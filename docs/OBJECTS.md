@@ -332,7 +332,7 @@ and the composite of the floor art over the procedural ground (F4, F5). The queu
   cell whose word has bit 0x01. So every cell an object, entrance or exit stands on (types 4, 9 and 10, which the placement writes, `ObjectCellHoles`) is drawn with no ground, in both texturing
   modes; types 2, 7 and 0x1E are cells without terrain and 0x15 the coaster's track connection marker. `Level` adds these to the render holes of the ground (`OriginalTerrain.RenderHoleSource`, with
   the pools extension's), so the static mesh and the procedural cell list leave them out and the ground under a ride is rebuilt only when the cell map changes. A cell that goes back to type 0
-  (the occupant demolished: `0x005367A0` clears the cell, `0x0005365D0` then restores it) takes its backup word again with the dirty bit 0x100, so the procedural terrain draws it again and
+  (the occupant demolished: `0x005367A0` clears the cell, `0x005365D0` then restores it) takes its backup word again with the dirty bit 0x100, so the procedural terrain draws it again and
   builds its texture once more (`ProceduralTerrain` marks a cell that stops being a hole dirty, `ProceduralTextureCache.Resolve` rebuilds the hit). OPEN-F5: every footprint cell of a
   demolished object (`0x00527EE0`, types 4, 9 and 10 alike, `0x5367A0` cases 4, 3 / 9 and 1 / 10) ends in `0x5346D0(0)` and the refresh, which is the 0x37 restore. A queue cell (type 3) is not on the
   list: its refresh places the queue model and writes the hole itself (F6, below). The pools' render holes and the camera modes that suspend the texturing leave these holes as they are (`0x46DED0`
@@ -345,7 +345,7 @@ and the composite of the floor art over the procedural ground (F4, F5). The queu
   `0x463994` and `0x4639CC`), and the flip bit 0x40 is kept. The words live in `OriginalCellWords` (the heightfield stays the file's backup; a removal restores the cell's backup word,
   `ParkObjects.Remove`; a level that clears its park drops them with it). Presentation only: no simulation state, hash or save reads them, and a park load rebuilds them from its objects.
 - **The composite (F5).** Right after the words, `0x57ACE0` runs over the footprint box (`0x467030` stores it in `+0xC0/+0xC4`: the shape's rectangle at the anchor, width and height swapped
-  for 90 and 270) row by row: every cell whose word has bits 0x80 and 0x200 (this instance's skirt cells, and any other object's inside the box: OPEN-F4 settled as ported, a slot the
+  for 90 and 270) row by row: every cell whose word has bits 0x80 and 0x200 (this instance's skirt cells and, at a park load, any other object's inside the box; a slot the
   instance's model lacks is skipped where the original reads past its slot table) takes the art of the slot its word names and the cell's procedural base (`0x572630` builds an N × N
   texture, `0x55F780` with a floor descriptor) and the slot's texture is redirected to it. `ProceduralTerrainTexturer.Compose` is the tail of `0x55F780` (from `0x5608B0`): the base buffer
   (the texturer's output, rows bottom-up) is read in one of eight orientations of the word's bits 0x78 (`BaseTexel`, tested 0x40, 0x08, 0x10, 0x20), the art is point sampled at row
@@ -363,6 +363,13 @@ and the composite of the floor art over the procedural ground (F4, F5). The queu
   over is transparent along a cell edge that borders open ground (mean alpha 69) and opaque along one that borders the floor (199), where the file's rows as decoded do not separate the two (118 and 128):
   `ObjectFloorBaseCorpusTests`. The seam test follows: where the art is transparent along an open edge the composite's texel is the base pixel of the ground at that place, so the cell's
   texture goes on the neighbouring terrain cell's (over 95% of more than ten thousand texels).
+  **OPEN-F4 (order).** A live placement runs the constructor first (`0x528E19` → `0x529E10` → `0x4DB090` → `0x4DD500(0)` → `0x463060`: the skirt words, then the composites) and only then types and
+  refreshes every footprint cell (op 0x81 at `0x52912C` → `0x5340A5` → `0x5365D0`), whose mode 8 sets 0x101 and clears 0x80 on every one of them. A later object's `0x57ACE0` therefore skips an
+  earlier object's cells, and a type-0 cell's `0x5367A0` does nothing (the `ja` at `0x5367ED`). `OriginalObject.RefreshFootprint` does this right after `PlaceFloorBase` for a live placement
+  (`ParkObjects.TryPlace`). A park load differs: `0x4647A0` creates every saved instance (with the creation flags it saved) and only afterwards `0x415140` → `0x4D83A0` refreshes all 128 × 128
+  cells, so while the instances are made every skirt cell still has bit 0x80 and a neighbour's cell inside a box is composed, in the saved order. Snapshot restore, the Theme Park Inc checkpoint,
+  the save import and the co-op join all end in `ParkObjects.CommitFootprintRefresh`, which does the refresh once the instances exist. The removal restores exactly the cells the placement wrote
+  (`OriginalObject.FloorWordCells`: the skirt cells and the refreshed footprint cells).
   With the procedural textures off none of this happens: no skirt words, no composites, the skirt cells draw their painted art (the holes are the same), as in the original.
 - **Queue models (F6) and path art (F9): read, not ported.** A queue piece is placed by `0x005229E0` with the instance flags 0x33A (bit 8 included) and every queue model of the four themes has the
   base flag (header 0x09, ground node 0) and one skirt entry (`C8` or `80`, `E0`, `A0` slot 0), so the original gives each queue cell a skirt word, a composite (the slot is the model's first) and,

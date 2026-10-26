@@ -576,6 +576,8 @@ public partial class Level : IDisposable
 		{
 			foreach ( var share in SetupObjects() )
 				yield return 0.4f + 0.35f * share;
+			// [BIN:TPW-EXE:0x00415140 load refresh] the cells are refreshed once the park's instances exist
+			Objects?.CommitFootprintRefresh();
 		}
 		using ( LoadProfile.Measure( "coasters" ) )
 			SetupCoasters();

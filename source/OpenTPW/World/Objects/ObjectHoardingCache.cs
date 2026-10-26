@@ -50,6 +50,9 @@ internal sealed class ObjectHoardingCache
 		return textures;
 	}
 
+	/// <summary>Drops the decoded floor art (128 × 128 texels per slot): the composites are made once per placement, so it is held only while the level's objects are built.</summary>
+	public void ReleaseFloorArt() => floorArt.Clear();
+
 	/// <summary>Drops the shared parts (the level is torn down; path textures stay in the texture cache as every path texture does).</summary>
 	public void Clear()
 	{

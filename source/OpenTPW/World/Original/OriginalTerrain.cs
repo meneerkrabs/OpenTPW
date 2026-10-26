@@ -279,6 +279,8 @@ public sealed partial class OriginalTerrain : Entity
 		if ( procedural == null || proceduralPart == null || heightfieldPart == null )
 			return;
 		var suspended = SuspendsProceduralGround( Camera.Mode );
+		if ( suspended && staticHolesStale )
+			RebuildHeightfieldPart();
 		proceduralPart.Hidden = suspended;
 		heightfieldPart.Hidden = !suspended;
 		if ( outsidePart != null )
@@ -296,14 +298,11 @@ public sealed partial class OriginalTerrain : Entity
 		if ( signature == heightfieldHoleSignature )
 			return;
 		heightfieldHoleSignature = signature;
-		var old = heightfieldPart;
-		parts.Remove( old );
-		old.Delete();
-		if ( old.Model is { } oldModel && models.Remove( oldModel ) )
-			ScheduleDispose( oldModel );
-		var hidden = old.Hidden;
-		heightfieldPart = AddPart( BuildHeightfieldModel( heightfieldMaterial, heightfieldSlotIndices ), "heightfield" );
-		heightfieldPart.Hidden = hidden;
+		// with the procedural ground the static mesh is hidden: it is rebuilt when a camera mode that suspends the textures shows it, not at every placement
+		if ( procedural != null && heightfieldPart.Hidden )
+			staticHolesStale = true;
+		else
+			RebuildHeightfieldPart();
 		if ( outsidePart != null && procedural is { } ground )
 		{
 			var outside = outsidePart;
@@ -314,6 +313,22 @@ public sealed partial class OriginalTerrain : Entity
 			outsidePart = AddPart( BuildHeightfieldModel( heightfieldMaterial, heightfieldSlotIndices, ( x, y ) => !ground.IsProcedural( x, y ) ), "heightfield outside the procedural rectangle" );
 			outsidePart.Hidden = outside.Hidden;
 		}
+	}
+
+	private bool staticHolesStale;
+
+	/// <summary>The static ground mesh made again for the holes as they are now.</summary>
+	private void RebuildHeightfieldPart()
+	{
+		staticHolesStale = false;
+		var old = heightfieldPart!;
+		parts.Remove( old );
+		old.Delete();
+		if ( old.Model is { } oldModel && models.Remove( oldModel ) )
+			ScheduleDispose( oldModel );
+		var hidden = old.Hidden;
+		heightfieldPart = AddPart( BuildHeightfieldModel( heightfieldMaterial!, heightfieldSlotIndices!, null ), "heightfield" );
+		heightfieldPart.Hidden = hidden;
 	}
 
 	/// <summary>The path layer: one quad per path cell, batched by at most 16 PathTex textures, and each queue cell's queue model.</summary>

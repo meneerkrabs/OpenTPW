@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>What a placed object needs to put its skirt on the landscape: the level's landscape words, its procedural ground and the terrain grid.</summary>
-internal sealed record FloorBaseContext( OriginalCellWords Words, ProceduralTerrain Ground, HoardingTerrain Terrain );
+internal sealed record FloorBaseContext( OriginalCellWords Words, ProceduralTerrain Ground, HoardingTerrain Terrain, Action ReleaseArt );
 
 /// <summary>One composite texture of a placed object: the cell it covers, the cell's word and the slot of the object's model whose texture it replaces.</summary>
 internal sealed record FloorComposite( int X, int Z, uint Word, int Slot, byte[] Rgba );

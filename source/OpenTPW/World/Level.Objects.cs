@@ -63,9 +63,6 @@ public partial class Level
 		}
 	}
 
-	/// <summary>The landscape words the placed objects' skirt cells write (<see cref="OriginalCellWords"/>); null for a level without terrain.</summary>
-	internal OriginalCellWords? CellWords { get; private set; }
-
 	/// <summary>Creates the park's objects; each value is a point where a frame may end, with the share of the objects placed.</summary>
 	private IEnumerable<float> SetupObjects()
 	{
@@ -456,8 +453,7 @@ public partial class Level
 		{
 			var words = new OriginalCellWords( heightfield );
 			var terrain = HoardingTerrain.Of( heightfield );
-			CellWords = words;
-			Objects.FloorBase = () => OriginalTerrain?.ProceduralGround is { } ground ? new FloorBaseContext( words, ground, terrain ) : null;
+			Objects.FloorBase = () => OriginalTerrain?.ProceduralGround is { } ground ? new FloorBaseContext( words, ground, terrain, HoardingCache.ReleaseFloorArt ) : null;
 		}
 		Objects.IsReserved = ( x, y ) => PoolBridges?.Reserves( x, y ) == true || IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 		Objects.IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );

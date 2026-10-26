@@ -90,8 +90,11 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	private readonly List<(Material Material, int[] Slots)> slotBindings = new();
 	/// <summary>The textures of this object's floor composites (<see cref="PlaceFloorBase"/>), released with the object.</summary>
 	private readonly List<Texture> compositeTextures = new();
-	/// <summary>The composites this object made: the cell, its word and the slot whose texture each one replaced.</summary>
+	/// <summary>The composites this object made: the cell, its word and the slot whose texture each one replaced (the pixels are on the GPU, not kept).</summary>
 	internal IReadOnlyList<FloorComposite> FloorComposites { get; private set; } = Array.Empty<FloorComposite>();
+	private readonly List<(int X, int Z)> floorWordCells = new();
+	/// <summary>The landscape cells this object's placement wrote a word into (its skirt cells, then its refreshed footprint cells), which its removal restores.</summary>
+	internal IReadOnlyList<(int X, int Z)> FloorWordCells => floorWordCells;
 	/// <summary>The type's hoarding drawn at this object, or null when its type has none (docs/OBJECTS.md, "Hoarding").</summary>
 	private ObjectHoardingRenderer? hoarding;
 	private readonly List<Model> models = new();
@@ -325,31 +328,28 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	/// </summary>
 	/// <param name="words">The level's landscape words, which this writes the skirt words into.</param>
 	/// <param name="ground">The level's procedural terrain, whose texturer builds the bases.</param>
-	/// <returns>The cells whose words were written.</returns>
 	// [BIN:TPW-EXE:0x0046334C skirt base] after the placement 0x467030 and the conform 0x469940 the block runs when the creation flag has bit 8, [0x7A1A8C] has 0x4000 (the texturing is on) and the base record's flag 0x40 is set; it writes the skirt words and calls 0x57ACE0
-	internal IReadOnlyList<(int X, int Z)> PlaceFloorBase( OriginalCellWords words, ProceduralTerrain ground, HoardingTerrain terrain )
+	internal void PlaceFloorBase( OriginalCellWords words, ProceduralTerrain ground, HoardingTerrain terrain )
 	{
 		if ( deleted || floor is not { Skirt: { HasBase: true } skirt } )
-			return Array.Empty<(int, int)>();
+			return;
 		using var profile = LoadProfile.Measure( "object-floor-base" );
 		var (originX, originZ) = ObjectFloorBase.OriginCell( Placement, terrain );
 		var model = Runtime.Model;
 		var cache = (Level ?? Level.Current)?.HoardingCache;
-		var written = new List<(int X, int Z)>();
 		foreach ( var cell in ObjectFloorBase.SkirtWords( skirt, originX, originZ, Placement.Rotation, words.Word ) )
 		{
 			words.Write( cell.X, cell.Z, cell.Word );
-			written.Add( (cell.X, cell.Z) );
+			floorWordCells.Add( (cell.X, cell.Z) );
 		}
 		var box = ObjectFloorBase.Box( skirt.Width, skirt.Height, Placement.Rotation, originX, originZ );
 		var composites = ObjectFloorBase.Compose( words, box, model.Textures.Count, ground.Texturer,
 			slot => slot < model.Textures.Count && model.Textures[slot].FrameNames.Count > 0
 				? (cache != null ? cache.FloorArt( Entry, model.Textures[slot].FrameNames[0] ) : DecodeSlotArt( Entry, model.Textures[slot].FrameNames[0] )) : null );
-		FloorComposites = composites;
 		LoadProfile.Count( "floor composites", composites.Count );
 		LoadProfile.Count( "floor composite bytes", composites.Sum( composite => (long)composite.Rgba.Length ) );
 		if ( composites.Count == 0 )
-			return written;
+			return;
 		// the last composite of a slot is the one the slot shows (a slot named by two cells of the box); the textures of the earlier ones are not kept
 		var size = ground.Size;
 		var shown = new Dictionary<int, Texture>();
@@ -370,7 +370,25 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			for ( var index = 0; index < slots.Length; index++ )
 				if ( shown.TryGetValue( slots[index], out var texture ) )
 					material.SetTextureArrayElement( TextureArrayName, index, texture );
-		return written;
+		// the pixels are uploaded: keep what identifies each composite, not its bytes
+		FloorComposites = composites.Select( composite => composite with { Rgba = Array.Empty<byte>() } ).ToArray();
+	}
+
+	/// <summary>
+	/// The cell refresh of this object's footprint (tp.exe <c>0x5365D0</c> through <c>0x46DF50</c> mode 8, once the cells are typed): every footprint cell takes the hole word, which clears bit 0x80 of the
+	/// skirt cells, so a later object's composite scan does not compose them. A live placement refreshes at once, after the constructor; a park load creates every instance first and refreshes
+	/// every cell afterwards (<c>0x415140</c> → <c>0x4D83A0</c>).
+	/// </summary>
+	internal void RefreshFootprint( OriginalCellWords words )
+	{
+		if ( deleted )
+			return;
+		foreach ( var (x, y, _) in Cells )
+		{
+			words.MarkHole( x, y );
+			if ( !floorWordCells.Contains( (x, y) ) )
+				floorWordCells.Add( (x, y) );
+		}
 	}
 
 	/// <summary>The art of a model texture slot's first frame as the floor composite reads it (RGBA, in the order the file decodes), or null when no searched directory has it.</summary>

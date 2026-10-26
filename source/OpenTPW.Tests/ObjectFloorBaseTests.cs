@@ -291,10 +291,8 @@ public class ObjectFloorBaseTests
 		Assert.AreEqual( 0x000B0289u, words.Word( 3, 4 ) );
 		Assert.AreEqual( 0u, words.Backup( 3, 4 ), "the backup is the file's" );
 		Assert.IsTrue( words.IsWritten( 3, 4 ) );
-		var version = words.Version;
 		Assert.IsTrue( words.Restore( 3, 4 ) );
 		Assert.AreEqual( 0u, words.Word( 3, 4 ) );
-		Assert.AreNotEqual( version, words.Version );
 		Assert.IsFalse( words.Restore( 3, 4 ), "a cell that was not written has nothing to restore" );
 		// outside the grid there is no word and nothing is written
 		words.Write( -1, 0, 5 );
@@ -342,12 +340,33 @@ public class ObjectFloorBaseTests
 		const int n = 16;
 		var words = new OriginalCellWords( Field() );
 		var texturer = Texturer( n );
-		// the cell (1, 1) is another object's skirt cell naming slot 3, which this instance's model has (4 slots); (2, 1) names slot 9, which it does not (the original reads past its slot table)
+		// at a park load (every instance is made before the cells are refreshed) the cell (1, 1) is another object's skirt cell naming slot 3, which this instance's model has (4 slots); (2, 1) names slot 9, which it does not (the original reads past its slot table)
 		words.Write( 1, 1, OriginalCellWords.SkirtWord( 0, new ObjectSkirtEntry( 0x80, 3 ), 0 ) );
 		words.Write( 2, 1, OriginalCellWords.SkirtWord( 0, new ObjectSkirtEntry( 0x80, 9 ), 0 ) );
 		var composites = ObjectFloorBase.Compose( words, (0, 0, 3, 3), 4, texturer, slot => Art( 5, "full" ) );
 		Assert.AreEqual( 1, composites.Count );
 		Assert.AreEqual( (1, 1, 3), (composites[0].X, composites[0].Z, composites[0].Slot) );
+	}
+
+	[TestMethod]
+	public void ARefreshedFootprintCellIsAHoleWithoutTheArtBitSoALaterObjectDoesNotComposeIt()
+	{
+		// the placement runs the constructor (the skirt words and the composites) and only then refreshes every footprint cell (0x5365D0, mode 8 of 0x46DF50: |= 0x101, &= ~0x80)
+		const int n = 16;
+		var words = new OriginalCellWords( Field() );
+		var texturer = Texturer( n );
+		words.Write( 1, 1, OriginalCellWords.SkirtWord( 0, new ObjectSkirtEntry( 0x88, 3 ), 0 ) );
+		Assert.AreEqual( 1, ObjectFloorBase.Compose( words, (0, 0, 3, 3), 4, texturer, slot => Art( 5, "full" ) ).Count, "before the refresh the cell is open to a scan" );
+		words.MarkHole( 1, 1 );
+		Assert.AreEqual( 0x0003_0309u, words.Word( 1, 1 ), "the slot, the orientation 8, 0x200 and the hole bits 0x101 stay; 0x80 is gone" );
+		Assert.AreEqual( 0, ObjectFloorBase.Compose( words, (0, 0, 3, 3), 4, texturer, slot => Art( 5, "full" ) ).Count, "after it a later object's scan skips the cell" );
+		// a footprint cell without a skirt word becomes a hole word of its own; the removal restores both
+		words.MarkHole( 2, 2 );
+		Assert.AreEqual( 0x101u, words.Word( 2, 2 ) );
+		Assert.IsTrue( words.Restore( 1, 1 ) && words.Restore( 2, 2 ) );
+		Assert.AreEqual( 0, words.WrittenCells );
+		Assert.AreEqual( 0x101u, OriginalCellWords.HoleWord( 0 ) );
+		Assert.AreEqual( 0x0003_0301u | 0x40, OriginalCellWords.HoleWord( 0x0003_0281u | 0x40 ) );
 	}
 
 	[TestMethod]
@@ -755,5 +774,45 @@ public class ObjectFloorBaseCorpusTests
 				Assert.IsTrue( composites.All( composite => (composite.Word & 0x281) == 0x281 ) );
 			}
 		}
+	}
+
+	/// <summary>The footprint cells of a placed type that no face of any of its meshes covers (a face counts for the cell its centre lies in), per theme: the ground under such a cell is a hole and nothing stands in it.</summary>
+	private static List<string> UncoveredFootprintCells( string theme )
+	{
+		var result = new List<string>();
+		var terrain = HoardingTerrain.Of( ObjectSkirtCorpusTests.FieldOf( theme ) );
+		foreach ( var entry in ObjectSkirtCorpusTests.NonFixedTypes( theme ) )
+		{
+			var model = ObjectSkirtCorpusTests.ModelOf( entry );
+			var placement = new ObjectPlacement( 20, 20, 0, N.Vector2.Zero, 0 );
+			var root = ObjectGroundConform.RootPlacement( placement, terrain );
+			var covered = new HashSet<(int, int)>();
+			for ( var node = 0; node < model.Nodes.Count; node++ )
+			{
+				var meshIndex = model.Nodes[node].MeshIndex;
+				if ( meshIndex < 0 || meshIndex >= model.Meshes.Count )
+					continue;
+				var mesh = model.Meshes[meshIndex];
+				var matrix = InstanceMatrix( model, node, root );
+				var positions = mesh.Positions.Select( p => ObjectFloorMath.TransformVertex( matrix, new N.Vector3( p.X, p.Y, p.Z ) ) ).ToArray();
+				for ( var face = 0; face * 3 + 2 < mesh.Indices.Length; face++ )
+				{
+					var centre = (positions[mesh.CornerPositionIndices[mesh.Indices[face * 3]]] + positions[mesh.CornerPositionIndices[mesh.Indices[face * 3 + 1]]] + positions[mesh.CornerPositionIndices[mesh.Indices[face * 3 + 2]]]) / 3;
+					covered.Add( ((int)MathF.Floor( centre.X / terrain.CellSizeX ), (int)MathF.Floor( centre.Z / terrain.CellSizeZ )) );
+				}
+			}
+			var missing = ObjectFootprint.GetCells( entry.Shape, 20, 20, 0 ).Where( cell => !covered.Contains( (cell.X, cell.Y) ) ).Select( cell => $"({cell.X - 20},{cell.Y - 20})" ).ToList();
+			if ( missing.Count > 0 )
+				result.Add( $"{entry.ArchiveName}: {string.Join( " ", missing )}" );
+		}
+		return result;
+	}
+
+	[TestMethod]
+	public void EveryFootprintCellOfEveryShippedTypeHasAFaceOverIt()
+	{
+		// every footprint cell is a hole in the ground (0x535DD0, mode 8), so a cell no face covers would be a see-through gap, as in the original; the shipped types have none
+		foreach ( var theme in Themes )
+			CollectionAssert.AreEqual( Array.Empty<string>(), UncoveredFootprintCells( theme ), theme );
 	}
 }

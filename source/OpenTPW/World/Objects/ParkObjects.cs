@@ -190,6 +190,26 @@ public sealed class ParkObjects
 	/// when the textures are off or the level has none, and a park without terrain has no such host.
 	/// </summary>
 	internal Func<FloorBaseContext?>? FloorBase { get; set; }
+	// objects registered since the last footprint refresh (a park load creates every instance before it refreshes the cells); refreshNow is set while a live placement registers
+	private readonly List<OriginalObject> pendingRefresh = new();
+	private bool refreshNow;
+
+	/// <summary>
+	/// The cell refresh of the objects a load placed (tp.exe <c>0x415140</c> → <c>0x4D83A0</c> refreshes all 128 × 128 cells after the instances of <c>0x4647A0</c> exist, so every skirt cell was still open to
+	/// a neighbour's composite scan when the instances were made): each footprint cell takes the hole word. A live placement does this itself, at once.
+	/// </summary>
+	internal void CommitFootprintRefresh()
+	{
+		if ( pendingRefresh.Count == 0 )
+			return;
+		if ( FloorBase?.Invoke() is { } context )
+		{
+			foreach ( var item in pendingRefresh.Where( objects.Contains ) )
+				item.RefreshFootprint( context.Words );
+			context.ReleaseArt();
+		}
+		pendingRefresh.Clear();
+	}
 	public event Action<OriginalObject>? ObjectPlaced;
 	public event Action<OriginalObject>? ObjectRemoved;
 
@@ -412,7 +432,17 @@ public sealed class ParkObjects
 			Remove( victim );
 		foreach ( var (x, y) in plan.ClearedPaths )
 			ClearPath?.Invoke( x, y );
-		return Register( item, registered: registered );
+		// a live placement refreshes its cells at once; the cells of earlier loads were refreshed already
+		CommitFootprintRefresh();
+		refreshNow = true;
+		try
+		{
+			return Register( item, registered: registered );
+		}
+		finally
+		{
+			refreshNow = false;
+		}
 	}
 
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
@@ -461,7 +491,16 @@ public sealed class ParkObjects
 			occupied[(x, y)] = item;
 		// [BIN:TPW-EXE:0x0046334C skirt base] the instance's creation (0x463060) writes the skirt words and makes the base composites once its placement is done, after the demolished objects' cells were restored
 		if ( FloorBase?.Invoke() is { } floorBase )
+		{
 			item.PlaceFloorBase( floorBase.Words, floorBase.Ground, floorBase.Terrain );
+			if ( refreshNow )
+			{
+				item.RefreshFootprint( floorBase.Words );
+				floorBase.ReleaseArt();
+			}
+			else
+				pendingRefresh.Add( item );
+		}
 		registered?.Invoke( item );
 		ObjectPlaced?.Invoke( item );
 		return item;
@@ -558,8 +597,9 @@ public sealed class ParkObjects
 			occupied.Remove( key );
 		item.Delete();
 		// [BIN:TPW-EXE:0x00527EE0 demolition] the demolition clears every footprint cell (0x5367A0, then the refresh 0x5365D0 of the type 0 cell: the backup word returns, 0x46DF50 mode 0x37); a level that clears its park does not bother
+		pendingRefresh.Remove( item );
 		if ( !clearing && FloorBase?.Invoke() is { } cleared )
-			foreach ( var (x, y, _) in item.Cells )
+			foreach ( var (x, y) in item.FloorWordCells )
 				cleared.Words.Restore( x, y );
 		// [BIN:TPW-EXE:0x00527EE0 object demolition] the demolition asks for the thing's destruction (0x0050B780 → 0x00516310), which the turn's end carries out; a park that clears itself frees the slots at once (0x00515FB0)
 		if ( Things is { } pool && item.ThingId != 0 )

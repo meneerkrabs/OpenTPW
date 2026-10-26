@@ -19,9 +19,6 @@ internal sealed class OriginalCellWords
 
 	public OriginalCellWords( ModelHeightfield field ) => this.field = field;
 
-	/// <summary>Counts every write and every restore, so a cache keyed on the words rebuilds only when they changed.</summary>
-	public int Version { get; private set; }
-
 	/// <summary>The cells an object's words currently change.</summary>
 	public int WrittenCells => written.Count;
 
@@ -44,8 +41,17 @@ internal sealed class OriginalCellWords
 		if ( !Inside( x, z ) )
 			return;
 		written[Index( x, z )] = word;
-		Version++;
 	}
+
+	/// <summary>
+	/// The word a cell takes when its map type is a hole type and the cell refresh runs (<c>0x46DF50</c> mode 8): bits 0x101 set and 0x80 cleared. A skirt cell then no longer has the "has art" bit
+	/// that the composite scan <c>0x57ACE0</c> asks for, so an object placed after the refresh does not compose it.
+	/// </summary>
+	public static uint HoleWord( uint word ) => (word | 0x101u) & ~0x80u;
+
+	/// <summary>Applies <see cref="HoleWord"/> to a cell (the refresh of a footprint cell).</summary>
+	// [BIN:TPW-EXE:0x0046DF50 hole word] mode 8: |= 0x101 and &= 0xFF7F of the landscape word
+	public void MarkHole( int x, int z ) => Write( x, z, HoleWord( Word( x, z ) ) );
 
 	/// <summary>
 	/// The cell's backup word again, as the removal of its occupant leaves it (<c>0x46DF50</c> mode 0x37 copies the backup word and sets the dirty bit 0x100, which the procedural terrain turns into
@@ -56,7 +62,6 @@ internal sealed class OriginalCellWords
 	{
 		if ( !Inside( x, z ) || !written.Remove( Index( x, z ) ) )
 			return false;
-		Version++;
 		return true;
 	}
 

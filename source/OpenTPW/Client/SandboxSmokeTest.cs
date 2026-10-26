@@ -83,6 +83,8 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	{
 		var field = park.Heightfield;
 		Require( level.OriginalTerrain != null && level.OriginalTerrain.SurfaceCellCount > 0 && level.OriginalTerrain.TerrainMeshCount > 0, "build original terrain" );
+		// the Jungle's river and waterfall: the terrain's own build registers all eleven scrolled meshes of basem.MD2 (the other themes have no terrain clip)
+		Require( !string.Equals( park.LevelName, "jungle", StringComparison.OrdinalIgnoreCase ) || level.OriginalTerrain!.UvAnimator is { RegisteredCount: 11 }, "the terrain build registers the eleven river and waterfall meshes" );
 		Require( level.GateSign != null && level.GateSign.TextPixelCount > 0, "render the park name on the gate sign with the original TrueType font" );
 		var cells = Enumerable.Range( 0, field.CellCountX * field.CellCountZ ).Select( index => (X: index % field.CellCountX, Y: index / field.CellCountX) ).ToArray();
 		var water = cells.First( cell => field.IsHole( cell.X, cell.Y ) && (park.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.Water ) || park.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.EntranceArea )) );

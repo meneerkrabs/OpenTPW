@@ -11,7 +11,7 @@ namespace OpenTPW;
 /// map) after <see cref="RefreshPaths"/>. Placed objects are drawn with their original models by
 /// <see cref="ParkObjects"/>, not as footprint markers.
 /// </summary>
-public sealed class OriginalTerrain : Entity
+public sealed partial class OriginalTerrain : Entity
 {
 	private const int MaximumTextureSlots = 16;
 	private readonly List<ModelEntity> parts = new();
@@ -533,6 +533,7 @@ public sealed class OriginalTerrain : Entity
 		var batchTextures = new List<string>();
 		var batchVertices = new List<Vertex>();
 		var batchIndices = new List<uint>();
+		uvAnimator = TerrainUvAnimator.Create( Park.TerrainModel, ListFiles( Park.TerrainDirectory ) );
 		foreach ( var model in new[] { Park.TerrainModel, Park.LakeModel }.OfType<ModelFile>() )
 		{
 			foreach ( var _ in BuildTerrainMeshes( textures, model, batchTextures, batchVertices, batchIndices ) )
@@ -546,8 +547,10 @@ public sealed class OriginalTerrain : Entity
 	/// <summary>The terrain meshes of one model into batches; a value after each mesh and each texture a full batch loads.</summary>
 	private IEnumerable<bool> BuildTerrainMeshes( Dictionary<string, Texture> textures, ModelFile model, List<string> batchTextures, List<Vertex> batchVertices, List<uint> batchIndices )
 	{
+		var runningIndex = -1;
 		foreach ( var mesh in model.Meshes )
 		{
+			runningIndex++;
 			if ( mesh.Vertices.Length == 0 || mesh.Indices.Length == 0 || mesh.Materials.Length is 0 or > MaximumTextureSlots || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
 				continue;
 			var names = mesh.Materials.Select( material => material.Name ).ToArray();
@@ -562,9 +565,14 @@ public sealed class OriginalTerrain : Entity
 					yield return true;
 			}
 			var world = GetWorldMatrix( model, mesh.NodeIndex );
-			if ( meshTextures.Any( texture => WorldTranslucency.IsTranslucent( texture.AlphaType ) ) )
+			// a mesh the terrain clip scrolls (the river and waterfall of the Jungle) is a model of its own with dynamic vertices, like a translucent one
+			var meshIndex = uvAnimator != null && ReferenceEquals( model, Park.TerrainModel ) ? runningIndex : -1;
+			var scrolls = meshIndex >= 0 && uvAnimator!.Animates( meshIndex );
+			if ( scrolls || meshTextures.Any( texture => WorldTranslucency.IsTranslucent( texture.AlphaType ) ) )
 			{
-				AddTranslucentMesh( mesh, names, meshTextures, world );
+				var (added, addedVertices) = AddTranslucentMesh( mesh, names, meshTextures, world, scrolls );
+				if ( scrolls )
+					uvAnimator!.Register( meshIndex, addedVertices, added.UpdateVertices );
 				TerrainMeshCount++;
 				yield return true;
 				continue;
@@ -615,7 +623,7 @@ public sealed class OriginalTerrain : Entity
 	private readonly Dictionary<string, Material> translucentMaterials = new( StringComparer.OrdinalIgnoreCase );
 
 	/// <summary>A terrain mesh with a translucent texture as a model of its own; the model splits its translucent faces by texture and draws them in the translucent pass.</summary>
-	private void AddTranslucentMesh( ModelFile.Mesh mesh, string[] names, Texture[] meshTextures, Matrix4x4 world )
+	private (Model Model, Vertex[] Vertices) AddTranslucentMesh( ModelFile.Mesh mesh, string[] names, Texture[] meshTextures, Matrix4x4 world, bool dynamicVertices = false )
 	{
 		var key = string.Join( "|", names );
 		if ( !translucentMaterials.TryGetValue( key, out var material ) )
@@ -631,7 +639,9 @@ public sealed class OriginalTerrain : Entity
 		var vertices = new Vertex[mesh.Vertices.Length];
 		for ( var index = 0; index < vertices.Length; index++ )
 			vertices[index] = MeshVertex( mesh, world, index, identity );
-		AddPart( new Model( vertices, mesh.Indices.ToArray(), material ), $"terrain translucent mesh {models.Count}" );
+		var model = new Model( vertices, mesh.Indices.ToArray(), material, dynamicVertices );
+		AddPart( model, $"terrain translucent mesh {models.Count}" );
+		return (model, vertices);
 	}
 
 	/// <summary>Makes a batch's model; a value after each of its textures.</summary>

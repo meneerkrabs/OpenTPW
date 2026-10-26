@@ -346,7 +346,7 @@ public sealed partial class OriginalTerrain : Entity
 					continue;
 				if ( QueueSource?.Invoke( x, y ) == true )
 				{
-					// The ground under a queue model keeps its terrain texture: the refresh gives it no path tile (0x5365D0).
+					// The ground under a queue model keeps its terrain texture: the refresh gives it no path tile (0x5365D0). The original makes the cell a hole of the ground and fills it with a composite floor (PATH-015).
 					if ( QueueModelSource?.Invoke( x, y ) is { } queueTile )
 						queues.Add( (x, y, queueTile) );
 					continue;
@@ -394,39 +394,121 @@ public sealed partial class OriginalTerrain : Entity
 	/// The queue models of the queue cells (<see cref="QueueModels"/>), baked into static batches: each instance stands on its cell turned by
 	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), each vertex on the ground under it.
 	/// </summary>
-	// [APPROX:PATH-015] the queue models are baked with each vertex raised by the drawn ground under it (LandscapeSampler, the path layer's lift above it, so the models follow a sloped cell and their floor shows over the grass as in the original's footage) and drawn without the skirt, the hole under the cell, the floor composite and the edge conform that the loader's flag 1 and the instance constructor give a queue piece as they give an object (docs/OBJECTS.md, "Floors", F6; the .hmp files are footprint height maps, nothing is deformed) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the model loader's flag 0x100000 (0x4629D0); the queue pieces' skirt, hole and composite are read (every queue model has the base flag and one entry) and need a texture of their own per queue cell in the baked batches
+	// [APPROX:PATH-015] the queue models are baked draped onto the landscape as tp.exe does (QueueModelDrape, 0x469A80), the cell a hole of the ground (0x46DF50) with the skirt of the object loader (opaque slot, normalised coordinates) and, with the procedural terrain textures on, the composite floor of the base art over the cell's ground (0x463060, 0x57ACE0; QueueModelFloor), and drawn without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the model loader's flag 0x100000 (0x4629D0) and the texture-frame animation of the torches
 	private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues )
 	{
 		QueueModelCount = 0;
-		if ( queues.Count == 0 )
-			return;
 		var field = Park.Heightfield;
-		// The path layer's lift, so the queue's floor never fights the ground for depth.
-		var lift = 0.01f * field.CellSizeX;
 		var directory = $"/levels/{Park.LevelName}/queue";
-		var batchTextures = new List<string>();
-		var batchVertices = new List<Vertex>();
-		var batchIndices = new List<uint>();
-		foreach ( var group in queues.Where( queue => queue.Tile.Model >= 0 && queue.Tile.Model < QueueModels.Names.Count ).GroupBy( queue => queue.Tile.Model ).OrderBy( group => group.Key ) )
+		var valid = queues.Where( queue => queue.Tile.Model >= 0 && queue.Tile.Model < QueueModels.Names.Count ).ToList();
+		// [BIN:TPW-EXE:0x00763388 queue model table] the loader 0x522900 fills 8 slots (the table ends at 0x7633E8); the chooser's index (class-2 base 0..3, +1 for a corner, +3 per linked path neighbour) can reach 8..10, where the original would read past its slots
+		foreach ( var (x, y, tile) in queues.Where( queue => queue.Tile.Model < 0 || queue.Tile.Model >= QueueModels.Names.Count ) )
 		{
-			ModelFile model;
+			if ( warnedQueueCells.Add( (x, y) ) )
+				Log.Warning( $"Queue cell ({x}, {y}) chose model index {tile.Model}, past the 8 queue model slots of tp.exe; the original reads past its slot array there, so no model is drawn." );
+		}
+		var floors = new Dictionary<int, QueueModelFloor>();
+		foreach ( var key in valid.Select( queue => queue.Tile.Model ).Distinct().OrderBy( key => key ) )
+		{
 			try
 			{
-				model = ObjectAssets.LoadModel( $"{directory}/{QueueModels.Names[group.Key]}.md2" );
+				floors[key] = QueueModelFloor.Create( ObjectAssets.LoadModel( $"{directory}/{QueueModels.Names[key]}.md2" ), field );
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
 			{
-				missingTextures.Add( $"{QueueModels.Names[group.Key]}.md2" );
-				continue;
+				missingTextures.Add( $"{QueueModels.Names[key]}.md2" );
 			}
+		}
+		// with the procedural terrain textures on, every queue cell with a composite takes a tile of the atlas (the skirt word and 0x57ACE0 of the placement); the atlas and the tiles of unchanged cells persist across rebuilds
+		var tileOfCell = new Dictionary<(int X, int Y), int>();
+		var wanted = new List<((int Model, int X, int Y, int Yaw) Key, QueueModelFloor Floor)>();
+		if ( procedural is { } ground )
+		{
+			foreach ( var (x, y, tile) in valid )
+			{
+				if ( floors.TryGetValue( tile.Model, out var floor ) && floor.HasComposite )
+					wanted.Add( ((tile.Model, x, y, tile.Yaw), floor) );
+			}
+			if ( queueAtlas != null && queueAtlas.TileSize != ground.Size )
+				ResetQueueAtlas();
+			// the composites of cells that no longer exist go, and so do their tiles (reused only from the next rebuild on: the parts drawn until now may still point at them)
+			var keys = wanted.Select( entry => entry.Key ).ToHashSet();
+			foreach ( var key in queueComposites.Keys.Where( key => !keys.Contains( key ) ).ToList() )
+			{
+				queueComposites.Remove( key );
+				if ( queueSlotOf.Remove( key, out var freed ) )
+					queueQuarantine.Add( freed );
+			}
+			var fresh = new List<(int Slot, byte[] Rgba)>();
+			var assigned = new List<((int Model, int X, int Y, int Yaw) Key, int Slot, byte[] Rgba)>();
+			foreach ( var (key, floor) in wanted )
+			{
+				if ( !queueComposites.TryGetValue( key, out var rgba ) )
+				{
+					rgba = floor.Compose( field, key.X, key.Y, key.Yaw, ground.Texturer, slot => QueueSlotArt( floor.Model, slot, directory ) );
+					queueComposites[key] = rgba;
+				}
+				if ( rgba == null )
+					continue;
+				var isNew = !queueSlotOf.ContainsKey( key );
+				if ( isNew )
+					queueSlotOf[key] = queueFreeSlots.Count > 0 ? queueFreeSlots.Pop() : queueNextSlot++;
+				assigned.Add( (key, queueSlotOf[key], rgba) );
+				if ( isNew )
+					fresh.Add( (queueSlotOf[key], rgba) );
+			}
+			foreach ( var slot in queueQuarantine )
+				queueFreeSlots.Push( slot );
+			queueQuarantine.Clear();
+			if ( assigned.Count > 0 )
+			{
+				if ( queueAtlas == null || queueNextSlot > queueAtlas.Slots )
+				{
+					// a bigger atlas holds every tile again; the old one is what the parts still drawn point into, so it is retired, not freed
+					var old = queueAtlas;
+					queueAtlas = new ProceduralTerrainAtlas( ground.Size, Math.Max( queueNextSlot, old == null ? queueNextSlot : old.Slots * 2 ) );
+					if ( old != null )
+					{
+						retiredQueueAtlas?.Dispose();
+						retiredQueueAtlas = old;
+					}
+					foreach ( var (_, slot, rgba) in assigned )
+						queueAtlas.Upload( slot, ObjectFloorBase.FlipRows( rgba, ground.Size, ground.Size ) );
+				}
+				else
+				{
+					foreach ( var (slot, rgba) in fresh )
+						queueAtlas.Upload( slot, ObjectFloorBase.FlipRows( rgba, ground.Size, ground.Size ) );
+				}
+				foreach ( var (key, slot, _) in assigned )
+					tileOfCell[(key.X, key.Y)] = slot;
+			}
+		}
+		else if ( queueAtlas != null )
+			ResetQueueAtlas();
+		var batchTextures = new List<string>();
+		var batchVertices = new List<Vertex>();
+		var batchIndices = new List<uint>();
+		foreach ( var group in valid.Where( queue => floors.ContainsKey( queue.Tile.Model ) ).GroupBy( queue => queue.Tile.Model ).OrderBy( group => group.Key ) )
+		{
+			var floor = floors[group.Key];
+			var model = floor.Model;
 			foreach ( var (x, y, tile) in group )
 			{
-				var turn = ObjectPlacement.CellRotation( tile.Yaw );
-				foreach ( var mesh in model.Meshes )
+				// the instance height and the chain of every node on this cell; each vertex is draped by its own chain (QueueModelDrape)
+				var baseHeight = QueueModelDrape.BaseHeight( field, x, y );
+				var placement = QueueModelDrape.Placement( field, model, x, y, tile.Yaw, baseHeight );
+				var chains = QueueModelDrape.Chains( model, placement );
+				var rootChain = ModelDrape.Chain( placement, System.Numerics.Matrix4x4.Identity );
+				var hasTile = tileOfCell.TryGetValue( (x, y), out var tileIndex );
+				for ( var meshIndex = 0; meshIndex < model.Meshes.Count; meshIndex++ )
 				{
+					var mesh = floor.Floor.Apply( meshIndex, model.Meshes[meshIndex] );
 					if ( ObjectAssets.GetUnrenderableReason( mesh ) != null || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
 						continue;
-					var names = mesh.Materials.Select( material => material.Name ).ToArray();
+					// the composite stands in for the skirt entry's slot: the materials that name it read the cell's tile of an atlas page
+					var composite = hasTile && mesh.Materials.Any( material => material.TextureIndex == floor.Entry.Slot ) ? queueAtlas!.PageOf( tileIndex ) : -1;
+					var names = mesh.Materials.Select( material => hasTile && material.TextureIndex == floor.Entry.Slot ? $"{CompositePrefix}{composite}" : material.Name ).ToArray();
 					if ( batchTextures.Union( names, StringComparer.OrdinalIgnoreCase ).Count() > MaximumTextureSlots )
 						FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
 					var slotOfMaterial = names.Select( name =>
@@ -439,21 +521,23 @@ public sealed partial class OriginalTerrain : Entity
 						}
 						return slot;
 					} ).ToArray();
-					var world = GetWorldMatrix( model, mesh.NodeIndex );
 					var first = (uint)batchVertices.Count;
+					var nodeChain = mesh.NodeIndex >= 0 && mesh.NodeIndex < chains.Length ? chains[mesh.NodeIndex] : rootChain;
 					for ( var index = 0; index < mesh.Vertices.Length; index++ )
 					{
 						var source = mesh.Vertices[index];
-						// Model space (Y up) → the cell's ground axes, turned within the cell → park model space at the cell → engine.
-						var local = System.Numerics.Vector3.Transform( ObjectAssets.ConvertAxes( System.Numerics.Vector3.Transform( source.Position.GetSystemVector3(), world ) ), turn );
-						var normal = System.Numerics.Vector3.TransformNormal( ObjectAssets.ConvertAxes( System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), world ) ), turn );
+						// Model space (Y up) → the grid's frame through the node's chain with the vertex's height on the landscape under it → engine.
+						var placed = QueueModelDrape.Vertex( field, nodeChain, source.Position.GetSystemVector3(), baseHeight );
+						var normal = ObjectAssets.ConvertAxes( System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), nodeChain ) );
 						var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
-						var (groundX, groundY) = (x * field.CellSizeX + local.X, y * field.CellSizeZ + local.Y);
+						var texCoords = mesh.TexCoords[index];
+						if ( hasTile && mesh.Materials[materialIndex].TextureIndex == floor.Entry.Slot )
+							texCoords = queueAtlas!.PageCoordinates( tileIndex, texCoords );
 						batchVertices.Add( new Vertex
 						{
-							Position = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( groundX, GroundUnder( field, groundX, groundY ) + lift + local.Z, groundY ) ),
+							Position = OriginalParkPlacement.ToEngine( field, placed ),
 							Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( normal ) : System.Numerics.Vector3.UnitZ,
-							TexCoords = mesh.TexCoords[index],
+							TexCoords = texCoords,
 							TexIndex = slotOfMaterial[materialIndex],
 							MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags )
 						} );
@@ -467,10 +551,58 @@ public sealed partial class OriginalTerrain : Entity
 		FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
 	}
 
+	/// <summary>The name a batch slot takes for a page of the queue composites (the atlas, not a file).</summary>
+	private const string CompositePrefix = "\u0001queue-composite-";
+
+	private ProceduralTerrainAtlas? queueAtlas, retiredQueueAtlas;
+
+	/// <summary>The atlas tile each queue composite lives in, stable across rebuilds so only the tiles of changed cells are uploaded.</summary>
+	private readonly Dictionary<(int Model, int X, int Y, int Yaw), int> queueSlotOf = new();
+	private readonly Stack<int> queueFreeSlots = new();
+	private readonly List<int> queueQuarantine = new();
+	private int queueNextSlot;
+
+	/// <summary>The queue cells already warned about for a model index past the table (once per cell).</summary>
+	private readonly HashSet<(int X, int Y)> warnedQueueCells = new();
+
+	/// <summary>Drops the atlas and every tile assignment (the tile size changed, or the procedural textures went off); the old atlas is retired, not freed.</summary>
+	private void ResetQueueAtlas()
+	{
+		if ( queueAtlas != null )
+		{
+			retiredQueueAtlas?.Dispose();
+			retiredQueueAtlas = queueAtlas;
+			queueAtlas = null;
+		}
+		queueComposites.Clear();
+		queueSlotOf.Clear();
+		queueFreeSlots.Clear();
+		queueQuarantine.Clear();
+		queueNextSlot = 0;
+	}
+
+	/// <summary>The composites made so far by (model, cell, yaw): the placement of a queue cell makes one once (the ground under it does not change), so a rebuild of the path layer reuses it.</summary>
+	private readonly Dictionary<(int Model, int X, int Y, int Yaw), byte[]?> queueComposites = new();
+
+	/// <summary>The art of a slot of a queue model (its first frame's file in the queue archive), as the composite reads it.</summary>
+	private ObjectFloorBase.SlotArt? QueueSlotArt( ModelFile model, int slot, string directory )
+	{
+		if ( slot < 0 || slot >= model.Textures.Count || model.Textures[slot].FrameNames.Count == 0 )
+			return null;
+		var path = FindTexture( directory, Park.LevelName, model.Textures[slot].FrameNames[0], "textures", ListFiles );
+		if ( path == null )
+			return null;
+		var (data, width, height) = path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) ? Texture.DecodeWct( path ) : Texture.DecodeImage( FileSystem, path );
+		return new ObjectFloorBase.SlotArt( data, width, height );
+	}
+
 	/// <summary>The drawn ground's height under a point in model units (<see cref="LandscapeSampler"/>), the point kept on the map.</summary>
 	internal static float GroundUnder( ModelHeightfield field, float x, float y ) =>
 		LandscapeSampler.Sample( field.CellCountX, field.CellCountZ, field.CellSizeX, field.CellSizeZ, field.GetCornerHeight, field.SplitsAlongAntiDiagonal,
 			Math.Clamp( x, 0, field.CellCountX * field.CellSizeX - 0.001f ), Math.Clamp( y, 0, field.CellCountZ * field.CellSizeZ - 0.001f ) );
+
+	private Texture QueueSlotTexture( Dictionary<string, Texture> textures, string name, string directory ) =>
+		name.StartsWith( CompositePrefix, StringComparison.Ordinal ) && queueAtlas != null && int.TryParse( name.AsSpan( CompositePrefix.Length ), out var page ) ? queueAtlas.Pages[page] : LoadTexture( textures, name, "textures", directory );
 
 	private void FlushQueueBatch( Dictionary<string, Texture> textures, string directory, List<string> names, List<Vertex> vertices, List<uint> indices )
 	{
@@ -478,7 +610,7 @@ public sealed partial class OriginalTerrain : Entity
 		{
 			var slots = new Texture[MaximumTextureSlots];
 			for ( var index = 0; index < slots.Length; index++ )
-				slots[index] = index < names.Count ? LoadTexture( textures, names[index], "textures", directory ) : slots[0];
+				slots[index] = index < names.Count ? QueueSlotTexture( textures, names[index], directory ) : slots[0];
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
 			pathParts.Add( AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"queue models {pathParts.Count}" ) );
@@ -800,6 +932,9 @@ public sealed partial class OriginalTerrain : Entity
 			Camera.ParkFarPlane = null;
 		procedural?.Dispose();
 		procedural = null;
+		queueAtlas?.Dispose();
+		retiredQueueAtlas?.Dispose();
+		queueAtlas = retiredQueueAtlas = null;
 		foreach ( var part in parts )
 			part.Delete();
 		parts.Clear();

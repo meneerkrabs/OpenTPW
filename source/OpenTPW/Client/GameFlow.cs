@@ -674,7 +674,7 @@ internal sealed partial class GameFlow : IDisposable
 
 		if ( Level != null && Hud != null )
 		{
-			Hud.ObserveApplicationFocus( Window.Current?.Focused == true, Window.Current?.IsOffscreen != false, onlineSession?.IsLoggedIn == true );
+			Hud.ObserveApplicationFocus( Window.Current?.Focused == true, Window.Current?.IsOffscreen != false );
 			using ( FrameMarks.Measure( "park.hud" ) )
 				Level.UiCapturesMouse = Hud.Update( Context, input ) || parkBuild != null;
 			// The camera reads the keyboard itself: while the next park is built it stays where it is, as under a modal window.
@@ -691,7 +691,7 @@ internal sealed partial class GameFlow : IDisposable
 				Level.Update();
 			presence?.Update( Time.Delta );
 			using ( FrameMarks.Measure( "park.advisor" ) )
-				Advisor?.Update( Hud.Paused, parkPaused: Level.SimulationTimeScale <= 0 );
+				Advisor?.Update( Hud.ClockPaused, parkPaused: Level.SimulationTimeScale <= 0 );
 			// [EXT:park-entry-preparation] what the build prepared for the advisor and its first line is used by the update of the frame that entered the park; anything left is dropped
 			// (a joined park's, once its advisor has said its first line: a resync's says it the frame after the swap), but for the lines decoded ahead, which wait for their own
 			// saying until a teardown
@@ -707,7 +707,7 @@ internal sealed partial class GameFlow : IDisposable
 			}
 			// The game timer the steps follow stands still while the park is paused, as the advisor's clock does.
 			var crowdLevel = Level;
-			GameAudio.UpdateCrowd( Hud.Paused ? 0 : Time.Delta * 1000.0, () => GuestsNearCamera( crowdLevel ), parkLost );
+			GameAudio.UpdateCrowd( Hud.ClockPaused ? 0 : Time.Delta * 1000.0, () => GuestsNearCamera( crowdLevel ), parkLost );
 			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1, Level.StaffWorld?.DrivesStaff == true );
 			if ( Level.StaffWorld != null )
 				GameAudio.PlayStaffVoices( Level.StaffWorld.TakeVoices() );

@@ -9,13 +9,14 @@ public sealed partial class ParkHud
 	private GameSpeed DisplayedGameSpeed => applicationPaused ? GameSpeed.Paused : Status.Speed;
 
 	/// <summary>
-	/// [EXT:offline-focus-pause] A visible offline park that loses observed focus stops until an explicit resume.
-	/// Initial lack of focus and offscreen automation are not deactivation. Native modal/audio/device parity is not claimed.
+	/// A visible park that loses observed focus stops until an explicit resume, as tp.exe's deactivation does (0x46B74C -> 0x4092A0(1), which builds the P window; a logged-in player's own park included).
+	/// [EXT:offline-focus-pause] what differs from the original is host plumbing only: focus is sampled once per frame (a loss and a return between two samples is not seen), an initial lack of focus and
+	/// offscreen automation are not deactivation, and the stopped state is shown through the speed buttons with the chosen speed stored. [EXT:online-coop-lockstep] a shared park and a read-only visit
+	/// are the host's clock and take no local pause.
 	/// </summary>
-	internal void ObserveApplicationFocus( bool focused, bool offscreen, bool loggedIn )
+	internal void ObserveApplicationFocus( bool focused, bool offscreen )
 	{
-		// No local focus-driven clock ownership in online visits/chat sessions. Future co-op requires host-issued commands.
-		if ( offscreen || loggedIn || level.IsReadOnlyVisit )
+		if ( offscreen || level.IsReadOnlyVisit || level.CoopRole != CoopRole.None )
 		{
 			previousApplicationFocus = null;
 			ClearApplicationPause();
@@ -25,7 +26,7 @@ public sealed partial class ParkHud
 		if ( previousApplicationFocus == true && !focused && TimeScaleFor( 1f, Stack.Screens.Select( screen => screen.Name ) ) > 0 )
 		{
 			applicationPaused = true;
-			// [BIN:TPW-EXE:0x46b74c focus loss] WM_ACTIVATEAPP deactivation of the window procedure 0x46b600, offline ([0xF82884] == 0), calls 0x4092a0(1, 1) on the pause object 0x786b68:
+			// [BIN:TPW-EXE:0x46b74c focus loss] WM_ACTIVATEAPP deactivation of the window procedure 0x46b600 (it tests [0xF82884], which is 0 in every park, so a logged-in player's own park pauses too), calls 0x4092a0(1, 1) on the pause object 0x786b68:
 			// it latches the pause and, for the constant 1, creates the P window (0x481440 -> 0x48a6e0 -> 0x4a2790, only when [0x7cb2cc] is still 0), so losing focus offline brings up the same backdrop as P.
 			CreatePausePointerOverlay();
 		}

@@ -923,6 +923,12 @@ public static class OriginalLayoutTables
 		new( 1, 0x1u, 0x321u, 102, 536, 1946, 940, -1, -1, "s_congrats", null, null, System.Array.Empty<LayoutNode>() ),
 	} );
 
+	/// <summary>[BIN:TPW-EXE:0x74fb20] layout table LossScreen.</summary>
+	public static readonly LayoutTable LossScreen = new( "LossScreen", 0x74FB20, new LayoutNode[]
+	{
+		new( 1, 0x3u, 0x5Au, 174, 500, 1874, 1000, -1, -1, "s_bkrupt", null, null, System.Array.Empty<LayoutNode>() ),
+	} );
+
 	/// <summary>[BIN:TPW-EXE:0x74f920] layout table MessageBox.</summary>
 	public static readonly LayoutTable MessageBox = new( "MessageBox", 0x74F920, new LayoutNode[]
 	{

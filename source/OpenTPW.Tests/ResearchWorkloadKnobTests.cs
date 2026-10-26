@@ -43,11 +43,14 @@ public class ResearchWorkloadKnobTests
 	{
 		// c=0, divisor33 yields limit1024 exactly; ordinary balance settings instead yield563.
 		var extra = fullRange ? "StaffPoolInfo.MaxResearchersInPark 33\nResearcherConstsPerGrade[4].ResearchAbility 1\n" : "";
+		// the research window opens only with a scientist hired (0x4aa480, UITEXT 0x1d3): grades 0 to 2 research nothing here and the pool is deeper, so the scientist of the build leaves the knob's sum at 0
+		extra += "ResearcherConstsPerGrade[0].ResearchAbility 0\nResearcherConstsPerGrade[1].ResearchAbility 0\nResearcherConstsPerGrade[2].ResearchAbility 0\nStaffPoolInfo.BeginningNumberOfResearchers 8\n";
 		var economy = new ParkEconomy( EconomyTestData.Settings( extra: extra ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
 		economy.Research.SetWorkload( workload );
 		var hud = StaffWindowTests.Hud( economy );
 		Set( hud, "researchFluids", Enumerable.Range( 0, 5 ).Select( _ => new ResearchFluid() ).ToArray() );
 		Set( hud, "researchFluidClock", new ReferenceFrameClock( 0.25f ) );
+		economy.Hire( economy.Staff.Candidates.Where( candidate => candidate.Type == StaffType.Researcher && candidate.Grade < 3 ).OrderBy( candidate => candidate.Grade ).ThenBy( candidate => candidate.Id ).First().Id );
 		hud.OpenResearchWindow();
 		return new World( hud, economy, Get<Level>( hud, "level" ), Context() );
 	}
@@ -182,7 +185,7 @@ public class ResearchWorkloadKnobTests
 		var pressY = pressTop + 20;
 		w.Down( 300, pressY );
 		var oldWorkload = w.Economy.Research.Workload;
-		EconomyTestData.HireBest( w.Economy, StaffType.Researcher );
+		EconomyTestData.HireBest( w.Economy, StaffType.Researcher ).Grade = 4;
 		w.Hold( 300, pressY );
 		var projected = ParkHud.KnobFromWorkload( oldWorkload, w.Knob.Limit );
 		Assert.AreEqual( projected, w.Knob.Value );
@@ -454,7 +457,7 @@ public class ResearchWorkloadKnobTests
 		w.Context.Batch.Clear();
 		gauge.Draw( w.Context, false, false );
 		CollectionAssert.AreEqual( first, w.Context.Batch.Draws.Single().Vertices.ToArray() );
-		EconomyTestData.HireBest( w.Economy, StaffType.Researcher );
+		EconomyTestData.HireBest( w.Economy, StaffType.Researcher ).Grade = 4;
 		w.Idle();
 		w.Context.Batch.Clear();
 		gauge.Draw( w.Context, false, false );

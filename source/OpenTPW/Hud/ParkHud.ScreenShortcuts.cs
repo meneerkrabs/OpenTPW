@@ -243,8 +243,9 @@ public sealed partial class ParkHud
 			return false;
 		if ( !FeatureGates.Sharing || host.OpenPostcard == null )
 		{
-			PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
-			return false;
+			// [BIN:TPW-EXE:0x4a8c89 postcard refusal] the composer's refusal is the alert queue's box (ERRORMSG 0x4E), see OpenPostcardFromPanel
+			Stack.Push( AlertBox() );
+			return true;
 		}
 		host.OpenPostcard( Stack );
 		return true;

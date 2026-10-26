@@ -2199,12 +2199,15 @@ that holds something without a member (`Level.HoldingGuestSeats`), in place of C
 back. **The host's end** (the host ending the share, a failure, the link lost for good) applies it for
 every guest seat that still holds anything, as records of the host's own log before its last checkpoint,
 so the log replays to the state the host's park runs on with. The records go to no guest: each guest's
-park runs on alone, and its own teardown clears what its session held.
+park runs on alone, and its own teardown clears what its session held. An end inside a tick (no game
+path makes one) records nothing there, as no command may apply inside a tick: the host's park then ends
+the guests' coasters' tool state on its own after the log, as a guest's teardown does.
 
-**The pending hires (C4a's format, C4c's use).** The join state's version 5 and the digest's version 3
-carry the pending hires as rows of seat and candidate, in place of the one pending hire before. Until C4c
-only the host's seat 0 hires, so a guest seat's row is refused at the join's restore, before any of the
-state applies.
+**Staff state (C4a's format, C4c's use).** The join state's version 5 and the digest's version 3 carry
+the pending hires as rows of seat and candidate, in place of the one pending hire before. Until C4c only
+the host's seat 0 hires or carries an employee, so the join's restore refuses a guest seat's pending hire
+or employee in hand, and a pending hire whose candidate the park's pool does not hold, before any of the
+state applies. A guest seat therefore holds nothing in C4a that the release above does not free.
 
 **Speed and pause (Q8).** A guest's speed buttons draw subdued (`UiButton.Subdued`: the disabled look with
 the hit target and the click kept) and show the host's speed. Each speed input of a guest, the four
@@ -2462,7 +2465,11 @@ new format version.
 tick order and an end mark. Versions 1 and 2 have no flags byte and remain readable (version 1 cannot
 contain the new queue commands). `ParkCommandReplay.Run` schedules a log on a park that stands where
 the log started and runs it tick by tick, so each command lands where it was recorded, under the
-session's rules when the log says so; `FirstMismatch` compares the checkpoints. A log is guaranteed to replay only on the build that recorded it: kind 14 (`BacktrackCommand`) gained meaning over pool water and pool bridge cells with the pools extension's Backspace removal, so a log recorded before that, with the key pressed over such a cell, did nothing then and does something now.
+session's rules when the log says so; `FirstMismatch` compares the checkpoints. A log taken from a
+running recording gets a final checkpoint, the park when it is taken: it comes after every command
+recorded by then, so it replaces an after-tick checkpoint of the same tick (a session's teardown records
+its releases after the last tick, C4a), and a replay compares it after the commands logged at its tick,
+which `Run` applies after the last tick. A log is guaranteed to replay only on the build that recorded it: kind 14 (`BacktrackCommand`) gained meaning over pool water and pool bridge cells with the pools extension's Backspace removal, so a log recorded before that, with the key pressed over such a cell, did nothing then and does something now.
 
 A co-op session records its own log (`CoopHostStream.SessionLog`, kept at the first desync and when
 the session ends): every command from the session's start, with the world hash of each tick digest as

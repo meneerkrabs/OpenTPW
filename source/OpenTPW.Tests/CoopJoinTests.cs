@@ -197,9 +197,8 @@ public class CoopJoinTests
 			Enter( park );
 			var commands = park.Level.Commands;
 			Assert.IsTrue( commands.Issue( new PickUpObjectCommand( park.One.Visitors.AttractionId ) ).Accepted, "a Move tool's pick-up: the carried entry" );
-			// an employee in two players' hands (the hands are the level's state, set as a pick-up's command sets them)
+			// an employee in the host's hand (the hands are the level's state, set as a pick-up's command sets them; a guest's seat carries one from C4c on)
 			park.Level.StaffHands!.Carry( 0, park.Economy.Staff.Members.First().Id, (4, 1) );
-			park.Level.StaffHands.Carry( 2, park.Economy.Staff.Members.Last().Id, (6, 1) );
 			if ( park.Economy.Staff.Candidates.FirstOrDefault() is { } candidate )
 				Assert.IsTrue( commands.Issue( new BeginStaffHireCommand( candidate.Id ) ).Accepted, "a pending hire" );
 			park.Economy.Staff.StaleOnPointerId = 3;
@@ -225,13 +224,22 @@ public class CoopJoinTests
 		Enter( host );
 		var state = CoopJoinState.Decode( host.Level.CaptureJoinState().Encode() );
 		Assert.AreEqual( 1, state.CarriedEntries.Count );
-		Assert.AreEqual( 2, state.StaffHands.Count );
+		Assert.AreEqual( 1, state.StaffHands.Count );
 		Assert.IsNotNull( state.SessionClockTicks );
 		CollectionAssert.AreEqual( new[] { (2, CoopRights.Build), (5, CoopRights.Build) }, state.SeatRights!.ToArray() );
 		Enter( twin );
-		// until C4c only the host's seat hires: a guest seat's pending hire is refused before any of the state applies
-		Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( state with { PendingHires = new[] { (2, 77) } } ), "a guest seat's pending hire" );
-		Assert.AreEqual( 0, twin.Level.SeatRights.Count, "nothing applied" );
+		// until C4c only the host's seat holds staff state: a guest seat's employee in hand or pending hire is refused before any of the state applies, as is a hire whose candidate the
+		// pool does not hold
+		foreach ( var (malformed, what) in new[]
+		{
+			(state with { StaffHands = state.StaffHands.Append( (2, twin.Economy.Staff.Members.Last().Id, 6, 1) ).ToArray() }, "a guest seat's employee in hand"),
+			(state with { PendingHires = new[] { (2, 77) } }, "a guest seat's pending hire"),
+			(state with { PendingHires = new[] { (0, 9999) } }, "a candidate the pool does not hold")
+		} )
+		{
+			Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( malformed ), what );
+			Assert.AreEqual( (0, 0), (twin.Level.SeatRights.Count, twin.Level.StaffHands!.All.Count()), $"{what}: nothing applied" );
+		}
 		twin.Level.ApplyJoinState( state );
 		CollectionAssert.AreEqual( new[] { 2, 5 }, twin.Level.BuildGrants.ToArray() );
 		Assert.AreEqual( digest, CoopDigest.Compute( twin.Level, out var twinWorld ), "the session state brought back what the digest covers beyond the save" );

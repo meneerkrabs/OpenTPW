@@ -701,14 +701,21 @@ public partial class CoopSessionTests
 		var hostBuilder = host.Level.GetCoasterBuilder( hostCoaster )!;
 		RoundsUntil( () => hostBuilder.Track.Nodes[node].X == cell.X + 1, host, guest, view, "the step reached the host" );
 		CatchUpAndCompare( host, guest );
-		// the host ends the session with the guest's drag held and its coaster in the tool
+		// the host ends the session with the guest's drag held and its coaster in the tool, at a tick of its after-tick checkpoints: the teardown's releases come after that checkpoint
+		// and change the park it holds, so the log's last checkpoint takes its place (C4a)
+		var interval = CoopHostStream.CheckpointInterval( host.Economy.Speed );
+		for ( var round = 0; round < 600 && host.Level.TickCount % interval != 0; round++ )
+			Rounds( 1, host, guest );
+		Assert.AreEqual( 0, host.Level.TickCount % interval, "at a checkpoint's tick" );
 		host.Enter();
 		var hostStream = host.Session!.HostStream!;
 		host.Session.End( "The host closed the park." );
 		var log = ParkCommandLogFile.Deserialize( hostStream.SessionLog!.Serialize() );
 		// [EXT:online-coop-permissions] the teardown released the guest's seat in a record of the log, before its last checkpoint, whose claim's end took the coaster out of the tool (C4a)
-		Assert.IsTrue( log.Entries[^1] is { Command: ReleaseSeatCommand { Seat: var released } } last && released == seat && last.Tick <= log.Checkpoints[^1].Ticks,
-			"the seat's release is the log's last record" );
+		Assert.IsTrue( log.Entries[^1] is { Command: ReleaseSeatCommand { Seat: var released } } last && released == seat && last.Tick == log.Checkpoints[^1].Ticks,
+			"the seat's release is the log's last record, at its last checkpoint's tick" );
+		Assert.AreEqual( (host.Level.TickCount, host.Level.ComputeStateHash()), (log.Checkpoints[^1].Ticks, log.Checkpoints[^1].Hash), "the last checkpoint is the park after the releases" );
+		Assert.AreEqual( 1, log.Checkpoints.Count( point => point.Ticks == host.Level.TickCount ), "and the only one of its tick" );
 		Assert.IsFalse( hostCoaster.Runtime.Coaster!.BeingEdited, "the host's park left no coaster a guest held closed and marked" );
 		Assert.IsNull( host.Level.CoasterEdits.Of( seat ), "nor its drag" );
 		Assert.AreEqual( cell, (hostBuilder.Track.Nodes[node].X, hostBuilder.Track.Nodes[node].Y), "the moved pylon went back" );
@@ -717,5 +724,38 @@ public partial class CoopSessionTests
 		guest.Session!.End( "The guest left." );
 		Assert.IsNull( guest.Level.CoasterPanel );
 		Assert.IsFalse( coaster.Runtime.Coaster!.BeingEdited, "the guest's park left no claimed coaster closed and marked either" );
+	}
+
+	[TestMethod]
+	public void AnEndInsideTheHostsTickRecordsNothingThereAndStillLeavesNoCoasterAGuestHeldClosedAndMarked()
+	{
+		var (host, guest, view, coaster, _, _) = SharedCoaster();
+		GuestCoasterTool( host, guest, view, coaster );
+		var hostCoaster = HostCoaster( host, coaster );
+		Assert.IsTrue( hostCoaster.Runtime.Coaster!.BeingEdited, "the guest holds the coaster in the tool" );
+		var session = host.Session!;
+		var hostStream = session.HostStream!;
+		// no game path ends a session inside a tick: the test seam does, outside a strict run, which throws at a command applied there
+		var strict = ParkCommands.Strict;
+		ParkCommands.Strict = false;
+		try
+		{
+			host.Level.TickCompleted = _ =>
+			{
+				host.Level.TickCompleted = null;
+				session.End( "The host closed the park." );
+			};
+			for ( var round = 0; round < 600 && session.EndedWith == null; round++ )
+				Rounds( 1, host, guest );
+		}
+		finally
+		{
+			ParkCommands.Strict = strict;
+			host.Level.TickCompleted = null;
+		}
+		Assert.IsNotNull( session.EndedWith, "the session ended inside a tick" );
+		Assert.IsFalse( hostStream.SessionLog!.Entries.Any( entry => entry.Command is ReleaseSeatCommand ), "no release was recorded inside the tick" );
+		Assert.IsFalse( hostCoaster.Runtime.Coaster!.BeingEdited, "the park's own end left no coaster a guest held closed and marked" );
+		Assert.AreEqual( (0, 0), (host.Level.RideClaims.Count, host.Level.SeatRights.Count) );
 	}
 }

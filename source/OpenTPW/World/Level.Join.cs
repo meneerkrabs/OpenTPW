@@ -35,7 +35,8 @@ public partial class Level
 	/// <summary>
 	/// [EXT:online-coop-snapshot-join] Writes a join snapshot's session state (<see cref="CaptureJoinState"/>) into the park a guest built from its save, before its first tick: the save's load
 	/// zeroed the pending hire and left the hands, the carried entries and the marks as the save has them. A coaster the state marks must be one of this park's, and a ride it claims one of
-	/// its track rides or coasters.
+	/// its track rides or coasters; a pending hire's candidate must be in the pool the save brought, and only the host's seat holds staff state (an employee in hand, a pending hire) until
+	/// C4c. Anything else throws before any of the state applies.
 	/// </summary>
 	internal void ApplyJoinState( CoopJoinState state )
 	{
@@ -47,11 +48,17 @@ public partial class Level
 			throw new InvalidDataException( $"The join state holds marker cells of coaster {unbound}, which the park does not hold." );
 		if ( state.StaffHands.Count > 0 && StaffHands == null )
 			throw new InvalidDataException( "The join state holds employees in hand, which this park cannot hold." );
-		// [EXT:online-coop-permissions] the host's pending hire alone (C4a): a guest's seat hires from C4c on
+		// [EXT:online-coop-permissions] the host's staff state alone (C4a): a guest's seat hires and carries employees from C4c on, whose release frees them
+		if ( state.StaffHands.FirstOrDefault( hand => hand.Player != ParkCommands.LocalPlayer ) is { Staff: > 0 } guestHand )
+			throw new InvalidDataException( $"The join state holds an employee in seat {guestHand.Player}'s hand, which no guest's seat holds yet." );
 		if ( state.PendingHires.FirstOrDefault( row => row.Seat != ParkCommands.LocalPlayer ) is { Candidate: > 0 } guestHire )
 			throw new InvalidDataException( $"The join state holds seat {guestHire.Seat}'s pending hire, which no guest's seat holds yet." );
-		if ( state.PendingHires.Count > 0 && Park?.Economy.Staff == null )
+		var pool = Park?.Economy.Staff;
+		if ( state.PendingHires.Count > 0 && pool == null )
 			throw new InvalidDataException( "The join state holds a pending hire, which this park cannot hold." );
+		// a pending hire's candidate stays in the pool, which the save brought: a candidate it does not hold is no hire of this park
+		if ( pool != null && state.PendingHires.FirstOrDefault( row => pool.Candidates.All( candidate => candidate.Id != row.Candidate ) ) is { Candidate: > 0 } absent )
+			throw new InvalidDataException( $"The join state's pending hire names candidate {absent.Candidate}, which the park's pool does not hold." );
 		// [EXT:online-coop-claims] a claimed ride must be one of this park's track rides (C3c-1) or coasters (C3c-2)
 		var claims = state.RideClaims ?? Array.Empty<(int Ride, int Seat)>();
 		if ( claims.Count > 0 )

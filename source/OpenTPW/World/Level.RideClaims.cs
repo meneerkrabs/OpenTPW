@@ -75,7 +75,8 @@ public partial class Level
 	/// <summary>
 	/// [EXT:online-coop-claims] A guest's session's teardown: each coaster of <paramref name="stations"/> (attraction ids) still in the tool leaves it on this park, which runs on alone (no peer
 	/// follows it), by an <see cref="EndCoasterToolCommand"/> of its own, as its claim's end would have left it (C3c-2): none stays closed and marked. The coaster tool of this machine stays on its
-	/// coaster. The host's teardown releases the guests' seats in records of its log instead, whose claims' end does the same (C4a).
+	/// coaster. The host's teardown releases the guests' seats in records of its log instead, whose claims' end does the same (C4a); an end inside a tick, which can record nothing, ends
+	/// them here after its log too.
 	/// </summary>
 	internal void EndSessionCoasters( IEnumerable<int> stations )
 	{

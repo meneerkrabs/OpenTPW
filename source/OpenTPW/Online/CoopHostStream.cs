@@ -1505,9 +1505,13 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			level.SessionStream = null;
 		// [EXT:online-coop-permissions] what every guest's seat still holds goes in records of the session's log, under the session's rules, before its last checkpoint (C4a): the seat's
 		// rights, its carry and its claims, whose end leaves a coaster's tool state (C3c-2), so the log replays to the state this park runs on with. They go to no guest (the stream
-		// stopped taking records above): each guest's park runs on alone, and its own teardown clears what its session held.
-		foreach ( var seat in level.HoldingGuestSeats() )
-			level.Commands.Apply( new ReleaseSeatCommand( seat ) );
+		// stopped taking records above): each guest's park runs on alone, and its own teardown clears what its session held. An end inside a tick (no game path makes one; a test's
+		// TickCompleted could) records nothing there, as no command may apply inside a tick: this park then ends the guests' coasters' tool state on its own after the log, as a
+		// guest's teardown does
+		if ( !level.Commands.IsInTick )
+			foreach ( var seat in level.HoldingGuestSeats() )
+				level.Commands.Apply( new ReleaseSeatCommand( seat ) );
+		var unreleased = level.RideClaims.Where( claim => claim.Value > 0 ).Select( claim => claim.Key ).ToArray();
 		var commands = level.Commands;
 		commands.SessionRules = previousSessionRules;
 		commands.InTick = previousInTick;
@@ -1523,6 +1527,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			scripts.SessionTime = null;
 		recorder.Dispose();
 		SessionLog = RecordedLog();
+		level.EndSessionCoasters( unreleased );
 	}
 
 	/// <summary>The session's recording so far, with the world hash now as its last checkpoint.</summary>

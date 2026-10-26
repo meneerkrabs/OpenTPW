@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -10,7 +11,8 @@ namespace OpenTPW.Tests;
 /// <summary>
 /// [EXT:online-coop-permissions] A shared park's rights per seat between its peers (docs/COOP.md, "Money and rights (C4)"; C4a): the rights command reaches every peer, and taking building back
 /// lets go of the seat's claim in its record; a right taken back while a guest's request is on its way refuses the request at its record; the host's end releases every guest seat that holds
-/// anything in records of its log, before the last checkpoint, and the log replays; the host's management of a ride a guest claims stays allowed and its log replays; [EXT:online-coop-speed]
+/// anything in records of its log, before the last checkpoint, and the log replays; the host's management of a ride a guest claims stays allowed, and a C3 session's records (the grant,
+/// its taking back and the seat's release apart) replay to the same park; [EXT:online-coop-speed]
 /// a guest's speed buttons draw subdued and every speed input of the guest says that only the host can do that.
 /// </summary>
 public partial class CoopSessionTests
@@ -88,7 +90,7 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
-	public void TheHostsManagementOfARideAGuestClaimsStaysAllowedAndTheLogReplays()
+	public void TheHostsManagementOfARideAGuestClaimsStaysAllowedAndAC3SessionsRecordsReplay()
 	{
 		var (host, guest, _, _) = Shared();
 		var view = ViewOf( guest );
@@ -98,7 +100,7 @@ public partial class CoopSessionTests
 		// the grant's command of C3 (101), as a C3 session's log holds it
 		Grant( host, guest, view );
 		var ride = host.One.Runtime.AttractionId;
-		GuestClaims( host, guest, ride );
+		var seat = GuestClaims( host, guest, ride );
 		// a claim guards building and removal against the host, not the host's management: the ride's open switch goes as it did in C3
 		var open = host.One.IsOpen;
 		Assert.IsTrue( host.Issue( new SetAttractionOpenCommand( ride, !open ) ).Accepted );
@@ -107,14 +109,33 @@ public partial class CoopSessionTests
 		Assert.IsFalse( guest.Issue( new SetAttractionOpenCommand( ride, open ) ).Accepted );
 		view.Update();
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopHostOnly ) );
+		Rounds( 10, host, guest );
+		// C3's release of a seat: its grant taken back, then its release, two records
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
+		Assert.IsTrue( host.Issue( new ReleaseSeatCommand( seat ) ).Accepted );
 		CatchUpAndCompare( host, guest );
-		Assert.AreEqual( !open, guest.One.IsOpen, "the host's switch reached the guest" );
+		Assert.AreEqual( (!open, (int?)null, 0), (guest.One.IsOpen, guest.Level.ClaimOf( ride ), guest.Level.SeatRights.Count), "the host's records reached the guest" );
 		host.Enter();
 		var hostStream = host.Session!.HostStream!;
 		host.Session.End( "The host closed the park." );
 		var log = ParkCommandLogFile.Deserialize( hostStream.SessionLog!.Serialize() );
-		Assert.IsTrue( log.Entries.Any( entry => entry.Command is SetBuildGrantCommand { Granted: true } ), "the log holds C3's grant" );
-		Assert.IsNull( FirstReplayMismatch( log, park => MarkStation( park, park.One, seat: null ) ), "and replays, the host's switch accepted again" );
+		Assert.AreEqual( 2, log.Entries.Count( entry => entry.Command is SetBuildGrantCommand ), "the log holds C3's grant and its taking back" );
+		Assert.AreEqual( 1, log.Entries.Count( entry => entry.Command is ReleaseSeatCommand ), "and one release: the seat held nothing at the end" );
+		// the records replay under the session's rights to the host's park, claim, switch and rights alike
+		var twin = NewPark();
+		twin.Enter();
+		MarkStation( twin, twin.One, seat: null );
+		var hashes = new Dictionary<long, ulong>();
+		var claimed = false;
+		ParkCommandReplay.Run( twin.Level.Commands, log, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks =>
+		{
+			hashes[ticks] = twin.Level.ComputeStateHash();
+			claimed |= twin.Level.ClaimOf( ride ) == seat;
+		}, new CoopBuildRights( twin.Level ) );
+		hashes[log.Checkpoints[^1].Ticks] = twin.Level.ComputeStateHash();
+		Assert.IsNull( ParkCommandReplay.FirstMismatch( log, hashes ) );
+		Assert.IsTrue( claimed, "the guest's claim was accepted again" );
+		Assert.AreEqual( (!open, (int?)null, 0), (twin.One.IsOpen, twin.Level.ClaimOf( ride ), twin.Level.SeatRights.Count), "and the host's switch, the release and the grant's end" );
 	}
 
 	[TestMethod]

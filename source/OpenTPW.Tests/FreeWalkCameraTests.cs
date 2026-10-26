@@ -136,6 +136,8 @@ public class FreeWalkCameraTests
 			Assert.IsTrue(level.EnterFreeWalk(Vector3.Zero)); level.IsPlacing=true;
 			level.UpdateWorldInput(true,false,new N.Vector2(500),new N.Vector2(1000)); Assert.IsNull(level.PlacedRide);
 			level.ExitFreeWalk(); level.UpdateWorldInput(true,false,new N.Vector2(500),new N.Vector2(1000)); Assert.IsNull(level.PlacedRide,"Held click remains consumed on return.");
+			// the release of that press, made while walking, is no click of the park's: the HUD never took the press
+			level.UpdateWorldInput(false,false,new N.Vector2(500),new N.Vector2(1000)); Assert.IsNull(level.PlacedRide,"Its release after leaving the walk places nothing.");
 		} finally { Input.UpdateButtons(); Input.KeysDown=down; Input.LastKeysDown=last; Camera.Mode=old; }
 	}
 

@@ -83,6 +83,8 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	{
 		var field = park.Heightfield;
 		Require( level.OriginalTerrain != null && level.OriginalTerrain.SurfaceCellCount > 0 && level.OriginalTerrain.TerrainMeshCount > 0, "build original terrain" );
+		// the Jungle's river and waterfall: the terrain's own build registers all eleven scrolled meshes of basem.MD2 (the other themes have no terrain clip)
+		Require( !string.Equals( park.LevelName, "jungle", StringComparison.OrdinalIgnoreCase ) || level.OriginalTerrain!.UvAnimator is { RegisteredCount: 11 }, "the terrain build registers the eleven river and waterfall meshes" );
 		Require( level.GateSign != null && level.GateSign.TextPixelCount > 0, "render the park name on the gate sign with the original TrueType font" );
 		var cells = Enumerable.Range( 0, field.CellCountX * field.CellCountZ ).Select( index => (X: index % field.CellCountX, Y: index / field.CellCountX) ).ToArray();
 		var water = cells.First( cell => field.IsHole( cell.X, cell.Y ) && (park.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.Water ) || park.Map.GetFlagsAt( cell.X, cell.Y ).HasFlag( MapCellFlags.EntranceArea )) );
@@ -109,6 +111,12 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		if ( frame == 1 && level.OriginalPark != null && Camera.Mode is ParkCameraMode smokeCamera )
 		{
 			smokeCamera.SetPose( level.PathFocus, ParkCameraMode.MaximumHeight, ParkCameraMode.HomeYaw );
+		}
+		if ( frame == 20 && level.OriginalTerrain?.ProceduralGround is { } ground )
+		{
+			// the procedural terrain texturing (docs/LND.md) is on for this level: the cells in view are built into the pages and drawn, and none waits for its texture
+			Require( ground.DrawnCells > 0 && ground.Builds > 0, $"draw the ground with procedural textures ({ground.DrawnCells} cells drawn, {ground.Builds} built)" );
+			Log.Trace( $"Procedural terrain: {ground.DrawnCells} cells in view at the widest zoom, cache {ground.Cache.Capacity}, {ground.Builds} built in {ground.BuildMilliseconds:F1} ms ({ground.TexturerMilliseconds:F1} ms of it the texturer), {ground.Cache.Hits} hits, {ground.Cache.Misses} misses." );
 		}
 		TrackObjectMotion();
 		TrackRideHeads();

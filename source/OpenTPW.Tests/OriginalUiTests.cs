@@ -830,16 +830,20 @@ public class OriginalUiTests
 	}
 
 	[TestMethod]
-	public void UiImageBlackKeyFadesTheDarkEdgeOfArtDrawnOnBlack()
+	public void UiCutOutKeysOutTexelsBelowTheAlphaReferenceAndKeepsTheRest()
 	{
-		// A row of the ipan disc's edge: black background, the dark anti-aliased fade, then the disc.
-		var rgba = new byte[] { 0, 0, 4, 255, 0, 2, 21, 255, 0, 11, 45, 255, 10, 28, 72, 255 };
-		UiImages.KeyOutBlackSoft( rgba, 4, 1 );
-		Assert.AreEqual( 0, rgba[3], "near-black background is transparent" );
-		Assert.AreEqual( 255, rgba[15], "the disc stays opaque" );
-		Assert.IsTrue( rgba[7] > 0 && rgba[7] < rgba[11] && rgba[11] < 255, "the fade becomes partly transparent, more so further out" );
-		Assert.AreEqual( 21 * 255 / rgba[7], rgba[6], 2, "fade colours are un-premultiplied against black" );
-		CollectionAssert.AreEqual( new byte[] { 10, 28, 72, 255 }, rgba[12..], "opaque texels keep their colour" );
+		// state 0x2756: alpha blend with a test at 0xF0/255; a discarded texel takes the colour of an opaque neighbour
+		var rgba = new byte[] { 9, 9, 9, 0xEF, 30, 40, 50, 0xF0, 60, 70, 80, 255, 1, 2, 3, 10 };
+		UiImages.CutOut( rgba, 4, 1 );
+		Assert.AreEqual( 0, rgba[3], "just below the reference is not drawn" );
+		Assert.AreEqual( 0xF0, rgba[7], "the reference itself is drawn" );
+		Assert.AreEqual( 255, rgba[11] );
+		Assert.AreEqual( 0, rgba[15] );
+		CollectionAssert.AreEqual( new byte[] { 30, 40, 50 }, rgba[..3], "a discarded texel takes the mean colour of its drawn neighbours" );
+		var opaque = new byte[] { 1, 2, 3, 255, 4, 5, 6, 0xF8 };
+		var copy = (byte[])opaque.Clone();
+		UiImages.CutOut( copy, 2, 1 );
+		CollectionAssert.AreEqual( opaque, copy, "a texture whose texels all pass the test is untouched" );
 	}
 
 	[TestMethod]

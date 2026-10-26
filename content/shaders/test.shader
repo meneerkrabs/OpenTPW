@@ -115,6 +115,10 @@ fragment {
     // TextureSlotAddressing.ClampFlag: an original MD2 slot without flag 0x10/0x20, which tp.exe clamps instead of wrapping.
     const uint FLAG_SLUSH = 0x40000000u; // [EXT:winter-snow] OpenTPW's vertex flag for a path-like material (TextureSlotAddressing.SlushFlag)
     const uint FLAG_CLAMP = 0x80000000u;
+    // WorldTranslucency.AlphaTestLowFlag: a corner of a translucent texture's face, which the original draws with state word 0x556 (an alpha test at 0x10/255, tp.exe 0x567620 and 0x590C40)
+    const uint FLAG_ALPHA_TEST_LOW = 0x20000000u;
+    // WorldTranslucency.CutoutFlag: a corner of a cut-out texture's face (an alpha plane with an alpha byte of 0), which the original draws with state word 0x2756 (an alpha test at 0xF0/255)
+    const uint FLAG_CUTOUT = 0x10000000u;
 
     // CLAMP on the wrapping sampler: the coordinates stay half a texel of the coarsest mip the footprint can select
     // inside the edges (that mip's real size, floor(size / 2^level) but at least 1, so odd sizes do not bleed either),
@@ -264,18 +268,22 @@ fragment {
             vOutColor = mix( vOutColor, vShouldered, clamp( ( 1.0 - g_oUbo.g_flAmbientLevel ) / 0.65, 0.0, 1.0 ) );
         }
 
-        // Handle opaque alpha testing
-        if (vTextureSample.a < 0.1) discard;
+        // Handle opaque alpha testing: the engine's 0.1, 0xF0/255 for the faces of the original's cut-out state, or 0x10/255 for the faces of its translucent state
+        float alphaReference = ( outMatFlags & FLAG_CUTOUT ) != 0u ? 240.0 / 255.0 : ( outMatFlags & FLAG_ALPHA_TEST_LOW ) != 0u ? 16.0 / 255.0 : 0.1;
+        if (vTextureSample.a < alphaReference) discard;
 
         fragColor = vec4(vOutColor, vTextureSample.a);
 
-        // Calculate fog using view space depth
-        // g_flViewDistanceScale stretches the fog distance (graphics settings); 0 from older callers means 1.
-        float viewDistanceScale = g_oUbo.g_flViewDistanceScale > 0.0 ? g_oUbo.g_flViewDistanceScale : 1.0;
-        float viewSpaceDepth = length(vs_out.vWorldPosition) / viewDistanceScale;
-        float fogFactor = exp(viewSpaceDepth * 0.01) * 0.025;
-        fogFactor = clamp( fogFactor, 0, 1 );
-        
+        // the original's linear fog in the projection's depth (UI-107, RenderFog): g_flViewDistanceScale carries the range (start x 8 x 4096 + end x 8, 1/8 view units; 0 = no fog)
+        float fogFactor = 0.0;
+        if ( g_oUbo.g_flViewDistanceScale > 0.0 )
+        {
+            float startQ = floor( g_oUbo.g_flViewDistanceScale / 4096.0 );
+            float fogStart = startQ * 0.125;
+            float fogEnd = ( g_oUbo.g_flViewDistanceScale - startQ * 4096.0 ) * 0.125;
+            fogFactor = clamp( ( 1.0 / gl_FragCoord.w - fogStart ) / max( fogEnd - fogStart, 0.001 ), 0.0, 1.0 );
+        }
+
         // Mix with fog
         fragColor.xyz = mix(fragColor.xyz, g_oUbo.g_vFogColor, fogFactor);
     }

@@ -60,6 +60,8 @@ public sealed class GuestRenderer : Entity
 	public bool Visible { get; set; } = true;
 	/// <summary>Which guests this renderer draws (null: all): the kids' renderer leaves guests in costume to the costume renderer.</summary>
 	public Func<Guest, bool>? Draws { get; init; }
+	/// <summary>The swimmers' renderer: drawn after the pool water in the late group of <see cref="Level.SplitLate"/>, so the water, which writes no depth, does not blend over the sprites.</summary>
+	public bool DrawsAfterWater { get; init; }
 	/// <summary>Consumer selection for stateful ride bodies, whose category was copied at player creation. Ordinary walking retains Draws.</summary>
 	public Func<Guest, bool>? DrawsRideBody { get; init; }
 

@@ -19,7 +19,7 @@ namespace OpenTPW.Tests;
 /// </summary>
 [TestClass]
 [DoNotParallelize]
-public class CoopSessionTests
+public partial class CoopSessionTests
 {
 	private AutomaticCheckpointCpuRendererScope? renderer;
 	private UpgradeCatalogueDefaultsTests? fixture;
@@ -183,7 +183,7 @@ public class CoopSessionTests
 		Assert.AreEqual( "The park is shared already.", reason );
 		Assert.ThrowsException<InvalidOperationException>( () => CoopSession.Host( host.Level, hostLink ) );
 
-		// a guest's own click is refused before it runs (only the host builds), its HUD hears of it, and its log stays the host's stream
+		// a guest's own click is refused before it runs (the host has not let it build), its HUD hears of it, and its log stays the host's stream
 		var logged = guest.Level.Commands.Log.Count;
 		Assert.IsFalse( guest.Issue( new SetEntranceFeeCommand( 99 ) ).Accepted );
 		Assert.AreEqual( 1, guest.Level.SessionRefusals );
@@ -345,7 +345,8 @@ public class CoopSessionTests
 			Assert.AreEqual( (log.StartTick, log.StartHash), (twin.Level.TickCount, twin.Level.ComputeStateHash()), "the twin is the session's starting park" );
 			var hashes = new Dictionary<long, ulong>();
 			if ( withRules )
-				ParkCommandReplay.Run( twin.Level.Commands, log, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
+				ParkCommandReplay.Run( twin.Level.Commands, log, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash(),
+					new CoopBuildRights( twin.Level ) );
 			else
 				ParkCommandReplay.Run( twin.Level.Commands, log.Entries, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
 			hashes[log.Checkpoints[^1].Ticks] = twin.Level.ComputeStateHash();
@@ -457,7 +458,7 @@ public class CoopSessionTests
 	}
 
 	[TestMethod]
-	public void AGuestsRefusedClicksAreSaidOnceAsOnlyTheHostBuilds()
+	public void AGuestsRefusedClicksAreSaidOnceInTheWordsOfTheirRefusal()
 	{
 		var (_, guest, _, _) = Shared();
 		guest.Enter();
@@ -467,7 +468,8 @@ public class CoopSessionTests
 		var context = new UiContext( strings, new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) )
 		{ Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };
 		void Frame() => hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
-		var said = strings.Extra( OpenTpwText.OnlyTheHostBuilds );
+		// a command only the host issues (C3a-2: the backtrack's removal comes back with its tool in C3b)
+		var said = strings.Extra( OpenTpwText.CoopHostOnly );
 		int Said() => hud.Messages.Count( message => message == said );
 		Frame();
 		Assert.AreEqual( 0, Said() );
@@ -484,6 +486,12 @@ public class CoopSessionTests
 		Frame();
 		Assert.AreEqual( 2, Said(), "a later click is said again" );
 		Assert.AreEqual( 7, guest.Level.SessionRefusals );
+		// building the host has not granted is said as such
+		Time.Update( ParkHud.SessionRefusalNoticeSeconds );
+		Assert.IsFalse( guest.Issue( new LayLineCommand( CellToolMode.Path, -1, 5, 20, 12, 20 ) ).Accepted );
+		Frame();
+		Assert.AreEqual( 1, hud.Messages.Count( message => message == strings.Extra( OpenTpwText.CoopNotGranted ) ) );
+		Assert.AreEqual( 2, Said() );
 	}
 
 	/// <summary>
@@ -691,7 +699,7 @@ public class CoopSessionTests
 					lostSockets++;
 				}
 				if ( round == 100 )
-					Assert.IsFalse( guest.Issue( new SetEntranceFeeCommand( 99 ) ).Accepted, "only the host builds" );
+					Assert.IsFalse( guest.Issue( new SetEntranceFeeCommand( 99 ) ).Accepted, "only the host sets the fee" );
 				clock += 1 / 60.0;
 				host.Frame( 1 / 60.0 );
 				guest.Frame( 1 / 60.0 );

@@ -23,7 +23,7 @@ public class WctBoundsTests
 	private static byte[] Wct( byte[] color, short width = 8, short height = 8, byte[]? alpha = null )
 	{
 		using var output = new MemoryStream(); using var writer = new BinaryWriter( output );
-		writer.Write( (byte)1 ); writer.Write( (byte)(alpha == null ? 0 : 1) ); writer.Write( (byte)0 ); writer.Write( (byte)0 );
+		writer.Write( (byte)1 ); writer.Write( (byte)(alpha == null ? 0 : 1) ); writer.Write( (byte)(alpha == null ? 0 : 0x20) ); writer.Write( (byte)0 );
 		writer.Write( width ); writer.Write( height );
 		for ( var i = 0; i < 4; i++ ) writer.Write( (short)0 );
 		writer.Write( color.Length ); writer.Write( alpha?.Length ?? 0 ); writer.Write( 0 );
@@ -121,7 +121,7 @@ public class WctBoundsTests
 		}
 		var alpha = valid.ToArray(); BinaryPrimitives.WriteInt32LittleEndian( alpha.AsSpan( 20 ), -1 );
 		Assert.ThrowsException<InvalidDataException>( () => Decode( alpha ) );
-		alpha = valid.ToArray(); alpha[1] = 1;
+		alpha = valid.ToArray(); alpha[1] = 1; alpha[2] = 0x20;
 		Assert.ThrowsException<InvalidDataException>( () => Decode( alpha ) );
 	}
 

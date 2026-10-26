@@ -12,6 +12,9 @@ public partial class ModelEntity : Entity
 	/// <summary>Not drawn while set (a scene that is kept loaded but not shown, or an MD2 mesh whose node-state bit 0x10 is set).</summary>
 	public bool Hidden { get; set; }
 
+	/// <summary>The model matrix the draw uses.</summary>
+	internal System.Numerics.Matrix4x4 DrawMatrix => TransformOverride ?? ModelMatrix;
+
 	/// <summary>Light position for scenes without a level sun (e.g. the online globe).</summary>
 	public Vector3? LightPosition { get; set; }
 
@@ -63,7 +66,7 @@ public partial class ModelEntity : Entity
 		if ( Model == null || Hidden )
 			return;
 
-		var model = TransformOverride ?? ModelMatrix;
+		var model = DrawMatrix;
 		// [BIN:TPW-EXE:0x561A30 mesh view test] the original clips the eight corners of the mesh record's box (widened by half its extent per side) and skips the mesh when all lie outside one plane; the exact vertex bounds used here are tighter, and every stored box of the corpus contains its vertices (Md2MeshBoundsCorpusTests), so only meshes wholly out of view are skipped
 		if ( Cullable && Model.Bounds is { } bounds && Frustum.IsOutside( bounds.Min, bounds.Max, model * Camera.ViewMatrix * Camera.ProjMatrix ) )
 		{
@@ -71,6 +74,24 @@ public partial class ModelEntity : Entity
 			return;
 		}
 		DrawnParts++;
+
+		if ( Model.HasGeometry )
+			DrawModel( Model, model );
+		// [BIN:TPW-EXE:0x582AD0 deferred records] the faces with a translucent texture are drawn after everything else, far to near (WorldPass); outside a level's pass (nothing collects them) they are drawn here
+		for ( var index = 0; index < Model.Companions.Count; index++ )
+		{
+			var companion = Model.Companions[index];
+			// a slot whose texture frame is not translucent now (a texture-frame animation) is drawn at once, like the original's immediate state words
+			if ( !Model.CompanionIsTranslucent( index ) || !WorldPass.Submit( this, companion, model ) )
+				DrawModel( companion, model );
+		}
+	}
+
+	/// <summary>Draws <paramref name="drawn"/> (this entity's model or one of its translucent companions) with this entity's uniforms at <paramref name="model"/>.</summary>
+	internal void DrawModel( Model drawn, System.Numerics.Matrix4x4 model )
+	{
+		// [BIN:TPW-EXE:0x565590 -> 0x565490 deferred batch] the triangles of a translucent part are drawn far to near by the sum of their corner depths
+		drawn.OrderTriangles( model, model * Camera.ViewMatrix * Camera.ProjMatrix, WorldPass.PassId );
 
 		var uniformBuffer = new ObjectUniformBuffer
 		{
@@ -95,8 +116,8 @@ public partial class ModelEntity : Entity
 			_padding6 = SnowUniformFor( Level?.SnowUniform ?? 0f ),
 		}.WithFog();
 
-		SetObjectUniforms( uniformBuffer, model );
-		Model.Draw();
+		SetObjectUniforms( uniformBuffer, model, drawn );
+		drawn.Draw( model );
 	}
 
 	/// <summary>
@@ -104,10 +125,12 @@ public partial class ModelEntity : Entity
 	/// in view, or on a shader that does not read them, it is the plain block as it always was.
 	/// </summary>
 	// [EXT:point-lights] the original's engine supports point lights but never creates one (docs/LIGHTS.md)
-	private protected void SetObjectUniforms( in ObjectUniformBuffer uniforms, in System.Numerics.Matrix4x4 model )
+	private protected void SetObjectUniforms( in ObjectUniformBuffer uniforms, in System.Numerics.Matrix4x4 model ) => SetObjectUniforms( uniforms, model, Model! );
+
+	private void SetObjectUniforms( in ObjectUniformBuffer uniforms, in System.Numerics.Matrix4x4 model, Model drawn )
 	{
-		var material = Model!.Material;
-		if ( material.ReceivesPointLights && Level?.PointLights is { Count: > 0 } lights && Model.Bounds is { } bounds )
+		var material = drawn.Material;
+		if ( material.ReceivesPointLights && Level?.PointLights is { Count: > 0 } lights && drawn.Bounds is { } bounds )
 		{
 			PointLightSet.TransformBox( bounds.Min, bounds.Max, model, out var boxMin, out var boxMax );
 			Span<PointLightGpu> chosen = stackalloc PointLightGpu[PointLightSet.MaxPerDraw];
@@ -121,6 +144,6 @@ public partial class ModelEntity : Entity
 				return;
 			}
 		}
-		material.Set( "ObjectUniformBuffer", uniforms );
+		material.SetUnchanged( "ObjectUniformBuffer", uniforms );
 	}
 }

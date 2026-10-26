@@ -273,7 +273,7 @@ public sealed class UiContext
 	internal UiTexture TextureFor( UiModelPart part )
 	{
 		var path = part.TextureName.Length == 0 ? null : ResolveTexture( part.TextureName );
-		return path == null ? UiTexture.Solid : UiTexture.Image( part.Transparent ? path + UiImages.BlackKeySuffix : path );
+		return path == null ? UiTexture.Solid : UiTexture.Image( path );
 	}
 
 	/// <summary>Draws model <paramref name="name"/> frame <paramref name="frame"/> into <paramref name="rect"/>; false if the model is missing.</summary>

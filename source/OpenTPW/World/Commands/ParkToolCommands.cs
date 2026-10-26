@@ -44,6 +44,8 @@ public abstract record ParkToolCommand : ParkCommand
 		ParkCommandKind.UndoPoolSlidePiece => new UndoPoolSlidePieceCommand( reader.Int(), reader.Int() ),
 		ParkCommandKind.PlacePoolBridge => new PlacePoolBridgeCommand( reader.Int(), reader.Int(), reader.Int() ),
 		ParkCommandKind.RemovePoolBridge => new RemovePoolBridgeCommand( reader.Int(), reader.Int() ),
+		ParkCommandKind.PoolCells => new PoolCellsCommand( reader.Bool(), reader.Bool(), reader.Cells() ),
+		ParkCommandKind.LayPoolSlidePieces => new LayPoolSlidePiecesCommand( reader.Int(), reader.Int(), reader.Cells() ),
 		ParkCommandKind.LayTrackLine => new LayTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 		ParkCommandKind.UndoTrackLine => new UndoTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 		ParkCommandKind.CutTrack => new CutTrackCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),

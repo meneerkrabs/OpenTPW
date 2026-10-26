@@ -151,7 +151,7 @@ public sealed class LocatorModel
 /// name, the staff state icon or the visitor's thought). Ctrl+S and Ctrl+V open them; a radio locates its role's next actor and the camera follows it.
 /// </summary>
 // [EXT:visitor-info-window] the visitor info window that Ctrl+V tests ([0x7cc418], window object 0x7cc408) is not ported, by design: a left click on an All Visitors row or a visitor picked in the park stands in for opening it and it closes with the All Visitors window, where the original's stays open on its own
-// [APPROX:UI-091] staff locator radios preserve independent saved role chains (+0x210), with qualified original-malformation and legacy-save reconstruction; visitor radios use the live ThingPool chain with an explicit out-of-pool fixture fallback; visitor position failure still clears the selection; camera follow lacks the original per-frame smoothing (0x42b1c0), patrol rectangles (0x536100) and panel sliding remain unimplemented — evidence needed: patrol presentation and slide geometry; camera and real-data visual comparison
+// [APPROX:UI-091] staff locator radios preserve independent saved role chains (+0x210), with qualified original-malformation and legacy-save reconstruction; visitor radios use the live ThingPool chain with an explicit out-of-pool fixture fallback; visitor position failure still clears the selection; camera follow lacks the original per-frame smoothing (0x42b1c0), panel sliding remains unimplemented — evidence needed: slide geometry; camera and real-data visual comparison
 public sealed partial class ParkHud
 {
 	private static LayoutTable LocatorTable => OriginalLayoutTables.LocatorPanels;

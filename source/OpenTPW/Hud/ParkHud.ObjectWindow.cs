@@ -237,7 +237,9 @@ public sealed partial class ParkHud
 		objRideIt = Info( new UiButton { Id = "rideView", Model = "b_ride it!", Clicked = () => { if ( IsRiding ) StopRide(); else StartRide( selectedObject ); } } );
 	}
 
-	private bool CanEditQueue( OriginalObject item ) => !level.IsReadOnlyVisit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && item.Visitors.QueueFrontCell != null;
+	private bool CanEditQueue( OriginalObject item ) => !level.IsReadOnlyVisit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && item.Visitors.QueueFrontCell != null
+		// [EXT:online-coop-permissions] a claimed ride's queue is the host's for now (C3b): a guest's window offers no tool whose lines would be refused
+		&& !(level.Commands.SendsRequests && level.Commands.Rights is CoopBuildRights rights && rights.IsClaimed( item ));
 
 	private bool CanEditTrack( OriginalObject item ) => !level.IsReadOnlyVisit && (item.Runtime.Coaster != null || item.Runtime.Bump != null);
 
@@ -265,8 +267,19 @@ public sealed partial class ParkHud
 		level.AreaClearTool?.Cancel();
 		level.PoolTool?.Cancel();
 		LeaveBuildTool();
+		var waiting = level.WaitingToolStart;
 		if ( !level.BeginMove( item ) )
+		{
+			// [EXT:online-coop-commands] a guest's pick-up went to the host: the Move tool arms with this item once it comes back (C3b-2), and the window closes now, as for the host; a
+			// click that sent none (another pick-up waits) binds nothing and keeps the window
+			if ( level.WaitingToolStart is { Command: PickUpObjectCommand } request && !ReferenceEquals( request, waiting ) )
+			{
+				waitingMove = (request, buyItem);
+				selectedObject = null;
+				SetInfoArm( false );
+			}
 			return;
+		}
 		pendingItem = buyItem;
 		selectedObject = null;
 		SetInfoArm( false );

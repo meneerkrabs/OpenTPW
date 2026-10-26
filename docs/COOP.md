@@ -157,11 +157,13 @@ part (`Level.CoopRole`: none, host or guest).
   `--park-resume-smoke`, `--smoke-presence`) and the browser page of the performance harness
   (`?perf=1`): their setups and hooks build, fill or edit the park directly, so a peer would never
   see their changes.
-- **Only the host builds.** In C2 the rights let only player 0 build (`CoopHostOnlyRights`). A
-  guest's own click is refused before it runs and leaves no trace in its log. The funnel raises
-  `SessionRefused`, and the guest's HUD says "Only the host builds in a shared park"
-  (`OpenTpwText.OnlyTheHostBuilds`, in the eleven languages of the OpenTPW texts) with the error
-  sound, as it does for a cell it cannot build on.
+- **The host decides who builds.** In C2 the rights let only player 0 build; since C3a they are
+  `CoopBuildRights`, which also let a guest the host granted building issue the building its tools do
+  ("Building by every player"). A guest's click the rights refuse is refused before it runs and leaves
+  no trace in its log. The funnel raises `SessionRefused`, and the guest's HUD says "The host has not
+  let you build yet." for building (`OpenTpwText.CoopNotGranted`) or "Only the host can do that for
+  now." for anything else (`OpenTpwText.CoopHostOnly`), in the eleven languages of the OpenTPW texts,
+  with the error sound, as it does for a cell it cannot build on.
 - **Rules every peer applies alike.** These checks read the funnel's session rules, so a guest
   refuses the host's record as the host did, and the record's outcome check agrees:
   - the cheats (`QueueCheatCommand`) and the secret park name of the rename are refused (decision
@@ -634,8 +636,8 @@ while it is shared. The line opens the Build Together screen over the pause menu
 screen is in the player's language.
 
 - **Before sharing**, the screen says what sharing means (the others watch the host build, walk around
-  and chat; only the host builds), why the park cannot be shared when it cannot, or that the player has
-  to log in, with a login button.
+  and chat; the host decides who builds with it), why the park cannot be shared when it cannot, or that
+  the player has to log in, with a login button.
 - **The choices:** the title (by default the player's park, by the online name), whether the park is on
   the open list (by default not: code and invitation only), and how many players it takes (2 to 4, by
   default 4).
@@ -1102,8 +1104,10 @@ The steps:
    it there. The same follows for the guest's view.
 4. **Building.** The host lays a path line through its HUD: a press on free land starts the tool, and a
    press on the end lays the line. The guest's park takes the line's record, its cells become paths, and
-   checkpoints are compared after it. The guest's own line is refused (only the host builds), its cells
-   stay free, and its park follows on.
+   checkpoints are compared after it. The guest's own line is refused (the host has not let it build
+   yet), its cells stay free, and its park follows on. Then the host lets the guest build with its switch
+   on the Build Together screen (C3a-2), and the guest's next line goes to the host: it is laid at its
+   record on both parks, as the guest's seat, with checkpoints compared after it.
 5. **The chat.** A line each way through the chat mode's entry (Enter over the park, the line, Enter),
    heard in the other game.
 6. **The guest's controls.** F4 to the HUD and back. A click on a ride in the chat mode rides it: the host
@@ -1132,8 +1136,9 @@ The driver then checks both games' evidence against each other (`checkEvidence`,
 The scenarios:
 
 - **baseline**: the steps above, with no resync, no desync and no lost link.
-- **recovery** (`--scenario recovery`): after the first line, the driver kills the server and starts it
-  again on the same port and data three seconds later. After that barrier both games' links go from
+- **recovery** (`--scenario recovery`): after the lines (the host's, the guest's refused one and its
+  granted one), the driver kills the server and starts it again on the same port and data three seconds
+  later. After that barrier both games' links go from
   reconnecting to open with a resume of the session, and both chats reconnect: the counts at the barrier
   must grow. The guest follows again (a resync is allowed here). The host's view jumps again, which the
   guest sees, and a second line reaches the guest's park, with checkpoints after it.
@@ -1166,18 +1171,21 @@ build):
 
 | Sides | Scenario | Checks | Wall time | Notes |
 |---|---|---|---|---|
-| native/native | baseline | 13 of 13 | 19 s | followed 3.4 s after Join; 104 KiB capture; 7 checkpoints |
-| native/page | baseline | 17 of 17 | 33 s | followed 6.3 s after Join; 106 KiB capture; 15 checkpoints |
-| page/native | baseline | 17 of 17 | 33 s | followed 3.7 s after Join; 104 KiB capture; 12 checkpoints |
-| page/page | baseline | 21 of 21 | 45 s | followed 6.6 s after Join; 106 KiB capture; 23 checkpoints |
-| native/native | recovery | 15 of 15 | 30 s | followed 3.3 s after Join; 104 KiB capture; links back 7.1 and 7.6 s after the drop; no resync |
-| native/page | recovery | 20 of 20 | 44 s | followed 6.2 s after Join; 106 KiB capture; links back 3.4 and 3.3 s after the drop; no resync |
-| page/native | recovery | 20 of 20 | 46 s | followed 3.6 s after Join; 104 KiB capture; links back 7.4 and 6.9 s after the drop; no resync |
-| page/page | recovery | 25 of 25 | 64 s | followed 8.3 s after Join; 107 KiB capture; links back 7.4 and 6.9 s after the drop; no resync |
+| native/native | baseline | 14 of 14 | 22 s | followed 3.4 s after Join; 104 KiB capture; 9 checkpoints |
+| native/page | baseline | 18 of 18 | 39 s | followed 6.4 s after Join; 107 KiB capture; 21 checkpoints |
+| page/native | baseline | 18 of 18 | 36 s | followed 3.6 s after Join; 104 KiB capture; 17 checkpoints |
+| page/page | baseline | 22 of 22 | 53 s | followed 6.1 s after Join; 105 KiB capture; 28 checkpoints |
+| native/native | recovery | 16 of 16 | 31 s | followed 3.3 s after Join; 104 KiB capture; links back 7.4 and 6.5 s after the drop; no resync |
+| native/page | recovery | 21 of 21 | 49 s | followed 5.6 s after Join; 105 KiB capture; links back 3.4 and 6.5 s after the drop; no resync |
+| page/native | recovery | 21 of 21 | 49 s | followed 3.6 s after Join; 104 KiB capture; links back 6.4 and 3.4 s after the drop; no resync |
+| page/page | recovery | 26 of 26 | 71 s | followed 7.6 s after Join; 107 KiB capture; links back 3.3 and 7.8 s after the drop; no resync |
 | native/native | endurance 30 min | 15 of 15 | 1820 s | followed 3.4 s after Join; 104 KiB capture; 1807 checkpoints; 1800 s at the fastest speed, slowest stretches 239.5 (host) and 230.2 (guest) ticks/s; longest frame gaps host 1.65 s, guest 0.57 s |
 | native/page | endurance 30 min | 19 of 19 | 1834 s | followed 5.8 s after Join; 105 KiB capture; 1819 checkpoints; 1800 s at the fastest speed, slowest stretches 239.6 (host) and 225.5 (guest) ticks/s; longest frame gaps host 1.50 s, guest 0.18 s |
 | page/native | endurance 30 min | 19 of 19 | 1839 s | followed 5.2 s after Join; 104 KiB capture; 1815 checkpoints; 1800 s at the fastest speed, slowest stretches 229.4 (host) and 229.5 (guest) ticks/s; longest frame gaps host 2.80 s, guest 0.73 s |
-| page/page | endurance 30 min | 23 of 23 | 1850 s | followed 6.4 s after Join; 106 KiB capture; 1824 checkpoints; 1801 s at the fastest speed, slowest stretches 224.4 (host) and 216.8 (guest) ticks/s; longest frame gaps host 2.98 s, guest 0.14 s |
+| page/page | endurance 30 min | 24 of 24 | 1877 s | followed 13.9 s after Join; 108 KiB capture; 1843 checkpoints; 1801 s at the fastest speed, slowest stretches 231.7 (host) and 219.2 (guest) ticks/s; longest frame gaps host 5.02 s, guest 0.35 s |
+
+The native/native, native/page and page/native endurance runs come from before the guest's granted line
+(C3a-2), which adds one check to every run; the other rows include it.
 
 No CI job runs it: it needs the game's data. A run's `run.json` keeps every check, both games' evidence
 and the run's facts; its logs, pictures and status files stay in its folder.
@@ -1681,8 +1689,11 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
 
 `[EXT:online-coop-commands]` `[EXT:online-coop-permissions]` In C2 the host builds and the guests watch.
 C3 lets every player build through the same stream the host orders, so every park stays the host's and
-no guest's click runs on its own park first. C3a-1 builds the requests, their records and the host's
-grants; the guests' tools use them in C3a-2 (with the host's switch for each guest's grant).
+no guest's click runs on its own park first. C3a-1 built the requests, their records and the host's
+grants; in C3a-2 the guests' line, placement and remove tools send their commands as requests and wait
+for them, and the host lets each guest build or only watch with a switch. C3b-1 adds land, the area
+clear, the removal of path and queue cells, Backspace, the sell buttons and the queue's edit, C3b-2 the
+Move tool, and C3b-3 the pools.
 
 **A guest's request.** A guest never applies its own command: its park follows the host's stream only
 (`ParkCommands.FollowsStream`), whatever its rights. It sends the command to the host as a request
@@ -1731,12 +1742,194 @@ The stream's frame (version 2) and the join state (version 3) changed, but the c
 the server relays both without reading them, and the version gate keeps every member of a session on one
 release (decision Q11).
 
-**What a granted guest may build (C3a).** `CoopBuildRights` asks of a command's kind, its fields and its
-target, at execution on every peer: path and queue lines, the queue's edit, a placed object (not a moving
-placement, not a track add-on), the removal of a cell's object, path or queue (not a coaster's or a track
-ride's station, whose edits need claims), and land. Everything else stays the host's: pause and speed
-(Q8), cheats (Q17), money and the park's management (C4), undo lines (whose cells a request could name
-freely), the Move tool, staff, pools, tracks and coasters (C3b, C3c) and the grants themselves.
+**What a granted guest may build (C3a, C3b-1).** `CoopBuildRights` asks of a command's kind, its fields
+and its target, at execution on every peer, and allows exactly the commands of the guests' tools:
+- path and queue lines (C3a);
+- a placed object, but not a moving placement, not a track add-on, and not a ride whose own tool follows
+  its placement: a coaster, a kart, water or bumper ride (C3a; a slide tower until C3b-3);
+- the remove click on an ordinary object: not a fixed item of the park (its gates, lights or bus), not a
+  coaster's or a track ride's station, whose edits need claims (C3a); and on a cell without an object, the
+  queue or path cell there (C3b-1);
+- land, the area clear, Backspace over a path or queue cell (a pool bridge or pool water cell is the pool
+  tools'), the sale of an ordinary object (never the developer's prototype ride) and the queue's edit
+  (C3b-1);
+- the Move tool (C3b-2): its pick-up of an object the guest may remove and place again (not a fixed
+  item, a claimed station, a track add-on or a ride whose own tool follows), its placement, and its end,
+  which every guest seat may send, granted or not, since it only drops that seat's own carry;
+- the pools (C3b-3): a stroke's batches of cells and of slide pieces, a bridge, the last piece of a slide
+  still being laid, and Backspace over a bridge or a pool cell. A slide tower is placed and removed as any
+  object, and its removal takes its slide.
+
+An object a guest may not remove (a fixed item, a claimed station) is also one its area clear leaves
+standing and its placement may not demolish: a command that removes what it finds asks the rights of each
+object (`IParkCommandRights.AllowsRemoval`, yes for the host). The queue of a claimed ride (a coaster's
+or a track ride's station) stays the host's in all of these until claims come (C3c): its lines, its edit,
+the removal of its cells and Backspace over them, any line across one of its cells (a path line paves a
+queue's end), a placement whose own plan writes over one (its footprint, the paths it clears, the cell
+beyond a track end, the cells outside its entrance and exit), a bridge with a cell or an end on one, and
+the object window's queue tool, which a guest's window does not offer. So does the path cell its back
+cell joins, whose removal or a queue laid over it would take the queue's link off: a guest's remove
+click, Backspace, queue lines, placements (whose plans clear the paths under them) and bridges refuse it,
+and its area clear leaves it standing (`IParkCommandRights.AllowsPathRemoval`). A path line along it
+leaves the queue's links as they are and stays the guest's. A queue cell's ride is resolved as its
+removal resolves it: the rides' cached lines, then each line walked again (on a copy) for the cells they
+miss, once per command. Everything else stays the host's: pause and speed (Q8), cheats (Q17), money,
+staff and the park's management (C4) with a wave machine's settings, undo lines and pool strokes (whose
+cells a request could name freely; undo is C5), the single-cell removals and the pools' single-cell kinds
+no guest's tool issues, tracks and coasters (C3c), the grants and the release of a departed seat.
+
+**A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
+of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
+one: never inside a tick, well formed, and allowed by the session's rights as the guest's own park holds
+them, so a command the host would refuse is not sent. The command comes back pending
+(`ParkCommandResult.IsPending`), with nothing changed yet, and its tool waits:
+- the line tool keeps the clicked line as its ghost and pushes, lays and stacks nothing yet;
+- the placement keeps the placed entry and Ctrl at its click;
+- the remove tool keeps its request.
+
+While a tool waits it takes no other click (the HUD asks the player to wait), and a guest's Backspace takes
+nothing back: its lines are the host's to undo. The requests resolve where their records apply or the host
+answers, inside the stream's application or the link's pump; the guest's HUD takes them at the start of
+its next update (`CoopGuestCommands.TakeCompleted`), outside any command, tick and stream application, and
+completes the tool that still waits for each one:
+- an applied line runs the click's continuation once, with the segment its record laid in the guest's park,
+  as for a line laid at once: it goes on from its end, or a refused command ends the tool. A line its record
+  cut short at a refused cell (the park changed between the click, whose ghost had none, and the record)
+  ends the tool with what it laid, as the click would have ended it on the refused ghost the park then
+  showed;
+- an applied placement finishes as the host's does (the Built message, the ride's queue tool, the tool
+  kept for exactly Ctrl at the click), also when a later record removed the object before the outcome
+  came back (no tool follows it then), and a refused one says its reason and keeps the tool armed;
+- a removal says nothing, as the host's remove click does: the park and the guest's own demolition cue
+  show it;
+- a request the host could not take (no record) leaves the click as if never made;
+- an error or a lost answer ends the line tool with a note that the outcome is not known.
+
+A waiting tool waits as long as its request does: through a lost link, whose resume sends the request
+again, and until the outcome comes. Escape or a right click leaves it, as it leaves any tool. Anything
+that ends or switches a tool drops its wait, and a resync replaces the park with its tools, while the
+requests are the session's: such a request's outcome is then only a message. The session's end ends
+every wait (a line that waits ends its tool). Each outcome the HUD says is its own event, so two refused
+lines or placements in a row are both said.
+
+**Who hears and reads what (C3a-2).** A command's cues are its issuer's: the placement, demolition,
+backtrack and queue cues inside a command play only where the running command's player is this machine's
+(`ParkCommands.IsLocalIssuer`), so the host hears nothing of a guest's build and a guest hears its own when
+its record applies in its park. Cue choices are presentation, never hashed or in the digest. A message a
+command writes is said only by its issuer's HUD (`Level.SaysLastActionMessage`); a guest says its own
+outcomes from its requests, never from the message text. A guest's click the rights refuse says that the
+host has not let it build yet, or that only the host does that.
+
+**A guest's other edits (C3b-1).** Land, the area clear and the sell buttons end at once for the host
+too, so a guest's sends its request and goes on: the land tool ends after its second click
+(`BuyLandClick.Sent`), the area clear after its rectangle, and a window's sale closes or refreshes the
+window as the host's does. Their outcomes are messages: a purchase the park refused says that the land
+cannot be bought, as the host's refused click does, and a refusal by the rights says so in its words.
+- **The area clear** is one command for every player (`ClearAreaCommand`): its second click sends the
+  rectangle, and the command runs tp.exe's scans (`AreaClear.Run`) with the level's own removals, in the
+  order the tool ran them, so a park clears as it did when each object and path cell was a command of its
+  own, in one record now. A guest's clear leaves an object it may not remove standing, as an object
+  across the rectangle's edge stays, and still clears the paths around it. The tool's counts are known at
+  once only to the host (`AreaClearTool.LastCleared`).
+- **The remove click** takes the queue or path cell under it when no object stands on the cell: a queue
+  cell with the cells behind it and their refund, a path cell without one. A guest's waits as the C3a-2
+  removal does.
+- **Backspace** with no tool on, over a path or queue cell: a guest's press sends its request and keeps it
+  (`Level.WaitingBacktrack`); until its outcome the key's presses and repeats send nothing more, so a held
+  key sends one request at a time, and a press over a cell with nothing to take back sends nothing.
+- **The sell buttons** of the object window and of the attractions list take no second sale of an object
+  whose first waits (`Level.IsSaleWaiting`); neither offers a fixed item's.
+- **The queue's edit.** The host's click starts the queue tool from the queue as it stands, then runs the
+  edit, which takes the link between the queue's back cell and its path off. A guest's click sends the
+  edit and starts no tool yet (`Level.WaitingQueueEdit`); another queue click waits, and Escape, a right
+  click or another tool leaves the wait (the first Escape opens no pause menu). The edit's record reads
+  what the host's click reads before it takes the link off (`Level.QueueEditStart`: the tool's start, the
+  corner walk and its segments), and the queue's cells and links after it. When the outcome comes back,
+  the queue tool starts from that read, with the help the host's click shows, if the park view still has
+  no tool, the ride still stands and no later record changed its queue's cells or links; otherwise no
+  tool starts and the park shows what happened.
+
+The session's end drops these waits with the others.
+
+**A guest's Move tool (C3b-2).** The Move button sells the object as its erase button does and arms the
+build tool with its type, which the player's seat then carries in the park (`Level.CarriesEntry`): a
+moving placement places only a type its player carries, pays its price and skips the buyable and
+research tests, and the tool's end drops the carry.
+- **The pick-up.** A guest's pick-up goes to the host and arms no tool yet: it is the request whose
+  outcome starts a tool (`Level.WaitingToolStart`, which the queue's edit uses too), left as that wait is
+  (Escape, a right click, another tool). Back accepted, the Move tool arms with the carried type at the
+  object's angle, as the host's does once its pick-up applied, if the view still has no tool.
+- **One pick-up at a time.** While a pick-up of the guest is open in the session's requests (from this
+  park or one a resync replaced), another Move click waits, so no end of an older carry reaches the host
+  after a newer pick-up: a guest's requests apply in their order.
+- **A carry without its tool.** A pick-up whose tool started no more, an end the host could not take, a
+  resync's park with the carry in it: each frame after the outcomes, a guest whose seat carries a type
+  while its Move tool is not armed sends the Move's end (`Level.EndStrayCarry`), at most once a second
+  and only while no pick-up or end of its own is open. The object stays sold, as a cancelled Move leaves
+  it.
+- **A grant taken back** leaves the Move tool armed: its placements are refused at their records, and its
+  end still goes.
+- **A departed seat.** At each frame's start, before the requests, the host takes the grant back and
+  releases the carry (`ReleaseSeatCommand`, a record of the stream) of every guest seat whose member left
+  or changed since the last frame: a live departure, one a resume's member list shows, a seat taken again
+  in between. The session's start and end clear the guests' carries with the grants, and a guest's
+  armed Move tool disarms with its session.
+
+Move needs no claim: the pick-up is one record, after which the object is gone and its type is that seat's
+alone; a second pick-up or a sale of the same object finds no object, and an edit of its queue no ride.
+
+**A guest's pools (C3b-3).** The pool tool writes each cell a stroke crosses as it is crossed, often many
+a frame, so a guest's one request a cell would outrun the session's bucket (40, refilled at 20 a second).
+A guest's strokes go in batches instead, and the host's tool writes at once, as before:
+- **The batches.** `PoolCellsCommand` paints or erases its cells in order and `LayPoolSlidePiecesCommand`
+  lays a slide's pieces, each cell exactly as the commands of one cell write it (every cell tried, a
+  refused one skipped), with the per-cell writes as their value. A batch holds at most 200 cells, which fit
+  the session's 1 KiB request. A slide batch tries no cell once its slide is finished: the cells after the
+  splash, or a whole batch that meets a finished slide, are no refusal, as the host's tool writes nothing
+  more once its slide is finished.
+- **Sending.** The cells the host's tool would write wait, in that order, in one queue for all the
+  guest's strokes (at most 200 cells) and go from its head only, so a later stroke never passes an
+  earlier one's cells. A batch goes while fewer than four of the guest's pool requests are open in the
+  session's requests (`Level.OpenPoolRequests`, which counts across the tool's ends and resyncs): a
+  press's first cell at once, the others at most every 0.2 seconds. A stroke stops at the first cell it
+  crosses while the queue is full: it takes no more cells, so it leaves no hole (a slide's next piece must
+  follow its last), and the player is asked to wait. The cells sent and waiting are drawn as blueprint
+  faces, as a waiting line's ghost is, until their outcome.
+- **The report.** A stroke reports once it is released, its batches are all sent and each has come back,
+  as the host's release does: the lay sound when it wrote, its first refusal in the order its cells were
+  tried (whatever order the answers came in) with its marker, and the slide's done message when this
+  stroke laid the splash and the slide still stands finished. A request the host could not take, an
+  outcome not known and a refusal by the rights are said once for the stroke. The refusal cue plays with
+  the report, as a guest's line released before its outcome plays it.
+- **Bridges and undo.** A bridge click is a request of its own through the same queue. Backspace in the
+  paint or erase mode takes nothing back: a stroke's undo names its cells freely, as a line's does (undo
+  is C5). In the slide mode Backspace takes the last piece of a slide that is not finished back, behind
+  the pieces still queued and one at a time; a slide with no piece to take back is the park's to refuse,
+  quietly, as the host's Backspace is. A finished slide's pieces are the host's (riders use it), or go with
+  its tower: an undo queued behind pieces that turned out to lay the splash meets a finished slide and
+  says nothing, as the host's slide mode ends with its splash. A Backspace during a drag ends the drag's
+  stroke, which reports once back.
+- **Backspace with no tool on** over a pool bridge or a pool cell is a request, as over a path (C3b-1), and
+  a refusal says the pool's reason.
+- **Escape**, a right click or another tool ends the tool: its unsent cells are dropped, the stroke under
+  the press and any that lost cells report nothing, as the host's cancelled stroke does, and their sent
+  requests are only messages.
+  The session's end ends a guest's pool tool and its strokes; a resync's park has a new tool: the old
+  strokes' cells not yet sent are dropped, and their sent requests are the session's.
+- **Two players' writes** over one cell apply in the host's order: the cell keeps what the later request
+  paints or erases. A slide is named by its tower's cell, so a batch on its way when its tower was removed
+  lays its pieces on a tower placed on that cell meanwhile.
+
+A slide tower is a guest's to place, sell, clear, move and remove, and its removal takes its slide and
+refunds it, on every peer alike. No claim keeps a slide to one player: two players laying one slide take
+turns piece by piece, since each piece must follow the last. A wave machine's settings stay the host's
+(C4).
+
+**The host's switch (C3a-2).** The Build Together screen lists the guests with a switch each, beside the
+removal: it reads the shared park's applied grant ("Builds" or "Watches") and a click turns it over with
+a `SetBuildGrantCommand`. The stream's order decides a request that races the switch: a request the host
+takes before the grant is taken back is built, one after it is refused at its record. The sharing and
+joining screens say that the host decides who builds.
 
 ## The command layer (C1)
 
@@ -1890,7 +2083,8 @@ changes.
     reconcile (`StaffPlacement.Reconcile`, which frees a member an original save left picked up)
     leaves a member a command picked up, on a peer and in a replay too.
   - A full thing pool refuses a hire before the placement ends (the hire threw after it before).
-- **Pools.** Each cell a paint or erase stroke writes is a command (`PaintPoolCellCommand`,
+- **Pools.** A guest's strokes go in batches (`PoolCellsCommand`, kind 78, and `LayPoolSlidePiecesCommand`,
+  kind 79; C3b-3, "A guest's pools"). Each cell a paint or erase stroke writes is a command (`PaintPoolCellCommand`,
   `ErasePoolCellCommand`), as the tool wrote each cell while the drag crossed it; Backspace takes a
   stroke back with one command that carries its cells (`UndoPoolStrokeCommand`). A stroke of more cells
   than a command takes (4096) goes back in chunks that write in the one command's order (an erase
@@ -1991,7 +2185,10 @@ its checkpoints. It takes none between the digests (a world hash is most of a di
 its start, at the first desync and at its end. It is the only log that sets the session-rules flag:
 the refusals of the cheats, the secret park name, the developer kinds and a command issued inside
 another read those rules, and `ParkCommandReplay.Run` replays the log under them on the session's
-starting park.
+starting park. Its rights are the session's too, given to the replay (`CoopBuildRights` on the replaying
+park): a guest's command the session's rights refused is refused again, and an object a guest's area
+clear left standing is left again, so the checkpoints match. A session's log does not replay without
+them.
 
 `ParkCommandLevelTests` runs a scripted build session (objects, the path tool with lines, undo and
 cancel, path removals, Backspace, the Move tool, a sale, the remove tool and refused commands) on a
@@ -2010,7 +2207,7 @@ guarded list.
 
 | Area | Commands | State |
 | --- | --- | --- |
-| Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up and its end, the bulldozer (area clear: one command per cleared cell) | converted |
+| Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up and its end, the bulldozer (area clear: one command for the rectangle, `ClearAreaCommand`, C3b-1; one command per cleared cell before) | converted |
 | Paths and queues | path and queue lines, undo inside the tool, path and queue cell removal, Backspace over a cell, the queue edit click | converted |
 | Developer prototype | place and remove the Totem, open and close it (the developer panel's button) | converted |
 | Winning screen | the end-of-park finale's dismissal in either game type (Escape, the late right click) | converted |
@@ -2107,9 +2304,9 @@ guarded list.
 - A guest's park must be built as a guest from its start (C2c's join): the game takes the restart
   snapshot when a park starts (`GameFlow.TakeRestartSnapshot`), before a session could mark the park
   as a guest's, and would write the host's park over the guest's own restart file.
-- A guest's HUD still offers the build tools (C2d): each refused click says "Only the host builds",
-  at most once every 1.5 seconds. Two tools add their own feedback to it: Buy Land's refused second
-  click also says that the land cannot be bought, with a second error sound, and a refused queue line
-  still plays the queue-join sound. Opening the loans window refreshes its offers by command, which a guest is refused,
+- A guest's HUD offers every build tool. A click its rights refuse says that the host has not let it
+  build yet, or that only the host can do that (C3a-2), at most once every 1.5 seconds. Two tools add
+  their own feedback to it: Buy Land's refused second click also says that the land cannot be bought,
+  with a second error sound, and a refused queue line still plays the queue-join sound. Opening the loans window refreshes its offers by command, which a guest is refused,
   and the winning screen's Resume is the host's alone, so a guest's winning screen stays until the
   host dismisses it.

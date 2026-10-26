@@ -89,10 +89,10 @@ public sealed partial class ParkHud
 	{
 		if ( level.PoolTool is not { IsActive: true } tool )
 			return false;
-		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		if ( parkRightClick )
 		{
 			tool.Cancel();
-			return toolPress = true;
+			return true;
 		}
 		// Backspace takes back the last stroke
 		if ( input.Backspaces > 0 && !tool.IsDragging )
@@ -113,14 +113,20 @@ public sealed partial class ParkHud
 		{
 			refusalClick.Press();
 			tool.Press( cursorX, cursorY );
-			return toolPress = true;
+			// [EXT:online-coop-commands] a guest's press goes to the host in this frame (C3b-3)
+			tool.SendGuestBatches( Time.Now );
+			return true;
 		}
 		if ( tool.IsDragging )
 		{
 			if ( input.LeftDown )
-				return toolPress = true;
+			{
+				tool.SendGuestBatches( Time.Now );
+				return true;
+			}
 			ReportPoolStroke( tool );
-			return toolPress = true;
+			tool.SendGuestBatches( Time.Now );
+			return true;
 		}
 		return false;
 	}
@@ -168,7 +174,23 @@ public sealed partial class ParkHud
 		// a held key removes the bridge and then, on its repeats, the water under it: the pool targets act on the first press only
 		if ( repeating && level.Paths is { } paths && Level.BacktrackTargetAt( paths.Cells, cursorX, cursorY, level.PoolBridges ) is Level.BacktrackTarget.PoolBridge or Level.BacktrackTarget.PoolWater )
 			return true;
+		// [EXT:online-coop-commands] a guest's Backspace that waits for the host: the key's presses and repeats send nothing more until its outcome, so a held key sends one request at a
+		// time (C3b); a new press asks the player to wait
+		if ( level.WaitingBacktrack != null )
+		{
+			if ( !repeating )
+				level.NoteWaitingClick();
+			return true;
+		}
+		// [EXT:online-coop-commands] nor does a guest send a press over a cell with nothing to take back, which the park would refuse at its record as it refuses the host's (C3b)
+		if ( level.Commands.SendsRequests && level.Paths is { } own && Level.BacktrackTargetAt( own.Cells, cursorX, cursorY, level.PoolBridges ) == Level.BacktrackTarget.None )
+			return false;
 		var result = level.Commands.Issue( new BacktrackCommand( cursorX, cursorY ) );
+		if ( result.Request is { } request )
+		{
+			level.WaitBacktrack( request );
+			return true;
+		}
 		if ( result.Accepted )
 			return true;
 		OpenTpwText? why = result.Value switch

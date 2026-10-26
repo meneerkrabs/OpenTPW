@@ -76,6 +76,56 @@ without them the key is 0x1256, no blend. Material word +0xC
 bit 0x1 draws the mesh in one constant colour instead of per-vertex lighting (0x580C51; on signs, fire,
 glow, water, flames and lava, i.e. self-lit art).
 
+### The translucent pass of world models
+
+Which MD2 faces tp.exe draws late is decided by the **header of the texture's own `.wct`**, never by a name (`TextureFile.ReadAlphaType`,
+`TextureAlphaType`). The loader 0x564C00 reads the 0x1C-byte header into the image object and loads the alpha chunk only when header byte 2
+(bits per pixel) is 0x20; 0x574D3A turns that into the type word 0x87A24C (0x24 without an alpha plane, 0x25 with one, 0x27 when header byte 1,
+the alpha byte, is also non-zero) and 0x5755F0 turns type bit 0 (and not bit 1) into texture flag 0x100 and bit 1 into 0x200. The state word of a
+face (0x581790 -> 0x590C40) and what the renderer's state decoder 0x567620 makes of it:
+
+| Header | Texture flag | State | Blend | Alpha test (GEQUAL: the device setup 0x566840 sets `D3DRS_ALPHAFUNC` to 7) | Depth write | Drawn |
+| --- | --- | --- | --- | --- | --- | --- |
+| no alpha plane (bits per pixel 0x18) | none | 0x1256 | off | off | on | at once |
+| 0x20 bits per pixel, alpha byte 0 | 0x100 | 0x2756 | source alpha | 0xF0 (bit 0x200 set) | on | at once, after the 0x1256 faces of its texture page |
+| 0x20 bits per pixel, alpha byte non-zero | 0x200 | 0x556 | source alpha | 0x10 (bit 0x200 clear) | on | deferred, far to near |
+| (load flag 8, no world texture) | 0x300 | 0x200552 | source alpha over one | 0x10 | on | deferred, far to near |
+
+The alpha references 0x10 and 0xF0 are the second pair of the table at 0x7012D8 (1000, F000, 10, F0), picked by the alpha-reference index
+(0x567270 probes the device and sets 2; the index stays 0, with the pair 1000/F000, when the capability bit 0x40 of the device is missing).
+The renderer's mask `[[0x879AB0]+0xC]` is 0x3000 (0x5667D0, 0x56682D); 0x567270 lowers it to 0x1000 on a device without that capability bit. The frame batcher 0x581DB0 (called by
+0x582170 at the end of the scene pass 0x576A00, after the particle pass 0x57C620 and the weather pass 0x57FF60) sorts the model faces by atlas page, then by ascending state word and
+texture, and draws every face whose state has bit 0x1000 or 0x2000 at once; every other face reaches 0x565590, which keeps it, sorts its triangles by the sum of their three vertex depths, largest first
+(0x565490; the software mode's integer twin is 0x5653D0), and returns without drawing. 0x582AD0, the second half of 0x582170, then draws those records after all of the above, sorted
+by 0x5829E0 on the record's average vertex depth (+0x30 over the vertex count at +0x20), largest first. The Direct3D renderer is mode 1 of `DAT_008BD524` (0x44DD50); the reverse sort 0x5828F0 runs only when
+`[0x8BCBC8] & 0xC` is 0xC and bit 0x20000000 is set, and no writer of bits 0x4 and 0x8 was found among the option and device-setup functions that were read (0x44D8F0, 0x44DD50, 0x44DE20, 0x566840, 0x5673D0).
+
+OpenTPW ports the pass in `Model`, so every consumer of `test.shader` gets it (terrain meshes, the heightfield, paths, placed objects including the harbour's glass roofs, coaster and track pieces, the tour, pool parts and the lobby scene).
+The model classifies its texture slots from the `.wct` header (`TextureFile.AlphaType`, read where the loader 0x564C00 reads it: an alpha plane exists only at 32 bits per pixel, so the one 13/01/18 member, bumper.wad
+`b_NEWwin`, is opaque) and splits the faces that use a translucent slot into companion models, one record per (part, texture). A companion is submitted to `WorldPass` (a queue that `Level.Render` flushes after the
+other entities, and the lobby scene after its layers) and drawn farthest first by the mean clip depth z/w of its vertices; its triangles are sorted farthest first by the sum of their three corner depths
+(`Model.OrderTriangles`, a dynamic index buffer that is uploaded only when the order changes). Vertices behind the eye plane get depth -1. The pool spray, pool water, particle and weather renderers draw after the
+sorted world list (`Level.SplitLate`). `test.shader` tests translucent faces at 0x10/255 (vertex bit 0x20000000, `WorldTranslucency.AlphaTestLowFlag`), cut-out faces at 0xF0/255 (bit 0x10000000, `CutoutFlag`, state
+0x2756) and every other face at the engine's 0.1. Cut-out textures (236 files, alpha byte 0 with an alpha plane) now decode their plane. Not covered: textures that are not `.wct` (Theme Park Inc art) and bonus-content
+textures (all opaque here).
+The deferred particle and weather batches (state 0x556 and 0x200552, which the original sorts into the same list as the world) are PTCL-905's business: they draw after the whole sorted world list.
+The late group also holds the swimmers' renderer (`GuestRenderer.DrawsAfterWater`), behind the pool water in the snapshot order, because the water writes no depth and its blend would tint the sprites ([POOLS.md](POOLS.md#rendering)).
+
+*Cost of the pass.* Every record of a frame is ordered and uploaded before the pass draws its first one (`WorldPass.Flush`: an upload between two draws ends the render pass on Metal), and a model drawn at several places (a track
+piece laid in many tiles) keeps one sorted index set per distinct rotation of its model matrix, sorted once per frame for the first record that asks (`Model.OrderTriangles`), so a draw never rewrites a buffer another record reads.
+`Material.SetUnchanged` skips the uniform upload of a draw whose block equals the one the material's buffer holds, so the translucent meshes of a terrain, which share their matrix and camera, write the block once. Busy Jungle park
+(Release, `--perf-run 9000 --perf-crowd 150 --no-vsync`, two alternating rounds, frame average in ms, GPU wait in ms): zoom 110 main 1.93 / 1.72 (GPU 0.11 / 0.22), this change 1.76 / 1.79 (0.19 / 0.18); zoom 300 main 3.20 / 3.14 (1.29 / 1.50), this change 3.12 / 3.16 (0.96 / 0.96).
+Before these three measures the same change took 3.3 ms at zoom 110 (GPU wait 1.6 to 1.8) and 5.8 at zoom 300, because every translucent terrain mesh drew with a uniform upload and an index upload of its own in the middle of the pass.
+`--frame-stats` reports the records of the pass per frame ("translucent records in the pass": 45 at zoom 110, 81 at zoom 300).
+
+*Texture frames.* A slot whose texture frames differ in alpha type (Space `Tv_Ride.md2` slot 29: `TV_THRUST_0` opaque, `TV_THRUST_1` translucent) is classified by its most translucent frame (`Material.AddSlotAlternatives`), and the faces of such a slot are drawn
+in the translucent pass only while the texture it shows now is translucent (`Material.CurrentSlotType`); in an opaque frame they are drawn with the model's other faces, which is the original's state word rebuilt from the current texture. A slot whose frames are cut-out and translucent keeps the 0x10/255 test of its translucent frames.
+
+*Render-state bits that no shipped model sets.* The state builder 0x581790 reads three bits of the mesh record's first dword (the node type, `ModelNode.Type`; the mesh record's material count and material pointer sit at +0x5A and +0x6C of the same record, the loader's +90 and +108): 0x2 gives state bit 0x800 (depth write off, D3DRS 14), 0x2000000 gives 0x5156 and 0x8000000 gives 0x20000.
+Over every MD2 member of the 312 archives (`Md2StateFlagCorpusTests`) the node types are 0x1 (4,578 meshes), 0x401 (331) and 0x2 (5, all the empty `heightfield` mesh of a terrain `base.MD2`, which has no texture slot and so no state word): no mesh with a texture slot has bit 0x2, and none has 0x2000000 or 0x8000000, so 0x800, 0x5156 and 0x20000
+never arise from model data. The wrap bit 0x400000 comes from the slot flags 0x10 and 0x20 (`TextureSlotAddressing`, loader 0x575E10). The slot flag 0x2 becomes state bit 0x800000 in 0x581790; no consumer was found in the state decoder 0x567620 (UI-034). The alpha-reference index (table 0x7012D8, index 2 when the probe 0x567270 passes, else 0) is a property of the device, not of the data, and the reverse sort 0x5828F0 needs
+render-flag bits 0x4 and 0x8 (no writer found) and an instance flag 0x20000000 of the draw call; neither is reachable by the models or the textures of the data, so neither is reproduced.
+
 Nodes: one tree rooted at 0x78. Mesh records are 160 bytes, dummy records 88:
 `u32 type`, parent/next-sibling/first-child record pointers, 4×4 float row-major
 matrix (translation in row 4), `u32 index`, name pointer. Mesh records continue
@@ -123,7 +173,7 @@ mesh and ground heights follow it); **0x8/0x10/0x20** turn the ground texture by
 corner steps and **0x40** mirrors it first (0x56F4F0; set 0x8 on 3, 0x10 on 17, 0x20 on 284 cells,
 0x40 on about 95 %); 0x80/0x100/0x200/0x400/0x800 are runtime bits never stored (overlay placed,
 dirty, footprint scan, darkened land outside the park, bent cell). The high 16 bits index the model's
-textures (0x56F443). The terrain renderer applies the turn and mirror (`TerrainCellTexture`): 0x56F4F0 permutes the corner array 0,1,2,3 (the cell's corners (x, z), (x, z + 1), (x + 1, z + 1), (x + 1, z) take the texture corners (0,0), (0,1), (1,1), (1,0) through it): 0x40 swaps entries 1 and 3, then 0x8 makes it 3,0,1,2, else 0x10 2,3,0,1, else 0x20 1,2,3,0, the same in both of the renderer's vertex orders (0x56F670). Node types (mesh 0x1/0x401/0x2 empty; dummy 0x200/0x208/0x300/0x600)
+textures (0x56F443). While the procedural terrain texturing is on (option PROCEDURALTEXTURING, docs/LND.md) the turn and mirror bits do not apply to the cells it textures: 0x46DED0 clears 0x8/0x10/0x20/0x40 (mask 0x78) of every cell word whose bits 0x81 are clear when the texturing turns on (0x46DEFA-0x46DF08: a hole carries bit 0x1 and a cell with the runtime bit 0x80 is skipped too, so such a cell keeps its turn and mirror bits) (and restores them from a backup when it turns off, for the camera modes that suspend it), and each cell's own texture is laid on the cell with its first texel at the cell's (x, z) corner, u along x and v along z (`ProceduralTerrain`); the static ground (texturing off, outside the procedural rectangle, in the suspended camera modes and in the lobby) keeps them. The terrain renderer applies the turn and mirror (`TerrainCellTexture`): 0x56F4F0 permutes the corner array 0,1,2,3 (the cell's corners (x, z), (x, z + 1), (x + 1, z + 1), (x + 1, z) take the texture corners (0,0), (0,1), (1,1), (1,0) through it): 0x40 swaps entries 1 and 3, then 0x8 makes it 3,0,1,2, else 0x10 2,3,0,1, else 0x20 1,2,3,0, the same in both of the renderer's vertex orders (0x56F670). Node types (mesh 0x1/0x401/0x2 empty; dummy 0x200/0x208/0x300/0x600)
 are not interpreted.
 
 ### Node transform space
@@ -269,6 +319,21 @@ Mac build (Totem cycle 430 ticks ≈ 14.3 s); scene-clock scaling and pause are 
   the 685 paired blocks of this run the corner count equals the mesh's, every
   track has at least two keys, starts at tick 0, increases strictly and reaches the
   clip end. `ModelUvAnimation`.
+- **Terrain clips** (`<base><letter>[number]` of a terrain `Base.MD2`, AnimID 5 = the letter `M`): the loader 0x461f10 binds a terrain's animation members like an object's
+  (the terrain model is loaded through it with flags 8 at 0x4504c0), and the sampler 0x4745c0 above writes the scrolled coordinates into the mesh record's table (+0x68).
+  Two archives hold one: the lobby's `Basem1.MD2` (200 ticks, two UV records on the sea meshes `Sea_Under` and `Sea`, every corner two keys, ΔU = ΔV = −1) and the Jungle
+  terrain's `basem.MD2` (100 ticks, eleven records on the water meshes `surface13`–`surface17`, `surface22`, `surface23`, `surface25` and `surface27`, `falls02` and `Object12`, 343 corners with two keys each, ΔU = +1,
+  ΔV = 0); the other three themes have none. In both, tick 0 equals the stored coordinates of the mesh, the scroll is a whole texture repeat per cycle and every slot
+  the records touch already wraps (flags 0x31/0x33; the loader also ORs 0x8030 into the first word of the record each material group of a UV-animated mesh points at, taken to be the texture slot record, 0x461f10,
+  which changes nothing for them). tp.exe plays the terrain instance every rendered frame, in the lobby and in a park: the lobby state of `0x54e360` calls `0x44e510` (`0x473c70(instance, 1, 4)`)
+  at 0x54e72a, and a park gets the same call through a render callback: the park load (state 9 of `0x54e360`) registers `0x54e2b0` at renderer +0x78 (0x54ecb6, after `0x457a90` loaded
+  `<park>\Terrain\base.md2` through `0x4504c0(0, …)`; only state 0xb clears it), `0x576a00` (← `0x576ec0` ← `0x44e540` ← 0x54fb6c in state 10) calls it once per value of the frame counter
+  `0x8bcc40` (0x576c26), and `0x54e2b0` ends in `0x44e510` (0x54e322). The instance has none of the flags `0x8004` and flag 4 clear, so the idle restart at the head of `0x473c70` (`0x473490` finds no
+  running channel, `0x4732a0` starts sub 0 with flags 4, speed 1.0) starts AnimID 5 itself, and a frame past the total restarts it the same way, the overshoot carried by `0x472f60`. The clock is the
+  scaled clock `0x7b496c`, refreshed by `0x473440` (state 10 at 0x54f475) from the game timer `0x785970`: the game pause freezes that timer (`0x4092a0`) and the game speed scales it, so the river and
+  waterfall stand still while a park is paused and flow faster at the faster speeds. The park loader zeroes the option word `0x7b4980` (`0x4740d0` at 0x457aa4), so the UV pass gate is open. OpenTPW plays
+  the lobby clip (`LobbyScene.AddTerrain`) and the park clip (`TerrainUvAnimator`, drawn through `OriginalTerrain`: the scrolled meshes are models of their own with dynamic vertices) on the `SceneClock`
+  (`TerrainUvAnimationTests`). Not located statically: the reader of the mesh record's coordinate table (+0x68) in the draw; the sampler writes the live record the draw walk (`0x57a530`) queues every frame.
 - **12-byte block** (flag 0x4000 with 0x1000; 30 records): `ptr → u32
   index[count], u32 count, ptr → floats`. The float table holds one pose of `count`
   positions (f32 x, y, z) per tick of the record, `duration + 1` poses in all: in

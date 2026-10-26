@@ -420,6 +420,68 @@ public class ObjectRayPickTests
 		Assert.IsFalse( level.CellTool.IsActive, "and starts no path tool behind it" );
 	}
 
+	/// <summary>
+	/// [BIN:TPW-EXE:0x488760 left press] the click dispatcher 0x4879D0 runs on the press (message 0x10005), before the mode object's press slot: in the idle mode the window of the hovered object opens
+	/// there, with the button still down, and the release does nothing in the idle mode (slot +8 of the idle object, 0x6B70D0).
+	/// </summary>
+	[TestMethod]
+	public void ThePressOpensTheRidesWindowAtOnceAndTheReleaseChangesNothing()
+	{
+		var hud = Park( out var level, out var tower );
+		var context = RideUpgradeIngressTests.Context();
+		var mouse = Screen( TowerTop() );
+		hud.SelectObject( null );
+		Input.UpdateButtons();
+		hud.Update( context, new UiInput( mouse, true, true, false, false, UiKeys.None ), false, false, false );
+		Assert.AreSame( tower, hud.SelectedObject, "the press selects the ride" );
+		Assert.IsFalse( level.CellTool.IsActive, "and starts no path tool behind it" );
+		hud.SelectObject( null );
+		hud.Update( context, UiInput.Click( mouse ), false, false, false );
+		Assert.IsNull( hud.SelectedObject, "the release selects nothing: the pick is the press's" );
+	}
+
+	/// <summary>The pick has no click-or-drag test: a press that goes on to be dragged away has opened the window all the same.</summary>
+	[TestMethod]
+	public void ARidePressThatBecomesADragHasAlreadySelectedTheRide()
+	{
+		var hud = Park( out _, out var tower );
+		var context = RideUpgradeIngressTests.Context();
+		var mouse = Screen( TowerTop() );
+		hud.SelectObject( null );
+		Input.UpdateButtons();
+		hud.Update( context, new UiInput( mouse, true, true, false, false, UiKeys.None ), false, false, false );
+		hud.Update( context, new UiInput( mouse + new NVector2( 40, 0 ), true, false, false, false, UiKeys.None ), false, false, false );
+		hud.Update( context, UiInput.Click( mouse + new NVector2( 40, 0 ) ) with { NotClick = true }, false, false, false );
+		Assert.AreSame( tower, hud.SelectedObject );
+	}
+
+	/// <summary>
+	/// [BIN:TPW-EXE:0x524AA7 refusal cue] a refused build click plays cat_ui 0xAF at its release; the "Cannot build" message that follows then adds no error feedback 0x1D (<c>[EXT:cannot-build-sound]</c> keeps
+	/// it for a refusal no cue preceded).
+	/// </summary>
+	[TestMethod]
+	public void ARefusedBuildClickPlaysTheRefusalCueAtItsReleaseAndItsMessageAddsNoErrorFeedback()
+	{
+		var hud = Park( out var level, out var tower );
+		var context = RideUpgradeIngressTests.Context();
+		var mouse = Screen( TowerTop() );
+		var cues = new List<uint>(); var global = new List<uint>();
+		GameAudio.UiSoundObserver = cues.Add; GameAudio.UiGlobalSoundObserver = global.Add;
+		try
+		{
+			level.BuildEntry = tower.Entry;
+			Click( hud, context, mouse );
+			CollectionAssert.AreEqual( new[] { GameAudio.PathRefusedEvent }, cues, "the tower's own cell refuses the ghost: the cue at the release" );
+			typeof( Level ).GetField( "<LastActionMessage>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, "Cannot build: Occupied." );
+			hud.Update( context, UiInput.Idle( mouse ), false, false, false );
+			Assert.IsFalse( global.Contains( GameAudio.ErrorEvent ), "the message after a cue adds no 0x1D" );
+			typeof( Level ).GetField( "<LastActionMessage>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, "Cannot build: Blocked." );
+			hud.Update( context, UiInput.Idle( mouse ), false, false, false );
+			Assert.IsTrue( global.Contains( GameAudio.ErrorEvent ), "a refusal no cue preceded keeps the error feedback" );
+		}
+		finally { GameAudio.UiSoundObserver = null; GameAudio.UiGlobalSoundObserver = null; }
+	}
+
 	[TestMethod]
 	public void ATerrainOnlyPickSendsTheSameClickToAPathBehindTheRide()
 	{

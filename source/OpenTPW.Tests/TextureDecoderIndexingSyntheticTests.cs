@@ -21,41 +21,42 @@ public class TextureDecoderIndexingSyntheticTests
 	/// <summary>Byte-for-byte twin of the corpus generator used to record the pinned hashes.</summary>
 	internal readonly record struct SynthCase( string Name, byte Flags, byte Alpha, byte Bpp, byte Ver, short W, short H, short Qy, short Qcb, short Qcr, short Qa, int ColorLen, int AlphaLen );
 
+	// The alpha cases carry 0x20 bits per pixel (a header alpha byte of 1 and no alpha plane no longer decodes one: the loader 0x564C00 reads the plane exactly at 32 bits per pixel).
 	// Qcb and Qcr are the header's two chroma shorts in file order. The decoder takes the first chroma plane's scale from the second short and the
 	// second plane's from the first (see TextureFile), so each case below lists the pair the other way round from when its hash was recorded:
 	// the pinned bytes are unchanged, which shows the plane to header mapping is the only thing that moved.
 	internal static readonly SynthCase[] SynthCases =
 	{
 		new( "tiny-half", 0x00, 0, 0, 0, 1, 1, 0, 0, 0, 0, 8320, 4224 ),
-		new( "tiny-half-alpha", 0x00, 1, 0, 0, 1, 1, 0, 0, 0, 0, 8320, 4224 ),
+		new( "tiny-half-alpha", 0x00, 1, 0x20, 0, 1, 1, 0, 0, 0, 0, 8320, 4224 ),
 		new( "odd-half", 0x00, 0, 0, 0, 3, 5, 1, 2, -1, -2, 8320, 4224 ),
-		new( "odd-half-alpha", 0x00, 1, 2, 1, 7, 4, -3, -4, 5, 6, 8320, 4224 ),
+		new( "odd-half-alpha", 0x00, 1, 0x20, 1, 7, 4, -3, -4, 5, 6, 8320, 4224 ),
 		new( "square8-half", 0x00, 0, 0, 0, 8, 8, 0, 0, 0, 0, 8320, 4224 ),
 		new( "square8-full", 0x01, 0, 0, 0, 8, 8, 0, 0, 0, 0, 8320, 4224 ),
-		new( "square8-full-alpha", 0x01, 1, 0, 0, 8, 8, 2, -1, 1, 3, 8320, 4224 ),
+		new( "square8-full-alpha", 0x01, 1, 0x20, 0, 8, 8, 2, -1, 1, 3, 8320, 4224 ),
 		new( "square16-half", 0x00, 0, 0, 0, 16, 16, 0, 0, 0, 0, 8704, 4480 ),
 		new( "square16-full", 0x01, 0, 0, 0, 16, 16, 1, 3, -2, -4, 8704, 4480 ),
-		new( "square16-half-a-q", 0x00, 1, 0, 0, 16, 16, -5, -6, 7, 8, 8704, 4480 ),
+		new( "square16-half-a-q", 0x00, 1, 0x20, 0, 16, 16, -5, -6, 7, 8, 8704, 4480 ),
 		new( "rect17x13-half", 0x00, 0, 0, 0, 17, 13, 0, 0, 0, 0, 10240, 5504 ),
-		new( "rect17x13-full-a", 0x01, 1, 0, 0, 17, 13, 4, 4, -4, -4, 10240, 5504 ),
+		new( "rect17x13-full-a", 0x01, 1, 0x20, 0, 17, 13, 4, 4, -4, -4, 10240, 5504 ),
 		new( "rect33x64-half", 0x00, 0, 0, 0, 33, 64, 0, 0, 0, 0, 16384, 9472 ),
-		new( "rect64x33-half-a", 0x00, 1, 0, 0, 64, 33, -1, -1, 1, 1, 16384, 9472 ),
+		new( "rect64x33-half-a", 0x00, 1, 0x20, 0, 64, 33, -1, -1, 1, 1, 16384, 9472 ),
 		new( "square64-half", 0x00, 0, 0, 0, 64, 64, 0, 0, 0, 0, 16384, 9472 ),
 		new( "square64-full", 0x01, 0, 0, 0, 64, 64, 0, 0, 0, 0, 16384, 9472 ),
-		new( "square64-full-a", 0x01, 1, 0, 0, 64, 64, 9, 8, -9, -8, 16384, 9472 ),
+		new( "square64-full-a", 0x01, 1, 0x20, 0, 64, 64, 9, 8, -9, -8, 16384, 9472 ),
 		new( "square128-half", 0x00, 0, 0, 0, 128, 128, 0, 0, 0, 0, 40960, 25600 ),
-		new( "square128-half-a", 0x00, 1, 0, 0, 128, 128, 3, 2, -3, -2, 40960, 25600 ),
+		new( "square128-half-a", 0x00, 1, 0x20, 0, 128, 128, 3, 2, -3, -2, 40960, 25600 ),
 		new( "square128-full", 0x01, 0, 0, 0, 128, 128, 0, 0, 0, 0, 40960, 25600 ),
 		new( "rect128x64-half", 0x00, 0, 0, 0, 128, 64, 0, 0, 0, 0, 40960, 25600 ),
 		new( "square256-half", 0x00, 0, 0, 0, 256, 256, 0, 0, 0, 0, 139264, 90112 ),
-		new( "square256-half-a", 0x00, 1, 0, 0, 256, 256, 1, 1, -1, -1, 139264, 90112 ),
+		new( "square256-half-a", 0x00, 1, 0x20, 0, 256, 256, 1, 1, -1, -1, 139264, 90112 ),
 		new( "square256-full", 0x01, 0, 0, 0, 256, 256, 0, 0, 0, 0, 139264, 90112 ),
 		new( "strip256x1-half", 0x00, 0, 0, 0, 256, 1, 0, 0, 0, 0, 139264, 90112 ),
-		new( "strip1x256-half-a", 0x00, 1, 0, 0, 1, 256, 0, 0, 0, 0, 139264, 90112 ),
-		new( "unknown-flag-half", 0x12, 1, 0, 0, 32, 32, 0, 0, 0, 0, 10240, 5504 ),
+		new( "strip1x256-half-a", 0x00, 1, 0x20, 0, 1, 256, 0, 0, 0, 0, 139264, 90112 ),
+		new( "unknown-flag-half", 0x12, 1, 0x20, 0, 32, 32, 0, 0, 0, 0, 10240, 5504 ),
 		new( "unknown-flag-full", 0x13, 0, 0, 0, 32, 32, 0, 0, 0, 0, 10240, 5504 ),
 		new( "trunc-color", 0x00, 0, 0, 0, 16, 16, 0, 0, 0, 0, 16, 16 ),
-		new( "trunc-alpha", 0x00, 1, 0, 0, 16, 16, 0, 0, 0, 0, 8704, 8 ),
+		new( "trunc-alpha", 0x00, 1, 0x20, 0, 16, 16, 0, 0, 0, 0, 8704, 8 ),
 	};
 
 	private readonly record struct SynthPin( string Name, string? Sha, string? ErrorType, string? ErrorMessage );

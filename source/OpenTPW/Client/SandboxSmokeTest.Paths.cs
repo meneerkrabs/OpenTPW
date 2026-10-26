@@ -65,10 +65,12 @@ internal sealed partial class SandboxSmokeTest
 		level.IsRemovingObjects = false;
 		Require( !level.CellTool.IsActive && !removeClick, "with the remove tool on, a park click is left to Level.RemoveAt" );
 
+		// [BIN:TPW-EXE:0x4879D0 park click] the press on an empty owned cell enters the path tool with no start; [BIN:TPW-EXE:0x524960] its release is the tool's first click
 		hud.Update( hudContext, new UiInput( startPoint, true, true, false, false, UiKeys.None ) );
-		Require( level.CellTool.Mode == CellToolMode.Path && level.CellTool.Start == start, "a HUD click on an empty owned cell starts the path tool" );
+		Require( level.CellTool.Mode == CellToolMode.Path && level.CellTool.Start == null, "a HUD press on an empty owned cell enters the path tool and stores no start" );
 		Require( hudContext.HoverHelp != null, "the path tool shows its help line (UIHELPTEXT 443)" );
 		hud.Update( hudContext, new UiInput( startPoint, false, false, true, false, UiKeys.None ) );
+		Require( level.CellTool.Mode == CellToolMode.Path && level.CellTool.Start == start, "its release is the tool's first click" );
 
 		// PATH-013: the pause menu blocks the tool's clicks, and Update reports them as captured so Level skips them too.
 		var cellVersion = grid.Cells.Version;

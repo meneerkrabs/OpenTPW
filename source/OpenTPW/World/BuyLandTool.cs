@@ -1,7 +1,18 @@
 namespace OpenTPW;
 
 /// <summary>What a click of the Buy Land tool did.</summary>
-public enum BuyLandClick { Ignored, CornerStored, Bought, Refused }
+public enum BuyLandClick
+{
+	Ignored,
+	CornerStored,
+	Bought,
+	/// <summary>The park refused the purchase (its rules or its money): the tool says it cannot buy the land.</summary>
+	Refused,
+	/// <summary>[EXT:online-coop-commands] A guest's purchase went to the host (C3b): its outcome comes back later, and only a refusal is said then.</summary>
+	Sent,
+	/// <summary>[EXT:online-coop-permissions] The session's rights refused the purchase here: the session's refusal says why, not the tool.</summary>
+	NotAllowed
+}
 
 /// <summary>
 /// The Buy Land tool (tp.exe mouse mode 0x39, the click handler <c>0x00524960</c>): started from the buy window's Buy Land row,
@@ -122,7 +133,7 @@ public sealed class BuyLandTool
 		var bought = issue( new BuyLandCommand( corner.X, corner.Y, post.X, post.Y ) );
 		LastResult = bought.Value is LandPurchaseCheck check ? check : null;
 		Cancel();
-		return bought.Accepted ? BuyLandClick.Bought : BuyLandClick.Refused;
+		return bought.Accepted ? BuyLandClick.Bought : bought.IsPending ? BuyLandClick.Sent : bought.RightsRefused ? BuyLandClick.NotAllowed : BuyLandClick.Refused;
 	}
 
 	/// <summary>

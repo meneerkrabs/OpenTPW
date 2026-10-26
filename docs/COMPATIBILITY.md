@@ -212,8 +212,8 @@ Original values ([DATA:Data/low.sam, med.sam, high.sam]):
 | --- | --- | --- | --- | --- | --- |
 | TEXTUREQUALITY | 1 | 2 | 3 | 3 | not applied (full resolution always) |
 | TEXTUREFILTERING (0 point, 1 bilinear, 2 trilinear, 3 anisotropic) | 0 | 1 | 2 | 3 (16x) | **applied** to world samplers |
-| PROCEDURALTEXTURING | 0 | 2 | 2 | 3 | not applied |
-| PROCEDURALTEXTURECACHE | 0 | 1 | 1 | 1 | not applied |
+| PROCEDURALTEXTURING (0 off, 1 16, 2 32, 3 64 texels) | 0 | 2 | 2 | 3 | **applied** at the next level load: each visible terrain cell gets its own N × N texture from the theme's `base.lnd` (docs/LND.md); the lobby stays static |
+| PROCEDURALTEXTURECACHE (0, 1, 2 → 1500, 2000, 2500 cells) | 0 | 1 | 1 | 2 | **applied** at the next level load: the size of the visible-cell cache |
 | ANIMATINGTEXTURES | 0 | 1 | 1 | 1 | **applied** to the object texture-frame tracks (0 = each slot shows its first frame, tp.exe `0x57A420`) |
 | SKYQUALITY (layers) | 1 | 2 | 4 | 4 | **applied** to the sky's scrolling cloud layers (0 draws no sky) |
 | SKYDETAIL / SKYSHADOW | 0/0 | 1/0 | 1/0 | 1/0 | not applied |
@@ -223,7 +223,7 @@ Original values ([DATA:Data/low.sam, med.sam, high.sam]):
 | MIPMAP | 1 | 1 | 1 | 1 | **applied** |
 | RENDER32 / TEXTURE32 | 0/0 | 0/0 | 0/0 | 1/1 | always 32-bit |
 | BUMPMAPPING / LIGHTING / FORCELOWALPHAREF | 0/0/0 | 0/1/0 | 0/1/0 | 0/1/0 | not applied |
-| FIRSTPERSONVIEWDISTANCE (0..3) | 0 | 1 | 2 | 3 | stored (no first-person view yet); the original picks its fog range from it (UI-107) |
+| FIRSTPERSONVIEWDISTANCE (0..3) | 0 | 1 | 2 | 3 | **applied**: the ray distance of the visible-cell spans (200, 325, 450, 700 original units) and, in the ride and free walk views only (the original has fog only in its first-person views, none in the park overview, the lobby or the globe), the fog's start and end (50-60, 100-110, 135-150, 230-250), linear in the projection's depth (docs/LND.md "Fog and far plane", UI-107); also sets the extension's wide-zoom far end |
 | COASTERSMOOTHNESS (1..8) / COASTERTRACKDETAIL | 1/0 | 4/1 | 6/1 | 8/1 | exposed for the rides slice |
 | PARTICLEDENSITY / TOTALPARTICLES (simulation) | 500/1000 | 1000/3200 | 1500/2000 | 1500/2000 (2000 with `enhanced-game-options`) | density applied to the particle pool at park start; TOTALPARTICLES unread, as in tp.exe |
 | NUMKIDS (0→4, 1→6, 2→8, 3→max; simulation) | 0 | 2 | 2 | 2 (3 with `enhanced-game-options`) | exposed for the guests slice |
@@ -317,6 +317,21 @@ Not frame-driven (real time or substep, nothing to match): the timer list polled
 to 1..200), scrolling textures `0x435a30` and thing animation clocks `0x557ab0` (clock reads), the render interpolation fractions `0x519060`, `0x55ce60`,
 `0x518f90` (time since the last substep), and every simulation step on the 31 ms substep
 (`0x520130`, `0x546c80`, `0x5516b0`, `0x55abf0`, `0x475360`, `0x516380`, `0x55a470`, `0x55ab50`).
+
+## World geometry translucency
+
+The terrain meshes and placed objects follow the original's translucent pass: faces whose texture has an alpha plane with a non-zero alpha byte (the river water, the harbour's glass roofs, leaves) are drawn after all
+other geometry, farthest first, and tested at 0x10/255; cut-out textures (alpha byte 0) are tested at 0xF0/255; every consumer of the world shader shares this path (terrain, heightfield, paths, objects, coaster, track, tour, pool parts and the lobby). The classification reads the texture's own header, so the low-detail copies (no alpha plane) stay opaque, as in
+the original ([MD2-MODELS.md](MD2-MODELS.md), "The translucent pass of world models"). This answers the community report of a multicoloured river and a glass roof that hid what stood behind it (issue 829).
+Open: the original's deferred particle batches are not merged into the sorted list (PTCL-905); the reverse sort 0x5828F0 and the
+alpha-reference index of devices that fail the 0x567270 probe are not reproduced.
+
+## Animated terrain water
+
+In tp.exe the terrain instance plays its `base` clip every rendered frame, in the lobby and in a park: the lobby's `Basem1.MD2` scrolls the two sea meshes one texture repeat per 200 ticks, and the Jungle
+terrain's `basem.MD2` (eleven UV tracks, 100 ticks, +1 U per cycle) scrolls the river and the waterfall (a render callback, `0x54e2b0` → `0x44e510`, runs it in a park). The clock is the game's scaled clock, so
+the water stands still while the park is paused and follows the game speed. OpenTPW plays both on the scene clock ([MD2-MODELS.md](MD2-MODELS.md), "Terrain clips"; issue 829). The harbour sea is static in
+the data and the other two park themes have no terrain clip.
 
 ## Tests
 

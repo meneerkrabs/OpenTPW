@@ -50,7 +50,7 @@ public sealed partial class ParkHud
 			textCaptured ??= io.WantTextInput;
 		}
 		if ( mouseCaptured.Value )
-			input = input with { Mouse = new System.Numerics.Vector2( -1 ), LeftDown = false, LeftPressed = false, LeftReleased = false, RightPressed = false, Wheel = 0 };
+			input = input with { Mouse = new System.Numerics.Vector2( -1 ), LeftDown = false, LeftPressed = false, LeftReleased = false, RightPressed = false, RightReleased = false, RightClicked = false, Wheel = 0 };
 		if ( keyboardCaptured.Value || textCaptured.Value )
 			input = input with { Pressed = UiKeys.None, Text = "", Backspaces = 0 };
 		// [BIN:TPW-EXE:0x0048A99E winning Escape] key 0x1B with modifier bits 0xFF0000 clear immediately calls 0x516C10.

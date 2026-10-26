@@ -15,6 +15,18 @@ public interface IParkCommandRights
 	/// a kind, C3): by default the kind's answer.
 	/// </summary>
 	bool Allows( int player, ParkCommand command ) => Allows( player, command.Kind );
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] Whether <paramref name="player"/> may remove <paramref name="item"/> inside a command that removes what it finds (the area clear, C3b): a session's
+	/// guest may not remove what its own removal click may not. By default yes.
+	/// </summary>
+	bool AllowsRemoval( int player, OriginalObject item ) => true;
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] Whether <paramref name="player"/> may clear the path cell (<paramref name="x"/>, <paramref name="y"/>) inside a command that clears what it finds (the area
+	/// clear): a session's guest may not clear what its own Backspace may not. By default yes.
+	/// </summary>
+	bool AllowsPathRemoval( int player, int x, int y ) => true;
 }
 
 /// <summary>What became of one command: accepted (it ran) or rejected (nothing changed), with the reason and the value the edit returns to its issuer.</summary>
@@ -23,8 +35,21 @@ public sealed record ParkCommandResult( bool Accepted, string? Reason = null, ob
 	/// <summary>The exception a command threw (a rule its own checks missed): it is a rejection with whatever the command wrote before the throw, logged like any other.</summary>
 	public Exception? Error { get; init; }
 
+	/// <summary>[EXT:online-coop-permissions] The rights refused the command (a session's: a guest's building without a grant, a host's command): the issuer says so in its own words.</summary>
+	public bool RightsRefused { get; init; }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The command went to the host as a guest's request (C3): nothing changed here yet, and the request resolves later, when its record applies here or the host
+	/// refuses it (<see cref="CoopGuestCommands"/>).
+	/// </summary>
+	internal CoopGuestCommands.Request? Request { get; init; }
+
+	/// <summary>[EXT:online-coop-commands] Whether the command waits for the host (<see cref="Request"/>).</summary>
+	public bool IsPending => Request != null;
+
 	public static ParkCommandResult Ok( object? value = null ) => new( true, null, value );
 	public static ParkCommandResult Rejected( string reason ) => new( false, reason );
+	internal static ParkCommandResult Sent( CoopGuestCommands.Request request ) => new( false, "Sent to the host." ) { Request = request };
 
 	/// <summary>The edit's value as <typeparamref name="T"/> (the placed object, the laid line, a count), or the default.</summary>
 	public T? As<T>() => Value is T value ? value : default;
@@ -84,6 +109,33 @@ public sealed class ParkCommands
 		this.execute = execute ?? throw new ArgumentNullException( nameof( execute ) );
 		this.refusesEdits = refusesEdits ?? throw new ArgumentNullException( nameof( refusesEdits ) );
 	}
+
+	/// <summary>Whether the rights refuse <paramref name="command"/> its player (no rights refuse nothing).</summary>
+	private bool Refuses( ParkCommand command ) => Rights is { } rights && !rights.Allows( command.Player, command );
+
+	/// <summary>[EXT:online-coop-permissions] Whether <paramref name="player"/> may remove <paramref name="item"/> inside a command that removes what it finds: the rights' answer, yes without any.</summary>
+	internal bool AllowsRemoval( int player, OriginalObject item ) => Rights is not { } rights || rights.AllowsRemoval( player, item );
+
+	/// <summary>[EXT:online-coop-permissions] Whether <paramref name="player"/> may clear the path cell (<paramref name="x"/>, <paramref name="y"/>) inside a command that clears what it finds: the rights' answer, yes without any.</summary>
+	internal bool AllowsPathRemoval( int player, int x, int y ) => Rights is not { } rights || rights.AllowsPathRemoval( player, x, y );
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's way to the host (C3): a command this machine's player issues on a park that follows a stream goes here as a request
+	/// (<see cref="CoopGuestCommands.Submit"/>) once <see cref="Apply"/>'s own checks pass, and <see cref="Issue"/> returns it pending; null while no session takes requests.
+	/// </summary>
+	internal Func<ParkCommand, CoopGuestCommands.Request?>? Submit { get; set; }
+
+	/// <summary>[EXT:online-coop-commands] Whether this machine's commands go to the host as requests (a guest's park with its session's way there, C3a-2): its tools wait for their outcomes.</summary>
+	internal bool SendsRequests => FollowsStream && Submit != null;
+
+	/// <summary>[EXT:online-coop-commands] The player of the outermost command running now, or null outside one: whose edit a message or a sound inside it belongs to (C3a-2).</summary>
+	internal int? RunningPlayer => running?.Player;
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Whether what runs now is this machine's player's own: outside any command, or inside a command it issued. The cues a command plays (a placement's,
+	/// a demolition's, a path's) are its issuer's alone: a peer applying another player's command hears none (C3a-2). A game of one is always its own issuer.
+	/// </summary>
+	internal bool IsLocalIssuer => running is not { } command || command.Player == Player;
 
 	/// <summary>The local player's id, put on the commands the HUD and the tools issue (<see cref="LocalPlayer"/> until a session gives this machine its slot).</summary>
 	public int Player { get; set; } = LocalPlayer;
@@ -163,10 +215,10 @@ public sealed class ParkCommands
 			return ParkCommandResult.Rejected( $"The {command.Kind} command has fields out of range." );
 		// [EXT:online-coop-lockstep] in a session a command of this machine the rights refuse leaves no trace: a guest's own issues stay out of its log, which is the host's stream. A held
 		// command (the host's stream) is refused as usual and logged, so the stream sees that it was refused here. A guest's park takes none of its own, granted or not (C3)
-		if ( SessionRules && !applyingDue && !applyingRemote && command.Player >= 0 && (FollowsStream || Rights is { } rights && !rights.Allows( command.Player, command )) )
+		if ( SessionRules && !applyingDue && !applyingRemote && command.Player >= 0 && (FollowsStream || Refuses( command )) )
 		{
 			SessionRefused?.Invoke( command );
-			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." );
+			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." ) with { RightsRefused = Refuses( command ) };
 		}
 		var tick = nextTick();
 		ParkCommandResult result;
@@ -234,6 +286,9 @@ public sealed class ParkCommands
 		issuing = true;
 		try
 		{
+			// [EXT:online-coop-commands] a guest's command goes to the host as a request, and changes nothing here until its record comes back
+			if ( FollowsStream && Submit is { } submit )
+				return Request( command with { Player = Player }, submit );
 			return Apply( command with { Player = Player } );
 		}
 		finally
@@ -244,6 +299,29 @@ public sealed class ParkCommands
 				RunAfterIssue();
 			}
 		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's command as a request to the host, after the checks <see cref="Apply"/> makes before it runs one, in the same order: never inside a tick, well formed,
+	/// and allowed by the session's rights here (the guest's own park's grants: a request the host would refuse is not sent). The host's rights decide again on every peer.
+	/// </summary>
+	private ParkCommandResult Request( ParkCommand command, Func<ParkCommand, CoopGuestCommands.Request?> submit )
+	{
+		if ( inTick )
+		{
+			if ( Strict )
+				throw new InvalidOperationException( $"The {command.Kind} command was issued during a simulation tick." );
+			Common.GlobalNamespace.Log?.Error( $"The {command.Kind} command was issued during a simulation tick and dropped." );
+			return ParkCommandResult.Rejected( $"The {command.Kind} command was issued during a simulation tick." );
+		}
+		if ( !command.IsWellFormed )
+			return ParkCommandResult.Rejected( $"The {command.Kind} command has fields out of range." );
+		if ( command.Player < 0 || Refuses( command ) )
+		{
+			SessionRefused?.Invoke( command );
+			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." ) with { RightsRefused = true };
+		}
+		return submit( command ) is { } request ? ParkCommandResult.Sent( request ) : ParkCommandResult.Rejected( "The shared park takes no requests now." );
 	}
 
 	/// <summary>
@@ -366,8 +444,8 @@ public sealed class ParkCommands
 		if ( refusesEdits() )
 			return ParkCommandResult.Rejected( "Read-only visit: the park takes no edits." );
 		// the rights are asked of the outermost command only: what runs inside it is that command's, which they allowed
-		if ( depth == 0 && Rights is { } rights && !rights.Allows( command.Player, command ) )
-			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." );
+		if ( depth == 0 && Refuses( command ) )
+			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." ) with { RightsRefused = true };
 		if ( depth == 0 )
 			running = command;
 		depth++;

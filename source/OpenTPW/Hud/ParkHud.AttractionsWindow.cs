@@ -303,12 +303,13 @@ public sealed partial class ParkHud
 	{
 		var row = SelectedAttractionRow;
 		var match = level.ListAttractions().FirstOrDefault( item => item.Runtime.AttractionId == row.AttractionId );
-		if ( match == null || RejectReadOnlyAction() )
+		// [EXT:online-coop-commands] no second sale of an object whose sale waits for the host (C3b)
+		if ( match == null || !CanSellAttraction( match ) || RejectReadOnlyAction() )
 			return;
 		void Remove()
 		{
 			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam ([EXT:online-coop-commands]: one command either way).
-			level.Commands.Issue( new RemoveAttractionCommand( match.Runtime.AttractionId ) );
+			SellAttraction( match.Runtime.AttractionId );
 			selectedAttractionId = 0;
 			RefreshAttractionRows();
 			EnsureAttractionSelection();
@@ -335,8 +336,17 @@ public sealed partial class ParkHud
 		selectedAttractionId = ParkAttractionRoster.HealedSelection( attractionRows, selectedAttractionId );
 		SetAttractionFirstRow( attractionFirstRow );
 		if ( deleteAttractionButton != null )
-			deleteAttractionButton.Enabled = !level.IsReadOnlyVisit && selectedAttractionId != 0;
+		{
+			var selected = level.ListAttractions().FirstOrDefault( item => item.Runtime.AttractionId == selectedAttractionId );
+			deleteAttractionButton.Enabled = !level.IsReadOnlyVisit && selectedAttractionId != 0 && (selected == null || CanSellAttraction( selected ));
+		}
 	}
+
+	/// <summary>
+	/// Whether the list's delete button sells <paramref name="item"/>: [EXT:online-coop-commands] not while this guest's sale of it waits for the host (C3b). The list never holds a fixed item
+	/// (<see cref="OriginalObjectRuntime.IsAttraction"/> excludes them), so it never offers one for sale.
+	/// </summary>
+	private bool CanSellAttraction( OriginalObject item ) => !level.IsSaleWaiting( item.Runtime.AttractionId );
 
 	private UiScreen CreateAttractionsScreen()
 	{

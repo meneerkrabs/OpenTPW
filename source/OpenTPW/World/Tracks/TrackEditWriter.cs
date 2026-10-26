@@ -35,7 +35,7 @@ public sealed class TrackEditWriter : ICellLineWriter
 	public (int X, int Y)? FirstPick => first;
 
 	/// <summary>
-	/// The first click: a tile the test accepts is picked, a refused tile is dropped (the tool stays on without a pick, <c>0x52692E</c>), a station tile or a cell without track changes nothing.
+	/// The first click: a tile the test accepts is picked, a station tile or a cell without track changes nothing (a refused tile never gets here: its hover set the refused-ghost latch, <see cref="RefusesFirstClick"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052692E first pick] the pick's step number goes to 0x7639B0 and the cell to 0x818694, then 0x539760(0xE) answering 1 clears both again (0x526935, 0x52692E)
 	public bool CanStart( (int X, int Y) cell )
@@ -46,6 +46,8 @@ public sealed class TrackEditWriter : ICellLineWriter
 		first = picked;
 		return true;
 	}
+
+	public bool RefusesFirstClick( (int X, int Y) cell ) => first == null && editor.Pick( cell.X, cell.Y ).Result == TrackEditPick.Rejected;
 
 	/// <summary>The marks of a hover: the picked tile alone before the first click, afterwards the tiles the cut between the picked tile and the one under the pointer would clear.</summary>
 	public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor )

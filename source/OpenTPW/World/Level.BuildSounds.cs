@@ -62,11 +62,19 @@ public sealed partial class Level
 	/// <summary>The cue of a placement just committed on the build click (<paramref name="clickX"/>, <paramref name="clickY"/>).</summary>
 	private void PlayPlacementCue( ObjectCatalogEntry entry, int clickX, int clickY, int rotation )
 	{
+		// [EXT:online-coop-commands] a placement's cue is its issuer's: a peer applying another player's placement plays none (C3a-2)
+		if ( Commands is { IsLocalIssuer: false } )
+			return;
 		var anchor = GetCentredAnchor( entry, clickX, clickY, rotation );
 		GameAudio.PlayUiAt( PlacementCueEvent( PlacementCueCells( Guests?.Grid.Cells, entry.Shape, anchor.X, anchor.Y, rotation ) ), PlacementCuePlace( entry.Shape, clickX, clickY ) );
 	}
 
 	/// <summary>The cue of an object about to be demolished (the removal event, raised before the footprint is cleared).</summary>
-	private void PlayDemolitionCue( OriginalObject item ) =>
+	private void PlayDemolitionCue( OriginalObject item )
+	{
+		// [EXT:online-coop-commands] a demolition's cue is its issuer's: a peer applying another player's removal plays none (C3a-2)
+		if ( Commands is { IsLocalIssuer: false } )
+			return;
 		GameAudio.PlayUiAt( DemolitionCueEvent( DemolitionCueCells( Guests?.Grid.Cells, item.Cells ) ), DemolitionCuePlace( item.Entry.Shape ) );
+	}
 }

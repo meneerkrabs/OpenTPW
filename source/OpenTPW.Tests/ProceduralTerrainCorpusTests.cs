@@ -227,4 +227,27 @@ public class ProceduralTerrainCorpusTests
 		Console.WriteLine( $"LND seam {seam / count:0.0}, inner {inner / count:0.0}" );
 		Assert.IsTrue( seam < inner * 1.3, $"seam {seam / count:0.0} against inner {inner / count:0.0}" );
 	}
+
+	/// <summary>The heightfield's column 95 lies one past the 95 cells of the weight grid; tp.exe's routine builds it from the flat grid reads, and these hashes are what it wrote (x86 oracle, shipped jungle file).</summary>
+	[TestMethod]
+	public void TheColumnAfterTheWeightGridIsBuiltLikeTheOriginalBuildsIt()
+	{
+		var lnd = Load( "jungle" );
+		(int Size, int X, int Z, string Sha256)[] golden =
+		[
+			(16, 95, 40, "8a1a810097a0a215a1bc2cc2b69c1d28332f0c279e5727e808e02e2be0bb9aa8"),
+			(16, 95, 0, "0c655a1c205855b52a6bfeff4a4d3ec064fb3fa033394e2008499c7d818e6ed3"),
+			(16, 95, 84, "642090cee6c0a252dc0162223adbce7f971bd34a70dbe4283d2ef839b2127cdf"),
+			(32, 95, 40, "c3330812e85f4af05de7959de1b289b4cba7883f328a1bdb8bb1665c2b35d507"),
+			(32, 95, 0, "47b32aff620bc92cdb7b5ffec7af02b8e9ead16fda39b8d50b164acfebbb13c1"),
+			(32, 95, 84, "2c7b763b61082cc45039c0840bc9e9340a365b104d00585c0e347a79a86b4c77"),
+		];
+		foreach ( var (size, x, z, sha) in golden )
+		{
+			var texturer = new ProceduralTerrainTexturer( lnd, size );
+			var buffer = new byte[texturer.TextureBytes];
+			Assert.IsTrue( texturer.Build( x, z, buffer ), $"N={size} ({x}, {z})" );
+			Assert.AreEqual( sha, Sha( buffer ), $"N={size} ({x}, {z})" );
+		}
+	}
 }

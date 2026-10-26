@@ -11,6 +11,12 @@ public partial class Texture : Asset
 	public uint Width { get; private set; }
 	public uint Height { get; private set; }
 
+	/// <summary>
+	/// How tp.exe draws geometry textured with this one, read from the header of the original <c>.wct</c> (<see cref="TextureFile.ReadAlphaType(Stream)"/>); a texture pack's replacement keeps it.
+	/// <see cref="TextureAlphaType.Opaque"/> for every texture that is not a game <c>.wct</c> (placeholders, images, Theme Park Inc art, other archives).
+	/// </summary>
+	internal TextureAlphaType AlphaType { get; private set; }
+
 	private static readonly Lazy<Texture> missing = new( () => new Texture( [255, 255, 255, 255], 1, 1 ) );
 
 	/// <summary>
@@ -198,12 +204,14 @@ public partial class Texture : Asset
 			NativeTextureView = cached.NativeTextureView;
 			Width = cached.Width;
 			Height = cached.Height;
+			AlphaType = cached.AlphaType;
 			// a texture that shares the cached one's GPU objects is a path texture too: ReleaseOwned must leave it alone, or it disposes what the first owner still draws
 			Path = path;
 			return;
 		}
 
-		var (data, width, height) = DecodeWct( path );
+		var (data, width, height) = DecodeWct( path, out var alphaType );
+		AlphaType = alphaType;
 		CreateTexture( path, data, (uint)width, (uint)height, flags );
 	}
 
@@ -212,16 +220,36 @@ public partial class Texture : Asset
 	/// No GPU access, so a pack switch may run it on a worker thread.
 	/// </summary>
 	// [EXT:texture-pack] pack lookup; a missing file falls back to the original.
-	internal static (byte[] Data, int Width, int Height) DecodeWct( string path )
+	internal static (byte[] Data, int Width, int Height) DecodeWct( string path ) => DecodeWct( path, out _ );
+
+	/// <summary><see cref="DecodeWct(string)"/> with the alpha type of the original file (a pack's replacement is classified by the header of the file it replaces).</summary>
+	private static (byte[] Data, int Width, int Height) DecodeWct( string path, out TextureAlphaType alphaType )
 	{
 		using var profile = LoadProfile.Measure( "texture-decode" );
 		if ( TexturePack.Find( path ) is { } replacement )
 		{
 			var image = ImageResult.FromMemory( File.ReadAllBytes( replacement ), ColorComponents.RedGreenBlueAlpha );
+			alphaType = OriginalAlphaType( path );
 			return (image.Data, image.Width, image.Height);
 		}
-		var textureFileData = new TextureFile( path ).Data;
+		var textureFile = new TextureFile( path );
+		alphaType = textureFile.AlphaType;
+		var textureFileData = textureFile.Data;
 		return (textureFileData.Data, textureFileData.Width, textureFileData.Height);
+	}
+
+	/// <summary>The alpha type from the header of the original <c>.wct</c> at <paramref name="path"/> (Opaque when the game data does not have it).</summary>
+	private static TextureAlphaType OriginalAlphaType( string path )
+	{
+		try
+		{
+			using var stream = FileSystem.OpenRead( path );
+			return TextureFile.ReadAlphaType( stream );
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or NotSupportedException )
+		{
+			return TextureAlphaType.Opaque;
+		}
 	}
 
 	/// <summary>A live texture made from the `.wct` at <paramref name="path"/>, or null (smoke tests).</summary>
@@ -326,6 +354,36 @@ public partial class Texture : Asset
 			oldView?.Dispose();
 			oldTexture?.Dispose();
 		} );
+	}
+
+	/// <summary>
+	/// A blank RGBA page of <paramref name="width"/> x <paramref name="height"/> texels with one mip level, filled piece by piece with <see cref="UpdateRegion"/> (the procedural terrain's texture pages). It belongs to
+	/// its maker: <see cref="ReleaseOwned"/> frees it.
+	/// </summary>
+	internal static Texture CreatePage( int width, int height )
+	{
+		var texture = new Texture( width, height );
+		return texture;
+	}
+
+	private Texture( int width, int height )
+	{
+		LoadProfile.Count( "gpu textures" );
+		LoadProfile.Count( "gpu texture bytes", width * height * 4 );
+		NativeTexture = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D( (uint)width, (uint)height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled ) );
+		NativeTextureView = Device.ResourceFactory.CreateTextureView( NativeTexture );
+		Path = "";
+		Width = (uint)width;
+		Height = (uint)height;
+		All.Add( this );
+	}
+
+	/// <summary>Writes the RGBA texels of a <paramref name="width"/> x <paramref name="height"/> rectangle at (<paramref name="x"/>, <paramref name="y"/>) of mip level 0 (a page from <see cref="CreatePage"/>; no mips follow).</summary>
+	internal void UpdateRegion( int x, int y, int width, int height, byte[] rgba )
+	{
+		if ( (uint)x + (uint)width > Width || (uint)y + (uint)height > Height )
+			throw new ArgumentOutOfRangeException( nameof( x ), "The rectangle lies outside the texture." );
+		Device.UpdateTexture( NativeTexture, rgba, (uint)x, (uint)y, 0, (uint)width, (uint)height, 1, 0, 0 );
 	}
 
 	private static int CalculateMipLevels( int width, int height, int depth )

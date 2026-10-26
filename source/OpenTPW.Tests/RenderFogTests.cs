@@ -16,7 +16,11 @@ namespace OpenTPW.Tests;
 public class RenderFogTests
 {
 	[TestCleanup]
-	public void RestoreTheColour() => RenderFog.WorldColour = RenderFog.ColourOf( RenderFog.LobbyColour );
+	public void RestoreTheColour()
+	{
+		RenderFog.WorldColour = RenderFog.ColourOf( RenderFog.LobbyColour );
+		RenderFog.Reset();
+	}
 
 	[DataTestMethod]
 	[DataRow( "jungle", 4774136, 0x48, 0xD8, 0xF8 )]
@@ -49,6 +53,68 @@ public class RenderFogTests
 		Assert.AreEqual( 272, Marshal.SizeOf<ObjectUniformBuffer>() );
 	}
 
+	[DataTestMethod]
+	[DataRow( 0, 200f, 50f, 60f )]
+	[DataRow( 1, 325f, 100f, 110f )]
+	[DataRow( 2, 450f, 135f, 150f )]
+	[DataRow( 3, 700f, 230f, 250f )]
+	public void FirstPersonViewDistanceGivesTheOriginalsRayDistanceAndFogRange( int option, float distance, float start, float end )
+	{
+		// [BIN:TPW-EXE:0x44DBB0 FIRSTPERSONVIEWDISTANCE] [0x8BD4C0], [0x8BD490] and [0x8BD494] (through 0x583280)
+		Assert.AreEqual( (distance, start, end), RenderFog.ViewDistanceOf( option ) );
+	}
+
+	[TestMethod]
+	public void TheParksRangeIsInViewDepthOfTheProjectionsW()
+	{
+		// the original's 90 degree projection has w = sin(45 degrees) x the depth and an original unit is 0.2 world units
+		RenderFog.SetParkRange( 2 );
+		Assert.AreEqual( 135f * 0.2f / MathF.Sin( MathF.PI / 4 ), RenderFog.ViewRange.Start, 1e-4f );
+		Assert.AreEqual( 150f * 0.2f / MathF.Sin( MathF.PI / 4 ), RenderFog.ViewRange.End, 1e-4f );
+	}
+
+	[TestMethod]
+	public void FogIsOnlyInTheFirstPersonViewsAndOffWhenDisabled()
+	{
+		// tp.exe adds the fog bit 0x100000 to a draw only while bit 0x2000 of [0x8BCBC8] is set (0x570E9A, 0x565FA6, 0x58179F); the park frame toggles it with [0x790AB0] & 0x16
+		RenderFog.Reset();
+		Assert.AreEqual( 0f, RenderFog.PackedRange( 1 ), "no scene has asked for fog" );
+		RenderFog.SetParkRange( 2 );
+		Assert.IsTrue( RenderFog.PackedRange( 1 ) > 0 );
+		RenderFog.Disable();
+		Assert.AreEqual( 0f, RenderFog.PackedRange( 1 ), "the overview, the lobby and the globe are not fogged" );
+		Assert.AreEqual( 0f, new ObjectUniformBuffer().WithFog()._padding2 );
+	}
+
+	[TestMethod]
+	public void ThePackedRangeSurvivesTheShadersDecode()
+	{
+		foreach ( var option in new[] { 0, 1, 2, 3 } )
+		{
+			RenderFog.SetParkRange( option );
+			foreach ( var scale in new[] { 0.5f, 1f, 2f, 4f } )
+			{
+				var packed = RenderFog.PackedRange( scale );
+				// the shaders' decode
+				var startQ = MathF.Floor( packed / 4096f );
+				var start = startQ * 0.125f;
+				var end = (packed - startQ * 4096f) * 0.125f;
+				Assert.AreEqual( RenderFog.ViewRange.Start * scale, start, 0.0625f, $"option {option}, scale {scale}" );
+				Assert.AreEqual( RenderFog.ViewRange.End * scale, end, 0.0625f );
+			}
+		}
+		Assert.IsTrue( RenderFog.PackedRange( 1000f ) > 0, "a scale of 1000 (the globe) is held at the largest range, not dropped" );
+	}
+
+	[TestMethod]
+	public void TheFogGoesIntoTheSlotTheShadersCallViewDistanceScale()
+	{
+		RenderFog.SetParkRange( 2 );
+		var buffer = new ObjectUniformBuffer().WithFog();
+		Assert.AreEqual( RenderFog.PackedRange( CompatibilityRuntime.RenderQuality.ViewDistanceScale ), buffer._padding2 );
+		Assert.AreEqual( RenderFog.PackedRange( 3f ), new ObjectUniformBuffer { _padding2 = 3f }.WithFog()._padding2, "an entity's own scale stretches the range" );
+	}
+
 	/// <summary>Every shader that fogs reads the colour and range from the buffer, in the same order and after the same fields, and keeps no blue of its own, in every stage that declares the block.</summary>
 	[DataTestMethod]
 	[DataRow( "test.shader" )]
@@ -68,6 +134,22 @@ public class RenderFogTests
 			Assert.IsTrue( next >= 0, $"{shader} declares {field} in order" );
 			position = next;
 		}
+	}
+
+	/// <summary>The shaders that draw the park fog with the original's linear range in the projection's depth, not the old exponential curve.</summary>
+	[DataTestMethod]
+	[DataRow( "test.shader" )]
+	[DataRow( "water.shader" )]
+	[DataRow( "sprite.shader" )]
+	[DataRow( "pool-water.shader" )]
+	[DataRow( "pool-deck.shader" )]
+	[DataRow( "pool-basin.shader" )]
+	public void TheParkShadersFogLinearlyInTheProjectionsDepth( string shader )
+	{
+		var text = File.ReadAllText( ShaderPath( shader ) );
+		Assert.IsTrue( text.Contains( "gl_FragCoord.w" ), $"{shader} measures the depth of the projection" );
+		Assert.IsFalse( text.Contains( "exp(" ) || text.Contains( "exp (" ), $"{shader} keeps no exponential fog" );
+		Assert.IsTrue( text.Contains( "4096.0" ), $"{shader} decodes the packed range" );
 	}
 
 	private static string ShaderPath( string shader )

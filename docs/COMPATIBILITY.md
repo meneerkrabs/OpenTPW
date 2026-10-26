@@ -326,6 +326,12 @@ the original ([MD2-MODELS.md](MD2-MODELS.md), "The translucent pass of world mod
 Open: the original's deferred particle batches are not merged into the sorted list (PTCL-905); the reverse sort 0x5828F0 and the
 alpha-reference index of devices that fail the 0x567270 probe are not reproduced.
 
+## Animated terrain water
+
+In tp.exe only the lobby's sea moves: the terrain instance is updated in the lobby state of the main loop (`0x44e510`, once per frame) and plays `Basem1.MD2`, whose UV tracks scroll the two sea
+meshes one texture repeat per 200 ticks (30 ticks a second); OpenTPW plays the same clip on the same clock. A park's terrain instance is never updated, so the river and waterfall of the Jungle
+terrain (`basem.MD2`, eleven UV tracks) are loaded and never played, and the water of a park stands still in the original; OpenTPW leaves it so ([MD2-MODELS.md](MD2-MODELS.md), "Terrain clips"; issue 829).
+
 ## Tests
 
 `TrueTypeFontTests` (synthetic fonts: metrics, cmap, kerning, exact coverage, non-zero

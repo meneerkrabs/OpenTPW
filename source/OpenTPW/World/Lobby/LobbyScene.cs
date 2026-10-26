@@ -35,7 +35,7 @@ public sealed class LobbyScene : OriginalModelScene
 		try
 		{
 			var terrain = new ModelFile( $"{TerrainDirectory}/Base.MD2" );
-			AddModel( terrain, NMatrix4x4.Identity );
+			AddTerrain( terrain );
 			if ( terrain.Heightfield != null )
 				AddHeightfield( terrain );
 			foreach ( var (candidate, slot) in placed )
@@ -75,6 +75,44 @@ public sealed class LobbyScene : OriginalModelScene
 		{
 			Delete();
 			throw;
+		}
+	}
+
+	private AnimatedModel? terrainModel;
+
+	/// <summary>The animator of the lobby terrain's sea clip (<c>Basem1.MD2</c>), or null when the archive has none; for tests.</summary>
+	internal ObjectAnimator? TerrainAnimator => terrainModel?.Animator;
+
+	/// <summary>
+	/// The lobby terrain: <c>Base.MD2</c> drawn as an animated model that plays its <c>M</c> clip (AnimID 5, sub 0: <c>Basem1.MD2</c>, else <c>Basem.MD2</c>), which scrolls the
+	/// texture coordinates of the sea meshes (<see cref="TerrainClip"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x44e510 terrain clip] the terrain instance (the model 0x4504c0 loads with base.md2 through the object loader 0x461f10, flags 8; the loader binds the animation members <base><letter>[number] of the letter table 0x6fe6bc to it, so Basem1 is group 5) is updated once per lobby frame by 0x44e510 (0x473c70(instance, 1, 4) from 0x54e72a, the lobby's state of 0x54e360, after the clock refresh 0x473440); the instance has flag 4 clear, so the idle restart at the head of 0x473c70 (0x473490, then 0x4732a0 with AnimID 5, sub 0, flags 4, speed 1.0) starts the clip at the first update and again whenever its frame is past the total (flags 4 loop it by restart with the overshoot carried, 0x472f60), on the scaled clock 0x7b496c (channel flag 0x40 clear), and 0x4735d0 samples the clip's UV records (0x471860 → 0x4745c0) into the mesh record's coordinate table (+0x68) every frame. No other caller of 0x473c70 reaches this instance: the park state of 0x54e360 never updates it, so the park's basem.MD2 (Jungle only) is never played
+	private void AddTerrain( ModelFile terrain )
+	{
+		var clip = TerrainClip( out var name );
+		var animatedMeshes = clip?.Tracks.Any( track => track.VertexAnimation != null || track.UvAnimation != null ) == true;
+		terrainModel = AddAnimatedModel( terrain, animatedMeshes );
+		if ( clip != null )
+			terrainModel.Animator.Trigger( 0, clip, name, animationId: 5, variant: 0, loop: true, speed: 1f );
+	}
+
+	/// <summary>The clip the lobby terrain plays (AnimID 5, sub 0 of <c>Base</c>), or null when the lobby archive has none.</summary>
+	private ModelAnimation? TerrainClip( out string name )
+	{
+		name = "";
+		try
+		{
+			var members = FileSystem.GetFiles( TerrainDirectory ).Where( file => file.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) ).ToArray();
+			if ( ObjectAnimations.Resolve( ObjectAnimations.Find( "Base", members ), 5, 0 ) is not { } file )
+				return null;
+			name = file.Name;
+			return new ModelFile( file.Path ).Clip;
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or InvalidOperationException )
+		{
+			Log?.Warning( $"Lobby terrain clip: {exception.Message}" );
+			return null;
 		}
 	}
 
@@ -267,6 +305,7 @@ public sealed class LobbyScene : OriginalModelScene
 	{
 		if ( !float.IsFinite( seconds ) || seconds < 0 )
 			return;
+		terrainModel?.Advance( seconds );
 		foreach ( var group in FlyingMeshes?.Groups ?? Array.Empty<LobbyFlyingMeshes.Group>() )
 		{
 			if ( !flyerModels.TryGetValue( group, out var models ) )

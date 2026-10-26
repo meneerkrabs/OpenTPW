@@ -110,7 +110,7 @@ slots. Theme files: `ISLAND(index, dir, island, gate, name, angle, height)`
 (jungle 0 at 90°/12.5, fantasy 1 at 270°/17.5, hallow 2 at 180°/38, space 3 at
 0°/35), `FLYINGMESH`, `SKYCOLOUR`, `RAINY`, `LIGHTNING`. Islands are ~50 units
 across around their origin; `Base.MD2` holds the 111×110 heightfield and the sea
-meshes. The angle is the island and gate models' yaw in degrees and the height
+meshes, which scroll through the terrain clip `Basem1.MD2` (200 ticks, one texture repeat towards −U and −V per cycle, [MD2-MODELS.md](MD2-MODELS.md), "Terrain clips"). The angle is the island and gate models' yaw in degrees and the height
 the Y of the island's camera target (tp.exe 0x5dfa60, 0x5e1210). The island
 view's eye orbits that target at SPINRADIUS and VERTICALOFFSET above; its angle
 advances by SPINSPEED radians per tenth of a second (the lobby step is the

@@ -347,6 +347,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Lobby!.FlyingMeshes is { } flyers && flyers.Groups.Count == 3 && flyers.Groups.Sum( group => group.Instances.Count ) == 70,
 				"the lobby flies its 70 bats and butterflies" );
 			Require( flow.Lobby.IslandClips.All( clip => clip is 1 or 2 ), "every island model plays its M1 or M2 clip" );
+			// the sea plays Basem1 (AnimID 5) on a loop, so its texture coordinates move off the stored ones after the settle frames
+			Require( flow.Lobby.TerrainAnimator is { } sea && sea.IsChannelPlaying( 0 ) && sea.GetAnimationId( 0 ) == 5 && sea.GetTick( 0 ) > 0 && Enumerable.Range( 0, 3 ).Count( mesh => sea.GetTexCoords( mesh ) != null ) == 2, "the lobby sea plays its Basem1 clip on its two sea meshes" );
 			RequireLobbySigns( flow.Lobby );
 			var capture = CaptureFrame( "frontend.png" );
 			// [BIN:TPW-EXE:0x757f60 lobby panel] the lobby has no title and no menu column: the panel, its four buttons and the island name; Escape opens the menu

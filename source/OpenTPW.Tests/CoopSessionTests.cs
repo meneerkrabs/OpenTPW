@@ -116,10 +116,10 @@ public partial class CoopSessionTests
 	private DateTime HostTime() => new DateTime( 2026, 10, 21, 15, 0, 0 ).AddSeconds( hostTimeFrozenAt ?? clock );
 
 	/// <summary>
-	/// A host and a guest of one in-memory session (<see cref="CoopTestNetwork"/>), both parks alike (<paramref name="prepare"/> runs on each before the session starts), their sessions started
-	/// through <see cref="CoopSession"/>.
+	/// A host and a guest of one in-memory session (<see cref="CoopTestNetwork"/>), both parks alike (<paramref name="prepare"/> runs on each before the session starts, told whether it is the
+	/// host's), their sessions started through <see cref="CoopSession"/>.
 	/// </summary>
-	private (Park Host, Park Guest, CoopTestNetwork.Member HostLink, CoopTestNetwork.Member GuestLink) Shared( Action<Park>? prepare = null )
+	private (Park Host, Park Guest, CoopTestNetwork.Member HostLink, CoopTestNetwork.Member GuestLink) Shared( Action<Park, bool>? prepare = null )
 	{
 		network = new CoopTestNetwork( () => clock );
 		var hostLink = network.Add( host: true );
@@ -129,7 +129,7 @@ public partial class CoopSessionTests
 		foreach ( var park in new[] { host, guest } )
 		{
 			park.Enter();
-			prepare?.Invoke( park );
+			prepare?.Invoke( park, park == host );
 		}
 		host.Pump = () => hostLink.Deliver();
 		guest.Pump = () => guestLink.Deliver();

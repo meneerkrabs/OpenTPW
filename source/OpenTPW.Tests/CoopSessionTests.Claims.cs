@@ -75,7 +75,7 @@ public partial class CoopSessionTests
 	[TestMethod]
 	public void TheHostsTrackToolClaimsItsRideWhileItIsOnAndAGuestsEditOfItIsRefusedInTheClaimsWords()
 	{
-		var (host, guest, _, _) = Shared( park => PlaceKartRide( park ) );
+		var (host, guest, _, _) = Shared( ( park, _ ) => PlaceKartRide( park ) );
 		var view = ViewOf( guest );
 		var hostView = ViewOf( host );
 		Rounds( 20, host, guest );
@@ -120,7 +120,7 @@ public partial class CoopSessionTests
 	[TestMethod]
 	public void AGuestsClaimKeepsItsRideFromTheHostAndGoesOnceItsClaimIsBackWithoutATool()
 	{
-		var (host, guest, _, _) = Shared( park => PlaceKartRide( park ) );
+		var (host, guest, _, _) = Shared( ( park, _ ) => PlaceKartRide( park ) );
 		var view = ViewOf( guest );
 		var hostView = ViewOf( host );
 		Rounds( 20, host, guest );
@@ -215,16 +215,19 @@ public partial class CoopSessionTests
 		Grant( host, guest, view );
 		var ride = host.One.Runtime.AttractionId;
 		var seat = guest.Level.Commands.Player;
-		// the guest's claim takes 31 seconds to reach the host, and the host reads the guest away meanwhile (its socket gone): the claim waits in the host's queue for its frame
-		hostLink.Latency = 31;
-		Assert.IsTrue( guest.Issue( new ClaimRideCommand( ride ) ).IsPending );
-		hostLink.Latency = 0;
+		// the session reads the guest away (its socket gone, the event not yet heard), and a host frame stamps it so
 		hostLink.Snapshot = hostLink.Snapshot! with
 		{
 			Members = hostLink.Snapshot.Members.Select( member => member.Id == guestLink.Id ? member with { Connected = false } : member ).ToArray()
 		};
+		HostWaits( host, 0.5 );
+		// the guest's claim reaches the host, whose loop then stalls for 31 seconds: one late frame takes the claim from its queue
+		Assert.IsTrue( guest.Issue( new ClaimRideCommand( ride ) ).IsPending );
 		var log = host.Level.Commands.Log.Count;
-		HostWaits( host, 32 );
+		host.Holds = true;
+		clock += 31;
+		host.Frame( 31 );
+		host.Holds = false;
 		var since = host.Level.Commands.Log.Skip( log ).ToArray();
 		var claim = Array.FindIndex( since, entry => entry.Command is ClaimRideCommand && entry.Command.Player == seat );
 		Assert.IsTrue( claim >= 0, "the late frame took the claim" );
@@ -256,6 +259,84 @@ public partial class CoopSessionTests
 		HostWaits( host, 101 );
 		Assert.IsNull( host.Level.ClaimOf( ride ), "five minutes without its holder's command" );
 		Assert.AreEqual( 1, HostReleases( host, ride ) );
+	}
+
+	[TestMethod]
+	public void AHostsTrackToolThatWasOnWhenTheParkWasSharedClaimsItsRideAtTheFirstFrame()
+	{
+		var (host, guest, _, _) = Shared( ( park, isHost ) =>
+		{
+			var kart = PlaceKartRide( park );
+			// the same command on both parks, so they start alike; only the host's tool stays on
+			Assert.IsTrue( park.Level.EnterTrackTool( kart ) );
+			if ( !isHost )
+				park.Level.ExitTrackTool();
+		} );
+		var view = ViewOf( guest );
+		var hostView = ViewOf( host );
+		var kart = host.Level.TrackStations.Keys.Single();
+		var ride = kart.Runtime.AttractionId;
+		Assert.AreSame( kart, host.Level.TrackToolStation, "the host's tool is on" );
+		Assert.IsNull( host.Level.ClaimOf( ride ), "a session starts without a claim" );
+		hostView.Update();
+		Assert.AreEqual( ParkCommands.LocalPlayer, host.Level.ClaimOf( ride ), "the frame check claims the ride the tool is on" );
+		RoundsUntil( () => guest.Level.ClaimOf( ride ) == ParkCommands.LocalPlayer, host, guest, view, "the claim reached the guest" );
+		hostView.Update();
+		Assert.AreEqual( 1, host.Level.Commands.Log.Count( entry => entry.Command is ClaimRideCommand ), "once" );
+		host.Enter();
+		host.Level.ExitTrackTool();
+		hostView.Update();
+		Assert.IsNull( host.Level.ClaimOf( ride ) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AGuestsClaimOfARideTheHostClaimsIsRefusedInTheClaimsWords()
+	{
+		var (host, guest, _, _) = Shared( ( park, _ ) => PlaceKartRide( park ) );
+		var view = ViewOf( guest );
+		var hostView = ViewOf( host );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var kart = host.Level.TrackStations.Keys.Single();
+		var ride = kart.Runtime.AttractionId;
+		host.Enter();
+		Assert.IsTrue( host.Level.EnterTrackTool( kart ) );
+		RoundsUntil( () => guest.Level.ClaimOf( ride ) == ParkCommands.LocalPlayer, host, guest, view, "the host's claim reached the guest" );
+		var request = guest.Issue( new ClaimRideCommand( ride ) ).Request!;
+		RoundsUntil( () => request.State != CoopGuestRequestState.Waiting && request.State != CoopGuestRequestState.Sent && view.Says( OpenTpwText.CoopClaimed ) == 1, host, guest, view,
+			"the refusal came back and was said" );
+		Assert.AreEqual( CoopGuestRequestState.Applied, request.State, "a record, refused by the park's rule" );
+		Assert.IsFalse( request.Accepted );
+		Assert.AreEqual( ParkCommands.LocalPlayer, host.Level.ClaimOf( ride ), "the claim stays the host's" );
+		host.Enter();
+		host.Level.ExitTrackTool();
+		hostView.Update();
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void TheHostsUndoOfALineThroughTheJoinOfAQueueAnotherPlayerClaimsIsRefused()
+	{
+		var park = NewPark();
+		park.Enter();
+		var level = park.Level;
+		// One's queue from (10, 6) up to its back cell (10, 2), joined to the path at (10, 1), its claim another guest's
+		ConfigureQueue( level.Guests!.Grid, park.One, 10, 5 );
+		var rights = new CoopBuildRights( level );
+		MarkStation( park, park.One, seat: 2 );
+		try
+		{
+			Assert.IsFalse( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 12, 1, new[] { (12, 1) }, new[] { (10, 1) } ) ),
+				"an undo counts the path cells its line crossed down: the claimed queue's join among them" );
+			Assert.IsFalse( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 10, 1, new[] { (10, 1) }, Array.Empty<(int, int)>() ) ),
+				"or takes it off" );
+			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 14, 1, new[] { (14, 1) }, new[] { (13, 1) } ) ), "away from it" );
+		}
+		finally
+		{
+			MarkStation( park, park.One, station: false );
+		}
 	}
 
 	[TestMethod]

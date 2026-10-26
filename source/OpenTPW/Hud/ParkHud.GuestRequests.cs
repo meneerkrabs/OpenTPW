@@ -150,6 +150,9 @@ public sealed partial class ParkHud
 				}
 				else if ( result.RightsRefused )
 					SayGuestNote( RightsRefusalText( request.Command, result.Reason ) );
+				// [EXT:online-coop-claims] a claim another player holds refuses the guest's claim in its words (C3c-1)
+				else if ( request.Command is ClaimRideCommand && result.Reason == Level.ClaimedReason )
+					SayGuestNote( OpenTpwText.CoopClaimed );
 				else if ( request.Command is PlaceObjectCommand or LayLineCommand or QueueSegmentCommand )
 					SayCannotBuild( result.Reason ?? "", entry );
 				// [EXT:land-feedback] a refused purchase says so, as the host's refused click does

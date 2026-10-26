@@ -847,8 +847,8 @@ public sealed partial class ParkHud
 		// without its Move tool is ended after that (C3b-2)
 		CompleteGuestRequests();
 		level.EndStrayCarry( Time.Now );
-		// [EXT:online-coop-claims] and a claim of a ride this machine's track tool is not on is let go (C3c-1)
-		level.EndStrayClaim( Time.Now );
+		// [EXT:online-coop-claims] and this machine's claim is bound to its track tool's ride (C3c-1)
+		level.SettleClaim( Time.Now );
 		// [EXT:online-coop-commands] a guest's pool strokes send what waits and say what finished (C3b-3)
 		UpdateGuestPoolStrokes();
 		SyncChallengeMessageSuspension();

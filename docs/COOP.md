@@ -1951,13 +1951,16 @@ other player, the host included.
   tool for a ride claimed against its player. A guest's track tools are not on yet (C3c-1b): a guest's
   window offers none.
 - **No tool event lets a claim go.** One frame check per machine, after the outcomes, does
-  (`Level.EndStrayClaim`, as `Level.EndStrayCarry` ends a carry): when this machine's seat holds the claim
+  (`Level.SettleClaim`, as `Level.EndStrayCarry` ends a carry): when this machine's seat holds the claim
   of a ride its track tool is not on, the host lets it go at once, and a guest asks the host, at most
   once a second and only while no claim, open or release request of its own is open in the session's
   requests (they apply in order, so a release sent then could come before a claim on its way). So a claim
   is bound to its ride by the park's state: every exit of the tool (Escape, a right click, another tool,
   the queue button, a valid circuit with or without the queue tool that follows it, a resync's park)
   lets it go, and the edit tool's turn into the line tool on the same ride, within one call, keeps it.
+  The same check claims the ride the host's track tool is on when the host holds no claim of it (a tool
+  that was on when the park was shared), and ends the tool with the claim's note when another player
+  holds it.
 - **The host lets go of a guest's claim** (a `ReleaseRideCommand` of its own, a record every peer
   applies alike) when the seat's member left or changed (its release, at the next frame's start, also of a
   claiming seat without a member), when the session has read the member disconnected for 30 seconds of the

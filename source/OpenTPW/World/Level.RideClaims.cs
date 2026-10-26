@@ -10,7 +10,10 @@ public partial class Level
 	private SortedDictionary<int, int>? rideClaims;
 
 	/// <summary>[EXT:online-coop-claims] Each claimed ride's attraction id and its holder's seat, in ride order (empty without a session or a claim).</summary>
-	internal IReadOnlyDictionary<int, int> RideClaims => (IReadOnlyDictionary<int, int>?)rideClaims ?? new SortedDictionary<int, int>();
+	internal IReadOnlyDictionary<int, int> RideClaims => (IReadOnlyDictionary<int, int>?)rideClaims ?? NoRideClaims;
+
+	/// <summary>The claims of a park without one.</summary>
+	private static readonly IReadOnlyDictionary<int, int> NoRideClaims = new SortedDictionary<int, int>();
 
 	/// <summary>[EXT:online-coop-claims] The seat that holds the claim of the ride with attraction id <paramref name="ride"/>, or null.</summary>
 	internal int? ClaimOf( int ride ) => rideClaims != null && rideClaims.TryGetValue( ride, out var seat ) ? seat : null;
@@ -60,19 +63,39 @@ public partial class Level
 			rideClaims = null;
 	}
 
-	/// <summary>When <see cref="EndStrayClaim"/> last sent a guest's release, or null.</summary>
+	/// <summary>When <see cref="SettleClaim"/> last sent a guest's release, or null.</summary>
 	private double? lastStrayClaimRelease;
 
 	/// <summary>
-	/// [EXT:online-coop-claims] This machine's seat holds the claim of a ride its track tool is not on (C3c-1): the tool left the ride (Escape, a right click, another tool, the queue button,
-	/// a valid circuit, the queue tool that follows it), a tool start was dropped, or a resync's park has the claim in it. The HUD calls this after taking its requests' outcomes each frame, so a
-	/// claim is bound to its ride by the park's state, never by a tool's event, and the edit tool's turn into the line tool, within one call, keeps it. The host lets the claim go at once; a
-	/// guest asks the host at most once a second (by <paramref name="now"/>), and only while no claim, open or release request of its own is open in the session's requests (from this park or
-	/// one a resync replaced): the host applies them in order, so a release sent before an open claim's outcome would come before the claim. True when it released or sent one.
+	/// [EXT:online-coop-claims] Binds this machine's claim to its track tool (C3c-1); the HUD calls this after taking its requests' outcomes each frame, so a claim is bound to its ride by the
+	/// park's state, never by a tool's event:
+	/// <list type="bullet">
+	/// <item>a claim of a ride the track tool is not on goes: the tool left the ride (Escape, a right click, another tool, the queue button, a valid circuit, the queue tool that follows it),
+	/// a tool start was dropped, or a resync's park has the claim in it; the edit tool's turn into the line tool, within one call, keeps it. The host lets it go at once; a guest asks the host
+	/// at most once a second (by <paramref name="now"/>), and only while no claim, open or release request of its own is open in the session's requests (from this park or one a resync
+	/// replaced): the host applies them in order, so a release sent before an open claim's outcome would come before the claim;</item>
+	/// <item>the host's track tool on a ride whose claim it does not hold (a tool that was on when the session started) claims it, and ends, with the claim's note, when another player holds
+	/// it.</item>
+	/// </list>
+	/// True when it released, claimed or sent something.
 	/// </summary>
-	internal bool EndStrayClaim( double now )
+	internal bool SettleClaim( double now )
 	{
-		if ( CoopSession == null || ClaimedRideOf( Commands.Player ) is not { } ride || TrackToolStation?.Runtime.AttractionId == ride )
+		if ( CoopSession == null )
+			return false;
+		var tool = TrackToolStation?.Runtime.AttractionId;
+		if ( !Commands.SendsRequests && tool is { } on && ClaimOf( on ) != Commands.Player )
+		{
+			// the claim moves from any other ride the host held
+			var claim = Commands.Issue( new ClaimRideCommand( on ) );
+			if ( claim.Accepted )
+				return true;
+			ExitTrackTool();
+			if ( claim.Reason == ClaimedReason )
+				NoteSessionRefusal( CoopRefusal.Claimed );
+			tool = null;
+		}
+		if ( ClaimedRideOf( Commands.Player ) is not { } ride || ride == tool )
 			return false;
 		if ( !Commands.SendsRequests )
 			return Commands.Issue( new ReleaseRideCommand( ride ) ).Accepted;

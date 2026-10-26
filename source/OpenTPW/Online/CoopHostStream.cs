@@ -876,7 +876,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// <summary>
 	/// [EXT:online-coop-claims] The host lets go of a guest seat's claim (a <see cref="ReleaseRideCommand"/>, a record every peer applies alike) once its member has been read disconnected for
 	/// <see cref="ClaimDisconnectedSeconds"/>, or once its lease ran out: no claim and no accepted command of its holder naming the ride for <see cref="ClaimLeaseSeconds"/> (C3c-1). The host's own
-	/// claim has neither: its tool is on this machine, whose frame check lets it go (<see cref="Level.EndStrayClaim"/>).
+	/// claim has neither: its tool is on this machine, whose frame check lets it go (<see cref="Level.SettleClaim"/>).
 	/// </summary>
 	private void ExpireClaims( double now )
 	{
@@ -891,8 +891,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			if ( away || now - renewed >= ClaimLeaseSeconds )
 				level.Commands.Apply( new ReleaseRideCommand( ride ) );
 		}
-		foreach ( var ride in claimLeases.Keys.Where( ride => level.ClaimOf( ride ) is not > 0 ).ToArray() )
-			claimLeases.Remove( ride );
+		if ( claimLeases.Count > 0 )
+		{
+			foreach ( var ride in claimLeases.Keys.Where( ride => level.ClaimOf( ride ) is not > 0 ).ToArray() )
+				claimLeases.Remove( ride );
+		}
 	}
 
 	/// <summary>[EXT:online-coop-claims] The ride <paramref name="command"/> names as its holder's edit (its claim, a track command), or null.</summary>

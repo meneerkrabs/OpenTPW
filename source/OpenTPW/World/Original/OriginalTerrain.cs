@@ -157,6 +157,8 @@ public sealed partial class OriginalTerrain : Entity
 	{
 		heightfieldTextures = textures;
 		var field = Park.Heightfield;
+		viewSpans = new TerrainViewSpans( field );
+		Camera.ParkFarPlane = FarPlane;
 		var slots = new List<Texture>();
 		var slotIndices = new Dictionary<int, int>();
 		// the texture slots are assigned over every cell, holes included, so rebuilding the mesh for another set of render holes keeps the one material
@@ -169,6 +171,7 @@ public sealed partial class OriginalTerrain : Entity
 			slotIndices.Add( modelSlot, AddSlot( slots, LoadTexture( textures, Park.TerrainModel.Textures[modelSlot].FrameNames[0] ) ) );
 			yield return true;
 		}
+		var staticSlots = slots.ToList();
 		var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 		while ( slots.Count < MaximumTextureSlots )
 			slots.Add( slots[0] );
@@ -179,16 +182,109 @@ public sealed partial class OriginalTerrain : Entity
 		heightfieldHoleSignature = HoleSignature();
 		heightfieldPart = AddPart( BuildHeightfieldModel( material, slotIndices ), "heightfield" );
 		yield return true;
+		TryAddProceduralGround( staticSlots, slotIndices );
+		yield return true;
 		BuildPaths( textures );
 	}
 
-	private Model BuildHeightfieldModel( Material material, Dictionary<int, int> slotIndices )
+	private Model BuildHeightfieldModel( Material material, Dictionary<int, int> slotIndices, Func<int, int, bool>? include = null )
 	{
 		var vertices = new List<Vertex>();
 		var indices = new List<uint>();
 		foreach ( var (x, y, modelSlot) in HeightfieldCells( Park.Heightfield, RenderHoleSource ) )
+		{
+			if ( include != null && !include( x, y ) )
+				continue;
 			AddCell( vertices, indices, Park.Heightfield, x, y, slotIndices[modelSlot], PathTiles.Identity, 0, Park.Heightfield.GetCellWord( x, y ) );
+		}
 		return new Model( vertices.ToArray(), indices.ToArray(), material );
+	}
+
+	private TerrainViewSpans? viewSpans;
+
+	/// <summary>
+	/// The park view's far plane (<see cref="Camera.ParkFarPlane"/>): the farthest corner distance of this frame's spans, in engine units (the original's <c>0x56BB00</c> hands it to <c>0x578CA0</c> before the frame draws).
+	/// </summary>
+	private float? FarPlane( Matrix4x4 view, float aspectWord )
+	{
+		if ( viewSpans == null || heightfieldPart == null )
+			return null;
+		// FIRSTPERSONVIEWDISTANCE takes effect at once, as the option apply (0x44D8F0) writes [0x8BD4C0] when it runs
+		viewSpans.ViewDistance = RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Distance;
+		return viewSpans.Update( heightfieldPart.DrawMatrix * view, aspectWord ) ? viewSpans.FarthestCorner * OriginalParkPlacement.ModelScale : null;
+	}
+
+	private ProceduralTerrain? procedural;
+	private ModelEntity? proceduralPart;
+	private ModelEntity? outsidePart;
+
+	/// <summary>The procedural ground of the level (<see cref="ProceduralTerrain"/>), or null when the option is off, the level has no <c>base.lnd</c> or the pages do not fit the material.</summary>
+	internal ProceduralTerrain? ProceduralGround => procedural;
+
+	/// <summary>
+	/// Draws the ground with the original's procedural textures when the options ask for them (<see cref="ProceduralTerrainSettings.Current"/>, read now, as the original applies them at a level load) and the
+	/// level has the data: the static ground part then waits for the camera modes that suspend the texturing, and the cells the rectangle leaves out keep a static part of their own.
+	/// </summary>
+	private void TryAddProceduralGround( List<Texture> staticSlots, Dictionary<int, int> slotIndices )
+	{
+		var settings = ProceduralTerrainSettings.Current();
+		if ( !settings.Enabled )
+			return;
+		var field = Park.Heightfield;
+		// the archive's members are listed, not tested with FileExists (as the lake model is found)
+		var lndPath = FileSystem.GetFiles( $"/levels/{Park.LevelName}/terrain" ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), "base.lnd", StringComparison.OrdinalIgnoreCase ) );
+		if ( lndPath == null || ProceduralTerrainRectangle.ReadLevelSettings( Park.LevelName ) is not { } levelSettings || ProceduralTerrainRectangle.From( levelSettings ) is not { } rectangle )
+			return;
+		var pageCount = ProceduralTerrainAtlas.PageCountFor( settings.Size, settings.CacheCells );
+		if ( staticSlots.Count + pageCount > MaximumTextureSlots )
+		{
+			Log.Warning( $"Procedural terrain textures of {Park.LevelName} are off: {staticSlots.Count} ground textures and {pageCount} pages do not fit {MaximumTextureSlots} slots." );
+			return;
+		}
+		LndFile lnd;
+		try
+		{
+			using var stream = FileSystem.OpenRead( $"/levels/{Park.LevelName}/terrain/base.lnd" );
+			lnd = new LndFile( stream );
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+		{
+			Log.Warning( $"Procedural terrain textures of {Park.LevelName} are off: base.lnd could not be read: {exception.Message}" );
+			return;
+		}
+		var ground = new ProceduralTerrain( field, lnd, rectangle, settings, staticSlots.Count, viewSpans: viewSpans );
+		var slots = staticSlots.Concat( ground.Pages ).ToList();
+		while ( slots.Count < MaximumTextureSlots )
+			slots.Add( slots[0] );
+		var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+		material.Set( "Color", slots.ToArray() );
+		procedural = ground;
+		proceduralPart = AddPart( ground.CreateModel( material ), "procedural heightfield" );
+		// the cells the procedural textures do not reach keep the static ground
+		if ( HeightfieldCells( field, null ).Any( cell => !ground.IsProcedural( cell.X, cell.Y ) ) )
+			outsidePart = AddPart( BuildHeightfieldModel( heightfieldMaterial!, slotIndices, ( x, y ) => !ground.IsProcedural( x, y ) ), "heightfield outside the procedural rectangle" );
+		heightfieldPart!.Hidden = true;
+		Log.Trace( $"Procedural terrain textures of {Park.LevelName}: {settings.Size} x {settings.Size}, {settings.CacheCells} cached cells in {pageCount} page(s) ({ground.Atlas.Bytes / 1048576} MB), rectangle ({rectangle.X0}, {rectangle.Y0}) to ({rectangle.X1}, {rectangle.Y1})." );
+	}
+
+	/// <summary>
+	/// Camera modes the original draws with the static ground: the terrain camcorder (bit 0x2 of [0x790AB0], left through 0x42AE70) and the ride camera (bit 0x4, entered for a ride whose record has flag 0x400000, 0x4E15B0),
+	/// which switch the procedural textures off (0x42AB20 calls 0x457A40 on entering them and 0x457A00 on leaving).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0042AB20 camera mode switch] the modes with the bits 0x2 (the terrain camcorder, exit 0x42AE70) and 0x4 (a ride, record flag 0x400000, 0x4E15B0) of [0x790AB0] turn the procedural textures off (0x457A40, remembered in bit 0x200) and leaving them turns them on again (0x457A00), which does so only when [0x78D8D8] is 1 and otherwise clears the bits 0x6000
+	private static bool SuspendsProceduralGround( CameraMode mode ) => mode is RideCameraMode or FreeWalkCameraMode;
+
+	protected override void OnRender()
+	{
+		if ( procedural == null || proceduralPart == null || heightfieldPart == null )
+			return;
+		var suspended = SuspendsProceduralGround( Camera.Mode );
+		proceduralPart.Hidden = suspended;
+		heightfieldPart.Hidden = !suspended;
+		if ( outsidePart != null )
+			outsidePart.Hidden = suspended;
+		if ( !suspended )
+			procedural.Refresh( proceduralPart.DrawMatrix * Camera.ViewMatrix, Camera.ProjMatrix, RenderHoleSource, heightfieldHoleSignature );
 	}
 
 	/// <summary>[EXT:pools-render] Rebuilds the ground mesh when the render-only holes changed since it was last built.</summary>
@@ -205,7 +301,19 @@ public sealed partial class OriginalTerrain : Entity
 		old.Delete();
 		if ( old.Model is { } oldModel && models.Remove( oldModel ) )
 			ScheduleDispose( oldModel );
+		var hidden = old.Hidden;
 		heightfieldPart = AddPart( BuildHeightfieldModel( heightfieldMaterial, heightfieldSlotIndices ), "heightfield" );
+		heightfieldPart.Hidden = hidden;
+		if ( outsidePart != null && procedural is { } ground )
+		{
+			var outside = outsidePart;
+			parts.Remove( outside );
+			outside.Delete();
+			if ( outside.Model is { } outsideModel && models.Remove( outsideModel ) )
+				ScheduleDispose( outsideModel );
+			outsidePart = AddPart( BuildHeightfieldModel( heightfieldMaterial, heightfieldSlotIndices, ( x, y ) => !ground.IsProcedural( x, y ) ), "heightfield outside the procedural rectangle" );
+			outsidePart.Hidden = outside.Hidden;
+		}
 	}
 
 	/// <summary>The path layer: one quad per path cell, batched by at most 16 PathTex textures, and each queue cell's queue model.</summary>
@@ -673,6 +781,10 @@ public sealed partial class OriginalTerrain : Entity
 
 	protected override void OnDelete()
 	{
+		if ( Camera.ParkFarPlane == FarPlane )
+			Camera.ParkFarPlane = null;
+		procedural?.Dispose();
+		procedural = null;
 		foreach ( var part in parts )
 			part.Delete();
 		parts.Clear();

@@ -134,6 +134,9 @@ EXPECTED = {
     ('tpw-exe-ground-conform', 'exact-inverse'): (62, ((2, 4), (10.0, 0.0, 30.0), 3)),
     ('tpw-exe-base-height', 'plan'): AGREE,
     ('tpw-exe-base-height', 'csharp-rule'): AGREE,
+    # the visible-cell span selection 0x56bb00 with the ray, hull, clip and rasteriser under it, and the visible-cell cache lookup 0x572440
+    ('tpw-exe-terrain-spans', 'plan'): AGREE,
+    ('tpw-exe-terrain-cache', 'plan'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -899,6 +902,10 @@ class Oracle(CoastTests, unittest.TestCase):
         self.check(('tpw-exe-terrain-weights', 'plan'))
         self.check(('tpw-exe-terrain-build', 'plan'))
 
+    def test_terrain_spans_and_cache_agree(self):
+        self.check(('tpw-exe-terrain-spans', 'plan'))
+        self.check(('tpw-exe-terrain-cache', 'plan'))
+
     def test_terrain_build_inputs_reach_every_run_mode_and_the_grey_fallback(self):
         inputs = targets.terrain_build_inputs(__import__('x86_harness').seeded('oracle-v1:tpw-exe-terrain-build'), DEFAULT_COUNT)
         seen = set()
@@ -1074,6 +1081,47 @@ class TerrainReading(unittest.TestCase):
         self.assertEqual(seen, set(targets.terrain_reading.MODES))
 
 
+class TerrainSpansAndCacheReading(unittest.TestCase):
+    """The Python readings of the visible-cell span selection and cache behind TerrainVisibleSpansGolden.cs and ProceduralTextureCacheGolden.cs need neither Unicorn nor an executable."""
+
+    def test_spans_inputs_reach_every_hull_and_clip_branch(self):
+        spans = __import__('terrain_spans')
+        spans.BRANCHES.clear()
+        for x in targets.terrain_spans_inputs(__import__('x86_harness').seeded('oracle-v1:tpw-exe-terrain-spans'), DEFAULT_COUNT):
+            spans.spans(x)
+        hull = {'hull1', 'hull2', 'hull2-right', 'hull2-left', 'hull2-collinear', 'hull-one-edge', 'hull-many-edges', 'hull-inside'}
+        clip = {f'clip-{axis}-{code}' for axis in 'xz' for code in range(9)}     # the edge codes 0 to 8 (previous class + 3 x current class) of both slabs
+        self.assertEqual(set(spans.BRANCHES), hull | clip, dict(spans.BRANCHES))
+
+    def test_spans_reach_the_last_column_and_row_of_a_level_field_but_not_of_a_tiny_one(self):
+        # an end is the edge plus 0.999999 in single precision: from a value of 32 on the sum rounds up to the next whole cell, so the last column and row are listed when the view reaches them
+        spans = __import__('terrain_spans')
+        wide = deep = False
+        for x in targets.terrain_spans_inputs(__import__('x86_harness').seeded('oracle-v1:tpw-exe-terrain-spans'), DEFAULT_COUNT):
+            if x['origin'] != (0.0, 0.0) or x['size'] != (10.0, 10.0) or x['cells'] != (96, 85):
+                continue
+            result = spans.spans(x)
+            wide |= any(result['end'][row] == 96 for row in range(result['min'], min(result['max'], 128)))
+            deep |= result['max'] == 85
+        self.assertTrue(wide and deep)
+        tiny = dict(spans.special_scenes()[0], cells=(5, 4), camera=(25.0, 200.0, 20.0))
+        result = spans.spans(tiny)
+        self.assertEqual((max(result['end'][result['min']:result['max']]), result['max']), (4, 3))
+
+    def test_cache_sequences_hit_miss_and_overflow(self):
+        cache_reading = __import__('terrain_cache')
+        hits = misses = overflow = 0
+        for run in cache_reading.random_sequences(__import__('x86_harness').seeded('oracle-v1:tpw-exe-terrain-cache'), 100):
+            cache = cache_reading.Cache(run['capacity'])
+            for frame in run['frames']:
+                before = dict(cache.table)
+                cache.resolve(frame['keys'], frame['dirty'])
+                hits += sum(1 for key in frame['keys'] if cache.entry(key) in before)
+                misses += sum(1 for key in frame['keys'] if cache.entry(key) not in before)
+                overflow += len(frame['keys']) > run['capacity']
+        self.assertTrue(hits > 0 and misses > 0 and overflow > 0, (hits, misses, overflow))
+
+
 class TerrainSyntheticLevels(unittest.TestCase):
     """The reproducible synthetic levels behind ProceduralTerrainSyntheticGolden.cs need neither Unicorn nor an executable."""
 
@@ -1088,7 +1136,7 @@ class TerrainSyntheticLevels(unittest.TestCase):
                 grey += not modes
                 count += 1
         self.assertEqual(seen, set(reading.MODES))
-        self.assertEqual((count, grey), (54, 3))
+        self.assertEqual((count, grey), (81, 3))
 
     def test_generator_is_deterministic(self):
         reading = targets.terrain_reading

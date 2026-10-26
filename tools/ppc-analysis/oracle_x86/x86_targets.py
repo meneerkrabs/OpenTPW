@@ -3148,6 +3148,8 @@ TQI_PASS_TARGET = Target(
 # tp.exe 0x55e710 (ramp table), 0x55e780 (weight plane) and 0x55f780 (the build routine, floor descriptor NULL). Plan: terrain_reading.py,
 # the reading OpenTPW's ProceduralTerrainTexturer follows (docs/LND.md).
 import terrain_reading  # noqa: E402
+import terrain_cache  # noqa: E402
+import terrain_spans  # noqa: E402
 
 TERRAIN_RAMP = 0x55E710
 TERRAIN_WEIGHTS = 0x55E780
@@ -3318,6 +3320,61 @@ def terrain_build_inputs(rng: random.Random, n: int) -> list:
             x, z = rng.randrange(cells), rng.randrange(cells)
         out.append({'n': n_size, 'x': x, 'z': z, 'mix': mix, 'level': level})
     return out
+
+
+TERRAIN_SPANS = 0x56BB00
+TERRAIN_SPANS_RANGES = [(0x56B940, 0x56DD60), (0x578D20, 0x578FF0), (0x67A830, 0x67A857)]   # the ray, hull, clip, rasteriser, the ray rotation and __ftol
+TERRAIN_SPANS_FAR = 0x578CA0      # thiscall (largest corner distance) on the fog object 0x87B110; stubbed, the argument is logged
+TERRAIN_SPANS_MEMMOVE = 0x67BB90  # cdecl (destination, source, bytes) of the hull insertion; stubbed
+TERRAIN_SPANS_CAMERA = 0x87AFE8   # pointer to the camera: the matrix columns (right, up, forward) at +0, +0x10, +0x20 and the position at +0x30
+TERRAIN_SPANS_GLOBALS = {'fov': 0x87AF58, 'aspect': 0x8BCBCC, 'max_distance': 0x8BD4C0}
+TERRAIN_SPANS_FIELD = 0x879D60    # pointer to a pointer to the heightfield record (read by a dead computation only)
+
+
+def terrain_spans_stubs(target: Target) -> dict:
+    def far(sb):
+        target.log.append(struct.unpack('<f', struct.pack('<I', sb.arg(0)))[0])
+        return 0, 4
+
+    def memmove(sb):
+        destination, source, count = sb.arg(0), sb.arg(1), sb.arg(2)
+        sb.uc.mem_write(destination, bytes(sb.uc.mem_read(source, count)))
+        return destination, 0
+    return {TERRAIN_SPANS_FAR: far, TERRAIN_SPANS_MEMMOVE: memmove}
+
+
+def terrain_spans_binary(sb: Sandbox, x: dict, log) -> bytes:
+    sb.set_fpcw(0x7F)     # DDSCL_FPUSETUP: single precision (docs/COMPATIBILITY.md ECON-059)
+    obj = sb.alloc(0x2D8, 16)
+    sb.write(obj + 0x30, 'f', x['low'])
+    sb.write(obj + 0x34, 'f', x['high'])
+    for offset, value in ((0x3C, x['origin'][0]), (0x40, x['origin'][0] + x['cells'][0] * x['size'][0]), (0x4C, x['size'][0]),
+                          (0x44, x['origin'][1]), (0x48, x['origin'][1] + x['cells'][1] * x['size'][1]), (0x50, x['size'][1])):
+        sb.write(obj + offset, 'f', value)
+    sb.write(obj + 0x58, 'i', x['cells'][1])
+    camera = sb.alloc(0x40, 16)
+    for index, value in enumerate(x['matrix']):
+        sb.write(camera + 16 * (index // 3) + 4 * (index % 3), 'f', value)
+    for index, value in enumerate(x['camera']):
+        sb.write(camera + 0x30 + 4 * index, 'f', value)
+    sb.write(TERRAIN_SPANS_CAMERA, 'I', camera)
+    for name, address in TERRAIN_SPANS_GLOBALS.items():
+        sb.write(address, 'f', x[name])
+    inner, outer = sb.alloc(0x40, 16), sb.alloc(0x40, 16)
+    sb.write(outer, 'I', inner)
+    sb.write(TERRAIN_SPANS_FIELD, 'I', outer)
+    sb.call(TERRAIN_SPANS, this=obj)
+    low_row, high_row = sb.read(obj + 0xC4, 'i'), sb.read(obj + 0xC8, 'i')
+    raw = bytes(sb.uc.mem_read(obj + 0xCC, 0x80)) + bytes(sb.uc.mem_read(obj + 0x14C, 0x80))
+    return struct.pack('<ii256sf', low_row, high_row, raw, log[0])
+
+
+def terrain_spans_plan(x: dict) -> bytes:
+    return terrain_spans.pack(terrain_spans.spans(x))
+
+
+def terrain_spans_inputs(rng: random.Random, n: int) -> list:
+    return terrain_spans.special_scenes() + [terrain_spans.random_scene(rng) for _ in range(n)]
 
 
 TERRAIN_RAMP_TARGET = Target(
@@ -4122,9 +4179,91 @@ BASE_HEIGHT_TARGET = Target(
     notes=['cdecl (box x, box z, shape, width, height, flags, rotation) after the box origin 0x466f90; the terrain is a synthetic landscape; the footprint stays on the map.'])
 
 # @@SKIRT-END@@
+TERRAIN_SPANS_TARGET = Target(
+    'tpw-exe-terrain-spans', 'tpw', 'tp.exe visible terrain spans 0x56bb00', 'docs/LND.md (TerrainVisibleSpans)',
+    TERRAIN_SPANS, TERRAIN_SPANS_RANGES, terrain_spans_stubs, terrain_spans_binary, terrain_spans_plan, terrain_spans_inputs,
+    budget=2_000_000,
+    notes=['thiscall (ecx = the landscape object: heights +0x30/+0x34, rectangle +0x3c..+0x58). Four corner rays to the ground, the convex hull in x and z from the camera, '
+           'the clip to the rectangle, the scale to cells and the rasteriser; the rows, the 128 start and 128 end bytes and the largest corner distance. Run with the single '
+           'precision control word; random cameras (yaw, pitch, roll, a mirrored matrix, field of view, aspect) and scenes for the hull branches they rarely reach.'])
+
+TERRAIN_CACHE = 0x572440
+TERRAIN_CACHE_RANGES = [(0x572440, 0x57262B)]
+TERRAIN_CACHE_MODE = 0x8BD554     # index into the table at 0x701548 (entries 0 to 2 are 2, which selects the other texture path at 0x57256a; 3 is 4)
+TERRAIN_CACHE_STUBS = {0x55F780: (16, 'build'), 0x590D40: (0, 'buffer'), 0x590DA0: (0, 'page'), 0x58DC50: (4, None), 0x590F90: (0, None), 0x58C9F0: (8, None), 0x562F70: (4, None)}
+
+
+def terrain_cache_stubs(target: Target) -> dict:
+    def make(pop, name):
+        def stub(sb):
+            if name == 'build':
+                target.log.append((sb.arg(1), sb.arg(2)))     # column, row of the cell the original builds
+            return (sb.target_buffer if name == 'buffer' else 1), pop
+        return stub
+    return {address: make(pop, name) for address, (pop, name) in TERRAIN_CACHE_STUBS.items()}
+
+
+def terrain_cache_binary(sb: Sandbox, x: dict, log) -> bytes:
+    capacity = x['capacity']
+    table_bytes = 128 * 128 * 4
+    cache = sb.alloc(0x10010, 16)
+    sb.write(cache + 4, 'i', 16)
+    nodes = sb.alloc(0x10 * capacity, 16)
+    sb.write(cache + 0x1000C, 'I', nodes + 0x10 * (capacity >> 1))
+    for node in range(capacity):
+        address = nodes + 0x10 * node
+        sb.write(address, 'I', nodes + 0x10 * ((node - 1) % capacity))
+        sb.write(address + 4, 'I', nodes + 0x10 * ((node + 1) % capacity))
+        sb.write(address + 8, 'I', 0)
+        sb.write(address + 0xC, 'I', node)
+    sb.write(TERRAIN_CACHE_MODE, 'I', 3)
+    sb.target_buffer = sb.alloc(16 * 16 * 4, 16)
+    out = b''
+    for frame in x['frames']:
+        count = len(frame['keys'])
+        keys = sb.alloc(4 * max(count, 1), 16)
+        records = sb.alloc(0x14 * max(count, 1), 16)
+        for index, key in enumerate(frame['keys']):
+            sb.write(keys + 4 * index, 'I', key)
+            sb.write(records + 0x14 * index + 0x10, 'I', 0x100 if frame['dirty'][index] else 0)
+        del log[:]
+        sb.call(TERRAIN_CACHE, (keys, records, count), this=cache)
+        slots = [sb.read(keys + 4 * index, 'I') for index in range(count)]
+        builds = list(log)
+        order, node = [], sb.read(cache + 0x1000C, 'I')
+        for _ in range(capacity):
+            order.append((node - nodes) // 0x10)
+            node = sb.read(node + 4, 'I')
+        owners = [sb.read(cache + 8 + 4 * terrain_cache.Cache.entry((z << 8) + col), 'I') for z in range(4) for col in range(14)]
+        owners = [(value - nodes) // 0x10 if value else -1 for value in owners]
+        out += bytes([len(slots), len(builds)]) + bytes(slots) + b''.join(bytes([col, row]) for col, row in builds) + bytes(order) + bytes(v & 0xFF for v in owners)
+    return out
+
+
+def terrain_cache_plan(x: dict) -> bytes:
+    cache = terrain_cache.Cache(x['capacity'])
+    out = b''
+    for frame in x['frames']:
+        slots, builds = cache.resolve(frame['keys'], frame['dirty'])
+        built = [(key & 0xFF, key >> 8) for key, flag in zip(frame['keys'], builds) if flag]
+        owners = [cache.table.get(terrain_cache.Cache.entry((z << 8) + col), -1) for z in range(4) for col in range(14)]
+        out += bytes([len(slots), len(built)]) + bytes(slots) + b''.join(bytes([col, row]) for col, row in built) + bytes(cache.ring()) + bytes(v & 0xFF for v in owners)
+    return out
+
+
+def terrain_cache_inputs(rng: random.Random, n: int) -> list:
+    return terrain_cache.random_sequences(rng, max(8, n // 4))
+
+
+TERRAIN_CACHE_TARGET = Target(
+    'tpw-exe-terrain-cache', 'tpw', 'tp.exe visible-cell cache lookup 0x572440', 'docs/LND.md (ProceduralTextureCache.Resolve)',
+    TERRAIN_CACHE, TERRAIN_CACHE_RANGES, terrain_cache_stubs, terrain_cache_binary, terrain_cache_plan, terrain_cache_inputs,
+    budget=2_000_000,
+    notes=['thiscall (ecx = the cache: level +0, N +4, the 128 x 128 key table +8, the head node +0x1000c; arguments the key array, the cell records of 0x14 bytes whose +0x10 bit 0x100 marks a dirty cell, the count). '
+           'The build 0x55f780, the page and device calls are stubbed; the oracle compares each frame\'s slots, the cells the original builds, the ring from the head and the table over random sequences of frames.'])
 
 WALK_TARGETS = [WALK_EDGE_TARGET, WALK_COMMIT_TARGET, WALK_SEARCH_TARGET, WALK_AVOID_TARGET, WALK_STEERING_TARGET]
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
            SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET, GUARD_TARGET,
-           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET, SKIRT_MASK_TARGET, SKIRT_UV_TARGET, SKIRT_FLAGS_TARGET, CONFORM_TARGET, BASE_HEIGHT_TARGET] + COAST_TARGETS + WALK_TARGETS
+           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET, TERRAIN_SPANS_TARGET, TERRAIN_CACHE_TARGET, SKIRT_MASK_TARGET, SKIRT_UV_TARGET, SKIRT_FLAGS_TARGET, CONFORM_TARGET, BASE_HEIGHT_TARGET] + COAST_TARGETS + WALK_TARGETS

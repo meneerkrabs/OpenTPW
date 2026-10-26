@@ -255,14 +255,17 @@ public partial class CoopSessionTests
 		Assert.AreEqual( BuyLandClick.CornerStored, tool.Click( 26, 12 ) );
 		tool.Hover( 30, 16 );
 		Assert.AreEqual( LandPurchaseRefusal.None, tool.HoverCheck?.Refusal, "the rectangle east of the fence is for sale" );
+		// its price, as the ghost reads it: the land's cell cost times its new cells
+		var price = tool.HoverCheck!.Value.Cost;
+		Assert.AreEqual( guest.Economy.CellCost( CellPurchase.Land ) * tool.HoverCheck.Value.Cells, price );
 		Assert.AreEqual( BuyLandClick.Sent, tool.Click( 30, 16 ) );
 		Assert.IsFalse( tool.IsActive, "the tool ends, as the host's does" );
 		Assert.IsFalse( Owned( guest ), "nothing is bought before its record" );
 		RoundsUntil( () => Owned( guest ), host, guest, view, "bought at its record" );
 		Assert.IsTrue( Owned( host ), "on both parks" );
 		Assert.AreEqual( 0, view.Says( OpenTpwText.CannotBuyLand ) );
-		Assert.AreEqual( 1, charges[0].Count, "the bank is charged once" );
-		Assert.IsTrue( charges[0][0] > 0 );
+		CollectionAssert.AreEqual( new[] { price }, charges[0], "the bank is charged once, the land's price" );
+		Assert.IsTrue( price > 0 );
 		CollectionAssert.AreEqual( charges[0], charges[1], "the same charge on both parks" );
 		// a rectangle of two cells a side: the park refuses it, and only the guest says so
 		Assert.IsTrue( tool.Begin() );
@@ -330,11 +333,18 @@ public partial class CoopSessionTests
 		Assert.IsFalse( Walkable( host, 12, 1 ) || Walkable( guest, 12, 1 ) );
 		long Refunds( Park park ) => park.Economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherIncome );
 		var (hostBefore, guestBefore) = (Refunds( host ), Refunds( guest ));
+		// three cells go (10, 4) and the two behind it, each refunded at the queue cell's cost times the ride's scrap share
+		host.Enter();
+		var instance = host.Level.GetEconomyInstance( host.One );
+		Assert.IsNotNull( instance, "the ride has its economy's object" );
+		Assert.IsTrue( host.Economy.TryGetObject( instance.Value, out var state ) );
+		var refund = 3 * (host.Economy.CellCost( CellPurchase.Queue ) * host.Economy.ScrapPercent( state ) / 100);
+		Assert.IsTrue( refund > 0 );
 		guest.Level.ClickRemoveTool( 10, 4 );
 		Assert.IsNotNull( guest.Level.WaitingRemoval, "the queue cell's removal went to the host" );
 		RoundsUntil( () => guest.Level.WaitingRemoval == null, host, guest, view, "the queue cell's removal came back" );
-		Assert.IsTrue( Refunds( host ) > hostBefore, "the cells are refunded" );
-		Assert.AreEqual( Refunds( host ) - hostBefore, Refunds( guest ) - guestBefore, "the same refund on both parks" );
+		Assert.AreEqual( refund, Refunds( host ) - hostBefore, "the cells are refunded" );
+		Assert.AreEqual( refund, Refunds( guest ) - guestBefore, "the same refund on both parks" );
 		foreach ( var park in new[] { host, guest } )
 		{
 			Assert.IsFalse( IsQueue( park, 10, 4 ) || IsQueue( park, 10, 3 ) || IsQueue( park, 10, 2 ), "the cell and those behind it go" );

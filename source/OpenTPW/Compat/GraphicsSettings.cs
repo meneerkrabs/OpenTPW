@@ -189,6 +189,8 @@ public static class GraphicsPresets
 			TextureQuality = 3,
 			TextureFiltering = 3,
 			ProceduralTexturing = 3,
+			// [EXT:COMPAT-GFX-ENHANCED] 2500 slots: with 64 texels and the longest view distance the span selection lists up to 2500 cells, which a 2000 slot cache would evict every frame
+			ProceduralTextureCache = 2,
 			SkyQuality = 4,
 			SpriteShadow = 3,
 			Mipmap = 1,

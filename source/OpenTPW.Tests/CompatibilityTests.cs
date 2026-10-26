@@ -70,7 +70,8 @@ public class CompatibilityTests
 		Assert.AreEqual( TextureFilterMode.Bilinear, GraphicsPresets.ToRenderQuality( detail with { TextureFiltering = 1 }, 16, 1 ).Filter );
 		Assert.AreEqual( new RenderQuality( TextureFilterMode.Trilinear, 1, true, 1, 0 ), GraphicsPresets.ToRenderQuality( detail with { TextureFiltering = 2, Mipmap = 1 }, 16, 1 ) );
 		Assert.AreEqual( new RenderQuality( TextureFilterMode.Anisotropic, 8, false, 4, 0 ), GraphicsPresets.ToRenderQuality( detail with { TextureFiltering = 3 }, 8, 9 ) );
-		var enhanced = GraphicsPresets.Enhance( detail with { NumKids = 2, ParticleDensity = 1500 }, simulationOptions: false );
+		var enhanced = GraphicsPresets.Enhance( detail with { NumKids = 2, ParticleDensity = 1500, ProceduralTextureCache = 1 }, simulationOptions: false );
+		Assert.AreEqual( (3, 2), (enhanced.ProceduralTexturing, enhanced.ProceduralTextureCache), "64 texels and 2500 slots: the longest view distance lists up to 2500 cells" );
 		Assert.AreEqual( (3, 3, 8, 4), (enhanced.TextureFiltering, enhanced.FirstPersonViewDistance, enhanced.CoasterSmoothness, enhanced.SkyQuality) );
 		Assert.AreEqual( (2, 1500), (enhanced.NumKids, enhanced.ParticleDensity), "simulation options stay original without the fix" );
 		var simulation = GraphicsPresets.Enhance( detail, simulationOptions: true );
@@ -171,7 +172,7 @@ public class CompatibilityTests
 		Assert.AreEqual( "1,0,0,0,0,1,0,0,0,0,0,1,1,0,0,0,0,0,0,1,0,500,1000,0,0,10", Values( GraphicsPreset.Low ) );
 		Assert.AreEqual( "2,1,2,1,1,2,1,0,0,1,0,1,1,0,0,0,1,1,0,4,1,1000,3200,2,1,70", Values( GraphicsPreset.Medium ) );
 		Assert.AreEqual( "3,2,2,1,1,4,1,0,1,2,1,1,1,0,0,0,2,1,0,6,1,1500,2000,2,1,100", Values( GraphicsPreset.High ) );
-		Assert.AreEqual( "3,3,3,1,1,4,1,0,1,3,1,1,1,1,1,0,3,1,0,8,1,1500,2000,2,1,100", Values( GraphicsPreset.Enhanced ) );
+		Assert.AreEqual( "3,3,3,2,1,4,1,0,1,3,1,1,1,1,1,0,3,1,0,8,1,1500,2000,2,1,100", Values( GraphicsPreset.Enhanced ) );
 		Assert.AreEqual( TextureFilterMode.Point, GraphicsPresets.ToRenderQuality( service.GetPresetValues( GraphicsPreset.Low )!, 16, 1 ).Filter );
 	}
 

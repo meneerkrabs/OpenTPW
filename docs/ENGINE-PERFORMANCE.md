@@ -428,9 +428,19 @@ The terrain computes the spans every frame (a few hundred floating point operati
 | 2, 64 texels, 2500 cells | 173 | 1.40 (2.42) | 1.56 (3.34) | 1.37, 1.38 |
 | 3, 32 texels, 2000 cells | 300 | 56.6 (61.1) | 54.9 (59.5) | 3.04, 2.67 |
 | 3, 64 texels, 2500 cells | 300 | 2.95 (4.12) | 4.76 (17.7) | 3.04, 2.67 |
-| 3, Enhanced preset (64 texels, 2000 cells) | 300 | 152.6 (190.6) | 148.0 (156.0) | 3.04, 2.67 |
+| 3, Enhanced preset with its old 2000 slots (64 texels) | 300 | 152.6 (190.6) | 148.0 (156.0) | 3.04, 2.67 |
 
-At zoom 173 the list is about 1400 cells, which fits every cache, and the frame cost is main's. Setting 3 at zoom 300 lists the cap of 2500 cells: a cache of 2500 holds them, but the High preset's 2000 slots and the Enhanced preset's 2000 slots (the Enhanced preset raises the texture size and the view distance, not the cache option) do not, so every frame evicts what it needs next and builds 2000 textures: 55 ms at 32 texels and 150 ms at 64 texels. That is the original's own behaviour for a list larger than its cache, not worked around here.
+At zoom 173 the list is about 1400 cells, which fits every cache, and the frame cost is main's. Setting 3 at zoom 300 lists the cap of 2500 cells: a cache of 2500 holds them, but the High preset's 2000 slots do not (the Enhanced preset, our own, now has the cache option 2 = 2500 slots, so it fits), so every frame evicts what it needs next and builds 2000 textures: 55 ms at 32 texels and 150 ms at 64 texels. That is the original's own behaviour for a list larger than its cache, not worked around here.
 
 In the browser (AOT page, headless Chrome 155 with `--mute-audio`, `tools/web-perf/run.mjs --scenarios jungle --window 15`, three runs of each build, Apple M5; final code): the first view is built in the park's entering frame, whose largest frame is 76, 79.7 and 73.4 ms against 46, 48.6 and 47.2 ms of the main build, about 28 ms once (the 898 cells of the Home view); the page is ready in 9.62, 9.43 and 9.44 s against 9.42, 9.59 and 9.42 s, and the steady window
 is the same (main thread busy 9.1, 8.3 and 8.7 % against 9.9, 8.3 and 8.1 %, frame p95 1.6, 1.5 and 1.5 ms against 1.7, 1.5 and 1.5 ms, 60 fps, no long task). The browser builds every listed cell before it draws, as the desktop does; there is no per frame budget and no static stand-in texture. The fog and the far plane add no measurable cost there.
+
+**The Enhanced preset** (our own: setting 3, 64 texels, now the cache option 2 = 2500 slots; one round, Release, Jungle, 150 guests, 9000 frames; frame average ms with p99 in brackets; still / panning; main at the same zoom for comparison):
+
+| Zoom | Enhanced still | Enhanced panning | main still | main panning |
+| ---: | ---: | ---: | ---: | ---: |
+| 70 | 1.19 (2.25) | 1.85 (4.74) | 1.04 (1.93) | 1.11 (2.13) |
+| 110 | 1.40 (2.19) | 1.39 (3.29) | 1.39 (2.35) | 1.35 (2.87) |
+| 300 | 2.99 (4.83) | 4.43 (17.4) | 2.91 (4.16) | 2.67 (4.06) |
+
+With 2500 slots the 2500-cell lists fit the cache at every zoom and nothing is rebuilt in a steady frame. Panning at 70 and 300 costs 0.7 and 1.8 ms more than main: the lists are the largest there (about 2500 cells), so the mesh of 10,000 vertices is rewritten each frame.

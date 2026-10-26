@@ -59,6 +59,42 @@ public sealed partial class ParkHud
 		pauseOverlayBelow = Stack.Screens.ToArray();
 	}
 
+	/// <summary>The P window's backdrop is up and nothing was opened after it: it holds the focus and the pointer (0x47ee67, 0x65db25).</summary>
+	private bool PauseBackdropHoldsFocus => pausePointerOverlay != null && (Stack.Top is not { } top || Array.IndexOf( pauseOverlayBelow, top ) >= 0);
+
+	// created on first use: fixtures build a HUD without its constructor
+	private HashSet<UiScreen>? seenPausingBoxes, actuallyPausingBoxes;
+
+	/// <summary>
+	/// A generic message box that actually paused (0x47F26C: the enable word was 1, so no pause menu, map or postcard held the pause) resumes the game when it closes (0x47EED0 message 0x14 ->
+	/// 0x409300), which also clears a P pause and destroys the P window (0x4a27c0): a box opened under P and closed again leaves the game running.
+	/// </summary>
+	// [BIN:TPW-EXE:0x47efac box close resume] the box's procedure 0x47EED0 resumes on its destruction (0x47EFAC-0x47EFDA) when its own property 5 says it paused; the P key does not clear the enable word, so a box opened during P pauses again and its close ends the P pause
+	private void UpdatePausingBoxes()
+	{
+		var holder = false;
+		seenPausingBoxes ??= new(); actuallyPausingBoxes ??= new();
+		foreach ( var screen in Stack.Screens )
+		{
+			if ( screen.Name is PauseMenuScreen or MapScreenName or PostcardScreen or "texturePackDownload" )
+				holder = true;
+			else if ( IsPausingMessageBox( screen.Name ) && seenPausingBoxes.Add( screen ) && !holder && !OnlineSession )
+				actuallyPausingBoxes.Add( screen );
+		}
+		if ( seenPausingBoxes.Count == 0 )
+			return;
+		foreach ( var closed in seenPausingBoxes.Where( box => !Stack.Screens.Contains( box ) ).ToArray() )
+		{
+			seenPausingBoxes.Remove( closed );
+			if ( actuallyPausingBoxes.Remove( closed ) && (pausePointerOverlay != null || applicationPaused) )
+			{
+				if ( Status.Speed == GameSpeed.Paused ) SetUserGameSpeed( GameSpeed.Normal );
+				else ClearApplicationPause();
+				RetirePausePointerOverlay();
+			}
+		}
+	}
+
 	private void RetirePausePointerOverlay()
 	{
 		pausePointerOverlay?.Retire();

@@ -65,6 +65,37 @@ public class ApplicationPauseTests
 	}
 
 	[TestMethod]
+	public void TheBackdropHoldsTheFocusSoNoEscapeOrShortcutWorksUnderP()
+	{
+		Key( UiKeys.Pause ); Assert.AreEqual( GameSpeed.Paused, hud.Status.Speed );
+		Key( UiKeys.Back );
+		Assert.AreEqual( "hud", hud.Stack.Top!.Name, "Escape reaches only the P window's procedure (0x4A2680), which uses P alone" );
+		Key( UiKeys.Pause ); Assert.AreEqual( GameSpeed.Normal, hud.Status.Speed, "P resumes" );
+		Key( UiKeys.Back ); Assert.AreEqual( ParkHud.PauseMenuScreen, hud.Stack.Top!.Name, "without the backdrop Escape opens the menu" );
+	}
+
+	[TestMethod]
+	public void ABoxThatPausedResumesTheGameWhenItClosesAndClearsAPPause()
+	{
+		Key( UiKeys.Pause ); Assert.AreEqual( GameSpeed.Paused, hud.Status.Speed );
+		var box = new UiScreen( "confirmDelete" ); hud.Stack.Push( box ); Key( UiKeys.None );
+		hud.Stack.Pop(); Key( UiKeys.None );
+		Assert.AreEqual( GameSpeed.Normal, hud.Status.Speed, "0x47EED0 resumes (0x409300) when the box that paused is destroyed" );
+		Assert.AreEqual( hud.Status.TimeScale, hud.SimulationTimeScale );
+		// a box under the Escape menu held no pause of its own: its close leaves the P pause alone
+		Key( UiKeys.Pause ); hud.OpenPauseMenu(); var nested = new UiScreen( "confirmDelete" ); hud.Stack.Push( nested ); Key( UiKeys.None );
+		hud.Stack.Pop(); Key( UiKeys.None );
+		Assert.AreEqual( GameSpeed.Paused, hud.Status.Speed );
+	}
+
+	[TestMethod]
+	public void TheCameraPanelsPostcardRefusalIsTheAlertQueuesPausingBox()
+	{
+		Assert.IsTrue( ParkHud.IsPausingMessageBox( ParkHud.AlertBoxScreen ) );
+		Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 1f, new[] { "hud", ParkHud.AlertBoxScreen } ) );
+	}
+
+	[TestMethod]
 	public void SpeedButtonExplicitlyResumesAndAppliesItsRequestedSpeed()
 	{
 		LoseFocus(); Observe( true ); Click( "speedNormal" );

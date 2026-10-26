@@ -39,7 +39,9 @@ public sealed partial class ParkHud
 	/// <summary>
 	/// The loss window and its overlay are this park's own, local presentation: not in a shared park, whose HUD keeps what it shows now (the co-op owner decides, docs/COOP.md), nor in a visit, which runs no park.
 	/// </summary>
-	private bool LossPresentationAllowed => level.Park != null && !level.IsReadOnlyVisit && level.CoopRole == CoopRole.None;
+	private bool LossPresentationAllowed => level.Park != null && !level.IsReadOnlyVisit && level.CoopRole == CoopRole.None
+		// Theme Park Inc has no bankrupt.MD2 banner (its levels carry none), so its lost park keeps what it did before; its own exe's loss scene is not read
+		&& !level.Park.Economy.Rules.ThemeParkInc;
 
 	/// <summary>The loss window is up (the gate camera and the full-screen banner).</summary>
 	public bool LossWindowOpen => lossPhase == LossPhase.Window;
@@ -112,7 +114,17 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x0048A8A7 loss Escape] key 0x1B with modifier bits 0xFF0000 clear leaves the window (message 0x1000B, the same test as the winning handler's 0x48A99E).
 		// [BIN:TPW-EXE:0x0048A7BD loss right click] RMBCancelOn ([0x78D911]), the window's pointer [0x7C24CC] not 0 and the clock (0x65968E) strictly more than 0x7D0 ms past the stamp of the window's creation message 0x15 (0x48A789) run the same exit on message 0x10006, button 1.
 		var back = Input.ModifierMaskDown == 0 ? input.Pressed : input.Pressed & ~UiKeys.Back;
-		Stack.Update( context, input with { Pressed = back, RightPressed = FinaleRightClickAllowed( input.RightPressed, GameOptions.Current.RmbCancel, context.Time - lossOpenedAt ) } );
+		var rightExit = FinaleRightClickAllowed( input.RightPressed, GameOptions.Current.RmbCancel, context.Time - lossOpenedAt );
+		// [BIN:TPW-EXE:0x4A26DA P window over the loss window] a deactivation while the loss window is up builds the P window (0x4092A0(1)), which takes the focus and the pointer from it: the window's Escape and right-click exits get nothing,
+		// and the P window's own procedure (0x4A2706, with the key tables disabled by 0x40CFA0) handles only P, which resumes (0x409350) and destroys the backdrop
+		if ( PauseBackdropHoldsFocus )
+		{
+			back &= ~UiKeys.Back;
+			rightExit = false;
+			if ( input.Has( UiKeys.Pause ) )
+				ToggleUserPause();
+		}
+		Stack.Update( context, input with { Pressed = back, RightPressed = rightExit } );
 		UpdateCursor( input, overUi: true, mouseCaptured.Value );
 		if ( lossPhase == LossPhase.Window )
 		{

@@ -178,10 +178,6 @@ of 0 to `0x49EFB0`, but that helper never reads the argument. Loss Restart, Exit
 setting and stale-menu Exit guard stay unchanged. `LostParkPauseMenuTests` constructs the actual menu and drives its rows,
 load chooser, confirmations and Back path with synthetic strings and economies.
 
-Money advice is already produced by `AutomaticAdvisor.ScanPark` through `AdvisorScan` and `EconomyMoneyState`: 102 requires
-negative cash and a loan available; 103–105 require no loan and select below 3, 3–4, or exactly 5 months in red. Existing
-`AdvisorScanTests` cover the real queue and selection. No second warning producer is needed.
-
 The loss scene is ported for single-player parks (`Hud/ParkHud.LossWindow.cs`). The bank's bankruptcy message (`0x5168F0`)
 selects the park's gates and enters the window root 0x7472 (`0x481B50`, `0x48AC40`): the camera rides the gate's seat (the
 winning-view machinery of `Level.EnterWinningView`), the layout `LossScreen` (`0x74FB20`, rect 174,500 - 1874,1000, generated into
@@ -191,7 +187,7 @@ either leaves the camera and creates the hidden-HUD overlay (`0x4A29D0`): the HU
 the player's again. Escape in the overlay (`0x4A2925`) opens the loss pause menu above. A loaded lost park restores the overlay
 without entering the camera (`0x4815E0`, `0x48ADB0`); the lost flag round-trips in the existing save field, so old saves load as
 before. The window pauses nothing: calendar and bank go on. The scene is gated on "no CoopSession" and on a park that is not a
-read-only visit, so shared parks and visits are unchanged until the co-op owner decides.
+read-only visit, and not on Theme Park Inc, which has no `bankrupt.MD2` banner (its own exe was not read), so shared parks, visits and TPI parks are unchanged until the co-op owner decides. While a deactivation holds the P window over the loss window, the window gets no Escape or right click (the P window holds the focus, `0x47EE67`) and P alone resumes (`0x4A2706`).
 
 Money advice is already produced by `AutomaticAdvisor.ScanPark` through `AdvisorScan` and `EconomyMoneyState`: 102 requires
 negative cash and a loan available; 103-105 require no loan and select below 3, 3-4, or exactly 5 months in red. Existing

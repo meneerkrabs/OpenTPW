@@ -323,7 +323,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			return;
 		// [BIN:TPW-EXE:0x005F0B91 map / 0x004A3A92 options] these builders call the silent stop path 0x5996D0, before their window help is served.
 		// Kill also hides a response in its delayed start or animation tail, when no speech sound is active.
-		// [BIN:TPW-EXE:0x004A9380 postcard] the postcard's builder runs the same stop path (0x4A93E4: 0x5996D0(1)) after its pause
+		// [BIN:TPW-EXE:0x004A9380 postcard] the postcard's builder runs the same stop path (push 1 at 0x4A9404, call 0x5996D0 at 0x4A9405) after its pause
 		if ( window is Hud.ParkHud.MapScreenName or Hud.ParkHud.PostcardScreen or "options" )
 			StopSpeechSilently();
 		// the object window builders (0x4AF980, 0x4B0E30, 0x4B2430) only build the window and post its help; whether the window creator 0x48CEA0 changes the interface mode is not read, so the tools' help stays

@@ -183,6 +183,39 @@ public class ParkLossWindowTests
 	}
 
 	[TestMethod]
+	public void ADeactivationOverTheLossWindowGivesTheFocusToThePWindow()
+	{
+		var level = LevelFor(); var hud = Hud( level ); var context = Context( 10 );
+		Lose( level ); Frame( hud, context );
+		var speed = hud.Status.Speed;
+		hud.ObserveApplicationFocus( true, false, false ); hud.ObserveApplicationFocus( false, false, false );
+		Assert.AreEqual( 0f, hud.SimulationTimeScale, "the deactivation pauses the park under the loss window" );
+		var previous = GameOptions.Current.RmbCancel;
+		try
+		{
+			GameOptions.Current.RmbCancel = true;
+			Frame( hud, Context( 13 ), UiInput.Key( UiKeys.Back ) );
+			Assert.IsTrue( hud.LossWindowOpen, "Escape reaches only the P window's procedure (0x4A2706), which ignores it" );
+			Frame( hud, Context( 13 ), UiInput.Idle( Nowhere ) with { RightPressed = true } );
+			Assert.IsTrue( hud.LossWindowOpen, "the backdrop owns the pointer" );
+			Frame( hud, Context( 13 ), UiInput.Key( UiKeys.Pause ) );
+			Assert.IsTrue( hud.LossWindowOpen ); Assert.AreEqual( speed, hud.Status.Speed ); Assert.AreEqual( hud.Status.TimeScale, hud.SimulationTimeScale, "P resumes and destroys the backdrop" );
+			Frame( hud, Context( 13 ), UiInput.Key( UiKeys.Back ) );
+			Assert.IsTrue( hud.LossOverlayOpen, "the window's own exits work again" );
+		}
+		finally { GameOptions.Current.RmbCancel = previous; }
+	}
+
+	[TestMethod]
+	public void TheLossSceneIsNotThemeParkIncs()
+	{
+		var economy = new ParkEconomy( OriginalSaveImportTests.Settings(), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1, EconomyRules.ThemeParkIncMoney );
+		var level = LevelFor( economy: economy ); var hud = Hud( level );
+		Lose( level ); Frame( hud, Context( 10 ) );
+		Assert.IsFalse( hud.LossWindowOpen || hud.LossOverlayOpen, "Theme Park Inc has no bankrupt banner" );
+	}
+
+	[TestMethod]
 	public void TheRightClickLeavesOnlyWithRmbCancelOn()
 	{
 		var level = LevelFor(); var hud = Hud( level );

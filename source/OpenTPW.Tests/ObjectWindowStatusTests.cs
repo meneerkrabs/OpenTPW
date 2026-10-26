@@ -139,4 +139,36 @@ public class ObjectWindowStatusTests
 		Assert.AreEqual( Text( UIStrings.RepairNoMechanics ), banner.Status );
 		Assert.IsTrue( ((UiButton)hud.Screen.Find( "openRide" )!).Enabled );
 	}
+
+	/// <summary>
+	/// The toilet's own window (tp.exe <c>0x497640</c>, refresh <c>0x4973A0</c>) enables its door exactly while the reopening guard <c>0x4DF290</c> allows, open or closed,
+	/// where the shop window's door ignores the guard.
+	/// </summary>
+	[TestMethod]
+	public void TheToiletWindowGreysItsDoorWhileTheGuardRefuses()
+	{
+		var hud = fixture.Fixture( BuildCategory.Shops, out var level, out var economy, out var toilet, out _, out _ );
+		var context = RideUpgradeIngressTests.Context();
+		// the object stands for a small toilet: a relief record in the economy
+		var record = economy.RegisterExisting( 1402 );
+		( (System.Collections.Generic.Dictionary<OriginalObject, int>)typeof( Level ).GetField( "economyInstances", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.GetValue( level )! )[toilet] = record.Id;
+		Assert.IsTrue( economy.Catalog.TryGet( record.InfoId, out var info ) && info.ProvidesRelief );
+		var door = (UiButton)hud.Screen.Find( "openRide" )!;
+		Frame( hud, context );
+		Assert.IsTrue( level.Gate!.MayOpen( toilet.Runtime ), "nothing refuses the toilet yet" );
+		Assert.IsTrue( door.Visible && door.Enabled, "the guard allows: the door is live" );
+		// a call closes it and makes the guard refuse (+0x64): the door greys, open or closed
+		economy.RequestMaintenance( record.Id, true );
+		toilet.Close();
+		Frame( hud, context );
+		Assert.IsFalse( level.Gate.MayOpen( toilet.Runtime ), "the guard refuses the called toilet" );
+		Assert.IsFalse( door.Enabled, "the toilet window greys its door (0x4973A0)" );
+		toilet.Open();
+		Frame( hud, context );
+		Assert.IsFalse( door.Enabled, "also while the toilet is open: the test is the guard alone" );
+		// cancelling the call lifts the refusal
+		economy.RequestMaintenance( record.Id, false );
+		Frame( hud, context );
+		Assert.IsTrue( door.Enabled );
+	}
 }

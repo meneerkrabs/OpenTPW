@@ -2151,6 +2151,16 @@ a `SetBuildGrantCommand`. The stream's order decides a request that races the sw
 takes before the grant is taken back is built, one after it is refused at its record. The sharing and
 joining screens say that the host decides who builds.
 
+**Nothing the player did not ask for.** A guest's park windows send only what its player asked for. The
+object window's apply on its close sends only the commands whose values its player changed (a shop's
+settings and its price apart, a sideshow's price or its game): the original applies every value on every
+close, which for a guest would be a request its rights refuse, with a note about a click it never made, or
+one that writes back what the park holds. A typed price and an apply-all go when clicked and not again at
+the close. The research window's workload knob projects the lab's workload, at the window's opening and
+at a staffing change, without writing it back, and the loans window's opening and tabs send no offer
+refresh, so the list shows the offers of the host's park. A change the player made still goes, and its
+refusal is said as any is.
+
 ## Money and rights (C4)
 
 `[EXT:online-coop-permissions]` `[EXT:online-coop-commands]` `[EXT:online-coop-speed]` C4 lets the host give

@@ -195,16 +195,20 @@ public static class ParkCommandReplay
 
 	/// <summary>
 	/// <see cref="Run(ParkCommands, IReadOnlyList{ParkCommandLogEntry}, Func{long}, Action, long, Action{long}?)"/> for a whole <paramref name="log"/>, under the funnel's session rules
-	/// when the log was recorded under them ([EXT:online-coop-lockstep]: a session refuses the cheats, the developer kinds and a command issued inside another).
+	/// when the log was recorded under them ([EXT:online-coop-lockstep]: a session refuses the cheats, the developer kinds and a command issued inside another), and then under the session's
+	/// rights, <paramref name="sessionRights"/> ([EXT:online-coop-permissions]: a guest's command the session refused, or an object its area clear left, is so again here).
 	/// </summary>
-	public static void Run( ParkCommands commands, ParkCommandLogFile log, Func<long> nextTick, Action tick, long endTick, Action<long>? afterTick = null )
+	public static void Run( ParkCommands commands, ParkCommandLogFile log, Func<long> nextTick, Action tick, long endTick, Action<long>? afterTick = null,
+		IParkCommandRights? sessionRights = null )
 	{
 		ArgumentNullException.ThrowIfNull( commands );
 		ArgumentNullException.ThrowIfNull( log );
-		var previous = commands.SessionRules;
+		var (previous, previousRights) = (commands.SessionRules, commands.Rights);
 		commands.SessionRules = log.SessionRules;
+		if ( log.SessionRules && sessionRights != null )
+			commands.Rights = sessionRights;
 		try { Run( commands, log.Entries, nextTick, tick, endTick, afterTick ); }
-		finally { commands.SessionRules = previous; }
+		finally { (commands.SessionRules, commands.Rights) = (previous, previousRights); }
 	}
 
 	private static void RunTicks( ParkCommands commands, Func<long> nextTick, Action tick, long endTick, Action<long>? afterTick )

@@ -231,7 +231,8 @@ public partial class Level
 	/// <summary>
 	/// The area clear's rectangle (<see cref="AreaClear.Run"/>) with the level's own removals, in the order tp.exe's clear takes them: an object through <see cref="RemoveObjectAt"/> when the
 	/// command's player may remove it ([EXT:online-coop-permissions] <see cref="ParkCommands.AllowsRemoval"/>: a guest's clear leaves a coaster's or a track ride's station and its ride
-	/// standing, and still clears the path cells around them), a path cell through the forced clear; a park whose objects do not type their cells follows the object on each cell.
+	/// standing, and still clears the path cells around them), a path cell through the forced clear; a park whose objects do not type their cells follows the object on each cell. A removal
+	/// that throws (a rule its checks missed) errs the whole rectangle's command after what it removed, logged as one errored record, on every peer alike.
 	/// </summary>
 	private ParkCommandResult ExecuteClearArea( ClearAreaCommand clear ) =>
 		ParkCommandResult.Ok( AreaClear.Run( Guests?.Grid.Cells, (clear.X0, clear.Y0), (clear.X1, clear.Y1),

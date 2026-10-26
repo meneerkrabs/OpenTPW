@@ -400,6 +400,12 @@ public partial class CoopSessionTests
 			Assert.IsTrue( guest.Level.IsSaleWaiting( item.Runtime.AttractionId ), "the sale went to the host" );
 			Assert.IsFalse( item.IsDeleted, "nothing is sold before its record" );
 			Sell( view.Hud, item );
+			// the object window's erase button is off for the object while its sale waits
+			typeof( ParkHud ).GetField( "selectedObject", NonPublic )!.SetValue( view.Hud, item );
+			view.Update();
+			var erase = ((UiScreen)typeof( ParkHud ).GetField( "hud", NonPublic )!.GetValue( view.Hud )!).Find( "deleteRide" ) as UiButton;
+			Assert.IsNotNull( erase );
+			Assert.IsFalse( erase!.Enabled, "the erase button is off while the sale waits" );
 			RoundsUntil( () => !guest.Level.IsSaleWaiting( item.Runtime.AttractionId ), host, guest, view, "the sale came back" );
 			Assert.IsTrue( item.IsDeleted );
 			Assert.IsNull( host.Level.Objects.FindAt( 20, 12 ) );
@@ -526,4 +532,76 @@ public partial class CoopSessionTests
 		Assert.IsTrue( item.IsDeleted );
 	}
 
+
+	[TestMethod]
+	public void AClaimedRidesQueueIsTheHostsForAGuest()
+	{
+		var (host, guest, _, _) = Shared();
+		QueueOnBoth( host, guest );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		var seat = guest.Level.Commands.Player;
+		var rights = new CoopBuildRights( guest.Level );
+		var ride = guest.One.Runtime.AttractionId;
+		ParkCommand[] queue =
+		{
+			new EditQueueCommand( 10, 4 ),
+			new QueueSegmentCommand( ride, 10, 2, 8, 2 ),
+			new LayLineCommand( CellToolMode.Queue, ride, 10, 2, 8, 2 ),
+			new RemoveAtCommand( 10, 4 ),
+			new BacktrackCommand( 10, 4 )
+		};
+		Assert.AreSame( guest.One, guest.Level.QueueOwnerAt( 10, 4 ) );
+		foreach ( var command in queue )
+			Assert.IsTrue( rights.Allows( seat, command ), $"an ordinary ride's queue is a granted guest's: {command}" );
+		// the ride is a track ride's station: its queue stays the host's until claims come
+		MarkStation( guest, guest.One );
+		try
+		{
+			foreach ( var command in queue )
+			{
+				Assert.IsFalse( rights.Allows( seat, command ), $"a claimed ride's queue is the host's: {command}" );
+				Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, command ) );
+			}
+			Assert.IsTrue( rights.Allows( seat, new RemoveAtCommand( 12, 1 ) ), "a path cell stays the guest's" );
+		}
+		finally
+		{
+			MarkStation( guest, guest.One, station: false );
+		}
+	}
+
+	[TestMethod]
+	public void ASessionLogReplaysUnderTheSessionsRights()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		// an ungranted guest's line (sent past its own pre-check): refused by the session's rights at its record on every peer
+		var seat = guest.Level.Commands.Player;
+		var line = guest.Session!.GuestCommands!.Submit( new LayLineCommand( CellToolMode.Path, -1, 5, 20, 12, 20 ) { Player = seat } );
+		RoundsUntil( () => !line.IsOpen, host, guest, view, "the line was answered" );
+		Assert.IsTrue( line.Result is { Accepted: false, RightsRefused: true } );
+		Assert.IsFalse( Walkable( host, 8, 20 ) );
+		Rounds( 60, host, guest );
+		var hostStream = host.Session!.HostStream!;
+		host.Session.End( "Done." );
+		var log = ParkCommandLogFile.Deserialize( hostStream.SessionLog!.Serialize() );
+		long? Replay( bool withRights )
+		{
+			var twin = NewPark();
+			twin.Enter();
+			var hashes = new Dictionary<long, ulong>();
+			ParkCommandReplay.Run( twin.Level.Commands, log, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks,
+				ticks => hashes[ticks] = twin.Level.ComputeStateHash(), withRights ? new CoopBuildRights( twin.Level ) : null );
+			hashes[log.Checkpoints[^1].Ticks] = twin.Level.ComputeStateHash();
+			Assert.IsNull( twin.Level.Commands.Rights is CoopBuildRights ? "left" : null, "the replay puts the funnel's rights back" );
+			return ParkCommandReplay.FirstMismatch( log, hashes )?.Ticks;
+		}
+		Assert.IsNull( Replay( withRights: true ), "under the session's rights every checkpoint matches" );
+		Assert.IsNotNull( Replay( withRights: false ), "without them the guest's refused line would be laid" );
+	}
 }
+

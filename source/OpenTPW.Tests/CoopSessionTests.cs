@@ -345,7 +345,8 @@ public partial class CoopSessionTests
 			Assert.AreEqual( (log.StartTick, log.StartHash), (twin.Level.TickCount, twin.Level.ComputeStateHash()), "the twin is the session's starting park" );
 			var hashes = new Dictionary<long, ulong>();
 			if ( withRules )
-				ParkCommandReplay.Run( twin.Level.Commands, log, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
+				ParkCommandReplay.Run( twin.Level.Commands, log, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash(),
+					new CoopBuildRights( twin.Level ) );
 			else
 				ParkCommandReplay.Run( twin.Level.Commands, log.Entries, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
 			hashes[log.Checkpoints[^1].Ticks] = twin.Level.ComputeStateHash();

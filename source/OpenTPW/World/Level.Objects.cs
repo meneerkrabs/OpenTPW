@@ -977,6 +977,11 @@ public partial class Level
 	}
 
 	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null: the ride whose chain reaches the cell, else the ride the cell's owner word names (a free-standing cell).</summary>
+	/// <summary>[EXT:online-coop-permissions] The placed object whose ride's queue holds the queue cell (<paramref name="x"/>, <paramref name="y"/>), or null (C3b: a guest's rights ask it).</summary>
+	internal OriginalObject? QueueOwnerAt( int x, int y ) => Guests != null && QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is { } ride
+		? Objects.Objects.FirstOrDefault( item => !item.IsDeleted && ReferenceEquals( item.Visitors, ride ) )
+		: null;
+
 	internal static RideVisitorBridge? QueueRideAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y )
 	{
 		if ( !grid.IsQueue( x, y ) )

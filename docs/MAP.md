@@ -79,8 +79,10 @@ X ∈ [10x, 10x+10), Z ∈ [10y, 10y+10) with no offset. Evidence:
   `verge`/`road_*`/`arrival_*`, value-1 interior shapes under `volcanoe`/`newcliff`.
 - The MD2 heightfield (below) has its holes on exactly these cells.
 
-`Standard.sam` also states `MapInfo.HeightfieldWidth 95` / `HeightfieldHeight 84`
-(maximum indices of the 96×85 heightfield) and `FixedItemOriginX/Y 48/17`.
+`Standard.sam` also states `MapInfo.HeightfieldXStart/YStart 0/0`, `HeightfieldWidth 95` / `HeightfieldHeight 84`
+(maximum indices of the 96×85 heightfield) and `FixedItemOriginX/Y 48/17`. The four heightfield keys are the procedural terrain's rectangle
+(`ProceduralTerrainRectangle`, docs/LND.md): the cells from (XStart, YStart) to (XStart + Width, YStart + Height) inclusive, which is the whole heightfield in all four themes,
+are textured procedurally from the theme's `terrain.wad/base.lnd` (the weight grid of that file, docs/LND.md, covers 95 of the 96 columns; the original reads the next sample row for the last).
 
 ## Terrain heightfield (`base.MD2` 0x6C block, verified layout)
 

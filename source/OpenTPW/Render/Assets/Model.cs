@@ -12,6 +12,12 @@ public class Model : Asset
 	public bool IsIndexed { get; private set; }
 
 	private uint indexCount;
+
+	/// <summary>
+	/// The most indices a draw uses, from the start of the index buffer (the whole buffer by default): a model whose vertices are rewritten each frame for a varying number of quads
+	/// (<see cref="ProceduralTerrain"/>) draws only the quads it holds.
+	/// </summary>
+	internal uint DrawIndexLimit { get; set; } = uint.MaxValue;
 	private ModelVertexBuffer? vertices;
 	private bool released;
 	private readonly bool dynamicVertices;
@@ -324,7 +330,7 @@ public class Model : Asset
 
 	private void Draw( DeviceBuffer? indexBuffer, TriangleOrder? order )
 	{
-		if ( !HasGeometry )
+		if ( !HasGeometry || (IsIndexed && DrawIndexLimit == 0) )
 			return;
 		var commandList = Render.CommandList;
 
@@ -343,7 +349,7 @@ public class Model : Asset
 			commandList.SetIndexBuffer( indexBuffer, IndexFormat.UInt32 );
 
 			commandList.DrawIndexed(
-				indexCount: indexCount,
+				indexCount: Math.Min( indexCount, DrawIndexLimit ),
 				instanceCount: 1,
 				indexStart: 0,
 				vertexOffset: 0,

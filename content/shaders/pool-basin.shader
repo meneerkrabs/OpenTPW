@@ -42,13 +42,22 @@ fragment {
   layout( set = 1, binding = 0 ) uniform texture2D Color;
   layout( set = 1, binding = 1 ) uniform sampler s_Color;
 
-  // the park's own fog (test.shader): exponential in view depth, stretched by the graphics settings' view distance
+  // [BIN:TPW-EXE:0x567AD0 fog] the original's fog (docs/UI.md, UI-107): linear in the projection's depth between a start and an end (SetFog's FOGTABLEMODE linear); g_flViewDistanceScale carries the range as
+  // start x 8 x 4096 + end x 8 in 1/8 world units of view depth (RenderFog.PackedRange), 0 for no fog
+  float fogAmount( float packedRange )
+  {
+    if ( packedRange <= 0.0 )
+      return 0.0;
+    float startQ = floor( packedRange / 4096.0 );
+    float fogStart = startQ * 0.125;
+    float fogEnd = ( packedRange - startQ * 4096.0 ) * 0.125;
+    float viewDepth = 1.0 / gl_FragCoord.w;
+    return clamp( ( viewDepth - fogStart ) / max( fogEnd - fogStart, 0.001 ), 0.0, 1.0 );
+  }
+
   vec3 applyFog( vec3 colour )
   {
-    float viewDistanceScale = g_oUbo.g_flViewDistanceScale > 0.0 ? g_oUbo.g_flViewDistanceScale : 1.0;
-    float viewSpaceDepth = length( vs_out.vPositionVs ) / viewDistanceScale;
-    float fogFactor = clamp( exp( viewSpaceDepth * 0.01 ) * 0.025, 0.0, 1.0 );
-    return mix( colour, g_oUbo.g_vFogColor, fogFactor );
+    return mix( colour, g_oUbo.g_vFogColor, fogAmount( g_oUbo.g_flViewDistanceScale ) );
   }
 
   // the park's own lighting (test.shader): the sun's diffuse plus 0.4 ambient

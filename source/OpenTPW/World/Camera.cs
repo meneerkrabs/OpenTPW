@@ -15,6 +15,19 @@ public static class Camera
 	/// <summary>The active camera mode, e.g. to restore a park's camera after the online globe.</summary>
 	public static CameraMode Mode { get => CameraMode; set => CameraMode = value; }
 
+	/// <summary>
+	/// The park view's far plane in engine units for the camera's view matrix, or null: the farthest corner distance of the span selection (<c>0x56BB00</c> hands it to <c>0x578CA0</c> every frame, which rebuilds the projection with it);
+	/// set by the level's terrain.
+	/// </summary>
+	public static Func<Matrix4x4, float, float?>? ParkFarPlane { get; set; }
+
+	private static float FarPlaneOf( CameraMode mode, Matrix4x4 view )
+	{
+		// the ride and walk views' far plane is the greatest depth of the cell boxes 0x56EA90 selects through 0x56E7E0 and 0x561BC0 (at least 100 original units, [this+0x1C], handed to 0x578CA0 at 0x56ED79); not ported, those views keep the default
+		// the heightfield's span selection works on the display's height over its width, the aspect word 0x8BCBCC
+		return mode is ParkCameraMode && ParkFarPlane?.Invoke( view, 1f / Screen.Aspect ) is { } far ? far : OriginalProjection.DefaultFarPlane;
+	}
+
 	private static void CalcViewProjMatrix()
 	{
 		if ( CameraMode == null )
@@ -33,7 +46,7 @@ public static class Camera
 		var fieldOfView = CameraMode.FieldOfView;
 
 		ProjMatrix = CameraMode.UsesOriginalProjection
-			? OriginalProjection.Create( Screen.Aspect, fieldOfView )
+			? OriginalProjection.Create( Screen.Aspect, fieldOfView, FarPlaneOf( CameraMode, ViewMatrix ) )
 			: Matrix4x4.CreatePerspectiveFieldOfView(
 				fieldOfView.DegreesToRadians(),
 				Screen.Aspect,

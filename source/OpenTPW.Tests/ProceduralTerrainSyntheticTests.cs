@@ -34,10 +34,33 @@ public class ProceduralTerrainSyntheticTests
 	}
 
 	[TestMethod]
+	public void TheRgbaWriterIsTheOriginalsBytesWithAlpha255()
+	{
+		var levels = new Dictionary<int, LndFile>();
+		foreach ( var (seed, mix, size, grey, x, z, sha) in ProceduralTerrainSyntheticGolden.Cells )
+		{
+			if ( !levels.TryGetValue( seed, out var lnd ) )
+				levels[seed] = lnd = SyntheticTerrain.Load( seed, mix, grey );
+			var texturer = new ProceduralTerrainTexturer( lnd, size );
+			var original = new byte[texturer.TextureBytes];
+			var rgba = new byte[texturer.TextureBytes];
+			var built = texturer.Build( x, z, original );
+			Assert.AreEqual( built, texturer.BuildRgba( x, z, rgba ) );
+			for ( var index = 0; index < original.Length; index += 4 )
+			{
+				Assert.AreEqual( original[index + 1], rgba[index], $"R seed {seed} N={size} ({x}, {z}) at {index}" );
+				Assert.AreEqual( original[index + 2], rgba[index + 1], $"G seed {seed} N={size} ({x}, {z}) at {index}" );
+				Assert.AreEqual( original[index + 3], rgba[index + 2], $"B seed {seed} N={size} ({x}, {z}) at {index}" );
+				Assert.AreEqual( 255, rgba[index + 3], $"A seed {seed} N={size} ({x}, {z}) at {index}" );
+			}
+		}
+	}
+
+	[TestMethod]
 	public void TheSyntheticSampleCoversEverySizeMixAndTheGreyFallback()
 	{
 		var cells = ProceduralTerrainSyntheticGolden.Cells;
-		Assert.AreEqual( 54, cells.Length );
+		Assert.AreEqual( 81, cells.Length );
 		foreach ( var size in new[] { 16, 32, 64 } )
 		{
 			Assert.IsTrue( SyntheticTerrain.Mixes.All( mix => cells.Any( cell => cell.Size == size && cell.Mix == mix && !cell.Grey ) ), $"every mix at N={size}" );

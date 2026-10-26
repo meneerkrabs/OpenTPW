@@ -94,6 +94,8 @@ class GuardRound2(unittest.TestCase):
             'LobbyCameraMode.cs: public static float Radius { get; set; } = 70f;',
             'LobbyCameraMode.cs: public static float SpinSpeed { get; set; } = 0.02f;',
             'LobbyCameraMode.cs: public static float VerticalOffset { get; set; } = 20f;',
+            # The wide zoom's test hook (null outside tests): the park's own state never reads it.
+            'ParkCameraMode.cs: internal static float? WideMaximumOverride { get; set; }',
             'ParkCameraMode.cs: public static float TargetExtent { get; set; } = SandboxTargetExtent;',
         ])
         # The mouth Random drives only the advisor's mouth mesh (BIN 0x10007434: rand() % 5 + 1 per 100 ms).

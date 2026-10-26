@@ -93,7 +93,8 @@ public sealed partial class ParkHud
 	private ListSortMemory? fallbackSorts;
 	/// <summary>The session's remembered list sorts (UI-084); a HUD built without a host keeps its own.</summary>
 	private ListSortMemory Sorts => host?.ListSorts ?? (fallbackSorts ??= new());
-	private OriginalObject? selectedObject;
+	/// <summary>The client's selection: the level's own (<see cref="Level.Selection"/>), which placements and the removal of the object also write.</summary>
+	private OriginalObject? selectedObject { get => level.Selection; set => level.Selection = value; }
 	private readonly List<UiElement> economyElements = new();
 	private int cursorX = -1;
 	/// <summary>The last left press was taken by a tool or a pick, so its release is no click on the ground (the online walk).</summary>

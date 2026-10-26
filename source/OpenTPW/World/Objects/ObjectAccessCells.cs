@@ -275,7 +275,7 @@ public static class ObjectAccessCells
 		{
 			// Setting a queue type over a path clears the path first, every link of it undone on both sides (0x5346D0 → 0x5367A0(0, 0)).
 			if ( type == (byte)ParkCellType.Path )
-				PathLinkWriter.Unlink( cells, x, y, cardinalOnly: false );
+				PathLinkWriter.Unlink( cells, x, y, cardinalOnly: false, cells.ClearEffects );
 			cells.SetType( x, y, ParkCellType.Queue );
 		}
 		cells.SetLinks( x, y, (byte)(cells.LinksAt( x, y ) | towardEntrance ) );

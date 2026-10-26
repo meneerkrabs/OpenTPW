@@ -172,6 +172,7 @@ HEADS-001 docs/GUESTS.md
 HEADS-002 docs/PROGRESS.md
 HEADS-003 docs/PROGRESS.md
 HEADS-005 docs/GUESTS.md
+HEADS-008 docs/GUESTS.md
 MD2-902 docs/MD2-MODELS.md
 ONLINE-001 docs/ONLINE.md
 ONLINE-002 docs/reverse/APPROX-TRACE.md
@@ -220,6 +221,7 @@ QUEUE-008 docs/GUESTS.md
 QUEUE-009 docs/GUESTS.md
 QUEUE-011 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 QUEUE-013 docs/reverse/REVIEW-ORACLE.md
+QUEUE-014 docs/GUESTS.md
 QUEUE-016 docs/GUESTS.md
 QUEUE-017 docs/GUESTS.md
 QUEUE-018 docs/GUESTS.md
@@ -227,6 +229,7 @@ QUEUE-019 docs/GUESTS.md
 QUEUE-020 docs/GUESTS.md
 QUEUE-021 docs/GUESTS.md
 QUEUE-022 docs/GUESTS.md
+QUEUE-023 docs/GUESTS.md
 RIDES-001 docs/reverse/APPROX-TRACE.md
 RIDES-002 docs/reverse/APPROX-TRACE.md
 RIDES-003 docs/OBJECTS.md

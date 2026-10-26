@@ -392,6 +392,9 @@ public sealed record RideVisitorBridgeSnapshot
 	/// <summary>The node base BOUNCESETNODE set (script +0x70); null or absent while it is the creation value 1. Presentation only: not part of the canonical hash.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public int? BounceNodeBase { get; init; }
+	/// <summary>The node number each bounce slot stored when BOUNCE filled it (tp.exe 0x555742), one per slot of <see cref="Bounce"/>; null or absent while every rider's node is the base plus its slot index, the case of all four shipped scripts. Presentation only: not part of the canonical hash.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int[]? BounceNodes { get; init; }
 	/// <summary>The base height BOUNCESETBASE set (script +0x6E); null or absent while it is the creation value 0. Presentation only: not part of the canonical hash.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public short? BounceBaseHeight { get; init; }

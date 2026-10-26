@@ -165,7 +165,7 @@ internal sealed class CoasterCellMarkers : IDisposable
 				if ( cells.RawTypeAt( cell.X, cell.Y ) != MarkerType )
 				{
 					if ( cells.RawTypeAt( cell.X, cell.Y ) == (byte)ParkCellType.Path )
-						PathLinkWriter.Unlink( cells, cell.X, cell.Y, cardinalOnly: false );
+						PathLinkWriter.Unlink( cells, cell.X, cell.Y, cardinalOnly: false, cells.ClearEffects );
 					cells.SetType( cell.X, cell.Y, ParkCellType.Empty );
 					cells.SetFlags( cell.X, cell.Y, ParkCellFlags.None );
 					cells.SetType( cell.X, cell.Y, MarkerType );

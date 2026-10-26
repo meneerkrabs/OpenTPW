@@ -48,7 +48,7 @@ public partial class CoopSessionTests
 	/// <summary>The object window's Move button on <paramref name="item"/>.</summary>
 	private static void PressMove( ParkHud hud, OriginalObject item )
 	{
-		typeof( ParkHud ).GetField( "selectedObject", NonPublic )!.SetValue( hud, item );
+		typeof( ParkHud ).GetProperty( "selectedObject", NonPublic | System.Reflection.BindingFlags.Instance )!.SetValue( hud, item );
 		typeof( ParkHud ).GetMethod( "MoveObject", NonPublic )!.Invoke( hud, null );
 	}
 

@@ -651,6 +651,16 @@ public partial class CoopSessionTests
 			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( queueEntrance, 11, 1, 0 ), "a queue entrance's first cell over the joined path cell" );
 			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( pathEntrance, 11, 1, 0 ), "a path laid over the joined path cell takes no link off" );
 			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( exit, 11, 1, 0 ), "nor does an exit's path" );
+			// of two entrances the placement lays only the last's queue cell (ObjectAccessCells.Lay): the first's outside cell is asked nothing
+			var twoEntrances = ShapedEntry( "Info.Id 9107\nInfo.HasQueue 1\n", "6.6" );
+			var anchor = Level.GetCentredAnchor( twoEntrances, 12, 1, 0 );
+			var points = ObjectFootprint.GetAccessPoints( twoEntrances.Shape, anchor.X, anchor.Y, 0 ).ToArray();
+			Assert.AreEqual( 2, points.Length );
+			Assert.AreEqual( (10, 1), (points[0].OutsideX, points[0].OutsideY), "the first entrance opens onto the join" );
+			Assert.AreEqual( points[^1], ObjectAccessCells.Find( points ).Entrance, "the placement lays the last" );
+			Assert.AreNotEqual( (10, 1), (points[^1].OutsideX, points[^1].OutsideY) );
+			Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( twoEntrances, anchor.X, anchor.Y, 0, out _ ) );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( twoEntrances, 12, 1, 0 ), "only the entrance it lays is asked" );
 		}
 		finally
 		{
@@ -771,6 +781,47 @@ public partial class CoopSessionTests
 		}
 		Assert.IsTrue( rights.Allows( 1, new RemoveAtCommand( 10, 2 ) ) );
 		Assert.IsTrue( rights.Allows( 1, new QueueSegmentCommand( level.Objects.Objects.First( item => !ReferenceEquals( item, park.One ) ).Runtime.AttractionId, 14, 4, 6, 4 ) ) );
+	}
+
+	[TestMethod]
+	public void AQueueLineThatOnlyEndsOnAClaimedQueuesJoinLinksToItAndLeavesThatQueueAsItWas()
+	{
+		var park = NewPark();
+		park.Enter();
+		var level = park.Level;
+		var grid = level.Guests!.Grid;
+		// One's queue from (10, 6) up to its back cell (10, 2), joined to the path at (10, 1); the path east of the join taken up, so another queue may reach the join from there
+		ConfigureQueue( grid, park.One, 10, 5 );
+		grid.SetPath( 11, 1, false );
+		grid.SetPath( 12, 1, false );
+		// Two's queue from (13, 6) up to its back cell (13, 2), joined to nothing
+		var two = level.Objects.Objects.First( item => !ReferenceEquals( item, park.One ) );
+		ConfigureQueue( grid, two, 13, 5 );
+		var oneBefore = QueueState( park.One.Visitors );
+		var joinBefore = grid.Cells.LinksAt( 10, 1 );
+		var rights = new CoopBuildRights( level );
+		level.SetBuildGrant( 1, true );
+		MarkStation( park, park.One );
+		try
+		{
+			var up = new LayLineCommand( CellToolMode.Queue, two.Runtime.AttractionId, 13, 2, 13, 1 ) { Player = 1 };
+			var west = new LayLineCommand( CellToolMode.Queue, two.Runtime.AttractionId, 13, 1, 10, 1 ) { Player = 1 };
+			Assert.IsTrue( rights.Allows( 1, up ) && level.Commands.Apply( up ).Accepted );
+			Assert.IsTrue( rights.Allows( 1, west ), "a queue line that only ends on the claimed queue's join is the guest's" );
+			Assert.IsTrue( level.Commands.Apply( west ).Accepted );
+			Assert.IsTrue( grid.IsQueue( 11, 1 ) && grid.IsQueue( 12, 1 ), "Two's queue reaches the join" );
+			Assert.IsTrue( grid.IsWalkable( 10, 1 ) && !grid.IsQueue( 10, 1 ), "the join stays a path cell" );
+			Assert.AreEqual( joinBefore, (byte)(grid.Cells.LinksAt( 10, 1 ) & joinBefore), "every link of the join stays" );
+			two.Visitors.RecomputeQueue( grid );
+			Assert.AreEqual( (11, 1), two.Visitors.QueueBackCell, "Two's queue ends beside the join" );
+			Assert.AreNotEqual( 0, grid.Cells.LinksAt( 11, 1 ) & GuestPathGrid.LinkValue( 3 ), "and is linked to it, westward" );
+			park.One.Visitors.RecomputeQueue( grid );
+			Assert.AreEqual( oneBefore, QueueState( park.One.Visitors ), "the claimed queue is as it was" );
+		}
+		finally
+		{
+			MarkStation( park, park.One, station: false );
+		}
 	}
 
 	[TestMethod]

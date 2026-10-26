@@ -1,5 +1,11 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
+using OpenTPW.UI.Original;
+using N = System.Numerics;
 
 namespace OpenTPW.Tests;
 
@@ -94,20 +100,50 @@ public partial class CoopJoinSessionTests
 		CatchUpAndCompare( guest );
 	}
 
-	[TestMethod]
-	public void AResyncArmsAGuestsMoveToolAgainFromItsCarry()
+	/// <summary>A buy menu of one item.</summary>
+	private sealed class OneItem( BuildItem item ) : IBuildCatalog
 	{
-		var guest = MoveHosted();
-		var seat = guest.Link.Slot;
+		public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => item.Category == category ? new[] { item } : Array.Empty<BuildItem>();
+	}
+
+	/// <summary>A HUD over the guest's park as it stands now (a resync's park gets a new one), whose buy menu offers <paramref name="entry"/>, and the HUD's frame.</summary>
+	private static (ParkHud Hud, Action Frame) HudOf( Peer guest, ObjectCatalogEntry entry )
+	{
+		guest.Enter();
+		var strings = OriginalUiTests.FakeStrings();
+		var item = new BuildItem( "ride", entry.InfoId, (BuildCategory)entry.WhichUIType, -1, 0, null, Array.Empty<string>(), Entry: entry );
+		var hud = new ParkHud( guest.Level!, strings, new EconomyParkStatus( () => guest.Economy ), new OneItem( item ), new HudHost() );
+		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
+		var context = new UiContext( strings, new UiFonts( _ => font ), new UiModels( name => throw new FileNotFoundException( name ) ) )
+		{ Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };
+		return (hud, () =>
+		{
+			guest.Enter();
+			hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
+		});
+	}
+
+	/// <summary>The guest picks up the ride at (20, 12) and arms its Move tool with what the pick-up carries, as its HUD does; the type and its angle.</summary>
+	private (ObjectCatalogEntry Entry, int Rotation) ArmedMove( Peer guest )
+	{
 		guest.Enter();
 		Assert.IsFalse( guest.Level!.BeginMove( guest.Level.Objects.FindAt( 20, 12 )! ) );
 		var pick = guest.Level.WaitingToolStart!;
 		RoundsUntil( () => !pick.IsOpen, "the pick-up came back" );
-		// the guest's HUD arms the Move tool with what the pick-up carries
 		guest.Enter();
 		var (entry, rotation) = pick.Result!.As<(ObjectCatalogEntry Entry, int Rotation)>();
 		guest.Level.EndWaiting( pick );
 		Assert.IsTrue( guest.Level.CompleteMove( entry, rotation ) );
+		return (entry, rotation);
+	}
+
+	[TestMethod]
+	public void AResyncArmsAGuestsMoveToolAgainFromItsCarryAtItsFirstHudFrame()
+	{
+		var guest = MoveHosted();
+		var seat = guest.Link.Slot;
+		var (entry, rotation) = ArmedMove( guest );
+		Assert.AreNotEqual( 0, rotation, "the ride stands turned, so the angle tells" );
 		StartResync( guest );
 		guest.Link.DropFrame = null;
 		var old = guest.Level;
@@ -115,16 +151,46 @@ public partial class CoopJoinSessionTests
 		guest.Enter();
 		Assert.IsTrue( guest.Level!.CarriesEntry( seat ), "the new park holds the seat's carry" );
 		Assert.IsFalse( guest.Level.IsMoving, "a new park starts with no tool" );
-		// the new park's HUD arms it again, once, at the angle it had
-		var restored = guest.Level.TakeMoveToRestore();
-		Assert.IsTrue( restored is { } move && move.Entry.InfoId == entry.InfoId && move.Rotation == rotation );
+		// the new park's HUD arms it again at its first frame, with the buy item of its type, at the angle it had
+		var (hud, frame) = HudOf( guest, entry );
+		frame();
+		Assert.IsTrue( guest.Level.IsMoving );
+		Assert.AreEqual( entry.InfoId, guest.Level.BuildEntry!.InfoId );
+		Assert.AreEqual( rotation, guest.Level.BuildRotation );
+		Assert.AreEqual( entry.InfoId, ((BuildItem?)typeof( ParkHud ).GetField( "pendingItem", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.GetValue( hud ))?.InfoId );
 		Assert.IsNull( guest.Level.TakeMoveToRestore(), "once" );
-		Assert.IsTrue( guest.Level.CompleteMove( restored!.Value.Entry, restored.Value.Rotation ) );
-		Assert.IsFalse( guest.Level.EndStrayCarry( clock ), "an armed tool's carry is no stray one" );
+		frame();
+		Assert.IsFalse( guest.Session!.GuestCommands!.Open.Any( request => request.Command is EndMoveCommand ), "its carry is no stray one" );
 		// its end releases the carry, as ever
 		guest.Level.BuildEntry = null;
 		RoundsUntil( () => !guest.Level.CarriesEntry( seat ) && !host.Level!.CarriesEntry( seat ), "the end released the carry" );
 		Assert.IsNull( host.Level!.Objects.FindAt( 20, 12 ), "the object stays sold" );
+		CatchUpAndCompare( guest );
+	}
+
+	[TestMethod]
+	public void AResyncArmsNoMoveToolThatWasNotArmed()
+	{
+		var guest = MoveHosted();
+		var seat = guest.Link.Slot;
+		var (entry, _) = ArmedMove( guest );
+		// the Move ends (its end on its way) and a new pick-up goes before the resync: neither arms the new park's tool
+		guest.Enter();
+		guest.Level!.BuildEntry = null;
+		Assert.IsFalse( guest.Level.BeginMove( guest.Level.Objects.FindAt( 24, 12 )! ) );
+		StartResync( guest );
+		guest.Link.DropFrame = null;
+		var old = guest.Level;
+		RoundsUntil( () => guest.Level != old, "the park was swapped in" );
+		var (_, frame) = HudOf( guest, entry );
+		frame();
+		Assert.IsFalse( guest.Level!.IsMoving, "no Move tool was armed when the park was replaced" );
+		Assert.IsNull( guest.Level.MoveBeforeResync );
+		RoundsUntil( () =>
+		{
+			frame();
+			return !guest.Session!.GuestCommands!.Open.Any() && !guest.Level.CarriesEntry( seat ) && !host.Level!.CarriesEntry( seat );
+		}, "the end went, and the second pick-up's carry, without its tool, was ended" );
 		CatchUpAndCompare( guest );
 	}
 

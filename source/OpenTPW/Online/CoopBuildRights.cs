@@ -133,8 +133,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// placement's own check plans it (<see cref="ParkObjects.Check(ObjectCatalogEntry, int, int, int, out ObjectPlacementPlan)"/>, centred as <see cref="Level.PlaceObject"/> centres it): no object
 	/// it would demolish (one of a lower overwrite priority) is one the guest may not remove (<see cref="MayRemove"/>), and no cell it writes is a claimed ride's queue cell or the path cell its
 	/// back joins: its footprint, the path cells it clears (beyond a track end too) and the cell outside a queue ride's entrance, which it lays as queue (taking the links of a path cell there
-	/// off). The cells outside its other entrances and exits it lays or links as path, over a path too (<see cref="ObjectAccessCells.Lay"/>), which takes no link off: they are asked for
-	/// themselves alone (a path paves a queue's end). A placement the park refuses is the park's to refuse.
+	/// off). The cell outside its other entrance and its exit it lays or links as path, over a path too, which takes no link off: they are asked for themselves alone (a path paves a queue's
+	/// end). The placement lays only its last entrance's and its last exit's (<see cref="ObjectAccessCells.Lay"/>), so only they are asked. A placement the park refuses is the park's to refuse.
 	/// </summary>
 	internal bool PlacementLeavesClaimsAlone( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
@@ -143,11 +143,11 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 			return true;
 		if ( plan.Overwritten.Any( item => !MayRemove( item ) ) )
 			return false;
-		var outside = ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, rotation ).ToArray();
-		bool LaysQueue( ObjectAccessPoint point ) => entry.HasQueue && point.Kind == ObjectCellKind.Entrance;
-		var written = ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) ).Concat( plan.ClearedPaths )
-			.Concat( outside.Where( LaysQueue ).Select( point => (point.OutsideX, point.OutsideY) ) ).Distinct().ToArray();
-		var paths = outside.Where( point => !LaysQueue( point ) ).Select( point => (point.OutsideX, point.OutsideY) ).Distinct().ToArray();
+		var (entrance, exit) = ObjectAccessCells.Find( ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, rotation ) );
+		var queueEntrance = entry.HasQueue && entrance is { } enter ? new[] { (enter.OutsideX, enter.OutsideY) } : Array.Empty<(int, int)>();
+		var written = ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) ).Concat( plan.ClearedPaths ).Concat( queueEntrance )
+			.Distinct().ToArray();
+		var paths = new[] { entry.HasQueue ? null : entrance, exit }.OfType<ObjectAccessPoint>().Select( point => (point.OutsideX, point.OutsideY) ).Distinct().ToArray();
 		return !TouchesClaimedQueue( written, joins: true ) && !TouchesClaimedQueue( paths, joins: false );
 	}
 

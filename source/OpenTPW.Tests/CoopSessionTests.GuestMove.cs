@@ -377,23 +377,41 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
-	public void AHostLinkWithoutItsSessionsStateTakesNoGrantBack()
+	public void AHostLinkWithoutItsSessionsStateTakesNoGrantOrCarryBack()
 	{
-		var (host, guest, hostLink, _) = Shared();
-		var view = ViewOf( guest );
-		Rounds( 20, host, guest );
-		Grant( host, guest, view );
-		var seat = guest.Level.Commands.Player;
+		var (host, guest, view, seat) = MoveSession();
+		PickUp( host, guest, view );
+		var hostLink = network!.Host;
 		var log = host.Level.Commands.Log.Count;
 		// the host's socket lost its session's state (between a loss and its resume): its frames read no seat
 		var state = hostLink.Snapshot;
 		hostLink.Snapshot = null;
 		Rounds( 10, host );
-		Assert.IsTrue( host.Level.HasBuildGrant( seat ), "no seat counts as left" );
+		Assert.IsTrue( host.Level.HasBuildGrant( seat ) && host.Level.CarriesEntry( seat ), "no seat counts as left" );
 		hostLink.Snapshot = state;
 		Rounds( 10, host, guest );
 		Assert.IsTrue( host.Level.HasBuildGrant( seat ) && guest.Level.HasBuildGrant( seat ), "the seat's member is the same once the state is back" );
-		Assert.IsFalse( host.Level.Commands.Log.Skip( log ).Any( entry => entry.Command is SetBuildGrantCommand or ReleaseSeatCommand ), "no grant was taken back" );
+		Assert.IsTrue( host.Level.CarriesEntry( seat ) && guest.Level.IsMoving, "and the carry and its Move tool stay" );
+		Assert.IsFalse( host.Level.Commands.Log.Skip( log ).Any( entry => entry.Command is SetBuildGrantCommand or ReleaseSeatCommand ), "nothing was taken back" );
+		view.Escape();
+		RoundsUntil( () => !host.Level.CarriesEntry( seat ), host, guest, view, "the Move's end released the carry" );
 		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AGuestThatLeavesWhileTheHostLinkLacksItsSessionsStateHasItsGrantAndCarryReleased()
+	{
+		var (host, guest, view, seat) = MoveSession();
+		PickUp( host, guest, view );
+		var hostLink = network!.Host;
+		hostLink.Snapshot = null;
+		// the departure is an event of its own: the next frame takes the grant back and releases the carry, whatever state the link holds
+		guest.Enter();
+		guest.Session!.End( "The guest left." );
+		network.Remove( moveGuestLink! );
+		for ( var round = 0; round < 600 && (host.Level.CarriesEntry( seat ) || host.Level.HasBuildGrant( seat )); round++ )
+			Rounds( 1, host );
+		Assert.IsFalse( host.Level.CarriesEntry( seat ) || host.Level.HasBuildGrant( seat ) );
+		Assert.IsTrue( host.Level.Commands.Log.Any( entry => entry.Command is ReleaseSeatCommand { Seat: var released } && released == seat ), "a record of the stream" );
 	}
 }

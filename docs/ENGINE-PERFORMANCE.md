@@ -420,5 +420,17 @@ builds 2000 textures (about 55 ms); the original does the same with its wide zoo
 The terrain computes the spans every frame (a few hundred floating point operations), looks the cells up when the original's gate lets it (docs/LND.md; in practice every frame once the level has changed), and rewrites the mesh of at most 2500 cells only when the list or a texture changed. The hole answers of the pools extension are kept per hole version.
 
 
+**At the wide zoom's new far end** (the range ends where the top of the screen still shows ground before the fog, docs/LND.md; one round, Release, Jungle, `--perf-run 9000` with 150 guests; 3000 frames for the last two rows; frame average ms, p99 in brackets; "panning" adds `--perf-pan`):
+
+| Setting, preset, cache | Zoom | Still | Panning | main at the same zoom (still, panning) |
+| --- | ---: | ---: | ---: | ---: |
+| 2, High (32 texels, 2000 cells) | 173 | 1.40 (2.43) | 1.47 (3.06) | 1.37, 1.38 |
+| 2, 64 texels, 2500 cells | 173 | 1.40 (2.42) | 1.56 (3.34) | 1.37, 1.38 |
+| 3, 32 texels, 2000 cells | 300 | 56.6 (61.1) | 54.9 (59.5) | 3.04, 2.67 |
+| 3, 64 texels, 2500 cells | 300 | 2.95 (4.12) | 4.76 (17.7) | 3.04, 2.67 |
+| 3, Enhanced preset (64 texels, 2000 cells) | 300 | 152.6 (190.6) | 148.0 (156.0) | 3.04, 2.67 |
+
+At zoom 173 the list is about 1400 cells, which fits every cache, and the frame cost is main's. Setting 3 at zoom 300 lists the cap of 2500 cells: a cache of 2500 holds them, but the High preset's 2000 slots and the Enhanced preset's 2000 slots (the Enhanced preset raises the texture size and the view distance, not the cache option) do not, so every frame evicts what it needs next and builds 2000 textures: 55 ms at 32 texels and 150 ms at 64 texels. That is the original's own behaviour for a list larger than its cache, not worked around here.
+
 In the browser (AOT page, headless Chrome 155 with `--mute-audio`, `tools/web-perf/run.mjs --scenarios jungle --window 15`, three runs of each build, Apple M5; final code): the first view is built in the park's entering frame, whose largest frame is 76, 79.7 and 73.4 ms against 46, 48.6 and 47.2 ms of the main build, about 28 ms once (the 898 cells of the Home view); the page is ready in 9.62, 9.43 and 9.44 s against 9.42, 9.59 and 9.42 s, and the steady window
 is the same (main thread busy 9.1, 8.3 and 8.7 % against 9.9, 8.3 and 8.1 %, frame p95 1.6, 1.5 and 1.5 ms against 1.7, 1.5 and 1.5 ms, 60 fps, no long task). The browser builds every listed cell before it draws, as the desktop does; there is no per frame budget and no static stand-in texture. The fog and the far plane add no measurable cost there.

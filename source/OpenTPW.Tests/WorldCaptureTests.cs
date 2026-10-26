@@ -47,9 +47,14 @@ public class WorldCaptureTests
 			var wide = new ParkCameraMode();
 			wide.SetPose( new Vector3( 3, 4, 9 ), 1, 405 );
 			Assert.AreEqual( 40f, wide.Height );
+			// its far end follows FIRSTPERSONVIEWDISTANCE: all 300 at setting 3, about 173 at setting 2 (the High preset)
+			RenderFog.OptionOverride = 3;
 			wide.SetPose( new Vector3( 3, 4, 9 ), 500, 0 );
 			Assert.AreEqual( 300f, wide.Height );
+			RenderFog.OptionOverride = 2;
+			wide.SetPose( new Vector3( 3, 4, 9 ), 500, 0 );
+			Assert.AreEqual( 173f, wide.Height, 1f );
 		}
-		finally { GameOptions.Current = previous; }
+		finally { GameOptions.Current = previous; RenderFog.OptionOverride = null; }
 	}
 }

@@ -203,7 +203,7 @@ public partial class Level
 		}
 		if ( typesFootprints )
 		{
-			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation );
+			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation, new LinkEffects( null, null, ReevaluateRideOfOwner ) );
 			// The cells outside the entrance and exit are laid by a build (PlaceObject), not by an import or a restore, and before the object registers with the guests, which read them.
 			Objects.ObjectPlaced += item =>
 			{
@@ -307,7 +307,36 @@ public partial class Level
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation] the ride is skipped when its open word +0x68 is set or its state +0x19C is 1 or 4, +0x64 (the call) is set, state 2, or 0x4DE4A0 reports the queue unconnected; a type-3 ride (coaster) must pass 0x441970 and a kind 1, 2 or 3 ride needs its track word +0x2C; then +0x68 = 1, the script variable 6 (VAR_RIDECLOSED) = 0 and SetState(0) (0x4E0E60); +0x5E is cleared on every path
 	// [BIN:TPW-EXE:0x004DE462 queue opening's model call] the opening calls 0x004547C0 on the ride's thing (table 0x007A4610 by the thing's +0x20): its hoarding sinks (OriginalObjectRuntime.Open)
-	// [APPROX:QUEUE-023] the re-evaluation runs on the queue tool's edits, a path laid over a queue cell and a queue cell's clear only, not at the click handler's own calls 0x52537A and 0x5259AE nor after the placements 0x528A70 and 0x52FE50
+	// [BIN:TPW-EXE:0x004DE1F0 re-evaluation callers] the callers are the queue tool's cell click (0x526118, QueueEdited), the segment commit (0x527541) and Back (0x52FFEC: after every undo that pops a point, the prior corner being a path cell included), the cell setter's path over a queue cell (0x534858, Paths.QueueCellPaved), a path cell's clear beside an entrance cell with an owner (0x53694B, ReevaluateRideOfOwner), and a ride's placement: inside the commit when the type has a queue (0x529890) and at the click's tail (0x52537A, the Move tool's 0x5259AE), which ReevaluatePlacedQueue runs; the cell clear's queue case (types 3 and 9) calls it nowhere
+	/// <summary>
+	/// The re-evaluation <c>0x004DE1F0</c> of the ride whose owner word is <paramref name="owner"/> after a path cell beside its entrance cell was cleared: the queue is recomputed and its back
+	/// cell stamped, and a closed ride that passes the opening tests opens.
+	/// </summary>
+	private void ReevaluateRideOfOwner( ushort owner )
+	{
+		if ( Guests is not { } guests || guests.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( ride => ride.OwnerWord == owner && ride.HasCells ) is not { } found )
+			return;
+		found.RecomputeQueue( guests.Grid );
+		found.NotifyQueueEdited( guests.Grid );
+	}
+
+	/// <summary>
+	/// The two re-evaluations a placed ride with a queue gets: the placement's own (<c>0x529890</c>, after the entrance's queue cell is laid) and the click's (<c>0x52537A</c>, the Move tool's
+	/// <c>0x5259AE</c>), each raising the stamp counter and stamping the block of the queue's back cell, which is the front cell the placement laid.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00529890 placement queue evaluation] the queue-option branch of the commit (0x52977F) runs 0x81, 0x85, 0x86 on the laid queue cell and then 0x4DE1F0 on the new ride (0x8186AC); the click handler's tail runs the passes 0x85, 0x86, 0x83, 0x81 and 0x4DE1F0 again for a placement the sub-record flag 0x52FAB0 reports as entrance-bearing (0x5251A8..0x52537A, 0x5258DF..0x5259AE). The ride's queue is not yet connected (the back cell links only toward the entrance, 0x4DE4A0), so neither call opens it
+	internal static void ReevaluatePlacedQueue( GuestSimulation guests, OriginalObject placed )
+	{
+		if ( !placed.Entry.HasQueue || placed.Entry.IsTool || placed.Visitors is not { HasCells: true } ride
+			|| ride.QueueFrontCell is not { } front || !guests.Grid.IsQueue( front.X, front.Y ) )
+			return;
+		for ( var call = 0; call < 2; call++ )
+		{
+			ride.RecomputeQueue( guests.Grid );
+			ride.NotifyQueueEdited( guests.Grid );
+		}
+	}
+
 	private void ReevaluateQueuedRide( OriginalObjectRuntime runtime )
 	{
 		if ( runtime.IsOpen || Gate?.MayOpen( runtime ) != true )
@@ -768,7 +797,7 @@ public partial class Level
 			{
 				if ( Park != null && Commands is not { IsLocalIssuer: false } )
 					GameAudio.PlayUiAt( GameAudio.QueueJoinEvent, GameAudio.QueueNeighbourSoundPosition( x, y ) );
-			} ),
+			}, ReevaluateRideOfOwner ),
 			ObjectGivesWay = ( x, y ) => Objects.GivesWay( x, y, ParkObjects.PathOverwritePriority ),
 			DemolishObject = DemolishObjectAt
 		};
@@ -922,7 +951,7 @@ public partial class Level
 			() => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0,
 			RefundNativeQueueOwner,
 			() => { ride.RecomputeQueue( Guests.Grid ); ride.NotifyQueueEdited( Guests.Grid ); },
-			new LinkEffects( RefreshTile ), removed => { Guests.SetDownOffQueueCells( removed, ride ); AfterAccessCellRemoved( removed ); },
+			new LinkEffects( RefreshTile, null, ReevaluateRideOfOwner ), removed => { Guests.SetDownOffQueueCells( removed, ride ); AfterAccessCellRemoved( removed ); },
 			() => ResolveQueueEntrance( Objects, Guests.Grid.Cells, ride.OwnerWord ),
 			terminalAllowed: ( x, y ) => !IsReadOnlyVisit && Objects.FindAt( x, y ) == null && Objects.Grid.CheckTerrain( x, y ) == OriginalPlacementResult.Path
 				&& Guests.Grid.Cells.RawTypeAt( x, y ) == (byte)ParkCellType.Path && !IsQueueBlockedCore( x, y, terminalPath: true ) ) );
@@ -1653,6 +1682,8 @@ public partial class Level
 		}
 		if ( bought != null )
 			LinkEconomy( placed, bought.Id );
+		if ( Guests != null && TypesFootprints )
+			ReevaluatePlacedQueue( Guests, placed );
 		LastActionMessage = bought != null
 			? $"Built {entry.DisplayName} for ${bought.TotalSpent}; it runs its original script."
 			: $"Built {entry.DisplayName} (sandbox: no economy, not charged); it runs its original script.";

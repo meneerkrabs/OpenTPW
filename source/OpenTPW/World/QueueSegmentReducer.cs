@@ -147,7 +147,8 @@ internal sealed class QueueSegmentReducer
 	{
 		if ( receipt.Start == ParkPathBuilder.SnapEnd( receipt.Start, receipt.End ) || !SupportsUndo( receipt.Start, receipt.End ) ) throw new InvalidOperationException( "Queue undo leaves the supported plain domain." );
 		// 52FE50: the prior corner currently being a path suppresses the second removal click altogether.
-		if ( cells.RawTypeAt( receipt.Start.X, receipt.Start.Y ) == 1 ) return;
+		// [BIN:TPW-EXE:0x0052FFEC Back's re-evaluation] the popped point is still clicked and the mode restored, and 0x4DE1F0 runs after every undo that popped a point, so a suppressed second click re-evaluates too
+		if ( cells.RawTypeAt( receipt.Start.X, receipt.Start.Y ) == 1 ) { changed?.Invoke(); return; }
 		var line = ParkPathBuilder.LayLine( receipt.End, receipt.Start );
 		var cleared = new HashSet<(int X, int Y)>();
 		foreach ( var p in line )

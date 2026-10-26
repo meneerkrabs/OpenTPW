@@ -200,4 +200,20 @@ public class QueueSegmentReducerTests
 		Assert.AreEqual( (byte)0, map.RawTypeAt( 3, 2 ) );
 	}
 
+
+	[TestMethod]
+	public void BackReevaluatesTheRideEvenWhenThePriorCornerIsAPathAndTheSecondClickIsSuppressed()
+	{
+		// tp.exe 0x52FE50: 0x4DE1F0 (0x52FFEC) runs after every undo that popped a point; a prior corner that is a path cell only suppresses the second removal click
+		var map = new ParkCellMap( 12, 12 );
+		map.SetType( 5, 5, ParkCellType.Path );
+		map.SetType( 5, 6, ParkCellType.Queue ); map.SetOwner( 5, 6, 17 );
+		map.SetType( 5, 7, ParkCellType.Queue ); map.SetOwner( 5, 7, 17 );
+		var edits = 0;
+		var reducer = new QueueSegmentReducer( map, 17, ( x, y ) => false, () => true, _ => true, () => 10, _ => { }, changed: () => edits++ );
+		reducer.Undo( new QueueSegmentReceipt( (5, 5), (5, 7) ) );
+		Assert.AreEqual( 1, edits, "the re-evaluation runs once" );
+		Assert.AreEqual( (byte)3, map.RawTypeAt( 5, 6 ), "nothing was cleared" );
+		Assert.AreEqual( (byte)3, map.RawTypeAt( 5, 7 ) );
+	}
 }

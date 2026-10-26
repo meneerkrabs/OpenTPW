@@ -126,6 +126,58 @@ public class ObjectAccessCellsTests
 		Assert.IsNull( Level.ResolveQueueEntrance( rig.Objects, restoredCells, Level.OwnerWord( item ) ), "ownership validation belongs to entry reconstruction" );
 	}
 
+	[TestMethod]
+	public void APlacedRideWithAQueueIsEvaluatedTwiceAndItsFrontBlockStamped()
+	{
+		// tp.exe: 0x4DE1F0 runs inside the placement commit when the type has a queue (0x529890) and again at the click's tail (0x52537A, the Move tool's 0x5259AE); each raises the stamp counter and stamps the back cell's block
+		var queued = Entry( 1236, 0, true, "*2S" );
+		var shop = Entry( 1237, 0, false, "*2S" );
+		var rig = new Rig( queued, shop );
+		var item = rig.Place( queued, 8, 8 )!;
+		var grid = new GuestPathGrid( rig.Cells );
+		grid.SetPath( 1, 1, true );
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 7 ) { ArrivalsEnabled = false };
+		Assert.IsTrue( Level.RegisterWithGuests( item.Runtime, item.AccessPoints, simulation, 0, Level.OwnerWord( item ), ownExitCell: true,
+			queueEntryResolver: () => Level.ResolveQueueEntrance( rig.Objects, rig.Cells, Level.OwnerWord( item ) ) ) );
+		var front = item.Visitors.QueueFrontCell!.Value;
+		Assert.IsTrue( grid.IsQueue( front.X, front.Y ) );
+		var before = rig.Cells.StampCounter;
+		Level.ReevaluatePlacedQueue( simulation, item );
+		Assert.AreEqual( before + 2, rig.Cells.StampCounter, "two evaluations" );
+		Assert.AreEqual( before + 2, rig.Cells.BlockStamp( front.X / 16, front.Y / 16 ), "the second stamps the front cell's block" );
+
+		// a type without a queue takes neither (0x529890 is the queue option's branch, and the tail is the entrance-bearing placement's)
+		var other = rig.Place( shop, 20, 20 )!;
+		Assert.IsTrue( Level.RegisterWithGuests( other.Runtime, other.AccessPoints, simulation, 0, Level.OwnerWord( other ), ownExitCell: true ) );
+		var counter = rig.Cells.StampCounter;
+		Level.ReevaluatePlacedQueue( simulation, other );
+		Assert.AreEqual( counter, rig.Cells.StampCounter );
+	}
+
+	[TestMethod]
+	public void AClearedPathCellBesideAnOwnedEntranceReportsItsRideAndAQueueCellDoesNot()
+	{
+		// tp.exe 0x5367A0 at 0x53694B: the path case (type 1) re-evaluates the ride of a type-9 neighbour that carries an owner word, on a cardinal bit; the queue case (types 3 and 9) calls nothing
+		var shop = Entry( 1238, 0, false, "*2S" );
+		var queued = Entry( 1239, 0, true, "*2S" );
+		var rig = new Rig( shop, queued );
+		var item = rig.Place( shop, 8, 8 )!;
+		var entrance = item.AccessPoints.Single( point => point.Kind == ObjectCellKind.Entrance );
+		var outside = (X: entrance.OutsideX, Y: entrance.OutsideY);
+		Assert.AreEqual( (byte)ParkCellType.Path, rig.Cells.RawTypeAt( outside.X, outside.Y ) );
+		Assert.AreNotEqual( 0, rig.Cells.LinksAt( outside.X, outside.Y ) & PathLinkWriter.Opposite( (byte)(rig.Cells.LinksAt( entrance.X, entrance.Y ) & 0x55) ), "the path cell is linked to the entrance" );
+		var seen = new List<ushort>();
+		PathLinkWriter.Unlink( rig.Cells, outside.X, outside.Y, cardinalOnly: false, new LinkEffects( null, null, owner => seen.Add( owner ) ) );
+		CollectionAssert.AreEqual( new[] { Level.OwnerWord( item ) }, seen );
+
+		var ride = rig.Place( queued, 20, 20 )!;
+		var gate = ride.AccessPoints.Single( point => point.Kind == ObjectCellKind.Entrance );
+		Assert.AreEqual( (byte)ParkCellType.Queue, rig.Cells.RawTypeAt( gate.OutsideX, gate.OutsideY ) );
+		seen.Clear();
+		PathLinkWriter.Unlink( rig.Cells, gate.OutsideX, gate.OutsideY, cardinalOnly: true, new LinkEffects( null, null, owner => seen.Add( owner ) ) );
+		Assert.AreEqual( 0, seen.Count, "a queue cell's clear re-evaluates nothing" );
+	}
+
 	[DataTestMethod, DataRow( 0 ), DataRow( 90 ), DataRow( 180 ), DataRow( 270 )]
 	public void RideExitUsesTheEntranceOwnerExitAndDirectionByteAfterRealPlacement( int rotation )
 	{

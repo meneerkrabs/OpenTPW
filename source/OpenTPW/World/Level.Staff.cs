@@ -78,6 +78,8 @@ public partial class Level
 	/// <summary>One park tool at a time: ends the path, queue, track, coaster, placing and remove tools before a staff tool starts.</summary>
 	public void EndBuildTools()
 	{
+		// [EXT:online-coop-commands] a guest's queue edit that waits for the host starts no tool after another tool's start (C3b)
+		DropQueueEditWait();
 		PatrolTool?.Cancel();
 		BuyLandTool?.Cancel();
 		AreaClearTool?.Cancel();

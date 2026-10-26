@@ -428,6 +428,9 @@ public sealed partial class ParkHud
 				level.CellTool.Cancel();
 			else if ( pendingItem != null || level.BuildEntry != null )
 				LeaveBuildTool();
+			// [EXT:online-coop-commands] a guest's queue edit that waits for the host is left as a tool is (C3b): only the next Escape opens the pause menu
+			else if ( level.WaitingQueueEdit != null )
+				level.DropQueueEditWait();
 			else
 				OpenPauseMenu();
 		};
@@ -634,16 +637,27 @@ public sealed partial class ParkHud
 		level.Commands.Issue( new SetAttractionOpenCommand( item.Runtime.AttractionId, !item.IsOpen ) );
 	}
 
+	/// <summary>
+	/// Sells the placed object with attraction id <paramref name="attraction"/> (<see cref="RemoveAttractionCommand"/>): [EXT:online-coop-commands] a guest's sale goes to the host, and the sell
+	/// buttons take no second sale of the object until its outcome comes back (C3b).
+	/// </summary>
+	private void SellAttraction( int attraction )
+	{
+		if ( level.Commands.Issue( new RemoveAttractionCommand( attraction ) ).Request is { } request )
+			level.WaitSale( attraction, request );
+	}
+
 	private void DeleteRide()
 	{
 		if ( RejectReadOnlyAction() )
 			return;
-		if ( selectedObject is not { IsDeleted: false } item || item.Entry.IsFixedItem )
+		// [EXT:online-coop-commands] a guest's sale of the object that waits for the host takes no second one (C3b)
+		if ( selectedObject is not { IsDeleted: false } item || item.Entry.IsFixedItem || level.IsSaleWaiting( item.Runtime.AttractionId ) )
 			return;
 		void Remove()
 		{
 			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam ([EXT:online-coop-commands]: one command either way).
-			level.Commands.Issue( new RemoveAttractionCommand( item.Runtime.AttractionId ) );
+			SellAttraction( item.Runtime.AttractionId );
 			selectedObject = null;
 			SetInfoArm( false );
 		}
@@ -1220,14 +1234,26 @@ public sealed partial class ParkHud
 			// Backspace over a path, queue, pool bridge or pool water cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack], a pool bridge or water cell [EXT:pools-bridges] [EXT:pools-tool]); a held key repeats only over path and queue cells.
 			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && BacktrackKey( input.BackspaceRepeating ) )
 				return true;
+			// [EXT:online-coop-commands] a right click leaves a guest's queue edit that waits for the host, as it leaves a tool (C3b)
+			if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel && level.WaitingQueueEdit != null )
+			{
+				level.DropQueueEditWait();
+				return toolPress = true;
+			}
 			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )
 				return false;
 			// A left click on a queue cell edits that ride's queue (help 444): the queue tool starts at its back cell.
-			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is 444 && level.EditQueueAt( cursorX, cursorY ) )
+			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is 444 )
 			{
-				PostMessage( strings.Help( 445 ) );
-				tool.Hover( (cursorX, cursorY) );
-				return toolPress = true;
+				if ( level.EditQueueAt( cursorX, cursorY ) )
+				{
+					PostMessage( strings.Help( 445 ) );
+					tool.Hover( (cursorX, cursorY) );
+					return toolPress = true;
+				}
+				// [EXT:online-coop-commands] a guest's edit went to the host (or one waits already): the queue tool starts once it comes back (C3b, CompleteQueueEdit)
+				if ( level.WaitingQueueEdit != null )
+					return toolPress = true;
 			}
 			// A left click on an empty owned cell or on a path cell starts the path tool there (help 441/442).
 			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY, out var refused ) )

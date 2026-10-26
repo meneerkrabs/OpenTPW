@@ -781,9 +781,8 @@ public partial class Level
 		}
 		SetupPoolSlides();
 		SetupPoolBridges();
-		// [EXT:online-coop-commands] the bulldozer's drag clears each object and path cell through a command of its own
-		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( x, y ) => Commands.Issue( new RemoveObjectAtCommand( x, y ) ).Accepted, () => Guests?.Grid.Cells,
-			( x, y ) => Commands.Issue( new RemovePathCellCommand( x, y ) ) is { Value: CellBuildResult result } ? result : CellBuildResult.NotPath, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
+		// [EXT:online-coop-commands] the area clear's rectangle is one command (C3b)
+		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( a, b ) => Commands.Issue( new ClearAreaCommand( a.X, a.Y, b.X, b.Y ) ) );
 	}
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
@@ -839,9 +838,20 @@ public partial class Level
 	// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8); it shares LayLine, the vertex stack and the preview/commit code with the path tool
 	public bool EnterQueueTool( RideVisitorBridge ride )
 	{
-		if ( IsReadOnlyVisit || Guests == null || ride.QueueFrontCell is not { } front )
+		if ( IsReadOnlyVisit || Guests == null || ride.QueueFrontCell == null )
 			return false;
 		StaffPlacement?.Cancel();
+		return EnterQueueTool( ride, ReadQueueToolStart( ride )! );
+	}
+
+	/// <summary>What the queue tool reads of a ride's queue when it starts (<see cref="EnterQueueTool(RideVisitorBridge)"/>): its line start, the corner walk's stack and the segments its undo takes back.</summary>
+	internal sealed record QueueToolStart( (int X, int Y) Start, IReadOnlyList<(int X, int Y)>? Stack, IReadOnlyList<SegmentResult>? Segments );
+
+	/// <summary>The queue tool's start for <paramref name="ride"/>, read from the park as it stands now; null without a queue front.</summary>
+	internal QueueToolStart? ReadQueueToolStart( RideVisitorBridge ride )
+	{
+		if ( Guests == null || ride.QueueFrontCell is not { } front )
+			return null;
 		// [EXT:online-coop-lockstep] the tool reads the queue as it stands now on a copy (a grid edit since the last recompute taken in): entering a tool changes nothing in
 		// the park, and each queue command brings the ride's own queue up to date first, on every peer
 		var queue = ride.QueueView( Guests.Grid );
@@ -851,9 +861,19 @@ public partial class Level
 		var stack = Guests.Grid.IsQueue( front.X, front.Y ) && queue.QueueCells.Count >= 2 ? QueuePaths.CornerStack( Guests.Grid, queue ) : null;
 		if ( stack is not { Count: >= 2 } || stack[^1] != start )
 			stack = null;
+		return new QueueToolStart( start, stack, stack == null ? null : QueuePaths.StackSegments( queue, stack ) );
+	}
+
+	/// <summary>
+	/// Starts the queue tool for <paramref name="ride"/> from <paramref name="start"/>: [EXT:online-coop-commands] a guest's queue edit enters it from what its record read before the
+	/// edit took the link off (<see cref="QueueEditStart"/>, C3b), as the host's click reads it before its edit.
+	/// </summary>
+	internal bool EnterQueueTool( RideVisitorBridge ride, QueueToolStart start )
+	{
+		if ( IsReadOnlyVisit || Guests == null )
+			return false;
 		// [EXT:online-coop-commands] the tool's previews read the ride's queue writer; each committed line is a command
-		CellTool.Enter( new ParkCommandLineWriter( CreateQueueWriter( ride ), Commands, ride.AttractionId ), start,
-			stack, stack == null ? null : QueuePaths.StackSegments( queue, stack ) );
+		CellTool.Enter( new ParkCommandLineWriter( CreateQueueWriter( ride ), Commands, ride.AttractionId ), start.Start, start.Stack, start.Segments );
 		return true;
 	}
 

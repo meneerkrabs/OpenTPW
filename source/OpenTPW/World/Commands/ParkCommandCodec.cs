@@ -75,6 +75,7 @@ public static class ParkCommandCodec
 			ParkCommandKind.PlaceObject => new PlaceObjectCommand( reader.String(), reader.Int(), reader.Int(), reader.Int(), reader.Bool(), reader.Int() ),
 			ParkCommandKind.RemoveAt => new RemoveAtCommand( reader.Int(), reader.Int() ),
 			ParkCommandKind.RemoveObjectAt => new RemoveObjectAtCommand( reader.Int(), reader.Int() ),
+			ParkCommandKind.ClearArea => new ClearAreaCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 			ParkCommandKind.RemoveAttraction => new RemoveAttractionCommand( reader.Int() ),
 			ParkCommandKind.PickUpObject => new PickUpObjectCommand( reader.Int() ),
 			ParkCommandKind.EndMove => new EndMoveCommand(),

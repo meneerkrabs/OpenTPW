@@ -1429,7 +1429,7 @@ public class DeterminismTests
 		"World/Coasters/CoasterRenderer.cs", "World/Coasters/CoasterPreview.cs",
 		"World/Guests/GuestRenderer.cs", "World/Guests/GuestSpriteAtlas.cs", "World/Guests/HeadPresentation.cs", "World/Guests/RideHeadRenderer.cs",
 		"World/Guests/SpriteScale.cs", "World/Guests/BalloonRenderer.cs", "World/Guests/ThoughtRenderer.cs",
-		"World/Original/BlueprintMarkers.cs", "World/Original/ProceduralTerrain.cs", "World/Original/TerrainVisibleSpans.cs", "World/Pools/PoolTextures.cs", "World/Pools/PoolMeshBuilder.cs", "World/Pools/PoolRenderer.cs",
+		"World/Original/BlueprintMarkers.cs", "World/Original/ProceduralTerrain.cs", "World/Original/TerrainListGate.cs", "World/Original/TerrainVisibleSpans.cs", "World/Pools/PoolTextures.cs", "World/Pools/PoolMeshBuilder.cs", "World/Pools/PoolRenderer.cs",
 		"World/Pools/Slides/PoolSlideMesh.cs", "World/Tracks/TrackRenderer.cs", "World/Tours/TourRenderer.cs", "World/Staff/StaffRenderer.cs",
 		"World/Winter/SnowCover.cs", "World/Winter/WinterAnchors.cs", "World/Winter/WarmItemRenderer.cs", "World/Umbrellas/UmbrellaRenderer.cs",
 		"World/Weather/WeatherRenderer.cs",

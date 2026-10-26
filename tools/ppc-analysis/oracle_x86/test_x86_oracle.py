@@ -958,10 +958,12 @@ class TerrainSpansAndCacheReading(unittest.TestCase):
         spans.BRANCHES.clear()
         for x in targets.terrain_spans_inputs(__import__('x86_harness').seeded('oracle-v1:tpw-exe-terrain-spans'), DEFAULT_COUNT):
             spans.spans(x)
-        self.assertEqual(set(spans.BRANCHES), {'hull1', 'hull2', 'hull2-right', 'hull2-left', 'hull2-collinear', 'hull-one-edge', 'hull-many-edges', 'hull-inside'})
+        hull = {'hull1', 'hull2', 'hull2-right', 'hull2-left', 'hull2-collinear', 'hull-one-edge', 'hull-many-edges', 'hull-inside'}
+        clip = {f'clip-{axis}-{code}' for axis in 'xz' for code in range(9)}     # the edge codes 0 to 8 (previous class + 3 x current class) of both slabs
+        self.assertEqual(set(spans.BRANCHES), hull | clip, dict(spans.BRANCHES))
 
     def test_spans_reach_the_last_column_and_row_of_a_level_field_but_not_of_a_tiny_one(self):
-        # an end is the edge plus 0.999999 in single precision: from about 8 cells on the sum rounds up to the next whole cell, so the last column and row are listed when the view reaches them
+        # an end is the edge plus 0.999999 in single precision: from a value of 32 on the sum rounds up to the next whole cell, so the last column and row are listed when the view reaches them
         spans = __import__('terrain_spans')
         wide = deep = False
         for x in targets.terrain_spans_inputs(__import__('x86_harness').seeded('oracle-v1:tpw-exe-terrain-spans'), DEFAULT_COUNT):

@@ -162,6 +162,7 @@ def _clip_axis(points: list, axis: int, low: float, high: float, cut) -> list:
         dcur = (low < cur[axis]) + (high < cur[axis])
         dprev = (low < prev[axis]) + (high < prev[axis])
         code = dprev + 3 * dcur
+        _hit(f'clip-{"x" if axis == 0 else "z"}-{code}')
         if code == 1:
             out += [prev, cut(cur, prev, low)]
         elif code == 2:

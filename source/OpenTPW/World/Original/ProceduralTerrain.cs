@@ -32,11 +32,12 @@ internal sealed class ProceduralTerrain : IDisposable
 
 	// the cells the procedural textures reach, the lowest and highest height of the field (model units) and the answers of the render hole delegate for the current hole version
 	private readonly bool[] eligible;
-	private readonly float lowHeight, highHeight;
 	private readonly byte[] holeState;
 	private readonly SysVector3[] cellNormals;
 	private ulong holeStateVersion;
-	private readonly TerrainVisibleSpans spans = new();
+	private readonly TerrainViewSpans viewSpans;
+	private TerrainVisibleSpans spans => viewSpans.Spans;
+	private readonly TerrainListGate gate = new();
 
 	// per cache slot: the cell whose texture the slot waits to be built for (x | z << 16), or -1 when the slot holds the pixels of the cell it was last given
 	private readonly int[] slotPending;
@@ -59,13 +60,8 @@ internal sealed class ProceduralTerrain : IDisposable
 	/// <summary>The spans of the last refresh (rows, columns and the farthest corner distance, <see cref="TerrainVisibleSpans.FarthestCorner"/>).</summary>
 	internal TerrainVisibleSpans Spans => spans;
 
-	/// <summary>
-	/// The distance the original's rays reach in original units (<c>0x8BD4C0</c>, set by FIRSTPERSONVIEWDISTANCE: 200, 325, 450 or 700); a ray's ground point is at most half of it from the camera.
-	/// </summary>
-	public float ViewDistance { get; set; } = 700f;
-
-	/// <summary>The field of view of the span selection's rays in degrees: 90, the value of <c>[0x87AF58]</c> in the park camera (<c>0x42A990</c> to <c>0x578BE0</c>), whose half-height tangent is 1. OpenTPW's camera is a narrower one (about 53 degrees, a tangent of 0.5), so the rays reach twice as far to each side as the screen does.</summary>
-	public const float SpanFieldOfView = 90f;
+	/// <summary>The span selection's inputs and results (shared with the level's far plane).</summary>
+	internal TerrainViewSpans ViewSpans => viewSpans;
 
 	/// <summary>Cells the last refresh drew with a procedural texture.</summary>
 	public int DrawnCells { get; private set; }
@@ -79,6 +75,12 @@ internal sealed class ProceduralTerrain : IDisposable
 	/// <summary>The part of <see cref="BuildMilliseconds"/> the texturer took, without the upload.</summary>
 	public double TexturerMilliseconds { get; private set; }
 
+	/// <summary>
+	/// A change of the scene's cells or nodes: the original's setters (<c>0x576574</c>, <c>0x576603</c>, <c>0x5767CA</c>, <c>0x473D9E</c>, <c>0x477177</c>, <c>0x477FAE</c>, <c>0x4786A7</c>) set bit 0x80000000 of <c>[0x8BD508]</c>, which the frame
+	/// function keeps (see <see cref="TerrainListGate"/>), so the cell list is built and looked up in every frame from then on.
+	/// </summary>
+	public void MarkSceneChanged() => gate.MarkSceneChanged();
+
 	public ProceduralTextureCache Cache => cache;
 	public ProceduralTerrainAtlas Atlas => ownedAtlas ?? throw new InvalidOperationException( "This terrain has no texture pages of its own." );
 	public ProceduralTerrainRectangle Rectangle => rectangle;
@@ -89,10 +91,11 @@ internal sealed class ProceduralTerrain : IDisposable
 
 	/// <param name="pageBase">The material slot of the first texture page; the pages follow it.</param>
 	public ProceduralTerrain( ModelHeightfield field, LndFile lnd, ProceduralTerrainRectangle rectangle, ProceduralTerrainSettings settings, int pageBase,
-		IProceduralPages? pages = null )
+		IProceduralPages? pages = null, TerrainViewSpans? viewSpans = null )
 	{
 		this.field = field;
 		this.rectangle = rectangle;
+		this.viewSpans = viewSpans ?? new TerrainViewSpans( field );
 		this.pageBase = pageBase;
 		texturer = new ProceduralTerrainTexturer( lnd, settings.Size );
 		atlas = pages ?? (ownedAtlas = new ProceduralTerrainAtlas( settings.Size, settings.CacheCells ));
@@ -107,15 +110,11 @@ internal sealed class ProceduralTerrain : IDisposable
 		previousSlots = new int[visibleKeys.Length];
 		cornerStride = field.CellCountX + 1;
 		corners = new SysVector3[cornerStride * (field.CellCountZ + 1)];
-		lowHeight = float.MaxValue;
-		highHeight = float.MinValue;
 		for ( var z = 0; z <= field.CellCountZ; z++ )
 		{
 			for ( var x = 0; x <= field.CellCountX; x++ )
 			{
 				var height = field.GetCornerHeight( x, z );
-				lowHeight = Math.Min( lowHeight, height );
-				highHeight = Math.Max( highHeight, height );
 				corners[z * cornerStride + x] = OriginalParkPlacement.ToEngine( field, new SysVector3( x * field.CellSizeX, height, z * field.CellSizeZ ) );
 			}
 		}
@@ -127,6 +126,8 @@ internal sealed class ProceduralTerrain : IDisposable
 		cellNormals = new SysVector3[eligible.Length];
 		// the mesh holds every cell a frame can list (2500), which can be more than the cache has slots for
 		vertices = new Vertex[ProceduralTextureCache.MaximumVisibleCells * 4];
+		// the level's scene nodes were just added (0x5762EE, 0x576574): the original's list is built from the first frame on
+		MarkSceneChanged();
 	}
 
 	/// <summary>The pages the material needs after its static slots.</summary>
@@ -171,7 +172,10 @@ internal sealed class ProceduralTerrain : IDisposable
 		{
 			Array.Clear( holeState );
 			holeStateVersion = holeVersion;
+			MarkSceneChanged();
 		}
+		if ( !gate.Frame( view ) )
+			return false;
 		CollectVisible( view, projection, renderHole );
 		cache.Resolve( visibleKeys.AsSpan( 0, visibleCount ), visibleSlots.AsSpan( 0, visibleCount ), visibleBuild.AsSpan( 0, visibleCount ) );
 		// a key that took a slot owns it until its pixels are built; a slot taken twice in one frame (a view of more cells than the cache holds) keeps the later cell's, as in the original
@@ -223,21 +227,9 @@ internal sealed class ProceduralTerrain : IDisposable
 	private void CollectVisible( in SysMatrix view, in SysMatrix projection, Func<int, int, bool>? renderHole )
 	{
 		visibleCount = 0;
-		// the original's rays first; a view that lists more cells than the cache holds (only the wide zoom range reaches it) takes narrower rays, down to nearly the screen's own field of view (the
-		// original's tangent is twice the screen's), so the cells would not push each other out of the cache every frame and the cap of a frame does not cut the far rows of the picture
-		var screen = Math.Abs( 1 / projection.M22 );
-		foreach ( var tangent in (ReadOnlySpan<float>)[1f, 0.75f, 0.625f, 0.5625f] )
-		{
-			var fieldOfView = tangent == 1f ? SpanFieldOfView : (float)(2 * Math.Atan( Math.Max( tangent * 2 * screen, screen ) ) * 180 / Math.PI);
-			if ( !ComputeSpans( view, projection, fieldOfView ) )
-			{
-				visibleCount = 0;
-				return;
-			}
-			ListSpanCells( renderHole );
-			if ( visibleCount <= cache.Capacity )
-				return;
-		}
+		if ( !viewSpans.Update( view, Math.Abs( projection.M11 ) / Math.Abs( projection.M22 ), TerrainViewSpans.LooksAlongNegativeZ( projection ) ) )
+			return;
+		ListSpanCells( renderHole );
 	}
 
 	private void ListSpanCells( Func<int, int, bool>? renderHole )
@@ -267,41 +259,6 @@ internal sealed class ProceduralTerrain : IDisposable
 				visibleCount++;
 			}
 		}
-	}
-
-	/// <summary>
-	/// The spans of the camera of <paramref name="view"/> and <paramref name="projection"/>: the camera's position and axes in the heightfield's own space (the engine space of the mesh undone: x, height, z),
-	/// the field of view and the aspect word of the projection.
-	/// </summary>
-	private bool ComputeSpans( in SysMatrix view, in SysMatrix projection, float fieldOfView )
-	{
-		if ( !SysMatrix.Invert( view, out var world ) || projection.M11 == 0 || projection.M22 == 0 )
-			return false;
-		// the camera's axes in the mesh's space: right and up are the view's x and y; forward is the view axis the projection puts in front of the camera (positive w)
-		var right = SysVector3.Normalize( SysVector3.TransformNormal( SysVector3.UnitX, world ) );
-		var up = SysVector3.Normalize( SysVector3.TransformNormal( SysVector3.UnitY, world ) );
-		var forward = SysVector4.Transform( new SysVector4( 0, 0, -1, 1 ), projection ).W > 0 ? -SysVector3.UnitZ : SysVector3.UnitZ;
-		forward = SysVector3.Normalize( SysVector3.TransformNormal( forward, world ) );
-		var eye = world.Translation;
-		var origin = OriginalParkPlacement.GetOrigin( field );
-		const float scale = OriginalParkPlacement.ModelScale;
-		// engine (x, y, z) is model (x, z, y) scaled and centred (OriginalParkPlacement.ToEngine); directions only swap the axes
-		static (float, float, float) Axis( SysVector3 v ) => (v.X, v.Z, v.Y);
-		var (rx, ry, rz) = Axis( right );
-		var (ux, uy, uz) = Axis( up );
-		var (fx, fy, fz) = Axis( forward );
-		Span<float> camera = [(eye.X + origin.X) / scale, eye.Z / scale, (eye.Y + origin.Y) / scale];
-		Span<float> matrix = [rx, ry, rz, ux, uy, uz, fx, fy, fz];
-		// the aspect word is the display's height over its width, which the projection's two scale factors give (M11 / M22)
-		var aspect = Math.Abs( projection.M11 ) / Math.Abs( projection.M22 );
-		// the option's distance (times the preset's view distance scale); only when the top edge of OpenTPW's own screen would reach the field's lowest point farther than half of it (the wide zoom range,
-		// [EXT:wide-zoom], puts the camera higher than the original's ordinary ones, whose limit would then leave the ground at the screen's far edge undrawn) it is the distance that edge needs, with a margin
-		var maxDistance = ViewDistance * CompatibilityRuntime.RenderQuality.ViewDistanceScale;
-		var topRayDescent = fy + Math.Abs( 1 / projection.M22 ) * uy;
-		if ( topRayDescent < -1e-4f && camera[1] > lowHeight )
-			maxDistance = Math.Max( maxDistance, 2.2f * (camera[1] - lowHeight) / -topRayDescent );
-		return spans.Compute( camera, matrix, lowHeight, highHeight, fieldOfView, aspect, maxDistance,
-			0, 0, field.CellCountX, field.CellCountZ, field.CellSizeX, field.CellSizeZ );
 	}
 
 	// the mesh: one quad per cell in view in the order of the list; a cell's texture coordinates run from the first to the last texel's centre of its tile (ProceduralTerrainAtlas),

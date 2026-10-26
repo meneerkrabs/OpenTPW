@@ -6,10 +6,10 @@ namespace OpenTPW;
 /// terrain lists the cells these spans cover (<c>0x56F090</c>), the cache holds them and the build makes their textures.
 /// </summary>
 /// <remarks>
-/// A port of the single precision x87 arithmetic of <c>0x56BB00</c> and the routines under it; the arithmetic is the original's operation by operation (the x87 runs with the 24-bit precision
-/// control that DDSCL_FPUSETUP gives), and the x86 oracle reproduces its rows, columns and distance for 400 and more cameras (<c>terrain_spans.py</c>, <see cref="TerrainVisibleSpansTests"/>
-/// pin the same cases without the executable). The one deviation is the rows: the original writes a row byte outside the 128 of its tables when the heightfield has more than 127 rows, OpenTPW
-/// leaves such a field without spans.
+/// A port of the single precision x87 arithmetic of <c>0x56BB00</c> and the routines under it, operation by operation. The 24-bit precision control is the game's own: the frame function <c>0x576EC0</c> calls
+/// <c>0x591220</c> (control word AND 0xFCFF) at <c>0x576FA7</c> and puts the old word back through <c>0x591240</c> at <c>0x577310</c>; the x86 oracle sets the same word (0x7F) and reproduces the rows, columns and distance
+/// for 400 and more cameras (<c>terrain_spans.py</c>; <see cref="TerrainVisibleSpansTests"/> pin the same cases without the executable).
+/// The origin is 0 in every shipped field: the heightfield header's +8 and +0xC (<c>0x56E6C0</c> to <c>0x56B880</c> and <c>0x56B8D0</c>) hold -0.0 and 0 (docs/MAP.md).
 /// </remarks>
 internal sealed class TerrainVisibleSpans
 {
@@ -48,7 +48,7 @@ internal sealed class TerrainVisibleSpans
 	/// The spans for a camera in the heightfield's own (model) space: the position, the matrix columns right, up and forward as nine values, the lowest and highest height of the field, the field of view in
 	/// degrees, the window's aspect word (height over width), the maximum distance (<c>0x8BD4C0</c>) and the heightfield's origin, cell counts and cell sizes. Returns false when the field has more rows than the tables hold.
 	/// </summary>
-	// [BIN:TPW-EXE:0x0056BB00 visible spans] corner rays (-w, h, 1), (w, h, 1), (w, -h, 1), (-w, -h, 1) with h = tan(fov pi / 360) and w = h / aspect, through the camera matrix (0x578D20 mode 3), each put on the ground (0x56B940), the hull of the camera and the four points (0x56BD60), clipped (0x56C5A0) to the field less its last cell, scaled by 1 / the cell size and rasterised (0x56D600)
+	// [BIN:TPW-EXE:0x0056BB00 visible spans] corner rays (-w, h, 1), (w, h, 1), (w, -h, 1), (-w, -h, 1) with h = tan(fov pi / 360) (the pick frustum 0x56B790 multiplies h by 0.5 at 0x56B7BD, this routine's factor is 1) and w = h / aspect, through the camera matrix (0x578D20 mode 3), each put on the ground (0x56B940), the hull of the camera and the four points (0x56BD60), clipped (0x56C5A0) to the field less its last cell, scaled by 1 / the cell size and rasterised (0x56D600)
 	public bool Compute( ReadOnlySpan<float> camera, ReadOnlySpan<float> matrix, float low, float high, float fieldOfView, float aspect, float maxDistance,
 		float originX, float originZ, int cellsX, int cellsZ, float sizeX, float sizeZ )
 	{
@@ -57,6 +57,8 @@ internal sealed class TerrainVisibleSpans
 		MinRow = 0x7F;
 		MaxRow = 0;
 		FarthestCorner = 10f;
+		// the original's tables hold 128 signed bytes and its code does not guard a larger field (a row or column byte past them would be written outside the object); every shipped field is at most 96 by 85 cells
+		// (docs/MAP.md; the lobby's 111 by 110 has no spans), so a larger one is outside what the original's list can describe and gets none here
 		if ( cellsX > Rows - 1 || cellsZ > Rows - 1 )
 			return false;
 

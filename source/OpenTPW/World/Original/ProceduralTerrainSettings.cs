@@ -45,11 +45,6 @@ public readonly record struct ProceduralTerrainSettings( int Size, int CacheCell
 		return For( detail.ProceduralTexturing, detail.ProceduralTextureCache, MachineMemoryBytes() );
 	}
 
-	// [BIN:TPW-EXE:0x0044D8F0 option apply] FIRSTPERSONVIEWDISTANCE 0, 1, 2 and 3 store 200, 325, 450 and 700 in [0x8BD4C0], the distance the span selection's rays reach (0x56B940)
-	/// <summary>The ray distance of the active FIRSTPERSONVIEWDISTANCE in original units (700, the longest, when no graphics settings exist).</summary>
-	public static float CurrentViewDistance()
-		=> IGraphicsSettings.Instance?.Detail.FirstPersonViewDistance switch { 0 => 200f, 1 => 325f, 2 => 450f, _ => 700f };
-
 	/// <summary>The RAM figure of this machine as the preset default reads it (the browser reports none and takes 4 GB).</summary>
 	// [EXT:graphics-preset-browser] the browser (WASM) reports no usable memory size; it takes the same 4096 MB as the preset default, so the clamp never applies there
 	public static long MachineMemoryBytes()

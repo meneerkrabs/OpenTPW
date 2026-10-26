@@ -1095,6 +1095,11 @@ internal sealed partial class GameFlow : IDisposable
 		// [BIN:TPW-EXE:0x4080e0 fog colour] [0x8bd47c] is the one colour of the viewport clear, the sky's haze and the distant vertices
 		// [EXT:evening] at dusk and night the evening extension darkens it (the level's WorldBackdropColour; the same colour at day)
 		RenderFog.WorldColour = RenderFog.ColourOf( Level?.WorldBackdropColour ?? RenderFog.LobbyColour );
+		// [BIN:TPW-EXE:0x44DBB0 FIRSTPERSONVIEWDISTANCE] the fog's linear range: the option's in a park, the lobby's 50 to 300 otherwise (RenderFog)
+		if ( Level != null )
+			RenderFog.SetParkRange( RenderFog.ViewDistanceOption() );
+		else
+			RenderFog.SetLobbyRange();
 		if ( Level != null )
 		{
 			// The park's backdrop: the level's fog colour (what the original's viewport clear and the sky's haze blend with), then the sky over it.
@@ -1116,7 +1121,7 @@ internal sealed partial class GameFlow : IDisposable
 			// The lobby's backdrop. The original clears the screen to the lobby's fog colour (LobbyEffects.ClearColour) and tints only its
 			// cloud layer with the island's eased colour (LobbyEffects.Sky); until that layer is drawn, the backdrop shows the cloud colour flat.
 			// [BIN:TPW-EXE:0x5d8b50 lobby sky] the lobby loads the engine sky (0x8c1828) from "Data\Levels\fantasy" (0x5852b0: sky.tga, sky_cyl.tga) and its draw (0x5863c0) colours the clouds from the 16 x 16 grid at +0xf60 that 0x5d96c0 fills with one colour each frame (the eased island colour, else the fog colour); the world pass is cleared to the fog colour
-			// [APPROX:UI-018] the lobby's own fog (50 to 300 units) is not applied: OpenTPW's world shaders keep their shared fog range (UI-107), and the scene's sky flags (0x5863c0 is gated on bit 0x10 of the scene flags, 0x576a00) are taken as set, as the video's clouds show
+			// [APPROX:UI-018] the lobby's fog is the original's 50 to 300 units (RenderFog.SetLobbyRange), and the scene's sky flags (0x5863c0 is gated on bit 0x10 of the scene flags, 0x576a00) are taken as set, as the video's clouds show
 			backgroundBatch.Clear();
 			var sky = lobbyEffects.Sky;
 			// [EXT:tpi-front-end-phase1] the Theme Park Inc Personnel File stands on a flat dark backdrop; the original's 3D intro world (wIntro) is not drawn

@@ -227,7 +227,7 @@ public static class GraphicsPresets
 	{
 		["GraphicalOptions.TEXTUREFILTERING"] = "Applied: sampler filter (point/bilinear/trilinear/anisotropic).",
 		["GraphicalOptions.MIPMAP"] = "Applied: mip levels sampled or not.",
-		["GraphicalOptions.FIRSTPERSONVIEWDISTANCE"] = "Stored only: OpenTPW has no first-person view yet.",
+		["GraphicalOptions.FIRSTPERSONVIEWDISTANCE"] = "Applied at once: the fog range of every view and the ray distance of the visible ground cells (there is no first-person view).",
 		["GraphicalOptions.FOG"] = "Not applied: OpenTPW always uses per-pixel depth fog (the original presets all select 1 = depth).",
 		["GraphicalOptions.TEXTUREQUALITY"] = "Not applied: textures are always uploaded at full resolution.",
 		["GraphicalOptions.PROCEDURALTEXTURING"] = "Applied at the next level load: 0 keeps the static ground textures, 1, 2 and 3 texture every visible terrain cell with its own 16, 32 or 64 texel texture built from the theme's base.lnd (the lobby stays static, as in the original; a level without base.lnd stays static).",

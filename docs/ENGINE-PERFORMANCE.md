@@ -404,21 +404,21 @@ warm cache; on the issue's hard disk with an antivirus filter each of the 1,258 
 
 ## Procedural terrain textures (October 26, 2026)
 
-The ground drawn with the original's procedural textures (docs/LND.md, issue #829) against the build before it (main at the merge of #834), same Mac, Release, Jungle, High preset (32 × 32 textures, a cache of 2000 cells),
-`--offscreen --silent --mute --no-advisor --frame-stats --no-vsync --perf-run 9000 --perf-crowd 150 --perf-zoom <value>`, two rounds, the builds alternating, other sessions running. "Panning" adds `--perf-pan` (the camera turns half a degree a frame and its target
+The ground drawn with the original's procedural textures, visible cells, fog and far plane (docs/LND.md, issue #829) against the build before it (main at the merge of #834), same Mac, Release, Jungle, High preset (32 × 32 textures, a cache of 2000 cells, FIRSTPERSONVIEWDISTANCE 2),
+`--offscreen --silent --mute --no-advisor --frame-stats --no-vsync --perf-run 9000 --perf-crowd 150 --perf-zoom <value>`, two rounds, the builds alternating, other sessions running (the machine was busier than for the earlier tables, so the Home numbers are higher for both builds). "Panning" adds `--perf-pan` (the camera turns half a degree a frame and its target
 goes round a circle of 30 units, so the cells in view change every frame); "still" is the unchanged park camera. Frame average and p99 in ms, round 1 and round 2:
 
 | View | Zoom value | main (average) | procedural (average) | main (p99) | procedural (p99) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Still | 110 (Home) | 1.43, 1.40 | 1.43, 1.40 | 2.39, 2.47 | 2.42, 2.34 |
-| Still | 300 | 3.00, 2.93 | 3.03, 3.03 | 4.41, 4.62 | 4.68, 5.52 |
-| Panning | 110 (Home) | 1.12, 1.45 | 1.40, 1.27 | 2.50, 4.34 | 2.93, 3.30 |
-| Panning | 300 | 3.02, 2.90 | 2.97, 2.96 | 5.90, 4.99 | 4.96, 4.49 |
+| Still | 110 (Home) | 1.72, 1.76 | 1.72, 1.77 | 3.10, 3.34 | 3.33, 3.37 |
+| Still | 300 | 3.58, 3.51 | 56.4, 60.1 | 5.06, 5.74 | 61.2, 67.8 |
+| Panning | 110 (Home) | 1.39, 1.41 | 1.51, 1.53 | 3.22, 3.21 | 3.75, 4.04 |
+| Panning | 300 | 3.32, 3.34 | 71.9, 57.9 | 5.81, 5.00 | 120, 65.1 |
 
-The frame cost stays within the run-to-run spread of the main build (its own two panning rounds at the Home zoom differ by 0.33 ms). Each frame the terrain computes the spans (a few hundred floating point operations), looks the listed cells up in the cache (about 140 cells at the Home zoom, a few hundred zoomed out) and compares
-the list with the last one; the mesh of at most 2500 cells is rewritten only when the list or a texture changed. A cell that takes a new slot is built before the frame draws (about 80 µs at N = 32 on this Mac, 60 µs of it the texturer, so the Home view's first frame builds its 140 cells in about 11 ms). The hole answers of the pools extension are kept per hole version, so a panning frame
-asks the delegate once per cell and version. An early version that ran a frustum test on 8,000 corners with the hole test on each cost 0.6 ms a frame at the Home zoom.
+At the Home zoom the frame cost is the main build's within the run-to-run spread when still, and about 0.12 ms more while panning. At zoom 300 it is not: the span selection is the original's, whose rays are twice as wide as the screen, and at that zoom it lists 2500 cells (the cap of a frame, `0x56F090`), which is more than the High preset's cache of 2000, so the ring evicts every cell before it is needed again and every frame
+builds 2000 textures (about 55 ms); the original does the same with its wide zoom flag, and the ground is all fog colour there at the High preset (docs/LND.md, "Fog and far plane"). The ordinary range (70 to 130) lists 900 to 1750 cells. A first view builds its cells before the frame draws (the Home view lists 898 cells and builds them in 37 ms on this Mac, 0.04 ms a cell at N = 32; the smoke's resume capture lists 1062).
+The terrain computes the spans every frame (a few hundred floating point operations), looks the cells up when the original's gate lets it (docs/LND.md; in practice every frame once the level has changed), and rewrites the mesh of at most 2500 cells only when the list or a texture changed. The hole answers of the pools extension are kept per hole version.
 
-In the browser (AOT page, headless Chrome 155 with `--mute-audio`, `tools/web-perf/run.mjs --scenarios jungle --window 15`, three runs of each build, Apple M5): the first view is built in the park's entering frame, whose largest frame is 77.1, 79.6 and 79.3 ms against 47.0, 55.2 and 53.2 ms of the main build, about 25 ms once; the page is ready in 9.42, 9.55 and 9.67 s against 9.39, 9.43 and 9.68 s, and the steady window
-is the same (main thread busy 9.4, 9.8 and 11.5 % against 10.6, 10.4 and 9.9 %, frame p95 1.5, 1.6 and 2.2 ms against 2.0, 1.7 and 1.7 ms, 60 fps, no long task). The browser builds every listed cell before it draws, as the desktop does; there is no per frame budget and no static stand-in texture any more.
 
+In the browser (AOT page, headless Chrome 155 with `--mute-audio`, `tools/web-perf/run.mjs --scenarios jungle --window 15`, three runs of each build, Apple M5; final code): the first view is built in the park's entering frame, whose largest frame is 76, 79.7 and 73.4 ms against 46, 48.6 and 47.2 ms of the main build, about 28 ms once (the 898 cells of the Home view); the page is ready in 9.62, 9.43 and 9.44 s against 9.42, 9.59 and 9.42 s, and the steady window
+is the same (main thread busy 9.1, 8.3 and 8.7 % against 9.9, 8.3 and 8.1 %, frame p95 1.6, 1.5 and 1.5 ms against 1.7, 1.5 and 1.5 ms, 60 fps, no long task). The browser builds every listed cell before it draws, as the desktop does; there is no per frame budget and no static stand-in texture. The fog and the far plane add no measurable cost there.

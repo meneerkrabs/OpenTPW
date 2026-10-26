@@ -2434,6 +2434,6 @@ prints the SHA-256 of each result; `ProceduralTerrainCorpusTests` compares the C
 reading with the emulated routine on 33,820 cells (every cell of the four themes at N = 16, 300 at N = 32 and 80 at N = 64 per theme): no mismatch.
 
 The visible cells (E4): `tpw-exe-terrain-spans` runs `0x56bb00` with the routines under it on 406 cameras and `tpw-exe-terrain-cache` runs `0x572440` on 100 random frame sequences; both agree with their Python readings (`terrain_spans.py`, `terrain_cache.py`), whose outputs `terrain_spans_golden.py` and `terrain_cache_golden.py` turn into
-`TerrainVisibleSpansGolden.cs` and `ProceduralTextureCacheGolden.cs`, so CI replays them without the executable. The spans reading has one detail worth knowing: an end column is the edge plus 0.999999 in single precision, which rounds up to the next whole cell from about 8 cells on (`test_spans_reach_the_last_column_and_row_of_a_level_field_but_not_of_a_tiny_one`).
+`TerrainVisibleSpansGolden.cs` and `ProceduralTextureCacheGolden.cs`, so CI replays them without the executable. The spans reading has one detail worth knowing: an end column is the edge plus 0.999999 in single precision, which rounds up to the next whole cell from 32 on (the single nearest to v + 0.999999 is v + 1 only for v of 32 or more) (`test_spans_reach_the_last_column_and_row_of_a_level_field_but_not_of_a_tiny_one`).
 
 Dev-only, as the rest of section 7: no original byte or image is committed, only hashes. The 16-bit pixel paths and the floor-art tail of `0x55f780` (floor descriptor not NULL) are not run.

@@ -198,4 +198,15 @@ public class ProceduralTerrainMeshTests
 		Assert.IsFalse( terrain.IsProcedural( 1, 1 ), "a hole has no surface" );
 		Assert.IsFalse( terrain.IsProcedural( 5, 0 ), "past the heightfield" );
 	}
+
+	[TestMethod]
+	public void TheSpanSelectionGetsTheHeaderBracketNotTheCornersOwnExtremes()
+	{
+		// the header's +0x20 and +0x24 (0x56E6C0 to 0x56B830), whole units: -10.7 and 60.9 give -10 and 60 whatever the corners hold
+		var heights = new float[6 * 5];
+		heights[7] = 33.3f;
+		var field = new ModelHeightfield( 5, 4, 10, 10, -10.7f, 60.9f, Array.Empty<uint>(), heights, new uint[20] );
+		var terrain = new ProceduralTerrain( field, Lnd(), new ProceduralTerrainRectangle( 0, 0, 3, 2 ), new ProceduralTerrainSettings( Size, 40 ), 2, new FakePages() );
+		Assert.AreEqual( (-10f, 60f), terrain.ViewSpans.Heights );
+	}
 }

@@ -157,6 +157,8 @@ public sealed class OriginalTerrain : Entity
 	{
 		heightfieldTextures = textures;
 		var field = Park.Heightfield;
+		viewSpans = new TerrainViewSpans( field );
+		Camera.ParkFarPlane = FarPlane;
 		var slots = new List<Texture>();
 		var slotIndices = new Dictionary<int, int>();
 		// the texture slots are assigned over every cell, holes included, so rebuilding the mesh for another set of render holes keeps the one material
@@ -198,6 +200,20 @@ public sealed class OriginalTerrain : Entity
 		return new Model( vertices.ToArray(), indices.ToArray(), material );
 	}
 
+	private TerrainViewSpans? viewSpans;
+
+	/// <summary>
+	/// The park view's far plane (<see cref="Camera.ParkFarPlane"/>): the farthest corner distance of this frame's spans, in engine units (the original's <c>0x56BB00</c> hands it to <c>0x578CA0</c> before the frame draws).
+	/// </summary>
+	private float? FarPlane( Matrix4x4 view, float aspectWord )
+	{
+		if ( viewSpans == null || heightfieldPart == null )
+			return null;
+		// FIRSTPERSONVIEWDISTANCE takes effect at once, as the option apply (0x44D8F0) writes [0x8BD4C0] when it runs
+		viewSpans.ViewDistance = RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Distance;
+		return viewSpans.Update( heightfieldPart.DrawMatrix * view, aspectWord ) ? viewSpans.FarthestCorner * OriginalParkPlacement.ModelScale : null;
+	}
+
 	private ProceduralTerrain? procedural;
 	private ModelEntity? proceduralPart;
 	private ModelEntity? outsidePart;
@@ -236,7 +252,7 @@ public sealed class OriginalTerrain : Entity
 			Log.Warning( $"Procedural terrain textures of {Park.LevelName} are off: base.lnd could not be read: {exception.Message}" );
 			return;
 		}
-		var ground = new ProceduralTerrain( field, lnd, rectangle, settings, staticSlots.Count ) { ViewDistance = ProceduralTerrainSettings.CurrentViewDistance() };
+		var ground = new ProceduralTerrain( field, lnd, rectangle, settings, staticSlots.Count, viewSpans: viewSpans );
 		var slots = staticSlots.Concat( ground.Pages ).ToList();
 		while ( slots.Count < MaximumTextureSlots )
 			slots.Add( slots[0] );
@@ -755,6 +771,8 @@ public sealed class OriginalTerrain : Entity
 
 	protected override void OnDelete()
 	{
+		if ( Camera.ParkFarPlane == FarPlane )
+			Camera.ParkFarPlane = null;
 		procedural?.Dispose();
 		procedural = null;
 		foreach ( var part in parts )

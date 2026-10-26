@@ -1166,8 +1166,9 @@ public sealed partial class ParkHud
 		if ( input.LeftReleased && leftOwned || input.RightReleased && rightOwned )
 			overUi = consumed = false;
 		// a release the platform made up (a browser blur) ends the press without a click: the tools see no release, the latches and the press' choices end with it
-		// [EXT:online-coop-commands] a guest's Move pick-up or queue edit that the host's answer started between this press and its release: the release is not a click of the tool it started (tp.exe's release
-		// needs no press, 0x46C610, but the guest's click came before the tool existed); every other tool armed in between takes the release as the original does, with no cue (the press latch was not set)
+		// [EXT:online-coop-commands] a guest's Move pick-up, queue edit or track tool that the host's answer started between this press and its release, or a line, cut or track Backspace whose
+		// outcome moved its tool on meanwhile (C3c-1b): the release is not a click of that tool (tp.exe's release needs no press, 0x46C610, but the guest's click came before the tool was as it is
+		// now); every other tool armed in between takes the release as the original does, with no cue (the press latch was not set)
 		var hostStartedSincePress = input.LeftReleased && leftOwned && pressHostStarts is { } started && started != level.HostToolStarts;
 		var lostRelease = input.LeftReleased && leftOwned && input.LeftReleaseLost;
 		input = input with { LeftReleased = input.LeftReleased && leftOwned && !input.LeftReleaseLost && !hostStartedSincePress, RightClicked = input.RightClicked && rightOwned };

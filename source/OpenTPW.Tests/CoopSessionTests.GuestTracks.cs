@@ -57,7 +57,9 @@ public partial class CoopSessionTests
 		Assert.IsNull( guest.Level.ClickCellTool( cell ), "no other click while it waits" );
 		Assert.AreEqual( waits + 1, guest.Level.WaitingClicks );
 		Assert.IsFalse( tool.Undo(), "nor a Backspace" );
+		var starts = guest.Level.HostToolStarts;
 		RoundsUntil( () => !tool.IsWaiting, host, guest, view, "the line came back" );
+		Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "a press made while it waited is no click of the tool its outcome moved on" );
 		return tool.LastCommit!;
 	}
 
@@ -121,7 +123,9 @@ public partial class CoopSessionTests
 		var waits = guest.Level.WaitingClicks;
 		Assert.IsNull( guest.Level.ClickCellTool( KartAt( guest, kart, 4, 2 ) ) );
 		Assert.AreEqual( waits + 1, guest.Level.WaitingClicks );
+		var starts = guest.Level.HostToolStarts;
 		RoundsUntil( () => tool.WaitingUndo == null, host, guest, view, "the Backspace came back" );
+		Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "nor of the tool the Backspace's outcome moved on" );
 		Assert.AreEqual( 0, tool.SegmentCount, "the line went off the stack" );
 		Assert.AreEqual( line.Start, tool.Start, "the tool goes on from the line's start" );
 		Assert.AreEqual( tiles, builder.Tiles().Count(), "and its tiles off the track" );

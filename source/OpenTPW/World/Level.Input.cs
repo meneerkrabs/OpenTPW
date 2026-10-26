@@ -517,8 +517,9 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-commands] How many tools a guest's request started when the host's answer came back (<see cref="CompleteMove"/>, <see cref="CompleteQueueEdit"/>,
-	/// [EXT:online-coop-claims] <see cref="CompleteTrackToolStart"/>): the HUD ignores the release of a press made before one started.
+	/// [EXT:online-coop-commands] How many tools a guest's request started or moved on when the host's answer came back (<see cref="CompleteMove"/>, <see cref="CompleteQueueEdit"/>,
+	/// [EXT:online-coop-claims] <see cref="CompleteTrackToolStart"/>, and the HUD's outcome of a line, cut or track Backspace that waited, C3c-1b): the HUD ignores the release of a press made
+	/// before, so a press made while a tool waited for the host never becomes its click.
 	/// </summary>
 	internal int HostToolStarts { get; set; }
 

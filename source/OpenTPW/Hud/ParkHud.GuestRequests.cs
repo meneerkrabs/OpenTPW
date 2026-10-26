@@ -118,6 +118,8 @@ public sealed partial class ParkHud
 	private void CompleteTrackUndo( CoopGuestCommands.Request request )
 	{
 		var tool = level.CellTool;
+		// a press made while the Backspace waited is no click of the tool its outcome moves on
+		level.HostToolStarts++;
 		if ( request is { State: CoopGuestRequestState.Applied, Result: { Error: null } outcome } )
 		{
 			if ( tool.CompleteUndo( outcome ) || !outcome.RightsRefused )
@@ -164,6 +166,9 @@ public sealed partial class ParkHud
 		var click = waitingLineClick;
 		waitingLineClick = null;
 		var tool = level.CellTool;
+		// [EXT:online-coop-commands] a press made while the line waited is no click of the tool its outcome moves on (C3c-1b: a cut that turns into the line tool, a close that ends, restarts
+		// or hands over the tool), as for a tool the host's answer started
+		level.HostToolStarts++;
 		if ( request is { State: CoopGuestRequestState.Applied, Result: { Error: null } outcome } )
 		{
 			var result = level.CompleteCellTool( outcome );

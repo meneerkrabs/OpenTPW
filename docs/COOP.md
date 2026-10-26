@@ -1802,8 +1802,9 @@ them, so a command the host would refuse is not sent. The command comes back pen
 - the placement keeps the placed entry and Ctrl at its click;
 - the remove tool keeps its request.
 
-While a tool waits it takes no other click (the HUD asks the player to wait), and a guest's Backspace takes
-nothing back: its lines are the host's to undo. The requests resolve where their records apply or the host
+While a tool waits it takes no other click (the HUD asks the player to wait), also from the release of a
+press made while it waited and let go after its outcome (C3c-1b), and a guest's Backspace in the path or
+queue tool takes nothing back: its lines are the host's to undo. The requests resolve where their records apply or the host
 answers, inside the stream's application or the link's pump; the guest's HUD takes them at the start of
 its next update (`CoopGuestCommands.TakeCompleted`), outside any command, tick and stream application, and
 completes the tool that still waits for each one:

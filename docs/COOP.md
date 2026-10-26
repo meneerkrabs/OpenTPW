@@ -1761,7 +1761,10 @@ An object a guest may not remove (a fixed item, a slide tower, whose slide is th
 station) is also one its area clear leaves standing: a command that removes what it finds asks the rights
 of each object (`IParkCommandRights.AllowsRemoval`, yes for the host). The queue of a claimed ride (a
 coaster's or a track ride's station) stays the host's in all of these until claims come (C3c): its lines,
-its edit, the removal of its cells and Backspace over them. Everything else stays the host's: pause and speed
+its edit, the removal of its cells and Backspace over them, a queue line of another ride across one of
+its cells, and the object window's queue tool, which a guest's window does not offer. A queue cell's
+ride is resolved as its removal resolves it: the rides' cached lines, then each line walked again (on a
+copy) for a cell they miss. Everything else stays the host's: pause and speed
 (Q8), cheats (Q17), money, staff and the park's management (C4), undo lines (whose cells a request could
 name freely; undo is C5), the single-cell removals no guest's tool issues, the pool tools, tracks and
 coasters (C3b, C3c), the grants and the release of a departed seat.
@@ -2127,7 +2130,8 @@ the refusals of the cheats, the secret park name, the developer kinds and a comm
 another read those rules, and `ParkCommandReplay.Run` replays the log under them on the session's
 starting park. Its rights are the session's too, given to the replay (`CoopBuildRights` on the replaying
 park): a guest's command the session's rights refused is refused again, and an object a guest's area
-clear left standing is left again, so the checkpoints match.
+clear left standing is left again, so the checkpoints match. A session's log does not replay without
+them.
 
 `ParkCommandLevelTests` runs a scripted build session (objects, the path tool with lines, undo and
 cancel, path removals, Backspace, the Move tool, a sale, the remove tool and refused commands) on a

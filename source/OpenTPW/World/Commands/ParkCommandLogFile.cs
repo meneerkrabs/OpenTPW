@@ -203,9 +203,11 @@ public static class ParkCommandReplay
 	{
 		ArgumentNullException.ThrowIfNull( commands );
 		ArgumentNullException.ThrowIfNull( log );
+		if ( log.SessionRules && sessionRights == null )
+			throw new ArgumentException( "A session's log replays under the session's rights.", nameof( sessionRights ) );
 		var (previous, previousRights) = (commands.SessionRules, commands.Rights);
 		commands.SessionRules = log.SessionRules;
-		if ( log.SessionRules && sessionRights != null )
+		if ( log.SessionRules )
 			commands.Rights = sessionRights;
 		try { Run( commands, log.Entries, nextTick, tick, endTick, afterTick ); }
 		finally { (commands.SessionRules, commands.Rights) = (previous, previousRights); }

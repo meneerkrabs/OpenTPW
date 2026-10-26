@@ -35,8 +35,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	internal bool Builds( ParkCommand command ) => command switch
 	{
 		// a claimed ride's queue (a coaster's or a track ride's station, whose edits need claims, C3c) is the host's: its lines, its edit, its cells' removal and Backspace over them
-		LayLineCommand line => line.Mode != CellToolMode.Queue || !ClaimedRide( line.Ride ),
-		QueueSegmentCommand line => !ClaimedRide( line.Ride ),
+		LayLineCommand line => line.Mode != CellToolMode.Queue || (!ClaimedRide( line.Ride ) && !CrossesClaimedQueue( line.StartX, line.StartY, line.EndX, line.EndY )),
+		QueueSegmentCommand line => !ClaimedRide( line.Ride ) && !CrossesClaimedQueue( line.StartX, line.StartY, line.EndX, line.EndY ),
 		// an object placed, or the Move tool's placement (C3b-2: the command itself checks that its player carries the type); a track add-on belongs to the track tools, which come later,
 		// as do the rides whose own tool follows their placement; a track add-on's entry is refused whatever ride the command names, so a request without one cannot place it as an
 		// ordinary object
@@ -93,6 +93,22 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 
 	/// <summary>Whether the queue cell (<paramref name="x"/>, <paramref name="y"/>) belongs to a claimed ride's queue.</summary>
 	private bool ClaimedQueueAt( int x, int y ) => level.QueueOwnerAt( x, y ) is { } owner && Claimed( owner );
+
+	/// <summary>
+	/// Whether a queue line from (<paramref name="startX"/>, <paramref name="startY"/>) toward (<paramref name="endX"/>, <paramref name="endY"/>) crosses a claimed ride's queue cell: a line of
+	/// another ride may take over a queue cell no owner word marks yet, so every cell of the snapped line is asked, as the line writers snap it.
+	/// </summary>
+	private bool CrossesClaimedQueue( int startX, int startY, int endX, int endY )
+	{
+		if ( level.Guests?.Grid is not { } grid )
+			return false;
+		var start = (startX, startY);
+		return ParkPathBuilder.LayLine( start, ParkPathBuilder.SnapEnd( start, (endX, endY) ) )
+			.Any( cell => grid.Cells.InBounds( cell.X, cell.Y ) && grid.IsQueue( cell.X, cell.Y ) && ClaimedQueueAt( cell.X, cell.Y ) );
+	}
+
+	/// <summary>Whether <paramref name="item"/> is claimed for a guest (a coaster's or a track ride's station): the object window offers its queue's tool to the host alone.</summary>
+	internal bool IsClaimed( OriginalObject item ) => Claimed( item );
 
 	/// <summary>Whether <paramref name="item"/> is a coaster's or a track ride's station, whose edits need a claim (C3c): a guest may not remove it yet.</summary>
 	private bool Claimed( OriginalObject item ) => item.Runtime?.Coaster != null || level.TrackStations.ContainsKey( item );

@@ -976,12 +976,22 @@ public partial class Level
 		return 1;
 	}
 
-	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null: the ride whose chain reaches the cell, else the ride the cell's owner word names (a free-standing cell).</summary>
-	/// <summary>[EXT:online-coop-permissions] The placed object whose ride's queue holds the queue cell (<paramref name="x"/>, <paramref name="y"/>), or null (C3b: a guest's rights ask it).</summary>
-	internal OriginalObject? QueueOwnerAt( int x, int y ) => Guests != null && QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is { } ride
-		? Objects.Objects.FirstOrDefault( item => !item.IsDeleted && ReferenceEquals( item.Visitors, ride ) )
-		: null;
+	/// <summary>
+	/// [EXT:online-coop-permissions] The placed object whose ride's queue holds the queue cell (<paramref name="x"/>, <paramref name="y"/>), or null (C3b: a guest's rights ask it). It resolves
+	/// the ride as the cell's removal does (<see cref="RemoveQueueCellAt(GuestPathGrid, IEnumerable{IRideVisitorBridge}, int, int, out RideVisitorBridge?, bool)"/>): the cached lines first,
+	/// then, for a queue cell they miss, each ride's line walked again, here on a copy (<see cref="RideVisitorBridge.QueueView"/>), so nothing in the park changes.
+	/// </summary>
+	internal OriginalObject? QueueOwnerAt( int x, int y )
+	{
+		if ( Guests == null )
+			return null;
+		var ride = QueueRideAt( Guests.Grid, Guests.Attractions, x, y );
+		if ( ride == null && Guests.Grid.IsQueue( x, y ) )
+			ride = Guests.Attractions.OfType<RideVisitorBridge>().Where( item => item.HasQueue ).FirstOrDefault( item => item.QueueView( Guests.Grid ).QueueCells.Contains( (x, y) ) );
+		return ride == null ? null : Objects.Objects.FirstOrDefault( item => !item.IsDeleted && ReferenceEquals( item.Visitors, ride ) );
+	}
 
+	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null: the ride whose chain reaches the cell, else the ride the cell's owner word names (a free-standing cell).</summary>
 	internal static RideVisitorBridge? QueueRideAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y )
 	{
 		if ( !grid.IsQueue( x, y ) )

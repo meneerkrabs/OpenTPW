@@ -566,11 +566,49 @@ public partial class CoopSessionTests
 				Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, command ) );
 			}
 			Assert.IsTrue( rights.Allows( seat, new RemoveAtCommand( 12, 1 ) ), "a path cell stays the guest's" );
+			// the object window offers the guest no tool for that queue
+			var canEdit = typeof( ParkHud ).GetMethod( "CanEditQueue", NonPublic )!;
+			Assert.IsFalse( (bool)canEdit.Invoke( view.Hud, new object[] { guest.One } )! );
 		}
 		finally
 		{
 			MarkStation( guest, guest.One, station: false );
 		}
+		Assert.IsTrue( (bool)typeof( ParkHud ).GetMethod( "CanEditQueue", NonPublic )!.Invoke( view.Hud, new object[] { guest.One } )!, "an ordinary ride's queue tool is offered" );
+	}
+
+	[TestMethod]
+	public void AGuestsQueueLineOfAnotherRideMayNotCrossAClaimedQueue()
+	{
+		var park = NewPark();
+		park.Enter();
+		var level = park.Level;
+		var grid = level.Guests!.Grid;
+		// One's queue from (10, 6) up to (10, 3); a cell its cached line does not hold yet at (10, 2), joined to its back (a grid edit no recompute took in)
+		ConfigureQueue( grid, park.One, 10, 4 );
+		grid.SetQueue( 10, 2, 2 );
+		Assert.IsFalse( park.One.Visitors.QueueCells.Contains( (10, 2) ) );
+		Assert.AreSame( park.One, level.QueueOwnerAt( 10, 2 ), "the cell is resolved as its removal resolves it" );
+		var rights = new CoopBuildRights( level );
+		level.SetBuildGrant( 1, true );
+		MarkStation( park, park.One );
+		try
+		{
+			Assert.IsFalse( rights.Allows( 1, new RemoveAtCommand( 10, 2 ) ), "a claimed queue's cell the cached line misses is still the host's" );
+			Assert.IsFalse( rights.Allows( 1, new BacktrackCommand( 10, 2 ) ) );
+			// a line of another ride across the claimed queue
+			var other = (Two: level.Objects.Objects.First( item => !ReferenceEquals( item, park.One ) ), _: 0).Two;
+			Assert.IsFalse( rights.Allows( 1, new QueueSegmentCommand( other.Runtime.AttractionId, 14, 4, 6, 4 ) ), "a line across a claimed queue's cell is the host's" );
+			Assert.IsFalse( rights.Allows( 1, new LayLineCommand( CellToolMode.Queue, other.Runtime.AttractionId, 14, 4, 6, 4 ) ) );
+			Assert.IsTrue( rights.Allows( 1, new QueueSegmentCommand( other.Runtime.AttractionId, 14, 8, 6, 8 ) ), "a line that crosses none is the guest's" );
+			Assert.IsTrue( rights.Allows( 1, new LayLineCommand( CellToolMode.Path, -1, 14, 4, 6, 4 ) ), "a path line is the park's to refuse over a queue" );
+		}
+		finally
+		{
+			MarkStation( park, park.One, station: false );
+		}
+		Assert.IsTrue( rights.Allows( 1, new RemoveAtCommand( 10, 2 ) ) );
+		Assert.IsTrue( rights.Allows( 1, new QueueSegmentCommand( level.Objects.Objects.First( item => !ReferenceEquals( item, park.One ) ).Runtime.AttractionId, 14, 4, 6, 4 ) ) );
 	}
 
 	[TestMethod]
@@ -594,14 +632,38 @@ public partial class CoopSessionTests
 			var twin = NewPark();
 			twin.Enter();
 			var hashes = new Dictionary<long, ulong>();
-			ParkCommandReplay.Run( twin.Level.Commands, log, () => twin.Level.Commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks,
-				ticks => hashes[ticks] = twin.Level.ComputeStateHash(), withRights ? new CoopBuildRights( twin.Level ) : null );
+			var commands = twin.Level.Commands;
+			var own = new CoopBuildRights( twin.Level );
+			commands.Rights = own;
+			if ( withRights )
+				ParkCommandReplay.Run( commands, log, () => commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash(),
+					new CoopBuildRights( twin.Level ) );
+			else
+			{
+				// the session's rules alone, without its rights
+				commands.Rights = null;
+				commands.SessionRules = true;
+				try
+				{
+					ParkCommandReplay.Run( commands, log.Entries, () => commands.NextTick, () => twin.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
+				}
+				finally
+				{
+					commands.SessionRules = false;
+					commands.Rights = own;
+				}
+			}
 			hashes[log.Checkpoints[^1].Ticks] = twin.Level.ComputeStateHash();
-			Assert.IsNull( twin.Level.Commands.Rights is CoopBuildRights ? "left" : null, "the replay puts the funnel's rights back" );
+			Assert.AreSame( own, commands.Rights, "the replay puts the funnel's own rights back" );
+			Assert.IsFalse( commands.SessionRules );
 			return ParkCommandReplay.FirstMismatch( log, hashes )?.Ticks;
 		}
 		Assert.IsNull( Replay( withRights: true ), "under the session's rights every checkpoint matches" );
 		Assert.IsNotNull( Replay( withRights: false ), "without them the guest's refused line would be laid" );
+		// a session's log never replays without its rights
+		var bare = NewPark();
+		bare.Enter();
+		Assert.ThrowsException<ArgumentException>( () => ParkCommandReplay.Run( bare.Level.Commands, log, () => bare.Level.Commands.NextTick, () => bare.Level.RunTicks( 1 ), log.Checkpoints[^1].Ticks ) );
 	}
 }
 

@@ -264,7 +264,9 @@ public class FrameBatchingTests
 	{
 		// OriginalObject: the ride hoarding's rise and fade (#721, tp.exe 0x0044E410 -> 0x004548F0) advances its level by real frame time; the simulation only sets the
 		// hoarding's state, and nothing it hashes or reads uses the level, which a save keeps like the particles (docs/DETERMINISM.md, "Frame batching").
-		"OpenTPW.CoasterRenderer", "OpenTPW.OriginalObject", "OpenTPW.ParticleRenderer", "OpenTPW.PoolBridgeRenderer", "OpenTPW.PoolRenderer", "OpenTPW.PoolSlideRenderer",
+		// OriginalTerrain: the terrain's UV clip (the Jungle river and waterfall, TerrainUvAnimator) advances on the SceneClock, the presentation clock the game pause freezes (tp.exe 0x54e2b0 -> 0x44e510 -> 0x473c70); it rewrites only the scrolled meshes'
+		// texture coordinates and nothing the simulation, the state hash or a save reads.
+		"OpenTPW.CoasterRenderer", "OpenTPW.OriginalObject", "OpenTPW.OriginalTerrain", "OpenTPW.ParticleRenderer", "OpenTPW.PoolBridgeRenderer", "OpenTPW.PoolRenderer", "OpenTPW.PoolSlideRenderer",
 		"OpenTPW.UI.RootPanel", "OpenTPW.WeatherForecastPresenter", "OpenTPW.WeatherRenderer",
 	};
 

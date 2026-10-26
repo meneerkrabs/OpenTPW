@@ -439,8 +439,10 @@ public sealed partial class OriginalTerrain : Entity
 	/// <summary>The terrain meshes of one model into batches; a value after each mesh and each texture a full batch loads.</summary>
 	private IEnumerable<bool> BuildTerrainMeshes( Dictionary<string, Texture> textures, ModelFile model, List<string> batchTextures, List<Vertex> batchVertices, List<uint> batchIndices )
 	{
+		var runningIndex = -1;
 		foreach ( var mesh in model.Meshes )
 		{
+			runningIndex++;
 			if ( mesh.Vertices.Length == 0 || mesh.Indices.Length == 0 || mesh.Materials.Length is 0 or > MaximumTextureSlots || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
 				continue;
 			var names = mesh.Materials.Select( material => material.Name ).ToArray();
@@ -456,7 +458,7 @@ public sealed partial class OriginalTerrain : Entity
 			}
 			var world = GetWorldMatrix( model, mesh.NodeIndex );
 			// a mesh the terrain clip scrolls (the river and waterfall of the Jungle) is a model of its own with dynamic vertices, like a translucent one
-			var meshIndex = uvAnimator != null && ReferenceEquals( model, Park.TerrainModel ) ? model.Meshes.IndexOf( mesh ) : -1;
+			var meshIndex = uvAnimator != null && ReferenceEquals( model, Park.TerrainModel ) ? runningIndex : -1;
 			var scrolls = meshIndex >= 0 && uvAnimator!.Animates( meshIndex );
 			if ( scrolls || meshTextures.Any( texture => WorldTranslucency.IsTranslucent( texture.AlphaType ) ) )
 			{

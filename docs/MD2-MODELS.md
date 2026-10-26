@@ -322,7 +322,7 @@ Mac build (Totem cycle 430 ticks ≈ 14.3 s); scene-clock scaling and pause are 
 - **Terrain clips** (`<base><letter>[number]` of a terrain `Base.MD2`, AnimID 5 = the letter `M`): the loader 0x461f10 binds a terrain's animation members like an object's
   (the terrain model is loaded through it with flags 8 at 0x4504c0), and the sampler 0x4745c0 above writes the scrolled coordinates into the mesh record's table (+0x68).
   Two archives hold one: the lobby's `Basem1.MD2` (200 ticks, two UV records on the sea meshes `Sea_Under` and `Sea`, every corner two keys, ΔU = ΔV = −1) and the Jungle
-  terrain's `basem.MD2` (100 ticks, eleven records on the water meshes `surface13`…`surface27`, `falls02` and `Object12`, 343 corners with two keys each, ΔU = +1,
+  terrain's `basem.MD2` (100 ticks, eleven records on the water meshes `surface13`–`surface17`, `surface22`, `surface23`, `surface25` and `surface27`, `falls02` and `Object12`, 343 corners with two keys each, ΔU = +1,
   ΔV = 0); the other three themes have none. In both, tick 0 equals the stored coordinates of the mesh, the scroll is a whole texture repeat per cycle and every slot
   the records touch already wraps (flags 0x31/0x33; the loader also ORs 0x8030 into the first word of the record each material group of a UV-animated mesh points at, taken to be the texture slot record, 0x461f10,
   which changes nothing for them). tp.exe plays the terrain instance every rendered frame, in the lobby and in a park: the lobby state of `0x54e360` calls `0x44e510` (`0x473c70(instance, 1, 4)`)

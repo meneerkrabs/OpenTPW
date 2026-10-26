@@ -453,6 +453,12 @@ internal sealed class TriangleOrder
 	/// <summary>The vertices moved (a vertex-animated part): the next sort and depth start from the new positions.</summary>
 	public void SetPositions( Vertex[] vertices )
 	{
+		// a texture-coordinate-only update (a scrolling water mesh) leaves the positions as they were: no new sort
+		var moved = false;
+		for ( var index = 0; index < vertices.Length && !moved; index++ )
+			moved = positions[index] != vertices[index].Position.GetSystemVector3();
+		if ( !moved )
+			return;
 		SetPositionsFrom( vertices );
 		positionVersion[0]++;
 		CheckVersion();

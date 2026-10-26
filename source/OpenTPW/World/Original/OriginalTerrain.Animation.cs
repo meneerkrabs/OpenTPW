@@ -5,11 +5,15 @@ public sealed partial class OriginalTerrain
 {
 	private TerrainUvAnimator? uvAnimator;
 
-	/// <summary>The park's rate-scaled clock in milliseconds (<see cref="SceneClock"/>); null reads the real frame time. The clip stands still while the park is paused.</summary>
+	/// <summary>The park's rate-scaled clock in milliseconds (<see cref="SceneClock"/>). The clip stands still while the park is paused and holds tick 0 until the clock is set (the load frames).</summary>
 	internal Func<uint>? SceneMilliseconds { get; set; }
 
 	/// <summary>The terrain's clip animator, or null without a base clip (every theme but the Jungle); for tests.</summary>
 	internal TerrainUvAnimator? UvAnimator => uvAnimator;
 
-	protected override void OnUpdate() => uvAnimator?.Update( SceneMilliseconds?.Invoke(), Time.Delta );
+	protected override void OnUpdate()
+	{
+		if ( SceneMilliseconds is { } clock )
+			uvAnimator?.Update( clock(), 0 );
+	}
 }

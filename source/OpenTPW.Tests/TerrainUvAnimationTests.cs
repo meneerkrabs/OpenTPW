@@ -153,6 +153,26 @@ public class TerrainUvAnimationTests
 		Assert.AreEqual( halfSecond + 0.3f, first[0].TexCoords.X, 2e-3f );
 	}
 
+	/// <summary>A mesh registered with the wrong number of vertices is reported and keeps its stored coordinates.</summary>
+	[TestMethod]
+	public void AMeshWithTheWrongVertexCountIsReportedAndNotRegistered()
+	{
+		var (animator, park, _, _) = JungleAnimator();
+		var log = Log;
+		Log = new();
+		try
+		{
+			var mesh = animator.AnimatedMeshes.First();
+			var before = animator.RegisteredCount;
+			animator.Register( mesh, new Vertex[1], _ => { } );
+			Assert.AreEqual( before, animator.RegisteredCount );
+		}
+		finally
+		{
+			Log = log;
+		}
+	}
+
 	/// <summary>Only the Jungle terrain has a clip; another theme's terrain gets no animator.</summary>
 	[TestMethod]
 	public void ANonJungleTerrainHasNoAnimator()

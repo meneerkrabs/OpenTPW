@@ -12,9 +12,10 @@ internal sealed class TerrainUvAnimator
 	private readonly ObjectAnimator animator;
 	private readonly HashSet<int> animated = new();
 	private readonly List<Target> targets = new();
+	private readonly List<int> versions = new();
 	private uint? lastMilliseconds;
 
-	private sealed record Target( int Mesh, Vertex[] Vertices, Action<Vertex[]> Upload, int Version );
+	private readonly record struct Target( int Mesh, Vertex[] Vertices, Action<Vertex[]> Upload );
 
 	private TerrainUvAnimator( ModelFile terrain, ModelAnimation clip, string name )
 	{
@@ -63,8 +64,14 @@ internal sealed class TerrainUvAnimator
 	/// </summary>
 	internal void Register( int mesh, Vertex[] vertices, Action<Vertex[]> upload )
 	{
-		if ( vertices.Length == terrain.Meshes[mesh].CornerPositionIndices.Length )
-			targets.Add( new Target( mesh, vertices, upload, -1 ) );
+		var corners = terrain.Meshes[mesh].CornerPositionIndices.Length;
+		if ( vertices.Length != corners )
+		{
+			Log?.Warning( $"Terrain clip: mesh {terrain.Meshes[mesh].Name} has {vertices.Length} vertices for {corners} corners; it keeps its stored coordinates." );
+			return;
+		}
+		targets.Add( new Target( mesh, vertices, upload ) );
+		versions.Add( -1 );
 	}
 
 	/// <summary>The meshes registered for drawing, for tests.</summary>
@@ -89,11 +96,11 @@ internal sealed class TerrainUvAnimator
 		{
 			var target = targets[index];
 			var version = animator.GetVertexVersion( target.Mesh );
-			if ( version == target.Version )
+			if ( version == versions[index] )
 				continue;
 			ObjectRenderParts.WriteTexCoords( terrain.Meshes[target.Mesh], animator.GetTexCoords( target.Mesh ), target.Vertices );
 			target.Upload( target.Vertices );
-			targets[index] = target with { Version = version };
+			versions[index] = version;
 		}
 	}
 }

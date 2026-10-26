@@ -1026,6 +1026,8 @@ public sealed partial class ParkHud
 			if ( lastLevelMessage.StartsWith( "Cannot build", StringComparison.Ordinal ) )
 				SayCannotBuild( lastLevelMessage, pendingItem?.Entry );
 		}
+		// the release's cue spares the error feedback of the message that follows it by one frame, no more
+		buildRefusalCue = false;
 
 		var rideOwnsInput = ridingAtStart || IsRiding || camcorderOwnsInput;
 		bool inPark, toolClick;
@@ -1062,8 +1064,8 @@ public sealed partial class ParkHud
 	/// <summary>A press entered the path tool (the original's tool object, 0x4879D0 case 1 or 2): the release that ends this click is the tool's first click, at the cell under the pointer there.</summary>
 	private bool pendingPathEntry;
 
-	/// <summary>Whether a tool object stood when the last left press was taken (null: no press seen). A tool armed after the press (a co-op guest's Move pick-up coming back, a key) takes no click from that press's release.</summary>
-	private bool? pressSawTool;
+	/// <summary>[EXT:online-coop-commands] <see cref="Level.HostToolStarts"/> when the last left press was taken (null: no press seen): a tool a guest's request starts when the host's answer comes back in between (CompleteMove, CompleteQueueEdit) takes no click from that press's release.</summary>
+	private int? pressHostStarts;
 
 	/// <summary>The release played the refusal cue (0xAF) for a refused build click: its "Cannot build" message follows without the error feedback of <see cref="SayCannotBuild"/>.</summary>
 	private bool buildRefusalCue;
@@ -1088,17 +1090,23 @@ public sealed partial class ParkHud
 		pendingPathEntry = false;
 		pendingQueueEdit = null;
 		pressConsumed = false;
+		// a pylon being dragged settles where it is, as when the park pointer is suspended: it does not stay on the cursor
+		if ( level.CoasterPanel is { IsDragging: true } panel )
+			panel.Release( null, null );
+		coasterPress = false;
 		legacyLeftPress = null;
-		pressSawTool = null;
+		pressHostStarts = null;
 		refusalClickState = null;
 		buildRefusalCue = false;
 	}
 
 	/// <summary>The release handler's refused-click cue (cat_ui 0xAF at the clicked cell, 0x524AA7) when the click it just handled found the ghost refused; the latch is consumed either way.</summary>
-	private void SoundRefusedRelease()
+	private bool SoundRefusedRelease()
 	{
-		if ( refusalClick.Release() is { } refused )
-			GameAudio.PlayPathRefused( refused.X, refused.Y );
+		if ( refusalClick.Release() is not { } refused )
+			return false;
+		GameAudio.PlayPathRefused( refused.X, refused.Y );
+		return true;
 	}
 
 	/// <summary>
@@ -1143,8 +1151,11 @@ public sealed partial class ParkHud
 		if ( input.LeftReleased && leftOwned || input.RightReleased && rightOwned )
 			overUi = consumed = false;
 		// a release the platform made up (a browser blur) ends the press without a click: the tools see no release, the latches and the press' choices end with it
+		// [EXT:online-coop-commands] a guest's Move pick-up or queue edit that the host's answer started between this press and its release: the release is not a click of the tool it started (tp.exe's release
+		// needs no press, 0x46C610, but the guest's click came before the tool existed); every other tool armed in between takes the release as the original does, with no cue (the press latch was not set)
+		var hostStartedSincePress = input.LeftReleased && leftOwned && pressHostStarts is { } started && started != level.HostToolStarts;
 		var lostRelease = input.LeftReleased && leftOwned && input.LeftReleaseLost;
-		input = input with { LeftReleased = input.LeftReleased && leftOwned && !input.LeftReleaseLost, RightClicked = input.RightClicked && rightOwned };
+		input = input with { LeftReleased = input.LeftReleased && leftOwned && !input.LeftReleaseLost && !hostStartedSincePress, RightClicked = input.RightClicked && rightOwned };
 		// The park view's own click is not a button-class 0x100. The hook 0x485780 plays cat_ui 0xBD only when the receiver of 0x100 has style bit 0x10 (the choice at 0x4857cb); this click stays 0x1F.
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
@@ -1168,7 +1179,7 @@ public sealed partial class ParkHud
 		if ( input.LeftPressed && parkView && !mouseCaptured )
 		{
 			LatchToolPress();
-			pressSawTool = ToolObjectActive;
+			pressHostStarts = level.HostToolStarts;
 		}
 		// A right click leaves a build tool that Ctrl kept armed (and one still waiting for its first click).
 		if ( parkRightClick && !paused && level.BuildEntry != null && !toolClick )
@@ -1190,7 +1201,6 @@ public sealed partial class ParkHud
 		if ( input.LeftPressed )
 		{
 			pressConsumed = toolClick;
-			buildRefusalCue = false;
 		}
 		if ( inPark && idle && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && input.LeftPressed && !toolClick )
 		{
@@ -1223,22 +1233,18 @@ public sealed partial class ParkHud
 			pendingQueueEdit = null;
 			pressConsumed = false;
 			// [BIN:TPW-EXE:0x524A63 build refusal] a build click whose ghost is refused places nothing and the tool stays, as for the line tools: the release plays the refusal cue behind the press latch
-			// the original skips the cue online (0x785A2C): a guest's click, and one its request still holds, plays none and keeps the error feedback of its refusal
-			if ( inPark && !toolClick && !paused && !level.IsReadOnlyVisit && !level.Commands.SendsRequests && level.WaitingPlacement == null && level.BuildClickRefused( cursorX, cursorY ) )
-			{
+			// [EXT:online-coop-commands] a guest's placement that waits for the host takes no click, so it has no cue either; the original skips the cue only during a layout replay (0x785A2C), which OpenTPW has none of
+			if ( inPark && !toolClick && !paused && !level.IsReadOnlyVisit && level.WaitingPlacement == null && level.BuildClickRefused( cursorX, cursorY ) )
 				refusalClick.Refused( cursorX, cursorY );
-				buildRefusalCue = true;
-			}
-			SoundRefusedRelease();
+			// the error feedback of "Cannot build" is spared only when the cue really sounded (SayCannotBuild, next frame)
+			buildRefusalCue = SoundRefusedRelease();
 		}
 		// the level's own tool click (the build tool, the removal) acts on the release the park took and no tool of the HUD used
-		// a tool armed after the press (CompleteMove, a key) takes no click from that press's release: the press was the idle mode's (0x4879D0), not the tool object's
-		var strayRelease = input.LeftReleased && pressSawTool == false && (level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects);
-		if ( input.LeftReleased )
-			pressSawTool = null;
-		level.ParkOwnsRelease = input.LeftReleased && !toolClick && !strayRelease;
+		if ( input.LeftReleased || hostStartedSincePress )
+			pressHostStarts = null;
+		level.ParkOwnsRelease = input.LeftReleased && !toolClick;
 
-		return (inPark, covered || toolClick || strayRelease);
+		return (inPark, covered || toolClick || hostStartedSincePress);
 	}
 
 	/// <summary>The patrol tool's HUD side: the hovered cell, right click leaves, a left click stores a corner or sets the area (tp.exe mode 0x36).</summary>
@@ -1322,7 +1328,7 @@ public sealed partial class ParkHud
 	/// object or line cannot be built here. <paramref name="entry"/> is the refused object's, when known.
 	/// </summary>
 	// [BIN:STP-PPC:0x10139A40 error feedback] a rejected action plays cat_ui event 0x1D (called from the buy window at 0x10163AFC/0x10163BFC and the checkbox dialog at 0x1013B7A4)
-	// [EXT:cannot-build-sound] the "Cannot build" message text, and the error feedback 0x1D where the original's own cue did not sound: a refused placement click plays cat_ui 0xAF at its release (0x524AA7, behind the refused-ghost latch 0x816D48, outside a layout replay 0x785A2C), and tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480); a guest's click and a refusal the host sends back sound no 0xAF, so they keep 0x1D; the message text is an OpenTPW addition
+	// [EXT:cannot-build-sound] the "Cannot build" message text, and the error feedback 0x1D where the original's own cue did not sound: a refused placement click plays cat_ui 0xAF at its release (0x524AA7, behind the refused-ghost latch 0x816D48, outside a layout replay 0x785A2C), and tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480); a refusal the host sends back sounds no 0xAF here, so it keeps 0x1D; the message text is an OpenTPW addition
 	// [BIN:TPW-EXE:0x524AA7 refusal cue] [BIN:TPW-EXE:0x535670 refusal stage] [BIN:TPW-EXE:0x536100 refusal stage] the refusal stages submit no sound (no call site of the sound entry 0x51bfc0 lies in them or the callees reached from them); the build tools' only refusal cue is the release handler's 0xAF
 	// [EXT:pools-changing-room] a changing room that is refused for want of a pool says so
 	// [EXT:pools-slides] a slide tower refused for want of a pool says so in its own words, turned away from the pool beside it in others
@@ -1335,7 +1341,6 @@ public sealed partial class ParkHud
 		// [EXT:cannot-build-sound] the error feedback only where the original's own refusal cue did not sound: its release plays 0xAF (buildRefusalCue), a guest's click and a refusal the host sends back play none
 		if ( !buildRefusalCue )
 			GameAudio.PlayUi( GameAudio.ErrorEvent );
-		buildRefusalCue = false;
 	}
 
 	/// <summary>

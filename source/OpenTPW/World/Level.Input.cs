@@ -388,6 +388,7 @@ public partial class Level
 		if ( IsReadOnlyVisit || !NoToolActive )
 			return false;
 		ArmMove( entry, rotation );
+		HostToolStarts++;
 		return true;
 	}
 
@@ -442,8 +443,14 @@ public partial class Level
 		if ( !QueueLinks( ride ).SequenceEqual( edit.Queue ) )
 			return false;
 		StaffPlacement?.Cancel();
-		return EnterQueueTool( ride, edit.Tool );
+		if ( !EnterQueueTool( ride, edit.Tool ) )
+			return false;
+		HostToolStarts++;
+		return true;
 	}
+
+	/// <summary>[EXT:online-coop-commands] How many tools a guest's request started when the host's answer came back (<see cref="CompleteMove"/>, <see cref="CompleteQueueEdit"/>): the HUD ignores the release of a press made before one started.</summary>
+	internal int HostToolStarts { get; set; }
 
 	/// <summary>[EXT:online-coop-commands] Whether no tool of the park view is on (the view a queue click starts the queue tool from).</summary>
 	internal bool NoToolActive => !CellTool.IsActive && BuildEntry == null && !IsRemovingObjects && !IsPlacing && !IsCoasterToolActive

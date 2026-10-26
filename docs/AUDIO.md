@@ -593,7 +593,7 @@ distance law are in the AUDIO-018 row and the AUDIO-033 note above and are imple
 `AudioMixer` (`AudioMixerLawTests`). The reverb exports hold no DSP: they forward to a COM object (see "Reverb"). Not read: the `SetPosition` integer message for flat
 voices, and ducking beyond the speech duck of `sound.sam`.
 
-AUDIO-009 is retired: the refusal stages (`0x535670`/`0x536100`) submit no sound; the refused click's only cue is the release handler's `cat_ui` 0xAF behind the refused-ghost latch (`0x524A63`, `0x524AA7`), which it plays in every tool mode, the placement modes 4 and 0x3B included (`ParkHud` plays it for a refused build click at the release, `Level.BuildClickRefused`). `[EXT:cannot-build-sound]` is narrowed to the "Cannot build" message text and to the error feedback `cat_ui` 0x1D where no 0xAF played (a guest's click, a refusal the host sends back; the original plays no 0xAF online).
+AUDIO-009 is retired: the refusal stages (`0x535670`/`0x536100`) submit no sound; the refused click's only cue is the release handler's `cat_ui` 0xAF behind the refused-ghost latch (`0x524A63`, `0x524AA7`), which it plays in every tool mode, the placement modes 4 and 0x3B included (`ParkHud` plays it for a refused build click at the release, `Level.BuildClickRefused`). `[EXT:cannot-build-sound]` is narrowed to the "Cannot build" message text and to the error feedback `cat_ui` 0x1D where no 0xAF played (a refusal the host sends back; a placement still waiting for the host takes no click and so no cue, under `[EXT:online-coop-commands]`; the original skips the cue only during a layout replay, `0x785A2C`).
 
 ## Lobby effects
 

@@ -96,7 +96,7 @@ public sealed partial class ParkHud
 		foreach ( var screen in Stack.Screens ) screen.CancelPointerGesture();
 		if ( level.CoasterPanel is { IsDragging: true } panel ) panel.Release( null, null );
 		coasterPress = pendingPathEntry = false;
-		pressSawTool = null;
+		pressHostStarts = null;
 		pendingQueueEdit = null;
 		legacyLeftPress = legacyRightPress = null;
 		refusalClickState = null;

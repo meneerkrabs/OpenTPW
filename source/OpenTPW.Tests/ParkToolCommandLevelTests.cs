@@ -3,7 +3,6 @@ using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
 using OpenTPW.Mods;
-using OpenTPW.UI.Original;
 
 namespace OpenTPW.Tests;
 
@@ -141,54 +140,6 @@ public class ParkToolCommandLevelTests
 		typeof( Level ).GetField( "coasterBuilders", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<OriginalObject, CoasterBuilder>() );
 		Assert.IsNotNull( park.One.Runtime.Coaster );
 		return park;
-	}
-
-	/// <summary>
-	/// [BIN:TPW-EXE:0x5263df coaster build click] the build buttons' pylon click is the tool object's release (0x524960, mode 0x15): through the real HUD with ordered pointer events the press
-	/// places nothing and the release logs the click at the cell under the pointer there.
-	/// </summary>
-	[TestMethod]
-	public void TheCoasterBuildClickIsTheReleaseNotThePress()
-	{
-		var park = Coaster();
-		var level = park.Level;
-		var restoreFrame = Input.CaptureFrameStateForTests(); var oldMouse = Input.Mouse; var oldKeyboard = Input.Keyboard; var oldMode = Camera.Mode; var oldView = Camera.ViewMatrix; var oldProjection = Camera.ProjMatrix;
-		try
-		{
-			Camera.Mode = new ParkCameraMode();
-			var centre = new System.Numerics.Vector3( ParkPlacement.MinimumCoordinate + 16.5f * ObjectPlacement.CellSize, ParkPlacement.MinimumCoordinate + 16.5f * ObjectPlacement.CellSize, 0 );
-			Camera.ViewMatrix = System.Numerics.Matrix4x4.CreateLookAt( centre + new System.Numerics.Vector3( 0, -20, 30 ), centre + new System.Numerics.Vector3( 0, 0, 12 ), System.Numerics.Vector3.UnitZ );
-			Camera.ProjMatrix = System.Numerics.Matrix4x4.CreatePerspectiveFieldOfView( 0.8f, 1, 0.5f, 500 );
-			// the fixture's park has no heightfield to pick: the generic sandbox's Z = 0 plane stands in for the terrain
-			typeof( Level ).GetField( "<OriginalPark>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, null );
-			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new NoItems(), new HudHost() );
-			foreach ( var element in hud.Screen.Elements.ToArray() ) hud.Screen.Remove( element );
-			var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
-			var context = new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 1000, 1000 ), PopupHelp = false, ResolveTexture = _ => null };
-			var point = new System.Numerics.Vector2( 500, 400 );
-			Assert.IsTrue( level.TryGetGridCell( point, new System.Numerics.Vector2( 1000 ), out _, out _ ) );
-			Assert.IsTrue( level.EnterCoasterTool( park.One ) );
-			Assert.IsTrue( level.CoasterPanel!.IsBuilding );
-			var source = new UiInputSource();
-			long sequence = 0;
-			void Frame( OrderedInputEventKind kind, bool left )
-			{
-				var events = new[] { new OrderedInputEvent( ++sequence, kind, point.X, point.Y, (int)Veldrid.MouseButton.Left, TimestampMilliseconds: sequence * 10, PositionIsExact: true ) };
-				Input.Mouse = new Input.MouseInfo { Position = new( point.X, point.Y ), Left = left };
-				Input.Keyboard = new Input.KeyboardInfo( new List<Veldrid.Key>() );
-				Input.SetFrameForTests( Input.Keyboard.KeysDown, events );
-				var input = source.Poll( 1, 1 );
-				var captured = hud.Update( context, input, false, false, false );
-				level.UpdateWorldInput( Input.Mouse.Left, captured, input.Mouse, new System.Numerics.Vector2( 1000 ), 0 );
-			}
-			int Clicks() => level.Commands.Log.Count( entry => entry.Command.Kind == ParkCommandKind.CoasterClick );
-			var before = Clicks();
-			Frame( OrderedInputEventKind.ButtonDown, true );
-			Assert.AreEqual( before, Clicks(), "the press places no pylon" );
-			Frame( OrderedInputEventKind.ButtonUp, false );
-			Assert.AreEqual( before + 1, Clicks(), "the release is the click" );
-		}
-		finally { restoreFrame(); Input.Mouse = oldMouse; Input.Keyboard = oldKeyboard; Camera.Mode = oldMode; Camera.ViewMatrix = oldView; Camera.ProjMatrix = oldProjection; level.ExitCoasterTool(); }
 	}
 
 	/// <summary>The coaster tool's entry and exit (the ride closed and opened, the controller's tool state, the being-edited mark that keeps guests off) are commands a twin follows.</summary>

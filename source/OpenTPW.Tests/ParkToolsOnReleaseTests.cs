@@ -371,17 +371,135 @@ public class ParkToolsOnReleaseTests
 	}
 
 	[TestMethod]
-	public void AToolArmedBetweenAPressAndItsReleaseTakesNoClickFromThatRelease()
+	public void AToolArmedBetweenAPressAndItsReleaseTakesTheReleaseButAGuestsStartedToolDoesNot()
 	{
-		// a co-op guest's Move pick-up coming back (CompleteMove) arms the build tool while the button is down: the press was the idle mode's, so its release places nothing
-		// with no path builder the press enters nothing: it is the idle mode's alone
+		// tp.exe's release needs no press (0x46C610 -> 0x524960): a tool armed mid-press (a key) takes the release, with no cue (its press latch was not set)
 		typeof( Level ).GetField( "<Paths>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, null );
 		Frame( new[] { Down( PointA ) }, left: true );
-		Assert.IsFalse( level.CellTool.IsActive );
 		level.IsRemovingObjects = true;
 		Frame( new[] { Up( PointA ) } );
-		Assert.AreEqual( 0, commands.Count, "the release of a press that saw no tool is no click of the tool armed since" );
+		Assert.AreEqual( 1, commands.Count, "the armed tool takes the release" );
+		CollectionAssert.AreEqual( Array.Empty<uint>(), sounds );
+		// [EXT:online-coop-commands] a tool the host's answer started (CompleteMove, CompleteQueueEdit) between the press and its release takes none
+		Frame( new[] { Down( PointA ) }, left: true );
+		level.HostToolStarts++;
+		Frame( new[] { Up( PointA ) } );
+		Assert.AreEqual( 1, commands.Count, "the guest's started tool takes no click from that release" );
 		Frame( new[] { Down( PointA ), Up( PointA ) } );
-		Assert.AreEqual( 1, commands.Count, "a fresh click of the armed tool acts" );
+		Assert.AreEqual( 2, commands.Count, "a fresh click acts" );
+	}
+
+	[TestMethod]
+	public void TheCoasterBuildClickIsTheReleaseNotThePress()
+	{
+		var renderer = new AutomaticCheckpointCpuRendererScope();
+		var fixture = new UpgradeCatalogueDefaultsTests();
+		fixture.Setup();
+		var park = ParkSettingCommandLevelTests.NewPark( fixture, "Bumper.WhichTrackType 3\n" );
+		typeof( Level ).GetField( "coasterBuilders", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<OriginalObject, CoasterBuilder>() );
+		var level = park.Level;
+		var restoreFrame = Input.CaptureFrameStateForTests(); var oldMouse = Input.Mouse; var oldKeyboard = Input.Keyboard; var oldDown = Input.KeysDown; var oldLast = Input.LastKeysDown; var oldText = Input.TextEntryActive; var oldCursor = Input.CursorType; var oldSoftware = Input.SoftwareCursorRequested; var oldMode = Camera.Mode; var oldView = Camera.ViewMatrix; var oldProjection = Camera.ProjMatrix;
+		try
+		{
+			Camera.Mode = new ParkCameraMode();
+			var centre = new System.Numerics.Vector3( ParkPlacement.MinimumCoordinate + 16.5f * ObjectPlacement.CellSize, ParkPlacement.MinimumCoordinate + 16.5f * ObjectPlacement.CellSize, 0 );
+			Camera.ViewMatrix = System.Numerics.Matrix4x4.CreateLookAt( centre + new System.Numerics.Vector3( 0, -20, 30 ), centre + new System.Numerics.Vector3( 0, 0, 12 ), System.Numerics.Vector3.UnitZ );
+			Camera.ProjMatrix = System.Numerics.Matrix4x4.CreatePerspectiveFieldOfView( 0.8f, 1, 0.5f, 500 );
+			// the fixture's park has no heightfield to pick: the generic sandbox's Z = 0 plane stands in for the terrain
+			typeof( Level ).GetField( "<OriginalPark>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, null );
+			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost() );
+			foreach ( var element in hud.Screen.Elements.ToArray() ) hud.Screen.Remove( element );
+			var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
+			var context = new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 1000, 1000 ), PopupHelp = false, ResolveTexture = _ => null };
+			var point = new System.Numerics.Vector2( 500, 400 );
+			Assert.IsTrue( level.TryGetGridCell( point, new System.Numerics.Vector2( 1000 ), out _, out _ ) );
+			Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+			Assert.IsTrue( level.CoasterPanel!.IsBuilding );
+			var source = new UiInputSource();
+			long sequence = 0;
+			void Frame( OrderedInputEventKind kind, bool left )
+			{
+				var events = new[] { new OrderedInputEvent( ++sequence, kind, point.X, point.Y, (int)Veldrid.MouseButton.Left, TimestampMilliseconds: sequence * 10, PositionIsExact: true ) };
+				Input.Mouse = new Input.MouseInfo { Position = new( point.X, point.Y ), Left = left };
+				Input.Keyboard = new Input.KeyboardInfo( new List<Veldrid.Key>() );
+				Input.SetFrameForTests( Input.Keyboard.KeysDown, events );
+				var input = source.Poll( 1, 1 );
+				var captured = hud.Update( context, input, false, false, false );
+				level.UpdateWorldInput( Input.Mouse.Left, captured, input.Mouse, new System.Numerics.Vector2( 1000 ), 0 );
+			}
+			int Clicks() => level.Commands.Log.Count( entry => entry.Command.Kind == ParkCommandKind.CoasterClick );
+			var before = Clicks();
+			Frame( OrderedInputEventKind.ButtonDown, true );
+			Assert.AreEqual( before, Clicks(), "the press places no pylon" );
+			Frame( OrderedInputEventKind.ButtonUp, false );
+			Assert.AreEqual( before + 1, Clicks(), "the release is the click" );
+			// [BIN:TPW-EXE:0x446300 coaster edit release] in an edit mode a press that picked nothing, released on the grid, only settles: it is no click of the level's
+			Assert.IsTrue( level.CoasterPanel!.Select( CoasterToolButton.Height ) );
+			var edits = Clicks();
+			Frame( OrderedInputEventKind.ButtonDown, true );
+			Frame( OrderedInputEventKind.ButtonUp, false );
+			Assert.AreEqual( edits, Clicks(), "the edit mode's release places no pylon" );
+		}
+		finally { restoreFrame(); Input.Mouse = oldMouse; Input.Keyboard = oldKeyboard; Input.KeysDown = oldDown; Input.LastKeysDown = oldLast; Input.TextEntryActive = oldText; Input.CursorType = oldCursor; Input.SoftwareCursorRequested = oldSoftware; fixture.Cleanup(); renderer.Dispose(); Camera.Mode = oldMode; Camera.ViewMatrix = oldView; Camera.ProjMatrix = oldProjection; level.ExitCoasterTool(); }
+	}
+
+	[TestMethod]
+	public void ALostReleaseSettlesAPylonDragInsteadOfLeavingItOnTheCursor()
+	{
+		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Synthetic" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( builder, (20, 20) ); builder.Height = 40;
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		var edits = new CoasterEdits();
+		var panel = new CoasterToolPanel( builder, null, 0, command => CoasterPanelCommand.ApplyTo( command, builder, edits ) );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Height ) );
+		Assert.IsTrue( panel.Press( CoasterTrack.StationNodeCount, new N.Vector2( 100, 100 ), 24, 20 ) );
+		panel.Drag( new N.Vector2( 100, 80 ), 0, null );
+		Assert.IsTrue( panel.IsDragging );
+		// the press went to the park before the drag began (while a drag holds the pointer, hit testing is suspended)
+		Frame( new[] { Down( PointA ) }, left: true );
+		level.UseCoasterPanelForTests( panel );
+		Frame( new[] { Up( PointA ) with { Source = OrderedInputEventSource.Browser, PositionIsExact = false } } );
+		Assert.IsFalse( panel.IsDragging, "the pylon is let go where it is" );
+	}
+
+	[TestMethod]
+	public void LegacyFramesABrowserBlurReleaseFromThePollEndsThePressWithNoClick()
+	{
+		// co-op and visits always take the hand-fed path: the flag comes from the batch's own left up
+		var session = (CoopSession)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( CoopSession ) );
+		typeof( CoopSession ).GetField( "<Role>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( session, CoopRole.Host );
+		level.CoopSession = session;
+		level.IsRemovingObjects = true;
+		Frame( new[] { Down( PointA ) }, left: true );
+		Frame( new[] { Up( PointA ) with { Source = OrderedInputEventSource.Browser, PositionIsExact = false } } );
+		Assert.AreEqual( 0, commands.Count, "the lost release clicks nothing" );
+		Frame( new[] { Down( PointA ) }, left: true );
+		Frame( new[] { Up( PointA ) } );
+		Assert.AreEqual( 1, commands.Count, "an exact release clicks" );
+	}
+
+	[TestMethod]
+	public void ATrackEditToolsRefusedFirstTileSoundsTheCueAndEndsAtTheRelease()
+	{
+		// [BIN:TPW-EXE:0x527B00] the first-tile hover sets the latch: 0xAF at the release, the tool ends
+		var cell = CellAt( PointA );
+		level.CellTool.Enter( new RefusedFirstTileWriter( cell ), null );
+		Frame( new[] { Down( PointA ) }, left: true );
+		CollectionAssert.AreEqual( Array.Empty<uint>(), sounds );
+		Frame( new[] { Up( PointA ) } );
+		Assert.IsFalse( level.CellTool.IsActive );
+		CollectionAssert.AreEqual( new[] { GameAudio.PathRefusedEvent }, sounds );
+	}
+
+	private sealed class RefusedFirstTileWriter( (int X, int Y) refused ) : ICellLineWriter
+	{
+		public CellToolMode Mode => CellToolMode.KartEdit;
+		public bool SnapsToLine => false;
+		public bool RefusesFirstClick( (int X, int Y) cell ) => cell == refused;
+		public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) =>
+			new( cursor, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Occupied, false ) { Start = start, Line = ParkPathBuilder.LayLine( start, cursor ) };
+		public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end ) => Preview( start, end );
+		public void Undo( SegmentResult segment ) { }
 	}
 }

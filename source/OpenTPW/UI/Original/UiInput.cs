@@ -31,7 +31,7 @@ public enum UiKeys
 /// (<see cref="UiPointerRouter.AdmitInjected"/>), whereas an unavailable batch never starts a gesture.
 /// </param>
 /// <param name="BackspaceRepeating">Every Backspace of this frame is the auto-repeat of a held key (the pool bridge and water removal acts only on the first press).</param>
-/// <param name="LeftReleaseLost">The left release is no gesture's end at a place: the platform made it up (a browser blur or visibility release, whose position is only the last one seen). It ends the press without a click, whatever the tool; <see cref="NotClick"/> alone does not, since a drag's release is the tools' click.</param>
+/// <param name="LeftReleaseLost">The left release is no gesture's end at a place: the platform made it up (a browser blur or visibility release, whose position is only the last one seen). It ends the press without a click for the tools that click on the release; <see cref="NotClick"/> alone does not, since a drag's release is the tools' click. The pool stroke has nothing to commit at its release (it writes live as the pointer moves), so a lost release ends it as the pointer leaving the park does.</param>
 /// <param name="RightReleased">The right button was released this frame.</param>
 /// <param name="RightClicked">
 /// The right release closes a quick click: the press lasted at most <see cref="UiInputSource.RightClickMilliseconds"/> and the pointer never strayed more than
@@ -136,11 +136,14 @@ public sealed class UiInputSource
 			rightMoved = true;
 		var rightReleased = !mouse.Right && wasRight;
 		var rightClicked = rightReleased && !rightMoved && (Clock() - rightPressedAt <= RightClickMilliseconds || rightFrames <= MaxQuickClickFrames);
+		var orderedEvents = NormalizeOrderedEvents( Input.OrderedEvents, keys, framebufferPerWindowX, framebufferPerWindowY );
+		// a left release the browser made up (blur, visibility): its position is only the last one seen
+		var leftReleaseLost = orderedEvents != null && orderedEvents.Any( item => item.Kind == OrderedInputEventKind.ButtonUp && item.Button == (int)MouseButton.Left && item.Source == OrderedInputEventSource.Browser && !item.PositionIsExact );
 		var input = new UiInput( new NVector2( mouse.Position.X * framebufferPerWindowX, mouse.Position.Y * framebufferPerWindowY ),
 			mouse.Left, mouse.Left && !wasLeft, !mouse.Left && wasLeft, mouse.Right && !wasRight, pressed, mouse.Wheel,
 			Input.Typed, Input.KeyPresses.Count( key => key == Key.BackSpace ), notClick,
-			NormalizeOrderedEvents( Input.OrderedEvents, keys, framebufferPerWindowX, framebufferPerWindowY ),
-			PointerScaleX: framebufferPerWindowX, PointerScaleY: framebufferPerWindowY, OrderedUnavailable: Input.OrderedEvents == null, BackspaceRepeating: Input.BackspaceRepeating, RightReleased: rightReleased, RightClicked: rightClicked );
+			orderedEvents,
+			PointerScaleX: framebufferPerWindowX, PointerScaleY: framebufferPerWindowY, OrderedUnavailable: Input.OrderedEvents == null, BackspaceRepeating: Input.BackspaceRepeating, RightReleased: rightReleased, RightClicked: rightClicked, LeftReleaseLost: leftReleaseLost && !mouse.Left );
 		wasLeft = mouse.Left;
 		wasRight = mouse.Right;
 		return input;

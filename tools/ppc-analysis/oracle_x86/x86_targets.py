@@ -3476,8 +3476,223 @@ TERRAIN_CACHE_TARGET = Target(
     notes=['thiscall (ecx = the cache: level +0, N +4, the 128 x 128 key table +8, the head node +0x1000c; arguments the key array, the cell records of 0x14 bytes whose +0x10 bit 0x100 marks a dirty cell, the count). '
            'The build 0x55f780, the page and device calls are stubbed; the oracle compares each frame\'s slots, the cells the original builds, the ring from the head and the table over random sequences of frames.'])
 
+# ============================================================================== X28: the model drape of the queue models (and the track pieces)
+# tp.exe 0x469940 (the instance wrapper of the placement 0x463060, creation flag 8) -> 0x469a80 (the node walk) on nodes with the node flag 0x20000 that the load flag 0x40 of 0x4629D0 gives every mesh
+# node: the chain matrix 0x4702d0, the point transform 0x46fc00, the inverse 0x470040 (LU: 0x46fe20, 0x46fd40), the identity 0x46f150, modf 0x67b280 and _ftol 0x67a830, all executed. Plan:
+# model_drape_reading.drape (the reading OpenTPW's ModelDrape and QueueModelDrape follow). The instance, model, base record, world and landscape objects are synthetic; the offsets are the ones the
+# routines read. The x87 control word is 0x7F (24 bit, docs/reverse/ORACLE.md 7.21).
+import model_drape_reading  # noqa: E402
+
+DRAPE_ENTRY = 0x469940
+DRAPE_FPCW = 0x7F
+DRAPE_RANGES = ([(0x469940, 0x469A76), (0x469A80, 0x46A54A), (0x4702D0, 0x4704B2), (0x46FC00, 0x46FC9A), (0x470040, 0x4700E6), (0x46FE20, 0x470040), (0x46FD40, 0x46FE12), (0x46F150, 0x46F176),
+                 (0x67A830, 0x67A857), (0x67B280, 0x67B3D1), (0x686080, 0x6860A8), (0x6855B0, 0x6855C5)])
+
+
+def drape_stubs(target: Target) -> dict:
+    return {}
+
+
+def drape_write_tree(sb: Sandbox, node: dict) -> int:
+    """A node as 0x469a80 reads it: flags +0, next sibling +8, first child +0xc, matrix +0x10, vertex count +0x58 (ushort), vertex array +0x60 (blocks of 4: x, y and z rows, 0x30 bytes), bounds +0x78
+    (minimum) and +0x84 (maximum). Returns the address; children are allocated after their parent and linked in order."""
+    address = sb.alloc(0xC0, 16)
+    sb.write(address, 'I', node['flags'])
+    for index, value in enumerate(node['matrix']):
+        sb.write(address + 0x10 + index * 4, 'f', value)
+    vertices = node['vertices']
+    sb.write(address + 0x58, 'H', len(vertices))
+    block = sb.alloc(0x30 * ((len(vertices) + 3) // 4 + 1), 16)
+    for index, (x, y, z) in enumerate(vertices):
+        base = block + (index >> 2) * 0x30 + (index & 3) * 4
+        sb.write(base, 'f', x)
+        sb.write(base + 0x10, 'f', y)
+        sb.write(base + 0x20, 'f', z)
+    sb.write(address + 0x60, 'I', block)
+    previous = 0
+    for child in node['children']:
+        child_address = drape_write_tree(sb, child)
+        if previous:
+            sb.write(previous + 8, 'I', child_address)
+        else:
+            sb.write(address + 0xC, 'I', child_address)
+        previous = child_address
+    return address
+
+
+def drape_read_tree(sb: Sandbox, address: int, node: dict) -> tuple:
+    """(nodes, world) of the tree in pre-order as the plan returns them; the second list stays empty (the grid's frame values are not stored by the original)."""
+    block = sb.read(address + 0x60, 'I')
+    vertices = []
+    for index in range(len(node['vertices'])):
+        base = block + (index >> 2) * 0x30 + (index & 3) * 4
+        vertices.append(tuple(model_drape_reading.f32_bits(sb.read(base + 0x10 * axis, 'f')) for axis in range(3)))
+    out = [(sb.read(address, 'I'), vertices)]
+    child = sb.read(address + 0xC, 'I')
+    for child_node in node['children']:
+        out += drape_read_tree(sb, child, child_node)
+        child = sb.read(child + 8, 'I')
+    return out
+
+
+def drape_binary(sb: Sandbox, x: dict, log, fpcw: int | None = DRAPE_FPCW) -> dict:
+    """cdecl 0x469940 (instance, world, base height, flags): instance +4 the instance model (+0x9c the template model, +0x78 root, +0x30 header flags, +0x44 node count 0), +8 the base record (+0x14
+    the list of vertex indices, empty); the world's +0x6c is the landscape (origin +8 / +0xc, cell size +0x10 / +0x14, counts +0x18 / +0x1c, corner heights +0x28, four bytes per cell +0x2c).
+    The root's flags get 0x10000 at the end."""
+    land = x['landscape']
+    source_root = drape_write_tree(sb, x['tree'])
+    destination_root = drape_write_tree(sb, x['tree'])
+    template = sb.alloc(0x100, 16)
+    sb.write(template + 0x78, 'I', source_root)
+    model = sb.alloc(0x100, 16)
+    sb.write(model + 0x78, 'I', destination_root)
+    sb.write(model + 0x9C, 'I', template)
+    sb.write(model + 0x70, 'I', sb.alloc(0x200, 16))
+    record = sb.alloc(0x40, 16)
+    sb.write(record + 0x14, 'I', sb.alloc(16, 16))
+    instance = sb.alloc(0x20, 16)
+    sb.write(instance + 4, 'I', model)
+    sb.write(instance + 8, 'I', record)
+    landscape = sb.alloc(0x100, 16)
+    sb.write(landscape + 8, 'f', land['origin'][0])
+    sb.write(landscape + 0xC, 'f', land['origin'][1])
+    sb.write(landscape + 0x10, 'f', land['cell'][0])
+    sb.write(landscape + 0x14, 'f', land['cell'][1])
+    sb.write(landscape + 0x18, 'I', land['cells'][0])
+    sb.write(landscape + 0x1C, 'I', land['cells'][1])
+    heights = sb.alloc(4 * len(land['heights']) + 16, 16)
+    for index, value in enumerate(land['heights']):
+        sb.write(heights + 4 * index, 'f', value)
+    sb.write(landscape + 0x28, 'I', heights)
+    flag_table = sb.alloc(len(land['flags']) + 16, 16)
+    for index, value in enumerate(land['flags']):
+        sb.write(flag_table + index, 'B', value)
+    sb.write(landscape + 0x2C, 'I', flag_table)
+    world = sb.alloc(0x100, 16)
+    sb.write(world + 0x6C, 'I', landscape)
+    if fpcw is not None:
+        sb.set_fpcw(fpcw)
+    sb.call(DRAPE_ENTRY, (instance, world, struct.unpack('<I', struct.pack('<f', x['base_height']))[0], 0))
+    return {'nodes': drape_read_tree(sb, destination_root, x['tree'])}
+
+
+def drape_plan(x: dict) -> dict:
+    return {'nodes': model_drape_reading.drape(x)['nodes']}
+
+
+def drape_signed_permutations() -> list:
+    """The 24 rotations of the signed permutation matrices (rows of the 3 x 3 part): what the queue models' nodes and a placement at a quarter turn carry."""
+    out = []
+    import itertools
+    for perm in itertools.permutations(range(3)):
+        for signs in itertools.product((1, -1), repeat=3):
+            rows = [[0.0] * 3 for _ in range(3)]
+            for row, (column, sign) in enumerate(zip(perm, signs)):
+                rows[row][column] = float(sign)
+            determinant = (rows[0][0] * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1]) - rows[0][1] * (rows[1][0] * rows[2][2] - rows[1][2] * rows[2][0])
+                           + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0]))
+            if determinant > 0:
+                out.append(rows)
+    return out
+
+
+DRAPE_ROTATIONS = drape_signed_permutations()
+DRAPE_Y_TURNS = [rows for rows in DRAPE_ROTATIONS if rows[1] == [0.0, 1.0, 0.0]]   # the placement's quarter turns about the vertical axis
+
+
+def drape_matrix(rows: list, translation: tuple) -> list:
+    return [rows[0][0], rows[0][1], rows[0][2], 0.0, rows[1][0], rows[1][1], rows[1][2], 0.0, rows[2][0], rows[2][1], rows[2][2], 0.0, translation[0], translation[1], translation[2], 1.0]
+
+
+def drape_land(rng: random.Random, cells: tuple, steps: str) -> dict:
+    cell = (10.0, 10.0) if steps == 'unit' else (model_drape_reading.f32(rng.choice((8.0, 12.5, 10.0, 16.0))), model_drape_reading.f32(rng.choice((10.0, 6.5, 12.0))))
+    count = (cells[0] + 1) * (cells[1] + 1)
+    style = rng.randrange(4)
+    if style == 0:
+        heights = [float(rng.randint(-3, 12)) for _ in range(count)]
+    elif style == 1:
+        heights = [model_drape_reading.f32(rng.uniform(-5.0, 30.0)) for _ in range(count)]
+    elif style == 2:
+        flat = float(rng.randint(0, 6))
+        heights = [flat] * count
+    else:
+        # a ramp with a little noise: the slopes of a hillside
+        heights = [model_drape_reading.f32(0.5 * (i % (cells[0] + 1)) * cell[0] + 0.25 * (i // (cells[0] + 1)) * cell[1] + rng.uniform(-0.3, 0.3)) for i in range(count)]
+    # four bytes per cell: the cell word, whose bit 4 is the diagonal; the other bits vary
+    flags = bytearray()
+    for _ in range(cells[0] * cells[1]):
+        flags += bytes([rng.choice((0, 4, 0, 4, 1, 5, 0x84, 0x80)), rng.randrange(256), rng.randrange(256), rng.randrange(256)])
+    return {'origin': (0.0, 0.0), 'cell': cell, 'cells': cells, 'heights': heights, 'flags': bytes(flags)}
+
+
+DRAPE_FRACTIONS = (0.0, 0.0, 0.001, 0.0099, 0.02, 0.3, 0.5, 0.49, 0.51, 0.75, 0.9, 0.99, 0.999, 0.4999, 0.5001, 0.25, 0.125, 0.875)
+
+
+def drape_case(rng: random.Random, index: int, small: bool = False) -> dict:
+    """One synthetic park. The placement is a quarter turn about the vertical axis with the cell's translation and the instance height (the midrange of the cell's corners in half the cases, any
+    height in the others); the mesh nodes carry a signed permutation matrix and a translation as the queue models' nodes do, with vertices that the chain puts on the map: on the grid lines and inside
+    the cells, at the map's far edge and past its near edge. `small` keeps it readable (the C# golden): up to 4 x 4 cells and a few vertices per node."""
+    f32 = model_drape_reading.f32
+    top = 4 if small else 7
+    cells = (rng.randint(2, top), rng.randint(2, top))
+    land = drape_land(rng, cells, 'unit' if index % 3 else 'odd')
+    cell = land['cell']
+    cx, cz = rng.randrange(cells[0]), rng.randrange(cells[1])
+    rotation = rng.choice(DRAPE_Y_TURNS)
+    if index % 2:
+        corners = [land['heights'][(cz + dz) * (cells[0] + 1) + cx + dx] for dx in (0, 1) for dz in (0, 1)]
+        base_height = f32(f32(min(corners) + max(corners)) * 0.5)
+    else:
+        base_height = f32(rng.choice((0.0, 1.5, -2.0, rng.uniform(-3, 15))))
+    root_matrix = drape_matrix(rotation, (f32(cx * cell[0]), base_height, f32(cz * cell[1])))
+    root = {'flags': 0, 'matrix': root_matrix, 'vertices': [], 'children': []}
+    count_nodes = rng.randint(1, 3)
+    for node_index in range(count_nodes):
+        local_rotation = rng.choice(DRAPE_ROTATIONS) if node_index else DRAPE_ROTATIONS[0]
+        local = drape_matrix(local_rotation, (f32(rng.choice((0.0, 2.64, 7.23, 9.35, rng.uniform(-3, 12)))), f32(rng.choice((0.0, 0.64, 9.36, rng.uniform(-1, 4)))),
+                                              f32(rng.choice((0.0, 10.0, 7.32, rng.uniform(-3, 12))))))
+        flags = 0x20000 if rng.randrange(8) else 0x20000 | 0x200 if index % 3 == 0 else 0
+        chain = model_drape_reading.chain_matrix(local, model_drape_reading.chain_matrix(root_matrix, list(model_drape_reading.IDENTITY)))
+        inverse = model_drape_reading.inverse_exact(chain)
+        vertices = []
+        for _ in range(rng.randint(1, 4 if small else 9)):
+            world = (axis_point(rng, cells[0], cell[0]), f32(rng.uniform(-1.0, 6.0)), axis_point(rng, cells[1], cell[1]))
+            vertices.append(model_drape_reading.transform_point(inverse, world))
+        child = {'flags': flags, 'matrix': local, 'vertices': vertices, 'children': []}
+        if node_index == 2 and rng.randrange(2):
+            # a grandchild: its chain goes through two nodes
+            grand_matrix = drape_matrix(rng.choice(DRAPE_ROTATIONS), (f32(rng.uniform(-2, 8)), 0.0, f32(rng.uniform(-2, 8))))
+            grand_chain = model_drape_reading.chain_matrix(grand_matrix, chain)
+            grand_inverse = model_drape_reading.inverse_exact(grand_chain)
+            grand = [model_drape_reading.transform_point(grand_inverse, (axis_point(rng, cells[0], cell[0]), f32(rng.uniform(-1, 5)), axis_point(rng, cells[1], cell[1]))) for _ in range(2)]
+            child['children'].append({'flags': 0x20000, 'matrix': grand_matrix, 'vertices': grand, 'children': []})
+        root['children'].append(child)
+    return {'landscape': land, 'tree': root, 'base_height': base_height}
+
+
+def axis_point(rng: random.Random, count: int, size: float) -> float:
+    """A coordinate along an axis of the map: a grid line plus a fraction (inside), now and then the far edge or a point left of the origin."""
+    roll = rng.randrange(20)
+    if roll == 0:
+        return model_drape_reading.f32(count * size)
+    if roll == 1:
+        return model_drape_reading.f32(-rng.choice((0.001, 0.5, 1.25)))
+    whole = rng.randrange(count)
+    return model_drape_reading.f32((whole + rng.choice(DRAPE_FRACTIONS)) * size)
+
+
+def drape_inputs(rng: random.Random, n: int) -> list:
+    return [drape_case(rng, index) for index in range(min(n, 400))]
+
+
+DRAPE_TARGET = Target(
+    'tpw-exe-model-drape', 'tpw', 'tp.exe model drape 0x469940 / 0x469a80', 'docs/PATHS.md (QueueModelDrape) / model_drape_reading.drape',
+    DRAPE_ENTRY, DRAPE_RANGES, drape_stubs, drape_binary, drape_plan, drape_inputs, budget=3_000_000,
+    notes=['cdecl 0x469940 (instance, world, base height, flags): the chain starts at the identity (0x46f150), the root node carries the placement; nodes with 0x20000 move every vertex onto the '
+           'landscape triangle (always split by the cell word bit 0x4) minus the base height plus the height they had; control word 0x7F.'])
+
 WALK_TARGETS = [WALK_EDGE_TARGET, WALK_COMMIT_TARGET, WALK_SEARCH_TARGET, WALK_AVOID_TARGET, WALK_STEERING_TARGET]
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
            SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET, GUARD_TARGET,
-           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET, TERRAIN_SPANS_TARGET, TERRAIN_CACHE_TARGET] + COAST_TARGETS + WALK_TARGETS
+           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET, TERRAIN_SPANS_TARGET, TERRAIN_CACHE_TARGET, DRAPE_TARGET] + COAST_TARGETS + WALK_TARGETS

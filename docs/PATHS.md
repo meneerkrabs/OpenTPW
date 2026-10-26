@@ -167,8 +167,46 @@ queue link is +X or +Y, a bend takes the other bend for some queue links, and a 
 back takes the end piece: `queend`, `quebin1`, `quebin2`), and the refresh places that model of the theme's `queue`
 archive on the cell (`quedead`, `questra`, `quebnd1`, `quebnd2`, `queend`, `quebin1`, `quebin2`; tp.exe `0x522900`,
 `0x5229e0`) at the yaw 360 minus the row's rotation, as a one-cell object would be placed (`QueueModels`). The
-models are baked into the path layer (PATH-015), each vertex on the drawn ground under it and lifted a little as
-the path tiles are, so the plank floor shows over the grass and the posts follow a sloped cell.
+models are baked into the path layer (PATH-015), each vertex draped onto the landscape as tp.exe does it
+([Queue models on the terrain](#queue-models-on-the-terrain)), so the plank floor lies on the ground and the posts follow a sloped cell.
+
+### Queue models on the terrain
+
+**The drape (October 26, 2026; issue 829, package D2).** [BIN:TPW-EXE:0x00522900 queue models] The loader `0x522900` loads each of the eight queue models with `0x4629D0` and the load flags
+`0x12423` (the two `quedead` entries, whose table byte `+5` is set, `0x112423`). [BIN:TPW-EXE:0x004629D0 loader flags] Of these, bit `0x2` becomes the loader's flag `0x40`, which makes `0x461F10` OR
+`0x20000` into every mesh node (`0x462610`..`0x462631`) and set the header's `+0x30` bit `0x80` (`0x4625F4`): the same drape flag the kart and water kits carry (`0x10422`, [TRACKS.md](TRACKS.md), "Terrain drape").
+The other bits are the footprint skirt (bit `0x1` → `0x46A5A0`, not ported for queue models yet), header `+0x30` bits `0x800` (from `0x20`) and `0x20000` (from `0x10000`), the dummy flag pass `0x46A550`
+(bit `0x2000`) and, for `quedead`, `0x100000` (PATH-015). [BIN:TPW-EXE:0x005229E0 queue model] `0x5229E0` places a model with the creation flags `0x33A` through `0x463060`, the footprint `{1, 1}` that
+`0x522900` stores at `0x816D68`, the cell (x, y) and the yaw `360 - rotation` (0 for 0); flag 8 runs `0x469940` → `0x469A80`, the routine that drapes the track pieces:
+
+- **Instance height.** [BIN:TPW-EXE:0x00466D70 base height] `0x463060` asks `0x466D70` for the instance height: half the sum of the lowest and highest of the cell's four corner heights (the all-cells flag
+  `0x10` of `0x33A` skips the footprint test), and `0x467030` stores it as the root's height (`+0x44`) beside the rotation about the vertical axis and the cell origin. `QueueModelDrape.BaseHeight`.
+- **The drape.** [BIN:TPW-EXE:0x00469A80 mesh drape] For every node with `0x20000` each vertex goes through the node's chain matrix (`0x4702D0`, `0x46FC00`) into the grid's frame, takes the height
+  `(landscape - instance height) + its height there`, and goes back through the inverse of the chain (`0x470040`); x and z are its own. The landscape value is the cell's triangle chosen by the cell word's
+  bit `0x4`, always split, from the cell's four corners by index arithmetic over the `(cells + 1)` wide height array (the cell word at index `x + z * cells`), with no `0x800` planar shortcut and no bounds test
+  (`LandscapeSampler.SampleDrape`). The instance height cancels: the vertex stands at the landscape under it plus its own model height, up to the single-precision rounding of the two additions.
+- **No lift, no offset.** The drape adds nothing else. The 0.01 cell lift above the ground that OpenTPW's path *quads* carry is a stand-in for blending over the terrain and was never part of the models;
+  the queue models no longer have it (they were baked with it and with a planar-shortcut sampler before). The yaw is a quarter turn about the cell (`ObjectPlacement.CellRotation`, the
+  rotation of `0x46F650`); `QueueModelDrape.Placement`.
+- **Arithmetic.** tp.exe's thread runs the x87 at the 24-bit control word `0x7F` (COAST-032), so the chain, the transform, the triangle and the two height operations are single-precision operations in the
+  original's order (`ModelDrape`). The one deviation is that x and z are the transformed vertex's, not the same after the round trip through the float inverse (an ulp of a position, never of a height).
+- **No mode.** The drape has no vehicle or bridge mode: the track pieces' modes 1 and 2 ([TRACKS.md](TRACKS.md)) belong to the vehicle height sampler `0x4511A0`, which never reads a queue model (guests walk
+  the cell's own height); the drape's arguments are the same for queue models and track pieces (the header bit `0x100` that would change them is not set by either).
+- **Slopes, joints, holes.** A vertex on the line between two queue cells reads the same two corners from either cell, so the cells meet at the same height up to the rounding of their two instance heights
+  (`QueueModelDrapeTests`, a few `1e-5` model units). The drape reads only the corner heights and the cell word's bit `0x4`: a cell that is a hole of the ground (the pool holes, the procedural floors'
+  skirt cells, the flag `0x1` of the cell word) drapes exactly like any other, and a vertex beyond the map's edge reads what the index arithmetic reaches there.
+- **Face normals.** The refresh `0x473C30` → `0x473A40` rewrites only the entry each face's first word points to; every face of every queue mesh (28 models, 74 meshes, 1536 faces in the four themes) points
+  into the face-normal block, none into the corner block, so the stored normals light the draped models as they do the original's (`QueueModelDrapeTests`). No node of a queue model has the flag `0x200` that
+  would take it out of the walk (the files' node types are `0x1` and `0x401`).
+- **Path cells are not draped.** Only the chooser's class-2 result (queue cells) places a model (`0x5365D0` → `0x5229E0`); a path cell's result is only written into the landscape cell (`0x450470`), a
+  ground texture, so there is no mesh for `0x469A80` to drape. OpenTPW's quads for path cells follow the ground triangles of the cell (`AddCell`) and keep their small lift against depth fights.
+- **The depth compare.** With no lift the floor of a queue model lies exactly on the ground, so it is drawn at the depth the ground stored. The original's device compares depth with LESSEQUAL (`0x57360F`, once,
+  in the device set-up), so the later draw wins the tie and the planks show; OpenTPW's world materials compared with LESS (the planks vanished under the ground), now `Material.DepthComparison`, the same
+  change as the floors work of PR 854 (identical hunk).
+- **Presentation only.** The baked vertices are drawn by the path layer; no simulation state, world hash or save field reads them (`QueueModelCount` is a count).
+
+Verification: `oracle_x86/model_drape_reading.py` is the plan side of the x86 oracle target `tpw-exe-model-drape` (`0x469940` run in the emulator on synthetic landscapes and trees, bit for bit,
+[ORACLE.md](reverse/ORACLE.md) X33); `ModelDrapeGolden.cs` replays its cases in `ModelDrapeTests` without the executable.
 
 ## Headless API
 
@@ -192,6 +230,6 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | --- | --- | --- |
 | PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate) |
 | PATH-017 | PATH-PAUSE-WINDOW | Bounded ordinary-WM pump/admission then drain is implemented for offline motion/button ownership and P: topmost eligible receiver, stable screen/element lifetime, separate movement capture, saved release owner, and the P key's pause backdrop (the 'lolight' layer `0x65dd7b` has flags 1, so `0x65db25` accepts it; the P key (`0x409350`, from the key row `0x40bf77` and the window's own procedure `0x4a2706`) and the offline focus-loss pause (`0x46b74c` -> `0x4092a0(1)` -> `0x481440` -> `0x4a2790`) create it and every resume destroys it (`0x409300` -> `0x4a27c0`), and it covers just the windows that existed then, so a window opened later is above it; the speed buttons, the numpad and a park loaded paused create none, and the backdrop takes the click without stopping the camera). The handler-only speed test does not describe the upstream window routing (`0x65db25`, `0x658b1a`, `0x658b7f`, outer pump `0x45ab13`, drain `0x48a5be`). Still open: alternate buffered-input scheduling; full native keyboard/wheel routing (legacy aggregate wheel/non-P paths can still act below the backdrop); original backdrop/panel rendering and full modal/audio parity; unobserved focus-modifier limits; whether a path or pool drag released over the HUD uses the stored hover cell (the click dispatcher `0x4879d0` takes no message coordinates and acts on the stored cursor mode `0x7b05d8`) is not settled, so the release over the HUD computes the cell under the pointer. |
-| PATH-015 | QUEUE-MODELS | queue cells carry the theme's queue models as tp.exe places them (0x535dd0 class 2, 0x5229e0); baked at the cell's mean height, without their .hmp ground deformation, texture-frame animation (the fire0 torches) and quedead's load flag 0x100000 |
+| PATH-015 | QUEUE-MODELS | queue cells carry the theme's queue models as tp.exe places and drapes them (0x535dd0 class 2, 0x5229e0, 0x469a80); drawn without their .hmp ground deformation, texture-frame animation (the fire0 torches) and quedead's load flag 0x100000 |
 
 Retired: `APPROX:PATH-016` (the links of MAP InitialPath cells: the map init `0x536490` types each cell and links it with the link writer `0x5348d0` in mode 1, the cells in index order, so a cell links only toward the path cells before it and the later cells link back when their own turn comes; `ParkCellMap.FromOriginal` runs the ported writer in that order and no longer links toward non-path neighbours).

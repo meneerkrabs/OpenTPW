@@ -1,0 +1,23 @@
+## Queue models drape onto the terrain as tp.exe does (October 26, 2026)
+
+Issue 829, package D2, the follow-up that PR 833 (kart and water track pieces) left open. The queue models of a queue cell were baked with each vertex on the planar-shortcut ground under it plus an extra lift of 0.01 cell. tp.exe puts them there with the same routine as the track pieces, and has neither.
+
+**The original's mechanism** (research in tp.exe, nothing run).
+- `0x522900` loads the eight queue models with `0x4629D0` and the flags `0x12423` (both `quedead` `0x112423`). Bit `0x2` becomes loader flag `0x40`, which ORs `0x20000` into every mesh node and sets header bit `0x80`: the drape flag of the track kits (`0x10422`).
+- `0x5229E0` places the model with `0x463060` (flags `0x33A`) on the footprint `{1, 1}` (`0x816D68`) at yaw `360 - rotation`; the instance height is `0x466D70` over the cell's four corners (half the sum of the lowest and highest), flag 8 runs `0x469940` → `0x469A80`: each vertex of every node goes through its chain matrix, takes `(landscape - instance height) + its height there`, and goes back through the inverse. The landscape is the cell's triangle chosen by the cell word's bit `0x4`, always split, read by index arithmetic over the `(cells + 1)` wide array.
+- There is no lift, no offset and no mode: the drape has the same arguments for queue models and track pieces (the modes 1 and 2 of PR 833 belong to the vehicle height sampler, which never reads a queue model). Holes and procedural cells are no input: only the corner heights and bit `0x4` are read. Neighbouring cells meet at the grid lines because both read the same two corners there.
+- Path cells are not draped: only the chooser's class-2 result (queue cells) places a model (`0x5365D0` → `0x5229E0`); a path cell's result only writes the landscape cell's tile (`0x450470`), a ground texture. OpenTPW's quads for path cells keep their small lift against depth fights.
+- Face normals: every face of all 28 shipped queue models (74 meshes, 1536 faces) points into the face-normal block, none into the corner block, so the refresh after the drape (`0x473C30` → `0x473A40`) changes nothing a light reads; no node has the flag `0x200` that would skip it.
+
+**Port.**
+- `QueueModelDrape` (instance height, root placement, node chains, vertex) and `ModelDrape` (the original's chain matrix `0x4702D0`, point transform `0x46FC00` and height `0x469A80` in single precision and the original's operation order, the 24-bit x87 of COAST-032); `OriginalTerrain.BuildQueueModels` bakes each vertex through them. The 0.01 cell lift and the planar-shortcut sampler are gone from the queue models.
+- `LandscapeSampler.SampleDrape` (shared with the track pieces) now does the triangle in single precision and reads the corners by index arithmetic over the flat array (cell word at `x + z * cells`): a point on the far edge weighs the corner row past it 0, a point beyond the edge reads what the arithmetic reaches, as the original does.
+- The world materials compare depth with the original's LESSEQUAL (`0x57360F`, set once by the device set-up; `Material.DepthComparison`): with no lift the queue floor lies exactly on the ground, and with LESS the planks vanished under the terrain (`reports/issue829/D2/without-lessequal/`). This is the identical hunk of PR 854 (floors, F8), so the two merge cleanly in `Material.cs`.
+- PATH-015 narrows to the `.hmp` ground deformation, the torches' texture-frame animation and `quedead`'s load flag `0x100000`.
+
+**Verified.**
+- x86 oracle target `tpw-exe-model-drape` (X33, `0x469940` with the routines under it executed on 400 synthetic parks): agrees bit for bit at the 24-bit control word; 268 of 400 differ at 53 and 64 bits. `ModelDrapeGolden.cs` replays 64 of its cases in `ModelDrapeTests` without the executable.
+- `QueueModelDrapeTests`: instance height, vertices on the cell floor and stacked heights at all yaws, joints between neighbouring cells at all yaw pairs, and with the PC data the node flags, the face-normal claim and a hash of every queue model's draped vertices on a synthetic hillside.
+- Captures before and after of queues on slopes in Jungle and Halloween: `reports/issue829/D2/` (not committed).
+
+Not here: the footprint skirt of the loader's flag 1 for queue models (OPEN-F6 of the floors work, PR 854), and the animation of the torches.

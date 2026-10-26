@@ -69,21 +69,49 @@ public static class LandscapeSampler
 
 	/// <summary>
 	/// The height the model drape gives a vertex of a draped mesh: the landscape triangle under the point (model units of the grid, 10 per cell), always split along the
-	/// cell's diagonal chosen by cell-word bit 0x4, with no 0x800 planar shortcut and no bounds test (a negative coordinate reads cell 0). The fractions and the corner
-	/// order are those of <see cref="InCell"/>; a point on or past the far edge reads the last cell at its far side, which is the value the original's index arithmetic
-	/// gives there (the far corner row weighs 0).
+	/// cell's diagonal chosen by cell-word bit 0x4, with no 0x800 planar shortcut and no bounds test (a negative coordinate reads cell 0). Every operation is one single-precision
+	/// operation in the original's order (the thread runs the x87 at the 24-bit control word, COAST-032), see <see cref="DrapeInCell"/>. The four corners are read by index arithmetic over the
+	/// (cells + 1) wide array as the original does, so a point on the far edge weighs the corner row past it 0, and a point beyond the edge reads what the arithmetic reaches (the next row's start;
+	/// past the array's end the original reads whatever follows it in memory, taken as 0 here).
 	/// </summary>
-	// [BIN:TPW-EXE:0x00469A80 mesh drape] for a node with flag 0x20000 each vertex is moved to the model height + the landscape under it (the triangle by the cell flag 0x4; a = (x, z), b = (x+1, z), c = (x, z+1), d = (x+1, z+1); flag clear: fz <= fx takes (d - b) z + x b + (1 - x) a, else -(c - a)(1 - z) + (1 - x) c + x d; flag set: 1 - fz <= fx takes -(d - b)(1 - z) + x d + (1 - x) c, else (c - a) z + x b + (1 - x) a) minus the instance height; there is no 0x800 test and no bounds test, only the negative clamp to 0
+	// [BIN:TPW-EXE:0x00469A80 mesh drape] for a node with flag 0x20000 each vertex is moved to the model height + the landscape under it (the triangle by the cell flag 0x4, read at cell index x + z * cells) minus the instance height; there is no 0x800 test and no bounds test, only the negative clamp to 0
 	public static float SampleDrape( int cellsX, int cellsZ, float cellSizeX, float cellSizeZ, Func<int, int, float> corner, Func<int, int, bool> antiDiagonal, float x, float y )
 	{
-		var (cx, cz) = (MathF.Max( 0, x / cellSizeX ), MathF.Max( 0, y / cellSizeZ ));
-		var (ix, iz) = ((int)cx, (int)cz);
-		var (fx, fz) = ((double)(cx - ix), (double)(cz - iz));
-		if ( ix >= cellsX )
-			(ix, fx) = (cellsX - 1, 1);
-		if ( iz >= cellsZ )
-			(iz, fz) = (cellsZ - 1, 1);
-		var (a, b, c, d) = (corner( ix, iz ), corner( ix + 1, iz ), corner( ix, iz + 1 ), corner( ix + 1, iz + 1 ));
-		return InCell( a, b, c, d, (float)fx, (float)fz, true, antiDiagonal( ix, iz ) );
+		// the clamp keeps the integer conversion defined for points far past the map
+		var (cx, cz) = (MathF.Min( MathF.Max( 0, x / cellSizeX ), 1e9f ), MathF.Min( MathF.Max( 0, y / cellSizeZ ), 1e9f ));
+		var (ix, iz) = ((long)cx, (long)cz);
+		var (fx, fz) = (cx - ix, cz - iz);
+		var stride = cellsX + 1L;
+		var first = ix + stride * iz;
+		float Height( long index ) => index >= 0 && index < stride * (cellsZ + 1L) ? corner( (int)(index % stride), (int)(index / stride) ) : 0f;
+		var cell = ix + iz * cellsX;
+		var anti = cell >= 0 && cell < (long)cellsX * cellsZ && antiDiagonal( (int)(cell % cellsX), (int)(cell / cellsX) );
+		return DrapeInCell( Height( first ), Height( first + 1 ), Height( first + stride ), Height( first + stride + 1 ), fx, fz, anti );
+	}
+
+	/// <summary>
+	/// The drape's triangle blend for the fractions (<paramref name="fx"/>, <paramref name="fz"/>) of a cell with corner heights a = (x, z), b = (x+1, z), c = (x, z+1), d = (x+1, z+1), in single precision.
+	/// Cell flag clear: <c>fz &lt;= fx</c> takes ((1 - fx) a + b fx) + fz (d - b), else ((1 - fx) c + d fx) + (1 - fz) (-(c - a)); flag set: <c>fx &lt; 1 - fz</c> takes ((1 - fx) a + b fx) + fz (c - a),
+	/// else ((1 - fx) c + d fx) + (1 - fz) (-(d - b)).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00469A80 drape triangle] the triangle by the cell flag 0x4 and the fractions, the difference of the two corners of its edge, the pair (1 - fx) times the near corner plus fx times the far one, then the row weight times the difference, each a single operation
+	public static float DrapeInCell( float a, float b, float c, float d, float fx, float fz, bool antiDiagonal )
+	{
+		bool upper, mirrored;
+		if ( !antiDiagonal )
+			(upper, mirrored) = !(fx < fz) ? (true, false) : (false, true);
+		else
+			(upper, mirrored) = fx < 1f - fz ? (false, false) : (true, true);
+		float difference = upper ? d - b : c - a;
+		float oneMinusX = 1f - fx;
+		if ( mirrored )
+		{
+			float sum = oneMinusX * c + d * fx;
+			float weighted = (1f - fz) * -difference;
+			return sum + weighted;
+		}
+		float near = oneMinusX * a + b * fx;
+		float rise = fz * difference;
+		return near + rise;
 	}
 }

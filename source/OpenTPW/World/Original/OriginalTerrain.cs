@@ -379,15 +379,13 @@ public sealed partial class OriginalTerrain : Entity
 	/// The queue models of the queue cells (<see cref="QueueModels"/>), baked into static batches: each instance stands on its cell turned by
 	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), each vertex on the ground under it.
 	/// </summary>
-	// [APPROX:PATH-015] the queue models are baked with each vertex raised by the drawn ground under it (LandscapeSampler, the path layer's lift above it, so the models follow a sloped cell and their floor shows over the grass as in the original's footage) and drawn without the ground deformation of their .hmp files (as objects, RIDES-014) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the .hmp deformation and the model loader's flag 0x100000 (0x4629D0)
+	// [APPROX:PATH-015] the queue models are baked draped onto the landscape as tp.exe does (QueueModelDrape, 0x469A80) and drawn without the ground deformation of their .hmp files (as objects, RIDES-014) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the .hmp deformation and the model loader's flag 0x100000 (0x4629D0)
 	private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues )
 	{
 		QueueModelCount = 0;
 		if ( queues.Count == 0 )
 			return;
 		var field = Park.Heightfield;
-		// The path layer's lift, so the queue's floor never fights the ground for depth.
-		var lift = 0.01f * field.CellSizeX;
 		var directory = $"/levels/{Park.LevelName}/queue";
 		var batchTextures = new List<string>();
 		var batchVertices = new List<Vertex>();
@@ -407,6 +405,11 @@ public sealed partial class OriginalTerrain : Entity
 			foreach ( var (x, y, tile) in group )
 			{
 				var turn = ObjectPlacement.CellRotation( tile.Yaw );
+				// the instance height and the chain of every node on this cell; each vertex is draped by its own chain (QueueModelDrape)
+				var baseHeight = QueueModelDrape.BaseHeight( field, x, y );
+				var placement = QueueModelDrape.Placement( field, x, y, tile.Yaw, baseHeight );
+				var chains = QueueModelDrape.Chains( model, placement );
+				var rootChain = ModelDrape.Chain( placement, System.Numerics.Matrix4x4.Identity );
 				foreach ( var mesh in model.Meshes )
 				{
 					if ( ObjectAssets.GetUnrenderableReason( mesh ) != null || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
@@ -429,14 +432,13 @@ public sealed partial class OriginalTerrain : Entity
 					for ( var index = 0; index < mesh.Vertices.Length; index++ )
 					{
 						var source = mesh.Vertices[index];
-						// Model space (Y up) → the cell's ground axes, turned within the cell → park model space at the cell → engine.
-						var local = System.Numerics.Vector3.Transform( ObjectAssets.ConvertAxes( System.Numerics.Vector3.Transform( source.Position.GetSystemVector3(), world ) ), turn );
+						// Model space (Y up) → the grid's frame through the node's chain with the vertex's height on the landscape under it → engine.
+						var placed = QueueModelDrape.Vertex( field, mesh.NodeIndex >= 0 && mesh.NodeIndex < chains.Length ? chains[mesh.NodeIndex] : rootChain, source.Position.GetSystemVector3(), baseHeight );
 						var normal = System.Numerics.Vector3.TransformNormal( ObjectAssets.ConvertAxes( System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), world ) ), turn );
 						var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
-						var (groundX, groundY) = (x * field.CellSizeX + local.X, y * field.CellSizeZ + local.Y);
 						batchVertices.Add( new Vertex
 						{
-							Position = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( groundX, GroundUnder( field, groundX, groundY ) + lift + local.Z, groundY ) ),
+							Position = OriginalParkPlacement.ToEngine( field, placed ),
 							Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( normal ) : System.Numerics.Vector3.UnitZ,
 							TexCoords = mesh.TexCoords[index],
 							TexIndex = slotOfMaterial[materialIndex],

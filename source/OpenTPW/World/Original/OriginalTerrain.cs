@@ -4,10 +4,11 @@ namespace OpenTPW;
 
 /// <summary>
 /// Renders an imported original level: the base.MD2 terrain meshes (node transforms composed up the
-/// hierarchy), the heightfield surface with its per-cell ground texture slot, and the paths as a blended
-/// layer on that ground. Each path cell takes the theme's PathTex shape and turn for its neighbours
-/// (<see cref="PathTiles"/>; cells unchanged since the original save keep the saved ones); queue cells carry the theme's
-/// queue models (<see cref="QueueModels"/>) on their ground. The layer follows <see cref="PathSource"/> and <see cref="QueueSource"/> (the level's cell
+/// hierarchy) and the heightfield surface with its per-cell ground texture slot. A path is not a layer over the ground, as in the original: each path cell takes the
+/// theme's PathTex shape and turn for its neighbours (<see cref="PathTiles"/>; cells unchanged since the original save keep the saved ones) as its own cell texture
+/// (<see cref="PathCellWord"/>), so the ground mesh leaves the cell out and the path tile is drawn in its place, turned by the cell word, or, with the procedural
+/// terrain textures on, is composited into the cell's procedural texture (<see cref="ProceduralTerrain.SetCellArt"/>). Queue cells carry the theme's
+/// queue models (<see cref="QueueModels"/>) as objects of their own. Both follow <see cref="PathSource"/> and <see cref="QueueSource"/> (the level's cell
 /// map) after <see cref="RefreshPaths"/>. Placed objects are drawn with their original models by
 /// <see cref="ParkObjects"/>, not as footprint markers.
 /// </summary>
@@ -83,19 +84,48 @@ public sealed partial class OriginalTerrain : Entity
 	/// <summary>Whether a path cell's straight or edge takes the second texture (the chooser's roll, <see cref="PathTileVariants"/>); null: the first.</summary>
 	public Func<int, int, bool>? PathVariantSource { get; set; }
 	public int SurfaceCellCount { get; private set; }
-	/// <summary>Path cells in the path layer.</summary>
+	/// <summary>Path cells that carry a path tile now.</summary>
 	public int PathCellCount { get; private set; }
 	private Dictionary<string, Texture>? heightfieldTextures;
-	private readonly List<ModelEntity> pathParts = new();
-	/// <summary>Path layer materials by texture set; kept when the layer is rebuilt, since a texture set that comes back is drawn by the same material; released with the terrain.</summary>
+
+	/// <summary>One path cell's tile: the texture (an index of the theme's <c>PathTex</c> list) and its turn.</summary>
+	private readonly record struct PathCell( int X, int Y, int Texture, int Rotation );
+
+	/// <summary>The path cells as the cell map has them (key <c>y * cells across + x</c>); the ground leaves each of them out.</summary>
+	private Dictionary<int, PathCell> pathCells = new();
+	private readonly List<(int X, int Y, QueueModelTile Tile)> queueCells = new();
+
+	/// <summary>The queue models of the queue cells: parts of their own, drawn whatever the camera mode is.</summary>
+	private readonly List<ModelEntity> queueParts = new();
+	/// <summary>The static path cells the procedural ground does not reach (outside its rectangle or its weight grid), or every path cell while the procedural textures are off.</summary>
+	private readonly List<ModelEntity> pathPartsOutside = new();
+	/// <summary>With the procedural textures on, every path cell as a static cell, for the camera modes that suspend them; built when such a mode first shows them and again after a change.</summary>
+	private readonly List<ModelEntity> pathPartsAll = new();
+	private bool pathPartsAllStale = true;
+	/// <summary>Path cell materials by texture set; kept when the cells are rebuilt, since a texture set that comes back is drawn by the same material; released with the terrain.</summary>
 	private readonly Dictionary<string, Material> pathMaterials = new();
 
-	/// <summary>Rebuilds the path layer so built and removed path cells show.</summary>
+	/// <summary>
+	/// Reads the cell map again so built and removed path cells show: the ground leaves the path cells out, the static path cells and the queue models are made again, and with the procedural textures on the cells whose
+	/// tile changed are marked to be built again (the dirty bit of the original's cell word).
+	/// </summary>
 	public void RefreshPaths()
 	{
 		if ( heightfieldTextures == null )
 			return;
-		foreach ( var old in pathParts )
+		ScanCells();
+		SyncProceduralArt();
+		DeleteParts( queueParts );
+		DeleteParts( pathPartsOutside );
+		DeleteParts( pathPartsAll );
+		pathPartsAllStale = true;
+		RefreshHoles();
+		BuildPaths( heightfieldTextures );
+	}
+
+	private void DeleteParts( List<ModelEntity> list )
+	{
+		foreach ( var old in list )
 		{
 			parts.Remove( old );
 			old.Delete();
@@ -107,9 +137,7 @@ public sealed partial class OriginalTerrain : Entity
 					model.Material.ReleaseOwnedResources();
 			}
 		}
-		pathParts.Clear();
-		RefreshHoles();
-		BuildPaths( heightfieldTextures );
+		list.Clear();
 	}
 	public int TerrainMeshCount { get; private set; }
 
@@ -138,6 +166,7 @@ public sealed partial class OriginalTerrain : Entity
 	private Material? heightfieldMaterial;
 	private Dictionary<int, int>? heightfieldSlotIndices;
 	private ulong heightfieldHoleSignature;
+	private ulong heightfieldSkipSignature;
 
 	private ulong HoleSignature()
 	{
@@ -152,7 +181,20 @@ public sealed partial class OriginalTerrain : Entity
 		return hash;
 	}
 
-	/// <summary>The ground mesh and the path layer; a value after each ground texture and after the mesh (a park built over frames, docs/BROWSER-PERFORMANCE.md, "Build steps").</summary>
+	/// <summary>The signature of the cells the static ground leaves out: the holes (<paramref name="holes"/>) and the path cells, which take a texture of their own.</summary>
+	private ulong SkipSignature( ulong holes )
+	{
+		var hash = holes;
+		var countX = Park.Heightfield.CellCountX;
+		foreach ( var key in pathCells.Keys.Order() )
+			hash = (hash ^ (uint)(key / countX * 4096 + key % countX + 0x40000000)) * 1099511628211UL;
+		return hash;
+	}
+
+	/// <summary>Whether the static ground leaves cell (<paramref name="x"/>, <paramref name="y"/>) out: a hole, or a path cell, whose texture is the path tile (<see cref="PathCellWord"/>).</summary>
+	private bool GroundSkips( int x, int y ) => RenderHoleSource?.Invoke( x, y ) == true || pathCells.ContainsKey( y * Park.Heightfield.CellCountX + x );
+
+	/// <summary>The ground mesh and the path cells; a value after each ground texture and after the mesh (a park built over frames, docs/BROWSER-PERFORMANCE.md, "Build steps").</summary>
 	private IEnumerable<bool> BuildHeightfield( Dictionary<string, Texture> textures )
 	{
 		heightfieldTextures = textures;
@@ -179,7 +221,10 @@ public sealed partial class OriginalTerrain : Entity
 		heightfieldMaterial = material;
 		heightfieldSlotIndices = slotIndices;
 		SurfaceCellCount = HeightfieldCells( field, null ).Count();
+		// the path cells are known before the ground is made: the ground leaves them out
+		ScanCells();
 		heightfieldHoleSignature = HoleSignature();
+		heightfieldSkipSignature = SkipSignature( heightfieldHoleSignature );
 		heightfieldPart = AddPart( BuildHeightfieldModel( material, slotIndices ), "heightfield" );
 		yield return true;
 		TryAddProceduralGround( staticSlots, slotIndices );
@@ -191,11 +236,11 @@ public sealed partial class OriginalTerrain : Entity
 	{
 		var vertices = new List<Vertex>();
 		var indices = new List<uint>();
-		foreach ( var (x, y, modelSlot) in HeightfieldCells( Park.Heightfield, RenderHoleSource ) )
+		foreach ( var (x, y, modelSlot) in HeightfieldCells( Park.Heightfield, GroundSkips ) )
 		{
 			if ( include != null && !include( x, y ) )
 				continue;
-			AddCell( vertices, indices, Park.Heightfield, x, y, slotIndices[modelSlot], PathTiles.Identity, 0, Park.Heightfield.GetCellWord( x, y ) );
+			AddCell( vertices, indices, Park.Heightfield, x, y, slotIndices[modelSlot], Park.Heightfield.GetCellWord( x, y ) );
 		}
 		return new Model( vertices.ToArray(), indices.ToArray(), material );
 	}
@@ -260,6 +305,8 @@ public sealed partial class OriginalTerrain : Entity
 		material.Set( "Color", slots.ToArray() );
 		procedural = ground;
 		proceduralPart = AddPart( ground.CreateModel( material ), "procedural heightfield" );
+		// the path cells the ground reaches carry their tile as art
+		SyncProceduralArt();
 		// the cells the procedural textures do not reach keep the static ground
 		if ( HeightfieldCells( field, null ).Any( cell => !ground.IsProcedural( cell.X, cell.Y ) ) )
 			outsidePart = AddPart( BuildHeightfieldModel( heightfieldMaterial!, slotIndices, ( x, y ) => !ground.IsProcedural( x, y ) ), "heightfield outside the procedural rectangle" );
@@ -281,6 +328,13 @@ public sealed partial class OriginalTerrain : Entity
 		var suspended = SuspendsProceduralGround( Camera.Mode );
 		if ( suspended && staticHolesStale )
 			RebuildHeightfieldPart();
+		// the static ground has no path cells (they are cells of their own): a mode that suspends the procedural textures shows every path cell as a static one, the other modes only those the procedural ground does not reach
+		if ( suspended && pathPartsAllStale && heightfieldTextures != null )
+			BuildStaticPathParts( pathCells.Values, pathPartsAll, heightfieldTextures );
+		foreach ( var part in pathPartsAll )
+			part.Hidden = !suspended;
+		foreach ( var part in pathPartsOutside )
+			part.Hidden = suspended;
 		proceduralPart.Hidden = suspended;
 		heightfieldPart.Hidden = !suspended;
 		if ( outsidePart != null )
@@ -289,15 +343,20 @@ public sealed partial class OriginalTerrain : Entity
 			procedural.Refresh( proceduralPart.DrawMatrix * Camera.ViewMatrix, Camera.ProjMatrix, RenderHoleSource, heightfieldHoleSignature );
 	}
 
-	/// <summary>[EXT:pools-render] Rebuilds the ground mesh when the render-only holes changed since it was last built.</summary>
+	/// <summary>
+	/// Rebuilds the static ground meshes when the cells they leave out changed since they were last built: the render-only holes ([EXT:pools-render]) and the path cells, which take the path tile as their
+	/// own texture. The holes' signature alone is what the procedural ground is told (<see cref="ProceduralTerrain.Refresh"/>).
+	/// </summary>
 	public void RefreshHoles()
 	{
 		if ( heightfieldPart == null || heightfieldMaterial == null || heightfieldSlotIndices == null )
 			return;
-		var signature = HoleSignature();
-		if ( signature == heightfieldHoleSignature )
+		var holes = HoleSignature();
+		heightfieldHoleSignature = holes;
+		var signature = SkipSignature( holes );
+		if ( signature == heightfieldSkipSignature )
 			return;
-		heightfieldHoleSignature = signature;
+		heightfieldSkipSignature = signature;
 		// with the procedural ground the static mesh is hidden: it is rebuilt when a camera mode that suspends the textures shows it, not at every placement
 		if ( procedural != null && heightfieldPart.Hidden )
 			staticHolesStale = true;
@@ -331,13 +390,16 @@ public sealed partial class OriginalTerrain : Entity
 		heightfieldPart.Hidden = hidden;
 	}
 
-	/// <summary>The path layer: one quad per path cell, batched by at most 16 PathTex textures, and each queue cell's queue model.</summary>
-	private void BuildPaths( Dictionary<string, Texture> textures )
+	/// <summary>
+	/// Reads the cell map into the path cells and the queue cells. A path cell takes the theme's PathTex shape and turn for its neighbours (<see cref="PathTiles"/>); a queue cell takes no tile (the ground under a queue model
+	/// keeps its terrain texture: the refresh gives it no path tile, 0x5365D0; the original makes the cell a hole of the ground and fills it with a composite floor, PATH-015).
+	/// </summary>
+	private void ScanCells()
 	{
 		var field = Park.Heightfield;
 		var pathNames = ReadTextureNames( "PathTex" );
-		var cells = new Dictionary<int, List<(int X, int Y, int Rotation)>>();
-		var queues = new List<(int X, int Y, QueueModelTile Tile)>();
+		var cells = new Dictionary<int, PathCell>();
+		queueCells.Clear();
 		for ( var y = 0; y < field.CellCountZ; y++ )
 		{
 			for ( var x = 0; x < field.CellCountX; x++ )
@@ -346,9 +408,8 @@ public sealed partial class OriginalTerrain : Entity
 					continue;
 				if ( QueueSource?.Invoke( x, y ) == true )
 				{
-					// The ground under a queue model keeps its terrain texture: the refresh gives it no path tile (0x5365D0). The original makes the cell a hole of the ground and fills it with a composite floor (PATH-015).
 					if ( QueueModelSource?.Invoke( x, y ) is { } queueTile )
-						queues.Add( (x, y, queueTile) );
+						queueCells.Add( (x, y, queueTile) );
 					continue;
 				}
 				if ( !IsPath( x, y ) )
@@ -356,22 +417,101 @@ public sealed partial class OriginalTerrain : Entity
 				var tile = ChoosePathTile( x, y );
 				if ( !pathNames.ContainsKey( tile.TextureIndex ) )
 					tile = new PathTile( 0, tile.Rotation );
-				if ( !cells.TryGetValue( tile.TextureIndex, out var list ) )
-					cells.Add( tile.TextureIndex, list = new() );
-				list.Add( (x, y, tile.Rotation) );
+				cells[y * field.CellCountX + x] = new PathCell( x, y, tile.TextureIndex, tile.Rotation );
 			}
 		}
-		PathCellCount = cells.Values.Sum( list => list.Count );
-		// Lifted a little along the cell so the blended layer never fights the ground for depth.
-		var lift = 0.01f * field.CellSizeX;
-		foreach ( var batch in PathTiles.Batches( cells.Keys, MaximumTextureSlots, pathNames.ContainsKey ) )
+		pathCells = cells;
+		PathCellCount = cells.Count;
+	}
+
+	/// <summary>The path art of the texture indexes read so far: the tile's texels as the composite reads them (<see cref="ObjectFloorBase.FlipRows"/>), or null when the data lacks the texture.</summary>
+	private readonly Dictionary<int, (byte[] Rgba, int Width, int Height)?> pathArt = new();
+
+	private (byte[] Rgba, int Width, int Height)? PathArtOf( int texture )
+	{
+		if ( pathArt.TryGetValue( texture, out var cached ) )
+			return cached;
+		(byte[], int, int)? art = null;
+		if ( ReadTextureNames( "PathTex" ).TryGetValue( texture, out var name ) && FindTexture( Park.TerrainDirectory, Park.LevelName, name, "pathtex", ListFiles ) is { } path )
+		{
+			try
+			{
+				var (data, width, height) = path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) ? Texture.DecodeWct( path ) : Texture.DecodeImage( FileSystem, path );
+				art = (ObjectFloorBase.FlipRows( data, width, height ), width, height);
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+			{
+				art = null;
+			}
+		}
+		pathArt[texture] = art;
+		return art;
+	}
+
+	/// <summary>The word the cell refresh gives a path cell: the tile's slot (here the texture's index), the turn bits of its angle and the art bits over the cell's file word (<see cref="PathCellWord"/>).</summary>
+	private uint WordOf( in PathCell cell ) => PathCellWord.Word( Park.Heightfield.GetCellWord( cell.X, cell.Y ), cell.Texture, cell.Rotation );
+
+	/// <summary>
+	/// With the procedural textures on, hands every cell of the procedural ground its tile as art (or takes the art of a cell that is no path any more): the cells whose tile changed are marked to be built again.
+	/// </summary>
+	private void SyncProceduralArt()
+	{
+		if ( procedural is not { } ground )
+			return;
+		var countX = Park.Heightfield.CellCountX;
+		var wanted = new HashSet<int>();
+		foreach ( var (key, cell) in pathCells )
+		{
+			if ( !ground.IsProcedural( cell.X, cell.Y ) )
+				continue;
+			wanted.Add( key );
+			var art = PathArtOf( cell.Texture );
+			ground.SetCellArt( cell.X, cell.Y, art is { } tile ? new ProceduralCellArt( cell.Texture, tile.Rgba, tile.Width, tile.Height, WordOf( cell ) ) : null );
+		}
+		// a cell that was a path and is not now takes its ground word again (the restore of 0x46DF50)
+		foreach ( var previous in artKeys.Where( key => !wanted.Contains( key ) ) )
+			ground.SetCellArt( previous % countX, previous / countX, null );
+		artKeys.Clear();
+		artKeys.UnionWith( wanted );
+	}
+
+	private readonly HashSet<int> artKeys = new();
+
+	/// <summary>The static cells of the path cells and the queue models; with the procedural textures on only the cells the procedural ground does not reach are made now.</summary>
+	private void BuildPaths( Dictionary<string, Texture> textures )
+	{
+		if ( procedural is { } ground )
+			BuildStaticPathParts( pathCells.Values.Where( cell => !ground.IsProcedural( cell.X, cell.Y ) ), pathPartsOutside, textures );
+		else
+			BuildStaticPathParts( pathCells.Values, pathPartsOutside, textures );
+		BuildQueueModels( textures, queueCells );
+	}
+
+	/// <summary>
+	/// Path cells as cells of their own, one quad each, batched by at most 16 PathTex textures: the quad lies on the ground cell's triangles (the cell's own diagonal) with no lift, since nothing is under it, and takes the
+	/// texture coordinates the cell word's turn bits give it (<see cref="TerrainCellTexture"/>), as the original's terrain draw does for every cell.
+	/// </summary>
+	private void BuildStaticPathParts( IEnumerable<PathCell> cells, List<ModelEntity> target, Dictionary<string, Texture> textures )
+	{
+		if ( ReferenceEquals( target, pathPartsAll ) )
+			pathPartsAllStale = false;
+		var field = Park.Heightfield;
+		var pathNames = ReadTextureNames( "PathTex" );
+		var byTexture = new Dictionary<int, List<PathCell>>();
+		foreach ( var cell in cells )
+		{
+			if ( !byTexture.TryGetValue( cell.Texture, out var list ) )
+				byTexture.Add( cell.Texture, list = new() );
+			list.Add( cell );
+		}
+		foreach ( var batch in PathTiles.Batches( byTexture.Keys, MaximumTextureSlots, pathNames.ContainsKey ) )
 		{
 			var slots = batch.Select( index => pathNames.TryGetValue( index, out var name ) ? LoadTexture( textures, name, "pathtex" ) : Texture.Missing ).ToList();
 			var vertices = new List<Vertex>();
 			var indices = new List<uint>();
 			for ( var slot = 0; slot < batch.Length; slot++ )
-				foreach ( var (x, y, rotation) in cells.GetValueOrDefault( batch[slot] ) ?? new() )
-					AddCell( vertices, indices, field, x, y, slot, rotation, lift );
+				foreach ( var cell in byTexture.GetValueOrDefault( batch[slot] ) ?? new() )
+					AddCell( vertices, indices, field, cell.X, cell.Y, slot, WordOf( cell ) );
 			var key = string.Join( ',', batch );
 			if ( !pathMaterials.TryGetValue( key, out var material ) )
 			{
@@ -382,9 +522,8 @@ public sealed partial class OriginalTerrain : Entity
 				material.Set( "Color", slots.ToArray(), SamplerType.Anisotropic );
 				pathMaterials.Add( key, material );
 			}
-			pathParts.Add( AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"paths {pathParts.Count}" ) );
+			target.Add( AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"paths {target.Count}" ) );
 		}
-		BuildQueueModels( textures, queues );
 	}
 
 	/// <summary>Queue cells drawn with a queue model.</summary>
@@ -394,7 +533,7 @@ public sealed partial class OriginalTerrain : Entity
 	/// The queue models of the queue cells (<see cref="QueueModels"/>), baked into static batches: each instance stands on its cell turned by
 	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), each vertex on the ground under it.
 	/// </summary>
-	// [APPROX:PATH-015] the queue models are baked draped onto the landscape as tp.exe does (QueueModelDrape, 0x469A80), the cell a hole of the ground (0x46DF50) with the skirt of the object loader (opaque slot, normalised coordinates) and, with the procedural terrain textures on, the composite floor of the base art over the cell's ground (0x463060, 0x57ACE0; QueueModelFloor), and drawn without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the model loader's flag 0x100000 (0x4629D0) and the texture-frame animation of the torches
+	// [APPROX:PATH-015] the queue models are baked draped onto the landscape as tp.exe does (QueueModelDrape, 0x469A80, static batches), the cell a hole of the ground (0x46DF50) with the skirt of the object loader (opaque slot, normalised coordinates) and, with the procedural terrain textures on, the composite floor of the base art over the cell's ground (0x463060, 0x57ACE0; QueueModelFloor), and drawn without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the model loader's flag 0x100000 (0x4629D0) and the texture-frame animation of the torches
 	private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues )
 	{
 		QueueModelCount = 0;
@@ -613,7 +752,7 @@ public sealed partial class OriginalTerrain : Entity
 				slots[index] = index < names.Count ? QueueSlotTexture( textures, names[index], directory ) : slots[0];
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
-			pathParts.Add( AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"queue models {pathParts.Count}" ) );
+			queueParts.Add( AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"queue models {queueParts.Count}" ) );
 		}
 		names.Clear();
 		vertices.Clear();
@@ -633,26 +772,22 @@ public sealed partial class OriginalTerrain : Entity
 	}
 
 	/// <summary>
-	/// One cell quad. <paramref name="rotation"/> is a path texture's clockwise turn (−Y to +X), applied through
-	/// <see cref="PathTiles.TextureCoordinates"/> (docs/PATHS.md, "Path textures"); ground quads keep their coordinates.
+	/// One cell quad, on the cell's own diagonal (<see cref="ModelHeightfield.SplitsAlongAntiDiagonal"/>), with the texture coordinates the cell word's turn and mirror bits give it
+	/// (<see cref="TerrainCellTexture"/>): the ground cell's own word, or a path cell's (<see cref="PathCellWord"/>), whose turn bits are the tile's angle.
 	/// </summary>
 	private static readonly uint[] DiagonalTriangles = { 0, 2, 3, 3, 1, 0 };
 	private static readonly uint[] AntiDiagonalTriangles = { 0, 2, 1, 1, 2, 3 };
 
-	private static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot, int rotation, float lift, uint groundWord = 0 )
+	private static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot, uint cellWord )
 	{
 		var start = (uint)vertices.Count;
-		// the ground texture's turn and mirror from the cell word (TerrainCellTexture); the path overlays carry no cell word and keep the path tile's own turn
-		var (u0, v0) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell00, groundWord );
-		var (u1, v1) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell10, groundWord );
-		var (u2, v2) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell01, groundWord );
-		var (u3, v3) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell11, groundWord );
+		var (u0, v0) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell00, cellWord );
+		var (u1, v1) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell10, cellWord );
+		var (u2, v2) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell01, cellWord );
+		var (u3, v3) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell11, cellWord );
 		var corners = new[] { (x, y, u0, v0), (x + 1, y, u1, v1), (x, y + 1, u2, v2), (x + 1, y + 1, u3, v3) };
-		if ( rotation != PathTiles.Identity )
-			corners = corners.Select( corner => (corner.Item1, corner.Item2, PathTiles.TextureCoordinates( corner.Item3, corner.Item4, rotation )) )
-				.Select( corner => (corner.Item1, corner.Item2, corner.Item3.U, corner.Item3.V) ).ToArray();
 		var positions = corners.Select( corner => OriginalParkPlacement.ToEngine( field,
-			new System.Numerics.Vector3( corner.Item1 * field.CellSizeX, field.GetCornerHeight( corner.Item1, corner.Item2 ) + lift, corner.Item2 * field.CellSizeZ ) ) ).ToArray();
+			new System.Numerics.Vector3( corner.Item1 * field.CellSizeX, field.GetCornerHeight( corner.Item1, corner.Item2 ), corner.Item2 * field.CellSizeZ ) ) ).ToArray();
 		var normal = System.Numerics.Vector3.Normalize( System.Numerics.Vector3.Cross( positions[1] - positions[0], positions[2] - positions[0] ) );
 		if ( normal.Z < 0 )
 			normal = -normal;

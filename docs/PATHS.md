@@ -130,9 +130,7 @@ path and queue cells are drawn as described in [Path textures](#path-textures).
 Each theme's texture table (`Jungle.tct` etc., in `terrain.wad`) lists 22 `PathTex` entries. Entries 0–15
 are the path shapes (14 repeats 13), 19 and 20 are second versions of the straight (2) and the edge (10), and
 16–18 and 21 name tool markers (`baseblue`, `grnarrow`, `redarrow`, `dark`) that no archive ships; the
-original draws its build ghosts from `Data/generic/dynamic/textures` instead ([blueprint markers](reverse/BLUEPRINT.md)). Paths are drawn as a blended layer over the ground, so the textures'
-transparent borders show the grass. Before this, every path cell replaced the ground with entry 0 (`squ`, a
-lone square), which left a dark outline around each cell.
+original draws its build ghosts from `Data/generic/dynamic/textures` instead ([blueprint markers](reverse/BLUEPRINT.md)). A path is not a layer over the ground (issue 829, package F9): see [Path cells are terrain cells](#path-cells-are-terrain-cells).
 
 The save stores each path cell's choice (docs/TPWS-PAYLOAD.md): byte +17 is the `PathTex` index and the
 u16 at +21 is a clockwise turn in degrees. Both follow from the neighbour bits at +8 (0x01 −Y, 0x02 +X−Y,
@@ -167,8 +165,20 @@ queue link is +X or +Y, a bend takes the other bend for some queue links, and a 
 back takes the end piece: `queend`, `quebin1`, `quebin2`), and the refresh places that model of the theme's `queue`
 archive on the cell (`quedead`, `questra`, `quebnd1`, `quebnd2`, `queend`, `quebin1`, `quebin2`; tp.exe `0x522900`,
 `0x5229e0`) at the yaw 360 minus the row's rotation, as a one-cell object would be placed (`QueueModels`). The
-models are baked into the path layer (PATH-015), each vertex draped onto the landscape as tp.exe does it
+models are baked into static batches of their own (PATH-015), each vertex draped onto the landscape as tp.exe does it
 ([Queue models on the terrain](#queue-models-on-the-terrain)), so the plank floor lies on the ground (the cell is a hole of the ground mesh) and the posts follow a sloped cell.
+
+### Path cells are terrain cells
+
+**(October 26, 2026; issue 829, package F9.)** [BIN:TPW-EXE:0x0046DF50 tile word] The tile refresh `0x5365D0` hands the chooser's result (group, tile, angle) to `0x450470` → `0x46DF50`, the only writer of path art (`0x46DF50` has the one caller `0x450470`, whose callers are `0x5365D0` and `0x5366E0`, the save restore). For a path cell
+the writer takes the slot of the tile's row in the theme's texture table (the `PathTex` list of the `.tct`), puts it in the high half of the cell's landscape word, clears the turn, mirror and hole bits (`& 0xFF87`, `& 0xFFFE`), sets `0x180` (art, dirty) and one turn bit for the angle (90: `0x20`, 180: `0x10`, 270: `0x08`). `PathCellWord`.
+The terrain draw has no path layer: [BIN:TPW-EXE:0x0056F670 cell draw] it draws every cell with the texture of its slot, its four corners permuted by the word's turn bits (`0x56F4F0`, `TerrainCellTexture`), and nothing tests bit `0x80` there; the permutation is the one the former layer's
+`PathTiles.TextureCoordinates` computed (`PathCellArtTests`).
+
+- **Procedural textures on.** [BIN:TPW-EXE:0x0056F090 cell list] a listed cell whose word has `0x80` gets the slot's texture as art; [BIN:TPW-EXE:0x00572440 cache] the cache builds the cell through `0x55F780` with that art (`ProceduralTerrainTexturer.Compose`: the base read in the orientation of the word's bits `0x78`, the art point sampled at `width / N`, `base + ((art - base) * alpha >> 8)`), and builds a hit again when the recorded word had `0x100`. The art is the file's image as the composite reads it (`ObjectFloorBase.FlipRows`). The base is read turned so that the drawn base stays upright while the art turns. The path tile's transparent border (alpha 0) is what shows the grass. `ProceduralTerrain.SetCellArt` is the writer's side: a changed tile marks the cell, which is built again the next time it is listed.
+- **Procedural textures off, outside the procedural rectangle, and in the camera modes that suspend them.** The cell is a quad of its own with the path texture and no ground under it (the word replaced the ground's slot), so the transparent texels of a tile show what is behind the terrain, as in the original. OpenTPW's ground mesh leaves path cells out (`OriginalTerrain.GroundSkips`) and draws them as static cells without a lift.
+- **Restore.** [BIN:TPW-EXE:0x0046DF50 word restore] a cleared path cell takes its backup word again with the dirty bit; the ground and, with the textures on, its plain procedural texture return.
+- **Nothing else.** The writer is called for path, queue and hole cells only; fences, hoardings and land purchases write no cell art (the land flag `0x400` of `0x450D10` darkens the cell's vertex colour and is not ported).
 
 ### Queue models on the terrain
 
@@ -213,7 +223,7 @@ The other bits are the footprint skirt (bit `0x1` → `0x46A5A0`: its footprint-
 - **Path cells are not draped.** Only the chooser's class-2 result (queue cells) places a model (`0x5365D0` → `0x5229E0`); a path cell's result is only written into the landscape cell (`0x450470`), a
   ground texture, so there is no mesh for `0x469A80` to drape. OpenTPW's quads for path cells follow the ground triangles of the cell (`AddCell`) and keep their small lift against depth fights.
 - **The depth compare.** The original's device compares depth with LESSEQUAL (`0x57360F`, once, in the device set-up), so the later draw wins a tie where the queue floor meets the ground of the neighbouring cells; OpenTPW's world materials now compare so too (`Material.DepthComparison`, the floors work of PR 854).
-- **Presentation only.** The baked vertices are drawn by the path layer; no simulation state, world hash or save field reads them (`QueueModelCount` is a count).
+- **Presentation only.** The baked vertices are drawn as parts of their own; no simulation state, world hash or save field reads them (`QueueModelCount` is a count).
 
 Verification: `oracle_x86/model_drape_reading.py` is the plan side of the x86 oracle target `tpw-exe-model-drape` (`0x469940` run in the emulator on synthetic landscapes and trees, bit for bit,
 [ORACLE.md](reverse/ORACLE.md) X34); `ModelDrapeGolden.cs` replays its cases in `ModelDrapeTests` without the executable.

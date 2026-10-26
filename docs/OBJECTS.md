@@ -371,12 +371,12 @@ and the composite of the floor art over the procedural ground (F4, F5). The queu
   the save import and the co-op join all end in `ParkObjects.CommitFootprintRefresh`, which does the refresh once the instances exist. The removal restores exactly the cells the placement wrote
   (`OriginalObject.FloorWordCells`: the skirt cells and the refreshed footprint cells).
   With the procedural textures off none of this happens: no skirt words, no composites, the skirt cells draw their painted art (the holes are the same), as in the original.
-- **Queue models (F6): ported; path art (F9): read, not ported.** A queue piece is placed by `0x005229E0` with the instance flags 0x33A (bit 8 included) and every queue model of the four themes has the
+- **Queue models (F6): ported; path art (F9): ported ([PATHS.md](PATHS.md#path-cells-are-terrain-cells)).** A queue piece is placed by `0x005229E0` with the instance flags 0x33A (bit 8 included) and every queue model of the four themes has the
   base flag (header 0x09, ground node 0) and one skirt entry (`C8` or `80`, `E0`, `A0` slot 0), so the original gives each queue cell a skirt word, a composite (the slot is the model's first) and,
   from the refresh that placed it, a hole. `QueueModelFloor` and `OriginalTerrain.BuildQueueModels` port them, the composites as tiles of an atlas page ([PATHS.md](PATHS.md), "Queue models on the terrain"). The path art is the other user of the
   descriptor: `0x0056F090` gives a non-hole cell with word bit 0x80 (a path tile written by `0x46DF50`: slot from the path table, turn bits 0x20, 0x10, 0x08 for 90, 180, 270, flags
   `0x180`) the path texture as art, and the cache builds the cell with the same tail, so the original's path is the terrain's own texture, point sampled at N × N, not a layer over it;
-  that moves the whole path layer (PATHS.md) into the terrain and is the plan's optional step F9.
+  that moved the whole path layer into the terrain (F9).
 
 ## Interfaces for other slices
 

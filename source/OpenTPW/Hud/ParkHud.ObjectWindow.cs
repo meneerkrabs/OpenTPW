@@ -238,12 +238,22 @@ public sealed partial class ParkHud
 	}
 
 	private bool CanEditQueue( OriginalObject item ) => !level.IsReadOnlyVisit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && item.Visitors.QueueFrontCell != null
-		// [EXT:online-coop-permissions] a claimed ride's queue is the host's for now (C3b): a guest's window offers no tool whose lines would be refused
-		&& !(level.Commands.SendsRequests && level.Commands.Rights is CoopBuildRights rights && rights.IsClaimed( item ));
+		// [EXT:online-coop-claims] the queue of a ride another player claims is that player's while its track tool is on it (C3c-1), and a coaster's the host's (C3c-2): the window offers no
+		// tool whose lines would be refused
+		&& !ClaimedAgainstThisPlayer( item );
 
-	private bool CanEditTrack( OriginalObject item ) => !level.IsReadOnlyVisit && (item.Runtime.Coaster != null || item.Runtime.Bump != null);
+	private bool CanEditTrack( OriginalObject item ) => !level.IsReadOnlyVisit && (item.Runtime.Coaster != null || item.Runtime.Bump != null)
+		// [EXT:online-coop-claims] nor the track of a ride another player claims (C3c-1); a guest's track tools are not on yet (C3c-1b, C3c-2)
+		&& !(level.CoopSession != null && (level.Commands.SendsRequests || ClaimedAgainstThisPlayer( item )));
 
-	private bool CanMoveObject( OriginalObject item ) => !level.IsReadOnlyVisit && !item.Entry.IsFixedItem && level.CanMove( item );
+	/// <summary>
+	/// [EXT:online-coop-claims] Whether <paramref name="item"/> is claimed against this machine's player in a shared park (<see cref="CoopBuildRights.IsClaimedAgainst"/>): its window offers
+	/// that player no queue or track tool, sale or Move, whose commands the rights would refuse (C3c-1).
+	/// </summary>
+	private bool ClaimedAgainstThisPlayer( OriginalObject item ) =>
+		level.CoopSession != null && level.Commands.Rights is CoopBuildRights rights && rights.IsClaimedAgainst( level.Commands.Player, item );
+
+	private bool CanMoveObject( OriginalObject item ) => !level.IsReadOnlyVisit && !item.Entry.IsFixedItem && level.CanMove( item ) && !ClaimedAgainstThisPlayer( item );
 
 	/// <summary>
 	/// The window's move button (<c>b_move</c>, <c>0x48cfa0</c>): the object is demolished as its erase button does, without the confirmation, and the Move tool arms the same type at its angle;
@@ -256,9 +266,7 @@ public sealed partial class ParkHud
 			return;
 		if ( selectedObject is not { IsDeleted: false } item || !CanMoveObject( item ) )
 			return;
-		var entry = item.Entry;
-		var buyItem = Catalog.GetItems( (BuildCategory)entry.WhichUIType ).FirstOrDefault( candidate => candidate.InfoId == entry.InfoId );
-		if ( buyItem == null )
+		if ( BuyItemOf( item.Entry ) is not { } buyItem )
 			return;
 		level.CellTool.Cancel();
 		level.StaffPlacement?.Cancel();

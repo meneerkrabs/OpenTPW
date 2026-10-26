@@ -557,15 +557,17 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// Finishes the build tool after its placement of <paramref name="item"/>: the Built message, then the tool kept for the next placement (<paramref name="keepTool"/>: exactly Ctrl at
-	/// the click) or the tool the placed object opens. [EXT:online-coop-commands] A guest's placement finishes when its request comes back, with the Ctrl of its click (C3a-2).
+	/// the click) or the tool the placed object opens. [EXT:online-coop-commands] A guest's placement finishes when its request comes back, with the Ctrl of its click (C3a-2); one that
+	/// a later record <paramref name="removed"/> again opens no tool, also when it was placed in the park a resync replaced, whose catalogue held entries of its own (C3b-2).
 	/// </summary>
-	private void FinishPlacement( OriginalObject item, bool keepTool )
+	private void FinishPlacement( OriginalObject item, bool keepTool, bool removed = false )
 	{
-		if ( pendingItem?.Entry != item.Entry )
+		if ( pendingItem?.Entry is not { } armed || ParkCommandCodec.EntryKey( armed ) != ParkCommandCodec.EntryKey( item.Entry ) )
 			return;
 		// Level.PlaceObject owns the purchase and guest link; this callback only finishes the HUD tool.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemName( pendingItem ) ) );
-		var queueFollows = !item.IsDeleted && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
+		removed |= item.IsDeleted;
+		var queueFollows = !removed && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
 		if ( keepTool && item.Runtime.Coaster == null && item.Runtime.Bump == null && !queueFollows )
 		{
 			// Ctrl at the placing click: the tool stays armed with its item and angle for the next placement.
@@ -575,7 +577,7 @@ public sealed partial class ParkHud
 		level.IsPlacing = false;
 		level.BuildEntry = null;
 		// [EXT:online-coop-commands] a guest's placement that a later record removed before its outcome came back opens no tool (C3a-2)
-		if ( item.IsDeleted )
+		if ( removed )
 		{
 			level.ResetBuildRotation();
 			return;
@@ -681,8 +683,9 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() )
 			return;
-		// [EXT:online-coop-commands] a guest's sale of the object that waits for the host takes no second one (C3b)
-		if ( selectedObject is not { IsDeleted: false } item || item.Entry.IsFixedItem || level.IsSaleWaiting( item.Runtime.AttractionId ) )
+		// [EXT:online-coop-commands] a guest's sale of the object that waits for the host takes no second one (C3b), and [EXT:online-coop-claims] a ride claimed against this player is not its
+		// to sell (C3c-1)
+		if ( selectedObject is not { IsDeleted: false } item || item.Entry.IsFixedItem || level.IsSaleWaiting( item.Runtime.AttractionId ) || ClaimedAgainstThisPlayer( item ) )
 			return;
 		void Remove()
 		{
@@ -869,10 +872,18 @@ public sealed partial class ParkHud
 		// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
 		if ( level.WaitingToolStart != null && !level.NoToolActive )
 			level.DropToolStartWait();
-		// [EXT:online-coop-commands] a guest's requests resolved since the last frame complete their tools first, outside any command, tick and stream application (C3a-2); a carry left
-		// without its Move tool is ended after that (C3b-2)
+		// [EXT:online-coop-commands] the buy item a pick-up arms the Move tool with is its wait's: a wait dropped (another tool, Escape, the session's end) takes it along (C3b-2)
+		if ( waitingMove is { } move && !ReferenceEquals( level.WaitingToolStart, move.Request ) )
+			waitingMove = null;
+		// [EXT:online-coop-commands] a resync's park arms the Move tool again from its carry, waiting again for its placement, before the outcomes are taken, so that placement's finishes it
+		// (C3b-2); a guest's requests resolved since the last frame complete their tools, outside any command, tick and stream application (C3a-2); then a Move tool whose carry the host
+		// released disarms, and a carry left without its Move tool is ended (C3b-2)
+		RestoreMove();
 		CompleteGuestRequests();
+		level.EndCarrylessMove();
 		level.EndStrayCarry( Time.Now );
+		// [EXT:online-coop-claims] and this machine's claim is bound to its track tool's ride (C3c-1)
+		level.SettleClaim( Time.Now );
 		// [EXT:online-coop-commands] a guest's pool strokes send what waits and say what finished (C3b-3)
 		UpdateGuestPoolStrokes();
 		SyncChallengeMessageSuspension();
@@ -919,8 +930,9 @@ public sealed partial class ParkHud
 			openButton.Enabled = !level.IsReadOnlyVisit && infoNow?.CanOpen == true && objectDoorAllowed;
 		}
 		if ( hud.Find( "deleteRide" ) is UiButton deleteButton )
-			// [EXT:online-coop-commands] not while this guest's sale of the object waits for the host (C3b)
-			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem && !level.IsSaleWaiting( item.Runtime.AttractionId );
+			// [EXT:online-coop-commands] not while this guest's sale of the object waits for the host (C3b), nor [EXT:online-coop-claims] for a ride claimed against this player (C3c-1)
+			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem && !level.IsSaleWaiting( item.Runtime.AttractionId )
+				&& !ClaimedAgainstThisPlayer( item );
 		if ( hud.Find( "rideView" ) is UiButton rideButton )
 			rideButton.Enabled = IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate ));
 
@@ -1040,15 +1052,15 @@ public sealed partial class ParkHud
 		if ( walkingAtStart && level.FreeWalk == null && Camera.Mode is ParkCameraMode returningCamera )
 			returningCamera.ModalOpen = true;
 
-		// [EXT:online-coop-lockstep] a guest's click the shared park's rights refuse (once for a drag's run of refusals): building the host has not let it do yet, or what only the host
-		// does ([EXT:online-coop-permissions], C3a-2)
+		// [EXT:online-coop-lockstep] a click the shared park's rights refuse (once for a drag's run of refusals): a guest's building the host has not let it do yet, or what only the host
+		// does ([EXT:online-coop-permissions], C3a-2); [EXT:online-coop-claims] any player's edit of a ride another player claims (C3c-1)
 		if ( level.SessionRefusals != lastSessionRefusals )
 		{
 			lastSessionRefusals = level.SessionRefusals;
 			if ( Time.Now - lastSessionRefusalNotice >= SessionRefusalNoticeSeconds )
 			{
 				lastSessionRefusalNotice = Time.Now;
-				PostMessage( strings.Extra( level.LastSessionRefusalWasBuilding ? OpenTpwText.CoopNotGranted : OpenTpwText.CoopHostOnly ) );
+				PostMessage( strings.Extra( RefusalText( level.LastSessionRefusal ) ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
 		}

@@ -123,6 +123,16 @@ public partial class Level
 			foreach ( var seat in grants )
 				hash.Add( seat );
 		}
+		// [EXT:online-coop-claims] the rides' claims, in ride order, hashed only once there is one (C3c-1)
+		if ( rideClaims is { Count: > 0 } claims )
+		{
+			hash.Add( claims.Count );
+			foreach ( var (ride, seat) in claims )
+			{
+				hash.Add( ride );
+				hash.Add( seat );
+			}
+		}
 	}
 
 	private void AddSessionLayout( StateHasher hash, OriginalObject item )

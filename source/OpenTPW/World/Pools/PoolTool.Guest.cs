@@ -7,11 +7,12 @@ namespace OpenTPW;
 /// <param name="BridgeRefusal">Why the bridge was refused.</param>
 /// <param name="SlideDone">The stroke laid a piece and finished its slide: the done message, and the slide mode ends.</param>
 /// <param name="RightsRefused">The first of its requests the session's rights refused at its record, which the note names.</param>
+/// <param name="RightsReason">That refusal's reason as the rights gave it ([EXT:online-coop-claims] another player's claim, C3c-1), which the note follows.</param>
 /// <param name="NotTaken">The host took a request of it without a record (too fast, too many).</param>
 /// <param name="Unknown">A request of it ended without a known outcome (an error, a lost answer).</param>
 // [EXT:online-coop-commands] the stroke's report of a guest (C3b-3)
 public sealed record PoolGuestReport( bool Wrote, ((int X, int Y) Cell, PoolBuildResult Reason)? Refusal, PoolSlideResult? SlideRefusal, PoolBridgeResult? BridgeRefusal, bool SlideDone,
-	ParkCommand? RightsRefused, bool NotTaken, bool Unknown );
+	ParkCommand? RightsRefused, string? RightsReason, bool NotTaken, bool Unknown );
 
 /// <summary>
 /// [EXT:online-coop-commands] A guest's strokes (docs/COOP.md, "A guest's pools"; C3b-3). On a guest's park the tool's writes go to the host as requests, and one request a cell would outrun
@@ -289,18 +290,19 @@ public sealed partial class PoolTool
 		PoolSlideResult? slideRefusal = null;
 		PoolBridgeResult? bridgeRefusal = null;
 		ParkCommand? rightsRefused = null;
+		string? rightsReason = null;
 		var notTaken = false;
 		var unknown = false;
 		foreach ( var batch in stroke.Batches )
 		{
 			if ( batch.Request is not { } request )
 			{
-				// refused here before it went: by the rights (said once for the stroke, the session's own note leaves the pool tool's to it; a slide undo only meets a finished slide
-				// there, which the host's slide mode has ended, so it says nothing) or because no request could go
-				if ( batch.Local is { RightsRefused: true } )
+				// refused here before it went: by the rights (said once for the stroke, the session's own note leaves the pool tool's to it; the HUD says nothing for a slide undo that met a
+				// finished slide) or because no request could go
+				if ( batch.Local is { RightsRefused: true } local )
 				{
-					if ( stroke.Write != GuestWrite.SlideUndo )
-						rightsRefused ??= batch.Command;
+					if ( rightsRefused == null )
+						(rightsRefused, rightsReason) = (batch.Command, local.Reason);
 				}
 				else if ( batch.Local != null )
 					notTaken = true;
@@ -311,9 +313,8 @@ public sealed partial class PoolTool
 				case CoopGuestRequestState.Applied when request.Result is { Error: null } result:
 					if ( result.RightsRefused )
 					{
-						// a slide undo the rights refuse met a slide the pieces before it finished: nothing is said, as the host's slide mode ended with the splash
-						if ( stroke.Write != GuestWrite.SlideUndo )
-							rightsRefused ??= request.Command;
+						if ( rightsRefused == null )
+							(rightsRefused, rightsReason) = (request.Command, result.Reason);
 						break;
 					}
 					switch ( result.Value )
@@ -376,6 +377,6 @@ public sealed partial class PoolTool
 		// a slide undo plays nothing and says only its notes, as the host's Backspace says nothing
 		if ( stroke.Write == GuestWrite.SlideUndo )
 			(wrote, refusal) = (false, null);
-		guestReports.Add( new PoolGuestReport( wrote, refusal, slideRefusal, bridgeRefusal, done, rightsRefused, notTaken, unknown ) );
+		guestReports.Add( new PoolGuestReport( wrote, refusal, slideRefusal, bridgeRefusal, done, rightsRefused, rightsReason, notTaken, unknown ) );
 	}
 }

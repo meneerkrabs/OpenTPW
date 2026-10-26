@@ -98,6 +98,9 @@ public class ParkCommandCodecTests
 		// [EXT:online-coop-commands] a guest's pool batches (C3b-3)
 		(new PoolCellsCommand( false, true, new[] { (20, 21), (21, 21) } ) { Player = 1 }, "024e02000104282a2a2a"),
 		(new LayPoolSlidePiecesCommand( 30, 40, new[] { (31, 40), (32, 40) } ), "024f003c50043e504050"),
+		// [EXT:online-coop-claims] seat 2 claims attraction 17, and the host lets the claim go (C3c-1)
+		(new ClaimRideCommand( 17 ) { Player = 2 }, "02670422"),
+		(new ReleaseRideCommand( 17 ), "02680022"),
 	};
 
 	[TestMethod]

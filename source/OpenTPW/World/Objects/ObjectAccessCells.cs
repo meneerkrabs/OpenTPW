@@ -11,8 +11,8 @@ public static class ObjectAccessCells
 	/// <summary>Whether (x, y) is the cell outside one of the entrances or exits among <paramref name="points"/>: a cell the placement lays (<see cref="Lay"/>).</summary>
 	public static bool IsOutsideCell( IEnumerable<ObjectAccessPoint> points, int x, int y ) => points.Any( point => (point.OutsideX, point.OutsideY) == (x, y) );
 
-	/// <summary>The last entrance and the last exit of a shape's access points: the placement's loop over the footprint keeps the last it meets.</summary>
-	private static (ObjectAccessPoint? Entrance, ObjectAccessPoint? Exit) Find( IEnumerable<ObjectAccessPoint> points )
+	/// <summary>The last entrance and the last exit of a shape's access points: the placement's loop over the footprint keeps the last it meets, and only they are laid (<see cref="Lay"/>).</summary>
+	internal static (ObjectAccessPoint? Entrance, ObjectAccessPoint? Exit) Find( IEnumerable<ObjectAccessPoint> points )
 	{
 		ObjectAccessPoint? entrance = null, exit = null;
 		foreach ( var point in points )

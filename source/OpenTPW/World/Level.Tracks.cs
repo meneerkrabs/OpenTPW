@@ -325,11 +325,22 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
 			return false;
+		// [EXT:online-coop-claims] a ride another player claims starts no tool, and the tool on stays: its track is that player's to edit now (C3c-1); a guest's track tool is not on yet
+		// (C3c-1b)
+		if ( CoopSession != null && (Commands.SendsRequests || ClaimedAgainst( Commands.Player, station.Runtime.AttractionId )) )
+		{
+			if ( !Commands.SendsRequests )
+				NoteSessionRefusal( CoopRefusal.Claimed );
+			return false;
+		}
 		// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b)
 		DropToolStartWait();
 		StaffPlacement?.Cancel();
 		var builder = BuilderOf( station )!;
 		CellTool.Cancel();
+		// [EXT:online-coop-claims] the tool claims its ride once the tool it replaces is gone (C3c-1); the claim moves from a ride the replaced tool held
+		if ( !ClaimForTrackTool( station ) )
+			return false;
 		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ) );
 		if ( station.Runtime.Bump is { IsTrackValid: true } )
 		{

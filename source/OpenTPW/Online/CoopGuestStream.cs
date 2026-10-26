@@ -470,6 +470,8 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		commands.FollowsStream = previousFollows;
 		// [EXT:online-coop-permissions] a grant is its session's: the park left after the session (or replaced by a resync's) keeps none, nor what a guest's seat carried (C3b-2)
 		level.ClearBuildGrants();
+		// [EXT:online-coop-claims] and the rides' claims (C3c-1)
+		level.ClearRideClaims();
 		level.ClearGuestCarries();
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )

@@ -429,10 +429,23 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-commands] This park's object for <paramref name="placed"/>, an accepted placement's result, and whether a later record removed it (C3b-2): the object itself, or, for
+	/// one placed in the park a resync replaced before that park's HUD took the outcome (the Move tool waits for it again, <see cref="TakeMoveToRestore"/>), this park's object of its
+	/// attraction id, which a record before the resync's cut may have removed (the replaced park's own objects are all gone with it).
+	/// </summary>
+	internal (OriginalObject Item, bool Removed) PlacedInThisPark( OriginalObject placed )
+	{
+		if ( ReferenceEquals( placed, PlacedRide ) || Objects?.Objects.Contains( placed ) != false )
+			return (placed, placed.IsDeleted);
+		return ResolveCommandObject( placed.Visitors.AttractionId ) is { } own ? (own, false) : (placed, true);
+	}
+
+	/// <summary>
 	/// Whether a placement of <paramref name="entry"/> made with exactly Ctrl leaves the build tool armed for the next one, by the type alone (<c>ParkHud.FinishPlacement</c>): not a type
-	/// whose placed object opens a tool of its own, a coaster's track, a kart or water ride's track or the bumper cars' arena (<see cref="CoasterDefinition.IsCoaster"/>,
+	/// whose placed object opens a tool of its own even then, a coaster's track, a kart or water ride's track or the bumper cars' arena (<see cref="CoasterDefinition.IsCoaster"/>,
 	/// <see cref="BumperTemplates.ForRide"/>, which give the object its <see cref="OriginalObjectRuntime.Coaster"/> or <see cref="OriginalObjectRuntime.Bump"/>), or a type with a queue,
-	/// whose placed ride opens its queue tool. A placed ride without queue cells keeps the tool; this test, which cannot see the placed object, counts it as one that ends it.
+	/// whose placed ride opens its queue tool (a slide tower's slide tool follows only a click without Ctrl). A placed ride without queue cells keeps the tool; this test, which cannot see
+	/// the placed object, counts it as one that ends it.
 	/// </summary>
 	internal static bool PlacementKeepsBuildTool( ObjectCatalogEntry entry ) => !entry.HasQueue && !CoasterDefinition.IsCoaster( entry.Settings )
 		&& BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) == null;

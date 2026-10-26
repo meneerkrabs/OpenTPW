@@ -531,15 +531,17 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// Finishes the build tool after its placement of <paramref name="item"/>: the Built message, then the tool kept for the next placement (<paramref name="keepTool"/>: exactly Ctrl at
-	/// the click) or the tool the placed object opens. [EXT:online-coop-commands] A guest's placement finishes when its request comes back, with the Ctrl of its click (C3a-2).
+	/// the click) or the tool the placed object opens. [EXT:online-coop-commands] A guest's placement finishes when its request comes back, with the Ctrl of its click (C3a-2); one that
+	/// a later record <paramref name="removed"/> again opens no tool, also when it was placed in the park a resync replaced, whose catalogue held entries of its own (C3b-2).
 	/// </summary>
-	private void FinishPlacement( OriginalObject item, bool keepTool )
+	private void FinishPlacement( OriginalObject item, bool keepTool, bool removed = false )
 	{
-		if ( pendingItem?.Entry != item.Entry )
+		if ( pendingItem?.Entry is not { } armed || ParkCommandCodec.EntryKey( armed ) != ParkCommandCodec.EntryKey( item.Entry ) )
 			return;
 		// Level.PlaceObject owns the purchase and guest link; this callback only finishes the HUD tool.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemName( pendingItem ) ) );
-		var queueFollows = !item.IsDeleted && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
+		removed |= item.IsDeleted;
+		var queueFollows = !removed && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells;
 		if ( keepTool && item.Runtime.Coaster == null && item.Runtime.Bump == null && !queueFollows )
 		{
 			// Ctrl at the placing click: the tool stays armed with its item and angle for the next placement.
@@ -549,7 +551,7 @@ public sealed partial class ParkHud
 		level.IsPlacing = false;
 		level.BuildEntry = null;
 		// [EXT:online-coop-commands] a guest's placement that a later record removed before its outcome came back opens no tool (C3a-2)
-		if ( item.IsDeleted )
+		if ( removed )
 		{
 			level.ResetBuildRotation();
 			return;

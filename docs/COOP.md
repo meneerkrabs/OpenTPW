@@ -1876,12 +1876,14 @@ research tests, and the tool's end drops the carry.
 - **A resync** keeps an armed Move tool: the new park's tool arms again from the carry its snapshot
   holds, at the angle it had (`Level.TakeMoveToRestore`); a carry its tool did not hold is a stray one,
   as above. A placement of the tool that waited for the host waits again in the new park, so its outcome
-  finishes the tool as it would have without the resync: ended, or kept for exactly Ctrl, with the tool
-  the placed object opens, or left armed by a refusal. A placement whose record is inside the resync's
-  cut has no result in the new park: the tool arms again only when Ctrl at its click keeps it whatever
-  that result was (`Level.PlacementKeepsBuildTool`: a type whose placed object opens no tool of its own).
-  Otherwise its carry is a stray one, so the object of a placement the host refused there stays sold, and
-  a placed ride's queue tool does not follow.
+  finishes the tool as it would have without the resync (on the new park's object of the same attraction
+  id when the old park took it): ended, or kept for exactly Ctrl, with the tool the placed object opens,
+  or left armed by a refusal. A placement whose record is inside the resync's cut has no result in the
+  new park: the tool arms again only when Ctrl at its click keeps it whatever that result was
+  (`Level.PlacementKeepsBuildTool`: a type whose placed object opens no tool of its own even then, so no
+  coaster, kart, water or bumper ride and no ride with a queue). Otherwise its carry is a stray one, so
+  the object of a placement the host refused there stays sold, and a placed ride's queue tool does not
+  follow.
 - **A Move tool without its carry.** When the host released the seat's carry while its Move tool was armed
   (a resume under a new member id, a departure the host saw), every placement of it would be refused: the
   guest's frame disarms it after the outcomes (`Level.EndCarrylessMove`), without an end command.

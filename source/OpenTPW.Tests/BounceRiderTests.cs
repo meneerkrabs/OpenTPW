@@ -73,6 +73,45 @@ public class BounceRiderTests
 		Assert.AreEqual( (3, (short)12), (restored.BounceNodeBase, restored.BounceBaseHeight) );
 	}
 
+	[TestMethod]
+	public void ARidersNodeIsStoredWhenBounceFillsItsSlotAndALaterBaseDoesNotMoveIt()
+	{
+		// tp.exe 0x555742: BOUNCE stores script +0x70 plus the entry's index in the entry; BOUNCESETNODE afterwards changes the nodes of later riders only
+		var (bridge, _) = Run( asm => asm.I( Opcode.COPY, V( 0 ), 44 ).I( Opcode.COPY, V( 1 ), 45 )
+			.I( Opcode.BOUNCESETNODE, 3 ).I( Opcode.BOUNCE, V( 0 ), 5 )
+			.I( Opcode.BOUNCESETNODE, 10 ).I( Opcode.BOUNCE, V( 1 ), 5 ), ticks: 6 );
+		var riders = new List<(int Guest, int Node, double Start)>();
+		bridge.CollectBouncing( riders );
+		CollectionAssert.AreEqual( new[] { (44, 3), (45, 11) }, riders.Select( rider => (rider.Guest, rider.Node) ).ToArray(), "slot 0 keeps 3 + 0, slot 1 takes 10 + 1" );
+		Assert.AreEqual( 10, bridge.BounceNodeBase );
+
+		// the stored nodes differ from base + index, so the snapshot carries them, and a restore keeps them
+		var snapshot = bridge.CaptureSnapshot();
+		CollectionAssert.AreEqual( new[] { 3, 11 }, snapshot.BounceNodes );
+		var restored = new RideVisitorBridge( 5, "Bounce", RideVisitorKind.Shop, 1, 0, 10 );
+		var vm = new RideVM( new RideScriptFile( new MemoryStream( new Asm().Label( "idle" ).I( Opcode.ENDSLICE ).I( Opcode.BRANCH, "idle" ).Build( GuestTests.ShopVariables ) ) ), new RideVMOptions { Seed = 1 } );
+		restored.Attach( vm, () => true );
+		restored.RestoreSnapshot( snapshot with { QueueCells = new[] { (0, 0) } } );
+		var again = new List<(int Guest, int Node, double Start)>();
+		restored.CollectBouncing( again );
+		CollectionAssert.AreEqual( new[] { (44, 3), (45, 11) }, again.Select( rider => (rider.Guest, rider.Node) ).ToArray() );
+
+		// a snapshot whose node count does not match the table is refused
+		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { QueueCells = new[] { (0, 0) }, BounceNodes = new[] { 3 } } ).Any( problem => problem.Contains( "stored nodes" ) ) );
+	}
+
+	[TestMethod]
+	public void WhenEveryNodeIsTheBasePlusItsIndexTheSnapshotKeepsItsSavedForm()
+	{
+		var (bridge, _) = Run( asm => asm.I( Opcode.COPY, V( 0 ), 44 ).I( Opcode.BOUNCESETNODE, 3 ).I( Opcode.BOUNCE, V( 0 ), 5 ), ticks: 6 );
+		var snapshot = bridge.CaptureSnapshot();
+		Assert.IsNull( snapshot.BounceNodes );
+		Assert.IsFalse( System.Text.Json.JsonSerializer.Serialize( snapshot ).Contains( "BounceNodes" ) );
+		var riders = new List<(int Guest, int Node, double Start)>();
+		bridge.CollectBouncing( riders );
+		Assert.AreEqual( 3, riders.Single().Node );
+	}
+
 	// ---- the rule of the per-frame script pass 0x00557AB0 -----------------------------------------
 
 	[TestMethod]

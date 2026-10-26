@@ -1148,8 +1148,8 @@ the opcodes in [RSE-VM.md](RSE-VM.md), "Bounce opcodes".
 
 OpenTPW (`BounceRiders`, `FlatRideBounceRiders`, `GuestRenderer.BounceRiders`): a guest in the Using state that its ride's bounce table holds is drawn by the kid renderer
 (or the costume renderer for a guest in costume) at that pose, through the same direction rule as any guest (`SelectOriginalDirection` with the pose's heading byte). Riders of
-other rides stay hidden as before. Approximations: HEADS-007 (the run animation's frame interval is not decoded; 100 ms is used) and HEADS-008 (the node is derived from the
-current base at draw time). Jelly Bounce's slots 7 to 9 sit on nodes its model lacks, so, as in the original, those riders are not drawn.
+other rides stay hidden as before. Approximation: HEADS-007 (the run animation's frame interval is not decoded; 100 ms is used). A rider's node is the one BOUNCE stored in its slot
+(`0x555742`: the script's `+0x70` plus the slot index, kept in the entry), so a later BOUNCESETNODE moves only the riders that bounce afterwards; HEADS-008 is retired. Jelly Bounce's slots 7 to 9 sit on nodes its model lacks, so, as in the original, those riders are not drawn.
 
 ## Tests and evidence
 

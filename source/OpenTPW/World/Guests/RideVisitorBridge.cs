@@ -39,6 +39,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	// [BIN:TPW-EXE:0x00558C45 script creation] the base of the node numbers BOUNCE entries take (script +0x70) starts at 1; the base height (+0x6E, a signed word) is not set there, so it starts at the block's 0
 	public const int DefaultBounceNodeBase = 1;
 	private int bounceNodeBase = DefaultBounceNodeBase;
+	/// <summary>The node number each BOUNCE stored in its slot when it filled it (index-parallel to <see cref="bouncing"/>; a free or trailing slot keeps no entry).</summary>
+	private readonly List<int> bounceNodes = new();
 	private short bounceBaseHeight;
 	private RideVM? vm;
 	private int called;       // ride +104: the pending visitor
@@ -348,6 +350,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public RideVisitorBridgeSnapshot CaptureSnapshot() => new()
 	{
 		BounceNodeBase = bounceNodeBase != DefaultBounceNodeBase ? bounceNodeBase : null,
+		BounceNodes = BounceNodesDeviate() ? Enumerable.Range( 0, bouncing.Count ).Select( BounceNodeOf ).ToArray() : null,
 		BounceBaseHeight = bounceBaseHeight != 0 ? bounceBaseHeight : null,
 		AttractionId = AttractionId,
 		Queue = Queue.ToArray(),
@@ -514,6 +517,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		if ( snapshot.Bounce.Length > 0 && snapshot.Bounce[^1].Guest == 0 )
 			Error( "the bounce table keeps trailing free slots." );
+		if ( snapshot.BounceNodes != null && snapshot.BounceNodes.Length != snapshot.Bounce.Length )
+			Error( $"the bounce table has {snapshot.Bounce.Length} slots but {snapshot.BounceNodes.Length} stored nodes." );
 		if ( snapshot.QueueEditCount < 0 )
 			Error( $"the queue edit count {snapshot.QueueEditCount} is negative." );
 		if ( snapshot.HeadNotReadyStreak < 0 || snapshot.MaximumHeadNotReadyStreak < snapshot.HeadNotReadyStreak )
@@ -565,6 +570,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		bouncing.AddRange( snapshot.Bounce );
 		bounceNodeBase = snapshot.BounceNodeBase ?? DefaultBounceNodeBase;
 		bounceBaseHeight = snapshot.BounceBaseHeight ?? 0;
+		// a save written before the nodes were kept per slot derives each one from the base, which is what the original stored unless a script changed the base while riders bounced
+		bounceNodes.Clear();
+		bounceNodes.AddRange( snapshot.BounceNodes ?? Enumerable.Range( 0, snapshot.Bounce.Length ).Select( index => bounceNodeBase + index ) );
 		called = snapshot.CalledGuest;
 		letMeOnWritten = snapshot.LetMeOnWritten;
 		lastAdmissionTurn = snapshot.LastAdmissionTurn;
@@ -1339,6 +1347,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		for ( var index = 0; index < bouncing.Count; index++ )
 			if ( bouncing[index].Guest == guest )
 				FreeBounceSlot( bouncing, index );
+		TrimBounceNodes();
 		ReleasedTotal++;
 		return true;
 	}
@@ -1543,14 +1552,44 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public short BounceBaseHeight => bounceBaseHeight;
 
 	/// <summary>
-	/// The riders the bounce table holds, in slot order: the visitor, the node number of its slot (the node base plus the slot index) and the script clock reading it bounced at.
+	/// The riders the bounce table holds, in slot order: the visitor, the node number its slot stored when BOUNCE filled it and the script clock reading it bounced at.
 	/// </summary>
-	// [APPROX:HEADS-008] the original stores each entry's node number when BOUNCE fills the slot (0x00555742: +0x70 plus the index); the node here is the current base plus the slot index, which differs only when a script sets the base while riders bounce (none of the four shipped scripts does)
+	// [BIN:TPW-EXE:0x00555742 BOUNCE node] BOUNCE fills the first free entry of the table and stores the rider (+0x00), the node number script +0x70 plus the entry's index (+0x04, 0x555742..0x55574F), then the deadline (+0x08) and the start (+0x0C); the node is kept in the entry from then on, so a later BOUNCESETNODE moves the nodes of the riders that bounce afterwards only
 	internal void CollectBouncing( List<(int Guest, int Node, double Start)> into )
 	{
 		for ( var index = 0; index < bouncing.Count; index++ )
 			if ( bouncing[index].Guest != 0 )
-				into.Add( (bouncing[index].Guest, bounceNodeBase + index, bouncing[index].Start) );
+				into.Add( (bouncing[index].Guest, BounceNodeOf( index ), bouncing[index].Start) );
+	}
+
+	/// <summary>The node number slot <paramref name="index"/> stored (the base at its BOUNCE plus the index); a slot whose entry was never recorded takes the current base.</summary>
+	private int BounceNodeOf( int index ) => index < bounceNodes.Count ? bounceNodes[index] : bounceNodeBase + index;
+
+	/// <summary>Whether a rider's stored node differs from the current base plus its index (a script set the base while riders bounced): the one case a save has to carry the nodes.</summary>
+	private bool BounceNodesDeviate()
+	{
+		for ( var index = 0; index < bouncing.Count; index++ )
+			if ( bouncing[index].Guest != 0 && BounceNodeOf( index ) != bounceNodeBase + index )
+				return true;
+		return false;
+	}
+
+	/// <summary>Records the node of the slot BOUNCE just filled for <paramref name="guest"/> (0x555742: the base plus the entry's index).</summary>
+	private void StoreBounceNode( int guest )
+	{
+		var index = bouncing.FindIndex( entry => entry.Guest == guest );
+		if ( index < 0 )
+			return;
+		while ( bounceNodes.Count <= index )
+			bounceNodes.Add( bounceNodeBase + bounceNodes.Count );
+		bounceNodes[index] = bounceNodeBase + index;
+	}
+
+	/// <summary>Drops the stored nodes of the trailing slots <see cref="FreeBounceSlot"/> removed.</summary>
+	private void TrimBounceNodes()
+	{
+		if ( bounceNodes.Count > bouncing.Count )
+			bounceNodes.RemoveRange( bouncing.Count, bounceNodes.Count - bouncing.Count );
 	}
 
 	/// <summary>Performs a visitor opcode; false for opcodes the bridge does not own.</summary>
@@ -1630,6 +1669,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				// [BIN:TPW-EXE:0x00555780 BOUNCE result] the flag word takes 1 when an entry was free and 0 with a full table
 				if ( onRide.Contains( guest ) && !bouncing.Any( entry => entry.Guest == guest ) )
 					result = TakeBounceSlot( bouncing, call.VM.Script.BounceSize, guest, now + seconds * 1000.0, now ) ? 1 : 0;
+				if ( result == 1 )
+					StoreBounceNode( guest );
 				return true;
 			}
 			case Opcode.UNBOUNCE:
@@ -1637,6 +1678,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			{
 				// Corpus: `TEST VAR_LETMEOFF; BRANCH_NZ; UNBOUNCE VAR_LETMEOFF` writes the leaving guest into LETMEOFF.
 				var guest = TakeUnbounced( bouncing, now, call.Opcode == Opcode.FORCEUNBOUNCE );
+				TrimBounceNodes();
 				if ( call.IsVariable( 0 ) )
 					call.SetOutput( 0, guest );
 				result = guest;

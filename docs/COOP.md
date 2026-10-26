@@ -1971,8 +1971,9 @@ other player, the host included. A guest's track tool works through it (C3c-1b, 
   player's tool, so a seat holds one at most and its own other claim never refuses it. Another seat's
   claim refuses it, and a refusal changes no claim. `ReleaseRideCommand` lets a claim go: its holder's
   own, or any claim when the host sends it. The release of a departed seat (`ReleaseSeatCommand`) lets go
-  of its claims too, and a ride's removal (a sale, the area clear, the Move's pick-up) takes its claim
-  with it, on every peer alike.
+  of its claims too, and so does the host taking a seat's grant back (`SetBuildGrantCommand`, in the same
+  record), and a ride's removal (a sale, the area clear, the Move's pick-up) takes its claim with it, on
+  every peer alike.
 - **What a claim keeps.** A claim keeps from every other player, the host included, the ride's track
   commands, its sale, its removal and its pick-up, its demolition by a placement, an add-on on it, and its
   queue as above (`CoopBuildRights.LeavesClaimsAlone`, asked of the host before its blanket yes). The
@@ -2007,9 +2008,11 @@ other player, the host included. A guest's track tool works through it (C3c-1b, 
   claiming seat without a member), when the session has read the member disconnected for 30 seconds of the
   host's clock (from the first frame that read it so; a frame that reads it connected again keeps the
   claim), and when its lease ran out: five minutes without the claim or an accepted command of its holder
-  naming the ride. The check runs at every frame's start after the guests' commands, paused too, so a
-  claim a late frame's queued command takes for a seat away that long goes in that same frame. The host's
-  own claim has neither: its tool is on the host's machine, whose frame check lets it go.
+  naming the ride, both read on the clock of the frame whose guest commands apply. The check runs at every
+  frame's start after the guests' commands, paused too, so a claim a late frame's queued command takes for
+  a seat away that long goes in that same frame. The host's own claim has neither: its tool is on the
+  host's machine, whose frame check lets it go, so a host that leaves its track tool on, idle, keeps the
+  guests off that ride for as long as the tool stays on.
 
 Bumper rides lay no track: a guest places them since C3c-1, and their queue tool follows the placement as
 any ride's does.

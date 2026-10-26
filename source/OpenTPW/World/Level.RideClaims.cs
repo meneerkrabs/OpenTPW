@@ -123,9 +123,12 @@ public partial class Level
 	{
 		if ( CoopSession == null )
 			return true;
-		if ( Commands.Issue( new ClaimRideCommand( station.Runtime.AttractionId ) ) is { Accepted: true } )
+		var claim = Commands.Issue( new ClaimRideCommand( station.Runtime.AttractionId ) );
+		if ( claim.Accepted )
 			return true;
-		NoteSessionRefusal( CoopRefusal.Claimed );
+		// as the frame check says it (SettleClaim): another player's claim, and no note for a refusal of another reason
+		if ( claim.Reason == ClaimedReason )
+			NoteSessionRefusal( CoopRefusal.Claimed );
 		return false;
 	}
 

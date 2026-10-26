@@ -173,7 +173,31 @@ public partial class CoopSessionTests
 		for ( var round = 0; round < 600 && host.Level.ClaimOf( ride ) != null; round++ )
 			Rounds( 1, host );
 		Assert.IsNull( host.Level.ClaimOf( ride ), "the host released the departed seat's claim" );
-		Assert.IsTrue( host.Level.Commands.Log.Any( entry => entry.Command is ReleaseSeatCommand { Seat: var released } && released == seat ), "a record of the stream" );
+		Assert.IsTrue( host.Level.Commands.Log.Any( entry => entry.Command is SetBuildGrantCommand { Seat: var released, Granted: false } && released == seat ),
+			"a record of the stream: the departed seat's grant taken back, which lets go of its claim" );
+	}
+
+	[TestMethod]
+	public void TakingAGuestsGrantBackLetsGoOfItsClaimInTheSameRecordOnEveryPeer()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		foreach ( var park in new[] { host, guest } )
+			MarkStation( park, park.One, seat: null );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var ride = host.One.Runtime.AttractionId;
+		var seat = GuestClaims( host, guest, ride );
+		// the host takes the grant back: the guest may build no more, so it holds the ride against no one
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
+		Assert.IsNull( host.Level.ClaimOf( ride ), "the grant's record let go of the claim" );
+		Assert.AreEqual( 0, HostReleases( host, ride ), "with no release of its own" );
+		RoundsUntil( () => !guest.Level.HasBuildGrant( seat ), host, guest, view, "the grant's record reached the guest" );
+		Assert.IsNull( guest.Level.ClaimOf( ride ), "and let go of the claim there too" );
+		// the host's own track tool takes the ride at once
+		host.Enter();
+		Assert.IsTrue( host.Issue( new ClaimRideCommand( ride ) ).Accepted );
+		CatchUpAndCompare( host, guest );
 	}
 
 	[TestMethod]
@@ -316,7 +340,7 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
-	public void TheHostsUndoOfALineThroughTheJoinOfAQueueAnotherPlayerClaimsIsRefused()
+	public void TheHostsUndoOfALineThatBuiltTheJoinOfAQueueAnotherPlayerClaimsIsRefused()
 	{
 		var park = NewPark();
 		park.Enter();
@@ -327,10 +351,12 @@ public partial class CoopSessionTests
 		MarkStation( park, park.One, seat: 2 );
 		try
 		{
-			Assert.IsFalse( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 12, 1, new[] { (12, 1) }, new[] { (10, 1) } ) ),
-				"an undo counts the path cells its line crossed down: the claimed queue's join among them" );
 			Assert.IsFalse( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 10, 1, new[] { (10, 1) }, Array.Empty<(int, int)>() ) ),
-				"or takes it off" );
+				"an undo takes the cells its line built off again: the claimed queue's join among them" );
+			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 12, 1, new[] { (12, 1) }, new[] { (10, 1) } ) ),
+				"one that only counts the join down, a path cell its line crossed, takes no link off (ParkPathBuilder.Undo)" );
+			Assert.IsFalse( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 12, 1, new[] { (12, 1) }, new[] { (10, 2) } ) ),
+				"a claimed queue cell among them is still the claim's" );
 			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 14, 1, new[] { (14, 1) }, new[] { (13, 1) } ) ), "away from it" );
 		}
 		finally

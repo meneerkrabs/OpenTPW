@@ -315,6 +315,9 @@ public partial class CoopJoinSessionTests
 		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, true ) ).Accepted );
 		var built = host.Issue( host.Level.BuildCommand( type, x, y, rotation ) );
 		Assert.IsTrue( built.Accepted, built.Reason );
+		// a save's layout of the park resolves the type by its id, as a guest's restore of the host's capture does
+		host.Enter();
+		ParkResumeSaveFile.ValidateSnapshot( host.Level.CaptureJoinSnapshot(), host.Level.Objects.Catalog!, host.Economy.Settings, host.Economy.Catalog, host.Level.AutosaveAssets() );
 		RoundsUntil( () => guest.Level!.HasBuildGrant( seat ) && guest.Level.Objects.FindAt( x, y ) != null, "the grant and the object reached the guest" );
 		var (entry, angle) = ArmedMove( guest, (x, y) );
 		Assert.AreEqual( ParkCommandCodec.EntryKey( type ), ParkCommandCodec.EntryKey( entry ) );
@@ -360,19 +363,22 @@ public partial class CoopJoinSessionTests
 		RoundsUntil( () => !placement.IsOpen, "the placement came back in the old park" );
 		Assert.AreEqual( CoopGuestRequestState.Applied, placement.State );
 		var placedInOld = placement.Result!.As<OriginalObject>()!;
+		// the asset-free ride's script loads only after its placement asked it to take guests, so no ride placed in this fixture has its entrance and exit cells; the placed ride takes
+		// them as a ride with its assets does at its placement: here in the old park, then on the host's park and the new one (below), so its queue tool can follow
+		var takeGuests = typeof( Level ).GetMethod( "RegisterObjectWithGuests", BindingFlags.Instance | BindingFlags.NonPublic )!;
+		takeGuests.Invoke( guest.Level, new object[] { placedInOld } );
+		Assert.IsTrue( placedInOld.Visitors.HasCells );
 		StartResync( guest );
 		guest.Link.DropFrame = null;
 		var old = guest.Level;
 		RoundsUntil( () => guest.Level != old, "the park was swapped in" );
 		var placed = guest.Level!.Objects.Objects.Single( item => !item.IsDeleted && ParkCommandCodec.EntryKey( item.Entry ) == ParkCommandCodec.EntryKey( entry ) );
 		Assert.AreEqual( (placed, false), guest.Level.PlacedInThisPark( placedInOld ) );
-		// the asset-free ride's script loads only after its placement asked it to take guests, so no ride placed in this fixture has its entrance and exit cells; the placed ride takes
-		// them on the host's park and the new one here, as a ride with its assets does at its placement, so its queue tool can follow
 		foreach ( var peer in new[] { host, guest } )
 		{
 			peer.Enter();
 			var ride = peer.Level!.Objects.Objects.Single( item => !item.IsDeleted && ParkCommandCodec.EntryKey( item.Entry ) == ParkCommandCodec.EntryKey( entry ) );
-			typeof( Level ).GetMethod( "RegisterObjectWithGuests", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( peer.Level, new object[] { ride } );
+			takeGuests.Invoke( peer.Level, new object[] { ride } );
 			Assert.IsTrue( ride.Visitors.HasCells );
 		}
 		var (_, frame) = HudOf( guest, NewParksEntry( guest, entry ) );
@@ -381,6 +387,7 @@ public partial class CoopJoinSessionTests
 		Assert.IsFalse( guest.Level.IsMoving );
 		Assert.IsNull( guest.Level.WaitingPlacement );
 		Assert.IsTrue( guest.Level.CellTool.IsActive, "the new park's ride opened its queue tool" );
+		Assert.AreSame( placed.Visitors, ((QueueLineWriter)((ParkCommandLineWriter)guest.Level.CellTool.Writer!).Inner).Ride, "on its own queue" );
 		guest.Level.CellTool.Cancel();
 		UntilTheCarryEndsWith( guest, frame, "the tool's end released the carry" );
 		CatchUpAndCompare( guest );

@@ -109,12 +109,12 @@ public partial class CoopSessionTests
 		Assert.IsNotNull( expected.Stack );
 		var joined = Links( guest, 10, 2 );
 		HudToolClick.Click( view.Hud, (10, 4) );
-		Assert.IsNotNull( guest.Level.WaitingQueueEdit, "the edit went to the host" );
+		Assert.IsNotNull( guest.Level.WaitingToolStart, "the edit went to the host" );
 		Assert.IsFalse( guest.Level.CellTool.IsActive, "no tool before its outcome" );
 		Assert.AreEqual( joined, Links( guest, 10, 2 ), "and nothing changed yet" );
 		HudToolClick.Click( view.Hud, (10, 5) );
 		Assert.AreEqual( 1, guest.Level.WaitingClicks, "another queue click waits" );
-		RoundsUntil( () => guest.Level.WaitingQueueEdit == null, host, guest, view, "the edit came back" );
+		RoundsUntil( () => guest.Level.WaitingToolStart == null, host, guest, view, "the edit came back" );
 		var tool = guest.Level.CellTool;
 		Assert.IsTrue( tool.IsActive );
 		Assert.AreEqual( CellToolMode.Queue, tool.Mode );
@@ -141,11 +141,11 @@ public partial class CoopSessionTests
 		Grant( host, guest, view );
 		guest.Enter();
 		HudToolClick.Click( view.Hud, (10, 4) );
-		var first = guest.Level.WaitingQueueEdit;
+		var first = guest.Level.WaitingToolStart;
 		Assert.IsNotNull( first );
 		var screens = view.Hud.Stack.Screens.Count;
 		view.Escape();
-		Assert.IsNull( guest.Level.WaitingQueueEdit, "Escape leaves the wait, as it leaves a tool" );
+		Assert.IsNull( guest.Level.WaitingToolStart, "Escape leaves the wait, as it leaves a tool" );
 		Assert.AreEqual( screens, view.Hud.Stack.Screens.Count, "and opens no pause menu" );
 		RoundsUntil( () => !first!.IsOpen, host, guest, view, "the edit resolved" );
 		view.Update();
@@ -153,30 +153,30 @@ public partial class CoopSessionTests
 		Assert.IsFalse( guest.Level.CellTool.IsActive, "but no tool starts from it" );
 		// a right click leaves it too
 		HudToolClick.Click( view.Hud, (10, 4) );
-		var second = guest.Level.WaitingQueueEdit;
+		var second = guest.Level.WaitingToolStart;
 		Assert.IsNotNull( second );
 		HudToolClick.RightClick( view.Hud, (10, 4) );
-		Assert.IsNull( guest.Level.WaitingQueueEdit, "a right click leaves the wait" );
+		Assert.IsNull( guest.Level.WaitingToolStart, "a right click leaves the wait" );
 		RoundsUntil( () => !second!.IsOpen, host, guest, view, "the second edit resolved" );
 		view.Update();
 		Assert.IsFalse( guest.Level.CellTool.IsActive );
 		// another tool that is on when the outcome comes back keeps its place
 		HudToolClick.Click( view.Hud, (10, 4) );
-		var third = guest.Level.WaitingQueueEdit;
+		var third = guest.Level.WaitingToolStart;
 		Assert.IsNotNull( third );
 		guest.Level.IsRemovingObjects = true;
 		RoundsUntil( () => !third!.IsOpen, host, guest, view, "the third edit resolved" );
 		view.Update();
-		Assert.IsNull( guest.Level.WaitingQueueEdit );
+		Assert.IsNull( guest.Level.WaitingToolStart );
 		Assert.IsTrue( guest.Level.IsRemovingObjects );
 		Assert.IsFalse( guest.Level.CellTool.IsActive, "the remove tool stays the one on" );
 		guest.Level.IsRemovingObjects = false;
 		// nor does a tool that started and ended while the edit waited: the wait went with its start
 		HudToolClick.Click( view.Hud, (10, 4) );
-		var fourth = guest.Level.WaitingQueueEdit;
+		var fourth = guest.Level.WaitingToolStart;
 		Assert.IsNotNull( fourth );
 		Assert.IsTrue( guest.Level.EnterPathTool( 5, 20 ) );
-		Assert.IsNull( guest.Level.WaitingQueueEdit, "the path tool's start leaves the wait" );
+		Assert.IsNull( guest.Level.WaitingToolStart, "the path tool's start leaves the wait" );
 		guest.Level.CellTool.Cancel();
 		RoundsUntil( () => !fourth!.IsOpen, host, guest, view, "the fourth edit resolved" );
 		view.Update();
@@ -196,7 +196,7 @@ public partial class CoopSessionTests
 		// the host takes the edit, then lays a segment from the queue's back cell onto the path: the same cells, joined to the path again, before the guest's HUD takes the outcome
 		guest.Enter();
 		HudToolClick.Click( view.Hud, (10, 4) );
-		var edit = guest.Level.WaitingQueueEdit!;
+		var edit = guest.Level.WaitingToolStart!;
 		HostTakes( host, seat, ParkCommandKind.EditQueue );
 		var detached = Links( host, 10, 2 );
 		host.Enter();
@@ -205,19 +205,19 @@ public partial class CoopSessionTests
 		Assert.AreNotEqual( detached, Links( host, 10, 2 ), "joined again" );
 		CollectionAssert.AreEqual( cells, host.One.Visitors.QueueView( host.Level.Guests.Grid ).QueueCells.ToArray(), "by its links alone" );
 		FramesUntil( () => !edit.IsOpen && Links( guest, 10, 2 ) == Links( host, 10, 2 ), host, guest, "the guest applied both records" );
-		Assert.IsNotNull( guest.Level.WaitingQueueEdit, "its HUD has not taken the outcome yet" );
+		Assert.IsNotNull( guest.Level.WaitingToolStart, "its HUD has not taken the outcome yet" );
 		view.Update();
-		Assert.IsNull( guest.Level.WaitingQueueEdit );
+		Assert.IsNull( guest.Level.WaitingToolStart );
 		Assert.IsFalse( guest.Level.CellTool.IsActive, "the queue changed since the record: no tool starts from its walk" );
 		// the host sells the ride after it takes the next edit
 		guest.Enter();
 		HudToolClick.Click( view.Hud, (10, 4) );
-		var second = guest.Level.WaitingQueueEdit!;
+		var second = guest.Level.WaitingToolStart!;
 		HostTakes( host, seat, ParkCommandKind.EditQueue );
 		Assert.IsTrue( host.Issue( new RemoveAttractionCommand( host.One.Runtime.AttractionId ) ).Accepted );
 		FramesUntil( () => !second.IsOpen && guest.One.IsDeleted, host, guest, "the guest applied the edit and the sale" );
 		view.Update();
-		Assert.IsNull( guest.Level.WaitingQueueEdit );
+		Assert.IsNull( guest.Level.WaitingToolStart );
 		Assert.IsFalse( guest.Level.CellTool.IsActive, "the ride was sold since the record: no tool starts" );
 		CatchUpAndCompare( host, guest );
 	}
@@ -443,11 +443,11 @@ public partial class CoopSessionTests
 			Assert.IsTrue( view.Hud.BacktrackKey() );
 			var item = guest.Level.Objects.FindAt( 20, 12 )!;
 			Sell( view.Hud, item );
-			Assert.IsNotNull( guest.Level.WaitingQueueEdit );
+			Assert.IsNotNull( guest.Level.WaitingToolStart );
 			Assert.IsNotNull( guest.Level.WaitingBacktrack );
 			Assert.IsTrue( guest.Level.IsSaleWaiting( item.Runtime.AttractionId ) );
 			guest.Session!.End( "The guest left." );
-			Assert.IsNull( guest.Level.WaitingQueueEdit );
+			Assert.IsNull( guest.Level.WaitingToolStart );
 			Assert.IsNull( guest.Level.WaitingBacktrack );
 			Assert.IsFalse( guest.Level.IsSaleWaiting( item.Runtime.AttractionId ), "the sell buttons take the object again" );
 			view.Update();

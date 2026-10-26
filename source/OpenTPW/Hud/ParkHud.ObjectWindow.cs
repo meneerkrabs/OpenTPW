@@ -266,7 +266,16 @@ public sealed partial class ParkHud
 		level.PoolTool?.Cancel();
 		LeaveBuildTool();
 		if ( !level.BeginMove( item ) )
+		{
+			// [EXT:online-coop-commands] a guest's pick-up went to the host: the Move tool arms with this item once it comes back (C3b-2), and the window closes now, as for the host
+			if ( level.WaitingToolStart is { Command: PickUpObjectCommand } request )
+			{
+				waitingMove = (request, buyItem);
+				selectedObject = null;
+				SetInfoArm( false );
+			}
 			return;
+		}
 		pendingItem = buyItem;
 		selectedObject = null;
 		SetInfoArm( false );

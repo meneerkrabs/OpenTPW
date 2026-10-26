@@ -94,6 +94,7 @@ public class ParkCommandCodecTests
 		(new SetSessionClockCommand( 63928191600 ), "026400e0a9d6a6dc03"),
 		// [EXT:online-coop-permissions] the host grants seat 3 building
 		(new SetBuildGrantCommand( 3, true ), "0265000601"),
+		(new ReleaseSeatCommand( 3 ), "02660006"),
 	};
 
 	[TestMethod]

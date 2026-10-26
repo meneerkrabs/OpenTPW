@@ -325,8 +325,8 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
 			return false;
-		// [EXT:online-coop-commands] another tool: a guest's queue edit that waits for the host starts no tool once it is back (C3b)
-		DropQueueEditWait();
+		// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b)
+		DropToolStartWait();
 		StaffPlacement?.Cancel();
 		var builder = BuilderOf( station )!;
 		CellTool.Cancel();

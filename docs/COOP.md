@@ -1692,7 +1692,8 @@ C3 lets every player build through the same stream the host orders, so every par
 no guest's click runs on its own park first. C3a-1 built the requests, their records and the host's
 grants; in C3a-2 the guests' line, placement and remove tools send their commands as requests and wait
 for them, and the host lets each guest build or only watch with a switch. C3b-1 adds land, the area
-clear, the removal of path and queue cells, Backspace, the sell buttons and the queue's edit.
+clear, the removal of path and queue cells, Backspace, the sell buttons and the queue's edit, and C3b-2
+the Move tool.
 
 **A guest's request.** A guest never applies its own command: its park follows the host's stream only
 (`ParkCommands.FollowsStream`), whatever its rights. It sends the command to the host as a request
@@ -1751,14 +1752,17 @@ and its target, at execution on every peer, and allows exactly the commands of t
   queue or path cell there (C3b-1);
 - land, the area clear, Backspace over a path or queue cell (a pool bridge or pool water cell is the pool
   tools'), the sale of an ordinary object (never the developer's prototype ride) and the queue's edit
-  (C3b-1).
+  (C3b-1);
+- the Move tool (C3b-2): its pick-up of an object the guest may remove and place again (not a fixed
+  item, a claimed station, a track add-on or a ride whose own tool follows), its placement, and its end,
+  which every guest seat may send, granted or not, since it only drops that seat's own carry.
 
 An object a guest may not remove (a fixed item, a claimed station) is also one its area clear leaves
 standing: a command that removes what it finds asks the rights of each object
 (`IParkCommandRights.AllowsRemoval`, yes for the host). Everything else stays the host's: pause and speed
 (Q8), cheats (Q17), money, staff and the park's management (C4), undo lines (whose cells a request could
-name freely; undo is C5), the single-cell removals no guest's tool issues, the pool tools, the Move tool,
-tracks and coasters (C3b, C3c) and the grants themselves.
+name freely; undo is C5), the single-cell removals no guest's tool issues, the pool tools, tracks and
+coasters (C3b, C3c), the grants and the release of a departed seat.
 
 **A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
 of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
@@ -1832,6 +1836,33 @@ cannot be bought, as the host's refused click does, and a refusal by the rights 
   tool starts and the park shows what happened.
 
 The session's end drops these waits with the others.
+
+**A guest's Move tool (C3b-2).** The Move button sells the object as its erase button does and arms the
+build tool with its type, which the player's seat then carries in the park (`Level.CarriesEntry`): a
+moving placement places only a type its player carries, pays its price and skips the buyable and
+research tests, and the tool's end drops the carry.
+- **The pick-up.** A guest's pick-up goes to the host and arms no tool yet: it is the request whose
+  outcome starts a tool (`Level.WaitingToolStart`, which the queue's edit uses too), left as that wait is
+  (Escape, a right click, another tool). Back accepted, the Move tool arms with the carried type at the
+  object's angle, as the host's does once its pick-up applied, if the view still has no tool.
+- **One pick-up at a time.** While a pick-up of the guest is open in the session's requests (from this
+  park or one a resync replaced), another Move click waits, so no end of an older carry reaches the host
+  after a newer pick-up: a guest's requests apply in their order.
+- **A carry without its tool.** A pick-up whose tool started no more, an end the host could not take, a
+  resync's park with the carry in it: each frame after the outcomes, a guest whose seat carries a type
+  while its Move tool is not armed sends the Move's end (`Level.EndStrayCarry`), at most once a second
+  and only while no pick-up or end of its own is open. The object stays sold, as a cancelled Move leaves
+  it.
+- **A grant taken back** leaves the Move tool armed: its placements are refused at their records, and its
+  end still goes.
+- **A departed seat.** At each frame's start, before the requests, the host takes the grant back and
+  releases the carry (`ReleaseSeatCommand`, a record of the stream) of every guest seat whose member left
+  or changed since the last frame: a live departure, one a resume's member list shows, a seat taken again
+  in between. The session's start and end clear the guests' carries with the grants, and a guest's
+  armed Move tool disarms with its session.
+
+Move needs no claim: the pick-up is one record, after which the object is gone and its type is that seat's
+alone; a second pick-up or a sale of the same object finds no object, and an edit of its queue no ride.
 
 **The host's switch (C3a-2).** The Build Together screen lists the guests with a switch each, beside the
 removal: it reads the shared park's applied grant ("Builds" or "Watches") and a click turns it over with

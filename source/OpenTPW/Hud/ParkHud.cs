@@ -428,9 +428,9 @@ public sealed partial class ParkHud
 				level.CellTool.Cancel();
 			else if ( pendingItem != null || level.BuildEntry != null )
 				LeaveBuildTool();
-			// [EXT:online-coop-commands] a guest's queue edit that waits for the host is left as a tool is (C3b): only the next Escape opens the pause menu
-			else if ( level.WaitingQueueEdit != null )
-				level.DropQueueEditWait();
+			// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host is left as a tool is (C3b): only the next Escape opens the pause menu
+			else if ( level.WaitingToolStart != null )
+				level.DropToolStartWait();
 			else
 				OpenPauseMenu();
 		};
@@ -605,8 +605,8 @@ public sealed partial class ParkHud
 	/// </summary>
 	private void RetireArmedTools()
 	{
-		// [EXT:online-coop-commands] a guest's queue edit that waits for the host starts no tool after this (C3b)
-		level.DropQueueEditWait();
+		// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host starts no tool after this (C3b)
+		level.DropToolStartWait();
 		LeaveBuildTool();
 		level.IsPlacing = level.IsRemovingObjects = false;
 		if ( level.IsCoasterToolActive ) level.ExitCoasterTool();
@@ -837,11 +837,13 @@ public sealed partial class ParkHud
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
 		level.WorldPointerRouted = false;
-		// [EXT:online-coop-commands] a guest's queue edit that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
-		if ( level.WaitingQueueEdit != null && !level.NoToolActive )
-			level.DropQueueEditWait();
-		// [EXT:online-coop-commands] a guest's requests resolved since the last frame complete their tools first, outside any command, tick and stream application (C3a-2)
+		// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
+		if ( level.WaitingToolStart != null && !level.NoToolActive )
+			level.DropToolStartWait();
+		// [EXT:online-coop-commands] a guest's requests resolved since the last frame complete their tools first, outside any command, tick and stream application (C3a-2); a carry left
+		// without its Move tool is ended after that (C3b-2)
 		CompleteGuestRequests();
+		level.EndStrayCarry( Time.Now );
 		SyncChallengeMessageSuspension();
 		QueueChallengeTerminalTimers();
 		if ( UpdateResearchFinale( context, input, mouseCaptured, keyboardCaptured, textCaptured ) )
@@ -1239,10 +1241,10 @@ public sealed partial class ParkHud
 			// Backspace over a path, queue, pool bridge or pool water cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack], a pool bridge or water cell [EXT:pools-bridges] [EXT:pools-tool]); a held key repeats only over path and queue cells.
 			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && BacktrackKey( input.BackspaceRepeating ) )
 				return true;
-			// [EXT:online-coop-commands] a right click leaves a guest's queue edit that waits for the host, as it leaves a tool (C3b)
-			if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel && level.WaitingQueueEdit != null )
+			// [EXT:online-coop-commands] a right click leaves a guest's queue edit or Move pick-up that waits for the host, as it leaves a tool (C3b)
+			if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel && level.WaitingToolStart != null )
 			{
-				level.DropQueueEditWait();
+				level.DropToolStartWait();
 				return toolPress = true;
 			}
 			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )
@@ -1257,7 +1259,7 @@ public sealed partial class ParkHud
 					return toolPress = true;
 				}
 				// [EXT:online-coop-commands] a guest's edit went to the host (or one waits already): the queue tool starts once it comes back (C3b, CompleteQueueEdit)
-				if ( level.WaitingQueueEdit != null )
+				if ( level.WaitingToolStart != null )
 					return toolPress = true;
 			}
 			// A left click on an empty owned cell or on a path cell starts the path tool there (help 441/442).

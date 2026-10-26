@@ -196,6 +196,43 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void AGuestsPlacementOfARideAnotherPlayerClaimedOpensNoToolNotEvenItsQueueTool()
+	{
+		var (host, guest, view, kart, ride, _) = SharedKart( hasQueue: true );
+		foreach ( var park in new[] { host, guest } )
+		{
+			var item = park.Level.TrackStations.Keys.Single();
+			item.Visitors.HasCells = true;
+			item.Visitors.QueueFrontCell = KartAt( park, item, 0, -2 );
+		}
+		// the host claims the ride before the guest's HUD finishes its placement
+		host.Enter();
+		Assert.IsTrue( host.Level.EnterTrackTool( host.Level.TrackStations.Keys.Single() ) );
+		RoundsUntil( () => guest.Level.ClaimOf( ride ) == ParkCommands.LocalPlayer, host, guest, view, "the host's claim reached the guest" );
+		guest.Enter();
+		typeof( ParkHud ).GetField( "pendingItem", NonPublic )!.SetValue( view.Hud,
+			new BuildItem( "karts", kart.Entry.InfoId, BuildCategory.Rides, 0, 0, null, Array.Empty<string>(), Entry: kart.Entry ) );
+		typeof( ParkHud ).GetMethod( "FinishPlacement", NonPublic )!.Invoke( view.Hud, new object[] { kart, false } );
+		Assert.IsFalse( guest.Level.CellTool.IsActive, "no track tool, and no queue tool for a ride whose queue is the host's while its track tool is on it" );
+		Assert.IsNull( guest.Level.WaitingToolStart );
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopClaimed ) );
+		// unclaimed, the placement's follow-on waits for the guest's claim: no queue tool meanwhile either
+		host.Enter();
+		host.Level.ExitTrackTool();
+		ViewOf( host ).Update();
+		RoundsUntil( () => guest.Level.ClaimOf( ride ) == null, host, guest, view, "the host let it go" );
+		guest.Enter();
+		typeof( ParkHud ).GetField( "pendingItem", NonPublic )!.SetValue( view.Hud,
+			new BuildItem( "karts", kart.Entry.InfoId, BuildCategory.Rides, 0, 0, null, Array.Empty<string>(), Entry: kart.Entry ) );
+		typeof( ParkHud ).GetMethod( "FinishPlacement", NonPublic )!.Invoke( view.Hud, new object[] { kart, false } );
+		Assert.IsFalse( guest.Level.CellTool.IsActive );
+		Assert.IsInstanceOfType( guest.Level.WaitingToolStart?.Command, typeof( ClaimRideCommand ) );
+		RoundsUntil( () => guest.Level.TrackToolStation == kart, host, guest, view, "the track tool started from the claim's outcome" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
 	public void AGuestsTrackToolEndsWithANoteWhenTheHostLetsItsIdleClaimGo()
 	{
 		var (host, guest, view, kart, ride, seat) = SharedKart();
@@ -247,7 +284,7 @@ public partial class CoopSessionTests
 		// the window offers the guest no track button for it, and an entry starts nothing, in the claim's words
 		Assert.IsFalse( (bool)typeof( ParkHud ).GetMethod( "CanEditTrack", NonPublic )!.Invoke( view.Hud, new object[] { kart } )! );
 		guest.Enter();
-		Assert.AreEqual( TrackToolEntry.None, guest.Level.BeginTrackTool( kart, placed: false ) );
+		Assert.AreEqual( TrackToolEntry.Refused, guest.Level.BeginTrackTool( kart, placed: false ) );
 		Assert.IsNull( guest.Level.WaitingToolStart );
 		view.Update();
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopClaimed ) );

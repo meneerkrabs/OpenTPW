@@ -326,7 +326,7 @@ public partial class Level
 	/// <summary>
 	/// The track tool's entry on <paramref name="station"/> (<see cref="EnterTrackTool"/>; with <paramref name="placed"/>, the tool a ride the player just placed opens, which leaves the ride's queue
 	/// start pending, <see cref="EnterPlacedTrackTool"/>): it started, or [EXT:online-coop-claims] a guest's claim went to the host and the tool starts from its outcome (C3c-1b,
-	/// <see cref="CompleteTrackToolStart"/>), or nothing started.
+	/// <see cref="CompleteTrackToolStart"/>), or a claim refused it (another player's, or the session's rights), or nothing started.
 	/// </summary>
 	internal TrackToolEntry BeginTrackTool( OriginalObject station, bool placed )
 	{
@@ -336,7 +336,7 @@ public partial class Level
 		if ( CoopSession != null && ClaimedAgainst( Commands.Player, station.Runtime.AttractionId ) )
 		{
 			NoteSessionRefusal( CoopRefusal.Claimed );
-			return TrackToolEntry.None;
+			return TrackToolEntry.Refused;
 		}
 		// [EXT:online-coop-commands] another tool: a guest's queue edit, Move pick-up or track entry that waits for the host starts no tool once it is back (C3b, C3c-1b)
 		DropToolStartWait();
@@ -348,14 +348,14 @@ public partial class Level
 		if ( CoopSession != null && Commands.SendsRequests )
 		{
 			if ( Commands.Issue( new ClaimRideCommand( station.Runtime.AttractionId ) ).Request is not { } claim )
-				return TrackToolEntry.None;
+				return TrackToolEntry.Refused;
 			WaitingToolStart = claim;
 			pendingTrackStart = new PendingTrackStart( claim, station.Runtime.AttractionId, placed );
 			return TrackToolEntry.Pending;
 		}
 		// [EXT:online-coop-claims] the tool claims its ride once the tool it replaces is gone (C3c-1); the claim moves from a ride the replaced tool held
 		if ( !ClaimForTrackTool( station ) )
-			return TrackToolEntry.None;
+			return TrackToolEntry.Refused;
 		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ) );
 		if ( station.Runtime.Bump is { IsTrackValid: true } )
 			EnterTrackEditTool( station, editor );
@@ -907,7 +907,9 @@ internal enum TrackToolEntry
 	/// <summary>The tool started.</summary>
 	Entered,
 	/// <summary>[EXT:online-coop-claims] A guest's claim went to the host: the tool starts from its outcome (C3c-1b).</summary>
-	Pending
+	Pending,
+	/// <summary>[EXT:online-coop-claims] A claim refused the tool (another player's, or the session's rights): nothing follows a placement then, its queue tool neither (C3c-1b).</summary>
+	Refused
 }
 
 /// <summary>[EXT:online-coop-claims] What the outcome of a guest's track tool entry did (<see cref="Level.CompleteTrackToolStart"/>, C3c-1b).</summary>

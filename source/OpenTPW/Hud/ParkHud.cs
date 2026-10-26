@@ -568,7 +568,8 @@ public sealed partial class ParkHud
 			return;
 		}
 		// a placed kart or water ride enters its track tool (tool mode 11 or 16) at its station with its queue start pending; the queue tool follows once the circuit is valid (Level.ContinueTrackTool);
-		// [EXT:online-coop-claims] a guest's tool starts once its claim is back, with the tool's help then (C3c-1b), and no queue tool follows the placement meanwhile
+		// [EXT:online-coop-claims] a guest's tool starts once its claim is back, with the tool's help then (C3c-1b), and no queue tool follows the placement meanwhile, nor after another
+		// player's claim refused the tool: that ride's queue is that player's while its track tool is on it
 		if ( item.Runtime.Bump != null && level.EnterPlacedTrackTool( item ) is var track and not TrackToolEntry.None )
 		{
 			level.ResetBuildRotation();

@@ -384,8 +384,14 @@ public sealed partial class ParkHud
 			// [APPROX:UI-064] raw-zero startup keeps the existing host-normalized bottom (634); native construction can retain authored top399 when SetPos is unchanged, but later startup normalization is not fully traced.
 			BallTop = WorkloadKnobTop( Value );
 			(ability, Limit) = owner.WorkloadStaffing();
-			SetValue( KnobFromWorkload( owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload, Limit ) );
+			SetValue( KnobFromWorkload( owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload, Limit ), writeWorkload: WritesProjection );
 		}
+
+		/// <summary>
+		/// Whether the knob's projection of the lab's workload writes it back, as the original's SetPos notifies its change handler; [EXT:online-coop-commands] a guest's does not: its
+		/// window's opening would be a request the guest never made.
+		/// </summary>
+		private bool WritesProjection => !owner.level.Commands.SendsRequests;
 
 		// [BIN:TPW-EXE:0x4a97d4 staffing refresh] only a changed ability sum reprojects workload; ordinary frames, efforts and targets leave the raw value alone.
 		internal void RefreshStaffing()
@@ -393,7 +399,7 @@ public sealed partial class ParkHud
 			var staffing = owner.WorkloadStaffing();
 			if ( staffing.Ability == ability ) return;
 			(ability, Limit) = staffing;
-			SetValue( KnobFromWorkload( owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload, Limit ) );
+			SetValue( KnobFromWorkload( owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload, Limit ), writeWorkload: WritesProjection );
 			// SetPos changes the live rectangle, not the press-time rectangle (+0x20); the next actual move still uses the original baseline.
 		}
 

@@ -2012,6 +2012,14 @@ a `SetBuildGrantCommand`. The stream's order decides a request that races the sw
 takes before the grant is taken back is built, one after it is refused at its record. The sharing and
 joining screens say that the host decides who builds.
 
+**Nothing the player did not ask for.** A guest's park windows send only what its player asked for. The
+object window's apply on its close sends nothing its player did not change: the original applies the
+window's values on every close, which for a guest would be a request its rights refuse, with a note about a
+click it never made, or one that writes back what the park holds. The research window's workload knob
+projects the lab's workload without writing it back, and the loans window's opening and tab switch send no
+offer refresh, so the list shows the offers of the host's park. A change the player made still goes, and its
+refusal is said as any is.
+
 ## The command layer (C1)
 
 `[EXT:online-coop-commands]` Every park edit of a HUD window or tool is a serializable command

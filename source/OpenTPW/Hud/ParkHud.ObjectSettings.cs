@@ -19,10 +19,21 @@ public sealed partial class ParkHud
 	{
 		public RideSettingWords Ride;
 		public int QualityStep, Ingredient, Price, Prize, WinChance;
+
+		internal void CopyFrom( ObjectWindowSettings other ) =>
+			(Ride, QualityStep, Ingredient, Price, Prize, WinChance) = (other.Ride, other.QualityStep, other.Ingredient, other.Price, other.Prize, other.WinChance);
+
+		internal bool SameAs( ObjectWindowSettings other ) =>
+			(Ride, QualityStep, Ingredient, Price, Prize, WinChance) == (other.Ride, other.QualityStep, other.Ingredient, other.Price, other.Prize, other.WinChance);
 	}
 
 	private OriginalObject? settingsOwner;
 	private readonly ObjectWindowSettings pending = new();
+	/// <summary>
+	/// [EXT:online-coop-commands] The values the window loaded, which a guest's apply compares with its own: a guest's window sends only what its player changed, where the original's apply
+	/// on every close would be a request the guest's rights refuse with a note the player never asked for, or one that writes back the values the park holds.
+	/// </summary>
+	private readonly ObjectWindowSettings loaded = new();
 	internal ObjectWindowSettings PendingSettings => pending;
 
 	/// <summary>The varibox range of the shop and sideshow prices (0x4b0735, 0x4b1cd0: 0..500, step 1).</summary>
@@ -100,6 +111,7 @@ public sealed partial class ParkHud
 				// [EXT:cheats-ride-vehicles] a ride whose vehicle limit the cheat raised has a larger capacity maximum (OriginalObjectRuntime.MaximumCapacity)
 				SliderPosition( words.Capacity, Setting( item, "UsageInfo.MinCapacity" ), item.Runtime.MaximumCapacity ),
 				SliderPosition( words.Duration, Setting( item, "UsageInfo.MinDuration" ), Setting( item, "UsageInfo.MaxDuration" ) ) );
+			loaded.CopyFrom( pending );
 			return;
 		}
 		if ( !TryPriceTarget( item, out _, out var state ) )
@@ -112,6 +124,7 @@ public sealed partial class ParkHud
 		pending.Ingredient = SliderPosition( state.IngredientAmount & 0xFF, 0, 100 );
 		// the win byte +0x190 is 100 less the type's InitChanceOfLoosing at build (0x4db3a1); OpenTPW's economy keeps the chance of losing
 		pending.WinChance = SliderPosition( (100 - state.ChanceOfLosingPercent) & 0xFF, 0, 100 );
+		loaded.CopyFrom( pending );
 	}
 
 	/// <summary>The window's apply for <paramref name="item"/>: the ride window's 0x4af440, the shop window's 0x4b0aa0 or the sideshow window's 0x4b20b0.</summary>
@@ -120,6 +133,9 @@ public sealed partial class ParkHud
 	private void CommitObjectSettings( OriginalObject item )
 	{
 		if ( item.IsDeleted || level.IsReadOnlyVisit || !level.Objects.Objects.Contains( item ) )
+			return;
+		// [EXT:online-coop-commands] a guest's window sends only what its player changed (loaded)
+		if ( level.Commands.SendsRequests && pending.SameAs( loaded ) )
 			return;
 		if ( item.Entry.WhichUIType == (int)BuildCategory.Rides )
 		{

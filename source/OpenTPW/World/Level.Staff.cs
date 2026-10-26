@@ -50,7 +50,7 @@ public partial class Level
 		AttachStaffWorld();
 		StaffHands = new StaffHands( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked );
 		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, command => Commands.Issue( command ), StaffHands.IsCarried );
-		PatrolTool = new PatrolAreaTool( () => Park?.Economy, command => Commands.Issue( command ) );
+		PatrolTool = new PatrolAreaTool( () => Park?.Economy, command => Commands.Issue( command ), () => Guests?.Grid.Cells );
 		// the staff sprites, then their renderer's atlases, are two long steps
 		NextStepIsLong = true;
 		yield return true;

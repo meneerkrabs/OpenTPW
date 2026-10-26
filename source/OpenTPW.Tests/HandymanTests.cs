@@ -249,6 +249,35 @@ public class HandymanTests
 	}
 
 	[TestMethod]
+	public void LitterOutsideHisAreaIsStillSweptAndThenHeGoesBackIn()
+	{
+		// [BIN:TPW-EXE:0x004D7100 handyman job search] the litter finder 0x004C8ED0 asks nothing of the area: 0x00506ED0 has one caller, the wander 0x004F9490
+		var f = new Fixture();
+		f.Handyman.SetPatrolArea( (10, 0), (12, 3) );
+		f.Park.Litter.Drop( 2, 5, (LitterType)3 );
+		var swept = false;
+		var outsideWhilePatrolling = 0;
+		var insideAfterwards = 0;
+		f.Turns( 600, () =>
+		{
+			swept |= f.Handyman.Job == StaffJob.Sweeping;
+			var (x, y) = f.Cell;
+			var inside = x is >= 10 and <= 12 && y is >= 0 and <= 3;
+			if ( swept && f.Park.Litter.Count == 0 )
+			{
+				if ( inside )
+					insideAfterwards++;
+				else if ( f.Handyman.Job == StaffJob.Patrol && insideAfterwards > 0 )
+					outsideWhilePatrolling++;
+			}
+		} );
+		Assert.IsTrue( swept, "he swept the litter two cells from the path he stands on, outside his area" );
+		Assert.AreEqual( 0, f.Park.Litter.Count );
+		Assert.IsTrue( insideAfterwards > 100, $"afterwards he walked into his area and stayed there ({insideAfterwards} turns inside)" );
+		Assert.AreEqual( 0, outsideWhilePatrolling );
+	}
+
+	[TestMethod]
 	public void DismissingAHandymanFreesEveryClaim()
 	{
 		var f = new Fixture();

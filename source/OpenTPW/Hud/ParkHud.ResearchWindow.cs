@@ -196,9 +196,32 @@ public sealed partial class ParkHud
 	public static bool TryMoveResearchCurrent( Level level, ResearchCategory category, int direction ) =>
 		level.Commands.Issue( new MoveResearchCommand( category, direction ) ).Accepted;
 
-	/// <summary>Sets a category's effort, clamped to 0..100 as the lab clamps it (<see cref="SetResearchEffortCommand"/>).</summary>
+	/// <summary>
+	/// Sets a category's effort, clamped to 0..100 as the lab clamps it (<see cref="SetResearchEffortCommand"/>); [EXT:online-coop-commands] a guest's goes to the host, the latest of a drag
+	/// once (C4b).
+	/// </summary>
 	private void SetResearchEffort( ResearchCategory category, int effort ) =>
-		level.Commands.Issue( new SetResearchEffortCommand( category, Math.Clamp( effort, 0, 100 ) ) );
+		IssueManagement( ManagementTarget.Research, ManagementKnob.Effort( category ), new SetResearchEffortCommand( category, Math.Clamp( effort, 0, 100 ) ) );
+
+	/// <summary>The lab's workload set from the knob (<see cref="TrySetResearchWorkload"/>); [EXT:online-coop-commands] a guest's goes to the host, the latest of a drag once (C4b).</summary>
+	private bool SetResearchWorkload( int workload ) =>
+		IssueManagement( ManagementTarget.Research, ManagementKnob.Workload, new SetResearchWorkloadCommand( Math.Clamp( workload, 0, 100 ) ) );
+
+	/// <summary>
+	/// A cursor arrow's click (<see cref="TryMoveResearchCurrent"/>): [EXT:online-coop-commands] a guest's move names the project its window shows, and while one of the category waits for the
+	/// host the arrows take no click, so a second quick click never skips a project (C4b).
+	/// </summary>
+	private void MoveResearchCurrent( ResearchCategory category, int direction )
+	{
+		if ( GuestManagement == null )
+		{
+			TryMoveResearchCurrent( level, category, direction );
+			return;
+		}
+		if ( ResearchMoveWaits( category ) || ResearchEconomy?.Research.Current( category ) is not { } current )
+			return;
+		IssueManagement( ManagementTarget.Research, null, new MoveResearchCommand( category, direction, current.InfoId, current.Level ) );
+	}
 
 	private UiScreen CreateResearchScreen()
 	{
@@ -225,10 +248,10 @@ public sealed partial class ParkHud
 			Model( $"icon{index}", icon, cells.Icon );
 			// [EXTENSION:UI] Cursor arrows select eligible research targets using the economy model.
 			screen.Add( new UiButton { Id = $"previous{index}", Model = "b_sleft", Enabled = false,
-				Clicked = () => TryMoveResearchCurrent( level, category, -1 ),
+				Clicked = () => MoveResearchCurrent( category, -1 ),
 				Bounds = cells.Previous, Anchor = UiAnchor.Center } );
 			screen.Add( new UiButton { Id = $"next{index}", Model = "b_sright", Enabled = false,
-				Clicked = () => TryMoveResearchCurrent( level, category, 1 ),
+				Clicked = () => MoveResearchCurrent( category, 1 ),
 				Bounds = cells.Next, Anchor = UiAnchor.Center } );
 			screen.Add( new UiLabel { Id = $"item{index}", Text = () => ResearchItemName( category ), Font = fonts => fonts.Label,
 				Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
@@ -241,7 +264,8 @@ public sealed partial class ParkHud
 			// [BIN:TPW-EXE:0x4aa6bd effort sliders] SetRange(0,100) on the generic slider class: integer value 0..100, a drag position is truncated (0x66afc9), the ball runs linearly across the table's slider rectangle
 			screen.Add( new UiSlider { Id = $"effort{index}", Track = cells.Track,
 				KnobSize = new NVector2( cells.Knob.Width, cells.Knob.Height ), KnobTop = cells.Knob.Y,
-				Steps = () => 101, Truncates = true, Value = () => ResearchEconomy?.Research.Effort[(int)category] ?? 0,
+				// [EXT:online-coop-commands] a guest's effort not back from the host yet is drawn as asked, and the slider's steps and change test count from it (C4b)
+				Steps = () => 101, Truncates = true, Value = () => DrawnResearchEffort( category ),
 				Changed = value => { SetResearchEffort( category, value ); SetResearchSlider( value ); },
 				Grabbed = StartResearchSlider, Released = StopResearchSlider,
 				Bounds = slider, Anchor = UiAnchor.Center } );
@@ -256,6 +280,7 @@ public sealed partial class ParkHud
 			workloadKnob.Enabled = editable;
 			if ( !editable ) workloadKnob.CancelInteraction();
 			workloadKnob.RefreshStaffing();
+			workloadKnob.FollowPark();
 			foreach ( var index in Enumerable.Range( 0, ResearchRows.Length ) )
 				{
 				if ( screen.Find( $"effort{index}" ) is UiSlider effort ) effort.Enabled = editable;
@@ -384,7 +409,7 @@ public sealed partial class ParkHud
 			// [APPROX:UI-064] raw-zero startup keeps the existing host-normalized bottom (634); native construction can retain authored top399 when SetPos is unchanged, but later startup normalization is not fully traced.
 			BallTop = WorkloadKnobTop( Value );
 			(ability, Limit) = owner.WorkloadStaffing();
-			SetValue( KnobFromWorkload( owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload, Limit ), writeWorkload: WritesProjection );
+			SetValue( KnobFromWorkload( owner.DrawnResearchWorkload, Limit ), writeWorkload: WritesProjection );
 		}
 
 		/// <summary>
@@ -399,8 +424,20 @@ public sealed partial class ParkHud
 			var staffing = owner.WorkloadStaffing();
 			if ( staffing.Ability == ability ) return;
 			(ability, Limit) = staffing;
-			SetValue( KnobFromWorkload( owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload, Limit ), writeWorkload: WritesProjection );
+			SetValue( KnobFromWorkload( owner.DrawnResearchWorkload, Limit ), writeWorkload: WritesProjection );
 			// SetPos changes the live rectangle, not the press-time rectangle (+0x20); the next actual move still uses the original baseline.
+		}
+
+		/// <summary>
+		/// [EXT:online-coop-commands] A guest's knob follows its player while its workload request waits for the host; once the last one came back and the knob is not held, it shows the lab's
+		/// workload: its raw value, ball and hum are reprojected from it, without writing it, when the raw value no longer means that workload (a refusal, another player's change; C4b).
+		/// </summary>
+		internal void FollowPark()
+		{
+			if ( !owner.level.Commands.SendsRequests || owner.ResearchWorkloadWaits || pressMode != PressMode.None || owner.ResearchEconomy is not { } economy )
+				return;
+			if ( WorkloadFromKnob( Value, Limit ) != economy.Research.Workload )
+				SetValue( KnobFromWorkload( economy.Research.Workload, Limit ), writeWorkload: false );
 		}
 
 		private void SetValue( int value, bool positionBall = true, bool writeWorkload = true )
@@ -411,7 +448,7 @@ public sealed partial class ParkHud
 			var capped = Math.Min( value, Math.Max( 0, Limit ) );
 			Value = capped;
 			if ( positionBall || capped != value ) BallTop = WorkloadKnobTop( Value );
-			if ( !writeWorkload || TrySetResearchWorkload( owner.level, WorkloadFromKnob( Value, Limit ) ) )
+			if ( !writeWorkload || owner.SetResearchWorkload( WorkloadFromKnob( Value, Limit ) ) )
 				owner.SetResearchHum( Value );
 		}
 
@@ -419,8 +456,9 @@ public sealed partial class ParkHud
 		public override void Adjust( int direction )
 		{
 			if ( !Editable ) return;
-			var workload = Math.Clamp( owner.ResearchEconomy!.Research.Workload + direction, MinimumKnobWorkload, MaximumKnobWorkload );
-			if ( !TrySetResearchWorkload( owner.level, workload ) ) return;
+			// [EXT:online-coop-commands] a guest's keys count from its workload not back from the host yet (C4b)
+			var workload = Math.Clamp( owner.DrawnResearchWorkload + direction, MinimumKnobWorkload, MaximumKnobWorkload );
+			if ( !owner.SetResearchWorkload( workload ) ) return;
 			CancelInteraction();
 			SetValue( KnobFromWorkload( workload, Limit ), writeWorkload: false );
 		}

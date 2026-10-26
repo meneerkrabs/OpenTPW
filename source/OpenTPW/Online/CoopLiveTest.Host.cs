@@ -182,12 +182,14 @@ internal sealed partial class CoopLiveTest
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-permissions] The host lets the guest build (C3a-2): Escape, Build Together, the guest's switch from "Watches" to "Builds", which the shared park's grant then
-	/// says, and back to the park.
+	/// [EXT:online-coop-permissions] The host lets the guest build (C3a-2, C4b's rights dialog): Escape, Build Together, the guest's rights button, Building in its dialog, which the shared
+	/// park's rights then say, the dialog closed, the row's button naming the right, and back to the park.
 	/// </summary>
 	private IEnumerable<CoopLiveWait> LetTheGuestBuild( string guestName, int seat )
 	{
 		const string screen = OnlineScreens.BuildTogetherScreenName;
+		const string dialog = OnlineScreens.SeatRightsScreenName;
+		var building = $"right{CoopRights.Build}";
 		var level = ThePark;
 		var members = flow.Sharing!.State!.Members.OrderBy( member => member.Slot ).ToList();
 		var row = members.FindIndex( member => member.Name == guestName );
@@ -195,17 +197,25 @@ internal sealed partial class CoopLiveTest
 		Give( UiInput.Key( UiKeys.Back ) );
 		yield return Wait( "Escape opens the pause menu", () => Top( ParkHud.PauseMenuScreen ), 10 );
 		Choose( ParkHud.PauseMenuScreen, ParkHud.BuildTogetherId );
-		yield return Wait( "the guest's switch", () => Usable<UiButton>( screen, $"builds{row}" ), 10 );
-		Require( !level.HasBuildGrant( seat ), "the guest only watches before the switch" );
-		var before = Element<UiButton>( screen, $"builds{row}" ).Text?.Invoke() ?? "";
-		Press( screen, $"builds{row}" );
-		yield return Wait( "the guest may build", () => level.HasBuildGrant( seat ) && (Element<UiButton>( screen, $"builds{row}" ).Text?.Invoke() ?? "") != before, 10 );
+		yield return Wait( "the guest's rights button", () => Usable<UiButton>( screen, $"rights{row}" ), 10 );
+		Require( !level.HasBuildGrant( seat ), "the guest only watches before the dialog" );
+		var before = Element<UiButton>( screen, $"rights{row}" ).Text?.Invoke() ?? "";
+		Press( screen, $"rights{row}" );
+		yield return Wait( "the guest's rights dialog", () => Top( dialog ) && Usable<UiButton>( dialog, building ), 10 );
+		Require( Element<UiButton>( dialog, building ).Selected?.Invoke() == false, "the dialog draws building as not given" );
+		Press( dialog, building );
+		yield return Wait( "the guest may build", () => level.HasBuildGrant( seat ) && Element<UiButton>( dialog, building ).Selected?.Invoke() == true, 10 );
+		Press( dialog, "back" );
+		yield return Wait( "Build Together again", () => Top( screen ), 10 );
+		var after = Element<UiButton>( screen, $"rights{row}" ).Text?.Invoke() ?? "";
+		Require( after != before, "the row's button names the right" );
 		Keep( "grant", new JsonObject
 		{
 			["seat"] = seat,
 			["record"] = TheSession.HostStream?.LastRecord,
 			["before"] = before,
-			["after"] = Element<UiButton>( screen, $"builds{row}" ).Text?.Invoke(),
+			["after"] = after,
+			["rights"] = level.RightsOf( seat ).ToString(),
 			["at"] = Math.Round( Now, 3 )
 		} );
 		Press( screen, "back" );

@@ -289,12 +289,15 @@ public sealed partial class ParkHud
 	internal static string CounterText( int count ) => string.Create( System.Globalization.CultureInfo.InvariantCulture, $"{count}  x" );
 	public string DateText => !Status.HasEconomy ? "" : string.Format( strings.Extra( OpenTpwText.DateFormat ), Status.Date.Year, Status.Date.Month, Status.Date.Day );
 
+	/// <summary>How many feedback lines the HUD keeps: a fourth message pushes the oldest out.</summary>
+	internal const int MaximumFeedbackLines = 3;
+
 	public void PostMessage( string text )
 	{
 		if ( string.IsNullOrWhiteSpace( text ) )
 			return;
 		messages.Add( (text, 0) );
-		if ( messages.Count > 3 )
+		if ( messages.Count > MaximumFeedbackLines )
 			messages.RemoveAt( 0 );
 	}
 
@@ -865,6 +868,8 @@ public sealed partial class ParkHud
 		// released disarms, and a carry left without its Move tool is ended (C3b-2)
 		RestoreMove();
 		CompleteGuestRequests();
+		// [EXT:online-coop-commands] and the management windows' outcomes, also under a covering screen and the research finale (C4b)
+		CompleteGuestManagement();
 		level.EndCarrylessMove();
 		level.EndStrayCarry( Time.Now );
 		// [EXT:online-coop-commands] the guest's coaster tool says what its waited actions came back with, before the claim is bound: an outcome that ended the tool says why itself (C3c-2)
@@ -999,17 +1004,28 @@ public sealed partial class ParkHud
 		if ( shortcutsAllowed && !IsRiding && FinanceEconomy is { } doorEconomy && !level.IsReadOnlyVisit )
 		{
 			// [BIN:TPW-EXE:0x0040C410 close-park handler] the shortcut calls the door routine 0x519EF0 whatever the park's state, which posts event 4 (0x51A1C6, also from a closed park) or, for opening, event 3 (0x51A033) every time
-			if ( Input.Pressed( InputButton.OpenPark ) )
+			// [EXT:online-coop-commands] a guest's keys ask the host for the state they name, unless the door is drawn in it already, and the advisor's event follows the accepted request (C4b)
+			if ( GuestManagement is { } doorQueue )
 			{
-				if ( !doorEconomy.IsParkOpen )
-					level.Commands.Issue( new SetParkOpenCommand( true ) );
-				host?.ParkDoorPressed?.Invoke( true );
+				if ( Input.Pressed( InputButton.OpenPark ) )
+					RequestParkDoor( doorQueue, true );
+				if ( Input.Pressed( InputButton.ClosePark ) )
+					RequestParkDoor( doorQueue, false );
 			}
-			if ( Input.Pressed( InputButton.ClosePark ) )
+			else
 			{
-				if ( doorEconomy.IsParkOpen )
-					level.Commands.Issue( new SetParkOpenCommand( false ) );
-				host?.ParkDoorPressed?.Invoke( false );
+				if ( Input.Pressed( InputButton.OpenPark ) )
+				{
+					if ( !doorEconomy.IsParkOpen )
+						level.Commands.Issue( new SetParkOpenCommand( true ) );
+					host?.ParkDoorPressed?.Invoke( true );
+				}
+				if ( Input.Pressed( InputButton.ClosePark ) )
+				{
+					if ( doorEconomy.IsParkOpen )
+						level.Commands.Issue( new SetParkOpenCommand( false ) );
+					host?.ParkDoorPressed?.Invoke( false );
+				}
 			}
 		}
 

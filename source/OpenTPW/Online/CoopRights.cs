@@ -24,8 +24,11 @@ public enum CoopRights : byte
 /// <summary>[EXT:online-coop-permissions] The rights this build lets the host give a seat: a right whose actions do not yet wait for the host's answer cannot be given, not even by a hand-made command.</summary>
 internal static class CoopRightsOffer
 {
-	/// <summary>The rights offered (C4a: building alone; C4b adds attractions, research and finance, C4c staff).</summary>
-	public const CoopRights Offered = CoopRights.Build;
+	/// <summary>The rights offered (C4a: building alone; C4b-1 research and finance, C4b-2 attractions, C4c staff).</summary>
+	public const CoopRights Offered = CoopRights.Build | CoopRights.Research | CoopRights.Finance;
+
+	/// <summary>Each offered right, in the order the rights dialog lists them.</summary>
+	public static IReadOnlyList<CoopRights> Each { get; } = Enum.GetValues<CoopRights>().Where( right => right != CoopRights.None && Offered.HasFlag( right ) ).ToArray();
 
 	/// <summary>Whether <paramref name="rights"/> holds only offered rights.</summary>
 	public static bool IsOffered( CoopRights rights ) => (rights & ~Offered) == 0;

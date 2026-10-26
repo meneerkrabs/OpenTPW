@@ -30,6 +30,9 @@ public sealed partial class ParkHud
 			return;
 		foreach ( var request in requests.TakeCompleted() )
 		{
+			// [EXT:online-coop-commands] a management window's request is its queue's, which took its outcome (C4b, CompleteGuestManagement)
+			if ( request.Owner != null )
+				continue;
 			// [EXT:online-coop-commands] a batch of a guest's pool stroke: its stroke reports once all of it is back (C3b-3)
 			if ( level.PoolTool?.CompleteGuestRequest( request ) == true )
 				continue;

@@ -45,6 +45,12 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() || FinanceEconomy is not { } economy )
 			return;
+		// [EXT:online-coop-commands] a guest's click asks the host for the opposite of the drawn door (C4b)
+		if ( GuestManagement is { } queue )
+		{
+			RequestParkDoor( queue, !DrawnParkOpen );
+			return;
+		}
 		var opens = !economy.IsParkOpen;
 		level.Commands.Issue( new SetParkOpenCommand( opens ) );
 		// [BIN:TPW-EXE:0x00519EF0 park door routine] every press posts the advisor's game event 3 (open) or 4 (close), also when the park was already in that state or a bankrupt park refuses to open
@@ -191,12 +197,14 @@ public sealed partial class ParkHud
 		{
 			// [BIN:TPW-EXE:0x00498D80 ticket price window] the park's name (0x4E2780 via 0x486280) is shown on the window's control 0x4F3AF, whose click (message 0x10006, handler 0x499060) opens the rename dialog 0x4990F0
 			// [EXT:park-rename-layout] the name button's place in OpenTPW's entry price window and the rename dialog's layout are OpenTPW's; the original window and dialog resources (0x751798, 0x751928) are not decoded
-			var parkNameButton = screen.Add( new UiButton { Id = "parkName", Text = () => level.ParkName?.DisplayName ?? "", Font = fonts => fonts.Label,
+			// [EXT:online-coop-commands] a guest's name not back from the host yet is drawn as asked (C4b)
+			var parkNameButton = screen.Add( new UiButton { Id = "parkName", Text = () => DrawnParkName, Font = fonts => fonts.Label,
 				Clicked = OpenParkRenameDialog, Bounds = Rect( 370, 180, 1663, 270 ), Anchor = UiAnchor.Center } );
 			adjustmentButtons.Add( (parkNameButton, () => level.ParkName != null) );
 			Label( "priceLabel", () => strings[UIStrings.TicketPrice], Rect( 370, 300, 1000, 380 ) );
-			Adjustment( "price", 300, () => FinanceEconomy?.EntranceFee ?? 0,
-				value => TrySetEntryPrice( level, (int)value ) );
+			// [EXT:online-coop-commands] a guest's fee is drawn as asked until it comes back, and each step counts from it (C4b)
+			Adjustment( "price", 300, () => DrawnEntranceFee,
+				value => IssueManagement( ManagementTarget.Finance, ManagementKnob.Fee, new SetEntranceFeeCommand( (int)value ) ) );
 			// The door: whether the park is open to visitors at all. The original's entryprice screen builds it
 			// as b_door at (1350,678)-(1555,847) with help row 194, shown down for a closed park; its handler calls
 			// the door routine with the switch's new state. [EXT:maexah/OpenTPW ParkEntryPriceScreen.cs (PC 0x00498d33, 0x00498fc3)]
@@ -207,7 +215,8 @@ public sealed partial class ParkHud
 				Model = "b_door",
 				Help = strings.Help( 194 ),
 				Clicked = () => ToggleParkDoor(),
-				Selected = () => FinanceEconomy is { IsParkOpen: false },
+				// [EXT:online-coop-commands] a guest's door request not back from the host yet is drawn as asked (C4b)
+				Selected = () => FinanceEconomy != null && !DrawnParkOpen,
 				Bounds = Rect( 1350, 678, 1555, 847 ),
 				Anchor = UiAnchor.Center
 			} );
@@ -235,7 +244,7 @@ public sealed partial class ParkHud
 			foreach ( var (button, available) in adjustmentButtons )
 				button.Enabled = !level.IsReadOnlyVisit && FinanceEconomy != null && available();
 			if ( door != null )
-				door.Help = strings.Help( FinanceEconomy is { IsParkOpen: true } ? 194 : 193 );
+				door.Help = strings.Help( FinanceEconomy != null && DrawnParkOpen ? 194 : 193 );
 		}
 		Refresh();
 		screen.Updating = _ => Refresh();
@@ -265,8 +274,18 @@ public sealed partial class ParkHud
 		void Cancel() { if ( Stack.Top == screen ) Stack.Pop(); }
 		void Apply()
 		{
+			if ( Stack.Top != screen ) return;
+			// [EXT:online-coop-commands] a guest's name goes to the host and the dialog closes at once; the window's name draws it until it comes back (C4b). A name the park would refuse
+			// (lines a save could not hold, the secret name in a session) keeps the dialog open, as the host's refusal does
+			if ( GuestManagement != null )
+			{
+				var lines = new ParkNameLines( first.Text, second.Text );
+				if ( !lines.IsValid || SecretParkName.Matches( first.Text, second.Text ) ) return;
+				if ( IssueManagement( ManagementTarget.Finance, ManagementKnob.Name, new RenameParkCommand( first.Text, second.Text ) ) ) Cancel();
+				return;
+			}
 			// A refused name (a read-only visit, or lines a save could not hold) keeps the dialog open.
-			if ( Stack.Top != screen || !level.Commands.Issue( new RenameParkCommand( first.Text, second.Text ) ).Accepted ) return;
+			if ( !level.Commands.Issue( new RenameParkCommand( first.Text, second.Text ) ).Accepted ) return;
 			Cancel();
 		}
 		var tick = screen.Add( new UiButton { Id = "apply", Model = "b_okay", Clicked = Apply,

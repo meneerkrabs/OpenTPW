@@ -83,7 +83,7 @@ public enum ParkCommandInTickRule
 /// later); <see cref="ApplyDue"/> runs the held commands at the start of their tick. Every well-formed command, accepted or not, is logged with its tick, so the log of a session
 /// replays to the same world (<see cref="ParkCommandReplay"/>).
 /// </summary>
-public sealed class ParkCommands
+public sealed class ParkCommands : IManagementIssuer
 {
 	/// <summary>The player id of the local player in single player (and of a session's host).</summary>
 	public const int LocalPlayer = 0;
@@ -122,6 +122,38 @@ public sealed class ParkCommands
 	/// <summary>[EXT:online-coop-lockstep] The rejection of a command the rights refuse: their own reason (another player's claim, C3c-1; a grant not given), else the generic one.</summary>
 	private ParkCommandResult RightsRefusal( ParkCommand command ) =>
 		ParkCommandResult.Rejected( Rights?.RefusalReason( command.Player, command ) ?? $"Player {command.Player} may not {command.Kind}." ) with { RightsRefused = true };
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] The session's rights' refusal of <paramref name="command"/> issued as this machine's player, asked silently (C4b: a guest's management window before it queues
+	/// an action, and its queue before it sends one); null when they allow it.
+	/// </summary>
+	internal ParkCommandResult? RightsRefusalOf( ParkCommand command )
+	{
+		ArgumentNullException.ThrowIfNull( command );
+		var issued = command with { Player = Player };
+		if ( issued.Player < 0 )
+			return ParkCommandResult.Rejected( $"Player {issued.Player} may not {command.Kind}." ) with { RightsRefused = true };
+		return Refuses( issued ) ? RightsRefusal( issued ) : null;
+	}
+
+	/// <summary>[EXT:online-coop-permissions] Whether the session's rights let this machine's player issue <paramref name="command"/>, asked silently (<see cref="RightsRefusalOf"/>).</summary>
+	internal bool MayIssue( ParkCommand command ) => RightsRefusalOf( command ) == null;
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] When the session's rights refuse <paramref name="command"/> of this machine's player, raises <see cref="SessionRefused"/> for it as a refused click does (the
+	/// HUD says it, once for a run) and returns true; false when they allow it.
+	/// </summary>
+	internal bool RefusesHere( ParkCommand command )
+	{
+		if ( MayIssue( command ) )
+			return false;
+		SessionRefused?.Invoke( command with { Player = Player } );
+		return true;
+	}
+
+	ParkCommandResult? IManagementIssuer.RightsRefusalOf( ParkCommand command ) => RightsRefusalOf( command );
+	bool IManagementIssuer.RefusesHere( ParkCommand command ) => RefusesHere( command );
+	ParkCommandResult IManagementIssuer.Issue( ParkCommand command ) => Issue( command );
 
 	/// <summary>[EXT:online-coop-permissions] Whether <paramref name="player"/> may remove <paramref name="item"/> inside a command that removes what it finds: the rights' answer, yes without any.</summary>
 	internal bool AllowsRemoval( int player, OriginalObject item ) => Rights is not { } rights || rights.AllowsRemoval( player, item );

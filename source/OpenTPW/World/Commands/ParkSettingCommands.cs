@@ -410,11 +410,27 @@ public sealed record TakeLoanCommand( int Offer, long Amount ) : ParkSettingComm
 		if ( level.Park?.Economy is not { } economy )
 			return NoEconomy;
 		if ( economy.IsBankrupt )
-			return ParkCommandResult.Rejected( "A bankrupt park cannot borrow." );
+			return new ParkCommandResult( false, "A bankrupt park cannot borrow.", LoanRefusal.Bankrupt );
 		if ( economy.AvailableLoans.FirstOrDefault( offer => offer.Index == Offer ) is not { } available || available.Amount != Amount )
-			return ParkCommandResult.Rejected( $"Loan offer {Offer} is not available." );
+			return new ParkCommandResult( false, $"Loan offer {Offer} is not available.", LoanRefusal.Gone );
 		return ParkCommandResult.Ok( economy.TakeLoan( Offer ) );
 	}
+}
+
+/// <summary>
+/// [EXT:online-coop-money] Why the park refused a loan's take or repay, as its result's value (C4b): a guest's confirmation hears it from the record and says what the host's own checks
+/// would have said, without reading the reason's text.
+/// </summary>
+public enum LoanRefusal : byte
+{
+	/// <summary>The park cannot afford to pay the loan off.</summary>
+	Unaffordable = 1,
+	/// <summary>The loan is not outstanding at the balance its confirmation named (another player repaid it, or its balance changed).</summary>
+	Changed = 2,
+	/// <summary>The offer is gone, or its amount changed.</summary>
+	Gone = 3,
+	/// <summary>A bankrupt park cannot borrow.</summary>
+	Bankrupt = 4
 }
 
 /// <summary>
@@ -437,8 +453,8 @@ public sealed record RepayLoanCommand( int Offer, long Amount ) : ParkSettingCom
 		if ( level.Park?.Economy is not { } economy )
 			return NoEconomy;
 		if ( economy.Loans.FirstOrDefault( loan => loan.OfferIndex == Offer ) is not { } loan || loan.RemainingBalance != Amount )
-			return ParkCommandResult.Rejected( $"Loan {Offer} is not outstanding at that balance." );
-		return economy.TryRepayLoan( Offer ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "The park cannot afford to pay off the loan." );
+			return new ParkCommandResult( false, $"Loan {Offer} is not outstanding at that balance.", LoanRefusal.Changed );
+		return economy.TryRepayLoan( Offer ) ? ParkCommandResult.Ok() : new ParkCommandResult( false, "The park cannot afford to pay off the loan.", LoanRefusal.Unaffordable );
 	}
 }
 

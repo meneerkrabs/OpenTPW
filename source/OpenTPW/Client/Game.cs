@@ -435,6 +435,10 @@ internal static class Game
 			int? perfCrowd = GetOption( args, "--perf-crowd", "a number of guests" ) is { } perfCrowdText
 				? int.TryParse( perfCrowdText, out var parsedPerfCrowd ) && parsedPerfCrowd is > 0 and <= 5000 ? parsedPerfCrowd : throw new ArgumentException( "--perf-crowd expects a number of guests from 1 to 5000." )
 				: null;
+			// [EXT:perf-run] --perf-pan turns the park camera by half a degree a frame and moves its target round a circle of 30 units (the target's start is its centre), so a run measures the ground
+			// while the view changes, as a panning player does; the zoom stays what --perf-zoom or the park's own said
+			var perfPan = args.Contains( "--perf-pan" );
+			Vector3 perfPanCentre = default;
 			int perfWarmup = 0, perfDone = 0;
 			var perfOpened = false;
 			Render.PostUpdate += () =>
@@ -453,10 +457,17 @@ internal static class Game
 					// [EXT:perf-run] --perf-zoom <value> holds the park camera at that zoom value for the whole run (the wide range of GameOptions.WideZoom reaches 40..300)
 					if ( perfZoom is { } zoom && Camera.Mode is ParkCameraMode perfCamera )
 						perfCamera.SetPose( perfCamera.Target, zoom, perfCamera.Yaw );
+					if ( Camera.Mode is ParkCameraMode panCamera )
+						perfPanCentre = panCamera.Target;
 					if ( perfArrivals is { } arrivals && perfLevel.Guests != null )
 						perfLevel.Guests.Settings.ArrivalTimeBetween = arrivals;
 					if ( perfCrowd is { } crowd && perfLevel.Guests != null )
 						Log.Trace( $"--perf-crowd: {UmbrellaPerf.Stage( perfLevel.Guests, null, crowd, 0, false ).Guests} guests in the park." );
+				}
+				if ( perfPan && Camera.Mode is ParkCameraMode movingCamera )
+				{
+					var angle = perfDone * 0.5f * MathF.PI / 180;
+					movingCamera.SetPose( perfPanCentre + new Vector3( MathF.Cos( angle ) * 30, MathF.Sin( angle ) * 30, 0 ), movingCamera.Height, movingCamera.Yaw + 0.5f );
 				}
 				if ( perfHashTick is { } hashTick && perfPark.Economy.Tick == hashTick )
 				{

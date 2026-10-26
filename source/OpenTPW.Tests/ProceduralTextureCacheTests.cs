@@ -168,4 +168,35 @@ public class ProceduralTextureCacheTests
 		Assert.AreEqual( 2, ProceduralTerrainAtlas.PageCountFor( 64, 1500 ) );
 		Assert.AreEqual( 1, ProceduralTerrainAtlas.PageCountFor( 64, 1024 ) );
 	}
+
+	[TestMethod]
+	public void RandomSequencesOfFramesGiveTheSlotsBuildsAndRingOfTheOriginal()
+	{
+		// the cases come from the x86 oracle's generator; the original's code gives the same slots, builds and ring for them (docs/LND.md)
+		foreach ( var (runIndex, run) in ProceduralTextureCacheGolden.Runs.Select( ( value, index ) => (index, value) ) )
+		{
+			var cache = new ProceduralTextureCache( run.Capacity );
+			for ( var frameIndex = 0; frameIndex < run.Frames.Length; frameIndex++ )
+			{
+				var frame = run.Frames[frameIndex];
+				var (slots, build) = Resolve( cache, frame.Keys, frame.Dirty );
+				CollectionAssert.AreEqual( frame.Slots, slots, $"run {runIndex} frame {frameIndex} slots" );
+				CollectionAssert.AreEqual( frame.Built, Enumerable.Range( 0, build.Length ).Where( index => build[index] ).ToArray(), $"run {runIndex} frame {frameIndex} builds" );
+				CollectionAssert.AreEqual( frame.Ring, cache.RingFromHead(), $"run {runIndex} frame {frameIndex} ring" );
+			}
+		}
+	}
+
+	[TestMethod]
+	public void AFrameOfHitsOnlyReordersTheRingSoItIsLookedUpAgainEveryFrame()
+	{
+		// a frame with misses followed by the same cells again: the all-hit pass moves the cells in front of the head's old node, which changes which slots the next misses take
+		var again = new ProceduralTextureCache( 6 );
+		var once = new ProceduralTextureCache( 6 );
+		var keys = Keys( 0, 1, 2 );
+		Resolve( again, keys );
+		Resolve( once, keys );
+		Resolve( again, keys );
+		CollectionAssert.AreNotEqual( once.RingFromHead(), again.RingFromHead() );
+	}
 }

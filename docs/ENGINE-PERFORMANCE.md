@@ -402,18 +402,23 @@ warm cache; on the issue's hard disk with an antivirus filter each of the 1,258 
 1. **The first start after an install or a Windows update** compiles the shaders as before and fills the cache; nothing shows that start's
    progress (the window stays black until the lobby is drawn). A loading indicator would be a visible change and is not made here.
 
-## Procedural terrain textures (October 25, 2026)
+## Procedural terrain textures (October 26, 2026)
 
 The ground drawn with the original's procedural textures (docs/LND.md, issue #829) against the build before it (main at the merge of #834), same Mac, Release, Jungle, High preset (32 × 32 textures, a cache of 2000 cells),
-`--offscreen --silent --mute --no-advisor --frame-stats --no-vsync --perf-run 9000 --perf-crowd 150 --perf-zoom <value>`, two rounds, the builds alternating, other sessions running:
+`--offscreen --silent --mute --no-advisor --frame-stats --no-vsync --perf-run 9000 --perf-crowd 150 --perf-zoom <value>`, two rounds, the builds alternating, other sessions running. "Panning" adds `--perf-pan` (the camera turns half a degree a frame and its target
+goes round a circle of 30 units, so the cells in view change every frame); "still" is the unchanged park camera. Frame average and p99 in ms, round 1 and round 2:
 
-| Zoom value | Build | Frame average (ms) | p99 (ms) | World render (ms) | GPU wait (ms) | Model parts drawn / outside |
-| ---: | --- | ---: | ---: | ---: | ---: | ---: |
-| 110 (Home) | main | 1.34, 1.60 | 2.46, 3.64 | 0.78, 1.04 | 0.40, 0.28 | 35 / 95 |
-| 110 (Home) | procedural | 1.57, 1.54 | 3.49, 3.31 | 1.07, 1.08 | 0.20, 0.18 | 35 / 95 |
-| 300 | main | 2.83, 2.77 | 4.50, 4.28 | 1.06, 1.13 | 1.64, 1.50 | 74 / 53 |
-| 300 | procedural | 3.27, 2.81 | 4.97, 4.45 | 1.18, 1.12 | 1.92, 1.56 | 74 / 53 |
+| View | Zoom value | main (average) | procedural (average) | main (p99) | procedural (p99) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Still | 110 (Home) | 1.43, 1.40 | 1.43, 1.40 | 2.39, 2.47 | 2.42, 2.34 |
+| Still | 300 | 3.00, 2.93 | 3.03, 3.03 | 4.41, 4.62 | 4.68, 5.52 |
+| Panning | 110 (Home) | 1.12, 1.45 | 1.40, 1.27 | 2.50, 4.34 | 2.93, 3.30 |
+| Panning | 300 | 3.02, 2.90 | 2.97, 2.96 | 5.90, 4.99 | 4.96, 4.49 |
 
-The frame cost stays within the run-to-run spread of the main build (the two rounds of the main build alone differ by 0.26 ms at the Home zoom). In a still view the terrain does one comparison of the view matrix per frame; a view that moves finds the cells in view
-(about 8,000 corner tests), looks them up in the cache, builds the cells that took a new slot (about 80 µs a cell at N = 32 on this Mac, 60 µs of it the texturer, so a Home view of 300 cells is 25 ms on its first frame) and rewrites one mesh of at most 2500 cells.
-An early version that re-ran the cell search every frame, with the pool extension's hole test on each of the 8,000 cells, cost 0.6 ms a frame at the Home zoom; the search now runs when the view or the holes change.
+The frame cost stays within the run-to-run spread of the main build (its own two panning rounds at the Home zoom differ by 0.33 ms). Each frame the terrain computes the spans (a few hundred floating point operations), looks the listed cells up in the cache (about 140 cells at the Home zoom, a few hundred zoomed out) and compares
+the list with the last one; the mesh of at most 2500 cells is rewritten only when the list or a texture changed. A cell that takes a new slot is built before the frame draws (about 80 µs at N = 32 on this Mac, 60 µs of it the texturer, so the Home view's first frame builds its 140 cells in about 11 ms). The hole answers of the pools extension are kept per hole version, so a panning frame
+asks the delegate once per cell and version. An early version that ran a frustum test on 8,000 corners with the hole test on each cost 0.6 ms a frame at the Home zoom.
+
+In the browser (AOT page, headless Chrome 155 with `--mute-audio`, `tools/web-perf/run.mjs --scenarios jungle --window 15`, three runs of each build, Apple M5): the first view is built in the park's entering frame, whose largest frame is 77.1, 79.6 and 79.3 ms against 47.0, 55.2 and 53.2 ms of the main build, about 25 ms once; the page is ready in 9.42, 9.55 and 9.67 s against 9.39, 9.43 and 9.68 s, and the steady window
+is the same (main thread busy 9.4, 9.8 and 11.5 % against 10.6, 10.4 and 9.9 %, frame p95 1.5, 1.6 and 2.2 ms against 2.0, 1.7 and 1.7 ms, 60 fps, no long task). The browser builds every listed cell before it draws, as the desktop does; there is no per frame budget and no static stand-in texture any more.
+

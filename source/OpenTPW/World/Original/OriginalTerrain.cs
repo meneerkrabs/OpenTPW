@@ -236,7 +236,7 @@ public sealed class OriginalTerrain : Entity
 			Log.Warning( $"Procedural terrain textures of {Park.LevelName} are off: base.lnd could not be read: {exception.Message}" );
 			return;
 		}
-		var ground = new ProceduralTerrain( field, lnd, rectangle, settings, ( x, z ) => slotIndices[field.GetCellTextureSlot( x, z )], staticSlots.Count );
+		var ground = new ProceduralTerrain( field, lnd, rectangle, settings, staticSlots.Count ) { ViewDistance = ProceduralTerrainSettings.CurrentViewDistance() };
 		var slots = staticSlots.Concat( ground.Pages ).ToList();
 		while ( slots.Count < MaximumTextureSlots )
 			slots.Add( slots[0] );
@@ -252,10 +252,10 @@ public sealed class OriginalTerrain : Entity
 	}
 
 	/// <summary>
-	/// Camera modes the original draws with the static ground: a view from inside the park, the follow of a ride or a guest and the first person view, which switch the procedural textures off (0x42AB20 calls 0x457A40 on entering
-	/// them and 0x457A00 on leaving).
+	/// Camera modes the original draws with the static ground: the terrain camcorder (bit 0x2 of [0x790AB0], left through 0x42AE70) and the ride camera (bit 0x4, entered for a ride whose record has flag 0x400000, 0x4E15B0),
+	/// which switch the procedural textures off (0x42AB20 calls 0x457A40 on entering them and 0x457A00 on leaving).
 	/// </summary>
-	// [BIN:TPW-EXE:0x0042AB20 camera mode switch] the modes with the bits 0x2 (a view entered from the cursor, 0x42AE70) and 0x4 (the follow of a Thing, 0x42A560) of [0x790AB0] turn the procedural textures off (0x457A40, remembered in bit 0x200) and leaving them turns them on again (0x457A00); the names of the modes are inferred from the calls, not from a string
+	// [BIN:TPW-EXE:0x0042AB20 camera mode switch] the modes with the bits 0x2 (the terrain camcorder, exit 0x42AE70) and 0x4 (a ride, record flag 0x400000, 0x4E15B0) of [0x790AB0] turn the procedural textures off (0x457A40, remembered in bit 0x200) and leaving them turns them on again (0x457A00), which does so only when [0x78D8D8] is 1 and otherwise clears the bits 0x6000
 	private static bool SuspendsProceduralGround( CameraMode mode ) => mode is RideCameraMode or FreeWalkCameraMode;
 
 	protected override void OnRender()
@@ -268,7 +268,7 @@ public sealed class OriginalTerrain : Entity
 		if ( outsidePart != null )
 			outsidePart.Hidden = suspended;
 		if ( !suspended )
-			procedural.Refresh( proceduralPart.DrawMatrix * Camera.ViewMatrix * Camera.ProjMatrix, RenderHoleSource, heightfieldHoleSignature );
+			procedural.Refresh( proceduralPart.DrawMatrix * Camera.ViewMatrix, Camera.ProjMatrix, RenderHoleSource, heightfieldHoleSignature );
 	}
 
 	/// <summary>[EXT:pools-render] Rebuilds the ground mesh when the render-only holes changed since it was last built.</summary>

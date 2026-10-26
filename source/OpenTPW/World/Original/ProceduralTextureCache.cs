@@ -104,6 +104,19 @@ public sealed class ProceduralTextureCache
 		}
 	}
 
+	/// <summary>The slots in ring order from the head: the order the next misses take them in, backwards (the head's previous node first).</summary>
+	public int[] RingFromHead()
+	{
+		var order = new int[Capacity];
+		var node = head;
+		for ( var index = 0; index < order.Length; index++ )
+		{
+			order[index] = node;
+			node = next[node];
+		}
+		return order;
+	}
+
 	/// <summary>The slot a key currently owns, or -1.</summary>
 	public int SlotOf( int key ) => table[((key >> 8) << 7) + (key & 0xFF)];
 }

@@ -234,6 +234,9 @@ public sealed partial class ParkHud
 			}
 			consumed = true;
 		}
+		// [BIN:TPW-EXE:0x446300 coaster edit release] in the edit modes the release only settles what a press picked up (0x446300(0)): one that picked nothing, a press off the grid let go on it, is the tool's and no click of the level's
+		if ( input.LeftReleased && !panel.IsBuilding )
+			consumed = true;
 		if ( input.LeftReleased )
 			coasterPress = false;
 		if ( panel.IsBuilding && panel.Cursor is { } cursor )

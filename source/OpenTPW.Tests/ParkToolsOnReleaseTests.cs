@@ -321,4 +321,52 @@ public class ParkToolsOnReleaseTests
 		Frame( new[] { Down( PointA, MouseButton.Right ), Up( PointA, MouseButton.Right ) } );
 		Assert.IsTrue( level.CellTool.IsActive );
 	}
+
+	[TestMethod]
+	public void LegacyFramesATapOnTheInterfaceLetGoOverTheParkClicksNothing()
+	{
+		// the hand-fed path (co-op, a read-only visit, frames with no ordered events): the release acts only when the park view took its press
+		var over = AddButtonOverPark( () => { } );
+		level.IsRemovingObjects = true;
+		Frame( null, mouse: over, left: true );
+		Frame( null, mouse: PointA );
+		Assert.AreEqual( 0, commands.Count, "a press on the interface is not the park's: its release over the park removes nothing" );
+	}
+
+	[TestMethod]
+	public void LegacyFramesAPressOnTheParkLetGoOverTheInterfaceClicksAtTheCellThere()
+	{
+		var over = AddButtonOverPark( () => { } );
+		var (ox, oy) = CellAt( over );
+		level.IsRemovingObjects = true;
+		Frame( null, mouse: PointA, left: true );
+		Assert.AreEqual( 0, commands.Count );
+		Frame( null, mouse: over );
+		var removed = commands.OfType<RemoveAtCommand>().Single();
+		Assert.AreEqual( (ox, oy), (removed.X, removed.Y), "the park's click, at the cell under the pointer at the release" );
+	}
+
+	[TestMethod]
+	public void ABlurReleaseEndsThePressWithNoClickAndNoCue()
+	{
+		// a browser blur makes up a release with the last position only: the gesture ends, the tools never click
+		var cell = CellAt( PointA );
+		level.CellTool.Enter( new RefusingTrackWriter( cell ), null );
+		Frame( new[] { Down( PointA ) }, left: true );
+		Frame( new[] { Up( PointA ) with { Source = OrderedInputEventSource.Browser, PositionIsExact = false } } );
+		Assert.IsTrue( level.CellTool.IsActive, "no click: the refused ghost did not end the tool" );
+		CollectionAssert.AreEqual( Array.Empty<uint>(), sounds, "and no refusal cue" );
+		level.CellTool.Cancel();
+		level.IsRemovingObjects = true;
+		Frame( new[] { Down( PointA ) }, left: true );
+		Frame( new[] { Up( PointA ) with { Source = OrderedInputEventSource.Browser, PositionIsExact = false } } );
+		Assert.AreEqual( 0, commands.Count, "the removal is not clicked either" );
+		level.IsRemovingObjects = false;
+		Frame( new[] { Down( PointA ) }, left: true );
+		Frame( new[] { Up( PointA ) with { Source = OrderedInputEventSource.Browser, PositionIsExact = false } } );
+		Assert.IsTrue( level.CellTool.IsActive, "the tool the press entered stays, with no start" );
+		Assert.IsNull( level.CellTool.Start );
+		Frame( new[] { Up( PointA ) } );
+		Assert.IsNull( level.CellTool.Start );
+	}
 }

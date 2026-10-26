@@ -31,6 +31,7 @@ public enum UiKeys
 /// (<see cref="UiPointerRouter.AdmitInjected"/>), whereas an unavailable batch never starts a gesture.
 /// </param>
 /// <param name="BackspaceRepeating">Every Backspace of this frame is the auto-repeat of a held key (the pool bridge and water removal acts only on the first press).</param>
+/// <param name="LeftReleaseLost">The left release is no gesture's end at a place: the platform made it up (a browser blur or visibility release, whose position is only the last one seen). It ends the press without a click, whatever the tool; <see cref="NotClick"/> alone does not, since a drag's release is the tools' click.</param>
 /// <param name="RightReleased">The right button was released this frame.</param>
 /// <param name="RightClicked">
 /// The right release closes a quick click: the press lasted at most <see cref="UiInputSource.RightClickMilliseconds"/> and the pointer never strayed more than
@@ -41,7 +42,7 @@ public enum UiKeys
 /// Set on a left release that is not a click: the press lasted longer than <see cref="UiInputSource.ClickMilliseconds"/> or the
 /// pointer strayed more than <see cref="UiInputSource.ClickSlop"/> pixels on an axis (tp.exe 0x65f6d1 / 0x65fa33). The release still ends drags.
 /// </param>
-public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false, IReadOnlyList<OrderedInputEvent>? OrderedEvents = null, bool PointerSuppressed = false, float PointerScaleX = 1, float PointerScaleY = 1, bool PointerHostBlocked = false, bool OrderedUnavailable = false, bool BackspaceRepeating = false, bool RightReleased = false, bool RightClicked = false )
+public readonly record struct UiInput( NVector2 Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased, bool RightPressed, UiKeys Pressed, float Wheel = 0, string Text = "", int Backspaces = 0, bool NotClick = false, IReadOnlyList<OrderedInputEvent>? OrderedEvents = null, bool PointerSuppressed = false, float PointerScaleX = 1, float PointerScaleY = 1, bool PointerHostBlocked = false, bool OrderedUnavailable = false, bool BackspaceRepeating = false, bool RightReleased = false, bool RightClicked = false, bool LeftReleaseLost = false )
 {
 
 	public static UiInput Idle( NVector2 mouse ) => new( mouse, false, false, false, false, UiKeys.None );

@@ -11,7 +11,7 @@ public partial class Level
 
 	/// <summary>
 	/// Whether the park view's tool clicks (a placement, a line, a removal) act on the left button's release, as tp.exe's do: the mode object's click handler 0x524960 is the release slot (+8) of the
-	/// tool object, and its press slot (+4, 0x524790) only sets a latch. The Theme Park World HUD sets it; the Theme Park Inc HUD and the level alone keep acting on the press.
+	/// tool object, and its press slot (+4, 0x524790) only sets a latch. The Theme Park World HUD sets it; the Theme Park Inc HUD and the level alone keep acting on the press (the TPI executable's mouse handler was not traced).
 	/// </summary>
 	// [BIN:TPW-EXE:0x46C610 release slot] the tool object's (vtable 0x6FE9E0) slot +8 calls 0x524960 with the hover cell 0x7B05CC read at the release; slot +4 (0x46C5D0 → 0x524790) sets the press latch 0x8186D8 and, in coaster mode 0x16 only, starts a pick-up
 	internal bool WorldClicksOnRelease { get; set; }
@@ -28,10 +28,11 @@ public partial class Level
 	internal enum WorldClickAction { None, PlacePrototype, UseTool }
 
 	/// <summary>World input stays suspended in ride and walking views, including tools armed through the HUD.</summary>
-	internal static WorldClickAction WorldClick( bool riding, bool leftDown, bool previousLeftDown, bool mouseCaptured, bool placing, bool onRelease = false )
+	internal static WorldClickAction WorldClick( bool riding, bool leftDown, bool previousLeftDown, bool mouseCaptured, bool placing, bool onRelease = false, bool parkOwnsRelease = false )
 	{
-		var edge = onRelease ? !leftDown && previousLeftDown : leftDown && !previousLeftDown;
-		return riding || !edge || mouseCaptured ? WorldClickAction.None
+		// on the release the HUD says whether the park view took the press (and no HUD tool used the release): then the release acts wherever the pointer is; any other release is nobody's click
+		var edge = onRelease ? !leftDown && previousLeftDown && parkOwnsRelease : leftDown && !previousLeftDown && !mouseCaptured;
+		return riding || !edge ? WorldClickAction.None
 			: placing ? WorldClickAction.PlacePrototype : WorldClickAction.UseTool;
 	}
 
@@ -44,8 +45,8 @@ public partial class Level
 			return;
 		}
 		clickModifierMask = modifierMask;
-		// a release whose press the park view took acts where the pointer is, over the interface or not
-		switch ( WorldClick( RideView != null || FreeWalk != null, leftDown, wasMouseDown, mouseCaptured && !(WorldClicksOnRelease && ParkOwnsRelease), IsPlacing, WorldClicksOnRelease ) )
+		// a release acts only when the park view took its press (ParkOwnsRelease), over the interface or not
+		switch ( WorldClick( RideView != null || FreeWalk != null, leftDown, wasMouseDown, mouseCaptured, IsPlacing, WorldClicksOnRelease, ParkOwnsRelease ) )
 		{
 			case WorldClickAction.PlacePrototype:
 				if ( TryGetPlacementPosition( mousePosition, viewportSize, out var position ) )

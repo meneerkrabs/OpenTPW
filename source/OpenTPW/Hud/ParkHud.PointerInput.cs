@@ -193,7 +193,8 @@ public sealed partial class ParkHud
 				routedRightPressMoved = true;
 			var rightClicked = rightRelease && !routedRightPressMoved && item.TimestampMilliseconds - routedRightPressTime <= UiInputSource.RightClickMilliseconds
 				&& !(item.Source == OrderedInputEventSource.Browser && !item.PositionIsExact);
-			var input = new UiInput( point, delivery.LeftDown, leftPress, leftRelease, rightPress, UiKeys.None, NotClick: notClick, RightReleased: rightRelease, RightClicked: rightClicked );
+			var input = new UiInput( point, delivery.LeftDown, leftPress, leftRelease, rightPress, UiKeys.None, NotClick: notClick, RightReleased: rightRelease, RightClicked: rightClicked,
+				LeftReleaseLost: leftRelease && item.Source == OrderedInputEventSource.Browser && !item.PositionIsExact );
 			using ( Input.UsePointerModifiers( item.Modifiers ) )
 				consumed |= DispatchPointerOwner( context, delivery.Owner, input, rideOwnsInput, mouseCaptured, keyboardCaptured, textCaptured );
 			SyncPointerCapture();
@@ -239,7 +240,7 @@ public sealed partial class ParkHud
 			}
 			var result = DispatchParkPointer( context, input, false, false, rideOwnsInput, Paused, false, keyboardCaptured, textCaptured );
 			// [BIN:TPW-EXE:0x46C610 release slot] the level's tools (a placement, a removal) act on the release the park took, at the cell under the pointer there
-			if ( input.LeftReleased && !result.Consumed )
+			if ( input.LeftReleased && !input.LeftReleaseLost && !result.Consumed )
 				level.DispatchRoutedWorldClick( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), Input.ModifierMaskDown );
 			return result.Consumed;
 		}

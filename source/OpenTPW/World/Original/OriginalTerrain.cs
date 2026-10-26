@@ -279,6 +279,8 @@ public sealed partial class OriginalTerrain : Entity
 		if ( procedural == null || proceduralPart == null || heightfieldPart == null )
 			return;
 		var suspended = SuspendsProceduralGround( Camera.Mode );
+		if ( suspended && staticHolesStale )
+			RebuildHeightfieldPart();
 		proceduralPart.Hidden = suspended;
 		heightfieldPart.Hidden = !suspended;
 		if ( outsidePart != null )
@@ -296,14 +298,11 @@ public sealed partial class OriginalTerrain : Entity
 		if ( signature == heightfieldHoleSignature )
 			return;
 		heightfieldHoleSignature = signature;
-		var old = heightfieldPart;
-		parts.Remove( old );
-		old.Delete();
-		if ( old.Model is { } oldModel && models.Remove( oldModel ) )
-			ScheduleDispose( oldModel );
-		var hidden = old.Hidden;
-		heightfieldPart = AddPart( BuildHeightfieldModel( heightfieldMaterial, heightfieldSlotIndices ), "heightfield" );
-		heightfieldPart.Hidden = hidden;
+		// with the procedural ground the static mesh is hidden: it is rebuilt when a camera mode that suspends the textures shows it, not at every placement
+		if ( procedural != null && heightfieldPart.Hidden )
+			staticHolesStale = true;
+		else
+			RebuildHeightfieldPart();
 		if ( outsidePart != null && procedural is { } ground )
 		{
 			var outside = outsidePart;
@@ -314,6 +313,22 @@ public sealed partial class OriginalTerrain : Entity
 			outsidePart = AddPart( BuildHeightfieldModel( heightfieldMaterial, heightfieldSlotIndices, ( x, y ) => !ground.IsProcedural( x, y ) ), "heightfield outside the procedural rectangle" );
 			outsidePart.Hidden = outside.Hidden;
 		}
+	}
+
+	private bool staticHolesStale;
+
+	/// <summary>The static ground mesh made again for the holes as they are now.</summary>
+	private void RebuildHeightfieldPart()
+	{
+		staticHolesStale = false;
+		var old = heightfieldPart!;
+		parts.Remove( old );
+		old.Delete();
+		if ( old.Model is { } oldModel && models.Remove( oldModel ) )
+			ScheduleDispose( oldModel );
+		var hidden = old.Hidden;
+		heightfieldPart = AddPart( BuildHeightfieldModel( heightfieldMaterial!, heightfieldSlotIndices!, null ), "heightfield" );
+		heightfieldPart.Hidden = hidden;
 	}
 
 	/// <summary>The path layer: one quad per path cell, batched by at most 16 PathTex textures, and each queue cell's queue model.</summary>
@@ -379,7 +394,7 @@ public sealed partial class OriginalTerrain : Entity
 	/// The queue models of the queue cells (<see cref="QueueModels"/>), baked into static batches: each instance stands on its cell turned by
 	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), each vertex on the ground under it.
 	/// </summary>
-	// [APPROX:PATH-015] the queue models are baked with each vertex raised by the drawn ground under it (LandscapeSampler, the path layer's lift above it, so the models follow a sloped cell and their floor shows over the grass as in the original's footage) and drawn without the ground deformation of their .hmp files (as objects, RIDES-014) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the .hmp deformation and the model loader's flag 0x100000 (0x4629D0)
+	// [APPROX:PATH-015] the queue models are baked with each vertex raised by the drawn ground under it (LandscapeSampler, the path layer's lift above it, so the models follow a sloped cell and their floor shows over the grass as in the original's footage) and drawn without the skirt, the hole under the cell, the floor composite and the edge conform that the loader's flag 1 and the instance constructor give a queue piece as they give an object (docs/OBJECTS.md, "Floors", F6; the .hmp files are footprint height maps, nothing is deformed) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the model loader's flag 0x100000 (0x4629D0); the queue pieces' skirt, hole and composite are read (every queue model has the base flag and one entry) and need a texture of their own per queue cell in the baked batches
 	private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues )
 	{
 		QueueModelCount = 0;

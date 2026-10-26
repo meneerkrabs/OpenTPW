@@ -847,6 +847,8 @@ public sealed partial class ParkHud
 		// without its Move tool is ended after that (C3b-2)
 		CompleteGuestRequests();
 		level.EndStrayCarry( Time.Now );
+		// [EXT:online-coop-claims] and a claim of a ride this machine's track tool is not on is let go (C3c-1)
+		level.EndStrayClaim( Time.Now );
 		// [EXT:online-coop-commands] a guest's pool strokes send what waits and say what finished (C3b-3)
 		UpdateGuestPoolStrokes();
 		SyncChallengeMessageSuspension();
@@ -1007,15 +1009,15 @@ public sealed partial class ParkHud
 		if ( walkingAtStart && level.FreeWalk == null && Camera.Mode is ParkCameraMode returningCamera )
 			returningCamera.ModalOpen = true;
 
-		// [EXT:online-coop-lockstep] a guest's click the shared park's rights refuse (once for a drag's run of refusals): building the host has not let it do yet, or what only the host
-		// does ([EXT:online-coop-permissions], C3a-2)
+		// [EXT:online-coop-lockstep] a click the shared park's rights refuse (once for a drag's run of refusals): a guest's building the host has not let it do yet, or what only the host
+		// does ([EXT:online-coop-permissions], C3a-2); [EXT:online-coop-claims] any player's edit of a ride another player claims (C3c-1)
 		if ( level.SessionRefusals != lastSessionRefusals )
 		{
 			lastSessionRefusals = level.SessionRefusals;
 			if ( Time.Now - lastSessionRefusalNotice >= SessionRefusalNoticeSeconds )
 			{
 				lastSessionRefusalNotice = Time.Now;
-				PostMessage( strings.Extra( level.LastSessionRefusalWasBuilding ? OpenTpwText.CoopNotGranted : OpenTpwText.CoopHostOnly ) );
+				PostMessage( strings.Extra( RefusalText( level.LastSessionRefusal ) ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
 		}

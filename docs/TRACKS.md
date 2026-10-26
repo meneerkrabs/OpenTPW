@@ -96,7 +96,8 @@ the arm toward any neighbour whose arm already points at it (the station's open 
 Removing a tile clears its neighbours' arms; the station tiles never lose theirs. A line ending on an existing tile ends the tool, like the path tool.
 
 The level reaches the tool through placing the ride (`ParkHud.OnObjectPlaced` → `Level.EnterTrackTool`); when the circuit becomes valid the tool
-closes and the queue tool starts. `Level.BuildTrack` is the headless entry.
+closes and the queue tool starts. `Level.BuildTrack` is the headless entry. `[EXT:online-coop-claims]` In a shared park the tool claims its ride when it starts,
+and another player's claim starts no tool; the claim goes at the frame after the tool left the ride (docs/COOP.md, "Claims").
 
 ### The station (TRACK-005)
 

@@ -102,7 +102,7 @@ public sealed partial class ParkHud
 		{
 			var result = level.CompleteCellTool( outcome );
 			if ( outcome.RightsRefused )
-				SayGuestNote( OpenTpwText.CoopNotGranted );
+				SayGuestNote( RightsRefusalText( request.Command, outcome.Reason ) );
 			if ( click != null )
 				FinishLineClick( click, result, released: true, sessionRefused: outcome.RightsRefused );
 			return;
@@ -149,7 +149,7 @@ public sealed partial class ParkHud
 						PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), EntryName( entry ) ) );
 				}
 				else if ( result.RightsRefused )
-					SayGuestNote( level.Commands.Rights is CoopBuildRights rights && rights.Builds( request.Command ) ? OpenTpwText.CoopNotGranted : OpenTpwText.CoopHostOnly );
+					SayGuestNote( RightsRefusalText( request.Command, result.Reason ) );
 				else if ( request.Command is PlaceObjectCommand or LayLineCommand or QueueSegmentCommand )
 					SayCannotBuild( result.Reason ?? "", entry );
 				// [EXT:land-feedback] a refused purchase says so, as the host's refused click does
@@ -192,7 +192,7 @@ public sealed partial class ParkHud
 		if ( report.SlideDone )
 			PostMessage( strings.Extra( OpenTpwText.PoolSlideDone ) );
 		if ( report.RightsRefused is { } refused )
-			SayGuestNote( level.Commands.Rights is CoopBuildRights rights && rights.Builds( refused ) ? OpenTpwText.CoopNotGranted : OpenTpwText.CoopHostOnly );
+			SayGuestNote( RightsRefusalText( refused, report.RightsReason ) );
 		else if ( report.NotTaken )
 			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
 		else if ( report.Unknown )
@@ -202,6 +202,21 @@ public sealed partial class ParkHud
 		refusalClick.Refused( refusal.Cell.X, refusal.Cell.Y );
 		PostMessage( strings.Extra( report.BridgeRefusal is { } bridge ? BridgeRefusalText( bridge ) : PoolRefusalText( refusal.Reason, report.SlideRefusal ) ) );
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] What a refusal of <paramref name="command"/> by the session's rights says, from its <paramref name="reason"/>: [EXT:online-coop-claims] another player's claim
+	/// (C3c-1), building the host has not let this player do yet, or what only the host does.
+	/// </summary>
+	private OpenTpwText RightsRefusalText( ParkCommand command, string? reason ) =>
+		RefusalText( level.Commands.Rights is CoopBuildRights rights ? rights.RefusalOf( command, reason ) : CoopRefusal.HostOnly );
+
+	/// <summary>The note of a refusal by the session's rights.</summary>
+	private static OpenTpwText RefusalText( CoopRefusal refusal ) => refusal switch
+	{
+		CoopRefusal.Claimed => OpenTpwText.CoopClaimed,
+		CoopRefusal.NotGranted => OpenTpwText.CoopNotGranted,
+		_ => OpenTpwText.CoopHostOnly
+	};
 
 	/// <summary>A note about this player's own request, with the error sound.</summary>
 	private void SayGuestNote( OpenTpwText text )

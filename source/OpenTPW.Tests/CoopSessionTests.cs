@@ -115,14 +115,22 @@ public partial class CoopSessionTests
 	/// <summary>The host's local civil time in the tests: an afternoon, moving with the virtual clock.</summary>
 	private DateTime HostTime() => new DateTime( 2026, 10, 21, 15, 0, 0 ).AddSeconds( hostTimeFrozenAt ?? clock );
 
-	/// <summary>A host and a guest of one in-memory session (<see cref="CoopTestNetwork"/>), both parks alike, their sessions started through <see cref="CoopSession"/>.</summary>
-	private (Park Host, Park Guest, CoopTestNetwork.Member HostLink, CoopTestNetwork.Member GuestLink) Shared()
+	/// <summary>
+	/// A host and a guest of one in-memory session (<see cref="CoopTestNetwork"/>), both parks alike (<paramref name="prepare"/> runs on each before the session starts), their sessions started
+	/// through <see cref="CoopSession"/>.
+	/// </summary>
+	private (Park Host, Park Guest, CoopTestNetwork.Member HostLink, CoopTestNetwork.Member GuestLink) Shared( Action<Park>? prepare = null )
 	{
 		network = new CoopTestNetwork( () => clock );
 		var hostLink = network.Add( host: true );
 		var guestLink = network.Add();
 		var host = NewPark();
 		var guest = NewPark();
+		foreach ( var park in new[] { host, guest } )
+		{
+			park.Enter();
+			prepare?.Invoke( park );
+		}
 		host.Pump = () => hostLink.Deliver();
 		guest.Pump = () => guestLink.Deliver();
 		hostLink.Deliver();

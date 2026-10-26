@@ -27,6 +27,12 @@ public interface IParkCommandRights
 	/// clear): a session's guest may not clear what its own Backspace may not. By default yes.
 	/// </summary>
 	bool AllowsPathRemoval( int player, int x, int y ) => true;
+
+	/// <summary>
+	/// [EXT:online-coop-claims] The reason a refusal of <paramref name="command"/> of <paramref name="player"/> by these rights gives, when it has one of its own (another player's claim, C3c-1);
+	/// null for the generic one. By default null.
+	/// </summary>
+	string? RefusalReason( int player, ParkCommand command ) => null;
 }
 
 /// <summary>What became of one command: accepted (it ran) or rejected (nothing changed), with the reason and the value the edit returns to its issuer.</summary>
@@ -112,6 +118,10 @@ public sealed class ParkCommands
 
 	/// <summary>Whether the rights refuse <paramref name="command"/> its player (no rights refuse nothing).</summary>
 	private bool Refuses( ParkCommand command ) => Rights is { } rights && !rights.Allows( command.Player, command );
+
+	/// <summary>[EXT:online-coop-lockstep] The rejection of a command the rights refuse: their own reason (another player's claim, C3c-1), else the generic one.</summary>
+	private ParkCommandResult RightsRefusal( ParkCommand command ) =>
+		ParkCommandResult.Rejected( Rights?.RefusalReason( command.Player, command ) ?? $"Player {command.Player} may not {command.Kind}." ) with { RightsRefused = true };
 
 	/// <summary>[EXT:online-coop-permissions] Whether <paramref name="player"/> may remove <paramref name="item"/> inside a command that removes what it finds: the rights' answer, yes without any.</summary>
 	internal bool AllowsRemoval( int player, OriginalObject item ) => Rights is not { } rights || rights.AllowsRemoval( player, item );
@@ -218,7 +228,7 @@ public sealed class ParkCommands
 		if ( SessionRules && !applyingDue && !applyingRemote && command.Player >= 0 && (FollowsStream || Refuses( command )) )
 		{
 			SessionRefused?.Invoke( command );
-			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." ) with { RightsRefused = Refuses( command ) };
+			return Refuses( command ) ? RightsRefusal( command ) : ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." );
 		}
 		var tick = nextTick();
 		ParkCommandResult result;
@@ -319,7 +329,7 @@ public sealed class ParkCommands
 		if ( command.Player < 0 || Refuses( command ) )
 		{
 			SessionRefused?.Invoke( command );
-			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." ) with { RightsRefused = true };
+			return command.Player < 0 ? ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." ) with { RightsRefused = true } : RightsRefusal( command );
 		}
 		return submit( command ) is { } request ? ParkCommandResult.Sent( request ) : ParkCommandResult.Rejected( "The shared park takes no requests now." );
 	}
@@ -445,7 +455,7 @@ public sealed class ParkCommands
 			return ParkCommandResult.Rejected( "Read-only visit: the park takes no edits." );
 		// the rights are asked of the outermost command only: what runs inside it is that command's, which they allowed
 		if ( depth == 0 && Refuses( command ) )
-			return ParkCommandResult.Rejected( $"Player {command.Player} may not {command.Kind}." ) with { RightsRefused = true };
+			return RightsRefusal( command );
 		if ( depth == 0 )
 			running = command;
 		depth++;

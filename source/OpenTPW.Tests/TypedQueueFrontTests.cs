@@ -219,13 +219,12 @@ public class TypedQueueFrontTests
 	[DataRow( 0 )] [DataRow( 2 )] [DataRow( 0xAA )]
 	public void AnEntryWithoutACardinalBitHasANativeZeroFront( int links )
 	{
-		// tp.exe 0x4DE040 writes the cell word 0 when none of the bits 1, 16, 64 and 4 is set (diagonal bits do not count); the ride is then unconnected (0x4DE4A0)
+		// tp.exe 0x4DE040 writes the cell word 0 when none of the bits 1, 16, 64 and 4 is set (diagonal bits do not count); 0x4DE4A0 then reports the queue ride unconnected (the opening guard keeps ECON-049's permissive answer)
 		var (grid, ride) = Rig( (byte)links );
 		ride.Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 );
 		Assert.IsTrue( ride.ReadNativeFront( grid, out var front, out var direction ) );
 		Assert.IsNull( front );
 		Assert.AreEqual( -1, direction );
-		Assert.IsFalse( ParkGate.QueueConnected( grid, ride ), "a queue ride with no front is not connected" );
 	}
 
 	[TestMethod]

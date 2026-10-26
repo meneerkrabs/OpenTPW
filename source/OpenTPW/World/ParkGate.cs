@@ -266,9 +266,6 @@ public sealed class ParkGate
 	{
 		if ( !ride.HasQueue )
 			return NoQueueEntranceConnected( grid, ride );
-		// [BIN:TPW-EXE:0x004DE4A0 zero front] an entry with no cardinal link bit has no front (0x4DE040 writes 0), so the back of the queue is 0 and the ride is not connected
-		if ( ride.ReadNativeFront( grid, out var nativeFront, out _ ) && nativeFront == null )
-			return false;
 		if ( ride.QueueFrontCell is not { } front || !grid.IsQueue( front.X, front.Y ) )
 			return true;
 		var back = ride.QueueBackCell;

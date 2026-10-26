@@ -94,7 +94,7 @@ Role order everywhere: handyman/cleaner, mechanic, entertainer, guard, researche
 | Advisor `StaffHireMechanics1.PoorerStateThan` | 25 | Worn-ride threshold | data (the headless mechanic dispatch below 25; in a level the mechanics' finder serves only broken and upgrading rides, tp.exe `0x4daa90`) |
 
 Staff states use `STAFFSTATES.str` order (Idle, Patrolling, Working, Resting, On strike, Picked up). In a level a hire starts the Place tool and an employee is picked up and moved with the Carry tool, see [STAFF-PLACEMENT.md](STAFF-PLACEMENT.md).
-Patrol areas are not simulated.
+Patrol areas are simulated in a level: the employee window's patrol button starts the patrol tool, two clicks on the map set the member's rectangle (cell ids `+0x20A`/`+0x20C`, inclusive, whole map by default) and every role's wander keeps to it, walking into it first when outside (tp.exe `0x4B5B50`, `0x524960`, `0x4F9490`, `0x506F30`; [STAFF-PLACEMENT.md](STAFF-PLACEMENT.md), [GUESTS.md](GUESTS.md)). The litter and toilet searches ignore the area.
 
 **Vitals and strikes (ECON-014, traced and executed in the oracle, ORACLE.md F22).** Every member has an energy and a happiness (singles, 0..100,
 both starting at 100). Each park turn a walking member (Patrolling) loses `0.012 x (6 - grade)` energy and `0.005 x (6 - grade)` happiness, a

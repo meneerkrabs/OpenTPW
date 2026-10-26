@@ -8,7 +8,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The player's toilet flow (GitHub issue 829): the door only closes (tp.exe <c>0x48CCF0</c> → <c>0x4DF300</c>) and the call button closes and calls a handyman
+/// The player's toilet flow (GitHub issue 829): the door is a toggle (tp.exe <c>0x48CCF0</c>: <c>0x4DF300</c> closes, <c>0x4DF390</c> opens) and closing sends nobody and the call button closes and calls a handyman
 /// (<c>0x4DFE30</c>), a handyman cleans a dirty toilet he passes whatever its door (<c>0x4D7880</c>), and the end of his clean (<c>0x4D73C0</c> state 11:
 /// <c>0x4DFD80</c>, <c>0x4DF390</c>) resets the gauge, the claim, the call and the script's VAR_WORN, then opens the toilet.
 /// </summary>
@@ -125,6 +125,7 @@ public class ToiletCleaningFlowTests
 		state.Repair = 10;
 		toilet.Runtime.SetVariable( nameof( RideVariables.VAR_WORN ), 1 );
 		state.ScriptWorn = 1;
+		Assert.AreEqual( 1, toilet.Runtime.GetVariable( RideVariables.VAR_WORN ), "the precondition took effect" );
 		Assert.IsTrue( level.Commands.Issue( new SetAttractionOpenCommand( toilet.Runtime.AttractionId, false ) ).Accepted );
 		Assert.IsFalse( toilet.IsOpen );
 		economy.FinishToiletClean( handyman );
@@ -144,6 +145,7 @@ public class ToiletCleaningFlowTests
 		var handyman = HandymanClaiming( economy, state );
 		Assert.IsTrue( level.Commands.Issue( new RequestMaintenanceCommand( toilet.Runtime.AttractionId, true ) ).Accepted );
 		toilet.Runtime.SetVariable( nameof( RideVariables.VAR_WORN ), 1 );
+		Assert.AreEqual( 1, toilet.Runtime.GetVariable( RideVariables.VAR_WORN ), "the precondition took effect" );
 		var answered = false;
 		economy.EventRaised += item => answered |= item.Kind == ParkEventKind.ToiletCleaned && item.Amount == 1;
 		economy.FinishToiletClean( handyman );

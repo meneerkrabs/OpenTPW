@@ -98,7 +98,7 @@ public partial class CoopSessionTests
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 		var context = new UiContext( view.Strings, new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) )
 		{ Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };
-		void Input( UiInput input )
+		void Give( UiInput input )
 		{
 			guest.Enter();
 			hud.Update( context, input, false, false, false );
@@ -120,8 +120,9 @@ public partial class CoopSessionTests
 		hud.PendingSettings.Price = (hud.PendingSettings.Price + 1) % ParkHud.MaximumPrice;
 		close();
 		Assert.AreEqual( 2, Sent(), "the price's command alone" );
-		// a typed price goes when typed, and not again at the close (the price action is the park view's)
-		var camera = Camera.Mode;
+		// a typed price goes when typed, and not again at the close (the price action is the park view's; the text field's focus sets the process's text entry, which the game's frame
+		// clears and a test must put back)
+		var (camera, typing) = (Camera.Mode, Input.TextEntryActive);
 		Camera.Mode = new ParkCameraMode();
 		try
 		{
@@ -129,10 +130,10 @@ public partial class CoopSessionTests
 			var price = (UiButton)hud.Screen.Find( "shopPrice" )!;
 			Assert.IsTrue( price.Visible && price.Enabled, "the price action" );
 			hud.Screen.Focus( price );
-			Input( UiInput.Key( UiKeys.Accept ) );
+			Give( UiInput.Key( UiKeys.Accept ) );
 			Assert.AreEqual( "shopPrice", hud.Stack.Top!.Name );
-			Input( UiInput.Type( $"{(hud.PendingSettings.Price + 7) % ParkHud.MaximumPrice}", 10 ) );
-			Input( UiInput.Key( UiKeys.Accept ) );
+			Give( UiInput.Type( $"{(hud.PendingSettings.Price + 7) % ParkHud.MaximumPrice}", 10 ) );
+			Give( UiInput.Key( UiKeys.Accept ) );
 			Assert.AreEqual( "hud", hud.Stack.Top!.Name, "the editor took the price" );
 			Assert.AreEqual( 3, Sent(), "the typed price's command" );
 			close();
@@ -140,7 +141,7 @@ public partial class CoopSessionTests
 		}
 		finally
 		{
-			Camera.Mode = camera;
+			(Camera.Mode, Input.TextEntryActive) = (camera, typing);
 		}
 		// apply-all sends the window's values to every shop of the type, and the close nothing more
 		open();

@@ -599,6 +599,24 @@ internal static class Game
 					Log.Warning( "--debug-coaster: no site with room for a coaster and its circuit." );
 			}
 		}
+		// Debug builds only: --debug-first-person walk|ride enters the free walk at the park camera's target, or boards the first rideable ride (build one with --debug-coaster open),
+		// once the original level has run for 120 frames, so a capture shows a first-person view (where the original's fog is on).
+		if ( GetOption( args, "--debug-first-person", "walk or ride" ) is { } firstPersonKind )
+		{
+			var firstPersonFrames = 0;
+			Render.PostUpdate += EnterFirstPerson;
+			void EnterFirstPerson()
+			{
+				if ( flow.Level is not { OriginalPark: not null } firstPersonLevel || ++firstPersonFrames < 120 )
+					return;
+				Render.PostUpdate -= EnterFirstPerson;
+				var entered = firstPersonKind == "ride"
+					? firstPersonLevel.Objects.Objects.Where( RideCameraMode.CanRide ).FirstOrDefault() is { } rideable && firstPersonLevel.EnterRideView( rideable )
+					: Camera.Mode is ParkCameraMode parkCamera && firstPersonLevel.EnterFreeWalk( new System.Numerics.Vector3( parkCamera.Target.X, parkCamera.Target.Y, 0 ) );
+				if ( !entered )
+					Log.Warning( "--debug-first-person: the view could not be entered." );
+			}
+		}
 		// [EXT:debug-weather] smoke-only (Debug builds): applies one weather quality through the simulation's own
 		// converter as soon as the park's weather exists, so captures can show rain/snow/lightning without waiting
 		// for the season's rolls. The drops, bolts and thunder still come from ParkWeather's normal machinery;

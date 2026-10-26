@@ -46,42 +46,56 @@ public class ParkCameraMode : CameraMode
 	/// <summary>The nearest zoom value the camera allows: 70 (tp.exe's normal range) or 40 with <see cref="GameOptions.WideZoom"/>.</summary>
 	public float MinimumZoom => wideZoom ? WideMinimumHeight : MinimumHeight;
 	/// <summary>The farthest zoom value the camera allows: 130 (tp.exe's normal range) or 300 with <see cref="GameOptions.WideZoom"/>.</summary>
-	public float MaximumZoom => wideZoom ? WideMaximumFor( RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Start ) : MaximumHeight;
+	public float MaximumZoom => wideZoom ? WideMaximumOverride ?? WideMaximumFor( RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Distance, Screen.Aspect > 0 && float.IsFinite( Screen.Aspect ) ? Screen.Aspect : 16f / 9 ) : MaximumHeight;
+
+	/// <summary>Tests: a fixed far end of the wide range in place of the span list's reach.</summary>
+	internal static float? WideMaximumOverride { get; set; }
+
+	/// <summary>The cells a frame lists at most (<see cref="ProceduralTextureCache.MaximumVisibleCells"/>, <c>0x56F090</c>).</summary>
+	private const float CellCap = ProceduralTextureCache.MaximumVisibleCells;
 
 	/// <summary>
-	/// [EXT:wide-zoom] The farthest zoom value the wide range allows for a fog start (original units): the largest zoom at which the ground point at the top centre of the screen is still before the fog start, never below
-	/// the original's 130 and at most <see cref="WideMaximumHeight"/>. Beyond it the original's own formulas show the whole view as fog (docs/LND.md, "Fog and far plane").
+	/// [EXT:wide-zoom] The farthest zoom value the wide range allows for a ray distance (original units, <c>[0x8BD4C0]</c>) and a display aspect (width over height): the largest zoom at which the ground at the top centre of
+	/// the screen is still inside the hull the span selection lists (<see cref="TerrainVisibleSpans"/>: the corner rays of tangent 1, the ground parameter held at half the ray distance) and that hull holds at most
+	/// <see cref="CellCap"/> cells, on flat ground under the target; never below the original's 130 and at most <see cref="WideMaximumHeight"/>. Beyond it the original's own formulas leave the top of the screen
+	/// without ground (the clear colour shows there, docs/LND.md "The visible cells"). The preset's view distance scale does not enter: it multiplies the fog range of the first-person views only, not the spans.
 	/// </summary>
-	public static float WideMaximumFor( float fogStart )
+	public static float WideMaximumFor( float rayDistance, float aspect )
 	{
-		if ( TopCentreFogDepth( WideMaximumHeight ) < fogStart )
-			return WideMaximumHeight;
-		float low = MaximumHeight, high = WideMaximumHeight;
-		if ( TopCentreFogDepth( low ) >= fogStart )
-			return MaximumHeight;
-		for ( var step = 0; step < 40; step++ )
+		var best = MaximumHeight;
+		for ( var zoom = MaximumHeight; zoom <= WideMaximumHeight + 1e-3f; zoom += 0.25f )
 		{
-			var middle = (low + high) / 2;
-			if ( TopCentreFogDepth( middle ) < fogStart )
-				low = middle;
-			else
-				high = middle;
+			if ( !ListCoversTheScreenTop( zoom, rayDistance, aspect, out var cells ) || cells > CellCap )
+				break;
+			best = zoom;
 		}
-		return Math.Clamp( low, MaximumHeight, WideMaximumHeight );
+		return Math.Min( best, WideMaximumHeight );
 	}
 
-	/// <summary>
-	/// The fog depth w (original units: the projection's w, sin(45 degrees) x the view depth) of the ground at the top centre of the screen for a zoom value, on the ground under the target: the eye is zoom x sin(pitch) above it
-	/// and the top edge's ray descends sin(pitch) - 0.5 cos(pitch) per unit of depth (the screen's half height at unit depth is 0.5, <see cref="OriginalProjection.HalfHeight"/>).
-	/// </summary>
-	public static float TopCentreFogDepth( float zoom )
+	/// <summary>Whether the span hull reaches the screen's top-centre ground point at a zoom value (flat ground, everything in original units), and the cells the hull's quadrilateral holds.</summary>
+	internal static bool ListCoversTheScreenTop( float zoom, float rayDistance, float aspect, out float cells )
 	{
 		var pitch = PitchOf( zoom );
-		var descent = MathF.Sin( pitch ) - OriginalProjection.HalfHeight( OriginalProjection.FieldOfView ) * MathF.Cos( pitch );
-		if ( descent <= 0 )
-			return float.MaxValue;
-		return zoom * MathF.Sin( pitch ) / descent * MathF.Sin( OriginalProjection.FieldOfView * MathF.PI / 360f );
+		float sin = MathF.Sin( pitch ), cos = MathF.Cos( pitch );
+		var eye = zoom * sin;
+		var half = rayDistance * 0.5f;
+		var spanHalfHeight = MathF.Tan( TerrainViewSpans.FieldOfView * MathF.PI / 360f );
+		var screenHalfHeight = OriginalProjection.HalfHeight( OriginalProjection.FieldOfView );
+		// the span rays (fwd +- spanHalfHeight x up) meet the ground at eye / descent per unit of depth, held at half the ray distance
+		float Parameter( float descent ) => descent > 1e-6f ? Math.Min( eye / descent, half ) : half;
+		var top = Parameter( sin - spanHalfHeight * cos );
+		var bottom = Parameter( sin + spanHalfHeight * cos );
+		float topForward = top * (cos + spanHalfHeight * sin), bottomForward = bottom * (cos - spanHalfHeight * sin);
+		var topWidth = top * aspect * spanHalfHeight;
+		var bottomWidth = bottom * aspect * spanHalfHeight;
+		cells = (topWidth + bottomWidth) * (topForward - bottomForward) / 100f;
+		var screenDescent = sin - screenHalfHeight * cos;
+		if ( screenDescent <= 1e-6f )
+			return true;
+		var screenForward = eye / screenDescent * (cos + screenHalfHeight * sin);
+		return topForward >= screenForward;
 	}
+
 	/// <summary>The bearing of the eye from the target in degrees (the eye is at <c>Target + (cos, sin) * distance</c>); the original's yaw 0 is -90 here (<see cref="OriginalYaw"/>).</summary>
 	public float Yaw { get; private set; } = HomeYaw;
 	/// <summary>The yaw of the Home pose: the original's yaw 0 looks along +Y (its +z), so the eye sits to the -Y side of the target.</summary>

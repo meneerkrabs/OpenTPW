@@ -13,7 +13,8 @@ public class TerrainListGateTests
 	public void BeforeAnySceneChangeOnlyAMovedCameraBuildsTheListAndOnlyForThatFrame()
 	{
 		var gate = new TerrainListGate();
-		Assert.IsFalse( gate.Frame( Camera( 5 ) ), "the very first frame compares nothing and sets nothing" );
+		Assert.IsTrue( gate.Frame( Camera( 5 ) ), "the very first frame compares nothing but 0x5836B0 sets 0x40000000 for it" );
+		Assert.IsFalse( gate.Persistent );
 		Assert.IsTrue( gate.Frame( Camera( 5 ) ), "the copy at 0x87A680 starts as the identity, which this camera is not" );
 		Assert.IsFalse( gate.Frame( Camera( 5 ) ), "the same 64 bytes: no list, no lookup" );
 		Assert.IsFalse( gate.Frame( Camera( 5 ) ) );

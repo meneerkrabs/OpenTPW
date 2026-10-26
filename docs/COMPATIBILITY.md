@@ -223,7 +223,7 @@ Original values ([DATA:Data/low.sam, med.sam, high.sam]):
 | MIPMAP | 1 | 1 | 1 | 1 | **applied** |
 | RENDER32 / TEXTURE32 | 0/0 | 0/0 | 0/0 | 1/1 | always 32-bit |
 | BUMPMAPPING / LIGHTING / FORCELOWALPHAREF | 0/0/0 | 0/1/0 | 0/1/0 | 0/1/0 | not applied |
-| FIRSTPERSONVIEWDISTANCE (0..3) | 0 | 1 | 2 | 3 | **applied**: the ray distance of the visible-cell spans (200, 325, 450, 700 original units) and the fog's start and end (50-60, 100-110, 135-150, 230-250), linear in the projection's depth (docs/LND.md "Fog and far plane", UI-107); there is no first-person view |
+| FIRSTPERSONVIEWDISTANCE (0..3) | 0 | 1 | 2 | 3 | **applied**: the ray distance of the visible-cell spans (200, 325, 450, 700 original units) and, in the ride and free walk views only (the original has fog only in its first-person views, none in the park overview, the lobby or the globe), the fog's start and end (50-60, 100-110, 135-150, 230-250), linear in the projection's depth (docs/LND.md "Fog and far plane", UI-107); also sets the extension's wide-zoom far end |
 | COASTERSMOOTHNESS (1..8) / COASTERTRACKDETAIL | 1/0 | 4/1 | 6/1 | 8/1 | exposed for the rides slice |
 | PARTICLEDENSITY / TOTALPARTICLES (simulation) | 500/1000 | 1000/3200 | 1500/2000 | 1500/2000 (2000 with `enhanced-game-options`) | density applied to the particle pool at park start; TOTALPARTICLES unread, as in tp.exe |
 | NUMKIDS (0→4, 1→6, 2→8, 3→max; simulation) | 0 | 2 | 2 | 2 (3 with `enhanced-game-options`) | exposed for the guests slice |

@@ -19,7 +19,7 @@ public class RenderFogTests
 	public void RestoreTheColour()
 	{
 		RenderFog.WorldColour = RenderFog.ColourOf( RenderFog.LobbyColour );
-		RenderFog.SetParkRange( 2 );
+		RenderFog.Reset();
 	}
 
 	[DataTestMethod]
@@ -71,8 +71,19 @@ public class RenderFogTests
 		RenderFog.SetParkRange( 2 );
 		Assert.AreEqual( 135f * 0.2f / MathF.Sin( MathF.PI / 4 ), RenderFog.ViewRange.Start, 1e-4f );
 		Assert.AreEqual( 150f * 0.2f / MathF.Sin( MathF.PI / 4 ), RenderFog.ViewRange.End, 1e-4f );
-		RenderFog.SetLobbyRange();
-		Assert.AreEqual( 50f / MathF.Sin( LobbyCameraMode.IslandFieldOfView * MathF.PI / 360f ), RenderFog.ViewRange.Start, 1e-3f, "the lobby's units are the original's" );
+	}
+
+	[TestMethod]
+	public void FogIsOnlyInTheFirstPersonViewsAndOffWhenDisabled()
+	{
+		// tp.exe adds the fog bit 0x100000 to a draw only while bit 0x2000 of [0x8BCBC8] is set (0x570E9A, 0x565FA6, 0x58179F); the park frame toggles it with [0x790AB0] & 0x16
+		RenderFog.Reset();
+		Assert.AreEqual( 0f, RenderFog.PackedRange( 1 ), "no scene has asked for fog" );
+		RenderFog.SetParkRange( 2 );
+		Assert.IsTrue( RenderFog.PackedRange( 1 ) > 0 );
+		RenderFog.Disable();
+		Assert.AreEqual( 0f, RenderFog.PackedRange( 1 ), "the overview, the lobby and the globe are not fogged" );
+		Assert.AreEqual( 0f, new ObjectUniformBuffer().WithFog()._padding2 );
 	}
 
 	[TestMethod]

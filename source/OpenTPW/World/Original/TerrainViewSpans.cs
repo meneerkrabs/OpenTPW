@@ -20,14 +20,14 @@ internal sealed class TerrainViewSpans
 	public TerrainViewSpans( ModelHeightfield field )
 	{
 		this.field = field;
-		// [BIN:TPW-EXE:0x0056E6C0 landscape header] the span selection's lowest and highest height are the heightfield header's +0x20 and +0x24 (0x56B830 reads them into the landscape object's +0x30 and +0x34), the stored bracket and not the corners' own minimum and maximum
-		lowHeight = MathF.Truncate( field.StoredLowerHeight );
-		highHeight = MathF.Truncate( field.StoredUpperHeight );
+		// [BIN:TPW-EXE:0x0056E6C0 landscape header] the span selection's lowest and highest height are the heightfield header's +0x20 and +0x24 (0x56B830 copies the raw floats into the landscape object's +0x30 and +0x34), the stored bracket and not the corners' own minimum and maximum
+		lowHeight = field.StoredLowerHeight;
+		highHeight = field.StoredUpperHeight;
 	}
 
 	public TerrainVisibleSpans Spans { get; } = new();
 
-	/// <summary>The lowest and highest height the span selection is given: the heightfield header's stored bracket, truncated to whole units.</summary>
+	/// <summary>The lowest and highest height the span selection is given: the heightfield header's stored bracket, as stored.</summary>
 	public (float Low, float High) Heights => (lowHeight, highHeight);
 
 	/// <summary>

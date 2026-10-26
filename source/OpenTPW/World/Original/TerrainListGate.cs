@@ -9,7 +9,7 @@ using SysMatrix = System.Numerics.Matrix4x4;
 /// <remarks>
 /// The frame function <c>0x576EC0</c> keeps the flag word of the frame's start (<c>local_98</c>) and puts it back at the end (<c>0x577326</c>), so a bit set during the frame lasts only for it and a bit set before it stays:
 /// bit 0x80000000 is set during the frame when the 64 bytes of the camera matrix differ from the copy at <c>0x87A680</c> (<c>0x5773BE</c> to <c>0x5773E1</c>, only while the flags
-/// are clear; the copy is refreshed every frame; the very first frame, with <c>[0x768AAC]</c> not yet 1, neither compares nor sets) or when there is more than one viewport (<c>0x5773FB</c>), and at the frame's very start when bit 0x40 is set
+/// are clear; the copy is refreshed every frame; the very first frame, with <c>[0x768AAC]</c> not yet 1, compares nothing but calls <c>0x5836B0</c> (<c>0x57734F</c>), which sets 0x40000000 for that frame) or when there is more than one viewport (<c>0x5773FB</c>), and at the frame's very start when bit 0x40 is set
 /// (<c>0x576ECB</c>; the flag is kept like the others). The scene-change setters <c>0x576574</c>, <c>0x576603</c>, <c>0x5767CA</c>, <c>0x473D9E</c>, <c>0x477177</c>, <c>0x477FAE</c> and <c>0x4786A7</c> set it outside the frame, so it
 /// is part of the next frame's start flags and stays: nothing in the executable was found to clear it, so after the first scene change the list is built in every frame and the camera compare is never reached again.
 /// </remarks>
@@ -41,8 +41,9 @@ internal sealed class TerrainListGate
 		}
 		if ( !seenFrame )
 		{
-			// [0x768AAC] is not 1 yet: the first frame sets it and compares nothing
+			// [0x768AAC] is not 1 yet: the first frame sets it, compares nothing and runs 0x5836B0, which sets 0x40000000 for this frame only
 			seenFrame = true;
+			run = true;
 		}
 		else
 		{

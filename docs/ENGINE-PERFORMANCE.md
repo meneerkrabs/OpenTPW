@@ -415,22 +415,23 @@ goes round a circle of 30 units, so the cells in view change every frame); "stil
 | Panning | 110 (Home) | 1.39, 1.41 | 1.51, 1.53 | 3.22, 3.21 | 3.75, 4.04 |
 | Panning | 300 | 3.32, 3.34 | 71.9, 57.9 | 5.81, 5.00 | 120, 65.1 |
 
-At the Home zoom the frame cost is the main build's within the run-to-run spread when still, and about 0.12 ms more while panning. At zoom 300 it is not: the span selection is the original's, whose rays are twice as wide as the screen, and at that zoom it lists 2500 cells (the cap of a frame, `0x56F090`), which is more than the High preset's cache of 2000, so the ring evicts every cell before it is needed again and every frame
-builds 2000 textures (about 55 ms); the original does the same with its wide zoom flag, and the ground is all fog colour there at the High preset (docs/LND.md, "Fog and far plane"). The ordinary range (70 to 130) lists 900 to 1750 cells. A first view builds its cells before the frame draws (the Home view lists 898 cells and builds them in 37 ms on this Mac, 0.04 ms a cell at N = 32; the smoke's resume capture lists 1062).
+At the Home zoom the frame cost is the main build's within the run-to-run spread when still, and about 0.12 ms more while panning. At zoom 300 with setting 3 (a zoom the wide range no longer reaches there) it is not: the span selection is the original's, whose rays are twice as wide as the screen, and at that zoom it lists 2500 cells (the cap of a frame, `0x56F090`), which is more than the High preset's cache of 2000, so the ring evicts every cell before it is needed again and every frame
+builds 2000 textures (about 55 ms); the original does the same with its wide zoom flag (docs/LND.md, "Fog and far plane"); the extension's wide zoom stops short of such a view. The ordinary range (70 to 130) lists 900 to 1750 cells. A first view builds its cells before the frame draws (the Home view lists 898 cells and builds them in 37 ms on this Mac, 0.04 ms a cell at N = 32; the smoke's resume capture lists 1062).
 The terrain computes the spans every frame (a few hundred floating point operations), looks the cells up when the original's gate lets it (docs/LND.md; in practice every frame once the level has changed), and rewrites the mesh of at most 2500 cells only when the list or a texture changed. The hole answers of the pools extension are kept per hole version.
 
 
-**At the wide zoom's new far end** (the range ends where the top of the screen still shows ground before the fog, docs/LND.md; one round, Release, Jungle, `--perf-run 9000` with 150 guests; 3000 frames for the last two rows; frame average ms, p99 in brackets; "panning" adds `--perf-pan`):
+**At the wide zoom's far end** (the largest zoom whose top-centre ground the span list still reaches, at most 2500 cells, docs/LND.md and UI.md; one round, Release, Jungle, `--perf-run 9000` with 150 guests, 16:9; frame average ms, p99 in brackets; "panning" adds `--perf-pan`; setting 0 ends at 130, the original range):
 
 | Setting, preset, cache | Zoom | Still | Panning | main at the same zoom (still, panning) |
 | --- | ---: | ---: | ---: | ---: |
-| 2, High (32 texels, 2000 cells) | 173 | 1.40 (2.43) | 1.47 (3.06) | 1.37, 1.38 |
-| 2, 64 texels, 2500 cells | 173 | 1.40 (2.42) | 1.56 (3.34) | 1.37, 1.38 |
-| 3, 32 texels, 2000 cells | 300 | 56.6 (61.1) | 54.9 (59.5) | 3.04, 2.67 |
-| 3, 64 texels, 2500 cells | 300 | 2.95 (4.12) | 4.76 (17.7) | 3.04, 2.67 |
-| 3, Enhanced preset with its old 2000 slots (64 texels) | 300 | 152.6 (190.6) | 148.0 (156.0) | 3.04, 2.67 |
+| 1, High (32 texels, 2000 cells) | 282.75 | 2.92 (4.82) | 2.65 (4.66) | 2.92, 2.46 |
+| 1, Enhanced (64 texels, 2500 cells) | 282.75 | 2.84 (3.87) | 3.15 (6.59) | 2.92, 2.46 |
+| 2, High (32 texels, 2000 cells) | 183.75 | 1.49 (2.74) | 1.51 (3.32) | 1.45, 1.44 |
+| 2, Enhanced (64 texels, 2500 cells) | 183.75 | 1.42 (2.13) | 1.93 (4.76) | 1.45, 1.44 |
+| 3, High (32 texels, 2000 cells) | 183.75 | 1.44 (1.97) | 1.66 (3.96) | 1.49, 1.41 |
+| 3, Enhanced (64 texels, 2500 cells) | 183.75 | 1.52 (3.00) | 1.72 (4.26) | 1.49, 1.41 |
 
-At zoom 173 the list is about 1400 cells, which fits every cache, and the frame cost is main's. Setting 3 at zoom 300 lists the cap of 2500 cells: a cache of 2500 holds them, but the High preset's 2000 slots do not (the Enhanced preset, our own, now has the cache option 2 = 2500 slots, so it fits), so every frame evicts what it needs next and builds 2000 textures: 55 ms at 32 texels and 150 ms at 64 texels. That is the original's own behaviour for a list larger than its cache, not worked around here.
+At every far end the measured frame cost is main's within the run-to-run spread (about 0.1 to 0.5 ms more while panning): the lists there fit the High preset's 2000 slots too, nothing is rebuilt in a steady frame. The far end is chosen from a flat-ground model of the list (at most 2500 cells), so a park with steep ground may list more than the model; the High preset then evicts as described above. The thrash that the earlier rule (zoom 300 at setting 3) produced, a list of 2500 cells against 2000 slots, is not reached at these zooms.
 
 In the browser (AOT page, headless Chrome 155 with `--mute-audio`, `tools/web-perf/run.mjs --scenarios jungle --window 15`, three runs of each build, Apple M5; final code): the first view is built in the park's entering frame, whose largest frame is 76, 79.7 and 73.4 ms against 46, 48.6 and 47.2 ms of the main build, about 28 ms once (the 898 cells of the Home view); the page is ready in 9.62, 9.43 and 9.44 s against 9.42, 9.59 and 9.42 s, and the steady window
 is the same (main thread busy 9.1, 8.3 and 8.7 % against 9.9, 8.3 and 8.1 %, frame p95 1.6, 1.5 and 1.5 ms against 1.7, 1.5 and 1.5 ms, 60 fps, no long task). The browser builds every listed cell before it draws, as the desktop does; there is no per frame budget and no static stand-in texture. The fog and the far plane add no measurable cost there.

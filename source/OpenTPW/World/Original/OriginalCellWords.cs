@@ -49,7 +49,7 @@ internal sealed class OriginalCellWords
 
 	/// <summary>
 	/// The cell's backup word again, as the removal of its occupant leaves it (<c>0x46DF50</c> mode 0x37 copies the backup word and sets the dirty bit 0x100, which the procedural terrain turns into
-	/// a rebuild of the cell's texture; the turn and mirror bits are cleared again while the texturing is on, so the word is the backup's without them).
+	/// a rebuild of the cell's texture, <see cref="ProceduralTerrain"/>; with the texturing on it also clears the turn and mirror bits, which nothing here reads: the procedural terrain ignores them).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0046DF50 word restore] mode 0x37 (the cleared cell, reached from 0x5365D0 for a cell of type 0 or 5): the high and low halves are copied from the backup landscape [0x79FC54], byte 1 |= 1 (the dirty bit), and the turn and mirror bits (0xFF87 mask) are cleared when [0x7A1A8C] has 0x4000
 	public bool Restore( int x, int z )

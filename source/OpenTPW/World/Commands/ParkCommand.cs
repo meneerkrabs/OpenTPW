@@ -122,6 +122,10 @@ public enum ParkCommandKind : byte
 	PlacePoolBridge = 76,
 	/// <summary>Takes a pool bridge down (<see cref="RemovePoolBridgeCommand"/>).</summary>
 	RemovePoolBridge = 77,
+	/// <summary>[EXT:online-coop-commands] Paints or erases a guest's batch of pool cells (<see cref="PoolCellsCommand"/>).</summary>
+	PoolCells = 78,
+	/// <summary>[EXT:online-coop-commands] Lays a guest's batch of pool slide pieces (<see cref="LayPoolSlidePiecesCommand"/>).</summary>
+	LayPoolSlidePieces = 79,
 	/// <summary>Lays one line of a kart or water ride's track (<see cref="LayTrackLineCommand"/>).</summary>
 	LayTrackLine = 80,
 	/// <summary>Takes back one line of a kart or water ride's track (<see cref="UndoTrackLineCommand"/>).</summary>

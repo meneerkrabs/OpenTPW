@@ -175,6 +175,9 @@ public partial class Level
 		WaitingToolStart = null;
 		WaitingBacktrack = null;
 		waitingSales = null;
+		// [EXT:online-coop-commands] a guest's pool tool ends with its session, and its strokes go without a report (C3b-3)
+		if ( Commands.Player > ParkCommands.LocalPlayer )
+			PoolTool?.EndGuestStrokes();
 		// [EXT:online-coop-commands] a guest's Move tool disarms without an end command: its carry goes with the session's state (C3b-2), and the park is shared no more
 		if ( IsMoving && Commands.Player > ParkCommands.LocalPlayer )
 		{
@@ -376,6 +379,9 @@ public partial class Level
 
 	/// <summary>[EXT:online-coop-commands] Whether a pick-up of this guest is open in the session's requests, from this park or the one a resync replaced (C3b-2).</summary>
 	internal bool HasOpenPickUp => CoopSession?.GuestCommands?.Open.Any( request => request.Command is PickUpObjectCommand ) == true;
+
+	/// <summary>[EXT:online-coop-commands] How many pool tool requests of this guest are open in the session's requests, from this park or the one a resync replaced (C3b-3): the pool tool's budget.</summary>
+	internal int OpenPoolRequests => CoopSession?.GuestCommands?.Open.Count( request => request.Command is PoolToolCommand ) ?? 0;
 
 	/// <summary>
 	/// [EXT:online-coop-commands] The guest's pick-up came back accepted (C3b-2): the Move tool arms with the type it carries, as <see cref="BeginMove"/> does once its pick-up applied, if

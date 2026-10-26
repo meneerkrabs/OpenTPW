@@ -123,5 +123,38 @@ public partial class CoopJoinSessionTests
 		UntilTheCarryEnds( guest, seat );
 		CatchUpAndCompare( guest );
 	}
+	[TestMethod]
+	public void AGuestsPoolStrokeAcrossAResyncLeavesItsRequestsToTheSessionAndTheNewParksToolHasNone()
+	{
+		var guest = Hosted( 1 ).Single();
+		Build( 60, 64 );
+		var seat = guest.Link.Slot;
+		host.Issue( new SetBuildGrantCommand( seat, true ) );
+		RoundsUntil( () => guest.Level!.HasBuildGrant( seat ), "the grant reached the guest" );
+		guest.Enter();
+		var old = guest.Level!;
+		var tool = old.PoolTool!;
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		// the host applies the press's batch, and the guest never gets the frame that holds its record: a resync follows
+		guest.Link.DropFrame = _ => true;
+		tool.Press( 20, 26 );
+		tool.SendGuestBatches( clock );
+		var requests = guest.Session!.GuestCommands!;
+		var first = requests.LastSubmitted!;
+		Assert.IsInstanceOfType( first.Command, typeof( PoolCellsCommand ) );
+		RoundsUntil( () => host.Level!.Commands.Log.Any( entry => entry.Command is PoolCellsCommand && entry.Command.Player == seat ), "the host applied the batch" );
+		guest.Link.Send( host.Link.Id, new CoopResendRequest( 1, 0 ).Encode() );
+		RoundsUntil( () => guest.Session.Phase == CoopGuestPhase.Resyncing, "the guest lost the stream and asked for the park" );
+		Assert.AreEqual( 1, old.OpenPoolRequests, "the batch is open in the session's requests" );
+		guest.Link.DropFrame = null;
+		RoundsUntil( () => guest.Level != old && !first.IsOpen, "the park was swapped in" );
+		Assert.AreEqual( CoopGuestRequestState.InSnapshot, first.State, "the batch is inside the cut" );
+		guest.Enter();
+		var level = guest.Level!;
+		Assert.AreNotSame( tool, level.PoolTool, "the new park has its own tool" );
+		Assert.IsFalse( level.PoolTool!.HasGuestBatches, "with no stroke" );
+		Assert.AreEqual( ParkCellTypes.PoolWater, level.Guests!.Grid.Cells.RawTypeAt( 20, 26 ), "the snapshot holds the painted cell" );
+		Build( 30, 65 );
+		CatchUpAndCompare( guest );
+	}
 }
-

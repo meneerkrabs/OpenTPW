@@ -428,7 +428,13 @@ internal sealed class CoopSession : IDisposable
 	/// A guest's own click was refused by the session's rights: its HUD says why, in its words: building the host has not granted it yet, or a command only the host may issue
 	/// ([EXT:online-coop-permissions]).
 	/// </summary>
-	private void OnRefused( ParkCommand command ) => level?.NoteSessionRefusal( level.Commands.Rights is CoopBuildRights rights && rights.Builds( command ) );
+	private void OnRefused( ParkCommand command )
+	{
+		// [EXT:online-coop-commands] a batch, bridge or slide undo the guest's pool tool sends says its refusal in its stroke's report, once for the stroke (C3b-3)
+		if ( level?.PoolTool is { SendingGuestBatch: true } )
+			return;
+		level?.NoteSessionRefusal( level.Commands.Rights is CoopBuildRights rights && rights.Builds( command ) );
+	}
 
 	/// <summary>[EXT:online-coop-commands] A guest's command for the host, as a request of the session's (null once it ended).</summary>
 	private CoopGuestCommands.Request? SubmitRequest( ParkCommand command )

@@ -240,4 +240,26 @@ public class TypedQueueFrontTests
 		Assert.AreEqual( 0, direction );
 		Assert.IsTrue( ParkGate.QueueConnected( typedGrid, typed ), "a front that holds no queue cell keeps the permissive answer" );
 	}
+
+	[TestMethod]
+	public void TheReevaluationRaisesTheCounterAndStampsNoBlockForAZeroFront()
+	{
+		// tp.exe 0x4DE1F0: the counter 0x7CDB98 rises (0x4D8C50) and 0x4D8C60 stamps the back cell's block only for a nonzero cell word; a zero front has back 0
+		var (grid, ride) = Rig( 0 );
+		ride.Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 );
+		var counter = grid.Cells.StampCounter;
+		var block = grid.Cells.BlockStamp( 0, 0 );
+		ride.NotifyQueueEdited( grid );
+		Assert.AreEqual( counter + 1, grid.Cells.StampCounter );
+		Assert.AreEqual( block, grid.Cells.BlockStamp( 0, 0 ), "no block was stamped" );
+		var (stampedGrid, stamped) = Rig( 1 );
+		stamped.Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 );
+		stamped.RecomputeQueue( stampedGrid );
+		stamped.NotifyQueueEdited( stampedGrid );
+		Assert.AreEqual( stampedGrid.Cells.StampCounter, stampedGrid.Cells.BlockStamp( 0, 0 ), "a front's block takes the new counter" );
+		var before = stampedGrid.Cells.StampCounter;
+		stamped.NotifyQueueEdited( stampedGrid, stampBack: false );
+		Assert.AreEqual( before + 1, stampedGrid.Cells.StampCounter );
+		Assert.AreEqual( before, stampedGrid.Cells.BlockStamp( 0, 0 ), "the entrance-clear evaluation stamps no block" );
+	}
 }

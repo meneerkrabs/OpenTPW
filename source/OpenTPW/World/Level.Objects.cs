@@ -317,7 +317,8 @@ public partial class Level
 		if ( Guests is not { } guests || guests.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( ride => ride.OwnerWord == owner && ride.HasCells ) is not { } found )
 			return;
 		found.RecomputeQueue( guests.Grid );
-		found.NotifyQueueEdited( guests.Grid );
+		// the clear just took the entrance's link toward the front off, so the front the selector finds is 0 unless another bit is set (0x4DE040): the counter rises and no block is stamped
+		found.NotifyQueueEdited( guests.Grid, stampBack: false );
 	}
 
 	/// <summary>

@@ -872,10 +872,16 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// the queue's back cell gets a new block stamp, so a guest whose walk crosses its block searches again.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation stamp] after the back cell is recomputed (0x4DE130) the counter 0x7CDB98 is raised by one (0x4D8C50, 0x4DE233) and written into the 16 x 16 block of that back cell (0x4D8C60, 0x4DE266) before the open test; the callers are the queue tool's cell click and the cell setter and clear (0x4DE1F0 callers)
-	internal void NotifyQueueEdited( GuestPathGrid? grid = null )
+	internal void NotifyQueueEdited( GuestPathGrid? grid = null, bool stampBack = true )
 	{
+		// [BIN:TPW-EXE:0x004D8C60 no block for cell 0] a back cell of 0 (a zero front: 0x4DE040 found no cardinal link bit, 0x4DE130 returns 0) raises the counter (0x4D8C50) but stamps no block (0x4D8C60 tests the cell word first)
 		if ( grid != null )
-			grid.Cells.StampBlockAt( QueueBackCell.X, QueueBackCell.Y );
+		{
+			if ( stampBack && !(ReadNativeFront( grid, out var native, out _ ) && native == null) )
+				grid.Cells.StampBlockAt( QueueBackCell.X, QueueBackCell.Y );
+			else
+				grid.Cells.StampBlockAt( -1, -1 );
+		}
 		QueueEdited?.Invoke();
 	}
 

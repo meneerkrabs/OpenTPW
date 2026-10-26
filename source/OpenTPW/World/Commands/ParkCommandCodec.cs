@@ -7,13 +7,26 @@ namespace OpenTPW;
 /// [EXT:online-coop-commands] The stable, versioned byte form of a <see cref="ParkCommand"/> (docs/COOP.md, "Serialization"). A command is an envelope (its
 /// <see cref="Version"/>, its <see cref="ParkCommandKind"/> tag, the player) and its fields in their declared order: integers as zigzag LEB128 varints, strings as a
 /// varint byte length and UTF-8, floats by their bit pattern, cell lists as a varint count and pairs. The same command always has the same bytes, on every platform.
-/// A change of any command's fields takes a new <see cref="Version"/>; the schema test pins the bytes of every kind.
+/// A change of any command's fields takes a new generation, written by the kinds that changed (<see cref="VersionOf"/>); the schema tests pin the bytes of every kind in each.
 /// </summary>
 public static class ParkCommandCodec
 {
-	/// <summary>The command format version written into every command.</summary>
-	public const int Version = 2;
+	/// <summary>
+	/// The newest command format. Each kind writes its own generation (<see cref="VersionOf"/>): version 1 for every legacy kind, <see cref="QueueVersion"/> for the native queue kinds,
+	/// and [EXT:online-coop-commands] <see cref="ExpectationVersion"/> for a stale-checked command that carries its expectation (C4b), so every command an older build wrote keeps its bytes.
+	/// </summary>
+	public const int Version = 3;
+	/// <summary>The native queue kinds' generation (<see cref="QueueSegmentCommand"/>, <see cref="UndoQueueSegmentCommand"/>).</summary>
+	public const int QueueVersion = 2;
+	/// <summary>
+	/// [EXT:online-coop-commands] The generation of a stale-checked command with its expectation (<see cref="IStaleChecked"/>: a guest's level upgrade, its cancellation and its research
+	/// move, C4b), whose expectation fields follow its own; the same kinds without one keep version 1.
+	/// </summary>
+	public const int ExpectationVersion = 3;
 	internal static bool IsNativeQueue( ParkCommand command ) => command is QueueSegmentCommand or UndoQueueSegmentCommand;
+	/// <summary>The generation <paramref name="command"/> is written in.</summary>
+	internal static int VersionOf( ParkCommand command ) => IsNativeQueue( command ) ? QueueVersion : command is IStaleChecked { HasExpectation: true } ? ExpectationVersion : 1;
+	private static bool IsStaleCheckedKind( ParkCommandKind kind ) => kind is ParkCommandKind.BuyUpgrade or ParkCommandKind.CancelUpgrade or ParkCommandKind.MoveResearch;
 	/// <summary>The bound of a cell coordinate a command may carry (the largest park map is far smaller).</summary>
 	public const int MaximumCoordinate = 4096;
 	/// <summary>The most cells one command's cell list may hold.</summary>
@@ -43,7 +56,7 @@ public static class ParkCommandCodec
 	{
 		ArgumentNullException.ThrowIfNull( command );
 		var writer = new ParkCommandWriter();
-		writer.Int( IsNativeQueue( command ) ? Version : 1 );
+		writer.Int( VersionOf( command ) );
 		writer.Byte( (byte)command.Kind );
 		writer.Int( command.Player );
 		command.WriteFields( writer );
@@ -53,20 +66,24 @@ public static class ParkCommandCodec
 		return bytes;
 	}
 
-	/// <summary>Reads one command; throws <see cref="InvalidDataException"/> for bytes that are not exactly one well-formed command of this version.</summary>
+	/// <summary>Reads one command; throws <see cref="InvalidDataException"/> for bytes that are not exactly one well-formed command of a generation its kind has.</summary>
 	public static ParkCommand Decode( ReadOnlySpan<byte> bytes )
 	{
 		if ( bytes.Length > MaximumBytes )
 			throw new InvalidDataException( $"A command of {bytes.Length} bytes is longer than {MaximumBytes}." );
 		var reader = new ParkCommandReader( bytes.ToArray() );
 		var version = reader.Int();
-		if ( version is not (1 or Version) )
-			throw new InvalidDataException( $"Park command version {version} is not {Version}." );
+		if ( version is not (1 or QueueVersion or ExpectationVersion) )
+			throw new InvalidDataException( $"Park command version {version} is none of 1 to {Version}." );
 		var kind = (ParkCommandKind)reader.Byte();
 		if ( version == 1 && kind is ParkCommandKind.QueueSegment or ParkCommandKind.UndoQueueSegment )
 			throw new InvalidDataException( "Native queue commands require version 2." );
-		if ( version == 2 && kind is not (ParkCommandKind.QueueSegment or ParkCommandKind.UndoQueueSegment) )
+		if ( version == QueueVersion && kind is not (ParkCommandKind.QueueSegment or ParkCommandKind.UndoQueueSegment) )
 			throw new InvalidDataException( "Legacy command kinds retain their canonical version 1 encoding." );
+		// [EXT:online-coop-commands] version 3 is a stale-checked command's with its expectation, which the kind's reader then reads (C4b)
+		if ( version == ExpectationVersion && !IsStaleCheckedKind( kind ) )
+			throw new InvalidDataException( $"A {kind} command has no version {ExpectationVersion} form." );
+		reader.Version = version;
 		var player = reader.Int();
 		if ( player < 0 )
 			throw new InvalidDataException( $"Player {player} is negative." );
@@ -181,6 +198,12 @@ public sealed class ParkCommandReader
 	private int position;
 
 	public ParkCommandReader( byte[] bytes ) => this.bytes = bytes ?? throw new ArgumentNullException( nameof( bytes ) );
+
+	/// <summary>The generation of the command being read (<see cref="ParkCommandCodec.VersionOf"/>): a stale-checked kind reads its expectation in <see cref="ParkCommandCodec.ExpectationVersion"/>.</summary>
+	public int Version { get; internal set; } = 1;
+
+	/// <summary>[EXT:online-coop-commands] Whether the command being read carries a stale-checked command's expectation (C4b).</summary>
+	internal bool HasExpectation => Version == ParkCommandCodec.ExpectationVersion;
 
 	public bool AtEnd => position == bytes.Length;
 	public int Remaining => bytes.Length - position;

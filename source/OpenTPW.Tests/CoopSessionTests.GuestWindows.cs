@@ -69,15 +69,15 @@ public partial class CoopSessionTests
 		hud.CloseLoansWindow();
 		view.Update();
 		Assert.AreEqual( refusals, guest.Level.SessionRefusals, "no command went, so nothing was refused" );
-		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) );
-		// a change the player made goes, and only the host may make it
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) + view.Says( OpenTpwText.CoopNotPermitted ) );
+		// a change the player made goes, and the guest has no right to make it (C4b: the attractions right is not offered yet)
 		hud.SelectObject( guest.One );
 		view.Update();
 		hud.PendingSettings.Ride = hud.PendingSettings.Ride with { Speed = hud.PendingSettings.Ride.Speed + 1 };
 		hud.SelectObject( null );
 		view.Update();
 		Assert.AreEqual( refusals + 1, guest.Level.SessionRefusals, "the changed ride's apply" );
-		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopHostOnly ) );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ) );
 		CatchUpAndCompare( host, guest );
 	}
 

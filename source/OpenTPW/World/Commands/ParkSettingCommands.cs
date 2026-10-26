@@ -40,6 +40,15 @@ public abstract record ParkSettingCommand : ParkCommand
 	/// <summary>The rejection of a command that names no employee.</summary>
 	private protected static ParkCommandResult NoStaff( int staff ) => ParkCommandResult.Rejected( $"No employee {staff}." );
 
+	/// <summary>
+	/// [EXT:online-coop-commands] The reason a stale-checked command whose expectation no longer holds gives (<see cref="IStaleChecked"/>, C4b): what its window showed is gone, and the
+	/// window says that it is not available.
+	/// </summary>
+	internal const string StaleReason = "What this asked for is no longer there.";
+
+	/// <summary>[EXT:online-coop-commands] The rejection of a stale-checked command whose expectation no longer holds.</summary>
+	private protected static ParkCommandResult Stale() => ParkCommandResult.Rejected( StaleReason );
+
 	/// <summary>Whether <paramref name="value"/> is text a command can carry: valid UTF-16 whose UTF-8 form fits the codec's string bound, so it decodes to the same string.</summary>
 	internal static bool IsText( string? value )
 	{
@@ -91,11 +100,12 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.SetTrainingBudget => new SetTrainingBudgetCommand( (StaffType)reader.Int(), reader.Long() ),
 		ParkCommandKind.SetResearchEffort => new SetResearchEffortCommand( (ResearchCategory)reader.Int(), reader.Int() ),
 		ParkCommandKind.SetResearchWorkload => new SetResearchWorkloadCommand( reader.Int() ),
-		ParkCommandKind.MoveResearch => new MoveResearchCommand( (ResearchCategory)reader.Int(), reader.Int() ),
+		ParkCommandKind.MoveResearch => new MoveResearchCommand( (ResearchCategory)reader.Int(), reader.Int(), reader.HasExpectation ? reader.Int() : null,
+			reader.HasExpectation ? reader.Int() : null ),
 		ParkCommandKind.TakeLoan => new TakeLoanCommand( reader.Int(), reader.Long() ),
 		ParkCommandKind.RepayLoan => new RepayLoanCommand( reader.Int(), reader.Long() ),
-		ParkCommandKind.BuyUpgrade => new BuyUpgradeCommand( reader.Int() ),
-		ParkCommandKind.CancelUpgrade => new CancelUpgradeCommand( reader.Int() ),
+		ParkCommandKind.BuyUpgrade => new BuyUpgradeCommand( reader.Int(), reader.HasExpectation ? reader.Int() : null ),
+		ParkCommandKind.CancelUpgrade => new CancelUpgradeCommand( reader.Int(), reader.HasExpectation ? reader.Int() : null ),
 		ParkCommandKind.RequestMaintenance => new RequestMaintenanceCommand( reader.Int(), reader.Bool() ),
 		ParkCommandKind.AnswerChallenge => new AnswerChallengeCommand( reader.Int(), reader.Long(), reader.Bool() ),
 		ParkCommandKind.RenameStaff => new RenameStaffCommand( reader.Int(), reader.String() ),
@@ -348,22 +358,34 @@ public sealed record SetResearchWorkloadCommand( int Workload ) : ParkSettingCom
 	}
 }
 
-/// <summary>Steps a research category's current project one place back (-1) or on (1), with wraparound; rejected when there is no other project.</summary>
-public sealed record MoveResearchCommand( ResearchCategory Category, int Direction ) : ParkSettingCommand
+/// <summary>
+/// Steps a research category's current project one place back (-1) or on (1), with wraparound; rejected when there is no other project. [EXT:online-coop-commands] A guest's names the
+/// project its window showed (<paramref name="ExpectedInfoId"/> and <paramref name="ExpectedLevel"/>, both or neither; C4b): a record whose category has another current project by
+/// then is refused as stale, so two players' moves never skip a project. The host's names none, as before.
+/// </summary>
+public sealed record MoveResearchCommand( ResearchCategory Category, int Direction, int? ExpectedInfoId = null, int? ExpectedLevel = null ) : ParkSettingCommand, IStaleChecked
 {
 	public override ParkCommandKind Kind => ParkCommandKind.MoveResearch;
-	internal override bool IsWellFormed => Enum.IsDefined( Category ) && Direction is -1 or 1;
+	internal override bool IsWellFormed => Enum.IsDefined( Category ) && Direction is -1 or 1 && (ExpectedInfoId, ExpectedLevel) is (null, null) or ( >= 0, >= 0 );
+	bool IStaleChecked.HasExpectation => ExpectedInfoId != null;
 
 	internal override void WriteFields( ParkCommandWriter writer )
 	{
 		writer.Int( (int)Category );
 		writer.Int( Direction );
+		if ( ExpectedInfoId is { } info && ExpectedLevel is { } project )
+		{
+			writer.Int( info );
+			writer.Int( project );
+		}
 	}
 
 	internal override ParkCommandResult Execute( Level level )
 	{
 		if ( level.Park?.Economy is not { Features.ResearchPanel: true } economy )
 			return ParkCommandResult.Rejected( "The park has no research lab." );
+		if ( ExpectedInfoId is { } info && (economy.Research.Current( Category ) is not { } current || current.InfoId != info || current.Level != ExpectedLevel) )
+			return Stale();
 		return economy.Research.MoveCurrent( Category, Direction ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "There is no other project to research." );
 	}
 }
@@ -439,8 +461,12 @@ public sealed record RefreshLoanOffersCommand : ParkSettingCommand
 	}
 }
 
-/// <summary>Asks for the next upgrade level of the ride <paramref name="Attraction"/> (its upgrade list); the result's value is the economy's <see cref="ParkEconomy.PurchaseResult"/>.</summary>
-public sealed record BuyUpgradeCommand( int Attraction ) : ParkSettingCommand
+/// <summary>
+/// Asks for the next upgrade level of the ride <paramref name="Attraction"/> (its upgrade list); the result's value is the economy's <see cref="ParkEconomy.PurchaseResult"/>.
+/// [EXT:online-coop-commands] A guest's names the level its list offered (<paramref name="ExpectedLevel"/>, C4b): a record whose ride's next level is another by then is refused as stale.
+/// The host's names none, as before.
+/// </summary>
+public sealed record BuyUpgradeCommand( int Attraction, int? ExpectedLevel = null ) : ParkSettingCommand, IStaleChecked
 {
 	/// <summary>
 	/// Whether the upgrade list may act on <paramref name="attraction"/> (<c>ParkHud.IsUpgradeListTarget</c>): a placed ride (not the developer prototype) whose economy record is a
@@ -451,29 +477,50 @@ public sealed record BuyUpgradeCommand( int Attraction ) : ParkSettingCommand
 		&& state.InfoId == item.Entry.InfoId && !IsCondemnedRide( level, item );
 
 	public override ParkCommandKind Kind => ParkCommandKind.BuyUpgrade;
-	internal override bool IsWellFormed => Attraction >= 0;
-	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Attraction );
+	internal override bool IsWellFormed => Attraction >= 0 && ExpectedLevel is null or >= 0;
+	bool IStaleChecked.HasExpectation => ExpectedLevel != null;
+
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Attraction );
+		if ( ExpectedLevel is { } expected )
+			writer.Int( expected );
+	}
 
 	internal override ParkCommandResult Execute( Level level )
 	{
 		if ( !IsUpgradeTarget( level, Attraction, out var economy, out var state ) )
 			return NoAttraction( Attraction );
+		if ( ExpectedLevel is { } expected && state.Level + 1 != expected )
+			return Stale();
 		var result = economy.TryBuyUpgrade( state.Id );
 		return result == ParkEconomy.PurchaseResult.Ok ? ParkCommandResult.Ok( result ) : new ParkCommandResult( false, $"The upgrade is refused: {result}.", result );
 	}
 }
 
-/// <summary>Cancels the upgrade the ride <paramref name="Attraction"/> waits for (its upgrade list's cancel row).</summary>
-public sealed record CancelUpgradeCommand( int Attraction ) : ParkSettingCommand
+/// <summary>
+/// Cancels the upgrade the ride <paramref name="Attraction"/> waits for (its upgrade list's cancel row). [EXT:online-coop-commands] A guest's names the pending level its list showed
+/// (<paramref name="ExpectedPendingLevel"/>, C4b): a record whose ride waits for another level by then is refused as stale. The host's names none, as before.
+/// </summary>
+public sealed record CancelUpgradeCommand( int Attraction, int? ExpectedPendingLevel = null ) : ParkSettingCommand, IStaleChecked
 {
 	public override ParkCommandKind Kind => ParkCommandKind.CancelUpgrade;
-	internal override bool IsWellFormed => Attraction >= 0;
-	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Attraction );
+	internal override bool IsWellFormed => Attraction >= 0 && ExpectedPendingLevel is null or >= 0;
+	bool IStaleChecked.HasExpectation => ExpectedPendingLevel != null;
+
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Attraction );
+		if ( ExpectedPendingLevel is { } expected )
+			writer.Int( expected );
+	}
 
 	internal override ParkCommandResult Execute( Level level )
 	{
 		if ( !BuyUpgradeCommand.IsUpgradeTarget( level, Attraction, out var economy, out var state ) )
 			return NoAttraction( Attraction );
+		if ( ExpectedPendingLevel is { } expected && state.PendingLevel != expected )
+			return Stale();
 		return economy.TryCancelUpgrade( state.Id ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "The ride waits for no upgrade." );
 	}
 }
@@ -822,4 +869,15 @@ public sealed record ReleaseRideCommand( int Ride ) : ParkSettingCommand
 	internal override bool IsWellFormed => Ride >= 0;
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Ride );
 	internal override ParkCommandResult Execute( Level level ) => level.ExecuteReleaseRide( Player, Ride );
+}
+
+/// <summary>
+/// [EXT:online-coop-commands] A command a guest's window sends with what the window showed (a level upgrade's level, a cancellation's pending level, a research move's project; C4b), so
+/// a record that comes after another player changed it is refused as stale (<see cref="ParkSettingCommand.StaleReason"/>) instead of acting on something its player never saw. With
+/// an expectation it is written in the codec's <see cref="ParkCommandCodec.ExpectationVersion"/>; without one, as the host sends it, in version 1 as before.
+/// </summary>
+internal interface IStaleChecked
+{
+	/// <summary>Whether the command carries its expectation.</summary>
+	bool HasExpectation { get; }
 }

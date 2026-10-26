@@ -119,6 +119,13 @@ public class CoopRightsTests
 		foreach ( var command in new ParkCommand[] { new SetSeatRightsCommand( seat, CoopRights.Build ), new SetBuildGrantCommand( seat, true ), new ReleaseSeatCommand( seat ),
 			new SetGameSpeedCommand( GameSpeed.Fast ), new SetSessionClockCommand( 63928191600 ) } )
 			Assert.IsFalse( rights.Allows( seat, command ), $"{command.Kind}" );
+		// what a guest's refusal says: building without the grant, management without its right (C4b), and nothing of its own for the host's kinds
+		level.SetSeatRights( seat, CoopRights.None );
+		Assert.AreEqual( CoopBuildRights.NotGrantedReason, rights.RefusalReason( seat, new LayLineCommand( CellToolMode.Path, -1, 5, 20, 12, 20 ) ) );
+		foreach ( var management in new ParkCommand[] { new SetEntranceFeeCommand( 20 ), new SetResearchWorkloadCommand( 50 ), new SetAttractionOpenCommand( 17, false ), new FireStaffCommand( 3 ) } )
+			Assert.AreEqual( CoopBuildRights.NotPermittedReason, rights.RefusalReason( seat, management ), $"{management.Kind}" );
+		Assert.AreEqual( CoopRefusal.NotPermitted, CoopBuildRights.RefusalOf( CoopBuildRights.NotPermittedReason ) );
+		Assert.IsNull( rights.RefusalReason( seat, new SetGameSpeedCommand( GameSpeed.Fast ) ) );
 	}
 
 	[TestMethod]
@@ -209,5 +216,39 @@ public class CoopRightsTests
 		Assert.AreEqual( 0, level.HoldingGuestSeats().Count() );
 		var none = commands.Issue( new ReleaseSeatCommand( 4 ) );
 		Assert.IsTrue( none.Accepted && none.Value is false, "a seat that held nothing releases nothing" );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A stale-checked command whose expectation no longer holds is refused as stale before the park's own rules, and one whose expectation holds runs as the host's
+	/// does (C4b): a level upgrade naming another level, a cancellation naming another pending level, a research move naming another project.
+	/// </summary>
+	[TestMethod]
+	public void AStaleCheckedCommandWhoseExpectationNoLongerHoldsIsRefusedAsStale()
+	{
+		var (level, one) = NewPark();
+		var commands = level.Commands;
+		var ride = one.Runtime.AttractionId;
+		var state = level.Park!.Economy.TryGetObject( level.GetEconomyInstance( one )!.Value, out var found ) ? found : null;
+		Assert.IsNotNull( state );
+		foreach ( var stale in new ParkCommand[] { new BuyUpgradeCommand( ride, state.Level + 2 ), new CancelUpgradeCommand( ride, state.PendingLevel + 1 ) } )
+		{
+			var result = commands.Issue( stale );
+			Assert.AreEqual( (false, ParkSettingCommand.StaleReason), (result.Accepted, result.Reason), stale.ToString() );
+		}
+		// the expected level passes the check, and the park's own rules decide as for the host's command
+		Assert.AreNotEqual( ParkSettingCommand.StaleReason, commands.Issue( new BuyUpgradeCommand( ride, state.Level + 1 ) ).Reason );
+		Assert.AreEqual( commands.Issue( new BuyUpgradeCommand( ride ) ).Reason, commands.Issue( new BuyUpgradeCommand( ride, state.Level + 1 ) ).Reason );
+		// a lab with rides to choose from (ManagementUiTests' research cursor park)
+		var economy = new ParkEconomy( EconomyTestData.Settings( extra: "ResearchTech[1].PercentageForThisTech 0\nResearchTech[2].PercentageForThisTech 0\n" ), EconomyTestData.Catalog(),
+			ParkGameMode.FullSimulation, 7 );
+		var lab = CommandTestLevel.Create( economy );
+		var research = economy.Research;
+		Assert.IsTrue( research.SelectableItems( ResearchCategory.Ride ).Count > 1 );
+		var current = research.Current( ResearchCategory.Ride )!;
+		var moved = lab.Commands.Issue( new MoveResearchCommand( ResearchCategory.Ride, 1, current.InfoId, current.Level + 1 ) );
+		Assert.AreEqual( (false, ParkSettingCommand.StaleReason), (moved.Accepted, moved.Reason), "another project than the current one" );
+		Assert.AreEqual( current, research.Current( ResearchCategory.Ride ), "nothing moved" );
+		Assert.IsTrue( lab.Commands.Issue( new MoveResearchCommand( ResearchCategory.Ride, 1, current.InfoId, current.Level ) ).Accepted, "the current project moves" );
+		Assert.AreNotEqual( current, research.Current( ResearchCategory.Ride ) );
 	}
 }

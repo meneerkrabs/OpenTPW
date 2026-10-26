@@ -383,6 +383,7 @@ public sealed partial class ParkHud
 		CoopRefusal.Claimed => OpenTpwText.CoopClaimed,
 		CoopRefusal.ClaimLost => OpenTpwText.CoopClaimLost,
 		CoopRefusal.NotGranted => OpenTpwText.CoopNotGranted,
+		CoopRefusal.NotPermitted => OpenTpwText.CoopNotPermitted,
 		_ => OpenTpwText.CoopHostOnly
 	};
 

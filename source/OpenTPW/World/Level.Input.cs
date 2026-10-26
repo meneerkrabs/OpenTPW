@@ -171,6 +171,8 @@ public partial class Level
 			{
 				endingMoveLocally = false;
 			}
+			// the HUD drops the item it had armed for the Move, as after any end of the build tools
+			BuildToolsEnded?.Invoke();
 		}
 	}
 

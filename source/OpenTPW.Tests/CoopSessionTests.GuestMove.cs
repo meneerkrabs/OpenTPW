@@ -27,11 +27,22 @@ public partial class CoopSessionTests
 		return request;
 	}
 
-	/// <summary>A buy menu of one item, the ride's (set once the park is built), so the object window's Move button finds it (<c>ParkHud.MoveObject</c>).</summary>
+	/// <summary>
+	/// A buy menu of one item, the ride's (set once the park is built), so the object window's Move button finds it (<c>ParkHud.MoveObject</c>): a new copy each time it is asked, so each
+	/// click's item is its own.
+	/// </summary>
 	private sealed class OneRide : IBuildCatalog
 	{
 		public BuildItem? Item { get; set; }
-		public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => Item is { } item && item.Category == category ? new[] { item } : Array.Empty<BuildItem>();
+		public List<BuildItem> Given { get; } = new();
+		public IReadOnlyList<BuildItem> GetItems( BuildCategory category )
+		{
+			if ( Item is not { } item || item.Category != category )
+				return Array.Empty<BuildItem>();
+			var copy = item with { };
+			Given.Add( copy );
+			return new[] { copy };
+		}
 	}
 
 	/// <summary>The object window's Move button on <paramref name="item"/>.</summary>
@@ -138,16 +149,20 @@ public partial class CoopSessionTests
 		PressMove( view.Hud, guest.Level.Objects.FindAt( 20, 12 )! );
 		var first = guest.Level.WaitingToolStart;
 		Assert.IsNotNull( first, "the window's Move button sent the pick-up" );
-		Assert.AreSame( first, (((CoopGuestCommands.Request Request, BuildItem Item)?)waitingMove.GetValue( view.Hud ))!.Value.Request );
-		// the Move button of the other ride while the first pick-up waits sends nothing and binds nothing
+		var firstItem = menu.Given.Single();
+		Assert.AreEqual( (first, firstItem), (((CoopGuestCommands.Request Request, BuildItem Item)?)waitingMove.GetValue( view.Hud ))!.Value );
+		// the Move button of the other ride while the first pick-up waits sends nothing and binds nothing: the first click's item stays bound
 		PressMove( view.Hud, guest.Level.Objects.FindAt( 24, 12 )! );
+		Assert.AreEqual( 2, menu.Given.Count, "the second click found its own item" );
 		Assert.AreSame( first, guest.Level.WaitingToolStart );
-		Assert.AreSame( first, (((CoopGuestCommands.Request Request, BuildItem Item)?)waitingMove.GetValue( view.Hud ))!.Value.Request, "the item stays the first pick-up's" );
+		var bound = (((CoopGuestCommands.Request Request, BuildItem Item)?)waitingMove.GetValue( view.Hud ))!.Value;
+		Assert.AreSame( first, bound.Request );
+		Assert.AreSame( firstItem, bound.Item, "the item stays the first click's" );
 		Assert.AreEqual( 1, guest.Session!.GuestCommands!.Open.Count( request => request.Command is PickUpObjectCommand ) );
 		RoundsUntil( () => guest.Level.IsMoving, host, guest, view, "the first pick-up armed the Move tool" );
 		Assert.IsNull( host.Level.Objects.FindAt( 20, 12 ), "the first ride was picked up" );
 		Assert.IsNotNull( host.Level.Objects.FindAt( 24, 12 ), "the second stands" );
-		Assert.AreSame( menu.Item, typeof( ParkHud ).GetField( "pendingItem", NonPublic )!.GetValue( view.Hud ) );
+		Assert.AreSame( firstItem, typeof( ParkHud ).GetField( "pendingItem", NonPublic )!.GetValue( view.Hud ), "the Move tool armed with the first click's item" );
 		// its placement finishes the tool as the host's does, and the end releases the carry
 		guest.Level.ClickBuildTool( 28, 12 );
 		RoundsUntil( () => guest.Level.WaitingPlacement == null, host, guest, view, "the placement came back" );
@@ -205,10 +220,12 @@ public partial class CoopSessionTests
 		PickUp( host, guest, view );
 		Assert.IsTrue( host.Level.CarriesEntry( seat ) );
 		guest.Enter();
+		Assert.IsNotNull( typeof( ParkHud ).GetField( "pendingItem", NonPublic )!.GetValue( view.Hud ), "the HUD's item is armed for the Move" );
 		guest.Session!.End( "The guest left." );
 		// the server takes the member out of the session, and the host hears of it
 		network!.Remove( moveGuestLink! );
 		Assert.IsFalse( guest.Level.IsMoving, "the guest's Move tool disarms with its session" );
+		Assert.IsNull( typeof( ParkHud ).GetField( "pendingItem", NonPublic )!.GetValue( view.Hud ), "and its HUD's item with it" );
 		Assert.IsFalse( guest.Level.CarriesEntry( seat ), "and its park keeps no guest's carry" );
 		for ( var round = 0; round < 600 && host.Level.CarriesEntry( seat ); round++ )
 			Rounds( 1, host );
@@ -235,10 +252,32 @@ public partial class CoopSessionTests
 		var next = network.Add();
 		Assert.AreEqual( seat, (int)next.Slot, "the freed seat is taken again" );
 		hostLink.Resume();
-		// the new member's first request, a moving placement of the type its seat carried, comes with the host's first frame after its resume
+		NextMembersFirstRequestComesAfterTheRelease( host, next, seat );
+	}
+
+	[TestMethod]
+	public void ASeatTakenAgainBeforeTheHostsNextFrameHasItsCarryAndGrantReleased()
+	{
+		var (host, guest, view, seat) = MoveSession();
+		PickUp( host, guest, view );
+		// the guest leaves and another member takes its seat between two of the host's frames
+		guest.Enter();
+		guest.Session!.End( "The guest left." );
+		network!.Remove( moveGuestLink! );
+		var next = network.Add();
+		Assert.AreEqual( seat, (int)next.Slot, "the freed seat is taken again" );
+		NextMembersFirstRequestComesAfterTheRelease( host, next, seat );
+	}
+
+	/// <summary>
+	/// The new member of <paramref name="seat"/> sends, as its first request, a moving placement of the type the seat carried: the host's stream releases the seat's carry and takes its
+	/// grant back before it, so the placement is refused.
+	/// </summary>
+	private void NextMembersFirstRequestComesAfterTheRelease( Park host, CoopTestNetwork.Member next, int seat )
+	{
 		host.Enter();
 		var log = host.Level.Commands.Log.Count;
-		next.Send( hostLink.Id, new CoopGuestCommand( 1, ParkCommandCodec.Encode( host.Level.BuildCommand( host.One.Entry, 24, 12, 90 ) with { Moving = true } ) ).Encode() );
+		next.Send( network!.Host.Id, new CoopGuestCommand( 1, ParkCommandCodec.Encode( host.Level.BuildCommand( host.One.Entry, 24, 12, 90 ) with { Moving = true } ) ).Encode() );
 		for ( var round = 0; round < 600 && !host.Level.Commands.Log.Skip( log ).Any( entry => entry.Command is PlaceObjectCommand ); round++ )
 			Rounds( 1, host );
 		var since = host.Level.Commands.Log.Skip( log ).Select( entry => entry.Command ).ToArray();

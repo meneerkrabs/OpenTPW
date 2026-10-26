@@ -412,6 +412,8 @@ public partial class Level
 				trackToolStation = station;
 				if ( start.Placed )
 					placedQueueStart = PlacedQueueStart( station );
+				// a press made before the tool started gives it no click with its release
+				HostToolStarts++;
 				return TrackToolStart.Entered;
 			}
 			if ( Commands.Issue( new OpenTrackLineToolCommand( start.Ride ) ).Request is not { } open )
@@ -426,6 +428,7 @@ public partial class Level
 		trackToolStation = station;
 		if ( start.Placed )
 			placedQueueStart = PlacedQueueStart( station );
+		HostToolStarts++;
 		return TrackToolStart.Entered;
 	}
 

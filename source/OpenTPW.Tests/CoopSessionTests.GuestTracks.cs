@@ -38,9 +38,11 @@ public partial class CoopSessionTests
 	private void GuestTrackTool( Park host, Park guest, View view, OriginalObject kart )
 	{
 		guest.Enter();
+		var starts = guest.Level.HostToolStarts;
 		Assert.AreEqual( TrackToolEntry.Pending, guest.Level.BeginTrackTool( kart, placed: false ), "the claim goes to the host" );
 		Assert.IsNull( guest.Level.TrackToolStation, "no tool until it is back" );
 		RoundsUntil( () => guest.Level.TrackToolStation == kart, host, guest, view, "the tool started from the outcome" );
+		Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "a press made before it started gives it no click" );
 	}
 
 	/// <summary>The guest's line click on (<paramref name="cell"/>): it goes to the host, the tool waits with no other click, and its outcome continues the tool.</summary>

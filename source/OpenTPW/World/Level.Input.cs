@@ -516,7 +516,10 @@ public partial class Level
 		return true;
 	}
 
-	/// <summary>[EXT:online-coop-commands] How many tools a guest's request started when the host's answer came back (<see cref="CompleteMove"/>, <see cref="CompleteQueueEdit"/>): the HUD ignores the release of a press made before one started.</summary>
+	/// <summary>
+	/// [EXT:online-coop-commands] How many tools a guest's request started when the host's answer came back (<see cref="CompleteMove"/>, <see cref="CompleteQueueEdit"/>,
+	/// [EXT:online-coop-claims] <see cref="CompleteTrackToolStart"/>): the HUD ignores the release of a press made before one started.
+	/// </summary>
 	internal int HostToolStarts { get; set; }
 
 	/// <summary>[EXT:online-coop-commands] Whether no tool of the park view is on (the view a queue click starts the queue tool from).</summary>

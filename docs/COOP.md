@@ -2011,9 +2011,10 @@ kart or water ride's track through its claim, with the host's tools' rules, ever
   outcome starts the tool when the park view has no tool by then and the park's claims, with every record
   applied so far, still give the ride to the guest's seat: a closed circuit opens the edit tool; an open
   one sends `OpenTrackLineToolCommand`, whose walk writes the tiles' overlap words, as a second request
-  with the same wait, and its outcome opens the line tool from the open end, with the tool's help. A
-  claim the host took and let go in one frame starts nothing and says that the player no longer edits
-  the ride. The latest entry wins: an earlier one's claim moves to the later ride, and its outcome starts
+  with the same wait, and its outcome opens the line tool from the open end, with the tool's help (a
+  press in the park made before the tool started gives it no click with its release, as for the queue
+  edit and the Move). A claim the host took and let go in one frame starts nothing and says that the
+  player no longer edits the ride. The latest entry wins: an earlier one's claim moves to the later ride, and its outcome starts
   nothing. A placement's follow-on opens no queue tool meanwhile; its queue start goes pending when the
   track tool starts, so a closed circuit hands over to the queue tool as the host's does.
 - **Lines.** A line (`LayTrackLineCommand`) waits for its outcome as the path tool's do (C3a-2): the

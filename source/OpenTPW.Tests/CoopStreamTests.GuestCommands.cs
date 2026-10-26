@@ -373,7 +373,9 @@ public partial class CoopStreamTests
 			new PoolCellsCommand( false, true, new[] { (8, 8), (9, 8) } ),
 			new PoolCellsCommand( true, false, new[] { (8, 8) } ),
 			new LayPoolSlidePiecesCommand( 13, 19, new[] { (15, 19) } ),
-			new PlacePoolBridgeCommand( 10, 15, 1 )
+			new PlacePoolBridgeCommand( 10, 15, 1 ),
+			// the undo of a slide piece unless the slide is finished: one with nothing to take back is the park's to refuse, quietly
+			new UndoPoolSlidePieceCommand( 13, 19 )
 		};
 		var hostOnly = new ParkCommand[]
 		{
@@ -389,14 +391,13 @@ public partial class CoopStreamTests
 			new SetSessionClockCommand( 5 ),
 			new UndoLineCommand( CellToolMode.Path, -1, 5, 20, new[] { (5, 20) }, Array.Empty<(int, int)>() ),
 			new PlacePrototypeCommand( 1, 2, 3 ),
-			// the pools' single-cell kinds no guest's tool issues, a stroke's undo (C5), a wave machine's settings (C4), and the undo of a slide that is none or finished
+			// the pools' single-cell kinds no guest's tool issues, a stroke's undo (C5), a wave machine's settings (C4)
 			new PaintPoolCellCommand( 8, 8, false ),
 			new ErasePoolCellCommand( 8, 8 ),
 			new LayPoolSlidePieceCommand( 13, 19, 15, 19 ),
 			new UndoPoolStrokeCommand( false, new[] { (8, 8) }, Array.Empty<(int, int)>() ),
 			new RemovePoolBridgeCommand( 10, 15 ),
-			new SetPoolWavesCommand( peer.Two.Runtime.AttractionId, true, 2, 1 ),
-			new UndoPoolSlidePieceCommand( 13, 19 )
+			new SetPoolWavesCommand( peer.Two.Runtime.AttractionId, true, 2, 1 )
 		};
 		foreach ( var command in building.Concat( hostOnly ) )
 		{

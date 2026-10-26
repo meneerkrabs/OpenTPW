@@ -1891,26 +1891,34 @@ A guest's strokes go in batches instead, and the host's tool writes at once, as 
   guest's strokes (at most 200 cells) and go from its head only, so a later stroke never passes an
   earlier one's cells. A batch goes while fewer than four of the guest's pool requests are open in the
   session's requests (`Level.OpenPoolRequests`, which counts across the tool's ends and resyncs): a
-  press's first cell at once, the others at most every 0.2 seconds. A cell crossed while the queue is
-  full is dropped, and the player is asked to wait. The cells sent and waiting are drawn as blueprint
+  press's first cell at once, the others at most every 0.2 seconds. A stroke stops at the first cell it
+  crosses while the queue is full: it takes no more cells, so it leaves no hole (a slide's next piece must
+  follow its last), and the player is asked to wait. The cells sent and waiting are drawn as blueprint
   faces, as a waiting line's ghost is, until their outcome.
 - **The report.** A stroke reports once it is released, its batches are all sent and each has come back,
   as the host's release does: the lay sound when it wrote, its first refusal in the order its cells were
   tried (whatever order the answers came in) with its marker, and the slide's done message when this
   stroke laid the splash and the slide still stands finished. A request the host could not take, an
-  outcome not known and a refusal by the rights are said once for the stroke.
+  outcome not known and a refusal by the rights are said once for the stroke. The refusal cue plays with
+  the report, as a guest's line released before its outcome plays it.
 - **Bridges and undo.** A bridge click is a request of its own through the same queue. Backspace in the
   paint or erase mode takes nothing back: a stroke's undo names its cells freely, as a line's does (undo
-  is C5). In the slide mode Backspace takes the last piece of a slide still being laid back, behind the
-  pieces still queued and one at a time; a finished slide's pieces are the host's (riders use it), or go
-  with its tower.
+  is C5). In the slide mode Backspace takes the last piece of a slide that is not finished back, behind
+  the pieces still queued and one at a time; a slide with no piece to take back is the park's to refuse,
+  quietly, as the host's Backspace is. A finished slide's pieces are the host's (riders use it), or go with
+  its tower: an undo queued behind pieces that turned out to lay the splash meets a finished slide and
+  says nothing, as the host's slide mode ends with its splash. A Backspace during a drag ends the drag's
+  stroke, which reports once back.
 - **Backspace with no tool on** over a pool bridge or a pool cell is a request, as over a path (C3b-1), and
   a refusal says the pool's reason.
 - **Escape**, a right click or another tool ends the tool: its unsent cells are dropped, the stroke under
   the press and any that lost cells report nothing, as the host's cancelled stroke does, and their sent
   requests are only messages.
-  The session's end ends a guest's pool tool and its strokes; a resync's park has a new tool, and the old
-  strokes' requests are the session's.
+  The session's end ends a guest's pool tool and its strokes; a resync's park has a new tool: the old
+  strokes' cells not yet sent are dropped, and their sent requests are the session's.
+- **Two players' writes** over one cell apply in the host's order: the cell keeps what the later request
+  paints or erases. A slide is named by its tower's cell, so a batch on its way when its tower was removed
+  lays its pieces on a tower placed on that cell meanwhile.
 
 A slide tower is a guest's to place, sell, clear, move and remove, and its removal takes its slide and
 refunds it, on every peer alike. No claim keeps a slide to one player: two players laying one slide take
@@ -2075,7 +2083,8 @@ changes.
     reconcile (`StaffPlacement.Reconcile`, which frees a member an original save left picked up)
     leaves a member a command picked up, on a peer and in a replay too.
   - A full thing pool refuses a hire before the placement ends (the hire threw after it before).
-- **Pools.** Each cell a paint or erase stroke writes is a command (`PaintPoolCellCommand`,
+- **Pools.** A guest's strokes go in batches (`PoolCellsCommand`, kind 78, and `LayPoolSlidePiecesCommand`,
+  kind 79; C3b-3, "A guest's pools"). Each cell a paint or erase stroke writes is a command (`PaintPoolCellCommand`,
   `ErasePoolCellCommand`), as the tool wrote each cell while the drag crossed it; Backspace takes a
   stroke back with one command that carries its cells (`UndoPoolStrokeCommand`). A stroke of more cells
   than a command takes (4096) goes back in chunks that write in the one command's order (an erase

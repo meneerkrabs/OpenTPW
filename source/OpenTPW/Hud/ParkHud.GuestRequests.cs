@@ -199,7 +199,8 @@ public sealed partial class ParkHud
 			SayGuestNote( OpenTpwText.CoopBuildUnknown );
 		if ( report.Refusal is not { } refusal )
 			return;
-		refusalClick.Refused( refusal.Cell.X, refusal.Cell.Y );
+		// the stroke's press was released before its report: the refusal cue plays now, as a guest's line released before its outcome plays it (FinishLineClick)
+		GameAudio.PlayPathRefused( refusal.Cell.X, refusal.Cell.Y );
 		PostMessage( strings.Extra( report.BridgeRefusal is { } bridge ? BridgeRefusalText( bridge ) : PoolRefusalText( refusal.Reason, report.SlideRefusal ) ) );
 	}
 

@@ -60,9 +60,9 @@ public sealed partial class PoolTool
 		public bool Finished;
 		/// <summary>It lost unsent cells to a cancel: it reports nothing.</summary>
 		public bool Discarded;
-		/// <summary>A cell of it was dropped for a full queue: the player was asked to wait.</summary>
+		/// <summary>A cell of it was dropped for a full queue: the player was asked to wait, and it takes no more.</summary>
 		public bool Dropped;
-		/// <summary>The funnel refused a batch of it here (the guest's own rights): it takes and sends nothing more.</summary>
+		/// <summary>It takes no more cells: a cell of it was dropped for a full queue, or the funnel refused a batch of it here (the guest's own rights), after which it sends nothing more either.</summary>
 		public bool Stopped;
 	}
 
@@ -114,14 +114,13 @@ public sealed partial class PoolTool
 	{
 		if ( guestStroke is not { } stroke || stroke.Finished || stroke.Stopped )
 			return false;
+		// a full queue stops the stroke at the cell it could not take: later cells would leave a hole (a slide's next piece would not follow its last)
 		if ( UnsentCells >= MaximumUnsentCells )
 		{
-			if ( !stroke.Dropped )
-			{
-				stroke.Dropped = true;
-				NoteWaiting?.Invoke();
-			}
-			return true;
+			stroke.Dropped = true;
+			stroke.Stopped = true;
+			NoteWaiting?.Invoke();
+			return false;
 		}
 		var tail = stroke.Batches.Count > 0 ? stroke.Batches[^1] : null;
 		if ( tail == null || tail.Request != null || tail.Resolved || tail.Cells.Count >= PoolCellsCommand.MaximumCells || stroke.Write == GuestWrite.Bridge )
@@ -296,9 +295,13 @@ public sealed partial class PoolTool
 		{
 			if ( batch.Request is not { } request )
 			{
-				// refused here before it went: by the rights (said once for the stroke, the session's own note leaves the pool tool's to it) or because no request could go
+				// refused here before it went: by the rights (said once for the stroke, the session's own note leaves the pool tool's to it; a slide undo only meets a finished slide
+				// there, which the host's slide mode has ended, so it says nothing) or because no request could go
 				if ( batch.Local is { RightsRefused: true } )
-					rightsRefused ??= batch.Command;
+				{
+					if ( stroke.Write != GuestWrite.SlideUndo )
+						rightsRefused ??= batch.Command;
+				}
 				else if ( batch.Local != null )
 					notTaken = true;
 				continue;
@@ -308,7 +311,9 @@ public sealed partial class PoolTool
 				case CoopGuestRequestState.Applied when request.Result is { Error: null } result:
 					if ( result.RightsRefused )
 					{
-						rightsRefused ??= request.Command;
+						// a slide undo the rights refuse met a slide the pieces before it finished: nothing is said, as the host's slide mode ended with the splash
+						if ( stroke.Write != GuestWrite.SlideUndo )
+							rightsRefused ??= request.Command;
 						break;
 					}
 					switch ( result.Value )

@@ -67,10 +67,11 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		PickUpObjectCommand pick => level.ResolveCommandObject( pick.Attraction ) is not { IsDeleted: false } item
 			|| (!ReferenceEquals( item, level.PlacedRide ) && MayRemove( item ) && GuestMayPlace( item.Entry )),
 		// C3b-3: a guest's pool strokes go in batches (the pool builders refuse every cell that is not theirs: a path, a queue, an object), its bridges unless an end of one is a claimed
-		// queue's or the path cell it joins, and the last piece of a slide still being laid (a finished slide takes riders: its pieces are the host's, or go with its tower)
+		// queue's or the path cell it joins, and the last piece of a slide that is not finished (a finished slide takes riders: its pieces are the host's, or go with its tower; a slide
+		// with no piece to take back is the park's to refuse, quietly, as the host's Backspace is)
 		PoolCellsCommand or LayPoolSlidePiecesCommand => true,
 		PlacePoolBridgeCommand bridge => !BridgeTouchesClaimedQueue( new PoolBridge( bridge.X, bridge.Y, bridge.Direction, 0 ) ),
-		UndoPoolSlidePieceCommand undo => level.PoolSlides?.Find( PoolSlide.KeyOf( undo.TowerX, undo.TowerY ) ) is { IsComplete: false },
+		UndoPoolSlidePieceCommand undo => level.PoolSlides?.Find( PoolSlide.KeyOf( undo.TowerX, undo.TowerY ) ) is not { IsComplete: true },
 		_ => false
 	};
 

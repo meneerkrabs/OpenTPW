@@ -30,6 +30,9 @@ public sealed partial class ParkHud
 			return;
 		foreach ( var request in requests.TakeCompleted() )
 		{
+			// [EXT:online-coop-commands] a batch of a guest's pool stroke: its stroke reports once all of it is back (C3b-3)
+			if ( level.PoolTool?.CompleteGuestRequest( request ) == true )
+				continue;
 			if ( level.CellTool.Waiting is { } line && ReferenceEquals( line.Commit.Request, request ) )
 				CompleteLine( request );
 			else if ( level.WaitingPlacement is { } placement && ReferenceEquals( placement.Request, request ) )
@@ -152,6 +155,11 @@ public sealed partial class ParkHud
 				// [EXT:land-feedback] a refused purchase says so, as the host's refused click does
 				else if ( request.Command is BuyLandCommand )
 					SayGuestNote( OpenTpwText.CannotBuyLand );
+				// [EXT:pools-bridges] [EXT:pools-tool] a refused Backspace over a pool bridge or water cell says why, as the host's key does (C3b-3)
+				else if ( request.Command is BacktrackCommand && result.Value is PoolBridgeResult bridge )
+					SayGuestNote( BridgeRefusalText( bridge ) );
+				else if ( request.Command is BacktrackCommand && result.Value is PoolBuildResult water )
+					SayGuestNote( PoolRefusalText( water ) );
 				return;
 			case CoopGuestRequestState.Applied:
 			case CoopGuestRequestState.Unknown:
@@ -161,6 +169,38 @@ public sealed partial class ParkHud
 				SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
 				return;
 		}
+	}
+
+	/// <summary>[EXT:online-coop-commands] A guest's pool strokes (C3b-3): what waits goes to the host, and each stroke that finished reports as the host's release does.</summary>
+	private void UpdateGuestPoolStrokes()
+	{
+		if ( level.PoolTool is not { } tool )
+			return;
+		tool.SendGuestBatches( Time.Now );
+		foreach ( var report in tool.TakeGuestReports() )
+			ReportGuestPoolStroke( report );
+	}
+
+	/// <summary>
+	/// A guest's finished pool stroke, said as <see cref="ReportPoolStroke"/> says the host's at its release: the lay sound when it wrote, the slide's done message, one refusal with its
+	/// marker; and its notes: a refusal by the rights, a request the host could not take, an outcome not known.
+	/// </summary>
+	private void ReportGuestPoolStroke( PoolGuestReport report )
+	{
+		if ( report.Wrote )
+			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
+		if ( report.SlideDone )
+			PostMessage( strings.Extra( OpenTpwText.PoolSlideDone ) );
+		if ( report.RightsRefused is { } refused )
+			SayGuestNote( level.Commands.Rights is CoopBuildRights rights && rights.Builds( refused ) ? OpenTpwText.CoopNotGranted : OpenTpwText.CoopHostOnly );
+		else if ( report.NotTaken )
+			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
+		else if ( report.Unknown )
+			SayGuestNote( OpenTpwText.CoopBuildUnknown );
+		if ( report.Refusal is not { } refusal )
+			return;
+		refusalClick.Refused( refusal.Cell.X, refusal.Cell.Y );
+		PostMessage( strings.Extra( report.BridgeRefusal is { } bridge ? BridgeRefusalText( bridge ) : PoolRefusalText( refusal.Reason, report.SlideRefusal ) ) );
 	}
 
 	/// <summary>A note about this player's own request, with the error sound.</summary>

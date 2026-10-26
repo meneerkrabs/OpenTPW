@@ -577,7 +577,8 @@ public partial class Level
 	/// </summary>
 	internal void RefreshPools()
 	{
-		if ( Guests == null || OriginalPark == null || !FeatureGates.Pools )
+		// a park without a graphics device (a headless park of the tests) draws no water: its textures need one, and nothing here is the park's state
+		if ( Guests == null || OriginalPark == null || !FeatureGates.Pools || Device is null )
 			return;
 		if ( PoolRenderer == null )
 		{
@@ -784,7 +785,13 @@ public partial class Level
 		if ( !IsReadOnlyVisit )
 		{
 			PoolBuilder = new PoolBuilder( Guests.Grid.Cells, () => Park?.Economy, Objects.Grid, IsPathBlocked, IsStoodOn, PoolEraseBlock );
-			PoolTool = new PoolTool( PoolBuilder, command => Commands.Issue( command ) );
+			PoolTool = new PoolTool( PoolBuilder, command => Commands.Issue( command ) )
+			{
+				// [EXT:online-coop-commands] a guest's strokes go to the host in batches (C3b-3)
+				SendsRequests = () => Commands.SendsRequests,
+				OpenRequests = () => OpenPoolRequests,
+				NoteWaiting = NoteWaitingClick
+			};
 			PoolBuilder.Painted += PreloadSwimSprites;
 		}
 		SetupPoolSlides();

@@ -113,13 +113,19 @@ public sealed partial class ParkHud
 		{
 			refusalClick.Press();
 			tool.Press( cursorX, cursorY );
+			// [EXT:online-coop-commands] a guest's press goes to the host in this frame (C3b-3)
+			tool.SendGuestBatches( Time.Now );
 			return toolPress = true;
 		}
 		if ( tool.IsDragging )
 		{
 			if ( input.LeftDown )
+			{
+				tool.SendGuestBatches( Time.Now );
 				return toolPress = true;
+			}
 			ReportPoolStroke( tool );
+			tool.SendGuestBatches( Time.Now );
 			return toolPress = true;
 		}
 		return false;

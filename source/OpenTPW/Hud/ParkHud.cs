@@ -844,6 +844,8 @@ public sealed partial class ParkHud
 		// without its Move tool is ended after that (C3b-2)
 		CompleteGuestRequests();
 		level.EndStrayCarry( Time.Now );
+		// [EXT:online-coop-commands] a guest's pool strokes send what waits and say what finished (C3b-3)
+		UpdateGuestPoolStrokes();
 		SyncChallengeMessageSuspension();
 		QueueChallengeTerminalTimers();
 		if ( UpdateResearchFinale( context, input, mouseCaptured, keyboardCaptured, textCaptured ) )
@@ -1449,6 +1451,9 @@ public sealed partial class ParkHud
 			directions = footprint.Directions;
 		}
 		cells.AddRange( LocatedPatrolAreaEdge() );
+		// [EXT:online-coop-commands] a guest's pool strokes: the cells sent or waiting to be sent, until their outcome, as a waiting line's ghost (C3b-3)
+		if ( level.PoolTool is { HasGuestBatches: true } guestPool )
+			cells.AddRange( guestPool.GuestStrokeCells.Select( cell => (cell.X, cell.Y, BlueprintMarker.Allowed) ) );
 		if ( level.BuildEntry == null || !inPark )
 			placementRefused = false;
 		blueprint.Update( delta, paused );

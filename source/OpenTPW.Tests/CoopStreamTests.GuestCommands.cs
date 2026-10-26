@@ -368,7 +368,12 @@ public partial class CoopStreamTests
 			new BacktrackCommand( 4, 1 ),
 			new RemoveAttractionCommand( peer.Two.Runtime.AttractionId ),
 			new PickUpObjectCommand( peer.Two.Runtime.AttractionId ),
-			place with { Moving = true }
+			place with { Moving = true },
+			// the pool tools' batches and bridge (C3b-3)
+			new PoolCellsCommand( false, true, new[] { (8, 8), (9, 8) } ),
+			new PoolCellsCommand( true, false, new[] { (8, 8) } ),
+			new LayPoolSlidePiecesCommand( 13, 19, new[] { (15, 19) } ),
+			new PlacePoolBridgeCommand( 10, 15, 1 )
 		};
 		var hostOnly = new ParkCommand[]
 		{
@@ -383,7 +388,15 @@ public partial class CoopStreamTests
 			new SetBuildGrantCommand( 1, true ),
 			new SetSessionClockCommand( 5 ),
 			new UndoLineCommand( CellToolMode.Path, -1, 5, 20, new[] { (5, 20) }, Array.Empty<(int, int)>() ),
-			new PlacePrototypeCommand( 1, 2, 3 )
+			new PlacePrototypeCommand( 1, 2, 3 ),
+			// the pools' single-cell kinds no guest's tool issues, a stroke's undo (C5), a wave machine's settings (C4), and the undo of a slide that is none or finished
+			new PaintPoolCellCommand( 8, 8, false ),
+			new ErasePoolCellCommand( 8, 8 ),
+			new LayPoolSlidePieceCommand( 13, 19, 15, 19 ),
+			new UndoPoolStrokeCommand( false, new[] { (8, 8) }, Array.Empty<(int, int)>() ),
+			new RemovePoolBridgeCommand( 10, 15 ),
+			new SetPoolWavesCommand( peer.Two.Runtime.AttractionId, true, 2, 1 ),
+			new UndoPoolSlidePieceCommand( 13, 19 )
 		};
 		foreach ( var command in building.Concat( hostOnly ) )
 		{
@@ -406,9 +419,9 @@ public partial class CoopStreamTests
 		// too (below: what the rights keep from a guest)
 		Assert.IsTrue( rights.Allows( 1, new RemoveAtCommand( 20, 12 ) ), "no object on the cell yet: the park refuses it" );
 		Assert.IsTrue( rights.Allows( 1, new RemoveAttractionCommand( 99_999 ) ), "no such object: the park refuses it" );
-		// nor a fixed item of the park (its gates, lights, bus), nor a slide tower, whose slide is the pool tools'
+		// nor a fixed item of the park (its gates, lights, bus); a slide tower is a guest's since its slide is (C3b-3)
 		Assert.IsFalse( CoopBuildRights.GuestMayRemove( SyntheticRide( "Info.DontApplyOffset 1\n" ) ) );
-		Assert.IsFalse( CoopBuildRights.GuestMayRemove( SyntheticRide( $"{PoolSlideTowers.SettingKey} 1\n" ) ) );
+		Assert.IsTrue( CoopBuildRights.GuestMayRemove( SyntheticRide( $"{PoolSlideTowers.SettingKey} 1\n" ) ) );
 		Assert.IsTrue( CoopBuildRights.GuestMayRemove( SyntheticRide( "" ) ) );
 		// a track ride's station needs a claim: a granted guest may not remove it
 		Assert.IsTrue( level.Commands.Apply( place ).Accepted );
@@ -447,15 +460,14 @@ public partial class CoopStreamTests
 	[TestMethod]
 	public void ARideWhoseOwnToolFollowsItsPlacementAndATrackAddOnAreTheHostsToPlaceForNow()
 	{
-		// a coaster's track, a kart, water or bumper ride's track or arena and a slide tower's slide are tools no guest's request carries yet (C3b, C3c)
+		// a coaster's track and a kart, water or bumper ride's track or arena are tools no guest's request carries yet (C3c); a slide tower's slide is a guest's since C3b-3
 		int TypeOf( TrackFamily family ) => BumperTemplates.All.First( template => !template.IsBumper && template.Family == family ).Type;
 		var followed = new[]
 		{
 			SyntheticRide( $"Bumper.WhichTrackType {CoasterDefinition.TrackType}\n" ),
 			SyntheticRide( $"Bumper.WhichTrackType 1\nBumper.BumperType {TypeOf( TrackFamily.Kart )}\n" ),
 			SyntheticRide( $"Bumper.WhichTrackType 2\nBumper.BumperType {TypeOf( TrackFamily.Water )}\n" ),
-			SyntheticRide( $"Bumper.WhichTrackType 0\nBumper.BumperType {BumperTemplates.All.First( template => template.IsBumper ).Type}\n" ),
-			SyntheticRide( $"{PoolSlideTowers.SettingKey} 1\n" )
+			SyntheticRide( $"Bumper.WhichTrackType 0\nBumper.BumperType {BumperTemplates.All.First( template => template.IsBumper ).Type}\n" )
 		};
 		foreach ( var entry in followed )
 		{
@@ -463,6 +475,7 @@ public partial class CoopStreamTests
 			Assert.IsFalse( CoopBuildRights.GuestMayPlace( entry ) );
 		}
 		Assert.IsFalse( CoopBuildRights.OwnToolFollows( SyntheticRide( "" ) ), "an ordinary ride is placed by its click alone" );
+		Assert.IsTrue( CoopBuildRights.GuestMayPlace( SyntheticRide( $"{PoolSlideTowers.SettingKey} 1\n" ) ), "a slide tower, whose slide mode lays its pieces in batches" );
 		Assert.IsTrue( CoopBuildRights.GuestMayPlace( SyntheticRide( "" ) ) );
 		Assert.IsFalse( CoopBuildRights.OwnToolFollows( SyntheticRide( "Bumper.WhichTrackType 1\nBumper.BumperType 0\n" ) ), "a track type without a controller has no track tool" );
 		// a track add-on goes onto its ride's track by the track tools' rule: a request that names no ride must not place it as an ordinary object

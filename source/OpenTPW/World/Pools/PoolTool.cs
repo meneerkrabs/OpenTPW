@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// another; right click or Escape (<see cref="Cancel"/>) leaves it, Backspace (<see cref="Undo"/>) takes back the last stroke. The HUD and the tests drive it.
 /// </summary>
 // [EXT:pools-tool] OpenTPW's own tool; the original game has no pools
-public sealed class PoolTool
+public sealed partial class PoolTool
 {
 	/// <summary>Strokes kept for <see cref="Undo"/>.</summary>
 	public const int UndoCapacity = 64;
@@ -214,7 +214,10 @@ public sealed class PoolTool
 		HoverBridgeBlocker = null;
 	}
 
-	/// <summary>The press: starts a stroke on the cell and writes it.</summary>
+	/// <summary>
+	/// The press: starts a stroke on the cell and writes it. [EXT:online-coop-commands] A guest's stroke sends the cell to the host instead (<see cref="SendGuestBatches"/>) and returns null:
+	/// nothing is written yet.
+	/// </summary>
 	public PoolBuildResult? Press( int x, int y )
 	{
 		if ( !IsActive )
@@ -228,6 +231,11 @@ public sealed class PoolTool
 		LastRefusal = null;
 		LastSlideRefusal = null;
 		LastBridgeRefusal = null;
+		if ( SendsRequests?.Invoke() == true )
+		{
+			BeginGuestStroke( x, y );
+			return null;
+		}
 		return Write( x, y );
 	}
 
@@ -241,6 +249,13 @@ public sealed class PoolTool
 			// [EXT:pools-slides] a slide the splash has finished takes no more cells: the rest of the drag is not a refusal
 			if ( slideTower is { } laid && Slides?.Find( PoolSlide.KeyOf( laid.X, laid.Y ) ) is { IsComplete: true } )
 				break;
+			// [EXT:online-coop-commands] a guest's stroke collects the cell for the host; an outcome that finished its slide ends it
+			if ( guestStroke != null )
+			{
+				if ( !AddGuestCell( cell.X, cell.Y ) )
+					break;
+				continue;
+			}
 			Write( cell.X, cell.Y );
 		}
 		last = (x, y);
@@ -252,6 +267,12 @@ public sealed class PoolTool
 		if ( last == null )
 			return null;
 		last = null;
+		// [EXT:online-coop-commands] a guest's stroke ends its press: it reports once its cells are sent and back (TakeGuestReports)
+		if ( guestStroke != null )
+		{
+			ReleaseGuestStroke();
+			return null;
+		}
 		if ( pending.Count == 0 && pendingMarked.Count == 0 )
 			return null;
 		var cells = pending.ToArray();
@@ -300,8 +321,14 @@ public sealed class PoolTool
 		if ( slideTower is { } tower )
 		{
 			last = null;
+			// [EXT:online-coop-commands] a guest's goes to the host behind the stroke's cells, one at a time
+			if ( SendsRequests?.Invoke() == true )
+				return QueueGuestSlideUndo( tower );
 			return Slides != null && issue( new UndoPoolSlidePieceCommand( tower.X, tower.Y ) ).Accepted;
 		}
+		// [EXT:online-coop-commands] a guest's strokes are the host's to undo: their undo names its cells freely (undo is C5, as for lines)
+		if ( SendsRequests?.Invoke() == true )
+			return false;
 		if ( strokes.Count == 0 )
 			return false;
 		var stroke = strokes[^1];
@@ -322,7 +349,10 @@ public sealed class PoolTool
 	{
 		if ( !IsActive )
 			return;
+		// [EXT:online-coop-commands] a guest's stroke under the press reports nothing, as the host's cancelled stroke, and the cells its strokes had not sent go (C3b-3)
+		DiscardGuestStroke();
 		Release();
+		DiscardUnsentGuestBatches();
 		IsActive = false;
 		bridgeMode = false;
 		HoverBridgeResult = null;

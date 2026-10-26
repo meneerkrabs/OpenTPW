@@ -297,11 +297,11 @@ public sealed partial class PoolTool
 		{
 			if ( batch.Request is not { } request )
 			{
-				// refused here before it went: by the rights (said once for the stroke, the session's own note leaves the pool tool's to it; a slide undo only meets a finished slide
-				// there, which the host's slide mode has ended, so it says nothing) or because no request could go
+				// refused here before it went: by the rights (said once for the stroke, the session's own note leaves the pool tool's to it; the HUD says nothing for a slide undo that met a
+				// finished slide) or because no request could go
 				if ( batch.Local is { RightsRefused: true } local )
 				{
-					if ( stroke.Write != GuestWrite.SlideUndo && rightsRefused == null )
+					if ( rightsRefused == null )
 						(rightsRefused, rightsReason) = (batch.Command, local.Reason);
 				}
 				else if ( batch.Local != null )
@@ -313,8 +313,7 @@ public sealed partial class PoolTool
 				case CoopGuestRequestState.Applied when request.Result is { Error: null } result:
 					if ( result.RightsRefused )
 					{
-						// a slide undo the rights refuse met a slide the pieces before it finished: nothing is said, as the host's slide mode ended with the splash
-						if ( stroke.Write != GuestWrite.SlideUndo && rightsRefused == null )
+						if ( rightsRefused == null )
 							(rightsRefused, rightsReason) = (request.Command, result.Reason);
 						break;
 					}

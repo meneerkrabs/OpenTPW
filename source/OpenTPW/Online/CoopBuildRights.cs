@@ -208,9 +208,10 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// against that player, as the placement's own check plans it (<see cref="ParkObjects.Check(ObjectCatalogEntry, int, int, int, out ObjectPlacementPlan)"/>, centred as
 	/// <see cref="Level.PlaceObject"/> centres it): no object it would demolish (one of a lower overwrite priority) is a ride claimed against the player, nor, for a guest, one it may not
 	/// remove (<see cref="MayRemove"/>), and no cell it writes is a claimed ride's queue cell or the path cell its back joins: its footprint, the path cells it clears (beyond a track end too)
-	/// and the cell outside a queue ride's entrance, which it lays as queue (taking the links of a path cell there off). The cell outside its other entrance and its exit it lays or links as
-	/// path, over a path too, which takes no link off: they are asked for themselves alone (a path paves a queue's end). The placement lays only its last entrance's and its last exit's
-	/// (<see cref="ObjectAccessCells.Lay"/>), so only they are asked. A placement the park refuses is the park's to refuse.
+	/// and the cell outside a queue ride's entrance, which it lays as queue (taking the links of a path cell there off). The cell outside any other entrance and a queue ride's exit it lays
+	/// as path, over a path too, which takes no link off: they are asked for themselves alone (a path paves a queue's end). The exit of an object without a queue only links a path cell
+	/// already outside it, and writes no other cell, so it is not asked. The placement lays only its last entrance's and its last exit's (<see cref="ObjectAccessCells.Lay"/>), so only
+	/// they are asked. A placement the park refuses is the park's to refuse.
 	/// </summary>
 	internal bool PlacementLeavesClaimsAlone( int player, ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
@@ -223,7 +224,7 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		var queueEntrance = entry.HasQueue && entrance is { } enter ? new[] { (enter.OutsideX, enter.OutsideY) } : Array.Empty<(int, int)>();
 		var written = ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) ).Concat( plan.ClearedPaths ).Concat( queueEntrance )
 			.Distinct().ToArray();
-		var paths = new[] { entry.HasQueue ? null : entrance, exit }.OfType<ObjectAccessPoint>().Select( point => (point.OutsideX, point.OutsideY) ).Distinct().ToArray();
+		var paths = new[] { entry.HasQueue ? exit : entrance }.OfType<ObjectAccessPoint>().Select( point => (point.OutsideX, point.OutsideY) ).ToArray();
 		return !TouchesClaimedQueue( player, written, joins: true ) && !TouchesClaimedQueue( player, paths, joins: false );
 	}
 

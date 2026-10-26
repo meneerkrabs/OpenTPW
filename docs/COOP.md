@@ -1778,7 +1778,8 @@ Backspace, queue lines, placements (whose plans clear the paths under them, and 
 its first queue cell outside its entrance) and bridges refuse it, and the area clear leaves it standing
 (`IParkCommandRights.AllowsPathRemoval`). A path line along it, the path a placement lays or links outside
 its other entrance and its exit, and a queue line that only ends on it (which links the queue to that
-path, `QueuePaths.Connect`) leave the queue's links as they are. A queue cell's ride is resolved as its
+path, `QueuePaths.Connect`) leave the queue's links as they are. The exit of an object without a queue
+only links a path cell already outside it and writes no other cell, so it is asked nothing. A queue cell's ride is resolved as its
 removal resolves it: the rides' cached lines, then each line walked again (on a copy) for the cells they
 miss, once per question of the rights (the area clear asks it for each path cell it would clear).
 Everything else stays the host's: pause and speed (Q8), cheats (Q17), money, staff and the park's
@@ -1920,8 +1921,9 @@ A guest's strokes go in batches instead, and the host's tool writes at once, as 
   the pieces still queued and one at a time; a slide with no piece to take back is the park's to refuse,
   quietly, as the host's Backspace is. A finished slide's pieces are the host's (riders use it), or go with
   its tower: an undo queued behind pieces that turned out to lay the splash meets a finished slide and
-  says nothing, as the host's slide mode ends with its splash. A Backspace during a drag ends the drag's
-  stroke, which reports once back.
+  says nothing, as the host's slide mode ends with its splash. An undo the rights refuse once the host
+  took the grant back says so, as any stroke's refusal. A Backspace during a drag ends the drag's stroke,
+  which reports once back.
 - **Backspace with no tool on** over a pool bridge or a pool cell is a request, as over a path (C3b-1), and
   a refusal says the pool's reason.
 - **Escape**, a right click or another tool ends the tool: its unsent cells are dropped, the stroke under

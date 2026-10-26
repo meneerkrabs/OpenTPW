@@ -208,7 +208,7 @@ public sealed partial class ParkHud
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( report.SlideDone )
 			PostMessage( strings.Extra( OpenTpwText.PoolSlideDone ) );
-		if ( report.RightsRefused is { } refused )
+		if ( report.RightsRefused is { } refused && !MetFinishedSlide( refused ) )
 			SayGuestNote( RightsRefusalText( refused, report.RightsReason ) );
 		else if ( report.NotTaken )
 			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
@@ -220,6 +220,13 @@ public sealed partial class ParkHud
 		GameAudio.PlayPathRefused( refusal.Cell.X, refusal.Cell.Y );
 		PostMessage( strings.Extra( report.BridgeRefusal is { } bridge ? BridgeRefusalText( bridge ) : PoolRefusalText( refusal.Reason, report.SlideRefusal ) ) );
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] Whether a refusal of <paramref name="command"/> by the session's rights met a finished slide: a slide undo the rights refuse while this player may build,
+	/// whose slide the pieces before it finished (<see cref="CoopBuildRights.Builds"/>). Nothing is said for it, as the host's slide mode ended with the splash and its Backspace says nothing;
+	/// one refused once the host took the grant back is said.
+	/// </summary>
+	private bool MetFinishedSlide( ParkCommand command ) => command is UndoPoolSlidePieceCommand && level.HasBuildGrant( level.Commands.Player );
 
 	/// <summary>
 	/// [EXT:online-coop-permissions] What a refusal of <paramref name="command"/> by the session's rights says, from its <paramref name="reason"/>: [EXT:online-coop-claims] another player's claim

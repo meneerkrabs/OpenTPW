@@ -404,6 +404,42 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void AGuestsSlideUndoRefusedOnceTheGrantWentSaysSo()
+	{
+		var (host, guest, _, _) = Shared();
+		var tower = TowerOnBoth( host, guest );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		Assert.IsTrue( guest.Level.EnterSlideTool( tower ) );
+		var tool = guest.Level.PoolTool!;
+		var seat = guest.Level.Commands.Player;
+		tool.Press( 15, 19 );
+		tool.Release();
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the piece came back" );
+		Assert.AreEqual( 1, SlideOf( host )!.Pieces.Count );
+		// the grant goes while the guest's Backspace is on its way: the host's rights refuse it, and its report says why (the slide is not finished, so it is no quiet undo)
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
+		Assert.IsTrue( tool.Undo() );
+		tool.SendGuestBatches( Time.Now );
+		RoundsUntil( () => !tool.HasGuestBatches && !guest.Level.HasBuildGrant( seat ), host, guest, view, "the undo came back" );
+		view.Update();
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is UndoPoolSlidePieceCommand ), "it went to the host" );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ) );
+		// once the guest's park knows, its Backspace is refused before it goes, and says so too
+		Assert.IsTrue( tool.Undo() );
+		tool.SendGuestBatches( Time.Now );
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the refused undo reported" );
+		view.Update();
+		Assert.AreEqual( 2, view.Says( OpenTpwText.CoopNotGranted ) );
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is UndoPoolSlidePieceCommand ), "the second went nowhere" );
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) );
+		Assert.IsTrue( SlideOf( host )!.Pieces.Count == 1 && SlideOf( guest )!.Pieces.Count == 1, "nothing was taken back" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
 	public void ABackspaceInTheSlideModeDuringADragEndsTheDragsStroke()
 	{
 		var (host, guest, _, _) = Shared();

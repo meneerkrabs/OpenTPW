@@ -676,6 +676,19 @@ public partial class CoopSessionTests
 			Assert.AreNotEqual( (10, 1), (points[^1].OutsideX, points[^1].OutsideY) );
 			Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( twoEntrances, anchor.X, anchor.Y, 0, out _ ) );
 			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 1, twoEntrances, 12, 1, 0 ), "only the entrance it lays is asked" );
+			// beside the claimed queue's cell (10, 3): the park blocks an entrance or a queue ride's exit there (it would lay their outside cells as path), not the exit of an object without
+			// a queue, which only links a path cell outside it and writes nothing there (ObjectAccessCells.Lay): the rights ask it nothing
+			var plainExit = ShapedEntry( "Info.Id 9108\n", "W" );
+			Assert.AreEqual( OriginalPlacementResult.AccessBlocked, level.Objects.Check( pathEntrance, 11, 3, 0, out _ ) );
+			Assert.AreEqual( OriginalPlacementResult.AccessBlocked, level.Objects.Check( exit, 11, 3, 0, out _ ) );
+			Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( plainExit, 11, 3, 0, out _ ) );
+			Assert.AreEqual( (10, 3), ObjectFootprint.GetAccessPoints( plainExit.Shape, 11, 3, 0 ).Select( point => (point.OutsideX, point.OutsideY) ).Single() );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 1, plainExit, 11, 3, 0 ), "the exit of an object without a queue" );
+			var cells = level.Guests.Grid.Cells;
+			var queueCell = (cells.RawTypeAt( 10, 3 ), cells.LinksAt( 10, 3 ), cells.QueueLinkAt( 10, 3 ), cells.OwnerAt( 10, 3 ));
+			Assert.AreEqual( (byte)ParkCellType.Queue, queueCell.Item1 );
+			ObjectAccessCells.Lay( cells, ObjectFootprint.GetAccessPoints( plainExit.Shape, 11, 3, 0 ), 0, hasQueue: false );
+			Assert.AreEqual( queueCell, (cells.RawTypeAt( 10, 3 ), cells.LinksAt( 10, 3 ), cells.QueueLinkAt( 10, 3 ), cells.OwnerAt( 10, 3 )), "its placement leaves the queue's cell as it was" );
 		}
 		finally
 		{

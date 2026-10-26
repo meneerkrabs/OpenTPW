@@ -10,3 +10,4 @@ In a shared park, a kart or water ride's track is now edited by one player at a 
 - **Claims are session state.** A late joiner receives them, the session's checks cover them, and saves never hold them.
 - **Track rides are ordinary rides while nobody claims them.** A guest can sell or clear an unclaimed kart or water ride, or edit its queue. A guest can now also place bumper rides, whose queue tool follows.
 - **Still the host's:** a guest's track tool (next), coasters and track add-ons.
+- **Two follow-ups to the guests' building.** A guest's Backspace in the slide mode that the host's rights refuse after the grant was taken back now says so; only an undo that met a finished slide stays quiet. And the exit of an object without a queue, which only links a path cell already outside it, no longer makes a placement beside a claimed queue a refusal.

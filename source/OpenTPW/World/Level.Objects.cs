@@ -448,6 +448,13 @@ public partial class Level
 	/// </summary>
 	internal void ConfigureObjectHooks()
 	{
+		// [BIN:TPW-EXE:0x0046334C skirt base] with the procedural terrain textures on, a placed object's skirt cells take their landscape words and base composites (docs/OBJECTS.md, "Floors")
+		if ( OriginalPark?.Heightfield is { } heightfield )
+		{
+			var words = new OriginalCellWords( heightfield );
+			var terrain = HoardingTerrain.Of( heightfield );
+			Objects.FloorBase = () => OriginalTerrain?.ProceduralGround is { } ground ? new FloorBaseContext( words, ground, terrain, HoardingCache.ReleaseFloorArt ) : null;
+		}
 		Objects.IsReserved = ( x, y ) => PoolBridges?.Reserves( x, y ) == true || IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 		Objects.IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
 		Objects.PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null;

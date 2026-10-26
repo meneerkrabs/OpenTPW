@@ -279,6 +279,8 @@ public sealed partial class OriginalTerrain : Entity
 		if ( procedural == null || proceduralPart == null || heightfieldPart == null )
 			return;
 		var suspended = SuspendsProceduralGround( Camera.Mode );
+		if ( suspended && staticHolesStale )
+			RebuildHeightfieldPart();
 		proceduralPart.Hidden = suspended;
 		heightfieldPart.Hidden = !suspended;
 		if ( outsidePart != null )
@@ -296,14 +298,11 @@ public sealed partial class OriginalTerrain : Entity
 		if ( signature == heightfieldHoleSignature )
 			return;
 		heightfieldHoleSignature = signature;
-		var old = heightfieldPart;
-		parts.Remove( old );
-		old.Delete();
-		if ( old.Model is { } oldModel && models.Remove( oldModel ) )
-			ScheduleDispose( oldModel );
-		var hidden = old.Hidden;
-		heightfieldPart = AddPart( BuildHeightfieldModel( heightfieldMaterial, heightfieldSlotIndices ), "heightfield" );
-		heightfieldPart.Hidden = hidden;
+		// with the procedural ground the static mesh is hidden: it is rebuilt when a camera mode that suspends the textures shows it, not at every placement
+		if ( procedural != null && heightfieldPart.Hidden )
+			staticHolesStale = true;
+		else
+			RebuildHeightfieldPart();
 		if ( outsidePart != null && procedural is { } ground )
 		{
 			var outside = outsidePart;
@@ -314,6 +313,22 @@ public sealed partial class OriginalTerrain : Entity
 			outsidePart = AddPart( BuildHeightfieldModel( heightfieldMaterial, heightfieldSlotIndices, ( x, y ) => !ground.IsProcedural( x, y ) ), "heightfield outside the procedural rectangle" );
 			outsidePart.Hidden = outside.Hidden;
 		}
+	}
+
+	private bool staticHolesStale;
+
+	/// <summary>The static ground mesh made again for the holes as they are now.</summary>
+	private void RebuildHeightfieldPart()
+	{
+		staticHolesStale = false;
+		var old = heightfieldPart!;
+		parts.Remove( old );
+		old.Delete();
+		if ( old.Model is { } oldModel && models.Remove( oldModel ) )
+			ScheduleDispose( oldModel );
+		var hidden = old.Hidden;
+		heightfieldPart = AddPart( BuildHeightfieldModel( heightfieldMaterial!, heightfieldSlotIndices!, null ), "heightfield" );
+		heightfieldPart.Hidden = hidden;
 	}
 
 	/// <summary>The path layer: one quad per path cell, batched by at most 16 PathTex textures, and each queue cell's queue model.</summary>
@@ -379,29 +394,65 @@ public sealed partial class OriginalTerrain : Entity
 	/// The queue models of the queue cells (<see cref="QueueModels"/>), baked into static batches: each instance stands on its cell turned by
 	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), each vertex on the ground under it.
 	/// </summary>
-	// [APPROX:PATH-015] the queue models are baked draped onto the landscape as tp.exe does (QueueModelDrape, 0x469A80) and drawn over the ground (the original makes the cell a hole, 0x46DF50, filled by the composite floor 0x57ACE0, so here the floor and the ground compete in depth on slopes) and without the ground deformation of their .hmp files (as objects, RIDES-014) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the composite floor (F5 of the floors work), the .hmp deformation and the model loader's flag 0x100000 (0x4629D0)
+	// [APPROX:PATH-015] the queue models are baked draped onto the landscape as tp.exe does (QueueModelDrape, 0x469A80), the cell a hole of the ground (0x46DF50) with the skirt of the object loader (opaque slot, normalised coordinates) and, with the procedural terrain textures on, the composite floor of the base art over the cell's ground (0x463060, 0x57ACE0; QueueModelFloor), and drawn without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the model loader's flag 0x100000 (0x4629D0) and the texture-frame animation of the torches
 	private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues )
 	{
 		QueueModelCount = 0;
-		if ( queues.Count == 0 )
-			return;
 		var field = Park.Heightfield;
 		var directory = $"/levels/{Park.LevelName}/queue";
-		var batchTextures = new List<string>();
-		var batchVertices = new List<Vertex>();
-		var batchIndices = new List<uint>();
-		foreach ( var group in queues.Where( queue => queue.Tile.Model >= 0 && queue.Tile.Model < QueueModels.Names.Count ).GroupBy( queue => queue.Tile.Model ).OrderBy( group => group.Key ) )
+		// the atlas of the build before the last may go: the last one is what the parts still drawn point into
+		retiredQueueAtlas?.Dispose();
+		retiredQueueAtlas = queueAtlas;
+		queueAtlas = null;
+		if ( queues.Count == 0 )
+			return;
+		var valid = queues.Where( queue => queue.Tile.Model >= 0 && queue.Tile.Model < QueueModels.Names.Count ).ToList();
+		var floors = new Dictionary<int, QueueModelFloor>();
+		foreach ( var key in valid.Select( queue => queue.Tile.Model ).Distinct().OrderBy( key => key ) )
 		{
-			ModelFile model;
 			try
 			{
-				model = ObjectAssets.LoadModel( $"{directory}/{QueueModels.Names[group.Key]}.md2" );
+				floors[key] = QueueModelFloor.Create( ObjectAssets.LoadModel( $"{directory}/{QueueModels.Names[key]}.md2" ), field );
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
 			{
-				missingTextures.Add( $"{QueueModels.Names[group.Key]}.md2" );
-				continue;
+				missingTextures.Add( $"{QueueModels.Names[key]}.md2" );
 			}
+		}
+		// with the procedural terrain textures on, every queue cell with a composite takes a tile of the atlas (the skirt word and 0x57ACE0 of the placement)
+		var tileOfCell = new Dictionary<(int X, int Y), int>();
+		if ( procedural is { } ground )
+		{
+			var tiles = new List<byte[]>();
+			foreach ( var (x, y, tile) in valid )
+			{
+				if ( !floors.TryGetValue( tile.Model, out var floor ) || !floor.HasComposite )
+					continue;
+				var key = (tile.Model, x, y, tile.Yaw);
+				if ( !queueComposites.TryGetValue( key, out var rgba ) )
+				{
+					rgba = floor.Compose( field, x, y, tile.Yaw, ground.Texturer, slot => QueueSlotArt( floor.Model, slot, directory ) );
+					queueComposites[key] = rgba;
+				}
+				if ( rgba == null )
+					continue;
+				tileOfCell[(x, y)] = tiles.Count;
+				tiles.Add( ObjectFloorBase.FlipRows( rgba, ground.Size, ground.Size ) );
+			}
+			if ( tiles.Count > 0 )
+			{
+				queueAtlas = new ProceduralTerrainAtlas( ground.Size, tiles.Count );
+				for ( var index = 0; index < tiles.Count; index++ )
+					queueAtlas.Upload( index, tiles[index] );
+			}
+		}
+		var batchTextures = new List<string>();
+		var batchVertices = new List<Vertex>();
+		var batchIndices = new List<uint>();
+		foreach ( var group in valid.Where( queue => floors.ContainsKey( queue.Tile.Model ) ).GroupBy( queue => queue.Tile.Model ).OrderBy( group => group.Key ) )
+		{
+			var floor = floors[group.Key];
+			var model = floor.Model;
 			foreach ( var (x, y, tile) in group )
 			{
 				// the instance height and the chain of every node on this cell; each vertex is draped by its own chain (QueueModelDrape)
@@ -409,11 +460,15 @@ public sealed partial class OriginalTerrain : Entity
 				var placement = QueueModelDrape.Placement( field, model, x, y, tile.Yaw, baseHeight );
 				var chains = QueueModelDrape.Chains( model, placement );
 				var rootChain = ModelDrape.Chain( placement, System.Numerics.Matrix4x4.Identity );
-				foreach ( var mesh in model.Meshes )
+				var hasTile = tileOfCell.TryGetValue( (x, y), out var tileIndex );
+				for ( var meshIndex = 0; meshIndex < model.Meshes.Count; meshIndex++ )
 				{
+					var mesh = floor.Floor.Apply( meshIndex, model.Meshes[meshIndex] );
 					if ( ObjectAssets.GetUnrenderableReason( mesh ) != null || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
 						continue;
-					var names = mesh.Materials.Select( material => material.Name ).ToArray();
+					// the composite stands in for the skirt entry's slot: the materials that name it read the cell's tile of an atlas page
+					var composite = hasTile && mesh.Materials.Any( material => material.TextureIndex == floor.Entry.Slot ) ? queueAtlas!.PageOf( tileIndex ) : -1;
+					var names = mesh.Materials.Select( material => hasTile && material.TextureIndex == floor.Entry.Slot ? $"{CompositePrefix}{composite}" : material.Name ).ToArray();
 					if ( batchTextures.Union( names, StringComparer.OrdinalIgnoreCase ).Count() > MaximumTextureSlots )
 						FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
 					var slotOfMaterial = names.Select( name =>
@@ -435,11 +490,14 @@ public sealed partial class OriginalTerrain : Entity
 						var placed = QueueModelDrape.Vertex( field, nodeChain, source.Position.GetSystemVector3(), baseHeight );
 						var normal = ObjectAssets.ConvertAxes( System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), nodeChain ) );
 						var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
+						var texCoords = mesh.TexCoords[index];
+						if ( hasTile && mesh.Materials[materialIndex].TextureIndex == floor.Entry.Slot )
+							texCoords = queueAtlas!.PageCoordinates( tileIndex, texCoords );
 						batchVertices.Add( new Vertex
 						{
 							Position = OriginalParkPlacement.ToEngine( field, placed ),
 							Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( normal ) : System.Numerics.Vector3.UnitZ,
-							TexCoords = mesh.TexCoords[index],
+							TexCoords = texCoords,
 							TexIndex = slotOfMaterial[materialIndex],
 							MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags )
 						} );
@@ -453,10 +511,33 @@ public sealed partial class OriginalTerrain : Entity
 		FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
 	}
 
+	/// <summary>The name a batch slot takes for a page of the queue composites (the atlas, not a file).</summary>
+	private const string CompositePrefix = "\u0001queue-composite-";
+
+	private ProceduralTerrainAtlas? queueAtlas, retiredQueueAtlas;
+
+	/// <summary>The composites made so far by (model, cell, yaw): the placement of a queue cell makes one once (the ground under it does not change), so a rebuild of the path layer reuses it.</summary>
+	private readonly Dictionary<(int Model, int X, int Y, int Yaw), byte[]?> queueComposites = new();
+
+	/// <summary>The art of a slot of a queue model (its first frame's file in the queue archive), as the composite reads it.</summary>
+	private ObjectFloorBase.SlotArt? QueueSlotArt( ModelFile model, int slot, string directory )
+	{
+		if ( slot < 0 || slot >= model.Textures.Count || model.Textures[slot].FrameNames.Count == 0 )
+			return null;
+		var path = FindTexture( directory, Park.LevelName, model.Textures[slot].FrameNames[0], "textures", ListFiles );
+		if ( path == null )
+			return null;
+		var (data, width, height) = path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) ? Texture.DecodeWct( path ) : Texture.DecodeImage( FileSystem, path );
+		return new ObjectFloorBase.SlotArt( data, width, height );
+	}
+
 	/// <summary>The drawn ground's height under a point in model units (<see cref="LandscapeSampler"/>), the point kept on the map.</summary>
 	internal static float GroundUnder( ModelHeightfield field, float x, float y ) =>
 		LandscapeSampler.Sample( field.CellCountX, field.CellCountZ, field.CellSizeX, field.CellSizeZ, field.GetCornerHeight, field.SplitsAlongAntiDiagonal,
 			Math.Clamp( x, 0, field.CellCountX * field.CellSizeX - 0.001f ), Math.Clamp( y, 0, field.CellCountZ * field.CellSizeZ - 0.001f ) );
+
+	private Texture QueueSlotTexture( Dictionary<string, Texture> textures, string name, string directory ) =>
+		name.StartsWith( CompositePrefix, StringComparison.Ordinal ) && queueAtlas != null && int.TryParse( name.AsSpan( CompositePrefix.Length ), out var page ) ? queueAtlas.Pages[page] : LoadTexture( textures, name, "textures", directory );
 
 	private void FlushQueueBatch( Dictionary<string, Texture> textures, string directory, List<string> names, List<Vertex> vertices, List<uint> indices )
 	{
@@ -464,7 +545,7 @@ public sealed partial class OriginalTerrain : Entity
 		{
 			var slots = new Texture[MaximumTextureSlots];
 			for ( var index = 0; index < slots.Length; index++ )
-				slots[index] = index < names.Count ? LoadTexture( textures, names[index], "textures", directory ) : slots[0];
+				slots[index] = index < names.Count ? QueueSlotTexture( textures, names[index], directory ) : slots[0];
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
 			pathParts.Add( AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"queue models {pathParts.Count}" ) );
@@ -786,6 +867,9 @@ public sealed partial class OriginalTerrain : Entity
 			Camera.ParkFarPlane = null;
 		procedural?.Dispose();
 		procedural = null;
+		queueAtlas?.Dispose();
+		retiredQueueAtlas?.Dispose();
+		queueAtlas = retiredQueueAtlas = null;
 		foreach ( var part in parts )
 			part.Delete();
 		parts.Clear();

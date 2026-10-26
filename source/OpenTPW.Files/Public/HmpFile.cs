@@ -7,7 +7,7 @@ namespace OpenTPW;
 /// A 48-byte header (version 3, magic 0xAB1E, samples per cell 5, 100, cells wide, cells high, body offset 48, the offsets of
 /// the per-cell maxima and the per-cell flags, then six bounding-box floats) is followed by the profile
 /// (5 × width) × (5 × height) bytes, the width × height per-cell maxima and the width × height per-cell flags.
-/// The profile steps are about 0.4 world units; the file's consumers are not traced (RIDES-014, TRACK-HMP).
+/// The profile steps are about 0.4 world units; the file's consumers are the object height map lookup (<c>ObjectHeightMaps</c>, 0x00452AE0) and the track piece profile (TRACK-HMP); it does not deform the terrain.
 /// </summary>
 public sealed class HmpFile : BaseFormat
 {

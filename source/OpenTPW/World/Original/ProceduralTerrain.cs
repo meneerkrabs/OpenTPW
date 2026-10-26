@@ -33,6 +33,10 @@ internal sealed class ProceduralTerrain : IDisposable
 	// the cells the procedural textures reach, the lowest and highest height of the field (model units) and the answers of the render hole delegate for the current hole version
 	private readonly bool[] eligible;
 	private readonly byte[] holeState;
+	// the answers before the last change of the hole version (2 = hole): a cell that was a hole and is not any more is dirty, as the original's restore of a cleared cell sets the dirty bit 0x100 on its word
+	private readonly byte[] previousHoleState;
+	private readonly HashSet<int> dirtyCells = new();
+	private readonly bool[] visibleDirty = new bool[ProceduralTextureCache.MaximumVisibleCells];
 	private readonly SysVector3[] cellNormals;
 	private ulong holeStateVersion;
 	private readonly TerrainViewSpans viewSpans;
@@ -82,6 +86,9 @@ internal sealed class ProceduralTerrain : IDisposable
 	public void MarkSceneChanged() => gate.MarkSceneChanged();
 
 	public ProceduralTextureCache Cache => cache;
+
+	/// <summary>The texturer that builds this level's cell textures; the floor composites take their bases from it (<see cref="ObjectFloorBase"/>). Not thread-safe: use it on the thread that refreshes the terrain.</summary>
+	internal ProceduralTerrainTexturer Texturer => texturer;
 	public ProceduralTerrainAtlas Atlas => ownedAtlas ?? throw new InvalidOperationException( "This terrain has no texture pages of its own." );
 	public ProceduralTerrainRectangle Rectangle => rectangle;
 	public int Size => texturer.Size;
@@ -123,6 +130,7 @@ internal sealed class ProceduralTerrain : IDisposable
 			for ( var x = 0; x < field.CellCountX; x++ )
 				eligible[z * field.CellCountX + x] = rectangle.Contains( x, z ) && texturer.CanBuild( x, z ) && field.GetCellTextureSlot( x, z ) >= 0;
 		holeState = new byte[eligible.Length];
+		previousHoleState = new byte[eligible.Length];
 		cellNormals = new SysVector3[eligible.Length];
 		// the mesh holds every cell a frame can list (2500), which can be more than the cache has slots for
 		vertices = new Vertex[ProceduralTextureCache.MaximumVisibleCells * 4];
@@ -170,6 +178,10 @@ internal sealed class ProceduralTerrain : IDisposable
 	{
 		if ( holeVersion != holeStateVersion )
 		{
+			// a cell no frame has asked about since an earlier change keeps what that change left
+			for ( var cell = 0; cell < holeState.Length; cell++ )
+				if ( holeState[cell] != 0 )
+					previousHoleState[cell] = holeState[cell];
 			Array.Clear( holeState );
 			holeStateVersion = holeVersion;
 			MarkSceneChanged();
@@ -177,7 +189,11 @@ internal sealed class ProceduralTerrain : IDisposable
 		if ( !gate.Frame( view ) )
 			return false;
 		CollectVisible( view, projection, renderHole );
-		cache.Resolve( visibleKeys.AsSpan( 0, visibleCount ), visibleSlots.AsSpan( 0, visibleCount ), visibleBuild.AsSpan( 0, visibleCount ) );
+		cache.Resolve( visibleKeys.AsSpan( 0, visibleCount ), visibleSlots.AsSpan( 0, visibleCount ), visibleBuild.AsSpan( 0, visibleCount ), visibleDirty.AsSpan( 0, visibleCount ) );
+		// a dirty cell that was listed is rebuilt (a cache hit rebuilds when the recorded word had bit 0x100) and is clean again
+		for ( var index = 0; index < visibleCount; index++ )
+			if ( visibleDirty[index] )
+				dirtyCells.Remove( visibleCells[index] );
 		// a key that took a slot owns it until its pixels are built; a slot taken twice in one frame (a view of more cells than the cache holds) keeps the later cell's, as in the original
 		for ( var index = 0; index < visibleCount; index++ )
 			if ( visibleBuild[index] )
@@ -247,7 +263,13 @@ internal sealed class ProceduralTerrain : IDisposable
 				if ( renderHole != null )
 				{
 					if ( holeState[cell] == 0 )
+					{
 						holeState[cell] = renderHole( x, z ) ? (byte)2 : (byte)1;
+						// [BIN:TPW-EXE:0x0046DF50 word restore] a cell that stops being a hole took its backup word again with the dirty bit 0x100
+						if ( holeState[cell] == 1 && previousHoleState[cell] == 2 )
+							dirtyCells.Add( x | (z << 16) );
+						previousHoleState[cell] = 0;
+					}
 					if ( holeState[cell] == 2 )
 						continue;
 				}
@@ -256,6 +278,7 @@ internal sealed class ProceduralTerrain : IDisposable
 					continue;
 				visibleKeys[visibleCount] = key;
 				visibleCells[visibleCount] = x | (z << 16);
+				visibleDirty[visibleCount] = dirtyCells.Count > 0 && dirtyCells.Contains( x | (z << 16) );
 				visibleCount++;
 			}
 		}

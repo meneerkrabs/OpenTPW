@@ -212,7 +212,7 @@ Original values ([DATA:Data/low.sam, med.sam, high.sam]):
 | --- | --- | --- | --- | --- | --- |
 | TEXTUREQUALITY | 1 | 2 | 3 | 3 | not applied (full resolution always) |
 | TEXTUREFILTERING (0 point, 1 bilinear, 2 trilinear, 3 anisotropic) | 0 | 1 | 2 | 3 (16x) | **applied** to world samplers |
-| PROCEDURALTEXTURING (0 off, 1 16, 2 32, 3 64 texels) | 0 | 2 | 2 | 3 | **applied** at the next level load: each visible terrain cell gets its own N × N texture from the theme's `base.lnd` (docs/LND.md); the lobby stays static |
+| PROCEDURALTEXTURING (0 off, 1 16, 2 32, 3 64 texels) | 0 | 2 | 2 | 3 | **applied** at the next level load: each visible terrain cell gets its own N × N texture from the theme's `base.lnd` (docs/LND.md), and the skirt cells of placed rides and shops get a composite of their floor art over that texture (docs/OBJECTS.md, Floors); the lobby stays static |
 | PROCEDURALTEXTURECACHE (0, 1, 2 → 1500, 2000, 2500 cells) | 0 | 1 | 1 | 2 | **applied** at the next level load: the size of the visible-cell cache |
 | ANIMATINGTEXTURES | 0 | 1 | 1 | 1 | **applied** to the object texture-frame tracks (0 = each slot shows its first frame, tp.exe `0x57A420`) |
 | SKYQUALITY (layers) | 1 | 2 | 4 | 4 | **applied** to the sky's scrolling cloud layers (0 draws no sky) |

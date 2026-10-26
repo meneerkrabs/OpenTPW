@@ -138,11 +138,10 @@ rotation about the anchor → + 10·(X, Y) → × 0.2 → grid origin (the heigh
 mapping of MAP.md; sandbox: the 32×32 tile park). Fixed items use anchor
 (0, 0) and no rotation: their models are authored in park coordinates (Jungle
 gates span MD2 X 450…510 = cells 45…51, matching the saved 6×3 footprint at
-45, 16). Base height = the midpoint of the lowest and highest terrain vertex under the footprint (`0x466D70`; RIDES-014: the earlier mean of the cell heights
-stays only for a park-resume save without `BaseHeightRule`)
-(**approximation** for the blend: rides flatten their ground in the original, cf.
-`Info.DontDeformBase` and the per-archive `.hmp` files, whose header repeats the
-shape size, e.g. Totem 3×4).
+45, 16). Base height = the midpoint of the lowest and highest terrain vertex under the footprint (`0x466D70`; the earlier mean of the cell heights
+stays only for a park-resume save without `BaseHeightRule`). The original does not flatten the ground under a ride: `0x467030` only places the
+footprint box and stores it, the ground meets the floor through the edge conform and the skirt ([Floors](#floors-the-skirt-and-the-edge-conform)); the per-archive `.hmp` files are the
+height maps of the object's footprint (their size is the shape's, e.g. Totem 3×4).
 
 ## Animations: ANIM_* → member
 
@@ -289,6 +288,96 @@ the state lives in the object's runtime, no state hash reads it, and the park-re
   attraction saved closed makes no model call. A park without terrain (the sandbox) has no hoardings, as the type
   loader's ground-node search needs the heightfield.
 
+## Floors (the skirt and the edge conform)
+
+Where a placed ride, shop, sideshow or feature meets the ground the original does five things (all of tp.exe, none flattening the terrain). Package F of issue 829 ports them in steps:
+the skirt read at type load, the opaque skirt slots, the edge conform and the depth compare (F1 to F3, F8), and, with the procedural terrain textures of PR 843, the holes under the footprint
+and the composite of the floor art over the procedural ground (F4, F5). The queue models' skirt (F6) is ported with the queue models' drape ([PATHS.md](PATHS.md)); the path art over the procedural ground (F9) is read, not ported (below).
+
+- **The skirt, read at type load.** The type loader (`0x004629D0`, load flag 1 → `0x0046A5A0` → `0x0046AA10`) reads the model's ground node (the node with most ground vertices,
+  `ObjectHoardingGeometry.ScanGround`) when the MD2 header `+0x30` has bit 0x08 ("has procedural base", the exporter's option; every non-fixed catalogue type has it except the
+  `mystery` box, header 1) and the type has a ground node or header bit 0x80. `ObjectSkirt` is that reading, built once per type over the level's terrain: the edge mask of the
+  shape (`0x0052C420`: cells of type 4, 9, 10 or 0x17 that lack a floor neighbour on any side, a 16 × 16 array indexed column × 16 + row, with the original's reads one cell past the
+  last column and row), the best axis-aligned horizontal floor face of every cell (`0x0046AA10`), the texture coordinates of the node after the snap, shift and wrap pass
+  (`0x00467310`, tolerance 0.02), and per edge cell an entry `{orientation code, texture slot}` (code 0x80 | corner 0, 8, 0x10 or 0x20 of the quad with the smallest
+  texture coordinates, 0x40 when the quad runs along its other axis; the default entry `{1, 10000}`). The base record gets flag 0x40. The skirt grid is the shape's size
+  (`+0xF0/+0xF4` = shape words 0 and 1, and the object's height map `+0xCC`, whose file size must equal it, is the grid the instance constructor walks: OPEN-F3 settled, every
+  shipped height map has its shape's size). Shipped: 60/57/61/59 types per theme (jungle, fantasy, hallow, space) have skirt cells, 394/370/437/437 cells in all, no two cells of
+  a type share a slot, the error "Could not generate skirt flags" never fires; Belly Bounce's ten entries are `C8 E0 90 A0 88 A0 88 80 90 E0` with slots 11, 10, 9, 8, 6, 5, 3, 2, 1, 0
+  (`ObjectSkirtCorpusTests`). Jungle `lavajump` has the base bit and no cell, `mystery` is not exported.
+  The reading is the oracle's, bit for bit (`SkirtReading`, `ObjectFloorMath`, [ORACLE.md](reverse/ORACLE.md) X28 to X32), in plain float arithmetic: tp.exe's thread runs the x87 at the
+  24-bit control word 0x7F (DDSCL_FPUSETUP and the Direct3D device start leave it so, which nothing restores: COAST-032, `X87Precision`), where every operation is one single-precision operation. At
+  the 53-bit word the same routines differ on some inputs (31 of 400 skirt, 104 of 400 conform).
+  Theme Park Inc's no-CD `Game.exe` has the same code (the skirt strings at `0x009AF698` and `0x009AF65C`, the mask code at `0x0066D146`, the slot flag 0x800 → state 0x1256 test at
+  `0x006EFCA0`, the conform tail `0x00469A56..0x00469A75` byte for byte at `0x004CE588`), so the floors apply to both games.
+- **Opaque skirt slots.** The same pass sets the runtime slot flag 0x800 on the texture slots of the ground node's faces that lie in an edge cell (and clears it on the others; the last
+  face of a slot decides) and clears the wrap bits of the slots whose faces all lie on the floor in an edge cell. A face of a slot with 0x800 is drawn with state 0x1256 (no blend,
+  no alpha test), never in the sorted translucent pass (`0x00581790`, [MD2-MODELS.md](MD2-MODELS.md#the-translucent-pass-of-world-models)). The grass-fringe art of these floors is
+  translucent, so before this the floors went through the sorted pass and z-fought with the terrain. Forced opaque, a skirt cell's art shows its painted grass edge as it is: with the
+  static ground the edge is meant to be seen on nothing, because the ground under a footprint is a hole (below), and with the procedural ground the composite replaces the art
+  (below). `ObjectFloor` applies the flags, the normalised coordinates and the conform to the
+  instance's copy of the meshes (the type's parsed model stays as read); `test.shader` reads the vertex bit `WorldTranslucency.OpaqueSlotFlag`.
+- **The edge conform, at every placement.** The creation flag 8 of every non-fixed object runs `0x00469940` → `0x00469A80` in its apply mode, whatever the texturing option is: each
+  ground vertex that the counting walk listed at type load is snapped to the nearest terrain grid corner (`ObjectGroundConform`): the placed vertex's ground coordinates
+  onto the grid line (within 0.01 of a cell) and its height onto that corner's height, then back into the node's frame through the inverse matrix. The floor's outer edge lies
+  on the terrain; the inner floor stays at the base height, so on a slope the edge ring tilts. A vertex whose corner lies past the last terrain corner ends its node (and its
+  subtree) there. Presentation only: the conformed copy is drawn and picked (`OriginalObject.TryHitPickLine`), no simulation state, world hash or save field reads it
+  (`ObjectGroundConform` works on copies; the type's model is shared and never changes). Not ported: after the vertices the original recomputes the normals of a model with flag 0x40000
+  (`0x469A66` → `0x473C30` / `0x473A40`); OpenTPW keeps the stored normals, as for every vertex-passed node (RIDES-021 names the same skipped recompute for the pick).
+- **Depth compare.** The original compares depth with LESSEQUAL (`0x0057360F`, once, in the device set-up), so on equal depth the later draw wins and the floor, drawn after the terrain,
+  shows over the ground it lies in. `Material.DepthComparison` ports it for every depth-tested material (Theme Park Inc's no-CD `Game.exe` sets the same LESSEQUAL, at `0x006D6574` and in its restore helper `0x006D5C1E`, and nothing else).
+  The terrain under a footprint is not drawn at all (next item), so nothing of it is left to fight the floor.
+- **No ground under a footprint (F4).** The cell refresh `0x005365D0` asks the chooser `0x00535DD0`, which answers 8 for the (absolute) cell types 2, 7, 0x1E, 4, 9, 10 and 0x15, and hands that to
+  `0x00450470` → `0x0046DF50`: mode 8 sets bits `0x101` of the landscape word and clears `0x80`. The terrain cell list (`0x0056F090`, for the static ground and the procedural ground alike) skips a
+  cell whose word has bit 0x01. So every cell an object, entrance or exit stands on (types 4, 9 and 10, which the placement writes, `ObjectCellHoles`) is drawn with no ground, in both texturing
+  modes; types 2, 7 and 0x1E are cells without terrain and 0x15 the coaster's track connection marker. `Level` adds these to the render holes of the ground (`OriginalTerrain.RenderHoleSource`, with
+  the pools extension's), so the static mesh and the procedural cell list leave them out and the ground under a ride is rebuilt only when the cell map changes. A cell that goes back to type 0
+  (the occupant demolished: `0x005367A0` clears the cell, `0x005365D0` then restores it) takes its backup word again with the dirty bit 0x100, so the procedural terrain draws it again and
+  builds its texture once more (`ProceduralTerrain` marks a cell that stops being a hole dirty, `ProceduralTextureCache.Resolve` rebuilds the hit). OPEN-F5: every footprint cell of a
+  demolished object (`0x00527EE0`, types 4, 9 and 10 alike, `0x5367A0` cases 4, 3 / 9 and 1 / 10) ends in `0x5346D0(0)` and the refresh, which is the 0x37 restore. A queue cell (type 3) is not on the
+  list: its refresh places the queue model and writes the hole itself (F6, below). The pools' render holes and the camera modes that suspend the texturing leave these holes as they are (`0x46DED0`
+  skips a word with bit 0x01).
+- **The skirt cell's word (F4).** With the procedural textures on (`[0x7A1A8C]` bit 0x4000) and the base flag 0x40, the instance constructor `0x00463060` (from `0x0046334C`, after the placement and
+  the conform) writes, for every entry with code bit 0x80, the word `(old & 6) | orientation | 0x281` of the landscape cell the entry lands on, the entry's slot in the high half
+  (`OriginalCellWords.SkirtWord`). The cell is `(X + column, Z + row)`, `(X + row, Z − column)`, `(X − column, Z − row)` or `(X − row, Z + column)` for 0, 90, 180 and 270 degrees, with no bounds test
+  (`ObjectFloorBase.Target`; the origin cell `X, Z` is `ftol(root translation / cell size)` less one in x for 180 and 270 and in z for 90 and 180: the placement's anchor, `OriginCell`). The
+  orientation is the entry's bits 0x08, 0x10 or 0x20 turned with the instance (0 → 8 → 0x10 → 0x20 → 0 for 90, the other way for 270; 0 ↔ 0x10 and 8 ↔ 0x20 for 180: the jump tables `0x46395C`,
+  `0x463994` and `0x4639CC`), and the flip bit 0x40 is kept. The words live in `OriginalCellWords` (the heightfield stays the file's backup; a removal restores the cell's backup word,
+  `ParkObjects.Remove`; a level that clears its park drops them with it). Presentation only: no simulation state, hash or save reads them, and a park load rebuilds them from its objects.
+- **The composite (F5).** Right after the words, `0x57ACE0` runs over the footprint box (`0x467030` stores it in `+0xC0/+0xC4`: the shape's rectangle at the anchor, width and height swapped
+  for 90 and 270) row by row: every cell whose word has bits 0x80 and 0x200 (this instance's skirt cells and, at a park load, any other object's inside the box; a slot the
+  instance's model lacks is skipped where the original reads past its slot table) takes the art of the slot its word names and the cell's procedural base (`0x572630` builds an N × N
+  texture, `0x55F780` with a floor descriptor) and the slot's texture is redirected to it. `ProceduralTerrainTexturer.Compose` is the tail of `0x55F780` (from `0x5608B0`): the base buffer
+  (the texturer's output, rows bottom-up) is read in one of eight orientations of the word's bits 0x78 (`BaseTexel`, tested 0x40, 0x08, 0x10, 0x20), the art is point sampled at row
+  `Y · (height / N)` and column `X · (width / N)` (integer divisions: a 128 × 128 art at N = 32 steps by 4, one of 16 by 8, one smaller than N keeps its first texel), and each channel is
+  `base + (((art − base) · alpha) >> 8)`, so an opaque pixel keeps 1/256 of the base. The oracle runs the original's tail with a floor descriptor on synthetic levels and art (X33,
+  [ORACLE.md](reverse/ORACLE.md); `ProceduralTerrainComposeGolden`). One composite per skirt cell and placed instance, made once at placement (`OriginalObject.PlaceFloorBase`, from
+  `ParkObjects.Register`, after the demolished objects' cells were restored), no cache slots (the cells are holes, so the terrain never lists them), freed with the instance. A slot named by
+  two cells gives the second the first's composite as its art, which the original stores with alpha 0, so it blends nothing (`ObjectFloorBase.Compose`). The composite texture is a page of
+  its own without mip levels, as the terrain's pages are (E's OPEN-3), and the clamped addressing the skirt reader gave its slot.
+  **OPEN-F1 (the art's rows).** `0x00590DA0` turns the art over (row r with row width − 1 − r) before the tail reads it, for a texture with flag 0x40000, which every floor art has; the
+  composite itself has no such flag and is read as stored. In OpenTPW's order (a texture's first row is the top of the file's image and the shader reads `1 − v`) the composite is made in the
+  original's device order, where row r lies at `v = r / N`, and turned over once more for the renderer (`ObjectFloorBase.FlipRows`). The data decides both halves: the base orientation word
+  puts, for 97% of the texels of every shipped floor at every turn, the base pixel of the ground under the texel there (the cells' texture coordinates give the ground; every
+  other reading of the base scores below 55%; the rest are the flared cells of Belly Bounce, the totem and the lookout, whose art stretches over more than their cell), and the art turned
+  over is transparent along a cell edge that borders open ground (mean alpha 69) and opaque along one that borders the floor (199), where the file's rows as decoded do not separate the two (118 and 128):
+  `ObjectFloorBaseCorpusTests`. The seam test follows: where the art is transparent along an open edge the composite's texel is the base pixel of the ground at that place, so the cell's
+  texture goes on the neighbouring terrain cell's (over 95% of more than ten thousand texels).
+  **OPEN-F4 (order).** A live placement runs the constructor first (`0x528E19` → `0x529E10` → `0x4DB090` → `0x4DD500(0)` → `0x463060`: the skirt words, then the composites) and only then types and
+  refreshes every footprint cell (op 0x81 at `0x52912C` → `0x5340A5` → `0x5365D0`), whose mode 8 sets 0x101 and clears 0x80 on every one of them. A later object's `0x57ACE0` therefore skips an
+  earlier object's cells, and a type-0 cell's `0x5367A0` does nothing (the `ja` at `0x5367ED`). `OriginalObject.RefreshFootprint` does this right after `PlaceFloorBase` for a live placement
+  (`ParkObjects.TryPlace`). A park load differs: `0x4647A0` creates every saved instance (with the creation flags it saved) and only afterwards `0x415140` → `0x4D83A0` refreshes all 128 × 128
+  cells, so while the instances are made every skirt cell still has bit 0x80 and a neighbour's cell inside a box is composed, in the saved order. Snapshot restore, the Theme Park Inc checkpoint,
+  the save import and the co-op join all end in `ParkObjects.CommitFootprintRefresh`, which does the refresh once the instances exist. The removal restores exactly the cells the placement wrote
+  (`OriginalObject.FloorWordCells`: the skirt cells and the refreshed footprint cells).
+  With the procedural textures off none of this happens: no skirt words, no composites, the skirt cells draw their painted art (the holes are the same), as in the original.
+- **Queue models (F6): ported; path art (F9): read, not ported.** A queue piece is placed by `0x005229E0` with the instance flags 0x33A (bit 8 included) and every queue model of the four themes has the
+  base flag (header 0x09, ground node 0) and one skirt entry (`C8` or `80`, `E0`, `A0` slot 0), so the original gives each queue cell a skirt word, a composite (the slot is the model's first) and,
+  from the refresh that placed it, a hole. `QueueModelFloor` and `OriginalTerrain.BuildQueueModels` port them, the composites as tiles of an atlas page ([PATHS.md](PATHS.md), "Queue models on the terrain"). The path art is the other user of the
+  descriptor: `0x0056F090` gives a non-hole cell with word bit 0x80 (a path tile written by `0x46DF50`: slot from the path table, turn bits 0x20, 0x10, 0x08 for 90, 180, 270, flags
+  `0x180`) the path texture as art, and the cache builds the cell with the same tail, so the original's path is the terrain's own texture, point sampled at N × N, not a layer over it;
+  that moves the whole path layer (PATHS.md) into the terrain and is the plan's optional step F9.
+
 ## Interfaces for other slices
 
 - Guests: `IRideVisitorBridge.Perform(ride, call)` receives every visitor opcode
@@ -395,7 +484,7 @@ nearest path cell (`GuestSimulation.SetDownOffCells`). Still open (RIDES-018): t
 ## Remaining gates
 
 Path parameters and the draw-path reader of texture frames; EVENT objects/particles (their sounds play, [AUDIO.md](AUDIO.md));
-water ride and kart jumps and tunnels (the track tool and the BUMP controllers of the water rides and go-karts are built, [TRACKS.md](TRACKS.md)); the tour controllers are described in [TOURS.md](TOURS.md); visitor simulation behind the bridge; `.hmp` ground deformation;
+water ride and kart jumps and tunnels (the track tool and the BUMP controllers of the water rides and go-karts are built, [TRACKS.md](TRACKS.md)); the tour controllers are described in [TOURS.md](TOURS.md); visitor simulation behind the bridge; the skirt, hole and composite of queue models and the path art as the terrain's own texture ([Floors](#floors-the-skirt-and-the-edge-conform), F6 and F9);
 the open build rules above (RIDES-018); animation tick rate; the coaster module's cell marker 0x15 beyond a track end (RIDES-011); the object-list update route (RIDES-032).
 
 ## The cells outside an entrance and an exit (RIDES-028 retired)
@@ -437,7 +526,6 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | Id | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
 | RIDES-011 | World/Objects/ObjectShape.cs | The cells of `+` and `#` are stamped as the original placement `0x528A70` stamps them (object type 4, the owner word, the flag word 0x10 on the cell and its track-layer cell, `0x52950D`–`0x52951C`) and validated as its add-on mode does (a cell of a straight, unflagged tile of the selected ride: `TrackBuilder.CanStandAddOn`, `Level.CheckAddOn`, `0x535953`–`0x5359B3`); a track end `<` `>` `D` needs the cell beyond it on the map (`0x5295A8`). The type 0x15 the commit writes on that cell with the ride's owner word (`0x5295F7`–`0x52963F`) is not written: it is the coaster module's cell marker (`0x452D30`, called by the coaster tool `0x434412`, `0x443057`, `0x444EE7`, `0x445B50`), which OpenTPW's coaster builder neither writes nor reads | What the coaster tool reads the marker for (the validator's modes 0x15 and 0x16, `0x535B53`) |
-| RIDES-014 | World/Objects/ParkObjects.cs | Base height = (lowest + highest) / 2 of the terrain vertex heights at the corners of the footprint's shape cells (`0x466D70`, cells with a non-zero type nibble, `0x469930`; the vertex is `ftol(lerp + 0.1)` of `0x454050`, equal to `ObjectFootprint.ToGrid` of the corner: `ObjectBaseHeightTests`). The original then blends the ground flat under the ride (`0x467030`, `0x57ACE0`), which is not modelled; a park-resume save from before the rule restores with the earlier cell mean (`BaseHeightRule` absent) | The blend; the instance words +0xF0/+0xF4 taken as the shape size; an instance height captured on a slope |
 | RIDES-018 | World/Objects/ParkObjects.cs | Build rules: grid, the original's map-start cell types (holes refused; `Blocked` surface cells buildable, as in tp.exe), plain path cells cleared and NoModify ones refused, overlap by `Info.OverwritePriority` (a lower-priority object gives way and is demolished, for objects, paths and queues alike), the access cells by `Info.HasQueue`, owned land; no slope test (none in tp.exe either); Level enforces economy purchases. Guests on a cleared path cell are set down on the nearest path cell | The second-layer link tests `0x53AE00`/`0x53AE90`, which types have record +0x288 = 1 (their `Bumper.WhichTrackType` turns the access-cell option off), and what tp.exe does with a guest inside a new footprint |
 | RIDES-021 | World/Level.Objects.cs, World/Original/ObjectRayPick.cs, World/Objects/ObjectPickModel.cs | The cursor's cell is the cell of the ray's nearest hit (the hit divided by the cell size, `0x45D560`; the click command `0x46C5D0` hands it to `0x524790`): the terrain hit (`TerrainRayPick`, the heightfield triangle planes of `0x45BF90`) or, when nearer the camera, the first object model the ray meets as `0x45BF90` walks the cells from the camera one cell per pass (with the cell at each crossing of the other axis and the edge clamp of `0x45CDC0`). A cell is tested when the cell lookup `0x452AE0` names an instance there (the owner with a height map) and the ray over the pass reaches down to the height it gives and up to the model's bounds minimum (`0x45CEE6`-`0x45CFBD`); its model is tested by `0x45D090` (the nodes depth first, a node's faces material by material unless its state has `0x10` or `0x8210`, the first face whose plane hit has an angle sum of at least 6.2821856). The same point is the mouse point `0x7A1C90`. The generic sandbox has no heightfield and takes the Z = 0 plane for the terrain hit (`EXT:build-cursor-ground-plane`). The anchor taken from that cell is the original's (`0x528B44`: the cell less (W/2, H/2), then the rotation's 5 × 5 window offsets), so the click is local (W/2, H/2) when each side is odd or at most 5 cells; the only shipped exception is space 3104 Orbiter (6 × 3: local (3, 1) at 0°, (2, 2) at 90°) | A track tile's second-layer piece instance, which `0x452AE0` names before the owner, is not tested (the port holds no piece model there); the members of an instance with the group flag `0x80000` (`0x447790`, `0x4477D0`); the node state bits `0x20` and `0x8000` (`0x200` marks the dummies, which hold no faces); the normal refresh `0x473C30` (`0x473A40`) of vertex-passed nodes when the instance's model flags word +0x30 has `0x40000` and `0x20000` (the port uses the stored normals); the hit instance handed to `0x469340` (`0x45CCD5`) and by the hover handler to `0x469180` (a hover highlight: normals copied, node flag `0x1000000`, model flag `0x400000`), not used; the original keeps its previous hit when the ray finds nothing |
 
@@ -470,7 +558,7 @@ Reclassified as OpenTPW conventions (no original rule to recover): `[EXT:md2-eng
 `[EXT:malformed-texture-coordinates]` (formerly `APPROX:RIDES-030`, non-finite texture coordinates drawn as (0, 0); the original passes raw floats to Direct3D) and
 `[EXT:trig-anim-speed-guard]` (formerly `APPROX:RIDES-038`: the corpus has 4 TRIGANIMSPEED uses, all literal 1800–4000, so the guard against 0 and negative speeds only meets malformed input).
 
-Narrowed: RIDES-011, 012, 019, 024, 031, 033, 035 and 044 (rows above); RIDES-013, 021, 028, 032, 040 stay as they were.
+Narrowed: RIDES-011, 012, 019, 024, 031, 033, 035 and 044 (rows above); RIDES-013, 021, 028, 032, 040 stay as they were. RIDES-014 retired on October 26 (below).
 
 ### Retired: the end-of-park finale (RIDES-019, October 22)
 
@@ -484,6 +572,19 @@ language's animated `s_congrats` banner (tables `0x74FAF0`, `0x74FCF8`) until Es
 click (`0x48A970` -> `0x516C10`); Instant Action then shows UITEXT 471 in the generic message box
 (`0x47F020`). A park restored with End enters the same screen. Theme Park Inc and read-only visits
 never start it.
+
+### Retired: the base height and the ground under a ride (RIDES-014, October 26)
+
+`APPROX:RIDES-014` is retired. Its three clauses were all read in tp.exe:
+
+- **"The original blends the ground under the ride flat (`0x467030`, `0x57ACE0`)" was wrong.** `0x467030` is the placement: it places the instance and stores the footprint box
+  (`+0xC0/+0xC4`); `0x57ACE0` builds the composite texture of the floor art over the procedural ground. Nothing flattens the terrain. The floor meets the ground through the skirt read at
+  type load and the edge conform at every placement ([Floors](#floors-the-skirt-and-the-edge-conform); `ObjectSkirt`, `ObjectGroundConform`).
+- **The instance words `+0xF0/+0xF4` are the shape's width and height.** `0x004629D0` stores shape words 0 and 1 there (its parameters 10 and 11, which override them, are 0 for objects);
+  the object's height map (`+0xCC`, the `.hmp`) has the same size, which every shipped type's file has (`ObjectSkirtCorpusTests.TheHeightMapOfEveryTypeHasItsShapesSizeSoTheInstanceGridIsTheShape`).
+- **The base height on a slope is the midpoint rule.** `0x00466D70` (with `0x00454050`, `0x00469930`) run in the x86 oracle (`tpw-exe-base-height`, [ORACLE.md](reverse/ORACLE.md))
+  returns, for every synthetic footprint, rotation and heightfield tried, the value of `ParkObjects.GetBaseHeight`
+  (`ObjectSkirtGoldenTests.TheBaseHeightIsWhatTheOriginalReturned`). The earlier mean of the cell heights stays only for a park-resume save without `BaseHeightRule`.
 
 ### Read round (tp.exe, October 15)
 

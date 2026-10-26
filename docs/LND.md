@@ -204,4 +204,4 @@ OpenTPW (`RenderFog`, `Camera.ParkFarPlane`, `TerrainViewSpans`): in the ride an
 - **The camera modes' names** (above), and whether a menu, a pause or loading suspends the textures: no suspending code was found for them.
 - **The "not allowed" check** (plan OPEN-5): which device check sets `[0x8BD550]` bit `0x10000000` ("Procedural textures not allowed") is not identified; OpenTPW never refuses.
 - **The 16-bit paths** (plan OPEN-6, `0x562F70` for 565, 1555 and 4444 pages) are read, not run, and not ported.
-- **The floor art tail** of `0x55F780` (rides and shops) and the dirty-bit rebuilds of `0x46DF50`: package F.
+- **The floor art tail** of `0x55F780` (rides and shops) is `ProceduralTerrainTexturer.Compose`, and the dirty-bit rebuild of a cell that stops being a hole is in `ProceduralTerrain` (package F, [OBJECTS.md](OBJECTS.md#floors-the-skirt-and-the-edge-conform)): the composites are made once per skirt cell and placed object, take no cache slots, and the ground under every footprint cell is a hole. Not ported: the dirty rebuilds that path art would drive (the path layer stays a layer over the ground, F9).

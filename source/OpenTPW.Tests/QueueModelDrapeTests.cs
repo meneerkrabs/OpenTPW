@@ -142,12 +142,30 @@ public class QueueModelDrapeTests
 	}
 
 	[TestMethod]
-	public void TheDepthCompareIsTheOriginalsLessEqualSoAFloorOnTheGroundShowsOverIt()
+	public void AQueueCellIsAHoleOfTheGroundLikeTheCellsOfAnObject()
 	{
-		// [BIN:TPW-EXE:0x0057360F depth compare] the device set-up sets ZFUNC to LESSEQUAL once; a queue floor draped exactly onto the ground (no lift) is at the stored depth and must pass
-		Assert.AreEqual( Veldrid.ComparisonKind.LessEqual, Material.DepthComparison( MaterialFlags.None ) );
-		Assert.AreEqual( Veldrid.ComparisonKind.LessEqual, Material.DepthComparison( MaterialFlags.DisableDepthWrite ), "the depth test stays on without the write" );
-		Assert.AreEqual( Veldrid.ComparisonKind.Always, Material.DepthComparison( MaterialFlags.DisableDepthTest | MaterialFlags.DisableDepthWrite ) );
+		// [BIN:TPW-EXE:0x005365D0 queue hole] the refresh writes a queue cell's hole itself (0x46DF50 mode 8); a path cell keeps its ground
+		var cells = new ParkCellMap( 4, 4 );
+		cells.SetType( 1, 1, ParkCellType.Queue );
+		cells.SetType( 2, 1, ParkCellType.Path );
+		Assert.IsTrue( ObjectCellHoles.IsHole( cells, 1, 1 ) );
+		Assert.IsFalse( ObjectCellHoles.IsHole( cells, 2, 1 ) );
+		Assert.IsFalse( ObjectCellHoles.IsHole( cells, 0, 0 ) );
+	}
+
+	[TestMethod]
+	public void TheAtlasTilesTakeTheModelsCoordinatesFromTheirFirstTexelCentreToTheirLast()
+	{
+		// a 16-texel tile at (16, 32) of a 2048 x 64 page; the shader flips v, so the model's (0, 1) is the tile's first row and left texel centre, (1, 0) its last row and right texel centre
+		var corner0 = ProceduralTerrainAtlas.TileCoordinates( 16, 2048, 64, 16, 32, new System.Numerics.Vector2( 0, 1 ) );
+		var corner1 = ProceduralTerrainAtlas.TileCoordinates( 16, 2048, 64, 16, 32, new System.Numerics.Vector2( 1, 0 ) );
+		Assert.AreEqual( 16.5f / 2048, corner0.X, 1e-7f );
+		Assert.AreEqual( 1 - 32.5f / 64, corner0.Y, 1e-7f );
+		Assert.AreEqual( 31.5f / 2048, corner1.X, 1e-7f );
+		Assert.AreEqual( 1 - 47.5f / 64, corner1.Y, 1e-7f );
+		// outside the model's unit square (a wrapped coordinate) stays inside the tile: no neighbour bleeds in
+		var outside = ProceduralTerrainAtlas.TileCoordinates( 16, 2048, 64, 16, 32, new System.Numerics.Vector2( -3, 5 ) );
+		Assert.AreEqual( corner0.X, outside.X, 1e-7f );
 	}
 
 	// ---- the shipped models ------------------------------------------------------------------------
@@ -167,6 +185,23 @@ public class QueueModelDrapeTests
 			foreach ( var name in QueueModels.Names.Distinct() )
 				yield return (theme, name, new ModelFile( new MemoryStream( archive.GetFile( name + ".md2" ).GetData() ) ));
 		}
+	}
+
+	[TestMethod]
+	public void EveryQueueModelHasTheBaseFlagAndOneSkirtEntryForItsFirstSlot()
+	{
+		var field = Hillside( 4 );
+		var codes = new List<string>();
+		foreach ( var (theme, name, model) in ShippedQueueModels() )
+		{
+			var floor = QueueModelFloor.Create( model, field );
+			Assert.IsTrue( floor.Skirt.HasBase, $"{theme} {name}: the base flag (header 0x09)" );
+			Assert.IsTrue( floor.Entry.HasSkirt, $"{theme} {name}: one skirt entry" );
+			codes.Add( $"{floor.Entry.Code:X2}/{floor.Entry.Slot}" );
+			Assert.IsTrue( floor.Skirt.OpaqueSlots[floor.Entry.Slot], $"{theme} {name}: the entry's slot draws opaque" );
+		}
+		// [BIN:TPW-EXE:0x0046AA10 skirt entries] the entries of the queue models of the four themes (docs/OBJECTS.md, "Floors": C8 or 80, E0, A0, slot 0)
+		Assert.AreEqual( "80/0 A0/0 C8/0 E0/0", string.Join( ' ', codes.Distinct().OrderBy( code => code ) ) );
 	}
 
 	[TestMethod]

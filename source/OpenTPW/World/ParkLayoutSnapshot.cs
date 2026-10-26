@@ -566,6 +566,8 @@ public static class ParkLayoutSnapshot
 			throw;
 		}
 		target.RestoreSeedAllocator( snapshot.NextSeed );
+		// [BIN:TPW-EXE:0x00415140 load refresh] a restored park's cells are refreshed once all its instances exist
+		target.CommitFootprintRefresh();
 		yield return 1;
 	}
 

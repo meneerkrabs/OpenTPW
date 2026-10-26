@@ -536,6 +536,10 @@ public partial class CoopSessionTests
 		view.Update();
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ), "its report says why, once" );
 		Assert.AreEqual( refusals, guest.Level.SessionRefusals, "the pool tool's refusal is its report's, not the session's note" );
+		// a pool command the tool does not send keeps the session's note
+		guest.Enter();
+		Assert.IsTrue( guest.Level.Commands.Issue( new PaintPoolCellCommand( 20, 20, false ) ).RightsRefused );
+		Assert.AreEqual( refusals + 1, guest.Level.SessionRefusals );
 		Assert.IsFalse( IsWater( host, 6, 22 ) || IsWater( guest, 6, 22 ) );
 		CatchUpAndCompare( host, guest );
 	}
@@ -555,6 +559,7 @@ public partial class CoopSessionTests
 		tool.Press( 6, 1 );
 		tool.SendGuestBatches( Time.Now );
 		var requests = guest.Session!.GuestCommands!;
+		var first = requests.LastSubmitted!;
 		var burst = Enumerable.Range( 0, 39 ).Select( _ => requests.Submit( new LayLineCommand( CellToolMode.Path, -1, 30, 30, 30, 30 ) { Player = seat } ) ).ToArray();
 		tool.Hover( 6, 4 );
 		GuestFrames( 1, host, guest, hostRuns: false );
@@ -562,11 +567,20 @@ public partial class CoopSessionTests
 		var later = requests.LastSubmitted!;
 		Assert.IsInstanceOfType( later.Command, typeof( PoolCellsCommand ) );
 		tool.Release();
-		RoundsUntil( () => !tool.HasGuestBatches && burst.All( request => !request.IsOpen ), host, guest, view, "the stroke came back" );
+		GuestFramesUntil( () => !first.IsOpen && !later.IsOpen && burst.All( request => !request.IsOpen ), host, guest, "every request resolved" );
+		Assert.AreEqual( CoopGuestRequestState.Applied, first.State );
 		Assert.AreEqual( CoopGuestRequestState.Refused, later.State, "the later batch had no record" );
-		view.Update();
-		Assert.AreEqual( 1, view.Says( OpenTpwText.CannotBuildHere ), "the path cell's refusal" );
-		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopHostCouldNotTake ), "and the batch the host could not take" );
+		// the host's answer to the later batch resolved it before the earlier batch's record applied, and the tool takes them in that order: the stroke waits for its earlier batch, and its
+		// report still names the first refusal in drag order
+		var taken = requests.TakeCompleted().ToList();
+		Assert.IsTrue( taken.IndexOf( later ) >= 0 && taken.IndexOf( later ) < taken.IndexOf( first ), "the answer came before the record" );
+		Assert.IsTrue( tool.CompleteGuestRequest( later ) );
+		Assert.AreEqual( 0, tool.TakeGuestReports().Count, "the stroke waits for its earlier batch" );
+		Assert.IsTrue( tool.CompleteGuestRequest( first ) );
+		var report = tool.TakeGuestReports().Single();
+		Assert.AreEqual( ((6, 1), PoolBuildResult.Occupied), report.Refusal, "the path cell under the press" );
+		Assert.IsTrue( report.NotTaken );
+		Assert.IsFalse( report.Wrote );
 		CatchUpAndCompare( host, guest );
 	}
 

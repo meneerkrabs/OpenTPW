@@ -430,8 +430,8 @@ internal sealed class CoopSession : IDisposable
 	/// </summary>
 	private void OnRefused( ParkCommand command )
 	{
-		// [EXT:online-coop-commands] the pool tool's batches, bridges and slide undos say their refusal in their stroke's report, once for the stroke (C3b-3)
-		if ( command is PoolToolCommand )
+		// [EXT:online-coop-commands] a batch, bridge or slide undo the guest's pool tool sends says its refusal in its stroke's report, once for the stroke (C3b-3)
+		if ( level?.PoolTool is { SendingGuestBatch: true } )
 			return;
 		level?.NoteSessionRefusal( level.Commands.Rights is CoopBuildRights rights && rights.Builds( command ) );
 	}

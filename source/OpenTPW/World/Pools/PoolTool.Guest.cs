@@ -90,6 +90,12 @@ public sealed partial class PoolTool
 	public IEnumerable<(int X, int Y)> GuestStrokeCells => unsentBatches.Concat( sentBatches )
 		.Where( batch => batch.Stroke.Write is GuestWrite.Cells or GuestWrite.Slide ).SelectMany( batch => batch.Cells );
 
+	/// <summary>
+	/// Set while the tool hands a batch of a guest's stroke to the funnel: a refusal of the session's rights then is the stroke report's to say, once for the stroke, and not the session's
+	/// note (<c>CoopSession.OnRefused</c>).
+	/// </summary>
+	internal bool SendingGuestBatch { get; private set; }
+
 	/// <summary>Whether a guest's stroke has cells unsent or requests open.</summary>
 	public bool HasGuestBatches => unsentBatches.Count > 0 || sentBatches.Count > 0;
 
@@ -168,7 +174,16 @@ public sealed partial class PoolTool
 			lastGuestSend = now;
 			var stroke = batch.Stroke;
 			batch.Command = GuestCommand( batch );
-			var result = issue( batch.Command );
+			ParkCommandResult result;
+			SendingGuestBatch = true;
+			try
+			{
+				result = issue( batch.Command );
+			}
+			finally
+			{
+				SendingGuestBatch = false;
+			}
 			if ( result.Request is { } request )
 			{
 				batch.Request = request;

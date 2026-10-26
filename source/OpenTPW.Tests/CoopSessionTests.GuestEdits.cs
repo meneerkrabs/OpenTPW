@@ -578,6 +578,12 @@ public partial class CoopSessionTests
 			Assert.IsTrue( rights.Allows( seat, new LayLineCommand( CellToolMode.Path, -1, 12, 1, 8, 1 ) ), "a path line along it changes no link of the queue" );
 			Assert.IsFalse( rights.Allows( seat, new LayLineCommand( CellToolMode.Path, -1, 12, 3, 8, 3 ) ), "a path line over a claimed queue cell (a path line paves a queue end)" );
 			Assert.IsTrue( rights.Allows( seat, new QueueSegmentCommand( other, 12, 9, 8, 9 ) ), "a line that crosses neither is the guest's" );
+			// nor may a placement write over them: its footprint clears the paths under it, and it lays the cells outside its entrance and exit
+			var entry = guest.Level.Objects.Objects.First( item => !ReferenceEquals( item, guest.One ) ).Entry;
+			Assert.IsFalse( rights.Allows( seat, guest.Level.BuildCommand( entry, 10, 1, 0 ) ), "a placement over the path cell the claimed queue joins" );
+			Assert.IsFalse( rights.Allows( seat, guest.Level.BuildCommand( entry, 10, 4, 0 ) ), "a placement over the claimed queue" );
+			Assert.IsTrue( rights.Allows( seat, guest.Level.BuildCommand( entry, 24, 20, 0 ) ), "a placement away from it" );
+			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, guest.Level.BuildCommand( entry, 10, 1, 0 ) ) );
 			// the object window offers the guest no tool for that queue
 			var canEdit = typeof( ParkHud ).GetMethod( "CanEditQueue", NonPublic )!;
 			Assert.IsFalse( (bool)canEdit.Invoke( view.Hud, new object[] { guest.One } )! );
@@ -588,6 +594,7 @@ public partial class CoopSessionTests
 		}
 		Assert.IsTrue( (bool)typeof( ParkHud ).GetMethod( "CanEditQueue", NonPublic )!.Invoke( view.Hud, new object[] { guest.One } )!, "an ordinary ride's queue tool is offered" );
 		Assert.IsTrue( rights.Allows( seat, new RemoveAtCommand( 10, 1 ) ) && rights.Allows( seat, new LayLineCommand( CellToolMode.Path, -1, 12, 3, 8, 3 ) ), "an ordinary ride's join is the guest's" );
+		Assert.IsTrue( rights.Allows( seat, guest.Level.BuildCommand( guest.Level.Objects.Objects.First( item => !ReferenceEquals( item, guest.One ) ).Entry, 10, 1, 0 ) ) );
 	}
 
 	[TestMethod]
@@ -607,6 +614,12 @@ public partial class CoopSessionTests
 		MarkStation( park, park.One );
 		try
 		{
+			// a path line along the path cell the queue joins is the guest's: its link pass leaves the queue's links as they were
+			var queueLinks = (Links( park, 10, 2 ), Links( park, 10, 3 ));
+			var line = level.Commands.ApplyRemote( new LayLineCommand( CellToolMode.Path, -1, 12, 1, 8, 1 ) { Player = 1 } );
+			Assert.IsFalse( line.RightsRefused, line.Reason );
+			Assert.AreEqual( queueLinks, (Links( park, 10, 2 ), Links( park, 10, 3 )) );
+			Assert.IsTrue( Walkable( park, 10, 1 ) && IsQueue( park, 10, 2 ) );
 			var result = level.Commands.ApplyRemote( new ClearAreaCommand( 9, 0, 11, 1 ) { Player = 1 } );
 			Assert.IsTrue( result.Accepted );
 			Assert.AreEqual( (0, 2), result.As<(int Objects, int Paths)>(), "the guest's clear takes the two path cells beside it" );

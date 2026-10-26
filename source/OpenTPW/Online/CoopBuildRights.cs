@@ -13,7 +13,7 @@ namespace OpenTPW;
 /// guest seat may issue, granted or not.</item>
 /// </list>
 /// The queue of a claimed ride (a coaster's or a track ride's station) stays the host's in all of these until claims come (C3c): its lines, its edit, its cells' removal and Backspace
-/// over them, a line over its cells, and the path cell its back joins, which no guest's removal, area clear or queue line takes.
+/// over them, a line or a placement over its cells, and the path cell its back joins, which no guest's removal, area clear, queue line or placement takes.
 /// Everything else stays the host's: speed and pause (Q8), cheats (Q17), the developer kinds, money, staff and the park's management (C4), undo lines (C5), the pool tools, tracks and
 /// coasters (C3b, C3c), the grants and the release of a departed seat. Asked at execution on every peer, of the same park, the answer is the same everywhere.
 /// </summary>
@@ -41,8 +41,9 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		QueueSegmentCommand line => !ClaimedRide( line.Ride ) && !CrossesClaimedQueue( line.StartX, line.StartY, line.EndX, line.EndY, joins: true ),
 		// an object placed, or the Move tool's placement (C3b-2: the command itself checks that its player carries the type); a track add-on belongs to the track tools, which come later,
 		// as do the rides whose own tool follows their placement; a track add-on's entry is refused whatever ride the command names, so a request without one cannot place it as an
-		// ordinary object
-		PlaceObjectCommand place => place.AddOnRide < 0 && level.ResolveCommandEntry( place.Entry ) is { } entry && GuestMayPlace( entry ),
+		// ordinary object; nor does a placement write over a claimed ride's queue or the path cell its back joins
+		PlaceObjectCommand place => place.AddOnRide < 0 && level.ResolveCommandEntry( place.Entry ) is { } entry && GuestMayPlace( entry )
+			&& !PlacementTouchesClaimedQueue( entry, place.X, place.Y, place.Rotation ),
 		// the remove click takes an ordinary object, else the queue or path cell under it (C3b)
 		RemoveAtCommand remove => level.Objects?.FindAt( remove.X, remove.Y ) is { IsDeleted: false } item ? MayRemove( item )
 			: !ClaimedQueueAt( remove.X, remove.Y ) && !JoinsClaimedQueue( remove.X, remove.Y ),
@@ -110,13 +111,36 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// </summary>
 	private bool CrossesClaimedQueue( int startX, int startY, int endX, int endY, bool joins )
 	{
+		var start = (startX, startY);
+		return TouchesClaimedQueue( ParkPathBuilder.LayLine( start, ParkPathBuilder.SnapEnd( start, (endX, endY) ) ).ToArray(), joins );
+	}
+
+	/// <summary>
+	/// Whether placing <paramref name="entry"/> on (<paramref name="x"/>, <paramref name="y"/>) turned <paramref name="rotation"/>, centred as the placement centres it, would write over a claimed
+	/// ride's queue cell or the path cell its back joins: under its footprint, whose path cells the placement clears, or outside its entrance and exit, where it lays a queue or a path cell (a path
+	/// paves a queue's end).
+	/// </summary>
+	private bool PlacementTouchesClaimedQueue( ObjectCatalogEntry entry, int x, int y, int rotation )
+	{
+		if ( entry.IsFixedItem )
+			return false;
+		var anchor = Level.GetCentredAnchor( entry, x, y, rotation );
+		var cells = ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) )
+			.Concat( ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, rotation ).Select( point => (point.OutsideX, point.OutsideY) ) ).Distinct().ToArray();
+		return TouchesClaimedQueue( cells, joins: true );
+	}
+
+	/// <summary>
+	/// Whether <paramref name="cells"/> hold a claimed ride's queue cell, or, with <paramref name="joins"/>, the path cell a claimed ride's queue joins. The cells' owners are resolved together
+	/// (<see cref="Level.QueueOwnersAt"/>).
+	/// </summary>
+	private bool TouchesClaimedQueue( IReadOnlyList<(int X, int Y)> cells, bool joins )
+	{
 		if ( level.Guests?.Grid is not { } grid )
 			return false;
-		var start = (startX, startY);
-		var line = ParkPathBuilder.LayLine( start, ParkPathBuilder.SnapEnd( start, (endX, endY) ) ).ToArray();
-		var asked = joins ? line.Concat( line.SelectMany( cell => JoinedQueueCells( grid, cell.X, cell.Y ) ) ) : line;
+		var asked = joins ? cells.Concat( cells.SelectMany( cell => JoinedQueueCells( grid, cell.X, cell.Y ) ) ) : cells;
 		var claimed = level.QueueOwnersAt( asked ).Where( cell => cell.Owner is { } owner && Claimed( owner ) ).Select( cell => (cell.X, cell.Y) ).ToHashSet();
-		return line.Any( claimed.Contains ) || (joins && line.Any( cell => JoinedQueueCells( grid, cell.X, cell.Y ).Any( claimed.Contains ) ));
+		return claimed.Count > 0 && (cells.Any( claimed.Contains ) || (joins && cells.Any( cell => JoinedQueueCells( grid, cell.X, cell.Y ).Any( claimed.Contains ) )));
 	}
 
 	/// <summary>

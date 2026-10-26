@@ -1355,3 +1355,7 @@ projections of `GuestRefusedTargetTests.JointMainProjectionPins` (the key is the
 | `ScriptModsAllHooksFixedRunHash` | `0x3D741AAF6928D531` | `0x46D7114F4B803468` |
 
 The browser build pins the same constants (`tools/web-determinism`), so its page, built from this commit, reproduces them.
+
+The first day also appends a zero entry to every object's walk-away history. The park save drops an all-zero history, so a restored list lost that entry and the next day's roll
+produced another saved form than the live park's (the park-resume smoke diverged at its 80th continuation tick). The saved form now leaves out the oldest zero days
+(`SkipWhile( day == 0 )`): the sums, which are all the history is read for, are unchanged, live and restored parks save alike, and no pin moves.

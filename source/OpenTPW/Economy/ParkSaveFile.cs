@@ -764,7 +764,7 @@ public static class ParkSaveFile
 			Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit },
 			WalkAways = item.WalkAways,
 			WalkAwaysToday = item.WalkAwaysToday,
-			WalkAwayDays = item.WalkAwayDays.Any( day => day != 0 ) ? item.WalkAwayDays.ToArray() : null,
+			WalkAwayDays = item.WalkAwayDays.Any( day => day != 0 ) ? item.WalkAwayDays.SkipWhile( day => day == 0 ).ToArray() : null,   // the oldest zero days carry no walk-aways: a restored list that lacks them reads and saves the same as the live one
 			Rings = RingsOf( item )
 		} ).ToList();
 

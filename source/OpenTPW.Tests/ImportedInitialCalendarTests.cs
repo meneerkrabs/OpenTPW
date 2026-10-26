@@ -142,6 +142,23 @@ public class ImportedInitialCalendarTests
 		Assert.AreEqual( 1, days, "the second turn is no day change" );
 	}
 
+	/// <summary>The first day's zero entry of an object's walk-away history is not part of its saved form: a restored list without it saves like the live one, so the next day's roll cannot tell them apart (found by the park-resume smoke after ECON-063).</summary>
+	[TestMethod]
+	public void LeadingZeroWalkAwayDaysDoNotChangeTheSavedPark()
+	{
+		string Saved( params long[] days )
+		{
+			var park = EconomyTestData.Park();
+			var item = park.RegisterExisting( 1303 );
+			item.WalkAwayDays.AddRange( days );
+			return ParkSaveFile.Serialize( park );
+		}
+		Assert.AreEqual( Saved( 1 ), Saved( 0, 1 ) );
+		Assert.AreEqual( Saved( 0, 3, 0 ), Saved( 0, 0, 3, 0 ) );
+		Assert.AreEqual( Saved(), Saved( 0, 0 ) );
+		Assert.AreNotEqual( Saved( 1, 0 ), Saved( 0, 1 ), "the order of the days still counts" );
+	}
+
 	/// <summary>Theme Park Inc has no traced calendar of its own: its park keeps the synchronised start.</summary>
 	[TestMethod]
 	public void ANewThemeParkIncParkKeepsTheSynchronisedStart()

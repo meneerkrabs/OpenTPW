@@ -799,6 +799,24 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			var hud = flow.Hud!;
 			Require( !hud.FinanceWindowOpen && hud.Stack.Top == hud.Screen, "finance exit returns to the HUD" );
+			// tp.exe refuses the lab without a researcher with a message box that pauses the park (UI-096)
+			Click( hud.Screen, "research" );
+		} );
+		Wait( "research refusal opens", 3 );
+		Do( "research refusal", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.Stack.Top?.Name == ParkHud.ResearchRefusedScreen && !hud.ResearchWindowOpen, "the lab is refused while no researcher is hired" );
+			Require( hud.ClockPaused, "the refusal's message box pauses the park" );
+			Click( hud.Stack.Top!, "ok" );
+			var economy = flow.Level!.Park!.Economy;
+			economy.Hire( economy.Staff.Candidates.First( candidate => candidate.Type == StaffType.Researcher ).Id );
+		} );
+		Wait( "research refusal closes", 3 );
+		Do( "research window opens", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.Stack.Top == hud.Screen && !hud.ClockPaused, "the refusal closes and the park runs again" );
 			Click( hud.Screen, "research" );
 		} );
 		Wait( "research window opens", 3 );

@@ -195,6 +195,14 @@ public partial class Material : Asset
 	internal TextureAlphaType CurrentSlotType( int slot )
 		=> _boundTextureArrays.TryGetValue( "Color", out var bound ) && (uint)slot < (uint)bound.Textures.Length ? bound.Textures[slot].AlphaType : TextureAlphaType.Opaque;
 
+	/// <summary>
+	/// The depth comparison of a material's pipeline: the original's, LESSEQUAL, so a fragment at exactly the stored depth passes and the later draw wins a tie (a floor drawn over the terrain it lies in); a
+	/// material with neither the depth test nor the depth write has no comparison (always).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0057360F depth compare] the Direct3D device set-up 0x00573080 enables the depth buffer (D3DRS_ZENABLE 7, when the device flag 0x10 is set) and sets D3DRS_ZFUNC (0x17) to 4, LESSEQUAL, once (0x00573601–0x00573614); Theme Park Inc's no-CD Game.exe sets it the same way, once in its device set-up (0x006D6574, ZENABLE guarded by [ebp+0x220] & 0x10) and once in the restore helper 0x006D5C00 (0x006D5C1E), always to 4; no other code sets ZFUNC in tp.exe: the per-face state decoder 0x00567620 writes ZENABLE (bit 0x8000 of the state word), ZWRITEENABLE (0x800), the alpha test and blend states and the texture stage states only, and a scan of every immediate 0x17 operand of the executable found no other render state write
+	internal static ComparisonKind DepthComparison( MaterialFlags flags ) =>
+		flags.HasFlag( MaterialFlags.DisableDepthTest | MaterialFlags.DisableDepthWrite ) ? ComparisonKind.Always : ComparisonKind.LessEqual;
+
 	private static bool ShaderReadsPointLights( string shaderPath )
 	{
 		var file = System.IO.Path.GetFileName( shaderPath );
@@ -360,7 +368,7 @@ public partial class Material : Asset
 			DepthStencilState = new DepthStencilStateDescription(
 				!flags.HasFlag( MaterialFlags.DisableDepthTest ),
 				!flags.HasFlag( MaterialFlags.DisableDepthWrite ),
-				flags.HasFlag( MaterialFlags.DisableDepthTest | MaterialFlags.DisableDepthWrite ) ? ComparisonKind.Always : ComparisonKind.Less
+				DepthComparison( flags )
 			),
 
 			RasterizerState = new RasterizerStateDescription(

@@ -157,7 +157,13 @@ public static class ObjectRenderParts
 	}
 
 	/// <summary>The render parts of <paramref name="model"/> with the nodes <paramref name="animations"/> move kept apart (a ride's supplemental mesh with its own clips).</summary>
-	public static IReadOnlyList<ObjectRenderPart> Build( ObjectCatalogEntry entry, ModelFile model, IReadOnlyList<ObjectAnimationFile> animations )
+	public static IReadOnlyList<ObjectRenderPart> Build( ObjectCatalogEntry entry, ModelFile model, IReadOnlyList<ObjectAnimationFile> animations ) => Build( entry, model, animations, null );
+
+	/// <summary>
+	/// The render parts of <paramref name="model"/> as an instance with <paramref name="floor"/> draws them: the floor's meshes are the conformed, renormalised copies, and the slots of the
+	/// type's skirt carry the opaque and clamp flags (<see cref="ObjectFloor"/>). A null floor is the model as it was read.
+	/// </summary>
+	internal static IReadOnlyList<ObjectRenderPart> Build( ObjectCatalogEntry entry, ModelFile model, IReadOnlyList<ObjectAnimationFile> animations, ObjectFloor? floor )
 	{
 		var animated = FindAnimatedNodes( entry, model, animations );
 		var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
@@ -181,6 +187,8 @@ public static class ObjectRenderParts
 			var mesh = model.Meshes[meshIndex];
 			if ( ObjectAssets.GetUnrenderableReason( mesh ) is "no geometry" or "no materials" )
 				continue;
+			if ( floor != null )
+				mesh = floor.Apply( meshIndex, mesh );
 			var node = mesh.NodeIndex >= 0 && mesh.NodeIndex < model.Nodes.Count ? mesh.NodeIndex : model.RootNodeIndex;
 			if ( node >= 0 && animated[node] )
 			{

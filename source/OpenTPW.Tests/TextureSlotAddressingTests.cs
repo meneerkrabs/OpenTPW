@@ -82,6 +82,17 @@ public class TextureSlotAddressingTests
 		Assert.AreEqual( 16, Regex.Matches( source, @"vTextureSample = SAMPLE_SLOT\( Color\d+ \);" ).Count, $"{shader} samples every slot through SAMPLE_SLOT" );
 	}
 
+	[TestMethod]
+	public void TheWorldShaderTestsNeitherAlphaNorBlendsAnOpaqueSlotsFaces()
+	{
+		// WorldTranslucency.OpaqueSlotFlag: the original draws a slot with the runtime flag 0x800 with state 0x1256 (no alpha test, no blend), so test.shader reads the flag, forces alpha 1 and skips the discard
+		var source = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "test.shader" ) );
+		var match = Regex.Match( source, @"const uint FLAG_OPAQUE_SLOT = 0x([0-9A-Fa-f]+)u;" );
+		Assert.IsTrue( match.Success, "test.shader declares FLAG_OPAQUE_SLOT" );
+		Assert.AreEqual( WorldTranslucency.OpaqueSlotFlag, uint.Parse( match.Groups[1].Value, NumberStyles.HexNumber ) );
+		Assert.IsTrue( Regex.IsMatch( source, @"if \( \( outMatFlags & FLAG_OPAQUE_SLOT \) != 0u \)\s*vTextureSample\.a = 1\.0;\s*else if \(vTextureSample\.a < alphaReference\) discard;" ), "the flag replaces the alpha test" );
+	}
+
 	private static string RepositoryRoot()
 	{
 		var directory = new DirectoryInfo( AppContext.BaseDirectory );

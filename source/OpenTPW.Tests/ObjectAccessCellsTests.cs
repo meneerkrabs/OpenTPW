@@ -194,6 +194,21 @@ public class ObjectAccessCellsTests
 		CollectionAssert.AreEqual( new[] { Level.OwnerWord( item ) }, seen, "a queue set over the path cell re-evaluates the ride beside it" );
 	}
 
+	[TestMethod]
+	public void ATrackTileOverAPathCellBesideAnOwnedEntranceReevaluatesItsRide()
+	{
+		// tp.exe 0x538FC0 / 0x538DC2 clear a path cell through 0x5367A0 (0x539190, 0x53919B): the entrance's ride is re-evaluated
+		var shop = Entry( 1238, 0, false, "*2S" );
+		var rig = new Rig( shop );
+		var item = rig.Place( shop, 8, 8 )!;
+		var entrance = item.AccessPoints.Single( point => point.Kind == ObjectCellKind.Entrance );
+		var seen = new List<ushort>();
+		rig.Cells.EntranceReevaluation = owner => seen.Add( owner );
+		var builder = new TrackBuilder( rig.Cells, TrackFamily.Kart, () => null, new SandboxParkGrid() );
+		typeof( TrackBuilder ).GetMethod( "ClearPath", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( builder, new object[] { entrance.OutsideX, entrance.OutsideY } );
+		CollectionAssert.AreEqual( new[] { Level.OwnerWord( item ) }, seen );
+	}
+
 	[DataTestMethod, DataRow( 0 ), DataRow( 90 ), DataRow( 180 ), DataRow( 270 )]
 	public void RideExitUsesTheEntranceOwnerExitAndDirectionByteAfterRealPlacement( int rotation )
 	{

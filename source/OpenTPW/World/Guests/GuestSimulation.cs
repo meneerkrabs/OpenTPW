@@ -2166,53 +2166,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return moved;
 	}
 
-	/// <summary>
-	/// Sets down the queued guests that stand on <paramref name="cells"/> after a removal emptied them (the queue tool took queue cells, front included): each such guest, queueing,
-	/// moving up, boarding or waiting to board, is put on the nearest path cell and leaves the queue as if dismissed ("queue was shortened"). Returns the number of guests moved.
-	/// </summary>
-	// Approximation (QUEUE-015, registered at QueuePaths.RemoveFrom): the original's cell clear (0x5367A0) writes no guest and what a guest standing on a cleared queue cell does next is not traced; the dismissal (0x005012F0) is the exit the queue-edited re-evaluation uses (0x00501390)
-	public int SetDownOffQueueCells( IReadOnlySet<(int X, int Y)> cells ) => SetDownOffQueueCells( cells, null );
-
-	/// <summary>Preserves the edited ride's overflow thought while its removed-cell occupants take the existing set-down exit.</summary>
-	internal int SetDownOffQueueCells( IReadOnlySet<(int X, int Y)> cells, RideVisitorBridge? editedRide )
-	{
-		var angry = new HashSet<int>();
-		if ( editedRide != null && ReferenceEquals( FindAttraction( editedRide.AttractionId ), editedRide ) )
-		{
-			// Snapshot before any set-down unlinks a guest: even an in-room occupant on a removed cell can shift a later overflow guest's place.
-			// The queue-edited exit (0x00501390, ORACLE.md X14) thinks 13 for ids divisible by three; its caller (0x004DE1F0) skips the called guest.
-			// Only carry that outcome through this host relocation policy; do not run re-evaluation early or change the called/state-14 set-down behavior.
-			var queue = editedRide.Queue;
-			var room = RideVisitorBridge.PositionsPerCell * editedRide.QueueSizeInCells;
-			var called = editedRide.CalledGuest;
-			for ( var position = room; position < queue.Count; position++ )
-			{
-				var id = queue[position];
-				if ( id != called && id % 3 == 0 && Find( id ) is { } guest && guest.AttractionId == editedRide.AttractionId
-					&& guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.Boarding )
-					angry.Add( id );
-			}
-		}
-		var moved = 0;
-		foreach ( var guest in guests.ToArray() )
-		{
-			if ( !guest.OnGrid || guest.Navigation.OffGrid || !guest.IsInQueue )
-				continue;
-			var here = guest.Navigation.Cell;
-			if ( !(cells.Contains( here ) || cells.Contains( (guest.CellX, guest.CellY) )) || Grid.IsWalkable( here.X, here.Y ) || Grid.IsQueue( here.X, here.Y ) )
-				continue;
-			if ( Grid.FindNearestWalkable( here.X, here.Y ) is not { } cell )
-				continue;
-			PlaceOnGrid( guest, cell.X, cell.Y );
-			if ( FindAttraction( guest.AttractionId ) is { } attraction )
-				DismissFromQueue( guest, attraction, angry.Contains( guest.Id ) ? GuestThought.Angry : GuestThought.None, QueueEndReason.QueueRemoved );
-			else
-				ReturnOrphanToPath( guest );
-			moved++;
-		}
-		return moved;
-	}
-
 	/// <summary>True when the route from the guest's cell on is still path cells, each linked to the next (a wander route is a shortest path, so no cell repeats).</summary>
 	private bool RouteAheadHolds( GuestNavigation navigation )
 	{

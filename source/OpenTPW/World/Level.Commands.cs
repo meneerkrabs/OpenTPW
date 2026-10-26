@@ -141,8 +141,9 @@ public partial class Level
 			var placed = ride != null && TrackAddOns.IsTrackAddOn( entry )
 				? PlaceAddOn( entry, place.X, place.Y, place.Rotation, ride )
 				: PlaceObject( entry, place.X, place.Y, place.Rotation );
-			if ( placed != null )
-				NoteLastRide( placed );
+			// [BIN:TPW-EXE:0x0052A02E placement selects] the placing player's own selection (0x7C2654) is the new object
+			if ( placed != null && place.Player == Commands.Player )
+				Selection = placed;
 			return Outcome( placed != null, placed );
 		}
 		finally
@@ -227,9 +228,9 @@ public partial class Level
 		if ( CommandLineWriter( undo.Mode, undo.Ride ) is not { } writer )
 			return ParkCommandResult.Rejected( $"No {undo.Mode} line can be taken back here." );
 		writer.Undo( new SegmentResult( (undo.StartX, undo.StartY), undo.Built, 0, CellBuildResult.Ok, false ) { Start = (undo.StartX, undo.StartY), Existing = undo.Existing } );
-		// [BIN:TPW-EXE:0x0052FFEC Back's re-evaluation] the path tool's Back passes no ride (0x40BEB3), so the pop's re-evaluation (mode 1: 0x52FF04) takes the last placed or edited ride (0x8186AC)
+		// [BIN:TPW-EXE:0x0052FFEC Back's re-evaluation] the path tool's Back passes no ride (0x40BEB3), so the pop's re-evaluation (mode 1: 0x52FF04) takes the selected ride (0x8186AC), which the issuer's command carries
 		if ( undo.Mode == CellToolMode.Path )
-			ReevaluateLastRide();
+			ReevaluateSelectedRide( undo.Ride );
 		return ParkCommandResult.Ok();
 	}
 
@@ -254,7 +255,6 @@ public partial class Level
 	{
 		if ( Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, edit.X, edit.Y ) is not { } ride || ride.QueueFrontCell == null )
 			return ParkCommandResult.Rejected( "No queue to edit here." );
-		NoteLastRide( Objects.Objects.FirstOrDefault( item => item.Visitors == ride ) );
 		ride.RecomputeQueue( Guests.Grid );
 		// [EXT:online-coop-commands] the tool's start as the click reads it before the edit, for a guest's tool that enters once its request comes back (C3b)
 		var tool = ReadQueueToolStart( ride, afterEditClick: true )!;

@@ -246,6 +246,8 @@ public partial class Level
 			PoolSites.Invalidate();
 		};
 		// A ride with queue cells takes them with it: the refunds are settled while the cells are laid, the cells go once its guests are set down
+		// [BIN:TPW-EXE:0x004DD2D6 selection cleared] destroying the selected object clears the selection
+		Objects.ObjectRemoved += item => { if ( ReferenceEquals( selection, item ) ) selection = null; };
 		Objects.ObjectRemoving += SettleDemolishedQueue;
 		Objects.ObjectRemoved += ClearDemolishedQueue;
 		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
@@ -896,7 +898,7 @@ public partial class Level
 		DropToolStartWait();
 		StaffPlacement?.Cancel();
 		// [EXT:online-coop-commands] the tool's previews read the path builder; each committed line is a command
-		CellTool.Enter( new ParkCommandLineWriter( Paths, Commands, -1 ), null );
+		CellTool.Enter( new ParkCommandLineWriter( Paths, Commands, -1, () => SelectedRideId ), null );
 		return true;
 	}
 

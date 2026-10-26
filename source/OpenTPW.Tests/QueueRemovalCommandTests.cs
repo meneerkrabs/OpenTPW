@@ -425,6 +425,11 @@ public class QueueRemovalCommandTests
 		Assert.AreEqual( GuestThought.Bored, occupants.Target.Thought );
 		Assert.AreEqual( GuestState.Queueing, occupants.Target.State );
 		Assert.AreEqual( (20, 3), occupants.Target.Cell );
+		// no ride's queue held the cell, so nothing re-evaluates: after the sync the guest is where it was, still in its own ride's queue
+		Sync( park );
+		Assert.AreEqual( GuestState.Queueing, occupants.Target.State );
+		Assert.AreEqual( park.Two.Visitors.AttractionId, occupants.Target.AttractionId );
+		Assert.AreEqual( (20, 3), occupants.Target.Cell );
 	}
 
 	[TestMethod]
@@ -463,46 +468,67 @@ public class QueueRemovalCommandTests
 
 	private static bool Park_HasPlacedCells( Park park ) => GuestSimulation.HasPlacedCells( park.Ride );
 
-	[TestMethod]
-	public void ThePathToolsBackReevaluatesTheLastRideAndOnlyOnceThereIsOne()
+	/// <summary>The path tool lays a line from (4, 0) and takes it back: the command the Back issued and the stamps the undo itself raised.</summary>
+	private static (UndoLineCommand Command, int Stamps) PathUndo( Park park )
 	{
-		// tp.exe 0x52FFE2: the path tool's Back passes no ride, so 0x4DE1F0 runs on the last placed or edited ride (0x8186AC)
-		var park = NewPark();
-		Assert.IsNull( park.Level.LastRide );
+		Assert.IsTrue( park.Level.BeginPathTool() );
+		park.Level.CellTool.Click( (4, 0) );
+		Assert.IsNotNull( park.Level.CellTool.Click( (4, 3) ) );
 		var stamps = park.Grid.Cells.StampCounter;
-		Assert.IsTrue( park.Level.Commands.Issue( new UndoLineCommand( CellToolMode.Path, -1, 5, 5, Array.Empty<(int X, int Y)>(), Array.Empty<(int X, int Y)>() ) ).Accepted );
-		Assert.AreEqual( stamps, park.Grid.Cells.StampCounter, "no last ride: nothing to re-evaluate" );
-		Assert.IsTrue( park.Level.Commands.Issue( new EditQueueCommand( 2, 3 ) ).Accepted );
-		Assert.AreEqual( park.Ride.AttractionId, park.Level.LastRide );
-		stamps = park.Grid.Cells.StampCounter;
-		Assert.IsTrue( park.Level.Commands.Issue( new UndoLineCommand( CellToolMode.Path, -1, 5, 5, Array.Empty<(int X, int Y)>(), Array.Empty<(int X, int Y)>() ) ).Accepted );
-		Assert.AreEqual( stamps + 1, park.Grid.Cells.StampCounter, "the ride's queue was re-evaluated once" );
+		Assert.IsTrue( park.Level.CellTool.Undo() );
+		return ((UndoLineCommand)park.Level.Commands.Log[^1].Command, park.Grid.Cells.StampCounter - stamps);
 	}
 
 	[TestMethod]
-	public void TheLastRideTravelsInTheJoinStateAndTheDigest()
+	public void ThePathToolsBackReevaluatesTheRideTheIssuerHadSelectedAndNothingWithoutOne()
 	{
+		// tp.exe 0x52FFE2: the path tool's Back passes no ride, so 0x4DE1F0 runs on the selection (0x8186AC = 0x7C2654); the command carries that ride, so every peer re-evaluates the same one
 		var park = NewPark();
-		var before = park.Level.CaptureJoinState();
-		Assert.IsNull( before.LastRide );
-		Assert.IsTrue( park.Level.Commands.Issue( new EditQueueCommand( 2, 3 ) ).Accepted );
-		var state = CoopJoinState.Decode( park.Level.CaptureJoinState().Encode() );
-		Assert.AreEqual( park.Ride.AttractionId, state.LastRide );
-		park.Level.ApplyJoinState( state with { LastRide = null } );
-		Assert.IsNull( park.Level.LastRide );
-		park.Level.ApplyJoinState( state );
-		Assert.AreEqual( park.Ride.AttractionId, park.Level.LastRide );
+		Assert.IsNull( park.Level.Selection );
+		var (none, noneStamps) = PathUndo( park );
+		Assert.AreEqual( -1, none.Ride, "nothing selected: the shape every older log has" );
+
+		var other = NewPark();
+		other.Level.Selection = other.One;
+		var (selected, selectedStamps) = PathUndo( other );
+		Assert.AreEqual( other.Ride.AttractionId, selected.Ride );
+		Assert.AreEqual( noneStamps + 1, selectedStamps, "the selected ride's queue was re-evaluated once" );
+
+		// replayed on a peer from the command alone, with no selection of its own
+		var peer = NewPark();
+		Assert.IsNull( peer.Level.Selection );
+		var stamps = peer.Grid.Cells.StampCounter;
+		var noOp = new UndoLineCommand( CellToolMode.Path, -1, 5, 5, Array.Empty<(int X, int Y)>(), Array.Empty<(int X, int Y)>() );
+		Assert.IsTrue( peer.Level.Commands.Issue( noOp ).Accepted );
+		var base1 = peer.Grid.Cells.StampCounter - stamps;
+		stamps = peer.Grid.Cells.StampCounter;
+		Assert.IsTrue( peer.Level.Commands.Issue( noOp with { Ride = peer.Ride.AttractionId } ).Accepted );
+		Assert.AreEqual( base1 + 1, peer.Grid.Cells.StampCounter - stamps );
 	}
 
 	[TestMethod]
-	public void ThePublicSetDownEntryKeepsItsNoNewThoughtContract()
+	public void TheSelectionFollowsPlacementsWindowsAddOnsAndRemovals()
 	{
 		var park = NewPark();
-		var occupants = Seed( park );
-		foreach ( var (x, y) in Removed ) park.Grid.ClearQueue( x, y );
-		park.Ride.RecomputeQueue( park.Grid );
-		Assert.AreEqual( 3, park.Guests.SetDownOffQueueCells( Removed.ToHashSet() ) );
-		Assert.AreEqual( GuestThought.Bored, occupants.Target.Thought );
+		var level = park.Level;
+		// a window opened on a ride selects it (the HUD sets it), and an object that is removed clears it (0x4DD2D6)
+		level.Selection = park.One;
+		Assert.AreEqual( park.Ride.AttractionId, level.SelectedRideId );
+		level.Selection = park.Two;
+		Assert.AreEqual( park.Two.Visitors.AttractionId, level.SelectedRideId );
+		Assert.IsTrue( level.RemoveAttraction( park.Two ) );
+		Assert.IsNull( level.Selection, "destroying the selected object clears the selection" );
+		Assert.AreEqual( -1, level.SelectedRideId );
+		// a placement command by this client's player selects the new object (0x52A02E); another player's does not
+		level.Selection = null;
+		var key = ParkCommandCodec.EntryKey( park.One.Entry );
+		var spots = Enumerable.Range( 1, 14 ).SelectMany( x => Enumerable.Range( 1, 14 ).Select( y => (X: x * 4, Y: y * 4) ) ).ToArray();
+		var strangers = level.Commands.ApplyRemote( new PlaceObjectCommand( key, spots[0].X, spots[0].Y, 0 ) { Player = level.Commands.Player + 1 } );
+		Assert.IsNull( level.Selection, "another player's placement is not this client's selection" );
+		var mine = spots.Select( spot => level.Commands.Issue( new PlaceObjectCommand( key, spot.X, spot.Y, 0 ) ) ).FirstOrDefault( result => result.Accepted );
+		Assert.IsNotNull( mine, $"no spot took the placement: {level.LastActionMessage}" );
+		Assert.AreSame( mine!.As<OriginalObject>(), level.Selection, "a placement by the issuing player selects the new object" );
+		GC.KeepAlive( strangers );
 	}
 
 	[TestMethod]

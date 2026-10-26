@@ -15,8 +15,8 @@ public partial class Level
 			if ( value != null )
 			{
 				StaffPlacement?.Cancel();
-				// [EXT:online-coop-commands] another tool: a guest's queue edit that waits for the host starts no tool once it is back (C3b)
-				DropQueueEditWait();
+				// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b)
+				DropToolStartWait();
 			}
 			// [EXT:online-coop-commands] another entry or none: a guest's placement that waits for the host is this tool's no more (C3a-2)
 			if ( !ReferenceEquals( value, buildEntry ) )
@@ -28,7 +28,7 @@ public partial class Level
 			buildAddOnRide = null;
 			// [EXT:online-coop-commands] the Move tool's end is a command, once the tool's state is the ended one: its player carries the picked-up type no more (a placement cannot say
 			// whether the tool stays)
-			if ( moveEnds )
+			if ( moveEnds && !endingMoveLocally )
 				Commands.Issue( new EndMoveCommand() );
 		}
 	}
@@ -53,8 +53,8 @@ public partial class Level
 			if ( value )
 			{
 				StaffPlacement?.Cancel();
-				// [EXT:online-coop-commands] another tool: a guest's queue edit that waits for the host starts no tool once it is back (C3b)
-				DropQueueEditWait();
+				// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b)
+				DropToolStartWait();
 			}
 			// [EXT:online-coop-commands] the remove tool on or off: a guest's removal that waits for the host is this tool's no more (C3a-2)
 			if ( value != isRemovingObjects )
@@ -832,8 +832,8 @@ public partial class Level
 		refused = null;
 		if ( IsReadOnlyVisit || Paths == null )
 			return false;
-		// [EXT:online-coop-commands] another tool: a guest's queue edit that waits for the host starts no tool once it is back (C3b), even if this one ends at once
-		DropQueueEditWait();
+		// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b), even if this one ends at once
+		DropToolStartWait();
 		StaffPlacement?.Cancel();
 		// [EXT:online-coop-commands] the tool's previews read the path builder; each committed line is a command
 		CellTool.Enter( new ParkCommandLineWriter( Paths, Commands, -1 ), null );

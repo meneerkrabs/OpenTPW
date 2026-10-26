@@ -354,7 +354,7 @@ public partial class CoopStreamTests
 		var rights = new CoopBuildRights( level );
 		var place = level.BuildCommand( peer.One.Entry, 20, 12, 90 );
 		// the commands of the guests' tools that wait for the host or send and go on (C3a-2: the line tools, the one-shot placement; C3b: the queue's edit, land, the area clear, the
-		// remove click on a path cell, Backspace over a path cell, the sale of an ordinary object)
+		// remove click on a path cell, Backspace over a path cell, the sale of an ordinary object, the Move tool's pick-up and placement)
 		Assert.IsTrue( level.Guests!.Grid.IsWalkable( 4, 1 ) );
 		var building = new ParkCommand[]
 		{
@@ -366,12 +366,14 @@ public partial class CoopStreamTests
 			new ClearAreaCommand( 0, 0, 8, 8 ),
 			new RemoveAtCommand( 4, 1 ),
 			new BacktrackCommand( 4, 1 ),
-			new RemoveAttractionCommand( peer.Two.Runtime.AttractionId )
+			new RemoveAttractionCommand( peer.Two.Runtime.AttractionId ),
+			new PickUpObjectCommand( peer.Two.Runtime.AttractionId ),
+			place with { Moving = true }
 		};
 		var hostOnly = new ParkCommand[]
 		{
-			place with { Moving = true },
 			place with { AddOnRide = peer.One.Runtime.AttractionId },
+			new ReleaseSeatCommand( 1 ),
 			// the single-cell removals no guest's tool issues (the area clear's rectangle is one command)
 			new RemoveObjectAtCommand( 20, 12 ),
 			new RemovePathCellCommand( 4, 1 ),
@@ -394,6 +396,9 @@ public partial class CoopStreamTests
 		foreach ( var command in hostOnly )
 			Assert.IsFalse( rights.Allows( 1, command ), $"a granted guest may not {command}" );
 		Assert.IsFalse( rights.Allows( 2, GuestLine ), "a grant is its seat's" );
+		// a Move tool's end only drops its own seat's carry: every guest seat may end its Move, granted or not (C3b-2)
+		Assert.IsTrue( rights.Allows( 2, new EndMoveCommand() ) );
+		Assert.IsTrue( rights.Allows( 1, new EndMoveCommand() ) );
 		Assert.IsFalse( rights.Allows( 1, ParkCommandKind.LayLine ), "a kind alone allows the host only" );
 		Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, ParkCommandKind.LayLine ) );
 
@@ -416,6 +421,7 @@ public partial class CoopStreamTests
 		{
 			Assert.IsFalse( rights.Allows( 1, new RemoveAtCommand( 20, 12 ) ) );
 			Assert.IsFalse( rights.Allows( 1, new RemoveAttractionCommand( station.Runtime.AttractionId ) ), "nor to sell it" );
+			Assert.IsFalse( rights.Allows( 1, new PickUpObjectCommand( station.Runtime.AttractionId ) ), "nor to move it" );
 			// the area clear asks of each object it would take: a guest's leaves the station standing, the host's takes it
 			Assert.IsFalse( rights.AllowsRemoval( 1, station ) );
 			Assert.IsTrue( rights.AllowsRemoval( ParkCommands.LocalPlayer, station ) );

@@ -163,6 +163,32 @@ public partial class Level
 		return ParkCommandResult.Ok( (entry, rotation) );
 	}
 
+	/// <summary>[EXT:online-coop-commands] Whether <paramref name="player"/>'s Move tool carries a picked-up type in the park (C3b-2).</summary>
+	internal bool CarriesEntry( int player ) => carriedEntries?.ContainsKey( player ) == true;
+
+	/// <summary>[EXT:online-coop-commands] The guest seats whose Move tools carry a picked-up type (C3b-2).</summary>
+	internal IEnumerable<int> CarryingGuestSeats() => carriedEntries?.Keys.Where( seat => seat > 0 ).OrderBy( seat => seat ) ?? Enumerable.Empty<int>();
+
+	/// <summary>[EXT:online-coop-commands] Releases what guest seat <paramref name="seat"/> holds (<see cref="ReleaseSeatCommand"/>): its carried type. True when it held anything.</summary>
+	internal bool ReleaseSeat( int seat )
+	{
+		if ( seat <= 0 || carriedEntries == null || !carriedEntries.Remove( seat ) )
+			return false;
+		if ( carriedEntries.Count == 0 )
+			carriedEntries = null;
+		return true;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A shared park's session starts or ends: the guests' carried types go with it, as their grants do (<see cref="ClearBuildGrants"/>), so a park shared again
+	/// starts with nothing in a guest's hand. The host's own Move tool keeps its carry.
+	/// </summary>
+	internal void ClearGuestCarries()
+	{
+		foreach ( var seat in CarryingGuestSeats().ToArray() )
+			ReleaseSeat( seat );
+	}
+
 	private ParkCommandResult ExecuteEndMove( EndMoveCommand end )
 	{
 		if ( carriedEntries == null || !carriedEntries.Remove( end.Player ) )

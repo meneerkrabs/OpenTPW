@@ -350,8 +350,8 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || GetCoasterBuilder( station ) is not { } builder )
 			return false;
-		// [EXT:online-coop-commands] another tool: a guest's queue edit that waits for the host starts no tool once it is back (C3b)
-		DropQueueEditWait();
+		// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b)
+		DropToolStartWait();
 		if ( CoasterToolStation != null && CoasterToolStation != station )
 			ExitCoasterTool();
 		StaffPlacement?.Cancel();

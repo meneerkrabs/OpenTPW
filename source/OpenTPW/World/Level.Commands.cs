@@ -251,7 +251,7 @@ public partial class Level
 			return ParkCommandResult.Rejected( "No queue to edit here." );
 		ride.RecomputeQueue( Guests.Grid );
 		// [EXT:online-coop-commands] the tool's start as the click reads it before the edit, for a guest's tool that enters once its request comes back (C3b)
-		var tool = ReadQueueToolStart( ride )!;
+		var tool = ReadQueueToolStart( ride, afterEditClick: true )!;
 		// [BIN:TPW-EXE:0x00530379 corner walk link clear] the walk the click runs also takes the link between the queue's back cell and the path it ends on off both cells, and a cancel restores nothing (QueuePaths.DetachFromPath)
 		// the walk's counter writes come first, as the walk stores them while it goes (QueuePaths.WriteWalkCounts)
 		QueuePaths.WriteWalkCounts( Guests.Grid, ride );

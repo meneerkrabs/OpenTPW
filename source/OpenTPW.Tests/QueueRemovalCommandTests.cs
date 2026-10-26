@@ -305,6 +305,47 @@ public class QueueRemovalCommandTests
 		Assert.IsTrue( dismissed.All( guest => guest.State is GuestState.WalkingAround or GuestState.DoingNothing ) );
 	}
 
+	[TestMethod]
+	public void AnEditClicksToolTakesItsSegmentsBackThroughTheNativeUndoAndACornerSurvivesItsNextSegment()
+	{
+		// tp.exe 0x52FE50: Back clicks the popped point and the new top in mode 0x34 and the second click clears the line between them through the cell clear with the walk's step: a cell's counter counts
+		// down and a bend goes whatever it holds; the corner walk of the edit click (0x526103, 0x530120) wrote 1 on the corners and 0 elsewhere, and the cells of the segment are cleared from its end, so the
+		// corner has lost its second link when its turn comes: it keeps its counter 1 - 1 = 0 and stays
+		var park = NewPark();
+		var ride = park.Two.Visitors;
+		// the ride's anchor cell holds its object, which the native refund reads to find the owner
+		park.Grid.Cells.SetType( 3, 3, ParkCellTypes.Object );
+		Assert.AreEqual( 4, QueuePaths.TryExtend( park.Grid, ride, new[] { (10, 4), (10, 3), (11, 3), (12, 3) } ) );
+		QueuePaths.TryConnect( park.Grid, ride );
+		foreach ( var (x, y) in new[] { (10, 4), (10, 3), (11, 3), (12, 3) } ) park.Grid.Cells.SetPlacementCount( x, y, 5 );
+		Assert.IsTrue( park.Level.EditQueueAt( 12, 3 ), "the edit click enters the tool" );
+		Assert.AreEqual( 2, park.Level.CellTool.SegmentCount );
+		Assert.AreEqual( (short)1, park.Grid.Cells.PlacementCountAt( 10, 3 ), "the walk wrote 1 on the corner" );
+		Assert.AreEqual( (short)0, park.Grid.Cells.PlacementCountAt( 11, 3 ), "and 0 on a cell that is no corner" );
+		var balance = park.Economy.Balance;
+		var refund = park.Economy.CellCost( CellPurchase.Queue ) * park.Economy.ScrapPercent( park.State ) / 100;
+
+		Assert.IsTrue( park.Level.CellTool.Undo() );
+		var first = park.Level.Commands.Log[^1].Command as UndoQueueSegmentCommand;
+		Assert.IsNotNull( first, "the segments of the edit click's tool go through the native undo" );
+		Assert.AreEqual( ((10, 3), (12, 3)), ((first!.StartX, first.StartY), (first.EndX, first.EndY)) );
+		Assert.AreEqual( ParkCellType.Empty, park.Grid.Cells.TypeAt( 12, 3 ) );
+		Assert.AreEqual( ParkCellType.Empty, park.Grid.Cells.TypeAt( 11, 3 ) );
+		Assert.AreEqual( ParkCellType.Queue, park.Grid.Cells.TypeAt( 10, 3 ), "the corner stays: its next segment is gone and its counter fell to 0" );
+		Assert.AreEqual( (short)0, park.Grid.Cells.PlacementCountAt( 10, 3 ) );
+		Assert.AreEqual( balance + 2 * refund, park.Economy.Balance );
+
+		Assert.IsTrue( park.Level.CellTool.Undo() );
+		var second = park.Level.Commands.Log[^1].Command as UndoQueueSegmentCommand;
+		Assert.IsNotNull( second );
+		Assert.AreEqual( ((10, 5), (10, 3)), ((second!.StartX, second.StartY), (second.EndX, second.EndY)) );
+		Assert.AreEqual( ParkCellType.Empty, park.Grid.Cells.TypeAt( 10, 3 ) );
+		Assert.AreEqual( ParkCellType.Empty, park.Grid.Cells.TypeAt( 10, 4 ) );
+		Assert.AreEqual( ParkCellType.Queue, park.Grid.Cells.TypeAt( 10, 5 ), "the NoModify front stays" );
+		Assert.AreEqual( balance + 4 * refund, park.Economy.Balance );
+		CollectionAssert.AreEqual( new[] { (10, 5) }, ride.QueueCells.ToArray() );
+	}
+
 	private static void Settle( Park park ) =>
 		typeof( Level ).GetMethod( "SettleDemolishedQueue", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( park.Level, new object[] { park.One } );
 

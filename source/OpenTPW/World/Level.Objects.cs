@@ -902,19 +902,22 @@ public partial class Level
 
 	/// <summary>Starts the queue tool for <paramref name="ride"/> at its entrance's outside cell (or the queue's back cell).</summary>
 	// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8); it shares LayLine, the vertex stack and the preview/commit code with the path tool
-	public bool EnterQueueTool( RideVisitorBridge ride )
+	public bool EnterQueueTool( RideVisitorBridge ride ) => EnterQueueTool( ride, afterEditClick: false );
+
+	/// <summary><see cref="EnterQueueTool(RideVisitorBridge)"/>; with <paramref name="afterEditClick"/> the tool is the queue edit click's (tp.exe <c>0x526103</c>), whose corner walk writes the counters the native undo counts down.</summary>
+	internal bool EnterQueueTool( RideVisitorBridge ride, bool afterEditClick )
 	{
 		if ( IsReadOnlyVisit || Guests == null || ride.QueueFrontCell == null )
 			return false;
 		StaffPlacement?.Cancel();
-		return EnterQueueTool( ride, ReadQueueToolStart( ride )! );
+		return EnterQueueTool( ride, ReadQueueToolStart( ride, afterEditClick )! );
 	}
 
 	/// <summary>What the queue tool reads of a ride's queue when it starts (<see cref="EnterQueueTool(RideVisitorBridge)"/>): its line start, the corner walk's stack and the segments its undo takes back.</summary>
 	internal sealed record QueueToolStart( (int X, int Y) Start, IReadOnlyList<(int X, int Y)>? Stack, IReadOnlyList<SegmentResult>? Segments );
 
 	/// <summary>The queue tool's start for <paramref name="ride"/>, read from the park as it stands now; null without a queue front.</summary>
-	internal QueueToolStart? ReadQueueToolStart( RideVisitorBridge ride )
+	internal QueueToolStart? ReadQueueToolStart( RideVisitorBridge ride, bool afterEditClick = false )
 	{
 		if ( Guests == null || ride.QueueFrontCell is not { } front )
 			return null;
@@ -927,7 +930,15 @@ public partial class Level
 		var stack = Guests.Grid.IsQueue( front.X, front.Y ) && queue.QueueCells.Count >= 2 ? QueuePaths.CornerStack( Guests.Grid, queue ) : null;
 		if ( stack is not { Count: >= 2 } || stack[^1] != start )
 			stack = null;
-		return new QueueToolStart( start, stack, stack == null ? null : QueuePaths.StackSegments( queue, stack ) );
+		var segments = stack == null ? null : QueuePaths.StackSegments( queue, stack );
+		// [BIN:TPW-EXE:0x00525F63 undo clears the line] Back clicks the popped point and the new top in mode 0x34 (0x52FE50): the second click clears the line between them, each cell through the cell clear with the walk's step (0x536100 pass 0x32), which counts a cell's counter down and clears a bend whatever its counter; the corner walk of the edit click wrote the counters (QueuePaths.WriteWalkCounts), so a corner whose next segment was cleared before it survives with its counter at 0. The segments an edit click's tool takes back therefore go through the native undo
+		if ( afterEditClick && segments != null )
+		{
+			var writer = CreateQueueWriter( ride );
+			segments = segments.Select( segment => segment.Start != segment.SnappedEnd && writer.SupportsNativeUndo( segment.Start, segment.SnappedEnd )
+				? segment with { QueueReceipt = new QueueSegmentReceipt( segment.Start, segment.SnappedEnd ) } : segment ).ToArray();
+		}
+		return new QueueToolStart( start, stack, segments );
 	}
 
 	/// <summary>

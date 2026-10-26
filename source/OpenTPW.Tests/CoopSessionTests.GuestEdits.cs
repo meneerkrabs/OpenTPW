@@ -642,6 +642,41 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void AGuestsPlacementCommandOfACatalogueEntryIsRefusedOverAClaimedQueuesJoin()
+	{
+		var park = NewPark();
+		park.Enter();
+		var level = park.Level;
+		ConfigureQueue( level.Guests!.Grid, park.One, 10, 5 );
+		var trackEnd = ShapedEntry( "Info.Id 9101\nInfo.WhichUIType 0\n", "<" );
+		// the catalogue holds the entry, so a command names it by its key as any other
+		var catalog = (ObjectCatalog)typeof( ObjectCatalog ).GetConstructor( NonPublic, null, new[] { typeof( string ), typeof( IReadOnlyList<ObjectCatalogEntry> ) }, null )!
+			.Invoke( new object[] { "jungle", (level.Objects.Catalog?.Entries ?? Array.Empty<ObjectCatalogEntry>()).Append( trackEnd ).ToArray() } );
+		typeof( ParkObjects ).GetField( "<Catalog>k__BackingField", NonPublic )!.SetValue( level.Objects, catalog );
+		var key = ParkCommandCodec.EntryKey( trackEnd );
+		Assert.AreSame( trackEnd, level.ResolveCommandEntry( key ) );
+		var rights = new CoopBuildRights( level );
+		level.SetBuildGrant( 1, true );
+		var before = level.Commands.Rights;
+		level.Commands.Rights = rights;
+		MarkStation( park, park.One );
+		try
+		{
+			var placed = level.Commands.ApplyRemote( new PlaceObjectCommand( key, 11, 1, 0 ) { Player = 1 } );
+			Assert.IsTrue( placed.RightsRefused, "its plan clears the path cell beyond its track end, which the claimed queue joins" );
+			Assert.IsTrue( level.Commands.ApplyRemote( new PlaceObjectCommand( key, 11, 1, 0, Moving: true ) { Player = 1 } ).RightsRefused, "and the Move tool's placement of it" );
+			Assert.IsTrue( Walkable( park, 10, 1 ) && Walkable( park, 11, 1 ) && IsQueue( park, 10, 2 ), "nothing changed" );
+			Assert.IsFalse( level.Commands.ApplyRemote( new PlaceObjectCommand( key, 11, 1, 0 ) ).RightsRefused, "the host's is the park's to decide" );
+		}
+		finally
+		{
+			MarkStation( park, park.One, station: false );
+			level.Commands.Rights = before;
+		}
+		Assert.IsTrue( rights.Allows( 1, new PlaceObjectCommand( key, 11, 1, 0 ) ), "an ordinary ride's join" );
+	}
+
+	[TestMethod]
 	public void AGuestsAreaClearLeavesThePathCellAClaimedQueueJoins()
 	{
 		var park = NewPark();

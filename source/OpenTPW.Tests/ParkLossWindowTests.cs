@@ -188,7 +188,7 @@ public class ParkLossWindowTests
 		var level = LevelFor(); var hud = Hud( level ); var context = Context( 10 );
 		Lose( level ); Frame( hud, context );
 		var speed = hud.Status.Speed;
-		hud.ObserveApplicationFocus( true, false, false ); hud.ObserveApplicationFocus( false, false, false );
+		hud.ObserveApplicationFocus( true, false ); hud.ObserveApplicationFocus( false, false );
 		Assert.AreEqual( 0f, hud.SimulationTimeScale, "the deactivation pauses the park under the loss window" );
 		var previous = GameOptions.Current.RmbCancel;
 		try

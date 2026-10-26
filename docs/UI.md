@@ -878,7 +878,7 @@ finance, loans, object and visitor windows do not.
 | `0x5F0B7F` | the map window `0x5F0B40` | `map` |
 | `0x4A93D7` | the postcard `0x4A9380`: hides the HUD, runs the advisor's stop path `0x5996D0` and sets the park state `0x7CC150` to 3 (game type 1 takes `0x4BCEC0` instead of the pause) | `sendPostcard` |
 | `0x47F26C` | the generic message box `0x47F020`, while the enable word is 1 and `[0xF82884]` is 0 (it is 0 in every park, logged in or not: its one write, `0x54E66C` in game state 1, is cleared at `0x54E7E6` before a park loads) | the screens of `IsPausingMessageBox`, in every park but a shared one or a visit |
-| `0x46B74C` | the application's deactivation in the window procedure `0x46B600` (offline: pause with the P window; online: only the mixer) | the offline focus-loss latch |
+| `0x46B74C` | the application's deactivation in the window procedure `0x46B600` (pause with the P window, in every park; the mixer is paused too) | the focus-loss latch (`ObserveApplicationFocus`; not in a shared park or a visit) |
 
 The 27 call sites of the message box `0x47F020`:
 

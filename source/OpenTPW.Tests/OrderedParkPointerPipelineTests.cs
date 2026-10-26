@@ -872,8 +872,8 @@ public class OrderedParkPointerPipelineTests
 	public void FocusLossOfflineOpensTheBackdropAndEveryResumeClosesIt()
 	{
 		var clicks = 0; var point = AddButton( () => clicks++ );
-		hud.ObserveApplicationFocus( true, false, false );
-		hud.ObserveApplicationFocus( false, false, false );
+		hud.ObserveApplicationFocus( true, false );
+		hud.ObserveApplicationFocus( false, false );
 		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
 		Assert.AreEqual( 0, clicks, "The focus-loss pause opens the P window's backdrop (0x4092a0(1))." );
 		// P resumes the stored speed and destroys the window.
@@ -881,12 +881,12 @@ public class OrderedParkPointerPipelineTests
 		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
 		Assert.AreEqual( 1, clicks ); Assert.AreEqual( GameSpeed.Normal, hud.Status.Speed );
 		// An explicit speed choice resumes as well.
-		hud.ObserveApplicationFocus( true, false, false ); hud.ObserveApplicationFocus( false, false, false );
+		hud.ObserveApplicationFocus( true, false ); hud.ObserveApplicationFocus( false, false );
 		hud.SetUserGameSpeed( GameSpeed.Normal );
 		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
 		Assert.AreEqual( 2, clicks );
 		// Offscreen or logged-in sessions never latch it.
-		hud.ObserveApplicationFocus( true, true, false ); hud.ObserveApplicationFocus( false, true, false );
+		hud.ObserveApplicationFocus( true, true ); hud.ObserveApplicationFocus( false, true );
 		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
 		Assert.AreEqual( 3, clicks );
 	}
@@ -896,7 +896,7 @@ public class OrderedParkPointerPipelineTests
 	{
 		var clicks = 0; var point = AddButton( () => clicks++ );
 		TapPause();
-		hud.ObserveApplicationFocus( true, false, false ); hud.ObserveApplicationFocus( false, false, false );
+		hud.ObserveApplicationFocus( true, false ); hud.ObserveApplicationFocus( false, false );
 		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
 		Assert.AreEqual( 0, clicks );
 	}

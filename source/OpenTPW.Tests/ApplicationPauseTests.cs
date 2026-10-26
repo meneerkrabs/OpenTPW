@@ -41,7 +41,7 @@ public class ApplicationPauseTests
 	[TestCleanup]
 	public void Cleanup() => restore();
 	private ParkHud CreateHud() => new( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus { Speed = GameSpeed.Fast }, new EmptyCatalog(), new HudHost() );
-	private void Observe( bool focused, bool offscreen = false, bool loggedIn = false ) => hud.ObserveApplicationFocus( focused, offscreen, loggedIn );
+	private void Observe( bool focused, bool offscreen = false ) => hud.ObserveApplicationFocus( focused, offscreen );
 	private void LoseFocus() { Observe( true ); Observe( false ); }
 	private void Key( UiKeys key ) => hud.Update( context, UiInput.Key( key ), false, false, false );
 	private void Click( string id )
@@ -138,17 +138,24 @@ public class ApplicationPauseTests
 		Assert.AreEqual( 0f, hud.SimulationTimeScale ); hud.Stack.Pop(); Assert.AreEqual( hud.Status.TimeScale, hud.SimulationTimeScale );
 	}
 
-	[DataTestMethod]
-	[DataRow( true )]
-	[DataRow( false )]
-	public void EnteringExcludedOnlineOrReadOnlyStateClearsOnlyFocusLatch( bool loggedIn )
+	[TestMethod]
+	public void EnteringAReadOnlyVisitClearsOnlyFocusLatch()
 	{
+		// a shared park is gated the same way (level.CoopRole != None, [EXT:online-coop-lockstep]); a session cannot be built asset-free here
+		void Enter() => Set( level, "<Visit>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( ParkVisitInfo ) ) );
 		LoseFocus();
-		if ( !loggedIn ) Set( level, "<Visit>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( ParkVisitInfo ) ) );
-		Observe( false, loggedIn: loggedIn ); Assert.AreEqual( GameSpeed.Fast, hud.Status.Speed ); Assert.AreEqual( hud.Status.TimeScale, hud.SimulationTimeScale );
-		Observe( true, loggedIn: loggedIn ); Observe( false, loggedIn: loggedIn ); Assert.AreEqual( hud.Status.TimeScale, hud.SimulationTimeScale );
+		Enter();
+		Observe( false ); Assert.AreEqual( GameSpeed.Fast, hud.Status.Speed ); Assert.AreEqual( hud.Status.TimeScale, hud.SimulationTimeScale );
+		Observe( true ); Observe( false ); Assert.AreEqual( hud.Status.TimeScale, hud.SimulationTimeScale );
 		Set( level, "<Visit>k__BackingField", null ); Observe( false ); Assert.AreEqual( hud.Status.TimeScale, hud.SimulationTimeScale );
-		hud.SetUserGameSpeed( GameSpeed.Paused ); LoseFocus(); Observe( true, loggedIn: true ); Assert.AreEqual( 0f, hud.SimulationTimeScale );
+		hud.SetUserGameSpeed( GameSpeed.Paused ); LoseFocus(); Enter(); Observe( true ); Assert.AreEqual( 0f, hud.SimulationTimeScale );
+	}
+
+	[TestMethod]
+	public void ALoggedInPlayersOwnParkPausesOnDeactivationToo()
+	{
+		// 0x46B74C tests [0xF82884], which is 0 in every park: no session state is read here
+		LoseFocus(); Assert.AreEqual( 0f, hud.SimulationTimeScale );
 	}
 
 	[TestMethod]

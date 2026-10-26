@@ -27,15 +27,29 @@ public partial class CoopSessionTests
 		return request;
 	}
 
+	/// <summary>A buy menu of one item, the ride's (set once the park is built), so the object window's Move button finds it (<c>ParkHud.MoveObject</c>).</summary>
+	private sealed class OneRide : IBuildCatalog
+	{
+		public BuildItem? Item { get; set; }
+		public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => Item is { } item && item.Category == category ? new[] { item } : Array.Empty<BuildItem>();
+	}
+
+	/// <summary>The object window's Move button on <paramref name="item"/>.</summary>
+	private static void PressMove( ParkHud hud, OriginalObject item )
+	{
+		typeof( ParkHud ).GetField( "selectedObject", NonPublic )!.SetValue( hud, item );
+		typeof( ParkHud ).GetMethod( "MoveObject", NonPublic )!.Invoke( hud, null );
+	}
+
 	/// <summary>The guest's member of the last <see cref="MoveSession"/>.</summary>
 	private CoopTestNetwork.Member? moveGuestLink;
 
 	/// <summary>A ride of the host's at (20, 12), granted guest, both parks with it.</summary>
-	private (Park Host, Park Guest, View View, int Seat) MoveSession()
+	private (Park Host, Park Guest, View View, int Seat) MoveSession( IBuildCatalog? catalog = null )
 	{
 		var (host, guest, _, guestLink) = Shared();
 		moveGuestLink = guestLink;
-		var view = ViewOf( guest );
+		var view = ViewOf( guest, catalog );
 		Rounds( 20, host, guest );
 		Assert.IsTrue( host.Issue( host.Level.BuildCommand( host.One.Entry, 20, 12, 90 ) ).Accepted );
 		Grant( host, guest, view );
@@ -107,6 +121,38 @@ public partial class CoopSessionTests
 		Assert.IsFalse( guest.Level.IsMoving, "no Move tool arms from it" );
 		Assert.IsNull( host.Level.Objects.FindAt( 20, 12 ), "the object stays sold, as a cancelled Move leaves it" );
 		CollectionAssert.AreEqual( new[] { ParkCommandKind.PickUpObject, ParkCommandKind.EndMove }, HostCommandsOf( host, seat ).Select( command => command.Kind ).ToArray() );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void TheMoveButtonOfAnotherObjectWhileAPickUpWaitsKeepsTheFirstPickUpsItem()
+	{
+		var menu = new OneRide();
+		var (host, guest, view, seat) = MoveSession( menu );
+		var entry = guest.One.Entry;
+		menu.Item = new BuildItem( "ride", entry.InfoId, (BuildCategory)entry.WhichUIType, -1, 0, null, Array.Empty<string>(), Entry: entry );
+		Assert.IsTrue( host.Issue( host.Level.BuildCommand( host.One.Entry, 24, 12, 90 ) ).Accepted );
+		RoundsUntil( () => guest.Level.Objects.FindAt( 24, 12 ) != null, host, guest, view, "the second ride reached the guest" );
+		var waitingMove = typeof( ParkHud ).GetField( "waitingMove", NonPublic )!;
+		guest.Enter();
+		PressMove( view.Hud, guest.Level.Objects.FindAt( 20, 12 )! );
+		var first = guest.Level.WaitingToolStart;
+		Assert.IsNotNull( first, "the window's Move button sent the pick-up" );
+		Assert.AreSame( first, (((CoopGuestCommands.Request Request, BuildItem Item)?)waitingMove.GetValue( view.Hud ))!.Value.Request );
+		// the Move button of the other ride while the first pick-up waits sends nothing and binds nothing
+		PressMove( view.Hud, guest.Level.Objects.FindAt( 24, 12 )! );
+		Assert.AreSame( first, guest.Level.WaitingToolStart );
+		Assert.AreSame( first, (((CoopGuestCommands.Request Request, BuildItem Item)?)waitingMove.GetValue( view.Hud ))!.Value.Request, "the item stays the first pick-up's" );
+		Assert.AreEqual( 1, guest.Session!.GuestCommands!.Open.Count( request => request.Command is PickUpObjectCommand ) );
+		RoundsUntil( () => guest.Level.IsMoving, host, guest, view, "the first pick-up armed the Move tool" );
+		Assert.IsNull( host.Level.Objects.FindAt( 20, 12 ), "the first ride was picked up" );
+		Assert.IsNotNull( host.Level.Objects.FindAt( 24, 12 ), "the second stands" );
+		Assert.AreSame( menu.Item, typeof( ParkHud ).GetField( "pendingItem", NonPublic )!.GetValue( view.Hud ) );
+		// its placement finishes the tool as the host's does, and the end releases the carry
+		guest.Level.ClickBuildTool( 28, 12 );
+		RoundsUntil( () => guest.Level.WaitingPlacement == null, host, guest, view, "the placement came back" );
+		Assert.IsFalse( guest.Level.IsMoving );
+		RoundsUntil( () => !guest.Level.CarriesEntry( seat ) && !host.Level.CarriesEntry( seat ), host, guest, view, "the end released the carry" );
 		CatchUpAndCompare( host, guest );
 	}
 
@@ -189,10 +235,20 @@ public partial class CoopSessionTests
 		var next = network.Add();
 		Assert.AreEqual( seat, (int)next.Slot, "the freed seat is taken again" );
 		hostLink.Resume();
-		for ( var round = 0; round < 600 && host.Level.CarriesEntry( seat ); round++ )
+		// the new member's first request, a moving placement of the type its seat carried, comes with the host's first frame after its resume
+		host.Enter();
+		var log = host.Level.Commands.Log.Count;
+		next.Send( hostLink.Id, new CoopGuestCommand( 1, ParkCommandCodec.Encode( host.Level.BuildCommand( host.One.Entry, 24, 12, 90 ) with { Moving = true } ) ).Encode() );
+		for ( var round = 0; round < 600 && !host.Level.Commands.Log.Skip( log ).Any( entry => entry.Command is PlaceObjectCommand ); round++ )
 			Rounds( 1, host );
+		var since = host.Level.Commands.Log.Skip( log ).Select( entry => entry.Command ).ToArray();
 		Assert.IsFalse( host.Level.CarriesEntry( seat ), "the seat's next member starts with nothing in hand" );
 		Assert.IsFalse( host.Level.HasBuildGrant( seat ), "and without the last member's grant" );
+		var release = Array.FindIndex( since, command => command is ReleaseSeatCommand { Seat: var released } && released == seat );
+		var revoke = Array.FindIndex( since, command => command is SetBuildGrantCommand { Granted: false } grant && grant.Seat == seat );
+		var request = Array.FindIndex( since, command => command is PlaceObjectCommand && command.Player == seat );
+		Assert.IsTrue( release >= 0 && revoke >= 0 && request > release && request > revoke, string.Join( ", ", since.Select( command => command.Kind ) ) );
+		Assert.IsNull( host.Level.Objects.FindAt( 24, 12 ), "its placement was refused" );
 	}
 
 	[TestMethod]

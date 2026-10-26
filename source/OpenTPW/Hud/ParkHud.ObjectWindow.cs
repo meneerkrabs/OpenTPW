@@ -265,10 +265,12 @@ public sealed partial class ParkHud
 		level.AreaClearTool?.Cancel();
 		level.PoolTool?.Cancel();
 		LeaveBuildTool();
+		var waiting = level.WaitingToolStart;
 		if ( !level.BeginMove( item ) )
 		{
-			// [EXT:online-coop-commands] a guest's pick-up went to the host: the Move tool arms with this item once it comes back (C3b-2), and the window closes now, as for the host
-			if ( level.WaitingToolStart is { Command: PickUpObjectCommand } request )
+			// [EXT:online-coop-commands] a guest's pick-up went to the host: the Move tool arms with this item once it comes back (C3b-2), and the window closes now, as for the host; a
+			// click that sent none (another pick-up waits) binds nothing and keeps the window
+			if ( level.WaitingToolStart is { Command: PickUpObjectCommand } request && !ReferenceEquals( request, waiting ) )
 			{
 				waitingMove = (request, buyItem);
 				selectedObject = null;

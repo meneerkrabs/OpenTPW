@@ -282,6 +282,44 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void ClosingTheToolMidDragSendsTheDragsLatestValueBeforeItsEnd()
+	{
+		var (host, guest, view, coaster, _, seat) = SharedCoaster();
+		GuestCoasterTool( host, guest, view, coaster );
+		var (hostBuilder, builder) = Builders( host, guest, coaster );
+		GuestPylons( host, guest, view, 2 );
+		guest.Enter();
+		var panel = guest.Level.CoasterPanel!;
+		Assert.IsTrue( panel.Select( CoasterToolButton.Height ) );
+		var node = CoasterTrack.StationNodeCount;
+		var start = builder.Track.Nodes[node].T;
+		var (low, high) = builder.Track.LoftRange( builder.Site, node );
+		hudPointer = new N.Vector2( 1000, 800 );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), CoasterCell.X + 4, CoasterCell.Y ) );
+		RoundsUntil( () => panel.IsDragging && guest.Level.CoasterRequests.IsEmpty, host, guest, view, "the press came back" );
+		Rounds( 120, host, guest );
+		// a step goes in a frame whose burst the host cannot take; the next value waits for its 0.2 s when the tool ends
+		var retried = guest.Level.CoasterRequests.Retried;
+		var burst = SpendTheBurst( guest );
+		hudPointer = new N.Vector2( 1000, 780 );
+		view.Update();
+		hudPointer = new N.Vector2( 1000, 760 );
+		view.Update();
+		Assert.IsTrue( guest.Level.CoasterRequests.HasUnsent, "the latest value waits" );
+		guest.Enter();
+		guest.Level.ExitCoasterTool();
+		hudPointer = new N.Vector2( -1 );
+		RoundsUntil( () => guest.Level.CoasterRequests.IsEmpty && burst.All( request => !request.IsOpen ), host, guest, view, "the drag's last commands came back" );
+		Assert.IsTrue( burst.All( request => request.State == CoopGuestRequestState.Applied ), "the burst spent the host's bucket: the step after it was too fast" );
+		Assert.AreEqual( retried, guest.Level.CoasterRequests.Retried, "the later value replaced it: it did not go again" );
+		var latest = Math.Clamp( start + 20 * CoasterToolPanel.HeightRate, low, high );
+		Assert.AreEqual( latest, builder.Track.Nodes[node].T, 1e-5f, "the drag ended at its latest value, as the host's ends at its own" );
+		Assert.AreEqual( builder.Track.Nodes[node].T, hostBuilder.Track.Nodes[node].T );
+		Assert.IsNull( host.Level.CoasterEdits.Of( seat ), "and its end applied" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
 	public void AGuestsCutGoesToTheHostAndItsOutcomeSelectsTheBuildButton()
 	{
 		var (host, guest, view, coaster, _, seat) = SharedCoaster();

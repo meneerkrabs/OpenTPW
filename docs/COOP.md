@@ -2093,10 +2093,13 @@ tool sends every write as a request:
   or ended, as for the track tools.
 - **Refusals.** A refusal by the rights (the claim or the grant went) of a click, a Backspace, a swap, a cut,
   a drag's press or its end ends the guest's tool without a command and says why: the claim's end left the
-  coaster's tool state, or the stray claim's release will. A request the host could not take and an outcome
-  not known are said, and the tool stays. A closed panel's outcome is only said.
-- **The exit.** Escape, a right click or another tool closes the panel: a drag's unsent steps are dropped, a
-  press not sent yet goes with them, a sent drag ends behind what went (a moved pylon put back first), and
+  coaster's tool state, or the stray claim's release will. A click, a Backspace, a swap, a cut or a drag's
+  press the host could not take, or whose outcome is not known, is said, and the tool stays; a drag's last
+  value or its end goes again, or gives the drag up and ends the panel (above). A closed panel's outcome is
+  only said.
+- **The exit.** Escape, a right click or another tool closes the panel. A running drag ends as a release over
+  no cell would end it, as the host's does: its values not sent yet still go, its end follows them, and a
+  moved pylon goes back first. A press not sent yet is dropped, and one that went is ended behind it.
   `EndCoasterToolCommand` follows only while the seat still holds the claim. The frame check lets the claim
   go once the queue is sent.
 - **The lease.** The coaster tool's commands of the claim's holder renew its lease, so a drag in progress

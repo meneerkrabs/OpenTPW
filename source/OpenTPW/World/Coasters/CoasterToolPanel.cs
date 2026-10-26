@@ -718,8 +718,9 @@ public sealed class CoasterToolPanel
 	}
 
 	/// <summary>
-	/// The tool ends: a drag in progress is released where it stands. [EXT:online-coop-commands] A guest's drag (C3c-2): what of it was not sent goes, and a drag whose press went ends behind
-	/// what went, a move put back first; a press that did not go is dropped, one that went is ended once it began. A click, Backspace, swap or cut that waits comes back as a message only.
+	/// The tool ends: a drag in progress is released where it stands, as a release over no cell (a move goes back, a height edit settles its money). [EXT:online-coop-commands] A guest's drag
+	/// too (C3c-2): its values not sent yet still go, before its end, so it ends at its latest values as the host's does, a move put back first. A guest's press that did not go is dropped, one
+	/// that went is ended once it began. A click, Backspace, swap or cut that waits comes back as a message only.
 	/// </summary>
 	public void Close()
 	{
@@ -733,20 +734,7 @@ public sealed class CoasterToolPanel
 				GuestRequests.Enqueue( new EndCoasterNodeEditCommand( station ), press.Number );
 		}
 		if ( drag is { } state )
-		{
-			if ( state.Number > 0 )
-			{
-				GuestRequests!.DropUnsent( state.Number );
-				// the steps that went may have moved the pylon: it goes back to its cell before the end, as the drag's last value of its field
-				if ( state.Kind == CoasterToolButton.Move && state.Last.ContainsKey( CoasterNodeField.Move ) )
-					GuestRequests.Step( state.Number, new EditCoasterNodeCommand( station, CoasterNodeField.Move, 0, state.Edit.Start.X, state.Edit.Start.Y ) );
-				drag = null;
-				DragCost = null;
-				GuestRequests.Enqueue( new EndCoasterNodeEditCommand( station ), state.Number );
-			}
-			else
-				EndDrag( state, null );
-		}
+			EndDrag( state, null );
 		cutStart = null;
 		Cursor = null;
 		builder.LoopMode = false;

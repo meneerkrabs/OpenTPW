@@ -75,6 +75,35 @@ public class NativeWorldShaderRenderTests
 	}
 
 	/// <summary>
+	/// A self-lit material (material word +0xC bit 0x1, TextureSlotAddressing.SelfLitFlag) takes the draw's constant colour in tp.exe (0x580C51), not the lighting colour: with the ambient-only light of
+	/// this draw a lit white texel comes out at the 0.4 ambient, a self-lit one at the texel itself (issue 829: the Gift Shop chest's glow and gold interior were drawn dark).
+	/// </summary>
+	[TestMethod]
+	public void ASelfLitCornerIsDrawnFullBrightAndALitOneAtTheAmbient()
+	{
+		using var device = CreateDevice();
+		Log = new();
+		double Whites( byte[] pixels )
+		{
+			double sum = 0;
+			var count = 0;
+			for ( var y = 0; y < Size; y++ )
+				for ( var x = 0; x < Size; x++ )
+					if ( IsWhite( x, y ) )
+					{
+						sum += pixels[(y * Size + x) * 4 + 1];
+						count++;
+					}
+			return sum / count;
+		}
+		var lit = Whites( Draw( device, "test.shader", TextureSlotAddressing.ClampFlag, materialScratchBuffer: false ) );
+		var selfLit = Whites( Draw( device, "test.shader", TextureSlotAddressing.ClampFlag | TextureSlotAddressing.SelfLitFlag, materialScratchBuffer: false ) );
+		Console.WriteLine( $"{device.BackendType}: white cells lit {lit:F1}, self-lit {selfLit:F1}" );
+		Assert.IsTrue( lit is > 80 and < 125, $"the lit white cells are at the 0.4 ambient (about 102): {lit:F1}" );
+		Assert.IsTrue( selfLit > 245, $"the self-lit white cells are the texel itself: {selfLit:F1}" );
+	}
+
+	/// <summary>
 	/// Direct3D 11 links the vertex shader's outputs to the pixel shader's inputs by register: every pixel shader input must sit in
 	/// the register where the vertex shader writes the same semantic, with at least its components (issue #754). This compiles
 	/// every shader as the engine does on Windows (Veldrid.SPIRV's HLSL, then the system HLSL compiler with Veldrid's vs_5_0/ps_5_0

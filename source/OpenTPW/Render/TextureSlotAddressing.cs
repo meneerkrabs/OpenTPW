@@ -35,6 +35,17 @@ public static class TextureSlotAddressing
 	/// </summary>
 	public const uint OpaqueSlotBit = 0x800;
 
+	/// <summary>
+	/// OpenTPW's vertex flag for a corner of a self-lit material (material word +0xC bit 0x1, <see cref="ModelBuilder.SelfLitMaterialFlag"/>): tp.exe gives the corners of such a material the constant
+	/// colour of the draw (0xFFFFFFFF) instead of the vertex lighting colour, so the texture is drawn full-bright, and <c>test.shader</c> shades the corner with 1. Bit 26 is free like bits 27 to 31.
+	/// </summary>
+	// [BIN:TPW-EXE:0x580C51 self-lit material] the vertex fill of the mesh draw (0x580530) tests the material record's word +0xC (the file's fourth dword of the 16-byte material record, the one the model reader calls Pad) for bit 0x1: with it clear the corner's diffuse colour is the lit colour (0x574660: the sum of 0x5741B0 clamped to bytes, alpha 0xFF, ANDed with the draw's mask [[0x87A248]+0x2C]) and with it set it is the mask itself (0xFFFFFFFF; 0xFFFF0000 for the one draw that tints), so the texture is not lit at all; the stage state 0x567620 modulates the texture with the diffuse colour
+	public const uint SelfLitFlag = 0x0400_0000;
+
+	/// <summary>The vertex flags for a corner of a material: those of its slot (<see cref="VertexFlags(uint)"/>) and <see cref="SelfLitFlag"/> when the material is self-lit.</summary>
+	public static uint VertexFlags( ModelFile.MaterialData material ) =>
+		VertexFlags( material.Flags ) | ((material.Pad & ModelBuilder.SelfLitMaterialFlag) != 0 ? SelfLitFlag : 0u);
+
 	/// <summary>Whether tp.exe wraps a slot with these flags (else it clamps).</summary>
 	public static bool Wraps( uint slotFlags ) => (slotFlags & WrapFlags) != 0;
 

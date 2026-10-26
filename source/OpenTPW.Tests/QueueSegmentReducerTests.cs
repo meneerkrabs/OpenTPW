@@ -247,4 +247,19 @@ public class QueueSegmentReducerTests
 		refusing.SetType( 5, 6, ParkCellTypes.Object );
 		Assert.IsFalse( new QueueSegmentReducer( refusing, 17, ( x, y ) => false, () => true, _ => true, () => 10, _ => { } ).Supports( (5, 5), (5, 7) ), "an object nothing gives way for stays outside the domain" );
 	}
+
+	[TestMethod]
+	public void AWorldThatTypesNoFootprintsDemolishesTheObjectOnAnEmptyTypedCell()
+	{
+		// a level without typed footprints (the Theme Park Inc slice) holds the object in its object list while the cell map says empty: the cell still gives way and the first pass demolishes
+		var map = new ParkCellMap( 12, 12 );
+		map.SetType( 5, 5, ParkCellType.Queue ); map.SetOwner( 5, 5, 17 );
+		var objectAt = (X: 5, Y: 6);
+		var demolished = new List<(int X, int Y)>();
+		var reducer = new QueueSegmentReducer( map, 17, ( x, y ) => false, () => true, _ => true, () => 10, _ => { },
+			givesWay: ( x, y ) => (x, y) == objectAt, demolish: ( x, y ) => demolished.Add( (x, y) ) );
+		reducer.Commit( (5, 5), (5, 7) );
+		CollectionAssert.AreEqual( new[] { objectAt }, demolished );
+		Assert.AreEqual( (byte)3, map.RawTypeAt( 5, 6 ) );
+	}
 }

@@ -34,8 +34,8 @@ internal sealed class QueueSegmentReducer
 		this.givesWay = givesWay; this.demolish = demolish;
 	}
 
-	/// <summary>The object cell types (4, 9 and 10) of an object the queue tool may cover.</summary>
-	private bool CoveredObjectCell( (int X, int Y) p ) => cells.RawTypeAt( p.X, p.Y ) is ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit && givesWay?.Invoke( p.X, p.Y ) == true;
+	/// <summary>An object the queue tool may cover stands on the cell: its cell types are 4, 9 and 10, or 0 in a world whose footprints are not typed.</summary>
+	private bool CoveredObjectCell( (int X, int Y) p ) => cells.RawTypeAt( p.X, p.Y ) is 0 or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit && givesWay?.Invoke( p.X, p.Y ) == true;
 
 	internal bool Supports( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, true );
 	internal bool SupportsAdmission( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, false );

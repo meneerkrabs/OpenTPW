@@ -239,6 +239,24 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void APressFirstSeenInTheFrameWhoseOutcomeMovedTheToolOnIsNoClickOfIt()
+	{
+		var (host, guest, view, kart, _, _) = SharedKart();
+		GuestTrackTool( host, guest, view, kart );
+		guest.Enter();
+		Assert.IsNotNull( guest.Level.ClickCellTool( KartAt( guest, kart, 4, 6 ) )?.Waiting );
+		// the line's outcome reaches the guest's park while its HUD does not run; the HUD's next frame takes it and sees a press
+		var requests = guest.Level.CoopSession!.GuestCommands!;
+		GuestFramesUntil( () => requests.Open.Count == 0, host, guest, "the line's record applied in the guest's park" );
+		var starts = guest.Level.HostToolStarts;
+		view.Press();
+		Assert.IsFalse( guest.Level.CellTool.IsWaiting, "the frame took the outcome" );
+		Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "and it moved the tool on" );
+		Assert.AreEqual( starts, (int?)typeof( ParkHud ).GetField( "pressHostStarts", NonPublic )!.GetValue( view.Hud ),
+			"the press was made while the tool waited: its release is no click of the tool as it is now" );
+	}
+
+	[TestMethod]
 	public void AGuestsTrackToolEndsWithANoteWhenTheHostLetsItsIdleClaimGo()
 	{
 		var (host, guest, view, kart, ride, seat) = SharedKart();

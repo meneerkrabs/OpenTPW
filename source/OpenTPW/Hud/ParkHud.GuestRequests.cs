@@ -118,12 +118,17 @@ public sealed partial class ParkHud
 	private void CompleteTrackUndo( CoopGuestCommands.Request request )
 	{
 		var tool = level.CellTool;
-		// a press made while the Backspace waited is no click of the tool its outcome moves on
-		level.HostToolStarts++;
 		if ( request is { State: CoopGuestRequestState.Applied, Result: { Error: null } outcome } )
 		{
-			if ( tool.CompleteUndo( outcome ) || !outcome.RightsRefused )
+			// a press made while the Backspace waited is no click of the tool its outcome moves on (a press held from before it, with the tool left as it was, keeps its release)
+			if ( tool.CompleteUndo( outcome ) )
+			{
+				level.HostToolStarts++;
 				return;
+			}
+			if ( !outcome.RightsRefused )
+				return;
+			level.HostToolStarts++;
 			tool.Cancel();
 			SayGuestNote( RightsRefusalText( outcome.Reason ) );
 			return;
@@ -134,6 +139,7 @@ public sealed partial class ParkHud
 			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
 			return;
 		}
+		level.HostToolStarts++;
 		tool.Cancel();
 		SayOutcome( request, null );
 	}

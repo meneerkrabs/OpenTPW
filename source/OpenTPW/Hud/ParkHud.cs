@@ -844,6 +844,7 @@ public sealed partial class ParkHud
 	{
 		level.WorldPointerRouted = false;
 		level.ParkOwnsRelease = false;
+		frameHostStarts = level.HostToolStarts;
 		// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
 		if ( level.WaitingToolStart != null && !level.NoToolActive )
 			level.DropToolStartWait();
@@ -1082,6 +1083,12 @@ public sealed partial class ParkHud
 	/// <summary>[EXT:online-coop-commands] <see cref="Level.HostToolStarts"/> when the last left press was taken (null: no press seen): a tool a guest's request starts when the host's answer comes back in between (CompleteMove, CompleteQueueEdit) takes no click from that press's release.</summary>
 	private int? pressHostStarts;
 
+	/// <summary>
+	/// [EXT:online-coop-commands] <see cref="Level.HostToolStarts"/> at the start of this frame, before the host's answers moved any tool: a press first seen in a frame whose answers started or moved
+	/// a tool was made while the player saw the tool as it was, so its release is no click of the tool as it is now (C3c-1b).
+	/// </summary>
+	private int frameHostStarts;
+
 	/// <summary>The release played the refusal cue (0xAF) for a refused build click: its "Cannot build" message follows without the error feedback of <see cref="SayCannotBuild"/>.</summary>
 	private bool buildRefusalCue;
 
@@ -1195,7 +1202,7 @@ public sealed partial class ParkHud
 		if ( input.LeftPressed && parkView && !mouseCaptured )
 		{
 			LatchToolPress();
-			pressHostStarts = level.HostToolStarts;
+			pressHostStarts = frameHostStarts;
 		}
 		// A right click leaves a build tool that Ctrl kept armed (and one still waiting for its first click).
 		if ( parkRightClick && !paused && level.BuildEntry != null && !toolClick )

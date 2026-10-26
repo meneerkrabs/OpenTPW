@@ -50,7 +50,7 @@ public partial class Level
 		AttachStaffWorld();
 		StaffHands = new StaffHands( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked );
 		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, command => Commands.Issue( command ), StaffHands.IsCarried );
-		PatrolTool = new PatrolAreaTool( () => Park?.Economy, command => Commands.Issue( command ) );
+		PatrolTool = new PatrolAreaTool( () => Park?.Economy, command => Commands.Issue( command ), () => Guests?.Grid.Cells );
 		// the staff sprites, then their renderer's atlases, are two long steps
 		NextStepIsLong = true;
 		yield return true;
@@ -78,6 +78,8 @@ public partial class Level
 	/// <summary>One park tool at a time: ends the path, queue, track, coaster, placing and remove tools before a staff tool starts.</summary>
 	public void EndBuildTools()
 	{
+		// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host starts no tool after another tool's start (C3b)
+		DropToolStartWait();
 		PatrolTool?.Cancel();
 		BuyLandTool?.Cancel();
 		AreaClearTool?.Cancel();

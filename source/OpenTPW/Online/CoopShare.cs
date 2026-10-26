@@ -297,6 +297,16 @@ internal sealed class CoopShare : IDisposable
 		finally { endingSelf = false; }
 	}
 
+	/// <summary>[EXT:online-coop-permissions] Whether the guest in seat <paramref name="slot"/> may build, as the shared park's applied grant says (C3a-2); false while not hosting.</summary>
+	public bool Builds( int slot ) => Stage == CoopShareStage.Hosting && Session?.Level is { } park && park.HasBuildGrant( slot );
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] The host lets the guest in seat <paramref name="slot"/> build, or takes it back (C3a-2): a command of the shared park, which every peer applies at its
+	/// record, so a request of the guest's is decided by where it stands in the stream. False when it was not applied (not hosting, the host's own seat).
+	/// </summary>
+	public bool SetBuilds( int slot, bool builds ) => Stage == CoopShareStage.Hosting && slot > 0 && Session?.Level is { } park
+		&& park.Commands.Issue( new SetBuildGrantCommand( slot, builds ) ).Accepted;
+
 	/// <summary>The host removes member <paramref name="memberId"/>; it cannot join this session again.</summary>
 	public bool Kick( uint memberId )
 	{

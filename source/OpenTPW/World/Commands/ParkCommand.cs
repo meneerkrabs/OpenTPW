@@ -32,6 +32,8 @@ public enum ParkCommandKind : byte
 	EditQueue = 15,
 	QueueSegment = 16,
 	UndoQueueSegment = 17,
+	/// <summary>The area clear tool's rectangle between two corners (<see cref="ClearAreaCommand"/>).</summary>
+	ClearArea = 18,
 	/// <summary>Places the developer prototype ride (<see cref="PlacePrototypeCommand"/>).</summary>
 	PlacePrototype = 20,
 	/// <summary>Removes the developer prototype ride (<see cref="RemovePrototypeCommand"/>).</summary>
@@ -151,6 +153,8 @@ public enum ParkCommandKind : byte
 	SetSessionClock = 100,
 	/// <summary>[EXT:online-coop-permissions] The host grants or takes back a guest's building (<see cref="SetBuildGrantCommand"/>).</summary>
 	SetBuildGrant = 101,
+	/// <summary>[EXT:online-coop-commands] The host releases what a seat whose member left holds in the park (<see cref="ReleaseSeatCommand"/>).</summary>
+	ReleaseSeat = 102,
 }
 
 /// <summary>
@@ -221,6 +225,25 @@ public sealed record RemoveObjectAtCommand( int X, int Y ) : ParkCommand
 	{
 		writer.Int( X );
 		writer.Int( Y );
+	}
+}
+
+/// <summary>
+/// The area clear tool's second click (<see cref="AreaClearTool"/>, tp.exe's clear 0x52BDD0): every object wholly inside the rectangle between (<paramref name="X0"/>, <paramref name="Y0"/>)
+/// and (<paramref name="X1"/>, <paramref name="Y1"/>), both included, and every path cell in it (<see cref="AreaClear.Run"/>); its value is the counts of objects and path cells removed.
+/// [EXT:online-coop-commands] One command for the whole rectangle, so a guest's clear is one request with one outcome (C3b): an object its player may not remove stays, as an object across
+/// the rectangle's edge does (<see cref="IParkCommandRights.AllowsRemoval"/>).
+/// </summary>
+public sealed record ClearAreaCommand( int X0, int Y0, int X1, int Y1 ) : ParkCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.ClearArea;
+	internal override bool IsWellFormed => IsCell( X0, Y0 ) && IsCell( X1, Y1 );
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( X0 );
+		writer.Int( Y0 );
+		writer.Int( X1 );
+		writer.Int( Y1 );
 	}
 }
 

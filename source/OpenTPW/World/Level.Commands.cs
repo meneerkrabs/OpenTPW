@@ -97,6 +97,7 @@ public partial class Level
 		PlaceObjectCommand place => ExecutePlaceObject( place ),
 		RemoveAtCommand remove => Outcome( RemoveAt( remove.X, remove.Y ) ),
 		RemoveObjectAtCommand remove => Outcome( RemoveObjectAt( remove.X, remove.Y ) ),
+		ClearAreaCommand clear => ExecuteClearArea( clear ),
 		RemoveAttractionCommand remove => ResolveCommandObject( remove.Attraction ) is { } item
 			? Outcome( RemoveAttraction( item ), item )
 			: ParkCommandResult.Rejected( $"No attraction {remove.Attraction}." ),
@@ -162,6 +163,32 @@ public partial class Level
 		return ParkCommandResult.Ok( (entry, rotation) );
 	}
 
+	/// <summary>[EXT:online-coop-commands] Whether <paramref name="player"/>'s Move tool carries a picked-up type in the park (C3b-2).</summary>
+	internal bool CarriesEntry( int player ) => carriedEntries?.ContainsKey( player ) == true;
+
+	/// <summary>[EXT:online-coop-commands] The guest seats whose Move tools carry a picked-up type (C3b-2).</summary>
+	internal IEnumerable<int> CarryingGuestSeats() => carriedEntries?.Keys.Where( seat => seat > 0 ).OrderBy( seat => seat ) ?? Enumerable.Empty<int>();
+
+	/// <summary>[EXT:online-coop-commands] Releases what guest seat <paramref name="seat"/> holds (<see cref="ReleaseSeatCommand"/>): its carried type. True when it held anything.</summary>
+	internal bool ReleaseSeat( int seat )
+	{
+		if ( seat <= 0 || carriedEntries == null || !carriedEntries.Remove( seat ) )
+			return false;
+		if ( carriedEntries.Count == 0 )
+			carriedEntries = null;
+		return true;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A shared park's session starts or ends: the guests' carried types go with it, as their grants do (<see cref="ClearBuildGrants"/>), so a park shared again
+	/// starts with nothing in a guest's hand. The host's own Move tool keeps its carry.
+	/// </summary>
+	internal void ClearGuestCarries()
+	{
+		foreach ( var seat in CarryingGuestSeats().ToArray() )
+			ReleaseSeat( seat );
+	}
+
 	private ParkCommandResult ExecuteEndMove( EndMoveCommand end )
 	{
 		if ( carriedEntries == null || !carriedEntries.Remove( end.Player ) )
@@ -201,15 +228,43 @@ public partial class Level
 		return ParkCommandResult.Ok();
 	}
 
+	/// <summary>
+	/// The area clear's rectangle (<see cref="AreaClear.Run"/>) with the level's own removals, in the order tp.exe's clear takes them: an object through <see cref="RemoveObjectAt"/> when the
+	/// command's player may remove it ([EXT:online-coop-permissions] <see cref="ParkCommands.AllowsRemoval"/>: a guest's clear leaves a coaster's or a track ride's station and its ride
+	/// standing, and still clears the path cells around them), a path cell through the forced clear; a park whose objects do not type their cells follows the object on each cell.
+	/// </summary>
+	private ParkCommandResult ExecuteClearArea( ClearAreaCommand clear ) =>
+		ParkCommandResult.Ok( AreaClear.Run( Guests?.Grid.Cells, (clear.X0, clear.Y0), (clear.X1, clear.Y1),
+			( x, y ) => Objects.FindAt( x, y ) is not { } item || Commands.AllowsRemoval( clear.Player, item ) ? RemoveObjectAt( x, y ) : false,
+			RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) ) );
+
+	/// <summary>
+	/// [EXT:online-coop-commands] What a queue edit's record read (C3b): the queue tool's start before the edit took the link off, as the host's click reads it before its edit, and the
+	/// queue's cells with their links after it, by which a guest's tool, entering at the request's completion, checks that no later record changed the queue since.
+	/// </summary>
+	internal sealed record QueueEditStart( int Ride, QueueToolStart Tool, IReadOnlyList<(int X, int Y, byte Links)> Queue );
+
 	private ParkCommandResult ExecuteEditQueue( EditQueueCommand edit )
 	{
 		if ( Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, edit.X, edit.Y ) is not { } ride || ride.QueueFrontCell == null )
 			return ParkCommandResult.Rejected( "No queue to edit here." );
 		ride.RecomputeQueue( Guests.Grid );
+		// [EXT:online-coop-commands] the tool's start as the click reads it before the edit, for a guest's tool that enters once its request comes back (C3b)
+		var tool = ReadQueueToolStart( ride )!;
 		// [BIN:TPW-EXE:0x00530379 corner walk link clear] the walk the click runs also takes the link between the queue's back cell and the path it ends on off both cells, and a cancel restores nothing (QueuePaths.DetachFromPath)
 		QueuePaths.DetachFromPath( Guests.Grid, ride );
-		return ParkCommandResult.Ok( ride );
+		return ParkCommandResult.Ok( new QueueEditStart( ride.AttractionId, tool, QueueLinks( ride ) ) );
 	}
+
+	/// <summary>[EXT:online-coop-commands] The cells of <paramref name="ride"/>'s queue, front first, with their link bytes as they stand now.</summary>
+	internal IReadOnlyList<(int X, int Y, byte Links)> QueueLinks( RideVisitorBridge ride )
+	{
+		var grid = Guests!.Grid;
+		return ride.QueueView( grid ).QueueCells.Select( cell => (cell.X, cell.Y, grid.Cells.LinksAt( cell.X, cell.Y )) ).ToArray();
+	}
+
+	/// <summary>[EXT:online-coop-commands] The HasQueue ride whose attraction id is <paramref name="attraction"/>, or null (a guest's queue edit resolves its ride again at its completion).</summary>
+	internal RideVisitorBridge? ResolveQueueRide( int attraction ) => ResolveCommandRide( attraction );
 
 	private ParkCommandResult ExecuteRemovePrototype()
 	{

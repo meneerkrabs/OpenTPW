@@ -11,7 +11,14 @@ internal static class HudToolClick
 	private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 
 	/// <summary>Clicks <paramref name="cell"/> through <paramref name="hud"/>'s tool click while <paramref name="held"/> are down; the keyboard state is put back after it.</summary>
-	internal static void Click( ParkHud hud, (int X, int Y) cell, params Veldrid.Key[] held )
+	internal static void Click( ParkHud hud, (int X, int Y) cell, params Veldrid.Key[] held ) =>
+		Press( hud, cell, new UiInput( new System.Numerics.Vector2( -1 ), true, true, false, false, UiKeys.None ), held );
+
+	/// <summary>A right click on <paramref name="cell"/> through <paramref name="hud"/>'s tool click (with the right-click cancel option on, as by default).</summary>
+	internal static void RightClick( ParkHud hud, (int X, int Y) cell ) =>
+		Press( hud, cell, new UiInput( new System.Numerics.Vector2( -1 ), false, false, false, true, UiKeys.None ) );
+
+	private static void Press( ParkHud hud, (int X, int Y) cell, UiInput press, params Veldrid.Key[] held )
 	{
 		var keyboard = Input.Keyboard;
 		var down = Input.KeysDown;
@@ -26,7 +33,6 @@ internal static class HudToolClick
 			Input.UpdateButtons();
 			typeof( ParkHud ).GetField( "cursorX", Private )!.SetValue( hud, cell.X );
 			typeof( ParkHud ).GetField( "cursorY", Private )!.SetValue( hud, cell.Y );
-			var press = new UiInput( new System.Numerics.Vector2( -1 ), true, true, false, false, UiKeys.None );
 			typeof( ParkHud ).GetMethod( "UpdateCellTool", Private )!.Invoke( hud, new object[] { RideUpgradeIngressTests.Context(), press, true, false } );
 		}
 		finally

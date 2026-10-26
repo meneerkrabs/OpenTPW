@@ -13,7 +13,14 @@ public partial class Level
 		set
 		{
 			if ( value != null )
+			{
 				StaffPlacement?.Cancel();
+				// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b)
+				DropToolStartWait();
+			}
+			// [EXT:online-coop-commands] another entry or none: a guest's placement that waits for the host is this tool's no more (C3a-2)
+			if ( !ReferenceEquals( value, buildEntry ) )
+				WaitingPlacement = null;
 			var moveEnds = IsMoving;
 			buildEntry = value;
 			// any other way of arming or leaving the build tool ends the Move tool (interface mode 0x3b) and the add-on mode; BeginMove and BeginAddOn set theirs after they armed the entry
@@ -21,7 +28,7 @@ public partial class Level
 			buildAddOnRide = null;
 			// [EXT:online-coop-commands] the Move tool's end is a command, once the tool's state is the ended one: its player carries the picked-up type no more (a placement cannot say
 			// whether the tool stays)
-			if ( moveEnds )
+			if ( moveEnds && !endingMoveLocally )
 				Commands.Issue( new EndMoveCommand() );
 		}
 	}
@@ -44,7 +51,14 @@ public partial class Level
 		set
 		{
 			if ( value )
+			{
 				StaffPlacement?.Cancel();
+				// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b)
+				DropToolStartWait();
+			}
+			// [EXT:online-coop-commands] the remove tool on or off: a guest's removal that waits for the host is this tool's no more (C3a-2)
+			if ( value != isRemovingObjects )
+				WaitingRemoval = null;
 			isRemovingObjects = value;
 		}
 	}
@@ -748,9 +762,10 @@ public partial class Level
 		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBuildBlocked )
 		{
 			// [BIN:TPW-EXE:0x00534A91 queue neighbour sound] the writer plays cat_ui 139 only while game+36 (0x785A2C, the park's money) is clear: here, while a park economy runs
+			// [EXT:online-coop-commands] the cue is the line's issuer's: a peer applying another player's line plays none (C3a-2)
 			Effects = new LinkEffects( RefreshTile, ( x, y ) =>
 			{
-				if ( Park != null )
+				if ( Park != null && Commands is not { IsLocalIssuer: false } )
 					GameAudio.PlayUiAt( GameAudio.QueueJoinEvent, GameAudio.QueueNeighbourSoundPosition( x, y ) );
 			} ),
 			ObjectGivesWay = ( x, y ) => Objects.GivesWay( x, y, ParkObjects.PathOverwritePriority ),
@@ -774,9 +789,8 @@ public partial class Level
 		}
 		SetupPoolSlides();
 		SetupPoolBridges();
-		// [EXT:online-coop-commands] the bulldozer's drag clears each object and path cell through a command of its own
-		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( x, y ) => Commands.Issue( new RemoveObjectAtCommand( x, y ) ).Accepted, () => Guests?.Grid.Cells,
-			( x, y ) => Commands.Issue( new RemovePathCellCommand( x, y ) ) is { Value: CellBuildResult result } ? result : CellBuildResult.NotPath, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
+		// [EXT:online-coop-commands] the area clear's rectangle is one command (C3b)
+		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( a, b ) => Commands.Issue( new ClearAreaCommand( a.X, a.Y, b.X, b.Y ) ) );
 	}
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
@@ -818,6 +832,8 @@ public partial class Level
 		refused = null;
 		if ( IsReadOnlyVisit || Paths == null )
 			return false;
+		// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b), even if this one ends at once
+		DropToolStartWait();
 		StaffPlacement?.Cancel();
 		// [EXT:online-coop-commands] the tool's previews read the path builder; each committed line is a command
 		CellTool.Enter( new ParkCommandLineWriter( Paths, Commands, -1 ), null );
@@ -832,9 +848,20 @@ public partial class Level
 	// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8); it shares LayLine, the vertex stack and the preview/commit code with the path tool
 	public bool EnterQueueTool( RideVisitorBridge ride )
 	{
-		if ( IsReadOnlyVisit || Guests == null || ride.QueueFrontCell is not { } front )
+		if ( IsReadOnlyVisit || Guests == null || ride.QueueFrontCell == null )
 			return false;
 		StaffPlacement?.Cancel();
+		return EnterQueueTool( ride, ReadQueueToolStart( ride )! );
+	}
+
+	/// <summary>What the queue tool reads of a ride's queue when it starts (<see cref="EnterQueueTool(RideVisitorBridge)"/>): its line start, the corner walk's stack and the segments its undo takes back.</summary>
+	internal sealed record QueueToolStart( (int X, int Y) Start, IReadOnlyList<(int X, int Y)>? Stack, IReadOnlyList<SegmentResult>? Segments );
+
+	/// <summary>The queue tool's start for <paramref name="ride"/>, read from the park as it stands now; null without a queue front.</summary>
+	internal QueueToolStart? ReadQueueToolStart( RideVisitorBridge ride )
+	{
+		if ( Guests == null || ride.QueueFrontCell is not { } front )
+			return null;
 		// [EXT:online-coop-lockstep] the tool reads the queue as it stands now on a copy (a grid edit since the last recompute taken in): entering a tool changes nothing in
 		// the park, and each queue command brings the ride's own queue up to date first, on every peer
 		var queue = ride.QueueView( Guests.Grid );
@@ -844,9 +871,19 @@ public partial class Level
 		var stack = Guests.Grid.IsQueue( front.X, front.Y ) && queue.QueueCells.Count >= 2 ? QueuePaths.CornerStack( Guests.Grid, queue ) : null;
 		if ( stack is not { Count: >= 2 } || stack[^1] != start )
 			stack = null;
+		return new QueueToolStart( start, stack, stack == null ? null : QueuePaths.StackSegments( queue, stack ) );
+	}
+
+	/// <summary>
+	/// Starts the queue tool for <paramref name="ride"/> from <paramref name="start"/>: [EXT:online-coop-commands] a guest's queue edit enters it from what its record read before the
+	/// edit took the link off (<see cref="QueueEditStart"/>, C3b), as the host's click reads it before its edit.
+	/// </summary>
+	internal bool EnterQueueTool( RideVisitorBridge ride, QueueToolStart start )
+	{
+		if ( IsReadOnlyVisit || Guests == null )
+			return false;
 		// [EXT:online-coop-commands] the tool's previews read the ride's queue writer; each committed line is a command
-		CellTool.Enter( new ParkCommandLineWriter( CreateQueueWriter( ride ), Commands, ride.AttractionId ), start,
-			stack, stack == null ? null : QueuePaths.StackSegments( queue, stack ) );
+		CellTool.Enter( new ParkCommandLineWriter( CreateQueueWriter( ride ), Commands, ride.AttractionId ), start.Start, start.Stack, start.Segments );
 		return true;
 	}
 
@@ -997,6 +1034,13 @@ public partial class Level
 	// [EXT:queue-backtrack] tp.exe's key handler backtracks only a type-1 (path) cell: it tests the tile's +8 through 0x536310 at 0x40BE3C and does nothing over a queue cell, whose cells the original takes back only with Backspace inside the queue tool (Back 0x52FE50, the segment just laid); OpenTPW also takes a queue back from the cursor, as the remove tool does (QueuePaths.RemoveFrom, so the queue stays one line from the ride)
 	public bool BacktrackAt( int x, int y ) => Backtrack( x, y ).Accepted;
 
+	/// <summary>The backtrack cue at cell (<paramref name="x"/>, <paramref name="y"/>): [EXT:online-coop-commands] its issuer's alone, as a placement's (C3a-2).</summary>
+	private void PlayBacktrackCue( int x, int y )
+	{
+		if ( Commands is not { IsLocalIssuer: false } )
+			GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
+	}
+
 	/// <summary>
 	/// <see cref="BacktrackAt"/> with its verdict: a refused pool target answers with the pool's own refusal (<see cref="PoolBridgeResult"/> or <see cref="PoolBuildResult"/>) as the value, so the HUD can say why.
 	/// </summary>
@@ -1019,7 +1063,7 @@ public partial class Level
 			var bridge = bridges.RemoveAt( x, y );
 			if ( bridge != PoolBridgeResult.Ok )
 				return new ParkCommandResult( false, $"The bridge is not removed: {bridge}.", bridge );
-			GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
+			PlayBacktrackCue( x, y );
 			LastActionMessage = "Removed a pool bridge.";
 			return ParkCommandResult.Ok( bridge );
 		}
@@ -1030,11 +1074,11 @@ public partial class Level
 			var water = builder.Erase( x, y );
 			if ( water != PoolBuildResult.Ok )
 				return new ParkCommandResult( false, $"The pool cell is not erased: {water}.", water );
-			GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
+			PlayBacktrackCue( x, y );
 			LastActionMessage = "Removed a pool cell.";
 			return ParkCommandResult.Ok( water );
 		}
-		GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
+		PlayBacktrackCue( x, y );
 		if ( target == BacktrackTarget.Path )
 		{
 			if ( Paths.RemoveOnce( x, y ) == CellBuildResult.Ok )

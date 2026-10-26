@@ -144,9 +144,10 @@ internal sealed partial class CoopLiveTest
 	/// <summary>
 	/// A path line laid through the HUD as a player lays it (the native smoke's path check, docs/PATH.md): a press on a free owned cell starts the path tool, the pointer over the end
 	/// shows its ghost, and a press on the end lays the line. The host's line is laid and charged, and its tool ended with a press on the end again; a guest's is refused by the
-	/// session (only the host builds), its park unchanged, and its tool ended with Escape. <paramref name="avoid"/> keeps the line clear of cells used before.
+	/// session before the host lets it build, its park unchanged, and its tool ended with Escape; a <paramref name="granted"/> guest's goes to the host and is laid at its record
+	/// ([EXT:online-coop-commands], C3a-2), its tool ended with a press on the end again. <paramref name="avoid"/> keeps the line clear of cells used before.
 	/// </summary>
-	private IEnumerable<CoopLiveWait> LayLine( bool host, ICollection<(int X, int Y)> avoid, LineResult result )
+	private IEnumerable<CoopLiveWait> LayLine( bool host, ICollection<(int X, int Y)> avoid, LineResult result, bool granted = false )
 	{
 		var level = ThePark;
 		var tool = level.CellTool;
@@ -184,6 +185,7 @@ internal sealed partial class CoopLiveTest
 		yield return Wait( "the line's ghost", () => InputGiven && tool.Ghost is { Built.Count: LineLength + 1 }, 10 );
 		var refusals = level.SessionRefusals;
 		var commit = tool.LastCommit;
+		var submitted = level.CoopSession?.GuestCommands?.LastSubmitted;
 		foreach ( var step in ClickThrough( endPoint ) )
 			yield return step;
 		if ( host )
@@ -193,6 +195,26 @@ internal sealed partial class CoopLiveTest
 			result.Evidence["record"] = TheSession.HostStream?.LastRecord;
 			result.Evidence["charged"] = tool.LastCommit!.Charged;
 			Require( tool.LastCommit.Charged > 0, "the line was charged" );
+			// a press on the line's end again ends the tool, laying nothing
+			foreach ( var step in ClickThrough( endPoint ) )
+				yield return step;
+			yield return Wait( "the path tool's end", () => InputGiven && !tool.IsActive, 10 );
+		}
+		else if ( granted )
+		{
+			// the line goes to the host and waits; the HUD completes the tool when its record applies in this park. The request is the one the click submitted, followed by its
+			// identity: a page's input is acknowledged late, by when the request may have resolved and the tool taken its outcome
+			var requests = level.CoopSession?.GuestCommands;
+			Require( requests != null, "the guest's park sends requests" );
+			yield return Wait( "the line sent to the host", () => InputGiven && !ReferenceEquals( requests!.LastSubmitted, submitted ), 10 );
+			var request = requests!.LastSubmitted!;
+			Require( request.Command is LayLineCommand or QueueSegmentCommand, $"the click sent the line ({request.Command.Kind})" );
+			yield return Wait( "the line laid at its record", () => !request.IsOpen && tool.Waiting == null, 120 );
+			Require( request.State == CoopGuestRequestState.Applied && request.Accepted, $"the host took the line and laid it ({request.State}, {request.Result?.Reason ?? request.Refusal?.ToString()})" );
+			Require( tool.LastCommit is { Completed: true } && level.SessionRefusals == refusals, "the line was laid whole, with no refusal" );
+			Require( result.Cells.All( cell => level.Guests!.Grid.Cells.RawTypeAt( cell.X, cell.Y ) == (byte)ParkCellType.Path ), "the line's cells are paths" );
+			result.Evidence["record"] = request.Record;
+			result.Evidence["charged"] = tool.LastCommit!.Charged;
 			// a press on the line's end again ends the tool, laying nothing
 			foreach ( var step in ClickThrough( endPoint ) )
 				yield return step;

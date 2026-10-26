@@ -28,6 +28,7 @@ public class ParkCommandCodecTests
 		(new RemoveQueueCellCommand( 10, 11 ), "020d001416"),
 		(new BacktrackCommand( 1, 2 ), "020e000204"),
 		(new EditQueueCommand( 3, 3 ), "020f000606"),
+		(new ClearAreaCommand( 1, 2, 7, 9 ) { Player = 1 }, "02120202040e12"),
 		(new QueueSegmentCommand( 9, 1, 2, 1, 9 ), "0410001202040212"),
 		(new UndoQueueSegmentCommand( 9, 1, 2, 1, 9 ), "0411001202040212"),
 		(new PlacePrototypeCommand( 1.5f, -2.25f, 0f ), "0214000000c03f000010c000000000"),
@@ -93,6 +94,7 @@ public class ParkCommandCodecTests
 		(new SetSessionClockCommand( 63928191600 ), "026400e0a9d6a6dc03"),
 		// [EXT:online-coop-permissions] the host grants seat 3 building
 		(new SetBuildGrantCommand( 3, true ), "0265000601"),
+		(new ReleaseSeatCommand( 3 ), "02660006"),
 	};
 
 	[TestMethod]

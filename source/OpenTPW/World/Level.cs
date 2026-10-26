@@ -26,6 +26,8 @@ public partial class Level : IDisposable
 			if ( value )
 			{
 				StaffPlacement?.Cancel();
+				// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b)
+				DropToolStartWait();
 				PatrolTool?.Cancel();
 				BuyLandTool?.Cancel();
 				AreaClearTool?.Cancel();
@@ -34,7 +36,25 @@ public partial class Level : IDisposable
 			isPlacing = value;
 		}
 	}
-	public string LastActionMessage { get; private set; } = "";
+	public string LastActionMessage
+	{
+		get;
+		private set
+		{
+			field = value;
+			// [EXT:online-coop-commands] whose command wrote it (null outside one): the HUD says its own player's only (C3a-2)
+			LastActionMessagePlayer = Commands?.RunningPlayer;
+		}
+	} = "";
+
+	/// <summary>[EXT:online-coop-commands] The player whose command wrote <see cref="LastActionMessage"/>, or null when no command did (C3a-2).</summary>
+	internal int? LastActionMessagePlayer { get; private set; }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Whether the HUD says <see cref="LastActionMessage"/> (C3a-2): written outside any command, or by a command of this machine's player in a park that
+	/// does not follow a stream. Another player's command is not this machine's to speak of, and a guest hears its own commands' outcomes from its requests.
+	/// </summary>
+	internal bool SaysLastActionMessage => LastActionMessagePlayer is not { } player || (player == Commands.Player && !Commands.FollowsStream);
 	/// <summary>Imported original level data; null for the generic sandbox.</summary>
 	public OriginalPark? OriginalPark { get; private set; }
 	public OriginalTerrain? OriginalTerrain { get; private set; }

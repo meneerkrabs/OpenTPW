@@ -168,7 +168,23 @@ public sealed partial class ParkHud
 		// a held key removes the bridge and then, on its repeats, the water under it: the pool targets act on the first press only
 		if ( repeating && level.Paths is { } paths && Level.BacktrackTargetAt( paths.Cells, cursorX, cursorY, level.PoolBridges ) is Level.BacktrackTarget.PoolBridge or Level.BacktrackTarget.PoolWater )
 			return true;
+		// [EXT:online-coop-commands] a guest's Backspace that waits for the host: the key's presses and repeats send nothing more until its outcome, so a held key sends one request at a
+		// time (C3b); a new press asks the player to wait
+		if ( level.WaitingBacktrack != null )
+		{
+			if ( !repeating )
+				level.NoteWaitingClick();
+			return true;
+		}
+		// [EXT:online-coop-commands] nor does a guest send a press over a cell with nothing to take back, which the park would refuse at its record as it refuses the host's (C3b)
+		if ( level.Commands.SendsRequests && level.Paths is { } own && Level.BacktrackTargetAt( own.Cells, cursorX, cursorY, level.PoolBridges ) == Level.BacktrackTarget.None )
+			return false;
 		var result = level.Commands.Issue( new BacktrackCommand( cursorX, cursorY ) );
+		if ( result.Request is { } request )
+		{
+			level.WaitBacktrack( request );
+			return true;
+		}
 		if ( result.Accepted )
 			return true;
 		OpenTpwText? why = result.Value switch

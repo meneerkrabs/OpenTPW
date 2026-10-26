@@ -13,39 +13,27 @@ public enum AreaClearClick
 
 /// <summary>
 /// The area clear tool (tp.exe tool mode 0x3A, the bulldozer: the buy window's Clear Land row and the Clear key): two clicks span a
-/// rectangle; the second removes every object wholly inside it and every path cell in it (<see cref="Clear"/>), then the tool ends.
+/// rectangle; the second removes every object wholly inside it and every path cell in it (<see cref="AreaClear.Run"/>, one <see cref="ClearAreaCommand"/>), then the tool ends.
 /// Queue cells and ride cells that are not wholly inside stay.
 /// </summary>
 // [BIN:TPW-EXE:0x0040C5E0 Clear key] the key builds the tool object 0x46C580(0x3A); the buy window's row −2 builds the same (0x4AC851)
 // [BIN:TPW-EXE:0x00525DA3 area clear click] in mode 0x3A the first click (start −1) stores the cell as the corner; the second runs the check 0x424EC0 (it returns 1) and the clear 0x52BDD0 from the corner to the clicked cell, sets the start to −1 and ends the tool (SetMode(0, 0) 0x525E33)
 public sealed class AreaClearTool
 {
-	private readonly Func<int, int, object?>? objectAt;
-	private readonly Func<int, int, bool> removeObject;
-	private readonly Func<ParkCellMap?> cells;
-	private readonly Func<int, int, CellBuildResult> removePath;
+	private readonly Func<(int X, int Y), (int X, int Y), ParkCommandResult> clear;
 
-	/// <param name="removeObject">Demolishes the object standing on a cell (the demolition 0x527EE0); false when it cannot.</param>
-	/// <param name="cells">The park's cell map: the cells' types, owner words and flags decide which objects the clear takes.</param>
-	/// <param name="removePath">The forced path clear of a cell (<see cref="ParkPathBuilder.Remove"/>).</param>
-	/// <param name="objectAt">
-	/// The object standing on a cell, only for a park whose objects do not type their cells (a Theme Park Inc layout, whose placement is not traced): the scans then follow the object
-	/// instead of the cells' owner words. Null: the cell map's types and owner words decide, as in tp.exe.
+	/// <param name="clear">
+	/// Clears the rectangle between two corners (<see cref="AreaClear.Run"/>): [EXT:online-coop-commands] the level issues a <see cref="ClearAreaCommand"/>, whose value is the counts of
+	/// objects and path cells it removed; a guest's request comes back later (<see cref="ParkCommandResult.IsPending"/>), and its counts are not known here.
 	/// </param>
-	public AreaClearTool( Func<int, int, bool> removeObject, Func<ParkCellMap?> cells, Func<int, int, CellBuildResult> removePath, Func<int, int, object?>? objectAt = null )
-	{
-		this.objectAt = objectAt;
-		this.removeObject = removeObject ?? throw new ArgumentNullException( nameof( removeObject ) );
-		this.cells = cells ?? throw new ArgumentNullException( nameof( cells ) );
-		this.removePath = removePath ?? throw new ArgumentNullException( nameof( removePath ) );
-	}
+	public AreaClearTool( Func<(int X, int Y), (int X, int Y), ParkCommandResult> clear ) => this.clear = clear ?? throw new ArgumentNullException( nameof( clear ) );
 
 	public bool IsActive { get; private set; }
 	/// <summary>The cell the first click stored, null before it.</summary>
 	public (int X, int Y)? Corner { get; private set; }
 	/// <summary>The cell under the pointer, null off the park.</summary>
 	public (int X, int Y)? HoverCell { get; private set; }
-	/// <summary>Objects and path cells the last clear removed.</summary>
+	/// <summary>Objects and path cells the last clear removed: (0, 0) after <see cref="Begin"/>, and for a guest's clear, which the host runs later.</summary>
 	public (int Objects, int Paths) LastCleared { get; private set; }
 
 	/// <summary>Starts the tool (SetMode 0x3A: no corner yet).</summary>
@@ -54,6 +42,7 @@ public sealed class AreaClearTool
 		IsActive = true;
 		Corner = null;
 		HoverCell = null;
+		LastCleared = (0, 0);
 	}
 
 	/// <summary>Ends the tool without clearing (right click, Escape, another tool).</summary>
@@ -78,7 +67,8 @@ public sealed class AreaClearTool
 			HoverCell = (x, y);
 			return AreaClearClick.CornerStored;
 		}
-		LastCleared = Clear( corner, (x, y) );
+		// [EXT:online-coop-commands] the rectangle is one command (ClearAreaCommand); the tool ends whatever became of it, as tp.exe's does
+		LastCleared = clear( corner, (x, y) ).As<(int Objects, int Paths)>();
 		Cancel();
 		return AreaClearClick.Cleared;
 	}
@@ -102,79 +92,5 @@ public sealed class AreaClearTool
 			for ( var x = x0; x <= x1; x++ )
 				if ( x == x0 || x == x1 || y == y0 || y == y1 )
 					yield return (x, y);
-	}
-
-	/// <summary>
-	/// The clear of the rectangle from <paramref name="a"/> to <paramref name="b"/> (both included): row by row, each object cell met (type 4, 9 or 10) starts four scans along
-	/// the cells of the same owner word and of an object type; the object is demolished when none of the cells scanned carries flag 0x10 (<see cref="ParkCellFlags.AddOn"/>) and
-	/// every scan ends no more than one cell past the rectangle; then every path cell in the rectangle is cleared (forced, a NoModify cell with neighbours stays).
-	/// </summary>
-	// [BIN:TPW-EXE:0x0052BDD0 area clear] the rectangle is normalised; rows from the top, cells from the left: a ride cell (type 4, 9 or 10) starts four scans along the cells of the same owner (+0x10) and of a ride type, to the right, the left, down and up, each refused when a scanned cell has flag 0x10 (0x535DB0(0x10)) or the run passes the rectangle's edge (0x52BEC6..0x52C06A), and when all four pass the object is demolished (0x527EE0(x, y, 0)); then every type-1 cell of the rectangle (0x536310) is cleared with 0x5367A0(0, 0) (0x52C0D8..0x52C11F), queue cells and ride cells staying
-	// [BIN:TPW-EXE:0x00528F26 owner word and add-on flag] the owner word is the cell word of the object's anchor, written on every typed footprint cell by the placement (0x539210); the flag word 0x10 is written as a constant only by the placement's '+' and '#' footprint cells (0x53A510(0x10), 0x52950D, 0x52951C: the other callers of 0x53A510 pass the bridge bits 2, 4 and 8, the unowned bit 0x40, 0x20 or a computed word), and the validator reads it to refuse a second add-on on a tile (0x535961); Easymode's saved cells carry the owner words and never the flag
-	public (int Objects, int Paths) Clear( (int X, int Y) a, (int X, int Y) b )
-	{
-		var (x0, x1) = (Math.Min( a.X, b.X ), Math.Max( a.X, b.X ));
-		var (y0, y1) = (Math.Min( a.Y, b.Y ), Math.Max( a.Y, b.Y ));
-		var map = cells();
-		var objects = 0;
-		if ( map != null )
-		{
-			for ( var y = y0; y <= y1; y++ )
-			{
-				for ( var x = x0; x <= x1; x++ )
-				{
-					if ( !map.InBounds( x, y ) || OwnerOf( map, x, y ) is not { } owner )
-						continue;
-					if ( RunInside( map, x, y, 1, 0, owner, x1 ) && RunInside( map, x, y, -1, 0, owner, x0 )
-						&& RunInside( map, x, y, 0, 1, owner, y1 ) && RunInside( map, x, y, 0, -1, owner, y0 ) && removeObject( x, y ) )
-						objects++;
-				}
-			}
-		}
-		var paths = 0;
-		if ( map != null )
-		{
-			for ( var y = y0; y <= y1; y++ )
-				for ( var x = x0; x <= x1; x++ )
-					if ( map.TypeAt( x, y ) == ParkCellType.Path && removePath( x, y ) == CellBuildResult.Ok )
-						paths++;
-		}
-		return (objects, paths);
-	}
-
-	/// <summary>
-	/// The owner of the object cell (x, y): its owner word when the cell is of an object type (4, 9 or 10), else null; for a park whose objects do not type their cells, the object
-	/// standing on it.
-	/// </summary>
-	private object? OwnerOf( ParkCellMap map, int x, int y )
-	{
-		if ( objectAt != null )
-			return objectAt( x, y );
-		return map.InBounds( x, y ) && ParkCellTypes.IsObjectCell( map.RawTypeAt( x, y ) ) ? map.OwnerAt( x, y ) : null;
-	}
-
-	/// <summary>
-	/// One of the four scans: from (<paramref name="x"/>, <paramref name="y"/>) along (<paramref name="dx"/>, <paramref name="dy"/>) over the cells of an object type with the
-	/// owner word <paramref name="owner"/> and the first cell beyond them; false when a scanned cell carries flag 0x10 or lies more than one cell past
-	/// <paramref name="edge"/> (the rectangle's edge on that side), so the object's run must end inside the rectangle.
-	/// </summary>
-	private bool RunInside( ParkCellMap map, int x, int y, int dx, int dy, object owner, int edge )
-	{
-		var inside = true;
-		var (cx, cy) = (x, y);
-		while ( true )
-		{
-			if ( ((ushort)map.FlagsAt( cx, cy ) & (ushort)ParkCellFlags.AddOn) != 0 )
-				inside = false;
-			var along = dx != 0 ? cx : cy;
-			if ( dx + dy > 0 ? along > edge + 1 : along < edge - 1 )
-				inside = false;
-			var owned = Equals( OwnerOf( map, cx, cy ), owner );
-			(cx, cy) = (cx + dx, cy + dy);
-			// The scan goes on past a cell of the object while the next cell is on the map (0x4D8300).
-			if ( !owned || !map.InBounds( cx, cy ) )
-				break;
-		}
-		return inside;
 	}
 }

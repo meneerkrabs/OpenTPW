@@ -222,6 +222,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private readonly List<(uint Member, CoopGuestCommand Request, bool TooLarge)> guestCommands = new();
 	/// <summary>[EXT:online-coop-permissions] The seats of guests that left, whose build grants the next frame's start takes back.</summary>
 	private readonly List<int> leftSeats = new();
+	/// <summary>
+	/// [EXT:online-coop-commands] Each guest seat's member at the last frame's start (C3b-2): a seat whose member left or changed since (a departure the live events report, one a resume's
+	/// reconciliation drops, a seat taken again in between) has its grant taken back and what it held released at the next frame's start, before that frame's requests.
+	/// </summary>
+	private Dictionary<int, uint> seatMembers = new();
 	/// <summary>[EXT:online-coop-commands] The origin of the guest's command being applied now, which its record carries, and the record it got.</summary>
 	private CoopRecordOrigin? applyingOrigin;
 	private long applyingRecord;
@@ -295,8 +300,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		// [EXT:online-coop-permissions] the session's rights, whatever rights the park had: every peer asks the same ones
 		commands.Rights = new CoopBuildRights( level );
 		commands.Player = ParkCommands.LocalPlayer;
-		// a grant is its session's: a park shared again starts without the last session's (a guest of the identical start has none either)
+		// a grant is its session's: a park shared again starts without the last session's (a guest of the identical start has none either), and so is what a guest's seat carried (C3b-2)
 		level.ClearBuildGrants();
+		level.ClearGuestCarries();
+		seatMembers = SeatMembers();
 		recorder = new ParkCommandRecorder( commands, level.LevelName ?? "", level.Seed.Value, level.TickCount, level.ComputeStateHash() ) { SessionRules = true };
 		commands.Applied += OnApplied;
 		level.TickEnded += OnTickEnded;
@@ -790,13 +797,22 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// </summary>
 	private void ApplyGuestCommands( double now )
 	{
-		if ( leftSeats.Count > 0 )
+		// [EXT:online-coop-commands] the seats whose member left or changed since the last frame, and any guest seat that still carries something without a member (C3b-2)
+		var members = SeatMembers();
+		var changed = seatMembers.Where( pair => !members.TryGetValue( pair.Key, out var member ) || member != pair.Value ).Select( pair => pair.Key )
+			.Concat( level.CarryingGuestSeats().Where( seat => !members.ContainsKey( seat ) ) ).ToArray();
+		seatMembers = members;
+		if ( leftSeats.Count > 0 || changed.Length > 0 )
 		{
-			var seats = leftSeats.ToArray();
+			var seats = leftSeats.Concat( changed ).Distinct().OrderBy( seat => seat ).ToArray();
 			leftSeats.Clear();
 			foreach ( var seat in seats )
+			{
 				if ( Failure == null && level.HasBuildGrant( seat ) )
 					level.Commands.Apply( new SetBuildGrantCommand( seat, false ) );
+				if ( Failure == null && level.CarriesEntry( seat ) )
+					level.Commands.Apply( new ReleaseSeatCommand( seat ) );
+			}
 		}
 		if ( guestCommands.Count > 0 )
 		{
@@ -812,6 +828,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			}
 		}
 	}
+
+	/// <summary>[EXT:online-coop-commands] Each guest seat's member as the session holds it now (C3b-2).</summary>
+	private Dictionary<int, uint> SeatMembers() => transport.Session is { } session
+		? session.Members.Where( member => member.Slot > 0 && member.Id != session.You ).GroupBy( member => (int)member.Slot ).ToDictionary( group => group.Key, group => group.First().Id )
+		: new Dictionary<int, uint>();
 
 	/// <summary>
 	/// [EXT:online-coop-commands] One guest's request: a request answered already gets its answer again, never the command twice; one that skips a number is refused until the guest sends from
@@ -1357,8 +1378,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.InTick = previousInTick;
 		commands.Rights = previousRights;
 		commands.Player = previousPlayer;
-		// [EXT:online-coop-permissions] a grant is its session's: the park runs on alone without one
+		// [EXT:online-coop-permissions] a grant is its session's: the park runs on alone without one, and without what a guest's seat carried (C3b-2)
 		level.ClearBuildGrants();
+		level.ClearGuestCarries();
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = null;

@@ -1134,6 +1134,16 @@ internal static class Game
 						case "ride": hud.DebugRide( argument ); break;
 						case "finale": hud.DebugFinale(); break;
 						case "winningmessage": hud.DebugWinningMessage(); break;
+						// [EXT:debug-hud] "patrol:<role>,x0,y0,x1,y1[,hover]" runs the patrol area flow (employee window, patrol button, two map clicks; "hover" stops after the first click with the pointer on the second cell) and "locate:<role>" the staff locator on that role
+						case "patrol":
+						{
+							var patrolParts = argument.Split( ',' );
+							if ( patrolParts.Length < 5 || !Enum.TryParse<StaffType>( patrolParts[0], true, out var patrolRole )
+								|| !hud.DebugPatrolArea( patrolRole, (int.Parse( patrolParts[1] ), int.Parse( patrolParts[2] )), (int.Parse( patrolParts[3] ), int.Parse( patrolParts[4] )), patrolParts.Length > 5 && patrolParts[5] == "hover" ) )
+								Log.Warning( $"--debug-hud: the patrol area flow for '{argument}' did not run." );
+							break;
+						}
+						case "locate": if ( !Enum.TryParse<StaffType>( argument, true, out var locateRole ) || !hud.DebugLocateStaff( locateRole ) ) Log.Warning( $"--debug-hud: no staff member to locate for '{argument}'." ); break;
 						case "models": hud.DebugShowModels( argument.Split( '+' ) ); break;
 						default: Log.Warning( $"--debug-hud: unknown action {name}." ); break;
 					}

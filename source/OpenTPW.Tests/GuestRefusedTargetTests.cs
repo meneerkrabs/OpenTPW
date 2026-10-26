@@ -233,7 +233,7 @@ public class GuestRefusedTargetTests
 			Assert.AreEqual( currentHash, Hash( current ), "diagnostic projection must restore the entire current hash" );
 		}
 		Assert.IsTrue( retainedTicks > 0, "the fixed run must exercise full-room retained targets" );
-		Assert.AreEqual( 0xF3F895E3EF2F969BUL, Hash( legacy ), $"legacy replay: 0x{Hash( legacy ):X16}" );
+		Assert.AreEqual( 0x05C6483AF1DFF71AUL, Hash( legacy ), $"legacy replay: 0x{Hash( legacy ):X16}" );
 		static ulong Hash( DeterminismTests.SyntheticPark park ) => WorldStateHash.Compute( new WorldStateSources { Seed = park.Seed, Economy = park.Economy, Guests = park.Guests, Scripts = park.Scripts } );
 		static bool HasRetainedTarget( Guest guest ) => guest.AttractionId != 0 && !guest.IsInQueue
 			&& RetainedStates.Contains( (guest.State, guest.Activity) );

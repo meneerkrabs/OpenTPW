@@ -134,8 +134,9 @@ public sealed partial class ParkHud
 	{
 		if ( item.IsDeleted || level.IsReadOnlyVisit || !level.Objects.Objects.Contains( item ) )
 			return;
-		// [EXT:online-coop-commands] a guest's window sends only what its player changed (loaded)
-		if ( level.Commands.SendsRequests && pending.SameAs( loaded ) )
+		// [EXT:online-coop-commands] a guest's window sends only the commands whose values its player changed (loaded)
+		var unchanged = level.Commands.SendsRequests ? loaded : null;
+		if ( unchanged != null && pending.SameAs( unchanged ) )
 			return;
 		if ( item.Entry.WhichUIType == (int)BuildCategory.Rides )
 		{
@@ -144,20 +145,30 @@ public sealed partial class ParkHud
 			return;
 		}
 		if ( TryPriceTarget( item, out var economy, out var state ) )
-			ApplyShopSettings( item, economy, state );
+			ApplyShopSettings( item, economy, state, unchanged );
 	}
 
-	private void ApplyShopSettings( OriginalObject item, ParkEconomy economy, ParkObjectState state )
+	/// <summary>
+	/// Applies the window's values to a shop or sideshow; [EXT:online-coop-commands] with <paramref name="unchanged"/> (a guest's apply on close) only the commands whose values differ from
+	/// those, where the original's apply writes them all.
+	/// </summary>
+	private void ApplyShopSettings( OriginalObject item, ParkEconomy economy, ParkObjectState state, ObjectWindowSettings? unchanged = null )
 	{
 		var attraction = item.Runtime.AttractionId;
+		var price = unchanged == null || pending.Price != unchanged.Price;
 		if ( state.Kind == ParkObjectKind.Shop )
 		{
-			level.Commands.Issue( new SetShopSettingsCommand( attraction, (byte)(pending.QualityStep * 50), pending.Ingredient ) );
-			level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
+			if ( unchanged == null || pending.QualityStep != unchanged.QualityStep || pending.Ingredient != unchanged.Ingredient )
+				level.Commands.Issue( new SetShopSettingsCommand( attraction, (byte)(pending.QualityStep * 50), pending.Ingredient ) );
+			if ( price )
+				level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
 		}
 		else if ( IsNonWinnable( item ) )
-			level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
-		else
+		{
+			if ( price )
+				level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
+		}
+		else if ( price || pending.Prize != unchanged!.Prize || pending.WinChance != unchanged.WinChance )
 			level.Commands.Issue( new SetGamePrizeCommand( attraction, pending.Price, pending.Prize, 100 - (pending.WinChance & 0xFF) ) );
 	}
 
@@ -187,6 +198,9 @@ public sealed partial class ParkHud
 				continue;
 			ApplyShopSettings( other, economy, target );
 		}
+		// [EXT:online-coop-commands] the shown object's values went with the click: a guest's close does not send them again
+		if ( level.Commands.SendsRequests )
+			loaded.CopyFrom( pending );
 	}
 
 	// ---- controls ----

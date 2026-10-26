@@ -7,8 +7,11 @@ namespace OpenTPW;
 /// </summary>
 internal static class CoopDigest
 {
-	/// <summary>Bumped whenever the digest's sections or their order change (2: no drags hash as an empty set of them).</summary>
-	public const int Version = 2;
+	/// <summary>
+	/// Bumped whenever the digest's sections or their order change (2: no drags hash as an empty set of them; 3: the pending hires seat by seat and every seat's rights, always hashed, in
+	/// place of one pending hire and the build grants, C4a).
+	/// </summary>
+	public const int Version = 3;
 
 	public static ulong Compute( Level level ) => Compute( level, out _ );
 
@@ -54,9 +57,9 @@ public partial class Level
 	/// <summary>
 	/// [EXT:online-coop-lockstep] Adds what the session digest covers beyond the world hash (<see cref="CoopDigest"/>): the placed objects in list order and the prototype ride (catalogue
 	/// key, cell, rotation, base, attraction id, deleted flag, economy link, run flags); the weather without its frame-drained thunder queue (<see cref="ParkWeather.TakeThunder"/> empties
-	/// it once a game frame, so at a tick's end it depends on how ticks fell into frames); each player's carried catalogue entry, hand and coaster drag, the pending hire and the stale
-	/// on-pointer candidate, the coasters' being-edited marks; the session clock. Never presentation a player may switch on or off alone: the snow cover is the winter snow
-	/// extension's, which changes no simulation and is no part of a session's identity, so two peers may differ in it.
+	/// it once a game frame, so at a tick's end it depends on how ticks fell into frames); each player's carried catalogue entry, hand and coaster drag, the pending hires seat by seat and
+	/// the stale on-pointer candidate, the coasters' being-edited marks; the session clock; every guest seat's rights and the rides' claims. Never presentation a player may switch on or off
+	/// alone: the snow cover is the winter snow extension's, which changes no simulation and is no part of a session's identity, so two peers may differ in it.
 	/// </summary>
 	internal void AddSessionState( StateHasher hash )
 	{
@@ -103,7 +106,15 @@ public partial class Level
 		hash.Add( StaffHands != null );
 		StaffHands?.AddSessionState( hash );
 		var staff = Park?.Economy.Staff;
-		hash.Add( staff?.PendingPlacementId ?? -1 );
+		// [EXT:online-coop-permissions] the pending hires, seat by seat (C4a)
+		hash.Add( staff != null );
+		var hires = PendingHireRows();
+		hash.Add( hires.Length );
+		foreach ( var (seat, candidate) in hires )
+		{
+			hash.Add( seat );
+			hash.Add( candidate );
+		}
 		hash.Add( staff?.StaleOnPointerId ?? -1 );
 		// [EXT:online-coop-snapshot-join] the set of drags is made the first time anything reads it, on one machine alone: none hashes as an empty set
 		if ( coasterEdits != null )
@@ -116,13 +127,14 @@ public partial class Level
 			foreach ( var ride in scripts.Coasters.Rides )
 				hash.Add( ride.BeingEdited );
 		hash.Add( scripts?.SessionTime?.Ticks ?? -1 );
-		// [EXT:online-coop-permissions] the guests' build grants, hashed only once there is one, so a session without grants keeps the digests it had
-		if ( buildGrants is { Count: > 0 } grants )
-		{
-			hash.Add( grants.Count );
-			foreach ( var seat in grants )
+		// [EXT:online-coop-permissions] every guest seat's rights, in seat order (C3's build grant is their building bit, C4a)
+		hash.Add( seatRights?.Count ?? 0 );
+		if ( seatRights != null )
+			foreach ( var (seat, rights) in seatRights )
+			{
 				hash.Add( seat );
-		}
+				hash.Add( (int)rights );
+			}
 		// [EXT:online-coop-claims] the rides' claims, in ride order, hashed only once there is one (C3c-1)
 		if ( rideClaims is { Count: > 0 } claims )
 		{

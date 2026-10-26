@@ -101,6 +101,8 @@ public class ParkCommandCodecTests
 		// [EXT:online-coop-claims] seat 2 claims attraction 17, and the host lets the claim go (C3c-1)
 		(new ClaimRideCommand( 17 ) { Player = 2 }, "02670422"),
 		(new ReleaseRideCommand( 17 ), "02680022"),
+		// [EXT:online-coop-permissions] the host gives seat 3 building through the seat's rights (C4a)
+		(new SetSeatRightsCommand( 3, CoopRights.Build ), "0269000602"),
 	};
 
 	[TestMethod]

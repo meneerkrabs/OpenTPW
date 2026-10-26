@@ -173,8 +173,9 @@ public partial class CoopSessionTests
 		for ( var round = 0; round < 600 && host.Level.ClaimOf( ride ) != null; round++ )
 			Rounds( 1, host );
 		Assert.IsNull( host.Level.ClaimOf( ride ), "the host released the departed seat's claim" );
-		Assert.IsTrue( host.Level.Commands.Log.Any( entry => entry.Command is SetBuildGrantCommand { Seat: var released, Granted: false } && released == seat ),
-			"a record of the stream: the departed seat's grant taken back, which lets go of its claim" );
+		Assert.IsTrue( host.Level.Commands.Log.Any( entry => entry.Command is ReleaseSeatCommand { Seat: var released } && released == seat ),
+			"a record of the stream: the departed seat's release, which takes its rights back and lets go of its claim" );
+		Assert.IsFalse( host.Level.Commands.Log.Any( entry => entry.Command is SetBuildGrantCommand { Granted: false } ), "in the one record" );
 	}
 
 	[TestMethod]

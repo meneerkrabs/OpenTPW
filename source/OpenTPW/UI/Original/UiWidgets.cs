@@ -585,20 +585,26 @@ public sealed class UiButton : UiElement
 	public UiAlign Align { get; set; } = UiAlign.Center;
 	/// <summary>A button that only shows its <see cref="Selected"/> state: drawn like an enabled one (the down frame while selected), never focused, hit or activated.</summary>
 	public bool Inert { get; set; }
+	/// <summary>
+	/// [EXT:online-coop-speed] While true, the button draws as a disabled one (the down frame still while selected or pressed) but keeps its hit target and its click, and plays no click
+	/// sound: a control whose action is refused says why when clicked, as a disabled one could not (a guest's speed buttons: the speed is the host's, docs/COOP.md, "Money and rights (C4)").
+	/// </summary>
+	public Func<bool>? Subdued { get; set; }
+	private bool IsSubdued => Subdued?.Invoke() == true;
 	public override bool Focusable => Visible && Enabled && !Inert;
 
 	public override void Adjust( int direction ) => Adjusted?.Invoke( direction );
 
 	/// <summary>The model frame the button draws in this state.</summary>
 	internal int StateFrame( bool focused, bool pressed ) =>
-		!Enabled ? DisabledFrame : pressed || Selected?.Invoke() == true ? DownFrame : focused && !KeepNormalFrameWhenFocused ? HighlightFrame : NormalFrame;
+		!Enabled ? DisabledFrame : pressed || Selected?.Invoke() == true ? DownFrame : IsSubdued ? DisabledFrame : focused && !KeepNormalFrameWhenFocused ? HighlightFrame : NormalFrame;
 
 	public override void Activate()
 	{
 		if ( !Enabled || Inert )
 			return;
 		// [BIN:TPW-EXE:0x485780 UI message hook] installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and called for every control message by the dispatcher 0x658d9f and the queue pump 0x658e42 (the call at 0x658eb2) before the control's own procedure. Message 0x100 plays cat_ui 0x1F, or 0xBD when the receiver's style word +0x48 has bit 0x10 (the choice at 0x4857cb). The button class 0x668f9c is the only sender of 0x100 for a mouse release over a button: it posts to the button's parent ([+0x60]) at 0x6691eb through the queue 0x658ccc, on a release over the button that was pressed. Window procedures also send 0x100 to their own window (0x48d83b, 0x49973e, 0x49ec53, 0x4a6df5 (via the dispatcher 0x658d9f), 0x4b640a, 0x4b9f06, 0x4bb020 and 0x4bfc29; ids -1, -2 and 0xe059, on 0x802 or 0x804), and the hook clicks for those too by that window's own style (style 1 in all eight: 0x1F); OpenTPW's dialogs route Enter to their tick's Activate there (docs/AUDIO.md, "List owners"). A release after auto-repeat has started (hold state +0x15a is 2, 0x668eff) returns false and posts no 0x100, so the sound is skipped then too.
-		if ( HoldState != 2 )
+		if ( HoldState != 2 && !IsSubdued )
 			GameAudio.PlayUi( ClickSound );
 		Clicked?.Invoke();
 	}
@@ -617,10 +623,11 @@ public sealed class UiButton : UiElement
 				tint = DisabledTint;
 			frame = NormalFrame;
 		}
+		var subdued = IsSubdued;
 		if ( Model != null && context.DrawModel( Model, frame, rect, tint ) )
 		{
 			if ( Text != null )
-				context.DrawFittedText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );
+				context.DrawFittedText( Font( context.Fonts ), Text(), rect, subdued ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
 			return;
 		}
 		// [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons
@@ -628,15 +635,15 @@ public sealed class UiButton : UiElement
 		var bar = rect;
 		if ( art != null )
 		{
-			var lit = focused || pressed || Selected?.Invoke() == true;
+			var lit = focused && !subdued || pressed || Selected?.Invoke() == true;
 			bar = new UiRect( rect.X, rect.Y + rect.Height * PurpleBarGap / 2, rect.Width, rect.Height * (1 - PurpleBarGap) );
-			DrawPurpleBar( context, UiTexture.Image( art ), bar, lit, Enabled ? RgbaByte.White : new RgbaByte( 160, 160, 160, 255 ) );
+			DrawPurpleBar( context, UiTexture.Image( art ), bar, lit, Enabled && !subdued ? RgbaByte.White : new RgbaByte( 160, 160, 160, 255 ) );
 		}
 		else
 			context.Batch.AddRectangle( rect, focused ? UiColors.Highlight : UiColors.HelpBackground );
 		// Margins keep the label off the bar's rim and rounded ends.
 		var inner = new UiRect( bar.X + bar.Height * 0.5f, bar.Y + bar.Height * 0.05f, bar.Width - bar.Height, bar.Height * 0.9f );
-		context.DrawFittedText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
+		context.DrawFittedText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled || subdued ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
 	}
 
 	/// <summary>

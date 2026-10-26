@@ -180,7 +180,7 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-commands] A shared park's session starts or ends: the guests' carried types go with it, as their grants do (<see cref="ClearBuildGrants"/>), so a park shared again
+	/// [EXT:online-coop-commands] A shared park's session starts or ends: the guests' carried types go with it, as their rights do (<see cref="ClearSeatRights"/>), so a park shared again
 	/// starts with nothing in a guest's hand. The host's own Move tool keeps its carry.
 	/// </summary>
 	internal void ClearGuestCarries()

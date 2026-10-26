@@ -111,6 +111,7 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.ReleaseSeat => new ReleaseSeatCommand( reader.Int() ),
 		ParkCommandKind.ClaimRide => new ClaimRideCommand( reader.Int() ),
 		ParkCommandKind.ReleaseRide => new ReleaseRideCommand( reader.Int() ),
+		ParkCommandKind.SetSeatRights => new SetSeatRightsCommand( reader.Int(), (CoopRights)reader.Int() ),
 		_ => null
 	};
 }
@@ -681,8 +682,10 @@ public sealed record SetSessionClockCommand( long Seconds ) : ParkSettingCommand
 /// <summary>
 /// [EXT:online-coop-permissions] The host grants a guest's seat the right to build, or takes it back (docs/COOP.md, "Building by every player"; the user's decision Q7: the host sets
 /// rights per player). The grants are session state, in every peer's park from the same tick on (the stream carries the command) and in a join snapshot, so every peer's rights refuse or
-/// allow a guest's command alike. Only the host may issue it (<see cref="CoopBuildRights"/>); the host's own seat 0 needs no grant. [EXT:online-coop-claims] Taking a grant back lets go of the
-/// seat's claims in the same record, as its departure does (<see cref="ReleaseSeatCommand"/>), so a guest that may build no more holds no ride against the others (C3c-1b).
+/// allow a guest's command alike. Only the host may issue it (<see cref="CoopBuildRights"/>); the host's own seat 0 needs no grant. The grant is the building right of the seat's rights
+/// (<see cref="CoopRights.Build"/>), set through the one reducer <see cref="SetSeatRightsCommand"/> uses (<see cref="Level.SetSeatRights"/>, C4a), so a C3 log replays as it did.
+/// [EXT:online-coop-claims] Taking a grant back lets go of the seat's claims in the same record, as its departure does (<see cref="ReleaseSeatCommand"/>), so a guest that may build no more
+/// holds no ride against the others (C3c-1b).
 /// </summary>
 public sealed record SetBuildGrantCommand( int Seat, bool Granted ) : ParkSettingCommand
 {
@@ -698,8 +701,30 @@ public sealed record SetBuildGrantCommand( int Seat, bool Granted ) : ParkSettin
 	internal override ParkCommandResult Execute( Level level )
 	{
 		level.SetBuildGrant( Seat, Granted );
-		if ( !Granted )
-			level.ReleaseClaimsOf( Seat );
+		return ParkCommandResult.Ok();
+	}
+}
+
+/// <summary>
+/// [EXT:online-coop-permissions] The host sets a guest seat's rights (docs/COOP.md, "Money and rights (C4)"; the user's decision Q7): the whole mask, each right a switch of the host's share
+/// screen. The rights are session state, as the build grant is (<see cref="SetBuildGrantCommand"/>, whose building bit it shares through one reducer, <see cref="Level.SetSeatRights"/>);
+/// taking a right back ends what it held in the same record. Only the host may issue it (<see cref="CoopBuildRights"/>), for a guest seat and only rights this build offers
+/// (<see cref="CoopRightsOffer"/>), so a right whose actions do not yet wait for the host's answer cannot be given (C4a).
+/// </summary>
+public sealed record SetSeatRightsCommand( int Seat, CoopRights Rights ) : ParkSettingCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.SetSeatRights;
+	internal override bool IsWellFormed => Seat > 0 && Seat < CoopJoinState.MaximumPlayerEntries && CoopRightsOffer.IsOffered( Rights );
+
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Seat );
+		writer.Int( (int)Rights );
+	}
+
+	internal override ParkCommandResult Execute( Level level )
+	{
+		level.SetSeatRights( Seat, Rights );
 		return ParkCommandResult.Ok();
 	}
 }
@@ -761,17 +786,18 @@ public sealed record SetAllObjectsOpenCommand( bool Open ) : ParkSettingCommand
 }
 
 /// <summary>
-/// [EXT:online-coop-commands] The host releases what the guest seat <paramref name="Seat"/> holds in the park, once the member that held it left or another took the seat (docs/COOP.md,
-/// "Building by every player"; C3b-2): the type its Move tool carried, so the seat's next member starts with nothing in hand. A record of the stream, applied by the host's stream at a
-/// frame's start before that frame's requests; only the host may issue it (<see cref="CoopBuildRights"/>). Its value is whether the seat held anything.
+/// [EXT:online-coop-commands] The host releases what the guest seat <paramref name="Seat"/> holds in the park, once the member that held it left or another took the seat, or the session ends
+/// (docs/COOP.md, "Building by every player", "Money and rights (C4)"; C3b-2): the type its Move tool carried, its claims (C3c-1, with a coaster's tool state, C3c-2) and its rights (C4a),
+/// so the seat's next member starts with nothing in hand. A record of the stream, applied by the host's stream at a frame's start before that frame's requests, and by its teardown before the
+/// session log's last checkpoint; only the host may issue it (<see cref="CoopBuildRights"/>). Its value is whether the seat held anything.
 /// </summary>
 public sealed record ReleaseSeatCommand( int Seat ) : ParkSettingCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.ReleaseSeat;
 	internal override bool IsWellFormed => Seat > 0 && Seat < CoopJoinState.MaximumPlayerEntries;
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Seat );
-	// [EXT:online-coop-claims] and the claim the seat held (C3c-1)
-	internal override ParkCommandResult Execute( Level level ) => ParkCommandResult.Ok( level.ReleaseSeat( Seat ) | level.ReleaseClaimsOf( Seat ) );
+	// [EXT:online-coop-claims] and the claim the seat held (C3c-1); [EXT:online-coop-permissions] and every right it had (C4a)
+	internal override ParkCommandResult Execute( Level level ) => ParkCommandResult.Ok( level.ReleaseSeat( Seat ) | level.ReleaseClaimsOf( Seat ) | level.ReleaseSeatRights( Seat ) );
 }
 
 /// <summary>

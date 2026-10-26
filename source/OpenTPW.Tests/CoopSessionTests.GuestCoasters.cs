@@ -706,6 +706,9 @@ public partial class CoopSessionTests
 		var hostStream = host.Session!.HostStream!;
 		host.Session.End( "The host closed the park." );
 		var log = ParkCommandLogFile.Deserialize( hostStream.SessionLog!.Serialize() );
+		// [EXT:online-coop-permissions] the teardown released the guest's seat in a record of the log, before its last checkpoint, whose claim's end took the coaster out of the tool (C4a)
+		Assert.IsTrue( log.Entries[^1] is { Command: ReleaseSeatCommand { Seat: var released } } last && released == seat && last.Tick <= log.Checkpoints[^1].Ticks,
+			"the seat's release is the log's last record" );
 		Assert.IsFalse( hostCoaster.Runtime.Coaster!.BeingEdited, "the host's park left no coaster a guest held closed and marked" );
 		Assert.IsNull( host.Level.CoasterEdits.Of( seat ), "nor its drag" );
 		Assert.AreEqual( cell, (hostBuilder.Track.Nodes[node].X, hostBuilder.Track.Nodes[node].Y), "the moved pylon went back" );

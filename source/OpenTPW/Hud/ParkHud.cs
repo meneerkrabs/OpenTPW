@@ -381,6 +381,8 @@ public sealed partial class ParkHud
 				Font = fonts => fonts.Label,
 				Clicked = () => SetUserGameSpeed( speed ),
 				Selected = () => DisplayedGameSpeed == speed,
+				// [EXT:online-coop-speed] a guest's buttons draw subdued and still take the click, which says the speed is the host's (C4a)
+				Subdued = () => SpeedIsTheHosts,
 				Bounds = new UiRect( 1540 + index * 122, 1430, 116, 84 ),
 				Anchor = UiAnchor.BottomRight
 			} );

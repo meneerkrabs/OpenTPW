@@ -7,8 +7,9 @@ public partial class Level
 
 	/// <summary>
 	/// [EXT:online-coop-snapshot-join] The session state a join snapshot carries beyond the park's save (<see cref="CoopJoinState"/>), taken at the cut between two ticks: every player's carried
-	/// catalogue entry and employee in hand, the pending hire and the stale on-pointer candidate (a load resets both), the coasters' being-edited marks, the session clock and the guests' build
-	/// grants. A held coaster drag refuses the capture, which waits for its release: the drag's edited pylon is no part of the save.
+	/// catalogue entry and employee in hand, the pending hire (the host's, seat 0: a guest hires from C4c on) and the stale on-pointer candidate (a load resets both), the coasters' being-edited
+	/// marks, the session clock, the guests' seats' rights and the rides' claims. A held coaster drag refuses the capture, which waits for its release: the drag's edited pylon is no part of the
+	/// save.
 	/// </summary>
 	internal CoopJoinState CaptureJoinState()
 	{
@@ -18,14 +19,18 @@ public partial class Level
 		return new CoopJoinState(
 			carriedEntries?.OrderBy( pair => pair.Key ).Select( pair => (pair.Key, pair.Value) ).ToArray() ?? Array.Empty<(int, string)>(),
 			StaffHands?.All.ToArray() ?? Array.Empty<(int, int, int, int)>(),
-			staff?.PendingPlacementId ?? 0,
+			PendingHireRows(),
 			staff?.StaleOnPointerId ?? 0,
 			CoasterStations().Where( station => station.Ride.BeingEdited ).Select( station => station.AttractionId ).ToArray(),
 			Objects?.ScriptWorld?.SessionTime?.Ticks,
 			CoasterUnheldCells(),
-			BuildGrants.ToArray(),
+			SeatRights.Select( pair => (pair.Key, pair.Value) ).ToArray(),
 			RideClaims.Select( pair => (pair.Key, pair.Value) ).ToArray() );
 	}
+
+	/// <summary>[EXT:online-coop-permissions] The pending hires as a join state and the session digest carry them, seat by seat: the host's (seat 0) alone until C4c.</summary>
+	private (int Seat, int Candidate)[] PendingHireRows() =>
+		Park?.Economy.Staff is { PendingPlacementId: > 0 and var candidate } ? new[] { (ParkCommands.LocalPlayer, candidate) } : Array.Empty<(int, int)>();
 
 	/// <summary>
 	/// [EXT:online-coop-snapshot-join] Writes a join snapshot's session state (<see cref="CaptureJoinState"/>) into the park a guest built from its save, before its first tick: the save's load
@@ -42,6 +47,11 @@ public partial class Level
 			throw new InvalidDataException( $"The join state holds marker cells of coaster {unbound}, which the park does not hold." );
 		if ( state.StaffHands.Count > 0 && StaffHands == null )
 			throw new InvalidDataException( "The join state holds employees in hand, which this park cannot hold." );
+		// [EXT:online-coop-permissions] the host's pending hire alone (C4a): a guest's seat hires from C4c on
+		if ( state.PendingHires.FirstOrDefault( row => row.Seat != ParkCommands.LocalPlayer ) is { Candidate: > 0 } guestHire )
+			throw new InvalidDataException( $"The join state holds seat {guestHire.Seat}'s pending hire, which no guest's seat holds yet." );
+		if ( state.PendingHires.Count > 0 && Park?.Economy.Staff == null )
+			throw new InvalidDataException( "The join state holds a pending hire, which this park cannot hold." );
 		// [EXT:online-coop-claims] a claimed ride must be one of this park's track rides (C3c-1) or coasters (C3c-2)
 		var claims = state.RideClaims ?? Array.Empty<(int Ride, int Seat)>();
 		if ( claims.Count > 0 )
@@ -56,7 +66,7 @@ public partial class Level
 			StaffHands!.Carry( player, staff, (x, y) );
 		if ( Park?.Economy.Staff is { } economyStaff )
 		{
-			economyStaff.PendingPlacementId = state.PendingHire;
+			economyStaff.PendingPlacementId = state.PendingHires.FirstOrDefault( row => row.Seat == ParkCommands.LocalPlayer ).Candidate;
 			economyStaff.StaleOnPointerId = state.StaleOnPointer;
 		}
 		var marked = state.CoastersBeingEdited.ToHashSet();
@@ -64,7 +74,7 @@ public partial class Level
 			ride.BeingEdited = marked.Contains( attraction );
 		if ( Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = state.SessionClockTicks is { } ticks ? new DateTime( ticks, DateTimeKind.Unspecified ) : null;
-		buildGrants = state.BuildGrants is { Count: > 0 } grants ? new SortedSet<int>( grants ) : null;
+		seatRights = state.SeatRights is { Count: > 0 } rights ? new SortedDictionary<int, CoopRights>( rights.ToDictionary( row => row.Seat, row => row.Rights ) ) : null;
 		rideClaims = claims.Count > 0 ? new SortedDictionary<int, int>( claims.ToDictionary( claim => claim.Ride, claim => claim.Seat ) ) : null;
 	}
 

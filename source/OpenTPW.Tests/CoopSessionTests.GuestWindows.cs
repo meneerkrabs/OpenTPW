@@ -7,24 +7,33 @@ namespace OpenTPW.Tests;
 /// <summary>
 /// [EXT:online-coop-commands] A guest's park windows send only what its player asked for: the object window's apply on its close, the research workload knob's projection on the window's
 /// opening and on a staffing change, and the loans window's offer refresh on its opening and its tabs would each be a request the guest's rights refuse, with a note about a click the player
-/// never made. A shop's apply sends only the commands whose values its player changed, and a typed price or an apply-all, which go when clicked, do not go again at the close.
+/// never made. A shop's or a sideshow's apply sends only the commands whose values its player changed, and a typed price or an apply-all, which go when clicked, do not go again at the
+/// close.
 /// </summary>
 public partial class CoopSessionTests
 {
-	/// <summary>A shop of the test catalogue's drinks shop (1203) on <paramref name="park"/>, placed and linked to its economy record as a placed shop is, before the session starts.</summary>
-	private OriginalObject AddShop( Park park )
+	/// <summary>
+	/// A shop or a sideshow of the test catalogue on <paramref name="park"/>, placed and linked to its economy record as a placed one is, before the session starts: the drinks shop (1203) or
+	/// the jungle spray (1303), with <paramref name="settings"/> added to its type's.
+	/// </summary>
+	private OriginalObject AddPriced( Park park, bool shop, int x, string settings = "" )
 	{
 		var root = (string)typeof( UpgradeCatalogueDefaultsTests ).GetField( "root", NonPublic )!.GetValue( fixture )!;
-		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Shop, "/shop", new ObjectSettings( new[] { new ObjectSettingsFile(
-				"Info.Id 1203\nInfo.Name SyntheticShop\nInfo.WhichUIType 1\nInfo.IsChoosable 1\n", "shop.sam" ) } ),
+		var (info, category, ui) = shop ? (1203, ObjectCategory.Shop, BuildCategory.Shops) : (1303, ObjectCategory.Sideshow, BuildCategory.Sideshows);
+		var entry = new ObjectCatalogEntry( "jungle", category, $"/priced{x}", new ObjectSettings( new[] { new ObjectSettingsFile(
+				$"Info.Id {info}\nInfo.Name SyntheticPriced{x}\nInfo.WhichUIType {(int)ui}\nInfo.IsChoosable 1\n{settings}", $"priced{x}.sam" ) } ),
 			new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", System.Array.Empty<string>(), System.Array.Empty<ObjectAnimationFile>(), System.Array.Empty<string>(),
 			System.Array.Empty<string>(), new BaseFileSystem( root ), null );
-		var shop = park.Level.Objects.TryPlace( entry, 20, 9, 0, out _ )!;
-		Assert.IsNotNull( shop );
-		var state = park.Economy.RegisterExisting( 1203 );
-		typeof( Level ).GetMethod( "LinkEconomy", NonPublic )!.Invoke( park.Level, new object[] { shop, state.Id } );
-		return shop;
+		var placed = park.Level.Objects.TryPlace( entry, x, 9, 0, out _ )!;
+		Assert.IsNotNull( placed );
+		var state = park.Economy.RegisterExisting( info );
+		typeof( Level ).GetMethod( "LinkEconomy", NonPublic )!.Invoke( park.Level, new object[] { placed, state.Id } );
+		return placed;
 	}
+
+	/// <summary>The guest's view of a priced object: its window opened and closed as a click and the HUD's next frame do it.</summary>
+	private static (System.Action Open, System.Action Close) Window( View view, OriginalObject item ) =>
+		(() => { view.Hud.SelectObject( item ); view.Update(); }, () => { view.Hud.SelectObject( null ); view.Update(); });
 
 	[TestMethod]
 	public void AGuestsWindowsSendNothingItsPlayerDidNotAskFor()
@@ -78,7 +87,7 @@ public partial class CoopSessionTests
 		OriginalObject? shop = null;
 		var (host, guest, _, _) = Shared( ( park, isHost ) =>
 		{
-			var placed = AddShop( park );
+			var placed = AddPriced( park, shop: true, 20 );
 			if ( !isHost )
 				shop = placed;
 		} );
@@ -96,36 +105,27 @@ public partial class CoopSessionTests
 		}
 		var refusals = guest.Level.SessionRefusals;
 		int Sent() => guest.Level.SessionRefusals - refusals;
-		void Open()
-		{
-			hud.SelectObject( shop );
-			view.Update();
-		}
-		void Close()
-		{
-			hud.SelectObject( null );
-			view.Update();
-		}
+		var (open, close) = Window( view, shop! );
 		// opened and closed: nothing
-		Open();
-		Close();
+		open();
+		close();
 		Assert.AreEqual( 0, Sent(), "nothing changed" );
 		// the quality alone: its settings' command, not the price's
-		Open();
+		open();
 		hud.PendingSettings.QualityStep = (hud.PendingSettings.QualityStep + 1) % 3;
-		Close();
+		close();
 		Assert.AreEqual( 1, Sent(), "the settings' command alone" );
 		// the price alone (the price box's steps): the price's command, not the settings'
-		Open();
+		open();
 		hud.PendingSettings.Price = (hud.PendingSettings.Price + 1) % ParkHud.MaximumPrice;
-		Close();
+		close();
 		Assert.AreEqual( 2, Sent(), "the price's command alone" );
 		// a typed price goes when typed, and not again at the close (the price action is the park view's)
 		var camera = Camera.Mode;
 		Camera.Mode = new ParkCameraMode();
 		try
 		{
-			Open();
+			open();
 			var price = (UiButton)hud.Screen.Find( "shopPrice" )!;
 			Assert.IsTrue( price.Visible && price.Enabled, "the price action" );
 			hud.Screen.Focus( price );
@@ -135,7 +135,7 @@ public partial class CoopSessionTests
 			Input( UiInput.Key( UiKeys.Accept ) );
 			Assert.AreEqual( "hud", hud.Stack.Top!.Name, "the editor took the price" );
 			Assert.AreEqual( 3, Sent(), "the typed price's command" );
-			Close();
+			close();
 			Assert.AreEqual( 3, Sent(), "and not again at the close" );
 		}
 		finally
@@ -143,12 +143,63 @@ public partial class CoopSessionTests
 			Camera.Mode = camera;
 		}
 		// apply-all sends the window's values to every shop of the type, and the close nothing more
-		Open();
+		open();
 		hud.PendingSettings.Ingredient = (hud.PendingSettings.Ingredient + 10) % 100;
 		((UiButton)hud.Screen.Find( "applyAll" )!).Activate();
 		Assert.AreEqual( 5, Sent(), "the settings' and the price's command of the one shop" );
-		Close();
+		close();
 		Assert.AreEqual( 5, Sent(), "nothing again at the close" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AGuestsSideshowWindowsSendTheirOneCommandOnlyWhenItsPlayerChangedItsValues()
+	{
+		OriginalObject? winnable = null, prizeless = null;
+		var (host, guest, _, _) = Shared( ( park, isHost ) =>
+		{
+			var game = AddPriced( park, shop: false, 20 );
+			var spray = AddPriced( park, shop: false, 23, "UsageInfo.NonWinnableSideshow 1\n" );
+			if ( !isHost )
+				(winnable, prizeless) = (game, spray);
+		} );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		guest.Enter();
+		var pending = view.Hud.PendingSettings;
+		var refusals = guest.Level.SessionRefusals;
+		int Sent() => guest.Level.SessionRefusals - refusals;
+		// a game: its price, its prize and its chance go in one command, sent when any of them changed
+		var (open, close) = Window( view, winnable! );
+		open();
+		close();
+		Assert.AreEqual( 0, Sent(), "nothing changed" );
+		foreach ( var (change, what) in new (System.Action, string)[]
+		{
+			(() => pending.Price = (pending.Price + 1) % ParkHud.MaximumPrice, "the price"),
+			(() => pending.Prize = (pending.Prize + 1) % ParkHud.MaximumPrize, "the prize"),
+			(() => pending.WinChance = (pending.WinChance + 1) % 100, "the chance")
+		} )
+		{
+			var before = Sent();
+			open();
+			change();
+			close();
+			Assert.AreEqual( before + 1, Sent(), $"{what}: the game's one command" );
+		}
+		// a sideshow without a prize: its price alone
+		(open, close) = Window( view, prizeless! );
+		open();
+		close();
+		Assert.AreEqual( 3, Sent(), "nothing changed" );
+		open();
+		pending.Price = (pending.Price + 1) % ParkHud.MaximumPrice;
+		close();
+		Assert.AreEqual( 4, Sent(), "the price's command" );
+		open();
+		pending.Prize = (pending.Prize + 1) % ParkHud.MaximumPrize;
+		close();
+		Assert.AreEqual( 4, Sent(), "a prize it does not use sends nothing" );
 		CatchUpAndCompare( host, guest );
 	}
 }

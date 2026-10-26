@@ -6,4 +6,4 @@ The game's pick is unchanged, because tp.exe also picks the model at its current
 
 A new test, `ObjectRayPickTests.APointerWhosePickTestsAModelIsNamedWhateverThePose`, checks that the answer stays true when the model moves off the ray, and that it is false beside the tower.
 
-Verification, with load averages of 19 to 23 plus two busy-loop processes: pristine main (22a35e03d) failed 5 of 10 jungle smokes, all with this message. The fixed build passed 12 of 12 in a row. The smoke now picks (69, 32) and (69, 35), and neither pointer's pick tests a model at any point up to the drop (frame 38, object version unchanged).
+Verification under load (load averages 9 to 23 plus two to six busy-loop processes): pristine main (22a35e03d) failed 5 of 10 jungle smokes, all with this message. The fixed build passed 12 of 12 in a row. After merging main, the branch passed 10 of 10. The final commit, with main merged again (#843, #846, #849, #850), passed another 10 of 10 in a row. The smoke now picks (69, 32) and (69, 35), and neither pointer's pick tests a model at any point up to the drop (frame 38, object version unchanged).

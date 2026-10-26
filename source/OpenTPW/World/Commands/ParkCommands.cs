@@ -29,8 +29,8 @@ public interface IParkCommandRights
 	bool AllowsPathRemoval( int player, int x, int y ) => true;
 
 	/// <summary>
-	/// [EXT:online-coop-claims] The reason a refusal of <paramref name="command"/> of <paramref name="player"/> by these rights gives, when it has one of its own (another player's claim, C3c-1);
-	/// null for the generic one. By default null.
+	/// [EXT:online-coop-claims] The reason a refusal of <paramref name="command"/> of <paramref name="player"/> by these rights gives, when it has one of its own (another player's claim, C3c-1;
+	/// building the host has not granted), read where and when the command is refused; null for the generic one. By default null.
 	/// </summary>
 	string? RefusalReason( int player, ParkCommand command ) => null;
 }
@@ -119,7 +119,7 @@ public sealed class ParkCommands
 	/// <summary>Whether the rights refuse <paramref name="command"/> its player (no rights refuse nothing).</summary>
 	private bool Refuses( ParkCommand command ) => Rights is { } rights && !rights.Allows( command.Player, command );
 
-	/// <summary>[EXT:online-coop-lockstep] The rejection of a command the rights refuse: their own reason (another player's claim, C3c-1), else the generic one.</summary>
+	/// <summary>[EXT:online-coop-lockstep] The rejection of a command the rights refuse: their own reason (another player's claim, C3c-1; a grant not given), else the generic one.</summary>
 	private ParkCommandResult RightsRefusal( ParkCommand command ) =>
 		ParkCommandResult.Rejected( Rights?.RefusalReason( command.Player, command ) ?? $"Player {command.Player} may not {command.Kind}." ) with { RightsRefused = true };
 

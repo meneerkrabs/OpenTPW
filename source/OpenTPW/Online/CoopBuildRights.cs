@@ -38,20 +38,26 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		return player > 0 && level.HasBuildGrant( player ) && Builds( command ) && HoldsClaimFor( player, command ) && LeavesClaimsAlone( player, command );
 	}
 
-	/// <summary>
-	/// [EXT:online-coop-claims] The reason these rights give when another player's claim is what refuses <paramref name="command"/> of <paramref name="player"/> (<see cref="Level.ClaimedReason"/>,
-	/// which the HUD says in its own words); null for any other refusal (a guest's building the host has not granted, what only the host does), which keeps the generic reason.
-	/// </summary>
-	public string? RefusalReason( int player, ParkCommand command ) =>
-		(player == ParkCommands.LocalPlayer ? !IsHostCleanup( command ) : player > 0 && level.HasBuildGrant( player ) && Builds( command )) && !LeavesClaimsAlone( player, command )
-			? Level.ClaimedReason : null;
+	/// <summary>[EXT:online-coop-permissions] The reason these rights give for a guest's building the host has not granted it (<see cref="RefusalReason"/>).</summary>
+	internal const string NotGrantedReason = "The host has not let this player build.";
 
 	/// <summary>
-	/// [EXT:online-coop-claims] What a refusal of <paramref name="command"/> by these rights says to its player, from the refusal's <paramref name="reason"/> as the rights gave it where the command
-	/// was refused (<see cref="RefusalReason"/>): another player's claim, building the host has not granted, or what only the host does.
+	/// The reason these rights give for a refusal of <paramref name="command"/> of <paramref name="player"/>, read where and when it is refused: [EXT:online-coop-claims] another player's claim
+	/// (<see cref="Level.ClaimedReason"/>), or [EXT:online-coop-permissions] a guest's building the host has not granted it (<see cref="NotGrantedReason"/>), which the HUD says in its own
+	/// words; null for what only the host does, which keeps the generic reason.
 	/// </summary>
-	internal CoopRefusal RefusalOf( ParkCommand command, string? reason ) =>
-		reason == Level.ClaimedReason ? CoopRefusal.Claimed : Builds( command ) ? CoopRefusal.NotGranted : CoopRefusal.HostOnly;
+	public string? RefusalReason( int player, ParkCommand command ) => player == ParkCommands.LocalPlayer
+		? !IsHostCleanup( command ) && !LeavesClaimsAlone( player, command ) ? Level.ClaimedReason : null
+		: player <= 0 || !Builds( command ) ? null
+		: !level.HasBuildGrant( player ) ? NotGrantedReason
+		: !LeavesClaimsAlone( player, command ) ? Level.ClaimedReason : null;
+
+	/// <summary>
+	/// [EXT:online-coop-claims] What a refusal by these rights says to its player, from the refusal's <paramref name="reason"/> as the rights gave it where and when the command was refused
+	/// (<see cref="RefusalReason"/>): another player's claim, building the host has not granted, or what only the host does.
+	/// </summary>
+	internal static CoopRefusal RefusalOf( string? reason ) =>
+		reason == Level.ClaimedReason ? CoopRefusal.Claimed : reason == NotGrantedReason ? CoopRefusal.NotGranted : CoopRefusal.HostOnly;
 
 	/// <summary>[EXT:online-coop-claims] The host's cleanup, which no claim refuses: its release of any claim, a departed seat's release and the grants.</summary>
 	private static bool IsHostCleanup( ParkCommand command ) => command is ReleaseRideCommand or ReleaseSeatCommand or SetBuildGrantCommand;
@@ -209,9 +215,10 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// <see cref="Level.PlaceObject"/> centres it): no object it would demolish (one of a lower overwrite priority) is a ride claimed against the player, nor, for a guest, one it may not
 	/// remove (<see cref="MayRemove"/>), and no cell it writes is a claimed ride's queue cell or the path cell its back joins: its footprint, the path cells it clears (beyond a track end too)
 	/// and the cell outside a queue ride's entrance, which it lays as queue (taking the links of a path cell there off). The cell outside any other entrance and a queue ride's exit it lays
-	/// as path, over a path too, which takes no link off: they are asked for themselves alone (a path paves a queue's end). The exit of an object without a queue only links a path cell
-	/// already outside it, and writes no other cell, so it is not asked. The placement lays only its last entrance's and its last exit's (<see cref="ObjectAccessCells.Lay"/>), so only
-	/// they are asked. A placement the park refuses is the park's to refuse.
+	/// as path, over a path too, which takes no link off: they are asked for themselves alone (a path paves a queue's end). The exit of an object without a queue lays no cell: it only
+	/// links a path cell already outside it (that cell's links and its path and access neighbours', <see cref="PathLinkWriter.LinkPath"/>), which takes no queue's link off, so it is not
+	/// asked. The placement lays only its last entrance's and its last exit's (<see cref="ObjectAccessCells.Lay"/>), so only they are asked. A placement the park refuses is the park's to
+	/// refuse.
 	/// </summary>
 	internal bool PlacementLeavesClaimsAlone( int player, ObjectCatalogEntry entry, int x, int y, int rotation )
 	{

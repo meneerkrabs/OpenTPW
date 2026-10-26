@@ -435,7 +435,7 @@ internal sealed class CoopSession : IDisposable
 		// [EXT:online-coop-commands] a batch, bridge or slide undo the guest's pool tool sends says its refusal in its stroke's report, once for the stroke (C3b-3)
 		if ( level?.PoolTool is { SendingGuestBatch: true } )
 			return;
-		level?.NoteSessionRefusal( level.Commands.Rights is CoopBuildRights rights ? rights.RefusalOf( command, rights.RefusalReason( command.Player, command ) ) : CoopRefusal.HostOnly );
+		level?.NoteSessionRefusal( CoopBuildRights.RefusalOf( level.Commands.Rights?.RefusalReason( command.Player, command ) ) );
 	}
 
 	/// <summary>[EXT:online-coop-commands] When the guest's park last sent the end of a carry left without its Move tool (<see cref="Level.EndStrayCarry"/>), across its resyncs, or null.</summary>

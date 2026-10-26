@@ -677,7 +677,7 @@ public partial class CoopSessionTests
 			Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( twoEntrances, anchor.X, anchor.Y, 0, out _ ) );
 			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 1, twoEntrances, 12, 1, 0 ), "only the entrance it lays is asked" );
 			// beside the claimed queue's cell (10, 3): the park blocks an entrance or a queue ride's exit there (it would lay their outside cells as path), not the exit of an object without
-			// a queue, which only links a path cell outside it and writes nothing there (ObjectAccessCells.Lay): the rights ask it nothing
+			// a queue, which lays no cell and only links a path cell already outside it (none here: ObjectAccessCells.Lay leaves the queue's cell as it is): the rights ask it nothing
 			var plainExit = ShapedEntry( "Info.Id 9108\n", "W" );
 			Assert.AreEqual( OriginalPlacementResult.AccessBlocked, level.Objects.Check( pathEntrance, 11, 3, 0, out _ ) );
 			Assert.AreEqual( OriginalPlacementResult.AccessBlocked, level.Objects.Check( exit, 11, 3, 0, out _ ) );

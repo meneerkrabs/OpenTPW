@@ -451,8 +451,13 @@ public partial class CoopStreamTests
 			Assert.IsFalse( rights.Allows( 1, new RemoveAttractionCommand( ride ) ), "nor to sell it" );
 			Assert.IsFalse( rights.Allows( 1, new PickUpObjectCommand( ride ) ), "nor to move it" );
 			Assert.AreEqual( Level.ClaimedReason, rights.RefusalReason( 1, new RemoveAttractionCommand( ride ) ) );
-			Assert.AreEqual( CoopRefusal.Claimed, rights.RefusalOf( new RemoveAttractionCommand( ride ), Level.ClaimedReason ) );
-			Assert.IsNull( rights.RefusalReason( 2, new RemoveAttractionCommand( ride ) ), "a seat without a grant is refused for that" );
+			Assert.AreEqual( CoopRefusal.Claimed, CoopBuildRights.RefusalOf( Level.ClaimedReason ) );
+			// [EXT:online-coop-permissions] a seat without a grant is refused for that first, and a command no guest builds with gives the generic reason: the cause is read where and when the
+			// command is refused
+			Assert.AreEqual( CoopBuildRights.NotGrantedReason, rights.RefusalReason( 2, new RemoveAttractionCommand( ride ) ), "a seat without a grant is refused for that" );
+			Assert.AreEqual( CoopRefusal.NotGranted, CoopBuildRights.RefusalOf( CoopBuildRights.NotGrantedReason ) );
+			Assert.IsNull( rights.RefusalReason( 1, new ReleaseSeatCommand( 2 ) ) );
+			Assert.AreEqual( CoopRefusal.HostOnly, CoopBuildRights.RefusalOf( null ) );
 			// the area clear asks of each object it would take: a guest's leaves the station standing, the host's takes it
 			Assert.IsFalse( rights.AllowsRemoval( 1, station ) );
 			Assert.IsTrue( rights.AllowsRemoval( ParkCommands.LocalPlayer, station ) );

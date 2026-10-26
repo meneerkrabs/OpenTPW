@@ -163,7 +163,10 @@ part (`Level.CoopRole`: none, host or guest).
   no trace in its log. The funnel raises `SessionRefused`, and the guest's HUD says "The host has not
   let you build yet." for building (`OpenTpwText.CoopNotGranted`) or "Only the host can do that for
   now." for anything else (`OpenTpwText.CoopHostOnly`), in the eleven languages of the OpenTPW texts,
-  with the error sound, as it does for a cell it cannot build on.
+  with the error sound, as it does for a cell it cannot build on. Which of them it says follows the
+  reason the rights gave where and when they refused the command (`IParkCommandRights.RefusalReason`:
+  a grant not given, a claim, or the generic reason), so a grant given or taken back after the refusal
+  does not change it.
 - **Rules every peer applies alike.** These checks read the funnel's session rules, so a guest
   refuses the host's record as the host did, and the record's outcome check agrees:
   - the cheats (`QueueCheatCommand`) and the secret park name of the rename are refused (decision
@@ -1779,7 +1782,8 @@ its first queue cell outside its entrance) and bridges refuse it, and the area c
 (`IParkCommandRights.AllowsPathRemoval`). A path line along it, the path a placement lays or links outside
 its other entrance and its exit, and a queue line that only ends on it (which links the queue to that
 path, `QueuePaths.Connect`) leave the queue's links as they are. The exit of an object without a queue
-only links a path cell already outside it and writes no other cell, so it is asked nothing. A queue cell's ride is resolved as its
+lays no cell: it only links a path cell already outside it (that cell's links and its path and access
+neighbours'), which takes no queue's link off, so it is asked nothing. A queue cell's ride is resolved as its
 removal resolves it: the rides' cached lines, then each line walked again (on a copy) for the cells they
 miss, once per question of the rights (the area clear asks it for each path cell it would clear).
 Everything else stays the host's: pause and speed (Q8), cheats (Q17), money, staff and the park's
@@ -1921,9 +1925,9 @@ A guest's strokes go in batches instead, and the host's tool writes at once, as 
   the pieces still queued and one at a time; a slide with no piece to take back is the park's to refuse,
   quietly, as the host's Backspace is. A finished slide's pieces are the host's (riders use it), or go with
   its tower: an undo queued behind pieces that turned out to lay the splash meets a finished slide and
-  says nothing, as the host's slide mode ends with its splash. An undo the rights refuse once the host
-  took the grant back says so, as any stroke's refusal. A Backspace during a drag ends the drag's stroke,
-  which reports once back.
+  says nothing, as the host's slide mode ends with its splash. An undo the rights refused for want of a
+  grant, which the host took back, says so, as any stroke's refusal. A Backspace during a drag ends the
+  drag's stroke, which reports once back.
 - **Backspace with no tool on** over a pool bridge or a pool cell is a request, as over a path (C3b-1), and
   a refusal says the pool's reason.
 - **Escape**, a right click or another tool ends the tool: its unsent cells are dropped, the stroke under

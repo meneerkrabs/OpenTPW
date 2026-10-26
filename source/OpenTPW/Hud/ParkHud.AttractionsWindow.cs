@@ -303,7 +303,7 @@ public sealed partial class ParkHud
 	{
 		var row = SelectedAttractionRow;
 		var match = level.ListAttractions().FirstOrDefault( item => item.Runtime.AttractionId == row.AttractionId );
-		// a fixed item is not for sale here either, as the object window's erase button refuses it; [EXT:online-coop-commands] nor an object whose sale waits for the host (C3b)
+		// [EXT:online-coop-commands] no second sale of an object whose sale waits for the host (C3b)
 		if ( match == null || !CanSellAttraction( match ) || RejectReadOnlyAction() )
 			return;
 		void Remove()
@@ -343,10 +343,10 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>
-	/// Whether the list's delete button sells <paramref name="item"/>: not a fixed item of the park, as the object window's erase button refuses it, and [EXT:online-coop-commands] not an
-	/// object whose sale by this guest waits for the host (C3b).
+	/// Whether the list's delete button sells <paramref name="item"/>: [EXT:online-coop-commands] not while this guest's sale of it waits for the host (C3b). The list never holds a fixed item
+	/// (<see cref="OriginalObjectRuntime.IsAttraction"/> excludes them), so it never offers one for sale.
 	/// </summary>
-	private bool CanSellAttraction( OriginalObject item ) => !item.Entry.IsFixedItem && !level.IsSaleWaiting( item.Runtime.AttractionId );
+	private bool CanSellAttraction( OriginalObject item ) => !level.IsSaleWaiting( item.Runtime.AttractionId );
 
 	private UiScreen CreateAttractionsScreen()
 	{

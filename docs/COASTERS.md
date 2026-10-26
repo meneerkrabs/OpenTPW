@@ -152,6 +152,7 @@ at once instead of sliding out. Its background takes the clicks of the area it c
 **Way in.** The ride window's track button (`b_track`, control `0x3e2a`, help 10; shown when the object's type record has a track type, `0x4ad53a`) calls `0x4af200`, which sends a coaster
 (type 3) to `0x4988c0`: it enters the tool (`0x4474d0`, state 2 for a finished circuit) and selects the first button (`0x4455c0`). The table-driven ride window (`ParkHud.ObjectWindow.cs`) has that
 button at its original place and `ParkHud.EditTrack` is its click, so select a coaster, press it, cut, extend, complete.
+The build buttons' pylon click is the tool object's release (`0x524960`, mode 0x15: the click sound `0x65`, the placement and the help `0xCD`, at the cell under the pointer at the release); the move, height, rotate and tilt buttons pick a pylon up on the press (`0x524790` in mode 0x16 and the drag class `0x6FEAA0`, `0x446300(1)`) and settle on the release (`0x446300(0)`), as before; a quick right click leaves the tool on its release.
 A drag does not fit the controller on every pointer move (the original rebuilds the track each frame): the renderer draws the nodes as they are and the track is fitted, rated and the trains
 placed once on the release. Backspace waits for a drag; a drag let go while the game is paused ends there. A save taken while the tool is open lets the ride out of state 2 on load, as leaving the tool would. `CoasterToolPanel` is the headless controller, `ParkHud.CoasterPanel.cs` the pointer side.
 

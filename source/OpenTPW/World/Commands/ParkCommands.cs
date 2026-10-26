@@ -21,6 +21,12 @@ public interface IParkCommandRights
 	/// guest may not remove what its own removal click may not. By default yes.
 	/// </summary>
 	bool AllowsRemoval( int player, OriginalObject item ) => true;
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] Whether <paramref name="player"/> may clear the path cell (<paramref name="x"/>, <paramref name="y"/>) inside a command that clears what it finds (the area
+	/// clear): a session's guest may not clear what its own Backspace may not. By default yes.
+	/// </summary>
+	bool AllowsPathRemoval( int player, int x, int y ) => true;
 }
 
 /// <summary>What became of one command: accepted (it ran) or rejected (nothing changed), with the reason and the value the edit returns to its issuer.</summary>
@@ -109,6 +115,9 @@ public sealed class ParkCommands
 
 	/// <summary>[EXT:online-coop-permissions] Whether <paramref name="player"/> may remove <paramref name="item"/> inside a command that removes what it finds: the rights' answer, yes without any.</summary>
 	internal bool AllowsRemoval( int player, OriginalObject item ) => Rights is not { } rights || rights.AllowsRemoval( player, item );
+
+	/// <summary>[EXT:online-coop-permissions] Whether <paramref name="player"/> may clear the path cell (<paramref name="x"/>, <paramref name="y"/>) inside a command that clears what it finds: the rights' answer, yes without any.</summary>
+	internal bool AllowsPathRemoval( int player, int x, int y ) => Rights is not { } rights || rights.AllowsPathRemoval( player, x, y );
 
 	/// <summary>
 	/// [EXT:online-coop-commands] A guest's way to the host (C3): a command this machine's player issues on a park that follows a stream goes here as a request

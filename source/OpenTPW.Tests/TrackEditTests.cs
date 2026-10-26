@@ -333,16 +333,24 @@ public class TrackEditTests
 	}
 
 	[TestMethod]
-	public void ARefusedFirstClickIsDroppedAndTheToolWaitsForAnotherPick()
+	public void ARefusedFirstTileEndsTheToolWithTheRefusedGhostAndASecondTileThatPicksNothingDoesNot()
 	{
+		// [BIN:TPW-EXE:0x527B00] the first-tile hover sets the refused-ghost latch for a junction: the release plays 0xAF and the tool ends (0x5266A3)
 		var rig = new Rig();
 		new TrackLineWriter( rig.Builder, owner: rig.Builder.OwnerOf( rig.Station ) ).Commit( (12, 12), (12, 14) );
 		var tool = new CellBuildTool();
 		tool.Enter( new TrackEditWriter( rig.Editor, TrackFamily.Kart, _ => { }, tool.Cancel ), null );
-		Assert.IsNull( tool.Click( (12, 12) ) );
-		Assert.IsNull( tool.Start, "a junction is refused and the first click dropped (0x52692E)" );
+		var refused = tool.Click( (12, 12) );
+		Assert.IsTrue( refused is { GhostRefused: true }, "a junction is a refused first tile: the click carries the refused ghost" );
+		Assert.IsFalse( tool.IsActive, "and the tool ends" );
+		// a station tile answers nothing (no latch): the tool stays on; a refused second tile ends it without the refused ghost (0x526ADC)
+		tool.Enter( new TrackEditWriter( rig.Editor, TrackFamily.Kart, _ => { }, tool.Cancel ), null );
+		Assert.IsNull( tool.Click( (10, 10) ) );
 		Assert.IsTrue( tool.IsActive );
 		tool.Click( (14, 12) );
 		Assert.AreEqual( (14, 12), tool.Start );
+		var second = tool.Click( (12, 12) );
+		Assert.IsFalse( tool.IsActive, "a refused second tile ends the tool" );
+		Assert.IsFalse( second is { GhostRefused: true }, "without the refusal cue" );
 	}
 }

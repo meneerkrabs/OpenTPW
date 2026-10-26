@@ -11,7 +11,6 @@ public sealed partial class ParkHud
 		if (!guest.IsVisible || !OpenVisitorInfoWindow(guest))
 			return false;
 		// [BIN:TPW-EXE:0x00487c43 park visitor click] the park click handler 0x4879d0 (cursor mode 7) opens the visitor window (0x4b79b0, on the window object 0x7cc408) for the picked thing [0x7c2650], which the Ctrl+V locator then takes
-		toolPress = true; // Its release must not also select an object or finish a path click.
 		return true;
 	}
 

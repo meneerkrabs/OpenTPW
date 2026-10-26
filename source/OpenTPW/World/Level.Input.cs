@@ -9,6 +9,17 @@ public partial class Level
 {
 	internal bool WorldPointerRouted { get; set; }
 
+	/// <summary>
+	/// Whether the park view's tool clicks (a placement, a line, a removal) act on the left button's release, as tp.exe's do: the mode object's click handler 0x524960 is the release slot (+8) of the
+	/// tool object, and its press slot (+4, 0x524790) only sets a latch. The Theme Park World HUD sets it; the Theme Park Inc HUD and the level alone keep acting on the press (the TPI executable's mouse handler was not traced).
+	/// </summary>
+	// [BIN:TPW-EXE:0x46C610 release slot] the tool object's (vtable 0x6FE9E0) slot +8 calls 0x524960 with the hover cell 0x7B05CC read at the release; slot +4 (0x46C5D0 → 0x524790) sets the press latch 0x8186D8 and, in coaster mode 0x16 only, starts a pick-up
+	internal bool WorldClicksOnRelease { get; set; }
+
+	/// <summary>With <see cref="WorldClicksOnRelease"/> and no routed pointer: the park view took the press whose release this frame brings, so the release acts even where the pointer now lies over the interface.</summary>
+	// [BIN:TPW-EXE:0x658b7f release recipient] a release goes to the window that took its press, wherever the pointer is
+	internal bool ParkOwnsRelease { get; set; }
+
 	// Unit-test seams: the pointer fixtures mark which tool or view the level is in without building a renderer, a ride or a walk.
 	internal void UseCoasterPanelForTests( CoasterToolPanel? panel ) => CoasterPanel = panel;
 	internal void UseRideViewForTests( RideCameraMode? view ) => RideView = view;
@@ -17,9 +28,13 @@ public partial class Level
 	internal enum WorldClickAction { None, PlacePrototype, UseTool }
 
 	/// <summary>World input stays suspended in ride and walking views, including tools armed through the HUD.</summary>
-	internal static WorldClickAction WorldClick( bool riding, bool leftDown, bool previousLeftDown, bool mouseCaptured, bool placing ) =>
-		riding || !leftDown || previousLeftDown || mouseCaptured ? WorldClickAction.None
+	internal static WorldClickAction WorldClick( bool riding, bool leftDown, bool previousLeftDown, bool mouseCaptured, bool placing, bool onRelease = false, bool parkOwnsRelease = false )
+	{
+		// on the release the HUD says whether the park view took the press (and no HUD tool used the release): then the release acts wherever the pointer is; any other release is nobody's click
+		var edge = onRelease ? !leftDown && previousLeftDown && parkOwnsRelease : leftDown && !previousLeftDown && !mouseCaptured;
+		return riding || !edge ? WorldClickAction.None
 			: placing ? WorldClickAction.PlacePrototype : WorldClickAction.UseTool;
+	}
 
 	/// <param name="modifierMask">The modifier mask held at the click (<see cref="Input.ModifierMask"/>: Shift 3, Ctrl 0xc, Alt 0x30); exactly Ctrl keeps the build tool armed after a placement.</param>
 	internal void UpdateWorldInput( bool leftDown, bool mouseCaptured, Vector2 mousePosition, Vector2 viewportSize, int modifierMask = 0 )
@@ -30,7 +45,8 @@ public partial class Level
 			return;
 		}
 		clickModifierMask = modifierMask;
-		switch ( WorldClick( RideView != null || FreeWalk != null, leftDown, wasMouseDown, mouseCaptured, IsPlacing ) )
+		// a release acts only when the park view took its press (ParkOwnsRelease), over the interface or not
+		switch ( WorldClick( RideView != null || FreeWalk != null, leftDown, wasMouseDown, mouseCaptured, IsPlacing, WorldClicksOnRelease, ParkOwnsRelease ) )
 		{
 			case WorldClickAction.PlacePrototype:
 				if ( TryGetPlacementPosition( mousePosition, viewportSize, out var position ) )
@@ -44,8 +60,8 @@ public partial class Level
 		wasMouseDown = leftDown;
 	}
 
-	/// <summary>An admitted park-view down, delivered once by the HUD router rather than reconstructed from final held state.</summary>
-	internal void DispatchRoutedWorldPress( Vector2 position, Vector2 viewport, int modifierMask )
+	/// <summary>An admitted park-view click, delivered once by the HUD router rather than reconstructed from final held state: the left release of a Theme Park World park (<see cref="WorldClicksOnRelease"/>), else the press.</summary>
+	internal void DispatchRoutedWorldClick( Vector2 position, Vector2 viewport, int modifierMask )
 	{
 		if ( RideView != null || FreeWalk != null ) return;
 		clickModifierMask = modifierMask;
@@ -372,8 +388,12 @@ public partial class Level
 		if ( IsReadOnlyVisit || !NoToolActive )
 			return false;
 		ArmMove( entry, rotation );
+		HostToolStarts++;
 		return true;
 	}
+
+	/// <summary>Whether (<paramref name="x"/>, <paramref name="y"/>) is a queue cell of a ride whose queue the queue tool can edit (<see cref="EditQueueAt"/> would start it).</summary>
+	public bool CanEditQueueAt( int x, int y ) => !IsReadOnlyVisit && Guests != null && QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is not null;
 
 	/// <summary>
 	/// Starts the queue tool on the queue that holds (x, y): the original's hover for a queue cell reads
@@ -423,8 +443,14 @@ public partial class Level
 		if ( !QueueLinks( ride ).SequenceEqual( edit.Queue ) )
 			return false;
 		StaffPlacement?.Cancel();
-		return EnterQueueTool( ride, edit.Tool );
+		if ( !EnterQueueTool( ride, edit.Tool ) )
+			return false;
+		HostToolStarts++;
+		return true;
 	}
+
+	/// <summary>[EXT:online-coop-commands] How many tools a guest's request started when the host's answer came back (<see cref="CompleteMove"/>, <see cref="CompleteQueueEdit"/>): the HUD ignores the release of a press made before one started.</summary>
+	internal int HostToolStarts { get; set; }
 
 	/// <summary>[EXT:online-coop-commands] Whether no tool of the park view is on (the view a queue click starts the queue tool from).</summary>
 	internal bool NoToolActive => !CellTool.IsActive && BuildEntry == null && !IsRemovingObjects && !IsPlacing && !IsCoasterToolActive

@@ -830,6 +830,18 @@ public partial class Level
 	public bool EnterPathTool( int x, int y, out SegmentResult? refused )
 	{
 		refused = null;
+		if ( !BeginPathTool() )
+			return false;
+		ClickEnteredPathTool( x, y, out refused );
+		return true;
+	}
+
+	/// <summary>
+	/// The press that enters the path tool: the tool has no start and lays nothing (tp.exe's tool object enter 0x46D5A0 only sets the mode, SetMode(1, 1)); the click is the release's
+	/// (<see cref="ClickEnteredPathTool"/>). False when no path tool can run (a read-only visit, no builder).
+	/// </summary>
+	public bool BeginPathTool()
+	{
 		if ( IsReadOnlyVisit || Paths == null )
 			return false;
 		// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b), even if this one ends at once
@@ -837,11 +849,16 @@ public partial class Level
 		StaffPlacement?.Cancel();
 		// [EXT:online-coop-commands] the tool's previews read the path builder; each committed line is a command
 		CellTool.Enter( new ParkCommandLineWriter( Paths, Commands, -1 ), null );
+		return true;
+	}
+
+	/// <summary>The first click of the path tool <see cref="BeginPathTool"/> entered, at (<paramref name="x"/>, <paramref name="y"/>): the refused ghost when the click ended the tool again, else null.</summary>
+	public void ClickEnteredPathTool( int x, int y, out SegmentResult? refused )
+	{
 		CellTool.Hover( (x, y) );
 		refused = CellTool.Click( (x, y) );
 		if ( refused != null )
 			LastActionMessage = $"Cannot build a path here: {refused.StoppedBy}.";
-		return true;
 	}
 
 	/// <summary>Starts the queue tool for <paramref name="ride"/> at its entrance's outside cell (or the queue's back cell).</summary>
@@ -974,6 +991,39 @@ public partial class Level
 		grid.Cells.SetFlags( x, y, grid.Cells.FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
 		removedCells = new HashSet<(int X, int Y)> { (x, y) };
 		return 1;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] The placed object whose ride's queue holds the queue cell (<paramref name="x"/>, <paramref name="y"/>), or null (C3b: a guest's rights ask it). It resolves
+	/// the ride as the cell's removal does (<see cref="RemoveQueueCellAt(GuestPathGrid, IEnumerable{IRideVisitorBridge}, int, int, out RideVisitorBridge?, bool)"/>): the cached lines first,
+	/// then, for a queue cell they miss, each ride's line walked again, here on a copy (<see cref="RideVisitorBridge.QueueView"/>), so nothing in the park changes.
+	/// </summary>
+	internal OriginalObject? QueueOwnerAt( int x, int y ) => QueueOwnersAt( new[] { (x, y) } ).FirstOrDefault().Owner;
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] The owners of the queue cells among <paramref name="cells"/>, each resolved as <see cref="QueueOwnerAt"/> resolves it, in order: a cell off the map or no
+	/// queue cell is skipped, and a queue cell no ride holds has a null owner. Each ride's line is walked again at most once for all the cells the cached lines miss, so a command's cells cost
+	/// one walk of the park's queues at most.
+	/// </summary>
+	internal IEnumerable<(int X, int Y, OriginalObject? Owner)> QueueOwnersAt( IEnumerable<(int X, int Y)> cells )
+	{
+		if ( Guests == null )
+			yield break;
+		var grid = Guests.Grid;
+		(RideVisitorBridge Ride, IReadOnlySet<(int X, int Y)> Cells)[]? walked = null;
+		foreach ( var (x, y) in cells )
+		{
+			if ( !grid.Cells.InBounds( x, y ) || !grid.IsQueue( x, y ) )
+				continue;
+			var ride = QueueRideAt( grid, Guests.Attractions, x, y );
+			if ( ride == null )
+			{
+				walked ??= Guests.Attractions.OfType<RideVisitorBridge>().Where( item => item.HasQueue )
+					.Select( item => (item, (IReadOnlySet<(int X, int Y)>)item.QueueView( grid ).QueueCells.ToHashSet()) ).ToArray();
+				ride = walked.FirstOrDefault( entry => entry.Cells.Contains( (x, y) ) ).Ride;
+			}
+			yield return (x, y, ride == null ? null : Objects.Objects.FirstOrDefault( item => !item.IsDeleted && ReferenceEquals( item.Visitors, ride ) ));
+		}
 	}
 
 	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null: the ride whose chain reaches the cell, else the ride the cell's owner word names (a free-standing cell).</summary>

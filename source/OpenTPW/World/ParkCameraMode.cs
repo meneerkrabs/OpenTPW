@@ -144,7 +144,7 @@ public class ParkCameraMode : CameraMode
 		var inside = input.LogicalSize.X > 0 && input.LogicalSize.Y > 0
 			&& input.MousePosition.X >= 0 && input.MousePosition.Y >= 0
 			&& input.MousePosition.X < input.LogicalSize.X && input.MousePosition.Y < input.LogicalSize.Y;
-		if ( !input.HasFocus || input.Modal || !inside ) { dragging = false; middleTurning = false; middleWasDown = input.MiddleButton; turnFrames.Reset(); return; }
+		if ( !input.HasFocus || input.Modal || !inside ) { dragging = false; rightWasDown = false; rightDragArmed = false; middleTurning = false; middleWasDown = input.MiddleButton; turnFrames.Reset(); return; }
 		var dt = float.IsFinite( input.DeltaSeconds ) ? Math.Clamp( input.DeltaSeconds, 0, 0.1f ) : 0;
 		var keyboard = !input.CaptureKeyboard && !input.TextEntry;
 		if ( keyboard )
@@ -162,6 +162,7 @@ public class ParkCameraMode : CameraMode
 		var right = new Vector3( forward.Y, -forward.X, 0 );
 		float x = keyboard ? input.Right : 0, y = keyboard ? input.Forward : 0;
 		var mouse = !input.CaptureMouse && !input.TextEntry;
+		ArmRightDrag( input, options, dt );
 		if ( mouse )
 		{
 			Height = Math.Clamp( Height - input.Wheel * WheelStep, MinimumZoom, MaximumZoom );
@@ -174,10 +175,44 @@ public class ParkCameraMode : CameraMode
 			x += Edge( input.MousePosition.X, input.LogicalSize.X );
 			y -= Edge( input.MousePosition.Y, input.LogicalSize.Y );
 		}
-		dragging = mouse && options.Scroll == ScrollMode.RightButton && input.RightButton;
+		dragging = mouse && options.Scroll == ScrollMode.RightButton && input.RightButton && rightDragArmed;
 		var length = MathF.Sqrt( x * x + y * y );
 		if ( length > 1 ) { x /= length; y /= length; }
 		Focus( Target + (right * x + forward * y) * dt * PanSpeed( Height ) );
+	}
+
+	private bool rightWasDown, rightDragArmed;
+	private float rightHeldSeconds;
+	private Vector2 rightPressPosition;
+
+	/// <summary>
+	/// With the RMBCancelOn option the right press is the camera's drag only once it has lasted 200 ms or the pointer has strayed 8 px on an axis; before that it may still be a quick click, which the park view
+	/// answers on its release by ending its tool or mode (<see cref="UiInput.RightClicked"/>). With the option off the drag starts at once.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4881AE held-back right press] with the option set the park view's mouse procedure 0x4881A0 does not forward the right press (0x10005) to the camera (0x74FC2C cleared at 0x488354) but remembers its time and position (0x7C2504, 0x7B5344/0x7B9774); the first message 0x1E older than 200 ms (0x48823F) or a move beyond 8 px on either axis (0x488265, 0x48827F) forwards it (0x42A760 with 0x10005 at 0x48828B), the drag starting at that position
+	private void ArmRightDrag( CameraControlInput input, GameOptions options, float dt )
+	{
+		if ( !input.RightButton )
+		{
+			rightWasDown = false;
+			rightDragArmed = false;
+			rightHeldSeconds = 0;
+			return;
+		}
+		if ( !rightWasDown )
+		{
+			rightWasDown = true;
+			rightDragArmed = !options.RmbCancel;
+			rightHeldSeconds = 0;
+			rightPressPosition = input.MousePosition;
+			return;
+		}
+		if ( rightDragArmed )
+			return;
+		rightHeldSeconds += dt;
+		if ( rightHeldSeconds > OpenTPW.UI.Original.UiInputSource.RightClickMilliseconds / 1000f || MathF.Abs( input.MousePosition.X - rightPressPosition.X ) > OpenTPW.UI.Original.UiInputSource.RightClickSlop
+			|| MathF.Abs( input.MousePosition.Y - rightPressPosition.Y ) > OpenTPW.UI.Original.UiInputSource.RightClickSlop )
+			rightDragArmed = true;
 	}
 
 	/// <summary>

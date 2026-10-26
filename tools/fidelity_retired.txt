@@ -16,6 +16,7 @@ ADVISOR-011 docs/reverse/APPROX-TRACE.md
 ADVISOR-013 docs/reverse/APPROX-TRACE.md
 ADVISOR-014 docs/reverse/APPROX-TRACE.md
 ADVISOR-016 docs/PROGRESS.md
+ADVISOR-017 docs/progress/2026-10-26-pause-and-loss.md
 ADVISOR-019 docs/LIPS.md
 ADVISOR-020 docs/progress/2026-10-15-economy-rules-bankruptcy-challenges-cell-types-net-worth-and.md
 ADVISOR-022 docs/LIPS.md

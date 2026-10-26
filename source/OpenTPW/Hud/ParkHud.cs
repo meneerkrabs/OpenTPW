@@ -184,7 +184,24 @@ public sealed partial class ParkHud
 		&& screen != attractionScreen && screen != visitorScreen && screen != chatModeScreen && screen.Name != OpenTPW.UI.ChatPanel.PopupScreenName );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	/// <summary>The park simulation's time scale for the screens now open (see <see cref="TimeScaleFor"/>).</summary>
-	public float SimulationTimeScale => TimeScaleFor( applicationPaused ? 0f : Status.TimeScale, Stack.Screens.Select( screen => screen.Name ) );
+	public float SimulationTimeScale => TimeScaleFor( applicationPaused ? 0f : Status.TimeScale, Stack.Screens.Select( screen => screen.Name ), OnlineSession );
+
+	/// <summary>
+	/// tp.exe's online session object ([0xF82884]): a logged-in game, a visit or a shared park. Its generic message boxes do not pause the game (0x47F020 tests it beside the pause object's enable word),
+	/// so no box and no deactivation of one player stops a shared park's lockstep clock ([EXT:online-coop-lockstep]; the level's own time scale ignores every screen there as well).
+	/// </summary>
+	private bool OnlineSession => host?.IsLoggedIn?.Invoke() == true || level.IsReadOnlyVisit || level.CoopRole != CoopRole.None;
+
+	/// <summary>
+	/// Whether the game timer stands still, the clock the advisor's speech and the crowd's steps follow (the game pause object 0x786B68, flag +0x1C): the owners of the pause 0x4092A0 are
+	/// the pause menu and its windows, the map window, the postcard, the offline message boxes, the application's deactivation, and the P key (0x409350 toggles the same flag and freezes
+	/// the same timer, 0x402DD0). Other windows (research, finance, the object windows) leave it running.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004092A0 game pause] 0x4092A0 sets the flag and freezes the timer object 0x785970 (0x402D90), 0x409300 clears it and thaws the timer (0x402DB0), 0x409350 (the P key) toggles both (0x402DD0)
+	// [APPROX:UI-096] the game pause's sound side is not ported: 0x4092A0 also pauses the advisor's speech handle (0x598960) and sets the sound entry's paused word (0x51C1C0 -> 0x803AD2, read by 0x51C1D0), and the deactivation pauses the whole mixer (0x51BCF0); OpenTPW's sounds go on under every owner
+	public bool ClockPaused => applicationPaused || Status.Speed == GameSpeed.Paused || SimulationTimeScaleOfScreens == 0;
+
+	private float SimulationTimeScaleOfScreens => TimeScaleFor( 1f, Stack.Screens.Select( screen => screen.Name ), OnlineSession );
 
 	/// <summary>
 	/// The park simulation's time scale: the speed setting's <paramref name="speedScale"/>, or 0 while the pause menu is
@@ -199,11 +216,17 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x4092a0 game pause] the game pause (object 0x786b68, +0x1c = 1) is called by the pause menu 0x48c830 (0x48c87e, from Esc), by the full-screen map window 0x5f0b40 (0x5f0b7f, from Space) and by the postcard 0x4a9380 (0x4a93d7, Ctrl+P), by the generic message box 0x47f020 (0x47f26c), by the main window procedure 0x46b600 when the application is deactivated (0x46b74c) and by the three screens the pause menu's handler 0x48b6a0 opens (0x49efba, 0x49f29f, 0x4a3a6c); the park pauses here for the pause menu with the screens opened from it and for the map window
 	// [BIN:TPW-EXE:0x0048AAC2 winning message pause] the Instant Action completion message after the winning screen is a 0x47F020 message box too (its call at 0x48AAC2 and 0x48AC06), so winningMessage stops the park until it closes
 	// [BIN:TPW-EXE:0x48cd10 delete confirmation] the delete confirmation of an object or staff member (the object windows 0x4af600, 0x4b0b30, 0x4b2150, the attractions window 0x497640 and the All Staff window 0x4b4fc0) is a generic message box 0x47f020 with UITEXT 0x18c and the b_exit and b_okay buttons when the Confirmations option is on, so it pauses (0x47f26c) and its close resumes (0x47eed0, message 0x14 → 0x409300); the postcard (Ctrl+P, 0x4a9380) pauses the same way: confirmDelete, confirmDeleteAttraction and the postcard screen stop the park here; the employee dismiss box (0x4b5e5d, UITEXT 0x18d) is a 0x47f020 caller too (its call at 0x4b5eac, yes callback 0x4b6070), so confirmDismissStaff stops it as well
-	// [APPROX:UI-096] the other message boxes (0x47f020's 27 call sites: the alert queue 0x47f620 that the goal and challenge code feeds through 0x47f410, the file errors of 0x4237f0, 0x4a77f0, the online notices 0x4bc500 and 0x4ec030) pause in the original and not here; application deactivation has a bounded offline host focus-loss latch (ParkHud.ApplicationPause), not full native activation/modal/audio parity — evidence needed: which of OpenTPW's other dialogs (the loan boxes, the restart and quit boxes) correspond to those call sites, and the remaining native activation/modal ownership gates
+	// [BIN:TPW-EXE:0x47f26c message box pause] the generic message box 0x47F020 pauses (0x4092A0(0, 0)) and clears the enable word only while that word is 1 and the online session object [0xF82884] is 0, so its boxes pause an offline game and, when
+	// the pause menu, a window of it or the map holds the gate (the enable word is 0), add nothing: a close resumes (0x47EED0 message 0x14, 0x409300) only for the box that paused. A game pause is the set of open screens here, which is the same for nested boxes
+	// [BIN:TPW-EXE:0x4aa480 research refusals] the research window's builder shows the boxes UITEXT 0x1D4 (Instant Action) and 0x1D3 (no scientist hired) instead of the window; they are 0x47F020 boxes too (0x4AA533, 0x4AA596)
+	// [BIN:TPW-EXE:0x47f410 alert queue] the alert queue 0x47F620 (fed through 0x47F410 by the login, chat, mail and FTP code with ERRORMSG.str ids) shows its boxes only to an online session or from the lobby: no offline park builds one
 	// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
-	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens ) =>
-		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" or PostcardScreen or "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff"
-			or WinningMessageScreen ) ? 0 : speedScale;
+	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens, bool online = false ) =>
+		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" or PostcardScreen || !online && IsPausingMessageBox( name ) ) ? 0 : speedScale;
+
+	/// <summary>The screens that are generic message boxes (0x47F020) of the offline park: the delete and dismiss confirmations, the winning message and the research refusals.</summary>
+	internal static bool IsPausingMessageBox( string name ) =>
+		name is "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff" or WinningMessageScreen or ResearchRefusedScreen;
 
 	/// <summary>The name of the postcard composer's screen (it pauses the park while open, as Ctrl+P does).</summary>
 	public const string PostcardScreen = "sendPostcard";

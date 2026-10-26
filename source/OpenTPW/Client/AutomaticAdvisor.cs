@@ -12,7 +12,9 @@ namespace OpenTPW;
 internal sealed partial class AutomaticAdvisor : IDisposable
 {
 	// [BIN:TPW-EXE:0x00402D63 clock offset] the clock's offset word starts at 0 and is rewritten only by the savegame load (0x415140 → 0x402E80 → 0x403160: the saved advisor clock minus the live clock); pause is 0x4092A0 and resume 0x409300
-	// [APPROX:ADVISOR-017] the clock starts at 0 for a new park, carries the saved word on an original-save import (AttachLevel), is sampled once per frame and stands still while the pause menu is open; the original stands still whenever 0x4092A0 pauses the timer: 0x46B74C in the main window procedure 0x46B600 (WM_ACTIVATEAPP deactivation, unless 0xF82884), 0x47F26C in the message box builder 0x47F020, 0x49EFB0 (load window), 0x49F280 (save window), 0x48C87E (the Escape menu 0x48C830, opened by VK_ESCAPE at 0x4A2933 and 0x4BE537: OpenTPW's pause menu) and 0x4A3A6C (the Game Options dialog 0x4A3A30, title 0x1D4D4, opened from that menu's items 0x48B977 and 0x48BF28) are identified, and 0x4092A0 acts only while the pause object's enable word (0x786BA4) is 1 and clears it — evidence needed: the screens of the callers 0x4A93D7 (0x4A9380, the level exit path: it sets 0x7CC150 to 3) and 0x5F0B7F (0x5F0B40, a modal with controls 0x990-0x995)
+	// [BIN:TPW-EXE:0x004092A0 game pause owners] all eight callers of the pause are identified and ported (Hud.ClockPaused): the application's deactivation 0x46B74C, the generic message boxes 0x47F26C (offline only), the Escape menu 0x48C87E,
+	// the load window 0x49EFBA, the save window 0x49F29F, the Game Options dialog 0x4A3A6C, the postcard 0x4A93D7 (the level exit path: it hides the HUD, runs the stop path 0x5996D0 and sets the park state 0x7CC150 to 3) and the map window 0x5F0B7F
+	// (0x48C8D0 and an open window return first); the P key 0x409350 toggles the same flag and freezes the same timer (0x402DD0). The enable word 0x786BA4 only keeps nested owners from pausing twice, which the set of open screens does by itself
 	private readonly PausableClock clock;
 	// Tests substitute a controllable speech state for the presentation (see the internal constructor).
 	private readonly Func<bool>? speechActive;
@@ -321,7 +323,8 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			return;
 		// [BIN:TPW-EXE:0x005F0B91 map / 0x004A3A92 options] these builders call the silent stop path 0x5996D0, before their window help is served.
 		// Kill also hides a response in its delayed start or animation tail, when no speech sound is active.
-		if ( window is Hud.ParkHud.MapScreenName or "options" )
+		// [BIN:TPW-EXE:0x004A9380 postcard] the postcard's builder runs the same stop path (0x4A93E4: 0x5996D0(1)) after its pause
+		if ( window is Hud.ParkHud.MapScreenName or Hud.ParkHud.PostcardScreen or "options" )
 			StopSpeechSilently();
 		// the object window builders (0x4AF980, 0x4B0E30, 0x4B2430) only build the window and post its help; whether the window creator 0x48CEA0 changes the interface mode is not read, so the tools' help stays
 		if ( !window.StartsWith( ObjectInfoHelp.Prefix, StringComparison.Ordinal ) )
@@ -424,17 +427,39 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		clock.SetPaused( gamePaused );
 		if ( level == null )
 			return;
-		// [BIN:TPW-EXE:0x0059A550 advisor update] the update scans first (0x59C680) and queues what passes, then serves the queue, whether or not the advisor is heard
-		if ( park != null )
-			ScanPark( park.Economy, gamePaused );
 		// [BIN:STP-PPC:0x10006BB4 advisor response player] options byte +0x34 clear: the player returns 0 (0x10006BC0) before saying anything
 		// [BIN:STP-PPC:0x1000BBF0 controller playback wrapper] and the wrapper still succeeds, so the advice is picked, consumed and recorded silently with span 0
 		// [BIN:STP-PPC:0x10129308 options serializer] the object at TOC −0x763C is the options object; its +0x34 is saved as "AdvisorOn" (0x1012653C)
 		if ( !GameOptions.Current.Advisor )
-		{
 			presentation?.Kill();
-			if ( parkPaused )
-				return;
+		else
+		{
+			presentation?.Update();
+			// [EXT:advisor-sliced-decode] a line whose decode failed after it started reserves what a line that could not be said reserves
+			if ( presentation?.TakeUnsaidLine() == true )
+				Controller.Queue.ReserveAsUnsaid();
+		}
+		// [BIN:TPW-EXE:0x0059A550 advisor update] one call of the update scans first (0x59C680) and queues what passes, then serves the queue (the end of the function), whether or not the advisor is heard;
+		// the thing loop calls it once per park turn (0x516380 -> 0x50B360, the advisor's case 0x50B3F1-0x50B437), so the queue is served once for every scan call and never while the park is paused or lost
+		if ( park != null )
+		{
+			ScanPark( park.Economy, gamePaused, parkPaused ? null : ServeQueue );
+			return;
+		}
+		// a level without a park economy has no turn counter to follow (the headless level of the advisor's tests): its queue is served once per frame
+		if ( !parkPaused )
+			ServeQueue();
+	}
+
+	/// <summary>How many times the queue has been served (the test seam of the once-per-turn cadence).</summary>
+	internal int QueueServices { get; private set; }
+
+	/// <summary>The queue service at the end of one update call of tp.exe's advisor (0x59A550): the next response is chosen and played, or, with the advisor off, only its caption posted.</summary>
+	private void ServeQueue()
+	{
+		QueueServices++;
+		if ( !GameOptions.Current.Advisor )
+		{
 			Controller.Update( () => AdvisorClock, () => GameTick, responseId =>
 			{
 				PostCaption( responseId );
@@ -442,22 +467,15 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			} );
 			return;
 		}
-		presentation?.Update();
-		// [EXT:advisor-sliced-decode] a line whose decode failed after it started reserves what a line that could not be said reserves
-		if ( presentation?.TakeUnsaidLine() == true )
-			Controller.Queue.ReserveAsUnsaid();
-		// [BIN:TPW-EXE:0x0059A550 advisor queue] service belongs to the park turn; a paused modal must not start another response after its stop.
-		if ( parkPaused )
-			return;
 		Controller.Update( () => AdvisorClock, () => GameTick, Play );
 	}
 
 	/// <summary>The scan of one update for a park: its turn, game type and the tutorial option, halted while paused or while the park is lost.</summary>
-	internal int ScanPark( ParkEconomy economy, bool gamePaused )
+	internal int ScanPark( ParkEconomy economy, bool gamePaused, Action? afterEachCall = null )
 	{
 		// [EXT:restored-advice] the extension's park view (null while it is off) and its per-frame observations
 		RestoredObserve();
-		return ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt, new EconomyParkState( economy, objectStampTurn, hireStampTurn ) { ArrivalWaves = arrivalRing.Waves, PlayerTickets = PlayerTickets }, RestoredState( economy ) );
+		return ScanTurns( new EconomyMoneyState( economy ), unchecked( (uint)economy.Turn ), economy.Mode == ParkGameMode.InstantAction ? 2 : 0, TutorialEnabled, gamePaused || economy.IsBankrupt, new EconomyParkState( economy, objectStampTurn, hireStampTurn ) { ArrivalWaves = arrivalRing.Waves, PlayerTickets = PlayerTickets }, RestoredState( economy ), afterEachCall );
 	}
 
 	/// <summary>
@@ -466,8 +484,8 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	/// the first call, and the first after a halt, only take the turn as the start.
 	/// </summary>
 	/// <returns>The scan calls made.</returns>
-	// [APPROX:ADVISOR-017] the queue is served once per frame here but once per turn in tp.exe (the end of 0x59A550); the scan itself is exact: once per park turn
-	internal int ScanTurns( IAdvisorMoneyState? money, uint turn, int gameType, bool tutorialEnabled, bool halted, IAdvisorParkState? park = null, IRestoredAdviceState? restored = null )
+	// [BIN:TPW-EXE:0x0059A550 advisor update] each call scans and then serves the queue, so <paramref name="afterEachCall"/> (the queue service) runs after every scan call, in tp.exe's order
+	internal int ScanTurns( IAdvisorMoneyState? money, uint turn, int gameType, bool tutorialEnabled, bool halted, IAdvisorParkState? park = null, IRestoredAdviceState? restored = null, Action? afterEachCall = null )
 	{
 		var previousTurn = lastScanTurn;
 		lastScanTurn = turn;
@@ -483,6 +501,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			var outcome = Controller.ScanOnce( money, turn, gameType, tutorialEnabled, park, restored );
 			if ( outcome is { Posted: { } posted, Admission: { } admission } )
 				Log.Trace( $"Advisor scan of row {outcome.ScoredRow}: advice {posted.MessageId} score {posted.Score} {admission.Eligibility}{(admission.Stored ? $" in slot {admission.Slot}" : admission.Acknowledged ? ", queue full" : "")}." );
+			afterEachCall?.Invoke();
 		}
 		// [EXT:restored-advice] one poll step for every scan call
 		if ( restored != null )

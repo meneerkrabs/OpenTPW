@@ -20,22 +20,26 @@ internal sealed class QueueSegmentReducer
 	private readonly Action<IReadOnlySet<(int X, int Y)>>? removed;
 	private readonly LinkEffects effects;
 	private readonly Func<(int X, int Y)?>? entrance;
+	private readonly Func<int, int, bool>? terminalAllowed;
 
 	internal QueueSegmentReducer( ParkCellMap cells, ushort owner, Func<int, int, bool> excluded,
-		Func<bool> spend, Func<long, bool> previewMoney, Func<long> price, Action<ushort> refund, Action? changed = null, LinkEffects effects = default, Action<IReadOnlySet<(int X, int Y)>>? removed = null, Func<(int X, int Y)?>? entrance = null )
+		Func<bool> spend, Func<long, bool> previewMoney, Func<long> price, Action<ushort> refund, Action? changed = null, LinkEffects effects = default, Action<IReadOnlySet<(int X, int Y)>>? removed = null, Func<(int X, int Y)?>? entrance = null, Func<int, int, bool>? terminalAllowed = null )
 	{
 		this.cells = cells; this.owner = owner; this.excluded = excluded; this.spend = spend;
-		this.previewMoney = previewMoney; this.price = price; this.refund = refund; this.changed = changed; this.effects = effects; this.removed = removed; this.entrance = entrance;
+		this.previewMoney = previewMoney; this.price = price; this.refund = refund; this.changed = changed; this.effects = effects; this.removed = removed; this.entrance = entrance; this.terminalAllowed = terminalAllowed;
 	}
 
 	internal bool Supports( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, true );
-	internal bool SupportsUndo( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, false );
-	private bool SupportsDomain( (int X, int Y) start, (int X, int Y) end, bool increments ) => owner is > 0 and <= 16384
+	internal bool SupportsAdmission( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, false );
+	internal bool SupportsUndo( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, false, terminalException: false );
+	private bool SupportsDomain( (int X, int Y) start, (int X, int Y) end, bool increments, (int X, int Y)? terminal = null, bool terminalException = true ) => owner is > 0 and <= 16384
 		&& ParkPathBuilder.LayLine( start, ParkPathBuilder.SnapEnd( start, end ) ).All( p =>
 			cells.InBounds( p.X, p.Y ) && cells.RawTypeAt( p.X, p.Y ) is 0 or 1 or 3
 			&& (!increments || cells.RawTypeAt( p.X, p.Y ) != 3 || cells.PlacementCountAt( p.X, p.Y ) < short.MaxValue)
 			&& cells.Tracks.Get( p.X, p.Y ).Equals( default(TrackCell) )
-			&& cells.PoolBridges?.Reserves( p.X, p.Y ) != true && !excluded( p.X, p.Y ) );
+			&& cells.PoolBridges?.Reserves( p.X, p.Y ) != true
+			// The host may admit its initial path only as the actual terminal cell; undo has no such exception.
+			&& (!excluded( p.X, p.Y ) || (terminalException && p == (terminal ?? ParkPathBuilder.SnapEnd( start, end )) && terminalAllowed?.Invoke( p.X, p.Y ) == true)) );
 
 	internal SegmentResult Preview( (int X, int Y) start, (int X, int Y) end )
 	{
@@ -44,7 +48,7 @@ internal sealed class QueueSegmentReducer
 		var built = new List<(int X, int Y)>();
 		foreach ( var p in line )
 		{
-			if ( !Supports( p, p ) ) return Result( CellBuildResult.Occupied, p );
+			if ( !SupportsDomain( p, p, true, end ) ) return Result( CellBuildResult.Occupied, p );
 			if ( cells.FlagsAt( p.X, p.Y ).HasFlag( ParkCellFlags.Unowned ) ) return Result( CellBuildResult.NotOwned, p );
 			var type = cells.RawTypeAt( p.X, p.Y );
 			// Native validator returns 8 for a final path before testing its NoModify bit.
@@ -141,7 +145,7 @@ internal sealed class QueueSegmentReducer
 
 	internal void Undo( QueueSegmentReceipt receipt )
 	{
-		if ( receipt.Start == ParkPathBuilder.SnapEnd( receipt.Start, receipt.End ) || !SupportsDomain( receipt.Start, receipt.End, false ) ) throw new InvalidOperationException( "Queue undo leaves the supported plain domain." );
+		if ( receipt.Start == ParkPathBuilder.SnapEnd( receipt.Start, receipt.End ) || !SupportsUndo( receipt.Start, receipt.End ) ) throw new InvalidOperationException( "Queue undo leaves the supported plain domain." );
 		// 52FE50: the prior corner currently being a path suppresses the second removal click altogether.
 		if ( cells.RawTypeAt( receipt.Start.X, receipt.Start.Y ) == 1 ) return;
 		var line = ParkPathBuilder.LayLine( receipt.End, receipt.Start );

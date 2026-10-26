@@ -404,6 +404,97 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void AGuestsSlideUndoRefusedOnceTheGrantWentSaysSo()
+	{
+		var (host, guest, _, _) = Shared();
+		var tower = TowerOnBoth( host, guest );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		Assert.IsTrue( guest.Level.EnterSlideTool( tower ) );
+		var tool = guest.Level.PoolTool!;
+		var seat = guest.Level.Commands.Player;
+		tool.Press( 15, 19 );
+		tool.Release();
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the piece came back" );
+		Assert.AreEqual( 1, SlideOf( host )!.Pieces.Count );
+		// the grant goes while the guest's Backspace is on its way: the host's rights refuse it, and its report says why (the slide is not finished, so it is no quiet undo)
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
+		Assert.IsTrue( tool.Undo() );
+		tool.SendGuestBatches( Time.Now );
+		RoundsUntil( () => !tool.HasGuestBatches && !guest.Level.HasBuildGrant( seat ), host, guest, view, "the undo came back" );
+		view.Update();
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is UndoPoolSlidePieceCommand ), "it went to the host" );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ) );
+		// once the guest's park knows, its Backspace is refused before it goes, and says so too
+		Assert.IsTrue( tool.Undo() );
+		tool.SendGuestBatches( Time.Now );
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the refused undo reported" );
+		view.Update();
+		Assert.AreEqual( 2, view.Says( OpenTpwText.CoopNotGranted ) );
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is UndoPoolSlidePieceCommand ), "the second went nowhere" );
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) );
+		Assert.IsTrue( SlideOf( host )!.Pieces.Count == 1 && SlideOf( guest )!.Pieces.Count == 1, "nothing was taken back" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void ASlideUndosNoteFollowsWhyItWasRefusedNotTheGrantAtItsReport()
+	{
+		var (host, guest, _, _) = Shared();
+		var tower = TowerOnBoth( host, guest );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		Assert.IsTrue( guest.Level.EnterSlideTool( tower ) );
+		var tool = guest.Level.PoolTool!;
+		var seat = guest.Level.Commands.Player;
+		var requests = guest.Level.CoopSession!.GuestCommands!;
+		// sends the guest's batches and runs frames, with no HUD to take their outcomes, until every request was answered and the host took the slide undos
+		void AnsweredWithoutTheHud( int undos )
+		{
+			for ( var round = 0; round < 600 && (requests.Open.Count > 0 || HostCommandsOf( host, seat ).Count( command => command is UndoPoolSlidePieceCommand ) < undos); round++ )
+			{
+				guest.Enter();
+				tool.SendGuestBatches( Time.Now );
+				GuestFrames( 1, host, guest );
+			}
+			Assert.AreEqual( 0, requests.Open.Count, "every request was answered" );
+		}
+		// a piece; then the host takes the grant back while the guest's undo is on its way, and gives it again before the guest's HUD takes the refusal: it was for want of the grant
+		tool.Press( 15, 19 );
+		tool.Release();
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the piece came back" );
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
+		guest.Enter();
+		Assert.IsTrue( tool.Undo() );
+		AnsweredWithoutTheHud( 1 );
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, true ) ).Accepted );
+		GuestFramesUntil( () => guest.Level.HasBuildGrant( seat ), host, guest, "the grant is back on the guest's park" );
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ), "said, the grant given back since or not" );
+		Assert.AreEqual( 1, SlideOf( guest )!.Pieces.Count );
+		// the pieces to the splash and an undo behind them, answered before the HUD takes them; the host takes the grant back before it does: the undo met a finished slide
+		guest.Enter();
+		tool.Press( 16, 19 );
+		tool.Hover( 17, 19 );
+		tool.Hover( 17, 18 );
+		tool.Release();
+		Assert.IsTrue( tool.Undo() );
+		AnsweredWithoutTheHud( 2 );
+		Assert.IsTrue( SlideOf( guest ) is { IsComplete: true } && SlideOf( host ) is { IsComplete: true }, "the undo took nothing back" );
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
+		GuestFramesUntil( () => !guest.Level.HasBuildGrant( seat ), host, guest, "the revoke reached the guest" );
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.PoolSlideDone ) );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ), "the finished slide's undo stays quiet, the grant taken back since or not" );
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
 	public void ABackspaceInTheSlideModeDuringADragEndsTheDragsStroke()
 	{
 		var (host, guest, _, _) = Shared();

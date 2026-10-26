@@ -159,6 +159,10 @@ public enum ParkCommandKind : byte
 	SetBuildGrant = 101,
 	/// <summary>[EXT:online-coop-commands] The host releases what a seat whose member left holds in the park (<see cref="ReleaseSeatCommand"/>).</summary>
 	ReleaseSeat = 102,
+	/// <summary>[EXT:online-coop-claims] A player's track tool takes a ride's claim (<see cref="ClaimRideCommand"/>).</summary>
+	ClaimRide = 103,
+	/// <summary>[EXT:online-coop-claims] A ride's claim goes (<see cref="ReleaseRideCommand"/>).</summary>
+	ReleaseRide = 104,
 }
 
 /// <summary>

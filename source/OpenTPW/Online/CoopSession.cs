@@ -388,7 +388,9 @@ internal sealed class CoopSession : IDisposable
 	private CoopSession Attach()
 	{
 		link.SessionEnded += OnSessionEnded;
-		level!.CoopSession = this;
+		// [EXT:online-coop-claims] the host's own commands are refused by a guest's claim (C3c-1), which its HUD says
+		level!.Commands.SessionRefused += OnRefused;
+		level.CoopSession = this;
 		return this;
 	}
 
@@ -433,11 +435,14 @@ internal sealed class CoopSession : IDisposable
 		// [EXT:online-coop-commands] a batch, bridge or slide undo the guest's pool tool sends says its refusal in its stroke's report, once for the stroke (C3b-3)
 		if ( level?.PoolTool is { SendingGuestBatch: true } )
 			return;
-		level?.NoteSessionRefusal( level.Commands.Rights is CoopBuildRights rights && rights.Builds( command ) );
+		level?.NoteSessionRefusal( CoopBuildRights.RefusalOf( level.Commands.Rights?.RefusalReason( command.Player, command ) ) );
 	}
 
 	/// <summary>[EXT:online-coop-commands] When the guest's park last sent the end of a carry left without its Move tool (<see cref="Level.EndStrayCarry"/>), across its resyncs, or null.</summary>
 	internal double? LastStrayCarryEnd { get; set; }
+
+	/// <summary>[EXT:online-coop-claims] When the guest's park last sent the release of a claim its track tool is not on (<see cref="Level.SettleClaim"/>), across its resyncs, or null.</summary>
+	internal double? LastStrayClaimRelease { get; set; }
 
 	/// <summary>[EXT:online-coop-commands] A guest's command for the host, as a request of the session's (null once it ended).</summary>
 	private CoopGuestCommands.Request? SubmitRequest( ParkCommand command )
@@ -1069,12 +1074,15 @@ public partial class Level
 	/// </summary>
 	internal int SessionRefusals { get; private set; }
 
-	/// <summary>[EXT:online-coop-permissions] Whether the last refused command was building (the host has not granted it yet), not a command only the host may issue.</summary>
-	internal bool LastSessionRefusalWasBuilding { get; private set; }
+	/// <summary>
+	/// [EXT:online-coop-permissions] What the last refused command was: building the host has not granted yet, a command only the host may issue, or [EXT:online-coop-claims] an edit of a ride
+	/// another player claims (C3c-1).
+	/// </summary>
+	internal CoopRefusal LastSessionRefusal { get; private set; }
 
-	internal void NoteSessionRefusal( bool building = false )
+	internal void NoteSessionRefusal( CoopRefusal refusal = CoopRefusal.HostOnly )
 	{
-		LastSessionRefusalWasBuilding = building;
+		LastSessionRefusal = refusal;
 		SessionRefusals++;
 	}
 }

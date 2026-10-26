@@ -464,6 +464,8 @@ public partial class Level
 		};
 		Objects.ObjectPlaced += _ => poolExtraSites = null;
 		Objects.ObjectRemoved += _ => poolExtraSites = null;
+		// [EXT:online-coop-claims] a removed ride's claim goes with it, on every peer alike (C3c-1)
+		Objects.ObjectRemoved += DropClaimOf;
 		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation ) ?? PoolSlideTowers.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation ) // [EXT:pools-slides] a slide tower needs pool water beside its far side
 			?? PoolExtras.PlacementRule( entry, Guests?.Grid.Cells, Objects, x, y, rotation )
 			// [EXT:pools-attractions] a rope swing, jets, wave machine or spa needs pool water on its water side

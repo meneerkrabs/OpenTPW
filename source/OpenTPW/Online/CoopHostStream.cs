@@ -227,6 +227,16 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// reconciliation drops, a seat taken again in between) has its grant taken back and what it held released at the next frame's start, before that frame's requests.
 	/// </summary>
 	private Dictionary<int, uint> seatMembers = new();
+	/// <summary>
+	/// [EXT:online-coop-claims] When each guest seat's member was first read disconnected (the host's clock), while it stays so (C3c-1): a seat away for
+	/// <see cref="ClaimDisconnectedSeconds"/> loses its claim (<see cref="ExpireClaims"/>).
+	/// </summary>
+	private readonly Dictionary<int, double> disconnectedSince = new();
+	/// <summary>
+	/// [EXT:online-coop-claims] When each guest seat's claim was last renewed (the host's clock): its claim, or an accepted command of its holder naming its ride (C3c-1). A claim not renewed for
+	/// <see cref="ClaimLeaseSeconds"/> goes (<see cref="ExpireClaims"/>).
+	/// </summary>
+	private readonly Dictionary<int, double> claimLeases = new();
 	/// <summary>[EXT:online-coop-commands] The origin of the guest's command being applied now, which its record carries, and the record it got.</summary>
 	private CoopRecordOrigin? applyingOrigin;
 	private long applyingRecord;
@@ -302,6 +312,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.Player = ParkCommands.LocalPlayer;
 		// a grant is its session's: a park shared again starts without the last session's (a guest of the identical start has none either), and so is what a guest's seat carried (C3b-2)
 		level.ClearBuildGrants();
+		// [EXT:online-coop-claims] and the rides' claims (C3c-1)
+		level.ClearRideClaims();
 		level.ClearGuestCarries();
 		seatMembers = SeatMembers();
 		recorder = new ParkCommandRecorder( commands, level.LevelName ?? "", level.Seed.Value, level.TickCount, level.ComputeStateHash() ) { SessionRules = true };
@@ -461,6 +473,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		}
 		var flags = result.Error != null ? CoopRecordFlags.Errored : result.Accepted ? CoopRecordFlags.Accepted : CoopRecordFlags.None;
 		var number = nextStream++;
+		// [EXT:online-coop-claims] a guest's claim, and every accepted command of its holder naming its ride, renews the claim's lease
+		if ( result.Accepted && entry.Command.Player > 0 && RideNamedBy( entry.Command ) is { } claimed && level.ClaimOf( claimed ) == entry.Command.Player )
+			claimLeases[claimed] = seconds();
 		// [EXT:online-coop-commands] a guest's command carries its origin, so its issuer knows the record that answers its request
 		var origin = applyingOrigin;
 		if ( origin != null )
@@ -797,11 +812,14 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// </summary>
 	private void ApplyGuestCommands( double now )
 	{
-		// [EXT:online-coop-commands] the seats whose member left or changed since the last frame, and any guest seat that still carries something without a member (C3b-2); a link without its
-		// session's state (between a lost socket and its resume) shows no seat, so the seats wait for its next state instead of all counting as left
-		var members = transport.Session != null ? SeatMembers() : seatMembers;
+		// [EXT:online-coop-commands] the seats whose member left or changed since the last frame, and any guest seat that still carries something without a member (C3b-2) or
+		// [EXT:online-coop-claims] still holds a claim without one (C3c-1); a link without its session's state (between a lost socket and its resume) shows no seat, so the seats wait for
+		// its next state instead of all counting as left
+		var known = transport.Session != null;
+		var members = known ? SeatMembers() : seatMembers;
 		var changed = seatMembers.Where( pair => !members.TryGetValue( pair.Key, out var member ) || member != pair.Value ).Select( pair => pair.Key )
-			.Concat( level.CarryingGuestSeats().Where( seat => transport.Session != null && !members.ContainsKey( seat ) ) ).ToArray();
+			.Concat( level.CarryingGuestSeats().Where( seat => known && !members.ContainsKey( seat ) ) )
+			.Concat( level.ClaimingSeats().Where( seat => known && seat > 0 && !members.ContainsKey( seat ) ) ).ToArray();
 		seatMembers = members;
 		if ( leftSeats.Count > 0 || changed.Length > 0 )
 		{
@@ -809,12 +827,16 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			leftSeats.Clear();
 			foreach ( var seat in seats )
 			{
+				// a new member of the seat starts with its own link
+				disconnectedSince.Remove( seat );
 				if ( Failure == null && level.HasBuildGrant( seat ) )
 					level.Commands.Apply( new SetBuildGrantCommand( seat, false ) );
-				if ( Failure == null && level.CarriesEntry( seat ) )
+				if ( Failure == null && (level.CarriesEntry( seat ) || level.ClaimedRideOf( seat ) != null) )
 					level.Commands.Apply( new ReleaseSeatCommand( seat ) );
 			}
 		}
+		// [EXT:online-coop-claims] each guest seat's link, read at every frame's start (a seed, a resume's reconciliation and an event alike)
+		ReadLinks( now );
 		if ( guestCommands.Count > 0 )
 		{
 			var arrived = guestCommands.ToArray();
@@ -828,7 +850,67 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 					Command( guest, request, tooLarge, now );
 			}
 		}
+		// [EXT:online-coop-claims] after the guests' commands, so a claim a late frame's queued command took is checked in that same frame (C3c-1)
+		ExpireClaims( now );
 	}
+
+	/// <summary>[EXT:online-coop-claims] How long a guest seat's member may be read disconnected before the host lets go of its claim (C3c-1).</summary>
+	public const double ClaimDisconnectedSeconds = 30;
+
+	/// <summary>[EXT:online-coop-claims] How long a guest seat's claim lasts without its holder's accepted command naming its ride (C3c-1).</summary>
+	public const double ClaimLeaseSeconds = 5 * 60;
+
+	/// <summary>
+	/// [EXT:online-coop-claims] Stamps each guest seat whose member the session reads disconnected now with the first frame that reads it so, and drops the stamp of one read connected or gone
+	/// (C3c-1); a link without its session's state changes no stamp.
+	/// </summary>
+	private void ReadLinks( double now )
+	{
+		// a link without its session's state reads no member: the stamps wait for its next state
+		if ( transport.Session is not { } session )
+			return;
+		var away = session.Members.Where( member => member.Slot > 0 && member.Id != session.You && !member.Connected ).Select( member => (int)member.Slot ).ToHashSet();
+		foreach ( var seat in disconnectedSince.Keys.Where( seat => !away.Contains( seat ) ).ToArray() )
+			disconnectedSince.Remove( seat );
+		foreach ( var seat in away )
+			disconnectedSince.TryAdd( seat, now );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] The host lets go of a guest seat's claim (a <see cref="ReleaseRideCommand"/>, a record every peer applies alike) once its member has been read disconnected for
+	/// <see cref="ClaimDisconnectedSeconds"/>, or once its lease ran out: no claim and no accepted command of its holder naming the ride for <see cref="ClaimLeaseSeconds"/> (C3c-1). The host's own
+	/// claim has neither: its tool is on this machine, whose frame check lets it go (<see cref="Level.SettleClaim"/>).
+	/// </summary>
+	private void ExpireClaims( double now )
+	{
+		foreach ( var (ride, seat) in level.RideClaims.ToArray() )
+		{
+			if ( Failure != null || seat <= 0 )
+				continue;
+			// a claim the stream saw no renewal of (one the park had before) starts its lease now
+			if ( !claimLeases.TryGetValue( ride, out var renewed ) )
+				claimLeases[ride] = renewed = now;
+			var away = disconnectedSince.TryGetValue( seat, out var since ) && now - since >= ClaimDisconnectedSeconds;
+			if ( away || now - renewed >= ClaimLeaseSeconds )
+				level.Commands.Apply( new ReleaseRideCommand( ride ) );
+		}
+		if ( claimLeases.Count > 0 )
+		{
+			foreach ( var ride in claimLeases.Keys.Where( ride => level.ClaimOf( ride ) is not > 0 ).ToArray() )
+				claimLeases.Remove( ride );
+		}
+	}
+
+	/// <summary>[EXT:online-coop-claims] The ride <paramref name="command"/> names as its holder's edit (its claim, a track command), or null.</summary>
+	private static int? RideNamedBy( ParkCommand command ) => command switch
+	{
+		ClaimRideCommand claim => claim.Ride,
+		OpenTrackLineToolCommand open => open.Ride,
+		LayTrackLineCommand line => line.Ride,
+		UndoTrackLineCommand undo => undo.Ride,
+		CutTrackCommand cut => cut.Ride,
+		_ => null
+	};
 
 	/// <summary>[EXT:online-coop-commands] Each guest seat's member as the session holds it now (C3b-2).</summary>
 	private Dictionary<int, uint> SeatMembers() => transport.Session is { } session
@@ -1381,6 +1463,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.Player = previousPlayer;
 		// [EXT:online-coop-permissions] a grant is its session's: the park runs on alone without one, and without what a guest's seat carried (C3b-2)
 		level.ClearBuildGrants();
+		// [EXT:online-coop-claims] and the rides' claims (C3c-1)
+		level.ClearRideClaims();
 		level.ClearGuestCarries();
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )

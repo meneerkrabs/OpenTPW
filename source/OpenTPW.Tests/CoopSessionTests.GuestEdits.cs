@@ -46,14 +46,24 @@ public partial class CoopSessionTests
 		typeof( ParkHud ).GetMethod( "DeleteRide", NonPublic )!.Invoke( hud, null );
 	}
 
-	/// <summary>Marks <paramref name="item"/> as a track ride's station (a removal of it needs a claim), or takes the mark off.</summary>
-	private static void MarkStation( Park park, OriginalObject item, bool station = true )
+	/// <summary>
+	/// Marks <paramref name="item"/> as a track ride's station whose claim <paramref name="seat"/> holds (C3c-1: another seat's edits of the ride and its queue are refused; null: unclaimed),
+	/// or takes the claim and the mark off.
+	/// </summary>
+	private static void MarkStation( Park park, OriginalObject item, bool station = true, int? seat = ParkCommands.LocalPlayer )
 	{
 		var stations = (Dictionary<OriginalObject, TrackStation>)typeof( Level ).GetField( "trackStations", NonPublic )!.GetValue( park.Level )!;
 		if ( station )
+		{
 			stations[item] = new TrackStation( 0, 0, (item.Placement.X, item.Placement.Y), (item.Placement.X + 1, item.Placement.Y) );
+			if ( seat is { } holder )
+				Assert.IsTrue( park.Level.ExecuteClaimRide( holder, item.Runtime.AttractionId ).Accepted );
+		}
 		else
+		{
+			park.Level.ExecuteReleaseRide( ParkCommands.LocalPlayer, item.Runtime.AttractionId );
 			stations.Remove( item );
+		}
 	}
 
 	/// <summary>
@@ -293,7 +303,7 @@ public partial class CoopSessionTests
 		Assert.IsTrue( host.Issue( new LayLineCommand( CellToolMode.Path, -1, 18, 20, 26, 20 ) ).Accepted );
 		Grant( host, guest, view );
 		RoundsUntil( () => guest.Level.Objects.FindAt( 24, 12 ) != null && Walkable( guest, 22, 20 ), host, guest, view, "the host's building reached the guest" );
-		// the ride at (24, 12) is a track ride's station on both parks: a guest may not remove it
+		// the ride at (24, 12) is a track ride's station the host claims on both parks: a guest may not remove it
 		foreach ( var park in new[] { host, guest } )
 			MarkStation( park, park.Level.Objects.FindAt( 24, 12 )! );
 		guest.Enter();
@@ -410,7 +420,7 @@ public partial class CoopSessionTests
 			Assert.IsTrue( item.IsDeleted );
 			Assert.IsNull( host.Level.Objects.FindAt( 20, 12 ) );
 			Assert.AreEqual( 1, HostCommandsOf( host, guest.Level.Commands.Player ).Count( command => command is RemoveAttractionCommand ), "the second click sent no second sale" );
-			// a track ride's station is the host's to sell: the guest's erase and Move buttons are off for it, and a sale sends nothing
+			// a track ride whose claim the host holds is not the guest's to sell: the guest's erase and Move buttons are off for it, and a sale sends nothing
 			foreach ( var park in new[] { host, guest } )
 				MarkStation( park, park.Level.Objects.FindAt( 24, 12 )! );
 			guest.Enter();
@@ -422,7 +432,7 @@ public partial class CoopSessionTests
 			Sell( view.Hud, station );
 			Assert.IsFalse( guest.Level.IsSaleWaiting( station.Runtime.AttractionId ) );
 			view.Update();
-			Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) + view.Says( OpenTpwText.CoopNotGranted ), "nothing to say: nothing went" );
+			Assert.AreEqual( 0, view.Says( OpenTpwText.CoopClaimed ) + view.Says( OpenTpwText.CoopHostOnly ) + view.Says( OpenTpwText.CoopNotGranted ), "nothing to say: nothing went" );
 			foreach ( var park in new[] { host, guest } )
 				MarkStation( park, park.Level.Objects.FindAt( 24, 12 )!, station: false );
 		}
@@ -560,7 +570,7 @@ public partial class CoopSessionTests
 		Assert.AreSame( guest.One, guest.Level.QueueOwnerAt( 10, 4 ) );
 		foreach ( var command in queue )
 			Assert.IsTrue( rights.Allows( seat, command ), $"an ordinary ride's queue is a granted guest's: {command}" );
-		// the ride is a track ride's station: its queue stays the host's until claims come
+		// the ride is a track ride's station whose claim the host holds: its queue is the host's while the claim lasts
 		MarkStation( guest, guest.One );
 		try
 		{
@@ -630,14 +640,19 @@ public partial class CoopSessionTests
 		var one = station.Cells.Select( cell => (cell.X, cell.Y) ).First( cell => ReferenceEquals( level.Objects.FindAt( cell.X, cell.Y ), station ) );
 		Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( outranks, one.X, one.Y, 0, out var over ) );
 		CollectionAssert.Contains( over.Overwritten.ToArray(), station, "the plan demolishes the ride" );
+		// One's claim is the host's, the station's another guest's (a seat holds one claim)
 		MarkStation( park, park.One );
-		MarkStation( park, station );
+		MarkStation( park, station, seat: 2 );
 		try
 		{
-			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( trackEnd, 11, 1, 0 ), "the path cell beyond a track end, which the claimed queue joins" );
-			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( fixedItem, 10, 1, 0 ), "a fixed item's footprint over it" );
-			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( outranks, one.X, one.Y, 0 ), "a placement that would demolish the claimed station" );
-			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( trackEnd, 6, 1, 0 ) && rights.PlacementLeavesClaimsAlone( fixedItem, 5, 1, 0 ), "away from it" );
+			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( 1, trackEnd, 11, 1, 0 ), "the path cell beyond a track end, which the claimed queue joins" );
+			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( 1, fixedItem, 10, 1, 0 ), "a fixed item's footprint over it" );
+			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( 1, outranks, one.X, one.Y, 0 ), "a placement that would demolish the claimed station" );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 1, trackEnd, 6, 1, 0 ) && rights.PlacementLeavesClaimsAlone( 1, fixedItem, 5, 1, 0 ), "away from it" );
+			// [EXT:online-coop-claims] the host's too, by another seat's claim, and the holder's own placement is its to make
+			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( ParkCommands.LocalPlayer, outranks, one.X, one.Y, 0 ), "the host may not demolish a ride another seat claims" );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( ParkCommands.LocalPlayer, trackEnd, 11, 1, 0 ), "the host's own claim leaves its join to the host" );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 2, outranks, one.X, one.Y, 0 ), "the holder's own ride" );
 			// the cells outside an entrance and an exit: a queue ride's entrance lays queue over the joined path cell, taking its links off; any other lays or links path there
 			// (an entrance's character names the side it is entered from: '6' opens to the west, onto (10, 1); an exit's the side it leaves by: 'W')
 			var queueEntrance = ShapedEntry( "Info.Id 9104\nInfo.HasQueue 1\n", "6" );
@@ -648,16 +663,9 @@ public partial class CoopSessionTests
 				Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( shaped, 11, 1, 0, out _ ), $"{shaped.InfoId} fits beside the join" );
 				Assert.AreEqual( (10, 1), ObjectFootprint.GetAccessPoints( shaped.Shape, 11, 1, 0 ).Select( point => (point.OutsideX, point.OutsideY) ).Single(), "its outside cell is the join" );
 			}
-			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( queueEntrance, 11, 1, 0 ), "a queue entrance's first cell over the joined path cell" );
-			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( pathEntrance, 11, 1, 0 ), "a path laid over the joined path cell takes no link off" );
-			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( exit, 11, 1, 0 ), "nor does an exit's path" );
-			// a type without a queue lays nothing outside its exit, only linking a path cell there (ObjectAccessCells.Lay), and the park checks nothing there: a claimed queue cell outside
-			// it is asked nothing (a queue ride's exit, which lays path, the park itself refuses over a queue cell)
-			var plainExit = ShapedEntry( "Info.Id 9108\n", "W" );
-			Assert.AreEqual( (10, 3), ObjectFootprint.GetAccessPoints( plainExit.Shape, 11, 3, 0 ).Select( point => (point.OutsideX, point.OutsideY) ).Single(), "its outside cell is a queue cell" );
-			Assert.AreEqual( OriginalPlacementResult.AccessBlocked, level.Objects.Check( exit, 11, 3, 0, out _ ), "the park refuses a queue ride's exit path over a queue cell" );
-			Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( plainExit, 11, 3, 0, out _ ) );
-			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( plainExit, 11, 3, 0 ), "the exit of a type without a queue lays nothing there" );
+			Assert.IsFalse( rights.PlacementLeavesClaimsAlone( 1, queueEntrance, 11, 1, 0 ), "a queue entrance's first cell over the joined path cell" );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 1, pathEntrance, 11, 1, 0 ), "a path laid over the joined path cell takes no link off" );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 1, exit, 11, 1, 0 ), "nor does an exit's path" );
 			// of two entrances the placement lays only the last's queue cell (ObjectAccessCells.Lay): the first's outside cell is asked nothing
 			var twoEntrances = ShapedEntry( "Info.Id 9107\nInfo.HasQueue 1\n", "6.6" );
 			var anchor = Level.GetCentredAnchor( twoEntrances, 12, 1, 0 );
@@ -667,14 +675,27 @@ public partial class CoopSessionTests
 			Assert.AreEqual( points[^1], ObjectAccessCells.Find( points ).Entrance, "the placement lays the last" );
 			Assert.AreNotEqual( (10, 1), (points[^1].OutsideX, points[^1].OutsideY) );
 			Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( twoEntrances, anchor.X, anchor.Y, 0, out _ ) );
-			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( twoEntrances, 12, 1, 0 ), "only the entrance it lays is asked" );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 1, twoEntrances, 12, 1, 0 ), "only the entrance it lays is asked" );
+			// beside the claimed queue's cell (10, 3): the park blocks an entrance or a queue ride's exit there (it would lay their outside cells as path), not the exit of an object without
+			// a queue, which lays no cell and only links a path cell already outside it (none here: ObjectAccessCells.Lay leaves the queue's cell as it is): the rights ask it nothing
+			var plainExit = ShapedEntry( "Info.Id 9108\n", "W" );
+			Assert.AreEqual( OriginalPlacementResult.AccessBlocked, level.Objects.Check( pathEntrance, 11, 3, 0, out _ ) );
+			Assert.AreEqual( OriginalPlacementResult.AccessBlocked, level.Objects.Check( exit, 11, 3, 0, out _ ) );
+			Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( plainExit, 11, 3, 0, out _ ) );
+			Assert.AreEqual( (10, 3), ObjectFootprint.GetAccessPoints( plainExit.Shape, 11, 3, 0 ).Select( point => (point.OutsideX, point.OutsideY) ).Single() );
+			Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 1, plainExit, 11, 3, 0 ), "the exit of an object without a queue" );
+			var cells = level.Guests.Grid.Cells;
+			var queueCell = (cells.RawTypeAt( 10, 3 ), cells.LinksAt( 10, 3 ), cells.QueueLinkAt( 10, 3 ), cells.OwnerAt( 10, 3 ));
+			Assert.AreEqual( (byte)ParkCellType.Queue, queueCell.Item1 );
+			ObjectAccessCells.Lay( cells, ObjectFootprint.GetAccessPoints( plainExit.Shape, 11, 3, 0 ), 0, hasQueue: false );
+			Assert.AreEqual( queueCell, (cells.RawTypeAt( 10, 3 ), cells.LinksAt( 10, 3 ), cells.QueueLinkAt( 10, 3 ), cells.OwnerAt( 10, 3 )), "its placement leaves the queue's cell as it was" );
 		}
 		finally
 		{
 			MarkStation( park, park.One, station: false );
 			MarkStation( park, station, station: false );
 		}
-		Assert.IsTrue( rights.PlacementLeavesClaimsAlone( trackEnd, 11, 1, 0 ) && rights.PlacementLeavesClaimsAlone( outranks, one.X, one.Y, 0 ), "an ordinary ride's" );
+		Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 1, trackEnd, 11, 1, 0 ) && rights.PlacementLeavesClaimsAlone( 1, outranks, one.X, one.Y, 0 ), "an unclaimed ride's" );
 	}
 
 	[TestMethod]

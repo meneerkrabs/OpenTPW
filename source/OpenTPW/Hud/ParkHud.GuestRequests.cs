@@ -119,7 +119,7 @@ public sealed partial class ParkHud
 		{
 			var result = level.CompleteCellTool( outcome );
 			if ( outcome.RightsRefused )
-				SayGuestNote( OpenTpwText.CoopNotGranted );
+				SayGuestNote( RightsRefusalText( outcome.Reason ) );
 			if ( click != null )
 				FinishLineClick( click, result, released: true, sessionRefused: outcome.RightsRefused );
 			return;
@@ -168,7 +168,10 @@ public sealed partial class ParkHud
 						PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), EntryName( entry ) ) );
 				}
 				else if ( result.RightsRefused )
-					SayGuestNote( level.Commands.Rights is CoopBuildRights rights && rights.Builds( request.Command ) ? OpenTpwText.CoopNotGranted : OpenTpwText.CoopHostOnly );
+					SayGuestNote( RightsRefusalText( result.Reason ) );
+				// [EXT:online-coop-claims] a claim another player holds refuses the guest's claim in its words (C3c-1)
+				else if ( request.Command is ClaimRideCommand && result.Reason == Level.ClaimedReason )
+					SayGuestNote( OpenTpwText.CoopClaimed );
 				else if ( request.Command is PlaceObjectCommand or LayLineCommand or QueueSegmentCommand )
 					SayCannotBuild( result.Reason ?? "", entry );
 				// [EXT:land-feedback] a refused purchase says so, as the host's refused click does
@@ -210,8 +213,8 @@ public sealed partial class ParkHud
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( report.SlideDone )
 			PostMessage( strings.Extra( OpenTpwText.PoolSlideDone ) );
-		if ( report.RightsRefused is { } refused )
-			SayGuestNote( level.Commands.Rights is CoopBuildRights rights && rights.Builds( refused ) ? OpenTpwText.CoopNotGranted : OpenTpwText.CoopHostOnly );
+		if ( report.RightsRefused is { } refused && !MetFinishedSlide( refused, report.RightsReason ) )
+			SayGuestNote( RightsRefusalText( report.RightsReason ) );
 		else if ( report.NotTaken )
 			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
 		else if ( report.Unknown )
@@ -222,6 +225,27 @@ public sealed partial class ParkHud
 		GameAudio.PlayPathRefused( refusal.Cell.X, refusal.Cell.Y );
 		PostMessage( strings.Extra( report.BridgeRefusal is { } bridge ? BridgeRefusalText( bridge ) : PoolRefusalText( refusal.Reason, report.SlideRefusal ) ) );
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] Whether a refusal of <paramref name="command"/> by the session's rights, for the <paramref name="reason"/> they gave where and when it was refused, met a
+	/// finished slide: a slide undo refused for any reason but a grant the host took back (no claim refuses one), whose slide the pieces before it finished
+	/// (<see cref="CoopBuildRights.Builds"/>). Nothing is said for it, as the host's slide mode ended with the splash and its Backspace says nothing; one refused for want of a grant is said.
+	/// </summary>
+	private static bool MetFinishedSlide( ParkCommand command, string? reason ) => command is UndoPoolSlidePieceCommand && reason != CoopBuildRights.NotGrantedReason;
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] What a refusal by the session's rights says, from the <paramref name="reason"/> they gave where and when it was refused: [EXT:online-coop-claims] another
+	/// player's claim (C3c-1), building the host has not let this player do yet, or what only the host does.
+	/// </summary>
+	private static OpenTpwText RightsRefusalText( string? reason ) => RefusalText( CoopBuildRights.RefusalOf( reason ) );
+
+	/// <summary>The note of a refusal by the session's rights.</summary>
+	private static OpenTpwText RefusalText( CoopRefusal refusal ) => refusal switch
+	{
+		CoopRefusal.Claimed => OpenTpwText.CoopClaimed,
+		CoopRefusal.NotGranted => OpenTpwText.CoopNotGranted,
+		_ => OpenTpwText.CoopHostOnly
+	};
 
 	/// <summary>A note about this player's own request, with the error sound.</summary>
 	private void SayGuestNote( OpenTpwText text )

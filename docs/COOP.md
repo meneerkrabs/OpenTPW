@@ -163,7 +163,10 @@ part (`Level.CoopRole`: none, host or guest).
   no trace in its log. The funnel raises `SessionRefused`, and the guest's HUD says "The host has not
   let you build yet." for building (`OpenTpwText.CoopNotGranted`) or "Only the host can do that for
   now." for anything else (`OpenTpwText.CoopHostOnly`), in the eleven languages of the OpenTPW texts,
-  with the error sound, as it does for a cell it cannot build on.
+  with the error sound, as it does for a cell it cannot build on. Which of them it says follows the
+  reason the rights gave where and when they refused the command (`IParkCommandRights.RefusalReason`:
+  a grant not given, a claim, or the generic reason), so a grant given or taken back after the refusal
+  does not change it.
 - **Rules every peer applies alike.** These checks read the funnel's session rules, so a guest
   refuses the host's record as the host did, and the record's outcome check agrees:
   - the cheats (`QueueCheatCommand`) and the secret park name of the rename are refused (decision
@@ -1693,7 +1696,8 @@ no guest's click runs on its own park first. C3a-1 built the requests, their rec
 grants; in C3a-2 the guests' line, placement and remove tools send their commands as requests and wait
 for them, and the host lets each guest build or only watch with a switch. C3b-1 adds land, the area
 clear, the removal of path and queue cells, Backspace, the sell buttons and the queue's edit, C3b-2 the
-Move tool, and C3b-3 the pools.
+Move tool, and C3b-3 the pools. C3c-1 brings the rides' claims, which keep a ride to the player whose
+track tool is on it, and the bumper rides; a guest's track tools follow (C3c-1b, C3c-2).
 
 **A guest's request.** A guest never applies its own command: its park follows the host's stream only
 (`ParkCommands.FollowsStream`), whatever its rights. It sends the command to the host as a request
@@ -1738,7 +1742,7 @@ that takes the freed seat starts without one. A grant is also its session's: a s
 grant back, and a park shared again starts without any. Both streams put the session's rights in place of
 any the park had, so every peer asks the same ones.
 
-The stream's frame (version 2) and the join state (version 3) changed, but the co-op protocol did not:
+The stream's frame (version 2) and the join state (version 3, version 4 with the claims of C3c-1) changed, but the co-op protocol did not:
 the server relays both without reading them, and the version gate keeps every member of a session on one
 release (decision Q11).
 
@@ -1746,43 +1750,48 @@ release (decision Q11).
 and its target, at execution on every peer, and allows exactly the commands of the guests' tools:
 - path and queue lines (C3a);
 - a placed object, but not a moving placement, not a track add-on, and not a ride whose own tool follows
-  its placement: a coaster, a kart, water or bumper ride (C3a; a slide tower until C3b-3);
+  its placement: a coaster, a kart or water ride (C3a; a slide tower until C3b-3, a bumper ride until
+  C3c-1, whose queue tool follows it);
 - the remove click on an ordinary object: not a fixed item of the park (its gates, lights or bus), not a
-  coaster's or a track ride's station, whose edits need claims (C3a); and on a cell without an object, the
-  queue or path cell there (C3b-1);
+  ride claimed against the guest (C3a, claims since C3c-1); and on a cell without an object, the queue or
+  path cell there (C3b-1);
 - land, the area clear, Backspace over a path or queue cell (a pool bridge or pool water cell is the pool
   tools'), the sale of an ordinary object (never the developer's prototype ride) and the queue's edit
   (C3b-1);
 - the Move tool (C3b-2): its pick-up of an object the guest may remove and place again (not a fixed
-  item, a claimed station, a track add-on or a ride whose own tool follows), its placement, and its end,
-  which every guest seat may send, granted or not, since it only drops that seat's own carry;
+  item, a ride claimed against the guest, a track add-on or a ride whose own tool follows), its placement,
+  and its end, which every guest seat may send, granted or not, since it only drops that seat's own carry;
 - the pools (C3b-3): a stroke's batches of cells and of slide pieces, a bridge, the last piece of a slide
   still being laid, and Backspace over a bridge or a pool cell. A slide tower is placed and removed as any
-  object, and its removal takes its slide.
+  object, and its removal takes its slide;
+- the claims (C3c-1): a track ride's claim, the track commands of the ride whose claim the guest holds,
+  and the release of its own claim, which every guest seat may send, granted or not.
 
-An object a guest may not remove (a fixed item, a claimed station) is also one its area clear leaves
-standing and its placement may not demolish: a command that removes what it finds asks the rights of each
-object (`IParkCommandRights.AllowsRemoval`, yes for the host). The queue of a claimed ride (a coaster's
-or a track ride's station) stays the host's in all of these until claims come (C3c): its lines, its edit,
-the removal of its cells and Backspace over them, any line across one of its cells (a path line paves a
-queue's end), a placement whose own plan writes over one (its footprint, the paths it clears, the cell
-beyond a track end, the cells it lays outside its entrance and exit), a bridge with a cell or an end on
-one, and the object window's queue tool, which a guest's window does not offer, nor its sale and Move
-buttons for the station. So does the path cell its back cell joins, whose removal or a queue laid over it
-would take the queue's link off: a guest's remove click, Backspace, queue lines, placements (whose plans
-clear the paths under them, and a queue ride's, which lays its first queue cell outside its entrance) and
-bridges refuse it, and its area clear leaves it standing (`IParkCommandRights.AllowsPathRemoval`). A path
-line along it, the path a placement lays outside the last exit of a ride with a queue or the last
-entrance of a type without one, or links outside the last exit of a type without a queue, where it lays
-nothing (only the last entrance and the last exit count, `ObjectAccessCells.Lay`), and a queue line that
-only ends on it (which links the queue to that path, `QueuePaths.Connect`) leave the queue's links as
-they are and stay the guest's. A queue cell's ride is resolved as its removal resolves it: the rides'
-cached lines, then each line walked again (on a copy) for the cells they miss, once per question of the
-rights (the area clear asks it for each path cell it would clear). Everything else stays the host's:
-pause and speed (Q8), cheats (Q17), money, staff and the park's management (C4) with a wave machine's
-settings, undo lines and pool strokes (whose cells a request could name freely; undo is C5), the
-single-cell removals and the pools' single-cell kinds no guest's tool issues, tracks and coasters (C3c),
-the grants and the release of a departed seat.
+An object a guest may not remove (a fixed item, a ride claimed against it) is also one its area clear
+leaves standing and its placement may not demolish: a command that removes what it finds asks the rights
+of each object (`IParkCommandRights.AllowsRemoval`). The queue of a ride claimed against a player (one
+another seat's claim holds, and for a guest a coaster until its tool claims, C3c-2) is kept from that
+player in all of these: its lines and their undo, its edit, the removal of its cells and Backspace over
+them, any line across one of its cells (a path line paves a queue's end), a placement whose own plan
+writes over one (its footprint, the paths it clears, the cell beyond a track end, the cells it lays
+outside its entrance and exit), a bridge with a cell or an end on one, and the object window's queue
+tool, which that player's window does not offer, nor its sale and Move buttons for the ride. So is the
+path cell its back cell joins, whose removal or a queue laid over it would take the queue's link off: the
+remove click, Backspace, queue lines, placements (whose plans clear the paths under them, and a queue
+ride's, which lays its first queue cell outside its entrance) and bridges refuse it, and the area clear
+leaves it standing (`IParkCommandRights.AllowsPathRemoval`). A path line along it, the path a placement
+lays outside the last exit of a ride with a queue or the last entrance of a type without one (only the
+last entrance and the last exit count, `ObjectAccessCells.Lay`), and a queue line that only ends on it
+(which links the queue to that path, `QueuePaths.Connect`) leave the queue's links as they are. The exit
+of an object without a queue lays no cell: it only links a path cell already outside it (that cell's
+links and its path and access neighbours'), which takes no queue's link off, so it is asked nothing. A
+queue cell's ride is resolved as its removal resolves it: the rides' cached lines, then each line walked
+again (on a copy) for the cells they miss, once per question of the rights (the area clear asks it for
+each path cell it would clear). Everything else stays the host's: pause and speed (Q8), cheats (Q17),
+money, staff and the park's management (C4) with a wave machine's settings, undo lines and pool strokes
+(whose cells a request could name freely; undo is C5), the single-cell removals and the pools'
+single-cell kinds no guest's tool issues, coasters and track add-ons (C3c-2), the grants and the release
+of a departed seat.
 
 **A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
 of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
@@ -1927,8 +1936,9 @@ A guest's strokes go in batches instead, and the host's tool writes at once, as 
   the pieces still queued and one at a time; a slide with no piece to take back is the park's to refuse,
   quietly, as the host's Backspace is. A finished slide's pieces are the host's (riders use it), or go with
   its tower: an undo queued behind pieces that turned out to lay the splash meets a finished slide and
-  says nothing, as the host's slide mode ends with its splash. A Backspace during a drag ends the drag's
-  stroke, which reports once back.
+  says nothing, as the host's slide mode ends with its splash. An undo the rights refused for want of a
+  grant, which the host took back, says so, as any stroke's refusal. A Backspace during a drag ends the
+  drag's stroke, which reports once back.
 - **Backspace with no tool on** over a pool bridge or a pool cell is a request, as over a path (C3b-1), and
   a refusal says the pool's reason.
 - **Escape**, a right click or another tool ends the tool: its unsent cells are dropped, the stroke under
@@ -1944,6 +1954,57 @@ A slide tower is a guest's to place, sell, clear, move and remove, and its remov
 refunds it, on every peer alike. No claim keeps a slide to one player: two players laying one slide take
 turns piece by piece, since each piece must follow the last. A wave machine's settings stay the host's
 (C4).
+
+**Claims (C3c-1).** `[EXT:online-coop-claims]` A kart or water ride's track is edited by one player at a
+time: the player whose track tool is on the ride holds its claim, and the claim keeps the ride from every
+other player, the host included.
+- **Session state.** The claims are the park's session state, as the grants are (`Level.RideClaims`: a
+  ride's attraction id and the seat that holds its claim). The session digest covers them once there is
+  one, a join snapshot carries them (the join state's version 4, in ride order, one claim a ride and a seat
+  at most, the host's seat 0 included), and the session's start and end clear them. No world hash or save
+  holds them.
+- **The commands.** `ClaimRideCommand` takes a track ride's claim for its player when no other seat holds
+  it, and in the same command lets go of that player's claim of any other ride: a claim moves with the
+  player's tool, so a seat holds one at most and its own other claim never refuses it. Another seat's
+  claim refuses it, and a refusal changes no claim. `ReleaseRideCommand` lets a claim go: its holder's
+  own, or any claim when the host sends it. The release of a departed seat (`ReleaseSeatCommand`) lets go
+  of its claims too, and a ride's removal (a sale, the area clear, the Move's pick-up) takes its claim
+  with it, on every peer alike.
+- **What a claim keeps.** A claim keeps from every other player, the host included, the ride's track
+  commands, its sale, its removal and its pick-up, its demolition by a placement, an add-on on it, and its
+  queue as above (`CoopBuildRights.LeavesClaimsAlone`, asked of the host before its blanket yes). The
+  host's cleanup is its own: its release of any claim, a departed seat's release and the grants. A claim
+  guards building and removal, not management: the ride's opening, its settings and its prices stay as
+  they are (the host's, C4 for guests). A command a claim refuses gives the claim's reason, and the HUD
+  says it in its words ("Another player is editing this ride.", one new string in every language), for a
+  click the rights refuse here and for a guest's refused record alike.
+- **The host's track tool** claims its ride as seat 0 when it starts, after the tool it replaces ended
+  (the track button, a placed ride's track tool). The claim applies at once; another player's claim
+  starts no tool, leaves the tool that was on, and says so. The object window offers no track or queue
+  tool for a ride claimed against its player. A guest's track tools are not on yet (C3c-1b): a guest's
+  window offers none.
+- **No tool event lets a claim go.** One frame check per machine, after the outcomes, does
+  (`Level.SettleClaim`, as `Level.EndStrayCarry` ends a carry): when this machine's seat holds the claim
+  of a ride its track tool is not on, the host lets it go at once, and a guest asks the host, at most
+  once a second and only while no claim, open or release request of its own is open in the session's
+  requests (they apply in order, so a release sent then could come before a claim on its way). So a claim
+  is bound to its ride by the park's state: every exit of the tool (Escape, a right click, another tool,
+  the queue button, a valid circuit with or without the queue tool that follows it, a resync's park)
+  lets it go, and the edit tool's turn into the line tool on the same ride, within one call, keeps it.
+  The same check claims the ride the host's track tool is on when the host holds no claim of it (a tool
+  that was on when the park was shared), and ends the tool with the claim's note when another player
+  holds it.
+- **The host lets go of a guest's claim** (a `ReleaseRideCommand` of its own, a record every peer
+  applies alike) when the seat's member left or changed (its release, at the next frame's start, also of a
+  claiming seat without a member), when the session has read the member disconnected for 30 seconds of the
+  host's clock (from the first frame that read it so; a frame that reads it connected again keeps the
+  claim), and when its lease ran out: five minutes without the claim or an accepted command of its holder
+  naming the ride. The check runs at every frame's start after the guests' commands, paused too, so a
+  claim a late frame's queued command takes for a seat away that long goes in that same frame. The host's
+  own claim has neither: its tool is on the host's machine, whose frame check lets it go.
+
+Bumper rides lay no track: a guest places them since C3c-1, and their queue tool follows the placement as
+any ride's does.
 
 **The host's switch (C3a-2).** The Build Together screen lists the guests with a switch each, beside the
 removal: it reads the shared park's applied grant ("Builds" or "Watches") and a click turns it over with

@@ -109,6 +109,8 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.SetSessionClock => new SetSessionClockCommand( reader.Long() ),
 		ParkCommandKind.SetBuildGrant => new SetBuildGrantCommand( reader.Int(), reader.Bool() ),
 		ParkCommandKind.ReleaseSeat => new ReleaseSeatCommand( reader.Int() ),
+		ParkCommandKind.ClaimRide => new ClaimRideCommand( reader.Int() ),
+		ParkCommandKind.ReleaseRide => new ReleaseRideCommand( reader.Int() ),
 		_ => null
 	};
 }
@@ -765,5 +767,30 @@ public sealed record ReleaseSeatCommand( int Seat ) : ParkSettingCommand
 	public override ParkCommandKind Kind => ParkCommandKind.ReleaseSeat;
 	internal override bool IsWellFormed => Seat > 0 && Seat < CoopJoinState.MaximumPlayerEntries;
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Seat );
-	internal override ParkCommandResult Execute( Level level ) => ParkCommandResult.Ok( level.ReleaseSeat( Seat ) );
+	// [EXT:online-coop-claims] and the claim the seat held (C3c-1)
+	internal override ParkCommandResult Execute( Level level ) => ParkCommandResult.Ok( level.ReleaseSeat( Seat ) | level.ReleaseClaimsOf( Seat ) );
+}
+
+/// <summary>
+/// [EXT:online-coop-claims] A player's track tool takes the claim of the ride with attraction id <paramref name="Ride"/> in a shared park (docs/COOP.md, "Claims"; C3c-1): one editor at a
+/// time. Refused while another seat holds it; the claim this seat held of another ride goes in the same command (a claim moves with its player's tool). Only a shared park issues it.
+/// </summary>
+public sealed record ClaimRideCommand( int Ride ) : ParkSettingCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.ClaimRide;
+	internal override bool IsWellFormed => Ride >= 0;
+	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Ride );
+	internal override ParkCommandResult Execute( Level level ) => level.ExecuteClaimRide( Player, Ride );
+}
+
+/// <summary>
+/// [EXT:online-coop-claims] The claim of the ride with attraction id <paramref name="Ride"/> goes: its holder's tool left the ride, or the host releases a disconnected or idle seat's claim. Its
+/// value is the seat that held it.
+/// </summary>
+public sealed record ReleaseRideCommand( int Ride ) : ParkSettingCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.ReleaseRide;
+	internal override bool IsWellFormed => Ride >= 0;
+	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Ride );
+	internal override ParkCommandResult Execute( Level level ) => level.ExecuteReleaseRide( Player, Ride );
 }

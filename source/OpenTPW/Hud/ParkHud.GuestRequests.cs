@@ -75,13 +75,16 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// A resync replaced the guest's park while its Move tool was armed (C3b-2): the new park's tool arms again from the carry its snapshot holds, at the angle it had, with the buy item of its
-	/// type (<see cref="Level.TakeMoveToRestore"/>); without one the carry is a stray one, which the frame ends.
+	/// type, and waits for its placement that waited in the old park (<see cref="Level.TakeMoveToRestore"/>), whose outcome then finishes it (<see cref="CompletePlacement"/>); without one the
+	/// carry is a stray one, which the frame ends.
 	/// </summary>
 	private void RestoreMove()
 	{
 		if ( level.TakeMoveToRestore() is not { } move || BuyItemOf( move.Entry ) is not { } item || !level.CompleteMove( move.Entry, move.Rotation ) )
 			return;
 		pendingItem = item;
+		if ( move.Placement is { } placement )
+			level.WaitForPlacementAgain( placement );
 	}
 
 	/// <summary>

@@ -196,9 +196,9 @@ public partial class CoopJoinSessionTests
 
 	/// <summary>
 	/// The guest places its carry back at (20, 12) with the modifiers <paramref name="modifiers"/>; the host applies the placement and the guest never gets the frame that holds its record, so
-	/// the placement still waits when the resync replaces the park, and the cut holds it. The swapped-in park, its HUD's frame and the placement's request.
+	/// the placement still waits when the resync replaces the park, and the cut holds it. The HUD's frame on the swapped-in park, after its first.
 	/// </summary>
-	private (Action Frame, CoopGuestCommands.Request Placement) ResyncedWithAPlacementWaiting( Peer guest, ObjectCatalogEntry entry, int modifiers )
+	private Action ResyncedWithAPlacementInsideTheCut( Peer guest, ObjectCatalogEntry entry, int modifiers )
 	{
 		var seat = guest.Link.Slot;
 		guest.Link.DropFrame = _ => true;
@@ -212,49 +212,155 @@ public partial class CoopJoinSessionTests
 		guest.Link.DropFrame = null;
 		var old = guest.Level;
 		RoundsUntil( () => guest.Level != old && !placement.Request.IsOpen, "the park was swapped in" );
-		Assert.AreEqual( CoopGuestRequestState.InSnapshot, placement.Request.State, "the placement is inside the cut" );
+		Assert.AreEqual( CoopGuestRequestState.InSnapshot, placement.Request.State, "the placement is inside the cut, its result here not known" );
 		Assert.IsTrue( guest.Level!.CarriesEntry( seat ), "the new park holds the seat's carry" );
-		var (_, frame) = HudOf( guest, entry );
+		var (_, frame) = HudOf( guest, NewParksEntry( guest, entry ) );
 		frame();
-		return (frame, placement.Request);
+		return frame;
 	}
 
+	/// <summary>The swapped-in park's own catalogue entry of <paramref name="entry"/>'s type, which its HUD's buy menu offers.</summary>
+	private static ObjectCatalogEntry NewParksEntry( Peer guest, ObjectCatalogEntry entry ) => guest.Level!.ResolveCommandEntry( ParkCommandCodec.EntryKey( entry ) )!;
+
+	/// <summary>Rounds of the HUD's <paramref name="frame"/> until neither park carries for the guest's seat.</summary>
+	private void UntilTheCarryEndsWith( Peer guest, Action frame, string what ) => RoundsUntil( () =>
+	{
+		frame();
+		return !guest.Session!.GuestCommands!.Open.Any() && !guest.Level!.CarriesEntry( guest.Link.Slot ) && !host.Level!.CarriesEntry( guest.Link.Slot );
+	}, what );
+
 	[TestMethod]
-	public void AResyncArmsNoMoveToolThatItsWaitingPlacementEnded()
+	public void AResyncArmsNoMoveToolThatItsPlacementInsideTheCutMayHaveEnded()
 	{
 		var guest = MoveHosted();
 		var seat = guest.Link.Slot;
 		var (entry, _) = ArmedMove( guest );
-		// a placement without Ctrl ends the tool once its outcome comes back: the resync does not arm it again, so the next click buys no second copy
-		var (frame, _) = ResyncedWithAPlacementWaiting( guest, entry, modifiers: 0 );
-		Assert.IsFalse( guest.Level!.IsMoving, "the placement waiting for the host ended the tool" );
+		// a placement without Ctrl ends the tool once accepted, and the new park cannot tell: the tool is not armed again, so the next click buys no second copy
+		var frame = ResyncedWithAPlacementInsideTheCut( guest, entry, modifiers: 0 );
+		Assert.IsFalse( guest.Level!.IsMoving, "the placement inside the cut may have ended the tool" );
 		Assert.IsNull( guest.Level.MoveBeforeResync );
-		RoundsUntil( () =>
-		{
-			frame();
-			return !guest.Session!.GuestCommands!.Open.Any() && !guest.Level.CarriesEntry( seat ) && !host.Level!.CarriesEntry( seat );
-		}, "the carry its tool left was ended" );
+		UntilTheCarryEndsWith( guest, frame, "the carry its tool left was ended" );
 		Assert.AreEqual( entry.InfoId, host.Level!.Objects.FindAt( 20, 12 )!.Entry.InfoId, "the object stands where it was placed" );
 		Assert.AreEqual( 1, host.Level.Commands.Log.Count( item => item.Command is PlaceObjectCommand { Moving: true } && item.Command.Player == seat ), "placed once" );
 		CatchUpAndCompare( guest );
 	}
 
 	[TestMethod]
-	public void AResyncArmsAMoveToolThatItsWaitingPlacementKept()
+	public void AResyncArmsNoMoveToolWhoseCtrlPlacementInsideTheCutMayHaveOpenedAQueueTool()
+	{
+		var guest = MoveHosted();
+		var (entry, _) = ArmedMove( guest );
+		// Ctrl keeps the tool only for a placed object that opens no tool of its own: a ride with a queue may open its queue tool, which ends the Move whatever the click held
+		Assert.IsTrue( entry.HasQueue );
+		Assert.IsFalse( Level.PlacementKeepsBuildTool( entry ) );
+		var frame = ResyncedWithAPlacementInsideTheCut( guest, entry, modifiers: 0xc );
+		Assert.IsFalse( guest.Level!.IsMoving, "the placement inside the cut may have ended the tool" );
+		UntilTheCarryEndsWith( guest, frame, "the carry its tool left was ended" );
+		Assert.AreEqual( entry.InfoId, host.Level!.Objects.FindAt( 20, 12 )!.Entry.InfoId, "the object stands where it was placed" );
+		CatchUpAndCompare( guest );
+	}
+
+	/// <summary>A synthetic catalogue entry of one cell with the given settings lines (no model or script is loaded).</summary>
+	private static ObjectCatalogEntry SettingsEntry( string settings ) =>
+		new( "jungle", ObjectCategory.Feature, "/synthetic", new ObjectSettings( new[] { new ObjectSettingsFile( settings, "synthetic.sam" ) } ), new ObjectShape( new[] { "*" } ), "/unused.MD2", null, null,
+			Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), null!, null );
+
+	[TestMethod]
+	public void CtrlKeepsTheBuildToolAfterAPlacementOfATypeThatOpensNoToolOfItsOwn()
+	{
+		Assert.IsTrue( Level.PlacementKeepsBuildTool( SettingsEntry( "Info.Id 9201\n" ) ), "an ordinary object" );
+		Assert.IsFalse( Level.PlacementKeepsBuildTool( SettingsEntry( "Info.Id 9202\nInfo.HasQueue 1\n" ) ), "a ride with a queue, whose queue tool may follow" );
+		Assert.IsFalse( Level.PlacementKeepsBuildTool( SettingsEntry( $"Info.Id 9203\nBumper.WhichTrackType {CoasterDefinition.TrackType}\n" ) ), "a coaster, whose track follows" );
+		Assert.IsFalse( Level.PlacementKeepsBuildTool( SettingsEntry( "Info.Id 9204\nBumper.WhichTrackType 1\nBumper.BumperType -4\n" ) ), "a kart ride, whose track follows" );
+		Assert.IsFalse( Level.PlacementKeepsBuildTool( SettingsEntry( "Info.Id 9205\nBumper.WhichTrackType 2\nBumper.BumperType -5\n" ) ), "a water ride, whose track follows" );
+		Assert.IsFalse( Level.PlacementKeepsBuildTool( SettingsEntry( "Info.Id 9206\nBumper.WhichTrackType 0\nBumper.BumperType -1\n" ) ), "the bumper cars, whose arena follows" );
+	}
+
+	/// <summary>The guest's Move tool armed, a resync started, and a placement of it clicked while the resync runs, which waits for the new park: the old park and the placement's request.</summary>
+	private (Level Old, CoopGuestCommands.Request Placement) PlacementWaitingForTheResync( Peer guest )
+	{
+		StartResync( guest );
+		guest.Enter();
+		var old = guest.Level!;
+		old.ClickBuildTool( 20, 12 );
+		var placement = old.WaitingPlacement!.Request;
+		Assert.AreEqual( CoopGuestRequestState.Waiting, placement.State, "it goes out after the resync" );
+		return (old, placement);
+	}
+
+	[TestMethod]
+	public void AResyncsMoveToolWaitsForItsPlacementAfterTheCutWhichEndsItAsEver()
 	{
 		var guest = MoveHosted();
 		var seat = guest.Link.Slot;
 		var (entry, rotation) = ArmedMove( guest );
-		// a placement with Ctrl keeps the tool for the next one: the resync arms it again
-		var (frame, _) = ResyncedWithAPlacementWaiting( guest, entry, modifiers: 0xc );
-		Assert.IsTrue( guest.Level!.IsMoving, "Ctrl at the placement kept the tool" );
-		Assert.AreEqual( entry.InfoId, guest.Level.BuildEntry!.InfoId );
+		var (old, placement) = PlacementWaitingForTheResync( guest );
+		guest.Link.DropFrame = null;
+		RoundsUntil( () => guest.Level != old, "the park was swapped in" );
+		var (_, frame) = HudOf( guest, NewParksEntry( guest, entry ) );
+		frame();
+		Assert.IsTrue( guest.Level!.IsMoving, "the tool arms again at its angle" );
 		Assert.AreEqual( rotation, guest.Level.BuildRotation );
+		Assert.AreSame( placement, guest.Level.WaitingPlacement?.Request, "and waits for its placement again" );
+		// its outcome finishes the tool as the placement's would have without the resync: placed without Ctrl, the tool ends, and its end releases the carry
+		RoundsUntil( () =>
+		{
+			frame();
+			return !guest.Level.IsMoving;
+		}, "the placement came back and ended the tool" );
+		Assert.IsTrue( placement.Accepted );
+		UntilTheCarryEndsWith( guest, frame, "the tool's end released the carry" );
+		Assert.AreEqual( entry.InfoId, host.Level!.Objects.FindAt( 20, 12 )!.Entry.InfoId, "the object stands where it was placed" );
+		Assert.AreEqual( 1, host.Level.Commands.Log.Count( item => item.Command is PlaceObjectCommand { Moving: true } && item.Command.Player == seat ), "placed once" );
+		CatchUpAndCompare( guest );
+	}
+
+	[TestMethod]
+	public void AResyncsMoveToolEndsWithItsPlacementThatCameBackBeforeTheNewHudsFirstFrame()
+	{
+		var guest = MoveHosted();
+		var seat = guest.Link.Slot;
+		var (entry, _) = ArmedMove( guest );
+		var (old, placement) = PlacementWaitingForTheResync( guest );
+		guest.Link.DropFrame = null;
+		// the placement goes out after the cut and comes back before the new park's HUD runs: the tool arms and waits again before the outcomes are taken, so this one finishes it
+		RoundsUntil( () => guest.Level != old && !placement.IsOpen, "the park was swapped in and the placement came back" );
+		Assert.IsTrue( placement.Accepted );
+		var (_, frame) = HudOf( guest, NewParksEntry( guest, entry ) );
+		frame();
+		Assert.IsFalse( guest.Level!.IsMoving, "placed without Ctrl, the tool ended" );
+		Assert.IsNull( guest.Level.WaitingPlacement );
+		UntilTheCarryEndsWith( guest, frame, "the tool's end released the carry" );
+		Assert.AreEqual( 1, host.Level!.Commands.Log.Count( item => item.Command is PlaceObjectCommand { Moving: true } && item.Command.Player == seat ), "placed once" );
+		CatchUpAndCompare( guest );
+	}
+
+	[TestMethod]
+	public void AResyncsMoveToolStaysArmedWhenItsPlacementAfterTheCutIsRefused()
+	{
+		var guest = MoveHosted();
+		var seat = guest.Link.Slot;
+		var (entry, rotation) = ArmedMove( guest );
+		var (old, placement) = PlacementWaitingForTheResync( guest );
+		// the host builds on the cell first, so the guest's placement is refused there
+		Assert.IsTrue( host.Issue( host.Level!.BuildCommand( host.Level.Objects.Objects.First().Entry, 20, 12, 90 ) ).Accepted );
+		guest.Link.DropFrame = null;
+		RoundsUntil( () => guest.Level != old, "the park was swapped in" );
+		var (_, frame) = HudOf( guest, NewParksEntry( guest, entry ) );
+		RoundsUntil( () =>
+		{
+			frame();
+			return !placement.IsOpen && guest.Level!.WaitingPlacement == null;
+		}, "the placement came back" );
+		Assert.IsFalse( placement.Accepted, "the cell was taken" );
+		// a refused placement leaves the tool armed, as without the resync: it takes clicks again, with its carry
+		Assert.IsTrue( guest.Level!.IsMoving );
+		Assert.AreEqual( rotation, guest.Level.BuildRotation );
+		Assert.IsTrue( guest.Level.CarriesEntry( seat ) && host.Level.CarriesEntry( seat ) );
 		frame();
 		Assert.IsFalse( guest.Session!.GuestCommands!.Open.Any( request => request.Command is EndMoveCommand ), "its carry is no stray one" );
 		guest.Level.BuildEntry = null;
-		RoundsUntil( () => !guest.Level.CarriesEntry( seat ) && !host.Level!.CarriesEntry( seat ), "the end released the carry" );
-		Assert.AreEqual( entry.InfoId, host.Level!.Objects.FindAt( 20, 12 )!.Entry.InfoId, "the object stands where it was placed" );
+		UntilTheCarryEndsWith( guest, frame, "the end released the carry" );
 		CatchUpAndCompare( guest );
 	}
 

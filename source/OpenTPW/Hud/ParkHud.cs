@@ -846,10 +846,11 @@ public sealed partial class ParkHud
 		// [EXT:online-coop-commands] the buy item a pick-up arms the Move tool with is its wait's: a wait dropped (another tool, Escape, the session's end) takes it along (C3b-2)
 		if ( waitingMove is { } move && !ReferenceEquals( level.WaitingToolStart, move.Request ) )
 			waitingMove = null;
-		// [EXT:online-coop-commands] a guest's requests resolved since the last frame complete their tools first, outside any command, tick and stream application (C3a-2); then a resync's park
-		// arms the Move tool again from its carry, a Move tool whose carry the host released disarms, and a carry left without its Move tool is ended (C3b-2)
-		CompleteGuestRequests();
+		// [EXT:online-coop-commands] a resync's park arms the Move tool again from its carry, waiting again for its placement, before the outcomes are taken, so that placement's finishes it
+		// (C3b-2); a guest's requests resolved since the last frame complete their tools, outside any command, tick and stream application (C3a-2); then a Move tool whose carry the host
+		// released disarms, and a carry left without its Move tool is ended (C3b-2)
 		RestoreMove();
+		CompleteGuestRequests();
 		level.EndCarrylessMove();
 		level.EndStrayCarry( Time.Now );
 		// [EXT:online-coop-commands] a guest's pool strokes send what waits and say what finished (C3b-3)

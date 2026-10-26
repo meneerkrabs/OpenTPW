@@ -1772,16 +1772,17 @@ buttons for the station. So does the path cell its back cell joins, whose remova
 would take the queue's link off: a guest's remove click, Backspace, queue lines, placements (whose plans
 clear the paths under them, and a queue ride's, which lays its first queue cell outside its entrance) and
 bridges refuse it, and its area clear leaves it standing (`IParkCommandRights.AllowsPathRemoval`). A path
-line along it, the path a placement lays or links outside its last exit, or lays outside the last
-entrance of a type without a queue (a placement lays the outside cells of only its last entrance and its
-last exit, `ObjectAccessCells.Lay`), and a queue line that only ends on it (which links the queue to that
-path, `QueuePaths.Connect`) leave the queue's links as they are and stay the guest's. A queue cell's ride
-is resolved as its removal resolves it: the rides' cached lines, then each line walked again (on a copy)
-for the cells they miss, once per question of the rights (the area clear asks it for each path cell it
-would clear). Everything else stays the host's: pause and speed (Q8), cheats (Q17), money, staff and the
-park's management (C4) with a wave machine's settings, undo lines and pool strokes (whose cells a request
-could name freely; undo is C5), the single-cell removals and the pools' single-cell kinds no guest's tool
-issues, tracks and coasters (C3c), the grants and the release of a departed seat.
+line along it, the path a placement lays outside the last exit of a ride with a queue or the last
+entrance of a type without one, or links outside the last exit of a type without a queue, where it lays
+nothing (only the last entrance and the last exit count, `ObjectAccessCells.Lay`), and a queue line that
+only ends on it (which links the queue to that path, `QueuePaths.Connect`) leave the queue's links as
+they are and stay the guest's. A queue cell's ride is resolved as its removal resolves it: the rides'
+cached lines, then each line walked again (on a copy) for the cells they miss, once per question of the
+rights (the area clear asks it for each path cell it would clear). Everything else stays the host's:
+pause and speed (Q8), cheats (Q17), money, staff and the park's management (C4) with a wave machine's
+settings, undo lines and pool strokes (whose cells a request could name freely; undo is C5), the
+single-cell removals and the pools' single-cell kinds no guest's tool issues, tracks and coasters (C3c),
+the grants and the release of a departed seat.
 
 **A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
 of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
@@ -1872,10 +1873,15 @@ research tests, and the tool's end drops the carry.
   while its Move tool is not armed sends the Move's end (`Level.EndStrayCarry`), at most once a second
   and only while no pick-up or end of its own is open. The object stays sold, as a cancelled Move leaves
   it.
-- **A resync** keeps an armed Move tool: the new park's tool arms again from the carry its snapshot holds,
-  at the angle it had (`Level.TakeMoveToRestore`); a carry its tool did not hold is a stray one, as above.
-  A tool whose placement without Ctrl waited for the host is not armed again: that placement ends it
-  (it applies after the resync's cut or is inside it), so its carry is a stray one too.
+- **A resync** keeps an armed Move tool: the new park's tool arms again from the carry its snapshot
+  holds, at the angle it had (`Level.TakeMoveToRestore`); a carry its tool did not hold is a stray one,
+  as above. A placement of the tool that waited for the host waits again in the new park, so its outcome
+  finishes the tool as it would have without the resync: ended, or kept for exactly Ctrl, with the tool
+  the placed object opens, or left armed by a refusal. A placement whose record is inside the resync's
+  cut has no result in the new park: the tool arms again only when Ctrl at its click keeps it whatever
+  that result was (`Level.PlacementKeepsBuildTool`: a type whose placed object opens no tool of its own).
+  Otherwise its carry is a stray one, so the object of a placement the host refused there stays sold, and
+  a placed ride's queue tool does not follow.
 - **A Move tool without its carry.** When the host released the seat's carry while its Move tool was armed
   (a resume under a new member id, a departure the host saw), every placement of it would be refused: the
   guest's frame disarms it after the outcomes (`Level.EndCarrylessMove`), without an end command.

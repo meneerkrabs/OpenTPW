@@ -134,8 +134,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// it would demolish (one of a lower overwrite priority) is one the guest may not remove (<see cref="MayRemove"/>), and no cell it writes is a claimed ride's queue cell or the path cell its
 	/// back joins: its footprint, the path cells it clears (beyond a track end too) and the cell outside a queue ride's entrance, which it lays as queue (taking the links of a path cell there
 	/// off). The cell outside a queue ride's exit, or outside the entrance of a type without a queue, it lays as path, over a path too, which takes no link off: it is asked for itself alone
-	/// (a path paves a queue's end). A type without a queue lays nothing outside its exit, only linking a path cell already there, so that cell is not asked. The placement lays only its last
-	/// entrance's and its last exit's (<see cref="ObjectAccessCells.Lay"/>), so only they count. A placement the park refuses is the park's to refuse.
+	/// (a path paves a queue's end). Outside the exit of a type without a queue it lays nothing, only linking a path cell already there, so that cell is not asked. Only the last entrance
+	/// and the last exit count (<see cref="ObjectAccessCells.Lay"/>). A placement the park refuses is the park's to refuse.
 	/// </summary>
 	internal bool PlacementLeavesClaimsAlone( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{

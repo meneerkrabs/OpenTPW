@@ -278,7 +278,7 @@ public class ParkToolsOnReleaseTests
 	[TestMethod]
 	public void TheAreaClearToolStoresItsCornersOnTheReleases()
 	{
-		var tool = new AreaClearTool( ( _, _ ) => true, () => null, ( _, _ ) => CellBuildResult.Ok );
+		var tool = new AreaClearTool( ( _, _ ) => ParkCommandResult.Ok() );
 		typeof( Level ).GetField( "<AreaClearTool>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, tool );
 		tool.Begin();
 		var (bx, by) = CellAt( PointB );

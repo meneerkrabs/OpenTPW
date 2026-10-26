@@ -1691,7 +1691,8 @@ The design fixed two constants only after measuring them (`coop-c2b-design.md`, 
 C3 lets every player build through the same stream the host orders, so every park stays the host's and
 no guest's click runs on its own park first. C3a-1 built the requests, their records and the host's
 grants; in C3a-2 the guests' line, placement and remove tools send their commands as requests and wait
-for them, and the host lets each guest build or only watch with a switch.
+for them, and the host lets each guest build or only watch with a switch. C3b-1 adds land, the area
+clear, the removal of path and queue cells, Backspace, the sell buttons and the queue's edit.
 
 **A guest's request.** A guest never applies its own command: its park follows the host's stream only
 (`ParkCommands.FollowsStream`), whatever its rights. It sends the command to the host as a request
@@ -1740,16 +1741,24 @@ The stream's frame (version 2) and the join state (version 3) changed, but the c
 the server relays both without reading them, and the version gate keeps every member of a session on one
 release (decision Q11).
 
-**What a granted guest may build (C3a).** `CoopBuildRights` asks of a command's kind, its fields and its
-target, at execution on every peer, and allows exactly the commands of the tools that wait for the host:
-path and queue lines, a placed object (not a moving placement, not a track add-on, and not a ride whose
-own tool follows its placement: a coaster, a kart, water or bumper ride, a slide tower), and the remove
-click on an ordinary object: not a fixed item of the park (its gates, lights or bus), not a coaster's or
-a track ride's station, whose edits need claims, and never the path or queue cell the remove tool takes
-when no object stands on the cell. Everything else stays the
-host's: pause and speed (Q8), cheats (Q17), money and the park's management (C4), undo lines (whose
-cells a request could name freely), land, the queue's edit, the area clear, the backtrack key, the Move
-tool, staff, pools, tracks and coasters (C3b, C3c) and the grants themselves.
+**What a granted guest may build (C3a, C3b-1).** `CoopBuildRights` asks of a command's kind, its fields
+and its target, at execution on every peer, and allows exactly the commands of the guests' tools:
+- path and queue lines (C3a);
+- a placed object, but not a moving placement, not a track add-on, and not a ride whose own tool follows
+  its placement: a coaster, a kart, water or bumper ride, a slide tower (C3a);
+- the remove click on an ordinary object: not a fixed item of the park (its gates, lights or bus), not a
+  coaster's or a track ride's station, whose edits need claims (C3a); and on a cell without an object, the
+  queue or path cell there (C3b-1);
+- land, the area clear, Backspace over a path or queue cell (a pool bridge or pool water cell is the pool
+  tools'), the sale of an ordinary object (never the developer's prototype ride) and the queue's edit
+  (C3b-1).
+
+An object a guest may not remove (a fixed item, a claimed station) is also one its area clear leaves
+standing: a command that removes what it finds asks the rights of each object
+(`IParkCommandRights.AllowsRemoval`, yes for the host). Everything else stays the host's: pause and speed
+(Q8), cheats (Q17), money, staff and the park's management (C4), undo lines (whose cells a request could
+name freely; undo is C5), the single-cell removals no guest's tool issues, the pool tools, the Move tool,
+tracks and coasters (C3b, C3c) and the grants themselves.
 
 **A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
 of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
@@ -1792,6 +1801,37 @@ its record applies in its park. Cue choices are presentation, never hashed or in
 command writes is said only by its issuer's HUD (`Level.SaysLastActionMessage`); a guest says its own
 outcomes from its requests, never from the message text. A guest's click the rights refuse says that the
 host has not let it build yet, or that only the host does that.
+
+**A guest's other edits (C3b-1).** Land, the area clear and the sell buttons end at once for the host
+too, so a guest's sends its request and goes on: the land tool ends after its second click
+(`BuyLandClick.Sent`), the area clear after its rectangle, and a window's sale closes or refreshes the
+window as the host's does. Their outcomes are messages: a purchase the park refused says that the land
+cannot be bought, as the host's refused click does, and a refusal by the rights says so in its words.
+- **The area clear** is one command for every player (`ClearAreaCommand`): its second click sends the
+  rectangle, and the command runs tp.exe's scans (`AreaClear.Run`) with the level's own removals, in the
+  order the tool ran them, so a park clears as it did when each object and path cell was a command of its
+  own, in one record now. A guest's clear leaves an object it may not remove standing, as an object
+  across the rectangle's edge stays, and still clears the paths around it. The tool's counts are known at
+  once only to the host (`AreaClearTool.LastCleared`).
+- **The remove click** takes the queue or path cell under it when no object stands on the cell: a queue
+  cell with the cells behind it and their refund, a path cell without one. A guest's waits as the C3a-2
+  removal does.
+- **Backspace** with no tool on, over a path or queue cell: a guest's press sends its request and keeps it
+  (`Level.WaitingBacktrack`); until its outcome the key's presses and repeats send nothing more, so a held
+  key sends one request at a time, and a press over a cell with nothing to take back sends nothing.
+- **The sell buttons** of the object window and of the attractions list take no second sale of an object
+  whose first waits (`Level.IsSaleWaiting`); neither offers a fixed item's.
+- **The queue's edit.** The host's click starts the queue tool from the queue as it stands, then runs the
+  edit, which takes the link between the queue's back cell and its path off. A guest's click sends the
+  edit and starts no tool yet (`Level.WaitingQueueEdit`); another queue click waits, and Escape, a right
+  click or another tool leaves the wait (the first Escape opens no pause menu). The edit's record reads
+  what the host's click reads before it takes the link off (`Level.QueueEditStart`: the tool's start, the
+  corner walk and its segments), and the queue's cells and links after it. When the outcome comes back,
+  the queue tool starts from that read, with the help the host's click shows, if the park view still has
+  no tool, the ride still stands and no later record changed its queue's cells or links; otherwise no
+  tool starts and the park shows what happened.
+
+The session's end drops these waits with the others.
 
 **The host's switch (C3a-2).** The Build Together screen lists the guests with a switch each, beside the
 removal: it reads the shared park's applied grant ("Builds" or "Watches") and a click turns it over with
@@ -2071,7 +2111,7 @@ guarded list.
 
 | Area | Commands | State |
 | --- | --- | --- |
-| Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up and its end, the bulldozer (area clear: one command per cleared cell) | converted |
+| Objects | place (the build tool, the Move tool, track add-ons), the remove tool, remove at a cell, sell from the object and attraction windows, the Move tool's pick-up and its end, the bulldozer (area clear: one command for the rectangle, `ClearAreaCommand`, C3b-1; one command per cleared cell before) | converted |
 | Paths and queues | path and queue lines, undo inside the tool, path and queue cell removal, Backspace over a cell, the queue edit click | converted |
 | Developer prototype | place and remove the Totem, open and close it (the developer panel's button) | converted |
 | Winning screen | the end-of-park finale's dismissal in either game type (Escape, the late right click) | converted |

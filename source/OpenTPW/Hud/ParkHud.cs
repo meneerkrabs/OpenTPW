@@ -430,6 +430,9 @@ public sealed partial class ParkHud
 				level.CellTool.Cancel();
 			else if ( pendingItem != null || level.BuildEntry != null )
 				LeaveBuildTool();
+			// [EXT:online-coop-commands] a guest's queue edit that waits for the host is left as a tool is (C3b): only the next Escape opens the pause menu
+			else if ( level.WaitingQueueEdit != null )
+				level.DropQueueEditWait();
 			else
 				OpenPauseMenu();
 		};
@@ -604,6 +607,8 @@ public sealed partial class ParkHud
 	/// </summary>
 	private void RetireArmedTools()
 	{
+		// [EXT:online-coop-commands] a guest's queue edit that waits for the host starts no tool after this (C3b)
+		level.DropQueueEditWait();
 		LeaveBuildTool();
 		level.IsPlacing = level.IsRemovingObjects = false;
 		if ( level.IsCoasterToolActive ) level.ExitCoasterTool();
@@ -636,16 +641,27 @@ public sealed partial class ParkHud
 		level.Commands.Issue( new SetAttractionOpenCommand( item.Runtime.AttractionId, !item.IsOpen ) );
 	}
 
+	/// <summary>
+	/// Sells the placed object with attraction id <paramref name="attraction"/> (<see cref="RemoveAttractionCommand"/>): [EXT:online-coop-commands] a guest's sale goes to the host, and the sell
+	/// buttons take no second sale of the object until its outcome comes back (C3b).
+	/// </summary>
+	private void SellAttraction( int attraction )
+	{
+		if ( level.Commands.Issue( new RemoveAttractionCommand( attraction ) ).Request is { } request )
+			level.WaitSale( attraction, request );
+	}
+
 	private void DeleteRide()
 	{
 		if ( RejectReadOnlyAction() )
 			return;
-		if ( selectedObject is not { IsDeleted: false } item || item.Entry.IsFixedItem )
+		// [EXT:online-coop-commands] a guest's sale of the object that waits for the host takes no second one (C3b)
+		if ( selectedObject is not { IsDeleted: false } item || item.Entry.IsFixedItem || level.IsSaleWaiting( item.Runtime.AttractionId ) )
 			return;
 		void Remove()
 		{
 			// Catalogue objects sell and unlink exactly once; the developer prototype removes through its own seam ([EXT:online-coop-commands]: one command either way).
-			level.Commands.Issue( new RemoveAttractionCommand( item.Runtime.AttractionId ) );
+			SellAttraction( item.Runtime.AttractionId );
 			selectedObject = null;
 			SetInfoArm( false );
 		}
@@ -824,6 +840,9 @@ public sealed partial class ParkHud
 	{
 		level.WorldPointerRouted = false;
 		level.ParkOwnsRelease = false;
+		// [EXT:online-coop-commands] a guest's queue edit that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
+		if ( level.WaitingQueueEdit != null && !level.NoToolActive )
+			level.DropQueueEditWait();
 		// [EXT:online-coop-commands] a guest's requests resolved since the last frame complete their tools first, outside any command, tick and stream application (C3a-2)
 		CompleteGuestRequests();
 		SyncChallengeMessageSuspension();
@@ -1319,6 +1338,12 @@ public sealed partial class ParkHud
 			// Backspace over a path, queue, pool bridge or pool water cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack], a pool bridge or water cell [EXT:pools-bridges] [EXT:pools-tool]); a held key repeats only over path and queue cells.
 			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && BacktrackKey( input.BackspaceRepeating ) )
 				return true;
+			// [EXT:online-coop-commands] a right click leaves a guest's queue edit that waits for the host, as it leaves a tool (C3b)
+			if ( parkRightClick && level.WaitingQueueEdit != null )
+			{
+				level.DropQueueEditWait();
+				return true;
+			}
 			// [BIN:TPW-EXE:0x48C940 queue edit release] the press on a queue cell chose the ride (0x4879D0 case 3: tool 0x14, whose enter 0x46D5A0 only sets the mode); the mode's release handler (0x524960, mode 0x14: 0x530120 walks the queue
 			// into the stack, then SetMode(3)) starts the queue tool for the chosen ride, wherever the pointer is released
 			if ( pendingQueueEdit is { } edit )
@@ -1326,12 +1351,15 @@ public sealed partial class ParkHud
 				if ( !input.LeftReleased )
 					return input.LeftPressed;
 				pendingQueueEdit = null;
-				if ( !level.EditQueueAt( edit.X, edit.Y ) )
-					return false;
-				PostMessage( strings.Help( 445 ) );
-				if ( inPark )
-					tool.Hover( (cursorX, cursorY) );
-				return true;
+				if ( level.EditQueueAt( edit.X, edit.Y ) )
+				{
+					PostMessage( strings.Help( 445 ) );
+					if ( inPark )
+						tool.Hover( (cursorX, cursorY) );
+					return true;
+				}
+				// [EXT:online-coop-commands] a guest's edit went to the host (or one waits already): the queue tool starts once it comes back (C3b, CompleteQueueEdit)
+				return level.WaitingQueueEdit != null;
 			}
 			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )
 				return false;

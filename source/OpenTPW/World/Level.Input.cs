@@ -104,6 +104,38 @@ public partial class Level
 	/// </summary>
 	internal CoopGuestCommands.Request? WaitingRemoval { get; private set; }
 
+	/// <summary>
+	/// [EXT:online-coop-commands] The guest's queue edit that waits for the host, or null (C3b): no tool is on yet, and the queue tool starts once the edit comes back, from what its record
+	/// read (<see cref="CompleteQueueEdit"/>). Escape, a right click and another tool drop it (its start, <see cref="EndBuildTools"/>, the HUD's frame with a tool on): its outcome is then
+	/// only a message.
+	/// </summary>
+	internal CoopGuestCommands.Request? WaitingQueueEdit { get; private set; }
+
+	/// <summary>[EXT:online-coop-commands] The guest's Backspace that waits for the host, or null (C3b): the key's presses and repeats send nothing more until its outcome.</summary>
+	internal CoopGuestCommands.Request? WaitingBacktrack { get; private set; }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The guest's sales that wait for the host, by attraction id, or null before the first (C3b): the sell buttons take no second sale of the same object
+	/// meanwhile.
+	/// </summary>
+	private Dictionary<int, CoopGuestCommands.Request>? waitingSales;
+
+	/// <summary>[EXT:online-coop-commands] Whether a sale of the object with attraction id <paramref name="attraction"/> waits for the host.</summary>
+	internal bool IsSaleWaiting( int attraction ) => waitingSales?.ContainsKey( attraction ) == true;
+
+	/// <summary>[EXT:online-coop-commands] The guest's sale of <paramref name="attraction"/> went to the host as <paramref name="request"/>.</summary>
+	internal void WaitSale( int attraction, CoopGuestCommands.Request request ) => (waitingSales ??= new())[attraction] = request;
+
+	/// <summary>[EXT:online-coop-commands] Whether <paramref name="request"/> is a sale that waits for the host.</summary>
+	private bool IsWaitingSale( CoopGuestCommands.Request request ) =>
+		request.Command is RemoveAttractionCommand sale && waitingSales?.TryGetValue( sale.Attraction, out var waiting ) == true && waiting == request;
+
+	/// <summary>[EXT:online-coop-commands] The guest's Backspace went to the host as <paramref name="request"/>.</summary>
+	internal void WaitBacktrack( CoopGuestCommands.Request request ) => WaitingBacktrack = request;
+
+	/// <summary>[EXT:online-coop-commands] Escape, a right click or another tool leaves the queue edit that waits for the host: its outcome is only a message then.</summary>
+	internal void DropQueueEditWait() => WaitingQueueEdit = null;
+
 	/// <summary>[EXT:online-coop-commands] How many clicks a tool refused while its request waited for the host (C3a-2): the HUD asks the player to wait when it changes.</summary>
 	internal int WaitingClicks { get; private set; }
 
@@ -117,11 +149,21 @@ public partial class Level
 			WaitingPlacement = null;
 		if ( WaitingRemoval == request )
 			WaitingRemoval = null;
+		if ( WaitingQueueEdit == request )
+			WaitingQueueEdit = null;
+		if ( WaitingBacktrack == request )
+			WaitingBacktrack = null;
+		if ( IsWaitingSale( request ) )
+			waitingSales!.Remove( ((RemoveAttractionCommand)request.Command).Attraction );
 	}
 
+	/// <summary>[EXT:online-coop-commands] Whether <paramref name="request"/> is one this level's tools or buttons wait for (C3a-2, C3b).</summary>
+	internal bool IsWaitingFor( CoopGuestCommands.Request request ) =>
+		WaitingPlacement?.Request == request || WaitingRemoval == request || WaitingQueueEdit == request || WaitingBacktrack == request || IsWaitingSale( request );
+
 	/// <summary>
-	/// [EXT:online-coop-commands] The session ended with requests open (C3a-2): the placement and the removal that waited wait no more, and a line that waited ends its tool, since
-	/// what became of it is not known here.
+	/// [EXT:online-coop-commands] The session ended with requests open (C3a-2, C3b): the placement, the removal, the queue edit, the Backspace and the sales that waited wait no more,
+	/// and a line that waited ends its tool, since what became of it is not known here.
 	/// </summary>
 	internal void EndGuestWaits()
 	{
@@ -129,6 +171,9 @@ public partial class Level
 			tool.Cancel();
 		WaitingPlacement = null;
 		WaitingRemoval = null;
+		WaitingQueueEdit = null;
+		WaitingBacktrack = null;
+		waitingSales = null;
 	}
 
 	/// <summary>The remove tool's click on cell (<paramref name="x"/>, <paramref name="y"/>): [EXT:online-coop-commands] a guest's removal waits for the host, taking no other click until its outcome (C3a-2).</summary>
@@ -288,6 +333,16 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is not { } ride )
 			return false;
+		// [EXT:online-coop-commands] a guest's edit goes to the host first: no tool is on while it waits, and the tool starts from what its record read once it comes back (C3b,
+		// CompleteQueueEdit); the click starts nothing here
+		if ( Commands.SendsRequests )
+		{
+			if ( WaitingQueueEdit != null )
+				NoteWaitingClick();
+			else if ( Commands.Issue( new EditQueueCommand( x, y ) ).Request is { } request )
+				WaitingQueueEdit = request;
+			return false;
+		}
 		// the tool takes the queue's corners as they are before the edit takes the link off, as the original's walk does
 		if ( !EnterQueueTool( ride ) )
 			return false;
@@ -296,4 +351,28 @@ public partial class Level
 		CellTool.Cancel();
 		return false;
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The guest's queue edit came back accepted (C3b): the queue tool starts from what the edit's record read before it took the link off, as the host's click
+	/// starts it, if the park view is still without a tool and no later record changed the ride's queue since (its cells and their links): else nothing starts, and the park shows what
+	/// happened. True when the tool started.
+	/// </summary>
+	internal bool CompleteQueueEdit( QueueEditStart edit )
+	{
+		ArgumentNullException.ThrowIfNull( edit );
+		// the ride resolves again by its id, as a placed object a later record did not sell
+		if ( IsReadOnlyVisit || Guests == null || !NoToolActive || ResolveCommandObject( edit.Ride ) is not { IsDeleted: false } item
+			|| !ReferenceEquals( item.Visitors, ResolveQueueRide( edit.Ride ) ) || item.Visitors.QueueFrontCell == null )
+			return false;
+		var ride = item.Visitors;
+		if ( !QueueLinks( ride ).SequenceEqual( edit.Queue ) )
+			return false;
+		StaffPlacement?.Cancel();
+		return EnterQueueTool( ride, edit.Tool );
+	}
+
+	/// <summary>[EXT:online-coop-commands] Whether no tool of the park view is on (the view a queue click starts the queue tool from).</summary>
+	internal bool NoToolActive => !CellTool.IsActive && BuildEntry == null && !IsRemovingObjects && !IsPlacing && !IsCoasterToolActive
+		&& BuyLandTool is not { IsActive: true } && AreaClearTool is not { IsActive: true } && PoolTool is not { IsActive: true }
+		&& StaffPlacement is not { IsActive: true } && PatrolTool is not { IsActive: true };
 }

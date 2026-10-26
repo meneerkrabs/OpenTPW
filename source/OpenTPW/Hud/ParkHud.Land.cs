@@ -122,7 +122,7 @@ public sealed partial class ParkHud
 			tool.Hover( cursorX, cursorY );
 		else
 			tool.Hover( null, null );
-		// [BIN:TPW-EXE:0x525d29 Buy Land click] the rectangle's two corners are clicks of the tool object's release (0x524960), at the cell under the pointer then
+		// [BIN:TPW-EXE:0x525DA3 area clear click] mode 0x3A: both corners are clicks of the tool object's release (0x524960), at the cell under the pointer then
 		if ( !inPark || !input.LeftReleased )
 			return false;
 		tool.Click( cursorX, cursorY );

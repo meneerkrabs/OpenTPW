@@ -218,7 +218,7 @@ public partial class CoopSessionTests
 		guest.Enter();
 		typeof( ParkHud ).GetField( "pendingItem", NonPublic )!.SetValue( view.Hud,
 			new BuildItem( "karts", kart.Entry.InfoId, BuildCategory.Rides, 0, 0, null, Array.Empty<string>(), Entry: kart.Entry ) );
-		typeof( ParkHud ).GetMethod( "FinishPlacement", NonPublic )!.Invoke( view.Hud, new object[] { kart, false } );
+		typeof( ParkHud ).GetMethod( "FinishPlacement", NonPublic )!.Invoke( view.Hud, new object[] { kart, false, false } );
 		Assert.IsFalse( guest.Level.CellTool.IsActive, "no track tool, and no queue tool for a ride whose queue is the host's while its track tool is on it" );
 		Assert.IsNull( guest.Level.WaitingToolStart );
 		view.Update();
@@ -231,7 +231,7 @@ public partial class CoopSessionTests
 		guest.Enter();
 		typeof( ParkHud ).GetField( "pendingItem", NonPublic )!.SetValue( view.Hud,
 			new BuildItem( "karts", kart.Entry.InfoId, BuildCategory.Rides, 0, 0, null, Array.Empty<string>(), Entry: kart.Entry ) );
-		typeof( ParkHud ).GetMethod( "FinishPlacement", NonPublic )!.Invoke( view.Hud, new object[] { kart, false } );
+		typeof( ParkHud ).GetMethod( "FinishPlacement", NonPublic )!.Invoke( view.Hud, new object[] { kart, false, false } );
 		Assert.IsFalse( guest.Level.CellTool.IsActive );
 		Assert.IsInstanceOfType( guest.Level.WaitingToolStart?.Command, typeof( ClaimRideCommand ) );
 		RoundsUntil( () => guest.Level.TrackToolStation == kart, host, guest, view, "the track tool started from the claim's outcome" );

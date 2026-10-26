@@ -294,6 +294,9 @@ public partial class CoopJoinSessionTests
 		return (park.Level, park.Entities);
 	}
 
+	/// <summary>Runs on every park this class builds (the host's, the guests', a join's replay twin) before anything else, so the parks of one session start alike.</summary>
+	private Action<Level>? prepareParks;
+
 	/// <summary>
 	/// The candidate a guest builds from <paramref name="payload"/>, by replay: a twin from the identical start, the host's first <see cref="CoopJoinPayload.Records"/> records applied under
 	/// the session's rules before their ticks up to the cut's tick, then its per-player state cleared (as a load of the save clears it) and the capture's session state applied.

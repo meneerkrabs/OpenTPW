@@ -681,7 +681,8 @@ public sealed record SetSessionClockCommand( long Seconds ) : ParkSettingCommand
 /// <summary>
 /// [EXT:online-coop-permissions] The host grants a guest's seat the right to build, or takes it back (docs/COOP.md, "Building by every player"; the user's decision Q7: the host sets
 /// rights per player). The grants are session state, in every peer's park from the same tick on (the stream carries the command) and in a join snapshot, so every peer's rights refuse or
-/// allow a guest's command alike. Only the host may issue it (<see cref="CoopBuildRights"/>); the host's own seat 0 needs no grant.
+/// allow a guest's command alike. Only the host may issue it (<see cref="CoopBuildRights"/>); the host's own seat 0 needs no grant. [EXT:online-coop-claims] Taking a grant back lets go of the
+/// seat's claims in the same record, as its departure does (<see cref="ReleaseSeatCommand"/>), so a guest that may build no more holds no ride against the others (C3c-1b).
 /// </summary>
 public sealed record SetBuildGrantCommand( int Seat, bool Granted ) : ParkSettingCommand
 {
@@ -697,6 +698,8 @@ public sealed record SetBuildGrantCommand( int Seat, bool Granted ) : ParkSettin
 	internal override ParkCommandResult Execute( Level level )
 	{
 		level.SetBuildGrant( Seat, Granted );
+		if ( !Granted )
+			level.ReleaseClaimsOf( Seat );
 		return ParkCommandResult.Ok();
 	}
 }

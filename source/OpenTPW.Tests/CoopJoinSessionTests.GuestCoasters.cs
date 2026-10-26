@@ -12,9 +12,6 @@ namespace OpenTPW.Tests;
 /// </summary>
 public partial class CoopJoinSessionTests
 {
-	/// <summary>Runs on every park this class builds (the host's, the guests', a join's replay twin) before anything else, so the parks of one session start alike.</summary>
-	private Action<Level>? prepareParks;
-
 	[TestMethod]
 	public void AResyncingGuestsHeldCoasterDragIsReleasedBeforeItsCapture()
 	{

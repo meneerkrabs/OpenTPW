@@ -508,14 +508,19 @@ public partial class CoopSessionTests
 		GuestCoasterTool( host, guest, view, coaster );
 		foreach ( var command in commands )
 			Assert.IsTrue( rights.Allows( seat, command with { Player = seat } ), $"{command.Kind} under the claim" );
-		// and a guest without the grant has none of them, the claim held or not
-		Grant( host, guest, view, false );
-		foreach ( var command in commands )
-			Assert.AreEqual( CoopBuildRights.NotGrantedReason, rights.RefusalReason( seat, command with { Player = seat } ), $"{command.Kind} without the grant" );
 		// the host claims what no seat holds, and every coaster command of a coaster another seat claims is refused it
 		var hostRights = (CoopBuildRights)host.Level.Commands.Rights!;
 		foreach ( var command in commands )
 			Assert.AreEqual( Level.ClaimedReason, hostRights.RefusalReason( ParkCommands.LocalPlayer, command ), $"the host's {command.Kind}" );
+		// a guest without the grant has none of them, and its grant's record let go of its claim, which ended the coaster's tool state (C3c-1b)
+		Grant( host, guest, view, false );
+		foreach ( var command in commands )
+			Assert.AreEqual( CoopBuildRights.NotGrantedReason, rights.RefusalReason( seat, command with { Player = seat } ), $"{command.Kind} without the grant" );
+		Assert.IsNull( host.Level.ClaimOf( ride ) );
+		Assert.IsNull( guest.Level.ClaimOf( ride ) );
+		Assert.IsFalse( coaster.Runtime.Coaster!.BeingEdited, "the coaster left the tool" );
+		foreach ( var command in commands )
+			Assert.IsNull( hostRights.RefusalReason( ParkCommands.LocalPlayer, command ), $"the host's {command.Kind} once no seat claims the coaster" );
 		CatchUpAndCompare( host, guest );
 	}
 

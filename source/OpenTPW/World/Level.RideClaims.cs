@@ -62,9 +62,9 @@ public partial class Level
 	internal bool IsClaimableRide( OriginalObject item ) => !item.IsDeleted && (trackStations.ContainsKey( item ) || item.Runtime.Coaster != null);
 
 	/// <summary>
-	/// [EXT:online-coop-claims] A claim of the ride with attraction id <paramref name="ride"/> ended (its release, its move to another ride, its seat's departure, the host's expiry): a coaster in the
-	/// tool leaves it as <see cref="EndCoasterToolCommand"/> leaves it (<see cref="LeaveCoasterToolState"/>), in the same record, so no player that left, resynced or idled leaves a coaster closed
-	/// and marked (C3c-2). A track ride has no such state.
+	/// [EXT:online-coop-claims] A claim of the ride with attraction id <paramref name="ride"/> ended (its release, its move to another ride, its seat's departure or grant taken back, the host's
+	/// expiry): a coaster in the tool leaves it as <see cref="EndCoasterToolCommand"/> leaves it (<see cref="LeaveCoasterToolState"/>), in the same record, so no player that left, resynced, idled
+	/// or may build no more leaves a coaster closed and marked (C3c-2). A track ride has no such state.
 	/// </summary>
 	private void EndClaimedCoaster( int ride )
 	{
@@ -171,9 +171,12 @@ public partial class Level
 	{
 		if ( CoopSession == null )
 			return true;
-		if ( Commands.Issue( new ClaimRideCommand( station.Runtime.AttractionId ) ) is { Accepted: true } )
+		var claim = Commands.Issue( new ClaimRideCommand( station.Runtime.AttractionId ) );
+		if ( claim.Accepted )
 			return true;
-		NoteSessionRefusal( CoopRefusal.Claimed );
+		// as the frame check says it (SettleClaim): another player's claim, and no note for a refusal of another reason
+		if ( claim.Reason == ClaimedReason )
+			NoteSessionRefusal( CoopRefusal.Claimed );
 		return false;
 	}
 

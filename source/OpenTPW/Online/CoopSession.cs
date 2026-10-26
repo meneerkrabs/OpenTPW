@@ -729,8 +729,8 @@ internal sealed class CoopSession : IDisposable
 			return;
 		var swapStarted = Stopwatch.GetTimestamp();
 		var old = level;
-		// [EXT:online-coop-commands] the guest's armed Move tool, which the new park arms again from the carry its snapshot holds (C3b-2)
-		var move = old is { IsMoving: true, BuildEntry: { } armed } ? (ParkCommandCodec.EntryKey( armed ), old.BuildRotation) : ((string, int)?)null;
+		// [EXT:online-coop-commands] the guest's armed Move tool and the placement of it that waits for the host, which the new park arms and waits for again (C3b-2)
+		var move = old?.MoveForResync();
 		var desyncs = GuestStream?.Desyncs ?? 0;
 		if ( old != null )
 		{

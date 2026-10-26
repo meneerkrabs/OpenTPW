@@ -132,12 +132,13 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	internal bool LeavesClaimsAlone( int player, ParkCommand command ) => !CanBeClaimedAgainst( player ) || command switch
 	{
 		// a claimed ride's queue lines and their undo; no line crosses its cells (a path line paves a queue end), and no queue line takes the path cell its back joins (the queue writers
-		// lay queue over path); an undo takes the cells its line built off again, which may take a queue's link off, and only counts down the ones it crossed (ParkPathBuilder.Undo), which
-		// takes no link off: those are asked for themselves alone
+		// lay queue over path); an undo takes the cells its line built off again, which may take a queue's link off; a path line's undo only counts down the ones it crossed
+		// (ParkPathBuilder.Undo), which takes no link off, so those are asked for themselves alone, and a queue line's undo leaves them as they are (QueueLineWriter.Undo)
 		LayLineCommand line => (line.Mode != CellToolMode.Queue || !ClaimedRide( player, line.Ride ))
 			&& !CrossesClaimedQueue( player, line.StartX, line.StartY, line.EndX, line.EndY, joins: line.Mode == CellToolMode.Queue, endOnPathLinks: line.Mode == CellToolMode.Queue ),
 		UndoLineCommand undo => (undo.Mode != CellToolMode.Queue || !ClaimedRide( player, undo.Ride ))
-			&& !TouchesClaimedQueue( player, undo.Built.ToArray(), joins: true ) && !TouchesClaimedQueue( player, undo.Existing.ToArray(), joins: false ),
+			&& !TouchesClaimedQueue( player, undo.Built.ToArray(), joins: true )
+			&& (undo.Mode == CellToolMode.Queue || !TouchesClaimedQueue( player, undo.Existing.ToArray(), joins: false )),
 		QueueSegmentCommand line => !ClaimedRide( player, line.Ride ) && !CrossesClaimedQueue( player, line.StartX, line.StartY, line.EndX, line.EndY, joins: true ),
 		UndoQueueSegmentCommand undo => !ClaimedRide( player, undo.Ride ) && !CrossesClaimedQueue( player, undo.StartX, undo.StartY, undo.EndX, undo.EndY, joins: true ),
 		// no add-on on a claimed ride, nor a placement that demolishes what is claimed or writes over a claimed ride's queue or the path cell its back joins

@@ -357,6 +357,8 @@ public partial class CoopSessionTests
 				"one that only counts the join down, a path cell its line crossed, takes no link off (ParkPathBuilder.Undo)" );
 			Assert.IsFalse( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 12, 1, new[] { (12, 1) }, new[] { (10, 2) } ) ),
 				"a claimed queue cell among them is still the claim's" );
+			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Queue, level.Objects.Objects.First( item => !ReferenceEquals( item, park.One ) ).Runtime.AttractionId, 10, 3, Array.Empty<(int, int)>(), new[] { (10, 2) } ) ),
+				"another ride's queue line's undo leaves the cells it crossed as they are (QueueLineWriter.Undo), the claimed queue's cell among them" );
 			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 14, 1, new[] { (14, 1) }, new[] { (13, 1) } ) ), "away from it" );
 		}
 		finally

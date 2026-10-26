@@ -1761,10 +1761,13 @@ An object a guest may not remove (a fixed item, a slide tower, whose slide is th
 station) is also one its area clear leaves standing: a command that removes what it finds asks the rights
 of each object (`IParkCommandRights.AllowsRemoval`, yes for the host). The queue of a claimed ride (a
 coaster's or a track ride's station) stays the host's in all of these until claims come (C3c): its lines,
-its edit, the removal of its cells and Backspace over them, a queue line of another ride across one of
-its cells, and the object window's queue tool, which a guest's window does not offer. A queue cell's
-ride is resolved as its removal resolves it: the rides' cached lines, then each line walked again (on a
-copy) for a cell they miss. Everything else stays the host's: pause and speed
+its edit, the removal of its cells and Backspace over them, any line across one of its cells (a path line
+paves a queue's end), and the object window's queue tool, which a guest's window does not offer. So does
+the path cell its back cell joins, whose removal or a queue laid over it would take the queue's link
+off: a guest's remove click, Backspace and queue lines refuse it, and its area clear leaves it standing
+(`IParkCommandRights.AllowsPathRemoval`). A path line along it changes no link of the queue and stays the
+guest's. A queue cell's ride is resolved as its removal resolves it: the rides' cached lines, then each
+line walked again (on a copy) for the cells they miss, once per command. Everything else stays the host's: pause and speed
 (Q8), cheats (Q17), money, staff and the park's management (C4), undo lines (whose cells a request could
 name freely; undo is C5), the single-cell removals no guest's tool issues, the pool tools, tracks and
 coasters (C3b, C3c), the grants and the release of a departed seat.

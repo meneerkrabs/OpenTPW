@@ -566,6 +566,18 @@ public partial class CoopSessionTests
 				Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, command ) );
 			}
 			Assert.IsTrue( rights.Allows( seat, new RemoveAtCommand( 12, 1 ) ), "a path cell stays the guest's" );
+			// the path cell its back (10, 2) joins is the host's too: a removal or a queue laid over it takes the link off
+			Assert.IsFalse( rights.Allows( seat, new RemoveAtCommand( 10, 1 ) ), "the path cell the claimed queue joins" );
+			Assert.IsFalse( rights.Allows( seat, new BacktrackCommand( 10, 1 ) ) );
+			Assert.IsTrue( rights.Allows( seat, new BacktrackCommand( 12, 1 ) ) );
+			Assert.IsFalse( rights.AllowsPathRemoval( seat, 10, 1 ) );
+			Assert.IsTrue( rights.AllowsPathRemoval( seat, 9, 1 ) && rights.AllowsPathRemoval( ParkCommands.LocalPlayer, 10, 1 ) );
+			var other = guest.Level.Objects.Objects.First( item => !ReferenceEquals( item, guest.One ) ).Runtime.AttractionId;
+			Assert.IsFalse( rights.Allows( seat, new QueueSegmentCommand( other, 12, 1, 8, 1 ) ), "another ride's queue over the path cell the claimed queue joins" );
+			Assert.IsFalse( rights.Allows( seat, new LayLineCommand( CellToolMode.Queue, other, 12, 1, 8, 1 ) ) );
+			Assert.IsTrue( rights.Allows( seat, new LayLineCommand( CellToolMode.Path, -1, 12, 1, 8, 1 ) ), "a path line along it changes no link of the queue" );
+			Assert.IsFalse( rights.Allows( seat, new LayLineCommand( CellToolMode.Path, -1, 12, 3, 8, 3 ) ), "a path line over a claimed queue cell (a path line paves a queue end)" );
+			Assert.IsTrue( rights.Allows( seat, new QueueSegmentCommand( other, 12, 9, 8, 9 ) ), "a line that crosses neither is the guest's" );
 			// the object window offers the guest no tool for that queue
 			var canEdit = typeof( ParkHud ).GetMethod( "CanEditQueue", NonPublic )!;
 			Assert.IsFalse( (bool)canEdit.Invoke( view.Hud, new object[] { guest.One } )! );
@@ -575,6 +587,41 @@ public partial class CoopSessionTests
 			MarkStation( guest, guest.One, station: false );
 		}
 		Assert.IsTrue( (bool)typeof( ParkHud ).GetMethod( "CanEditQueue", NonPublic )!.Invoke( view.Hud, new object[] { guest.One } )!, "an ordinary ride's queue tool is offered" );
+		Assert.IsTrue( rights.Allows( seat, new RemoveAtCommand( 10, 1 ) ) && rights.Allows( seat, new LayLineCommand( CellToolMode.Path, -1, 12, 3, 8, 3 ) ), "an ordinary ride's join is the guest's" );
+	}
+
+	[TestMethod]
+	public void AGuestsAreaClearLeavesThePathCellAClaimedQueueJoins()
+	{
+		var park = NewPark();
+		park.Enter();
+		var level = park.Level;
+		var grid = level.Guests!.Grid;
+		// One's queue from (10, 6) up to its back cell (10, 2), joined to the path at (10, 1)
+		ConfigureQueue( grid, park.One, 10, 5 );
+		Assert.AreNotEqual( 0, Links( park, 10, 1 ) & GuestPathGrid.LinkValue( 2 ), "the path cell links to the queue's back" );
+		var rights = new CoopBuildRights( level );
+		level.SetBuildGrant( 1, true );
+		var before = level.Commands.Rights;
+		level.Commands.Rights = rights;
+		MarkStation( park, park.One );
+		try
+		{
+			var result = level.Commands.ApplyRemote( new ClearAreaCommand( 9, 0, 11, 1 ) { Player = 1 } );
+			Assert.IsTrue( result.Accepted );
+			Assert.AreEqual( (0, 2), result.As<(int Objects, int Paths)>(), "the guest's clear takes the two path cells beside it" );
+			Assert.IsTrue( Walkable( park, 10, 1 ) && !Walkable( park, 9, 1 ) && !Walkable( park, 11, 1 ) );
+			Assert.AreNotEqual( 0, Links( park, 10, 2 ) & GuestPathGrid.LinkValue( 0 ), "the queue's back keeps its link to the path" );
+			Assert.IsTrue( IsQueue( park, 10, 2 ) && IsQueue( park, 10, 6 ) );
+			// the host's clear takes it
+			Assert.AreEqual( (0, 1), level.Commands.ApplyRemote( new ClearAreaCommand( 9, 0, 11, 1 ) ).As<(int Objects, int Paths)>() );
+			Assert.IsFalse( Walkable( park, 10, 1 ) );
+		}
+		finally
+		{
+			MarkStation( park, park.One, station: false );
+			level.Commands.Rights = before;
+		}
 	}
 
 	[TestMethod]
@@ -601,7 +648,11 @@ public partial class CoopSessionTests
 			Assert.IsFalse( rights.Allows( 1, new QueueSegmentCommand( other.Runtime.AttractionId, 14, 4, 6, 4 ) ), "a line across a claimed queue's cell is the host's" );
 			Assert.IsFalse( rights.Allows( 1, new LayLineCommand( CellToolMode.Queue, other.Runtime.AttractionId, 14, 4, 6, 4 ) ) );
 			Assert.IsTrue( rights.Allows( 1, new QueueSegmentCommand( other.Runtime.AttractionId, 14, 8, 6, 8 ) ), "a line that crosses none is the guest's" );
-			Assert.IsTrue( rights.Allows( 1, new LayLineCommand( CellToolMode.Path, -1, 14, 4, 6, 4 ) ), "a path line is the park's to refuse over a queue" );
+			Assert.IsFalse( rights.Allows( 1, new LayLineCommand( CellToolMode.Path, -1, 14, 4, 6, 4 ) ), "a path line across it too" );
+			Assert.IsTrue( rights.Allows( 1, new LayLineCommand( CellToolMode.Path, -1, 14, 8, 6, 8 ) ) );
+			// the cells' owners resolved together, as each alone
+			CollectionAssert.AreEqual( new (int, int, OriginalObject?)[] { (10, 2, park.One), (10, 4, park.One) },
+				level.QueueOwnersAt( new[] { (10, 2), (9, 9), (10, 4), (-1, 4) } ).ToArray() );
 		}
 		finally
 		{

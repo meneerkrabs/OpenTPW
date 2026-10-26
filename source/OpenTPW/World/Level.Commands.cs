@@ -237,7 +237,7 @@ public partial class Level
 	private ParkCommandResult ExecuteClearArea( ClearAreaCommand clear ) =>
 		ParkCommandResult.Ok( AreaClear.Run( Guests?.Grid.Cells, (clear.X0, clear.Y0), (clear.X1, clear.Y1),
 			( x, y ) => Objects.FindAt( x, y ) is not { } item || Commands.AllowsRemoval( clear.Player, item ) ? RemoveObjectAt( x, y ) : false,
-			RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) ) );
+			( x, y ) => Commands.AllowsPathRemoval( clear.Player, x, y ) ? RemovePathCell( x, y ) : CellBuildResult.Occupied, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) ) );
 
 	/// <summary>
 	/// [EXT:online-coop-commands] What a queue edit's record read (C3b): the queue tool's start before the edit took the link off, as the host's click reads it before its edit, and the

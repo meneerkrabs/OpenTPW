@@ -91,7 +91,8 @@ public partial class Level
 
 	/// <summary>
 	/// [EXT:online-coop-commands] The guest's queue edit that waits for the host, or null (C3b): no tool is on yet, and the queue tool starts once the edit comes back, from what its record
-	/// read (<see cref="CompleteQueueEdit"/>). Escape, a right click, <see cref="EndBuildTools"/> and any tool that is on by then drop it: its outcome is then only a message.
+	/// read (<see cref="CompleteQueueEdit"/>). Escape, a right click and another tool drop it (its start, <see cref="EndBuildTools"/>, the HUD's frame with a tool on): its outcome is then
+	/// only a message.
 	/// </summary>
 	internal CoopGuestCommands.Request? WaitingQueueEdit { get; private set; }
 

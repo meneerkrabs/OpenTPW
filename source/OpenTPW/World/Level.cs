@@ -26,6 +26,8 @@ public partial class Level : IDisposable
 			if ( value )
 			{
 				StaffPlacement?.Cancel();
+				// [EXT:online-coop-commands] another tool: a guest's queue edit that waits for the host starts no tool once it is back (C3b)
+				DropQueueEditWait();
 				PatrolTool?.Cancel();
 				BuyLandTool?.Cancel();
 				AreaClearTool?.Cancel();

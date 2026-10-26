@@ -605,6 +605,8 @@ public sealed partial class ParkHud
 	/// </summary>
 	private void RetireArmedTools()
 	{
+		// [EXT:online-coop-commands] a guest's queue edit that waits for the host starts no tool after this (C3b)
+		level.DropQueueEditWait();
 		LeaveBuildTool();
 		level.IsPlacing = level.IsRemovingObjects = false;
 		if ( level.IsCoasterToolActive ) level.ExitCoasterTool();
@@ -835,6 +837,9 @@ public sealed partial class ParkHud
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
 		level.WorldPointerRouted = false;
+		// [EXT:online-coop-commands] a guest's queue edit that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
+		if ( level.WaitingQueueEdit != null && !level.NoToolActive )
+			level.DropQueueEditWait();
 		// [EXT:online-coop-commands] a guest's requests resolved since the last frame complete their tools first, outside any command, tick and stream application (C3a-2)
 		CompleteGuestRequests();
 		SyncChallengeMessageSuspension();

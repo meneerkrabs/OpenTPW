@@ -171,6 +171,16 @@ public partial class CoopSessionTests
 		Assert.IsTrue( guest.Level.IsRemovingObjects );
 		Assert.IsFalse( guest.Level.CellTool.IsActive, "the remove tool stays the one on" );
 		guest.Level.IsRemovingObjects = false;
+		// nor does a tool that started and ended while the edit waited: the wait went with its start
+		HudToolClick.Click( view.Hud, (10, 4) );
+		var fourth = guest.Level.WaitingQueueEdit;
+		Assert.IsNotNull( fourth );
+		Assert.IsTrue( guest.Level.EnterPathTool( 5, 20 ) );
+		Assert.IsNull( guest.Level.WaitingQueueEdit, "the path tool's start leaves the wait" );
+		guest.Level.CellTool.Cancel();
+		RoundsUntil( () => !fourth!.IsOpen, host, guest, view, "the fourth edit resolved" );
+		view.Update();
+		Assert.IsFalse( guest.Level.CellTool.IsActive, "no queue tool comes after the path tool's cancel" );
 		CatchUpAndCompare( host, guest );
 	}
 
@@ -232,6 +242,9 @@ public partial class CoopSessionTests
 		}
 		var view = ViewOf( guest );
 		var hostView = ViewOf( host );
+		var charges = new[] { new List<long>(), new List<long>() };
+		host.Economy.EventRaised += raised => { if ( raised.Kind == ParkEventKind.CellsBought ) charges[0].Add( raised.Amount ); };
+		guest.Economy.EventRaised += raised => { if ( raised.Kind == ParkEventKind.CellsBought ) charges[1].Add( raised.Amount ); };
 		Rounds( 20, host, guest );
 		Grant( host, guest, view );
 		guest.Enter();
@@ -248,6 +261,9 @@ public partial class CoopSessionTests
 		RoundsUntil( () => Owned( guest ), host, guest, view, "bought at its record" );
 		Assert.IsTrue( Owned( host ), "on both parks" );
 		Assert.AreEqual( 0, view.Says( OpenTpwText.CannotBuyLand ) );
+		Assert.AreEqual( 1, charges[0].Count, "the bank is charged once" );
+		Assert.IsTrue( charges[0][0] > 0 );
+		CollectionAssert.AreEqual( charges[0], charges[1], "the same charge on both parks" );
 		// a rectangle of two cells a side: the park refuses it, and only the guest says so
 		Assert.IsTrue( tool.Begin() );
 		tool.Click( 30, 12 );
@@ -257,6 +273,7 @@ public partial class CoopSessionTests
 		RoundsUntil( () => view.Says( OpenTpwText.CannotBuyLand ) == 1, host, guest, view, "the refusal is said to the guest" );
 		hostView.Update();
 		Assert.AreEqual( 0, hostView.Says( OpenTpwText.CannotBuyLand ) );
+		Assert.AreEqual( 1, charges[0].Count, "a refused purchase charges nothing" );
 		CatchUpAndCompare( host, guest );
 	}
 
@@ -311,9 +328,13 @@ public partial class CoopSessionTests
 		Assert.IsNotNull( guest.Level.WaitingRemoval, "the path cell's removal went to the host" );
 		RoundsUntil( () => guest.Level.WaitingRemoval == null, host, guest, view, "the path cell's removal came back" );
 		Assert.IsFalse( Walkable( host, 12, 1 ) || Walkable( guest, 12, 1 ) );
+		long Refunds( Park park ) => park.Economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherIncome );
+		var (hostBefore, guestBefore) = (Refunds( host ), Refunds( guest ));
 		guest.Level.ClickRemoveTool( 10, 4 );
 		Assert.IsNotNull( guest.Level.WaitingRemoval, "the queue cell's removal went to the host" );
 		RoundsUntil( () => guest.Level.WaitingRemoval == null, host, guest, view, "the queue cell's removal came back" );
+		Assert.IsTrue( Refunds( host ) > hostBefore, "the cells are refunded" );
+		Assert.AreEqual( Refunds( host ) - hostBefore, Refunds( guest ) - guestBefore, "the same refund on both parks" );
 		foreach ( var park in new[] { host, guest } )
 		{
 			Assert.IsFalse( IsQueue( park, 10, 4 ) || IsQueue( park, 10, 3 ) || IsQueue( park, 10, 2 ), "the cell and those behind it go" );
@@ -457,15 +478,21 @@ public partial class CoopSessionTests
 				( x, y ) => level.Commands.Issue( new RemovePathCellCommand( x, y ) ) is { Value: CellBuildResult removed } ? removed : CellBuildResult.NotPath );
 			Assert.IsTrue( result.Accepted );
 			Assert.AreEqual( old, result.As<(int Objects, int Paths)>(), "the same counts" );
-			Assert.AreEqual( 2, old.Objects, "the two rides wholly inside" );
-			Assert.IsTrue( old.Paths > 0 );
+			// what tp.exe's clear takes there, read off the park and not off the scans: the two rides wholly inside and the path cells x 18 to 26 of the line
+			Assert.AreEqual( (2, 9), old );
 			CollectionAssert.AreEqual( sounds.ToArray(), oneSounds, "the same cues" );
 		}
 		finally
 		{
 			GameAudio.UiSoundObserver = null;
 		}
-		Assert.IsNotNull( one.Level.Objects.FindAt( 28, 15 ) );
+		foreach ( var park in new[] { one, cells } )
+		{
+			Assert.IsNull( park.Level.Objects.FindAt( 20, 12 ) ?? park.Level.Objects.FindAt( 24, 12 ), "the rides inside go" );
+			Assert.IsNotNull( park.Level.Objects.FindAt( 28, 15 ), "the ride outside stays" );
+			Assert.IsTrue( Enumerable.Range( 18, 9 ).All( x => !Walkable( park, x, 20 ) ), "the path cells inside go" );
+			Assert.IsTrue( Enumerable.Range( 27, 4 ).All( x => Walkable( park, x, 20 ) ), "the path cells outside stay" );
+		}
 		Assert.AreEqual( cells.Level.LastActionMessage, one.Level.LastActionMessage, "the same last message" );
 		Assert.AreEqual( cells.Level.ComputeStateHash(), one.Level.ComputeStateHash(), "the same world" );
 		Assert.AreEqual( CoopDigest.Compute( cells.Level ), CoopDigest.Compute( one.Level ), "the same session state" );

@@ -5,18 +5,22 @@ namespace OpenTPW;
 /// that filled it (a drag's put-back and end and the tool's end go after the panel closed). It sends from its head while fewer than <see cref="Level.OpenToolRequestLimit"/> tool requests of the
 /// guest are open in the session (the pool tool's counted too), a drag's step at most every <see cref="StepSeconds"/> and anything else at once. A drag's step replaces the unsent step of the same
 /// field of that drag, wherever it waits, so a drag holds at most one unsent step per field besides its press and its end. Each command may carry what its outcome does, run once it is back.
-/// A drag's end settles the money against the pylon as the drag's steps left it, so it goes only once every command before it came back, and nothing goes after it until it is back: a drag's last
-/// value of a field, or its end, that the host took no record of (or whose outcome is not known) goes again, first, at most <see cref="MaximumRetries"/> times.
+/// A drag's end settles the money against the pylon as the drag's steps left it, so it goes only once every command before it came back, and nothing goes after it until it is back. A drag's last
+/// value of a field, or its end, that the host found too fast goes again, first, <see cref="RetrySeconds"/> later, as often as it takes; one whose outcome is not known goes again at most
+/// <see cref="MaximumRetries"/> times. Any other loss of them gives the drag up, and its panel ends (<see cref="CoasterGuestAction.DragLost"/>): the claim's release ends the edit the host holds.
 /// </summary>
 internal sealed class CoasterRequestQueue
 {
 	/// <summary>The least time between two drag steps sent: the drag's latest value goes at most this often (0.2 s, as the pool tool's batches).</summary>
 	public const double StepSeconds = 0.2;
 
-	/// <summary>How often a drag's last value of a field, or its end, goes again after the host took no record of it or its outcome was not known.</summary>
+	/// <summary>How often a drag's last value of a field, or its end, goes again after its outcome was not known.</summary>
 	public const int MaximumRetries = 5;
 
-	/// <summary>One queued command: its drag (0 for none), a step's field, the request once sent, what its outcome does, and how often it went again.</summary>
+	/// <summary>How long a drag's last value of a field, or its end, that the host found too fast waits before it goes again: the host's bucket of the guest's requests refills meanwhile.</summary>
+	public const double RetrySeconds = 0.5;
+
+	/// <summary>One queued command: its drag (0 for none), a step's field, the request once sent, what its outcome does, how often it went again and when it may go again.</summary>
 	private sealed class Item
 	{
 		public required ParkCommand Command;
@@ -25,6 +29,8 @@ internal sealed class CoasterRequestQueue
 		public CoopGuestCommands.Request? Request;
 		public Action<CoasterOutcome>? Completed;
 		public int Retries;
+		/// <summary>When it may go again (NaN: <see cref="RetrySeconds"/> from the next send).</summary>
+		public double RetryAt = double.NegativeInfinity;
 
 		/// <summary>Whether this is a drag's end, which settles what the drag's steps left.</summary>
 		public bool IsDragEnd => Drag > 0 && Command is EndCoasterNodeEditCommand;
@@ -33,6 +39,10 @@ internal sealed class CoasterRequestQueue
 	private readonly List<Item> unsent = new();
 	private readonly List<Item> sent = new();
 	private double lastStep = double.NegativeInfinity;
+	private int lastDrag;
+
+	/// <summary>A number for a new drag, unique in this queue: its steps, its end and their retries are that drag's alone, whichever panel queued them.</summary>
+	public int NewDrag() => ++lastDrag;
 
 	/// <summary>How many commands went again after the host took no record of them or their outcome was not known (the tests read it).</summary>
 	internal int Retried { get; private set; }
@@ -86,7 +96,9 @@ internal sealed class CoasterRequestQueue
 			var item = unsent[0];
 			if ( sent.Any( other => other.IsDragEnd ) || (item.IsDragEnd && sent.Count > 0) )
 				return;
-			if ( openRequests() >= limit || (item.Field != null && now - lastStep < StepSeconds) )
+			if ( double.IsNaN( item.RetryAt ) )
+				item.RetryAt = now + RetrySeconds;
+			if ( now < item.RetryAt || openRequests() >= limit || (item.Field != null && now - lastStep < StepSeconds) )
 				return;
 			unsent.RemoveAt( 0 );
 			if ( item.Field != null )
@@ -104,8 +116,9 @@ internal sealed class CoasterRequestQueue
 
 	/// <summary>
 	/// A guest request resolved (the HUD's drain): when it is one of this queue's, its completion runs with its outcome. A drag's end, or a drag's step whose field no later command of the drag
-	/// sets, that the host took no record of or whose outcome is not known goes again instead, before anything else, at most <see cref="MaximumRetries"/> times: the end then settles the drag's
-	/// last values (setting a value again, or ending a drag that ended, changes nothing more). True when it was this queue's.
+	/// sets, goes again instead, before anything else, when the host found it too fast (<see cref="RetrySeconds"/> later, as often as it takes) or its outcome is not known (at once, at most
+	/// <see cref="MaximumRetries"/> times): the end then settles the drag's last values (setting a value again, or ending a drag that ended, changes nothing more). Any other loss of them gives
+	/// the drag up (<see cref="CoasterGuestAction.DragLost"/>). True when it was this queue's.
 	/// </summary>
 	public bool Complete( CoopGuestCommands.Request request )
 	{
@@ -121,13 +134,20 @@ internal sealed class CoasterRequestQueue
 			{ State: CoopGuestRequestState.Refused } => new CoasterOutcome( null, true, false ),
 			_ => new CoasterOutcome( null, false, true )
 		};
-		if ( (outcome.NotTaken || outcome.Unknown) && item.Retries < MaximumRetries && (item.IsDragEnd || (item.Field is { } field && !SetLater( item.Drag, field, index ))) )
+		if ( (outcome.NotTaken || outcome.Unknown) && (item.IsDragEnd || (item.Field is { } field && !SetLater( item.Drag, field, index ))) )
 		{
-			item.Retries++;
-			item.Request = null;
-			unsent.Insert( 0, item );
-			Retried++;
-			return true;
+			var tooFast = request is { State: CoopGuestRequestState.Refused, Refusal: CoopGuestRefusal.TooFast };
+			if ( tooFast || (outcome.Unknown && item.Retries < MaximumRetries) )
+			{
+				item.Retries++;
+				item.Request = null;
+				item.RetryAt = tooFast ? double.NaN : double.NegativeInfinity;
+				unsent.Insert( 0, item );
+				Retried++;
+				return true;
+			}
+			// given up (a park that takes no commands now, a seat lost, an outcome not known again and again): the drag is lost, and its panel ends
+			Reports.Add( new CoasterGuestReport( CoasterGuestAction.DragLost, outcome, Open: false, Closing: false ) { Drag = item.Drag } );
 		}
 		item.Completed?.Invoke( outcome );
 		return true;

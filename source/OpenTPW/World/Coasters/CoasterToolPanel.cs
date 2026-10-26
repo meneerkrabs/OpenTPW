@@ -57,8 +57,8 @@ public sealed class CoasterToolPanel
 	private int cutVersion;
 	private (int Version, CoasterToolButton Button, bool Loop)? areaKey;
 	private IReadOnlyList<(int X, int Y)> area = [];
-	/// <summary>[EXT:online-coop-commands] The drags a guest's panel numbered (its queue's scope for a drag's steps, C3c-2).</summary>
-	private int drags;
+	/// <summary>[EXT:online-coop-commands] The first and the last number of the drags this guest's panel took from its queue (<see cref="CoasterRequestQueue.NewDrag"/>, C3c-2); 0 for none.</summary>
+	private int firstDrag, lastDrag;
 	/// <summary>[EXT:online-coop-commands] A guest's press whose <see cref="BeginCoasterNodeEditCommand"/> waits for the host: the drag starts from its outcome (C3c-2).</summary>
 	private PendingPress? pendingPress;
 	/// <summary>[EXT:online-coop-commands] A guest's click, Backspace, swap or cut that waits for the host (C3c-2).</summary>
@@ -86,6 +86,9 @@ public sealed class CoasterToolPanel
 
 	/// <summary>[EXT:online-coop-commands] Whether a guest's press waits for the host (C3c-2): its release is kept for the drag its outcome starts.</summary>
 	public bool PressWaits => pendingPress != null;
+
+	/// <summary>[EXT:online-coop-commands] Whether <paramref name="drag"/> is a drag of this guest's panel (C3c-2).</summary>
+	internal bool Numbered( int drag ) => firstDrag > 0 && drag >= firstDrag && drag <= lastDrag;
 
 	/// <summary>
 	/// [EXT:online-coop-commands] Whether a guest's request of the panel waits for the host (C3c-2): a click, a Backspace, a swap or a cut, or a drag's press. The panel takes no button, press, click
@@ -359,7 +362,9 @@ public sealed class CoasterToolPanel
 			return false;
 		if ( Guest )
 		{
-			var number = ++drags;
+			var number = lastDrag = GuestRequests!.NewDrag();
+			if ( firstDrag == 0 )
+				firstDrag = number;
 			pendingPress = new PendingPress { Number = number, Kind = Selected, Drag = dragKind, Node = node, Origin = mouse };
 			GuestRequests!.Enqueue( new BeginCoasterNodeEditCommand( station, node, dragKind ), number, outcome => PressAnswered( number, outcome ) );
 			return true;
@@ -815,14 +820,23 @@ internal enum CoasterGuestAction
 	/// <summary>A drag's press (<see cref="BeginCoasterNodeEditCommand"/>).</summary>
 	Press,
 	/// <summary>A drag's end (<see cref="EndCoasterNodeEditCommand"/>), reported only when the rights refused it while its panel was open.</summary>
-	DragEnd
+	DragEnd,
+	/// <summary>
+	/// A drag the queue gave up (<see cref="CoasterRequestQueue.Complete"/>): its end, or its last value of a field, was lost (a park that takes no commands now, a seat lost, an outcome not known
+	/// again and again). Its panel ends, and the claim's release ends the edit the host may hold.
+	/// </summary>
+	DragLost
 }
 
 /// <summary>
 /// [EXT:online-coop-commands] What a guest's coaster tool action came back with, for the HUD to say (C3c-2): the action, its outcome, whether its panel was still the open one when it came back (a
 /// closed panel's outcome ends no tool), and for a click whether it was on the chain start.
 /// </summary>
-internal sealed record CoasterGuestReport( CoasterGuestAction Action, CoasterOutcome Outcome, bool Open, bool Closing );
+internal sealed record CoasterGuestReport( CoasterGuestAction Action, CoasterOutcome Outcome, bool Open, bool Closing )
+{
+	/// <summary>The drag of a <see cref="CoasterGuestAction.DragLost"/> report (<see cref="CoasterRequestQueue.NewDrag"/>).</summary>
+	public int Drag { get; init; }
+}
 
 /// <summary>What a release in the coaster panel did.</summary>
 public enum CoasterPanelResult

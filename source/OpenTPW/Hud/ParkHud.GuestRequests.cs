@@ -277,11 +277,23 @@ public sealed partial class ParkHud
 	/// A guest's coaster tool action came back (C3c-2), said as the host's is said at once: a click's result (<see cref="ReportCoasterResult"/>), the build button's help after a cut that reopened the
 	/// circuit. A press made while the action waited is no click whatever came back (the HUD marked it, <see cref="coasterPressWhileWaiting"/>), and a press held from before the wait keeps its
 	/// release. A refusal by the rights ends the open panel's tool, without a command (the claim or the grant went: the claim's end left the coaster's tool state, or the stray claim's release
-	/// will), as a tool the host's answer ended, and says why; a request the host could not take, or whose outcome is not known, says so and the tool stays. A closed panel's outcome is only said.
+	/// will), as a tool the host's answer ended, and says why; a request the host could not take, or whose outcome is not known, says so and the tool stays, but a drag the queue gave up ends its
+	/// open panel so too. A closed panel's outcome is only said.
 	/// </summary>
 	private void ReportGuestCoasterAction( CoasterGuestReport report )
 	{
 		var outcome = report.Outcome;
+		// a drag the queue gave up: the panel it belongs to ends, if it is the open one, and says why; the claim's release then ends the edit the host may hold
+		if ( report.Action == CoasterGuestAction.DragLost )
+		{
+			if ( level.CoasterPanel is { } panel && panel.Numbered( report.Drag ) )
+			{
+				level.HostToolStarts++;
+				level.CloseCoasterToolLocally();
+				SayGuestNote( outcome.NotTaken ? OpenTpwText.CoopHostCouldNotTake : OpenTpwText.CoopBuildUnknown );
+			}
+			return;
+		}
 		if ( outcome.Result is { RightsRefused: true } refused )
 		{
 			// a closed panel's refusal is only said: the tool on now is another one

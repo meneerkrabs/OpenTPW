@@ -2080,12 +2080,17 @@ tool sends every write as a request:
   incline, loop rotation, move), replacing that field's value not yet sent: the latest value goes, a step at
   most every 0.2 seconds of the HUD's clock. The release ends the drag at once here and queues the end
   behind the steps (a move released over nothing goes back to its cell first). The guest sees the pylon
-  move as the records apply.
+  move as the records apply. The end settles the money against the pylon as the steps left it, so it goes
+  only once every command before it came back, and nothing goes after it until it is back. A drag's last
+  value of a field, or its end, that the host found too fast goes again half a second later, as often as it
+  takes, and one whose outcome is not known goes again a few times; any other loss gives the drag up: its
+  panel ends with a note, and the claim's release ends the edit the host may hold.
 - **A press made while the panel waited** (at the start of the HUD's frame, before its outcomes, or when the
   press is taken, before a drag's own press is sent) is marked: its release is no click and no drag's
-  release, whatever came back meanwhile. An outcome that changed the open panel (its opening, a click that
-  placed or completed, a cut, a swap, a Backspace that took a pylon off) counts as a tool the host's answer
-  moved on, as for the track tools.
+  release, whatever came back meanwhile. A press held from before the wait keeps its release: an outcome
+  that only changed the panel (a click that placed, a cut, a swap, a Backspace) moves no gesture on. The
+  panel's opening from an outcome, and an outcome that ended it, count as a tool the host's answer started
+  or ended, as for the track tools.
 - **Refusals.** A refusal by the rights (the claim or the grant went) of a click, a Backspace, a swap, a cut,
   a drag's press or its end ends the guest's tool without a command and says why: the claim's end left the
   coaster's tool state, or the stray claim's release will. A request the host could not take and an outcome

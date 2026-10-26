@@ -31,15 +31,26 @@ public static class QueueModelDrape
 	}
 
 	/// <summary>
-	/// The root node's matrix of the instance in the MD2 frame (x, y up, z): the turn about the cell (<see cref="ObjectPlacement.CellRotation"/>, the yaw 360 - rotation of 0x5229E0), the cell's
-	/// origin on the grid and the instance height.
+	/// The root node's matrix of the instance in the MD2 frame (x, y up, z): the root node's own matrix (<paramref name="root"/>, which the Space models' bends carry a quarter turn in) turned by the
+	/// yaw with the sine table's cosine and sine (not exactly 0 and 1), and only its translation replaced: the cell's origin on the grid and the instance height. The cell is the one 0x466F90 advances for
+	/// the quarter turns (90 a row, 180 a column and a row, 270 a column).
 	/// </summary>
-	// [BIN:TPW-EXE:0x00467030 instance placement] the root's matrix gets the rotation about the vertical axis from the yaw (0x46F650) and the translation (cell x * size + origin, instance height, cell y * size + origin); the cell is advanced by 0x466F90 for the quarter turns, which is the cell rotation's own offset
-	public static Matrix4x4 Placement( ModelHeightfield field, int x, int y, int yaw, float baseHeight )
+	// [BIN:TPW-EXE:0x00467030 instance placement] creation flag 0x20: the node's matrix is turned by 0x46F650 (table cosine and sine of the angle) and the words +0x40 / +0x44 / +0x48 are set to (cell x * size + origin, instance height, cell y * size + origin); the cell advances are 0x466F90's
+	public static Matrix4x4 Placement( ModelHeightfield field, Matrix4x4 root, int x, int y, int yaw, float baseHeight )
 	{
 		ArgumentNullException.ThrowIfNull( field );
-		return ObjectPlacement.SwapAxes( ObjectPlacement.CellRotation( yaw ) * Matrix4x4.CreateTranslation( x * field.CellSizeX, y * field.CellSizeZ, baseHeight ) );
+		var (sin, cos) = ModelDrape.YawSinCos( yaw );
+		var placement = ModelDrape.RotateYaw( root, cos, sin );
+		var (column, row) = (x + (yaw is 180 or 270 ? 1 : 0), y + (yaw is 90 or 180 ? 1 : 0));
+		placement.M41 = column * field.CellSizeX;
+		placement.M42 = baseHeight;
+		placement.M43 = row * field.CellSizeZ;
+		return placement;
 	}
+
+	/// <summary><see cref="Placement(ModelHeightfield, Matrix4x4, int, int, int, float)"/> with the model's own root node matrix.</summary>
+	public static Matrix4x4 Placement( ModelHeightfield field, ModelFile model, int x, int y, int yaw, float baseHeight ) =>
+		Placement( field, model.RootNodeIndex >= 0 && model.RootNodeIndex < model.Nodes.Count ? model.Nodes[model.RootNodeIndex].Transform : Matrix4x4.Identity, x, y, yaw, baseHeight );
 
 	/// <summary>
 	/// The chain matrix of every node of <paramref name="model"/> in the grid's frame (<see cref="ModelDrape.Chain"/>): the root's own matrix is replaced by <paramref name="placement"/>, as the

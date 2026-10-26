@@ -127,6 +127,7 @@ EXPECTED = {
     ('tpw-exe-terrain-cache', 'plan'): AGREE,
     # X33 (the model drape of the queue models and the track pieces, docs/PATHS.md): 0x469940 -> 0x469a80 on nodes with the node flag 0x20000, the chain 0x4702d0, the transform 0x46fc00 and the inverse 0x470040 under it
     ('tpw-exe-model-drape', 'plan'): AGREE,
+    ('tpw-exe-model-placement', 'plan'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -895,6 +896,7 @@ class Oracle(CoastTests, unittest.TestCase):
 
     def test_model_drape_agrees(self):
         self.check(('tpw-exe-model-drape', 'plan'))
+        self.check(('tpw-exe-model-placement', 'plan'))
 
     def test_model_drape_readings_are_sharp(self):
         # Every variant of the drape that a transcription could use instead differs from the original on some input: the triangle chosen by the other
@@ -1008,6 +1010,14 @@ class ModelDrapeReading(unittest.TestCase):
         if not committed.exists():
             self.skipTest('the C# golden is not part of this checkout')
         self.assertEqual(committed.read_text(), buffer.getvalue())
+
+    def test_the_table_cosine_of_a_quarter_turn_is_not_zero(self):
+        reading = targets.model_drape_reading
+        sin, cos = reading.yaw_sin_cos(90)
+        self.assertEqual(sin, 1.0)
+        self.assertEqual(cos, reading.f32(__import__('math').sin(reading.f32(0.5 * reading.TURN))))
+        self.assertNotEqual(cos, 0.0)
+        self.assertEqual(reading.yaw_sin_cos(0), (0.0, 1.0))
 
     def test_a_flat_landscape_gives_the_height_plus_the_base_height_difference_back(self):
         reading = targets.model_drape_reading

@@ -3691,8 +3691,75 @@ DRAPE_TARGET = Target(
     notes=['cdecl 0x469940 (instance, world, base height, flags): the chain starts at the identity (0x46f150), the root node carries the placement; nodes with 0x20000 move every vertex onto the '
            'landscape triangle (always split by the cell word bit 0x4) minus the base height plus the height they had; control word 0x7F.'])
 
+# ---- X33 part two: the placement of the instance's root (0x467030), which the drape's chain starts from
+# tp.exe 0x467030 (flag 0x20 of the creation flags 0x33a) multiplies the yaw into the root node's own matrix (0x46f650, with the cosine and sine of the table 0x7b0968, which 0x4708d0 fills with
+# N = 4096 at start-up: run first, then the placement) and overwrites only the translation. Plan: model_drape_reading.placement.
+PLACEMENT_ENTRY = 0x467030
+PLACEMENT_TABLE_INIT = 0x4708D0
+PLACEMENT_RANGES = [(0x467030, 0x4671ED), (0x46F650, 0x46F6E4), (0x4708D0, 0x470937), (0x67A830, 0x67A857)]
+PLACEMENT_FLAGS = 0x3A      # the low byte of the creation flags 0x33a: 0x2 (the footprint box), 0x10, 0x20 (the root's matrix), 0x8
+
+
+def placement_stubs(target: Target) -> dict:
+    return {}
+
+
+def placement_binary(sb: Sandbox, x: dict, log, fpcw: int | None = DRAPE_FPCW) -> dict:
+    """cdecl 0x467030 (instance, box x, box y, cell x, cell y, rotation, height, flags, footprint width, height). The instance +8 is the record (+4 the model, +0x10 the rotation word), the model +0x78 the root
+    node (matrix +0x10), the world 0x7a0854 +0x6c the landscape (origin +8 / +0xc, cell size +0x10 / +0x14)."""
+    if fpcw is not None:
+        sb.set_fpcw(fpcw)
+    sb.call(PLACEMENT_TABLE_INIT, (TABLE_SIZE_ARG,))
+    land = x['landscape']
+    root = sb.alloc(0xC0, 16)
+    for index, value in enumerate(x['root']):
+        sb.write(root + 0x10 + index * 4, 'f', value)
+    model = sb.alloc(0x100, 16)
+    sb.write(model + 0x78, 'I', root)
+    record = sb.alloc(0x40, 16)
+    sb.write(record + 4, 'I', model)
+    instance = sb.alloc(0x100, 16)
+    sb.write(instance + 8, 'I', record)
+    landscape = sb.alloc(0x100, 16)
+    for offset, value in ((8, land['origin'][0]), (0xC, land['origin'][1]), (0x10, land['cell'][0]), (0x14, land['cell'][1])):
+        sb.write(landscape + offset, 'f', value)
+    world = sb.alloc(0x100, 16)
+    sb.write(world + 0x6C, 'I', landscape)
+    sb.write(0x7A0854, 'I', world)
+    sb.call(PLACEMENT_ENTRY, (instance, x['x'], x['z'], x['x'], x['z'], x['rotation'], struct.unpack('<I', struct.pack('<f', x['height']))[0], PLACEMENT_FLAGS, 1, 1))
+    return {'matrix': [model_drape_reading.f32_bits(sb.read(root + 0x10 + 4 * i, 'f')) for i in range(16)], 'angle': sb.read(record + 0x10, 'I')}
+
+
+TABLE_SIZE_ARG = 4096
+
+
+def placement_plan(x: dict) -> dict:
+    return model_drape_reading.placement(x)
+
+
+def placement_inputs(rng: random.Random, n: int) -> list:
+    """A root node matrix (the identity or one of the signed permutations the queue models' roots carry, with a translation that the placement overwrites), the four yaws, cells and heights."""
+    f32 = model_drape_reading.f32
+    out = []
+    for index in range(min(n, 200)):
+        rotation = (0, 90, 180, 270)[index % 4]
+        rows = DRAPE_ROTATIONS[rng.randrange(len(DRAPE_ROTATIONS))] if index % 3 else DRAPE_ROTATIONS[0]
+        root = drape_matrix(rows, (f32(rng.uniform(-5, 5)), f32(rng.uniform(-5, 5)), f32(rng.uniform(-5, 5))))
+        land = {'origin': (0.0, 0.0), 'cell': (10.0, 10.0) if index % 5 else (12.5, 6.5)}
+        cell_x, cell_z = rng.randrange(0, 120), rng.randrange(0, 120)
+        # the caller's adjusted cell: 90 adds a row, 180 a column and a row, 270 a column
+        out.append({'root': root, 'rotation': rotation, 'landscape': land, 'cell': (cell_x, cell_z), 'x': cell_x + (1 if rotation in (180, 270) else 0), 'z': cell_z + (1 if rotation in (90, 180) else 0),
+                    'height': f32(rng.uniform(-3, 40))})
+    return out
+
+
+PLACEMENT_TARGET = Target(
+    'tpw-exe-model-placement', 'tpw', 'tp.exe root placement 0x467030 with the sine table 0x4708d0', 'docs/PATHS.md (QueueModelDrape.Placement) / model_drape_reading.placement',
+    PLACEMENT_ENTRY, PLACEMENT_RANGES, placement_stubs, placement_binary, placement_plan, placement_inputs, budget=3_000_000,
+    notes=['cdecl 0x467030 after the table fill 0x4708d0(4096): the root matrix is turned by the yaw (0x46f650, the table cosine and sine, not exact 0 and 1) and only its translation overwritten; control word 0x7F.'])
+
 WALK_TARGETS = [WALK_EDGE_TARGET, WALK_COMMIT_TARGET, WALK_SEARCH_TARGET, WALK_AVOID_TARGET, WALK_STEERING_TARGET]
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
            SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET, GUARD_TARGET,
-           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET, TERRAIN_SPANS_TARGET, TERRAIN_CACHE_TARGET, DRAPE_TARGET] + COAST_TARGETS + WALK_TARGETS
+           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET, TERRAIN_RAMP_TARGET, TERRAIN_WEIGHTS_TARGET, TERRAIN_BUILD_TARGET, TERRAIN_SPANS_TARGET, TERRAIN_CACHE_TARGET, DRAPE_TARGET, PLACEMENT_TARGET] + COAST_TARGETS + WALK_TARGETS

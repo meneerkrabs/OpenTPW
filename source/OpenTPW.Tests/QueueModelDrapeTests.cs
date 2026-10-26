@@ -58,7 +58,7 @@ public class QueueModelDrapeTests
 		{
 			var (x, y) = (4, 5);
 			var baseHeight = QueueModelDrape.BaseHeight( field, x, y );
-			var placement = QueueModelDrape.Placement( field, x, y, yaw, baseHeight );
+			var placement = QueueModelDrape.Placement( field, Matrix4x4.Identity, x, y, yaw, baseHeight );
 			var chain = ModelDrape.Chain( placement, Matrix4x4.Identity );
 			for ( var step = 0; step <= 10; step += 2 )
 			{
@@ -88,8 +88,8 @@ public class QueueModelDrapeTests
 				// cells (3, 4) and (4, 4) share the line x = 40, and have different instance heights on the slope
 				var (heightA, heightB) = (QueueModelDrape.BaseHeight( field, 3, 4 ), QueueModelDrape.BaseHeight( field, 4, 4 ));
 				Assert.AreNotEqual( heightA, heightB );
-				var chainA = ModelDrape.Chain( QueueModelDrape.Placement( field, 3, 4, yawA, heightA ), Matrix4x4.Identity );
-				var chainB = ModelDrape.Chain( QueueModelDrape.Placement( field, 4, 4, yawB, heightB ), Matrix4x4.Identity );
+				var chainA = ModelDrape.Chain( QueueModelDrape.Placement( field, Matrix4x4.Identity, 3, 4, yawA, heightA ), Matrix4x4.Identity );
+				var chainB = ModelDrape.Chain( QueueModelDrape.Placement( field, Matrix4x4.Identity, 4, 4, yawB, heightB ), Matrix4x4.Identity );
 				var edgeA = EdgePoints( field, chainA, heightA, 40 );
 				var edgeB = EdgePoints( field, chainB, heightB, 40 );
 				Assert.IsTrue( edgeA.Count >= 3 && edgeB.Count >= 3, "each cell has local points on the shared line" );
@@ -129,7 +129,7 @@ public class QueueModelDrapeTests
 	{
 		var field = Hillside();
 		var baseHeight = QueueModelDrape.BaseHeight( field, 2, 2 );
-		var chains = new[] { 0, 90, 180, 270 }.Select( yaw => ModelDrape.Chain( QueueModelDrape.Placement( field, 2, 2, yaw, baseHeight ), Matrix4x4.Identity ) ).ToArray();
+		var chains = new[] { 0, 90, 180, 270 }.Select( yaw => ModelDrape.Chain( QueueModelDrape.Placement( field, Matrix4x4.Identity, 2, 2, yaw, baseHeight ), Matrix4x4.Identity ) ).ToArray();
 		// the model's corner (0, 0, 0) lands on a different corner of the cell for each yaw, at that corner's ground height
 		var landings = chains.Select( chain => QueueModelDrape.Vertex( field, chain, Vector3.Zero, baseHeight ) ).ToArray();
 		var expectedCorners = new[] { (20f, 20f), (20f, 30f), (30f, 30f), (30f, 20f) };
@@ -208,8 +208,8 @@ public class QueueModelDrapeTests
 			foreach ( var (x, y, yaw) in new[] { (3, 4, 0), (5, 6, 90), (7, 8, 180), (9, 3, 270) } )
 			{
 				var baseHeight = QueueModelDrape.BaseHeight( field, x, y );
-				var chains = QueueModelDrape.Chains( model, QueueModelDrape.Placement( field, x, y, yaw, baseHeight ) );
-				var flatChains = QueueModelDrape.Chains( model, QueueModelDrape.Placement( field, x, y, yaw, 0 ) );
+				var chains = QueueModelDrape.Chains( model, QueueModelDrape.Placement( field, model, x, y, yaw, baseHeight ) );
+				var flatChains = QueueModelDrape.Chains( model, QueueModelDrape.Placement( field, model, x, y, yaw, 0 ) );
 				foreach ( var mesh in model.Meshes )
 				{
 					foreach ( var vertex in mesh.Vertices )
@@ -220,6 +220,8 @@ public class QueueModelDrapeTests
 						var modelHeight = ModelDrape.Transform( flatChains[mesh.NodeIndex], source );
 						var landscape = LandscapeSampler.SampleDrape( field.CellCountX, field.CellCountZ, 10, 10, field.GetCornerHeight, field.SplitsAlongAntiDiagonal, placed.X, placed.Z );
 						Assert.AreEqual( landscape + modelHeight.Y, placed.Y, 2e-3f, $"{theme} {name} {mesh.Name} at ({x}, {y}) yaw {yaw}" );
+						// on its cell, within a model's authored reach beyond the edge (up to 2.5 units), whatever the root node's own turn (the Space bends carry a quarter turn there)
+						Assert.IsTrue( placed.X > x * 10 - 2.5f && placed.X < (x + 1) * 10 + 2.5f && placed.Z > y * 10 - 2.5f && placed.Z < (y + 1) * 10 + 2.5f, $"{theme} {name} {mesh.Name} at ({x}, {y}) yaw {yaw}: ({placed.X}, {placed.Z})" );
 						Assert.AreEqual( modelHeight.X, placed.X, 1e-4f );
 						Assert.AreEqual( modelHeight.Z, placed.Z, 1e-4f );
 						vertices++;
@@ -233,6 +235,6 @@ public class QueueModelDrapeTests
 		}
 		Assert.IsTrue( vertices > 10000 && lifted > 1000, $"{vertices} vertices, {lifted} above their floor" );
 		// a regression pin of the draped positions (the models of the four themes at four cells and yaws on the integer hillside), not original data
-		Assert.AreEqual( "D6519BEDDEE2EB0EAB03640310B85815A011B147A5BFC440F7EA34B53D34CF63", Convert.ToHexString( hash.GetHashAndReset() ) );
+		Assert.AreEqual( "9D67F8307D2913F590CB87067B2BA716F77F1617B8CB4E4B3F043AF04296546F", Convert.ToHexString( hash.GetHashAndReset() ) );
 	}
 }

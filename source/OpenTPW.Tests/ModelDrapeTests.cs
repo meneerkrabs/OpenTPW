@@ -60,6 +60,26 @@ public class ModelDrapeTests
 	}
 
 	[TestMethod]
+	public void ThePlacementTurnsTheRootsOwnMatrixByTheTableYawAndReplacesOnlyItsTranslation()
+	{
+		var different = 0;
+		foreach ( var golden in ModelDrapeGolden.Placements )
+		{
+			var field = new ModelHeightfield( 128, 128, golden.SizeX, golden.SizeZ, 0, 0, Array.Empty<uint>(), new float[129 * 129], new uint[128 * 128] );
+			var placed = QueueModelDrape.Placement( field, Matrix( golden.Root ), golden.CellX, golden.CellZ, golden.Rotation, golden.Height );
+			var bits = new[] { placed.M11, placed.M12, placed.M13, placed.M14, placed.M21, placed.M22, placed.M23, placed.M24, placed.M31, placed.M32, placed.M33, placed.M34, placed.M41, placed.M42, placed.M43, placed.M44 }
+				.Select( BitConverter.SingleToUInt32Bits ).ToArray();
+			CollectionAssert.AreEqual( golden.Matrix, bits, $"root {string.Join( ',', golden.Root )} yaw {golden.Rotation} cell ({golden.CellX}, {golden.CellZ})" );
+			different += bits.Skip( 1 ).Take( 2 ).Any( value => value != 0 ) || golden.Rotation == 90 ? 1 : 0;
+		}
+		Assert.IsTrue( different > 10 );
+		// the table's cosine of 90 degrees is the entry at 2048, sin(3.1415927): not exactly 0
+		Assert.AreEqual( -8.742278e-8f, ModelDrape.YawSinCos( 90 ).Cos, 1e-14f );
+		Assert.AreEqual( 1f, ModelDrape.YawSinCos( 90 ).Sin );
+		Assert.AreEqual( (0f, 1f), ModelDrape.YawSinCos( 0 ) );
+	}
+
+	[TestMethod]
 	public void TheDrapeTriangleIsTheCellSplitByTheCellWordWithoutThePlanarShortcut()
 	{
 		// a flat cell with one corner raised: planar sampling would give a plane, the drape follows the split

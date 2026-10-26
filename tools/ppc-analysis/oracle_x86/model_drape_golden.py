@@ -42,6 +42,7 @@ def main() -> int:
            '// World holds, for the nodes the drape moves, the grid-frame position of every vertex after the drape as float bits.',
            'namespace OpenTPW.Tests;', '', 'internal static class ModelDrapeGolden', '{',
            '\tpublic readonly record struct Node( int Parent, int Flags, float[] Matrix, float[][] Vertices, uint[][] World );',
+           '\tpublic readonly record struct Placement( float[] Root, int Rotation, float SizeX, float SizeZ, int CellX, int CellZ, float Height, uint[] Matrix );',
            '\tpublic readonly record struct Case( int CellsX, int CellsZ, float SizeX, float SizeZ, float[] Heights, bool[] Anti, float BaseHeight, Node[] Nodes );', '',
            '\tpublic static readonly Case[] Cases =', '\t[']
     for case in cases:
@@ -58,6 +59,12 @@ def main() -> int:
         out.append('\t\tnew( %d, %d, %s, %s, [%s], [%s], %s,\n\t\t\t[%s] ),' % (land['cells'][0], land['cells'][1], literal(land['cell'][0]), literal(land['cell'][1]),
                                                                           ', '.join(literal(h) for h in land['heights']), anti, literal(case['base_height']),
                                                                           ',\n\t\t\t\t'.join(nodes)))
+    out += ['\t];', '', '\t/// <summary>The root placement 0x467030 (after the sine table fill 0x4708D0): the root node\'s own matrix turned by the yaw, the translation replaced; Matrix is the 16 floats as bits.</summary>',
+            '\tpublic static readonly Placement[] Placements =', '\t[']
+    for case in x86_targets.placement_inputs(random.Random(833), 64):
+        matrix = reading.placement(case)['matrix']
+        out.append('\t\tnew( [%s], %d, %s, %s, %d, %d, %s, [%s] ),' % (', '.join(literal(v) for v in case['root']), case['rotation'], literal(case['landscape']['cell'][0]), literal(case['landscape']['cell'][1]),
+                                                                     case['cell'][0], case['cell'][1], literal(case['height']), ', '.join('0x%08X' % bits for bits in matrix)))
     out += ['\t];', '}', '']
     print('\n'.join(out))
     return 0

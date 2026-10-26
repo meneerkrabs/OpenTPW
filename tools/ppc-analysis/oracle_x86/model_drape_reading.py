@@ -231,3 +231,54 @@ def drape(case: dict) -> dict:
     # 0x469940 marks the root once the walk is done
     nodes[0] = (nodes[0][0] | 0x10000, nodes[0][1])
     return {'nodes': nodes, 'world': world}
+
+
+# ---------------------------------------------------------------------------------------------------------------- 0x467030 the placement of the root
+# [BIN:TPW-EXE:0x004708D0 sine table] the table at 0x7b0968 is filled at start-up (0x449eb0, 0x44a1d0: N = 4096): entry i is the single sin(float(i / 4096) * 2 pi) (the constant 0x6feba0, 6.2831855), the scale 0x7b095c
+# is float(4096) * the constant 0x6feb9c (0.15915494) and the mask 0x7b0960 is N - 1. Entry 2048 is sin(3.1415927), -8.74e-8, not 0.
+TABLE_SIZE = 4096
+RADIANS = struct.unpack('<f', bytes.fromhex('35fa8e3c'))[0]        # [0x6fe774] 0.017453292
+QUARTER = struct.unpack('<f', bytes.fromhex('db0fc9bf'))[0]         # [0x6fe778] -1.5707964
+TURN = struct.unpack('<f', bytes.fromhex('db0fc940'))[0]           # [0x6feba0] 6.2831855
+PER_TURN = struct.unpack('<f', bytes.fromhex('83f9223e'))[0]       # [0x6feb9c] 0.15915494
+SCALE = f32(TABLE_SIZE * PER_TURN)
+
+
+def table_entry(index: int) -> float:
+    return f32(math.sin(f32(f32(index / TABLE_SIZE) * TURN)))
+
+
+def round_even(value: float) -> int:
+    """FISTP at the default rounding: to nearest, ties to even."""
+    return round(value)
+
+
+def yaw_sin_cos(degrees: int) -> tuple:
+    """[BIN:TPW-EXE:0x467030]: a = float(degrees) * 0.017453292 (a single); the sine is the table entry round(a * scale) & mask, the cosine that of round((a - (-1.5707964)) * scale) & mask."""
+    a = f32(degrees * RADIANS)
+    sin_index = round_even(f32(SCALE * a)) & (TABLE_SIZE - 1)
+    cos_index = round_even(f32(f32(a - QUARTER) * SCALE)) & (TABLE_SIZE - 1)
+    return table_entry(sin_index), table_entry(cos_index)
+
+
+def rotate_columns(matrix: list, cos: float, sin: float) -> list:
+    """[BIN:TPW-EXE:0x46F650]: each row of the matrix (a, b, c) turns in its x and z elements: x' = x cos + z sin, z' = z cos - x sin (elements 0 / 2, 4 / 6 and 8 / 10)."""
+    out = list(matrix)
+    for row in (0, 4, 8):
+        x, z = matrix[row], matrix[row + 2]
+        out[row] = f32(f32(x * cos) + f32(z * sin))
+        out[row + 2] = f32(f32(z * cos) - f32(x * sin))
+    return out
+
+
+def placement(case: dict) -> dict:
+    """[BIN:TPW-EXE:0x467030, flag 0x20]: the root node's matrix after the placement: its own matrix turned by the yaw (0x46F650 with the table's cosine and sine), the translation words (+0x40, +0x44,
+    +0x48 of the node) overwritten with (cell x * size + origin, the instance height, cell z * size + origin); the record's rotation word gets the angle added (taken modulo 360). The cell is the
+    caller's adjusted one (0x466F90: 90 adds a row, 180 a column and a row, 270 a column)."""
+    sin, cos = yaw_sin_cos(case["rotation"])
+    matrix = rotate_columns([f32(v) for v in case['root']], cos, sin)
+    land = case['landscape']
+    matrix[12] = f32(f32(case['x'] * land['cell'][0]) + land['origin'][0])
+    matrix[13] = case['height']
+    matrix[14] = f32(f32(case['z'] * land['cell'][1]) + land['origin'][1])
+    return {'matrix': [f32_bits(v) for v in matrix], 'angle': case['rotation'] % 360}

@@ -331,7 +331,7 @@ public sealed partial class OriginalTerrain : Entity
 					continue;
 				if ( QueueSource?.Invoke( x, y ) == true )
 				{
-					// The ground under a queue model keeps its terrain texture: the refresh gives it no path tile (0x5365D0).
+					// The ground under a queue model keeps its terrain texture: the refresh gives it no path tile (0x5365D0). The original makes the cell a hole of the ground and fills it with a composite floor (PATH-015).
 					if ( QueueModelSource?.Invoke( x, y ) is { } queueTile )
 						queues.Add( (x, y, queueTile) );
 					continue;
@@ -379,7 +379,7 @@ public sealed partial class OriginalTerrain : Entity
 	/// The queue models of the queue cells (<see cref="QueueModels"/>), baked into static batches: each instance stands on its cell turned by
 	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), each vertex on the ground under it.
 	/// </summary>
-	// [APPROX:PATH-015] the queue models are baked draped onto the landscape as tp.exe does (QueueModelDrape, 0x469A80) and drawn without the ground deformation of their .hmp files (as objects, RIDES-014) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the .hmp deformation and the model loader's flag 0x100000 (0x4629D0)
+	// [APPROX:PATH-015] the queue models are baked draped onto the landscape as tp.exe does (QueueModelDrape, 0x469A80) and drawn over the ground (the original makes the cell a hole, 0x46DF50, filled by the composite floor 0x57ACE0, so here the floor and the ground compete in depth on slopes) and without the ground deformation of their .hmp files (as objects, RIDES-014) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the composite floor (F5 of the floors work), the .hmp deformation and the model loader's flag 0x100000 (0x4629D0)
 	private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues )
 	{
 		QueueModelCount = 0;
@@ -404,10 +404,9 @@ public sealed partial class OriginalTerrain : Entity
 			}
 			foreach ( var (x, y, tile) in group )
 			{
-				var turn = ObjectPlacement.CellRotation( tile.Yaw );
 				// the instance height and the chain of every node on this cell; each vertex is draped by its own chain (QueueModelDrape)
 				var baseHeight = QueueModelDrape.BaseHeight( field, x, y );
-				var placement = QueueModelDrape.Placement( field, x, y, tile.Yaw, baseHeight );
+				var placement = QueueModelDrape.Placement( field, model, x, y, tile.Yaw, baseHeight );
 				var chains = QueueModelDrape.Chains( model, placement );
 				var rootChain = ModelDrape.Chain( placement, System.Numerics.Matrix4x4.Identity );
 				foreach ( var mesh in model.Meshes )
@@ -427,14 +426,14 @@ public sealed partial class OriginalTerrain : Entity
 						}
 						return slot;
 					} ).ToArray();
-					var world = GetWorldMatrix( model, mesh.NodeIndex );
 					var first = (uint)batchVertices.Count;
+					var nodeChain = mesh.NodeIndex >= 0 && mesh.NodeIndex < chains.Length ? chains[mesh.NodeIndex] : rootChain;
 					for ( var index = 0; index < mesh.Vertices.Length; index++ )
 					{
 						var source = mesh.Vertices[index];
 						// Model space (Y up) → the grid's frame through the node's chain with the vertex's height on the landscape under it → engine.
-						var placed = QueueModelDrape.Vertex( field, mesh.NodeIndex >= 0 && mesh.NodeIndex < chains.Length ? chains[mesh.NodeIndex] : rootChain, source.Position.GetSystemVector3(), baseHeight );
-						var normal = System.Numerics.Vector3.TransformNormal( ObjectAssets.ConvertAxes( System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), world ) ), turn );
+						var placed = QueueModelDrape.Vertex( field, nodeChain, source.Position.GetSystemVector3(), baseHeight );
+						var normal = ObjectAssets.ConvertAxes( System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), nodeChain ) );
 						var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
 						batchVertices.Add( new Vertex
 						{

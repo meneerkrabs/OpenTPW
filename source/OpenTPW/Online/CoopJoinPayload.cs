@@ -20,9 +20,10 @@ internal sealed record CoopJoinState(
 	long? SessionClockTicks,
 	IReadOnlyList<(int Station, int X, int Y, bool Displaced)> CoasterUnheldCells,
 	IReadOnlyList<int>? BuildGrants = null,
-	IReadOnlyList<(int Ride, int Seat)>? RideClaims = null )
+	IReadOnlyList<(int Ride, int Seat)>? RideClaims = null,
+	int? LastRide = null )
 {
-	public const ushort Version = 4;
+	public const ushort Version = 5;
 	/// <summary>The most unheld coaster cells a join state carries (no player tool makes one today: it is a defence).</summary>
 	public const int MaximumUnheldCells = 4096;
 	/// <summary>The most entries of a per-player list: one a player, with room for a replay's other player numbers.</summary>
@@ -79,6 +80,10 @@ internal sealed record CoopJoinState(
 			writer.U32( Unsigned( ride ) );
 			writer.U32( Unsigned( seat ) );
 		}
+		// [BIN:TPW-EXE:0x008186AC last ride] the object the last placement or queue edit left for the path tool's Back to re-evaluate (the original does not save it; the level's session state, as the claims)
+		writer.Bool( LastRide.HasValue );
+		if ( LastRide is { } last )
+			writer.U32( Unsigned( last ) );
 		return writer.ToArray();
 	}
 
@@ -111,6 +116,7 @@ internal sealed record CoopJoinState(
 		for ( var index = 0; index < claims.Length; index++ )
 			claims[index] = (NonNegative( reader.U32() ), NonNegative( reader.U32() ) is var holder and < CoopProtocol.MaximumPlayers ? holder
 				: throw new InvalidDataException( "The join state's claim names a seat out of range." ));
+		int? lastRide = reader.Bool() ? NonNegative( reader.U32() ) : null;
 		reader.End();
 		if ( claims.Select( claim => claim.Ride ).Distinct().Count() != claims.Length || claims.Select( claim => claim.Seat ).Distinct().Count() != claims.Length )
 			throw new InvalidDataException( "The join state claims a ride twice, or one seat holds two claims." );
@@ -118,7 +124,7 @@ internal sealed record CoopJoinState(
 			|| coasters.Distinct().Count() != coasters.Length || unheld.Select( item => (item.Item1, item.Item2, item.Item3) ).Distinct().Count() != unheld.Length
 			|| grants.Distinct().Count() != grants.Length )
 			throw new InvalidDataException( "The join state names a player, a coaster, a coaster's cell or a granted seat twice." );
-		return new CoopJoinState( carried, hands, pending, stale, coasters, clock, unheld, grants, claims );
+		return new CoopJoinState( carried, hands, pending, stale, coasters, clock, unheld, grants, claims, lastRide );
 	}
 
 	private static uint Unsigned( int value ) => unchecked( (uint)value );

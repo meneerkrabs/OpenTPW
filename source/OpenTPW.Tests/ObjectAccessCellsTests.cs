@@ -178,6 +178,22 @@ public class ObjectAccessCellsTests
 		Assert.AreEqual( 0, seen.Count, "a queue cell's clear re-evaluates nothing" );
 	}
 
+	[TestMethod]
+	public void EveryRouteThatClearsAPathCellBesideAnOwnedEntranceRunsTheReevaluation()
+	{
+		// tp.exe 0x5367A0 at 0x53694B is the one clear every route reaches: the guest grid's queue setter and the footprint clear report the ride as the bulldozer's clear does
+		var shop = Entry( 1238, 0, false, "*2S" );
+		var rig = new Rig( shop );
+		var item = rig.Place( shop, 8, 8 )!;
+		var entrance = item.AccessPoints.Single( point => point.Kind == ObjectCellKind.Entrance );
+		var outside = (X: entrance.OutsideX, Y: entrance.OutsideY);
+		var seen = new List<ushort>();
+		rig.Cells.EntranceReevaluation = owner => seen.Add( owner );
+		var grid = new GuestPathGrid( rig.Cells );
+		grid.SetQueue( outside.X, outside.Y, -1 );
+		CollectionAssert.AreEqual( new[] { Level.OwnerWord( item ) }, seen, "a queue set over the path cell re-evaluates the ride beside it" );
+	}
+
 	[DataTestMethod, DataRow( 0 ), DataRow( 90 ), DataRow( 180 ), DataRow( 270 )]
 	public void RideExitUsesTheEntranceOwnerExitAndDirectionByteAfterRealPlacement( int rotation )
 	{

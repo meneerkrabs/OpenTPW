@@ -421,9 +421,77 @@ public class QueueRemovalCommandTests
 		Assert.IsTrue( result.Accepted );
 		Assert.AreEqual( 1, result.As<int>() );
 		Assert.AreEqual( balance, park.Economy.Balance );
+		// the one-click removal keeps the original's guest policy (its clear writes no guest): the guest stays where it stands
 		Assert.AreEqual( GuestThought.Bored, occupants.Target.Thought );
+		Assert.AreEqual( GuestState.Queueing, occupants.Target.State );
+		Assert.AreEqual( (20, 3), occupants.Target.Cell );
+	}
+
+	[TestMethod]
+	public void TheOneClickRemovalKeepsGuestsInPlaceAndTheReevaluationDismissesByPlaceAlone()
+	{
+		// [EXT:dev-one-click-remove] [EXT:queue-backtrack] the original's guest policy: the cells go, no guest is written, and the re-evaluation dismisses the guests beyond the room where they stand
+		var park = NewPark();
+		var occupants = Seed( park );
+		var result = park.Level.Commands.Issue( new RemoveQueueCellCommand( 2, 4 ) );
+		Assert.IsTrue( result.Accepted );
+		Assert.AreEqual( 4, result.As<int>() );
+		Assert.AreEqual( GuestState.Queueing, occupants.Target.State, "no guest is set down by the clear" );
+		Assert.AreEqual( (2, 4), occupants.Target.Cell );
+		Sync( park );
 		Assert.AreEqual( GuestState.DoingNothing, occupants.Target.State );
-		Assert.AreEqual( (20, 2), occupants.Target.Cell );
+		Assert.AreEqual( GuestThought.Angry, occupants.Target.Thought );
+		Assert.AreEqual( (2, 4), occupants.Target.Cell, "dismissed in place, on the emptied cell" );
+	}
+
+	[TestMethod]
+	public void ADemolitionsBackLoopDismissesTheOverflowWithItsThoughtBeforeTheRemovalMessage()
+	{
+		// tp.exe 0x527FC1: each pop of the demolition's Back re-evaluates the ride (0x52FFEC), and the last pop leaves a room of 0: the guests of ids divisible by 3 think 13 and leave in place
+		var park = NewPark();
+		var occupants = Seed( park );
+		var other = occupants.Retained.Concat( new[] { occupants.Nondivisible } ).ToArray();
+		Assert.IsTrue( Park_HasPlacedCells( park ) );
+		Settle( park );
+		Assert.AreEqual( 0, Enumerable.Range( 2, 5 ).Count( y => park.Grid.IsQueue( 2, y ) ), "the loop took every queue cell" );
+		Assert.AreEqual( GuestThought.Angry, occupants.Early.Thought );
+		Assert.AreEqual( GuestThought.Angry, occupants.Target.Thought );
+		Assert.AreEqual( GuestState.DoingNothing, occupants.Target.State );
+		foreach ( var guest in other )
+			Assert.AreEqual( GuestThought.Bored, guest.Thought, "no thought for an id that is not divisible by 3" );
+	}
+
+	private static bool Park_HasPlacedCells( Park park ) => GuestSimulation.HasPlacedCells( park.Ride );
+
+	[TestMethod]
+	public void ThePathToolsBackReevaluatesTheLastRideAndOnlyOnceThereIsOne()
+	{
+		// tp.exe 0x52FFE2: the path tool's Back passes no ride, so 0x4DE1F0 runs on the last placed or edited ride (0x8186AC)
+		var park = NewPark();
+		Assert.IsNull( park.Level.LastRide );
+		var stamps = park.Grid.Cells.StampCounter;
+		Assert.IsTrue( park.Level.Commands.Issue( new UndoLineCommand( CellToolMode.Path, -1, 5, 5, Array.Empty<(int X, int Y)>(), Array.Empty<(int X, int Y)>() ) ).Accepted );
+		Assert.AreEqual( stamps, park.Grid.Cells.StampCounter, "no last ride: nothing to re-evaluate" );
+		Assert.IsTrue( park.Level.Commands.Issue( new EditQueueCommand( 2, 3 ) ).Accepted );
+		Assert.AreEqual( park.Ride.AttractionId, park.Level.LastRide );
+		stamps = park.Grid.Cells.StampCounter;
+		Assert.IsTrue( park.Level.Commands.Issue( new UndoLineCommand( CellToolMode.Path, -1, 5, 5, Array.Empty<(int X, int Y)>(), Array.Empty<(int X, int Y)>() ) ).Accepted );
+		Assert.AreEqual( stamps + 1, park.Grid.Cells.StampCounter, "the ride's queue was re-evaluated once" );
+	}
+
+	[TestMethod]
+	public void TheLastRideTravelsInTheJoinStateAndTheDigest()
+	{
+		var park = NewPark();
+		var before = park.Level.CaptureJoinState();
+		Assert.IsNull( before.LastRide );
+		Assert.IsTrue( park.Level.Commands.Issue( new EditQueueCommand( 2, 3 ) ).Accepted );
+		var state = CoopJoinState.Decode( park.Level.CaptureJoinState().Encode() );
+		Assert.AreEqual( park.Ride.AttractionId, state.LastRide );
+		park.Level.ApplyJoinState( state with { LastRide = null } );
+		Assert.IsNull( park.Level.LastRide );
+		park.Level.ApplyJoinState( state );
+		Assert.AreEqual( park.Ride.AttractionId, park.Level.LastRide );
 	}
 
 	[TestMethod]

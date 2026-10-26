@@ -1962,7 +1962,7 @@ other player, the host included.
   ride's attraction id and the seat that holds its claim). The session digest covers them once there is
   one, a join snapshot carries them (the join state's version 4, in ride order, one claim a ride and a seat
   at most, the host's seat 0 included), and the session's start and end clear them. No world hash or save
-  holds them.
+  holds them. The join state's version 5 also carries the last placed or edited object (`Level.LastRide`, tp.exe's `0x8186AC`, which the path tool's Back re-evaluates), which the digest covers once it is set.
 - **The commands.** `ClaimRideCommand` takes a track ride's claim for its player when no other seat holds
   it, and in the same command lets go of that player's claim of any other ride: a claim moves with the
   player's tool, so a seat holds one at most and its own other claim never refuses it. Another seat's

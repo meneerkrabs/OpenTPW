@@ -123,6 +123,12 @@ public partial class Level
 			foreach ( var seat in grants )
 				hash.Add( seat );
 		}
+		// [BIN:TPW-EXE:0x008186AC last ride] the object the last placement or queue edit left for Back, hashed only once there is one
+		if ( lastRide is { } last )
+		{
+			hash.Add( 0x4C52 );
+			hash.Add( last );
+		}
 		// [EXT:online-coop-claims] the rides' claims, in ride order, hashed only once there is one (C3c-1)
 		if ( rideClaims is { Count: > 0 } claims )
 		{

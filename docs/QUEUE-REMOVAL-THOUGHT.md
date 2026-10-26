@@ -10,8 +10,7 @@ queue no longer holds: its state 11 routes it to its place from where it stands 
 (`0x4F9490`: a start without links searches for a path cell around it).
 
 This holds for the cells of a placed ride (`RideVisitorBridge.OwnerWord` and `ExitAccessCell` set, a Theme Park World level). The bridges without them (the gates, the test rigs, the Theme Park Inc slice) keep
-the host's relocation to the front cell or the nearest path. The removal from a clicked cell on (`[EXT:dev-one-click-remove]`, `[EXT:queue-backtrack]`) keeps `GuestSimulation.SetDownOffQueueCells`, which
-puts the queued guests on the emptied cells on the nearest path and dismisses them: the original has no such removal.
+the host's relocation to the front cell or the nearest path. The removal from a clicked cell on (`[EXT:dev-one-click-remove]`, `[EXT:queue-backtrack]`) keeps the original's guest policy too, by the user's decision: the clear writes no guest and the re-evaluation of the ride dismisses the guests the shrunken room no longer holds, in place.
 
 `QueueRemovalCommandTests` drives the queue tool's `Undo()` through the production writer and command: the clear writes no guest (before the re-evaluation every occupant is where and what it was),
 the re-evaluation dismisses the overflow in place with the thought for ids divisible by three, excludes the called guest and a guest waiting to board, leaves another ride's queue alone, replays to the same

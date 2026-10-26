@@ -24,7 +24,8 @@ public partial class Level
 			Objects?.ScriptWorld?.SessionTime?.Ticks,
 			CoasterUnheldCells(),
 			BuildGrants.ToArray(),
-			RideClaims.Select( pair => (pair.Key, pair.Value) ).ToArray() );
+			RideClaims.Select( pair => (pair.Key, pair.Value) ).ToArray(),
+			lastRide );
 	}
 
 	/// <summary>
@@ -65,6 +66,7 @@ public partial class Level
 		if ( Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = state.SessionClockTicks is { } ticks ? new DateTime( ticks, DateTimeKind.Unspecified ) : null;
 		buildGrants = state.BuildGrants is { Count: > 0 } grants ? new SortedSet<int>( grants ) : null;
+		lastRide = state.LastRide;
 		rideClaims = claims.Count > 0 ? new SortedDictionary<int, int>( claims.ToDictionary( claim => claim.Ride, claim => claim.Seat ) ) : null;
 	}
 

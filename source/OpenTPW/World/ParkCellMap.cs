@@ -105,6 +105,15 @@ public enum ParkCellFlags : ushort
 /// </summary>
 public sealed partial class ParkCellMap
 {
+	/// <summary>
+	/// The re-evaluation of the ride whose owner word is the argument, which a path cell's clear runs for an entrance cell beside it (tp.exe <c>0x5367A0</c> at <c>0x53694B</c>); the level sets it,
+	/// and each route that clears a path cell passes <see cref="ClearEffects"/> to the unlinking.
+	/// </summary>
+	public Action<ushort>? EntranceReevaluation { get; set; }
+
+	/// <summary>The effects a path clear carries on this map (<see cref="EntranceReevaluation"/>).</summary>
+	internal LinkEffects ClearEffects => new( null, null, EntranceReevaluation );
+
 	/// <summary>[EXT:pools-bridges] Optional elevated walking layer; underlying water stays unchanged.</summary>
 	public PoolBridgeWorld? PoolBridges { get; internal set; }
 	private readonly byte[] types;
@@ -465,7 +474,7 @@ public sealed partial class ParkCellMap
 				continue;
 			if ( cell.CellType == ObjectShapeSymbols.TypeAt )
 			{
-				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false );
+				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false, ClearEffects );
 				SetFlags( x, y, FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
 			}
 			else if ( addOn )

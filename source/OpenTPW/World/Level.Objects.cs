@@ -173,6 +173,8 @@ public partial class Level
 			return;
 		Guests.Bins = LitterBins;
 		Guests.LitterBinned += ( _, bin ) => TriggerBin( bin );
+		// [BIN:TPW-EXE:0x0053694B path clear beside an entrance] every route that clears a path cell (the queue laid over a path, an '@' footprint cell, a coaster marker, the guest grid's queue setter) runs the ride's re-evaluation as the bulldozer's clear does
+		Guests.Grid.Cells.EntranceReevaluation = ReevaluateRideOfOwner;
 		// The placed objects type their footprint cells (4, 9, 10: ParkCellMap.WriteFootprint, tp.exe 0x00528A70); a visit, a Theme Park Inc layout and
 		// Theme Park Inc itself (whose placement is not traced) keep the cells they were given
 		var typesFootprints = TypesFootprints;
@@ -317,8 +319,8 @@ public partial class Level
 		if ( Guests is not { } guests || guests.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( ride => ride.OwnerWord == owner && ride.HasCells ) is not { } found )
 			return;
 		found.RecomputeQueue( guests.Grid );
-		// the clear just took the entrance's link toward the front off, so the front the selector finds is 0 unless another bit is set (0x4DE040): the counter rises and no block is stamped
-		found.NotifyQueueEdited( guests.Grid, stampBack: false );
+		// the front the selector finds (0x4DE040) decides: 0 when no cardinal bit is left on the entrance cell, and then the counter rises and no block is stamped
+		found.NotifyQueueEdited( guests.Grid );
 	}
 
 	/// <summary>
@@ -1379,10 +1381,8 @@ public partial class Level
 		var removed = RemoveQueueCellAt( Guests.Grid, Guests.Attractions, x, y, out var ride, out var removedCells, removeFixed: !original );
 		if ( removed > 0 )
 		{
-			// [EXT:dev-one-click-remove] the guests standing on the emptied cells leave the queue on the nearest path; the ride's entrance resolves again when it used one of them
-			if ( !original )
-				Guests.SetDownOffQueueCells( removedCells, ride );
-			AfterAccessCellRemoved( removedCells, setDownGuests: !original );
+			// [EXT:dev-one-click-remove] [EXT:queue-backtrack] the guests keep their place as the original's clear leaves them (it writes no guest): the re-evaluation RemoveFrom ran dismisses them by place alone (0x4DE1F0, 0x501390); the ride's entrance resolves again when it used one of the cells
+			AfterAccessCellRemoved( removedCells, setDownGuests: false );
 		}
 		if ( ride == null )
 			return removed;
@@ -1416,12 +1416,18 @@ public partial class Level
 		}
 		if ( ride.QueueFrontCell is not { } front || !Guests.Grid.IsQueue( front.X, front.Y ) )
 			return;
-		demolishedQueues.Add( item );
-		if ( Park?.Economy is not { } economy || GetEconomyInstance( item ) is not int instance )
-			return;
-		for ( var cell = 0; cell < ride.QueueCells.Count; cell++ )
-			economy.RefundQueueCell( instance );
-		economy.ChargeQueueDemolition( instance );
+		// [BIN:TPW-EXE:0x00527FC1 demolition's Back loop] a ride with placed cells runs the loop here, before the removal message: each pop re-evaluates the queue (0x52FFEC) and dismisses the guests the shrunken room no longer holds; other bridges keep the one clear after the message
+		var loops = GuestSimulation.HasPlacedCells( ride );
+		if ( !loops )
+			demolishedQueues.Add( item );
+		if ( Park?.Economy is { } economy && GetEconomyInstance( item ) is int instance )
+		{
+			for ( var cell = 0; cell < ride.QueueCells.Count; cell++ )
+				economy.RefundQueueCell( instance );
+			economy.ChargeQueueDemolition( instance );
+		}
+		if ( loops )
+			QueuePaths.ClearAll( Guests.Grid, ride, () => Guests.ReevaluateQueueNow( ride, ride.QueueCells.Count( cell => Guests.Grid.IsQueue( cell.X, cell.Y ) ) ) );
 	}
 
 	/// <summary>Takes the queue cells of a demolished ride off the map (<see cref="QueuePaths.ClearAll"/>), once its guests have been set down.</summary>

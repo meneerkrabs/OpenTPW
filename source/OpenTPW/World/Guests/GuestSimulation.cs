@@ -2701,10 +2701,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:TPW-EXE:0x00501390 queue re-evaluation] the only exit is position ≥ 4 × cells (unsigned) with the guest not in state 14; "Queue edited underneath me while Standing In Queue" is the entry log every guest prints, not an exit; the caller 0x004DE1F0 visits every guest in the queue list but the called one (ride +0x6C); executed by the x86 oracle target tpw-exe-queue-reevaluate (ORACLE.md X14)
 	// [BIN:TPW-EXE:0x00501160 state 11 re-route] a guest whose place changed (0x004FFFF0 at 0x005002C2) takes the new place's queue slot (0x004DDF50, 0x004DE7E0) and routes to it with the generic route 0x004FA5F0 (state 12), or leaves through the dismissal when the route fails
-	private void ReevaluateQueue( IRideVisitorBridge attraction )
+	private void ReevaluateQueue( IRideVisitorBridge attraction, int? sizeInCells = null )
 	{
 		var cells = attraction.QueueCells;
-		var room = RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells;
+		var room = RideVisitorBridge.PositionsPerCell * (sizeInCells ?? attraction.QueueSizeInCells);
 		foreach ( var guest in guests )
 		{
 			if ( guest.AttractionId != attraction.AttractionId || guest.State is not (GuestState.Queueing or GuestState.MovingUpQueue or GuestState.Boarding) || guest.Id == attraction.CalledGuest )
@@ -2724,6 +2724,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [BIN:TPW-EXE:0x00501160 queue place route] a guest whose cell left the queue is not sent away here: it keeps its place and, when its place changed, state 11 routes it to the new slot from wherever it stands with the generic search (MoveToQueuePosition); the dismissal comes only if that search fails
 			guest.QueueCellIndex = index < 0 ? cells.Count : index;
 		}
+	}
+
+	/// <summary>
+	/// The re-evaluation tp.exe's Back runs at once after each pop of a ride's demolition (0x52FFEC → 0x4DE1F0, 0x501390 per guest), with the queue's size as the pop left it: the
+	/// guests the room no longer holds leave in place before the removal message, and the next tick's sync finds nothing left to do for this edit.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00501390 demolition re-evaluation] the room is 4 x the ride's word +0x40, which reaches 0 with the last cell (0x4DE1F0 reads it, not the one-cell fallback OpenTPW keeps), so the last pop dismisses every guest of the queue but the called one
+	internal void ReevaluateQueueNow( RideVisitorBridge ride, int sizeInCells )
+	{
+		if ( !attractions.Contains( ride ) )
+			return;
+		seenQueueEdits[ride.AttractionId] = ride.QueueEditCount;
+		ReevaluateQueue( ride, sizeInCells );
 	}
 
 	private static int IndexOfCell( IReadOnlyList<(int X, int Y)> cells, int x, int y )
@@ -3226,7 +3239,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// Whether the attraction's cells are the placement's own (a Theme Park World level, which types its footprints and writes the entrance's and exit's links): its queue exits, edits and removal follow
 	/// tp.exe, which writes no position. A bridge without them (the gates, the test rigs, the Theme Park Inc slice) keeps the host's front-cell relocation, as its cells carry nothing to walk off by.
 	/// </summary>
-	private static bool HasPlacedCells( IRideVisitorBridge attraction ) => attraction is RideVisitorBridge { OwnerWord: not 0, ExitAccessCell: not null };
+	internal static bool HasPlacedCells( IRideVisitorBridge attraction ) => attraction is RideVisitorBridge { OwnerWord: not 0, ExitAccessCell: not null };
 
 	/// <summary>State 6 where the guest stood, whatever the cell is now (the original writes no position); a bridge without placed cells keeps the front-cell fallback (QUEUE-010).</summary>
 	private void StandAfterQueue( Guest guest, IRideVisitorBridge attraction )

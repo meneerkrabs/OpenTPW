@@ -562,7 +562,7 @@ square radius). A guest's needs phase adds the first three words of its cell. Th
 
 The security word is what a prank tests before a guard comes, so a camera guards its square as a guard does. The attraction word divides the
 distance match of an attraction whose back-of-queue cell lies under a show (`0xe9388`). The objects' rows come from the constructor `0x4db090`,
-the destructor `0x4dd0a0`, the toilet wear `0x4e2440`, the handyman's clean `0x4dfd80` and the fireworks tick `0x4e0b90`.
+the destructor `0x4dd0a0`, the toilet wear `0x4e2440`, the handyman's clean `0x4dfd80` (which also writes `VAR_WORN` = 0, so the toilet's script drops its dirty look; ECONOMY.md "Toilets: the door, the call and the clean") and the fireworks tick `0x4e0b90`.
 
 ### Balloons and costumes
 

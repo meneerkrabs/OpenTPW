@@ -1,0 +1,10 @@
+## Guests build roller coasters in a shared park (October 26, 2026)
+
+A guest the host lets build can now build and edit a roller coaster in a shared park, one player per coaster at a time ([COOP.md](../COOP.md), "A guest's coaster tool"; `[EXT:online-coop-claims]`, `[EXT:online-coop-commands]`). This is C3c-2, after the guests' kart and water track tools.
+
+- **The coaster tool works through the coaster's claim.** The track button and a placed coaster ask the host for the coaster's claim and then for the tool, and the panel opens once both answers are back. The host's own coaster tool claims its coaster too, so two players never edit one coaster.
+- **Clicks, Backspace, stack swaps and cuts go to the host one at a time.** While one waits the panel takes no other click or button and asks the player to wait; its answer moves the tool on as the host's click does, and the click that completes the coaster hands over to the queue tool. A press made while that completion waits, including one first seen in the frame that takes its answer, gives the new queue tool no release click; a fresh click builds normally.
+- **Drags follow the host's record.** A pylon's drag starts once its press is back, then sends its latest height, angle or cell at most five times a second, and its release settles the money as the host's does. The coaster's commands and the pool tool's share one small budget, so neither floods the host.
+- **No coaster is left closed.** When a guest leaves, idles for five minutes, asks for the park again or the session ends, its coaster leaves the tool: a held pylon goes back, the coaster opens again, and a capture for a resync no longer waits on the guest's own drag.
+- **Guests place coasters and track add-ons.** A placed coaster opens the coaster tool through its claim, and a ride's upgrade list lets a guest place a jump, tunnel or teleport on its own kart or water ride's track.
+- **One tool at a time.** Starting the coaster tool now ends any other tool, and starting a track tool ends the coaster tool, in a game of one as well, as the original has one tool mode.

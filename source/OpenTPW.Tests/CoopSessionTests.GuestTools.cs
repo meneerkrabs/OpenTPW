@@ -27,9 +27,14 @@ public partial class CoopSessionTests
 		public Action Escape { get; init; } = null!;
 		/// <summary>The HUD's frame with the left button pressed (and held), the pointer off the park.</summary>
 		public Action Press { get; init; } = null!;
+		/// <summary>The HUD's frame with the given input.</summary>
+		public Action<UiInput> Input { get; init; } = null!;
 		/// <summary>How many of the HUD's lines (the last three) say <paramref name="text"/>.</summary>
 		public int Says( OpenTpwText text ) => Hud.Messages.Count( message => message == Strings.Extra( text ) );
 	}
+
+	/// <summary>Where the views' plain frames hold the pointer, in canvas pixels: off the park, unless a test moves it for a drag the HUD follows (C3c-2).</summary>
+	private N.Vector2 hudPointer = new( -1 );
 
 	private View ViewOf( Park park, IBuildCatalog? catalog = null )
 	{
@@ -46,7 +51,7 @@ public partial class CoopSessionTests
 			Update = () =>
 			{
 				park.Enter();
-				hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
+				hud.Update( context, UiInput.Idle( hudPointer ), false, false, false );
 			},
 			Escape = () =>
 			{
@@ -57,6 +62,11 @@ public partial class CoopSessionTests
 			{
 				park.Enter();
 				hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ) with { LeftDown = true, LeftPressed = true }, false, false, false );
+			},
+			Input = input =>
+			{
+				park.Enter();
+				hud.Update( context, input, false, false, false );
 			}
 		};
 	}

@@ -275,15 +275,22 @@ public partial class Level
 	/// The build check of a track add-on (a jump or tunnel, the objects of <c>AddOn.UpgradeType</c> 1) for <paramref name="ride"/>: its '+' and '#' cells must lie on straight, unflagged
 	/// tiles of the ride's track (<see cref="TrackBuilder.CanStandAddOn"/>), its other cells on free ground, as for any object.
 	/// </summary>
-	public OriginalPlacementResult CheckAddOn( ObjectCatalogEntry entry, int x, int y, int rotation, OriginalObject ride )
+	public OriginalPlacementResult CheckAddOn( ObjectCatalogEntry entry, int x, int y, int rotation, OriginalObject ride ) => CheckAddOn( entry, x, y, rotation, ride, out _ );
+
+	/// <summary>
+	/// <see cref="CheckAddOn(ObjectCatalogEntry, int, int, int, OriginalObject)"/> with the objects it would demolish and the path cells it would clear ([EXT:online-coop-claims] a shared park's
+	/// claims ask them, <see cref="CoopBuildRights.PlacementLeavesClaimsAlone"/>).
+	/// </summary>
+	internal OriginalPlacementResult CheckAddOn( ObjectCatalogEntry entry, int x, int y, int rotation, OriginalObject ride, out ObjectPlacementPlan plan )
 	{
+		plan = ObjectPlacementPlan.None;
 		if ( !trackStations.TryGetValue( ride, out var station ) || BuilderOf( ride ) is not { } builder )
 			return OriginalPlacementResult.Blocked;
 		var owner = builder.OwnerOf( station );
 		Objects.AddOnCellRule = ( cx, cy ) => builder.CanStandAddOn( cx, cy, owner );
 		try
 		{
-			return CheckObject( entry, x, y, rotation, out _ );
+			return CheckObject( entry, x, y, rotation, out plan );
 		}
 		finally
 		{
@@ -341,15 +348,22 @@ public partial class Level
 			NoteSessionRefusal( CoopRefusal.Claimed );
 			return TrackToolEntry.Refused;
 		}
-		// [EXT:online-coop-commands] another tool: a guest's queue edit, Move pick-up or track entry that waits for the host starts no tool once it is back (C3b, C3c-1b)
+		// [EXT:online-coop-commands] a guest's coaster commands still to send go first: a claim sent now would come before them (C3c-2)
+		if ( !CoasterCommandsSentBeforeClaim() )
+			return TrackToolEntry.Refused;
+		// [EXT:online-coop-commands] another tool: a guest's queue edit, Move pick-up or track entry that waits for the host starts no tool once it is back (C3b, C3c-1b); the coaster tool ends
+		// first, so no claim moves away from a coaster whose panel is open (C3c-2)
 		DropToolStartWait();
 		StaffPlacement?.Cancel();
+		ExitCoasterTool();
 		var builder = BuilderOf( station )!;
 		CellTool.Cancel();
 		// [EXT:online-coop-claims] a guest's tool claims its ride through the host (C3c-1b): the tool starts from the claim's outcome, the latest entry's alone (an earlier one's wait was
-		// dropped above), and the claim moves from a ride an earlier entry claimed
+		// dropped above), and the claim moves from a ride an earlier entry claimed; the coaster tool that ended sends its last commands first (C3c-2)
 		if ( CoopSession != null && Commands.SendsRequests )
 		{
+			if ( !CoasterCommandsSentBeforeClaim() )
+				return TrackToolEntry.Refused;
 			if ( Commands.Issue( new ClaimRideCommand( station.Runtime.AttractionId ) ).Request is not { } claim )
 				return TrackToolEntry.Refused;
 			WaitingToolStart = claim;
@@ -380,12 +394,12 @@ public partial class Level
 	private static OriginalObject? PlacedQueueStart( OriginalObject item ) => item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells ? item : null;
 
 	/// <summary>
-	/// [EXT:online-coop-claims] A guest's track tool entry that waits for the host (C3c-1b): the request of its claim, then of its open, the ride, whether a placement opened it (its queue
-	/// start), and whether it starts as a placement's (the line tool whatever the circuit).
+	/// [EXT:online-coop-claims] A guest's track or coaster tool entry that waits for the host (C3c-1b, C3c-2): the request of its claim, then of its open (a coaster's: its entry), the ride,
+	/// whether a placement opened a kart or water ride's tool (its queue start), and whether that tool starts as a placement's (the line tool whatever the circuit).
 	/// </summary>
-	private sealed record PendingTrackStart( CoopGuestCommands.Request Request, int Ride, bool Placed, bool JustPlaced );
+	private sealed record PendingTrackStart( CoopGuestCommands.Request Request, int Ride, bool Placed, bool JustPlaced = false );
 
-	/// <summary>[EXT:online-coop-claims] The guest's track tool entry that waits for the host, or null (C3c-1b): <see cref="WaitingToolStart"/> holds its request.</summary>
+	/// <summary>[EXT:online-coop-claims] The guest's track or coaster tool entry that waits for the host, or null (C3c-1b, C3c-2): <see cref="WaitingToolStart"/> holds its request.</summary>
 	private PendingTrackStart? pendingTrackStart;
 
 	/// <summary>
@@ -403,8 +417,12 @@ public partial class Level
 		if ( pendingTrackStart is not { } start || !ReferenceEquals( start.Request, request ) )
 			return TrackToolStart.None;
 		pendingTrackStart = null;
-		if ( !request.Accepted || IsReadOnlyVisit || waterTracks == null || ResolveCommandObject( start.Ride ) is not { IsDeleted: false } station
-			|| !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
+		if ( !request.Accepted || IsReadOnlyVisit || ResolveCommandObject( start.Ride ) is not { IsDeleted: false } station )
+			return TrackToolStart.None;
+		// [EXT:online-coop-claims] a coaster's entry: after the claim the entry's writes go as a second request, whose outcome opens the panel (C3c-2)
+		if ( station.Runtime.Coaster != null )
+			return CompleteCoasterToolStart( request, start, station );
+		if ( waterTracks == null || !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
 			return TrackToolStart.None;
 		if ( ClaimOf( start.Ride ) != Commands.Player )
 			return TrackToolStart.ClaimGone;
@@ -435,6 +453,31 @@ public partial class Level
 		trackToolStation = station;
 		if ( start.Placed )
 			placedQueueStart = PlacedQueueStart( station );
+		HostToolStarts++;
+		return TrackToolStart.Entered;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] The outcome of a guest's coaster tool entry (C3c-2): the claim accepted sends <see cref="BeginCoasterToolCommand"/> as a second request with the same wait; that
+	/// one accepted opens the panel, counted as a tool the host's answer started. Either only while the park view has no tool and the claims still give the coaster to this seat.
+	/// </summary>
+	private TrackToolStart CompleteCoasterToolStart( CoopGuestCommands.Request request, PendingTrackStart start, OriginalObject station )
+	{
+		if ( GetCoasterBuilder( station ) is not { } builder )
+			return TrackToolStart.None;
+		if ( ClaimOf( start.Ride ) != Commands.Player )
+			return TrackToolStart.ClaimGone;
+		if ( !NoToolActive )
+			return TrackToolStart.None;
+		if ( request.Command is ClaimRideCommand )
+		{
+			if ( Commands.Issue( new BeginCoasterToolCommand( start.Ride ) ).Request is not { } begin )
+				return TrackToolStart.None;
+			WaitingToolStart = begin;
+			pendingTrackStart = start with { Request = begin };
+			return TrackToolStart.Pending;
+		}
+		OpenCoasterPanel( station, builder );
 		HostToolStarts++;
 		return TrackToolStart.Entered;
 	}

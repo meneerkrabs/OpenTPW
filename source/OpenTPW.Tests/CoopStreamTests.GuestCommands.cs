@@ -495,32 +495,22 @@ public partial class CoopStreamTests
 			new BaseFileSystem( "/" ), null );
 
 	[TestMethod]
-	public void ACoasterAndATrackAddOnAreTheHostsToPlaceForNow()
+	public void EveryRideIsAGuestsToPlaceButATrackAddOnGoesOntoItsRide()
 	{
-		// a coaster's track is a tool no guest's request carries yet (C3c-2); a kart or water ride's track tool claims its ride through the host since C3c-1b; a slide tower's slide is a
-		// guest's since C3b-3
+		// C3c-2: a coaster's tool follows a guest's placement through the coaster's claim, as a kart or water ride's track tool does since C3c-1b; a bumper ride lays no track and its queue
+		// tool follows (C3c-1); a slide tower's slide is a guest's since C3b-3
 		int TypeOf( TrackFamily family ) => BumperTemplates.All.First( template => !template.IsBumper && template.Family == family ).Type;
-		var coaster = SyntheticRide( $"Bumper.WhichTrackType {CoasterDefinition.TrackType}\n" );
-		Assert.IsTrue( CoopBuildRights.OwnToolFollows( coaster ) );
-		Assert.IsFalse( CoopBuildRights.GuestMayPlace( coaster ) );
 		foreach ( var entry in new[]
 		{
+			SyntheticRide( $"Bumper.WhichTrackType {CoasterDefinition.TrackType}\n" ),
 			SyntheticRide( $"Bumper.WhichTrackType 1\nBumper.BumperType {TypeOf( TrackFamily.Kart )}\n" ),
-			SyntheticRide( $"Bumper.WhichTrackType 2\nBumper.BumperType {TypeOf( TrackFamily.Water )}\n" )
+			SyntheticRide( $"Bumper.WhichTrackType 2\nBumper.BumperType {TypeOf( TrackFamily.Water )}\n" ),
+			SyntheticRide( $"Bumper.WhichTrackType 0\nBumper.BumperType {BumperTemplates.All.First( template => template.IsBumper ).Type}\n" ),
+			SyntheticRide( $"{PoolSlideTowers.SettingKey} 1\n" ),
+			SyntheticRide( "" )
 		} )
-		{
-			Assert.IsFalse( CoopBuildRights.OwnToolFollows( entry ), entry.Settings.ToString() );
-			Assert.IsTrue( CoopBuildRights.GuestMayPlace( entry ) );
-		}
-		// a bumper ride lays no track: its queue tool follows its placement, which a guest's request carries (C3c-1)
-		var bumper = SyntheticRide( $"Bumper.WhichTrackType 0\nBumper.BumperType {BumperTemplates.All.First( template => template.IsBumper ).Type}\n" );
-		Assert.IsFalse( CoopBuildRights.OwnToolFollows( bumper ) );
-		Assert.IsTrue( CoopBuildRights.GuestMayPlace( bumper ) );
-		Assert.IsFalse( CoopBuildRights.OwnToolFollows( SyntheticRide( "" ) ), "an ordinary ride is placed by its click alone" );
-		Assert.IsTrue( CoopBuildRights.GuestMayPlace( SyntheticRide( $"{PoolSlideTowers.SettingKey} 1\n" ) ), "a slide tower, whose slide mode lays its pieces in batches" );
-		Assert.IsTrue( CoopBuildRights.GuestMayPlace( SyntheticRide( "" ) ) );
-		Assert.IsFalse( CoopBuildRights.OwnToolFollows( SyntheticRide( "Bumper.WhichTrackType 1\nBumper.BumperType 0\n" ) ), "a track type without a controller has no track tool" );
-		// a track add-on goes onto its ride's track by the track tools' rule: a request that names no ride must not place it as an ordinary object
+			Assert.IsTrue( CoopBuildRights.GuestMayPlace( entry ), entry.Settings.ToString() );
+		// a track add-on goes onto its ride's track by the add-on rule: a request that names no ride must not place it as an ordinary object
 		var addOn = SyntheticRide( $"AddOn.UpgradesId 1100\nAddOn.UpgradeType {TrackAddOns.TrackUpgradeType}\n" );
 		Assert.IsTrue( TrackAddOns.IsTrackAddOn( addOn ) );
 		Assert.IsFalse( CoopBuildRights.GuestMayPlace( addOn ) );

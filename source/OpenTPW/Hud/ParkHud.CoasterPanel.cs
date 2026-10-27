@@ -44,6 +44,12 @@ public sealed partial class ParkHud
 	/// <summary>The cell under the pointer was pressed on a pylon the sub-mode picked up: the release belongs to the tool.</summary>
 	private bool coasterPress;
 
+	/// <summary>
+	/// [EXT:online-coop-commands] The press of this gesture was made while a guest's request of the panel waited for the host, at its frame's start or when it was taken (C3c-2): its release is no
+	/// click and no drag's release, whatever came back meanwhile.
+	/// </summary>
+	private bool coasterPressWhileWaiting;
+
 	private void BuildCoasterPanel()
 	{
 		// the panel's backdrop takes the clicks of the area it covers, so a click beside a button does not reach the park
@@ -90,8 +96,15 @@ public sealed partial class ParkHud
 
 	private void SelectCoasterButton( CoasterButtonSpec spec )
 	{
-		if ( level.CoasterPanel is not { } panel || !panel.Select( spec.Button ) )
+		if ( level.CoasterPanel is not { } panel )
 			return;
+		if ( !panel.Select( spec.Button ) )
+		{
+			// [EXT:online-coop-commands] a guest's panel takes no button while its request waits: the outcome finds the selection its action left (C3c-2)
+			if ( panel.IsWaiting )
+				level.NoteWaitingClick();
+			return;
+		}
 		if ( spec.ToolHelp >= 0 )
 		{
 			// [BIN:TPW-EXE:0x4982a0 loop help] the loop button shows help 0x127 instead of 0x126 when the mask has bit 0x200 (definition flag 0x100: the flume coasters)
@@ -169,14 +182,20 @@ public sealed partial class ParkHud
 			return false;
 		if ( paused )
 		{
-			// a drag that is let go while the game is paused ends there (a move goes back, a height settles its money)
-			if ( panel.IsDragging && input.LeftReleased )
-				panel.Release( null, null );
+			// a drag that is let go while the game is paused ends there (a move goes back, a height settles its money); [EXT:online-coop-commands] a guest's press that waits keeps the release
+			// for the drag its outcome starts (C3c-2)
+			if ( input.LeftReleased )
+				EndCoasterGesture();
 			return false;
 		}
-		// Backspace waits for the drag: it would delete the pylon the drag holds ([EXT:online-coop-commands] each one a command)
+		// Backspace waits for the drag: it would delete the pylon the drag holds ([EXT:online-coop-commands] each one a command; a guest's goes to the host one at a time, C3c-2)
 		for ( var index = 0; index < input.Backspaces && !panel.IsDragging && level.CoasterToolStation is { } station; index++ )
-			level.Commands.Issue( new RemoveLastCoasterPylonCommand( station.Runtime.AttractionId ) );
+		{
+			if ( !panel.SendsToHost )
+				level.Commands.Issue( new RemoveLastCoasterPylonCommand( station.Runtime.AttractionId ) );
+			else if ( !level.SendCoasterBackspace() )
+				break;
+		}
 		if ( parkRightClick )
 		{
 			level.ExitCoasterTool();
@@ -188,20 +207,42 @@ public sealed partial class ParkHud
 			panel.Hover( cursorX, cursorY );
 		else
 			panel.HoverNothing();
-		if ( panel.IsDragging )
+		// [EXT:online-coop-commands] a press made while a guest's request of the panel waited, at this frame's start (before its answers) or now (before the press sends a drag's own begin): its
+		// release is nobody's (C3c-2), wherever it is let go; a press in the park while the panel still waits asks the player to wait
+		if ( input.LeftPressed )
 		{
-			// [BIN:TPW-EXE:0x443371 tilt drag yaw] the camera yaw (0x790a38) minus the node's yaw turns the tilt drag
+			coasterPressWhileWaiting = frameCoasterWaiting || panel.IsWaiting;
+			if ( inPark && panel.IsWaiting )
+				level.NoteWaitingClick();
+		}
+		if ( panel.IsDragging || panel.PressWaits )
+		{
+			// [BIN:TPW-EXE:0x443371 tilt drag yaw] the camera yaw (0x790a38) minus the node's yaw turns the tilt drag; [EXT:online-coop-commands] a guest's press that waits keeps the pointer for
+			// the drag its outcome starts (C3c-2)
 			panel.Drag( pointer, level.CoasterCameraYaw, inPark ? (cursorX, cursorY) : null );
+			if ( inPark && input.LeftPressed )
+				coasterPress = true;
 			consumed = true;
 		}
 		else if ( inPark && input.LeftReleased && panel.IsBuilding )
 		{
-			// [BIN:TPW-EXE:0x5263df coaster build click] a build click is the tool object's release (0x524960, mode 0x15): the pylon is placed, the click sounds and the help follows, at the cell under the pointer then; the press does nothing
-			var closing = level.CoasterTool is { } tool && tool.Track.IsChainStart( cursorX, cursorY ) && !tool.Track.IsClosed;
-			ReportCoasterResult( level.CoasterClick( cursorX, cursorY ), closing );
-			// [BIN:TPW-EXE:0x52644c coaster tool click] the tool's click handler 0x524960 in mode 0x15 posts help 0xCD (205) after every click's action (the release 0x446300 with 0 for the edit buttons)
-			PostToolHelp( AdvisorToolHelp.CoasterToolClick );
-			PlayCoasterToolClick( cursorX, cursorY );
+			if ( !coasterPressWhileWaiting )
+			{
+				// [BIN:TPW-EXE:0x5263df coaster build click] a build click is the tool object's release (0x524960, mode 0x15): the pylon is placed, the click sounds and the help follows, at the cell under the pointer then; the press does nothing
+				var closing = level.CoasterTool is { } tool && tool.Track.IsChainStart( cursorX, cursorY ) && !tool.Track.IsClosed;
+				// [EXT:online-coop-commands] a guest's click goes to the host, and its result is said when it comes back (C3c-2); a click while its request waits went nowhere
+				var clicked = true;
+				if ( panel.SendsToHost )
+					clicked = level.SendCoasterClick( cursorX, cursorY, closing );
+				else
+					ReportCoasterResult( level.CoasterClick( cursorX, cursorY ), closing );
+				if ( clicked )
+				{
+					// [BIN:TPW-EXE:0x52644c coaster tool click] the tool's click handler 0x524960 in mode 0x15 posts help 0xCD (205) after every click's action (the release 0x446300 with 0 for the edit buttons)
+					PostToolHelp( AdvisorToolHelp.CoasterToolClick );
+					PlayCoasterToolClick( cursorX, cursorY );
+				}
+			}
 			consumed = true;
 		}
 		else if ( inPark && input.LeftPressed )
@@ -215,18 +256,26 @@ public sealed partial class ParkHud
 			else
 			{
 				// the move, height, rotate and tilt buttons pick the pylon up now; the stack and demolish buttons act on the release
-				if ( PickCoasterNode( panel, context, input.Mouse ) is int node )
+				if ( !coasterPressWhileWaiting && PickCoasterNode( panel, context, input.Mouse ) is int node )
 					panel.Press( node, pointer, cursorX, cursorY );
 				coasterPress = true;
 				consumed = true;
 			}
 		}
-		if ( input.LeftReleased && (panel.IsDragging || (coasterPress && !panel.IsBuilding)) )
+		if ( input.LeftReleased && coasterPressWhileWaiting )
+		{
+			// [EXT:online-coop-commands] the release of a press made while the panel waited is nobody's (C3c-2)
+			consumed = true;
+		}
+		else if ( input.LeftReleased && (panel.IsDragging || (coasterPress && !panel.IsBuilding)) )
 		{
 			var node = inPark ? PickCoasterNode( panel, context, input.Mouse ) : null;
 			var result = panel.Release( node, inPark ? (cursorX, cursorY) : null );
 			if ( result == CoasterPanelResult.Reopened )
 				PostMessage( strings.Help( 0x125 ) );
+			// [EXT:online-coop-commands] a guest's swap or cut while another request of its panel waits went nowhere (C3c-2)
+			if ( result == CoasterPanelResult.Waiting )
+				level.NoteWaitingClick();
 			if ( inPark )
 			{
 				PostToolHelp( AdvisorToolHelp.CoasterToolClick );
@@ -238,7 +287,7 @@ public sealed partial class ParkHud
 		if ( input.LeftReleased && !panel.IsBuilding )
 			consumed = true;
 		if ( input.LeftReleased )
-			coasterPress = false;
+			coasterPress = coasterPressWhileWaiting = false;
 		if ( panel.IsBuilding && panel.Cursor is { } cursor )
 		{
 			CoasterGhost = (cursor.X, cursor.Y, cursor.Result, cursor.Cost);
@@ -247,6 +296,18 @@ public sealed partial class ParkHud
 				level.CoasterPreview = new CoasterPreview( cursor.X, cursor.Y, cursor.Result == CoasterPlaceResult.Ok, builder.Height, builder.LoopMode, builder.FirstOfPair );
 		}
 		return consumed;
+	}
+
+	/// <summary>
+	/// The park's left gesture ends without its release reaching the tool (a pause's release, the pointer suspended, a release that was lost): a drag settles where it stands (a move goes back, a
+	/// height settles its money), [EXT:online-coop-commands] a guest's press that waits keeps a release over nothing for the drag its outcome starts, and a press made while the panel waited ends
+	/// with no release at all (C3c-2).
+	/// </summary>
+	private void EndCoasterGesture()
+	{
+		if ( level.CoasterPanel is { } panel && (panel.IsDragging || panel.PressWaits) && !coasterPressWhileWaiting )
+			panel.Release( null, null );
+		coasterPress = coasterPressWhileWaiting = false;
 	}
 
 	/// <summary>

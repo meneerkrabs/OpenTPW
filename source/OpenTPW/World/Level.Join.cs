@@ -30,7 +30,7 @@ public partial class Level
 	/// <summary>
 	/// [EXT:online-coop-snapshot-join] Writes a join snapshot's session state (<see cref="CaptureJoinState"/>) into the park a guest built from its save, before its first tick: the save's load
 	/// zeroed the pending hire and left the hands, the carried entries and the marks as the save has them. A coaster the state marks must be one of this park's, and a ride it claims one of
-	/// its track rides.
+	/// its track rides or coasters.
 	/// </summary>
 	internal void ApplyJoinState( CoopJoinState state )
 	{
@@ -42,13 +42,13 @@ public partial class Level
 			throw new InvalidDataException( $"The join state holds marker cells of coaster {unbound}, which the park does not hold." );
 		if ( state.StaffHands.Count > 0 && StaffHands == null )
 			throw new InvalidDataException( "The join state holds employees in hand, which this park cannot hold." );
-		// [EXT:online-coop-claims] a claimed ride must be one of this park's track rides (C3c-1)
+		// [EXT:online-coop-claims] a claimed ride must be one of this park's track rides (C3c-1) or coasters (C3c-2)
 		var claims = state.RideClaims ?? Array.Empty<(int Ride, int Seat)>();
 		if ( claims.Count > 0 )
 		{
-			var tracks = trackStations.Keys.Where( item => !item.IsDeleted ).Select( item => item.Runtime.AttractionId ).ToHashSet();
-			if ( claims.Where( claim => !tracks.Contains( claim.Ride ) ).Select( claim => (int?)claim.Ride ).FirstOrDefault() is { } stray )
-				throw new InvalidDataException( $"The join state claims attraction {stray}, which is no track ride of the park." );
+			var claimable = Objects.Objects.Where( item => !item.IsDeleted && IsClaimableRide( item ) ).Select( item => item.Runtime.AttractionId ).ToHashSet();
+			if ( claims.Where( claim => !claimable.Contains( claim.Ride ) ).Select( claim => (int?)claim.Ride ).FirstOrDefault() is { } stray )
+				throw new InvalidDataException( $"The join state claims attraction {stray}, which is no track ride or coaster of the park." );
 		}
 		carriedEntries = state.CarriedEntries.Count == 0 ? null : state.CarriedEntries.ToDictionary( item => item.Player, item => item.Entry );
 		StaffHands?.Clear();

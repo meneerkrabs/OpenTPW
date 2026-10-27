@@ -376,7 +376,7 @@ wrapped block stays inside the rectangle (`[EXT:option-label-fit]`); when the wr
 ink width, where `0x6AEC80` compares pen advances with the bitmap width (a pixel or two apart). OpenTPW texts that are wider than their box opt out of the clip: the "not simulated yet" value of the object window and
 the attractions list (`[EXT:strings]`), the online screens as a whole (`[EXT:ONLINE-UI]`: their labels, label buttons, text fields and list headers, several of which are original UITEXT in original boxes), the text field
 widget (`[EXT:ONLINE-UI]`: its template is not decoded, so its text inset is OpenTPW's, and it also draws the original dialogs' name and price fields), the options page's OpenTPW rows (`[EXT:display]`), the speed
-buttons (`[EXT:speed-buttons]`), the confirm dialog's messages that are not original UITEXT (`UiDialogs.Message`; the original ones, `MessageOfOriginalText`, and the original message box are cut off, although the
+buttons (`[EXT:speed-buttons]`), the confirm dialog's messages that are not original UITEXT (`UiDialogs.Message`, `[EXT:strings]`, or `[EXT:ONLINE-UI]` for the online screens' messages; the original ones, `MessageOfOriginalText`, and the original message box are cut off, although the
 confirm dialog's text box is read off the video, so its clip is not the original's) and the fitted-label fallbacks (`[EXT:fit-button-text]`). Probe of the front end and the Jungle HUD window cycle in 11 languages: the
 only clipped ink left is that first glyph column of the HUD balance.
 

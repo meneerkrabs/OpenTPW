@@ -65,7 +65,7 @@ public static class UiDialogs
 			Font = fonts => fonts.Label,
 			Align = UiAlign.Center,
 			Wrap = true,
-			// [EXT:ONLINE-UI] a message that is not an original UITEXT one (OpenTPW's own strings, error texts, the online screens' messages) is not cut off at the text box; an original one is, although the box itself is read off the video
+			// [EXT:strings] a message that is not an original UITEXT one (OpenTPW's own strings, error texts; [EXT:ONLINE-UI] for the online screens' messages) is not cut off at the text box; an original one is, although the box itself is read off the video
 			// ([DATA:video 28:00]), so for a long translation its clip is not the original's
 			Unclipped = originalText ? null : () => true,
 			Bounds = new UiRect( rect.X + 56, caption.Bottom + 20, textRight - rect.X - 56, rect.Bottom - caption.Bottom - 60 ),

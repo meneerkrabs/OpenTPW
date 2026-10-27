@@ -114,13 +114,56 @@ public class ImportedInitialCalendarTests
 		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Capture( park ), park.Settings, EconomyTestData.Catalog() ) );
 	}
 	[TestMethod]
-	public void SyntheticUpdatedAndUnsupportedCalendarsDoNotAcquireInitialDispatch()
+	public void UpdatedAndUnsupportedCalendarsDoNotAcquireInitialDispatch()
 	{
-		foreach ( var park in new[] { EconomyTestData.Park(), Import( day: 1 ), Import( rate: 16000, day: 1 ), Import( turn: 1 ) } )
+		foreach ( var park in new[] { Import( day: 1 ), Import( rate: 16000, day: 1 ), Import( turn: 1 ) } )
 		{
 			Assert.IsFalse( park.PendingInitialDay ); var days = 0;
 			park.EventRaised += item => { if ( item.Kind == ParkEventKind.DayEnded ) days++; };
 			park.Advance( ParkCalendar.TickOfTurn( 2 ) - park.Tick ); Assert.AreEqual( 0, days );
 		}
+	}
+
+	/// <summary>ECON-063: a new park owes the day message the calendar constructor's day cache -1 makes its first update post (0x4F7E80, 0x4F8260), once, whatever the date.</summary>
+	[TestMethod]
+	public void ANewParkPostsOneDayMessageOnItsFirstActualTurn()
+	{
+		var park = EconomyTestData.Park();
+		Assert.IsTrue( park.PendingInitialDay );
+		var days = 0;
+		park.EventRaised += item => { if ( item.Kind == ParkEventKind.DayEnded ) days++; };
+		park.Advance( ParkCalendar.TickOfTurn( 1 ) - 1 );
+		Assert.AreEqual( 0, days );
+		Assert.IsTrue( park.PendingInitialDay, "no turn has run yet" );
+		park.Advance( 1 );
+		Assert.AreEqual( 1, days );
+		Assert.IsFalse( park.PendingInitialDay );
+		park.Advance( ParkCalendar.TickOfTurn( 2 ) - park.Tick );
+		Assert.AreEqual( 1, days, "the second turn is no day change" );
+	}
+
+	/// <summary>The first day's zero entry of an object's walk-away history is not part of its saved form: a restored list without it saves like the live one, so the next day's roll cannot tell them apart (found by the park-resume smoke after ECON-063).</summary>
+	[TestMethod]
+	public void LeadingZeroWalkAwayDaysDoNotChangeTheSavedPark()
+	{
+		string Saved( params long[] days )
+		{
+			var park = EconomyTestData.Park();
+			var item = park.RegisterExisting( 1303 );
+			item.WalkAwayDays.AddRange( days );
+			return ParkSaveFile.Serialize( park );
+		}
+		Assert.AreEqual( Saved( 1 ), Saved( 0, 1 ) );
+		Assert.AreEqual( Saved( 0, 3, 0 ), Saved( 0, 0, 3, 0 ) );
+		Assert.AreEqual( Saved(), Saved( 0, 0 ) );
+		Assert.AreNotEqual( Saved( 1, 0 ), Saved( 0, 1 ), "the order of the days still counts" );
+	}
+
+	/// <summary>Theme Park Inc has no traced calendar of its own: its park keeps the synchronised start.</summary>
+	[TestMethod]
+	public void ANewThemeParkIncParkKeepsTheSynchronisedStart()
+	{
+		var park = new ParkEconomy( OriginalSaveImportTests.Settings(), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1, EconomyRules.ThemeParkIncMoney );
+		Assert.IsFalse( park.PendingInitialDay );
 	}
 }

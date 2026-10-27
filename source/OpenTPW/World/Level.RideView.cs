@@ -15,7 +15,13 @@ public partial class Level
 	internal ParkCameraMode? ParkCameraWhileRiding => RideView != null ? parkCameraBeforeRide as ParkCameraMode : null;
 
 	/// <summary>True while the ride view is open: the original's camcorder hides every interface layer but the viewfinder, the eject button and the advisor ([DATA:video 77:09-77:24]).</summary>
-	public bool HidesInterface => RideView != null;
+	public bool HidesInterface => RideView != null || LossOverlayActive;
+
+	/// <summary>
+	/// True while the lost park's hidden-HUD overlay is up: the HUD is hidden and only the loss banner shows, and the park camera is the player's (ECON-030, <c>ParkHud.LossWindow</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x4A29D0 hide HUD] the overlay window 0xDDF22 with its procedure 0x4A2840 is built and the HUD root [0x7CB2AC] hidden (0x65D9DD), the flag [0x7CB2E8] set
+	public bool LossOverlayActive { get; internal set; }
 
 	/// <summary>
 	/// Enters the ride view of a placed ride from the park camera: the original's "Ride it!" (ride window,
@@ -58,6 +64,16 @@ public partial class Level
 		Camera.Mode = RideView;
 		return true;
 	}
+
+	/// <summary>
+	/// The camera of the lost park: the camera seat of the park's gate (the entrance gate's fixed item <c>Gates</c>), entered as the winning screen enters End's. False, and the camera unchanged, when the park has no
+	/// gate, its model has no seat or a ride view is already open.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0048AC84 loss camera] the loss window's builder 0x48AC40 gets the gate thing from the bankruptcy (0x5168F0 passes the thing the world +0x1DA732 names) and calls 0x4E15B0(0) on it, the Ride it! routine: 0x42A560 looks up camera seat 1 in the gate model (the shipped Gates models carry the record, type 0x1031 value 1) and enters the seat camera, mode 4; without the seat it leaves the camera alone (0x42A6EE)
+	public bool EnterLossView() => Objects.Objects.FirstOrDefault( IsGateObject ) is { } gate && EnterWinningView( gate );
+
+	/// <summary>Whether <paramref name="item"/> is the park's entrance gate (the fixed item <c>Gates</c>).</summary>
+	internal static bool IsGateObject( OriginalObject item ) => !item.IsDeleted && item.Entry.SettingsName.Equals( "Gates", StringComparison.OrdinalIgnoreCase );
 
 	/// <summary>
 	/// Leaves the ride view and restores the park camera it was entered from. The original leaves to the

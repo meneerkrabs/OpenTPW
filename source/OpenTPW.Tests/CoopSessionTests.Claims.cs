@@ -95,7 +95,7 @@ public partial class CoopSessionTests
 		// the guest's window offers no sale, Move or queue tool for the ride, and a sale is refused here in the claim's words: nothing goes
 		guest.Enter();
 		var guestKart = guest.Level.TrackStations.Keys.Single();
-		typeof( ParkHud ).GetField( "selectedObject", NonPublic )!.SetValue( view.Hud, guestKart );
+		typeof( ParkHud ).GetProperty( "selectedObject", NonPublic | System.Reflection.BindingFlags.Instance )!.SetValue( view.Hud, guestKart );
 		view.Update();
 		var erase = ((UiScreen)typeof( ParkHud ).GetField( "hud", NonPublic )!.GetValue( view.Hud )!).Find( "deleteRide" ) as UiButton;
 		Assert.IsFalse( erase!.Enabled, "the erase button is off for a ride another player claims" );

@@ -125,7 +125,7 @@ public sealed class GuestPathGrid
 		if ( !InBounds( x, y ) )
 			throw new ArgumentOutOfRangeException( nameof( x ) );
 		if ( Cells.TypeAt( x, y ) is ParkCellType.Path or ParkCellType.Queue )
-			PathLinkWriter.Unlink( Cells, x, y, cardinalOnly: Cells.TypeAt( x, y ) == ParkCellType.Queue );
+			PathLinkWriter.Unlink( Cells, x, y, cardinalOnly: Cells.TypeAt( x, y ) == ParkCellType.Queue, Cells.ClearEffects );
 		Cells.SetType( x, y, ParkCellType.Queue );
 		Cells.SetLinks( x, y, 0 );
 		Cells.SetQueueLink( x, y, towards >= 0 ? LinkValue( towards ) : (byte)0 );

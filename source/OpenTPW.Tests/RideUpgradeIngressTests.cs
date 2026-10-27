@@ -125,7 +125,8 @@ public class RideUpgradeIngressTests
 		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
 		Assert.AreEqual( "rideUpgrade", hud.Stack.Top!.Name ); Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( 0, state.PendingLevel ); Assert.AreSame( p, owner.Visitors.Parameters ); CollectionAssert.AreEqual( vars, owner.Script.Variables );
 	}
-	[DataTestMethod, DataRow( "funds" ), DataRow( "bankrupt" )]
+	// a bankrupt park has no upgrade list to refuse from: its HUD is hidden behind the loss overlay (tp.exe 0x4A29D0; ParkLossWindowTests), so only the lack of funds is driven here
+	[DataTestMethod, DataRow( "funds" )]
 	public void ARefusedLevelLeavesLedgerAndDefaultsUnchangedAndClosesTheList( string refusal )
 	{
 		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out _, out _ ); var context = Context(); Research( economy );

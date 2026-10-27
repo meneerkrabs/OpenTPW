@@ -1144,10 +1144,13 @@ public class AdvisorRestoredAdviceTests
 		Assert.AreEqual( 1, Pending( original ).Count );
 	}
 
-	private static AutomaticAdvisor Attached( out List<int> captions )
+	private static AutomaticAdvisor Attached( out List<int> captions ) => Attached( out captions, out _ );
+
+	private static AutomaticAdvisor Attached( out List<int> captions, out ParkEconomy economy )
 	{
 		var advisor = new AutomaticAdvisor( Controller(), () => 0L );
-		advisor.AttachLevel( Live( EconomyTestData.Park() ) );
+		economy = EconomyTestData.Park();
+		advisor.AttachLevel( Live( economy ) );
 		advisor.Controller.Queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory>() );
 		var list = new List<int>();
 		advisor.CaptionSink = list.Add;
@@ -1162,9 +1165,11 @@ public class AdvisorRestoredAdviceTests
 		try
 		{
 			GameOptions.Current.Advisor = false;
-			var advisor = Attached( out var captions );
+			var advisor = Attached( out var captions, out var economy );
+			advisor.Update();   // the first update takes the park's turn as the start
 			Assert.IsTrue( advisor.Controller.AdviseRestored( 59, 100, 0, true )!.Value.Stored );
-			advisor.Update();
+			economy.Advance( ParkCalendar.TickOfTurn( 1 ) );
+			advisor.Update();   // the queue is served once per park turn (0x59A550)
 			Assert.AreEqual( 0, Pending( advisor.Controller ).Count, "the line is picked and consumed silently" );
 			CollectionAssert.AreEqual( new[] { AdvisorCaptionTable.For( AdvisorDescriptorTable.Rows[59].FirstResponseId )!.Value.TextEntry }, captions, "its caption reaches the tube" );
 		}

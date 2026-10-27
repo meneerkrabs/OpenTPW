@@ -35,9 +35,17 @@ public sealed partial class ParkHud
 	{
 		if ( ResearchWindowOpen || RejectReadOnlyAction() )
 			return;
+		// [BIN:TPW-EXE:0x4aa480 research window refusals] the builder returns while the pause menu is open (0x48C8D0) or the window exists, shows the 0x47F020 box UITEXT 0x1D4 ("Research is automatic in Instant Action mode.") in game
+		// type 2, else the box UITEXT 0x1D3 ("You need to hire some scientists before you can carry out any research!") while the researcher list (world +0x1DA742) is empty, and builds the window only past both; the boxes carry the cross
+		// button and no action (0x47F020(.., 2, 0, ..)) and pause the offline game like every message box (0x47F26C)
 		if ( ResearchEconomy is { Features.ResearchPanel: false } )
 		{
-			PostMessage( strings[UIStrings.ResearchInstantAction] );
+			Stack.Push( ResearchRefusalBox( UIStrings.ResearchInstantAction ) );
+			return;
+		}
+		if ( ResearchEconomy is { } economy && !economy.Staff.Members.Any( member => member.Type == StaffType.Researcher ) )
+		{
+			Stack.Push( ResearchRefusalBox( UIStrings.NeedToHireScientists ) );
 			return;
 		}
 		SetInfoArm( false );
@@ -52,6 +60,18 @@ public sealed partial class ParkHud
 		GameAudio.PlayUi( GameAudio.DrawerOpenEvent );
 		StartResearchSounds();
 		((ResearchWorkloadKnob)researchScreen.Find( "workloadKnob" )!).Reset();
+	}
+
+	/// <summary>The name of the research refusal boxes (they pause the offline park while open, as every 0x47F020 box does).</summary>
+	public const string ResearchRefusedScreen = "researchRefused";
+
+	private UiScreen ResearchRefusalBox( UIStrings text )
+	{
+		UiScreen? screen = null;
+		screen = UiDialogs.OriginalMessageBox( ResearchRefusedScreen, () => strings[text],
+			() => Stack.RemoveWhere( candidate => ReferenceEquals( candidate, screen ) ),
+			(UiDialogs.MessageBoxButton.Exit, null, null) );
+		return screen;
 	}
 
 	public void CloseResearchWindow()

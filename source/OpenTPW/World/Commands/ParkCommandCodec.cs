@@ -51,6 +51,14 @@ public static class ParkCommandCodec
 		_ => false
 	};
 
+	/// <summary>Whether <paramref name="ride"/> fits an undo of a line in <paramref name="mode"/>: a queue's ride, or for the path tool the issuer's selected ride (-1 for none: the shape every older log has).</summary>
+	internal static bool IsUndoLineMode( CellToolMode mode, int ride ) => mode switch
+	{
+		CellToolMode.Path => ride >= -1,
+		CellToolMode.Queue => ride >= 0,
+		_ => false
+	};
+
 	/// <summary>The command's bytes.</summary>
 	public static byte[] Encode( ParkCommand command )
 	{

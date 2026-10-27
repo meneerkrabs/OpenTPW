@@ -96,7 +96,7 @@ public class QueueModelTests
 	}
 
 	[TestMethod]
-	public void QueueModelVerticesStandOnTheDrawnGroundUnderThem()
+	public void TheDrawnGroundUnderAPointFollowsTheCornersAndTheEdgeOfTheMap()
 	{
 		var heights = new float[9];
 		for ( var index = 0; index < heights.Length; index++ )

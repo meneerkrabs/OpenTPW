@@ -8,7 +8,7 @@ internal sealed class UiPointerOwner( object target, bool capturesMouse = true )
 	public object Target { get; } = target;
 	/// <summary>
 	/// Whether an event this owner takes counts as the interface capturing the mouse (<c>Level.UiCapturesMouse</c>, which switches off the camera's
-	/// wheel, right-drag and edge scrolling). The pause backdrop takes the click without that: the camera keeps working under P, as before routing.
+	/// wheel, right-drag and edge scrolling). The pause backdrop captures it too: under the P window's layer the camera takes no input (ParkHud.CreatePausePointerOverlay).
 	/// </summary>
 	public bool CapturesMouse { get; } = capturesMouse;
 	public bool Retired { get; private set; }

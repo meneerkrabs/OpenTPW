@@ -1708,15 +1708,15 @@ public sealed class ParkEconomy : IParkEconomy
 	/// layer (the original's structure records). Stations preserve the overwritten base type; ordinary and legacy track cells use 0.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D0AF0 structure records] a cell's structure record is not part of the cell: the records (0x28 bytes, the type in +8, 0x0B to 0x19) are an array of their own indexed by the cell id, 0x004D0AF0 (the array at game +0x10FFD8), and an extension record (types 0x0C and 0x11) names its parent through +0x10 (0x0053B280, 0x005363F0); the cell keeps its own type in +8 of its 0x44-byte record (0x536300..0x5363E0), whose only immediate writers in the map code are the init 0x00536490 (7, 2, 30, 5, 1, 0)
-	// [BIN:TPW-EXE:0x0053AD90 counted structures] 0x005363F0 counts 50 for the record of a cell when its type is 0x0B, 0x0D, 0x10, 0x12 or 0x19, or when it is an extension (0x0C, 0x11) of such a record; no extension type pairs with 0x19, so a hoarding post stands on its own cell
-	// [APPROX:ECON-026] Station markers preserve their overwritten base type. Ordinary track tiles and legacy saves without that metadata retain base type 0. Hoardings still count one structure cell per owned land-ring post, and maps without land retain the existing all-owned adaptation; original structure reconstruction and general hoarding footprints remain unresolved.
+	// [BIN:TPW-EXE:0x0053AD90 counted structures] 0x005363F0 counts 50 for the record of a cell when its type is 0x0B, 0x0D, 0x10, 0x12 or 0x19, or when it is an extension (0x0C, 0x11) of such a record: the fence walk types the three cells beside every post (east, south, south-east) as extensions of it (0x52BA50), so a hoarding post counts its whole 2 x 2 block, each cell judged by its own flag 0x40
+	// [BIN:TPW-EXE:0x004C7DB0 net worth] the cell's type is its own map type: under a track tile the map keeps what the ground was (0 on plain ground, the base type a station overwrote), which is what this reads
 	private static (byte Type, bool Structure) CellForValue( ParkCellMap cells, int x, int y )
 	{
 		var track = cells.Tracks.Get( x, y );
 		// [BIN:TPW-EXE:0x005323F0 park fence] the fence setup lays the level's Hoardings.sam clicks with the track tool in mode 0x19 (0x00524960), each post a structure record of type 25, which the net worth
 		// counts 50 for through 0x005363F0; the land keeps the posts as a ring (ParkLand), so a post cell is a structure cell here
 		if ( track.IsEmpty )
-			return (cells.RawTypeAt( x, y ), cells.Land?.IsPost( x, y ) == true);
+			return (cells.RawTypeAt( x, y ), cells.Land?.CountsAsStructure( x, y, cells.Width, cells.Height ) == true);
 		var record = track.Type;
 		if ( track.IsExtension && track.Parent >= 0 )
 		{

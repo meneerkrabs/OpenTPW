@@ -40,6 +40,24 @@ public sealed class FenceLayer
 	/// <summary>Whether a post stands on the cell.</summary>
 	public bool IsPost( int x, int y ) => (uint)x < (uint)Width && (uint)y < (uint)Height && Type[y * Width + x] == PostType;
 
+	/// <summary>
+	/// Whether the cell's structure record counts 50 for the net worth (tp.exe 0x5363F0): a post, or an extension (0xC) whose parent record is a post. Every hoarding post therefore counts the
+	/// four cells of its block, each judged by its own flag 0x40 (the caller's).
+	/// </summary>
+	public bool CountsAsStructure( int x, int y )
+	{
+		switch ( TypeAt( x, y ) )
+		{
+			case PostType:
+				return true;
+			case ExtensionType:
+				var parent = OwnerAt( x, y ) - 1;
+				return parent >= 0 && parent < Width * Height && Type[parent] == PostType;
+			default:
+				return false;
+		}
+	}
+
 	/// <summary>The structure type the layer holds for the cell (0, <see cref="PostType"/> or <see cref="ExtensionType"/>).</summary>
 	public byte TypeAt( int x, int y ) => (uint)x < (uint)Width && (uint)y < (uint)Height ? Type[y * Width + x] : (byte)0;
 

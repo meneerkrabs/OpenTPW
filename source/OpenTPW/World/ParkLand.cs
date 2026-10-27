@@ -143,6 +143,9 @@ public sealed class ParkLand
 	/// <summary>Whether a fence post (a hoarding, cell type 0x19) stands on cell (<paramref name="x"/>, <paramref name="y"/>).</summary>
 	public bool IsPost( int x, int y ) => layer != null ? layer.IsPost( x, y ) : posts.Contains( (x, y) );
 
+	/// <summary>Whether the fence's record on the cell counts 50 for the net worth and the big park ticket (<see cref="FenceLayer.CountsAsStructure"/>), on a map of <paramref name="width"/> × <paramref name="height"/> cells.</summary>
+	public bool CountsAsStructure( int x, int y, int width, int height ) => LayerFor( width, height ).CountsAsStructure( x, y );
+
 	/// <summary>The <c>HoardingClicks[n].X/Y</c> pairs of a <c>Hoardings.sam</c>, up to the 512 terminator, a missing pair or 64 pairs.</summary>
 	// [BIN:TPW-EXE:0x407f20 Hoardings loader] the theme's hoardings.sam (name 0x74782c, string object 0x786bd8) fills the click table 0x784e30, whose pairs start at 0x784e3c; endhoardings.sam fills a second table 0x784c20 the park fence does not read
 	// [BIN:TPW-EXE:0x532506 fence clicks] the fence tool (mode 0x19) gets one click at post A + each pair until a pair's X is 512 or after the 64th pair (bound 0x78503c)

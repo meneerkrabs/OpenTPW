@@ -26,7 +26,7 @@ public sealed partial class ParkHud
 		var table = OriginalLayoutTables.EmployeeRenameDialog;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.RenameStaffMember], Font = fonts => fonts.Title,
-			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x5DAA ).Rect, Anchor = UiAnchor.Center } );
+			Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x5DAA ).Rect, Anchor = UiAnchor.Center } );
 		// [EXT:online-coop-commands] reopening edits the latest requested name, not the park's older one (C4c-2)
 		var field = screen.Add( new UiTextField { Id = "name", Text = DrawnStaffName( member ) ?? StaffName( member ), MaximumLength = StaffMember.MaximumNameLength,
 			Model = table.Control( 0x5DAB ).Model, Bounds = table.Control( 0x5DAB ).Rect, Anchor = UiAnchor.Center } );

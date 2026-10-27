@@ -202,7 +202,7 @@ public sealed partial class ParkHud
 			Id = "infoName",
 			Text = () => InfoNow == null ? "" : InfoNow.DisplayName ?? strings.Object( InfoNow.ObjectNameIndex ),
 			Font = fonts => fonts.Heading,
-			Color = UiColors.Title,
+			Shadow = true, Color = UiColors.Title,
 			Align = UiAlign.Center,
 			Fit = true
 		} );
@@ -216,7 +216,9 @@ public sealed partial class ParkHud
 				Id = $"statValue{index}",
 				Text = () => StatOfRow( index ) is { } stat ? stat.Value ?? (stat.IsGauge ? "" : strings.Extra( OpenTpwText.NotSimulated )) : "",
 				Font = fonts => fonts.Small,
-				Color = UiColors.Text
+				Color = UiColors.Text,
+				// [EXT:strings] the "not simulated yet" value (OpenTpwText.NotSimulated) is OpenTPW's text, wider than the original's value box in some languages, so it is not cut off there
+				Unclipped = () => StatOfRow( index ) is { Value: null }
 			} );
 			objGauges[index] = Info( new ObjectGauge( this, index ) { Id = $"statGauge{index}" } );
 		}

@@ -461,7 +461,7 @@ public partial class Level
 			if ( world == null ) throw new InvalidDataException( "The saved park's pool bridge world is unavailable." );
 			world.RestoreSnapshot( bridgeData );
 			foreach ( var ride in target.Attractions.OfType<RideVisitorBridge>() )
-				ride.RecomputeQueue( target.Grid );
+				ride.RecomputeQueueKeepingBack( target.Grid );
 		}
 		ValidateResumeQueueGeometry( snapshot, target, restoreVisitorCells: true );
 		// Keep the original empty-bridge validation and restore order, including the saved map version.
@@ -482,7 +482,7 @@ public partial class Level
 			var registered = target.Attractions.OfType<RideVisitorBridge>().ToDictionary( item => item.AttractionId );
 			foreach ( var saved in snapshot.Attractions )
 				if ( registered.TryGetValue( saved.AttractionId, out var ride ) && ride.RestoreVisitorCells( saved ) )
-					ride.RecomputeQueue( target.Grid );
+					ride.RecomputeQueueKeepingBack( target.Grid );
 		}
 		if ( snapshot.SeenGridVersion > target.Grid.Version )
 			throw new InvalidDataException( "The guests refer to a cell-map version newer than the saved layout." );

@@ -11,7 +11,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>Asset-free tests for sprites, path grid, queues, needs, determinism and performance of the guest simulation.</summary>
 [TestClass]
-public class GuestTests
+public partial class GuestTests
 {
 	private const float Tick = 1f / FixedStepClock.TicksPerSecond;
 

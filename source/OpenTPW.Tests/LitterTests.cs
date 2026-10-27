@@ -245,7 +245,8 @@ public class LitterTests
 		Assert.IsTrue( walked, "state 9" );
 		CollectionAssert.AreEqual( new[] { 8 }, binned, "the nearer bin: (3, 4) is 2 away squared, (4, 6) is 5" );
 		Assert.AreEqual( 0, litter.Count );
-		Assert.AreEqual( (GuestState.DoingNothing, 0), (guest.State, guest.BinId) );
+		// [BIN:TPW-EXE:0x004FFF20 state 9 end] the walk ends with the meter 0 and state 6 and leaves +0x1DC: the bin is the guest's target until its next major choice
+		Assert.AreEqual( (GuestState.DoingNothing, 8), (guest.State, guest.BinId) );
 	}
 
 	[TestMethod]

@@ -40,8 +40,8 @@ internal sealed class CoopGuestStaff
 	/// <summary>Whether a staff request of the guest's waits for its outcome to be taken: while it does, every staff click is no click, and the tool waits for it.</summary>
 	public bool HasOpenRequest => open != null;
 
-	/// <summary>Whether a hire or a pick-up the player still wants waits for the host: Escape and the park view's right click let go of it also while no staff tool is on yet.</summary>
-	public bool StartWaits => WantsTool && open is { IsOpen: true } && openKind == GuestStaffRequestKind.Start;
+	/// <summary>Whether a hire or a pick-up the player still wants waits for its outcome to be taken: Escape and the park view's right click let go of it also while no staff tool is on yet.</summary>
+	public bool StartWaits => WantsTool && open != null && openKind == GuestStaffRequestKind.Start;
 
 	/// <summary>
 	/// Whether something of the player's staff may not have been made and was not said (the session's end line, as <see cref="CoopManagementRequests.HasUnfinished"/>): a request not resolved yet,

@@ -27,6 +27,7 @@ public sealed class ParkCommandLineWriter : ICellLineWriter
 	public int Ride { get; }
 	public CellToolMode Mode => Inner.Mode;
 	public bool SnapsToLine => Inner.SnapsToLine;
+	public int VertexCapacity => Inner.VertexCapacity;
 	public void ResetToolSession() => Inner.ResetToolSession();
 
 	/// <summary>The writer a tool holds, without this layer (the queue writer of a queue tool, the track writers): what callers that ask for a writer's type read.</summary>

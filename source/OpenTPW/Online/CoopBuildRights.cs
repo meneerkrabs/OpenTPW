@@ -135,9 +135,9 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// [EXT:online-coop-claims] Whether <paramref name="command"/> of <paramref name="player"/> leaves alone every ride claimed against that player (<see cref="ClaimedAgainst"/>): the ride itself
 	/// (its track, its sale, its removal, its pick-up, its demolition by a placement, an add-on on it), its queue's lines, their undo, its edit and its cells, and the path cell its back
 	/// joins, which no removal, area clear, line or placement takes. Asked of every player, the host included, so a claim's holder edits its ride alone (C3c-1); while nothing is claimed
-	/// against the player it asks nothing, except a guest's placement still checks the fixed objects it may not demolish.
+	/// against the player it asks nothing.
 	/// </summary>
-	internal bool LeavesClaimsAlone( int player, ParkCommand command ) => (!CanBeClaimedAgainst( player ) && (player == ParkCommands.LocalPlayer || command is not PlaceObjectCommand)) || command switch
+	internal bool LeavesClaimsAlone( int player, ParkCommand command ) => !CanBeClaimedAgainst( player ) || command switch
 	{
 		// a claimed ride's queue lines and their undo; no line crosses its cells (a path line paves a queue end), and no queue line takes the path cell its back joins (the queue writers
 		// lay queue over path); an undo takes the cells its line built off again, which may take a queue's link off; a path line's undo only counts down the ones it crossed

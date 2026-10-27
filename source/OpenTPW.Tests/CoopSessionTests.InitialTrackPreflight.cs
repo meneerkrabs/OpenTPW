@@ -66,36 +66,55 @@ public partial class CoopSessionTests
 			var cells = level.Guests!.Grid.Cells;
 			foreach ( var tile in new[] { station.Exit, station.Entry } )
 			foreach ( var at in TrackStation.TileCellsOf( tile.X, tile.Y ) )
-			foreach ( var fixedItem in new[] { false, true } )
 			{
-				// TPW fixed items are anchored at (0,0), with world-space shape offsets. The first text row has the greatest V coordinate.
-				var shape = fixedItem ? new[] { new string( '.', at.X ) + "*" }.Concat( Enumerable.Repeat( ".", at.Y ) ).ToArray() : new[] { "*" };
-				var victimEntry = InitialTrackEntry( park, "Info.Id 1100\nInfo.OverwritePriority 9\n"
-					+ (fixedItem ? "Info.DontApplyOffset 1\n" : "Bumper.WhichTrackType 3\n"), shape );
-				var victim = level.Objects.TryPlace( victimEntry, fixedItem ? 0 : at.X, fixedItem ? 0 : at.Y, 0, out var placed );
+				var victimEntry = InitialTrackEntry( park, "Info.Id 1100\nInfo.OverwritePriority 9\nBumper.WhichTrackType 3\n", "*" );
+				var victim = level.Objects.TryPlace( victimEntry, at.X, at.Y, 0, out var placed );
 				Assert.IsNotNull( victim, placed.ToString() );
 				Assert.AreSame( victim, level.Objects.FindAt( at.X, at.Y ), "the protected object must actually occupy this adjacent cell" );
-				if ( fixedItem )
-					Assert.AreEqual( 0, level.RideClaims.Count, "fixed objects need protection even with no active claims" );
-				else
-				{
-					Assert.IsNotNull( victim!.Runtime.Coaster );
-					Assert.IsTrue( level.ExecuteClaimRide( 2, victim.Runtime.AttractionId ).Accepted );
-				}
+				Assert.IsNotNull( victim!.Runtime.Coaster );
+				Assert.IsTrue( level.ExecuteClaimRide( 2, victim.Runtime.AttractionId ).Accepted );
 				var blocked = TrackStation.TileCellsOf( tile.X, tile.Y ).First( cell => cell != at );
 				level.Guests.Grid.SetPath( blocked.X, blocked.Y, true );
 				cells.SetFlags( blocked.X, blocked.Y, ParkCellFlags.NoModify );
 				Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( entry, anchor.X, anchor.Y, rotation, out var plan ) );
 				Assert.IsFalse( plan.Overwritten.Contains( victim! ), "the ordinary footprint does not cover the victim" );
-				AssertInitialTrackRefusalIsAtomic( park, entry, rotation, fixedItem ? new[] { 1 } : new[] { 0, 1 } );
+				AssertInitialTrackRefusalIsAtomic( park, entry, rotation, 0, 1 );
 				Assert.IsFalse( victim!.IsDeleted );
-				Assert.IsTrue( ((CoopBuildRights)level.Commands.Rights).PlacementLeavesClaimsAlone( fixedItem ? 0 : 2, entry, 16, 18, rotation ), "host for a fixed object, holder for a claimed ride" );
-				if ( !fixedItem )
-					level.ExecuteReleaseRide( 0, victim.Runtime.AttractionId );
+				Assert.IsTrue( ((CoopBuildRights)level.Commands.Rights).PlacementLeavesClaimsAlone( 2, entry, 16, 18, rotation ), "the holder's own claimed ride" );
+				level.ExecuteReleaseRide( 0, victim.Runtime.AttractionId );
 				level.Objects.Remove( victim );
 				cells.SetFlags( blocked.X, blocked.Y, ParkCellFlags.None );
 				cells.SetType( blocked.X, blocked.Y, ParkCellType.Empty );
 			}
+		}
+	}
+
+	[TestMethod]
+	public void InitialTrackPlacementLeavesFixedItemsUnoccupiedAndStandingWithoutClaims()
+	{
+		foreach ( var family in new[] { TrackFamily.Kart, TrackFamily.Water } )
+		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+		{
+			var park = NewPark();
+			var (entry, _, _, _) = InitialTrackPlacement( park, family, rotation );
+			var level = park.Level;
+			// Fixed park items deliberately have no occupied cells. Their removal is checked by identity, not as an adjacent footprint victim.
+			var fixedEntry = InitialTrackEntry( park, "Info.Id 1100\nInfo.DontApplyOffset 1\n", "*" );
+			Assert.IsTrue( fixedEntry.IsFixedItem );
+			var fixedItem = level.Objects.Add( fixedEntry, 0, 0, 0 );
+			Assert.IsFalse( fixedItem.Cells.Any() );
+			Assert.IsNull( level.Objects.FindAt( 0, 0 ) );
+			Assert.AreEqual( 0, level.RideClaims.Count );
+			Assert.IsFalse( level.Commands.AllowsRemoval( 1, fixedItem ) );
+			var removal = level.Commands.ApplyRemote( new RemoveAttractionCommand( fixedItem.Runtime.AttractionId ) { Player = 1 } );
+			Assert.IsTrue( removal.RightsRefused, removal.Reason );
+			var result = level.Commands.ApplyRemote( new PlaceObjectCommand( ParkCommandCodec.EntryKey( entry ), 16, 18, rotation ) { Player = 1 } );
+			Assert.IsTrue( result.Accepted, result.Reason );
+			Assert.IsFalse( fixedItem.IsDeleted );
+			Assert.IsTrue( level.Objects.Objects.Contains( fixedItem ) );
+			Assert.IsFalse( fixedItem.Cells.Any() );
+			Assert.IsNull( level.Objects.FindAt( 0, 0 ) );
+			Assert.AreEqual( 0, level.RideClaims.Count );
 		}
 	}
 

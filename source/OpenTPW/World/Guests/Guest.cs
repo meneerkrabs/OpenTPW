@@ -172,7 +172,7 @@ public sealed class Guest
 	public float Happiness { get; internal set; }
 	/// <summary>The litter meter (guest <c>+0x1b4</c>, 0..100): each use adds the type's <c>LitterEffect</c>; at a byte of 90 the guest bins or drops its litter.</summary>
 	public float Litter { get; internal set; }
-	/// <summary>The litter bin a guest in state 9 walks to (guest <c>+0x1dc</c>, the ride word's other use); 0 otherwise.</summary>
+	/// <summary>The litter bin a guest in state 9 walks to and keeps as its target after the walk (guest <c>+0x1dc</c>, the ride word's other use) until the next major choice, a bin search of another bin, the leaving state or a hold; 0 otherwise.</summary>
 	public int BinId { get; internal set; }
 	/// <summary>The prankery flag (guest <c>+0x1c0</c>, <c>mPrankeryIndex</c>): 0, or 100 (stinkbombs), 101 (litter) or 102 (balloons) for a prankster.</summary>
 	public int PrankFlag { get; internal set; }
@@ -264,7 +264,23 @@ public sealed class Guest
 	/// <summary>Whether the sideshow the guest is playing was won (guest <c>+0x1F1</c>, set when the play starts); null outside a sideshow or without its result.</summary>
 	public bool? SideshowWon { get; internal set; }
 	/// <summary>Attraction the guest is heading to, queueing for or riding (0 = none).</summary>
-	public int AttractionId { get; internal set; }
+	public int AttractionId
+	{
+		get => attractionId;
+		// +0x1DC holds one id: naming an attraction replaces a bin the guest last used (the bin search 0x00500DC0, written at 0x004FEDEF by its caller, is the only other writer of a bin there)
+		internal set
+		{
+			attractionId = value;
+			if ( value != 0 )
+				BinId = 0;
+		}
+	}
+	private int attractionId;
+	/// <summary>
+	/// The saved major destination (guest <c>+0x1DE</c>; tp.exe's serializer names it <c>mSavedMajorDest</c> and the target <c>+0x1DC</c>, <see cref="AttractionId"/>, <c>mMajorDest</c>; the save keeps both, <c>0x004FD92A</c>): the attraction a guest had chosen when its minor decision (<c>0x004FD570</c>) sent it to another one on the way; the exit walk of the visit
+	/// that follows (state 15, <c>0x00500923</c>) takes it up again as the target. 0 = none; cleared only by that and by the removal of the attraction it names.
+	/// </summary>
+	public int SavedMajorAttractionId { get; internal set; }
 	/// <summary>The byte at +0x2C that state 10 counts while the guest walks to a ride with the park open; every twelfth count the minor decision runs (tp.exe 0x004FFEF2).</summary>
 	public int RideWalkCount { get; internal set; }
 	/// <summary>Park turns an expensive verdict still holds the guest at the booth (+0x200, tp.exe 0x004FF9D0): one is counted per turn, the verdict runs again as the last reaches 0. State 3 counts the same word down.</summary>

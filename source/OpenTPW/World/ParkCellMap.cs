@@ -111,6 +111,12 @@ public sealed partial class ParkCellMap
 	/// </summary>
 	public Action<ushort>? EntranceReevaluation { get; set; }
 
+	/// <summary>
+	/// The ride thing on a type 9 cell's owner cell, as the edge test's mask-2 rule reads it (<see cref="WalkEdges.Blocked"/>, tp.exe <c>0x004D88A0..0x004D8B28</c>): null when no object stands on the owner cell,
+	/// else whether the step into the entrance is open (the object can be ridden, <c>0x0042A440</c>, and its type has <c>UsageInfo.CannotRide</c> 0). The level sets it; a map without a level has no things.
+	/// </summary>
+	public Func<int, int, bool?>? EntranceRideOpens { get; set; }
+
 	/// <summary>The effects a path clear carries on this map (<see cref="EntranceReevaluation"/>).</summary>
 	internal LinkEffects ClearEffects => new( null, null, EntranceReevaluation );
 

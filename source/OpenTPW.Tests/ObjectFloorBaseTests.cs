@@ -45,7 +45,7 @@ public class ObjectFloorBaseTests
 				rgba[offset] = red;
 				rgba[offset + 1] = green;
 				rgba[offset + 2] = blue;
-				rgba[offset + 3] = alphaMode switch { "zero" => 0, "full" => 255, "mid" => 127, "ramp" => (byte)(x * 255 / Math.Max( 1, width - 1 )), _ => lcg.Next() };
+				rgba[offset + 3] = alphaMode switch { "zero" => 0, "full" => 255, "mid" => 127, "ramp" => (byte)(x * 255 / Math.Max( 1, width - 1 )), "path" => (byte)(x < 3 || y < 3 || x >= width - 3 || y >= height - 3 ? 0 : 252), _ => lcg.Next() };
 			}
 		}
 		return rgba;
@@ -92,7 +92,7 @@ public class ObjectFloorBaseTests
 	{
 		var cases = ProceduralTerrainComposeGolden.Cases;
 		CollectionAssert.IsSubsetOf( new[] { 0x00, 0x08, 0x10, 0x20, 0x40, 0x48, 0x50, 0x60 }, cases.Select( c => c.Word & 0x78 ).Distinct().ToArray() );
-		CollectionAssert.AreEquivalent( new[] { "zero", "full", "mid", "ramp", "random" }, cases.Select( c => c.Alpha ).Distinct().ToArray() );
+		CollectionAssert.AreEquivalent( new[] { "zero", "full", "mid", "ramp", "random", "path" }, cases.Select( c => c.Alpha ).Distinct().ToArray() );
 		CollectionAssert.AreEquivalent( new[] { "n", "double", "odd", "big", "small" }, cases.Select( c => c.ArtSize ).Distinct().ToArray() );
 		CollectionAssert.AreEquivalent( new[] { 16, 32, 64 }, cases.Select( c => c.Size ).Distinct().ToArray() );
 	}

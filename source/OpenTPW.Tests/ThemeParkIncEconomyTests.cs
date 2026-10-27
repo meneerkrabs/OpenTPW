@@ -231,6 +231,7 @@ public class ThemeParkIncEconomyTests
 		fresh!.IsBrokenDown = true;
 		Assert.AreEqual( 30, tpi.ScrapPercent( fresh ), "broken down (state 1) still refunds" );
 		fresh.LifeGauge = 0;
+		fresh.StateWord.Set( RideObjectStates.Condemned );
 		Assert.AreEqual( 0, tpi.ScrapPercent( fresh ), "condemned (state 4) refunds nothing" );
 		Assert.AreEqual( 0L, tpi.ScrapValue( fresh ) );
 		var before = tpi.Balance;

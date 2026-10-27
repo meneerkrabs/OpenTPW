@@ -245,8 +245,9 @@ public sealed partial class ParkHud
 		&& !ClaimedAgainstThisPlayer( item );
 
 	private bool CanEditTrack( OriginalObject item ) => !level.IsReadOnlyVisit && (item.Runtime.Coaster != null || item.Runtime.Bump != null)
-		// [EXT:online-coop-claims] nor the track of a ride another player claims (C3c-1); a guest's track tools are not on yet (C3c-1b, C3c-2)
-		&& !(level.CoopSession != null && (level.Commands.SendsRequests || ClaimedAgainstThisPlayer( item )));
+		// [EXT:online-coop-claims] nor the track of a ride another player claims (C3c-1), or for a guest a coaster's, whose tool is the host's until C3c-2; a guest's kart or water ride's
+		// track tool claims its ride through the host (C3c-1b)
+		&& !ClaimedAgainstThisPlayer( item );
 
 	/// <summary>
 	/// [EXT:online-coop-claims] Whether <paramref name="item"/> is claimed against this machine's player in a shared park (<see cref="CoopBuildRights.IsClaimedAgainst"/>): its window offers
@@ -316,7 +317,8 @@ public sealed partial class ParkHud
 			return;
 		SetInfoArm( false );
 		LeaveBuildTool();
-		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.EnterTrackTool( item );
+		// [EXT:online-coop-claims] a guest's track tool starts once its claim is back, with the help then (C3c-1b)
+		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.BeginTrackTool( item, placed: false ) == TrackToolEntry.Entered;
 		if ( entered )
 			PostMessage( item.Runtime.Coaster != null ? strings.Help( 0x125 ) : TrackToolHelp );
 	}
@@ -466,7 +468,7 @@ public sealed partial class ParkHud
 		var relief = economy.Catalog.TryGet( record.InfoId, out var info ) && info.ProvidesRelief;
 		var state = ParkEconomy.ObjectState( record );
 		var guests = level.Guests;
-		// EXIT NOT CONNECTED is never shown (ECON-049, tagged at ParkGate.MayOpen): the exit test 0x4de5a0 steps from the exit cell by its link byte (+0xd) and walks the edge test 0x4d8750 from the cell in front, and OpenTPW's entrance and exit cells keep no link byte
+		// [BIN:TPW-EXE:0x00485F60 exit status] the exit test 0x4DE5A0 (ParkGate.ExitConnected) runs for a ride (type +0x4AC 0) that is no add-on (upgrade parent 0, +0x288 not 2) once its queue is connected, and a failing exit shows status 0x18, EXIT NOT CONNECTED
 		return new RideStatusFacts(
 			state,
 			TrackIncomplete: item.Runtime.TrackIncomplete,
@@ -476,7 +478,7 @@ public sealed partial class ParkHud
 			// an upgrade always waits for the mechanics; a toilet's call is the handymen's
 			Service: ServiceProgress( economy, record, relief && state != RideObjectStates.Upgrading ? StaffType.Handyman : StaffType.Mechanic ),
 			QueueDetached: item.Entry.HasQueue && guests != null && !ParkGate.QueueConnected( guests.Grid, item.Visitors ),
-			ExitDetached: false,
+			ExitDetached: item.Entry.WhichUIType == 0 && !TrackAddOns.IsAddOn( item.Entry ) && guests != null && !ParkGate.ExitConnected( guests.Grid, item.Visitors ),
 			IsOpen: item.IsOpen );
 	}
 

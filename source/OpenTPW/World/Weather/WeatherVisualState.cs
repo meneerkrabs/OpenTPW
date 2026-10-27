@@ -43,22 +43,34 @@ public readonly record struct WeatherCamera( NVector3 Eye, NVector3 Right, NVect
 	public static WeatherCamera Looking( NVector3 eye ) => new( eye, NVector3.UnitX, NVector3.UnitY, NVector3.UnitZ );
 }
 
-/// <summary>One vertex of a weather quad: a camera-space position (original units), a grey level, an alpha and a texture coordinate.</summary>
-public readonly record struct WeatherVertex( NVector3 Position, float Grey, float Alpha, NVector2 TexCoords );
+/// <summary>
+/// One vertex of a rain streak or snow flake as tp.exe hands it to its polygon submit (<c>0x565BB0</c>): homogeneous clip coordinates (x, y, z in <see cref="Position"/>, the fourth word in <see cref="W"/>),
+/// y running down the screen, a grey level, an alpha and a texture coordinate (v as OpenTPW's upright textures read it).
+/// </summary>
+public readonly record struct WeatherVertex( NVector3 Position, float W, float Grey, float Alpha, NVector2 TexCoords );
 
 /// <summary>One straight piece of a bolt in original world units, and the branch depth it belongs to (0 is the trunk).</summary>
 public readonly record struct WeatherBoltSegment( NVector3 A, NVector3 B, int Depth );
 
+/// <summary>
+/// One call of the walk to the ribbon emitter (<c>0x57DD10</c>): a point pair at a branch depth, the closing call of a polyline (<see cref="First"/> null) or the start of a branch's polyline
+/// (<see cref="StartsBranch"/>, the original's reset of that depth's counter).
+/// </summary>
+public readonly record struct WeatherBoltCall( NVector3? First, NVector3 Second, int Depth, bool StartsBranch = false );
+
 /// <summary>One live bolt: its fixed shape, its age, and the flicker term of its current colour.</summary>
 public sealed class WeatherBolt
 {
-	internal WeatherBolt( IReadOnlyList<WeatherBoltSegment> segments, float lifetime )
+	internal WeatherBolt( IReadOnlyList<WeatherBoltSegment> segments, IReadOnlyList<WeatherBoltCall> calls, float lifetime )
 	{
 		Segments = segments;
+		Calls = calls;
 		Lifetime = lifetime;
 	}
 
 	public IReadOnlyList<WeatherBoltSegment> Segments { get; }
+	/// <summary>The emitter calls of the walk in order: the ribbon follows these, not the unordered segments.</summary>
+	public IReadOnlyList<WeatherBoltCall> Calls { get; }
 	public float Age { get; internal set; }
 	public float Lifetime { get; }
 
@@ -82,11 +94,9 @@ public sealed class WeatherBolt
 // [BIN:STP-PPC:engine_shared 0x1001FCE4 dt] dt is the wall-clock frame time in ms capped at 500 ms, zeroed by an engine flag
 // [BIN:TPW-EXE:0x57fff8 rain parallax] the factor (CRain +0x3340, 0.1 from the init at 0x57d1fc) is 0.3 while the camera-mode byte 0x790ab0 has bits 0x16 (0x580003-0x58000b); per axis the field offset is wrap(factor x camera position + 4) - 4 into [-4, 4) (x and z use +factor, y uses -factor; the wrap is x16384 & 0x1FFFF, 0x580013-0x5800b7), an absolute position, not a per-frame delta
 // [BIN:TPW-EXE:0x57efd0 rain draw] the drop is (p.x - o.x, o.y + p.y, p.z - o.z) with o the scroll plus the wrapped parallax, whose y carries -factor: every axis moves by -factor x the camera's position, so the field here is wrapped (fall - 0.1 x eye)
-// [APPROX:AUDIO-900] the factor 0.3 applies in OpenTPW's free-walk and ride cameras, the mapping the listener already uses for the same bits (EXT:listener-eye-mode); what the bits 0x2, 0x4 and 0x10 of the original's camera-state word 0x790ab0 mean (0x42AB20 toggles 2 and 4 from input events 2 and 4; no instruction sets 0x10 alone) is not read, so which original views take 0.3 is not known
+// [BIN:TPW-EXE:0x57fff8 eye views] the factor 0.3 applies in the park's first-person views, the ones that raise bits 0x16 of the camera-mode byte 0x790ab0: the terrain camcorder (bit 0x2, toggled by 0x42AB20 from input event 2; OpenTPW's free walk) and the ride follow (bit 0x4, event 4); no instruction sets 0x10, so the factor is 0.1 in the overview and the lobby (WeatherRenderer.IsEyeView)
 // [BIN:TPW-EXE:0x57f490 CRain snow] the swirl is selected by engine flag 0x8bcbc8 bit 0x100, which no instruction sets (the word is .bss, and its writers, among them 0x44d8f0, 0x40c830, 0x54fae9, 0x566840, 0x5673d0, 0x576f07, 0x583d30, 0x587950, set other bits or restore saved copies), so the PC always draws the jitter version: each frame every axis gets ((rand & 31) - 16) / 2048 before the camera transform; each flake is one triangle: apex (x, y + h) at the top middle of its atlas quadrant's row, base corners (x +- w, y - h) at the row's lower corners, h the half-size (+0x3354)
-// [BIN:TPW-EXE:0x57f490 flake vertex] the vertex is (x, y, z + 0.1, w = z + 0.1501) in the engine's homogeneous clip space (0x565bb0 clips it with the clip codes 0x561bc0, which compare |x|, |y|, |z| against w), x and y being the spread camera-space position (y negated), so the flake lands at x / (z + 0.1501) of the screen; its base half-width w = h x 0x8bcbcc (height / width) is in that clip x, which keeps the flake square on the screen
-// [EXT:snow-depth-value] OpenTPW projects the flake through its scene camera with the depth moved by 0.1501 (the position the original's w gives); the original's depth-buffer value (z + 0.1) / (z + 0.1501), close to 1, needs a clip-space vertex path the precompiled browser weather shader does not have (a platform limit), so snow's depth writes and the depth test against the scene differ
-// [APPROX:AUDIO-901] the flake's base half-width is h x 0x8bcbcc (the display's height / width) in the original and w = h here, which is the same only if OpenTPW's aspect-correct projection stands for that factor (as for PTCL-904); the space of the vertex's z + 0.1 and fourth word z + 0.1501 (camera or clip) is not read
+// [BIN:TPW-EXE:0x57f490 flake vertex] the vertex is (x, y, z + 0.1, w = z + 0.1501) in homogeneous clip coordinates handed straight to the polygon submit 0x565bb0 (it clips with the clip codes 0x561bc0, which compare |x|, |y|, |z| against w, and the viewport 0x5796a0 lands it at x / w and y / w of the half screen), x and y being the spread camera-space position (y negated); the flake's base half-width h x [0x8bcbcc] (height / width) in that clip x keeps it as wide as it is tall on the screen, and the position itself is not multiplied by the projection's or the screen matrix's factors (the weather is not the world: a flake sits at x s / w of the half screen where a world point at the same camera-space offset would sit at 2 a x / z of it)
 public sealed class WeatherVisualState
 {
 	/// <summary>The presentation field's draw stream seed; it shares nothing with the park's simulation streams.</summary>
@@ -110,8 +120,12 @@ public sealed class WeatherVisualState
 	public const float MaximumStepSeconds = 0.5f;
 	/// <summary>A rain streak's length along its fall, in original units.</summary>
 	public const float StreakLength = 0.1f;
-	/// <summary>A rain streak's width as a fraction of its length.</summary>
-	public const float StreakWidthRatio = 0.2f;
+	/// <summary>A rain streak's half-width vector is this times the streak's own projected vector turned a quarter (0x701D00 = 0.1): a streak is 0.2 x its length wide.</summary>
+	public const float StreakHalfWidthFactor = 0.1f;
+	/// <summary>The rain vertex's clip z is the trailing end's depth plus this (0x701D0C is -0.04, subtracted).</summary>
+	public const float RainDepthBias = 0.04f;
+	/// <summary>The rain vertex's clip w is its own end's depth plus this (0x701D10 is -0.1, subtracted).</summary>
+	public const float RainW = 0.1f;
 	/// <summary>Depth at which the rain's grey ramp reaches 0.</summary>
 	public const float RainFadeDepth = 6f;
 	/// <summary>Half the edge of a snow flake, in original units.</summary>
@@ -120,8 +134,10 @@ public sealed class WeatherVisualState
 	public const float SnowJitter = 1f / 2048f;
 	/// <summary>Divisor of the snow's depth spread: x and y scale by 1 + depth / 8.</summary>
 	public const float SnowSpreadDepth = 8f;
-	/// <summary>The original adds this to a flake's depth to form the vertex's w (and 0.1 for its z), so the flake projects slightly farther than its depth.</summary>
+	/// <summary>The original adds this to a flake's depth to form the vertex's w, so the flake projects slightly farther than its depth.</summary>
 	public const float SnowProjectionBias = 0.1501f;
+	/// <summary>The original adds this to a flake's depth to form the vertex's clip z.</summary>
+	public const float SnowDepthBias = 0.1f;
 	/// <summary>Vertices a snow flake takes: one triangle.</summary>
 	public const int SnowVerticesPerFlake = 3;
 
@@ -249,7 +265,8 @@ public sealed class WeatherVisualState
 	/// <summary>Starts a bolt between <paramref name="top"/> and <paramref name="bottom"/> (original units): the lobby hands both.</summary>
 	public WeatherBolt AddBolt( NVector3 top, NVector3 bottom, float lifetimeSeconds )
 	{
-		var bolt = new WeatherBolt( BuildBolt( top, bottom, random.NextUInt64() ), lifetimeSeconds );
+		var (segments, calls) = Build( top, bottom, random.NextUInt64() );
+		var bolt = new WeatherBolt( segments, calls, lifetimeSeconds );
 		if ( bolts.Count >= MaximumBolts )
 			bolts.RemoveAt( 0 );
 		bolts.Add( bolt );
@@ -264,33 +281,41 @@ public sealed class WeatherVisualState
 	// [BIN:TPW-EXE:0x57EC50 bolt walk] the walk starts at depth 0 with the sky point first and the ground point second (0x57EE30 passes the record's second point, the sky one, as the first argument), the branch depth limit 4 (+0xA1A0, set by 0x57EE30 for a seeded bolt) and the roughness 0.6 (+0x3310 = 0x3F19999A, init 0x57D2AB)
 	// [BIN:TPW-EXE:0x57E810 split] each call draws the midpoint (0x57E4B0), then one word for the branch ((word & 0x1FF) < 9 and depth < 4), then one word for the stop threshold: threshold = 6 (+0xA180) + ((word & 0xFFF) - 0x800) x 2 (+0xA184) / 2048, i.e. 4 to 8; each half (midpoint to the far end, then the near end to the midpoint) splits again when its squared length is at least the threshold and is a final segment otherwise, so the test runs on the halves, not on the whole piece
 	// [BIN:TPW-EXE:0x57E810 branch] a branch takes depth + 1, scale 1 / (96 x depth) and two words: along-segment = ((w1 & 0x3FF) + 0x200) x scale x 2.5, along-bolt = ((w2 & 0x3FF) + 0x200) x scale; its heading is along-bolt x the bolt's unit direction (record +0x18, ground minus sky) + along-segment x the segment's unit direction, and when that points against the bolt direction the along-bolt term is halved and the sum is the halved term x the bolt direction + half the first heading; the branch starts at the segment's near end and runs along that heading, splitting from there
-	public static IReadOnlyList<WeatherBoltSegment> BuildBolt( NVector3 top, NVector3 bottom, ulong seed )
+	public static IReadOnlyList<WeatherBoltSegment> BuildBolt( NVector3 top, NVector3 bottom, ulong seed ) => Build( top, bottom, seed ).Segments;
+
+	/// <summary>The bolt's final segments and the ordered emitter calls of its walk (the ribbon's input), from the same walk.</summary>
+	// [BIN:TPW-EXE:0x57EC50 bolt emit order] the walk calls the emitter 0x57DD10 with (midpoint, far) and then (near, midpoint) for every final half, a branch resets its depth's counter, walks from the branch end to the segment's near end and closes with a call (0, branch end) at that depth; the trunk closes with (0, near) at depth 0 (the sky point)
+	internal static (IReadOnlyList<WeatherBoltSegment> Segments, IReadOnlyList<WeatherBoltCall> Calls) Build( NVector3 top, NVector3 bottom, ulong seed )
 	{
 		var rng = new CRainRandom( (uint)(seed ^ (seed >> 32)) | 1u );
 		var segments = new List<WeatherBoltSegment>();
+		var calls = new List<WeatherBoltCall>();
 		var boltDirection = bottom - top;
 		var boltLength = boltDirection.Length();
 		if ( boltLength != 0 )
 			boltDirection /= boltLength;
 		var depth = 0;
 		// Guards of OpenTPW's fixed vertex buffer (the original grows its draw list): a piece that cannot split any further within the budget is dropped.
-		var calls = 0;
+		var walks = 0;
 
 		void Leaf( NVector3 a, NVector3 b )
 		{
-			if ( segments.Count < MaximumBoltSegments )
-				segments.Add( new WeatherBoltSegment( a, b, depth ) );
+			if ( segments.Count >= MaximumBoltSegments )
+				return;
+			segments.Add( new WeatherBoltSegment( a, b, depth ) );
+			calls.Add( new WeatherBoltCall( a, b, depth ) );
 		}
 
 		void Walk( NVector3 near, NVector3 far )
 		{
-			if ( ++calls > 4 * MaximumBoltSegments )
+			if ( ++walks > 4 * MaximumBoltSegments )
 				return;
 			var middle = Midpoint( ref rng, far, near );
 
 			if ( (rng.Next() & 0x1FF) < 9 && depth < MaximumBranchDepth )
 			{
 				depth++;
+				calls.Add( new WeatherBoltCall( null, default, depth, StartsBranch: true ) );
 				var scale = 1f / (depth * 96);
 				var along = far - near;
 				var alongLength = along.Length();
@@ -304,7 +329,9 @@ public sealed class WeatherVisualState
 					alongBolt *= 0.5f;
 					heading = boltDirection * alongBolt + heading * 0.5f;
 				}
-				Walk( near + heading, near );
+				var branchEnd = near + heading;
+				Walk( branchEnd, near );
+				calls.Add( new WeatherBoltCall( null, branchEnd, depth ) );
 				depth--;
 			}
 
@@ -320,7 +347,8 @@ public sealed class WeatherVisualState
 		}
 
 		Walk( top, bottom );
-		return segments;
+		calls.Add( new WeatherBoltCall( null, top, 0 ) );
+		return (segments, calls);
 	}
 
 	/// <summary>Squared length below which a half of a bolt stops splitting, before its draw (+0xA180).</summary>
@@ -405,58 +433,75 @@ public sealed class WeatherVisualState
 	public static float RainGrey( float depth ) => 3 * Math.Max( 0, (int)(12f * (RainFadeDepth - depth)) ) / 255f;
 
 	/// <summary>
-	/// Writes the rain streaks of the drawn drops as camera-space triangles (six vertices a streak) and returns the vertex
-	/// count. A streak is skipped when either end is at or behind the eye; the grey follows each end's depth and the alpha
-	/// runs from 0x80 at the trailing end to 0xFF at the leading end.
+	/// Writes the rain streaks of the drawn drops as clip-space triangles (six vertices a streak, the fan (0, 1, 2) and (0, 2, 3) of the original's four vertices) and returns the vertex count. A streak is skipped
+	/// when its trailing end is at or behind the eye (the leading end is not tested); the grey follows the trailing end's depth for both ends and the alpha runs from 0x80 at the trailing end to 0xFF at the leading end.
 	/// </summary>
+	// [BIN:TPW-EXE:0x57F1F0 rain vertex] the vertices are submitted straight to the polygon path, no projection: with A the trailing end in camera space (y negated, the screen runs down) and d = B - A the streak (0.1 along the fall), p = 0.1 d.x and q = 0.1 d.y: V0 = A + (q, -p), V1 = A - (q, -p), V2 = B - (q, -p), V3 = B + (q, -p), the same z = A.z + 0.04 (0x701D0C) on all four and w = z of the vertex's own end + 0.1 (0x701D10: A.z on V0 and V1, B.z on V2 and V3), the colour 3c in each channel with c = max(0, int(12 (6 - A.z))) and alpha 0x80 on V0 and V1 and 0xFF on V2 and V3 (the leading end's colour uses the trailing end's depth too), only A.z > 0 tested
 	public int WriteRain( WeatherCamera camera, Span<WeatherVertex> output )
 	{
 		var fall = camera.ToCamera( FallDirection ) * StreakLength;
 		var count = 0;
 		for ( var index = 0; index < drawn && count + 6 <= output.Length; index++ )
-		{
-			var trailing = camera.ToCamera( DropOffset( index ) );
-			var leading = trailing + fall;
-			if ( trailing.Z <= 0 || leading.Z <= 0 )
-				continue;
-			var across = new NVector2( -fall.Y, fall.X );
-			across = across.LengthSquared() > 1e-12f ? NVector2.Normalize( across ) : NVector2.UnitX;
-			var half = new NVector3( across * (0.5f * StreakWidthRatio * StreakLength), 0 );
-			var greyTrailing = RainGrey( trailing.Z );
-			var greyLeading = RainGrey( leading.Z );
-			var a = new WeatherVertex( trailing - half, greyTrailing, 128f / 255f, new NVector2( 0, 0 ) );
-			var b = new WeatherVertex( trailing + half, greyTrailing, 128f / 255f, new NVector2( 1, 0 ) );
-			var c = new WeatherVertex( leading - half, greyLeading, 1f, new NVector2( 0, 1 ) );
-			var d = new WeatherVertex( leading + half, greyLeading, 1f, new NVector2( 1, 1 ) );
-			output[count++] = a; output[count++] = b; output[count++] = c;
-			output[count++] = b; output[count++] = d; output[count++] = c;
-		}
+			count += WriteStreak( camera.ToCamera( DropOffset( index ) ), fall, output[count..] );
 		return count;
 	}
 
+	/// <summary>One streak from its trailing end and its (camera-space) fall vector: six vertices, or none when the trailing end is not in front of the eye.</summary>
+	internal static int WriteStreak( NVector3 trailing, NVector3 fall, Span<WeatherVertex> output )
+	{
+		if ( trailing.Z <= 0 )
+			return 0;
+		var p = StreakHalfWidthFactor * fall.X;
+		var q = StreakHalfWidthFactor * -fall.Y;
+		var grey = RainGrey( trailing.Z );
+		var z = trailing.Z + RainDepthBias;
+		var wTrailing = trailing.Z + RainW;
+		var wLeading = trailing.Z + fall.Z + RainW;
+		var startX = trailing.X;
+		var startY = -trailing.Y;
+		var endX = trailing.X + fall.X;
+		var endY = -(trailing.Y + fall.Y);
+		var v0 = new WeatherVertex( new NVector3( startX + q, startY - p, z ), wTrailing, grey, 128f / 255f, new NVector2( 1, 0 ) );
+		var v1 = new WeatherVertex( new NVector3( startX - q, startY + p, z ), wTrailing, grey, 128f / 255f, new NVector2( 0, 0 ) );
+		var v2 = new WeatherVertex( new NVector3( endX - q, endY + p, z ), wLeading, grey, 1f, new NVector2( 0, 1 ) );
+		var v3 = new WeatherVertex( new NVector3( endX + q, endY - p, z ), wLeading, grey, 1f, new NVector2( 1, 1 ) );
+		output[0] = v0; output[1] = v1; output[2] = v2;
+		output[3] = v0; output[4] = v2; output[5] = v3;
+		return 6;
+	}
+
 	/// <summary>
-	/// Writes the snow flakes of the drawn drops as camera-space triangles (three vertices a flake): full white, the
-	/// screen x and y spread by 1 + depth / 8, the apex at the top middle of the flake's atlas quadrant (index &amp; 3) and
-	/// the base at its lower corners.
+	/// Writes the snow flakes of the drawn drops as clip-space triangles (three vertices a flake): full white, the camera-space x and y spread by 1 + depth / 8, the apex above the flake's centre and the base
+	/// <paramref name="displayAspect"/> (the display's height over its width, the word 0x8BCBCC) times the half-size to each side, the apex at the lower middle and the base at the upper corners of the flake's atlas quadrant (index &amp; 3).
 	/// </summary>
-	public int WriteSnow( WeatherCamera camera, Span<WeatherVertex> output )
+	// [BIN:TPW-EXE:0x57F490 flake vertex] with the flake's camera-space position (x, y, z) (y negated for the screen), s = 1 + z / 8, h = 0.1 (+0x3354) and a = [0x8BCBCC]: the apex is (s x, -(s y + h)), the base corners (s x + h a, h - s y) and (s x - h a, h - s y), all with z + 0.1 and w = z + 0.1501 (0x701D10, 0x701D24), colour [0x87A248 + 0x2c], and only z > 0 is drawn; nothing multiplies x and y by the projection or the screen matrix, so the flake lands at x s / w of the screen half-width and the base half-width h a in clip x is h in clip y on the screen
+	// [BIN:TPW-EXE:0x57F490 flake texture] the original's v runs up the picture (its textures keep the TGA's bottom-up rows): the apex takes the row's lower v and the base its upper v, so OpenTPW's upright textures read the apex at the quadrant's bottom edge and the base at its top edge
+	public int WriteSnow( WeatherCamera camera, Span<WeatherVertex> output, float displayAspect = 0.75f )
 	{
 		var count = 0;
 		for ( var index = 0; index < drawn && count + SnowVerticesPerFlake <= output.Length; index++ )
-		{
-			var position = camera.ToCamera( DropOffset( index ) + jitter[index] );
-			if ( position.Z <= 0 )
-				continue;
-			var spread = 1f + position.Z / SnowSpreadDepth;
-			// the original's homogeneous w is the depth + 0.1501 (0x57F490 submit loop), so a flake projects as x / (depth + 0.1501)
-			var centre = new NVector3( position.X * spread, position.Y * spread, position.Z + SnowProjectionBias );
-			var quadrant = index & 3;
-			var u0 = (quadrant & 1) * 0.5f;
-			var v0 = (quadrant >> 1) * 0.5f;
-			output[count++] = new WeatherVertex( centre + new NVector3( 0, SnowHalfSize, 0 ), 1f, 1f, new NVector2( u0 + 0.25f, v0 ) );
-			output[count++] = new WeatherVertex( centre + new NVector3( SnowHalfSize, -SnowHalfSize, 0 ), 1f, 1f, new NVector2( u0 + 0.5f, v0 + 0.5f ) );
-			output[count++] = new WeatherVertex( centre + new NVector3( -SnowHalfSize, -SnowHalfSize, 0 ), 1f, 1f, new NVector2( u0, v0 + 0.5f ) );
-		}
+			count += WriteFlake( camera.ToCamera( DropOffset( index ) + jitter[index] ), index, displayAspect, output[count..] );
 		return count;
+	}
+
+	/// <summary>One flake at its (camera-space, jittered) position: three vertices, or none when it is not in front of the eye.</summary>
+	internal static int WriteFlake( NVector3 position, int index, float displayAspect, Span<WeatherVertex> output )
+	{
+		if ( position.Z <= 0 )
+			return 0;
+		var spread = 1f + position.Z / SnowSpreadDepth;
+		var x = position.X * spread;
+		var y = position.Y * spread;
+		var z = position.Z + SnowDepthBias;
+		var w = position.Z + SnowProjectionBias;
+		var quadrant = index & 3;
+		var u0 = (quadrant & 1) * 0.5f;
+		var row = quadrant >> 1;
+		var apexV = 1f - 0.5f * row;
+		var baseV = 0.5f - 0.5f * row;
+		output[0] = new WeatherVertex( new NVector3( x, -(y + SnowHalfSize), z ), w, 1f, 1f, new NVector2( u0 + 0.25f, apexV ) );
+		output[1] = new WeatherVertex( new NVector3( x + SnowHalfSize * displayAspect, SnowHalfSize - y, z ), w, 1f, 1f, new NVector2( u0 + 0.5f, baseV ) );
+		output[2] = new WeatherVertex( new NVector3( x - SnowHalfSize * displayAspect, SnowHalfSize - y, z ), w, 1f, 1f, new NVector2( u0, baseV ) );
+		return SnowVerticesPerFlake;
 	}
 }

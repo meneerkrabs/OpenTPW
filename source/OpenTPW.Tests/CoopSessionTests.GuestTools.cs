@@ -25,6 +25,8 @@ public partial class CoopSessionTests
 		public Action Update { get; init; } = null!;
 		/// <summary>The HUD's frame with Escape pressed.</summary>
 		public Action Escape { get; init; } = null!;
+		/// <summary>The HUD's frame with the left button pressed (and held), the pointer off the park.</summary>
+		public Action Press { get; init; } = null!;
 		/// <summary>How many of the HUD's lines (the last three) say <paramref name="text"/>.</summary>
 		public int Says( OpenTpwText text ) => Hud.Messages.Count( message => message == Strings.Extra( text ) );
 	}
@@ -50,6 +52,11 @@ public partial class CoopSessionTests
 			{
 				park.Enter();
 				hud.Update( context, UiInput.Key( UiKeys.Back ), false, false, false );
+			},
+			Press = () =>
+			{
+				park.Enter();
+				hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ) with { LeftDown = true, LeftPressed = true }, false, false, false );
 			}
 		};
 	}
@@ -161,7 +168,9 @@ public partial class CoopSessionTests
 		var requests = guest.Session!.GuestCommands!;
 		var burst = Enumerable.Range( 0, 40 ).Select( _ => requests.Submit( new LayLineCommand( CellToolMode.Path, -1, 30, 30, 30, 30 ) { Player = guest.Level.Commands.Player } ) ).ToArray();
 		var line = guest.Level.ClickCellTool( (12, 20) )!.Waiting!.Request;
+		var starts = guest.Level.HostToolStarts;
 		RoundsUntil( () => tool.Waiting == null && burst.All( request => !request.IsOpen ), host, guest, view, "the line came back" );
+		Assert.AreEqual( starts, guest.Level.HostToolStarts, "the tool is as it was: a press held meanwhile keeps its release (C3c-1b)" );
 		Assert.IsTrue( burst.All( request => request.State == CoopGuestRequestState.Applied ), "the burst's requests are records" );
 		Assert.AreEqual( (CoopGuestRequestState.Refused, (CoopGuestRefusal?)CoopGuestRefusal.TooFast), (line.State, line.Refusal) );
 		Assert.IsFalse( Walkable( host, 8, 20 ) || Walkable( guest, 8, 20 ) );

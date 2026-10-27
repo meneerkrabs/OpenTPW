@@ -20,6 +20,47 @@ public static class RideObjectStates
 }
 
 /// <summary>
+/// The broken-down part of a ride object's state word (<c>CObject +0x19C</c> on the PC): 0 idle, 1 broken down, 4 condemned. One instance belongs to the ride's economy record and is shared with
+/// its visitor bridge, so the ride update that enters state 1 or 4 (<c>0x4E14E0</c> through <c>SetState</c> <c>0x4E0E60</c>), the repair and every opener (<c>SetState(0)</c>) write the one word the economy,
+/// the guests, the object window and the opening guard read. State 2 (a purchased upgrade not yet installed) is read from the economy's pending level and state 3 (not an attraction) from the type.
+/// </summary>
+// [BIN:TPW-EXE:0x004E0E60 SetState] states 0 and 3 only store the word; 1, 2 and 4 close the object first; the ride update's state 0 is the only caller of SetState(1) and SetState(4) (0x4E154E, 0x4E1590) and the state is left through SetState(0) (0x4DE487, 0x4DF438, 0x4DFCB8, 0x4E003C, 0x4E01B6)
+public sealed class RideStateWord
+{
+	/// <summary>0 idle, 1 broken down (<see cref="RideObjectStates.BrokenDown"/>) or 4 condemned (<see cref="RideObjectStates.Condemned"/>).</summary>
+	public int Value { get; private set; }
+
+	/// <summary>Whether the ride is in state 1 or 4 (what the choice's counts-test, the admission and the opening guard refuse).</summary>
+	public bool IsBroken => Value is RideObjectStates.BrokenDown or RideObjectStates.Condemned;
+
+	/// <summary>Raised when the word changes: the old value, then the new one.</summary>
+	public event Action<int, int>? Changed;
+
+	/// <summary><c>SetState</c>: the new state (0, 1 or 4); raises <see cref="Changed"/> when the word moves.</summary>
+	public void Set( int state )
+	{
+		if ( state is not (RideObjectStates.Idle or RideObjectStates.BrokenDown or RideObjectStates.Condemned) )
+			throw new ArgumentOutOfRangeException( nameof( state ), state, "The word holds 0, 1 or 4." );
+		if ( state == Value )
+			return;
+		var before = Value;
+		Value = state;
+		Changed?.Invoke( before, state );
+	}
+
+	/// <summary>Stores a state a save or a snapshot holds, without the change event.</summary>
+	public void Restore( int state )
+	{
+		if ( state is not (RideObjectStates.Idle or RideObjectStates.BrokenDown or RideObjectStates.Condemned) )
+			throw new ArgumentOutOfRangeException( nameof( state ), state, "The word holds 0, 1 or 4." );
+		Value = state;
+	}
+
+	/// <summary>The state the ride update's <c>0x4E14E0</c> enters for a life gauge: 4 when its byte is 0, else 1.</summary>
+	public static int BrokenStateFor( double lifeGauge ) => RideBreakdownRules.GaugeByte( (float)lifeGauge ) == 0 ? RideObjectStates.Condemned : RideObjectStates.BrokenDown;
+}
+
+/// <summary>
 /// Whether a ride may be opened (<c>0xde654</c>, ORACLE.md F27, ECON-049): the guard of the park door's opening walk
 /// (<c>0x108f40</c>) and of the open buttons. It reads the ride's state, not <c>VAR_BROKEN</c>.
 /// </summary>

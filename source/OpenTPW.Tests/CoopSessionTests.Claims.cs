@@ -17,9 +17,10 @@ public partial class CoopSessionTests
 {
 	/// <summary>
 	/// A kart ride of the asset-free park: the level's track builders as the game sets them up, and a synthetic go-kart ride (the Dino Karts' controller type −4) placed at
-	/// (<paramref name="x"/>, <paramref name="y"/>), its station tiles laid and no track. Run on every park alike before the session starts (<see cref="Shared"/>).
+	/// (<paramref name="x"/>, <paramref name="y"/>), its station tiles laid and no track; with <paramref name="hasQueue"/> a type with a queue. Run on every park alike before the session
+	/// starts (<see cref="Shared"/>).
 	/// </summary>
-	private OriginalObject PlaceKartRide( Park park, int x = 20, int y = 9 )
+	private OriginalObject PlaceKartRide( Park park, int x = 20, int y = 9, bool hasQueue = false )
 	{
 		var level = park.Level;
 		foreach ( var (name, value) in new (string, object)[]
@@ -36,7 +37,7 @@ public partial class CoopSessionTests
 		typeof( Level ).GetMethod( "SetupTracks", NonPublic )!.Invoke( level, null );
 		var root = (string)typeof( UpgradeCatalogueDefaultsTests ).GetField( "root", NonPublic )!.GetValue( fixture )!;
 		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/karts", new ObjectSettings( new[] { new ObjectSettingsFile(
-				"Info.Id 1150\nInfo.Name SyntheticKarts\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nBumper.WhichTrackType 1\nBumper.BumperType -4\n", "karts.sam" ) } ),
+				"Info.Id 1150\nInfo.Name SyntheticKarts\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nBumper.WhichTrackType 1\nBumper.BumperType -4\n" + (hasQueue ? "Info.HasQueue 1\n" : ""), "karts.sam" ) } ),
 			new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(),
 			new BaseFileSystem( root ), null );
 		var ride = level.Objects.TryPlace( entry, x, y, 0, out _ );
@@ -172,7 +173,31 @@ public partial class CoopSessionTests
 		for ( var round = 0; round < 600 && host.Level.ClaimOf( ride ) != null; round++ )
 			Rounds( 1, host );
 		Assert.IsNull( host.Level.ClaimOf( ride ), "the host released the departed seat's claim" );
-		Assert.IsTrue( host.Level.Commands.Log.Any( entry => entry.Command is ReleaseSeatCommand { Seat: var released } && released == seat ), "a record of the stream" );
+		Assert.IsTrue( host.Level.Commands.Log.Any( entry => entry.Command is SetBuildGrantCommand { Seat: var released, Granted: false } && released == seat ),
+			"a record of the stream: the departed seat's grant taken back, which lets go of its claim" );
+	}
+
+	[TestMethod]
+	public void TakingAGuestsGrantBackLetsGoOfItsClaimInTheSameRecordOnEveryPeer()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		foreach ( var park in new[] { host, guest } )
+			MarkStation( park, park.One, seat: null );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var ride = host.One.Runtime.AttractionId;
+		var seat = GuestClaims( host, guest, ride );
+		// the host takes the grant back: the guest may build no more, so it holds the ride against no one
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
+		Assert.IsNull( host.Level.ClaimOf( ride ), "the grant's record let go of the claim" );
+		Assert.AreEqual( 0, HostReleases( host, ride ), "with no release of its own" );
+		RoundsUntil( () => !guest.Level.HasBuildGrant( seat ), host, guest, view, "the grant's record reached the guest" );
+		Assert.IsNull( guest.Level.ClaimOf( ride ), "and let go of the claim there too" );
+		// the host's own track tool takes the ride at once
+		host.Enter();
+		Assert.IsTrue( host.Issue( new ClaimRideCommand( ride ) ).Accepted );
+		CatchUpAndCompare( host, guest );
 	}
 
 	[TestMethod]
@@ -315,7 +340,7 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
-	public void TheHostsUndoOfALineThroughTheJoinOfAQueueAnotherPlayerClaimsIsRefused()
+	public void TheHostsUndoOfALineThatBuiltTheJoinOfAQueueAnotherPlayerClaimsIsRefused()
 	{
 		var park = NewPark();
 		park.Enter();
@@ -326,10 +351,14 @@ public partial class CoopSessionTests
 		MarkStation( park, park.One, seat: 2 );
 		try
 		{
-			Assert.IsFalse( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 12, 1, new[] { (12, 1) }, new[] { (10, 1) } ) ),
-				"an undo counts the path cells its line crossed down: the claimed queue's join among them" );
 			Assert.IsFalse( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 10, 1, new[] { (10, 1) }, Array.Empty<(int, int)>() ) ),
-				"or takes it off" );
+				"an undo takes the cells its line built off again: the claimed queue's join among them" );
+			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 12, 1, new[] { (12, 1) }, new[] { (10, 1) } ) ),
+				"one that only counts the join down, a path cell its line crossed, takes no link off (ParkPathBuilder.Undo)" );
+			Assert.IsFalse( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 12, 1, new[] { (12, 1) }, new[] { (10, 2) } ) ),
+				"a claimed queue cell among them is still the claim's" );
+			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Queue, level.Objects.Objects.First( item => !ReferenceEquals( item, park.One ) ).Runtime.AttractionId, 10, 3, Array.Empty<(int, int)>(), new[] { (10, 2) } ) ),
+				"another ride's queue line's undo leaves the cells it crossed as they are (QueueLineWriter.Undo), the claimed queue's cell among them" );
 			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, new UndoLineCommand( CellToolMode.Path, -1, 14, 1, new[] { (14, 1) }, new[] { (13, 1) } ) ), "away from it" );
 		}
 		finally

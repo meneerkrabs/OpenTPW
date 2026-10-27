@@ -622,8 +622,8 @@ public class ParkEconomyTests
 		var park = EconomyTestData.Park();
 		park.TryBuild( 1100, out var condemned );
 		park.TryBuild( 1100, out var broken );
-		condemned!.IsBrokenDown = true;
-		condemned.LifeGauge = 0;
+		condemned!.LifeGauge = 0;
+		condemned.IsBrokenDown = true;
 		broken!.IsBrokenDown = true;
 		broken.Repair = 50;
 		broken.PendingLevel = 1;
@@ -649,8 +649,8 @@ public class ParkEconomyTests
 		// 0x4daa90 selects a called ride in any state; the repair 0x4df8f0 then sets the gauge to 100 and the state to 0.
 		var park = EconomyTestData.Park();
 		park.TryBuild( 1100, out var condemned );
-		condemned!.IsBrokenDown = true;
-		condemned.LifeGauge = 0;
+		condemned!.LifeGauge = 0;
+		condemned.IsBrokenDown = true;
 		condemned.Repair = 40;
 		Assert.AreEqual( RideObjectStates.Condemned, ParkEconomy.ObjectState( condemned ) );
 		Assert.IsTrue( park.RequestMaintenance( condemned.Id, true ) );

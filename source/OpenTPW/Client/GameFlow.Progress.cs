@@ -6,6 +6,7 @@ namespace OpenTPW;
 internal sealed partial class GameFlow
 {
 	private PlayerProgressRuntimeOwner? progressOwner;
+	private InstantActionTicketAccount? instantAccount;
 	private string? progressNotice;
 	private string? shownProgressNotice;
 	private string? displayedProgressDetail;
@@ -167,8 +168,16 @@ internal sealed partial class GameFlow
 			return;
 		if ( level.Park is { Start.Kind: ParkStartKind.InstantAction } instant && instant.Economy.Mode == ParkGameMode.InstantAction )
 		{
-			// Instant Action keeps no tickets or keys, but its research completion still marks the player's park record (InstantActionResearchRecords)
+			// Instant Action earns no tickets or keys, but its research completion still marks the player's park record (InstantActionResearchRecords), and it spends from the player's
+			// ticket account (tp.exe 0x4D4AD0 skips it only in game type 1, the online visit; the HUD counter 0x4A10CD reads it in every game type)
 			level.ResearchRecords = new InstantActionResearchRecords( ProgressPath, () => ReferenceEquals( Level, level ) && ReferenceEquals( level.Park, instant ) && level.CoopSession == null );
+			try
+			{
+				if ( PlayerTicketFile.ReadIfPresent( ProgressPath ) is { } account && level.CoopSession == null )
+					instantAccount = new InstantActionTicketAccount( ProgressPath, account, instant, () => ReferenceEquals( Level, level ) && ReferenceEquals( level.Park, instant ) && !level.IsReadOnlyVisit && level.CoopSession == null,
+						message => Log.Warning( $"OpenTPW ticket account: {message}" ) );
+			}
+			catch ( Exception error ) when ( ProgressFailure( error ) ) { Log.Warning( $"OpenTPW ticket account unavailable: {error.Message}" ); }
 			return;
 		}
 		if ( level.Park is not { Start.Kind: ParkStartKind.FullSimulation } runtime || runtime.Economy.Mode != ParkGameMode.FullSimulation ) return;
@@ -238,11 +247,13 @@ internal sealed partial class GameFlow
 	private void DetachProgress()
 	{
 		if ( Level is { } level ) level.ResearchRecords = null;
+		instantAccount?.Dispose(); instantAccount = null;
 		progressOwner?.Dispose(); progressOwner = null; progressNotice = null; shownProgressNotice = null; displayedProgressDetail = null;
 	}
 	private void PumpProgress()
 	{
 		progressOwner?.Pump();
+		instantAccount?.Pump();
 		if ( progressNotice == null || progressNotice == shownProgressNotice ) return;
 		shownProgressNotice = progressNotice;
 		ShowProgressFailure( progressNotice, progressOwner == null ? progressNotice : null );

@@ -50,7 +50,7 @@ public sealed class ParkEconomy : IParkEconomy
 		World = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
-		Research = new ParkResearch( settings, catalog, trackRecentItems: !Rules.ThemeParkInc ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
+		Research = new ParkResearch( settings, catalog, trackRecentItems: !Rules.ThemeParkInc ) { OwnsTicketItem = infoId => OwnsTicketItem( infoId ) };
 		Objectives = new ParkObjectives( settings, catalog );
 		Counters.Added += ( key, amount ) => Objectives.AccumulateCounter( key, amount, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
 		Counters.Restored += () => Objectives.RestoreLegacyRawValue( MeasureChallenge, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
@@ -150,7 +150,18 @@ public sealed class ParkEconomy : IParkEconomy
 	public IReadOnlyCollection<ParkObjectState> Objects => objects.Values;
 	public IReadOnlyList<LoanAccount> Loans => loans;
 	public IReadOnlyList<long> MonthlyAdmissions => monthlyAdmissions;
-	public int GoldenTicketsAvailable => Objectives.GoldenTickets.Count - TicketsSpent;
+	/// <summary>
+	/// The tickets the HUD counter shows and the purchase check spends: the player's earned tickets less the player's spent count while the park is part of its player's progress, otherwise the park's own.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005AF5D0 ticket count] the HUD's counter handler 0x4A0FB0 (at 0x4A10CD) and the purchase check 0x4D4AD0 read the player ticket object's earned count (the four global flags once, the six local bytes of every park, the two secret flags) less its spent count (+0x1C)
+	public int GoldenTicketsAvailable => TicketWallet is { Active: true } wallet ? wallet.Available : Objectives.GoldenTickets.Count - TicketsSpent;
+
+	/// <summary>The player's ticket account the owner of the player's progress attaches while the park is part of it; null for a park that counts its own tickets.</summary>
+	internal IPlayerTicketWallet? TicketWallet { get; set; }
+
+	/// <summary>Whether the item was bought with tickets already: in the player's set while the park is part of its progress, otherwise in the park's.</summary>
+	// [BIN:TPW-EXE:0x004D4B70 ticket item owned] asks the player's set (0x5AF780), which every park of the player shares
+	internal bool OwnsTicketItem( int infoId ) => ticketItems.Contains( infoId ) || TicketWallet is { Active: true } wallet && wallet.Owns( infoId );
 	public IParkGuestStatistics GuestStatistics { get => guestStatistics; set => guestStatistics = value ?? NoGuestStatistics.Instance; }
 
 	public event Action<ParkEvent>? EventRaised;
@@ -946,13 +957,13 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( RideBreakdownRules.BreaksDown( info.ProvidesRelief, item.ScriptHosted ? item.ScriptBreakStat : 0, (float)item.LifeGauge, (float)item.Repair ) )
 			{
 				item.LifeGauge = RideBreakdownRules.LifeAfterBreakdown( (float)item.LifeGauge );
-				// [APPROX:ECON-023] [EXT:headless-economy-breakdown] (user-approved) an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN); the one state word is split between the visitor bridge (states 1 and 4, told apart by the life gauge the level mirrors into it) and the economy's broken flag, which the level joins on the rising edge of the bridge's state, and the headless test and tool economy without ride scripts breaks an object down at once and repairs it without the wait, where a level runs the scripts
+				// [APPROX:ECON-023] [EXT:headless-economy-breakdown] (user-approved) an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 writes the shared state word and calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN); the headless test and tool economy without ride scripts breaks an object down at once (the same word) and repairs it without the wait, where a level runs the scripts; state 2 is read from the pending level (the register row)
 				if ( item.ScriptHosted )
 					WriteScript( item, RideVariables.VAR_BREAKSTAT, 1 );
 				else
 				{
 					item.IsBrokenDown = true;
-					Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+					PublishRideState( item );
 				}
 				Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
 			}
@@ -981,27 +992,36 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// The level saw the ride update enter state 1 (the script's VAR_BROKEN read in state 0, tp.exe <c>0x004E14E0</c>): the object is broken down and a mechanic
-	/// is sent (<c>0x004DAA90</c> looks for state 1). Only the rising edge of <paramref name="inBrokenState"/> breaks it down, so a repaired ride the level has not yet reopened stays repaired.
+	/// Publishes the ride's entry into state 1 or 4 (the ride update's <c>0x004E14E0</c> wrote the shared state word, <see cref="RideStateWord"/>): the object is broken down and a mechanic is
+	/// sent (<c>0x004DAA90</c> looks for state 1). The level calls it after the bridge's update, so the event comes in the economy's own pass as it did when the level joined the two records.
 	/// </summary>
-	internal void ObserveScriptState( ParkObjectState item, bool inBrokenState )
+	internal void PublishRideState( ParkObjectState item )
 	{
-		if ( inBrokenState && item.ScriptStateBroken == false )
-		{
-			item.IsBrokenDown = true;
+		if ( !item.BrokenStatePending )
+			return;
+		item.BrokenStatePending = false;
+		if ( item.StateWord.IsBroken )
 			Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
-		}
-		item.ScriptStateBroken = inBrokenState;
+	}
+
+	/// <summary>Notes a change of the ride's state word for <see cref="PublishRideState"/>: only the entry into state 1 or 4.</summary>
+	private static void HookStateWord( ParkObjectState item )
+	{
+		item.StateWord.Changed += ( before, after ) =>
+		{
+			if ( after is RideObjectStates.BrokenDown or RideObjectStates.Condemned && before is not (RideObjectStates.BrokenDown or RideObjectStates.Condemned) )
+				item.BrokenStatePending = true;
+		};
 	}
 
 	/// <summary>
-	/// The ride object's state word as far as OpenTPW can tell it (<see cref="RideObjectStates"/>): broken down or condemned (the life gauge
-	/// truncates to a zero byte) when the economy or the ride script reports a breakdown, upgrading while a purchased upgrade is not installed.
+	/// The ride object's state word (<see cref="RideObjectStates"/>): the shared word's state 1 or 4, upgrading (state 2) while a purchased upgrade is not installed, else idle.
 	/// </summary>
+	// [BIN:TPW-EXE:0x004E0E60 SetState] one word +0x19C: 1 and 4 are written by the ride update (0x4E14E0) and left through SetState(0); the purchased upgrade's state 2 is read from the pending level
 	internal static int ObjectState( ParkObjectState item )
 	{
-		if ( item.IsBrokenDown || item.ScriptBroken )
-			return RideBreakdownRules.GaugeByte( (float)item.LifeGauge ) == 0 ? RideObjectStates.Condemned : RideObjectStates.BrokenDown;
+		if ( item.StateWord.IsBroken )
+			return item.StateWord.Value;
 		return item.PendingLevel > item.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
 	}
 
@@ -1838,6 +1858,9 @@ public sealed class ParkEconomy : IParkEconomy
 		var cost = payWithTickets ? 0 : info.PurchaseCost;
 		if ( payWithTickets )
 		{
+			// [BIN:TPW-EXE:0x004D4AD0 ticket purchase] the cost goes to the player's spent count (0x5AF740, +0x1C) when the check passed; the park keeps its own spent count and set as its history
+			if ( TicketWallet is { Active: true } wallet && !wallet.TrySpend( infoId, info.GoldenTicketCost ) )
+				return PurchaseResult.NotEnoughGoldenTickets;
 			TicketsSpent += info.GoldenTicketCost;
 			ticketItems.Add( infoId );
 		}
@@ -1882,7 +1905,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	// [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost <= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path
 	private bool PaysWithTickets( EconomyObjectInfo info ) =>
-		Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !ticketItems.Contains( info.InfoId );
+		Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !OwnsTicketItem( info.InfoId );
 
 	/// <summary>
 	/// The park's attraction points for the arrival rule: per ride or sideshow, its Info.AttractionValue plus the
@@ -1895,7 +1918,7 @@ public sealed class ParkEconomy : IParkEconomy
 	// [BIN:STP-PPC:0x100C24C0 park points] executed by the PowerPC oracle (docs/reverse/ORACLE.md F10): a type whose +0x9C word (Bumper.WhichTrackType) is 0 is aged from its park record's +28 (0x100D1BE8; written by 0x100DA874 at a purchase while it is still 0, so the first purchase after turn 0) and divided by the record's +24 copy count (0x100C5828); any other type is aged from the thing's own purchase time (0x100DC520) and divided by 1
 	// [BIN:STP-PPC:0x100DC834 counts-test] only things passing 0x100DC834 count: thing +0x2E bit 0x4 (the type's Info.IsChoosable, 0x100DABDC), ride state (+0x198) not BROKEN_DOWN (1, 0x100DFE0C) and not CONDEMNED (4, 0x100DFE20), the open word +0x64 nonzero (0x100DFF18; 1 at construction, cleared by closing and by breaking down), a connected entrance (0x100DD3F4 gives a cell), room in the queue (0x100DC988), a coaster without riders (0x100E2FE4, 0x10045EAC) and a built track for karts and water rides (+0x28)
 	// [BIN:TPW-EXE:0x004C8240 park points] a thing counts only when its type's Info.WhichUIType (+0x4AC, copied from +0x4C at 0x004134F5) is 0 or 2, it passes the counts-test 0x004DD920 and its type has copies (0x004D3D80 +0x18 > 0)
-	// [APPROX:ARRIVAL-003] the coaster economic test is CoasterRide.CountsForParkPoints (the native flags/intersection/edit predicate, without the host admission sample guard); a kart or water ride's track word is false before its first circuit walk where the original's constructor sets it to 1 (0x004DB0DF) — evidence needed: when the original's first circuit walk runs against the queue cell the placement lays for a kart or water ride
+	// [BIN:TPW-EXE:0x00441970 coaster economic test] the coaster test is CoasterRide.CountsForParkPoints (the native flags/intersection/edit predicate, without the host admission sample guard); a kart or water ride's track word is BumpController.IsTrackValid, which starts at 1 as the constructor's does (0x004DB0DF)
 	public int ParkPoints()
 	{
 		var counts = new Dictionary<int, int>();
@@ -1930,7 +1953,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DD920 counts-test] the same tests as 0x100DC834 at the PC offsets (flags +0x32 bit 4, state +0x19C not 1 or 4, open word +0x68); the back of the queue 0x004DE130 walks the queue from the front cell at the entrance and counts its cells (+0x40), so an attraction without queue cells has none and does not count, and 0x004DDF50 called with guest 0 returns the whole list's length, compared with 4 × the cells
 	// [BIN:TPW-EXE:0x004DD9AD counts-test track types] Bumper.WhichTrackType (type +0x9C) 3 needs the coaster test 0x00441970 (cdecl, the thing), 1 and 2 need the track word +0x2C, any other type passes
-	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && !item.ScriptBroken && item.IsOpen && item.QueueHasRoom
+	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && item.IsOpen && item.QueueHasRoom
 		&& (info.TrackType is not (1 or 2) || item.TrackValid) && (info.TrackType != 3 || item.CoasterAcceptsGuests);
 
 	/// <summary>Registers an object that already exists (imported original save, fixed item) without charging.</summary>
@@ -1972,6 +1995,7 @@ public sealed class ParkEconomy : IParkEconomy
 			ChanceOfLosingPercent = info.ChanceOfLosingPercent ?? 0
 		};
 		objects.Add( item.Id, item );
+		HookStateWord( item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
 		// [BIN:STP-PPC:0x100DA874 object purchase] the type's park record +28 takes the current turn while it is still 0 (0x100DADEC..0x100DAE14); selling does not clear it
 		// [BIN:TPW-EXE:0x004DB690 first purchase] the constructor stamps the game turn into the type's record +0x1C only while it is 0; at a new park the gates and traffic lights are built after the turn is set to 0 (0x00515865), so fixed items stamp 0 as here
@@ -2736,6 +2760,7 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( !Catalog.TryGet( item.InfoId, out _ ) )
 				throw new InvalidDataException( $"Saved object {item.Id} has Info.Id {item.InfoId}, which the {Settings.Theme} catalogue does not declare." );
 			objects.Add( item.Id, item );
+			HookStateWord( item );
 		}
 		loans.Clear();
 		loans.AddRange( restoredLoans );

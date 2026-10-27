@@ -17,7 +17,7 @@ public partial class TrackAddOnLevelTests
 		var (level, ride, _) = World( hasQueue: true, laid: false, extra );
 		AttachTrackEconomy( level, ride );
 		WithQueue( ride );
-		Assert.IsTrue( level.EnterPlacedTrackTool( ride ) );
+		Assert.AreEqual( TrackToolEntry.Entered, level.EnterPlacedTrackTool( ride ) );
 		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode );
 		Assert.AreEqual( (14, 10), level.CellTool.Start, "the line starts at the station's exit" );
 		return (level, ride);
@@ -42,7 +42,7 @@ public partial class TrackAddOnLevelTests
 	private static void AssertTheTrackButtonsCloseKeepsTheLineTool( Level level, OriginalObject ride )
 	{
 		level.CellTool.Cancel();
-		Assert.IsTrue( level.EnterTrackTool( ride ), "the track button" );
+		Assert.IsTrue( level.EnterTrackTool( ride, justPlaced: true ), "the track button" );
 		Assert.IsTrue( LayLoop( level, 0xc )?.Completed == true );
 		Assert.IsTrue( ride.Runtime.Bump!.IsTrackValid, "the last line closes the circuit" );
 		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode, "no queue start is pending: exactly Ctrl keeps the line tool (0x527146)" );
@@ -103,7 +103,7 @@ public partial class TrackAddOnLevelTests
 	private static void AssertTheTrackButtonsCloseHandsOverToTheQueue( Level level, OriginalObject ride )
 	{
 		level.CellTool.Cancel();
-		Assert.IsTrue( level.EnterTrackTool( ride ), "the track button" );
+		Assert.IsTrue( level.EnterTrackTool( ride, justPlaced: true ), "the track button" );
 		Assert.IsTrue( LayLoop( level, 0xc )?.Completed == true );
 		Assert.AreEqual( CellToolMode.Queue, level.CellTool.Mode, "the start is still pending: the close hands over to the queue tool" );
 		Assert.AreEqual( (4, 4), level.CellTool.Start );

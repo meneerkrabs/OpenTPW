@@ -125,6 +125,10 @@ fragment {
     const uint FLAG_SELF_LIT = 0x04000000u;
     // TextureSlotAddressing.LightSourceFlag: a corner of a self-lit material that is a light source itself (glow, flame, fire, torch, lamp, light, coal, lava by its name): at night it stays full-bright [EXT:evening]
     const uint FLAG_LIGHT_SOURCE = 0x02000000u;
+    // TextureSlotAddressing.LandDimFlag: a corner of a terrain cell in unowned land, whose vertex colour the original halves (tp.exe 0x56FB0E: shr 1, and 0x7F7F7F, unless the LIGHTING option cleared it)
+    const uint FLAG_LAND_DIM = 0x01000000u;
+    // TextureSlotAddressing.TerrainUnlitFlag: a corner of the terrain while the LIGHTING option is 0: tp.exe 0x574530 then copies one constant colour (white, 0xFFFFFFFF) into every terrain colour and skips the lights [BIN:TPW-EXE:0x0057453A terrain colour table]
+    const uint FLAG_TERRAIN_UNLIT = 0x00800000u;
 
     // CLAMP on the wrapping sampler: the coordinates stay half a texel of the coarsest mip the footprint can select
     // inside the edges (that mip's real size, floor(size / 2^level) but at least 1, so odd sizes do not bleed either),
@@ -254,6 +258,14 @@ fragment {
         bool selfLit = ( outMatFlags & FLAG_SELF_LIT ) != 0u;
         if ( selfLit )
             vShading = vec3( 1.0 );
+        // the terrain at LIGHTING 0: the constant white replaces the whole lighting colour, the sun, the ambient and the point lights (the lights are summed by 0x5741B0, which the constant branch does not call)
+        bool terrainUnlit = ( outMatFlags & FLAG_TERRAIN_UNLIT ) != 0u;
+        if ( terrainUnlit )
+            vShading = vec3( 1.0 );
+        // the land outside the park: the original's vertex colour is each channel fistp( light * 255.0 ) clamped to 0..255 (the terrain colour table, 0x574530), and the draw halves it with 'shr 1; and 0x7F7F7F'
+        // (0x56FB0E); so the light is rounded to a level (round to nearest even, the FPU's default: roundEven), clamped to 255, and its integer half taken [BIN:TPW-EXE:0x0056FB0E terrain colour]
+        if ( ( outMatFlags & FLAG_LAND_DIM ) != 0u )
+            vShading = floor( clamp( roundEven( vShading * 255.0 ), 0.0, 255.0 ) * 0.5 ) / 255.0;
         // [EXT:winter-snow] snow and slush on the albedo, after the light is known (so a lit white lands near 0.9 instead of burning out, and the evening's dark ambient still darkens it) and before
         // the evening tint and the fog act on the result (g_flSnowCover 0 skips it)
         if ( g_oUbo.g_flSnowCover != 0.0 && ( outMatFlags & FLAG_TRANSPARENT ) == 0u )
@@ -268,15 +280,15 @@ fragment {
             vOutColor = vTextureSample.xyz * vShading;
         }
 
-        // [EXT:evening] at dusk and night (the tinted ambient is set only then) a self-lit material that is no light source takes the tint of the extension's other unlit content (the pool water's), which
+        // [EXT:evening] at dusk and night (the tinted ambient is set only then) a self-lit material that is no light source, and the terrain while LIGHTING is 0 (its constant white is unlit content too: the extension darkens it on top), takes the tint of the extension's other unlit content (the pool water's), which
         // ModelEntity writes into the camera position this shader never reads; glow, flame, fire, torch and lamp textures stay full-bright, and at day nothing is multiplied
-        if ( selfLit && ( outMatFlags & FLAG_LIGHT_SOURCE ) == 0u && vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )
+        if ( ( ( selfLit && ( outMatFlags & FLAG_LIGHT_SOURCE ) == 0u ) || terrainUnlit ) && vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )
             vOutColor *= g_oUbo.g_vCameraPos;
 
         // [EXT:evening] at dusk and night (the tinted ambient is set only then) a soft shoulder keeps a near-white surface lit by a lamp, such as the ticket booths' panels, from burning out to flat white;
         // the colour is untouched up to a brightest channel of 0.4, above it only 25 % of the excess is kept, scaling all three channels so the lamp's warm hue stays (day and extension-off draws skip this: the tint is all zero).
         // It fades in with the falling ambient (none at the first dusk frame, whole at full night: the ambient left goes from 1 to 0.35), so a lit surface never jumps between two frames
-        if ( !selfLit && vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )
+        if ( !selfLit && !terrainUnlit && vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )
         {
             float peak = max( vOutColor.x, max( vOutColor.y, vOutColor.z ) );
             vec3 vShouldered = vOutColor * ( peak > 0.4 ? ( 0.4 + ( peak - 0.4 ) * 0.25 ) / peak : 1.0 );

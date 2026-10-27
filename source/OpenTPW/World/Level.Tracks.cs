@@ -74,7 +74,7 @@ public partial class Level
 			BuilderOf( item )!.PlaceInitialStation( station );
 		else
 			BuilderOf( item )!.PlaceStation( station );
-		// [EXT:track-placement-walk] the original's placement lays the station (0x0052A1A0 from 0x00529E10) and walks nothing; OpenTPW walks the fresh station so its controller has the station's sections and verdict at once, and the pieces take the add-on walk's rule (TrackPieceAnimations.ForWalk), which on the station's open circuit stops clips none of them plays yet
+		// [EXT:track-placement-walk] the original's placement lays the station (0x0052A1A0 from 0x00529E10) and walks nothing; OpenTPW walks the fresh station so its controller has the station's sections at once, without writing the track word (it keeps the constructor's 1 until a track edit, as the original's does), and the pieces take the add-on walk's rule (TrackPieceAnimations.ForWalk), which on the station's open circuit stops clips none of them plays yet
 		RewalkTrack( item, TrackWalkCause.Placement );
 	}
 
@@ -202,7 +202,8 @@ public partial class Level
 		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || item.Runtime.Bump is not { } bump )
 			return null;
 		var circuit = TrackCircuitWalker.WalkAndRefresh( BuilderOf( item )!, station );
-		bump.Rebuild( circuit );
+		// [BIN:TPW-EXE:0x00529E10 placement walks nothing] the ride's placement lays the station and walks no circuit, so the track word +0x2C keeps the constructor's 1 until a track edit writes it (0x524D1B, 0x5251B8): OpenTPW's placement walk builds the station's sections without writing the word
+		bump.Rebuild( circuit, writesWord: cause != TrackWalkCause.Placement );
 		LinkAddOns( item, circuit );
 		if ( TrackPieceAnimations.ForWalk( cause, circuit.IsValid ) is { } pieces )
 			trackPieceAnimations.TriggerTrack( BuilderOf( item )!.Tracks, station, pieces.Play, pieces.Backward );
@@ -261,8 +262,8 @@ public partial class Level
 			return;
 		}
 		var record = EconomyStateOf( runtime );
-		var state = runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0 ? RideObjectStates.BrokenDown
-			: record != null ? ParkEconomy.ObjectState( record ) : RideObjectStates.Idle;
+		// [BIN:TPW-EXE:0x004DF290 reopen guard state] the state word, as the guard reads it
+		var state = record != null ? ParkEconomy.ObjectState( record ) : runtime.Visitors.StateWord.Value;
 		if ( !RideOpening.MayOpen( state, record?.MaintenanceRequested == true,
 			Guests == null || ParkGate.QueueConnected( Guests.Grid, item.Visitors ), 0, true ) )
 			return;
@@ -321,42 +322,129 @@ public partial class Level
 	/// </summary>
 	// [BIN:TPW-EXE:0x004AF200 track button] the button sets the cursor of tool 0xE (type 1) or 0x13 (type 2) and calls the click handler; the hover 0x527960 puts the tool in that mode
 	// [BIN:TPW-EXE:0x00526800 edit click] with the ride's circuit word (+0x2C) zero the click walks the track to its open end (0x530830) and the tool becomes the line tool 0xB or 0x10 (0x526C36, 0x526C50) starting there; with a closed circuit the click picks tiles for the cut
-	public bool EnterTrackTool( OriginalObject station )
+	public bool EnterTrackTool( OriginalObject station, bool justPlaced = false ) => BeginTrackTool( station, placed: false, justPlaced ) == TrackToolEntry.Entered;
+
+	/// <summary>
+	/// The track tool's entry on <paramref name="station"/> (<see cref="EnterTrackTool"/>; with <paramref name="placed"/>, the tool a ride the player just placed opens, which leaves the ride's queue
+	/// start pending, <see cref="EnterPlacedTrackTool"/>; with <paramref name="justPlaced"/>, implied by <paramref name="placed"/>, the line tool as a placement starts it, whatever the circuit):
+	/// it started, or [EXT:online-coop-claims] a guest's claim went to the host and the tool starts from its outcome (C3c-1b, <see cref="CompleteTrackToolStart"/>), or a claim refused it
+	/// (another player's, or the session's rights), or nothing started.
+	/// </summary>
+	internal TrackToolEntry BeginTrackTool( OriginalObject station, bool placed, bool justPlaced = false )
 	{
+		justPlaced |= placed;
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
-			return false;
-		// [EXT:online-coop-claims] a ride another player claims starts no tool, and the tool on stays: its track is that player's to edit now (C3c-1); a guest's track tool is not on yet
-		// (C3c-1b)
-		if ( CoopSession != null && (Commands.SendsRequests || ClaimedAgainst( Commands.Player, station.Runtime.AttractionId )) )
+			return TrackToolEntry.None;
+		// [EXT:online-coop-claims] a ride another player claims starts no tool, and the tool on stays: its track is that player's to edit now (C3c-1)
+		if ( CoopSession != null && ClaimedAgainst( Commands.Player, station.Runtime.AttractionId ) )
 		{
-			if ( !Commands.SendsRequests )
-				NoteSessionRefusal( CoopRefusal.Claimed );
-			return false;
+			NoteSessionRefusal( CoopRefusal.Claimed );
+			return TrackToolEntry.Refused;
 		}
-		// [EXT:online-coop-commands] another tool: a guest's queue edit or Move pick-up that waits for the host starts no tool once it is back (C3b)
+		// [EXT:online-coop-commands] another tool: a guest's queue edit, Move pick-up or track entry that waits for the host starts no tool once it is back (C3b, C3c-1b)
 		DropToolStartWait();
 		StaffPlacement?.Cancel();
 		var builder = BuilderOf( station )!;
 		CellTool.Cancel();
+		// [EXT:online-coop-claims] a guest's tool claims its ride through the host (C3c-1b): the tool starts from the claim's outcome, the latest entry's alone (an earlier one's wait was
+		// dropped above), and the claim moves from a ride an earlier entry claimed
+		if ( CoopSession != null && Commands.SendsRequests )
+		{
+			if ( Commands.Issue( new ClaimRideCommand( station.Runtime.AttractionId ) ).Request is not { } claim )
+				return TrackToolEntry.Refused;
+			WaitingToolStart = claim;
+			pendingTrackStart = new PendingTrackStart( claim, station.Runtime.AttractionId, placed, justPlaced );
+			return TrackToolEntry.Pending;
+		}
 		// [EXT:online-coop-claims] the tool claims its ride once the tool it replaces is gone (C3c-1); the claim moves from a ride the replaced tool held
 		if ( !ClaimForTrackTool( station ) )
-			return false;
+			return TrackToolEntry.Refused;
 		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ) );
-		if ( station.Runtime.Bump is { IsTrackValid: true } )
-		{
-			// [EXT:online-coop-commands] the cut is a command (CutTrackCommand); the tool moves on from its walk
-			CellTool.Enter( new TrackEditWriter( editor, builder.Family, _ => { }, CancelTrackTool, ( first, second ) => CutTrack( station, editor, first, second ) ), null );
-		}
+		// [BIN:TPW-EXE:0x0052A050 line tool after a placement] the placement starts the line tool itself (mode 3 with its line start), without reading the circuit word that the tool button's click reads (0x5267F2)
+		if ( !justPlaced && station.Runtime.Bump is { IsTrackValid: true } )
+			EnterTrackEditTool( station, editor );
 		else
 		{
 			// [EXT:online-coop-commands] the walk to the open end writes the tiles' overlap words: it is a command, and the tool takes its corners
 			if ( Commands.Issue( new OpenTrackLineToolCommand( station.Runtime.AttractionId ) ).Value is not TrackOpenEnd open )
-				return false;
+				return TrackToolEntry.None;
 			EnterTrackLineTool( station, editor, open );
 		}
 		trackToolStation = station;
-		return true;
+		if ( placed )
+			placedQueueStart = PlacedQueueStart( station );
+		return TrackToolEntry.Entered;
 	}
+
+	/// <summary>The queue start a placed kart or water ride leaves pending (<see cref="placedQueueStart"/>): a ride with a queue, so the close of its circuit hands over to the queue tool.</summary>
+	private static OriginalObject? PlacedQueueStart( OriginalObject item ) => item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells ? item : null;
+
+	/// <summary>
+	/// [EXT:online-coop-claims] A guest's track tool entry that waits for the host (C3c-1b): the request of its claim, then of its open, the ride, whether a placement opened it (its queue
+	/// start), and whether it starts as a placement's (the line tool whatever the circuit).
+	/// </summary>
+	private sealed record PendingTrackStart( CoopGuestCommands.Request Request, int Ride, bool Placed, bool JustPlaced );
+
+	/// <summary>[EXT:online-coop-claims] The guest's track tool entry that waits for the host, or null (C3c-1b): <see cref="WaitingToolStart"/> holds its request.</summary>
+	private PendingTrackStart? pendingTrackStart;
+
+	/// <summary>
+	/// [EXT:online-coop-claims] The outcome of the guest's track tool entry that waits for the host (C3c-1b), once its request is back (the HUD calls this after <see cref="EndWaiting"/>):
+	/// <list type="bullet">
+	/// <item>the claim accepted: a closed circuit opens the edit tool; an open one sends the walk to its open end (<see cref="OpenTrackLineToolCommand"/>), a second request with the same wait;</item>
+	/// <item>the open accepted: the line tool starts from the open end its record walked to.</item>
+	/// </list>
+	/// Either starts the tool only while the park view has no tool and the park's claims, with every record applied so far, still give the ride to this guest's seat (a claim taken and let go
+	/// in one host frame starts nothing: <see cref="TrackToolStart.ClaimGone"/>).
+	/// </summary>
+	internal TrackToolStart CompleteTrackToolStart( CoopGuestCommands.Request request )
+	{
+		ArgumentNullException.ThrowIfNull( request );
+		if ( pendingTrackStart is not { } start || !ReferenceEquals( start.Request, request ) )
+			return TrackToolStart.None;
+		pendingTrackStart = null;
+		if ( !request.Accepted || IsReadOnlyVisit || waterTracks == null || ResolveCommandObject( start.Ride ) is not { IsDeleted: false } station
+			|| !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
+			return TrackToolStart.None;
+		if ( ClaimOf( start.Ride ) != Commands.Player )
+			return TrackToolStart.ClaimGone;
+		if ( !NoToolActive )
+			return TrackToolStart.None;
+		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ) );
+		if ( request.Command is ClaimRideCommand )
+		{
+			if ( !start.JustPlaced && station.Runtime.Bump is { IsTrackValid: true } )
+			{
+				EnterTrackEditTool( station, editor );
+				trackToolStation = station;
+				if ( start.Placed )
+					placedQueueStart = PlacedQueueStart( station );
+				// a press made before the tool started gives it no click with its release
+				HostToolStarts++;
+				return TrackToolStart.Entered;
+			}
+			if ( Commands.Issue( new OpenTrackLineToolCommand( start.Ride ) ).Request is not { } open )
+				return TrackToolStart.None;
+			WaitingToolStart = open;
+			pendingTrackStart = start with { Request = open };
+			return TrackToolStart.Pending;
+		}
+		if ( request.Result?.Value is not TrackOpenEnd end )
+			return TrackToolStart.None;
+		EnterTrackLineTool( station, editor, end );
+		trackToolStation = station;
+		if ( start.Placed )
+			placedQueueStart = PlacedQueueStart( station );
+		HostToolStarts++;
+		return TrackToolStart.Entered;
+	}
+
+	/// <summary>
+	/// The edit tool on <paramref name="station"/>'s closed circuit; [EXT:online-coop-commands] its cut is a command (<see cref="CutTrackCommand"/>), a guest's a request whose outcome finishes the edit
+	/// (C3c-1b), and the tool moves on from the cut's walk.
+	/// </summary>
+	private void EnterTrackEditTool( OriginalObject station, TrackEditor editor ) =>
+		CellTool.Enter( new TrackEditWriter( editor, BuilderOf( station )!.Family, _ => { }, CancelTrackTool, ( first, second ) => SendTrackCut( station, editor, first, second ) ), null );
 
 	/// <summary>
 	/// The line tool from the open end of <paramref name="station"/>'s track; [EXT:online-coop-commands] its lines and their undo are commands (<see cref="ParkCommandTrackWriter"/>), and a walk that finds the
@@ -365,10 +453,22 @@ public partial class Level
 	private void EnterTrackLineTool( OriginalObject station, TrackEditor editor, TrackOpenEnd open ) =>
 		editor.EnterLineTool( CellTool, null, inner => new ParkCommandTrackWriter( inner, Commands, station.Runtime.AttractionId, () => ContinueTrackTool( station, TrackWalkCause.Line ) ), open );
 
-	/// <summary>The edit tool's cut of <paramref name="station"/>'s track between two picked tiles, through the command; null when it is refused, which ends the tool.</summary>
-	private TrackCutResult? CutTrack( OriginalObject station, TrackEditor editor, (int X, int Y) first, (int X, int Y) second )
+	/// <summary>
+	/// The edit tool's cut of <paramref name="station"/>'s track between two picked tiles, through the command: done at once (null when it is refused, which ends the tool), or [EXT:online-coop-commands]
+	/// a guest's that waits for the host, whose outcome finishes the edit (C3c-1b).
+	/// </summary>
+	private TrackCutSent SendTrackCut( OriginalObject station, TrackEditor editor, (int X, int Y) first, (int X, int Y) second )
 	{
-		if ( Commands.Issue( new CutTrackCommand( station.Runtime.AttractionId, first.X, first.Y, second.X, second.Y ) ).Value is not TrackCutDone done )
+		var result = Commands.Issue( new CutTrackCommand( station.Runtime.AttractionId, first.X, first.Y, second.X, second.Y ) );
+		if ( result.Request is { } request )
+			return new TrackCutSent( null, new WaitingTrackCut( request, outcome => FinishTrackCut( station, editor, outcome ) ) );
+		return new TrackCutSent( FinishTrackCut( station, editor, result ) );
+	}
+
+	/// <summary>The edit after a cut's <paramref name="result"/> (<see cref="FinishTrackEdit"/>): the cut, or null when it was refused.</summary>
+	private TrackCutResult? FinishTrackCut( OriginalObject station, TrackEditor editor, ParkCommandResult result )
+	{
+		if ( result.Value is not TrackCutDone done )
 			return null;
 		FinishTrackEdit( station, editor, done );
 		return done.Cut;
@@ -472,7 +572,8 @@ public partial class Level
 		if ( waterTracks == null || ResolveCommandObject( ride ) is not { } station || !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
 			return ParkCommandResult.Rejected( $"Attraction {ride} lays no kart or water track." );
 		// a closed circuit opens the edit tool instead (EnterTrackTool)
-		if ( station.Runtime.Bump is { IsTrackValid: true } )
+		// a ride no edit has walked reads 1 from its constructor (the placement starts this tool itself): its station-only circuit is open
+		if ( station.Runtime.Bump is { IsTrackValid: true, TrackWordWritten: true } )
 			return ParkCommandResult.Rejected( $"The track of attraction {ride} is a closed circuit." );
 		return ParkCommandResult.Ok( TrackEditorOf( station, layout, builder ).FindOpenEnd() );
 	}
@@ -571,7 +672,7 @@ public partial class Level
 				|| !Enumerable.Range( anchor.X - 2 - margin, 9 + 2 * margin ).All( x => Enumerable.Range( anchor.Y - 1 - margin, depth + 4 + 2 * margin ).All( y => Free( x, y ) ) ) )
 				continue;
 			var station = PlaceObject( entry, cell.X, cell.Y, 0 ) ?? Objects.TryPlace( entry, anchor.X, anchor.Y, 0, out _ );
-			if ( station == null || !trackStations.TryGetValue( station, out var layout ) || !EnterTrackTool( station ) )
+			if ( station == null || !trackStations.TryGetValue( station, out var layout ) || !EnterTrackTool( station, justPlaced: true ) )
 				return null;
 			// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the capture helper opens it as the player's door button would
 			station.Open();
@@ -744,7 +845,7 @@ public partial class Level
 			var circuit = (shared ? RewalkForRestore( station, entry ) : RewalkTrack( station ))
 				?? throw new InvalidDataException( $"Attraction {entry.AttractionId} has no track station." );
 			// a shared-module save may hold a ride the shared pools refused (saved invalid, walking valid): the restore keeps the refusal
-			if ( shared ? entry.IsTrackValid && !circuit.IsValid : circuit.IsValid != entry.IsTrackValid )
+			if ( entry.TrackWordWritten != false && (shared ? entry.IsTrackValid && !circuit.IsValid : circuit.IsValid != entry.IsTrackValid) )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s circuit walks {(circuit.IsValid ? "valid" : "invalid")}, the save says {(entry.IsTrackValid ? "valid" : "invalid")}." );
 			var rebuilt = bump.Sections.Select( section => new TrackSectionSaveData( section.Kind, section.NoBuoy, section.X, section.Y, section.Segment ) ).ToList();
 			if ( !rebuilt.SequenceEqual( entry.Sections.Select( section => section with { AddOnPassing = false } ) ) )
@@ -807,4 +908,30 @@ internal sealed class TrackHeadSources : IHeadSourceProvider
 		foreach ( var renderer in renderers() )
 			renderer.CollectHeads( sources, onlyAttraction );
 	}
+}
+
+/// <summary>How a track tool's entry went (<see cref="Level.BeginTrackTool"/>, <see cref="Level.EnterPlacedTrackTool"/>).</summary>
+internal enum TrackToolEntry
+{
+	/// <summary>No tool started.</summary>
+	None,
+	/// <summary>The tool started.</summary>
+	Entered,
+	/// <summary>[EXT:online-coop-claims] A guest's claim went to the host: the tool starts from its outcome (C3c-1b).</summary>
+	Pending,
+	/// <summary>[EXT:online-coop-claims] A claim refused the tool (another player's, or the session's rights): nothing follows a placement then, its queue tool neither (C3c-1b).</summary>
+	Refused
+}
+
+/// <summary>[EXT:online-coop-claims] What the outcome of a guest's track tool entry did (<see cref="Level.CompleteTrackToolStart"/>, C3c-1b).</summary>
+internal enum TrackToolStart
+{
+	/// <summary>No tool started: the request was refused, the view has a tool by now, the ride is gone, or the request was no entry's.</summary>
+	None,
+	/// <summary>The tool started.</summary>
+	Entered,
+	/// <summary>The claim came back and the walk to the open end went to the host: the line tool starts from its outcome.</summary>
+	Pending,
+	/// <summary>The claim came back, but the park's claims no longer give the ride to this seat (the host let it go in the same frame).</summary>
+	ClaimGone
 }

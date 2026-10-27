@@ -35,10 +35,14 @@ public sealed partial class ParkHud
 				continue;
 			if ( level.CellTool.Waiting is { } line && ReferenceEquals( line.Commit.Request, request ) )
 				CompleteLine( request );
+			else if ( level.CellTool.WaitingUndo is { } undo && ReferenceEquals( undo.Request, request ) )
+				CompleteTrackUndo( request );
 			else if ( level.WaitingPlacement is { } placement && ReferenceEquals( placement.Request, request ) )
 				CompletePlacement( placement );
 			else if ( ReferenceEquals( level.WaitingToolStart, request ) && request.Command is PickUpObjectCommand )
 				CompleteMove( request );
+			else if ( ReferenceEquals( level.WaitingToolStart, request ) && request.Command is ClaimRideCommand or OpenTrackLineToolCommand )
+				CompleteTrackStart( request );
 			else if ( ReferenceEquals( level.WaitingToolStart, request ) )
 				CompleteQueueEdit( request );
 			else if ( level.IsWaitingFor( request ) )
@@ -88,6 +92,62 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-claims] The guest's track tool entry comes back (C3c-1b): its claim accepted opens the edit tool on a closed circuit or sends the walk to the open end, whose outcome
+	/// opens the line tool, with the tool's help, as the host's button posts it; a claim the host let go meanwhile says so; a refusal says its reason (another player's claim, the grant).
+	/// </summary>
+	private void CompleteTrackStart( CoopGuestCommands.Request request )
+	{
+		level.EndWaiting( request );
+		switch ( level.CompleteTrackToolStart( request ) )
+		{
+			case TrackToolStart.Entered:
+				PostMessage( TrackToolHelp );
+				return;
+			case TrackToolStart.Pending:
+				return;
+			case TrackToolStart.ClaimGone:
+				SayGuestNote( OpenTpwText.CoopClaimLost );
+				return;
+		}
+		if ( !request.Accepted )
+			SayOutcome( request, null );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] The guest's Backspace in its track tool comes back (C3c-1b): applied, the line it took back goes off the tool's stacks and the tool moves on as the walk once
+	/// moved it; a refusal of the rights ends the tool and says why (its claim or its grant went), and a refusal of the park takes nothing back, quietly, as the host's; a refusal without a
+	/// record leaves the line, and the player tries again; an outcome not known ends the tool.
+	/// </summary>
+	private void CompleteTrackUndo( CoopGuestCommands.Request request )
+	{
+		var tool = level.CellTool;
+		if ( request is { State: CoopGuestRequestState.Applied, Result: { Error: null } outcome } )
+		{
+			// a press made while the Backspace waited is no click of the tool its outcome moves on (a press held from before it, with the tool left as it was, keeps its release)
+			if ( tool.CompleteUndo( outcome ) )
+			{
+				level.HostToolStarts++;
+				return;
+			}
+			if ( !outcome.RightsRefused )
+				return;
+			level.HostToolStarts++;
+			tool.Cancel();
+			SayGuestNote( RightsRefusalText( outcome.Reason ) );
+			return;
+		}
+		tool.CompleteUndo( null );
+		if ( request.State == CoopGuestRequestState.Refused )
+		{
+			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
+			return;
+		}
+		level.HostToolStarts++;
+		tool.Cancel();
+		SayOutcome( request, null );
+	}
+
+	/// <summary>
 	/// The guest's queue edit comes back (C3b): accepted, the queue tool starts from what its record read, with the help the host's click posts, unless the view has a tool by now or a
 	/// later record changed the queue (then the park shows what happened); otherwise its outcome is said.
 	/// </summary>
@@ -117,6 +177,9 @@ public sealed partial class ParkHud
 		var tool = level.CellTool;
 		if ( request is { State: CoopGuestRequestState.Applied, Result: { Error: null } outcome } )
 		{
+			// [EXT:online-coop-commands] a press made while the line waited is no click of the tool its outcome moves on (C3c-1b: a cut that turns into the line tool, a close that ends,
+			// restarts or hands over the tool), as for a tool the host's answer started; a refusal without a record leaves the tool as it was, and a held press its release
+			level.HostToolStarts++;
 			var result = level.CompleteCellTool( outcome );
 			if ( outcome.RightsRefused )
 				SayGuestNote( RightsRefusalText( outcome.Reason ) );
@@ -130,6 +193,7 @@ public sealed partial class ParkHud
 			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
 			return;
 		}
+		level.HostToolStarts++;
 		tool.Cancel();
 		SayOutcome( request, null );
 	}
@@ -243,6 +307,7 @@ public sealed partial class ParkHud
 	private static OpenTpwText RefusalText( CoopRefusal refusal ) => refusal switch
 	{
 		CoopRefusal.Claimed => OpenTpwText.CoopClaimed,
+		CoopRefusal.ClaimLost => OpenTpwText.CoopClaimLost,
 		CoopRefusal.NotGranted => OpenTpwText.CoopNotGranted,
 		_ => OpenTpwText.CoopHostOnly
 	};

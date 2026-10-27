@@ -566,7 +566,7 @@ public sealed class OnlineScreens
 		var visibility = screen.Add( new UiLabel { Unclipped = () => true, Id = "visibility", Font = fonts => fonts.Small, Align = UiAlign.Center,
 			Text = () => Attempt()?.State is { } state ? strings.Extra( state.Listed ? OpenTpwText.SharedParkListed : OpenTpwText.SharedParkUnlisted ) : "",
 			Bounds = new UiRect( x, window.Y + 260, width, 70 ), Anchor = UiAnchor.Center } );
-		var rows = new List<(UiLabel Name, UiButton Builds, UiButton Remove)>();
+		var rows = new List<(UiLabel Name, UiButton Rights, UiButton Remove)>();
 		for ( var index = 0; index < CoopProtocol.MaximumPlayers; index++ )
 		{
 			var row = index;
@@ -574,13 +574,14 @@ public sealed class OnlineScreens
 			var name = screen.Add( new UiLabel { Unclipped = () => true, Id = $"member{row}", Font = fonts => fonts.Label,
 				Text = () => Member() is { } member && Attempt()?.State is { } state ? MemberText( member, state ) : "",
 				Bounds = new UiRect( x, window.Y + 350 + row * 90, width - 840, 80 ), Anchor = UiAnchor.Center } );
-			// [EXT:online-coop-permissions] the host lets a guest build or only watch (Q7, C3a-2): the switch says what the shared park's applied grant is, and a click turns it over
-			var builds = screen.Add( new UiButton { Unclipped = true, Id = $"builds{row}",
-				Text = () => strings.Extra( Member() is { } member && Attempt() is { } share && share.Builds( member.Slot ) ? OpenTpwText.CoopBuilds : OpenTpwText.CoopWatches ),
+			// [EXT:online-coop-permissions] the host sets each guest's rights (Q7, C4b): the button names the rights the shared park's applied state gives the guest ("Watches" with none), and
+			// a click opens the guest's rights dialog
+			var rights = screen.Add( new UiButton { Unclipped = true, Id = $"rights{row}",
+				Text = () => Member() is { } member && Attempt() is { } share ? RightsText( share.Rights( member.Slot ) ) : "",
 				Clicked = () =>
 				{
 					if ( Member() is { } member && Attempt() is { } share )
-						share.SetBuilds( member.Slot, !share.Builds( member.Slot ) );
+						ShowSeatRights( share, member.Id, member.Slot, member.Name );
 				},
 				Bounds = new UiRect( x + width - 820, window.Y + 345 + row * 90, 400, 85 ), Anchor = UiAnchor.Center } );
 			var remove = screen.Add( new UiButton { Unclipped = true, Id = $"remove{row}", Text = () => strings.Extra( OpenTpwText.RemovePlayer ),
@@ -595,7 +596,7 @@ public sealed class OnlineScreens
 					stack.Push( confirm );
 				},
 				Bounds = new UiRect( x + width - 400, window.Y + 345 + row * 90, 400, 85 ), Anchor = UiAnchor.Center } );
-			rows.Add( (name, builds, remove) );
+			rows.Add( (name, rights, remove) );
 		}
 		var inviteField = screen.Add( new UiTextField { Id = "inviteName", MaximumLength = CoopProtocol.MaximumInviteNameLength, Model = "f_text1",
 			Bounds = new UiRect( x, window.Y + 730, width - 420, 93 ), Anchor = UiAnchor.Center } );
@@ -653,12 +654,68 @@ public sealed class OnlineScreens
 			{
 				var member = Attempt()?.State is { } state && index < state.Members.Count ? state.Members.OrderBy( info => info.Slot ).ElementAt( index ) : null;
 				rows[index].Name.Visible = hosted && member != null;
-				rows[index].Builds.Visible = rows[index].Remove.Visible = hosted && member != null && member.Id != Attempt()!.State!.Host;
+				rows[index].Rights.Visible = rows[index].Remove.Visible = hosted && member != null && member.Id != Attempt()!.State!.Host;
 			}
 		};
 		AddStatus( screen, window );
 		AddBack( screen, window );
 		screen.Focus( form.Title );
+		Push( screen );
+	}
+
+	/// <summary>[EXT:online-coop-permissions] The name of the rights dialog's screen (<see cref="ShowSeatRights"/>).</summary>
+	internal const string SeatRightsScreenName = "seatRights";
+
+	/// <summary>A guest's rights as its row's button names them: the offered rights it holds, joined, or "Watches" with none.</summary>
+	private string RightsText( CoopRights rights ) => (rights & CoopRightsOffer.Offered) == CoopRights.None ? strings.Extra( OpenTpwText.CoopWatches )
+		: string.Join( ", ", CoopRightsOffer.Each.Where( right => rights.HasFlag( right ) ).Select( right => strings.Extra( RightName( right ) ) ) );
+
+	/// <summary>The name of one right.</summary>
+	private static OpenTpwText RightName( CoopRights right ) => right switch
+	{
+		CoopRights.Build => OpenTpwText.CoopRightBuilding,
+		CoopRights.Attractions => OpenTpwText.CoopRightAttractions,
+		CoopRights.Staff => OpenTpwText.CoopRightStaff,
+		CoopRights.Research => OpenTpwText.CoopRightResearch,
+		_ => OpenTpwText.CoopRightFinance
+	};
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] A guest's rights dialog on the Build Together screen (C4b): one switch per offered right, each drawing the shared park's applied bit; a toggle issues the
+	/// seat's rights with that bit turned over from the applied ones (<see cref="CoopShare.SetRights"/>). Bound to the sharing attempt <paramref name="share"/>, the member and its seat: once the
+	/// attempt no longer hosts or the member left that seat (checked every frame and again at a toggle), it closes and sends nothing.
+	/// </summary>
+	// [EXT:own-window-sizes] the dialog and the places of its controls are OpenTPW's: the original has no shared parks
+	private void ShowSeatRights( CoopShare share, uint memberId, int slot, string name )
+	{
+		var screen = new UiScreen( SeatRightsScreenName );
+		var window = UiDialogs.CenteredWindow( 1100, 300 + CoopRightsOffer.Each.Count * 130 );
+		UiDialogs.AddWindow( screen, window, "w_big", () => string.Format( strings.Extra( OpenTpwText.CoopRightsTitle ), name ) );
+		bool Bound() => share.Stage == CoopShareStage.Hosting && share.State is { } state && state.Members.Any( member => member.Id == memberId && member.Slot == slot );
+		void Close() => stack.RemoveWhere( shown => ReferenceEquals( shown, screen ) );
+		var y = window.Y + 170;
+		foreach ( var right in CoopRightsOffer.Each )
+		{
+			var each = right;
+			screen.Add( new UiButton { Unclipped = true, Id = $"right{each}", Text = () => strings.Extra( RightName( each ) ), Selected = () => share.Rights( slot ).HasFlag( each ),
+				Clicked = () =>
+				{
+					if ( !Bound() )
+					{
+						Close();
+						return;
+					}
+					share.SetRights( slot, share.Rights( slot ) ^ each );
+				},
+				Bounds = new UiRect( window.X + 140, y, window.Width - 280, 100 ), Anchor = UiAnchor.Center } );
+			y += 130;
+		}
+		screen.Updating += _ =>
+		{
+			if ( !Bound() )
+				Close();
+		};
+		AddBack( screen, window, Close );
 		Push( screen );
 	}
 

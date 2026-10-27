@@ -2163,8 +2163,9 @@ close, which for a guest would be a request its rights refuse, with a note about
 one that writes back what the park holds. A typed price and an apply-all go when clicked and not again at
 the close. The research window's workload knob projects the lab's workload, at the window's opening and
 at a staffing change, without writing it back, and the loans window's opening and tabs send no offer
-refresh, so the list shows the offers of the host's park. A change the player made still goes, and its
-refusal is said as any is.
+refresh unless the guest holds the finance right (then the refresh is its own request, as the host's is; see
+"A guest's management windows (C4b-1)"), so without it the list shows the offers of the host's park. A
+change the player made still goes, and its refusal is said as any is.
 
 ## Money and rights (C4)
 
@@ -2172,7 +2173,9 @@ refusal is said as any is.
 each guest the park's management besides building, right by right (decision Q7), over the one shared bank
 (Q6), while the speed and the pause stay the host's (Q8). The plan (v8, a Codex go after eight rounds) makes
 it three parts: C4a the rights and their lifecycle, C4b the windows of the attractions, research and finance
-with their switches, C4c staff. C4a offers no new switch: building stays the one right a host can give.
+with their switches, C4c staff. C4b is two parts of its own (its plan, v13, a Codex go after twelve rounds):
+C4b-1 the research and finance windows with everything both parts share, C4b-2 the attractions. Since C4b-1
+the host gives building, research and finance; attractions and staff follow.
 
 **The command classes (C4a).** Every command kind is of exactly one class (`CoopBuildRights.ClassOf`), which
 says who may issue it in a shared park; a test pins each class's kinds:
@@ -2201,11 +2204,12 @@ them. Two commands write them through one reducer: `SetSeatRightsCommand` (kind 
 and C3's `SetBuildGrantCommand` (kind 101) flips its building bit alone, so a C3 log replays byte for byte.
 A right taken back ends what it held in the same record, on every peer: building's claims, with a
 coaster's tool state. The rights command names a guest's seat (1 to 63) and only the rights this build
-offers (`CoopRightsOffer`: building alone in C4a), so a right whose actions do not yet wait for the host's
+offers (`CoopRightsOffer`: building, research and finance since C4b-1), so a right whose actions do not yet wait for the host's
 answer cannot be given, not even by a hand-made record, which the codec refuses; a join state refuses a
 row of seat 0, of no right, of a right not offered, and a seat named twice. The host's own seat holds no
-mask and keeps its full authority. The session's start and end clear every seat's rights. In C4a a
-guest's management command is refused, whatever the seat holds, with the host-only note.
+mask and keeps its full authority. The session's start and end clear every seat's rights. A guest's
+management command without its right, or of a right this build does not offer yet, is refused with the
+rights' note: "The host has not given you that right."
 
 **A seat's release.** `ReleaseSeatCommand` is the one record that frees everything a guest seat holds:
 its rights, its carry (C3b-2) and its claims (C3c-1, with a coaster's tool state). The host issues it at
@@ -2230,9 +2234,58 @@ buttons, the numpad's time keys and the pause key, issues its command, which the
 the guest's park with the host-only note: nothing goes to the host. A session is online, where no
 focus-loss pause latches.
 
-**Later parts.** The share screen keeps C3's switch per guest ("Builds" or "Watches"): the dialog with a
-switch per right comes with C4b, which offers its rights, and so does the note "The host has not given you
-that right." for a right not given; the host-only note keeps its "for now" until then.
+**The rights dialog (C4b-1).** Build Together's row of a guest keeps its name and its removal; its button names
+the rights the shared park gives the guest ("Building, Finance", or "Watches" with none), and opens the guest's
+dialog: one switch per offered right, each drawing the park's applied bit, whose click issues the seat's
+rights with that bit turned over. The dialog belongs to the sharing attempt, the member and its seat: once
+the share no longer hosts or the member left that seat (checked every frame and again at a click), it closes
+and sends nothing. The host-only note no longer says "for now": "Only the host can do that."
+
+**A guest's management windows (C4b-1).** `[EXT:online-coop-money]` With the research or the finance right a
+guest's research, entry price and loans windows act as the host's do, through the session's management queue
+(`CoopManagementRequests`), which outlives the windows and the resyncs. Without the right a click says the
+rights' note (once for a drag's run) and nothing is queued; the windows' own checks come after the rights,
+so a repay with neither the right nor the money says only the rights' note.
+- **The queue.** A window's action enqueues its commands whole; each target (the research lab; the door, the
+  fee and the name; the loans, whose refresh, take and repay so go in their order) sends one at a time in its
+  order, at most four requests are open across the targets, the oldest first, and at most one goes every
+  fifth of a second. A control's later value replaces its unsent entry at its target's tail, so a drag goes
+  once with its latest value. A target holds at most 16 unsent entries: an action that would not fit is no
+  click ("Waiting for the host...", once for a run). The queue sends only while the guest follows a live
+  stream with its requests unfenced, against the park it follows, and asks the session's rights again
+  before each send: a right taken back meanwhile refuses the entry without a request. It follows its
+  requests through the session's ledger without a HUD, and the HUD's completion of the tools' requests
+  skips the requests it owns (`Request.Owner`). A request the host could not take (too fast) is an
+  outcome, never sent again by the queue; the ledger's own resend is the only one.
+- **What the controls draw.** A control draws the value of its latest entry while one is unsent or open,
+  and the park's once the last came back, whatever became of it: the effort sliders, the workload knob
+  (its keys count from the drawn workload; a refusal or another player's change reprojects it without
+  writing it), the fee, the door and the park's name. A project's arrows name the project their window
+  shows (version 3 of the codec, below), and take no click while a move of their category waits.
+- **Waits and outcomes.** A loan's confirmation waits for its take or repay after its Yes ("Waiting for the
+  host...", its buttons inert; Escape closes it): accepted, it closes and the list refills; refused, its
+  failure dialog over the loans window says why as the host's would (the rights' note; too little money; no
+  longer there for a gone offer, a changed or repaid loan or a bankrupt park), and a request the host could
+  not take or whose outcome is not known says so. The loans window's refresh refills the list of the tab it
+  shows when it comes back, and an accepted door posts the advisor's door event, whichever HUD is current
+  (a resync's new one included). An outcome nobody waits for any more (a closed window, a resync's
+  teardown) is a note: a refusal's reason where the host's window has one, a request not taken, an outcome
+  not known; the fee, the door, the efforts, the workload and the name say nothing of their own, since
+  their controls show the park's values.
+- **Notes.** The notes wait in the session (a resync's new HUD says what the old one could not), and the HUD
+  says one once its feedback lines can be seen (no screen hides the park, the info arm is in, no message is
+  open) and have room, so none expires unseen. A note whose words a line shows already renews that line
+  instead of adding a second, and a rights' note keeps the session's own note of the same run from
+  following it.
+- **Stale actions.** `BuyUpgradeCommand`, `CancelUpgradeCommand` and `MoveResearchCommand` may name what
+  their window showed (the next level, the pending level, the current project's id and level); a record
+  whose expectation no longer holds is refused as stale. The codec writes them in its version 3, only with
+  an expectation: the host's records and every older log keep their version-1 bytes, and the native queue's
+  two kinds keep version 2. The loan commands give their refusal's kind as their result's value
+  (`LoanRefusal`).
+
+C4b-2 adds the attractions' windows (their settings, prices and upgrades through the same queue), the
+guests' ride-targeted claims for them, and the browser's acceptance path; C4c staff.
 
 ## The command layer (C1)
 

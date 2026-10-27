@@ -105,10 +105,10 @@ public partial class CoopSessionTests
 		var open = host.One.IsOpen;
 		Assert.IsTrue( host.Issue( new SetAttractionOpenCommand( ride, !open ) ).Accepted );
 		Assert.AreEqual( !open, host.One.IsOpen );
-		// no guest manages anything yet: no part offers the right (C4b), so a guest's switch is the host's to throw
+		// no guest manages an attraction yet: no part offers the right (C4b-2), so a guest's switch is refused with the rights' note
 		Assert.IsFalse( guest.Issue( new SetAttractionOpenCommand( ride, open ) ).Accepted );
 		view.Update();
-		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopHostOnly ) );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ) );
 		Rounds( 10, host, guest );
 		// C3's release of a seat: its grant taken back, then its release, two records
 		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );

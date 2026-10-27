@@ -1,6 +1,8 @@
 # Bounded track edit recovery (TRACK-018)
 
-October 18, 2026. This implements existing-track Backspace and reopening after explicit valid line/edit operations. It does not retire TRACK-018, TRACK-004 or TRACK-007, or implement the BLUEPRINT-003 cut-hover symbols.
+October 18, 2026. This implements existing-track Backspace and reopening after explicit valid line/edit operations. It did not retire TRACK-018, TRACK-004 or TRACK-007, or implement the BLUEPRINT-003 cut-hover symbols.
+
+**Superseded in part (October 27, 2026, round 9 F):** the collector's stack is now kept as it is (a walk that ends at the exit leaves it twice and Backspace takes the zero-length line back with the step (0, 0), the exit counting down and staying), the tool holds the PC's 1025 points, Backspace repairs the exit tile with the last-line flag, covers station tiles like any other, and TRACK-004, TRACK-007 and TRACK-018 are retired (docs/TRACKS.md, "The clear op"). The text below is the October 18 state.
 
 ## Contract
 

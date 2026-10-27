@@ -71,7 +71,8 @@ public partial class Level
 		if ( resumeState != null )
 			return;
 		if ( fresh )
-			BuilderOf( item )!.PlaceInitialStation( station );
+			// [BIN:TPW-EXE:0x00538CF0 cell op 0x87] the exit and entry tiles' first op (0x538D76..0x538D9E) demolishes the object owning each of their cells that is a type 4, 9 or 10 cell (0x527EE0, 0x527D60) when 0x818C14 < 0x818C10: the placement's tool priority is the ride's Info.OverwritePriority (5, the hover 0x5234D0 at 0x5236A4) and 0x818C14, the priority of the last owner the footprint's validation met (0x535788), is below it for any placement the validator allowed (0x535D66); the two tiles lie outside the 4-cell footprint, so nothing validated them. A kart or water ride's station cells are no such cells (TrackBuilder.GiveWay), but the map of OpenTPW's objects holds them, so they are skipped there
+			BuilderOf( item )!.PlaceInitialStation( station, ( x, y ) => DemolishObjectAt( x, y ) );
 		else
 			BuilderOf( item )!.PlaceStation( station );
 		// [EXT:track-placement-walk] the original's placement lays the station (0x0052A1A0 from 0x00529E10) and walks nothing; OpenTPW walks the fresh station so its controller has the station's sections at once, without writing the track word (it keeps the constructor's 1 until a track edit, as the original's does), and the pieces take the add-on walk's rule (TrackPieceAnimations.ForWalk), which on the station's open circuit stops clips none of them plays yet
@@ -152,7 +153,7 @@ public partial class Level
 	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool and the kart/water track tool from both station sides to clear the circuit, with one Spend of 2 × cell cost × 0x100E2424() / 100
 	// [BIN:TPW-EXE:0x00527EE0 ride demolition] the replays run with flag 0x81B46C = 1, so ClearCell 0x53B280 refunds every cleared kart or water tile (0x53B54A..0x53B57F: a tile whose overlap word +0x20 went negative is cleared and refunds unless it is an end of the replayed line while the flag is clear; the flag is set, the type 0x19 and online cases aside), and 0x5280F0..0x528179 then debits twice the cell cost × the scrap percentage / 100 once
 	// [BIN:TPW-EXE:0x00527EE0 demolition replays] the two replays of the track tool clear the chain of tiles from the station's exit to the open end of the track (0x530830, then the lines between its corner points) and the chain from the tile before the station (0x530B70), as TrackEditor.Demolish does: a tile no chain reaches stays in the park and refunds nothing, a tile a chain passes with a pass counter left (a junction) loses one pass only
-	// [APPROX:TRACK-007] the replay clears each line between two corner points through the click handler's mode 0x35, whose per-tile arm writes for the line's step (0x53B280 with the line's (±2, 0) or (0, ±2): the arm the line used goes, the other arm stays when a pass remains, a corner's second arm after its second visit) are modelled as one clear per tile in chain order; a two-line full crossing whose laid flow includes the chain's heading takes the line step's rule (the chain's link bit and that axis's arms go, TrackEditor.Replay), but any other junction keeps the pass rule of the cut (0x53B280 with (−1, −1)) for its arms and link, not the line step's
+	// [BIN:TPW-EXE:0x0053B280 replay clears] each line between two corner points of the collected stacks is replayed through the click handler's mode 0x35 (0x52FE50) with the clear op's line step, and the cut's pass rule (-1, -1) applies to a non-line junction: TrackEditor.ClearCell is the full port
 	private void OnTrackStationRemoving( OriginalObject item )
 	{
 		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || BuilderOf( item ) is not { } builder )
@@ -486,8 +487,11 @@ public partial class Level
 	/// The edit tool on <paramref name="station"/>'s closed circuit; [EXT:online-coop-commands] its cut is a command (<see cref="CutTrackCommand"/>), a guest's a request whose outcome finishes the edit
 	/// (C3c-1b), and the tool moves on from the cut's walk.
 	/// </summary>
-	private void EnterTrackEditTool( OriginalObject station, TrackEditor editor ) =>
+	private void EnterTrackEditTool( OriginalObject station, TrackEditor editor )
+	{
+		editor.UseEditToolExit();
 		CellTool.Enter( new TrackEditWriter( editor, BuilderOf( station )!.Family, _ => { }, CancelTrackTool, ( first, second ) => SendTrackCut( station, editor, first, second ) ), null );
+	}
 
 	/// <summary>
 	/// The line tool from the open end of <paramref name="station"/>'s track; [EXT:online-coop-commands] its lines and their undo are commands (<see cref="ParkCommandTrackWriter"/>), and a walk that finds the
@@ -572,7 +576,7 @@ public partial class Level
 	/// Runs a track line command (<see cref="LayTrackLineCommand"/>, <see cref="UndoTrackLineCommand"/>) for the ride whose attraction id is <paramref name="ride"/>: the ride's line writer lays the line from
 	/// <paramref name="start"/> toward <paramref name="end"/>, or with <paramref name="undo"/> its editor takes that line back, and a change walks the circuit again (<see cref="WalkTrack"/>).
 	/// </summary>
-	internal ParkCommandResult ExecuteTrackLine( int ride, (int X, int Y) start, (int X, int Y) end, bool undo )
+	internal ParkCommandResult ExecuteTrackLine( int ride, (int X, int Y) start, (int X, int Y) end, bool undo, bool last = false )
 	{
 		if ( waterTracks == null || ResolveCommandObject( ride ) is not { } station || !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
 			return ParkCommandResult.Rejected( $"Attraction {ride} lays no kart or water track." );
@@ -580,7 +584,7 @@ public partial class Level
 		var writer = new TrackLineWriter( builder, () => walked = WalkTrack( station, TrackWalkCause.Line ), builder.OwnerOf( layout ), TrackEditorOf( station, layout, builder ) );
 		SegmentResult? segment = null;
 		if ( undo )
-			writer.Undo( new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start } );
+			writer.Undo( new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start, IsFirstLine = last } );
 		else
 			segment = writer.Commit( start, end );
 		return ParkCommandResult.Ok( new TrackLineDone( segment, walked?.IsValid ) );
@@ -671,7 +675,7 @@ public partial class Level
 					var entry = first.Entry;
 					var kit = family == TrackFamily.Bumper ? null : TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, family );
 					renderer = new TrackRenderer( entry, kit, () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ), ( x, y ) => Objects.Grid.GetCornerHeight( x, y ), ( x, y ) => Objects.Grid.GetTerrainHeight( x, y ), ( x, y ) => Objects.Grid.GetDrapeHeight( x, y ) )
-						{ AddOnSurfaceAt = AddOnSurfaceAt };
+						{ ObjectSurfaceAt = ObjectSurfaceAt };
 					trackRenderers[family] = renderer;
 				}
 				renderer.Update( waterTracks.Tracks, Objects.ScriptWorld.Bumpers.Controllers.Where( controller => controller.Template.RenderFamily == family ), trackPieceAnimations );

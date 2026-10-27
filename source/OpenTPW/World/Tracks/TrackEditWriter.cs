@@ -56,25 +56,36 @@ public sealed class TrackEditWriter : ICellLineWriter
 	public bool RefusesFirstClick( (int X, int Y) cell ) => first == null && editor.Pick( cell.X, cell.Y ).Result == TrackEditPick.Rejected;
 
 	/// <summary>The marks of a hover: the picked tile alone before the first click, afterwards the tiles the cut between the picked tile and the one under the pointer would clear.</summary>
+	// [BIN:TPW-EXE:0x00527960 edit hover] before the first pick the hovered tile is drawn through the ghost op of the tool mode with the chooser's answer (9, the m_break symbol over the tile, or 1, the red face); after it the second pick is reset to the first unless the chooser answers 9 for it and the cut's walk 0x52B400(.., 0) draws the lines between its corner points with the op 0x10F, each tile of the ride answering 0xD (m_erase)
 	public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor )
 	{
 		var (result, tile) = editor.Pick( cursor.X, cursor.Y );
+		// [BIN:TPW-EXE:0x00527960 hover cell] the hover keeps the snapped tile's origin in 0x8186B8/0x8186B4, which the ghost's glide chases (0x53C3F0)
+		var glide = tile ?? cursor;
 		if ( first is not { } picked )
 		{
 			var line = tile is { } hovered ? TrackStation.TileCellsOf( hovered.X, hovered.Y ).ToArray() : new[] { cursor };
-			return Ghost( cursor, line, result == TrackEditPick.Accepted ? null : tile ?? cursor, result == TrackEditPick.Accepted ? CellBuildResult.Ok : CellBuildResult.Occupied );
+			var accepted = result == TrackEditPick.Accepted && tile is { };
+			// the chooser's answer 9 is the m_break face over the tile, 1 the red face over it (a cell that is no tile: the red cell)
+			return Ghost( cursor, line, accepted ? null : tile ?? cursor, accepted ? CellBuildResult.Ok : CellBuildResult.Occupied,
+				tile is { } shown ? new[] { (shown, accepted ? BlueprintMarker.Break : BlueprintMarker.RefusedTile) } : null, glide );
 		}
 		if ( result != TrackEditPick.Accepted || tile is not { } second )
 		{
 			// a second tile the test refuses draws as the first alone, the hovered tile red (0x527960 resets the second pick to the first)
 			var line = TrackStation.TileCellsOf( picked.X, picked.Y ).Concat( tile is { } other ? TrackStation.TileCellsOf( other.X, other.Y ) : new[] { cursor } ).ToArray();
-			return Ghost( cursor, line, tile ?? cursor, CellBuildResult.Occupied );
+			var symbols = SymbolsOf( new[] { picked } ).Concat( tile is { } refused ? new[] { (refused, BlueprintMarker.RefusedTile) } : Array.Empty<((int X, int Y), BlueprintMarker)>() ).ToArray();
+			return Ghost( cursor, line, tile ?? cursor, CellBuildResult.Occupied, symbols, glide );
 		}
 		var (low, high) = Ordered( picked, second );
 		var path = editor.Cut( low, high, commit: false );
 		var cells = path.Path.SelectMany( step => TrackStation.TileCellsOf( step.X, step.Y ) ).ToArray();
-		return Ghost( cursor, cells, path.Failed ? second : null, path.Failed ? CellBuildResult.Occupied : CellBuildResult.Ok );
+		return Ghost( cursor, cells, path.Failed ? second : null, path.Failed ? CellBuildResult.Occupied : CellBuildResult.Ok, path.Failed ? null : SymbolsOf( path.Path ), glide );
 	}
+
+	/// <summary>The cut's tiles as symbol faces: m_erase on each tile of the ride (<see cref="TrackEditor.GhostSymbol"/>).</summary>
+	private ((int X, int Y) Origin, BlueprintMarker Symbol)[] SymbolsOf( IEnumerable<(int X, int Y)> tiles ) =>
+		tiles.Select( tile => (Tile: tile, Symbol: editor.GhostSymbol( tile, cut: true )) ).Where( item => item.Symbol is not null ).Select( item => (item.Tile, item.Symbol!.Value) ).ToArray();
 
 	/// <summary>The second click: the cut between the two picked tiles, or the end of the tool when the clicked tile is refused.</summary>
 	// [BIN:TPW-EXE:0x00526ADA second pick] a second click whose test does not answer 9 leaves the tool (0x52F200(0, 0) at 0x526ADC); otherwise the pair, the lower step first (0x526AF2), goes to 0x52B400 with the last argument 1 (0x526B5E) and the station repair 0x52FC80 follows (0x526B67)
@@ -130,6 +141,8 @@ public sealed class TrackEditWriter : ICellLineWriter
 		if ( editor.Pick( first.X, first.Y ) is not (TrackEditPick.Accepted, { } a) || editor.Pick( second.X, second.Y ) is not (TrackEditPick.Accepted, { } b) )
 			return null;
 		var (low, high) = editor.StepOf( b ) < editor.StepOf( a ) ? (b, a) : (a, b);
+		// the hover of the edit tool keeps the ride's anchor in the exit globals (0x527A17): during the cut no tile is the exit
+		editor.UseEditToolExit();
 		var done = editor.Cut( low, high, commit: true );
 		editor.RepairStation();
 		return done;
@@ -144,8 +157,9 @@ public sealed class TrackEditWriter : ICellLineWriter
 
 	private ((int X, int Y) Low, (int X, int Y) High) Ordered( (int X, int Y) a, (int X, int Y) b ) => FirstOf( a, b ) == a ? (a, b) : (b, a);
 
-	private static SegmentResult Ghost( (int X, int Y) end, IReadOnlyList<(int X, int Y)> line, (int X, int Y)? stoppedAt, CellBuildResult stoppedBy ) =>
-		new( end, Array.Empty<(int X, int Y)>(), 0, stoppedBy, false ) { Start = end, Line = line, StoppedAt = stoppedAt };
+	private static SegmentResult Ghost( (int X, int Y) end, IReadOnlyList<(int X, int Y)> line, (int X, int Y)? stoppedAt, CellBuildResult stoppedBy,
+		IReadOnlyList<((int X, int Y) Origin, BlueprintMarker Symbol)>? symbols = null, (int X, int Y)? glideCell = null ) =>
+		new( end, Array.Empty<(int X, int Y)>(), 0, stoppedBy, false ) { Start = end, Line = line, StoppedAt = stoppedAt, Symbols = symbols ?? Array.Empty<((int X, int Y) Origin, BlueprintMarker Symbol)>(), GlideCell = glideCell };
 }
 
 /// <summary>

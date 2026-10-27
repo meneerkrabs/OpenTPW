@@ -66,7 +66,7 @@ public partial class TrackAddOnLevelTests
 	/// (14, 10) … (28, 10) and (28, 14) … (10, 14) between the corners (30, 10), (30, 14), (8, 14) and (8, 10). Without <paramref name="laid"/> the station stands alone;
 	/// <paramref name="extra"/> joins the catalogue.
 	/// </summary>
-	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false, bool laid = true, ObjectCatalogEntry? extra = null )
+	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false, bool laid = true, ObjectCatalogEntry? extra = null, (int X, int Y)? extraAt = null )
 	{
 		var (rideEntry, jump) = Entries( hasQueue );
 		var entries = extra == null ? new[] { rideEntry, jump } : new[] { rideEntry, jump, extra };
@@ -88,6 +88,8 @@ public partial class TrackAddOnLevelTests
 		var cells = guests.Grid.Cells;
 		objects.ObjectPlaced += item => cells.WriteFootprint( item.Cells, Level.OwnerWord( item ), item.Placement.Rotation );
 		objects.ObjectRemoved += item => cells.ClearFootprint( item.Cells );
+		if ( extra != null && extraAt is { } blocker )
+			Assert.IsNotNull( objects.TryPlace( extra, blocker.X, blocker.Y, 0, out _ ), "the object standing where the ride's exit tile goes" );
 		var ride = objects.TryPlace( rideEntry, 10, 9, 0, out _ );
 		Assert.IsNotNull( ride?.Runtime.Bump, "the kart ride and its controller" );
 		var station = level.TrackStations[ride!];
@@ -458,4 +460,15 @@ public partial class TrackAddOnLevelTests
 		public void Undo( SegmentResult segment ) => throw new InvalidOperationException();
 	}
 
+
+	[TestMethod]
+	public void TheExitTileDemolishesTheObjectStandingOnItAndIsLaid()
+	{
+		var scenery = Entry( ObjectCategory.Feature, "Info.Id 1700\nInfo.Name SyntheticBush\nInfo.WhichUIType 0\nInfo.OverwritePriority 0\n", "*" );
+		var (level, ride, _) = World( laid: false, extra: scenery, extraAt: (14, 10) );
+		Assert.IsNull( level.Objects.FindAt( 14, 10 ), "op 0x87 of the exit tile demolished it (0x527EE0)" );
+		Assert.IsTrue( level.KartTracks!.Tracks.Get( 14, 10 ).IsOrigin, "and the tile was laid on its cells" );
+		var station = level.TrackStations[ride];
+		Assert.AreEqual( station.Exit, (14, 10) );
+	}
 }

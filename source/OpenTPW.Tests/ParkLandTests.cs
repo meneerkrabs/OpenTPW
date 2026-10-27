@@ -51,20 +51,23 @@ public class ParkLandTests
 		cells.Land!.CheckPurchase( cells, first, second, barrier ?? (( _, _ ) => false), cost, balance );
 
 	[TestMethod]
-	public void EveryOwnedFencePostCountsFiftyInTheParkValueAndTheBigParkCount()
+	public void EveryOwnedFencePostAndItsBlockCountFiftyInTheParkValueAndTheBigParkCount()
 	{
-		// tp.exe 0x5323F0: the fence's posts are structure records of type 25 (0x00524960 in mode 0x19); 0x004C7DB0 adds 50 for each one on an owned cell (0x005363F0), 0x004CD7F0 counts it as covered
+		// tp.exe 0x5323F0: the fence's posts are structure records of type 25 (0x00524960 in mode 0x19) and the walk 0x52BA50 types the three cells beside each as its extensions; 0x004C7DB0 adds 50 for each such cell
+		// on an owned cell (0x005363F0 follows an extension to its parent), 0x004CD7F0 counts it as covered owned or not
 		var park = EconomyTestData.Park();
 		var cells = NewPark();
 		park.Litter.Cells = cells;
-		var posts = cells.Land!.Ring.Distinct().Where( post => Owned( cells, post.X, post.Y ) ).ToList();
-		Assert.IsTrue( posts.Count > 0, "some posts stand on owned cells" );
+		var land = cells.Land!;
+		var structure = Enumerable.Range( 0, 128 * 128 ).Select( index => (X: index % 128, Y: index / 128) ).Where( cell => land.CountsAsStructure( cell.X, cell.Y, 128, 128 ) ).ToList();
+		var owned = structure.Count( cell => Owned( cells, cell.X, cell.Y ) );
+		Assert.IsTrue( owned > 0, "some posts stand on owned cells" );
+		Assert.IsTrue( structure.Count > land.Ring.Distinct().Count() * 2, "each post counts its block of up to four cells" );
 		var withPosts = park.ParkValue;
 		var coveredWithPosts = park.CoveredCells();
-		var distinctPosts = cells.Land.Ring.Distinct().Count();
 		cells.SetLand( null );
-		Assert.AreEqual( withPosts - 50 * posts.Count, park.ParkValue, "the park value without the posts" );
-		Assert.AreEqual( coveredWithPosts - distinctPosts, park.CoveredCells(), "the big park counts every post, owned or not" );
+		Assert.AreEqual( withPosts - 50 * owned, park.ParkValue, "the park value without the posts' blocks" );
+		Assert.AreEqual( coveredWithPosts - structure.Count, park.CoveredCells(), "the big park counts every cell of every block, owned or not" );
 	}
 
 	// --- Hoardings.sam ---

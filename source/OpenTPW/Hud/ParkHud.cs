@@ -912,6 +912,8 @@ public sealed partial class ParkHud
 		CompleteGuestRequests();
 		level.EndCarrylessMove();
 		level.EndStrayCarry( Time.Now );
+		// [EXT:online-coop-commands] the staff tool follows what the park holds for this player, every frame, paused too and whatever the pointer is over, before any pointer's dispatch (C4c)
+		level.StaffPlacement?.FollowPark();
 		// [EXT:online-coop-commands] the guest's coaster tool says what its waited actions came back with, before the claim is bound: an outcome that ended the tool says why itself (C3c-2)
 		ReportGuestCoasterActions();
 		// [EXT:online-coop-commands] one tool at a time: a coaster tool on together with a tool that started after it ends (C3c-2)
@@ -1285,8 +1287,6 @@ public sealed partial class ParkHud
 			cursorX = cursorY = -1;
 		// [BIN:TPW-EXE:0x488434 right click cancel] with RMBCancelOn a right press the park view took and let go within 200 ms and 8 px ends the mode (0x52F200(0, 1)) at the release, wherever the pointer then is; nothing happens on the press
 		parkRightClick = input.RightClicked && parkView && !mouseCaptured && GameOptions.Current.RmbCancel;
-		// [EXT:online-coop-commands] the staff tool follows what the park holds for this player, every frame and paused too (C4c)
-		level.StaffPlacement?.FollowPark();
 		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
 		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured, viewport ) || UpdatePatrolTool( input, inPark && !mouseCaptured )
 			|| UpdateBuyLandTool( input, inPark && !mouseCaptured ) || UpdateAreaClearTool( input, inPark && !mouseCaptured )

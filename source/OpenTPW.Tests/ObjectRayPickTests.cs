@@ -307,6 +307,25 @@ public class ObjectRayPickTests
 	private static T Empty<T>() => (T)RuntimeHelpers.GetUninitializedObject( typeof( T ) );
 	private sealed class EmptyCatalog : IBuildCatalog { public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => Array.Empty<BuildItem>(); }
 
+	private sealed class TowerCatalog( ObjectCatalogEntry entry ) : IBuildCatalog
+	{
+		public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => category == BuildCategory.Rides
+			? new[] { new BuildItem( "tower", 1100, BuildCategory.Rides, 0, 5000, null, Array.Empty<string>(), null, entry ) } : Array.Empty<BuildItem>();
+	}
+
+	/// <summary>A status with an economy whose balance is <paramref name="money"/>; every item is available at its catalogue price.</summary>
+	private sealed class MoneyStatus( long money ) : IHudParkStatus
+	{
+		public bool HasEconomy => true;
+		public long Money => money;
+		public ParkDate Date => default;
+		public GameSpeed Speed { get; set; } = GameSpeed.Normal;
+		public float TimeScale => 1f;
+		public void Update( float realSeconds ) { }
+		public long? PriceOf( BuildItem item ) => item.Cost;
+		public bool IsAvailable( BuildItem item ) => true;
+	}
+
 	[TestInitialize]
 	public void Setup()
 	{
@@ -355,7 +374,7 @@ public class ObjectRayPickTests
 	}
 
 	/// <summary>A sandbox park with a tower ride on cell (16, 16) and the HUD over it, the camera south of the tower looking down at it.</summary>
-	private ParkHud Park( out Level level, out OriginalObject tower )
+	private ParkHud Park( out Level level, out OriginalObject tower, IHudParkStatus? status = null, bool catalog = false, int rotation = 0 )
 	{
 		VisitorWorldSelectionTests.Fixture( out var guests, out _ );
 		level = Empty<Level>();
@@ -367,13 +386,13 @@ public class ObjectRayPickTests
 		var settings = new ObjectSettings( new[] { new ObjectSettingsFile( "Info.Id 1100\nInfo.Name tower\nInfo.IsChoosable 1\nInfo.WhichUIType 0\n", "tower.sam" ) } );
 		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/tower", settings, new ObjectShape( new[] { "*" } ), "/tower.MD2", null, "/script.RSE",
 			Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem( root ), null );
-		tower = objects.Add( entry, 16, 16, 0 );
+		tower = objects.Add( entry, 16, 16, rotation );
 		// the tower's model: a 1.6 x 1.6 column 20 units tall inset in its cell, as TowerModel draws it at rest
 		var corner = new NVector3( ParkPlacement.MinimumCoordinate + 16 * ObjectPlacement.CellSize, ParkPlacement.MinimumCoordinate + 16 * ObjectPlacement.CellSize, 0 );
 		var shape = new Box( corner + new NVector3( 0.2f, 0.2f, 0 ), corner + new NVector3( 1.8f, 1.8f, 20 ) );
 		var placed = tower;
 		level.PickShapeOf = item => item == placed ? shape : null;
-		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost() );
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), status ?? new NoEconomyStatus(), catalog ? new TowerCatalog( entry ) : new EmptyCatalog(), new HudHost() );
 		// the camera: south of the tower and above it, looking at the tower's top
 		var cell = new NVector3( ParkPlacement.MinimumCoordinate + 16.5f * ObjectPlacement.CellSize, ParkPlacement.MinimumCoordinate + 16.5f * ObjectPlacement.CellSize, 0 );
 		Camera.Mode = new ParkCameraMode();
@@ -438,6 +457,61 @@ public class ObjectRayPickTests
 		hud.SelectObject( null );
 		hud.Update( context, UiInput.Click( mouse ), false, false, false );
 		Assert.IsNull( hud.SelectedObject, "the release selects nothing: the pick is the press's" );
+	}
+
+	/// <summary>
+	/// [BIN:TPW-EXE:0x4879D0 object copy] Ctrl at the press on a placed object arms a copy of it (the mode 4 build tool of its Info id, 0x46C5A0) at the object's own angle (0x52F1B0) and opens no window.
+	/// </summary>
+	[TestMethod]
+	public void CtrlAndAPressOnAnObjectArmsACopyAtItsAngleAndOpensNoWindow()
+	{
+		var hud = Park( out var level, out var tower, new MoneyStatus( 10_000 ), catalog: true, rotation: 90 );
+		var context = RideUpgradeIngressTests.Context();
+		var mouse = Screen( TowerTop() );
+		hud.SelectObject( null );
+		Input.SetFrameForTests( new[] { Veldrid.Key.ControlLeft }, null );
+		try
+		{
+			hud.Update( context, new UiInput( mouse, true, true, false, false, UiKeys.None ), false, false, false );
+		}
+		finally { Input.ResetFrameStateForTests(); }
+		Assert.IsNull( hud.SelectedObject, "no window opens" );
+		Assert.AreSame( tower.Entry, level.BuildEntry, "the tool of the clicked object's type is armed" );
+		Assert.AreEqual( 90, level.BuildRotation, "at the object's own angle" );
+	}
+
+	/// <summary>A balance below the price plays the error cue and arms nothing; the click opens no window either (0x487bf1 returns before 0x486920).</summary>
+	[TestMethod]
+	public void CtrlAndAPressWithTooLittleMoneyArmsNothingAndPlaysTheErrorCue()
+	{
+		var hud = Park( out var level, out _, new MoneyStatus( 4_999 ), catalog: true );
+		var context = RideUpgradeIngressTests.Context();
+		var mouse = Screen( TowerTop() );
+		var cues = new List<uint>();
+		GameAudio.UiSoundObserver = cues.Add; GameAudio.UiGlobalSoundObserver = cues.Add;
+		hud.SelectObject( null );
+		Input.SetFrameForTests( new[] { Veldrid.Key.ControlRight }, null );
+		try
+		{
+			hud.Update( context, new UiInput( mouse, true, true, false, false, UiKeys.None ), false, false, false );
+		}
+		finally { Input.ResetFrameStateForTests(); GameAudio.UiSoundObserver = null; GameAudio.UiGlobalSoundObserver = null; }
+		Assert.IsNull( hud.SelectedObject );
+		Assert.IsNull( level.BuildEntry );
+		CollectionAssert.Contains( cues, GameAudio.ErrorEvent );
+	}
+
+	/// <summary>Without Ctrl the same press opens the window and arms nothing.</summary>
+	[TestMethod]
+	public void APressWithoutCtrlStillOpensTheWindowAndArmsNoCopy()
+	{
+		var hud = Park( out var level, out var tower, new MoneyStatus( 10_000 ), catalog: true );
+		var context = RideUpgradeIngressTests.Context();
+		hud.SelectObject( null );
+		Input.UpdateButtons();
+		hud.Update( context, new UiInput( Screen( TowerTop() ), true, true, false, false, UiKeys.None ), false, false, false );
+		Assert.AreSame( tower, hud.SelectedObject );
+		Assert.IsNull( level.BuildEntry );
 	}
 
 	/// <summary>The pick has no click-or-drag test: a press that goes on to be dragged away has opened the window all the same.</summary>

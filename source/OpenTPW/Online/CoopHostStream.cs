@@ -320,6 +320,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		// [EXT:online-coop-claims] and the rides' claims (C3c-1)
 		level.ClearRideClaims();
 		level.ClearGuestCarries();
+		// [EXT:online-coop-permissions] and what a guest's seat held of the staff (C4c)
+		level.ClearGuestStaff();
 		seatMembers = SeatMembers();
 		recorder = new ParkCommandRecorder( commands, level.LevelName ?? "", level.Seed.Value, level.TickCount, level.ComputeStateHash() ) { SessionRules = true };
 		commands.Applied += OnApplied;
@@ -1528,6 +1530,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		recorder.Dispose();
 		SessionLog = RecordedLog();
 		level.EndSessionCoasters( unreleased );
+		// [EXT:online-coop-permissions] staff state a guest's seat still holds (an end inside a tick recorded no release) goes after the log's last checkpoint, never before it, so the log replays
+		// to that checkpoint (C4c): its employees in hand drop back where they were picked up
+		level.ClearGuestStaff();
 	}
 
 	/// <summary>The session's recording so far, with the world hash now as its last checkpoint.</summary>

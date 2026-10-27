@@ -54,7 +54,14 @@ public sealed class UiTitleBitmap
 	private static long totalBytes;
 
 	/// <summary>Starts the next frame (once per frame, where the interface batch is cleared): a bitmap asked for in this frame or the one before is not dropped, so the titles a frame draws always keep their bitmaps.</summary>
-	public static void BeginFrame() => Interlocked.Increment( ref generation );
+	public static void BeginFrame()
+	{
+		lock ( gate )
+		{
+			generation++;
+			TrimCache();
+		}
+	}
 
 	/// <summary>The composed bitmap of <paramref name="layout"/> at text scale <paramref name="scale"/>, cached by atlas, string layout, copy alpha and scale; null when the layout draws nothing.</summary>
 	public static UiTitleBitmap? Get( FontAtlas atlas, TextLayoutResult layout, byte copyAlpha, int scale )
@@ -88,19 +95,25 @@ public sealed class UiTitleBitmap
 			bitmap.usedIn = generation;
 			cache[key] = (bitmap, recent.AddFirst( key ));
 			totalBytes += bitmap.Rgba.Length;
-			while ( cache.Count > Capacity || totalBytes > ByteBudget && cache.Count > 1 )
-			{
-				var oldest = recent.Last!;
-				var dropped = cache[oldest.Value].Bitmap;
-				// the list is in order of use: when the oldest was used this frame or the last one, so were all the others; the budgets are exceeded for now
-				if ( generation - dropped.usedIn <= 1 )
-					break;
-				recent.RemoveLast();
-				dropped.evicted = true;
-				totalBytes -= dropped.Rgba.Length;
-				cache.Remove( oldest.Value );
-			}
+			TrimCache();
 			return bitmap;
+		}
+	}
+
+	// Called under gate, both on insertion and as frames advance: a temporary overflow must drain even when every later request is a cache hit.
+	private static void TrimCache()
+	{
+		while ( cache.Count > Capacity || totalBytes > ByteBudget && cache.Count > 1 )
+		{
+			var oldest = recent.Last!;
+			var dropped = cache[oldest.Value].Bitmap;
+			// the list is in order of use: when the oldest was used this frame or the last one, so were all the others; the budgets are exceeded for now
+			if ( generation - dropped.usedIn <= 1 )
+				break;
+			recent.RemoveLast();
+			dropped.evicted = true;
+			totalBytes -= dropped.Rgba.Length;
+			cache.Remove( oldest.Value );
 		}
 	}
 

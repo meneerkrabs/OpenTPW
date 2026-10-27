@@ -413,6 +413,31 @@ public class FontAtlasTests
 	}
 
 	[TestMethod]
+	public void TextAlignedInsideAFractionalBoxKeepsAllItsInk()
+	{
+		// the box is the rounded left and top and the truncated width and height (0x48f47b-0x48f4c5): one box places the text and cuts it off, so no alignment loses a column
+		Assert.AreEqual( new UiRect( 11, 5, 20, 12 ), UiContext.TextBox( new UiRect( 10.6f, 5.2f, 20.7f, 12.9f ) ) );
+		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 4, 4, -1, 0, 4 ), new SyntheticGlyph( '?', 4, 4, -1, 0, 4 ) ) );
+		var white = new RgbaByte( 255, 255, 255, 255 );
+		foreach ( var align in new[] { UiAlign.Left, UiAlign.Center, UiAlign.Right } )
+		{
+			foreach ( var width in new[] { 20.7f, 16.0f, 17.4f } )
+			{
+				var rect = new UiRect( 10.6f, 5.2f, width, 12.9f );
+				var context = new UiContext( null!, null!, null! );
+				context.DrawText( atlas, "aaaa", rect, white, align, textScale: 1 );
+				var box = UiContext.TextBox( rect );
+				var glyphs = context.Batch.Glyphs;
+				// the string is 16 wide with the glyph offset of -1 on the first glyph at the box's left edge for a left alignment, so the first glyph may start one column left of a full box; the right edge never loses ink
+				var inside = glyphs.All( glyph => glyph.X >= box.X - 1 && glyph.X + glyph.Width <= box.Right );
+				Assert.IsTrue( inside, $"{align} width {width}: every glyph stays inside the box {box}" );
+				var drawnRight = context.Batch.Draws.SelectMany( draw => draw.Vertices ).Max( vertex => vertex.Position.X );
+				Assert.AreEqual( glyphs.Max( glyph => glyph.X + glyph.Width ), drawnRight, $"{align} width {width}: the right-most ink column is drawn" );
+			}
+		}
+	}
+
+	[TestMethod]
 	public void EveryOriginalEnglishFontPacksAllGlyphsWithoutOverlap()
 	{
 		var directory = OriginalFontDirectory();

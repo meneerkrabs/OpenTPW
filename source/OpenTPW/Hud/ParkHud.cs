@@ -412,6 +412,7 @@ public sealed partial class ParkHud
 				Font = fonts => fonts.Label,
 				Clicked = () => SetUserGameSpeed( speed ),
 				Selected = () => DisplayedGameSpeed == speed,
+				Unclipped = true,
 				Bounds = new UiRect( 1540 + index * 122, 1430, 116, 84 ),
 				Anchor = UiAnchor.BottomRight
 			} );

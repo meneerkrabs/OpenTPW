@@ -53,7 +53,7 @@ public sealed class UiTitleBitmap
 	private static readonly object gate = new();
 	private static long totalBytes;
 
-	/// <summary>Starts the next frame (<see cref="UiBatch.Clear"/>): a bitmap asked for in this frame or the one before is not dropped, so the titles a frame draws always keep their bitmaps.</summary>
+	/// <summary>Starts the next frame (once per frame, where the interface batch is cleared): a bitmap asked for in this frame or the one before is not dropped, so the titles a frame draws always keep their bitmaps.</summary>
 	public static void BeginFrame() => Interlocked.Increment( ref generation );
 
 	/// <summary>The composed bitmap of <paramref name="layout"/> at text scale <paramref name="scale"/>, cached by atlas, string layout, copy alpha and scale; null when the layout draws nothing.</summary>

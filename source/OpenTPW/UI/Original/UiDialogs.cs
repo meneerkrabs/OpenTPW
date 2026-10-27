@@ -131,6 +131,8 @@ public static class UiDialogs
 			Color = new Veldrid.RgbaByte( 255, 255, 255, 255 ),
 			Align = UiAlign.Center,
 			Wrap = true,
+			// [EXT:ui-font-tier-by-scale] the message's font is OpenTPW's label font (and its texts OpenTPW's own, e.g. the save extension question), which can run a pixel past the descriptor's box
+			Unclipped = () => true,
 			Bounds = root.Inner!.Value,
 			Anchor = UiAnchor.Center
 		} );

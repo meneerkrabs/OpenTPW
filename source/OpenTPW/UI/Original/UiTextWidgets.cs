@@ -93,7 +93,7 @@ public sealed class UiTextField : UiElement
 		// The selection wash/caret use the host text-field style, not original hilight-art pixel parity.
 		if ( focused && AllSelected && Text.Length > 0 )
 			context.Batch.AddRectangle( textRect, new RgbaByte( 60, 90, 200, 170 ) );
-		context.DrawText( Font( context.Fonts ), shown, textRect, Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
+		context.DrawText( Font( context.Fonts ), shown, textRect, Enabled && !prompt ? UiColors.Value : UiColors.Disabled, clip: false );
 	}
 }
 
@@ -293,7 +293,8 @@ public sealed class UiScrollList : UiElement, IUiRowList
 			{
 				var width = Bounds.Width - column.Offset - Margin;
 				var header = new UiRect( rect.X + column.Offset * scale, top, width * scale, height );
-				context.DrawText( context.Fonts.Small, column.Text(), header, UiColors.Value );
+				// [EXT:ONLINE-UI] the column headers of the online lists are OpenTPW's texts in OpenTPW's boxes, so they are not cut off
+				context.DrawText( context.Fonts.Small, column.Text(), header, UiColors.Value, clip: false );
 			}
 			top += height;
 		}

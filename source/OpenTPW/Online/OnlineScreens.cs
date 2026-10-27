@@ -39,7 +39,7 @@ public sealed class OnlineHost
 /// list_msgs, b_vote, i_mail) keep their authored places. Text comes from the original UITEXT where
 /// it exists and from <see cref="OnlineStrings"/> otherwise.
 /// </summary>
-// [EXT:ONLINE-UI] native online screens; composition of the original screens and the place of code-positioned controls are OpenTPW's
+// [EXT:ONLINE-UI] every label and label button of these screens is OpenTPW's own text (Unclipped), so none is cut off at its box; native online screens; composition of the original screens and the place of code-positioned controls are OpenTPW's
 public sealed class OnlineScreens
 {
 	private readonly UiScreenStack stack;
@@ -99,7 +99,7 @@ public sealed class OnlineScreens
 			var number = index + 1;
 			var satellite = screen.Add( new UiButton { Id = $"satellite{number}", Model = "i_sat", Help = strings.Help( 423 ), Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = anchor,
 				Clicked = () => Guard( () => ShowChatPark( number, screen ) ) } );
-			var count = screen.Add( new UiLabel { Id = $"satellite{number}Count", Font = fonts => fonts.Menu, Color = UiColors.Text, Align = UiAlign.Center,
+			var count = screen.Add( new UiLabel { Unclipped = () => true, Id = $"satellite{number}Count", Font = fonts => fonts.Menu, Color = UiColors.Text, Align = UiAlign.Center,
 				Bounds = countRegion, Anchor = anchor,
 				Text = () => Session.ChatParks.FirstOrDefault( park => park.Id == number ) is { } park ? park.Players.ToString( System.Globalization.CultureInfo.InvariantCulture ) : "" } );
 			screen.Updating += _ => satellite.Enabled = Session.IsLoggedIn && Session.Busy == 0;
@@ -116,7 +116,7 @@ public sealed class OnlineScreens
 		// while an online request runs, here showing the screen's own status line.
 		// [EXT:ONLINE-UI] a status is shown once, on the screen on top, and only what came after the screen was opened or came back to the top (StatusText)
 		var worldStatus = StatusText( screen, busy: false );
-		screen.Add( new UiLabel { Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Align = UiAlign.Left,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Align = UiAlign.Left,
 			Bounds = new UiRect( 1349, 1418, 630, 60 ), Anchor = UiAnchor.BottomRight, Text = worldStatus } );
 		OnlineClient? worldListed = null;
 		var chatParkTimer = 0f;
@@ -158,9 +158,9 @@ public sealed class OnlineScreens
 	// command 1; whether the original drew that model (highlight.MD2) behind a label's text is not known and not reproduced
 	private void AddCityLabels( OnlineGlobeScreen screen, Func<string>? idle )
 	{
-		screen.Add( new UiLabel { Id = "city", Font = fonts => fonts.Title, Color = UiColors.Text, Align = UiAlign.Center, Bounds = Region( 1477, 90, 2048, 240 ), Anchor = UiAnchor.TopRight,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "city", Font = fonts => fonts.Title, Color = UiColors.Text, Align = UiAlign.Center, Bounds = Region( 1477, 90, 2048, 240 ), Anchor = UiAnchor.TopRight,
 			Text = () => screen.Hovered is { } city ? city.Name : idle?.Invoke() ?? "" } );
-		screen.Add( new UiLabel { Id = "cityParks", Font = fonts => fonts.Small, Color = UiColors.Text, Align = UiAlign.Center, Bounds = Region( 1627, 275, 2048, 395 ), Anchor = UiAnchor.TopRight,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "cityParks", Font = fonts => fonts.Small, Color = UiColors.Text, Align = UiAlign.Center, Bounds = Region( 1627, 275, 2048, 395 ), Anchor = UiAnchor.TopRight,
 			Text = () => screen.Hovered is { } city ? OnlineStrings.Ui( OnlineStrings.CityParks, "Parks: " ) + city.Parks : "" } );
 	}
 
@@ -232,11 +232,11 @@ public sealed class OnlineScreens
 		stack.RemoveWhere( other => other.Name == ChatParkDetailsScreenName );
 		var window = new UiRect( 248, 30, 1552, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "parkName", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 512, 75, 1024, 80 ), Anchor = UiAnchor.Center, Text = () => scene.Name } );
-		screen.Add( new UiLabel { Id = "theme", Font = fonts => fonts.Label, Bounds = new UiRect( 380, 233, 481, 45 ), Anchor = UiAnchor.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "theme", Font = fonts => fonts.Label, Bounds = new UiRect( 380, 233, 481, 45 ), Anchor = UiAnchor.Center,
 			Text = () => scene.Level is { } level ? ChatParkThemeRow( level ) : "" } );
-		screen.Add( new UiLabel { Id = "description", Wrap = true, Font = fonts => fonts.Small,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "description", Wrap = true, Font = fonts => fonts.Small,
 			Bounds = new UiRect( 922, 207, 680, 448 ), Anchor = UiAnchor.Center, Text = () => scene.Description } );
 		var enter = screen.Add( new UiButton { Unclipped = true, Id = "visit", Text = () => OnlineStrings.Get( OnlineLabel.VisitReadOnly ),
 			Clicked = () => Guard( () => EnterChatPark( scene ) ),
@@ -321,13 +321,13 @@ public sealed class OnlineScreens
 		PanelButton( "previousIsland", "b_lobleft", 95, 1299, 249, 1453, 343, () => screen.Step( -1 ) );
 		PanelButton( "nextIsland", "b_lobright", 260, 1299, 413, 1453, 344, () => screen.Step( 1 ) );
 		// [BIN:STP-PPC:0x101834A0 item detail overlay] label 0x49D9: the selected item's name, font slot 5, colour (252,232,7); label 0x49DA: "%d" of its index + 1, font slot 0; both hidden without a selection
-		var name = screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Color = new Veldrid.RgbaByte( 252, 232, 7, 255 ), Align = UiAlign.Center,
+		var name = screen.Add( new UiLabel { Unclipped = () => true, Id = "parkName", Font = fonts => fonts.Title, Color = new Veldrid.RgbaByte( 252, 232, 7, 255 ), Align = UiAlign.Center,
 			Bounds = new UiRect( 477, 1282, 1094, 175 ), Anchor = UiAnchor.Bottom, Text = () => screen.SelectedPark?.Name ?? "" } );
-		var rank = screen.Add( new UiLabel { Id = "rank", Font = fonts => fonts.Menu, Color = UiColors.Text, Align = UiAlign.Center, Bounds = new UiRect( 844, 118, 360, 135 ), Anchor = UiAnchor.Top,
+		var rank = screen.Add( new UiLabel { Unclipped = () => true, Id = "rank", Font = fonts => fonts.Menu, Color = UiColors.Text, Align = UiAlign.Center, Bounds = new UiRect( 844, 118, 360, 135 ), Anchor = UiAnchor.Top,
 			Text = () => (screen.Selected + 1).ToString( System.Globalization.CultureInfo.InvariantCulture ) } );
 		// [EXT:ONLINE-UI] the city's name and the fetch status while no park is shown; a city without parks says so (UITEXT 306)
 		var cityStatus = StatusText( screen, busy: false );
-		var status = screen.Add( new UiLabel { Id = "cityStatus", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 118, 1000, 135 ), Anchor = UiAnchor.Top,
+		var status = screen.Add( new UiLabel { Unclipped = () => true, Id = "cityStatus", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 118, 1000, 135 ), Anchor = UiAnchor.Top,
 			Text = () => $"{city.Name}\n{(cityStatus() is { Length: > 0 } text ? text : Session.CityParks is { Count: 0 } && ReferenceEquals( stack.Top, screen ) ? OnlineStrings.Ui( OnlineStrings.NoSearchResults, "No search results" ) : "")}" } );
 		screen.Updating += _ =>
 		{
@@ -400,7 +400,7 @@ public sealed class OnlineScreens
 		screen.Add( new UiModelImage { Id = "mail", Model = "i_mail", Bounds = Authored( "i_mail", new UiRect( 1500, 1180, 120, 110 ) ), Anchor = UiAnchor.BottomRight } );
 		// [DATA:Language/English/UITEXT.str:472] the original reminded the player of unsent postcards before going online ("... go online to send them"); it shows while logged out only. Logged in, nothing sends the
 		// outbox by itself, so the line says where to send it. It sits right under the last button, whatever their number.
-		screen.Add( new UiLabel { Id = "waiting", Wrap = true, Font = fonts => fonts.Small, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "waiting", Wrap = true, Font = fonts => fonts.Small, Align = UiAlign.Center,
 			Bounds = new UiRect( window.X + 120, lastButton!.Bounds.Bottom + 14, window.Width - 240, 90 ), Anchor = UiAnchor.Center,
 			Text = () => Session.Folders.List( Session.Folders.Outbox ).Any( entry => entry.Card != null )
 				? Session.IsLoggedIn ? OnlineStrings.Get( OnlineLabel.OutboxReadyToSend ) : OnlineStrings.Ui( OnlineStrings.OutboxWaiting, "You have postcards in your outbox, waiting to be sent." ) : "" } );
@@ -437,7 +437,7 @@ public sealed class OnlineScreens
 		public ShareChoices( UiScreen screen, UiStringTable strings, Func<string> defaultTitle, float x, float top, float width, CoopShareRequest? initial )
 		{
 			this.defaultTitle = defaultTitle;
-			titleLabel = screen.Add( new UiLabel { Id = "titleLabel", Font = fonts => fonts.Label, Text = () => strings.Extra( OpenTpwText.SharedParkTitle ),
+			titleLabel = screen.Add( new UiLabel { Unclipped = () => true, Id = "titleLabel", Font = fonts => fonts.Label, Text = () => strings.Extra( OpenTpwText.SharedParkTitle ),
 				Bounds = new UiRect( x, top + 10, 300, 90 ), Anchor = UiAnchor.Center } );
 			Title = screen.Add( new UiTextField { Id = "parkTitle", MaximumLength = CoopProtocol.MaximumTitleLength, Model = "f_text1",
 				Bounds = new UiRect( x + 320, top, width - 320, 93 ), Anchor = UiAnchor.Center } );
@@ -507,9 +507,9 @@ public sealed class OnlineScreens
 		bool Finished() => Attempt() is { Stage: CoopShareStage.Done };
 
 		// before sharing
-		var intro = screen.Add( new UiLabel { Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.ShareParkIntro ),
+		var intro = screen.Add( new UiLabel { Unclipped = () => true, Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.ShareParkIntro ),
 			Bounds = new UiRect( x, window.Y + 150, width, 190 ), Anchor = UiAnchor.Center } );
-		var message = screen.Add( new UiLabel { Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+		var message = screen.Add( new UiLabel { Unclipped = () => true, Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
 			Bounds = new UiRect( x, window.Y + 350, width, 120 ), Anchor = UiAnchor.Center,
 			Text = () => Attempt() is { } share ? ShareMessage( share ) : !Session.IsLoggedIn ? strings.Extra( OpenTpwText.LogInToShare )
 				: hosting.ShareRefusal is { } refusal and not CoopShareRefusal.None ? RefusalText( refusal ) : "" } );
@@ -534,10 +534,10 @@ public sealed class OnlineScreens
 			Clicked = () => { hosting.DismissSharing(); Session.Coop.Open( takeOver: true ); },
 			Bounds = new UiRect( x + 600, window.Y + 880, 560, 110 ), Anchor = UiAnchor.Center } );
 		// while it is hosted
-		var code = screen.Add( new UiLabel { Id = "code", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+		var code = screen.Add( new UiLabel { Unclipped = () => true, Id = "code", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
 			Text = () => Attempt()?.State is { } state ? string.Format( strings.Extra( OpenTpwText.SharedParkCode ), state.Code ) : "",
 			Bounds = new UiRect( x, window.Y + 150, width, 110 ), Anchor = UiAnchor.Center } );
-		var visibility = screen.Add( new UiLabel { Id = "visibility", Font = fonts => fonts.Small, Align = UiAlign.Center,
+		var visibility = screen.Add( new UiLabel { Unclipped = () => true, Id = "visibility", Font = fonts => fonts.Small, Align = UiAlign.Center,
 			Text = () => Attempt()?.State is { } state ? strings.Extra( state.Listed ? OpenTpwText.SharedParkListed : OpenTpwText.SharedParkUnlisted ) : "",
 			Bounds = new UiRect( x, window.Y + 260, width, 70 ), Anchor = UiAnchor.Center } );
 		var rows = new List<(UiLabel Name, UiButton Builds, UiButton Remove)>();
@@ -545,7 +545,7 @@ public sealed class OnlineScreens
 		{
 			var row = index;
 			CoopMemberInfo? Member() => Attempt()?.State is { } state && row < state.Members.Count ? state.Members.OrderBy( member => member.Slot ).ElementAt( row ) : null;
-			var name = screen.Add( new UiLabel { Id = $"member{row}", Font = fonts => fonts.Label,
+			var name = screen.Add( new UiLabel { Unclipped = () => true, Id = $"member{row}", Font = fonts => fonts.Label,
 				Text = () => Member() is { } member && Attempt()?.State is { } state ? MemberText( member, state ) : "",
 				Bounds = new UiRect( x, window.Y + 350 + row * 90, width - 840, 80 ), Anchor = UiAnchor.Center } );
 			// [EXT:online-coop-permissions] the host lets a guest build or only watch (Q7, C3a-2): the switch says what the shared park's applied grant is, and a click turns it over
@@ -584,10 +584,10 @@ public sealed class OnlineScreens
 		inviteField.Submitted = Invite;
 		var invite = screen.Add( new UiButton { Unclipped = true, Id = "invite", Text = () => strings.Extra( OpenTpwText.InvitePlayer ), Clicked = Invite,
 			Bounds = new UiRect( x + width - 400, window.Y + 725, 400, 100 ), Anchor = UiAnchor.Center } );
-		var inviteResult = screen.Add( new UiLabel { Id = "inviteResult", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+		var inviteResult = screen.Add( new UiLabel { Unclipped = () => true, Id = "inviteResult", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
 			Text = () => Attempt()?.LastInvite is { } notice ? InviteText( notice ) : "",
 			Bounds = new UiRect( x, window.Y + 835, width, 70 ), Anchor = UiAnchor.Center } );
-		var inviteLate = screen.Add( new UiLabel { Id = "inviteLate", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+		var inviteLate = screen.Add( new UiLabel { Unclipped = () => true, Id = "inviteLate", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
 			Text = () => Attempt()?.LateRefusal is { } notice ? InviteText( notice ) : "",
 			Bounds = new UiRect( x, window.Y + 905, width, 70 ), Anchor = UiAnchor.Center } );
 		// a removal is answered by its player leaving the list: of its refusals only too many requests is said, on the screen's status line
@@ -652,9 +652,9 @@ public sealed class OnlineScreens
 		UiDialogs.AddWindow( screen, window, "w_big", () => strings.Extra( OpenTpwText.BuildTogether ) );
 		var x = window.X + 120;
 		var width = window.Width - 240;
-		screen.Add( new UiLabel { Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.ShareSavedParkIntro ),
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.ShareSavedParkIntro ),
 			Bounds = new UiRect( x, window.Y + 150, width, 160 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
 			Bounds = new UiRect( x, window.Y + 320, width, 80 ), Anchor = UiAnchor.Center,
 			Text = () => parks.Count == 0 ? strings.Extra( OpenTpwText.NoSavedParks ) : !Session.IsLoggedIn ? strings.Extra( OpenTpwText.LogInToShare ) : "" } );
 		// the rows read as on the Load Park screen: the park's name (marked when cheated or when it needs extensions) and when it was saved
@@ -714,7 +714,7 @@ public sealed class OnlineScreens
 		UiDialogs.AddWindow( screen, window, "w_big", () => strings.Extra( OpenTpwText.BuildTogether ) );
 		var x = window.X + 120;
 		var width = window.Width - 240;
-		screen.Add( new UiLabel { Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.BuildTogetherLobbyIntro ),
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.BuildTogetherLobbyIntro ),
 			Bounds = new UiRect( x, window.Y + 150, width, 200 ), Anchor = UiAnchor.Center } );
 		var share = screen.Add( new UiButton { Unclipped = true, Id = "shareSaved", Text = () => strings.Extra( OpenTpwText.ShareASavedPark ), Clicked = ShowShareSavedPark,
 			Enabled = host.Hosting != null, Bounds = new UiRect( x, window.Y + 390, width, 110 ), Anchor = UiAnchor.Center } );
@@ -754,9 +754,9 @@ public sealed class OnlineScreens
 		bool Running() => Attempt() is { Stage: not CoopJoinStage.Done };
 		bool Failed() => Attempt() is { Stage: CoopJoinStage.Done, Outcome: not CoopJoinOutcome.Joined };
 
-		var intro = screen.Add( new UiLabel { Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.JoinIntro ),
+		var intro = screen.Add( new UiLabel { Unclipped = () => true, Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.JoinIntro ),
 			Bounds = new UiRect( x, window.Y + 150, width, 160 ), Anchor = UiAnchor.Center } );
-		var codeLabel = screen.Add( new UiLabel { Id = "codeLabel", Font = fonts => fonts.Label, Text = () => strings.Extra( OpenTpwText.JoinCodeLabel ),
+		var codeLabel = screen.Add( new UiLabel { Unclipped = () => true, Id = "codeLabel", Font = fonts => fonts.Label, Text = () => strings.Extra( OpenTpwText.JoinCodeLabel ),
 			Bounds = new UiRect( x, window.Y + 340, 300, 90 ), Anchor = UiAnchor.Center } );
 		// room for a code typed with spaces and dashes between its letters (the server's normalization drops them)
 		var codeField = screen.Add( new UiTextField { Id = "code", MaximumLength = 32, Model = "f_text1",
@@ -764,7 +764,7 @@ public sealed class OnlineScreens
 		codeField.Changed = _ => localMessage = "";
 		if ( code != null )
 			codeField.Text = code;
-		screen.Add( new UiLabel { Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
 			Bounds = new UiRect( x, window.Y + 460, width, 120 ), Anchor = UiAnchor.Center,
 			Text = () => Attempt() is { } attempt ? JoinMessage( attempt ) : localMessage.Length > 0 ? localMessage
 				: CoopSession.JoinRefusalKind is var refusal and not CoopJoinRefusal.None ? strings.Extra( GameFlow.JoinNotAllowedText( refusal ) )
@@ -888,7 +888,7 @@ public sealed class OnlineScreens
 		CoopListedSession? Chosen( UiScrollList list ) => list.Selected >= 0 && list.Selected < rows.Count ? rows[list.Selected] : null;
 		static bool Full( CoopListedSession park ) => park.Players >= park.MaximumPlayers;
 
-		screen.Add( new UiLabel { Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.SharedParksIntro ),
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "intro", Wrap = true, Font = fonts => fonts.Small, Text = () => strings.Extra( OpenTpwText.SharedParksIntro ),
 			Bounds = new UiRect( x, window.Y + 150, width, 120 ), Anchor = UiAnchor.Center } );
 		var list = screen.Add( new UiScrollList
 		{
@@ -898,7 +898,7 @@ public sealed class OnlineScreens
 			Bounds = new UiRect( x, window.Y + 290, width, 440 ),
 			Anchor = UiAnchor.Center
 		} );
-		screen.Add( new UiLabel { Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "message", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value,
 			Bounds = new UiRect( x, window.Y + 750, width, 120 ), Anchor = UiAnchor.Center,
 			Text = () => CoopSession.JoinRefusalKind is var refusal and not CoopJoinRefusal.None ? strings.Extra( GameFlow.JoinNotAllowedText( refusal ) )
 				: !Session.IsLoggedIn ? strings.Extra( OpenTpwText.LogInToJoin )
@@ -1033,7 +1033,7 @@ public sealed class OnlineScreens
 		var screen = new UiScreen( "onlineNews" );
 		var window = new UiRect( 186, 30, 1832, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 822, 98, 473, 79 ), Anchor = UiAnchor.Center,
 			// [DATA:Language/English/UITEXT.str:266] the original news panel's heading
 			Text = () => OnlineStrings.Ui( OnlineStrings.NewsFromThemeParkWorld, "News from ThemeParkWorld.com" ) } );
@@ -1043,7 +1043,7 @@ public sealed class OnlineScreens
 		screen.Add( new UiButton { Unclipped = true, Id = "systemNews", Text = () => OnlineStrings.Ui( OnlineStrings.SystemNews, "System News" ), Clicked = () => showSystem = true,
 			Bounds = new UiRect( 1372, 224, 323, 70 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiLabel
-		{
+		{ Unclipped = () => true,
 			Id = "text",
 			Wrap = true,
 			Font = fonts => fonts.Small,
@@ -1067,7 +1067,7 @@ public sealed class OnlineScreens
 		UiDialogs.AddWindow( screen, window, "w_med", () => OnlineStrings.Get( OnlineLabel.DeleteAccount ) );
 		var x = window.X + 120;
 		var width = window.Width - 340;
-		screen.Add( new UiLabel { Id = "warning", Wrap = true, Font = fonts => fonts.Small, Text = () => OnlineStrings.Get( OnlineLabel.DeleteAccountWarning ),
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "warning", Wrap = true, Font = fonts => fonts.Small, Text = () => OnlineStrings.Get( OnlineLabel.DeleteAccountWarning ),
 			Bounds = new UiRect( x, window.Y + 150, width, 190 ), Anchor = UiAnchor.Center } );
 		var name = AddField( screen, "name", () => OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), x, window.Y + 360, width, 16 );
 		var password = AddField( screen, "password", () => OnlineStrings.Ui( OnlineStrings.Password, "Password" ), x, window.Y + 530, width, 16 );
@@ -1120,7 +1120,7 @@ public sealed class OnlineScreens
 		var screen = new UiScreen( "onlineLogin" );
 		var window = table.Root.Rect;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = window, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = table.Control( 0x4D ).Rect, Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ) } );
 		// The original fields: 16 characters each, labels inside the field's frame.
 		UiTextField Field( string id, uint control, bool secret )
@@ -1132,16 +1132,16 @@ public sealed class OnlineScreens
 		var name = Field( "name", 0x49, false );
 		name.Text = Session.Settings.PlayerName ?? "";
 		var password = Field( "password", 0x4B, true );
-		screen.Add( new UiLabel { Id = "nameLabel", Text = () => OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ),
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "nameLabel", Text = () => OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ),
 			Bounds = table.Control( 0x4A ).Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "passwordLabel", Text = () => OnlineStrings.Ui( OnlineStrings.Password, "Password" ),
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "passwordLabel", Text = () => OnlineStrings.Ui( OnlineStrings.Password, "Password" ),
 			Bounds = table.Control( 0x4C ).Rect, Anchor = UiAnchor.Center } );
 		// [EXT:ONLINE-UI] in a panel of their own under the original window: the server address (the original service address was built in),
 		// the authenticator code of two-step login, register and recovery.
 		screen.Add( new UiModelImage { Id = "ownWindow", Model = "w_med", Bounds = LoginPanelBounds, Anchor = UiAnchor.Center } );
 		UiTextField OwnField( string id, Func<string> label, UiRect labelBounds, UiRect bounds, int maximumLength )
 		{
-			screen.Add( new UiLabel { Id = id + "Label", Text = label, Fit = true, Bounds = labelBounds, Anchor = UiAnchor.Center } );
+			screen.Add( new UiLabel { Unclipped = () => true, Id = id + "Label", Text = label, Fit = true, Bounds = labelBounds, Anchor = UiAnchor.Center } );
 			return screen.Add( new UiTextField { Id = id, MaximumLength = maximumLength, Model = "f_text1", Bounds = bounds, Anchor = UiAnchor.Center } );
 		}
 		var server = OwnField( "server", () => OnlineStrings.Get( OnlineLabel.ServerAddress ), LoginServerLabelBounds, LoginServerBounds, 256 );
@@ -1201,7 +1201,7 @@ public sealed class OnlineScreens
 				screen.Focus( code );
 			codeRequested = Session.CodeRequested;
 		};
-		screen.Add( new UiLabel { Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Bounds = LoginStatusBounds, Anchor = UiAnchor.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Bounds = LoginStatusBounds, Anchor = UiAnchor.Center,
 			Text = StatusText( screen ) } );
 		screen.Back = stack.Pop;
 		screen.Focus( name.Text.Length == 0 ? name : password );
@@ -1223,14 +1223,14 @@ public sealed class OnlineScreens
 		var window = UiDialogs.CenteredWindow( 1500, 1450 );
 		UiDialogs.AddWindow( screen, window, "w_med", () => OnlineStrings.Get( OnlineLabel.TwoStepLogin ) );
 		var x = window.X + 120;
-		screen.Add( new UiLabel { Id = "instructions", Wrap = true, Font = fonts => fonts.Small, Text = () => OnlineStrings.Get( OnlineLabel.TwoStepInstructions ),
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "instructions", Wrap = true, Font = fonts => fonts.Small, Text = () => OnlineStrings.Get( OnlineLabel.TwoStepInstructions ),
 			Bounds = new UiRect( x, window.Y + 140, window.Width - 300, 170 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiQrCode { Id = "qr", Text = enrollment.Uri, Bounds = new UiRect( x, window.Y + 330, 600, 600 ), Anchor = UiAnchor.Center } );
 		var right = x + 660;
 		var rightWidth = window.Right - 180 - right;
-		screen.Add( new UiLabel { Id = "keyLabel", Text = () => enrollment.Name, Bounds = new UiRect( right, window.Y + 340, rightWidth, 60 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "keyLabel", Text = () => enrollment.Name, Bounds = new UiRect( right, window.Y + 340, rightWidth, 60 ), Anchor = UiAnchor.Center } );
 		// The key in the label font and the plain text colour: it is typed over by hand when scanning is not possible.
-		screen.Add( new UiLabel { Id = "key", Wrap = true, Text = () => Totp.Grouped( enrollment.Secret ),
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "key", Wrap = true, Text = () => Totp.Grouped( enrollment.Secret ),
 			Bounds = new UiRect( right, window.Y + 420, rightWidth, 200 ), Anchor = UiAnchor.Center } );
 		// The authenticator code under the QR code; on servers that require e-mail, the address and its code on the right.
 		var code = AddField( screen, "code", () => OnlineStrings.Get( OnlineLabel.AuthenticatorCode ), x, window.Y + 960, 420, Totp.Digits );
@@ -1334,7 +1334,7 @@ public sealed class OnlineScreens
 		var screen = new UiScreen( "findParks" );
 		var window = new UiRect( 108, 30, 1832, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 758, 74, 472, 80 ), Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( OnlineStrings.FindParks, "Find Parks" ) } );
 		// The original search field (0xe05a) holds the player whose parks are listed and starts with the player's own name.
 		var search = screen.Add( new UiTextField { Id = "search", MaximumLength = 64, Model = "f_text1", Bounds = new UiRect( 380, 839, 742, 99 ), Anchor = UiAnchor.Center } );
@@ -1371,7 +1371,7 @@ public sealed class OnlineScreens
 		list.SelectionChanged = _ => { if ( Selected() is { } park ) ShowParkDetails( park, list.Selected ); };
 		// [EXT:ONLINE-070] the original's Platinum Tickets, won when others visit the player's published parks
 		// (manual p. 62): the server awards one per recorded visit, whatever list is open here.
-		screen.Add( new UiLabel { Id = "platinum", Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Right,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "platinum", Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Right,
 			Bounds = new UiRect( 1300, 74, 560, 70 ), Anchor = UiAnchor.Center,
 			Text = () => Session.Profile is { } profile ? $"{OnlineStrings.Get( OnlineLabel.PlatinumTickets )}: " +
 				profile.PlatinumTickets.ToString( System.Globalization.CultureInfo.InvariantCulture ) : "" } );
@@ -1407,7 +1407,7 @@ public sealed class OnlineScreens
 		stack.RemoveWhere( other => other.Name == "parkDetails" );
 		var window = new UiRect( 248, 30, 1552, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "parkName", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 512, 75, 1024, 80 ), Anchor = UiAnchor.Center, Text = () => park.Name } );
 		// The eight original label rows, top to bottom (data:0x51150); each shows its original UITEXT label.
 		var rows = new (float Y, Func<string> Label, Func<string> Value)[]
@@ -1430,12 +1430,12 @@ public sealed class OnlineScreens
 		foreach ( var row in rows )
 		{
 			var current = row;
-			screen.Add( new UiLabel { Id = $"row{(int)current.Y}", Text = current.Label, Font = fonts => fonts.Label,
+			screen.Add( new UiLabel { Unclipped = () => true, Id = $"row{(int)current.Y}", Text = current.Label, Font = fonts => fonts.Label,
 				Bounds = new UiRect( 380, current.Y, 481, 45 ), Anchor = UiAnchor.Center } );
-			screen.Add( new UiLabel { Id = $"row{(int)current.Y}Value", Text = current.Value, Font = fonts => fonts.Label, Color = UiColors.Value,
+			screen.Add( new UiLabel { Unclipped = () => true, Id = $"row{(int)current.Y}Value", Text = current.Value, Font = fonts => fonts.Label, Color = UiColors.Value,
 				Bounds = new UiRect( 380, current.Y, 481, 45 ), Anchor = UiAnchor.Center, Align = UiAlign.Right } );
 		}
-		screen.Add( new UiLabel { Id = "description", Wrap = true, Font = fonts => fonts.Small,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "description", Wrap = true, Font = fonts => fonts.Small,
 			Bounds = new UiRect( 922, 207, 680, 448 ), Anchor = UiAnchor.Center, Text = () => park.Description } );
 		var visit = screen.Add( new UiButton { Unclipped = true, Id = "visit", Text = () => OnlineStrings.Get( OnlineLabel.VisitReadOnly ),
 			Clicked = () => Guard( () => Session.Download( park, path => Inspect( path, start: true, park.Id ) ) ),
@@ -1475,7 +1475,7 @@ public sealed class OnlineScreens
 		var window = new UiRect( 248, 30, 1552, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
 		// [DATA:Language/English/UITEXT.str:446] "Other Parks In " + the location name (0x1018c880)
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 767, 67, 472, 79 ), Anchor = UiAnchor.Center,
 			Text = () => OnlineStrings.Ui( OnlineStrings.OtherParksIn, "Other Parks In " ) + city.Name } );
 		var columns = new (float Offset, int Text)[]
@@ -1598,7 +1598,7 @@ public sealed class OnlineScreens
 		var screen = new UiScreen( "publishPark" );
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		var title = table.Control( 0x11E5 );
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = title.Rect, Anchor = UiAnchor.Center,
 			Text = () => { var text = OnlineStrings.Ui( OnlineStrings.PublishParkTitle, OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish Park" ) ); return city == null ? text : $"{text}: {city.Name}"; } } );
 		UiTextField Field( string id, uint control, int maximumLength, string text )
@@ -1647,7 +1647,7 @@ public sealed class OnlineScreens
 		// The status (and the reason a park cannot be shared) goes in the free column left of the fields.
 		var formStatus = StatusText( screen );
 		Func<string> publishStatus = () => ParkSharing.ModsRefusal( level ) ?? formStatus();
-		screen.Add( new UiLabel { Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Bounds = PublishStatusBounds, Anchor = UiAnchor.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Bounds = PublishStatusBounds, Anchor = UiAnchor.Center,
 			Text = publishStatus } );
 		// [EXT:mods] a park that records mods cannot be exported or published yet (ParkSharing.ModsRefusal): both buttons are hidden and the status column says why
 		screen.Updating += _ => publish.Visible = export.Visible = ParkSharing.ModsRefusal( level ) == null;
@@ -1684,7 +1684,7 @@ public sealed class OnlineScreens
 		var table = OriginalLayoutTables.PostcardWindow;
 		LayoutNode Control( uint id ) => table.Control( id );
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "heading", Text = () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send Postcard" ), Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "heading", Text = () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send Postcard" ), Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title,
 			Align = UiAlign.Center, Fit = true, Bounds = Control( 0x5D9E ).Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "photo", Model = Control( 0x5D9F ).Model!, Bounds = Control( 0x5D9F ).Rect, Anchor = UiAnchor.Center } );
 		var edited = new HashSet<string>( StringComparer.Ordinal );
@@ -1790,7 +1790,7 @@ public sealed class OnlineScreens
 		var table = OriginalLayoutTables.OutboxWindow;
 		LayoutNode Control( uint id ) => table.Control( id );
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = Control( 0xEE9 ).Rect, Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent Postcards" ) } );
 		IReadOnlyList<(string Path, Postcard? Card, string? Error)> cards = Array.Empty<(string, Postcard?, string?)>();
 		void Reload() => cards = Session.Folders.List( Session.Folders.Outbox );
@@ -1817,7 +1817,7 @@ public sealed class OnlineScreens
 		foreach ( var header in headers )
 		{
 			var text = header;
-			screen.Add( new UiLabel { Id = $"header{text.Id - 0x10}", Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
+			screen.Add( new UiLabel { Unclipped = () => true, Id = $"header{text.Id - 0x10}", Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
 				Bounds = Control( text.Id ).Rect, Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( text.Text, text.Fallback ) } );
 		}
 		// [BIN:TPW-EXE:0x4bcbc0 outbox row] the row factory makes each row as high as font slot 7's line height x 1536 / screen height + 6, the buy list's rule (0x4ad240), with a text cell
@@ -1995,7 +1995,7 @@ public sealed class OnlineScreens
 			Rows = () => cards.Select( entry => entry.Card is { } card ? $"{card.Manifest.From}: {card.Manifest.Title}" : entry.Error ?? "?" ).ToArray(),
 		} );
 		screen.Add( new UiLabel
-		{
+		{ Unclipped = () => true,
 			Id = "text",
 			Wrap = true,
 			Font = fonts => fonts.Small,
@@ -2039,7 +2039,7 @@ public sealed class OnlineScreens
 		var view = screen.Add( new UiChatParkView( Session ) { Id = "park", Bounds = new UiRect( 543, 30, 1462, 1120 ), Anchor = UiAnchor.TopLeft } );
 		panel.AddTo( screen );
 		// The room's name over the park view, where the original showed the park it sat on.
-		screen.Add( new UiLabel { Id = "room", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "room", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 543, 1050, 1462, 90 ), Anchor = UiAnchor.TopLeft, Text = () => Session.CurrentRoomName } );
 		screen.Updating += context =>
 		{
@@ -2065,7 +2065,7 @@ public sealed class OnlineScreens
 		var path = AddField( screen, "path", () => OnlineStrings.Get( OnlineLabel.ImportFile ), window.X + 120, window.Y + 170, window.Width - 340, 2048 );
 		path.Submitted = () => Inspect( path.Text, start: false );
 		path.Changed = _ => inspected = null;
-		screen.Add( new UiLabel { Id = "description", Wrap = true, Font = fonts => fonts.Small, Bounds = new UiRect( window.X + 120, window.Y + 360, window.Width - 340, 380 ), Anchor = UiAnchor.Center,
+		screen.Add( new UiLabel { Unclipped = () => true, Id = "description", Wrap = true, Font = fonts => fonts.Small, Bounds = new UiRect( window.X + 120, window.Y + 360, window.Width - 340, 380 ), Anchor = UiAnchor.Center,
 			Text = () => inspected == null ? "" : ParkSharing.Describe( inspected ) } );
 		screen.Add( new UiButton { Unclipped = true, Id = "inspect", Text = () => OnlineStrings.Get( OnlineLabel.ImportFile ), Clicked = () => Inspect( path.Text, start: false ),
 			Bounds = new UiRect( window.X + 120, window.Bottom - 360, 480, 110 ), Anchor = UiAnchor.Center } );
@@ -2108,7 +2108,7 @@ public sealed class OnlineScreens
 
 	private UiTextField AddField( UiScreen screen, string id, Func<string> label, float x, float y, float width, int maximumLength )
 	{
-		screen.Add( new UiLabel { Id = id + "Label", Text = label, Bounds = new UiRect( x, y, width, 60 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Unclipped = () => true, Id = id + "Label", Text = label, Bounds = new UiRect( x, y, width, 60 ), Anchor = UiAnchor.Center } );
 		return screen.Add( new UiTextField { Id = id, MaximumLength = maximumLength, Model = "f_text1", Bounds = new UiRect( x, y + 64, width, 84 ), Anchor = UiAnchor.Center } );
 	}
 
@@ -2142,7 +2142,7 @@ public sealed class OnlineScreens
 	{
 		var status = StatusText( screen );
 		screen.Add( new UiLabel
-		{
+		{ Unclipped = () => true,
 			Id = "status",
 			Wrap = true,
 			Font = fonts => fonts.Small,

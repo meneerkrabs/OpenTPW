@@ -520,8 +520,9 @@ public sealed partial class ParkHud
 					if ( ParkAttractionRoster.IsGauge( kind ) )
 						UiGauge.Draw( context.Batch, cell.Inflate( -cell.Height * 0.2f ), cells[column].Gauge );
 					else
+						// [EXT:strings] the "not simulated yet" text (OpenTpwText.NotSimulated) is OpenTPW's, so it is not cut off at the cell; every other cell text is
 						context.DrawFittedText( context.Fonts.Small, cells[column].Text ?? context.Strings.Extra( OpenTpwText.NotSimulated ), cell, color,
-							kind == AttractionColumnKind.Name ? UiAlign.Left : ParkAttractionRoster.IsMoney( kind ) ? UiAlign.Right : UiAlign.Center );
+							kind == AttractionColumnKind.Name ? UiAlign.Left : ParkAttractionRoster.IsMoney( kind ) ? UiAlign.Right : UiAlign.Center, clip: cells[column].Text != null );
 				}
 			}
 		}

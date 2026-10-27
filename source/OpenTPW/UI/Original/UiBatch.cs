@@ -71,7 +71,6 @@ public sealed class UiBatch
 
 	public void Clear()
 	{
-		UiTitleBitmap.BeginFrame();
 		draws.Clear();
 		glyphs.Clear();
 		texts.Clear();

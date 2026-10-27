@@ -68,12 +68,20 @@ public sealed class UiContext
 		return (layout.Width * Canvas.TextScale, layout.Height * Canvas.TextScale);
 	}
 
+	/// <summary>
+	/// The control's box in whole pixels, one box for the placement and the clip: tp.exe's text control makes its bitmap [control+0x3c] x [control+0x3e] pixels
+	/// ((R - L) x W >> 11 and (B - T) x H / 1536, truncated, 0x48f47b-0x48f4c5) and aligns the text inside that size (the right and centre bounds of 0x48f8ba and 0x48f943 are the width); the
+	/// bitmap's own position stays the rectangle's left and top in 2048 x 1536 units (the quad of 0x48fbb9), which the rasteriser puts on the nearest pixel, so the box starts at the rounded left and top.
+	/// </summary>
+	public static UiRect TextBox( UiRect rect ) => new( MathF.Round( rect.X ), MathF.Round( rect.Y ), MathF.Floor( rect.Width ), MathF.Floor( rect.Height ) );
+
 	/// <summary>Draws text inside <paramref name="rect"/> as tp.exe's text library places it: the block aligned horizontally, each line aligned inside the block, the block centred vertically.</summary>
 	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, byte shadowAlpha = 0, int? textScale = null, bool originalPlacement = true, bool clip = true )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
 		align = Drawn( align );
+		rect = TextBox( rect );
 		var scale = textScale ?? Canvas.TextScale;
 		var layout = Layout( font, text, wrap ? (int)rect.Width : 0, scale );
 		var textAlignment = align switch { UiAlign.Center => TextAlignment.Center, UiAlign.Right => TextAlignment.Right, _ => TextAlignment.Left };
@@ -85,10 +93,8 @@ public sealed class UiContext
 			// [BIN:TPW-EXE:0x6ae550 line offset] a centred or right aligned multi-line text moves each line inside the widest one
 			layout = layout.AlignLines( textAlignment );
 			// [BIN:TPW-EXE:0x6aeb10 block box] whole-pixel block placement; a block taller than the box is still centred (the original's control bitmap cuts it off at both ends, 0x48f3d0, and so does the clip)
-			var left = (int)MathF.Round( rect.X );
-			var top = (int)MathF.Round( rect.Y );
-			ix = TextPlacement.BlockLeft( textAlignment, left, (int)MathF.Round( rect.Right ), width );
-			iy = TextPlacement.BlockTopCentered( top, (int)MathF.Round( rect.Bottom ), height );
+			ix = TextPlacement.BlockLeft( textAlignment, (int)rect.X, (int)rect.Right, width );
+			iy = TextPlacement.BlockTopCentered( (int)rect.Y, (int)rect.Bottom, height );
 		}
 		else
 		{
@@ -124,6 +130,7 @@ public sealed class UiContext
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
+		rect = TextBox( rect );
 		var candidates = new List<FontAtlas> { font };
 		candidates.AddRange( Fonts.Smaller( font ) );
 		// [EXT:fit-button-text] a label that fits no size of its own family goes on to the body fonts, smaller than the last size tried, so a small icon button
@@ -135,6 +142,7 @@ public sealed class UiContext
 		if ( fit.Wrap )
 		{
 			// [EXT:fit-button-text] before any word is cut between characters, the label is wrapped at its spaces in the largest size whose lines all fit the box
+			// [EXT:fit-button-text] these fallbacks (the wrapped label and the smallest size on one line) are OpenTPW's own layout of a label that fits no size, so they are not cut off at the box
 			var words = text.Split( new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries );
 			var wrapped = UiTextFit.ChooseWrapped( Canvas.TextScale, candidates.Count, ( index, scale ) =>
 			{
@@ -145,23 +153,30 @@ public sealed class UiContext
 			}, rect.Height );
 			if ( wrapped is { } choice )
 			{
-				DrawText( candidates[choice.Index], text, rect, color, align, true, shadowAlpha, choice.Scale, originalPlacement: false, clip: clip );
+				DrawText( candidates[choice.Index], text, rect, color, align, true, shadowAlpha, choice.Scale, originalPlacement: false, clip: false );
 				return;
 			}
 			// No size fits even wrapped (a box of a few pixels): the smallest size on one line, centred, as the original's unwrapped control text is.
-			DrawTextAt( candidates[^1], 1, text, rect, color, align, shadowAlpha, clip );
+			DrawTextAt( candidates[^1], 1, text, rect, color, align, shadowAlpha, clip: false );
 			return;
 		}
 		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadowAlpha, clip );
 	}
 
 	/// <summary>Draws single-line text in <paramref name="chosen"/> at whole text scale <paramref name="scale"/>, placed like <see cref="DrawFittedText"/> (ink aligned horizontally, letter box centred vertically).</summary>
-	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, byte shadowAlpha = 0, bool clip = true )
+	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, byte shadowAlpha = 0, bool clip = true, bool wrap = false )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
 		align = Drawn( align );
+		rect = TextBox( rect );
 		var box = InkBox( chosen, text );
+		// [BIN:TPW-EXE:0x6aec80 text wrap] the original does not shrink or cut an option label that is wider than its rectangle: the text library wraps it greedily into the rectangle (a line ends at the last space before the overflowing glyph, a word longer than the line is broken between characters), the block centred vertically (0x6aeb10) and cut off at the box (0x48f3d0)
+		if ( wrap && (box.Right - box.Left) * scale > rect.Width )
+		{
+			DrawText( chosen, text, rect, color, align, true, shadowAlpha, scale, clip: clip );
+			return;
+		}
 		var width = (box.Right - box.Left) * scale;
 		var x = align switch
 		{
@@ -205,7 +220,7 @@ public sealed class UiContext
 		var target = maximum * UiLabelGroup.TargetHeight;
 		var page = sizes.Where( size => size.Height <= maximum ).OrderBy( size => Math.Abs( size.Height - target ) ).ThenByDescending( size => size.Height ).Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault()
 			?? sizes.OrderBy( size => size.Height ).First();
-		var rect = label.ScreenRect( Canvas );
+		var rect = TextBox( label.ScreenRect( Canvas ) );
 		var texts = label.Variants?.Invoke().ToList() ?? new List<string> { label.Text() };
 		bool Fits( (FontAtlas Font, int Scale, int Height) size ) => texts.All( text =>
 		{
@@ -215,8 +230,19 @@ public sealed class UiContext
 		if ( Fits( page ) )
 			return (page.Font, page.Scale);
 		var smaller = sizes.Where( size => size.Height <= page.Height ).OrderByDescending( size => size.Height ).ToList();
-		var fit = smaller.Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault( size => Fits( size!.Value ) ) ?? smaller[^1];
-		return (fit.Font, fit.Scale);
+		var fit = smaller.Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault( size => Fits( size!.Value ) );
+		if ( fit is { } single )
+			return (single.Font, single.Scale);
+		// [BIN:TPW-EXE:0x6aec80 text wrap] a label that fits no size on one line is wrapped into its rectangle (UiLabel.Draw -> DrawTextAt), as the original's text library does; [EXT:option-label-fit] OpenTPW takes the largest size whose
+		// wrapped block (no word cut) stays inside the rectangle, so the lines are not cut off at both ends, and the smallest size when none does
+		var wrapped = smaller.Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault( size => texts.All( text =>
+		{
+			var layout = Layout( size!.Value.Font, text, (int)rect.Width, size.Value.Scale );
+			var available = (int)(rect.Width / size.Value.Scale);
+			return layout.Height * size.Value.Scale <= rect.Height && text.Split( ' ', StringSplitOptions.RemoveEmptyEntries ).All( word => Layout( size.Value.Font, word ).Width <= available );
+		} ) );
+		var chosen = wrapped ?? smaller[^1];
+		return (chosen.Font, chosen.Scale);
 	}
 
 	private readonly Dictionary<FontAtlas, (int Top, int Bottom)> letterBoxes = new();
@@ -385,7 +411,7 @@ public sealed class UiLabel : UiElement
 		if ( Group != null )
 		{
 			var (groupFont, scale) = context.ChooseUniform( Group, this );
-			context.DrawTextAt( groupFont, scale, text, rect, color, Align, Shadow ? ShadowAlpha : (byte)0, !(Unclipped?.Invoke() ?? false) );
+			context.DrawTextAt( groupFont, scale, text, rect, color, Align, Shadow ? ShadowAlpha : (byte)0, !(Unclipped?.Invoke() ?? false), wrap: Unclipped == null );
 			return;
 		}
 		if ( Fit && !Wrap )

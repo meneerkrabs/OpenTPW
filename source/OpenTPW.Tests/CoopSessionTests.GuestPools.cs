@@ -427,13 +427,11 @@ public partial class CoopSessionTests
 		view.Update();
 		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is TakeBackCommand ), "it went to the host" );
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ) );
-		// once the guest's park knows, its Backspace is refused before it goes, and says so too
-		Assert.IsTrue( tool.Undo() );
-		tool.SendGuestBatches( Time.Now );
-		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the refused undo reported" );
-		view.Update();
-		Assert.AreEqual( 2, view.Says( OpenTpwText.CoopNotGranted ) );
-		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is TakeBackCommand ), "the second went nowhere" );
+		// [EXT:online-coop-undo] a take-back the rights refused ends the slide mode, as it ends the line tools (C5): no second Backspace goes
+		Assert.IsFalse( tool.IsActive, "the slide mode ended" );
+		Assert.IsFalse( tool.Undo() );
+		Rounds( 5, host, guest );
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is TakeBackCommand ), "nothing more went" );
 		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) );
 		Assert.IsTrue( SlideOf( host )!.Pieces.Count == 1 && SlideOf( guest )!.Pieces.Count == 1, "nothing was taken back" );
 		CatchUpAndCompare( host, guest );
@@ -476,9 +474,12 @@ public partial class CoopSessionTests
 		view.Update();
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ), "said, the grant given back since or not" );
 		Assert.AreEqual( 1, SlideOf( guest )!.Pieces.Count );
+		// [EXT:online-coop-undo] the refusal by the rights ended the slide mode, as it ends the line tools (C5): the guest starts it again
+		Assert.IsFalse( tool.IsActive );
+		guest.Enter();
+		Assert.IsTrue( guest.Level.EnterSlideTool( tower ) );
 		// the pieces to the splash and an undo behind them, the pieces answered before the HUD takes them; the host takes the grant back before it does: the undo waits behind the pieces and
 		// then meets a finished slide, which takes no take-back (C5)
-		guest.Enter();
 		tool.Press( 16, 19 );
 		tool.Hover( 17, 19 );
 		tool.Hover( 17, 18 );

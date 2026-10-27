@@ -66,3 +66,22 @@ Do not duplicate the model picker. Map any remaining UI-027 acceptance cases to 
 
 The current picker explicitly retains RIDES-021 residuals for second-layer track-piece models, grouped instances, node-state/normal-refresh behavior and hover highlighting. These are separate ownership boundaries, not permission to silently broaden UI-027 or claim full model-pick parity. A closure decision needs that boundary reviewed, plus evidence for the original proposal's still-relevant acceptance cases; the obsolete sprite premise is not a reason to replace working code.
 
+## Current-main supersession (2026-10-27)
+
+This section updates the 2026-10-22 reconciliation and supersedes conflicting historical claims above. Baseline: public main `60c941de233ac45a0d8c7d680aef2269f655b8b6`. This is source inspection only, not a new original-executable trace, runtime change, test result, retirement or PR closure.
+
+### Existing implementation and recorded status
+
+- [Level.Objects.cs](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Level.Objects.cs#L1552-L1592) resolves object-model hits before returning the cursor point. Consequently, `Objects.FindAt(cursorX, cursorY)` in either HUD does not mean the pick is terrain-only.
+- [ObjectRayPick.cs](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Original/ObjectRayPick.cs#L27-L78) walks cells from the camera and takes the first model hit only when it beats the terrain distance (or terrain was missed). Do not replace this with a global nearest-face sort or the proposal's historical object pick-sprite algorithm.
+- [ParkHud.cs](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/Hud/ParkHud.cs#L1254-L1268) documents the distinction between object-owner selection and people picked through sprites; [ThemeParkIncHud.cs](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/Client/ThemeParkIncHud.cs#L431-L439) consumes the shared model-ray cursor-cell contract. This does not assert identical input timing across the two editions.
+- Existing [ObjectRayPickTests.cs](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW.Tests/ObjectRayPickTests.cs#L404-L459) includes a synthetic tall-ride HUD witness plus press/release and drag cases; the file also covers terrain occlusion, off-grid traversal, missing height maps, and model node/material traversal. [VisitorWorldSelectionTests.cs](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW.Tests/VisitorWorldSelectionTests.cs#L89-L162) already covers numerous input-owner and locator/modifier gates. These bodies were inspected, not executed. Corpus-dependent tests are not media-free acceptance evidence.
+- Current main already lists UI-027 in [tools/fidelity_retired.txt](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/tools/fidelity_retired.txt#L325) and explicitly describes its retirement in [docs/UI.md](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/docs/UI.md#L989). This addition reports that existing status; it does not perform or re-approve retirement.
+
+### Remaining action and boundary
+
+Review this supersession rather than implementing the obsolete object pick-sprite premise. Any optional additional integration coverage should first identify an actual uncovered case; do not duplicate the existing tall-object and input-owner tests or call their source inspection an executed result.
+
+The picker still names separate [RIDES-021 residuals](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Original/ObjectRayPick.cs#L44-L49) for second-layer track-piece models, grouped instances, node-state/normal-refresh behavior and hover highlighting. Preserve that ownership boundary rather than silently treating it as unfinished UI-027 or asserting full model-pick fidelity.
+
+The original proposal, earlier addendum and progress fragment remain historical records. No runtime code or register changes, C# or original-game execution, original-media publication, new test-pass, merge-readiness or closure claim is made here.

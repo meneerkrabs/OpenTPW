@@ -135,9 +135,9 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// [EXT:online-coop-claims] Whether <paramref name="command"/> of <paramref name="player"/> leaves alone every ride claimed against that player (<see cref="ClaimedAgainst"/>): the ride itself
 	/// (its track, its sale, its removal, its pick-up, its demolition by a placement, an add-on on it), its queue's lines, their undo, its edit and its cells, and the path cell its back
 	/// joins, which no removal, area clear, line or placement takes. Asked of every player, the host included, so a claim's holder edits its ride alone (C3c-1); while nothing is claimed
-	/// against the player it asks nothing.
+	/// against the player it asks nothing, except a guest's placement still checks the fixed objects it may not demolish.
 	/// </summary>
-	internal bool LeavesClaimsAlone( int player, ParkCommand command ) => !CanBeClaimedAgainst( player ) || command switch
+	internal bool LeavesClaimsAlone( int player, ParkCommand command ) => (!CanBeClaimedAgainst( player ) && (player == ParkCommands.LocalPlayer || command is not PlaceObjectCommand)) || command switch
 	{
 		// a claimed ride's queue lines and their undo; no line crosses its cells (a path line paves a queue end), and no queue line takes the path cell its back joins (the queue writers
 		// lay queue over path); an undo takes the cells its line built off again, which may take a queue's link off; a path line's undo only counts down the ones it crossed
@@ -279,12 +279,39 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 			return true;
 		if ( plan.Overwritten.Any( item => player == ParkCommands.LocalPlayer ? ClaimedAgainst( player, item ) : !MayRemove( player, item ) ) )
 			return false;
+		if ( !InitialStationLeavesClaimsAlone( player, entry, anchor.X, anchor.Y, rotation ) )
+			return false;
 		var (entrance, exit) = ObjectAccessCells.Find( ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, rotation ) );
 		var queueEntrance = entry.HasQueue && entrance is { } enter ? new[] { (enter.OutsideX, enter.OutsideY) } : Array.Empty<(int, int)>();
 		var written = ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) ).Concat( plan.ClearedPaths ).Concat( queueEntrance )
 			.Distinct().ToArray();
 		var paths = new[] { entry.HasQueue ? exit : entrance }.OfType<ObjectAccessPoint>().Select( point => (point.OutsideX, point.OutsideY) ).ToArray();
 		return !TouchesClaimedQueue( player, written, joins: true ) && !TouchesClaimedQueue( player, paths, joins: false );
+	}
+
+	/// <summary>
+	/// A fresh kart/water station's exit and entry ops lie outside its ordinary footprint plan. Ask before the command buys or registers the station, including demolition before a
+	/// refused tile's type op: objects, the owners of offset track records cleared by GiveWay, and path cells whose clearing could unlink another ride's queue. Never omit a forbidden
+	/// removal inside the writer after the station has already been bought. Existing stations keep the writer's skip gates, so a harmless adjacent placement stays possible.
+	/// </summary>
+	private bool InitialStationLeavesClaimsAlone( int player, ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	{
+		if ( level.KartTracks == null || level.WaterTracks == null
+			|| BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is not { IsBumper: false } template )
+			return true;
+		var builder = template.Family == TrackFamily.Kart ? level.KartTracks : level.WaterTracks;
+		var station = TrackStation.FromPlacement( anchorX, anchorY, rotation );
+		var demolished = builder.InitialStationGiveWayCells( station ).ToArray();
+		if ( demolished.Select( cell => level.Objects.FindAt( cell.X, cell.Y ) ).OfType<OriginalObject>().Distinct()
+			.Any( item => player == ParkCommands.LocalPlayer ? ClaimedAgainst( player, item ) : !MayRemove( player, item ) ) )
+			return false;
+		// A track cell outside its station has no OriginalObject in Objects.FindAt. Its owner is the station's first-cell index plus one, not its attraction id.
+		var owners = demolished.Select( cell => builder.Tracks.Get( cell.X, cell.Y ).Owner ).Where( owner => owner != 0 ).ToHashSet();
+		if ( level.TrackStations.Any( pair => owners.Contains( builder.OwnerOf( pair.Value ) ) && ClaimedAgainst( player, pair.Key ) ) )
+			return false;
+		var paths = new[] { station.Exit, station.Entry }.SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) )
+			.Where( cell => builder.Cells.TypeAt( cell.X, cell.Y ) == ParkCellType.Path ).ToArray();
+		return !TouchesClaimedQueue( player, paths, joins: true );
 	}
 
 	/// <summary>

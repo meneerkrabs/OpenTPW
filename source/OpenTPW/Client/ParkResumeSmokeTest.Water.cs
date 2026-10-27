@@ -62,7 +62,7 @@ internal sealed partial class ParkResumeSmokeTest
 		// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the fixture opens it as the player would
 		ride!.Open();
 		var station = level.TrackStations[ride!];
-		Require( level.EnterTrackTool( ride ), "the water track tool starts" );
+		Require( level.EnterTrackTool( ride, justPlaced: true ), "the water track tool starts" );
 		foreach ( var offset in new (int X, int Y)[] { (4, depth), (-2, depth), (-2, 0) } )
 		{
 			var click = level.CellTool.Click( (station.First.X + offset.X, station.First.Y + offset.Y) );

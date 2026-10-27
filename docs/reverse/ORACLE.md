@@ -1445,7 +1445,7 @@ the values 0 idle (the admission runs), 1 broken down, 2 upgrading, 3 not an att
    in any other state at once; the repair of a worn ride that the player had closed reopens it.
 
 **Fixed in C#** (before → after: `ride-may-open` 264 → 0, `ride-breakdown-update` 280 → 0, `ride-repair` 423 → 0 on the compared fields). `RideOpening.MayOpen` is the guard of
-`ParkGate.MayOpen`: the state comes from the script's VAR_BROKEN or the economy's breakdown flag (1), a purchased upgrade not yet installed (2) and the coaster's circuit;
+`ParkGate.MayOpen`: the state is the ride's one state word (`RideStateWord`, shared by the economy record and the visitor bridge: 1 or 4 written by the ride update that read VAR_BROKEN, cleared by every opener since round 9), a purchased upgrade not yet installed (2) and the coaster's circuit;
 `Level` gives the gate the economy record of each object, and the HUD's open button asks the same guard. `ParkEconomy.UpdateRides` applies `RideBreakdownRules`: a broken or
 upgrading or closed ride is skipped (it kept wearing, and a closed ride with an empty gauge broke down in a closed park), a mechanic at work on a ride in state 0 does not stop it.
 `ParkEconomy.FinishJob` writes `RideRepair.FullGauge`, and `Level.OpenAfterRepair` opens the ride on `RideRepaired` (a coaster with an incomplete circuit stays closed).
@@ -2197,8 +2197,7 @@ of the object kind. Transcribed, the C# rule agrees on every input (`csharp-rule
 `0x441970`–`0x4419af` confirms the edited-controller exclusion (`0x790fec`) and no sample-count or controller-state term.
 The economic consumer now uses the flags/intersection/edit predicate without requiring three samples; actual guest admission
 retains that host safety guard. The edited-controller term was already wired through `BeingEdited`. This correction is static
-evidence plus synthetic coverage, not another native execution. ARRIVAL-003 retains the kart/water residual: the track word
-starts false before the first walk where the original's constructor stores 1 (`0x4db0df`).
+evidence plus synthetic coverage, not another native execution. ARRIVAL-003 is retired: the kart/water track word now starts at 1 as the original's constructor stores it (`0x4db0df`; the PC constructor 0x4DB0A0), and only a circuit walk or a track edit's clear rewrites it (0x524D1B, 0x52694F, 0x526BE1, 0x526F13, 0x5251B8, 0x5257FB).
 
 ### 7.12 Finding X16: guests test the price when they are called forward
 

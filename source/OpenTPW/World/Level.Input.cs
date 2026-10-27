@@ -134,8 +134,15 @@ public partial class Level
 	/// <summary>[EXT:online-coop-commands] The guest's Backspace went to the host as <paramref name="request"/>.</summary>
 	internal void WaitBacktrack( CoopGuestCommands.Request request ) => WaitingBacktrack = request;
 
-	/// <summary>[EXT:online-coop-commands] Escape, a right click or another tool leaves the queue edit or the pick-up that waits for the host: its outcome starts no tool then.</summary>
-	internal void DropToolStartWait() => WaitingToolStart = null;
+	/// <summary>
+	/// [EXT:online-coop-commands] Escape, a right click or another tool leaves the queue edit, the pick-up or [EXT:online-coop-claims] the track tool entry (C3c-1b) that waits for the host: its
+	/// outcome starts no tool then.
+	/// </summary>
+	internal void DropToolStartWait()
+	{
+		WaitingToolStart = null;
+		pendingTrackStart = null;
+	}
 
 	/// <summary>[EXT:online-coop-commands] How many clicks a tool refused while its request waited for the host (C3a-2): the HUD asks the player to wait when it changes.</summary>
 	internal int WaitingClicks { get; private set; }
@@ -164,15 +171,19 @@ public partial class Level
 
 	/// <summary>
 	/// [EXT:online-coop-commands] The session ended with requests open (C3a-2, C3b): the placement, the removal, the queue edit or pick-up, the Backspace and the sales that waited wait
-	/// no more, a line that waited ends its tool, since what became of it is not known here, and a guest's Move tool disarms.
+	/// no more, a line or a track Backspace that waited ends its tool, since what became of it is not known here, [EXT:online-coop-claims] a guest's track tool ends with the claim it held
+	/// (C3c-1b), and a guest's Move tool disarms.
 	/// </summary>
 	internal void EndGuestWaits()
 	{
-		if ( (CellBuildTool?)CellTool is { Waiting: not null } tool )
+		if ( (CellBuildTool?)CellTool is { IsWaiting: true } tool )
 			tool.Cancel();
+		if ( Commands.Player > ParkCommands.LocalPlayer )
+			ExitTrackTool();
 		WaitingPlacement = null;
 		WaitingRemoval = null;
 		WaitingToolStart = null;
+		pendingTrackStart = null;
 		WaitingBacktrack = null;
 		waitingSales = null;
 		// [EXT:online-coop-commands] a guest's pool tool ends with its session, and its strokes go without a report (C3b-3)
@@ -248,6 +259,9 @@ public partial class Level
 	// A live track click's continuation choice is local tool state, never a command or world input.
 	private bool keepTrackToolAfterLine;
 
+	/// <summary>[EXT:online-coop-commands] The continuation choice of the guest's track line that waits for the host (C3c-1b): its click's exactly Ctrl, which its outcome's continuation reads.</summary>
+	private bool waitingLineKeepsTrackTool;
+
 	/// <summary>
 	/// The ride whose queue start the last placement left pending (tp.exe <c>0x8186C0</c>): the queue tool follows a kart or water circuit's close only while one is
 	/// pending, from that ride's queue (<see cref="ContinueTrackTool"/>), and the close takes it. Local tool state of the issuer, never a command, saved or hashed.
@@ -257,8 +271,8 @@ public partial class Level
 
 	internal SegmentResult? ClickCellTool( (int X, int Y) cell, int modifierMask = 0 )
 	{
-		// [EXT:online-coop-commands] a guest's line that waits for the host takes no other click (C3a-2)
-		if ( CellTool.Waiting != null )
+		// [EXT:online-coop-commands] a guest's line or track Backspace that waits for the host takes no other click (C3a-2, C3c-1b)
+		if ( CellTool.IsWaiting )
 		{
 			NoteWaitingClick();
 			return null;
@@ -269,6 +283,9 @@ public partial class Level
 		try
 		{
 			var result = CellTool.Click( cell );
+			// [EXT:online-coop-commands] a guest's track line went to the host: its outcome's continuation takes this click's Ctrl (C3c-1b)
+			if ( result?.Waiting != null )
+				waitingLineKeepsTrackTool = keepTrackToolAfterLine;
 			// [BIN:TPW-EXE:0x00527483 queue start] the path and queue handler zeroes the pending queue start after its commit LayLine (0x527472); a click on a refused ghost returns before
 			// it (0x524A63), and a line whose command the park refused ([EXT:online-coop-commands]) laid nothing either
 			if ( mode is CellToolMode.Path or CellToolMode.Queue && result is { GhostRefused: false, CommandRefused: false, Waiting: null } )
@@ -288,7 +305,19 @@ public partial class Level
 	internal SegmentResult? CompleteCellTool( ParkCommandResult outcome )
 	{
 		var mode = CellTool.Mode;
-		var result = CellTool.CompleteWaiting( outcome );
+		// [EXT:online-coop-commands] a guest's track line that closed its circuit continues as its click chose (C3c-1b): exactly Ctrl keeps the line tool
+		var previous = keepTrackToolAfterLine;
+		keepTrackToolAfterLine = waitingLineKeepsTrackTool;
+		SegmentResult? result;
+		try
+		{
+			result = CellTool.CompleteWaiting( outcome );
+		}
+		finally
+		{
+			keepTrackToolAfterLine = previous;
+			waitingLineKeepsTrackTool = false;
+		}
 		// [BIN:TPW-EXE:0x00527483 queue start] the path and queue handler zeroes the pending queue start after its commit LayLine, here once the guest's commit came back laid
 		if ( mode is CellToolMode.Path or CellToolMode.Queue && result is { GhostRefused: false, CommandRefused: false } )
 			placedQueueStart = null;
@@ -297,15 +326,12 @@ public partial class Level
 
 	/// <summary>
 	/// The track tool a kart or water ride the player just placed opens (<see cref="EnterTrackTool"/>): a ride with a queue leaves its queue start pending, so the close of
-	/// its circuit hands over to the queue tool (<see cref="ContinueTrackTool"/>).
+	/// its circuit hands over to the queue tool (<see cref="ContinueTrackTool"/>). [EXT:online-coop-claims] A guest's tool starts once its claim is back (C3c-1b): the placement then opens no queue tool.
 	/// </summary>
-	internal bool EnterPlacedTrackTool( OriginalObject item )
+	internal TrackToolEntry EnterPlacedTrackTool( OriginalObject item )
 	{
 		ArgumentNullException.ThrowIfNull( item );
-		if ( !EnterTrackTool( item, justPlaced: true ) )
-			return false;
-		placedQueueStart = item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells ? item : null;
-		return true;
+		return BeginTrackTool( item, placed: true );
 	}
 
 	/// <summary>
@@ -541,7 +567,11 @@ public partial class Level
 		return true;
 	}
 
-	/// <summary>[EXT:online-coop-commands] How many tools a guest's request started when the host's answer came back (<see cref="CompleteMove"/>, <see cref="CompleteQueueEdit"/>): the HUD ignores the release of a press made before one started.</summary>
+	/// <summary>
+	/// [EXT:online-coop-commands] How many tools a guest's request started or moved on when the host's answer came back (<see cref="CompleteMove"/>, <see cref="CompleteQueueEdit"/>,
+	/// [EXT:online-coop-claims] <see cref="CompleteTrackToolStart"/>, and the HUD's outcome of a line, cut or track Backspace that waited, C3c-1b): the HUD ignores the release of a press made
+	/// before, so a press made while a tool waited for the host never becomes its click.
+	/// </summary>
 	internal int HostToolStarts { get; set; }
 
 	/// <summary>[EXT:online-coop-commands] Whether no tool of the park view is on (the view a queue click starts the queue tool from).</summary>

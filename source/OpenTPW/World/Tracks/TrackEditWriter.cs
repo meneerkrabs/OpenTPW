@@ -11,7 +11,7 @@ public sealed class TrackEditWriter : ICellLineWriter
 	private readonly TrackFamily family;
 	private readonly Action<(int X, int Y)> cutDone;
 	private readonly Action refused;
-	private readonly Func<(int X, int Y), (int X, int Y), TrackCutResult?> cut;
+	private readonly Func<(int X, int Y), (int X, int Y), TrackCutSent> cut;
 	private (int X, int Y)? first;
 
 	/// <param name="editor">The editor of the ride's track.</param>
@@ -21,12 +21,18 @@ public sealed class TrackEditWriter : ICellLineWriter
 	/// <param name="cut">Makes the cut between the two picked tiles and answers it, or null when it is refused (the tool then ends); null cuts through <paramref name="editor"/> at once
 	/// (<see cref="Cut(TrackEditor, ValueTuple{int, int}, ValueTuple{int, int})"/>). [EXT:online-coop-commands] The level's tool hands it to its commands (<see cref="CutTrackCommand"/>).</param>
 	public TrackEditWriter( TrackEditor editor, TrackFamily family, Action<(int X, int Y)> cutDone, Action refused, Func<(int X, int Y), (int X, int Y), TrackCutResult?>? cut = null )
+		: this( editor, family, cutDone, refused, cut == null ? ( a, b ) => new TrackCutSent( Cut( editor, a, b ) ) : ( a, b ) => new TrackCutSent( cut( a, b ) ) )
+	{
+	}
+
+	/// <param name="send">[EXT:online-coop-commands] Sends the cut between the two picked tiles: done at once, or a guest's cut that waits for the host (C3c-1b), whose outcome finishes it.</param>
+	internal TrackEditWriter( TrackEditor editor, TrackFamily family, Action<(int X, int Y)> cutDone, Action refused, Func<(int X, int Y), (int X, int Y), TrackCutSent> send )
 	{
 		this.editor = editor ?? throw new ArgumentNullException( nameof( editor ) );
 		this.family = family;
 		this.cutDone = cutDone ?? throw new ArgumentNullException( nameof( cutDone ) );
 		this.refused = refused ?? throw new ArgumentNullException( nameof( refused ) );
-		this.cut = cut ?? (( a, b ) => Cut( editor, a, b ));
+		cut = send ?? throw new ArgumentNullException( nameof( send ) );
 	}
 
 	public CellToolMode Mode => family == TrackFamily.Water ? CellToolMode.WaterEdit : CellToolMode.KartEdit;
@@ -77,12 +83,37 @@ public sealed class TrackEditWriter : ICellLineWriter
 		var picked = first;
 		first = null;
 		var (result, tile) = editor.Pick( end.X, end.Y );
-		if ( picked is not { } low || result != TrackEditPick.Accepted || tile is not { } second || cut( low, second ) is not { } done )
+		if ( picked is not { } low || result != TrackEditPick.Accepted || tile is not { } second )
+			return Finish( start, end, null, null );
+		var sent = cut( low, second );
+		// [EXT:online-coop-commands] a guest's cut went to the host (C3c-1b): the first pick stays while the tool waits, so its ghost is the cut's, and the outcome finishes the cut as this
+		// click would have; a request the host could not take leaves the first pick for the next click
+		if ( sent.Waiting is { } waiting )
+		{
+			first = low;
+			return new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false )
+			{
+				Start = start,
+				Line = Preview( start, end ).Line,
+				Waiting = new WaitingLineCommit( waiting.Request, outcome =>
+				{
+					first = null;
+					return Finish( start, end, second, waiting.Complete( outcome ) );
+				} )
+			};
+		}
+		return Finish( start, end, second, sent.Cut );
+	}
+
+	/// <summary>The second click's end: the cut <paramref name="done"/> between the picks (the tool then goes on from <paramref name="second"/>), or, without one, the end of the tool.</summary>
+	private SegmentResult Finish( (int X, int Y) start, (int X, int Y) end, (int X, int Y)? second, TrackCutResult? done )
+	{
+		if ( second is not { } tile || done == null )
 		{
 			refused();
 			return Ghost( end, Array.Empty<(int X, int Y)>(), null, CellBuildResult.Ok );
 		}
-		cutDone( second );
+		cutDone( tile );
 		return new SegmentResult( end, done.Cleared, 0, CellBuildResult.Ok, false )
 		{
 			Start = start,
@@ -116,3 +147,12 @@ public sealed class TrackEditWriter : ICellLineWriter
 	private static SegmentResult Ghost( (int X, int Y) end, IReadOnlyList<(int X, int Y)> line, (int X, int Y)? stoppedAt, CellBuildResult stoppedBy ) =>
 		new( end, Array.Empty<(int X, int Y)>(), 0, stoppedBy, false ) { Start = end, Line = line, StoppedAt = stoppedAt };
 }
+
+/// <summary>
+/// [EXT:online-coop-commands] What the level made of the edit tool's cut (<see cref="TrackEditWriter"/>): the cut at once (<see cref="Cut"/>, null when it was refused, which ends the tool), or a
+/// guest's cut that went to the host (<see cref="Waiting"/>, C3c-1b).
+/// </summary>
+internal readonly record struct TrackCutSent( TrackCutResult? Cut, WaitingTrackCut? Waiting = null );
+
+/// <summary>[EXT:online-coop-commands] A guest's cut that waits for the host (C3c-1b): its request, and what finishes the edit from the request's outcome once and gives the cut, null when refused.</summary>
+internal sealed record WaitingTrackCut( CoopGuestCommands.Request Request, Func<ParkCommandResult, TrackCutResult?> Complete );

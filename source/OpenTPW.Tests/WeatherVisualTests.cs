@@ -209,16 +209,53 @@ public class WeatherVisualTests
 		Assert.IsTrue( count <= WeatherVisualState.FieldSize * 6 );
 		for ( var quad = 0; quad < count; quad += 6 )
 		{
-			var trailing = (vertices[quad].Position + vertices[quad + 1].Position) / 2;
-			var leading = (vertices[quad + 2].Position + vertices[quad + 4].Position) / 2;
-			Assert.AreEqual( WeatherVisualState.StreakLength, (leading - trailing).Length(), 1e-4f, "the streak is 0.1 long" );
-			Assert.AreEqual( -WeatherVisualState.StreakLength, leading.Y - trailing.Y, 1e-4f, "it points down" );
-			Assert.AreEqual( 128f / 255f, vertices[quad].Alpha, 1e-6f, "trailing alpha 0x80" );
-			Assert.AreEqual( 1f, vertices[quad + 2].Alpha, 1e-6f, "leading alpha 0xFF" );
-			Assert.AreEqual( WeatherVisualState.StreakWidthRatio * WeatherVisualState.StreakLength, (vertices[quad].Position - vertices[quad + 1].Position).Length(), 1e-4f, "0.2 x length wide" );
-			Assert.IsTrue( vertices[quad].Position.Z > 0 && vertices[quad + 2].Position.Z > 0, "only depth > 0 is drawn" );
-			Assert.AreEqual( WeatherVisualState.RainGrey( vertices[quad].Position.Z ), vertices[quad].Grey, 1e-6f );
+			// the fan of the original's four vertices: (V0, V1, V2) and (V0, V2, V3), the clip y running down the screen
+			var (v0, v1, v2, v3) = (vertices[quad], vertices[quad + 1], vertices[quad + 2], vertices[quad + 5]);
+			Assert.AreEqual( v0, vertices[quad + 3] );
+			Assert.AreEqual( v2, vertices[quad + 4] );
+			var trailing = (v0.Position + v1.Position) / 2;
+			var leading = (v2.Position + v3.Position) / 2;
+			Assert.AreEqual( WeatherVisualState.StreakLength, leading.Y - trailing.Y, 1e-4f, "the streak is 0.1 long and points down the screen" );
+			Assert.AreEqual( 0f, leading.X - trailing.X, 1e-4f );
+			Assert.AreEqual( 128f / 255f, v0.Alpha, 1e-6f, "trailing alpha 0x80" );
+			Assert.AreEqual( 1f, v2.Alpha, 1e-6f, "leading alpha 0xFF" );
+			Assert.AreEqual( 0.2f * WeatherVisualState.StreakLength, (v0.Position - v1.Position).Length(), 1e-4f, "0.2 x length wide" );
+			var depth = v0.W - WeatherVisualState.RainW;
+			Assert.IsTrue( depth > 0, "only a trailing end in front of the eye is drawn" );
+			Assert.AreEqual( depth + WeatherVisualState.RainDepthBias, v0.Position.Z, 1e-5f, "clip z is the trailing depth + 0.04 on every vertex" );
+			Assert.AreEqual( v0.Position.Z, v3.Position.Z );
+			Assert.AreEqual( WeatherVisualState.RainGrey( depth ), v0.Grey, 1e-6f );
+			Assert.AreEqual( v0.Grey, v2.Grey, "the leading end's colour is the trailing end's too" );
 		}
+	}
+
+	[TestMethod]
+	public void RainStreaksMatchTheOriginalsVertexSubmitForAnExplicitStreak()
+	{
+		// [BIN:TPW-EXE:0x57efd0 rain vertices] reference values run on the original's own code with an identity camera (static analysis only: tp.exe is never run): trailing end, fall vector, then the four vertices (x, y, z, w)
+		var cases = new (NVector3 Trailing, NVector3 Fall, (float X, float Y, float Z, float W)[] Vertices)[]
+		{
+			(new( 0.5f, 0.3f, 2.0f ), new( 0.0f, -0.1f, 0.0f ), new[] { (0.51f, -0.3f, 2.04f, 2.1f), (0.49f, -0.3f, 2.04f, 2.1f), (0.49f, -0.2f, 2.04f, 2.1f), (0.51f, -0.2f, 2.04f, 2.1f) }),
+			(new( -1.2f, 2.0f, 3.5f ), new( 0.02f, -0.09f, 0.03f ), new[] { (-1.191f, -2.002f, 3.54f, 3.6f), (-1.209f, -1.998f, 3.54f, 3.6f), (-1.189f, -1.908f, 3.54f, 3.63f), (-1.171f, -1.912f, 3.54f, 3.63f) }),
+			(new( 0.1f, -0.7f, 0.4f ), new( 0.05f, -0.08f, -0.02f ), new[] { (0.108f, 0.695f, 0.44f, 0.5f), (0.092f, 0.705f, 0.44f, 0.5f), (0.142f, 0.785f, 0.44f, 0.48f), (0.158f, 0.775f, 0.44f, 0.48f) }),
+			(new( 2.5f, 1.0f, 3.5f ), new( 0.0f, 0.0f, 0.1f ), new[] { (2.5f, -1.0f, 3.54f, 3.6f), (2.5f, -1.0f, 3.54f, 3.6f), (2.5f, -1.0f, 3.54f, 3.7f), (2.5f, -1.0f, 3.54f, 3.7f) }),
+			(new( -0.3f, 0.2f, 0.05f ), new( 0.07f, -0.07f, 0.0f ), new[] { (-0.293f, -0.207f, 0.09f, 0.15f), (-0.307f, -0.193f, 0.09f, 0.15f), (-0.237f, -0.123f, 0.09f, 0.15f), (-0.223f, -0.137f, 0.09f, 0.15f) }),
+		};
+		foreach ( var (trailing, fall, expected) in cases )
+		{
+			var output = new WeatherVertex[6];
+			Assert.AreEqual( 6, WeatherVisualState.WriteStreak( trailing, fall, output ) );
+			var fan = new[] { output[0], output[1], output[2], output[5] };
+			for ( var corner = 0; corner < 4; corner++ )
+			{
+				Assert.AreEqual( expected[corner].X, fan[corner].Position.X, 2e-5f, $"{trailing} vertex {corner} x" );
+				Assert.AreEqual( expected[corner].Y, fan[corner].Position.Y, 2e-5f, $"{trailing} vertex {corner} y" );
+				Assert.AreEqual( expected[corner].Z, fan[corner].Position.Z, 2e-5f, $"{trailing} vertex {corner} z" );
+				Assert.AreEqual( expected[corner].W, fan[corner].W, 2e-5f, $"{trailing} vertex {corner} w" );
+			}
+		}
+		Assert.AreEqual( 0, WeatherVisualState.WriteStreak( new NVector3( 0.1f, 0.1f, 0f ), new NVector3( 0, -0.1f, 0 ), new WeatherVertex[6] ), "a trailing end at or behind the eye is not drawn" );
+		Assert.AreEqual( 6, WeatherVisualState.WriteStreak( new NVector3( 0.1f, 0.1f, 0.02f ), new NVector3( 0, 0, -0.1f ), new WeatherVertex[6] ), "the leading end is not tested: it may lie behind the eye" );
 	}
 
 	[TestMethod]
@@ -239,26 +276,58 @@ public class WeatherVisualTests
 		var vertices = new WeatherVertex[WeatherVisualState.FieldSize * 6];
 		var count = state.WriteSnow( Eye, vertices );
 		Assert.IsTrue( count > 0 && count % 3 == 0 );
-		// [BIN:TPW-EXE:0x57f490] one triangle a flake: the apex at the top middle of the quadrant, the base at its lower corners
+		// [BIN:TPW-EXE:0x57f490] one triangle a flake: the apex above the centre, the base at the lower corners, OpenTPW's upright v running down the original's
 		for ( var flake = 0; flake < count; flake += 3 )
 		{
 			var (apex, right, left) = (vertices[flake], vertices[flake + 1], vertices[flake + 2]);
 			Assert.AreEqual( 1f, apex.Grey, "full white" );
 			Assert.AreEqual( 1f, apex.Alpha );
-			Assert.AreEqual( 2 * WeatherVisualState.SnowHalfSize, (right.Position - left.Position).X, 1e-5f, "base 2h wide" );
-			Assert.AreEqual( 2 * WeatherVisualState.SnowHalfSize, apex.Position.Y - left.Position.Y, 1e-5f, "2h tall" );
+			var aspect = 0.75f;
+			Assert.AreEqual( 2 * WeatherVisualState.SnowHalfSize * aspect, (right.Position - left.Position).X, 1e-5f, "base 2 h a wide in clip x: the display's height over its width keeps the flake square on the screen" );
+			Assert.AreEqual( 2 * WeatherVisualState.SnowHalfSize, left.Position.Y - apex.Position.Y, 1e-5f, "2h tall in clip y, which runs down" );
 			Assert.AreEqual( (right.Position.X + left.Position.X) / 2, apex.Position.X, 1e-5f, "the apex above the base's middle" );
+			Assert.AreEqual( apex.W, right.W );
+			Assert.AreEqual( apex.W - WeatherVisualState.SnowProjectionBias + WeatherVisualState.SnowDepthBias, apex.Position.Z, 1e-5f, "z is the depth + 0.1 and w the depth + 0.1501" );
 			var corner = left.TexCoords;
-			Assert.IsTrue( corner is { X: 0f or 0.5f, Y: 0.5f or 1f }, "the lower left corner of an atlas quadrant" );
+			Assert.IsTrue( corner is { X: 0f or 0.5f, Y: 0f or 0.5f }, "the upper left corner of an atlas quadrant" );
 			Assert.AreEqual( new System.Numerics.Vector2( corner.X + 0.5f, corner.Y ), right.TexCoords );
-			Assert.AreEqual( new System.Numerics.Vector2( corner.X + 0.25f, corner.Y - 0.5f ), apex.TexCoords );
-			Assert.IsTrue( apex.Position.Z > 0 );
+			Assert.AreEqual( new System.Numerics.Vector2( corner.X + 0.25f, corner.Y + 0.5f ), apex.TexCoords, "the apex at the quadrant's lower middle" );
 		}
 		var first = vertices[0];
 		state.Update( 0.016f, new Source { DropCount = 8, Snow = true }, Eye );
 		var again = new WeatherVertex[WeatherVisualState.FieldSize * 6];
 		state.WriteSnow( Eye, again );
 		Assert.AreNotEqual( first.Position, again[0].Position, "a flake moves each frame" );
+	}
+
+	[TestMethod]
+	public void SnowFlakesMatchTheOriginalsVertexSubmitForAnExplicitPosition()
+	{
+		// [BIN:TPW-EXE:0x57f490 flake vertices] reference values run on the original's own code with an identity camera, the aspect word 0.75, flake index 0 (static analysis only: tp.exe is never run): the jittered camera-space position, then the three vertices (x, y, z, w)
+		var cases = new (NVector3 Position, (float X, float Y, float Z, float W)[] Vertices)[]
+		{
+			(new( 1.001953f, 0.501953f, 2.001953f ), new[] { (1.252686f, -0.727564f, 2.101953f, 2.152053f), (1.327686f, -0.527564f, 2.101953f, 2.152053f), (1.177686f, -0.527564f, 2.101953f, 2.152053f) }),
+			(new( -0.498047f, -0.248047f, 1.001953f ), new[] { (-0.560424f, 0.179113f, 1.101953f, 1.152053f), (-0.485424f, 0.379113f, 1.101953f, 1.152053f), (-0.635424f, 0.379113f, 1.101953f, 1.152053f) }),
+			(new( 2.001953f, -1.498047f, 3.901953f ), new[] { (2.978394f, 2.128711f, 4.001953f, 4.052053f), (3.053394f, 2.32871f, 4.001953f, 4.052053f), (2.903394f, 2.32871f, 4.001953f, 4.052053f) }),
+			(new( 0.201953f, 3.001953f, 0.501953f ), new[] { (0.214625f, -3.290308f, 0.601953f, 0.652053f), (0.289625f, -3.090308f, 0.601953f, 0.652053f), (0.139625f, -3.090308f, 0.601953f, 0.652053f) }),
+		};
+		foreach ( var (position, expected) in cases )
+		{
+			var output = new WeatherVertex[3];
+			Assert.AreEqual( 3, WeatherVisualState.WriteFlake( position, 0, 0.75f, output ) );
+			for ( var corner = 0; corner < 3; corner++ )
+			{
+				Assert.AreEqual( expected[corner].X, output[corner].Position.X, 2e-5f, $"{position} vertex {corner} x" );
+				Assert.AreEqual( expected[corner].Y, output[corner].Position.Y, 2e-5f, $"{position} vertex {corner} y" );
+				Assert.AreEqual( expected[corner].Z, output[corner].Position.Z, 2e-5f, $"{position} vertex {corner} z" );
+				Assert.AreEqual( expected[corner].W, output[corner].W, 2e-5f, $"{position} vertex {corner} w" );
+			}
+		}
+		// the base half-width is h x the aspect word: at 16:9 (0.5625) the base is narrower in clip x, the same on the screen
+		var wide = new WeatherVertex[3];
+		WeatherVisualState.WriteFlake( new NVector3( 0, 0, 1 ), 0, 0.5625f, wide );
+		Assert.AreEqual( 2 * 0.1f * 0.5625f, wide[1].Position.X - wide[2].Position.X, 1e-6f );
+		Assert.AreEqual( 0, WeatherVisualState.WriteFlake( new NVector3( 0, 0, 0 ), 0, 0.75f, wide ), "a flake at or behind the eye is not drawn" );
 	}
 
 	[TestMethod]
@@ -307,7 +376,7 @@ public class WeatherVisualTests
 			var offset = state.DropOffset( index );
 			if ( offset.Z <= 0 )
 				continue;
-			var centre = new NVector3( vertices[quad * 3].Position.X, (vertices[quad * 3].Position.Y + vertices[quad * 3 + 1].Position.Y) / 2, vertices[quad * 3].Position.Z );
+			var centre = new NVector3( vertices[quad * 3].Position.X, -vertices[quad * 3].Position.Y - WeatherVisualState.SnowHalfSize, vertices[quad * 3].W );
 			var spread = 1f + offset.Z / WeatherVisualState.SnowSpreadDepth;
 			Assert.AreEqual( offset.X * spread, centre.X, 0.03f, $"flake {index} x" );
 			Assert.AreEqual( offset.Y * spread, centre.Y, 0.03f, $"flake {index} y" );

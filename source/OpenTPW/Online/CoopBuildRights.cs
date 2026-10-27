@@ -13,7 +13,8 @@ namespace OpenTPW;
 /// <item>C3b-3: the pool tools' batches of a stroke (<see cref="PoolCellsCommand"/>, <see cref="LayPoolSlidePiecesCommand"/>), a bridge, the last piece of an unfinished slide back,
 /// Backspace over a bridge or a pool cell, and slide towers, which a guest now places and removes as any object;</item>
 /// <item>C3c-1: a track ride's claim (<see cref="ClaimRideCommand"/>) and the track commands of the ride whose claim the guest holds; the release of its own claim
-/// (<see cref="ReleaseRideCommand"/>), which every guest seat may issue, granted or not; bumper rides, which a guest now places (their queue tool follows).</item>
+/// (<see cref="ReleaseRideCommand"/>), which every guest seat may issue, granted or not; bumper rides, which a guest now places (their queue tool follows); and since C3c-1b kart and
+/// water rides, whose track tool follows through the claim.</item>
 /// </list>
 /// [EXT:online-coop-claims] A claim guards its ride against every other player, the host included (<see cref="LeavesClaimsAlone"/>): its track, its sale, its removal and its pick-up,
 /// its demolition by a placement, an add-on on it, its queue's lines, edit and cells, and the path cell its back joins. For a guest a coaster counts as claimed until a guest's coaster
@@ -42,22 +43,34 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	internal const string NotGrantedReason = "The host has not let this player build.";
 
 	/// <summary>
+	/// [EXT:online-coop-claims] The reason these rights give for a guest's track command on a ride whose claim it does not hold and no other seat holds (<see cref="RefusalReason"/>): the host let
+	/// it go (the guest left for 30 seconds, or sent nothing on the ride for 5 minutes), and the guest's tool ends (C3c-1b).
+	/// </summary>
+	internal const string ClaimLostReason = "This player no longer edits this ride.";
+
+	/// <summary>
 	/// The reason these rights give for a refusal of <paramref name="command"/> of <paramref name="player"/>, read where and when it is refused: [EXT:online-coop-claims] another player's claim
-	/// (<see cref="Level.ClaimedReason"/>), or [EXT:online-coop-permissions] a guest's building the host has not granted it (<see cref="NotGrantedReason"/>), which the HUD says in its own
-	/// words; null for what only the host does, which keeps the generic reason.
+	/// (<see cref="Level.ClaimedReason"/>), a guest's track command on a ride whose claim it no longer holds (<see cref="ClaimLostReason"/>, C3c-1b), or [EXT:online-coop-permissions] a guest's
+	/// building the host has not granted it (<see cref="NotGrantedReason"/>), which the HUD says in its own words; null for what only the host does, which keeps the generic reason.
 	/// </summary>
 	public string? RefusalReason( int player, ParkCommand command ) => player == ParkCommands.LocalPlayer
 		? !IsHostCleanup( command ) && !LeavesClaimsAlone( player, command ) ? Level.ClaimedReason : null
 		: player <= 0 || !Builds( command ) ? null
 		: !level.HasBuildGrant( player ) ? NotGrantedReason
-		: !LeavesClaimsAlone( player, command ) ? Level.ClaimedReason : null;
+		: !LeavesClaimsAlone( player, command ) ? Level.ClaimedReason
+		: !HoldsClaimFor( player, command ) ? ClaimLostReason : null;
 
 	/// <summary>
 	/// [EXT:online-coop-claims] What a refusal by these rights says to its player, from the refusal's <paramref name="reason"/> as the rights gave it where and when the command was refused
-	/// (<see cref="RefusalReason"/>): another player's claim, building the host has not granted, or what only the host does.
+	/// (<see cref="RefusalReason"/>): another player's claim, a claim the player no longer holds, building the host has not granted, or what only the host does.
 	/// </summary>
-	internal static CoopRefusal RefusalOf( string? reason ) =>
-		reason == Level.ClaimedReason ? CoopRefusal.Claimed : reason == NotGrantedReason ? CoopRefusal.NotGranted : CoopRefusal.HostOnly;
+	internal static CoopRefusal RefusalOf( string? reason ) => reason switch
+	{
+		Level.ClaimedReason => CoopRefusal.Claimed,
+		ClaimLostReason => CoopRefusal.ClaimLost,
+		NotGrantedReason => CoopRefusal.NotGranted,
+		_ => CoopRefusal.HostOnly
+	};
 
 	/// <summary>[EXT:online-coop-claims] The host's cleanup, which no claim refuses: its release of any claim, a departed seat's release and the grants.</summary>
 	private static bool IsHostCleanup( ParkCommand command ) => command is ReleaseRideCommand or ReleaseSeatCommand or SetBuildGrantCommand;
@@ -119,11 +132,13 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	internal bool LeavesClaimsAlone( int player, ParkCommand command ) => !CanBeClaimedAgainst( player ) || command switch
 	{
 		// a claimed ride's queue lines and their undo; no line crosses its cells (a path line paves a queue end), and no queue line takes the path cell its back joins (the queue writers
-		// lay queue over path); an undo takes the cells its line built off again and counts down the ones it crossed
+		// lay queue over path); an undo takes the cells its line built off again, which may take a queue's link off; a path line's undo only counts down the ones it crossed
+		// (ParkPathBuilder.Undo), which takes no link off, so those are asked for themselves alone, and a queue line's undo leaves them as they are (QueueLineWriter.Undo)
 		LayLineCommand line => (line.Mode != CellToolMode.Queue || !ClaimedRide( player, line.Ride ))
 			&& !CrossesClaimedQueue( player, line.StartX, line.StartY, line.EndX, line.EndY, joins: line.Mode == CellToolMode.Queue, endOnPathLinks: line.Mode == CellToolMode.Queue ),
 		UndoLineCommand undo => (undo.Mode != CellToolMode.Queue || !ClaimedRide( player, undo.Ride ))
-			&& !TouchesClaimedQueue( player, undo.Built.Concat( undo.Existing ).ToArray(), joins: true ),
+			&& !TouchesClaimedQueue( player, undo.Built.ToArray(), joins: true )
+			&& (undo.Mode == CellToolMode.Queue || !TouchesClaimedQueue( player, undo.Existing.ToArray(), joins: false )),
 		QueueSegmentCommand line => !ClaimedRide( player, line.Ride ) && !CrossesClaimedQueue( player, line.StartX, line.StartY, line.EndX, line.EndY, joins: true ),
 		UndoQueueSegmentCommand undo => !ClaimedRide( player, undo.Ride ) && !CrossesClaimedQueue( player, undo.StartX, undo.StartY, undo.EndX, undo.EndY, joins: true ),
 		// no add-on on a claimed ride, nor a placement that demolishes what is claimed or writes over a claimed ride's queue or the path cell its back joins
@@ -148,9 +163,23 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		PlacePoolBridgeCommand bridge => !BridgeTouchesClaimedQueue( player, new PoolBridge( bridge.X, bridge.Y, bridge.Direction, 0 ) ),
 		RemovePoolBridgeCommand bridge => level.PoolBridges?.At( bridge.X, bridge.Y ) is not { } standing || !BridgeTouchesClaimedQueue( player, standing ),
 		RemovePrototypeCommand => level.PlacedRide is not { IsDeleted: false } prototype || !ClaimedAgainst( player, prototype ),
+		// a track line of a ride another seat claims, and one whose tiles lie over the path cell a claimed queue joins: a tile laid over path clears it, which takes the link of the queue's
+		// back cell off and re-evaluates its entrance (TrackBuilder.ClearPath), as a path removal does
+		LayTrackLineCommand line => !level.ClaimedAgainst( player, line.Ride ) && !TrackLineJoinsClaimedQueue( player, line ),
 		// the track commands of a ride another seat claims
 		_ => TrackRide( command ) is not { } ride || !level.ClaimedAgainst( player, ride )
 	};
+
+	/// <summary>
+	/// Whether <paramref name="line"/> of <paramref name="player"/> lays a tile over a path cell the queue of a ride claimed against that player joins (<see cref="JoinsClaimedQueue"/>): its tiles
+	/// as the line writer lays them (<see cref="TrackLineWriter.LayLine"/> to its snapped end), each over its four cells.
+	/// </summary>
+	private bool TrackLineJoinsClaimedQueue( int player, LayTrackLineCommand line )
+	{
+		var start = (line.StartX, line.StartY);
+		return TrackLineWriter.LayLine( start, TrackLineWriter.SnapEnd( start, (line.EndX, line.EndY) ) )
+			.SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ).Any( cell => JoinsClaimedQueue( player, cell.X, cell.Y ) );
+	}
 
 	/// <summary>
 	/// Whether <paramref name="player"/> may remove <paramref name="item"/> inside a command that removes what it finds (the area clear): the host what no other player claims, a granted
@@ -174,15 +203,15 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// </summary>
 	internal static bool GuestMayRemove( ObjectCatalogEntry entry ) => !entry.IsFixedItem;
 
-	/// <summary>Whether a granted guest may place <paramref name="entry"/>: not a track add-on (the track tools are the host's) and not a ride whose own tool follows its placement.</summary>
+	/// <summary>Whether a granted guest may place <paramref name="entry"/>: not a track add-on (the track add-ons are the host's, C3c-2) and not a ride whose own tool follows its placement.</summary>
 	internal static bool GuestMayPlace( ObjectCatalogEntry entry ) => !TrackAddOns.IsTrackAddOn( entry ) && !OwnToolFollows( entry );
 
 	/// <summary>
-	/// Whether a placed <paramref name="entry"/> opens a tool of its own that no guest's request carries yet (<c>ParkHud.FinishPlacement</c>): a coaster's track (C3c-2), a kart or water ride's
-	/// track (C3c-1b). A bumper ride lays no track, and its queue tool follows its placement (C3c-1); a slide tower's slide mode is a guest's since C3b-3: it lays its pieces in batches.
+	/// Whether a placed <paramref name="entry"/> opens a tool of its own that no guest's request carries yet (<c>ParkHud.FinishPlacement</c>): a coaster's track (C3c-2). A kart or water ride's
+	/// track tool follows a guest's placement through the ride's claim (C3c-1b), a bumper ride lays no track and its queue tool follows (C3c-1), and a slide tower's slide mode is a guest's since
+	/// C3b-3: it lays its pieces in batches.
 	/// </summary>
-	internal static bool OwnToolFollows( ObjectCatalogEntry entry ) => CoasterDefinition.IsCoaster( entry.Settings )
-		|| (entry.Settings.GetInt( "Bumper.WhichTrackType" ) is 1 or 2 && BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) != null);
+	internal static bool OwnToolFollows( ObjectCatalogEntry entry ) => CoasterDefinition.IsCoaster( entry.Settings );
 
 	/// <summary>Whether anything can be claimed against <paramref name="player"/>: for a guest always (a coaster is the host's until C3c-2), for the host while another seat holds a claim.</summary>
 	private bool CanBeClaimedAgainst( int player ) => player != ParkCommands.LocalPlayer || level.HasClaimsAgainst( player );
@@ -301,4 +330,6 @@ internal enum CoopRefusal
 	NotGranted,
 	/// <summary>[EXT:online-coop-claims] An edit of a ride another player claims (C3c-1).</summary>
 	Claimed,
+	/// <summary>[EXT:online-coop-claims] A guest's edit of a ride whose claim the host let go: its track tool ends (C3c-1b).</summary>
+	ClaimLost,
 }

@@ -603,11 +603,14 @@ public sealed partial class ParkHud
 			PostMessage( strings.Extra( OpenTpwText.PoolSlideHint ) );
 			return;
 		}
-		// a placed kart or water ride enters its track tool (tool mode 11 or 16) at its station with its queue start pending; the queue tool follows once the circuit is valid (Level.ContinueTrackTool)
-		if ( item.Runtime.Bump != null && level.EnterPlacedTrackTool( item ) )
+		// a placed kart or water ride enters its track tool (tool mode 11 or 16) at its station with its queue start pending; the queue tool follows once the circuit is valid (Level.ContinueTrackTool);
+		// [EXT:online-coop-claims] a guest's tool starts once its claim is back, with the tool's help then (C3c-1b), and no queue tool follows the placement meanwhile, nor after another
+		// player's claim refused the tool: that ride's queue is that player's while its track tool is on it
+		if ( item.Runtime.Bump != null && level.EnterPlacedTrackTool( item ) is var track and not TrackToolEntry.None )
 		{
 			level.ResetBuildRotation();
-			PostMessage( TrackToolHelp );
+			if ( track == TrackToolEntry.Entered )
+				PostMessage( TrackToolHelp );
 			return;
 		}
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride (type record +64) enters tool mode 3, the queue tool (PATH-plan §8); park clicks lay its queue until Back
@@ -877,6 +880,7 @@ public sealed partial class ParkHud
 	{
 		level.WorldPointerRouted = false;
 		level.ParkOwnsRelease = false;
+		frameHostStarts = level.HostToolStarts;
 		UpdatePausingBoxes();
 		// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
 		if ( level.WaitingToolStart != null && !level.NoToolActive )
@@ -1131,6 +1135,12 @@ public sealed partial class ParkHud
 	/// <summary>[EXT:online-coop-commands] <see cref="Level.HostToolStarts"/> when the last left press was taken (null: no press seen): a tool a guest's request starts when the host's answer comes back in between (CompleteMove, CompleteQueueEdit) takes no click from that press's release.</summary>
 	private int? pressHostStarts;
 
+	/// <summary>
+	/// [EXT:online-coop-commands] <see cref="Level.HostToolStarts"/> at the start of this frame, before the host's answers moved any tool: a press first seen in a frame whose answers started or moved
+	/// a tool was made while the player saw the tool as it was, so its release is no click of the tool as it is now (C3c-1b).
+	/// </summary>
+	private int frameHostStarts;
+
 	/// <summary>The release played the refusal cue (0xAF) for a refused build click: its "Cannot build" message follows without the error feedback of <see cref="SayCannotBuild"/>.</summary>
 	private bool buildRefusalCue;
 
@@ -1215,8 +1225,9 @@ public sealed partial class ParkHud
 		if ( input.LeftReleased && leftOwned || input.RightReleased && rightOwned )
 			overUi = consumed = false;
 		// a release the platform made up (a browser blur) ends the press without a click: the tools see no release, the latches and the press' choices end with it
-		// [EXT:online-coop-commands] a guest's Move pick-up or queue edit that the host's answer started between this press and its release: the release is not a click of the tool it started (tp.exe's release
-		// needs no press, 0x46C610, but the guest's click came before the tool existed); every other tool armed in between takes the release as the original does, with no cue (the press latch was not set)
+		// [EXT:online-coop-commands] a guest's Move pick-up, queue edit or track tool that the host's answer started between this press and its release, or a line, cut or track Backspace whose
+		// outcome moved its tool on meanwhile (C3c-1b): the release is not a click of that tool (tp.exe's release needs no press, 0x46C610, but the guest's click came before the tool was as it is
+		// now); every other tool armed in between takes the release as the original does, with no cue (the press latch was not set)
 		var hostStartedSincePress = input.LeftReleased && leftOwned && pressHostStarts is { } started && started != level.HostToolStarts;
 		var lostRelease = input.LeftReleased && leftOwned && input.LeftReleaseLost;
 		input = input with { LeftReleased = input.LeftReleased && leftOwned && !input.LeftReleaseLost && !hostStartedSincePress, RightClicked = input.RightClicked && rightOwned };
@@ -1243,7 +1254,7 @@ public sealed partial class ParkHud
 		if ( input.LeftPressed && parkView && !mouseCaptured )
 		{
 			LatchToolPress();
-			pressHostStarts = level.HostToolStarts;
+			pressHostStarts = frameHostStarts;
 		}
 		// A right click leaves a build tool that Ctrl kept armed (and one still waiting for its first click).
 		if ( parkRightClick && !paused && level.BuildEntry != null && !toolClick )
@@ -1489,10 +1500,11 @@ public sealed partial class ParkHud
 		}
 		if ( input.Backspaces > 0 )
 		{
-			// [EXT:online-coop-commands] a guest's Backspace takes nothing back: its lines are the host's to undo, and one that waits for the host is not laid yet (C3a-2)
-			if ( level.Commands.SendsRequests && tool.Waiting != null )
+			// [EXT:online-coop-commands] a guest's Backspace in the path or queue tool takes nothing back: its lines are the host's to undo (C3a-2); in its track tool it goes to the host, one at
+			// a time, under the ride's claim (C3c-1b); a line or Backspace that waits for the host is not done yet
+			if ( level.Commands.SendsRequests && tool.IsWaiting )
 				level.NoteWaitingClick();
-			else if ( level.Commands.SendsRequests && tool.SegmentCount > 0 )
+			else if ( level.Commands.SendsRequests && tool.SegmentCount > 0 && tool.Writer is { CanUndo: false } )
 				SayGuestNote( OpenTpwText.CoopGuestUndo );
 			else
 				tool.Undo();
@@ -1509,8 +1521,8 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x524960 line click] every line click of the tool object is its release handler's: the press (0x524790) only sets the latch
 		if ( !input.LeftReleased )
 			return false;
-		// [EXT:online-coop-commands] a guest's line that waits for the host takes no other click (C3a-2)
-		if ( tool.Waiting != null )
+		// [EXT:online-coop-commands] a guest's line or track Backspace that waits for the host takes no other click (C3a-2, C3c-1b)
+		if ( tool.IsWaiting )
 		{
 			pendingPathEntry = false;
 			level.NoteWaitingClick();

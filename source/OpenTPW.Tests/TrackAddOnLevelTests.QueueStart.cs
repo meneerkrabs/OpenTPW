@@ -17,7 +17,7 @@ public partial class TrackAddOnLevelTests
 		var (level, ride, _) = World( hasQueue: true, laid: false, extra );
 		AttachTrackEconomy( level, ride );
 		WithQueue( ride );
-		Assert.IsTrue( level.EnterPlacedTrackTool( ride ) );
+		Assert.AreEqual( TrackToolEntry.Entered, level.EnterPlacedTrackTool( ride ) );
 		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode );
 		Assert.AreEqual( (14, 10), level.CellTool.Start, "the line starts at the station's exit" );
 		return (level, ride);

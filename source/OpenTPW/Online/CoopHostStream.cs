@@ -475,7 +475,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		var number = nextStream++;
 		// [EXT:online-coop-claims] a guest's claim, and every accepted command of its holder naming its ride, renews the claim's lease
 		if ( result.Accepted && entry.Command.Player > 0 && RideNamedBy( entry.Command ) is { } claimed && level.ClaimOf( claimed ) == entry.Command.Player )
-			claimLeases[claimed] = seconds();
+			claimLeases[claimed] = guestCommandsSeconds;
 		// [EXT:online-coop-commands] a guest's command carries its origin, so its issuer knows the record that answers its request
 		var origin = applyingOrigin;
 		if ( origin != null )
@@ -812,6 +812,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// </summary>
 	private void ApplyGuestCommands( double now )
 	{
+		// [EXT:online-coop-claims] the frame's clock, which a guest's command renews its claim's lease with and the expiry reads (C3c-1)
+		guestCommandsSeconds = now;
 		// [EXT:online-coop-commands] the seats whose member left or changed since the last frame, and any guest seat that still carries something without a member (C3b-2) or
 		// [EXT:online-coop-claims] still holds a claim without one (C3c-1); a link without its session's state (between a lost socket and its resume) shows no seat, so the seats wait for
 		// its next state instead of all counting as left
@@ -853,6 +855,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		// [EXT:online-coop-claims] after the guests' commands, so a claim a late frame's queued command took is checked in that same frame (C3c-1)
 		ExpireClaims( now );
 	}
+
+	/// <summary>[EXT:online-coop-claims] The clock of the frame whose guest commands apply (<see cref="ApplyGuestCommands"/>): the time a guest's command renews its claim's lease at.</summary>
+	private double guestCommandsSeconds;
 
 	/// <summary>[EXT:online-coop-claims] How long a guest seat's member may be read disconnected before the host lets go of its claim (C3c-1).</summary>
 	public const double ClaimDisconnectedSeconds = 30;

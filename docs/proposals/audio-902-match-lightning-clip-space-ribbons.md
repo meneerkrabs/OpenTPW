@@ -1,5 +1,13 @@
 # AUDIO-902: Match lightning clip-space ribbons
 
+## 2026-10-27 current-source supersession
+
+This qualification supersedes the historical residual and future-work instructions below. Public main `eb8e3d2018eeeb726b5143caf51f75ce9f0681e1` includes merged [PR #874](https://github.com/meneerkrabs/OpenTPW/pull/874); [AUDIO.md](https://github.com/meneerkrabs/OpenTPW/blob/eb8e3d2018eeeb726b5143caf51f75ce9f0681e1/docs/AUDIO.md#L693-L707) retires AUDIO-902 and records the projection, mitred joins and quad order. This reconciliation reads public code and its evidence annotations; it does not repeat their original-instruction analysis.
+
+[WeatherBoltRibbon](https://github.com/meneerkrabs/OpenTPW/blob/eb8e3d2018eeeb726b5143caf51f75ce9f0681e1/source/OpenTPW/World/Weather/WeatherBoltRibbon.cs#L13-L109) now keeps per-depth projected corners/directions, emits joins and the closing cap, and supplies the ordered quad. [WeatherRenderer](https://github.com/meneerkrabs/OpenTPW/blob/eb8e3d2018eeeb726b5143caf51f75ce9f0681e1/source/OpenTPW/World/Weather/WeatherRenderer.cs#L134-L139) projects each bolt point; its `AddBolt` path consumes those quads rather than creating unjoined world-facing quads. The proposal's missing implementation/projection/winding claims are superseded. The half-width is 1.3/(branch depth + 1) in clip units, with screen width additionally divided by w; it is not constant pixel width at different camera distances.
+
+[WeatherClipTests](https://github.com/meneerkrabs/OpenTPW/blob/eb8e3d2018eeeb726b5143caf51f75ce9f0681e1/source/OpenTPW.Tests/WeatherClipTests.cs#L11-L147) already contains trunk/branch/repeated-point, clip-width and emitter-order fixtures. They were not run here, and their checked-in vectors are not a fresh original-runtime capture or GPU seam/winding acceptance. Additional backend/render-capture qualification remains separate evidence work, not a reason to repeat the old implementation plan or restore AUDIO-902. This historical proposal is not made merge-ready by this note, which requests no PR state change.
+
 ## Status and classification
 - Classification: approximation.
 - Plan-only local proposal: no runtime implementation, annotation retirement, publication or merge performed.

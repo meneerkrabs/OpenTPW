@@ -118,13 +118,13 @@ public partial class CoopSessionTests
 		Assert.AreEqual( before + 1, Numbered( guest ), "one request went" );
 		Assert.AreEqual( (target, target), (guest.Economy.Research.Effort[0], host.Economy.Research.Effort[0]) );
 		Assert.AreEqual( target, slider.Value() );
-		// without the right: the rights' note once for the run, and nothing queued or sent
+		// without the right: the rights' note once for the run, through the session's notes and never the session's immediate path (C4b-2), and nothing queued or sent
 		GiveRights( host, guest, view, CoopRights.Finance );
 		var refusals = guest.Level.SessionRefusals;
 		foreach ( var step in new[] { 50, 51, 52 } )
 			slider.Changed!( step );
 		view.Update();
-		Assert.AreEqual( refusals + 3, guest.Level.SessionRefusals );
+		Assert.AreEqual( refusals, guest.Level.SessionRefusals );
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ), "said once for the run" );
 		Assert.AreEqual( 0, Management( guest ).Pending.Count() );
 		Assert.AreEqual( target, slider.Value(), "the park's value" );
@@ -367,11 +367,13 @@ public partial class CoopSessionTests
 		GiveRights( host, guest, view, CoopRights.Finance );
 		OpenLoans( host, guest, view );
 		var loans = guest.Economy.Loans.Count;
+		var live = LiveWaiters( guest );
 		Element<UiElement>( view, "loanList" ).Activate();
 		Assert.IsFalse( Element<UiLabel>( view, "message" ).Unclipped?.Invoke() ?? false, "the original loan question keeps its clip" );
 		Element<UiButton>( view, "choice0" ).Activate();
 		Assert.IsTrue( Element<UiLabel>( view, "message" ).Unclipped?.Invoke() ?? false, "the co-op waiting line is not cut off" );
 		Assert.AreEqual( "loanConfirm", Top( view ), "it waits for the host" );
+		Assert.AreEqual( live + 1, LiveWaiters( guest ), "the confirmation waits with its own waiter" );
 		StringAssert.Contains( Element<UiLabel>( view, "message" ).Text!(), view.Strings.Extra( OpenTpwText.CoopWaitingForHost ) );
 		// its buttons are inert while it waits
 		Element<UiButton>( view, "choice1" ).Activate();
@@ -379,6 +381,7 @@ public partial class CoopSessionTests
 		Assert.AreEqual( ("loanConfirm", 1), (Top( view ), Management( guest ).Pending.Count()) );
 		UntilManaged( host, guest, view );
 		Assert.AreEqual( "loans", Top( view ), "accepted: it closed" );
+		Assert.AreEqual( live, LiveWaiters( guest ), "the confirmation's waiter, taken, is gone" );
 		Assert.AreEqual( (loans + 1, loans + 1), (guest.Economy.Loans.Count, host.Economy.Loans.Count) );
 		Assert.AreEqual( 0, view.Hud.Messages.Count, "an accepted action says nothing" );
 		CatchUpAndCompare( host, guest );
@@ -432,9 +435,11 @@ public partial class CoopSessionTests
 		Confirm( view );
 		SendNext( guest );
 		Assert.IsTrue( host.Issue( new SetSeatRightsCommand( seat, CoopRights.None ) ).Accepted );
+		var live = LiveWaiters( guest );
 		UntilManaged( host, guest, view );
 		Assert.AreEqual( "loanFailure", Top( view ) );
 		Assert.AreEqual( view.Strings.Extra( OpenTpwText.CoopNotPermitted ), Element<UiLabel>( view, "message" ).Text!() );
+		Assert.AreEqual( live - 1, LiveWaiters( guest ), "a refused confirmation's waiter, taken, is gone too" );
 		view.Escape();
 		Assert.AreEqual( "loans", Top( view ), "Back returns to the loans window, never to a waiting confirmation" );
 		// the host could not take it (its bucket of the guest's requests ran dry): not taken, and the player tries again
@@ -483,9 +488,10 @@ public partial class CoopSessionTests
 		Element<UiButton>( view, "outstanding" ).Activate();
 		view.Update();
 		Alike( host, guest, Spend );
-		var refusals = guest.Level.SessionRefusals;
 		Element<UiElement>( view, "loanList" ).Activate();
-		Assert.AreEqual( ("loans", refusals + 1), (Top( view ), guest.Level.SessionRefusals), "the rights' note, no funds dialog" );
+		Assert.AreEqual( ("loans", ManagementNoteKind.Rights), (Top( view ), Management( guest ).PeekNote()?.Note.Kind), "the rights' note, no funds dialog" );
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ) );
 		// the right taken back between the repay's confirmation opening and its Yes: the rights' note, and nothing sent
 		Alike( host, guest, Earn );
 		GiveRights( host, guest, view, CoopRights.Finance );
@@ -496,9 +502,11 @@ public partial class CoopSessionTests
 		Element<UiElement>( view, "loanList" ).Activate();
 		Assert.AreEqual( "loanConfirm", Top( view ) );
 		GiveRights( host, guest, view, CoopRights.None );
-		refusals = guest.Level.SessionRefusals;
+		view.Pass( ParkHud.MessageSeconds + 1 );
 		Element<UiButton>( view, "choice0" ).Activate();
-		Assert.AreEqual( ("loans", refusals + 1, before), (Top( view ), guest.Level.SessionRefusals, Numbered( guest )) );
+		Assert.AreEqual( ("loans", ManagementNoteKind.Rights, before), (Top( view ), Management( guest ).PeekNote()?.Note.Kind, Numbered( guest )) );
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ) );
 		// the right taken back after a Yes whose repay waits behind an open refresh: the confirmation closes with the rights' failure dialog, one message
 		GiveRights( host, guest, view, CoopRights.Finance );
 		view.Pass( ParkHud.MessageSeconds + 1 );
@@ -977,5 +985,120 @@ public partial class CoopSessionTests
 		SteppedRounds( 240, host, first, second );
 		CutAndCompare( host, first, second );
 		Assert.AreEqual( (CoopRights.Finance | CoopRights.Build, CoopRights.Research), (second.Level.RightsOf( one ), first.Level.RightsOf( two )), "every peer holds every seat's rights" );
+	}
+
+	/// <summary>A researcher and the ride's next level researched, alike on every peer before the session starts (as <c>ParkCommandLevelTests.ResearchedRide</c> does).</summary>
+	private static void ResearchedRide( Park park )
+	{
+		EconomyTestData.HireBest( park.Economy, StaffType.Researcher );
+		park.Economy.SetResearchEffort( ResearchCategory.Ride, 0 );
+		for ( var day = 0; day < 100 && !park.Economy.Research.IsAvailable( 1100, 1 ); day++ )
+			park.Economy.AdvanceDays( 1 );
+		Assert.IsTrue( park.Economy.Research.IsAvailable( 1100, 1 ) );
+	}
+
+	/// <summary>One peer's money at a frame's end: its tick, balance, the month's ledger lines and the ride's pending level and total spent.</summary>
+	private sealed record MoneyFrame( long Tick, long Balance, (LedgerCategory Key, long Value)[] Lines, int PendingLevel, long TotalSpent )
+	{
+		public long Line( LedgerCategory category ) => Lines.Where( line => line.Key == category ).Select( line => line.Value ).SingleOrDefault();
+
+		/// <summary>The balance's change since <paramref name="before"/> that the lines' changes explain: incomes up, every other line down.</summary>
+		public long LineChange( MoneyFrame before ) => Lines.Sum( line => (ParkLedger.IsIncome( line.Key ) ? 1 : -1) * (line.Value - before.Line( line.Key )) );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] [EXT:online-coop-money] A guest with the attractions right changes a shop's price and buys a ride's next level through its queue while the host changes rights
+	/// (C4b-2): the record debits nothing, the installation charges the level's cost once, at the same tick on every peer, and every peer's money stays equal at the cuts.
+	/// </summary>
+	[TestMethod]
+	public void AGuestsPriceAndPurchasedLevelKeepEveryPeersMoneyEqualFromTheRecordThroughTheInstallationWhileTheHostChangesRights()
+	{
+		var shops = new Dictionary<Park, int>();
+		var (host, first, second) = SharedWithTwo( ( park, isHost ) =>
+		{
+			Bankable( park, isHost );
+			shops[park] = AddPriced( park, shop: true, 20 ).Runtime.AttractionId;
+			ResearchedRide( park );
+		} );
+		var peers = new[] { host, first, second };
+		Rounds( 20, host, first, second );
+		var (one, two) = (first.Level.Commands.Player, second.Level.Commands.Player);
+		Assert.IsTrue( host.Issue( new SetSeatRightsCommand( one, CoopRights.Attractions ) ).Accepted );
+		CutAndCompare( host, first, second );
+		var ride = host.One.Runtime.AttractionId;
+		var rideStates = peers.ToDictionary( park => park, park => StateOf( park, ride ) );
+		var upgrade = rideStates[host].Level + 1;
+		Assert.IsTrue( host.Economy.Catalog.TryGet( rideStates[host].InfoId, out var info ) );
+		var cost = (long)info.Upgrades[upgrade].CostOfUpgrade;
+		Assert.IsTrue( cost > 0, "the level costs something" );
+		MoneyFrame Frame( Park park ) => new( park.Economy.Tick, park.Economy.Balance, park.Economy.Ledger.CurrentTotals.OrderBy( line => line.Key ).Select( line => (line.Key, line.Value) ).ToArray(),
+			rideStates[park].PendingLevel, rideStates[park].TotalSpent );
+		// what each peer saw after every frame, and the installation's tick on each
+		var frames = peers.ToDictionary( park => park, park => new List<MoneyFrame>() );
+		var installed = peers.ToDictionary( park => park, park => -1L );
+		foreach ( var park in peers )
+			park.Economy.EventRaised += item =>
+			{
+				if ( item.Kind == ParkEventKind.UpgradeCompleted && item.InstanceId == rideStates[park].Id )
+					installed[park] = park.Economy.Tick;
+			};
+		void Step()
+		{
+			SteppedRounds( 1, host, first, second );
+			foreach ( var park in peers )
+				frames[park].Add( Frame( park ) );
+		}
+		// the guest changes the shop's price and buys the level, the host gives and takes rights meanwhile
+		var queue = Management( first );
+		var waiter = queue.NewWaiter();
+		first.Enter();
+		var price = StateOf( first, shops[first] ).Price + 3;
+		Assert.IsTrue( queue.Enqueue( new[] { new ManagementItem( ManagementTarget.Attraction( shops[first] ), ManagementKnob.Price, new SetPriceCommand( shops[first], price ) ) }, waiter ).Queued );
+		Assert.IsTrue( queue.Enqueue( new[] { new ManagementItem( ManagementTarget.Attraction( ride ), null, new BuyUpgradeCommand( ride, upgrade ) ) }, waiter ).Queued );
+		Step();
+		Assert.IsTrue( host.Issue( new SetSeatRightsCommand( two, CoopRights.Research | CoopRights.Finance ) ).Accepted );
+		for ( var round = 0; round < 600 && queue.Pending.Any(); round++ )
+			Step();
+		Assert.IsFalse( queue.Pending.Any(), "both entries resolved" );
+		CollectionAssert.AreEqual( new[] { ManagementOutcomeKind.Accepted, ManagementOutcomeKind.Accepted }, queue.TakeOutcomes( waiter ).Select( outcome => outcome.Kind ).ToArray() );
+		Assert.IsTrue( host.Issue( new SetSeatRightsCommand( one, CoopRights.Attractions | CoopRights.Research ) ).Accepted );
+		// at the buy's record every peer has the level pending and nothing debited by the record
+		foreach ( var park in peers )
+		{
+			var list = frames[park];
+			var at = list.FindIndex( frame => frame.PendingLevel == upgrade );
+			Assert.IsTrue( at > 0, "the level is pending on every peer" );
+			Assert.AreEqual( list[at - 1].Line( LedgerCategory.OtherCosts ), list[at].Line( LedgerCategory.OtherCosts ), "the record posts no cost" );
+			Assert.AreEqual( list[at - 1].TotalSpent, list[at].TotalSpent, "the record adds no spending to the ride" );
+			Assert.AreEqual( list[at].LineChange( list[at - 1] ), list[at].Balance - list[at - 1].Balance, "the balance moves only by the frame's ledger changes: nothing debited by the record" );
+		}
+		CutAndCompare( host, first, second );
+		foreach ( var park in peers )
+			Assert.AreEqual( price, StateOf( park, shops[park] ).Price, "the price on every peer" );
+		// the run goes on to the installation
+		for ( var round = 0; round < 20000 && peers.Any( park => installed[park] < 0 ); round++ )
+			Step();
+		foreach ( var park in peers )
+			Assert.IsTrue( installed[park] >= 0, "the level was installed on every peer" );
+		Assert.AreEqual( 1, peers.Select( park => installed[park] ).Distinct().Count(), "at the same tick on every peer" );
+		var tick = installed[host];
+		var changes = new List<(long Month, long Spent, long Balance, long Lines)>();
+		foreach ( var park in peers )
+		{
+			var list = frames[park];
+			var after = list.First( frame => frame.Tick >= tick );
+			var before = list.LastOrDefault( frame => frame.Tick == tick - 1 );
+			Assert.IsNotNull( before, "a frame ended on the tick before the installation" );
+			Assert.AreEqual( tick, after.Tick, "a frame ended on the installation's tick" );
+			var month = after.Line( LedgerCategory.OtherCosts ) - before.Line( LedgerCategory.OtherCosts );
+			Assert.AreEqual( cost, month, "the month's other costs rise by the level's cost" );
+			Assert.AreEqual( cost, after.TotalSpent - before.TotalSpent, "the ride's total spent rises by the same" );
+			Assert.AreEqual( after.LineChange( before ), after.Balance - before.Balance, "the balance moves by the sum of the tick's category changes, the cost among them" );
+			changes.Add( (month, after.TotalSpent - before.TotalSpent, after.Balance - before.Balance, after.LineChange( before )) );
+		}
+		Assert.AreEqual( 1, changes.Distinct().Count(), "equal on every peer" );
+		CutAndCompare( host, first, second );
+		SteppedRounds( 120, host, first, second );
+		CutAndCompare( host, first, second );
 	}
 }

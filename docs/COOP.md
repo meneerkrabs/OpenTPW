@@ -1148,6 +1148,19 @@ The scenarios:
   reconnecting to open with a resume of the session, and both chats reconnect: the counts at the barrier
   must grow. The guest follows again (a resync is allowed here). The host's view jumps again, which the
   guest sees, and a second line reaches the guest's park, with checkpoints after it.
+- **management** (`--scenario management`, C4b-2): the guest's granted line is the run's purchase: at its
+  record each park's balance falls by its charge, the same on both. Then the host gives the attractions right
+  through the rights dialog. The guest opens a shop of the park with a click, types its price and closes the
+  window: the price at its record on both parks. It closes and opens a ride's door through its window, each at
+  its record on both parks. It types a second price and applies it with the editor's OK; in the same step,
+  before the frame's pump could send it, the price waits unsent and the guest forces a desync of its own stream
+  (`CoopGuestStream.ForceDesync`, a protocol desync whose reason, "forced by the live test", only the log
+  keeps). The session resyncs: the host's park replaces the guest's (the stream's generation one higher), the
+  price goes once after the swap and applies on both parks, and checkpoints are compared after it with no
+  other desync. As a real desync would, the forced one counts as the join's failure when it comes within
+  the session's early window (three minutes after the join); no other failed join may follow. The host sees
+  exactly one desync report, the forced one, and takes one capture for it. The run's one resync is that one;
+  no link is lost.
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
   HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
   takes its ticks before the host sets the speed, and the host its own when it does. Every five seconds both
@@ -1189,6 +1202,8 @@ build):
 | native/page | endurance 30 min | 19 of 19 | 1834 s | followed 5.8 s after Join; 105 KiB capture; 1819 checkpoints; 1800 s at the fastest speed, slowest stretches 239.6 (host) and 225.5 (guest) ticks/s; longest frame gaps host 1.50 s, guest 0.18 s |
 | page/native | endurance 30 min | 19 of 19 | 1839 s | followed 5.2 s after Join; 104 KiB capture; 1815 checkpoints; 1800 s at the fastest speed, slowest stretches 229.4 (host) and 229.5 (guest) ticks/s; longest frame gaps host 2.80 s, guest 0.73 s |
 | page/page | endurance 30 min | 24 of 24 | 1877 s | followed 13.9 s after Join; 108 KiB capture; 1843 checkpoints; 1801 s at the fastest speed, slowest stretches 231.7 (host) and 219.2 (guest) ticks/s; longest frame gaps host 5.02 s, guest 0.35 s |
+| native/native | management | 18 of 18 | 31 s | followed 3.8 s after Join; 104 KiB capture; the forced resync's park in 2.7 s; 3 checkpoints after the swap |
+| native/page | management | 22 of 22 | 55 s | followed 6.8 s after Join; 108 KiB capture; the forced resync's park in 3.5 s; 7 checkpoints after the swap |
 
 The native/native, native/page and page/native endurance runs come from before the guest's granted line
 (C3a-2), which adds one check to every run; the other rows include it.
@@ -1792,12 +1807,23 @@ buttons for the ride. So is the path cell its back cell joins, whose removal or 
 would take the queue's link off: the remove click, Backspace, queue lines, placements (whose plans clear
 the paths under them, and a queue ride's, which lays its first queue cell outside its entrance), bridges
 and kart or water track lines (a tile laid over path clears it) refuse it, and the area clear leaves it
-standing (`IParkCommandRights.AllowsPathRemoval`). A path
-line along it, the path a placement lays outside the last exit of a ride with a queue or the last
-entrance of a type without one (only the last entrance and the last exit count, `ObjectAccessCells.Lay`),
-and a queue line that only ends on it (which links the queue to that path, `QueuePaths.Connect`) leave
-the queue's links as they are. The exit of an object without a queue lays no cell: it only links a path
-cell already outside it (that cell's links and its path and access neighbours'), which takes no queue's
+standing (`IParkCommandRights.AllowsPathRemoval`). So is a path cell linked into the ride's entrance cell
+(type 9, which carries the ride's owner word): its clear takes that link off and re-evaluates the ride,
+which recomputes its queue, stamps a block and may open the ride when it is closed (tp.exe `0x53694B`,
+`CoopBuildRights.BesideClaimedEntrance`). The remove click, Backspace, native queue segments laid over
+it and their undo, placements (the paths under them, a queue ride's first queue cell outside its entrance
+and a fresh kart or water station's exit and entry tiles) and kart or water track lines (asked as drawn,
+also past a tile their writer would stop at) refuse it, as do the host's single-cell removal and the undo
+of a path line that built the cell, and the area clear leaves it standing. A path cell beside the
+entrance that does not link into it, and a queue cell there, re-evaluate nothing when cleared, so they are
+not asked; nor is the queue tool's per-cell line, which lays no queue over path, nor a native segment's
+last path cell, where it stops. A path line along such a cell, a Backspace that only counts it down (a
+cell laid more than once loses one placement and stays, `ParkPathBuilder.RemoveOnce`), the path a
+placement lays outside the last exit of a ride with a queue or the last entrance of a type without one
+(only the last entrance and the last exit count, `ObjectAccessCells.Lay`), and a queue line that only ends
+on it (which links the queue to that path, `QueuePaths.Connect`) take no link off. The exit of an object
+without a queue lays no cell: it only links a path cell already outside it (that cell's links and its
+path and access neighbours'), which takes no
 link off, so it is asked nothing. A queue cell's ride is resolved as its removal resolves it: the rides'
 cached lines, then each line walked again (on a copy) for the cells they miss, once per question of the
 rights (the area clear asks it for each path cell it would clear). Everything else stays the host's:
@@ -1987,11 +2013,12 @@ the claim keeps the ride from every other player, the host included. A guest's t
   record, or the building right through `SetSeatRightsCommand`, C4a), and a ride's removal (a sale, the area clear, the Move's pick-up) takes its claim with it, on
   every peer alike.
 - **What a claim keeps.** A claim keeps from every other player, the host included, the ride's track
-  commands, its sale, its removal and its pick-up, its demolition by a placement, an add-on on it, and its
-  queue as above (`CoopBuildRights.LeavesClaimsAlone`, asked of the host before its blanket yes). The
-  host's cleanup is its own: its release of any claim, a departed seat's release and the grants. A claim
-  guards building and removal, not management: the ride's opening, its settings and its prices stay as
-  they are (the host's, C4 for guests). A command a claim refuses gives the claim's reason, and the HUD
+  commands, its sale, its removal and its pick-up, its demolition by a placement, an add-on on it, its
+  queue and the path cell linked into its entrance as above (`CoopBuildRights.LeavesClaimsAlone`, asked
+  of the host before its blanket yes). The host's cleanup is its own: its release of any claim, a departed
+  seat's release and the grants. A claim guards building and removal, not management: the ride's opening,
+  its settings and its prices stay as they are (the host's, C4 for guests), but a path clear that would
+  re-evaluate the ride, and might open it, is building and is kept. A command a claim refuses gives the claim's reason, and the HUD
   says it in its words ("Another player is editing this ride.", one new string in every language), for a
   click the rights refuse here and for a guest's refused record alike. A guest's track command on a ride
   whose claim it no longer holds, which the host let go and no other seat took, is refused with a reason
@@ -2174,8 +2201,9 @@ each guest the park's management besides building, right by right (decision Q7),
 (Q6), while the speed and the pause stay the host's (Q8). The plan (v8, a Codex go after eight rounds) makes
 it three parts: C4a the rights and their lifecycle, C4b the windows of the attractions, research and finance
 with their switches, C4c staff. C4b is two parts of its own (its plan, v13, a Codex go after twelve rounds):
-C4b-1 the research and finance windows with everything both parts share, C4b-2 the attractions. Since C4b-1
-the host gives building, research and finance; attractions and staff follow.
+C4b-1 the research and finance windows with everything both parts share, C4b-2 the attractions (its own
+plan, v13, a Codex go after twelve rounds). Since C4b-2 the host gives building, attractions, research and
+finance; staff follows (C4c).
 
 **The command classes (C4a).** Every command kind is of exactly one class (`CoopBuildRights.ClassOf`), which
 says who may issue it in a shared park; a test pins each class's kinds:
@@ -2204,7 +2232,7 @@ them. Two commands write them through one reducer: `SetSeatRightsCommand` (kind 
 and C3's `SetBuildGrantCommand` (kind 101) flips its building bit alone, so a C3 log replays byte for byte.
 A right taken back ends what it held in the same record, on every peer: building's claims, with a
 coaster's tool state. The rights command names a guest's seat (1 to 63) and only the rights this build
-offers (`CoopRightsOffer`: building, research and finance since C4b-1), so a right whose actions do not yet wait for the host's
+offers (`CoopRightsOffer`: building, attractions, research and finance since C4b-2), so a right whose actions do not yet wait for the host's
 answer cannot be given, not even by a hand-made record, which the codec refuses; a join state refuses a
 row of seat 0, of no right, of a right not offered, and a seat named twice. The host's own seat holds no
 mask and keeps its full authority. The session's start and end clear every seat's rights. A guest's
@@ -2284,8 +2312,74 @@ so a repay with neither the right nor the money says only the rights' note.
   two kinds keep version 2. The loan commands give their refusal's kind as their result's value
   (`LoanRefusal`).
 
-C4b-2 adds the attractions' windows (their settings, prices and upgrades through the same queue), the
-guests' ride-targeted claims for them, and the browser's acceptance path; C4c staff.
+**A guest's attraction windows (C4b-2).** `[EXT:online-coop-commands]` With the attractions right a guest's
+object windows (a ride's, a shop's, a sideshow's, a toilet's) act as the host's do, through the same queue,
+with one difference the queue forces: a guest's window keeps no draft.
+- **Each change goes at once.** The original's window applies its values when it closes or shows another
+  object, as the host's and a single player's windows still do. A guest's close cannot be refused once its
+  input acted (the window commits in the frame after it, and a resync's swap can come between), and a commit
+  made then could be neither refused nor bounded without moving or dropping values the park reads between
+  records. So each change of a guest's control goes at once as a click: a slider's step, the quality's step, a
+  price or prize box's click or hold step, a typed price, an apply-all. The rights, a claim or the queue's
+  room may refuse it before anything changes (the control shows the drawn value again, a typed price's
+  editor stays open with the note); the window's close and its arrows send nothing. The controls, and the
+  excitement and reliability gauges, draw the drawn values every frame: each field its group's latest entry
+  while one is unsent or open, else the park's (a reopened window, the arrows' next object, the window after a
+  resync).
+- **The host's close.** A host's window in a shared park keeps its draft and applies it when it closes or shows
+  another object, as the original's, but only what it changed from the values it loaded: each group with a
+  changed field goes, its other fields as the park has them then, so a guest's change made while the host's
+  window was open stays. A typed price and an apply-all count as applied. A single player's window applies all
+  its values, as the original's.
+- **Groups and order.** Each target is one attraction (its attraction id); different attractions go side by
+  side under the cap of four open. An attraction's fields go in groups, one writer per field: a ride's speed,
+  capacity and duration (`SetRideSettingsCommand`); a shop's quality and ingredient (`SetShopSettingsCommand`)
+  and its price (`SetPriceCommand`); a winnable sideshow's price, prize and chance (`SetGamePrizeCommand`, its
+  typed price included); a prizeless sideshow's price. Every entry of a target applies in its click's order,
+  and only a run of one group's changes with nothing between coalesces, at the target's tail (a drag goes
+  once with its latest value): a sale between two records reads the price, the goods and the open word of
+  every record before it.
+- **A gesture asks for a step once.** A guest's slider or box asks only for a step its gesture has not asked
+  for, and a box step that changes nothing (at the range's end) asks nothing: a refused step is not asked
+  again while the pointer stays on it, nor at the release (the screen skips a guest's slider's release frame,
+  `IUiDragTarget.FollowsRelease`). The next press starts a new gesture, a box's hold arithmetic included
+  (`UiButtonRepeat.Pressed`); a key asks each time. A host's sliders and boxes keep the original's paths.
+- **The bound.** Besides 16 unsent entries per target, the queue holds at most 256 unsent entries across its
+  targets (an apply-all adds a target per object, and an attraction id is never reused); a batch that would
+  pass either is refused whole with the waiting note. A change that replaces a target's unsent tail always
+  fits. Nothing waits in a window, so no close, retarget or swap can lose an edit.
+- **Open-state actions.** The door, the call button and a ride's level bought or cancelled write or read the
+  object's open word: one of an object waits at a time, its door and call buttons greyed and its upgrade rows
+  inert meanwhile. While one waits the window draws a projected copy of the object's record (its open word
+  the runtime's, the action applied only when its record's checks would pass, so a refusal or a no-op such as
+  the host's call first changes nothing): the state with a breakdown's priority, the status banner, the
+  door's and the call button's frames and help, and the upgrade rows. With nothing waiting it draws the park,
+  and the host's rules decide the buttons. A park refusal of the door or the call says nothing, as the host's.
+  A guest's call button under the call's own refusal (no staff, a strike) draws subdued but stays clickable:
+  the rights' note first, then the error sound with nothing sent.
+- **The upgrade list.** A level or cancel row asks the rights first (their note, and the list closes), then
+  goes with what the list showed, its rows inert under a waiting line; every outcome removes the list first,
+  then says its note (a stale buy or cancel: no longer there; any other park refusal nothing, as the
+  original's silent level rows). A purchase has an identity: each record counts the levels bought for it
+  (`ParkObjectState.UpgradePurchases`, saved as an optional field; the session digest's version 4 covers it,
+  and the world hash leaves it out so every older log replays). A guest's cancel names the pending level and
+  that count (the codec's version 4, which C4b-1's version-3 cancel and the host's version-1 cancel keep
+  beside it), so the host's cancel and re-buy first make it stale instead of cancelling the new purchase; a
+  guest's buy is stale once the ride waits for a level. The add-on row stays a placement under the building
+  right: without its grant, the grant's note before the row's price check.
+- **The claim guard.** `[EXT:online-coop-claims]` A guest's door, settings, level bought or cancelled, or call
+  on a claimable ride another seat claims is refused with the claim's note, asked at the click and again
+  before the send; without the attractions right the rights' note comes first. The claiming guest's and the
+  host's stay allowed, so a C3 log replays.
+- **Notes.** Every management refusal's note, at the click, by the bound or before the send, waits in the
+  session's notes and is said once the lines can be seen, never at once under the object window's arm. The
+  notes coalesce by their words, so they hold one per kind of words and none is dropped.
+- **The session's end.** When the session ends with an entry not resolved, a note not said, or a window's
+  failure not taken, the guest's end dialog adds "Some of your last changes may not have been made." (eleven
+  languages). A resync whose swap fails before its teardown leaves the old park the game's: the end dialog
+  then shows over it, with that sentence when it applies.
+
+C4c adds staff.
 
 ## The command layer (C1)
 

@@ -189,6 +189,11 @@ public class CoopLiveHarnessTests
 		var written = Json( "host-evidence.json" );
 		Assert.AreEqual( "endurance", written["scenario"]!.GetValue<string>() );
 		Assert.AreEqual( 2.5, written["enduranceMinutes"]!.GetValue<double>() );
+		// [EXT:online-coop-commands] the management scenario (C4b-2) needs no minutes
+		using var management = Harness( hosting: true, None, Environment( ("OPENTPW_COOP_LIVE_SCENARIO", "management") ) );
+		management.Update();
+		Assert.IsTrue( management.Completed );
+		Assert.AreEqual( "management", Json( "host-evidence.json" )["scenario"]!.GetValue<string>() );
 		Assert.ThrowsException<ArgumentException>( () => CoopLiveTest.Run( Flow(), "watch", evidence ) );
 	}
 

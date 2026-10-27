@@ -15,7 +15,7 @@ internal sealed record CoopLiveStep( string What, int Frame, double Started, dou
 /// [EXT:online-coop-session] The live co-op acceptance (C2d-5; docs/COOP.md, "The live acceptance"): one game of a live shared park, the host or the guest, through the real server and the
 /// game's own screens, with the original game's data. <c>--coop-live host|join --coop-live-evidence &lt;folder&gt;</c>; the driver (tools/coop-live.mjs) gives the server, the player's name
 /// and password, and the guest's code in the environment (<c>OPENTPW_COOP_LIVE_SERVER</c>, <c>_NAME</c>, <c>_PASSWORD</c>, <c>_CODE</c>), never in arguments or files, and the
-/// scenario (<c>OPENTPW_COOP_LIVE_SCENARIO</c>: <c>baseline</c>, <c>recovery</c> or <c>endurance</c>, with <c>OPENTPW_COOP_LIVE_MINUTES</c>).
+/// scenario (<c>OPENTPW_COOP_LIVE_SCENARIO</c>: <c>baseline</c>, <c>recovery</c>, <c>endurance</c>, with <c>OPENTPW_COOP_LIVE_MINUTES</c>, or <c>management</c>).
 /// <para>
 /// The run is a script of steps (<see cref="HostSteps"/>, <see cref="GuestSteps"/>), each waiting for a condition with a deadline of wall time. It acts on the top screen only, as a
 /// player does: an element is found by its id, of its type, visible and enabled, and a button is activated and a field typed into as the screen's own input would. Keys, the chat
@@ -46,7 +46,10 @@ internal sealed partial class CoopLiveTest : IDisposable
 	private readonly string playerName;
 	private readonly string password;
 	private readonly string? code;
-	/// <summary>The scenario: the baseline, a server restart in the session (recovery), or minutes at the fastest speed (endurance).</summary>
+	/// <summary>
+	/// The scenario: the baseline, a server restart in the session (recovery), minutes at the fastest speed (endurance), or a guest's attraction windows and a forced resync
+	/// (management, C4b-2).
+	/// </summary>
 	private readonly string scenario;
 	/// <summary>Minutes of wall time the endurance scenario shares the park at the fastest speed.</summary>
 	private readonly double enduranceMinutes;
@@ -91,8 +94,8 @@ internal sealed partial class CoopLiveTest : IDisposable
 		password = Required( "OPENTPW_COOP_LIVE_PASSWORD" );
 		code = hosting ? null : Required( "OPENTPW_COOP_LIVE_CODE" );
 		scenario = environment( "OPENTPW_COOP_LIVE_SCENARIO" ) is { Length: > 0 } chosen ? chosen : "baseline";
-		if ( scenario is not ("baseline" or "recovery" or "endurance") )
-			throw new ArgumentException( $"OPENTPW_COOP_LIVE_SCENARIO is 'baseline', 'recovery' or 'endurance', not '{scenario}'." );
+		if ( scenario is not ("baseline" or "recovery" or "endurance" or "management") )
+			throw new ArgumentException( $"OPENTPW_COOP_LIVE_SCENARIO is 'baseline', 'recovery', 'endurance' or 'management', not '{scenario}'." );
 		enduranceMinutes = scenario != "endurance" ? 0
 			: double.TryParse( environment( "OPENTPW_COOP_LIVE_MINUTES" ), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var minutes )
 				&& minutes > 0 && double.IsFinite( minutes ) ? minutes

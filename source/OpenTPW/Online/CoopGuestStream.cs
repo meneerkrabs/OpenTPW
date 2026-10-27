@@ -437,6 +437,12 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 			Fail( CoopDesyncKind.Digest, $"the digest after tick {ticks} differs", ticks, digest, mine );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The live test's resync (<c>--coop-live</c>, the management scenario, C4b-2): a desync of this stream's own, taken as a mismatched digest takes one, so the
+	/// session resyncs. Its reason goes to the log alone (a report carries none); no game path calls it.
+	/// </summary>
+	internal void ForceDesync( string why ) => Fail( CoopDesyncKind.Protocol, why );
+
 	/// <summary>A desync: the guest's clock stops, and it reports the desync with every progress until the host has seen it.</summary>
 	private void Fail( CoopDesyncKind kind, string reason, long? tick = null, ulong hostDigest = 0, ulong guestDigest = 0 )
 	{

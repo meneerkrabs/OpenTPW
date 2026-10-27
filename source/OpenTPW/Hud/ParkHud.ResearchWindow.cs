@@ -290,6 +290,8 @@ public sealed partial class ParkHud
 				KnobSize = new NVector2( cells.Knob.Width, cells.Knob.Height ), KnobTop = cells.Knob.Y,
 				// [EXT:online-coop-commands] a guest's effort not back from the host yet is drawn as asked, and the slider's steps and change test count from it (C4b)
 				Steps = () => 101, Truncates = true, Value = () => DrawnResearchEffort( category ),
+				// [EXT:online-coop-commands] a guest's gesture asks for each step once, and nothing at its release (C4b-2)
+				AsksOncePerStep = () => GuestManagement != null,
 				Changed = value => { SetResearchEffort( category, value ); SetResearchSlider( value ); },
 				Grabbed = StartResearchSlider, Released = StopResearchSlider,
 				Bounds = slider, Anchor = UiAnchor.Center } );

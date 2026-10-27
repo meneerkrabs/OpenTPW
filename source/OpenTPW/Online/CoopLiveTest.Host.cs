@@ -21,6 +21,8 @@ internal sealed partial class CoopLiveTest
 	/// guest's view jumps and the host sees its figure there.</item>
 	/// <item>A path line laid through the HUD, which the guest's park applies; the guest's own line is refused, the host lets it build with the Build Together screen's switch, and
 	/// its next line is laid at its record on both parks (C3a-2) (recovery: the driver restarts the server, both come back, and a second line reaches the guest).</item>
+	/// <item>Management (C4b-2): the attractions right through the rights dialog; the guest's price and door at their records here; the guest's forced resync seen as one desync report
+	/// and one capture, and its second price applied once.</item>
 	/// <item>A chat line through the chat mode's entry, and the guest's answer; F4 back to the HUD (endurance: the fastest speed for the run's minutes).</item>
 	/// <item>The guest rides: its figure is gone from the host's park while it rides and comes back after.</item>
 	/// <item>Once the guest's checks are done, the host ends sharing from the Build Together screen (Yes), and its park runs on alone.</item>
@@ -113,9 +115,11 @@ internal sealed partial class CoopLiveTest
 				};
 		}
 		level.Commands.Applied += Observe;
+		// [EXT:online-coop-money] the management scenario's purchase: the guest's line charged at its record in this park (C4b-2)
+		var purchase = scenario == "management" ? new LinePurchase( level, seat ) : null;
 		try
 		{
-			foreach ( var step in LetTheGuestBuild( guestName, seat ) )
+			foreach ( var step in GiveTheGuestARight( guestName, seat, CoopRights.Build, "grant" ) )
 				yield return step;
 			Publish( "granted", true );
 			yield return Wait( "the guest's own line", () => Other( "ownBuilt" ) is JsonObject, 300 );
@@ -126,9 +130,19 @@ internal sealed partial class CoopLiveTest
 		finally
 		{
 			level.Commands.Applied -= Observe;
+			purchase?.Dispose();
 		}
 		Keep( "guestBuild", observed! );
+		if ( purchase != null )
+		{
+			Require( purchase.Evidence != null, "the guest's line was charged in the host's park" );
+			Keep( "guestPurchase", purchase.Evidence );
+		}
 		Publish( "sawGuestBuild", true );
+
+		if ( scenario == "management" )
+			foreach ( var step in HostManagement( guestName, seat ) )
+				yield return step;
 
 		if ( scenario == "recovery" )
 			foreach ( var step in HostRecovery( guestName, avoid ) )
@@ -182,14 +196,15 @@ internal sealed partial class CoopLiveTest
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-permissions] The host lets the guest build (C3a-2, C4b's rights dialog): Escape, Build Together, the guest's rights button, Building in its dialog, which the shared
-	/// park's rights then say, the dialog closed, the row's button naming the right, and back to the park.
+	/// [EXT:online-coop-permissions] The host gives the guest <paramref name="right"/> (C3a-2, C4b's rights dialog; the management scenario's attractions, C4b-2): Escape, Build Together,
+	/// the guest's rights button, the right's switch in its dialog, which the shared park's rights then say, the dialog closed, the row's button naming the right, and back to the park.
+	/// Its evidence is kept as <paramref name="key"/>.
 	/// </summary>
-	private IEnumerable<CoopLiveWait> LetTheGuestBuild( string guestName, int seat )
+	private IEnumerable<CoopLiveWait> GiveTheGuestARight( string guestName, int seat, CoopRights right, string key )
 	{
 		const string screen = OnlineScreens.BuildTogetherScreenName;
 		const string dialog = OnlineScreens.SeatRightsScreenName;
-		var building = $"right{CoopRights.Build}";
+		var toggle = $"right{right}";
 		var level = ThePark;
 		var members = flow.Sharing!.State!.Members.OrderBy( member => member.Slot ).ToList();
 		var row = members.FindIndex( member => member.Name == guestName );
@@ -198,18 +213,18 @@ internal sealed partial class CoopLiveTest
 		yield return Wait( "Escape opens the pause menu", () => Top( ParkHud.PauseMenuScreen ), 10 );
 		Choose( ParkHud.PauseMenuScreen, ParkHud.BuildTogetherId );
 		yield return Wait( "the guest's rights button", () => Usable<UiButton>( screen, $"rights{row}" ), 10 );
-		Require( !level.HasBuildGrant( seat ), "the guest only watches before the dialog" );
+		Require( !level.RightsOf( seat ).HasFlag( right ), $"the guest has no {right} right before the dialog" );
 		var before = Element<UiButton>( screen, $"rights{row}" ).Text?.Invoke() ?? "";
 		Press( screen, $"rights{row}" );
-		yield return Wait( "the guest's rights dialog", () => Top( dialog ) && Usable<UiButton>( dialog, building ), 10 );
-		Require( Element<UiButton>( dialog, building ).Selected?.Invoke() == false, "the dialog draws building as not given" );
-		Press( dialog, building );
-		yield return Wait( "the guest may build", () => level.HasBuildGrant( seat ) && Element<UiButton>( dialog, building ).Selected?.Invoke() == true, 10 );
+		yield return Wait( "the guest's rights dialog", () => Top( dialog ) && Usable<UiButton>( dialog, toggle ), 10 );
+		Require( Element<UiButton>( dialog, toggle ).Selected?.Invoke() == false, $"the dialog draws {right} as not given" );
+		Press( dialog, toggle );
+		yield return Wait( $"the guest has the {right} right", () => level.RightsOf( seat ).HasFlag( right ) && Element<UiButton>( dialog, toggle ).Selected?.Invoke() == true, 10 );
 		Press( dialog, "back" );
 		yield return Wait( "Build Together again", () => Top( screen ), 10 );
 		var after = Element<UiButton>( screen, $"rights{row}" ).Text?.Invoke() ?? "";
 		Require( after != before, "the row's button names the right" );
-		Keep( "grant", new JsonObject
+		Keep( key, new JsonObject
 		{
 			["seat"] = seat,
 			["record"] = TheSession.HostStream?.LastRecord,

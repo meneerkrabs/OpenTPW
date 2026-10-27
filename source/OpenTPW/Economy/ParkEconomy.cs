@@ -2083,10 +2083,35 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( IsBankrupt )
 			return PurchaseResult.Bankrupt;
-		// [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead
+		// the checks in their order, an absent object asked for only past the game type's (UpgradePurchaseRefusal)
 		if ( !Features.Upgrades )
 			return Rules.Staff ? PurchaseResult.NotAvailableInInstantAction : PurchaseResult.NeedsStaff;
 		var item = RequireObject( instanceId );
+		var result = UpgradePurchaseRefusal( item );
+		if ( result != PurchaseResult.Ok )
+			return result;
+		var level = item.Level + 1;
+		Catalog.TryGet( item.InfoId, out var info );
+		var cost = info.Upgrades[level].CostOfUpgrade;
+		item.PendingLevel = level;
+		item.UpgradeCostDue = true;
+		// [EXT:online-coop-commands] the purchase's identity, which a guest's cancellation names (C4b-2)
+		item.UpgradePurchases++;
+		Raise( ParkEventKind.UpgradeBought, cost, item.Id, item.InfoId, $"level {level}" );
+		return PurchaseResult.Ok;
+	}
+
+	/// <summary>
+	/// What <see cref="TryBuyUpgrade"/> would answer for <paramref name="item"/> now, without buying (null: the park is bankrupt): its checks alone, so [EXT:online-coop-commands] a guest's
+	/// window projects a waiting buy only when its record would take it (C4b-2).
+	/// </summary>
+	internal PurchaseResult UpgradePurchaseRefusal( ParkObjectState? item )
+	{
+		if ( IsBankrupt || item == null )
+			return PurchaseResult.Bankrupt;
+		// [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead
+		if ( !Features.Upgrades )
+			return Rules.Staff ? PurchaseResult.NotAvailableInInstantAction : PurchaseResult.NeedsStaff;
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || item.Kind != ParkObjectKind.Ride )
 			return PurchaseResult.NotBuyable;
 		if ( item.PendingLevel > item.Level )
@@ -2098,13 +2123,7 @@ public sealed class ParkEconomy : IParkEconomy
 			return PurchaseResult.NotResearched;
 		// [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff
 		// [BIN:TPW-EXE:0x004AF4E9 upgrade purchase] the buy handler compares the signed balance (bank +0xC) with Upgrades[level].CostOfUpgrade (type record +0x1B8 + 0x40 · level) and requests the upgrade (0x004E0050(1): state 2, a mechanic called) only when the balance is greater; nothing is debited here
-		var cost = info.Upgrades[level].CostOfUpgrade;
-		if ( Balance <= cost )
-			return PurchaseResult.NotEnoughMoney;
-		item.PendingLevel = level;
-		item.UpgradeCostDue = true;
-		Raise( ParkEventKind.UpgradeBought, cost, item.Id, item.InfoId, $"level {level}" );
-		return PurchaseResult.Ok;
+		return Balance <= info.Upgrades[level].CostOfUpgrade ? PurchaseResult.NotEnoughMoney : PurchaseResult.Ok;
 	}
 
 	/// <summary>

@@ -154,6 +154,41 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void InitialTrackPreflightProtectsEveryExitAndEntryPathCellLinkedIntoAClaimedRidesEntrance()
+	{
+		foreach ( var family in new[] { TrackFamily.Kart, TrackFamily.Water } )
+		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+		{
+			var park = NewPark();
+			var (entry, station, anchor, _) = InitialTrackPlacement( park, family, rotation );
+			var level = park.Level;
+			var grid = level.Guests!.Grid;
+			var rights = (CoopBuildRights)level.Commands.Rights!;
+			MarkStation( park, park.One, seat: 2 );
+			var outside = new[] { station.Exit, station.Entry }.SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ).ToArray();
+			var occupied = ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) ).Concat( outside ).ToHashSet();
+			foreach ( var at in outside )
+			{
+				// One's entrance cell beside the tile's cell, whose path cell links into it: the tile's type op clears that path cell (TrackBuilder.ClearPath), which re-evaluates One
+				var direction = Enumerable.Range( 0, 4 ).First( d => !occupied.Contains( (at.X + GuestPathGrid.Directions[d].DX, at.Y + GuestPathGrid.Directions[d].DY) ) );
+				var entrance = (X: at.X + GuestPathGrid.Directions[direction].DX, Y: at.Y + GuestPathGrid.Directions[direction].DY);
+				grid.SetPath( at.X, at.Y, true, (byte)(1 << direction) );
+				LinkEntranceBeside( park, park.One, entrance, at );
+				Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( entry, anchor.X, anchor.Y, rotation, out var plan ) );
+				Assert.IsFalse( plan.ClearedPaths.Contains( at ) );
+				AssertInitialTrackRefusalIsAtomic( park, entry, rotation, 0, 1 );
+				Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 2, entry, 16, 18, rotation ), "the holder's own claimed ride" );
+				// the same path cell not linked into the entrance re-evaluates nothing
+				grid.SetPath( at.X, at.Y, true, 0 );
+				Assert.IsTrue( rights.PlacementLeavesClaimsAlone( 1, entry, 16, 18, rotation ) );
+				grid.SetPath( at.X, at.Y, false );
+				grid.Cells.SetType( entrance.X, entrance.Y, ParkCellType.Empty );
+			}
+			MarkStation( park, park.One, station: false );
+		}
+	}
+
+	[TestMethod]
 	public void InitialTrackPreflightProtectsOffsetForeignOriginsAndExtensionsByTrackOwner()
 	{
 		foreach ( var family in new[] { TrackFamily.Kart, TrackFamily.Water } )

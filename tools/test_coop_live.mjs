@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { crc32, deflateSync } from 'node:zlib';
-import { checkEvidence, checkFreshness, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, logTo, parseArguments, redact, STATUS_STALL_SECONDS, throwawayPlayer } from './coop-live.mjs';
+import { checkEvidence, checkFreshness, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, FORCED_DESYNC_REASON, logTo, parseArguments, redact, STATUS_STALL_SECONDS, throwawayPlayer } from './coop-live.mjs';
 import { checkPageSides, checkPictures, keyEvent, pagePoint, PageSide, pictureName, pngSize } from './coop-live-page.mjs';
 
 // The live co-op acceptance's driver (tools/coop-live.mjs, docs/COOP.md "The live acceptance") without the games: its options, its throwaway players and their
@@ -120,6 +120,74 @@ test('the recovery run allows a resync, and needs the session back, both links r
 	]);
 });
 
+/** Both games' evidence of a passing management run (C4b-2): the baseline's, with the purchase, the attractions right, the price, the doors and the forced resync. */
+function managementPair() {
+	const pair = passingPair();
+	const { host, guest } = pair;
+	host.guestPurchase = { before: 50000, after: 49880, charged: 120, cells: 6 };
+	guest.ownPurchase = { ...host.guestPurchase };
+	host.attractionsGrant = { seat: 1, record: 15, before: 'Builds', after: 'Building, Attractions', rights: 'Build, Attractions' };
+	const price = { shop: 7, price: 27, record: 17 };
+	const doors = [{ ride: 3, open: false, record: 18 }, { ride: 3, open: true, record: 19 }];
+	guest.management = {
+		price, doors,
+		forced: { frame: 4100, generation: 1, failedJoinsBefore: 0, failedJoinsAfter: 1, entry: 'Unsent', desync: { id: 1, kind: 'Protocol', tick: 4000, reason: FORCED_DESYNC_REASON },
+			price: 38, shop: 7, after: { generation: 2, checks: 3, desyncs: 1, failedJoins: 1 } },
+	};
+	host.management = { price: { ...price }, doors: doors.map(door => ({ ...door })),
+		forced: { desyncs: [{ guest: 2, id: 1, kind: 'Protocol', tick: 4000 }], capturesBefore: 1, capturesAfter: 2, secondPriceRecords: 1 } };
+	guest.streams = 2;
+	// the session's desync ids go on across its streams: the last stream counts the forced one
+	guest.stream.desyncs = 1;
+	guest.stream.failedJoins = 1;
+	guest.phases = ['guest following', 'guest resyncing', 'guest following', 'guest ended'];
+	return pair;
+}
+
+test('a management run whose evidence holds passes every check, its one resync the forced one', () => {
+	const { host, guest } = managementPair();
+	const checks = checkEvidence(host, guest, 'management', 30);
+	assert.equal(checks.length, 17);
+	assert.deepEqual(failing(checks), []);
+});
+
+for (const [what, change, check] of [
+	['a line that charged nothing', ({ host, guest }) => { host.guestPurchase.charged = guest.ownPurchase.charged = 0; },
+		'the guest\'s line was a purchase: each park\'s balance at its record fell by its charge, the same on both'],
+	['a balance that fell by another sum', ({ host }) => { host.guestPurchase.after = 49870; },
+		'the guest\'s line was a purchase: each park\'s balance at its record fell by its charge, the same on both'],
+	['a guest whose balance differs', ({ guest }) => { guest.ownPurchase.before += 5; guest.ownPurchase.after += 5; },
+		'the guest\'s line was a purchase: each park\'s balance at its record fell by its charge, the same on both'],
+	['no attractions right', ({ host }) => { host.attractionsGrant.rights = 'Build'; }, 'the host gave the attractions right through the rights dialog'],
+	['a price at another record', ({ host }) => { host.management.price.record = 16; }, 'the guest\'s typed price applied at its record on both parks'],
+	['a door opened only', ({ guest }) => { guest.management.doors.shift(); }, 'the guest\'s ride door closed and opened again, each at its record on both parks'],
+	['a door at another record on the host', ({ host }) => { host.management.doors[1].record = 20; },
+		'the guest\'s ride door closed and opened again, each at its record on both parks'],
+	['a price sent before the cut', ({ guest }) => { guest.management.forced.entry = 'Open'; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a second desync report', ({ host }) => { host.management.forced.desyncs.push({ guest: 2, id: 2, kind: 'Digest', tick: 4100 }); },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a price applied twice', ({ host }) => { host.management.forced.secondPriceRecords = 2; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['no new capture', ({ host }) => { host.management.forced.capturesAfter = 1; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a second resync', ({ guest }) => { guest.streams = 3; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a desync after the swap', ({ guest }) => { guest.stream.desyncs = 2; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a failed join besides the forced desync\'s own', ({ guest }) => { guest.management.forced.failedJoinsAfter = 2; guest.stream.failedJoins = 2; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a failed join after the swap', ({ guest }) => { guest.stream.failedJoins = 2; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a lost link', ({ guest }) => { guest.links.resumes = 1; }, 'neither game\'s link was lost'],
+]) {
+	test(`the management run fails ${what}`, () => {
+		const pair = managementPair();
+		change(pair);
+		assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'management', 30)), [check]);
+	});
+}
+
 test('the endurance run needs its whole minutes at the fastest speed, on both sides', () => {
 	const step = ENDURANCE_SAMPLE_SECONDS;
 	const run = (minutes, rate = 240) => {
@@ -215,7 +283,8 @@ test('the driver needs the game, the server and a fresh out directory, and a pag
 	assert.deepEqual([options.scenario, options.host, options.guest, options.timeoutMinutes], ['baseline', 'native', 'native', 30]);
 	assert.equal(parseArguments([...base, '--scenario', 'endurance', '--minutes', '45']).timeoutMinutes, 75);
 	assert.throws(() => parseArguments(base.slice(0, 6)), /--out/);
-	assert.throws(() => parseArguments([...base, '--scenario', 'longer']), /baseline, recovery, endurance/);
+	assert.throws(() => parseArguments([...base, '--scenario', 'longer']), /baseline, recovery, endurance, management/);
+	assert.equal(parseArguments([...base, '--scenario', 'management']).scenario, 'management');
 	assert.throws(() => parseArguments([...base, '--guest', 'page']), /--web/);
 	const page = parseArguments([...base, '--guest', 'page', '--web', 'wwwroot', '--runtime', 'interpreter']);
 	assert.deepEqual([page.host, page.guest, page.web, page.runtime], ['native', 'page', 'wwwroot', 'interpreter']);

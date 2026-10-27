@@ -9,9 +9,9 @@ internal static class CoopDigest
 {
 	/// <summary>
 	/// Bumped whenever the digest's sections or their order change (2: no drags hash as an empty set of them; 3: the pending hires seat by seat and every seat's rights, always hashed, in
-	/// place of one pending hire and the build grants, C4a).
+	/// place of one pending hire and the build grants, C4a; 4: the economy objects' counts of levels bought, which the world hash leaves out, C4b-2).
 	/// </summary>
-	public const int Version = 3;
+	public const int Version = 4;
 
 	public static ulong Compute( Level level ) => Compute( level, out _ );
 
@@ -58,7 +58,8 @@ public partial class Level
 	/// [EXT:online-coop-lockstep] Adds what the session digest covers beyond the world hash (<see cref="CoopDigest"/>): the placed objects in list order and the prototype ride (catalogue
 	/// key, cell, rotation, base, attraction id, deleted flag, economy link, run flags); the weather without its frame-drained thunder queue (<see cref="ParkWeather.TakeThunder"/> empties
 	/// it once a game frame, so at a tick's end it depends on how ticks fell into frames); each player's carried catalogue entry, hand and coaster drag, the pending hires seat by seat and
-	/// the stale on-pointer candidate, the coasters' being-edited marks; the session clock; every guest seat's rights and the rides' claims. Never presentation a player may switch on or off
+	/// the stale on-pointer candidate, the coasters' being-edited marks; the session clock; every guest seat's rights and the rides' claims; the economy objects' counts of levels bought
+	/// (C4b-2). Never presentation a player may switch on or off
 	/// alone: the snow cover is the winter snow extension's, which changes no simulation and is no part of a session's identity, so two peers may differ in it.
 	/// </summary>
 	internal void AddSessionState( StateHasher hash )
@@ -144,6 +145,14 @@ public partial class Level
 				hash.Add( ride );
 				hash.Add( seat );
 			}
+		}
+		// [EXT:online-coop-commands] the economy objects' counts of levels bought, those not 0 in id order: a guest's upgrade cancellation names them, and the world hash leaves them out (C4b-2)
+		var bought = Park?.Economy.Objects.Where( item => item.UpgradePurchases != 0 ).OrderBy( item => item.Id ).ToArray() ?? Array.Empty<ParkObjectState>();
+		hash.Add( bought.Length );
+		foreach ( var item in bought )
+		{
+			hash.Add( item.Id );
+			hash.Add( item.UpgradePurchases );
 		}
 	}
 

@@ -1,5 +1,13 @@
 # AUDIO-900: Identify weather camera modes
 
+## 2026-10-27 current-source supersession
+
+This qualification supersedes the historical residual and future-work instructions below. Public main `eb8e3d2018eeeb726b5143caf51f75ce9f0681e1` includes merged [PR #874](https://github.com/meneerkrabs/OpenTPW/pull/874); [AUDIO.md](https://github.com/meneerkrabs/OpenTPW/blob/eb8e3d2018eeeb726b5143caf51f75ce9f0681e1/docs/AUDIO.md#L649-L664) retires AUDIO-900 and identifies bit 0x2 as the terrain camcorder (OpenTPW free walk), bit 0x4 as ride follow, and no instruction setting 0x10. This is a reconciliation of public source and its recorded evidence, not a fresh original-executable trace.
+
+[WeatherRenderer.IsEyeView](https://github.com/meneerkrabs/OpenTPW/blob/eb8e3d2018eeeb726b5143caf51f75ce9f0681e1/source/OpenTPW/World/Weather/WeatherRenderer.cs#L112-L132) maps free walk and ride cameras to the stronger factor; [WeatherVisualState](https://github.com/meneerkrabs/OpenTPW/blob/eb8e3d2018eeeb726b5143caf51f75ce9f0681e1/source/OpenTPW/World/Weather/WeatherVisualState.cs#L208-L243) retains the 0.3/0.1 choice and 1/16384 quantised absolute parallax. The old claim that the native camera bits are unread, and the resulting request to discover that mapping, are superseded. The separate `EXT:camcorder-first-person` control-mode substitution is not retired by this weather proposal.
+
+Existing `WeatherVisualTests` and `WeatherClipTests` contain CPU parallax/grid and camera-selection assertions; this reconciliation did not run them or reproduce their recorded native-analysis provenance. New original-runtime capture or GPU qualification is not supplied here. The proposal is historical, not a new implementation or retirement vehicle: do not reintroduce AUDIO-900 or infer a merge/closure instruction from this note. Any additional validation must identify the actual current contract rather than repeat the superseded investigation.
+
 ## Status and classification
 - Classification: evidence-only.
 - Plan-only local proposal: no runtime implementation, annotation retirement, publication or merge performed.

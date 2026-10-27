@@ -77,7 +77,7 @@ public readonly record struct TrackStation( int Rotation, byte Heading, (int X, 
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052A1A0 station line] from the attraction cell (x, y) the line runs, per rotation, 0°: (x, y+1) → (x+2, y+1), exit (x+4, y+1); 90°: (x+1, y−1) → (x+1, y−3), exit (x+1, y−5); 180°: (x−1, y−2) → (x−3, y−2), exit (x−5, y−2); 270°: (x−2, y) → (x−2, y+2), exit (x−2, y+4) (0x52A1E1..0x52A28C: the start cell is the walk's start 0x7639E0/E4); the tiles are the footprint's rows 1 and 2 across the heading, the entrance row 0 beside them
 	// [BIN:TPW-EXE:0x00529E10 ride placement] the controller's reference is the cell between the two tiles on their centre line (anchor + the type's Bumper.*Adjust + (4, 1), (1, −5), (−5, −2) or (−2, 4) by rotation, 0x529EDF..0x529F2B), see Level.TrackStationReference
-	// [APPROX:TRACK-005] the exit and entry tiles of the placement (0x525254..0x525690) are laid by the first and the last line, and its validation of them is not reproduced; the station tiles are typed and linked as the placement of the player's own lines is (the arm writes of 0x5255D8..0x52572C do not depend on the type ops)
+	// [BIN:TPW-EXE:0x005254C5 station ops] the placement lays the exit and entry tiles with the op list 0x87, the type op, 0x80, 0x82, 0x83, 0x85, 0x86, 0x81 on each (TrackBuilder.PlaceInitialStation): the station tiles written here carry the arms of the station line (the first tile toward the second, the second back), and the other arms follow the exit's and entry's ops whatever their type ops answered (0x5255D8..0x52572C)
 	public static TrackStation FromPlacement( int anchorX, int anchorY, int rotation )
 	{
 		var heading = TrackHeading.FromRotation( rotation );

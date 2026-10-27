@@ -71,12 +71,8 @@ public partial class Level
 		if ( resumeState != null )
 			return;
 		if ( fresh )
-			// [BIN:TPW-EXE:0x0053452F cell op 0x87] the exit and entry tiles' first op demolishes what stands on their cells; the placement's tool priority is the ride's (0x818C10 = its Info.OverwritePriority), so an object of a lower priority gives way
-			BuilderOf( item )!.PlaceInitialStation( station, ( x, y ) =>
-			{
-				if ( Objects.GivesWay( x, y, item.Entry.OverwritePriority ) )
-					DemolishObjectAt( x, y );
-			} );
+			// [BIN:TPW-EXE:0x005344E5 cell op 0x87] the exit and entry tiles' first op demolishes the object owning each of their four cells (0x527EE0 at 0x534566; 0x527D60 finds it for a cell of type 4, 9 or 10) when 0x818C14 < 0x818C10: the placement's tool priority is the ride's Info.OverwritePriority (5 for a kart or water ride, the hover 0x5234D0 at 0x5236A4), and 0x818C14, the priority of the last owner the validator met in the footprint (0x535788), is below it for any placement the validator allowed (it refuses a cell whose owner's priority is not below the tool's, 0x535D66); the two tiles lie outside the 4-cell footprint, so nothing validated them, and whatever stands there goes
+			BuilderOf( item )!.PlaceInitialStation( station, ( x, y ) => DemolishObjectAt( x, y ) );
 		else
 			BuilderOf( item )!.PlaceStation( station );
 		// [EXT:track-placement-walk] the original's placement lays the station (0x0052A1A0 from 0x00529E10) and walks nothing; OpenTPW walks the fresh station so its controller has the station's sections at once, without writing the track word (it keeps the constructor's 1 until a track edit, as the original's does), and the pieces take the add-on walk's rule (TrackPieceAnimations.ForWalk), which on the station's open circuit stops clips none of them plays yet

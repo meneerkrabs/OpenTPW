@@ -25,7 +25,7 @@ public static class BlueprintGhosts
 			refused |= stoppedAt is { } stop && cell == stop;
 			if ( covered?.Contains( cell ) == true )
 				continue;
-			cells.Add( (cell.X, cell.Y, refused ? BlueprintMarker.Refused : origins != null && origins.TryGetValue( cell, out var symbol ) ? symbol : BlueprintMarker.Allowed) );
+			cells.Add( (cell.X, cell.Y, origins != null && origins.TryGetValue( cell, out var symbol ) ? symbol : refused ? BlueprintMarker.Refused : BlueprintMarker.Allowed) );
 		}
 		return cells;
 	}

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -57,5 +58,83 @@ public class TrackGhostSymbolTests
 			Assert.IsTrue( vertices.Any( vertex => MathF.Abs( vertex.Position.X - engineX ) < 1e-4f && MathF.Abs( vertex.Position.Z - expected * OriginalParkPlacement.ModelScale ) < 1e-3f ),
 				$"corner ({cx}, {cy}) of the 2 x 2 tile" );
 		}
+	}
+
+	private static IReadOnlyDictionary<(int X, int Y), float?> Raises( params ((int X, int Y) Cell, float Raise)[] raises ) =>
+		raises.ToDictionary( item => item.Cell, item => (float?)item.Raise );
+
+	[TestMethod]
+	public void ATilesRaiseIsTheGreatestOfItsFourCellsAndASideWallClimbsFromTheLowerNeighbourInTens()
+	{
+		// the tile (2, 2) has one cell raised 20; its neighbour above (2, 0) stands at 0: the wall on that side has two faces
+		var heights = Raises( ((2, 2), 0f), ((3, 2), 0f), ((2, 3), 20f), ((3, 3), 0f) );
+		Assert.AreEqual( 20f, BlueprintMarkers.TileRaise( heights, 2, 2 ) );
+		var (vertices, _) = BlueprintMarkers.BuildGeometry( Field(), new[] { (2, 2, BlueprintMarker.Break) }, null, 0, heights );
+		// the symbol face (4 vertices x 2 sides) and, per side that stands lower, one wall face per 10 units from the neighbour's raise (0) to 20: two faces on each of the four sides
+		Assert.AreEqual( 8 + 4 * 2 * 8, vertices.Length );
+		Assert.AreEqual( 8, vertices.Count( vertex => vertex.TexIndex == 9 ), "the symbol face" );
+		Assert.AreEqual( 64, vertices.Count( vertex => vertex.TexIndex == 0 ), "blue walls" );
+		var lifted = BlueprintMarkers.BuildGeometry( Field(), new[] { (2, 2, BlueprintMarker.Break) }, null, 0, Raises( ((2, 2), 0f) ) ).Vertices;
+		Assert.AreEqual( 8, lifted.Length, "no raise, no walls" );
+	}
+
+	[TestMethod]
+	public void ARefusedTileIsTheRedFaceWithRedWallsAndTheUnitSquare()
+	{
+		var heights = Raises( ((2, 2), 10f), ((3, 2), 10f), ((2, 3), 10f), ((3, 3), 10f) );
+		var (vertices, _) = BlueprintMarkers.BuildGeometry( Field(), new[] { (2, 2, BlueprintMarker.RefusedTile) }, null, 0, heights );
+		Assert.IsTrue( vertices.All( vertex => vertex.TexIndex == 1 ), "the face and its walls are red" );
+		Assert.AreEqual( 8 + 4 * 8, vertices.Length );
+		var face = vertices.Take( 4 ).Select( vertex => vertex.TexCoords ).ToArray();
+		Assert.AreEqual( 0f, face[0].X, 1e-6f, "a texture below 8 takes the unit square" );
+		Assert.AreEqual( 1f, face[3].X, 1e-6f );
+	}
+
+	[TestMethod]
+	public void RedFacesOnlyAppearWhileTheBlinkFlagIsSet()
+	{
+		var shown = BlueprintMarkers.BuildGeometry( Field(), new[] { (1, 1, BlueprintMarker.Refused), (2, 2, BlueprintMarker.Allowed) }, null, 0, null, 0, showRed: true ).Vertices;
+		var hidden = BlueprintMarkers.BuildGeometry( Field(), new[] { (1, 1, BlueprintMarker.Refused), (2, 2, BlueprintMarker.Allowed) }, null, 0, null, 0, showRed: false ).Vertices;
+		Assert.AreEqual( 16, shown.Length );
+		Assert.AreEqual( 8, hidden.Length );
+		Assert.IsTrue( hidden.All( vertex => vertex.TexIndex == 0 ) );
+	}
+
+	[TestMethod]
+	public void TheGlideMovesTheFacesOfATextureBelowThirteenAndNotTheEraseFace()
+	{
+		var glide = new Vector2( 30, -10 );
+		var plain = BlueprintMarkers.BuildGeometry( Field(), new[] { (1, 1, BlueprintMarker.Break), (2, 2, BlueprintMarker.Erase) }, null, 0 ).Vertices;
+		var moved = BlueprintMarkers.BuildGeometry( Field(), new[] { (1, 1, BlueprintMarker.Break), (2, 2, BlueprintMarker.Erase) }, null, 0, null, 0, true, glide ).Vertices;
+		var scale = OriginalParkPlacement.ModelScale;
+		Assert.AreEqual( 30 * scale, moved[0].Position.X - plain[0].Position.X, 1e-3f, "m_break glides (texture 9)" );
+		Assert.AreEqual( 0f, moved[8].Position.X - plain[8].Position.X, 1e-6f, "m_erase (texture 13) does not" );
+	}
+
+	[TestMethod]
+	public void TheBlinkIsHiddenTwoFlushesAndShownSeven()
+	{
+		var flush = new BlueprintFlush();
+		var shown = new List<bool>();
+		for ( var frame = 0; frame < 18; frame++ )
+		{
+			flush.Tick( (0, 0) );
+			shown.Add( flush.RedShown );
+		}
+		// counter 1 (hidden), 2 -> shown; then 1..6 shown, 7 -> hidden (counter 0 again), 1 hidden, 2 -> shown
+		CollectionAssert.AreEqual( new[] { false, true, true, true, true, true, true, true, false, false, true, true, true, true, true, true, true, false }, shown );
+	}
+
+	[TestMethod]
+	public void TheGlidePointMovesHalfTheWayToTenTimesTheCursorEveryFlush()
+	{
+		var flush = new BlueprintFlush();
+		flush.Tick( (4, 2) );
+		Assert.AreEqual( new Vector2( -20, -10 ), flush.Offset( (4, 2) ), "from the origin: half of 40 and of 20 is covered" );
+		for ( var frame = 0; frame < 40; frame++ )
+			flush.Tick( (4, 2) );
+		Assert.AreEqual( 0f, flush.Offset( (4, 2) ).X, 1e-3f );
+		flush.Tick( (5, 2) );
+		Assert.AreEqual( -10 + 0.5f * 10, flush.Offset( (5, 2) ).X, 1e-3f, "a cell on: the face lags by what is left of the new distance" );
 	}
 }

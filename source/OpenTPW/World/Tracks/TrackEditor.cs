@@ -154,7 +154,7 @@ public sealed class TrackEditor
 		var cell = Tracks.Get( origin.X, origin.Y );
 		var ours = cell.IsOrigin && !TrackCellTypes.IsStation( cell.Type ) && (cell.Owner == Owner || cell.Owner == 0 || Owner == 0);
 		if ( cut )
-			return ours ? BlueprintMarker.Erase : cell.Type == TrackCellTypes.WaterAlternate ? null : BlueprintMarker.Refused;
+			return ours ? BlueprintMarker.Erase : cell.Type == TrackCellTypes.WaterAlternate ? null : BlueprintMarker.RefusedTile;
 		if ( !ours )
 			return null;
 		return TrackHeading.Count( cell.Mask ) < 3 ? BlueprintMarker.Break : null;

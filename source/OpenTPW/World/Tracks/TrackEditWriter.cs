@@ -60,25 +60,29 @@ public sealed class TrackEditWriter : ICellLineWriter
 	public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor )
 	{
 		var (result, tile) = editor.Pick( cursor.X, cursor.Y );
+		// [BIN:TPW-EXE:0x00527960 hover cell] the hover keeps the snapped tile's origin in 0x8186B8/0x8186B4, which the ghost's glide chases (0x53C3F0)
+		var glide = tile ?? cursor;
 		if ( first is not { } picked )
 		{
 			var line = tile is { } hovered ? TrackStation.TileCellsOf( hovered.X, hovered.Y ).ToArray() : new[] { cursor };
 			var accepted = result == TrackEditPick.Accepted && tile is { };
-			return Ghost( cursor, line, accepted ? null : tile ?? cursor, accepted ? CellBuildResult.Ok : CellBuildResult.Occupied, accepted ? new[] { (tile!.Value, BlueprintMarker.Break) } : null );
+			// the chooser's answer 9 is the m_break face over the tile, 1 the red face over it (a cell that is no tile: the red cell)
+			return Ghost( cursor, line, accepted ? null : tile ?? cursor, accepted ? CellBuildResult.Ok : CellBuildResult.Occupied,
+				tile is { } shown ? new[] { (shown, accepted ? BlueprintMarker.Break : BlueprintMarker.RefusedTile) } : null, glide );
 		}
 		if ( result != TrackEditPick.Accepted || tile is not { } second )
 		{
 			// a second tile the test refuses draws as the first alone, the hovered tile red (0x527960 resets the second pick to the first)
 			var line = TrackStation.TileCellsOf( picked.X, picked.Y ).Concat( tile is { } other ? TrackStation.TileCellsOf( other.X, other.Y ) : new[] { cursor } ).ToArray();
-			return Ghost( cursor, line, tile ?? cursor, CellBuildResult.Occupied, SymbolsOf( new[] { picked } ) );
+			var symbols = SymbolsOf( new[] { picked } ).Concat( tile is { } refused ? new[] { (refused, BlueprintMarker.RefusedTile) } : Array.Empty<((int X, int Y), BlueprintMarker)>() ).ToArray();
+			return Ghost( cursor, line, tile ?? cursor, CellBuildResult.Occupied, symbols, glide );
 		}
 		var (low, high) = Ordered( picked, second );
 		var path = editor.Cut( low, high, commit: false );
 		var cells = path.Path.SelectMany( step => TrackStation.TileCellsOf( step.X, step.Y ) ).ToArray();
-		return Ghost( cursor, cells, path.Failed ? second : null, path.Failed ? CellBuildResult.Occupied : CellBuildResult.Ok, path.Failed ? null : SymbolsOf( path.Path ) );
+		return Ghost( cursor, cells, path.Failed ? second : null, path.Failed ? CellBuildResult.Occupied : CellBuildResult.Ok, path.Failed ? null : SymbolsOf( path.Path ), glide );
 	}
 
-	// [APPROX:TRACK-018] the hover marks the pick (m_break) and the cut path (m_erase) as 0x10F of 0x52B400 does, but not the pick hover's glide, walls and neighbour raise or the ghost's blink (BLUEPRINT-003); whether 0x52FC80 repairs the exit rather than the first station tile is not traced
 	/// <summary>The cut's tiles as symbol faces: m_erase on each tile of the ride (<see cref="TrackEditor.GhostSymbol"/>).</summary>
 	private ((int X, int Y) Origin, BlueprintMarker Symbol)[] SymbolsOf( IEnumerable<(int X, int Y)> tiles ) =>
 		tiles.Select( tile => (Tile: tile, Symbol: editor.GhostSymbol( tile, cut: true )) ).Where( item => item.Symbol is not null ).Select( item => (item.Tile, item.Symbol!.Value) ).ToArray();
@@ -154,8 +158,8 @@ public sealed class TrackEditWriter : ICellLineWriter
 	private ((int X, int Y) Low, (int X, int Y) High) Ordered( (int X, int Y) a, (int X, int Y) b ) => FirstOf( a, b ) == a ? (a, b) : (b, a);
 
 	private static SegmentResult Ghost( (int X, int Y) end, IReadOnlyList<(int X, int Y)> line, (int X, int Y)? stoppedAt, CellBuildResult stoppedBy,
-		IReadOnlyList<((int X, int Y) Origin, BlueprintMarker Symbol)>? symbols = null ) =>
-		new( end, Array.Empty<(int X, int Y)>(), 0, stoppedBy, false ) { Start = end, Line = line, StoppedAt = stoppedAt, Symbols = symbols ?? Array.Empty<((int X, int Y) Origin, BlueprintMarker Symbol)>() };
+		IReadOnlyList<((int X, int Y) Origin, BlueprintMarker Symbol)>? symbols = null, (int X, int Y)? glideCell = null ) =>
+		new( end, Array.Empty<(int X, int Y)>(), 0, stoppedBy, false ) { Start = end, Line = line, StoppedAt = stoppedAt, Symbols = symbols ?? Array.Empty<((int X, int Y) Origin, BlueprintMarker Symbol)>(), GlideCell = glideCell };
 }
 
 /// <summary>

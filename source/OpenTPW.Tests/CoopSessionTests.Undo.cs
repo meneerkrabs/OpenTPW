@@ -959,6 +959,68 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void ALatePieceOfAnEarlierSlideModeIsNoPieceOfTheNewOne()
+	{
+		var (host, guest, _, _) = Shared();
+		var tower = TowerOnBoth( host, guest );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var seat = guest.Level.Commands.Player;
+		guest.Enter();
+		Assert.IsTrue( guest.Level.EnterSlideTool( tower ) );
+		var tool = guest.Level.PoolTool!;
+		// a piece goes; before its outcome the guest leaves the slide mode and starts it again
+		tool.Press( 15, 19 );
+		tool.Release();
+		tool.SendGuestBatches( Time.Now );
+		Assert.IsTrue( tool.HasGuestBatches, "the piece is on its way" );
+		tool.Cancel();
+		Assert.IsTrue( guest.Level.EnterSlideTool( tower ) );
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the piece came back" );
+		Assert.AreEqual( 1, SlideOf( host )!.Pieces.Count, "laid" );
+		// the new slide mode laid no piece of its own: its Backspace sends nothing
+		guest.Enter();
+		tool.Undo();
+		tool.SendGuestBatches( Time.Now );
+		Rounds( 10, host, guest );
+		Assert.AreEqual( 0, HostCommandsOf( host, seat ).Count( command => command is TakeBackCommand ), "no take-back went" );
+		Assert.AreEqual( 1, SlideOf( host )!.Pieces.Count );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void ARightsRefusalOfAnEarlierSlideModesTakeBackLeavesTheNewOneOn()
+	{
+		var (host, guest, _, _) = Shared();
+		var tower = TowerOnBoth( host, guest );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var seat = guest.Level.Commands.Player;
+		guest.Enter();
+		Assert.IsTrue( guest.Level.EnterSlideTool( tower ) );
+		var tool = guest.Level.PoolTool!;
+		tool.Press( 15, 19 );
+		tool.Release();
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the piece came back" );
+		// the take-back goes, the grant is taken back while it is on its way, and the guest starts the slide mode again before the refusal comes back
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
+		guest.Enter();
+		Assert.IsTrue( tool.Undo() );
+		tool.SendGuestBatches( Time.Now );
+		tool.Cancel();
+		Assert.IsTrue( guest.Level.EnterSlideTool( tower ) );
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the refusal came back" );
+		view.Update();
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is TakeBackCommand ), "it went to the host" );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ) );
+		Assert.IsTrue( tool.IsActive && tool.SlideTower == (tower.Placement.X, tower.Placement.Y), "the refusal ends the slide mode it came from, not the new one" );
+		Assert.AreEqual( 1, SlideOf( host )!.Pieces.Count );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
 	public void ASinglePlayersSlideBackspaceStaysThePlainUndo()
 	{
 		var park = NewPark();

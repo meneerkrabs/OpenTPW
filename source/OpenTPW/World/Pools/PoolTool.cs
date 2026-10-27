@@ -155,6 +155,7 @@ public sealed partial class PoolTool
 		Release();
 		// [EXT:online-coop-undo] a slide mode takes back only the pieces it laid itself, as a line tool its own segments (C5)
 		ownPieces.Clear();
+		slideSession++;
 		IsActive = true;
 		bridgeMode = false;
 		HoverCell = null;

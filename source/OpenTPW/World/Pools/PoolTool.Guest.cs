@@ -16,6 +16,8 @@ public sealed record PoolGuestReport( bool Wrote, ((int X, int Y) Cell, PoolBuil
 {
 	/// <summary>[EXT:online-coop-undo] The reason the host's journal refused a slide's take-back for (C5), said by its note; null when taken, or when it met a finished slide (quiet).</summary>
 	public string? TakeBackRefusal { get; init; }
+	/// <summary>[EXT:online-coop-undo] The slide mode the stroke was drawn in (<see cref="PoolTool.InSlideSession"/>), so a late outcome acts on that slide mode alone (C5).</summary>
+	public int SlideSession { get; init; }
 }
 
 /// <summary>
@@ -57,6 +59,12 @@ public sealed partial class PoolTool
 	/// </summary>
 	private readonly List<((int X, int Y) Tower, long Record, int Part)> ownPieces = new();
 
+	/// <summary>[EXT:online-coop-undo] Each start of the slide mode (<see cref="BeginSlide"/>); a stroke keeps the one it was drawn in (C5).</summary>
+	private int slideSession;
+
+	/// <summary>[EXT:online-coop-undo] Whether the slide mode started as <paramref name="session"/> is still on (C5).</summary>
+	internal bool InSlideSession( int session ) => IsActive && slideTower != null && session == slideSession;
+
 	/// <summary>[EXT:online-coop-undo] The newest piece this tool laid on <paramref name="tower"/>'s slide, or null (C5).</summary>
 	private (long Record, int Part)? NewestOwnPiece( (int X, int Y) tower )
 	{
@@ -74,6 +82,8 @@ public sealed partial class PoolTool
 	private sealed class GuestStroke( GuestWrite write, bool erase, bool river, (int X, int Y)? tower, int direction )
 	{
 		public GuestWrite Write { get; } = write;
+		/// <summary>[EXT:online-coop-undo] The slide mode it was drawn in (C5).</summary>
+		public int Session { get; init; }
 		public bool Erase { get; } = erase;
 		public bool River { get; } = river;
 		public (int X, int Y)? Tower { get; } = tower;
@@ -131,7 +141,7 @@ public sealed partial class PoolTool
 	private void BeginGuestStroke( int x, int y )
 	{
 		var write = bridgeMode ? GuestWrite.Bridge : slideTower != null ? GuestWrite.Slide : GuestWrite.Cells;
-		guestStroke = new GuestStroke( write, IsErasing, IsRiver, slideTower, bridgeDirection );
+		guestStroke = new GuestStroke( write, IsErasing, IsRiver, slideTower, bridgeDirection ) { Session = slideSession };
 		AddGuestCell( x, y );
 	}
 
@@ -177,7 +187,7 @@ public sealed partial class PoolTool
 			NoteWaiting?.Invoke();
 			return false;
 		}
-		var stroke = new GuestStroke( GuestWrite.SlideUndo, false, false, tower, 0 ) { Released = true };
+		var stroke = new GuestStroke( GuestWrite.SlideUndo, false, false, tower, 0 ) { Released = true, Session = slideSession };
 		var batch = new GuestBatch( stroke, first: true );
 		stroke.Batches.Add( batch );
 		unsentBatches.Add( batch );
@@ -264,8 +274,9 @@ public sealed partial class PoolTool
 			batch.Stroke.Finished = true;
 			DropUnsent( batch.Stroke );
 		}
-		// [EXT:online-coop-undo] the pieces a batch laid are the tool's own, each by its record and ordinal; a taken take-back's piece is no longer (C5)
-		if ( batch.Stroke is { Write: GuestWrite.Slide, Tower: { } tower } && request is { Accepted: true, Result.Value: PoolSlideBatch laid } )
+		// [EXT:online-coop-undo] the pieces a batch laid are the tool's own, each by its record and ordinal, while the slide mode it was drawn in is on (a late outcome of an earlier one adds
+		// none to a new one's); a taken take-back's piece is no longer (C5)
+		if ( batch.Stroke is { Write: GuestWrite.Slide, Tower: { } tower } stroke && InSlideSession( stroke.Session ) && request is { Accepted: true, Result.Value: PoolSlideBatch laid } )
 		{
 			var count = laid.Writes.Count( write => write.Result == PoolSlideResult.Ok );
 			for ( var ordinal = 0; ordinal < count; ordinal++ )
@@ -431,6 +442,10 @@ public sealed partial class PoolTool
 		// a slide undo plays nothing and says only its notes, as the host's Backspace says nothing
 		if ( stroke.Write == GuestWrite.SlideUndo )
 			(wrote, refusal) = (false, null);
-		guestReports.Add( new PoolGuestReport( wrote, refusal, slideRefusal, bridgeRefusal, done, rightsRefused, rightsReason, notTaken, unknown ) { TakeBackRefusal = takeBackRefusal } );
+		guestReports.Add( new PoolGuestReport( wrote, refusal, slideRefusal, bridgeRefusal, done, rightsRefused, rightsReason, notTaken, unknown )
+		{
+			TakeBackRefusal = takeBackRefusal,
+			SlideSession = stroke.Session
+		} );
 	}
 }

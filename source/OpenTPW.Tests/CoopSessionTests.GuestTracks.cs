@@ -135,7 +135,7 @@ public partial class CoopSessionTests
 		Assert.AreEqual( tiles, builder.Tiles().Count(), "and its tiles off the track" );
 		Assert.AreEqual( tiles, host.Level.BuilderOf( host.Level.TrackStations.Keys.Single() )!.Tiles().Count() );
 		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is UndoTrackLineCommand ) );
-		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopGuestUndo ), "a track tool's Backspace is the guest's under its claim" );
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopUndoNotOwn ), "a track tool's Backspace is the guest's under its claim" );
 		Assert.AreEqual( (seat, seat), (host.Level.ClaimOf( ride ), guest.Level.ClaimOf( ride )) );
 		CatchUpAndCompare( host, guest );
 	}

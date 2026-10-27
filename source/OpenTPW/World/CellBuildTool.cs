@@ -329,15 +329,56 @@ public sealed class CellBuildTool
 		return null;
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-undo] Why the tool's last Backspace took nothing back in a shared park (C5): the host's refused take-back, or a segment the tool loaded, which no step of its player's
+	/// laid. The HUD says it once (<see cref="TakeUndoRefusal"/>).
+	/// </summary>
+	private ParkCommandResult? undoRefusal;
+
+	/// <summary>[EXT:online-coop-undo] The refusal of the last Backspace, once (C5).</summary>
+	internal ParkCommandResult? TakeUndoRefusal()
+	{
+		var refusal = undoRefusal;
+		undoRefusal = null;
+		return refusal;
+	}
+
 	/// <summary>Backspace: takes back the last committed segment and continues from its start.</summary>
 	public bool Undo()
 	{
-		// [EXT:online-coop-commands] a guest's Backspace in the path or queue tool takes nothing back: its segments are the host's to undo, and a line or Backspace that waits for the host
-		// is not done yet (C3a-2)
+		// [EXT:online-coop-commands] a line or Backspace that waits for the host is not done yet (C3a-2)
+		undoRefusal = null;
 		if ( Writer == null || segments.Count == 0 || IsWaiting || !Writer.CanUndo )
 			return false;
 		var segment = segments[^1];
-		// [EXT:online-coop-commands] a guest's Backspace in its track tool goes to the host first, under the ride's claim (C3c-1b): the segment stays until the outcome takes it back
+		// [EXT:online-coop-undo] in a shared park a path or queue segment is taken back through the host's journal (C5): one that laid nothing pops as in single player; one the tool loaded
+		// (no record) was laid by no step of its player's, and stays
+		if ( Writer is ParkCommandLineWriter { TakesBack: true } lines )
+		{
+			if ( !lines.HasWork( segment ) )
+			{
+				PopSegment( segment );
+				return true;
+			}
+			if ( segment.Record == null )
+			{
+				undoRefusal = ParkCommandResult.Rejected( TakeBackCommand.NotOwnReason );
+				return false;
+			}
+			if ( !((IGuestUndoWriter)lines).UndoesByRequest )
+			{
+				var taken = lines.TakeBack( segment );
+				if ( !taken.Accepted )
+				{
+					undoRefusal = taken;
+					return false;
+				}
+				PopSegment( segment );
+				return true;
+			}
+		}
+		// [EXT:online-coop-commands] a guest's Backspace in its track tool goes to the host first, under the ride's claim (C3c-1b), [EXT:online-coop-undo] and in its path or queue tool as a
+		// take-back (C5): the segment stays until the outcome takes it back
 		if ( Writer is IGuestUndoWriter { UndoesByRequest: true } sender )
 		{
 			if ( sender.SendUndo( segment ) is not { } request )
@@ -352,6 +393,15 @@ public sealed class CellBuildTool
 		Start = vertices.Count > 0 ? vertices[^1] : segment.Start;
 		Ghost = null;
 		return true;
+	}
+
+	/// <summary>[EXT:online-coop-undo] Takes <paramref name="segment"/>, the stack's last, off the tool's stacks as the undo pops it, and goes on from its start (C5).</summary>
+	private void PopSegment( SegmentResult segment )
+	{
+		segments.RemoveAt( segments.Count - 1 );
+		vertices.RemoveAt( vertices.Count - 1 );
+		Start = vertices.Count > 0 ? vertices[^1] : segment.Start;
+		Ghost = null;
 	}
 
 	/// <summary>

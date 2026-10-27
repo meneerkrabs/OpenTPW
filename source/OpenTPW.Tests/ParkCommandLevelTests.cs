@@ -486,7 +486,7 @@ public class ParkCommandLevelTests
 		long Amount() => Pick( -1L, long.MinValue, long.MaxValue, 0L, 100L, 10_000L, 10_001L, 18_000L );
 		bool Flag() => random.Below( 2 ) == 0;
 		string Text() => Pick( "Ann", "", "A\u0007B", "\ud800", new string( 'a', 600 ), "Kevin the", "Cosmic Cow" );
-		ParkCommand Next() => random.Below( 80 ) switch
+		ParkCommand Next() => random.Below( 81 ) switch
 		{
 			0 => new PlaceObjectCommand( Entry(), Coordinate(), Coordinate(), Rotation(), random.Below( 4 ) == 0, Pick( -1, -2, Id() ) ),
 			1 => new RemoveAtCommand( Coordinate(), Coordinate() ),
@@ -579,6 +579,9 @@ public class ParkCommandLevelTests
 			77 => new ReleaseRideCommand( Id() ),
 			// [EXT:online-coop-permissions] a seat's rights (C4a)
 			78 => new SetSeatRightsCommand( Pick( -1, 0, 1, 3, 64 ), (CoopRights)Pick<byte>( 0, 1, 2, 3, 31, 32, 255 ) ),
+			// [EXT:online-coop-undo] a take-back no host decided, or decided with a random inverse of the local player (C5)
+			79 => new TakeBackCommand( Flag(), Pick( -1L, 0L, 41L, long.MaxValue ), Pick( -2, -1, 0, 3 ), Pick( -1, -2, Id() ), Pick( -1, Id() ), (TakeBackVerdict)Pick<byte>( 0, 1, 2, 3, 7, 8, 255 ),
+				random.Below( 2 ) == 0 ? null : new UndoLineCommand( Mode(), Pick( -1, Id() ), Coordinate(), Coordinate(), Cells(), Cells() ) ),
 			_ => new RemoveAttractionCommand( Pick( -1, int.MinValue, 99_999 ) ),
 		};
 		CollectionAssert.IsSubsetOf( Enum.GetValues<ParkCommandKind>(), Enumerable.Range( 0, 1024 ).Select( _ => Next().Kind ).Distinct().ToArray(), "the stream draws every kind" );

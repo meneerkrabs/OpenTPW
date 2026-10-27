@@ -339,7 +339,7 @@ public partial class CoopSessionTests
 		view.Update();
 		Assert.AreEqual( 1, view.Says( OpenTpwText.PoolSlideDone ) );
 		Assert.AreEqual( 0, view.Says( OpenTpwText.CannotBuildHere ) + view.Says( OpenTpwText.PoolSlideNotNext ) );
-		// a finished slide's last piece is the host's: a guest's undo of it is refused
+		// a slide's last piece is the host's tools' to take off: a guest's slide Backspace is a take-back of its own piece (C5)
 		var rights = new CoopBuildRights( guest.Level );
 		Assert.IsFalse( rights.Allows( guest.Level.Commands.Player, new UndoPoolSlidePieceCommand( 13, 19 ) ) );
 		CatchUpAndCompare( host, guest );
@@ -383,11 +383,10 @@ public partial class CoopSessionTests
 		Assert.IsTrue( guest.Level.EnterSlideTool( tower ) );
 		var tool = guest.Level.PoolTool!;
 		var seat = guest.Level.Commands.Player;
-		Assert.IsTrue( new CoopBuildRights( guest.Level ).Allows( seat, new UndoPoolSlidePieceCommand( 13, 19 ) ), "a slide with no piece is the park's to refuse" );
-		// Backspace with no piece laid: the park refuses it quietly, as the host's Backspace
+		// Backspace with no piece of the tool's own laid: it takes nothing back, quietly, as the host's Backspace, and sends nothing (C5)
 		Assert.IsTrue( tool.Undo() );
-		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the undo came back" );
-		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is UndoPoolSlidePieceCommand ), "it went to the host" );
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the undo was resolved" );
+		Assert.AreEqual( 0, HostCommandsOf( host, seat ).Count( command => command is TakeBackCommand ), "nothing went to the host" );
 		// the pieces to the splash, and an undo queued behind them before they went: the slide they finish meets it
 		tool.Press( 15, 19 );
 		tool.Hover( 16, 19 );
@@ -395,8 +394,9 @@ public partial class CoopSessionTests
 		tool.Hover( 17, 18 );
 		tool.Release();
 		Assert.IsTrue( tool.Undo(), "behind the pieces" );
-		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the pieces and the undo came back" );
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the pieces came back and the undo was resolved" );
 		Assert.IsTrue( SlideOf( host ) is { IsComplete: true } && SlideOf( guest ) is { IsComplete: true }, "the undo took nothing back" );
+		Assert.AreEqual( 0, HostCommandsOf( host, seat ).Count( command => command is TakeBackCommand ), "a finished slide takes no take-back: nothing went" );
 		view.Update();
 		Assert.AreEqual( 1, view.Says( OpenTpwText.PoolSlideDone ) );
 		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) + view.Says( OpenTpwText.CoopNotGranted ) + view.Says( OpenTpwText.CoopHostCouldNotTake ), "nothing else is said" );
@@ -425,7 +425,7 @@ public partial class CoopSessionTests
 		tool.SendGuestBatches( Time.Now );
 		RoundsUntil( () => !tool.HasGuestBatches && !guest.Level.HasBuildGrant( seat ), host, guest, view, "the undo came back" );
 		view.Update();
-		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is UndoPoolSlidePieceCommand ), "it went to the host" );
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is TakeBackCommand ), "it went to the host" );
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ) );
 		// once the guest's park knows, its Backspace is refused before it goes, and says so too
 		Assert.IsTrue( tool.Undo() );
@@ -433,7 +433,7 @@ public partial class CoopSessionTests
 		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the refused undo reported" );
 		view.Update();
 		Assert.AreEqual( 2, view.Says( OpenTpwText.CoopNotGranted ) );
-		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is UndoPoolSlidePieceCommand ), "the second went nowhere" );
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is TakeBackCommand ), "the second went nowhere" );
 		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) );
 		Assert.IsTrue( SlideOf( host )!.Pieces.Count == 1 && SlideOf( guest )!.Pieces.Count == 1, "nothing was taken back" );
 		CatchUpAndCompare( host, guest );
@@ -455,7 +455,7 @@ public partial class CoopSessionTests
 		// sends the guest's batches and runs frames, with no HUD to take their outcomes, until every request was answered and the host took the slide undos
 		void AnsweredWithoutTheHud( int undos )
 		{
-			for ( var round = 0; round < 600 && (requests.Open.Count > 0 || HostCommandsOf( host, seat ).Count( command => command is UndoPoolSlidePieceCommand ) < undos); round++ )
+			for ( var round = 0; round < 600 && (requests.Open.Count > 0 || HostCommandsOf( host, seat ).Count( command => command is TakeBackCommand ) < undos); round++ )
 			{
 				guest.Enter();
 				tool.SendGuestBatches( Time.Now );
@@ -476,14 +476,16 @@ public partial class CoopSessionTests
 		view.Update();
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ), "said, the grant given back since or not" );
 		Assert.AreEqual( 1, SlideOf( guest )!.Pieces.Count );
-		// the pieces to the splash and an undo behind them, answered before the HUD takes them; the host takes the grant back before it does: the undo met a finished slide
+		// the pieces to the splash and an undo behind them, the pieces answered before the HUD takes them; the host takes the grant back before it does: the undo waits behind the pieces and
+		// then meets a finished slide, which takes no take-back (C5)
 		guest.Enter();
 		tool.Press( 16, 19 );
 		tool.Hover( 17, 19 );
 		tool.Hover( 17, 18 );
 		tool.Release();
 		Assert.IsTrue( tool.Undo() );
-		AnsweredWithoutTheHud( 2 );
+		tool.SendGuestBatches( Time.Now );
+		AnsweredWithoutTheHud( 1 );
 		Assert.IsTrue( SlideOf( guest ) is { IsComplete: true } && SlideOf( host ) is { IsComplete: true }, "the undo took nothing back" );
 		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
 		GuestFramesUntil( () => !guest.Level.HasBuildGrant( seat ), host, guest, "the revoke reached the guest" );

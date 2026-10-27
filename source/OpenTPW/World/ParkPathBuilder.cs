@@ -54,6 +54,11 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 	/// (<see cref="CellBuildTool.CompleteWaiting"/>).
 	/// </summary>
 	internal WaitingLineCommit? Waiting { get; init; }
+	/// <summary>
+	/// [EXT:online-coop-undo] The record of the session's stream that laid the segment (C5): the host's own from its stream, a guest's from its request; null in single player, and for a
+	/// segment a tool loaded from the park (the queue tool's existing segments). A take-back names it (<see cref="TakeBackCommand"/>).
+	/// </summary>
+	internal long? Record { get; init; }
 	/// <summary>A successful preview visited the path/queue validator's link branch; only completed ghosts expose it in the HUD.</summary>
 	public bool LinkPointer { get; init; }
 	/// <summary>True when no cell of the line was refused.</summary>

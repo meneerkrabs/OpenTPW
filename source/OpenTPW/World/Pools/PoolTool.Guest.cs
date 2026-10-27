@@ -12,7 +12,11 @@ namespace OpenTPW;
 /// <param name="Unknown">A request of it ended without a known outcome (an error, a lost answer).</param>
 // [EXT:online-coop-commands] the stroke's report of a guest (C3b-3)
 public sealed record PoolGuestReport( bool Wrote, ((int X, int Y) Cell, PoolBuildResult Reason)? Refusal, PoolSlideResult? SlideRefusal, PoolBridgeResult? BridgeRefusal, bool SlideDone,
-	ParkCommand? RightsRefused, string? RightsReason, bool NotTaken, bool Unknown );
+	ParkCommand? RightsRefused, string? RightsReason, bool NotTaken, bool Unknown )
+{
+	/// <summary>[EXT:online-coop-undo] The reason the host's journal refused a slide's take-back for (C5), said by its note; null when taken, or when it met a finished slide (quiet).</summary>
+	public string? TakeBackRefusal { get; init; }
+}
 
 /// <summary>
 /// [EXT:online-coop-commands] A guest's strokes (docs/COOP.md, "A guest's pools"; C3b-3). On a guest's park the tool's writes go to the host as requests, and one request a cell would outrun
@@ -40,6 +44,25 @@ public sealed partial class PoolTool
 
 	/// <summary>Whether the tool's writes go to the host as requests (a guest's park in a session, <see cref="ParkCommands.SendsRequests"/>); set by the level.</summary>
 	internal Func<bool>? SendsRequests { get; set; }
+
+	/// <summary>[EXT:online-coop-undo] Whether the slide mode's Backspace is a take-back the host decides (C5): in a shared park, the host's and a guest's alike.</summary>
+	internal Func<bool>? TakesBack { get; set; }
+
+	/// <summary>[EXT:online-coop-undo] On a session's host: the record its stream took last, the record of a piece the host just laid (C5).</summary>
+	internal Func<long?>? HostRecord { get; set; }
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The slide pieces this tool laid in a shared park (C5), oldest first: each one's tower, record and ordinal within its record, the step a take-back names. The slide
+	/// mode's Backspace takes back the newest of its own tower's, never another player's piece.
+	/// </summary>
+	private readonly List<((int X, int Y) Tower, long Record, int Part)> ownPieces = new();
+
+	/// <summary>[EXT:online-coop-undo] The newest piece this tool laid on <paramref name="tower"/>'s slide, or null (C5).</summary>
+	private (long Record, int Part)? NewestOwnPiece( (int X, int Y) tower )
+	{
+		var index = ownPieces.FindLastIndex( piece => piece.Tower == tower );
+		return index >= 0 ? (ownPieces[index].Record, ownPieces[index].Part) : null;
+	}
 	/// <summary>How many tool requests of this guest are open in the session's requests, the pool tool's and the coaster tool's (<see cref="Level.OpenToolRequests"/>); set by the level.</summary>
 	internal Func<int>? OpenRequests { get; set; }
 	/// <summary>Asks the player to wait (<see cref="Level.NoteWaitingClick"/>); set by the level.</summary>
@@ -76,6 +99,8 @@ public sealed partial class PoolTool
 		/// <summary>The command it went as, once sent or refused here.</summary>
 		public ParkCommand? Command;
 		public CoopGuestCommands.Request? Request;
+		/// <summary>[EXT:online-coop-undo] The own piece a slide's take-back names, chosen when it goes (C5).</summary>
+		public (long Record, int Part)? Piece;
 		/// <summary>The funnel's answer when it refused the batch itself (the guest's own rights): no request went.</summary>
 		public ParkCommandResult? Local;
 		public bool Resolved;
@@ -170,9 +195,24 @@ public sealed partial class PoolTool
 			var batch = unsentBatches[0];
 			if ( (OpenRequests?.Invoke() ?? 0) >= MaximumOpenRequests || (!batch.First && now - lastGuestSend < SendSeconds) )
 				return;
+			// [EXT:online-coop-undo] a slide's take-back waits for the pieces sent before it, so it names the newest piece the tool laid (C5)
+			if ( batch.Stroke.Write == GuestWrite.SlideUndo && sentBatches.Any( item => item.Stroke.Write == GuestWrite.Slide ) )
+				return;
 			unsentBatches.RemoveAt( 0 );
-			lastGuestSend = now;
 			var stroke = batch.Stroke;
+			if ( stroke.Write == GuestWrite.SlideUndo )
+			{
+				// with no piece of its own on the slide, or on a slide finished since (its pieces go only with its tower), Backspace takes nothing back, quietly, as the host's
+				var tower = stroke.Tower!.Value;
+				if ( NewestOwnPiece( tower ) is not { } piece || Slides?.Find( PoolSlide.KeyOf( tower.X, tower.Y ) ) is { IsComplete: true } )
+				{
+					batch.Resolved = true;
+					TryFinishGuestStroke( stroke );
+					continue;
+				}
+				batch.Piece = piece;
+			}
+			lastGuestSend = now;
 			batch.Command = GuestCommand( batch );
 			ParkCommandResult result;
 			SendingGuestBatch = true;
@@ -203,7 +243,8 @@ public sealed partial class PoolTool
 	{
 		GuestWrite.Slide => new LayPoolSlidePiecesCommand( batch.Stroke.Tower!.Value.X, batch.Stroke.Tower.Value.Y, batch.Cells.ToArray() ),
 		GuestWrite.Bridge => new PlacePoolBridgeCommand( batch.Cells[0].X, batch.Cells[0].Y, batch.Stroke.Direction ),
-		GuestWrite.SlideUndo => new UndoPoolSlidePieceCommand( batch.Stroke.Tower!.Value.X, batch.Stroke.Tower.Value.Y ),
+		// [EXT:online-coop-undo] a take-back of the tool's own newest piece, which the host's journal decides (C5)
+		GuestWrite.SlideUndo => new TakeBackCommand( false, batch.Piece!.Value.Record, batch.Piece.Value.Part, -1, -1 ),
 		_ => new PoolCellsCommand( batch.Stroke.Erase, batch.Stroke.River, batch.Cells.ToArray() )
 	};
 
@@ -223,6 +264,15 @@ public sealed partial class PoolTool
 			batch.Stroke.Finished = true;
 			DropUnsent( batch.Stroke );
 		}
+		// [EXT:online-coop-undo] the pieces a batch laid are the tool's own, each by its record and ordinal; a taken take-back's piece is no longer (C5)
+		if ( batch.Stroke is { Write: GuestWrite.Slide, Tower: { } tower } && request is { Accepted: true, Result.Value: PoolSlideBatch laid } )
+		{
+			var count = laid.Writes.Count( write => write.Result == PoolSlideResult.Ok );
+			for ( var ordinal = 0; ordinal < count; ordinal++ )
+				ownPieces.Add( (tower, request.Record, ordinal) );
+		}
+		else if ( batch is { Stroke.Write: GuestWrite.SlideUndo, Piece: { } taken } && request.Accepted )
+			ownPieces.RemoveAll( piece => piece.Record == taken.Record && piece.Part == taken.Part );
 		TryFinishGuestStroke( batch.Stroke );
 		return true;
 	}
@@ -291,6 +341,7 @@ public sealed partial class PoolTool
 		PoolBridgeResult? bridgeRefusal = null;
 		ParkCommand? rightsRefused = null;
 		string? rightsReason = null;
+		string? takeBackRefusal = null;
 		var notTaken = false;
 		var unknown = false;
 		foreach ( var batch in stroke.Batches )
@@ -317,6 +368,9 @@ public sealed partial class PoolTool
 							(rightsRefused, rightsReason) = (request.Command, result.Reason);
 						break;
 					}
+					// [EXT:online-coop-undo] a slide's take-back the journal refused says why, but one that met a finished slide says nothing, as the host's Backspace there (C5)
+					if ( request.Command is TakeBackCommand && !result.Accepted && TakeBackCommand.VerdictOf( result.Reason ) is { } verdict && verdict != TakeBackVerdict.InTheWay )
+						takeBackRefusal = result.Reason;
 					switch ( result.Value )
 					{
 						case PoolCellWrite[] writes:
@@ -377,6 +431,6 @@ public sealed partial class PoolTool
 		// a slide undo plays nothing and says only its notes, as the host's Backspace says nothing
 		if ( stroke.Write == GuestWrite.SlideUndo )
 			(wrote, refusal) = (false, null);
-		guestReports.Add( new PoolGuestReport( wrote, refusal, slideRefusal, bridgeRefusal, done, rightsRefused, rightsReason, notTaken, unknown ) );
+		guestReports.Add( new PoolGuestReport( wrote, refusal, slideRefusal, bridgeRefusal, done, rightsRefused, rightsReason, notTaken, unknown ) { TakeBackRefusal = takeBackRefusal } );
 	}
 }

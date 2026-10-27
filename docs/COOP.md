@@ -1830,9 +1830,9 @@ link off, so it is asked nothing. A queue cell's ride is resolved as its removal
 cached lines, then each line walked again (on a copy) for the cells they miss, once per question of the
 rights (the area clear asks it for each path cell it would clear). Everything else stays the host's:
 pause and speed (Q8), cheats (Q17), money, staff and the park's management (C4) with a wave machine's
-settings, undo lines and pool strokes (whose cells a request could name freely; undo is C5), the
-single-cell removals and the pools' single-cell kinds no guest's tool issues, the grants and the release
-of a departed seat.
+settings, undo lines and pool strokes (whose cells a request could name freely: since C5 a guest's
+Backspace is a take-back the host decides, see "Conflicts and undo (C5)"), the single-cell removals and the
+pools' single-cell kinds no guest's tool issues, the grants and the release of a departed seat.
 
 **A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
 of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
@@ -1844,8 +1844,8 @@ them, so a command the host would refuse is not sent. The command comes back pen
 - the remove tool keeps its request.
 
 While a tool waits it takes no other click (the HUD asks the player to wait), also from the release of a
-press made while it waited and let go after its outcome (C3c-1b), and a guest's Backspace in the path or
-queue tool takes nothing back: its lines are the host's to undo. The requests resolve where their records apply or the host
+press made while it waited and let go after its outcome (C3c-1b); a guest's Backspace in the path or
+queue tool is a take-back since C5, which waits as a line does ("Conflicts and undo (C5)"). The requests resolve where their records apply or the host
 answers, inside the stream's application or the link's pump; the guest's HUD takes them at the start of
 its next update (`CoopGuestCommands.TakeCompleted`), outside any command, tick and stream application, and
 completes the tool that still waits for each one:
@@ -1973,14 +1973,13 @@ A guest's strokes go in batches instead, and the host's tool writes at once, as 
   outcome not known and a refusal by the rights are said once for the stroke. The refusal cue plays with
   the report, as a guest's line released before its outcome plays it.
 - **Bridges and undo.** A bridge click is a request of its own through the same queue. Backspace in the
-  paint or erase mode takes nothing back: a stroke's undo names its cells freely, as a line's does (undo
-  is C5). In the slide mode Backspace takes the last piece of a slide that is not finished back, behind
-  the pieces still queued and one at a time; a slide with no piece to take back is the park's to refuse,
-  quietly, as the host's Backspace is. A finished slide's pieces are the host's (riders use it), or go with
-  its tower: an undo queued behind pieces that turned out to lay the splash meets a finished slide and
-  says nothing, as the host's slide mode ends with its splash. An undo the rights refused for want of a
-  grant, which the host took back, says so, as any stroke's refusal. A Backspace during a drag ends the
-  drag's stroke, which reports once back.
+  paint or erase mode takes nothing back: a stroke's undo names its cells freely, as a line's does (C5-2
+  makes it a take-back). In the slide mode Backspace is a take-back of the tool's own newest piece since
+  C5-1 ("Conflicts and undo (C5)"), behind the pieces still queued and one at a time; with no piece of its
+  own, or on a slide finished since, it sends nothing and says nothing, as the host's Backspace does. A
+  finished slide's pieces go only with its tower (riders use it). A take-back the rights refused for want
+  of a grant, which the host took back, says so, as any stroke's refusal. A Backspace during a drag ends
+  the drag's stroke, which reports once back.
 - **Backspace with no tool on** over a pool bridge or a pool cell is a request, as over a path (C3b-1), and
   a refusal says the pool's reason.
 - **Escape**, a right click or another tool ends the tool: its unsent cells are dropped, the stroke under
@@ -2215,7 +2214,8 @@ says who may issue it in a shared park; a test pins each class's kinds:
   a right;
 - **attractions, staff, research and finance**: the four management rights' (below);
 - **the host's tools**: what the host's tools issue and no guest's tool does (the single-cell kinds, the
-  undo of lines, queue segments and pool strokes, a pool bridge's removal);
+  undo of lines, queue segments, pool strokes and since C5 a slide's last piece, a pool bridge's removal):
+  a guest's Backspace is a take-back of the building class, whose inverse only the host fills;
 - **the host's alone**: the developer prototype's placement and removal, the finale's dismissal, a
   challenge's answer, the speed, the wave machine, and the session's own kinds (the clock, the grant, a
   seat's release and its rights);
@@ -2464,6 +2464,79 @@ action goes to the host, and the guest's tools and windows follow what came back
   of an employee another player carries, and the not-available note for every other park refusal (an employee or
   an applicant gone, an applicant another seat places, an employee that cannot be picked up, a cell that takes no
   one). The host's own dismissal of an employee a guest carries now says it too.
+
+## Conflicts and undo (C5)
+
+`[EXT:online-coop-undo]` C5 makes Backspace in a building tool of a shared park take back the player's own last
+step of that tool, for the host and every guest alike, under the normal refund rules (decision Q14, A), and
+refuses it while a later command still depends on it. The plan (v16, after sixteen Codex rounds) makes it
+three parts that reach main as one merge: C5-1 the host's undo journal, the path, queue and slide tools;
+C5-2 the pool strokes and the wave machine; C5-3 the kart, water and coaster tools.
+
+**What stays as it was.** Undo stays where the original has it: Backspace inside a building tool, which takes
+back that tool's last step; there is no general undo key across tools. A placed object has no undo: it leaves
+by its sale, a separate removal any granted player may make under the claims, as since C3b. Overlapping path
+lines are no conflict: two players' lines over the same cells are both laid in the host's order, the later
+crossing the earlier's cells, as in the original; the park itself refuses the later of two writes it cannot
+both take (objects, rides, queues and pools on one cell), the same one on every peer, since every peer applies
+the host's order. A single player's Backspace issues the plain undo as before, its bytes unchanged.
+
+**The host's undo journal.** The host keeps, for the session, every member's steps of the building tools: a
+path or queue line, a native queue segment, a slide piece (each piece of a guest's batch is a step of its own,
+named by its record and its ordinal within it). It lives on the host alone (`CoopUndoJournal`, owned by the
+host's stream): no peer keeps one, so it is in no join state and no digest. While a command runs, the map's
+setters report each cell whose fields really changed (type, flags, counter, links, queue link, owner, residue;
+a value written again unchanged is none), and the record goes into the history of every cell a live step lies
+on: the records still in effect that changed it, oldest first. A step keeps its effects, the cells' fields
+before and right after it; a take-back removes its record from each cell where it reversed every effect (each
+field back to its value before the step, links and flags bit by bit), wherever the record stands, so later
+steps taken back in any order leave the histories as if they had never been. A record of no step (a removal, a
+sale, a departed member's step) can never leave and stays as one permanent marker. The journal keeps a member's
+newest 16,384 steps within 262,144 cells; an older step's take-back says it is too long ago. A member that
+leaves its seat leaves its steps behind for good, and a slide tower's removal drops its slide's steps. Any fault
+of the journal turns it off for the rest of the session: it then takes nothing back, so nothing is decided on
+incomplete histories.
+
+**The take-back.** `TakeBackCommand` (kind 106) names the step by its record (and a slide piece's part); a
+guest sends only that, a few bytes. The host decides it at its intake, before the rights and the log, through
+a preparation hook of `ParkCommands`: the step must be the member's own (`NotOwn` otherwise: another seat's, a
+former member's, taken back already) and its last of the tool (`NotLast`); no record still in effect of anyone
+else may have changed its cells since it (`Changed`); and its tool's own undo, run on a disposable copy of the
+cells, must do exactly the step's work back, refusing, skipping and adding nothing but the unlinking of the
+cells beside it (`InTheWay`: an object, a pool bridge or a slide piece on its cells, a native undo that would
+change another player's path, a queue removal that would reach past its cells). Taken, the record carries the
+inverse, the tool's own undo of the step (`UndoLineCommand`, `UndoQueueSegmentCommand`,
+`UndoPoolSlidePieceCommand`), which every peer runs as the take-back's player with its refunds; refused, it
+carries its verdict, and every peer refuses it alike; a guest's tool reads the verdict back from the result's
+reason, one constant per verdict. The rights check the decided record again with its inverse: a grant taken
+back while the take-back waited, a claimed ride's queue, or a path cell it would clear beside the entrance of
+a ride another seat claims (the clear re-evaluates that ride, which may open it) refuses it with the rights'
+note and ends the tool. A path undo re-evaluates the
+issuer's selected ride only for the host's own take-back, and never a ride another seat claims. The tools'
+scope is the interface's: the host checks own and last, so a crafted request for a member's own last step
+takes back only that step, under every check.
+
+**The tools (C5-1).** The path and queue tools keep each segment's record; Backspace takes back the newest, the
+host's at once, a guest's as a request that waits as a line does, and the segment leaves the tool only once
+taken. A segment the tool loaded from an existing queue was laid by no step: Backspace keeps it and says so. A
+tool's own chain goes back step by step: a native queue's later segment clears the bend corner it shares with
+the member's own earlier one, as the original's undo does, and the earlier one's take-back then expects it
+empty. The slide mode's Backspace takes back the tool's own newest piece, a guest's behind the pieces it still
+waits for; with none, or on a slide finished since (its pieces go only with its tower), it takes nothing,
+quietly.
+
+**Notes.** A refused take-back keeps the step and says why: "Someone has changed that since, so it can no longer
+be taken back." (`Changed`), "That cannot be taken back while something is in the way." (`InTheWay`), "Only what
+you built with this tool can be taken back." (not own, not the last, or too long ago); a refusal of the rights
+says the rights' note; a finished slide says nothing.
+
+**Tests.** `CoopSessionTests.Undo` (path segments and chains, native and legacy queue lines with their refunds
+and their owner words compared on every peer, the money-stopped segment's residue, other players' lines across
+and beside a step, three players taking back in either order, a pool bridge in the way, forged and stale
+take-backs, the grant taken back on the way, a claimed ride's entrance beside the step, conflicts in one frame, the sale's full first-year scrap, the
+slide's pieces and its sold tower), `CoopUndoJournalTests` (the setters, the histories, the permanent marker,
+departures, the bounds, the own bend chain, a fault), `CoopJoinSessionTests.Undo` (take-backs across a
+resync), the codec's pinned bytes and the class table.
 
 ## The command layer (C1)
 

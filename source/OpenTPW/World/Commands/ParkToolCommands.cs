@@ -31,6 +31,7 @@ public abstract record ParkToolCommand : ParkCommand
 	internal static ParkToolCommand? Read( ParkCommandKind kind, ParkCommandReader reader ) => kind switch
 	{
 		ParkCommandKind.BuyLand => new BuyLandCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
+		ParkCommandKind.TakeBack => TakeBackCommand.Read( reader ),
 		ParkCommandKind.BeginStaffHire => new BeginStaffHireCommand( reader.Int() ),
 		ParkCommandKind.CancelStaffHire => new CancelStaffHireCommand(),
 		ParkCommandKind.PlaceStaff => new PlaceStaffCommand( reader.Int(), reader.Int(), reader.Int() ),

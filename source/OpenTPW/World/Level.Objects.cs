@@ -834,7 +834,10 @@ public partial class Level
 				// sent the budget reads full, so the coaster's last commands take a freed slot first (C3c-2)
 				SendsRequests = () => Commands.SendsRequests,
 				OpenRequests = () => coasterRequests?.HasUnsent == true ? OpenToolRequestLimit : OpenToolRequests,
-				NoteWaiting = NoteWaitingClick
+				NoteWaiting = NoteWaitingClick,
+				// [EXT:online-coop-undo] in a shared park the slide mode's Backspace takes back the tool's own newest piece, which the host's journal decides (C5)
+				TakesBack = () => Commands.SessionRules,
+				HostRecord = () => UndoJournal?.LastRecord
 			};
 			PoolBuilder.Painted += PreloadSwimSprites;
 		}
@@ -899,7 +902,7 @@ public partial class Level
 		DropToolStartWait();
 		StaffPlacement?.Cancel();
 		// [EXT:online-coop-commands] the tool's previews read the path builder; each committed line is a command
-		CellTool.Enter( new ParkCommandLineWriter( Paths, Commands, -1, () => SelectedRideId ), null );
+		CellTool.Enter( new ParkCommandLineWriter( Paths, Commands, -1, () => SelectedRideId, () => UndoJournal?.LastRecord ), null );
 		return true;
 	}
 
@@ -962,7 +965,7 @@ public partial class Level
 		if ( IsReadOnlyVisit || Guests == null )
 			return false;
 		// [EXT:online-coop-commands] the tool's previews read the ride's queue writer; each committed line is a command
-		CellTool.Enter( new ParkCommandLineWriter( CreateQueueWriter( ride ), Commands, ride.AttractionId ), start.Start, start.Stack, start.Segments );
+		CellTool.Enter( new ParkCommandLineWriter( CreateQueueWriter( ride ), Commands, ride.AttractionId, hostRecord: () => UndoJournal?.LastRecord ), start.Start, start.Stack, start.Segments );
 		return true;
 	}
 

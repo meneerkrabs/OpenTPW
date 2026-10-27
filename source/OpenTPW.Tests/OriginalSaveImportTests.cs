@@ -178,7 +178,7 @@ public class OriginalSaveImportTests
 			Assert.IsTrue( import.Evidence.Any( line => line.Contains( $"[APPROX:{id}]" ) ), $"{id} is reported" );
 		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Research highest open groups imported as saved", StringComparison.Ordinal ) ), "the lab's highest groups are imported" );
 		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-006]" ) ), "no staff claim is left without its job" );
-		Assert.IsTrue( import.Evidence.Where( line => line.Contains( "[APPROX:SAVE-007]" ) ).All( line => line.Contains( "the object controls' researched flags (the save's control table does not read)" ) && !line.Contains( "projects of objects" ) ), "no lab project or current project is dropped" );
+		Assert.IsTrue( import.Evidence.Where( line => line.StartsWith( "Research not imported", StringComparison.Ordinal ) ).All( line => line.Contains( "the object controls' researched flags (the save's control table does not read)" ) && !line.Contains( "projects of objects" ) ), "no lab project or current project is dropped" );
 		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) && line.Contains( "imported" ) ), "the generator state is named as imported" );
 		Assert.AreEqual( 0x3F416BBAu, economy.World.State, "the save's mRandomSeed is the world generator's state (tp.exe 0x00516330, saved raw by 0x00517123)" );
 		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-001]" ) ), "SAVE-001 is retired" );

@@ -8,7 +8,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// A lab's highest open groups are the saved ones (tp.exe group serializer 0x504760: the last byte of each group record, read back as it is; only the opener 0x503B80 raises it), SAVE-007.
+/// A lab's highest open groups are the saved ones (tp.exe group serializer 0x504760: the last byte of each group record, read back as it is; only the opener 0x503B80 raises it).
 /// </summary>
 [TestClass]
 public class SavedResearchGroupTests

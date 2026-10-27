@@ -3,7 +3,7 @@
 - Classification: **evidence-only**.
 - Mode: Evidence and compatibility adjudication only.
 - Baseline: provided main `5ccddcab` source snapshot; source inspected locally on 2026-10-18.
-- Status: PLAN ONLY. No runtime implementation, identifier retirement or merge is claimed.
+- Status: superseded: SAVE-007 was retired in fidelity round 9 (package R9-C) with the 11 corpus labs pinned; see docs/ECONOMY.md.
 
 ## Current residual
 Importer drops unknown projects and current projects no longer offered; known corpus controls/order already agree.

@@ -140,6 +140,19 @@ public sealed class TrackEditor
 	// [EXT:track-open-end-guard] a cell that is no track tile ends the walk at the last tile (at the exit cell when the track is empty) where the original would walk on over the empty cells for as long as the grid goes
 	public TrackOpenEnd FindOpenEnd()
 	{
+		var (corners, last, reached) = CollectForward();
+		// The initial exit is a vertex, not a zero-length segment to undo (the original pushes it twice, see CollectForward). Keep genuine repeated corner points.
+		if ( corners.Count == 2 && corners[0] == station.Exit && corners[1] == station.Exit && last == station.Exit )
+			corners.RemoveAt( 1 );
+		return new TrackOpenEnd( last, corners, reached );
+	}
+
+	/// <summary>
+	/// The corner collector of <c>0x530830</c> as the original leaves its stack: the exit (when it is a laid tile), every corner and the end of the walk, each pushed while the stack holds
+	/// at most <see cref="CornerCapacity"/> points (so a walk that ends at the exit leaves the exit twice). The walk also writes the overlap word of every tile it passes.
+	/// </summary>
+	private (List<(int X, int Y)> Corners, (int X, int Y) Last, bool Reached) CollectForward()
+	{
 		var corners = new List<(int X, int Y)>();
 		var heading = station.Heading;
 		var position = station.Exit;
@@ -186,10 +199,58 @@ public sealed class TrackEditor
 				break;
 			position = next;
 		}
-		// The initial exit is a vertex, not a zero-length segment to undo. Keep genuine repeated corner points.
-		if ( corners.Count < CornerCapacity && (corners.Count != 1 || corners[0] != station.Exit || last != station.Exit) )
+		if ( corners.Count < CornerCapacity )
 			corners.Add( last );
-		return new TrackOpenEnd( last, corners, reached );
+		return (corners, last, reached);
+	}
+
+	/// <summary>
+	/// The corner collector of <c>0x530B70</c>, which the demolition runs from the tile before the station against the flow: the entry (when it is a laid tile), every corner and the end of the
+	/// walk, which stops on the last laid tile before a station tile of the ride whose arm points back. It also writes the overlap word of every tile it passes (1 at a corner or junction, else 0,
+	/// and 0 on the exit tile).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00530B70 backward collector] from the entry cell (0x52A420: the tile before the station, heading against the flow) over the tiles of type 0xB or 0x10 (0x53AD70): a corner turns to mask ^ the reversed heading and is pushed (≤ 0x401 points), the overlap word is 1 at a corner or junction and 0 else (0x5228A0), the exit tile's is 0 (0x530D26..0x530D34: the cell equal to 0x7639E0/E4), a non-corner without the heading in its mask ends the walk, and so does a station tile of the ride (0x53ADB0, +0x10) two cells ahead whose mask holds the reversed heading, the walk then standing on the last laid tile (unlike 0x530830, which steps onto the station tile); the end is pushed too
+	// [EXT:track-open-end-guard] a cell that is no laid tile ends the walk where the original would walk on over the empty cells
+	private List<(int X, int Y)> CollectBackward()
+	{
+		var stack = new List<(int X, int Y)>();
+		var heading = Opposite( station.Heading );
+		var position = station.Entry;
+		if ( IsLaidTile( Tracks.Get( position.X, position.Y ) ) && stack.Count < CornerCapacity )
+			stack.Add( position );
+		var limit = Tracks.Count + 16;
+		for ( var steps = 0; steps < limit; steps++ )
+		{
+			var cell = Tracks.Get( position.X, position.Y );
+			if ( !IsLaidTile( cell ) )
+				break;
+			var stop = false;
+			if ( IsCorner( cell.Mask ) )
+			{
+				heading = (byte)(cell.Mask ^ Opposite( heading ));
+				if ( stack.Count < CornerCapacity )
+					stack.Add( position );
+				cell.Overlap = 1;
+			}
+			else
+			{
+				cell.Overlap = IsJunction( cell.Mask ) ? (short)1 : (short)0;
+				if ( (heading & cell.Mask) == 0 )
+					stop = true;
+			}
+			if ( position == station.Exit )
+				cell.Overlap = 0;
+			Tracks.Set( position.X, position.Y, cell );
+			if ( heading != 0 && Origin( Step( position, heading ) ) is { } ahead
+				&& Tracks.Get( ahead.X, ahead.Y ) is var after && TrackCellTypes.IsStation( after.Type ) && after.Owner == cell.Owner && (after.Mask & Opposite( heading )) != 0 )
+				stop = true;
+			if ( stop || heading == 0 )
+				break;
+			position = Step( position, heading );
+		}
+		if ( stack.Count < CornerCapacity )
+			stack.Add( position );
+		return stack;
 	}
 
 	/// <summary>
@@ -220,9 +281,8 @@ public sealed class TrackEditor
 	/// Takes a line back from its end to its start, using the directional form of the tile clear. A shared crossing retains its other
 	/// flow and a shared corner becomes the new open endpoint. Only a tile actually cleared refunds and removes its add-on.
 	/// </summary>
-	// [BIN:TPW-EXE:0x0052FE50 Back] pop the last corner, click in mode 0x35 at it and the new stack top (0x52FF3A, 0x52FFB2); mode 0x35 runs line op 0x32 (0x526001), which calls 0x53B280 with the reverse line's step (0x538CCE)
-	// [BIN:TPW-EXE:0x0053B393 directional clear] decrement the pass word; when the flow link has two or more bits (0x522860), clear the bit opposite the replay step (0x53B3FF..0x53B437) and both mask arms of its axis (0x53B437..0x53B477); otherwise spare the protected ends, remove only that opposite arm and, for a former corner left with one arm, reverse its flow link (0x53B47C..0x53B543)
-	// [APPROX:TRACK-018] the recorded-corner replay and directional clear are built; the tool's 1024-point cap, existing station-layout approximation and full original replay/restore equivalence still lack executable-oracle coverage (TRACK-004/007 remain open)
+	// [BIN:TPW-EXE:0x0052FE50 Back] pop the last corner, click in mode 0x35 at it and the new stack top (0x52FF3A, 0x52FFB2): the first click only sets the line start (0x52F200 reset it), the second runs line op 0x32 (0x526001: 0x53AAC0 over the line between the two points, every tile of it, both ends included) whose per-tile handler calls 0x53B280 with the line's step (0x5370E0, 0x538CCE); a zero-length line clears with (0, 0)
+	// [BIN:TPW-EXE:0x0053B280 line step clear] ClearStep: a step of (±2, 0) or (0, ±2) takes the line's direction out of the tile as the cell op does
 	public void UndoLine( SegmentResult segment )
 	{
 		// Only axis-aligned, whole-tile segments belong to this writer. A stale or foreign segment must not clear an arbitrary rectangle.
@@ -231,38 +291,27 @@ public sealed class TrackEditor
 			|| (segment.SnappedEnd.X - segment.Start.X) % TrackStation.TileCells != 0
 			|| (segment.SnappedEnd.Y - segment.Start.Y) % TrackStation.TileCells != 0 )
 			return;
-		var line = TrackLineWriter.LayLine( segment.SnappedEnd, segment.Start );
+		ReplayLine( segment.SnappedEnd, segment.Start, replay: false, cleared: null );
+		RepairStation();
+	}
+
+	/// <summary>
+	/// The replay of one line from <paramref name="from"/> (the later point) to <paramref name="to"/> (the earlier one) through the clear op: every tile of the line, both ends included, takes the line's
+	/// step (<c>0x53AAC0</c> calling <c>0x53B280</c>), and a zero-length line clears its one tile with the step (0, 0). Only tiles of this ride (and its station tiles) are touched.
+	/// </summary>
+	private void ReplayLine( (int X, int Y) from, (int X, int Y) to, bool replay, List<(int X, int Y)>? cleared )
+	{
+		var line = TrackLineWriter.LayLine( from, to );
 		var back = line.Count > 1 ? TrackBuilder.HeadingBetween( line[0], line[1] ) : (byte)0;
+		var (dx, dy) = (TrackStation.TileCells * TrackHeading.Dx( back ), TrackStation.TileCells * TrackHeading.Dy( back ));
 		foreach ( var at in line )
 		{
 			var cell = Tracks.Get( at.X, at.Y );
-			if ( !IsLaidTile( cell ) || cell.Type != builder.OriginType )
+			if ( !cell.IsOrigin || cell.Type != builder.OriginType && !(replay && TrackCellTypes.IsStation( cell.Type )) || !(cell.Owner == Owner || cell.Owner == 0 || Owner == 0) )
 				continue;
-			// The zero-step replay forces a clear; an ordinary reverse step consumes one of the collector's passes.
-			cell.Overlap = back == 0 ? (short)-1 : (short)(cell.Overlap - 1);
-			if ( back != 0 )
-			{
-				var forward = Opposite( back );
-				if ( TrackHeading.Count( cell.Link ) >= 2 )
-				{
-					cell.Link &= (byte)~forward;
-					cell.Mask &= (byte)~(back | forward);
-				}
-				else if ( at != station.Exit && at != station.Entry )
-				{
-					var corner = IsCorner( cell.Mask );
-					cell.Mask &= (byte)~forward;
-					if ( corner && TrackHeading.Count( cell.Mask ) == 1 )
-						cell.Link = Opposite( cell.Mask );
-				}
-			}
-			Tracks.Set( at.X, at.Y, cell );
-			if ( cell.Overlap < 0 && at != station.Exit && at != station.Entry )
-				ClearOrigin( at, cell );
-			else
-				Repick( at );
+			if ( ClearCell( at, dx, dy, replay ) )
+				cleared?.Add( at );
 		}
-		RepairStation();
 	}
 
 	/// <summary>A tile of the kart or water origin type of this ride (<c>0x53AD70</c>: type 0xB or 0x10).</summary>
@@ -274,78 +323,26 @@ public sealed class TrackEditor
 	// ---- The demolition replay ------------------------------------------------------------------------
 
 	/// <summary>
-	/// The clearing of a demolished ride's track (the two replays of <c>0x527EE0</c>): the walk from the tile after the station along the flow to the open end (<see cref="FindOpenEnd"/>) and then
-	/// the walk from the tile before the station against the flow, each clearing the tiles it passes with the replay flag set (<c>0x81B46C</c>): a tile whose pass counter goes below zero
-	/// is cleared and refunds, a junction loses one pass only, and a tile that no walk reaches (a branch, a detached piece) stays and refunds nothing. Returns the tiles it cleared.
+	/// The clearing of a demolished ride's track (the two replays of <c>0x527EE0</c>): the corner points of the walk from the tile after the station along the flow to the open end
+	/// (<c>0x530830</c>) and then of the walk from the tile before the station against the flow (<c>0x530B70</c>), each replayed as the lines between consecutive corner points, latest
+	/// first (<c>0x52FE50</c>), through the clear op with the replay flag set (<c>0x81B46C</c>): a tile whose pass counter goes below zero is cleared and refunds, a junction loses one
+	/// pass only, and a tile that no walk reaches (a branch, a detached piece) stays and refunds nothing. Returns the tiles it cleared.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00527EE0 demolition replays] for a ride with a queue and track type 1 or 2: 0x530830 (the forward corner collector, which resets the pass counters along the chain: 1 at a corner or junction, else 0, 0x5228A0), the tool mode 0xB or 0x10, the flag 0x81B46C = 1 and 0x52FE50 until it answers 0 (each pop replays the click handler in mode 0x35 over the line between two corner points, clearing it with 0x53B280), then 0x530B70 (the same from the tile before the station, against the flow) and the same replay; 0x52FB60 or 0x52FB80 gives the cell cost the refund and the one charge use
+	// [BIN:TPW-EXE:0x0052FE50 replay pops] the stack 0x81B740 (count 0x820A8C) pops its top point (0x52FEA1..0x52FEC9), the click handler takes it as the line start and the new top as the end (0x52FF3A, 0x52FFB2): a stack of n points replays the n − 1 lines n → n − 1, …, 2 → 1, each tile of a line (both ends) cleared with the line's step, so a corner is cleared twice (its pass counter is 1), a straight once; the bottom point is no line of its own, and with one point or none nothing is replayed
 	// [EXT:track-open-end-guard] a walk stops at the last laid tile when the next cell holds no track, where the original would walk on over empty cells; a chain that leaves a closed circuit's cleared tiles behind it simply ends
 	public IReadOnlyList<(int X, int Y)> Demolish()
 	{
 		var cleared = new List<(int X, int Y)>();
-		Replay( station.Exit, station.Heading, cleared );
-		Replay( station.Entry, Opposite( station.Heading ), cleared );
+		ReplayStack( CollectForward().Corners, cleared );
+		ReplayStack( CollectBackward(), cleared );
 		return cleared;
 	}
 
-	private void Replay( (int X, int Y) start, byte heading, List<(int X, int Y)> cleared )
+	private void ReplayStack( List<(int X, int Y)> stack, List<(int X, int Y)> cleared )
 	{
-		// the walk that collects the corners also resets the pass counters (corner or junction 1, any other tile 0) before the lines are replayed
-		var chain = new List<((int X, int Y) Tile, byte Heading, bool Crossing)>();
-		var position = start;
-		var limit = Tracks.Count + 16;
-		for ( var steps = 0; steps < limit; steps++ )
-		{
-			var cell = Tracks.Get( position.X, position.Y );
-			if ( !IsLaidTile( cell ) )
-				break;
-			var stop = false;
-			if ( IsCorner( cell.Mask ) )
-			{
-				heading = (byte)(cell.Mask ^ Opposite( heading ));
-				cell.Overlap = 1;
-			}
-			else
-			{
-				cell.Overlap = IsJunction( cell.Mask ) ? (short)1 : (short)0;
-				stop = (heading & cell.Mask) == 0;
-			}
-			Tracks.Set( position.X, position.Y, cell );
-			chain.Add( (position, heading, cell.Mask == 0x55) );
-			if ( heading == 0 || stop )
-				break;
-			var next = Step( position, heading );
-			if ( Origin( next ) is { } ahead && Tracks.Get( ahead.X, ahead.Y ) is var after && TrackCellTypes.IsStation( after.Type ) && (after.Mask & Opposite( heading )) != 0 )
-				break;
-			position = next;
-		}
-		foreach ( var (tile, traversed, crossing) in chain )
-		{
-			var cell = Tracks.Get( tile.X, tile.Y );
-			if ( !cell.IsOrigin )
-				continue;
-			// Preserve the other flow of a supported two-line crossing. Other replay shapes and contrary laid-flow directions keep the existing policy.
-			// [BIN:TPW-EXE:0x53B280 line step] with two or more link bits the line step clears dx -2 → 0x04, dx +2 → 0x40, dy -2 → 0x10, dy +2 → 0x01 from the link (0x5227f0) and both arms
-			// of the step's axis from the mask (0x522730), the bit opposite to the step (the per-tile driver 0x53aac0 steps from the anchor to the click, and 0x5370e0 maps dx -2 to heading 0x40);
-			// the replay 0x52FE50 pops the corner points the collector pushed in walk order (0x530830, 0x530B70: stack 0x81B740, count 0x820A8C) and runs each line from the later point
-			// back to the earlier one (mode 0x35: anchor = popped point, click = the point below it), so the cleared bit is the chain's own heading, the traversed heading here
-			var remaining = (byte)(cell.Link & ~traversed);
-			if ( crossing && IsJunction( cell.Mask ) && cell.Overlap == 1 && (traversed & ~0x55) == 0 && TrackHeading.Count( traversed ) == 1
-				&& (cell.Link & ~0x55) == 0 && TrackHeading.Count( cell.Link ) == 2 && (cell.Link & traversed) != 0
-				&& remaining != Opposite( traversed ) )
-			{
-				cell.Link = remaining;
-				Tracks.Set( tile.X, tile.Y, cell );
-			}
-			// a corner is an end of two replayed lines, so it is visited twice and its counter of 1 runs out; a plain tile is cleared on its one visit
-			var removed = ClearCell( tile, pass: IsJunction( cell.Mask ), replay: true );
-			// Exit is exempt from the forced -1 write even during replay. A corner there starts with one pass,
-			// so consume its second recorded-line visit instead of leaving overlap zero alive. Do not repeat junction passes.
-			if ( !removed && tile == station.Exit && IsCorner( cell.Mask ) )
-				removed = ClearCell( tile, pass: false, replay: true );
-			if ( removed )
-				cleared.Add( tile );
-		}
+		for ( var top = stack.Count; top >= 2; top-- )
+			ReplayLine( stack[top - 1], stack[top - 2], replay: true, cleared );
 	}
 
 	// ---- The cut --------------------------------------------------------------------------------------
@@ -494,19 +491,28 @@ public sealed class TrackEditor
 	// ---- Clearing a tile ------------------------------------------------------------------------------
 
 	/// <summary>
-	/// The clear of one tile for a cut (<c>0x53B280</c> with the cut's arguments): a pass of a junction (<paramref name="pass"/>, arguments −1, −1) takes one pass off the overlap
-	/// counter and removes the arms of the pass that the tile's flow link no longer names, any other tile is marked for clearing outright (arguments 0, 0). A tile whose counter
-	/// went below zero is then cleared and refunds, except the initial exit and entry tiles, which stay. Returns whether the tile was cleared.
+	/// The clear of one tile for a cut (<c>0x53B280</c> with the cut's arguments): a pass of a junction (<paramref name="pass"/>, arguments −1, −1) or any other tile marked for clearing
+	/// outright (arguments 0, 0); see <see cref="ClearCell(ValueTuple{int, int}, int, int, bool)"/>. Returns whether the tile was cleared.
 	/// </summary>
-	// [BIN:TPW-EXE:0x0053B280 clear cell] the forced clear (0, 0) writes the overlap word 0xFFFF (0x53B388) unless the tile is the exit tile; a pass (−1, −1) decrements it (0x53B393), removes the arms across the remaining link (0x53B3A7: link 1 or 0x10 takes 4 and 0x40, link 4 or 0x40 takes 1 and 0x10) and chooses the piece again (0x53B54A); a counter below zero clears the tile (0x53B54A..0x53B8BB) when it is neither the exit tile (0x7639E0/E4) nor the entry tile (0x7639E8/EC), or when the replay flag 0x81B46C is set: the refund (0x53B622), the arms of the tile and the arms of its neighbours pointing at it (0x53B634..0x53B6D9), the add-on object (0x53B6E5), the link, flags and step word (0x53B70B..0x53B73E) and the three extension cells (0x53B751..0x53B8BB)
-	internal bool ClearCell( (int X, int Y) at, bool pass, bool replay = false )
+	internal bool ClearCell( (int X, int Y) at, bool pass, bool replay = false ) => ClearCell( at, pass ? -1 : 0, pass ? -1 : 0, replay );
+
+	/// <summary>
+	/// The clear op of one tile, <c>0x53B280</c>: <paramref name="dx"/>, <paramref name="dy"/> are its two arguments, (0, 0) for a forced clear, (−1, −1) for a pass of a junction (a cut) and
+	/// (±2, 0) or (0, ±2) for the step of a replayed line. The tile's overlap word (+0x20) goes to −1 for a forced clear (a tile that is not the exit) and else counts down; the arms and the
+	/// flow link follow the arguments; a tile whose counter went below zero is then cleared and refunds, except the exit and entry tiles, which stay unless <paramref name="replay"/> (the
+	/// demolition's flag <c>0x81B46C</c>); a surviving exit tile takes back the arm toward the station tile beside it (<see cref="RestoreExit"/>). Returns whether the tile was cleared.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0053B280 clear cell] with (0, 0) the overlap word is written 0xFFFF (0x53B388) unless the tile is the exit tile (0x7639E0/E4), which counts down like every other call (0x53B393); (−1, −1) removes the arms across the remaining link (0x53B3A7: link 1 or 0x10 takes 4 and 0x40, link 4 or 0x40 takes 1 and 0x10, by 0x522850 and 0x522730); any other step, with at most one link bit (0x522860 < 2), spares the exit and entry tiles (0x53B3FA..0x53B46E, 0x53B54A), removes the arm opposite to the step (dx −2 → 4, +2 → 0x40, dy −2 → 0x10, +2 → 1) and, for a former corner left with one arm, points the link away from it (0x53B4AA..0x53B543); with two or more link bits it takes the opposite bit out of the link (0x5227F0) and both arms of the step's axis (0x522730); the piece is chosen again (0x53AFA0, 0x53B54A) whenever the arms were looked at
+	// [BIN:TPW-EXE:0x0053B54A clear test] a counter below zero clears the tile (0x53B57F) when it is neither the exit tile nor the entry tile (0x7639E8/EC), or when the replay flag 0x81B46C is set; the flag 0x81D7A8 of the queue demolition (0x527FAC, 0x528015) clears regardless and is never set while a track tool runs
+	// [BIN:TPW-EXE:0x0053B8BB exit tail] a surviving exit tile (not during a replay) looks at its four sides (0x4D8C20 turns from 1): a side without an arm whose neighbour two cells on is a station tile with the same ride word (+0x10) gets the arm and the flow link turned to it (0x5227E0, 0x522700, 0x53AFA0); then, with exactly one arm (0x522790 = 1), the link is cleared (0x5227F0) and set to the reverse of each arm that faces such a station tile
+	internal bool ClearCell( (int X, int Y) at, int dx, int dy, bool replay = false )
 	{
 		var cell = Tracks.Get( at.X, at.Y );
 		if ( !cell.IsOrigin )
 			return false;
 		var isExit = at == station.Exit;
 		var isEntry = at == station.Entry;
-		if ( !pass && !isExit )
+		if ( dx == 0 && dy == 0 && !isExit )
 		{
 			cell.Overlap = -1;
 			Tracks.Set( at.X, at.Y, cell );
@@ -515,7 +521,8 @@ public sealed class TrackEditor
 		{
 			cell.Overlap--;
 			Tracks.Set( at.X, at.Y, cell );
-			if ( pass )
+			var repick = true;
+			if ( dx == -1 && dy == -1 )
 			{
 				switch ( cell.Link )
 				{
@@ -529,18 +536,90 @@ public sealed class TrackEditor
 						break;
 				}
 			}
-			Repick( at );
+			else if ( TrackHeading.Count( cell.Link ) < 2 )
+			{
+				if ( isExit || isEntry )
+				{
+					repick = false;
+				}
+				else
+				{
+					var corner = IsCorner( cell.Mask );
+					if ( dx == -2 )
+						RemoveArm( at, TrackHeading.PosX );
+					if ( dx == 2 )
+						RemoveArm( at, TrackHeading.NegX );
+					if ( dy == -2 )
+						RemoveArm( at, TrackHeading.PosY );
+					if ( dy == 2 )
+						RemoveArm( at, TrackHeading.NegY );
+					if ( corner && Tracks.Get( at.X, at.Y ) is var left && TrackHeading.Count( left.Mask ) == 1 )
+						SetLink( at, Opposite( left.Mask ) );
+				}
+			}
+			else
+			{
+				if ( dx == -2 )
+					ClearLink( at, TrackHeading.PosX );
+				if ( dx == 2 )
+					ClearLink( at, TrackHeading.NegX );
+				if ( dy == -2 )
+					ClearLink( at, TrackHeading.PosY );
+				if ( dy == 2 )
+					ClearLink( at, TrackHeading.NegY );
+				if ( Math.Abs( dx ) == 2 )
+					RemoveArm( at, (byte)(TrackHeading.PosX | TrackHeading.NegX) );
+				if ( Math.Abs( dy ) == 2 )
+					RemoveArm( at, (byte)(TrackHeading.NegY | TrackHeading.PosY) );
+			}
+			if ( repick )
+				Repick( at );
 		}
 		cell = Tracks.Get( at.X, at.Y );
-		if ( cell.Overlap >= 0 || (!replay && (isExit || isEntry)) )
-			return false;
-		ClearOrigin( at, cell );
-		return true;
+		if ( cell.Overlap < 0 && (replay || !isExit && !isEntry) )
+		{
+			ClearOrigin( at, cell );
+			return true;
+		}
+		if ( isExit && !replay )
+			RestoreExit( at );
+		return false;
 	}
 
+	private void ClearLink( (int X, int Y) at, byte bits ) => Update( at, cell => { cell.Link &= (byte)~bits; return cell; } );
+
+	/// <summary>A station tile of this ride two cells from <paramref name="at"/> toward <paramref name="heading"/> (the tests of <c>0x53ADB0</c> and the ride word of the exit tail).</summary>
+	private bool StationBeside( (int X, int Y) at, byte heading ) =>
+		Origin( Step( at, heading ) ) is { } beside && Tracks.Get( beside.X, beside.Y ) is var other && TrackCellTypes.IsStation( other.Type ) && other.Owner == Tracks.Get( at.X, at.Y ).Owner;
+
+	/// <summary>The tail of <c>0x53B280</c> for the exit tile that is still there: the arm toward a station tile beside it comes back with the flow link turned to it, and a lone arm sets the link.</summary>
+	// [EXT:track-tile-owner] the ride word (+0x10) of the original's tests is the tile's owner field here; an extension cell of a station tile two cells on (the 0xC/0x11 case of 0x53B923..0x53B956) has a parent index that never equals the ride word, so only origin cells match
+	private void RestoreExit( (int X, int Y) at )
+	{
+		foreach ( var heading in TrackHeading.All )
+		{
+			if ( (Tracks.Get( at.X, at.Y ).Mask & heading) == 0 && StationBeside( at, heading ) )
+			{
+				SetLink( at, Opposite( heading ) );
+				AddArm( at, heading );
+				Repick( at );
+			}
+		}
+		if ( TrackHeading.Count( Tracks.Get( at.X, at.Y ).Mask ) != 1 )
+			return;
+		ClearLink( at, 0xFF );
+		foreach ( var heading in TrackHeading.All )
+		{
+			if ( (Tracks.Get( at.X, at.Y ).Mask & heading) != 0 && StationBeside( at, heading ) )
+				SetLink( at, Opposite( heading ) );
+		}
+	}
+
+	// [BIN:TPW-EXE:0x0053B57F tile clear] the overlap word is 0 (0x53B582); a tile of type 0xB or 0x10 refunds (0x53B5C6..0x53B627: a station tile, type 0xD or 0x12, has no cell cost) unless the type is 0x19 or the credit is off (0x785A2C); then for each arm (0x53B634..0x53B6CD) the arm goes with the neighbour's arm back (0x522730, 0x50C3E0(heading, 2)) and a neighbour left with one arm whose flow link is not that arm's reverse takes it (0x522790, 0x522850, 0x4D8C00, 0x5227E0), the add-on object goes (0x53B6E5 → 0x527EE0), the link, flags, type and step word (0xFFFF) are written (0x53B70B..0x53B73E) and the three extension cells are cleared too (0x53B751..0x53B8BB)
 	private void ClearOrigin( (int X, int Y) at, TrackCell cell )
 	{
-		hooks.TileCleared?.Invoke( at );
+		if ( cell.Type is TrackCellTypes.KartOrigin or TrackCellTypes.WaterOrigin )
+			hooks.TileCleared?.Invoke( at );
 		var arms = cell.Mask;
 		foreach ( var heading in TrackHeading.All )
 		{

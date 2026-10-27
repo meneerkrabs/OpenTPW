@@ -254,9 +254,10 @@ public class TrackEditTests
 	{
 		var rig = new Rig();
 		var cleared = rig.Editor.Demolish();
-		Assert.AreEqual( 6, cleared.Distinct().Count(), "the six laid tiles go" );
-		Assert.AreEqual( 6, rig.Refunded.Count, "each refunds once" );
-		Assert.AreEqual( 2, rig.Tracks.Cells().Count( item => item.Cell.IsOrigin ), "only the two station tiles are left for the ride's removal" );
+		Assert.AreEqual( 7, cleared.Distinct().Count(), "the six laid tiles go, and the first station tile where the forward chain ends (0x530830 stands on it, so the first replayed line starts there)" );
+		Assert.AreEqual( 6, rig.Refunded.Count, "each laid tile refunds once; a station tile has no cell cost (0x53B5C6: only types 0xB and 0x10)" );
+		Assert.IsFalse( rig.Laid( 10, 10 ), "the first station tile went with the replay" );
+		Assert.AreEqual( 1, rig.Tracks.Cells().Count( item => item.Cell.IsOrigin ), "the second station tile is left for the ride's removal" );
 		rig.Builder.RemoveStation( rig.Station );
 		Assert.AreEqual( 0, rig.Tracks.Count );
 	}
@@ -271,9 +272,12 @@ public class TrackEditTests
 		rig.Editor.Demolish();
 		Assert.IsTrue( rig.Laid( 20, 20 ) && rig.Laid( 20, 22 ) && rig.Laid( 20, 24 ), "the detached piece stays" );
 		Assert.IsTrue( rig.Laid( 12, 14 ), "so does the branch tile" );
-		Assert.AreEqual( 0, rig.Tracks.Get( 12, 14 ).Mask, "with the arm toward the cleared junction gone" );
-		Assert.AreEqual( 6, rig.Refunded.Count, "the loop's six tiles (the junction among them) refund; the branch and the detached piece do not" );
-		Assert.IsFalse( rig.Refunded.Contains( (12, 14) ) || rig.Refunded.Contains( (20, 20) ) );
+		// the junction is passed once by the forward chain: its pass counter (1, set by the collector) runs out to 0, so it stays with the arm of the branch and the branch keeps its arm back (0x53B3A7 step rule)
+		Assert.IsTrue( rig.Laid( 12, 12 ), "the junction keeps one pass" );
+		Assert.AreEqual( 0x10, rig.Tracks.Get( 12, 12 ).Mask, "only the arm toward the branch is left: the line step took both arms of the loop's axis" );
+		Assert.AreEqual( 0x01, rig.Tracks.Get( 12, 14 ).Mask, "the branch keeps its arm toward the junction" );
+		Assert.AreEqual( 5, rig.Refunded.Count, "five of the loop's six tiles refund; the junction, the branch and the detached piece do not" );
+		Assert.IsFalse( rig.Refunded.Contains( (12, 12) ) || rig.Refunded.Contains( (12, 14) ) || rig.Refunded.Contains( (20, 20) ) );
 	}
 
 	[TestMethod]

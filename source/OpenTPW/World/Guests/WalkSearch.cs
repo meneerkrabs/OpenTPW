@@ -38,7 +38,7 @@ public static class WalkEdges
 	/// <c>0x4D8750</c>: true when a walker with <paramref name="mask"/> may not step from (<paramref name="x"/>,
 	/// <paramref name="y"/>) to its neighbour in <paramref name="direction"/>. Coordinates are bytes, as in the original.
 	/// </summary>
-	// [APPROX:WALK-005] supported track origins and nonzero type-12 parents now read the low flag nibble from ParkCellMap.Tracks. Type-17 and zero/invalid-parent records retain the old fallthrough; a type-9 target owner still does not decide mask-2 steps, and underground links are not modelled. The host track layer retains TRACK-010 bridge/underlay limitations.
+	// [APPROX:WALK-005] supported track origins and nonzero type-12 parents now read the low flag nibble from ParkCellMap.Tracks; type-17 and zero/invalid-parent records retain the old fallthrough; the underground link byte (+0x22, 0x522770) is read only while the land tools' flag 0x81B4CC is set (0x532408..0x532622, 0x53AF51), which no walk sees. The host track layer retains TRACK-010 bridge/underlay limitations
 	public static bool Blocked( ParkCellMap map, int x, int y, int direction, int mask )
 	{
 		x &= 0xFF;
@@ -66,10 +66,11 @@ public static class WalkEdges
 			return true;
 		if ( mask == 2 )
 		{
-			// 0x4D8871: the target's flag 0x400 opens it; a type-9 target with a ride thing on its owner cell decides by
-			// the ride (0x42A440, 0x4DD4E0 +0x118). OpenTPW keeps no thing references in its cell map (WALK-005).
+			// [BIN:TPW-EXE:0x004D8871 mask-2 target] the target's flag 0x400 opens it; a type-9 target whose owner cell lists an object (the first thing of type 3, 0x004D88BC..0x004D88F3) is open when the object can be ridden (0x0042A440) and its type has CannotRide 0 (0x004DD4E0 +0x118), else blocked (0x004D8B00..0x004D8B28); without such a thing the test goes on. The only callers with mask 2 are the camera's (0x0042C093, 0x0042C290): no guest or staff member of OpenTPW walks with it
 			if ( ((ushort)map.FlagsAt( tx, ty ) & 0x400) != 0 )
 				return false;
+			if ( to == 9 && map.EntranceRideOpens?.Invoke( tx, ty ) is { } open )
+				return !open;
 		}
 		else if ( to == 0x1E )
 			return false;

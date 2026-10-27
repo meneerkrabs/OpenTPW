@@ -217,7 +217,13 @@ public sealed class UiContext
 
 	private readonly Dictionary<FontAtlas, (int Top, int Bottom)> letterBoxes = new();
 
-	/// <summary>Unscaled box of <paramref name="text"/>'s drawn pixels, widened vertically to the font's letter box and by the drop shadow.</summary>
+	/// <summary>
+	/// Unscaled box of <paramref name="text"/>'s drawn pixels, widened by the drop shadow. Vertically it is the font's letter box, and drawn pixels
+	/// count only where they leave the font's line box: the MENU, TITLE and SESH fonts keep the rows between the line top and their capitals for
+	/// diacritics (the MENUSMALL letter box starts 9 rows down; French î and Swedish å reach row 4 or 5), and the original's text library stacks lines a
+	/// line height apart (its block box is lines times line height, 0x6ae1c0), so a mark inside the line box never meets the line above. Counting those marks would shrink an accented label below its
+	/// neighbours, or drop it out of its family, and move its baseline.
+	/// </summary>
 	private (int Left, int Top, int Right, int Bottom) InkBox( FontAtlas font, string text, bool shadow )
 	{
 		if ( !letterBoxes.TryGetValue( font, out var letters ) )
@@ -230,7 +236,9 @@ public sealed class UiContext
 		var extra = shadow ? 1 : 0;
 		if ( layout.Glyphs.Count == 0 )
 			return (0, letters.Top, layout.Width + extra, letters.Bottom + extra);
-		return (layout.InkLeft, Math.Min( layout.InkTop, letters.Top ), layout.InkRight + extra, Math.Max( layout.InkBottom, letters.Bottom ) + extra);
+		var top = layout.InkTop < 0 ? Math.Min( layout.InkTop, letters.Top ) : letters.Top;
+		var bottom = layout.InkBottom > font.LineHeight ? Math.Max( layout.InkBottom, letters.Bottom ) : letters.Bottom;
+		return (layout.InkLeft, top, layout.InkRight + extra, bottom + extra);
 	}
 
 	/// <summary>Draws a model frame stretched so its selected-mesh fit bounds fill <paramref name="rect"/>.</summary>
@@ -632,18 +640,25 @@ public sealed class UiButton : UiElement
 		}
 		// [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons
 		var art = context.ResolveTexture( "purple_button" );
-		var bar = rect;
+		var inner = PurpleLabelRect( rect, art != null );
 		if ( art != null )
 		{
 			var lit = focused && !subdued || pressed || Selected?.Invoke() == true;
-			bar = new UiRect( rect.X, rect.Y + rect.Height * PurpleBarGap / 2, rect.Width, rect.Height * (1 - PurpleBarGap) );
-			DrawPurpleBar( context, UiTexture.Image( art ), bar, lit, Enabled && !subdued ? RgbaByte.White : new RgbaByte( 160, 160, 160, 255 ) );
+			DrawPurpleBar( context, UiTexture.Image( art ), PurpleBar( rect ), lit, Enabled && !subdued ? RgbaByte.White : new RgbaByte( 160, 160, 160, 255 ) );
 		}
 		else
 			context.Batch.AddRectangle( rect, focused ? UiColors.Highlight : UiColors.HelpBackground );
-		// Margins keep the label off the bar's rim and rounded ends.
-		var inner = new UiRect( bar.X + bar.Height * 0.5f, bar.Y + bar.Height * 0.05f, bar.Width - bar.Height, bar.Height * 0.9f );
 		context.DrawFittedText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled || subdued ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
+	}
+
+	/// <summary>The purple bar of a text button in <paramref name="rect"/>: the texture's bar rows, centred.</summary>
+	private static UiRect PurpleBar( UiRect rect ) => new( rect.X, rect.Y + rect.Height * PurpleBarGap / 2, rect.Width, rect.Height * (1 - PurpleBarGap) );
+
+	/// <summary>The box a text button in <paramref name="rect"/> fits its label into: margins keep the label off the bar's rim and rounded ends (the whole button without the bar art).</summary>
+	internal static UiRect PurpleLabelRect( UiRect rect, bool art = true )
+	{
+		var bar = art ? PurpleBar( rect ) : rect;
+		return new UiRect( bar.X + bar.Height * 0.5f, bar.Y + bar.Height * 0.05f, bar.Width - bar.Height, bar.Height * 0.9f );
 	}
 
 	/// <summary>

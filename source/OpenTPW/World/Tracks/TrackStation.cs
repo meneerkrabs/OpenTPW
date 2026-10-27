@@ -35,6 +35,32 @@ public readonly record struct TrackStation( int Rotation, byte Heading, (int X, 
 		}
 	}
 
+	/// <summary>
+	/// The ride's anchor cell (the original's attraction cell <c>0x7639A4/A8</c>), the cell <see cref="FromPlacement"/> was given: the edit tool's hover keeps it in the exit globals
+	/// (<see cref="TrackEditor.ToolExit"/>). A legacy station is searched for the anchor that gives its layout.
+	/// </summary>
+	public (int X, int Y) Anchor
+	{
+		get
+		{
+			var (x, y) = Rotation switch
+			{
+				0 => (First.X, First.Y - 1),
+				90 => (First.X - 1, First.Y + 1),
+				180 => (First.X + 1, First.Y + 2),
+				270 => (First.X + 2, First.Y),
+				_ => First
+			};
+			if ( !Legacy )
+				return (x, y);
+			for ( var dy = -4; dy <= 4; dy++ )
+				for ( var dx = -4; dx <= 4; dx++ )
+					if ( FromPlacementLegacy( x + dx, y + dy, Rotation ).First == First )
+						return (x + dx, y + dy);
+			return (x, y);
+		}
+	}
+
 	/// <summary>The origin cells of both station tiles in circuit order.</summary>
 	public IEnumerable<(int X, int Y)> Tiles
 	{
@@ -51,7 +77,7 @@ public readonly record struct TrackStation( int Rotation, byte Heading, (int X, 
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052A1A0 station line] from the attraction cell (x, y) the line runs, per rotation, 0°: (x, y+1) → (x+2, y+1), exit (x+4, y+1); 90°: (x+1, y−1) → (x+1, y−3), exit (x+1, y−5); 180°: (x−1, y−2) → (x−3, y−2), exit (x−5, y−2); 270°: (x−2, y) → (x−2, y+2), exit (x−2, y+4) (0x52A1E1..0x52A28C: the start cell is the walk's start 0x7639E0/E4); the tiles are the footprint's rows 1 and 2 across the heading, the entrance row 0 beside them
 	// [BIN:TPW-EXE:0x00529E10 ride placement] the controller's reference is the cell between the two tiles on their centre line (anchor + the type's Bumper.*Adjust + (4, 1), (1, −5), (−5, −2) or (−2, 4) by rotation, 0x529EDF..0x529F2B), see Level.TrackStationReference
-	// [APPROX:TRACK-005] the line modes 0x80 and 0x83 of 0x53AAC0 (0x82 is the flow link, TRACK-004) and what they write on the station tiles are not traced; the tiles are typed and linked as the placement of the player's own lines is
+	// [BIN:TPW-EXE:0x005254C5 station ops] the placement lays the exit and entry tiles with the op list 0x87, the type op, 0x80, 0x82, 0x83, 0x85, 0x86, 0x81 on each (TrackBuilder.PlaceInitialStation): the station tiles written here carry the arms of the station line (the first tile toward the second, the second back), and the other arms follow the exit's and entry's ops whatever their type ops answered (0x5255D8..0x52572C)
 	public static TrackStation FromPlacement( int anchorX, int anchorY, int rotation )
 	{
 		var heading = TrackHeading.FromRotation( rotation );

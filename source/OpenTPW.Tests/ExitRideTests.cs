@@ -67,7 +67,7 @@ public class ExitRideTests
 			Assert.AreEqual( (3, 6), guest.Navigation.Cell, $"rotation {rotation}: in the exit cell" );
 			Assert.IsTrue( System.Math.Abs( guest.Navigation.X - point.X ) < Fixed16.One / 4 && System.Math.Abs( guest.Navigation.Y - point.Y ) < Fixed16.One / 4,
 				$"rotation {rotation}: at the exit point ({guest.Navigation.X - point.X}, {guest.Navigation.Y - point.Y})" );
-			Assert.AreEqual( 0, guest.AttractionId, "the visit ended (GUEST-004)" );
+			Assert.AreEqual( rig.Ride.AttractionId, guest.AttractionId, "the target is kept through state 15 until the next major choice (GUEST-004, tp.exe 0x00500900 writes +0x1DC only for a stuck walk or a major destination)" );
 			for ( var tick = 0; tick < 20 * 60 && guest.State == GuestState.ExitingRide; tick++ )
 				rig.Step();
 			Assert.AreEqual( (4, 6), (guest.CellX, guest.CellY), $"rotation {rotation}: it walked to the cell beyond the exit" );

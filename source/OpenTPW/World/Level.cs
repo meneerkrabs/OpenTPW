@@ -606,6 +606,8 @@ public partial class Level : IDisposable
 				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
 				OriginalTerrain.QueueModelSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue ? QueueModels.Choose( cells, x, y ) : null;
 				OriginalTerrain.PathVariantSource = PathVariants.IsSecond;
+				// [BIN:TPW-EXE:0x00450D10 land refresh] the land outside the park is drawn darker
+				OriginalTerrain.LandFlagsSource = ( x, y ) => cells.InBounds( x, y ) ? cells.FlagsAt( x, y ) : ParkCellFlags.None;
 				// [EXT:pools-render] the pool cells are render-only holes of the ground mesh while the extension is on (nothing else reads this)
 				// [BIN:TPW-EXE:0x00535DD0 hole cell types] the ground is not drawn under an object, entrance or exit cell (the cell refresh writes the hole word), so the floor stands on nothing
 				OriginalTerrain.RenderHoleSource = ( x, y ) => ObjectCellHoles.IsHole( cells, x, y ) || PoolRenderHoles.IsHole( cells, x, y, FeatureGates.Pools );

@@ -1,5 +1,7 @@
 # TRACK-007: Replay directional track demolition
 
+- **Superseded (October 27, 2026):** PR #879 (round 9 F) ports the clear op `0x53B280` and the replays from the corner stacks in full and retires `APPROX:TRACK-007` (docs/TRACKS.md, "The clear op"). The rest of this proposal is kept as history.
+
 ## Status and classification
 - Classification: approximation.
 - Original status: plan-only local proposal. Its bounded part merged in #593 on 2026-10-20 (exact-head CI green); see "October 20 bounded implementation" below. TRACK-007 is not retired.

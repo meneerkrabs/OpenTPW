@@ -12,14 +12,20 @@ public static class BlueprintGhosts
 	/// </summary>
 	// [BIN:TPW-EXE:0x00536100 LayLine ghost] the line preview calls the ghost SetCell 0x532FC0 for every cell of the line and it answers 1 for allowed (0x53391D) and refused (0x534009) cells alike, so the loop never stops early; the validator 0x535670 refuses every later cell once the flag 0x816D50 is set (0x5358A0; reset at 0x527C52 and 0x5247AA), and a refused ghost cell takes the red texture (the second AddFace argument pair 1 at 0x533FEC against the chooser's result at 0x5338F3)
 	// [APPROX:BLUEPRINT-003] the validator's answer for a cell that already holds the line's type is not read (0x535670 after 0x5358B5): such cells before the refusal stay blue
-	public static List<(int X, int Y, BlueprintMarker Marker)> LineCells( IReadOnlyList<(int X, int Y)> line, (int X, int Y)? stoppedAt )
+	public static List<(int X, int Y, BlueprintMarker Marker)> LineCells( IReadOnlyList<(int X, int Y)> line, (int X, int Y)? stoppedAt,
+		IReadOnlyList<((int X, int Y) Origin, BlueprintMarker Symbol)>? symbols = null )
 	{
 		var cells = new List<(int X, int Y, BlueprintMarker Marker)>( line.Count );
 		var refused = false;
+		// a symbol tile is one face over its four cells: the origin carries it and the other three cells give way
+		var covered = symbols is { Count: > 0 } ? symbols.SelectMany( symbol => new[] { (symbol.Origin.X + 1, symbol.Origin.Y), (symbol.Origin.X, symbol.Origin.Y + 1), (symbol.Origin.X + 1, symbol.Origin.Y + 1) } ).ToHashSet() : null;
+		var origins = symbols?.ToDictionary( symbol => symbol.Origin, symbol => symbol.Symbol );
 		foreach ( var cell in line )
 		{
 			refused |= stoppedAt is { } stop && cell == stop;
-			cells.Add( (cell.X, cell.Y, refused ? BlueprintMarker.Refused : BlueprintMarker.Allowed) );
+			if ( covered?.Contains( cell ) == true )
+				continue;
+			cells.Add( (cell.X, cell.Y, origins != null && origins.TryGetValue( cell, out var symbol ) ? symbol : refused ? BlueprintMarker.Refused : BlueprintMarker.Allowed) );
 		}
 		return cells;
 	}

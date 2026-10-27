@@ -189,6 +189,18 @@ public class ParkCommandCodecTests
 		Assert.AreEqual( BitConverter.SingleToInt32Bits( -0f ), BitConverter.SingleToInt32Bits( ((PlacePrototypeCommand)ParkCommandCodec.Decode( ParkCommandCodec.Encode( edges[2] ) )).Y ), "floats keep their bit pattern" );
 	}
 
+	/// <summary>A log recorded before the undo's last-line flag decodes as it was written, and a flag byte that is present must be 1.</summary>
+	[TestMethod]
+	public void TheUndoTrackLineBytesOfAnOlderLogStillDecodeAndAPresentZeroFlagIsRefused()
+	{
+		var old = ParkCommandCodec.Decode( Convert.FromHexString( "0251002250645070" ) );
+		Assert.AreEqual( new UndoTrackLineCommand( 17, 40, 50, 40, 56 ), old );
+		var last = new UndoTrackLineCommand( 17, 40, 50, 40, 56, true );
+		Assert.AreEqual( "025100225064507001", Convert.ToHexString( ParkCommandCodec.Encode( last ) ).ToLowerInvariant() );
+		Assert.AreEqual( last, ParkCommandCodec.Decode( Convert.FromHexString( "025100225064507001" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( Convert.FromHexString( "025100225064507000" ) ) );
+	}
+
 	/// <summary>Bytes that are not exactly one well-formed command: every truncation of every sample, an extra byte, another version, an unknown kind, a padded varint, bad fields.</summary>
 	[TestMethod]
 	public void MalformedAndOutOfRangeBytesAreRefused()

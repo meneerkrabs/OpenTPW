@@ -60,6 +60,8 @@ public static class UiDialogs
 			Font = fonts => fonts.Label,
 			Align = UiAlign.Center,
 			Wrap = true,
+			// [EXT:own-window-sizes] OpenTPW's own window, its text box and font are OpenTPW's choice, so the text is not cut off at the box
+			Unclipped = () => true,
 			Bounds = new UiRect( rect.X + 56, caption.Bottom + 20, textRight - rect.X - 56, rect.Bottom - caption.Bottom - 60 ),
 			Anchor = UiAnchor.Center
 		} );

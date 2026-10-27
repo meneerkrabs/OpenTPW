@@ -154,6 +154,41 @@ public class DisconnectedQueueScoringTests
 	}
 
 	[TestMethod]
+	public void ATypedFrontOnEmptyGroundIsScoredAndItsFailedRouteSticksTheWalkAtEveryDecision()
+	{
+		// [BIN:TPW-EXE:0x004DE130 typed front on empty ground] any cell the selector 0x004DE040 finds from the entry's link byte is the back (size 1), typed or not: 0x004DD920 counts it, the route request 0x004FA530 to it fails and the guest is "stuck on the way" (0x004FFBC0 -> 0x004FEA70(2), +0x1DC = 0, state 6)
+		var rig = new Rig( neverConnected: true );
+		foreach ( var cell in new[] { (2, 5), (2, 4), (2, 3) } )
+		{
+			rig.Grid.Cells.SetType( cell.Item1, cell.Item2, ParkCellType.Empty );
+			rig.Grid.Cells.SetLinks( cell.Item1, cell.Item2, 0 );
+			rig.Grid.Cells.SetQueueLink( cell.Item1, cell.Item2, 0 );
+		}
+		rig.Grid.Cells.SetType( 2, 6, ParkCellTypes.Entrance );
+		rig.Grid.Cells.SetLinks( 2, 6, 0x01 );
+		rig.Older.QueueEntryResolver = () => (2, 6);
+		rig.Older.RecomputeQueue( rig.Grid );
+		Assert.IsTrue( rig.Older.HasTypedBack );
+		Assert.AreEqual( (2, 5), rig.Older.BackCell, "the one-cell back lies on empty ground" );
+		var guest = rig.Spawn();
+		Assert.AreEqual( 0, rig.Grid.Cells.RawTypeAt( 2, 5 ) );
+		Assert.IsTrue( rig.Simulation.ScoreAttraction( guest, rig.Older ) > rig.Simulation.ScoreAttraction( guest, rig.Newer ), "the empty-ground back is scored" );
+		Assert.AreSame( rig.Newer, rig.Simulation.Choose( guest ), "the newer reachable candidate is tried first, the older one's route request then fails" );
+		Assert.IsTrue( guest.Navigation.Stuck, "the failed route request left the walk stuck" );
+		guest.State = GuestState.GoingToRide;
+		guest.AttractionId = rig.Newer.AttractionId;
+		var before = guest.Happiness;
+		for ( var tick = 0; tick < 600 && guest.State == GuestState.GoingToRide; tick++ )
+		{
+			before = guest.Happiness;
+			rig.Step();
+		}
+		Assert.AreEqual( GuestState.DoingNothing, guest.State, "state 10's first update finds the walk stuck and the guest decides again" );
+		Assert.AreEqual( 0, guest.AttractionId, "the stuck guest's target is cleared" );
+		Assert.AreEqual( MeterMath.Add( before, -rig.Simulation.Settings.BigHappinessChange ), guest.Happiness, "and its happiness takes the big step (0x004FEA70(2))" );
+	}
+
+	[TestMethod]
 	public void PeekChoicePreservesEveryGuestQueueNavigationAndVmFieldBeforeAndAfterFailure()
 	{
 		var rig = new Rig();

@@ -1807,12 +1807,23 @@ buttons for the ride. So is the path cell its back cell joins, whose removal or 
 would take the queue's link off: the remove click, Backspace, queue lines, placements (whose plans clear
 the paths under them, and a queue ride's, which lays its first queue cell outside its entrance), bridges
 and kart or water track lines (a tile laid over path clears it) refuse it, and the area clear leaves it
-standing (`IParkCommandRights.AllowsPathRemoval`). A path
-line along it, the path a placement lays outside the last exit of a ride with a queue or the last
-entrance of a type without one (only the last entrance and the last exit count, `ObjectAccessCells.Lay`),
-and a queue line that only ends on it (which links the queue to that path, `QueuePaths.Connect`) leave
-the queue's links as they are. The exit of an object without a queue lays no cell: it only links a path
-cell already outside it (that cell's links and its path and access neighbours'), which takes no queue's
+standing (`IParkCommandRights.AllowsPathRemoval`). So is a path cell linked into the ride's entrance cell
+(type 9, which carries the ride's owner word): its clear takes that link off and re-evaluates the ride,
+which recomputes its queue, stamps a block and may open the ride when it is closed (tp.exe `0x53694B`,
+`CoopBuildRights.BesideClaimedEntrance`). The remove click, Backspace, native queue segments laid over
+it and their undo, placements (the paths under them, a queue ride's first queue cell outside its entrance
+and a fresh kart or water station's exit and entry tiles) and kart or water track lines (asked as drawn,
+also past a tile their writer would stop at) refuse it, as do the host's single-cell removal and the undo
+of a path line that built the cell, and the area clear leaves it standing. A path cell beside the
+entrance that does not link into it, and a queue cell there, re-evaluate nothing when cleared, so they are
+not asked; nor is the queue tool's per-cell line, which lays no queue over path, nor a native segment's
+last path cell, where it stops. A path line along such a cell, a Backspace that only counts it down (a
+cell laid more than once loses one placement and stays, `ParkPathBuilder.RemoveOnce`), the path a
+placement lays outside the last exit of a ride with a queue or the last entrance of a type without one
+(only the last entrance and the last exit count, `ObjectAccessCells.Lay`), and a queue line that only ends
+on it (which links the queue to that path, `QueuePaths.Connect`) take no link off. The exit of an object
+without a queue lays no cell: it only links a path cell already outside it (that cell's links and its
+path and access neighbours'), which takes no
 link off, so it is asked nothing. A queue cell's ride is resolved as its removal resolves it: the rides'
 cached lines, then each line walked again (on a copy) for the cells they miss, once per question of the
 rights (the area clear asks it for each path cell it would clear). Everything else stays the host's:
@@ -2002,11 +2013,12 @@ the claim keeps the ride from every other player, the host included. A guest's t
   record, or the building right through `SetSeatRightsCommand`, C4a), and a ride's removal (a sale, the area clear, the Move's pick-up) takes its claim with it, on
   every peer alike.
 - **What a claim keeps.** A claim keeps from every other player, the host included, the ride's track
-  commands, its sale, its removal and its pick-up, its demolition by a placement, an add-on on it, and its
-  queue as above (`CoopBuildRights.LeavesClaimsAlone`, asked of the host before its blanket yes). The
-  host's cleanup is its own: its release of any claim, a departed seat's release and the grants. A claim
-  guards building and removal, not management: the ride's opening, its settings and its prices stay as
-  they are (the host's, C4 for guests). A command a claim refuses gives the claim's reason, and the HUD
+  commands, its sale, its removal and its pick-up, its demolition by a placement, an add-on on it, its
+  queue and the path cell linked into its entrance as above (`CoopBuildRights.LeavesClaimsAlone`, asked
+  of the host before its blanket yes). The host's cleanup is its own: its release of any claim, a departed
+  seat's release and the grants. A claim guards building and removal, not management: the ride's opening,
+  its settings and its prices stay as they are (the host's, C4 for guests), but a path clear that would
+  re-evaluate the ride, and might open it, is building and is kept. A command a claim refuses gives the claim's reason, and the HUD
   says it in its words ("Another player is editing this ride.", one new string in every language), for a
   click the rights refuse here and for a guest's refused record alike. A guest's track command on a ride
   whose claim it no longer holds, which the host let go and no other seat took, is refused with a reason
@@ -2367,7 +2379,39 @@ with one difference the queue forces: a guest's window keeps no draft.
   languages). A resync whose swap fails before its teardown leaves the old park the game's: the end dialog
   then shows over it, with that sentence when it applies.
 
-C4c adds staff.
+**A seat's staff (C4c-1).** `[EXT:online-coop-commands]` `[EXT:online-coop-permissions]` The park keeps the staff state of
+every seat, ready for the staff right, which C4c-2 offers with the guest's staff tools and windows; until then no
+guest seat issues a staff command, and the host's and a single player's play is as before but for the two points
+marked below.
+- **A pending hire per seat.** Each seat's hire reserves its candidate (`ParkStaff.PendingHires`; seat 0's is
+  `PendingPlacementId`): another seat's hire or placement of it is refused, and the pool's expiry keeps every
+  reserved candidate. An imported save's candidate on the pointer loses its flag at any placement's end, and is
+  removed from the pool by another candidate's placement only while no seat reserves it. The pending hires are not
+  saved (as before); the join state and the session digest carry every seat's.
+- **One staff state per guest seat.** A guest seat holds a pending hire or an employee in hand, not both. Its hire
+  and its pick-up replace what it held in the same record, a hand dropping back where it was picked up and a
+  pending hire's placement ending, as the original's hire and pick-up replace the running tool (0x507bf0,
+  0x505c50); a refused record changes nothing. The host's seat keeps its transitions: its HUD ends the running
+  tool first, as before, and now asks first whether another seat reserves the candidate, so a refused hire keeps
+  the host's carry or pending hire.
+- **Hands.** Firing an employee another seat carries is refused ("That employee is being moved."); firing one's
+  own carried employee empties the hand in the same record. *(Single player: the Carry tool of an employee
+  dismissed from its window now ends at the next frame, since its drop would find no hand.)* Every player's
+  local staff tool follows what the park holds for its seat each frame, paused or not. The drop of a seat's own
+  employee back on the cell it was picked up from is every seat's cleanup: it needs no right, so it never loses
+  a race with the right taken back; a drop anywhere else needs the staff right.
+- **Release.** A seat's release (`ReleaseSeatCommand`) and its staff right taken back end its pending hire and
+  drop its employee in hand back where it was picked up, in the same record; both seat queries count a seat that
+  holds only staff state. The host's teardown releases them in records before the log's last checkpoint; an end
+  inside a tick records nothing and the park drops them after that checkpoint. A park shared again, and a
+  guest's park leaving its session, start without any guest seat's staff state.
+- **Saves.** A host's save (the manual one and the autosave) writes an employee in a guest's hand as its drop
+  back to where it was picked up would leave it, in the economy and the staff world alike, while the live park
+  keeps it in hand; a join carries it as it is. The join state's staff rows are checked whole before any
+  applies: each seat once, a candidate of the pool reserved once, an employee of the park held once and picked
+  up, an origin on the grid, and a guest seat with one of a hand and a pending hire.
+
+C4c-2 offers the staff right with the guest's staff tools and windows.
 
 ## The command layer (C1)
 

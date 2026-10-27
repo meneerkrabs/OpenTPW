@@ -209,6 +209,9 @@ public partial class Level
 			if ( !join )
 				StaffPlacement?.PrepareForSave();
 		}
+		// [EXT:online-coop-commands] an employee in a guest seat's hand is saved as its drop back to where it was picked up leaves it, in the economy's members and the staff world's actors
+		// alike, while the live park keeps it in hand (C4c); a join carries it as it is, with the hands
+		using var heldForSave = join ? null : StaffHands?.PutDownForSave( player => player != ParkCommands.LocalPlayer );
 		var prototype = CapturePrototypeSnapshot();
 		ParkResumeRuntime[] runtimes;
 		using ( FrameMarks.Measure( "capture.runtimes" ) )

@@ -479,6 +479,8 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		// [EXT:online-coop-claims] and the rides' claims (C3c-1)
 		level.ClearRideClaims();
 		level.ClearGuestCarries();
+		// [EXT:online-coop-permissions] and what the guests' seats held of the staff, its employees in hand dropped back where they were picked up (C4c)
+		level.ClearGuestStaff();
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = null;

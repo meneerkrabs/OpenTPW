@@ -240,7 +240,16 @@ public sealed partial class ParkStaff
 	// [BIN:TPW-EXE:0x506830 staff name] the inline field accepts up to 32 UTF-16 units, including an explicit blank name.
 	public bool Rename( StaffMember member, string name )
 	{
-		if ( !members.Contains( member ) || name == null || name.Length > StaffMember.MaximumNameLength ) return false;
+		if ( !members.Contains( member ) || !IsValidName( name ) ) return false;
+		member.Name = name;
+		return true;
+	}
+
+	/// <summary>Whether <paramref name="name"/> is a name <see cref="Rename"/> takes: at most 32 UTF-16 units, no control character and no lone surrogate. It writes nothing.</summary>
+	// [BIN:TPW-EXE:0x506830 staff name] the inline field accepts up to 32 UTF-16 units, including an explicit blank name.
+	public static bool IsValidName( string? name )
+	{
+		if ( name == null || name.Length > StaffMember.MaximumNameLength ) return false;
 		for ( var index = 0; index < name.Length; index++ )
 		{
 			if ( char.IsControl( name[index] ) ) return false;
@@ -248,7 +257,6 @@ public sealed partial class ParkStaff
 			if ( !char.IsSurrogatePair( name, index ) ) return false;
 			index++;
 		}
-		member.Name = name;
 		return true;
 	}
 
@@ -258,9 +266,45 @@ public sealed partial class ParkStaff
 	public long NextPoolUpdateTick { get; private set; }
 	/// <summary>
 	/// The candidate whose Place tool is running (the original's "being placed" flag, candidate <c>+0xb</c>, tp.exe 0x507bf0): it stays in the pool,
-	/// is not hired yet and does not expire while the player places it. Not saved: a pending hire is only a flag.
+	/// is not hired yet and does not expire while the player places it. Not saved: a pending hire is only a flag. The local player's (seat 0) of <see cref="PendingHires"/>.
 	/// </summary>
-	public int PendingPlacementId { get; set; }
+	public int PendingPlacementId { get => PendingHireOf( 0 ); set => SetPendingHire( 0, value ); }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Every seat's pending hire, lowest seat first (C4c): the candidate each player's Place tool places, reserved for that seat, so no other seat may begin
+	/// or place it and the pool keeps it. A game of one holds seat 0's alone (<see cref="PendingPlacementId"/>). Not saved; a join snapshot and the session digest carry them.
+	/// </summary>
+	public IReadOnlyDictionary<int, int> PendingHires => pendingHires;
+	private readonly SortedDictionary<int, int> pendingHires = new();
+
+	/// <summary>[EXT:online-coop-commands] The candidate seat <paramref name="seat"/> places, or 0 (C4c).</summary>
+	public int PendingHireOf( int seat ) => pendingHires.TryGetValue( seat, out var candidate ) ? candidate : 0;
+
+	/// <summary>[EXT:online-coop-commands] Sets the candidate seat <paramref name="seat"/> places; 0 or less ends it without a tool exit (C4c).</summary>
+	internal void SetPendingHire( int seat, int candidate )
+	{
+		if ( candidate > 0 )
+			pendingHires[seat] = candidate;
+		else
+			pendingHires.Remove( seat );
+	}
+
+	/// <summary>[EXT:online-coop-commands] The seat whose pending hire is candidate <paramref name="candidate"/>, or null (C4c).</summary>
+	public int? ReservedBy( int candidate )
+	{
+		foreach ( var (seat, placing) in pendingHires )
+			if ( placing == candidate )
+				return seat;
+		return null;
+	}
+
+	/// <summary>[EXT:online-coop-commands] Restores the pending hires a join snapshot carries, seat by seat (C4c): they replace every seat's.</summary>
+	internal void RestorePendingHires( IEnumerable<(int Seat, int Candidate)> rows )
+	{
+		pendingHires.Clear();
+		foreach ( var (seat, candidate) in rows )
+			SetPendingHire( seat, candidate );
+	}
 
 	/// <summary>
 	/// A candidate an original save held with its on-pointer byte set (<c>+0xB</c>) and no carry tool to end it: it does not expire and stays in the pool until the next tool exit clears the flag
@@ -271,14 +315,20 @@ public sealed partial class ParkStaff
 
 	/// <summary>
 	/// A placement tool ended (<c>0x5083b0</c>): the pending candidate is no longer being placed and a candidate the load left flagged loses its flag; when <paramref name="placed"/> the flagged candidate is
-	/// removed from the pool (the placed one is hired by its caller).
+	/// removed from the pool (the placed one is hired by its caller). The local player's (seat 0) tool.
 	/// </summary>
-	public void EndPlacement( bool placed )
+	public void EndPlacement( bool placed ) => EndPlacement( 0, placed );
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Seat <paramref name="seat"/>'s placement tool ended (C4c): its pending candidate is no longer being placed, and the flag of a candidate the load left flagged goes as at any
+	/// tool exit; when <paramref name="placed"/> the flagged candidate leaves the pool unless another seat places it, whose own end then frees it as any.
+	/// </summary>
+	public void EndPlacement( int seat, bool placed )
 	{
-		var placing = PendingPlacementId;
-		PendingPlacementId = 0;
+		var placing = PendingHireOf( seat );
+		pendingHires.Remove( seat );
 		// the candidate being hired goes through the hire path, not this one
-		if ( StaleOnPointerId != 0 && placed && StaleOnPointerId != placing )
+		if ( StaleOnPointerId != 0 && placed && StaleOnPointerId != placing && ReservedBy( StaleOnPointerId ) == null )
 			candidates.RemoveAll( candidate => candidate.Id == StaleOnPointerId );
 		StaleOnPointerId = 0;
 	}
@@ -342,7 +392,8 @@ public sealed partial class ParkStaff
 	// [BIN:STP-PPC:0x100F6E24 staff pool update] draw = rand() % total shortfall picks the role whose share it falls in; each added candidate lowers that role's shortfall and the per-update cap (also limited by the 32 free slots); 0x100F65E8 drops roles whose hired count reached Max*InPark; 0x100F6790 then tops every role up to Min*InPool counting hired and pooled staff
 	public void UpdatePool( WorldRng random, long tick )
 	{
-		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && candidate.Id != PendingPlacementId && candidate.Id != StaleOnPointerId );
+		// [EXT:online-coop-commands] every seat's pending hire stays, as the one being placed does (C4c)
+		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && ReservedBy( candidate.Id ) == null && candidate.Id != StaleOnPointerId );
 		if ( tick < NextPoolUpdateTick )
 			return;
 		NextPoolUpdateTick = TickAfterUnits( tick, settings.TimeBetweenStaffUpdates );
@@ -500,7 +551,7 @@ public sealed partial class ParkStaff
 
 	internal void Restore( IEnumerable<StaffMember> restoredMembers, IEnumerable<StaffCandidate> restoredCandidates, IReadOnlyList<long> budgets, int nextId, long nextPoolUpdate )
 	{
-		PendingPlacementId = 0;
+		pendingHires.Clear();
 		if ( things != null )
 			foreach ( var old in members )
 				if ( old.ThingId != 0 )
@@ -551,7 +602,7 @@ public sealed partial class ParkStaff
 	internal void RestoreOriginalPool( IEnumerable<(StaffType Type, int NameIndex, int Grade, long MadeTurn, long Timeout, int SubType)> saved, long lastRefillTurn, IReadOnlyList<bool>? onPointer = null )
 	{
 		candidates.Clear();
-		PendingPlacementId = 0;
+		pendingHires.Clear();
 		StaleOnPointerId = 0;
 		var position = 0;
 		foreach ( var (type, name, grade, made, timeout, subType) in saved.Take( PoolSlots ) )

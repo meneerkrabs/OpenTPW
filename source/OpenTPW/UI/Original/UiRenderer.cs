@@ -102,6 +102,7 @@ internal sealed class UiRenderer : IDisposable
 	{
 		frameBuffers = 0;
 		preparedImages.Clear();
+		RetireTitleTextures();
 	}
 
 	/// <summary>
@@ -313,18 +314,6 @@ internal sealed class UiRenderer : IDisposable
 			// a bitmap the cache has dropped is not given a GPU copy again (the batch composes a fresh one when the title is next drawn)
 			if ( title.Evicted )
 				return null;
-			var dropped = titleTextures.Where( pair => pair.Key.Evicted ).ToList();
-			foreach ( var pair in dropped )
-				titleTextures.Remove( pair.Key );
-			if ( dropped.Count > 0 )
-				Render.ScheduleDelete( () =>
-				{
-					foreach ( var (_, (oldTexture, oldSet)) in dropped )
-					{
-						oldSet.Dispose();
-						oldTexture.Dispose();
-					}
-				} );
 			// one texel per output pixel when the bitmap's factor matches the scale; a capped factor is filtered
 			titleEntry = Create( title.Rgba, title.Width, title.Height, title.Factor == texture.FontScale ? Device.PointSampler : Device.LinearSampler );
 			titleTextures[title] = titleEntry;
@@ -371,6 +360,25 @@ internal sealed class UiRenderer : IDisposable
 			entry = Create( [255, 255, 255, 255], 1, 1, Device.PointSampler );
 		textures[key] = entry;
 		return entry.Set;
+	}
+
+	// A frame with only cached titles (or no titles) must still release GPU copies the CPU cache has dropped. Disposal stays at the renderer's safe boundary.
+	private void RetireTitleTextures()
+	{
+		if ( titleTextures.Count == 0 )
+			return;
+		var dropped = titleTextures.Where( pair => pair.Key.Evicted ).ToList();
+		foreach ( var pair in dropped )
+			titleTextures.Remove( pair.Key );
+		if ( dropped.Count > 0 )
+			Render.ScheduleDelete( () =>
+			{
+				foreach ( var (_, (oldTexture, oldSet)) in dropped )
+				{
+					oldSet.Dispose();
+					oldTexture.Dispose();
+				}
+			} );
 	}
 
 	private (Veldrid.Texture, ResourceSet) Create( byte[] rgba, int width, int height, Sampler sampler )

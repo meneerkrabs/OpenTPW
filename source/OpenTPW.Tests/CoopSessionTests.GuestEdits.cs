@@ -583,6 +583,11 @@ public partial class CoopSessionTests
 			// the path cell its back (10, 2) joins is the host's too: a removal or a queue laid over it takes the link off
 			Assert.IsFalse( rights.Allows( seat, new RemoveAtCommand( 10, 1 ) ), "the path cell the claimed queue joins" );
 			Assert.IsFalse( rights.Allows( seat, new BacktrackCommand( 10, 1 ) ) );
+			// laid twice, the join only loses a placement to Backspace (ParkPathBuilder.RemoveOnce), which takes no link off
+			guest.Level.Guests!.Grid.Cells.SetPlacementCount( 10, 1, 1 );
+			Assert.IsTrue( rights.Allows( seat, new BacktrackCommand( 10, 1 ) ), "a Backspace that only counts the join down" );
+			Assert.IsFalse( rights.Allows( seat, new RemoveAtCommand( 10, 1 ) ), "a removal still clears it" );
+			guest.Level.Guests.Grid.Cells.SetPlacementCount( 10, 1, 0 );
 			Assert.IsTrue( rights.Allows( seat, new BacktrackCommand( 12, 1 ) ) );
 			Assert.IsFalse( rights.AllowsPathRemoval( seat, 10, 1 ) );
 			Assert.IsTrue( rights.AllowsPathRemoval( seat, 9, 1 ) && rights.AllowsPathRemoval( ParkCommands.LocalPlayer, 10, 1 ) );

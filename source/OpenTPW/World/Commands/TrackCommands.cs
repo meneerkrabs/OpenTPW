@@ -88,9 +88,10 @@ public sealed record CutTrackCommand( int Ride, int FirstX, int FirstY, int Seco
 /// <summary>
 /// [EXT:online-coop-commands] The line writer a kart or water ride's track tool holds: previews and the start check stay local (<see cref="Inner"/>, no writes), and each commit and undo of a line becomes one
 /// command (<see cref="LayTrackLineCommand"/>, <see cref="UndoTrackLineCommand"/>). When the command walked the circuit to a valid one, the tool moves on as the walk once moved it
-/// (<see cref="Level.ContinueTrackTool"/>: it ends, follows the queue or restarts), on the issuer's machine only.
+/// (<see cref="Level.ContinueTrackTool"/>: it ends, follows the queue or restarts), on the issuer's machine only. A guest's line and Backspace go to the host as requests under the ride's claim
+/// (C3c-1b): the tool waits for each outcome, which lays or takes back the line and moves the tool on from there.
 /// </summary>
-public sealed class ParkCommandTrackWriter : ICellLineWriter
+public sealed class ParkCommandTrackWriter : ICellLineWriter, IGuestUndoWriter
 {
 	private readonly ParkCommands commands;
 	private readonly Action continueTool;
@@ -120,6 +121,20 @@ public sealed class ParkCommandTrackWriter : ICellLineWriter
 	public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end )
 	{
 		var result = commands.Issue( new LayTrackLineCommand( Ride, start.X, start.Y, end.X, end.Y ) );
+		// a guest's line goes to the host (C3c-1b): nothing is laid yet, and the tool waits for the line's outcome, whose walk moves the tool on from there
+		if ( result.Request is { } request )
+			return new SegmentResult( start, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false )
+			{
+				Start = start,
+				Line = LineCells( start, TrackLineWriter.SnapEnd( start, end ) ),
+				Waiting = new WaitingLineCommit( request, outcome => Complete( start, end, outcome ) )
+			};
+		return Complete( start, end, result );
+	}
+
+	/// <summary>The segment a line's command laid, from its result (at once, or a guest's request's once its record applied in the guest's park), after the tool's step when the walk found the circuit valid.</summary>
+	private SegmentResult Complete( (int X, int Y) start, (int X, int Y) end, ParkCommandResult result )
+	{
 		if ( result.Value is TrackLineDone { Segment: { } segment } done )
 		{
 			if ( done.Valid == true )
@@ -131,16 +146,43 @@ public sealed class ParkCommandTrackWriter : ICellLineWriter
 		return new SegmentResult( snapped, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Occupied, false )
 		{
 			Start = start,
-			Line = TrackLineWriter.LayLine( start, snapped ).SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ).ToArray(),
+			Line = LineCells( start, snapped ),
 			StoppedAt = start,
 			CommandRefused = result.Error == null
 		};
 	}
 
+	/// <summary>The cells of the tiles of the line from <paramref name="start"/> to <paramref name="end"/>.</summary>
+	private static IReadOnlyList<(int X, int Y)> LineCells( (int X, int Y) start, (int X, int Y) end ) =>
+		TrackLineWriter.LayLine( start, end ).SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ).ToArray();
+
 	public void Undo( SegmentResult segment )
 	{
 		ArgumentNullException.ThrowIfNull( segment );
-		if ( commands.Issue( new UndoTrackLineCommand( Ride, segment.Start.X, segment.Start.Y, segment.SnappedEnd.X, segment.SnappedEnd.Y ) ).Value is TrackLineDone { Valid: true } )
+		if ( commands.Issue( UndoOf( segment ) ).Value is TrackLineDone { Valid: true } )
 			continueTool();
+	}
+
+	private UndoTrackLineCommand UndoOf( SegmentResult segment ) => new( Ride, segment.Start.X, segment.Start.Y, segment.SnappedEnd.X, segment.SnappedEnd.Y );
+
+	/// <summary>A guest's Backspace goes to the host first: the ride's claim makes its track the guest's alone, so its last line is the guest's to take back (C3c-1b).</summary>
+	bool IGuestUndoWriter.UndoesByRequest => commands.SendsRequests;
+
+	CoopGuestCommands.Request? IGuestUndoWriter.SendUndo( SegmentResult segment )
+	{
+		ArgumentNullException.ThrowIfNull( segment );
+		return commands.Issue( UndoOf( segment ) ).Request;
+	}
+
+	bool IGuestUndoWriter.CompleteUndo( ParkCommandResult outcome, Action pop )
+	{
+		ArgumentNullException.ThrowIfNull( outcome );
+		ArgumentNullException.ThrowIfNull( pop );
+		if ( outcome.Value is not TrackLineDone done )
+			return false;
+		pop();
+		if ( done.Valid == true )
+			continueTool();
+		return true;
 	}
 }

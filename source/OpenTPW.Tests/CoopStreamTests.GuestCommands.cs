@@ -495,20 +495,22 @@ public partial class CoopStreamTests
 			new BaseFileSystem( "/" ), null );
 
 	[TestMethod]
-	public void ARideWhoseOwnToolFollowsItsPlacementAndATrackAddOnAreTheHostsToPlaceForNow()
+	public void ACoasterAndATrackAddOnAreTheHostsToPlaceForNow()
 	{
-		// a coaster's track and a kart or water ride's track are tools no guest's request carries yet (C3c-1b, C3c-2); a slide tower's slide is a guest's since C3b-3
+		// a coaster's track is a tool no guest's request carries yet (C3c-2); a kart or water ride's track tool claims its ride through the host since C3c-1b; a slide tower's slide is a
+		// guest's since C3b-3
 		int TypeOf( TrackFamily family ) => BumperTemplates.All.First( template => !template.IsBumper && template.Family == family ).Type;
-		var followed = new[]
+		var coaster = SyntheticRide( $"Bumper.WhichTrackType {CoasterDefinition.TrackType}\n" );
+		Assert.IsTrue( CoopBuildRights.OwnToolFollows( coaster ) );
+		Assert.IsFalse( CoopBuildRights.GuestMayPlace( coaster ) );
+		foreach ( var entry in new[]
 		{
-			SyntheticRide( $"Bumper.WhichTrackType {CoasterDefinition.TrackType}\n" ),
 			SyntheticRide( $"Bumper.WhichTrackType 1\nBumper.BumperType {TypeOf( TrackFamily.Kart )}\n" ),
 			SyntheticRide( $"Bumper.WhichTrackType 2\nBumper.BumperType {TypeOf( TrackFamily.Water )}\n" )
-		};
-		foreach ( var entry in followed )
+		} )
 		{
-			Assert.IsTrue( CoopBuildRights.OwnToolFollows( entry ), entry.Settings.ToString() );
-			Assert.IsFalse( CoopBuildRights.GuestMayPlace( entry ) );
+			Assert.IsFalse( CoopBuildRights.OwnToolFollows( entry ), entry.Settings.ToString() );
+			Assert.IsTrue( CoopBuildRights.GuestMayPlace( entry ) );
 		}
 		// a bumper ride lays no track: its queue tool follows its placement, which a guest's request carries (C3c-1)
 		var bumper = SyntheticRide( $"Bumper.WhichTrackType 0\nBumper.BumperType {BumperTemplates.All.First( template => template.IsBumper ).Type}\n" );

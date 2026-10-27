@@ -101,4 +101,29 @@ public class ParkFenceGoldenTests
 			Assert.AreEqual( golden.Posts, land.LayerFor( Side, Side ).Type.Count( type => type == FenceLayer.PostType ), golden.Name );
 		}
 	}
+
+	/// <summary>A save keeps only the ring: the fence records derived from it are the live ones (type, links, walk direction, owner), after the set-up and after every purchase.</summary>
+	[TestMethod]
+	public void TheLayerDerivedFromTheRingIsTheLiveLayer()
+	{
+		foreach ( var golden in ParkFenceGolden.Cases )
+		{
+			var cells = MapOf( golden );
+			var land = ParkLand.NewPark( cells, new ParkLandSetup( golden.PostA, golden.PostB, golden.Clicks ) )!;
+			cells.SetLand( land );
+			void Compare( string step )
+			{
+				var live = land.LayerFor( Side, Side );
+				var derived = ParkLand.LayerFromRing( land.Ring, Side, Side );
+				for ( var index = 0; index < Side * Side; index++ )
+					Assert.AreEqual( (live.Type[index], live.Links[index], live.Direction[index], live.Owner[index]), (derived.Type[index], derived.Links[index], derived.Direction[index], derived.Owner[index]), $"{golden.Name} {step}: cell {index}" );
+			}
+			Compare( "set-up" );
+			foreach ( var buy in golden.Buys.Where( buy => buy.Accepted && !buy.Faults ) )
+			{
+				Assert.IsTrue( land.Purchase( cells, buy.First, buy.Second ) );
+				Compare( $"after {buy.First}-{buy.Second}" );
+			}
+		}
+	}
 }

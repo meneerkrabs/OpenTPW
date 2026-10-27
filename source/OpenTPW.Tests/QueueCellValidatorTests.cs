@@ -14,8 +14,10 @@ public class QueueCellValidatorTests
 	[TestMethod]
 	public void TheValidatorAnswersAndSetsTheLatchesAsTheExecutableDoes()
 	{
-		Assert.IsTrue( QueueCellValidatorGolden.Rows.Length > 500 );
-		foreach ( var row in QueueCellValidatorGolden.Rows )
+		using var unpacked = new System.IO.StreamReader( new System.IO.Compression.ZLibStream( new System.IO.MemoryStream( Convert.FromBase64String( QueueCellValidatorGolden.Packed ) ), System.IO.Compression.CompressionMode.Decompress ) );
+		var rows = unpacked.ReadToEnd().Split( '\n' );
+		Assert.AreEqual( QueueCellValidatorGolden.RowCount, rows.Length );
+		foreach ( var row in rows )
 		{
 			var parts = row.Split( ' ' );
 			int V( int index ) => int.Parse( parts[index] );

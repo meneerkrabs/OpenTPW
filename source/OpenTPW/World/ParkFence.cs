@@ -98,26 +98,6 @@ public sealed class FenceLayer
 		Array.Copy( Counter, copy.Counter, Counter.Length );
 		return copy;
 	}
-
-	/// <summary>Whether another layer holds the same records.</summary>
-	public bool SameAs( FenceLayer other ) =>
-		Width == other.Width && Height == other.Height && Type.AsSpan().SequenceEqual( other.Type ) && Owner.AsSpan().SequenceEqual( other.Owner )
-		&& Flags.AsSpan().SequenceEqual( other.Flags ) && Links.AsSpan().SequenceEqual( other.Links ) && Direction.AsSpan().SequenceEqual( other.Direction )
-		&& Counter.AsSpan().SequenceEqual( other.Counter );
-
-	internal void AddCanonicalState( StateHasher hash )
-	{
-		var count = 0;
-		foreach ( var _ in Occupied() )
-			count++;
-		hash.Add( count );
-		foreach ( var index in Occupied() )
-		{
-			hash.Add( index );
-			hash.Add( Type[index] | Links[index] << 8 | Direction[index] << 16 | (long)Flags[index] << 24 | (long)Owner[index] << 40 );
-			hash.Add( Counter[index] );
-		}
-	}
 }
 
 /// <summary>
@@ -245,6 +225,10 @@ public sealed class FenceEngine
 		else
 			layer.Flags[index] = (ushort)value;
 	}
+
+	/// <summary>The ride word the tool compares an owner with (0x818698): the fence tool runs with none.</summary>
+	// [BIN:TPW-EXE:0x539220 link back] the other record links only when its +0x10 is 0 or 0x818698, the tool's ride; the fence setup and a purchase run with 0x818698 = 0
+	private const int ToolOwner = 0;
 
 	private int OwnerOf( int index )
 	{
@@ -508,7 +492,7 @@ public sealed class FenceEngine
 			void TryLink( int direction, int ownBit, int otherBit )
 			{
 				var other = Neighbour( index, direction, 2 );
-				if ( other < 0 || !IsFenceStructure( other, trackToo ) || PopAll( LinksOf( index ) ) >= 4 || PopAll( LinksOf( other ) ) >= 4 || (OwnerOf( other ) != 0 && OwnerOf( other ) != 0) )
+				if ( other < 0 || !IsFenceStructure( other, trackToo ) || PopAll( LinksOf( index ) ) >= 4 || PopAll( LinksOf( other ) ) >= 4 || (OwnerOf( other ) != 0 && OwnerOf( other ) != ToolOwner) )
 					return;
 				layer.Links[index] |= (byte)ownBit;
 				layer.Links[other] |= (byte)otherBit;
@@ -559,7 +543,7 @@ public sealed class FenceEngine
 
 	private static bool IsWet( int cellType ) => cellType is 2 or 7 or 0x1E;
 
-	/// <summary>0x5370E0 op 0x85: a record not at a corner or a junction takes the flag word 1 when one of the four cells of its post lies on water or without terrain.</summary>
+	/// <summary>0x5370E0 op 0x85 (0x538A97..): writes the flag word of a fence post, or of a track record (bridge bits), when water or no terrain lies under its cells; a record at a corner or a junction is skipped. A record not at a corner or a junction takes the flag word 1 when one of the four cells of its post lies on water or without terrain.</summary>
 	private void MarkWater( int index )
 	{
 		if ( TypeOf( index ) == 0x19 )

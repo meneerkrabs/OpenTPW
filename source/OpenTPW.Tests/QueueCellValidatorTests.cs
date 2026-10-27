@@ -53,4 +53,30 @@ public class QueueCellValidatorTests
 		}
 		Assert.IsTrue( posts > 20, "the fence has owned post and extension cells" );
 	}
+
+	/// <summary>The path tool's validator is the same routine: a hoarding post's block is refused on owned land, and a cell beside the block is not.</summary>
+	[TestMethod]
+	public void ThePathToolRefusesAHoardingPostsBlockOnOwnedLand()
+	{
+		var grid = new GuestPathGrid( 128, 128 );
+		var cells = grid.Cells;
+		var land = ParkLand.NewPark( cells, new ParkLandSetup( (51, 17), (43, 17), new (int X, int Y)[] { (0, 0), (4, 0), (4, 10), (-12, 10), (-12, 0), (-8, 0) } ) );
+		Assert.IsNotNull( land );
+		cells.SetLand( land );
+		var paths = new ParkPathBuilder( cells, grid, (ParkEconomy?)null, new PoolsTests.FlatGrid( 128, 128 ) );
+		var checkedBlocks = 0;
+		for ( var y = 0; y < 128; y++ )
+		{
+			for ( var x = 0; x < 128; x++ )
+			{
+				if ( land!.CountsAsStructure( x, y, 128, 128 ) && !cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ) )
+				{
+					Assert.AreEqual( CellBuildResult.Occupied, paths.CheckCell( x, y ), $"({x}, {y})" );
+					checkedBlocks++;
+				}
+			}
+		}
+		Assert.IsTrue( checkedBlocks > 20 );
+		Assert.AreEqual( CellBuildResult.Ok, paths.CheckCell( 47, 19 ), "owned land inside the fence stays buildable" );
+	}
 }

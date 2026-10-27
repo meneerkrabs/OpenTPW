@@ -207,6 +207,9 @@ public sealed class ParkPathBuilder : ICellLineWriter
 			return CellBuildResult.NotOwned;
 		// [BIN:TPW-EXE:0x535D66 overwrite priority] a type 4, 9 or 10 cell is tested by its owner's overwrite priority alone: below the tool's 0x818C10 (2 for a path, set by the hover 0x5234D0) it is allowed, otherwise refused
 		var givesWay = ObjectGivesWay?.Invoke( x, y ) == true;
+		// [BIN:TPW-EXE:0x535670 fence post] the validator refuses a cell whose structure record is a hoarding post (or an extension of one, which it follows to the parent) for the path tool as for the queue tool, on owned land as well (QueueCellValidator)
+		if ( !givesWay && QueueCellValidator.StructureTypeAt( Cells, x, y ) == FenceLayer.PostType )
+			return CellBuildResult.Occupied;
 		var old = givesWay ? (byte)0 : Cells.RawTypeAt( x, y );
 		if ( !ParkCellMap.CanChangeCellType( old, (byte)type, lastCell ) )
 			return CellBuildResult.Occupied;

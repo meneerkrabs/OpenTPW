@@ -228,7 +228,11 @@ public partial class Level
 		{
 			try
 			{
-				surface = TrackSurface.FromObject( addOn.Runtime.Model );
+				// [BIN:TPW-EXE:0x00413C10 object loader] a type that is no fixed item (Info.DontApplyOffset 0) is loaded with the ground node search (0x4629D0 flag 1) over the level's terrain grid; the search's node is the instance's +0x2C, which the mode-4 sampler reads
+				var groundNode = -1;
+				if ( !addOn.Entry.IsFixedItem && OriginalPark?.Heightfield is { } field )
+					groundNode = ObjectHoardingGeometry.SelectGroundNode( addOn.Runtime.Model, ObjectMapGrid.ShapeOf( addOn.Entry.Settings ), HoardingTerrain.Of( field ) ).Node;
+				surface = TrackSurface.FromObject( addOn.Runtime.Model, groundNode: groundNode );
 			}
 			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
 			{

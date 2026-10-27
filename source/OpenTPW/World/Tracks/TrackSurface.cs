@@ -68,12 +68,12 @@ public sealed class TrackSurface
 	// [BIN:TPW-EXE:0x004511A0 sample] mode 1: the terrain sampler 0x004527F0 (the landscape's corner heights over the cell's two triangles, not the .hmp) + model +0xA0; mode 2: 0x00451290(x, z, 0, 1); mode 4: 0x00451290(x, z, 1, 0); every mode adds +0xA0, and a NaN +0xA0 is reset to 0
 	// [BIN:TPW-EXE:0x00451290 face sampler] mode 4 samples the +0x2C mesh (first covering face; none: the instance height +0x44), mode 2 walks the dummy records with bit 2 (mesh = the header's first dummy mesh +0x46 plus the record index) and takes the highest covering face, returning at once for a record with bit 4; −100 when nothing covers
 	// [BIN:TPW-EXE:0x00451390 mesh faces] only faces whose first u16 has bit 0x8000 count; the height is the face plane's at the point (the normal at the low 15 bits, turned by the instance's 0/90/180/270 rotation)
-	// [APPROX:TRACK-001] the instance mesh sampler (mode 4, +0x2C) reads every 0x8000 face of the model, where the original's 0x46A5A0 builds it through 0x469A80 from the node hierarchy under the model's root with its own node filters (flags 0x200, 0x1000, 0x20000 of the node, the call's bits 2 and 4), which are not traced; only objects without a surface record, header flag 0x80 or +0xA0 reach it, none of them a track piece or station
+	// [BIN:TPW-EXE:0x0046A5A0 mode-4 mesh] the instance mesh sampler (mode 4, +0x2C) reads the faces of the ground node the type loader chose through 0x469A80 (the node with the most ground vertices on the footprint's boundary; its flags 0x200 skip a node, 0x20000 count nothing, the header's 0x100 counts every ground vertex; the call's bits 2 and 4 are 0): only objects without a surface record, header flag 0x80 or +0xA0 reach it
 	/// <param name="model">The object's model.</param>
 	/// <param name="drapeLoaded">The model was loaded with the drape load flag (a kart or water track piece: <c>0x4629D0</c> sets header bit 0x80 on a model it loads draped), so the sampler takes the terrain mode when the model has no surface record.</param>
 	// [BIN:TPW-EXE:0x0044A870 surface block] the loader's last step sets bit 8 of the instance's +0x28 block exactly when a dummy record has type bit 2, which is the test 0x450EA0 makes for mode 2: the surface-record rule here is the original's
 	// [BIN:TPW-EXE:0x004629D0 drape header bit] a node with 0x20000 (every mesh node of a piece loaded with load flag 0x40, set by 0x461F10) sets header +0x30 bit 0x80, so every kart and water piece without a surface record is sampled in mode 1 (terrain at the probe + header +0xA0), even where +0xA0 is 0
-	public static TrackSurface FromObject( ModelFile model, bool drapeLoaded = false )
+	public static TrackSurface FromObject( ModelFile model, bool drapeLoaded = false, int groundNode = -1 )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		var records = new List<(int Mesh, bool FirstHit)>();
@@ -109,8 +109,9 @@ public sealed class TrackSurface
 				Add( mesh, firstHit );
 			return new TrackSurface( found.ToArray(), groups.ToArray(), baseWhenUncovered: false, Offset( model ) );
 		}
-		for ( var mesh = 0; mesh < model.Meshes.Count; mesh++ )
-			Add( mesh, true );
+		// [BIN:TPW-EXE:0x0046A5A0 ground node] the instance's +0x2C is the node 0x469A80 counted the most ground vertices on (ObjectHoardingGeometry.SelectGroundNode, the type loader's search; nothing when the type is loaded without the base flag or the level has no terrain): only that node's faces are the mode-4 mesh
+		if ( groundNode >= 0 && groundNode < model.Nodes.Count && model.Nodes[groundNode].MeshIndex is >= 0 and var groundMesh && groundMesh < model.Meshes.Count )
+			Add( groundMesh, true );
 		// the collision mesh answers with its first covering face, and with the instance's own height where none covers
 		return new TrackSurface( found.ToArray(), new[] { (0, found.Count, true) }, baseWhenUncovered: true, Offset( model ) );
 	}
@@ -213,7 +214,7 @@ public sealed class TrackSurface
 		return u * a.Z + v * b.Z + w * c.Z;
 	}
 
-	// [BIN:TPW-EXE:0x004514CF directed face edges] for the edges B → A of a face taken in the order V2 → V0, V1 → V2, V0 → V1 (0x4514C7..0x45153A) the value is ((dz × px − (dz × Bx + dx × Bz)) + dx × pz) with dz = Az − Bz and dx = Bx − Ax (0x4514CF..0x45151D), compared with 0.0 (0x6FE3DC at 0x45151F): below it the point is outside. The thread runs at the control word 0x7F (24-bit mantissa, COAST-032, X87Precision), so each x87 result is rounded to a single, which is what these float operations do in this order; the tests emulate the instruction sequence with the x87 type and compare
+	// [BIN:TPW-EXE:0x004514CF directed face edges] for the edges B → A of a face taken in the order V2 → V0, V1 → V2, V0 → V1 (0x4514C7..0x45153A) the value is ((dz × px − (dz × Bx + dx × Bz)) + dx × pz) with dz = Az − Bz and dx = Bx − Ax (0x4514CF..0x45151D), compared with 0.0 (0x6FE3DC at 0x45151F): below it the point is outside. The thread runs at the control word 0x7F (24-bit mantissa, COAST-032, X87Precision), so each x87 result is rounded to a single, which is what these float operations do in this order for values in the normal range (the x87 keeps its extended exponent, so a result that would be a subnormal single differs; park coordinates never produce one); the tests emulate the instruction sequence with the x87 type and compare
 	internal static bool InsideDirectedEdge( V3 previous, V3 next, float x, float y )
 	{
 		var dx = previous.X - next.X;

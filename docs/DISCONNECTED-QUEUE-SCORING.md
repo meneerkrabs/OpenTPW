@@ -64,8 +64,13 @@ runtime results, native behavior, full-suite hashes or original-game equivalence
 
 ## Remaining scope
 
-`GUEST-002` remains open. The minor-decision target/candidate filters, smarter
-planning/alternative/booth filters, unknown fallback enrichment, original-save
-back reconstruction and the broader `QUEUE-003` geometry/placement work are
-unchanged. No approximation is retired. No movement, queue admission or
+`GUEST-002` is narrowed (round 9, package G), not retired. Since then the minor decision
+scores the same candidates as the major choice, and a front the entry cell's link
+byte names counts on any cell, even empty ground (`0x4DE130` returns that cell with
+size 1; the route request then fails and the guest is stuck on the way, `0x4FFBC0`;
+`DisconnectedQueueScoringTests.ATypedFrontOnEmptyGroundIsScoredAndItsFailedRouteSticksTheWalkAtEveryDecision`).
+What remains: a bridge without a typed front (host harness, untyped world) keeps the
+host's geometry and is scored only on a real queue cell; a stale cached back
+(`+0x3A`, kept by `0x4DE130` until the next `0x4DE1F0`) is not reproduced; the smarter
+guests' planning (an extension) still requires a join cell. No approximation is retired. No movement, queue admission or
 persistence schema is changed by this bounded scoring fix.

@@ -240,6 +240,8 @@ public interface IRideVisitorBridge
 	/// <summary>Queue cells from the front (index 0) to the back; empty for a ride whose entrance has no queue direction (a zero front, tp.exe <c>0x004DE040</c>).</summary>
 	IReadOnlyList<(int X, int Y)> QueueCells { get; }
 	/// <summary>The back-of-queue cell (<c>0x004DE110</c>): the last queue cell, or null when the queue is empty (the original's back cell of 0).</summary>
+	/// <summary>The back cell was read from the entry cell's links (a typed world, <c>0x004DE040</c>), not made up by the host: it counts as the original's back cell whatever the cell holds.</summary>
+	bool HasTypedBack => false;
 	(int X, int Y)? BackCell => QueueCells.Count > 0 ? QueueCells[^1] : null;
 	int QueueSizeInCells { get; }
 	/// <summary>Walkable path cell where guests step onto the back of the queue; null when the queue is not connected.</summary>

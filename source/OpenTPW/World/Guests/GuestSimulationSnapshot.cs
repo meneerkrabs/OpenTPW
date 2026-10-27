@@ -77,9 +77,9 @@ public sealed record GuestSnapshot
 	/// <summary>A sideshow player's result (null otherwise). Absent before schema 7.</summary>
 	public bool? SideshowWon { get; init; }
 	public required int AttractionId { get; init; }
-	/// <summary>The major destination (<see cref="Guest.MajorAttractionId"/>); written only while set, absent in older saves (none).</summary>
+	/// <summary>The major destination (<see cref="Guest.SavedMajorAttractionId"/>); written only while set, absent in older saves (none).</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
-	public int MajorAttractionId { get; init; }
+	public int SavedMajorAttractionId { get; init; }
 	/// <summary>May name an attraction that is no longer registered (a demolished ride the guest remembers).</summary>
 	public required int LastAttractionId { get; init; }
 	/// <summary>The four attractions the guest used last, newest first (guest <c>+480..+486</c>); 0 = empty. Absent in

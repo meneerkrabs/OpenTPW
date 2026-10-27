@@ -392,7 +392,7 @@ public partial class Level
 
 	/// <summary>An object's access cell (thing <c>+0x36</c>) for the guests' bin walk: the cell of its first entrance symbol, inside the footprint; a world that keeps the cells it was given falls back to its entrance's outside cell on a path, else its first path neighbour.</summary>
 	// [BIN:TPW-EXE:0x004DB33C access cell] the constructor 0x004DB090 stores the shape's first entrance cell itself into +0x36 (0x004DB33C, the first type 9 cell of the shape scan 0x00413410 at type +0x494, turned by the angle 0x004D9CC0, (0, 0) without one: the thing's own cell), with no walkability test, and the bin search 0x00500DC0 requests the route to it (0x004FA530); the route finder reaches a cell inside a footprint through the edge test 0x004D8750, which opens a step from a path or queue cell into a type 3 or 9 cell whose link byte points back at it (a bin's entrance cell links to its outside cell)
-	// A world that keeps the cells it was given (an imported or restored park, Theme Park Inc: no entrance symbol is typed on its map) has no such cell to walk into, so the guests walk to the cell in front of the entrance there (QUEUE-010)
+	// A world that keeps the cells it was given (a read-only visit, a Theme Park Inc layout or Theme Park Inc itself: no entrance symbol is typed on its map) has no such cell to walk into, so the guests walk to the cell in front of the entrance there (QUEUE-010)
 	private (int X, int Y)? AccessCell( OriginalObject item, GuestPathGrid grid )
 	{
 		var cell = (item.Placement.X, item.Placement.Y);
@@ -1020,13 +1020,14 @@ public partial class Level
 		return item == null ? null : ResolveQueueEntrance( item.AccessPoints, cells, owner );
 	}
 
-	/// <summary><see cref="ResolveQueueEntrance(ParkObjects, ParkCellMap, ushort)"/> for the access points of the owner's HasQueue object: its last entrance cell, when that cell is a type-9 cell of the owner.</summary>
+	/// <summary><see cref="ResolveQueueEntrance(ParkObjects, ParkCellMap, ushort)"/> for the access points of the owner's HasQueue object: its first entrance cell (+0x36), when that cell is a type-9 cell of the owner.</summary>
 	internal static (int X, int Y)? ResolveQueueEntrance( IEnumerable<ObjectAccessPoint> accessPoints, ParkCellMap cells, ushort owner )
 	{
 		if ( owner == 0 ) return null;
+		// [BIN:TPW-EXE:0x004DE040 first entrance] the selector reads the link byte of the cell +0x36, the shape's FIRST entrance cell (0x004DB33C), like the access cell and the link writer
 		ObjectAccessPoint? entrance = null;
 		foreach ( var point in accessPoints )
-			if ( point.Kind == ObjectCellKind.Entrance ) entrance = point;
+			if ( point.Kind == ObjectCellKind.Entrance ) { entrance = point; break; }
 		return entrance is { } entry && cells.InBounds( entry.X, entry.Y )
 			&& cells.RawTypeAt( entry.X, entry.Y ) == ParkCellTypes.Entrance && cells.OwnerAt( entry.X, entry.Y ) == owner
 			? (entry.X, entry.Y) : null;

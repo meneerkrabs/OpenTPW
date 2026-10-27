@@ -619,6 +619,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		QueueEditCount = snapshot.QueueEditCount;
 		JoinCell = snapshot.JoinCell;
 		IsZeroFront = snapshot.ZeroFront == true;
+		HasTypedBack = snapshot.TypedQueueFront != null && !IsZeroFront;
 		RestoreVisitorCells( snapshot );
 		HeadNotReadyStreak = snapshot.HeadNotReadyStreak;
 		MaximumHeadNotReadyStreak = snapshot.MaximumHeadNotReadyStreak;
@@ -757,6 +758,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE040 zero front] none of the bits 1, 16, 64 and 4 set writes the cell word 0 (0x4DE0F9): the back-of-queue walk 0x4DE130 returns 0 and writes +0x40 = 0, so 0x4DD920 fails at its back test (0x4DD96C), the choice 0x4FCB10 skips the ride at 0x4FCB84 and the room 0x4DDA20 (count below 4 × +0x40) refuses a joiner
 	public bool IsZeroFront { get; private set; }
+	/// <summary>The front was read from the entry cell's links at the last recompute (<see cref="IRideVisitorBridge.HasTypedBack"/>).</summary>
+	public bool HasTypedBack { get; private set; }
 	/// <summary>The back-of-queue cell the original's <c>0x004DE110</c> returns: the last queue cell, null for a ride without a front.</summary>
 	public (int X, int Y)? BackCell => IsZeroFront ? null : QueueCells[^1];
 	/// <summary>Cached back-of-queue cell (ride <c>+54</c>) for the queue tool's geometry: the one-cell fallback for a ride without a front (<see cref="BackCell"/> is the guests' view).</summary>
@@ -840,6 +843,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		var typedFront = RefreshTypedQueueFront( grid );
 		// [BIN:TPW-EXE:0x004DE040 zero front] an entry cell without a cardinal link bit gives no front: the queue is empty (back cell 0, size 0) and joins nothing; the host keeps its one-cell geometry on the entrance cell
 		var wasZeroFront = IsZeroFront;
+		HasTypedBack = typedFront;
 		IsZeroFront = !typedFront && ReadNativeFront( grid, out var nativeFront, out _ ) && nativeFront == null;
 		if ( IsZeroFront )
 		{

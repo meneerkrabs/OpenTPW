@@ -22,7 +22,7 @@ public partial class GuestTests
 
 	private const byte LinkUp = 0x01, LinkRight = 0x04, LinkDown = 0x10, LinkLeft = 0x40;
 
-	private static (GuestSimulation Simulation, ScriptedAttraction Far, ScriptedAttraction Near, ScriptedAttraction Decoy, Guest Guest) DetourPark()
+	private static (GuestSimulation Simulation, ScriptedAttraction Far, ScriptedAttraction Near, ScriptedAttraction Decoy, Guest Guest) DetourPark( bool withGuest = true )
 	{
 		var grid = CreateCross();
 		var simulation = new GuestSimulation( grid, CreateSettings(), 9 ) { ArrivalsEnabled = false };
@@ -44,6 +44,8 @@ public partial class GuestTests
 		simulation.Register( far.Bridge );
 		simulation.Register( near.Bridge );
 		simulation.Register( decoy.Bridge );
+		if ( !withGuest )
+			return (simulation, far, near, decoy, null!);
 		var guest = simulation.SpawnInPark( 10, 8 );
 		guest.AttractionId = far.Bridge.AttractionId;
 		guest.State = GuestState.GoingToRide;
@@ -56,7 +58,7 @@ public partial class GuestTests
 		var (simulation, far, near, decoy, guest) = DetourPark();
 		simulation.MinorDecision( guest );
 		Assert.AreEqual( near.Bridge.AttractionId, guest.AttractionId, "the ride whose anchor lies in the window and nearer to the target's back cell wins; the decoy's join cell in the window does not count" );
-		Assert.AreEqual( far.Bridge.AttractionId, guest.MajorAttractionId, "+0x1DE = the old target (0x004FD92A)" );
+		Assert.AreEqual( far.Bridge.AttractionId, guest.SavedMajorAttractionId, "+0x1DE = the old target (0x004FD92A)" );
 		Assert.IsTrue( guest.HasWaypoint, "the route request to the best's access cell was made" );
 		Assert.AreNotEqual( decoy.Bridge.AttractionId, guest.AttractionId );
 	}
@@ -79,7 +81,7 @@ public partial class GuestTests
 		Assert.IsTrue( visited.Contains( (11, 6) ), $"the guest stood in the access cell: {string.Join( " ", visited )}" );
 		Assert.AreEqual( GuestState.Queueing, guest.State is GuestState.MovingUpQueue ? GuestState.Queueing : guest.State, $"then it joined the queue ({guest.State})" );
 		Assert.AreEqual( near.Bridge.AttractionId, guest.AttractionId );
-		Assert.AreEqual( far.Bridge.AttractionId, guest.MajorAttractionId, "the detour's major destination stays until the exit walk" );
+		Assert.AreEqual( far.Bridge.AttractionId, guest.SavedMajorAttractionId, "the detour's major destination stays until the exit walk" );
 	}
 
 	[TestMethod]
@@ -87,14 +89,14 @@ public partial class GuestTests
 	{
 		var (simulation, far, near, _, guest) = DetourPark();
 		guest.AttractionId = near.Bridge.AttractionId;
-		guest.MajorAttractionId = far.Bridge.AttractionId;
+		guest.SavedMajorAttractionId = far.Bridge.AttractionId;
 		guest.State = GuestState.ExitingRide;
 		guest.HasWaypoint = false;
 		simulation.Tick( Tick );
 		// [BIN:TPW-EXE:0x00500900 state 15] arrived: +0x1DC = +0x1DE, +0x1DE = 0, a route request to the back cell, "Left minor destination, found old major", state 10
 		Assert.AreEqual( GuestState.GoingToRide, guest.State );
 		Assert.AreEqual( far.Bridge.AttractionId, guest.AttractionId );
-		Assert.AreEqual( 0, guest.MajorAttractionId );
+		Assert.AreEqual( 0, guest.SavedMajorAttractionId );
 		Assert.IsTrue( guest.HasWaypoint );
 	}
 
@@ -120,13 +122,13 @@ public partial class GuestTests
 		far.Bridge.RecomputeQueue( simulation.Grid );
 		Assert.IsNull( far.Bridge.BackCell );
 		guest.AttractionId = near.Bridge.AttractionId;
-		guest.MajorAttractionId = far.Bridge.AttractionId;
+		guest.SavedMajorAttractionId = far.Bridge.AttractionId;
 		guest.State = GuestState.ExitingRide;
 		guest.HasWaypoint = false;
 		simulation.Tick( Tick );
 		Assert.AreEqual( GuestState.DoingNothing, guest.State );
 		Assert.AreEqual( far.Bridge.AttractionId, guest.AttractionId );
-		Assert.AreEqual( 0, guest.MajorAttractionId );
+		Assert.AreEqual( 0, guest.SavedMajorAttractionId );
 	}
 
 	[TestMethod]
@@ -134,7 +136,7 @@ public partial class GuestTests
 	{
 		var (simulation, far, near, _, guest) = DetourPark();
 		guest.AttractionId = near.Bridge.AttractionId;
-		guest.MajorAttractionId = far.Bridge.AttractionId;
+		guest.SavedMajorAttractionId = far.Bridge.AttractionId;
 		guest.State = GuestState.ExitingRide;
 		// a walk into the park that cannot be made: the destination is an unreachable cell
 		simulation.Grid.Cells.SetType( 0, 0, ParkCellType.Empty );
@@ -145,7 +147,7 @@ public partial class GuestTests
 			simulation.Tick( Tick );
 		Assert.AreEqual( GuestState.DoingNothing, guest.State );
 		Assert.AreEqual( 0, guest.AttractionId, "0x00500A3B: a stuck walk clears +0x1DC" );
-		Assert.AreEqual( far.Bridge.AttractionId, guest.MajorAttractionId, "and writes no +0x1DE" );
+		Assert.AreEqual( far.Bridge.AttractionId, guest.SavedMajorAttractionId, "and writes no +0x1DE" );
 	}
 
 	[TestMethod]
@@ -153,13 +155,13 @@ public partial class GuestTests
 	{
 		var (simulation, far, near, _, guest) = DetourPark();
 		var other = simulation.SpawnInPark( 10, 2 );
-		other.MajorAttractionId = far.Bridge.AttractionId;
+		other.SavedMajorAttractionId = far.Bridge.AttractionId;
 		other.AttractionId = 0;
 		guest.AttractionId = far.Bridge.AttractionId;
 		guest.State = GuestState.DoingNothing;
 		var happiness = guest.Happiness;
 		simulation.Unregister( far.Bridge );
-		Assert.AreEqual( 0, other.MajorAttractionId, "0x004FB4A6: +0x1DE is cleared whenever the message names the object" );
+		Assert.AreEqual( 0, other.SavedMajorAttractionId, "0x004FB4A6: +0x1DE is cleared whenever the message names the object" );
 		Assert.AreEqual( 0, guest.AttractionId, "the retained target of a guest that has just left the ride is hit (0x004FB444)" );
 		Assert.IsTrue( guest.Happiness < happiness, "the small happiness step" );
 		Assert.AreEqual( GuestState.DoingNothing, guest.State );
@@ -184,23 +186,23 @@ public partial class GuestTests
 		var (simulation, far, near, _, guest) = DetourPark();
 		simulation.SpawnInPark( 10, 2 );
 		guest.AttractionId = near.Bridge.AttractionId;
-		guest.MajorAttractionId = far.Bridge.AttractionId;
+		guest.SavedMajorAttractionId = far.Bridge.AttractionId;
 		guest.State = GuestState.DoingNothing;
 		var snapshot = simulation.CaptureSnapshot();
-		Assert.AreEqual( far.Bridge.AttractionId, snapshot.Guests.Single( item => item.Id == guest.Id ).MajorAttractionId );
+		Assert.AreEqual( far.Bridge.AttractionId, snapshot.Guests.Single( item => item.Id == guest.Id ).SavedMajorAttractionId );
 		Assert.IsTrue( simulation.ValidateSnapshot( snapshot ).IsValid );
 		var json = System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( snapshot.Guests.Single( item => item.Id == guest.Id ) ) );
-		StringAssert.Contains( json, "MajorAttractionId" );
+		StringAssert.Contains( json, "SavedMajorAttractionId" );
 		var withoutNone = System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( snapshot.Guests.Single( item => item.Id != guest.Id ) ) );
-		Assert.IsFalse( withoutNone.Contains( "MajorAttractionId" ), "written only while set: an old reader and an old save are unchanged" );
+		Assert.IsFalse( withoutNone.Contains( "SavedMajorAttractionId" ), "written only while set: an old reader and an old save are unchanged" );
 		// a major destination that names no attraction is rejected
-		var corrupt = snapshot with { Guests = snapshot.Guests.Select( item => item.Id == guest.Id ? item with { MajorAttractionId = 99 } : item ).ToArray() };
+		var corrupt = snapshot with { Guests = snapshot.Guests.Select( item => item.Id == guest.Id ? item with { SavedMajorAttractionId = 99 } : item ).ToArray() };
 		Assert.IsFalse( simulation.ValidateSnapshot( corrupt ).IsValid );
 		var before = simulation.ComputeStateHash();
 		simulation.RestoreSnapshot( snapshot );
-		Assert.AreEqual( far.Bridge.AttractionId, simulation.Find( guest.Id )!.MajorAttractionId );
+		Assert.AreEqual( far.Bridge.AttractionId, simulation.Find( guest.Id )!.SavedMajorAttractionId );
 		Assert.AreEqual( before, simulation.ComputeStateHash() );
-		simulation.Find( guest.Id )!.MajorAttractionId = 0;
+		simulation.Find( guest.Id )!.SavedMajorAttractionId = 0;
 		Assert.AreNotEqual( before, simulation.ComputeStateHash(), "the major destination is in the digest while set" );
 	}
 
@@ -354,5 +356,41 @@ public partial class GuestTests
 		map.EntranceRideOpens = ( _, _ ) => false;
 		map.SetFlags( 3, 3, (ParkCellFlags)0x400 );
 		Assert.IsFalse( WalkEdges.Blocked( map, 2, 3, East, 2 ) );
+	}
+
+	private static Guest ImportSaved( GuestSimulation simulation, int id, uint state, ushort major, ushort savedMajor, Func<int, int> attraction )
+	{
+		var body = SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields
+		{
+			Position = (10 * 256 + 128, 8 * 256 + 128), State = state, MajorDest = major, SavedMajorDest = savedMajor, PaidAdmission = 0
+		} );
+		var payload = new byte[8 + body.Length];
+		body.CopyTo( payload, 8 );
+		var saved = SaveGuest.Read( payload, new SaveThing( id, SaveThingModel.Guest, 0, 0, 8, body.Length ) );
+		var report = simulation.ImportOriginal( new[] { saved }, 755, attraction, _ => 0 );
+		Assert.IsTrue( report.Any( line => line.StartsWith( "Guest destinations imported", StringComparison.Ordinal ) ), "the import reports its destinations" );
+		return simulation.Find( id )!;
+	}
+
+	[DataTestMethod]
+	[DataRow( 6u )]
+	[DataRow( 7u )]
+	[DataRow( 8u )]
+	public void AnOriginalSaveKeepsTheTargetOfAGuestDecidingOrWanderingAndItsSavedMajorDestination( uint state )
+	{
+		// tp.exe saves +0x1DC (mMajorDest) and +0x1DE (mSavedMajorDest) with every person and its loader (0x004FB530) leaves both as read; the state-6/7/8 handlers keep the target (0x004FCB21)
+		var (simulation, far, near, _, _) = DetourPark( withGuest: false );
+		var guest = ImportSaved( simulation, 90, state, 4001, 4002, id => id == 4001 ? far.Bridge.AttractionId : id == 4002 ? near.Bridge.AttractionId : 0 );
+		Assert.AreEqual( far.Bridge.AttractionId, guest.AttractionId, "+0x1DC" );
+		Assert.AreEqual( near.Bridge.AttractionId, guest.SavedMajorAttractionId, "+0x1DE" );
+	}
+
+	[TestMethod]
+	public void AnOriginalSaveNamingNoAttractionLeavesBothDestinationsClear()
+	{
+		var (simulation, _, _, _, _) = DetourPark( withGuest: false );
+		var guest = ImportSaved( simulation, 91, 7, 4001, 4002, _ => 0 );
+		Assert.AreEqual( 0, guest.AttractionId );
+		Assert.AreEqual( 0, guest.SavedMajorAttractionId );
 	}
 }

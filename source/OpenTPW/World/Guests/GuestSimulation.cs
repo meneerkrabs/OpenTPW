@@ -344,8 +344,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		foreach ( var guest in guests )
 		{
 			// [BIN:TPW-EXE:0x004FB4A6 major destination removed] the message clears +0x1DE of every guest it reaches when it names the object, whatever the target
-			if ( guest.MajorAttractionId == attraction.AttractionId && attraction.AttractionId != 0 )
-				guest.MajorAttractionId = 0;
+			if ( guest.SavedMajorAttractionId == attraction.AttractionId && attraction.AttractionId != 0 )
+				guest.SavedMajorAttractionId = 0;
 			for ( var slot = 0; slot < Guest.HistorySlots && attraction.AttractionId != 0; slot++ )
 			{
 				if ( guest.UsedHistory[slot] != attraction.AttractionId )
@@ -394,8 +394,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			guest.AttractionId = 0;
 			guest.Activity = GuestActivity.None;
-			// a guest that has just left the removed attraction (state 15, the target kept until the next choice) stops where it walks; the message sets the state and nothing else (0x004FB36E..0x00501DB0)
-			if ( guest.State == GuestState.ExitingRide )
+			// [BIN:TPW-EXE:0x004FB36F removal reaches every holder of the target] the message tests only +0x1DC, never the state: a guest still deciding or wandering (states 6 and 7, the target kept until the next choice) and one that has just left the attraction (state 15) all get the small step, +0x1DC = 0 and SetState(6) (0x00501DB0) and nothing else, so a walking guest stops where it walks (no position is written) and a standing one decides again
+			if ( guest.State is GuestState.ExitingRide or GuestState.WalkingAround )
 				StayWhereItStands( guest );
 			else
 				EnterGuestState( guest, GuestState.DoingNothing );
@@ -2336,7 +2336,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100E9164 attraction score] executed by the PowerPC oracle (attraction-score, 578 inputs; C# agrees)
 	// [BIN:STP-PPC:0x100E9388 cell modifier] the environment record's component 4 (+8) at the back-of-queue cell divides the distance match; only the fireworks' RegionFX row 7 writes it (Attraction 10 in the shipped Standard.sam; tp.exe 0x004DB48C), so it is 0 everywhere else
-	// [APPROX:GUEST-002] faithful scoring, the major choice and the minor decision admit a disconnected real raw-type-3 queue back and leave route failure to RouteToCell; missing/untyped fallback backs and a typed front on a cell that is neither queue nor path stay excluded (docs/DISCONNECTED-QUEUE-SCORING.md)
+	// [APPROX:GUEST-002] faithful scoring, the major choice and the minor decision admit a disconnected real raw-type-3 queue back and leave route failure to RouteToCell; a typed front counts on any cell, even empty ground (0x4DE130, as in tp.exe); only an untyped fallback back stays excluded (docs/DISCONNECTED-QUEUE-SCORING.md)
 	public uint ScoreAttraction( Guest guest, IRideVisitorBridge attraction )
 	{
 		if ( !HasScoreBackCell( attraction ) )
@@ -2613,7 +2613,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var toBest = RouteLength( guest, targetAccess, bestAccess );
 		if ( toGuest == -1 || toBest == -1 || toBest >= toGuest )
 			return;
-		guest.MajorAttractionId = target.AttractionId;
+		guest.SavedMajorAttractionId = target.AttractionId;
 		guest.AttractionId = best.AttractionId;
 		RouteToCell( guest, bestAccess );
 	}
@@ -3464,10 +3464,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			EnterGuestState( guest, GuestState.DoingNothing );
 			return;
 		}
-		if ( guest.MajorAttractionId != 0 )
+		if ( guest.SavedMajorAttractionId != 0 )
 		{
-			guest.AttractionId = guest.MajorAttractionId;
-			guest.MajorAttractionId = 0;
+			guest.AttractionId = guest.SavedMajorAttractionId;
+			guest.SavedMajorAttractionId = 0;
 			if ( FindAttraction( guest.AttractionId ) is { } major )
 			{
 				if ( major.BackCell is { } back && RouteToCell( guest, back ) )
@@ -3845,7 +3845,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			BubbleTurn = guest.BubbleTurn,
 			SideshowWon = guest.SideshowWon,
 			AttractionId = guest.AttractionId,
-			MajorAttractionId = guest.MajorAttractionId,
+			SavedMajorAttractionId = guest.SavedMajorAttractionId,
 			LastAttractionId = guest.LastAttractionId,
 			UsedHistory = (int[])guest.UsedHistory.Clone(),
 			TemporaryHistory = (int[])guest.TemporaryHistory.Clone(),
@@ -4341,8 +4341,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			else if ( guest.State == GuestState.GoingToRide )
 				Error( $"Guest {guest.Id} heads for a ride without naming an attraction." );
 			// the major destination names a registered attraction (the removal of an attraction clears it from every guest, tp.exe 0x004FB4A6)
-			if ( guest.MajorAttractionId < 0 || (guest.MajorAttractionId != 0 && !snapshotIds.Contains( guest.MajorAttractionId )) )
-				Error( $"Guest {guest.Id} names major destination {guest.MajorAttractionId}, which is not registered." );
+			if ( guest.SavedMajorAttractionId < 0 || (guest.SavedMajorAttractionId != 0 && !snapshotIds.Contains( guest.SavedMajorAttractionId )) )
+				Error( $"Guest {guest.Id} names major destination {guest.SavedMajorAttractionId}, which is not registered." );
 		}
 		foreach ( var (guestId, attractionId) in queuedIn )
 			if ( !guestIds.Contains( guestId ) )
@@ -4551,7 +4551,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.BubbleThought = snapshot.BubbleThought;
 		guest.BubbleTurn = snapshot.BubbleTurn;
 		guest.AttractionId = snapshot.AttractionId;
-		guest.MajorAttractionId = snapshot.MajorAttractionId;
+		guest.SavedMajorAttractionId = snapshot.SavedMajorAttractionId;
 		guest.LastAttractionId = snapshot.LastAttractionId;
 		snapshot.UsedHistory?.CopyTo( guest.UsedHistory, 0 );
 		snapshot.TemporaryHistory?.CopyTo( guest.TemporaryHistory, 0 );
@@ -4699,8 +4699,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			hash.Add( (int)guest.Thought );
 			hash.Add( guest.AttractionId );
 			// the major destination joins the digest only while a guest has one (every park without one keeps its pins)
-			if ( guest.MajorAttractionId != 0 )
-				hash.Add( 0x4D414A52L + guest.MajorAttractionId );
+			if ( guest.SavedMajorAttractionId != 0 )
+				hash.Add( 0x4D414A52L + guest.SavedMajorAttractionId );
 			hash.Add( guest.LastAttractionId );
 			foreach ( var id in guest.UsedHistory )
 				hash.Add( id );
@@ -4882,8 +4882,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Add( guest.ExitLevel );
 			Add( guest.Money );
 			Add( guest.AttractionId );
-			if ( guest.MajorAttractionId != 0 )
-				Add( 0x4D414A52L + guest.MajorAttractionId );
+			if ( guest.SavedMajorAttractionId != 0 )
+				Add( 0x4D414A52L + guest.SavedMajorAttractionId );
 			Add( (int)guest.Thought );
 			Add( guest.CellX * 4096 + guest.CellY );
 			Add( guest.QueuePosition );

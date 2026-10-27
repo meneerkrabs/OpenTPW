@@ -67,6 +67,8 @@ public sealed partial class GuestSimulation
 		var states = new List<string>();
 		var recovery = new List<string>();
 		var stranded = new List<string>();
+		var keptTargets = 0;
+		var savedMajors = 0;
 		long Relative( uint stamp ) => Math.Max( 0, stamp - parkTurn );
 		foreach ( var save in saved.OrderBy( item => item.Id ) )
 		{
@@ -110,6 +112,10 @@ public sealed partial class GuestSimulation
 				continue;
 			}
 			var guest = new Guest( save.Id, save.PersonType );
+			// [BIN:TPW-EXE:0x004FB530 saved major destination] mSavedMajorDest (+0x1DE) is saved with the person and nothing in the loader touches it: it names the attraction a minor decision set aside, whatever the state; one that names no attraction OpenTPW holds is 0
+			guest.SavedMajorAttractionId = attraction( save.SavedMajorDest );
+			if ( guest.SavedMajorAttractionId != 0 )
+				savedMajors++;
 			float Meter( float value, string name )
 			{
 				// the meters are singles the guest code clamps to 0..100 (MeterMath); a save of the original holds no other value
@@ -196,6 +202,8 @@ public sealed partial class GuestSimulation
 			if ( inPark )
 			{
 				ImportInPark( guest, save, cell, destination, attraction, bin, adjusted, recovery );
+				if ( guest.AttractionId != 0 && guest.State is not GuestState.GoingToRide )
+					keptTargets++;
 				// [BIN:TPW-EXE:0x4FD950 time in park] mArrivalDate (+0x1D4) is the world's game tick at the stamp and the hours the visitor lists show are (tick − stamp) >> 2 turns (the roster's cell); the saved stamp gives the elapsed park turns, a stamp after the save's own turn is not a date
 				if ( save.ArrivalDate <= parkTurn )
 				{
@@ -216,6 +224,7 @@ public sealed partial class GuestSimulation
 			balloonHistoryReconstructed = true;
 			states.Add( $"{guest.Id}:{save.State}→{(int)guest.State}" );
 		}
+		evidence.Add( $"Guest destinations imported: {keptTargets} kept targets (mMajorDest, +0x1DC, of guests deciding or wandering) and {savedMajors} saved major destinations (mSavedMajorDest, +0x1DE)." );
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Guest value adjusted on import: {line}." );
@@ -253,7 +262,9 @@ public sealed partial class GuestSimulation
 		switch ( save.State )
 		{
 			case 7:
+				// [BIN:TPW-EXE:0x004FB530 kept target] mMajorDest (+0x1DC) is the target the guest keeps until its next major choice (0x004FCB21) whatever the state (0x00500900, 0x004FFEDA leave it): a wanderer keeps the attraction it last chose, a bin it last used is no attraction (0)
 				guest.State = GuestState.WalkingAround;
+				guest.AttractionId = attraction( save.MajorDest );
 				WalkOn();
 				break;
 			case 9 when bin( save.MajorDest ) is var found and not 0:
@@ -274,6 +285,9 @@ public sealed partial class GuestSimulation
 				if ( save.State is 9 or 10 )
 					adjusted.Add( $"guest {guest.Id} state {save.State} target thing {save.MajorDest} is not imported, imported deciding (state 6)" );
 				guest.State = GuestState.DoingNothing;
+				// states 6 and 8 (an activity, decided again at once) keep the target too
+				if ( save.State is 6 or 8 )
+					guest.AttractionId = attraction( save.MajorDest );
 				break;
 		}
 	}

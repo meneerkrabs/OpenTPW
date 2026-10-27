@@ -44,4 +44,48 @@ public class SavedAccessCellTests
 		}
 		finally { FileSystem = previous; }
 	}
+
+	/// <summary>
+	/// tp.exe 0x004DE040 reads the link byte of the cell +0x36, the shape's first entrance cell (0x004DB33C): <see cref="Level.ResolveQueueEntrance(System.Collections.Generic.IEnumerable{ObjectAccessPoint}, ParkCellMap, ushort)"/>
+	/// answers that cell for every queued shape of the four catalogs, whatever the rotation, and a shape with several entrances is not answered by its last one.
+	/// </summary>
+	[TestMethod]
+	public void TheQueueEntranceOfEveryQueuedShapeIsItsFirstEntranceCell()
+	{
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previous ) == null )
+		{
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH." );
+			return;
+		}
+		try
+		{
+			var queued = 0;
+			var several = 0;
+			foreach ( var theme in new[] { "fantasy", "hallow", "jungle", "space" } )
+				foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( x => x.HasQueue && !x.IsTool ) )
+					foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+					{
+						var points = ObjectFootprint.GetAccessPoints( entry.Shape, 40, 40, rotation ).ToArray();
+						var entrances = points.Where( p => p.Kind == ObjectCellKind.Entrance ).ToArray();
+						if ( entrances.Length == 0 ) continue;
+						var cells = new ParkCellMap( 128, 128 );
+						foreach ( var entrance in entrances )
+						{
+							cells.SetType( entrance.X, entrance.Y, ParkCellTypes.Entrance );
+							cells.SetOwner( entrance.X, entrance.Y, 5 );
+						}
+						var resolved = Level.ResolveQueueEntrance( points, cells, 5 );
+						Assert.AreEqual( (entrances[0].X, entrances[0].Y), resolved, $"{theme} {entry.InfoId} rotation {rotation}" );
+						Assert.AreEqual( Level.FirstEntranceCellOf( points ), resolved, $"{theme} {entry.InfoId} rotation {rotation}: the access cell" );
+						if ( rotation == 0 )
+						{
+							queued++;
+							if ( entrances.Length > 1 ) several++;
+						}
+					}
+			Console.WriteLine( $"QUEUE_FRONT_CORPUS queued shapes={queued} with several entrances={several}" );
+			Assert.IsTrue( queued > 0, "the catalogs list queued shapes with entrances" );
+		}
+		finally { FileSystem = previous; }
+	}
 }

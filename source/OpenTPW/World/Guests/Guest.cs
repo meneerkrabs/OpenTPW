@@ -266,10 +266,10 @@ public sealed class Guest
 	/// <summary>Attraction the guest is heading to, queueing for or riding (0 = none).</summary>
 	public int AttractionId { get; internal set; }
 	/// <summary>
-	/// The major destination (guest <c>+0x1DE</c>, tp.exe <c>0x004FD92A</c>): the attraction a guest had chosen when its minor decision (<c>0x004FD570</c>) sent it to another one on the way; the exit walk of the visit
+	/// The saved major destination (guest <c>+0x1DE</c>; tp.exe's serializer names it <c>mSavedMajorDest</c> and the target <c>+0x1DC</c>, <see cref="AttractionId"/>, <c>mMajorDest</c>; the save keeps both, <c>0x004FD92A</c>): the attraction a guest had chosen when its minor decision (<c>0x004FD570</c>) sent it to another one on the way; the exit walk of the visit
 	/// that follows (state 15, <c>0x00500923</c>) takes it up again as the target. 0 = none; cleared only by that and by the removal of the attraction it names.
 	/// </summary>
-	public int MajorAttractionId { get; internal set; }
+	public int SavedMajorAttractionId { get; internal set; }
 	/// <summary>The byte at +0x2C that state 10 counts while the guest walks to a ride with the park open; every twelfth count the minor decision runs (tp.exe 0x004FFEF2).</summary>
 	public int RideWalkCount { get; internal set; }
 	/// <summary>Park turns an expensive verdict still holds the guest at the booth (+0x200, tp.exe 0x004FF9D0): one is counted per turn, the verdict runs again as the last reaches 0. State 3 counts the same word down.</summary>

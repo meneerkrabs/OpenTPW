@@ -18,9 +18,10 @@ public sealed partial class GuestSimulation
 		decisions.UsesPathComfort && SmarterGuests is { } paths ? paths.Complaints.Of( guest.BirthId ) : -1 );
 
 	/// <summary>The score's eligibility only: preserve connected fallbacks, and opt in to a disconnected back only when it is a real raw queue cell.</summary>
+	// [BIN:TPW-EXE:0x004DE130 typed back] the back-of-queue walk starts at the front cell the entry's links name (0x004DE040) whatever the cell holds, so an empty-ground front is a one-cell back that passes 0x004DD920 and is scored; the route request then fails (a mask-0 walk cannot enter a type-0 cell) and the walk is stuck (state 10: "stuck on the way")
 	// [BIN:TPW-EXE:0x004FCB84 back cell test] the choice skips a ride whose back-of-queue cell (0x004DE110) is 0: a ride without a front (QUEUE-003, a zero front) is never scored, chosen or joined
 	private bool HasScoreBackCell( IRideVisitorBridge attraction ) => attraction.BackCell is { } back && (attraction.JoinCell != null
-		|| decisions.ScoresDisconnectedQueues && Grid.Cells.RawTypeAt( back.X, back.Y ) == (byte)ParkCellType.Queue);
+		|| decisions.ScoresDisconnectedQueues && (attraction.HasTypedBack || Grid.Cells.RawTypeAt( back.X, back.Y ) == (byte)ParkCellType.Queue));
 
 	/// <summary>
 	/// <paramref name="attraction"/> as <paramref name="guest"/> sees it: every value the score reads, taken now. An opted-in disconnected typed back carries real facts while

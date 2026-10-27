@@ -163,28 +163,29 @@ public class GuestRefusedTargetTests
 			&& RetainedStates.Contains( (guest.State, guest.Activity) ) )
 			.Select( guest => (Guest: guest, Target: guest.AttractionId) ).ToArray();
 		foreach ( var pair in retained ) pair.Guest.AttractionId = 0;
-		ulong projected, repeatedProjection;
-		string projectedBeforeFinally, repeatedBeforeFinally;
-		try
-		{
-			var directProjected = DirectHash( simulation, sources );
-			projected = compute();
-			Assert.AreEqual( directProjected, projected, $"direct and delegate hashes agree while targets are zeroed; direct=0x{directProjected:X16}; delegated=0x{projected:X16}" );
-			projectedBeforeFinally = projected.ToString( "X16" );
-			repeatedProjection = compute();
-			repeatedBeforeFinally = repeatedProjection.ToString( "X16" );
-			Assert.AreEqual( projectedBeforeFinally, repeatedBeforeFinally, $"target-only projection repeated inside try; actual=0x{actual:X16}; targets={targets}" );
-		}
-		finally { foreach ( var pair in retained ) pair.Guest.AttractionId = pair.Target; }
+		var (projected, repeatedProjection) = ProjectWithTargetsCleared( simulation, compute, sources, retained, actual, targets );
 		Assert.AreEqual( actual, compute(), "diagnostic projection restores the actual hash" );
 		Assert.AreEqual( actual, DirectHash( simulation, sources ), "direct hash after restoration equals the original delegate hash" );
-		Assert.AreEqual( projectedBeforeFinally, projected.ToString( "X16" ), "the first projected scalar survives finally and restoration" );
-		Assert.AreEqual( repeatedBeforeFinally, repeatedProjection.ToString( "X16" ), "the repeated projected scalar survives finally and restoration" );
 		Assert.AreEqual( projected, repeatedProjection, "target-only projection is stable while the selected IDs remain cleared" );
 		if ( JointMainProjectionPins.TryGetValue( actual, out var mainPin ) )
 			Assert.AreEqual( mainPin, projected, "target-only projection retains the independently observed joint-main baseline" );
 		Console.WriteLine( $"GUEST004_JOINT actual=0x{actual:X16} projected=0x{projected:X16} retained={retained.Length}" );
 		return actual; // All existing pin assertions still compare the real, unmodified hash.
+	}
+
+	/// <summary>The cleared-target projections, computed in their own method so no string local lives across the finally (the Mono interpreter corrupted such a slot).</summary>
+	private static (ulong Projected, ulong Repeated) ProjectWithTargetsCleared( GuestSimulation simulation, Func<ulong> compute, WorldStateSources? sources, (Guest Guest, int Target)[] retained, ulong actual, string targets )
+	{
+		try
+		{
+			var directProjected = DirectHash( simulation, sources );
+			var projected = compute();
+			Assert.AreEqual( directProjected, projected, $"direct and delegate hashes agree while targets are zeroed; direct=0x{directProjected:X16}; delegated=0x{projected:X16}" );
+			var repeated = compute();
+			Assert.AreEqual( projected, repeated, $"target-only projection repeated inside try; actual=0x{actual:X16}; targets={targets}" );
+			return (projected, repeated);
+		}
+		finally { foreach ( var pair in retained ) pair.Guest.AttractionId = pair.Target; }
 	}
 
 	private static ulong DirectHash( GuestSimulation simulation, WorldStateSources? sources ) =>

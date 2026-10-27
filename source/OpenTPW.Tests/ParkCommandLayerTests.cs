@@ -74,7 +74,7 @@ public class ParkCommandLayerTests
 		new( "Settings mutators as method groups", @"(?<!InputButton)\.(OpenPark|ClosePark|SetEntranceFee|SetPrices|SetShopSettings|TakeLoan|TryRepayLoan|SetTrainingBudget|SetResearchEffort|AcceptChallenge|DeclineChallenge|RequestMaintenance|TryBuyUpgrade|TryCancelUpgrade|QueueCheat|RefreshLoanOffers)\b(?!\s*[(=])", nameof( ParkSettingCommand ) ),
 		new( "Loan list build", Call( "RefreshLoanOffers" ), nameof( RefreshLoanOffersCommand ) ),
 		// the park's tools (C1 part 3)
-		new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand|ClaimEnclosedCells)\s*\(", nameof( BuyLandCommand ) ),
+		new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand|Purchase)\s*\(", nameof( BuyLandCommand ) ),
 		// the staff placement's own helpers are bare calls inside its file, so the bare form counts too
 		new( "ParkEconomy.Hire and the staff placement", @"\.(Hire|EndPlacement)\s*\(|" + Call( "PutDown" ) + "|" + Call( "ReleaseAssignments" ) + @"|\b(PendingPlacementId|PatrolArea|BubbleThought)\s*=[^=]",
 			nameof( PlaceStaffCommand ) ),
@@ -245,8 +245,7 @@ public class ParkCommandLayerTests
 		Assert.IsFalse( Caught( prototype, "ImGui.Text( level.PlacedRide.IsOpen ? \"Ride: open\" : \"Ride: closed\" );" ) );
 		// the tools (C1 part 3)
 		var land = Converted.Single( mutator => mutator.Name == "Land" );
-		Assert.IsTrue( Caught( land, "map.SetLand( merged );" ) );
-		Assert.IsTrue( Caught( land, "merged.ClaimEnclosedCells( map );" ) );
+		Assert.IsTrue( Caught( land, "if ( !land.Purchase( map, corner, post ) )" ) );
 		Assert.IsTrue( Caught( land, "economy()?.ChargeLand( check.Cost, check.Cells );" ) );
 		Assert.IsFalse( Caught( land, "var check = land.CheckPurchase( map, corner, post, barrier, cost, balance );" ) );
 		var staff = Converted.Single( mutator => mutator.Name == "ParkEconomy.Hire and the staff placement" );

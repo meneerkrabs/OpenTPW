@@ -5,73 +5,11 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
 
-/// <summary>Asset-free host contracts for PATH-007, not an oracle for the original executable's fill.</summary>
+/// <summary>Asset-free contracts of the park land beside the oracle cases (<see cref="ParkFenceGoldenTests"/>): bounded walks and the refusal of a purchase on which the original's fence routines fault.</summary>
 [TestClass]
 public class ParkLandEdgeCaseTests
 {
 	private static readonly (int X, int Y) PostA = (21, 11), PostB = (13, 11);
-
-	[DataTestMethod]
-	[DataRow( 64, 64 )]
-	[DataRow( 18, 18 )]
-	public void ConcaveFillOnlyClearsOwnershipAndIsIdempotent( int width, int height )
-	{
-		// A rectangle with its south-east quarter removed; the concave vertex is (17, 17).
-		var land = ParkLand.FromClicks( new ParkLandSetup( PostA, PostB, new[]
-		{
-			(0, 0), (4, 0), (4, 6), (-4, 6), (-4, 10), (-12, 10), (-12, 0), (-8, 0)
-		} ) );
-		AssertFill( land, width, height, ( x, y ) =>
-			(x >= 10 && x <= 25 && y >= 12 && y <= 17)
-			|| (x >= 10 && x <= 17 && y >= 18 && y <= 21)
-			|| (x == 18 && y == 18) );
-	}
-
-	[TestMethod]
-	public void TwoConcaveCornersDoNotFillTheOpenNotch()
-	{
-		// A U-shaped park: notch x 13..21, y 15..21 remains open to the south.
-		var land = ParkLand.FromClicks( new ParkLandSetup( PostA, PostB, new[]
-		{
-			(0, 0), (4, 0), (4, 10), (0, 10), (0, 4), (-8, 4), (-8, 10), (-12, 10), (-12, 0), (-8, 0)
-		} ) );
-		AssertFill( land, 64, 64, ( x, y ) =>
-			(x >= 10 && x <= 25 && y >= 12 && y <= 15)
-			|| ((x >= 10 && x <= 13 || x >= 22 && x <= 25) && y >= 16 && y <= 21)
-			|| ((x == 14 || x == 21) && y == 16) );
-	}
-
-	private static void AssertFill( ParkLand land, int width, int height, Func<int, int, bool> claimed )
-	{
-		var cells = new ParkCellMap( width, height );
-		const ParkCellFlags kept = ParkCellFlags.NoModify | ParkCellFlags.EntranceArea | ParkCellFlags.MapBit04;
-		for ( var y = 0; y < height; y++ )
-			for ( var x = 0; x < width; x++ )
-				cells.SetFlags( x, y, kept | ParkCellFlags.Unowned );
-		cells.SetFlags( 0, 0, kept ); // previously owned outside the ring must stay owned
-		cells.SetType( 12, 14, ParkCellType.Queue );
-		cells.SetLinks( 12, 14, 4 );
-		cells.SetQueueLink( 12, 14, 64 );
-		cells.SetOwner( 12, 14, 42 );
-		cells.SetPlacementCount( 12, 14, 3 );
-		var stamp = cells.StampCounter;
-		land.ClaimEnclosedCells( cells );
-		for ( var y = 0; y < height; y++ )
-			for ( var x = 0; x < width; x++ )
-			{
-				var expected = kept | (claimed( x, y ) || (x, y) == (0, 0) ? ParkCellFlags.None : ParkCellFlags.Unowned);
-				Assert.AreEqual( expected, cells.FlagsAt( x, y ), $"ownership and unrelated flags at ({x}, {y})" );
-			}
-		Assert.AreEqual( ParkCellType.Queue, cells.TypeAt( 12, 14 ) );
-		Assert.AreEqual( (byte)4, cells.LinksAt( 12, 14 ) );
-		Assert.AreEqual( (byte)64, cells.QueueLinkAt( 12, 14 ) );
-		Assert.AreEqual( (ushort)42, cells.OwnerAt( 12, 14 ) );
-		Assert.AreEqual( (short)3, cells.PlacementCountAt( 12, 14 ) );
-		Assert.AreEqual( stamp, cells.StampCounter, "ownership does not change cell types" );
-		var version = cells.Version;
-		land.ClaimEnclosedCells( cells );
-		Assert.AreEqual( version, cells.Version, "a second fill performs no writes" );
-	}
 
 	[TestMethod]
 	public void CyclicImportedLinksTerminateWithoutReachingPostB()
@@ -85,39 +23,39 @@ public class ParkLandEdgeCaseTests
 		var calls = 0;
 		var land = ParkLand.FromFenceLinks( PostA, PostB, ( x, y ) =>
 		{
-			// Fail synchronously if the traversal guard regresses; never hang the test runner.
-			Assert.IsTrue( ++calls <= ParkLand.MaximumPosts, "the link walk must remain bounded" );
+			// the layer is read once per cell, then the walk runs on it: it stops at the guard, whatever the links say
+			Assert.IsTrue( ++calls <= 128 * 128, "the layer is read once per cell" );
 			return links.TryGetValue( (x, y), out var bits ) ? bits : (byte?)null;
 		} );
-		Assert.IsTrue( calls > 0 );
+		Assert.AreEqual( 128 * 128, calls );
 		Assert.IsNull( land );
 	}
 
-	[DataTestMethod]
-	[DataRow( false )]
-	[DataRow( true )]
-	public void GateCrossingCommandRefusesWithoutChargingOrMutating( bool reversed )
+	/// <summary>
+	/// A rectangle over the gate's open side is accepted by the original's validator and the first purchase runs; the second one, over the first and the gate, leaves the old park outside the fence the walk
+	/// from post A finds, so the fill scans to the edge of the map and tp.exe crashes there (oracle case "buy over the open side of the gate (rectangle)"). OpenTPW refuses it: nothing is charged or written.
+	/// </summary>
+	[TestMethod]
+	public void APurchaseTheOriginalCrashesOnIsRefusedWithoutChargingOrMutating()
 	{
-		var land = ParkLand.FromClicks( new ParkLandSetup( PostA, PostB, new[]
-		{
-			(0, 0), (4, 0), (4, 10), (-12, 10), (-12, 0), (-8, 0)
-		} ) );
-		var cells = new ParkCellMap( 64, 64 );
-		land.ApplyToNewPark( cells );
+		var cells = new ParkCellMap( 128, 128 );
+		var land = ParkLand.NewPark( cells, new ParkLandSetup( PostA, PostB, new[] { (0, 0), (4, 0), (4, 10), (-12, 10), (-12, 0), (-8, 0) } ) )!;
 		cells.SetLand( land );
 		var economy = new ParkEconomy(
 			new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( EconomyTestData.StandardText( 50000 ), "Standard.sam" ) } ),
 				null, null, "jungle", false ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
-		var before = Enumerable.Range( 0, 64 * 64 ).Select( i => cells.FlagsAt( i % 64, i / 64 ) ).ToArray();
-		var version = cells.Version;
+		Assert.IsTrue( new BuyLandCommand( 15, 7, 19, 15 ).Apply( cells, economy, ( _, _ ) => false ).Accepted, "the first rectangle in front of the gate is bought" );
+		var before = Enumerable.Range( 0, 128 * 128 ).Select( i => cells.FlagsAt( i % 128, i / 128 ) ).ToArray();
+		var ring = land.Ring.ToArray();
 		var balance = economy.Balance;
-		var command = reversed ? new BuyLandCommand( 19, 15, 15, 7 ) : new BuyLandCommand( 15, 7, 19, 15 );
-		var result = command.Apply( cells, economy, ( _, _ ) => false );
+		var version = cells.Version;
+		var result = new BuyLandCommand( 11, 7, 23, 15 ).Apply( cells, economy, ( _, _ ) => false );
 		Assert.IsFalse( result.Accepted );
-		Assert.AreEqual( new LandPurchaseCheck( LandPurchaseRefusal.Gate, 0, 0 ), result.Value );
+		Assert.AreEqual( LandPurchaseRefusal.Fence, ((LandPurchaseCheck)result.Value!).Refusal );
 		Assert.AreEqual( balance, economy.Balance );
 		Assert.AreEqual( version, cells.Version );
 		Assert.AreSame( land, cells.Land );
-		CollectionAssert.AreEqual( before, Enumerable.Range( 0, 64 * 64 ).Select( i => cells.FlagsAt( i % 64, i / 64 ) ).ToArray() );
+		CollectionAssert.AreEqual( ring, land.Ring.ToArray() );
+		CollectionAssert.AreEqual( before, Enumerable.Range( 0, 128 * 128 ).Select( i => cells.FlagsAt( i % 128, i / 128 ) ).ToArray() );
 	}
 }

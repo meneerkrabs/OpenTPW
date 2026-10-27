@@ -287,22 +287,40 @@ public sealed partial class ParkCellMap
 		ArgumentNullException.ThrowIfNull( setup );
 		if ( save != null && save.Cells.CountX == Width && save.Cells.CountY == Height )
 		{
-			ImportLand( setup, ( x, y ) => (save.Cells[x, y].MapFlags & (ushort)ParkCellFlags.Unowned) != 0,
-				( x, y ) => InBounds( x, y ) && save.Cells[x, y].StructureType == SaveCell.HoardingType ? save.Cells[x, y].HoardingNeighbours : null );
+			ImportLand( setup, ( x, y ) => (save.Cells[x, y].MapFlags & (ushort)ParkCellFlags.Unowned) != 0, FenceOfSave( save.Cells, Width, Height ) );
 			return;
 		}
-		ParkLand fence;
-		try
+		// a new park: the level's fence laid by the original's own routines (ParkLand.NewPark); a fence that cannot be laid leaves every cell owned
+		if ( ParkLand.NewPark( this, setup ) is { } fence )
 		{
-			fence = ParkLand.FromClicks( setup );
-		}
-		catch ( InvalidDataException exception )
-		{
-			Log.Warning( $"The level's park fence cannot be laid: {exception.Message} Every cell stays owned." );
+			SetLand( fence );
 			return;
 		}
-		fence.ApplyToNewPark( this );
-		SetLand( fence );
+		Log.Warning( "The level's park fence cannot be laid: its walk does not reach post B. Every cell stays owned." );
+	}
+
+	/// <summary>The fence records an original save holds: its structure cells of type 0x19 (posts) and 0xC (the cells next to a post) with their links, walk direction, flags, owner word and counter.</summary>
+	// [BIN:TPW-EXE:0x4d0b30 cell base serializer] each cell record writes the structure cell's mDirection (+0xd), mFlags (+0xe), mOverlapCounter (+0x20), mParentID (+0x10), mType (+8) and mHoardingNeighbours (+0x22)
+	internal static FenceLayer FenceOfSave( SaveCellGrid saved, int width, int height )
+	{
+		var fence = new FenceLayer( width, height );
+		for ( var y = 0; y < height && y < saved.CountY; y++ )
+		{
+			for ( var x = 0; x < width && x < saved.CountX; x++ )
+			{
+				var record = saved[x, y];
+				if ( record.StructureType is not (SaveCell.HoardingType or SaveCell.HoardingExtensionType) )
+					continue;
+				var index = y * width + x;
+				fence.Type[index] = (byte)record.StructureType;
+				fence.Links[index] = record.HoardingNeighbours;
+				fence.Direction[index] = record.StructureDirection;
+				fence.Flags[index] = record.StructureFlags;
+				fence.Owner[index] = record.StructureParentId;
+				fence.Counter[index] = record.StructureOverlapCounter;
+			}
+		}
+		return fence;
 	}
 
 	/// <summary>
@@ -310,10 +328,11 @@ public sealed partial class ParkCellMap
 	/// walked from post A by the saved hoardings' links (<paramref name="links"/>). When that walk fails the map has no land
 	/// (Buy Land is unavailable) and keeps the saved flags.
 	/// </summary>
-	internal void ImportLand( ParkLandSetup setup, Func<int, int, bool> unowned, Func<int, int, byte?> links )
+	internal void ImportLand( ParkLandSetup setup, Func<int, int, bool> unowned, FenceLayer fence )
 	{
 		ArgumentNullException.ThrowIfNull( setup );
-		var imported = ParkLand.FromFenceLinks( setup.PostA, setup.PostB, links );
+		ArgumentNullException.ThrowIfNull( fence );
+		var imported = ParkLand.FromLayer( setup.PostA, setup.PostB, fence );
 		for ( var y = 0; y < Height; y++ )
 		{
 			for ( var x = 0; x < Width; x++ )

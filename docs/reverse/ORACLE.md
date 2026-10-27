@@ -2197,8 +2197,7 @@ of the object kind. Transcribed, the C# rule agrees on every input (`csharp-rule
 `0x441970`–`0x4419af` confirms the edited-controller exclusion (`0x790fec`) and no sample-count or controller-state term.
 The economic consumer now uses the flags/intersection/edit predicate without requiring three samples; actual guest admission
 retains that host safety guard. The edited-controller term was already wired through `BeingEdited`. This correction is static
-evidence plus synthetic coverage, not another native execution. ARRIVAL-003 retains the kart/water residual: the track word
-starts false before the first walk where the original's constructor stores 1 (`0x4db0df`).
+evidence plus synthetic coverage, not another native execution. ARRIVAL-003 is retired: the kart/water track word now starts at 1 as the original's constructor stores it (`0x4db0df`; the PC constructor 0x4DB0A0), and only a circuit walk or a track edit's clear rewrites it (0x524D1B, 0x52694F, 0x526BE1, 0x526F13, 0x5251B8, 0x5257FB).
 
 ### 7.12 Finding X16: guests test the price when they are called forward
 

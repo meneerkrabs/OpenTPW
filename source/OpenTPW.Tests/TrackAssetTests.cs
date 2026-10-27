@@ -260,7 +260,10 @@ public class TrackAssetTests
 		Assert.IsNotNull( bump, "Splish Splash has a controller" );
 		Assert.AreSame( bump, runtime.LiveBump, "a running ride's controller is live" );
 		Assert.AreEqual( -5, bump.Type );
-		Assert.IsFalse( bump.IsTrackValid );
+		// [BIN:TPW-EXE:0x004DB0DF attraction constructor] the track word is 1 from the constructor on; only a circuit walk rewrites it (ARRIVAL-003)
+		Assert.IsTrue( bump.IsTrackValid, "the constructor's track word" );
+		bump.Rebuild( TrackCircuit.Invalid( "no track laid" ) );
+		Assert.IsFalse( bump.IsTrackValid, "a walk without a circuit says invalid" );
 		Assert.IsNotNull( runtime.Visitors.ExcitementBase, "the controller feeds the ride's excitement" );
 		// no track yet: the script waits at BUMP 5 and nothing opens
 		for ( var tick = 0; tick < 5 * 60; tick++ )
@@ -496,6 +499,8 @@ public class TrackAssetTests
 		Assert.AreEqual( -4, bump.Type );
 		var effects = new List<BumpEffect>();
 		bump.Effect += effects.Add;
+		// the constructor's track word is 1 (0x004DB0DF); the walk of a station without a circuit rewrites it to 0, which BUMP 5 reports
+		bump.Rebuild( TrackCircuit.Invalid( "no track laid" ) );
 		for ( var tick = 0; tick < 3 * 60; tick++ )
 			runtime.Simulate( Tick );
 		Assert.AreEqual( BumpController.PhaseClosed, bump.Phase, "no circuit: the script waits at BUMP 5" );

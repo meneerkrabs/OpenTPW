@@ -58,10 +58,11 @@ public sealed class BumpController
 		Laps = template.Laps;
 		Performance = template.DefaultPerformance;
 		ApplyPerformance();
+		// [BIN:TPW-EXE:0x004DB0DF attraction constructor] the attraction's track word +0x2C is 1 from the constructor on, for every ride; only a track edit's circuit walk (0x52A970 at 0x524D1B, 0x52694F, 0x526BE1, 0x526F13) or its clear (0x5251B8, 0x5257FB) rewrites it
+		IsTrackValid = true;
 		if ( template.IsBumper )
 		{
-			// a bumper ride has no track to walk: the attraction's track word keeps its constructor value 1, and the arena exists from the start (a placed ride moves it with SetStation)
-			IsTrackValid = true;
+			// a bumper ride has no track to walk, and the arena exists from the start (a placed ride moves it with SetStation)
 			SetStation( 0, 0, TrackHeading.PosY );
 		}
 	}

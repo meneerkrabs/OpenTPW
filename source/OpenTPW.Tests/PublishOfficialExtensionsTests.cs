@@ -477,7 +477,7 @@ public class PublishOfficialExtensionsTests
 			var buttons = menu.Elements.OfType<UiButton>().Where( button => button.Id != "back" ).ToArray();
 			Assert.AreEqual( 10, buttons.Length );
 			var waiting = menu.Find( "waiting" )!;
-			var window = UiDialogs.CenteredWindow( 1200, 1460 );
+			var window = UiDialogs.CenteredWindow( OnlineScreens.MenuWindowWidth, OnlineScreens.MenuWindowHeight );
 			var lowest = buttons.Max( button => button.Bounds.Bottom );
 			Assert.IsTrue( waiting.Bounds.Y >= lowest, $"the postcard line starts at {waiting.Bounds.Y}, below the lowest button ({lowest})" );
 			Assert.IsTrue( waiting.Bounds.Bottom <= menu.Find( "status" )!.Bounds.Y + 1, "and ends above the status line" );

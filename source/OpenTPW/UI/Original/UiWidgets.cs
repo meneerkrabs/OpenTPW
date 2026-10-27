@@ -104,7 +104,7 @@ public sealed class UiContext
 			ix = (int)MathF.Round( x );
 			iy = (int)MathF.Round( y );
 		}
-		// [APPROX:UI-007] drop shadow one text pixel down-right; the original's control text renderer (0x48f830) draws each string once, without a shadow, and the engine's sprite draw 0x58a010 submits the control's quads with the control colour as their only diffuse colour (no offset pass) — evidence needed: the blend and texture-stage state of those quads, to tell whether the capture's apparent shadow is a render-state effect
+		// [APPROX:UI-007] drop shadow one text pixel down-right in OpenTPW's own colour; only the original's title controls (0x491ab0) draw one (a grey copy two bitmap pixels off, modulated by the title colour), the plain text controls (0x48f830) draw their string once with the sprite state 0x7060556 — evidence needed: the title shadow's offset direction and the text bitmap's texel alpha path
 		if ( shadow )
 			Batch.AddText( font, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
 		Batch.AddText( font, layout, ix, iy, color, scale, text );
@@ -623,7 +623,7 @@ public sealed class UiButton : UiElement
 				context.DrawFittedText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );
 			return;
 		}
-		// [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons
+		// [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed; no UI model of the PC's ui.wad names it — evidence needed: which PC screens draw a model-less text button and with which art, or a capture of the original front-end buttons
 		var art = context.ResolveTexture( "purple_button" );
 		var bar = rect;
 		if ( art != null )

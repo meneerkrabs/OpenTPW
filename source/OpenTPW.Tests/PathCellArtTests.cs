@@ -34,9 +34,11 @@ public class PathCellArtTests
 		return new LndFile( new MemoryStream( data ) );
 	}
 
+	private static ModelHeightfield Field() => new( 5, 4, 10, 10, 0, 0, Array.Empty<uint>(), new float[6 * 5], new uint[20] );
+
 	private static (ProceduralTerrain Terrain, Pages Pages) Make()
 	{
-		var field = new ModelHeightfield( 5, 4, 10, 10, 0, 0, Array.Empty<uint>(), new float[6 * 5], new uint[20] );
+		var field = Field();
 		var pages = new Pages();
 		return (new ProceduralTerrain( field, Lnd(), new ProceduralTerrainRectangle( 0, 0, 3, 2 ), new ProceduralTerrainSettings( Size, 40 ), 2, pages ), pages);
 	}
@@ -46,6 +48,68 @@ public class PathCellArtTests
 		var view = Matrix4x4.CreateLookAt( new System.Numerics.Vector3( 0, 0, 40 ), new System.Numerics.Vector3( 0, 0, 0 ), System.Numerics.Vector3.UnitY );
 		var projection = Matrix4x4.CreatePerspectiveFieldOfView( 90 * MathF.PI / 180, 4f / 3, 0.1f, 1000 );
 		return terrain.Refresh( view, projection, null );
+	}
+
+	private static bool RefreshOverFirstColumn( ProceduralTerrain terrain )
+	{
+		// The same low camera used by ProceduralTerrainMeshTests: it reaches columns 0 and 1, never column 3.
+		var centre = OriginalParkPlacement.ToEngine( Field(), new System.Numerics.Vector3( 5, 0, 25 ) );
+		var view = Matrix4x4.CreateLookAt( new System.Numerics.Vector3( centre.X, centre.Y, 1.6f ), new System.Numerics.Vector3( centre.X, centre.Y, 0 ), System.Numerics.Vector3.UnitY );
+		var projection = Matrix4x4.CreatePerspectiveFieldOfView( 90 * MathF.PI / 180, 4f / 3, 0.1f, 1000 );
+		return terrain.Refresh( view, projection, null );
+	}
+
+	private static void CompleteSyntheticPackSwitch()
+	{
+		// The real completion notification, without texture/GPU targets or a background worker.
+		var change = new TexturePackSwitch( new(), TimeSpan.FromSeconds( 1 ), _ => throw new InvalidOperationException(), decodeOnRenderThread: true );
+		change.Pump();
+		Assert.IsTrue( change.Finished );
+	}
+
+	[TestMethod]
+	public void MissingPathArtIsCachedUntilACompletedSwitchAndCanDisappearAgain()
+	{
+		var available = false;
+		var decodes = 0;
+		var notifications = 0;
+		(byte[], int, int)? Decode( int _ )
+		{
+			decodes++;
+			return available ? (new byte[16], 2, 2) : null;
+		}
+		using var cache = new PathCellArtCache( Decode, () => notifications++ );
+		Assert.IsNull( cache.Get( 3, 0x180 ) );
+		available = true;
+		Assert.IsNull( cache.Get( 3, 0x180 ), "missing tiles stay cached within the same generation" );
+		Assert.AreEqual( 1, decodes );
+		CompleteSyntheticPackSwitch();
+		var restored = cache.Get( 3, 0x180 );
+		Assert.IsNotNull( restored, "a completed pack switch retries missing art" );
+		Assert.IsTrue( ProceduralCellArt.Same( restored, cache.Get( 3, 0x180 ) ) );
+		Assert.AreEqual( 2, decodes );
+		available = false;
+		CompleteSyntheticPackSwitch();
+		Assert.IsNull( cache.Get( 3, 0x180 ), "art absent from the new pack returns to ground" );
+		Assert.AreEqual( 3, decodes );
+		Assert.AreEqual( 2, notifications );
+	}
+
+	[TestMethod]
+	public void DisposingACacheTwiceDoesNotUnsubscribeTheNextTerrain()
+	{
+		var oldCalls = 0;
+		var liveCalls = 0;
+		using var old = new PathCellArtCache( _ => null, () => oldCalls++ );
+		using var live = new PathCellArtCache( _ => null, () => liveCalls++ );
+		CompleteSyntheticPackSwitch();
+		Assert.AreEqual( 1, oldCalls );
+		Assert.AreEqual( 1, liveCalls );
+		old.Dispose();
+		old.Dispose();
+		CompleteSyntheticPackSwitch();
+		Assert.AreEqual( 1, oldCalls, "the old terrain's callback is detached" );
+		Assert.AreEqual( 2, liveCalls, "the next terrain remains subscribed" );
 	}
 
 	/// <summary>A 64 × 64 art: opaque red on the left half, half transparent green on the right, a transparent first row.</summary>
@@ -138,11 +202,101 @@ public class PathCellArtTests
 	{
 		var (terrain, pages) = Make();
 		Refresh( terrain );
+		RefreshOverFirstColumn( terrain );
+		Assert.IsFalse( terrain.VisibleCells.Contains( (3, 1) ), "the edited cell really is outside the current spans" );
 		var builds = terrain.Builds;
 		terrain.SetCellArt( 3, 1, Art( 2, PathCellWord.Word( 0, 2, 0 ) ) );
 		terrain.SetCellArt( 3, 1, Art( 2, PathCellWord.Word( 0, 2, 180 ) ) );
+		RefreshOverFirstColumn( terrain );
+		Assert.AreEqual( builds, terrain.Builds, "offscreen changes wait for the cell to return" );
 		Refresh( terrain );
-		Assert.AreEqual( builds + 1, terrain.Builds, "one build for the latest word" );
+		Assert.IsTrue( terrain.VisibleCells.Contains( (3, 1) ) );
+		Assert.AreEqual( builds + 1, terrain.Builds, "one build for the latest word on its cached slot" );
+	}
+
+	[TestMethod]
+	public void CompletedPacksReplaceSameSizedArtForVisibleAndReturningCachedCells()
+	{
+		var (terrain, pages) = Make();
+		Refresh( terrain );
+		RefreshOverFirstColumn( terrain );
+		var visible = terrain.VisibleCells.First();
+		var offscreen = (X: 3, Z: 1);
+		Assert.IsFalse( terrain.VisibleCells.Contains( offscreen ) );
+		var cells = new[] { visible, offscreen };
+		var word = PathCellWord.Word( 0, 4, 0 );
+		var source = (byte)20; // Original, then synthetic pack A, pack B, Original: all 64 x 64.
+		var decodes = 0;
+		PathCellArtCache? cache = null;
+		void Sync()
+		{
+			foreach ( var cell in cells )
+				terrain.SetCellArt( cell.X, cell.Z, cache!.Get( 4, word ) );
+		}
+		(byte[], int, int)? Decode( int key )
+		{
+			decodes++;
+			var pixels = new byte[64 * 64 * 4];
+			for ( var at = 0; at < pixels.Length; at += 4 )
+			{
+				pixels[at] = source;
+				pixels[at + 1] = (byte)(255 - source);
+				pixels[at + 3] = 255;
+			}
+			return (pixels, 64, 64);
+		}
+		using ( cache = new PathCellArtCache( Decode, Sync ) )
+		{
+			Sync();
+			Refresh( terrain );
+			int Slot( (int X, int Z) cell ) => terrain.Cache.SlotOf( ProceduralTextureCache.KeyOf( cell.X, cell.Z, 0, 0 ) );
+			var visibleSlot = Slot( visible );
+			var offscreenSlot = Slot( offscreen );
+			var originalVisible = pages.Tiles[visibleSlot];
+			var originalOffscreen = pages.Tiles[offscreenSlot];
+			foreach ( var color in new byte[] { 80, 180, 20 } )
+			{
+				RefreshOverFirstColumn( terrain );
+				Assert.IsTrue( terrain.VisibleCells.Contains( visible ) );
+				Assert.IsFalse( terrain.VisibleCells.Contains( offscreen ) );
+				var previousArt = terrain.ArtOf( visible.X, visible.Z )!;
+				var previousOffscreen = pages.Tiles[offscreenSlot];
+				var builds = terrain.Builds;
+				var beforeDecodes = decodes;
+				source = color;
+				CompleteSyntheticPackSwitch();
+				Assert.AreEqual( beforeDecodes + 1, decodes, "one decode per texture, shared by both path cells" );
+				var currentArt = terrain.ArtOf( visible.X, visible.Z )!;
+				Assert.AreEqual( (previousArt.Key, previousArt.Word, previousArt.Width, previousArt.Height), (currentArt.Key, currentArt.Word, currentArt.Width, currentArt.Height) );
+				Assert.IsFalse( ProceduralCellArt.Same( previousArt, currentArt ), "a new pack generation must dirty equal-sized art" );
+				RefreshOverFirstColumn( terrain );
+				Assert.AreEqual( builds + 1, terrain.Builds, "only the visible path rebuilds now" );
+				CollectionAssert.AreEqual( previousOffscreen, pages.Tiles[offscreenSlot], "the cached offscreen tile has not been uploaded yet" );
+				Sync();
+				RefreshOverFirstColumn( terrain );
+				Assert.AreEqual( builds + 1, terrain.Builds, "unchanged refresh and resync do no extra work" );
+				Refresh( terrain );
+				Assert.IsTrue( terrain.VisibleCells.Contains( offscreen ) );
+				Assert.AreEqual( builds + 2, terrain.Builds, "the returning cached cell rebuilds exactly once" );
+				Assert.AreEqual( offscreenSlot, Slot( offscreen ) );
+				foreach ( var cell in cells )
+				{
+					var art = terrain.ArtOf( cell.X, cell.Z )!;
+					var plain = new byte[Size * Size * 4];
+					var expected = new byte[plain.Length];
+					terrain.Texturer.BuildRgba( cell.X, cell.Z, plain );
+					ProceduralTerrainTexturer.Compose( plain, Size, art.Rgba, art.Width, art.Height, (int)art.Word, expected );
+					CollectionAssert.AreEqual( expected, pages.Tiles[Slot( cell )] );
+				}
+				Refresh( terrain );
+				Assert.AreEqual( builds + 2, terrain.Builds );
+			}
+			CollectionAssert.AreEqual( originalVisible, pages.Tiles[visibleSlot], "Original restores the original composite pixels" );
+			CollectionAssert.AreEqual( originalOffscreen, pages.Tiles[offscreenSlot] );
+		}
+		var afterDispose = decodes;
+		CompleteSyntheticPackSwitch();
+		Assert.AreEqual( afterDispose, decodes, "a deleted terrain's cache no longer receives the completion event" );
 	}
 
 	[TestMethod]

@@ -1363,6 +1363,7 @@ public partial class Level : IDisposable
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
 		var viewProjection = Camera.ViewMatrix * Camera.ProjMatrix;
 		PointLights?.Gather( viewProjection );
+		OriginalTerrain?.PrepareRender();
 		var snapshot = WeatherAfterParticles( Entity.All.ToArray() );
 		var before = lateBefore ??= new List<Entity>();
 		var after = lateAfter ??= new List<Entity>();

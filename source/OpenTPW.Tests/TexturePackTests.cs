@@ -967,6 +967,40 @@ public class TexturePackTests
 	}
 
 	[TestMethod]
+	public void CancelledAndReplacedPackSwitchesDoNotPublishPathArt()
+	{
+		var notifications = 0;
+		using var cache = new PathCellArtCache( _ => (new byte[16], 2, 2), () => notifications++ );
+		var original = cache.Get( 0, 0x180 )!;
+		var cancelled = new TexturePackSwitch( new(), TimeSpan.FromSeconds( 1 ), _ => throw new InvalidOperationException(), decodeOnRenderThread: true );
+		cancelled.Cancel();
+		cancelled.Pump();
+		Assert.AreEqual( 0, notifications );
+		Assert.IsTrue( ProceduralCellArt.Same( original, cache.Get( 0, 0x180 ) ) );
+
+		var first = TexturePackSwitch.Begin( "", new List<string>() )!;
+		var second = TexturePackSwitch.Begin( "", new List<string>() )!;
+		try
+		{
+			Assert.IsTrue( first.Finished, "replaced switches are cancelled" );
+			first.Pump();
+			Assert.AreEqual( 0, notifications );
+			TexturePackSwitch.PumpCurrent();
+			Assert.IsTrue( second.Finished );
+			Assert.AreEqual( 1, notifications );
+			Assert.IsFalse( ProceduralCellArt.Same( original, cache.Get( 0, 0x180 ) ), "only the current completed switch advances the generation" );
+			first.Pump();
+			second.Pump();
+			Assert.AreEqual( 1, notifications, "old/completed pumps cannot publish another generation" );
+		}
+		finally
+		{
+			first.Cancel();
+			second.Cancel();
+		}
+	}
+
+	[TestMethod]
 	public void AScreenIgnoresTheRestOfTheFrameAfterItRemovedItself()
 	{
 		var stack = new UiScreenStack();

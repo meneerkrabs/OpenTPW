@@ -449,7 +449,7 @@ internal sealed partial class CoopJoinSmokeTest
 		var state = park.CaptureJoinState();
 		var staged = new List<string>();
 		if ( state.StaffHands.Count > 0 ) staged.Add( "employee in hand" );
-		if ( state.PendingHire != 0 ) staged.Add( "pending hire" );
+		if ( state.PendingHires.Count > 0 ) staged.Add( "pending hire" );
 		if ( state.CarriedEntries.Count > 0 ) staged.Add( "carried Move entry" );
 		if ( state.CoastersBeingEdited.Count > 0 ) staged.Add( "coaster tool open" );
 		if ( state.SessionClockTicks != null ) staged.Add( "session clock" );

@@ -111,6 +111,13 @@ public sealed partial class ParkHud
 		return true;
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-speed] Whether the park's speed is another machine's: a guest's park follows the host's stream, and only the host pauses or changes speed (docs/COOP.md, "Money and
+	/// rights (C4)"; the user's decision Q8). The speed buttons draw subdued for it; each speed input, the pause key and the numpad's included, issues its command, which the session's
+	/// rights refuse here with the host-only note. A session is online, where no focus-loss pause latches (<see cref="ObserveApplicationFocus"/>).
+	/// </summary>
+	private bool SpeedIsTheHosts => level?.Park != null && level.Commands.FollowsStream;
+
 	/// <summary>Produces bounded terminal timer events before HUD input; dispatch can observe a read/delete in between.</summary>
 	// [BIN:TPW-EXE:0x661fe5 UI timer delivery] timers queue messages; reading stops future timers but queued expiry still needs the active guard.
 	// ECON-058: this managed queue coalesces each one-shot terminal event. It does not emulate repeated interval delivery,

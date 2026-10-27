@@ -224,6 +224,33 @@ public class ParkCommandLevelTests
 	}
 
 	/// <summary>
+	/// A log's final checkpoint is the park when the log is taken: a command after the last tick is recorded at a tick whose after-tick checkpoint it changes ([EXT:online-coop-permissions]
+	/// a session's teardown records its releases there, C4a), so the final checkpoint takes that checkpoint's place, and a replay compares it after the commands logged at its tick.
+	/// </summary>
+	[TestMethod]
+	public void ALogsFinalCheckpointIsTheParkWhenTheLogIsTaken()
+	{
+		var recorded = NewPark();
+		var twin = NewPark();
+		recorded.Level.StartCommandRecording();
+		Run( recorded.Level, ParkCommandRecorder.CheckpointInterval, null );
+		var tick = recorded.Level.Commands.NextTick;
+		Assert.AreEqual( tick, recorded.Level.CommandLog()!.Checkpoints[^1].Ticks, "an after-tick checkpoint at the tick" );
+		var before = recorded.Level.ComputeStateHash();
+		Assert.IsTrue( recorded.Level.Commands.Issue( new RemoveAttractionCommand( recorded.Two.Runtime.AttractionId ) ).Accepted );
+		Assert.AreNotEqual( before, recorded.Level.ComputeStateHash() );
+		var log = ParkCommandLogFile.Deserialize( recorded.Level.CommandLog()!.Serialize() );
+		Assert.AreEqual( 1, log.Checkpoints.Count( point => point.Ticks == tick ), "one checkpoint a tick" );
+		Assert.AreEqual( recorded.Level.ComputeStateHash(), log.Checkpoints[^1].Hash, "the park with the sale" );
+		var hashes = new Dictionary<long, ulong>();
+		ParkCommandReplay.Run( twin.Level.Commands, log.Entries, () => twin.Level.Commands.NextTick, () => twin.Level.AdvanceSimulation( FixedStepClock.TickDuration ), tick,
+			ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
+		Assert.AreEqual( before, hashes[tick], "the tick's own hash, before the sale" );
+		hashes[tick] = twin.Level.ComputeStateHash();
+		Assert.IsNull( ParkCommandReplay.FirstMismatch( log, hashes ), "the replay matches it after the commands of the last tick" );
+	}
+
+	/// <summary>
 	/// The Move tool's end is a command (<see cref="EndMoveCommand"/>), whatever ends the tool: after it the player carries the picked-up type no more, so a moving placement of the type, which
 	/// skips research and the balance test, is refused. While the tool stays (a placing click holding exactly Ctrl), another moving placement of the type is accepted, as the original's mode
 	/// 0x3b takes it; a pick-up while carrying ends the old move first, so the new type is the one carried.
@@ -330,7 +357,7 @@ public class ParkCommandLevelTests
 		long Amount() => Pick( -1L, long.MinValue, long.MaxValue, 0L, 100L, 10_000L, 10_001L, 18_000L );
 		bool Flag() => random.Below( 2 ) == 0;
 		string Text() => Pick( "Ann", "", "A\u0007B", "\ud800", new string( 'a', 600 ), "Kevin the", "Cosmic Cow" );
-		ParkCommand Next() => random.Below( 79 ) switch
+		ParkCommand Next() => random.Below( 80 ) switch
 		{
 			0 => new PlaceObjectCommand( Entry(), Coordinate(), Coordinate(), Rotation(), random.Below( 4 ) == 0, Pick( -1, -2, Id() ) ),
 			1 => new RemoveAtCommand( Coordinate(), Coordinate() ),
@@ -421,6 +448,8 @@ public class ParkCommandLevelTests
 			// [EXT:online-coop-claims] a ride's claim and its release (C3c-1)
 			76 => new ClaimRideCommand( Id() ),
 			77 => new ReleaseRideCommand( Id() ),
+			// [EXT:online-coop-permissions] a seat's rights (C4a)
+			78 => new SetSeatRightsCommand( Pick( -1, 0, 1, 3, 64 ), (CoopRights)Pick<byte>( 0, 1, 2, 3, 31, 32, 255 ) ),
 			_ => new RemoveAttractionCommand( Pick( -1, int.MinValue, 99_999 ) ),
 		};
 		CollectionAssert.IsSubsetOf( Enum.GetValues<ParkCommandKind>(), Enumerable.Range( 0, 1024 ).Select( _ => Next().Kind ).Distinct().ToArray(), "the stream draws every kind" );

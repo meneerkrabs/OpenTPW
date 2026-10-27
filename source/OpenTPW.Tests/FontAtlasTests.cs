@@ -370,12 +370,35 @@ public class FontAtlasTests
 			titles.Add( UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, new string( 'a', length ) ), 0x80, 1 )! );
 		Assert.IsTrue( titles.Sum( title => (long)title.Rgba.Length ) > UiTitleBitmap.ByteBudget );
 		Assert.IsTrue( titles.All( title => !title.Evicted ), "no title of the frame that draws it is dropped" );
-		// two frames later the budget is applied again, oldest first
+		// A hit in the next frame protects this existing title; no insertion is needed to recover the budget as the other titles age out.
 		UiTitleBitmap.BeginFrame();
+		Assert.IsTrue( titles.All( title => !title.Evicted ), "the previous frame's titles are also protected" );
+		var latest = UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "aaa" ), 0x80, 1 )!;
+		Assert.AreSame( titles[2], latest );
 		UiTitleBitmap.BeginFrame();
-		var latest = UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "aaa" ), 0xC8, 1 )!;
+		Assert.AreSame( latest, UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "aaa" ), 0x80, 1 ) );
 		Assert.IsTrue( titles[0].Evicted, "past the 16 MB budget the oldest bitmaps are dropped" );
 		Assert.IsFalse( latest.Evicted );
+		Assert.IsTrue( titles.Where( title => !title.Evicted ).Sum( title => (long)title.Rgba.Length ) <= UiTitleBitmap.ByteBudget,
+			"hit-only frames drain the temporary byte-budget overflow" );
+	}
+
+	[TestMethod]
+	public void TheTitleBitmapEntryBudgetRecoversOnHitOnlyFrames()
+	{
+		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ) ) );
+		UiTitleBitmap.BeginFrame();
+		var titles = Enumerable.Range( 1, UiTitleBitmap.Capacity + 1 )
+			.Select( length => UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, new string( 'a', length ) ), 0x80, 1 )! ).ToArray();
+		Assert.IsTrue( titles.All( title => !title.Evicted ), "current-frame entries may exceed capacity" );
+		UiTitleBitmap.BeginFrame();
+		Assert.IsTrue( titles.All( title => !title.Evicted ), "previous-frame entries stay alive" );
+		Assert.AreSame( titles[0], UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "a" ), 0x80, 1 ) );
+		UiTitleBitmap.BeginFrame();
+		Assert.IsTrue( titles[1].Evicted, "the oldest unused entry is retired without inserting anything" );
+		Assert.IsFalse( titles[0].Evicted, "a hit refreshed both the age and the LRU position" );
+		Assert.IsTrue( titles.Count( title => !title.Evicted ) <= UiTitleBitmap.Capacity );
+		Assert.AreSame( titles[0], UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "a" ), 0x80, 1 ) );
 	}
 
 	[TestMethod]

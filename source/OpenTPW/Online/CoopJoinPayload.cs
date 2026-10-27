@@ -6,23 +6,25 @@ namespace OpenTPW;
 
 /// <summary>
 /// [EXT:online-coop-snapshot-join] The session state a join snapshot carries beyond the park's save (docs/COOP.md, "Joining a running session"): what the session digest covers that the save
-/// leaves out or a load resets. Every player's carried catalogue entry and employee in hand, the pending hire and the stale on-pointer candidate, the coasters' being-edited marks (by their
-/// station's attraction id), the session clock, and the cells each coaster's marker binding wants and does not hold (by the station's attraction id; its displaced cells marked), which the
-/// save leaves out and a join's adoption of the binding needs; the guests' seats the host granted building ([EXT:online-coop-permissions], C3); and the rides' claims, each a ride's attraction id
-/// and its holder's seat ([EXT:online-coop-claims], C3c-1). A capture waits while a coaster drag is held, so it carries no drag.
+/// leaves out or a load resets. Every player's carried catalogue entry and employee in hand, the pending hires (each a seat and the candidate it places; C4a: one seat's at most, the host's)
+/// and the stale on-pointer candidate, the coasters' being-edited marks (by their station's attraction id), the session clock, and the cells each coaster's marker binding wants and does not
+/// hold (by the station's attraction id; its displaced cells marked), which the save leaves out and a join's adoption of the binding needs; the guests' seats' rights, each a seat and its
+/// rights ([EXT:online-coop-permissions], C3's build grant and C4a's rights); and the rides' claims, each a ride's attraction id and its holder's seat ([EXT:online-coop-claims], C3c-1). A
+/// capture waits while a coaster drag is held, so it carries no drag.
 /// </summary>
 internal sealed record CoopJoinState(
 	IReadOnlyList<(int Player, string Entry)> CarriedEntries,
 	IReadOnlyList<(int Player, int Staff, int X, int Y)> StaffHands,
-	int PendingHire,
+	IReadOnlyList<(int Seat, int Candidate)> PendingHires,
 	int StaleOnPointer,
 	IReadOnlyList<int> CoastersBeingEdited,
 	long? SessionClockTicks,
 	IReadOnlyList<(int Station, int X, int Y, bool Displaced)> CoasterUnheldCells,
-	IReadOnlyList<int>? BuildGrants = null,
+	IReadOnlyList<(int Seat, CoopRights Rights)>? SeatRights = null,
 	IReadOnlyList<(int Ride, int Seat)>? RideClaims = null )
 {
-	public const ushort Version = 4;
+	/// <summary>5: the pending hires per seat and the seats' rights (C4a), in place of one pending hire and the build grants' seats.</summary>
+	public const ushort Version = 5;
 	/// <summary>The most unheld coaster cells a join state carries (no player tool makes one today: it is a defence).</summary>
 	public const int MaximumUnheldCells = 4096;
 	/// <summary>The most entries of a per-player list: one a player, with room for a replay's other player numbers.</summary>
@@ -32,10 +34,10 @@ internal sealed record CoopJoinState(
 
 	public byte[] Encode()
 	{
-		var grants = BuildGrants ?? Array.Empty<int>();
+		var rights = SeatRights ?? Array.Empty<(int Seat, CoopRights Rights)>();
 		var claims = RideClaims ?? Array.Empty<(int Ride, int Seat)>();
-		if ( CarriedEntries.Count > MaximumPlayerEntries || StaffHands.Count > MaximumPlayerEntries || CoastersBeingEdited.Count > CoasterSave.MaximumRides
-			|| CoasterUnheldCells.Count > MaximumUnheldCells || grants.Count > MaximumPlayerEntries || claims.Count > CoopProtocol.MaximumPlayers )
+		if ( CarriedEntries.Count > MaximumPlayerEntries || StaffHands.Count > MaximumPlayerEntries || PendingHires.Count > MaximumPlayerEntries || CoastersBeingEdited.Count > CoasterSave.MaximumRides
+			|| CoasterUnheldCells.Count > MaximumUnheldCells || rights.Count > MaximumPlayerEntries || claims.Count > CoopProtocol.MaximumPlayers )
 			throw new InvalidOperationException( "The join state holds more entries than a join snapshot carries." );
 		var writer = new CoopWriter();
 		writer.U16( Version );
@@ -53,7 +55,12 @@ internal sealed record CoopJoinState(
 			writer.U32( Unsigned( x ) );
 			writer.U32( Unsigned( y ) );
 		}
-		writer.U32( Unsigned( PendingHire ) );
+		writer.Byte( (byte)PendingHires.Count );
+		foreach ( var (seat, candidate) in PendingHires )
+		{
+			writer.U32( Unsigned( seat ) );
+			writer.U32( Unsigned( candidate ) );
+		}
 		writer.U32( Unsigned( StaleOnPointer ) );
 		writer.U16( (ushort)CoastersBeingEdited.Count );
 		foreach ( var station in CoastersBeingEdited )
@@ -69,9 +76,12 @@ internal sealed record CoopJoinState(
 			writer.U32( Unsigned( y ) );
 			writer.Bool( displaced );
 		}
-		writer.Byte( (byte)grants.Count );
-		foreach ( var seat in grants )
+		writer.Byte( (byte)rights.Count );
+		foreach ( var (seat, right) in rights )
+		{
 			writer.U32( Unsigned( seat ) );
+			writer.Byte( (byte)right );
+		}
 		// [EXT:online-coop-claims] one claim a seat at most, in ride order
 		writer.Byte( (byte)claims.Count );
 		foreach ( var (ride, seat) in claims )
@@ -82,7 +92,10 @@ internal sealed record CoopJoinState(
 		return writer.ToArray();
 	}
 
-	/// <summary>Reads a join state; anything malformed (another version, a count past its bound, a negative number, a duplicate player, bytes after the fields) throws <see cref="InvalidDataException"/>.</summary>
+	/// <summary>
+	/// Reads a join state; anything malformed (another version, a count past its bound, a negative number, a duplicate player, a candidate placed by two seats, a seat's rights row without a
+	/// right or with one this build does not offer, bytes after the fields) throws <see cref="InvalidDataException"/>.
+	/// </summary>
 	public static CoopJoinState Decode( ReadOnlySpan<byte> bytes )
 	{
 		var reader = new CoopReader( bytes );
@@ -94,7 +107,10 @@ internal sealed record CoopJoinState(
 		var hands = new (int, int, int, int)[Count( reader.Byte(), MaximumPlayerEntries )];
 		for ( var index = 0; index < hands.Length; index++ )
 			hands[index] = (NonNegative( reader.U32() ), NonNegative( reader.U32() ), Signed( reader.U32() ), Signed( reader.U32() ));
-		var pending = NonNegative( reader.U32() );
+		var pending = new (int Seat, int Candidate)[Count( reader.Byte(), MaximumPlayerEntries )];
+		for ( var index = 0; index < pending.Length; index++ )
+			pending[index] = (NonNegative( reader.U32() ) is var seat and < MaximumPlayerEntries ? seat : throw new InvalidDataException( "The join state's pending hire names a seat out of range." ),
+				NonNegative( reader.U32() ) is var candidate and > 0 ? candidate : throw new InvalidDataException( "The join state's pending hire names no candidate." ));
 		var stale = NonNegative( reader.U32() );
 		var coasters = new int[Count( reader.U16(), CoasterSave.MaximumRides )];
 		for ( var index = 0; index < coasters.Length; index++ )
@@ -104,9 +120,11 @@ internal sealed record CoopJoinState(
 		var unheld = new (int, int, int, bool)[Count( reader.U16(), MaximumUnheldCells )];
 		for ( var index = 0; index < unheld.Length; index++ )
 			unheld[index] = (NonNegative( reader.U32() ), Signed( reader.U32() ), Signed( reader.U32() ), reader.Bool());
-		var grants = new int[Count( reader.Byte(), MaximumPlayerEntries )];
-		for ( var index = 0; index < grants.Length; index++ )
-			grants[index] = NonNegative( reader.U32() ) is var seat and > 0 and < MaximumPlayerEntries ? seat : throw new InvalidDataException( "The join state grants a seat out of range." );
+		var rights = new (int Seat, CoopRights Rights)[Count( reader.Byte(), MaximumPlayerEntries )];
+		for ( var index = 0; index < rights.Length; index++ )
+			rights[index] = (NonNegative( reader.U32() ) is var seat and > 0 and < MaximumPlayerEntries ? seat : throw new InvalidDataException( "The join state gives rights to a seat out of range." ),
+				(CoopRights)reader.Byte() is var right && right != CoopRights.None && CoopRightsOffer.IsOffered( right ) ? right
+					: throw new InvalidDataException( "The join state gives a seat no right, or one this build does not offer." ));
 		var claims = new (int Ride, int Seat)[Count( reader.Byte(), CoopProtocol.MaximumPlayers )];
 		for ( var index = 0; index < claims.Length; index++ )
 			claims[index] = (NonNegative( reader.U32() ), NonNegative( reader.U32() ) is var holder and < CoopProtocol.MaximumPlayers ? holder
@@ -116,9 +134,10 @@ internal sealed record CoopJoinState(
 			throw new InvalidDataException( "The join state claims a ride twice, or one seat holds two claims." );
 		if ( carried.Select( item => item.Item1 ).Distinct().Count() != carried.Length || hands.Select( item => item.Item1 ).Distinct().Count() != hands.Length
 			|| coasters.Distinct().Count() != coasters.Length || unheld.Select( item => (item.Item1, item.Item2, item.Item3) ).Distinct().Count() != unheld.Length
-			|| grants.Distinct().Count() != grants.Length )
-			throw new InvalidDataException( "The join state names a player, a coaster, a coaster's cell or a granted seat twice." );
-		return new CoopJoinState( carried, hands, pending, stale, coasters, clock, unheld, grants, claims );
+			|| rights.Select( row => row.Seat ).Distinct().Count() != rights.Length || pending.Select( row => row.Seat ).Distinct().Count() != pending.Length
+			|| pending.Select( row => row.Candidate ).Distinct().Count() != pending.Length )
+			throw new InvalidDataException( "The join state names a player, a coaster, a coaster's cell, a seat's rights or pending hire, or a hire's candidate twice." );
+		return new CoopJoinState( carried, hands, pending, stale, coasters, clock, unheld, rights, claims );
 	}
 
 	private static uint Unsigned( int value ) => unchecked( (uint)value );

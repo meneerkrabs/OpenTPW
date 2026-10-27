@@ -7,7 +7,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The park fence against tp.exe's own routines (docs/reverse/ORACLE.md F30): the cases of <see cref="ParkFenceGolden"/> were produced by running the executable's fence set-up 0x5323F0, the Buy Land validator
+/// The park fence against tp.exe's own routines (docs/reverse/ORACLE.md X35): the cases of <see cref="ParkFenceGolden"/> were produced by running the executable's fence set-up 0x5323F0, the Buy Land validator
 /// 0x531A50 and the purchase 0x5327E0 in the x86 oracle on synthetic 128 x 128 maps. <see cref="FenceEngine"/> and <see cref="ParkLand"/> must leave every cell flag word and the fence's structure records
 /// (type, links, owner word, walk direction) as the executable does, answer the validator the same, and refuse the purchases on which the executable hangs or crashes.
 /// </summary>

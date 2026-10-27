@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The path and queue cell validator against tp.exe's own routine 0x535670 (docs/reverse/ORACLE.md, F31; QUEUE-012): every row of <see cref="QueueCellValidatorGolden"/> is a combination of cell type,
+/// The path and queue cell validator against tp.exe's own routine 0x535670 (docs/reverse/ORACLE.md, X36; QUEUE-012): every row of <see cref="QueueCellValidatorGolden"/> is a combination of cell type,
 /// flags, structure record, links, owner, line state and latches the executable answered in the x86 oracle.
 /// </summary>
 [TestClass]

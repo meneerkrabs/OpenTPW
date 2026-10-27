@@ -7,7 +7,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The park fence and the net worth's cell points against the original saves (docs/reverse/ORACLE.md, F30; PATH-007, ECON-026): the Jungle Easymode save and the corpus of
+/// The park fence and the net worth's cell points against the original saves (docs/reverse/ORACLE.md, X35; PATH-007, ECON-026): the Jungle Easymode save and the corpus of
 /// <c>OPENTPW_TPWS_SAVES</c> (the four <c>restart.INTS</c> fresh parks and the <c>.TPWS</c> saves). Inconclusive without OPENTPW_GAME_PATH; nothing of the game data is written.
 /// </summary>
 [TestClass]

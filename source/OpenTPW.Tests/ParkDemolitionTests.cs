@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The cells a demolished object leaves (ECON-050) against tp.exe's own demolition 0x527EE0 with the cell remover 0x5367A0 (docs/reverse/ORACLE.md, F31): the vectors were produced by running the
+/// The cells a demolished object leaves (ECON-050) against tp.exe's own demolition 0x527EE0 with the cell remover 0x5367A0 (docs/reverse/ORACLE.md, X36): the vectors were produced by running the
 /// executable's routines in the x86 oracle on synthetic cells (the queue part and the presentation stubbed), so they hold no original data. Each cell is (type, links, queue link, flags, owner, counter).
 /// </summary>
 [TestClass]

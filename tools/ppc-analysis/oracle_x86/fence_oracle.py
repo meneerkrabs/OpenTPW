@@ -1,4 +1,4 @@
-"""tp.exe's park fence routines run in the x86 oracle sandbox (docs/reverse/ORACLE.md, finding F30; PATH-007, ECON-026, ECON-050).
+"""tp.exe's park fence routines run in the x86 oracle sandbox (docs/reverse/ORACLE.md, finding X35; PATH-007, ECON-026, ECON-050).
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified tp.exe (OPENTPW_TPW_EXE, SHA-256 pinned) are needed, nothing here is shipped. The sandbox runs the executable's own routines on a synthetic
 128 x 128 map, so no original data enters the checkout:

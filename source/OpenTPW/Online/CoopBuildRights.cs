@@ -22,8 +22,9 @@ namespace OpenTPW;
 /// removal and its pick-up, its demolition by a placement, an add-on on it, its queue's lines, edit and cells, and the path cell its back joins. The host's cleanup leaves the claims alone by
 /// itself: its release of any claim, a departed seat's release and the grants.
 /// Everything else stays the host's: speed and pause (Q8), cheats (Q17), the developer kinds, money, staff and the park's management (C4) with a wave machine's settings, undo lines and
-/// pool strokes (C5), the pools' single-cell kinds no guest's tool issues, the grants and the release of a departed seat. Asked at execution on every peer, of the same park, the answer is the
-/// same everywhere.
+/// pool strokes (C5), the pools' single-cell kinds no guest's tool issues, the rights, the grants and the release of a departed seat. Every command kind is of one class
+/// (<see cref="ClassOf"/>, C4a), which says who may issue it; the management rights (<see cref="CoopRights"/>) take their classes once a part offers them (<see cref="CoopRightsOffer"/>).
+/// Asked at execution on every peer, of the same park, the answer is the same everywhere.
 /// </summary>
 internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 {
@@ -34,12 +35,63 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		// [EXT:online-coop-claims] the host issues everything but an edit of a ride another player claims, and its cleanup always (C3c-1)
 		if ( player == ParkCommands.LocalPlayer )
 			return IsHostCleanup( command ) || LeavesClaimsAlone( player, command );
-		// [EXT:online-coop-commands] a Move tool's end only drops its own seat's carry, and a Move must end even when the grant went meanwhile (C3b-2); [EXT:online-coop-claims] a release
-		// only drops its own seat's claim, which a track tool lets go once it left its ride, the grant taken back or not (C3c-1)
-		if ( player > 0 && command is EndMoveCommand or ReleaseRideCommand )
-			return true;
-		return player > 0 && level.HasBuildGrant( player ) && Builds( command ) && HoldsClaimFor( player, command ) && LeavesClaimsAlone( player, command );
+		if ( player <= 0 )
+			return false;
+		return ClassOf( command.Kind ) switch
+		{
+			// [EXT:online-coop-commands] a Move tool's end only drops its own seat's carry, and a Move must end even when the grant went meanwhile (C3b-2); [EXT:online-coop-claims] a release
+			// only drops its own seat's claim, which a track tool lets go once it left its ride, the grant taken back or not (C3c-1)
+			CoopCommandClass.SeatCleanup => true,
+			CoopCommandClass.GuestBuilding => level.HasBuildGrant( player ) && Builds( command ) && HoldsClaimFor( player, command ) && LeavesClaimsAlone( player, command ),
+			// [EXT:online-coop-permissions] a management right this build does not offer is refused whatever the seat's rights hold (C4a)
+			var management when RightOf( management ) is { } right => CoopRightsOffer.Offered.HasFlag( right ) && level.RightsOf( player ).HasFlag( right ),
+			_ => false
+		};
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] Who may issue a command kind in a shared park (docs/COOP.md, "Money and rights (C4)"; C4a): every kind is of exactly one class, a test holds them to it.
+	/// The C3 building's own fields, targets and claims stay asked as they were (<see cref="Builds"/>, <see cref="HoldsClaimFor"/>, <see cref="LeavesClaimsAlone"/>).
+	/// </summary>
+	internal static CoopCommandClass ClassOf( ParkCommandKind kind ) => kind switch
+	{
+		ParkCommandKind.PlaceObject or ParkCommandKind.RemoveAt or ParkCommandKind.RemoveAttraction or ParkCommandKind.PickUpObject or ParkCommandKind.LayLine or ParkCommandKind.Backtrack
+			or ParkCommandKind.EditQueue or ParkCommandKind.QueueSegment or ParkCommandKind.ClearArea or ParkCommandKind.BuyLand or ParkCommandKind.UndoPoolSlidePiece
+			or ParkCommandKind.PlacePoolBridge or ParkCommandKind.PoolCells or ParkCommandKind.LayPoolSlidePieces or ParkCommandKind.LayTrackLine or ParkCommandKind.UndoTrackLine
+			or ParkCommandKind.CutTrack or ParkCommandKind.OpenTrackLineTool or ParkCommandKind.BeginCoasterTool or ParkCommandKind.EndCoasterTool or ParkCommandKind.CoasterClick
+			or ParkCommandKind.RemoveLastCoasterPylon or ParkCommandKind.BeginCoasterNodeEdit or ParkCommandKind.EditCoasterNode or ParkCommandKind.EndCoasterNodeEdit
+			or ParkCommandKind.SwapCoasterStack or ParkCommandKind.CutCoaster or ParkCommandKind.ClaimRide => CoopCommandClass.GuestBuilding,
+		ParkCommandKind.EndMove or ParkCommandKind.ReleaseRide => CoopCommandClass.SeatCleanup,
+		ParkCommandKind.SetAttractionOpen or ParkCommandKind.SetRideSettings or ParkCommandKind.SetPrice or ParkCommandKind.SetGamePrize or ParkCommandKind.SetShopSettings
+			or ParkCommandKind.BuyUpgrade or ParkCommandKind.CancelUpgrade or ParkCommandKind.RequestMaintenance => CoopCommandClass.Attractions,
+		ParkCommandKind.SetTrainingBudget or ParkCommandKind.RenameStaff or ParkCommandKind.FireStaff or ParkCommandKind.SetPatrolArea or ParkCommandKind.BeginStaffHire
+			or ParkCommandKind.CancelStaffHire or ParkCommandKind.PlaceStaff or ParkCommandKind.PickUpStaff or ParkCommandKind.DropStaff => CoopCommandClass.Staff,
+		ParkCommandKind.SetResearchEffort or ParkCommandKind.SetResearchWorkload or ParkCommandKind.MoveResearch => CoopCommandClass.Research,
+		ParkCommandKind.SetParkOpen or ParkCommandKind.SetEntranceFee or ParkCommandKind.TakeLoan or ParkCommandKind.RepayLoan or ParkCommandKind.RenamePark
+			or ParkCommandKind.RefreshLoanOffers => CoopCommandClass.Finance,
+		// what the host's tools issue and no guest's tool does: single cells, the line and queue undo, the pool strokes' undo and their single cells, a bridge's removal
+		ParkCommandKind.RemoveObjectAt or ParkCommandKind.UndoLine or ParkCommandKind.RemovePathCell or ParkCommandKind.RemoveQueueCell or ParkCommandKind.UndoQueueSegment
+			or ParkCommandKind.PaintPoolCell or ParkCommandKind.ErasePoolCell or ParkCommandKind.UndoPoolStroke or ParkCommandKind.LayPoolSlidePiece
+			or ParkCommandKind.RemovePoolBridge => CoopCommandClass.HostTools,
+		// the host's alone: the developer prototype's placement and removal (a session's host may issue them, so an older log replays as it did), the finale's dismissal and a challenge's
+		// answer (they bind the whole park), the speed (Q8), the wave machine (C5), and the session's own kinds
+		ParkCommandKind.PlacePrototype or ParkCommandKind.RemovePrototype or ParkCommandKind.DismissFinale or ParkCommandKind.AnswerChallenge or ParkCommandKind.SetGameSpeed
+			or ParkCommandKind.SetPoolWaves or ParkCommandKind.SetSessionClock or ParkCommandKind.SetBuildGrant or ParkCommandKind.ReleaseSeat
+			or ParkCommandKind.SetSeatRights => CoopCommandClass.HostOnly,
+		// refused in a session for every seat, the host included, by the session's rules (Q17 and C2b-2)
+		ParkCommandKind.SetPrototypeRunning or ParkCommandKind.SetAllObjectsOpen or ParkCommandKind.QueueCheat => CoopCommandClass.RefusedInSession,
+		_ => throw new ArgumentOutOfRangeException( nameof( kind ), kind, "Every command kind has a class of the shared park's rights." )
+	};
+
+	/// <summary>[EXT:online-coop-permissions] The right a management class needs (C4a), or null for a class that is no right's.</summary>
+	internal static CoopRights? RightOf( CoopCommandClass @class ) => @class switch
+	{
+		CoopCommandClass.Attractions => CoopRights.Attractions,
+		CoopCommandClass.Staff => CoopRights.Staff,
+		CoopCommandClass.Research => CoopRights.Research,
+		CoopCommandClass.Finance => CoopRights.Finance,
+		_ => null
+	};
 
 	/// <summary>[EXT:online-coop-permissions] The reason these rights give for a guest's building the host has not granted it (<see cref="RefusalReason"/>).</summary>
 	internal const string NotGrantedReason = "The host has not let this player build.";
@@ -74,8 +126,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		_ => CoopRefusal.HostOnly
 	};
 
-	/// <summary>[EXT:online-coop-claims] The host's cleanup, which no claim refuses: its release of any claim, a departed seat's release and the grants.</summary>
-	private static bool IsHostCleanup( ParkCommand command ) => command is ReleaseRideCommand or ReleaseSeatCommand or SetBuildGrantCommand;
+	/// <summary>[EXT:online-coop-claims] The host's cleanup, which no claim refuses: its release of any claim, a departed seat's release, the grants and the rights.</summary>
+	private static bool IsHostCleanup( ParkCommand command ) => command is ReleaseRideCommand or ReleaseSeatCommand or SetBuildGrantCommand or SetSeatRightsCommand;
 
 	/// <summary>
 	/// Whether <paramref name="command"/> is building a granted guest may do (C3a to C3c-2): its kind, its fields and its target, before the claims (<see cref="LeavesClaimsAlone"/>) and a
@@ -381,4 +433,21 @@ internal enum CoopRefusal
 	Claimed,
 	/// <summary>[EXT:online-coop-claims] A guest's edit of a ride whose claim the host let go: its track tool (C3c-1b) or coaster tool (C3c-2) ends.</summary>
 	ClaimLost,
+}
+
+/// <summary>
+/// [EXT:online-coop-permissions] The classes of the shared park's command kinds (<see cref="CoopBuildRights.ClassOf"/>, C4a): the guests' building (C3, with its grant and claims), what every
+/// seat may issue to end its own tools, the four management rights, the host's tools' primitives and the host's alone, and what a session refuses for every seat.
+/// </summary>
+internal enum CoopCommandClass
+{
+	GuestBuilding,
+	SeatCleanup,
+	Attractions,
+	Staff,
+	Research,
+	Finance,
+	HostTools,
+	HostOnly,
+	RefusedInSession
 }

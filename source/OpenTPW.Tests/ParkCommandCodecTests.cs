@@ -101,6 +101,8 @@ public class ParkCommandCodecTests
 		// [EXT:online-coop-claims] seat 2 claims attraction 17, and the host lets the claim go (C3c-1)
 		(new ClaimRideCommand( 17 ) { Player = 2 }, "02670422"),
 		(new ReleaseRideCommand( 17 ), "02680022"),
+		// [EXT:online-coop-permissions] the host gives seat 3 building through the seat's rights (C4a)
+		(new SetSeatRightsCommand( 3, CoopRights.Build ), "0269000602"),
 	};
 
 	[TestMethod]
@@ -136,6 +138,34 @@ public class ParkCommandCodecTests
 			Assert.AreEqual( command, decoded, command.Kind.ToString() );
 			Assert.AreEqual( command.Player, decoded.Player );
 			CollectionAssert.AreEqual( bytes, ParkCommandCodec.Encode( decoded ), command.Kind.ToString() );
+		}
+	}
+
+	[TestMethod]
+	public void SeatRightsDecodeRefusesUnofferedBitsBeforeNarrowing()
+	{
+		// Write the raw integer: constructing CoopRights first would already lose its high bits.
+		foreach ( var rights in new[] { 2, 31, 255, 256, 257, -1, -255, -256, int.MinValue, int.MinValue + 1, int.MaxValue } )
+		{
+			var writer = new ParkCommandWriter();
+			writer.Int( 1 );
+			writer.Byte( (byte)ParkCommandKind.SetSeatRights );
+			writer.Int( ParkCommands.LocalPlayer );
+			writer.Int( 2 );
+			writer.Int( rights );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( writer.ToArray() ), $"raw rights {rights}" );
+		}
+	}
+
+	[TestMethod]
+	public void OfferedSeatRightsKeepTheirCanonicalBytes()
+	{
+		foreach ( var (rights, hex) in new[] { (CoopRights.None, "0269000400"), (CoopRights.Build, "0269000402") } )
+		{
+			var command = new SetSeatRightsCommand( 2, rights );
+			var bytes = Convert.FromHexString( hex );
+			Assert.AreEqual( command, ParkCommandCodec.Decode( bytes ) );
+			CollectionAssert.AreEqual( bytes, ParkCommandCodec.Encode( command ) );
 		}
 	}
 

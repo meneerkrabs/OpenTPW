@@ -614,8 +614,9 @@ internal sealed class CoopUndoJournal
 	/// Whether a command still in effect that is none of the step set's (<paramref name="records"/>) changed <paramref name="cell"/> since the set first did: its list must hold, from the set's
 	/// first record on, only the set's records and two exceptions, so a step that wrote a cell on both sides of another player's write is refused (for a step of one record, its list ends
 	/// with it): <paramref name="step"/>'s member's own residue marker on a cell its inverse clears whole, which leaves nothing of that residue behind; and on a cell the step only counted up,
-	/// a later live step's record whose effect there left the cell's type, its other fields and the step's own links alone (a link to another cell, a crossing's count): the count-down
-	/// takes back the step's own increment and links only. Another member's residue, the permanent marker, a removal and any other record stay changes.
+	/// a later live step's record whose effect there left the cell's type, counter and other fields and the step's own links alone (another line's link into it from elsewhere): the
+	/// count-down takes back the step's own increment and links only. A later crossing of that cell (its counter raised again) stays a dependency, so crossings go back newest first and each
+	/// take-back finds the counter as its step left it. Another member's residue, the permanent marker, a removal and any other record stay changes.
 	/// </summary>
 	private bool ChangedSince( Step step, (int X, int Y) cell, IReadOnlySet<long> records )
 	{
@@ -638,15 +639,16 @@ internal sealed class CoopUndoJournal
 	}
 
 	/// <summary>
-	/// Whether <paramref name="entry"/>, a live step's record, left a cell <paramref name="step"/> only counted up as the step's count-down needs it: the cell's type, flags, owner, queue link
-	/// and residue as they were, its links changed only on bits the step did not change, its counter by any count.
+	/// Whether <paramref name="entry"/>, a live step's record, left a cell <paramref name="step"/> only counted up as the step's count-down needs it: the cell's type, flags, counter, owner,
+	/// queue link and residue as they were, its links changed only on bits the step did not change.
 	/// </summary>
 	private bool LeavesCountAlone( Step step, (int X, int Y) cell, long entry )
 	{
 		if ( entry < 0 || !live.TryGetValue( entry, out var other ) || !other.Effects.TryGetValue( cell, out var effect ) || !step.Effects.TryGetValue( cell, out var own ) )
 			return false;
 		var (before, after) = effect;
-		return before.Type == after.Type && before.Flags == after.Flags && before.Owner == after.Owner && before.QueueLink == after.QueueLink && before.Residue == after.Residue
+		return before.Type == after.Type && before.Flags == after.Flags && before.Placements == after.Placements && before.Owner == after.Owner && before.QueueLink == after.QueueLink
+			&& before.Residue == after.Residue
 			&& ((before.Links ^ after.Links) & (own.Before.Links ^ own.After.Links)) == 0;
 	}
 

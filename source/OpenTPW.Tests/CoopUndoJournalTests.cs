@@ -461,6 +461,28 @@ public class CoopUndoJournalTests
 	}
 
 	[TestMethod]
+	public void TwoCrossingsOfOneCellGoBackNewestFirstAndLeaveNothingBehind()
+	{
+		var journaled = NewJournaled();
+		var cells = journaled.Level.Guests!.Grid.Cells;
+		// member 3's column ends at (8, 20); member 1's row crosses it there; member 2's line up from (8, 25) to (8, 15) crosses it again
+		var column = journaled.Run( 3, Line( 8, 17, 8, 20 ) ).Record;
+		var counter = cells.PlacementCountAt( 8, 20 );
+		var row = journaled.Run( 1, Line( 5, 20, 12, 20 ) ).Record;
+		var up = journaled.Run( 2, Line( 8, 25, 8, 15 ) );
+		Assert.IsTrue( up.Result.Value is SegmentResult { Completed: true, EndedOnExisting: false } && cells.PlacementCountAt( 8, 20 ) == counter + 2, "a second crossing" );
+		// the earlier crossing waits for the later: its counter is raised again
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBack( 1, row ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 2, up.Record ) );
+		Assert.AreEqual( counter + 1, cells.PlacementCountAt( 8, 20 ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, row ) );
+		Assert.AreEqual( counter, cells.PlacementCountAt( 8, 20 ) );
+		CollectionAssert.AreEqual( new[] { column }, journaled.History( 8, 20 ), "both records left: each found the counter as its step left it" );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 3, column ), "then the column" );
+		Assert.IsFalse( journaled.Level.Guests.Grid.IsWalkable( 8, 20 ) || journaled.Level.Guests.Grid.IsWalkable( 8, 18 ) );
+	}
+
+	[TestMethod]
 	public void OnlyTheBuildingToolsAcceptedStepsAreSteps()
 	{
 		var journaled = NewJournaled();

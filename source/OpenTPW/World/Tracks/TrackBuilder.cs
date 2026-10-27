@@ -292,20 +292,34 @@ public sealed class TrackBuilder
 	// [BIN:TPW-EXE:0x005367A0 second-layer clear] the record of a cell that is no station cell is cleared (its type and arms), here the tile record of the cell without the rest of its tile
 	private void GiveWay( (int X, int Y) at, Action<int, int> giveWay )
 	{
-		var origin = Tracks.Get( at.X, at.Y );
-		if ( origin.IsOrigin && (origin.Flags & TrackCell.FlagAddOn) == 0 )
-			return;
-		foreach ( var (cx, cy) in TrackStation.TileCellsOf( at.X, at.Y ) )
+		foreach ( var (cx, cy) in GiveWayCells( at ) )
 		{
-			var cell = Tracks.Get( cx, cy );
-			if ( TrackCellTypes.IsStation( cell.Type ) || cell.IsExtension && TrackCellTypes.IsStation( Tracks.Get( Tracks.CellOf( cell.Parent ).X, Tracks.CellOf( cell.Parent ).Y ).Type ) )
-				continue;
 			giveWay( cx, cy );
 			if ( Tracks.Get( cx, cy ).Type != 0 )
 			{
 				Tracks.Clear( cx, cy );
 				Cells.SetType( cx, cy, ParkCellType.Empty );
 			}
+		}
+	}
+
+	/// <summary>
+	/// The adjacent cells whose objects and second-layer records a fresh station may demolish before its tile validation. The rights preflight uses the same gates as the writer:
+	/// an existing origin without an add-on skips the whole tile, and another station's origin and extension cells are spared. Enumerate before changing the park for a read-only plan.
+	/// </summary>
+	internal IEnumerable<(int X, int Y)> InitialStationGiveWayCells( TrackStation station ) => new[] { station.Exit, station.Entry }.SelectMany( GiveWayCells );
+
+	private IEnumerable<(int X, int Y)> GiveWayCells( (int X, int Y) at )
+	{
+		var origin = Tracks.Get( at.X, at.Y );
+		if ( origin.IsOrigin && (origin.Flags & TrackCell.FlagAddOn) == 0 )
+			yield break;
+		foreach ( var (cx, cy) in TrackStation.TileCellsOf( at.X, at.Y ) )
+		{
+			var cell = Tracks.Get( cx, cy );
+			if ( TrackCellTypes.IsStation( cell.Type ) || cell.IsExtension && TrackCellTypes.IsStation( Tracks.Get( Tracks.CellOf( cell.Parent ).X, Tracks.CellOf( cell.Parent ).Y ).Type ) )
+				continue;
+			yield return (cx, cy);
 		}
 	}
 

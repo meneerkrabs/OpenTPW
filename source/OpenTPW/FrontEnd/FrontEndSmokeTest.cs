@@ -2249,7 +2249,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		var matching = 0;
 		foreach ( var entry in drawn )
 		{
-			foreach ( var glyph in batch.Glyphs.Skip( entry.FirstGlyph ).Take( entry.GlyphCount ).Where( glyph => glyph.Color.A == 255 && glyph.Color != UiColors.Shadow ) )
+			foreach ( var glyph in batch.Glyphs.Skip( entry.FirstGlyph ).Take( entry.GlyphCount ).Where( glyph => glyph.Color.A == 255 ) )
 			{
 				// The renderer draws the smoothed coverage one texel per pixel (FontSmoothing).
 				var factor = FontSmoothing.Factor( glyph.Atlas, glyph.Scale );

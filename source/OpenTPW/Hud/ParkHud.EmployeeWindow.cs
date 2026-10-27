@@ -178,7 +178,7 @@ public sealed partial class ParkHud
 		}
 		var staffId = member.Id;
 		CloseEmployeeWindow();
-		Stack.Push( UiDialogs.Message( "confirmDismissStaff", () => strings[UIStrings.DismissEmployee],
+		Stack.Push( UiDialogs.MessageOfOriginalText( "confirmDismissStaff", () => strings[UIStrings.DismissEmployee],
 			(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); DismissStaff( staffId ); }),
 			(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 	}
@@ -241,7 +241,7 @@ public sealed partial class ParkHud
 			FeetInCanvas = EmployeePortraitGeometry.Feet( inner ), CanvasUnitsPerPixel = EmployeePortraitGeometry.CanvasUnitsPerPixel } );
 		var title = table.Control( 0x520 );
 		screen.Add( new UiLabel { Id = "title", Clicked = OpenEmployeeRenameDialog, Text = () => Employee is { } member ? StaffName( member ) : "", Help = strings.Help( title.Help ), Font = fonts => fonts.Title,
-			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = title.Rect, Anchor = UiAnchor.Center } );
+			Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = title.Rect, Anchor = UiAnchor.Center } );
 		// [BIN:TPW-EXE:0x004b53c0 stats frame] the labels take UITEXT 64 (0x51a), 65 (0x51d), 67 (0x519), 69 (0x518), 68 (0x51c) and 66 (0x516); the value 0x51b is text,
 		// 0x51e a money cell (0x490250), the bars 0x513 (happygrad.wct), 0x514 and 0x515 (ridestatbar.wct)
 		void Label( uint id, int text )

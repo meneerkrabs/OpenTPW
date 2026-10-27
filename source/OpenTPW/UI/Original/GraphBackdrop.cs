@@ -107,7 +107,7 @@ internal static class GraphBackdropRenderer
 			Fill( span, GraphBackdrop.Grid );
 			// Existing Small-font/centred text-box adapter; these glyphs do not establish native text raster equivalence.
 			context.DrawText( context.Fonts.Small, step.ToString( System.Globalization.CultureInfo.InvariantCulture ),
-				ToScreen( label, frame, pixel ), GraphBackdrop.Axis, UiAlign.Left, false, false );
+				ToScreen( label, frame, pixel ), GraphBackdrop.Axis, UiAlign.Left, false );
 		}
 		foreach ( var span in backdrop.HorizontalLines() ) Fill( span, GraphBackdrop.Grid );
 		Fill( backdrop.HorizontalAxis, GraphBackdrop.Axis );

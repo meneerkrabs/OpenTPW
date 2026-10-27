@@ -343,8 +343,10 @@ UI-029 docs/reverse/APPROX-TRACE.md
 UI-030 docs/reverse/APPROX-TRACE.md
 UI-032 docs/UI.md
 UI-033 docs/reverse/APPROX-TRACE.md
+UI-034 docs/UI.md
 UI-035 docs/reverse/PPC-review.md
 UI-036 docs/UI.md
+UI-037 docs/UI.md
 UI-038 docs/PROGRESS.md
 UI-039 docs/UI.md
 UI-040 docs/PROGRESS.md
@@ -397,3 +399,4 @@ WALK-006 docs/GUESTS.md
 WALK-007 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
+UI-007 docs/UI.md

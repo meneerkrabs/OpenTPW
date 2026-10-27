@@ -121,6 +121,20 @@ public class UiModelFitTests
 	}
 
 	[TestMethod]
+	public void AncestorTranslationsAccumulateDownTheChainAndStillCancelInTheFit()
+	{
+		// 0x57a530: a node's world matrix is its local matrix times the accumulated ancestors, translations included.
+		var model = Model( NMatrix4x4.CreateTranslation( 100, 0, 0 ), NMatrix4x4.CreateTranslation( 0, -50, 0 ), NMatrix4x4.CreateTranslation( 7, 0, 3 ) );
+		Assert.AreEqual( new NVector2( 130, 60 ), model.GetFrame( 0 ).Parts[0].Vertices[0].Position );
+		Assert.AreEqual( new NVector2( 130, 110 ), model.GetFrame( 1 ).Parts[0].Vertices[0].Position );
+		var last = model.GetFrame( 2 );
+		Assert.AreEqual( new NVector2( 137, 110 ), last.Parts[0].Vertices[0].Position );
+		Assert.AreEqual( 3f, last.Parts[0].Vertices[0].Depth );
+		Assert.AreEqual( new UiRect( 117, 70, 100, 200 ), last.FitBounds!.Value );
+		AssertPoints( PaddedPoints, Draw( last ) );
+	}
+
+	[TestMethod]
 	public void ReversedTransformedEndpointsAreOrderedWithoutRemovingVertexReflection()
 	{
 		var frame = Model( NMatrix4x4.CreateScale( -1, -1, 1 ) ).GetFrame( 0 );

@@ -54,6 +54,7 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>The average happiness byte of the guests on the cells within <paramref name="radius"/> of cell (<paramref name="x"/>, <paramref name="y"/>), 0 without guests.</summary>
+	// [BIN:TPW-EXE:0x4cd880 cell id and edges] the argument is the cell id (y << 7) + x + 1 (decremented at 0x4cd88e); the high edges x + radius and y + radius are clamped to 0x7f by an unsigned test (0x4cd8a7 ja, 0x4cd8c1 jbe), the low edges are not clamped (the loops start at x - radius and y - radius, signed), so a cell at the map's low edge reads the wrapped or out-of-table cell, which this port leaves out: it counts only cells inside the map
 	// [BIN:TPW-EXE:0x4cd880 local happiness] the cells x - radius..min(0x7f, x + radius) by y - radius..min(0x7f, y + radius) are walked through their thing lists; every thing of type 1 (a guest) adds the low byte of its float +0x19c (the happiness, ftol) to a sum and 1 to a count, and the result is sum / count (integer division), 0 when nothing was found
 	internal static int LocalHappiness( IEnumerable<(int X, int Y, float Happiness)> guests, int x, int y, int radius = 1 )
 	{

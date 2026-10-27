@@ -144,6 +144,11 @@ internal sealed partial class CoopLiveTest
 			foreach ( var step in HostManagement( guestName, seat ) )
 				yield return step;
 
+		// [EXT:online-coop-commands] the staff scenario (C4c-2)
+		if ( scenario == "staff" )
+			foreach ( var step in HostStaff( guestName, seat ) )
+				yield return step;
+
 		if ( scenario == "recovery" )
 			foreach ( var step in HostRecovery( guestName, avoid ) )
 				yield return step;

@@ -638,9 +638,15 @@ public sealed record RenameStaffCommand( int Staff, string Name ) : ParkSettingC
 	}
 }
 
-/// <summary>Dismisses the employee <paramref name="Staff"/> (the employee window's dismiss button).</summary>
+/// <summary>
+/// Dismisses the employee <paramref name="Staff"/> (the employee window's dismiss button). [EXT:online-coop-commands] An employee in another player's hand is not dismissed, and one in the
+/// issuing player's own hand leaves that hand with it (C4c).
+/// </summary>
 public sealed record FireStaffCommand( int Staff ) : ParkSettingCommand
 {
+	/// <summary>[EXT:online-coop-commands] The refusal of a dismissal of an employee another player carries (C4c).</summary>
+	public const string BeingMovedReason = "That employee is being moved.";
+
 	public override ParkCommandKind Kind => ParkCommandKind.FireStaff;
 	internal override bool IsWellFormed => Staff >= 0;
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Staff );
@@ -651,7 +657,12 @@ public sealed record FireStaffCommand( int Staff ) : ParkSettingCommand
 			return NoEconomy;
 		if ( economy.Staff.Members.All( member => member.Id != Staff ) )
 			return NoStaff( Staff );
+		if ( level.StaffHands?.HolderOf( Staff ) is { } holder && holder != Player )
+			return ParkCommandResult.Rejected( BeingMovedReason );
 		economy.Fire( Staff );
+		// a hand left holding a dismissed employee would carry its id into a join's capture, which the restore refuses
+		if ( level.StaffHands is { } hands && hands.HolderOf( Staff ) == Player )
+			hands.Empty( Player );
 		return ParkCommandResult.Ok();
 	}
 }
@@ -872,8 +883,9 @@ public sealed record ReleaseSeatCommand( int Seat ) : ParkSettingCommand
 	public override ParkCommandKind Kind => ParkCommandKind.ReleaseSeat;
 	internal override bool IsWellFormed => Seat > 0 && Seat < CoopJoinState.MaximumPlayerEntries;
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Seat );
-	// [EXT:online-coop-claims] and the claim the seat held (C3c-1); [EXT:online-coop-permissions] and every right it had (C4a)
-	internal override ParkCommandResult Execute( Level level ) => ParkCommandResult.Ok( level.ReleaseSeat( Seat ) | level.ReleaseClaimsOf( Seat ) | level.ReleaseSeatRights( Seat ) );
+	// [EXT:online-coop-claims] and the claim the seat held (C3c-1); [EXT:online-coop-permissions] its staff state (C4c) and every right it had (C4a)
+	internal override ParkCommandResult Execute( Level level ) =>
+		ParkCommandResult.Ok( level.ReleaseSeat( Seat ) | level.ReleaseClaimsOf( Seat ) | level.ReleaseStaffOf( Seat ) | level.ReleaseSeatRights( Seat ) );
 }
 
 /// <summary>

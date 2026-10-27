@@ -160,8 +160,11 @@ public class CoopJoinTests
 		// [EXT:online-coop-permissions] a seat's rights name a guest's seat: never the host's 0, never past the per-player bound; a row holds a right, and only one this build offers (C4a)
 		foreach ( var seat in new[] { 0, CoopJoinState.MaximumPlayerEntries } )
 			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { SeatRights = new[] { (seat, CoopRights.Build) } }).Encode() ), $"rights for seat {seat}" );
-		foreach ( var rights in new[] { CoopRights.None, CoopRights.Staff, CoopRights.Attractions | CoopRights.Staff, (CoopRights)0x80 } )
+		foreach ( var rights in new[] { CoopRights.None, (CoopRights)0x20, CoopRights.Attractions | (CoopRights)0x20, (CoopRights)0x80 } )
 			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { SeatRights = new[] { (2, rights) } }).Encode() ), $"a row of {rights}" );
+		// [EXT:online-coop-permissions] the staff right is offered since C4c-2
+		AssertSameState( state with { SeatRights = new[] { (2, CoopRights.Staff | CoopRights.Research) } },
+			CoopJoinState.Decode( (state with { SeatRights = new[] { (2, CoopRights.Staff | CoopRights.Research) } }).Encode() ) );
 		AssertSameState( state with { SeatRights = null }, CoopJoinState.Decode( (state with { SeatRights = null }).Encode() ) );
 		// [EXT:online-coop-permissions] the attractions right is offered since C4b-2
 		AssertSameState( state with { SeatRights = new[] { (2, CoopRights.Attractions | CoopRights.Build) } },
@@ -200,8 +203,9 @@ public class CoopJoinTests
 			Enter( park );
 			var commands = park.Level.Commands;
 			Assert.IsTrue( commands.Issue( new PickUpObjectCommand( park.One.Visitors.AttractionId ) ).Accepted, "a Move tool's pick-up: the carried entry" );
-			// an employee in the host's hand (the hands are the level's state, set as a pick-up's command sets them; a guest's seat carries one from C4c on)
+			// an employee in the host's hand (the hands are the level's state, set as a pick-up's command sets them: the hand and the picked-up state)
 			park.Level.StaffHands!.Carry( 0, park.Economy.Staff.Members.First().Id, (4, 1) );
+			park.Economy.Staff.Members.First().State = StaffState.PickedUp;
 			if ( park.Economy.Staff.Candidates.FirstOrDefault() is { } candidate )
 				Assert.IsTrue( commands.Issue( new BeginStaffHireCommand( candidate.Id ) ).Accepted, "a pending hire" );
 			park.Economy.Staff.StaleOnPointerId = 3;
@@ -231,26 +235,40 @@ public class CoopJoinTests
 		Assert.IsNotNull( state.SessionClockTicks );
 		CollectionAssert.AreEqual( new[] { (2, CoopRights.Build), (5, CoopRights.Build) }, state.SeatRights!.ToArray() );
 		Enter( twin );
-		// until C4c only the host's seat holds staff state: a guest seat's employee in hand or pending hire is refused before any of the state applies, as is a hire whose candidate the
-		// pool does not hold
+		// [EXT:online-coop-permissions] the staff rows are checked whole before any of the state applies (C4c)
+		var (held, hand) = (state.StaffHands.Single().Staff, state.StaffHands.Single());
+		var notHeld = twin.Economy.Staff.Members.First( member => member.Id != held ).Id;
+		var hires = state.PendingHires.ToArray();
+		var spare = twin.Economy.Staff.Candidates.Select( candidate => candidate.Id ).FirstOrDefault( id => hires.All( row => row.Candidate != id ) );
+		Assert.AreNotEqual( 0, spare, "a candidate no seat places" );
 		foreach ( var (malformed, what) in new[]
 		{
-			(state with { StaffHands = state.StaffHands.Append( (2, twin.Economy.Staff.Members.Last().Id, 6, 1) ).ToArray() }, "a guest seat's employee in hand"),
+			(state with { StaffHands = state.StaffHands.Append( (2, held, 6, 1) ).ToArray() }, "an employee in two hands"),
+			(state with { StaffHands = new[] { (2, held, hand.X, hand.Y) }, PendingHires = hires.Append( (2, spare) ).ToArray() }, "a guest seat with a hand and a pending hire"),
+			(state with { StaffHands = new[] { (0, notHeld, 4, 1) } }, "an employee the park does not hold picked up"),
+			(state with { StaffHands = new[] { (0, held, 999, 1) } }, "a hand from outside the grid"),
+			(state with { StaffHands = new[] { (CoopJoinState.MaximumPlayerEntries, held, 4, 1) } }, "a hand of no seat"),
+			(state with { PendingHires = new[] { (2, spare), (3, spare) } }, "a candidate reserved twice"),
+			(state with { PendingHires = new[] { (2, spare), (2, hires.Length > 0 ? hires[0].Candidate : spare) } }, "a seat with two pending hires"),
 			(state with { StaffHands = new[] { (1, 0, 0, 0) } }, "a zero-id guest hand"),
 			(state with { StaffHands = new[] { (1, 0, 0, 0), (2, twin.Economy.Staff.Members.Last().Id, 6, 1) } }, "a zero-id guest hand before another guest's employee"),
-			(state with { PendingHires = new[] { (2, 77) } }, "a guest seat's pending hire"),
 			(state with { PendingHires = new[] { (0, 9999) } }, "a candidate the pool does not hold")
 		} )
 		{
-			// The wire accepts a zero staff id; it must not hide a guest row from C4a's host-only restore check.
-			var fromWire = CoopJoinState.Decode( malformed.Encode() );
-			Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( fromWire ), what );
+			// Check the direct restore as well as the wire path: decoding may reject duplicates earlier, while a zero staff id reaches the whole-row restore check.
+			Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( malformed ), what );
+			Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( CoopJoinState.Decode( malformed.Encode() ) ), what + ": from wire" );
 			Assert.AreEqual( (0, 0), (twin.Level.SeatRights.Count, twin.Level.StaffHands!.All.Count()), $"{what}: nothing applied" );
 		}
 		twin.Level.ApplyJoinState( state );
 		CollectionAssert.AreEqual( new[] { 2, 5 }, twin.Level.BuildGrants.ToArray() );
 		Assert.AreEqual( digest, CoopDigest.Compute( twin.Level, out var twinWorld ), "the session state brought back what the digest covers beyond the save" );
 		Assert.AreEqual( world, twinWorld );
+		// a guest's seat's employee in hand and another's pending hire restore (C4c), and the digest covers them
+		twin.Level.ApplyJoinState( state with { StaffHands = new[] { (2, held, hand.X, hand.Y) }, PendingHires = new[] { (3, spare) } } );
+		Assert.AreEqual( (held, spare), (twin.Level.StaffHands!.Of( 2 )!.Value.Staff, twin.Economy.Staff.PendingHireOf( 3 )) );
+		Assert.AreNotEqual( digest, CoopDigest.Compute( twin.Level ) );
+		twin.Level.ApplyJoinState( state );
 		Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( state with { CoastersBeingEdited = new[] { 999 } } ), "a coaster the park does not hold" );
 		Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( state with { CoasterUnheldCells = new[] { (999, 1, 1, true) } } ),
 			"marker cells of a coaster the park does not hold" );

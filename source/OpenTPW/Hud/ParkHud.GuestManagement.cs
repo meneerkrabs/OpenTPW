@@ -77,6 +77,17 @@ public sealed partial class ParkHud
 	private int DrawnResearchEffort( ResearchCategory category ) =>
 		PendingManagement( ManagementTarget.Research, ManagementKnob.Effort( category ) ) is SetResearchEffortCommand effort ? effort.Effort : ResearchEconomy?.Research.Effort[(int)category] ?? 0;
 
+	/// <summary>[EXT:online-coop-commands] An employee's name as its window draws it: a guest's latest rename not resolved yet, else null (the park's, C4c-2).</summary>
+	private string? DrawnStaffName( StaffMember member ) => PendingManagement( ManagementTarget.Staff( member.Id ), ManagementKnob.StaffName ) is RenameStaffCommand rename ? rename.Name : null;
+
+	/// <summary>[EXT:online-coop-commands] Whether an employee is drawn with a patrol area of its own: a guest's latest set or clear not resolved yet, else the park's (C4c-2).</summary>
+	private bool DrawnHasPatrolArea( StaffMember member ) =>
+		PendingManagement( ManagementTarget.Staff( member.Id ), ManagementKnob.Patrol ) is SetPatrolAreaCommand patrol ? !patrol.Clear : member.HasPatrolArea;
+
+	/// <summary>[EXT:online-coop-commands] A role's training budget as its row draws it: a guest's latest budget not resolved yet, else the park's (C4c-2).</summary>
+	private long DrawnTrainingBudget( StaffType role ) =>
+		PendingManagement( ManagementTarget.Training, ManagementKnob.TrainingBudget( role ) ) is SetTrainingBudgetCommand budget ? budget.Budget : FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0;
+
 	/// <summary>The lab's workload as the knob projects it: a guest's latest workload not resolved yet, else the lab's.</summary>
 	private int DrawnResearchWorkload =>
 		PendingManagement( ManagementTarget.Research, ManagementKnob.Workload ) is SetResearchWorkloadCommand workload ? workload.Workload : ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload;
@@ -101,7 +112,8 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// Once a frame, after the screens took the frame's input (and under the research finale): the door's outcomes (the advisor's event of an accepted one, whichever HUD queued it), the loans
-	/// window's refreshes (each refills the list of the tab shown), the waiting loan confirmation's outcome, then the notes nobody waits for; every note is said once its messages can be seen.
+	/// window's refreshes (each refills the list of the tab shown), the waiting loan and dismissal confirmations' outcomes, then the notes nobody waits for; every note is said once its messages
+	/// can be seen.
 	/// </summary>
 	private void CompleteGuestManagement()
 	{
@@ -123,6 +135,10 @@ public sealed partial class ParkHud
 		if ( loanConfirmation is { } waiting )
 			foreach ( var outcome in waiting.Waiter.Queue.TakeOutcomes( waiting.Waiter ) )
 				CompleteLoanConfirmation( waiting.Screen, waiting.Waiter, outcome );
+		// [EXT:online-coop-commands] the waiting dismissal confirmation's (C4c-2)
+		if ( dismissalConfirmation is { } dismissal )
+			foreach ( var outcome in dismissal.Waiter.Queue.TakeOutcomes( dismissal.Waiter ) )
+				CompleteDismissalConfirmation( dismissal.Screen, dismissal.Waiter, outcome );
 		// [EXT:online-coop-commands] the upgrade list's waiting row (C4b-2)
 		CompleteGuestUpgrade();
 		SayManagementNotes();
@@ -180,6 +196,7 @@ public sealed partial class ParkHud
 		ManagementNoteKind.InsufficientFunds => strings[UIStrings.InsufficientFunds],
 		ManagementNoteKind.NotAvailable => strings.Extra( OpenTpwText.NotAvailable ),
 		ManagementNoteKind.NotTaken => strings.Extra( OpenTpwText.CoopRequestNotTaken ),
+		ManagementNoteKind.BeingMoved => strings.Extra( OpenTpwText.CoopStaffBeingMoved ),
 		_ => strings.Extra( OpenTpwText.CoopRequestUnknown )
 	};
 

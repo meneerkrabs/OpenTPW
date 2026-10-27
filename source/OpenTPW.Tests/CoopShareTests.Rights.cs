@@ -38,7 +38,7 @@ public partial class CoopShareTests
 		Element<UiButton>( stack, $"rights{row}" ).Clicked!();
 		Assert.AreEqual( UI.OnlineScreens.SeatRightsScreenName, stack.Top!.Name );
 		Assert.AreEqual( string.Format( English( OpenTpwText.CoopRightsTitle ), "Guest" ), Element<UiLabel>( stack, "title" ).Text!() );
-		CollectionAssert.AreEqual( new[] { "rightBuild", "rightAttractions", "rightResearch", "rightFinance" },
+		CollectionAssert.AreEqual( new[] { "rightBuild", "rightAttractions", "rightStaff", "rightResearch", "rightFinance" },
 			stack.Top.Elements.OfType<UiButton>().Select( button => button.Id ).Where( id => id.StartsWith( "right" ) ).ToArray(), "one switch per offered right" );
 		// each switch draws the park's applied bit and turns it over
 		foreach ( var right in CoopRightsOffer.Each )
@@ -52,12 +52,13 @@ public partial class CoopShareTests
 		}
 		Element<UiButton>( stack, "rightResearch" ).Clicked!();
 		Element<UiButton>( stack, "rightAttractions" ).Clicked!();
-		Assert.AreEqual( CoopRights.Build | CoopRights.Finance, level.RightsOf( seat ), "research and the attractions taken back alone" );
+		Assert.AreEqual( CoopRights.Build | CoopRights.Staff | CoopRights.Finance, level.RightsOf( seat ), "research and the attractions taken back alone" );
 		// closed, the row names the rights given
 		Element<UiButton>( stack, "back" ).Clicked!();
 		Assert.AreEqual( UI.OnlineScreens.BuildTogetherScreenName, stack.Top!.Name );
 		Update( stack );
-		Assert.AreEqual( $"{English( OpenTpwText.CoopRightBuilding )}, {English( OpenTpwText.CoopRightFinance )}", Element<UiButton>( stack, $"rights{row}" ).Text!() );
+		Assert.AreEqual( $"{English( OpenTpwText.CoopRightBuilding )}, {English( OpenTpwText.CoopRightStaff )}, {English( OpenTpwText.CoopRightFinance )}",
+			Element<UiButton>( stack, $"rights{row}" ).Text!() );
 		// a member that left closes its dialog, which sends nothing more
 		Element<UiButton>( stack, $"rights{row}" ).Clicked!();
 		Assert.AreEqual( UI.OnlineScreens.SeatRightsScreenName, stack.Top!.Name );

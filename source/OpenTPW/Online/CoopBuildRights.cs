@@ -44,6 +44,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 			// only drops its own seat's claim, which a track tool lets go once it left its ride, the grant taken back or not (C3c-1)
 			CoopCommandClass.SeatCleanup => true,
 			CoopCommandClass.GuestBuilding => level.HasBuildGrant( player ) && Builds( command ) && HoldsClaimFor( player, command ) && LeavesClaimsAlone( player, command ),
+			// [EXT:online-coop-permissions] the seat's own employee dropped back where it was picked up is every seat's cleanup, the staff right taken back or not (C4c)
+			CoopCommandClass.Staff when IsOwnOriginDrop( player, command ) => true,
 			// [EXT:online-coop-permissions] a management right this build does not offer is refused whatever the seat's rights hold (C4a); [EXT:online-coop-claims] with the attractions right,
 			// a ride another seat claims is still refused (C4b-2)
 			var management when RightOf( management ) is { } right => CoopRightsOffer.Offered.HasFlag( right ) && level.RightsOf( player ).HasFlag( right )
@@ -86,6 +88,13 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		_ => throw new ArgumentOutOfRangeException( nameof( kind ), kind, "Every command kind has a class of the shared park's rights." )
 	};
 
+	/// <summary>
+	/// [EXT:online-coop-permissions] A drop of the employee in <paramref name="player"/>'s own hand on exactly the cell it was picked up from (C4c): every seat's cleanup, with or without the
+	/// staff right, so a drop back racing the right's withdrawal is never refused; a drop anywhere else needs the right.
+	/// </summary>
+	private bool IsOwnOriginDrop( int player, ParkCommand command ) =>
+		command is DropStaffCommand drop && level.StaffHands?.Of( player ) is { } hand && hand.Staff == drop.Staff && (hand.X, hand.Y) == (drop.X, drop.Y);
+
 	/// <summary>[EXT:online-coop-permissions] The right a management class needs (C4a), or null for a class that is no right's.</summary>
 	internal static CoopRights? RightOf( CoopCommandClass @class ) => @class switch
 	{
@@ -120,6 +129,7 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	public string? RefusalReason( int player, ParkCommand command ) => player == ParkCommands.LocalPlayer
 		? !IsHostCleanup( command ) && !LeavesClaimsAlone( player, command ) ? Level.ClaimedReason : null
 		: player <= 0 ? null
+		: IsOwnOriginDrop( player, command ) ? null
 		: RightOf( ClassOf( command.Kind ) ) is { } right ? !CoopRightsOffer.Offered.HasFlag( right ) || !level.RightsOf( player ).HasFlag( right ) ? NotPermittedReason
 			: !LeavesAttractionClaimsAlone( player, command ) ? Level.ClaimedReason : null
 		: !Builds( command ) ? null

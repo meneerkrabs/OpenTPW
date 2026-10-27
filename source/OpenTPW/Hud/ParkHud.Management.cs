@@ -103,7 +103,8 @@ public sealed partial class ParkHud
 			var plus = row.Children.First( node => node.Model == "b_plus" );
 			screen.Add( new UiModelImage { Id = $"row{role}", Model = row.Model!, Bounds = row.Rect, Anchor = UiAnchor.Center } );
 			screen.Add( new UiModelImage { Id = $"icon{role}", Model = icon.Model!, Bounds = icon.Rect, Anchor = UiAnchor.Center } );
-			screen.Add( new UiLabel { Id = $"budget{role}Value", Text = () => FormatMoney( FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0 ), Font = fonts => fonts.Label,
+			// [EXT:online-coop-commands] a guest's row draws the budget it asked for until it comes back, and its buttons step from it (C4c-2)
+			screen.Add( new UiLabel { Id = $"budget{role}Value", Text = () => FormatMoney( DrawnTrainingBudget( role ) ), Font = fonts => fonts.Label,
 				Color = UiColors.Text, Align = UiAlign.Center, Fit = true, Bounds = row.Inner!.Value, Anchor = UiAnchor.Center } );
 			var gauge = row.Children.First( node => node.Type == 9 );
 			screen.Add( new UiGaugeBar { Id = $"skill{role}", Value = () => trainingGaugeFills[(int)role],
@@ -112,9 +113,15 @@ public sealed partial class ParkHud
 			{
 				var step = delta;
 				var button = screen.Add( new UiButton { Id = $"budget{role}" + (step < 0 ? "Decrease" : "Increase"), Model = node.Model, Help = strings.Help( row.Help ),
-					Clicked = () => { var current = FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0; var next = StepTrainingBudget( current, step ); if ( next != current ) TrySetStaffTrainingBudget( level, role, next ); },
+					Clicked = () =>
+					{
+						var current = DrawnTrainingBudget( role );
+						var next = StepTrainingBudget( current, step );
+						if ( next != current )
+							IssueManagement( ManagementTarget.Training, ManagementKnob.TrainingBudget( role ), new SetTrainingBudgetCommand( role, next ) );
+					},
 					Bounds = node.Rect, Anchor = UiAnchor.Center } );
-				adjustmentButtons.Add( (button, () => step < 0 ? (FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0) > 0 : true) );
+				adjustmentButtons.Add( (button, () => step < 0 ? DrawnTrainingBudget( role ) > 0 : true) );
 			}
 		}
 		void Close() { if ( Stack.Top == screen ) Stack.Pop(); }
@@ -232,8 +239,9 @@ public sealed partial class ParkHud
 				var type = role;
 				var y = 370 + (int)role * 95;
 				Label( $"role{role}", () => StaffRole( type ), Rect( 370, y, 1000, y + 75 ) );
-				Adjustment( $"budget{role}", y, () => FinanceEconomy?.Staff.GetTrainingBudget( type ) ?? 0,
-					value => TrySetStaffTrainingBudget( level, type, value ) );
+				// [EXT:online-coop-commands] a guest's budget is drawn as asked until it comes back, and each step counts from it (C4c-2)
+				Adjustment( $"budget{role}", y, () => DrawnTrainingBudget( type ),
+					value => IssueManagement( ManagementTarget.Training, ManagementKnob.TrainingBudget( type ), new SetTrainingBudgetCommand( type, value ) ) );
 			}
 		}
 		void Close() { if ( Stack.Top == screen ) Stack.Pop(); }

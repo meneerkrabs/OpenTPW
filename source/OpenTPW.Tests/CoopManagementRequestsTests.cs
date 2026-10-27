@@ -11,7 +11,7 @@ namespace OpenTPW.Tests;
 /// nobody waits for, a batch checked whole, and the session's end. The requests are the test's to resolve, as the session's ledger resolves them (<see cref="CoopManagementRequests.Resolved"/>).
 /// </summary>
 [TestClass]
-public class CoopManagementRequestsTests
+public partial class CoopManagementRequestsTests
 {
 	/// <summary>The test's issuer: the rights it answers and the requests it made.</summary>
 	private sealed class Issuer : IManagementIssuer

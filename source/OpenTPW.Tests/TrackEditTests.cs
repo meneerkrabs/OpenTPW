@@ -47,6 +47,8 @@ public class TrackEditTests
 				Assert.IsTrue( Walk().IsValid, "the loop is a valid circuit" );
 			}
 			Editor = new TrackEditor( Builder, Station, new TrackEditHooks { TileCleared = at => Refunded.Add( at ), RemoveAddOn = at => AddOnsRemoved.Add( at ) } );
+			// the edit tool's hover keeps the ride's anchor in the exit globals (0x527A17); the line tool's tests ask for the exit tile
+			Editor.UseEditToolExit();
 		}
 
 		public TrackCellLayer Tracks => Builder.Tracks;
@@ -138,15 +140,36 @@ public class TrackEditTests
 	}
 
 	[TestMethod]
-	public void TheStationTileDropsItsArmToAMissingTileAndTakesItBackWhenATileIsLaidThere()
+	public void TheRepairFixesTheExitTileNotTheFirstStationTile()
 	{
 		var rig = new Rig();
-		rig.Builder.EraseTile( 8, 10 );
+		rig.Editor.UseLineToolExit();
+		Assert.AreEqual( 0x50, rig.Tracks.Get( 14, 10 ).Mask, "the exit tile has the arm toward the station tile and the one toward the line" );
+		rig.Builder.EraseTile( 14, 12 );
 		rig.Editor.RepairStation();
-		Assert.AreEqual( 0x04, rig.Tracks.Get( 10, 10 ).Mask, "an arm toward a cell without track goes (0x52FD6B)" );
-		rig.Builder.PlaceTile( 8, 10, rig.Builder.OwnerOf( rig.Station ) );
-		Assert.AreEqual( 0x44, rig.Tracks.Get( 10, 10 ).Mask, "a tile laid on the station's axis joins it again" );
-		Assert.AreEqual( 0x04, rig.Tracks.Get( 8, 10 ).Mask & 0x44, "and takes the arm toward it" );
+		Assert.AreEqual( 0x40, rig.Tracks.Get( 14, 10 ).Mask, "an arm toward a cell without track goes (0x52FD6B)" );
+		Assert.AreEqual( 0x44, rig.Tracks.Get( 10, 10 ).Mask & 0x44, "the first station tile is not the repair's tile" );
+		var exit = rig.Tracks.Get( 14, 10 );
+		exit.Mask &= 0x10;
+		exit.Mask |= 0x10;
+		exit.Mask &= unchecked( (byte)~0x40 );
+		exit.Link = 0;
+		rig.Tracks.Set( 14, 10, exit );
+		rig.Editor.RepairStation();
+		Assert.AreEqual( 0x40, rig.Tracks.Get( 14, 10 ).Mask & 0x40, "an arm toward a station tile of the ride that the exit tile lacks comes back (0x52FD73)" );
+	}
+
+	[TestMethod]
+	public void TheEditToolsExitIsTheAnchorSoItsRepairDoesNothing()
+	{
+		var rig = new Rig();
+		rig.Editor.UseEditToolExit();
+		Assert.AreEqual( rig.Station.Anchor, rig.Editor.ToolExit );
+		Assert.AreEqual( (10, 9), rig.Station.Anchor );
+		rig.Builder.EraseTile( 14, 12 );
+		var before = rig.Tracks.Get( 14, 10 );
+		rig.Editor.RepairStation();
+		Assert.AreEqual( before, rig.Tracks.Get( 14, 10 ), "the anchor is no track tile (0x53AD30), so the repair finds nothing to do (0x526B67)" );
 	}
 
 	[TestMethod]
@@ -165,7 +188,7 @@ public class TrackEditTests
 		Assert.IsTrue( rig.Walk().IsValid );
 		var cut = rig.Editor.Cut( (14, 10), (14, 14), commit: true );
 		Assert.IsFalse( cut.Failed );
-		CollectionAssert.AreEqual( new[] { (14, 14) }, cut.Cleared.ToArray(), "the crossing and protected exit are not cleared" );
+		CollectionAssert.AreEqual( new[] { (14, 10), (14, 14) }, cut.Cleared.ToArray(), "the crossing is not cleared; the exit tile is, as during a cut no tile is the exit (0x527A17 writes the anchor there)" );
 		Assert.IsTrue( rig.Laid( 14, 12 ), "it stays with the cross line" );
 		Assert.AreEqual( 0x44, rig.Tracks.Get( 14, 12 ).Mask, "the arms along the cut went, the arms of the other pass stay" );
 		Assert.AreEqual( 0, rig.Tracks.Get( 14, 12 ).Overlap, "one pass counted down" );

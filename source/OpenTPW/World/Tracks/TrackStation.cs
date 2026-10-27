@@ -35,6 +35,32 @@ public readonly record struct TrackStation( int Rotation, byte Heading, (int X, 
 		}
 	}
 
+	/// <summary>
+	/// The ride's anchor cell (the original's attraction cell <c>0x7639A4/A8</c>), the cell <see cref="FromPlacement"/> was given: the edit tool's hover keeps it in the exit globals
+	/// (<see cref="TrackEditor.ToolExit"/>). A legacy station is searched for the anchor that gives its layout.
+	/// </summary>
+	public (int X, int Y) Anchor
+	{
+		get
+		{
+			var (x, y) = Rotation switch
+			{
+				0 => (First.X, First.Y - 1),
+				90 => (First.X - 1, First.Y + 1),
+				180 => (First.X + 1, First.Y + 2),
+				270 => (First.X + 2, First.Y),
+				_ => First
+			};
+			if ( !Legacy )
+				return (x, y);
+			for ( var dy = -4; dy <= 4; dy++ )
+				for ( var dx = -4; dx <= 4; dx++ )
+					if ( FromPlacementLegacy( x + dx, y + dy, Rotation ).First == First )
+						return (x + dx, y + dy);
+			return (x, y);
+		}
+	}
+
 	/// <summary>The origin cells of both station tiles in circuit order.</summary>
 	public IEnumerable<(int X, int Y)> Tiles
 	{

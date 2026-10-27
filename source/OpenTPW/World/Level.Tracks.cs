@@ -443,8 +443,11 @@ public partial class Level
 	/// The edit tool on <paramref name="station"/>'s closed circuit; [EXT:online-coop-commands] its cut is a command (<see cref="CutTrackCommand"/>), a guest's a request whose outcome finishes the edit
 	/// (C3c-1b), and the tool moves on from the cut's walk.
 	/// </summary>
-	private void EnterTrackEditTool( OriginalObject station, TrackEditor editor ) =>
+	private void EnterTrackEditTool( OriginalObject station, TrackEditor editor )
+	{
+		editor.UseEditToolExit();
 		CellTool.Enter( new TrackEditWriter( editor, BuilderOf( station )!.Family, _ => { }, CancelTrackTool, ( first, second ) => SendTrackCut( station, editor, first, second ) ), null );
+	}
 
 	/// <summary>
 	/// The line tool from the open end of <paramref name="station"/>'s track; [EXT:online-coop-commands] its lines and their undo are commands (<see cref="ParkCommandTrackWriter"/>), and a walk that finds the
@@ -529,7 +532,7 @@ public partial class Level
 	/// Runs a track line command (<see cref="LayTrackLineCommand"/>, <see cref="UndoTrackLineCommand"/>) for the ride whose attraction id is <paramref name="ride"/>: the ride's line writer lays the line from
 	/// <paramref name="start"/> toward <paramref name="end"/>, or with <paramref name="undo"/> its editor takes that line back, and a change walks the circuit again (<see cref="WalkTrack"/>).
 	/// </summary>
-	internal ParkCommandResult ExecuteTrackLine( int ride, (int X, int Y) start, (int X, int Y) end, bool undo )
+	internal ParkCommandResult ExecuteTrackLine( int ride, (int X, int Y) start, (int X, int Y) end, bool undo, bool last = false )
 	{
 		if ( waterTracks == null || ResolveCommandObject( ride ) is not { } station || !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
 			return ParkCommandResult.Rejected( $"Attraction {ride} lays no kart or water track." );
@@ -537,7 +540,7 @@ public partial class Level
 		var writer = new TrackLineWriter( builder, () => walked = WalkTrack( station, TrackWalkCause.Line ), builder.OwnerOf( layout ), TrackEditorOf( station, layout, builder ) );
 		SegmentResult? segment = null;
 		if ( undo )
-			writer.Undo( new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start } );
+			writer.Undo( new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start, IsFirstLine = last } );
 		else
 			segment = writer.Commit( start, end );
 		return ParkCommandResult.Ok( new TrackLineDone( segment, walked?.IsValid ) );

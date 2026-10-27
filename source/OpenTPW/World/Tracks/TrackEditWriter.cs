@@ -137,6 +137,8 @@ public sealed class TrackEditWriter : ICellLineWriter
 		if ( editor.Pick( first.X, first.Y ) is not (TrackEditPick.Accepted, { } a) || editor.Pick( second.X, second.Y ) is not (TrackEditPick.Accepted, { } b) )
 			return null;
 		var (low, high) = editor.StepOf( b ) < editor.StepOf( a ) ? (b, a) : (a, b);
+		// the hover of the edit tool keeps the ride's anchor in the exit globals (0x527A17): during the cut no tile is the exit
+		editor.UseEditToolExit();
 		var done = editor.Cut( low, high, commit: true );
 		editor.RepairStation();
 		return done;

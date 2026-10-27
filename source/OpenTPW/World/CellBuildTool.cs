@@ -344,6 +344,8 @@ public sealed class CellBuildTool
 		if ( Writer == null || segments.Count == 0 || IsWaiting || !Writer.CanUndo )
 			return false;
 		var segment = segments[^1];
+		// [BIN:TPW-EXE:0x0052FF73 last line flag] the pop that leaves one point on the stack sets the repair's flag
+		segment.IsFirstLine = vertices.Count == 2;
 		// [EXT:online-coop-commands] a guest's Backspace in its track tool goes to the host first, under the ride's claim (C3c-1b): the segment stays until the outcome takes it back
 		if ( Writer is IGuestUndoWriter { UndoesByRequest: true } sender )
 		{

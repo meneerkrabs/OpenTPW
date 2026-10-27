@@ -77,7 +77,7 @@ public class ParkCommandCodecTests
 		(new PlacePoolBridgeCommand( 12, 14, 1 ), "024c00181c02"),
 		(new RemovePoolBridgeCommand( 12, 14 ), "024d00181c"),
 		(new LayTrackLineCommand( 17, 40, 50, 40, 56 ), "0250002250645070"),
-		(new UndoTrackLineCommand( 17, 40, 50, 40, 56 ), "0251002250645070"),
+		(new UndoTrackLineCommand( 17, 40, 50, 40, 56, true ), "025100225064507001"),
 		(new CutTrackCommand( 17, 40, 50, 44, 50 ) { Player = 1 }, "0252022250645864"),
 		(new OpenTrackLineToolCommand( 17 ), "02530022"),
 		// the coaster tool (C1 part 3b)

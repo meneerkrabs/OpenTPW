@@ -47,7 +47,7 @@ public abstract record ParkToolCommand : ParkCommand
 		ParkCommandKind.PoolCells => new PoolCellsCommand( reader.Bool(), reader.Bool(), reader.Cells() ),
 		ParkCommandKind.LayPoolSlidePieces => new LayPoolSlidePiecesCommand( reader.Int(), reader.Int(), reader.Cells() ),
 		ParkCommandKind.LayTrackLine => new LayTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
-		ParkCommandKind.UndoTrackLine => new UndoTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
+		ParkCommandKind.UndoTrackLine => new UndoTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Bool() ),
 		ParkCommandKind.CutTrack => new CutTrackCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 		ParkCommandKind.OpenTrackLineTool => new OpenTrackLineToolCommand( reader.Int() ),
 		ParkCommandKind.BeginCoasterTool => new BeginCoasterToolCommand( reader.Int() ),

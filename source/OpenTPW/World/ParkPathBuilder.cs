@@ -40,6 +40,8 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 	public IReadOnlyList<(int X, int Y)> Existing { get; init; } = Array.Empty<(int X, int Y)>();
 	/// <summary>The refused cell, when <see cref="StoppedBy"/> is a refusal.</summary>
 	public (int X, int Y)? StoppedAt { get; init; }
+	/// <summary>True for the segment the tool's stack holds first (taking it back leaves one point, the original's repair flag <c>0x52FF73</c>); the tool sets it when Backspace takes the segment.</summary>
+	public bool IsFirstLine { get; internal set; }
 	/// <summary>
 	/// The 2 x 2 tiles a track edit ghost draws as one symbol face each (<see cref="BlueprintMarker.Break"/> for a tile the edit tool can pick, <see cref="BlueprintMarker.Erase"/> for a tile of the cut), by the
 	/// tile's origin cell; their cells are left out of the per-cell marks.

@@ -48,6 +48,20 @@ public sealed class TrackEditor
 	private readonly TrackStation station;
 	private readonly TrackEditHooks hooks;
 
+	/// <summary>
+	/// The tile the original's globals <c>0x7639E0/E4</c> name, which the clear op, its exit tail, the end re-link and the station repair treat as "the exit". The line tool, Backspace and the
+	/// demolition run with the ride's exit tile (<see cref="TrackStation.Exit"/>: the ride select <c>0x5276D0</c> and the placement write it through <c>0x52A3A0</c>); the edit tool's hover
+	/// (<c>0x527960</c> at <c>0x527A17</c>, every frame) writes the ride's raw anchor cell there instead, so during a cut no tile is the exit (<see cref="UseEditToolExit"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00527A17 hover exit] the hover copies the ride anchor 0x7639A4/A8 into 0x7639E0/E4 and 0x7639E8/EC without the 0x52A3A0/0x52A420 mapping (only its local copies go through them, 0x527A41, and the entry 0x7639E8 is set right at 0x527A5F); the line tool's tool start (0x5276D0 at 0x52788A, the placement at 0x5255F0 then 0x52A3A0) leaves the exit tile there
+	public (int X, int Y) ToolExit { get; private set; }
+
+	/// <summary>The edit tool's hover is running: <see cref="ToolExit"/> is the ride's anchor cell, which is no track tile (a cut may clear the exit tile, the exit tail never runs, the repair after it finds no track).</summary>
+	public void UseEditToolExit() => ToolExit = station.Anchor;
+
+	/// <summary>The line tool, Backspace and the demolition: <see cref="ToolExit"/> is the ride's exit tile.</summary>
+	public void UseLineToolExit() => ToolExit = station.Exit;
+
 	/// <param name="builder">The ride's family builder over the level's track layer.</param>
 	/// <param name="station">The ride's station: its exit tile (<c>0x7639E0/E4</c>) and the entry tile (<c>0x7639E8/EC</c>) are the tiles a clear spares.</param>
 	/// <param name="hooks">Refunds and add-on removals; null for a headless cut.</param>
@@ -56,6 +70,7 @@ public sealed class TrackEditor
 		this.builder = builder ?? throw new ArgumentNullException( nameof( builder ) );
 		this.station = station;
 		this.hooks = hooks ?? new TrackEditHooks();
+		ToolExit = station.Exit;
 	}
 
 	private TrackCellLayer Tracks => builder.Tracks;
@@ -157,10 +172,8 @@ public sealed class TrackEditor
 	// [EXT:track-open-end-guard] a cell that is no track tile ends the walk at the last tile (at the exit cell when the track is empty) where the original would walk on over the empty cells for as long as the grid goes
 	public TrackOpenEnd FindOpenEnd()
 	{
+		// the stack stays as the collector leaves it: a walk that ends at the exit leaves the exit twice, and Backspace takes the zero-length line back with the step (0, 0) (UndoLine)
 		var (corners, last, reached) = CollectForward();
-		// The initial exit is a vertex, not a zero-length segment to undo (the original pushes it twice, see CollectForward). Keep genuine repeated corner points.
-		if ( corners.Count == 2 && corners[0] == station.Exit && corners[1] == station.Exit && last == station.Exit )
-			corners.RemoveAt( 1 );
 		return new TrackOpenEnd( last, corners, reached );
 	}
 
@@ -255,7 +268,7 @@ public sealed class TrackEditor
 				if ( (heading & cell.Mask) == 0 )
 					stop = true;
 			}
-			if ( position == station.Exit )
+			if ( position == ToolExit )
 				cell.Overlap = 0;
 			Tracks.Set( position.X, position.Y, cell );
 			if ( heading != 0 && Origin( Step( position, heading ) ) is { } ahead
@@ -280,6 +293,7 @@ public sealed class TrackEditor
 	public void EnterLineTool( CellBuildTool tool, Action? changed = null, Func<ICellLineWriter, ICellLineWriter>? wrap = null, TrackOpenEnd? walked = null )
 	{
 		ArgumentNullException.ThrowIfNull( tool );
+		UseLineToolExit();
 		var open = walked ?? FindOpenEnd();
 		// [BIN:TPW-EXE:0x00530A87 collector end] the end of the walk is pushed only while the stack has room (a count of at most 0x400), so a walk that recorded 0x401 corner points leaves the stack without it and the tool starts at the end all the same (0x81EDE4/E8): the stack is the collector's, as the original keeps it
 		var corners = open.Corners.Count == 0 ? new[] { open.End } : open.Corners;
@@ -303,8 +317,10 @@ public sealed class TrackEditor
 			|| (segment.SnappedEnd.X - segment.Start.X) % TrackStation.TileCells != 0
 			|| (segment.SnappedEnd.Y - segment.Start.Y) % TrackStation.TileCells != 0 )
 			return;
+		UseLineToolExit();
 		ReplayLine( segment.SnappedEnd, segment.Start, replay: false, cleared: null );
-		RepairStation();
+		// [BIN:TPW-EXE:0x00530005 repair after a pop] every pop repairs the exit tile (0x52FC80), with the flag set when the stack holds one point after the pop (0x52FF73)
+		RepairStation( segment.IsFirstLine );
 	}
 
 	/// <summary>
@@ -319,7 +335,7 @@ public sealed class TrackEditor
 		foreach ( var at in line )
 		{
 			var cell = Tracks.Get( at.X, at.Y );
-			if ( !cell.IsOrigin || cell.Type != builder.OriginType && !(replay && TrackCellTypes.IsStation( cell.Type )) || !(cell.Owner == Owner || cell.Owner == 0 || Owner == 0) )
+			if ( !cell.IsOrigin || cell.Type != builder.OriginType && !TrackCellTypes.IsStation( cell.Type ) || !(cell.Owner == Owner || cell.Owner == 0 || Owner == 0) )
 				continue;
 			if ( ClearCell( at, dx, dy, replay ) )
 				cleared?.Add( at );
@@ -346,15 +362,21 @@ public sealed class TrackEditor
 	public IReadOnlyList<(int X, int Y)> Demolish()
 	{
 		var cleared = new List<(int X, int Y)>();
+		UseLineToolExit();
 		ReplayStack( CollectForward().Corners, cleared );
 		ReplayStack( CollectBackward(), cleared );
 		return cleared;
 	}
 
+	// [BIN:TPW-EXE:0x0052FE50 repair per pop] every call of the replay pop (0x52FE50) runs the station repair 0x52FC80 afterwards (0x530005) with the flag set for the pop that leaves one point; the call that finds no point to pop (the stack ends with one point) repairs once more without the flag (0x530062) and answers 0
 	private void ReplayStack( List<(int X, int Y)> stack, List<(int X, int Y)> cleared )
 	{
 		for ( var top = stack.Count; top >= 2; top-- )
+		{
 			ReplayLine( stack[top - 1], stack[top - 2], replay: true, cleared );
+			RepairStation( top == 2 );
+		}
+		RepairStation( false );
 	}
 
 	// ---- The cut --------------------------------------------------------------------------------------
@@ -522,7 +544,7 @@ public sealed class TrackEditor
 		var cell = Tracks.Get( at.X, at.Y );
 		if ( !cell.IsOrigin )
 			return false;
-		var isExit = at == station.Exit;
+		var isExit = at == ToolExit;
 		var isEntry = at == station.Entry;
 		if ( dx == 0 && dy == 0 && !isExit )
 		{
@@ -600,20 +622,35 @@ public sealed class TrackEditor
 
 	private void ClearLink( (int X, int Y) at, byte bits ) => Update( at, cell => { cell.Link &= (byte)~bits; return cell; } );
 
-	/// <summary>A station tile of this ride two cells from <paramref name="at"/> toward <paramref name="heading"/> (the tests of <c>0x53ADB0</c> and the ride word of the exit tail).</summary>
-	private bool StationBeside( (int X, int Y) at, byte heading ) =>
-		Origin( Step( at, heading ) ) is { } beside && Tracks.Get( beside.X, beside.Y ) is var other && TrackCellTypes.IsStation( other.Type ) && other.Owner == Tracks.Get( at.X, at.Y ).Owner;
+	/// <summary>The cell <paramref name="heading"/> two cells from <paramref name="at"/> as the original's <c>0x50C3E0(heading, 2)</c> answers it: any cell of the grid (the raw cell, an extension cell as it is), none outside.</summary>
+	private (int X, int Y)? RawNeighbour( (int X, int Y) at, byte heading ) => Step( at, heading ) is var next && Tracks.InBounds( next.X, next.Y ) ? next : null;
 
-	/// <summary>The tail of <c>0x53B280</c> for the exit tile that is still there: the arm toward a station tile beside it comes back with the flow link turned to it, and a lone arm sets the link.</summary>
-	// [EXT:track-tile-owner] the ride word (+0x10) of the original's tests is the tile's owner field here; an extension cell of a station tile two cells on (the 0xC/0x11 case of 0x53B923..0x53B956) has a parent index that never equals the ride word, so only origin cells match
+	/// <summary>A cell the original's <c>0x53ADB0</c> calls a station tile: a station origin (type 0xD or 0x12) or an extension cell (0xC or 0x11) whose parent is one.</summary>
+	private bool IsStationCell( TrackCell cell ) =>
+		TrackCellTypes.IsStation( cell.Type ) || cell.IsExtension && Tracks.Get( Tracks.CellOf( cell.Parent ).X, Tracks.CellOf( cell.Parent ).Y ) is var parent && TrackCellTypes.IsStation( parent.Type );
+
+	/// <summary>The neighbour's ride word (+0x10) equals the tile's: only an origin cell can match, an extension cell holds its parent's cell index there.</summary>
+	// [EXT:track-tile-owner] the ride word (+0x10) of the original's tests is the tile's owner field here; the owner an extension cell carries (its origin's) is not what the original finds at its +0x10 (the parent's cell index, never a ride word), so only origin cells match
+	private static bool SameRide( TrackCell tile, TrackCell neighbour ) => !neighbour.IsExtension && neighbour.Owner == tile.Owner;
+
+	/// <summary>The tail of <c>0x53B280</c> for the exit tile that is still there: the arm toward a station tile beside it comes back with the flow link turned to it, a side whose neighbour is no track goes, and a lone arm sets the link.</summary>
 	private void RestoreExit( (int X, int Y) at )
 	{
 		foreach ( var heading in TrackHeading.All )
 		{
-			if ( (Tracks.Get( at.X, at.Y ).Mask & heading) == 0 && StationBeside( at, heading ) )
+			if ( (Tracks.Get( at.X, at.Y ).Mask & heading) != 0 || RawNeighbour( at, heading ) is not { } next )
+				continue;
+			var beside = Tracks.Get( next.X, next.Y );
+			if ( IsStationCell( beside ) && SameRide( Tracks.Get( at.X, at.Y ), beside ) )
 			{
 				SetLink( at, Opposite( heading ) );
 				AddArm( at, heading );
+				Repick( at );
+			}
+			// [BIN:TPW-EXE:0x0053B98C exit tail removal] a neighbour that is no track type (0x53AD30: not 0xB, 0xD, 0x10, 0x12 or 0x19) loses the side's arm, which is absent here already, and the piece is chosen again
+			if ( !IsTrackType( beside ) )
+			{
+				RemoveArm( at, heading );
 				Repick( at );
 			}
 		}
@@ -622,7 +659,8 @@ public sealed class TrackEditor
 		ClearLink( at, 0xFF );
 		foreach ( var heading in TrackHeading.All )
 		{
-			if ( (Tracks.Get( at.X, at.Y ).Mask & heading) != 0 && StationBeside( at, heading ) )
+			if ( (Tracks.Get( at.X, at.Y ).Mask & heading) != 0 && RawNeighbour( at, heading ) is { } next
+				&& Tracks.Get( next.X, next.Y ) is var beside && IsStationCell( beside ) && SameRide( Tracks.Get( at.X, at.Y ), beside ) )
 				SetLink( at, Opposite( heading ) );
 		}
 	}
@@ -696,15 +734,15 @@ public sealed class TrackEditor
 				Repick( near );
 			}
 		}
+		// [BIN:TPW-EXE:0x0053BD8E relink tail] a tile two cells from the tool's exit (0x7639E0/E4) on an axis, with that cell on the grid (0x4D8300): every side whose neighbour is a station tile (type 0xD or 0x12, by type alone, no ride test) gives the exit cell that arm and the piece is chosen again; with the exit an anchor (the edit tool) the cell is no track tile, so its arm byte is never read and nothing is written (only a rotation 270 ride has a station tile two cells from its anchor)
 		var gap = TrackStation.TileCells;
-		var home = station.First;
+		var home = ToolExit;
 		var adjacent = (at.X + gap == home.X && at.Y == home.Y) || (at.X == home.X && at.Y + gap == home.Y) || (at.X - gap == home.X && at.Y == home.Y) || (at.X == home.X && at.Y - gap == home.Y);
-		if ( !adjacent )
+		if ( !adjacent || !Tracks.InBounds( home.X, home.Y ) )
 			return;
 		foreach ( var direction in TrackHeading.All )
 		{
-			var partner = Step( home, direction );
-			if ( Origin( partner ) is { } other && TrackCellTypes.IsStation( Tracks.Get( other.X, other.Y ).Type ) )
+			if ( RawNeighbour( home, direction ) is { } partner && TrackCellTypes.IsStation( Tracks.Get( partner.X, partner.Y ).Type ) )
 			{
 				AddArm( home, direction );
 				Repick( home );
@@ -720,26 +758,28 @@ public sealed class TrackEditor
 	} );
 
 	/// <summary>
-	/// The repair of the first station tile after an edit (<c>0x52FC80</c>): an arm toward a station tile of the ride that the tile lacks comes back with the flow link
-	/// turned to it, an arm toward a cell that holds no track, or a track whose mask does not point back, goes.
+	/// The repair of the tool's exit tile after an edit (<c>0x52FC80</c>, <see cref="ToolExit"/>): an arm toward a station tile of the ride that the tile lacks comes back with the flow link
+	/// turned to it, an arm toward a cell that holds no track, or a track whose mask does not point back, goes. With <paramref name="last"/> (Backspace's last line, the pop that leaves one
+	/// point) a corner tile also drops every arm toward a cell that is no station tile together with that cell's arm back, and an arm toward a station tile sets the link to its reverse.
+	/// Nothing happens unless the exit lies on the grid (<c>0x4D8300</c>) and holds a track type (<c>0x53AD30</c>), so after an edit tool's cut, whose exit is the anchor, it does nothing.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052FC80 station repair] for each of the four headings from 1 (0x4D8C20 turns by 90 degrees): without the arm, a station tile of the same ride (+0x10) two cells on gets it, with the flow link turned back (0x5227E0) and the piece chosen again (0x52FD73); with it, a cell that is no track tile and no station tile, or a track tile whose mask lacks the reversed heading, loses it (0x52FD6B)
-	public void RepairStation()
+	// [BIN:TPW-EXE:0x0052FD94 repair flag tail] with the flag set (the argument, from 0x52FF73) and the tile a corner (0x53AE00, tested once): each arm toward a cell on the grid that is no station tile (0x53ADB0) goes with the neighbour's arm back and both pieces are chosen again (0x52FDDD..0x52FDFF); an arm toward a station tile clears the link (0x5227F0(0xFF)) and sets it to the arm's reverse (0x5227E0, 0x52FE06..0x52FE1E)
+	public void RepairStation( bool last = false )
 	{
-		var home = station.First;
-		if ( !Tracks.InBounds( home.X, home.Y ) || !TrackCellTypes.IsWalkable( Tracks.Get( home.X, home.Y ).Type ) )
+		var home = ToolExit;
+		if ( !Tracks.InBounds( home.X, home.Y ) || !IsTrackType( Tracks.Get( home.X, home.Y ) ) )
 			return;
 		foreach ( var heading in TrackHeading.All )
 		{
 			var cell = Tracks.Get( home.X, home.Y );
-			var next = Step( home, heading );
-			var neighbour = Origin( next );
+			var neighbour = RawNeighbour( home, heading );
 			if ( (cell.Mask & heading) == 0 )
 			{
 				if ( neighbour is { } other )
 				{
 					var theirs = Tracks.Get( other.X, other.Y );
-					if ( TrackCellTypes.IsStation( theirs.Type ) && theirs.Owner == cell.Owner )
+					if ( IsStationCell( theirs ) && SameRide( cell, theirs ) )
 					{
 						SetLink( home, Opposite( heading ) );
 						AddArm( home, heading );
@@ -752,13 +792,31 @@ public sealed class TrackEditor
 			if ( neighbour is { } found )
 			{
 				var theirs = Tracks.Get( found.X, found.Y );
-				remove = !TrackCellTypes.IsWalkable( theirs.Type ) && !TrackCellTypes.IsStation( theirs.Type )
-					|| TrackCellTypes.IsWalkable( theirs.Type ) && (Opposite( heading ) & theirs.Mask) == 0;
+				remove = IsTrackType( theirs ) ? (Opposite( heading ) & theirs.Mask) == 0 : !IsStationCell( theirs );
 			}
 			if ( remove )
 			{
 				RemoveArm( home, heading );
 				Repick( home );
+			}
+		}
+		if ( !last || !IsCorner( Tracks.Get( home.X, home.Y ).Mask ) )
+			return;
+		foreach ( var heading in TrackHeading.All )
+		{
+			if ( (Tracks.Get( home.X, home.Y ).Mask & heading) == 0 || RawNeighbour( home, heading ) is not { } next )
+				continue;
+			if ( !IsStationCell( Tracks.Get( next.X, next.Y ) ) )
+			{
+				RemoveArm( home, heading );
+				Repick( home );
+				RemoveArm( next, Opposite( heading ) );
+				Repick( next );
+			}
+			else
+			{
+				ClearLink( home, 0xFF );
+				SetLink( home, Opposite( heading ) );
 			}
 		}
 	}

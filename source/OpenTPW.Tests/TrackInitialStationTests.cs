@@ -53,8 +53,12 @@ public class TrackInitialStationTests
 			}
 			var tool = new CellBuildTool();
 			new TrackEditor( builder, station ).EnterLineTool( tool );
-			CollectionAssert.AreEqual( new[] { station.Exit }, tool.Vertices.ToArray() );
-			Assert.IsFalse( tool.Undo(), "initial vertex is not a paid segment" );
+			// [BIN:TPW-EXE:0x00530A87 collector stack] a walk that ends at the exit pushes it twice: the stack is kept as collected
+			CollectionAssert.AreEqual( new[] { station.Exit, station.Exit }, tool.Vertices.ToArray() );
+			Assert.IsTrue( tool.Undo(), "the zero-length line is taken back with the step (0, 0): the exit counts down and stays, nothing is refunded" );
+			CollectionAssert.AreEqual( new[] { station.Exit }, tool.Vertices.ToArray(), "one point is left" );
+			Assert.AreEqual( TrackHeading.Opposite( station.Heading ), cells.Tracks.Get( station.Exit.X, station.Exit.Y ).Mask );
+			Assert.IsFalse( tool.Undo(), "the bottom point is no line" );
 		}
 	}
 

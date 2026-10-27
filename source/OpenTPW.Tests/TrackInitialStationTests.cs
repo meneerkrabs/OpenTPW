@@ -271,4 +271,21 @@ public class TrackInitialStationTests
 		builder.PlaceInitialStation( station, ( x, y ) => seen.Add( (x, y) ) );
 		CollectionAssert.AreEquivalent( TrackStation.TileCellsOf( station.Exit.X, station.Exit.Y ).Concat( TrackStation.TileCellsOf( station.Entry.X, station.Entry.Y ) ).ToArray(), seen );
 	}
+
+	[TestMethod]
+	public void AnotherRidesStationIsNeverDemolishedByAnExitTileOverIt()
+	{
+		var cells = new ParkCellMap( 64, 64 );
+		var builder = new TrackBuilder( cells, TrackFamily.Kart, () => null, new Grid() );
+		var a = TrackStation.FromPlacement( 30, 30, 0 );
+		builder.PlaceInitialStation( a );
+		// ride B's exit tile (anchor + (4, 1)) lands on ride A's first station tile
+		var b = TrackStation.FromPlacement( 26, 30, 0 );
+		Assert.AreEqual( a.First, b.Exit );
+		var seen = new List<(int X, int Y)>();
+		builder.PlaceInitialStation( b, ( x, y ) => seen.Add( (x, y) ) );
+		Assert.IsFalse( seen.Intersect( TrackStation.TileCellsOf( a.First.X, a.First.Y ) ).Any(), "op 0x87 asks nothing about a tile whose origin is a station" );
+		Assert.IsTrue( TrackCellTypes.IsStation( cells.Tracks.Get( a.First.X, a.First.Y ).Type ), "ride A's station stays" );
+		Assert.AreEqual( builder.OwnerOf( a ), cells.Tracks.Get( a.First.X, a.First.Y ).Owner );
+	}
 }

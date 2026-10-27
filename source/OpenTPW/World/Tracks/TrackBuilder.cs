@@ -258,10 +258,7 @@ public sealed class TrackBuilder
 		foreach ( var at in new[] { station.Exit, station.Entry } )
 		{
 			if ( giveWay != null )
-			{
-				foreach ( var (cx, cy) in TrackStation.TileCellsOf( at.X, at.Y ) )
-					giveWay( cx, cy );
-			}
+				GiveWay( at, giveWay );
 			// A refused adjacent tile remains untouched; placement is not an atomic four-origin transaction.
 			var result = PlaceTile( at.X, at.Y, owner, free: true );
 			var laid = result is CellBuildResult.Ok or CellBuildResult.Existing;
@@ -284,6 +281,31 @@ public sealed class TrackBuilder
 			Refresh( station.First.X, station.First.Y );
 			if ( laid )
 				Refresh( at.X, at.Y );
+		}
+	}
+
+	/// <summary>
+	/// Op 0x87 on a tile: unless the tile's origin cell already holds a track type (and no add-on), each of its four cells that is not a station cell is handed to <paramref name="giveWay"/> (the demolition of the
+	/// object owning it) and its second-layer record is cleared.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00538CF0 cell op 0x87] in 0x5370E0 (jump table 0x538EEC): when 0x818C14 < 0x818C10 (signed) a tile whose origin cell's type is 0xB, 0xD, 0x10, 0x12 or 0x19 does nothing (0x538D42..0x538D6C); any other tile calls 0x527EE0(x, y, 0) on (x, y), (x+1, y), (x, y+1) and (x+1, y+1) (0x538D76..0x538D9E), each returning at once unless the cell is of type 4, 9 or 10 (0x527D60), then, the cell being the line's only cell (0x820AD0 = 1), clears the four second-layer records (0x4D0B10, 0x5367A0(0, 0)) and restores the tool mode and 0x81EDE4/E8 (0x52F580); the cells of a kart or water station (types 13 and 18, extension 12 and 17 there) are no type 4, 9 or 10 cell, so no station is demolished, while an add-on's cells are type 4
+	// [BIN:TPW-EXE:0x005367A0 second-layer clear] the record of a cell that is no station cell is cleared (its type and arms), here the tile record of the cell without the rest of its tile
+	private void GiveWay( (int X, int Y) at, Action<int, int> giveWay )
+	{
+		var origin = Tracks.Get( at.X, at.Y );
+		if ( origin.IsOrigin && (origin.Flags & TrackCell.FlagAddOn) == 0 )
+			return;
+		foreach ( var (cx, cy) in TrackStation.TileCellsOf( at.X, at.Y ) )
+		{
+			var cell = Tracks.Get( cx, cy );
+			if ( TrackCellTypes.IsStation( cell.Type ) || cell.IsExtension && TrackCellTypes.IsStation( Tracks.Get( Tracks.CellOf( cell.Parent ).X, Tracks.CellOf( cell.Parent ).Y ).Type ) )
+				continue;
+			giveWay( cx, cy );
+			if ( Tracks.Get( cx, cy ).Type != 0 )
+			{
+				Tracks.Clear( cx, cy );
+				Cells.SetType( cx, cy, ParkCellType.Empty );
+			}
 		}
 	}
 

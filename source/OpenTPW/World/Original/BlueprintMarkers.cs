@@ -186,10 +186,10 @@ public sealed class BlueprintMarkers : ModelEntity
 	/// (hidden for two frames, shown for seven) and moves the glide point half the way to the cursor, all unless the game is paused.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0053C762 ripple phase] the per-frame flush subtracts the constant 0x700DF8 (-0.1) from the global 0x874FC0 unless the pause test 0x402DF0 answers true
-	// [BIN:TPW-EXE:0x0053C7BB red blink] the flush (0x53C3F0) adds the game clock's time scale (0x785970 +0x20, truncated: 1 at normal speed) to the counter 0x874FC8 when the clock is not paused (+0x30): with the flag 0x763C98 clear the flag is set after the counter exceeds 1 and with it set cleared after it exceeds 6 (the counter restarts at 0 at each change), and 0x53C8D0 queues a face of texture 1 (red) only while the flag is set
+	// [BIN:TPW-EXE:0x0053C7BB red blink] the flush (0x53C3F0) adds the game clock's time scale (0x785970 +0x20, truncated: the game speed factor, 1.0 at normal speed, which 0x4032F0 and 0x403340 step by 1.25 within 0.25 and 2.0) to the counter 0x874FC8 when the clock is not paused (+0x30): with the flag 0x763C98 clear the flag is set after the counter exceeds 1 and with it set cleared after it exceeds 6 (the counter restarts at 0 at each change), and 0x53C8D0 queues a face of texture 1 (red) only while the flag is set
 	// [BIN:TPW-EXE:0x0053C42B glide] every flush moves 0x820AFC/0x820AF8 by half the way to 10 x the hover's cell (0x8186B8/0x8186B4), and the face builder 0x53DF30 offsets a face's x and z by (glide - 10 x cell) for a texture below 13 while the tool is the placement (4) or an edit tool (0xE, 0x13) and the flag 0x874FC4 is clear (0x53DF67..0x53DFCF)
-	// [EXT:blueprint-phase-step] the original steps once per rendered frame (frame-rate dependent); OpenTPW steps once per 1/30 s of real time so the ripple, the blink and the glide do not depend on the display's frame rate
-	public void Update( float deltaSeconds, bool paused )
+	// [EXT:blueprint-phase-step] only the frame-rate part: the original steps once per rendered frame (frame-rate dependent); OpenTPW steps once per 1/30 s of real time so the ripple, the blink and the glide do not depend on the display's frame rate; the blink counter moves by the game speed per step (1, 2 or 3 in OpenTPW's speeds) as the original's by the clock scale
+	public void Update( float deltaSeconds, bool paused, int timeScale = 1 )
 	{
 		if ( paused || !(deltaSeconds > 0) )
 			return;
@@ -197,7 +197,7 @@ public sealed class BlueprintMarkers : ModelEntity
 		var whole = (int)ticks;
 		tickRemainder = ticks - whole;
 		for ( var tick = 0; tick < whole; tick++ )
-			Tick();
+			Tick( timeScale );
 		if ( shown.Length == 0 )
 			return;
 		phase = (phase + PhaseStep * Math.Min( deltaSeconds, 0.25f ) * AssumedFrameRate) % (MathF.PI * 2 * 64);
@@ -227,7 +227,7 @@ public sealed class BlueprintMarkers : ModelEntity
 	/// <summary>Whether the red faces are in their shown phase (the blink flag <c>0x763C98</c>).</summary>
 	internal bool RedShown => flush.RedShown;
 
-	private void Tick() => flush.Tick( GlideCursor );
+	private void Tick( int timeScale ) => flush.Tick( GlideCursor, timeScale );
 
 	private float tickRemainder;
 	private readonly BlueprintFlush flush = new();
@@ -497,9 +497,9 @@ internal sealed class BlueprintFlush
 	public bool RedShown { get; private set; }
 
 	/// <summary>One flush: the counter moves by the clock's time scale (1 at normal speed) and the glide point half the way to 10 x the cursor cell.</summary>
-	public void Tick( (int X, int Y) cursor )
+	public void Tick( (int X, int Y) cursor, int timeScale = 1 )
 	{
-		counter++;
+		counter += timeScale;
 		if ( !RedShown )
 		{
 			if ( counter > 1 )

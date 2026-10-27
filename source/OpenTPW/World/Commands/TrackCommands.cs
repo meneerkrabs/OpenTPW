@@ -59,7 +59,9 @@ public sealed record UndoTrackLineCommand( int Ride, int StartX, int StartY, int
 		writer.Int( StartY );
 		writer.Int( EndX );
 		writer.Int( EndY );
-		writer.Bool( Last );
+		// a trailing 1 only when set: the bytes of a line that is not the stack's first are the format's original ones (recorded logs decode)
+		if ( Last )
+			writer.Bool( true );
 	}
 
 	internal override ParkCommandResult Execute( Level level ) => level.ExecuteTrackLine( Ride, (StartX, StartY), (EndX, EndY), undo: true, last: Last );

@@ -27,6 +27,14 @@ public abstract record ParkToolCommand : ParkCommand
 		}
 	}
 
+	/// <summary>The undo's optional trailing last-line flag: absent for false, a single 1 for true; a present 0 is not the canonical encoding.</summary>
+	private static bool OptionalLast( ParkCommandReader reader )
+	{
+		if ( reader.AtEnd )
+			return false;
+		return reader.Byte() == 1 ? true : throw new InvalidDataException( "The undo's last-line flag is written only when set." );
+	}
+
 	/// <summary>Reads the fields of the tool command of <paramref name="kind"/> (<see cref="ParkCommandCodec.Decode"/>), or null for a kind that is not a tool command.</summary>
 	internal static ParkToolCommand? Read( ParkCommandKind kind, ParkCommandReader reader ) => kind switch
 	{
@@ -47,7 +55,7 @@ public abstract record ParkToolCommand : ParkCommand
 		ParkCommandKind.PoolCells => new PoolCellsCommand( reader.Bool(), reader.Bool(), reader.Cells() ),
 		ParkCommandKind.LayPoolSlidePieces => new LayPoolSlidePiecesCommand( reader.Int(), reader.Int(), reader.Cells() ),
 		ParkCommandKind.LayTrackLine => new LayTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
-		ParkCommandKind.UndoTrackLine => new UndoTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Bool() ),
+		ParkCommandKind.UndoTrackLine => new UndoTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int(), OptionalLast( reader ) ),
 		ParkCommandKind.CutTrack => new CutTrackCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 		ParkCommandKind.OpenTrackLineTool => new OpenTrackLineToolCommand( reader.Int() ),
 		ParkCommandKind.BeginCoasterTool => new BeginCoasterToolCommand( reader.Int() ),

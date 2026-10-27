@@ -141,4 +141,17 @@ public class TrackGhostSymbolTests
 		flush.Tick( (5, 2) );
 		Assert.AreEqual( -10 + 0.5f * 10, flush.Offset( (5, 2) ).X, 1e-3f, "a cell on: the face lags by what is left of the new distance" );
 	}
+
+	[TestMethod]
+	public void TheBlinkCounterMovesByTheGameSpeedPerFlush()
+	{
+		var flush = new BlueprintFlush();
+		flush.Tick( (0, 0), 2 );
+		Assert.IsTrue( flush.RedShown, "at twice the speed the counter passes 1 in one flush" );
+		for ( var step = 0; step < 3; step++ )
+			flush.Tick( (0, 0), 2 );
+		Assert.IsTrue( flush.RedShown, "6 is not above 6" );
+		flush.Tick( (0, 0), 2 );
+		Assert.IsFalse( flush.RedShown, "8 is" );
+	}
 }

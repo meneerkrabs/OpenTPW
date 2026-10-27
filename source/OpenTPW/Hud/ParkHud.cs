@@ -1694,7 +1694,7 @@ public sealed partial class ParkHud
 		else if ( inPark && cursorX >= 0 )
 			blueprint.GlideCursor = (cursorX, cursorY);
 		blueprint.GlideActive = editGhost != null || inPark && level.BuildEntry != null && cursorX >= 0;
-		blueprint.Update( delta, paused );
+		blueprint.Update( delta, paused, Math.Max( 0, (int)level.SimulationTimeScale ) );
 		blueprint.Show( cells, directions );
 	}
 

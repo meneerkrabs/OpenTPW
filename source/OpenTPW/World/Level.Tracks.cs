@@ -71,7 +71,7 @@ public partial class Level
 		if ( resumeState != null )
 			return;
 		if ( fresh )
-			// [BIN:TPW-EXE:0x005344E5 cell op 0x87] the exit and entry tiles' first op demolishes the object owning each of their four cells (0x527EE0 at 0x534566; 0x527D60 finds it for a cell of type 4, 9 or 10) when 0x818C14 < 0x818C10: the placement's tool priority is the ride's Info.OverwritePriority (5 for a kart or water ride, the hover 0x5234D0 at 0x5236A4), and 0x818C14, the priority of the last owner the validator met in the footprint (0x535788), is below it for any placement the validator allowed (it refuses a cell whose owner's priority is not below the tool's, 0x535D66); the two tiles lie outside the 4-cell footprint, so nothing validated them, and whatever stands there goes
+			// [BIN:TPW-EXE:0x00538CF0 cell op 0x87] the exit and entry tiles' first op (0x538D76..0x538D9E) demolishes the object owning each of their cells that is a type 4, 9 or 10 cell (0x527EE0, 0x527D60) when 0x818C14 < 0x818C10: the placement's tool priority is the ride's Info.OverwritePriority (5, the hover 0x5234D0 at 0x5236A4) and 0x818C14, the priority of the last owner the footprint's validation met (0x535788), is below it for any placement the validator allowed (0x535D66); the two tiles lie outside the 4-cell footprint, so nothing validated them. A kart or water ride's station cells are no such cells (TrackBuilder.GiveWay), but the map of OpenTPW's objects holds them, so they are skipped there
 			BuilderOf( item )!.PlaceInitialStation( station, ( x, y ) => DemolishObjectAt( x, y ) );
 		else
 			BuilderOf( item )!.PlaceStation( station );

@@ -884,4 +884,119 @@ public partial class CoopSessionTests
 		CutAndCompare( host, first, second );
 		Assert.AreEqual( (CoopRights.Finance | CoopRights.Build, CoopRights.Research), (second.Level.RightsOf( one ), first.Level.RightsOf( two )), "every peer holds every seat's rights" );
 	}
+
+	/// <summary>A researcher and the ride's next level researched, alike on every peer before the session starts (as <c>ParkCommandLevelTests.ResearchedRide</c> does).</summary>
+	private static void ResearchedRide( Park park )
+	{
+		EconomyTestData.HireBest( park.Economy, StaffType.Researcher );
+		park.Economy.SetResearchEffort( ResearchCategory.Ride, 0 );
+		for ( var day = 0; day < 100 && !park.Economy.Research.IsAvailable( 1100, 1 ); day++ )
+			park.Economy.AdvanceDays( 1 );
+		Assert.IsTrue( park.Economy.Research.IsAvailable( 1100, 1 ) );
+	}
+
+	/// <summary>One peer's money at a frame's end: its tick, balance, the month's ledger lines and the ride's pending level and total spent.</summary>
+	private sealed record MoneyFrame( long Tick, long Balance, (LedgerCategory Key, long Value)[] Lines, int PendingLevel, long TotalSpent )
+	{
+		public long Line( LedgerCategory category ) => Lines.Where( line => line.Key == category ).Select( line => line.Value ).SingleOrDefault();
+
+		/// <summary>The balance's change since <paramref name="before"/> that the lines' changes explain: incomes up, every other line down.</summary>
+		public long LineChange( MoneyFrame before ) => Lines.Sum( line => (ParkLedger.IsIncome( line.Key ) ? 1 : -1) * (line.Value - before.Line( line.Key )) );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] [EXT:online-coop-money] A guest with the attractions right changes a shop's price and buys a ride's next level through its queue while the host changes rights
+	/// (C4b-2): the record debits nothing, the installation charges the level's cost once, at the same tick on every peer, and every peer's money stays equal at the cuts.
+	/// </summary>
+	[TestMethod]
+	public void AGuestsPriceAndPurchasedLevelKeepEveryPeersMoneyEqualFromTheRecordThroughTheInstallationWhileTheHostChangesRights()
+	{
+		var shops = new Dictionary<Park, int>();
+		var (host, first, second) = SharedWithTwo( ( park, isHost ) =>
+		{
+			Bankable( park, isHost );
+			shops[park] = AddPriced( park, shop: true, 20 ).Runtime.AttractionId;
+			ResearchedRide( park );
+		} );
+		var peers = new[] { host, first, second };
+		Rounds( 20, host, first, second );
+		var (one, two) = (first.Level.Commands.Player, second.Level.Commands.Player);
+		Assert.IsTrue( host.Issue( new SetSeatRightsCommand( one, CoopRights.Attractions ) ).Accepted );
+		CutAndCompare( host, first, second );
+		var ride = host.One.Runtime.AttractionId;
+		var rideStates = peers.ToDictionary( park => park, park => StateOf( park, ride ) );
+		var upgrade = rideStates[host].Level + 1;
+		Assert.IsTrue( host.Economy.Catalog.TryGet( rideStates[host].InfoId, out var info ) );
+		var cost = (long)info.Upgrades[upgrade].CostOfUpgrade;
+		Assert.IsTrue( cost > 0, "the level costs something" );
+		MoneyFrame Frame( Park park ) => new( park.Economy.Tick, park.Economy.Balance, park.Economy.Ledger.CurrentTotals.OrderBy( line => line.Key ).Select( line => (line.Key, line.Value) ).ToArray(),
+			rideStates[park].PendingLevel, rideStates[park].TotalSpent );
+		// what each peer saw after every frame, and the installation's tick on each
+		var frames = peers.ToDictionary( park => park, park => new List<MoneyFrame>() );
+		var installed = peers.ToDictionary( park => park, park => -1L );
+		foreach ( var park in peers )
+			park.Economy.EventRaised += item =>
+			{
+				if ( item.Kind == ParkEventKind.UpgradeCompleted && item.InstanceId == rideStates[park].Id )
+					installed[park] = park.Economy.Tick;
+			};
+		void Step()
+		{
+			SteppedRounds( 1, host, first, second );
+			foreach ( var park in peers )
+				frames[park].Add( Frame( park ) );
+		}
+		// the guest changes the shop's price and buys the level, the host gives and takes rights meanwhile
+		var queue = Management( first );
+		var waiter = queue.NewWaiter();
+		first.Enter();
+		var price = StateOf( first, shops[first] ).Price + 3;
+		Assert.IsTrue( queue.Enqueue( new[] { new ManagementItem( ManagementTarget.Attraction( shops[first] ), ManagementKnob.Price, new SetPriceCommand( shops[first], price ) ) }, waiter ).Queued );
+		Assert.IsTrue( queue.Enqueue( new[] { new ManagementItem( ManagementTarget.Attraction( ride ), null, new BuyUpgradeCommand( ride, upgrade ) ) }, waiter ).Queued );
+		Step();
+		Assert.IsTrue( host.Issue( new SetSeatRightsCommand( two, CoopRights.Research | CoopRights.Finance ) ).Accepted );
+		for ( var round = 0; round < 600 && queue.Pending.Any(); round++ )
+			Step();
+		Assert.IsFalse( queue.Pending.Any(), "both entries resolved" );
+		CollectionAssert.AreEqual( new[] { ManagementOutcomeKind.Accepted, ManagementOutcomeKind.Accepted }, queue.TakeOutcomes( waiter ).Select( outcome => outcome.Kind ).ToArray() );
+		Assert.IsTrue( host.Issue( new SetSeatRightsCommand( one, CoopRights.Attractions | CoopRights.Research ) ).Accepted );
+		// at the buy's record every peer has the level pending and nothing debited by the record
+		foreach ( var park in peers )
+		{
+			var list = frames[park];
+			var at = list.FindIndex( frame => frame.PendingLevel == upgrade );
+			Assert.IsTrue( at > 0, "the level is pending on every peer" );
+			Assert.AreEqual( list[at - 1].Line( LedgerCategory.OtherCosts ), list[at].Line( LedgerCategory.OtherCosts ), "the record posts no cost" );
+			Assert.AreEqual( list[at - 1].TotalSpent, list[at].TotalSpent, "the record adds no spending to the ride" );
+			Assert.AreEqual( list[at].LineChange( list[at - 1] ), list[at].Balance - list[at - 1].Balance, "the balance moves only by the frame's ledger changes: nothing debited by the record" );
+		}
+		CutAndCompare( host, first, second );
+		foreach ( var park in peers )
+			Assert.AreEqual( price, StateOf( park, shops[park] ).Price, "the price on every peer" );
+		// the run goes on to the installation
+		for ( var round = 0; round < 20000 && peers.Any( park => installed[park] < 0 ); round++ )
+			Step();
+		foreach ( var park in peers )
+			Assert.IsTrue( installed[park] >= 0, "the level was installed on every peer" );
+		Assert.AreEqual( 1, peers.Select( park => installed[park] ).Distinct().Count(), "at the same tick on every peer" );
+		var tick = installed[host];
+		var changes = new List<(long Month, long Spent, long Balance, long Lines)>();
+		foreach ( var park in peers )
+		{
+			var list = frames[park];
+			var after = list.First( frame => frame.Tick >= tick );
+			var before = list.LastOrDefault( frame => frame.Tick == tick - 1 );
+			Assert.IsNotNull( before, "a frame ended on the tick before the installation" );
+			Assert.AreEqual( tick, after.Tick, "a frame ended on the installation's tick" );
+			var month = after.Line( LedgerCategory.OtherCosts ) - before.Line( LedgerCategory.OtherCosts );
+			Assert.AreEqual( cost, month, "the month's other costs rise by the level's cost" );
+			Assert.AreEqual( cost, after.TotalSpent - before.TotalSpent, "the ride's total spent rises by the same" );
+			Assert.AreEqual( after.LineChange( before ), after.Balance - before.Balance, "the balance moves by the sum of the tick's category changes, the cost among them" );
+			changes.Add( (month, after.TotalSpent - before.TotalSpent, after.Balance - before.Balance, after.LineChange( before )) );
+		}
+		Assert.AreEqual( 1, changes.Distinct().Count(), "equal on every peer" );
+		CutAndCompare( host, first, second );
+		SteppedRounds( 120, host, first, second );
+		CutAndCompare( host, first, second );
+	}
 }

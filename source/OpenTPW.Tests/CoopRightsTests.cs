@@ -272,4 +272,59 @@ public class CoopRightsTests
 		Assert.IsTrue( lab.Commands.Issue( new MoveResearchCommand( ResearchCategory.Ride, 1, current.InfoId, current.Level ) ).Accepted, "the current project moves" );
 		Assert.AreNotEqual( current, research.Current( ResearchCategory.Ride ) );
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] The claim guard of a guest's attractions commands (C4b-2): exactly the five kinds that name a claimable ride (the open switch, the settings, a level bought or
+	/// cancelled, the call) are asked about its claim; a price, a game's prize and a shop's settings are not. The answer goes in order: without the right the rights' refusal whatever the
+	/// claims, with it on another seat's claimed ride the claim's, the claiming seat's own allowed, and the host's allowed.
+	/// </summary>
+	[TestMethod]
+	public void TheClaimGuardNamesFiveKindsOfAClaimableRideAndAnswersAfterTheRightInOrder()
+	{
+		var (level, one) = NewPark();
+		var rights = new CoopBuildRights( level );
+		var ride = one.Runtime.AttractionId;
+		var guarded = new ParkCommand[] { new SetAttractionOpenCommand( ride, false ), new SetRideSettingsCommand( ride, 50, 2, 30 ), new BuyUpgradeCommand( ride ), new BuyUpgradeCommand( ride, 1 ),
+			new CancelUpgradeCommand( ride ), new CancelUpgradeCommand( ride, 1, 1 ), new RequestMaintenanceCommand( ride, true ) };
+		var unguarded = new ParkCommand[] { new SetPriceCommand( ride, 20 ), new SetGamePrizeCommand( ride, 20, 5, 50 ), new SetShopSettingsCommand( ride, 50, 10 ) };
+		foreach ( var command in guarded )
+			Assert.AreEqual( ride, CoopBuildRights.AttractionRide( command ), $"{command.Kind} names its ride" );
+		foreach ( var command in unguarded )
+			Assert.IsNull( CoopBuildRights.AttractionRide( command ), $"{command.Kind} names no claimable ride" );
+		CollectionAssert.AreEquivalent( new[] { ParkCommandKind.SetAttractionOpen, ParkCommandKind.SetRideSettings, ParkCommandKind.BuyUpgrade, ParkCommandKind.CancelUpgrade, ParkCommandKind.RequestMaintenance },
+			ParkCommandCodecTests.Schema.Where( row => CoopBuildRights.AttractionRide( row.Command ) != null ).Select( row => row.Command.Kind ).Distinct().ToArray(), "exactly five kinds of the codec's table" );
+		// a seat holds the ride's claim (a claimable ride is a track ride)
+		var stations = (Dictionary<OriginalObject, TrackStation>)typeof( Level ).GetField( "trackStations", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( level )!;
+		stations[one] = new TrackStation( 0, 0, (one.Placement.X, one.Placement.Y), (one.Placement.X + 1, one.Placement.Y) );
+		const int holder = 3, other = 2, without = 4;
+		level.SetSeatRights( holder, CoopRights.Build | CoopRights.Attractions );
+		Assert.IsTrue( level.ExecuteClaimRide( holder, ride ).Accepted );
+		level.SetSeatRights( other, CoopRights.Attractions );
+		level.SetSeatRights( without, CoopRights.Build );
+		foreach ( var command in guarded )
+		{
+			// without the attractions right: the rights' refusal, whatever the claim
+			Assert.IsFalse( rights.Allows( without, command ), $"{command.Kind}: no right" );
+			Assert.AreEqual( CoopBuildRights.NotPermittedReason, rights.RefusalReason( without, command ), $"{command.Kind}: the rights' refusal, not the claim's" );
+			// with it on another seat's claimed ride: the claim's
+			Assert.IsFalse( rights.Allows( other, command ), $"{command.Kind}: another seat's claim" );
+			Assert.AreEqual( Level.ClaimedReason, rights.RefusalReason( other, command ), $"{command.Kind}: the claim's refusal" );
+			// the claiming seat's own, and the host's
+			Assert.IsTrue( rights.Allows( holder, command ), $"{command.Kind}: the claiming seat's own" );
+			Assert.IsNull( rights.RefusalReason( holder, command ), $"{command.Kind}: the claiming seat's own" );
+			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, command ), $"{command.Kind}: the host's management of a claimed ride stays allowed" );
+			Assert.IsNull( rights.RefusalReason( ParkCommands.LocalPlayer, command ), $"{command.Kind}: the host's" );
+		}
+		foreach ( var command in unguarded )
+		{
+			Assert.IsTrue( rights.Allows( other, command ), $"{command.Kind}: no claim guards it" );
+			Assert.IsNull( rights.RefusalReason( other, command ), $"{command.Kind}" );
+			Assert.AreEqual( CoopBuildRights.NotPermittedReason, rights.RefusalReason( without, command ), $"{command.Kind}: without the right" );
+		}
+		// with no claim on the ride every seat with the right asks nothing of it
+		Assert.IsTrue( level.ExecuteReleaseRide( holder, ride ).Accepted );
+		Assert.IsNull( level.ClaimOf( ride ) );
+		foreach ( var command in guarded )
+			Assert.IsTrue( rights.Allows( other, command ), $"{command.Kind}: a ride nobody claims" );
+	}
 }

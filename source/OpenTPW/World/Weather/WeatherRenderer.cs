@@ -33,13 +33,14 @@ public sealed class WeatherRenderer : Entity
 	/// <summary>The bolts' state 0x200D52, as the rain's.</summary>
 	internal const MaterialFlags BoltFlags = MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend;
 	/// <summary>Worst-case vertex count: the drop field (rain or snow, one at a time) plus every bolt, allocated once.</summary>
-	private static readonly int MaximumVertices = (WeatherVisualState.FieldSize + WeatherVisualState.MaximumBolts * WeatherVisualState.MaximumBoltSegments) * VerticesPerQuad;
+	private static readonly int MaximumVertices = (2 * WeatherVisualState.FieldSize + WeatherVisualState.MaximumBolts * WeatherVisualState.MaximumBoltSegments) * VerticesPerQuad;
 
 	private readonly IWeatherVisualSource source;
 	private readonly Func<SVector3, SVector3> originalToEngine;
 	private readonly Func<float> timeScale;
 	private readonly float scale;
 	private readonly float originalFieldOfView;
+	private readonly bool depthSplit;
 	private readonly WeatherVisualState visual = new();
 	private readonly WeatherBoltRibbon ribbon;
 	// the per-frame inputs of the ribbon's projection, set before a frame's bolts are built (no closure allocated per frame)
@@ -62,14 +63,16 @@ public sealed class WeatherRenderer : Entity
 	/// <param name="originalToEngine">Maps an original position (Y up) to engine space; the park maps through its heightfield's origin.</param>
 	/// <param name="timeScale">The simulation's time scale the visuals advance by (0 freezes them); the park passes its own, the lobby 1.</param>
 	/// <param name="engineUnitsPerOriginal">Engine units per original unit: the park's models are drawn at <see cref="OriginalParkPlacement.ModelScale"/>, the lobby at 1.</param>
+	/// <param name="depthSplit">Whether the original's depth value has its linear range (the park views; the lobby never sets the split, 0x578CA0 is not called there).</param>
 	/// <param name="fieldOfView">The field of view in degrees the original builds the scene's projection with (the park's <see cref="OriginalProjection.FieldOfView"/>, the lobby's island field of view): the bolt ribbon's width is in the clip units of that projection.</param>
-	public WeatherRenderer( IWeatherVisualSource source, Func<SVector3, SVector3> originalToEngine, Func<float> timeScale, float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale, float fieldOfView = OriginalProjection.FieldOfView )
+	public WeatherRenderer( IWeatherVisualSource source, Func<SVector3, SVector3> originalToEngine, Func<float> timeScale, float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale, float fieldOfView = OriginalProjection.FieldOfView, bool depthSplit = true )
 	{
 		this.source = source;
 		this.originalToEngine = originalToEngine;
 		this.timeScale = timeScale;
 		scale = engineUnitsPerOriginal;
 		originalFieldOfView = fieldOfView;
+		this.depthSplit = depthSplit;
 		ribbon = new WeatherBoltRibbon( ProjectBoltPoint );
 		Name = "Weather";
 		// Prepared with the entity — a resumed park creates it inside its load scope, a fresh park on its
@@ -150,18 +153,43 @@ public sealed class WeatherRenderer : Entity
 		var dropVertexCount = 0;
 		var vertexCount = 0;
 
+		// the original's depth split (WeatherProjection): its far argument is 1000 in the eye views and the span selection's farthest corner otherwise; the lobby has no linear range
+		var far = IsEyeView( Camera.Mode ) ? WeatherProjection.OriginalFar : MathF.Max( 1f, MathF.Min( WeatherProjection.OriginalFar, projection.M43 / (projection.M33 + 1f) / scale ) );
 		if ( dropMaterial != null && visual.DropCount > 0 )
 		{
 			var written = visual.Snow ? visual.WriteSnow( camera, scratch, displayAspect ) : visual.WriteRain( camera, scratch );
-			for ( var index = 0; index < written; index++ )
+			var step = visual.Snow ? WeatherVisualState.SnowVerticesPerFlake : VerticesPerQuad / 2;
+			Span<WeatherRibbonVertex> triangle = stackalloc WeatherRibbonVertex[3];
+			Span<WeatherRibbonVertex> clipped = stackalloc WeatherRibbonVertex[8];
+			for ( var index = 0; index + step <= written; index += step )
 			{
-				var vertex = scratch[index];
-				var screen = WeatherProjection.ToScreen( vertex.Position, vertex.W );
-				var depth = WeatherProjection.WriteDepth( vertex.Position.Z / vertex.W, projection, scale );
-				vertices[vertexCount++] = new Vertex( new SVector3( screen.X, screen.Y, depth ), new SVector3( vertex.Grey, vertex.Alpha, 0 ), vertex.TexCoords );
+				for ( var corner = 0; corner < step; corner++ )
+				{
+					var vertex = scratch[index + corner];
+					triangle[corner] = new WeatherRibbonVertex( new SVector4( vertex.Position.X, vertex.Position.Y, vertex.Position.Z, vertex.W ), vertex.TexCoords, new SVector2( vertex.Grey, vertex.Alpha ) );
+				}
+				var inside = true;
+				foreach ( var corner in triangle )
+					inside &= corner.Clip.Z <= corner.Clip.W;
+				var count = 3;
+				var source = triangle;
+				if ( !inside )
+				{
+					// a vertex beyond the far plane (clip z above w): the original's clipper cuts the triangle there
+					count = WeatherProjection.ClipNear( triangle, clipped, -1f, 1f, 0f );
+					source = clipped;
+				}
+				if ( count < 3 || vertexCount + (count - 2) * 3 > vertices.Length )
+					continue;
+				for ( var fan = 1; fan < count - 1; fan++ )
+				{
+					AddDropVertex( source[0], projection, far, ref vertexCount );
+					AddDropVertex( source[fan], projection, far, ref vertexCount );
+					AddDropVertex( source[fan + 1], projection, far, ref vertexCount );
+				}
+				DrawnDrops++;
 			}
-			dropVertexCount = written;
-			DrawnDrops = written / (visual.Snow ? WeatherVisualState.SnowVerticesPerFlake : VerticesPerQuad);
+			dropVertexCount = vertexCount;
 		}
 
 		var boltStart = vertexCount;
@@ -185,11 +213,19 @@ public sealed class WeatherRenderer : Entity
 		commandList.UpdateBuffer( vertexBuffer, 0, ref vertices[0], (uint)vertexCount * stride );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 
-		// every vertex is already on the screen (see WeatherProjection), so both draw with identity matrices
+		// every vertex is already in clip space (see WeatherProjection and weather.shader), so both draw with identity matrices
 		if ( dropVertexCount > 0 )
 			Draw( commandList, dropMaterial!, 0, dropVertexCount );
 		if ( boltVertexCount > 0 )
 			Draw( commandList, boltMaterial!, boltStart, boltVertexCount );
+	}
+
+	private void AddDropVertex( in WeatherRibbonVertex vertex, System.Numerics.Matrix4x4 projection, float far, ref int vertexCount )
+	{
+		var clip = vertex.Clip;
+		var depth = WeatherProjection.WriteDepth( clip.Z, clip.W, projection, scale, far, depthSplit );
+		// clip-space vertex (x w', y w', z w', w): the shader takes w from the tint's third component, so the device interpolates texture and colour perspective-correctly as the original's rhw does
+		vertices[vertexCount++] = new Vertex( new SVector3( clip.X, -clip.Y, depth * clip.W ), new SVector3( vertex.Tint.X, vertex.Tint.Y, clip.W ), vertex.TexCoords );
 	}
 
 	private static void Draw( CommandList commandList, Material<ObjectUniformBuffer> material, int first, int count )
@@ -248,9 +284,8 @@ public sealed class WeatherRenderer : Entity
 			Vertex Corner( in WeatherRibbonVertex vertex )
 			{
 				var clip = vertex.Clip;
-				var screen = WeatherProjection.ToScreen( new SVector3( clip.X, clip.Y, clip.Z ), clip.W );
-				var depth = MathF.Min( MathF.Max( clip.Z / clip.W, 0f ), 1f );
-				return new Vertex( new SVector3( screen.X, screen.Y, depth ), new SVector3( grey, 1f, 0 ), new SVector2( vertex.TexCoords.X, 1f - vertex.TexCoords.Y ) );
+				var depth = float.IsNaN( clip.Z / clip.W ) ? 1f : MathF.Min( MathF.Max( clip.Z / clip.W, 0f ), 1f );
+				return new Vertex( new SVector3( clip.X, -clip.Y, depth * clip.W ), new SVector3( grey, 1f, clip.W ), new SVector2( vertex.TexCoords.X, 1f - vertex.TexCoords.Y ) );
 			}
 			// the original's fan (0, 1, 2), (0, 2, 3) over the (clipped) polygon
 			for ( var triangle = 1; triangle < count - 1; triangle++ )

@@ -4,8 +4,8 @@ using NVector4 = System.Numerics.Vector4;
 
 namespace OpenTPW;
 
-/// <summary>One vertex of a bolt ribbon quad in clip space (x, y, z, w) with its texture coordinates, before the divide by w.</summary>
-public readonly record struct WeatherRibbonVertex( NVector4 Clip, NVector2 TexCoords );
+/// <summary>One vertex in clip space (x, y, z, w) with its texture coordinates and an optional (grey, alpha) tint, before the divide by w.</summary>
+public readonly record struct WeatherRibbonVertex( NVector4 Clip, NVector2 TexCoords, NVector2 Tint = default );
 
 /// <summary>One quad of a bolt ribbon: the four vertices in the original's order (old start corner, old end corner, new end corner, new start corner), drawn as the fan (0, 1, 2) and (0, 2, 3).</summary>
 public readonly record struct WeatherRibbonQuad( WeatherRibbonVertex V0, WeatherRibbonVertex V1, WeatherRibbonVertex V2, WeatherRibbonVertex V3 );

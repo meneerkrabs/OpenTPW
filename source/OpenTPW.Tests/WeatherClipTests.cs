@@ -10,7 +10,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The weather's projection to the screen (docs/AUDIO.md "Weather visuals"): the lightning ribbon emitter of tp.exe (0x57DD10), the original's depth value in OpenTPW's scene depth, the near-plane clip and the
-/// view modes that take the stronger rain parallax. The reference numbers were produced by running the original's own instructions in an offline emulator over the same inputs (static analysis; tp.exe is never launched).
+/// view modes that take the stronger rain parallax. The reference numbers were produced by an offline emulation of the original's own instructions over the same inputs (analysis scripts outside the repository; tp.exe is never launched).
 /// </summary>
 [TestClass]
 public class WeatherClipTests
@@ -178,18 +178,41 @@ public class WeatherClipTests
 	}
 
 	[TestMethod]
+	public void TheDepthSplitThresholdMatchesTheOriginalsOnTheFarArgument()
+	{
+		// [BIN:TPW-EXE:0x583220 depth split] the original's code run offline for D = 1000 (the eye views) and D = 400: the threshold [0x8BCC28] and the slope [0x8BCC34]
+		Assert.AreEqual( 2.9294944f, WeatherProjection.SplitThreshold( 1000f ), 2e-3f );
+		Assert.AreEqual( 1.1294838f, WeatherProjection.SplitThreshold( 400f ), 2e-3f );
+		// a far argument so small that t stays at the near plane: the linear range ends where the scene's depth is the near plane's
+		Assert.AreEqual( 0f, WeatherProjection.SplitThreshold( 20f ), 0.05f );
+	}
+
+	[TestMethod]
 	public void TheOriginalsDepthValueSitsWhereASceneSurfaceOfTheEquivalentDistanceDoes()
 	{
-		// the original's depth-buffer value at view depth v (0x578BE0 with near 0.1, far 1000) and its inverse
-		foreach ( var distance in new[] { 0.1f, 0.3f, 1f, 2.5f, 10f, 200f } )
+		var threshold = WeatherProjection.SplitThreshold( 1000f );
+		var m10 = WeatherProjection.ParkSine / (1f - 0.1f / 1000f);
+		// the linear range (clip z below the threshold, no divide by w): the surface at n + z / m10, whatever the w
+		foreach ( var z in new[] { 0.04f, 0.5f, 2.04f, 2.9f } )
+			Assert.AreEqual( 0.1f + z / m10, WeatherProjection.EquivalentDistance( z, z + 0.06f ), 1e-4f, $"z = {z}" );
+		// above it, the divided range: n / (1 - (z / w) (1 - n / f)), and the two ranges meet at the distance t where the split sits
+		var t = 0.1f + threshold / m10;
+		var wt = WeatherProjection.ParkSine * t;
+		Assert.AreEqual( t, WeatherProjection.EquivalentDistance( threshold + 1e-5f, wt ), 2e-3f, "continuous across the threshold" );
+		Assert.AreEqual( t, WeatherProjection.EquivalentDistance( threshold - 1e-5f, wt ), 2e-3f );
+		Assert.IsTrue( t > 4.2f && t < 4.3f, $"t = {t}: nearly the whole 8-unit drop field lies in the linear range" );
+		foreach ( var distance in new[] { 5f, 10f, 200f } )
 		{
-			var value = (distance - 0.1f) / (distance * (1f - 0.1f / 1000f));
-			Assert.AreEqual( distance, WeatherProjection.EquivalentDistance( value ), distance * 1e-3f + 1e-4f, $"v = {distance}" );
+			var z = m10 * (distance - 0.1f);
+			var w = WeatherProjection.ParkSine * distance;
+			Assert.AreEqual( distance, WeatherProjection.EquivalentDistance( z, w ), distance * 1e-3f, $"v = {distance}" );
 		}
-		// the flake's value (z + 0.1) / (z + 0.1501) and the rain's (z + 0.04) / (z + 0.1) of the original's weather vertices
+		// the lobby has no linear range: every vertex takes z / w
 		var flake = 2f;
-		Assert.AreEqual( (flake + 0.1f) / (flake + 0.1501f), (WeatherProjection.EquivalentDistance( (flake + 0.1f) / (flake + 0.1501f) ) - 0.1f) / (WeatherProjection.EquivalentDistance( (flake + 0.1f) / (flake + 0.1501f) ) * 0.9999f), 1e-5f );
-		Assert.IsTrue( WeatherProjection.EquivalentDistance( (flake + 0.1f) / (flake + 0.1501f) ) > 2 * flake, "a flake sorts as a surface about twice as far as the flake's depth, so a world surface nearer than that hides it" );
+		var ratio = (flake + 0.1f) / (flake + 0.1501f);
+		Assert.AreEqual( WeatherProjection.EquivalentDistance( ratio ), WeatherProjection.EquivalentDistance( flake + 0.1f, flake + 0.1501f, split: false ), 1e-4f );
+		Assert.IsTrue( WeatherProjection.EquivalentDistance( ratio ) > 2 * flake, "without the split a flake sorts as a surface about twice as far as its depth" );
+		Assert.IsTrue( float.IsPositiveInfinity( WeatherProjection.EquivalentDistance( 2f, 1.9f, split: false ) ), "beyond the far plane" );
 	}
 
 	[TestMethod]
@@ -199,11 +222,28 @@ public class WeatherClipTests
 		const float scale = OriginalParkPlacement.ModelScale;
 		Assert.AreEqual( 0f, WeatherProjection.SceneDepth( projection, 0.1f ), 1e-5f, "0 at the scene's near plane, 0.1 engine units" );
 		Assert.AreEqual( 1f, WeatherProjection.SceneDepth( projection, 200f ), 1e-4f, "1 at its far plane" );
-		// a rain vertex right in front of the eye sorts nearer than the scene's near plane: the original draws it, in front of everything
-		Assert.IsTrue( WeatherProjection.EquivalentDistance( 0.4f ) * scale < 0.1f );
-		Assert.AreEqual( 0f, WeatherProjection.WriteDepth( 0.4f, projection, scale ) );
-		var farValue = (1.5f - 0.1f) / (1.5f * 0.9999f);
-		Assert.IsTrue( WeatherProjection.WriteDepth( farValue, projection, scale ) is > 0 and < 1 );
+		// a rain vertex right in front of the eye: z 0.09, w 0.15 sorts at 0.1 + 0.09 / 0.7 = 0.23 original units, nearer than the scene's near plane: the original draws it, in front of everything
+		Assert.IsTrue( WeatherProjection.EquivalentDistance( 0.09f, 0.15f ) * scale < 0.1f );
+		Assert.AreEqual( 0f, WeatherProjection.WriteDepth( 0.09f, 0.15f, projection, scale ) );
+		Assert.IsTrue( WeatherProjection.WriteDepth( 0.7071f * 499.9f, 0.7071f * 500f, projection, scale ) is > 0 and < 1, "a drop 500 original units away" );
+		Assert.AreEqual( 1f, WeatherProjection.WriteDepth( 2f, 1.9f, projection, scale, split: false ), "beyond the far plane, and no NaN at the pole of the mapping" );
+		Assert.AreEqual( 1f, WeatherProjection.WriteDepth( 1.0001f / (1f - 0.1f / 1000f), 1f, projection, scale, split: false ) );
+	}
+
+	[TestMethod]
+	public void ARainStreakWhoseLeadingEndLiesBeyondTheFarPlaneIsClippedAtZEqualsW()
+	{
+		// looking steeply up: the streak's leading end has z = trailing depth + 0.04 and w = its own depth + 0.1 with the leading depth far less: z > w
+		var output = new WeatherVertex[6];
+		WeatherVisualState.WriteStreak( new NVector3( 0f, 0f, 1f ), new NVector3( 0f, 0f, -0.1f ), output );
+		var triangle = new[] { output[3], output[4], output[5] }.Select( v => new WeatherRibbonVertex( new NVector4( v.Position, v.W ), v.TexCoords, new NVector2( v.Grey, v.Alpha ) ) ).ToArray();
+		Assert.IsTrue( triangle.Any( v => v.Clip.Z > v.Clip.W ), "the leading vertices are beyond the far plane" );
+		var clipped = new WeatherRibbonVertex[8];
+		var count = WeatherProjection.ClipNear( triangle, clipped, -1f, 1f, 0f );
+		Assert.IsTrue( count >= 3 );
+		foreach ( var vertex in clipped.Take( count ) )
+			Assert.IsTrue( vertex.Clip.Z <= vertex.Clip.W + 1e-5f );
+		Assert.IsTrue( clipped.Take( count ).All( v => v.Tint.Y is >= 0.5f and <= 1f ), "the alpha interpolates between 0x80 and 0xFF" );
 	}
 
 	[TestMethod]

@@ -982,7 +982,7 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		// The lobby's rain and bolts are drawn by the engine's weather renderer, as the original's are (CRain), at the lobby's own scale.
 		if ( lobbyWeather == null || !Entity.All.Contains( lobbyWeather ) )
-			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f, fieldOfView: LobbyCameraMode.IslandFieldOfView );
+			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f, fieldOfView: LobbyCameraMode.IslandFieldOfView, depthSplit: false );
 		lobbyIslands.Clear();
 		foreach ( var (island, slot) in Lobby.Slots )
 		{

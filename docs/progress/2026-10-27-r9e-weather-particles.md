@@ -9,4 +9,4 @@ Package R9-E. The rain, snow and lightning now reach the screen the way the orig
 - **PTCL-904 retired:** nothing rescales a frame's float +8, so textured quads are the frame's aspect times the display's width over its height wide; screen-space quads follow the original's factors.
 - **PTCL-900 narrowed:** the refresh gate is read (instance registered in the scene, table with a matrix key). **PTCL-909 narrowed:** the particle pass lies in the only scene view before the advisor's model; the HUD windows' place is not read.
 
-Reference numbers for the tests come from running tp.exe's own instructions offline; the game was never launched. The determinism hash is unchanged (presentation only, no simulation stream is drawn).
+Reference numbers for the tests come from an offline emulation of tp.exe's own instructions (analysis scripts outside the repository, no original bytes committed); the game was never launched. The determinism hash is unchanged (presentation only, no simulation stream is drawn).

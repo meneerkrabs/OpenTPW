@@ -54,7 +54,7 @@ public class SelfLitMaterialTests
 	[TestMethod]
 	public void TheLitShaderShadesASelfLitCornerWithTheConstantColourAndNoLight()
 	{
-		var text = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "test.shader" ) );
+		var text = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "test.shader" ) ).ReplaceLineEndings( "\n" );
 		StringAssert.Contains( text, $"const uint FLAG_SELF_LIT = 0x{TextureSlotAddressing.SelfLitFlag:X8}u;", "the shader's bit is the vertex flag's" );
 		StringAssert.Contains( text, "if ( selfLit )\n            vShading = vec3( 1.0 );", "the constant colour replaces the whole lighting colour, point lights included" );
 		StringAssert.Contains( text, "if ( !selfLit && vAmbientTint.x", "the evening shoulder is for lit surfaces" );

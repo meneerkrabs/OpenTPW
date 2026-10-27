@@ -68,7 +68,7 @@ public sealed class TrackSurface
 	// [BIN:TPW-EXE:0x004511A0 sample] mode 1: the terrain sampler 0x004527F0 (the landscape's corner heights over the cell's two triangles, not the .hmp) + model +0xA0; mode 2: 0x00451290(x, z, 0, 1); mode 4: 0x00451290(x, z, 1, 0); every mode adds +0xA0, and a NaN +0xA0 is reset to 0
 	// [BIN:TPW-EXE:0x00451290 face sampler] mode 4 samples the +0x2C mesh (first covering face; none: the instance height +0x44), mode 2 walks the dummy records with bit 2 (mesh = the header's first dummy mesh +0x46 plus the record index) and takes the highest covering face, returning at once for a record with bit 4; −100 when nothing covers
 	// [BIN:TPW-EXE:0x00451390 mesh faces] only faces whose first u16 has bit 0x8000 count; the height is the face plane's at the point (the normal at the low 15 bits, turned by the instance's 0/90/180/270 rotation)
-	// [APPROX:TRACK-001] the surface records are taken when a dummy record has bit 2 (the instance block's bit 8 the original tests is set by 0x44A870 for exactly those; every shipped hill piece and the face-sampled stations carry such a record, and the flat pieces a nonzero +0xA0); the faces are baked with the full rest transforms (the original adds the node translations only), the faces are read in record order; the directed edge gate follows the original but uses host float arithmetic, not exact x87 intermediates; the instance mesh sampler (+0x2C, 0x0046A5A0) reads every 0x8000 face of the model
+	// [APPROX:TRACK-001] the instance mesh sampler (mode 4, +0x2C) reads every 0x8000 face of the model, where the original's 0x46A5A0 builds it through 0x469A80 from the node hierarchy under the model's root with its own node filters (flags 0x200, 0x1000, 0x20000 of the node, the call's bits 2 and 4), which are not traced; only objects without a surface record, header flag 0x80 or +0xA0 reach it, none of them a track piece or station
 	/// <param name="model">The object's model.</param>
 	/// <param name="drapeLoaded">The model was loaded with the drape load flag (a kart or water track piece: <c>0x4629D0</c> sets header bit 0x80 on a model it loads draped), so the sampler takes the terrain mode when the model has no surface record.</param>
 	// [BIN:TPW-EXE:0x0044A870 surface block] the loader's last step sets bit 8 of the instance's +0x28 block exactly when a dummy record has type bit 2, which is the test 0x450EA0 makes for mode 2: the surface-record rule here is the original's
@@ -86,15 +86,14 @@ public sealed class TrackSurface
 		}
 		if ( records.Count == 0 && (drapeLoaded || (model.HeaderFlags & 0x80) != 0 || model.HeaderHeight != 0 && !float.IsNaN( model.HeaderHeight )) )
 			return new TrackSurface( Offset( model ) );
-		var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		var found = new List<Triangle>();
 		var groups = new List<(int Start, int Count, bool FirstHit)>();
 		void Add( int meshIndex, bool firstHit )
 		{
 			var mesh = model.Meshes[meshIndex];
 			var node = mesh.NodeIndex >= 0 && mesh.NodeIndex < model.Nodes.Count ? mesh.NodeIndex : model.RootNodeIndex;
-			var bake = node >= 0 ? rest[node] : Matrix4x4.Identity;
-			V3 Position( uint index ) => ObjectAssets.ConvertAxes( V3.Transform( mesh.Vertices[(int)index].Position.GetSystemVector3(), bake ) );
+			var offset = NodeOffset( model, node );
+			V3 Position( uint index ) => ObjectAssets.ConvertAxes( mesh.Vertices[(int)index].Position.GetSystemVector3() + offset );
 			var start = found.Count;
 			for ( var face = 0; face < mesh.FaceNormalIndices.Length && face * 3 + 2 < mesh.Indices.Length; face++ )
 			{
@@ -114,6 +113,27 @@ public sealed class TrackSurface
 			Add( mesh, true );
 		// the collision mesh answers with its first covering face, and with the instance's own height where none covers
 		return new TrackSurface( found.ToArray(), new[] { (0, found.Count, true) }, baseWhenUncovered: true, Offset( model ) );
+	}
+
+	/// <summary>
+	/// The position the instance gathering adds to a mesh's vertices: the node's own position plus those of its ancestors that have a parent themselves (the root's is left out), the
+	/// translations only, in the original's order of addition.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00450F20 instance faces] each vertex is the mesh's local vertex plus the node's position (+0x40/+0x44/+0x48) and, walking up while the ancestor itself has a parent (0x451001..0x45103F), that ancestor's position; the node's rotation and scale do not enter (no shipped surface mesh has any: the full rest transform gave the same vertices to 6e-6)
+	private static V3 NodeOffset( ModelFile model, int node )
+	{
+		if ( node < 0 || node >= model.Nodes.Count || model.Nodes[node].ParentIndex < 0 )
+			return V3.Zero;
+		var own = model.Nodes[node].Transform;
+		var (x, y, z) = (own.M41, own.M42, own.M43);
+		for ( var parent = model.Nodes[node].ParentIndex; parent >= 0 && model.Nodes[parent].ParentIndex >= 0; parent = model.Nodes[parent].ParentIndex )
+		{
+			var transform = model.Nodes[parent].Transform;
+			x = transform.M41 + x;
+			y = transform.M42 + y;
+			z = z + transform.M43;
+		}
+		return new V3( x, y, z );
 	}
 
 	/// <summary>
@@ -193,10 +213,8 @@ public sealed class TrackSurface
 		return u * a.Z + v * b.Z + w * c.Z;
 	}
 
-	// [BIN:TPW-EXE:0x004514CF directed face edges] Three edge values must be >= 0, with no
-	// epsilon (comparison against 0 at 0x45151f). In converted axes this accepts clockwise
-	// faces. These host float operations do not reproduce all x87 boundary rounding.
-	private static bool InsideDirectedEdge( V3 previous, V3 next, float x, float y )
+	// [BIN:TPW-EXE:0x004514CF directed face edges] for the edges B → A of a face taken in the order V2 → V0, V1 → V2, V0 → V1 (0x4514C7..0x45153A) the value is ((dz × px − (dz × Bx + dx × Bz)) + dx × pz) with dz = Az − Bz and dx = Bx − Ax (0x4514CF..0x45151D), compared with 0.0 (0x6FE3DC at 0x45151F): below it the point is outside. The thread runs at the control word 0x7F (24-bit mantissa, COAST-032, X87Precision), so each x87 result is rounded to a single, which is what these float operations do in this order; the tests emulate the instruction sequence with the x87 type and compare
+	internal static bool InsideDirectedEdge( V3 previous, V3 next, float x, float y )
 	{
 		var dx = previous.X - next.X;
 		var dy = next.Y - previous.Y;

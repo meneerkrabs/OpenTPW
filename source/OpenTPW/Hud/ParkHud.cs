@@ -707,7 +707,7 @@ public sealed partial class ParkHud
 			SetInfoArm( false );
 		}
 		if ( GameOptions.Current.Confirmations )
-			Stack.Push( UiDialogs.Message( "confirmDelete", () => strings[UIStrings.DeleteItem],
+			Stack.Push( UiDialogs.MessageOfOriginalText( "confirmDelete", () => strings[UIStrings.DeleteItem],
 				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); Remove(); }),
 				(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 		else Remove();
@@ -751,14 +751,14 @@ public sealed partial class ParkHud
 		{
 			(UIStrings.Load, () => { if ( host.CreateLoad != null ) Stack.Push( host.CreateLoad( Stack ) ); }),
 			(UIStrings.Save, SavePark),
-			(UIStrings.RestartPark, () => Stack.Push( UiDialogs.Message( "confirmRestart", () => strings[UIStrings.ConfirmRestartPark],
+			(UIStrings.RestartPark, () => Stack.Push( UiDialogs.MessageOfOriginalText( "confirmRestart", () => strings[UIStrings.ConfirmRestartPark],
 				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); host.RestartPark?.Invoke(); }), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 			(UIStrings.PublishPark, () => host.PublishPark?.Invoke( Stack )),
 			(UIStrings.Options, () => { if ( host.CreateOptions != null ) Stack.Push( host.CreateOptions( Stack, () => { } ) ); }),
 			(UIStrings.GoOnline, () => host.GoOnline?.Invoke( Stack )),
 			(UIStrings.ResumeGame, ResumeGameAfterApplicationPause),
 			(UIStrings.ExitToLobby, () => { if ( menu is { IsRemoved: false } && ReferenceEquals( Stack.Top, menu ) ) ExitToLobbyFromMenu(); }),
-			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
+			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.MessageOfOriginalText( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};
 		// [BIN:TPW-EXE:0x48c150 pause menu selection] game type 1 (0x48c1e3) selects the three online entries before the

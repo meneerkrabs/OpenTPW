@@ -39,7 +39,7 @@ public sealed class OnlineHost
 /// list_msgs, b_vote, i_mail) keep their authored places. Text comes from the original UITEXT where
 /// it exists and from <see cref="OnlineStrings"/> otherwise.
 /// </summary>
-// [EXT:ONLINE-UI] every label and label button of these screens is OpenTPW's own text (Unclipped), so none is cut off at its box; native online screens; composition of the original screens and the place of code-positioned controls are OpenTPW's
+// [EXT:ONLINE-UI] the online screens are OpenTPW's as a whole, so their labels, label buttons, text fields and headers (several of them original UITEXT in original table boxes) are not cut off at their boxes (Unclipped); native online screens; composition of the original screens and the place of code-positioned controls are OpenTPW's
 public sealed class OnlineScreens
 {
 	private readonly UiScreenStack stack;

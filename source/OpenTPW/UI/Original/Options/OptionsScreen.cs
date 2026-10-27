@@ -393,7 +393,7 @@ public static class OptionsScreen
 					state.TexturePackSelected = false;
 				}
 				if ( graphicsRestart || (languageChanged && languageNow == null) )
-					stack.Push( UiDialogs.Message( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
+					stack.Push( UiDialogs.MessageOfOriginalText( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
 				else if ( languageNow == false )
 					stack.Push( UiDialogs.Message( "languageAfterPark", () => strings.Extra( OpenTpwText.LanguageAfterPark ), (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
 				else
@@ -614,7 +614,7 @@ public static class OptionsScreen
 		void ShowRestored()
 		{
 			stack.Pop();
-			stack.Push( UiDialogs.Message( "restored", () => strings[UIStrings.ChangeScreenResolutionRestored], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
+			stack.Push( UiDialogs.MessageOfOriginalText( "restored", () => strings[UIStrings.ChangeScreenResolutionRestored], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
 		}
 		void Keep()
 		{
@@ -633,7 +633,7 @@ public static class OptionsScreen
 			display.Revert();
 			ShowRestored();
 		}
-		var screen = UiDialogs.Message( "confirmDisplay", () => $"{strings[UIStrings.ChangeScreenResolution]}\n\n{display.ConfirmationSecondsRemaining}",
+		var screen = UiDialogs.MessageOfOriginalText( "confirmDisplay", () => $"{strings[UIStrings.ChangeScreenResolution]}\n\n{display.ConfirmationSecondsRemaining}",
 			(() => strings.Value( UIStrings.Yes ), Keep), (() => strings.Value( UIStrings.No ), Restore) );
 		// The display reverts by itself after its timeout; follow it.
 		screen.Updating = _ =>

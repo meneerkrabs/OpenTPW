@@ -170,7 +170,7 @@ public sealed partial class ParkHud
 		var row = rows[selectedLoan];
 		if ( outstandingLoans && row.FinalAmount > economy.Balance )
 		{
-			Stack.Push( UiDialogs.Message( "loanFunds", () => strings[UIStrings.InsufficientFunds],
+			Stack.Push( UiDialogs.MessageOfOriginalText( "loanFunds", () => strings[UIStrings.InsufficientFunds],
 				(() => strings.Extra( OpenTpwText.Back ), () => Stack.Pop()) ) );
 			return;
 		}
@@ -178,7 +178,7 @@ public sealed partial class ParkHud
 		var repayment = outstandingLoans;
 		var prompt = repayment ? $"{strings[UIStrings.RemainingBalance]} {FormatMoney( amount )}?"
 			: $"{strings[UIStrings.TakeOutLoan]} {amount.ToString( "#,0", CultureInfo.InvariantCulture )}?";
-		Stack.Push( UiDialogs.Message( "loanConfirm", () => prompt,
+		Stack.Push( UiDialogs.MessageOfOriginalText( "loanConfirm", () => prompt,
 			(() => strings[UIStrings.Yes], () =>
 			{
 				Stack.Pop();

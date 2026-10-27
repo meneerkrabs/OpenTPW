@@ -391,7 +391,7 @@ public sealed partial class FrontEndMenu
 	{
 		if ( Stack.Top?.Name == "confirmQuit" )
 			return;
-		Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
+		Stack.Push( UiDialogs.MessageOfOriginalText( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 			(() => strings.Value( UIStrings.Yes ), actions.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 	}
 }

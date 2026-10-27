@@ -315,7 +315,7 @@ public sealed partial class ParkHud
 			EnsureAttractionSelection();
 		}
 		if ( GameOptions.Current.Confirmations )
-			Stack.Push( UiDialogs.Message( "confirmDeleteAttraction", () => strings[DeleteLabelOf( row.Category )] + "\n" + row.Name,
+			Stack.Push( UiDialogs.MessageOfOriginalText( "confirmDeleteAttraction", () => strings[DeleteLabelOf( row.Category )] + "\n" + row.Name,
 				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); Remove(); }),
 				(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 		else Remove();

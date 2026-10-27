@@ -71,7 +71,7 @@ public sealed class UiContext
 	/// <summary>
 	/// The control's box in whole pixels, one box for the placement and the clip: tp.exe's text control makes its bitmap [control+0x3c] x [control+0x3e] pixels
 	/// ((R - L) x W >> 11 and (B - T) x H / 1536, truncated, 0x48f47b-0x48f4c5) and aligns the text inside that size (the right and centre bounds of 0x48f8ba and 0x48f943 are the width); the
-	/// bitmap's own position stays the rectangle's left and top in 2048 x 1536 units (the quad of 0x48fbb9), which the rasteriser puts on the nearest pixel, so the box starts at the rounded left and top.
+	/// bitmap's own position stays the rectangle's left and top in 2048 x 1536 units (the quad of 0x48fbb9), which the sprite draw 0x58a010 turns into whole pixels with fistp (0x58a15f, 0x58a1c6: round half to even, as MathF.Round), so the box starts at the rounded left and top.
 	/// </summary>
 	public static UiRect TextBox( UiRect rect ) => new( MathF.Round( rect.X ), MathF.Round( rect.Y ), MathF.Floor( rect.Width ), MathF.Floor( rect.Height ) );
 
@@ -172,6 +172,7 @@ public sealed class UiContext
 		rect = TextBox( rect );
 		var box = InkBox( chosen, text );
 		// [BIN:TPW-EXE:0x6aec80 text wrap] the original does not shrink or cut an option label that is wider than its rectangle: the text library wraps it greedily into the rectangle (a line ends at the last space before the overflowing glyph, a word longer than the line is broken between characters), the block centred vertically (0x6aeb10) and cut off at the box (0x48f3d0)
+		// [EXT:option-label-fit] the wrap triggers on the label's ink width; 0x6aec80 compares the pen advances with the bitmap's width, which can differ by the glyph offsets (a pixel or two)
 		if ( wrap && (box.Right - box.Left) * scale > rect.Width )
 		{
 			// [EXT:option-label-fit] when even the wrapped block is taller than the rectangle (the original would cut it off at both ends), the label stays on one line and, like the other OpenTPW fits, is not cut off at the box

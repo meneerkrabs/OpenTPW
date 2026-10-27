@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -126,6 +126,29 @@ public class EveningTorchTests
 			Assert.AreEqual( 0, entry.Settings.GetInt( "Info.AttractionValue", -1 ) );
 			Assert.IsTrue( Enumerable.Range( 0, 3 ).All( bracket => entry.Settings.GetInt( $"Attraction[{bracket}].NewBonus", -1 ) == 0 ) );
 			Assert.IsNotNull( entry.ScriptPath );
+		}
+	}
+
+	[TestMethod]
+	public void TheEveningExtensionsTorchFlamesAreLightSourcesAndItsBodiesAreLitExceptTheirOwnGlow()
+	{
+		foreach ( var (theme, index) in new[] { "jungle", "hallow", "space", "fantasy" }.Select( ( theme, index ) => (theme, index) ) )
+		{
+			var entry = ObjectCatalog.Load( theme ).Get( 63900 + index );
+			var model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
+			var flame = model.Meshes[model.Nodes.Single( node => node.Name == "flame" ).MeshIndex];
+			Assert.IsTrue( flame.Materials.All( material => (material.Pad & ModelBuilder.SelfLitMaterialFlag) != 0 && TextureSlotAddressing.IsLightSource( material.Name ) ), $"{theme}: the flame stays full-bright at night" );
+			var vertices = ObjectAssets.ConvertMesh( flame );
+			Assert.IsTrue( vertices.All( vertex => (vertex.MatFlags & TextureSlotAddressing.LightSourceFlag) != 0 && (vertex.MatFlags & TextureSlotAddressing.SelfLitFlag) != 0 ), $"{theme}: the flame's vertices" );
+			// the body is lit except for what its own art makes a light (the hallow torch's tt_hal_glow): a corner is a light source exactly when its material is self-lit and named for light
+			var body = model.Meshes[model.Nodes.Single( node => node.Name == "torch" ).MeshIndex];
+			Assert.IsTrue( body.Materials.Any( material => (material.Pad & ModelBuilder.SelfLitMaterialFlag) == 0 && !TextureSlotAddressing.IsLightSource( material.Name ) ), $"{theme}: the body has lit parts" );
+			var bodyVertices = ObjectAssets.ConvertMesh( body );
+			for ( var corner = 0; corner < bodyVertices.Length; corner++ )
+			{
+				var material = body.Materials[(int)body.Vertices[corner].TextureIndex];
+				Assert.AreEqual( (material.Pad & ModelBuilder.SelfLitMaterialFlag) != 0 && TextureSlotAddressing.IsLightSource( material.Name ), (bodyVertices[corner].MatFlags & TextureSlotAddressing.LightSourceFlag) != 0, $"{theme}: {material.Name}" );
+			}
 		}
 	}
 

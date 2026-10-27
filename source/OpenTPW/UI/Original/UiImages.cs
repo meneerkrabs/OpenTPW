@@ -51,10 +51,10 @@ public static class UiImages
 	}
 
 	/// <summary>
-	/// Texture slot flag 0x2. The state builder turns it into state bit 0x800000 (0x581790) and OpenTPW ignores it: no consumer of that bit was found in the state decoder 0x567620 (UI-034). Of the 185 ui.wad slots
+	/// Texture slot flag 0x2. OpenTPW ignores it: state bit 0x800000 of the state builder (0x581790) is bit 0x2 of the material word +0xC, which no shipped material sets, and its only reader is the sort-key override at 0x58109E (UI-034). Of the 185 ui.wad slots
 	/// that set it, all 185 textures carry their own alpha plane; <c>ipan</c> (the lobby panel's <c>f_lobbutbg</c>, and <c>w_dialog</c> and <c>f_train</c> without the flag) and <c>smallguage</c> are cut-outs.
 	/// </summary>
-	// [APPROX:UI-034] the slot flag 0x2 (state bit 0x800000, 0x581790) has no effect here: the draw state of every UI texture comes from its own alpha type (0x590C40) — evidence needed: the consumer of state bit 0x800000
+	// [BIN:TPW-EXE:0x581db0 UI part state] a UI node's parts go through the scene batcher (the walker 0x576910 marks them with 0x8bb624 = 0x1000000, 0x581cd0 appends them, 0x581db0 -> 0x581790 -> 0x590c40), so every UI texture draws with the state word of its own alpha type and a cut-out gets the 0xF0/255 test; state bit 0x800000 (material word bit 0x2, never set) only re-keys the part's depth sort (0x58109e)
 	public const uint TransparentFlag = 0x2;
 
 	/// <summary>The alpha test of a cut-out texture (state 0x2756, reference 0xF0/255): texels below it are not drawn, the others keep their alpha; discarded texels take a neighbour's colour so linear filtering does not bleed them in.</summary>

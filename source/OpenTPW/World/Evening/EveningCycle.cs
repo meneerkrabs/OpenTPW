@@ -88,6 +88,9 @@ public readonly record struct EveningLook(
 	/// <summary>Full daylight: the sun white, the whole ambient, no tint anywhere, the lamps off.</summary>
 	public static EveningLook Day { get; } = new( 1f, SVector3.One, 1f, SVector3.One, SVector3.One, SVector3.One, SVector3.One, 0f, SVector3.One );
 
+	/// <summary>[EXT:evening] The night tint of the self-lit materials that are no light source (water, signs, lava, beams, panels): the pool water's (<see cref="WaterTint"/>), the extension's other unlit content, which keeps a river as dark as the lit art round it; the sprites' own tint is brighter.</summary>
+	public SVector3 UnlitTint => WaterTint;
+
 	/// <summary>Whether this is full daylight, which the renderer draws exactly as the original does (every uniform stays as it was).</summary>
 	public bool IsDay => Daylight >= 1f;
 

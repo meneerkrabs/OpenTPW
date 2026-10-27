@@ -19,10 +19,21 @@ public sealed partial class ParkHud
 	{
 		public RideSettingWords Ride;
 		public int QualityStep, Ingredient, Price, Prize, WinChance;
+
+		internal void CopyFrom( ObjectWindowSettings other ) =>
+			(Ride, QualityStep, Ingredient, Price, Prize, WinChance) = (other.Ride, other.QualityStep, other.Ingredient, other.Price, other.Prize, other.WinChance);
+
+		internal bool SameAs( ObjectWindowSettings other ) =>
+			(Ride, QualityStep, Ingredient, Price, Prize, WinChance) == (other.Ride, other.QualityStep, other.Ingredient, other.Price, other.Prize, other.WinChance);
 	}
 
 	private OriginalObject? settingsOwner;
 	private readonly ObjectWindowSettings pending = new();
+	/// <summary>
+	/// [EXT:online-coop-commands] The values the window loaded, which a guest's apply compares with its own: a guest's window sends only what its player changed, where the original's apply
+	/// on every close would be a request the guest's rights refuse with a note the player never asked for, or one that writes back the values the park holds.
+	/// </summary>
+	private readonly ObjectWindowSettings loaded = new();
 	internal ObjectWindowSettings PendingSettings => pending;
 
 	/// <summary>The varibox range of the shop and sideshow prices (0x4b0735, 0x4b1cd0: 0..500, step 1).</summary>
@@ -100,6 +111,7 @@ public sealed partial class ParkHud
 				// [EXT:cheats-ride-vehicles] a ride whose vehicle limit the cheat raised has a larger capacity maximum (OriginalObjectRuntime.MaximumCapacity)
 				SliderPosition( words.Capacity, Setting( item, "UsageInfo.MinCapacity" ), item.Runtime.MaximumCapacity ),
 				SliderPosition( words.Duration, Setting( item, "UsageInfo.MinDuration" ), Setting( item, "UsageInfo.MaxDuration" ) ) );
+			loaded.CopyFrom( pending );
 			return;
 		}
 		if ( !TryPriceTarget( item, out _, out var state ) )
@@ -112,6 +124,7 @@ public sealed partial class ParkHud
 		pending.Ingredient = SliderPosition( state.IngredientAmount & 0xFF, 0, 100 );
 		// the win byte +0x190 is 100 less the type's InitChanceOfLoosing at build (0x4db3a1); OpenTPW's economy keeps the chance of losing
 		pending.WinChance = SliderPosition( (100 - state.ChanceOfLosingPercent) & 0xFF, 0, 100 );
+		loaded.CopyFrom( pending );
 	}
 
 	/// <summary>The window's apply for <paramref name="item"/>: the ride window's 0x4af440, the shop window's 0x4b0aa0 or the sideshow window's 0x4b20b0.</summary>
@@ -121,6 +134,10 @@ public sealed partial class ParkHud
 	{
 		if ( item.IsDeleted || level.IsReadOnlyVisit || !level.Objects.Objects.Contains( item ) )
 			return;
+		// [EXT:online-coop-commands] a guest's window sends only the commands whose values its player changed (loaded)
+		var unchanged = level.Commands.SendsRequests ? loaded : null;
+		if ( unchanged != null && pending.SameAs( unchanged ) )
+			return;
 		if ( item.Entry.WhichUIType == (int)BuildCategory.Rides )
 		{
 			if ( item.Runtime.Script != null )
@@ -128,20 +145,30 @@ public sealed partial class ParkHud
 			return;
 		}
 		if ( TryPriceTarget( item, out var economy, out var state ) )
-			ApplyShopSettings( item, economy, state );
+			ApplyShopSettings( item, economy, state, unchanged );
 	}
 
-	private void ApplyShopSettings( OriginalObject item, ParkEconomy economy, ParkObjectState state )
+	/// <summary>
+	/// Applies the window's values to a shop or sideshow; [EXT:online-coop-commands] with <paramref name="unchanged"/> (a guest's apply on close) only the commands whose values differ from
+	/// those, where the original's apply writes them all.
+	/// </summary>
+	private void ApplyShopSettings( OriginalObject item, ParkEconomy economy, ParkObjectState state, ObjectWindowSettings? unchanged = null )
 	{
 		var attraction = item.Runtime.AttractionId;
+		var price = unchanged == null || pending.Price != unchanged.Price;
 		if ( state.Kind == ParkObjectKind.Shop )
 		{
-			level.Commands.Issue( new SetShopSettingsCommand( attraction, (byte)(pending.QualityStep * 50), pending.Ingredient ) );
-			level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
+			if ( unchanged == null || pending.QualityStep != unchanged.QualityStep || pending.Ingredient != unchanged.Ingredient )
+				level.Commands.Issue( new SetShopSettingsCommand( attraction, (byte)(pending.QualityStep * 50), pending.Ingredient ) );
+			if ( price )
+				level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
 		}
 		else if ( IsNonWinnable( item ) )
-			level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
-		else
+		{
+			if ( price )
+				level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
+		}
+		else if ( price || pending.Prize != unchanged!.Prize || pending.WinChance != unchanged.WinChance )
 			level.Commands.Issue( new SetGamePrizeCommand( attraction, pending.Price, pending.Prize, 100 - (pending.WinChance & 0xFF) ) );
 	}
 
@@ -171,6 +198,9 @@ public sealed partial class ParkHud
 				continue;
 			ApplyShopSettings( other, economy, target );
 		}
+		// [EXT:online-coop-commands] the shown object's values went with the click: a guest's close does not send them again
+		if ( level.Commands.SendsRequests )
+			loaded.CopyFrom( pending );
 	}
 
 	// ---- controls ----

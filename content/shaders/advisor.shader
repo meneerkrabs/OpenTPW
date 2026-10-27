@@ -104,6 +104,8 @@ fragment {
         
     // TextureSlotAddressing.ClampFlag: an original MD2 slot without flag 0x10/0x20, which tp.exe clamps instead of wrapping.
     const uint FLAG_CLAMP = 0x80000000u;
+    // TextureSlotAddressing.SelfLitFlag: a corner of a self-lit material (material word +0xC bit 0x1), which the original draws with the constant colour of the draw instead of the vertex lighting colour (tp.exe 0x580C51)
+    const uint FLAG_SELF_LIT = 0x04000000u;
 
     // CLAMP on the wrapping sampler: the coordinates stay half a texel of the coarsest mip the footprint can select
     // inside the edges (that mip's real size, floor(size / 2^level) but at least 1, so odd sizes do not bleed either),
@@ -154,7 +156,8 @@ fragment {
         if ( texIndex == 14 ) vTextureSample = SAMPLE_SLOT( Color14 );
         if ( texIndex == 15 ) vTextureSample = SAMPLE_SLOT( Color15 );
 
-        vec3 vShading = vs_out.vLight;
+        // a self-lit material takes no light: its corners carry the draw's constant colour, white (tp.exe 0x580C51; the advisor's models go through the same vertex fill, 0x581DB0 -> 0x580530)
+        vec3 vShading = ( outMatFlags & FLAG_SELF_LIT ) != 0u ? vec3( 1.0 ) : vs_out.vLight;
         vec3 vOutColor;
 
         // Apply Gouraud shading if the flag is set, otherwise use flat shading

@@ -89,7 +89,7 @@ public class PriceRefusalRecordTests
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( economy ) ) ), EconomyTestData.Settings(), EconomyTestData.Catalog() );
 		Assert.IsTrue( restored.TryGetObject( shop.Id, out var resumed ) );
 		Assert.AreEqual( (2L, 1L), (resumed.WalkAways, resumed.WalkAwaysToday) );
-		CollectionAssert.AreEqual( new[] { 1L }, resumed.WalkAwayDays );
+		CollectionAssert.AreEqual( new[] { 1L, 0L }, resumed.WalkAwayDays, "the first day (ECON-063) took the first record, the day that passed the second entry" );
 		CollectionAssert.AreEqual( new byte[] { 42 }, restored.PriceStatistics.Values( 9 ).ToArray() );
 		var older = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( plain ) ), EconomyTestData.Settings(), EconomyTestData.Catalog() );
 		Assert.IsTrue( older.TryGetObject( shop.Id, out var old ) );

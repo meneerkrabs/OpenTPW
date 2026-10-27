@@ -227,6 +227,12 @@ internal sealed class CoopSession : IDisposable
 	internal CoopManagementRequests? Management { get; private set; }
 
 	/// <summary>
+	/// [EXT:online-coop-commands] A guest's staff tool as requests (C4c-2, docs/COOP.md "A guest's staff"): its one open staff request and whether the player still wants a staff tool, for the
+	/// whole session, across resyncs, as its ledger. Null for a host.
+	/// </summary>
+	internal CoopGuestStaff? GuestStaff { get; private set; }
+
+	/// <summary>
 	/// [EXT:online-coop-commands] Whether the session ended while its management queue held an action not made or not said (C4b-2, <see cref="CoopManagementRequests.HasUnfinished"/>): the
 	/// guest's end dialog adds that some of the last changes may not have been made.
 	/// </summary>
@@ -413,6 +419,8 @@ internal sealed class CoopSession : IDisposable
 	{
 		Management = new CoopManagementRequests();
 		GuestCommands!.Resolved += Management.Resolved;
+		// [EXT:online-coop-commands] and its staff tool's requests, whose notes join the queue's (C4c-2)
+		GuestStaff = new CoopGuestStaff( Management );
 	}
 
 	/// <summary>A guest's subscriptions: the session's end, and the handshake's messages, frames and reconnects.</summary>
@@ -507,8 +515,8 @@ internal sealed class CoopSession : IDisposable
 		}
 		GuestStream?.Dispose();
 		// [EXT:online-coop-commands] whether the guest's management actions left something not made or not said, asked before the ledger's end resolves their requests (C4b-2): the end
-		// dialog says so
-		ManagementUnfinished = Management?.HasUnfinished == true;
+		// dialog says so; a staff request waiting counts too (C4c-2)
+		ManagementUnfinished = Management?.HasUnfinished == true || GuestStaff?.HasUnfinished == true;
 		GuestCommands?.End();
 		Management?.End();
 		if ( level?.CoopSession == this )

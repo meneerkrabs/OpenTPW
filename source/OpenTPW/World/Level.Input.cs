@@ -172,7 +172,7 @@ public partial class Level
 	/// <summary>
 	/// [EXT:online-coop-commands] The session ended with requests open (C3a-2, C3b): the placement, the removal, the queue edit or pick-up, the Backspace and the sales that waited wait
 	/// no more, a line or a track Backspace that waited ends its tool, since what became of it is not known here, [EXT:online-coop-claims] a guest's track tool ends with the claim it held
-	/// (C3c-1b) and its coaster tool closes, its queue dropped (C3c-2), and a guest's Move tool disarms.
+	/// (C3c-1b) and its coaster tool closes, its queue dropped (C3c-2), and a guest's Move and staff tools disarm (C4c-2).
 	/// </summary>
 	internal void EndGuestWaits()
 	{
@@ -197,6 +197,9 @@ public partial class Level
 		// [EXT:online-coop-commands] a guest's Move tool disarms without an end command: its carry goes with the session's state (C3b-2), and the park is shared no more
 		if ( IsMoving && Commands.Player > ParkCommands.LocalPlayer )
 			DisarmMoveLocally();
+		// [EXT:online-coop-commands] and its staff tool turns off without a command, before its park's own cleanup of the guest seats' staff state (C4c-2)
+		if ( Commands.Player > ParkCommands.LocalPlayer )
+			StaffPlacement?.Abandon();
 	}
 
 	/// <summary>[EXT:online-coop-commands] The guest's Move tool disarms without an end command (its carry is gone, or goes with the session), and the HUD drops the item it had armed for it.</summary>

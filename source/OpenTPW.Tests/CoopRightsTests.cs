@@ -112,15 +112,15 @@ public class CoopRightsTests
 		CollectionAssert.Contains( building, ParkCommandKind.LayLine );
 		foreach ( var kind in building )
 			Assert.IsTrue( CoopBuildRights.ClassOf( kind ) is CoopCommandClass.GuestBuilding or CoopCommandClass.SeatCleanup, $"{kind}" );
-		// every right held (set here directly: no command gives one this build does not offer): building's, the attractions', research's and finance's kinds answer (C4b-1, C4b-2), and a
-		// management right no part offers yet is refused even when the seat's rights hold it (staff until C4c)
+		// every right held: building's, the attractions', staff's, research's and finance's kinds answer (C4b-1, C4b-2, C4c-2)
 		level.SetSeatRights( seat, (CoopRights)0x1F );
 		var held = Allowed( seat ).ToArray();
 		CollectionAssert.IsSubsetOf( building, held );
 		foreach ( var kind in held )
-			Assert.IsTrue( CoopBuildRights.ClassOf( kind ) is CoopCommandClass.GuestBuilding or CoopCommandClass.SeatCleanup or CoopCommandClass.Attractions or CoopCommandClass.Research
-				or CoopCommandClass.Finance, $"{kind}" );
-		foreach ( var kind in Enum.GetValues<ParkCommandKind>().Where( kind => CoopBuildRights.ClassOf( kind ) is CoopCommandClass.Attractions or CoopCommandClass.Research or CoopCommandClass.Finance ) )
+			Assert.IsTrue( CoopBuildRights.ClassOf( kind ) is CoopCommandClass.GuestBuilding or CoopCommandClass.SeatCleanup or CoopCommandClass.Attractions or CoopCommandClass.Staff
+				or CoopCommandClass.Research or CoopCommandClass.Finance, $"{kind}" );
+		foreach ( var kind in Enum.GetValues<ParkCommandKind>().Where( kind => CoopBuildRights.ClassOf( kind ) is CoopCommandClass.Attractions or CoopCommandClass.Staff or CoopCommandClass.Research
+			or CoopCommandClass.Finance ) )
 			CollectionAssert.Contains( held, kind, $"{kind} with its right" );
 		// each offered management right answers its own class alone
 		level.SetSeatRights( seat, CoopRights.Research );
@@ -132,6 +132,9 @@ public class CoopRightsTests
 		level.SetSeatRights( seat, CoopRights.Attractions );
 		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>().Where( kind => CoopBuildRights.ClassOf( kind ) is CoopCommandClass.Attractions or CoopCommandClass.SeatCleanup ).ToArray(),
 			Allowed( seat ).ToArray(), "the attractions alone" );
+		level.SetSeatRights( seat, CoopRights.Staff );
+		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>().Where( kind => CoopBuildRights.ClassOf( kind ) is CoopCommandClass.Staff or CoopCommandClass.SeatCleanup ).ToArray(),
+			Allowed( seat ).ToArray(), "staff alone (C4c-2)" );
 		level.SetSeatRights( seat, CoopRights.Build );
 		// a session's own kinds and the speed stay the host's
 		foreach ( var command in new ParkCommand[] { new SetSeatRightsCommand( seat, CoopRights.Build ), new SetBuildGrantCommand( seat, true ), new ReleaseSeatCommand( seat ),
@@ -217,25 +220,30 @@ public class CoopRightsTests
 	[TestMethod]
 	public void TheRightsCommandTakesOnlyAGuestsSeatAndTheRightsThisBuildOffers()
 	{
-		Assert.AreEqual( CoopRights.Build | CoopRights.Attractions | CoopRights.Research | CoopRights.Finance, CoopRightsOffer.Offered, "C4b-2 offers building, the attractions, research and finance" );
-		CollectionAssert.AreEqual( new[] { CoopRights.Build, CoopRights.Attractions, CoopRights.Research, CoopRights.Finance }, CoopRightsOffer.Each.ToArray(), "the dialog's order" );
+		Assert.AreEqual( CoopRights.Build | CoopRights.Attractions | CoopRights.Staff | CoopRights.Research | CoopRights.Finance, CoopRightsOffer.Offered,
+			"C4c-2 offers all five: building, the attractions, staff, research and finance" );
+		CollectionAssert.AreEqual( new[] { CoopRights.Build, CoopRights.Attractions, CoopRights.Staff, CoopRights.Research, CoopRights.Finance }, CoopRightsOffer.Each.ToArray(),
+			"the dialog's order" );
 		foreach ( var seat in new[] { 1, 3, CoopJoinState.MaximumPlayerEntries - 1 } )
-			foreach ( var rights in new[] { CoopRights.None, CoopRights.Build, CoopRights.Attractions, CoopRights.Research, CoopRights.Finance,
-				CoopRights.Build | CoopRights.Attractions | CoopRights.Research | CoopRights.Finance } )
+			foreach ( var rights in new[] { CoopRights.None, CoopRights.Build, CoopRights.Attractions, CoopRights.Staff, CoopRights.Research, CoopRights.Finance,
+				CoopRights.Research | CoopRights.Staff, (CoopRights)0x1F } )
 				Assert.IsTrue( new SetSeatRightsCommand( seat, rights ).IsWellFormed, $"seat {seat}, {rights}" );
 		foreach ( var seat in new[] { int.MinValue, -1, 0, CoopJoinState.MaximumPlayerEntries } )
 			Assert.IsFalse( new SetSeatRightsCommand( seat, CoopRights.Build ).IsWellFormed, $"seat {seat}: never the host's, never past the per-player bound" );
-		foreach ( var rights in new[] { CoopRights.Staff, CoopRights.Research | CoopRights.Staff, CoopRights.Build | CoopRights.Staff, (CoopRights)0x20, (CoopRights)0xFF } )
-			Assert.IsFalse( new SetSeatRightsCommand( 2, rights ).IsWellFormed, $"{rights}: a right whose actions do not wait for the host yet cannot be given" );
-		// a hand-made record that gives the staff right does not decode, so no stream carries it; one made in memory is refused before the park and its log
+		foreach ( var rights in new[] { (CoopRights)0x20, CoopRights.Staff | (CoopRights)0x20, (CoopRights)0x80, (CoopRights)0xFF } )
+			Assert.IsFalse( new SetSeatRightsCommand( 2, rights ).IsWellFormed, $"{rights}: a right past the five cannot be given" );
+		// a hand-made record that gives a right past the five does not decode, so no stream carries it; one made in memory is refused before the park and its log
 		var bytes = ParkCommandCodec.Encode( new SetSeatRightsCommand( 2, CoopRights.Build ) );
-		// the rights are the record's last field, a zigzag varint: the staff right is 4, written 0x08
-		bytes[^1] = 0x08;
+		// the rights are the record's last field, a zigzag varint: the bit past the five is 32, written 0x40
+		bytes[^1] = 0x40;
 		Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes ) );
 		var (level, _) = NewPark();
 		var log = level.Commands.Log.Count;
-		Assert.IsFalse( level.Commands.Apply( new SetSeatRightsCommand( 2, CoopRights.Staff ) ).Accepted );
+		Assert.IsFalse( level.Commands.Apply( new SetSeatRightsCommand( 2, (CoopRights)0x20 ) ).Accepted );
 		Assert.AreEqual( (log, CoopRights.None), (level.Commands.Log.Count, level.RightsOf( 2 )) );
+		// the staff right is given as any other (C4c-2)
+		Assert.IsTrue( level.Commands.Apply( new SetSeatRightsCommand( 2, CoopRights.Staff ) ).Accepted );
+		Assert.AreEqual( CoopRights.Staff, level.RightsOf( 2 ) );
 	}
 
 	[TestMethod]

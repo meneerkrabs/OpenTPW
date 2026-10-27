@@ -11,6 +11,10 @@ internal enum ManagementTargetKind : byte
 	Loans = 3,
 	/// <summary>One placed attraction (<see cref="ManagementTarget.Id"/> is its attraction id): its window's settings and prices, its door, its call and its upgrade (C4b-2).</summary>
 	Attraction = 4,
+	/// <summary>One employee (<see cref="ManagementTarget.Id"/> is its staff id, which no later employee takes): its name, its patrol area and its dismissal (C4c-2).</summary>
+	Staff = 5,
+	/// <summary>The roles' training budgets (C4c-2).</summary>
+	Training = 6,
 	/// <summary>A test's own targets (the cap's test needs more targets than the windows have); no window makes one.</summary>
 	Synthetic = 255
 }
@@ -22,6 +26,8 @@ internal readonly record struct ManagementTarget( ManagementTargetKind Kind, int
 	public static ManagementTarget Finance => new( ManagementTargetKind.Finance );
 	public static ManagementTarget Loans => new( ManagementTargetKind.Loans );
 	public static ManagementTarget Attraction( int attraction ) => new( ManagementTargetKind.Attraction, attraction );
+	public static ManagementTarget Staff( int staff ) => new( ManagementTargetKind.Staff, staff );
+	public static ManagementTarget Training => new( ManagementTargetKind.Training );
 }
 
 /// <summary>[EXT:online-coop-commands] A control whose latest value is what its player wants (C4b): a run of its changes goes once, with the latest value.</summary>
@@ -44,7 +50,13 @@ internal enum ManagementKnobKind : byte
 	/// <summary>A winnable sideshow's price, prize and chance together (<see cref="SetGamePrizeCommand"/>): its typed price too, so no two knobs write one field.</summary>
 	Game = 10,
 	/// <summary>An attraction's call for a mechanic or a handyman (<see cref="RequestMaintenanceCommand"/>).</summary>
-	Maintenance = 11
+	Maintenance = 11,
+	/// <summary>An employee's name (<see cref="RenameStaffCommand"/>, C4c-2).</summary>
+	StaffName = 12,
+	/// <summary>An employee's patrol area, set or cleared (<see cref="SetPatrolAreaCommand"/>).</summary>
+	Patrol = 13,
+	/// <summary>A role's training budget (<see cref="ManagementKnob.Index"/> is the role, <see cref="SetTrainingBudgetCommand"/>).</summary>
+	TrainingBudget = 14
 }
 
 /// <summary>[EXT:online-coop-commands] A control within a target (<see cref="ManagementKnobKind"/>), with its index where a target has several of a kind.</summary>
@@ -61,6 +73,9 @@ internal readonly record struct ManagementKnob( ManagementKnobKind Kind, int Ind
 	public static ManagementKnob Price => new( ManagementKnobKind.Price );
 	public static ManagementKnob Game => new( ManagementKnobKind.Game );
 	public static ManagementKnob Maintenance => new( ManagementKnobKind.Maintenance );
+	public static ManagementKnob StaffName => new( ManagementKnobKind.StaffName );
+	public static ManagementKnob Patrol => new( ManagementKnobKind.Patrol );
+	public static ManagementKnob TrainingBudget( StaffType role ) => new( ManagementKnobKind.TrainingBudget, (int)role );
 }
 
 /// <summary>[EXT:online-coop-commands] One command of a window's action, for <see cref="CoopManagementRequests.Enqueue"/>: its target and its knob, if it has one.</summary>
@@ -147,7 +162,9 @@ internal enum ManagementNoteKind : byte
 	/// <summary>Whether it went through is not known.</summary>
 	Unknown = 5,
 	/// <summary>The click was not queued for want of room: its player is asked to wait (C4b-2).</summary>
-	Waiting = 6
+	Waiting = 6,
+	/// <summary>The employee it dismisses is in another player's hand (C4c-2, <see cref="FireStaffCommand.BeingMovedReason"/>).</summary>
+	BeingMoved = 7
 }
 
 /// <summary>[EXT:online-coop-commands] A management outcome's note: its kind, and for a refusal by the rights, which (another player's claim, the right not given, the host's alone).</summary>
@@ -178,11 +195,17 @@ internal sealed record ManagementOutcome( ManagementEntry Entry, ManagementOutco
 		_ => ManagementNote.None
 	};
 
-	/// <summary>What a park's refusal of <paramref name="command"/> says: the loans' as their confirmation says it, a stale action that it is no longer there, anything else nothing.</summary>
+	/// <summary>
+	/// What a park's refusal of <paramref name="command"/> says: the loans' as their confirmation says it, a stale action that it is no longer there, a dismissal of an employee another player
+	/// carries that it is being moved, any other refusal of a staff window's action (the employee gone) or of the staff tool's (a candidate gone or reserved, a member that cannot be picked
+	/// up, a cell that takes no one) that it is no longer there (C4c-2), anything else nothing.
+	/// </summary>
 	private static ManagementNote ParkRefusalNote( ParkCommand command, ParkCommandResult? result ) => command switch
 	{
 		TakeLoanCommand or RepayLoanCommand => new ManagementNote( result?.Value is LoanRefusal.Unaffordable ? ManagementNoteKind.InsufficientFunds : ManagementNoteKind.NotAvailable ),
 		IStaleChecked when result?.Reason == ParkSettingCommand.StaleReason => new ManagementNote( ManagementNoteKind.NotAvailable ),
+		FireStaffCommand when result?.Reason == FireStaffCommand.BeingMovedReason => new ManagementNote( ManagementNoteKind.BeingMoved ),
+		RenameStaffCommand or FireStaffCommand or SetPatrolAreaCommand or SetTrainingBudgetCommand or StaffToolCommand => new ManagementNote( ManagementNoteKind.NotAvailable ),
 		_ => ManagementNote.None
 	};
 }
@@ -359,11 +382,15 @@ internal sealed class CoopManagementRequests
 	private int TotalUnsent() => targets.Values.Sum( list => list.Count( entry => entry.State == ManagementEntryState.Unsent ) );
 
 	/// <summary>
-	/// Whether <paramref name="item"/> is an attraction's open-state action (C4b-2): its door, its call, or a ride's level bought or cancelled, which all write or read the object's open word,
-	/// so one waits at a time.
+	/// Whether <paramref name="item"/> is an object's open-state action, one of which waits at a time: an attraction's door, its call, or a ride's level bought or cancelled, which all write or
+	/// read the object's open word (C4b-2); an employee's dismissal (C4c-2).
 	/// </summary>
-	internal static bool IsOpenState( ManagementItem item ) => item.Target.Kind == ManagementTargetKind.Attraction
-		&& (item.Knob?.Kind is ManagementKnobKind.Door or ManagementKnobKind.Maintenance || item.Command is BuyUpgradeCommand or CancelUpgradeCommand);
+	internal static bool IsOpenState( ManagementItem item ) => item.Target.Kind switch
+	{
+		ManagementTargetKind.Attraction => item.Knob?.Kind is ManagementKnobKind.Door or ManagementKnobKind.Maintenance || item.Command is BuyUpgradeCommand or CancelUpgradeCommand,
+		ManagementTargetKind.Staff => item.Command is FireStaffCommand,
+		_ => false
+	};
 
 	/// <summary>Whether an open-state action of <paramref name="target"/> is unsent or open (C4b-2): the object's door, call button and upgrade rows take no click meanwhile.</summary>
 	public bool OpenStateWaits( ManagementTarget target ) => OpenStateEntry( target ) != null;
@@ -372,7 +399,7 @@ internal sealed class CoopManagementRequests
 	public ParkCommand? OpenStateCommand( ManagementTarget target ) => OpenStateEntry( target )?.Command;
 
 	private ManagementEntry? OpenStateEntry( ManagementTarget target ) =>
-		target.Kind == ManagementTargetKind.Attraction && targets.TryGetValue( target, out var list )
+		target.Kind is ManagementTargetKind.Attraction or ManagementTargetKind.Staff && targets.TryGetValue( target, out var list )
 			? list.FirstOrDefault( entry => IsOpenState( new ManagementItem( entry.Target, entry.Knob, entry.Command ) ) ) : null;
 
 	/// <summary>How many of <paramref name="target"/>'s entries are unsent.</summary>
@@ -500,6 +527,16 @@ internal sealed class CoopManagementRequests
 	{
 		var entry = new ManagementEntry( this, 0, item.Target, item.Knob, item.Command, null ) { State = ManagementEntryState.Resolved };
 		AddNote( new ManagementOutcome( entry, rights != null ? ManagementOutcomeKind.Refused : ManagementOutcomeKind.NotQueued, rights ) );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's staff tool's outcome of <paramref name="command"/> (C4c-2, <see cref="CoopGuestStaff"/>): its note joins the session's notes as a management entry's
+	/// would, said once the HUD's lines can be seen.
+	/// </summary>
+	internal void NoteOutcome( ParkCommand command, ManagementOutcomeKind kind, ParkCommandResult? result )
+	{
+		var entry = new ManagementEntry( this, 0, new ManagementTarget( ManagementTargetKind.Staff ), null, command, null ) { State = ManagementEntryState.Resolved };
+		AddNote( new ManagementOutcome( entry, kind, result ) );
 	}
 
 	/// <summary>The oldest note not said yet, or null; it stays until <see cref="TakeNote"/>.</summary>

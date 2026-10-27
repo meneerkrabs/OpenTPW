@@ -108,6 +108,9 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() || Employee is not { } member || level.StaffPlacement is not { } placement )
 			return false;
+		// [EXT:online-coop-commands] a guest's pick-up asks the session's rights before the park's own check, and goes to the host as a request (C4c-2)
+		if ( GuestStaff is { } guestStaff )
+			return GuestPickUp( guestStaff, member );
 		if ( !placement.PickUp( member ) )
 			return false;
 		level.EndBuildTools();
@@ -116,7 +119,7 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>Whether the patrol button acts: clearing an employee's own area, or setting one with the patrol tool.</summary>
-	public bool CanPressEmployeePatrol => Employee is { } member && !level.IsReadOnlyVisit && (member.HasPatrolArea || level.PatrolTool != null);
+	public bool CanPressEmployeePatrol => Employee is { } member && !level.IsReadOnlyVisit && (DrawnHasPatrolArea( member ) || level.PatrolTool != null);
 
 	/// <summary>The patrol toggle (b_route): checked while the employee has a patrol area; pressing it sets one (the patrol tool) or clears it.</summary>
 	// [BIN:TPW-EXE:0x004b5e34 patrol toggle] control 0x510 (b_route, attribute 0x11: a toggle, help 86 / 87) passes its new state to 0x4b5b50: 1 holds the member (0x48c950),
@@ -126,7 +129,10 @@ public sealed partial class ParkHud
 	{
 		if ( !CanPressEmployeePatrol || Employee is not { } member )
 			return false;
-		return member.HasPatrolArea ? ClearPatrolArea( member ) : SetPatrolArea( member );
+		// [EXT:online-coop-commands] a guest's toggle asks the session's rights before it acts, and reads the area it asked for (C4c-2)
+		if ( GuestManagement != null && RefusedByRights( new SetPatrolAreaCommand( member.Id, 0, 0, 0, 0, Clear: DrawnHasPatrolArea( member ) ) ) )
+			return false;
+		return DrawnHasPatrolArea( member ) ? ClearPatrolArea( member ) : SetPatrolArea( member );
 	}
 
 	private bool SetPatrolArea( StaffMember member )
@@ -148,7 +154,8 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() )
 			return false;
-		return level.Commands.Issue( new SetPatrolAreaCommand( member.Id, 0, 0, 0, 0, Clear: true ) ).Accepted;
+		// [EXT:online-coop-commands] a guest's clear goes to the host, the toggle drawing it until it comes back (C4c-2)
+		return IssueManagement( ManagementTarget.Staff( member.Id ), ManagementKnob.Patrol, new SetPatrolAreaCommand( member.Id, 0, 0, 0, 0, Clear: true ) );
 	}
 
 	/// <summary>Dismisses the window's employee through the park economy and closes the window.</summary>
@@ -158,8 +165,17 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy || economy.Staff.Members.All( item => item.Id != staffId ) )
 			return false;
-		if ( !level.Commands.Issue( new FireStaffCommand( staffId ) ).Accepted )
+		// [EXT:online-coop-commands] a guest's dismissal goes to the host, after the session's rights; the window closes when the employee leaves the roster (C4c-2)
+		if ( GuestManagement != null )
+			return IssueManagement( ManagementTarget.Staff( staffId ), null, new FireStaffCommand( staffId ) );
+		var fired = level.Commands.Issue( new FireStaffCommand( staffId ) );
+		if ( !fired.Accepted )
+		{
+			// [EXT:online-coop-commands] the host's dismissal of an employee a guest carries says why (C4c-2)
+			if ( fired.Reason == FireStaffCommand.BeingMovedReason )
+				PostMessage( strings.Extra( OpenTpwText.CoopStaffBeingMoved ) );
 			return false;
+		}
 		CloseEmployeeWindow();
 		return true;
 	}
@@ -171,6 +187,9 @@ public sealed partial class ParkHud
 	{
 		if ( Employee is not { } member || RejectReadOnlyAction() )
 			return;
+		// [EXT:online-coop-permissions] a guest without the staff right hears the rights' note, and the window stays (C4c-2)
+		if ( GuestManagement != null && RefusedByRights( new FireStaffCommand( member.Id ) ) )
+			return;
 		if ( !GameOptions.Current.Confirmations )
 		{
 			DismissStaff( member.Id );
@@ -178,6 +197,12 @@ public sealed partial class ParkHud
 		}
 		var staffId = member.Id;
 		CloseEmployeeWindow();
+		// [EXT:online-coop-commands] a guest's confirmation waits for the host's answer after its Yes, as a loan's does (C4c-2)
+		if ( GuestManagement != null )
+		{
+			ConfirmGuestDismissal( staffId );
+			return;
+		}
 		Stack.Push( UiDialogs.MessageOfOriginalText( "confirmDismissStaff", () => strings[UIStrings.DismissEmployee],
 			(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); DismissStaff( staffId ); }),
 			(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
@@ -240,7 +265,8 @@ public sealed partial class ParkHud
 		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = EmployeePortraitFrame, Bounds = inner, Anchor = UiAnchor.Center,
 			FeetInCanvas = EmployeePortraitGeometry.Feet( inner ), CanvasUnitsPerPixel = EmployeePortraitGeometry.CanvasUnitsPerPixel } );
 		var title = table.Control( 0x520 );
-		screen.Add( new UiLabel { Id = "title", Clicked = OpenEmployeeRenameDialog, Text = () => Employee is { } member ? StaffName( member ) : "", Help = strings.Help( title.Help ), Font = fonts => fonts.Title,
+		// [EXT:online-coop-commands] a guest's title draws the name it asked for until it comes back (C4c-2)
+		screen.Add( new UiLabel { Id = "title", Clicked = OpenEmployeeRenameDialog, Text = () => Employee is { } member ? DrawnStaffName( member ) ?? StaffName( member ) : "", Help = strings.Help( title.Help ), Font = fonts => fonts.Title,
 			Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = title.Rect, Anchor = UiAnchor.Center } );
 		// [BIN:TPW-EXE:0x004b53c0 stats frame] the labels take UITEXT 64 (0x51a), 65 (0x51d), 67 (0x519), 69 (0x518), 68 (0x51c) and 66 (0x516); the value 0x51b is text,
 		// 0x51e a money cell (0x490250), the bars 0x513 (happygrad.wct), 0x514 and 0x515 (ridestatbar.wct)
@@ -280,8 +306,8 @@ public sealed partial class ParkHud
 		Button( "dismissStaff", "b_fire", ConfirmDismissEmployee );
 		Button( "pickUpStaff", "b_pick", () => PickUpEmployee() );
 		var route = table.Model( "b_route" );
-		screen.Add( new UiButton { Id = "patrol", Model = route.Model, Clicked = () => PressEmployeePatrol(), Selected = () => Employee is { HasPatrolArea: true },
-			HelpSource = () => strings.Help( Employee is { HasPatrolArea: true } ? route.AltHelp : route.Help ), Bounds = route.Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "patrol", Model = route.Model, Clicked = () => PressEmployeePatrol(), Selected = () => Employee is { } member && DrawnHasPatrolArea( member ),
+			HelpSource = () => strings.Help( Employee is { } member && DrawnHasPatrolArea( member ) ? route.AltHelp : route.Help ), Bounds = route.Rect, Anchor = UiAnchor.Center } );
 		Button( "previousEmployee", "b_arup", () => CycleEmployee( false ) );
 		Button( "nextEmployee", "b_ardown", () => CycleEmployee( true ) );
 		Button( "allStaff", "b_allstaff", ShowAllStaffOfEmployee );

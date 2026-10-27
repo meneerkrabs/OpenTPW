@@ -78,6 +78,7 @@ public sealed class TrackEditWriter : ICellLineWriter
 		return Ghost( cursor, cells, path.Failed ? second : null, path.Failed ? CellBuildResult.Occupied : CellBuildResult.Ok, path.Failed ? null : SymbolsOf( path.Path ) );
 	}
 
+	// [APPROX:TRACK-018] the hover marks the pick (m_break) and the cut path (m_erase) as 0x10F of 0x52B400 does, but not the pick hover's glide, walls and neighbour raise or the ghost's blink (BLUEPRINT-003); whether 0x52FC80 repairs the exit rather than the first station tile is not traced
 	/// <summary>The cut's tiles as symbol faces: m_erase on each tile of the ride (<see cref="TrackEditor.GhostSymbol"/>).</summary>
 	private ((int X, int Y) Origin, BlueprintMarker Symbol)[] SymbolsOf( IEnumerable<(int X, int Y)> tiles ) =>
 		tiles.Select( tile => (Tile: tile, Symbol: editor.GhostSymbol( tile, cut: true )) ).Where( item => item.Symbol is not null ).Select( item => (item.Tile, item.Symbol!.Value) ).ToArray();

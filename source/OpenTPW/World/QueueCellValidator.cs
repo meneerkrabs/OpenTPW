@@ -166,4 +166,37 @@ internal static class QueueCellValidator
 		}
 		return track.Type;
 	}
+
+	/// <summary>
+	/// Whether the validator refuses the cell for the tool in <paramref name="mode"/> as a single cell of a fresh drag (no latch set, not part of a line): the per-cell routes use it as a refusal on top of their own rules.
+	/// The cell's type is its own (a track tile keeps the type of the ground or the base type of a station under it).
+	/// </summary>
+	/// <param name="givesWay">An object cell the tool may cover (its owner's overwrite priority is below the tool's).</param>
+	public static bool Refuses( ParkCellMap cells, int mode, int x, int y, bool givesWay )
+	{
+		ArgumentNullException.ThrowIfNull( cells );
+		if ( !cells.InBounds( x, y ) )
+			return true;
+		var track = cells.Tracks.Get( x, y );
+		var origin = track;
+		if ( track.IsExtension && track.Parent >= 0 )
+		{
+			var (px, py) = cells.Tracks.CellOf( track.Parent );
+			origin = cells.Tracks.Get( px, py );
+		}
+		var raw = cells.RawTypeAt( x, y );
+		var type = !track.IsEmpty && raw == track.Type ? track.BaseType : raw;
+		var links = cells.LinksAt( x, y );
+		byte neighbour = 0;
+		if ( mode == 1 && type == 3 && System.Numerics.BitOperations.PopCount( links ) == 1 )
+		{
+			var (dx, dy) = PathTiles.Offsets[System.Numerics.BitOperations.TrailingZeroCount( links )];
+			neighbour = cells.RawTypeAt( x + dx, y + dy );
+		}
+		var toolPriority = mode == 3 ? 3 : 2;
+		var input = new CellValidatorInput( mode, type, (ushort)cells.FlagsAt( x, y ), StructureTypeAt( cells, x, y ), origin.IsEmpty ? (byte)0 : origin.Mask, links, false, false, false, neighbour,
+			givesWay ? 0 : toolPriority, toolPriority );
+		var latches = new CellValidatorLatches();
+		return Check( input, ref latches ) == 1;
+	}
 }

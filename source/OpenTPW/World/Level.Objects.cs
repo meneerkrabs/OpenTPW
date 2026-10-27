@@ -229,11 +229,13 @@ public partial class Level
 					return;
 				// the queue goes first, then the demolition's passes over the footprint (0x527EE0); a queue cell of the shape refunds while its owner cell still holds something
 				ObjectAccessCells.ClearQueue( removed, OwnerWord( item ) );
+				// the refund is the native credit 0x4D0190 of the demolished ride, found before it was removed
+				var ownerWord = OwnerWord( item );
+				var instance = demolishingInstances.Remove( item, out var kept ) ? kept : null;
 				removed.DemolishFootprint( item.Cells, owner =>
 				{
-					var ride = Objects.Objects.FirstOrDefault( other => OwnerWord( other ) == owner );
-					if ( Park != null && ride != null && GetEconomyInstance( ride ) is int instance )
-						Park.Economy.RefundQueueCell( instance );
+					if ( owner == ownerWord && Park != null && instance is int rideInstance )
+						Park.Economy.RefundQueueCellNative( rideInstance );
 				} );
 			};
 		}
@@ -255,6 +257,7 @@ public partial class Level
 		// A ride with queue cells takes them with it: the refunds are settled while the cells are laid, the cells go once its guests are set down
 		// [BIN:TPW-EXE:0x004DD2D6 selection cleared] destroying the selected object clears the selection
 		Objects.ObjectRemoved += item => { if ( ReferenceEquals( selection, item ) ) selection = null; };
+		Objects.ObjectRemoving += item => demolishingInstances[item] = GetEconomyInstance( item );
 		Objects.ObjectRemoving += SettleDemolishedQueue;
 		Objects.ObjectRemoved += ClearDemolishedQueue;
 		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
@@ -1433,6 +1436,7 @@ public partial class Level
 	}
 
 	private readonly HashSet<OriginalObject> demolishedQueues = new();
+	private readonly Dictionary<OriginalObject, int?> demolishingInstances = new();
 
 	/// <summary>
 	/// The money side of a ride's demolition for its queue, while the cells are still laid: each queue cell refunds <c>Costs.QueueCell</c> × the ride's scrap percentage
@@ -1484,8 +1488,8 @@ public partial class Level
 	private bool IsQueueBlockedCore( int x, int y, bool terminalPath ) =>
 		!QueueTerrainAllows( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ))
-		// [BIN:TPW-EXE:0x00535670 fence post] the validator refuses a hoarding post and the three cells beside it (its extensions) on owned land as well
-		|| (Guests?.Grid.Cells is { } fenced && fenced.InBounds( x, y ) && QueueCellValidator.StructureTypeAt( fenced, x, y ) == FenceLayer.PostType)
+		// [BIN:TPW-EXE:0x00535670 queue cell] the validator's own answer for the cell refuses it on top of the rules above: a hoarding post or one of its extension cells on owned land, a corner or junction track tile, the coaster marker, water and no terrain, another ride's cell
+		|| (Guests?.Grid.Cells is { } judged && judged.InBounds( x, y ) && judged.RawTypeAt( x, y ) != (byte)ParkCellType.Queue && QueueCellValidator.Refuses( judged, 3, x, y, Objects.FindAt( x, y ) != null && QueueGivesWay( x, y ) ))
 		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
 		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true)
 		// [EXT:pools-bridges] a bridge's cells and the two outside end cells (bare or with a path) take no queue: a queue there would break the bridge's save and its entrance

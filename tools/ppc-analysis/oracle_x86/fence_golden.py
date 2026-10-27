@@ -61,6 +61,20 @@ CASES = [
     case('buy around the short fence', BIG, SIX_CLICKS, buys=[((41, 45), (55, 57)), ((43, 41), (53, 47)), ((37, 37), (57, 49))]),
 ]
 
+# pocket cases: rectangles round the lobes of the fence, where the validator's pocket grid 0x81EEB0 (rebuilt by 0x532960 and read by the ring walk) decides
+def pocket_buys(base_x, base_y):
+    out = []
+    for dx, dy, w, h in ((-30, -18, 12, 14), (-22, -14, 10, 10), (-14, -12, 8, 8), (-10, -20, 14, 16), (-6, -10, 6, 6), (2, -20, 10, 14), (12, -18, 12, 12), (16, -8, 10, 8), (24, -12, 8, 10), (-34, -6, 10, 10), (-26, 4, 12, 12), (-18, 12, 10, 10)):
+        x0, y0 = base_x + dx, base_y + dy
+        out.append(((x0, y0), (x0 + w, y0 + h)))
+    return out
+
+
+CASES += [
+    case('pockets round a lobed fence', BIG, LOBED, buys=pocket_buys(51, 41)),
+    case('pockets round a stepped fence', BIG, STEPPED, buys=pocket_buys(51, 41)),
+]
+
 
 def build(spec, oracle, applied):
     oracle.start(spec['terrain'], spec['no_modify'])

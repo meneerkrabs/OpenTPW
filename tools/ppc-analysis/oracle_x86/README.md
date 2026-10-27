@@ -40,4 +40,4 @@ the rest reports skips; nothing fails. CI has neither.
 
 ## Park fence, demolition and cell validator (round 9, package H)
 
-`fence_oracle.py` runs the fence set-up `0x5323F0`, the Buy Land validator `0x531A50` and purchase `0x5327E0` on a synthetic 128 x 128 map; `fence_golden.py` writes `source/OpenTPW.Tests/ParkFenceGolden.cs` from 18 cases and `validator_golden.py` writes `QueueCellValidatorGolden.cs` from the cell validator `0x535670` (both accept `--check FILE`). Findings X35 and X36 in `docs/reverse/ORACLE.md` section 7.24.
+`fence_oracle.py` runs the fence set-up `0x5323F0`, the Buy Land validator `0x531A50` and purchase `0x5327E0` on a synthetic 128 x 128 map; `fence_golden.py` writes `source/OpenTPW.Tests/ParkFenceGolden.cs` from 20 cases and `validator_golden.py` writes `QueueCellValidatorGolden.cs` from the cell validator `0x535670` (both accept `--check FILE`). Findings X35 and X36 in `docs/reverse/ORACLE.md` section 7.24.

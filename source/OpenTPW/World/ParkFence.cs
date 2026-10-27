@@ -234,7 +234,8 @@ public sealed class FenceEngine
 	{
 		var (x, y) = (X( index ), Y( index ));
 		var track = cells.Tracks.Get( x, y );
-		return track.Type != 0 ? (track.IsExtension && track.Parent >= 0 ? track.Parent + 1 : layer.Owner[index]) : layer.Owner[index];
+		// a ride's track tile (origin or extension) carries its ride's word, which the link-back test compares with the tool's; a fence record carries the walk's parent
+		return track.Type != 0 ? Math.Min( track.Owner, ushort.MaxValue ) : layer.Owner[index];
 	}
 
 	private int CellFlags( int index ) => pendingFlags.TryGetValue( index, out var pending ) ? pending : (ushort)cells.FlagsAt( X( index ), Y( index ) );

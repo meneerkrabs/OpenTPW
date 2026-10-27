@@ -33,7 +33,7 @@ GAME_SIZE = 0x1B02D8 + 0x10000
 DIRECTIONS = {0x7CDBA0: (0, -1), 0x7CDBA8: (0, 1), 0x7CDBB0: (-1, 1), 0x7CDBB8: (1, 1), 0x7CDBC0: (-1, -1), 0x7CDBC8: (1, 0), 0x7CDBD0: (-1, 0), 0x7CDBD8: (1, -1)}
 
 # the callees that only draw, play or pay: each is a no-op here (the oracle matches the original's saved start states with them)
-STUBS = {0x5365D0: 0, 0x53AFA0: 0, 0x53C8D0: 0x20, 0x450D10: 0, 0x532960: 0, 0x5DA3C0: 0, 0x452AE0: 0, 0x536CA0: 4, 0x527940: 4, 0x4D01F0: 4}
+STUBS = {0x5365D0: 0, 0x53AFA0: 0, 0x53C8D0: 0x20, 0x450D10: 0, 0x5DA3C0: 0, 0x452AE0: 0, 0x536CA0: 4, 0x527940: 4, 0x4D01F0: 4}
 BANK_BALANCE = 0x7FFFFFFF
 COST_PER_CELL = 100
 
@@ -155,6 +155,8 @@ class FenceOracle:
         sb = self.sandbox
         sb.executed = 0
         self._gates(post_a, post_b, 0)
+        # the click handler rebuilds the pocket grid 0x81EEB0 (0x532960 at 0x525D15) before the validator reads it
+        sb.call(0x532960)
         accepted = sb.call(0x531A50, args=(first[0], first[1], second[0], second[1], 1)).eax & 0xFF
         return bool(accepted), sb.read(0x81AF4C, 'i') // COST_PER_CELL
 

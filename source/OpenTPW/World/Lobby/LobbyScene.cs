@@ -35,6 +35,7 @@ public sealed class LobbyScene : OriginalModelScene
 		try
 		{
 			var terrain = new ModelFile( $"{TerrainDirectory}/Base.MD2" );
+			Heightfield = terrain.Heightfield;
 			AddTerrain( terrain );
 			if ( terrain.Heightfield != null )
 				AddHeightfield( terrain );
@@ -77,6 +78,9 @@ public sealed class LobbyScene : OriginalModelScene
 			throw;
 		}
 	}
+
+	/// <summary>The lobby terrain's heightfield (the span selection <c>0x56BB00</c> of the lobby's camera works on it), or null when the model has none.</summary>
+	internal ModelHeightfield? Heightfield { get; }
 
 	private AnimatedModel? terrainModel;
 

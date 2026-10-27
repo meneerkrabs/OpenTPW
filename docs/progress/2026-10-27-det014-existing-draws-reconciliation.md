@@ -1,0 +1,3 @@
+## Reconcile DET-014's already implemented guest draws (October 27, 2026)
+
+Corrected the guest-update annotation, determinism register and [approximation summary](../DETERMINISM.md#approximations): the won-sideshow tail, balloon-recreation reseed and draws, and arrival-walk draws are already present and must not be implemented twice. The remaining DET-014 question is guest-update and RNG scheduling between park turns, separately from the pooled thing sweep and standalone simulations. Source/metadata reconciliation only: no runtime behavior, random calls, deterministic pins or save format changed, no approximation retired, and no new original-game or runtime-test result claimed.

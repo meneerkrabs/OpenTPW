@@ -1006,6 +1006,13 @@ internal static class Game
 				Log.Trace( $"--debug-sim-minutes: bands (STARTSCREAM operand: count) {string.Join( ", ", final.Bands.Select( pair => $"{pair.Key}: {pair.Value}" ) )}." );
 				foreach ( var (name, counts) in final.PerRide.OrderByDescending( pair => pair.Value.Refusals ) )
 					Log.Trace( $"--debug-sim-minutes: {name}: {counts.Starts} starts, {counts.Refusals} refused, {counts.Stops} stops." );
+				// the guests' side of the park: where they stand and what each attraction took (one line, for comparing two builds)
+				if ( level.Guests is { } simGuests )
+				{
+					Log.Trace( $"--debug-sim-minutes: guests by state {string.Join( ", ", simGuests.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Key}: {group.Count()}" ) )}; {simGuests.Guests.Count( guest => guest.AttractionId != 0 )} name an attraction, {simGuests.Guests.Sum( guest => guest.RidesTaken )} rides, {simGuests.Guests.Sum( guest => guest.ShopsVisited )} shops and {simGuests.Guests.Sum( guest => guest.SideshowsVisited )} sideshows taken by the guests in the park." );
+					foreach ( var attraction in simGuests.Attractions.OfType<RideVisitorBridge>() )
+						Log.Trace( $"--debug-sim-minutes: attraction {attraction.AttractionId} {attraction.Name}: {attraction.BoardedTotal} boarded, {attraction.QueueLength} queued, join cell {(attraction.JoinCell is { } join ? $"({join.X},{join.Y})" : "none")}." );
+				}
 			}
 		}
 		// [EXT:debug-guest-looks] for captures: dresses the park's guests as they appear, so captures can show the balloons and costumes

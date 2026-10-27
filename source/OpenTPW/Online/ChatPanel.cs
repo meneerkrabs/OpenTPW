@@ -337,7 +337,7 @@ public sealed class ChatPanel
 				// [EXT:online-chat-row-highlight] the chosen row is marked with a bar; the original's hilight art (0x659bc9 "hilight") is not drawn
 				if ( person.Name == selected )
 					context.Batch.AddRectangle( row, new RgbaByte( 60, 90, 200, focused ? (byte)150 : (byte)100 ) );
-				context.DrawText( context.Fonts.Small, person.Name, row, ChatPanelModel.NameColor( person.Flags ), shadow: false );
+				context.DrawText( context.Fonts.Small, person.Name, row, ChatPanelModel.NameColor( person.Flags ) );
 			}
 		}
 	}
@@ -394,7 +394,7 @@ public sealed class ChatPanel
 				first = MaxFirst;
 			var height = rowHeight * scale;
 			for ( var index = 0; index < VisibleRows && First + index < rows.Count; index++ )
-				context.DrawText( font, rows[First + index], new UiRect( rect.X, rect.Y + index * height, rect.Width, height ), UiColors.Text, shadow: false );
+				context.DrawText( font, rows[First + index], new UiRect( rect.X, rect.Y + index * height, rect.Width, height ), UiColors.Text );
 		}
 	}
 

@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// rain's target, lightning strikes count down and thunder follows a strike a few turns later. The sound side is
 /// reproduced, and the drops, snow and bolts are drawn by the CRain port (<see cref="WeatherRenderer"/>).
 /// </summary>
-// [EXT:forecast-presentation] the PC has no forecast message: event type 2 (the forecast, built by 0x40f240 and broadcast by 0x40fb10) has a single subscriber, the weather thing itself (0x511fa9/0x511fb8, handler 0x5127a0, which only schedules or applies), and no weather text exists in the Language tables, so the forecast banner, wording and cadence are OpenTPW's own (AUDIO-905..907 are extensions); the drawn drops, snow and bolts follow the traced CRain with the approximations AUDIO-900..904
+// [EXT:forecast-presentation] the PC has no forecast message: event type 2 (the forecast, built by 0x40f240 and broadcast by 0x40fb10) has a single subscriber, the weather thing itself (0x511fa9/0x511fb8, handler 0x5127a0, which only schedules or applies), and no weather text exists in the Language tables, so the forecast banner, wording and cadence are OpenTPW's own (AUDIO-905..907 are extensions); the drawn drops, snow and bolts follow the traced CRain (AUDIO-900..904 are retired)
 /// <remarks>
 /// The sim advances once per park turn (248 ms, <see cref="ParkCalendar.Turn"/>), and the day is the calendar's
 /// (<see cref="ParkCalendar.DayIndex"/>). The Mac binary's weather-tick gate is not located; the turn is the cadence

@@ -367,7 +367,10 @@ public partial class CoopSessionTests
 		GiveRights( host, guest, view, CoopRights.Finance );
 		OpenLoans( host, guest, view );
 		var loans = guest.Economy.Loans.Count;
-		Confirm( view );
+		Element<UiElement>( view, "loanList" ).Activate();
+		Assert.IsFalse( Element<UiLabel>( view, "message" ).Unclipped?.Invoke() ?? false, "the original loan question keeps its clip" );
+		Element<UiButton>( view, "choice0" ).Activate();
+		Assert.IsTrue( Element<UiLabel>( view, "message" ).Unclipped?.Invoke() ?? false, "the co-op waiting line is not cut off" );
 		Assert.AreEqual( "loanConfirm", Top( view ), "it waits for the host" );
 		StringAssert.Contains( Element<UiLabel>( view, "message" ).Text!(), view.Strings.Extra( OpenTpwText.CoopWaitingForHost ) );
 		// its buttons are inert while it waits

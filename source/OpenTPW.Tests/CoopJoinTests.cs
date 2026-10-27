@@ -233,11 +233,15 @@ public class CoopJoinTests
 		foreach ( var (malformed, what) in new[]
 		{
 			(state with { StaffHands = state.StaffHands.Append( (2, twin.Economy.Staff.Members.Last().Id, 6, 1) ).ToArray() }, "a guest seat's employee in hand"),
+			(state with { StaffHands = new[] { (1, 0, 0, 0) } }, "a zero-id guest hand"),
+			(state with { StaffHands = new[] { (1, 0, 0, 0), (2, twin.Economy.Staff.Members.Last().Id, 6, 1) } }, "a zero-id guest hand before another guest's employee"),
 			(state with { PendingHires = new[] { (2, 77) } }, "a guest seat's pending hire"),
 			(state with { PendingHires = new[] { (0, 9999) } }, "a candidate the pool does not hold")
 		} )
 		{
-			Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( malformed ), what );
+			// The wire accepts a zero staff id; it must not hide a guest row from C4a's host-only restore check.
+			var fromWire = CoopJoinState.Decode( malformed.Encode() );
+			Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( fromWire ), what );
 			Assert.AreEqual( (0, 0), (twin.Level.SeatRights.Count, twin.Level.StaffHands!.All.Count()), $"{what}: nothing applied" );
 		}
 		twin.Level.ApplyJoinState( state );

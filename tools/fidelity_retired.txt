@@ -49,7 +49,11 @@ AUDIO-036 docs/PROGRESS.md
 AUDIO-037 docs/AUDIO.md
 AUDIO-039 docs/AUDIO.md
 AUDIO-041 docs/AUDIO.md
+AUDIO-900 docs/AUDIO.md
+AUDIO-901 docs/AUDIO.md
+AUDIO-902 docs/AUDIO.md
 AUDIO-903 docs/AUDIO.md
+AUDIO-904 docs/AUDIO.md
 AUDIO-908 docs/AUDIO.md
 BLUEPRINT-002 docs/PROGRESS.md
 COAST-001 docs/reverse/COAST-plan.md
@@ -163,12 +167,16 @@ GATE-005 docs/M3-GATE.md
 GATEM4-001 docs/M4-GATE.md
 GATEM4-002 docs/M4-GATE.md
 GUEST-001 docs/PROGRESS.md
+GUEST-002 docs/DISCONNECTED-QUEUE-SCORING.md
 GUEST-003 docs/progress/2026-10-17-thing-pool-and-thing-ids.md
+GUEST-004 docs/GUESTS.md
+GUEST-005 docs/GUESTS.md
 GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
 GUEST-011 docs/CLOSED-RIDE-ADMISSION.md
 GUEST-012 docs/GUESTS.md
 GUEST-018 docs/GUESTS.md
+GUEST-019 docs/GUESTS.md
 GUEST-022 docs/progress/2026-10-18-tpc-sprite-banks.md
 GUEST-023 docs/DETERMINISM.md
 HEADS-001 docs/GUESTS.md
@@ -213,6 +221,7 @@ PATH-016 docs/PATHS.md
 PTCL-901 docs/PROGRESS.md
 PTCL-902 docs/PARTICLES.md
 PTCL-903 docs/PARTICLES.md
+PTCL-904 docs/PARTICLES.md
 PTCL-907 docs/PARTICLES.md
 QUEUE-001 docs/PROGRESS.md
 QUEUE-002 docs/PROGRESS.md
@@ -276,7 +285,6 @@ SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
 SAVE-004 docs/progress/2026-10-18-round8-saves-econ.md
 SAVE-005 docs/ECONOMY.md
-SAVE-007 docs/ECONOMY.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
 SAVE-009 docs/SAVE-THINGS.md
 SAVE-941 docs/THEME-PARK-INC.md
@@ -290,8 +298,12 @@ TOUR-007 docs/TOURS.md
 TOUR-008 docs/TOURS.md
 TOUR-009 docs/PROGRESS.md
 TOUR-010 docs/PROGRESS.md
+TRACK-001 docs/TRACKS.md
 TRACK-003 docs/TRACKS.md
+TRACK-004 docs/TRACKS.md
+TRACK-005 docs/TRACKS.md
 TRACK-006 docs/TRACKS.md
+TRACK-007 docs/TRACKS.md
 TRACK-008 docs/TRACKS.md
 TRACK-009 docs/PROGRESS.md
 TRACK-011 docs/PROGRESS.md
@@ -301,6 +313,7 @@ TRACK-014 docs/TRACKS.md
 TRACK-015 docs/PROGRESS.md
 TRACK-016 docs/PROGRESS.md
 TRACK-017 docs/PROGRESS.md
+TRACK-018 docs/TRACKS.md
 TRACK-019 docs/TRACKS.md
 TRACK-023 docs/PROGRESS.md
 TRACK-024 docs/PROGRESS.md
@@ -330,8 +343,10 @@ UI-029 docs/reverse/APPROX-TRACE.md
 UI-030 docs/reverse/APPROX-TRACE.md
 UI-032 docs/UI.md
 UI-033 docs/reverse/APPROX-TRACE.md
+UI-034 docs/UI.md
 UI-035 docs/reverse/PPC-review.md
 UI-036 docs/UI.md
+UI-037 docs/UI.md
 UI-038 docs/PROGRESS.md
 UI-039 docs/UI.md
 UI-040 docs/PROGRESS.md
@@ -384,3 +399,4 @@ WALK-006 docs/GUESTS.md
 WALK-007 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
+UI-007 docs/UI.md

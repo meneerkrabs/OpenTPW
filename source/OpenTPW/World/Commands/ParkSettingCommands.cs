@@ -111,9 +111,18 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.ReleaseSeat => new ReleaseSeatCommand( reader.Int() ),
 		ParkCommandKind.ClaimRide => new ClaimRideCommand( reader.Int() ),
 		ParkCommandKind.ReleaseRide => new ReleaseRideCommand( reader.Int() ),
-		ParkCommandKind.SetSeatRights => new SetSeatRightsCommand( reader.Int(), (CoopRights)reader.Int() ),
+		ParkCommandKind.SetSeatRights => new SetSeatRightsCommand( reader.Int(), ReadSeatRights( reader ) ),
 		_ => null
 	};
+
+	/// <summary>Checks the whole wire integer before narrowing it to the byte-sized rights mask.</summary>
+	private static CoopRights ReadSeatRights( ParkCommandReader reader )
+	{
+		var rights = reader.Int();
+		if ( (rights & ~(int)CoopRightsOffer.Offered) != 0 )
+			throw new InvalidDataException( $"A seat rights mask of {rights} contains rights this build does not offer." );
+		return (CoopRights)rights;
+	}
 }
 
 /// <summary>Opens or closes the park's door (the entry price window's door and the open and close keys). A bankrupt park stays closed: the economy refuses silently, as the door does.</summary>

@@ -280,7 +280,9 @@ at a cut of the host's stream and goes on from there without leaving the session
   the session and runs the hand-back before anything saves the park, also when a progress check then
   keeps the player in the park (the player asked to leave; a host's leave ends the session for
   everyone). A guest's park, also one that joined at the session's identical start, never hands the
-  host's tickets to its player.
+  host's tickets to its player. The park spends its own tickets while shared (the player's account is not
+  read, so every peer decides a purchase the same way); what it bought enters its player's account at the
+  hand-back, once, by item (UI-051).
 - **The digest's version 2.** A capture read the coaster drags through a getter that made their set,
   and the digest counted whether the set existed: one machine's read would have been a desync. The
   capture reads the drags without making the set, and the digest hashes no set as an empty one.

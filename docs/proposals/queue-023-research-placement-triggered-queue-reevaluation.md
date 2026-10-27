@@ -1,5 +1,37 @@
 # Draft proposal: QUEUE-023 — Research placement-triggered queue reevaluation
 
+## Current-source reconciliation (October 27, 2026)
+
+This section supersedes the historical missing-hook premise and October 22
+event-source matrix below. Public main
+`60c941de233ac45a0d8c7d680aef2269f655b8b6` retires QUEUE-023 in
+[`tools/fidelity_retired.txt`](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/tools/fidelity_retired.txt).
+[Merged #858](https://github.com/meneerkrabs/OpenTPW/pull/858)
+(`2b50a45b23b373d604bbf3603b1c97c6c9a0ccd7`) delivered the queue-tool work.
+
+- [`Level.Objects.cs`](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Level.Objects.cs#L307-L354)
+  implements owner reevaluation and `ReevaluatePlacedQueue`'s two calls.
+  [Placement calls it after economy binding](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Level.Objects.cs#L1762-L1765).
+  Do not add another placement callback or a speculative global reopen scan.
+- The [landed queue-tool summary](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/docs/progress/2026-10-26-queue-tool.md)
+  records the caller-specific path clear, Back and demolition routes. A fresh
+  placement's queue front links only toward its entrance and does not establish
+  the earlier proposed connectivity case. Queue-cell clear is not path-cell
+  clear; repeated notifications/stamps must not be blindly deduplicated.
+- Existing [`ObjectAccessCellsTests`](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW.Tests/ObjectAccessCellsTests.cs#L129-L209)
+  cover two placement stamps, path-clear owner notification, no corresponding
+  queue-clear callback, and guest-grid/track clear routes. These tests were
+  source-inspected, not executed by this reconciliation.
+
+The next action is review of this superseded proposal's disposition. Separate
+ECON-049, ECON-050 and QUEUE-003/-010/-015 residuals are not closed by QUEUE-023's
+retirement and must not be folded into a duplicate implementation here.
+No original media or executable was inspected, and no C#, browser or native
+test was run in this pass. No new test result, runtime change, retirement, merge
+or closure is claimed; keep this PR draft pending review of its disposition.
+
+## Historical proposal (superseded where noted above)
+
 - Classification: **approximation**.
 - Mode: Evidence-gated implementation design only.
 - Baseline: provided main `5ccddcab` source snapshot; source inspected locally on 2026-10-18.

@@ -150,6 +150,50 @@ public class TrackInitialStationTests
 	}
 
 	[TestMethod]
+	public void TheStationLineGivesEachTileOnlyTheArmTowardItsPartnerUntilTheExitAndEntryAreLaid()
+	{
+		foreach ( var family in Families )
+		foreach ( var rotation in Rotations )
+		{
+			var heading = TrackHeading.FromRotation( rotation );
+			var back = TrackHeading.Opposite( heading );
+			var station = TrackStation.FromPlacement( 30, 30, rotation );
+
+			// both adjacent tiles refused (a foreign tile at the exit, a no-modify path at the entry): the station line's own arms only (0x539220 on the second tile)
+			var refused = new ParkCellMap( 64, 64 );
+			var refusing = new TrackBuilder( refused, family, () => null, new Grid() );
+			refusing.PlaceTile( station.Exit.X, station.Exit.Y, 987 );
+			refused.SetType( station.Entry.X, station.Entry.Y, ParkCellType.Path );
+			refused.SetFlags( station.Entry.X, station.Entry.Y, ParkCellFlags.NoModify );
+			refusing.PlaceInitialStation( station );
+			Assert.AreEqual( heading, refused.Tracks.Get( station.First.X, station.First.Y ).Mask, "the first tile: the arm toward the second only" );
+			Assert.AreEqual( back, refused.Tracks.Get( station.Second.X, station.Second.Y ).Mask, "the second tile: the arm toward the first only" );
+
+			// only the exit laid: the second tile takes the arm toward it (the exit's op 0x80 with the previous step), the first tile still has none toward the entry
+			var exitOnly = new ParkCellMap( 64, 64 );
+			var exitBuilder = new TrackBuilder( exitOnly, family, () => null, new Grid() );
+			exitOnly.SetType( station.Entry.X, station.Entry.Y, ParkCellType.Path );
+			exitOnly.SetFlags( station.Entry.X, station.Entry.Y, ParkCellFlags.NoModify );
+			exitBuilder.PlaceInitialStation( station );
+			Assert.AreEqual( (byte)(heading | back), exitOnly.Tracks.Get( station.Second.X, station.Second.Y ).Mask );
+			Assert.AreEqual( back, exitOnly.Tracks.Get( station.Exit.X, station.Exit.Y ).Mask );
+			Assert.AreEqual( heading, exitOnly.Tracks.Get( station.First.X, station.First.Y ).Mask );
+
+			// both laid: the axis on both station tiles
+			var both = new ParkCellMap( 64, 64 );
+			var bothBuilder = new TrackBuilder( both, family, () => null, new Grid() );
+			bothBuilder.PlaceInitialStation( station );
+			Assert.AreEqual( (byte)(heading | back), both.Tracks.Get( station.First.X, station.First.Y ).Mask );
+			Assert.AreEqual( (byte)(heading | back), both.Tracks.Get( station.Second.X, station.Second.Y ).Mask );
+
+			// a ride that is not freshly placed keeps its station written as before
+			var legacy = new ParkCellMap( 64, 64 );
+			new TrackBuilder( legacy, family, () => null, new Grid() ).PlaceStation( station );
+			Assert.AreEqual( (byte)(heading | back), legacy.Tracks.Get( station.First.X, station.First.Y ).Mask );
+		}
+	}
+
+	[TestMethod]
 	public void DemolitionConsumesBothVisitsOfACornerExitWithoutLeavingAnOrphan()
 	{
 		foreach ( var family in Families )

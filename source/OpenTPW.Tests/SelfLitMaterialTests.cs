@@ -56,8 +56,7 @@ public class SelfLitMaterialTests
 	{
 		var text = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "test.shader" ) );
 		StringAssert.Contains( text, $"const uint FLAG_SELF_LIT = 0x{TextureSlotAddressing.SelfLitFlag:X8}u;", "the shader's bit is the vertex flag's" );
-		StringAssert.Contains( text, "vec3 vShading = selfLit ? vec3( 1.0 ) : vDiffuse + vAmbient;" );
-		StringAssert.Contains( text, "if ( !selfLit && g_oUbo.g_flLightCount > 0.5 )", "the park's point lights are part of the lighting colour a self-lit corner does not take" );
+		StringAssert.Contains( text, "if ( selfLit )\n            vShading = vec3( 1.0 );", "the constant colour replaces the whole lighting colour, point lights included" );
 		StringAssert.Contains( text, "if ( !selfLit && vAmbientTint.x", "the evening shoulder is for lit surfaces" );
 	}
 
@@ -86,6 +85,72 @@ public class SelfLitMaterialTests
 			checkedModels++;
 		}
 		Assert.AreEqual( 5, checkedModels, "the global advisor and the four themes' (Advisor.MD2 has five mouths and no ticket)" );
+	}
+
+	[DataTestMethod]
+	[DataRow( "glow2", true )]
+	[DataRow( "b_glow2", true )]
+	[DataRow( "GEM_GLOW", true )]
+	[DataRow( "h_flame", true )]
+	[DataRow( "fire0", true )]
+	[DataRow( "s_lights", true )]
+	[DataRow( "H_LIGHT", true )]
+	[DataRow( "tt_jun_flame", true )]
+	[DataRow( "torch_head", true )]
+	[DataRow( "lamp3", true )]
+	[DataRow( "wr_water3", false )]
+	[DataRow( "sign1", false )]
+	[DataRow( "lava2", false )]
+	[DataRow( "treasure", false )]
+	[DataRow( "Mouth1a", false )]
+	[DataRow( "windshine1", false )]
+	[DataRow( "", false )]
+	public void ALightSourceIsNamedByGlowFlameFireTorchLampOrLight( string name, bool lightSource )
+	{
+		Assert.AreEqual( lightSource, TextureSlotAddressing.IsLightSource( name ) );
+		Assert.IsFalse( TextureSlotAddressing.IsLightSource( null ) );
+	}
+
+	[TestMethod]
+	public void OnlyASelfLitMaterialCanBeALightSourceAndTheFlagIsAFreeBit()
+	{
+		Assert.AreEqual( 0u, TextureSlotAddressing.VertexFlags( new ModelFile.MaterialData { Flags = 0x13, Pad = 0, Name = "glow2" } ) & (TextureSlotAddressing.SelfLitFlag | TextureSlotAddressing.LightSourceFlag), "a lit material is no light source whatever its name" );
+		var glow = TextureSlotAddressing.VertexFlags( new ModelFile.MaterialData { Flags = 0x13, Pad = 1, Name = "glow2" } );
+		Assert.AreEqual( TextureSlotAddressing.SelfLitFlag | TextureSlotAddressing.LightSourceFlag, glow & (TextureSlotAddressing.SelfLitFlag | TextureSlotAddressing.LightSourceFlag) );
+		var water = TextureSlotAddressing.VertexFlags( new ModelFile.MaterialData { Flags = 0x1, Pad = 1, Name = "wr_water3" } );
+		Assert.AreEqual( TextureSlotAddressing.SelfLitFlag, water & (TextureSlotAddressing.SelfLitFlag | TextureSlotAddressing.LightSourceFlag) );
+		Assert.AreEqual( 1, System.Numerics.BitOperations.PopCount( TextureSlotAddressing.LightSourceFlag ) );
+		foreach ( var other in new[] { TextureSlotAddressing.ClampFlag, TextureSlotAddressing.SlushFlag, WorldTranslucency.AlphaTestLowFlag, WorldTranslucency.CutoutFlag, WorldTranslucency.OpaqueSlotFlag, TextureSlotAddressing.SelfLitFlag, 0xFFu } )
+			Assert.AreEqual( 0u, TextureSlotAddressing.LightSourceFlag & other );
+	}
+
+	[TestMethod]
+	public void TheLitShaderTintsASelfLitMaterialAtNightExceptALightSource()
+	{
+		var text = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "test.shader" ) );
+		StringAssert.Contains( text, $"const uint FLAG_LIGHT_SOURCE = 0x{TextureSlotAddressing.LightSourceFlag:X8}u;" );
+		StringAssert.Contains( text, "if ( selfLit && ( outMatFlags & FLAG_LIGHT_SOURCE ) == 0u && vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )", "only while the tinted ambient is set (dusk and night)" );
+		StringAssert.Contains( text, "vOutColor *= g_oUbo.g_vCameraPos;" );
+		StringAssert.Contains( text, "if ( g_oUbo.g_flLightCount > 0.5 )", "the lit shaders keep one literal point-light test (PointLightTests)" );
+		Assert.AreEqual( EveningLook.At( 0f ).WaterTint, EveningLook.At( 0f ).UnlitTint, "the pool water's night tint" );
+		Assert.AreEqual( EveningLook.At( 0.4f ).WaterTint, EveningLook.At( 0.4f ).UnlitTint );
+	}
+
+	[TestMethod]
+	public void TheLightSourcesAmongTheShippedSelfLitMaterialsAreTheGlowFlameFireAndLightArt()
+	{
+		var dataPath = Md2CorpusTests.OriginalDataPath();
+		var lightSources = new SortedSet<string>( StringComparer.Ordinal );
+		var tinted = new SortedSet<string>( StringComparer.Ordinal );
+		foreach ( var (_, model) in OriginalModels( dataPath ) )
+			foreach ( var material in model.Meshes.SelectMany( mesh => mesh.Materials ).Where( material => (material.Pad & ModelBuilder.SelfLitMaterialFlag) != 0 ) )
+				( TextureSlotAddressing.IsLightSource( material.Name ) ? lightSources : tinted ).Add( material.Name );
+		Console.WriteLine( "Light sources: " + string.Join( ", ", lightSources ) );
+		CollectionAssert.AreEqual( new[] { "b_glow2", "fire0", "flame", "GEM_GLOW", "glow2", "h_flame", "h_glow", "h_glow2", "h_light", "s_lights", "sc_glow" }.Order( StringComparer.Ordinal ).ToArray(), lightSources.ToArray() );
+		// what takes the night tint: water, signs, lava, beams, the interface and the advisor's mouths and ticket among them
+		foreach ( var name in new[] { "wr_water3", "ss_water", "sp_water2", "sign1", "sign2", "lava2", "beam", "Mouth1a", "Gold_Ticket", "treasure", "gold", "dome", "web2" } )
+			CollectionAssert.Contains( tinted.ToArray(), name );
+		Assert.IsTrue( tinted.Count > 200, $"{tinted.Count} other self-lit materials" );
 	}
 
 	[TestMethod]

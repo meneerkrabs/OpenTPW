@@ -81,7 +81,7 @@ public static class FeatureGates
 	public static bool RestoredAdvice => OpenTpwExtensions.IsEnabled( OfficialExtensions.RestoredAdvice );
 
 	/// <summary>
-	/// [EXT:evening] The <c>opentpw.evening</c> extension is on for this run (on by default): the park has a day and night cycle and its lamps (docs/EVENING.md), which are presentation only, and the catalogs list the extension's torches (recorded in a save only while the park holds one).
+	/// [EXT:evening] The <c>opentpw.evening</c> extension is on for this run (on by default): the park has a day and night cycle and its lamps (docs/EVENING.md), which are presentation only (at night the self-lit materials that are no light source take the pool water's night tint, glows, flames and lamps stay full-bright), and the catalogs list the extension's torches (recorded in a save only while the park holds one).
 	/// </summary>
 	public static bool Evening => OpenTpwExtensions.IsEnabled( OfficialExtensions.Evening );
 

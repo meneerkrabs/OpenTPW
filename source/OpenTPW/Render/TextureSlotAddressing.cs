@@ -39,12 +39,29 @@ public static class TextureSlotAddressing
 	/// OpenTPW's vertex flag for a corner of a self-lit material (material word +0xC bit 0x1, <see cref="ModelBuilder.SelfLitMaterialFlag"/>): tp.exe gives the corners of such a material the constant
 	/// colour of the draw (0xFFFFFFFF) instead of the vertex lighting colour, so the texture is drawn full-bright, and <c>test.shader</c> shades the corner with 1. Bit 26 is free like bits 27 to 31.
 	/// </summary>
-	// [BIN:TPW-EXE:0x580C51 self-lit material] the vertex fill of the mesh draw (0x580530) tests the material record's word +0xC (the file's fourth dword of the 16-byte material record, the one the model reader calls Pad) for bit 0x1: with it clear the corner's diffuse colour is the lit colour (0x574660: the sum of 0x5741B0 clamped to bytes, alpha 0xFF, ANDed with the draw's mask [[0x87A248]+0x2C]) and with it set it is the mask itself (0xFFFFFFFF; 0xFFFF0000 for the one draw that tints), so the texture is not lit at all; the stage state 0x567620 modulates the texture with the diffuse colour
+	// [BIN:TPW-EXE:0x580C51 self-lit material] the vertex fill of the mesh draw (0x580530) tests the material record's word +0xC (the file's fourth dword of the 16-byte material record, the one the model reader calls Pad) for bit 0x1: with it clear the corner's diffuse colour is the lit colour (0x574660: the sum of 0x5741B0 clamped to bytes, alpha 0xFF, ANDed with the draw's mask [[0x87A248]+0x2C]) and with it set it is the mask itself (0xFFFFFFFF; the anaglyph stereo mode writes 0xFFFF0000 at 0x577120 and 0xFF00FFFF at 0x57715D and restores the mask at 0x57718C, bit 8 of [0x8BCBC8] through 0x40C830 (Ctrl+T, .data 0x748330), and the software renderer's 0x57AB61 sets 0xFFFF0000 around 0x574660 and restores it at 0x57AB78, before the fill), so the texture is not lit at all; the stage state 0x567620 modulates the texture with the diffuse colour
 	public const uint SelfLitFlag = 0x0400_0000;
 
-	/// <summary>The vertex flags for a corner of a material: those of its slot (<see cref="VertexFlags(uint)"/>) and <see cref="SelfLitFlag"/> when the material is self-lit.</summary>
+	/// <summary>
+	/// [EXT:evening] OpenTPW's vertex flag for a corner of a self-lit material that is a light source itself (<see cref="IsLightSource"/>): at night it stays full-bright while the other self-lit
+	/// materials take the night tint. Bit 25 is free like bits 26 to 31. Never set without <see cref="SelfLitFlag"/>.
+	/// </summary>
+	public const uint LightSourceFlag = 0x0200_0000;
+
+	/// <summary>
+	/// [EXT:evening] Whether a self-lit material's texture name is a real light source: glow, flame, fire, torch, lamp or light in the name (user decision of October 27, 2026). Over the original files these
+	/// are the glow quads of the chests and gems (<c>glow2</c>, <c>b_glow2</c>, <c>h_glow</c>, <c>h_glow2</c>, <c>sc_glow</c>, <c>GEM_GLOW</c>), the flames (<c>flame</c>, <c>h_flame</c>, <c>fire0</c>), the lights
+	/// (<c>s_lights</c>, <c>h_light</c>) and the evening extension's own torch flames (<c>tt_*_flame</c>); every other self-lit material (water, signs, lava, beams, panels) takes the night tint.
+	/// </summary>
+	public static bool IsLightSource( string? textureName ) =>
+		textureName != null && LightSourceWords.Any( word => textureName.Contains( word, StringComparison.OrdinalIgnoreCase ) );
+
+	/// <summary>The words of a light source's texture name.</summary>
+	public static readonly string[] LightSourceWords = ["glow", "flame", "fire", "torch", "lamp", "light"];
+
+	/// <summary>The vertex flags for a corner of a material: those of its slot (<see cref="VertexFlags(uint)"/>), <see cref="SelfLitFlag"/> when the material is self-lit, and <see cref="LightSourceFlag"/> when it also is a light source.</summary>
 	public static uint VertexFlags( ModelFile.MaterialData material ) =>
-		VertexFlags( material.Flags ) | ((material.Pad & ModelBuilder.SelfLitMaterialFlag) != 0 ? SelfLitFlag : 0u);
+		VertexFlags( material.Flags ) | ((material.Pad & ModelBuilder.SelfLitMaterialFlag) != 0 ? SelfLitFlag | (IsLightSource( material.Name ) ? LightSourceFlag : 0u) : 0u);
 
 	/// <summary>Whether tp.exe wraps a slot with these flags (else it clamps).</summary>
 	public static bool Wraps( uint slotFlags ) => (slotFlags & WrapFlags) != 0;

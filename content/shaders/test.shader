@@ -123,6 +123,8 @@ fragment {
     const uint FLAG_OPAQUE_SLOT = 0x08000000u;
     // TextureSlotAddressing.SelfLitFlag: a corner of a self-lit material (material word +0xC bit 0x1), which the original draws with the constant colour of the draw instead of the vertex lighting colour (tp.exe 0x580C51)
     const uint FLAG_SELF_LIT = 0x04000000u;
+    // TextureSlotAddressing.LightSourceFlag: a corner of a self-lit material that is a light source itself (glow, flame, fire, torch, lamp, light by its name): at night it stays full-bright [EXT:evening]
+    const uint FLAG_LIGHT_SOURCE = 0x02000000u;
 
     // CLAMP on the wrapping sampler: the coordinates stay half a texel of the coarsest mip the footprint can select
     // inside the edges (that mip's real size, floor(size / 2^level) but at least 1, so odd sizes do not bleed either),
@@ -244,12 +246,14 @@ fragment {
         if ( texIndex == 14 ) vTextureSample = SAMPLE_SLOT( Color14 );
         if ( texIndex == 15 ) vTextureSample = SAMPLE_SLOT( Color15 );
 
+        vec3 vShading = vDiffuse + vAmbient;
+        // [EXT:point-lights] lights in reach add to the shading like the sun and the ambient (0x5741B0 sums them into one vertex colour)
+        if ( g_oUbo.g_flLightCount > 0.5 )
+            vShading += pointLights( vs_out.vPosition );
         // a self-lit material takes no light: its corners carry the draw's constant colour, white (tp.exe 0x580C51: the vertex fill skips the lighting colour of 0x574660 for material bit 0x1)
         bool selfLit = ( outMatFlags & FLAG_SELF_LIT ) != 0u;
-        vec3 vShading = selfLit ? vec3( 1.0 ) : vDiffuse + vAmbient;
-        // [EXT:point-lights] lights in reach add to the shading like the sun and the ambient (0x5741B0 sums them into one vertex colour)
-        if ( !selfLit && g_oUbo.g_flLightCount > 0.5 )
-            vShading += pointLights( vs_out.vPosition );
+        if ( selfLit )
+            vShading = vec3( 1.0 );
         // [EXT:winter-snow] snow and slush on the albedo, after the light is known (so a lit white lands near 0.9 instead of burning out, and the evening's dark ambient still darkens it) and before
         // the evening tint and the fog act on the result (g_flSnowCover 0 skips it)
         if ( g_oUbo.g_flSnowCover != 0.0 && ( outMatFlags & FLAG_TRANSPARENT ) == 0u )
@@ -263,6 +267,11 @@ fragment {
         } else {
             vOutColor = vTextureSample.xyz * vShading;
         }
+
+        // [EXT:evening] at dusk and night (the tinted ambient is set only then) a self-lit material that is no light source takes the tint of the extension's other unlit content (the pool water's), which
+        // ModelEntity writes into the camera position this shader never reads; glow, flame, fire, torch and lamp textures stay full-bright, and at day nothing is multiplied
+        if ( selfLit && ( outMatFlags & FLAG_LIGHT_SOURCE ) == 0u && vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )
+            vOutColor *= g_oUbo.g_vCameraPos;
 
         // [EXT:evening] at dusk and night (the tinted ambient is set only then) a soft shoulder keeps a near-white surface lit by a lamp, such as the ticket booths' panels, from burning out to flat white;
         // the colour is untouched up to a brightest channel of 0.4, above it only 25 % of the excess is kept, scaling all three channels so the lamp's warm hue stays (day and extension-off draws skip this: the tint is all zero).

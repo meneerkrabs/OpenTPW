@@ -100,7 +100,8 @@ public partial class ModelEntity : Entity
 			g_mProj = Camera.ProjMatrix,
 			g_vLightPos = LightPosition ?? Level?.SunLight?.Position ?? Vector3.Zero,
 			g_vLightColor = FollowsTimeOfDay ? Level?.SunLight?.Color ?? Vector3.One : Vector3.One,
-			g_vCameraPos = Camera.Position,
+			// [EXT:evening] test.shader never reads the camera position: at dusk and night it carries the tint of a self-lit material that is no light source (the shader reads it only while the tinted ambient is set)
+			g_vCameraPos = FollowsTimeOfDay && Level?.Look is { IsDay: false } look ? look.UnlitTint : Camera.Position,
 			g_flTime = Time.Now,
 
 			// [EXT:evening] g_flAmbientLevel: 0 (unchanged) unless the evening extension has darkened the park

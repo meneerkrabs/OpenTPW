@@ -457,6 +457,7 @@ public sealed class UiScreenStack
 		var height = context.Measure( context.Fonts.Small, text, (int)inner.Width ).Height;
 		// a text taller than the box is centred on it, not hung from its top edge
 		var area = height > inner.Height ? new UiRect( inner.X, inner.Y - (height - inner.Height) / 2, inner.Width, height ) : inner;
-		context.DrawText( context.Fonts.Small, text, area, UiColors.Text, UiAlign.Center, wrap: true );
+		// [EXT:ui-font-tier-by-scale] the box's width and position follow 0x492180 but its height comes from OpenTPW's substitute for font slot 7, so the text is not cut off at it (French accents reach two pixels past it)
+		context.DrawText( context.Fonts.Small, text, area, UiColors.Text, UiAlign.Center, wrap: true, clip: false );
 	}
 }

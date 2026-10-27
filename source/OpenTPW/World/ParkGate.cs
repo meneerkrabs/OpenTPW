@@ -281,7 +281,7 @@ public sealed class ParkGate
 	/// next to it along that link, and the edge test of that cell in the three directions that do not lead back to the exit: the exit is connected when one of them is open.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE5A0 exit test] link = +0x0D of the exit cell (+0x38), reversed by 0x4D8C00 when +0x38 equals the entry cell +0x36; the neighbour cell id from 0x4D97E0; for the bits 1, 4, 0x10, 0x40 (directions 0 to 3) other than the reversed link, 0x4D8750(x, y, direction, 0) == 0 (open) returns 1 at once ("exit connected", the status 0x18 EXIT NOT CONNECTED is shown when none is open)
-	// [APPROX:ECON-049] a ride without a placed exit cell of its own (a prototype, a test rig), an exit cell whose link byte is not cardinal and a neighbour off the map keep the permissive answer: the original's cell holds a link byte there and OpenTPW's untyped geometry does not
+	// a ride without a placed exit cell of its own (a prototype, a test rig), an exit cell whose link byte is not cardinal and a neighbour off the map keep the permissive answer (the register row of ECON-049, tagged at QueueConnected): the original's cell holds a link byte there and OpenTPW's untyped geometry does not
 	internal static bool ExitConnected( GuestPathGrid grid, RideVisitorBridge ride )
 	{
 		if ( ride.ExitAccessCell is not { } exit || !grid.InBounds( exit.X, exit.Y ) )

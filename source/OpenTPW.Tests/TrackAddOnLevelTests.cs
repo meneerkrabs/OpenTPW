@@ -192,11 +192,12 @@ public partial class TrackAddOnLevelTests
 	{
 		var (level, ride, _) = World();
 		var state = AttachTrackEconomy( level, ride );
-		if ( blocker is "broken" or "condemned" ) state.IsBrokenDown = true;
 		if ( blocker == "condemned" ) state.LifeGauge = 0;
+		if ( blocker is "broken" or "condemned" ) state.IsBrokenDown = true;
 		if ( blocker == "upgrading" ) state.PendingLevel = state.Level + 1;
 		if ( blocker == "maintenance" ) state.MaintenanceRequested = true;
-		if ( blocker == "script-broken" ) ride.Runtime.SetVariable( nameof( RideVariables.VAR_BROKEN ), 1 );
+		// the script's VAR_BROKEN made the ride update enter state 1: the guard reads the state word (0xde654)
+		if ( blocker == "script-broken" ) { ride.Runtime.SetVariable( nameof( RideVariables.VAR_BROKEN ), 1 ); state.StateWord.Set( RideObjectStates.BrokenDown ); }
 		if ( blocker == "disconnected-queue" )
 		{
 			ride.Visitors.Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 );

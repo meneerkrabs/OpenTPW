@@ -94,8 +94,8 @@ internal sealed partial class CoopLiveTest : IDisposable
 		password = Required( "OPENTPW_COOP_LIVE_PASSWORD" );
 		code = hosting ? null : Required( "OPENTPW_COOP_LIVE_CODE" );
 		scenario = environment( "OPENTPW_COOP_LIVE_SCENARIO" ) is { Length: > 0 } chosen ? chosen : "baseline";
-		if ( scenario is not ("baseline" or "recovery" or "endurance" or "management") )
-			throw new ArgumentException( $"OPENTPW_COOP_LIVE_SCENARIO is 'baseline', 'recovery', 'endurance' or 'management', not '{scenario}'." );
+		if ( scenario is not ("baseline" or "recovery" or "endurance" or "management" or "staff") )
+			throw new ArgumentException( $"OPENTPW_COOP_LIVE_SCENARIO is 'baseline', 'recovery', 'endurance', 'management' or 'staff', not '{scenario}'." );
 		enduranceMinutes = scenario != "endurance" ? 0
 			: double.TryParse( environment( "OPENTPW_COOP_LIVE_MINUTES" ), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var minutes )
 				&& minutes > 0 && double.IsFinite( minutes ) ? minutes

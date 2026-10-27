@@ -165,8 +165,8 @@ public class ParkCommandCodecTests
 	[TestMethod]
 	public void SeatRightsDecodeRefusesUnofferedBitsBeforeNarrowing()
 	{
-		// Write the raw integer: constructing CoopRights first would already lose its high bits. 4 is the staff right, not offered before C4c.
-		foreach ( var rights in new[] { 4, 31, 255, 256, 257, -1, -255, -256, int.MinValue, int.MinValue + 1, int.MaxValue } )
+		// Write the raw integer: constructing CoopRights first would already lose its high bits. 32 is the first bit past the five rights, all offered since C4c-2.
+		foreach ( var rights in new[] { 32, 63, 255, 256, 257, -1, -255, -256, int.MinValue, int.MinValue + 1, int.MaxValue } )
 		{
 			var writer = new ParkCommandWriter();
 			writer.Int( 1 );
@@ -181,7 +181,7 @@ public class ParkCommandCodecTests
 	[TestMethod]
 	public void OfferedSeatRightsKeepTheirCanonicalBytes()
 	{
-		foreach ( var (rights, hex) in new[] { (CoopRights.None, "0269000400"), (CoopRights.Build, "0269000402") } )
+		foreach ( var (rights, hex) in new[] { (CoopRights.None, "0269000400"), (CoopRights.Build, "0269000402"), (CoopRights.Staff, "0269000408"), ((CoopRights)0x1F, "026900043E") } )
 		{
 			var command = new SetSeatRightsCommand( 2, rights );
 			var bytes = Convert.FromHexString( hex );

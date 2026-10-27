@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { crc32, deflateSync } from 'node:zlib';
-import { checkEvidence, checkFreshness, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, FORCED_DESYNC_REASON, logTo, parseArguments, redact, STATUS_STALL_SECONDS, throwawayPlayer } from './coop-live.mjs';
+import { checkEvidence, checkFreshness, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, FORCED_DESYNC_REASON, logTo, parseArguments, redact, STAFF_NAME, STATUS_STALL_SECONDS,
+	throwawayPlayer } from './coop-live.mjs';
 import { checkPageSides, checkPictures, keyEvent, pagePoint, PageSide, pictureName, pngSize } from './coop-live-page.mjs';
 
 // The live co-op acceptance's driver (tools/coop-live.mjs, docs/COOP.md "The live acceptance") without the games: its options, its throwaway players and their
@@ -188,6 +189,75 @@ for (const [what, change, check] of [
 	});
 }
 
+/** Both games' evidence of a passing staff run (C4c-2): the baseline's, with the staff right and the guest's seven staff commands at their records on both parks. */
+function staffPair() {
+	const pair = passingPair();
+	const { host, guest } = pair;
+	host.staffGrant = { seat: 1, record: 15, before: 'Builds', after: 'Building, Staff', rights: 'Build, Staff' };
+	const commands = [
+		{ kind: 'BeginStaffHire', staff: 41, record: 17 },
+		{ kind: 'PlaceStaff', staff: 41, cell: [20, 12], record: 18 },
+		{ kind: 'PickUpStaff', staff: 41, record: 19 },
+		{ kind: 'DropStaff', staff: 41, cell: [24, 14], record: 20 },
+		{ kind: 'RenameStaff', staff: 41, name: STAFF_NAME, record: 21 },
+		{ kind: 'SetTrainingBudget', role: 'Guard', budget: 25, record: 22 },
+		{ kind: 'FireStaff', staff: 41, record: 23 },
+	];
+	const forced = (id, state, generation) => ({ state, generation, desync: { id, kind: 'Protocol', reason: FORCED_DESYNC_REASON },
+		after: { generation: generation + 1, checks: 3, desyncs: id, failedJoins: id } });
+	guest.staff = { seat: 1, commands, resyncs: [forced(1, 'hire', 1), forced(2, 'hand', 2)] };
+	host.staff = { seat: 1, commands: commands.map(command => ({ ...command, accepted: true })), trainingBudget: 25,
+		forced: { desyncs: [{ guest: 2, id: 1, kind: 'Protocol', tick: 900 }, { guest: 2, id: 2, kind: 'Protocol', tick: 1400 }], capturesBefore: 1, capturesAfter: 3 } };
+	// the session's desync ids go on across its streams: the last stream counts both forced ones, each inside the early window after a join
+	guest.streams = 3;
+	guest.stream.desyncs = 2;
+	guest.stream.failedJoins = 2;
+	guest.phases = ['guest following', 'guest resyncing', 'guest following', 'guest resyncing', 'guest following', 'guest ended'];
+	return pair;
+}
+
+test('a staff run whose evidence holds passes every check', () => {
+	const { host, guest } = staffPair();
+	const checks = checkEvidence(host, guest, 'staff', 30);
+	assert.equal(checks.length, 16);
+	assert.deepEqual(failing(checks), []);
+});
+
+const STAFF_RESYNCS = 'exactly two resyncs, the guest\'s forced ones, with its pending hire and then its employee in hand, each tool armed again from the snapshot';
+
+for (const [what, change, check] of [
+	['no staff right', ({ host }) => { host.staffGrant.rights = 'Build'; }, 'the host gave the staff right through the rights dialog'],
+	['the right for another seat', ({ host }) => { host.staffGrant.seat = 2; }, 'the host gave the staff right through the rights dialog'],
+	['a step missing', ({ host, guest }) => { guest.staff.commands.splice(2, 1); host.staff.commands.splice(2, 1); },
+		'the guest hired, placed, picked up, dropped elsewhere, renamed, trained and dismissed one employee, in that order'],
+	['a drop where it was placed', ({ host, guest }) => { guest.staff.commands[3].cell = [20, 12]; host.staff.commands[3].cell = [20, 12]; },
+		'the guest hired, placed, picked up, dropped elsewhere, renamed, trained and dismissed one employee, in that order'],
+	['another employee dismissed', ({ host, guest }) => { guest.staff.commands[6].staff = 42; host.staff.commands[6].staff = 42; },
+		'the guest hired, placed, picked up, dropped elsewhere, renamed, trained and dismissed one employee, in that order'],
+	['another name', ({ host, guest }) => { guest.staff.commands[4].name = 'Bob'; host.staff.commands[4].name = 'Bob'; },
+		'the guest hired, placed, picked up, dropped elsewhere, renamed, trained and dismissed one employee, in that order'],
+	['a placement at another record on the host', ({ host }) => { host.staff.commands[1].record = 30; },
+		'each of the guest\'s staff commands applied at its record on both parks, accepted'],
+	['a drop the host refused', ({ host }) => { host.staff.commands[3].accepted = false; }, 'each of the guest\'s staff commands applied at its record on both parks, accepted'],
+	['a command the host never applied', ({ host }) => { host.staff.commands.pop(); }, 'each of the guest\'s staff commands applied at its record on both parks, accepted'],
+	['a budget the host applied with another value', ({ host }) => { host.staff.commands[5].budget = 50; },
+		'each of the guest\'s staff commands applied at its record on both parks, accepted'],
+	['a third resync', ({ guest }) => { guest.streams = 4; }, STAFF_RESYNCS],
+	['one forced resync only', ({ guest, host }) => { guest.staff.resyncs.pop(); host.staff.forced.desyncs.pop(); guest.streams = 2; guest.stream.desyncs = 1; }, STAFF_RESYNCS],
+	['the resyncs in the other order', ({ guest }) => { guest.staff.resyncs.reverse(); }, STAFF_RESYNCS],
+	['a resync whose tool never armed again', ({ guest }) => { guest.staff.resyncs[1].after.generation = 2; }, STAFF_RESYNCS],
+	['a desync after the swaps', ({ guest }) => { guest.stream.desyncs = 3; }, STAFF_RESYNCS],
+	['a failed join besides the forced desyncs\' own', ({ guest }) => { guest.stream.failedJoins = 3; }, STAFF_RESYNCS],
+	['another desync on the host', ({ host }) => { host.staff.forced.desyncs.push({ guest: 2, id: 3, kind: 'Digest', tick: 1500 }); }, STAFF_RESYNCS],
+	['a capture missing', ({ host }) => { host.staff.forced.capturesAfter = 2; }, STAFF_RESYNCS],
+]) {
+	test(`the staff run fails ${what}`, () => {
+		const pair = staffPair();
+		change(pair);
+		assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'staff', 30)), [check]);
+	});
+}
+
 test('the endurance run needs its whole minutes at the fastest speed, on both sides', () => {
 	const step = ENDURANCE_SAMPLE_SECONDS;
 	const run = (minutes, rate = 240) => {
@@ -283,8 +353,9 @@ test('the driver needs the game, the server and a fresh out directory, and a pag
 	assert.deepEqual([options.scenario, options.host, options.guest, options.timeoutMinutes], ['baseline', 'native', 'native', 30]);
 	assert.equal(parseArguments([...base, '--scenario', 'endurance', '--minutes', '45']).timeoutMinutes, 75);
 	assert.throws(() => parseArguments(base.slice(0, 6)), /--out/);
-	assert.throws(() => parseArguments([...base, '--scenario', 'longer']), /baseline, recovery, endurance, management/);
+	assert.throws(() => parseArguments([...base, '--scenario', 'longer']), /baseline, recovery, endurance, management, staff/);
 	assert.equal(parseArguments([...base, '--scenario', 'management']).scenario, 'management');
+	assert.equal(parseArguments([...base, '--scenario', 'staff']).scenario, 'staff');
 	assert.throws(() => parseArguments([...base, '--guest', 'page']), /--web/);
 	const page = parseArguments([...base, '--guest', 'page', '--web', 'wwwroot', '--runtime', 'interpreter']);
 	assert.deepEqual([page.host, page.guest, page.web, page.runtime], ['native', 'page', 'wwwroot', 'interpreter']);

@@ -9,10 +9,12 @@
 // the figures seen both ways, the guest's refused line, the chat both ways, Go to, and the session's end; the baseline and the endurance run with no resync and no
 // desync, the recovery run with the session back and a second line after the restart, the endurance run at the fastest speed for its minutes, and the management run
 // (C4b-2) with the guest's line as its purchase, the attractions right given through the dialog, a guest's typed price and ride door at their records, and exactly one
-// resync, the guest's forced one, with its queued price sent once after it.
+// resync, the guest's forced one, with its queued price sent once after it; the staff run (C4c-2) with the staff right given through the dialog and the guest's hire, placement,
+// pick-up, drop, rename, training budget and dismissal, each at its record on both parks, and two resyncs, the guest's forced ones, with its pending hire and then its employee in
+// hand, whose staff tool came back armed from each snapshot.
 //
 // Usage:
-//   node tools/coop-live.mjs --game <OpenTPW.dll> --server <OpenTPW.Server.dll> --out <directory> [--game-path <Theme Park World>] [--scenario baseline|recovery|endurance|management]
+//   node tools/coop-live.mjs --game <OpenTPW.dll> --server <OpenTPW.Server.dll> --out <directory> [--game-path <Theme Park World>] [--scenario baseline|recovery|endurance|management|staff]
 //        [--minutes M] [--config-source <directory>] [--host native|page] [--guest native|page] [--web <published wwwroot>] [--runtime aot|interpreter]
 //        [--chrome <executable>] [--headed] [--timeout-minutes T]
 // A page side (C2d-5b, tools/coop-live-page.mjs) is the game in a page in a Chrome of its own, through a local server of its own in front of the real one, which then
@@ -32,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 import { sleep } from './web-perf/lib.mjs';
 import { checkPageSides, checkPictures, PAGE_START_SECONDS, PageSide } from './coop-live-page.mjs';
 
-const SCENARIOS = ['baseline', 'recovery', 'endurance', 'management'];
+const SCENARIOS = ['baseline', 'recovery', 'endurance', 'management', 'staff'];
 const SIDES = ['native', 'page'];
 const DEFAULT_CHROME = {
 	darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -391,7 +393,7 @@ export function checkEvidence(host, guest, scenario, minutes) {
 				guest: guest?.recovery && { atRestart: guest.recovery.linksAtRestart, after: guest.recovery.links } });
 		check('the guest saw the host\'s figure move after the restart', sighting(guest, 'host-moved-again', host?.player), guest?.sightings);
 	} else {
-		if (scenario !== 'management')
+		if (scenario !== 'management' && scenario !== 'staff')
 			check('the session ran with no resync and no desync', guest?.streams === 1 && guest?.stream?.desyncs === 0 && guest?.stream?.failedJoins === 0
 				&& !(guest?.phases ?? []).includes('guest resyncing'), { streams: guest?.streams, stream: guest?.stream, phases: guest?.phases });
 		check('neither game\'s link was lost', [host, guest].every(evidence => evidence?.links?.resumes === 0
@@ -399,6 +401,8 @@ export function checkEvidence(host, guest, scenario, minutes) {
 	}
 	if (scenario === 'management')
 		checkManagement(host, guest, check);
+	if (scenario === 'staff')
+		checkStaff(host, guest, check);
 	if (scenario === 'endurance') {
 		const endurance = host?.endurance;
 		const samples = endurance?.samples ?? [];
@@ -453,6 +457,43 @@ function checkManagement(host, guest, check) {
 		&& guest?.stream?.failedJoins === forced.failedJoinsAfter && seen?.desyncs?.length === 1 && seen.desyncs[0].id === forced.desync.id
 		&& seen.desyncs[0].kind === 'Protocol' && seen.capturesAfter === seen.capturesBefore + 1 && seen.secondPriceRecords === 1,
 	{ guest: forced, host: seen, streams: guest?.streams, stream: guest?.stream });
+}
+
+/** The staff run's commands of the guest's, in their order (C4c-2, CoopLiveTest.GuestStaff). */
+export const STAFF_COMMANDS = ['BeginStaffHire', 'PlaceStaff', 'PickUpStaff', 'DropStaff', 'RenameStaff', 'SetTrainingBudget', 'FireStaff'];
+
+/** The name the staff run gives its employee (CoopLiveTest.StaffName). */
+export const STAFF_NAME = 'Live';
+
+/**
+ * The staff run's checks (C4c-2, docs/COOP.md "The live acceptance"): the staff right through the rights dialog, then the guest's hire and its placement, its pick-up and its drop
+ * elsewhere, its rename, the guards' training budget and its dismissal, each accepted at the same record on both parks, about one employee; and exactly two resyncs, the guest's
+ * forced ones (the C4 plan's browser resync cases), the first with its pending hire and the second with its employee in hand, each staff tool armed again from the snapshot, each
+ * desync the host's one report of it with one capture. Each forced desync takes the stream's own path, so within the session's early window after a join it counts as that join's
+ * failure, as a real one would: at most those two.
+ */
+function checkStaff(host, guest, check) {
+	check('the host gave the staff right through the rights dialog', host?.staffGrant?.seat > 0 && host.staffGrant.seat === guest?.ownBuild?.seat
+		&& /\bStaff\b/.test(host.staffGrant.rights ?? ''), host?.staffGrant);
+	const mine = guest?.staff?.commands ?? [], theirs = host?.staff?.commands ?? [];
+	const kinds = mine.map(command => command.kind);
+	const employee = mine[0]?.staff;
+	const placed = mine.find(command => command.kind === 'PlaceStaff'), dropped = mine.find(command => command.kind === 'DropStaff');
+	check('the guest hired, placed, picked up, dropped elsewhere, renamed, trained and dismissed one employee, in that order', kinds.length === STAFF_COMMANDS.length
+		&& kinds.every((kind, index) => kind === STAFF_COMMANDS[index]) && Number.isInteger(employee)
+		&& mine.filter(command => 'staff' in command).every(command => command.staff === employee) && mine.find(command => command.kind === 'RenameStaff')?.name === STAFF_NAME
+		&& Array.isArray(placed?.cell) && Array.isArray(dropped?.cell) && (placed.cell[0] !== dropped.cell[0] || placed.cell[1] !== dropped.cell[1]), { guest: mine });
+	check('each of the guest\'s staff commands applied at its record on both parks, accepted', mine.length > 0 && theirs.length === mine.length
+		&& mine.every(command => Number.isInteger(command.record)) && mine.every((command, index) => theirs[index]?.accepted === true
+			&& JSON.stringify({ ...theirs[index], accepted: undefined }) === JSON.stringify({ ...command, accepted: undefined })), { guest: mine, host: theirs });
+	const resyncs = guest?.staff?.resyncs ?? [], seen = host?.staff?.forced;
+	check('exactly two resyncs, the guest\'s forced ones, with its pending hire and then its employee in hand, each tool armed again from the snapshot', guest?.streams === 3
+		&& resyncs.length === 2 && resyncs[0].state === 'hire' && resyncs[1].state === 'hand'
+		&& resyncs.every((resync, index) => resync.desync?.kind === 'Protocol' && resync.desync.reason === FORCED_DESYNC_REASON && resync.desync.id === index + 1
+			&& resync.after?.generation === resync.generation + 1 && resync.after.checks >= 2)
+		&& resyncs[1].generation === resyncs[0].after.generation && guest?.stream?.desyncs === 2 && guest?.stream?.failedJoins <= 2
+		&& seen?.desyncs?.length === 2 && seen.desyncs.every((report, index) => report.id === index + 1 && report.kind === 'Protocol')
+		&& seen.capturesAfter === seen.capturesBefore + 2, { guest: resyncs, host: seen, streams: guest?.streams, stream: guest?.stream });
 }
 
 /** How often both games sample the park's ticks at the fastest speed, in seconds (CoopLiveTest.EnduranceSampleSeconds). */

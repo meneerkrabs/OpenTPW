@@ -126,6 +126,9 @@ public sealed partial class ParkHud
 			if ( (CellBuildTool?)level.CellTool is { } cellTool )
 				cellTool.Ended += OnCellToolEnded;
 			level.BuildToolsEnded += OnBuildToolsEnded;
+			// [EXT:online-coop-commands] a guest's patrol area goes through its management queue (C4c-2)
+			guestPatrolArea = QueueGuestPatrolArea;
+			level.GuestPatrolArea = guestPatrolArea;
 			hud = new UiScreen( "hud" ) { Modal = false };
 			Stack.Push( hud );
 			Build();
@@ -148,6 +151,9 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>Removes every handler the constructor puts on the level and its park (removing one that was not added is a no-op).</summary>
+	/// <summary>This HUD's route of a guest's patrol area into its management queue, as the level holds it (<see cref="Level.GuestPatrolArea"/>).</summary>
+	private Func<SetPatrolAreaCommand, bool>? guestPatrolArea;
+
 	private void UnhookLevel()
 	{
 		if ( level.Objects is { } objects )
@@ -155,6 +161,8 @@ public sealed partial class ParkHud
 		if ( (CellBuildTool?)level.CellTool is { } cellTool )
 			cellTool.Ended -= OnCellToolEnded;
 		level.BuildToolsEnded -= OnBuildToolsEnded;
+		if ( guestPatrolArea != null && ReferenceEquals( level.GuestPatrolArea, guestPatrolArea ) )
+			level.GuestPatrolArea = null;
 		if ( level.Park != null )
 		{
 			level.Park.EventRaised -= OnStaffStrikeEvent;
@@ -457,6 +465,9 @@ public sealed partial class ParkHud
 				level.ExitCoasterTool();
 			else if ( level.StaffPlacement is { IsActive: true } staffTool )
 				staffTool.Cancel();
+			// [EXT:online-coop-commands] a guest's hire or pick-up that waits for the host with no staff tool on yet is let go as its tool would be (C4c-2): only the next Escape opens the pause menu
+			else if ( GuestStaffStartWaits && level.StaffPlacement is { } waitingStaffTool )
+				waitingStaffTool.Cancel();
 			else if ( level.PatrolTool is { IsActive: true } patrolTool )
 				patrolTool.Cancel();
 			else if ( level.BuyLandTool is { IsActive: true } landTool )
@@ -912,8 +923,12 @@ public sealed partial class ParkHud
 		CompleteGuestRequests();
 		level.EndCarrylessMove();
 		level.EndStrayCarry( Time.Now );
-		// [EXT:online-coop-commands] the staff tool follows what the park holds for this player, every frame, paused too and whatever the pointer is over, before any pointer's dispatch (C4c)
-		level.StaffPlacement?.FollowPark();
+		// [EXT:online-coop-commands] the staff tool follows what the park holds for this player, every frame, paused too and whatever the pointer is over, before any pointer's dispatch (C4c); a
+		// guest's follows its seat's state through its staff requests (C4c-2)
+		if ( GuestStaff is { } guestStaff )
+			FollowGuestStaff( guestStaff );
+		else
+			level.StaffPlacement?.FollowPark();
 		// [EXT:online-coop-commands] the guest's coaster tool says what its waited actions came back with, before the claim is bound: an outcome that ended the tool says why itself (C3c-2)
 		ReportGuestCoasterActions();
 		// [EXT:online-coop-commands] one tool at a time: a coaster tool on together with a tool that started after it ends (C3c-2)
@@ -1410,6 +1425,12 @@ public sealed partial class ParkHud
 				staffCursorSet = false;
 				Input.CursorType = Input.CursorTypes.Normal;
 			}
+			// [EXT:online-coop-commands] a guest's right click lets go of a hire or pick-up that waits for the host with no staff tool on yet, before any other tool takes it (C4c-2)
+			if ( parkRightClick && tool != null && GuestStaffStartWaits )
+			{
+				tool.Cancel();
+				return true;
+			}
 			return false;
 		}
 		staffCursorSet = true;
@@ -1438,6 +1459,12 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x46C8E0 staff placement press] the hire and carry tools are not the tool object: their own classes (vtables 0x6FEA40 and 0x6FEA70) take the left PRESS (slot +4 = 0x46C8E0 / 0x46CC40) and ignore the release (slot +8 is empty)
 		if ( !inPark || !input.LeftPressed )
 			return false;
+		// [EXT:online-coop-commands] a guest's click is a request to the host (C4c-2)
+		if ( GuestStaff is { } guestStaff )
+		{
+			ClickGuestStaff( guestStaff, tool, cursorX, cursorY );
+			return true;
+		}
 		// a click on an invalid cell only logs in the original ("Can't put staff here"): no player text, the tool stays
 		tool.Click( cursorX, cursorY );
 		return true;

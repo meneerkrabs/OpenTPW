@@ -27,7 +27,8 @@ public sealed partial class ParkHud
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.RenameStaffMember], Font = fonts => fonts.Title,
 			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x5DAA ).Rect, Anchor = UiAnchor.Center } );
-		var field = screen.Add( new UiTextField { Id = "name", Text = StaffName( member ), MaximumLength = StaffMember.MaximumNameLength,
+		// [EXT:online-coop-commands] reopening edits the latest requested name, not the park's older one (C4c-2)
+		var field = screen.Add( new UiTextField { Id = "name", Text = DrawnStaffName( member ) ?? StaffName( member ), MaximumLength = StaffMember.MaximumNameLength,
 			Model = table.Control( 0x5DAB ).Model, Bounds = table.Control( 0x5DAB ).Rect, Anchor = UiAnchor.Center } );
 		bool TargetExists() => EmployeeWindowOpen && ReferenceEquals( employeeScreen, parent )
 			&& ReferenceEquals( Status.EconomySource, economy ) && member.ThingId == thingId && economy.Staff.Members.Contains( member );
@@ -40,6 +41,15 @@ public sealed partial class ParkHud
 			// Host safety: a stale callback, replaced roster or read-only visit cannot write through the captured target.
 			if ( Stack.Top != screen || !ReferenceEquals( employeeRenameScreen, screen ) ) return;
 			if ( level.IsReadOnlyVisit || !TargetExists() ) { Cancel(); return; }
+			// [EXT:online-coop-commands] a guest's name goes to the host and the dialog closes at once; the window's title draws it until it comes back (C4c-2). The session's rights are asked
+			// first; a click they or the queue's room refuse (their note is said), and a name the park would refuse, keep the dialog open, as the host's refusal does
+			if ( GuestManagement != null )
+			{
+				var rename = new RenameStaffCommand( member.Id, field.Text );
+				if ( !RefusedByRights( rename ) && ParkStaff.IsValidName( field.Text ) && IssueManagement( ManagementTarget.Staff( member.Id ), ManagementKnob.StaffName, rename ) )
+					Cancel();
+				return;
+			}
 			if ( !level.Commands.Issue( new RenameStaffCommand( member.Id, field.Text ) ).Accepted ) return;
 			RefreshEmployeeStats();
 			Cancel();

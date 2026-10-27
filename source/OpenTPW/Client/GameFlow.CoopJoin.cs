@@ -152,9 +152,12 @@ internal sealed partial class GameFlow
 			} );
 	}
 
-	/// <summary>[EXT:online-coop-commands] An end dialog's words, with the line that some of the last changes may not have been made when <paramref name="unfinished"/> (C4b-2).</summary>
+	/// <summary>
+	/// [EXT:online-coop-commands] An end dialog's words, followed by the sentence that some of the last changes may not have been made when <paramref name="unfinished"/> (C4b-2), in the
+	/// dialog's body with them (a line break would make the words its caption).
+	/// </summary>
 	private string JoinEndWords( OpenTpwText words, bool unfinished ) =>
-		unfinished ? $"{Strings.Extra( words )}\n{Strings.Extra( OpenTpwText.CoopChangesNotMade )}" : Strings.Extra( words );
+		unfinished ? $"{Strings.Extra( words )} {Strings.Extra( OpenTpwText.CoopChangesNotMade )}" : Strings.Extra( words );
 
 	/// <summary>The name of the dialog over a guest's park whose session ended.</summary>
 	internal const string GuestEndedScreenName = "coopGuestEnded";

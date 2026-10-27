@@ -337,6 +337,40 @@ public class TrackEditTests
 	}
 
 	[TestMethod]
+	public void TheEditHoverDrawsTheBreakSymbolOnAPickableTileAndTheEraseSymbolOnTheCutsTiles()
+	{
+		var rig = new Rig();
+		var tool = new CellBuildTool();
+		tool.Enter( new TrackEditWriter( rig.Editor, TrackFamily.Kart, _ => { }, tool.Cancel ), null );
+		// before the first pick: the chooser answers 9 for a tile of the ride with at most two arms, the texture m_break over the whole tile
+		var hover = tool.Hover( (15, 13) )!;
+		CollectionAssert.AreEqual( new[] { ((14, 12), BlueprintMarker.Break) }, hover.Symbols.ToArray() );
+		var cells = BlueprintGhosts.LineCells( hover.Line, hover.StoppedAt, hover.Symbols );
+		CollectionAssert.AreEqual( new[] { (14, 12, BlueprintMarker.Break) }, cells.ToArray(), "one face for the tile: the origin carries it and the other three cells give way" );
+		// a station tile and bare ground draw no symbol
+		Assert.AreEqual( 0, tool.Hover( (10, 10) )!.Symbols.Count );
+		Assert.AreEqual( 0, tool.Hover( (30, 30) )!.Symbols.Count );
+		// after it: every tile of the cut between the picks is m_erase (the chooser's answer 0xD for the mode 0xF of the op 0x10F)
+		tool.Click( (15, 13) );
+		var cut = tool.Hover( (11, 13) )!;
+		CollectionAssert.AreEqual( new[] { (14, 12), (12, 12), (10, 12) }, cut.Symbols.Select( symbol => symbol.Origin ).ToArray() );
+		Assert.IsTrue( cut.Symbols.All( symbol => symbol.Symbol == BlueprintMarker.Erase ) );
+		Assert.AreEqual( 3, BlueprintGhosts.LineCells( cut.Line, cut.StoppedAt, cut.Symbols ).Count, "three faces, not twelve cell marks" );
+	}
+
+	[TestMethod]
+	public void TheGhostSymbolOfATileFollowsTheChoosersAnswers()
+	{
+		var rig = new Rig();
+		new TrackLineWriter( rig.Builder, owner: rig.Builder.OwnerOf( rig.Station ) ).Commit( (12, 12), (12, 14) );
+		Assert.AreEqual( BlueprintMarker.Break, rig.Editor.GhostSymbol( (14, 12), cut: false ) );
+		Assert.IsNull( rig.Editor.GhostSymbol( (12, 12), cut: false ), "a junction answers 1" );
+		Assert.AreEqual( BlueprintMarker.Erase, rig.Editor.GhostSymbol( (12, 12), cut: true ), "a tile of the cut answers 0xD whatever its arms" );
+		Assert.IsNull( rig.Editor.GhostSymbol( (10, 10), cut: true ), "a station tile is no tile of the cut" );
+		Assert.IsNull( rig.Editor.GhostSymbol( (30, 30), cut: false ) );
+	}
+
+	[TestMethod]
 	public void ARefusedFirstTileEndsTheToolWithTheRefusedGhostAndASecondTileThatPicksNothingDoesNot()
 	{
 		// [BIN:TPW-EXE:0x527B00] the first-tile hover sets the refused-ghost latch for a junction: the release plays 0xAF and the tool ends (0x5266A3)

@@ -14,6 +14,10 @@ public enum BlueprintMarker
 	Enter = 3,
 	/// <summary>The exit's outside cell: <c>m_exit</c>, an arrow turned to the direction byte (texture 4).</summary>
 	Exit = 4,
+	/// <summary>A tile the track edit tool can pick: <c>m_break</c>, one face over the tile's 2 x 2 cells (texture 9, <see cref="TrackSymbolFace"/>).</summary>
+	Break = 9,
+	/// <summary>A tile of the track edit tool's cut: <c>m_erase</c>, one face over the tile's 2 x 2 cells (texture 13).</summary>
+	Erase = 13,
 	/// <summary>The front row of an object's footprint: <c>m_front</c>, turned to the build direction (texture 6).</summary>
 	Front = 6,
 	/// <summary>The entrance's outside cell when no queue is laid: <c>m_inout</c> (texture 7).</summary>
@@ -42,7 +46,7 @@ public sealed class BlueprintMarkers : ModelEntity
 	private const int TextureSlots = 16;
 	private static readonly string[] TextureNames = ["blue", "red"];
 	// [BIN:STP-PPC:0x1022C374 dynamic texture table] slots 3, 4, 6 and 7 are m_enter, m_exit, m_front and m_inout (docs/reverse/BLUEPRINT.md)
-	private static readonly (int Slot, string Name)[] ArrowTextures = [(3, "m_enter"), (4, "m_exit"), (6, "m_front"), (7, "m_inout")];
+	private static readonly (int Slot, string Name)[] ArrowTextures = [(3, "m_enter"), (4, "m_exit"), (6, "m_front"), (7, "m_inout"), (9, "m_break"), (13, "m_erase")];
 
 	private readonly ModelHeightfield field;
 	private readonly Material material;
@@ -134,6 +138,12 @@ public sealed class BlueprintMarkers : ModelEntity
 	/// <summary>The ripple phase (the original's global <c>0x874FC0</c>).</summary>
 	public float Phase => phase;
 
+	/// <summary>
+	/// The camera's yaw in the original's radians (<c>0x790A38</c>, <see cref="ParkCameraMode.OriginalYaw"/>), which turns the texture coordinates of the track symbols (<see cref="BlueprintMarker.Break"/>,
+	/// <see cref="BlueprintMarker.Erase"/>) so they stay upright on the screen.
+	/// </summary>
+	public float SymbolAngle { get; set; }
+
 	/// <summary>Shows exactly these cells (later duplicates of a cell win); an empty list hides the markers.</summary>
 	public void Show( IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells ) => Show( cells, null );
 
@@ -184,7 +194,7 @@ public sealed class BlueprintMarkers : ModelEntity
 		// instead of allocating a model and its buffers every frame.
 		if ( Model is { } model && model.HasDynamicVertices )
 		{
-			var (vertices, _) = BuildGeometry( field, shown, shownDirections, phase, shownHeights );
+			var (vertices, _) = BuildGeometry( field, shown, shownDirections, phase, shownHeights, SymbolAngle );
 			model.UpdateVertices( vertices );
 			return;
 		}
@@ -198,7 +208,7 @@ public sealed class BlueprintMarkers : ModelEntity
 		Hidden = shown.Length == 0;
 		if ( shown.Length > 0 )
 		{
-			var (vertices, indices) = BuildGeometry( field, shown, shownDirections, phase, shownHeights );
+			var (vertices, indices) = BuildGeometry( field, shown, shownDirections, phase, shownHeights, SymbolAngle );
 			Model = new Model( vertices, indices, material, dynamicVertices: true );
 		}
 		old?.ReleaseBuffers();
@@ -225,6 +235,8 @@ public sealed class BlueprintMarkers : ModelEntity
 	}
 
 	private const int SineEntries = 4096;
+	/// <summary>The sine table entry nearest to <paramref name="angle"/> radians (the original's rounding, <c>fistp</c>).</summary>
+	private static int TableIndex( float angle ) => (int)MathF.Round( angle * (SineEntries * 0.15915493667125702f), MidpointRounding.ToEven ) & (SineEntries - 1);
 	private static readonly float[] SineTable = Enumerable.Range( 0, SineEntries ).Select( index => (float)Math.Sin( (double)index / SineEntries * 6.2831854820251465 ) ).ToArray();
 
 	/// <summary>
@@ -249,7 +261,7 @@ public sealed class BlueprintMarkers : ModelEntity
 
 	internal static (Vertex[] Vertices, uint[] Indices) BuildGeometry( ModelHeightfield field, IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells,
 		IReadOnlyDictionary<(int X, int Y), byte>? directions = null, float phase = 0,
-		IReadOnlyDictionary<(int X, int Y), float?>? heights = null )
+		IReadOnlyDictionary<(int X, int Y), float?>? heights = null, float symbolAngle = 0 )
 	{
 		var vertices = new List<Vertex>();
 		var indices = new List<uint>();
@@ -259,6 +271,11 @@ public sealed class BlueprintMarkers : ModelEntity
 			var raised = offset ?? 0;
 			var left = x * FaceSize;
 			var front = y * FaceSize;
+			if ( marker is BlueprintMarker.Break or BlueprintMarker.Erase )
+			{
+				AddTileSymbol( vertices, indices, field, (int)marker, x, y, raised, phase, symbolAngle );
+				continue;
+			}
 			byte direction = 0;
 			if ( directions != null )
 				directions.TryGetValue( (x, y), out direction );
@@ -282,6 +299,27 @@ public sealed class BlueprintMarkers : ModelEntity
 			}
 		}
 		return (vertices.ToArray(), indices.ToArray());
+	}
+
+
+	/// <summary>
+	/// One track symbol face: 20 x 20 units over the tile whose origin cell is (<paramref name="x"/>, <paramref name="y"/>), its four vertices on the ground plus the face lift and the ripple like every
+	/// face (<see cref="VertexHeight"/>), its texture coordinates the ±0.4 square about the centre turned by the camera's yaw.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0053C3F0 symbol UV set] the entries 5 to 8 of the table 0x871EE8 are the square (-0.4, -0.4), (0.4, -0.4), (-0.4, 0.4), (0.4, 0.4) (0x53C480..0x53C4C2), each turned about the origin by the camera yaw 0x790A38 with the 4096-entry sine table (sin at the yaw, cos at yaw + pi/2, rounded to the nearest entry: 0x53C4DF..0x53C51B; x' = cos x - sin y, y' = sin x + cos y: 0x53C533..0x53C561) and then moved by +0.5 (0x53C565..0x53C612)
+	// [BIN:TPW-EXE:0x0053DB0A symbol face] the flush hands each face record (x, y, z, type, direction byte, texture, size flag) to 0x53DF30, which takes the table entries from 5 for a texture from 8 to 14 and builds a floor face (type 0) 20 units square when the record's size flag (+0x18) is set (the track ghost's origin face passes 1, 0x5372FF: the whole 2 x 2 tile) in the vertex order (x, z), (x + 20, z), (x, z + 20), (x + 20, z + 20)
+	// [APPROX:BLUEPRINT-003] the symbol face is drawn where the cursor snaps (the pick hover's glide, 0x53C3F0's chase of 0x820AF8/FC at half the remaining distance per frame for textures below 13, is not applied), without the stepped walls of the ghost, and the red refusal and the neighbour raise 0x536CA0 of the tile keep the plain cell marks
+	private static void AddTileSymbol( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int slot, int x, int y, float raised, float phase, float angle )
+	{
+		var sin = SineTable[TableIndex( angle )];
+		var cos = SineTable[TableIndex( angle + 1.5707964f )];
+		Vector2 Uv( float u, float v ) => new( 0.5f + (cos * u - sin * v), 0.5f + (sin * u + cos * v) );
+		var uv = new[] { Uv( -0.4f, -0.4f ), Uv( 0.4f, -0.4f ), Uv( -0.4f, 0.4f ), Uv( 0.4f, 0.4f ) };
+		var size = 2 * FaceSize;
+		var (left, front) = (x * FaceSize, y * FaceSize);
+		AddFace( vertices, indices, field, slot, uv,
+			new( left, raised + VertexHeight( field, x, y, phase ), front ), new( left + size, raised + VertexHeight( field, x + 2, y, phase ), front ),
+			new( left, raised + VertexHeight( field, x, y + 2, phase ), front + size ), new( left + size, raised + VertexHeight( field, x + 2, y + 2, phase ), front + size ) );
 	}
 
 	private static readonly (int Dx, int Dy, int Ax, int Ay, int Bx, int By)[] Edges =
@@ -325,11 +363,15 @@ public sealed class BlueprintMarkers : ModelEntity
 	private static void AddFace( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int slot, byte direction,
 		System.Numerics.Vector3 a, System.Numerics.Vector3 b, System.Numerics.Vector3 c, System.Numerics.Vector3 d )
 	{
+		var square = new[] { new Vector2( 0, 0 ), new Vector2( 1, 0 ), new Vector2( 0, 1 ), new Vector2( 1, 1 ) };
+		AddFace( vertices, indices, field, slot, CornerOrder( direction ).Select( entry => square[entry] ).ToArray(), a, b, c, d );
+	}
+
+	private static void AddFace( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int slot, Vector2[] uv,
+		System.Numerics.Vector3 a, System.Numerics.Vector3 b, System.Numerics.Vector3 c, System.Numerics.Vector3 d )
+	{
 		var positions = new[] { a, b, c, d }.Select( corner => OriginalParkPlacement.ToEngine( field, corner ) ).ToArray();
 		var normal = System.Numerics.Vector3.Normalize( System.Numerics.Vector3.Cross( positions[1] - positions[0], positions[2] - positions[0] ) );
-		var square = new[] { new Vector2( 0, 0 ), new Vector2( 1, 0 ), new Vector2( 0, 1 ), new Vector2( 1, 1 ) };
-		var order = CornerOrder( direction );
-		var uv = order.Select( entry => square[entry] ).ToArray();
 		foreach ( var (offsets, sign) in new[] { (new uint[] { 0, 2, 3, 3, 1, 0 }, 1f), (new uint[] { 0, 1, 3, 3, 2, 0 }, -1f) } )
 		{
 			var start = (uint)vertices.Count;

@@ -40,6 +40,11 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 	public IReadOnlyList<(int X, int Y)> Existing { get; init; } = Array.Empty<(int X, int Y)>();
 	/// <summary>The refused cell, when <see cref="StoppedBy"/> is a refusal.</summary>
 	public (int X, int Y)? StoppedAt { get; init; }
+	/// <summary>
+	/// The 2 x 2 tiles a track edit ghost draws as one symbol face each (<see cref="BlueprintMarker.Break"/> for a tile the edit tool can pick, <see cref="BlueprintMarker.Erase"/> for a tile of the cut), by the
+	/// tile's origin cell; their cells are left out of the per-cell marks.
+	/// </summary>
+	public IReadOnlyList<((int X, int Y) Origin, BlueprintMarker Symbol)> Symbols { get; init; } = Array.Empty<((int X, int Y) Origin, BlueprintMarker Symbol)>();
 	/// <summary>True when the refusal is the bound of the original's back-of-queue walk (QueuePaths.MaximumCells), the only queue length limit it has: such a ghost does not end the tool.</summary>
 	public bool StoppedByOwnLimit { get; init; }
 	/// <summary>True for the ghost a click returns when the line had a refused cell and nothing was committed (tp.exe <c>0x524A63</c>).</summary>

@@ -126,6 +126,23 @@ public sealed class TrackEditor
 		return (ours && TrackHeading.Count( cell.Mask ) < 3 ? TrackEditPick.Accepted : TrackEditPick.Rejected, origin);
 	}
 
+	/// <summary>
+	/// The symbol the edit tool's ghost draws on a tile (<c>0x539760</c> with the tool mode 0xE or 0x13, and with 0xF for the cut's hover): <see cref="BlueprintMarker.Break"/> (the chooser's answer 9) for a
+	/// tile the pick test accepts, <see cref="BlueprintMarker.Erase"/> (0xD) for a tile of the cut, which is a tile of this ride; null where the answer is 1 (the refused red).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0053A36C chooser answer 9] the tool mode 0xE or 0x13 on a tile of type 0xB (0x53A36C..0x53A3A6) or 0x10 (0x53A3B5..0x53A3F4) whose ride word is the selected ride's with at most two arms answers 9, the texture m_break (the dynamic table 0x763B3C: 0 blue, 1 red, 2 orange, 3 m_enter, 4 m_exit, 5 m_direct, 6 m_front, 7 m_inout, 8 m_link, 9 m_break, 10 m_cross, 11 m_end, 12 m_nocash, 13 m_erase)
+	// [BIN:TPW-EXE:0x0053A326 chooser mode 0xF] the cut's ghost op 0x10F (0x52B400 at 0x52B687, the pair's lines between the corner points) asks with the mode 0xF: a tile of type 0xB or 0x10 of the selected ride answers 0xD (0x53A32B..0x53A342), the texture m_erase; any other type but 0x19 answers 1 (0x53A351..0x53A35A), the red face
+	public BlueprintMarker? GhostSymbol( (int X, int Y) tile, bool cut )
+	{
+		if ( Origin( tile ) is not { } origin )
+			return null;
+		var cell = Tracks.Get( origin.X, origin.Y );
+		var ours = cell.IsOrigin && !TrackCellTypes.IsStation( cell.Type ) && (cell.Owner == Owner || cell.Owner == 0 || Owner == 0);
+		if ( !ours )
+			return null;
+		return cut ? BlueprintMarker.Erase : TrackHeading.Count( cell.Mask ) < 3 ? BlueprintMarker.Break : null;
+	}
+
 	/// <summary>The step number of a tile (<c>0x53AEC0</c>: the word at +0x24, the origin's for an extension cell).</summary>
 	public short StepOf( (int X, int Y) tile ) => Origin( tile ) is { } origin ? (short)Tracks.Get( origin.X, origin.Y ).Segment : (short)0;
 

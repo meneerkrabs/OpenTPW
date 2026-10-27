@@ -1663,7 +1663,7 @@ public sealed partial class ParkHud
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
-			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt ) );
+			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt, ghost.Symbols ) );
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
@@ -1684,6 +1684,8 @@ public sealed partial class ParkHud
 			cells.AddRange( guestPool.GuestStrokeCells.Select( cell => (cell.X, cell.Y, BlueprintMarker.Allowed) ) );
 		if ( level.BuildEntry == null || !inPark )
 			placementRefused = false;
+		// the track symbols turn with the camera's yaw (0x790A38, BlueprintMarkers.SymbolAngle)
+		blueprint.SymbolAngle = Camera.Mode is ParkCameraMode symbolCamera ? ParkCameraMode.OriginalYaw( symbolCamera.Yaw ) : 0f;
 		blueprint.Update( delta, paused );
 		blueprint.Show( cells, directions );
 	}

@@ -214,6 +214,7 @@ public sealed partial class OriginalTerrain : Entity
 		var field = Park.Heightfield;
 		viewSpans = new TerrainViewSpans( field );
 		Camera.ParkFarPlane = FarPlane;
+		Camera.EyeViewFarArgument = EyeViewFar;
 		var slots = new List<Texture>();
 		var slotIndices = new Dictionary<int, int>();
 		// the texture slots are assigned over every cell, holes included, so rebuilding the mesh for another set of render holes keeps the one material
@@ -271,6 +272,17 @@ public sealed partial class OriginalTerrain : Entity
 		// FIRSTPERSONVIEWDISTANCE takes effect at once, as the option apply (0x44D8F0) writes [0x8BD4C0] when it runs
 		viewSpans.ViewDistance = RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Distance;
 		return viewSpans.Update( heightfieldPart.DrawMatrix * view, aspectWord ) ? viewSpans.FarthestCorner * OriginalParkPlacement.ModelScale : null;
+	}
+
+	/// <summary>
+	/// The far argument of the eye views (<see cref="Camera.EyeViewFarArgument"/>): the greatest clip depth of the cell boxes the view reaches, in original units (<see cref="TerrainEyeViewFar"/>); the weather's depth split takes it.
+	/// </summary>
+	private float? EyeViewFar( Matrix4x4 view, float aspectWord, float sine, float cosine )
+	{
+		if ( viewSpans == null || heightfieldPart == null )
+			return null;
+		viewSpans.ViewDistance = RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Distance;
+		return viewSpans.EyeViewFar( heightfieldPart.DrawMatrix * view, aspectWord, sine, cosine );
 	}
 
 	private ProceduralTerrain? procedural;
@@ -1084,6 +1096,8 @@ public sealed partial class OriginalTerrain : Entity
 	{
 		if ( Camera.ParkFarPlane == FarPlane )
 			Camera.ParkFarPlane = null;
+		if ( Camera.EyeViewFarArgument == EyeViewFar )
+			Camera.EyeViewFarArgument = null;
 		procedural?.Dispose();
 		procedural = null;
 		queueAtlas?.Dispose();

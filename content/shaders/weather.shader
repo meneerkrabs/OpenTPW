@@ -1,7 +1,7 @@
 vertex {
     //
-    // Layout: the weather quads reuse the shared vertex format; the normal slot carries the grey level in x and
-    // the alpha in y (content/shaders/weather.shader, docs/AUDIO.md "Weather visuals").
+    // Layout: the weather quads reuse the shared vertex format; the normal slot carries the grey level in x, the
+    // alpha in y and the clip w in z (content/shaders/weather.shader, docs/AUDIO.md "Weather visuals").
     //
     layout( location = 0 ) in vec3 position;
     layout( location = 1 ) in vec3 tint;
@@ -27,7 +27,8 @@ vertex {
         vs_out.vTexCoords = texCoords;
         vs_out.vGrey = tint.x;
         vs_out.vAlpha = tint.y;
-        gl_Position = g_oUbo.g_mProj * g_oUbo.g_mView * vec4( position, 1.0 );
+        // clip-space vertex: position is (x w, y w, z w) and the tint's third component is w (WeatherProjection), the original's rhw interpolation
+        gl_Position = vec4( position, tint.z );
     }
 }
 

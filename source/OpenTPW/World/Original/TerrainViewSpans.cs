@@ -13,13 +13,20 @@ internal sealed class TerrainViewSpans
 {
 	private readonly ModelHeightfield field;
 	private readonly float lowHeight, highHeight;
+	private readonly float scale;
+	private readonly bool centred;
 
 	/// <summary>The field of view of the span selection's rays in degrees: 90, the value of <c>[0x87AF58]</c> in the park camera (<c>0x42A990</c> to <c>0x578BE0</c>), whose half-height tangent is 1. OpenTPW's camera shows a half height of 0.5, so the rays reach twice as far to each side as the screen does.</summary>
 	public const float FieldOfView = 90f;
 
-	public TerrainViewSpans( ModelHeightfield field )
+	/// <param name="field">The heightfield.</param>
+	/// <param name="engineUnitsPerOriginal">The engine units of one original unit: the park's <see cref="OriginalParkPlacement.ModelScale"/>, 1 in the lobby.</param>
+	/// <param name="centred">Whether the engine space is the park's, centred on the field (<see cref="OriginalParkPlacement.GetOrigin"/>); the lobby's is the field's own space.</param>
+	public TerrainViewSpans( ModelHeightfield field, float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale, bool centred = true )
 	{
 		this.field = field;
+		scale = engineUnitsPerOriginal;
+		this.centred = centred;
 		// [BIN:TPW-EXE:0x0056E6C0 landscape header] the span selection's lowest and highest height are the heightfield header's +0x20 and +0x24 (0x56B830 copies the raw floats into the landscape object's +0x30 and +0x34), the stored bracket and not the corners' own minimum and maximum
 		lowHeight = field.StoredLowerHeight;
 		highHeight = field.StoredUpperHeight;
@@ -44,22 +51,49 @@ internal sealed class TerrainViewSpans
 	/// </summary>
 	public bool Update( in SysMatrix view, float aspectWord, bool lookAlongNegativeZ = true )
 	{
-		if ( !SysMatrix.Invert( view, out var world ) || !(aspectWord > 0) )
+		if ( !(aspectWord > 0) || !TryGetPose( view, lookAlongNegativeZ, out var position, out var right, out var up, out var forward ) )
 			return false;
-		var right = SysVector3.Normalize( SysVector3.TransformNormal( SysVector3.UnitX, world ) );
-		var up = SysVector3.Normalize( SysVector3.TransformNormal( SysVector3.UnitY, world ) );
-		var forward = SysVector3.Normalize( SysVector3.TransformNormal( lookAlongNegativeZ ? -SysVector3.UnitZ : SysVector3.UnitZ, world ) );
+		Span<float> camera = [position.X, position.Y, position.Z];
+		Span<float> matrix = [right.X, right.Y, right.Z, up.X, up.Y, up.Z, forward.X, forward.Y, forward.Z];
+		return Spans.Compute( camera, matrix, lowHeight, highHeight, RayFieldOfView, aspectWord, ViewDistance, 0, 0, field.CellCountX, field.CellCountZ, field.CellSizeX, field.CellSizeZ );
+	}
+
+	/// <summary>The field of view of the span selection's rays in degrees: <see cref="FieldOfView"/> in the park, the lobby's island field of view there.</summary>
+	public float RayFieldOfView { get; set; } = FieldOfView;
+
+	/// <summary>
+	/// The camera's position and axes in the heightfield's own space (x, height, z) from the matrix <paramref name="view"/> (engine space of the mesh to the camera), in original units: the engine space of the mesh undone
+	/// (<see cref="OriginalParkPlacement.ToEngine"/> in the park, the axes swapped only in the lobby).
+	/// </summary>
+	private bool TryGetPose( in SysMatrix view, bool lookAlongNegativeZ, out SysVector3 position, out SysVector3 right, out SysVector3 up, out SysVector3 forward )
+	{
+		position = right = up = forward = default;
+		if ( !SysMatrix.Invert( view, out var world ) )
+			return false;
+		right = SysVector3.Normalize( SysVector3.TransformNormal( SysVector3.UnitX, world ) );
+		up = SysVector3.Normalize( SysVector3.TransformNormal( SysVector3.UnitY, world ) );
+		forward = SysVector3.Normalize( SysVector3.TransformNormal( lookAlongNegativeZ ? -SysVector3.UnitZ : SysVector3.UnitZ, world ) );
 		var eye = world.Translation;
-		var origin = OriginalParkPlacement.GetOrigin( field );
-		const float scale = OriginalParkPlacement.ModelScale;
+		var origin = centred ? OriginalParkPlacement.GetOrigin( field ) : System.Numerics.Vector2.Zero;
 		// engine (x, y, z) is model (x, z, y) scaled and centred (OriginalParkPlacement.ToEngine); directions only swap the axes
-		static (float, float, float) Axis( SysVector3 v ) => (v.X, v.Z, v.Y);
-		var (rx, ry, rz) = Axis( right );
-		var (ux, uy, uz) = Axis( up );
-		var (fx, fy, fz) = Axis( forward );
-		Span<float> camera = [(eye.X + origin.X) / scale, eye.Z / scale, (eye.Y + origin.Y) / scale];
-		Span<float> matrix = [rx, ry, rz, ux, uy, uz, fx, fy, fz];
-		return Spans.Compute( camera, matrix, lowHeight, highHeight, FieldOfView, aspectWord, ViewDistance, 0, 0, field.CellCountX, field.CellCountZ, field.CellSizeX, field.CellSizeZ );
+		static SysVector3 Axis( SysVector3 v ) => new( v.X, v.Z, v.Y );
+		right = Axis( right );
+		up = Axis( up );
+		forward = Axis( forward );
+		position = new SysVector3( (eye.X + origin.X) / scale, eye.Z / scale, (eye.Y + origin.Y) / scale );
+		return true;
+	}
+
+	/// <summary>
+	/// The far argument the original's eye views give the projection setup (<see cref="TerrainEyeViewFar"/>) for the camera of <paramref name="view"/>, in original units, or null when the pose is unusable. <paramref name="aspectWord"/> is the display's
+	/// height over its width and <paramref name="sine"/> and <paramref name="cosine"/> those of half the projection's field of view.
+	/// </summary>
+	public float? EyeViewFar( in SysMatrix view, float aspectWord, float sine, float cosine, bool lookAlongNegativeZ = true )
+	{
+		if ( !(aspectWord > 0) || !TryGetPose( view, lookAlongNegativeZ, out var position, out var right, out var up, out var forward ) )
+			return null;
+		var field = new TerrainEyeViewFar.Field( this.field.CellCountX, this.field.CellCountZ, this.field.CellSizeX, this.field.CellSizeZ, 0f, 0f, lowHeight, highHeight );
+		return TerrainEyeViewFar.Compute( field, new TerrainEyeViewFar.View( position, right, up, forward, aspectWord, sine, cosine ), ViewDistance );
 	}
 
 	/// <summary>The view axis the projection puts in front of the camera: -Z when a point one unit along -Z has a positive w.</summary>

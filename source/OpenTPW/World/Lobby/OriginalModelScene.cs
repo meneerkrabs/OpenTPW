@@ -89,7 +89,7 @@ public abstract class OriginalModelScene : Entity
 								Normal = normal.LengthSquared() > 0 ? NVector3.Normalize( ToEngine( normal ) ) : NVector3.UnitZ,
 								TexCoords = mesh.TexCoords[index],
 								TexIndex = slots[material - low],
-								MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[material].Flags )
+								MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[material] )
 							} );
 							remap[index] = mapped;
 						}

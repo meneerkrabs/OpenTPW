@@ -75,6 +75,87 @@ public class NativeWorldShaderRenderTests
 	}
 
 	/// <summary>
+	/// A self-lit material (material word +0xC bit 0x1, TextureSlotAddressing.SelfLitFlag) takes the draw's constant colour in tp.exe (0x580C51), not the lighting colour: with the ambient-only light of
+	/// this draw a lit white texel comes out at the ambient (0.4 in the park shader, 0.15 in the advisor's), a self-lit one at the texel itself (issue 829: the Gift Shop chest's glow and gold interior were drawn dark).
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( "test.shader", 80, 125 )]
+	[DataRow( "advisor.shader", 25, 55 )]
+	public void ASelfLitCornerIsDrawnFullBrightAndALitOneAtTheAmbient( string shader, int litLow, int litHigh )
+	{
+		using var device = CreateDevice();
+		Log = new();
+		double Whites( byte[] pixels )
+		{
+			double sum = 0;
+			var count = 0;
+			for ( var y = 0; y < Size; y++ )
+				for ( var x = 0; x < Size; x++ )
+					if ( IsWhite( x, y ) )
+					{
+						sum += pixels[(y * Size + x) * 4 + 1];
+						count++;
+					}
+			return sum / count;
+		}
+		var lit = Whites( Draw( device, shader, TextureSlotAddressing.ClampFlag, materialScratchBuffer: false ) );
+		var selfLit = Whites( Draw( device, shader, TextureSlotAddressing.ClampFlag | TextureSlotAddressing.SelfLitFlag, materialScratchBuffer: false ) );
+		Console.WriteLine( $"{device.BackendType} {shader}: white cells lit {lit:F1}, self-lit {selfLit:F1}" );
+		Assert.IsTrue( lit > litLow && lit < litHigh, $"{shader}: the lit white cells are at the ambient: {lit:F1}" );
+		Assert.IsTrue( selfLit > 245, $"{shader}: the self-lit white cells are the texel itself: {selfLit:F1}" );
+	}
+
+	/// <summary>
+	/// [EXT:evening] At night a self-lit material that is no light source takes the night tint of the extension's other unlit content (the sprites'), which ModelEntity writes into the camera position that
+	/// test.shader never reads; a light source (glow, flame, fire, torch, lamp, light) stays full-bright; a lit material is as before; and with the tinted ambient off (day) the camera position is not read at all.
+	/// </summary>
+	[TestMethod]
+	public void ASelfLitCornerTakesTheNightTintUnlessItIsALightSourceAndAtDayNothingChanges()
+	{
+		using var device = CreateDevice();
+		Log = new();
+		double Whites( byte[] pixels, int channel )
+		{
+			double sum = 0;
+			var count = 0;
+			for ( var y = 0; y < Size; y++ )
+				for ( var x = 0; x < Size; x++ )
+					if ( IsWhite( x, y ) )
+					{
+						sum += pixels[(y * Size + x) * 4 + channel];
+						count++;
+					}
+			return sum / count;
+		}
+		var tint = EveningLook.At( 0f ).UnlitTint;
+		ObjectUniformBuffer Night( ObjectUniformBuffer ubo )
+		{
+			ubo.g_vCameraPos = tint;
+			ubo._padding3 = 0.2f;
+			ubo._padding4 = 0.3f;
+			ubo._padding5 = 0.5f;
+			return ubo;
+		}
+		ObjectUniformBuffer DayWithAPosition( ObjectUniformBuffer ubo )
+		{
+			ubo.g_vCameraPos = new System.Numerics.Vector3( 300f, -40f, 12f );
+			return ubo;
+		}
+		var clamp = TextureSlotAddressing.ClampFlag;
+		var night = Draw( device, "test.shader", clamp | TextureSlotAddressing.SelfLitFlag, false, adjustUniforms: Night );
+		var source = Draw( device, "test.shader", clamp | TextureSlotAddressing.SelfLitFlag | TextureSlotAddressing.LightSourceFlag, false, adjustUniforms: Night );
+		var day = Draw( device, "test.shader", clamp | TextureSlotAddressing.SelfLitFlag, false, adjustUniforms: DayWithAPosition );
+		Console.WriteLine( $"{device.BackendType}: self-lit at night {Whites( night, 0 ):F1},{Whites( night, 1 ):F1},{Whites( night, 2 ):F1}, light source {Whites( source, 1 ):F1}, day {Whites( day, 1 ):F1}" );
+		for ( var channel = 0; channel < 3; channel++ )
+		{
+			var expected = new[] { tint.X, tint.Y, tint.Z }[channel] * 255;
+			Assert.AreEqual( expected, Whites( night, channel ), 2.5, $"channel {channel}: the night tint" );
+			Assert.IsTrue( Whites( source, channel ) > 245, $"channel {channel}: a light source stays full-bright" );
+			Assert.IsTrue( Whites( day, channel ) > 245, $"channel {channel}: at day the camera position is not a tint" );
+		}
+	}
+
+	/// <summary>
 	/// Direct3D 11 links the vertex shader's outputs to the pixel shader's inputs by register: every pixel shader input must sit in
 	/// the register where the vertex shader writes the same semantic, with at least its components (issue #754). This compiles
 	/// every shader as the engine does on Windows (Veldrid.SPIRV's HLSL, then the system HLSL compiler with Veldrid's vs_5_0/ps_5_0
@@ -289,7 +370,7 @@ public class NativeWorldShaderRenderTests
 		return null!;
 	}
 
-	private static byte[] Draw( GraphicsDevice device, string shader, uint matFlags, bool materialScratchBuffer, Func<ResourceFactory, byte[], byte[], Veldrid.Shader[]>? createShaders = null )
+	private static byte[] Draw( GraphicsDevice device, string shader, uint matFlags, bool materialScratchBuffer, Func<ResourceFactory, byte[], byte[], Veldrid.Shader[]>? createShaders = null, Func<ObjectUniformBuffer, ObjectUniformBuffer>? adjustUniforms = null )
 	{
 		var factory = device.ResourceFactory;
 		var target = device.BackendType switch
@@ -335,6 +416,8 @@ public class NativeWorldShaderRenderTests
 			g_vLightPos = new Vector3( 0, 0, -10 ),
 			g_vLightColor = Vector3.Zero,
 		};
+		if ( adjustUniforms != null )
+			ubo = adjustUniforms( ubo );
 		using var uniforms = factory.CreateBuffer( materialScratchBuffer
 			? new BufferDescription( 16 * 128, BufferUsage.UniformBuffer | BufferUsage.Dynamic ) // Material.SetupResources' ScratchBuffer
 			: new BufferDescription( 4096, BufferUsage.UniformBuffer ) );

@@ -26,7 +26,7 @@ public partial class CoopSessionTests
 	private OriginalObject PlaceCoaster( Park park ) => PlaceCoasterOn( park.Level, fixture! );
 
 	/// <summary><see cref="PlaceCoaster"/> on <paramref name="level"/>, a park of the stream tests' asset-free start built over <paramref name="fixture"/>.</summary>
-	internal static OriginalObject PlaceCoasterOn( Level level, UpgradeCatalogueDefaultsTests fixture )
+	internal static OriginalObject PlaceCoasterOn( Level level, UpgradeCatalogueDefaultsTests fixture, bool withQueue = false )
 	{
 		// the park is built without its field initializers: the coaster builders the tool keeps
 		var builders = typeof( Level ).GetField( "coasterBuilders", NonPublic )!;
@@ -34,20 +34,28 @@ public partial class CoopSessionTests
 			builders.SetValue( level, new Dictionary<OriginalObject, CoasterBuilder>() );
 		var root = (string)typeof( UpgradeCatalogueDefaultsTests ).GetField( "root", NonPublic )!.GetValue( fixture )!;
 		var pylons = string.Join( "\n", CoasterTests.PcSettings().Select( pair => $"{pair.Key} {pair.Value}" ) );
+		var queue = withQueue ? "Info.HasQueue 1\n" : "";
 		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/coaster", new ObjectSettings( new[] { new ObjectSettingsFile(
-				$"Info.Id 1160\nInfo.Name SyntheticCoaster\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nBumper.WhichTrackType {CoasterDefinition.TrackType}\n{pylons}\n", "coaster.sam" ) } ),
+				$"Info.Id 1160\nInfo.Name SyntheticCoaster\nInfo.WhichUIType 0\nInfo.IsChoosable 1\n{queue}Bumper.WhichTrackType {CoasterDefinition.TrackType}\n{pylons}\n", "coaster.sam" ) } ),
 			new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(),
 			new BaseFileSystem( root ), null );
 		var station = level.Objects.TryPlace( entry, CoasterCell.X, CoasterCell.Y, 0, out _ );
 		Assert.IsNotNull( station?.Runtime.Coaster, "the coaster's station and its ride" );
 		CoasterTests.PlaceStation( level.GetCoasterBuilder( station! )!, CoasterCell );
+		if ( withQueue )
+		{
+			// The synthetic '*' shape has no entrance: give its ride the queue tests' geometry and register it as a queue command target on every peer.
+			station!.Visitors.HasCells = true;
+			ConfigureQueue( level.Guests!.Grid, station, 10, 5 );
+			level.Guests.Register( station.Visitors );
+		}
 		return station!;
 	}
 
 	/// <summary>A shared park with a coaster on both parks, the guest granted; the guest's coaster, its attraction id and the guest's seat.</summary>
-	private (Park Host, Park Guest, View View, OriginalObject Coaster, int Ride, int Seat) SharedCoaster()
+	private (Park Host, Park Guest, View View, OriginalObject Coaster, int Ride, int Seat) SharedCoaster( bool withQueue = false )
 	{
-		var (host, guest, _, _) = Shared( ( park, _ ) => PlaceCoaster( park ) );
+		var (host, guest, _, _) = Shared( ( park, _ ) => PlaceCoasterOn( park.Level, fixture!, withQueue ) );
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );
 		Grant( host, guest, view );
@@ -157,6 +165,96 @@ public partial class CoopSessionTests
 		Assert.IsFalse( coaster.Runtime.Coaster!.BeingEdited || HostCoaster( host, coaster ).Runtime.Coaster!.BeingEdited );
 		Assert.AreEqual( CoasterTests.Circuit.Length + 3, HostCommandsOf( host, seat ).Count( command => command is CoasterClickCommand ) );
 		RoundsUntil( () => host.Level.ClaimOf( ride ) == null && guest.Level.ClaimOf( ride ) == null, host, guest, view, "the frame check let the claim go" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void APressBeforeTheCoastersCompletionHandoverIsNoClickOfItsQueueTool( bool pressOnCompletionFrame )
+	{
+		var (host, guest, view, coaster, ride, seat) = SharedCoaster( withQueue: true );
+		GuestCoasterTool( host, guest, view, coaster );
+		GuestPylons( host, guest, view );
+		var builder = guest.Level.CoasterTool!;
+		var back = builder.Track.ReturnCell!.Value;
+		GuestCoasterClick( host, guest, view, back.X, back.Y, closing: true );
+		Assert.IsTrue( builder.Track.IsClosed && !builder.Track.IsComplete );
+		var panel = guest.Level.CoasterPanel!;
+		var starts = guest.Level.HostToolStarts;
+		var before = QueueState( coaster.Visitors );
+		var links = guest.Level.QueueLinks( coaster.Visitors ).ToArray();
+		var (oldMode, oldView, oldProjection) = (Camera.Mode, Camera.ViewMatrix, Camera.ProjMatrix);
+		var originalPark = typeof( Level ).GetProperty( nameof( Level.OriginalPark ) )!;
+		// The asset-free original park has no heightfield: only pointer frames use the sandbox's ground plane, never the simulation frames.
+		void Hud( UiInput input )
+		{
+			var park = originalPark.GetValue( guest.Level );
+			originalPark.SetValue( guest.Level, null );
+			try { view.Input( input ); }
+			finally { originalPark.SetValue( guest.Level, park ); }
+		}
+		try
+		{
+			// Point the middle of the real HUD at an empty cell where a fresh queue segment from (10, 2) can succeed.
+			Camera.Mode = new ParkCameraMode();
+			var origin = guest.Level.Objects.Grid.Origin;
+			var centre = new N.Vector3( origin.X + 8.5f * ObjectPlacement.CellSize, origin.Y + 2.5f * ObjectPlacement.CellSize, 0 );
+			Camera.ViewMatrix = N.Matrix4x4.CreateLookAt( centre + new N.Vector3( 0, 0, 30 ), centre, N.Vector3.UnitY );
+			Camera.ProjMatrix = N.Matrix4x4.CreatePerspectiveFieldOfView( 0.8f, 2048f / 1536f, 0.5f, 500 );
+			var point = new N.Vector2( 1024, 768 );
+			guest.Enter();
+			Assert.IsTrue( guest.Level.SendCoasterClick( back.X, back.Y, false ) );
+			view.Update();
+			var requests = guest.Session!.GuestCommands!;
+			var completion = requests.Open.Single( request => request.Command is CoasterClickCommand );
+			if ( !pressOnCompletionFrame )
+			{
+				Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = true } );
+				Assert.IsTrue( panel.IsWaiting && completion.IsOpen, "the press was taken while the completing click still waited" );
+			}
+			// Deliver the answer to the guest park without a HUD frame: its panel still waits until the next input frame takes the outcome.
+			for ( var round = 0; round < 600 && completion.IsOpen; round++ )
+			{
+				clock += 1 / 60.0;
+				host.Frame( 1 / 60.0 );
+				guest.Frame( 1 / 60.0 );
+				guest.Session.Step();
+			}
+			Assert.IsTrue( completion.Accepted && builder.Track.IsComplete );
+			Assert.IsTrue( panel.IsWaiting, "the HUD has not taken the completion yet" );
+			Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = pressOnCompletionFrame } );
+			Assert.IsNull( guest.Level.CoasterPanel );
+			var tool = guest.Level.CellTool;
+			Assert.AreEqual( CellToolMode.Queue, tool.Mode, "the completion handed over to the queue tool" );
+			Assert.AreEqual( (10, 2), tool.Start );
+			Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "the handover fences both an earlier press and one first seen in this frame" );
+			panel.Completed!.Invoke();
+			Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "a stale panel's completion cannot invalidate the current tool's gestures" );
+			Hud( UiInput.Idle( point ) with { LeftReleased = true } );
+			Assert.IsNull( tool.Waiting, "the stale release sent no queue segment" );
+			Assert.IsFalse( requests.Open.Any( request => request.Command is QueueSegmentCommand ) );
+			RoundsUntil( () => host.Level.ClaimOf( ride ) == null && guest.Level.ClaimOf( ride ) == null, host, guest, view, "the completed coaster's claim was released" );
+			Assert.AreEqual( 0, HostCommandsOf( host, seat ).Count( command => command is QueueSegmentCommand ) );
+			foreach ( var (park, station) in new[] { (host, HostCoaster( host, coaster )), (guest, coaster) } )
+			{
+				Assert.AreEqual( before, QueueState( station.Visitors ), "the handover and stale release preserved the queue" );
+				CollectionAssert.AreEqual( links, park.Level.QueueLinks( station.Visitors ).ToArray() );
+			}
+			// A new gesture is the queue tool's: the same pointer route must send and apply a real segment, not merely ignore every release.
+			Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = true } );
+			Hud( UiInput.Idle( point ) with { LeftReleased = true } );
+			Assert.IsNotNull( tool.Waiting, "the fresh release sent a queue segment" );
+			RoundsUntil( () => !tool.IsWaiting, host, guest, view, "the fresh queue segment came back" );
+			Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is QueueSegmentCommand ) );
+			Assert.AreEqual( (8, 2), tool.Start );
+			Assert.IsTrue( coaster.Visitors.QueueCells.Contains( (8, 2) ) );
+			Assert.AreEqual( QueueState( HostCoaster( host, coaster ).Visitors ), QueueState( coaster.Visitors ) );
+		}
+		finally
+		{
+			(Camera.Mode, Camera.ViewMatrix, Camera.ProjMatrix) = (oldMode, oldView, oldProjection);
+		}
 		CatchUpAndCompare( host, guest );
 	}
 

@@ -26,7 +26,8 @@ internal sealed record BumpVehicleSaveData( int Slot, int Flags, int Variant, in
 /// </summary>
 internal sealed record BumpControllerSaveData( int AttractionId, int Type, int Laps, int Performance, int Phase, int State, long TickCount, double TickRemainder, bool WaterRunning,
 	bool IsTrackValid, List<int> Pending, List<int> Leaving, List<TrackSectionSaveData> Sections, List<BumpVehicleSaveData> Vehicles, List<int>? ObjectSlots = null, int? BuoyCount = null, int StationLayout = 0,
-	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] int? VehicleLimit = null );
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] int? VehicleLimit = null,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] bool? TrackWordWritten = null );
 
 /// <summary>The kart and water tracks of one saved park (the park-resume envelope's optional track part): the cell layer, the controllers and the cosmetic generator.</summary>
 internal sealed record TrackWorldSaveData
@@ -77,7 +78,9 @@ internal static class TrackSave
 			vehicle.TargetBuoy, vehicle.Laps, vehicle.BuoyCountdown, vehicle.Age, vehicle.ObjectIndex, vehicle.WallHits, vehicle.WallWindow, vehicle.Sprays, vehicle.Riders.ToList(), vehicle.VisualHeading, vehicle.YawRate, vehicle.YawDelta, vehicle.Animation, vehicle.EffectRequest, vehicle.EffectLatch, vehicle.Height, vehicle.ChaseTarget, vehicle.Engine, vehicle.Smoke, vehicle.ObjectOwner?.AttractionId ?? -1 ) ).ToList(),
 		controller.Objects.Select( item => item.ModuleSlot ).ToList(), controller.Buoys.Count, controller.LegacyStationLayout ? 0 : 1,
 		// [EXT:cheats-ride-vehicles] written only for a raised limit, so every other save keeps its bytes
-		controller.VehicleLimit != controller.Template.MaxVehicles ? controller.VehicleLimit : null );
+		controller.VehicleLimit != controller.Template.MaxVehicles ? controller.VehicleLimit : null,
+		// written only for a ride no track edit has walked, so every other save keeps its bytes
+		controller.TrackWordWritten ? null : false );
 
 	/// <summary>The module part of a park-resume restore, once every controller is back: the cosmetic generator, the module clock and the objects' saved pool slots.</summary>
 	public static void RestoreModule( BumpWorld module, TrackWorldSaveData saved, IReadOnlyList<(BumpController Controller, IReadOnlyList<int>? Slots)> controllers )

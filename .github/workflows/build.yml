@@ -90,6 +90,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Check fidelity annotation consistency and the progress fragments
+        shell: bash
         run: |
           python tools/fidelity_register.py --check
           python -m unittest discover -s tools -p "test_ci_change_scope.py" -v

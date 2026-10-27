@@ -97,8 +97,8 @@ public class ObjectWindowStatusTests
 		var hud = fixture.Fixture( BuildCategory.Rides, out var level, out var economy, out var ride, out _, out _ );
 		var context = RideUpgradeIngressTests.Context();
 		var state = Record( level, economy, ride );
-		state.IsBrokenDown = true;
 		state.LifeGauge = 0;
+		state.IsBrokenDown = true;
 		Frame( hud, context );
 		var banner = (ParkHud.StatusBanner)hud.Screen.Find( "infoStatus" )!;
 		Assert.AreEqual( Text( UIStrings.Condemned ), banner.Status );
@@ -114,8 +114,8 @@ public class ObjectWindowStatusTests
 		var hud = fixture.Fixture( BuildCategory.Shops, out var level, out var economy, out var shop, out _, out _ );
 		var context = RideUpgradeIngressTests.Context();
 		var state = Record( level, economy, shop );
-		state.IsBrokenDown = true;
 		state.LifeGauge = 0;
+		state.IsBrokenDown = true;
 		Frame( hud, context );
 		Assert.AreEqual( Text( UIStrings.Condemned ), ((ParkHud.StatusBanner)hud.Screen.Find( "infoStatus" )!).Status );
 		Assert.IsTrue( hud.Screen.Find( "openRide" )!.Visible, "the shop window's refresh (0x4b01d0) tests no status" );

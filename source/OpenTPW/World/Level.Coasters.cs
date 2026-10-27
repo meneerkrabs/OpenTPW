@@ -523,6 +523,8 @@ public partial class Level
 	{
 		if ( !ReferenceEquals( CoasterPanel, panel ) )
 			return;
+		// The host's answer ends this tool and may start the queue tool: a press made before the handover gives the next tool no release click.
+		HostToolStarts++;
 		if ( station.IsDeleted || ClaimOf( station.Runtime.AttractionId ) != Commands.Player )
 		{
 			CloseCoasterToolLocally();

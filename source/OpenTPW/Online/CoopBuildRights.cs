@@ -44,8 +44,10 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 			// only drops its own seat's claim, which a track tool lets go once it left its ride, the grant taken back or not (C3c-1)
 			CoopCommandClass.SeatCleanup => true,
 			CoopCommandClass.GuestBuilding => level.HasBuildGrant( player ) && Builds( command ) && HoldsClaimFor( player, command ) && LeavesClaimsAlone( player, command ),
-			// [EXT:online-coop-permissions] a management right this build does not offer is refused whatever the seat's rights hold (C4a)
-			var management when RightOf( management ) is { } right => CoopRightsOffer.Offered.HasFlag( right ) && level.RightsOf( player ).HasFlag( right ),
+			// [EXT:online-coop-permissions] a management right this build does not offer is refused whatever the seat's rights hold (C4a); [EXT:online-coop-claims] with the attractions right,
+			// a ride another seat claims is still refused (C4b-2)
+			var management when RightOf( management ) is { } right => CoopRightsOffer.Offered.HasFlag( right ) && level.RightsOf( player ).HasFlag( right )
+				&& (management != CoopCommandClass.Attractions || LeavesAttractionClaimsAlone( player, command )),
 			_ => false
 		};
 	}
@@ -118,7 +120,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	public string? RefusalReason( int player, ParkCommand command ) => player == ParkCommands.LocalPlayer
 		? !IsHostCleanup( command ) && !LeavesClaimsAlone( player, command ) ? Level.ClaimedReason : null
 		: player <= 0 ? null
-		: RightOf( ClassOf( command.Kind ) ) != null ? NotPermittedReason
+		: RightOf( ClassOf( command.Kind ) ) is { } right ? !CoopRightsOffer.Offered.HasFlag( right ) || !level.RightsOf( player ).HasFlag( right ) ? NotPermittedReason
+			: !LeavesAttractionClaimsAlone( player, command ) ? Level.ClaimedReason : null
 		: !Builds( command ) ? null
 		: !level.HasBuildGrant( player ) ? NotGrantedReason
 		: !LeavesClaimsAlone( player, command ) ? Level.ClaimedReason
@@ -135,6 +138,25 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		NotGrantedReason => CoopRefusal.NotGranted,
 		NotPermittedReason => CoopRefusal.NotPermitted,
 		_ => CoopRefusal.HostOnly
+	};
+
+	/// <summary>
+	/// [EXT:online-coop-claims] Whether a guest's attractions command leaves alone every ride claimed against it (C4b-2): the five kinds that name a ride (<see cref="AttractionRide"/>: its door,
+	/// its settings, a level bought or cancelled, its call) on a ride another seat claims are refused, after the right. The host's management of a claimed ride stays allowed (C3), so a C3 log
+	/// replays as it did; a shop's or a sideshow's kinds name no claimable ride.
+	/// </summary>
+	internal bool LeavesAttractionClaimsAlone( int player, ParkCommand command ) =>
+		!CanBeClaimedAgainst( player ) || AttractionRide( command ) is not { } ride || !level.ClaimedAgainst( player, ride );
+
+	/// <summary>[EXT:online-coop-claims] The attraction an attractions command of a kind that can name a claimable ride names (C4b-2), or null.</summary>
+	internal static int? AttractionRide( ParkCommand command ) => command switch
+	{
+		SetAttractionOpenCommand open => open.Attraction,
+		SetRideSettingsCommand settings => settings.Attraction,
+		BuyUpgradeCommand buy => buy.Attraction,
+		CancelUpgradeCommand cancel => cancel.Attraction,
+		RequestMaintenanceCommand call => call.Attraction,
+		_ => null
 	};
 
 	/// <summary>[EXT:online-coop-claims] The host's cleanup, which no claim refuses: its release of any claim, a departed seat's release, the grants and the rights.</summary>

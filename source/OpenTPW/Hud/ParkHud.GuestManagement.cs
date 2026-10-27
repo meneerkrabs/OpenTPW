@@ -31,14 +31,33 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>A guest's management action into <paramref name="queue"/>, after the session's rights allowed it; a full target is no click.</summary>
-	private bool QueueManagement( CoopManagementRequests queue, ManagementItem item, ManagementWaiter? waiter = null )
+	private bool QueueManagement( CoopManagementRequests queue, ManagementItem item, ManagementWaiter? waiter = null ) => QueueManagement( queue, new[] { item }, waiter ).Queued;
+
+	/// <summary>What became of a guest's management click: queued, or refused with its note (none for an object's open-state action while another waits, which is no click).</summary>
+	private readonly record struct ManagementClick( bool Queued, ManagementNote Note );
+
+	/// <summary>
+	/// A guest's management action of one or more commands into <paramref name="queue"/>, whole or not at all: refused by the session's rights (asked silently for each), or for want of room
+	/// (<see cref="ManagementEnqueued.Full"/>), its note joins the session's notes, said once the HUD's lines can be seen (C4b-2), with the error sound now; an object's open-state action
+	/// while another waits is no click (<see cref="ManagementEnqueued.Busy"/>).
+	/// </summary>
+	private ManagementClick QueueManagement( CoopManagementRequests queue, IReadOnlyList<ManagementItem> items, ManagementWaiter? waiter = null )
 	{
-		if ( level.Commands.RefusesHere( item.Command ) )
-			return false;
-		var enqueued = queue.Enqueue( new[] { item }, waiter );
-		if ( enqueued.Full )
-			level.NoteWaitingClick();
-		return enqueued.Queued;
+		foreach ( var item in items )
+			if ( level.Commands.RightsRefusalOf( item.Command ) is { } refusal )
+			{
+				queue.NoteRefused( item, refusal );
+				GameAudio.PlayUi( GameAudio.ErrorEvent );
+				return new ManagementClick( false, new ManagementOutcome( new ManagementEntry( queue, 0, item.Target, item.Knob, item.Command, null ), ManagementOutcomeKind.Refused, refusal ).Note );
+			}
+		var enqueued = queue.Enqueue( items, waiter );
+		if ( enqueued.Full && items.Count > 0 )
+		{
+			queue.NoteRefused( items[0], null );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
+			return new ManagementClick( false, new ManagementNote( ManagementNoteKind.Waiting ) );
+		}
+		return new ManagementClick( enqueued.Queued, ManagementNote.None );
 	}
 
 	/// <summary>The command of <paramref name="knob"/>'s latest entry not resolved yet on a guest (what its control draws), or null: the park's value.</summary>
@@ -104,6 +123,8 @@ public sealed partial class ParkHud
 		if ( loanConfirmation is { } waiting )
 			foreach ( var outcome in waiting.Waiter.Queue.TakeOutcomes( waiting.Waiter ) )
 				CompleteLoanConfirmation( waiting.Screen, outcome );
+		// [EXT:online-coop-commands] the upgrade list's waiting row (C4b-2)
+		CompleteGuestUpgrade();
 		SayManagementNotes();
 	}
 
@@ -155,6 +176,7 @@ public sealed partial class ParkHud
 	private string ManagementNoteText( ManagementNote note ) => note.Kind switch
 	{
 		ManagementNoteKind.Rights => strings.Extra( RefusalText( note.Refusal ) ),
+		ManagementNoteKind.Waiting => strings.Extra( OpenTpwText.CoopWaitingForHost ),
 		ManagementNoteKind.InsufficientFunds => strings[UIStrings.InsufficientFunds],
 		ManagementNoteKind.NotAvailable => strings.Extra( OpenTpwText.NotAvailable ),
 		ManagementNoteKind.NotTaken => strings.Extra( OpenTpwText.CoopRequestNotTaken ),

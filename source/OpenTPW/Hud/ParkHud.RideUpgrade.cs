@@ -80,7 +80,10 @@ public sealed partial class ParkHud
 	{
 		if ( upgradeOwner is not { IsDeleted: false } owner )
 			return Array.Empty<UpgradeListRow>();
-		var offer = level.UpgradeOffer( owner );
+		// [EXT:online-coop-commands] a guest's list waits for its level or cancel row's outcome with a waiting line, and reads the ride's record as its waiting open-state action will leave it (C4b-2)
+		if ( upgradeWaiter != null )
+			return new[] { new UpgradeListRow( strings.Extra( OpenTpwText.CoopWaitingForHost ), "", null ) };
+		var offer = level.UpgradeOffer( owner, ProjectedRecord( owner ) );
 		if ( offer.Message is { } message )
 			return strings[message].Split( '\n' ).Where( line => line.Length > 0 ).Select( line => new UpgradeListRow( line, "", null ) ).ToArray();
 		return offer.Rows.Select( row => new UpgradeListRow( row.Kind switch
@@ -118,6 +121,12 @@ public sealed partial class ParkHud
 
 	private void CloseRideUpgrade()
 	{
+		// [EXT:online-coop-commands] a guest's list that closes while its row waits (Escape, its exit, the window moving on) leaves the outcome a note (C4b-2)
+		if ( upgradeWaiter is { } waiter )
+		{
+			upgradeWaiter = null;
+			waiter.Queue.Detach( waiter );
+		}
 		if ( upgradeScreen == null || !RideUpgradeOpen )
 			return;
 		while ( Stack.Top != upgradeScreen && Stack.Screens.Count > 1 )
@@ -144,6 +153,20 @@ public sealed partial class ParkHud
 		if ( upgradeSelected < 0 || upgradeSelected >= rows.Count || rows[upgradeSelected].Row is not { } row || upgradeOwner is not { IsDeleted: false } owner
 			|| !IsUpgradeListTarget( owner ) || FinanceEconomy is not { } economy || level.GetEconomyInstance( owner ) == null )
 			return;
+		// [EXT:online-coop-commands] a guest's level and cancel rows wait with the list (C4b-2); its add-on row asks the building grant before its price (the grant's note)
+		if ( GuestManagement is { } queue )
+		{
+			if ( row.Kind is RideUpgradeRowKind.Level or RideUpgradeRowKind.CancelLevel )
+			{
+				ActivateGuestUpgradeRow( queue, owner, row );
+				return;
+			}
+			if ( row.AddOn is { } refused && RefusesAddOnWithoutGrant( owner, refused ) )
+			{
+				CloseRideUpgrade();
+				return;
+			}
+		}
 		switch ( row.Kind )
 		{
 			case RideUpgradeRowKind.AddOn:

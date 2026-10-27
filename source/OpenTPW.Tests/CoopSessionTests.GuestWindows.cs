@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
 using OpenTPW.UI.Original;
@@ -5,10 +6,9 @@ using OpenTPW.UI.Original;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// [EXT:online-coop-commands] A guest's park windows send only what its player asked for: the object window's apply on its close, the research workload knob's projection on the window's
-/// opening and on a staffing change, and the loans window's offer refresh on its opening and its tabs would each be a request the guest's rights refuse, with a note about a click the player
-/// never made. A shop's or a sideshow's apply sends only the commands whose values its player changed, and a typed price or an apply-all, which go when clicked, do not go again at the
-/// close.
+/// [EXT:online-coop-commands] A guest's park windows send only what its player asked for: the research workload knob's projection on the window's opening and on a staffing change and the
+/// loans window's offer refresh on its opening and its tabs send nothing, and the object window keeps no draft (C4b-2): each change of its controls goes at once as a click, which the
+/// session's rights or the queue's room may refuse before anything changes, its controls draw the drawn values, and its close and retarget send nothing.
 /// </summary>
 public partial class CoopSessionTests
 {
@@ -38,6 +38,13 @@ public partial class CoopSessionTests
 	private static (System.Action Open, System.Action Close) Window( View view, OriginalObject item ) =>
 		(() => { view.Hud.SelectObject( item ); view.Update(); }, () => { view.Hud.SelectObject( null ); view.Update(); });
 
+	/// <summary>The guest's object window's slider <paramref name="id"/>.</summary>
+	private static UiSlider WindowSlider( View view, string id ) => (UiSlider)view.Hud.Screen.Find( id )!;
+
+	/// <summary>The guest's queue's entry of <paramref name="knob"/> of <paramref name="item"/>'s target, unsent or open, or null.</summary>
+	private static ParkCommand? WindowEntry( Park guest, OriginalObject item, ManagementKnob knob ) =>
+		Management( guest ).PendingCommand( ManagementTarget.Attraction( item.Runtime.AttractionId ), knob );
+
 	[TestMethod]
 	public void AGuestsWindowsSendNothingItsPlayerDidNotAskFor()
 	{
@@ -46,9 +53,11 @@ public partial class CoopSessionTests
 		Rounds( 20, host, guest );
 		guest.Enter();
 		var hud = view.Hud;
-		var refusals = guest.Level.SessionRefusals;
-		// the ride's window opened and closed
+		var before = Numbered( guest );
+		// the ride's window opened, moved on by the arrows and closed
 		hud.SelectObject( guest.One );
+		view.Update();
+		hud.CycleSelectedObject( 1 );
 		view.Update();
 		hud.SelectObject( null );
 		view.Update();
@@ -71,139 +80,76 @@ public partial class CoopSessionTests
 		view.Update();
 		hud.CloseLoansWindow();
 		view.Update();
-		Assert.AreEqual( refusals, guest.Level.SessionRefusals, "no command went, so nothing was refused" );
-		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) + view.Says( OpenTpwText.CoopNotPermitted ) );
-		// a change the player made goes, and the guest has no right to make it (C4b: the attractions right is not offered yet)
+		Assert.AreEqual( before, Numbered( guest ), "nothing went" );
+		Assert.AreEqual( (0, 0, 0), (Management( guest ).Pending.Count(), Management( guest ).TakeNotes().Count, guest.Level.SessionRefusals), "nothing queued, refused or said" );
+		// a change the player made goes at its click, and only the host may make it here: refused, the control returns and the window's close sends nothing more
 		hud.SelectObject( guest.One );
 		view.Update();
-		hud.PendingSettings.Ride = hud.PendingSettings.Ride with { Speed = hud.PendingSettings.Ride.Speed + 1 };
+		var speed = WindowSlider( view, "rideSpeed" );
+		var drawn = speed.Value();
+		speed.Changed!( drawn + 1 );
+		Assert.AreEqual( drawn, speed.Value(), "the control returned at once" );
+		Assert.AreEqual( new ManagementNote( ManagementNoteKind.Rights, CoopRefusal.NotPermitted ), Management( guest ).PeekNote()?.Note );
+		view.Update();
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopNotPermitted ), "not said while the object window hides the lines" );
 		hud.SelectObject( null );
 		view.Update();
-		Assert.AreEqual( refusals + 1, guest.Level.SessionRefusals, "the changed ride's apply" );
-		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ) );
+		Assert.AreEqual( (1, before), (view.Says( OpenTpwText.CoopNotPermitted ), Numbered( guest )), "said once the window closed, and nothing sent" );
 		CatchUpAndCompare( host, guest );
 	}
 
 	[TestMethod]
-	public void AGuestsShopWindowSendsOnlyTheCommandsOfWhatItsPlayerChangedAndNothingTwice()
+	public void AGuestsWindowSendsEachChangeAtOnceAndItsCloseAndRetargetSendNothing()
 	{
-		OriginalObject? shop = null;
+		OriginalObject? shop = null, other = null;
 		var (host, guest, _, _) = Shared( ( park, isHost ) =>
 		{
-			var placed = AddPriced( park, shop: true, 20 );
+			var first = AddPriced( park, shop: true, 20, "UsageInfo.SpecialIngredient 2\n" );
+			var second = AddPriced( park, shop: true, 23, "UsageInfo.SpecialIngredient 2\n" );
 			if ( !isHost )
-				shop = placed;
+				(shop, other) = (first, second);
 		} );
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );
-		guest.Enter();
+		GiveRights( host, guest, view, CoopRights.Attractions );
 		var hud = view.Hud;
-		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
-		var context = new UiContext( view.Strings, new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) )
-		{ Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };
-		void Give( UiInput input )
-		{
-			guest.Enter();
-			hud.Update( context, input, false, false, false );
-		}
-		var refusals = guest.Level.SessionRefusals;
-		int Sent() => guest.Level.SessionRefusals - refusals;
+		var before = Numbered( guest );
 		var (open, close) = Window( view, shop! );
-		// opened and closed: nothing
 		open();
+		// the quality's step: its group at once, the window drawing it while it waits
+		var quality = WindowSlider( view, "shopQuality" );
+		var step = (quality.Value() + 1) % 3;
+		quality.Changed!( step );
+		var ingredient = hud.PendingSettings.Ingredient;
+		Assert.AreEqual( new SetShopSettingsCommand( shop!.Runtime.AttractionId, step * 50, ingredient ), WindowEntry( guest, shop, ManagementKnob.ShopSettings ) );
+		view.Update();
+		Assert.AreEqual( step, quality.Value(), "drawn while it waits" );
+		// a drag of the ingredient in one frame: one entry with its latest value, after the quality's (the same group's run at the target's tail)
+		var drag = WindowSlider( view, "shopIngredient" );
+		foreach ( var value in new[] { 10, 11, 12 } )
+			drag.Changed!( value );
+		Assert.AreEqual( 1, Management( guest ).Pending.Count( entry => entry.Target == ManagementTarget.Attraction( shop.Runtime.AttractionId ) ) );
+		Assert.AreEqual( new SetShopSettingsCommand( shop.Runtime.AttractionId, step * 50, 12 ), WindowEntry( guest, shop, ManagementKnob.ShopSettings ) );
+		// the price box's click: the price's group, behind the settings
+		var price = hud.PendingSettings.Price;
+		((UiButton)hud.Screen.Find( "pricePlus" )!).Clicked!();
+		Assert.AreEqual( new SetPriceCommand( shop.Runtime.AttractionId, price + 1 ), WindowEntry( guest, shop, ManagementKnob.Price ) );
+		// the arrows move on and the window closes: nothing more goes, and nothing is lost
+		hud.CycleSelectedObject( 1 );
+		view.Update();
 		close();
-		Assert.AreEqual( 0, Sent(), "nothing changed" );
-		// the quality alone: its settings' command, not the price's
-		open();
-		hud.PendingSettings.QualityStep = (hud.PendingSettings.QualityStep + 1) % 3;
-		close();
-		Assert.AreEqual( 1, Sent(), "the settings' command alone" );
-		// the price alone (the price box's steps): the price's command, not the settings'
-		open();
-		hud.PendingSettings.Price = (hud.PendingSettings.Price + 1) % ParkHud.MaximumPrice;
-		close();
-		Assert.AreEqual( 2, Sent(), "the price's command alone" );
-		// a typed price goes when typed, and not again at the close (the price action is the park view's; the text field's focus sets the process's text entry, which the game's frame
-		// clears and a test must put back)
-		var (camera, typing) = (Camera.Mode, Input.TextEntryActive);
-		Camera.Mode = new ParkCameraMode();
-		try
+		Assert.AreEqual( 2, Management( guest ).Pending.Count(), "the settings and the price" );
+		UntilManaged( host, guest, view );
+		Assert.AreEqual( before + 2, Numbered( guest ), "two requests, at their clicks" );
+		foreach ( var park in new[] { host, guest } )
 		{
-			open();
-			var price = (UiButton)hud.Screen.Find( "shopPrice" )!;
-			Assert.IsTrue( price.Visible && price.Enabled, "the price action" );
-			hud.Screen.Focus( price );
-			Give( UiInput.Key( UiKeys.Accept ) );
-			Assert.AreEqual( "shopPrice", hud.Stack.Top!.Name );
-			Give( UiInput.Type( $"{(hud.PendingSettings.Price + 7) % ParkHud.MaximumPrice}", 10 ) );
-			Give( UiInput.Key( UiKeys.Accept ) );
-			Assert.AreEqual( "hud", hud.Stack.Top!.Name, "the editor took the price" );
-			Assert.AreEqual( 3, Sent(), "the typed price's command" );
-			close();
-			Assert.AreEqual( 3, Sent(), "and not again at the close" );
+			var state = park.Economy.Objects.Single( item => item.Id == park.Level.GetEconomyInstance( park == guest ? shop : park.Level.Objects.Objects.First( placed => placed.Runtime.AttractionId == shop.Runtime.AttractionId ) ) );
+			Assert.AreEqual( (step * 50, 12, price + 1), (state.QualityOfGoods, state.IngredientAmount, state.Price), $"{(park == host ? "the host's" : "the guest's")} shop" );
 		}
-		finally
-		{
-			(Camera.Mode, Input.TextEntryActive) = (camera, typing);
-		}
-		// apply-all sends the window's values to every shop of the type, and the close nothing more
-		open();
-		hud.PendingSettings.Ingredient = (hud.PendingSettings.Ingredient + 10) % 100;
-		((UiButton)hud.Screen.Find( "applyAll" )!).Activate();
-		Assert.AreEqual( 5, Sent(), "the settings' and the price's command of the one shop" );
-		close();
-		Assert.AreEqual( 5, Sent(), "nothing again at the close" );
-		CatchUpAndCompare( host, guest );
-	}
-
-	[TestMethod]
-	public void AGuestsSideshowWindowsSendTheirOneCommandOnlyWhenItsPlayerChangedItsValues()
-	{
-		OriginalObject? winnable = null, prizeless = null;
-		var (host, guest, _, _) = Shared( ( park, isHost ) =>
-		{
-			var game = AddPriced( park, shop: false, 20 );
-			var spray = AddPriced( park, shop: false, 23, "UsageInfo.NonWinnableSideshow 1\n" );
-			if ( !isHost )
-				(winnable, prizeless) = (game, spray);
-		} );
-		var view = ViewOf( guest );
-		Rounds( 20, host, guest );
-		guest.Enter();
-		var pending = view.Hud.PendingSettings;
-		var refusals = guest.Level.SessionRefusals;
-		int Sent() => guest.Level.SessionRefusals - refusals;
-		// a game: its price, its prize and its chance go in one command, sent when any of them changed
-		var (open, close) = Window( view, winnable! );
-		open();
-		close();
-		Assert.AreEqual( 0, Sent(), "nothing changed" );
-		foreach ( var (change, what) in new (System.Action, string)[]
-		{
-			(() => pending.Price = (pending.Price + 1) % ParkHud.MaximumPrice, "the price"),
-			(() => pending.Prize = (pending.Prize + 1) % ParkHud.MaximumPrize, "the prize"),
-			(() => pending.WinChance = (pending.WinChance + 1) % 100, "the chance")
-		} )
-		{
-			var before = Sent();
-			open();
-			change();
-			close();
-			Assert.AreEqual( before + 1, Sent(), $"{what}: the game's one command" );
-		}
-		// a sideshow without a prize: its price alone
-		(open, close) = Window( view, prizeless! );
-		open();
-		close();
-		Assert.AreEqual( 3, Sent(), "nothing changed" );
-		open();
-		pending.Price = (pending.Price + 1) % ParkHud.MaximumPrice;
-		close();
-		Assert.AreEqual( 4, Sent(), "the price's command" );
-		open();
-		pending.Prize = (pending.Prize + 1) % ParkHud.MaximumPrize;
-		close();
-		Assert.AreEqual( 4, Sent(), "a prize it does not use sends nothing" );
+		// the other shop's window draws its own values, untouched
+		Window( view, other! ).Open();
+		Assert.AreEqual( 50 / 50, hud.PendingSettings.QualityStep );
+		Window( view, other ).Close();
 		CatchUpAndCompare( host, guest );
 	}
 }

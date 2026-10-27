@@ -116,8 +116,10 @@ public sealed partial class ParkHud
 			var refresh = new RefreshLoanOffersCommand();
 			if ( GuestManagement is { } queue )
 			{
-				if ( loansWaiter != null && level.Commands.MayIssue( refresh ) && queue.Enqueue( new[] { new ManagementItem( ManagementTarget.Loans, ManagementKnob.Refresh, refresh ) }, loansWaiter ).Full )
-					level.NoteWaitingClick();
+				// [EXT:online-coop-commands] a refresh the queue has no room for says the waiting note through the session's notes (C4b-2)
+				var item = new ManagementItem( ManagementTarget.Loans, ManagementKnob.Refresh, refresh );
+				if ( loansWaiter != null && level.Commands.MayIssue( refresh ) && queue.Enqueue( new[] { item }, loansWaiter ).Full )
+					queue.NoteRefused( item, null );
 			}
 			else if ( !level.Commands.SendsRequests )
 				level.Commands.Issue( refresh );
@@ -172,8 +174,12 @@ public sealed partial class ParkHud
 	/// <returns>True when the dialog waits.</returns>
 	private bool ConfirmGuestLoan( CoopManagementRequests queue, UiScreen confirmation, ParkCommand action, bool repayment, int offerIndex, long amount )
 	{
-		if ( level.Commands.RefusesHere( action ) )
+		var item = new ManagementItem( ManagementTarget.Loans, null, action );
+		// [EXT:online-coop-commands] the rights' note goes through the session's notes, said once the lines can be seen (C4b-2)
+		if ( level.Commands.RightsRefusalOf( action ) is { } refusal )
 		{
+			queue.NoteRefused( item, refusal );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
 			Stack.Pop();
 			return false;
 		}
@@ -186,11 +192,15 @@ public sealed partial class ParkHud
 			return false;
 		}
 		var waiter = queue.NewWaiter();
-		var enqueued = queue.Enqueue( new[] { new ManagementItem( ManagementTarget.Loans, null, action ) }, waiter );
+		var enqueued = queue.Enqueue( new[] { item }, waiter );
 		if ( !enqueued.Queued )
 		{
+			queue.Detach( waiter );
 			if ( enqueued.Full )
-				level.NoteWaitingClick();
+			{
+				queue.NoteRefused( item, null );
+				GameAudio.PlayUi( GameAudio.ErrorEvent );
+			}
 			Stack.Pop();
 			return false;
 		}
@@ -257,8 +267,13 @@ public sealed partial class ParkHud
 		// [EXT:online-coop-permissions] a guest without the finance right hears the rights' note, and the window's own checks of the money and the offer never run (C4b)
 		var queue = GuestManagement;
 		ParkCommand action = repayment ? new RepayLoanCommand( row.OfferIndex, amount ) : new TakeLoanCommand( row.OfferIndex, amount );
-		if ( queue != null && level.Commands.RefusesHere( action ) )
+		if ( queue != null && level.Commands.RightsRefusalOf( action ) is { } refusal )
+		{
+			// [EXT:online-coop-commands] the rights' note through the session's notes (C4b-2)
+			queue.NoteRefused( new ManagementItem( ManagementTarget.Loans, null, action ), refusal );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
 			return;
+		}
 		if ( outstandingLoans && row.FinalAmount > economy.Balance )
 		{
 			Stack.Push( UiDialogs.Message( "loanFunds", () => strings[UIStrings.InsufficientFunds],

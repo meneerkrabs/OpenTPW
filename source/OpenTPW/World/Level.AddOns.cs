@@ -39,7 +39,13 @@ public partial class Level
 	/// </summary>
 	// [BIN:TPW-EXE:0x004AE140 upgrade list] outside game type 2 (Instant Action, DAT_00FB3B7C): every type definition (0x00412E60/E70) whose model loaded (+0x508 = 0), whose +0x284 (AddOn.UpgradesId) is the ride's type and whose object control (0x004D3D10) has the researched byte +0x10 gets a row of its name (0x00412FB0) and the control's price +4, value = the type id; then, when the ride is not in state 2 (0x004E03E0) and its level byte +0x50 is below 2 and level + 1 is at most the control's researched level +0x14, a row of UITEXT 0x1D with level + 2 and the price at type +0x1B8 + 0x40 · (level + 1), value −(level + 1); in state 2 a row of UITEXT 0x1E with level + 2, price 0, value −12999 (0xFFFFCD39); a list without rows shows UITEXT 0x1B in Instant Action, 0x1C at level 2 and 0x1A otherwise, one row of value −7890 per line (0x0067C430 splits the text)
 	// [EXT:upgrade-tier-runtime] the level row is listed only for a tier the ride's catalogue defaults and runtime can install (the next tier's record, Level.CanBuyCatalogueUpgrade), an OpenTPW requirement the original has no counterpart of
-	public RideUpgradeOffer UpgradeOffer( OriginalObject ride )
+	public RideUpgradeOffer UpgradeOffer( OriginalObject ride ) => UpgradeOffer( ride, null );
+
+	/// <summary>
+	/// <see cref="UpgradeOffer(OriginalObject)"/> with <paramref name="record"/> as the ride's economy record (null: the park's): [EXT:online-coop-commands] a guest's list reads the record its
+	/// waiting open-state action is projected onto (C4b-2).
+	/// </summary>
+	internal RideUpgradeOffer UpgradeOffer( OriginalObject ride, ParkObjectState? record )
 	{
 		ArgumentNullException.ThrowIfNull( ride );
 		var rows = new List<RideUpgradeRow>();
@@ -53,7 +59,8 @@ public partial class Level
 				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.AddOn, entry, 0, addOn.PurchaseCost ) );
 		}
 		var level = 0;
-		if ( GetEconomyInstance( ride ) is int instance && economy.TryGetObject( instance, out var state ) && state.Kind == ParkObjectKind.Ride && economy.Catalog.TryGet( state.InfoId, out var info ) )
+		if ( (record ?? (GetEconomyInstance( ride ) is int instance && economy.TryGetObject( instance, out var found ) ? found : null)) is { Kind: ParkObjectKind.Ride } state
+			&& economy.Catalog.TryGet( state.InfoId, out var info ) )
 		{
 			level = state.Level;
 			if ( ParkEconomy.ObjectState( state ) == RideObjectStates.Upgrading )

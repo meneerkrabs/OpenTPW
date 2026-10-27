@@ -222,7 +222,8 @@ public sealed partial class ParkHud
 		}
 		objDoor = Info( new UiButton { Id = "openRide", Model = "b_door", Clicked = ToggleRideOpen,
 			// b_door state frames: open door normally, closed door in the "down" frames.
-			Selected = () => selectedObject?.IsOpen == false } );
+			// [EXT:online-coop-commands] a guest's door draws its open word as drawn (C4b-2)
+			Selected = () => selectedObject is { } shown && !DrawnIsOpen( shown ) } );
 		objErase = Info( new UiButton { Id = "deleteRide", Model = "b_erase", Clicked = DeleteRide } );
 		objMove = Info( new UiButton { Id = "moveRide", Model = "b_move", Clicked = MoveObject } );
 		objOkay = Info( new UiButton { Id = "retractInfo", Model = "b_okay", Clicked = () => SetInfoArm( false ) } );
@@ -406,7 +407,7 @@ public sealed partial class ParkHud
 		}
 		// the table's second help id (12, open) is the door's prompt while it is down, that is closed; its first (13, close) while it is open
 		if ( objDoor != null && layout.Door != null )
-			objDoor.Help = HelpOf( selectedObject?.IsOpen == false && layout.Door.AltHelp >= 0 ? layout.Door.AltHelp : layout.Door.Help );
+			objDoor.Help = HelpOf( selectedObject is { } shown && !DrawnIsOpen( shown ) && layout.Door.AltHelp >= 0 ? layout.Door.AltHelp : layout.Door.Help );
 		// the per-frame visibility reset shows every control of the window: hide the ones this table lacks
 		if ( layout.RideIt == null && objRideIt != null ) objRideIt.Visible = false;
 		if ( layout.Upgrade == null && rideUpgradeButton != null ) rideUpgradeButton.Visible = false;
@@ -461,7 +462,8 @@ public sealed partial class ParkHud
 	/// <summary>What the status banner reads of <paramref name="item"/>; null in a visit or for an object without an economy record.</summary>
 	private RideStatusFacts? StatusFactsOf( OriginalObject item )
 	{
-		if ( Status.EconomySource is not ParkEconomy economy || LiveState( item ) is not { } record )
+		// [EXT:online-coop-commands] a guest's window reads the record as its waiting open-state action will leave it (C4b-2)
+		if ( Status.EconomySource is not ParkEconomy economy || DrawnRecord( item ) is not { } record )
 			return null;
 		var relief = economy.Catalog.TryGet( record.InfoId, out var info ) && info.ProvidesRelief;
 		var state = ParkEconomy.ObjectState( record );
@@ -477,7 +479,7 @@ public sealed partial class ParkHud
 			Service: ServiceProgress( economy, record, relief && state != RideObjectStates.Upgrading ? StaffType.Handyman : StaffType.Mechanic ),
 			QueueDetached: item.Entry.HasQueue && guests != null && !ParkGate.QueueConnected( guests.Grid, item.Visitors ),
 			ExitDetached: false,
-			IsOpen: item.IsOpen );
+			IsOpen: DrawnIsOpen( item ) );
 	}
 
 	/// <summary>How far the service of <paramref name="record"/> (an upgrade or a call) has come with the employees of <paramref name="role"/>.</summary>

@@ -226,6 +226,12 @@ internal sealed class CoopSession : IDisposable
 	/// </summary>
 	internal CoopManagementRequests? Management { get; private set; }
 
+	/// <summary>
+	/// [EXT:online-coop-commands] Whether the session ended while its management queue held an action not made or not said (C4b-2, <see cref="CoopManagementRequests.HasUnfinished"/>): the
+	/// guest's end dialog adds that some of the last changes may not have been made.
+	/// </summary>
+	internal bool ManagementUnfinished { get; private set; }
+
 	/// <summary>The session's park on this machine; null while a joining guest has none yet.</summary>
 	public Level? Level => level;
 
@@ -500,6 +506,9 @@ internal sealed class CoopSession : IDisposable
 			HostStream.Dispose();
 		}
 		GuestStream?.Dispose();
+		// [EXT:online-coop-commands] whether the guest's management actions left something not made or not said, asked before the ledger's end resolves their requests (C4b-2): the end
+		// dialog says so
+		ManagementUnfinished = Management?.HasUnfinished == true;
 		GuestCommands?.End();
 		Management?.End();
 		if ( level?.CoopSession == this )

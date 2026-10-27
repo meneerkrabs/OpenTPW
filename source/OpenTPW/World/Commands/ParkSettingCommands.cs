@@ -105,7 +105,7 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.TakeLoan => new TakeLoanCommand( reader.Int(), reader.Long() ),
 		ParkCommandKind.RepayLoan => new RepayLoanCommand( reader.Int(), reader.Long() ),
 		ParkCommandKind.BuyUpgrade => new BuyUpgradeCommand( reader.Int(), reader.HasExpectation ? reader.Int() : null ),
-		ParkCommandKind.CancelUpgrade => new CancelUpgradeCommand( reader.Int(), reader.HasExpectation ? reader.Int() : null ),
+		ParkCommandKind.CancelUpgrade => new CancelUpgradeCommand( reader.Int(), reader.HasExpectation ? reader.Int() : null, reader.HasPurchase ? reader.Int() : null ),
 		ParkCommandKind.RequestMaintenance => new RequestMaintenanceCommand( reader.Int(), reader.Bool() ),
 		ParkCommandKind.AnswerChallenge => new AnswerChallengeCommand( reader.Int(), reader.Long(), reader.Bool() ),
 		ParkCommandKind.RenameStaff => new RenameStaffCommand( reader.Int(), reader.String() ),
@@ -507,7 +507,8 @@ public sealed record BuyUpgradeCommand( int Attraction, int? ExpectedLevel = nul
 	{
 		if ( !IsUpgradeTarget( level, Attraction, out var economy, out var state ) )
 			return NoAttraction( Attraction );
-		if ( ExpectedLevel is { } expected && state.Level + 1 != expected )
+		// [EXT:online-coop-commands] a guest's list showed the level row of a ride that waited for no level: a level pending by now (the host's buy came first) is stale too (C4b-2)
+		if ( ExpectedLevel is { } expected && (state.Level + 1 != expected || state.PendingLevel > state.Level) )
 			return Stale();
 		var result = economy.TryBuyUpgrade( state.Id );
 		return result == ParkEconomy.PurchaseResult.Ok ? ParkCommandResult.Ok( result ) : new ParkCommandResult( false, $"The upgrade is refused: {result}.", result );
@@ -515,13 +516,14 @@ public sealed record BuyUpgradeCommand( int Attraction, int? ExpectedLevel = nul
 }
 
 /// <summary>
-/// Cancels the upgrade the ride <paramref name="Attraction"/> waits for (its upgrade list's cancel row). [EXT:online-coop-commands] A guest's names the pending level its list showed
-/// (<paramref name="ExpectedPendingLevel"/>, C4b): a record whose ride waits for another level by then is refused as stale. The host's names none, as before.
+/// Cancels the upgrade the ride <paramref name="Attraction"/> waits for (its upgrade list's cancel row). [EXT:online-coop-commands] A guest's names the pending level and the purchase its list
+/// showed (<paramref name="ExpectedPendingLevel"/>, <paramref name="ExpectedPurchase"/>: the ride's <see cref="ParkObjectState.UpgradePurchases"/>, C4b-2): a record whose ride waits for
+/// another level by then, or for none, or for a later purchase of the same level (the host's cancel and re-buy came first), is refused as stale. The host's names neither, as before.
 /// </summary>
-public sealed record CancelUpgradeCommand( int Attraction, int? ExpectedPendingLevel = null ) : ParkSettingCommand, IStaleChecked
+public sealed record CancelUpgradeCommand( int Attraction, int? ExpectedPendingLevel = null, int? ExpectedPurchase = null ) : ParkSettingCommand, IStaleChecked
 {
 	public override ParkCommandKind Kind => ParkCommandKind.CancelUpgrade;
-	internal override bool IsWellFormed => Attraction >= 0 && ExpectedPendingLevel is null or >= 0;
+	internal override bool IsWellFormed => Attraction >= 0 && (ExpectedPendingLevel, ExpectedPurchase) is (null, null) or ( >= 0, null ) or ( >= 0, >= 0 );
 	bool IStaleChecked.HasExpectation => ExpectedPendingLevel != null;
 
 	internal override void WriteFields( ParkCommandWriter writer )
@@ -529,13 +531,15 @@ public sealed record CancelUpgradeCommand( int Attraction, int? ExpectedPendingL
 		writer.Int( Attraction );
 		if ( ExpectedPendingLevel is { } expected )
 			writer.Int( expected );
+		if ( ExpectedPurchase is { } purchase )
+			writer.Int( purchase );
 	}
 
 	internal override ParkCommandResult Execute( Level level )
 	{
 		if ( !BuyUpgradeCommand.IsUpgradeTarget( level, Attraction, out var economy, out var state ) )
 			return NoAttraction( Attraction );
-		if ( ExpectedPendingLevel is { } expected && state.PendingLevel != expected )
+		if ( ExpectedPendingLevel is { } expected && (state.PendingLevel != expected || ExpectedPurchase is { } purchase && state.UpgradePurchases != purchase) )
 			return Stale();
 		return economy.TryCancelUpgrade( state.Id ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "The ride waits for no upgrade." );
 	}

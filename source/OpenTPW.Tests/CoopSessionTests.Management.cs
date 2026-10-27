@@ -118,13 +118,13 @@ public partial class CoopSessionTests
 		Assert.AreEqual( before + 1, Numbered( guest ), "one request went" );
 		Assert.AreEqual( (target, target), (guest.Economy.Research.Effort[0], host.Economy.Research.Effort[0]) );
 		Assert.AreEqual( target, slider.Value() );
-		// without the right: the rights' note once for the run, and nothing queued or sent
+		// without the right: the rights' note once for the run, through the session's notes and never the session's immediate path (C4b-2), and nothing queued or sent
 		GiveRights( host, guest, view, CoopRights.Finance );
 		var refusals = guest.Level.SessionRefusals;
 		foreach ( var step in new[] { 50, 51, 52 } )
 			slider.Changed!( step );
 		view.Update();
-		Assert.AreEqual( refusals + 3, guest.Level.SessionRefusals );
+		Assert.AreEqual( refusals, guest.Level.SessionRefusals );
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ), "said once for the run" );
 		Assert.AreEqual( 0, Management( guest ).Pending.Count() );
 		Assert.AreEqual( target, slider.Value(), "the park's value" );
@@ -443,9 +443,10 @@ public partial class CoopSessionTests
 		Element<UiButton>( view, "outstanding" ).Activate();
 		view.Update();
 		Alike( host, guest, Spend );
-		var refusals = guest.Level.SessionRefusals;
 		Element<UiElement>( view, "loanList" ).Activate();
-		Assert.AreEqual( ("loans", refusals + 1), (Top( view ), guest.Level.SessionRefusals), "the rights' note, no funds dialog" );
+		Assert.AreEqual( ("loans", ManagementNoteKind.Rights), (Top( view ), Management( guest ).PeekNote()?.Note.Kind), "the rights' note, no funds dialog" );
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ) );
 		// the right taken back between the repay's confirmation opening and its Yes: the rights' note, and nothing sent
 		Alike( host, guest, Earn );
 		GiveRights( host, guest, view, CoopRights.Finance );
@@ -456,9 +457,11 @@ public partial class CoopSessionTests
 		Element<UiElement>( view, "loanList" ).Activate();
 		Assert.AreEqual( "loanConfirm", Top( view ) );
 		GiveRights( host, guest, view, CoopRights.None );
-		refusals = guest.Level.SessionRefusals;
+		view.Pass( ParkHud.MessageSeconds + 1 );
 		Element<UiButton>( view, "choice0" ).Activate();
-		Assert.AreEqual( ("loans", refusals + 1, before), (Top( view ), guest.Level.SessionRefusals, Numbered( guest )) );
+		Assert.AreEqual( ("loans", ManagementNoteKind.Rights, before), (Top( view ), Management( guest ).PeekNote()?.Note.Kind, Numbered( guest )) );
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ) );
 		// the right taken back after a Yes whose repay waits behind an open refresh: the confirmation closes with the rights' failure dialog, one message
 		GiveRights( host, guest, view, CoopRights.Finance );
 		view.Pass( ParkHud.MessageSeconds + 1 );

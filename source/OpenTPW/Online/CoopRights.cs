@@ -25,7 +25,7 @@ public enum CoopRights : byte
 internal static class CoopRightsOffer
 {
 	/// <summary>The rights offered (C4a: building alone; C4b-1 research and finance, C4b-2 attractions, C4c staff).</summary>
-	public const CoopRights Offered = CoopRights.Build | CoopRights.Research | CoopRights.Finance;
+	public const CoopRights Offered = CoopRights.Build | CoopRights.Attractions | CoopRights.Research | CoopRights.Finance;
 
 	/// <summary>Each offered right, in the order the rights dialog lists them.</summary>
 	public static IReadOnlyList<CoopRights> Each { get; } = Enum.GetValues<CoopRights>().Where( right => right != CoopRights.None && Offered.HasFlag( right ) ).ToArray();

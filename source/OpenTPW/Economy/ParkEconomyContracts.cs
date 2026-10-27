@@ -269,7 +269,18 @@ public sealed class ParkObjectState
 	/// save written while OpenTPW charged the purchase, which has been paid already.
 	/// </summary>
 	public bool UpgradeCostDue { get; set; }
+	/// <summary>
+	/// [EXT:online-coop-commands] How many levels were bought for this object (each accepted <see cref="ParkEconomy.TryBuyUpgrade"/>): the identity of its pending purchase, which a guest's
+	/// cancellation names, so a cancel and a re-buy of the same level before it arrives make it stale instead of cancelling the new purchase (C4b-2, <see cref="CancelUpgradeCommand"/>).
+	/// </summary>
+	public int UpgradePurchases { get; set; }
 	public long TotalSpent { get; set; }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A copy of this record that a guest's window projects a waiting open-state action onto (C4b-2, the drawn open state): a member-wise copy, read only, never
+	/// one of the economy's records.
+	/// </summary>
+	internal ParkObjectState Projection() => (ParkObjectState)MemberwiseClone();
 	public int Price { get; set; }
 	public int CostOfGoods { get; set; }
 	public int ChanceOfLosingPercent { get; set; }

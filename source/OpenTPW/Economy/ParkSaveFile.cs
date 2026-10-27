@@ -200,6 +200,9 @@ public static class ParkSaveFile
 		/// <summary>The pending upgrade is not paid yet (debited when it is installed); absent in saves that charged it at purchase.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public bool UpgradeCostDue { get; init; }
+		/// <summary>[EXT:online-coop-commands] The levels bought for the object (<see cref="ParkObjectState.UpgradePurchases"/>); absent while 0, and in older saves, which then use 0.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int UpgradePurchases { get; init; }
 		public required long TotalSpent { get; init; }
 		public required int Price { get; init; }
 		public required int CostOfGoods { get; init; }
@@ -743,6 +746,7 @@ public static class ParkSaveFile
 			Level = item.Level,
 			PendingLevel = item.PendingLevel,
 			UpgradeCostDue = item.UpgradeCostDue,
+			UpgradePurchases = item.UpgradePurchases,
 			TotalSpent = item.TotalSpent,
 			Price = item.Price,
 			CostOfGoods = item.CostOfGoods,
@@ -972,6 +976,7 @@ public static class ParkSaveFile
 			Require( item.Id > 0 && item.Id < data.NextObjectId && ids.Add( item.Id ), $"object id {item.Id}" );
 			Require( item.Level is >= 0 and <= 2 && item.PendingLevel is >= 0 and <= 2 && item.StateOfRepair is >= 0 and <= 100 && item.Statistics.Length == 9, $"object {item.Id}" );
 			Require( !item.UpgradeCostDue || item.PendingLevel > item.Level, $"object {item.Id} upgrade cost" );
+			Require( item.UpgradePurchases >= 0, $"object {item.Id} upgrade purchases" );
 			Require( item.BuiltTick <= data.Tick && item.Price >= 0 && item.CostOfGoods >= 0 && item.ChanceOfLosingPercent is >= 0 and <= 100, $"object {item.Id} values" );
 			Require( item.Repair is null || (double.IsFinite( item.Repair.Value ) && item.Repair.Value is >= 0 and <= 100 && (int)item.Repair.Value == item.StateOfRepair), $"object {item.Id} repair" );
 			// the quality setter keeps a byte (0x4e2190); the ingredient amount is a raw word, as the original loader reads it (0x4dcdc1)
@@ -1083,6 +1088,7 @@ public static class ParkSaveFile
 				Level = item.Level,
 				PendingLevel = item.PendingLevel,
 				UpgradeCostDue = item.UpgradeCostDue,
+				UpgradePurchases = item.UpgradePurchases,
 				TotalSpent = item.TotalSpent,
 				Price = item.Price,
 				CostOfGoods = item.CostOfGoods,

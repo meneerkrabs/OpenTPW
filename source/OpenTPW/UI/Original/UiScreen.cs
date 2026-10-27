@@ -181,14 +181,18 @@ public class UiScreen
 				if ( pressed is { Enabled: true } and IUiDragStart start && input.Mouse.X >= 0 )
 					start.DragStart( canvas, input.Mouse );
 				if ( hit is UiButton { Repeat: not null, Enabled: true } holdButton && input.Mouse.X >= 0 )
+				{
 					(holdButton.HoldState, holdButton.HoldTime) = (1, context.Time);
+					// [EXT:online-coop-commands] a press starts a hold's own state, whether its start runs or the pointer misses it (C4b-2)
+					holdButton.Repeat.Pressed?.Invoke();
+				}
 			}
 			if ( pressed is UiButton { Repeat: { } repeat, HoldState: not 0 } held && input.LeftDown )
 				RunHold( held, repeat, context.Time, ReferenceEquals( hit, held ) );
 			if ( input.LeftPressed && pressed is { Enabled: true } and IUiDragTarget begin && input.Mouse.X >= 0 )
 				begin.DragBegin( canvas, input.Mouse );
 			// A slider follows the mouse while it is held, wherever the pointer has drifted to.
-			if ( pressed is { Enabled: true } and IUiDragTarget drag && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased) )
+			if ( pressed is { Enabled: true } and IUiDragTarget drag && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased && drag.FollowsRelease) )
 				drag.DragTo( canvas, input.Mouse );
 			if ( input.LeftReleased )
 			{

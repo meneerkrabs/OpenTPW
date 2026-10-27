@@ -482,8 +482,9 @@ public sealed partial class ParkHud
 	/// <summary>The info arm's contents as computed once at the start of the frame (the draw lambdas read it).</summary>
 	private ObjectInfo? InfoNow => infoNow ?? SelectedInfo;
 
+	// [EXT:online-coop-commands] a guest's open word as drawn: projected while an open-state action of the object waits (C4b-2)
 	public ObjectInfo? SelectedInfo => InfoArmOpen && selectedObject is { IsDeleted: false } item
-		? new ObjectInfo( item.Entry.ObjectNameIndex ?? -1, item.IsOpen, item.Runtime.IsAttraction, ObjectStats( item ), EntryName( item.Entry ) ) : null;
+		? new ObjectInfo( item.Entry.ObjectNameIndex ?? -1, DrawnIsOpen( item ), item.Runtime.IsAttraction, ObjectStats( item ), EntryName( item.Entry ) ) : null;
 
 	/// <summary>The live economy record behind a placed object, null in a visit or without an economy.</summary>
 	private ParkObjectState? LiveState( OriginalObject item ) =>
@@ -684,6 +685,12 @@ public sealed partial class ParkHud
 			return;
 		if ( selectedObject is not { IsDeleted: false } item || !item.Runtime.IsAttraction )
 			return;
+		// [EXT:online-coop-commands] a guest's door is an open-state action of its object, from the drawn state (C4b-2)
+		if ( GuestManagement is { } queue )
+		{
+			RequestAttractionDoor( queue, item );
+			return;
+		}
 		// the command asks the reopening guard before it opens (SetAttractionOpenCommand)
 		level.Commands.Issue( new SetAttractionOpenCommand( item.Runtime.AttractionId, !item.IsOpen ) );
 	}
@@ -957,7 +964,8 @@ public sealed partial class ParkHud
 		{
 			// a visit reads the published state while drawing instead (the snapshot stays empty)
 			infoNow = level.IsReadOnlyVisit ? null : SelectedInfo;
-			openButton.Enabled = !level.IsReadOnlyVisit && infoNow?.CanOpen == true && objectDoorAllowed;
+			// [EXT:online-coop-commands] greyed while an open-state action of a guest's object waits (C4b-2)
+			openButton.Enabled = !level.IsReadOnlyVisit && infoNow?.CanOpen == true && objectDoorAllowed && !(selectedObject is { } waiting && OpenStateWaits( waiting ));
 		}
 		if ( hud.Find( "deleteRide" ) is UiButton deleteButton )
 			// [EXT:online-coop-commands] not while this guest's sale of the object waits for the host (C3b), nor [EXT:online-coop-claims] for a ride claimed against this player (C3c-1)

@@ -9,6 +9,8 @@ internal enum ManagementTargetKind : byte
 	Finance = 2,
 	/// <summary>The loans: the offers' refresh, a take and a repay, which so go in their order.</summary>
 	Loans = 3,
+	/// <summary>One placed attraction (<see cref="ManagementTarget.Id"/> is its attraction id): its window's settings and prices, its door, its call and its upgrade (C4b-2).</summary>
+	Attraction = 4,
 	/// <summary>A test's own targets (the cap's test needs more targets than the windows have); no window makes one.</summary>
 	Synthetic = 255
 }
@@ -19,6 +21,7 @@ internal readonly record struct ManagementTarget( ManagementTargetKind Kind, int
 	public static ManagementTarget Research => new( ManagementTargetKind.Research );
 	public static ManagementTarget Finance => new( ManagementTargetKind.Finance );
 	public static ManagementTarget Loans => new( ManagementTargetKind.Loans );
+	public static ManagementTarget Attraction( int attraction ) => new( ManagementTargetKind.Attraction, attraction );
 }
 
 /// <summary>[EXT:online-coop-commands] A control whose latest value is what its player wants (C4b): a run of its changes goes once, with the latest value.</summary>
@@ -31,7 +34,17 @@ internal enum ManagementKnobKind : byte
 	Door = 4,
 	Name = 5,
 	/// <summary>The loan offers' refresh.</summary>
-	Refresh = 6
+	Refresh = 6,
+	/// <summary>A ride's speed, capacity and duration (<see cref="SetRideSettingsCommand"/>, C4b-2).</summary>
+	RideSettings = 7,
+	/// <summary>A shop's quality of goods and special ingredient (<see cref="SetShopSettingsCommand"/>).</summary>
+	ShopSettings = 8,
+	/// <summary>A shop's or a prizeless sideshow's price (<see cref="SetPriceCommand"/>).</summary>
+	Price = 9,
+	/// <summary>A winnable sideshow's price, prize and chance together (<see cref="SetGamePrizeCommand"/>): its typed price too, so no two knobs write one field.</summary>
+	Game = 10,
+	/// <summary>An attraction's call for a mechanic or a handyman (<see cref="RequestMaintenanceCommand"/>).</summary>
+	Maintenance = 11
 }
 
 /// <summary>[EXT:online-coop-commands] A control within a target (<see cref="ManagementKnobKind"/>), with its index where a target has several of a kind.</summary>
@@ -43,13 +56,21 @@ internal readonly record struct ManagementKnob( ManagementKnobKind Kind, int Ind
 	public static ManagementKnob Door => new( ManagementKnobKind.Door );
 	public static ManagementKnob Name => new( ManagementKnobKind.Name );
 	public static ManagementKnob Refresh => new( ManagementKnobKind.Refresh );
+	public static ManagementKnob RideSettings => new( ManagementKnobKind.RideSettings );
+	public static ManagementKnob ShopSettings => new( ManagementKnobKind.ShopSettings );
+	public static ManagementKnob Price => new( ManagementKnobKind.Price );
+	public static ManagementKnob Game => new( ManagementKnobKind.Game );
+	public static ManagementKnob Maintenance => new( ManagementKnobKind.Maintenance );
 }
 
 /// <summary>[EXT:online-coop-commands] One command of a window's action, for <see cref="CoopManagementRequests.Enqueue"/>: its target and its knob, if it has one.</summary>
 internal readonly record struct ManagementItem( ManagementTarget Target, ManagementKnob? Knob, ParkCommand Command );
 
-/// <summary>[EXT:online-coop-commands] What <see cref="CoopManagementRequests.Enqueue"/> did with a window's action: its entries (none when nothing was queued) and whether its targets were full.</summary>
-internal readonly record struct ManagementEnqueued( IReadOnlyList<ManagementEntry> Entries, bool Full )
+/// <summary>
+/// [EXT:online-coop-commands] What <see cref="CoopManagementRequests.Enqueue"/> did with a window's action: its entries (none when nothing was queued), whether its targets or the queue were
+/// full, and whether an object's open-state action waits already (<see cref="CoopManagementRequests.OpenStateWaits"/>: the action is no click, C4b-2).
+/// </summary>
+internal readonly record struct ManagementEnqueued( IReadOnlyList<ManagementEntry> Entries, bool Full, bool Busy = false )
 {
 	public bool Queued => Entries.Count > 0;
 }
@@ -106,7 +127,9 @@ internal enum ManagementOutcomeKind : byte
 	/// <summary>Whether it applied is not known (its record is inside the cut of the snapshot a resync rebuilt the park from, the host forgot it, or it threw): the park shows it.</summary>
 	Unknown = 4,
 	/// <summary>The session ended before it resolved.</summary>
-	Ended = 5
+	Ended = 5,
+	/// <summary>Never queued: its target or the queue held no room (<see cref="CoopManagementRequests.MaximumUnsent"/>, <see cref="CoopManagementRequests.MaximumUnsentTotal"/>), so the click changed nothing (C4b-2).</summary>
+	NotQueued = 6
 }
 
 /// <summary>[EXT:online-coop-commands] What a management outcome says to its player (<see cref="ManagementOutcome.Note"/>).</summary>
@@ -122,7 +145,9 @@ internal enum ManagementNoteKind : byte
 	/// <summary>The host could not take it; the player tries again.</summary>
 	NotTaken = 4,
 	/// <summary>Whether it went through is not known.</summary>
-	Unknown = 5
+	Unknown = 5,
+	/// <summary>The click was not queued for want of room: its player is asked to wait (C4b-2).</summary>
+	Waiting = 6
 }
 
 /// <summary>[EXT:online-coop-commands] A management outcome's note: its kind, and for a refusal by the rights, which (another player's claim, the right not given, the host's alone).</summary>
@@ -146,6 +171,7 @@ internal sealed record ManagementOutcome( ManagementEntry Entry, ManagementOutco
 	public ManagementNote Note => Kind switch
 	{
 		ManagementOutcomeKind.NotTaken => new ManagementNote( ManagementNoteKind.NotTaken ),
+		ManagementOutcomeKind.NotQueued => new ManagementNote( ManagementNoteKind.Waiting ),
 		ManagementOutcomeKind.Unknown => new ManagementNote( ManagementNoteKind.Unknown ),
 		ManagementOutcomeKind.Refused when Result is { RightsRefused: true } refused => new ManagementNote( ManagementNoteKind.Rights, CoopBuildRights.RefusalOf( refused.Reason ) ),
 		ManagementOutcomeKind.Refused => ParkRefusalNote( Command, Result ),
@@ -180,16 +206,13 @@ internal sealed class ManagementWaiter
 }
 
 /// <summary>
-/// [EXT:online-coop-commands] What a guest's management queue sends its commands through (the guest's park's <see cref="ParkCommands"/>; a test's own): the session's rights asked silently, the
-/// rights' refusal said through the session's refusal path, and the issue that makes a request of the session's ledger.
+/// [EXT:online-coop-commands] What a guest's management queue sends its commands through (the guest's park's <see cref="ParkCommands"/>; a test's own): the session's rights asked silently,
+/// and the issue that makes a request of the session's ledger. A refusal's note goes to the queue's own notes (C4b-2), never through the session's refusal path.
 /// </summary>
 internal interface IManagementIssuer
 {
 	/// <summary>The rights' refusal of <paramref name="command"/> of this machine's player, asked silently; null when they allow it.</summary>
 	ParkCommandResult? RightsRefusalOf( ParkCommand command );
-
-	/// <summary>Says the rights' refusal of <paramref name="command"/> through the session's refusal path (coalesced for a run); false when the rights allow it.</summary>
-	bool RefusesHere( ParkCommand command );
 
 	/// <summary>Issues <paramref name="command"/> as this machine's player: a guest's goes to the host as a request (<see cref="ParkCommandResult.Request"/>).</summary>
 	ParkCommandResult Issue( ParkCommand command );
@@ -221,9 +244,17 @@ internal sealed class CoopManagementRequests
 	/// </summary>
 	public const int MaximumUnsent = 16;
 
+	/// <summary>
+	/// How many unsent entries the queue holds at most across all its targets (C4b-2): an apply-all adds a target per object and an object's attraction id is never reused, so the per-target
+	/// cap alone does not bound the queue. A batch past it is not queued at all (<see cref="ManagementEnqueued.Full"/>); 256 lets an apply-all over 128 shops of two groups go whole.
+	/// </summary>
+	public const int MaximumUnsentTotal = 256;
+
 	/// <summary>Each target's entries not resolved yet, in their order: at most the first is open.</summary>
 	private readonly Dictionary<ManagementTarget, List<ManagementEntry>> targets = new();
 	private readonly Queue<ManagementOutcome> notes = new();
+	/// <summary>The waiters not detached, whose outcomes not taken yet the session's end asks about (<see cref="HasUnfinished"/>).</summary>
+	private readonly List<ManagementWaiter> live = new();
 	private long lastOrder;
 	private double lastSend = double.NegativeInfinity;
 	private int open;
@@ -239,10 +270,19 @@ internal sealed class CoopManagementRequests
 	/// </summary>
 	public ManagementWaiter HudWaiter { get; }
 
-	public CoopManagementRequests() => HudWaiter = new ManagementWaiter( this );
+	public CoopManagementRequests()
+	{
+		HudWaiter = new ManagementWaiter( this );
+		live.Add( HudWaiter );
+	}
 
 	/// <summary>A waiter for a window's opening, which its screen's removal detaches (<see cref="Detach"/>).</summary>
-	public ManagementWaiter NewWaiter() => new( this );
+	public ManagementWaiter NewWaiter()
+	{
+		var waiter = new ManagementWaiter( this );
+		live.Add( waiter );
+		return waiter;
+	}
 
 	/// <summary>Whether the session ended: nothing is queued or sent any more.</summary>
 	public bool Ended => ended;
@@ -273,6 +313,9 @@ internal sealed class CoopManagementRequests
 				throw new InvalidOperationException( $"A management window queued a malformed {what} command." );
 			return new ManagementEnqueued( Array.Empty<ManagementEntry>(), false );
 		}
+		// [EXT:online-coop-commands] one open-state action of an object at a time: its buttons and rows take no click meanwhile, and the queue holds to it (C4b-2)
+		if ( batch.Any( item => IsOpenState( item ) && OpenStateWaits( item.Target ) ) )
+			return new ManagementEnqueued( Array.Empty<ManagementEntry>(), false, Busy: true );
 		if ( !Fits( batch, waiter ) )
 			return new ManagementEnqueued( Array.Empty<ManagementEntry>(), true );
 		var entries = new List<ManagementEntry>( batch.Count );
@@ -307,8 +350,30 @@ internal sealed class CoopManagementRequests
 			var supersedes = item.Knob is { } knob && tail.Unsent && tail.Knob == knob && ReferenceEquals( tail.Waiter, waiter );
 			tails[item.Target] = (item.Knob, true, waiter, tail.Appended + (supersedes ? 0 : 1));
 		}
-		return tails.All( pair => pair.Value.Appended == 0 || UnsentCount( pair.Key ) + pair.Value.Appended <= MaximumUnsent );
+		var appended = tails.Values.Sum( tail => tail.Appended );
+		return tails.All( pair => pair.Value.Appended == 0 || UnsentCount( pair.Key ) + pair.Value.Appended <= MaximumUnsent )
+			&& (appended == 0 || TotalUnsent() + appended <= MaximumUnsentTotal);
 	}
+
+	/// <summary>How many entries are unsent across every target.</summary>
+	private int TotalUnsent() => targets.Values.Sum( list => list.Count( entry => entry.State == ManagementEntryState.Unsent ) );
+
+	/// <summary>
+	/// Whether <paramref name="item"/> is an attraction's open-state action (C4b-2): its door, its call, or a ride's level bought or cancelled, which all write or read the object's open word,
+	/// so one waits at a time.
+	/// </summary>
+	internal static bool IsOpenState( ManagementItem item ) => item.Target.Kind == ManagementTargetKind.Attraction
+		&& (item.Knob?.Kind is ManagementKnobKind.Door or ManagementKnobKind.Maintenance || item.Command is BuyUpgradeCommand or CancelUpgradeCommand);
+
+	/// <summary>Whether an open-state action of <paramref name="target"/> is unsent or open (C4b-2): the object's door, call button and upgrade rows take no click meanwhile.</summary>
+	public bool OpenStateWaits( ManagementTarget target ) => OpenStateEntry( target ) != null;
+
+	/// <summary>The open-state action of <paramref name="target"/> that is unsent or open, or null: what the window projects onto the object's record (C4b-2).</summary>
+	public ParkCommand? OpenStateCommand( ManagementTarget target ) => OpenStateEntry( target )?.Command;
+
+	private ManagementEntry? OpenStateEntry( ManagementTarget target ) =>
+		target.Kind == ManagementTargetKind.Attraction && targets.TryGetValue( target, out var list )
+			? list.FirstOrDefault( entry => IsOpenState( new ManagementItem( entry.Target, entry.Knob, entry.Command ) ) ) : null;
 
 	/// <summary>How many of <paramref name="target"/>'s entries are unsent.</summary>
 	private int UnsentCount( ManagementTarget target ) => targets.TryGetValue( target, out var list ) ? list.Count( entry => entry.State == ManagementEntryState.Unsent ) : 0;
@@ -333,14 +398,9 @@ internal sealed class CoopManagementRequests
 		{
 			if ( issuer.RightsRefusalOf( entry.Command ) is { } refusal )
 			{
-				// an entry without a waiter says the rights' note through the session's refusal path alone (coalesced for a run); a waiter's outcome says it to its window
-				if ( entry.Waiter == null )
-				{
-					issuer.RefusesHere( entry.Command );
-					Resolve( entry, new ManagementOutcome( entry, ManagementOutcomeKind.Refused, refusal ), note: false );
-				}
-				else
-					Resolve( entry, new ManagementOutcome( entry, ManagementOutcomeKind.Refused, refusal ) );
+				// [EXT:online-coop-commands] its note goes to its window's waiter or to the session's notes, said once the HUD's lines can be seen, never through the session's immediate
+				// refusal path (C4b-2)
+				Resolve( entry, new ManagementOutcome( entry, ManagementOutcomeKind.Refused, refusal ) );
 				continue;
 			}
 			if ( open >= MaximumOpen || now - lastSend < SendSeconds )
@@ -424,9 +484,22 @@ internal sealed class CoopManagementRequests
 	{
 		if ( outcome.Note.Kind == ManagementNoteKind.None )
 			return;
+		// [EXT:online-coop-commands] a note whose words wait already is not kept twice (the HUD would renew that line anyway), so the notes never overflow (C4b-2)
+		if ( notes.Any( waiting => waiting.Note == outcome.Note ) )
+			return;
 		notes.Enqueue( outcome );
 		while ( notes.Count > MaximumNotes )
 			notes.Dequeue();
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A window's action refused before it was queued (C4b-2): by the session's rights (<paramref name="rights"/>, their note or a claim's) or for want of room (null:
+	/// the waiting note). Its note joins the session's notes as an outcome's would, said once the HUD's lines can be seen, never through the session's immediate refusal path.
+	/// </summary>
+	public void NoteRefused( ManagementItem item, ParkCommandResult? rights )
+	{
+		var entry = new ManagementEntry( this, 0, item.Target, item.Knob, item.Command, null ) { State = ManagementEntryState.Resolved };
+		AddNote( new ManagementOutcome( entry, rights != null ? ManagementOutcomeKind.Refused : ManagementOutcomeKind.NotQueued, rights ) );
 	}
 
 	/// <summary>The oldest note not said yet, or null; it stays until <see cref="TakeNote"/>.</summary>
@@ -456,6 +529,7 @@ internal sealed class CoopManagementRequests
 		if ( waiter.Detached || waiter == HudWaiter )
 			return;
 		waiter.Detached = true;
+		live.Remove( waiter );
 		while ( waiter.Outcomes.TryDequeue( out var outcome ) )
 			AddNote( outcome );
 	}
@@ -469,6 +543,13 @@ internal sealed class CoopManagementRequests
 		notes.Clear();
 		return taken;
 	}
+
+	/// <summary>
+	/// Whether something of its player's may not have been made and was not said (C4b-2, the session's end line): an entry not resolved yet, a note not said yet, or a live waiter's outcome not
+	/// taken yet that is no success (refused, not taken, unknown).
+	/// </summary>
+	public bool HasUnfinished => targets.Count > 0 || notes.Count > 0
+		|| live.Any( waiter => waiter.Outcomes.Any( outcome => outcome.Kind is ManagementOutcomeKind.Refused or ManagementOutcomeKind.NotTaken or ManagementOutcomeKind.Unknown ) );
 
 	/// <summary>The session ended: every entry not resolved yet resolves as ended, silently (a waiter still hears it), and nothing more is queued.</summary>
 	public void End()

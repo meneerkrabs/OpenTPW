@@ -244,9 +244,14 @@ public sealed class ParkGate
 	/// flag, the back of its queue connected to a path (<see cref="QueueConnected"/>), and a coaster with a complete circuit.
 	/// </summary>
 	// [BIN:STP-PPC:0x100DE654 reopen guard] state 1, 4 and 2 (the script's VAR_BROKEN or the economy's breakdown; a purchased upgrade not yet installed), maintenance flag +96, back of the queue 0xdd744, coaster circuit 0x45eac; executed by the oracle target ride-may-open
-	internal bool MayOpen( OriginalObjectRuntime item )
+	internal bool MayOpen( OriginalObjectRuntime item ) => MayOpen( item, economyOf?.Invoke( item ) );
+
+	/// <summary>
+	/// <see cref="MayOpen(OriginalObjectRuntime)"/> with <paramref name="record"/> as the ride's economy record: [EXT:online-coop-commands] a guest's window asks it of the record it projects
+	/// a waiting action onto (C4b-2), the queue and the circuit as they stand.
+	/// </summary>
+	internal bool MayOpen( OriginalObjectRuntime item, ParkObjectState? record )
 	{
-		var record = economyOf?.Invoke( item );
 		var state = item.GetVariable( RideVariables.VAR_BROKEN ) != 0 || record is { IsBrokenDown: true } ? RideObjectStates.BrokenDown
 			: record is { } && record.PendingLevel > record.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
 		var coaster = item.Coaster != null;

@@ -123,35 +123,48 @@ internal sealed partial class GameFlow
 			coopJoin = null;
 		if ( endingJoin || JoinEndText( session.EndCause, session.ServerReason ) is not { } words )
 			return;
+		// [EXT:online-coop-commands] the guest's management actions that may not have been made add their line (C4b-2)
+		var unfinished = session.ManagementUnfinished;
 		if ( session.Level != null )
 		{
 			if ( ReferenceEquals( session.Level, Level ) && Hud is { } hud )
-				ShowGuestEnd( session.Level, hud, words, reason );
+				ShowGuestEnd( session.Level, hud, words, reason, unfinished );
+			return;
+		}
+		// [EXT:online-coop-snapshot-join] a resync whose install failed before its teardown left the session's old park the game's park, detached from the session: the end shows over it,
+		// as over a park the session ended, instead of leaving the guest in a park that issues its own commands (C4b-2)
+		if ( Level is { IsCoopGuestPark: true } old && Hud is { } oldHud )
+		{
+			ShowGuestEnd( old, oldHud, words, reason, unfinished );
 			return;
 		}
 		if ( Level != null )
 			return;
 		Log.Warning( $"Joining the shared park ended: {reason}" );
 		if ( Menu != null )
-			ShowJoinFailure( Menu.Stack, words );
+			ShowJoinFailure( Menu.Stack, words, unfinished );
 		else
 			Queue( () =>
 			{
 				ShowFrontEnd();
 				if ( Menu != null )
-					ShowJoinFailure( Menu.Stack, words );
+					ShowJoinFailure( Menu.Stack, words, unfinished );
 			} );
 	}
+
+	/// <summary>[EXT:online-coop-commands] An end dialog's words, with the line that some of the last changes may not have been made when <paramref name="unfinished"/> (C4b-2).</summary>
+	private string JoinEndWords( OpenTpwText words, bool unfinished ) =>
+		unfinished ? $"{Strings.Extra( words )}\n{Strings.Extra( OpenTpwText.CoopChangesNotMade )}" : Strings.Extra( words );
 
 	/// <summary>The name of the dialog over a guest's park whose session ended.</summary>
 	internal const string GuestEndedScreenName = "coopGuestEnded";
 
 	/// <summary>[EXT:online-coop-session] The guest's park lost its session: the reason over the park, and its OK leaves for the lobby (C2d-3).</summary>
-	private void ShowGuestEnd( Level level, ParkHud hud, OpenTpwText words, string reason )
+	private void ShowGuestEnd( Level level, ParkHud hud, OpenTpwText words, string reason, bool unfinished = false )
 	{
 		Log.Info( $"The shared park ended for this guest: {reason}" );
 		UiScreen? screen = null;
-		screen = UiDialogs.Message( GuestEndedScreenName, () => Strings.Extra( words ), (() => Strings.Extra( OpenTpwText.Back ), () =>
+		screen = UiDialogs.Message( GuestEndedScreenName, () => JoinEndWords( words, unfinished ), (() => Strings.Extra( OpenTpwText.Back ), () =>
 		{
 			if ( screen!.IsRemoved || !ReferenceEquals( hud.Stack.Top, screen ) )
 				return;
@@ -161,10 +174,10 @@ internal sealed partial class GameFlow
 		hud.Stack.Push( screen );
 	}
 
-	private void ShowJoinFailure( UiScreenStack stack, OpenTpwText words )
+	private void ShowJoinFailure( UiScreenStack stack, OpenTpwText words, bool unfinished = false )
 	{
 		UiScreen? screen = null;
-		screen = UiDialogs.Message( "coopJoinEnded", () => Strings.Extra( words ), (() => Strings.Extra( OpenTpwText.Back ), () =>
+		screen = UiDialogs.Message( "coopJoinEnded", () => JoinEndWords( words, unfinished ), (() => Strings.Extra( OpenTpwText.Back ), () =>
 		{
 			if ( !screen!.IsRemoved && ReferenceEquals( stack.Top, screen ) )
 				stack.Pop();

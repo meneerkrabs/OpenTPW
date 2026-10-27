@@ -66,7 +66,8 @@ public sealed partial class ParkHud
 		var number = screen.Add( new UiTextField
 		{
 			// Keep oversized pasted numbers invalid rather than truncating them into another valid price.
-			Id = "price", Text = state.Price.ToString( CultureInfo.InvariantCulture ), MaximumLength = 64,
+			// [EXT:online-coop-commands] a guest's editor opens with the drawn price (its window's, C4b-2)
+			Id = "price", Text = (GuestManagement != null ? PendingSettings.Price : state.Price).ToString( CultureInfo.InvariantCulture ), MaximumLength = 64,
 			Bounds = new UiRect( window.X + 180, window.Y + 220, 650, 100 ), Anchor = UiAnchor.Center
 		} );
 		var error = "";
@@ -82,11 +83,26 @@ public sealed partial class ParkHud
 			if ( !InfoArmOpen || !PriceViewAllowed || !ReferenceEquals( selectedObject, owner ) || !TryPriceTarget( owner, out var current, out var target )
 				|| !ReferenceEquals( current, economy ) || !ReferenceEquals( target, state ) )
 			{ error = strings.Extra( OpenTpwText.NotAvailable ); return; }
+			// [EXT:online-coop-commands] a guest's typed price goes with its group at once (a winnable sideshow's game with its drawn prize and chance, C4b-2): queued, the editor closes;
+			// refused, it stays open with the refusal's words, and the window shows the drawn price again
+			if ( GuestManagement is { } queue )
+			{
+				var knob = PriceKnob( owner );
+				PendingSettings.Price = price;
+				var click = WindowGroupCommand( owner, knob ) is { } command
+					? QueueManagement( queue, new[] { new ManagementItem( AttractionTarget( owner ), knob, command ) } ) : new ManagementClick( false, ManagementNote.None );
+				if ( !click.Queued )
+				{
+					LoadDrawnSettings( owner );
+					error = click.Note.Kind == ManagementNoteKind.None ? "" : ManagementNoteText( click.Note );
+					return;
+				}
+				Cancel();
+				return;
+			}
 			level.Commands.Issue( new SetPriceCommand( owner.Runtime.AttractionId, price ) );
-			// the window's own price follows, so its apply on close keeps the typed price; [EXT:online-coop-commands] a guest's went with its own request, which its close does not send again
+			// the window's own price follows, so its apply on close keeps the typed price
 			PendingSettings.Price = price;
-			if ( level.Commands.SendsRequests )
-				loaded.Price = price;
 			Cancel();
 		}
 		number.Submitted = Apply;

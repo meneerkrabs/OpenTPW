@@ -67,6 +67,82 @@ public class CoasterPresentationTests
 		Assert.AreEqual( 2, sections.WinchSection );
 	}
 
+	[DataTestMethod]
+	[DataRow( false, false )]
+	[DataRow( false, true )]
+	[DataRow( true, false )]
+	[DataRow( true, true )]
+	public void TrackVerticesCarrySelfLightingForFixedAndScrollingTextures( bool selfLit, bool scrolling )
+	{
+		var values = SectionSettings();
+		values["asTextureData[0].bIsSelfIlluminating"] = selfLit ? "1" : "0";
+		values["asTextureData[1].bIsSelfIlluminating"] = selfLit ? "1" : "0";
+		values["asTextureData[0].fScrollRate"] = scrolling ? "1" : "0";
+		values["asTextureData[1].fScrollRate"] = scrolling ? "1" : "0";
+		values["asTextureData[1].pcTextureFilename"] = "\"GEM_GLOW.tga\"";
+		var sections = CoasterCrossSections.FromValues( values );
+		for ( var texture = 0; texture < 2; texture++ )
+		{
+			var mesh = CoasterTrackMesh.Build( sections, StraightSlices( 2 ), closed: false, winch: texture == 1 ? new HashSet<int> { 0 } : null );
+			Assert.IsTrue( mesh.Vertices.Count > 0 );
+			Assert.IsTrue( mesh.Vertices.All( source => source.Texture == texture ) );
+			var expected = selfLit ? TextureSlotAddressing.SelfLitFlag | (texture == 1 ? TextureSlotAddressing.LightSourceFlag : 0u) : 0u;
+			foreach ( var source in mesh.Vertices )
+			{
+				var vertex = CoasterRenderer.TrackVertex( source, sections );
+				Assert.AreEqual( expected, vertex.MatFlags, "only self-lit textures gain lighting flags; glow is a light source only when self-lit" );
+				AssertTrackVertexGeometry( source, vertex );
+			}
+		}
+	}
+
+	[DataTestMethod]
+	[DataRow( 1 )]
+	[DataRow( 2 )]
+	[DataRow( 3 )]
+	public void EveryAppendedTrackMarkerIsSelfLitButNotALightSource( int variant )
+	{
+		var sections = CoasterCrossSections.FromValues( SectionSettings() );
+		var mesh = CoasterTrackMesh.Build( sections, StraightSlices( 2 ), closed: false, marker: ( _, _ ) => variant );
+		Assert.IsTrue( mesh.Vertices.Count > 0 );
+		Assert.IsTrue( mesh.Vertices.All( source => source.Texture == CoasterTrackMesh.MarkerTexture( sections.Textures.Count, variant ) ) );
+		foreach ( var source in mesh.Vertices )
+		{
+			var vertex = CoasterRenderer.TrackVertex( source, sections );
+			Assert.AreEqual( TextureSlotAddressing.SelfLitFlag, vertex.MatFlags, "m_erase/red/blue ignore scene lighting but keep the evening extension's non-light-source tint" );
+			AssertTrackVertexGeometry( source, vertex );
+		}
+	}
+
+	[TestMethod]
+	public void UnknownTrackTexturesDoNotBecomeSelfLit()
+	{
+		var sections = CoasterCrossSections.FromValues( SectionSettings() );
+		foreach ( var texture in new[] { -1, sections.Textures.Count + CoasterTrackMesh.MarkerTextureNames.Length, int.MaxValue } )
+		{
+			var source = new CoasterMeshVertex( new SVector3( 1, 2, 3 ), new SVector3( 4, 5, 6 ), 0.25f, 0.75f, texture );
+			var vertex = CoasterRenderer.TrackVertex( source, sections );
+			Assert.AreEqual( 0u, vertex.MatFlags );
+			AssertTrackVertexGeometry( source, vertex );
+		}
+		var empty = CoasterCrossSections.FromValues( new Dictionary<string, string>() );
+		var fallback = new CoasterMeshVertex( SVector3.Zero, SVector3.UnitY, 0, 0, 0 );
+		Assert.AreEqual( 0u, CoasterRenderer.TrackVertex( fallback, empty ).MatFlags, "the mesh's ordinary missing-texture fallback is not a marker" );
+	}
+
+	private static void AssertTrackVertexGeometry( CoasterMeshVertex source, Vertex vertex )
+	{
+		Assert.AreEqual( source.Position.X, vertex.Position.X );
+		Assert.AreEqual( source.Position.Z, vertex.Position.Y );
+		Assert.AreEqual( source.Position.Y, vertex.Position.Z );
+		Assert.AreEqual( source.Normal.X, vertex.Normal.X );
+		Assert.AreEqual( source.Normal.Z, vertex.Normal.Y );
+		Assert.AreEqual( source.Normal.Y, vertex.Normal.Z );
+		Assert.AreEqual( source.U, vertex.TexCoords.X );
+		Assert.AreEqual( source.V, vertex.TexCoords.Y );
+		Assert.AreEqual( source.Texture, vertex.TexIndex );
+	}
+
 	[TestMethod]
 	public void TheSelectUsesTheWinchSectionAndTheClimbingPitchWindow()
 	{

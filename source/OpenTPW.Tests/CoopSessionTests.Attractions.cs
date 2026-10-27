@@ -113,6 +113,10 @@ public partial class CoopSessionTests
 	/// <summary>The list's selected row activated, as Enter does it.</summary>
 	private static void ActivateRow( View view ) => view.Input( UiInput.Key( UiKeys.Accept ) );
 
+	/// <summary>How many waiters the guest's queue keeps live, its HUD's own included: a window's waiter leaves once its outcome is taken or its screen goes.</summary>
+	private static int LiveWaiters( Park guest ) =>
+		((System.Collections.ICollection)typeof( CoopManagementRequests ).GetField( "live", NonPublic )!.GetValue( Management( guest ) )!).Count;
+
 	/// <summary>The kinds of the rows the open list shows (its waiting line has none).</summary>
 	private static RideUpgradeRowKind?[] RowKinds( View view ) => view.Hud.UpgradeListRows().Select( row => row.Row?.Kind ).ToArray();
 
@@ -1547,6 +1551,35 @@ public partial class CoopSessionTests
 		} );
 	}
 
+	/// <summary>
+	/// A row's outcome comes frames after its click: the list's screen goes by itself, and the session's end dialog, pushed above the list in between (the game's own end, or a resync's
+	/// failed swap over the old park), stays on top with its way back to the lobby.
+	/// </summary>
+	[TestMethod]
+	public void ARowsOutcomeUnderTheSessionsEndDialogRemovesTheListAloneAndItsWaiter()
+	{
+		InParkView( () =>
+		{
+			var (_, guest, view) = AttractionsSession();
+			var ride = guest.One;
+			var id = ride.Runtime.AttractionId;
+			Show( view, ride );
+			OpenUpgradeList( view );
+			var live = LiveWaiters( guest );
+			ActivateRow( view );
+			Assert.AreEqual( new BuyUpgradeCommand( id, 1 ), Waiting( guest, id ) );
+			// the session ends: its dialog goes above the list (GameFlow.ShowGuestEnd), and the row ends with the queue
+			var end = UiDialogs.Message( GameFlow.GuestEndedScreenName, () => "ended", (() => "Back", () => { }) );
+			view.Hud.Stack.Push( end );
+			Management( guest ).End();
+			view.Update();
+			Assert.AreSame( end, view.Hud.Stack.Top, "the end dialog stays on top" );
+			Assert.IsFalse( view.Hud.RideUpgradeOpen, "the list went beneath it" );
+			CollectionAssert.AreEqual( new[] { "hud", GameFlow.GuestEndedScreenName }, view.Hud.Stack.Screens.Select( screen => screen.Name ).ToArray() );
+			Assert.AreEqual( live, LiveWaiters( guest ), "the row's waiter is gone" );
+		} );
+	}
+
 	[TestMethod]
 	public void AnAcceptedCancelRowClosesTheListAndOpensTheRideOnEveryPeer()
 	{
@@ -1559,12 +1592,15 @@ public partial class CoopSessionTests
 			Assert.AreEqual( (1, false), (StateOf( guest, id ).PendingLevel, ride.IsOpen) );
 			OpenUpgradeList( view );
 			CollectionAssert.AreEqual( new RideUpgradeRowKind?[] { RideUpgradeRowKind.CancelLevel }, RowKinds( view ) );
+			var live = LiveWaiters( guest );
 			ActivateRow( view );
 			Assert.AreEqual( new CancelUpgradeCommand( id, 1, 1 ), Waiting( guest, id ), "the cancel names the pending level and the purchase" );
+			Assert.AreEqual( live + 1, LiveWaiters( guest ), "the row waits with its own waiter" );
 			view.Update();
 			Assert.AreEqual( (false, true), (LookOf( view ).Closed, LookOf( view ).InfoOpen), "drawn open while it waits" );
 			UntilManaged( host, guest, view );
 			Assert.AreEqual( "hud", Top( view ), "an accepted cancel closes the list" );
+			Assert.AreEqual( live, LiveWaiters( guest ), "the row's waiter, taken, is gone" );
 			foreach ( var park in new[] { host, guest } )
 				Assert.AreEqual( (0, 1, true), (StateOf( park, id ).PendingLevel, StateOf( park, id ).UpgradePurchases, ObjectOf( park, id ).IsOpen), "cancelled, the count never lowered" );
 			Assert.AreEqual( (0, 0), (Management( guest ).TakeNotes().Count, guest.Level.SessionRefusals), "accepted: nothing said" );

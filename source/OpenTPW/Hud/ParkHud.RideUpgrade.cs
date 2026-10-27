@@ -121,12 +121,7 @@ public sealed partial class ParkHud
 
 	private void CloseRideUpgrade()
 	{
-		// [EXT:online-coop-commands] a guest's list that closes while its row waits (Escape, its exit, the window moving on) leaves the outcome a note (C4b-2)
-		if ( upgradeWaiter is { } waiter )
-		{
-			upgradeWaiter = null;
-			waiter.Queue.Detach( waiter );
-		}
+		DetachUpgradeWaiter();
 		if ( upgradeScreen == null || !RideUpgradeOpen )
 			return;
 		while ( Stack.Top != upgradeScreen && Stack.Screens.Count > 1 )
@@ -232,7 +227,20 @@ public sealed partial class ParkHud
 		var exit = table.Model( "b_exit" );
 		screen.Add( new UiButton { Id = "cancel", Model = exit.Model, Help = strings.Help( 2 ), Clicked = CloseRideUpgrade, Bounds = exit.Rect, Anchor = UiAnchor.Center } );
 		screen.Back = CloseRideUpgrade;
+		screen.Removed = DetachUpgradeWaiter;
 		return screen;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's list whose screen goes while its row waits (Escape, its exit, the window moving on, a screen that clears the stack) leaves the outcome a note
+	/// (C4b-2): its waiter is detached.
+	/// </summary>
+	private void DetachUpgradeWaiter()
+	{
+		if ( upgradeWaiter is not { } waiter )
+			return;
+		upgradeWaiter = null;
+		waiter.Queue.Detach( waiter );
 	}
 
 	private sealed class RideUpgradeScreen : UiScreen

@@ -213,17 +213,20 @@ public sealed partial class ParkHud
 		upgradeWaiter = waiter;
 	}
 
-	/// <summary>The waiting list's outcome: the list closes first (the host's closes after every row), then the outcome's note, if any (an accepted one says nothing).</summary>
+	/// <summary>
+	/// The waiting list's outcome: the list closes first (the host's closes after every row), then the outcome's note, if any (an accepted one says nothing). The outcome comes frames after
+	/// the click, so the list's screen goes by itself, and a screen pushed above it since (the session's end dialog) stays; its waiter, taken, is detached with nothing left to note.
+	/// </summary>
 	private void CompleteGuestUpgrade()
 	{
-		if ( upgradeWaiter is not { } waiter )
+		if ( upgradeWaiter is not { } waiter || waiter.Queue.TakeOutcomes( waiter ) is not { Count: > 0 } outcomes )
 			return;
-		foreach ( var outcome in waiter.Queue.TakeOutcomes( waiter ) )
-		{
-			upgradeWaiter = null;
-			CloseRideUpgrade();
+		DetachUpgradeWaiter();
+		if ( upgradeScreen is { } list )
+			Stack.RemoveWhere( screen => ReferenceEquals( screen, list ) );
+		upgradeOwner = null;
+		foreach ( var outcome in outcomes )
 			NoteManagement( outcome );
-		}
 	}
 
 	/// <summary>

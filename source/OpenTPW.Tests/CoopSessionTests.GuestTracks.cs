@@ -361,4 +361,43 @@ public partial class CoopSessionTests
 		Assert.AreEqual( CoopBuildRights.ClaimLostReason, rights.RefusalReason( guest.Level.Commands.Player, new LayTrackLineCommand( kart.Runtime.AttractionId, 1, 1, 3, 1 ) ) );
 		Assert.AreEqual( CoopRefusal.ClaimLost, CoopBuildRights.RefusalOf( CoopBuildRights.ClaimLostReason ) );
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] A track line whose tiles lie over the path cell a claimed queue joins leaves that queue alone (C3c-1b): a tile laid over path clears it, taking the link of the
+	/// queue's back cell off, so the line is refused in the claim's words to every seat but the claim's holder, the host included, as a path removal there is.
+	/// </summary>
+	[TestMethod]
+	public void ATrackLineMayNotLayATileOverThePathCellAClaimedQueueJoins()
+	{
+		var park = NewPark();
+		park.Enter();
+		var level = park.Level;
+		// One's queue from (10, 6) up to its back cell (10, 2), joined to the path at (10, 1)
+		ConfigureQueue( level.Guests!.Grid, park.One, 10, 5 );
+		var kart = PlaceKartRide( park );
+		var rights = new CoopBuildRights( level );
+		var ride = kart.Runtime.AttractionId;
+		// a line along the path row whose second tile covers (10, 1), and one along the row below the path, which covers none of its cells
+		var over = new LayTrackLineCommand( ride, 7, 0, 11, 0 );
+		var away = new LayTrackLineCommand( ride, 7, 14, 11, 14 );
+		CollectionAssert.Contains( TrackLineWriter.LayLine( (7, 0), (11, 0) ).SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ).ToArray(), (10, 1) );
+		Assert.IsTrue( rights.LeavesClaimsAlone( 1, over ), "an ordinary ride's join is anyone's" );
+		// One is a track ride's station whose claim another guest holds
+		MarkStation( park, park.One, seat: 2 );
+		try
+		{
+			Assert.IsFalse( rights.LeavesClaimsAlone( 1, over ), "a guest's line over the claimed queue's join" );
+			Assert.IsFalse( rights.LeavesClaimsAlone( ParkCommands.LocalPlayer, over ), "the host's too" );
+			Assert.IsTrue( rights.LeavesClaimsAlone( 2, over ), "the claim's holder's own" );
+			Assert.IsTrue( rights.LeavesClaimsAlone( 1, away ) && rights.LeavesClaimsAlone( ParkCommands.LocalPlayer, away ), "a line away from it" );
+			level.SetBuildGrant( 1, true );
+			Assert.IsTrue( level.ExecuteClaimRide( 1, ride ).Accepted, "the guest holds its own ride's claim" );
+			Assert.AreEqual( Level.ClaimedReason, rights.RefusalReason( 1, over ), "refused in the claim's words" );
+			Assert.IsNull( rights.RefusalReason( 1, away ) );
+		}
+		finally
+		{
+			MarkStation( park, park.One, station: false );
+		}
+	}
 }

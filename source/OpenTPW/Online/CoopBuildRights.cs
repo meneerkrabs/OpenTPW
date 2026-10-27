@@ -163,9 +163,23 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		PlacePoolBridgeCommand bridge => !BridgeTouchesClaimedQueue( player, new PoolBridge( bridge.X, bridge.Y, bridge.Direction, 0 ) ),
 		RemovePoolBridgeCommand bridge => level.PoolBridges?.At( bridge.X, bridge.Y ) is not { } standing || !BridgeTouchesClaimedQueue( player, standing ),
 		RemovePrototypeCommand => level.PlacedRide is not { IsDeleted: false } prototype || !ClaimedAgainst( player, prototype ),
+		// a track line of a ride another seat claims, and one whose tiles lie over the path cell a claimed queue joins: a tile laid over path clears it, which takes the link of the queue's
+		// back cell off and re-evaluates its entrance (TrackBuilder.ClearPath), as a path removal does
+		LayTrackLineCommand line => !level.ClaimedAgainst( player, line.Ride ) && !TrackLineJoinsClaimedQueue( player, line ),
 		// the track commands of a ride another seat claims
 		_ => TrackRide( command ) is not { } ride || !level.ClaimedAgainst( player, ride )
 	};
+
+	/// <summary>
+	/// Whether <paramref name="line"/> of <paramref name="player"/> lays a tile over a path cell the queue of a ride claimed against that player joins (<see cref="JoinsClaimedQueue"/>): its tiles
+	/// as the line writer lays them (<see cref="TrackLineWriter.LayLine"/> to its snapped end), each over its four cells.
+	/// </summary>
+	private bool TrackLineJoinsClaimedQueue( int player, LayTrackLineCommand line )
+	{
+		var start = (line.StartX, line.StartY);
+		return TrackLineWriter.LayLine( start, TrackLineWriter.SnapEnd( start, (line.EndX, line.EndY) ) )
+			.SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ).Any( cell => JoinsClaimedQueue( player, cell.X, cell.Y ) );
+	}
 
 	/// <summary>
 	/// Whether <paramref name="player"/> may remove <paramref name="item"/> inside a command that removes what it finds (the area clear): the host what no other player claims, a granted

@@ -1784,8 +1784,9 @@ outside its entrance and exit), a bridge with a cell or an end on one, and the o
 tool, which that player's window does not offer, nor its sale and Move buttons for the ride. So is the
 path cell its back cell joins, whose removal or a queue laid over it would take the queue's link off: the
 remove click, Backspace, queue lines, placements (whose plans clear the paths under them, and a queue
-ride's, which lays its first queue cell outside its entrance) and bridges refuse it, and the area clear
-leaves it standing (`IParkCommandRights.AllowsPathRemoval`). A path line along it, the path a placement
+ride's, which lays its first queue cell outside its entrance), bridges and kart or water track lines (a
+tile laid over path clears it) refuse it, and the area clear leaves it standing
+(`IParkCommandRights.AllowsPathRemoval`). A path line along it, the path a placement
 lays outside the last exit of a ride with a queue or the last entrance of a type without one (only the
 last entrance and the last exit count, `ObjectAccessCells.Lay`), and a queue line that only ends on it
 (which links the queue to that path, `QueuePaths.Connect`) leave the queue's links as they are. The exit

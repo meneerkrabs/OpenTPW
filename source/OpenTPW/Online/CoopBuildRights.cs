@@ -21,9 +21,10 @@ namespace OpenTPW;
 /// [EXT:online-coop-claims] A claim guards its ride against every other player, the host included (<see cref="LeavesClaimsAlone"/>): its track (a coaster's tool and pylons), its sale, its
 /// removal and its pick-up, its demolition by a placement, an add-on on it, its queue's lines, edit and cells, the path cell its back joins, and a path cell linked into its entrance, whose
 /// clear re-evaluates it. The host's cleanup leaves the claims alone by itself: its release of any claim, a departed seat's release and the grants.
-/// Everything else stays the host's: speed and pause (Q8), cheats (Q17), the developer kinds, money, staff and the park's management (C4) with a wave machine's settings, undo lines and
-/// pool strokes (C5), the pools' single-cell kinds no guest's tool issues, the rights, the grants and the release of a departed seat. Every command kind is of one class
-/// (<see cref="ClassOf"/>, C4a), which says who may issue it; the management rights (<see cref="CoopRights"/>) take their classes once a part offers them (<see cref="CoopRightsOffer"/>).
+/// Everything else stays the host's: speed and pause (Q8), cheats (Q17), the developer kinds, the park's management a seat has no offered right for (C4: research and finance since
+/// C4b-1, the attractions and staff later) with a wave machine's settings, undo lines and pool strokes (C5), the pools' single-cell kinds no guest's tool issues, the rights, the
+/// grants and the release of a departed seat. Every command kind is of one class (<see cref="ClassOf"/>, C4a), which says who may issue it; the management rights
+/// (<see cref="CoopRights"/>) take their classes once a part offers them (<see cref="CoopRightsOffer"/>).
 /// Asked at execution on every peer, of the same park, the answer is the same everywhere.
 /// </summary>
 internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
@@ -97,6 +98,12 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	internal const string NotGrantedReason = "The host has not let this player build.";
 
 	/// <summary>
+	/// [EXT:online-coop-permissions] The reason these rights give for a guest's management command without its right (<see cref="RefusalReason"/>, C4b): the host has not given it, or
+	/// this build offers it to no guest yet.
+	/// </summary>
+	internal const string NotPermittedReason = "The host has not given this player that right.";
+
+	/// <summary>
 	/// [EXT:online-coop-claims] The reason these rights give for a guest's track or coaster command on a ride whose claim it does not hold and no other seat holds (<see cref="RefusalReason"/>): the
 	/// host let it go (the guest left for 30 seconds, or sent nothing on the ride for 5 minutes), and the guest's tool ends (C3c-1b, C3c-2).
 	/// </summary>
@@ -105,11 +112,14 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// <summary>
 	/// The reason these rights give for a refusal of <paramref name="command"/> of <paramref name="player"/>, read where and when it is refused: [EXT:online-coop-claims] another player's claim
 	/// (<see cref="Level.ClaimedReason"/>), a guest's track command on a ride whose claim it no longer holds (<see cref="ClaimLostReason"/>, C3c-1b), or [EXT:online-coop-permissions] a guest's
-	/// building the host has not granted it (<see cref="NotGrantedReason"/>), which the HUD says in its own words; null for what only the host does, which keeps the generic reason.
+	/// building the host has not granted it (<see cref="NotGrantedReason"/>) or management command without its right (<see cref="NotPermittedReason"/>, C4b), which the HUD says in its
+	/// own words; null for what only the host does, which keeps the generic reason.
 	/// </summary>
 	public string? RefusalReason( int player, ParkCommand command ) => player == ParkCommands.LocalPlayer
 		? !IsHostCleanup( command ) && !LeavesClaimsAlone( player, command ) ? Level.ClaimedReason : null
-		: player <= 0 || !Builds( command ) ? null
+		: player <= 0 ? null
+		: RightOf( ClassOf( command.Kind ) ) != null ? NotPermittedReason
+		: !Builds( command ) ? null
 		: !level.HasBuildGrant( player ) ? NotGrantedReason
 		: !LeavesClaimsAlone( player, command ) ? Level.ClaimedReason
 		: !HoldsClaimFor( player, command ) ? ClaimLostReason : null;
@@ -123,6 +133,7 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		Level.ClaimedReason => CoopRefusal.Claimed,
 		ClaimLostReason => CoopRefusal.ClaimLost,
 		NotGrantedReason => CoopRefusal.NotGranted,
+		NotPermittedReason => CoopRefusal.NotPermitted,
 		_ => CoopRefusal.HostOnly
 	};
 
@@ -488,6 +499,8 @@ internal enum CoopRefusal
 	Claimed,
 	/// <summary>[EXT:online-coop-claims] A guest's edit of a ride whose claim the host let go: its track tool (C3c-1b) or coaster tool (C3c-2) ends.</summary>
 	ClaimLost,
+	/// <summary>[EXT:online-coop-permissions] A guest's management command without its right (C4b).</summary>
+	NotPermitted,
 }
 
 /// <summary>

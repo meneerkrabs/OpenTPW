@@ -59,6 +59,11 @@ internal sealed class CoopGuestCommands : IDisposable
 		public bool IsOpen => State is CoopGuestRequestState.Waiting or CoopGuestRequestState.Sent;
 		/// <summary>Whether its command applied as accepted in the guest's park (its record's result here).</summary>
 		public bool Accepted => State == CoopGuestRequestState.Applied && Result is { Accepted: true };
+		/// <summary>
+		/// What follows it to its outcome when not a tool (C4b: the management queue's entry, <see cref="CoopManagementRequests"/>): the HUD's completion of the tools' requests skips it, and its
+		/// owner takes its outcome from <see cref="Resolved"/>.
+		/// </summary>
+		internal object? Owner { get; set; }
 	}
 
 	/// <summary>How long a request waits for its outcome before every open request goes to the host again: a request or its answer lost on its way, which no resume shows.</summary>

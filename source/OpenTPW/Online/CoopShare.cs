@@ -307,6 +307,16 @@ internal sealed class CoopShare : IDisposable
 	public bool SetBuilds( int slot, bool builds ) => Stage == CoopShareStage.Hosting && slot > 0 && Session?.Level is { } park
 		&& park.Commands.Issue( new SetBuildGrantCommand( slot, builds ) ).Accepted;
 
+	/// <summary>[EXT:online-coop-permissions] The rights the shared park's applied state gives the guest in seat <paramref name="slot"/> (C4b); none while not hosting.</summary>
+	public CoopRights Rights( int slot ) => Stage == CoopShareStage.Hosting && Session?.Level is { } park ? park.RightsOf( slot ) : CoopRights.None;
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] The host sets the rights of the guest in seat <paramref name="slot"/> (C4b, the rights dialog): one command of the shared park, which every peer applies
+	/// at its record. False when it was not applied (not hosting, the host's own seat, a right this build does not offer).
+	/// </summary>
+	public bool SetRights( int slot, CoopRights rights ) => Stage == CoopShareStage.Hosting && slot > 0 && CoopRightsOffer.IsOffered( rights ) && Session?.Level is { } park
+		&& park.Commands.Issue( new SetSeatRightsCommand( slot, rights ) ).Accepted;
+
 	/// <summary>The host removes member <paramref name="memberId"/>; it cannot join this session again.</summary>
 	public bool Kick( uint memberId )
 	{

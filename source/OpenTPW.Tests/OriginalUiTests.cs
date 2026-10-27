@@ -752,10 +752,11 @@ public class OriginalUiTests
 				Assert.IsFalse( string.IsNullOrWhiteSpace( text ), $"{key} {language}" );
 				CollectionAssert.AreEqual( placeholders, System.Text.RegularExpressions.Regex.Matches( text, @"\{\d\}" ).Select( match => match.Value ).OrderBy( value => value ).ToArray(), $"{key} {language}" );
 				// words that are the same in the language: Dutch and German "Winter"; Spanish "Original", "(experimental)", "Incompatible"; Polish "Folder"; "Menu" in Dutch, Danish, French and Polish; Dutch "bus"; German "Ticket";
-				// Dutch and German "Code: {0}"; Dutch and Italian "{0} (host)"
+				// Dutch and German "Code: {0}"; Dutch and Italian "{0} (host)"; French "Attractions"
 				if ( language != "English" && key is not (OpenTpwText.UpscaleLinear or OpenTpwText.UpscaleNative or OpenTpwText.OpenTpwPage or OpenTpwText.EditionThemeParkWorld or OpenTpwText.TpiItemPriced)
 					&& !(language == "Spanish" && key is OpenTpwText.TexturePackOriginal or OpenTpwText.EditionThemeParkInc or OpenTpwText.ModIncompatible) && !(language == "Polish" && key == OpenTpwText.ModFolderLabel) && !(language is "Dutch" or "German" && key == OpenTpwText.ExtensionWinterName) && !(language is "Dutch" or "Danish" or "French" or "Polish" && key == OpenTpwText.TpiMenu) && !(language == "Dutch" && key == OpenTpwText.CheatBus) && !(language == "German" && key == OpenTpwText.CheatTicketLabel)
-					&& !(language is "Dutch" or "German" && key == OpenTpwText.SharedParkCode) && !(language is "Dutch" or "Italian" && key == OpenTpwText.SharedParkHost) )
+					&& !(language is "Dutch" or "German" && key == OpenTpwText.SharedParkCode) && !(language is "Dutch" or "Italian" && key == OpenTpwText.SharedParkHost)
+					&& !(language == "French" && key == OpenTpwText.CoopRightAttractions) )
 					Assert.AreNotEqual( english, text, $"{key} is translated to {language}" );
 			}
 		}

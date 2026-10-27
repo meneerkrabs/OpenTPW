@@ -196,6 +196,31 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void ALegacyQueueLinesTakeBackOverTheRidesExitCellLeavesTheRideAlikeOnEveryPeer()
+	{
+		// the queue tests' geometry, with the ride's exit cell on a cell the line will build: the take-back's removal runs the ride's access refresh for it (Level.AfterAccessCellRemoved:
+		// the entrance and exit resolved again, the queue recomputed), the inverse's own effect on ride state, which every peer runs alike from the same cells
+		var (host, guest, _, _) = Shared( ( park, _ ) =>
+		{
+			QueueOf( park );
+			park.Level.Guests!.Grid.SetQueue( 9, 2, towards: GuestPathGrid.DirectionBetween( 9, 2, 10, 2 ) );
+			park.One.Visitors.ExitCell = (7, 2);
+			park.One.Visitors.HasCells = true;
+		} );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var line = Requested( host, guest, view, new LayLineCommand( CellToolMode.Queue, host.One.Visitors.AttractionId, 9, 2, 7, 2 ) );
+		Assert.IsTrue( line.Accepted );
+		Assert.IsTrue( Requested( host, guest, view, new TakeBackCommand( false, line.Record, -1, -1, -1 ) ).Accepted );
+		Assert.AreEqual( 0, host.Level.Guests!.Grid.Cells.RawTypeAt( 7, 2 ), "the exit's cell went" );
+		CatchUpAndCompare( host, guest );
+		Assert.AreEqual( (host.One.Visitors.EntranceCell, host.One.Visitors.ExitCell), (guest.One.Visitors.EntranceCell, guest.One.Visitors.ExitCell), "the ride's cells alike on both parks" );
+		Assert.AreEqual( QueueState( host.One.Visitors ), QueueState( guest.One.Visitors ), "and its queue" );
+		QueueCellsAlike( host, guest );
+	}
+
+	[TestMethod]
 	public void AToolsOwnChainOfThreePathSegmentsIsTakenBackInReverse()
 	{
 		var (host, guest, view) = UndoSession();

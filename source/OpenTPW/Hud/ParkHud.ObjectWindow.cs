@@ -448,7 +448,10 @@ public sealed partial class ParkHud
 		if ( objDoor != null )
 			objDoor.Visible &= !objectCondemned;
 		// the frame's door enabling (ParkHud.Update) takes this with the object's own CanOpen
-		objectDoorAllowed = !rideWindow || !RideWindowStatus.LocksDoor( status ) && (target.IsOpen || (level.Gate?.MayOpen( target.Runtime ) ?? true));
+		// [BIN:TPW-EXE:0x4973a0 toilet window refresh] the toilet's own window (0x497640) enables its door (0x15bc4) exactly while the reopening guard 0x4df290 allows, open or closed
+		var reliefWindow = !rideWindow && LiveState( target ) is { } liveRecord && Status.EconomySource is ParkEconomy { } source && source.Catalog.TryGet( liveRecord.InfoId, out var reliefInfo ) && reliefInfo.ProvidesRelief;
+		objectDoorAllowed = reliefWindow ? level.Gate?.MayOpen( target.Runtime ) ?? true
+			: !rideWindow || !RideWindowStatus.LocksDoor( status ) && (target.IsOpen || (level.Gate?.MayOpen( target.Runtime ) ?? true));
 		if ( objectCondemned )
 			foreach ( var element in new[] { objQueue, objTrack, objMove, objRideIt } )
 				if ( element != null )

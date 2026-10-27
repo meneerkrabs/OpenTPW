@@ -2,7 +2,7 @@
 
 ## Status
 
-Bounded menu implementation in progress, based on main `75c5de1b`. ECON-030 remains open. This proposal does not claim completed loss-camera presentation, original runtime playback, or register retirement.
+Bounded menu implementation in progress, based on main `75c5de1b`. ECON-030 remains open (narrowed on October 26, 2026: the loss window, overlay and restore are ported; see docs/ECONOMY.md). This proposal does not claim completed loss-camera presentation, original runtime playback, or register retirement.
 
 ## Verified current behavior and correction
 

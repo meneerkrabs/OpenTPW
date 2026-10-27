@@ -22,6 +22,10 @@ internal sealed class ObjectFloor
 
 	public ObjectSkirt Skirt => skirt;
 
+	/// <summary>The floor of a model that has a skirt but no edge conform of its own (a queue model: its nodes carry the drape flag, so the drape pass, not the conform, moves them).</summary>
+	internal static ObjectFloor ForSkirt( ModelFile model, ObjectSkirt skirt ) =>
+		new( model, skirt, new ObjectGroundConform.Result( new Dictionary<int, NVector3[]>(), Array.Empty<(int Mesh, int Vertex)>() ) );
+
 	/// <summary>
 	/// The floor of an object of <paramref name="entry"/> at <paramref name="placement"/> over <paramref name="field"/>, or null when it has none: a fixed item, or a park without terrain.
 	/// </summary>

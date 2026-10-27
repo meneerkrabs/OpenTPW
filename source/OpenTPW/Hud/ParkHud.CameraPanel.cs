@@ -116,6 +116,15 @@ public sealed partial class ParkHud
 		ArmCamcorder();
 	}
 
+	private UiScreen AlertBox()
+	{
+		UiScreen? screen = null;
+		screen = UiDialogs.OriginalMessageBox( AlertBoxScreen, () => OnlineStrings.Error( 0x4E, strings.Extra( OpenTpwText.NotAvailable ) ),
+			() => Stack.RemoveWhere( candidate => ReferenceEquals( candidate, screen ) ),
+			(UiDialogs.MessageBoxButton.Exit, null, null) );
+		return screen;
+	}
+
 	private void OpenPostcardFromPanel()
 	{
 		CloseCameraPanel();
@@ -124,7 +133,8 @@ public sealed partial class ParkHud
 			return;
 		if ( !FeatureGates.Sharing || host.OpenPostcard == null )
 		{
-			PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
+			// [BIN:TPW-EXE:0x4a8c89 postcard refusal] when the composer 0x4A8C00 cannot be built (the check 0x5B6460 returns 0) it queues ERRORMSG 0x4E through 0x47F410: the alert queue (0x47F620 -> 0x47F020, one button) shows it and, like every generic message box, pauses the park while it is open
+			Stack.Push( AlertBox() );
 			return;
 		}
 		host.OpenPostcard( Stack );

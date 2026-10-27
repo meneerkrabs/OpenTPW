@@ -829,22 +829,39 @@ public class OrderedParkPointerPipelineTests
 		Assert.AreEqual( 0, commands.Count );
 	}
 
+	/// <summary>
+	/// PATH-017: the camera takes its input only from messages the HUD's, the overlay's and the chat mode's procedures pass on (0x42a760, callers 0x488290, 0x48845c, 0x488b6a, 0x4a287d, 0x4bd5cc);
+	/// the P window's layer is the hit window of every pointer message and the focus window of every key, and its default procedure forwards nothing, so the camera takes no input under it.
+	/// </summary>
 	[TestMethod]
-	public void CameraKeepsWorkingUnderTheBackdropButNotOverAScreen()
+	public void TheCameraTakesNoInputUnderTheBackdropAndTheMouseIsCapturedThere()
 	{
+		Frame( new[] { Event( OrderedInputEventKind.Motion ) }, wheel: 1 );
+		Assert.IsFalse( lastCaptured, "without P the wheel zooms" );
 		TapPause();
 		Frame( new[] { Event( OrderedInputEventKind.Motion ) }, wheel: 1 );
-		Assert.IsFalse( lastCaptured, "Wheel zoom stays on under P." );
+		Assert.IsTrue( lastCaptured, "no wheel zoom under P" );
 		var rightDown = Down() with { Button = (int)MouseButton.Right }; var rightUp = Up() with { Button = (int)MouseButton.Right };
 		Frame( new[] { rightDown, rightUp } );
-		Assert.IsFalse( lastCaptured, "Right-drag scrolling stays on under P." );
+		Assert.IsTrue( lastCaptured, "no right-drag scrolling under P" );
 		var edge = new N.Vector2( 1, 500 );
 		Frame( new[] { Event( OrderedInputEventKind.Motion, edge ) }, mouse: edge );
-		Assert.IsFalse( lastCaptured, "Edge scrolling stays on under P." );
+		Assert.IsTrue( lastCaptured, "no edge scrolling under P" );
 		Frame( new[] { Down(), Up() } );
-		Assert.IsFalse( lastCaptured, "A click the backdrop takes does not stop the camera either." );
+		Assert.IsTrue( lastCaptured, "the click the backdrop takes does not reach the park either" );
 		Assert.AreEqual( 0, commands.Count );
-		// A real screen still captures the mouse.
+		var camera = (ParkCameraMode)Camera.Mode;
+		Frame( Array.Empty<OrderedInputEvent>() );
+		Assert.IsTrue( camera.ModalOpen, "the park camera takes no keys or pointer while the P window's layer is up" );
+		TapPause();
+		Frame( Array.Empty<OrderedInputEvent>() );
+		Assert.IsFalse( camera.ModalOpen, "P again destroys the window and returns the camera" );
+	}
+
+	[TestMethod]
+	public void AScreenOpenedAfterTheBackdropStillCapturesTheMouse()
+	{
+		TapPause();
 		var point = AddButton( () => { }, hud.Screen );
 		hud.Stack.Push( new UiScreen( "pipeline-capture" ) );
 		Frame( new[] { Event( OrderedInputEventKind.Motion, point ) }, mouse: point );
@@ -855,8 +872,8 @@ public class OrderedParkPointerPipelineTests
 	public void FocusLossOfflineOpensTheBackdropAndEveryResumeClosesIt()
 	{
 		var clicks = 0; var point = AddButton( () => clicks++ );
-		hud.ObserveApplicationFocus( true, false, false );
-		hud.ObserveApplicationFocus( false, false, false );
+		hud.ObserveApplicationFocus( true, false );
+		hud.ObserveApplicationFocus( false, false );
 		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
 		Assert.AreEqual( 0, clicks, "The focus-loss pause opens the P window's backdrop (0x4092a0(1))." );
 		// P resumes the stored speed and destroys the window.
@@ -864,12 +881,12 @@ public class OrderedParkPointerPipelineTests
 		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
 		Assert.AreEqual( 1, clicks ); Assert.AreEqual( GameSpeed.Normal, hud.Status.Speed );
 		// An explicit speed choice resumes as well.
-		hud.ObserveApplicationFocus( true, false, false ); hud.ObserveApplicationFocus( false, false, false );
+		hud.ObserveApplicationFocus( true, false ); hud.ObserveApplicationFocus( false, false );
 		hud.SetUserGameSpeed( GameSpeed.Normal );
 		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
 		Assert.AreEqual( 2, clicks );
 		// Offscreen or logged-in sessions never latch it.
-		hud.ObserveApplicationFocus( true, true, false ); hud.ObserveApplicationFocus( false, true, false );
+		hud.ObserveApplicationFocus( true, true ); hud.ObserveApplicationFocus( false, true );
 		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
 		Assert.AreEqual( 3, clicks );
 	}
@@ -879,7 +896,7 @@ public class OrderedParkPointerPipelineTests
 	{
 		var clicks = 0; var point = AddButton( () => clicks++ );
 		TapPause();
-		hud.ObserveApplicationFocus( true, false, false ); hud.ObserveApplicationFocus( false, false, false );
+		hud.ObserveApplicationFocus( true, false ); hud.ObserveApplicationFocus( false, false );
 		Frame( new[] { Down( point ), Up( point ) }, mouse: point );
 		Assert.AreEqual( 0, clicks );
 	}

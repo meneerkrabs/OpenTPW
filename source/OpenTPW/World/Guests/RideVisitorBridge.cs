@@ -39,6 +39,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	// [BIN:TPW-EXE:0x00558C45 script creation] the base of the node numbers BOUNCE entries take (script +0x70) starts at 1; the base height (+0x6E, a signed word) is not set there, so it starts at the block's 0
 	public const int DefaultBounceNodeBase = 1;
 	private int bounceNodeBase = DefaultBounceNodeBase;
+	/// <summary>The node number each BOUNCE stored in its slot when it filled it (index-parallel to <see cref="bouncing"/>; a free or trailing slot keeps no entry).</summary>
+	private readonly List<int> bounceNodes = new();
 	private short bounceBaseHeight;
 	private RideVM? vm;
 	private int called;       // ride +104: the pending visitor
@@ -348,6 +350,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public RideVisitorBridgeSnapshot CaptureSnapshot() => new()
 	{
 		BounceNodeBase = bounceNodeBase != DefaultBounceNodeBase ? bounceNodeBase : null,
+		BounceNodes = BounceNodesDeviate() ? Enumerable.Range( 0, bouncing.Count ).Select( BounceNodeOf ).ToArray() : null,
 		BounceBaseHeight = bounceBaseHeight != 0 ? bounceBaseHeight : null,
 		AttractionId = AttractionId,
 		Queue = Queue.ToArray(),
@@ -514,6 +517,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		if ( snapshot.Bounce.Length > 0 && snapshot.Bounce[^1].Guest == 0 )
 			Error( "the bounce table keeps trailing free slots." );
+		if ( snapshot.BounceNodes != null && snapshot.BounceNodes.Length != snapshot.Bounce.Length )
+			Error( $"the bounce table has {snapshot.Bounce.Length} slots but {snapshot.BounceNodes.Length} stored nodes." );
 		if ( snapshot.QueueEditCount < 0 )
 			Error( $"the queue edit count {snapshot.QueueEditCount} is negative." );
 		if ( snapshot.HeadNotReadyStreak < 0 || snapshot.MaximumHeadNotReadyStreak < snapshot.HeadNotReadyStreak )
@@ -565,6 +570,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		bouncing.AddRange( snapshot.Bounce );
 		bounceNodeBase = snapshot.BounceNodeBase ?? DefaultBounceNodeBase;
 		bounceBaseHeight = snapshot.BounceBaseHeight ?? 0;
+		// a save written before the nodes were kept per slot derives each one from the base, which is what the original stored unless a script changed the base while riders bounced
+		bounceNodes.Clear();
+		bounceNodes.AddRange( snapshot.BounceNodes ?? Enumerable.Range( 0, snapshot.Bounce.Length ).Select( index => bounceNodeBase + index ) );
 		called = snapshot.CalledGuest;
 		letMeOnWritten = snapshot.LetMeOnWritten;
 		lastAdmissionTurn = snapshot.LastAdmissionTurn;
@@ -684,20 +692,35 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	// [BIN:TPW-EXE:0x004DE040] mEntryPos +0x36, Links +0x0C, priority 1,16,64,4; no neighbour type, owner or reciprocity filter.
 	internal bool RefreshTypedQueueFront( GuestPathGrid grid )
 	{
+		if ( !ReadNativeFront( grid, out var native, out var direction ) || native is not { } front ) return false;
+		QueueFrontCell = front;
+		QueueEntranceDirection = (direction + 2) & 3;
+		return true;
+	}
+
+	/// <summary>
+	/// The front cell tp.exe's selector <c>0x4DE040</c> reads from the live entry: false while the entry cannot be reconstructed (an untyped world, a neighbour off the map); true with a null
+	/// <paramref name="front"/> when the entry's link byte has no cardinal bit, for which the selector writes 0 and the back-of-queue walk <c>0x4DE130</c> keeps the count 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DE040 zero front] none of the bits 1, 16, 64 and 4 set writes the cell word 0 (0x4DE0F9): the ride has no front, 0x4DE130 returns 0 with +0x40 = 0, 0x4DE4A0 reports a queue ride unconnected (a back of 0 fails its first test) and the demolition 0x527EE0 finds no count to undo
+	internal bool ReadNativeFront( GuestPathGrid grid, out (int X, int Y)? front, out int direction )
+	{
+		front = null;
+		direction = -1;
 		if ( QueueEntryResolver?.Invoke() is not { } entry || !grid.InBounds( entry.X, entry.Y ) ) return false;
 		var links = grid.Cells.LinksAt( entry.X, entry.Y );
-		foreach ( var direction in new[] { 0, 2, 3, 1 } )
+		foreach ( var candidate in new[] { 0, 2, 3, 1 } )
 		{
-			if ( (links & GuestPathGrid.LinkValue( direction )) == 0 ) continue;
-			var (dx, dy) = GuestPathGrid.Directions[direction];
-			var front = (X: entry.X + dx, Y: entry.Y + dy);
+			if ( (links & GuestPathGrid.LinkValue( candidate )) == 0 ) continue;
+			var (dx, dy) = GuestPathGrid.Directions[candidate];
+			var neighbour = (X: entry.X + dx, Y: entry.Y + dy);
 			// Out-of-map neighbours remain outside the supported host reconstruction, not a native type test.
-			if ( !grid.InBounds( front.X, front.Y ) ) return false;
-			QueueFrontCell = front;
-			QueueEntranceDirection = (direction + 2) & 3;
+			if ( !grid.InBounds( neighbour.X, neighbour.Y ) ) return false;
+			front = neighbour;
+			direction = candidate;
 			return true;
 		}
-		return false;
+		return true;
 	}
 
 	/// <summary><see cref="GuestPathGrid.Directions"/> index from the front cell toward the ride's entrance cell, or −1.</summary>
@@ -849,10 +872,16 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// the queue's back cell gets a new block stamp, so a guest whose walk crosses its block searches again.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation stamp] after the back cell is recomputed (0x4DE130) the counter 0x7CDB98 is raised by one (0x4D8C50, 0x4DE233) and written into the 16 x 16 block of that back cell (0x4D8C60, 0x4DE266) before the open test; the callers are the queue tool's cell click and the cell setter and clear (0x4DE1F0 callers)
-	internal void NotifyQueueEdited( GuestPathGrid? grid = null )
+	internal void NotifyQueueEdited( GuestPathGrid? grid = null, bool stampBack = true )
 	{
+		// [BIN:TPW-EXE:0x004D8C60 no block for cell 0] a back cell of 0 (a zero front: 0x4DE040 found no cardinal link bit, 0x4DE130 returns 0) raises the counter (0x4D8C50) but stamps no block (0x4D8C60 tests the cell word first)
 		if ( grid != null )
-			grid.Cells.StampBlockAt( QueueBackCell.X, QueueBackCell.Y );
+		{
+			if ( stampBack && !(ReadNativeFront( grid, out var native, out _ ) && native == null) )
+				grid.Cells.StampBlockAt( QueueBackCell.X, QueueBackCell.Y );
+			else
+				grid.Cells.StampBlockAt( -1, -1 );
+		}
 		QueueEdited?.Invoke();
 	}
 
@@ -878,7 +907,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// on a path; null when the queue is not connected to a path.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE840 attached path] 0x4DEA2F..0x4DEA57: for the bits 1, 4, 16, 64 of the back cell's +0x0C (0x522770) the neighbour along it (0x4D97E0) is taken when it is type 1 (0x536310); none logs "No path attached to end of queue"
-	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented. Supported live typed HasQueue entries select their nonzero front from +0x0C (0x4DE040). Linkless/unsupported entries and untyped worlds retain the host one-cell fallback; native zero-front/count semantics and divergent imported mEntryPos remain unsupported.
+	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented; supported live typed HasQueue entries derive their front from the actual entry link byte (+0x0C, tp.exe 0x4DE040, bits 1, 16, 64, 4), and a native zero front (no cardinal bit; 0x4DE4A0 reads such a ride as unconnected, which the opening guard still answers permissively under ECON-049) leaves its demolition without a count to undo (0x527FB4) and its re-evaluation without a block stamp; the guests' joining and scoring of a zero-front ride, linkless or unsupported entries and untyped worlds retain the host positive one-cell fallback; divergent imported mEntryPos and the native cache invalidation timing (0x4DE130 keeps +0x3A until the next 0x4DE1F0, where OpenTPW recomputes on every grid change) remain unsupported
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];
@@ -1339,6 +1368,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		for ( var index = 0; index < bouncing.Count; index++ )
 			if ( bouncing[index].Guest == guest )
 				FreeBounceSlot( bouncing, index );
+		TrimBounceNodes();
 		ReleasedTotal++;
 		return true;
 	}
@@ -1543,14 +1573,44 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public short BounceBaseHeight => bounceBaseHeight;
 
 	/// <summary>
-	/// The riders the bounce table holds, in slot order: the visitor, the node number of its slot (the node base plus the slot index) and the script clock reading it bounced at.
+	/// The riders the bounce table holds, in slot order: the visitor, the node number its slot stored when BOUNCE filled it and the script clock reading it bounced at.
 	/// </summary>
-	// [APPROX:HEADS-008] the original stores each entry's node number when BOUNCE fills the slot (0x00555742: +0x70 plus the index); the node here is the current base plus the slot index, which differs only when a script sets the base while riders bounce (none of the four shipped scripts does)
+	// [BIN:TPW-EXE:0x00555742 BOUNCE node] BOUNCE fills the first free entry of the table and stores the rider (+0x00), the node number script +0x70 plus the entry's index (+0x04, 0x555742..0x55574F), then the deadline (+0x08) and the start (+0x0C); the node is kept in the entry from then on, so a later BOUNCESETNODE moves the nodes of the riders that bounce afterwards only
 	internal void CollectBouncing( List<(int Guest, int Node, double Start)> into )
 	{
 		for ( var index = 0; index < bouncing.Count; index++ )
 			if ( bouncing[index].Guest != 0 )
-				into.Add( (bouncing[index].Guest, bounceNodeBase + index, bouncing[index].Start) );
+				into.Add( (bouncing[index].Guest, BounceNodeOf( index ), bouncing[index].Start) );
+	}
+
+	/// <summary>The node number slot <paramref name="index"/> stored (the base at its BOUNCE plus the index); a slot whose entry was never recorded takes the current base.</summary>
+	private int BounceNodeOf( int index ) => index < bounceNodes.Count ? bounceNodes[index] : bounceNodeBase + index;
+
+	/// <summary>Whether a rider's stored node differs from the current base plus its index (a script set the base while riders bounced): the one case a save has to carry the nodes.</summary>
+	private bool BounceNodesDeviate()
+	{
+		for ( var index = 0; index < bouncing.Count; index++ )
+			if ( bouncing[index].Guest != 0 && BounceNodeOf( index ) != bounceNodeBase + index )
+				return true;
+		return false;
+	}
+
+	/// <summary>Records the node of the slot BOUNCE just filled for <paramref name="guest"/> (0x555742: the base plus the entry's index).</summary>
+	private void StoreBounceNode( int guest )
+	{
+		var index = bouncing.FindIndex( entry => entry.Guest == guest );
+		if ( index < 0 )
+			return;
+		while ( bounceNodes.Count <= index )
+			bounceNodes.Add( bounceNodeBase + bounceNodes.Count );
+		bounceNodes[index] = bounceNodeBase + index;
+	}
+
+	/// <summary>Drops the stored nodes of the trailing slots <see cref="FreeBounceSlot"/> removed.</summary>
+	private void TrimBounceNodes()
+	{
+		if ( bounceNodes.Count > bouncing.Count )
+			bounceNodes.RemoveRange( bouncing.Count, bounceNodes.Count - bouncing.Count );
 	}
 
 	/// <summary>Performs a visitor opcode; false for opcodes the bridge does not own.</summary>
@@ -1630,6 +1690,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				// [BIN:TPW-EXE:0x00555780 BOUNCE result] the flag word takes 1 when an entry was free and 0 with a full table
 				if ( onRide.Contains( guest ) && !bouncing.Any( entry => entry.Guest == guest ) )
 					result = TakeBounceSlot( bouncing, call.VM.Script.BounceSize, guest, now + seconds * 1000.0, now ) ? 1 : 0;
+				if ( result == 1 )
+					StoreBounceNode( guest );
 				return true;
 			}
 			case Opcode.UNBOUNCE:
@@ -1637,6 +1699,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			{
 				// Corpus: `TEST VAR_LETMEOFF; BRANCH_NZ; UNBOUNCE VAR_LETMEOFF` writes the leaving guest into LETMEOFF.
 				var guest = TakeUnbounced( bouncing, now, call.Opcode == Opcode.FORCEUNBOUNCE );
+				TrimBounceNodes();
 				if ( call.IsVariable( 0 ) )
 					call.SetOutput( 0, guest );
 				result = guest;

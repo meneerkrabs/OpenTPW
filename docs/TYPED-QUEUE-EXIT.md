@@ -9,8 +9,8 @@ The existing dismissal, thought, happiness, voice, observer and queue accounting
 paths are unchanged. This slice only extends the existing position-preserving
 branch. It depends on the linked access-cell wander start support. Untyped,
 unowned, mismatched or disconnected geometry keeps the previous fallback.
-QUEUE-010 remains open for those cases; no general cleared-cell relocation
-policy is changed.
+Since fidelity round 9 the exit is the original's on every placed ride: the guest stays in state 6 where it stands, whatever its cell is now (a cell the queue's undo or a demolition emptied
+included, see [QUEUE-REMOVAL-THOUGHT](QUEUE-REMOVAL-THOUGHT.md)); only a bridge without placed cells keeps the relocation.
 
 Synthetic `TypedQueueExitTests` drive actual queue admission, stand-point price
 refusal and ride-head dismissal. They check exact position and existing effects,

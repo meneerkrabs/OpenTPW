@@ -41,10 +41,26 @@ public class SavedResearchGroupTests
 		Assert.AreEqual( 0, restored.Research.Current( ResearchCategory.Feature )!.Level );
 	}
 
+	/// <summary>A lab loaded from a save keeps its saved current project as it is, offered by the picker now or not (SAVE-007); it ends when the project is finished or the player moves on.</summary>
+	[TestMethod]
+	public void ASavedCurrentProjectThePickerWouldNotOfferIsKeptAsSaved()
+	{
+		var park = HigherGroupPark();
+		Assert.IsFalse( park.Research.TrySelect( ResearchCategory.Feature, 1410, 0 ), "the group is closed: the picker would not offer it" );
+		Assert.AreEqual( 1400, park.Research.Current( ResearchCategory.Feature )!.InfoId );
+		Assert.IsTrue( park.Research.SelectAsSaved( ResearchCategory.Feature, 1410, 0 ) );
+		Assert.AreEqual( 1410, park.Research.Current( ResearchCategory.Feature )!.InfoId, "kept as the loader reads it" );
+		Assert.IsFalse( park.Research.SelectAsSaved( ResearchCategory.Feature, 9999, 0 ), "a project the lab does not hold cannot be kept" );
+		// it survives the park's own save
+		var saved = ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( park ) ) );
+		CollectionAssert.AreEqual( new[] { (int)ResearchCategory.Feature, 1410, 0 }, saved.Research.Current!.Single() );
+		var restored = ParkSaveFile.Restore( saved, park.Settings, park.Catalog );
+		Assert.AreEqual( 1410, restored.Research.Current( ResearchCategory.Feature )!.InfoId );
+	}
+
 	[DataTestMethod]
 	[DataRow( 9999, 0, (int)ResearchCategory.Ride )]
 	[DataRow( 1100, 0, (int)ResearchCategory.Ride )]
-	[DataRow( 1500, 0, (int)ResearchCategory.Upgrade )]
 	public void SavedGroupsDoNotPermitUnknownCompletedOrPrerequisiteBlockedCursors( int id, int level, int category )
 	{
 		var park = EconomyTestData.Park();
@@ -58,15 +74,17 @@ public class SavedResearchGroupTests
 	}
 
 	[TestMethod]
-	public void AbsentSavedGroupsDoNotOpenASelectedProjectsGroup()
+	public void AbsentSavedGroupsDoNotOpenASelectedProjectsGroupAndItsCursorIsKept()
 	{
 		var park = HigherGroupPark();
 		var json = JsonNode.Parse( ParkSaveFile.Serialize( park ) )!;
 		Assert.IsNull( json["Research"]!["HighestGroups"] );
 		json["Research"]!["Current"] = new JsonArray( new JsonArray( (int)ResearchCategory.Feature, 1410, 0 ) );
 		var saved = ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json.ToJsonString() ) );
-		var error = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( saved, park.Settings, park.Catalog ) );
-		Assert.AreEqual( "Saved research cursor refers to an invalid project 1410 level 0.", error.Message );
+		// the cursor is kept as saved (the loader runs no picker over it, SAVE-007) and opens no group
+		var restored = ParkSaveFile.Restore( saved, park.Settings, park.Catalog );
+		Assert.AreEqual( 1, restored.Research.HighestOpenGroup( ResearchCategory.Feature ) );
+		Assert.AreEqual( 1410, restored.Research.Current( ResearchCategory.Feature )!.InfoId );
 	}
 
 	[TestMethod]

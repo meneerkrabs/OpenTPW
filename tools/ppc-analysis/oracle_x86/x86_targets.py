@@ -3412,7 +3412,7 @@ def terrain_spans_stubs(target: Target) -> dict:
 
 
 def terrain_spans_binary(sb: Sandbox, x: dict, log) -> bytes:
-    sb.set_fpcw(0x7F)     # DDSCL_FPUSETUP: single precision (COAST-032; the shop goods cost ECON-059 is retired on the same word)
+    sb.set_fpcw(0x7F)     # DDSCL_FPUSETUP: single precision (COAST-032; the shop goods cost ECON-059 on the same word, hardware path)
     obj = sb.alloc(0x2D8, 16)
     sb.write(obj + 0x30, 'f', x['low'])
     sb.write(obj + 0x34, 'f', x['high'])

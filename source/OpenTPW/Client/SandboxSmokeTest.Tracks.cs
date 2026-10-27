@@ -103,10 +103,10 @@ internal sealed partial class SandboxSmokeTest
 		// [BIN:TPW-EXE:0x005253E9 initial track] the placement lays a track tile at the exit and at the entry, free of charge (docs/TRACKS.md, "The station"): before any line those are the
 		// only track tiles and the circuit is invalid
 		var laid = builder.Tracks.Cells().Where( item => item.Cell.Type == originType ).Select( item => (item.X, item.Y) ).ToHashSet();
-		Require( !station!.Runtime.Bump!.IsTrackValid && laid.SetEquals( new[] { layout.Exit, layout.Entry } ),
-			$"no circuit yet: the placement laid only the exit {layout.Exit} and entry {layout.Entry} tiles ({string.Join( ", ", laid )}) and the circuit is invalid" );
+		Require( station!.Runtime.Bump!.IsTrackValid && !station.Runtime.Bump.TrackWordWritten && laid.SetEquals( new[] { layout.Exit, layout.Entry } ),
+			$"no circuit yet: the placement laid only the exit {layout.Exit} and entry {layout.Entry} tiles ({string.Join( ", ", laid )}) and walked nothing: the track word keeps the constructor's 1" );
 		var balance = economy?.Balance ?? 0;
-		Require( level.EnterTrackTool( station ) && level.CellTool.IsActive && level.CellTool.Mode == mode && level.CellTool.Start == layout.Exit,
+		Require( level.EnterTrackTool( station, justPlaced: true ) && level.CellTool.IsActive && level.CellTool.Mode == mode && level.CellTool.Start == layout.Exit,
 			$"the {kind} track tool starts at the tile after the station" );
 		var corners = WaterCircuit.Select( offset => (X: layout.First.X + offset.X, Y: layout.First.Y + offset.Y) ).ToArray();
 		var tiles = 0;

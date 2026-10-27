@@ -302,7 +302,7 @@ public partial class Level
 	internal bool EnterPlacedTrackTool( OriginalObject item )
 	{
 		ArgumentNullException.ThrowIfNull( item );
-		if ( !EnterTrackTool( item ) )
+		if ( !EnterTrackTool( item, justPlaced: true ) )
 			return false;
 		placedQueueStart = item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells ? item : null;
 		return true;

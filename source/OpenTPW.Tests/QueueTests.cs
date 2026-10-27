@@ -1060,6 +1060,11 @@ public class QueueTests
 			return other.Ride;
 		}
 		Assert.IsTrue( Restored( snapshot ).IsCondemned );
+		// a snapshot still broken after the repair reopened the ride (the open word set, VAR_RIDECLOSED 0) is stale: the opener's SetState(0) left the state
+		var reopened = new Rig();
+		reopened.Script[RideVariables.VAR_RIDECLOSED] = 0;
+		reopened.Ride.RestoreSnapshot( snapshot );
+		Assert.IsFalse( reopened.Ride.StateWord.IsBroken || reopened.Ride.IsBrokenDown, "an open ride ignores a stale broken snapshot" );
 		// an older save holds no such field: the restored ride is in state 1
 		var third = Restored( snapshot with { Condemned = null } );
 		Assert.IsTrue( third.StateWord.IsBroken && third.IsBrokenDown && !third.IsCondemned && third.HoldsQueuedGuests );

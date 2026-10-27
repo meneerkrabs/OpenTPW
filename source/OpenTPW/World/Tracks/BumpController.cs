@@ -127,6 +127,11 @@ public sealed class BumpController
 	/// <summary>The attraction's track-valid flag (+0x2C on the PC, <c>mIsTrackRideValid</c>), written by the circuit walk.</summary>
 	// [BIN:TPW-EXE:0x00524960 track validity] the flag is the circuit walk's verdict, rewritten after every track edit (label 0x75B538 at 0x4DBE00); BUMP 5 reads it into the branch accumulator
 	public bool IsTrackValid { get; private set; }
+	/// <summary>
+	/// Whether a track edit has written the track word since the constructor stored 1: the ride's placement walks nothing in tp.exe (<c>0x529E10</c> lays the station through <c>0x52A1A0</c>), so a fresh
+	/// ride reads 1 until the first track-tool click clears it (<c>0x5251B8</c>, <c>0x5257FB</c>) or a walk writes its verdict. Saved, so a load keeps a fresh ride's 1.
+	/// </summary>
+	public bool TrackWordWritten { get; private set; }
 	/// <summary>The water pieces' animation state set by BUMP 17: true while they run (animation 5), false when stopped (animation 12).</summary>
 	public bool WaterRunning { get; private set; } = true;
 	/// <summary>
@@ -299,7 +304,7 @@ public sealed class BumpController
 	/// circuit's sections, collision objects and buoys are built. The validity flag is the walk's verdict.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00545450 section reset] a re-walk first unloads every vehicle (0x0054AE50) and closes the ride (0x00544A10), then frees the sections, their collision objects and the buoys that are not station buoys (flags 2 or 4)
-	public void Rebuild( TrackCircuit circuit )
+	public void Rebuild( TrackCircuit circuit, bool writesWord = true )
 	{
 		ArgumentNullException.ThrowIfNull( circuit );
 		EjectAll();
@@ -312,11 +317,14 @@ public sealed class BumpController
 			Log?.Warning( result.Truncated
 				? $"A track circuit of {circuit.Steps.Count} tiles overflows the section pool; the ride is invalid."
 				: $"A track circuit of {circuit.Steps.Count} tiles does not fit the module's shared collision-object or buoy pool beside the other rides; the ride is invalid." );
-			IsTrackValid = false;
+			if ( writesWord )
+				IsTrackValid = false;
 			Adopt( TrackSections.Build( Array.Empty<TrackStep>(), Template.Slack, CloneStation(), IsWater ) );
 		}
-		else
+		else if ( writesWord )
 			IsTrackValid = circuit.IsValid;
+		if ( writesWord )
+			TrackWordWritten = true;
 		foreach ( var vehicle in vehicles )
 		{
 			vehicle.ObjectIndex = -1;
@@ -356,6 +364,7 @@ public sealed class BumpController
 		if ( savedBuoyCount is { } count && count != buoys.Count )
 			throw new InvalidDataException( $"A saved controller holds {count} buoys, but its rebuilt circuit has {buoys.Count}." );
 		IsTrackValid = valid;
+		TrackWordWritten = true;
 		foreach ( var vehicle in vehicles )
 		{
 			vehicle.ObjectIndex = -1;
@@ -1928,6 +1937,12 @@ public sealed class BumpController
 		if ( data.VehicleLimit is { } limit && (!CanRaiseVehicleLimit || limit != RaisedVehicleLimit) )
 			throw new InvalidDataException( $"A saved controller of type {Type} has the vehicle limit {limit}, which only a raised bumper or kart ride ({RaisedVehicleLimit}) has." );
 		VehicleLimit = data.VehicleLimit ?? Template.MaxVehicles;
+		// a ride no edit has walked keeps the constructor's word (an older save holds no such field: its word was written)
+		if ( data.TrackWordWritten == false )
+		{
+			IsTrackValid = data.IsTrackValid;
+			TrackWordWritten = false;
+		}
 		Laps = data.Laps;
 		SetPerformance( data.Performance );
 		Phase = data.Phase;

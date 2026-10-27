@@ -161,7 +161,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>Whether the item was bought with tickets already: in the player's set while the park is part of its progress, otherwise in the park's.</summary>
 	// [BIN:TPW-EXE:0x004D4B70 ticket item owned] asks the player's set (0x5AF780), which every park of the player shares
-	internal bool OwnsTicketItem( int infoId ) => TicketWallet is { Active: true } wallet ? wallet.Owns( infoId ) : ticketItems.Contains( infoId );
+	internal bool OwnsTicketItem( int infoId ) => ticketItems.Contains( infoId ) || TicketWallet is { Active: true } wallet && wallet.Owns( infoId );
 	public IParkGuestStatistics GuestStatistics { get => guestStatistics; set => guestStatistics = value ?? NoGuestStatistics.Instance; }
 
 	public event Action<ParkEvent>? EventRaised;

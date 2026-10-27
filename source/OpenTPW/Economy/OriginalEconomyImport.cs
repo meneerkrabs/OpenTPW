@@ -835,8 +835,9 @@ public sealed partial class OriginalEconomyImport
 			if ( group.CurrentProject < 0 || group.CurrentProject >= used )
 				continue;
 			var project = lab.Project( group.CurrentProject );
-			if ( research.TrySelect( category, project.ObjectId, project.UpgradeLevel ) )
-				current.Add( $"{category} {project.ObjectId}" );
+			// [BIN:TPW-EXE:0x00504760 research group serializer] the saved current project is kept as it is, offered by the picker now or not
+			if ( research.SelectAsSaved( category, project.ObjectId, project.UpgradeLevel ) )
+				current.Add( $"{category} {project.ObjectId}{(research.TrySelect( category, project.ObjectId, project.UpgradeLevel ) ? "" : " (not offered by the picker now)")}" );
 			else
 				refused.Add( $"{category} {project.ObjectId} level {project.UpgradeLevel}" );
 		}
@@ -874,12 +875,12 @@ public sealed partial class OriginalEconomyImport
 				evidence.Add( $"Research cheat: {research.MakeAvailableByCheat( cheatAvailable )} objects the cheated save marks researched without a finished project are available to build ({string.Join( ", ", cheatAvailable )})." );
 			evidence.Add( $"Research object controls: {controls.Controls.Count} records, {controls.Controls.Count( control => control.Researched )} researched, {checkedControls} research items checked against OpenTPW's research, {(disagreements.Count == 0 ? "none" : string.Join( ", ", disagreements ))} disagree." );
 		}
-		// [BIN:TPW-EXE:0x00504630 research step] a lab project of an object this install's level archives do not define (a modified save) names no research item here, and a saved current project the picker (0x503B80) would not offer now is not selected: both are reported and neither occurs in the 11 corpus labs, which OriginalSaveImportCorpusTests pins (every project is a level object, in the original's scan order, and every saved current project is offered)
+		// a lab project of an object this install's level archives do not define (a modified save) names no research item here and cannot be kept; the saved current projects are kept as saved (SelectAsSaved), and a current project of no category's table is reported as well; neither occurs in the 11 corpus labs, which OriginalSaveImportCorpusTests pins
 		var dropped = new List<string>();
 		if ( unknown.Count > 0 )
 			dropped.Add( $"projects of objects the level archives do not define ({string.Join( ", ", unknown )})" );
 		if ( refused.Count > 0 )
-			dropped.Add( $"current projects OpenTPW's picker would not offer now ({string.Join( ", ", refused )})" );
+			dropped.Add( $"current projects the lab's table does not hold ({string.Join( ", ", refused )})" );
 		if ( disagreements.Count > 0 )
 			dropped.Add( $"object-control researched flags that disagree with OpenTPW's research ({string.Join( ", ", disagreements )})" );
 		if ( controls == null )

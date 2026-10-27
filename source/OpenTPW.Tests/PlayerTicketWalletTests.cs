@@ -97,7 +97,7 @@ public class PlayerTicketWalletTests
 	}
 
 	[TestMethod]
-	public void AParkRefusesATicketItemTheAccountCannotPayEvenWithTicketsOfItsOwn()
+	public void AParkWithoutEarnedTicketsInTheAccountRefusesATicketItem()
 	{
 		var path = NewProfile( out var root );
 		try
@@ -135,6 +135,56 @@ public class PlayerTicketWalletTests
 			using var second = new PlayerProgressRuntimeOwner( path, "jungle", PlayerTicketFile.ReadIfPresent( path )!, again, () => true, _ => Assert.Fail() );
 			Assert.AreEqual( 3, second.Ledger.SpentTickets, "a second attach does not charge the purchase again" );
 			Assert.AreEqual( 0, park.GoldenTicketsAvailable );
+		}
+		finally { Directory.Delete( root, true ); }
+	}
+
+	/// <summary>A migrated purchase the account cannot afford stays the park's own record: the park's next copy is paid in cash, not charged in tickets again.</summary>
+	[TestMethod]
+	public void AMigratedPurchaseTheAccountCannotAffordStaysTheParksOwn()
+	{
+		var path = NewProfile( out var root );
+		try
+		{
+			var runtime = Runtime();
+			var park = runtime.Economy;
+			park.RestoreTicketItems( new[] { TicketItem } );
+			var reports = new System.Collections.Generic.List<string>();
+			using var owner = new PlayerProgressRuntimeOwner( path, "jungle", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, reports.Add );
+			Assert.AreEqual( 0, owner.Ledger.SpentTickets, "the account could not be charged" );
+			Assert.AreEqual( 1, reports.Count, "the unaffordable migration is reported" );
+			Assert.IsFalse( owner.Ledger.OwnsPurchasedItem( TicketItem ) );
+			Assert.IsTrue( park.OwnsTicketItem( TicketItem ), "the park's own record still says it was bought" );
+			Assert.IsNull( park.ListedTicketCost( TicketItem ), "the next copy is a cash row" );
+			var cash = park.Balance;
+			Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( TicketItem, out _ ) );
+			Assert.IsTrue( park.Balance < cash, "paid in cash" );
+			Assert.AreEqual( 0, owner.Ledger.SpentTickets );
+		}
+		finally { Directory.Delete( root, true ); }
+	}
+
+	/// <summary>Instant Action spends from the player's account (tp.exe 0x4D4AD0 skips it only in the online visit) and shows its count.</summary>
+	[TestMethod]
+	public void InstantActionSpendsFromThePlayersAccount()
+	{
+		var path = NewProfile( out var root, ledger =>
+		{
+			ledger.RecordEarned( "hallow", GoldenTicketKind.Visitors );
+			ledger.RecordEarned( "fantasy", GoldenTicketKind.Visitors );
+			ledger.RecordEarned( "space", GoldenTicketKind.Visitors );
+		} );
+		try
+		{
+			var runtime = ParkEconomyRuntime.ForResume( EconomyTestData.Park( initialCash: 100000, mode: ParkGameMode.InstantAction ), ParkStartKind.InstantAction );
+			var park = runtime.Economy;
+			using var account = new InstantActionTicketAccount( path, PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, _ => Assert.Fail() );
+			Assert.AreEqual( 3, park.GoldenTicketsAvailable, "the counter reads the account in Instant Action" );
+			Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( TicketItem, out _ ) );
+			Assert.AreEqual( 3, account.Ledger.SpentTickets );
+			Assert.AreEqual( 0, park.GoldenTicketsAvailable );
+			Assert.IsFalse( account.Dirty, "the purchase was saved" );
+			Assert.AreEqual( 3, PlayerTicketFile.LoadIfPresent( path )!.SpentTickets );
 		}
 		finally { Directory.Delete( root, true ); }
 	}

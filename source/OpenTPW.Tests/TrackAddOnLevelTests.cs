@@ -165,6 +165,31 @@ public partial class TrackAddOnLevelTests
 		return state;
 	}
 
+	/// <summary>
+	/// ARRIVAL-003: tp.exe's ride placement walks nothing (0x529E10 lays the station through 0x52A1A0), so the track word +0x2C keeps the constructor's 1 until a track edit writes it
+	/// (0x524D1B, 0x5251B8): BUMP 5 and the park points counts-test read 1 after the placement, and the word is saved as never written.
+	/// </summary>
+	[TestMethod]
+	public void AFreshStationKeepsTheConstructorsTrackWordUntilATrackEditWritesIt()
+	{
+		var (level, ride, _) = World( laid: false );
+		var state = AttachTrackEconomy( level, ride );
+		var bump = ride.Runtime.Bump!;
+		Assert.IsTrue( bump.IsTrackValid && !bump.TrackWordWritten, "the placement's walk did not write the word" );
+		Assert.AreEqual( 1, bump.Command( 5, 0 ), "BUMP 5 reads the constructor's 1" );
+		typeof( Level ).GetMethod( "SyncObjectEconomy", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( level, null );
+		Assert.IsTrue( state.TrackValid, "the park points counts-test reads 1 (0x4DD9AD, 1 and 2 need the track word)" );
+		Assert.IsFalse( BumpControllerSaveDataOf( bump ).TrackWordWritten ?? true, "a fresh ride is saved as never written" );
+		// the first track edit (a line, 0x526F02) writes the walk's verdict: the open circuit is invalid
+		Assert.IsTrue( level.EnterTrackTool( ride, justPlaced: true ) );
+		level.CellTool.Click( (20, 10) );
+		Assert.IsTrue( bump.TrackWordWritten && !bump.IsTrackValid );
+		Assert.AreEqual( 0, bump.Command( 5, 0 ) );
+		Assert.IsNull( BumpControllerSaveDataOf( bump ).TrackWordWritten, "an edited ride saves the field absent" );
+	}
+
+	private static BumpControllerSaveData BumpControllerSaveDataOf( BumpController bump ) => TrackSave.CaptureController( bump, 1 );
+
 	[DataTestMethod]
 	[DataRow( TrackWalkCause.Line, true )]
 	[DataRow( TrackWalkCause.Edit, true )]
@@ -364,7 +389,7 @@ public partial class TrackAddOnLevelTests
 		AttachTrackEconomy( level, ride );
 		var posted = new List<int>();
 		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { HelpPosted = posted.Add } );
-		Assert.IsTrue( level.EnterTrackTool( ride ) );
+		Assert.IsTrue( level.EnterTrackTool( ride, justPlaced: true ) );
 		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode );
 		Assert.IsNotNull( level.CellTool.Start, "the open end is the start (0x530830, then 0x52F580 keeps it)" );
 		HudToolClick.Click( hud, (20, 10) );

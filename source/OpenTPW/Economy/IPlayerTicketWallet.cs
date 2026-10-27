@@ -3,7 +3,7 @@ namespace OpenTPW;
 /// <summary>
 /// The player-wide ticket account a park spends from while it is part of its player's progress (the original's ticket object, tp.exe <c>0x409410</c>): the earned count less the spent count
 /// (<c>0x5AF5D0</c>), the set of items already bought with tickets (<c>0x5AF780</c>) and the purchase that adds the cost to the spent count (<c>0x5AF740</c>). A park without a wallet
-/// (the sandbox, Instant Action, a shared co-op park, a visit) counts its own tickets, as before.
+/// (the sandbox, a shared co-op park, a visit) counts its own tickets; an Instant Action park has one too (<see cref="InstantActionTicketAccount"/>: tp.exe skips the account only in game type 1, the online visit).
 /// </summary>
 internal interface IPlayerTicketWallet
 {

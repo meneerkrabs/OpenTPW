@@ -303,10 +303,10 @@ to a cell, its queue holds fewer guests than four per queue cell, a coaster carr
 ride has its track word (set when the ride is built). OpenTPW applies all of it (tp.exe `0x4dd920`, ORACLE.md X15): `IsChoosable`,
 `IsBrokenDown` or the script's VAR_BROKEN, `IsOpen`, `QueueHasRoom` (queue cells from the entrance and fewer guests than four per
 cell), for a coaster its controller test (`0x441970`: no self-intersection, complete and closed, `CoasterRide.AcceptsGuests`) and for
-a kart or water ride its track word (the circuit walk's verdict, `BumpController.IsTrackValid`); the level syncs them each tick. So a
+a kart or water ride its track word (`BumpController.IsTrackValid`: the constructor's 1 until a track edit's circuit walk writes its verdict, `0x524D1B`); the level syncs them each tick. So a
 closed, broken, queue-less, full, crossing or invalid ride gives no points, while its copies still count in the divisor of an untracked
 type. Only things whose type's `Info.WhichUIType` is 0 or 2 count (`0x4c8240`), which includes the shipped add-ons that declare 0. The
-coaster test is the shared predicate `0x441970` (its edited-coaster term is `CoasterRide.BeingEdited`; the host's three-sample guard stays on guest admission only) and the track word starts at 1 as the constructor stores it (`0x4db0df`), until a circuit walk rewrites it (`APPROX:ARRIVAL-003` is retired). Objects imported from an original save find each type's first purchase restored from the save's object-control table (tp.exe `0x4d3aa0`, `+0x1c`) and stamp the import turn only into a type still at 0, as the original does; fixed items of a new park stamp turn 0 in both. Open points are ARRIVAL-001, 002, 003 and 006 (`ArrivalApproximations`).
+coaster test is the shared predicate `0x441970` (its edited-coaster term is `CoasterRide.BeingEdited`; the host's three-sample guard stays on guest admission only) and the track word starts at 1 as the constructor stores it (`0x4db0df`), until a circuit walk rewrites it (`APPROX:ARRIVAL-003` is retired). Objects imported from an original save find each type's first purchase restored from the save's object-control table (tp.exe `0x4d3aa0`, `+0x1c`) and stamp the import turn only into a type still at 0, as the original does; fixed items of a new park stamp turn 0 in both. Open points are ARRIVAL-001, 002 and 006 (`ArrivalApproximations`; ARRIVAL-003 is retired).
 
 ## Simulation
 

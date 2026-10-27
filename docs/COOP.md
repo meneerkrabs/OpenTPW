@@ -2289,6 +2289,10 @@ them.
 cancel, path removals, Backspace, the Move tool, a sale, the remove tool and refused commands) on a
 no-data level, replays its log on a twin level and finds the same hash after every tick.
 
+A park that spends from its player's ticket account (`IPlayerTicketWallet`, UI-051: a Full Simulation park, and an Instant Action park since round 9) decides a ticket purchase by the account, which is
+the player's file and not part of the log or the park's state. A log that holds such a purchase replays only on a park whose own tickets or account hold the same, so the replay park is given the
+account of the player who recorded it (the same progress file) or the purchase is refused and the checkpoints differ; a session's log never holds one, because a shared park spends its own tickets.
+
 ### The guard
 
 `ParkCommandLayerTests` reads the tool layer's source (the HUD, the UI, the front end and online

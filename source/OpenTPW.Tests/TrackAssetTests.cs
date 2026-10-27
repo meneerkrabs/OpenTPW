@@ -263,7 +263,13 @@ public class TrackAssetTests
 		// [BIN:TPW-EXE:0x004DB0DF attraction constructor] the track word is 1 from the constructor on; only a circuit walk rewrites it (ARRIVAL-003)
 		Assert.IsTrue( bump.IsTrackValid, "the constructor's track word" );
 		bump.Rebuild( TrackCircuit.Invalid( "no track laid" ) );
-		Assert.IsFalse( bump.IsTrackValid, "a walk without a circuit says invalid" );
+		Assert.IsFalse( bump.IsTrackValid, "a track edit's walk without a closed circuit writes 0" );
+		Assert.IsTrue( bump.TrackWordWritten );
+		// the placement's own walk leaves the word alone
+		var fresh = new BumpController( BumperTemplates.Get( -5 ), () => 0 );
+		fresh.Rebuild( TrackCircuit.Invalid( "station only" ), writesWord: false );
+		Assert.IsTrue( fresh.IsTrackValid && !fresh.TrackWordWritten );
+		Assert.AreEqual( 1, fresh.Command( 5, 0 ), "BUMP 5 reads the constructor's 1 after the placement" );
 		Assert.IsNotNull( runtime.Visitors.ExcitementBase, "the controller feeds the ride's excitement" );
 		// no track yet: the script waits at BUMP 5 and nothing opens
 		for ( var tick = 0; tick < 5 * 60; tick++ )
@@ -499,7 +505,7 @@ public class TrackAssetTests
 		Assert.AreEqual( -4, bump.Type );
 		var effects = new List<BumpEffect>();
 		bump.Effect += effects.Add;
-		// the constructor's track word is 1 (0x004DB0DF); the walk of a station without a circuit rewrites it to 0, which BUMP 5 reports
+		// the constructor's track word is 1 (0x004DB0DF); a track edit's walk without a closed circuit rewrites it to 0, which BUMP 5 reports
 		bump.Rebuild( TrackCircuit.Invalid( "no track laid" ) );
 		for ( var tick = 0; tick < 3 * 60; tick++ )
 			runtime.Simulate( Tick );

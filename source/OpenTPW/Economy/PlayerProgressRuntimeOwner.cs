@@ -49,22 +49,9 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable, IPlayerTicketWal
 		economy.TicketWallet = this;
 	}
 
-	/// <summary>
-	/// The items a park bought with tickets before its purchases went through the player's account (an older park save) enter the account once, by identity: an item the account holds
-	/// already is not charged again, and one the account cannot afford stays the park's own record (reported), so the counter never reads less than the park's history allows.
-	/// </summary>
 	private void ReconcilePurchases( ParkEconomy economy )
 	{
-		if ( !RecordsEligible ) return;
-		foreach ( var infoId in economy.TicketItems.Order().ToArray() )
-		{
-			if ( Ledger.OwnsPurchasedItem( infoId ) || !economy.Catalog.TryGet( infoId, out var info ) || info.GoldenTicketCost <= 0 ) continue;
-			switch ( Ledger.TryPurchase( infoId, info.GoldenTicketCost ) )
-			{
-				case TicketPurchaseOutcome.Purchased: Dirty = true; break;
-				case TicketPurchaseOutcome.InsufficientTickets: report( $"The park's earlier ticket purchase of item {infoId} ({info.GoldenTicketCost} tickets) exceeds the player's earned tickets and is not charged to the player's account." ); break;
-			}
-		}
+		if ( RecordsEligible && PlayerTicketMigration.Reconcile( economy, Ledger, report ) ) Dirty = true;
 	}
 
 	// the park spends from the player's account while it is part of its player's progress (tp.exe 0x4D4AD0 -> 0x5AF740)
@@ -155,7 +142,8 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable, IPlayerTicketWal
 			Reclaim();
 			return;
 		}
-		if ( Eligible && !ReferenceEquals( observed, runtime.Economy ) ) { Reconcile(); TryFlush(); }
+		// the park a load replaced takes the player's account again: the wallet needs the records the park may keep (RecordsEligible), as the constructor does, not the earning of tickets
+		if ( RecordsEligible && !ReferenceEquals( observed, runtime.Economy ) ) { Reconcile(); TryFlushRecords(); }
 	}
 
 	/// <summary>

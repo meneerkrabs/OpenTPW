@@ -590,7 +590,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		letMeOnWritten = snapshot.LetMeOnWritten;
 		lastAdmissionTurn = snapshot.LastAdmissionTurn;
 		// an older save holds no state for a ride that was broken down (the ride update reads VAR_BROKEN again), and the economy's own save may hold it already: a clear is never written over it
-		if ( snapshot.BrokenDown )
+		// a snapshot still "broken" after a repair reopened the ride is stale: every opener writes SetState(0) with the open word, so an open ride (the open word set and VAR_RIDECLOSED 0) has left the state
+		if ( snapshot.BrokenDown && (!isOpen() || vm == null || Get( RideVariables.VAR_RIDECLOSED ) != 0) )
 			stateWord.Restore( snapshot.Condemned == true ? RideObjectStates.Condemned : RideObjectStates.BrokenDown );
 		calledTurn = snapshot.CalledTurn;
 		queueCells.Clear();

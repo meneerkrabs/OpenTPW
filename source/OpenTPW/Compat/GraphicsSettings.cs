@@ -244,7 +244,7 @@ public static class GraphicsPresets
 		["GraphicalOptions.RENDER32"] = "Not needed: OpenTPW always renders 32-bit.",
 		["GraphicalOptions.TEXTURE32"] = "Not needed: textures are always 32-bit.",
 		["GraphicalOptions.BUMPMAPPING"] = "Not applied.",
-		["GraphicalOptions.LIGHTING"] = "Not applied: OpenTPW always lights meshes.",
+		["GraphicalOptions.LIGHTING"] = "Partly applied at the next level load: 0 turns the darkening of the land outside the park off (tp.exe 0x44DC36 sets bits 0x1800 of [0x8BCBC8], and the terrain draw skips its halving while bit 0x800 is set). Not applied: with that bit tp.exe 0x574530 also fills the terrain colours with one constant instead of lighting them (white, the light object's +0x2C, 0xFFFFFFFF), so LIGHTING 0 should draw the terrain unlit; OpenTPW always lights the terrain and the meshes.",
 		["GraphicalOptions.FORCELOWALPHAREF"] = "Not applied: meaning unknown.",
 		["GameOptions.COASTERSMOOTHNESS"] = "Exposed for the rides slice (coaster track tessellation); not consumed yet.",
 		["GameOptions.COASTERTRACKDETAIL"] = "Exposed for the rides slice; not consumed yet.",

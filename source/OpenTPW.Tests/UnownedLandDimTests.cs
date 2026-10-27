@@ -96,4 +96,39 @@ public class UnownedLandDimTests
 		var dim = Enumerable.Range( 0, 64 ).SelectMany( x => Enumerable.Range( 0, 64 ).Select( y => (x, y) ) ).Count( cell => UnownedLandDim.Dims( cells.FlagsAt( cell.x, cell.y ) ) );
 		Assert.IsTrue( dim > 64 * 64 / 2 && dim < 64 * 64 );
 	}
+
+	[TestMethod]
+	public void TheLevelIsRoundedClampedThenHalved()
+	{
+		Assert.AreEqual( 0, UnownedLandDim.Level( 0f ) );
+		Assert.AreEqual( 127, UnownedLandDim.Level( 1f ), "255 >> 1" );
+		Assert.AreEqual( 127, UnownedLandDim.Level( 1.6f ), "light above 1 clamps to 255 first (halving the unclamped 408 would give 204)" );
+		Assert.AreEqual( 0, UnownedLandDim.Level( -0.5f ) );
+		Assert.AreEqual( 51, UnownedLandDim.Level( 0.4f ), "102 >> 1" );
+		Assert.AreEqual( 0, UnownedLandDim.Level( 1f / 255 ), "level 1 halves to 0" );
+		Assert.AreEqual( 64, UnownedLandDim.Level( 0.5f ), "127.5 rounds to the even 128, then 64" );
+	}
+
+	[TestMethod]
+	public void TheShaderConstantIsTheVertexFlagAndItsArithmeticIsTheOriginals()
+	{
+		var text = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "test.shader" ) ).ReplaceLineEndings( "\n" );
+		StringAssert.Contains( text, $"const uint FLAG_LAND_DIM = 0x{TextureSlotAddressing.LandDimFlag:X8}u;" );
+		StringAssert.Contains( text, "vShading = floor( clamp( roundEven( vShading * 255.0 ), 0.0, 255.0 ) * 0.5 ) / 255.0;" );
+	}
+
+	[TestMethod]
+	public void WithoutOriginalDetailDataTheDimmingStaysOnLikeTheOriginalsZeroedFlags()
+	{
+		Assert.IsTrue( UnownedLandDim.Enabled( GraphicsSettingsService.FallbackDetail.Lighting ) );
+		Assert.IsFalse( UnownedLandDim.Enabled( new OriginalDetailSettings().Lighting ), "a bare record is LIGHTING 0, which is why the fallback sets it" );
+	}
+
+	private static string RepositoryRoot()
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !Directory.Exists( Path.Combine( directory.FullName, "content", "shaders" ) ) )
+			directory = directory.Parent;
+		return directory?.FullName ?? throw new InvalidOperationException( "repository root not found" );
+	}
 }

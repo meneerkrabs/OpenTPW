@@ -256,9 +256,10 @@ fragment {
         bool selfLit = ( outMatFlags & FLAG_SELF_LIT ) != 0u;
         if ( selfLit )
             vShading = vec3( 1.0 );
-        // the land outside the park: half the lighting colour (the original's vertex colour shifted right by one)
+        // the land outside the park: the original's vertex colour is each channel fistp( light * 255.0 ) clamped to 0..255 (the terrain colour table, 0x574530), and the draw halves it with 'shr 1; and 0x7F7F7F'
+        // (0x56FB0E); so the light is rounded to a level (round to nearest even, the FPU's default: roundEven), clamped to 255, and its integer half taken [BIN:TPW-EXE:0x0056FB0E terrain colour]
         if ( ( outMatFlags & FLAG_LAND_DIM ) != 0u )
-            vShading *= 0.5;
+            vShading = floor( clamp( roundEven( vShading * 255.0 ), 0.0, 255.0 ) * 0.5 ) / 255.0;
         // [EXT:winter-snow] snow and slush on the albedo, after the light is known (so a lit white lands near 0.9 instead of burning out, and the evening's dark ambient still darkens it) and before
         // the evening tint and the fog act on the result (g_flSnowCover 0 skips it)
         if ( g_oUbo.g_flSnowCover != 0.0 && ( outMatFlags & FLAG_TRANSPARENT ) == 0u )

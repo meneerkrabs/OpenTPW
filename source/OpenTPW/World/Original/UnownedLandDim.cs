@@ -25,4 +25,11 @@ internal static class UnownedLandDim
 	/// <summary>The map cell the land refresh reads for the heightfield cell (<paramref name="x"/>, <paramref name="z"/>): negative indexes become 0 and an index past the map the last cell.</summary>
 	// [BIN:TPW-EXE:0x00450D3D land refresh cell] the column and the row are clamped to 0 below and to [0x7A0314] - 1 and [0x7A0374] - 1 above before the map record is addressed
 	public static (int X, int Z) MapCell( int x, int z, int mapWidth, int mapHeight ) => (Math.Clamp( x, 0, Math.Max( 0, mapWidth - 1 ) ), Math.Clamp( z, 0, Math.Max( 0, mapHeight - 1 ) ));
+
+	/// <summary>
+	/// The dimmed level (0..127) of a lighting channel the way the original makes it: the colour table fills each channel with fistp( light * 255.0 ) clamped to 0..255 and the draw halves it with <c>shr 1</c>
+	/// (and <c>0x7F7F7F</c>, which only drops the bits the shift carries across channels). <c>test.shader</c> does the same per channel.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0056FB0E terrain colour] fistp uses the FPU rounding mode, round to nearest even (the project's x87 control word 0x7F), so a half level goes to the even one
+	public static int Level( float light ) => Math.Clamp( (int)MathF.Round( light * 255f, MidpointRounding.ToEven ), 0, 255 ) >> 1;
 }

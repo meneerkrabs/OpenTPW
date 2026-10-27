@@ -97,7 +97,7 @@ public sealed partial class OriginalTerrain : Entity
 		return UnownedLandDim.Dims( flags( mx, my ) );
 	}
 
-	private ulong DimSignature()
+	private ulong ComputeDimSignature()
 	{
 		var hash = 14695981039346656037UL;
 		if ( !landDimEnabled || LandFlagsSource == null )
@@ -141,10 +141,11 @@ public sealed partial class OriginalTerrain : Entity
 			return;
 		ScanCells();
 		SyncProceduralArt();
-		var dim = DimSignature();
-		if ( dim != procedureDimSignature )
+		// the dim answers follow the live cell flags, which only a land refresh changes: scanned once here, then read by the signatures
+		dimSignature = ComputeDimSignature();
+		if ( dimSignature != proceduralDimSignature )
 		{
-			procedureDimSignature = dim;
+			proceduralDimSignature = dimSignature;
 			procedural?.MarkMeshStale();
 		}
 		DeleteParts( queueParts );
@@ -200,7 +201,9 @@ public sealed partial class OriginalTerrain : Entity
 	private ulong heightfieldHoleSignature;
 	private ulong heightfieldSkipSignature;
 	private ulong outsideSkipSignature;
-	private ulong procedureDimSignature;
+	/// <summary>The dim answers as the last scan of the cells found them, and as the procedural mesh was last told.</summary>
+	private ulong dimSignature;
+	private ulong proceduralDimSignature;
 
 	private ulong HoleSignature()
 	{
@@ -218,7 +221,7 @@ public sealed partial class OriginalTerrain : Entity
 	/// <summary>The signature of the cells the static ground leaves out: the holes (<paramref name="holes"/>) and the path cells, which take a texture of their own.</summary>
 	private ulong SkipSignature( ulong holes )
 	{
-		var hash = holes ^ DimSignature();
+		var hash = holes ^ dimSignature;
 		var countX = Park.Heightfield.CellCountX;
 		foreach ( var key in pathCells.Keys.Order() )
 			hash = (hash ^ (uint)(key / countX * 4096 + key % countX + 0x40000000)) * 1099511628211UL;
@@ -271,6 +274,7 @@ public sealed partial class OriginalTerrain : Entity
 		SurfaceCellCount = HeightfieldCells( field, null ).Count();
 		// the path cells are known before the ground is made: the ground leaves them out
 		ScanCells();
+		dimSignature = proceduralDimSignature = ComputeDimSignature();
 		heightfieldHoleSignature = HoleSignature();
 		heightfieldSkipSignature = SkipSignature( heightfieldHoleSignature );
 		heightfieldPart = AddPart( BuildHeightfieldModel( material, slotIndices ), "heightfield" );

@@ -139,20 +139,7 @@ public sealed class ParkCommands : IManagementIssuer
 	/// <summary>[EXT:online-coop-permissions] Whether the session's rights let this machine's player issue <paramref name="command"/>, asked silently (<see cref="RightsRefusalOf"/>).</summary>
 	internal bool MayIssue( ParkCommand command ) => RightsRefusalOf( command ) == null;
 
-	/// <summary>
-	/// [EXT:online-coop-permissions] When the session's rights refuse <paramref name="command"/> of this machine's player, raises <see cref="SessionRefused"/> for it as a refused click does (the
-	/// HUD says it, once for a run) and returns true; false when they allow it.
-	/// </summary>
-	internal bool RefusesHere( ParkCommand command )
-	{
-		if ( MayIssue( command ) )
-			return false;
-		SessionRefused?.Invoke( command with { Player = Player } );
-		return true;
-	}
-
 	ParkCommandResult? IManagementIssuer.RightsRefusalOf( ParkCommand command ) => RightsRefusalOf( command );
-	bool IManagementIssuer.RefusesHere( ParkCommand command ) => RefusesHere( command );
 	ParkCommandResult IManagementIssuer.Issue( ParkCommand command ) => Issue( command );
 
 	/// <summary>[EXT:online-coop-permissions] Whether <paramref name="player"/> may remove <paramref name="item"/> inside a command that removes what it finds: the rights' answer, yes without any.</summary>

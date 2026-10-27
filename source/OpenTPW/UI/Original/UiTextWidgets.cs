@@ -130,6 +130,11 @@ public interface IUiDragTarget
 	void DragBegin( UiCanvas canvas, System.Numerics.Vector2 point ) { }
 	/// <summary>The left button came up after a press that began on this element (called once, after the last <see cref="DragTo"/>).</summary>
 	void DragEnd( UiCanvas canvas, System.Numerics.Vector2 point ) { }
+	/// <summary>
+	/// Whether the release frame's pointer reaches <see cref="DragTo"/> before <see cref="DragEnd"/>, as every held frame's does (true by default). [EXT:online-coop-commands] A guest's slider
+	/// asks for nothing at its release (C4b-2, <see cref="UiSlider.AsksOncePerStep"/>).
+	/// </summary>
+	bool FollowsRelease => true;
 }
 
 /// <summary>

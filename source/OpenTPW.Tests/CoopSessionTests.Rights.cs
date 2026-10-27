@@ -138,6 +138,41 @@ public partial class CoopSessionTests
 		Assert.AreEqual( (!open, (int?)null, 0), (twin.One.IsOpen, twin.Level.ClaimOf( ride ), twin.Level.SeatRights.Count), "and the host's switch, the release and the grant's end" );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-permissions] The host's settings, door and call on a ride a guest claims (C4b-2): a claim guards building and removal, not the host's management, so a C3 session's
+	/// log with those records replays under C4b-2's rights to its last checkpoint.
+	/// </summary>
+	[TestMethod]
+	public void TheHostsSettingsDoorAndCallOnARideAGuestClaimsReplayUnderTheRightsToTheLastCheckpoint()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		foreach ( var park in new[] { host, guest } )
+			MarkStation( park, park.One, seat: null );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var ride = host.One.Runtime.AttractionId;
+		var seat = GuestClaims( host, guest, ride );
+		// while the guest holds the claim the host changes the ride's settings, closes its door and calls a mechanic; a checkpoint's worth of ticks between them
+		Assert.IsTrue( host.Issue( new SetRideSettingsCommand( ride, 60, 1, 1 ) ).Accepted );
+		Rounds( 10, host, guest );
+		var open = host.One.IsOpen;
+		Assert.IsTrue( host.Issue( new SetAttractionOpenCommand( ride, !open ) ).Accepted );
+		Rounds( 10, host, guest );
+		Assert.IsTrue( host.Issue( new RequestMaintenanceCommand( ride, true ) ).Accepted );
+		Rounds( 10, host, guest );
+		Assert.AreEqual( seat, host.Level.ClaimOf( ride ), "the claim held throughout" );
+		CatchUpAndCompare( host, guest );
+		host.Enter();
+		var hostStream = host.Session!.HostStream!;
+		host.Session.End( "The host closed the park." );
+		var log = ParkCommandLogFile.Deserialize( hostStream.SessionLog!.Serialize() );
+		Assert.AreEqual( 1, log.Entries.Count( entry => entry.Command is SetRideSettingsCommand ), "the log holds the settings" );
+		Assert.AreEqual( 1, log.Entries.Count( entry => entry.Command is SetAttractionOpenCommand ), "the door" );
+		Assert.AreEqual( 1, log.Entries.Count( entry => entry.Command is RequestMaintenanceCommand ), "and the call" );
+		Assert.IsNull( FirstReplayMismatch( log, park => MarkStation( park, park.One, seat: null ) ), "the session's log replays to its last checkpoint under the rights" );
+	}
+
 	[TestMethod]
 	public void AGuestsSpeedButtonsDrawSubduedAndEverySpeedInputSaysOnlyTheHostCanDoThat()
 	{

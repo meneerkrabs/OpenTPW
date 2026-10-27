@@ -11,26 +11,16 @@ namespace OpenTPW.Tests;
 /// nobody waits for, a batch checked whole, and the session's end. The requests are the test's to resolve, as the session's ledger resolves them (<see cref="CoopManagementRequests.Resolved"/>).
 /// </summary>
 [TestClass]
-public class CoopManagementRequestsTests
+public partial class CoopManagementRequestsTests
 {
-	/// <summary>The test's issuer: the rights it answers, the requests it made, and the refusals it said through the session's path.</summary>
+	/// <summary>The test's issuer: the rights it answers and the requests it made.</summary>
 	private sealed class Issuer : IManagementIssuer
 	{
 		public readonly List<CoopGuestCommands.Request> Sent = new();
 		/// <summary>The rights' refusal of a command, or null when they allow it.</summary>
 		public Func<ParkCommand, ParkCommandResult?> Rights = _ => null;
-		/// <summary>How often the session's refusal path said the rights' note.</summary>
-		public int SaidRefusals;
 
 		public ParkCommandResult? RightsRefusalOf( ParkCommand command ) => Rights( command );
-
-		public bool RefusesHere( ParkCommand command )
-		{
-			if ( Rights( command ) == null )
-				return false;
-			SaidRefusals++;
-			return true;
-		}
 
 		public ParkCommandResult Issue( ParkCommand command )
 		{
@@ -174,10 +164,10 @@ public class CoopManagementRequestsTests
 		var outcome = queue.TakeOutcomes( waiter ).Single();
 		Assert.AreSame( waited, outcome.Entry );
 		Assert.AreEqual( (ManagementOutcomeKind.Refused, ManagementNoteKind.Rights, CoopRefusal.NotPermitted), (outcome.Kind, outcome.Note.Kind, outcome.Note.Refusal) );
-		// every refusal without a live waiter is durable: a hidden or replaced HUD must still hear the bare one's refusal, without a second transient notice
-		CollectionAssert.AreEqual( new[] { open, escaped, bare }, queue.TakeNotes().Select( note => note.Entry ).ToArray() );
-		Assert.AreEqual( 0, issuer.SaidRefusals );
-		Assert.AreEqual( ManagementEntryState.Resolved, bare.State );
+		// the open one's refusal at its record, the escaped one's and the bare one's at the pump are notes of the same words, kept once among the session's notes (a hidden or a replaced
+		// HUD still says it) and never through the session's immediate path (C4b-2)
+		CollectionAssert.AreEqual( new[] { open }, queue.TakeNotes().Select( note => note.Entry ).ToArray() );
+		Assert.AreEqual( (ManagementEntryState.Resolved, ManagementEntryState.Resolved), (escaped.State, bare.State) );
 	}
 
 	[TestMethod]
@@ -211,7 +201,7 @@ public class CoopManagementRequestsTests
 			queue.Pump( issuer, 4 + index );
 			NotTaken( queue, issuer.Sent[^1] );
 		}
-		Assert.AreEqual( CoopManagementRequests.MaximumNotes, queue.TakeNotes().Count, "the notes keep the newest only" );
+		Assert.AreEqual( 1, queue.TakeNotes().Count, "the notes keep one of each kind of words (C4b-2)" );
 		Assert.AreSame( waiting, queue.TakeOutcomes( opening ).Single().Entry, "and the waiter's outcome stays" );
 		// a detach moves what is not taken yet to the notes, in order, and so do the outcomes that come after it
 		var later = queue.NewWaiter();
@@ -220,10 +210,11 @@ public class CoopManagementRequestsTests
 		One( queue, new ManagementItem( Synthetic( 5 ), null, Fee( 3 ) ), later );
 		for ( var index = 0; index < 3; index++ )
 			queue.Pump( issuer, 1000 + index );
+		// (three kinds of words, each kept once: C4b-2's notes coalesce by their words)
 		NotTaken( queue, issuer.Sent[^3] );
-		NotTaken( queue, issuer.Sent[^2] );
+		Applied( queue, issuer.Sent[^2], NotPermitted );
 		queue.Detach( later );
-		NotTaken( queue, issuer.Sent[^1] );
+		Applied( queue, issuer.Sent[^1], ParkCommandResult.Ok() with { Error = new InvalidOperationException( "thrown" ) } );
 		CollectionAssert.AreEqual( new[] { 1, 2, 3 }, queue.TakeNotes().Select( note => ((SetEntranceFeeCommand)note.Command).Fee ).ToArray() );
 		Assert.AreEqual( 0, queue.TakeOutcomes( later ).Count );
 	}
@@ -459,7 +450,6 @@ public class CoopManagementRequestsTests
 	private sealed class ResolvingIssuer( Issuer inner ) : IManagementIssuer
 	{
 		public ParkCommandResult? RightsRefusalOf( ParkCommand command ) => inner.RightsRefusalOf( command );
-		public bool RefusesHere( ParkCommand command ) => inner.RefusesHere( command );
 
 		public ParkCommandResult Issue( ParkCommand command )
 		{

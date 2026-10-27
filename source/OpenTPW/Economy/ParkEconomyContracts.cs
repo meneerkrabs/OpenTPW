@@ -269,7 +269,24 @@ public sealed class ParkObjectState
 	/// save written while OpenTPW charged the purchase, which has been paid already.
 	/// </summary>
 	public bool UpgradeCostDue { get; set; }
+	/// <summary>
+	/// [EXT:online-coop-commands] How many levels were bought for this object (each accepted <see cref="ParkEconomy.TryBuyUpgrade"/>): the identity of its pending purchase, which a guest's
+	/// cancellation names, so a cancel and a re-buy of the same level before it arrives make it stale instead of cancelling the new purchase (C4b-2, <see cref="CancelUpgradeCommand"/>).
+	/// </summary>
+	public int UpgradePurchases { get; set; }
 	public long TotalSpent { get; set; }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A copy of this record that a guest's window projects a waiting open-state action onto (C4b-2, the drawn open state): a member-wise copy, read only, never
+	/// one of the economy's records. Its state word is its own, of the same value and without the bridge's or the economy's listeners.
+	/// </summary>
+	internal ParkObjectState Projection()
+	{
+		var copy = (ParkObjectState)MemberwiseClone();
+		copy.StateWord = new RideStateWord();
+		copy.StateWord.Restore( StateWord.Value );
+		return copy;
+	}
 	public int Price { get; set; }
 	public int CostOfGoods { get; set; }
 	public int ChanceOfLosingPercent { get; set; }
@@ -292,7 +309,7 @@ public sealed class ParkObjectState
 	/// The ride's state word (<c>+0x19C</c>): the one word the visitor bridge, the economy and the opening guard share (<see cref="RideStateWord"/>). The level hands it to the ride's bridge; the
 	/// economy's headless breakdown, a repair and the import write it too.
 	/// </summary>
-	public RideStateWord StateWord { get; } = new();
+	public RideStateWord StateWord { get; private set; } = new();
 	/// <summary>The state word entered state 1 or 4 and the economy has not published it yet (<see cref="ParkEconomy.PublishRideState"/>); not saved.</summary>
 	internal bool BrokenStatePending { get; set; }
 	/// <summary>The state word's value, for a restore (a save or an import): stored without the change event.</summary>

@@ -14,7 +14,8 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x48ec04,0x750610,0x48ec40] admission checks the configured count of ten and scans ten reusable records; there is no oldest eviction.
 	// [BIN:TPW-EXE:0x4a1278,0x65f447] attaching a reused slot appends it after surviving rows, represented here by list order.
 	// [EXT:message-tube-art] the red tube body is drawn as rectangles and the white icons as discs, the growth per message (77 units) read off the video, instead of the original's tube art
-	// [APPROX:UI-025] pending tube messages are not saved; original offer removal, timer integration and other action-bearing sources remain incomplete.
+	// [BIN:TPW-EXE:0x48EE50 tube saved] the tube is saved with the park (ParkHud.MessageTubeSave.cs; the original's SaveTags writes the occupied slots with their tag, text, lifetime and context words)
+	// [APPROX:UI-025] original offer removal, timer integration and other action-bearing sources remain incomplete; the original's own tag save record is not imported or written.
 	public const int MessageTubeCapacity = 10;
 
 	/// <summary>The advisor help the open message panel carries (0x11C, 284).</summary>

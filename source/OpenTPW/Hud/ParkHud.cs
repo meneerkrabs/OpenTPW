@@ -132,6 +132,11 @@ public sealed partial class ParkHud
 			HookStaffStrikeMessages();
 			HookChallengeMessages();
 			HookLossEvents();
+			// the park's save takes this HUD's message tube, and a resumed park's saved tube comes back (tp.exe saves its tag tube with the park, 0x48EE50)
+			level.MessageTubeCaptured = CaptureMessageTube;
+			var resumedTube = level.ResumedMessageTube;
+			level.ResumedMessageTube = null;
+			RestoreMessageTube( resumedTube );
 		}
 		catch
 		{
@@ -155,6 +160,8 @@ public sealed partial class ParkHud
 		if ( (CellBuildTool?)level.CellTool is { } cellTool )
 			cellTool.Ended -= OnCellToolEnded;
 		level.BuildToolsEnded -= OnBuildToolsEnded;
+		if ( level.MessageTubeCaptured?.Target == this )
+			level.MessageTubeCaptured = null;
 		if ( level.Park != null )
 		{
 			level.Park.EventRaised -= OnStaffStrikeEvent;

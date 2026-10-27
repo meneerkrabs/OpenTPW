@@ -4,6 +4,15 @@ namespace OpenTPW;
 
 public partial class Level
 {
+	/// <summary>
+	/// The park HUD's message tube as a park-resume save captures it (set by the HUD while it is attached; null without a HUD, which saves no tube). tp.exe saves its tag tube with the park
+	/// (SaveTags 0x48EE50 from the world save 0x4164C0).
+	/// </summary>
+	internal Func<MessageTubeSaveData?>? MessageTubeCaptured { get; set; }
+
+	/// <summary>The tube a resumed park's save held, for the HUD that is made for the park to take (null when the save had none, as every save from before the tube was saved).</summary>
+	internal MessageTubeSaveData? ResumedMessageTube { get; set; }
+
 	/// <summary>Captures the level's particle pool for a park-resume save (set by the particle renderer module; null in headless hosts).</summary>
 	internal static Func<Level, ParticleSystemState?>? ParticlesCaptured { get; set; }
 
@@ -258,6 +267,8 @@ public partial class Level
 			SnowCover = CaptureSnowCover(),
 			Staff = StaffWorld?.CaptureSnapshot(),
 			Advisor = advisor?.CaptureSnapshot( advisorMaySpeak ),
+			// [BIN:TPW-EXE:0x48EE50 tube saved] optional: null (left out of the file) while the tube is empty, so such saves keep their bytes
+			MessageTube = MessageTubeCaptured?.Invoke(),
 			Coasters = CaptureCoastersSnapshot(),
 			Tracks = CaptureTracksSnapshot(),
 			PoolSlides = PoolSlides?.CaptureSnapshot(),
@@ -338,6 +349,7 @@ public partial class Level
 		}
 		yield return true;
 		simulationClock.RestoreSnapshot( snapshot.Clock );
+		ResumedMessageTube = snapshot.MessageTube;
 		using ( LoadProfile.Measure( "resume-weather" ) )
 		{
 			if ( snapshot.Weather != null )

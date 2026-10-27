@@ -875,7 +875,7 @@ public sealed partial class OriginalEconomyImport
 				evidence.Add( $"Research cheat: {research.MakeAvailableByCheat( cheatAvailable )} objects the cheated save marks researched without a finished project are available to build ({string.Join( ", ", cheatAvailable )})." );
 			evidence.Add( $"Research object controls: {controls.Controls.Count} records, {controls.Controls.Count( control => control.Researched )} researched, {checkedControls} research items checked against OpenTPW's research, {(disagreements.Count == 0 ? "none" : string.Join( ", ", disagreements ))} disagree." );
 		}
-		// a lab project of an object this install's level archives do not define (a modified save) names no research item here and cannot be kept; the saved current projects are kept as saved (SelectAsSaved), and a current project of no category's table is reported as well; neither occurs in the 11 corpus labs, which OriginalSaveImportCorpusTests pins
+		// [APPROX:SAVE-007] projects of objects the level archives do not define, and current project identities absent from their category's reconstructed table, are dropped and reported; the 11 corpus labs contain neither case. Known current projects are kept as saved even when the picker would not offer them (SelectAsSaved). Evidence needed: original continuation with missing object/project identities, or an explicit supported-save scope decision for those cases.
 		var dropped = new List<string>();
 		if ( unknown.Count > 0 )
 			dropped.Add( $"projects of objects the level archives do not define ({string.Join( ", ", unknown )})" );

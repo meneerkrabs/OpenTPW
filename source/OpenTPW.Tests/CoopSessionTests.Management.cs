@@ -99,7 +99,7 @@ public partial class CoopSessionTests
 	[TestMethod]
 	public void AGuestsEffortDragGoesOnceWithItsLatestValueAndWithoutTheRightNothingGoes()
 	{
-		var (host, guest, _, _) = Shared();
+		var (host, guest, _, _) = Shared( Staffed );
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );
 		GiveRights( host, guest, view, CoopRights.Research );
@@ -136,7 +136,7 @@ public partial class CoopSessionTests
 	[TestMethod]
 	public void AGuestsWorkloadKeysGoAndARefusalReturnsTheKnobWithoutWritingIt()
 	{
-		var (host, guest, _, _) = Shared();
+		var (host, guest, _, _) = Shared( Staffed );
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );
 		GiveRights( host, guest, view, CoopRights.Research );
@@ -169,9 +169,10 @@ public partial class CoopSessionTests
 		CatchUpAndCompare( host, guest );
 	}
 
-	/// <summary>A lab with projects to choose from (the asset-free park's first projects researched alike on every peer before the session starts).</summary>
+	/// <summary>A lab with a scientist and projects to choose from (the asset-free park's first projects researched alike on every peer before the session starts).</summary>
 	private static void Researched( Park park, bool host )
 	{
+		Staffed( park, host );
 		var research = park.Economy.Research;
 		for ( var round = 0; round < 200 && Enum.GetValues<ResearchCategory>().All( category => research.SelectableItems( category ).Count < 2 ); round++ )
 			research.AddResearcherPoints( 50 );
@@ -658,7 +659,7 @@ public partial class CoopSessionTests
 	[TestMethod]
 	public void AGuestsWorkloadDragGoesOnceWithItsLatestValueAndARefusalReturnsTheKnobAndItsHum()
 	{
-		var (host, guest, _, _) = Shared();
+		var (host, guest, _, _) = Shared( Staffed );
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );
 		GiveRights( host, guest, view, CoopRights.Research );

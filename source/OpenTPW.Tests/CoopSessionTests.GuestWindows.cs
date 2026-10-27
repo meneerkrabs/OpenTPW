@@ -31,6 +31,9 @@ public partial class CoopSessionTests
 		return placed;
 	}
 
+	/// <summary>A lab with a scientist, hired alike on every peer before the session starts: the research window opens only with one (tp.exe 0x4aa480, UITEXT 0x1d3).</summary>
+	private static void Staffed( Park park, bool host ) => EconomyTestData.HireBest( park.Economy, StaffType.Researcher );
+
 	/// <summary>The guest's view of a priced object: its window opened and closed as a click and the HUD's next frame do it.</summary>
 	private static (System.Action Open, System.Action Close) Window( View view, OriginalObject item ) =>
 		(() => { view.Hud.SelectObject( item ); view.Update(); }, () => { view.Hud.SelectObject( null ); view.Update(); });
@@ -38,7 +41,7 @@ public partial class CoopSessionTests
 	[TestMethod]
 	public void AGuestsWindowsSendNothingItsPlayerDidNotAskFor()
 	{
-		var (host, guest, _, _) = Shared();
+		var (host, guest, _, _) = Shared( Staffed );
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );
 		guest.Enter();

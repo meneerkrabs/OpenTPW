@@ -109,6 +109,21 @@ public class TrackToolExitTests
 		Assert.IsTrue( marked[^1], "and it is the last one taken back" );
 	}
 
+	[TestMethod]
+	public void BackspaceRightAfterTheCircuitClosesTakesTheLastLineBackAndWithItTheStationTileItEndsOn()
+	{
+		var rig = new Rig();
+		var open = rig.Editor.FindOpenEnd();
+		Assert.IsTrue( open.ReachedStation, "the closed loop's walk ends on the station tile whose arm points back" );
+		Assert.AreEqual( rig.Station.First, open.End );
+		var tool = new CellBuildTool();
+		rig.Editor.EnterLineTool( tool );
+		// [BIN:TPW-EXE:0x00538CCE line op 0x32] the replay of the last line (the station tile back to the corner before it) calls the clear op on every cell, the station tile's too: its overlap word is 0, so the step takes it below zero
+		Assert.IsTrue( tool.Undo() );
+		Assert.IsFalse( TrackCellTypes.IsStation( rig.Tracks.Get( rig.Station.First.X, rig.Station.First.Y ).Type ), "the station's first tile cleared, with no refund" );
+		Assert.AreEqual( 0, rig.Refunded.Count( at => at == rig.Station.First ) );
+	}
+
 	private sealed class RecordingWriter( List<bool> marked ) : ICellLineWriter
 	{
 		public CellToolMode Mode => CellToolMode.KartTrack;

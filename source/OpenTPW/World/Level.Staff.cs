@@ -50,8 +50,8 @@ public partial class Level
 		AttachStaffWorld();
 		StaffHands = new StaffHands( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked );
 		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, command => Commands.Issue( command ), StaffHands.IsCarried, StaffHands.Of,
-			() => Commands.Player );
-		PatrolTool = new PatrolAreaTool( () => Park?.Economy, command => Commands.Issue( command ), () => Guests?.Grid.Cells );
+			() => Commands.Player, GuestStaffExit );
+		PatrolTool = new PatrolAreaTool( () => Park?.Economy, IssuePatrolArea, () => Guests?.Grid.Cells );
 		// the staff sprites, then their renderer's atlases, are two long steps
 		NextStepIsLong = true;
 		yield return true;
@@ -66,6 +66,29 @@ public partial class Level
 			{ FeetHeight = ( x, y ) => PoolBridges?.At( (int)x, (int)y )?.HeightAt( x, y ) };
 		}
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's exit from its staff tool (C4c-2, <see cref="StaffPlacement.Cancel"/>): the session's staff controller lets go, and the seat's state is cleaned up
+	/// by its rule after any open request (the hire's cancel or the drop back, one request at a time). False where the tool sends them itself (a host, a single player, a session that ended).
+	/// </summary>
+	private bool GuestStaffExit()
+	{
+		if ( !Commands.SendsRequests || CoopSession?.GuestStaff is not { } staff )
+			return false;
+		staff.LetGo();
+		return true;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Where the patrol tool's area goes on a guest (C4c-2): the HUD's management queue, after the session's rights, so the employee window draws it as asked until
+	/// it comes back. Null sends it to the park's commands, as a host's and a single player's.
+	/// </summary>
+	internal Func<SetPatrolAreaCommand, bool>? GuestPatrolArea { get; set; }
+
+	/// <summary>The patrol tool's second click: its area through <see cref="GuestPatrolArea"/> on a guest, else the park's commands.</summary>
+	private ParkCommandResult IssuePatrolArea( ParkCommand command ) => command is SetPatrolAreaCommand patrol && Commands.SendsRequests && GuestPatrolArea is { } guest
+		? guest( patrol ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "The patrol area was not queued." )
+		: Commands.Issue( command );
 
 	/// <summary>[EXT:online-coop-permissions] The guest seats that hold staff state, in order (C4c): an employee in hand or a pending hire, which their release frees.</summary>
 	internal IEnumerable<int> StaffHoldingGuestSeats() =>

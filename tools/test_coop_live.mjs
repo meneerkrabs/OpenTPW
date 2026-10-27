@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { crc32, deflateSync } from 'node:zlib';
-import { checkEvidence, checkFreshness, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, FORCED_DESYNC_REASON, logTo, parseArguments, redact, STATUS_STALL_SECONDS, throwawayPlayer } from './coop-live.mjs';
+import { checkEvidence, checkFreshness, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, FORCED_DESYNC_REASON, logTo, parseArguments, redact, STAFF_NAME, STATUS_STALL_SECONDS,
+	throwawayPlayer } from './coop-live.mjs';
 import { checkPageSides, checkPictures, keyEvent, pagePoint, PageSide, pictureName, pngSize } from './coop-live-page.mjs';
 
 // The live co-op acceptance's driver (tools/coop-live.mjs, docs/COOP.md "The live acceptance") without the games: its options, its throwaway players and their
@@ -188,6 +189,82 @@ for (const [what, change, check] of [
 	});
 }
 
+/** Both games' evidence of a passing staff run (C4c-2): the baseline's, with the staff right, the guest's nine staff commands and its three forced resyncs. */
+function staffPair() {
+	const pair = passingPair();
+	const { host, guest } = pair;
+	host.staffGrant = { seat: 1, record: 15, before: 'Builds', after: 'Building, Staff', rights: 'Build, Staff' };
+	const commands = [
+		{ kind: 'BeginStaffHire', staff: 40, record: null },
+		{ kind: 'CancelStaffHire', record: 18 },
+		{ kind: 'BeginStaffHire', staff: 41, record: 19 },
+		{ kind: 'PlaceStaff', staff: 41, cell: [20, 12], record: 20 },
+		{ kind: 'PickUpStaff', staff: 41, record: 21 },
+		{ kind: 'DropStaff', staff: 41, cell: [24, 14], record: null },
+		{ kind: 'RenameStaff', staff: 41, name: STAFF_NAME, record: 24 },
+		{ kind: 'SetTrainingBudget', role: 'Guard', budget: 25, record: 25 },
+		{ kind: 'FireStaff', staff: 41, record: 26 },
+	];
+	const hostRecords = [17, 18, 19, 20, 21, 23, 24, 25, 26];
+	const forced = (id, state, generation, request, armed) => ({ state, generation, request, armed, desync: { id, kind: 'Protocol', reason: FORCED_DESYNC_REASON },
+		after: { generation: generation + 1, checks: 3, desyncs: id, failedJoins: Math.min(id, 2) } });
+	guest.staff = { seat: 1, commands, resyncs: [forced(1, 'hire', 1, 'InSnapshot', false), forced(2, 'hand', 2, null, true), forced(3, 'drop', 3, 'InSnapshot', false)] };
+	host.staff = { seat: 1, commands: commands.map((command, index) => ({ ...command, record: hostRecords[index], accepted: true })), trainingBudget: 25,
+		forced: { desyncs: [1, 2, 3].map(id => ({ guest: 2, id, kind: 'Protocol', tick: 900 + 300 * id })), capturesBefore: 1, capturesAfter: 4 } };
+	// the session's desync ids go on across its streams: the last stream counts the three forced ones, the first two inside the early window after a join
+	guest.streams = 4;
+	guest.stream.desyncs = 3;
+	guest.stream.failedJoins = 2;
+	guest.phases = ['guest following', 'guest resyncing', 'guest following', 'guest resyncing', 'guest following', 'guest resyncing', 'guest following', 'guest ended'];
+	return pair;
+}
+
+test('a staff run whose evidence holds passes every check', () => {
+	const { host, guest } = staffPair();
+	const checks = checkEvidence(host, guest, 'staff', 30);
+	assert.equal(checks.length, 16);
+	assert.deepEqual(failing(checks), []);
+});
+
+const STAFF_ORDER = 'the guest let a hire go, then hired, placed, picked up, dropped elsewhere, renamed, trained and dismissed one employee, in that order';
+const STAFF_RECORDS = 'each of the guest\'s staff commands applied at its record on both parks, accepted, those inside a cut the same but for the record';
+const STAFF_RESYNCS = 'exactly three resyncs, the guest\'s forced ones: a hire let go inside the cut cleaned up, the employee in hand armed again, a drop inside the cut leaving no tool';
+
+for (const [what, change, check] of [
+	['no staff right', ({ host }) => { host.staffGrant.rights = 'Build'; }, 'the host gave the staff right through the rights dialog'],
+	['the right for another seat', ({ host }) => { host.staffGrant.seat = 2; }, 'the host gave the staff right through the rights dialog'],
+	['a step missing', ({ host, guest }) => { guest.staff.commands.splice(4, 1); host.staff.commands.splice(4, 1); }, STAFF_ORDER],
+	['a drop where it was placed', ({ host, guest }) => { guest.staff.commands[5].cell = [20, 12]; host.staff.commands[5].cell = [20, 12]; }, STAFF_ORDER],
+	['the let-go hire\'s applicant placed', ({ host, guest }) => { guest.staff.commands[0].staff = 41; host.staff.commands[0].staff = 41; }, STAFF_ORDER],
+	['another employee dismissed', ({ host, guest }) => { guest.staff.commands[8].staff = 42; host.staff.commands[8].staff = 42; }, STAFF_ORDER],
+	['another name', ({ host, guest }) => { guest.staff.commands[6].name = 'Bob'; host.staff.commands[6].name = 'Bob'; }, STAFF_ORDER],
+	['a placement at another record on the host', ({ host }) => { host.staff.commands[3].record = 30; }, STAFF_RECORDS],
+	['a drop the host refused', ({ host }) => { host.staff.commands[5].accepted = false; }, STAFF_RECORDS],
+	['a dropped cell the host put elsewhere', ({ host }) => { host.staff.commands[5].cell = [25, 14]; }, STAFF_RECORDS],
+	['a command the host never applied', ({ host }) => { host.staff.commands.pop(); }, STAFF_RECORDS],
+	['a record the guest knew for a command inside a cut', ({ guest }) => { guest.staff.commands[0].record = 17; }, STAFF_RECORDS],
+	['no record for a command outside a cut', ({ guest }) => { guest.staff.commands[7].record = null; }, STAFF_RECORDS],
+	['a budget the host applied with another value', ({ host }) => { host.staff.commands[7].budget = 50; }, STAFF_RECORDS],
+	['a fourth resync', ({ guest }) => { guest.streams = 5; }, STAFF_RESYNCS],
+	['two forced resyncs only', ({ guest, host }) => { guest.staff.resyncs.pop(); host.staff.forced.desyncs.pop(); guest.streams = 3; guest.stream.desyncs = 2; }, STAFF_RESYNCS],
+	['the resyncs in another order', ({ guest }) => { guest.staff.resyncs.reverse(); }, STAFF_RESYNCS],
+	['a let-go hire whose tool came back', ({ guest }) => { guest.staff.resyncs[0].armed = true; }, STAFF_RESYNCS],
+	['a let-go hire applied before the cut', ({ guest }) => { guest.staff.resyncs[0].request = 'Applied'; }, STAFF_RESYNCS],
+	['a Carry tool not armed again', ({ guest }) => { guest.staff.resyncs[1].armed = false; }, STAFF_RESYNCS],
+	['a drop whose tool stayed', ({ guest }) => { guest.staff.resyncs[2].armed = true; }, STAFF_RESYNCS],
+	['a resync to no new park', ({ guest }) => { guest.staff.resyncs[1].after.generation = 2; }, STAFF_RESYNCS],
+	['a desync after the swaps', ({ guest }) => { guest.stream.desyncs = 4; }, STAFF_RESYNCS],
+	['a third failed join', ({ guest }) => { guest.stream.failedJoins = 3; }, STAFF_RESYNCS],
+	['another desync on the host', ({ host }) => { host.staff.forced.desyncs.push({ guest: 2, id: 4, kind: 'Digest', tick: 2100 }); }, STAFF_RESYNCS],
+	['a capture missing', ({ host }) => { host.staff.forced.capturesAfter = 3; }, STAFF_RESYNCS],
+]) {
+	test(`the staff run fails ${what}`, () => {
+		const pair = staffPair();
+		change(pair);
+		assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'staff', 30)), [check]);
+	});
+}
+
 test('the endurance run needs its whole minutes at the fastest speed, on both sides', () => {
 	const step = ENDURANCE_SAMPLE_SECONDS;
 	const run = (minutes, rate = 240) => {
@@ -283,8 +360,9 @@ test('the driver needs the game, the server and a fresh out directory, and a pag
 	assert.deepEqual([options.scenario, options.host, options.guest, options.timeoutMinutes], ['baseline', 'native', 'native', 30]);
 	assert.equal(parseArguments([...base, '--scenario', 'endurance', '--minutes', '45']).timeoutMinutes, 75);
 	assert.throws(() => parseArguments(base.slice(0, 6)), /--out/);
-	assert.throws(() => parseArguments([...base, '--scenario', 'longer']), /baseline, recovery, endurance, management/);
+	assert.throws(() => parseArguments([...base, '--scenario', 'longer']), /baseline, recovery, endurance, management, staff/);
 	assert.equal(parseArguments([...base, '--scenario', 'management']).scenario, 'management');
+	assert.equal(parseArguments([...base, '--scenario', 'staff']).scenario, 'staff');
 	assert.throws(() => parseArguments([...base, '--guest', 'page']), /--web/);
 	const page = parseArguments([...base, '--guest', 'page', '--web', 'wwwroot', '--runtime', 'interpreter']);
 	assert.deepEqual([page.host, page.guest, page.web, page.runtime], ['native', 'page', 'wwwroot', 'interpreter']);

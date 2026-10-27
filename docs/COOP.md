@@ -2379,7 +2379,39 @@ with one difference the queue forces: a guest's window keeps no draft.
   languages). A resync whose swap fails before its teardown leaves the old park the game's: the end dialog
   then shows over it, with that sentence when it applies.
 
-C4c adds staff.
+**A seat's staff (C4c-1).** `[EXT:online-coop-commands]` `[EXT:online-coop-permissions]` The park keeps the staff state of
+every seat, ready for the staff right, which C4c-2 offers with the guest's staff tools and windows; until then no
+guest seat issues a staff command, and the host's and a single player's play is as before but for the two points
+marked below.
+- **A pending hire per seat.** Each seat's hire reserves its candidate (`ParkStaff.PendingHires`; seat 0's is
+  `PendingPlacementId`): another seat's hire or placement of it is refused, and the pool's expiry keeps every
+  reserved candidate. An imported save's candidate on the pointer loses its flag at any placement's end, and is
+  removed from the pool by another candidate's placement only while no seat reserves it. The pending hires are not
+  saved (as before); the join state and the session digest carry every seat's.
+- **One staff state per guest seat.** A guest seat holds a pending hire or an employee in hand, not both. Its hire
+  and its pick-up replace what it held in the same record, a hand dropping back where it was picked up and a
+  pending hire's placement ending, as the original's hire and pick-up replace the running tool (0x507bf0,
+  0x505c50); a refused record changes nothing. The host's seat keeps its transitions: its HUD ends the running
+  tool first, as before, and now asks first whether another seat reserves the candidate, so a refused hire keeps
+  the host's carry or pending hire.
+- **Hands.** Firing an employee another seat carries is refused ("That employee is being moved."); firing one's
+  own carried employee empties the hand in the same record. *(Single player: the Carry tool of an employee
+  dismissed from its window now ends at the next frame, since its drop would find no hand.)* Every player's
+  local staff tool follows what the park holds for its seat each frame, paused or not. The drop of a seat's own
+  employee back on the cell it was picked up from is every seat's cleanup: it needs no right, so it never loses
+  a race with the right taken back; a drop anywhere else needs the staff right.
+- **Release.** A seat's release (`ReleaseSeatCommand`) and its staff right taken back end its pending hire and
+  drop its employee in hand back where it was picked up, in the same record; both seat queries count a seat that
+  holds only staff state. The host's teardown releases them in records before the log's last checkpoint; an end
+  inside a tick records nothing and the park drops them after that checkpoint. A park shared again, and a
+  guest's park leaving its session, start without any guest seat's staff state.
+- **Saves.** A host's save (the manual one and the autosave) writes an employee in a guest's hand as its drop
+  back to where it was picked up would leave it, in the economy and the staff world alike, while the live park
+  keeps it in hand; a join carries it as it is. The join state's staff rows are checked whole before any
+  applies: each seat once, a candidate of the pool reserved once, an employee of the park held once and picked
+  up, an origin on the grid, and a guest seat with one of a hand and a pending hire.
+
+C4c-2 offers the staff right with the guest's staff tools and windows.
 
 ## The command layer (C1)
 

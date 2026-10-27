@@ -32,7 +32,8 @@ public partial class Level
 
 	/// <summary>
 	/// [EXT:online-coop-permissions] Sets the rights of <paramref name="seat"/> (C4a), the one reducer of <see cref="SetSeatRightsCommand"/> and <see cref="SetBuildGrantCommand"/>: a seat
-	/// without a right has no row. A right taken back ends what it held, in the same record: building's claims ([EXT:online-coop-claims], with a coaster's tool state, C3c-1b and C3c-2).
+	/// without a right has no row. A right taken back ends what it held, in the same record: building's claims ([EXT:online-coop-claims], with a coaster's tool state, C3c-1b and C3c-2), the
+	/// staff's pending hire and employee in hand (C4c, <see cref="ReleaseStaffOf"/>).
 	/// </summary>
 	internal void SetSeatRights( int seat, CoopRights rights )
 	{
@@ -46,16 +47,19 @@ public partial class Level
 			(seatRights ??= new SortedDictionary<int, CoopRights>())[seat] = rights;
 		if ( taken.HasFlag( CoopRights.Build ) )
 			ReleaseClaimsOf( seat );
+		if ( taken.HasFlag( CoopRights.Staff ) )
+			ReleaseStaffOf( seat );
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-permissions] The guest seats that hold anything in the park, in order (C4a): a right, a carried type (C3b-2) or a claim (C3c-1), which their release frees
-	/// (<see cref="ReleaseSeatCommand"/>).
+	/// [EXT:online-coop-permissions] The guest seats that hold anything in the park, in order (C4a): a right, a carried type (C3b-2), a claim (C3c-1) or staff state (C4c), which their release
+	/// frees (<see cref="ReleaseSeatCommand"/>).
 	/// </summary>
-	internal IEnumerable<int> HoldingGuestSeats() => SeatRights.Keys.Concat( CarryingGuestSeats() ).Concat( ClaimingSeats().Where( seat => seat > 0 ) ).Distinct().Order().ToArray();
+	internal IEnumerable<int> HoldingGuestSeats() =>
+		SeatRights.Keys.Concat( CarryingGuestSeats() ).Concat( ClaimingSeats().Where( seat => seat > 0 ) ).Concat( StaffHoldingGuestSeats() ).Distinct().Order().ToArray();
 
 	/// <summary>[EXT:online-coop-permissions] Whether the guest seat <paramref name="seat"/> holds anything its release frees (<see cref="HoldingGuestSeats"/>).</summary>
-	internal bool SeatHoldsAnything( int seat ) => seat > 0 && (RightsOf( seat ) != CoopRights.None || CarriesEntry( seat ) || ClaimedRideOf( seat ) != null);
+	internal bool SeatHoldsAnything( int seat ) => seat > 0 && (RightsOf( seat ) != CoopRights.None || CarriesEntry( seat ) || ClaimedRideOf( seat ) != null || HoldsStaff( seat ));
 
 	/// <summary>[EXT:online-coop-permissions] Takes every right of <paramref name="seat"/> back (a departed seat's release, <see cref="ReleaseSeatCommand"/>). True when it held one.</summary>
 	internal bool ReleaseSeatRights( int seat )

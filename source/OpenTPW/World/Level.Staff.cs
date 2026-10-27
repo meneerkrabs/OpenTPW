@@ -49,7 +49,8 @@ public partial class Level
 		};
 		AttachStaffWorld();
 		StaffHands = new StaffHands( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked );
-		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, command => Commands.Issue( command ), StaffHands.IsCarried );
+		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, command => Commands.Issue( command ), StaffHands.IsCarried, StaffHands.Of,
+			() => Commands.Player );
 		PatrolTool = new PatrolAreaTool( () => Park?.Economy, command => Commands.Issue( command ), () => Guests?.Grid.Cells );
 		// the staff sprites, then their renderer's atlases, are two long steps
 		NextStepIsLong = true;
@@ -64,6 +65,44 @@ public partial class Level
 			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement )
 			{ FeetHeight = ( x, y ) => PoolBridges?.At( (int)x, (int)y )?.HeightAt( x, y ) };
 		}
+	}
+
+	/// <summary>[EXT:online-coop-permissions] The guest seats that hold staff state, in order (C4c): an employee in hand or a pending hire, which their release frees.</summary>
+	internal IEnumerable<int> StaffHoldingGuestSeats() =>
+		(StaffHands?.All.Select( hand => hand.Player ) ?? Enumerable.Empty<int>()).Concat( Park?.Economy.Staff.PendingHires.Keys ?? Enumerable.Empty<int>() )
+			.Where( seat => seat > 0 ).Distinct().Order().ToArray();
+
+	/// <summary>[EXT:online-coop-permissions] Whether seat <paramref name="seat"/> holds staff state (C4c): an employee in hand or a pending hire.</summary>
+	internal bool HoldsStaff( int seat ) => StaffHands?.Of( seat ) != null || Park?.Economy.Staff.PendingHireOf( seat ) > 0;
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] Frees what seat <paramref name="seat"/> holds of the staff (C4c: its release, <see cref="ReleaseSeatCommand"/>, and its staff right taken back): its pending
+	/// hire's placement ends, its employee in hand drops back where it was picked up. True when it held either.
+	/// </summary>
+	internal bool ReleaseStaffOf( int seat )
+	{
+		var held = false;
+		if ( Park?.Economy.Staff is { } staff && staff.PendingHireOf( seat ) > 0 )
+		{
+			staff.EndPlacement( seat, placed: false );
+			held = true;
+		}
+		if ( StaffHands?.Of( seat ) != null )
+		{
+			StaffHands.ReturnToOrigin( seat );
+			held = true;
+		}
+		return held;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] Frees every guest seat's staff state outside the commands (C4c): a session's teardown, after the host's log took its last checkpoint, or the guest's own park
+	/// leaving its session, as their carries go.
+	/// </summary>
+	internal void ClearGuestStaff()
+	{
+		foreach ( var seat in StaffHoldingGuestSeats() )
+			ReleaseStaffOf( seat );
 	}
 
 	/// <summary>

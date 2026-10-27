@@ -57,7 +57,7 @@ public class SelfLitMaterialTests
 		var text = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "test.shader" ) ).ReplaceLineEndings( "\n" );
 		StringAssert.Contains( text, $"const uint FLAG_SELF_LIT = 0x{TextureSlotAddressing.SelfLitFlag:X8}u;", "the shader's bit is the vertex flag's" );
 		StringAssert.Contains( text, "if ( selfLit )\n            vShading = vec3( 1.0 );", "the constant colour replaces the whole lighting colour, point lights included" );
-		StringAssert.Contains( text, "if ( !selfLit && vAmbientTint.x", "the evening shoulder is for lit surfaces" );
+		StringAssert.Contains( text, "if ( !selfLit && !terrainUnlit && vAmbientTint.x", "the evening shoulder is for lit surfaces" );
 	}
 
 	[TestMethod]
@@ -133,7 +133,7 @@ public class SelfLitMaterialTests
 	{
 		var text = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "test.shader" ) );
 		StringAssert.Contains( text, $"const uint FLAG_LIGHT_SOURCE = 0x{TextureSlotAddressing.LightSourceFlag:X8}u;" );
-		StringAssert.Contains( text, "if ( selfLit && ( outMatFlags & FLAG_LIGHT_SOURCE ) == 0u && vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )", "only while the tinted ambient is set (dusk and night)" );
+		StringAssert.Contains( text, "if ( ( ( selfLit && ( outMatFlags & FLAG_LIGHT_SOURCE ) == 0u ) || terrainUnlit ) && vAmbientTint.x + vAmbientTint.y + vAmbientTint.z > 0.0 )", "only while the tinted ambient is set (dusk and night)" );
 		StringAssert.Contains( text, "vOutColor *= g_oUbo.g_vCameraPos;" );
 		StringAssert.Contains( text, "if ( g_oUbo.g_flLightCount > 0.5 )", "the lit shaders keep one literal point-light test (PointLightTests)" );
 		Assert.AreEqual( EveningLook.At( 0f ).WaterTint, EveningLook.At( 0f ).UnlitTint, "the pool water's night tint" );

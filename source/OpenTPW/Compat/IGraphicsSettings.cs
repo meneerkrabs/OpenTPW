@@ -74,7 +74,14 @@ public sealed class GraphicsSettingsService : IGraphicsSettings
 
 	public GraphicsSettings Current { get; private set; }
 
-	public OriginalDetailSettings Detail => Resolve( Current ) ?? new OriginalDetailSettings();
+	/// <summary>
+	/// The original detail values of the current choice. Without them (a preset's .sam is missing, Custom without a Detail) the fallback is a default record, except for LIGHTING: the original's render flags
+	/// <c>[0x8BCBC8]</c> start as zero (.bss), which leaves the lighting on, so the fallback says 1.
+	/// </summary>
+	public OriginalDetailSettings Detail => Resolve( Current ) ?? FallbackDetail;
+
+	/// <summary>The detail values used when the original data gives none: the record's defaults, with the lighting on as the original's zeroed render flags have it.</summary>
+	internal static OriginalDetailSettings FallbackDetail { get; } = new OriginalDetailSettings { Lighting = 1 };
 
 	public RenderQuality Effective
 	{

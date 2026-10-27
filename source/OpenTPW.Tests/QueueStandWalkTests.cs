@@ -108,7 +108,6 @@ public class QueueStandWalkTests
 		Assert.AreEqual( 5, QueuePaths.RemoveFrom( rig.Grid, ride, 2, 5, removeFixed: true ) );
 		var emptied = new HashSet<(int X, int Y)> { (2, 5), (2, 4), (2, 3), (2, 2), (2, 1) };
 		Level.RefreshVisitorCells( new[] { ((IEnumerable<ObjectAccessPoint>)points, ride) }, rig.Grid, emptied );
-		rig.Simulation.SetDownOffQueueCells( emptied );
 		Assert.AreEqual( ride.EntranceCell, ride.QueueCells[0], "the queue fell back to the path cell as its one-cell front" );
 		Assert.IsTrue( rig.Grid.IsWalkable( ride.QueueCells[0].X, ride.QueueCells[0].Y ) );
 		Assert.AreEqual( ride.QueueCells[0], GuestSimulation.StandCellOf( ride ), "guests stand in the fallback entrance cell itself, not in the emptied cell beyond it" );
@@ -120,7 +119,8 @@ public class QueueStandWalkTests
 		foreach ( var guest in guests.Append( late ) )
 		{
 			Assert.IsFalse( guest.Navigation.Stuck, $"guest {guest.Id} (state {guest.State}) is not stuck" );
-			if ( guest.OnGrid && !guest.Navigation.OffGrid )
+			// the original's clear writes no guest: a guest that keeps its place in the queue stands on the emptied cell until its own state moves it
+			if ( guest.OnGrid && !guest.Navigation.OffGrid && !guest.IsInQueue )
 				Assert.IsTrue( rig.Grid.IsWalkable( guest.CellX, guest.CellY ) || rig.Grid.IsQueue( guest.CellX, guest.CellY ), $"guest {guest.Id} (state {guest.State}) stands on {(guest.CellX, guest.CellY)}" );
 		}
 	}

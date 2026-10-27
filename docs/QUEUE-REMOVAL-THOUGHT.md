@@ -1,22 +1,17 @@
-# Queue removal: preserving the overflow thought
+# Queue removal: the re-evaluation dismisses, the clear writes no guest
 
-This is a bounded QUEUE-015 correction, not a completion of queue removal fidelity.
+The queue tool's undo (Back, tp.exe `0x52FE50`) clears the cells through the cell clear `0x5367A0`, which writes no guest. The queue re-evaluation that follows (`0x4DE1F0` at
+`0x52FFEC`) runs `0x501390` for every queued guest but the called one: a guest whose place is at least four per cell (unsigned, the guest not in state 14) thinks 13 when its
+thing id is divisible by three, leaves the queue through the dismissal `0x5012F0` (the medium happiness step) and goes to state 6 where it stands. Every other guest keeps its place.
 
-The existing queue-edit re-evaluation gives an Angry thought to guests whose id is divisible by three, whose list position is beyond the shortened queue's room, and whose state is 11, 12 or 13. The called guest and state 14 are excluded. That decision is established by the existing public [X14 oracle account](reverse/ORACLE.md), with stubbed list-position and dismissal calls; it is not evidence for a complete original queue undo.
+OpenTPW follows this. The undo (the native route and the per-cell route of an existing queue's segments) no longer sets down the guests on the emptied cells; the next simulation step
+re-evaluates the queue (`GuestSimulation.ReevaluateQueue`) and dismisses by place alone, in place, with the thought. A guest within the new room keeps its place while it stands on a cell the
+queue no longer holds: its state 11 routes it to its place from where it stands and dismisses it, again in place, when the search fails. A dismissed guest decides from its cell by the ported wander
+(`0x4F9490`: a start without links searches for a path cell around it).
 
-The Level queue tool's ordinary undo already relocates guests standing on emptied queue cells to the nearest path and dismisses them immediately. That removes their membership before the later re-evaluation can supply its thought. Level now passes the resolved edited ride to that set-down operation. It snapshots eligible ids before any guest is moved or unlinked, then supplies Angry through the existing dismissal. An earlier in-room guest forced off a removed cell cannot shift a later guest out of eligibility.
+This holds for the cells of a placed ride (`RideVisitorBridge.OwnerWord` and `ExitAccessCell` set, a Theme Park World level). The bridges without them (the gates, the test rigs, the Theme Park Inc slice) keep
+the host's relocation to the front cell or the nearest path. The removal from a clicked cell on (`[EXT:dev-one-click-remove]`, `[EXT:queue-backtrack]`) keeps the original's guest policy too, by the user's decision: the clear writes no guest and the re-evaluation of the ride dismisses the guests the shrunken room no longer holds, in place.
 
-This carries the thought through OpenTPW's existing relocation policy. It does not reorder re-evaluation, change position selection, add a dismissal or refund, or change called/state-14 forced set-down behavior. None still means no new thought, preserving an existing thought. Only the exact registered edited ride supplies eligibility; another ride, a stray cell without an owner, and the public set-down entry without edit context keep their prior behavior.
-
-## Regression coverage authored
-
-`QueueRemovalCommandTests` uses an asset-free real Level with actual economy-bound objects. Its action is the queue tool's `Undo()`, recorded as an `UndoLineCommand` and executed through the production writer and removal callback.
-
-- A naturally joined and settled queue exercises the missing immediate thought.
-- Explicitly synthetic membership cases isolate all eligible states, called/state-14 exclusions, retained capacity, nondivisible ids, and an earlier forced removal that shifts the target's live position from four to three.
-- Other-ride, stray-cell, missing-membership and legacy public-entry controls preserve their previous thought behavior.
-- Assertions cover the existing relocation, once-only events and happiness step, queue/admission counters, refund and cell metadata, RNG state, command refusal, and twin replay through subsequent simulation ticks.
-
-The queue geometry is synthetic on the real fixture objects. These are not captures of native occupant movement. No original media is needed. The fixture was source-reviewed but has not been compiled or executed in the current environment; an authorized exact-head C# run remains required.
-
-QUEUE-015 remains open for the original cleared-cell occupant policy, outside-cell demolition accounting and remaining corner/count lifecycle evidence. The separate QUEUE-014 conversion failure-state and persistence gate is unaffected.
+`QueueRemovalCommandTests` drives the queue tool's `Undo()` through the production writer and command: the clear writes no guest (before the re-evaluation every occupant is where and what it was),
+the re-evaluation dismisses the overflow in place with the thought for ids divisible by three, excludes the called guest and a guest waiting to board, leaves another ride's queue alone, replays to the same
+state hash, and a dismissed guest starts its wander from the emptied cell.

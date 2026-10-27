@@ -97,7 +97,8 @@ public sealed class ObjectSkirt
 	}
 
 	/// <summary><see cref="Build(ObjectSettings, ModelFile, HoardingTerrain)"/> for a parsed shape.</summary>
-	internal static ObjectSkirt Build( ObjectMapGrid? shape, ModelFile model, HoardingTerrain terrain )
+	/// <param name="drapeLoaded">The model is loaded with the drape load flag (the queue models: the loader gives the header bit 0x80 the file lacks, 0x461F10, before the skirt is read).</param>
+	internal static ObjectSkirt Build( ObjectMapGrid? shape, ModelFile model, HoardingTerrain terrain, bool drapeLoaded = false )
 	{
 		var scan = ObjectHoardingGeometry.ScanGround( model, shape, terrain );
 		var skirt = new ObjectSkirt( shape?.Width ?? 0, shape?.Height ?? 0 )
@@ -107,7 +108,7 @@ public sealed class ObjectSkirt
 			OpaqueSlots = new bool[model.Textures.Count],
 			ClampedSlots = new bool[model.Textures.Count]
 		};
-		var drape = (model.HeaderFlags & 0x80) != 0;
+		var drape = drapeLoaded || (model.HeaderFlags & 0x80) != 0;
 		// [BIN:TPW-EXE:0x0046A5A0 base gate] the skirt reader runs when the header has bit 0x08 and the ground node (+0x2C) is set or the header has bit 0x80 (the drape flag: the node is then the root +0x78); without bit 0x08 it logs "has not been exported with 'has procedural base'" and skips the base
 		if ( (model.HeaderFlags & 8) == 0 )
 			return skirt;

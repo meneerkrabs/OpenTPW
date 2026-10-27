@@ -207,8 +207,8 @@ public class AccessCellRemovalTests
 		Assert.AreEqual( 5, QueuePaths.RemoveFrom( rig.Grid, ride, 2, 5, removeFixed: true ) );
 		Level.RefreshVisitorCells( new[] { ((IEnumerable<ObjectAccessPoint>)points, ride) }, rig.Grid, new HashSet<(int X, int Y)> { (2, 5), (2, 4), (2, 3), (2, 2), (2, 1) } );
 		var emptied = new HashSet<(int X, int Y)> { (2, 5), (2, 4), (2, 3), (2, 2), (2, 1) };
-		Assert.IsTrue( rig.Simulation.SetDownOffQueueCells( emptied ) >= 1, "the queued guests are set down" );
-		rig.Simulation.SetDownOffCells( emptied );
+		// the original's clear writes no guest: the queued guests keep their place until the ride's re-evaluation (the next turns' sync) dismisses them where they stand
+		Assert.IsTrue( guests.Any( guest => guest.IsInQueue ), "the guests are still queued after the clear" );
 		var late = rig.Send();
 		rig.Open = true;
 		rig.Script[RideVariables.VAR_RUNNING] = 0;
@@ -218,7 +218,8 @@ public class AccessCellRemovalTests
 		foreach ( var guest in guests.Append( late ) )
 		{
 			Assert.IsFalse( guest.Navigation.Stuck, $"guest {guest.Id} (state {guest.State}) is not stuck" );
-			if ( guest.OnGrid && !guest.Navigation.OffGrid && guest.State is GuestState.GoingToRide or GuestState.WalkingAround or GuestState.DoingNothing or GuestState.Queueing or GuestState.MovingUpQueue )
+			// the original's clear writes no guest, so a guest that keeps its place in the queue (within the room) stands on the emptied cell until its own state moves it
+			if ( guest.OnGrid && !guest.Navigation.OffGrid && guest.State is GuestState.GoingToRide or GuestState.WalkingAround or GuestState.DoingNothing )
 				Assert.IsTrue( rig.Grid.IsWalkable( guest.CellX, guest.CellY ) || rig.Grid.IsQueue( guest.CellX, guest.CellY ), $"guest {guest.Id} (state {guest.State}) stands on {(guest.CellX, guest.CellY)}, neither path nor queue" );
 		}
 	}

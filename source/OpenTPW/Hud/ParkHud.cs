@@ -93,7 +93,8 @@ public sealed partial class ParkHud
 	private ListSortMemory? fallbackSorts;
 	/// <summary>The session's remembered list sorts (UI-084); a HUD built without a host keeps its own.</summary>
 	private ListSortMemory Sorts => host?.ListSorts ?? (fallbackSorts ??= new());
-	private OriginalObject? selectedObject;
+	/// <summary>The client's selection: the level's own (<see cref="Level.Selection"/>), which placements and the removal of the object also write.</summary>
+	private OriginalObject? selectedObject { get => level.Selection; set => level.Selection = value; }
 	private readonly List<UiElement> economyElements = new();
 	private int cursorX = -1;
 	/// <summary>The last left press was taken by a tool or a pick, so its release is no click on the ground (the online walk).</summary>
@@ -130,6 +131,7 @@ public sealed partial class ParkHud
 			Build();
 			HookStaffStrikeMessages();
 			HookChallengeMessages();
+			HookLossEvents();
 		}
 		catch
 		{
@@ -156,6 +158,7 @@ public sealed partial class ParkHud
 		if ( level.Park != null )
 		{
 			level.Park.EventRaised -= OnStaffStrikeEvent;
+			level.Park.EventRaised -= OnLossEvent;
 			level.Park.ChallengePresentationPosted -= OnChallengePresentation;
 		}
 	}
@@ -168,6 +171,7 @@ public sealed partial class ParkHud
 	{
 		UnhookLevel();
 		Stack.Clear();
+		level.LossOverlayActive = false;
 	}
 
 	public UiScreenStack Stack { get; } = new();
@@ -179,12 +183,30 @@ public sealed partial class ParkHud
 	public const uint ParkViewClickEvent = 0x1F;
 
 	public OriginalObject? SelectedObject => selectedObject;
-	/// <summary>True while a menu is on top of the HUD; the buy, staff, attractions and visitors windows, a visit's chat mode and its name popups do not pause.</summary>
-	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != rideScreen && screen != finaleScreen && screen != buyScreen && screen != staffScreen
+	/// <summary>True while a screen other than the HUD's own windows is open (the pause menu and its children, the map, a box, the research, finance and other windows); the buy, staff, attractions and visitors windows, the ride view, the finale and loss screens, a visit's chat mode and its name popups do not count. This gates the park's shortcuts and tools; the clock is <see cref="ClockPaused"/>.</summary>
+	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != rideScreen && screen != finaleScreen && screen != lossScreen && screen != buyScreen && screen != staffScreen
 		&& screen != attractionScreen && screen != visitorScreen && screen != chatModeScreen && screen.Name != OpenTPW.UI.ChatPanel.PopupScreenName );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	/// <summary>The park simulation's time scale for the screens now open (see <see cref="TimeScaleFor"/>).</summary>
-	public float SimulationTimeScale => TimeScaleFor( applicationPaused ? 0f : Status.TimeScale, Stack.Screens.Select( screen => screen.Name ) );
+	public float SimulationTimeScale => TimeScaleFor( applicationPaused ? 0f : Status.TimeScale, Stack.Screens.Select( screen => screen.Name ), OnlineSession );
+
+	/// <summary>
+	/// A shared park or a read-only visit: its clock is the host's, so no box and no deactivation of one player may stop it. [EXT:online-coop-lockstep] tp.exe has no such case: the word
+	/// [0xF82884] that 0x47F26C tests is non-zero only while the front end runs (its one write is at 0x54E66C in game state 1; state 3 clears it at 0x54E7E6 before a park is loaded), so in every
+	/// park, logged in or not, the generic message boxes pause. The level's own time scale ignores every screen of a session as well (<c>GameFlow.SessionTimeScale</c>).
+	/// </summary>
+	private bool OnlineSession => level.IsReadOnlyVisit || level.CoopRole != CoopRole.None;
+
+	/// <summary>
+	/// Whether the game timer stands still, the clock the advisor's speech and the crowd's steps follow (the game pause object 0x786B68, flag +0x1C): the owners of the pause 0x4092A0 are
+	/// the pause menu and its windows, the map window, the postcard, the offline message boxes, the application's deactivation, and the P key (0x409350 toggles the same flag and freezes
+	/// the same timer, 0x402DD0). Other windows (research, finance, the object windows) leave it running.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004092A0 game pause] 0x4092A0 sets the flag and freezes the timer object 0x785970 (0x402D90), 0x409300 clears it and thaws the timer (0x402DB0), 0x409350 (the P key) toggles both (0x402DD0)
+	// [APPROX:UI-096] the game pause's sound side is not ported: 0x4092A0 also pauses the advisor's speech handle (0x598960) and sets the sound entry's paused word (0x51C1C0 -> 0x803AD2, read by 0x51C1D0), and the deactivation pauses the whole mixer (0x51BCF0); OpenTPW's sounds go on under every owner
+	public bool ClockPaused => applicationPaused || Status.Speed == GameSpeed.Paused || SimulationTimeScaleOfScreens == 0;
+
+	private float SimulationTimeScaleOfScreens => TimeScaleFor( 1f, Stack.Screens.Select( screen => screen.Name ), OnlineSession );
 
 	/// <summary>
 	/// The park simulation's time scale: the speed setting's <paramref name="speedScale"/>, or 0 while the pause menu is
@@ -199,11 +221,20 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x4092a0 game pause] the game pause (object 0x786b68, +0x1c = 1) is called by the pause menu 0x48c830 (0x48c87e, from Esc), by the full-screen map window 0x5f0b40 (0x5f0b7f, from Space) and by the postcard 0x4a9380 (0x4a93d7, Ctrl+P), by the generic message box 0x47f020 (0x47f26c), by the main window procedure 0x46b600 when the application is deactivated (0x46b74c) and by the three screens the pause menu's handler 0x48b6a0 opens (0x49efba, 0x49f29f, 0x4a3a6c); the park pauses here for the pause menu with the screens opened from it and for the map window
 	// [BIN:TPW-EXE:0x0048AAC2 winning message pause] the Instant Action completion message after the winning screen is a 0x47F020 message box too (its call at 0x48AAC2 and 0x48AC06), so winningMessage stops the park until it closes
 	// [BIN:TPW-EXE:0x48cd10 delete confirmation] the delete confirmation of an object or staff member (the object windows 0x4af600, 0x4b0b30, 0x4b2150, the attractions window 0x497640 and the All Staff window 0x4b4fc0) is a generic message box 0x47f020 with UITEXT 0x18c and the b_exit and b_okay buttons when the Confirmations option is on, so it pauses (0x47f26c) and its close resumes (0x47eed0, message 0x14 → 0x409300); the postcard (Ctrl+P, 0x4a9380) pauses the same way: confirmDelete, confirmDeleteAttraction and the postcard screen stop the park here; the employee dismiss box (0x4b5e5d, UITEXT 0x18d) is a 0x47f020 caller too (its call at 0x4b5eac, yes callback 0x4b6070), so confirmDismissStaff stops it as well
-	// [APPROX:UI-096] the other message boxes (0x47f020's 27 call sites: the alert queue 0x47f620 that the goal and challenge code feeds through 0x47f410, the file errors of 0x4237f0, 0x4a77f0, the online notices 0x4bc500 and 0x4ec030) pause in the original and not here; application deactivation has a bounded offline host focus-loss latch (ParkHud.ApplicationPause), not full native activation/modal/audio parity — evidence needed: which of OpenTPW's other dialogs (the loan boxes, the restart and quit boxes) correspond to those call sites, and the remaining native activation/modal ownership gates
+	// [BIN:TPW-EXE:0x47f26c message box pause] the generic message box 0x47F020 pauses (0x4092A0(0, 0)) and clears the enable word only while that word is 1 and [0xF82884] is 0 (it is 0 in every park: only the front end sets it), so its boxes pause every park (a logged-in player's own park included) and, when
+	// the pause menu, a window of it or the map holds the gate (the enable word is 0), add nothing: a close resumes (0x47EED0 message 0x14, 0x409300) only for the box that paused. A game pause is the set of open screens here, which is the same for nested boxes
+	// [BIN:TPW-EXE:0x4aa480 research refusals] the research window's builder shows the boxes UITEXT 0x1D4 (Instant Action) and 0x1D3 (no scientist hired) instead of the window; they are 0x47F020 boxes too (0x4AA533, 0x4AA596)
+	// [BIN:TPW-EXE:0x47f410 alert queue] the alert queue 0x47F620 (fed through 0x47F410 with ERRORMSG.str ids) shows each entry as a 0x47F020 box (0x47F76E, UITEXT-style one-button box, kind 2); an offline park builds one when the postcard composer 0x4A8C00 is asked for and the check 0x5B6460 on the online object [0xF7D88C] returns 0: ERRORMSG 0x4E is queued at 0x4A8C89 instead of the window (the postcard close 0x4A91D0-0x4A9265 reaches it)
 	// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
-	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens ) =>
-		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" or PostcardScreen or "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff"
-			or WinningMessageScreen ) ? 0 : speedScale;
+	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens, bool online = false ) =>
+		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" or PostcardScreen || !online && IsPausingMessageBox( name ) ) ? 0 : speedScale;
+
+	/// <summary>The screens that are generic message boxes (0x47F020) of a park: the delete and dismiss confirmations, the winning message, the research refusals and the alert queue's box.</summary>
+	internal static bool IsPausingMessageBox( string name ) =>
+		name is "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff" or WinningMessageScreen or ResearchRefusedScreen or AlertBoxScreen;
+
+	/// <summary>The alert queue's box (0x47F620 -> 0x47F020): ERRORMSG.str entry 0x4E when the postcard composer cannot be opened.</summary>
+	public const string AlertBoxScreen = "alertBox";
 
 	/// <summary>The name of the postcard composer's screen (it pauses the park while open, as Ctrl+P does).</summary>
 	public const string PostcardScreen = "sendPostcard";
@@ -408,6 +439,9 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x488921 key dispatch] a key goes to the camera, game and shortcut groups in turn (0x40C990, the first nonzero callback wins); Escape's game row (0x748028, 0x40C180) ends any mode object other than the default park mode (types 0 and 1): it installs the default mode and SetMode(0) 0x52F200 without writing and consumes the key, so only the next Escape reaches the shortcut row "menu" (0x748378, 0x40C4D0), which opens the pause menu (0x4816D0); the path and queue tools run in a type-3 mode object (vtable 0x6FE9E0)
 		hud.Back = () =>
 		{
+			// the P window holds the focus: Escape reaches only its procedure, which ignores it
+			if ( PauseBackdropHoldsFocus )
+				return;
 			if ( IsRiding )
 				StopRide();
 			else if ( CameraPanelOpen )
@@ -854,6 +888,7 @@ public sealed partial class ParkHud
 		frameHostStarts = level.HostToolStarts;
 		// [EXT:online-coop-commands] whether the guest's coaster panel waited for the host before this frame's answers (C3c-2): a press first seen now was made while it waited
 		frameCoasterWaiting = level.CoasterPanel?.IsWaiting == true;
+		UpdatePausingBoxes();
 		// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
 		if ( level.WaitingToolStart != null && !level.NoToolActive )
 			level.DropToolStartWait();
@@ -883,6 +918,13 @@ public sealed partial class ParkHud
 			// The full-screen owner consumes input, not the unscaled UI timer/delayed-release pumps.
 			if ( !finaleObservedCamera )
 				rideStatic.SkipFrame(); // the frame that retires the screen observes no camera and refreshes no timestamp
+			FinishChallengeMessageFrame();
+			return true;
+		}
+		if ( UpdateLossScene( context, input, mouseCaptured, keyboardCaptured, textCaptured ) )
+		{
+			if ( !lossObservedCamera )
+				rideStatic.SkipFrame(); // the frame that retires the window observes no camera and refreshes no timestamp
 			FinishChallengeMessageFrame();
 			return true;
 		}
@@ -953,16 +995,16 @@ public sealed partial class ParkHud
 		ReportInterfaceMode();
 		if ( Camera.Mode is ParkCameraMode camera )
 		{
-			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
+			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > (LossOverlayOnTop ? 2 : 1);
 			// the chat entry over the park keeps only the keys: over the park the wheel, the edges and the drag still move the camera
 			camera.TextEntryKeepsPointer = ChatEntryFocused;
 			// [EXT:online-visit-chat-mode] the chat overlay's panels lie along the screen's left and bottom edges, where the HUD leaves the edge band free:
 			// pushing the pointer against those edges still scrolls the camera
 			camera.EdgeScrollOverUi = ChatMode && Stack.Screens.Count == 1;
-			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal );
+			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal ) || pausePointerOverlay != null;
 		}
 		// [BIN:TPW-EXE:0x6698e6 key delivery] a key event (0x1000a/b/c, posted to window 1 by 0x658c38/0x658c67/0x658c96) is handed to exactly one window: an accelerator-table window (0x65e640, list and edit controls) when the key is in its table, else the focus window (0x65e59b, [0xfaa5ec]) while its flag bit 0 is set, else the root ([0xfaa5dc]); nothing falls through to a second window
-		// [BIN:TPW-EXE:0x48ac40 ride view creation] the ride view window (flags 1) takes the focus (0x65e59b) and the HUD's own window handle [0x7c24c8] gets message 5 and is cleared, so the HUD's key groups (0x787c14, 0x787a60, 0x78721c at 0x488886) are never reached while it is open: the procedure 0x488a00 acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf), and the pause key and the park door shortcuts are not offered while riding
+		// [BIN:TPW-EXE:0x48a1f5 ride view creation] the ride view window (flags 1, built at 0x48a1f5 and 0x48a4d4) takes the focus (0x65e59b) and the HUD's own window handle [0x7c24c8] gets message 5 and is cleared, so the HUD's key groups (0x787c14, 0x787a60, 0x78721c at 0x488886) are never reached while it is open: the procedure 0x488a00 acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf), and the pause key and the park door shortcuts are not offered while riding
 		if ( !paused && !IsRiding && !Input.TextEntryActive && input.Has( UiKeys.Pause ) )
 			ToggleUserPause();
 
@@ -974,7 +1016,8 @@ public sealed partial class ParkHud
 			textCaptured ??= io.WantTextInput;
 		}
 		// the ride view's own screen is not an overlay of the park: its exit keys stay live
-		var parkShortcuts = ParkShortcutsAllowed( paused, Stack.Screens.Count > (rideScreen != null ? 2 : 1), Input.TextEntryActive, keyboardCaptured.Value || textCaptured.Value );
+		// [BIN:TPW-EXE:0x47ee67 P window focus] the P window takes the focus (0x47ee67 -> 0x65e59b), so a key reaches only its procedure 0x4a2680 (the P key and the panel's animation) while the backdrop is up: no HUD shortcut works under it
+		var parkShortcuts = !PauseBackdropHoldsFocus && ParkShortcutsAllowed( paused, Stack.Screens.Count > (rideScreen != null ? 2 : 1), Input.TextEntryActive, keyboardCaptured.Value || textCaptured.Value );
 		// [BIN:TPW-EXE:0x4862A0 chat mode] the HUD's key groups go with the HUD: the chat mode has none of its windows or tools
 		var shortcutsAllowed = parkShortcuts && !ChatMode;
 
@@ -1083,6 +1126,12 @@ public sealed partial class ParkHud
 		SyncRideScreen();
 		PrepareRideStatic( context ); // observe the final camera once, after this frame's callbacks and shortcuts
 		FinishChallengeMessageFrame();
+		// the lost park's overlay takes every click for itself (no tool, no selection) and leaves the pointer to the park camera
+		if ( LossOverlayOnTop )
+		{
+			level.WorldPointerRouted = true;
+			return false;
+		}
 		return overUi || consumed || toolClick;
 	}
 
@@ -1395,10 +1444,9 @@ public sealed partial class ParkHud
 		var tool = level.CellTool;
 		// [BIN:TPW-EXE:0x0048C8D0 pause-menu click gate] the handler tests the pause-menu object, not the speed flag;
 		// admission is separate: 0x65db25 chooses the topmost eligible window, and 0x658b1a/0x658b7f save down/up recipients.
-		// [APPROX:PATH-017] ParkHud.PointerInput implements bounded ordinary-WM batch admission then P/pointer drain,
-		// including captured movement and original release owners. The P window's backdrop (an eligible receiver of 0x65db25, flags 1) is created by the P key and by the offline focus-loss pause (0x4a27f0, 0x4a2790)
-		// and covers only the windows that existed then; it takes the click without stopping the camera. Alternate buffered input, aggregate wheel/non-P keys,
-		// and the original backdrop/panel rendering remain outside this contract; a generic speed flag is not an input owner.
+		// [APPROX:PATH-017] ParkHud.PointerInput implements bounded ordinary-WM batch admission then P/pointer drain, including captured movement and original release owners. The P window's backdrop (0x65dd7b, flags 1, appended last under the root;
+		// 0x65db25 lets the last eligible sibling win, 0x65f6d1 forwards nothing) is created by the P key and by the offline focus-loss pause (0x4a27f0, 0x4a2790) and covers only the windows that existed then: it takes every click and the camera takes no input under it.
+		// Alternate buffered input, the aggregate wheel and the keys other than P of the screens below it, and the original backdrop/panel rendering remain outside this contract; a generic speed flag is not an input owner.
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
 			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true }

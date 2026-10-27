@@ -52,8 +52,47 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x4a2790 create] the window is made only while [0x7cb2cc] is still empty
 		if ( pausePointerOverlay != null || level == null || level.CoopRole != CoopRole.None || level.IsReadOnlyVisit )
 			return;
-		pausePointerOverlay = new UiPointerOwner( new object(), capturesMouse: false );
+		// [BIN:TPW-EXE:0x42a760 camera input] the camera takes its buttons, wheel, pointer position and keys only from messages that the procedures of the HUD (0x488290, 0x48845c, 0x488b6a), the hidden-HUD overlay (0x4a287d) and the chat mode (0x4bd5cc) pass on to it;
+		// the backdrop is the hit window of every pointer message and the focus window of every key (0x47ed80 ends in 0x65e59b), and its procedure 0x4a2680 hands all it does not use to the default procedure 0x65f6d1, which forwards nothing: the camera takes no input
+		// under it, and the HUD, which gets the leave message (0x10002: [0x790ab0] |= 0x100) when the layer appears, no pointer either
+		pausePointerOverlay = new UiPointerOwner( new object() );
 		pauseOverlayBelow = Stack.Screens.ToArray();
+	}
+
+	/// <summary>The P window's backdrop is up and nothing was opened after it: it holds the focus and the pointer (0x47ee67, 0x65db25).</summary>
+	private bool PauseBackdropHoldsFocus => pausePointerOverlay != null && (Stack.Top is not { } top || Array.IndexOf( pauseOverlayBelow, top ) >= 0);
+
+	// created on first use: fixtures build a HUD without its constructor
+	private HashSet<UiScreen>? seenPausingBoxes, actuallyPausingBoxes;
+
+	/// <summary>
+	/// A generic message box that actually paused (0x47F26C: the enable word was 1, so no pause menu, map or postcard held the pause) resumes the game when it closes (0x47EED0 message 0x14 ->
+	/// 0x409300), which also clears a P pause and destroys the P window (0x4a27c0): a box opened under P and closed again leaves the game running.
+	/// </summary>
+	// [BIN:TPW-EXE:0x47efac box close resume] the box's procedure 0x47EED0 resumes on its destruction (0x47EFAC-0x47EFDA) when its own property 5 says it paused; the P key does not clear the enable word, so a box opened during P pauses again and its close ends the P pause
+	private void UpdatePausingBoxes()
+	{
+		var holder = false;
+		seenPausingBoxes ??= new(); actuallyPausingBoxes ??= new();
+		foreach ( var screen in Stack.Screens )
+		{
+			if ( screen.Name is PauseMenuScreen or MapScreenName or PostcardScreen or "texturePackDownload" )
+				holder = true;
+			else if ( IsPausingMessageBox( screen.Name ) && seenPausingBoxes.Add( screen ) && !holder && !OnlineSession )
+				actuallyPausingBoxes.Add( screen );
+		}
+		if ( seenPausingBoxes.Count == 0 )
+			return;
+		foreach ( var closed in seenPausingBoxes.Where( box => !Stack.Screens.Contains( box ) ).ToArray() )
+		{
+			seenPausingBoxes.Remove( closed );
+			if ( actuallyPausingBoxes.Remove( closed ) && (pausePointerOverlay != null || applicationPaused) )
+			{
+				if ( Status.Speed == GameSpeed.Paused ) SetUserGameSpeed( GameSpeed.Normal );
+				else ClearApplicationPause();
+				RetirePausePointerOverlay();
+			}
+		}
 	}
 
 	private void RetirePausePointerOverlay()

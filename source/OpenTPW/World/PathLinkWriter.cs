@@ -6,7 +6,8 @@ namespace OpenTPW;
 /// </summary>
 /// <param name="Refresh">A cell whose tile the original recomputes after the write (its chooser runs again).</param>
 /// <param name="QueueNeighbour">A laid path cell beside a queue cell that links back to it: the original plays <c>cat_ui</c> 139 for it.</param>
-public readonly record struct LinkEffects( Action<int, int>? Refresh = null, Action<int, int>? QueueNeighbour = null );
+/// <param name="EntranceNeighbour">A path cell's clear took its link off an entrance cell (type 9) that carries an owner word: the owner word of that entrance, whose ride the original re-evaluates (<c>0x4DE1F0</c> at <c>0x53694B</c>).</param>
+public readonly record struct LinkEffects( Action<int, int>? Refresh = null, Action<int, int>? QueueNeighbour = null, Action<ushort>? EntranceNeighbour = null );
 
 /// <summary>
 /// tp.exe's cell link writer <c>0x5348D0</c> and the unlinking loops of the cell clear <c>0x5367A0</c>, over the link byte
@@ -197,6 +198,9 @@ public static class PathLinkWriter
 				continue;
 			Clear( map, nx, ny, Opposite( value ) );
 			effects?.Refresh?.Invoke( nx, ny );
+			// [BIN:TPW-EXE:0x0053694B path clear beside an entrance] the path case (type 1) of the clear, on a cardinal bit whose neighbour is a type-9 cell with an owner word (+0x10) whose thing is an attraction (thing type 3), runs that ride's re-evaluation 0x004DE1F0 once the neighbour is unlinked and refreshed (0x5368A1..0x53694B), before the next bit
+			if ( !cardinalOnly && (bit & 1) == 0 && map.RawTypeAt( x, y ) == (byte)ParkCellType.Path && map.RawTypeAt( nx, ny ) == ParkCellTypes.Entrance && map.OwnerAt( nx, ny ) != 0 )
+				effects?.EntranceNeighbour?.Invoke( map.OwnerAt( nx, ny ) );
 		}
 	}
 }

@@ -42,7 +42,7 @@ public partial class CoopSessionTests
 	/// <summary>The object window's erase button on <paramref name="item"/> (without the confirmation).</summary>
 	private static void Sell( ParkHud hud, OriginalObject item )
 	{
-		typeof( ParkHud ).GetField( "selectedObject", NonPublic )!.SetValue( hud, item );
+		typeof( ParkHud ).GetProperty( "selectedObject", NonPublic | BindingFlags.Instance )!.SetValue( hud, item );
 		typeof( ParkHud ).GetMethod( "DeleteRide", NonPublic )!.Invoke( hud, null );
 	}
 
@@ -411,7 +411,7 @@ public partial class CoopSessionTests
 			Assert.IsFalse( item.IsDeleted, "nothing is sold before its record" );
 			Sell( view.Hud, item );
 			// the object window's erase button is off for the object while its sale waits
-			typeof( ParkHud ).GetField( "selectedObject", NonPublic )!.SetValue( view.Hud, item );
+			typeof( ParkHud ).GetProperty( "selectedObject", NonPublic | BindingFlags.Instance )!.SetValue( view.Hud, item );
 			view.Update();
 			var erase = ((UiScreen)typeof( ParkHud ).GetField( "hud", NonPublic )!.GetValue( view.Hud )!).Find( "deleteRide" ) as UiButton;
 			Assert.IsNotNull( erase );
@@ -425,7 +425,7 @@ public partial class CoopSessionTests
 				MarkStation( park, park.Level.Objects.FindAt( 24, 12 )! );
 			guest.Enter();
 			var station = guest.Level.Objects.FindAt( 24, 12 )!;
-			typeof( ParkHud ).GetField( "selectedObject", NonPublic )!.SetValue( view.Hud, station );
+			typeof( ParkHud ).GetProperty( "selectedObject", NonPublic | BindingFlags.Instance )!.SetValue( view.Hud, station );
 			view.Update();
 			Assert.IsFalse( erase.Enabled, "the erase button is off for a claimed station" );
 			Assert.IsFalse( (bool)typeof( ParkHud ).GetMethod( "CanMoveObject", NonPublic )!.Invoke( view.Hud, new object[] { station } )!, "and the Move button" );

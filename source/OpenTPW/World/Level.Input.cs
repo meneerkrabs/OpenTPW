@@ -542,7 +542,7 @@ public partial class Level
 			return false;
 		}
 		// the tool takes the queue's corners as they are before the edit takes the link off, as the original's walk does
-		if ( !EnterQueueTool( ride ) )
+		if ( !EnterQueueTool( ride, afterEditClick: true ) )
 			return false;
 		if ( Commands.Issue( new EditQueueCommand( x, y ) ).Accepted )
 			return true;

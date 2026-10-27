@@ -200,4 +200,66 @@ public class QueueSegmentReducerTests
 		Assert.AreEqual( (byte)0, map.RawTypeAt( 3, 2 ) );
 	}
 
+
+	[TestMethod]
+	public void BackReevaluatesTheRideEvenWhenThePriorCornerIsAPathAndTheSecondClickIsSuppressed()
+	{
+		// tp.exe 0x52FE50: 0x4DE1F0 (0x52FFEC) runs after every undo that popped a point; a prior corner that is a path cell only suppresses the second removal click
+		var map = new ParkCellMap( 12, 12 );
+		map.SetType( 5, 5, ParkCellType.Path );
+		map.SetType( 5, 6, ParkCellType.Queue ); map.SetOwner( 5, 6, 17 );
+		map.SetType( 5, 7, ParkCellType.Queue ); map.SetOwner( 5, 7, 17 );
+		var edits = 0;
+		var reducer = new QueueSegmentReducer( map, 17, ( x, y ) => false, () => true, _ => true, () => 10, _ => { }, changed: () => edits++ );
+		reducer.Undo( new QueueSegmentReceipt( (5, 5), (5, 7) ) );
+		Assert.AreEqual( 1, edits, "the re-evaluation runs once" );
+		Assert.AreEqual( (byte)3, map.RawTypeAt( 5, 6 ), "nothing was cleared" );
+		Assert.AreEqual( (byte)3, map.RawTypeAt( 5, 7 ) );
+	}
+
+	[TestMethod]
+	public void ALowerPriorityObjectOnTheLineIsDemolishedByTheFirstPassAndItsCellIsLaid()
+	{
+		// tp.exe 0x53452F: the commit's first line pass (cell op 0x87) demolishes the object on a cell whose owner's priority is below the tool's; the validator lets only such objects through (0x535D66)
+		var map = new ParkCellMap( 12, 12 );
+		map.SetType( 5, 5, ParkCellType.Queue ); map.SetOwner( 5, 5, 17 );
+		map.SetType( 5, 6, ParkCellTypes.Object ); map.SetOwner( 5, 6, 99 );
+		var demolished = new List<(int X, int Y)>();
+		var order = new List<string>();
+		var reducer = new QueueSegmentReducer( map, 17, ( x, y ) => false, () => { order.Add( "spend" ); return true; }, _ => true, () => 10, _ => { },
+			givesWay: ( x, y ) => map.RawTypeAt( x, y ) == ParkCellTypes.Object,
+			demolish: ( x, y ) => { order.Add( "demolish" ); demolished.Add( (x, y) ); map.SetType( x, y, ParkCellType.Empty ); map.SetOwner( x, y, 0 ); } );
+		Assert.IsTrue( reducer.Supports( (5, 5), (5, 7) ) );
+		var preview = reducer.Preview( (5, 5), (5, 7) );
+		Assert.AreEqual( CellBuildResult.Ok, preview.StoppedBy );
+		Assert.AreEqual( 2, preview.Built.Count, "the object's cell counts as a cell to lay" );
+		Assert.AreEqual( 0, demolished.Count, "a preview demolishes nothing" );
+		var result = reducer.Commit( (5, 5), (5, 7) );
+		CollectionAssert.AreEqual( new[] { (5, 6) }, demolished );
+		Assert.AreEqual( "demolish", order[0], "the demolition pass precedes the type pass" );
+		Assert.AreEqual( 2, result.Built.Count );
+		Assert.AreEqual( (byte)3, map.RawTypeAt( 5, 6 ) );
+		Assert.AreEqual( (ushort)17, map.OwnerAt( 5, 6 ) );
+		Assert.AreEqual( (byte)3, map.RawTypeAt( 5, 7 ) );
+
+		var refusing = new ParkCellMap( 12, 12 );
+		refusing.SetType( 5, 5, ParkCellType.Queue ); refusing.SetOwner( 5, 5, 17 );
+		refusing.SetType( 5, 6, ParkCellTypes.Object );
+		Assert.IsFalse( new QueueSegmentReducer( refusing, 17, ( x, y ) => false, () => true, _ => true, () => 10, _ => { } ).Supports( (5, 5), (5, 7) ), "an object nothing gives way for stays outside the domain" );
+	}
+
+	[TestMethod]
+	public void AWorldThatTypesNoFootprintsDemolishesTheObjectOnAnEmptyTypedCell()
+	{
+		// a level without typed footprints (the Theme Park Inc slice) holds the object in its object list while the cell map says empty: the cell still gives way and the first pass demolishes
+		var map = new ParkCellMap( 12, 12 );
+		map.SetType( 5, 5, ParkCellType.Queue ); map.SetOwner( 5, 5, 17 );
+		var objectAt = (X: 5, Y: 6);
+		var demolished = new List<(int X, int Y)>();
+		var reducer = new QueueSegmentReducer( map, 17, ( x, y ) => false, () => true, _ => true, () => 10, _ => { },
+			givesWay: ( x, y ) => (x, y) == objectAt, demolish: ( x, y ) => demolished.Add( (x, y) ) );
+		reducer.Commit( (5, 5), (5, 7) );
+		CollectionAssert.AreEqual( new[] { objectAt }, demolished );
+		Assert.AreEqual( (byte)3, map.RawTypeAt( 5, 6 ) );
+	}
 }

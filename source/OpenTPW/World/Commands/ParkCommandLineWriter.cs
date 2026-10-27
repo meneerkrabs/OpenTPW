@@ -8,11 +8,14 @@ namespace OpenTPW;
 public sealed class ParkCommandLineWriter : ICellLineWriter
 {
 	private readonly ParkCommands commands;
+	private readonly Func<int>? selectedRide;
 
 	/// <param name="inner">The writer whose preview and start check the tool shows (the park's path builder, or the ride's queue writer).</param>
 	/// <param name="ride">The attraction id of the queue's ride, or -1 for the path tool.</param>
-	public ParkCommandLineWriter( ICellLineWriter inner, ParkCommands commands, int ride )
+	/// <param name="selectedRide">For the path tool: the attraction id of the ride the issuer has selected (-1 for none), read when the tool takes a segment back, so every peer's Back re-evaluates the same ride (<see cref="UndoLineCommand"/>).</param>
+	public ParkCommandLineWriter( ICellLineWriter inner, ParkCommands commands, int ride, Func<int>? selectedRide = null )
 	{
+		this.selectedRide = selectedRide;
 		Inner = inner ?? throw new ArgumentNullException( nameof( inner ) );
 		this.commands = commands ?? throw new ArgumentNullException( nameof( commands ) );
 		Ride = ride;
@@ -80,7 +83,7 @@ public sealed class ParkCommandLineWriter : ICellLineWriter
 			commands.Issue( new UndoQueueSegmentCommand( Ride, receipt.Start.X, receipt.Start.Y, receipt.End.X, receipt.End.Y ) );
 			return;
 		}
-		commands.Issue( new UndoLineCommand( Mode, Ride, segment.Start.X, segment.Start.Y, segment.Built.ToArray(), segment.Existing.ToArray() ) );
+		commands.Issue( new UndoLineCommand( Mode, Mode == CellToolMode.Path ? Math.Max( -1, selectedRide?.Invoke() ?? -1 ) : Ride, segment.Start.X, segment.Start.Y, segment.Built.ToArray(), segment.Existing.ToArray() ) );
 	}
 }
 

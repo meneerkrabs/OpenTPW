@@ -1746,6 +1746,8 @@ The stream's frame (version 2) and the join state (version 3, version 4 with the
 the server relays both without reading them, and the version gate keeps every member of a session on one
 release (decision Q11).
 
+The path tool's `UndoLineCommand` (kind 11) keeps its bytes and gains a meaning for its ride field: it carries the ride its issuer had selected when the Back was pressed, -1 for none, which every older log has (the queue tool's undo still carries its queue's ride). tp.exe's Back re-evaluates the selected ride (`0x8186AC`), and the selection is each player's own, so the issuer resolves it at click time and every peer re-evaluates the same ride; the join state and the digest need no field for it.
+
 **What a granted guest may build (C3a, C3b-1).** `CoopBuildRights` asks of a command's kind, its fields
 and its target, at execution on every peer, and allows exactly the commands of the guests' tools:
 - path and queue lines (C3a);

@@ -84,10 +84,13 @@ public class ParkRatingValueTests
 		ride.Repair = 100;
 		Assert.AreEqual( 1400, park.ParkValue );
 		// A condemned ride (broken down with an empty life gauge) adds nothing.
-		ride.IsBrokenDown = true;
 		ride.LifeGauge = 0.5;
+		ride.IsBrokenDown = true;
+		Assert.AreEqual( RideObjectStates.Condemned, ParkEconomy.ObjectState( ride ) );
 		Assert.AreEqual( 0, park.ParkValue );
+		ride.IsBrokenDown = false;
 		ride.LifeGauge = 60;
+		ride.IsBrokenDown = true;
 		Assert.AreEqual( 1400, park.ParkValue, "broken down but not condemned: it still counts" );
 	}
 

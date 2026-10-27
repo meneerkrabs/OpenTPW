@@ -466,7 +466,7 @@ public sealed partial class ParkHud
 		var relief = economy.Catalog.TryGet( record.InfoId, out var info ) && info.ProvidesRelief;
 		var state = ParkEconomy.ObjectState( record );
 		var guests = level.Guests;
-		// EXIT NOT CONNECTED is never shown (ECON-049, tagged at ParkGate.MayOpen): the exit test 0x4de5a0 steps from the exit cell by its link byte (+0xd) and walks the edge test 0x4d8750 from the cell in front, and OpenTPW's entrance and exit cells keep no link byte
+		// [BIN:TPW-EXE:0x00485F60 exit status] the exit test 0x4DE5A0 (ParkGate.ExitConnected) runs for a ride (type +0x4AC 0) that is no add-on (upgrade parent 0, +0x288 not 2) once its queue is connected, and a failing exit shows status 0x18, EXIT NOT CONNECTED
 		return new RideStatusFacts(
 			state,
 			TrackIncomplete: item.Runtime.TrackIncomplete,
@@ -476,7 +476,7 @@ public sealed partial class ParkHud
 			// an upgrade always waits for the mechanics; a toilet's call is the handymen's
 			Service: ServiceProgress( economy, record, relief && state != RideObjectStates.Upgrading ? StaffType.Handyman : StaffType.Mechanic ),
 			QueueDetached: item.Entry.HasQueue && guests != null && !ParkGate.QueueConnected( guests.Grid, item.Visitors ),
-			ExitDetached: false,
+			ExitDetached: item.Entry.WhichUIType == 0 && !TrackAddOns.IsAddOn( item.Entry ) && guests != null && !ParkGate.ExitConnected( guests.Grid, item.Visitors ),
 			IsOpen: item.IsOpen );
 	}
 

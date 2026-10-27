@@ -34,12 +34,16 @@ public partial class CoopSessionTests
 		return (host, guest, view, kart, kart.Runtime.AttractionId, guest.Level.Commands.Player);
 	}
 
-	/// <summary>The guest's track button on <paramref name="kart"/>: the claim goes to the host, and the tool starts once it is back (an open circuit's line tool after the walk's request).</summary>
-	private void GuestTrackTool( Park host, Park guest, View view, OriginalObject kart )
+	/// <summary>
+	/// The guest's track tool on <paramref name="kart"/>: the claim goes to the host, and the tool starts once it is back. As a placement starts it (<paramref name="placement"/>), the line
+	/// tool after the walk's request, whatever the circuit; else as the track button starts it, which reads the ride's track word (1 from the constructor until a track edit writes it,
+	/// tp.exe 0x004DB0DF): the edit tool on a closed circuit or a fresh ride.
+	/// </summary>
+	private void GuestTrackTool( Park host, Park guest, View view, OriginalObject kart, bool placement = true )
 	{
 		guest.Enter();
 		var starts = guest.Level.HostToolStarts;
-		Assert.AreEqual( TrackToolEntry.Pending, guest.Level.BeginTrackTool( kart, placed: false ), "the claim goes to the host" );
+		Assert.AreEqual( TrackToolEntry.Pending, guest.Level.BeginTrackTool( kart, placed: false, justPlaced: placement ), "the claim goes to the host" );
 		Assert.IsNull( guest.Level.TrackToolStation, "no tool until it is back" );
 		RoundsUntil( () => guest.Level.TrackToolStation == kart, host, guest, view, "the tool started from the outcome" );
 		Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "a press made before it started gives it no click" );
@@ -142,9 +146,9 @@ public partial class CoopSessionTests
 		var (host, guest, view, kart, ride, seat) = SharedKart();
 		var hostView = ViewOf( host );
 		var hostKart = host.Level.TrackStations.Keys.Single();
-		// the host lays the closed circuit, and its frame lets the claim go
+		// the host lays the closed circuit (its tool as the placement starts it), and its frame lets the claim go
 		host.Enter();
-		Assert.IsTrue( host.Level.EnterTrackTool( hostKart ) );
+		Assert.IsTrue( host.Level.EnterTrackTool( hostKart, justPlaced: true ) );
 		foreach ( var (x, y) in KartLoop )
 			Assert.IsTrue( host.Level.CellTool.Click( KartAt( host, hostKart, x, y ) ) is { Completed: true } );
 		Assert.IsTrue( hostKart.Runtime.Bump!.IsTrackValid );
@@ -152,7 +156,7 @@ public partial class CoopSessionTests
 		RoundsUntil( () => host.Level.ClaimOf( ride ) == null && guest.Level.ClaimOf( ride ) == null && kart.Runtime.Bump!.IsTrackValid, host, guest, view,
 			"the circuit and the release reached the guest" );
 		// the guest's button: the claim's outcome opens the edit tool at once on the closed circuit, with no walk to request
-		GuestTrackTool( host, guest, view, kart );
+		GuestTrackTool( host, guest, view, kart, placement: false );
 		var tool = guest.Level.CellTool;
 		Assert.AreEqual( CellToolMode.KartEdit, tool.Mode );
 		Assert.AreEqual( 0, HostCommandsOf( host, seat ).Count( command => command is OpenTrackLineToolCommand ) );
@@ -281,6 +285,7 @@ public partial class CoopSessionTests
 		var (host, guest, view, kart, ride, seat) = SharedKart();
 		GuestTrackTool( host, guest, view, kart );
 		var tiles = guest.Level.BuilderOf( kart )!.Tiles().Count();
+		var word = kart.Runtime.Bump!.IsTrackValid;
 		// the host lets the claim go while the guest's line is on its way: the line is refused at its record, for want of the claim
 		guest.Enter();
 		Assert.IsNotNull( guest.Level.ClickCellTool( KartAt( guest, kart, 4, 6 ) )?.Waiting );
@@ -292,7 +297,7 @@ public partial class CoopSessionTests
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopClaimLost ), "in the claim's words, once" );
 		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopHostOnly ) );
 		Assert.AreEqual( tiles, guest.Level.BuilderOf( kart )!.Tiles().Count(), "nothing laid" );
-		Assert.IsFalse( kart.Runtime.Bump!.IsTrackValid );
+		Assert.AreEqual( word, kart.Runtime.Bump!.IsTrackValid, "nor the track word written" );
 		CatchUpAndCompare( host, guest );
 	}
 
@@ -318,11 +323,11 @@ public partial class CoopSessionTests
 		hostView.Update();
 		RoundsUntil( () => guest.Level.ClaimOf( ride ) == null, host, guest, view, "the host let it go" );
 		Assert.IsTrue( (bool)typeof( ParkHud ).GetMethod( "CanEditTrack", NonPublic )!.Invoke( view.Hud, new object[] { kart } )! );
-		// two entries before the first is back: the first's outcome starts nothing, the latest's starts the tool
+		// two entries (as a placement starts the tool, so the latest's outcome walks to the open end) before the first is back: the first's outcome starts nothing, the latest's starts the tool
 		guest.Enter();
-		Assert.AreEqual( TrackToolEntry.Pending, guest.Level.BeginTrackTool( kart, placed: false ) );
+		Assert.AreEqual( TrackToolEntry.Pending, guest.Level.BeginTrackTool( kart, placed: false, justPlaced: true ) );
 		var first = guest.Level.WaitingToolStart;
-		Assert.AreEqual( TrackToolEntry.Pending, guest.Level.BeginTrackTool( kart, placed: false ) );
+		Assert.AreEqual( TrackToolEntry.Pending, guest.Level.BeginTrackTool( kart, placed: false, justPlaced: true ) );
 		Assert.AreNotSame( first, guest.Level.WaitingToolStart );
 		RoundsUntil( () => guest.Level.TrackToolStation == kart, host, guest, view, "the latest entry's tool started" );
 		Assert.AreEqual( 2, HostCommandsOf( host, seat ).Count( command => command is ClaimRideCommand ) );

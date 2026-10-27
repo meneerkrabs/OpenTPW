@@ -36,7 +36,7 @@ def main() -> int:
            'namespace OpenTPW.Tests;', '', 'internal static class ProceduralTerrainComposeGolden', '{',
            '\tpublic static readonly (int Seed, int Size, int X, int Z, string ArtSize, int ArtSeed, int Word, string Alpha, string Sha256)[] Cases =', '\t[']
     mismatches = 0
-    for seed, n_size, x, z, kind, art_seed, word, alpha in terrain.compose_specs():
+    for seed, n_size, x, z, kind, art_seed, word, alpha in terrain.compose_specs() + terrain.path_compose_specs():
         level = terrain.synthetic_level(seed, 'C', n_size, False)
         width, height = terrain.compose_art_size(kind, n_size)
         pixels = terrain.synthetic_art(art_seed, width, height, alpha)

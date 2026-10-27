@@ -280,7 +280,9 @@ at a cut of the host's stream and goes on from there without leaving the session
   the session and runs the hand-back before anything saves the park, also when a progress check then
   keeps the player in the park (the player asked to leave; a host's leave ends the session for
   everyone). A guest's park, also one that joined at the session's identical start, never hands the
-  host's tickets to its player.
+  host's tickets to its player. The park spends its own tickets while shared (the player's account is not
+  read, so every peer decides a purchase the same way); what it bought enters its player's account at the
+  hand-back, once, by item (UI-051).
 - **The digest's version 2.** A capture read the coaster drags through a getter that made their set,
   and the digest counted whether the set existed: one machine's read would have been a desync. The
   capture reads the drags without making the set, and the digest hashes no set as an empty one.
@@ -2056,6 +2058,16 @@ a `SetBuildGrantCommand`. The stream's order decides a request that races the sw
 takes before the grant is taken back is built, one after it is refused at its record. The sharing and
 joining screens say that the host decides who builds.
 
+**Nothing the player did not ask for.** A guest's park windows send only what its player asked for. The
+object window's apply on its close sends only the commands whose values its player changed (a shop's
+settings and its price apart, a sideshow's price or its game): the original applies every value on every
+close, which for a guest would be a request its rights refuse, with a note about a click it never made, or
+one that writes back what the park holds. A typed price and an apply-all go when clicked and not again at
+the close. The research window's workload knob projects the lab's workload, at the window's opening and
+at a staffing change, without writing it back, and the loans window's opening and tabs send no offer
+refresh, so the list shows the offers of the host's park. A change the player made still goes, and its
+refusal is said as any is.
+
 ## The command layer (C1)
 
 `[EXT:online-coop-commands]` Every park edit of a HUD window or tool is a serializable command
@@ -2318,6 +2330,10 @@ them.
 `ParkCommandLevelTests` runs a scripted build session (objects, the path tool with lines, undo and
 cancel, path removals, Backspace, the Move tool, a sale, the remove tool and refused commands) on a
 no-data level, replays its log on a twin level and finds the same hash after every tick.
+
+A park that spends from its player's ticket account (`IPlayerTicketWallet`, UI-051: a Full Simulation park, and an Instant Action park since round 9) decides a ticket purchase by the account, which is
+the player's file and not part of the log or the park's state. A log that holds such a purchase replays only on a park whose own tickets or account hold the same, so the replay park is given the
+account of the player who recorded it (the same progress file) or the purchase is refused and the checkpoints differ; a session's log never holds one, because a shared park spends its own tickets.
 
 ### The guard
 

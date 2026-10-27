@@ -311,10 +311,13 @@ public class ParkGateTests
 		Cycle();
 		Assert.IsFalse( totem.IsOpen, "a ride with an upgrade on its way (state 2) stays closed" );
 		record.PendingLevel = 0;
+		// the guard reads the state word (0xde654), which the ride update set from the script's VAR_BROKEN (0x4E14E0)
 		totem.SetVariable( nameof( RideVariables.VAR_BROKEN ), 1 );
+		record.StateWord.Set( RideObjectStates.BrokenDown );
 		Cycle();
-		Assert.IsFalse( totem.IsOpen, "the script's VAR_BROKEN still blocks" );
+		Assert.IsFalse( totem.IsOpen, "state 1 still blocks" );
 		totem.SetVariable( nameof( RideVariables.VAR_BROKEN ), 0 );
+		record.StateWord.Set( RideObjectStates.Idle );
 		gate.DoorMoved( closed: false );
 		Assert.IsTrue( totem.IsOpen, "repaired: the door opens it again" );
 	}

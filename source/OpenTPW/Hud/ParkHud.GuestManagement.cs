@@ -122,7 +122,7 @@ public sealed partial class ParkHud
 				CompleteLoanRefresh( outcome );
 		if ( loanConfirmation is { } waiting )
 			foreach ( var outcome in waiting.Waiter.Queue.TakeOutcomes( waiting.Waiter ) )
-				CompleteLoanConfirmation( waiting.Screen, outcome );
+				CompleteLoanConfirmation( waiting.Screen, waiting.Waiter, outcome );
 		// [EXT:online-coop-commands] the upgrade list's waiting row (C4b-2)
 		CompleteGuestUpgrade();
 		SayManagementNotes();

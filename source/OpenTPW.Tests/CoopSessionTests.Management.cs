@@ -367,8 +367,10 @@ public partial class CoopSessionTests
 		GiveRights( host, guest, view, CoopRights.Finance );
 		OpenLoans( host, guest, view );
 		var loans = guest.Economy.Loans.Count;
+		var live = LiveWaiters( guest );
 		Confirm( view );
 		Assert.AreEqual( "loanConfirm", Top( view ), "it waits for the host" );
+		Assert.AreEqual( live + 1, LiveWaiters( guest ), "the confirmation waits with its own waiter" );
 		StringAssert.Contains( Element<UiLabel>( view, "message" ).Text!(), view.Strings.Extra( OpenTpwText.CoopWaitingForHost ) );
 		// its buttons are inert while it waits
 		Element<UiButton>( view, "choice1" ).Activate();
@@ -376,6 +378,7 @@ public partial class CoopSessionTests
 		Assert.AreEqual( ("loanConfirm", 1), (Top( view ), Management( guest ).Pending.Count()) );
 		UntilManaged( host, guest, view );
 		Assert.AreEqual( "loans", Top( view ), "accepted: it closed" );
+		Assert.AreEqual( live, LiveWaiters( guest ), "the confirmation's waiter, taken, is gone" );
 		Assert.AreEqual( (loans + 1, loans + 1), (guest.Economy.Loans.Count, host.Economy.Loans.Count) );
 		Assert.AreEqual( 0, view.Hud.Messages.Count, "an accepted action says nothing" );
 		CatchUpAndCompare( host, guest );
@@ -429,9 +432,11 @@ public partial class CoopSessionTests
 		Confirm( view );
 		SendNext( guest );
 		Assert.IsTrue( host.Issue( new SetSeatRightsCommand( seat, CoopRights.None ) ).Accepted );
+		var live = LiveWaiters( guest );
 		UntilManaged( host, guest, view );
 		Assert.AreEqual( "loanFailure", Top( view ) );
 		Assert.AreEqual( view.Strings.Extra( OpenTpwText.CoopNotPermitted ), Element<UiLabel>( view, "message" ).Text!() );
+		Assert.AreEqual( live - 1, LiveWaiters( guest ), "a refused confirmation's waiter, taken, is gone too" );
 		view.Escape();
 		Assert.AreEqual( "loans", Top( view ), "Back returns to the loans window, never to a waiting confirmation" );
 		// the host could not take it (its bucket of the guest's requests ran dry): not taken, and the player tries again

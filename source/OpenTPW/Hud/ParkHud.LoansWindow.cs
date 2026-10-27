@@ -147,9 +147,11 @@ public sealed partial class ParkHud
 	/// nothing more; anything else is said: by the failure dialog over the loans window when the confirmation was on top, else (another screen covered it) as a note, so no dialog opens
 	/// under or over a screen it does not belong to.
 	/// </summary>
-	private void CompleteLoanConfirmation( UiScreen confirmation, ManagementOutcome outcome )
+	private void CompleteLoanConfirmation( UiScreen confirmation, ManagementWaiter waiter, ManagementOutcome outcome )
 	{
 		loanConfirmation = null;
+		// [EXT:online-coop-commands] its outcome taken, the waiter is done: detached with nothing left to note, so the queue keeps no live waiter for it (C4b-2)
+		waiter.Queue.Detach( waiter );
 		var onTop = ReferenceEquals( Stack.Top, confirmation );
 		Stack.RemoveWhere( screen => ReferenceEquals( screen, confirmation ) );
 		switch ( outcome.Kind )

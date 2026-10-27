@@ -46,3 +46,20 @@ CollectBouncing derives node from current bounceNodeBase plus index; original sn
 - This deliverable is a documentation proposal only; no gameplay source files are changed by this PR.
 - Runtime work remains blocked on the evidence/ownership decisions listed above where applicable.
 - No approximation is retired by creating this plan; no PR is claimed implemented or ready to merge.
+
+## Current-main supersession (2026-10-27)
+
+This section supersedes the historical missing-implementation and scope statements above, without removing their audit history. It is a public-source reconciliation against main `60c941de233ac45a0d8c7d680aef2269f655b8b6`, not a new original-executable trace, runtime change, test result, retirement or PR closure.
+
+### Existing implementation and recorded status
+
+- [RideVisitorBridge.cs](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Guests/RideVisitorBridge.cs#L1575-L1615) now keeps a node number per occupied bounce slot. `CollectBouncing` reads `BounceNodeOf(index)`; `StoreBounceNode` records the current base plus the slot index. The [BOUNCE dispatch](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Guests/RideVisitorBridge.cs#L1676-L1707) stores that node only after a successful insertion. Later `BOUNCESETNODE` therefore does not move existing riders.
+- [Snapshot capture](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Guests/RideVisitorBridge.cs#L350-L354) includes `BounceNodes` only when occupied slots differ from the current base-plus-index form. [Restore](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Guests/RideVisitorBridge.cs#L569-L575) retains stored nodes and derives the historical form when the field is absent. [Validation](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Guests/RideVisitorBridge.cs#L520-L521) rejects a stored-node count inconsistent with the bounce table.
+- Existing [BounceRiderTests.cs](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW.Tests/BounceRiderTests.cs#L76-L113) contains synthetic base-mutation, snapshot round-trip, malformed-length and omitted-field checks. These test bodies were inspected, not executed in this reconciliation; their presence is not a new pass claim.
+- Current main already records HEADS-008 as retired in [tools/fidelity_retired.txt](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/tools/fidelity_retired.txt#L177) and [docs/GUESTS.md](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/docs/GUESTS.md#L1150-L1152). This proposal is not performing or re-approving that retirement.
+
+### Remaining action and boundary
+
+Review this documentation supersession against the existing implementation and recorded retirement. Do not implement a second per-slot node store, revive the old live-base premise, or broaden the proposal into custom-script work on the strength of its historical text. Any newly demonstrated regression needs its own bounded evidence and verification.
+
+The original proposal and progress fragment remain historical records. This addition changes no runtime code or register, runs no C# or original-game executable, publishes no original media, and makes no new test-pass, merge-readiness or closure claim.

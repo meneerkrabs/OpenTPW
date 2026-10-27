@@ -1148,6 +1148,19 @@ The scenarios:
   reconnecting to open with a resume of the session, and both chats reconnect: the counts at the barrier
   must grow. The guest follows again (a resync is allowed here). The host's view jumps again, which the
   guest sees, and a second line reaches the guest's park, with checkpoints after it.
+- **management** (`--scenario management`, C4b-2): the guest's granted line is the run's purchase: at its
+  record each park's balance falls by its charge, the same on both. Then the host gives the attractions right
+  through the rights dialog. The guest opens a shop of the park with a click, types its price and closes the
+  window: the price at its record on both parks. It closes and opens a ride's door through its window, each at
+  its record on both parks. It types a second price and applies it with the editor's OK; in the same step,
+  before the frame's pump could send it, the price waits unsent and the guest forces a desync of its own stream
+  (`CoopGuestStream.ForceDesync`, a protocol desync whose reason, "forced by the live test", only the log
+  keeps). The session resyncs: the host's park replaces the guest's (the stream's generation one higher), the
+  price goes once after the swap and applies on both parks, and checkpoints are compared after it with no
+  other desync. As a real desync would, the forced one counts as the join's failure when it comes within
+  the session's early window (three minutes after the join); no other failed join may follow. The host sees
+  exactly one desync report, the forced one, and takes one capture for it. The run's one resync is that one;
+  no link is lost.
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
   HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
   takes its ticks before the host sets the speed, and the host its own when it does. Every five seconds both
@@ -1189,6 +1202,8 @@ build):
 | native/page | endurance 30 min | 19 of 19 | 1834 s | followed 5.8 s after Join; 105 KiB capture; 1819 checkpoints; 1800 s at the fastest speed, slowest stretches 239.6 (host) and 225.5 (guest) ticks/s; longest frame gaps host 1.50 s, guest 0.18 s |
 | page/native | endurance 30 min | 19 of 19 | 1839 s | followed 5.2 s after Join; 104 KiB capture; 1815 checkpoints; 1800 s at the fastest speed, slowest stretches 229.4 (host) and 229.5 (guest) ticks/s; longest frame gaps host 2.80 s, guest 0.73 s |
 | page/page | endurance 30 min | 24 of 24 | 1877 s | followed 13.9 s after Join; 108 KiB capture; 1843 checkpoints; 1801 s at the fastest speed, slowest stretches 231.7 (host) and 219.2 (guest) ticks/s; longest frame gaps host 5.02 s, guest 0.35 s |
+| native/native | management | 18 of 18 | 31 s | followed 3.8 s after Join; 104 KiB capture; the forced resync's park in 2.7 s; 3 checkpoints after the swap |
+| native/page | management | 22 of 22 | 55 s | followed 6.8 s after Join; 108 KiB capture; the forced resync's park in 3.5 s; 7 checkpoints after the swap |
 
 The native/native, native/page and page/native endurance runs come from before the guest's granted line
 (C3a-2), which adds one check to every run; the other rows include it.
@@ -2163,8 +2178,9 @@ close, which for a guest would be a request its rights refuse, with a note about
 one that writes back what the park holds. A typed price and an apply-all go when clicked and not again at
 the close. The research window's workload knob projects the lab's workload, at the window's opening and
 at a staffing change, without writing it back, and the loans window's opening and tabs send no offer
-refresh, so the list shows the offers of the host's park. A change the player made still goes, and its
-refusal is said as any is.
+refresh unless the guest holds the finance right (then the refresh is its own request, as the host's is; see
+"A guest's management windows (C4b-1)"), so without it the list shows the offers of the host's park. A
+change the player made still goes, and its refusal is said as any is.
 
 ## Money and rights (C4)
 
@@ -2172,7 +2188,10 @@ refusal is said as any is.
 each guest the park's management besides building, right by right (decision Q7), over the one shared bank
 (Q6), while the speed and the pause stay the host's (Q8). The plan (v8, a Codex go after eight rounds) makes
 it three parts: C4a the rights and their lifecycle, C4b the windows of the attractions, research and finance
-with their switches, C4c staff. C4a offers no new switch: building stays the one right a host can give.
+with their switches, C4c staff. C4b is two parts of its own (its plan, v13, a Codex go after twelve rounds):
+C4b-1 the research and finance windows with everything both parts share, C4b-2 the attractions (its own
+plan, v13, a Codex go after twelve rounds). Since C4b-2 the host gives building, attractions, research and
+finance; staff follows (C4c).
 
 **The command classes (C4a).** Every command kind is of exactly one class (`CoopBuildRights.ClassOf`), which
 says who may issue it in a shared park; a test pins each class's kinds:
@@ -2201,11 +2220,12 @@ them. Two commands write them through one reducer: `SetSeatRightsCommand` (kind 
 and C3's `SetBuildGrantCommand` (kind 101) flips its building bit alone, so a C3 log replays byte for byte.
 A right taken back ends what it held in the same record, on every peer: building's claims, with a
 coaster's tool state. The rights command names a guest's seat (1 to 63) and only the rights this build
-offers (`CoopRightsOffer`: building alone in C4a), so a right whose actions do not yet wait for the host's
+offers (`CoopRightsOffer`: building, attractions, research and finance since C4b-2), so a right whose actions do not yet wait for the host's
 answer cannot be given, not even by a hand-made record, which the codec refuses; a join state refuses a
 row of seat 0, of no right, of a right not offered, and a seat named twice. The host's own seat holds no
-mask and keeps its full authority. The session's start and end clear every seat's rights. In C4a a
-guest's management command is refused, whatever the seat holds, with the host-only note.
+mask and keeps its full authority. The session's start and end clear every seat's rights. A guest's
+management command without its right, or of a right this build does not offer yet, is refused with the
+rights' note: "The host has not given you that right."
 
 **A seat's release.** `ReleaseSeatCommand` is the one record that frees everything a guest seat holds:
 its rights, its carry (C3b-2) and its claims (C3c-1, with a coaster's tool state). The host issues it at
@@ -2230,9 +2250,124 @@ buttons, the numpad's time keys and the pause key, issues its command, which the
 the guest's park with the host-only note: nothing goes to the host. A session is online, where no
 focus-loss pause latches.
 
-**Later parts.** The share screen keeps C3's switch per guest ("Builds" or "Watches"): the dialog with a
-switch per right comes with C4b, which offers its rights, and so does the note "The host has not given you
-that right." for a right not given; the host-only note keeps its "for now" until then.
+**The rights dialog (C4b-1).** Build Together's row of a guest keeps its name and its removal; its button names
+the rights the shared park gives the guest ("Building, Finance", or "Watches" with none), and opens the guest's
+dialog: one switch per offered right, each drawing the park's applied bit, whose click issues the seat's
+rights with that bit turned over. The dialog belongs to the sharing attempt, the member and its seat: once
+the share no longer hosts or the member left that seat (checked every frame and again at a click), it closes
+and sends nothing. The host-only note no longer says "for now": "Only the host can do that."
+
+**A guest's management windows (C4b-1).** `[EXT:online-coop-money]` With the research or the finance right a
+guest's research, entry price and loans windows act as the host's do, through the session's management queue
+(`CoopManagementRequests`), which outlives the windows and the resyncs. Without the right a click says the
+rights' note (once for a drag's run) and nothing is queued; the windows' own checks come after the rights,
+so a repay with neither the right nor the money says only the rights' note.
+- **The queue.** A window's action enqueues its commands whole; each target (the research lab; the door, the
+  fee and the name; the loans, whose refresh, take and repay so go in their order) sends one at a time in its
+  order, at most four requests are open across the targets, the oldest first, and at most one goes every
+  fifth of a second. A control's later value replaces its unsent entry at its target's tail, so a drag goes
+  once with its latest value. A target holds at most 16 unsent entries: an action that would not fit is no
+  click ("Waiting for the host...", once for a run). The queue sends only while the guest follows a live
+  stream with its requests unfenced, against the park it follows, and asks the session's rights again
+  before each send: a right taken back meanwhile refuses the entry without a request. It follows its
+  requests through the session's ledger without a HUD, and the HUD's completion of the tools' requests
+  skips the requests it owns (`Request.Owner`). A request the host could not take (too fast) is an
+  outcome, never sent again by the queue; the ledger's own resend is the only one.
+- **What the controls draw.** A control draws the value of its latest entry while one is unsent or open,
+  and the park's once the last came back, whatever became of it: the effort sliders, the workload knob
+  (its keys count from the drawn workload; a refusal or another player's change reprojects it without
+  writing it), the fee, the door and the park's name. A project's arrows name the project their window
+  shows (version 3 of the codec, below), and take no click while a move of their category waits.
+- **Waits and outcomes.** A loan's confirmation waits for its take or repay after its Yes ("Waiting for the
+  host...", its buttons inert; Escape closes it): accepted, it closes and the list refills; refused, its
+  failure dialog over the loans window says why as the host's would (the rights' note; too little money; no
+  longer there for a gone offer, a changed or repaid loan or a bankrupt park), and a request the host could
+  not take or whose outcome is not known says so. The loans window's refresh refills the list of the tab it
+  shows when it comes back, and an accepted door posts the advisor's door event, whichever HUD is current
+  (a resync's new one included). An outcome nobody waits for any more (a closed window, a resync's
+  teardown) is a note: a refusal's reason where the host's window has one, a request not taken, an outcome
+  not known; the fee, the door, the efforts, the workload and the name say nothing of their own, since
+  their controls show the park's values.
+- **Notes.** The notes wait in the session (a resync's new HUD says what the old one could not), and the HUD
+  says one once its feedback lines can be seen (no screen hides the park, the info arm is in, no message is
+  open) and have room, so none expires unseen. A note whose words a line shows already renews that line
+  instead of adding a second, and a rights' note keeps the session's own note of the same run from
+  following it.
+- **Stale actions.** `BuyUpgradeCommand`, `CancelUpgradeCommand` and `MoveResearchCommand` may name what
+  their window showed (the next level, the pending level, the current project's id and level); a record
+  whose expectation no longer holds is refused as stale. The codec writes them in its version 3, only with
+  an expectation: the host's records and every older log keep their version-1 bytes, and the native queue's
+  two kinds keep version 2. The loan commands give their refusal's kind as their result's value
+  (`LoanRefusal`).
+
+**A guest's attraction windows (C4b-2).** `[EXT:online-coop-commands]` With the attractions right a guest's
+object windows (a ride's, a shop's, a sideshow's, a toilet's) act as the host's do, through the same queue,
+with one difference the queue forces: a guest's window keeps no draft.
+- **Each change goes at once.** The original's window applies its values when it closes or shows another
+  object, as the host's and a single player's windows still do. A guest's close cannot be refused once its
+  input acted (the window commits in the frame after it, and a resync's swap can come between), and a commit
+  made then could be neither refused nor bounded without moving or dropping values the park reads between
+  records. So each change of a guest's control goes at once as a click: a slider's step, the quality's step, a
+  price or prize box's click or hold step, a typed price, an apply-all. The rights, a claim or the queue's
+  room may refuse it before anything changes (the control shows the drawn value again, a typed price's
+  editor stays open with the note); the window's close and its arrows send nothing. The controls, and the
+  excitement and reliability gauges, draw the drawn values every frame: each field its group's latest entry
+  while one is unsent or open, else the park's (a reopened window, the arrows' next object, the window after a
+  resync).
+- **The host's close.** A host's window in a shared park keeps its draft and applies it when it closes or shows
+  another object, as the original's, but only what it changed from the values it loaded: each group with a
+  changed field goes, its other fields as the park has them then, so a guest's change made while the host's
+  window was open stays. A typed price and an apply-all count as applied. A single player's window applies all
+  its values, as the original's.
+- **Groups and order.** Each target is one attraction (its attraction id); different attractions go side by
+  side under the cap of four open. An attraction's fields go in groups, one writer per field: a ride's speed,
+  capacity and duration (`SetRideSettingsCommand`); a shop's quality and ingredient (`SetShopSettingsCommand`)
+  and its price (`SetPriceCommand`); a winnable sideshow's price, prize and chance (`SetGamePrizeCommand`, its
+  typed price included); a prizeless sideshow's price. Every entry of a target applies in its click's order,
+  and only a run of one group's changes with nothing between coalesces, at the target's tail (a drag goes
+  once with its latest value): a sale between two records reads the price, the goods and the open word of
+  every record before it.
+- **A gesture asks for a step once.** A guest's slider or box asks only for a step its gesture has not asked
+  for, and a box step that changes nothing (at the range's end) asks nothing: a refused step is not asked
+  again while the pointer stays on it, nor at the release (the screen skips a guest's slider's release frame,
+  `IUiDragTarget.FollowsRelease`). The next press starts a new gesture, a box's hold arithmetic included
+  (`UiButtonRepeat.Pressed`); a key asks each time. A host's sliders and boxes keep the original's paths.
+- **The bound.** Besides 16 unsent entries per target, the queue holds at most 256 unsent entries across its
+  targets (an apply-all adds a target per object, and an attraction id is never reused); a batch that would
+  pass either is refused whole with the waiting note. A change that replaces a target's unsent tail always
+  fits. Nothing waits in a window, so no close, retarget or swap can lose an edit.
+- **Open-state actions.** The door, the call button and a ride's level bought or cancelled write or read the
+  object's open word: one of an object waits at a time, its door and call buttons greyed and its upgrade rows
+  inert meanwhile. While one waits the window draws a projected copy of the object's record (its open word
+  the runtime's, the action applied only when its record's checks would pass, so a refusal or a no-op such as
+  the host's call first changes nothing): the state with a breakdown's priority, the status banner, the
+  door's and the call button's frames and help, and the upgrade rows. With nothing waiting it draws the park,
+  and the host's rules decide the buttons. A park refusal of the door or the call says nothing, as the host's.
+  A guest's call button under the call's own refusal (no staff, a strike) draws subdued but stays clickable:
+  the rights' note first, then the error sound with nothing sent.
+- **The upgrade list.** A level or cancel row asks the rights first (their note, and the list closes), then
+  goes with what the list showed, its rows inert under a waiting line; every outcome removes the list first,
+  then says its note (a stale buy or cancel: no longer there; any other park refusal nothing, as the
+  original's silent level rows). A purchase has an identity: each record counts the levels bought for it
+  (`ParkObjectState.UpgradePurchases`, saved as an optional field; the session digest's version 4 covers it,
+  and the world hash leaves it out so every older log replays). A guest's cancel names the pending level and
+  that count (the codec's version 4, which C4b-1's version-3 cancel and the host's version-1 cancel keep
+  beside it), so the host's cancel and re-buy first make it stale instead of cancelling the new purchase; a
+  guest's buy is stale once the ride waits for a level. The add-on row stays a placement under the building
+  right: without its grant, the grant's note before the row's price check.
+- **The claim guard.** `[EXT:online-coop-claims]` A guest's door, settings, level bought or cancelled, or call
+  on a claimable ride another seat claims is refused with the claim's note, asked at the click and again
+  before the send; without the attractions right the rights' note comes first. The claiming guest's and the
+  host's stay allowed, so a C3 log replays.
+- **Notes.** Every management refusal's note, at the click, by the bound or before the send, waits in the
+  session's notes and is said once the lines can be seen, never at once under the object window's arm. The
+  notes coalesce by their words, so they hold one per kind of words and none is dropped.
+- **The session's end.** When the session ends with an entry not resolved, a note not said, or a window's
+  failure not taken, the guest's end dialog adds "Some of your last changes may not have been made." (eleven
+  languages). A resync whose swap fails before its teardown leaves the old park the game's: the end dialog
+  then shows over it, with that sentence when it applies.
+
+C4c adds staff.
 
 ## The command layer (C1)
 

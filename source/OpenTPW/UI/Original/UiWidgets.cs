@@ -581,7 +581,14 @@ public sealed class UiImageElement : UiElement
 
 /// <summary>The timer of a repeating button: after <see cref="Delay"/> held it calls <see cref="Start"/>, then <see cref="Tick"/> every time more than <see cref="Interval"/> has passed.</summary>
 // [BIN:TPW-EXE:0x668dd9 button hold timer] the per-frame message 0x1e of a pressed button with style bit 0x20 (+0x48): state +0x15a 1 waits until now - +0x144 >= +0x13c (the delay), then sets state 2 and posts 0x10009 to the parent; state 2 posts 0x10008 each time now - +0x144 > +0x140 (the interval); both only while the button's pressed bit (+0x138 & 2) is set, and they restart +0x144; the ctor 0x6688b3 stores +0x13c = 500 ms and +0x140 = 0x7d = 125 ms for every button, and only a button with style bit 0x20 repeats (the scroll arrows are style 0x21); the press 0x668ecf sets state 1 and +0x144, the release 0x668eff clears the state and the click (0x100) follows only when it was not 2
-public sealed record UiButtonRepeat( float Delay, float Interval, Action Start, Action Tick );
+public sealed record UiButtonRepeat( float Delay, float Interval, Action Start, Action Tick )
+{
+	/// <summary>
+	/// [EXT:online-coop-commands] Run at the button's press, where the screen starts the hold's state (C4b-2): a hold whose <see cref="Start"/> the pointer misses (outside the button at the
+	/// delay) still begins from its press. Null: nothing.
+	/// </summary>
+	public Action? Pressed { get; init; }
+}
 
 /// <summary>
 /// Button. With <see cref="Model"/> it draws the original state frames (0 normal, 1 disabled,
@@ -769,6 +776,31 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 	public override bool Focusable => Visible && Enabled;
 
 	/// <summary>
+	/// [EXT:online-coop-commands] Whether a pointer gesture asks for each value once (a guest's windows, C4b-2): its press's page step and its grabbed held frames ask for a value only when it
+	/// differs from the drawn one and from the last one the gesture asked for, and neither its release frame nor its release's click asks anything, so a refused step is not asked again while
+	/// the pointer stays on it, nor at the release. A key asks as before. Null or false: every path as before (a host's and a single player's sliders).
+	/// </summary>
+	public Func<bool>? AsksOncePerStep { get; set; }
+	/// <summary>The value the gesture last asked for (<see cref="AsksOncePerStep"/>), cleared only at the next press.</summary>
+	private int? lastAsked;
+	private bool OncePerStep => AsksOncePerStep?.Invoke() == true;
+	bool IUiDragTarget.FollowsRelease => !OncePerStep;
+
+	/// <summary>A pointer's value: set as before, or [EXT:online-coop-commands] asked once in the gesture where <see cref="AsksOncePerStep"/>.</summary>
+	private void Ask( int value )
+	{
+		if ( !OncePerStep )
+		{
+			Set( value );
+			return;
+		}
+		if ( value == lastAsked || value == Value() )
+			return;
+		lastAsked = value;
+		Changed?.Invoke( value );
+	}
+
+	/// <summary>
 	/// Authored ball rectangle for <paramref name="value"/>: the ball's centre moves linearly from half a ball
 	/// inside the track's left end to half a ball inside its right end.
 	/// </summary>
@@ -812,6 +844,7 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 	void IUiDragTarget.DragBegin( UiCanvas canvas, NVector2 point )
 	{
 		pressMode = PressMode.None;
+		lastAsked = null;
 		if ( !Truncates || !Enabled || ScreenRect( canvas ).Width <= 0 )
 			return;
 		var x = AuthoredX( canvas, point );
@@ -828,7 +861,7 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 		{
 			pressMode = PressMode.Page;
 			var steps = Math.Max( 2, Steps() );
-			Set( Math.Clamp( Value() + (x < knob.Right ? -Page : Page), 0, steps - 1 ) );
+			Ask( Math.Clamp( Value() + (x < knob.Right ? -Page : Page), 0, steps - 1 ) );
 		}
 	}
 
@@ -848,7 +881,15 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 			if ( !Enabled || ScreenRect( canvas ).Width <= 0 )
 				return;
 			// [BIN:TPW-EXE:0x66af19 slider drag] the thumb follows the pointer at the grabbed offset; the value is read from the thumb's left edge
-			Set( ValueAt( AuthoredX( canvas, point ) - grabOffset ) );
+			Ask( ValueAt( AuthoredX( canvas, point ) - grabOffset ) );
+			return;
+		}
+		// [EXT:online-coop-commands] with no press mode a once-a-step slider's pointer is the release's click (UiScreen.Click after DragEnd): it asks nothing, the press and the grab having
+		// asked already; a slider without the original's press (not Truncates) asks once from the pointer
+		if ( OncePerStep )
+		{
+			if ( !Truncates && Enabled && ScreenRect( canvas ) is { Width: > 0 } rect )
+				Ask( ValueAt( Bounds.X + (point.X - rect.X) / rect.Width * Bounds.Width ) );
 			return;
 		}
 		SetFromMouse( canvas, point );

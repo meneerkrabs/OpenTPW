@@ -112,13 +112,38 @@ public class CoopRightsTests
 		CollectionAssert.Contains( building, ParkCommandKind.LayLine );
 		foreach ( var kind in building )
 			Assert.IsTrue( CoopBuildRights.ClassOf( kind ) is CoopCommandClass.GuestBuilding or CoopCommandClass.SeatCleanup, $"{kind}" );
-		// a management right no part offers yet is refused even when the seat's rights hold it (set here directly: no command can give one)
+		// every right held (set here directly: no command gives one this build does not offer): building's, the attractions', research's and finance's kinds answer (C4b-1, C4b-2), and a
+		// management right no part offers yet is refused even when the seat's rights hold it (staff until C4c)
 		level.SetSeatRights( seat, (CoopRights)0x1F );
-		CollectionAssert.AreEquivalent( building, Allowed( seat ).ToArray(), "every right held, building's alone answers" );
+		var held = Allowed( seat ).ToArray();
+		CollectionAssert.IsSubsetOf( building, held );
+		foreach ( var kind in held )
+			Assert.IsTrue( CoopBuildRights.ClassOf( kind ) is CoopCommandClass.GuestBuilding or CoopCommandClass.SeatCleanup or CoopCommandClass.Attractions or CoopCommandClass.Research
+				or CoopCommandClass.Finance, $"{kind}" );
+		foreach ( var kind in Enum.GetValues<ParkCommandKind>().Where( kind => CoopBuildRights.ClassOf( kind ) is CoopCommandClass.Attractions or CoopCommandClass.Research or CoopCommandClass.Finance ) )
+			CollectionAssert.Contains( held, kind, $"{kind} with its right" );
+		// each offered management right answers its own class alone
+		level.SetSeatRights( seat, CoopRights.Research );
+		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>().Where( kind => CoopBuildRights.ClassOf( kind ) is CoopCommandClass.Research or CoopCommandClass.SeatCleanup ).ToArray(),
+			Allowed( seat ).ToArray(), "research alone" );
+		level.SetSeatRights( seat, CoopRights.Finance );
+		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>().Where( kind => CoopBuildRights.ClassOf( kind ) is CoopCommandClass.Finance or CoopCommandClass.SeatCleanup ).ToArray(),
+			Allowed( seat ).ToArray(), "finance alone" );
+		level.SetSeatRights( seat, CoopRights.Attractions );
+		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>().Where( kind => CoopBuildRights.ClassOf( kind ) is CoopCommandClass.Attractions or CoopCommandClass.SeatCleanup ).ToArray(),
+			Allowed( seat ).ToArray(), "the attractions alone" );
+		level.SetSeatRights( seat, CoopRights.Build );
 		// a session's own kinds and the speed stay the host's
 		foreach ( var command in new ParkCommand[] { new SetSeatRightsCommand( seat, CoopRights.Build ), new SetBuildGrantCommand( seat, true ), new ReleaseSeatCommand( seat ),
 			new SetGameSpeedCommand( GameSpeed.Fast ), new SetSessionClockCommand( 63928191600 ) } )
 			Assert.IsFalse( rights.Allows( seat, command ), $"{command.Kind}" );
+		// what a guest's refusal says: building without the grant, management without its right (C4b), and nothing of its own for the host's kinds
+		level.SetSeatRights( seat, CoopRights.None );
+		Assert.AreEqual( CoopBuildRights.NotGrantedReason, rights.RefusalReason( seat, new LayLineCommand( CellToolMode.Path, -1, 5, 20, 12, 20 ) ) );
+		foreach ( var management in new ParkCommand[] { new SetEntranceFeeCommand( 20 ), new SetResearchWorkloadCommand( 50 ), new SetAttractionOpenCommand( 17, false ), new FireStaffCommand( 3 ) } )
+			Assert.AreEqual( CoopBuildRights.NotPermittedReason, rights.RefusalReason( seat, management ), $"{management.Kind}" );
+		Assert.AreEqual( CoopRefusal.NotPermitted, CoopBuildRights.RefusalOf( CoopBuildRights.NotPermittedReason ) );
+		Assert.IsNull( rights.RefusalReason( seat, new SetGameSpeedCommand( GameSpeed.Fast ) ) );
 	}
 
 	[TestMethod]
@@ -170,21 +195,24 @@ public class CoopRightsTests
 	[TestMethod]
 	public void TheRightsCommandTakesOnlyAGuestsSeatAndTheRightsThisBuildOffers()
 	{
-		Assert.AreEqual( CoopRights.Build, CoopRightsOffer.Offered, "C4a offers building alone" );
+		Assert.AreEqual( CoopRights.Build | CoopRights.Attractions | CoopRights.Research | CoopRights.Finance, CoopRightsOffer.Offered, "C4b-2 offers building, the attractions, research and finance" );
+		CollectionAssert.AreEqual( new[] { CoopRights.Build, CoopRights.Attractions, CoopRights.Research, CoopRights.Finance }, CoopRightsOffer.Each.ToArray(), "the dialog's order" );
 		foreach ( var seat in new[] { 1, 3, CoopJoinState.MaximumPlayerEntries - 1 } )
-			foreach ( var rights in new[] { CoopRights.None, CoopRights.Build } )
+			foreach ( var rights in new[] { CoopRights.None, CoopRights.Build, CoopRights.Attractions, CoopRights.Research, CoopRights.Finance,
+				CoopRights.Build | CoopRights.Attractions | CoopRights.Research | CoopRights.Finance } )
 				Assert.IsTrue( new SetSeatRightsCommand( seat, rights ).IsWellFormed, $"seat {seat}, {rights}" );
 		foreach ( var seat in new[] { int.MinValue, -1, 0, CoopJoinState.MaximumPlayerEntries } )
 			Assert.IsFalse( new SetSeatRightsCommand( seat, CoopRights.Build ).IsWellFormed, $"seat {seat}: never the host's, never past the per-player bound" );
-		foreach ( var rights in new[] { CoopRights.Attractions, CoopRights.Staff, CoopRights.Research, CoopRights.Finance, CoopRights.Build | CoopRights.Staff, (CoopRights)0x20, (CoopRights)0xFF } )
+		foreach ( var rights in new[] { CoopRights.Staff, CoopRights.Research | CoopRights.Staff, CoopRights.Build | CoopRights.Staff, (CoopRights)0x20, (CoopRights)0xFF } )
 			Assert.IsFalse( new SetSeatRightsCommand( 2, rights ).IsWellFormed, $"{rights}: a right whose actions do not wait for the host yet cannot be given" );
-		// a hand-made record that gives the finance right does not decode, so no stream carries it; one made in memory is refused before the park and its log
+		// a hand-made record that gives the staff right does not decode, so no stream carries it; one made in memory is refused before the park and its log
 		var bytes = ParkCommandCodec.Encode( new SetSeatRightsCommand( 2, CoopRights.Build ) );
-		bytes[^1] = 0x20;
+		// the rights are the record's last field, a zigzag varint: the staff right is 4, written 0x08
+		bytes[^1] = 0x08;
 		Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes ) );
 		var (level, _) = NewPark();
 		var log = level.Commands.Log.Count;
-		Assert.IsFalse( level.Commands.Apply( new SetSeatRightsCommand( 2, CoopRights.Finance ) ).Accepted );
+		Assert.IsFalse( level.Commands.Apply( new SetSeatRightsCommand( 2, CoopRights.Staff ) ).Accepted );
 		Assert.AreEqual( (log, CoopRights.None), (level.Commands.Log.Count, level.RightsOf( 2 )) );
 	}
 
@@ -209,5 +237,94 @@ public class CoopRightsTests
 		Assert.AreEqual( 0, level.HoldingGuestSeats().Count() );
 		var none = commands.Issue( new ReleaseSeatCommand( 4 ) );
 		Assert.IsTrue( none.Accepted && none.Value is false, "a seat that held nothing releases nothing" );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A stale-checked command whose expectation no longer holds is refused as stale before the park's own rules, and one whose expectation holds runs as the host's
+	/// does (C4b): a level upgrade naming another level, a cancellation naming another pending level, a research move naming another project.
+	/// </summary>
+	[TestMethod]
+	public void AStaleCheckedCommandWhoseExpectationNoLongerHoldsIsRefusedAsStale()
+	{
+		var (level, one) = NewPark();
+		var commands = level.Commands;
+		var ride = one.Runtime.AttractionId;
+		var state = level.Park!.Economy.TryGetObject( level.GetEconomyInstance( one )!.Value, out var found ) ? found : null;
+		Assert.IsNotNull( state );
+		foreach ( var stale in new ParkCommand[] { new BuyUpgradeCommand( ride, state.Level + 2 ), new CancelUpgradeCommand( ride, state.PendingLevel + 1 ) } )
+		{
+			var result = commands.Issue( stale );
+			Assert.AreEqual( (false, ParkSettingCommand.StaleReason), (result.Accepted, result.Reason), stale.ToString() );
+		}
+		// the expected level passes the check, and the park's own rules decide as for the host's command
+		Assert.AreNotEqual( ParkSettingCommand.StaleReason, commands.Issue( new BuyUpgradeCommand( ride, state.Level + 1 ) ).Reason );
+		Assert.AreEqual( commands.Issue( new BuyUpgradeCommand( ride ) ).Reason, commands.Issue( new BuyUpgradeCommand( ride, state.Level + 1 ) ).Reason );
+		// a lab with rides to choose from (ManagementUiTests' research cursor park)
+		var economy = new ParkEconomy( EconomyTestData.Settings( extra: "ResearchTech[1].PercentageForThisTech 0\nResearchTech[2].PercentageForThisTech 0\n" ), EconomyTestData.Catalog(),
+			ParkGameMode.FullSimulation, 7 );
+		var lab = CommandTestLevel.Create( economy );
+		var research = economy.Research;
+		Assert.IsTrue( research.SelectableItems( ResearchCategory.Ride ).Count > 1 );
+		var current = research.Current( ResearchCategory.Ride )!;
+		var moved = lab.Commands.Issue( new MoveResearchCommand( ResearchCategory.Ride, 1, current.InfoId, current.Level + 1 ) );
+		Assert.AreEqual( (false, ParkSettingCommand.StaleReason), (moved.Accepted, moved.Reason), "another project than the current one" );
+		Assert.AreEqual( current, research.Current( ResearchCategory.Ride ), "nothing moved" );
+		Assert.IsTrue( lab.Commands.Issue( new MoveResearchCommand( ResearchCategory.Ride, 1, current.InfoId, current.Level ) ).Accepted, "the current project moves" );
+		Assert.AreNotEqual( current, research.Current( ResearchCategory.Ride ) );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] The claim guard of a guest's attractions commands (C4b-2): exactly the five kinds that name a claimable ride (the open switch, the settings, a level bought or
+	/// cancelled, the call) are asked about its claim; a price, a game's prize and a shop's settings are not. The answer goes in order: without the right the rights' refusal whatever the
+	/// claims, with it on another seat's claimed ride the claim's, the claiming seat's own allowed, and the host's allowed.
+	/// </summary>
+	[TestMethod]
+	public void TheClaimGuardNamesFiveKindsOfAClaimableRideAndAnswersAfterTheRightInOrder()
+	{
+		var (level, one) = NewPark();
+		var rights = new CoopBuildRights( level );
+		var ride = one.Runtime.AttractionId;
+		var guarded = new ParkCommand[] { new SetAttractionOpenCommand( ride, false ), new SetRideSettingsCommand( ride, 50, 2, 30 ), new BuyUpgradeCommand( ride ), new BuyUpgradeCommand( ride, 1 ),
+			new CancelUpgradeCommand( ride ), new CancelUpgradeCommand( ride, 1, 1 ), new RequestMaintenanceCommand( ride, true ) };
+		var unguarded = new ParkCommand[] { new SetPriceCommand( ride, 20 ), new SetGamePrizeCommand( ride, 20, 5, 50 ), new SetShopSettingsCommand( ride, 50, 10 ) };
+		foreach ( var command in guarded )
+			Assert.AreEqual( ride, CoopBuildRights.AttractionRide( command ), $"{command.Kind} names its ride" );
+		foreach ( var command in unguarded )
+			Assert.IsNull( CoopBuildRights.AttractionRide( command ), $"{command.Kind} names no claimable ride" );
+		CollectionAssert.AreEquivalent( new[] { ParkCommandKind.SetAttractionOpen, ParkCommandKind.SetRideSettings, ParkCommandKind.BuyUpgrade, ParkCommandKind.CancelUpgrade, ParkCommandKind.RequestMaintenance },
+			ParkCommandCodecTests.Schema.Where( row => CoopBuildRights.AttractionRide( row.Command ) != null ).Select( row => row.Command.Kind ).Distinct().ToArray(), "exactly five kinds of the codec's table" );
+		// a seat holds the ride's claim (a claimable ride is a track ride)
+		var stations = (Dictionary<OriginalObject, TrackStation>)typeof( Level ).GetField( "trackStations", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( level )!;
+		stations[one] = new TrackStation( 0, 0, (one.Placement.X, one.Placement.Y), (one.Placement.X + 1, one.Placement.Y) );
+		const int holder = 3, other = 2, without = 4;
+		level.SetSeatRights( holder, CoopRights.Build | CoopRights.Attractions );
+		Assert.IsTrue( level.ExecuteClaimRide( holder, ride ).Accepted );
+		level.SetSeatRights( other, CoopRights.Attractions );
+		level.SetSeatRights( without, CoopRights.Build );
+		foreach ( var command in guarded )
+		{
+			// without the attractions right: the rights' refusal, whatever the claim
+			Assert.IsFalse( rights.Allows( without, command ), $"{command.Kind}: no right" );
+			Assert.AreEqual( CoopBuildRights.NotPermittedReason, rights.RefusalReason( without, command ), $"{command.Kind}: the rights' refusal, not the claim's" );
+			// with it on another seat's claimed ride: the claim's
+			Assert.IsFalse( rights.Allows( other, command ), $"{command.Kind}: another seat's claim" );
+			Assert.AreEqual( Level.ClaimedReason, rights.RefusalReason( other, command ), $"{command.Kind}: the claim's refusal" );
+			// the claiming seat's own, and the host's
+			Assert.IsTrue( rights.Allows( holder, command ), $"{command.Kind}: the claiming seat's own" );
+			Assert.IsNull( rights.RefusalReason( holder, command ), $"{command.Kind}: the claiming seat's own" );
+			Assert.IsTrue( rights.Allows( ParkCommands.LocalPlayer, command ), $"{command.Kind}: the host's management of a claimed ride stays allowed" );
+			Assert.IsNull( rights.RefusalReason( ParkCommands.LocalPlayer, command ), $"{command.Kind}: the host's" );
+		}
+		foreach ( var command in unguarded )
+		{
+			Assert.IsTrue( rights.Allows( other, command ), $"{command.Kind}: no claim guards it" );
+			Assert.IsNull( rights.RefusalReason( other, command ), $"{command.Kind}" );
+			Assert.AreEqual( CoopBuildRights.NotPermittedReason, rights.RefusalReason( without, command ), $"{command.Kind}: without the right" );
+		}
+		// with no claim on the ride every seat with the right asks nothing of it
+		Assert.IsTrue( level.ExecuteReleaseRide( holder, ride ).Accepted );
+		Assert.IsNull( level.ClaimOf( ride ) );
+		foreach ( var command in guarded )
+			Assert.IsTrue( rights.Allows( other, command ), $"{command.Kind}: a ride nobody claims" );
 	}
 }

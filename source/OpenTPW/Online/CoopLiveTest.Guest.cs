@@ -19,6 +19,8 @@ internal sealed partial class CoopLiveTest
 	/// <item>The host's line applied at its record, with checkpoints compared after it; the guest's own line refused (the host has not let it build yet), its park following on;
 	/// once the host lets it build, its next line goes to the host and is laid at its record, with checkpoints compared after it (C3a-2) (recovery: the server's restart,
 	/// following again and the second line).</item>
+	/// <item>Management (C4b-2): once the host gives the attractions right, a shop's typed price and a ride's door each at its record; a second price queued, the stream forced to
+	/// desync before the price is sent, the resync's park, and the price sent once after it.</item>
 	/// <item>The host's chat line heard and answered through the chat mode's entry (endurance: following the fastest speed for the run's minutes, with no desync or resync).</item>
 	/// <item>F4 to the HUD and back; a click on a ride in the chat mode rides it, which the host sees as the figure gone, and Escape leaves it; Go to in the host's name popup
 	/// moves the view to the host's figure with no park command.</item>
@@ -100,8 +102,22 @@ internal sealed partial class CoopLiveTest
 		var seat = ThePark.Commands.Player;
 		yield return Wait( "the host lets the guest build", () => OtherSays( "granted" ) && ThePark.HasBuildGrant( seat ), 180 );
 		var own = new LineResult();
-		foreach ( var step in LayLine( host: false, avoid, own, granted: true ) )
-			yield return step;
+		// [EXT:online-coop-money] the management scenario's purchase: the line's charge as this park applies its record (C4b-2)
+		var purchase = scenario == "management" ? new LinePurchase( ThePark, seat ) : null;
+		try
+		{
+			foreach ( var step in LayLine( host: false, avoid, own, granted: true ) )
+				yield return step;
+		}
+		finally
+		{
+			purchase?.Dispose();
+		}
+		if ( purchase != null )
+		{
+			Require( purchase.Evidence != null, "the guest's line was charged in its park" );
+			Keep( "ownPurchase", purchase.Evidence );
+		}
 		var ownApplied = new JsonObject();
 		foreach ( var step in Applied( own.Evidence, ownApplied ) )
 			yield return step;
@@ -111,6 +127,10 @@ internal sealed partial class CoopLiveTest
 		Keep( "ownBuild", own.Evidence );
 		Publish( "ownBuilt", own.Evidence );
 		yield return Wait( "the host's park has the guest's line", () => OtherSays( "sawGuestBuild" ), 180 );
+
+		if ( scenario == "management" )
+			foreach ( var step in GuestManagement() )
+				yield return step;
 
 		if ( scenario == "recovery" )
 			foreach ( var step in GuestRecovery( hostName, avoid ) )
@@ -140,7 +160,10 @@ internal sealed partial class CoopLiveTest
 
 		Keep( "stream", StreamEvidence() );
 		Keep( "session", SessionEvidence() );
-		if ( scenario != "recovery" )
+		// [EXT:online-coop-snapshot-join] the management scenario's one resync is its forced one (C4b-2)
+		if ( scenario == "management" )
+			Require( streams == 2 && TheSession is { FailedJoins: <= 1, GuestStream: { Desyncs: 1, Desync: null } }, "the session followed with one resync, the forced one, and no other desync" );
+		else if ( scenario != "recovery" )
 			Require( streams == 1 && TheSession is { FailedJoins: 0, GuestStream.Desyncs: 0 }, "the session followed with no resync and no desync" );
 		Publish( "done", true );
 

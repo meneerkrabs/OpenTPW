@@ -7,10 +7,12 @@
 // recovery scenario, stops both games when one fails, and checks both games' evidence
 // against each other once both completed: one session, the guest's build of the host's park, the host's line applied by the guest with checkpoints compared after it,
 // the figures seen both ways, the guest's refused line, the chat both ways, Go to, and the session's end; the baseline and the endurance run with no resync and no
-// desync, the recovery run with the session back and a second line after the restart, and the endurance run at the fastest speed for its minutes.
+// desync, the recovery run with the session back and a second line after the restart, the endurance run at the fastest speed for its minutes, and the management run
+// (C4b-2) with the guest's line as its purchase, the attractions right given through the dialog, a guest's typed price and ride door at their records, and exactly one
+// resync, the guest's forced one, with its queued price sent once after it.
 //
 // Usage:
-//   node tools/coop-live.mjs --game <OpenTPW.dll> --server <OpenTPW.Server.dll> --out <directory> [--game-path <Theme Park World>] [--scenario baseline|recovery|endurance]
+//   node tools/coop-live.mjs --game <OpenTPW.dll> --server <OpenTPW.Server.dll> --out <directory> [--game-path <Theme Park World>] [--scenario baseline|recovery|endurance|management]
 //        [--minutes M] [--config-source <directory>] [--host native|page] [--guest native|page] [--web <published wwwroot>] [--runtime aot|interpreter]
 //        [--chrome <executable>] [--headed] [--timeout-minutes T]
 // A page side (C2d-5b, tools/coop-live-page.mjs) is the game in a page in a Chrome of its own, through a local server of its own in front of the real one, which then
@@ -30,7 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { sleep } from './web-perf/lib.mjs';
 import { checkPageSides, checkPictures, PAGE_START_SECONDS, PageSide } from './coop-live-page.mjs';
 
-const SCENARIOS = ['baseline', 'recovery', 'endurance'];
+const SCENARIOS = ['baseline', 'recovery', 'endurance', 'management'];
 const SIDES = ['native', 'page'];
 const DEFAULT_CHROME = {
 	darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -389,11 +391,14 @@ export function checkEvidence(host, guest, scenario, minutes) {
 				guest: guest?.recovery && { atRestart: guest.recovery.linksAtRestart, after: guest.recovery.links } });
 		check('the guest saw the host\'s figure move after the restart', sighting(guest, 'host-moved-again', host?.player), guest?.sightings);
 	} else {
-		check('the session ran with no resync and no desync', guest?.streams === 1 && guest?.stream?.desyncs === 0 && guest?.stream?.failedJoins === 0
-			&& !(guest?.phases ?? []).includes('guest resyncing'), { streams: guest?.streams, stream: guest?.stream, phases: guest?.phases });
+		if (scenario !== 'management')
+			check('the session ran with no resync and no desync', guest?.streams === 1 && guest?.stream?.desyncs === 0 && guest?.stream?.failedJoins === 0
+				&& !(guest?.phases ?? []).includes('guest resyncing'), { streams: guest?.streams, stream: guest?.stream, phases: guest?.phases });
 		check('neither game\'s link was lost', [host, guest].every(evidence => evidence?.links?.resumes === 0
 			&& !(evidence.links.states ?? []).some(item => item.state === 'Reconnecting') && evidence.links.chatReconnects === 0), { host: host?.links, guest: guest?.links });
 	}
+	if (scenario === 'management')
+		checkManagement(host, guest, check);
 	if (scenario === 'endurance') {
 		const endurance = host?.endurance;
 		const samples = endurance?.samples ?? [];
@@ -416,6 +421,38 @@ export function checkEvidence(host, guest, scenario, minutes) {
 			slowestHostRate: Math.min(...rates), slowestGuestRate: Math.min(...guestRates), longestFrameGaps: { host: host?.longestFrameGap ?? null, guest: guest?.longestFrameGap ?? null } });
 	}
 	return checks;
+}
+
+/** The reason the guest's forced desync logs (CoopLiveTest.ForcedDesyncReason). */
+export const FORCED_DESYNC_REASON = 'forced by the live test';
+
+/**
+ * The management run's checks (C4b-2, docs/COOP.md "The live acceptance"): the guest's own line as its purchase on both parks, the attractions right through the dialog, the
+ * guest's typed price and its ride door at their records on both parks, and exactly one resync, the guest's forced one, whose queued price was sent once after it. The forced
+ * desync takes the stream's own path, so within the session's early window after the join it counts as the join's failure, as a real one would: at most that one.
+ */
+function checkManagement(host, guest, check) {
+	const purchase = host?.guestPurchase, own = guest?.ownPurchase;
+	const same = (left, right, keys) => keys.every(key => left?.[key] !== undefined && left[key] === right?.[key]);
+	check('the guest\'s line was a purchase: each park\'s balance at its record fell by its charge, the same on both', Number.isFinite(purchase?.charged) && purchase.charged > 0
+		&& purchase.before - purchase.after === purchase.charged && purchase.cells === 6 && same(purchase, own, ['before', 'after', 'charged', 'cells']),
+	{ host: purchase, guest: own });
+	check('the host gave the attractions right through the rights dialog', host?.attractionsGrant?.seat > 0 && host.attractionsGrant.seat === guest?.ownBuild?.seat
+		&& /\bAttractions\b/.test(host.attractionsGrant.rights ?? ''), host?.attractionsGrant);
+	const price = guest?.management?.price, hostPrice = host?.management?.price;
+	check('the guest\'s typed price applied at its record on both parks', Number.isInteger(price?.record) && same(price, hostPrice, ['shop', 'price', 'record']),
+		{ guest: price, host: hostPrice });
+	const doors = guest?.management?.doors ?? [], hostDoors = host?.management?.doors ?? [];
+	check('the guest\'s ride door closed and opened again, each at its record on both parks', doors.length === 2 && doors[0].open === false && doors[1].open === true
+		&& doors.every(door => Number.isInteger(door.record)) && hostDoors.length === 2 && doors.every((door, index) => same(door, hostDoors[index], ['ride', 'open', 'record'])),
+	{ guest: doors, host: hostDoors });
+	const forced = guest?.management?.forced, seen = host?.management?.forced;
+	check('exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap', guest?.streams === 2 && forced?.entry === 'Unsent'
+		&& forced?.desync?.kind === 'Protocol' && forced.desync.reason === FORCED_DESYNC_REASON && forced?.after?.generation === forced.generation + 1 && forced.after.checks >= 2
+		&& forced.after.desyncs === forced.desync.id && guest?.stream?.desyncs === forced.desync.id && forced.failedJoinsBefore === 0 && forced.failedJoinsAfter <= 1
+		&& guest?.stream?.failedJoins === forced.failedJoinsAfter && seen?.desyncs?.length === 1 && seen.desyncs[0].id === forced.desync.id
+		&& seen.desyncs[0].kind === 'Protocol' && seen.capturesAfter === seen.capturesBefore + 1 && seen.secondPriceRecords === 1,
+	{ guest: forced, host: seen, streams: guest?.streams, stream: guest?.stream });
 }
 
 /** How often both games sample the park's ticks at the fastest speed, in seconds (CoopLiveTest.EnduranceSampleSeconds). */

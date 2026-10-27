@@ -105,10 +105,10 @@ public partial class CoopSessionTests
 		var open = host.One.IsOpen;
 		Assert.IsTrue( host.Issue( new SetAttractionOpenCommand( ride, !open ) ).Accepted );
 		Assert.AreEqual( !open, host.One.IsOpen );
-		// no guest manages anything yet: no part offers the right (C4b), so a guest's switch is the host's to throw
+		// no guest manages an attraction yet: no part offers the right (C4b-2), so a guest's switch is refused with the rights' note
 		Assert.IsFalse( guest.Issue( new SetAttractionOpenCommand( ride, open ) ).Accepted );
 		view.Update();
-		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopHostOnly ) );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ) );
 		Rounds( 10, host, guest );
 		// C3's release of a seat: its grant taken back, then its release, two records
 		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
@@ -136,6 +136,41 @@ public partial class CoopSessionTests
 		Assert.IsNull( ParkCommandReplay.FirstMismatch( log, hashes ) );
 		Assert.IsTrue( claimed, "the guest's claim was accepted again" );
 		Assert.AreEqual( (!open, (int?)null, 0), (twin.One.IsOpen, twin.Level.ClaimOf( ride ), twin.Level.SeatRights.Count), "and the host's switch, the release and the grant's end" );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-permissions] The host's settings, door and call on a ride a guest claims (C4b-2): a claim guards building and removal, not the host's management, so a C3 session's
+	/// log with those records replays under C4b-2's rights to its last checkpoint.
+	/// </summary>
+	[TestMethod]
+	public void TheHostsSettingsDoorAndCallOnARideAGuestClaimsReplayUnderTheRightsToTheLastCheckpoint()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		foreach ( var park in new[] { host, guest } )
+			MarkStation( park, park.One, seat: null );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var ride = host.One.Runtime.AttractionId;
+		var seat = GuestClaims( host, guest, ride );
+		// while the guest holds the claim the host changes the ride's settings, closes its door and calls a mechanic; a checkpoint's worth of ticks between them
+		Assert.IsTrue( host.Issue( new SetRideSettingsCommand( ride, 60, 1, 1 ) ).Accepted );
+		Rounds( 10, host, guest );
+		var open = host.One.IsOpen;
+		Assert.IsTrue( host.Issue( new SetAttractionOpenCommand( ride, !open ) ).Accepted );
+		Rounds( 10, host, guest );
+		Assert.IsTrue( host.Issue( new RequestMaintenanceCommand( ride, true ) ).Accepted );
+		Rounds( 10, host, guest );
+		Assert.AreEqual( seat, host.Level.ClaimOf( ride ), "the claim held throughout" );
+		CatchUpAndCompare( host, guest );
+		host.Enter();
+		var hostStream = host.Session!.HostStream!;
+		host.Session.End( "The host closed the park." );
+		var log = ParkCommandLogFile.Deserialize( hostStream.SessionLog!.Serialize() );
+		Assert.AreEqual( 1, log.Entries.Count( entry => entry.Command is SetRideSettingsCommand ), "the log holds the settings" );
+		Assert.AreEqual( 1, log.Entries.Count( entry => entry.Command is SetAttractionOpenCommand ), "the door" );
+		Assert.AreEqual( 1, log.Entries.Count( entry => entry.Command is RequestMaintenanceCommand ), "and the call" );
+		Assert.IsNull( FirstReplayMismatch( log, park => MarkStation( park, park.One, seat: null ) ), "the session's log replays to its last checkpoint under the rights" );
 	}
 
 	[TestMethod]

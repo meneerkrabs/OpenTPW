@@ -160,9 +160,12 @@ public class CoopJoinTests
 		// [EXT:online-coop-permissions] a seat's rights name a guest's seat: never the host's 0, never past the per-player bound; a row holds a right, and only one this build offers (C4a)
 		foreach ( var seat in new[] { 0, CoopJoinState.MaximumPlayerEntries } )
 			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { SeatRights = new[] { (seat, CoopRights.Build) } }).Encode() ), $"rights for seat {seat}" );
-		foreach ( var rights in new[] { CoopRights.None, CoopRights.Finance, CoopRights.Build | CoopRights.Staff, (CoopRights)0x80 } )
+		foreach ( var rights in new[] { CoopRights.None, CoopRights.Staff, CoopRights.Attractions | CoopRights.Staff, (CoopRights)0x80 } )
 			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { SeatRights = new[] { (2, rights) } }).Encode() ), $"a row of {rights}" );
 		AssertSameState( state with { SeatRights = null }, CoopJoinState.Decode( (state with { SeatRights = null }).Encode() ) );
+		// [EXT:online-coop-permissions] the attractions right is offered since C4b-2
+		AssertSameState( state with { SeatRights = new[] { (2, CoopRights.Attractions | CoopRights.Build) } },
+			CoopJoinState.Decode( (state with { SeatRights = new[] { (2, CoopRights.Attractions | CoopRights.Build) } }).Encode() ) );
 		// a pending hire names a seat in the per-player bound and a candidate
 		foreach ( var row in new[] { (CoopJoinState.MaximumPlayerEntries, 9), (1, 0) } )
 			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { PendingHires = new[] { row } }).Encode() ), $"a pending hire {row}" );

@@ -109,11 +109,105 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x004A06B0 loan tabs] the dialog's open and each tab button build the list again, which runs every offer's credit test (0x0049FA00 → 0x004D06B0)
 	private void SelectLoanTab( bool outstanding )
 	{
-		// [EXT:online-coop-commands] a guest's opening and tab switch send no refresh, which the guest never asked for: its list shows the offers of the park the host refreshes
-		if ( LoansEconomy != null && !level.Commands.SendsRequests )
-			level.Commands.Issue( new RefreshLoanOffersCommand() );
+		if ( LoansEconomy != null )
+		{
+			// [EXT:online-coop-commands] a guest holding the finance right refreshes as the host does, through its queue, and the list refills when the refresh comes back (C4b); without the
+			// right its opening and tab switch send nothing, which it never asked for: its list shows the offers of the park the host refreshes
+			var refresh = new RefreshLoanOffersCommand();
+			if ( GuestManagement is { } queue )
+			{
+				// [EXT:online-coop-commands] a refresh the queue has no room for says the waiting note through the session's notes (C4b-2)
+				var item = new ManagementItem( ManagementTarget.Loans, ManagementKnob.Refresh, refresh );
+				if ( loansWaiter != null && level.Commands.MayIssue( refresh ) && queue.Enqueue( new[] { item }, loansWaiter ).Full )
+					queue.NoteRefused( item, null );
+			}
+			else if ( !level.Commands.SendsRequests )
+				level.Commands.Issue( refresh );
+		}
 		outstandingLoans = outstanding;
 		FillLoanList();
+	}
+
+	/// <summary>[EXT:online-coop-commands] The loans window's opening on a guest (C4b): its refreshes' waiter, detached when the window's screen is removed.</summary>
+	private ManagementWaiter? loansWaiter;
+
+	/// <summary>[EXT:online-coop-commands] A guest's loan confirmation that waits for the host (C4b): its screen, and its entry's waiter, detached when the screen is removed.</summary>
+	private (UiScreen Screen, ManagementWaiter Waiter)? loanConfirmation;
+
+	/// <summary>[EXT:online-coop-commands] A guest's refresh came back, accepted or not (C4b): the list of the tab shown refills from the park's offers and loans, and its note is said.</summary>
+	private void CompleteLoanRefresh( ManagementOutcome outcome )
+	{
+		if ( LoansWindowOpen )
+			FillLoanList();
+		NoteManagement( outcome );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's take or repay came back (C4b): its confirmation goes first, wherever it stands. Accepted, the list refills as the host's does; the session's end says
+	/// nothing more; anything else is said: by the failure dialog over the loans window when the confirmation was on top, else (another screen covered it) as a note, so no dialog opens
+	/// under or over a screen it does not belong to.
+	/// </summary>
+	private void CompleteLoanConfirmation( UiScreen confirmation, ManagementWaiter waiter, ManagementOutcome outcome )
+	{
+		loanConfirmation = null;
+		// [EXT:online-coop-commands] its outcome taken, the waiter is done: detached with nothing left to note, so the queue keeps no live waiter for it (C4b-2)
+		waiter.Queue.Detach( waiter );
+		var onTop = ReferenceEquals( Stack.Top, confirmation );
+		Stack.RemoveWhere( screen => ReferenceEquals( screen, confirmation ) );
+		switch ( outcome.Kind )
+		{
+			case ManagementOutcomeKind.Accepted:
+				if ( LoansWindowOpen )
+					SelectLoan( 0 );
+				return;
+			case ManagementOutcomeKind.Ended:
+				return;
+		}
+		if ( onTop && loansScreen != null && ReferenceEquals( Stack.Top, loansScreen ) )
+			ShowLoanFailure( ManagementNoteText( outcome.Note ) );
+		else
+			NoteManagement( outcome );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's Yes (C4b): the rights asked again (a right taken back since the dialog opened says their note and closes it), then the confirmation's own checks as
+	/// the host's, then the take or repay is queued and the dialog waits with its question and a waiting line, its buttons inert, until the outcome comes (<see cref="CompleteLoanConfirmation"/>).
+	/// </summary>
+	/// <returns>True when the dialog waits.</returns>
+	private bool ConfirmGuestLoan( CoopManagementRequests queue, UiScreen confirmation, ParkCommand action, bool repayment, int offerIndex, long amount )
+	{
+		var item = new ManagementItem( ManagementTarget.Loans, null, action );
+		// [EXT:online-coop-commands] the rights' note goes through the session's notes, said once the lines can be seen (C4b-2)
+		if ( level.Commands.RightsRefusalOf( action ) is { } refusal )
+		{
+			queue.NoteRefused( item, refusal );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
+			Stack.Pop();
+			return false;
+		}
+		if ( level.IsReadOnlyVisit || LoansEconomy is not { Features.Loans: true } current
+			|| (repayment ? current.Loans.FirstOrDefault( loan => loan.OfferIndex == offerIndex ) is not { } loan || loan.RemainingBalance != amount
+				: current.IsBankrupt || current.AvailableLoans.FirstOrDefault( offer => offer.Index == offerIndex ) is not { } offer || offer.Amount != amount) )
+		{
+			Stack.Pop();
+			ShowLoanFailure( strings.Extra( OpenTpwText.NotAvailable ) );
+			return false;
+		}
+		var waiter = queue.NewWaiter();
+		var enqueued = queue.Enqueue( new[] { item }, waiter );
+		if ( !enqueued.Queued )
+		{
+			queue.Detach( waiter );
+			if ( enqueued.Full )
+			{
+				queue.NoteRefused( item, null );
+				GameAudio.PlayUi( GameAudio.ErrorEvent );
+			}
+			Stack.Pop();
+			return false;
+		}
+		loanConfirmation = (confirmation, waiter);
+		return true;
 	}
 	private void SortLoans( int column )
 	{
@@ -144,6 +238,8 @@ public sealed partial class ParkHud
 		loanSummary = LoansEconomy is { } economy ? LoanSummaryOf( economy ) : default;
 		loanSortColumn = 0;
 		loanSortDescending = false;
+		// [EXT:online-coop-commands] a guest's opening waits for its own refreshes: a reopened window's are a new opening's (C4b)
+		loansWaiter = GuestManagement?.NewWaiter();
 		SelectLoanTab( outstandingLoans );
 		Stack.Push( loansScreen );
 		loansScreen.Focus( loansScreen.Find( "loanList" ) );
@@ -168,19 +264,43 @@ public sealed partial class ParkHud
 		if ( selectedLoan < 0 || selectedLoan >= rows.Count )
 			return;
 		var row = rows[selectedLoan];
+		var amount = outstandingLoans ? row.FinalAmount : row.Amount;
+		var repayment = outstandingLoans;
+		// [EXT:online-coop-permissions] a guest without the finance right hears the rights' note, and the window's own checks of the money and the offer never run (C4b)
+		var queue = GuestManagement;
+		ParkCommand action = repayment ? new RepayLoanCommand( row.OfferIndex, amount ) : new TakeLoanCommand( row.OfferIndex, amount );
+		if ( queue != null && level.Commands.RightsRefusalOf( action ) is { } refusal )
+		{
+			// [EXT:online-coop-commands] the rights' note through the session's notes (C4b-2)
+			queue.NoteRefused( new ManagementItem( ManagementTarget.Loans, null, action ), refusal );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
+			return;
+		}
 		if ( outstandingLoans && row.FinalAmount > economy.Balance )
 		{
 			Stack.Push( UiDialogs.MessageOfOriginalText( "loanFunds", () => strings[UIStrings.InsufficientFunds],
 				(() => strings.Extra( OpenTpwText.Back ), () => Stack.Pop()) ) );
 			return;
 		}
-		var amount = outstandingLoans ? row.FinalAmount : row.Amount;
-		var repayment = outstandingLoans;
 		var prompt = repayment ? $"{strings[UIStrings.RemainingBalance]} {FormatMoney( amount )}?"
 			: $"{strings[UIStrings.TakeOutLoan]} {amount.ToString( "#,0", CultureInfo.InvariantCulture )}?";
-		Stack.Push( UiDialogs.MessageOfOriginalText( "loanConfirm", () => prompt,
+		// [EXT:online-coop-commands] a guest's confirmation waits for the host after its Yes: its question and a waiting line, its buttons inert; Escape closes it (C4b)
+		var waiting = false;
+		UiScreen? confirmation = null;
+		confirmation = UiDialogs.MessageOfOriginalText( "loanConfirm", () => waiting ? $"{prompt} {strings.Extra( OpenTpwText.CoopWaitingForHost )}" : prompt,
 			(() => strings[UIStrings.Yes], () =>
 			{
+				if ( waiting )
+					return;
+				if ( queue != null )
+				{
+					// a session that ended meanwhile takes nothing: the dialog closes
+					if ( GuestManagement is not { } live )
+						Stack.Pop();
+					else
+						waiting = ConfirmGuestLoan( live, confirmation!, action, repayment, row.OfferIndex, amount );
+					return;
+				}
 				Stack.Pop();
 				if ( level.IsReadOnlyVisit || LoansEconomy is not { Features.Loans: true } current )
 				{
@@ -200,7 +320,24 @@ public sealed partial class ParkHud
 					level.Commands.Issue( new TakeLoanCommand( row.OfferIndex, amount ) );
 				SelectLoan( 0 );
 			}),
-			(() => strings[UIStrings.No], () => Stack.Pop()) ) );
+			(() => strings[UIStrings.No], () =>
+			{
+				if ( !waiting )
+					Stack.Pop();
+			}) );
+		// [EXT:strings] the original loan question keeps its clip; the co-op waiting line is OpenTPW-authored and is not cut off.
+		if ( confirmation.Find( "message" ) is UiLabel message )
+			message.Unclipped = () => waiting;
+		confirmation.Back = () => Stack.Pop();
+		confirmation.Removed = () =>
+		{
+			if ( loanConfirmation is { } held && ReferenceEquals( held.Screen, confirmation ) )
+			{
+				loanConfirmation = null;
+				held.Waiter.Queue.Detach( held.Waiter );
+			}
+		};
+		Stack.Push( confirmation );
 	}
 
 	private void ShowLoanFailure( string message ) => Stack.Push( UiDialogs.Message( "loanFailure", () => message,
@@ -302,6 +439,15 @@ public sealed partial class ParkHud
 		TableButton( "staffCosts", "b_staffcost", OpenStaffCostsWindow, LoansEconomy != null );
 		TableButton( "exit", "b_exit", CloseLoansWindow );
 		screen.Back = CloseLoansWindow;
+		// [EXT:online-coop-commands] the opening's refreshes no longer refill anything once its screen is gone: their outcomes are notes (C4b)
+		screen.Removed = () =>
+		{
+			if ( loansWaiter is { } opening )
+			{
+				loansWaiter = null;
+				opening.Queue.Detach( opening );
+			}
+		};
 		return screen;
 	}
 

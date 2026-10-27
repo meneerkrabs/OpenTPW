@@ -367,4 +367,82 @@ public partial class CoopJoinSessionTests
 		Assert.IsNotNull( GetField( flow, "pending" ), "the front end is queued with the reason" );
 		using ( new EntityConstructionScope() ) { }
 	}
+
+	/// <summary>The words of the dialog on top of <paramref name="flow"/>'s park HUD (its body).</summary>
+	private static string EndWords( GameFlow flow )
+	{
+		Assert.AreEqual( GameFlow.GuestEndedScreenName, flow.Hud!.Stack.Top?.Name, "the end dialog over the park" );
+		return ((UiLabel)flow.Hud.Stack.Top!.Find( "message" )!).Text();
+	}
+
+	/// <summary>A flow guest following the session from its open park, with a HUD as the game's park has one.</summary>
+	private Peer FlowGuestWithHud()
+	{
+		var guest = Hosted( 1, flowGuests: true ).Single();
+		SetField( guest.Flow!, "<Hud>k__BackingField", BareHud( guest.Level! ) );
+		return guest;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The guest's end dialog adds that some of its last changes may not have been made (C4b-2) when the session ends with a management entry not resolved, a live
+	/// waiter's failure not taken, or a note not said; with none of them it says only why the session ended.
+	/// </summary>
+	[DataTestMethod]
+	[DataRow( "entry" )]
+	[DataRow( "waiter" )]
+	[DataRow( "note" )]
+	[DataRow( "none" )]
+	public void AGuestsEndDialogSaysWhenSomeOfItsLastChangesMayNotHaveBeenMade( string left )
+	{
+		var guest = FlowGuestWithHud();
+		var flow = guest.Flow!;
+		Build( 60, 72 );
+		var queue = guest.Session!.Management!;
+		var fee = new ManagementItem( ManagementTarget.Finance, ManagementKnob.Fee, new SetEntranceFeeCommand( 7 ) );
+		switch ( left )
+		{
+			case "entry":
+				// queued in the frame the end arrives: still unsent when the session ends
+				Assert.IsTrue( queue.Enqueue( new[] { fee } ).Queued );
+				break;
+			case "waiter":
+				// refused before its send (no finance right), its outcome in a window's waiter nobody took
+				var waiter = queue.NewWaiter();
+				Assert.IsTrue( queue.Enqueue( new[] { fee }, waiter ).Queued );
+				RoundsUntil( () => !queue.Pending.Any(), "the rights refused it" );
+				Assert.AreEqual( 0, queue.TakeNotes().Count, "the waiter holds its outcome" );
+				break;
+			case "note":
+				// nothing left in the queue but a note of an outcome not known, not said yet
+				var entry = new ManagementEntry( queue, 0, fee.Target, fee.Knob, fee.Command, null ) { State = ManagementEntryState.Resolved };
+				queue.AddNote( new ManagementOutcome( entry, ManagementOutcomeKind.Unknown ) );
+				break;
+		}
+		guest.Link.End( "The host closed the park." );
+		RoundsUntil( () => guest.Session.EndedWith != null, "the guest heard the session end" );
+		// the in-memory link's end is a lost link: its words, and the sentence after them in the dialog's body
+		var strings = OriginalUiTests.FakeStrings();
+		var why = strings.Extra( OpenTpwText.SharedParkLinkLost );
+		Assert.AreEqual( left == "none" ? why : $"{why} {strings.Extra( OpenTpwText.CoopChangesNotMade )}", EndWords( flow ) );
+	}
+
+	[TestMethod]
+	public void AResyncWhoseSwapFailsShowsTheEndOverTheOldParkWithTheLineForChangesQueued()
+	{
+		var guest = FlowGuestWithHud();
+		var flow = guest.Flow!;
+		Build( 60, 73 );
+		var oldPark = guest.Level!;
+		guest.StageFails = true;
+		guest.Enter();
+		guest.Economy.Ledger.Post( LedgerCategory.OtherIncome, 1 );
+		RoundsUntil( () => guest.Session!.Phase == CoopGuestPhase.Resyncing, "the guest found the desync" );
+		// a change queued while the host's park is built: it is still unsent when the swap fails
+		Assert.IsTrue( guest.Session!.Management!.Enqueue( new[] { new ManagementItem( ManagementTarget.Finance, ManagementKnob.Fee, new SetEntranceFeeCommand( 7 ) ) } ).Queued );
+		RoundsUntil( () => guest.Session.EndedWith != null, "the swap failed" );
+		Assert.AreSame( oldPark, flow.Level, "the old park is still the game's park" );
+		Assert.IsNull( oldPark.CoopSession, "detached from the session" );
+		var words = EndWords( flow );
+		StringAssert.Contains( words, OriginalUiTests.FakeStrings().Extra( OpenTpwText.CoopChangesNotMade ), words );
+	}
 }

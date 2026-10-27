@@ -220,6 +220,18 @@ internal sealed class CoopSession : IDisposable
 	/// </summary>
 	public CoopGuestCommands? GuestCommands { get; private set; }
 
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's management requests (C4b, docs/COOP.md "A guest's management windows"): the research, finance and loans windows' commands, queued per target and
+	/// sent by <see cref="Step"/>; for the whole session, across resyncs, as its ledger. Null for a host.
+	/// </summary>
+	internal CoopManagementRequests? Management { get; private set; }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Whether the session ended while its management queue held an action not made or not said (C4b-2, <see cref="CoopManagementRequests.HasUnfinished"/>): the
+	/// guest's end dialog adds that some of the last changes may not have been made.
+	/// </summary>
+	internal bool ManagementUnfinished { get; private set; }
+
 	/// <summary>The session's park on this machine; null while a joining guest has none yet.</summary>
 	public Level? Level => level;
 
@@ -327,6 +339,7 @@ internal sealed class CoopSession : IDisposable
 		session.GuestStream = new CoopGuestStream( level, link, seconds );
 		session.GuestCommands = new CoopGuestCommands( link, session.seconds );
 		session.GuestStream.RecordApplied += session.GuestCommands.RecordApplied;
+		session.StartManagement();
 		// [EXT:online-coop-commands] the guest's own tools send their commands to the host (C3a-2)
 		level.Commands.Submit = session.SubmitRequest;
 		session.followingSince = session.seconds();
@@ -354,6 +367,7 @@ internal sealed class CoopSession : IDisposable
 		var session = new CoopSession( null, link, CoopRole.Guest, seconds, joinHost ) { Phase = CoopGuestPhase.Joining };
 		// a guest without a park has nothing to build on: a request waits for the first park's swap
 		session.GuestCommands = new CoopGuestCommands( link, session.seconds ) { Fenced = true };
+		session.StartManagement();
 		session.Subscribe();
 		session.Ask( CoopSnapshotReason.Join );
 		return session;
@@ -392,6 +406,13 @@ internal sealed class CoopSession : IDisposable
 		level!.Commands.SessionRefused += OnRefused;
 		level.CoopSession = this;
 		return this;
+	}
+
+	/// <summary>[EXT:online-coop-commands] The guest's management queue, which follows its requests through the ledger (C4b).</summary>
+	private void StartManagement()
+	{
+		Management = new CoopManagementRequests();
+		GuestCommands!.Resolved += Management.Resolved;
 	}
 
 	/// <summary>A guest's subscriptions: the session's end, and the handshake's messages, frames and reconnects.</summary>
@@ -485,7 +506,11 @@ internal sealed class CoopSession : IDisposable
 			HostStream.Dispose();
 		}
 		GuestStream?.Dispose();
+		// [EXT:online-coop-commands] whether the guest's management actions left something not made or not said, asked before the ledger's end resolves their requests (C4b-2): the end
+		// dialog says so
+		ManagementUnfinished = Management?.HasUnfinished == true;
 		GuestCommands?.End();
+		Management?.End();
 		if ( level?.CoopSession == this )
 			level.CoopSession = null;
 		buffered.Clear();
@@ -542,6 +567,10 @@ internal sealed class CoopSession : IDisposable
 			return;
 		// [EXT:online-coop-commands] a request that waited too long for its outcome goes out again
 		GuestCommands?.Step();
+		// [EXT:online-coop-commands] the management windows' commands go to the host (C4b), only while the guest follows a live stream with its requests unfenced, against the park it
+		// follows: never during a resync, never against the park a swap replaced, and not on the frame its stream stopped, before the stop below turns into a resync
+		if ( Phase == CoopGuestPhase.Following && GuestCommands is { Fenced: false } && GuestStream is { Stopped: false } && level != null )
+			Management?.Pump( level.Commands, seconds() );
 		if ( joinHost == null )
 			return;
 		var now = seconds();

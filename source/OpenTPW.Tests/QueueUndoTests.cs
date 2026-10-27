@@ -57,6 +57,24 @@ public class QueueUndoTests
 	}
 
 	[TestMethod]
+	public void TheWalkWritesTheCounterOneOnACornerAndZeroOnEveryOtherCellItVisits()
+	{
+		// tp.exe 0x5302C2: the corner walk stores +0x20 through 0x5228A0: 1 for a corner (pushed), 0 for any other cell it visits
+		var (grid, ride) = Rig();
+		Lay( grid, ride, (2, 1), (2, 2), (2, 3), (3, 3), (4, 3), (4, 4) );
+		foreach ( var (x, y) in ride.QueueCells )
+			grid.Cells.SetPlacementCount( x, y, 7 );
+		QueuePaths.WriteWalkCounts( grid, ride );
+		var corners = QueuePaths.CornerStack( grid, ride ).ToHashSet();
+		foreach ( var (x, y) in ride.QueueCells )
+			Assert.AreEqual( corners.Contains( (x, y) ) && (x, y) != (2, 1) && (x, y) != (4, 4) ? (short)1 : (short)0, grid.Cells.PlacementCountAt( x, y ), $"counter of {(x, y)}" );
+		Assert.AreEqual( (short)1, grid.Cells.PlacementCountAt( 2, 3 ), "a bend" );
+		Assert.AreEqual( (short)1, grid.Cells.PlacementCountAt( 4, 3 ), "a bend" );
+		Assert.AreEqual( (short)0, grid.Cells.PlacementCountAt( 2, 2 ), "a straight cell" );
+		Assert.AreEqual( (short)0, grid.Cells.PlacementCountAt( 4, 4 ), "the back cell is no corner" );
+	}
+
+	[TestMethod]
 	public void ACornerFrontCellAndAnEmptyQueueComeUpTwice()
 	{
 		var (grid, ride) = Rig();

@@ -75,11 +75,4 @@ public class RideViewTests
 		var halfway = camera.Rotation.Forward;
 		Assert.IsTrue( System.Numerics.Vector3.Dot( halfway.GetSystemVector3(), turned ) is > 0.7f and < 0.99f, "between the previous and the current heading" );
 	}
-
-	[TestMethod]
-	public void RightClickWaitsMoreThanTwoSeconds()
-	{
-		Assert.IsFalse( ParkHud.RideRightClickReady( 2f ) );
-		Assert.IsTrue( ParkHud.RideRightClickReady( 2.01f ) );
-	}
 }

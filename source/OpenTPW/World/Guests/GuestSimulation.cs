@@ -359,7 +359,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>The removal message's treatment of one guest whose target the attraction is (tp.exe <c>0x004FB360</c>; see <see cref="Unregister"/>).</summary>
 	private void DropForRemovedAttraction( Guest guest, IRideVisitorBridge attraction )
 	{
-		var cell = guest.State == GuestState.Using ? attraction.ExitCell : guest.IsInQueue ? JoinCellOf( attraction ) : (guest.CellX, guest.CellY);
+		// [BIN:TPW-EXE:0x004FB360 queue guests of a removed ride] the removal message dismisses a queued guest in place (0x005012F0) and sets state 6: no position is written, so on a placed ride's cell the guest stays where it stood
+		var cell = guest.State == GuestState.Using ? attraction.ExitCell : guest.IsInQueue && !HasPlacedCells( attraction ) ? JoinCellOf( attraction ) : (guest.CellX, guest.CellY);
 		if ( guest.State != GuestState.Using && guest.IsInQueue )
 			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.MediumHappinessChange & 0xFF) );
 		// [BIN:TPW-EXE:0x4fb3f5 rider voice] a guest in state 16 (on the ride) whose ride is removed gets its model back and plays cat_kids 0x80, whatever its thing id
@@ -377,7 +378,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( guest.InSwimSession )
 			EndSwimAtOnce( guest, attraction );
 		else if ( guest.State is GuestState.GoingToRide or GuestState.Using || guest.IsInQueue )
-			ReturnToPath( guest, cell );
+		{
+			if ( guest.State != GuestState.Using && HasPlacedCells( attraction ) )
+			{
+				guest.AttractionId = 0;
+				StayWhereItStands( guest );
+			}
+			else
+				ReturnToPath( guest, cell );
+		}
 		else
 		{
 			guest.AttractionId = 0;
@@ -386,6 +395,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		if ( !guest.InSwimSession )
 			guest.BodySprite.QueueTemplate( VisitorSpriteTemplate.Stand );
+	}
+
+	/// <summary>State 6 where the guest stands: its walk ends there and no position is written (the original's dismissals and its removal message set the state and nothing else).</summary>
+	private void StayWhereItStands( Guest guest )
+	{
+		var navigation = guest.Navigation;
+		navigation.SetDestination( navigation.X, navigation.Y, [] );
+		var cell = navigation.Cell;
+		if ( cell != (guest.CellX, guest.CellY) )
+			(guest.PreviousCellX, guest.PreviousCellY, guest.CellX, guest.CellY) = (guest.CellX, guest.CellY, cell.X, cell.Y);
+		guest.HasWaypoint = false;
+		guest.IsMoving = false;
+		EnterGuestState( guest, GuestState.DoingNothing );
 	}
 
 	/// <summary>
@@ -2144,53 +2166,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return moved;
 	}
 
-	/// <summary>
-	/// Sets down the queued guests that stand on <paramref name="cells"/> after a removal emptied them (the queue tool took queue cells, front included): each such guest, queueing,
-	/// moving up, boarding or waiting to board, is put on the nearest path cell and leaves the queue as if dismissed ("queue was shortened"). Returns the number of guests moved.
-	/// </summary>
-	// Approximation (QUEUE-015, registered at QueuePaths.RemoveFrom): the original's cell clear (0x5367A0) writes no guest and what a guest standing on a cleared queue cell does next is not traced; the dismissal (0x005012F0) is the exit the queue-edited re-evaluation uses (0x00501390)
-	public int SetDownOffQueueCells( IReadOnlySet<(int X, int Y)> cells ) => SetDownOffQueueCells( cells, null );
-
-	/// <summary>Preserves the edited ride's overflow thought while its removed-cell occupants take the existing set-down exit.</summary>
-	internal int SetDownOffQueueCells( IReadOnlySet<(int X, int Y)> cells, RideVisitorBridge? editedRide )
-	{
-		var angry = new HashSet<int>();
-		if ( editedRide != null && ReferenceEquals( FindAttraction( editedRide.AttractionId ), editedRide ) )
-		{
-			// Snapshot before any set-down unlinks a guest: even an in-room occupant on a removed cell can shift a later overflow guest's place.
-			// The queue-edited exit (0x00501390, ORACLE.md X14) thinks 13 for ids divisible by three; its caller (0x004DE1F0) skips the called guest.
-			// Only carry that outcome through this host relocation policy; do not run re-evaluation early or change the called/state-14 set-down behavior.
-			var queue = editedRide.Queue;
-			var room = RideVisitorBridge.PositionsPerCell * editedRide.QueueSizeInCells;
-			var called = editedRide.CalledGuest;
-			for ( var position = room; position < queue.Count; position++ )
-			{
-				var id = queue[position];
-				if ( id != called && id % 3 == 0 && Find( id ) is { } guest && guest.AttractionId == editedRide.AttractionId
-					&& guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.Boarding )
-					angry.Add( id );
-			}
-		}
-		var moved = 0;
-		foreach ( var guest in guests.ToArray() )
-		{
-			if ( !guest.OnGrid || guest.Navigation.OffGrid || !guest.IsInQueue )
-				continue;
-			var here = guest.Navigation.Cell;
-			if ( !(cells.Contains( here ) || cells.Contains( (guest.CellX, guest.CellY) )) || Grid.IsWalkable( here.X, here.Y ) || Grid.IsQueue( here.X, here.Y ) )
-				continue;
-			if ( Grid.FindNearestWalkable( here.X, here.Y ) is not { } cell )
-				continue;
-			PlaceOnGrid( guest, cell.X, cell.Y );
-			if ( FindAttraction( guest.AttractionId ) is { } attraction )
-				DismissFromQueue( guest, attraction, angry.Contains( guest.Id ) ? GuestThought.Angry : GuestThought.None, QueueEndReason.QueueRemoved );
-			else
-				ReturnOrphanToPath( guest );
-			moved++;
-		}
-		return moved;
-	}
-
 	/// <summary>True when the route from the guest's cell on is still path cells, each linked to the next (a wander route is a shortest path, so no cell repeats).</summary>
 	private bool RouteAheadHolds( GuestNavigation navigation )
 	{
@@ -2679,10 +2654,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:TPW-EXE:0x00501390 queue re-evaluation] the only exit is position ≥ 4 × cells (unsigned) with the guest not in state 14; "Queue edited underneath me while Standing In Queue" is the entry log every guest prints, not an exit; the caller 0x004DE1F0 visits every guest in the queue list but the called one (ride +0x6C); executed by the x86 oracle target tpw-exe-queue-reevaluate (ORACLE.md X14)
 	// [BIN:TPW-EXE:0x00501160 state 11 re-route] a guest whose place changed (0x004FFFF0 at 0x005002C2) takes the new place's queue slot (0x004DDF50, 0x004DE7E0) and routes to it with the generic route 0x004FA5F0 (state 12), or leaves through the dismissal when the route fails
-	private void ReevaluateQueue( IRideVisitorBridge attraction )
+	private void ReevaluateQueue( IRideVisitorBridge attraction, int? sizeInCells = null )
 	{
 		var cells = attraction.QueueCells;
-		var room = RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells;
+		var room = RideVisitorBridge.PositionsPerCell * (sizeInCells ?? attraction.QueueSizeInCells);
 		foreach ( var guest in guests )
 		{
 			if ( guest.AttractionId != attraction.AttractionId || guest.State is not (GuestState.Queueing or GuestState.MovingUpQueue or GuestState.Boarding) || guest.Id == attraction.CalledGuest )
@@ -2702,6 +2677,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [BIN:TPW-EXE:0x00501160 queue place route] a guest whose cell left the queue is not sent away here: it keeps its place and, when its place changed, state 11 routes it to the new slot from wherever it stands with the generic search (MoveToQueuePosition); the dismissal comes only if that search fails
 			guest.QueueCellIndex = index < 0 ? cells.Count : index;
 		}
+	}
+
+	/// <summary>
+	/// The re-evaluation tp.exe's Back runs at once after each pop of a ride's demolition (0x52FFEC → 0x4DE1F0, 0x501390 per guest), with the queue's size as the pop left it: the
+	/// guests the room no longer holds leave in place before the removal message, and the next tick's sync finds nothing left to do for this edit.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00501390 demolition re-evaluation] the room is 4 x the ride's word +0x40, which reaches 0 with the last cell (0x4DE1F0 reads it, not the one-cell fallback OpenTPW keeps), so the last pop dismisses every guest of the queue but the called one
+	internal void ReevaluateQueueNow( RideVisitorBridge ride, int sizeInCells )
+	{
+		if ( !attractions.Contains( ride ) )
+			return;
+		seenQueueEdits[ride.AttractionId] = ride.QueueEditCount;
+		ReevaluateQueue( ride, sizeInCells );
 	}
 
 	private static int IndexOfCell( IReadOnlyList<(int X, int Y)> cells, int x, int y )
@@ -3175,7 +3163,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>The guest leaves the queue without riding: state 6 where it stood.</summary>
 	// [BIN:TPW-EXE:0x005004AA queue exit position] every state-11 exit (0x005004AA: unlink 0x004DDD20, dismissal 0x005012F0, SetState(6)) and the queue-edit exit write no position: the guest stays where it stood, in state 6, until the decision handler 0x004FEC90 starts its next walk from there (a route search from a queue cell, or a wander along the cell's links minus its own queue link)
-	// [APPROX:QUEUE-010] a linked type-9 stand cell owned by this ride preserves position. Unsupported entrance ownership/geometry and broken links still relocate to the front or nearest path; their continuation remains unverified.
+	// [APPROX:QUEUE-010] a guest leaving a queue (0x5004AA, the queue edit's dismissal 0x501390, a removed ride's message 0x4FB360) stays where it stands in state 6 on every placed ride, whatever its cell is now (a path, a queue cell, the owned stand cell, or a cell the queue's undo or a demolition emptied), and decides from there by the ported wander (0x4F9490); a bridge without placed cells (no owner word or no exit cell: the gates, the test rigs, the Theme Park Inc slice) and the exits of a guest whose attraction is gone retain the front/nearest-path relocation, whose cells carry no links to walk off by
 	private void LeaveQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
 	{
 		attraction.LeaveQueue( guest.Id );
@@ -3200,12 +3188,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			&& WalkEdges.Commit( Grid.Cells, cell, front, 0 );
 	}
 
-	/// <summary>State 6 where the guest stood, including a linked, owned entrance; unsupported entrance geometry retains the front-cell fallback (QUEUE-010).</summary>
+	/// <summary>
+	/// Whether the attraction's cells are the placement's own (a Theme Park World level, which types its footprints and writes the entrance's and exit's links): its queue exits, edits and removal follow
+	/// tp.exe, which writes no position. A bridge without them (the gates, the test rigs, the Theme Park Inc slice) keeps the host's front-cell relocation, as its cells carry nothing to walk off by.
+	/// </summary>
+	internal static bool HasPlacedCells( IRideVisitorBridge attraction ) => attraction is RideVisitorBridge { OwnerWord: not 0, ExitAccessCell: not null };
+
+	/// <summary>State 6 where the guest stood, whatever the cell is now (the original writes no position); a bridge without placed cells keeps the front-cell fallback (QUEUE-010).</summary>
 	private void StandAfterQueue( Guest guest, IRideVisitorBridge attraction )
 	{
 		guest.AttractionId = 0;
 		var cell = guest.Navigation.Cell;
-		if ( Grid.IsWalkable( cell.X, cell.Y ) || Grid.IsQueue( cell.X, cell.Y ) || CanStandAfterQueueAtEntrance( attraction, cell ) )
+		// [BIN:TPW-EXE:0x005004AA queue exit position] a guest that stands on a cell the queue no longer holds (the queue tool's undo emptied it, a demolished ride's forced clears did) stays there in state 6; its decision walk starts from the cell with the original's rules (0x004F9490: a start without links searches for a path cell around it)
+		if ( HasPlacedCells( attraction ) || Grid.IsWalkable( cell.X, cell.Y ) || Grid.IsQueue( cell.X, cell.Y ) || CanStandAfterQueueAtEntrance( attraction, cell ) )
 		{
 			if ( cell != (guest.CellX, guest.CellY) )
 				(guest.PreviousCellX, guest.PreviousCellY, guest.CellX, guest.CellY) = (guest.CellX, guest.CellY, cell.X, cell.Y);

@@ -139,6 +139,9 @@ EXPECTED = {
     # the visible-cell span selection 0x56bb00 with the ray, hull, clip and rasteriser under it, and the visible-cell cache lookup 0x572440
     ('tpw-exe-terrain-spans', 'plan'): AGREE,
     ('tpw-exe-terrain-cache', 'plan'): AGREE,
+    # X34 (the model drape of the queue models and the track pieces, docs/PATHS.md): 0x469940 -> 0x469a80 on nodes with the node flag 0x20000, the chain 0x4702d0, the transform 0x46fc00 and the inverse 0x470040 under it
+    ('tpw-exe-model-drape', 'plan'): AGREE,
+    ('tpw-exe-model-placement', 'plan'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -909,6 +912,37 @@ class Oracle(CoastTests, unittest.TestCase):
         self.check(('tpw-exe-terrain-spans', 'plan'))
         self.check(('tpw-exe-terrain-cache', 'plan'))
 
+    def test_model_drape_agrees(self):
+        self.check(('tpw-exe-model-drape', 'plan'))
+        self.check(('tpw-exe-model-placement', 'plan'))
+
+    def test_model_drape_readings_are_sharp(self):
+        # Every variant of the drape that a transcription could use instead differs from the original on some input: the triangle chosen by the other
+        # diagonal bit, the 53-bit x87 (the control words 0x27f and 0x37f), and the subtraction of the instance height left out.
+        reading = targets.model_drape_reading
+        target = targets.DRAPE_TARGET
+
+        def with_landscape(change):
+            def plan(x):
+                return targets.drape_plan(dict(x, landscape=change(x['landscape'])))
+            return plan
+        flipped = with_landscape(lambda land: dict(land, flags=bytes(b ^ 4 if i % 4 == 0 else b for i, b in enumerate(land['flags']))))
+        unsubtracted = lambda x: targets.drape_plan(dict(x, base_height=0.0))
+        for name, plan in (('flag', flipped), ('base-height', unsubtracted)):
+            [comparison] = [c for c in compare(target, self.image, 100, plan=plan) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, name)
+        # the control word: the same routine at 53 and 64 bits no longer matches the single-precision reading
+        sandbox = target.sandbox(self.image)
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), 60)
+        for control_word in (0x27F, 0x37F):
+            different = 0
+            for x in inputs:
+                sandbox.reset()
+                target.log.clear()
+                different += targets.drape_binary(sandbox, x, target.log, fpcw=control_word) != targets.drape_plan(x)
+            self.assertGreater(different, 0, hex(control_word))
+        self.assertIs(reading.TRACE, None)
+
     def test_terrain_build_inputs_reach_every_run_mode_and_the_grey_fallback(self):
         inputs = targets.terrain_build_inputs(__import__('x86_harness').seeded('oracle-v1:tpw-exe-terrain-build'), DEFAULT_COUNT)
         seen = set()
@@ -1095,6 +1129,49 @@ class TerrainReading(unittest.TestCase):
         for x in inputs:
             seen.update(targets.terrain_reading.build(x['level'], x['n'], x['x'], x['z'])[1].values())
         self.assertEqual(seen, set(targets.terrain_reading.MODES))
+
+
+class ModelDrapeReading(unittest.TestCase):
+    """The Python reading of the model drape behind ModelDrapeGolden.cs needs neither Unicorn nor an executable."""
+
+    def test_inputs_reach_every_triangle_clamp_edge_and_node_kind(self):
+        reading = targets.model_drape_reading
+        reading.TRACE = []
+        try:
+            for x in targets.drape_inputs(__import__('x86_harness').seeded('oracle-v1:tpw-exe-model-drape'), DEFAULT_COUNT):
+                reading.drape(x)
+            seen = set(reading.TRACE)
+        finally:
+            reading.TRACE = None
+        triangles = {f'triangle-{anti}-{upper}{mirrored}' for anti, upper, mirrored in ((0, 1, 0), (0, 0, 1), (1, 0, 0), (1, 1, 1))}
+        self.assertEqual(seen, triangles | {'clamp', 'far-edge', 'plain-node', 'skipped-node'})
+
+    def test_the_committed_golden_is_the_generators_output(self):
+        import contextlib
+        import io
+        golden = __import__('model_drape_golden')
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            golden.main()
+        committed = Path(__file__).resolve().parents[3] / 'source' / 'OpenTPW.Tests' / 'ModelDrapeGolden.cs'
+        if not committed.exists():
+            self.skipTest('the C# golden is not part of this checkout')
+        self.assertEqual(committed.read_text(), buffer.getvalue())
+
+    def test_the_table_cosine_of_a_quarter_turn_is_not_zero(self):
+        reading = targets.model_drape_reading
+        sin, cos = reading.yaw_sin_cos(90)
+        self.assertEqual(sin, 1.0)
+        self.assertEqual(cos, reading.f32(__import__('math').sin(reading.f32(0.5 * reading.TURN))))
+        self.assertNotEqual(cos, 0.0)
+        self.assertEqual(reading.yaw_sin_cos(0), (0.0, 1.0))
+
+    def test_a_flat_landscape_gives_the_height_plus_the_base_height_difference_back(self):
+        reading = targets.model_drape_reading
+        land = {'origin': (0.0, 0.0), 'cell': (10.0, 10.0), 'cells': (2, 2), 'heights': [4.0] * 9, 'flags': bytes(16)}
+        case = {'landscape': land, 'base_height': 4.0, 'tree': {'flags': 0, 'matrix': list(reading.IDENTITY), 'vertices': [], 'children': [
+            {'flags': 0x20000, 'matrix': list(reading.IDENTITY), 'vertices': [(3.0, 1.5, 7.0)], 'children': []}]}}
+        self.assertEqual(reading.drape(case)['nodes'][1][1], [tuple(reading.f32_bits(c) for c in (3.0, 1.5, 7.0))])
 
 
 class TerrainSpansAndCacheReading(unittest.TestCase):

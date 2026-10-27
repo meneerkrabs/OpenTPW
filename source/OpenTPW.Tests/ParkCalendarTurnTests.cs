@@ -141,11 +141,12 @@ public class ParkCalendarTurnTests
 		};
 		park.Advance( ParkCalendar.TickOfTurn( 8433 ) );
 		Assert.AreEqual( 8433, park.Turn );
-		// 366 midnights and 12 month starts of the leap year 2000, then the year: all on the turn the date changed.
-		Assert.AreEqual( 366, events.Count( e => e.Kind == ParkEventKind.DayEnded ) );
+		// ECON-063: the new park's first turn posts the constructor's pending day message (day cache -1, 0x4F8260), then 366 midnights and 12 month starts of the leap year 2000, then the year: all on the turn the date changed.
+		Assert.AreEqual( 367, events.Count( e => e.Kind == ParkEventKind.DayEnded ) );
+		Assert.AreEqual( (1L, ParkEventKind.DayEnded), events[0] );
 		Assert.AreEqual( 12, events.Count( e => e.Kind == ParkEventKind.MonthEnded ) );
 		Assert.AreEqual( 1, events.Count( e => e.Kind == ParkEventKind.YearEnded ) );
-		Assert.AreEqual( (24L, ParkEventKind.DayEnded), events[0] );
+		Assert.AreEqual( (24L, ParkEventKind.DayEnded), events.Where( e => e.Kind == ParkEventKind.DayEnded ).ElementAt( 1 ) );
 		Assert.AreEqual( 715L, events.First( e => e.Kind == ParkEventKind.MonthEnded ).Turn );
 		CollectionAssert.AreEqual( new[] { (8433L, ParkEventKind.DayEnded), (8433L, ParkEventKind.MonthEnded), (8433L, ParkEventKind.YearEnded) },
 			events.TakeLast( 3 ).ToArray(), "the day, month and year messages of one update come in that order" );

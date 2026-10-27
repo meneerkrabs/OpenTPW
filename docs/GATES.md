@@ -59,8 +59,9 @@ The grid holds the original's types: the world init types the cells without terr
 
 - `ECON-049`: the reopen guard (`0xde654`) is executed in the oracle and follows the original's state test, including the maintenance flag (the ride
   panel's call for a mechanic) and the back-of-queue path test (`0xdd744`, PC `FUN_004de4a0`: the back queue cell's link byte must differ
-  from its queue link, so a queue whose back has lost its path stays closed); a ride on OpenTPW's one-cell queue and an object without a
-  queue are taken as connected, because OpenTPW's ride entrance cells keep no link byte.
+  from its queue link, so a queue whose back has lost its path stays closed); a queue ride whose entry has no cardinal link bit has no front and is unconnected
+  (`0x4DE040`, `0x4DE130`); a ride on OpenTPW's one-cell queue and an object without a queue on untyped geometry are taken as connected, because OpenTPW's ride entrance cells
+  keep no link byte there.
 - `ECON-050`: a removed object empties the cells it typed; the original's removal path to its cells is not traced, and the placement's other cell
   writes (the link to the path in front of an entrance) are not modelled.
 - `GUEST-011` (retired): a paid visitor walks in only while the entrance gate's script variable 1 (`VAR_STATUS`, `0x51a290`) is 1, else it goes home as at a closed park (`0x4ff814`, `GuestSimulation.EntranceGateOpen`);

@@ -69,6 +69,33 @@ public class PlayerTicketWalletTests
 		finally { Directory.Delete( root, true ); }
 	}
 
+	/// <summary>The counter is the ledger's earned count less its spent count (0x5AF5D0): the four global flags once, the six local flags of every park, the two secret flags.</summary>
+	[TestMethod]
+	public void TheCounterCountsGlobalLocalAndSecretTicketsOnceAndSubtractsTheSpentCount()
+	{
+		var ledger = new PlayerTicketLedger();
+		// local tickets are per park
+		ledger.RecordEarned( "jungle", GoldenTicketKind.Visitors );
+		ledger.RecordEarned( "hallow", GoldenTicketKind.Visitors );
+		ledger.RecordEarned( "hallow", GoldenTicketKind.ProfitYear );
+		Assert.AreEqual( 3, ledger.AvailableTickets );
+		// a global ticket counts once, and moving it between parks changes nothing
+		Assert.AreEqual( GlobalTicketOutcome.Awarded, ledger.RecordGlobal( "jungle", GoldenTicketKind.CoasterHeight, 110 ) );
+		Assert.AreEqual( 4, ledger.AvailableTickets );
+		Assert.AreEqual( GlobalTicketOutcome.Moved, ledger.RecordGlobal( "space", GoldenTicketKind.CoasterHeight, 140 ) );
+		Assert.AreEqual( 4, ledger.AvailableTickets, "a moved global ticket never changes the count" );
+		// the two secret flags are player-wide
+		ledger.RecordEarned( "fantasy", GoldenTicketKind.CamerasEverywhere );
+		ledger.RecordEarned( "space", GoldenTicketKind.AllLandOwned );
+		Assert.AreEqual( 6, ledger.AvailableTickets );
+		Assert.AreEqual( TicketPurchaseOutcome.Purchased, ledger.TryPurchase( 1112, 4 ) );
+		Assert.AreEqual( (6, 4, 2), (ledger.EarnedTickets, ledger.SpentTickets, ledger.AvailableTickets) );
+		Assert.AreEqual( TicketPurchaseOutcome.AlreadyOwned, ledger.TryPurchase( 1112, 1 ) );
+		Assert.AreEqual( TicketPurchaseOutcome.InsufficientTickets, ledger.TryPurchase( 1200, 3 ) );
+		var restored = PlayerTicketLedger.Restore( ledger.Capture() );
+		Assert.AreEqual( 2, restored.AvailableTickets, "the spent count survives the file" );
+	}
+
 	[TestMethod]
 	public void AParkRefusesATicketItemTheAccountCannotPayEvenWithTicketsOfItsOwn()
 	{

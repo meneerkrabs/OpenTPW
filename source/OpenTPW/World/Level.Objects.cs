@@ -346,7 +346,7 @@ public partial class Level
 	{
 		if ( runtime.IsOpen || Gate?.MayOpen( runtime ) != true )
 			return;
-		// a HasQueue ride without queue cells has no back cell, which the original's connection test 0x004DE4A0 reports as not connected (ECON-049 takes it as connected)
+		// a HasQueue ride without queue cells has no back cell, which the original's connection test 0x004DE4A0 reports as not connected
 		if ( runtime.Visitors.HasQueue && (runtime.Visitors.QueueFrontCell is not { } front || Guests?.Grid.IsQueue( front.X, front.Y ) != true) )
 			return;
 		if ( runtime.Coaster is { AcceptsGuests: false } || runtime.Bump is { HasTrack: true, IsTrackValid: false } )

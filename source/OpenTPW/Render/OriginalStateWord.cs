@@ -50,3 +50,23 @@ internal readonly record struct OriginalStateWord( uint Word )
 	/// <summary>Stage 0 colour operation: MODULATE2X (5) with bit 0x10000, else MODULATE (4).</summary>
 	public int ColorOperation => (Word & 0x10000) != 0 ? 5 : 4;
 }
+
+/// <summary>
+/// The texel a text control's one-colour glyph blit writes into its bitmap (display formats 4-4-4-4 and 8-8-8-8) before the sprite quads draw it with <see cref="OriginalStateWord.SpriteQuad"/>.
+/// </summary>
+// [BIN:TPW-EXE:0x6b4aa0 text blit class] the canvas class comes from the table at 0x782d38 by (format flag, destination type, source kind); an RGB bitmap (flag 0x20 clear, 0x4925d0) takes the class at 0xfb1ef0
+// (vtable 0x70a1a8): its 8-8-8-8 blitter 0x6b24b0 writes, for every glyph sample of coverage c > 0 (0-15), the pixel (alpha = c * 17, colour RGB) and leaves coverage 0 untouched (the bitmap was cleared to zero, 0x48fb64);
+// the 4-4-4-4 blitter 0x6b21f0 writes alpha nibble c. A colour alpha below 0xff (the title shadow's 0x80) scales the coverage first: level = c * alpha / 255, rounded down, and a level of 0 writes nothing (0x6b26d0-0x6b2702).
+public static class OriginalTextTexel
+{
+	/// <summary>The 8-bit texel alpha of a glyph sample of <paramref name="coverage"/> (0-15) drawn with a colour alpha of 0xff.</summary>
+	public static int Alpha( int coverage ) => coverage <= 0 ? 0 : Math.Min( coverage, 15 ) * 17;
+
+	/// <summary>The 8-bit texel alpha of a glyph sample drawn with the colour alpha <paramref name="colorAlpha"/>; 0 means the texel is not written.</summary>
+	public static int Alpha( int coverage, int colorAlpha ) => coverage <= 0 || colorAlpha <= 0 ? 0 : Math.Min( coverage, 15 ) * Math.Min( colorAlpha, 255 ) / 255 * 17;
+
+	/// <summary>The screen alpha of the quad pixel: texel alpha times the control colour's alpha, then the SRCALPHA blend (stage 0 alpha MODULATE, 0x566840); the alpha test (0x10) drops lower values.</summary>
+	public static float BlendAlpha( int texelAlpha, int diffuseAlpha ) => texelAlpha * diffuseAlpha / 65025f;
+
+	public static bool PassesAlphaTest( int texelAlpha, int diffuseAlpha ) => texelAlpha * diffuseAlpha / 255 >= 0x10;
+}

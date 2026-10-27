@@ -141,17 +141,20 @@ October 17, 2026. Static analysis of tp.exe (`[BIN:TPW-EXE:...]`), the PC twin o
   takes the next byte as well: index = threshold + (lead - 1 - threshold) * 255 + (trail - 1). The index feeds the glyph metrics and
   the table of code points (`+0xc`), whose entry is the character the line breaker classifies (`0x6aeab0`).
 - **Surface and blend.** A text control draws into a bitmap in the display mode's pixel format (`0x4925d0`: bit depth and channel
-  masks from the 32-byte mode record at `0x8bd558`; `0x48f830` clears it to zero, draws once with colour white (255,255,255,255) unless the
-  control keeps the font's colours, then sends the bitmap through the sprite pass). The renderer classes at vtable `0x70a188` onwards
-  hold one blitter per pixel format. The 5-5-5 blitter (`0x6b0760`) blends per channel as `dst + ((src - dst) * c) / 15` with signed
-  division on 5-bit channels and keeps the destination's alpha bit: no gamma. It differs from the Mac 8888 path above, whose unsigned
-  arithmetic wraps. White on the cleared bitmap gives grey levels with alpha bit 0, so how coverage turns into screen alpha depends on
-  the sprite draw's state, which is read: the fixed word `0x7060556` (alpha blend, alpha test `0x10`, depth test and write, stage 0 colour = texture MODULATE the control colour, `0x58a26c`, `0x567620`), so a black control colour gives exact black text (`UI-037` retired); the step that gives the bitmap texels an alpha for the test stays open (`UI-007`). The 32-bit blitter (`0x6b15f0`) blends the same way per channel and also keeps the
-  destination's alpha byte. A default run does not use the 5-5-5 format: the texture format index `[0x8bd554]` is 2 (4-4-4-4) or 3
+  masks from the 32-byte mode record at `0x8bd558`; `0x48f830` clears it to zero, puts the text library in mode 0 (`0x6ad790`), draws once with
+  colour white (255,255,255,255) unless the control keeps the font's colours, then sends the bitmap through the sprite pass). The glyph draw
+  reaches the canvas class by the table at `0x782d38` (library mode, destination type, source kind): an RGB bitmap takes the class at `0xfb1ef0`
+  (vtable `0x70a1a8`), whose generic slot `0x6b4aa0` expands the glyph to a 0-15 coverage buffer and picks the per-format blitter by the
+  destination's channel masks (`0x6b4f11`-`0x6b52b7`). Its 8-8-8-8 blitter (`0x6b24b0`) writes, for every sample of coverage `c` above 0, the
+  pixel (alpha = `c` x 17, the colour's RGB) and leaves the rest of the cleared bitmap untouched; the 4-4-4-4 blitter (`0x6b21f0`) writes the alpha nibble `c`;
+  a colour alpha below 0xff (the title shadow's 0x80) scales the coverage first, `c x alpha / 255` rounded down. The blending
+  blitters of class `0x70a188` (5-5-5 `0x6b0760`, 4-4-4-4 `0x6b1130`, 8-8-8-8 `0x6b15f0`, blending `dst + ((src - dst) * c) / 15` and keeping the
+  destination's alpha) serve 8-bit paletted bitmaps, not these. The texture format index `[0x8bd554]` is 2 (4-4-4-4) or 3
   (8-8-8-8) by option bit `0x400000` of `[0x7a1a8c]` (table `0x7015f8`: 0 = 5-6-5, 1 = 1-5-5-5, 2 = 4-4-4-4, 3 = 8-8-8-8). The control is a
   sprite object (record at control +0x54, colour at record +0x24 = control +0x78) drawn by the sprite draw `0x58a010` as pre-transformed
-  quads whose single diffuse colour is that colour, with the alpha test state word `0x400`; the 565 and 4444 blitters and the blend and
-  texture-stage state of those quads are not yet read.
+  quads of the fixed state word `0x7060556` (`0x58a26c`): alpha blend SRCALPHA/INVSRCALPHA, alpha test at `0x10`, depth test and write, stage 0
+  colour = texture MODULATE diffuse (the control colour), point filters (`0x567620`, `0x566840`). The screen result is the control colour blended with
+  coverage `c / 15`, and a black control colour gives exact black text (`UI-037` retired). The title control (`0x491ab0`) draws a grey shadow copy under its string in the same bitmap.
 - **Control text box** (`0x48f830`). Horizontal alignment byte +0xd8 (0 left, 1 centre, 2 right) and vertical byte +0xd9 (0 top, 1 centre, 2 bottom;
   constructor default centre) select the library's modes; margins +0xde and +0xe0 are in 2048 x 1536 units scaled by the screen
   size words `0xfaa5c4` and `0xfaa5c0`; without the wrap byte (+0xda) the box is 0x4000 wide. The bitmap's quad is placed in canvas

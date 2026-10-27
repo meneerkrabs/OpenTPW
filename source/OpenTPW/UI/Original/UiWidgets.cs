@@ -104,7 +104,8 @@ public sealed class UiContext
 			ix = (int)MathF.Round( x );
 			iy = (int)MathF.Round( y );
 		}
-		// [APPROX:UI-007] drop shadow one text pixel down-right in OpenTPW's own colour; only the original's title controls (0x491ab0) draw one (a grey copy two bitmap pixels off, modulated by the title colour), the plain text controls (0x48f830) draw their string once with the sprite state 0x7060556 — evidence needed: the title shadow's offset direction and the text bitmap's texel alpha path
+		// [BIN:TPW-EXE:0x48f830 text control] one 0x6ae0f0 call into the control's bitmap (texel alpha 17 x coverage, 0x6b24b0), then the sprite quads of the state word 0x7060556 (0x58a010): the control colour blended with coverage / 15
+		// [APPROX:UI-007] drop shadow one text pixel down-right in OpenTPW's own colour; only the original's title controls (0x491ab0) draw one (a grey copy moved by (-2, +2) bitmap pixels under the white string, modulated by the title colour), plain text controls draw their string once — evidence needed: a decision on dropping the shadow from plain text and giving titles the original's darker copy
 		if ( shadow )
 			Batch.AddText( font, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
 		Batch.AddText( font, layout, ix, iy, color, scale, text );

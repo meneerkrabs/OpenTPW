@@ -62,4 +62,27 @@ public class OriginalStateWordTests
 		// 0x4a441e, 0x4a44fe: the label colour (0,0,0,255); the sprite quads modulate the white-coverage texels by it (stage 0 MODULATE, 0x566840), so the RGB is black.
 		Assert.AreEqual( new Veldrid.RgbaByte( 0, 0, 0, 255 ), OpenTPW.UI.Original.UiColors.OptionText );
 	}
+
+	[TestMethod]
+	public void GlyphCoverageBecomesTexelAlphaAndPassesTheTestFromTheFirstLevel()
+	{
+		Assert.AreEqual( 0, OriginalTextTexel.Alpha( 0 ) );
+		Assert.AreEqual( 17, OriginalTextTexel.Alpha( 1 ) );
+		Assert.AreEqual( 255, OriginalTextTexel.Alpha( 15 ) );
+		Assert.IsFalse( OriginalTextTexel.PassesAlphaTest( OriginalTextTexel.Alpha( 0 ), 255 ) );
+		for ( var coverage = 1; coverage <= 15; coverage++ )
+			Assert.IsTrue( OriginalTextTexel.PassesAlphaTest( OriginalTextTexel.Alpha( coverage ), 255 ), $"coverage {coverage}" );
+		// the blend alpha of a full-colour-alpha pixel is the coverage over 15
+		for ( var coverage = 0; coverage <= 15; coverage++ )
+			Assert.AreEqual( coverage / 15f, OriginalTextTexel.BlendAlpha( OriginalTextTexel.Alpha( coverage ), 255 ), 1e-6f );
+	}
+
+	[TestMethod]
+	public void TheTitleShadowCopyIsHalfAsOpaqueAndDropsTheFirstLevel()
+	{
+		// 0x491db7: the shadow colour is (128,128,128) with alpha 0x80; 0x6b26d0 scales the coverage by it and rounds down.
+		Assert.AreEqual( 0, OriginalTextTexel.Alpha( 1, 0x80 ) );
+		Assert.AreEqual( 17, OriginalTextTexel.Alpha( 2, 0x80 ) );
+		Assert.AreEqual( 7 * 17, OriginalTextTexel.Alpha( 15, 0x80 ) );
+	}
 }

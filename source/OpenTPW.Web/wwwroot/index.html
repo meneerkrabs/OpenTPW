@@ -40,7 +40,7 @@
 				<p class="source-row"><label class="field">Address of a CD image:
 					<input type="url" id="urlInput" placeholder="https://example.org/disc.zip" spellcheck="false" autocomplete="off"></label>
 					<button id="urlLoad" type="button" class="secondary" disabled>Load from this address</button><br>
-					<span class="note">A .zip, .iso or .bin (a ZIP is unpacked in the browser; only its image is read). The server must allow requests from this page (CORS), and a page served by an OpenTPW server only connects to archive.org; otherwise download the file and choose it below.</span></p>
+					<span class="note">A .zip, .iso or .bin (a ZIP is unpacked in the browser; only its image is read). The server must allow requests from this page (CORS); otherwise download the file and choose it below.</span></p>
 				<p class="source-row"><label class="button alt"><span>Choose CD image</span><input type="file" id="imageFile" accept=".iso,.bin,.img,.cue,.zip" multiple></label><br>
 					<span class="note">An .iso, a .bin with its .cue (select both), or a .zip that holds one. It is read in place and never uploaded.</span></p>
 				<p class="source-row"><label class="button alt"><span id="folderText">Choose folder</span><input type="file" id="folder" webkitdirectory directory multiple></label><br>

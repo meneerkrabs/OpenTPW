@@ -22,7 +22,7 @@ dotnet publish source/OpenTPW.Web/OpenTPW.Web.csproj -c Release -o out/web
 ```
 
 Serve `out/web/wwwroot` over http (WebAssembly needs a server, not `file://`), open
-`index.html` and choose the game folder (the one that holds `Data`). No extra .NET workload
+`index.html` and choose where the game data comes from (see "Game data sources"; a game folder is the one that holds `Data`). No extra .NET workload
 is needed: this build runs .NET in interpreter mode. The published page (the server image) is
 compiled ahead of time, which runs the game about twice as fast for about 5 MB more download
 (docs/BROWSER-PERFORMANCE.md); for that build install the workload once and add the property:
@@ -245,9 +245,10 @@ Park World, and nothing is fetched or read before the player clicks:
   executable from any image is read (the image's other files are skipped, and the CD's own
   programs are not planned for copying).
 - **Another address.** The address of a `.zip`, `.iso` or `.bin`; the same pipeline. The server must
-  answer cross-origin requests (CORS), and a page served by an OpenTPW server only connects to archive.org
-  (its content security policy, docs/SERVER.md), so other addresses work on a copy of the page served
-  without that policy; otherwise download the file and choose it. `?source=<address>` on the page's own address fills the box
+  answer cross-origin requests (CORS). An OpenTPW server's content security policy (docs/SERVER.md)
+  therefore allows `https:` in `connect-src`: the data addresses are chosen by the player and cannot be listed
+  in advance (archive.org's download hosts alone change per request). Nothing else is widened: scripts still
+  come from the page only, so this lets the page fetch the player's chosen image, not run foreign code. `?source=<address>` on the page's own address fills the box
   and opens the alternatives, without starting anything.
 - **A local CD image**: an `.iso`, a `.bin` (select its `.cue` with it: a leading audio track is
   refused) or a `.zip` holding one, chosen with the button or dropped on the page. It is read in

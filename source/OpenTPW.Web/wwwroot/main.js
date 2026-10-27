@@ -596,7 +596,7 @@ function imageErrorText(error, label) {
 	if (error?.name === 'QuotaExceededError')
 		return 'This browser has no room for the game files (about 320 MB). Free some disk space, or allow more storage for this site, and load again.';
 	if (error instanceof TypeError)
-		return `Could not fetch ${label}: a network error, the server does not allow requests from this page (CORS), or the page's security policy allows only archive.org. Check the connection and try again, or download the file and choose it from your disk.`;
+		return `Could not fetch ${label}: a network error, or the server does not allow requests from this page (CORS). Check the connection and try again, or download the file and choose it from your disk.`;
 	return `Loading the game data failed: ${error?.message ?? error}`;
 }
 async function loadImage(label, makeSource, expectedBytes = null) {

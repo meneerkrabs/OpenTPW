@@ -20,7 +20,7 @@ sectors in front of the first file are copy-protection data without sync, outsid
 that answers ranges but sends **no CORS header**, so a page cannot read it; the per-member address streams the BIN with CORS but ignores
 `Range`. The page uses the latter.
 
-The OpenTPW server's content security policy for the page now also allows `connect-src https://archive.org https://*.archive.org` (and nothing broader), pinned by `ServesTheBrowserGameBesideTheApi`; a hosted page therefore cannot load an arbitrary address, only archive.org or a local file.
+The OpenTPW server's content security policy for the page now allows `https:` in `connect-src` (and nothing else changes: scripts stay the page's own), so a player's chosen data address works on a hosted page; pinned by `ServesTheBrowserGameBesideTheApi`.
 
 Verification: 31 synthetic-fixture unit tests (`tools/test_web_cdimage.mjs`, in CI; ZIP, sectors, ISO, ranges, errors, cancel). With the
 real ZIP all 935 kept files are byte-identical (SHA-256) to an existing copy of the same CD. `tools/web-archive-smoke.mjs` loads it in

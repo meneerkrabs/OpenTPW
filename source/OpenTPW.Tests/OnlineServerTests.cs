@@ -810,11 +810,12 @@ public class OnlineServerTests
 			Assert.AreEqual( "text/html", page.Content.Headers.ContentType!.MediaType );
 			StringAssert.Contains( page.Headers.CacheControl!.ToString(), "no-cache" );
 			StringAssert.Contains( string.Join( ";", page.Headers.GetValues( "Content-Security-Policy" ) ), "'wasm-unsafe-eval'" );
-			// the game data source: archive.org and its download hosts may be fetched, nothing else outside the page and its sockets
+			// the game data source: the player's chosen https address may be fetched; scripts stay the page's own
 			var policy = string.Join( ";", page.Headers.GetValues( "Content-Security-Policy" ) );
 			StringAssert.Contains( policy, "connect-src 'self'" );
-			StringAssert.Contains( policy, "https://archive.org https://*.archive.org;" );
-			Assert.IsFalse( policy.Contains( "https:;" ) || policy.Contains( "connect-src *" ), policy );
+			StringAssert.Contains( policy, " https:;" );
+			StringAssert.Contains( policy, "script-src 'self' 'wasm-unsafe-eval';" );
+			Assert.IsFalse( policy.Contains( "connect-src *" ) || policy.Contains( "script-src 'self' https:" ), policy );
 
 			using var request = new HttpRequestMessage( HttpMethod.Get, "/index.html" );
 			request.Headers.AcceptEncoding.ParseAdd( "gzip, br" );

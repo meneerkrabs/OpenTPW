@@ -489,7 +489,9 @@ public sealed partial class OriginalTerrain : Entity
 
 	/// <summary>
 	/// Path cells as cells of their own, one quad each, batched by at most 16 PathTex textures: the quad lies on the ground cell's triangles (the cell's own diagonal) with no lift, since nothing is under it, and takes the
-	/// texture coordinates the cell word's turn bits give it (<see cref="TerrainCellTexture"/>), as the original's terrain draw does for every cell.
+	/// texture coordinates the cell word's turn bits give it (<see cref="TerrainCellTexture"/>), as the original's terrain draw does for every cell. The quad draws opaque: the terrain pass gives every record the state word 0x1256
+	/// whatever the texture's own alpha type is, so a tile's transparent texels are drawn with their stored colour (painted grass in the shipped tiles) and nothing shows through.
+	// [BIN:TPW-EXE:0x0056F753 terrain pass state] the cell draw creates its records with the constant state 0x1256 (0x101256 when [0x8BCBC8] has 0x2000), never with 0x590C40's answer for the cell's texture: no blend, no alpha test
 	/// </summary>
 	private void BuildStaticPathParts( IEnumerable<PathCell> cells, List<ModelEntity> target, Dictionary<string, Texture> textures )
 	{
@@ -511,7 +513,7 @@ public sealed partial class OriginalTerrain : Entity
 			var indices = new List<uint>();
 			for ( var slot = 0; slot < batch.Length; slot++ )
 				foreach ( var cell in byTexture.GetValueOrDefault( batch[slot] ) ?? new() )
-					AddCell( vertices, indices, field, cell.X, cell.Y, slot, WordOf( cell ) );
+					AddCell( vertices, indices, field, cell.X, cell.Y, slot, WordOf( cell ), WorldTranslucency.OpaqueSlotFlag );
 			var key = string.Join( ',', batch );
 			if ( !pathMaterials.TryGetValue( key, out var material ) )
 			{
@@ -778,7 +780,7 @@ public sealed partial class OriginalTerrain : Entity
 	private static readonly uint[] DiagonalTriangles = { 0, 2, 3, 3, 1, 0 };
 	private static readonly uint[] AntiDiagonalTriangles = { 0, 2, 1, 1, 2, 3 };
 
-	private static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot, uint cellWord )
+	private static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot, uint cellWord, uint matFlags = 0 )
 	{
 		var start = (uint)vertices.Count;
 		var (u0, v0) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell00, cellWord );
@@ -798,7 +800,8 @@ public sealed partial class OriginalTerrain : Entity
 				Position = positions[index],
 				Normal = normal,
 				TexCoords = new Vector2( corners[index].Item3, corners[index].Item4 ),
-				TexIndex = slot
+				TexIndex = slot,
+				MatFlags = matFlags
 			} );
 		}
 		// The cell's own diagonal (ModelHeightfield.SplitsAlongAntiDiagonal), so the drawn ground matches the heights things stand on.

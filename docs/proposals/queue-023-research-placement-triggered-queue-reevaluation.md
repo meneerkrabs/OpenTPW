@@ -13,7 +13,7 @@ event-source matrix below. Public main
   implements owner reevaluation and `ReevaluatePlacedQueue`'s two calls.
   [Placement calls it after economy binding](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Level.Objects.cs#L1762-L1765).
   Do not add another placement callback or a speculative global reopen scan.
-- The [landed queue-tool summary](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/docs/progress/2026-10-26-queue-tool.md)
+- The [landed queue-tool summary](https://github.com/meneerkrabs/OpenTPW/pull/858) (`docs/progress/2026-10-26-queue-tool.md`)
   records the caller-specific path clear, Back and demolition routes. A fresh
   placement's queue front links only toward its entrance and does not establish
   the earlier proposed connectivity case. Queue-cell clear is not path-cell

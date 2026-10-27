@@ -85,6 +85,27 @@ public sealed partial class ParkHud
 			Log.Warning( "--debug-hud finale: this park has no End to build." );
 	}
 
+	/// <summary>Loses the park now, whatever its balance (a capture of the loss window); the window opens on the next update.</summary>
+	internal void DebugLoss()
+	{
+		if ( level.Park is not { } park || park.Economy.IsBankrupt )
+			Log.Warning( "--debug-hud loss: there is no park to lose, or it is lost already." );
+		else
+			park.Economy.DebugLose();
+	}
+
+	/// <summary>Loses the park as a loaded lost park is found (no loss window: the hidden-HUD overlay without the gate camera, a capture of it); the overlay opens on the next update.</summary>
+	internal void DebugLossRestored()
+	{
+		if ( level.Park is not { } park || park.Economy.IsBankrupt )
+		{
+			Log.Warning( "--debug-hud lossrestored: there is no park to lose, or it is lost already." );
+			return;
+		}
+		park.Economy.DebugLose();
+		lossPending = false;
+	}
+
 	/// <summary>Shows the Instant Action completion message box (a capture of it in any game type).</summary>
 	internal void DebugWinningMessage() => Stack.Push( WinningMessage() );
 

@@ -514,7 +514,7 @@ occupied slot it looks the node up in the ride's model (class `0x800`, `0x44B220
 - ride broken: template 3 (standing), the node's position unchanged, heading byte = the visitor mod 7.
 
 OpenTPW: `BounceRiders` (GPU-free rule, `BounceRiderTests`) and `FlatRideBounceRiders` (the park source); `GuestRenderer` draws a Using guest that a bounce slot holds from the
-pose instead of skipping it. Approximated: the run animation's frame interval (HEADS-007) and the node taken from the current base (HEADS-008).
+pose instead of skipping it. Approximated: the run animation's frame interval (HEADS-007). The node of a rider is stored per slot when BOUNCE fills it (`0x555742`, `RideVisitorBridge.CollectBouncing`; the saved form `BounceNodes` appears only when a script changed the base while riders bounced).
 
 ## Original interpreter internals
 

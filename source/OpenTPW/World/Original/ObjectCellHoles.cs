@@ -21,5 +21,9 @@ internal static class ObjectCellHoles
 	public static bool IsHoleType( byte type ) => type is 2 or 7 or 0x1E or 4 or 9 or 10 or 0x15;
 
 	/// <summary>Whether the ground skips cell (<paramref name="x"/>, <paramref name="y"/>) of the level's cell map.</summary>
-	public static bool IsHole( ParkCellMap cells, int x, int y ) => cells.InBounds( x, y ) && IsHoleType( cells.RawTypeAt( x, y ) );
+	public static bool IsHole( ParkCellMap cells, int x, int y ) => cells.InBounds( x, y ) && (IsHoleType( cells.RawTypeAt( x, y ) ) || cells.RawTypeAt( x, y ) == QueueType);
+
+	/// <summary>The queue cell's type: its refresh writes the hole itself, after placing the queue model (<c>0x5365D0</c> class 2: <c>0x5229E0</c>, then <c>0x450470(8)</c> → <c>0x46DF50</c>).</summary>
+	// [BIN:TPW-EXE:0x005365D0 queue hole] the class-2 branch places the queue model and then writes the tile (0, 8, 0) through 0x450470 → 0x46DF50, whose mode 8 ORs 0x101 into the cell word and clears 0x80: the cell is a hole of the ground (docs/PATHS.md, "Queue models on the terrain")
+	public const byte QueueType = 3;
 }

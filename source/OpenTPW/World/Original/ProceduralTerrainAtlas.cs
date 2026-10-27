@@ -93,6 +93,24 @@ internal sealed class ProceduralTerrainAtlas : IProceduralPages, IDisposable
 		return ((x + 0.5f) / page.Width, (y + 0.5f) / page.Height, (x + TileSize - 0.5f) / page.Width, (y + TileSize - 0.5f) / page.Height);
 	}
 
+	/// <summary>
+	/// A model's texture coordinates (<paramref name="uv"/>, u to the right, v up as the model files and the shader's flip have them) taken into the tile of <paramref name="slot"/>: the first texel's centre to the last's, so a
+	/// tile's edge texel is sampled exactly and no neighbour bleeds in. The page the tile lives on is <see cref="PageOf"/>.
+	/// </summary>
+	public System.Numerics.Vector2 PageCoordinates( int slot, System.Numerics.Vector2 uv )
+	{
+		var page = pages[PageOf( slot )];
+		var (x, y) = TileOrigin( slot );
+		return TileCoordinates( TileSize, page.Width, page.Height, x, y, uv );
+	}
+
+	/// <summary><see cref="PageCoordinates"/> for a tile of <paramref name="tileSize"/> texels at (<paramref name="x"/>, <paramref name="y"/>) of a page <paramref name="pageWidth"/> × <paramref name="pageHeight"/> texels.</summary>
+	public static System.Numerics.Vector2 TileCoordinates( int tileSize, float pageWidth, float pageHeight, int x, int y, System.Numerics.Vector2 uv )
+	{
+		float u = Math.Clamp( uv.X, 0f, 1f ), down = Math.Clamp( 1f - uv.Y, 0f, 1f );
+		return new System.Numerics.Vector2( (x + 0.5f + (tileSize - 1) * u) / pageWidth, 1f - (y + 0.5f + (tileSize - 1) * down) / pageHeight );
+	}
+
 	/// <summary>Writes a tile's N × N RGBA texels (rows top to bottom, as <see cref="ProceduralTerrainTexturer.BuildRgba"/> makes them) into the slot's place.</summary>
 	public void Upload( int slot, byte[] rgba )
 	{

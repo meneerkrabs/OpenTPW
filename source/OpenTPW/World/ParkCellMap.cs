@@ -105,6 +105,15 @@ public enum ParkCellFlags : ushort
 /// </summary>
 public sealed partial class ParkCellMap
 {
+	/// <summary>
+	/// The re-evaluation of the ride whose owner word is the argument, which a path cell's clear runs for an entrance cell beside it (tp.exe <c>0x5367A0</c> at <c>0x53694B</c>); the level sets it,
+	/// and each route that clears a path cell passes <see cref="ClearEffects"/> to the unlinking.
+	/// </summary>
+	public Action<ushort>? EntranceReevaluation { get; set; }
+
+	/// <summary>The effects a path clear carries on this map (<see cref="EntranceReevaluation"/>).</summary>
+	internal LinkEffects ClearEffects => new( null, null, EntranceReevaluation );
+
 	/// <summary>[EXT:pools-bridges] Optional elevated walking layer; underlying water stays unchanged.</summary>
 	public PoolBridgeWorld? PoolBridges { get; internal set; }
 	private readonly byte[] types;
@@ -366,7 +375,7 @@ public sealed partial class ParkCellMap
 	// [BIN:TPW-EXE:0x00529173 '@' footprint cell] on commit a type-1 shape cell gets the flag word 0x20 (0x53A510, 0x529182), the path link writer in mode 1 (0x5348D0, 0x529198) and, for each cardinal link it then has to a path cell, the same writer on that neighbour (0x5291C5..0x5291DD, the loop over 1, 4, 16, 64 by 0x4D8C20)
 	// [BIN:TPW-EXE:0x0052950D '+' and '#' footprint cell] on commit the flag word of the cell and of the second-layer cell at the same coordinates is set to 0x10 (0x53A510(0x10) twice, 0x52950D..0x52951C); the 'Q' cell (3) takes the generic stamp only
 	// [BIN:TPW-EXE:0x005293B3 entrance and exit cells] on commit an entrance or exit cell's queue link +0xD is the symbol's direction byte turned by the build rotation (0x4D8C20, 0x5227E0: 0x5293B3..0x5293C3, 0x5292A7..0x5292B2); Easymode's saved entrance and exit cells carry these bytes (the path cell in front of them is linked by ObjectAccessCells.Lay)
-	public void WriteFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint, ushort owner = 0, int rotation = 0 )
+	public void WriteFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint, ushort owner = 0, int rotation = 0, LinkEffects? effects = null )
 	{
 		foreach ( var (x, y, cell) in footprint )
 		{
@@ -376,7 +385,7 @@ public sealed partial class ParkCellMap
 			// A path cell that is not NoModify gives way: the commit clears the cell (0x5367A0(0, 0)) before it writes the type.
 			if ( RawTypeAt( x, y ) == (byte)ParkCellType.Path && !FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) )
 			{
-				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false );
+				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false, effects );
 				SetType( x, y, ParkCellType.Empty );
 			}
 			var fresh = RawTypeAt( x, y ) == 0;
@@ -465,7 +474,7 @@ public sealed partial class ParkCellMap
 				continue;
 			if ( cell.CellType == ObjectShapeSymbols.TypeAt )
 			{
-				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false );
+				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false, ClearEffects );
 				SetFlags( x, y, FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
 			}
 			else if ( addOn )

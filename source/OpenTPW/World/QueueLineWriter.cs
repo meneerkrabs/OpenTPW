@@ -32,7 +32,7 @@ public sealed class QueueLineWriter : ICellLineWriter
 	internal bool SupportsNativeStart( (int X, int Y) start ) => grid.Cells.InBounds( start.X, start.Y )
 		&& (grid.IsQueue( start.X, start.Y ) && (grid.Cells.OwnerAt( start.X, start.Y ) == 0 || grid.Cells.OwnerAt( start.X, start.Y ) == Ride.OwnerWord)
 			|| grid.Cells.HasQueuePassResidue( start.X, start.Y ) && grid.Cells.OwnerAt( start.X, start.Y ) == Ride.OwnerWord && grid.Cells.QueueLinkAt( start.X, start.Y ) != 0);
-	internal bool CanUseNative( (int X, int Y) start, (int X, int Y) end ) => native != null && native.SupportsUndo( start, end ) && SupportsNativeStart( start )
+	internal bool CanUseNative( (int X, int Y) start, (int X, int Y) end ) => native != null && native.SupportsAdmission( start, end ) && SupportsNativeStart( start )
 		&& (nativeActive || grid.IsQueue( start.X, start.Y ));
 	public void ResetToolSession() => nativeActive = false;
 	internal void RememberNativeResult( SegmentResult result ) => nativeActive = result.QueueReceipt != null;

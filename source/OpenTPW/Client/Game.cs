@@ -1152,6 +1152,8 @@ internal static class Game
 						case "ride": hud.DebugRide( argument ); break;
 						case "finale": hud.DebugFinale(); break;
 						case "winningmessage": hud.DebugWinningMessage(); break;
+						case "loss": hud.DebugLoss(); break;
+						case "lossrestored": hud.DebugLossRestored(); break;
 						// [EXT:debug-hud] "patrol:<role>,x0,y0,x1,y1[,hover]" runs the patrol area flow (employee window, patrol button, two map clicks; "hover" stops after the first click with the pointer on the second cell) and "locate:<role>" the staff locator on that role
 						case "patrol":
 						{

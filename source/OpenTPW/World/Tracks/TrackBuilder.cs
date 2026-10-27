@@ -201,6 +201,9 @@ public sealed class TrackBuilder
 			var neighbour = Cells.LinksAt( x + dx, y + dy );
 			if ( (neighbour & back) != 0 )
 				Cells.SetLinks( x + dx, y + dy, (byte)(neighbour & ~back) );
+			// [BIN:TPW-EXE:0x0053694B path clear beside an entrance] the clear every track routine reaches (0x538FC0 at 0x539190, the routine around 0x538DC2) re-evaluates the ride of a type-9 neighbour that carries an owner word
+			if ( (Cells.LinksAt( x, y ) & GuestPathGrid.LinkValue( direction )) != 0 && Cells.RawTypeAt( x + dx, y + dy ) == ParkCellTypes.Entrance && Cells.OwnerAt( x + dx, y + dy ) != 0 )
+				Cells.EntranceReevaluation?.Invoke( Cells.OwnerAt( x + dx, y + dy ) );
 		}
 		Cells.SetType( x, y, ParkCellType.Empty );
 		return true;

@@ -96,6 +96,7 @@ COMPAT-016 docs/progress/2026-10-16-park-name-and-sign-paint-read-in-tp-exe.md
 COMPAT-017 docs/COMPATIBILITY.md
 COMPAT-019 docs/COMPATIBILITY.md
 COMPAT-030 docs/COMPATIBILITY.md
+COMPAT-032 docs/COMPATIBILITY.md
 DET-001 docs/reverse/DET-plan.md
 DET-002 docs/reverse/DET-plan.md
 DET-003 docs/reverse/DET-plan.md

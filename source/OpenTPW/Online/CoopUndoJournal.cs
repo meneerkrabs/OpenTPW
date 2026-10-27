@@ -38,6 +38,8 @@ internal sealed class CoopUndoJournal
 	/// <summary>How many live steps' footprints include each tracked cell.</summary>
 	private readonly Dictionary<(int X, int Y), int> tracked = new();
 	private readonly Dictionary<uint, Member> members = new();
+	/// <summary>A live step of each record still in the cells' lists (a batch's pieces share theirs and its effects).</summary>
+	private readonly Dictionary<long, Step> live = new();
 	/// <summary>The take-back decided last and not yet applied: its steps, and the shared bend corner its inverse clears.</summary>
 	private Decision? pending;
 
@@ -71,6 +73,11 @@ internal sealed class CoopUndoJournal
 		public IReadOnlyDictionary<(int X, int Y), (CellFields Before, CellFields After)> Effects { get; set; } = new Dictionary<(int X, int Y), (CellFields Before, CellFields After)>();
 		/// <summary>The cells of its footprint its inverse clears whole (a cell it created), where its member's own residue does not stop it.</summary>
 		public IReadOnlySet<(int X, int Y)> ClearsWhole { get; init; } = new HashSet<(int X, int Y)>();
+		/// <summary>
+		/// The cells of its footprint it only counted up (a path line's raised crossing, a native segment's queue cell): its inverse counts them down and unlinks its own links there, so a
+		/// later step's write that left the cell's type and those links alone is no dependency.
+		/// </summary>
+		public IReadOnlySet<(int X, int Y)> CountedUp { get; init; } = new HashSet<(int X, int Y)>();
 		/// <summary>A native segment's footprint cells' types before it: a cell it found queue it counted up, any other it made queue.</summary>
 		public IReadOnlyDictionary<(int X, int Y), byte> Before { get; init; } = new Dictionary<(int X, int Y), byte>();
 		public SegmentResult? Segment { get; init; }
@@ -216,7 +223,8 @@ internal sealed class CoopUndoJournal
 					return Array.Empty<Step>();
 				var footprint = line.Mode == CellToolMode.Queue ? segment.Built.ToHashSet() : segment.Built.Concat( segment.Existing ).ToHashSet();
 				return new[] { new Step { Record = record, Member = member, Kind = line.Mode == CellToolMode.Queue ? StepKind.QueueLine : StepKind.PathLine, Group = 0, Footprint = footprint,
-					Changes = changes, Segment = segment, Mode = line.Mode, Ride = line.Ride, Start = (line.StartX, line.StartY), ClearsWhole = segment.Built.ToHashSet() } };
+					Changes = changes, Segment = segment, Mode = line.Mode, Ride = line.Ride, Start = (line.StartX, line.StartY), ClearsWhole = segment.Built.ToHashSet(),
+					CountedUp = line.Mode == CellToolMode.Queue ? new HashSet<(int X, int Y)>() : segment.Existing.ToHashSet() } };
 			}
 			case QueueSegmentCommand line when result.Value is SegmentResult { QueueReceipt: { } receipt } laid && level.Guests?.Grid.Cells is { } cells:
 			{
@@ -233,7 +241,8 @@ internal sealed class CoopUndoJournal
 				return new[] { new Step { Record = record, Member = member, Kind = StepKind.QueueSegment, Group = 0, Footprint = footprint, Changes = changes, Ride = line.Ride,
 					Start = receipt.Start, End = receipt.End,
 					Before = footprint.ToDictionary( cell => cell, cell => before.TryGetValue( cell, out var fields ) ? fields.Type : cells.RawTypeAt( cell.X, cell.Y ) ),
-					ClearsWhole = footprint.Where( cell => before.TryGetValue( cell, out var fields ) && fields.Type != (byte)ParkCellType.Queue ).ToHashSet() } };
+					ClearsWhole = footprint.Where( cell => before.TryGetValue( cell, out var fields ) && fields.Type != (byte)ParkCellType.Queue ).ToHashSet(),
+					CountedUp = footprint.Where( cell => before.TryGetValue( cell, out var fields ) && fields.Type == (byte)ParkCellType.Queue ).ToHashSet() } };
 			}
 			case LayPoolSlidePieceCommand piece when result.Value is PoolSlideWrite { Result: PoolSlideResult.Ok }:
 				return SlidePieces( record, member, (piece.TowerX, piece.TowerY), 1, changes );
@@ -276,6 +285,7 @@ internal sealed class CoopUndoJournal
 			members[step.Member] = member = new Member();
 		member.Steps.Add( step );
 		member.Cells += step.Weight;
+		live.TryAdd( step.Record, step );
 		foreach ( var cell in step.Footprint )
 		{
 			tracked[cell] = tracked.TryGetValue( cell, out var count ) ? count + 1 : 1;
@@ -307,8 +317,14 @@ internal sealed class CoopUndoJournal
 		member.Cells -= step.Weight;
 		// a record shared by a batch's pieces stays while another of its pieces is a step
 		var shared = member.Steps.Any( other => other.Record == step.Record );
-		if ( !shared )
+		if ( shared )
 		{
+			if ( live.TryGetValue( step.Record, out var kept ) && ReferenceEquals( kept, step ) )
+				live[step.Record] = member.Steps.First( other => other.Record == step.Record );
+		}
+		else
+		{
+			live.Remove( step.Record );
 			foreach ( var cell in step.Changes )
 			{
 				if ( !histories.TryGetValue( cell, out var list ) )
@@ -329,7 +345,7 @@ internal sealed class CoopUndoJournal
 
 	/// <summary>
 	/// Whether every effect <paramref name="step"/> had on <paramref name="cell"/> is undone now: each field it changed back to its value before it, a link or flag bit by bit (so another player's
-	/// link on the same neighbour does not count). A native segment's queue metadata on its stop cell, which its undo leaves, is an effect that stays.
+	/// link on the same neighbour does not count).
 	/// </summary>
 	private bool Reversed( Step step, (int X, int Y) cell )
 	{
@@ -492,6 +508,7 @@ internal sealed class CoopUndoJournal
 	internal void Clear()
 	{
 		members.Clear();
+		live.Clear();
 		histories.Clear();
 		tracked.Clear();
 		running.Clear();
@@ -546,7 +563,7 @@ internal sealed class CoopUndoJournal
 		var records = new HashSet<long> { step.Record };
 		foreach ( var cell in step.Footprint )
 		{
-			if ( ChangedSince( cell, records, step.Member, step.ClearsWhole.Contains( cell ) ) )
+			if ( ChangedSince( step, cell, records ) )
 				return TakeBackVerdict.Changed;
 		}
 		var player = request.Player;
@@ -595,24 +612,42 @@ internal sealed class CoopUndoJournal
 
 	/// <summary>
 	/// Whether a command still in effect that is none of the step set's (<paramref name="records"/>) changed <paramref name="cell"/> since the set first did: its list must hold, from the set's
-	/// first record on, only the set's records, so a step that wrote a cell on both sides of another player's write is refused (for a step of one record, its list ends with it); the one
-	/// exception is <paramref name="member"/>'s own residue marker on a cell its inverse clears whole (<paramref name="clearsWhole"/>), which leaves nothing of that residue behind. Another
-	/// member's residue, the permanent marker and any other record stay changes.
+	/// first record on, only the set's records and two exceptions, so a step that wrote a cell on both sides of another player's write is refused (for a step of one record, its list ends
+	/// with it): <paramref name="step"/>'s member's own residue marker on a cell its inverse clears whole, which leaves nothing of that residue behind; and on a cell the step only counted up,
+	/// a later live step's record whose effect there left the cell's type, its other fields and the step's own links alone (a link to another cell, a crossing's count): the count-down
+	/// takes back the step's own increment and links only. Another member's residue, the permanent marker, a removal and any other record stay changes.
 	/// </summary>
-	private bool ChangedSince( (int X, int Y) cell, IReadOnlySet<long> records, uint member, bool clearsWhole )
+	private bool ChangedSince( Step step, (int X, int Y) cell, IReadOnlySet<long> records )
 	{
 		if ( !histories.TryGetValue( cell, out var list ) )
 			return true;
 		var first = list.FindIndex( records.Contains );
 		if ( first < 0 )
 			return true;
-		var residue = ResidueOf( member );
+		var residue = ResidueOf( step.Member );
+		var clearsWhole = step.ClearsWhole.Contains( cell );
+		var countedUp = step.CountedUp.Contains( cell );
 		for ( var index = first + 1; index < list.Count; index++ )
 		{
-			if ( !records.Contains( list[index] ) && !(clearsWhole && list[index] == residue) )
-				return true;
+			var entry = list[index];
+			if ( records.Contains( entry ) || (clearsWhole && entry == residue) || (countedUp && LeavesCountAlone( step, cell, entry )) )
+				continue;
+			return true;
 		}
 		return false;
+	}
+
+	/// <summary>
+	/// Whether <paramref name="entry"/>, a live step's record, left a cell <paramref name="step"/> only counted up as the step's count-down needs it: the cell's type, flags, owner, queue link
+	/// and residue as they were, its links changed only on bits the step did not change, its counter by any count.
+	/// </summary>
+	private bool LeavesCountAlone( Step step, (int X, int Y) cell, long entry )
+	{
+		if ( entry < 0 || !live.TryGetValue( entry, out var other ) || !other.Effects.TryGetValue( cell, out var effect ) || !step.Effects.TryGetValue( cell, out var own ) )
+			return false;
+		var (before, after) = effect;
+		return before.Type == after.Type && before.Flags == after.Flags && before.Owner == after.Owner && before.QueueLink == after.QueueLink && before.Residue == after.Residue
+			&& ((before.Links ^ after.Links) & (own.Before.Links ^ own.After.Links)) == 0;
 	}
 
 	private static TakeBackVerdict Decided( TakeBackCommand request, ParkCommand inverse, IReadOnlyList<Step> steps, (int X, int Y)? bend, Step? owner,

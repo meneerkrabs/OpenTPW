@@ -435,6 +435,32 @@ public class CoopUndoJournalTests
 	}
 
 	[TestMethod]
+	public void AnotherLinkIntoACellALineOnlyCrossedIsNoDependency()
+	{
+		var journaled = NewJournaled();
+		var cells = journaled.Level.Guests!.Grid.Cells;
+		// member 3's column ends at (8, 20); member 1's row crosses it there and builds on both sides
+		var column = journaled.Run( 3, Line( 8, 17, 8, 20 ) ).Record;
+		var counter = cells.PlacementCountAt( 8, 20 );
+		var row = journaled.Run( 1, Line( 5, 20, 12, 20 ) );
+		Assert.IsTrue( row.Result.Value is SegmentResult { Completed: true, EndedOnExisting: false } && cells.PlacementCountAt( 8, 20 ) == counter + 1, "a crossing" );
+		// member 2's line down from (8, 21) links into (8, 20) from below, and into nothing of the row's
+		var below = journaled.Run( 2, Line( 8, 21, 8, 24 ) ).Record;
+		CollectionAssert.AreEqual( new[] { column, row.Record, below }, journaled.History( 8, 20 ) );
+		// the row's undo counts (8, 20) down and unlinks its own cells there alone: the line below does not depend on it
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, row.Record ) );
+		Assert.AreEqual( counter, cells.PlacementCountAt( 8, 20 ) );
+		Assert.IsTrue( journaled.Level.Guests.Grid.IsWalkable( 8, 22 ) && !journaled.Level.Guests.Grid.IsWalkable( 9, 20 ) );
+		CollectionAssert.AreEqual( new[] { column, below }, journaled.History( 8, 20 ), "its record left" );
+		// a line through one of the row's own cells is a dependency, as before
+		var again = journaled.Run( 1, Line( 5, 20, 12, 20 ) );
+		Assert.IsTrue( again.Result.Value is SegmentResult { Completed: true } );
+		var across = journaled.Run( 2, Line( 6, 17, 6, 23 ) );
+		Assert.IsTrue( across.Result.Accepted );
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBack( 1, again.Record ), "the line across its built (6, 20)" );
+	}
+
+	[TestMethod]
 	public void OnlyTheBuildingToolsAcceptedStepsAreSteps()
 	{
 		var journaled = NewJournaled();

@@ -2478,7 +2478,7 @@ action goes to the host, and the guest's tools and windows follow what came back
 
 `[EXT:online-coop-undo]` C5 makes Backspace in a building tool of a shared park take back the player's own last
 step of that tool, for the host and every guest alike, under the normal refund rules (decision Q14, A), and
-refuses it while a later command still depends on it. The plan (v22, after twenty-two Codex rounds) makes it
+refuses it while a later command still depends on it. The plan (v23, after twenty-three Codex rounds) makes it
 three parts that reach main as one merge: C5-1 the host's undo journal, the path, queue and slide tools;
 C5-2 the pool strokes and the wave machine; C5-3 the kart, water and coaster tools.
 
@@ -2518,7 +2518,9 @@ incomplete histories.
 guest sends only that, a few bytes. The host decides it at its intake, before the rights and the log, through
 a preparation hook of `ParkCommands`: the step must be the member's own (`NotOwn` otherwise: another seat's, a
 former member's, taken back already) and its last of the tool (`NotLast`); no record still in effect of anyone
-else may have changed its cells since it (`Changed`); and its tool's own undo, run on a disposable copy of the
+else may have changed its cells since it (`Changed`), save on a cell the step only crossed: there another
+line's link into the cell from elsewhere is no dependency, since the undo only counts that cell down and
+unlinks its own links; and its tool's own undo, run on a disposable copy of the
 cells, must do exactly the step's work back, refusing, skipping and adding nothing but the unlinking of the
 cells beside it (`InTheWay`: an object, a pool bridge or a slide piece on its cells, a native undo that would
 change another player's path, a queue removal that would reach past its cells). Taken, the record carries the

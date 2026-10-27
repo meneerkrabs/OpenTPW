@@ -110,11 +110,22 @@ public partial class CoopSessionTests
 		GuestClick( host, guest, view, (8, 2) );
 		GuestClick( host, guest, view, (8, 4) );
 		Assert.IsTrue( host.One.Visitors.QueueCells.Contains( (8, 4) ) );
-		var paid = host.Economy.Balance;
+		// each queue cell an undo clears refunds the queue cell's cost times the ride's scrap percentage (the native undo's own rule, RefundQueueCellNative); a count-down refunds nothing
+		host.Enter();
+		var instance = host.Level.GetEconomyInstance( host.One );
+		Assert.IsNotNull( instance );
+		Assert.IsTrue( host.Economy.TryGetObject( instance.Value, out var state ) );
+		var perCell = (long)(unchecked( (uint)((int)host.Economy.CellCost( CellPurchase.Queue ) * host.Economy.ScrapPercent( state )) ) / 100U);
+		Assert.IsTrue( perCell > 0 );
+		var cells = host.Level.Guests!.Grid.Cells;
+		int QueueCellsNow() => Enumerable.Range( 0, 9 ).Sum( y => Enumerable.Range( 2, 11 ).Count( x => cells.RawTypeAt( x, y ) == (byte)ParkCellType.Queue ) );
+		var (paid, before) = (host.Economy.Balance, QueueCellsNow());
 		Assert.IsTrue( GuestBackspace( host, guest, view ), "the second segment taken back" );
 		Assert.IsFalse( host.One.Visitors.QueueCells.Contains( (8, 4) ) || host.One.Visitors.QueueCells.Contains( (8, 3) ), "its cells gone" );
-		Assert.IsTrue( host.Economy.Balance > paid, "refunded at the ride's scrap percentage" );
+		Assert.AreEqual( paid + (before - QueueCellsNow()) * perCell, host.Economy.Balance, "refunded per cleared cell at the ride's scrap percentage" );
+		(paid, before) = (host.Economy.Balance, QueueCellsNow());
 		Assert.IsTrue( GuestBackspace( host, guest, view ), "the first segment taken back, its bend corner cleared with the second as the original's undo clears it" );
+		Assert.AreEqual( paid + (before - QueueCellsNow()) * perCell, host.Economy.Balance, "the same for the first" );
 		Assert.AreEqual( queue, QueueCellsOf( host ), "the queue as it was" );
 		Assert.AreEqual( loaded, tool.SegmentCount );
 		Assert.IsTrue( TakeBacksOf( host, seat ).All( command => command.Verdict == TakeBackVerdict.Taken && command.Inverse is UndoQueueSegmentCommand ) );
@@ -171,7 +182,14 @@ public partial class CoopSessionTests
 		Assert.IsTrue( taken.Accepted, taken.Result?.Reason );
 		Assert.IsTrue( TakeBacksOf( host, seat ).Single() is { Verdict: TakeBackVerdict.Taken, Inverse: UndoLineCommand { Mode: CellToolMode.Queue } } );
 		Assert.IsFalse( host.One.Visitors.QueueCells.Contains( (7, 2) ) || host.One.Visitors.QueueCells.Contains( (8, 2) ), "its built cells gone" );
-		Assert.IsTrue( host.Economy.Balance > paid, "refunded" );
+		// its two built cells, each refunded at the queue cell's cost times the ride's scrap percentage (the queue removal's rule, RefundQueueCell)
+		host.Enter();
+		var instance = host.Level.GetEconomyInstance( host.One );
+		Assert.IsNotNull( instance );
+		Assert.IsTrue( host.Economy.TryGetObject( instance.Value, out var state ) );
+		var perCell = host.Economy.CellCost( CellPurchase.Queue ) * host.Economy.ScrapPercent( state ) / 100;
+		Assert.IsTrue( perCell > 0 );
+		Assert.AreEqual( paid + 2 * perCell, host.Economy.Balance, "refunded per removed cell" );
 		CatchUpAndCompare( host, guest );
 		Assert.AreEqual( host.Economy.Balance, guest.Economy.Balance );
 		QueueCellsAlike( host, guest );
@@ -504,6 +522,33 @@ public partial class CoopSessionTests
 		Assert.IsFalse( Walkable( host, 8, 22 ) );
 		Assert.IsTrue( GuestBackspace( host, guest, view ), "now taken" );
 		Assert.IsFalse( Walkable( host, 8, 20 ) || Walkable( guest, 8, 20 ) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void ALinkIntoACellAGuestsLineOnlyCrossedLeavesItsTakeBackThrough()
+	{
+		var (host, guest, view) = UndoSession();
+		var cells = host.Level.Guests!.Grid.Cells;
+		// the host's column ends at (8, 20); the guest's row crosses it there
+		HostLine( host, (8, 17), (8, 20) ).Cancel();
+		var counter = cells.PlacementCountAt( 8, 20 );
+		var tool = StartPath( guest );
+		GuestClick( host, guest, view, (12, 20) );
+		Assert.AreEqual( counter + 1, cells.PlacementCountAt( 8, 20 ), "crossed" );
+		// the host's line down from (8, 21) links into that cell from below, its tool kept on
+		var hostTool = HostLine( host, (8, 21), (8, 24) );
+		Rounds( 5, host, guest );
+		Assert.IsTrue( GuestBackspace( host, guest, view ), "the row's undo counts the cell down and unlinks its own cells there alone: no dependency" );
+		Assert.AreEqual( 0, tool.SegmentCount );
+		Assert.IsFalse( Walkable( host, 10, 20 ) || Walkable( guest, 10, 20 ) );
+		Assert.IsTrue( Walkable( host, 8, 20 ) && Walkable( host, 8, 22 ) && Walkable( guest, 8, 22 ), "the column and the host's line stay" );
+		Assert.AreEqual( counter, cells.PlacementCountAt( 8, 20 ) );
+		Assert.AreNotEqual( 0, cells.LinksAt( 8, 20 ) & GuestPathGrid.LinkValue( 2 ), "the host's link into it stays" );
+		host.Enter();
+		Assert.IsTrue( hostTool.Undo(), "the host's own take-back after it" );
+		Assert.IsFalse( Walkable( host, 8, 22 ) );
+		Rounds( 5, host, guest );
 		CatchUpAndCompare( host, guest );
 	}
 

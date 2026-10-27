@@ -249,7 +249,7 @@ public sealed partial class ParkHud
 		new( 255, 0, 0, 255 ), new( 250, 90, 0, 255 ), new( 255, 175, 0, 255 ), new( 255, 200, 0, 255 ), new( 255, 255, 150, 255 ), new( 255, 255, 255, 255 ),
 	};
 	public static Veldrid.RgbaByte CashColor( long balance ) => CashColors[(int)Math.Clamp( (Math.Clamp( balance, -999, 6000 ) + 999) / 1000, 0, CashColors.Length - 1 )];
-	private string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
+	internal string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
 
 	/// <summary>
 	/// The frame of the trend arrow beside the balance (control 49, <c>green_up</c>): 1 (the red down arrow) when the last closed month spent more than it took, else 0;
@@ -868,8 +868,6 @@ public sealed partial class ParkHud
 		// released disarms, and a carry left without its Move tool is ended (C3b-2)
 		RestoreMove();
 		CompleteGuestRequests();
-		// [EXT:online-coop-commands] and the management windows' outcomes, also under a covering screen and the research finale (C4b)
-		CompleteGuestManagement();
 		level.EndCarrylessMove();
 		level.EndStrayCarry( Time.Now );
 		// [EXT:online-coop-commands] the guest's coaster tool says what its waited actions came back with, before the claim is bound: an outcome that ended the tool says why itself (C3c-2)
@@ -888,6 +886,8 @@ public sealed partial class ParkHud
 			// The full-screen owner consumes input, not the unscaled UI timer/delayed-release pumps.
 			if ( !finaleObservedCamera )
 				rideStatic.SkipFrame(); // the frame that retires the screen observes no camera and refreshes no timestamp
+			// [EXT:online-coop-commands] the management windows' outcomes are taken under the research finale too (C4b)
+			CompleteGuestManagement();
 			FinishChallengeMessageFrame();
 			return true;
 		}
@@ -948,6 +948,9 @@ public sealed partial class ParkHud
 			FocusChatEntry();
 			overUi = consumed = true;
 		}
+		// [EXT:online-coop-commands] the management windows' outcomes, after the screens took this frame's input (C4b): a confirmation the player closed this frame already detached, so an
+		// outcome that came this frame is its note, never a dialog its own Back would close unseen
+		CompleteGuestManagement();
 		// [BIN:TPW-EXE:0x488aa1 RMBCancelOn] the original's screens read the option (+0x39) before a right click leaves them; the object window leaves on it too
 		if ( InfoArmOpen && Stack.Screens.Count == 1 && !IsRiding && input.RightPressed && GameOptions.Current.RmbCancel && !Input.TextEntryActive )
 		{

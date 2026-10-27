@@ -78,8 +78,8 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>
-	/// Once a frame, before the windows' own updates: the door's outcomes (the advisor's event of an accepted one, whichever HUD queued it), the loans window's refreshes (each refills the list
-	/// of the tab shown), the waiting loan confirmation's outcome, then the notes nobody waits for; every note is said once its messages can be seen.
+	/// Once a frame, after the screens took the frame's input (and under the research finale): the door's outcomes (the advisor's event of an accepted one, whichever HUD queued it), the loans
+	/// window's refreshes (each refills the list of the tab shown), the waiting loan confirmation's outcome, then the notes nobody waits for; every note is said once its messages can be seen.
 	/// </summary>
 	private void CompleteGuestManagement()
 	{
@@ -129,9 +129,15 @@ public sealed partial class ParkHud
 	{
 		while ( managementNotes.Count > 0 && FeedbackShows && messages.Count < MaximumFeedbackLines )
 		{
-			var text = ManagementNoteText( managementNotes.Dequeue() );
-			if ( messages.All( message => message.Text != text ) )
-				SayGuestNote( text );
+			var note = managementNotes.Dequeue();
+			var text = ManagementNoteText( note );
+			if ( messages.Any( message => message.Text == text ) )
+				continue;
+			SayGuestNote( text );
+			// a rights' note belongs to the run of the session's refusals: one said here keeps the session's own note of the same run from following it (a right taken back with entries queued
+			// is said once, whether the open one's record or the queue's send refused them)
+			if ( note.Kind == ManagementNoteKind.Rights )
+				lastSessionRefusalNotice = Time.Now;
 		}
 	}
 

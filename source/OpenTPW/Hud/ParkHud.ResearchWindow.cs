@@ -394,6 +394,8 @@ public sealed partial class ParkHud
 		internal float BallTop { get; private set; } = WorkloadKnobTop( 0 );
 		internal UiRect BallRect => Rect( 267, BallTop, 334, BallTop + KnobBallHeight );
 		private int ability;
+		/// <summary>[EXT:online-coop-commands] The workload the knob stands for: what its player last asked for, or the workload it last projected (C4b).</summary>
+		private int shownWorkload = -1;
 		private enum PressMode { None, Page, Grab }
 		private PressMode pressMode;
 		private bool releasedPage;
@@ -410,6 +412,7 @@ public sealed partial class ParkHud
 			BallTop = WorkloadKnobTop( Value );
 			(ability, Limit) = owner.WorkloadStaffing();
 			SetValue( KnobFromWorkload( owner.DrawnResearchWorkload, Limit ), writeWorkload: WritesProjection );
+			shownWorkload = owner.DrawnResearchWorkload;
 		}
 
 		/// <summary>
@@ -425,19 +428,24 @@ public sealed partial class ParkHud
 			if ( staffing.Ability == ability ) return;
 			(ability, Limit) = staffing;
 			SetValue( KnobFromWorkload( owner.DrawnResearchWorkload, Limit ), writeWorkload: WritesProjection );
+			shownWorkload = owner.DrawnResearchWorkload;
 			// SetPos changes the live rectangle, not the press-time rectangle (+0x20); the next actual move still uses the original baseline.
 		}
 
 		/// <summary>
 		/// [EXT:online-coop-commands] A guest's knob follows its player while its workload request waits for the host; once the last one came back and the knob is not held, it shows the lab's
-		/// workload: its raw value, ball and hum are reprojected from it, without writing it, when the raw value no longer means that workload (a refusal, another player's change; C4b).
+		/// workload: when that is not the workload the knob stands for (a refusal, another player's change), its raw value, ball and hum are reprojected from it without writing it (C4b). An
+		/// accepted request leaves the raw value its player set.
 		/// </summary>
 		internal void FollowPark()
 		{
 			if ( !owner.level.Commands.SendsRequests || owner.ResearchWorkloadWaits || pressMode != PressMode.None || owner.ResearchEconomy is not { } economy )
 				return;
-			if ( WorkloadFromKnob( Value, Limit ) != economy.Research.Workload )
-				SetValue( KnobFromWorkload( economy.Research.Workload, Limit ), writeWorkload: false );
+			var workload = economy.Research.Workload;
+			if ( workload == shownWorkload )
+				return;
+			SetValue( KnobFromWorkload( workload, Limit ), writeWorkload: false );
+			shownWorkload = workload;
 		}
 
 		private void SetValue( int value, bool positionBall = true, bool writeWorkload = true )
@@ -448,6 +456,8 @@ public sealed partial class ParkHud
 			var capped = Math.Min( value, Math.Max( 0, Limit ) );
 			Value = capped;
 			if ( positionBall || capped != value ) BallTop = WorkloadKnobTop( Value );
+			if ( writeWorkload )
+				shownWorkload = WorkloadFromKnob( Value, Limit );
 			if ( !writeWorkload || owner.SetResearchWorkload( WorkloadFromKnob( Value, Limit ) ) )
 				owner.SetResearchHum( Value );
 		}
@@ -461,6 +471,7 @@ public sealed partial class ParkHud
 			if ( !owner.SetResearchWorkload( workload ) ) return;
 			CancelInteraction();
 			SetValue( KnobFromWorkload( workload, Limit ), writeWorkload: false );
+			shownWorkload = workload;
 		}
 
 		private NVector2 AuthoredPoint( UiCanvas canvas, NVector2 point )

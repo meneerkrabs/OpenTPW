@@ -21,9 +21,10 @@ namespace OpenTPW;
 /// [EXT:online-coop-claims] A claim guards its ride against every other player, the host included (<see cref="LeavesClaimsAlone"/>): its track (a coaster's tool and pylons), its sale, its
 /// removal and its pick-up, its demolition by a placement, an add-on on it, its queue's lines, edit and cells, and the path cell its back joins. The host's cleanup leaves the claims alone by
 /// itself: its release of any claim, a departed seat's release and the grants.
-/// Everything else stays the host's: speed and pause (Q8), cheats (Q17), the developer kinds, money, staff and the park's management (C4) with a wave machine's settings, undo lines and
-/// pool strokes (C5), the pools' single-cell kinds no guest's tool issues, the rights, the grants and the release of a departed seat. Every command kind is of one class
-/// (<see cref="ClassOf"/>, C4a), which says who may issue it; the management rights (<see cref="CoopRights"/>) take their classes once a part offers them (<see cref="CoopRightsOffer"/>).
+/// Everything else stays the host's: speed and pause (Q8), cheats (Q17), the developer kinds, the park's management a seat has no offered right for (C4: research and finance since
+/// C4b-1, the attractions and staff later) with a wave machine's settings, undo lines and pool strokes (C5), the pools' single-cell kinds no guest's tool issues, the rights, the
+/// grants and the release of a departed seat. Every command kind is of one class (<see cref="ClassOf"/>, C4a), which says who may issue it; the management rights
+/// (<see cref="CoopRights"/>) take their classes once a part offers them (<see cref="CoopRightsOffer"/>).
 /// Asked at execution on every peer, of the same park, the answer is the same everywhere.
 /// </summary>
 internal sealed class CoopBuildRights( Level level ) : IParkCommandRights

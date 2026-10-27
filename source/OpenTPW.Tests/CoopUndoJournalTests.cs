@@ -449,12 +449,15 @@ public class CoopUndoJournalTests
 	[TestMethod]
 	public void ACellsListKeepsEachRunOfMarkersAsTheSetTheRuleReads()
 	{
-		// records 5, 7 and 9; residues of members 1 (−3), 2 (−4) and 3 (−5); the permanent marker (−1)
-		var list = new List<long> { 5, -3, -4, -3, 7, -3, -1, -4, 9, -1, -1, -5 };
-		CoopUndoJournal.Normalize( list );
-		CollectionAssert.AreEqual( new long[] { 5, -3, -4, 7, -1, 9, -1 }, list, "each member's residue once; a run with the permanent marker that marker alone" );
+		// records 5, 7 and 9; residue entries −3 and −6 of member 1, −4 of member 2, −5 of member 3; the permanent marker (−1)
+		uint MemberOf( long entry ) => entry == -6 ? 1u : (uint)(-2 - entry);
+		var merged = new List<(long Kept, long Merged)>();
+		var list = new List<long> { 5, -3, -4, -6, 7, -3, -1, -4, 9, -1, -1, -5 };
+		CoopUndoJournal.Normalize( list, MemberOf, ( kept, gone ) => merged.Add( (kept, gone) ) );
+		CollectionAssert.AreEqual( new long[] { 5, -3, -4, 7, -1, 9, -1 }, list, "each member's residue once in a run, the later merged into it; a run with the permanent marker that marker alone" );
+		CollectionAssert.AreEqual( new[] { (-3L, -6L) }, merged, "within a run only: the residue after the record 7 stays apart" );
 		var permanentFirst = new List<long> { -1, -3, -1, 4 };
-		CoopUndoJournal.Normalize( permanentFirst );
+		CoopUndoJournal.Normalize( permanentFirst, MemberOf );
 		CollectionAssert.AreEqual( new long[] { -1, 4 }, permanentFirst );
 	}
 
@@ -528,6 +531,30 @@ public class CoopUndoJournalTests
 		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, over.Record ) );
 		Assert.IsFalse( journaled.Level.Guests.Grid.IsWalkable( 13, 20 ) );
 		Assert.IsTrue( journaled.Level.Guests.Grid.IsWalkable( 8, 20 ) && (cells.LinksAt( 8, 20 ) & 8) != 0 );
+	}
+
+	[TestMethod]
+	public void TwoResiduesOfOneMemberOnEitherSideOfAnotherStepKeepWhatEachLeft()
+	{
+		var journaled = NewJournaled();
+		var cells = journaled.Level.Guests!.Grid.Cells;
+		// member 3's row; member 1's longer row over it, crossing (8, 20); member 4's column down from (9, 21)
+		var row = journaled.Run( 3, Line( 5, 20, 12, 20 ) ).Record;
+		var over = journaled.Run( 1, Line( 5, 20, 14, 20 ) ).Record;
+		journaled.Run( 4, Line( 9, 21, 9, 24 ) );
+		// member 2's column down from (8, 21), taken back: it leaves (8, 20) a diagonal toward (9, 21)
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 2, journaled.Run( 2, Line( 8, 21, 8, 24 ) ).Record ) );
+		// member 5's line up from (8, 19) links into (8, 20); member 6's column down from (7, 21)
+		var up = journaled.Run( 5, Line( 8, 19, 8, 16 ) ).Record;
+		journaled.Run( 6, Line( 7, 21, 7, 24 ) );
+		// member 2's column again, taken back again: now it leaves (8, 20) a diagonal toward (7, 21)
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 2, journaled.Run( 2, Line( 8, 21, 8, 24 ) ).Record ) );
+		CollectionAssert.AreEqual( new[] { row, over, -4L, up, -4L }, journaled.History( 8, 20 ), "two residues of member 2, one on each side of member 5's line" );
+		Assert.AreEqual( (byte)8, journaled.Journal.ResidueLinksAt( 8, 20, 2 ), "the first left its diagonal toward (9, 21)" );
+		Assert.AreEqual( (byte)0x20, journaled.Journal.ResidueLinksAt( 8, 20, 4 ), "the second its diagonal toward (7, 21) alone" );
+		// the longer row's count-down leaves both diagonals and member 5's link: taken
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, over ) );
+		Assert.AreEqual( 8 | 0x20, cells.LinksAt( 8, 20 ) & (8 | 0x20) );
 	}
 
 	[TestMethod]

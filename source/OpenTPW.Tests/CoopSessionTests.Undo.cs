@@ -457,6 +457,26 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void InASharedParkAFullVertexStackEndsTheToolBeforeItsLineGoes()
+	{
+		var (host, guest, view) = UndoSession();
+		// the host's path tool with a full stack of corner points (OpenTPW's guard: 1,024)
+		host.Enter();
+		var level = host.Level;
+		var stack = Enumerable.Repeat( (5, 20), CellBuildTool.VertexCapacity ).ToArray();
+		var between = Enumerable.Range( 0, stack.Length - 1 ).Select( _ => new SegmentResult( (5, 20), Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = (5, 20) } ).ToArray();
+		level.CellTool.Enter( new ParkCommandLineWriter( level.Paths!, level.Commands, -1, () => -1, () => level.UndoJournal?.LastRecord ), (5, 20), stack, between );
+		var log = level.Commands.Log.Count;
+		// its click ends the tool before the line goes: the host never gets a line that ended its tool as a step
+		Assert.IsNull( level.CellTool.Click( (12, 20) ) );
+		Assert.IsFalse( level.CellTool.IsActive );
+		Assert.AreEqual( log, level.Commands.Log.Count, "no line went" );
+		Assert.IsFalse( Walkable( host, 8, 20 ) );
+		Rounds( 5, host, guest );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
 	public void ABackspaceWhileATakeBackWaitsSaysSoAndSendsNothing()
 	{
 		var (host, guest, view) = UndoSession();

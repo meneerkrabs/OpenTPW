@@ -197,6 +197,13 @@ public sealed class CellBuildTool
 			return null;
 		}
 		// The original ignores the push's result (0x7bcf4, whose guard is count > 1024, one past the buffer: REVIEW-PATH N2); a full stack ending the tool is an OpenTPW guard.
+		// [EXT:online-coop-undo] in a shared park that guard ends the tool before the line goes, so the host, which sees no tool's stack, is never left a line that ended its tool as a
+		// step (C5: such a line has no take-back)
+		if ( vertices.Count >= VertexCapacity && Writer is ParkCommandLineWriter { TakesBack: true } )
+		{
+			End();
+			return null;
+		}
 		var pushed = false;
 		if ( vertices.Count < VertexCapacity )
 		{

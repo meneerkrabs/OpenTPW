@@ -2478,7 +2478,7 @@ action goes to the host, and the guest's tools and windows follow what came back
 
 `[EXT:online-coop-undo]` C5 makes Backspace in a building tool of a shared park take back the player's own last
 step of that tool, for the host and every guest alike, under the normal refund rules (decision Q14, A), and
-refuses it while a later command still depends on it. The plan (v26, after twenty-six Codex rounds) makes it
+refuses it while a later command still depends on it. The plan (v27, after twenty-seven Codex rounds) makes it
 three parts that reach main as one merge: C5-1 the host's undo journal, the path, queue and slide tools;
 C5-2 the pool strokes and the wave machine; C5-3 the kart, water and coaster tools.
 
@@ -2506,9 +2506,9 @@ the member's residue: every other member's step meets it as a change, while the 
 clears the cell whole passes over it, so a player's own chain goes back as in single player; a take-back's own
 writes outside its step (its clear unlinking a bit another command set beside it) count as its member's residue
 too. A record of no step (a removal, a sale, a departed member's step) can never leave and stays as the
-permanent marker. The markers between two records are kept as the set the rule reads (a run with the permanent
-marker is that marker alone, any other each member's residue once), and a departed member's residue turns
-permanent, so a cell's history stays short whatever ran. The journal keeps a member's
+permanent marker. Each residue keeps what it left changed there. The markers between two records are kept as the
+set the rule reads (a run with the permanent marker is that marker alone, any other one residue per member), and
+a departed member's residue turns permanent, so a cell's history stays short whatever ran. The journal keeps a member's
 newest 16,384 steps within 262,144 cells; an older step's take-back says it is too long ago. A member that
 leaves its seat leaves its steps behind for good, and a slide tower's removal drops its slide's steps. Any fault
 of the journal turns it off for the rest of the session: it then takes nothing back, so nothing is decided on
@@ -2544,7 +2544,8 @@ line that ends its tool (it joined an existing path, as in the original, or a gu
 has no take-back, as in single player (the user's decision): the tool's stack ends with it, the journal makes no
 step of it (a take-back of it made by hand takes nothing), its player removes it with Backspace over its cells,
 and a step of another player's it crossed or joined can no longer be taken back. A refused line ends the tool, as
-before, so no segment that laid nothing stays on it. A tool's own chain goes back step by step: a native queue's later segment clears the bend corner it shares with
+before, so no segment that laid nothing stays on it; at OpenTPW's full vertex stack (1,024 corners) a session's
+tool ends before its line goes. A tool's own chain goes back step by step: a native queue's later segment clears the bend corner it shares with
 the member's own earlier one, as the original's undo does, and the earlier one's take-back then expects it
 empty; a corner another player's segment left from since is in the way, for both (each one's undo would clear
 it). The slide mode's Backspace takes back the tool's own newest piece, a guest's behind the pieces it still

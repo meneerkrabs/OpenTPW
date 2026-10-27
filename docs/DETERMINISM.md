@@ -250,8 +250,7 @@ Windows, Linux and macOS, and the browser check checks them in WebAssembly.
 Simulation code calls DetMath for every elementary function. `[EXT:deterministic-math]` (user decision, 2026-10-19: "Als EXT:
 deterministic-math"): tp.exe evaluates them on the x87 in extended precision (`fsin`, `fpatan`, `fyl2x`) or through its C runtime
 (`pow`, `acos`). OpenTPW evaluated them before through the platform's double `Math`, and now through DetMath. That is the same
-double precision, now identical everywhere, and the change moved no pin. The x87 control-word questions of `COAST-032` and
-`ECON-059` are unchanged. The call sites:
+double precision, now identical everywhere, and the change moved no pin. The x87 control word is 24 bits on the one simulation thread (`COAST-032`; `ECON-059` is retired on that reading). The call sites:
 
 | Site | Function | Original |
 | --- | --- | --- |

@@ -280,7 +280,7 @@ public sealed partial class ParkHud
 		new( 255, 0, 0, 255 ), new( 250, 90, 0, 255 ), new( 255, 175, 0, 255 ), new( 255, 200, 0, 255 ), new( 255, 255, 150, 255 ), new( 255, 255, 255, 255 ),
 	};
 	public static Veldrid.RgbaByte CashColor( long balance ) => CashColors[(int)Math.Clamp( (Math.Clamp( balance, -999, 6000 ) + 999) / 1000, 0, CashColors.Length - 1 )];
-	private string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
+	internal string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
 
 	/// <summary>
 	/// The frame of the trend arrow beside the balance (control 49, <c>green_up</c>): 1 (the red down arrow) when the last closed month spent more than it took, else 0;
@@ -320,12 +320,15 @@ public sealed partial class ParkHud
 	internal static string CounterText( int count ) => string.Create( System.Globalization.CultureInfo.InvariantCulture, $"{count}  x" );
 	public string DateText => !Status.HasEconomy ? "" : string.Format( strings.Extra( OpenTpwText.DateFormat ), Status.Date.Year, Status.Date.Month, Status.Date.Day );
 
+	/// <summary>How many feedback lines the HUD keeps: a fourth message pushes the oldest out.</summary>
+	internal const int MaximumFeedbackLines = 3;
+
 	public void PostMessage( string text )
 	{
 		if ( string.IsNullOrWhiteSpace( text ) )
 			return;
 		messages.Add( (text, 0) );
-		if ( messages.Count > 3 )
+		if ( messages.Count > MaximumFeedbackLines )
 			messages.RemoveAt( 0 );
 	}
 
@@ -919,6 +922,8 @@ public sealed partial class ParkHud
 			// The full-screen owner consumes input, not the unscaled UI timer/delayed-release pumps.
 			if ( !finaleObservedCamera )
 				rideStatic.SkipFrame(); // the frame that retires the screen observes no camera and refreshes no timestamp
+			// [EXT:online-coop-commands] the management windows' outcomes are taken under the research finale too (C4b)
+			CompleteGuestManagement();
 			FinishChallengeMessageFrame();
 			return true;
 		}
@@ -986,6 +991,9 @@ public sealed partial class ParkHud
 			FocusChatEntry();
 			overUi = consumed = true;
 		}
+		// [EXT:online-coop-commands] the management windows' outcomes, after the screens took this frame's input (C4b): a confirmation the player closed this frame already detached, so an
+		// outcome that came this frame is its note, never a dialog its own Back would close unseen
+		CompleteGuestManagement();
 		// [BIN:TPW-EXE:0x488aa1 RMBCancelOn] the original's screens read the option (+0x39) before a right click leaves them; the object window leaves on it too
 		if ( InfoArmOpen && Stack.Screens.Count == 1 && !IsRiding && input.RightPressed && GameOptions.Current.RmbCancel && !Input.TextEntryActive )
 		{
@@ -1043,17 +1051,28 @@ public sealed partial class ParkHud
 		if ( shortcutsAllowed && !IsRiding && FinanceEconomy is { } doorEconomy && !level.IsReadOnlyVisit )
 		{
 			// [BIN:TPW-EXE:0x0040C410 close-park handler] the shortcut calls the door routine 0x519EF0 whatever the park's state, which posts event 4 (0x51A1C6, also from a closed park) or, for opening, event 3 (0x51A033) every time
-			if ( Input.Pressed( InputButton.OpenPark ) )
+			// [EXT:online-coop-commands] a guest's keys ask the host for the state they name, unless the door is drawn in it already, and the advisor's event follows the accepted request (C4b)
+			if ( GuestManagement is { } doorQueue )
 			{
-				if ( !doorEconomy.IsParkOpen )
-					level.Commands.Issue( new SetParkOpenCommand( true ) );
-				host?.ParkDoorPressed?.Invoke( true );
+				if ( Input.Pressed( InputButton.OpenPark ) )
+					RequestParkDoor( doorQueue, true );
+				if ( Input.Pressed( InputButton.ClosePark ) )
+					RequestParkDoor( doorQueue, false );
 			}
-			if ( Input.Pressed( InputButton.ClosePark ) )
+			else
 			{
-				if ( doorEconomy.IsParkOpen )
-					level.Commands.Issue( new SetParkOpenCommand( false ) );
-				host?.ParkDoorPressed?.Invoke( false );
+				if ( Input.Pressed( InputButton.OpenPark ) )
+				{
+					if ( !doorEconomy.IsParkOpen )
+						level.Commands.Issue( new SetParkOpenCommand( true ) );
+					host?.ParkDoorPressed?.Invoke( true );
+				}
+				if ( Input.Pressed( InputButton.ClosePark ) )
+				{
+					if ( doorEconomy.IsParkOpen )
+						level.Commands.Issue( new SetParkOpenCommand( false ) );
+					host?.ParkDoorPressed?.Invoke( false );
+				}
 			}
 		}
 

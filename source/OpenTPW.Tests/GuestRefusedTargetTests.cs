@@ -147,28 +147,10 @@ public class GuestRefusedTargetTests
 	}
 
 	// Joint baseline: main 9b8943a9 (ExitRide + balloon presentation), observed on all desktop and browser modes.
+	/// <summary>The fixed run's pin and what the same run hashes with its retained targets zeroed (the legacy replay of <see cref="FixedRunDiffersFromTheLegacyPinOnlyByRetainedTargetIdentity"/>); the other pins' projections moved with the guest destinations (round 9, package G) and are not kept.</summary>
 	private static readonly IReadOnlyDictionary<ulong, ulong> JointMainProjectionPins = new Dictionary<ulong, ulong>
 	{
-		[0xAF6434D38684D562UL] = 0xB7FE34DDDA0A7E62UL,
-		[0x1AABD1698E2E75BEUL] = 0x05C6483AF1DFF71AUL,
-		[0xF29FC9EE9FA2CBC4UL] = 0x36A3AFB8CC43B4BAUL,
-		[0x5467A6E95F5BC676UL] = 0xE4C37292CC801E93UL,
-		[0x0AECF3233FBD5294UL] = 0x110F6215FE085755UL,
-		[0x1CDA6A275C9F3F5BUL] = 0x99D913B64E16B731UL,
-		[0xA8C95CA65160807CUL] = 0xED5A56D5EA8E74CDUL,
-		[0xCB5E98B00C5AAD4CUL] = 0xFDFC0F8656629F55UL,
-		[0x130B524C99334012UL] = 0xC91DF895918FDA7BUL,
-		[0x5AEE05EB1A2D348DUL] = 0x39B8D469AA2703C4UL,
-		[0x72FD6BD04393AED1UL] = 0x9BC6C2CF5078F064UL,
-		[0xEDBB35F77BB53B24UL] = 0x720B828F24ED1BF1UL,
-		[0x0AD27109C2E5643DUL] = 0xC52EB9E19789F97DUL,
-		[0x8ACD297D0155243EUL] = 0x189A6CB279223067UL,
-		[0x92910893AA42DAD7UL] = 0xA7CC0F211F8E8E63UL,
-		[0x46D7114F4B803468UL] = 0x21DEDD2A49E4F1F0UL,
-		[0x5AC8D8A47AAC35D2UL] = 0x7539BB3BB9729317UL,
-		[0x51F09D065798C992UL] = 0x33BAE0D9E1039AF7UL,
-		[0xED306F312346AEC8UL] = 0x23A78F4981EEB303UL,
-		[0xEF00F0D64A9077FEUL] = 0xD2AF869CDF9A7D3DUL,
+		[0x5946C7CB09C6EEE7UL] = 0x307DA54FFB0EC403UL,
 	};
 
 	internal static ulong VerifyRetainedTargetHash( GuestSimulation simulation, Func<ulong> compute, WorldStateSources? sources = null )
@@ -233,7 +215,7 @@ public class GuestRefusedTargetTests
 			Assert.AreEqual( currentHash, Hash( current ), "diagnostic projection must restore the entire current hash" );
 		}
 		Assert.IsTrue( retainedTicks > 0, "the fixed run must exercise full-room retained targets" );
-		Assert.AreEqual( 0x05C6483AF1DFF71AUL, Hash( legacy ), $"legacy replay: 0x{Hash( legacy ):X16}" );
+		Assert.AreEqual( 0x307DA54FFB0EC403UL, Hash( legacy ), $"legacy replay: 0x{Hash( legacy ):X16}" );
 		static ulong Hash( DeterminismTests.SyntheticPark park ) => WorldStateHash.Compute( new WorldStateSources { Seed = park.Seed, Economy = park.Economy, Guests = park.Guests, Scripts = park.Scripts } );
 		static bool HasRetainedTarget( Guest guest ) => guest.AttractionId != 0 && !guest.IsInQueue
 			&& RetainedStates.Contains( (guest.State, guest.Activity) );

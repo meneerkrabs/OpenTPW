@@ -1011,7 +1011,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// enters the temporary history.
 	/// </summary>
 	// [EXT:online-bubbles-on] bubbles are on in a visit too, where 0x50BE80 skips them in an online game (GameType word 0xFB3B7C = 1; none of its 22 callers passes the override): a visit is OpenTPW's read-only extension and shows the park as its owner sees it
-	// [APPROX:GUEST-006] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, but the pick's voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0) is not played; bubbles are always on where 0x50BE80 skips them while bits 0x16 of 0x790AB0 are set; a show's row 7 comes off once (FireworksSpent) where 0x4E0B90 removes it whenever VAR_STATUS is 1, a variable native code also writes (0x4E0900, 0x4E0AC0); a load puts back the row an object's saved state implies — evidence needed: whether the original saves or rebuilds the environment table, and what bits 0x16 of 0x790AB0 mean
+	// [APPROX:GUEST-006] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, its voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0, 0x4FCA6F) is played as a presentation event (Voiced); bubbles are always on where 0x50BE80 skips them while bits 0x16 of 0x790AB0 are set; a show's row 7 comes off once (FireworksSpent) where 0x4E0B90 removes it whenever VAR_STATUS is 1, a variable native code also writes (0x4E0900, 0x4E0AC0); a load puts back the row an object's saved state implies — evidence needed: whether the original saves or rebuilds the environment table, and what bits 0x16 of 0x790AB0 mean
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
@@ -2336,7 +2336,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100E9164 attraction score] executed by the PowerPC oracle (attraction-score, 578 inputs; C# agrees)
 	// [BIN:STP-PPC:0x100E9388 cell modifier] the environment record's component 4 (+8) at the back-of-queue cell divides the distance match; only the fireworks' RegionFX row 7 writes it (Attraction 10 in the shipped Standard.sam; tp.exe 0x004DB48C), so it is 0 everywhere else
-	// [APPROX:GUEST-002] faithful scoring and major choice now admit a disconnected real raw-type-3 queue back and leave route failure to RouteToCell; missing/untyped fallback backs, the minor decision and extension planning retain their join-cell filters (docs/DISCONNECTED-QUEUE-SCORING.md)
+	// [APPROX:GUEST-002] faithful scoring, the major choice and the minor decision admit a disconnected real raw-type-3 queue back and leave route failure to RouteToCell; missing/untyped fallback backs and a typed front on a cell that is neither queue nor path stay excluded (docs/DISCONNECTED-QUEUE-SCORING.md)
 	public uint ScoreAttraction( Guest guest, IRideVisitorBridge attraction )
 	{
 		if ( !HasScoreBackCell( attraction ) )

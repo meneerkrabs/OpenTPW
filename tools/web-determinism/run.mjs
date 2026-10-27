@@ -21,7 +21,7 @@ export const PIN_CLASSES = [
 	'CoasterTests', 'CoasterCollisionTests', 'CoasterRollTests', 'CoasterDispatchTests', 'CoasterTrainLayoutTests', 'CoasterStationTests',
 	'CoasterTagKnotTests', 'CoasterSaveTests', 'OriginalCoasterImportTests', 'TourControllerTests', 'BumpModuleTests', 'BumpControllerTests', 'BumperControllerTests',
 	'TrackSurfaceTests', 'TrackCircuitTests', 'PoolsTests', 'PoolsAttractionsTests', 'PoolsSwimSessionTests',
-	'PoolSwimmingTests', 'PoolSlidesTests', 'StaffWorldTests', 'StaffSteeringTests', 'LoansSummaryTests', 'BankWordsTests', 'ParkEconomyTests',
+	'PoolSwimmingTests', 'PoolSlidesTests', 'StaffWorldTests', 'StaffSteeringTests', 'LoansSummaryTests', 'BankWordsTests', 'ParkEconomyTests', 'MonoInterpreterTryFinallyProbeTests',
 ];
 
 /** Tests of those classes that read the repository's own files (sources, shaders), which the page does not have: skipped, with the reason. */

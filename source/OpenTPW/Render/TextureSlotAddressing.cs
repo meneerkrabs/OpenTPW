@@ -49,15 +49,15 @@ public static class TextureSlotAddressing
 	public const uint LightSourceFlag = 0x0200_0000;
 
 	/// <summary>
-	/// [EXT:evening] Whether a self-lit material's texture name is a real light source: glow, flame, fire, torch, lamp or light in the name (user decision of October 27, 2026). Over the original files these
+	/// [EXT:evening] Whether a self-lit material's texture name is a real light source: glow, flame, fire, torch, lamp, light, coal or lava in the name (user decisions of October 27, 2026: the glowing coals and the lava are glowing fire). Over the original files these
 	/// are the glow quads of the chests and gems (<c>glow2</c>, <c>b_glow2</c>, <c>h_glow</c>, <c>h_glow2</c>, <c>sc_glow</c>, <c>GEM_GLOW</c>), the flames (<c>flame</c>, <c>h_flame</c>, <c>fire0</c>), the lights
-	/// (<c>s_lights</c>, <c>h_light</c>) and the evening extension's own torch flames (<c>tt_*_flame</c>); every other self-lit material (water, signs, lava, beams, panels) takes the night tint.
+	/// (<c>s_lights</c>, <c>h_light</c>), the fire pit's coals and the lava (<c>fp_coals</c>, <c>lava2</c>, <c>lava2a</c>, <c>ig_lava2</c>) and the evening extension's own torch flames (<c>tt_*_flame</c>); every other self-lit material (water, signs, beams, the fire pit's stand, panels) takes the night tint.
 	/// </summary>
 	public static bool IsLightSource( string? textureName ) =>
 		textureName != null && LightSourceWords.Any( word => textureName.Contains( word, StringComparison.OrdinalIgnoreCase ) );
 
 	/// <summary>The words of a light source's texture name.</summary>
-	public static readonly string[] LightSourceWords = ["glow", "flame", "fire", "torch", "lamp", "light"];
+	public static readonly string[] LightSourceWords = ["glow", "flame", "fire", "torch", "lamp", "light", "coal", "lava"];
 
 	/// <summary>The vertex flags for a corner of a material: those of its slot (<see cref="VertexFlags(uint)"/>), <see cref="SelfLitFlag"/> when the material is self-lit, and <see cref="LightSourceFlag"/> when it also is a light source.</summary>
 	public static uint VertexFlags( ModelFile.MaterialData material ) =>

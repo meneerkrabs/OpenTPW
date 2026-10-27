@@ -100,12 +100,16 @@ public class SelfLitMaterialTests
 	[DataRow( "lamp3", true )]
 	[DataRow( "wr_water3", false )]
 	[DataRow( "sign1", false )]
-	[DataRow( "lava2", false )]
+	[DataRow( "lava2", true )]
+	[DataRow( "ig_lava2", true )]
+	[DataRow( "fp_coals", true )]
+	[DataRow( "fp_standred", false )]
+	[DataRow( "sc_beamred", false )]
 	[DataRow( "treasure", false )]
 	[DataRow( "Mouth1a", false )]
 	[DataRow( "windshine1", false )]
 	[DataRow( "", false )]
-	public void ALightSourceIsNamedByGlowFlameFireTorchLampOrLight( string name, bool lightSource )
+	public void ALightSourceIsNamedByGlowFlameFireTorchLampLightCoalOrLava( string name, bool lightSource )
 	{
 		Assert.AreEqual( lightSource, TextureSlotAddressing.IsLightSource( name ) );
 		Assert.IsFalse( TextureSlotAddressing.IsLightSource( null ) );
@@ -146,9 +150,9 @@ public class SelfLitMaterialTests
 			foreach ( var material in model.Meshes.SelectMany( mesh => mesh.Materials ).Where( material => (material.Pad & ModelBuilder.SelfLitMaterialFlag) != 0 ) )
 				( TextureSlotAddressing.IsLightSource( material.Name ) ? lightSources : tinted ).Add( material.Name );
 		Console.WriteLine( "Light sources: " + string.Join( ", ", lightSources ) );
-		CollectionAssert.AreEqual( new[] { "b_glow2", "fire0", "flame", "GEM_GLOW", "glow2", "h_flame", "h_glow", "h_glow2", "h_light", "s_lights", "sc_glow" }.Order( StringComparer.Ordinal ).ToArray(), lightSources.ToArray() );
+		CollectionAssert.AreEqual( new[] { "b_glow2", "fire0", "flame", "fp_coals", "GEM_GLOW", "glow2", "h_flame", "h_glow", "h_glow2", "h_light", "ig_lava2", "lava2", "lava2a", "s_lights", "sc_glow" }.Order( StringComparer.Ordinal ).ToArray(), lightSources.ToArray() );
 		// what takes the night tint: water, signs, lava, beams, the interface and the advisor's mouths and ticket among them
-		foreach ( var name in new[] { "wr_water3", "ss_water", "sp_water2", "sign1", "sign2", "lava2", "beam", "Mouth1a", "Gold_Ticket", "treasure", "gold", "dome", "web2" } )
+		foreach ( var name in new[] { "wr_water3", "ss_water", "sp_water2", "sign1", "sign2", "fp_standred", "beam", "sc_beamred", "Mouth1a", "Gold_Ticket", "treasure", "gold", "dome", "web2" } )
 			CollectionAssert.Contains( tinted.ToArray(), name );
 		Assert.IsTrue( tinted.Count > 200, $"{tinted.Count} other self-lit materials" );
 	}

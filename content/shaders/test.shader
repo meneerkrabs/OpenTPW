@@ -123,7 +123,7 @@ fragment {
     const uint FLAG_OPAQUE_SLOT = 0x08000000u;
     // TextureSlotAddressing.SelfLitFlag: a corner of a self-lit material (material word +0xC bit 0x1), which the original draws with the constant colour of the draw instead of the vertex lighting colour (tp.exe 0x580C51)
     const uint FLAG_SELF_LIT = 0x04000000u;
-    // TextureSlotAddressing.LightSourceFlag: a corner of a self-lit material that is a light source itself (glow, flame, fire, torch, lamp, light by its name): at night it stays full-bright [EXT:evening]
+    // TextureSlotAddressing.LightSourceFlag: a corner of a self-lit material that is a light source itself (glow, flame, fire, torch, lamp, light, coal, lava by its name): at night it stays full-bright [EXT:evening]
     const uint FLAG_LIGHT_SOURCE = 0x02000000u;
 
     // CLAMP on the wrapping sampler: the coordinates stay half a texel of the coarsest mip the footprint can select

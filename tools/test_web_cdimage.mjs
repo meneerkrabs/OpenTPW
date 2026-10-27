@@ -14,14 +14,16 @@ const fill = (size, seed) => Uint8Array.from({ length: size }, (_, index) => (in
 
 // ---- fixture builders ----
 
-function record(name, lba, size, directory) {
+function record(name, lba, size, directory, extra = {}) {
 	const length = 33 + name.length + (name.length % 2 === 0 ? 1 : 0);
 	const out = new Uint8Array(length);
 	const view = new DataView(out.buffer);
 	out[0] = length;
 	view.setUint32(2, lba, true); view.setUint32(6, lba, false);
 	view.setUint32(10, size, true); view.setUint32(14, size, false);
-	out[25] = directory ? 2 : 0;
+	out[25] = (directory ? 2 : 0) | (extra.flags ?? 0);
+	out[26] = extra.unit ?? 0;
+	out[27] = extra.gap ?? 0;
 	view.setUint16(28, 1, true); view.setUint16(30, 1, false);
 	out[32] = name.length;
 	out.set(name, 33);
@@ -30,7 +32,7 @@ function record(name, lba, size, directory) {
 const ucs2 = text => Uint8Array.from([...text].flatMap(char => [char.charCodeAt(0) >> 8, char.charCodeAt(0) & 255]));
 
 /** Builds an ISO 9660 image from { path: Uint8Array } with a plain tree (upper case) and, when asked, a Joliet one (given case). */
-function buildIso(files, { joliet = true, label = 'TESTDISC' } = {}) {
+function buildIso(files, { joliet = true, label = 'TESTDISC', extras = {} } = {}) {
 	const tree = { dirs: new Map(), files: [] };
 	for (const [path, contents] of Object.entries(files)) {
 		const parts = path.split('/');
@@ -64,7 +66,7 @@ function buildIso(files, { joliet = true, label = 'TESTDISC' } = {}) {
 		for (const [name, child] of node.dirs) records.push(record(wide ? ucs2(name) : bytes(name.toUpperCase()), child.lba, SECTOR, true));
 		for (const [name, , path] of node.files) {
 			const extent = extents.get(path);
-			records.push(record(wide ? ucs2(`${name};1`) : bytes(`${name.toUpperCase()};1`), extent.lba, extent.size, false));
+			records.push(record(wide ? ucs2(`${name};1`) : bytes(`${name.toUpperCase()};1`), extent.lba, extent.size, false, extras[path] ?? {}));
 		}
 		let at = node.lba * SECTOR;
 		for (const entry of records) { image.set(entry, at); at += entry.length; }
@@ -116,13 +118,16 @@ function zipOf(entries) {
 	const u16 = value => Uint8Array.of(value & 255, value >> 8 & 255);
 	const u32 = value => Uint8Array.of(value & 255, value >> 8 & 255, value >> 16 & 255, value >>> 24);
 	const join = parts => { const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0)); let at = 0; for (const part of parts) { out.set(part, at); at += part.length; } return out; };
-	for (const { name, data, method = 8, flags = 0, rawCompressed = null } of entries) {
+	for (const { name, data, method = 8, flags = 0, rawCompressed = null, descriptor = null } of entries) {
 		const compressed = rawCompressed ?? (method === 8 ? deflateRawSync(data) : data);
 		const nameBytes = bytes(name);
-		const header = join([u32(0x04034B50), u16(20), u16(flags), u16(method), u16(0), u16(0), u32(0), u32(flags & 8 ? 0 : compressed.length), u32(flags & 8 ? 0 : data.length), u16(nameBytes.length), u16(0), nameBytes]);
-		local.push(header, compressed);
+		// descriptor: 'signed' or 'plain' writes the sizes in the local header and a data descriptor after the data (flag bit 3)
+		const sized = !(flags & 8) || descriptor !== null;
+		const header = join([u32(0x04034B50), u16(20), u16(flags), u16(method), u16(0), u16(0), u32(0), u32(sized ? compressed.length : 0), u32(sized ? data.length : 0), u16(nameBytes.length), u16(0), nameBytes]);
+		const trailer = descriptor === null ? new Uint8Array(0) : join([...(descriptor === 'signed' ? [u32(0x08074B50)] : []), u32(0), u32(compressed.length), u32(data.length)]);
+		local.push(header, compressed, trailer);
 		central.push(join([u32(0x02014B50), u16(20), u16(20), u16(flags), u16(method), u16(0), u16(0), u32(0), u32(compressed.length), u32(data.length), u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), nameBytes]));
-		offset += header.length + compressed.length;
+		offset += header.length + compressed.length + trailer.length;
 	}
 	const directory = join(central);
 	return join([...local, directory, u32(0x06054B50), u16(0), u16(0), u16(entries.length), u16(entries.length), u32(directory.length), u32(offset), u16(0)]);
@@ -319,8 +324,8 @@ test('a directory tree beyond the head limit is refused with advice', async () =
 test('a streamed ZIP skips other members without inflating them and inflates the image', async () => {
 	const image = rawify(buildIso(GAME));
 	const archive = zipOf([
-		{ name: 'FIX/', data: new Uint8Array(0), method: 0 },
-		{ name: 'FIX/tool.exe', data: fill(500, 1), rawCompressed: Uint8Array.from([0xFF, 0xFF, 0xFF, 0xFF, 0xFF]) },
+		{ name: 'EXTRA/', data: new Uint8Array(0), method: 0 },
+		{ name: 'EXTRA/other.dat', data: fill(500, 1), rawCompressed: Uint8Array.from([0xFF, 0xFF, 0xFF, 0xFF, 0xFF]) },
 		{ name: 'DISC.bin', data: image },
 		{ name: 'DISC.cue', data: bytes('x') },
 	]);
@@ -358,7 +363,7 @@ test('pickImage prefers an ISO and never picks an executable', () => {
 
 test('a local ZIP is read through its central directory', async () => {
 	const iso = buildIso(GAME);
-	const archive = zipOf([{ name: 'FIX/tool.exe', data: fill(50, 1), rawCompressed: Uint8Array.from([0xFF, 0xFF]) }, { name: 'DISC.bin', data: rawify(iso) }]);
+	const archive = zipOf([{ name: 'EXTRA/other.dat', data: fill(50, 1), rawCompressed: Uint8Array.from([0xFF, 0xFF]) }, { name: 'DISC.bin', data: rawify(iso) }]);
 	const sourceOfZip = await blobSource(new Blob([archive]));
 	assert.equal(sourceOfZip.name, 'DISC.bin');
 	const { state, options } = collector();
@@ -428,7 +433,7 @@ test('a streamed raw image from an address (no range support) is extracted in on
 test('a ZIP address that answers ranges is read by its directory: the other members are never requested', async () => {
 	const iso = buildIso(GAME);
 	const exe = fill(4000, 3);
-	const archive = zipOf([{ name: 'FIX/tool.exe', data: exe, method: 0 }, { name: 'DISC.bin', data: rawify(iso) }]);
+	const archive = zipOf([{ name: 'EXTRA/other.dat', data: exe, method: 0 }, { name: 'DISC.bin', data: rawify(iso) }]);
 	const { fetchFn, requests } = fakeServer(archive);
 	const { state, options } = collector();
 	const address = urlSource('https://example.test/disc.zip', { fetch: fetchFn });
@@ -445,7 +450,7 @@ test('a ZIP address that answers ranges is read by its directory: the other memb
 
 test('a ZIP address whose server refuses ranges falls back to one streamed request', async () => {
 	const iso = buildIso(GAME);
-	const archive = zipOf([{ name: 'FIX/tool.exe', data: fill(300, 3), rawCompressed: Uint8Array.from([0xFF]) }, { name: 'DISC.bin', data: rawify(iso) }]);
+	const archive = zipOf([{ name: 'EXTRA/other.dat', data: fill(300, 3), rawCompressed: Uint8Array.from([0xFF]) }, { name: 'DISC.bin', data: rawify(iso) }]);
 	for (const server of [fakeServer(archive, { ranges: false }), fakeServer(archive, { cors: false })]) {
 		const { state, options } = collector();
 		const address = urlSource('https://example.test/disc.zip', { fetch: server.fetchFn });
@@ -489,7 +494,7 @@ test('an HTTP error and a network failure are told apart', async () => {
 	const { options } = collector();
 	await assert.rejects(extractImage({ ...options, source: urlSource('https://example.test/missing.bin', { fetch: fakeServer(new Uint8Array(1), { status: 404 }).fetchFn }) }), error => error instanceof ImageError && error.code === 'http' && /404/.test(error.message));
 	const down = async () => { throw new TypeError('Failed to fetch'); };
-	await assert.rejects(extractImage({ ...options, source: urlSource('https://example.test/disc.bin', { fetch: down }) }), TypeError);
+	await assert.rejects(extractImage({ ...options, source: urlSource('https://example.test/disc.bin', { fetch: down }) }), error => error instanceof ImageError && error.code === 'network');
 });
 
 test('a ZIP is never skipped into: a long unwanted stretch inside a zipped image is read through (regression)', async () => {
@@ -503,4 +508,120 @@ test('a ZIP is never skipped into: a long unwanted stretch inside a zipped image
 		assert.deepEqual(state.written.get('Data/last.wad'), files['Data/last.wad']);
 		assert.deepEqual(state.written.get('Data/first.wad'), files['Data/first.wad']);
 	}
+});
+
+// ---- review follow-ups ----
+
+/** The image with every file record of size `size` (little then big endian) changed to `to`: file records only (flag bit 1 clear). */
+function resized(iso, size, to) {
+	const patched = iso.slice();
+	const view = new DataView(patched.buffer);
+	for (let at = 10; at + 8 <= patched.length; at++)
+		if (view.getUint32(at, true) === size && view.getUint32(at + 4, false) === size && (patched[at + 15] & 2) === 0 && patched[at - 10] > 33) {
+			view.setUint32(at, to, true);
+			view.setUint32(at + 4, to, false);
+		}
+	return patched;
+}
+const everything = list => list.map(file => file.path);
+
+test('a streamed ZIP skips a member with a data descriptor (with or without its signature) and reaches the image', async () => {
+	const iso = buildIso(GAME);
+	for (const descriptor of ['signed', 'plain']) {
+		const archive = zipOf([
+			{ name: 'readme.txt', data: bytes('read me please'), method: 0, flags: 8, descriptor },
+			{ name: 'disc.iso', data: iso, method: 0 },
+		]);
+		const parts = [];
+		for await (const chunk of zipStreamChunks(chunked(archive, 333)))
+			parts.push(chunk);
+		assert.deepEqual(Buffer.concat(parts), Buffer.from(iso), descriptor);
+	}
+});
+
+test('a failure of the connection in the middle of the stream is a network error, not a bare TypeError', async () => {
+	const image = rawify(buildIso(GAME));
+	const fetchFn = async () => new Response(new ReadableStream({
+		start(controller) { controller.enqueue(image.slice(0, 30000)); },
+		pull() { throw new TypeError('network error'); },
+	}), { status: 200 });
+	const { options } = collector();
+	await assert.rejects(extractImage({ ...options, source: urlSource('https://example.test/disc.bin', { fetch: fetchFn }) }), error => error.code === 'network');
+});
+
+test('a wanted file over 64 MB, or beyond the end of a known-size image, is refused', async () => {
+	const iso = buildIso({ 'Data/a.wad': fill(5000, 1) });
+	const { options } = collector();
+	await assert.rejects(extractImage({ ...options, choose: everything, source: { random: false, open: () => ({ chunks: chunked(resized(iso, 5000, 65 * 1048576), 65536) }) } }), /64 MB/);
+	const file = readVolume(readerOf(iso)).files[0];
+	const cut = iso.slice(0, file.lba * SECTOR);
+	await assert.rejects(extractImage({ ...options, choose: everything, source: { random: false, total: cut.length, open: () => ({ chunks: chunked(cut, 65536), total: cut.length }) } }), error => error.code === 'truncated');
+	await assert.rejects(extractImage({ ...options, choose: everything, source: { random: true, total: cut.length, read: async (start, length) => cut.slice(start, start + length) } }), error => error.code === 'truncated');
+});
+
+test('overlapping wanted files do not make the extraction hold unbounded memory', async () => {
+	const iso = resized(buildIso({ 'Data/a.wad': fill(2048, 1), 'Data/b.wad': fill(2048, 2), 'Data/c.wad': fill(2048, 3) }), 2048, 60 * 1048576);
+	const { options } = collector();
+	await assert.rejects(extractImage({ ...options, choose: everything, source: { random: false, open: () => ({ chunks: chunked(iso, 1 << 20) }) } }), error => error instanceof ImageError && /overlapping/.test(error.message));
+});
+
+test('a damaged directory record is skipped; interleaved, associated and multi-extent wanted files are refused', async () => {
+	const files = { 'Data/a.wad': fill(3000, 1), 'Data/b.wad': fill(3000, 2) };
+	for (const [extra, word] of [[{ unit: 1 }, /interleaved/], [{ gap: 1 }, /interleaved/], [{ flags: 4 }, /associated/], [{ flags: 0x80 }, /several parts/]]) {
+		const iso = buildIso(files, { extras: { 'Data/b.wad': extra } });
+		await assert.rejects(extractImage({ ...collector().options, choose: everything, source: { random: false, open: () => ({ chunks: chunked(iso, 65536) }) } }), word);
+		const { state, options } = collector();
+		await extractImage({ ...options, choose: list => list.filter(file => file.path === 'Data/a.wad').map(file => file.path), source: { random: false, open: () => ({ chunks: chunked(iso, 65536) }) } });
+		assert.deepEqual([...state.written.keys()], ['Data/a.wad']);
+	}
+	// a record whose name runs past its own length is skipped, never read beyond itself
+	const iso = buildIso(files, { joliet: false });
+	const root = new DataView(iso.buffer).getUint32(16 * SECTOR + 156 + 2, true);
+	let at = root * SECTOR;
+	at += iso[at]; at += iso[at]; // . and ..
+	iso[at + 32] = 200; // the first entry's name length now exceeds its record
+	assert.deepEqual(readVolume(readerOf(iso)).files, []);
+});
+
+test('an image that lists more than 100,000 files is refused', () => {
+	const iso = buildIso({ 'x.txt': fill(10, 1) }, { joliet: false });
+	const sectors = [];
+	let current = [];
+	let used = 0;
+	for (let index = 0; index < 100001; index++) {
+		const entry = record(bytes(`F${index}.TXT;1`), 0, 0, false);
+		if (used + entry.length > SECTOR) { sectors.push(current); current = []; used = 0; }
+		current.push(entry);
+		used += entry.length;
+	}
+	sectors.push(current);
+	const big = new Uint8Array(sectors.length * SECTOR);
+	sectors.forEach((entries, index) => { let offset = index * SECTOR; for (const entry of entries) { big.set(entry, offset); offset += entry.length; } });
+	const image = new Uint8Array(iso.length + big.length);
+	image.set(iso);
+	image.set(big, iso.length);
+	const view = new DataView(image.buffer);
+	view.setUint32(16 * SECTOR + 156 + 2, iso.length / SECTOR, true);
+	view.setUint32(16 * SECTOR + 156 + 10, big.length, true);
+	assert.throws(() => readVolume(readerOf(image)), /more than 100000 files/);
+});
+
+test('a Mode 2 Form 2 sector is not file data', async () => {
+	const iso = buildIso({ 'Data/a.wad': fill(5000, 1) });
+	const raw = rawify(iso, 2);
+	const file = readVolume(readerOf(iso)).files[0];
+	raw[2352 * (file.lba + 1) + 18] = 0x20;
+	const bad = [];
+	for await (const batch of userSectors(chunked(raw, 5000)))
+		bad.push(...batch.bad);
+	assert.deepEqual(bad, [file.lba + 1]);
+	await assert.rejects(extractImage({ ...collector().options, choose: everything, source: { random: false, open: () => ({ chunks: chunked(raw, 5000) }) } }), error => error.code === 'damaged');
+});
+
+test('a local BIN reports its progress against the wanted bytes and reaches 100%', async () => {
+	const { options, state } = collector();
+	await extractImage({ ...options, source: await blobSource(new Blob([rawify(buildIso(GAME))])) });
+	const last = state.progress.at(-1);
+	assert.equal(last.bytes, last.total);
+	assert.equal(last.total, wantedPaths.reduce((sum, path) => sum + GAME[path].length, 0));
 });

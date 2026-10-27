@@ -5,11 +5,11 @@ streams the CD image of the third-party archive.org item `tpworld_202508` once, 
 (935 files, 322 MB) in the browser's origin-private store with the usual manifest, and starts the game; the next visit
 shows Play and fetches nothing. Alternatives sit below it: an address of a `.zip`, `.iso` or `.bin`, a local `.iso`, `.bin` (+ `.cue`)
 or `.zip` (chosen or dropped), and the existing game folder. Nothing is fetched or read before a click. OpenTPW still ships no game
-data, and only data files are read: the upload's patched executable is never requested or mentioned, and no executable of any image is read.
+data, and only data files are read: the item's other files are never requested or read, and no executable is read.
 
 The pipeline (`opentpw-cdimage.js`, no dependencies) streams bytes, converts raw 2352-byte Mode 1 or Mode 2 sectors to
 2048-byte user data, reads the ISO 9660 (Joliet) tree from the first sectors, and hands each wanted file to the store when
-its last sector has passed, so memory holds at most one file (32 MB) and nothing is stored whole. A ZIP is read through its central
+its last sector has passed, so memory holds about one file at a time (at most 64 MB each, with a 128 MB budget for overlapping ones), plus the 32 MB directory head while it is read, and nothing is stored whole. A ZIP is read through its central
 directory when the server answers ranges (other members are never requested), else parsed in the stream and inflated with
 `DecompressionStream('deflate-raw')`. Progress, cancel, a storage-quota check, `navigator.storage.persist()`, restart that skips
 files already kept, and separate messages for network/CORS, HTTP, quota and image problems are in the page.

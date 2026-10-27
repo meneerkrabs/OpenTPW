@@ -2,7 +2,7 @@
 // sectors) or an ISO (2048-byte sectors), loose or inside a ZIP, from a local file or an address. The image is never held in memory
 // and never stored whole: sectors are converted to their 2048-byte user data as they arrive, the ISO 9660 directory tree is read
 // from the first sectors, and each wanted file is handed to `write` as soon as its last sector has passed. Only data files are
-// taken: a ZIP's other members (a crack, a tool) are skipped without being inflated, and nothing here reads an executable.
+// taken: a ZIP's other members are skipped without being inflated, and no executable is read.
 // No imports, so the unit tests load this file as it ships.
 
 export const USER_SECTOR = 2048;
@@ -11,6 +11,11 @@ const RAW_SECTOR = 2352;
 const HEAD_LIMIT = 16384;
 /** A gap this large between wanted files is skipped with a ranged request, when the server answers ranges. */
 const SKIP_BYTES = 8 * 1048576;
+/** The largest wanted file (bytes) and the most the extraction holds in memory at once for files being cut out (the directory head is separate). */
+const MAX_FILE = 64 * 1048576;
+const MAX_INFLIGHT = 128 * 1048576;
+/** The most files an image's directory tree may list. */
+const MAX_FILES = 100000;
 
 /** A problem with the image itself (not a network or storage failure): `code` tells what kind. */
 export class ImageError extends Error {
@@ -101,7 +106,8 @@ function toUser(chunk, count, layout, firstLba) {
 	const bad = [];
 	for (let index = 0; index < count; index++) {
 		const at = index * RAW_SECTOR;
-		if (!hasSync(chunk, at)) {
+		// a Mode 2 Form 2 sector (submode bit 5) has no 2048-byte user data: it is not a file sector
+		if (!hasSync(chunk, at) || layout.mode === 2 && (chunk[at + 18] & 0x20)) {
 			bad.push(firstLba + index);
 			continue;
 		}
@@ -204,14 +210,21 @@ export function readVolume(read) {
 			const entry = data.subarray(at, at + size);
 			at += size;
 			const nameLength = entry[32];
+			// a damaged record is skipped (to the next one), never read past its own length
+			if (size < 34 || 33 + nameLength > size)
+				continue;
 			if (nameLength === 1 && (entry[33] === 0 || entry[33] === 1))
 				continue;
 			const name = decode(entry, 33, 33 + nameLength).replace(/;\d+$/, '').replace(/\.$/, '');
 			const full = path ? `${path}/${name}` : name;
 			if (entry[25] & 2)
 				pending.push({ record: entry, path: full });
-			else
-				files.push({ path: full, lba: u32(entry, 2), size: u32(entry, 10), multi: (entry[25] & 0x80) !== 0 });
+			else {
+				if (files.length >= MAX_FILES)
+					throw new ImageError(`That image lists more than ${MAX_FILES} files: it is not a game CD.`);
+				const odd = (entry[25] & 0x80) ? 'stored in several parts' : (entry[25] & 4) ? 'an associated file' : (entry[26] !== 0 || entry[27] !== 0) ? 'stored interleaved' : null;
+				files.push({ path: full, lba: u32(entry, 2), size: u32(entry, 10), odd });
+			}
 		}
 	}
 	return { label: text(primary, 40, 72).trim(), joliet: !!joliet, files };
@@ -221,7 +234,7 @@ export function readVolume(read) {
 
 const IMAGE_NAME = /\.(iso|bin|img)$/i;
 
-/** The entry that holds the CD image: the first .iso, else the first .bin or .img. Other members (and every executable) are ignored. */
+/** The entry that holds the CD image: the first .iso, else the first .bin or .img. Other members are ignored. */
 export function pickImage(entries) {
 	const images = entries.filter(entry => !entry.name.endsWith('/') && IMAGE_NAME.test(entry.name));
 	return images.find(entry => /\.iso$/i.test(entry.name)) ?? images[0] ?? null;
@@ -304,7 +317,17 @@ function toStream(chunks) {
 /** The (inflated) bytes of an entry's data, from the compressed chunks. */
 function entryChunks(compressed, entry) {
 	const inflate = inflater(entry.method, entry.name);
-	return inflate ? streamChunks(toStream(compressed).pipeThrough(inflate)) : compressed;
+	if (!inflate)
+		return compressed;
+	return (async function* () {
+		try {
+			yield* streamChunks(toStream(compressed).pipeThrough(inflate));
+		} catch (error) {
+			if (error instanceof TypeError)
+				throw new ImageError(`${entry.name} in that ZIP cannot be unpacked (damaged or cut short).`, 'format');
+			throw error;
+		}
+	})();
 }
 
 /** Reads exact byte counts from an async iterable of chunks. */
@@ -331,6 +354,11 @@ class ByteReader {
 		const bytes = this.rest.subarray(0, count);
 		this.rest = this.rest.subarray(count);
 		return bytes;
+	}
+	/** The next `count` bytes without consuming them (fewer at the end of the stream). */
+	async peek(count) {
+		while (this.rest.length < count && await this.more());
+		return this.rest.subarray(0, count);
 	}
 	async skip(count) {
 		while (count > 0) {
@@ -377,6 +405,11 @@ export async function* zipStreamChunks(chunks) {
 				throw new ImageError('This ZIP was written as a stream (sizes after the data), which the browser cannot skip through. Download the file and choose it from your disk instead.', 'unsupported');
 			if (!image) {
 				await reader.skip(entry.compressed);
+				if (flags & 8) {
+					// a data descriptor follows the data: 12 bytes (crc, two sizes), or 16 with its signature
+					const next = await reader.peek(4);
+					await reader.skip(next.length === 4 && u32(next, 0) === 0x08074B50 ? 16 : 12);
+				}
 				continue;
 			}
 			yield* entryChunks(reader.take(entry.compressed), entry);
@@ -432,6 +465,27 @@ function httpError(response) {
  * recognised by its first bytes. `total` is the image's size when the server tells it (else `expectedBytes`, for the progress bar).
  */
 export function urlSource(url, { fetch: fetchFn = globalThis.fetch.bind(globalThis), signal, expectedBytes = null, ranges = true } = {}) {
+	const host = (() => { try { return new URL(url).host; } catch { return url; } })();
+	// Every failure of the browser's fetch (offline, DNS, CORS, a blocked policy) is the same TypeError to a page: it becomes one 'network' ImageError,
+	// so the caller can word it without mistaking another TypeError (a storage rejection, say) for a network problem.
+	const request = async init => {
+		try {
+			return await fetchFn(url, { signal, cache: 'no-store', ...init });
+		} catch (error) {
+			if (error?.name === 'AbortError')
+				throw error;
+			throw new ImageError(`Could not fetch ${host}.`, 'network');
+		}
+	};
+	async function* body(response) {
+		try {
+			yield* streamChunks(response.body);
+		} catch (error) {
+			if (error?.name === 'AbortError' || error instanceof ImageError)
+				throw error;
+			throw new ImageError(`The connection to ${host} broke off.`, 'network');
+		}
+	}
 	const source = {
 		random: false, total: expectedBytes, rangeable: ranges ? undefined : false, name: url, zipRanged: false,
 		async open() {
@@ -440,11 +494,11 @@ export function urlSource(url, { fetch: fetchFn = globalThis.fetch.bind(globalTh
 				if (ranged)
 					return ranged;
 			}
-			const response = await fetchFn(url, { signal, cache: 'no-store' });
+			const response = await request({});
 			if (!response.ok)
 				throw httpError(response);
 			const length = Number(response.headers.get('content-length'));
-			const chunks = streamChunks(response.body);
+			const chunks = body(response);
 			const first = await chunks.next();
 			if (first.done)
 				throw new ImageError('That address returned an empty file.', 'format');
@@ -465,11 +519,12 @@ export function urlSource(url, { fetch: fetchFn = globalThis.fetch.bind(globalTh
 			if (this.rangeable === false)
 				return null;
 			try {
-				const response = await fetchFn(url, { signal, cache: 'no-store', headers: { Range: `bytes=${start}-` } });
+				const response = await request({ headers: { Range: `bytes=${start}-` } });
 				if (response.status === 206)
-					return { chunks: streamChunks(response.body), total: null };
+					return { chunks: body(response), total: null };
 				await response.body?.cancel().catch(() => {});
 			} catch (error) {
+				// a refused ranged request (the preflight) just means no ranges
 				if (error?.name === 'AbortError')
 					throw error;
 			}
@@ -479,7 +534,7 @@ export function urlSource(url, { fetch: fetchFn = globalThis.fetch.bind(globalTh
 		/** The ranged route for a ZIP; null when the server cannot do ranges for the browser (then one plain request is used). */
 		async openZipRanged() {
 			try {
-				const tailResponse = await fetchFn(url, { signal, cache: 'no-store', headers: { Range: 'bytes=-66000' } });
+				const tailResponse = await request({ headers: { Range: 'bytes=-66000' } });
 				if (tailResponse.status !== 206) {
 					// a server that ignores ranges is streaming the whole file: stop it
 					await tailResponse.body?.cancel().catch(() => {});
@@ -487,7 +542,7 @@ export function urlSource(url, { fetch: fetchFn = globalThis.fetch.bind(globalTh
 				}
 				const tailBytes = new Uint8Array(await tailResponse.arrayBuffer());
 				const readRange = async (from, length) => {
-					const response = await fetchFn(url, { signal, cache: 'no-store', headers: { Range: `bytes=${from}-${from + length - 1}` } });
+					const response = await request({ headers: { Range: `bytes=${from}-${from + length - 1}` } });
 					if (response.status !== 206)
 						throw new ImageError('The server stopped answering range requests.', 'http');
 					return new Uint8Array(await response.arrayBuffer());
@@ -500,7 +555,7 @@ export function urlSource(url, { fetch: fetchFn = globalThis.fetch.bind(globalTh
 					throw new ImageError('ZIP64 files are not supported; use a ZIP below 4 GB or choose the extracted image.');
 				const local = await readRange(entry.offset, 30);
 				const from = entry.offset + 30 + u16(local, 26) + u16(local, 28);
-				const response = await fetchFn(url, { signal, cache: 'no-store', headers: { Range: `bytes=${from}-${from + entry.compressed - 1}` } });
+				const response = await request({ headers: { Range: `bytes=${from}-${from + entry.compressed - 1}` } });
 				if (response.status !== 206) {
 					await response.body?.cancel().catch(() => {});
 					return null;
@@ -508,9 +563,10 @@ export function urlSource(url, { fetch: fetchFn = globalThis.fetch.bind(globalTh
 				this.zipRanged = true;
 				this.rangeable = false;
 				this.total = entry.size;
-				return { chunks: entryChunks(streamChunks(response.body), entry), total: entry.size };
+				return { chunks: entryChunks(body(response), entry), total: entry.size };
 			} catch (error) {
-				if (error?.name === 'AbortError' || error instanceof ImageError)
+				// a failed probe (a refused preflight, say) falls back to one plain request
+				if (error?.name === 'AbortError' || error instanceof ImageError && error.code !== 'network')
 					throw error;
 				return null;
 			}
@@ -526,6 +582,7 @@ function makeDispatcher(files, write, progress) {
 	const list = [...files].sort((a, b) => a.lba - b.lba);
 	let next = 0;
 	let active = [];
+	let inflight = 0;
 	let done = 0;
 	const remaining = () => list.length - done;
 	return {
@@ -542,6 +599,10 @@ function makeDispatcher(files, write, progress) {
 			while (next < list.length && list[next].lba < end) {
 				const file = list[next++];
 				file.end = file.lba + Math.ceil(file.size / USER_SECTOR);
+				// files cut out at the same time (overlapping extents) share a memory budget
+				inflight += file.size;
+				if (inflight > MAX_INFLIGHT)
+					throw new ImageError('That image has overlapping files that would need too much memory to read at once.', 'format');
 				file.buffer = new Uint8Array(file.size);
 				if (file.lba < batch.lba)
 					throw new ImageError(`${file.path} starts before the sectors the page has (internal error).`, 'internal');
@@ -565,6 +626,7 @@ function makeDispatcher(files, write, progress) {
 				active = active.filter(entry => entry !== file);
 				const bytes = file.buffer;
 				file.buffer = null;
+				inflight -= file.size;
 				await write(file.path, bytes);
 				done++;
 				progress(file);
@@ -591,11 +653,18 @@ export async function extractImage({ source, choose, begin, have = () => false, 
 	let layout = null;
 	let total = source.total ?? null;
 	const report = (extra = {}) => progress({ total, done: 0, count: 0, bytes: 0, ...extra });
-	const wantedOf = (volume) => {
+	// `exactTotal`: the image's size when the source knows it for sure; a wanted file may not reach beyond it.
+	const wantedOf = (volume, exactTotal) => {
 		const paths = new Set(choose(volume.files.map(file => ({ path: file.path, size: file.size }))));
 		const wanted = volume.files.filter(file => paths.has(file.path));
-		if (wanted.some(file => file.multi))
-			throw new ImageError(`${wanted.find(file => file.multi).path} is stored in several parts, which is not supported.`);
+		for (const file of wanted) {
+			if (file.odd)
+				throw new ImageError(`${file.path} is ${file.odd} on that disc, which is not supported.`);
+			if (file.size > MAX_FILE)
+				throw new ImageError(`${file.path} is ${(file.size / 1048576).toFixed(0)} MB, more than the ${MAX_FILE / 1048576} MB one file may have here.`);
+			if (exactTotal != null && (file.lba + Math.ceil(file.size / USER_SECTOR)) * layout.stride > exactTotal)
+				throw new ImageError(`${file.path} lies beyond the end of the image (damaged or cut short).`, 'truncated');
+		}
 		return wanted;
 	};
 	const summary = (volume, wanted) => ({ files: wanted.length, bytes: wanted.reduce((sum, file) => sum + file.size, 0), joliet: volume.joliet, label: volume.label });
@@ -619,28 +688,28 @@ export async function extractImage({ source, choose, begin, have = () => false, 
 				throw new ImageError('The directory tree of that image lies beyond its first 32 MB, which the page does not support.', 'format');
 			return head.subarray(lba * USER_SECTOR, (lba + count) * USER_SECTOR);
 		});
-		const wanted = wantedOf(volume);
+		const wanted = wantedOf(volume, source.total ?? null);
 		await begin(wanted.map(file => ({ path: file.path, size: file.size })));
 		const todo = wanted.filter(file => !have(file.path, file.size)).sort((a, b) => a.lba - b.lba);
+		// progress counts the wanted bytes (the image's other sectors are never read)
+		total = todo.reduce((sum, file) => sum + file.size, 0);
 		let bytes = 0;
 		let done = 0;
 		const count = todo.length;
 		for (const file of todo) {
 			aborted();
-			const parts = [];
+			const contents = new Uint8Array(file.size);
 			let at = 0;
 			while (at < file.size) {
 				aborted();
 				const sectors = Math.min(Math.ceil((file.size - at) / USER_SECTOR), 2048);
 				const part = await sector(file.lba + at / USER_SECTOR, sectors, file);
-				parts.push(part.subarray(0, Math.min(part.length, file.size - at)));
-				at += sectors * USER_SECTOR;
-				bytes += sectors * layout.stride;
+				const used = Math.min(part.length, file.size - at);
+				contents.set(part.subarray(0, used), at);
+				at += used;
+				bytes += used;
 				report({ bytes, done, count, path: file.path });
 			}
-			const contents = new Uint8Array(file.size);
-			let offset = 0;
-			for (const part of parts) { contents.set(part, offset); offset += part.length; }
 			await write(file.path, contents);
 			done++;
 			report({ bytes, done, count, path: file.path });
@@ -651,6 +720,7 @@ export async function extractImage({ source, choose, begin, have = () => false, 
 	// A streamed source: the head of the image is kept until the directory tree is read, then wanted files are cut out as they pass.
 	let opened = await source.open();
 	total = opened.total ?? total;
+	const exactTotal = opened.total ?? null;
 	let iterator = userSectors(opened.chunks, { onLayout: found => layout = found })[Symbol.asyncIterator]();
 	const head = [];
 	let available = 0;
@@ -702,7 +772,7 @@ export async function extractImage({ source, choose, begin, have = () => false, 
 					}
 					throw error;
 				}
-				wanted = wantedOf(volume);
+				wanted = wantedOf(volume, exactTotal);
 				await begin(wanted.map(file => ({ path: file.path, size: file.size })));
 				const empty = wanted.filter(file => file.size === 0 && !have(file.path, 0));
 				for (const file of empty)

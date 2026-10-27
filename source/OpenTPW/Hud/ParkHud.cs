@@ -558,8 +558,9 @@ public sealed partial class ParkHud
 	{
 		if ( BuyItemOf( clicked.Entry ) is not { } item || clicked.Entry is not { } entry )
 			return false;
-		if ( RejectReadOnlyAction() )
-			return true;
+		// a read-only visit builds nothing: the click opens the object's window as it does without Ctrl
+		if ( level.IsReadOnlyVisit )
+			return false;
 		if ( Status.HasEconomy && (Status.PriceOf( item ) ?? item.Cost) > Status.Money )
 		{
 			PostMessage( strings.Help( 152 ) );

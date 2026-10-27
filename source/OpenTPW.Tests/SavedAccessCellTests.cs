@@ -127,4 +127,30 @@ public class SavedAccessCellTests
 		Assert.AreEqual( (1, 4), Level.FirstEntranceCellOf( apart ), "the lowest U" );
 		Assert.AreEqual( (5, 1), (ObjectAccessCells.Find( apart ).Entrance!.Value.X, ObjectAccessCells.Find( apart ).Entrance!.Value.Y), "the highest V" );
 	}
+
+	[TestMethod]
+	public void TheExitCellIsTheFirstExitInColumnOrderElseTheFirstEntrance()
+	{
+		// [BIN:TPW-EXE:0x004DB36B exit cell source] +0x38 comes from the def's +0x4A0, which 0x00413410 fills with the first type 10 cell (U outer, V inner), else the first entrance (0x00413582)
+		var exits = new[]
+		{
+			new ObjectAccessPoint( ObjectCellKind.Exit, 5, 1, 5, 0, U: 3, V: 0 ),
+			new ObjectAccessPoint( ObjectCellKind.Exit, 1, 4, 1, 5, U: 0, V: 3 ),
+			new ObjectAccessPoint( ObjectCellKind.Entrance, 9, 9, 9, 8, U: 5, V: 5 ),
+		};
+		Assert.AreEqual( (1, 4), Level.ExitAccessCellOf( exits ), "the lowest U wins whatever the row" );
+		var sameColumn = new[]
+		{
+			new ObjectAccessPoint( ObjectCellKind.Exit, 2, 7, 2, 8, U: 1, V: 4 ),
+			new ObjectAccessPoint( ObjectCellKind.Exit, 2, 3, 2, 2, U: 1, V: 0 ),
+		};
+		Assert.AreEqual( (2, 3), Level.ExitAccessCellOf( sameColumn ), "then the lowest V" );
+		var entrances = new[]
+		{
+			new ObjectAccessPoint( ObjectCellKind.Entrance, 6, 6, 6, 5, U: 4, V: 0 ),
+			new ObjectAccessPoint( ObjectCellKind.Entrance, 1, 2, 1, 1, U: 0, V: 2 ),
+		};
+		Assert.AreEqual( (1, 2), Level.ExitAccessCellOf( entrances ), "without an exit: the first entrance" );
+		Assert.IsNull( Level.ExitAccessCellOf( Array.Empty<ObjectAccessPoint>() ) );
+	}
 }

@@ -477,12 +477,16 @@ public partial class Level
 	/// Walkable entrance and exit cells for an object's access points, plus the entrance's outside cell (the queue's
 	/// front cell) and the direction from it into the entrance; null when it has no entrance or the grid no path.
 	/// </summary>
-	/// <summary>The object's own exit cell (thing +0x38): the last exit cell of the shape the placement loop meets, else the last entrance cell; null without either.</summary>
+	/// <summary>The object's own exit cell (thing +0x38): the first exit cell of the shape in column-major order (lowest U, then lowest V), else its first entrance cell; null without either.</summary>
 	// [BIN:TPW-EXE:0x005014E0 exit cell] ExitRide takes the exit cell index +0x38 and compares it with the entrance cell +0x36: an object without an exit has the same cell in both (0x00501587)
+	// [BIN:TPW-EXE:0x004DB36B exit cell source] the constructor writes +0x38 from the def's precomputed +0x4A0 (0x004DB341..0x004DB36B), which the shape scan 0x00413410 fills (0x0041354C..0x004135D2) with the FIRST type 10 cell in its column-major order and, when there is none, with the first entrance cell (0x00413582)
 	internal static (int X, int Y)? ExitAccessCellOf( IEnumerable<ObjectAccessPoint> accessPoints )
 	{
-		var (entrance, exit) = ObjectAccessCells.Find( accessPoints );
-		return (exit ?? entrance) is { } cell ? (cell.X, cell.Y) : null;
+		ObjectAccessPoint? first = null;
+		foreach ( var point in accessPoints )
+			if ( point.Kind == ObjectCellKind.Exit && (first is not { } best || (point.U, point.V).CompareTo( (best.U, best.V) ) < 0) )
+				first = point;
+		return first is { } found ? (found.X, found.Y) : FirstEntranceCellOf( accessPoints );
 	}
 
 	internal static ((int X, int Y) Entrance, (int X, int Y) Exit, (int X, int Y) QueueFront, int QueueEntranceDirection)? ResolveVisitorCells( IEnumerable<ObjectAccessPoint> accessPoints, GuestPathGrid grid )
@@ -1059,12 +1063,9 @@ public partial class Level
 		owner = QueueRideAt( grid, attractions, x, y );
 		if ( owner == null && grid.IsQueue( x, y ) )
 		{
-			// The rides' queue lines are cached: walk them again before a cell counts as stray.
+			// The rides' queue lines are cached: walk them again before a cell counts as stray. [BIN:TPW-EXE:0x005367A0 cell clear] this is the host's own geometry only (the cached back and size stay): the clear re-evaluates the ride that owns the cell and no other
 			foreach ( var ride in attractions.OfType<RideVisitorBridge>().Where( item => item.HasQueue ) )
-			{
-				if ( ride.RecomputeQueue( grid ) )
-					ride.NotifyQueueEdited();
-			}
+				ride.RecomputeQueueKeepingBack( grid );
 			owner = QueueRideAt( grid, attractions, x, y );
 		}
 		if ( owner != null )
@@ -1435,11 +1436,14 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Guests == null || !item.Entry.HasQueue || item.Visitors is not RideVisitorBridge ride )
 			return;
-		ride.RecomputeQueue( Guests.Grid );
+		// [BIN:TPW-EXE:0x00527FB4 cached size] the demolition reads the ride's word +0x40 as it stands, the cached size, and drops no cache: a ride with no cached size (no front) neither undoes nor debits
+		ride.RecomputeQueueKeepingBack( Guests.Grid );
+		if ( ride.QueueSizeInCells == 0 )
+			return;
 		// [BIN:TPW-EXE:0x00527FB4 front that holds no queue cell] the word +0x40 counts the chain from the front cell whatever its type, so a ride with a front but no queue cell still runs Back (it pops the front twice and clears nothing: a path cell as the prior corner suppresses the second click) and then debits one cell; a ride with no front (the entry has no link bit, 0x4DE040) has a count of 0 and neither undoes nor debits
 		if ( ride.ReadNativeFront( Guests.Grid, out var nativeFront, out _ ) && !(nativeFront is { } held && Guests.Grid.IsQueue( held.X, held.Y )) )
 		{
-			if ( nativeFront != null && Park?.Economy is { } frontEconomy && GetEconomyInstance( item ) is int frontInstance )
+			if ( Park?.Economy is { } frontEconomy && GetEconomyInstance( item ) is int frontInstance )
 				frontEconomy.ChargeQueueDemolition( frontInstance );
 			return;
 		}

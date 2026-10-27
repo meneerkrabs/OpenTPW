@@ -9,8 +9,8 @@ namespace OpenTPW.Tests;
 /// Controls for a Mono interpreter fault the browser pins met (CI "pins (interpreter)", October 2026) in the projection helper of the guest tests: in a method called about 70 times (the interpreter's
 /// tier-up) whose <c>try</c> assigns locals that are read after the <c>finally</c>, a <c>finally</c> body that runs a <c>for</c> or <c>foreach</c> loop over an array of value tuples (its index and the element's int copied
 /// into temporaries) overwrote the low half of those locals: a returned <c>(ulong, ulong)</c> came back as <c>0x111122220000000B, 0x555566660000000C</c> (the loop's last indices) from call 69 to 75 on, whatever the
-/// return form (a tuple, a class, locals after the finally) and with or without Jiterpreter traces; Mono AOT and the desktop runtime were right. Probed 2026-10-27: no such finally exists in the simulation code (the
-/// finally blocks of GuestSimulation's decisions, ScriptHost and the others only call or subtract a field, which the controls below repeat hot and which hold). The helper that met it
+/// return form (a tuple, a class, locals after the finally) and with or without Jiterpreter traces; Mono AOT and the desktop runtime were right. Probed 2026-10-27: three finally bodies of the browser build did loop (World/Level.Simulation.cs SimulateSweptTurn, Client/GameFlow.CoopJoin.cs's slice, the pin runner of OpenTPW.Web); none misbehaved in the pins, but each read locals after the finally, so
+/// each loop moved into a helper method, and tools/test_no_loop_in_finally.py fails on any loop or LINQ call in a finally body of those projects. The other finally blocks (the guest decisions, ScriptHost and the rest) only call or subtract a field, which the controls below repeat hot and which hold. The helper that met it
 /// (GuestRefusedTargetTests.VerifyRetainedTargetHash) has no try/finally any more. A new simulation method with a loop in a finally and a try-assigned local read after it needs this class's pattern checked first.
 /// </summary>
 [TestClass]

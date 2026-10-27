@@ -23,7 +23,6 @@ public enum ObjectCellKind
 	Overlay
 }
 
-/// <summary>An entrance or exit cell of a placed object and the adjacent outside cell (queue end or path).</summary>
 /// <summary>An entrance or exit cell of a placed shape: its grid cell, the outside cell in front of it and its place in the shape (<paramref name="U"/> the column, <paramref name="V"/> the row counted from the last text row), which the scan orders of tp.exe read.</summary>
 public readonly record struct ObjectAccessPoint( ObjectCellKind Kind, int X, int Y, int OutsideX, int OutsideY, int U = 0, int V = 0 );
 

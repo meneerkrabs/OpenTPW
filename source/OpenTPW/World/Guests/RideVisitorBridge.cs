@@ -881,8 +881,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	private bool RecomputeQueue( GuestPathGrid grid, bool keepBackCache )
 	{
+		var roomBefore = QueueSizeInCells;
 		var changed = RecomputeQueueCells( grid );
 		RefreshBackCache( keepBackCache );
+		// a re-evaluation (0x004DE1F0) that drops a stale cache changes the room the guests were held to, whether or not the cells moved since the sync last found them: the queue's guests re-evaluate
+		if ( !keepBackCache && !changed && QueueSizeInCells != roomBefore )
+		{
+			QueueEditCount++;
+			changed = true;
+		}
 		return changed;
 	}
 

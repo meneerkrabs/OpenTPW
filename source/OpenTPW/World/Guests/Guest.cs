@@ -267,7 +267,7 @@ public sealed class Guest
 	public int AttractionId
 	{
 		get => attractionId;
-		// +0x1DC holds one id: naming an attraction replaces a bin the guest last used (the bin search 0x00500DC0 is the only other writer of a bin there)
+		// +0x1DC holds one id: naming an attraction replaces a bin the guest last used (the bin search 0x00500DC0, written at 0x004FEDEF by its caller, is the only other writer of a bin there)
 		internal set
 		{
 			attractionId = value;

@@ -123,7 +123,7 @@ public class ObjectAccessCellsTests
 		var restoredGrid = new GuestPathGrid( restoredCells );
 		restoredGrid.SetPath( 1, 1, true );
 		item.Visitors.RecomputeQueue( restoredGrid );
-		// [BIN:TPW-EXE:0x004DE040 first entrance] the placement links only the first entrance (0x5293A1, 0x5297BD), the selector reads the first one's link byte (+0x36): a two-entrance shape has no front
+		// [BIN:TPW-EXE:0x004DE040 first entrance] the placement keeps the last entrance (0x5293A1) and links that one (0x5297BD), the selector reads the first one's link byte (+0x36): a two-entrance shape has no front
 		Assert.IsTrue( item.Visitors.IsZeroFront, "the first entrance carries no link byte" );
 		Assert.AreEqual( 0, item.Visitors.QueueSizeInCells );
 		restoredCells.SetOwner( first.X, first.Y, 0 );

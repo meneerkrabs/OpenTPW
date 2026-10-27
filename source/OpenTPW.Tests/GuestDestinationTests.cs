@@ -285,6 +285,31 @@ public partial class GuestTests
 	}
 
 	[TestMethod]
+	public void AnEditOnlyTheParkTurnsSyncFindsDismissesNobodyUntilAReevaluation()
+	{
+		// [BIN:TPW-EXE:0x004DE1F0 guest re-evaluation] 0x00501390 runs only from 0x004DE1F0, with the room it has just dropped the cache for: the sync's own recompute keeps the cached room
+		var grid = CreateCross();
+		var simulation = new GuestSimulation( grid, CreateSettings(), 9 ) { ArrivalsEnabled = false };
+		var shop = TypedShop( grid, 1, (15, 5), (15, 4), LinkDown );
+		simulation.Register( shop.Bridge );
+		var guest = simulation.SpawnInPark( 15, 5 );
+		guest.AttractionId = shop.Bridge.AttractionId;
+		Assert.AreEqual( QueueJoinResult.Joined, shop.Bridge.JoinQueue( guest.Id ) );
+		guest.State = GuestState.Queueing;
+		Entrance( grid, (15, 4), 0 );
+		for ( var tick = 0; tick < 5; tick++ )
+			simulation.Tick( Tick );
+		Assert.IsTrue( shop.Bridge.IsZeroFront );
+		Assert.IsTrue( shop.Bridge.BackCacheIsStale );
+		Assert.AreEqual( 0, shop.Bridge.GetQueuePosition( guest.Id ), "the cached room still holds the guest" );
+		shop.Bridge.RecomputeQueue( grid );
+		shop.Bridge.NotifyQueueEdited( grid );
+		for ( var tick = 0; tick < 5 && shop.Bridge.GetQueuePosition( guest.Id ) >= 0; tick++ )
+			simulation.Tick( Tick );
+		Assert.AreEqual( -1, shop.Bridge.GetQueuePosition( guest.Id ), "the re-evaluation dismisses it" );
+	}
+
+	[TestMethod]
 	public void AZeroFrontIsSavedAndASaveFromBeforeLoadsWithItsOldOneCellQueue()
 	{
 		var grid = CreateCross();

@@ -2643,10 +2643,26 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			seenGridVersion = Grid.Version;
 			// [BIN:TPW-EXE:0x004DE130 cached back] the park turn's sync finds an edit no re-evaluation (0x004DE1F0) reported: the cached back and size stay until the next one
+			// [BIN:TPW-EXE:0x004DE1F0 guest re-evaluation] tp.exe runs the guests' queue re-evaluation (0x00501390: the room 4 x +0x40 dismisses) only from 0x004DE1F0, with the cache it has just dropped: the edits reported explicitly are handled first, with the room they left, and a change only this sync finds moves the host's queue cells and the guests' places on them, and dismisses nobody
+			ReevaluateReportedEdits();
 			foreach ( var attraction in attractions )
+			{
+				var before = attraction.QueueEditCount;
 				attraction.RecomputeQueueKeepingBack( Grid );
+				if ( attraction.QueueEditCount != before )
+				{
+					seenQueueEdits[attraction.AttractionId] = attraction.QueueEditCount;
+					ReevaluateQueue( attraction, dismiss: false );
+				}
+			}
 			EndBrokenWalks();
 		}
+		ReevaluateReportedEdits();
+	}
+
+	/// <summary>The queue edits a ride reported (its edit count moved, <c>0x004DE1F0</c>): the guests re-evaluate with the room the edit left.</summary>
+	private void ReevaluateReportedEdits()
+	{
 		foreach ( var attraction in attractions )
 		{
 			if ( seenQueueEdits.TryGetValue( attraction.AttractionId, out var seen ) && seen == attraction.QueueEditCount )
@@ -2663,7 +2679,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:TPW-EXE:0x00501390 queue re-evaluation] the only exit is position ≥ 4 × cells (unsigned) with the guest not in state 14; "Queue edited underneath me while Standing In Queue" is the entry log every guest prints, not an exit; the caller 0x004DE1F0 visits every guest in the queue list but the called one (ride +0x6C); executed by the x86 oracle target tpw-exe-queue-reevaluate (ORACLE.md X14)
 	// [BIN:TPW-EXE:0x00501160 state 11 re-route] a guest whose place changed (0x004FFFF0 at 0x005002C2) takes the new place's queue slot (0x004DDF50, 0x004DE7E0) and routes to it with the generic route 0x004FA5F0 (state 12), or leaves through the dismissal when the route fails
-	private void ReevaluateQueue( IRideVisitorBridge attraction, int? sizeInCells = null )
+	private void ReevaluateQueue( IRideVisitorBridge attraction, int? sizeInCells = null, bool dismiss = true )
 	{
 		var cells = attraction.QueueCells;
 		var room = RideVisitorBridge.PositionsPerCell * (sizeInCells ?? attraction.QueueSizeInCells);
@@ -2673,6 +2689,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				continue;
 			var position = attraction.GetQueuePosition( guest.Id );
 			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts); OpenTPW sends it away
+			if ( !dismiss && (position < 0 || position >= room) )
+				continue;
 			if ( position < 0 || position >= room )
 			{
 				// [BIN:TPW-EXE:0x00501496 queue edited] before the dismissal a guest whose thing id (the word at thing +0, read at 0x00501483) is a multiple of 3 thinks 13 (Angry, 0x0050BE80); the others think nothing; the guest's id is its thing id

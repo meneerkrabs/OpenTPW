@@ -350,6 +350,14 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		// a ride without a front joins the digest only while it has none (every park without one keeps its pins)
 		if ( IsZeroFront )
 			hash.Add( 0x5A465254L );
+		// a back cell cached before an edit (+0x3A) joins the digest only while it differs from the queue as it stands
+		if ( BackCacheIsStale )
+		{
+			hash.Add( 0x4B434142L );
+			hash.Add( backCache is { } cachedBack ? cachedBack.X : -1 );
+			hash.Add( backCache is { } cachedBackY ? cachedBackY.Y : -1 );
+			hash.Add( sizeCache );
+		}
 		hash.Add( QueueEditCount );
 		hash.Add( calledTurn );
 		hash.Add( HeadNotReadyStreak );
@@ -394,6 +402,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		TypedQueueFront = QueueEntryResolver != null && QueueEntranceDirection >= 0 ? QueueFrontCell : null,
 		TypedQueueDirection = QueueEntryResolver != null && QueueFrontCell != null && QueueEntranceDirection >= 0 ? QueueEntranceDirection : null,
 		ZeroFront = IsZeroFront ? true : null,
+		CachedBack = BackCacheIsStale ? backCache : null,
+		CachedBackSize = BackCacheIsStale ? sizeCache : null,
 		QueueEditCount = QueueEditCount,
 		JoinCell = JoinCell,
 		EntranceCell = HasCells ? EntranceCell : null,
@@ -620,6 +630,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		JoinCell = snapshot.JoinCell;
 		IsZeroFront = snapshot.ZeroFront == true;
 		HasTypedBack = snapshot.TypedQueueFront != null && !IsZeroFront;
+		// a cached back (+0x3A) that an edit left behind is saved with the ride and kept by the load (0x004DE130); a save without one holds the queue as it stands
+		(backCache, sizeCache, backCacheKnown) = (snapshot.CachedBack ?? LiveBack, snapshot.CachedBackSize ?? LiveSize, true);
 		RestoreVisitorCells( snapshot );
 		HeadNotReadyStreak = snapshot.HeadNotReadyStreak;
 		MaximumHeadNotReadyStreak = snapshot.MaximumHeadNotReadyStreak;
@@ -761,11 +773,34 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>The front was read from the entry cell's links at the last recompute (<see cref="IRideVisitorBridge.HasTypedBack"/>).</summary>
 	public bool HasTypedBack { get; private set; }
 	/// <summary>The back-of-queue cell the original's <c>0x004DE110</c> returns: the last queue cell, null for a ride without a front.</summary>
-	public (int X, int Y)? BackCell => IsZeroFront ? null : QueueCells[^1];
+	// [BIN:TPW-EXE:0x004DE130 cached back] the walk returns the cached word +0x3A (and keeps +0x40) while it is non-zero; only the re-evaluation 0x004DE1F0 drops it, a zero front leaves it 0, so a cell edit that runs no re-evaluation (the guests' park turn finds it) leaves the old back and size to the guests, and the next re-evaluation, a ride that has no cache or a load that keeps the saved word refreshes them
+	public (int X, int Y)? BackCell => backCacheKnown ? backCache : LiveBack;
+	private (int X, int Y)? LiveBack => IsZeroFront ? null : QueueCells[^1];
+	private (int X, int Y)? backCache;
+	private int sizeCache;
+	private bool backCacheKnown;
+	/// <summary>The cached back and size (+0x3A, +0x40) differ from the queue as it stands: an edit ran no re-evaluation yet.</summary>
+	public bool BackCacheIsStale => backCacheKnown && (backCache != LiveBack || sizeCache != LiveSize);
+	/// <summary>An original save's cached back cell (<c>+0x3A</c>, cell id y × 128 + x + 1) and size (<c>+0x40</c>): the loader keeps the saved words and <c>0x004DE130</c> returns them until a re-evaluation drops them. 0 (an empty cache) changes nothing. True when the saved cache differs from the queue as it stands.</summary>
+	// [BIN:TPW-EXE:0x004DE130 saved cache kept] the person loader's twin for things stores +0x3A and +0x40 as read; the walk recomputes only a zero word
+	internal bool ImportSavedBackCache( int cellId, int size )
+	{
+		if ( cellId <= 0 )
+			return false;
+		(backCache, sizeCache, backCacheKnown) = (((cellId - 1) % 128, (cellId - 1) / 128), size, true);
+		return BackCacheIsStale;
+	}
+	private int LiveSize => IsZeroFront ? 0 : Math.Max( 1, queueCells.Count );
+	private void RefreshBackCache( bool keep )
+	{
+		if ( keep && backCacheKnown && backCache != null )
+			return;
+		(backCache, sizeCache, backCacheKnown) = (LiveBack, LiveSize, true);
+	}
 	/// <summary>Cached back-of-queue cell (ride <c>+54</c>) for the queue tool's geometry: the one-cell fallback for a ride without a front (<see cref="BackCell"/> is the guests' view).</summary>
 	public (int X, int Y) QueueBackCell => QueueCells[^1];
 	/// <summary>Queue size in cells (ride <c>+60</c>, the original's +0x40): at least 1, and 0 for a ride without a front.</summary>
-	public int QueueSizeInCells => IsZeroFront ? 0 : Math.Max( 1, queueCells.Count );
+	public int QueueSizeInCells => backCacheKnown ? sizeCache : LiveSize;
 	/// <summary>Walkable path cell where guests step onto the back of the queue, or null when the back is not connected to a path.</summary>
 	public (int X, int Y)? JoinCell { get; private set; }
 	/// <summary>Physical room: four guests per queue cell.</summary>
@@ -836,7 +871,22 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// cell and follow queue cells whose link points back at the current cell, at most
 	/// <see cref="QueueWalkGuard"/> steps. Returns true when the cells changed (a queue edit).
 	/// </summary>
-	public bool RecomputeQueue( GuestPathGrid grid )
+	public bool RecomputeQueue( GuestPathGrid grid ) => RecomputeQueue( grid, keepBackCache: false );
+
+	/// <summary>
+	/// <see cref="RecomputeQueue(GuestPathGrid)"/> for a recompute that is no re-evaluation (the park turn's sync after any cell edit, a load): a cached back and size (<c>+0x3A</c>, <c>+0x40</c>) that are
+	/// set stay as they are, as <c>0x004DE130</c> keeps them until <c>0x004DE1F0</c> drops them.
+	/// </summary>
+	public bool RecomputeQueueKeepingBack( GuestPathGrid grid ) => RecomputeQueue( grid, keepBackCache: true );
+
+	private bool RecomputeQueue( GuestPathGrid grid, bool keepBackCache )
+	{
+		var changed = RecomputeQueueCells( grid );
+		RefreshBackCache( keepBackCache );
+		return changed;
+	}
+
+	private bool RecomputeQueueCells( GuestPathGrid grid )
 	{
 		var previous = queueCells.ToArray();
 		queueCells.Clear();

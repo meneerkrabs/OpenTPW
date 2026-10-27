@@ -424,6 +424,14 @@ public sealed record RideVisitorBridgeSnapshot
 	/// </summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public bool? ZeroFront { get; init; }
+	/// <summary>
+	/// The cached back-of-queue cell and size (tp.exe <c>+0x3A</c>, <c>+0x40</c>) while an edit has left them different from the queue as it stands (<c>0x004DE130</c> returns them until the re-evaluation
+	/// <c>0x004DE1F0</c> drops them). Written only then; a save without them holds the queue as it stands.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public (int X, int Y)? CachedBack { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? CachedBackSize { get; init; }
 	public required int QueueEditCount { get; init; }
 	public required (int X, int Y)? JoinCell { get; init; }
 	/// <summary>

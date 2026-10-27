@@ -38,11 +38,14 @@ public sealed partial class GuestSimulation
 
 	/// <summary>Called at verified semantic state entries only. Temporary placement writes and snapshot/import reconstruction never call this helper.</summary>
 	// [BIN:TPW-EXE:0x00501DB0 guest state entry] ordinary states queue walk 1 or stand 3 directly, independently of current/pending template
-	private static void EnterGuestState( Guest guest, GuestState state )
+	internal static void EnterGuestState( Guest guest, GuestState state )
 	{
 		// [BIN:TPW-EXE:0x00502305 state 18 entry] the leaving state's entry clears the target +0x1DC (0x0050231C) and the thought record, as a held guest's (state 17, 0x005022E0) does; the other states leave it, so it lives until the next major choice (0x004FCB21)
 		if ( state == GuestState.LeavingPark )
+		{
 			guest.AttractionId = 0;
+			guest.BinId = 0;
+		}
 		guest.State = state;
 		if ( StateBodyTemplate( state ) is { } template )
 			guest.BodySprite.QueueTemplate( template );

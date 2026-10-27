@@ -287,6 +287,8 @@ public interface IRideVisitorBridge
 	bool LeaveQueue( int guestId );
 	/// <summary>Recomputes the queue cells from the grid; true when they changed.</summary>
 	bool RecomputeQueue( GuestPathGrid grid );
+	/// <summary><see cref="RecomputeQueue"/> for a recompute that is no re-evaluation (0x004DE1F0): a cached back (+0x3A) stays. Defaults to <see cref="RecomputeQueue"/> for a bridge without such a cache.</summary>
+	bool RecomputeQueueKeepingBack( GuestPathGrid grid ) => RecomputeQueue( grid );
 	/// <summary>Direction from queue cell <paramref name="index"/> toward its predecessor (toward the ride entrance for the front cell).</summary>
 	int DirectionTowardsFront( int index );
 	/// <summary>The called guest reached the stand point; true once its id is in VAR_LETMEON.</summary>

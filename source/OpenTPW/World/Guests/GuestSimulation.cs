@@ -418,25 +418,22 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>
-	/// A litter bin is removed (the removal message 10, tp.exe <c>0x004DD0A0</c> → <c>0x004FB360</c>): a guest walking to it loses the small happiness step and
-	/// its target and decides again where it stands (state 6), keeping its litter.
+	/// A litter bin is removed (the removal message 10, tp.exe <c>0x004DD0A0</c> → <c>0x004FB360</c>): every guest whose target is the bin (walking to it in state 9, or deciding
+	/// or wandering with it kept as its last target) loses the small happiness step and its target and decides again where it stands (state 6), keeping its litter.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004FB360 bin removed] the bin is the walking guest's target +0x1DC (state 9, 0x004FFF20): the small step (0x004FE980(0)), +0x1DC = 0 and state 6; the litter meter +0x1B4 is not touched
+	// [BIN:TPW-EXE:0x004FB360 bin removed] the bin is the guest's target +0x1DC (state 9, 0x004FFF20, or kept after the walk, which writes no +0x1DC): the message tests only +0x1DC, never the state, so the small step (0x004FE980(0)), +0x1DC = 0 and state 6 reach every holder; the litter meter +0x1B4 is not touched
 	public void BinRemoved( int binId )
 	{
 		if ( binId == 0 )
 			return;
 		foreach ( var guest in guests )
 		{
-			if ( guest.State != GuestState.ThrowingAwayLitter || guest.BinId != binId )
+			if ( guest.BinId != binId )
 				continue;
 			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.SmallHappinessChange & 0xFF) );
-			var navigation = guest.Navigation;
-			navigation.SetDestination( navigation.X, navigation.Y, [] );
-			guest.HasWaypoint = false;
-			guest.IsMoving = false;
 			guest.BinId = 0;
-			EnterGuestState( guest, GuestState.DoingNothing );
+			guest.Activity = GuestActivity.None;
+			StayWhereItStands( guest );
 		}
 	}
 
@@ -2052,7 +2049,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		else
 			DropLitter( guest, (LitterType)(1 + random.NextWord() % ParkLitter.OrdinaryKinds) );
 		guest.Litter = 0;
-		guest.BinId = 0;
+		// [BIN:TPW-EXE:0x004FFF20 state 9 end] the walk's end writes the litter meter 0 and SetState(6), never +0x1DC: the bin stays the guest's target until the next major choice (0x004FCB21), a hold (0x005022E0) or the leaving state (0x0050231C), and the removal message (0x004FB360) hits a guest that still holds it
 		EnterGuestState( guest, GuestState.DoingNothing );
 	}
 
@@ -2336,7 +2333,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100E9164 attraction score] executed by the PowerPC oracle (attraction-score, 578 inputs; C# agrees)
 	// [BIN:STP-PPC:0x100E9388 cell modifier] the environment record's component 4 (+8) at the back-of-queue cell divides the distance match; only the fireworks' RegionFX row 7 writes it (Attraction 10 in the shipped Standard.sam; tp.exe 0x004DB48C), so it is 0 everywhere else
-	// [APPROX:GUEST-002] faithful scoring, the major choice and the minor decision admit a disconnected real raw-type-3 queue back and leave route failure to RouteToCell; a typed front counts on any cell, even empty ground (0x4DE130, as in tp.exe); only an untyped fallback back stays excluded (docs/DISCONNECTED-QUEUE-SCORING.md)
+	// [BIN:TPW-EXE:0x004FCB84 scoring and choice] faithful scoring, the major choice and the minor decision admit every back the back-of-queue walk returns (a typed front on any cell, a real queue cell; 0x004DE130) and skip a ride whose back is 0; a bridge without a typed front (a host harness, a read-only visit, a Theme Park Inc world: tp.exe types the entrance cells in 0x528A70 and a save keeps them) is a host-model boundary and is scored on a real queue cell only; the extension policies opt out explicitly (ScoresDisconnectedQueues, docs/DISCONNECTED-QUEUE-SCORING.md)
 	public uint ScoreAttraction( Guest guest, IRideVisitorBridge attraction )
 	{
 		if ( !HasScoreBackCell( attraction ) )
@@ -2357,7 +2354,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		// A real major choice replaces the retained target; observational PeekChoice does not.
 		if ( setWalk )
+		{
 			guest.AttractionId = 0;
+			guest.BinId = 0;
+		}
 		// the host runs the choice loop: the policy scores and compares, the route request below is the host's alone (made exactly as the original makes it, for a candidate that beats the best)
 		var context = ContextNow();
 		var view = ViewOf( guest );
@@ -2642,8 +2642,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( Grid.Version != seenGridVersion )
 		{
 			seenGridVersion = Grid.Version;
+			// [BIN:TPW-EXE:0x004DE130 cached back] the park turn's sync finds an edit no re-evaluation (0x004DE1F0) reported: the cached back and size stay until the next one
 			foreach ( var attraction in attractions )
-				attraction.RecomputeQueue( Grid );
+				attraction.RecomputeQueueKeepingBack( Grid );
 			EndBrokenWalks();
 		}
 		foreach ( var attraction in attractions )
@@ -4190,7 +4191,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [EXT:rain-mood-imported-age] the optional load turn of an imported guest: never negative, and only for a guest without a time in the park
 			if ( guest.RainMoodAgeStartTurn is { } ageStart && (ageStart < 0 || guest.TimeInParkSeconds != null) )
 				Error( $"Guest {guest.Id} rain mood age start {ageStart} is negative or set for a guest with a known time in the park." );
-			if ( guest.BinId < 0 || (guest.BinId != 0) != (guest.State == GuestState.ThrowingAwayLitter) )
+			// the bin walk (state 9) names its bin; after it the bin stays the target (+0x1DC) wherever an attraction target may stay, and never beside one
+			if ( guest.BinId < 0 || (guest.State == GuestState.ThrowingAwayLitter && guest.BinId == 0)
+				|| (guest.BinId != 0 && guest.State != GuestState.ThrowingAwayLitter && (!CanRetainTarget( guest.State, guest.Activity ) || guest.AttractionId != 0)) )
 				Error( $"Guest {guest.Id} bin {guest.BinId} does not match its state {guest.State}." );
 			Bounded( guest.Id, guest.QueueJoinHappiness, nameof( guest.QueueJoinHappiness ), 0, 100 );
 			if ( guest.TimeInParkSeconds is { } elapsed && (!double.IsFinite( elapsed ) || elapsed < 0 || elapsed > Guest.MaximumTimeInParkSeconds) )

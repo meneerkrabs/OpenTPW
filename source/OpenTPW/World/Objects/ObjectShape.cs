@@ -24,7 +24,8 @@ public enum ObjectCellKind
 }
 
 /// <summary>An entrance or exit cell of a placed object and the adjacent outside cell (queue end or path).</summary>
-public readonly record struct ObjectAccessPoint( ObjectCellKind Kind, int X, int Y, int OutsideX, int OutsideY );
+/// <summary>An entrance or exit cell of a placed shape: its grid cell, the outside cell in front of it and its place in the shape (<paramref name="U"/> the column, <paramref name="V"/> the row counted from the last text row), which the scan orders of tp.exe read.</summary>
+public readonly record struct ObjectAccessPoint( ObjectCellKind Kind, int X, int Y, int OutsideX, int OutsideY, int U = 0, int V = 0 );
 
 /// <summary>One footprint cell: local shape coordinates and its kind.</summary>
 public readonly record struct ObjectShapeCell( int U, int V, ObjectCellKind Kind, char Symbol )
@@ -232,7 +233,7 @@ public static class ObjectFootprint
 			var (x, y) = ToGrid( anchorX, anchorY, rotation, cell.U, cell.V );
 			var (du, dv) = OutwardDirection( shape, cell );
 			var (dx, dy) = RotateDirection( rotation, du, dv );
-			yield return new ObjectAccessPoint( cell.Kind, x, y, x + dx, y + dy );
+			yield return new ObjectAccessPoint( cell.Kind, x, y, x + dx, y + dy, cell.U, cell.V );
 		}
 	}
 

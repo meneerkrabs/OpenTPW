@@ -463,12 +463,14 @@ public partial class Level
 	}
 
 	/// <summary>The object's access cell (thing +0x36): the cell of the shape's first entrance symbol, inside the footprint; null without an entrance.</summary>
+	// [BIN:TPW-EXE:0x00413410 first entrance scan] the shape scan runs the columns (U) in the outer loop and the rows (V) in the inner one (the row stride 0xA0 is the inner step) and stops at the first type 9 cell: the entrance with the lowest U, then the lowest V. The placement loop 0x00528A70 runs the other way round (rows outer, columns inner) and keeps the last one it meets (ObjectAccessCells.Find); no shipped shape names two entrances, so the two orders differ only for a shape a mod brings
 	internal static (int X, int Y)? FirstEntranceCellOf( IEnumerable<ObjectAccessPoint> accessPoints )
 	{
+		ObjectAccessPoint? first = null;
 		foreach ( var point in accessPoints )
-			if ( point.Kind == ObjectCellKind.Entrance )
-				return (point.X, point.Y);
-		return null;
+			if ( point.Kind == ObjectCellKind.Entrance && (first is not { } best || (point.U, point.V).CompareTo( (best.U, best.V) ) < 0) )
+				first = point;
+		return first is { } found ? (found.X, found.Y) : null;
 	}
 
 	/// <summary>
@@ -479,12 +481,7 @@ public partial class Level
 	// [BIN:TPW-EXE:0x005014E0 exit cell] ExitRide takes the exit cell index +0x38 and compares it with the entrance cell +0x36: an object without an exit has the same cell in both (0x00501587)
 	internal static (int X, int Y)? ExitAccessCellOf( IEnumerable<ObjectAccessPoint> accessPoints )
 	{
-		ObjectAccessPoint? entrance = null, exit = null;
-		foreach ( var point in accessPoints )
-			if ( point.Kind == ObjectCellKind.Exit )
-				exit = point;
-			else if ( point.Kind == ObjectCellKind.Entrance )
-				entrance = point;
+		var (entrance, exit) = ObjectAccessCells.Find( accessPoints );
 		return (exit ?? entrance) is { } cell ? (cell.X, cell.Y) : null;
 	}
 
@@ -2025,6 +2022,9 @@ public partial class Level
 			if ( !import.AttractionInstances.TryGetValue( attraction.Id, out var instance ) || !runtimes.TryGetValue( instance, out var runtime ) )
 				continue;
 			var taken = runtime.RestoreOriginalSettingWords( attraction.OperatingSpeed, attraction.OperatingCapacity, attraction.OperatingDuration );
+			// [BIN:TPW-EXE:0x004DE130 saved cache kept] the saved back cell (+0x3A) and queue size (+0x40) are kept as read
+			if ( runtime.Visitors is RideVisitorBridge savedQueue && savedQueue.ImportSavedBackCache( attraction.BackOfQueueCell, attraction.QueueSizeInCells ) )
+				import.Report( $"Attraction thing {attraction.Id}: the saved cached back-of-queue cell {attraction.BackOfQueueCell} (size {attraction.QueueSizeInCells}) differs from the queue as it stands and is kept (0x004DE130)." );
 			// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is cleared by states 1, 2 and 4 (their import closes the ride already) and by the player's close or a maintenance call; an idle attraction saved with it clear stays closed until the door opens the park
 			if ( Park!.Economy.TryGetObject( instance, out var objectState ) && RideOpening.ClosedByImportedOpenWord( attraction.CanLoad, ParkEconomy.ObjectState( objectState ) ) && runtime.IsOpen )
 			{

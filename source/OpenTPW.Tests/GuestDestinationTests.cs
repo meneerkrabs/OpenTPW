@@ -274,6 +274,9 @@ public partial class GuestTests
 		Assert.AreEqual( QueueJoinResult.Joined, shop.Bridge.JoinQueue( guest.Id ) );
 		guest.State = GuestState.Queueing;
 		Entrance( grid, (15, 4), 0 );
+		// the edit's re-evaluation (0x004DE1F0) drops the cached back and finds the zero front
+		shop.Bridge.RecomputeQueue( grid );
+		shop.Bridge.NotifyQueueEdited( grid );
 		simulation.Tick( Tick );
 		Assert.IsTrue( shop.Bridge.IsZeroFront );
 		for ( var tick = 0; tick < 5 && shop.Bridge.GetQueuePosition( guest.Id ) >= 0; tick++ )
@@ -358,7 +361,7 @@ public partial class GuestTests
 		Assert.IsFalse( WalkEdges.Blocked( map, 2, 3, East, 2 ) );
 	}
 
-	private static Guest ImportSaved( GuestSimulation simulation, int id, uint state, ushort major, ushort savedMajor, Func<int, int> attraction )
+	private static Guest ImportSaved( GuestSimulation simulation, int id, uint state, ushort major, ushort savedMajor, Func<int, int> attraction, Func<int, int>? bin = null )
 	{
 		var body = SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields
 		{
@@ -367,7 +370,7 @@ public partial class GuestTests
 		var payload = new byte[8 + body.Length];
 		body.CopyTo( payload, 8 );
 		var saved = SaveGuest.Read( payload, new SaveThing( id, SaveThingModel.Guest, 0, 0, 8, body.Length ) );
-		var report = simulation.ImportOriginal( new[] { saved }, 755, attraction, _ => 0 );
+		var report = simulation.ImportOriginal( new[] { saved }, 755, attraction, bin ?? ( _ => 0 ) );
 		Assert.IsTrue( report.Any( line => line.StartsWith( "Guest destinations imported", StringComparison.Ordinal ) ), "the import reports its destinations" );
 		return simulation.Find( id )!;
 	}
@@ -392,5 +395,104 @@ public partial class GuestTests
 		var guest = ImportSaved( simulation, 91, 7, 4001, 4002, _ => 0 );
 		Assert.AreEqual( 0, guest.AttractionId );
 		Assert.AreEqual( 0, guest.SavedMajorAttractionId );
+	}
+
+	[TestMethod]
+	public void ACachedBackStaysUntilTheNextReevaluationAndASaveKeepsIt()
+	{
+		// [BIN:TPW-EXE:0x004DE130 cached back] +0x3A is returned while it is non-zero and only 0x004DE1F0 drops it: an edit the park turn finds on its own leaves the old back and size to the guests
+		var grid = CreateCross();
+		var simulation = new GuestSimulation( grid, CreateSettings(), 9 ) { ArrivalsEnabled = false };
+		var shop = TypedShop( grid, 1, (15, 5), (15, 4), LinkDown );
+		simulation.Register( shop.Bridge );
+		var back = shop.Bridge.BackCell;
+		var size = shop.Bridge.QueueSizeInCells;
+		Assert.IsNotNull( back );
+		Assert.IsFalse( shop.Bridge.BackCacheIsStale );
+		Entrance( grid, (15, 4), 0 );
+		simulation.Tick( Tick );
+		Assert.IsTrue( shop.Bridge.IsZeroFront, "the queue as it stands has no front" );
+		Assert.AreEqual( back, shop.Bridge.BackCell, "the cached back is still returned" );
+		Assert.AreEqual( size, shop.Bridge.QueueSizeInCells );
+		Assert.IsTrue( shop.Bridge.BackCacheIsStale );
+		var snapshot = shop.Bridge.CaptureSnapshot();
+		Assert.AreEqual( back, snapshot.CachedBack );
+		Assert.AreEqual( size, snapshot.CachedBackSize );
+		var restored = TypedShop( CreateCross(), 1, (15, 5), (15, 4), 0 );
+		restored.Bridge.RestoreSnapshot( ParkResumeJson.Deserialize<RideVisitorBridgeSnapshot>( ParkResumeJson.Serialize( snapshot ) ) );
+		Assert.AreEqual( back, restored.Bridge.BackCell, "a save keeps the cache (the loader keeps +0x3A)" );
+		Assert.IsTrue( restored.Bridge.BackCacheIsStale );
+		var cleanHash = new StateHasher();
+		var staleHash = new StateHasher();
+		shop.Bridge.RecomputeQueue( grid );
+		shop.Bridge.AddCanonicalState( cleanHash );
+		Assert.IsFalse( shop.Bridge.BackCacheIsStale, "the re-evaluation drops it" );
+		Assert.IsNull( shop.Bridge.BackCell );
+		Assert.AreEqual( 0, shop.Bridge.QueueSizeInCells );
+		restored.Bridge.AddCanonicalState( staleHash );
+		Assert.AreNotEqual( cleanHash.Value, staleHash.Value, "the stale cache joins the digest" );
+	}
+
+	private static (GuestSimulation Simulation, Guest Guest) BinGuest( int bin = 5 )
+	{
+		var grid = CreateCross();
+		var simulation = new GuestSimulation( grid, CreateSettings(), 9 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 10, 8 );
+		guest.BinId = bin;
+		guest.State = GuestState.DoingNothing;
+		return (simulation, guest);
+	}
+
+	[DataTestMethod]
+	[DataRow( GuestState.DoingNothing )]
+	[DataRow( GuestState.WalkingAround )]
+	public void ARemovedBinHitsAGuestThatKeepsItAsItsTarget( GuestState state )
+	{
+		var (simulation, guest) = BinGuest();
+		guest.State = state;
+		var other = simulation.SpawnInPark( 10, 4 );
+		other.BinId = 6;
+		var happiness = guest.Happiness;
+		var validation = simulation.ValidateSnapshot( simulation.CaptureSnapshot() );
+		Assert.IsTrue( validation.IsValid, string.Join( "; ", validation.Errors ) );
+		simulation.BinRemoved( 5 );
+		Assert.AreEqual( 0, guest.BinId );
+		Assert.AreEqual( GuestState.DoingNothing, guest.State );
+		Assert.AreEqual( MeterMath.Add( happiness, -(float)(simulation.Settings.SmallHappinessChange & 0xFF) ), guest.Happiness, "the small step (0x004FE980(0))" );
+		Assert.AreEqual( 6, other.BinId, "another bin's guest is not reached" );
+	}
+
+	[TestMethod]
+	public void ANewTargetReplacesTheKeptBinAndALeavingGuestLosesIt()
+	{
+		var (simulation, guest) = BinGuest();
+		var shop = CreateShop( 1, (10, 6) );
+		guest.AttractionId = shop.Bridge.AttractionId;
+		Assert.AreEqual( 0, guest.BinId, "+0x1DC holds one id" );
+		guest.BinId = 5;
+		Assert.AreEqual( 5, guest.BinId );
+		guest.State = GuestState.WalkingAround;
+		var leaving = simulation.SpawnInPark( 10, 4 );
+		leaving.BinId = 9;
+		GuestSimulation.EnterGuestState( leaving, GuestState.LeavingPark );
+		Assert.AreEqual( 0, leaving.BinId, "the leaving state's entry clears +0x1DC (0x0050231C)" );
+	}
+
+	[TestMethod]
+	public void ABinGuestIsNotValidInAStateThatCannotKeepATarget()
+	{
+		var (simulation, guest) = BinGuest();
+		guest.State = GuestState.EnteringPark;
+		var validation = simulation.ValidateSnapshot( simulation.CaptureSnapshot() );
+		Assert.IsFalse( validation.IsValid );
+	}
+
+	[TestMethod]
+	public void AnOriginalSaveKeepsALitterBinAsTheTargetOfADecidingOrWanderingGuest()
+	{
+		var (simulation, _, _, _, _) = DetourPark( withGuest: false );
+		var guest = ImportSaved( simulation, 92, 7, 5001, 0, id => 0, thing => thing == 5001 ? 77 : 0 );
+		Assert.AreEqual( 0, guest.AttractionId );
+		Assert.AreEqual( 77, guest.BinId, "mMajorDest names a bin the guest last used (0x004FFF20 writes no +0x1DC)" );
 	}
 }

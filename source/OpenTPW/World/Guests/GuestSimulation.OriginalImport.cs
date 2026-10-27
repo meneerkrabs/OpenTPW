@@ -202,7 +202,7 @@ public sealed partial class GuestSimulation
 			if ( inPark )
 			{
 				ImportInPark( guest, save, cell, destination, attraction, bin, adjusted, recovery );
-				if ( guest.AttractionId != 0 && guest.State is not GuestState.GoingToRide )
+				if ( (guest.AttractionId != 0 || guest.BinId != 0) && guest.State is not (GuestState.GoingToRide or GuestState.ThrowingAwayLitter) )
 					keptTargets++;
 				// [BIN:TPW-EXE:0x4FD950 time in park] mArrivalDate (+0x1D4) is the world's game tick at the stamp and the hours the visitor lists show are (tick − stamp) >> 2 turns (the roster's cell); the saved stamp gives the elapsed park turns, a stamp after the save's own turn is not a date
 				if ( save.ArrivalDate <= parkTurn )
@@ -224,7 +224,7 @@ public sealed partial class GuestSimulation
 			balloonHistoryReconstructed = true;
 			states.Add( $"{guest.Id}:{save.State}→{(int)guest.State}" );
 		}
-		evidence.Add( $"Guest destinations imported: {keptTargets} kept targets (mMajorDest, +0x1DC, of guests deciding or wandering) and {savedMajors} saved major destinations (mSavedMajorDest, +0x1DE)." );
+		evidence.Add( $"Guest destinations imported: {keptTargets} kept targets (mMajorDest, +0x1DC: an attraction or a litter bin, of guests deciding or wandering) and {savedMajors} saved major destinations (mSavedMajorDest, +0x1DE)." );
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Guest value adjusted on import: {line}." );
@@ -242,6 +242,14 @@ public sealed partial class GuestSimulation
 	/// and a walking state is routed again to its accurate destination with the original's walk set-up, which draws nothing.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004F9407 load re-route] the person loader calls 0x004FA5F0 with the accurate destination (+0x18, +0x1A): SetDest 0x00510100 → the walk set-up 0x0050F8E0, whose search starts from any cell (the edge test 0x004D8750 opens every step out of a cell that is neither path nor queue); a failed search leaves the walk finished with mCantReachDest set and only logs "Couldn't renav to my accurate dest!!", so the first walk step answers 2 (0x004FA2A0) and the state handler recovers (7: a draw and the wander, 9: the litter drop, 10: "stuck on the way")
+	/// <summary>The saved target +0x1DC of a guest the import keeps in state 6, 7 or 8: the attraction or the litter bin the thing id names (one id, so at most one), 0 when OpenTPW holds neither.</summary>
+	private static void KeepTarget( Guest guest, int thingId, Func<int, int> attraction, Func<int, int> bin )
+	{
+		guest.AttractionId = attraction( thingId );
+		if ( guest.AttractionId == 0 )
+			guest.BinId = bin( thingId );
+	}
+
 	private void ImportInPark( Guest guest, SaveGuest save, (int X, int Y) cell, (int X, int Y) destination, Func<int, int> attraction, Func<int, int> bin, List<string> adjusted, List<string> recovery )
 	{
 		guest.OnGrid = true;
@@ -262,9 +270,9 @@ public sealed partial class GuestSimulation
 		switch ( save.State )
 		{
 			case 7:
-				// [BIN:TPW-EXE:0x004FB530 kept target] mMajorDest (+0x1DC) is the target the guest keeps until its next major choice (0x004FCB21) whatever the state (0x00500900, 0x004FFEDA leave it): a wanderer keeps the attraction it last chose, a bin it last used is no attraction (0)
+				// [BIN:TPW-EXE:0x004FB530 kept target] mMajorDest (+0x1DC) is the target the guest keeps until its next major choice (0x004FCB21) whatever the state (0x00500900, 0x004FFEDA leave it): a wanderer keeps the attraction it last chose or the bin it last used (0x004FFF20 writes no +0x1DC)
 				guest.State = GuestState.WalkingAround;
-				guest.AttractionId = attraction( save.MajorDest );
+				KeepTarget( guest, save.MajorDest, attraction, bin );
 				WalkOn();
 				break;
 			case 9 when bin( save.MajorDest ) is var found and not 0:
@@ -287,7 +295,7 @@ public sealed partial class GuestSimulation
 				guest.State = GuestState.DoingNothing;
 				// states 6 and 8 (an activity, decided again at once) keep the target too
 				if ( save.State is 6 or 8 )
-					guest.AttractionId = attraction( save.MajorDest );
+					KeepTarget( guest, save.MajorDest, attraction, bin );
 				break;
 		}
 	}

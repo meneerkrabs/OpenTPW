@@ -64,13 +64,16 @@ runtime results, native behavior, full-suite hashes or original-game equivalence
 
 ## Remaining scope
 
-`GUEST-002` is narrowed (round 9, package G), not retired. Since then the minor decision
-scores the same candidates as the major choice, and a front the entry cell's link
-byte names counts on any cell, even empty ground (`0x4DE130` returns that cell with
-size 1; the route request then fails and the guest is stuck on the way, `0x4FFBC0`;
-`DisconnectedQueueScoringTests.ATypedFrontOnEmptyGroundIsScoredAndItsFailedRouteSticksTheWalkAtEveryDecision`).
-What remains: a bridge without a typed front (host harness, untyped world) keeps the
-host's geometry and is scored only on a real queue cell; a stale cached back
-(`+0x3A`, kept by `0x4DE130` until the next `0x4DE1F0`) is not reproduced; the smarter
-guests' planning (an extension) still requires a join cell. No approximation is retired. No movement, queue admission or
-persistence schema is changed by this bounded scoring fix.
+`GUEST-002` is retired (round 9, package G). The minor decision scores the same candidates as the
+major choice, a front the entry cell's link byte names counts on any cell, even empty ground
+(`0x4DE130` returns that cell with size 1; the route request then fails and the guest is stuck on the
+way, `0x4FFBC0`; `DisconnectedQueueScoringTests.ATypedFrontOnEmptyGroundIsScoredAndItsFailedRouteSticksTheWalkAtEveryDecision`),
+and the cached back and size (`+0x3A`, `+0x40`) are kept until a re-evaluation (`0x4DE1F0`) drops them
+(`RideVisitorBridge.RecomputeQueueKeepingBack`; the park turn's sync, a load and an original save keep
+the cache, every explicit queue edit refreshes it; a zero front keeps no cache and is read live).
+
+Two boundaries remain that are not tp.exe behaviour: a bridge without a typed front (a host harness,
+a read-only visit, a Theme Park Inc world; tp.exe types every entrance cell in `0x528A70` and saves
+keep them) is scored on a real queue cell only, and the smarter-guests policy (an extension, labelled
+`[EXT:smarter-guests]`) scores only attractions with a join cell (`ScoresDisconnectedQueues` is
+false there).

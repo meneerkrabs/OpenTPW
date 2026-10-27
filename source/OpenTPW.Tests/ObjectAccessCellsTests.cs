@@ -107,14 +107,14 @@ public class ObjectAccessCellsTests
 		Assert.IsNotNull( item );
 		var entrances = item!.AccessPoints.Where( point => point.Kind == ObjectCellKind.Entrance ).ToArray();
 		Assert.AreEqual( 2, entrances.Length );
-		var last = entrances[0]; // 0x4DE040 reads the first entrance's link byte (the constructor's +0x36)
+		var first = entrances[0]; // 0x4DE040 reads the first entrance's link byte (the constructor's +0x36)
 		var grid = new GuestPathGrid( rig.Cells );
 		grid.SetPath( 1, 1, true );
 		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 7 ) { ArrivalsEnabled = false };
 		Assert.IsTrue( Level.RegisterWithGuests( item.Runtime, item.AccessPoints, simulation, rotation,
 			Level.OwnerWord( item ), ownExitCell: true,
 			queueEntryResolver: () => Level.ResolveQueueEntrance( rig.Objects, rig.Cells, Level.OwnerWord( item ) ) ) );
-		Assert.AreEqual( (last.OutsideX, last.OutsideY), item.Visitors.QueueFrontCell!.Value );
+		Assert.AreEqual( (first.OutsideX, first.OutsideY), item.Visitors.QueueFrontCell!.Value );
 		Assert.AreNotEqual( (entrances[1].OutsideX, entrances[1].OutsideY), item.Visitors.QueueFrontCell.Value );
 		var saved = ParkResumeJson.Deserialize<ParkLayoutSnapshot.Data>( ParkResumeJson.Serialize( ParkLayoutSnapshot.CaptureSnapshot( rig.Cells, rig.Objects ) ) );
 		var restoredCells = ParkLayoutSnapshot.RestoreCellMap( saved );
@@ -123,10 +123,10 @@ public class ObjectAccessCellsTests
 		var restoredGrid = new GuestPathGrid( restoredCells );
 		restoredGrid.SetPath( 1, 1, true );
 		item.Visitors.RecomputeQueue( restoredGrid );
-		// [BIN:TPW-EXE:0x004DE040 first entrance] the placement links only the last entrance (0x5292BE), the selector reads the first one's link byte (+0x36): a two-entrance shape has no front
+		// [BIN:TPW-EXE:0x004DE040 first entrance] the placement links only the first entrance (0x5293A1, 0x5297BD), the selector reads the first one's link byte (+0x36): a two-entrance shape has no front
 		Assert.IsTrue( item.Visitors.IsZeroFront, "the first entrance carries no link byte" );
 		Assert.AreEqual( 0, item.Visitors.QueueSizeInCells );
-		restoredCells.SetOwner( last.X, last.Y, 0 );
+		restoredCells.SetOwner( first.X, first.Y, 0 );
 		Assert.IsNull( Level.ResolveQueueEntrance( rig.Objects, restoredCells, Level.OwnerWord( item ) ), "ownership validation belongs to entry reconstruction" );
 	}
 

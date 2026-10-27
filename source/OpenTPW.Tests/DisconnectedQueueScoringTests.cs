@@ -175,15 +175,17 @@ public class DisconnectedQueueScoringTests
 		Assert.IsTrue( rig.Simulation.ScoreAttraction( guest, rig.Older ) > rig.Simulation.ScoreAttraction( guest, rig.Newer ), "the empty-ground back is scored" );
 		Assert.AreSame( rig.Newer, rig.Simulation.Choose( guest ), "the newer reachable candidate is tried first, the older one's route request then fails" );
 		Assert.IsTrue( guest.Navigation.Stuck, "the failed route request left the walk stuck" );
-		var happiness = guest.Happiness;
-		guest.State = GuestState.GoingToRide;
 		guest.State = GuestState.GoingToRide;
 		guest.AttractionId = rig.Newer.AttractionId;
+		var before = guest.Happiness;
 		for ( var tick = 0; tick < 600 && guest.State == GuestState.GoingToRide; tick++ )
+		{
+			before = guest.Happiness;
 			rig.Step();
+		}
 		Assert.AreEqual( GuestState.DoingNothing, guest.State, "state 10's first update finds the walk stuck and the guest decides again" );
 		Assert.AreEqual( 0, guest.AttractionId, "the stuck guest's target is cleared" );
-		Assert.IsTrue( guest.Happiness < happiness, "and its happiness takes the big step" );
+		Assert.AreEqual( MeterMath.Add( before, -rig.Simulation.Settings.BigHappinessChange ), guest.Happiness, "and its happiness takes the big step (0x004FEA70(2))" );
 	}
 
 	[TestMethod]

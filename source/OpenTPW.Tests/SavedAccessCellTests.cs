@@ -88,4 +88,43 @@ public class SavedAccessCellTests
 		}
 		finally { FileSystem = previous; }
 	}
+
+	/// <summary>
+	/// tp.exe scans a shape for its first entrance column by column (0x00413410: U outer, V inner) and for the placement's last entrance or exit row by row (0x00528A70: V outer, U inner). The two orders name different
+	/// cells only for a shape with several entrances or exits; none of the four catalogs has one, so the shipped parks cannot tell them apart. This pins that count, and the orders on a synthetic shape.
+	/// </summary>
+	[TestMethod]
+	public void NoShippedShapeNamesTwoEntrancesOrExitsAndTheScanOrdersFollowTheOriginal()
+	{
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previous ) == null )
+		{
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH." );
+			return;
+		}
+		try
+		{
+			var multiple = 0;
+			foreach ( var theme in new[] { "fantasy", "hallow", "jungle", "space" } )
+				foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( x => !x.IsTool ) )
+					if ( entry.Shape.Cells.Count( c => c.Kind == ObjectCellKind.Entrance ) > 1 || entry.Shape.Cells.Count( c => c.Kind == ObjectCellKind.Exit ) > 1 )
+						multiple++;
+			Assert.AreEqual( 0, multiple, "no shape has two entrances or two exits" );
+		}
+		finally { FileSystem = previous; }
+		// two entrances apart in both axes: column-major picks the lowest U (then V), row-major keeps the highest V (then U)
+		var points = new[]
+		{
+			new ObjectAccessPoint( ObjectCellKind.Entrance, 5, 1, 5, 0, U: 3, V: 0 ),
+			new ObjectAccessPoint( ObjectCellKind.Entrance, 1, 4, 1, 5, U: 0, V: 3 ),
+		};
+		Assert.AreEqual( (1, 4), Level.FirstEntranceCellOf( points ), "0x413410: the lowest column first" );
+		Assert.AreEqual( (1, 4), (ObjectAccessCells.Find( points ).Entrance!.Value.X, ObjectAccessCells.Find( points ).Entrance!.Value.Y), "0x528A70: the highest row last" );
+		var apart = new[]
+		{
+			new ObjectAccessPoint( ObjectCellKind.Entrance, 5, 1, 5, 0, U: 3, V: 3 ),
+			new ObjectAccessPoint( ObjectCellKind.Entrance, 1, 4, 1, 5, U: 0, V: 0 ),
+		};
+		Assert.AreEqual( (1, 4), Level.FirstEntranceCellOf( apart ), "the lowest U" );
+		Assert.AreEqual( (5, 1), (ObjectAccessCells.Find( apart ).Entrance!.Value.X, ObjectAccessCells.Find( apart ).Entrance!.Value.Y), "the highest V" );
+	}
 }

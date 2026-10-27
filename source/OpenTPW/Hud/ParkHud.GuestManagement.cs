@@ -13,8 +13,11 @@ public sealed partial class ParkHud
 	/// <summary>The guest's management queue while this park follows a session's host; null for a host and a single player, whose windows issue at once.</summary>
 	private CoopManagementRequests? GuestManagement => level.Commands.SendsRequests && level.CoopSession?.Management is { Ended: false } queue ? queue : null;
 
-	/// <summary>The notes of the guest's management outcomes the HUD says once its messages can be seen, oldest first (the newest <see cref="CoopManagementRequests.MaximumNotes"/>).</summary>
-	private readonly Queue<ManagementNote> managementNotes = new();
+	/// <summary>
+	/// The session's management queue this HUD last saw: its notes are said from there (the session's, so a resync's new HUD says what this one could not), also after the session ended,
+	/// when the park no longer names it.
+	/// </summary>
+	private CoopManagementRequests? managementSeen;
 
 	/// <summary>
 	/// A management window's action: on a guest, queued once the session's rights allowed it (refused, their note is said once for a run, and nothing is queued; a full target is no click,
@@ -85,16 +88,15 @@ public sealed partial class ParkHud
 	{
 		if ( level.CoopSession?.Management is { } queue )
 		{
+			managementSeen = queue;
 			foreach ( var outcome in queue.TakeOutcomes( queue.HudWaiter ) )
 			{
 				if ( outcome is { Accepted: true, Command: SetParkOpenCommand door } )
 					// [BIN:TPW-EXE:0x00519EF0 park door routine] the advisor's game event 3 (open) or 4 (close), as the host's press posts it; a guest's only for its accepted request
 					host?.ParkDoorPressed?.Invoke( door.Open );
 				else
-					NoteManagement( outcome.Note );
+					NoteManagement( outcome );
 			}
-			foreach ( var note in queue.TakeNotes() )
-				NoteManagement( note.Note );
 		}
 		if ( loansWaiter is { } opening )
 			foreach ( var outcome in opening.Queue.TakeOutcomes( opening ) )
@@ -105,15 +107,8 @@ public sealed partial class ParkHud
 		SayManagementNotes();
 	}
 
-	/// <summary>Keeps <paramref name="note"/> to be said once the HUD's messages can be seen (nothing for none).</summary>
-	private void NoteManagement( ManagementNote note )
-	{
-		if ( note.Kind == ManagementNoteKind.None )
-			return;
-		managementNotes.Enqueue( note );
-		while ( managementNotes.Count > CoopManagementRequests.MaximumNotes )
-			managementNotes.Dequeue();
-	}
+	/// <summary>Keeps <paramref name="outcome"/>'s note among the session's notes, to be said once the HUD's lines can be seen (nothing for none).</summary>
+	private static void NoteManagement( ManagementOutcome outcome ) => outcome.Entry.Queue.AddNote( outcome );
 
 	/// <summary>
 	/// Whether the HUD's feedback lines can be seen (<see cref="DrawFeedback"/>): no screen hides the park (the ride view, the research finale), the object window's info arm is in and no
@@ -122,20 +117,35 @@ public sealed partial class ParkHud
 	private bool FeedbackShows => !InfoArmOpen && OpenedMessage == null && !Stack.Screens.Any( screen => screen.HidesBelow );
 
 	/// <summary>
-	/// Says the kept notes, oldest first, one at a time while the feedback lines can be seen and have room (they keep <see cref="MaximumFeedbackLines"/>), so none expires or is pushed out
-	/// unseen; a note shown already is not said again.
+	/// Says the session's notes, oldest first, one at a time while the feedback lines can be seen and have room (they keep <see cref="MaximumFeedbackLines"/>), so none expires or is pushed
+	/// out unseen; until then they wait in the session's queue. Each entry's note is said: a note whose words a line shows already renews that line (its time starts again, with the error
+	/// sound once a frame) instead of adding a second. A rights' note belongs to the run of the session's refusals: inside the run's notice time it is the run's line already, and one said
+	/// here keeps the session's own note of the same run from following it (a right taken back with entries queued is said once, whether a record or the queue's send refused them).
 	/// </summary>
 	private void SayManagementNotes()
 	{
-		while ( managementNotes.Count > 0 && FeedbackShows && messages.Count < MaximumFeedbackLines )
+		if ( managementSeen is not { } queue )
+			return;
+		var sounded = new HashSet<string>();
+		while ( FeedbackShows && queue.PeekNote() is { } outcome )
 		{
-			var note = managementNotes.Dequeue();
+			var note = outcome.Note;
 			var text = ManagementNoteText( note );
-			if ( messages.Any( message => message.Text == text ) )
+			var shown = messages.FindIndex( message => message.Text == text );
+			if ( note.Kind == ManagementNoteKind.Rights && Time.Now - lastSessionRefusalNotice < SessionRefusalNoticeSeconds && shown >= 0 )
+			{
+				queue.TakeNote();
 				continue;
-			SayGuestNote( text );
-			// a rights' note belongs to the run of the session's refusals: one said here keeps the session's own note of the same run from following it (a right taken back with entries queued
-			// is said once, whether the open one's record or the queue's send refused them)
+			}
+			if ( shown >= 0 )
+				messages[shown] = (text, 0);
+			else if ( messages.Count < MaximumFeedbackLines )
+				PostMessage( text );
+			else
+				return;
+			queue.TakeNote();
+			if ( sounded.Add( text ) )
+				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			if ( note.Kind == ManagementNoteKind.Rights )
 				lastSessionRefusalNotice = Time.Now;
 		}
@@ -151,10 +161,4 @@ public sealed partial class ParkHud
 		_ => strings.Extra( OpenTpwText.CoopRequestUnknown )
 	};
 
-	/// <summary>A note about this player's own request, with the error sound.</summary>
-	private void SayGuestNote( string text )
-	{
-		PostMessage( text );
-		GameAudio.PlayUi( GameAudio.ErrorEvent );
-	}
 }

@@ -137,7 +137,7 @@ public sealed partial class ParkHud
 	{
 		if ( LoansWindowOpen )
 			FillLoanList();
-		NoteManagement( outcome.Note );
+		NoteManagement( outcome );
 	}
 
 	/// <summary>
@@ -162,7 +162,7 @@ public sealed partial class ParkHud
 		if ( onTop && loansScreen != null && ReferenceEquals( Stack.Top, loansScreen ) )
 			ShowLoanFailure( ManagementNoteText( outcome.Note ) );
 		else
-			NoteManagement( outcome.Note );
+			NoteManagement( outcome );
 	}
 
 	/// <summary>

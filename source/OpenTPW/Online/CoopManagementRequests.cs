@@ -416,7 +416,11 @@ internal sealed class CoopManagementRequests
 			AddNote( outcome );
 	}
 
-	private void AddNote( ManagementOutcome outcome )
+	/// <summary>
+	/// Keeps <paramref name="outcome"/>'s note (if it says anything) among the newest <see cref="MaximumNotes"/>, for the HUD to say once its lines can be seen: an outcome nobody waits for,
+	/// or one a waiter turned into a note (a failure under a covering screen, a refresh's refusal). The notes are the session's, so a resync's new HUD says what the old one could not.
+	/// </summary>
+	internal void AddNote( ManagementOutcome outcome )
 	{
 		if ( outcome.Note.Kind == ManagementNoteKind.None )
 			return;
@@ -424,6 +428,12 @@ internal sealed class CoopManagementRequests
 		while ( notes.Count > MaximumNotes )
 			notes.Dequeue();
 	}
+
+	/// <summary>The oldest note not said yet, or null; it stays until <see cref="TakeNote"/>.</summary>
+	public ManagementOutcome? PeekNote() => notes.Count > 0 ? notes.Peek() : null;
+
+	/// <summary>Takes the oldest note not said yet, or null.</summary>
+	public ManagementOutcome? TakeNote() => notes.Count > 0 ? notes.Dequeue() : null;
 
 	/// <summary><paramref name="waiter"/>'s outcomes not taken yet, in the order their entries resolved.</summary>
 	public IReadOnlyList<ManagementOutcome> TakeOutcomes( ManagementWaiter waiter )
@@ -450,7 +460,7 @@ internal sealed class CoopManagementRequests
 			AddNote( outcome );
 	}
 
-	/// <summary>The notes of the outcomes nobody waits for, oldest first, each once: the HUD says them every frame.</summary>
+	/// <summary>Every note not said yet, oldest first, each once (a headless guest's and the tests' view; the HUD takes them one at a time, <see cref="TakeNote"/>).</summary>
 	public IReadOnlyList<ManagementOutcome> TakeNotes()
 	{
 		if ( notes.Count == 0 )

@@ -609,9 +609,9 @@ public partial class CoopSessionTests
 		// four notes at once: three lines, the fourth when a line has room, none pushed out unseen
 		view.Hud.Stack.Push( new UiScreen( "full" ) { HidesBelow = true } );
 		var texts = new[] { OpenTpwText.CoopNotPermitted, OpenTpwText.CoopRequestNotTaken, OpenTpwText.CoopRequestUnknown, OpenTpwText.NotAvailable };
-		var notes = (Queue<ManagementNote>)typeof( ParkHud ).GetField( "managementNotes", NonPublic )!.GetValue( view.Hud )!;
-		foreach ( var kind in new[] { ManagementNoteKind.Rights, ManagementNoteKind.NotTaken, ManagementNoteKind.Unknown, ManagementNoteKind.NotAvailable } )
-			notes.Enqueue( new ManagementNote( kind, CoopRefusal.NotPermitted ) );
+		foreach ( var outcome in new[] { Outcome( guest, ManagementOutcomeKind.Refused, NotPermitted ), Outcome( guest, ManagementOutcomeKind.NotTaken ), Outcome( guest, ManagementOutcomeKind.Unknown ),
+			Outcome( guest, ManagementOutcomeKind.Refused, new ParkCommandResult( false, "gone", LoanRefusal.Gone ), new TakeLoanCommand( 1, 100 ) ) } )
+			Management( guest ).AddNote( outcome );
 		view.Update();
 		Assert.AreEqual( 0, view.Hud.Messages.Count );
 		view.Hud.Stack.Pop();
@@ -620,6 +620,78 @@ public partial class CoopSessionTests
 		view.Pass( ParkHud.MessageSeconds + 1 );
 		view.Update();
 		CollectionAssert.AreEqual( new[] { view.Strings.Extra( texts[3] ) }, view.Hud.Messages.ToArray(), "the fourth once the lines had room" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	private static readonly ParkCommandResult NotPermitted = ParkCommandResult.Rejected( CoopBuildRights.NotPermittedReason ) with { RightsRefused = true };
+
+	/// <summary>An outcome of the guest's queue as the session's ledger would resolve it, of a fee (or <paramref name="command"/>) nobody waits for: for the notes' own tests.</summary>
+	private static ManagementOutcome Outcome( Park guest, ManagementOutcomeKind kind, ParkCommandResult? result = null, ParkCommand? command = null ) =>
+		new( new ManagementEntry( Management( guest ), 0, ManagementTarget.Finance, null, command ?? new SetEntranceFeeCommand( 1 ), null ), kind, result );
+
+	[TestMethod]
+	public void AHiddenNoteOutlivesItsHudAndASecondNoteOfTheSameWordsRenewsItsLine()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		// a note due while the park is hidden waits in the session, not in the HUD a resync replaces
+		view.Hud.Stack.Push( new UiScreen( "full" ) { HidesBelow = true } );
+		Management( guest ).AddNote( Outcome( guest, ManagementOutcomeKind.NotTaken ) );
+		view.Update();
+		Assert.AreEqual( 0, view.Hud.Messages.Count );
+		view.Hud.Stack.Clear();
+		var replacement = ViewOf( guest );
+		replacement.Update();
+		Assert.AreEqual( 1, replacement.Says( OpenTpwText.CoopRequestNotTaken ), "the new HUD says it" );
+		// a second entry's note of the same words renews the line rather than adding a second or being lost
+		replacement.Pass( 5 );
+		Management( guest ).AddNote( Outcome( guest, ManagementOutcomeKind.NotTaken ) );
+		replacement.Update();
+		Assert.AreEqual( 1, replacement.Hud.Messages.Count );
+		replacement.Pass( 5 );
+		Assert.AreEqual( 1, replacement.Says( OpenTpwText.CoopRequestNotTaken ), "renewed: still on screen ten seconds after the first" );
+		Assert.IsNull( Management( guest ).PeekNote() );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AGuestsWorkloadDragGoesOnceWithItsLatestValueAndARefusalReturnsTheKnobAndItsHum()
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		GiveRights( host, guest, view, CoopRights.Research );
+		Assert.IsTrue( host.Issue( new SetResearchWorkloadCommand( 80 ) ).Accepted );
+		RoundsUntil( () => guest.Economy.Research.Workload == 80, host, guest, view, "the host's workload" );
+		view.Hud.OpenResearchWindow();
+		view.Update();
+		var knob = Element<ParkHud.ResearchWorkloadKnob>( view, "workloadKnob" );
+		var canvas = new UiCanvas( 2048, 1536 );
+		var rect = knob.ScreenRect( canvas );
+		System.Numerics.Vector2 Screen( float x, float y ) => new System.Numerics.Vector2( rect.X, rect.Y ) + (new System.Numerics.Vector2( x, y ) - new System.Numerics.Vector2( knob.Bounds.X, knob.Bounds.Y )) * canvas.Scale;
+		var ball = knob.BallRect;
+		var (x, y) = (ball.X + ball.Width / 2, ball.Y + ball.Height / 2);
+		var (value, before) = (knob.Value, Numbered( guest ));
+		// a drag's steps: one entry, the latest value, the knob and its hum as dragged
+		knob.DragStart( canvas, Screen( x, y ) );
+		foreach ( var step in new[] { 10, 20, 30 } )
+			knob.DragTo( canvas, Screen( x, y - step ) );
+		knob.DragEnd( canvas, Screen( x, y - 30 ) );
+		Assert.AreNotEqual( value, knob.Value, "the knob moved" );
+		var asked = ParkHud.WorkloadFromKnob( knob.Value, knob.Limit );
+		Assert.AreEqual( 1, Management( guest ).Pending.Count() );
+		Assert.AreEqual( new SetResearchWorkloadCommand( asked ), Management( guest ).PendingCommand( ManagementTarget.Research, ManagementKnob.Workload ) );
+		Assert.AreEqual( ParkHud.ResearchHumParameter( knob.Value ), view.Hud.LastResearchHum );
+		// refused at its record (the right taken back on its way): the knob and its hum show the lab's workload again, and nothing more is written
+		SendNext( guest );
+		Assert.IsTrue( host.Issue( new SetSeatRightsCommand( guest.Level.Commands.Player, CoopRights.Finance ) ).Accepted );
+		UntilManaged( host, guest, view );
+		view.Update();
+		Assert.AreEqual( (80, 80), (guest.Economy.Research.Workload, host.Economy.Research.Workload) );
+		Assert.AreEqual( ParkHud.KnobFromWorkload( 80, knob.Limit ), knob.Value );
+		Assert.AreEqual( ParkHud.ResearchHumParameter( knob.Value ), view.Hud.LastResearchHum );
+		Assert.AreEqual( before + 1, Numbered( guest ), "one request for the drag, and the projection wrote nothing" );
 		CatchUpAndCompare( host, guest );
 	}
 

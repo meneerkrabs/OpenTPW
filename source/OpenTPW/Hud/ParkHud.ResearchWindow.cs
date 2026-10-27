@@ -93,9 +93,13 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x4a97ad workload knob sound] the master slider's change (message 0x800 from 0xd2d10, after the limit clamp) sets parameters 0xC and 0xD of both loops to value * 100 / 1024 (the signed shift of 0x4a98d5-0x4a98dd) through 0x51bc40
 	internal static int ResearchHumParameter( int knobValue ) => knobValue * 100 / 1024;
 
+	/// <summary>The hum's parameter the workload knob set last (null before any), for the tests: the hum has no sentence without the game's audio.</summary>
+	internal int? LastResearchHum { get; private set; }
+
 	private void SetResearchHum( int knobValue )
 	{
 		var parameter = ResearchHumParameter( knobValue );
+		LastResearchHum = parameter;
 		foreach ( var sentence in new[] { researchHum, researchSecondHum } )
 		{
 			sentence?.SetParameter( 0xC, parameter );

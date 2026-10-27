@@ -2267,9 +2267,11 @@ so a repay with neither the right nor the money says only the rights' note.
   teardown) is a note: a refusal's reason where the host's window has one, a request not taken, an outcome
   not known; the fee, the door, the efforts, the workload and the name say nothing of their own, since
   their controls show the park's values.
-- **Notes.** The HUD says a note once its feedback lines can be seen (no screen hides the park, the info arm
-  is in, no message is open) and have room, so none expires unseen; a note on screen already is not said
-  again, and a rights' note keeps the session's own note of the same run from following it.
+- **Notes.** The notes wait in the session (a resync's new HUD says what the old one could not), and the HUD
+  says one once its feedback lines can be seen (no screen hides the park, the info arm is in, no message is
+  open) and have room, so none expires unseen. A note whose words a line shows already renews that line
+  instead of adding a second, and a rights' note keeps the session's own note of the same run from
+  following it.
 - **Stale actions.** `BuyUpgradeCommand`, `CancelUpgradeCommand` and `MoveResearchCommand` may name what
   their window showed (the next level, the pending level, the current project's id and level); a record
   whose expectation no longer holds is refused as stale. The codec writes them in its version 3, only with

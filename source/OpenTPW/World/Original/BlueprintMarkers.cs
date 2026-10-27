@@ -305,8 +305,9 @@ public sealed class BlueprintMarkers : ModelEntity
 		// [BIN:TPW-EXE:0x0053C8D0 red face blink] a face of texture 1 is queued only while the blink flag 0x763C98 is set; [BIN:TPW-EXE:0x0053DF67 glide] a texture below 13 is moved by the glide offset in x and z
 		void Face( int slot, byte direction, Vector2[]? uv, System.Numerics.Vector3 a, System.Numerics.Vector3 b, System.Numerics.Vector3 c, System.Numerics.Vector3 d )
 		{
+			// a hidden red face keeps its place in the arrays (a dynamic model keeps its vertex count) as a point
 			if ( slot == (int)BlueprintMarker.Refused && !showRed )
-				return;
+				(b, c, d) = (a, a, a);
 			if ( slot < 13 && glide != default )
 			{
 				var shift = new System.Numerics.Vector3( glide.X, 0, glide.Y );
@@ -469,7 +470,8 @@ public sealed class BlueprintMarkers : ModelEntity
 		System.Numerics.Vector3 a, System.Numerics.Vector3 b, System.Numerics.Vector3 c, System.Numerics.Vector3 d )
 	{
 		var positions = new[] { a, b, c, d }.Select( corner => OriginalParkPlacement.ToEngine( field, corner ) ).ToArray();
-		var normal = System.Numerics.Vector3.Normalize( System.Numerics.Vector3.Cross( positions[1] - positions[0], positions[2] - positions[0] ) );
+		var cross = System.Numerics.Vector3.Cross( positions[1] - positions[0], positions[2] - positions[0] );
+		var normal = cross.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( cross ) : System.Numerics.Vector3.UnitY;
 		foreach ( var (offsets, sign) in new[] { (new uint[] { 0, 2, 3, 3, 1, 0 }, 1f), (new uint[] { 0, 1, 3, 3, 2, 0 }, -1f) } )
 		{
 			var start = (uint)vertices.Count;

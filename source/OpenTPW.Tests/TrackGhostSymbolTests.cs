@@ -91,13 +91,17 @@ public class TrackGhostSymbolTests
 	}
 
 	[TestMethod]
-	public void RedFacesOnlyAppearWhileTheBlinkFlagIsSet()
+	public void RedFacesOnlyAppearWhileTheBlinkFlagIsSetAndKeepTheirPlaceInTheArraysAsPoints()
 	{
-		var shown = BlueprintMarkers.BuildGeometry( Field(), new[] { (1, 1, BlueprintMarker.Refused), (2, 2, BlueprintMarker.Allowed) }, null, 0, null, 0, showRed: true ).Vertices;
-		var hidden = BlueprintMarkers.BuildGeometry( Field(), new[] { (1, 1, BlueprintMarker.Refused), (2, 2, BlueprintMarker.Allowed) }, null, 0, null, 0, showRed: false ).Vertices;
-		Assert.AreEqual( 16, shown.Length );
-		Assert.AreEqual( 8, hidden.Length );
-		Assert.IsTrue( hidden.All( vertex => vertex.TexIndex == 0 ) );
+		var cells = new[] { (1, 1, BlueprintMarker.Refused), (2, 2, BlueprintMarker.Allowed) };
+		var shown = BlueprintMarkers.BuildGeometry( Field(), cells, null, 0, null, 0, showRed: true );
+		var hidden = BlueprintMarkers.BuildGeometry( Field(), cells, null, 0, null, 0, showRed: false );
+		Assert.AreEqual( shown.Vertices.Length, hidden.Vertices.Length, "a dynamic model keeps its vertex count" );
+		Assert.AreEqual( shown.Indices.Length, hidden.Indices.Length );
+		var red = hidden.Vertices.Take( 8 ).ToArray();
+		Assert.IsTrue( red.All( vertex => vertex.TexIndex == 1 && vertex.Position == red[0].Position ), "the hidden red face is a point" );
+		Assert.IsTrue( red.All( vertex => !float.IsNaN( vertex.Normal.X ) ) );
+		Assert.IsFalse( shown.Vertices.Take( 4 ).All( vertex => vertex.Position == shown.Vertices[0].Position ) );
 	}
 
 	[TestMethod]

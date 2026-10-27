@@ -69,7 +69,7 @@ public sealed class UiContext
 	}
 
 	/// <summary>Draws text inside <paramref name="rect"/> as tp.exe's text library places it: the block aligned horizontally, each line aligned inside the block, the block centred vertically.</summary>
-	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, byte shadowAlpha = 0, int? textScale = null, bool originalPlacement = true )
+	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, byte shadowAlpha = 0, int? textScale = null, bool originalPlacement = true, bool clip = true )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
@@ -84,7 +84,7 @@ public sealed class UiContext
 		{
 			// [BIN:TPW-EXE:0x6ae550 line offset] a centred or right aligned multi-line text moves each line inside the widest one
 			layout = layout.AlignLines( textAlignment );
-			// [BIN:TPW-EXE:0x6aeb10 block box] whole-pixel block placement; a block taller than the box is still centred (the original's control bitmap cuts a plain text off at both ends, 0x48f3d0; OpenTPW clips only titles: the Dutch option labels, the online buttons with their small label boxes and a few window labels draw wider than their box)
+			// [BIN:TPW-EXE:0x6aeb10 block box] whole-pixel block placement; a block taller than the box is still centred (the original's control bitmap cuts it off at both ends, 0x48f3d0, and so does the clip)
 			var left = (int)MathF.Round( rect.X );
 			var top = (int)MathF.Round( rect.Y );
 			ix = TextPlacement.BlockLeft( textAlignment, left, (int)MathF.Round( rect.Right ), width );
@@ -104,13 +104,13 @@ public sealed class UiContext
 			ix = (int)MathF.Round( x );
 			iy = (int)MathF.Round( y );
 		}
-		// [APPROX:UI-007] a plain text is not cut off at its control's box as the original's bitmap does (0x48f3d0), because several of OpenTPW's boxes are smaller than the text drawn in them — evidence needed: those controls' boxes
+		// [BIN:TPW-EXE:0x48f3d0 control bitmap] every text control's bitmap is its box, so a string is cut off at it (UiBatch.TryClip); OpenTPW-authored texts that are wider than their box opt out (UiLabel.Unclipped, UiButton.Unclipped)
 		// [BIN:TPW-EXE:0x48f830 text control] one 0x6ae0f0 call into the control's bitmap (texel alpha 17 x coverage, 0x6b24b0), then the sprite quads of the state word 0x7060556 (0x58a010): the control colour blended with coverage / 15; plain text has no shadow
 		// [BIN:TPW-EXE:0x491ab0 title control] a title control (constructor 0x491920) first draws a grey (128,128,128, alpha 0x80) copy on the rectangle moved by (-2, +2) pixels (0x491dd0-0x491e1a), then the white string (0x491e27-0x491e84), both modulated by the control colour
 		if ( shadowAlpha != 0 )
-			Batch.AddTitleText( font, layout, ix, iy, color, shadowAlpha, rect, scale, text );
+			Batch.AddTitleText( font, layout, ix, iy, color, shadowAlpha, clip ? rect : null, scale, text );
 		else
-			Batch.AddText( font, layout, ix, iy, color, scale, text );
+			Batch.AddText( font, layout, ix, iy, color, scale, text, clip ? rect : null );
 	}
 
 	/// <summary>
@@ -120,7 +120,7 @@ public sealed class UiContext
 	/// the line box. Horizontally the text's own ink is aligned; vertically the font's letter box (capitals,
 	/// ascenders and descenders) is centred, so labels on neighbouring buttons share a baseline.
 	/// </summary>
-	public void DrawFittedText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Center, byte shadowAlpha = 0 )
+	public void DrawFittedText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Center, byte shadowAlpha = 0, bool clip = true )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
@@ -145,18 +145,18 @@ public sealed class UiContext
 			}, rect.Height );
 			if ( wrapped is { } choice )
 			{
-				DrawText( candidates[choice.Index], text, rect, color, align, true, shadowAlpha, choice.Scale, originalPlacement: false );
+				DrawText( candidates[choice.Index], text, rect, color, align, true, shadowAlpha, choice.Scale, originalPlacement: false, clip: clip );
 				return;
 			}
 			// No size fits even wrapped (a box of a few pixels): the smallest size on one line, centred, as the original's unwrapped control text is.
-			DrawTextAt( candidates[^1], 1, text, rect, color, align, shadowAlpha );
+			DrawTextAt( candidates[^1], 1, text, rect, color, align, shadowAlpha, clip );
 			return;
 		}
-		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadowAlpha );
+		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadowAlpha, clip );
 	}
 
 	/// <summary>Draws single-line text in <paramref name="chosen"/> at whole text scale <paramref name="scale"/>, placed like <see cref="DrawFittedText"/> (ink aligned horizontally, letter box centred vertically).</summary>
-	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, byte shadowAlpha = 0 )
+	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, byte shadowAlpha = 0, bool clip = true )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
@@ -174,9 +174,9 @@ public sealed class UiContext
 		var ix = (int)MathF.Round( x );
 		var iy = (int)MathF.Round( y );
 		if ( shadowAlpha != 0 )
-			Batch.AddTitleText( chosen, layout, ix, iy, color, shadowAlpha, rect, scale, text );
+			Batch.AddTitleText( chosen, layout, ix, iy, color, shadowAlpha, clip ? rect : null, scale, text );
 		else
-			Batch.AddText( chosen, layout, ix, iy, color, scale, text );
+			Batch.AddText( chosen, layout, ix, iy, color, scale, text, clip ? rect : null );
 	}
 
 	/// <summary>
@@ -365,6 +365,8 @@ public sealed class UiLabel : UiElement
 	/// The title control's shadow (<see cref="UiBatch.AddTitleText"/>): window, screen and lobby titles have it; every other text control of the original draws its string once.
 	/// </summary>
 	public bool Shadow { get; set; }
+	/// <summary>When it returns true the text is not cut off at the label's box (every other text is, 0x48f3d0): OpenTPW-authored texts that are wider than their box, each cited where it is set.</summary>
+	public Func<bool>? Unclipped { get; set; }
 	/// <summary>The colour alpha of the title copy when <see cref="Shadow"/> is set: 0x80 for Theme Park World's title control, 0xc8 for Theme Park Inc's.</summary>
 	public byte ShadowAlpha { get; set; } = UiBatch.TitleCopyAlpha;
 	/// <summary>Fit the single line into the rectangle (smaller font, smaller scale) instead of the small-font fallback.</summary>
@@ -383,12 +385,12 @@ public sealed class UiLabel : UiElement
 		if ( Group != null )
 		{
 			var (groupFont, scale) = context.ChooseUniform( Group, this );
-			context.DrawTextAt( groupFont, scale, text, rect, color, Align, Shadow ? ShadowAlpha : (byte)0 );
+			context.DrawTextAt( groupFont, scale, text, rect, color, Align, Shadow ? ShadowAlpha : (byte)0, !(Unclipped?.Invoke() ?? false) );
 			return;
 		}
 		if ( Fit && !Wrap )
 		{
-			context.DrawFittedText( font, text, rect, color, Align, Shadow ? ShadowAlpha : (byte)0 );
+			context.DrawFittedText( font, text, rect, color, Align, Shadow ? ShadowAlpha : (byte)0, !(Unclipped?.Invoke() ?? false) );
 			return;
 		}
 		// [BIN:TPW-EXE:0x6aec80 text wrap] the original's formatter wraps greedily: a line ends at the last break opportunity before the glyph that overflows, trailing spaces dropped, or before that glyph when the line has none
@@ -397,7 +399,7 @@ public sealed class UiLabel : UiElement
 		// Longer translations fall back to the small game font instead of overflowing the art.
 		if ( !Wrap && context.Measure( font, text ).Width > rect.Width )
 			font = context.Fonts.Small;
-		context.DrawText( font, text, rect, color, Align, Wrap, Shadow ? ShadowAlpha : (byte)0 );
+		context.DrawText( font, text, rect, color, Align, Wrap, Shadow ? ShadowAlpha : (byte)0, clip: !(Unclipped?.Invoke() ?? false) );
 	}
 }
 
@@ -558,6 +560,8 @@ public sealed class UiButton : UiElement
 
 	public string? Model { get; set; }
 	public Func<string>? Text { get; set; }
+	/// <summary>The label is not cut off at the button's box: OpenTPW's own label buttons of the online screens ([EXT:ONLINE-UI]) draw their text on a purple bar whose label box can be narrower than the text.</summary>
+	public bool Unclipped { get; set; }
 	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Menu;
 	public Action? Clicked { get; set; }
 	/// <summary>
@@ -630,7 +634,7 @@ public sealed class UiButton : UiElement
 		if ( Model != null && context.DrawModel( Model, frame, rect, tint ) )
 		{
 			if ( Text != null )
-				context.DrawFittedText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );
+				context.DrawFittedText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align, clip: !Unclipped );
 			return;
 		}
 		// [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed; no UI model of the PC's ui.wad names it — evidence needed: which PC screens draw a model-less text button and with which art, or a capture of the original front-end buttons
@@ -646,7 +650,7 @@ public sealed class UiButton : UiElement
 			context.Batch.AddRectangle( rect, focused ? UiColors.Highlight : UiColors.HelpBackground );
 		// Margins keep the label off the bar's rim and rounded ends.
 		var inner = new UiRect( bar.X + bar.Height * 0.5f, bar.Y + bar.Height * 0.05f, bar.Width - bar.Height, bar.Height * 0.9f );
-		context.DrawFittedText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
+		context.DrawFittedText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align, clip: !Unclipped );
 	}
 
 	/// <summary>

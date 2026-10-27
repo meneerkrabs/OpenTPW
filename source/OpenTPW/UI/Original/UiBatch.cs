@@ -71,6 +71,7 @@ public sealed class UiBatch
 
 	public void Clear()
 	{
+		UiTitleBitmap.BeginFrame();
 		draws.Clear();
 		glyphs.Clear();
 		texts.Clear();
@@ -170,25 +171,31 @@ public sealed class UiBatch
 	// [BIN:TPW-EXE:0x491ab0 title control] the grey copy (128,128,128,0x80) on (L-2, T+2, R-2, B+2), then the white string, both written into the control's bitmap and modulated by the control colour
 	// [BIN:TPI-EXE:0x515fe0 title control] the same with the colour alpha 0xc8
 	// [BIN:TPW-EXE:0x48f3d0 control bitmap] the bitmap of every text control, title or plain (slot +0x28 of the vtables 0x6ff530 and 0x6ff320, 0x588940), is the control's box: [control+0xa8] x [control+0xaa] from the rectangle [+0x18..+0x1e] (0x48f456-0x48f4c5), placed at the box's top-left (0x491ab0 via 0x659dac), so both passes and the whole string are cut off at the box
-	public void AddTitleText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, byte copyAlpha, UiRect clip, int scale = 1, string? text = null )
+	public void AddTitleText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, byte copyAlpha, UiRect? clip, int scale = 1, string? text = null )
 	{
 		scale = Math.Max( 1, scale );
 		RecordText( atlas, layout, x, y, color, scale, text );
 		if ( UiTitleBitmap.Get( atlas, layout, copyAlpha, scale ) is not { } bitmap )
 			return;
 		var full = new UiRect( x + bitmap.Left * scale, y + bitmap.Top * scale, bitmap.TextWidth * scale, bitmap.TextHeight * scale );
-		if ( !TryClip( full, clip, out var drawn ) )
+		var drawn = full;
+		if ( clip is { } box && !TryClip( full, box, out drawn ) )
 			return;
 		AddQuad( bitmap.Texture, drawn, new NVector2( (drawn.X - full.X) / full.Width, (drawn.Y - full.Y) / full.Height ), new NVector2( (drawn.Right - full.X) / full.Width, (drawn.Bottom - full.Y) / full.Height ), color );
 	}
 
-	/// <summary>The part of <paramref name="full"/> inside <paramref name="clip"/>; false when nothing of it is inside.</summary>
+	/// <summary>
+	/// The part of <paramref name="full"/> inside the control box <paramref name="clip"/>, as tp.exe makes the control's bitmap: from the box's left and top pixel, as wide and as high as the box's size
+	/// truncated ([control+0x3c] = (R - L) x W >> 11, [control+0x3e] = (B - T) x H / 1536, 0x48f47b-0x48f4c5; right and bottom exclusive). False when nothing of it is inside.
+	/// </summary>
 	private static bool TryClip( UiRect full, UiRect clip, out UiRect drawn )
 	{
-		var left = Math.Max( full.X, MathF.Round( clip.X ) );
-		var top = Math.Max( full.Y, MathF.Round( clip.Y ) );
-		var right = Math.Min( full.Right, MathF.Round( clip.Right ) );
-		var bottom = Math.Min( full.Bottom, MathF.Round( clip.Bottom ) );
+		var boxLeft = MathF.Round( clip.X );
+		var boxTop = MathF.Round( clip.Y );
+		var left = Math.Max( full.X, boxLeft );
+		var top = Math.Max( full.Y, boxTop );
+		var right = Math.Min( full.Right, boxLeft + MathF.Floor( clip.Width ) );
+		var bottom = Math.Min( full.Bottom, boxTop + MathF.Floor( clip.Height ) );
 		drawn = new UiRect( left, top, right - left, bottom - top );
 		return right > left && bottom > top;
 	}
@@ -197,23 +204,23 @@ public sealed class UiBatch
 	/// Draws BF4 text with its top-left at (<paramref name="x"/>, <paramref name="y"/>), each atlas texel
 	/// covering <paramref name="scale"/>×<paramref name="scale"/> pixels at integer positions.
 	/// </summary>
-	public void AddText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale = 1, string? text = null )
+	public void AddText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale = 1, string? text = null, UiRect? clip = null )
 	{
 		scale = Math.Max( 1, scale );
 		var texture = UiTexture.Font( atlas, scale );
 		var firstGlyph = glyphs.Count;
-		AddGlyphs( atlas, layout, x, y, color, scale, texture );
+		AddGlyphs( atlas, layout, x, y, color, scale, texture, clip );
 		RecordTextDraw( layout, x, y, scale, text, firstGlyph );
 	}
 
 	private void RecordText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale, string? text )
 	{
 		var firstGlyph = glyphs.Count;
-		AddGlyphs( atlas, layout, x, y, color, scale, null );
+		AddGlyphs( atlas, layout, x, y, color, scale, null, null );
 		RecordTextDraw( layout, x, y, scale, text, firstGlyph );
 	}
 
-	private void AddGlyphs( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale, UiTexture? texture )
+	private void AddGlyphs( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale, UiTexture? texture, UiRect? clip )
 	{
 		// indexed rather than foreach: the layout's list is read through its interface, whose enumerator is allocated on every call
 		var layoutGlyphs = layout.Glyphs;
@@ -224,9 +231,20 @@ public sealed class UiBatch
 			glyphs.Add( quad );
 			if ( texture == null )
 				continue;
-			AddQuad( texture, new UiRect( quad.X, quad.Y, quad.Width, quad.Height ),
-				new NVector2( (float)glyph.Glyph.X / atlas.Width, (float)glyph.Glyph.Y / atlas.Height ),
-				new NVector2( (float)(glyph.Glyph.X + glyph.Glyph.Width) / atlas.Width, (float)(glyph.Glyph.Y + glyph.Glyph.Height) / atlas.Height ), color );
+			var full = new UiRect( quad.X, quad.Y, quad.Width, quad.Height );
+			var uv0 = new NVector2( (float)glyph.Glyph.X / atlas.Width, (float)glyph.Glyph.Y / atlas.Height );
+			var uv1 = new NVector2( (float)(glyph.Glyph.X + glyph.Glyph.Width) / atlas.Width, (float)(glyph.Glyph.Y + glyph.Glyph.Height) / atlas.Height );
+			if ( clip is { } box )
+			{
+				// the control's bitmap cuts the string off at its box (0x48f3d0)
+				if ( !TryClip( full, box, out var drawn ) )
+					continue;
+				var span = uv1 - uv0;
+				uv1 = uv0 + span * new NVector2( (drawn.Right - full.X) / full.Width, (drawn.Bottom - full.Y) / full.Height );
+				uv0 += span * new NVector2( (drawn.X - full.X) / full.Width, (drawn.Y - full.Y) / full.Height );
+				full = drawn;
+			}
+			AddQuad( texture, full, uv0, uv1, color );
 		}
 	}
 

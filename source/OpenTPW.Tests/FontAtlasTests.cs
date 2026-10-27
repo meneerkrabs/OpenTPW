@@ -348,21 +348,34 @@ public class FontAtlasTests
 		Assert.AreSame( first.Texture.Title, first );
 		Assert.IsFalse( first.Evicted );
 		for ( var length = 2; length <= UiTitleBitmap.Capacity + 1; length++ )
+		{
+			UiTitleBitmap.BeginFrame();
 			UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, new string( 'a', length ) ), 0x80, 1 );
+		}
+		UiTitleBitmap.BeginFrame();
+		UiTitleBitmap.BeginFrame();
+		UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "aaaa" ), 0x80, 1 );
 		Assert.IsTrue( first.Evicted, "past the capacity the least recently used bitmap is dropped" );
 		Assert.AreNotSame( first, UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "a" ), 0x80, 1 ), "a dropped layout is composed again" );
 	}
 
 	[TestMethod]
-	public void TheTitleBitmapCacheIsAlsoBoundedByItsPixelBytes()
+	public void TheTitleBitmapCacheIsAlsoBoundedByItsPixelBytesButNeverWithinAFrame()
 	{
 		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 100, 100, 0, 0, 100 ), new SyntheticGlyph( '?', 100, 100, 0, 0, 100 ) ) );
-		var first = UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "a" ), 0x80, 1 )!;
-		UiTitleBitmap last = first;
-		for ( var length = 2; length <= 60; length++ )
-			last = UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, new string( 'a', length ) ), 0x80, 1 )!;
-		Assert.IsTrue( first.Evicted, "about 76 MB of bitmaps were composed, past the 16 MB budget" );
-		Assert.IsFalse( last.Evicted );
+		// one frame that needs about 76 MB of title bitmaps keeps all of them (the budget is exceeded for the frame)
+		UiTitleBitmap.BeginFrame();
+		var titles = new List<UiTitleBitmap>();
+		for ( var length = 1; length <= 60; length++ )
+			titles.Add( UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, new string( 'a', length ) ), 0x80, 1 )! );
+		Assert.IsTrue( titles.Sum( title => (long)title.Rgba.Length ) > UiTitleBitmap.ByteBudget );
+		Assert.IsTrue( titles.All( title => !title.Evicted ), "no title of the frame that draws it is dropped" );
+		// two frames later the budget is applied again, oldest first
+		UiTitleBitmap.BeginFrame();
+		UiTitleBitmap.BeginFrame();
+		var latest = UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "aaa" ), 0xC8, 1 )!;
+		Assert.IsTrue( titles[0].Evicted, "past the 16 MB budget the oldest bitmaps are dropped" );
+		Assert.IsFalse( latest.Evicted );
 	}
 
 	[TestMethod]
@@ -376,19 +389,27 @@ public class FontAtlasTests
 	}
 
 	[TestMethod]
-	public void ATitleIsCutOffAtItsControlBoxAndPlainTextIsNot()
+	public void TextIsCutOffAtItsControlBoxUnlessItOptsOut()
 	{
 		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 4, 4, 0, 0, 4 ), new SyntheticGlyph( '?', 4, 4, 0, 0, 4 ) ) );
 		var white = new RgbaByte( 255, 255, 255, 255 );
-		var rect = new UiRect( 10, 10, 6, 6 );
-		var title = new UiContext( null!, null!, null! );
-		title.DrawText( atlas, "aaaa", rect, white, UiAlign.Left, false, UiBatch.TitleCopyAlpha, textScale: 1 );
-		var vertices = title.Batch.Draws.SelectMany( draw => draw.Vertices ).ToList();
-		Assert.IsTrue( vertices.Count > 0 );
-		Assert.IsTrue( vertices.All( vertex => vertex.Position.X >= rect.X && vertex.Position.X <= rect.Right && vertex.Position.Y >= rect.Y && vertex.Position.Y <= rect.Bottom ), "the drawn quad stays inside the box (0x48f3d0)" );
-		var plain = new UiContext( null!, null!, null! );
-		plain.DrawText( atlas, "aaaa", rect, white, UiAlign.Left, false, 0, textScale: 1 );
-		Assert.IsTrue( plain.Batch.Draws.SelectMany( draw => draw.Vertices ).Any( vertex => vertex.Position.X > rect.Right ), "plain text keeps drawing past its box (UI-007)" );
+		var rect = new UiRect( 10, 10, 6.9f, 6.9f );
+		foreach ( var alpha in new byte[] { UiBatch.TitleCopyAlpha, 0 } )
+		{
+			var context = new UiContext( null!, null!, null! );
+			context.DrawText( atlas, "aaaa", rect, white, UiAlign.Left, false, alpha, textScale: 1 );
+			var vertices = context.Batch.Draws.SelectMany( draw => draw.Vertices ).ToList();
+			Assert.IsTrue( vertices.Count > 0, $"alpha {alpha}" );
+			// the box is 6 x 6 pixels from (10, 10): the width and height are truncated (0x48f47b-0x48f4c5), right and bottom exclusive
+			Assert.IsTrue( vertices.All( vertex => vertex.Position.X >= 10 && vertex.Position.X <= 16 && vertex.Position.Y >= 10 && vertex.Position.Y <= 16 ), $"alpha {alpha}: the drawn quads stay inside the box" );
+			Assert.IsTrue( vertices.Any( vertex => vertex.Position.X == 16 ), $"alpha {alpha}: and reach its right edge" );
+			// a stretched quad would still pass the position test: the texture coordinates must stop short of the whole image
+			var wide = vertices.Where( vertex => vertex.Position.X == 16 ).Select( vertex => vertex.TexCoords.X ).Max();
+			Assert.IsTrue( wide < (alpha == 0 ? (float)(atlas.Glyphs['a'].X + 4) / atlas.Width : 1f), $"alpha {alpha}: the clipped quad's u1 {wide} is cut" );
+		}
+		var open = new UiContext( null!, null!, null! );
+		open.DrawText( atlas, "aaaa", rect, white, UiAlign.Left, false, 0, textScale: 1, clip: false );
+		Assert.IsTrue( open.Batch.Draws.SelectMany( draw => draw.Vertices ).Any( vertex => vertex.Position.X > 16 ), "an opted-out text keeps drawing past its box" );
 	}
 
 	[TestMethod]

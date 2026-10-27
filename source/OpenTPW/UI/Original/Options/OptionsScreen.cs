@@ -200,7 +200,7 @@ public static class OptionsScreen
 		public void Panel( string id, string model, UiRect rect ) =>
 			screen.Add( new UiModelImage { Id = id + "Panel", Model = model, Bounds = rect, Anchor = UiAnchor.Center } );
 
-		public void Label( string id, UiRect rect, Func<string> text, Func<IEnumerable<string>>? variants = null )
+		public void Label( string id, UiRect rect, Func<string> text, Func<IEnumerable<string>>? variants = null, bool unclipped = false )
 		{
 			var label = screen.Add( new UiLabel
 			{
@@ -210,6 +210,7 @@ public static class OptionsScreen
 				Font = fonts => fonts.Label,
 				Color = UiColors.OptionText,
 				Shadow = false,
+				Unclipped = unclipped ? () => true : null,
 				Group = Group,
 				Bounds = rect,
 				Anchor = UiAnchor.Center
@@ -467,7 +468,8 @@ public static class OptionsScreen
 			var top = 167f + (column == 0 ? rowIndex : rowIndex - 4) * 156f;
 			rowIndex++;
 			page.Panel( id, "f_optpanel", Rect( left, top, left + 633, top + 149 ) );
-			page.Label( id, Rect( left + 70, top + 50, left + 370, top + 95 ), text, variants );
+			// [EXT:display] these rows are OpenTPW's own texts (window mode, scales, language, extensions): in some languages they are wider than the authored label box, so they are not cut off at it
+			page.Label( id, Rect( left + 70, top + 50, left + 370, top + 95 ), text, variants, unclipped: true );
 			var button = page.Toggle( id, "b_on2", Rect( left + 476, top + 23, left + 579, top + 125 ), () => true, () => change( 1 ), true, change );
 			if ( help != null )
 				button.Help = help;

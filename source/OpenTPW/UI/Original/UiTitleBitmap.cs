@@ -10,7 +10,7 @@ namespace OpenTPW.UI.Original;
 // [EXT:hidpi-glyphs] above scale 1 the glyph coverage is the smoothed atlas (<see cref="FontSmoothing"/>): the copy's alpha is then the smoothed coverage times the colour alpha / 255 (no stepped levels), the same replace rule
 public sealed class UiTitleBitmap
 {
-	/// <summary>Most bitmaps kept (each has a GPU copy); the least recently used is dropped past it (the renderer then deletes its GPU copy).</summary>
+	/// <summary>Most bitmaps kept (each has a GPU copy); the least recently used is dropped past it, but never one used in the current or the previous frame (the renderer then deletes its GPU copy).</summary>
 	public const int Capacity = 192;
 	/// <summary>Most pixel bytes kept over all bitmaps; the least recently used are dropped until the total is under it (the newest bitmap always stays).</summary>
 	public const int ByteBudget = 16 * 1024 * 1024;
@@ -46,9 +46,15 @@ public sealed class UiTitleBitmap
 	private readonly record struct Key( FontAtlas Atlas, int Scale, byte CopyAlpha, int Count, int Width, int Height, ulong Hash );
 
 	private static readonly Dictionary<Key, (UiTitleBitmap Bitmap, LinkedListNode<Key> Node)> cache = new();
+	private static long generation;
+	// the generation each bitmap was last asked for in
+	private long usedIn;
 	private static readonly LinkedList<Key> recent = new();
 	private static readonly object gate = new();
 	private static long totalBytes;
+
+	/// <summary>Starts the next frame (<see cref="UiBatch.Clear"/>): a bitmap asked for in this frame or the one before is not dropped, so the titles a frame draws always keep their bitmaps.</summary>
+	public static void BeginFrame() => Interlocked.Increment( ref generation );
 
 	/// <summary>The composed bitmap of <paramref name="layout"/> at text scale <paramref name="scale"/>, cached by atlas, string layout, copy alpha and scale; null when the layout draws nothing.</summary>
 	public static UiTitleBitmap? Get( FontAtlas atlas, TextLayoutResult layout, byte copyAlpha, int scale )
@@ -72,19 +78,24 @@ public sealed class UiTitleBitmap
 			{
 				recent.Remove( entry.Node );
 				recent.AddFirst( entry.Node );
+				entry.Bitmap.usedIn = generation;
 				return entry.Bitmap;
 			}
 			var factor = FontSmoothing.Factor( atlas, scale );
 			// a capped factor is drawn with the linear sampler, which would blend the empty texels' colour into the edges
 			var bitmap = Compose( atlas, layout, copyAlpha, factor, fillEmptyColor: factor != scale );
 			bitmap.Texture = UiTexture.Of( bitmap, scale );
+			bitmap.usedIn = generation;
 			cache[key] = (bitmap, recent.AddFirst( key ));
 			totalBytes += bitmap.Rgba.Length;
 			while ( cache.Count > Capacity || totalBytes > ByteBudget && cache.Count > 1 )
 			{
 				var oldest = recent.Last!;
-				recent.RemoveLast();
 				var dropped = cache[oldest.Value].Bitmap;
+				// the list is in order of use: when the oldest was used this frame or the last one, so were all the others; the budgets are exceeded for now
+				if ( generation - dropped.usedIn <= 1 )
+					break;
+				recent.RemoveLast();
 				dropped.evicted = true;
 				totalBytes -= dropped.Rgba.Length;
 				cache.Remove( oldest.Value );

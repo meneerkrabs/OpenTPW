@@ -59,15 +59,16 @@ public partial class Level
 				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.AddOn, entry, 0, addOn.PurchaseCost ) );
 		}
 		var level = 0;
-		if ( (record ?? (GetEconomyInstance( ride ) is int instance && economy.TryGetObject( instance, out var found ) ? found : null)) is { Kind: ParkObjectKind.Ride } state
-			&& economy.Catalog.TryGet( state.InfoId, out var info ) )
+		var parkRecord = GetEconomyInstance( ride ) is int instance && economy.TryGetObject( instance, out var found ) ? found : null;
+		if ( (record ?? parkRecord) is { Kind: ParkObjectKind.Ride } state && economy.Catalog.TryGet( state.InfoId, out var info ) )
 		{
 			level = state.Level;
 			if ( ParkEconomy.ObjectState( state ) == RideObjectStates.Upgrading )
 				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.CancelLevel, null, level + 1, 0 ) );
 			// a broken-down ride whose upgrade waits (OpenTPW's state keeps both, the original's one state word either) lists neither row: its level is asked for already
 			else if ( state.PendingLevel <= state.Level && level < 2 && level + 1 < info.Upgrades.Count && info.Upgrades[level + 1].Level == level + 1 && economy.Research.IsAvailable( state.InfoId, level + 1 )
-				&& !ride.IsDeleted && CanBuyCatalogueUpgrade( ride, state ) )
+				// the catalogue's own check binds the park's record; a projected copy keeps its level (C4b-2)
+				&& !ride.IsDeleted && parkRecord != null && CanBuyCatalogueUpgrade( ride, parkRecord ) )
 				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.Level, null, level + 1, info.Upgrades[level + 1].CostOfUpgrade ) );
 		}
 		return rows.Count > 0 ? new RideUpgradeOffer( rows, null ) : new RideUpgradeOffer( rows, level == 2 ? UIStrings.RideFullyUpgraded : UIStrings.NoUpgrades );

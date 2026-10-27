@@ -1147,9 +1147,8 @@ public partial class CoopSessionTests
 			Assert.IsNotNull( entry );
 			// the list opens, and its row takes no click: nothing is queued and the list stays as it is
 			OpenUpgradeList( view );
-			// the rows as the projection shows them: a waiting level lists its cancel row (a door's or a call's projected copy is no record the level row's catalogue check knows, so it lists none)
-			if ( waiting == "level" )
-				CollectionAssert.AreEqual( new RideUpgradeRowKind?[] { RideUpgradeRowKind.CancelLevel }, RowKinds( view ) );
+			// the rows as the projection shows them: a waiting level lists its cancel row, a waiting door or call the level row the park offers
+			CollectionAssert.AreEqual( new RideUpgradeRowKind?[] { waiting == "level" ? RideUpgradeRowKind.CancelLevel : RideUpgradeRowKind.Level }, RowKinds( view ) );
 			ActivateRow( view );
 			ActivateRow( view );
 			Assert.AreEqual( (1, "rideUpgrade", entry), (Management( guest ).Pending.Count(), Top( view ), Waiting( guest, id )), "inert: no second action, the list stays open" );

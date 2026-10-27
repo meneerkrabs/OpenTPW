@@ -333,14 +333,8 @@ internal sealed class CoopManagementRequests
 		{
 			if ( issuer.RightsRefusalOf( entry.Command ) is { } refusal )
 			{
-				// an entry without a waiter says the rights' note through the session's refusal path alone (coalesced for a run); a waiter's outcome says it to its window
-				if ( entry.Waiter == null )
-				{
-					issuer.RefusesHere( entry.Command );
-					Resolve( entry, new ManagementOutcome( entry, ManagementOutcomeKind.Refused, refusal ), note: false );
-				}
-				else
-					Resolve( entry, new ManagementOutcome( entry, ManagementOutcomeKind.Refused, refusal ) );
+				// keep the outcome until its waiter or a visible HUD can say it, also across HUD replacement; the HUD coalesces rights' notes, so no transient session refusal too
+				Resolve( entry, new ManagementOutcome( entry, ManagementOutcomeKind.Refused, refusal ) );
 				continue;
 			}
 			if ( open >= MaximumOpen || now - lastSend < SendSeconds )
@@ -398,8 +392,8 @@ internal sealed class CoopManagementRequests
 		Resolve( entry, outcome );
 	}
 
-	/// <summary>Resolves <paramref name="entry"/>: its outcome goes to its live waiter, else (when <paramref name="note"/>) to the notes if it says anything.</summary>
-	private void Resolve( ManagementEntry entry, ManagementOutcome outcome, bool note = true )
+	/// <summary>Resolves <paramref name="entry"/>: its outcome goes to its live waiter, else to the notes if it says anything.</summary>
+	private void Resolve( ManagementEntry entry, ManagementOutcome outcome )
 	{
 		if ( entry.State == ManagementEntryState.Open )
 			open--;
@@ -412,7 +406,7 @@ internal sealed class CoopManagementRequests
 		}
 		if ( entry.Waiter is { Detached: false } waiter )
 			waiter.Outcomes.Enqueue( outcome );
-		else if ( note )
+		else
 			AddNote( outcome );
 	}
 

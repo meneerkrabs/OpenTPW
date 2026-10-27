@@ -174,9 +174,9 @@ public class CoopManagementRequestsTests
 		var outcome = queue.TakeOutcomes( waiter ).Single();
 		Assert.AreSame( waited, outcome.Entry );
 		Assert.AreEqual( (ManagementOutcomeKind.Refused, ManagementNoteKind.Rights, CoopRefusal.NotPermitted), (outcome.Kind, outcome.Note.Kind, outcome.Note.Refusal) );
-		// the open one's refusal at its record and the escaped one's are notes; the bare one says the session's note, once, and no note of the queue's
-		CollectionAssert.AreEqual( new[] { open, escaped }, queue.TakeNotes().Select( note => note.Entry ).ToArray() );
-		Assert.AreEqual( 1, issuer.SaidRefusals );
+		// every refusal without a live waiter is durable: a hidden or replaced HUD must still hear the bare one's refusal, without a second transient notice
+		CollectionAssert.AreEqual( new[] { open, escaped, bare }, queue.TakeNotes().Select( note => note.Entry ).ToArray() );
+		Assert.AreEqual( 0, issuer.SaidRefusals );
 		Assert.AreEqual( ManagementEntryState.Resolved, bare.State );
 	}
 

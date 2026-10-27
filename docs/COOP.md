@@ -1738,15 +1738,17 @@ result here is not known), and the others go out again; the host answers those i
 record. The session's end resolves the open requests as ended.
 
 **Grants.** The host grants building per guest (decision Q7) with a command of the stream
-(`SetBuildGrantCommand`), so every peer's park holds the same grants from the same tick on. A join
-snapshot carries them (the join state's version 3), and the session digest covers them once there is
-one, so a session without grants keeps the digests it had. A grant is its member's: when the member
-leaves or is kicked, the host takes it back at its next frame, before that frame's requests, so a member
-that takes the freed seat starts without one. A grant is also its session's: a session's end takes every
-grant back, and a park shared again starts without any. Both streams put the session's rights in place of
-any the park had, so every peer asks the same ones.
+(`SetBuildGrantCommand`), so every peer's park holds the same grants from the same tick on. Since C4a a
+grant is the building right of the seat's rights ("Money and rights (C4)"): a join snapshot carries the
+rights (the join state's version 5) and the session digest covers them (its version 3). A grant is its
+member's: when the member leaves or is kicked, the host releases the seat at its next frame, before that
+frame's requests (`ReleaseSeatCommand`, which takes every right back), so a member that takes the freed
+seat starts without one. A grant is also its session's: a session's end takes every grant back, and a park
+shared again starts without any. Both streams put the session's rights in place of any the park had, so
+every peer asks the same ones.
 
-The stream's frame (version 2) and the join state (version 3, version 4 with the claims of C3c-1) changed, but the co-op protocol did not:
+The stream's frame (version 2) and the join state (version 3, version 4 with the claims of C3c-1, version 5
+with the seats' rights and pending hires of C4a) changed, but the co-op protocol did not:
 the server relays both without reading them, and the version gate keeps every member of a session on one
 release (decision Q11).
 
@@ -1910,11 +1912,11 @@ research tests, and the tool's end drops the carry.
   guest's frame disarms it after the outcomes (`Level.EndCarrylessMove`), without an end command.
 - **A grant taken back** leaves the Move tool armed: its placements are refused at their records, and its
   end still goes.
-- **A departed seat.** At each frame's start, before the requests, the host takes the grant back and
-  releases the carry (`ReleaseSeatCommand`, a record of the stream) of every guest seat whose member left
-  or changed since the last frame: a live departure, one a resume's member list shows, a seat taken again
-  in between. The session's start and end clear the guests' carries with the grants, and a guest's
-  armed Move tool disarms with its session.
+- **A departed seat.** At each frame's start, before the requests, the host releases every guest seat
+  whose member left or changed since the last frame (`ReleaseSeatCommand`, one record of the stream that
+  takes its carry and its grant, since C3c-1 its claims, since C4a every right): a live departure, one a
+  resume's member list shows, a seat taken again in between. The session's start and end clear the guests'
+  carries with the grants, and a guest's armed Move tool disarms with its session.
 
 Move needs no claim: the pick-up is one record, after which the object is gone and its type is that seat's
 alone; a second pick-up or a sale of the same object finds no object, and an edit of its queue no ride.
@@ -1982,7 +1984,7 @@ the claim keeps the ride from every other player, the host included. A guest's t
   claim refuses it, and a refusal changes no claim. `ReleaseRideCommand` lets a claim go: its holder's
   own, or any claim when the host sends it. The release of a departed seat (`ReleaseSeatCommand`) lets go
   of its claims too, and so does the host taking a seat's grant back (`SetBuildGrantCommand`, in the same
-  record), and a ride's removal (a sale, the area clear, the Move's pick-up) takes its claim with it, on
+  record, or the building right through `SetSeatRightsCommand`, C4a), and a ride's removal (a sale, the area clear, the Move's pick-up) takes its claim with it, on
   every peer alike.
 - **What a claim keeps.** A claim keeps from every other player, the host included, the ride's track
   commands, its sale, its removal and its pick-up, its demolition by a placement, an add-on on it, and its
@@ -2133,11 +2135,12 @@ tool sends every write as a request:
   seat waiting for it holds one, with the release inside its cut; another seat's drag is waited for as
   before. The new park has neither the panel nor the claim.
 - **The session's end** closes a guest's coaster tool without a command and drops its queue
-  (`Level.EndGuestWaits`). After the host's session log is taken, the host's park ends the tool state of
-  every coaster a guest's seat held, and a guest's park that of every coaster still in the tool
-  (`Level.EndSessionCoasters`), each by an `EndCoasterToolCommand` of its own on a park that runs on alone:
-  no coaster stays closed and marked, and the log replays to its last checkpoint as recorded. The host's own
-  coaster tool keeps its coaster.
+  (`Level.EndGuestWaits`). The host's end releases every guest seat that holds anything in records of its
+  log, before its last checkpoint (C4a, "Money and rights (C4)"), whose claims' end leaves each coaster's
+  tool state; a guest's park, which runs on alone, ends that of every coaster still in the tool after its
+  session (`Level.EndSessionCoasters`), each by an `EndCoasterToolCommand` of its own. No coaster stays closed
+  and marked, and the host's log replays to its last checkpoint as recorded. The host's own coaster tool
+  keeps its coaster.
 
 **Track add-ons (C3c-2).** A granted guest places a kart or water ride's track add-on (a jump, a tunnel, the
 teleport) onto its own ride's track through the ride's upgrade list, as the host does. Its placement
@@ -2162,6 +2165,74 @@ the close. The research window's workload knob projects the lab's workload, at t
 at a staffing change, without writing it back, and the loans window's opening and tabs send no offer
 refresh, so the list shows the offers of the host's park. A change the player made still goes, and its
 refusal is said as any is.
+
+## Money and rights (C4)
+
+`[EXT:online-coop-permissions]` `[EXT:online-coop-commands]` `[EXT:online-coop-speed]` C4 lets the host give
+each guest the park's management besides building, right by right (decision Q7), over the one shared bank
+(Q6), while the speed and the pause stay the host's (Q8). The plan (v8, a Codex go after eight rounds) makes
+it three parts: C4a the rights and their lifecycle, C4b the windows of the attractions, research and finance
+with their switches, C4c staff. C4a offers no new switch: building stays the one right a host can give.
+
+**The command classes (C4a).** Every command kind is of exactly one class (`CoopBuildRights.ClassOf`), which
+says who may issue it in a shared park; a test pins each class's kinds:
+- **building** (C3): the guests' tools' commands, a ride's claim included, with C3's checks of their fields,
+  targets and claims;
+- **every seat's cleanup**: the Move tool's end and a claim's release, which a guest issues with or without
+  a right;
+- **attractions, staff, research and finance**: the four management rights' (below);
+- **the host's tools**: what the host's tools issue and no guest's tool does (the single-cell kinds, the
+  undo of lines, queue segments and pool strokes, a pool bridge's removal);
+- **the host's alone**: the developer prototype's placement and removal, the finale's dismissal, a
+  challenge's answer, the speed, the wave machine, and the session's own kinds (the clock, the grant, a
+  seat's release and its rights);
+- **refused in a session** for every seat, the host included, by the session's rules: the cheats and the
+  developer kinds 22 and 25.
+
+The host issues every kind but an edit of a ride another player claims (C3c-1). Its management of a ride a
+guest claims stays allowed, as in C3, so a C3 session's log, which may hold such records, replays as
+recorded.
+
+**Rights per seat.** A guest seat's rights are five independent switches (`CoopRights`: building,
+attractions, staff, research, finance), kept in the park as session state (`Level.SeatRights`, in seat
+order; a seat without a right has no row). The session digest covers them (its version 3, with every row
+always hashed) and a join snapshot carries them (the join state's version 5); no world hash or save holds
+them. Two commands write them through one reducer: `SetSeatRightsCommand` (kind 105) sets a seat's mask,
+and C3's `SetBuildGrantCommand` (kind 101) flips its building bit alone, so a C3 log replays byte for byte.
+A right taken back ends what it held in the same record, on every peer: building's claims, with a
+coaster's tool state. The rights command names a guest's seat (1 to 63) and only the rights this build
+offers (`CoopRightsOffer`: building alone in C4a), so a right whose actions do not yet wait for the host's
+answer cannot be given, not even by a hand-made record, which the codec refuses; a join state refuses a
+row of seat 0, of no right, of a right not offered, and a seat named twice. The host's own seat holds no
+mask and keeps its full authority. The session's start and end clear every seat's rights. In C4a a
+guest's management command is refused, whatever the seat holds, with the host-only note.
+
+**A seat's release.** `ReleaseSeatCommand` is the one record that frees everything a guest seat holds:
+its rights, its carry (C3b-2) and its claims (C3c-1, with a coaster's tool state). The host issues it at
+each frame's start, before the requests, for every seat whose member left or changed and for any seat
+that holds something without a member (`Level.HoldingGuestSeats`), in place of C3's separate grant taken
+back. **The host's end** (the host ending the share, a failure, the link lost for good) applies it for
+every guest seat that still holds anything, as records of the host's own log before its last checkpoint,
+so the log replays to the state the host's park runs on with. The records go to no guest: each guest's
+park runs on alone, and its own teardown clears what its session held. An end inside a tick (no game
+path makes one) records nothing there, as no command may apply inside a tick: the host's park then ends
+the guests' coasters' tool state on its own after the log, as a guest's teardown does.
+
+**Staff state (C4a's format, C4c's use).** The join state's version 5 and the digest's version 3 carry
+the pending hires as rows of seat and candidate, in place of the one pending hire before. Until C4c only
+the host's seat 0 hires or carries an employee, so the join's restore refuses a guest seat's pending hire
+or employee in hand, and a pending hire whose candidate the park's pool does not hold, before any of the
+state applies. A guest seat therefore holds nothing in C4a that the release above does not free.
+
+**Speed and pause (Q8).** A guest's speed buttons draw subdued (`UiButton.Subdued`: the disabled look with
+the hit target and the click kept) and show the host's speed. Each speed input of a guest, the four
+buttons, the numpad's time keys and the pause key, issues its command, which the session's rights refuse on
+the guest's park with the host-only note: nothing goes to the host. A session is online, where no
+focus-loss pause latches.
+
+**Later parts.** The share screen keeps C3's switch per guest ("Builds" or "Watches"): the dialog with a
+switch per right comes with C4b, which offers its rights, and so does the note "The host has not given you
+that right." for a right not given; the host-only note keeps its "for now" until then.
 
 ## The command layer (C1)
 
@@ -2409,7 +2480,11 @@ new format version.
 tick order and an end mark. Versions 1 and 2 have no flags byte and remain readable (version 1 cannot
 contain the new queue commands). `ParkCommandReplay.Run` schedules a log on a park that stands where
 the log started and runs it tick by tick, so each command lands where it was recorded, under the
-session's rules when the log says so; `FirstMismatch` compares the checkpoints. A log is guaranteed to replay only on the build that recorded it: kind 14 (`BacktrackCommand`) gained meaning over pool water and pool bridge cells with the pools extension's Backspace removal, so a log recorded before that, with the key pressed over such a cell, did nothing then and does something now.
+session's rules when the log says so; `FirstMismatch` compares the checkpoints. A log taken from a
+running recording gets a final checkpoint, the park when it is taken: it comes after every command
+recorded by then, so it replaces an after-tick checkpoint of the same tick (a session's teardown records
+its releases after the last tick, C4a), and a replay compares it after the commands logged at its tick,
+which `Run` applies after the last tick. A log is guaranteed to replay only on the build that recorded it: kind 14 (`BacktrackCommand`) gained meaning over pool water and pool bridge cells with the pools extension's Backspace removal, so a log recorded before that, with the key pressed over such a cell, did nothing then and does something now.
 
 A co-op session records its own log (`CoopHostStream.SessionLog`, kept at the first desync and when
 the session ends): every command from the session's start, with the world hash of each tick digest as

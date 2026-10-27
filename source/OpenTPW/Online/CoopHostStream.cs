@@ -316,7 +316,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.Rights = new CoopBuildRights( level );
 		commands.Player = ParkCommands.LocalPlayer;
 		// a grant is its session's: a park shared again starts without the last session's (a guest of the identical start has none either), and so is what a guest's seat carried (C3b-2)
-		level.ClearBuildGrants();
+		level.ClearSeatRights();
 		// [EXT:online-coop-claims] and the rides' claims (C3c-1)
 		level.ClearRideClaims();
 		level.ClearGuestCarries();
@@ -819,14 +819,13 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	{
 		// [EXT:online-coop-claims] the frame's clock, which a guest's command renews its claim's lease with and the expiry reads (C3c-1)
 		guestCommandsSeconds = now;
-		// [EXT:online-coop-commands] the seats whose member left or changed since the last frame, and any guest seat that still carries something without a member (C3b-2) or
-		// [EXT:online-coop-claims] still holds a claim without one (C3c-1); a link without its session's state (between a lost socket and its resume) shows no seat, so the seats wait for
-		// its next state instead of all counting as left
+		// [EXT:online-coop-commands] the seats whose member left or changed since the last frame, and any guest seat that still holds something without a member: a carry (C3b-2),
+		// [EXT:online-coop-claims] a claim (C3c-1), [EXT:online-coop-permissions] a right (C4a); a link without its session's state (between a lost socket and its resume) shows no seat, so
+		// the seats wait for its next state instead of all counting as left
 		var known = transport.Session != null;
 		var members = known ? SeatMembers() : seatMembers;
 		var changed = seatMembers.Where( pair => !members.TryGetValue( pair.Key, out var member ) || member != pair.Value ).Select( pair => pair.Key )
-			.Concat( level.CarryingGuestSeats().Where( seat => known && !members.ContainsKey( seat ) ) )
-			.Concat( level.ClaimingSeats().Where( seat => known && seat > 0 && !members.ContainsKey( seat ) ) ).ToArray();
+			.Concat( level.HoldingGuestSeats().Where( seat => known && !members.ContainsKey( seat ) ) ).ToArray();
 		seatMembers = members;
 		if ( leftSeats.Count > 0 || changed.Length > 0 )
 		{
@@ -834,11 +833,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			leftSeats.Clear();
 			foreach ( var seat in seats )
 			{
-				// a new member of the seat starts with its own link
+				// a new member of the seat starts with its own link; [EXT:online-coop-permissions] one record frees all the seat held (C4a)
 				disconnectedSince.Remove( seat );
-				if ( Failure == null && level.HasBuildGrant( seat ) )
-					level.Commands.Apply( new SetBuildGrantCommand( seat, false ) );
-				if ( Failure == null && (level.CarriesEntry( seat ) || level.ClaimedRideOf( seat ) != null) )
+				if ( Failure == null && level.SeatHoldsAnything( seat ) )
 					level.Commands.Apply( new ReleaseSeatCommand( seat ) );
 			}
 		}
@@ -1506,15 +1503,23 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		level.TickLimit = null;
 		if ( level.SessionStream == this )
 			level.SessionStream = null;
+		// [EXT:online-coop-permissions] what every guest's seat still holds goes in records of the session's log, under the session's rules, before its last checkpoint (C4a): the seat's
+		// rights, its carry and its claims, whose end leaves a coaster's tool state (C3c-2), so the log replays to the state this park runs on with. They go to no guest (the stream
+		// stopped taking records above): each guest's park runs on alone, and its own teardown clears what its session held. An end inside a tick (no game path makes one; a test's
+		// TickCompleted could) records nothing there, as no command may apply inside a tick: this park then ends the guests' coasters' tool state on its own after the log, as a
+		// guest's teardown does
+		if ( !level.Commands.IsInTick )
+			foreach ( var seat in level.HoldingGuestSeats() )
+				level.Commands.Apply( new ReleaseSeatCommand( seat ) );
+		var unreleased = level.RideClaims.Where( claim => claim.Value > 0 ).Select( claim => claim.Key ).ToArray();
 		var commands = level.Commands;
 		commands.SessionRules = previousSessionRules;
 		commands.InTick = previousInTick;
 		commands.Rights = previousRights;
 		commands.Player = previousPlayer;
-		// [EXT:online-coop-permissions] a grant is its session's: the park runs on alone without one, and without what a guest's seat carried (C3b-2)
-		level.ClearBuildGrants();
-		// [EXT:online-coop-claims] and the rides' claims (C3c-1); the guests' seats' coasters leave the tool once the log is taken (C3c-2)
-		var guestRides = level.RideClaims.Where( claim => claim.Value > 0 ).Select( claim => claim.Key ).ToArray();
+		// [EXT:online-coop-permissions] rights are their session's: the park runs on alone without any (the guests' were released above), and without what a guest's seat carried (C3b-2)
+		level.ClearSeatRights();
+		// [EXT:online-coop-claims] and the rides' claims (C3c-1): the host's own, as the guests' went above
 		level.ClearRideClaims();
 		level.ClearGuestCarries();
 		// the park's scripts read the machine's own clock again
@@ -1522,8 +1527,7 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			scripts.SessionTime = null;
 		recorder.Dispose();
 		SessionLog = RecordedLog();
-		// [EXT:online-coop-claims] after the log and its last checkpoint: a coaster a guest's seat held leaves the tool on this park, which runs on alone, so none stays closed and marked (C3c-2)
-		level.EndSessionCoasters( guestRides );
+		level.EndSessionCoasters( unreleased );
 	}
 
 	/// <summary>The session's recording so far, with the world hash now as its last checkpoint.</summary>

@@ -270,8 +270,8 @@ public partial class CoopSessionTests
 	}
 
 	/// <summary>
-	/// The new member of <paramref name="seat"/> sends, as its first request, a moving placement of the type the seat carried: the host's stream releases the seat's carry and takes its
-	/// grant back before it, so the placement is refused.
+	/// The new member of <paramref name="seat"/> sends, as its first request, a moving placement of the type the seat carried: the host's stream releases the seat before it, its carry and
+	/// its rights in one record, so the placement is refused.
 	/// </summary>
 	private void NextMembersFirstRequestComesAfterTheRelease( Park host, CoopTestNetwork.Member next, int seat )
 	{
@@ -284,9 +284,9 @@ public partial class CoopSessionTests
 		Assert.IsFalse( host.Level.CarriesEntry( seat ), "the seat's next member starts with nothing in hand" );
 		Assert.IsFalse( host.Level.HasBuildGrant( seat ), "and without the last member's grant" );
 		var release = Array.FindIndex( since, command => command is ReleaseSeatCommand { Seat: var released } && released == seat );
-		var revoke = Array.FindIndex( since, command => command is SetBuildGrantCommand { Granted: false } grant && grant.Seat == seat );
 		var request = Array.FindIndex( since, command => command is PlaceObjectCommand && command.Player == seat );
-		Assert.IsTrue( release >= 0 && revoke >= 0 && request > release && request > revoke, string.Join( ", ", since.Select( command => command.Kind ) ) );
+		Assert.IsTrue( release >= 0 && request > release, string.Join( ", ", since.Select( command => command.Kind ) ) );
+		Assert.IsFalse( since.Any( command => command is SetBuildGrantCommand ), "the one record released its carry and its rights" );
 		Assert.IsNull( host.Level.Objects.FindAt( 24, 12 ), "its placement was refused" );
 	}
 

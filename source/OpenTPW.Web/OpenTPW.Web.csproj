@@ -125,7 +125,9 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.Claims.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.GuestWindows.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.GuestTracks.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.InitialTrackPreflight.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.GuestCoasters.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.Rights.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.GameFlow.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Attempt.cs" />

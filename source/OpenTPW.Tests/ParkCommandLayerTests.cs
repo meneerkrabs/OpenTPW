@@ -71,7 +71,7 @@ public class ParkCommandLayerTests
 		new( "Challenge slots", @"\.(AcceptAt|DeclineAt)\s*\(", nameof( AnswerChallengeCommand ) ),
 		new( "Cheat queue (direct)", @"\bCheats!?\??\.Queue\s*\(", nameof( QueueCheatCommand ) ),
 		// a method group handed on (a button's click, a callback) reaches the economy's mutators as surely as a call
-		new( "Settings mutators as method groups", @"(?<!InputButton)\.(OpenPark|ClosePark|SetEntranceFee|SetPrices|SetShopSettings|TakeLoan|TryRepayLoan|SetTrainingBudget|SetResearchEffort|AcceptChallenge|DeclineChallenge|RequestMaintenance|TryBuyUpgrade|TryCancelUpgrade|QueueCheat|RefreshLoanOffers)\b(?!\s*[(=])", nameof( ParkSettingCommand ) ),
+		new( "Settings mutators as method groups", @"(?<!InputButton)(?<!ParkCommandKind)\.(OpenPark|ClosePark|SetEntranceFee|SetPrices|SetShopSettings|TakeLoan|TryRepayLoan|SetTrainingBudget|SetResearchEffort|AcceptChallenge|DeclineChallenge|RequestMaintenance|TryBuyUpgrade|TryCancelUpgrade|QueueCheat|RefreshLoanOffers)\b(?!\s*[(=])", nameof( ParkSettingCommand ) ),
 		new( "Loan list build", Call( "RefreshLoanOffers" ), nameof( RefreshLoanOffersCommand ) ),
 		// the park's tools (C1 part 3)
 		new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand|Purchase)\s*\(", nameof( BuyLandCommand ) ),
@@ -237,6 +237,7 @@ public class ParkCommandLayerTests
 		Assert.IsFalse( Caught( groups, "economy.OpenPark();" ), "a call is the call rows' to catch" );
 		Assert.IsFalse( Caught( groups, "if ( economy.IsParkOpen )" ) );
 		Assert.IsFalse( Caught( groups, "if ( Input.Pressed( InputButton.OpenPark ) )" ), "the park door's key binding" );
+		Assert.IsFalse( Caught( groups, "ParkCommandKind.SetShopSettings or ParkCommandKind.TakeLoan => CoopCommandClass.Finance," ), "a command kind's name in the session's class table" );
 		var place2 = Converted.Single( mutator => mutator.Name == "Level.PlaceObject" );
 		Assert.IsTrue( Caught( place2, "private OriginalObject? Build() => PlaceObject( entry, x, y, 0 );" ), "an expression body's call" );
 		var prototype = Converted.Single( mutator => mutator.Name == "Developer prototype run" );

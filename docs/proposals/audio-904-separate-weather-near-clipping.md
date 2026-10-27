@@ -1,5 +1,15 @@
 # AUDIO-904: Separate weather near clipping
 
+## 2026-10-27 current-source supersession after PR #874
+
+This qualification supersedes the present-tense implementation claims and future design choices below, including the earlier October 27 qualification at `60c941de`. Public main `eb8e3d2018eeeb726b5143caf51f75ce9f0681e1` includes merged [PR #874](https://github.com/meneerkrabs/OpenTPW/pull/874). [AUDIO.md](https://github.com/meneerkrabs/OpenTPW/blob/eb8e3d2018eeeb726b5143caf51f75ce9f0681e1/docs/AUDIO.md#L720-L729) records AUDIO-904 as retired and `EXT:weather-near-plane` / `OPENTPW_WEATHER_NEAR` as removed. Its attribution to a user decision is repository history, not new approval or authority inferred by this reconciliation.
+
+The current path is not the scene-projected camera-space rain/snow assumed by the old tables. [WeatherVisualState](https://github.com/meneerkrabs/OpenTPW/blob/eb8e3d2018eeeb726b5143caf51f75ce9f0681e1/source/OpenTPW/World/Weather/WeatherVisualState.cs#L435-L505) emits homogeneous clip vertices; rain now rejects only a trailing end at or behind the eye, not both ends. [WeatherProjection.WriteDepth](https://github.com/meneerkrabs/OpenTPW/blob/eb8e3d2018eeeb726b5143caf51f75ce9f0681e1/source/OpenTPW/World/Weather/WeatherProjection.cs#L29-L76) converts the original linear/divided depth mapping to equivalent scene distance using the frame's native far argument and field of view, then writes scene depth clamped to [0,1]. [WeatherRenderer](https://github.com/meneerkrabs/OpenTPW/blob/eb8e3d2018eeeb726b5143caf51f75ce9f0681e1/source/OpenTPW/World/Weather/WeatherRenderer.cs#L150-L246) submits the resulting clip vertices with identity matrices and clips rain at clip z = w; bolts retain a distinct 0.1-original-unit near boundary. Rain/snow have no independent near plane, and the scene near plane remains unchanged.
+
+The earlier 0.5/0.1 original-depth thresholds, both-end CPU rejection, raw-rain streak tables and separate-near affine remap are historical calculations for the named old path, not current acceptance or a pending implementation design. Their caution that clamping cannot preserve arbitrary distinct near-band ordering remains mathematical, but is not a new demonstration that the current equivalent-distance mapping fails; this reconciliation neither proves nor rejects all snow-overlap/finite-precision behavior.
+
+Existing `WeatherClipTests` cover the depth split, equivalent-distance mapping, clamp and clipping in CPU fixtures; they were not run here. The main document records macOS Metal Debug offscreen measurements only, not D3D11, Vulkan or WebGL acceptance, and its captures are not kept in the repository. Fresh native/GPU evidence is not supplied. Any additional current-contract depth-ordering, clipping or backend validation must remain separately scoped; do not resurrect AUDIO-904, propose another near-plane change, or infer a merge/closure instruction from this historical proposal.
+
 ## Status and classification
 - Classification: approximation.
 - Plan-only local proposal: no runtime implementation, annotation retirement, publication or merge performed.

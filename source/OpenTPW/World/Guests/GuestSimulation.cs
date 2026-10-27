@@ -577,7 +577,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			SyncOccupants();
 		}
-		// [APPROX:DET-014] without a host thing sweep (a simulation of its own, the ticks between park turns) the guests' draws interleave in this list order, not the original's newest-first thing sweep (DET-013), and the draws of the won sideshow's tail (0x004FE8D9) and the balloon model's recreation (0x0050205F) are not taken
+		// [APPROX:DET-014] without a host thing sweep (a simulation of its own, the ticks between park turns) the guests' updates and their draws run in this list order, not the original's newest-first thing sweep (DET-013); the remaining mismatch is which guest steps run between park turns, not missing won-sideshow tail or balloon-recreation draws (ApplyVisit and FinishUse already take those)
 		for ( var index = 0; index < guests.Count; index++ )
 			UpdateGuest( guests[index], deltaSeconds );
 		for ( var index = guests.Count - 1; index >= 0; index-- )

@@ -877,7 +877,6 @@ internal sealed partial class GameFlow : IDisposable
 	private enum Backdrop { Lobby, Globe, City }
 
 	private Backdrop backdrop = Backdrop.Lobby;
-	/// <summary>The open city lobby's islands (a lobby scene with the city's parks at the island slots).</summary>
 	private TerrainViewSpans? lobbySpans;
 	private ModelHeightfield? lobbySpansField;
 
@@ -898,6 +897,7 @@ internal sealed partial class GameFlow : IDisposable
 		return lobbySpans.Update( Camera.ViewMatrix, aspectWord ) ? lobbySpans.FarthestCorner : null;
 	}
 
+	/// <summary>The open city lobby's islands (a lobby scene with the city's parks at the island slots).</summary>
 	private LobbyScene? cityScene;
 	/// <summary>Islands of the open city lobby (front-end smoke test).</summary>
 	internal int CityIslandCount => cityScene?.IslandCount ?? 0;

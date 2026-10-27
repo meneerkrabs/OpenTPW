@@ -8,7 +8,7 @@ using Vector3 = System.Numerics.Vector3;
 
 /// <summary>
 /// The far argument of the original's eye views (<see cref="TerrainEyeViewFar"/>, <c>0x56EA90</c>): reference numbers from an offline emulation of the original's own instructions (the box search, the box test and the initialiser of its outcode table, with the matrix
-/// transform of <c>0x87B088</c> replaced by the same clip formula in single precision; analysis scripts outside the repository, tp.exe never launched).
+/// transform of <c>0x87B088</c> replaced by the same clip formula in single precision, which was checked separately against <c>0x578CA0</c> + <c>0x5783B0</c> + <c>0x579330</c> run offline; analysis scripts outside the repository, tp.exe never launched).
 /// </summary>
 [TestClass]
 public class TerrainEyeViewFarTests
@@ -31,6 +31,46 @@ public class TerrainEyeViewFarTests
 			// the magnitude compares use |w| = 1: beyond (2) is greater, inside (0.5) is not
 			Assert.AreEqual( expected[index], TerrainEyeViewFar.Outcode( x, y, z, w ), $"index {index}" );
 		}
+	}
+
+	[TestMethod]
+	public void TheOutcodesMeanTheSixPlanes()
+	{
+		Assert.AreEqual( 0, TerrainEyeViewFar.Outcode( 0.5f, 0.5f, 0.5f, 1f ), "inside" );
+		Assert.AreEqual( 0x8, TerrainEyeViewFar.Outcode( 2f, 0.5f, 0.5f, 1f ) & 0xC, "x > w" );
+		Assert.AreEqual( 0x4, TerrainEyeViewFar.Outcode( -2f, 0.5f, 0.5f, 1f ) & 0xC, "x < -w" );
+		Assert.AreEqual( 0x20, TerrainEyeViewFar.Outcode( 0.5f, 2f, 0.5f, 1f ) & 0x30, "y > w" );
+		Assert.AreEqual( 0x10, TerrainEyeViewFar.Outcode( 0.5f, -2f, 0.5f, 1f ) & 0x30, "y < -w" );
+		Assert.AreEqual( 0x2, TerrainEyeViewFar.Outcode( 0.5f, 0.5f, 2f, 1f ) & 0x3, "z > w" );
+		Assert.AreEqual( 0x1, TerrainEyeViewFar.Outcode( 0.5f, 0.5f, -0.5f, 1f ) & 0x3, "z < 0" );
+		Assert.AreNotEqual( 0, TerrainEyeViewFar.Outcode( 0.5f, 0.5f, 0.5f, -1f ), "a negative w is outside" );
+	}
+
+	[TestMethod]
+	public void TheClipMatchesTheOriginalsTransform()
+	{
+		// the transform of 0x578CA0 + 0x5783B0 + 0x579330 run offline for this pose
+		var view = new TerrainEyeViewFar.View( new Vector3( 695.19354f, 56.547016f, 639.89856f ), new Vector3( 0.7163676f, 0f, -0.6977231f ), new Vector3( 0.09632723f, 0.990424f, 0.09890128f ),
+			new Vector3( -0.69104165f, 0.1380594f, -0.7095076f ), 0.5625f, 0.70710678f, 0.70710678f );
+		void Check( Vector3 point, float x, float y, float z, float w )
+		{
+			var clip = TerrainEyeViewFar.Clip( view, point );
+			Assert.AreEqual( x, clip.X, Math.Abs( x ) * 1e-4f + 1e-4f );
+			Assert.AreEqual( y, clip.Y, Math.Abs( y ) * 1e-4f + 1e-4f );
+			Assert.AreEqual( z, clip.Z, Math.Abs( z ) * 1e-4f + 1e-4f );
+			Assert.AreEqual( w, clip.W, Math.Abs( w ) * 1e-4f + 1e-4f );
+		}
+		Check( new Vector3( 906.78998f, -0.78178042f, 358.74719f ), 276.63074f, 90.797516f, 31.994324f, 32.061768f );
+		Check( new Vector3( 932.02808f, 25.256931f, 881.08057f ), 1.0996552f, -22.169739f, -239.87671f, -239.78204f );
+	}
+
+	[TestMethod]
+	public void TheWholeFieldBranchSearchesEveryCell()
+	{
+		var field = new TerrainEyeViewFar.Field( 40, 40, 10f, 10f, 0f, 0f, -2f, 10f );
+		var view = new TerrainEyeViewFar.View( new Vector3( 5000f, 5f, 5000f ), Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, 0.5625f, 0.70710678f, 0.70710678f );
+		Assert.AreEqual( TerrainEyeViewFar.WholeRange, TerrainEyeViewFar.Compute( field, view, 325f ), "the rectangle misses the field" );
+		Assert.IsTrue( TerrainEyeViewFar.Compute( field, view, 325f, wholeField: true ) >= TerrainEyeViewFar.Floor, "the whole field is searched whatever the rectangle" );
 	}
 
 	[TestMethod]

@@ -45,11 +45,17 @@ internal static class TerrainEyeViewFar
 
 	/// <summary>
 	/// The far argument of the frame for <paramref name="viewDistance"/> (<c>[0x8BD4C0]</c>, FIRSTPERSONVIEWDISTANCE): <see cref="WholeRange"/> when the rectangle around the camera misses the field, else at least <see cref="Floor"/> and the
-	/// greatest clip z of the corners of the boxes the view reaches.
+	/// greatest clip z of the corners of the boxes the view reaches; <paramref name="wholeField"/> searches the whole field (bit 0x20 of <c>[0x8BCBC8]</c>).
 	/// </summary>
-	// [BIN:TPW-EXE:0x56EA90 eye view cells] the rectangle is the camera x and z less and plus half the viewing distance (0x56EB2B to 0x56EBA4: (x - S / 2) x [this+0x10], (x + S / 2 + 0.999) x [this+0x10], the reciprocal cell sizes, each truncated by 0x67A830); it is dropped when it starts at or beyond the last column or row or ends before the first (0x56EBA8 to 0x56EBC5), else clamped to the field and handed to 0x56E7E0
-	public static float Compute( in Field field, in View view, float viewDistance )
+	// [BIN:TPW-EXE:0x56EA90 eye view cells] with bit 0x20 of [0x8BCBC8] set the whole field (0, 0, cols, rows) is searched and the rectangle skipped (0x56EB03 to 0x56EB21; only a clear of the bit was found, 0x54E8D3, no setter, so the park views leave it clear and <c>wholeField</c> defaults to false); otherwise the rectangle is the camera x and z less and plus half the viewing distance (0x56EB2B to 0x56EBA4: (x - S / 2) x [this+0x10], (x + S / 2 + 0.999) x [this+0x10], the reciprocal cell sizes, each truncated by 0x67A830); it is dropped when it starts at or beyond the last column or row or ends before the first (0x56EBA8 to 0x56EBC5), else clamped to the field and handed to 0x56E7E0
+	public static float Compute( in Field field, in View view, float viewDistance, bool wholeField = false )
 	{
+		if ( wholeField )
+		{
+			var whole = Floor;
+			Visit( field, view, 0, 0, field.CellsX, field.CellsZ, ref whole );
+			return whole;
+		}
 		var inverseX = 1f / field.SizeX;
 		var inverseZ = 1f / field.SizeZ;
 		var half = viewDistance * 0.5f;
@@ -68,7 +74,7 @@ internal static class TerrainEyeViewFar
 		return far;
 	}
 
-	// [BIN:TPW-EXE:0x56E7E0 cell boxes] the box over the cells x0..x1 and z0..z1 (cells times the sizes plus the origin) between the stored lowest and highest height has its eight corners transformed by the matrix [0x87B088] (clip coordinates of the projection built with far 1000, 0x56EAC0) and tested by 0x561BC0: every corner beyond one plane (the outcodes' AND) drops the box; a box that is wholly inside, or one cell, ends the search and raises the far argument to the greatest clip z of its corners (0x56EA60 to 0x56EA75); any other splits at the middle cell into up to four quarters (0x56E9B9 to 0x56EA22)
+	// [BIN:TPW-EXE:0x56E7E0 cell boxes] the box over the cells x0..x1 and z0..z1 (cells times the sizes plus the origin) between the stored lowest and highest height has its eight corners transformed by the matrix [0x87B088] (checked separately against 0x578CA0 + 0x5783B0 + 0x579330 run offline) (clip coordinates of the projection built with far 1000, 0x56EAC0) and tested by 0x561BC0: every corner beyond one plane (the outcodes' AND) drops the box; a box that is wholly inside, or one cell, ends the search and raises the far argument to the greatest clip z of its corners (0x56EA60 to 0x56EA75); any other splits at the middle cell into up to four quarters (0x56E9B9 to 0x56EA22)
 	private static void Visit( in Field field, in View view, int x0, int z0, int x1, int z1, ref float far )
 	{
 		Span<Vector4> corners = stackalloc Vector4[8];

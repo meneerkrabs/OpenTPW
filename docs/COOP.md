@@ -1161,6 +1161,19 @@ The scenarios:
   the session's early window (three minutes after the join); no other failed join may follow. The host sees
   exactly one desync report, the forced one, and takes one capture for it. The run's one resync is that one;
   no link is lost.
+- **staff** (`--scenario staff`, C4c-2): after the lines the host gives the staff right through the rights
+  dialog. The guest's resyncs are forced ones (the browser resync cases), each with its staff state at the cut.
+  First it hires a guard from the staff window (Enter on the applicant) and, while the hire still waits, forces a
+  desync of its own stream and lets go with Escape before the swap: the hire's record is inside the cut, so the
+  new park holds the pending hire, which is cleaned up with its cancel, and no tool comes. Then it hires another
+  guard, places it with a click in the park and picks it up from its window; with it in hand it forces a second
+  desync, and after the swap the Carry tool arms again from the snapshot's hand. Once the session's early window
+  after that join has passed, a click drops the guard elsewhere and a third desync is forced at once, so the
+  drop's record is inside the cut: no state and no tool after the swap. Then it renames the guard, raises the
+  guards' training budget a step and dismisses it (through the confirmation when the options ask for one). Every
+  one of the nine staff commands is accepted on both parks, at the same record where the guest's park knows it
+  (the two inside a cut have none there). Each forced desync is the host's one report of it with one capture; the
+  first two, inside the early window after a join, may count as that join's failure, at most those two.
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
   HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
   takes its ticks before the host sets the speed, and the host its own when it does. Every five seconds both
@@ -2202,8 +2215,9 @@ each guest the park's management besides building, right by right (decision Q7),
 it three parts: C4a the rights and their lifecycle, C4b the windows of the attractions, research and finance
 with their switches, C4c staff. C4b is two parts of its own (its plan, v13, a Codex go after twelve rounds):
 C4b-1 the research and finance windows with everything both parts share, C4b-2 the attractions (its own
-plan, v13, a Codex go after twelve rounds). Since C4b-2 the host gives building, attractions, research and
-finance; staff follows (C4c).
+plan, v13, a Codex go after twelve rounds). C4c is two parts (its plan, v7, a Codex go after six rounds):
+C4c-1 every seat's staff state in the park, C4c-2 the guest's staff tools and windows. Since C4c-2 the host
+gives all five rights: building, attractions, staff, research and finance.
 
 **The command classes (C4a).** Every command kind is of exactly one class (`CoopBuildRights.ClassOf`), which
 says who may issue it in a shared park; a test pins each class's kinds:
@@ -2232,8 +2246,8 @@ them. Two commands write them through one reducer: `SetSeatRightsCommand` (kind 
 and C3's `SetBuildGrantCommand` (kind 101) flips its building bit alone, so a C3 log replays byte for byte.
 A right taken back ends what it held in the same record, on every peer: building's claims, with a
 coaster's tool state. The rights command names a guest's seat (1 to 63) and only the rights this build
-offers (`CoopRightsOffer`: building, attractions, research and finance since C4b-2), so a right whose actions do not yet wait for the host's
-answer cannot be given, not even by a hand-made record, which the codec refuses; a join state refuses a
+offers (`CoopRightsOffer`: all five since C4c-2), so a bit past them cannot be given, not even by a
+hand-made record, which the codec refuses; a join state refuses a
 row of seat 0, of no right, of a right not offered, and a seat named twice. The host's own seat holds no
 mask and keeps its full authority. The session's start and end clear every seat's rights. A guest's
 management command without its right, or of a right this build does not offer yet, is refused with the
@@ -2251,10 +2265,9 @@ path makes one) records nothing there, as no command may apply inside a tick: th
 the guests' coasters' tool state on its own after the log, as a guest's teardown does.
 
 **Staff state (C4a's format, C4c's use).** The join state's version 5 and the digest's version 3 carry
-the pending hires as rows of seat and candidate, in place of the one pending hire before. Until C4c only
-the host's seat 0 hires or carries an employee, so the join's restore refuses a guest seat's pending hire
-or employee in hand, and a pending hire whose candidate the park's pool does not hold, before any of the
-state applies. A guest seat therefore holds nothing in C4a that the release above does not free.
+the pending hires as rows of seat and candidate, in place of the one pending hire before. Since C4c-1 every
+seat may hold one (a seat's staff, below); the join's restore checks the rows whole before any of the state
+applies.
 
 **Speed and pause (Q8).** A guest's speed buttons draw subdued (`UiButton.Subdued`: the disabled look with
 the hit target and the click kept) and show the host's speed. Each speed input of a guest, the four
@@ -2380,9 +2393,8 @@ with one difference the queue forces: a guest's window keeps no draft.
   then shows over it, with that sentence when it applies.
 
 **A seat's staff (C4c-1).** `[EXT:online-coop-commands]` `[EXT:online-coop-permissions]` The park keeps the staff state of
-every seat, ready for the staff right, which C4c-2 offers with the guest's staff tools and windows; until then no
-guest seat issues a staff command, and the host's and a single player's play is as before but for the two points
-marked below.
+every seat, which the staff right (C4c-2, below) lets a guest's seat use; the host's and a single player's play is as
+before but for the two points marked below.
 - **A pending hire per seat.** Each seat's hire reserves its candidate (`ParkStaff.PendingHires`; seat 0's is
   `PendingPlacementId`): another seat's hire or placement of it is refused, and the pool's expiry keeps every
   reserved candidate. An imported save's candidate on the pointer loses its flag at any placement's end, and is
@@ -2411,7 +2423,59 @@ marked below.
   applies: each seat once, a candidate of the pool reserved once, an employee of the park held once and picked
   up, an origin on the grid, and a guest seat with one of a hand and a pending hire.
 
-C4c-2 offers the staff right with the guest's staff tools and windows.
+**A guest's staff (C4c-2).** `[EXT:online-coop-commands]` With the staff right a guest hires, places, picks up, drops,
+renames and dismisses employees, sets their patrol areas and the roles' training budgets, as the host does; each
+action goes to the host, and the guest's tools and windows follow what came back.
+- **One staff request at a time.** The session owns the guest's staff controller (`CoopGuestStaff`), as its
+  management queue, so a resync's new park and HUD find it. It holds at most one open staff request of the
+  guest's (a hire, a pick-up, a placement, a drop or a cleanup) and whether the player still wants a staff tool.
+  Its wait is its own, not the Move tool's, so a staff tool that stays on while a request waits does not drop
+  it. While a request waits every staff click is no click, with the waiting note once for a run.
+- **Starts.** A hire from the staff window and a pick-up from the employee window ask the session's rights first,
+  then the host's own checks (bankruptcy, the role's room, the applicant still in the pool and placed by no other
+  seat; the employee may be picked up). Then every non-staff tool and its waits end, a Move tool's end going
+  before the start; a staff tool already on stays on, inert, until the start's outcome. The window closes when
+  the start goes.
+- **The tool follows the seat's state.** Every frame, after the outcomes and outside the simulation tick (a paused
+  park too), whenever no staff request waits: with a pending hire or an employee in hand the player still wants
+  and no other tool on, the matching tool is on, armed for that applicant or employee; otherwise that state ends
+  by its cleanup request (the hire's cancel, or the drop back to where the employee was picked up), one at a time,
+  at most one a second; with neither, a staff tool goes off. So an accepted start arms its tool, a refused start
+  gives the old tool back while its state remains, an accepted placement or drop ends the tool, and a right taken
+  back, a departure's release or a dismissal turns it off. A refused placement keeps the tool for a bad cell and
+  lets go when its applicant can no longer be hired (the role full, bankruptcy, a full thing pool), so one cancel
+  goes, as the host's click cancels; a refused drop keeps the Carry tool.
+- **Clicks.** A Place tool's click on a cell that takes someone sends the placement, a Carry tool's the drop; a
+  cell that takes no one does nothing, as the host's click.
+- **Letting go.** Escape, the tool's right click, another tool and a window that ends the tool let go of it:
+  the tool turns off at once without a command, and the cleanup follows by the rule above, after an open
+  request's outcome. Escape and the park view's right click also let go of a hire or pick-up that waits with no
+  staff tool on yet (only the next Escape opens the pause menu). Every way a tool ends goes through one exit
+  (`StaffPlacement.Cancel` hands a guest's exit to the controller), so no caller sends a second staff request
+  beside an open one or cancels a newly accepted hire.
+- **Across a resync.** A request inside the cut has no result, and the tool follows the new park's state for the
+  seat: a start the player let go of is cleaned up with no tool, a start or a tool still wanted is armed again
+  from the snapshot's state, and a placement or a drop inside the cut leaves no state and no tool. A request after
+  the cut waits in the new park, and its outcome follows the rule. A state the new view cannot arm a tool for
+  (another tool on) is cleaned up.
+- **The session's end.** The guest's teardown turns its staff tool off without a command, before its park's own
+  cleanup of the guest seats' staff state; a staff request still waiting counts for the end dialog's line, beside
+  the management queue's.
+- **The windows** go through the management queue. Each employee is a target of its own (its staff id, which no
+  later employee takes), with its name and its patrol area as knobs (the latest wins) and its dismissal as an
+  open-state action; the roles' training budgets are one target with a knob per role. Every action asks the
+  session's rights first. The employee window's title draws the latest name asked for, its patrol toggle the
+  area asked for (set by the patrol tool's second corner, whose clicks stay local, or cleared), and the training
+  rows the budgets asked for, their buttons stepping from them; the controls return with a refusal. The rename
+  dialog keeps a name the park would refuse (`ParkStaff.IsValidName`) open, as the host's refusal does, and
+  closes when a valid one goes. A dismissal with the Confirmations option waits after its Yes, as a loan's
+  confirmation does (its question and a waiting line, its buttons inert; Escape closes it and its outcome becomes
+  a note); every outcome removes it first. Without the option the dismissal goes at once, and the window stays
+  until the employee leaves the roster.
+- **Notes.** A refused staff record says why: the rights' note, "That employee is being moved." for a dismissal
+  of an employee another player carries, and the not-available note for every other park refusal (an employee or
+  an applicant gone, an applicant another seat places, an employee that cannot be picked up, a cell that takes no
+  one). The host's own dismissal of an employee a guest carries now says it too.
 
 ## The command layer (C1)
 

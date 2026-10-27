@@ -122,8 +122,15 @@ public sealed class StaffMember
 
 	/// <summary>Whether the member has a patrol rectangle of its own.</summary>
 	public bool HasPatrolArea => PatrolArea != WholeMap;
-	/// <summary>Base speed [+0xc0]: 60, 80, 100, 120 or 140 by energy.</summary>
-	public int BaseSpeed { get; set; } = 60;
+	private int baseSpeed = 60;
+	/// <summary>Whether a constructor or saved world state supplied the speed; legacy members without either take the grade fallback once when placed.</summary>
+	internal bool HasInitializedBaseSpeed { get; private set; }
+	/// <summary>Base speed [+0xc0], supplied by the constructor or saved world state; creating a navigation state must not replace it.</summary>
+	public int BaseSpeed
+	{
+		get => baseSpeed;
+		set { baseSpeed = value; HasInitializedBaseSpeed = true; }
+	}
 	/// <summary>Speed bonus [+0xc2]: 25 while walking to a job.</summary>
 	public int SpeedBonus { get; set; }
 	/// <summary>The smoothed speed [+200] (<see cref="GuestSpeed.Update"/>).</summary>
@@ -482,7 +489,7 @@ public sealed partial class ParkStaff
 		// [BIN:TPW-EXE:0x004F89E1 staff base speed draw] the person base constructor 0x004F8940, which every staff constructor (0x00504B10) runs right after taking the thing id, draws R mod 5 from the world generator and takes that entry of the speed table {60, 80, 100, 120, 140} (0x0075C7F8) as the base speed +0xC0 (the reseed with the thing id is the online avatar's constructor 0x004F7B20, not the staff's)
 		// [BIN:TPW-EXE:0x004D4340 entertainer speed] the entertainer constructor then overwrites +0xC0 with the first table entry (60) after the draw; [BIN:TPW-EXE:0x004D5E02 guard variant] the guard constructor draws its own sprite variant ((R >> 2) mod the guard bank count, 0x00541F70) instead of taking the candidate's
 		// a pool-less (headless) economy has no person things, so it takes no draw
-		var baseSpeed = 60;
+		int? baseSpeed = null;
 		var variant = candidate.Variant;
 		if ( things != null && random != null )
 		{
@@ -494,7 +501,9 @@ public sealed partial class ParkStaff
 		}
 		MaterializeRoleOrder();
 		candidates.Remove( candidate );
-		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = variant, BaseSpeed = baseSpeed };
+		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = variant };
+		if ( baseSpeed is { } drawnSpeed )
+			member.BaseSpeed = drawnSpeed;
 		members.Add( member );
 		roleOrder![(int)member.Type].Insert( 0, member.Id );
 		return member;

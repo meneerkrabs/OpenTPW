@@ -21,8 +21,18 @@ public sealed partial class ParkHud
 			if ( pendingChallengeRows![index] is { } row )
 			{
 				if ( row.IsTerminal )
+				{
+					// A read row has no running clock. Suspension restarts active origins on resume, so its continuation has a full lifetime.
+					// For an active clock, every age at or past its lifetime has the same queued expiry; do not serialize unbounded wall time.
+					var elapsed = !row.Active || challengeTimersSuspended ? 0 : Math.Clamp( now - row.Origin, 0L, (long)row.Lifetime );
 					rows.Add( new MessageTubeRowSave( MessageTubeRowSave.Terminal, text, row.Identity.Tag, row.Identity.ContextShort, row.Identity.ContextInt, row.Lifetime,
-						Math.Max( 0, now - row.Origin ), row.Active, row.PreExpiryEnabled, row.PreExpiryReached ) );
+						elapsed, row.Active, row.PreExpiryEnabled, row.PreExpiryReached )
+					{
+						// Pending delivery is not its effect: after load, input may still read this row before dispatch and cancel either event.
+						PendingPreExpiry = row.Active && challengeTimerEvents?.Any( entry => ReferenceEquals( entry.Row, row ) && entry.Kind == ChallengeTimerEvent.PreExpiry ) == true,
+						PendingExpiry = row.Active && challengeTimerEvents?.Any( entry => ReferenceEquals( entry.Row, row ) && entry.Kind == ChallengeTimerEvent.Expiry ) == true
+					} );
+				}
 				else
 					rows.Add( new MessageTubeRowSave( MessageTubeRowSave.Progress, text, row.Identity.Tag, row.Identity.ContextShort, row.Identity.ContextInt, 0, 0, false, false, false ) );
 			}
@@ -32,13 +42,15 @@ public sealed partial class ParkHud
 		return rows.Count == 0 ? null : new MessageTubeSaveData { Rows = rows };
 	}
 
-	/// <summary>Puts a saved (and validated) tube into this empty HUD: no sound, help or timer queue runs for the restored rows, whose timers continue from the time they had passed.</summary>
+	/// <summary>Puts a saved (and validated) tube into this empty HUD without dispatch, sound or help. Pending timers are queued for normal delivery after input; running clocks continue from their saved age.</summary>
 	internal void RestoreMessageTube( MessageTubeSaveData? saved )
 	{
-		if ( saved == null || saved.Rows.Count == 0 || (pendingMessages?.Count ?? 0) != 0 )
+		if ( saved == null )
 			return;
 		if ( saved.Problem() is { } problem )
 			throw new InvalidDataException( $"The saved message tube is invalid: {problem}." );
+		if ( saved.Rows.Count == 0 || (pendingMessages?.Count ?? 0) != 0 )
+			return;
 		pendingMessages = new List<string>();
 		pendingActions = new List<GameMessageAction[]>();
 		pendingChallengeRows = new List<ChallengeTubeRow?>();
@@ -48,15 +60,21 @@ public sealed partial class ParkHud
 			pendingMessages.Add( row.Text );
 			pendingActions.Add( row.Kind == MessageTubeRowSave.Offer ? ChallengeActions( () => level?.Park?.Economy ) : Array.Empty<GameMessageAction>() );
 			var identity = new ChallengeMessageIdentity( row.Tag, row.ContextShort, row.ContextInt );
-			pendingChallengeRows.Add( row.Kind switch
+			var challengeRow = row.Kind switch
 			{
 				MessageTubeRowSave.Progress => new ChallengeTubeRow( identity ),
 				MessageTubeRowSave.Terminal => new ChallengeTubeRow( identity, row.Lifetime, now - row.ElapsedMs )
 				{
-					Active = row.Active, PreExpiryEnabled = row.PreExpiryEnabled, PreExpiryReached = row.PreExpiryReached
+					Active = row.Active, PreExpiryEnabled = row.PreExpiryEnabled, PreExpiryReached = row.PreExpiryReached,
+					PreExpiryQueued = row.PendingPreExpiry, ExpiryQueued = row.PendingExpiry
 				},
 				_ => null
-			} );
+			};
+			pendingChallengeRows.Add( challengeRow );
+			if ( challengeRow != null && row.PendingPreExpiry )
+				(challengeTimerEvents ??= new()).Enqueue( (challengeRow, ChallengeTimerEvent.PreExpiry) );
+			if ( challengeRow != null && row.PendingExpiry )
+				(challengeTimerEvents ??= new()).Enqueue( (challengeRow, ChallengeTimerEvent.Expiry) );
 		}
 	}
 }

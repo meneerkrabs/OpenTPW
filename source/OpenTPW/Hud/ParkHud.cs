@@ -126,6 +126,9 @@ public sealed partial class ParkHud
 			if ( (CellBuildTool?)level.CellTool is { } cellTool )
 				cellTool.Ended += OnCellToolEnded;
 			level.BuildToolsEnded += OnBuildToolsEnded;
+			// [EXT:online-coop-commands] a guest's patrol area goes through its management queue (C4c-2)
+			guestPatrolArea = QueueGuestPatrolArea;
+			level.GuestPatrolArea = guestPatrolArea;
 			hud = new UiScreen( "hud" ) { Modal = false };
 			Stack.Push( hud );
 			Build();
@@ -153,6 +156,9 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>Removes every handler the constructor puts on the level and its park (removing one that was not added is a no-op).</summary>
+	/// <summary>This HUD's route of a guest's patrol area into its management queue, as the level holds it (<see cref="Level.GuestPatrolArea"/>).</summary>
+	private Func<SetPatrolAreaCommand, bool>? guestPatrolArea;
+
 	private void UnhookLevel()
 	{
 		if ( level.Objects is { } objects )
@@ -162,6 +168,8 @@ public sealed partial class ParkHud
 		level.BuildToolsEnded -= OnBuildToolsEnded;
 		if ( level.MessageTubeCaptured?.Target == this )
 			level.MessageTubeCaptured = null;
+		if ( guestPatrolArea != null && ReferenceEquals( level.GuestPatrolArea, guestPatrolArea ) )
+			level.GuestPatrolArea = null;
 		if ( level.Park != null )
 		{
 			level.Park.EventRaised -= OnStaffStrikeEvent;
@@ -453,7 +461,11 @@ public sealed partial class ParkHud
 			// the P window holds the focus: Escape reaches only its procedure, which ignores it
 			if ( PauseBackdropHoldsFocus )
 				return;
-			if ( IsRiding )
+			// [EXT:online-coop-commands] a guest's hire or pick-up that waits for the host with no staff tool on yet is let go as its tool would be, before anything else takes the key (C4c-2):
+			// only the next Escape closes a window or opens the pause menu
+			if ( level.StaffPlacement is { } waitingStaffTool && (frameStaffStartWithoutTool || GuestStaffStartWaits && !waitingStaffTool.IsActive) )
+				waitingStaffTool.Cancel();
+			else if ( IsRiding )
 				StopRide();
 			else if ( CameraPanelOpen )
 				CloseCameraPanel();
@@ -932,6 +944,8 @@ public sealed partial class ParkHud
 		level.WorldPointerRouted = false;
 		level.ParkOwnsRelease = false;
 		frameHostStarts = level.HostToolStarts;
+		// [EXT:online-coop-commands] staff presses and Escape belong to the state seen before this frame takes a start's or a click's outcome (C4c-2)
+		RememberGuestStaffInput();
 		// [EXT:online-coop-commands] whether the guest's coaster panel waited for the host before this frame's answers (C3c-2): a press first seen now was made while it waited
 		frameCoasterWaiting = level.CoasterPanel?.IsWaiting == true;
 		UpdatePausingBoxes();
@@ -948,8 +962,12 @@ public sealed partial class ParkHud
 		CompleteGuestRequests();
 		level.EndCarrylessMove();
 		level.EndStrayCarry( Time.Now );
-		// [EXT:online-coop-commands] the staff tool follows what the park holds for this player, every frame, paused too and whatever the pointer is over, before any pointer's dispatch (C4c)
-		level.StaffPlacement?.FollowPark();
+		// [EXT:online-coop-commands] the staff tool follows what the park holds for this player, every frame, paused too and whatever the pointer is over, before any pointer's dispatch (C4c); a
+		// guest's follows its seat's state through its staff requests (C4c-2)
+		if ( GuestStaff is { } guestStaff )
+			FollowGuestStaff( guestStaff );
+		else
+			level.StaffPlacement?.FollowPark();
 		// [EXT:online-coop-commands] the guest's coaster tool says what its waited actions came back with, before the claim is bound: an outcome that ended the tool says why itself (C3c-2)
 		ReportGuestCoasterActions();
 		// [EXT:online-coop-commands] one tool at a time: a coaster tool on together with a tool that started after it ends (C3c-2)
@@ -1440,12 +1458,25 @@ public sealed partial class ParkHud
 	private bool UpdateStaffTool( UiInput input, bool inPark, NVector2 viewport )
 	{
 		var tool = level.StaffPlacement;
+		// [EXT:online-coop-commands] a press made while the staff tool waited is no click even when this frame's outcome armed, replaced or ended it (C4c-2). A first start still waiting
+		// with no tool on keeps the idle park's selections, as before; the next frame samples the new state and can take a fresh staff press.
+		if ( inPark && input.LeftPressed && !parkRightClick && frameStaffRequestWaited && (frameStaffToolWasActive || tool is { IsActive: true }) )
+		{
+			level.NoteWaitingClick();
+			return true;
+		}
 		if ( tool == null || !tool.IsActive )
 		{
 			if ( staffCursorSet )
 			{
 				staffCursorSet = false;
 				Input.CursorType = Input.CursorTypes.Normal;
+			}
+			// [EXT:online-coop-commands] a guest's right click lets go of a hire or pick-up that waits for the host with no staff tool on yet, before any other tool takes it (C4c-2)
+			if ( parkRightClick && tool != null && GuestStaffStartWaits )
+			{
+				tool.Cancel();
+				return true;
 			}
 			return false;
 		}
@@ -1475,6 +1506,12 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x46C8E0 staff placement press] the hire and carry tools are not the tool object: their own classes (vtables 0x6FEA40 and 0x6FEA70) take the left PRESS (slot +4 = 0x46C8E0 / 0x46CC40) and ignore the release (slot +8 is empty)
 		if ( !inPark || !input.LeftPressed )
 			return false;
+		// [EXT:online-coop-commands] a guest's click is a request to the host (C4c-2)
+		if ( GuestStaff is { } guestStaff )
+		{
+			ClickGuestStaff( guestStaff, tool, cursorX, cursorY );
+			return true;
+		}
 		// a click on an invalid cell only logs in the original ("Can't put staff here"): no player text, the tool stays
 		tool.Click( cursorX, cursorY );
 		return true;

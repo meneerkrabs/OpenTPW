@@ -143,7 +143,7 @@ public sealed partial class StaffWorldSimulation
 	{
 		var destination = member.ResumeDestination!.Value;
 		member.ResumeDestination = null;
-		// the loaded member keeps its saved base speed; Place sets a new member's
+		// The loaded member keeps its saved base speed; Place only initializes legacy members without one.
 		var baseSpeed = member.BaseSpeed;
 		if ( !Place( member ) )
 			return;
@@ -205,7 +205,9 @@ public sealed partial class StaffWorldSimulation
 		var navigation = new GuestNavigation { X = (int)(x * Fixed16.One), Y = (int)(y * Fixed16.One) };
 		navigation.SetDestination( navigation.X, navigation.Y, [] );
 		member.Navigation = navigation;
-		member.BaseSpeed = member.Grade < 3 ? GuestSpeed.BaseSpeeds[0] : GuestSpeed.BaseSpeeds[2];
+		// Only a legacy member without a constructor/saved speed needs the old grade-based fallback. Pick-up/drop also recreates navigation.
+		if ( !member.HasInitializedBaseSpeed )
+			member.BaseSpeed = member.Grade < 3 ? GuestSpeed.BaseSpeeds[0] : GuestSpeed.BaseSpeeds[2];
 		return true;
 	}
 

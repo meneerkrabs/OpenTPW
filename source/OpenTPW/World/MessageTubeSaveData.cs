@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace OpenTPW;
 
 /// <summary>
@@ -19,8 +21,12 @@ internal sealed record MessageTubeSaveData
 		if ( Rows == null || Rows.Count > MaximumRows )
 			return $"the message tube holds more than {MaximumRows} rows";
 		foreach ( var row in Rows )
-			if ( row?.Problem() is { } problem )
+		{
+			if ( row == null )
+				return "a message tube row is missing";
+			if ( row.Problem() is { } problem )
 				return problem;
+		}
 		return null;
 	}
 }
@@ -39,6 +45,12 @@ internal sealed record MessageTubeSaveData
 internal sealed record MessageTubeRowSave( int Kind, string Text, int Tag, short ContextShort, int ContextInt, int Lifetime, long ElapsedMs, bool Active, bool PreExpiryEnabled, bool PreExpiryReached )
 {
 	public const int Message = 0, Offer = 1, Progress = 2, Terminal = 3;
+	/// <summary>An undelivered warning, not the sticky runtime queued latch; optional in older saves.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+	public bool PendingPreExpiry { get; init; }
+	/// <summary>An undelivered expiry. Input may still read the restored row before dispatch and cancel it.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+	public bool PendingExpiry { get; init; }
 
 	public string? Problem()
 	{
@@ -55,8 +67,10 @@ internal sealed record MessageTubeRowSave( int Kind, string Text, int Tag, short
 		{
 			if ( Lifetime is <= 0 or > MessageTubeSaveData.MaximumLifetime || ElapsedMs < 0 || ElapsedMs > Lifetime + MessageTubeSaveData.MaximumLifetime )
 				return "a terminal tube row's lifetime or elapsed time is out of range";
+			if ( PendingExpiry && !Active || PendingPreExpiry && (!Active || !PreExpiryEnabled || PreExpiryReached) )
+				return "a terminal tube row has inconsistent pending timers";
 			return null;
 		}
-		return Lifetime != 0 || ElapsedMs != 0 || Active || PreExpiryEnabled || PreExpiryReached ? "a tube row that is no terminal carries timer state" : null;
+		return Lifetime != 0 || ElapsedMs != 0 || Active || PreExpiryEnabled || PreExpiryReached || PendingPreExpiry || PendingExpiry ? "a tube row that is no terminal carries timer state" : null;
 	}
 }

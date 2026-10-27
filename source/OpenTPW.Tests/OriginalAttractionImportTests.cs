@@ -87,7 +87,7 @@ public class OriginalAttractionImportTests
 		// a win byte above 100 always wins (the loader reads the low byte, 0x4e26e2) and is imported as a chance of losing of 0 without a report
 		Assert.IsTrue( adjusted.Any( line => line.Contains( "state 3 does not fit a choosable type" ) ), "state 3 is the constructor's state of a type that is not choosable" );
 		var (_, broken, _) = Import( Bouncy with { State = 4, LifeGauge = 60 } );
-		StringAssert.Contains( broken.Evidence.Single( line => line.StartsWith( "Attraction value adjusted", StringComparison.Ordinal ) ), "OpenTPW reads it as state 1" );
+		StringAssert.Contains( broken.Evidence.Single( line => line.StartsWith( "Attraction value adjusted", StringComparison.Ordinal ) ), "the saved state is kept" );
 	}
 
 	[TestMethod]

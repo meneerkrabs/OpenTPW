@@ -585,10 +585,10 @@ public sealed partial class OriginalEconomyImport
 			case 3 when !choosable:
 				break;
 			case 1 or 4 when choosable:
-				state.IsBrokenDown = true;
-				// OpenTPW tells state 4 from 1 by the life gauge's byte (ParkEconomy.ObjectState), as the ride update 0x004E14E0 sets it
+				// the saved state word is the state word: 1 or 4 as saved (the ride update 0x004E14E0 sets 4 for a life gauge byte of 0, so a save that disagrees with its gauge is reported)
+				state.StateWord.Restore( attraction.State );
 				if ( (attraction.State == 4) != (RideBreakdownRules.GaugeByte( attraction.LifeGauge ) == 0) )
-					adjusted.Add( $"{what} state {attraction.State} with life gauge {attraction.LifeGauge} is imported broken down; OpenTPW reads it as state {ParkEconomy.ObjectState( state )}" );
+					adjusted.Add( $"{what} state {attraction.State} with life gauge {attraction.LifeGauge} disagrees with the state the ride update would enter ({RideStateWord.BrokenStateFor( attraction.LifeGauge )}); the saved state is kept" );
 				break;
 			case 2 when choosable && info!.Upgrades.Count > state.Level + 1:
 				state.PendingLevel = state.Level + 1;
@@ -835,8 +835,9 @@ public sealed partial class OriginalEconomyImport
 			if ( group.CurrentProject < 0 || group.CurrentProject >= used )
 				continue;
 			var project = lab.Project( group.CurrentProject );
-			if ( research.TrySelect( category, project.ObjectId, project.UpgradeLevel ) )
-				current.Add( $"{category} {project.ObjectId}" );
+			// [BIN:TPW-EXE:0x00504760 research group serializer] the saved current project is kept as it is, offered by the picker now or not
+			if ( research.SelectAsSaved( category, project.ObjectId, project.UpgradeLevel ) )
+				current.Add( $"{category} {project.ObjectId}{(research.TrySelect( category, project.ObjectId, project.UpgradeLevel ) ? "" : " (not offered by the picker now)")}" );
 			else
 				refused.Add( $"{category} {project.ObjectId} level {project.UpgradeLevel}" );
 		}
@@ -849,7 +850,7 @@ public sealed partial class OriginalEconomyImport
 			evidence.Add( $"Research highest open groups imported as saved: {string.Join( "/", savedGroups )}{(savedGroups.SequenceEqual( recomputedGroups ) ? ", the groups the researched projects give" : $" (the researched projects give {string.Join( "/", recomputedGroups )})")}." );
 		}
 		else
-			evidence.Add( $"[APPROX:SAVE-007] Research highest open groups {string.Join( "/", savedGroups )} are outside 0 to {ParkResearch.MaximumOpenGroup}: the groups the researched projects give ({string.Join( "/", recomputedGroups )}) are kept." );
+			evidence.Add( $"Research highest open groups {string.Join( "/", savedGroups )} are outside 0 to {ParkResearch.MaximumOpenGroup}: the groups the researched projects give ({string.Join( "/", recomputedGroups )}) are kept." );
 		evidence.Add( $"Research imported: {used} projects, {progress.Count} started, {completed.Count - initial} researched by the lab, effort {string.Join( "/", effort )}, work load {lab.WorkLoad}, current {(current.Count == 0 ? "none" : string.Join( ", ", current ))}." );
 		// [BIN:TPW-EXE:0x4D3AA0 object controls] the control manager's table (150 records of 32 bytes, the used ones first) is the first part of the World after its variables; a record's researched byte (+0x10) is written by the lab's init 0x5031A0 (1 for an object without a research cost, so it starts researched), by the research step 0x504630 when a project reaches its cost (1, with the upgrade level in +0x14) and by the research cheat 0x503FF0 (1 for every research item's object, the project left unfinished), so the flags follow from the lab's projects and the objects' costs and are checked against OpenTPW's research here; in a save with the cheat mode on an object marked researched whose project is unfinished is the research cheat's (docs/CHEATS.md)
 		var disagreements = new List<string>();
@@ -874,18 +875,18 @@ public sealed partial class OriginalEconomyImport
 				evidence.Add( $"Research cheat: {research.MakeAvailableByCheat( cheatAvailable )} objects the cheated save marks researched without a finished project are available to build ({string.Join( ", ", cheatAvailable )})." );
 			evidence.Add( $"Research object controls: {controls.Controls.Count} records, {controls.Controls.Count( control => control.Researched )} researched, {checkedControls} research items checked against OpenTPW's research, {(disagreements.Count == 0 ? "none" : string.Join( ", ", disagreements ))} disagree." );
 		}
-		// [APPROX:SAVE-007] a lab project of an object this install's level archives do not define (a modified save) and a saved current project OpenTPW's picker would not offer now (its group closed, its add-on target not researched) are dropped — evidence needed: a save that holds either (the 11 corpus labs hold neither: every project is a level object, in the original's scan order, ECON-017, and every saved current project is offered)
+		// a lab project of an object this install's level archives do not define (a modified save) names no research item here and cannot be kept; the saved current projects are kept as saved (SelectAsSaved), and a current project of no category's table is reported as well; neither occurs in the 11 corpus labs, which OriginalSaveImportCorpusTests pins
 		var dropped = new List<string>();
 		if ( unknown.Count > 0 )
 			dropped.Add( $"projects of objects the level archives do not define ({string.Join( ", ", unknown )})" );
 		if ( refused.Count > 0 )
-			dropped.Add( $"current projects OpenTPW's picker would not offer now ({string.Join( ", ", refused )})" );
+			dropped.Add( $"current projects the lab's table does not hold ({string.Join( ", ", refused )})" );
 		if ( disagreements.Count > 0 )
 			dropped.Add( $"object-control researched flags that disagree with OpenTPW's research ({string.Join( ", ", disagreements )})" );
 		if ( controls == null )
 			dropped.Add( "the object controls' researched flags (the save's control table does not read)" );
 		if ( dropped.Count > 0 )
-			evidence.Add( $"[APPROX:SAVE-007] Research not imported: {string.Join( "; ", dropped )}." );
+			evidence.Add( $"Research not imported: {string.Join( "; ", dropped )}." );
 	}
 
 	private static void ReportNotImported( OriginalParkImport save, List<string> evidence, bool lostImported )

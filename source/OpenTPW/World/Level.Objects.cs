@@ -346,7 +346,7 @@ public partial class Level
 	{
 		if ( runtime.IsOpen || Gate?.MayOpen( runtime ) != true )
 			return;
-		// a HasQueue ride without queue cells has no back cell, which the original's connection test 0x004DE4A0 reports as not connected (ECON-049 takes it as connected)
+		// a HasQueue ride without queue cells has no back cell, which the original's connection test 0x004DE4A0 reports as not connected
 		if ( runtime.Visitors.HasQueue && (runtime.Visitors.QueueFrontCell is not { } front || Guests?.Grid.IsQueue( front.X, front.Y ) != true) )
 			return;
 		if ( runtime.Coaster is { AcceptsGuests: false } || runtime.Bump is { HasTrack: true, IsTrackValid: false } )
@@ -2080,7 +2080,9 @@ public partial class Level
 			state.ScriptHosted = item.Runtime.Script != null;
 			state.ScriptBreakStat = item.Runtime.GetVariable( RideVariables.VAR_BREAKSTAT );
 			state.ScriptWorn = item.Runtime.GetVariable( RideVariables.VAR_WORN );
-			Park.Economy.ObserveScriptState( state, item.Visitors.InBrokenState );
+			// the ride's state word is one: the economy record's word is the bridge's too (tp.exe +0x19C), and the entry into state 1 or 4 is published to the economy's mechanics here
+			item.Visitors.StateWord = state.StateWord;
+			Park.Economy.PublishRideState( state );
 			// a kart or water ride's circuit walk writes the attraction's track word (+0x2C on the PC), which the counts-test reads (docs/TRACKS.md)
 			state.TrackValid = item.Runtime.Bump?.IsTrackValid ?? true;
 			// Use the native shared predicate for park points, not the additional host admission sample guard; a missing controller fails lookup.

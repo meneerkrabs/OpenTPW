@@ -136,7 +136,8 @@ public partial class Level
 					CloseCoasterToolLocally();
 				else
 					ExitTrackTool();
-				NoteSessionRefusal( ClaimOf( on ) != null ? CoopRefusal.Claimed : CoopRefusal.ClaimLost );
+				// a claim another player took, building taken back (its record let go of the claim), or a claim the host let go
+				NoteSessionRefusal( ClaimOf( on ) != null ? CoopRefusal.Claimed : !HasBuildGrant( Commands.Player ) ? CoopRefusal.NotGranted : CoopRefusal.ClaimLost );
 				return true;
 			}
 			// the claim moves from any other ride the host held

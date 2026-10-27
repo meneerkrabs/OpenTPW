@@ -46,8 +46,8 @@ public partial class Level
 		if ( saved.CanLoad != 0 || runtime.Script == null || runtime.IsOpen )
 			return "the independent saved open word cannot be represented by this runtime's script state";
 		// state 1 or 4 follows the economy's gauge normalization; a saved state that disagrees with its gauge byte is reported by OriginalEconomyImport.ImportAttractionState
+		runtime.Visitors.StateWord = state.StateWord;
 		runtime.Visitors.RestoreOriginalBrokenState( normalized == RideObjectStates.Condemned, state.LifeGauge );
-		state.ScriptStateBroken = true;
 		return null;
 	}
 }

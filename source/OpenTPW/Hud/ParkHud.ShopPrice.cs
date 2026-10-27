@@ -83,8 +83,10 @@ public sealed partial class ParkHud
 				|| !ReferenceEquals( current, economy ) || !ReferenceEquals( target, state ) )
 			{ error = strings.Extra( OpenTpwText.NotAvailable ); return; }
 			level.Commands.Issue( new SetPriceCommand( owner.Runtime.AttractionId, price ) );
-			// the window's own price follows, so its apply on close keeps the typed price
+			// the window's own price follows, so its apply on close keeps the typed price; [EXT:online-coop-commands] a guest's went with its own request, which its close does not send again
 			PendingSettings.Price = price;
+			if ( level.Commands.SendsRequests )
+				loaded.Price = price;
 			Cancel();
 		}
 		number.Submitted = Apply;

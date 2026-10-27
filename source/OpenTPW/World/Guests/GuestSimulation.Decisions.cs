@@ -18,9 +18,9 @@ public sealed partial class GuestSimulation
 		decisions.UsesPathComfort && SmarterGuests is { } paths ? paths.Complaints.Of( guest.BirthId ) : -1 );
 
 	/// <summary>The score's eligibility only: preserve connected fallbacks, and opt in to a disconnected back only when it is a real raw queue cell.</summary>
-	private bool HasScoreBackCell( IRideVisitorBridge attraction ) => attraction.JoinCell != null
-		|| decisions.ScoresDisconnectedQueues && attraction.QueueCells.Count > 0
-			&& Grid.Cells.RawTypeAt( attraction.QueueCells[^1].X, attraction.QueueCells[^1].Y ) == (byte)ParkCellType.Queue;
+	// [BIN:TPW-EXE:0x004FCB84 back cell test] the choice skips a ride whose back-of-queue cell (0x004DE110) is 0: a ride without a front (QUEUE-003, a zero front) is never scored, chosen or joined
+	private bool HasScoreBackCell( IRideVisitorBridge attraction ) => attraction.BackCell is { } back && (attraction.JoinCell != null
+		|| decisions.ScoresDisconnectedQueues && Grid.Cells.RawTypeAt( back.X, back.Y ) == (byte)ParkCellType.Queue);
 
 	/// <summary>
 	/// <paramref name="attraction"/> as <paramref name="guest"/> sees it: every value the score reads, taken now. An opted-in disconnected typed back carries real facts while
@@ -32,7 +32,7 @@ public sealed partial class GuestSimulation
 			return new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, false, default, attraction.EntranceCell, 0, attraction.QueueLength, attraction.QueueSizeInCells,
 				attraction.QueueLimit, 0, 0, 0, 0, attraction.ProvidesRelief, 0, false, 0, 0, attraction.IsOpen, attraction.IsBrokenDown, false );
 		var sameType = guest.UsedHistory[0] != 0 && FindAttraction( guest.UsedHistory[0] ) is { } last && last.TypeId == attraction.TypeId;
-		var back = attraction.QueueCells[^1];
+		var back = attraction.BackCell!.Value;
 		var modifier = Litter?.Environment.At( back.X, back.Y ).Attraction ?? 0;
 		// [EXT:smarter-guests-value] the price and the guest's willingness for a shop or sideshow with a price, for a policy that weighs prices
 		var (price, willingness) = decisions.UsesValueForMoney ? PriceFacts( attraction, guest ) : (0, 0u);

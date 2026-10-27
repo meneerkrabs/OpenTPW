@@ -410,8 +410,12 @@ public class GuestRefusedTargetTests
 		Assert.AreEqual( GuestState.HeldByGuard, guest.State );
 	}
 
+	/// <summary>
+	/// The leaving state's entry clears the target (tp.exe 0x00502305, the write at 0x0050231C: SetState(18) as it does for a held guest's state 17, 0x005022E0), so a refused target does not survive a departure; a
+	/// recalled guest decides again with none, and the removal of the ride it refused is no longer a message to it.
+	/// </summary>
 	[TestMethod]
-	public void DepartureAndRecallRetainTheTargetUntilRemovalOrTheNextChoice()
+	public void DepartureClearsTheTargetAndARecalledGuestDecidesWithNone()
 	{
 		foreach ( var recall in new[] { false, true } )
 		{
@@ -424,16 +428,17 @@ public class GuestRefusedTargetTests
 			rig.Simulation.Settings.ArrivalLaneB = null;
 			guest.ExitLevel = 1;
 			rig.Simulation.ShowCells = () => new[] { (3, 0) }; // wait in state 6 until the needs phase makes the exit counter zero
+			Assert.AreEqual( RideId, guest.AttractionId, "the refused target is kept while the guest decides" );
 			Until( rig, () => guest.State == GuestState.LeavingPark, "state 6 started the actual departure" );
 			rig.Simulation.ShowCells = null;
-			Assert.AreEqual( RideId, guest.AttractionId );
+			Assert.AreEqual( 0, guest.AttractionId, "SetState(18) clears +0x1DC" );
 			if ( recall )
 			{
 				guest.ExitLevel = 10000;
 				rig.Simulation.ShowCells = () => new[] { (guest.CellX + 1, guest.CellY) };
 				Until( rig, () => observer.Recalls.Contains( guest.Id ), "the departure was recalled on the next park turn" );
 				Assert.AreEqual( GuestState.DoingNothing, guest.State );
-				Assert.AreEqual( RideId, guest.AttractionId );
+				Assert.AreEqual( 0, guest.AttractionId );
 				Assert.AreEqual( 0, observer.Decisions.Count );
 			}
 			else
@@ -442,7 +447,7 @@ public class GuestRefusedTargetTests
 				for ( var tick = 0; guest.State != GuestState.WaitingToGoHome && tick < 6000; tick++ )
 				{
 					rig.Step();
-					Assert.AreEqual( RideId, guest.AttractionId );
+					Assert.AreEqual( 0, guest.AttractionId );
 					if ( seen.Add( guest.State ) )
 						Valid( rig.Simulation, RoundTrip( rig.Simulation.CaptureSnapshot() ) );
 				}
@@ -451,10 +456,10 @@ public class GuestRefusedTargetTests
 					Assert.IsTrue( seen.Contains( state ), $"actual departure reached {state}" );
 			}
 			var happiness = guest.Happiness;
+			var state18 = guest.State;
 			rig.Simulation.Unregister( rig.Ride );
-			Assert.AreEqual( happiness - 5, guest.Happiness );
-			Assert.AreEqual( 0, guest.AttractionId );
-			Assert.AreEqual( GuestState.DoingNothing, guest.State );
+			Assert.AreEqual( happiness, guest.Happiness, "the guest no longer names the ride: no small step" );
+			Assert.AreEqual( state18, guest.State );
 		}
 	}
 
@@ -569,7 +574,7 @@ public class GuestRefusedTargetTests
 		var invalid = new List<GuestSimulationSnapshot>();
 		foreach ( var state in new[] { GuestState.CrossingRoad, GuestState.CrossingRoadToPark, GuestState.GoingToTicketBooth,
 			GuestState.WaitingAtBooth, GuestState.AtTicketBooth, GuestState.EnteringPark, GuestState.ThrowingAwayLitter,
-			GuestState.ExitingRide, GuestState.HeldByGuard, GuestState.Gone, GuestState.Using, GuestState.Queueing } )
+			GuestState.HeldByGuard, GuestState.Gone, GuestState.Using, GuestState.Queueing } )
 			invalid.Add( WithGuest( snapshot, guest.Id, item => item with { State = state, BinId = state == GuestState.ThrowingAwayLitter ? 91 : 0 } ) );
 		invalid.Add( WithGuest( snapshot, guest.Id, item => item with { Activity = GuestActivity.CantDecide } ) );
 		invalid.Add( WithGuest( snapshot, guest.Id, item => item with { Activity = (GuestActivity)6 } ) );
@@ -584,7 +589,7 @@ public class GuestRefusedTargetTests
 		foreach ( var corrupt in invalid )
 		{
 			var loaded = RoundTrip( corrupt );
-			Assert.IsFalse( rig.Simulation.ValidateSnapshot( loaded ).IsValid );
+			Assert.IsFalse( rig.Simulation.ValidateSnapshot( loaded ).IsValid, $"corrupt snapshot #{invalid.IndexOf( corrupt )} must be rejected" );
 			Unchanged( rig, before, "validation is observational" );
 			Assert.ThrowsException<InvalidDataException>( () => rig.Simulation.RestoreSnapshot( loaded ) );
 			Assert.AreSame( guest, rig.Simulation.Find( guest.Id ), "failed restore does not replace even the live guest object" );

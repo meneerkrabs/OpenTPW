@@ -175,6 +175,7 @@ public partial class Level
 		Guests.LitterBinned += ( _, bin ) => TriggerBin( bin );
 		// [BIN:TPW-EXE:0x0053694B path clear beside an entrance] every route that clears a path cell (the queue laid over a path, an '@' footprint cell, a coaster marker, the guest grid's queue setter) runs the ride's re-evaluation as the bulldozer's clear does
 		Guests.Grid.Cells.EntranceReevaluation = ReevaluateRideOfOwner;
+		Guests.Grid.Cells.EntranceRideOpens = EntranceRideOpens;
 		// The placed objects type their footprint cells (4, 9, 10: ParkCellMap.WriteFootprint, tp.exe 0x00528A70); a visit, a Theme Park Inc layout and
 		// Theme Park Inc itself (whose placement is not traced) keep the cells they were given
 		var typesFootprints = TypesFootprints;
@@ -295,7 +296,7 @@ public partial class Level
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
 		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ), ownExitCell: TypesFootprints, queueEntryResolver: TypesFootprints && item.Entry.HasQueue
-			? () => ResolveQueueEntrance( Objects, Guests.Grid.Cells, OwnerWord( item ) ) : null ) )
+			? () => ResolveQueueEntrance( Objects, Guests.Grid.Cells, OwnerWord( item ) ) : null, positionCell: (item.Placement.X, item.Placement.Y) ) )
 		{
 			item.Runtime.Visitors.QueueEdited += () => ReevaluateQueuedRide( item.Runtime );
 			// [EXT:pools-changing-room] a changing room's pool-side cells follow from its footprint (geometry only: the water is read when a guest swims)
@@ -323,6 +324,19 @@ public partial class Level
 		found.RecomputeQueue( guests.Grid );
 		// the front the selector finds (0x4DE040) decides: 0 when no cardinal bit is left on the entrance cell, and then the counter rises and no block is stamped
 		found.NotifyQueueEdited( guests.Grid );
+	}
+
+	/// <summary>The mask-2 edge rule's answer for the type 9 cell (x, y): the first object of its owner cell, and whether a walker with mask 2 may step into its entrance (it can be ridden and its type has CannotRide 0).</summary>
+	// [BIN:TPW-EXE:0x004D8B00 mask-2 entrance] 0x42A440 (the camera's ride test: a coaster with a train, else a model with the seat record 0x44B220(model, 0x1000, 1), RideCameraMode.CanRide) must hold and the type record +0x118 (UsageInfo.CannotRide) must be 0
+	private bool? EntranceRideOpens( int x, int y )
+	{
+		if ( Guests?.Grid.Cells is not { } cells )
+			return null;
+		var owner = cells.OwnerAt( x, y );
+		if ( owner == 0 )
+			return null;
+		var thing = Objects.Objects.FirstOrDefault( item => !item.IsDeleted && OwnerWord( item ) == owner );
+		return thing == null ? null : RideCameraMode.CanRide( thing ) && IsRideExitThing( thing );
 	}
 
 	/// <summary>
@@ -376,11 +390,14 @@ public partial class Level
 		return bins;
 	}
 
-	/// <summary>An object's access cell (thing <c>+0x36</c>) for bins and rest areas: its entrance's outside cell on a path, else its first path neighbour.</summary>
-	// [APPROX:GUEST-005] a bin's or rest area's access cell (thing +0x36) is its entrance's outside cell or its first path neighbour in direction order; tp.exe's constructor 0x004DB090 stores the shape's first entrance cell itself (0x004DB33C, the shape cell 0x00413410 records at +0x494; no walkability test) — evidence needed: whether the original's route finder reaches a goal cell inside a footprint
-	private static (int X, int Y)? AccessCell( OriginalObject item, GuestPathGrid grid )
+	/// <summary>An object's access cell (thing <c>+0x36</c>) for the guests' bin walk: the cell of its first entrance symbol, inside the footprint; a world that keeps the cells it was given falls back to its entrance's outside cell on a path, else its first path neighbour.</summary>
+	// [BIN:TPW-EXE:0x004DB33C access cell] the constructor 0x004DB090 stores the shape's first entrance cell itself into +0x36 (0x004DB33C, the first type 9 cell of the shape scan 0x00413410 at type +0x494, turned by the angle 0x004D9CC0, (0, 0) without one: the thing's own cell), with no walkability test, and the bin search 0x00500DC0 requests the route to it (0x004FA530); the route finder reaches a cell inside a footprint through the edge test 0x004D8750, which opens a step from a path or queue cell into a type 3 or 9 cell whose link byte points back at it (a bin's entrance cell links to its outside cell)
+	// A world that keeps the cells it was given (an imported or restored park, Theme Park Inc: no entrance symbol is typed on its map) has no such cell to walk into, so the guests walk to the cell in front of the entrance there (QUEUE-010)
+	private (int X, int Y)? AccessCell( OriginalObject item, GuestPathGrid grid )
 	{
 		var cell = (item.Placement.X, item.Placement.Y);
+		if ( TypesFootprints )
+			return FirstEntranceCellOf( item.AccessPoints ) ?? cell;
 		foreach ( var point in item.AccessPoints )
 			if ( grid.IsWalkable( point.OutsideX, point.OutsideY ) )
 				return (point.OutsideX, point.OutsideY);
@@ -423,7 +440,7 @@ public partial class Level
 	/// </summary>
 	/// <param name="ownExitCell">The object's own exit cell holds the link its placement wrote (a Theme Park World level, which types the footprints): the guests leave by it (ExitRide). Without one (the gates,
 	/// test harnesses, the Theme Park Inc slice and online visits, whose cell maps carry no access-cell links) the object lets off in the cell it takes its guests in and names <see cref="RideVisitorBridge.ExitCell"/> as the cell beyond.</param>
-	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests, int rotation = 0, ushort ownerWord = 0, bool ownExitCell = false, Func<(int X, int Y)?>? queueEntryResolver = null )
+	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests, int rotation = 0, ushort ownerWord = 0, bool ownExitCell = false, Func<(int X, int Y)?>? queueEntryResolver = null, (int X, int Y)? positionCell = null )
 	{
 		if ( !runtime.IsAttraction || ResolveVisitorCells( accessPoints, guests.Grid ) is not { } cells )
 			return false;
@@ -431,6 +448,9 @@ public partial class Level
 		runtime.Visitors.EntranceCell = cells.Entrance;
 		runtime.Visitors.ExitCell = cells.Exit;
 		runtime.Visitors.ExitAccessCell = ownExitCell ? ExitAccessCellOf( accessPoints ) : null;
+		// [BIN:TPW-EXE:0x004DB33C access cell] +0x36 is the shape's first entrance cell itself (inside the footprint), +5/+7 the cell the thing stands on (the anchor); a world that keeps the cells it was given has neither
+		runtime.Visitors.AccessCell = ownExitCell ? FirstEntranceCellOf( accessPoints ) : null;
+		runtime.Visitors.PositionCell = ownExitCell ? positionCell : null;
 		runtime.Visitors.QueueFrontCell = cells.QueueFront;
 		runtime.Visitors.QueueEntranceDirection = cells.QueueEntranceDirection;
 		runtime.Visitors.QueueEntryResolver = queueEntryResolver;
@@ -440,6 +460,15 @@ public partial class Level
 		runtime.Visitors.HasCells = true;
 		guests.Register( runtime.Visitors );
 		return true;
+	}
+
+	/// <summary>The object's access cell (thing +0x36): the cell of the shape's first entrance symbol, inside the footprint; null without an entrance.</summary>
+	internal static (int X, int Y)? FirstEntranceCellOf( IEnumerable<ObjectAccessPoint> accessPoints )
+	{
+		foreach ( var point in accessPoints )
+			if ( point.Kind == ObjectCellKind.Entrance )
+				return (point.X, point.Y);
+		return null;
 	}
 
 	/// <summary>

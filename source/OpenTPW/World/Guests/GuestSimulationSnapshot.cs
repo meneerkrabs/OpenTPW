@@ -77,6 +77,9 @@ public sealed record GuestSnapshot
 	/// <summary>A sideshow player's result (null otherwise). Absent before schema 7.</summary>
 	public bool? SideshowWon { get; init; }
 	public required int AttractionId { get; init; }
+	/// <summary>The major destination (<see cref="Guest.MajorAttractionId"/>); written only while set, absent in older saves (none).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int MajorAttractionId { get; init; }
 	/// <summary>May name an attraction that is no longer registered (a demolished ride the guest remembers).</summary>
 	public required int LastAttractionId { get; init; }
 	/// <summary>The four attractions the guest used last, newest first (guest <c>+480..+486</c>); 0 = empty. Absent in
@@ -415,6 +418,12 @@ public sealed record RideVisitorBridgeSnapshot
 	public (int X, int Y)? TypedQueueFront { get; init; }
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public int? TypedQueueDirection { get; init; }
+	/// <summary>
+	/// The ride has no front (tp.exe <c>0x004DE040</c> found no cardinal link bit on its entrance cell): its back-of-queue cell is 0 and its queue size 0, so guests neither choose nor join it. Written only while set; a save from before has
+	/// none, and its zero-front rides keep the one-cell queue the host used then until the next recompute.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public bool? ZeroFront { get; init; }
 	public required int QueueEditCount { get; init; }
 	public required (int X, int Y)? JoinCell { get; init; }
 	/// <summary>

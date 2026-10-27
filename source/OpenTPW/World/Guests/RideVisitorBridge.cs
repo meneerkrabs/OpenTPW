@@ -187,6 +187,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public (float X, float Y) ExitCellAppearPos { get; set; } = (0.5f, 0.5f);
 	/// <summary>The object's own exit cell (<see cref="IRideVisitorBridge.ExitAccessCell"/>), set when the level registers a placed object; not saved (the level registers it again on load).</summary>
 	public (int X, int Y)? ExitAccessCell { get; set; }
+	/// <summary>The object's access cell (<see cref="IRideVisitorBridge.AccessCell"/>), set when the level registers a placed object; not saved (the level registers it again on load).</summary>
+	public (int X, int Y)? AccessCell { get; set; }
+	/// <summary>The cell the object's thing stands on (<see cref="IRideVisitorBridge.PositionCell"/>), set when the level registers a placed object; not saved.</summary>
+	public (int X, int Y)? PositionCell { get; set; }
 	public int Rotation { get; set; }
 	public bool HasCells { get; set; }
 	/// <summary>Queue rules from the object's .sam data (<see cref="QueueParameters"/>); defaults describe a queue-less object.</summary>
@@ -343,6 +347,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		hash.Add( JoinCell is { } join ? join.X : -1 );
 		hash.Add( JoinCell is { } joinCell ? joinCell.Y : -1 );
+		// a ride without a front joins the digest only while it has none (every park without one keeps its pins)
+		if ( IsZeroFront )
+			hash.Add( 0x5A465254L );
 		hash.Add( QueueEditCount );
 		hash.Add( calledTurn );
 		hash.Add( HeadNotReadyStreak );
@@ -386,6 +393,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		QueueCells = queueCells.ToArray(),
 		TypedQueueFront = QueueEntryResolver != null && QueueEntranceDirection >= 0 ? QueueFrontCell : null,
 		TypedQueueDirection = QueueEntryResolver != null && QueueFrontCell != null && QueueEntranceDirection >= 0 ? QueueEntranceDirection : null,
+		ZeroFront = IsZeroFront ? true : null,
 		QueueEditCount = QueueEditCount,
 		JoinCell = JoinCell,
 		EntranceCell = HasCells ? EntranceCell : null,
@@ -610,6 +618,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		QueueEditCount = snapshot.QueueEditCount;
 		JoinCell = snapshot.JoinCell;
+		IsZeroFront = snapshot.ZeroFront == true;
 		RestoreVisitorCells( snapshot );
 		HeadNotReadyStreak = snapshot.HeadNotReadyStreak;
 		MaximumHeadNotReadyStreak = snapshot.MaximumHeadNotReadyStreak;
@@ -742,10 +751,18 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int QueueEntranceDirection { get; set; } = -1;
 	/// <summary>Queue cells from the front (index 0) to the back; the front may be a path cell.</summary>
 	public IReadOnlyList<(int X, int Y)> QueueCells => queueCells.Count > 0 ? queueCells : new[] { EntranceCell };
-	/// <summary>Cached back-of-queue cell (ride <c>+54</c>).</summary>
+	/// <summary>
+	/// The ride's entrance has no queue direction (tp.exe <c>0x004DE040</c> found no cardinal link bit in the link byte of the entry cell): the original's back-of-queue cell is 0 and its queue size 0, so no guest chooses
+	/// or joins it and every guest queued but the called one leaves at the next re-evaluation. <see cref="QueueCells"/> keeps the host's one-cell geometry (the stand cell of a called guest and the queue tool's front) meanwhile.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DE040 zero front] none of the bits 1, 16, 64 and 4 set writes the cell word 0 (0x4DE0F9): the back-of-queue walk 0x4DE130 returns 0 and writes +0x40 = 0, so 0x4DD920 fails at its back test (0x4DD96C), the choice 0x4FCB10 skips the ride at 0x4FCB84 and the room 0x4DDA20 (count below 4 × +0x40) refuses a joiner
+	public bool IsZeroFront { get; private set; }
+	/// <summary>The back-of-queue cell the original's <c>0x004DE110</c> returns: the last queue cell, null for a ride without a front.</summary>
+	public (int X, int Y)? BackCell => IsZeroFront ? null : QueueCells[^1];
+	/// <summary>Cached back-of-queue cell (ride <c>+54</c>) for the queue tool's geometry: the one-cell fallback for a ride without a front (<see cref="BackCell"/> is the guests' view).</summary>
 	public (int X, int Y) QueueBackCell => QueueCells[^1];
-	/// <summary>Queue size in cells (ride <c>+60</c>), at least 1.</summary>
-	public int QueueSizeInCells => Math.Max( 1, queueCells.Count );
+	/// <summary>Queue size in cells (ride <c>+60</c>, the original's +0x40): at least 1, and 0 for a ride without a front.</summary>
+	public int QueueSizeInCells => IsZeroFront ? 0 : Math.Max( 1, queueCells.Count );
 	/// <summary>Walkable path cell where guests step onto the back of the queue, or null when the back is not connected to a path.</summary>
 	public (int X, int Y)? JoinCell { get; private set; }
 	/// <summary>Physical room: four guests per queue cell.</summary>
@@ -821,6 +838,18 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		var previous = queueCells.ToArray();
 		queueCells.Clear();
 		var typedFront = RefreshTypedQueueFront( grid );
+		// [BIN:TPW-EXE:0x004DE040 zero front] an entry cell without a cardinal link bit gives no front: the queue is empty (back cell 0, size 0) and joins nothing; the host keeps its one-cell geometry on the entrance cell
+		var wasZeroFront = IsZeroFront;
+		IsZeroFront = !typedFront && ReadNativeFront( grid, out var nativeFront, out _ ) && nativeFront == null;
+		if ( IsZeroFront )
+		{
+			queueCells.Add( EntranceCell );
+			JoinCell = null;
+			if ( wasZeroFront && previous.SequenceEqual( queueCells ) )
+				return false;
+			QueueEditCount++;
+			return true;
+		}
 		var front = QueueFrontCell ?? EntranceCell;
 		// A front cell that is neither a queue nor a path cell falls back to EntranceCell, the nearest walkable path cell (a cell nothing laid: restores, the gates; an import takes the save's queue cells), as a one-cell queue.
 		if ( !typedFront && !grid.IsQueue( front.X, front.Y ) && !grid.IsWalkable( front.X, front.Y ) )
@@ -836,7 +865,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			current = next.Value;
 		}
 		JoinCell = FindJoinCell( grid );
-		if ( previous.SequenceEqual( queueCells ) )
+		// a ride that has just gained its front changes its room (0 to 4 positions per cell) even when its cells are the one-cell geometry it had
+		if ( !wasZeroFront && previous.SequenceEqual( queueCells ) )
 			return false;
 		QueueEditCount++;
 		return true;
@@ -874,7 +904,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			};
 			expected.RecomputeQueue( grid );
 		}
-		return saved.QueueCells.SequenceEqual( expected.QueueCells ) && saved.JoinCell == expected.JoinCell
+		// a save from before the zero front (no ZeroFront word) holds the one-cell queue the host kept for a ride without a front; it loads, and the next recompute turns it into the zero front
+		if ( saved.ZeroFront == null && expected.IsZeroFront )
+			return true;
+		return saved.QueueCells.SequenceEqual( expected.QueueCells ) && saved.JoinCell == expected.JoinCell && saved.ZeroFront == (expected.IsZeroFront ? true : null)
 			&& (saved.TypedQueueFront == null || (saved.TypedQueueFront == expected.QueueFrontCell
 				&& saved.TypedQueueDirection == expected.QueueEntranceDirection));
 	}

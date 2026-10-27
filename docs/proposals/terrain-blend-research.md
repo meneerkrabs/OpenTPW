@@ -1,5 +1,36 @@
 # Draft proposal: RIDES-014 terrain blending evidence and implementation gate
 
+## Current-source reconciliation (October 27, 2026)
+
+This section supersedes the historical implementation premise below. Public main
+`60c941de233ac45a0d8c7d680aef2269f655b8b6` already retires RIDES-014 in
+[`tools/fidelity_retired.txt`](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/tools/fidelity_retired.txt).
+[Merged #854](https://github.com/meneerkrabs/OpenTPW/pull/854)
+(`9ad4bce3cee9e90c85ae7a6d732315f2111e6f89`) delivered the object-floor work.
+
+- The [landed research summary](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/docs/progress/2026-10-26-object-floors-skirt-conform.md)
+  corrects the old flattening claim: `0x467030` places the instance and stores its
+  footprint box; `0x57ACE0` builds the floor composite. Do not implement generic
+  terrain flattening from this proposal.
+- [`ObjectFloor.Create`](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Objects/ObjectFloor.cs#L30-L43)
+  builds the skirt and edge conform on per-instance model copies. The original
+  ground is not flattened; the shipped-map size and base-height questions are
+  recorded as resolved by the landed work, not newly verified here.
+- The [queue drape/floor implementation](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/docs/progress/2026-10-26-queue-model-drape.md)
+  also supersedes this proposal's PATH-015 deformation premise. Current
+  [PATH-015](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Original/OriginalTerrain.cs#L397)
+  remains limited to torch texture-frame animation and the `quedead` load flag
+  `0x100000`; the evidence/activation gates of #440 remain separate.
+
+The next action is review of this superseded proposal's disposition, not duplicate
+runtime implementation. This is public-source reconciliation only: no original
+media, executable, C# tests or rendering were inspected or run in this pass.
+Reported historical oracle/test results above belong to the linked landed work.
+No new test result, fidelity retirement, merge or closure is claimed; keep this
+PR draft pending review of its disposition.
+
+## Historical proposal (superseded where noted above)
+
 ## Status and boundary
 
 Plan only, October 18, 2026. No gameplay implementation or runtime tests are delivered by this draft. Do not merge as an implemented feature; keep this PR draft until the implementation/evidence gates below are met and independently reviewed. No approximation ID is retired and no platform/original-fidelity qualification is claimed.

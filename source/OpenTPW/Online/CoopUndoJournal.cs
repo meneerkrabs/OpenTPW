@@ -40,6 +40,34 @@ internal sealed class CoopUndoJournal
 	private readonly Dictionary<uint, Member> members = new();
 	/// <summary>A live step of each record still in the cells' lists (a batch's pieces share theirs and its effects).</summary>
 	private readonly Dictionary<long, Step> live = new();
+	/// <summary>
+	/// For each tracked cell, what each member's residue there left changed (<see cref="Stayed"/>): the link bits, and whether any other field; a count-down passes a residue that left
+	/// neither its counter nor its own links changed (<see cref="ChangedSince"/>).
+	/// </summary>
+	private readonly Dictionary<(int X, int Y), Dictionary<uint, Stayed>> residues = new();
+
+	/// <summary>What a residue left changed on its cell: link bits, and any other field (type, flags, counter, owner, queue link, residue).</summary>
+	private readonly record struct Stayed( byte Links, bool Fields )
+	{
+		public Stayed With( Stayed other ) => new( (byte)(Links | other.Links), Fields || other.Fields );
+
+		/// <summary>What differs between <paramref name="was"/> and <paramref name="now"/>, of the fields <paramref name="changed"/> marks (a field set there, a link bit set there).</summary>
+		public static Stayed Of( CellFields was, CellFields now, CellFields changed ) => new( (byte)((was.Links ^ now.Links) & changed.Links),
+			(changed.Type != 0 && was.Type != now.Type) || (changed.Flags != 0 && was.Flags != now.Flags) || (changed.Placements != 0 && was.Placements != now.Placements)
+			|| (changed.QueueLink != 0 && was.QueueLink != now.QueueLink) || (changed.Owner != 0 && was.Owner != now.Owner) || (changed.Residue && was.Residue != now.Residue) );
+	}
+
+	/// <summary>A mask of the fields that differ between <paramref name="a"/> and <paramref name="b"/>: each field nonzero where it differs, links bit by bit.</summary>
+	private static CellFields Differing( CellFields a, CellFields b ) => new( (byte)(a.Type != b.Type ? 1 : 0), (ushort)(a.Flags != b.Flags ? 1 : 0), (short)(a.Placements != b.Placements ? 1 : 0),
+		(byte)(a.Links ^ b.Links), (byte)(a.QueueLink != b.QueueLink ? 1 : 0), (ushort)(a.Owner != b.Owner ? 1 : 0), a.Residue != b.Residue );
+
+	/// <summary>Records what <paramref name="member"/>'s residue on <paramref name="cell"/> left changed, with what an earlier one of its left there.</summary>
+	private void Leaves( (int X, int Y) cell, uint member, Stayed stayed )
+	{
+		if ( !residues.TryGetValue( cell, out var byMember ) )
+			residues[cell] = byMember = new Dictionary<uint, Stayed>();
+		byMember[member] = byMember.TryGetValue( member, out var earlier ) ? earlier.With( stayed ) : stayed;
+	}
 	/// <summary>The take-back decided last and not yet applied: its steps, and the shared bend corners its inverse clears with their earlier own segments.</summary>
 	private Decision? pending;
 
@@ -136,6 +164,9 @@ internal sealed class CoopUndoJournal
 	/// <summary>The steps <paramref name="member"/> keeps, oldest first (tests).</summary>
 	internal int StepsOf( uint member ) => members.TryGetValue( member, out var steps ) ? steps.Steps.Count : 0;
 
+	/// <summary>Whether <paramref name="member"/>'s weight in the bounds is exactly its live steps' (tests).</summary>
+	internal bool WeightAgrees( uint member ) => !members.TryGetValue( member, out var steps ) || steps.Cells == steps.Steps.Sum( step => step.Weight );
+
 	/// <summary>The records still in effect on (<paramref name="x"/>, <paramref name="y"/>), oldest first, −1 for the permanent marker and −2 − member for a member's residue; null for a cell no step tracks (tests).</summary>
 	internal IReadOnlyList<long>? HistoryAt( int x, int y ) => histories.TryGetValue( (x, y), out var list ) ? list : null;
 
@@ -176,7 +207,7 @@ internal sealed class CoopUndoJournal
 		pending = null;
 		if ( command is TakeBackCommand { Verdict: TakeBackVerdict.Taken } && decided != null && result.Accepted && result.Error == null )
 		{
-			Complete( decided, changes.ToHashSet() );
+			Complete( decided, before );
 			return;
 		}
 		var member = MemberOf( origin );
@@ -336,7 +367,13 @@ internal sealed class CoopUndoJournal
 					Normalize( list );
 				}
 				else
+				{
+					if ( takenBack && step.Effects.TryGetValue( cell, out var effect ) && level.Guests?.Grid.Cells is { } map )
+						Leaves( cell, step.Member, Stayed.Of( effect.Before, map.FieldsAt( cell.X, cell.Y ), Differing( effect.Before, effect.After ) ) );
+					else if ( takenBack )
+						Leaves( cell, step.Member, new Stayed( 0xFF, true ) );
 					Mark( list, step.Record, takenBack ? ResidueOf( step.Member ) : Permanent );
+				}
 			}
 		}
 		foreach ( var cell in step.Footprint )
@@ -373,6 +410,7 @@ internal sealed class CoopUndoJournal
 		}
 		tracked.Remove( cell );
 		histories.Remove( cell );
+		residues.Remove( cell );
 	}
 
 	/// <summary>Appends <paramref name="entry"/>, a record or a marker, keeping the list in its normal form (<see cref="Normalize"/>).</summary>
@@ -427,32 +465,41 @@ internal sealed class CoopUndoJournal
 	}
 
 	/// <summary>
-	/// A taken take-back ran: its steps leave, their records leave the cells where it reversed their effects, and a tracked cell it changed that none of them changed (<paramref name="written"/>:
-	/// the cells its run changed; its clear unlinking a neighbour's bit another command set) gets its member's residue marker, a write of that member's own, unless it is the earlier own
-	/// segment's whose shared bend corner it cleared; and that corner leaves the earlier segment's footprint.
+	/// A taken take-back ran: its steps leave, their records leave the cells where it reversed their effects, and a tracked cell it changed that none of them changed (<paramref name="run"/>:
+	/// the cells its run changed, with their fields before it; its clear unlinking a neighbour's bit another command set) gets its member's residue marker, a write of that member's own, with
+	/// what it changed there, unless it is the earlier own segment's whose shared bend corner it cleared; and that corner leaves the earlier segment's footprint and its weight.
 	/// </summary>
-	private void Complete( Decision decided, IReadOnlySet<(int X, int Y)> written )
+	private void Complete( Decision decided, IReadOnlyDictionary<(int X, int Y), CellFields> run )
 	{
 		foreach ( var step in decided.Steps )
 		{
 			if ( members.TryGetValue( step.Member, out var member ) )
 				Leave( member, step, takenBack: true );
 		}
-		var residue = ResidueOf( decided.Steps[0].Member );
-		foreach ( var cell in written )
+		var by = decided.Steps[0].Member;
+		var residue = ResidueOf( by );
+		foreach ( var (cell, was) in run )
 		{
 			if ( decided.Steps.Any( step => step.Effects.ContainsKey( cell ) ) )
 				continue;
 			// the shared bend's clearing unlinks the member's own earlier segment beside it: that chain's own writes, no marker (another player's records there stay)
 			if ( decided.Bends.Any( bend => bend.Owner.Effects.ContainsKey( cell ) || bend.Owner.Footprint.Contains( cell ) ) )
 				continue;
-			if ( histories.TryGetValue( cell, out var list ) )
-				Append( list, residue );
+			if ( !histories.TryGetValue( cell, out var list ) || level.Guests?.Grid.Cells is not { } map )
+				continue;
+			var now = map.FieldsAt( cell.X, cell.Y );
+			Leaves( cell, by, Stayed.Of( was, now, Differing( was, now ) ) );
+			Append( list, residue );
 		}
 		foreach ( var (bend, owner) in decided.Bends )
 		{
-			if ( owner.Footprint.Remove( bend ) )
-				Untrack( bend );
+			// the earlier segment's weight in its member's bounds shrinks with its footprint
+			var weight = owner.Weight;
+			if ( !owner.Footprint.Remove( bend ) )
+				continue;
+			if ( members.TryGetValue( owner.Member, out var holder ) && holder.Steps.Contains( owner ) )
+				holder.Cells -= weight - owner.Weight;
+			Untrack( bend );
 		}
 	}
 
@@ -476,6 +523,8 @@ internal sealed class CoopUndoJournal
 				if ( list.Contains( residue ) )
 					Mark( list, residue, Permanent );
 			}
+			foreach ( var byMember in residues.Values )
+				byMember.Remove( id );
 		}
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
@@ -512,6 +561,7 @@ internal sealed class CoopUndoJournal
 	{
 		members.Clear();
 		live.Clear();
+		residues.Clear();
 		histories.Clear();
 		tracked.Clear();
 		running.Clear();
@@ -635,7 +685,7 @@ internal sealed class CoopUndoJournal
 		for ( var index = first + 1; index < list.Count; index++ )
 		{
 			var entry = list[index];
-			if ( records.Contains( entry ) || (clearsWhole && entry == residue) || (countedUp && LeavesCountAlone( step, cell, entry )) )
+			if ( records.Contains( entry ) || (clearsWhole && entry == residue) || (countedUp && (LeavesCountAlone( step, cell, entry ) || ResidueLeavesCountAlone( step, cell, entry ))) )
 				continue;
 			return true;
 		}
@@ -659,6 +709,17 @@ internal sealed class CoopUndoJournal
 				return false;
 		}
 		return true;
+	}
+
+	/// <summary>
+	/// Whether <paramref name="entry"/>, a member's residue marker, left a cell <paramref name="step"/> only counted up as the step's count-down needs it: what it left changed there is link
+	/// bits alone, none of them one the step changed (a diagonal another member's taken-back line left).
+	/// </summary>
+	private bool ResidueLeavesCountAlone( Step step, (int X, int Y) cell, long entry )
+	{
+		if ( entry >= Permanent || !residues.TryGetValue( cell, out var byMember ) || !byMember.TryGetValue( (uint)(-2 - entry), out var stayed ) || !step.Effects.TryGetValue( cell, out var own ) )
+			return false;
+		return !stayed.Fields && (stayed.Links & (own.Before.Links ^ own.After.Links)) == 0;
 	}
 
 	/// <summary>

@@ -195,7 +195,7 @@ function undoPair() {
 	const { host, guest } = pair;
 	const takeBack = (record, player, step, verdict, accepted) => ({ record, player, step, verdict, accepted });
 	const mine = [takeBack(16, 1, 15, 'Taken', true), takeBack(17, 1, 14, 'Taken', true), takeBack(20, 1, 18, 'Changed', false), takeBack(22, 1, 18, 'Taken', true)];
-	const applied = [...mine.slice(0, 3), takeBack(21, 0, 19, 'Taken', true), mine[3]].map(({ player, step, verdict }) => ({ player, step, verdict }));
+	const applied = [...mine.slice(0, 3), takeBack(21, 0, 19, 'Taken', true), mine[3]].map(({ player, step, verdict }) => ({ player, step, verdict, money: 0 }));
 	guest.undo = {
 		takeBacks: mine,
 		segments: [{ record: 14, cells: [[8, 8], [9, 8], [10, 8]] }, { record: 15, cells: [[10, 8], [11, 8], [12, 8], [13, 8]] }],
@@ -210,7 +210,7 @@ function undoPair() {
 test('an undo run whose evidence holds passes every check', () => {
 	const { host, guest } = undoPair();
 	const checks = checkEvidence(host, guest, 'undo', 30);
-	assert.equal(checks.length, 17);
+	assert.equal(checks.length, 18);
 	assert.deepEqual(failing(checks), []);
 });
 
@@ -224,6 +224,7 @@ const UNDO_ORDER = 'the guest took its two segments back with two Backspaces, th
 const UNDO_RECORDS = 'each of the guest\'s take-backs applied at its record with the host\'s verdict on both parks';
 const UNDO_HOST = 'the host\'s own Backspace took its line across or into the guest\'s back between the guest\'s refused take-back and its last';
 const UNDO_LOGS = 'both parks applied the same take-backs in the same order';
+const UNDO_MONEY = 'no take-back changed the money on either park';
 
 for (const [what, change, check] of [
 	['the older segment taken back first', ({ host, guest }) => { [guest.undo.takeBacks[0].step, guest.undo.takeBacks[1].step] = [14, 15];
@@ -239,7 +240,10 @@ for (const [what, change, check] of [
 	['the host\'s line refused', ({ host }) => { host.undo.takeBacks[3].accepted = false; }, UNDO_HOST],
 	['the host\'s line of three cells', ({ host }) => { host.undo.crossed = host.undo.crossed.slice(0, 3); }, UNDO_HOST],
 	['the guest\'s park applied another order', ({ guest }) => { guest.undo.applied = [...guest.undo.applied].reverse(); }, UNDO_LOGS],
-	['the guest\'s park missing one', ({ guest }) => { guest.undo.applied = guest.undo.applied.slice(1); }, UNDO_LOGS],
+	['the guest\'s park missing one', ({ guest }) => { guest.undo.applied = guest.undo.applied.slice(1); }, [UNDO_LOGS, UNDO_MONEY]],
+	['a path take-back that refunded on both parks', ({ host, guest }) => { host.undo.applied[0].money = 40; guest.undo.applied[0].money = 40; }, UNDO_MONEY],
+	['a refused take-back that charged on one park', ({ guest }) => { guest.undo.applied[2].money = -10; }, [UNDO_LOGS, UNDO_MONEY]],
+	['a take-back whose money is not known', ({ host, guest }) => { delete host.undo.applied[3].money; delete guest.undo.applied[3].money; }, UNDO_MONEY],
 ]) {
 	test(`an undo run with ${what} fails exactly its check`, () => {
 		const pair = undoPair();

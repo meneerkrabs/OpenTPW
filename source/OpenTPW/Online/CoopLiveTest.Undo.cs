@@ -26,8 +26,8 @@ internal sealed partial class CoopLiveTest
 	/// <summary>Whether every one of <paramref name="cells"/> is a path cell of this game's park.</summary>
 	private bool ArePaths( IEnumerable<(int X, int Y)> cells ) => cells.All( cell => ThePark.Guests!.Grid.Cells.RawTypeAt( cell.X, cell.Y ) == (byte)ParkCellType.Path );
 
-	/// <summary>Whether none of <paramref name="cells"/> is a path cell of this game's park.</summary>
-	private bool AreFree( IEnumerable<(int X, int Y)> cells ) => cells.All( cell => ThePark.Guests!.Grid.Cells.RawTypeAt( cell.X, cell.Y ) != (byte)ParkCellType.Path );
+	/// <summary>Whether every one of <paramref name="cells"/> is an empty cell of this game's park (no path, no queue, nothing).</summary>
+	private bool AreFree( IEnumerable<(int X, int Y)> cells ) => cells.All( cell => ThePark.Guests!.Grid.Cells.RawTypeAt( cell.X, cell.Y ) == (byte)ParkCellType.Empty );
 
 	/// <summary>Where a click reaches <paramref name="cell"/> in the view, when it does.</summary>
 	private bool PointOf( (int X, int Y) cell, out System.Numerics.Vector2 point )
@@ -140,7 +140,10 @@ internal sealed partial class CoopLiveTest
 	private IEnumerable<CoopLiveWait> GuestUndo( ICollection<(int X, int Y)> avoid )
 	{
 		var takeBacks = new JsonArray();
-		var evidence = new JsonObject { ["takeBacks"] = takeBacks };
+		var (applied, stop) = RecordTakeBacks();
+		var evidence = new JsonObject { ["takeBacks"] = takeBacks, ["applied"] = applied };
+		try
+		{
 		// a line of two segments, taken back by two Backspaces, the newest first
 		var laid = new List<((int X, int Y)[] Cells, long Record)>();
 		foreach ( var step in LaySegments( avoid, 2, laid ) )
@@ -198,14 +201,52 @@ internal sealed partial class CoopLiveTest
 		yield return Wait( "checkpoints compared after the last take-back", () => TheSession.GuestStream is { Stopped: false } stream && stream.Checks >= checks + 2, 60 );
 		Give( UiInput.Key( UiKeys.Back ) );
 		yield return Wait( "Escape ends the path tool", () => InputGiven && !ThePark.CellTool.IsActive, 10 );
-		evidence["applied"] = AppliedTakeBacks();
+		}
+		finally
+		{
+			stop();
+		}
 		Keep( "undo", evidence );
 		Publish( "undoDone", true );
 	}
 
-	/// <summary>Every take-back this game's park applied, in its log's order: its player, the step it named and the host's verdict.</summary>
-	private JsonArray AppliedTakeBacks() => new( ThePark.Commands.Log.Select( entry => entry.Command ).OfType<TakeBackCommand>()
-		.Select( takeBack => (JsonNode?)new JsonObject { ["player"] = takeBack.Player, ["step"] = takeBack.Step, ["verdict"] = takeBack.Verdict.ToString() } ).ToArray() );
+	/// <summary>
+	/// Records every take-back this game's park applies from now on, in order: its player, the step it named, the host's verdict and the money its run changed (the balance right after it
+	/// less the balance right before it, around the command alone). Returns the list and what stops the recording.
+	/// </summary>
+	private (JsonArray Applied, Action Stop) RecordTakeBacks()
+	{
+		var commands = ThePark.Commands;
+		var applied = new JsonArray();
+		var previous = commands.Starting;
+		long? before = null;
+		Action<ParkCommand> starting = command =>
+		{
+			previous?.Invoke( command );
+			before = command is TakeBackCommand ? ThePark.Park?.Economy.Balance : null;
+		};
+		void Observe( ParkCommandLogEntry entry, ParkCommandResult result )
+		{
+			if ( entry.Command is not TakeBackCommand takeBack )
+				return;
+			applied.Add( new JsonObject
+			{
+				["player"] = takeBack.Player,
+				["step"] = takeBack.Step,
+				["verdict"] = takeBack.Verdict.ToString(),
+				["money"] = before is { } was && ThePark.Park is { } park ? park.Economy.Balance - was : null,
+			} );
+			before = null;
+		}
+		commands.Starting = starting;
+		commands.Applied += Observe;
+		return (applied, () =>
+		{
+			commands.Applied -= Observe;
+			if ( commands.Starting == starting )
+				commands.Starting = previous;
+		});
+	}
 
 	/// <summary>
 	/// The host's line across the guest's kept line (C5-1): through one of its cells, from a free cell beside it to a free cell beyond, as a player lays it through the HUD, the tool kept on.
@@ -266,7 +307,8 @@ internal sealed partial class CoopLiveTest
 				takeBacks.Add( TakeBackEvidence( TheSession.HostStream?.LastRecord, takeBack, result.Accepted ) );
 		}
 		level.Commands.Applied += Observe;
-		var evidence = new JsonObject { ["seat"] = seat, ["takeBacks"] = takeBacks };
+		var (applied, stop) = RecordTakeBacks();
+		var evidence = new JsonObject { ["seat"] = seat, ["takeBacks"] = takeBacks, ["applied"] = applied };
 		try
 		{
 			yield return Wait( "the guest took its two segments back", () => OtherSays( "undone" ), 300 );
@@ -292,8 +334,8 @@ internal sealed partial class CoopLiveTest
 		finally
 		{
 			level.Commands.Applied -= Observe;
+			stop();
 		}
-		evidence["applied"] = AppliedTakeBacks();
 		Keep( "undo", evidence );
 	}
 }

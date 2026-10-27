@@ -507,6 +507,48 @@ public class CoopUndoJournalTests
 	}
 
 	[TestMethod]
+	public void AnotherMembersLinkOnlyResidueOnACellALineOnlyCrossedIsNoDependency()
+	{
+		var journaled = NewJournaled();
+		var cells = journaled.Level.Guests!.Grid.Cells;
+		// member 3's row; member 1's longer row over it, crossing all of it and building two cells past its end
+		journaled.Run( 3, Line( 5, 20, 12, 20 ) );
+		var over = journaled.Run( 1, Line( 5, 20, 14, 20 ) );
+		Assert.IsTrue( over.Result.Value is SegmentResult { Built.Count: 2, EndedOnExisting: false } );
+		// member 4's column down from (9, 21) links into the crossed (9, 20); member 2's column down from (8, 21) gives the crossed (8, 20) a diagonal toward (9, 21)
+		journaled.Run( 4, Line( 9, 21, 9, 24 ) );
+		Assert.AreEqual( 0, cells.LinksAt( 8, 20 ) & 8 );
+		var beside = journaled.Run( 2, Line( 8, 21, 8, 24 ) ).Record;
+		Assert.AreNotEqual( 0, cells.LinksAt( 8, 20 ) & 8 );
+		// taken back, it leaves that diagonal behind: its member's residue, of a link alone
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 2, beside ) );
+		Assert.AreNotEqual( 0, cells.LinksAt( 8, 20 ) & 8 );
+		CollectionAssert.Contains( journaled.History( 8, 20 ), -4L );
+		// the longer row's undo only counts (8, 20) down and leaves that diagonal as it is: taken
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, over.Record ) );
+		Assert.IsFalse( journaled.Level.Guests.Grid.IsWalkable( 13, 20 ) );
+		Assert.IsTrue( journaled.Level.Guests.Grid.IsWalkable( 8, 20 ) && (cells.LinksAt( 8, 20 ) & 8) != 0 );
+	}
+
+	[TestMethod]
+	public void AClearedSharedBendTakesItsWeightFromTheEarlierSegment()
+	{
+		var journaled = NewJournaled();
+		QueueOf( journaled );
+		var cells = journaled.Level.Guests!.Grid.Cells;
+		// an own chain: along the row to (8, 2), up from it, then down from it; the last one's undo finds (8, 2) a bend (toward (9, 2) and (8, 1)) and clears it
+		journaled.Run( 1, Segment( journaled, 10, 2, 8, 2 ) );
+		journaled.Run( 1, Segment( journaled, 8, 2, 8, 0 ) );
+		var down = journaled.Run( 1, Segment( journaled, 8, 2, 8, 4 ) ).Record;
+		Assert.IsTrue( journaled.Journal.WeightAgrees( 1 ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, down ) );
+		Assert.AreEqual( 0, cells.RawTypeAt( 8, 2 ), "the bend cleared, as the original's undo clears it" );
+		Assert.IsTrue( journaled.Journal.WeightAgrees( 1 ), "the earlier segment's weight shrank with its footprint" );
+		journaled.Journal.Depart( 1 );
+		Assert.AreEqual( 0, journaled.Journal.StepsOf( 1 ) );
+	}
+
+	[TestMethod]
 	public void OnlyTheBuildingToolsAcceptedStepsAreSteps()
 	{
 		var journaled = NewJournaled();

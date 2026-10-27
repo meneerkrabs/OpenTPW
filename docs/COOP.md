@@ -1181,8 +1181,8 @@ The scenarios:
   on. The guest's Backspace is refused as changed on both parks and says so; the host takes its own line back
   with its Backspace; the guest's next Backspace then takes its line back. The driver checks the guest's four
   take-backs (taken, taken, changed, taken) at their records with the host's verdicts on both parks, the host's
-  one take-back between the guest's refused one and its last, and that both parks applied the same take-backs in
-  the same order.
+  one take-back between the guest's refused one and its last, that both parks applied the same take-backs in
+  the same order, and that none of them changed the money on either park (a path's undo refunds nothing).
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
   HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
   takes its ticks before the host sets the speed, and the host its own when it does. Every five seconds both
@@ -2478,7 +2478,7 @@ action goes to the host, and the guest's tools and windows follow what came back
 
 `[EXT:online-coop-undo]` C5 makes Backspace in a building tool of a shared park take back the player's own last
 step of that tool, for the host and every guest alike, under the normal refund rules (decision Q14, A), and
-refuses it while a later command still depends on it. The plan (v25, after twenty-five Codex rounds) makes it
+refuses it while a later command still depends on it. The plan (v26, after twenty-six Codex rounds) makes it
 three parts that reach main as one merge: C5-1 the host's undo journal, the path, queue and slide tools;
 C5-2 the pool strokes and the wave machine; C5-3 the kart, water and coaster tools.
 
@@ -2520,7 +2520,8 @@ a preparation hook of `ParkCommands`: the step must be the member's own (`NotOwn
 former member's, taken back already) and its last of the tool (`NotLast`); no record still in effect of anyone
 else may have changed its cells since it (`Changed`), save on a cell the step only crossed: there another
 line's link into the cell from elsewhere is no dependency, since the undo only counts that cell down and
-unlinks its own links (another crossing of it is one: crossings go back newest first); and its tool's own undo, run on a disposable copy of the
+unlinks its own links (another crossing of it is one: crossings go back newest first), and neither is a link such
+a line left there when it was taken back (each residue keeps what it left changed); and its tool's own undo, run on a disposable copy of the
 cells, must do exactly the step's work back, refusing, skipping and adding nothing but the unlinking of the
 cells beside it (`InTheWay`: an object, a pool bridge or a slide piece on its cells, a native undo that would
 change another player's path, a queue removal that would reach past its cells). Taken, the record carries the

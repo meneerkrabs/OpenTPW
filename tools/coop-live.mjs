@@ -536,6 +536,9 @@ function checkUndo(host, guest, check) {
 		&& [4, 5].includes((host?.undo?.crossed ?? []).length), { host: hosts, crossed: host?.undo?.crossed });
 	check('both parks applied the same take-backs in the same order', (guest?.undo?.applied ?? []).length === 5
 		&& JSON.stringify(host?.undo?.applied ?? null) === JSON.stringify(guest.undo.applied), { host: host?.undo?.applied, guest: guest?.undo?.applied });
+	// a path's undo refunds nothing, as the original's, and a refused take-back changes nothing: every take-back left the money as it was, on both parks
+	check('no take-back changed the money on either park', [host?.undo?.applied, guest?.undo?.applied].every(applied => (applied ?? []).length === 5
+		&& applied.every(item => item.money === 0)), { host: host?.undo?.applied, guest: guest?.undo?.applied });
 }
 
 /** How often both games sample the park's ticks at the fastest speed, in seconds (CoopLiveTest.EnduranceSampleSeconds). */

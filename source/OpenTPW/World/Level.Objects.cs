@@ -231,7 +231,7 @@ public partial class Level
 				ObjectAccessCells.ClearQueue( removed, OwnerWord( item ) );
 				// the refund is the native credit 0x4D0190 of the demolished ride, found before it was removed
 				var ownerWord = OwnerWord( item );
-				var instance = demolishingInstances.Remove( item, out var kept ) ? kept : null;
+				var instance = demolishingInstances != null && demolishingInstances.Remove( item, out var kept ) ? kept : null;
 				removed.DemolishFootprint( item.Cells, owner =>
 				{
 					if ( owner == ownerWord && Park != null && instance is int rideInstance )
@@ -257,7 +257,7 @@ public partial class Level
 		// A ride with queue cells takes them with it: the refunds are settled while the cells are laid, the cells go once its guests are set down
 		// [BIN:TPW-EXE:0x004DD2D6 selection cleared] destroying the selected object clears the selection
 		Objects.ObjectRemoved += item => { if ( ReferenceEquals( selection, item ) ) selection = null; };
-		Objects.ObjectRemoving += item => demolishingInstances[item] = GetEconomyInstance( item );
+		Objects.ObjectRemoving += item => ( demolishingInstances ??= new() )[item] = Park != null ? GetEconomyInstance( item ) : null;
 		Objects.ObjectRemoving += SettleDemolishedQueue;
 		Objects.ObjectRemoved += ClearDemolishedQueue;
 		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
@@ -1436,7 +1436,7 @@ public partial class Level
 	}
 
 	private readonly HashSet<OriginalObject> demolishedQueues = new();
-	private readonly Dictionary<OriginalObject, int?> demolishingInstances = new();
+	private Dictionary<OriginalObject, int?>? demolishingInstances;
 
 	/// <summary>
 	/// The money side of a ride's demolition for its queue, while the cells are still laid: each queue cell refunds <c>Costs.QueueCell</c> × the ride's scrap percentage

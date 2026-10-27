@@ -8,7 +8,7 @@ This section supersedes the historical implementation premise below. Public main
 [Merged #854](https://github.com/meneerkrabs/OpenTPW/pull/854)
 (`9ad4bce3cee9e90c85ae7a6d732315f2111e6f89`) delivered the object-floor work.
 
-- The [landed research summary](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/docs/progress/2026-10-26-object-floors-skirt-conform.md)
+- The [landed research summary](https://github.com/meneerkrabs/OpenTPW/pull/854) (`docs/progress/2026-10-26-object-floors-skirt-conform.md`)
   corrects the old flattening claim: `0x467030` places the instance and stores its
   footprint box; `0x57ACE0` builds the floor composite. Do not implement generic
   terrain flattening from this proposal.
@@ -16,7 +16,7 @@ This section supersedes the historical implementation premise below. Public main
   builds the skirt and edge conform on per-instance model copies. The original
   ground is not flattened; the shipped-map size and base-height questions are
   recorded as resolved by the landed work, not newly verified here.
-- The [queue drape/floor implementation](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/docs/progress/2026-10-26-queue-model-drape.md)
+- The [queue drape/floor implementation](https://github.com/meneerkrabs/OpenTPW/pull/857) (`docs/progress/2026-10-26-queue-model-drape.md`)
   also supersedes this proposal's PATH-015 deformation premise. Current
   [PATH-015](https://github.com/meneerkrabs/OpenTPW/blob/60c941de233ac45a0d8c7d680aef2269f655b8b6/source/OpenTPW/World/Original/OriginalTerrain.cs#L397)
   remains limited to torch texture-frame animation and the `quedead` load flag

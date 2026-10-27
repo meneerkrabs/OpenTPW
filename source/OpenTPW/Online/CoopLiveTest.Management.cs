@@ -7,8 +7,8 @@ namespace OpenTPW;
 /// <summary>
 /// [EXT:online-coop-commands] The live acceptance's management scenario (C4b-2; docs/COOP.md, "The live acceptance"): after the baseline's lines, whose guest's line is the scenario's
 /// purchase, the host gives the attractions right through the rights dialog; the guest types a shop's price and toggles a ride's door through their windows, each at its record on both
-/// parks; then the guest types a second price and, the frame after its click, while its request still waits unsent, forces a desync of its own stream, so the session resyncs and the
-/// price goes once after the swap.
+/// parks; then the guest types a second price and, at its OK, while its request still waits unsent, forces a desync of its own stream, so the session resyncs and the price goes
+/// once after the swap.
 /// </summary>
 internal sealed partial class CoopLiveTest
 {
@@ -190,18 +190,17 @@ internal sealed partial class CoopLiveTest
 		evidence["doors"] = doors;
 		Publish( "doorSet", doors );
 
-		// the forced resync: a second price typed and applied by Enter (the frame's HUD queues it after the frame's pump); at the next step, before the next frame's pump, it waits
-		// unsent, and the guest's own stream is forced to desync
+		// the forced resync: a second price typed and applied with the editor's OK, which queues it; in the same step, before the frame's pump could send it, it waits unsent and the
+		// guest's own stream is forced to desync (a stopped stream's session sends nothing, so it waits through the resync)
 		yield return Wait( "the host ready for the resync", () => OtherSays( "readyForResync" ), 120 );
 		var second = (RecordOf( level, shop )!.Price + 11) % ParkHud.MaximumPrice;
 		foreach ( var step in OpenWindow( shop ) )
 			yield return step;
 		foreach ( var step in TypeShopPrice( second ) )
 			yield return step;
-		foreach ( var step in KeyThrough( UiKeys.Accept, "Enter" ) )
-			yield return step;
 		bool Queued( ManagementEntry entry ) => entry.Command is SetPriceCommand set && set.Attraction == attraction && set.Price == second;
-		yield return Wait( "the second price queued", () => queue.Pending.Any( Queued ), 30 );
+		Press( "shopPrice", "apply" );
+		Require( Top( "hud" ) && queue.Pending.Count( Queued ) == 1, "the editor's OK queued the second price" );
 		var waiting = queue.Pending.Single( Queued );
 		Require( waiting.State == ManagementEntryState.Unsent, "the second price waits unsent at the cut" );
 		var stream = TheSession.GuestStream!;

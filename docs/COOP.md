@@ -1150,8 +1150,8 @@ The scenarios:
   record each park's balance falls by its charge, the same on both. Then the host gives the attractions right
   through the rights dialog. The guest opens a shop of the park with a click, types its price and closes the
   window: the price at its record on both parks. It closes and opens a ride's door through its window, each at
-  its record on both parks. It types a second price and applies it with Enter; at its next step, before the
-  next frame's pump, the price waits unsent and the guest forces a desync of its own stream
+  its record on both parks. It types a second price and applies it with the editor's OK; in the same step,
+  before the frame's pump could send it, the price waits unsent and the guest forces a desync of its own stream
   (`CoopGuestStream.ForceDesync`, a protocol desync whose reason, "forced by the live test", only the log
   keeps). The session resyncs: the host's park replaces the guest's (the stream's generation one higher), the
   price goes once after the swap and applies on both parks, and checkpoints are compared after it with no
@@ -1200,6 +1200,8 @@ build):
 | native/page | endurance 30 min | 19 of 19 | 1834 s | followed 5.8 s after Join; 105 KiB capture; 1819 checkpoints; 1800 s at the fastest speed, slowest stretches 239.6 (host) and 225.5 (guest) ticks/s; longest frame gaps host 1.50 s, guest 0.18 s |
 | page/native | endurance 30 min | 19 of 19 | 1839 s | followed 5.2 s after Join; 104 KiB capture; 1815 checkpoints; 1800 s at the fastest speed, slowest stretches 229.4 (host) and 229.5 (guest) ticks/s; longest frame gaps host 2.80 s, guest 0.73 s |
 | page/page | endurance 30 min | 24 of 24 | 1877 s | followed 13.9 s after Join; 108 KiB capture; 1843 checkpoints; 1801 s at the fastest speed, slowest stretches 231.7 (host) and 219.2 (guest) ticks/s; longest frame gaps host 5.02 s, guest 0.35 s |
+| native/native | management | 18 of 18 | 31 s | followed 3.8 s after Join; 104 KiB capture; the forced resync's park in 2.7 s; 3 checkpoints after the swap |
+| native/page | management | 22 of 22 | 55 s | followed 6.8 s after Join; 108 KiB capture; the forced resync's park in 3.5 s; 7 checkpoints after the swap |
 
 The native/native, native/page and page/native endurance runs come from before the guest's granted line
 (C3a-2), which adds one check to every run; the other rows include it.

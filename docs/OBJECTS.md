@@ -292,7 +292,7 @@ the state lives in the object's runtime, no state hash reads it, and the park-re
 
 Where a placed ride, shop, sideshow or feature meets the ground the original does five things (all of tp.exe, none flattening the terrain). Package F of issue 829 ports them in steps:
 the skirt read at type load, the opaque skirt slots, the edge conform and the depth compare (F1 to F3, F8), and, with the procedural terrain textures of PR 843, the holes under the footprint
-and the composite of the floor art over the procedural ground (F4, F5). The queue models' skirt (F6) is ported with the queue models' drape ([PATHS.md](PATHS.md)); the path art over the procedural ground (F9) is read, not ported (below).
+and the composite of the floor art over the procedural ground (F4, F5). The queue models' skirt (F6) is ported with the queue models' drape ([PATHS.md](PATHS.md)); the path art over the procedural ground (F9) is ported too ([PATHS.md](PATHS.md#path-cells-are-terrain-cells)).
 
 - **The skirt, read at type load.** The type loader (`0x004629D0`, load flag 1 → `0x0046A5A0` → `0x0046AA10`) reads the model's ground node (the node with most ground vertices,
   `ObjectHoardingGeometry.ScanGround`) when the MD2 header `+0x30` has bit 0x08 ("has procedural base", the exporter's option; every non-fixed catalogue type has it except the

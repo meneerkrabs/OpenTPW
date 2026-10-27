@@ -337,7 +337,7 @@ internal sealed class ProceduralTerrain : IDisposable
 
 	// the mesh: one quad per cell in view in the order of the list; a cell's texture coordinates run from the first to the last texel's centre of its tile (ProceduralTerrainAtlas),
 	// u along x and v along z, the tile's first row at the cell's z edge ([BIN:TPW-EXE:0x56F670 cell corners] corner (x, z) takes the tile's (0, 0), (x, z + 1) its (0, 1)); turn and mirror
-	// bits of the cell word do not apply ([BIN:TPW-EXE:0x46DED0] clears them while the texturing is on). The terrain shader flips v, so the page's v goes in as 1 - v.
+	// bits of the cell word do not apply to a cell without art ([BIN:TPW-EXE:0x46DED0] clears them while the texturing is on); a path cell's word keeps them and permutes the corners (WriteCell). The terrain shader flips v, so the page's v goes in as 1 - v.
 	private void WriteMesh()
 	{
 		for ( var index = 0; index < visibleCount; index++ )

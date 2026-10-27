@@ -167,6 +167,7 @@ public sealed partial class OriginalTerrain : Entity
 	private Dictionary<int, int>? heightfieldSlotIndices;
 	private ulong heightfieldHoleSignature;
 	private ulong heightfieldSkipSignature;
+	private ulong outsideSkipSignature;
 
 	private ulong HoleSignature()
 	{
@@ -188,6 +189,18 @@ public sealed partial class OriginalTerrain : Entity
 		var countX = Park.Heightfield.CellCountX;
 		foreach ( var key in pathCells.Keys.Order() )
 			hash = (hash ^ (uint)(key / countX * 4096 + key % countX + 0x40000000)) * 1099511628211UL;
+		return hash;
+	}
+
+	/// <summary>The signature of the skipped cells the procedural ground does not reach: the cells of <see cref="outsidePart"/> that are left out.</summary>
+	private ulong OutsideSkipSignature( ProceduralTerrain ground )
+	{
+		var hash = 14695981039346656037UL;
+		var field = Park.Heightfield;
+		for ( var y = 0; y < field.CellCountZ; y++ )
+			for ( var x = 0; x < field.CellCountX; x++ )
+				if ( !ground.IsProcedural( x, y ) && GroundSkips( x, y ) )
+					hash = (hash ^ (uint)(y * 4096 + x)) * 1099511628211UL;
 		return hash;
 	}
 
@@ -234,8 +247,9 @@ public sealed partial class OriginalTerrain : Entity
 
 	private Model BuildHeightfieldModel( Material material, Dictionary<int, int> slotIndices, Func<int, int, bool>? include = null )
 	{
-		var vertices = new List<Vertex>();
-		var indices = new List<uint>();
+		var capacity = Park.Heightfield.CellCountX * Park.Heightfield.CellCountZ;
+		var vertices = new List<Vertex>( include == null ? capacity * 4 : 64 );
+		var indices = new List<uint>( include == null ? capacity * 6 : 96 );
 		foreach ( var (x, y, modelSlot) in HeightfieldCells( Park.Heightfield, GroundSkips ) )
 		{
 			if ( include != null && !include( x, y ) )
@@ -310,6 +324,7 @@ public sealed partial class OriginalTerrain : Entity
 		// the cells the procedural textures do not reach keep the static ground
 		if ( HeightfieldCells( field, null ).Any( cell => !ground.IsProcedural( cell.X, cell.Y ) ) )
 			outsidePart = AddPart( BuildHeightfieldModel( heightfieldMaterial!, slotIndices, ( x, y ) => !ground.IsProcedural( x, y ) ), "heightfield outside the procedural rectangle" );
+		outsideSkipSignature = outsidePart != null ? OutsideSkipSignature( ground ) : 0;
 		heightfieldPart!.Hidden = true;
 		Log.Trace( $"Procedural terrain textures of {Park.LevelName}: {settings.Size} x {settings.Size}, {settings.CacheCells} cached cells in {pageCount} page(s) ({ground.Atlas.Bytes / 1048576} MB), rectangle ({rectangle.X0}, {rectangle.Y0}) to ({rectangle.X1}, {rectangle.Y1})." );
 	}
@@ -320,6 +335,7 @@ public sealed partial class OriginalTerrain : Entity
 	/// </summary>
 	// [BIN:TPW-EXE:0x0042AB20 camera mode switch] the modes with the bits 0x2 (the terrain camcorder, exit 0x42AE70) and 0x4 (a ride, record flag 0x400000, 0x4E15B0) of [0x790AB0] turn the procedural textures off (0x457A40, remembered in bit 0x200) and leaving them turns them on again (0x457A00), which does so only when [0x78D8D8] is 1 and otherwise clears the bits 0x6000
 	private static bool SuspendsProceduralGround( CameraMode mode ) => mode is RideCameraMode or FreeWalkCameraMode;
+
 
 	protected override void OnRender()
 	{
@@ -357,12 +373,16 @@ public sealed partial class OriginalTerrain : Entity
 		if ( signature == heightfieldSkipSignature )
 			return;
 		heightfieldSkipSignature = signature;
+		// the part of the ground outside the procedural rectangle changes only when a skipped cell out there does
+		var outsideSignature = outsidePart != null && procedural is { } groundNow ? OutsideSkipSignature( groundNow ) : 0;
+		var outsideChanged = outsideSignature != outsideSkipSignature;
+		outsideSkipSignature = outsideSignature;
 		// with the procedural ground the static mesh is hidden: it is rebuilt when a camera mode that suspends the textures shows it, not at every placement
 		if ( procedural != null && heightfieldPart.Hidden )
 			staticHolesStale = true;
 		else
 			RebuildHeightfieldPart();
-		if ( outsidePart != null && procedural is { } ground )
+		if ( outsidePart != null && outsideChanged && procedural is { } ground )
 		{
 			var outside = outsidePart;
 			parts.Remove( outside );
@@ -491,8 +511,8 @@ public sealed partial class OriginalTerrain : Entity
 	/// Path cells as cells of their own, one quad each, batched by at most 16 PathTex textures: the quad lies on the ground cell's triangles (the cell's own diagonal) with no lift, since nothing is under it, and takes the
 	/// texture coordinates the cell word's turn bits give it (<see cref="TerrainCellTexture"/>), as the original's terrain draw does for every cell. The quad draws opaque: the terrain pass gives every record the state word 0x1256
 	/// whatever the texture's own alpha type is, so a tile's transparent texels are drawn with their stored colour (painted grass in the shipped tiles) and nothing shows through.
-	// [BIN:TPW-EXE:0x0056F753 terrain pass state] the cell draw creates its records with the constant state 0x1256 (0x101256 when [0x8BCBC8] has 0x2000), never with 0x590C40's answer for the cell's texture: no blend, no alpha test
 	/// </summary>
+	// [BIN:TPW-EXE:0x0056F753 terrain pass state] the cell draw creates its records with the constant state 0x1256 (0x101256 when [0x8BCBC8] has 0x2000), never with 0x590C40's answer for the cell's texture: no blend, no alpha test
 	private void BuildStaticPathParts( IEnumerable<PathCell> cells, List<ModelEntity> target, Dictionary<string, Texture> textures )
 	{
 		if ( ReferenceEquals( target, pathPartsAll ) )
@@ -780,30 +800,26 @@ public sealed partial class OriginalTerrain : Entity
 	private static readonly uint[] DiagonalTriangles = { 0, 2, 3, 3, 1, 0 };
 	private static readonly uint[] AntiDiagonalTriangles = { 0, 2, 1, 1, 2, 3 };
 
-	private static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot, uint cellWord, uint matFlags = 0 )
+	internal static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot, uint cellWord, uint matFlags = 0 )
 	{
 		var start = (uint)vertices.Count;
-		var (u0, v0) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell00, cellWord );
-		var (u1, v1) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell10, cellWord );
-		var (u2, v2) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell01, cellWord );
-		var (u3, v3) = TerrainCellTexture.Coordinate( TerrainCellTexture.Cell11, cellWord );
-		var corners = new[] { (x, y, u0, v0), (x + 1, y, u1, v1), (x, y + 1, u2, v2), (x + 1, y + 1, u3, v3) };
-		var positions = corners.Select( corner => OriginalParkPlacement.ToEngine( field,
-			new System.Numerics.Vector3( corner.Item1 * field.CellSizeX, field.GetCornerHeight( corner.Item1, corner.Item2 ), corner.Item2 * field.CellSizeZ ) ) ).ToArray();
+		// the corners in the renderer's order: (x, z), (x + 1, z), (x, z + 1), (x + 1, z + 1) with the cell corner each takes its texture coordinate from
+		Span<System.Numerics.Vector3> positions = stackalloc System.Numerics.Vector3[4];
+		Span<Vector2> coordinates = stackalloc Vector2[4];
+		ReadOnlySpan<int> cellCorners = [TerrainCellTexture.Cell00, TerrainCellTexture.Cell10, TerrainCellTexture.Cell01, TerrainCellTexture.Cell11];
+		for ( var index = 0; index < 4; index++ )
+		{
+			var cx = x + (index & 1);
+			var cy = y + (index >> 1);
+			positions[index] = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( cx * field.CellSizeX, field.GetCornerHeight( cx, cy ), cy * field.CellSizeZ ) );
+			var (u, v) = TerrainCellTexture.Coordinate( cellCorners[index], cellWord );
+			coordinates[index] = new Vector2( u, v );
+		}
 		var normal = System.Numerics.Vector3.Normalize( System.Numerics.Vector3.Cross( positions[1] - positions[0], positions[2] - positions[0] ) );
 		if ( normal.Z < 0 )
 			normal = -normal;
 		for ( var index = 0; index < 4; index++ )
-		{
-			vertices.Add( new Vertex
-			{
-				Position = positions[index],
-				Normal = normal,
-				TexCoords = new Vector2( corners[index].Item3, corners[index].Item4 ),
-				TexIndex = slot,
-				MatFlags = matFlags
-			} );
-		}
+			vertices.Add( new Vertex { Position = positions[index], Normal = normal, TexCoords = coordinates[index], TexIndex = slot, MatFlags = matFlags } );
 		// The cell's own diagonal (ModelHeightfield.SplitsAlongAntiDiagonal), so the drawn ground matches the heights things stand on.
 		foreach ( var offset in field.SplitsAlongAntiDiagonal( x, y ) ? AntiDiagonalTriangles : DiagonalTriangles )
 			indices.Add( start + offset );

@@ -159,4 +159,34 @@ public class PathCellArtTests
 		CollectionAssert.AreNotEqual( plain, turned.Select( vertex => vertex.TexCoords ).ToArray(), "in another order" );
 		Assert.IsTrue( turned.All( vertex => (vertex.MatFlags & TextureSlotAddressing.SlushFlag) != 0 ) );
 	}
+
+	[TestMethod]
+	public void AStaticPathCellStandsOnTheGroundsCornersOfASlopedCellAndSharesItsDiagonal()
+	{
+		var heights = new float[6 * 5];
+		for ( var index = 0; index < heights.Length; index++ )
+			heights[index] = (index * 37 % 11) * 0.7f;
+		var words = new uint[20];
+		words[1 * 5 + 2] = ModelHeightfield.AntiDiagonalFlag;
+		var field = new ModelHeightfield( 5, 4, 10, 10, 0, 0, Array.Empty<uint>(), heights, words );
+		foreach ( var (x, y) in new[] { (1, 1), (2, 1) } )
+		{
+			var ground = new List<Vertex>();
+			var groundIndices = new List<uint>();
+			var path = new List<Vertex>();
+			var pathIndices = new List<uint>();
+			OriginalTerrain.AddCell( ground, groundIndices, field, x, y, 0, field.GetCellWord( x, y ) );
+			OriginalTerrain.AddCell( path, pathIndices, field, x, y, 3, PathCellWord.Word( field.GetCellWord( x, y ), 3, 90 ), WorldTranslucency.OpaqueSlotFlag );
+			Assert.AreEqual( 4, path.Count );
+			for ( var corner = 0; corner < 4; corner++ )
+			{
+				var expected = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( (x + (corner & 1)) * 10, field.GetCornerHeight( x + (corner & 1), y + (corner >> 1) ), (y + (corner >> 1)) * 10 ) );
+				Assert.AreEqual( expected, path[corner].Position, $"cell ({x}, {y}) corner {corner}: the corner's own height, no lift" );
+				Assert.AreEqual( ground[corner].Position, path[corner].Position );
+			}
+			CollectionAssert.AreEqual( groundIndices, pathIndices, "the same diagonal as the ground" );
+			Assert.AreEqual( 3, path[0].TexIndex );
+		}
+		Assert.IsTrue( heights.Distinct().Count() > 3, "the cell is sloped" );
+	}
 }

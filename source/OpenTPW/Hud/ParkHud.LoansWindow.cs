@@ -109,7 +109,8 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x004A06B0 loan tabs] the dialog's open and each tab button build the list again, which runs every offer's credit test (0x0049FA00 → 0x004D06B0)
 	private void SelectLoanTab( bool outstanding )
 	{
-		if ( LoansEconomy != null )
+		// [EXT:online-coop-commands] a guest's opening and tab switch send no refresh, which the guest never asked for: its list shows the offers of the park the host refreshes
+		if ( LoansEconomy != null && !level.Commands.SendsRequests )
 			level.Commands.Issue( new RefreshLoanOffersCommand() );
 		outstandingLoans = outstanding;
 		FillLoanList();

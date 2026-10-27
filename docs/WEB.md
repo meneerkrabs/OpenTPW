@@ -10,8 +10,10 @@ the interpreter. Sound plays through WebAudio, and saves, options, online files 
 stay in the browser between visits. Movies and the developer panels are not in the browser yet
 (see the end of this page).
 
-Nothing from the game is shipped or uploaded: the player chooses their own game
-folder, and the page copies the files needed for the selected start into the runtime's memory.
+Nothing from the game is shipped or uploaded: the player chooses where their own game data
+comes from (a CD image on archive.org, another address, a local CD image or a game folder; see
+"Game data sources" below), and the page copies the files needed for the selected start into
+the runtime's memory.
 
 ## Building and running
 
@@ -226,6 +228,99 @@ mixer, speech and movie code use it unchanged. It queues 16-bit stereo PCM to an
 (`opentpw-audio-worklet.js`) that plays it and reports the frames it has taken; that count is
 the clock for the mixer and the advisor's lip sync. Browsers start audio only after a click or
 key press on the page.
+
+### Game data sources
+
+**OpenTPW ships no game data.** The start screen offers four ways to bring one's own copy of Theme
+Park World, and nothing is fetched or read before the player clicks:
+
+- **Load from archive.org** (the visible default, one click). The item
+  [`tpworld_202508`](https://archive.org/details/tpworld_202508), "Theme Park World (PC
+  ITA/ENG/DUT/POL)", is a **third-party upload** that the player chooses to load; OpenTPW does not host,
+  mirror or vouch for it. The page streams the item's CD image once (`TPWORLD.bin`, 712,674,816
+  bytes) and keeps only the game's data files (935 files, about 322 MB: everything
+  `opentpw-startup.js` plans to copy, for English, Dutch, Italian and Polish). Afterwards they stay in the
+  browser (the next visit shows **Play**; no download). **Only data files are read.** The upload
+  also contains a patched executable; the page never requests, reads or mentions it, and no
+  executable from any image is read (the image's other files are skipped, and the CD's own
+  programs are not planned for copying).
+- **Another address.** The address of a `.zip`, `.iso` or `.bin`; the same pipeline. The server must
+  answer cross-origin requests (CORS), and a page served by an OpenTPW server only connects to archive.org
+  (its content security policy, docs/SERVER.md), so other addresses work on a copy of the page served
+  without that policy; otherwise download the file and choose it. `?source=<address>` on the page's own address fills the box
+  and opens the alternatives, without starting anything.
+- **A local CD image**: an `.iso`, a `.bin` (select its `.cue` with it: a leading audio track is
+  refused) or a `.zip` holding one, chosen with the button or dropped on the page. It is read in
+  place and never uploaded.
+- **The game folder** (an installed game or the CD's contents), as before.
+
+#### The pipeline (`opentpw-cdimage.js`)
+
+The image is never held in memory and never stored whole. Bytes stream in (a `fetch` body, or a
+`Blob` slice) and pass through four steps, each tested with synthetic fixtures
+(`tools/test_web_cdimage.mjs`):
+
+1. **ZIP.** A local ZIP and a ZIP address whose server answers ranges (and allows the `Range`
+   header cross-origin) are read from the central directory, so only the image's own bytes are
+   requested; any other member (the upload's patched executable among them) is never requested.
+   Otherwise one streamed request is parsed local header by local header: other members are skipped by
+   their compressed size, never inflated, and the image is inflated with `DecompressionStream('deflate-raw')`.
+   Stored and deflate are supported; ZIP64 and streamed sizes (flag bit 3) are refused with advice.
+2. **Sectors.** The layout comes from the first bytes: a raw dump starts with the 12-byte sync
+   pattern, and its mode byte gives the user data's offset (Mode 1: 16, Mode 2 form 1: 24); anything
+   else is a plain 2048-byte ISO. A raw sector without sync is not data (copy-protected and unreadable
+   sectors are dumped like that, outside the files) and is only an error for a wanted file that lies on it.
+3. **ISO 9660.** The directory tree is read as soon as its sectors have arrived (the first
+   few hundred sectors; the page buffers at most 32 MB while looking), preferring the Joliet tree (mixed-case
+   long names; the plain names are upper case) and dropping `;1` version suffixes. The same
+   `plan()` that chooses files from a folder chooses the files to keep, so the result is exactly what a
+   folder would have given.
+4. **Keeping.** `begin` writes the manifest (same format, so the next visit needs nothing else), then each
+   wanted file is handed to the store the moment its last sector has passed (at most one file, 32 MB
+   at most, is in memory). The stream stops after the last wanted file. A local `.iso`/`.bin` is read at
+   random and touches only the wanted sectors; a ranged address skips long stretches (8 MB or more) of unwanted data (movies)
+   with a `Range` request, and a server that ignores ranges is simply read through.
+
+The page asks for storage that survives pressure (`navigator.storage.persist()`) and checks
+`navigator.storage.estimate()` against the files' size before writing. **Cancel** stops at once
+and keeps what is written; a failed or cancelled load can be started again and skips every file that is
+already kept (the data itself is fetched again: the default source cannot resume, see below).
+Errors are told apart: a network or CORS failure, an HTTP status, a full disk or quota, and an image
+problem (not a CD image, no `Data` folder, truncated, damaged sectors). It needs writable OPFS streams
+(`createWritable`) and, for a ZIP, `DecompressionStream`; a browser without them gets an explanation and the
+folder choice. Only Chrome was exercised end to end (the other engines are covered by the unit tests' synthetic
+streams only), and dropping a file on the page is not part of the smoke check.
+
+#### What the archive.org item is (measured on October 27, 2026)
+
+- `TPWORLD.zip` is 587,693,074 bytes with three members: a directory with a patched executable (deflate,
+  1.5 MB), `TPWORLD.bin` (deflate, 712,674,816 bytes) and `TPWORLD.cue` (deflate, 316 bytes). The cue (Aaru
+  5.3.2.0) lists one track, `MODE1/2352`: 303,008 raw sectors, no audio track; the user data is bytes 16 to 2063 of each.
+- The disc is plain ISO 9660 with a Joliet tree, 2,651 files. `Data` is the English game (its language text
+  and speech are in `Data/Language/English` and `Data/global/Speech`); `Dutch`, `Italian` and `Polish` hold
+  their own `data/language/<language>`, `data/global/speech` and `data/levels/<theme>/speech` folders,
+  the layout the page already reads from an installed game or CD folder. There are no installer archives
+  to unpack for the game data (the `Setup` folders hold installers that are not read). The game picks the
+  language itself (Options, as with a folder); the page keeps all four languages' text and speech.
+- 843 raw sectors (LBA 809 to 10436, in front of the first file) have no sync pattern: protection data
+  outside every file, ignored as described above. All 935 kept files are byte-identical (SHA-256) to an
+  existing copy of the same CD.
+- `https://archive.org/download/tpworld_202508/TPWORLD.zip` redirects to a `dnNNN.ca.archive.org` host
+  that answers `Range` (206) **without any CORS header**, so a page on another origin cannot read it.
+  The per-member address `.../TPWORLD.zip/TPWORLD.bin` redirects to `view_archive.php` on an `iaNNN.us` host, which
+  sends `access-control-allow-origin` (the caller's origin) but ignores `Range`, has no `Content-Length` and streams the
+  extracted member (about 7 MB/s in a measurement, so about 100 s for the 713 MB image). That is what the page uses; the progress bar
+  therefore knows the size from the item (a constant in `main.js`), and the host behind the redirect changes between requests
+  (nothing about it is cached).
+- A load that is interrupted starts the download again (the files it already wrote are kept and not written twice).
+
+The end-to-end check, `tools/web-archive-smoke.mjs`, serves a published page and a local copy of an image on two
+origins (with or without ranges and CORS), loads it in muted headless Chrome with a fresh profile, enters the Jungle
+park from the kept files, and then starts a second visit from Play with no request to the image server. Measured on
+October 27, 2026 with the real `TPWORLD.zip` (and its `TPWORLD.bin`): ZIP with ranges, 9 s, three ranged requests, none inside the
+executable's bytes; ZIP without ranges, 7 s, one request; the file chooser, 6 s; raw BIN without ranges, 9 s; raw BIN with
+ranges, 8 s and three ranged jumps over the unwanted stretches (a server without ranges costs one cancelled probe). All kept 935 of 935 files (322,175,733 bytes). `--probe-archive`
+checks the real archive.org stream in the page (CORS, redirect, progress) and cancels after 15 MB.
 
 ### Game files kept in the browser
 

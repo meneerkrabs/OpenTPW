@@ -116,7 +116,8 @@ public static partial class WebClient
 				{
 					var host = http.Request.Host.Value;
 					http.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "
-						+ $"connect-src 'self' ws://{host} wss://{host}; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+						// archive.org (and its download hosts) only: the page's one-click game data source streams a CD image from there (docs/WEB.md, "Game data sources").
+						+ $"connect-src 'self' ws://{host} wss://{host} https://archive.org https://*.archive.org; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 				}
 			}
 		} );

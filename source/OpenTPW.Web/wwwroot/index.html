@@ -17,7 +17,7 @@
 	<div class="balloon balloon-right" aria-hidden="true"></div>
 	<h1><span class="logo-open">Open</span><span class="logo-tpw">TPW</span></h1>
 	<div class="panel">
-		<p class="intro">Choose your own game folder (the one that holds <code>Data</code>).<br>The files stay in this browser; nothing is uploaded.</p>
+		<p class="intro">OpenTPW ships no game files: load your own copy of Theme Park World once.<br>The files stay in this browser; nothing is uploaded.</p>
 		<p><label class="field">Start:
 			<select id="edition">
 				<option value="">Theme Park World</option>
@@ -27,7 +27,31 @@
 			</select>
 		</label><br><span class="note">Theme Park Inc: building, guests and money (cash, loans, costs); no staff, research, challenges, missions, original game save writing, tickets or sharing. Original-game behaviour is unverified.</span></p>
 		<p id="kept" hidden>Game files kept in this browser: <span id="keptSize"></span><br><button id="play" type="button">Play</button></p>
-		<p><label class="button"><span id="folderText">Choose folder</span><input type="file" id="folder" webkitdirectory directory multiple></label></p>
+		<div id="sources">
+			<div id="archiveSource">
+				<button id="archiveLoad" type="button" disabled>Load from archive.org</button>
+				<p class="note">Theme Park World (PC ITA/ENG/DUT/POL), a third-party upload at
+					<a href="https://archive.org/details/tpworld_202508" target="_blank" rel="noopener">archive.org/details/tpworld_202508</a>.
+					Its CD image (about 713 MB) is streamed once from archive.org; only the game's data files are read (about 320 MB) and kept in this browser, so later visits need no download.
+					Nothing is fetched before you click.</p>
+			</div>
+			<details id="otherSources">
+				<summary>Another address, your own CD image or your game folder</summary>
+				<p class="source-row"><label class="field">Address of a CD image:
+					<input type="url" id="urlInput" placeholder="https://example.org/disc.zip" spellcheck="false" autocomplete="off"></label>
+					<button id="urlLoad" type="button" class="secondary" disabled>Load from this address</button><br>
+					<span class="note">A .zip, .iso or .bin (a ZIP is unpacked in the browser; only its image is read). The server must allow requests from this page (CORS), and a page served by an OpenTPW server only connects to archive.org; otherwise download the file and choose it below.</span></p>
+				<p class="source-row"><label class="button alt"><span>Choose CD image</span><input type="file" id="imageFile" accept=".iso,.bin,.img,.cue,.zip" multiple></label><br>
+					<span class="note">An .iso, a .bin with its .cue (select both), or a .zip that holds one. It is read in place and never uploaded.</span></p>
+				<p class="source-row"><label class="button alt"><span id="folderText">Choose folder</span><input type="file" id="folder" webkitdirectory directory multiple></label><br>
+					<span class="note">An installed game or the CD's contents (the folder that holds <code>Data</code>).</span></p>
+			</details>
+			<div id="imageProgress" hidden>
+				<progress id="imageBar" max="1"></progress>
+				<p id="imageText"></p>
+				<button id="imageCancel" type="button" class="secondary">Cancel</button>
+			</div>
+		</div>
 		<p id="keepRow" hidden>Keep the game files in this browser:
 			<select id="keep" aria-label="Keep the game files in this browser">
 				<option value="lazy">what the parks use</option>

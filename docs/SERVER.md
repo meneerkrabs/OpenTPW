@@ -379,7 +379,10 @@ browser (CORS, GET only); the official server allows `https://opentpw.io` and
   scripts and `dotnet.js` are revalidated on every load (ETag, answered 304).
   Measurements: [BROWSER-PERFORMANCE.md](BROWSER-PERFORMANCE.md#transfer-and-memory-october-19-2026).
 - The page has a strict content security policy: scripts and connections only to its own
-  address (WebAssembly compilation allowed), no inline scripts or styles, no framing.
+  address and to `archive.org` with its download hosts (the page's one-click game data source,
+  [WEB.md](WEB.md#game-data-sources); WebAssembly compilation allowed), no inline scripts or styles, no framing.
+  A page served from here therefore loads a CD image only from archive.org, or from a local file;
+  another address is blocked by this policy (a self-hosted copy of the page without it is not).
 
 ## Account e-mail
 

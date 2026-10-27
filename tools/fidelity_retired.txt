@@ -24,6 +24,7 @@ ADVISOR-023 docs/PROGRESS.md
 ADVISOR-026 docs/LIPS.md
 ADVISOR-027 docs/LIPS.md
 ARRIVAL-002 docs/GUESTS.md
+ARRIVAL-003 docs/GUESTS.md
 ARRIVAL-004 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 ARRIVAL-005 docs/GUESTS.md
 ARRIVAL-007 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
@@ -275,6 +276,7 @@ SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
 SAVE-004 docs/progress/2026-10-18-round8-saves-econ.md
 SAVE-005 docs/ECONOMY.md
+SAVE-007 docs/ECONOMY.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
 SAVE-009 docs/SAVE-THINGS.md
 SAVE-941 docs/THEME-PARK-INC.md

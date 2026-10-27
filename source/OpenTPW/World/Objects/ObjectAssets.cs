@@ -78,7 +78,7 @@ public static class ObjectAssets
 				Normal = ConvertAxes( normal ),
 				TexCoords = texCoords,
 				TexIndex = (int)sourceVertex.TextureIndex,
-				MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[(int)sourceVertex.TextureIndex].Flags )
+				MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[(int)sourceVertex.TextureIndex] )
 					| ( TextureSlotAddressing.IsPathLikeTexture( mesh.Materials[(int)sourceVertex.TextureIndex].Name ) ? TextureSlotAddressing.SlushFlag : 0u )
 			};
 		}

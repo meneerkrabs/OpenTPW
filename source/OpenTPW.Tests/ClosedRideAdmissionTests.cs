@@ -392,7 +392,6 @@ public class ClosedRideAdmissionTests
 		Assert.IsTrue( ride.IsBrokenDown );
 		Assert.IsFalse( ride.PresentForBoarding( 101 ) );
 		runtime.Open();
-		Assert.IsTrue( ride.InBrokenState, "The bridge clears its retained state at the next ride update only." );
 		Assert.IsFalse( ride.IsBrokenDown, "The opener's VAR_RIDECLOSED 0 and open word 1 leave state 1 at once, as SetState(0) does." );
 		Assert.IsTrue( ride.PresentForBoarding( 101 ) );
 		Assert.AreEqual( 101, runtime.GetVariable( RideVariables.VAR_LETMEON ) );

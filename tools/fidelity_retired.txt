@@ -285,7 +285,6 @@ SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
 SAVE-004 docs/progress/2026-10-18-round8-saves-econ.md
 SAVE-005 docs/ECONOMY.md
-SAVE-007 docs/ECONOMY.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
 SAVE-009 docs/SAVE-THINGS.md
 SAVE-941 docs/THEME-PARK-INC.md

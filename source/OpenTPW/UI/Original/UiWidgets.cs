@@ -84,7 +84,7 @@ public sealed class UiContext
 		{
 			// [BIN:TPW-EXE:0x6ae550 line offset] a centred or right aligned multi-line text moves each line inside the widest one
 			layout = layout.AlignLines( textAlignment );
-			// [BIN:TPW-EXE:0x6aeb10 block box] whole-pixel block placement; a block taller than the box is still centred (the original's control bitmap cuts it off at both ends; OpenTPW does not clip)
+			// [BIN:TPW-EXE:0x6aeb10 block box] whole-pixel block placement; a block taller than the box is still centred (the original's control bitmap cuts a plain text off at both ends, 0x48f3d0; OpenTPW clips only titles: the Dutch option labels, the online buttons with their small label boxes and a few window labels draw wider than their box)
 			var left = (int)MathF.Round( rect.X );
 			var top = (int)MathF.Round( rect.Y );
 			ix = TextPlacement.BlockLeft( textAlignment, left, (int)MathF.Round( rect.Right ), width );
@@ -104,10 +104,11 @@ public sealed class UiContext
 			ix = (int)MathF.Round( x );
 			iy = (int)MathF.Round( y );
 		}
+		// [APPROX:UI-007] a plain text is not cut off at its control's box as the original's bitmap does (0x48f3d0), because several of OpenTPW's boxes are smaller than the text drawn in them — evidence needed: those controls' boxes
 		// [BIN:TPW-EXE:0x48f830 text control] one 0x6ae0f0 call into the control's bitmap (texel alpha 17 x coverage, 0x6b24b0), then the sprite quads of the state word 0x7060556 (0x58a010): the control colour blended with coverage / 15; plain text has no shadow
 		// [BIN:TPW-EXE:0x491ab0 title control] a title control (constructor 0x491920) first draws a grey (128,128,128, alpha 0x80) copy on the rectangle moved by (-2, +2) pixels (0x491dd0-0x491e1a), then the white string (0x491e27-0x491e84), both modulated by the control colour
 		if ( shadowAlpha != 0 )
-			Batch.AddTitleText( font, layout, ix, iy, color, shadowAlpha, scale, text );
+			Batch.AddTitleText( font, layout, ix, iy, color, shadowAlpha, rect, scale, text );
 		else
 			Batch.AddText( font, layout, ix, iy, color, scale, text );
 	}
@@ -173,7 +174,7 @@ public sealed class UiContext
 		var ix = (int)MathF.Round( x );
 		var iy = (int)MathF.Round( y );
 		if ( shadowAlpha != 0 )
-			Batch.AddTitleText( chosen, layout, ix, iy, color, shadowAlpha, scale, text );
+			Batch.AddTitleText( chosen, layout, ix, iy, color, shadowAlpha, rect, scale, text );
 		else
 			Batch.AddText( chosen, layout, ix, iy, color, scale, text );
 	}

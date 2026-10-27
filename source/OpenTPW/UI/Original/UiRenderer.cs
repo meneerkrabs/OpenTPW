@@ -310,6 +310,9 @@ internal sealed class UiRenderer : IDisposable
 		{
 			if ( titleTextures.TryGetValue( title, out var titleEntry ) )
 				return titleEntry.Set;
+			// a bitmap the cache has dropped is not given a GPU copy again (the batch composes a fresh one when the title is next drawn)
+			if ( title.Evicted )
+				return null;
 			var dropped = titleTextures.Where( pair => pair.Key.Evicted ).ToList();
 			foreach ( var pair in dropped )
 				titleTextures.Remove( pair.Key );

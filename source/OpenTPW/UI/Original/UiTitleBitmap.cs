@@ -10,8 +10,10 @@ namespace OpenTPW.UI.Original;
 // [EXT:hidpi-glyphs] above scale 1 the glyph coverage is the smoothed atlas (<see cref="FontSmoothing"/>): the copy's alpha is then the smoothed coverage times the colour alpha / 255 (no stepped levels), the same replace rule
 public sealed class UiTitleBitmap
 {
-	/// <summary>Most bitmaps kept; the least recently used is dropped past it (the renderer then deletes its GPU copy).</summary>
+	/// <summary>Most bitmaps kept (each has a GPU copy); the least recently used is dropped past it (the renderer then deletes its GPU copy).</summary>
 	public const int Capacity = 192;
+	/// <summary>Most pixel bytes kept over all bitmaps; the least recently used are dropped until the total is under it (the newest bitmap always stays).</summary>
+	public const int ByteBudget = 16 * 1024 * 1024;
 
 	/// <summary>Pixels of the bitmap: <see cref="Width"/> x <see cref="Height"/>, straight RGBA, row 0 on top.</summary>
 	public byte[] Rgba { get; }
@@ -26,7 +28,10 @@ public sealed class UiTitleBitmap
 	public int TextWidth => Width / Factor;
 	public int TextHeight => Height / Factor;
 	/// <summary>Set when the cache dropped this bitmap; the renderer then deletes its GPU copy.</summary>
-	public bool Evicted { get; private set; }
+	public bool Evicted => evicted;
+	private volatile bool evicted;
+	/// <summary>The UI texture that draws this bitmap at the scale it was composed for, made once (<see cref="Get"/>).</summary>
+	public UiTexture Texture { get; private set; } = null!;
 
 	private UiTitleBitmap( byte[] rgba, int width, int height, int factor, int left, int top )
 	{
@@ -43,6 +48,7 @@ public sealed class UiTitleBitmap
 	private static readonly Dictionary<Key, (UiTitleBitmap Bitmap, LinkedListNode<Key> Node)> cache = new();
 	private static readonly LinkedList<Key> recent = new();
 	private static readonly object gate = new();
+	private static long totalBytes;
 
 	/// <summary>The composed bitmap of <paramref name="layout"/> at text scale <paramref name="scale"/>, cached by atlas, string layout, copy alpha and scale; null when the layout draws nothing.</summary>
 	public static UiTitleBitmap? Get( FontAtlas atlas, TextLayoutResult layout, byte copyAlpha, int scale )
@@ -68,13 +74,19 @@ public sealed class UiTitleBitmap
 				recent.AddFirst( entry.Node );
 				return entry.Bitmap;
 			}
-			var bitmap = Compose( atlas, layout, copyAlpha, FontSmoothing.Factor( atlas, scale ) );
+			var factor = FontSmoothing.Factor( atlas, scale );
+			// a capped factor is drawn with the linear sampler, which would blend the empty texels' colour into the edges
+			var bitmap = Compose( atlas, layout, copyAlpha, factor, fillEmptyColor: factor != scale );
+			bitmap.Texture = UiTexture.Of( bitmap, scale );
 			cache[key] = (bitmap, recent.AddFirst( key ));
-			while ( cache.Count > Capacity )
+			totalBytes += bitmap.Rgba.Length;
+			while ( cache.Count > Capacity || totalBytes > ByteBudget && cache.Count > 1 )
 			{
 				var oldest = recent.Last!;
 				recent.RemoveLast();
-				cache[oldest.Value].Bitmap.Evicted = true;
+				var dropped = cache[oldest.Value].Bitmap;
+				dropped.evicted = true;
+				totalBytes -= dropped.Rgba.Length;
 				cache.Remove( oldest.Value );
 			}
 			return bitmap;
@@ -82,10 +94,10 @@ public sealed class UiTitleBitmap
 	}
 
 	/// <summary>Composes the bitmap of a layout at <paramref name="factor"/> bitmap pixels per text pixel (see <see cref="UiTitleBitmap"/>).</summary>
-	public static UiTitleBitmap Compose( FontAtlas atlas, TextLayoutResult layout, byte copyAlpha, int factor )
+	public static UiTitleBitmap Compose( FontAtlas atlas, TextLayoutResult layout, byte copyAlpha, int factor, bool fillEmptyColor = false )
 	{
 		factor = Math.Max( 1, factor );
-		// [APPROX:UI-007] the original clips both passes to the title control's bitmap ([control+0xa8] x [control+0xaa]); this bitmap is the string's ink plus the copy, unclipped — evidence needed: the control box each title builder passes
+		// the control's bitmap cuts both passes off at its box; the batch draws the part of this bitmap inside the box (UiBatch.AddTitleText), which is exact because every texel depends only on its own two writes
 		var offset = UiBatch.TitleShadowOffset;
 		var left = layout.InkLeft - offset;
 		var top = layout.InkTop;
@@ -132,6 +144,41 @@ public sealed class UiTitleBitmap
 				}
 			}
 		}
+		if ( fillEmptyColor )
+			FillEmptyColor( rgba, width, height );
 		return new UiTitleBitmap( rgba, width, height, factor, left, top );
+	}
+
+	/// <summary>Gives every empty texel (alpha 0) the RGB of the nearest written one, so a linear sampler does not darken the edges (the texel stays invisible).</summary>
+	private static void FillEmptyColor( byte[] rgba, int width, int height )
+	{
+		var queue = new Queue<int>();
+		var seen = new bool[width * height];
+		for ( var index = 0; index < seen.Length; index++ )
+		{
+			if ( rgba[index * 4 + 3] == 0 )
+				continue;
+			seen[index] = true;
+			queue.Enqueue( index );
+		}
+		while ( queue.Count > 0 )
+		{
+			var index = queue.Dequeue();
+			var x = index % width;
+			var y = index / width;
+			for ( var neighbour = 0; neighbour < 4; neighbour++ )
+			{
+				var nx = x + (neighbour == 0 ? -1 : neighbour == 1 ? 1 : 0);
+				var ny = y + (neighbour == 2 ? -1 : neighbour == 3 ? 1 : 0);
+				if ( nx < 0 || ny < 0 || nx >= width || ny >= height || seen[ny * width + nx] )
+					continue;
+				var target = ny * width + nx;
+				seen[target] = true;
+				rgba[target * 4] = rgba[index * 4];
+				rgba[target * 4 + 1] = rgba[index * 4 + 1];
+				rgba[target * 4 + 2] = rgba[index * 4 + 2];
+				queue.Enqueue( target );
+			}
+		}
 	}
 }

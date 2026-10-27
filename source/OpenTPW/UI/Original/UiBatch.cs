@@ -169,14 +169,28 @@ public sealed class UiBatch
 	/// </summary>
 	// [BIN:TPW-EXE:0x491ab0 title control] the grey copy (128,128,128,0x80) on (L-2, T+2, R-2, B+2), then the white string, both written into the control's bitmap and modulated by the control colour
 	// [BIN:TPI-EXE:0x515fe0 title control] the same with the colour alpha 0xc8
-	public void AddTitleText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, byte copyAlpha, int scale = 1, string? text = null )
+	// [BIN:TPW-EXE:0x48f3d0 control bitmap] the bitmap of every text control, title or plain (slot +0x28 of the vtables 0x6ff530 and 0x6ff320, 0x588940), is the control's box: [control+0xa8] x [control+0xaa] from the rectangle [+0x18..+0x1e] (0x48f456-0x48f4c5), placed at the box's top-left (0x491ab0 via 0x659dac), so both passes and the whole string are cut off at the box
+	public void AddTitleText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, byte copyAlpha, UiRect clip, int scale = 1, string? text = null )
 	{
 		scale = Math.Max( 1, scale );
 		RecordText( atlas, layout, x, y, color, scale, text );
 		if ( UiTitleBitmap.Get( atlas, layout, copyAlpha, scale ) is not { } bitmap )
 			return;
-		var rect = new UiRect( x + bitmap.Left * scale, y + bitmap.Top * scale, bitmap.TextWidth * scale, bitmap.TextHeight * scale );
-		AddQuad( UiTexture.Of( bitmap, scale ), rect, NVector2.Zero, NVector2.One, color );
+		var full = new UiRect( x + bitmap.Left * scale, y + bitmap.Top * scale, bitmap.TextWidth * scale, bitmap.TextHeight * scale );
+		if ( !TryClip( full, clip, out var drawn ) )
+			return;
+		AddQuad( bitmap.Texture, drawn, new NVector2( (drawn.X - full.X) / full.Width, (drawn.Y - full.Y) / full.Height ), new NVector2( (drawn.Right - full.X) / full.Width, (drawn.Bottom - full.Y) / full.Height ), color );
+	}
+
+	/// <summary>The part of <paramref name="full"/> inside <paramref name="clip"/>; false when nothing of it is inside.</summary>
+	private static bool TryClip( UiRect full, UiRect clip, out UiRect drawn )
+	{
+		var left = Math.Max( full.X, MathF.Round( clip.X ) );
+		var top = Math.Max( full.Y, MathF.Round( clip.Y ) );
+		var right = Math.Min( full.Right, MathF.Round( clip.Right ) );
+		var bottom = Math.Min( full.Bottom, MathF.Round( clip.Bottom ) );
+		drawn = new UiRect( left, top, right - left, bottom - top );
+		return right > left && bottom > top;
 	}
 
 	/// <summary>
@@ -208,8 +222,9 @@ public sealed class UiBatch
 			var glyph = layoutGlyphs[index];
 			var quad = new UiGlyphQuad( atlas, x + glyph.X * scale, y + glyph.Y * scale, glyph.Glyph.Width * scale, glyph.Glyph.Height * scale, glyph.Glyph.X, glyph.Glyph.Y, scale, color );
 			glyphs.Add( quad );
-			if ( texture != null )
-				AddQuad( texture, new UiRect( quad.X, quad.Y, quad.Width, quad.Height ),
+			if ( texture == null )
+				continue;
+			AddQuad( texture, new UiRect( quad.X, quad.Y, quad.Width, quad.Height ),
 				new NVector2( (float)glyph.Glyph.X / atlas.Width, (float)glyph.Glyph.Y / atlas.Height ),
 				new NVector2( (float)(glyph.Glyph.X + glyph.Glyph.Width) / atlas.Width, (float)(glyph.Glyph.Y + glyph.Glyph.Height) / atlas.Height ), color );
 		}

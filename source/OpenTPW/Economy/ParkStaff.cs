@@ -58,7 +58,7 @@ public sealed class StaffMember
 	public int PhaseId => ThingId != 0 ? ThingId : Id;
 	public required StaffType Type { get; init; }
 	public required int NameIndex { get; init; }
-	/// <summary>The sprite variant the member was hired with (the candidate's, tp.exe member +0x20); -1 for a member of an original save (the save holds none) or of an older park save, whose bank derives from its name and id.</summary>
+	/// <summary>The sprite variant the member was hired with (the candidate's, tp.exe member +0x20); -1 for a member of an older OpenTPW park save from before the variant was kept (an original save's member takes the saved mSpriteID, tp.exe 0x4F8B10), whose bank derives from its name and id.</summary>
 	public int Variant { get; init; } = -1;
 	/// <summary>
 	/// The member's own name, stored inline in an original save (the staff suffix's <c>mName[i]</c>, +0x1A0, which the employee panels show); null
@@ -520,10 +520,10 @@ public sealed partial class ParkStaff
 		_ => StaffState.Working
 	};
 
-	/// <summary>Adds an employee taken from an original save (not hired from the pool).</summary>
-	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0 )
+	/// <summary>Adds an employee taken from an original save (not hired from the pool); <paramref name="variant"/> is the sprite variant its person record saves (-1: none).</summary>
+	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0, int variant = -1 )
 	{
-		var member = new StaffMember { Id = AllocateId(), ThingId = thingId, Type = type, NameIndex = 0, Name = name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
+		var member = new StaffMember { Id = AllocateId(), Variant = variant, ThingId = thingId, Type = type, NameIndex = 0, Name = name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
 		AdoptThing( member );
 		MaterializeRoleOrder();
 		members.Add( member );

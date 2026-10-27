@@ -13,8 +13,17 @@ internal sealed class CoopUndoJournal
 	internal const int MaximumSteps = 16384;
 	/// <summary>The most cells a member's steps keep, footprints and changes together, a step without cells counting one.</summary>
 	internal const int MaximumCells = 262144;
-	/// <summary>A cell's record no take-back can remove any more (a command that is no step, a step forgotten, dropped or left behind): consecutive ones are kept as one.</summary>
+	/// <summary>
+	/// A cell's record no take-back can remove any more (a command that is no step, a step forgotten, dropped or departed). A list's entries are typed: a record (0 or more), this permanent
+	/// marker, or a member's residue marker (<see cref="ResidueOf"/>); a list is kept in its normal form (<see cref="Normalize"/>).
+	/// </summary>
 	private const long Permanent = -1;
+
+	/// <summary>
+	/// The residue marker of <paramref name="member"/>: the record of its taken-back step on a cell where an effect of the step stayed. Every other member's step meets it as a change; the
+	/// member's own earlier step whose inverse clears that cell whole passes over it, since that inverse leaves nothing of the residue behind.
+	/// </summary>
+	private static long ResidueOf( uint member ) => -2 - (long)member;
 
 	/// <summary>The bounds a member's steps are kept within (<see cref="MaximumSteps"/>, <see cref="MaximumCells"/>; a test lowers them).</summary>
 	internal int StepBound { get; set; } = MaximumSteps;
@@ -60,6 +69,8 @@ internal sealed class CoopUndoJournal
 		public required (int X, int Y)[] Changes { get; init; }
 		/// <summary>The fields of each of <see cref="Changes"/> before and right after the step's record.</summary>
 		public IReadOnlyDictionary<(int X, int Y), (CellFields Before, CellFields After)> Effects { get; set; } = new Dictionary<(int X, int Y), (CellFields Before, CellFields After)>();
+		/// <summary>The cells of its footprint its inverse clears whole (a cell it created), where its member's own residue does not stop it.</summary>
+		public IReadOnlySet<(int X, int Y)> ClearsWhole { get; init; } = new HashSet<(int X, int Y)>();
 		/// <summary>A native segment's footprint cells' types before it: a cell it found queue it counted up, any other it made queue.</summary>
 		public IReadOnlyDictionary<(int X, int Y), byte> Before { get; init; } = new Dictionary<(int X, int Y), byte>();
 		public SegmentResult? Segment { get; init; }
@@ -118,7 +129,7 @@ internal sealed class CoopUndoJournal
 	/// <summary>The steps <paramref name="member"/> keeps, oldest first (tests).</summary>
 	internal int StepsOf( uint member ) => members.TryGetValue( member, out var steps ) ? steps.Steps.Count : 0;
 
-	/// <summary>The records still in effect on (<paramref name="x"/>, <paramref name="y"/>), oldest first, −1 for a permanent run; null for a cell no step tracks (tests).</summary>
+	/// <summary>The records still in effect on (<paramref name="x"/>, <paramref name="y"/>), oldest first, −1 for the permanent marker and −2 − member for a member's residue; null for a cell no step tracks (tests).</summary>
 	internal IReadOnlyList<long>? HistoryAt( int x, int y ) => histories.TryGetValue( (x, y), out var list ) ? list : null;
 
 	/// <summary>The record the journal took last: the host's tools read the record of the command they just issued (<see cref="SegmentResult.Record"/>).</summary>
@@ -162,7 +173,7 @@ internal sealed class CoopUndoJournal
 			return;
 		}
 		var member = MemberOf( origin );
-		var made = result.Accepted && result.Error == null ? StepsOf( record, member, command, result, changes, before ) : Array.Empty<Step>();
+		var made = result.Accepted && result.Error == null ? StepsOf( record, member, origin != null, command, result, changes, before ) : Array.Empty<Step>();
 		if ( made.Length > 0 && level.Guests?.Grid.Cells is { } map )
 		{
 			// each step keeps its effects, its cells' fields before and right after it: a take-back removes its record only where it reversed every one (Reversed)
@@ -183,32 +194,46 @@ internal sealed class CoopUndoJournal
 			Bound( step.Member );
 	}
 
-	/// <summary>The steps an accepted record makes: a path or queue line, a native queue segment, the slide pieces it laid.</summary>
-	private Step[] StepsOf( long record, uint member, ParkCommand command, ParkCommandResult result, (int X, int Y)[] changes, IReadOnlyDictionary<(int X, int Y), CellFields> before )
+	/// <summary>
+	/// The steps an accepted record makes: a path or queue line that leaves its tool on, a native queue segment that does, the slide pieces it laid. A line that ends its tool has no
+	/// take-back, as in single player (the user's decision 7 of the plan): it is no step, and its record stays in the cells' lists for good.
+	/// </summary>
+	private Step[] StepsOf( long record, uint member, bool guest, ParkCommand command, ParkCommandResult result, (int X, int Y)[] changes, IReadOnlyDictionary<(int X, int Y), CellFields> before )
 	{
 		switch ( command )
 		{
-			case LayLineCommand line when result.Value is SegmentResult { Built.Count: > 0 } laid && level.Guests?.Grid.Cells is { } map:
+			case LayLineCommand line when result.Value is SegmentResult laid && level.Guests?.Grid.Cells is { } map:
 			{
-				// a path line counts down only the crossings whose counter it raised: one at the counter's limit rose by nothing (ParkPathBuilder.BumpPlacement)
+				if ( EndsItsTool( laid, (line.StartX, line.StartY), guest ) )
+					return Array.Empty<Step>();
+				// a path line counts down only the crossings whose counter it raised: one at the counter's limit rose by nothing (ParkPathBuilder.BumpPlacement); a path line of crossings
+				// alone is a step too, so they can be taken back; a queue line's undo takes its built cells alone
 				var segment = line.Mode == CellToolMode.Queue ? laid : laid with
 				{
 					Existing = laid.Existing.Where( cell => before.TryGetValue( cell, out var fields ) && map.PlacementCountAt( cell.X, cell.Y ) == fields.Placements + 1 ).ToArray()
 				};
+				if ( segment.Built.Count == 0 && (line.Mode == CellToolMode.Queue || segment.Existing.Count == 0) )
+					return Array.Empty<Step>();
 				var footprint = line.Mode == CellToolMode.Queue ? segment.Built.ToHashSet() : segment.Built.Concat( segment.Existing ).ToHashSet();
 				return new[] { new Step { Record = record, Member = member, Kind = line.Mode == CellToolMode.Queue ? StepKind.QueueLine : StepKind.PathLine, Group = 0, Footprint = footprint,
-					Changes = changes, Segment = segment, Mode = line.Mode, Ride = line.Ride, Start = (line.StartX, line.StartY) } };
+					Changes = changes, Segment = segment, Mode = line.Mode, Ride = line.Ride, Start = (line.StartX, line.StartY), ClearsWhole = segment.Built.ToHashSet() } };
 			}
-			case QueueSegmentCommand line when result.Value is SegmentResult { QueueReceipt: { } receipt } && level.Guests?.Grid.Cells is { } cells:
+			case QueueSegmentCommand line when result.Value is SegmentResult { QueueReceipt: { } receipt } laid && level.Guests?.Grid.Cells is { } cells:
 			{
-				// the cells its commit left as queue: its undo counts them down or clears them; metadata past a money stop is a change, not its footprint
+				// a segment with a receipt leaves its tool on unless its record cut a guest's short (one ending its tool has none)
+				if ( EndsItsTool( laid, receipt.Start, guest ) )
+					return Array.Empty<Step>();
+				// the cells its commit really made queue or counted up, by their fields before it: its undo counts them down or clears them; a queue cell the commit never reached (past a
+				// money stop) is none of them, and metadata past the stop is a change, not its footprint
 				var footprint = ParkPathBuilder.LayLine( receipt.Start, ParkPathBuilder.SnapEnd( receipt.Start, receipt.End ) )
-					.Where( cell => cells.RawTypeAt( cell.X, cell.Y ) == (byte)ParkCellType.Queue ).ToHashSet();
+					.Where( cell => cells.RawTypeAt( cell.X, cell.Y ) == (byte)ParkCellType.Queue && before.TryGetValue( cell, out var fields )
+						&& (fields.Type != (byte)ParkCellType.Queue || cells.PlacementCountAt( cell.X, cell.Y ) == fields.Placements + 1) ).ToHashSet();
 				if ( footprint.Count == 0 )
 					return Array.Empty<Step>();
 				return new[] { new Step { Record = record, Member = member, Kind = StepKind.QueueSegment, Group = 0, Footprint = footprint, Changes = changes, Ride = line.Ride,
 					Start = receipt.Start, End = receipt.End,
-					Before = footprint.ToDictionary( cell => cell, cell => before.TryGetValue( cell, out var fields ) ? fields.Type : cells.RawTypeAt( cell.X, cell.Y ) ) } };
+					Before = footprint.ToDictionary( cell => cell, cell => before.TryGetValue( cell, out var fields ) ? fields.Type : cells.RawTypeAt( cell.X, cell.Y ) ),
+					ClearsWhole = footprint.Where( cell => before.TryGetValue( cell, out var fields ) && fields.Type != (byte)ParkCellType.Queue ).ToHashSet() } };
 			}
 			case LayPoolSlidePieceCommand piece when result.Value is PoolSlideWrite { Result: PoolSlideResult.Ok }:
 				return SlidePieces( record, member, (piece.TowerX, piece.TowerY), 1, changes );
@@ -217,6 +242,21 @@ internal sealed class CoopUndoJournal
 			default:
 				return Array.Empty<Step>();
 		}
+	}
+
+	/// <summary>
+	/// Whether the line <paramref name="laid"/> from <paramref name="start"/> ends its tool, as the tool's continuation decides (<see cref="CellBuildTool"/>): a guest's line its record cut
+	/// short at a refused cell (the host's own never reaches its record so: its ghost ends the tool first), one whose end is its start, and one that reached an existing path or queue at
+	/// its end (the original's end flag; a native segment's own flag). The tool's vertex stack, which ends a tool only once full (1,024), is the tool's alone.
+	/// </summary>
+	private static bool EndsItsTool( SegmentResult laid, (int X, int Y) start, bool guest )
+	{
+		if ( guest && laid is { Completed: false, StoppedByOwnLimit: false } )
+			return true;
+		if ( laid.SnappedEnd == start )
+			return true;
+		var reachedLast = laid.Completed || (laid.Line.Count > 0 && laid.StoppedAt == laid.Line[^1]);
+		return laid.QueueFinalEndsTool ?? (laid.EndedOnExisting && reachedLast);
 	}
 
 	/// <summary>The <paramref name="laid"/> pieces a record laid last on the slide of <paramref name="tower"/>, each a step with its ordinal within the record.</summary>
@@ -274,9 +314,13 @@ internal sealed class CoopUndoJournal
 				if ( !histories.TryGetValue( cell, out var list ) )
 					continue;
 				if ( takenBack && Reversed( step, cell ) )
+				{
+					// the runs of markers on its two sides become one
 					list.RemoveAll( entry => entry == step.Record );
+					Normalize( list );
+				}
 				else
-					MakePermanent( list, step.Record );
+					Mark( list, step.Record, takenBack ? ResidueOf( step.Member ) : Permanent );
 			}
 		}
 		foreach ( var cell in step.Footprint )
@@ -315,31 +359,61 @@ internal sealed class CoopUndoJournal
 		histories.Remove( cell );
 	}
 
-	private static void Append( List<long> list, long record )
+	/// <summary>Appends <paramref name="entry"/>, a record or a marker, keeping the list in its normal form (<see cref="Normalize"/>).</summary>
+	private static void Append( List<long> list, long entry )
 	{
-		if ( record == Permanent && list.Count > 0 && list[^1] == Permanent )
-			return;
-		list.Add( record );
+		list.Add( entry );
+		if ( entry < 0 )
+			Normalize( list );
 	}
 
-	/// <summary>Turns <paramref name="record"/>'s entries of a list permanent, keeping consecutive permanent entries as one.</summary>
-	private static void MakePermanent( List<long> list, long record )
+	/// <summary>Turns <paramref name="record"/>'s entries of a list into <paramref name="marker"/>, keeping the list in its normal form (<see cref="Normalize"/>).</summary>
+	private static void Mark( List<long> list, long record, long marker )
 	{
 		for ( var index = 0; index < list.Count; index++ )
 		{
 			if ( list[index] == record )
-				list[index] = Permanent;
+				list[index] = marker;
 		}
-		for ( var index = list.Count - 1; index > 0; index-- )
-		{
-			if ( list[index] == Permanent && list[index - 1] == Permanent )
-				list.RemoveAt( index );
-		}
+		Normalize( list );
 	}
 
 	/// <summary>
-	/// A taken take-back ran: its steps leave, their records leave the cells where it reversed their effects, a tracked cell it changed that none of them changed gets a permanent marker
-	/// (<paramref name="written"/>: the cells its run changed) unless it is the earlier own segment's whose shared bend corner it cleared, and that corner leaves the earlier segment's footprint.
+	/// Puts a cell's list in its normal form. The changed-since rule reads the markers between two records as a set (any entry after a step's first record that is not its own and no
+	/// exception refuses it), so each run of markers is kept as that set: a run with the permanent marker is that marker alone (no step before it can pass it), and any other run keeps
+	/// each member's residue marker once. A list so holds its records, each a live step's, and between two of them one permanent marker or at most one residue marker per member.
+	/// </summary>
+	internal static void Normalize( List<long> list )
+	{
+		var write = 0;
+		// where the run of markers the output ends with starts
+		var run = 0;
+		foreach ( var entry in list.ToArray() )
+		{
+			if ( entry >= 0 )
+			{
+				list[write++] = entry;
+				run = write;
+				continue;
+			}
+			if ( write > run && list[run] == Permanent )
+				continue;
+			if ( entry == Permanent )
+			{
+				write = run;
+				list[write++] = Permanent;
+				continue;
+			}
+			if ( list.IndexOf( entry, run, write - run ) < 0 )
+				list[write++] = entry;
+		}
+		list.RemoveRange( write, list.Count - write );
+	}
+
+	/// <summary>
+	/// A taken take-back ran: its steps leave, their records leave the cells where it reversed their effects, and a tracked cell it changed that none of them changed (<paramref name="written"/>:
+	/// the cells its run changed; its clear unlinking a neighbour's bit another command set) gets its member's residue marker, a write of that member's own, unless it is the earlier own
+	/// segment's whose shared bend corner it cleared; and that corner leaves the earlier segment's footprint.
 	/// </summary>
 	private void Complete( Decision decided, IReadOnlySet<(int X, int Y)> written )
 	{
@@ -348,6 +422,7 @@ internal sealed class CoopUndoJournal
 			if ( members.TryGetValue( step.Member, out var member ) )
 				Leave( member, step, takenBack: true );
 		}
+		var residue = ResidueOf( decided.Steps[0].Member );
 		foreach ( var cell in written )
 		{
 			if ( decided.Steps.Any( step => step.Effects.ContainsKey( cell ) ) )
@@ -356,7 +431,7 @@ internal sealed class CoopUndoJournal
 			if ( decided.BendOwner is { } earlier && (earlier.Effects.ContainsKey( cell ) || earlier.Footprint.Contains( cell )) )
 				continue;
 			if ( histories.TryGetValue( cell, out var list ) )
-				Append( list, Permanent );
+				Append( list, residue );
 		}
 		if ( decided is { SharedBend: { } bend, BendOwner: { } owner } && owner.Footprint.Remove( bend ) )
 			Untrack( bend );
@@ -364,7 +439,10 @@ internal sealed class CoopUndoJournal
 
 	// ---- departures and towers ---------------------------------------------------------------------
 
-	/// <summary>A member left its seat (or another took it): its steps leave as they are, never taken back; their records stay in the cells' lists for good.</summary>
+	/// <summary>
+	/// A member left its seat (or another took it): its steps leave as they are, never taken back; their records stay in the cells' lists for good, and so does its residue, now as the
+	/// permanent marker (no step of its passes it any more), so a list holds the residue of the members present alone.
+	/// </summary>
 	internal void Depart( uint id )
 	{
 		if ( Disabled || !members.Remove( id, out var member ) )
@@ -373,6 +451,12 @@ internal sealed class CoopUndoJournal
 		{
 			foreach ( var step in member.Steps.ToArray() )
 				Leave( member, step, takenBack: false );
+			var residue = ResidueOf( id );
+			foreach ( var list in histories.Values )
+			{
+				if ( list.Contains( residue ) )
+					Mark( list, residue, Permanent );
+			}
 		}
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
 		{
@@ -462,7 +546,7 @@ internal sealed class CoopUndoJournal
 		var records = new HashSet<long> { step.Record };
 		foreach ( var cell in step.Footprint )
 		{
-			if ( ChangedSince( cell, records ) )
+			if ( ChangedSince( cell, records, step.Member, step.ClearsWhole.Contains( cell ) ) )
 				return TakeBackVerdict.Changed;
 		}
 		var player = request.Player;
@@ -511,18 +595,21 @@ internal sealed class CoopUndoJournal
 
 	/// <summary>
 	/// Whether a command still in effect that is none of the step set's (<paramref name="records"/>) changed <paramref name="cell"/> since the set first did: its list must hold, from the set's
-	/// first record on, only the set's records, so a step that wrote a cell on both sides of another player's write is refused; for a step of one record, its list ends with it.
+	/// first record on, only the set's records, so a step that wrote a cell on both sides of another player's write is refused (for a step of one record, its list ends with it); the one
+	/// exception is <paramref name="member"/>'s own residue marker on a cell its inverse clears whole (<paramref name="clearsWhole"/>), which leaves nothing of that residue behind. Another
+	/// member's residue, the permanent marker and any other record stay changes.
 	/// </summary>
-	private bool ChangedSince( (int X, int Y) cell, IReadOnlySet<long> records )
+	private bool ChangedSince( (int X, int Y) cell, IReadOnlySet<long> records, uint member, bool clearsWhole )
 	{
 		if ( !histories.TryGetValue( cell, out var list ) )
 			return true;
 		var first = list.FindIndex( records.Contains );
 		if ( first < 0 )
 			return true;
+		var residue = ResidueOf( member );
 		for ( var index = first + 1; index < list.Count; index++ )
 		{
-			if ( !records.Contains( list[index] ) )
+			if ( !records.Contains( list[index] ) && !(clearsWhole && list[index] == residue) )
 				return true;
 		}
 		return false;

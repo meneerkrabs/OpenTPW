@@ -189,6 +189,65 @@ for (const [what, change, check] of [
 	});
 }
 
+/** Both games' evidence of a passing undo run (C5-1): the baseline's, with the guest's two segments and kept line, its four take-backs and the host's one. */
+function undoPair() {
+	const pair = passingPair();
+	const { host, guest } = pair;
+	const takeBack = (record, player, step, verdict, accepted) => ({ record, player, step, verdict, accepted });
+	const mine = [takeBack(16, 1, 15, 'Taken', true), takeBack(17, 1, 14, 'Taken', true), takeBack(20, 1, 18, 'Changed', false), takeBack(22, 1, 18, 'Taken', true)];
+	const applied = [...mine.slice(0, 3), takeBack(21, 0, 19, 'Taken', true), mine[3]].map(({ player, step, verdict }) => ({ player, step, verdict }));
+	guest.undo = {
+		takeBacks: mine,
+		segments: [{ record: 14, cells: [[8, 8], [9, 8], [10, 8]] }, { record: 15, cells: [[10, 8], [11, 8], [12, 8], [13, 8]] }],
+		kept: { record: 18, cells: [[8, 10], [9, 10], [10, 10], [11, 10], [12, 10], [13, 10]] },
+		applied,
+	};
+	host.undo = { seat: 1, takeBacks: structuredClone([...mine.slice(0, 3), takeBack(21, 0, 19, 'Taken', true), mine[3]]), crossed: [[10, 8], [10, 9], [10, 10], [10, 11], [10, 12]],
+		applied: structuredClone(applied) };
+	return pair;
+}
+
+test('an undo run whose evidence holds passes every check', () => {
+	const { host, guest } = undoPair();
+	const checks = checkEvidence(host, guest, 'undo', 30);
+	assert.equal(checks.length, 17);
+	assert.deepEqual(failing(checks), []);
+});
+
+test('an undo run whose host joined the guest\'s line from beside it, by the park\'s edge, passes every check', () => {
+	const { host, guest } = undoPair();
+	host.undo.crossed = [[11, 10], [12, 10], [13, 10], [14, 10]];
+	assert.deepEqual(failing(checkEvidence(host, guest, 'undo', 30)), []);
+});
+
+const UNDO_ORDER = 'the guest took its two segments back with two Backspaces, the newest first; its kept line\'s take-back was refused as changed while the host\'s line crossed it, and taken after';
+const UNDO_RECORDS = 'each of the guest\'s take-backs applied at its record with the host\'s verdict on both parks';
+const UNDO_HOST = 'the host\'s own Backspace took its line across or into the guest\'s back between the guest\'s refused take-back and its last';
+const UNDO_LOGS = 'both parks applied the same take-backs in the same order';
+
+for (const [what, change, check] of [
+	['the older segment taken back first', ({ host, guest }) => { [guest.undo.takeBacks[0].step, guest.undo.takeBacks[1].step] = [14, 15];
+		[host.undo.takeBacks[0].step, host.undo.takeBacks[1].step] = [14, 15]; }, UNDO_ORDER],
+	['the crossed line\'s take-back taken', ({ host, guest }) => { guest.undo.takeBacks[2] = { ...guest.undo.takeBacks[2], verdict: 'Taken', accepted: true };
+		host.undo.takeBacks[2] = { ...host.undo.takeBacks[2], verdict: 'Taken', accepted: true }; }, UNDO_ORDER],
+	['a take-back of another seat\'s', ({ host, guest }) => { guest.undo.takeBacks[3].player = 2; host.undo.takeBacks[4].player = 2; }, [UNDO_ORDER, UNDO_RECORDS]],
+	['a verdict the host decided otherwise', ({ host }) => { host.undo.takeBacks[2].verdict = 'InTheWay'; }, UNDO_RECORDS],
+	['a take-back at another record on the host', ({ host }) => { host.undo.takeBacks[1].record = 30; }, UNDO_RECORDS],
+	['a take-back the host never applied', ({ host }) => { host.undo.takeBacks.splice(1, 1); }, UNDO_RECORDS],
+	['no take-back of the host\'s', ({ host }) => { host.undo.takeBacks.splice(3, 1); }, UNDO_HOST],
+	['the host\'s take-back after the guest\'s last', ({ host }) => { host.undo.takeBacks[3].record = 23; }, UNDO_HOST],
+	['the host\'s line refused', ({ host }) => { host.undo.takeBacks[3].accepted = false; }, UNDO_HOST],
+	['the host\'s line of three cells', ({ host }) => { host.undo.crossed = host.undo.crossed.slice(0, 3); }, UNDO_HOST],
+	['the guest\'s park applied another order', ({ guest }) => { guest.undo.applied = [...guest.undo.applied].reverse(); }, UNDO_LOGS],
+	['the guest\'s park missing one', ({ guest }) => { guest.undo.applied = guest.undo.applied.slice(1); }, UNDO_LOGS],
+]) {
+	test(`an undo run with ${what} fails exactly its check`, () => {
+		const pair = undoPair();
+		change(pair);
+		assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'undo', 30)), Array.isArray(check) ? check : [check]);
+	});
+}
+
 /** Both games' evidence of a passing staff run (C4c-2): the baseline's, with the staff right, the guest's nine staff commands and its three forced resyncs. */
 function staffPair() {
 	const pair = passingPair();

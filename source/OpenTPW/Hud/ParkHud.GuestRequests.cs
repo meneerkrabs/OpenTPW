@@ -123,7 +123,8 @@ public sealed partial class ParkHud
 	/// <summary>
 	/// [EXT:online-coop-claims] The guest's Backspace in its track tool comes back (C3c-1b): applied, the line it took back goes off the tool's stacks and the tool moves on as the walk once
 	/// moved it; a refusal of the rights ends the tool and says why (its claim or its grant went), and a refusal of the park takes nothing back, quietly, as the host's; a refusal without a
-	/// record leaves the line, and the player tries again; an outcome not known ends the tool.
+	/// record leaves the line, and the player tries again; an outcome not known ends the tool. [EXT:online-coop-undo] A path or queue take-back (C5) refused by the host's journal says why
+	/// and keeps the segment and the tool, and so does one another player's claim refused; the grant gone ends the tool.
 	/// </summary>
 	private void CompleteTrackUndo( CoopGuestCommands.Request request )
 	{
@@ -141,6 +142,12 @@ public sealed partial class ParkHud
 			{
 				if ( request.Command is TakeBackCommand )
 					SayTakeBackNote( outcome.Reason );
+				return;
+			}
+			// [EXT:online-coop-undo] another player's claim on the cells its undo would touch keeps the segment and the tool, as a line refused there: its note alone (C5)
+			if ( request.Command is TakeBackCommand && CoopBuildRights.RefusalOf( outcome.Reason ) == CoopRefusal.Claimed )
+			{
+				SayGuestNote( OpenTpwText.CoopClaimed );
 				return;
 			}
 			level.HostToolStarts++;

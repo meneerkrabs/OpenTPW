@@ -311,10 +311,13 @@ public partial class CoopSessionTests
 		CatchUpAndCompare( host, guest );
 	}
 
-	[TestMethod]
-	public void APathTakeBackBesideTheEntranceOfARideAnotherSeatClaimsIsRefusedByTheRights()
+	[DataTestMethod]
+	[DataRow( true )]
+	[DataRow( false )]
+	public void APathTakeBackLinkedToTheEntranceOfARideAnotherSeatClaimsIsRefusedByTheRights( bool linked )
 	{
-		// a kart ride whose entrance cell (8, 21) lies beside the guest's line: a path clear beside an entrance with an owner word re-evaluates that ride, and may open it
+		// a kart ride whose entrance cell (8, 21) lies beside the guest's line: a path clear that unlinks an entrance with an owner word re-evaluates that ride, and may open it; the
+		// entrance faces the line's cell (8, 20) (its queue link points on into the ride, +Y), or away from it, when the line's cell does not link to it
 		var (host, guest, _, _) = Shared( ( park, _ ) =>
 		{
 			var kart = PlaceKartRide( park );
@@ -324,6 +327,7 @@ public partial class CoopSessionTests
 			park.Level.Guests!.Register( kart.Visitors );
 			park.Level.Guests!.Grid.Cells.SetType( 8, 21, ParkCellTypes.Entrance );
 			park.Level.Guests.Grid.Cells.SetOwner( 8, 21, kart.Visitors.OwnerWord );
+			park.Level.Guests.Grid.Cells.SetQueueLink( 8, 21, GuestPathGrid.LinkValue( linked ? 2 : 1 ) );
 		} );
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );
@@ -332,35 +336,32 @@ public partial class CoopSessionTests
 		var ride = host.Level.TrackStations.Keys.Single();
 		var tool = StartPath( guest );
 		GuestClick( host, guest, view, (12, 20) );
-		var record = tool.LastCommit!.Record!.Value;
-		// the host claims the ride: the guest's take-back would re-evaluate it
+		Assert.AreEqual( linked, (host.Level.Guests!.Grid.Cells.LinksAt( 8, 20 ) & GuestPathGrid.LinkValue( 2 )) != 0, "the line's cell links to the entrance it faces" );
+		// the host claims the ride: the guest's take-back would re-evaluate it through that link
 		host.Enter();
 		Assert.IsTrue( host.Level.EnterTrackTool( ride ) );
 		RoundsUntil( () => guest.Level.ClaimOf( ride.Runtime.AttractionId ) == ParkCommands.LocalPlayer, host, guest, view, "the host's claim reached the guest" );
-		Assert.IsTrue( GuestBackspaceGoes( host, guest, view ), "the Backspace went to the host" );
-		Assert.IsFalse( tool.IsActive, "a refusal by the rights ends the tool" );
+		if ( !linked )
+		{
+			Assert.IsTrue( GuestBackspace( host, guest, view ), "an entrance the line's cell does not link to is not re-evaluated: taken" );
+			Assert.AreEqual( 0, view.Says( OpenTpwText.CoopClaimed ) );
+			Assert.IsFalse( Walkable( host, 8, 20 ) || Walkable( guest, 8, 20 ) );
+			CatchUpAndCompare( host, guest );
+			return;
+		}
+		Assert.IsFalse( GuestBackspace( host, guest, view ), "refused by the rights" );
+		Assert.IsTrue( tool.IsActive && tool.SegmentCount == 1, "another player's claim keeps the step and the tool, as a line refused there" );
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopClaimed ) );
 		Assert.IsTrue( Walkable( host, 8, 20 ) && Walkable( guest, 8, 20 ), "nothing taken back" );
 		Assert.AreEqual( TakeBackVerdict.Taken, TakeBacksOf( host, seat ).Single().Verdict, "decided, then refused by the rights" );
-		// the claim let go, the same step is taken
+		// the claim let go, the same tool's Backspace takes the step back
 		host.Enter();
 		host.Level.ExitTrackTool();
 		ViewOf( host ).Update();
 		RoundsUntil( () => guest.Level.ClaimOf( ride.Runtime.AttractionId ) == null, host, guest, view, "the host let the claim go" );
-		Assert.IsTrue( Requested( host, guest, view, new TakeBackCommand( false, record, -1, -1, -1 ) ).Accepted );
+		Assert.IsTrue( GuestBackspace( host, guest, view ) );
 		Assert.IsFalse( Walkable( host, 8, 20 ) || Walkable( guest, 8, 20 ) );
 		CatchUpAndCompare( host, guest );
-	}
-
-	/// <summary>The guest's Backspace, sent to the host as a take-back: whether it went, once its outcome is back.</summary>
-	private bool GuestBackspaceGoes( Park host, Park guest, View view )
-	{
-		var tool = guest.Level.CellTool;
-		guest.Enter();
-		if ( !tool.Undo() || tool.WaitingUndo == null )
-			return false;
-		RoundsUntil( () => tool.WaitingUndo == null, host, guest, view, "the take-back came back" );
-		return true;
 	}
 
 	[TestMethod]
@@ -378,6 +379,62 @@ public partial class CoopSessionTests
 		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ) );
 		Assert.IsTrue( Walkable( host, 8, 20 ) && Walkable( guest, 8, 20 ), "nothing taken back" );
 		Assert.IsTrue( TakeBacksOf( host, seat ).Single().Verdict == TakeBackVerdict.Taken, "decided, then refused by the rights" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AGuestsLineTheRightsRefuseOnItsWayEndsTheToolAndMakesNoStep()
+	{
+		var (host, guest, _, guestLink) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var seat = guest.Level.Commands.Player;
+		var tool = StartPath( guest );
+		GuestClick( host, guest, view, (12, 20) );
+		Assert.AreEqual( 1, host.Level.UndoJournal!.StepsOf( guestLink.Id ) );
+		// the second line goes, and the host takes the grant back before its stream takes it: refused at its record, it lays nothing and ends the tool as any refused command does
+		// (its segment's snapped end is its start), so no segment that laid nothing stays for a Backspace
+		guest.Enter();
+		Assert.IsNotNull( guest.Level.ClickCellTool( (12, 26) )?.Waiting, "the line went to the host" );
+		Assert.IsTrue( host.Issue( new SetBuildGrantCommand( seat, false ) ).Accepted );
+		RoundsUntil( () => tool.Waiting == null, host, guest, view, "the line came back" );
+		Assert.IsTrue( tool.LastCommit is { CommandRefused: true }, "it laid nothing" );
+		Assert.IsFalse( tool.IsActive, "the refused line ended the tool" );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotGranted ) );
+		Assert.AreEqual( 1, host.Level.UndoJournal.StepsOf( guestLink.Id ), "the refused line made no step" );
+		Assert.AreEqual( 0, TakeBacksOf( host, seat ).Length, "and nothing was sent back" );
+		Assert.IsFalse( Walkable( host, 12, 24 ) || Walkable( guest, 12, 24 ) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void ALineEndingOnAnotherPlayersPathEndsItsToolAndTheSegmentItEndedOnStaysChanged()
+	{
+		var (host, guest, hostLink, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var seat = guest.Level.Commands.Player;
+		var tool = StartPath( guest );
+		GuestClick( host, guest, view, (12, 20) );
+		// the host's line from above ends on the guest's cell (8, 20): a line ending on a path ends its tool, as the original's does, so no Backspace of the host's reaches it
+		host.Enter();
+		Assert.IsTrue( host.Level.EnterPathTool( 8, 16 ) );
+		Assert.IsTrue( host.Level.ClickCellTool( (8, 20) ) is { Completed: true, EndedOnExisting: true }, "the host's line" );
+		Assert.IsFalse( host.Level.CellTool.IsActive, "the host's tool ended on the guest's path" );
+		var joining = host.Level.UndoJournal!.LastRecord!.Value;
+		Assert.AreEqual( 0, host.Level.UndoJournal.StepsOf( hostLink.Id ), "a line that ends its tool is no step" );
+		// nor does a take-back of it made by hand take anything (the user's decision: as the original)
+		Assert.IsFalse( host.Issue( new TakeBackCommand( false, joining, -1, -1, -1 ) ).Accepted );
+		Assert.AreEqual( TakeBackVerdict.NotOwn, TakeBacksOf( host, 0 ).Single().Verdict );
+		Assert.IsTrue( Walkable( host, 8, 18 ) );
+		Rounds( 5, host, guest );
+		Assert.IsFalse( GuestBackspace( host, guest, view ), "refused while the host's line stands on its cell" );
+		Assert.AreEqual( TakeBackVerdict.Changed, TakeBacksOf( host, seat ).Single().Verdict );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopUndoChanged ) );
+		Assert.IsTrue( tool.IsActive && tool.SegmentCount == 1, "the guest's tool keeps its segment" );
+		Assert.IsTrue( Walkable( host, 8, 18 ) && Walkable( host, 10, 20 ) && Walkable( guest, 10, 20 ), "nothing changed" );
 		CatchUpAndCompare( host, guest );
 	}
 
@@ -573,10 +630,10 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
-	public void ANativeSegmentTheMoneyStoppedIsTakenBackAndItsResidueStaysAsInSinglePlayer()
+	public void ANativeSegmentTheMoneyCutShortEndsItsToolAndIsNoStepItsResidueAsInSinglePlayer()
 	{
-		// a line the money cut short ends its tool, the host's and a guest's alike: its step stays in the journal, and a take-back naming it is decided as the tool's Backspace would be
-		var (host, guest, _, _) = Shared( ( park, _ ) => QueueOf( park ) );
+		// a guest's line its record cut short ends its tool, as the click would have on the refused ghost: no step, so a take-back naming it, made by hand, takes nothing
+		var (host, guest, _, guestLink) = Shared( ( park, _ ) => QueueOf( park ) );
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );
 		Grant( host, guest, view );
@@ -588,44 +645,16 @@ public partial class CoopSessionTests
 		var cells = host.Level.Guests!.Grid.Cells;
 		Assert.AreEqual( ParkCellType.Queue, cells.TypeAt( 9, 2 ), $"its one cell (balance {host.Economy.Balance})" );
 		Assert.IsTrue( cells.RawTypeAt( 8, 2 ) == 0 && cells.HasQueuePassResidue( 8, 2 ), "residue past the stop" );
+		Assert.AreEqual( 0, host.Level.UndoJournal!.StepsOf( guestLink.Id ), "no step" );
 		Alike( host, guest, economy => economy.Ledger.Post( LedgerCategory.OtherIncome, 2_000_000 ) );
 		var taken = Requested( host, guest, view, new TakeBackCommand( false, segment.Record, -1, -1, -1 ) );
-		Assert.IsTrue( taken.Accepted, taken.Result?.Reason );
-		Assert.AreEqual( TakeBackVerdict.Taken, TakeBacksOf( host, seat ).Single().Verdict );
-		Assert.AreEqual( 0, cells.RawTypeAt( 9, 2 ), "its built cell cleared" );
-		Assert.IsTrue( cells.HasQueuePassResidue( 8, 2 ), "the residue stays, as the original's undo leaves it" );
+		Assert.IsFalse( taken.Accepted );
+		Assert.AreEqual( TakeBackVerdict.NotOwn, TakeBacksOf( host, seat ).Single().Verdict );
+		Assert.AreEqual( ParkCellType.Queue, cells.TypeAt( 9, 2 ), "its built cell stays" );
+		Assert.IsTrue( cells.HasQueuePassResidue( 8, 2 ), "and the residue past the stop, as in single player" );
 		CatchUpAndCompare( host, guest );
 		Assert.IsTrue( guest.Level.Guests!.Grid.Cells.HasQueuePassResidue( 8, 2 ) );
 		QueueCellsAlike( host, guest );
-	}
-
-	[TestMethod]
-	public void AnotherPlayersPathOnAStoppedSegmentsResidueCellPutsItsTakeBackInTheWay()
-	{
-		var (host, guest, _, _) = Shared( ( park, _ ) => QueueOf( park ) );
-		var view = ViewOf( guest );
-		Rounds( 20, host, guest );
-		Grant( host, guest, view );
-		MoneyForOneQueueCell( host, guest );
-		var seat = guest.Level.Commands.Player;
-		var segment = Requested( host, guest, view, new QueueSegmentCommand( host.One.Visitors.AttractionId, 10, 2, 6, 2 ) );
-		Assert.IsTrue( segment.Result?.Value is SegmentResult { StoppedBy: CellBuildResult.NotEnoughMoney }, "stopped by the money" );
-		var cells = host.Level.Guests!.Grid.Cells;
-		Assert.IsTrue( cells.HasQueuePassResidue( 6, 2 ), "residue at the segment's end" );
-		Alike( host, guest, economy => economy.Ledger.Post( LedgerCategory.OtherIncome, 2_000_000 ) );
-		// the host lays a path down from the residue cell (6, 2), away from the guest's queue cell
-		HostLine( host, (6, 2), (6, 0) ).Cancel();
-		Assert.AreEqual( ParkCellType.Path, cells.TypeAt( 6, 2 ), "the host's path on the residue cell" );
-		var before = CellsOf( host, (4, 0), (10, 6) );
-		// the native undo walks the whole line, so it would change the host's path cell: refused, nothing changed
-		var taken = Requested( host, guest, view, new TakeBackCommand( false, segment.Record, -1, -1, -1 ) );
-		Assert.IsFalse( taken.Accepted );
-		Assert.AreEqual( TakeBackVerdict.InTheWay, TakeBacksOf( host, seat ).Single().Verdict );
-		Assert.AreEqual( ParkCellType.Queue, cells.TypeAt( 9, 2 ) );
-		Assert.AreEqual( ParkCellType.Path, cells.TypeAt( 6, 2 ) );
-		Assert.AreEqual( before, CellsOf( host, (4, 0), (10, 6) ), "the refusal changed no cell" );
-		CatchUpAndCompare( host, guest );
-		Assert.AreEqual( CellsOf( host, (2, 0), (12, 8) ), CellsOf( guest, (2, 0), (12, 8) ), "every queue cell field alike" );
 	}
 
 	[TestMethod]

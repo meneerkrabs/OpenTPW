@@ -424,7 +424,9 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		{
 			var (dx, dy) = GuestPathGrid.Directions[direction];
 			var (nx, ny) = (x + dx, y + dy);
-			if ( !cells.InBounds( nx, ny ) || cells.RawTypeAt( nx, ny ) != ParkCellTypes.Entrance || cells.OwnerAt( nx, ny ) is not (> 0 and var owner) )
+			// the clear re-evaluates a ride only through a link of the path cell toward its entrance (PathLinkWriter.Unlink)
+			if ( !cells.InBounds( nx, ny ) || (cells.LinksAt( x, y ) & GuestPathGrid.LinkValue( direction )) == 0 || cells.RawTypeAt( nx, ny ) != ParkCellTypes.Entrance
+				|| cells.OwnerAt( nx, ny ) is not (> 0 and var owner) )
 				continue;
 			if ( guests.Attractions.OfType<RideVisitorBridge>().FirstOrDefault( ride => ride.OwnerWord == owner && ride.HasCells ) is { } ride && level.ClaimedAgainst( player, ride.AttractionId ) )
 				return true;

@@ -7,8 +7,9 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// [EXT:online-coop-undo] The host's undo journal on its own (docs/COOP.md, "Conflicts and undo (C5)"), on the stream tests' asset-free park, wired as the host's stream wires it: the map's
-/// setters report real changes only; a step's record leaves the cells where its take-back reversed its effects, wherever it stands in their lists; records of no step stay as one
-/// permanent marker; a departure keeps its member's records; the bounds forget the oldest steps; and only the building tools' accepted steps are steps.
+/// setters report real changes only; a step's record leaves the cells where its take-back reversed its effects, wherever it stands in their lists, and stays as its member's residue
+/// where an effect stayed, which only that member's earlier step clearing the cell whole passes; records of no step stay as one permanent marker; a departure keeps its member's records;
+/// the bounds forget the oldest steps; and only the building tools' accepted steps are steps.
 /// </summary>
 [TestClass]
 [DoNotParallelize]
@@ -272,6 +273,67 @@ public class CoopUndoJournalTests
 	}
 
 	[TestMethod]
+	public void ALineThatEndsItsToolIsNoStepAndTheLineItCrossedStaysChangedForGood()
+	{
+		var journaled = NewJournaled();
+		var first = journaled.Run( 1, Line( 5, 20, 12, 20 ) ).Record;
+		// another member's line over the same cells builds nothing and raises every crossing; it ends on a path, so it ends its tool, as in the original: no take-back reaches it
+		var over = journaled.Run( 2, Line( 5, 20, 12, 20 ) );
+		Assert.IsTrue( over.Result.Accepted && over.Result.Value is SegmentResult { Built.Count: 0, EndedOnExisting: true }, "it built nothing" );
+		Assert.AreEqual( 0, journaled.Journal.StepsOf( 2 ), "no step" );
+		Assert.AreEqual( TakeBackVerdict.NotOwn, journaled.TakeBack( 2, over.Record ), "not even by a request made by hand" );
+		CollectionAssert.AreEqual( new[] { first, -1L }, journaled.History( 8, 20 ), "its record stays for good" );
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBack( 1, first ) );
+		Assert.IsTrue( journaled.Level.Guests!.Grid.IsWalkable( 8, 20 ) );
+		// a line that ends on a cell of the first one ends its tool too, whatever it built
+		var joining = journaled.Run( 3, Line( 9, 16, 9, 20 ) );
+		Assert.IsTrue( joining.Result.Value is SegmentResult { Completed: true, EndedOnExisting: true, Built.Count: 4 } );
+		Assert.AreEqual( 0, journaled.Journal.StepsOf( 3 ) );
+	}
+
+	[TestMethod]
+	public void AGuestsSegmentItsRecordCutShortEndsItsToolAndIsNoStep()
+	{
+		var journaled = NewJournaled();
+		QueueOf( journaled );
+		var grid = journaled.Level.Guests!.Grid;
+		grid.Cells.Changed = null;
+		// a queue cell of the ride's on the line, past where the money will stop it
+		grid.SetQueue( 7, 2, towards: GuestPathGrid.DirectionBetween( 7, 2, 6, 2 ) );
+		grid.Cells.Changed = journaled.Journal.Changed;
+		var economy = journaled.Level.Park!.Economy;
+		economy.Ledger.Post( LedgerCategory.OtherCosts, economy.Balance - (2 * economy.CellCost( CellPurchase.Queue ) - 1) );
+		var counter = grid.Cells.PlacementCountAt( 7, 2 );
+		var segment = journaled.Run( 1, Segment( journaled, 10, 2, 6, 2 ) );
+		Assert.IsTrue( segment.Result.Value is SegmentResult { StoppedBy: CellBuildResult.NotEnoughMoney, Built.Count: 1 }, "one cell built, stopped before (7, 2)" );
+		Assert.AreEqual( counter, grid.Cells.PlacementCountAt( 7, 2 ), "the commit's type pass never reached it (its link passes did)" );
+		var queue = grid.Cells.FieldsAt( 7, 2 );
+		economy.Ledger.Post( LedgerCategory.OtherIncome, 2_000_000 );
+		// a guest's line its record cut short ends its tool (CellBuildTool.CompleteWaiting), as the click would have on the refused ghost: no step, no take-back
+		Assert.AreEqual( 0, journaled.Journal.StepsOf( 1 ) );
+		Assert.AreEqual( TakeBackVerdict.NotOwn, journaled.TakeBack( 1, segment.Record ) );
+		Assert.AreEqual( queue, grid.Cells.FieldsAt( 7, 2 ) );
+		Assert.AreEqual( (byte)ParkCellType.Queue, grid.Cells.RawTypeAt( 9, 2 ), "its own cell stays" );
+	}
+
+	[TestMethod]
+	public void AStepWhoseCellAnotherCommandEmptiedIsRefusedEvenAfterThatOneIsTakenBack()
+	{
+		var journaled = NewJournaled();
+		QueueOf( journaled );
+		// a path line down across row 2, then another member's native segment along the row paving its cell (8, 2), then taken back: the cell is left empty
+		var path = journaled.Run( 1, Line( 8, 0, 8, 4 ) ).Record;
+		var segment = journaled.Run( 2, Segment( journaled, 10, 2, 6, 2 ) );
+		Assert.IsTrue( segment.Result.Accepted, segment.Result.Reason );
+		Assert.AreEqual( (byte)ParkCellType.Queue, journaled.Level.Guests!.Grid.Cells.RawTypeAt( 8, 2 ), "paved" );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 2, segment.Record ) );
+		Assert.AreEqual( 0, journaled.Level.Guests.Grid.Cells.RawTypeAt( 8, 2 ), "the native undo left the paved cell empty" );
+		// the segment's take-back did not reverse its effect there (the cell was a path before it, it is empty now), so its record stays: someone changed that since
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBack( 1, path ), "the path line's cell is gone" );
+		Assert.IsTrue( journaled.Level.Guests.Grid.IsWalkable( 8, 0 ), "nothing taken" );
+	}
+
+	[TestMethod]
 	public void AFaultTurnsTheJournalOffAndNoTakeBackIsDecidedOnIncompleteHistories()
 	{
 		var journaled = NewJournaled();
@@ -294,6 +356,82 @@ public class CoopUndoJournalTests
 		Assert.AreEqual( TakeBackVerdict.Forgotten, fresh.TakeBack( 1, step ) );
 		Assert.IsTrue( fresh.Journal.Disabled );
 		Assert.IsTrue( fresh.Level.Guests!.Grid.IsWalkable( 8, 20 ) );
+	}
+
+	/// <summary>
+	/// Member 1's column down from (9, 21), then its row on y 20 ending at (8, 20), diagonal to the column's top, then a column down from (8, 21), beside the first and under the row's end: the
+	/// last one's link pass gives the row's (8, 20) a diagonal bit toward the first column's (9, 21) and that cell one back (the original's neighbour diagonals,
+	/// <see cref="PathLinkWriter.LinkPath"/>), between two cells its take-back leaves standing. Returns the three records.
+	/// </summary>
+	private static (long Column, long Row, long Beside) ColumnRowAndBeside( Journaled journaled, uint besideBy )
+	{
+		var column = journaled.Run( 1, Line( 9, 21, 9, 24 ) ).Record;
+		var row = journaled.Run( 1, Line( 5, 20, 8, 20 ) ).Record;
+		Assert.AreEqual( 0, journaled.Level.Guests!.Grid.Cells.LinksAt( 8, 20 ) & 8, "no diagonal toward (9, 21) yet" );
+		var beside = journaled.Run( besideBy, Line( 8, 21, 8, 24 ) );
+		Assert.IsTrue( beside.Result.Accepted, beside.Result.Reason );
+		Assert.AreNotEqual( 0, journaled.Level.Guests.Grid.Cells.LinksAt( 8, 20 ) & 8, "its link pass set it" );
+		return (column, row, beside.Record);
+	}
+
+	[TestMethod]
+	public void AnOwnLinesLeftoverDiagonalIsItsResidueWhichItsEarlierLinesPassOver()
+	{
+		var journaled = NewJournaled();
+		var (column, row, beside) = ColumnRowAndBeside( journaled, 1 );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, beside ) );
+		var cells = journaled.Level.Guests!.Grid.Cells;
+		Assert.AreNotEqual( 0, cells.LinksAt( 8, 20 ) & 8, "the clear unlinks the removed cells alone: the diagonal stays, as in single player" );
+		CollectionAssert.AreEqual( new[] { row, -3L }, journaled.History( 8, 20 ), "the row's record, then member 1's residue" );
+		CollectionAssert.AreEqual( new[] { column, -3L }, journaled.History( 9, 21 ), "the bit back, the same on the column's cell" );
+		// the row's take-back clears (8, 20) whole, the diagonal with it: its member's own residue does not stop it; its clear unlinks the column's (9, 21) too, a write of its member's own
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, row ) );
+		CollectionAssert.AreEqual( new[] { column, -3L }, journaled.History( 9, 21 ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, column ) );
+		Assert.IsFalse( journaled.Level.Guests.Grid.IsWalkable( 8, 20 ) || journaled.Level.Guests.Grid.IsWalkable( 9, 22 ) );
+		Assert.AreEqual( 0, journaled.Journal.StepsOf( 1 ) );
+	}
+
+	[TestMethod]
+	public void AnOwnResidueBesideAnotherPlayersRecordStillRefusesTheEarlierLine()
+	{
+		var journaled = NewJournaled();
+		var (_, row, beside) = ColumnRowAndBeside( journaled, 1 );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, beside ) );
+		// another member's line up from the row's (8, 20) links into it
+		var other = journaled.Run( 2, Line( 8, 19, 8, 16 ) );
+		Assert.IsTrue( other.Result.Accepted, other.Result.Reason );
+		CollectionAssert.AreEqual( new[] { row, -3L, other.Record }, journaled.History( 8, 20 ) );
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBack( 1, row ), "the other member's line still joins it" );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 2, other.Record ) );
+		CollectionAssert.AreEqual( new[] { row, -3L }, journaled.History( 8, 20 ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, row ), "its own residue alone is passed" );
+	}
+
+	[TestMethod]
+	public void AnotherMembersResidueIsAChangeAndStaysOneAfterItsDeparture()
+	{
+		var journaled = NewJournaled();
+		var (_, row, beside) = ColumnRowAndBeside( journaled, 2 );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 2, beside ) );
+		CollectionAssert.AreEqual( new[] { row, -4L }, journaled.History( 8, 20 ), "member 2's residue" );
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBack( 1, row ), "no take-back undoes over another player's write" );
+		// its member gone, it stays for good as the permanent marker
+		journaled.Journal.Depart( 2 );
+		CollectionAssert.AreEqual( new[] { row, -1L }, journaled.History( 8, 20 ) );
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBack( 1, row ) );
+	}
+
+	[TestMethod]
+	public void ACellsListKeepsEachRunOfMarkersAsTheSetTheRuleReads()
+	{
+		// records 5, 7 and 9; residues of members 1 (−3), 2 (−4) and 3 (−5); the permanent marker (−1)
+		var list = new List<long> { 5, -3, -4, -3, 7, -3, -1, -4, 9, -1, -1, -5 };
+		CoopUndoJournal.Normalize( list );
+		CollectionAssert.AreEqual( new long[] { 5, -3, -4, 7, -1, 9, -1 }, list, "each member's residue once; a run with the permanent marker that marker alone" );
+		var permanentFirst = new List<long> { -1, -3, -1, 4 };
+		CoopUndoJournal.Normalize( permanentFirst );
+		CollectionAssert.AreEqual( new long[] { -1, 4 }, permanentFirst );
 	}
 
 	[TestMethod]

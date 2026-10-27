@@ -20,7 +20,8 @@ public sealed partial class Level
 		if ( Guests?.Grid.Cells is not { } cells || Objects == null )
 			return false;
 		var footprint = segment.Built.Concat( segment.Existing ).ToArray();
-		if ( footprint.Any( cell => StandsOn( cells, cell ) ) )
+		// the step still there: every cell of it a path (a cell another command emptied, even one taken back since, leaves the undo nothing to remove), nothing standing on it
+		if ( footprint.Any( cell => cells.TypeAt( cell.X, cell.Y ) != ParkCellType.Path || StandsOn( cells, cell ) ) )
 			return false;
 		var copy = cells.CopyForPrediction();
 		copy.Changed = ( x, y, _ ) => trace.Add( (x, y) );
@@ -81,7 +82,8 @@ public sealed partial class Level
 		if ( Guests is not { } guests || ResolveCommandRide( ride ) is not { } bridge )
 			return false;
 		var cells = guests.Grid.Cells;
-		if ( footprint.Any( cell => StandsOn( cells, cell ) ) )
+		// the step still there: every cell of it a queue cell, nothing standing on it
+		if ( footprint.Any( cell => cells.RawTypeAt( cell.X, cell.Y ) != (byte)ParkCellType.Queue || StandsOn( cells, cell ) ) )
 			return false;
 		var copy = cells.CopyForPrediction();
 		copy.Changed = ( x, y, _ ) => trace.Add( (x, y) );

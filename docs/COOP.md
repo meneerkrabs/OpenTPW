@@ -1174,6 +1174,15 @@ The scenarios:
   one of the nine staff commands is accepted on both parks, at the same record where the guest's park knows it
   (the two inside a cut have none there). Each forced desync is the host's one report of it with one capture; the
   first two, inside the early window after a join, may count as that join's failure, at most those two.
+- **undo** (`--scenario undo`, C5-1): after the lines the guest lays a path line of two segments through the
+  HUD's clicks and takes it back with two Backspaces, the newest segment first, each a take-back the host decides
+  and both parks take; then it lays another line and keeps its tool on. The host lays a line across one of that
+  line's inner cells (by the park's edge, a line from beside one of them, which links into it), its own tool kept
+  on. The guest's Backspace is refused as changed on both parks and says so; the host takes its own line back
+  with its Backspace; the guest's next Backspace then takes its line back. The driver checks the guest's four
+  take-backs (taken, taken, changed, taken) at their records with the host's verdicts on both parks, the host's
+  one take-back between the guest's refused one and its last, and that both parks applied the same take-backs in
+  the same order.
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
   HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
   takes its ticks before the host sets the speed, and the host its own when it does. Every five seconds both
@@ -2469,7 +2478,7 @@ action goes to the host, and the guest's tools and windows follow what came back
 
 `[EXT:online-coop-undo]` C5 makes Backspace in a building tool of a shared park take back the player's own last
 step of that tool, for the host and every guest alike, under the normal refund rules (decision Q14, A), and
-refuses it while a later command still depends on it. The plan (v16, after sixteen Codex rounds) makes it
+refuses it while a later command still depends on it. The plan (v22, after twenty-two Codex rounds) makes it
 three parts that reach main as one merge: C5-1 the host's undo journal, the path, queue and slide tools;
 C5-2 the pool strokes and the wave machine; C5-3 the kart, water and coaster tools.
 
@@ -2490,8 +2499,16 @@ a value written again unchanged is none), and the record goes into the history o
 on: the records still in effect that changed it, oldest first. A step keeps its effects, the cells' fields
 before and right after it; a take-back removes its record from each cell where it reversed every effect (each
 field back to its value before the step, links and flags bit by bit), wherever the record stands, so later
-steps taken back in any order leave the histories as if they had never been. A record of no step (a removal, a
-sale, a departed member's step) can never leave and stays as one permanent marker. The journal keeps a member's
+steps taken back in any order leave the histories as if they had never been. Where an effect of the step stays
+after its take-back (a diagonal link its line's link pass set between two cells that both stay, which a clear
+does not take back), its record stays as
+the member's residue: every other member's step meets it as a change, while the member's own earlier step that
+clears the cell whole passes over it, so a player's own chain goes back as in single player; a take-back's own
+writes outside its step (its clear unlinking a bit another command set beside it) count as its member's residue
+too. A record of no step (a removal, a sale, a departed member's step) can never leave and stays as the
+permanent marker. The markers between two records are kept as the set the rule reads (a run with the permanent
+marker is that marker alone, any other each member's residue once), and a departed member's residue turns
+permanent, so a cell's history stays short whatever ran. The journal keeps a member's
 newest 16,384 steps within 262,144 cells; an older step's take-back says it is too long ago. A member that
 leaves its seat leaves its steps behind for good, and a slide tower's removal drops its slide's steps. Any fault
 of the journal turns it off for the rest of the session: it then takes nothing back, so nothing is decided on
@@ -2509,9 +2526,10 @@ inverse, the tool's own undo of the step (`UndoLineCommand`, `UndoQueueSegmentCo
 `UndoPoolSlidePieceCommand`), which every peer runs as the take-back's player with its refunds; refused, it
 carries its verdict, and every peer refuses it alike; a guest's tool reads the verdict back from the result's
 reason, one constant per verdict. The rights check the decided record again with its inverse: a grant taken
-back while the take-back waited, a claimed ride's queue, or a path cell it would clear beside the entrance of
-a ride another seat claims (the clear re-evaluates that ride, which may open it) refuses it with the rights'
-note and ends the tool. A path undo re-evaluates the
+back while the take-back waited refuses it and ends the tool; another seat's claim on what its undo would
+touch (a claimed ride's queue, or a path cell it would clear that links to that ride's entrance, whose unlinking
+re-evaluates the ride and may open it) refuses it with the claim's note and keeps the step and the tool, as a line refused
+there. A path undo re-evaluates the
 issuer's selected ride only for the host's own take-back, and never a ride another seat claims. The tools'
 scope is the interface's: the host checks own and last, so a crafted request for a member's own last step
 takes back only that step, under every check.
@@ -2519,7 +2537,11 @@ takes back only that step, under every check.
 **The tools (C5-1).** The path and queue tools keep each segment's record; Backspace takes back the newest, the
 host's at once, a guest's as a request that waits as a line does, and the segment leaves the tool only once
 taken. A segment the tool loaded from an existing queue was laid by no step: Backspace keeps it and says so. A
-tool's own chain goes back step by step: a native queue's later segment clears the bend corner it shares with
+line that ends its tool (it joined an existing path, as in the original, or a guest's line its record cut short)
+has no take-back, as in single player (the user's decision): the tool's stack ends with it, the journal makes no
+step of it (a take-back of it made by hand takes nothing), its player removes it with Backspace over its cells,
+and a step of another player's it crossed or joined can no longer be taken back. A refused line ends the tool, as
+before, so no segment that laid nothing stays on it. A tool's own chain goes back step by step: a native queue's later segment clears the bend corner it shares with
 the member's own earlier one, as the original's undo does, and the earlier one's take-back then expects it
 empty. The slide mode's Backspace takes back the tool's own newest piece, a guest's behind the pieces it still
 waits for; with none, or on a slide finished since (its pieces go only with its tower), it takes nothing,
@@ -2532,10 +2554,12 @@ says the rights' note; a finished slide says nothing.
 
 **Tests.** `CoopSessionTests.Undo` (path segments and chains, native and legacy queue lines with their refunds
 and their owner words compared on every peer, the money-stopped segment's residue, other players' lines across
-and beside a step, three players taking back in either order, a pool bridge in the way, forged and stale
-take-backs, the grant taken back on the way, a claimed ride's entrance beside the step, conflicts in one frame, the sale's full first-year scrap, the
-slide's pieces and its sold tower), `CoopUndoJournalTests` (the setters, the histories, the permanent marker,
-departures, the bounds, the own bend chain, a fault), `CoopJoinSessionTests.Undo` (take-backs across a
+and beside a step, a line ending on another player's path, three players taking back in either order, a pool
+bridge in the way, forged and stale take-backs, the grant taken back on the way (a line and a take-back), a
+claimed ride's entrance beside the step, conflicts in one frame, the sale's full first-year scrap, the slide's
+pieces and its sold tower), `CoopUndoJournalTests` (the setters, the histories, the permanent marker, the
+residue of an own chain and of another member, the lists' normal form, departures, the bounds, the own bend
+chain, a fault), `CoopJoinSessionTests.Undo` (take-backs across a
 resync), the codec's pinned bytes and the class table.
 
 ## The command layer (C1)

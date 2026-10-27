@@ -351,8 +351,8 @@ public sealed class CellBuildTool
 		if ( Writer == null || segments.Count == 0 || IsWaiting || !Writer.CanUndo )
 			return false;
 		var segment = segments[^1];
-		// [EXT:online-coop-undo] in a shared park a path or queue segment is taken back through the host's journal (C5): one that laid nothing pops as in single player; one the tool loaded
-		// (no record) was laid by no step of its player's, and stays
+		// [EXT:online-coop-undo] in a shared park a path or queue segment is taken back through the host's journal (C5): one that laid nothing pops as in single player (none stays on the
+		// stack today: a refused command ends the tool); one the tool loaded (no record) was laid by no step of its player's, and stays
 		if ( Writer is ParkCommandLineWriter { TakesBack: true } lines )
 		{
 			if ( !lines.HasWork( segment ) )

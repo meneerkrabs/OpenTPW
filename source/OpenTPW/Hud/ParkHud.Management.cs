@@ -260,6 +260,9 @@ public sealed partial class ParkHud
 	internal void OpenParkRenameDialog()
 	{
 		if ( level.IsReadOnlyVisit || level.ParkName is not { } current ) return;
+		// [EXT:online-coop-commands] reopening edits the latest requested name, not the park's older applied lines (C4b)
+		if ( PendingManagement( ManagementTarget.Finance, ManagementKnob.Name ) is RenameParkCommand pending )
+			current = new ParkNameLines( pending.Line1, pending.Line2 );
 		var screen = new ShopPriceScreen( "parkRename" );
 		var window = UiDialogs.CenteredWindow( 1100, 760 );
 		UiDialogs.AddWindow( screen, window, "w_dialog", () => strings[UIStrings.RenameItem] );

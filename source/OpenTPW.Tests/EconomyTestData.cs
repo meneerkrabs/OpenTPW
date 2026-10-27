@@ -7,6 +7,13 @@ namespace OpenTPW.Tests;
 /// <summary>Synthetic balance settings and objects shaped like the original files (no original data).</summary>
 internal static class EconomyTestData
 {
+	/// <summary>The ride update entering state 1 or 4 (tp.exe 0x4E14E0): the bridge writes the ride's shared state word, and the level publishes the entry to the economy.</summary>
+	internal static void RideUpdateEntersBrokenState( ParkEconomy park, ParkObjectState ride )
+	{
+		ride.StateWord.Set( RideStateWord.BrokenStateFor( ride.LifeGauge ) );
+		park.PublishRideState( ride );
+	}
+
 	private static readonly string[] Plurals = { "Handymen", "Mechanics", "Entertainers", "Guards", "Researchers" };
 	private static readonly string[] Singulars = { "Handyman", "Mechanic", "Entertainer", "Guard", "Researcher" };
 

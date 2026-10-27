@@ -398,8 +398,8 @@ internal sealed class CoopManagementRequests
 		{
 			if ( issuer.RightsRefusalOf( entry.Command ) is { } refusal )
 			{
-				// [EXT:online-coop-commands] its note goes to its window's waiter or to the session's notes, said once the HUD's lines can be seen, never through the session's immediate
-				// refusal path (C4b-2)
+				// [EXT:online-coop-commands] its outcome waits for its window's waiter or in the session's notes until a HUD's lines can be seen, also across a HUD's replacement, never through
+				// the session's immediate refusal path (C4b-2)
 				Resolve( entry, new ManagementOutcome( entry, ManagementOutcomeKind.Refused, refusal ) );
 				continue;
 			}
@@ -458,8 +458,8 @@ internal sealed class CoopManagementRequests
 		Resolve( entry, outcome );
 	}
 
-	/// <summary>Resolves <paramref name="entry"/>: its outcome goes to its live waiter, else (when <paramref name="note"/>) to the notes if it says anything.</summary>
-	private void Resolve( ManagementEntry entry, ManagementOutcome outcome, bool note = true )
+	/// <summary>Resolves <paramref name="entry"/>: its outcome goes to its live waiter, else to the notes if it says anything.</summary>
+	private void Resolve( ManagementEntry entry, ManagementOutcome outcome )
 	{
 		if ( entry.State == ManagementEntryState.Open )
 			open--;
@@ -472,7 +472,7 @@ internal sealed class CoopManagementRequests
 		}
 		if ( entry.Waiter is { Detached: false } waiter )
 			waiter.Outcomes.Enqueue( outcome );
-		else if ( note )
+		else
 			AddNote( outcome );
 	}
 

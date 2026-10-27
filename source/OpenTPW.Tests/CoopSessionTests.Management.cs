@@ -297,6 +297,43 @@ public partial class CoopSessionTests
 		CatchUpAndCompare( host, guest );
 	}
 
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void ReopeningAPendingRenameKeepsBothLatestLinesWhenOnlyOneIsEdited( bool firstSent )
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		GiveRights( host, guest, view, CoopRights.Finance );
+		view.Hud.OpenEntryPriceWindow();
+		view.Update();
+		var applied = guest.Level.ParkName!.DisplayName;
+		Element<UiButton>( view, "parkName" ).Activate();
+		Element<UiTextField>( view, "line1" ).Text = "Shared";
+		Element<UiTextField>( view, "line2" ).Text = "Park";
+		Element<UiButton>( view, "apply" ).Activate();
+		if ( firstSent )
+			SendNext( guest );
+		// the first rename is still unsent or open: changing only its second line must preserve the requested first line
+		Element<UiButton>( view, "parkName" ).Activate();
+		Assert.AreEqual( ("Shared", "Park"), (Element<UiTextField>( view, "line1" ).Text, Element<UiTextField>( view, "line2" ).Text) );
+		Element<UiTextField>( view, "line2" ).Text = "Land";
+		Element<UiButton>( view, "apply" ).Activate();
+		// if the first was sent, there are now an open and an unsent rename: reopening must use the newest one's two lines
+		Element<UiButton>( view, "parkName" ).Activate();
+		Assert.AreEqual( ("Shared", "Land"), (Element<UiTextField>( view, "line1" ).Text, Element<UiTextField>( view, "line2" ).Text) );
+		Element<UiTextField>( view, "line1" ).Text = "New";
+		Element<UiButton>( view, "apply" ).Activate();
+		Assert.AreEqual( "entryPrice", Top( view ) );
+		Assert.AreEqual( new RenameParkCommand( "New", "Land" ), Management( guest ).PendingCommand( ManagementTarget.Finance, ManagementKnob.Name ) );
+		Assert.AreEqual( applied, guest.Level.ParkName!.DisplayName, "editing the pending name does not apply it locally" );
+		UntilManaged( host, guest, view );
+		var name = new ParkNameLines( "New", "Land" ).DisplayName;
+		Assert.AreEqual( (name, name), (guest.Level.ParkName!.DisplayName, host.Level.ParkName!.DisplayName) );
+		CatchUpAndCompare( host, guest );
+	}
+
 	/// <summary>
 	/// A park the bank lends to (the asset-free park's value is below every offer's amount): the credit test reads the park's value from its own cell map, as a headless economy's
 	/// (<see cref="ParkEconomyTests"/>), the same on every peer before the session starts.
@@ -624,6 +661,63 @@ public partial class CoopSessionTests
 		view.Pass( ParkHud.MessageSeconds + 1 );
 		view.Update();
 		CollectionAssert.AreEqual( new[] { view.Strings.Extra( texts[3] ) }, view.Hud.Messages.ToArray(), "the fourth once the lines had room" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void ARightRevokedBeforeThePumpKeepsOneVisibleNoteAfterTheHudWasHiddenOrReplaced( bool replaceHud )
+	{
+		var (host, guest, _, _) = Shared();
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		GiveRights( host, guest, view, CoopRights.Finance );
+		var seat = guest.Level.Commands.Player;
+		var numbered = Numbered( guest );
+		var refusals = guest.Level.SessionRefusals;
+		Assert.IsTrue( Management( guest ).Enqueue( new[]
+		{
+			new ManagementItem( ManagementTarget.Finance, ManagementKnob.Fee, new SetEntranceFeeCommand( guest.Economy.EntranceFee + 1 ) ),
+			new ManagementItem( ManagementTarget.Finance, ManagementKnob.Name, new RenameParkCommand( "Not", "Applied" ) )
+		} ).Queued );
+		view.Hud.Stack.Push( new UiScreen( "full" ) { HidesBelow = true } );
+		Assert.IsTrue( host.Issue( new SetSeatRightsCommand( seat, CoopRights.None ) ).Accepted );
+		// deliver the revocation without stepping the guest's management pump: neither queued action has been sent yet
+		for ( var round = 0; round < 600 && guest.Level.RightsOf( seat ) != CoopRights.None; round++ )
+		{
+			clock += 1 / 60.0;
+			host.Frame( 1 / 60.0 );
+			guest.Frame( 1 / 60.0 );
+		}
+		Assert.AreEqual( CoopRights.None, guest.Level.RightsOf( seat ) );
+		Assert.AreEqual( 2, Management( guest ).Pending.Count() );
+		Assert.IsTrue( Management( guest ).Pending.All( entry => entry.State == ManagementEntryState.Unsent ) );
+		SendNext( guest );
+		Assert.IsFalse( Management( guest ).Pending.Any() );
+		Assert.AreEqual( numbered, Numbered( guest ), "the revocation refused both actions before a request was numbered" );
+		Assert.AreEqual( refusals, guest.Level.SessionRefusals, "only durable notes, not duplicate transient session refusals" );
+		view.Update();
+		view.Pass( ParkHud.MessageSeconds + 1 );
+		Assert.AreEqual( 0, view.Hud.Messages.Count, "nothing is said while the feedback is hidden" );
+		Assert.IsNotNull( Management( guest ).PeekNote(), "the refusal cannot expire unseen" );
+		if ( replaceHud )
+		{
+			view.Hud.Stack.Clear();
+			view = ViewOf( guest );
+		}
+		else
+			view.Hud.Stack.Pop();
+		view.Update();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ), "both refusals coalesce to one visible line" );
+		Assert.AreEqual( 1, view.Hud.Messages.Count );
+		Assert.IsNull( Management( guest ).PeekNote() );
+		view.Update();
+		Assert.AreEqual( 1, view.Hud.Messages.Count, "no transient notice follows the durable note" );
+		view.Pass( ParkHud.MessageSeconds - 1 );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ), "the newly visible line gets its full lifetime" );
+		view.Pass( 2 );
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopNotPermitted ) );
 		CatchUpAndCompare( host, guest );
 	}
 

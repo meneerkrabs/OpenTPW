@@ -29,6 +29,8 @@ public sealed class ParkResearch
 	private readonly Dictionary<(int InfoId, int Level), long> progress = new();
 	private readonly int[] effort;
 	private readonly Dictionary<ResearchCategory, ResearchItem> selected = new();
+	/// <summary>Categories whose current project is one the picker would not offer now (its group is closed or its add-on target is not researched): a lab loaded from a save keeps the saved project as it is until it is finished or the player moves on.</summary>
+	private readonly HashSet<ResearchCategory> unoffered = new();
 	private readonly HashSet<(int InfoId, int Level)> itemKeys = new();
 	private readonly SortedSet<int> cheatAvailable = new();
 	private readonly Dictionary<ResearchCategory, List<ResearchItem>> byCategory = new();
@@ -376,9 +378,10 @@ public sealed class ParkResearch
 	// Host UI selection below retains the native default cursor; correspondence with native player selection remains unverified.
 	public ResearchItem? Current( ResearchCategory category )
 	{
-		if ( selected.TryGetValue( category, out var item ) && IsSelectable( item ) )
+		if ( selected.TryGetValue( category, out var item ) && (IsSelectable( item ) || unoffered.Contains( category ) && !completed.Contains( (item.InfoId, item.Level) )) )
 			return item;
 		selected.Remove( category );
+		unoffered.Remove( category );
 		return byCategory.TryGetValue( category, out var list ) ? list.FirstOrDefault( IsSelectable ) : null;
 	}
 
@@ -400,6 +403,7 @@ public sealed class ParkResearch
 		if ( choices[next] == current )
 			return false;
 		selected[category] = choices[next];
+		unoffered.Remove( category );
 		return true;
 	}
 
@@ -477,6 +481,7 @@ public sealed class ParkResearch
 	private void AdvanceCursor( ResearchItem finished )
 	{
 		selected.Remove( finished.Category );
+		unoffered.Remove( finished.Category );
 		if ( !byCategory.TryGetValue( finished.Category, out var list ) )
 			return;
 		var index = list.IndexOf( finished );
@@ -545,11 +550,29 @@ public sealed class ParkResearch
 		return true;
 	}
 
+	/// <summary>
+	/// Makes an imported project its category's current item as the saved lab holds it, whether or not the picker would offer it now; false when the lab has no such project.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00504760 research group serializer] the group record's current project index is read back as it is: the loader runs no picker over it (the picker 0x005034F0 only runs when the cursor's project is finished, 0x00504040)
+	internal bool SelectAsSaved( ResearchCategory category, int infoId, int level )
+	{
+		var item = items.FirstOrDefault( item => item.Category == category && item.InfoId == infoId && item.Level == level );
+		if ( item == null )
+			return false;
+		selected[category] = item;
+		if ( IsSelectable( item ) )
+			unoffered.Remove( category );
+		else
+			unoffered.Add( category );
+		return true;
+	}
+
 	internal void Restore( IEnumerable<(int InfoId, int Level)> restoredCompleted, IEnumerable<((int InfoId, int Level) Key, long Points)> restoredProgress, IReadOnlyList<int> restoredEffort, IEnumerable<(ResearchCategory Category, int InfoId, int Level)>? restoredCurrent = null,
 		IReadOnlyList<(int InfoId, int Level)>? upgradeOrder = null, IReadOnlyList<int>? restoredHighestGroups = null )
 	{
 		RestoreRecentItems( null );
 		selected.Clear();
+		unoffered.Clear();
 		completed.Clear();
 		foreach ( var key in restoredCompleted )
 		{
@@ -572,8 +595,10 @@ public sealed class ParkResearch
 		foreach ( var (category, infoId, level) in restoredCurrent ?? Enumerable.Empty<(ResearchCategory, int, int)>() )
 		{
 			var item = items.FirstOrDefault( item => item.Category == category && item.InfoId == infoId && item.Level == level );
-			if ( item == null || !IsSelectable( item ) || !selected.TryAdd( category, item ) )
+			if ( item == null || completed.Contains( (item.InfoId, item.Level) ) || !selected.TryAdd( category, item ) )
 				throw new InvalidDataException( $"Saved research cursor refers to an invalid project {infoId} level {level}." );
+			if ( !IsSelectable( item ) )
+				unoffered.Add( category );
 		}
 	}
 
@@ -603,7 +628,7 @@ public sealed class ParkResearch
 	}
 
 	internal IEnumerable<(ResearchCategory Category, int InfoId, int Level)> CurrentEntries =>
-		selected.Where( entry => IsSelectable( entry.Value ) ).OrderBy( entry => entry.Key )
+		selected.Where( entry => IsSelectable( entry.Value ) || unoffered.Contains( entry.Key ) && !completed.Contains( (entry.Value.InfoId, entry.Value.Level) ) ).OrderBy( entry => entry.Key )
 			.Select( entry => (entry.Key, entry.Value.InfoId, entry.Value.Level) );
 
 	internal IEnumerable<((int InfoId, int Level) Key, long Points)> ProgressEntries => progress.Select( pair => (pair.Key, pair.Value) );

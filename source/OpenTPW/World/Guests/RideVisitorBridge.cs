@@ -214,28 +214,41 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// The choice's counts-test refuses both, and so does the ride update (both dismiss the queue head); a queued guest's move-up holds only in state 1
 	/// (<see cref="HoldsQueuedGuests"/>).
 	/// </summary>
-	// The repair (0xdf4d4) and the other openers write the open word 1 and VAR_RIDECLOSED 0 together with SetState(0), so an opened ride has left state 1
-	public bool IsBrokenDown => brokenDown && (!isOpen() || vm == null || Get( RideVariables.VAR_RIDECLOSED ) != 0);
+	// [BIN:TPW-EXE:0x004E0E60 SetState] the state word +0x19C is read as it stands: the repair, the open routine and the other openers write SetState(0) with the open word (OriginalObjectRuntime.Open), so an opened ride has left state 1
+	public bool IsBrokenDown => stateWord.IsBroken;
 	/// <summary>
 	/// The ride is in state 1 exactly (the predicate <c>0x004E0370</c>, <c>+0x19C == 1</c>): a queued guest's move-up holds its walk only then, so in state 4 (condemned) the guests
 	/// behind the dismissed head walk on.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004E0370 state-1 predicate] returns ride +0x19C == 1; the guest's state 11 reads it at 0x00500523 and holds the move-up walk for a true result only
-	public bool HoldsQueuedGuests => IsBrokenDown && !condemned;
+	public bool HoldsQueuedGuests => stateWord.Value == RideObjectStates.BrokenDown;
 	/// <summary>The ride update's state 4 (<see cref="LifeGauge"/> truncated to a zero byte when the update read <c>VAR_BROKEN</c>, <c>0x004E14E0</c>).</summary>
-	public bool IsCondemned => IsBrokenDown && condemned;
+	public bool IsCondemned => stateWord.Value == RideObjectStates.Condemned;
 	/// <summary>The ride's life gauge (<c>+0x48</c>, 0..100): the level mirrors it from the economy; the ride update reads it when it enters state 1 or 4.</summary>
 	public double LifeGauge { get; set; } = 100;
-	/// <summary>The ride update's state 1 or 4 (the state word the bridge keeps): entered when the update reads VAR_BROKEN in state 0, left when the ride opens again.</summary>
-	public bool InBrokenState => brokenDown;
-	private bool condemned;
-	private bool brokenDown;
+	/// <summary>
+	/// The ride's state word (+0x19C, <see cref="RideStateWord"/>): entered at state 1 or 4 when the ride update reads VAR_BROKEN in state 0, left through <c>SetState(0)</c> when the ride opens again. The level
+	/// replaces the bridge's own word with the one of the ride's economy record, so the economy, the guests and the opening guard read one word; a broken state the bridge held already moves to the new word.
+	/// </summary>
+	public RideStateWord StateWord
+	{
+		get => stateWord;
+		internal set
+		{
+			ArgumentNullException.ThrowIfNull( value );
+			if ( ReferenceEquals( value, stateWord ) )
+				return;
+			if ( stateWord.IsBroken && !value.IsBroken )
+				value.Restore( stateWord.Value );
+			stateWord = value;
+		}
+	}
+	private RideStateWord stateWord = new();
 
 	/// <summary>Restores a supported original retained state without admission, queue or script side effects.</summary>
 	internal void RestoreOriginalBrokenState( bool isCondemned, double lifeGauge )
 	{
-		brokenDown = true;
-		condemned = isCondemned;
+		stateWord.Restore( isCondemned ? RideObjectStates.Condemned : RideObjectStates.BrokenDown );
 		LifeGauge = lifeGauge;
 	}
 
@@ -316,9 +329,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		hash.Add( letMeOnWritten );
 		hash.Add( lastAdmissionTurn );
-		hash.Add( brokenDown );
-		if ( condemned )
-			hash.Add( condemned );   // state 4 only, so a ride in state 1 or 0 hashes as before
+		hash.Add( stateWord.IsBroken );
+		if ( stateWord.Value == RideObjectStates.Condemned )
+			hash.Add( true );   // state 4 only, so a ride in state 1 or 0 hashes as before
 		hash.Add( QueueFrontCell is { } front ? front.X : -1 );
 		hash.Add( QueueFrontCell is { } frontCell ? frontCell.Y : -1 );
 		hash.Add( QueueEntranceDirection );
@@ -367,8 +380,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		CalledGuest = called,
 		LetMeOnWritten = letMeOnWritten,
 		LastAdmissionTurn = lastAdmissionTurn,
-		BrokenDown = brokenDown,
-		Condemned = condemned ? true : null,
+		BrokenDown = stateWord.IsBroken,
+		Condemned = stateWord.Value == RideObjectStates.Condemned ? true : null,
 		CalledTurn = calledTurn,
 		QueueCells = queueCells.ToArray(),
 		TypedQueueFront = QueueEntryResolver != null && QueueEntranceDirection >= 0 ? QueueFrontCell : null,
@@ -576,8 +589,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		called = snapshot.CalledGuest;
 		letMeOnWritten = snapshot.LetMeOnWritten;
 		lastAdmissionTurn = snapshot.LastAdmissionTurn;
-		brokenDown = snapshot.BrokenDown;
-		condemned = snapshot.BrokenDown && snapshot.Condemned == true;
+		// an older save holds no state for a ride that was broken down (the ride update reads VAR_BROKEN again), and the economy's own save may hold it already: a clear is never written over it
+		// a snapshot still "broken" after a repair reopened the ride is stale: every opener writes SetState(0) with the open word, so an open ride (the open word set and VAR_RIDECLOSED 0) has left the state
+		if ( snapshot.BrokenDown && (!isOpen() || vm == null || Get( RideVariables.VAR_RIDECLOSED ) != 0) )
+			stateWord.Restore( snapshot.Condemned == true ? RideObjectStates.Condemned : RideObjectStates.BrokenDown );
 		calledTurn = snapshot.CalledTurn;
 		queueCells.Clear();
 		queueCells.AddRange( snapshot.QueueCells );
@@ -1095,9 +1110,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return false;
 		// Recheck the owner's open word and retained state at the stand point; the choice's coaster/track predicate does not apply here.
 		// [BIN:TPW-EXE:0x004E0900 AdmitPerson state/open test] AdmitPerson refuses a ride in state 1 (+0x19C), with the open word +0x68 = 0 or in state 4 before the loading-slot and VAR_LETMEON checks: it logs and returns 0 without touching the ride (0x004E0A30), so the pending visitor and VAR_LETMEON stay as they are
-		// IsBrokenDown stands for tp.exe's +0x19C test (states 1 and 4) only because every opener writes the open word 1 and VAR_RIDECLOSED 0 together with SetState(0)
-		// (the repair 0x004DF8F0, the open routine 0x004DF390, the queue edit's reopening 0x004DE1F0, the upgrade cancel 0x004E0050; see IsBrokenDown): an opener
-		// that wrote only the open word would leave tp.exe in state 1 while the bridge's retained state reads as left (ClosedRideAdmissionTests pins the runtime opener)
+		// IsBrokenDown is tp.exe's +0x19C test (states 1 and 4): every opener writes the open word 1 and VAR_RIDECLOSED 0 together with SetState(0)
+		// (the repair 0x004DF8F0, the open routine 0x004DF390, the queue edit's reopening 0x004DE1F0, the upgrade cancel 0x004E0050), which OriginalObjectRuntime.Open does with the word
 		if ( !isOpen() || IsBrokenDown )
 			return false;
 		if ( letMeOnWritten )
@@ -1183,16 +1197,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		// [BIN:STP-PPC:0x100E1864 breakdown noticed] in state 0 the ride update runs the admission (0xe1404) first and only then reads VAR_BROKEN and enters state 1 (4 when the life gauge is 0): SetState(1) runs the head step once, zeroes the pending visitor and writes VAR_RIDECLOSED = 1 with the open word 0 (the oracle target ride-set-state executes it, ORACLE.md F27)
 		// [BIN:TPW-EXE:0x4e0e00 ride state dispatch] state 0 runs 0x4e14e0 (VAR_BROKEN, script slot 7: SetState(1), or 4 when the life gauge +0x48 truncates to 0); states 1, 2 and 4 run the head step 0x4e0450 and the script dismiss 0x4e1410; nothing in states 1, 2 or 4 reads VAR_BROKEN
 		// [BIN:TPW-EXE:0x004E0E60 SetState 1, 2 and 4] states 1, 2 and 4 each run the head step 0x004E0450, write the open word +0x68 = 0 and VAR_RIDECLOSED = 1 (script slot 6), and are left only through SetState(0) (the repair 0x004DF8F0 opens the ride first; the reopen guard 0x004DF290 refuses 1, 2 and 4); state 2 (upgrading) is the economy's closed ride (ECON-023); the bridge keeps state 1 and state 4 apart by the life gauge (condemned), because the guest's state 11 holds its move-up only in state 1 (0x004E0370 at 0x00500523)
-		if ( brokenDown )
+		if ( stateWord.IsBroken )
 		{
-			if ( IsBrokenDown )
-			{
-				DismissHead();
-				DismissLetOff();
-				return;
-			}
-			brokenDown = false;
-			condemned = false;
+			DismissHead();
+			DismissLetOff();
+			return;
 		}
 		// [BIN:TPW-EXE:0x004E1220 closed ride admission] state 0 runs the admission first (0x004E14E0); with the open word +0x68 at 0 it only runs the head step 0x004E0450, which unlinks the queue head (0x004DDD20) and dismisses it (0x005012F0), so a closed ride sends away one head per park turn and the others wait (a head the script has already taken was boarded above: 0x004E0450's "forcing him onto ride" case, 0x00500870)
 		if ( !isOpen() )
@@ -1263,9 +1272,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// </summary>
 	private void EnterBrokenState()
 	{
-		brokenDown = true;
 		// [BIN:TPW-EXE:0x004E14E0 state 1 or 4] the ride update reads the life gauge +0x48 (fld, __ftol, test al) when it enters the state: a nonzero low byte gives state 1 ("Setting state BROKEN", SetState 0x004E0E60(1)), a zero byte state 4 ("Setting state CONDEMNED", SetState(4))
-		condemned = RideBreakdownRules.GaugeByte( (float)LifeGauge ) == 0;
+		var condemned = RideBreakdownRules.GaugeByte( (float)LifeGauge ) == 0;
+		stateWord.Set( condemned ? RideObjectStates.Condemned : RideObjectStates.BrokenDown );
 		// [BIN:TPW-EXE:0x004E1542 breakdown's model calls] "Setting state BROKEN" calls 0x00454550(2) and "Setting state CONDEMNED" 0x00454550(4) before SetState(1) or SetState(4), whose close calls 0x00454550(1) (0x004E0F20, 0x004E1123): the hoarding shows the broken-down or condemned set
 		ModelState?.Invoke( condemned ? ObjectHoardingState.CondemnMode : ObjectHoardingState.BreakdownMode );
 		DismissHead();

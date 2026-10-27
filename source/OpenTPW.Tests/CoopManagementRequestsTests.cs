@@ -164,8 +164,8 @@ public partial class CoopManagementRequestsTests
 		var outcome = queue.TakeOutcomes( waiter ).Single();
 		Assert.AreSame( waited, outcome.Entry );
 		Assert.AreEqual( (ManagementOutcomeKind.Refused, ManagementNoteKind.Rights, CoopRefusal.NotPermitted), (outcome.Kind, outcome.Note.Kind, outcome.Note.Refusal) );
-		// the open one's refusal at its record, the escaped one's and the bare one's at the pump are notes of the same words, kept once among the session's notes and never through the
-		// session's immediate path (C4b-2)
+		// the open one's refusal at its record, the escaped one's and the bare one's at the pump are notes of the same words, kept once among the session's notes (a hidden or a replaced
+		// HUD still says it) and never through the session's immediate path (C4b-2)
 		CollectionAssert.AreEqual( new[] { open }, queue.TakeNotes().Select( note => note.Entry ).ToArray() );
 		Assert.AreEqual( (ManagementEntryState.Resolved, ManagementEntryState.Resolved), (escaped.State, bare.State) );
 	}

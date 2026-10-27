@@ -37,17 +37,17 @@ public class ImportedBrokenRideStateTests
 		var runtime = fixture.Runtime;
 		var bridge = runtime.Visitors;
 		Assert.AreEqual( 0, runtime.GetVariable( RideVariables.VAR_BROKEN ) );
-		Assert.IsFalse( bridge.InBrokenState, "The freshly constructed bridge has no original retained state." );
+		Assert.IsFalse( bridge.StateWord.IsBroken, "The freshly constructed bridge has no original retained state." );
 		var script = ParkResumeJson.Serialize( runtime.Script!.CaptureSnapshot() );
-		w.Economy.ObserveScriptState( w.State, bridge.InBrokenState );
+		w.Economy.PublishRideState( w.State );
 		var events = 0;
 		w.Economy.EventRaised += _ => events++;
 		Assert.IsNull( Level.RestoreOriginalRetainedRideState( w.Saved, w.State, runtime, w.Saved.Id ) );
-		Assert.IsTrue( bridge.InBrokenState && bridge.IsBrokenDown );
+		Assert.IsTrue( bridge.StateWord.IsBroken && bridge.IsBrokenDown );
 		Assert.AreEqual( state == 4, bridge.IsCondemned );
 		Assert.AreEqual( state == 1, bridge.HoldsQueuedGuests );
 		Assert.AreEqual( w.State.LifeGauge, bridge.LifeGauge );
-		w.Economy.ObserveScriptState( w.State, bridge.InBrokenState );
+		w.Economy.PublishRideState( w.State );
 		Assert.AreEqual( 0, events );
 		CollectionAssert.AreEqual( script, ParkResumeJson.Serialize( runtime.Script.CaptureSnapshot() ) );
 
@@ -58,11 +58,11 @@ public class ImportedBrokenRideStateTests
 		Assert.IsNull( Level.RestoreOriginalRetainedRideState( w.Saved, w.State, runtime, w.Saved.Id ) );
 		bridge.UpdateAdmission();
 		Assert.AreEqual( 1, bridge.Queue.Count() );
-		Assert.IsTrue( bridge.InBrokenState );
+		Assert.IsTrue( bridge.StateWord.IsBroken );
 		runtime.Open();
 		bridge.UpdateAdmission();
-		Assert.IsFalse( bridge.InBrokenState || bridge.IsCondemned );
-		w.Economy.ObserveScriptState( w.State, bridge.InBrokenState );
+		Assert.IsFalse( bridge.StateWord.IsBroken || bridge.IsCondemned );
+		w.Economy.PublishRideState( w.State );
 		Assert.AreEqual( 0, events, "Reopening does not replay a breakdown." );
 	}
 
@@ -117,7 +117,7 @@ public class ImportedBrokenRideStateTests
 		var loaded = park.Objects.Single( item => item.Id == w.State.Id );
 		var events = 0;
 		park.EventRaised += _ => events++;
-		park.ObserveScriptState( loaded, restored.Runtime.Visitors.InBrokenState );
+		park.PublishRideState( loaded );
 		Assert.AreEqual( state == 4, restored.Runtime.Visitors.IsCondemned );
 		Assert.AreEqual( state == 1, restored.Runtime.Visitors.HoldsQueuedGuests );
 		Assert.AreEqual( 0, events );
@@ -133,18 +133,17 @@ public class ImportedBrokenRideStateTests
 		var before = ParkResumeJson.Serialize( fixture.Runtime.CaptureSnapshot() );
 		Assert.IsNotNull( Level.RestoreOriginalRetainedRideState( w.Saved, w.State, fixture.Runtime, w.Saved.Id ) );
 		CollectionAssert.AreEqual( before, ParkResumeJson.Serialize( fixture.Runtime.CaptureSnapshot() ) );
-		Assert.IsNull( w.State.ScriptStateBroken );
 	}
 
 	[TestMethod]
-	public void ExistingGaugeNormalizationAlsoControlsTheBridgeClassification()
+	public void TheSavedStateWordIsKeptWhateverTheLifeGaugeSays()
 	{
 		var w = Import( 4, lifeGauge: 90 );
 		using var fixture = new RuntimeFixture();
-		// The existing importer retains the gauge-based state on inconsistent original records.
+		// the saved state word is the state word: a record whose state 4 disagrees with its life gauge keeps state 4 (and is reported by the import)
 		Assert.IsNull( Level.RestoreOriginalRetainedRideState( w.Saved, w.State, fixture.Runtime, w.Saved.Id ) );
-		Assert.IsTrue( fixture.Runtime.Visitors.HoldsQueuedGuests );
-		Assert.IsFalse( fixture.Runtime.Visitors.IsCondemned );
+		Assert.IsFalse( fixture.Runtime.Visitors.HoldsQueuedGuests );
+		Assert.IsTrue( fixture.Runtime.Visitors.IsCondemned );
 	}
 
 	[DataTestMethod]
@@ -164,12 +163,11 @@ public class ImportedBrokenRideStateTests
 			.Append( (unrelated.Runtime, w.Saved.Id, w.State.Id + 1) );
 		var reason = Level.RestoreOriginalRetainedRideOwner( w.Saved, w.State, candidates );
 		Assert.AreEqual( matches == 1, reason == null );
-		Assert.IsTrue( fixture.Runtime.Visitors.InBrokenState );
+		Assert.IsTrue( fixture.Runtime.Visitors.StateWord.IsBroken );
 		Assert.AreEqual( matches != 1, fixture.Runtime.Visitors.IsCondemned );
 		if ( matches != 1 )
 		{
 			CollectionAssert.AreEqual( before, ParkResumeJson.Serialize( fixture.Runtime.CaptureSnapshot() ) );
-			Assert.IsNull( w.State.ScriptStateBroken );
 		}
 		CollectionAssert.AreEqual( otherBefore, ParkResumeJson.Serialize( unrelated.Runtime.CaptureSnapshot() ) );
 	}
@@ -182,7 +180,6 @@ public class ImportedBrokenRideStateTests
 		var before = ParkResumeJson.Serialize( fixture.Runtime.CaptureSnapshot() );
 		Assert.IsNotNull( Level.RestoreOriginalRetainedRideState( w.Saved, w.State, fixture.Runtime, w.Saved.Id ) );
 		CollectionAssert.AreEqual( before, ParkResumeJson.Serialize( fixture.Runtime.CaptureSnapshot() ) );
-		Assert.IsNull( w.State.ScriptStateBroken );
 	}
 
 	private sealed class RuntimeFixture : IDisposable

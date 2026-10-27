@@ -945,6 +945,7 @@ public class AdvisorRestoredAdviceTests
 		var broken = state.Rides.Single();
 		Assert.IsTrue( broken.BrokenDown && !broken.Condemned );
 		ride.LifeGauge = 0;
+		ride.StateWord.Set( RideObjectStates.Condemned ); // the ride update enters state 4 when the gauge's byte is 0
 		var condemned = state.Rides.Single();
 		Assert.IsTrue( !condemned.BrokenDown && condemned.Condemned, "a life gauge of 0 is state 4" );
 		ride.IsOpen = false;
@@ -973,6 +974,7 @@ public class AdvisorRestoredAdviceTests
 		item.LifeGauge = 40;
 		Assert.AreEqual( new RestoredRide( item.Id, true, true, false, 3, 0, false ), ParkRestoredAdviceState.RideFacts( item, bridge, points, grid ), "three riders stuck in a broken-down ride" );
 		item.LifeGauge = 0;
+		item.StateWord.Set( RideObjectStates.Condemned );
 		Assert.AreEqual( new RestoredRide( item.Id, true, false, true, 3, 0, false ), ParkRestoredAdviceState.RideFacts( item, bridge, points, grid ), "and in a condemned one" );
 		var exit = points.Single( point => point.Kind == ObjectCellKind.Exit );
 		grid.SetPath( exit.OutsideX, exit.OutsideY, false );

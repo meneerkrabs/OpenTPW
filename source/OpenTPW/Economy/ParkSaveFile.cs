@@ -220,10 +220,10 @@ public static class ParkSaveFile
 		/// <summary>Ride life gauge; absent in older saves, which then start at 100.</summary>
 		public double? LifeGauge { get; init; }
 		public required bool IsBrokenDown { get; init; }
-		/// <summary>
-		/// The ride update's state 1 as the level last saw it (<see cref="ParkObjectState.ScriptStateBroken"/>), so the first observation after a load counts no
-		/// second breakdown; absent in older saves and for objects no level observed: the first observation then only records the state.
-		/// </summary>
+		/// <summary>The ride's state word when it is 1 (broken down) or 4 (condemned); absent when idle and in older saves, which then read <see cref="IsBrokenDown"/> and the life gauge.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? RideState { get; init; }
+		/// <summary>Read from older saves and ignored: the visitor bridge's state 1 as the level last saw it, which the one state word replaced.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public bool? ScriptStateBroken { get; init; }
 		public required int MechanicId { get; init; }
@@ -611,7 +611,7 @@ public static class ParkSaveFile
 		/// <summary>The category-4 table's order as (Info.Id, level) pairs (ECON-017); absent in older saves and while the completions give the order a restore would rebuild.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<int[]>? UpgradeOrder { get; init; }
-		/// <summary>Each category's highest open group (SAVE-007) where it differs from what the completed projects give; absent in older saves and otherwise.</summary>
+		/// <summary>Each category's highest open group where it differs from what the completed projects give; absent in older saves and otherwise.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<int>? HighestGroups { get; init; }
 		/// <summary>The objects the research cheat made available without researching them (<see cref="ParkResearch.CheatAvailable"/>), by Info.Id; absent in a park that never used it.</summary>
@@ -758,7 +758,7 @@ public static class ParkSaveFile
 			Repair = item.Repair,
 			LifeGauge = item.LifeGauge,
 			IsBrokenDown = item.IsBrokenDown,
-			ScriptStateBroken = item.ScriptStateBroken,
+			RideState = item.StateWord.Value == RideObjectStates.Idle ? null : item.StateWord.Value,
 			MechanicId = item.MechanicId,
 			// the releases clear the claim word and leave its turn: a turn belongs to a claim only
 			ClaimTurn = item.MechanicId == 0 ? 0 : item.ClaimTurn,
@@ -977,6 +977,8 @@ public static class ParkSaveFile
 			Require( item.Level is >= 0 and <= 2 && item.PendingLevel is >= 0 and <= 2 && item.StateOfRepair is >= 0 and <= 100 && item.Statistics.Length == 9, $"object {item.Id}" );
 			Require( !item.UpgradeCostDue || item.PendingLevel > item.Level, $"object {item.Id} upgrade cost" );
 			Require( item.UpgradePurchases >= 0, $"object {item.Id} upgrade purchases" );
+			Require( item.RideState is null or RideObjectStates.BrokenDown or RideObjectStates.Condemned, $"object {item.Id} ride state" );
+			Require( item.RideState is null || item.IsBrokenDown, $"object {item.Id} ride state against its broken-down flag" );
 			Require( item.BuiltTick <= data.Tick && item.Price >= 0 && item.CostOfGoods >= 0 && item.ChanceOfLosingPercent is >= 0 and <= 100, $"object {item.Id} values" );
 			Require( item.Repair is null || (double.IsFinite( item.Repair.Value ) && item.Repair.Value is >= 0 and <= 100 && (int)item.Repair.Value == item.StateOfRepair), $"object {item.Id} repair" );
 			// the quality setter keeps a byte (0x4e2190); the ingredient amount is a raw word, as the original loader reads it (0x4dcdc1)
@@ -1098,8 +1100,7 @@ public static class ParkSaveFile
 				IsOpen = item.IsOpen,
 				Repair = item.Repair ?? item.StateOfRepair,
 				LifeGauge = item.LifeGauge ?? 100,
-				IsBrokenDown = item.IsBrokenDown,
-				ScriptStateBroken = item.ScriptStateBroken,
+				RideState = item.RideState ?? (item.IsBrokenDown ? RideStateWord.BrokenStateFor( item.LifeGauge ?? 100 ) : RideObjectStates.Idle),
 				MechanicId = item.MechanicId,
 				ClaimTurn = item.ClaimTurn,
 				MaintenanceRequested = item.MaintenanceRequested,

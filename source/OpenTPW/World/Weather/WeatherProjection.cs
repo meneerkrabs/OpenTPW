@@ -5,15 +5,6 @@ using NVector4 = System.Numerics.Vector4;
 
 namespace OpenTPW;
 
-/// <summary>Which near plane the weather is clipped by (see <see cref="WeatherProjection"/>).</summary>
-public enum WeatherNearPlane
-{
-	/// <summary>The scene camera's near plane (0.1 engine units, 0.5 original units in the park): a drop or ribbon nearer than it is cut away. This is <c>[EXT:weather-near-plane]</c>.</summary>
-	Scene,
-	/// <summary>The original's near plane (0.1 original units, <c>0x578BE0</c>): nothing of the weather is cut before the eye, the depth value is held at the front of the buffer.</summary>
-	Original
-}
-
 /// <summary>
 /// How the original's weather vertices reach OpenTPW's screen. tp.exe submits the rain and snow vertices straight to its polygon path in homogeneous clip coordinates (no projection matrix, no screen matrix), so a vertex lands at
 /// x / w and y / w of the half screen (<c>0x5796A0</c>: x / w x half width + centre, y / w x half height + centre, y running down) with the depth-buffer value z / w; the bolts go through the scene's view-projection-screen matrix like the world.
@@ -41,15 +32,10 @@ public static class WeatherProjection
 
 	/// <summary>
 	/// The depth value OpenTPW writes for a weather vertex whose original depth-buffer value is <paramref name="originalDepth"/> (clip z over w): the scene's own depth for the same ordering against the world
-	/// (<see cref="EquivalentDistance"/> at <paramref name="engineUnitsPerOriginal"/>), held at 0 or above for <see cref="WeatherNearPlane.Original"/>, left negative (so the device cuts it) for <see cref="WeatherNearPlane.Scene"/>.
+	/// (<see cref="EquivalentDistance"/> at <paramref name="engineUnitsPerOriginal"/>), held at 0 or above because the original cuts nothing of the rain and snow before the eye (no near plane of the weather's own, no change of the scene's).
 	/// </summary>
-	public static float WriteDepth( float originalDepth, Matrix4x4 sceneProjection, float engineUnitsPerOriginal, WeatherNearPlane near )
-	{
-		var depth = SceneDepth( sceneProjection, EquivalentDistance( originalDepth ) * engineUnitsPerOriginal );
-		if ( near == WeatherNearPlane.Original )
-			depth = MathF.Max( depth, 0f );
-		return MathF.Min( depth, 1f );
-	}
+	public static float WriteDepth( float originalDepth, Matrix4x4 sceneProjection, float engineUnitsPerOriginal ) =>
+		MathF.Min( MathF.Max( SceneDepth( sceneProjection, EquivalentDistance( originalDepth ) * engineUnitsPerOriginal ), 0f ), 1f );
 
 	/// <summary>The screen position a clip vertex has, x right and y up in -1..1 (the original's y runs down).</summary>
 	public static NVector2 ToScreen( NVector3 clipXyz, float w ) => new( clipXyz.X / w, -clipXyz.Y / w );

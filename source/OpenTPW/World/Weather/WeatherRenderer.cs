@@ -18,8 +18,7 @@ namespace OpenTPW;
 // [BIN:STP-PPC:engine_shared 0x1001DE6C bolt ribbon] a camera-facing ribbon of half-width 1.3 / (branch depth + 1) textured with lightning.tga; opaque grey; no screen flash and no sky darkening in the park
 // [BIN:TPW-EXE:0x567620 render states] the rain (0x57efd0) and the bolts (0x57ec50) are submitted with state 0x200D52: source alpha over one (low byte 0x52 -> SRCBLEND 5, DESTBLEND 2), blending on (0x100), the alpha test (0x400, reference 0x10 of 255, ALPHAFUNC greater-or-equal from 0x566840) and no depth writes (0x800); the snow (0x57f490) with 0x556: source alpha over inverse source alpha, blending and the alpha test on, depth writes on; the rain's 0x200D22 (one plus one, 0x57f1a7) applies only on the chips flagged at 0x566840 (engine flag 0x8bcbc8 bit 2)
 // [BIN:TPW-EXE:0x57F1F0 weather submit] the rain and snow vertices go to the polygon path as clip coordinates, the bolts through the scene matrix: every vertex is drawn here from its screen position (x / w, y / w of the half screen, y down in the original) with an identity matrix, so the projection, the display aspect (0x8BCBCC) and the aspect-independent flake and streak sizes are the original's
-// [EXT:weather-near-plane] the weather depth is written in the scene camera's depth space (the original's own depth value, z / w, sits where a world surface at the equivalent distance would, 0x578BE0) and the scene camera's 0.1 near plane (0.5 original units in the park) cuts it, so a drop whose equivalent distance is under that and a ribbon nearer than it are cut away; a near plane of the weather's own would change its depth values against the scene and one for the whole camera would cost scene depth precision; the vertex buffer is sized once (1024 drops plus 16 bolts of 1024 quads, so a browser session allocates no further per-frame memory)
-// [APPROX:AUDIO-904] the original cuts nothing before the eye (rain and snow: only a depth above 0 is drawn, 0x57f1f0, 0x57f490; bolts: the polygon clipper 0x561bc0, 0x562a70 at its near plane 0.1 original units, 0x54e86f, 0x42a990 -> 0x578be0), where OpenTPW's default cuts at the scene camera's near plane (WeatherNearPlane.Scene); WeatherNearPlane.Original draws the original's behaviour (measurement switch OPENTPW_WEATHER_NEAR=original, awaiting the user's decision on dropping the EXT)
+// [BIN:TPW-EXE:0x578BE0 weather depth] the weather depth is written in the scene camera's depth space (the original's own depth value, z / w, sits where a world surface at the equivalent distance would) and nothing of the rain and snow is cut before the eye (a drop is drawn when its depth is above 0, 0x57F1F0, 0x57F490), the bolts are clipped at the original's 0.1 original units (the polygon clipper 0x561BC0, 0x562A70): no near plane of the weather's own and no change of the scene's; the vertex buffer is sized once (1024 drops plus 16 bolts of 1024 quads, so a browser session allocates no further per-frame memory)
 // [BIN:TPW-EXE:0x57ec50 bolt ribbon] the vertex buffer is sized once for 1024 drops plus 16 bolts of 1024 quads (the original has no bound of its own), so a browser session allocates no further per-frame GPU memory
 public sealed class WeatherRenderer : Entity
 {
@@ -129,12 +128,6 @@ public sealed class WeatherRenderer : Entity
 	// [BIN:TPW-EXE:0x54FAD7 eye views] the same test (0x790AB0 & 0x16) switches the park's fog on (0x54FAE9, bit 0x2000 of 0x8BCBC8) and the listener to the eye (0x54F915); OpenTPW's pair is the free walk (the camcorder's stand-in, [EXT:camcorder-first-person]) and the ride camera
 	internal static bool IsEyeView( CameraMode? mode ) => mode is FreeWalkCameraMode or RideCameraMode;
 
-	/// <summary>
-	/// The nearest plane the weather is clipped by. Defaults to <see cref="WeatherNearPlane.Scene"/> ([EXT:weather-near-plane]); the environment variable OPENTPW_WEATHER_NEAR=original selects <see cref="WeatherNearPlane.Original"/> for measurements.
-	/// </summary>
-	internal static WeatherNearPlane NearPlane { get; set; } =
-		string.Equals( Environment.GetEnvironmentVariable( "OPENTPW_WEATHER_NEAR" ), "original", StringComparison.OrdinalIgnoreCase ) ? WeatherNearPlane.Original : WeatherNearPlane.Scene;
-
 	/// <summary>A bolt point (original units) in the clip space of the original's matrix: the scene's clip scaled so that w is sin(fov / 2) x the view depth in original units, y running down.</summary>
 	private SVector4 ProjectBoltPoint( SVector3 original )
 	{
@@ -153,7 +146,6 @@ public sealed class WeatherRenderer : Entity
 		// the display's height over its width, the original's aspect word 0x8BCBCC
 		var displayAspect = target.Width > 0 && target.Height > 0 ? (float)target.Height / target.Width : 0.75f;
 		var projection = Camera.ProjMatrix;
-		var near = NearPlane;
 		var dropMaterial = visual.Snow ? snowMaterial : rainMaterial;
 		var dropVertexCount = 0;
 		var vertexCount = 0;
@@ -165,7 +157,7 @@ public sealed class WeatherRenderer : Entity
 			{
 				var vertex = scratch[index];
 				var screen = WeatherProjection.ToScreen( vertex.Position, vertex.W );
-				var depth = WeatherProjection.WriteDepth( vertex.Position.Z / vertex.W, projection, scale, near );
+				var depth = WeatherProjection.WriteDepth( vertex.Position.Z / vertex.W, projection, scale );
 				vertices[vertexCount++] = new Vertex( new SVector3( screen.X, screen.Y, depth ), new SVector3( vertex.Grey, vertex.Alpha, 0 ), vertex.TexCoords );
 			}
 			dropVertexCount = written;
@@ -179,7 +171,7 @@ public sealed class WeatherRenderer : Entity
 			clipScale = MathF.Sin( originalFieldOfView * MathF.PI / 360f ) / scale;
 			foreach ( var bolt in visual.Bolts )
 			{
-				if ( AddBolt( bolt, ref vertexCount, projection, near ) )
+				if ( AddBolt( bolt, ref vertexCount ) )
 					DrawnBolts++;
 			}
 		}
@@ -218,7 +210,7 @@ public sealed class WeatherRenderer : Entity
 	}
 
 	/// <summary>Adds the ribbon quads of one bolt, from the walk's emitter calls through <see cref="WeatherBoltRibbon"/>; false when nothing fit.</summary>
-	private bool AddBolt( WeatherBolt bolt, ref int vertexCount, System.Numerics.Matrix4x4 sceneProjection, WeatherNearPlane near )
+	private bool AddBolt( WeatherBolt bolt, ref int vertexCount )
 	{
 		var grey = WeatherVisualState.BoltGrey( bolt );
 		var any = false;
@@ -245,12 +237,10 @@ public sealed class WeatherRenderer : Entity
 			var source = polygon;
 			var inside = true;
 			foreach ( var corner in polygon )
-				inside &= near == WeatherNearPlane.Scene ? corner.Clip.Z >= 0 : corner.Clip.W >= originalNearW;
+				inside &= corner.Clip.W >= originalNearW;
 			if ( !inside )
 			{
-				count = near == WeatherNearPlane.Scene
-					? WeatherProjection.ClipNear( polygon, clipped, 1f, 0f, 0f )
-					: WeatherProjection.ClipNear( polygon, clipped, 0f, 1f, -originalNearW );
+				count = WeatherProjection.ClipNear( polygon, clipped, 0f, 1f, -originalNearW );
 				source = clipped;
 			}
 			if ( count < 3 || vertexCount + (count - 2) * 3 > vertices.Length )
@@ -259,7 +249,7 @@ public sealed class WeatherRenderer : Entity
 			{
 				var clip = vertex.Clip;
 				var screen = WeatherProjection.ToScreen( new SVector3( clip.X, clip.Y, clip.Z ), clip.W );
-				var depth = MathF.Min( near == WeatherNearPlane.Original ? MathF.Max( clip.Z / clip.W, 0f ) : clip.Z / clip.W, 1f );
+				var depth = MathF.Min( MathF.Max( clip.Z / clip.W, 0f ), 1f );
 				return new Vertex( new SVector3( screen.X, screen.Y, depth ), new SVector3( grey, 1f, 0 ), new SVector2( vertex.TexCoords.X, 1f - vertex.TexCoords.Y ) );
 			}
 			// the original's fan (0, 1, 2), (0, 2, 3) over the (clipped) polygon

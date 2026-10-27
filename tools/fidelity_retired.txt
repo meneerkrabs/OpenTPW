@@ -53,6 +53,7 @@ AUDIO-900 docs/AUDIO.md
 AUDIO-901 docs/AUDIO.md
 AUDIO-902 docs/AUDIO.md
 AUDIO-903 docs/AUDIO.md
+AUDIO-904 docs/AUDIO.md
 AUDIO-908 docs/AUDIO.md
 BLUEPRINT-002 docs/PROGRESS.md
 COAST-001 docs/reverse/COAST-plan.md

@@ -193,22 +193,17 @@ public class WeatherClipTests
 	}
 
 	[TestMethod]
-	public void SceneDepthFollowsTheProjectionAndTheNearVariantsDifferOnlyWhereTheSceneCameraWouldCut()
+	public void SceneDepthFollowsTheProjectionAndNothingIsCutBeforeTheEye()
 	{
 		var projection = OriginalProjection.Create( 4f / 3f, farPlane: 200f );
 		const float scale = OriginalParkPlacement.ModelScale;
 		Assert.AreEqual( 0f, WeatherProjection.SceneDepth( projection, 0.1f ), 1e-5f, "0 at the scene's near plane, 0.1 engine units" );
 		Assert.AreEqual( 1f, WeatherProjection.SceneDepth( projection, 200f ), 1e-4f, "1 at its far plane" );
-
-		// a rain vertex right in front of the eye: its equivalent distance (0.5 original units is the scene near plane) is below the scene's near plane
-		var near = WeatherProjection.WriteDepth( 0.4f, projection, scale, WeatherNearPlane.Scene );
-		Assert.IsTrue( WeatherProjection.EquivalentDistance( 0.4f ) * scale < 0.1f && near < 0, "the scene's near plane cuts it (a negative depth the device clips)" );
-		var original = WeatherProjection.WriteDepth( 0.4f, projection, scale, WeatherNearPlane.Original );
-		Assert.AreEqual( 0f, original, "the original's draws it, in front of everything" );
-		// farther away both agree
+		// a rain vertex right in front of the eye sorts nearer than the scene's near plane: the original draws it, in front of everything
+		Assert.IsTrue( WeatherProjection.EquivalentDistance( 0.4f ) * scale < 0.1f );
+		Assert.AreEqual( 0f, WeatherProjection.WriteDepth( 0.4f, projection, scale ) );
 		var farValue = (1.5f - 0.1f) / (1.5f * 0.9999f);
-		Assert.AreEqual( WeatherProjection.WriteDepth( farValue, projection, scale, WeatherNearPlane.Scene ), WeatherProjection.WriteDepth( farValue, projection, scale, WeatherNearPlane.Original ) );
-		Assert.IsTrue( WeatherProjection.WriteDepth( farValue, projection, scale, WeatherNearPlane.Scene ) is > 0 and < 1 );
+		Assert.IsTrue( WeatherProjection.WriteDepth( farValue, projection, scale ) is > 0 and < 1 );
 	}
 
 	[TestMethod]

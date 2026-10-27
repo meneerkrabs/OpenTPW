@@ -50,7 +50,7 @@ public sealed class ParkEconomy : IParkEconomy
 		World = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
-		Research = new ParkResearch( settings, catalog, trackRecentItems: !Rules.ThemeParkInc ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
+		Research = new ParkResearch( settings, catalog, trackRecentItems: !Rules.ThemeParkInc ) { OwnsTicketItem = infoId => OwnsTicketItem( infoId ) };
 		Objectives = new ParkObjectives( settings, catalog );
 		Counters.Added += ( key, amount ) => Objectives.AccumulateCounter( key, amount, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
 		Counters.Restored += () => Objectives.RestoreLegacyRawValue( MeasureChallenge, id => objects.GetValueOrDefault( id )?.InfoId ?? 0 );
@@ -150,7 +150,18 @@ public sealed class ParkEconomy : IParkEconomy
 	public IReadOnlyCollection<ParkObjectState> Objects => objects.Values;
 	public IReadOnlyList<LoanAccount> Loans => loans;
 	public IReadOnlyList<long> MonthlyAdmissions => monthlyAdmissions;
-	public int GoldenTicketsAvailable => Objectives.GoldenTickets.Count - TicketsSpent;
+	/// <summary>
+	/// The tickets the HUD counter shows and the purchase check spends: the player's earned tickets less the player's spent count while the park is part of its player's progress, otherwise the park's own.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005AF5D0 ticket count] the HUD's counter handler 0x4A0FB0 (at 0x4A10CD) and the purchase check 0x4D4AD0 read the player ticket object's earned count (the four global flags once, the six local bytes of every park, the two secret flags) less its spent count (+0x1C)
+	public int GoldenTicketsAvailable => TicketWallet is { Active: true } wallet ? wallet.Available : Objectives.GoldenTickets.Count - TicketsSpent;
+
+	/// <summary>The player's ticket account the owner of the player's progress attaches while the park is part of it; null for a park that counts its own tickets.</summary>
+	internal IPlayerTicketWallet? TicketWallet { get; set; }
+
+	/// <summary>Whether the item was bought with tickets already: in the player's set while the park is part of its progress, otherwise in the park's.</summary>
+	// [BIN:TPW-EXE:0x004D4B70 ticket item owned] asks the player's set (0x5AF780), which every park of the player shares
+	internal bool OwnsTicketItem( int infoId ) => TicketWallet is { Active: true } wallet ? wallet.Owns( infoId ) : ticketItems.Contains( infoId );
 	public IParkGuestStatistics GuestStatistics { get => guestStatistics; set => guestStatistics = value ?? NoGuestStatistics.Instance; }
 
 	public event Action<ParkEvent>? EventRaised;
@@ -1838,6 +1849,9 @@ public sealed class ParkEconomy : IParkEconomy
 		var cost = payWithTickets ? 0 : info.PurchaseCost;
 		if ( payWithTickets )
 		{
+			// [BIN:TPW-EXE:0x004D4AD0 ticket purchase] the cost goes to the player's spent count (0x5AF740, +0x1C) when the check passed; the park keeps its own spent count and set as its history
+			if ( TicketWallet is { Active: true } wallet && !wallet.TrySpend( infoId, info.GoldenTicketCost ) )
+				return PurchaseResult.NotEnoughGoldenTickets;
 			TicketsSpent += info.GoldenTicketCost;
 			ticketItems.Add( infoId );
 		}
@@ -1882,7 +1896,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	// [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost <= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path
 	private bool PaysWithTickets( EconomyObjectInfo info ) =>
-		Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !ticketItems.Contains( info.InfoId );
+		Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !OwnsTicketItem( info.InfoId );
 
 	/// <summary>
 	/// The park's attraction points for the arrival rule: per ride or sideshow, its Info.AttractionValue plus the

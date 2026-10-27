@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>One application-owned active runtime subscription. Failed writes retain dirty earned identities.</summary>
-internal sealed class PlayerProgressRuntimeOwner : IDisposable
+internal sealed class PlayerProgressRuntimeOwner : IDisposable, IPlayerTicketWallet
 {
 	private readonly string path;
 	private readonly string theme;
@@ -42,8 +42,42 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	private void Reconcile()
 	{
 		if ( Eligible && Ledger.Reconcile( theme, runtime.Economy.Objectives.GoldenTickets ) != 0 ) Dirty = true;
-		observed = runtime.Economy;
-		runtime.Economy.Objectives.GlobalTicketAuthority = authority;
+		var economy = runtime.Economy;
+		if ( !ReferenceEquals( observed, economy ) || economy.TicketWallet == null ) ReconcilePurchases( economy );
+		observed = economy;
+		economy.Objectives.GlobalTicketAuthority = authority;
+		economy.TicketWallet = this;
+	}
+
+	/// <summary>
+	/// The items a park bought with tickets before its purchases went through the player's account (an older park save) enter the account once, by identity: an item the account holds
+	/// already is not charged again, and one the account cannot afford stays the park's own record (reported), so the counter never reads less than the park's history allows.
+	/// </summary>
+	private void ReconcilePurchases( ParkEconomy economy )
+	{
+		if ( !RecordsEligible ) return;
+		foreach ( var infoId in economy.TicketItems.Order().ToArray() )
+		{
+			if ( Ledger.OwnsPurchasedItem( infoId ) || !economy.Catalog.TryGet( infoId, out var info ) || info.GoldenTicketCost <= 0 ) continue;
+			switch ( Ledger.TryPurchase( infoId, info.GoldenTicketCost ) )
+			{
+				case TicketPurchaseOutcome.Purchased: Dirty = true; break;
+				case TicketPurchaseOutcome.InsufficientTickets: report( $"The park's earlier ticket purchase of item {infoId} ({info.GoldenTicketCost} tickets) exceeds the player's earned tickets and is not charged to the player's account." ); break;
+			}
+		}
+	}
+
+	// the park spends from the player's account while it is part of its player's progress (tp.exe 0x4D4AD0 -> 0x5AF740)
+	bool IPlayerTicketWallet.Active => RecordsEligible && ReferenceEquals( runtime.Economy, observed );
+	int IPlayerTicketWallet.Available => Ledger.AvailableTickets;
+	bool IPlayerTicketWallet.Owns( int infoId ) => Ledger.OwnsPurchasedItem( infoId );
+
+	bool IPlayerTicketWallet.TrySpend( int infoId, int cost )
+	{
+		if ( Ledger.TryPurchase( infoId, cost ) != TicketPurchaseOutcome.Purchased ) return false;
+		Dirty = true;
+		TryFlushRecords();
+		return true;
 	}
 
 	/// <summary>The player-wide holder rule of the four global tickets (tp.exe 0x5AF940); a park outside this player's progress keeps its own set.</summary>
@@ -141,6 +175,8 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 			if ( !Ledger.HeldBy( theme, kind ) ) objectives.TakeGoldenTicket( kind );
 		}
 		wonInSession.Clear();
+		// what the park bought with its own tickets in the session enters the player's account now
+		ReconcilePurchases( runtime.Economy );
 		TryFlush();
 	}
 
@@ -173,6 +209,7 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 		disposed = true;
 		runtime.EventRaised -= OnEvent;
 		if ( runtime.Economy.Objectives.GlobalTicketAuthority == authority ) runtime.Economy.Objectives.GlobalTicketAuthority = null;
+		if ( ReferenceEquals( runtime.Economy.TicketWallet, this ) ) runtime.Economy.TicketWallet = null;
 	}
 }
 

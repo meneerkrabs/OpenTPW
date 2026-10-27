@@ -146,7 +146,7 @@ October 17, 2026. Static analysis of tp.exe (`[BIN:TPW-EXE:...]`), the PC twin o
   hold one blitter per pixel format. The 5-5-5 blitter (`0x6b0760`) blends per channel as `dst + ((src - dst) * c) / 15` with signed
   division on 5-bit channels and keeps the destination's alpha bit: no gamma. It differs from the Mac 8888 path above, whose unsigned
   arithmetic wraps. White on the cleared bitmap gives grey levels with alpha bit 0, so how coverage turns into screen alpha depends on
-  the sprite draw's state (`UI-007`, `UI-037`). The 32-bit blitter (`0x6b15f0`) blends the same way per channel and also keeps the
+  the sprite draw's state, which is read: the fixed word `0x7060556` (alpha blend, alpha test `0x10`, depth test and write, stage 0 colour = texture MODULATE the control colour, `0x58a26c`, `0x567620`), so a black control colour gives exact black text (`UI-037` retired); the step that gives the bitmap texels an alpha for the test stays open (`UI-007`). The 32-bit blitter (`0x6b15f0`) blends the same way per channel and also keeps the
   destination's alpha byte. A default run does not use the 5-5-5 format: the texture format index `[0x8bd554]` is 2 (4-4-4-4) or 3
   (8-8-8-8) by option bit `0x400000` of `[0x7a1a8c]` (table `0x7015f8`: 0 = 5-6-5, 1 = 1-5-5-5, 2 = 4-4-4-4, 3 = 8-8-8-8). The control is a
   sprite object (record at control +0x54, colour at record +0x24 = control +0x78) drawn by the sprite draw `0x58a010` as pre-transformed

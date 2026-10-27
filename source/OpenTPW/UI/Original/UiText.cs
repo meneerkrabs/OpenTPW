@@ -296,10 +296,10 @@ public static class UiColors
 	public static readonly RgbaByte MenuItemFocused = new( 255, 255, 255, 255 );
 	/// <summary>Red text of costs (the hire window's mini balance rows, video 12:00).</summary>
 	public static readonly RgbaByte Negative = new( 255, 40, 40, 255 );
-	/// <summary>Dark label text inside the light-green option bars (near-black navy).</summary>
+	/// <summary>Dark label text inside the light-green option bars (black).</summary>
 	// [BIN:TPW-EXE:0x4a43b0 options labels] the original's options labels (and the slider labels, 0x4a4490) get the colour (0,0,0,255) (0x4a441e, 0x4a44fe) and font slot 6 ([0x7537b4])
-	// [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye; the control's colour (0,0,0,255) at +0x78 is the diffuse colour of its quads in the sprite draw 0x58a010 (0x58a019) — evidence needed: the blend and texture-stage state that combines it with the grey glyph bitmap)
-	public static readonly RgbaByte OptionText = new( 16, 16, 48, 255 );
+	// [BIN:TPW-EXE:0x58a010 option label colour] the control's colour (0,0,0,255) is the diffuse colour of its sprite quads (0x58a019), drawn with the fixed state word 0x7060556 (stage 0 colour = texture MODULATE diffuse: 0x567620, 0x566840), so every texel's RGB is white coverage x black = (0,0,0); the (16,16,48) read off the video earlier was its chroma
+	public static readonly RgbaByte OptionText = new( 0, 0, 0, 255 );
 	public static readonly RgbaByte Shadow = new( 0, 0, 40, 200 );
 	public static readonly RgbaByte Backdrop = new( 0, 0, 30, 120 );
 	public static readonly RgbaByte HelpBackground = new( 20, 30, 90, 230 );

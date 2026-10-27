@@ -43,3 +43,13 @@ Separate scoring window position, route metric endpoint and final destination fi
 - Deliver the evidence ledger, agreed contract and concrete regression cases described above.
 - Keep this proposal draft while required original evidence or scope decisions are unavailable.
 - Any later implementation, approximation retirement and merge require separate verified results; this document performs none.
+
+## Source-only reconciliation (2026-10-27)
+
+The preceding plan is preserved as the 2026-10-18 baseline, not a statement that the implementation is still missing. At reviewed main `eb8e3d2018eeeb726b5143caf51f75ce9f0681e1`, `docs/GUESTS.md:1216` and `tools/fidelity_retired.txt:179` record GUEST-019 as retired by merged [PR #876, guest destinations](https://github.com/meneerkrabs/OpenTPW/pull/876) (merge `9ab29cac013d488d6c7422971186b2cddfe59321`). The missing spatial/major-target pieces were added in `d7ad9b11a3bcdcb02a0acd77185c639687110ab7`; the retirement was recorded in `871eb4b6861f268a206702939cf8e7234f2ddbf8`, with review corrections included in that merge.
+
+- Current source at that main: `source/OpenTPW/World/Guests/GuestSimulation.cs:2540-2545,2573-2588,2610-2618` contains the twelfth-update call, position-cell candidate window, routes measured from the target's access cell, access-cell destination and saved old target. Lines 3486-3501 consume `SavedMajorAttractionId` after the exit walk.
+- `source/OpenTPW/World/Level.Objects.cs:450-473` supplies the placed object's position and first-entrance access cells. The null/entrance fallback for bridges without placed objects remains explicit in `source/OpenTPW/World/Guests/IRideVisitorBridge.cs:209-216`; this note does not widen that boundary or take over #527's access-cell scope.
+- Synthetic regression source exists in `source/OpenTPW.Tests/GuestDestinationTests.cs:25-207` for the position-cell decoy, access-cell detour, major-target promotion/removal and snapshot handling. These tests were inspected, not executed here; their presence is not a fresh pass of the original acceptance plan.
+
+Proposed disposition: treat the missing-implementation premise as superseded; do not duplicate the merged work. Preserve the original evidence, acceptance and completion gates and draft status pending a separate disposition review. This source-only reconciliation supplies no new original-game trace, fixture qualification, runtime/GPU/native acceptance result or fresh retirement decision, and changes no gameplay, register or progress fragment.

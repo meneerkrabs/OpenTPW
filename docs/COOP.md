@@ -1792,12 +1792,20 @@ buttons for the ride. So is the path cell its back cell joins, whose removal or 
 would take the queue's link off: the remove click, Backspace, queue lines, placements (whose plans clear
 the paths under them, and a queue ride's, which lays its first queue cell outside its entrance), bridges
 and kart or water track lines (a tile laid over path clears it) refuse it, and the area clear leaves it
-standing (`IParkCommandRights.AllowsPathRemoval`). A path
-line along it, the path a placement lays outside the last exit of a ride with a queue or the last
-entrance of a type without one (only the last entrance and the last exit count, `ObjectAccessCells.Lay`),
-and a queue line that only ends on it (which links the queue to that path, `QueuePaths.Connect`) leave
-the queue's links as they are. The exit of an object without a queue lays no cell: it only links a path
-cell already outside it (that cell's links and its path and access neighbours'), which takes no queue's
+standing (`IParkCommandRights.AllowsPathRemoval`). So is a path cell linked into the ride's entrance cell
+(type 9, which carries the ride's owner word): its clear takes that link off and re-evaluates the ride,
+which recomputes its queue, stamps a block and may open the ride when it is closed (tp.exe `0x53694B`,
+`CoopBuildRights.BesideClaimedEntrance`). The remove click, Backspace, queue lines, placements (the
+paths under them, a queue ride's first queue cell outside its entrance and a fresh kart or water
+station's exit and entry tiles) and kart or water track lines refuse it, as do the host's single-cell
+removal and the undo of a path line that built the cell, and the area clear leaves it standing. A path
+cell beside the entrance that does not link into it, and a queue cell there, re-evaluate nothing when
+cleared, so they are not asked. A path line along such a cell, the path a
+placement lays outside the last exit of a ride with a queue or the last entrance of a type without one
+(only the last entrance and the last exit count, `ObjectAccessCells.Lay`), and a queue line that only ends
+on it (which links the queue to that path, `QueuePaths.Connect`) take no link off. The exit of an object
+without a queue lays no cell: it only links a path cell already outside it (that cell's links and its
+path and access neighbours'), which takes no
 link off, so it is asked nothing. A queue cell's ride is resolved as its removal resolves it: the rides'
 cached lines, then each line walked again (on a copy) for the cells they miss, once per question of the
 rights (the area clear asks it for each path cell it would clear). Everything else stays the host's:
@@ -1987,11 +1995,12 @@ the claim keeps the ride from every other player, the host included. A guest's t
   record, or the building right through `SetSeatRightsCommand`, C4a), and a ride's removal (a sale, the area clear, the Move's pick-up) takes its claim with it, on
   every peer alike.
 - **What a claim keeps.** A claim keeps from every other player, the host included, the ride's track
-  commands, its sale, its removal and its pick-up, its demolition by a placement, an add-on on it, and its
-  queue as above (`CoopBuildRights.LeavesClaimsAlone`, asked of the host before its blanket yes). The
-  host's cleanup is its own: its release of any claim, a departed seat's release and the grants. A claim
-  guards building and removal, not management: the ride's opening, its settings and its prices stay as
-  they are (the host's, C4 for guests). A command a claim refuses gives the claim's reason, and the HUD
+  commands, its sale, its removal and its pick-up, its demolition by a placement, an add-on on it, its
+  queue and the path cell linked into its entrance as above (`CoopBuildRights.LeavesClaimsAlone`, asked
+  of the host before its blanket yes). The host's cleanup is its own: its release of any claim, a departed
+  seat's release and the grants. A claim guards building and removal, not management: the ride's opening,
+  its settings and its prices stay as they are (the host's, C4 for guests), but a path clear that would
+  re-evaluate the ride, and might open it, is building and is kept. A command a claim refuses gives the claim's reason, and the HUD
   says it in its words ("Another player is editing this ride.", one new string in every language), for a
   click the rights refuse here and for a guest's refused record alike. A guest's track command on a ride
   whose claim it no longer holds, which the host let go and no other seat took, is refused with a reason

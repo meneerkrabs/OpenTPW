@@ -56,7 +56,7 @@ internal sealed partial class CoopJoinSmokeTest
 		// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the fixture opens it as the player would
 		ride!.Open();
 		waterRide = ride;
-		Require( level.EnterTrackTool( ride ), "the water track tool starts" );
+		Require( level.EnterTrackTool( ride, justPlaced: true ), "the water track tool starts" );
 		foreach ( var (x, y) in new (int X, int Y)[] { (4, WaterDepth), (-2, WaterDepth), (-2, 0) } )
 			Require( level.CellTool.Click( WaterAt( x, y ) ) is { Completed: true }, $"the water track click at offset ({x}, {y}) lays its line" );
 		Require( ride.Runtime.Bump!.IsTrackValid, "the water ride's circuit is closed" );

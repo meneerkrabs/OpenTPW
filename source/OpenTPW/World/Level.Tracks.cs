@@ -74,7 +74,7 @@ public partial class Level
 			BuilderOf( item )!.PlaceInitialStation( station );
 		else
 			BuilderOf( item )!.PlaceStation( station );
-		// [EXT:track-placement-walk] the original's placement lays the station (0x0052A1A0 from 0x00529E10) and walks nothing; OpenTPW walks the fresh station so its controller has the station's sections and verdict at once, and the pieces take the add-on walk's rule (TrackPieceAnimations.ForWalk), which on the station's open circuit stops clips none of them plays yet
+		// [EXT:track-placement-walk] the original's placement lays the station (0x0052A1A0 from 0x00529E10) and walks nothing; OpenTPW walks the fresh station so its controller has the station's sections at once, without writing the track word (it keeps the constructor's 1 until a track edit, as the original's does), and the pieces take the add-on walk's rule (TrackPieceAnimations.ForWalk), which on the station's open circuit stops clips none of them plays yet
 		RewalkTrack( item, TrackWalkCause.Placement );
 	}
 
@@ -202,7 +202,8 @@ public partial class Level
 		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || item.Runtime.Bump is not { } bump )
 			return null;
 		var circuit = TrackCircuitWalker.WalkAndRefresh( BuilderOf( item )!, station );
-		bump.Rebuild( circuit );
+		// [BIN:TPW-EXE:0x00529E10 placement walks nothing] the ride's placement lays the station and walks no circuit, so the track word +0x2C keeps the constructor's 1 until a track edit writes it (0x524D1B, 0x5251B8): OpenTPW's placement walk builds the station's sections without writing the word
+		bump.Rebuild( circuit, writesWord: cause != TrackWalkCause.Placement );
 		LinkAddOns( item, circuit );
 		if ( TrackPieceAnimations.ForWalk( cause, circuit.IsValid ) is { } pieces )
 			trackPieceAnimations.TriggerTrack( BuilderOf( item )!.Tracks, station, pieces.Play, pieces.Backward );
@@ -261,8 +262,8 @@ public partial class Level
 			return;
 		}
 		var record = EconomyStateOf( runtime );
-		var state = runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0 ? RideObjectStates.BrokenDown
-			: record != null ? ParkEconomy.ObjectState( record ) : RideObjectStates.Idle;
+		// [BIN:TPW-EXE:0x004DF290 reopen guard state] the state word, as the guard reads it
+		var state = record != null ? ParkEconomy.ObjectState( record ) : runtime.Visitors.StateWord.Value;
 		if ( !RideOpening.MayOpen( state, record?.MaintenanceRequested == true,
 			Guests == null || ParkGate.QueueConnected( Guests.Grid, item.Visitors ), 0, true ) )
 			return;
@@ -321,7 +322,7 @@ public partial class Level
 	/// </summary>
 	// [BIN:TPW-EXE:0x004AF200 track button] the button sets the cursor of tool 0xE (type 1) or 0x13 (type 2) and calls the click handler; the hover 0x527960 puts the tool in that mode
 	// [BIN:TPW-EXE:0x00526800 edit click] with the ride's circuit word (+0x2C) zero the click walks the track to its open end (0x530830) and the tool becomes the line tool 0xB or 0x10 (0x526C36, 0x526C50) starting there; with a closed circuit the click picks tiles for the cut
-	public bool EnterTrackTool( OriginalObject station )
+	public bool EnterTrackTool( OriginalObject station, bool justPlaced = false )
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )
 			return false;
@@ -342,7 +343,8 @@ public partial class Level
 		if ( !ClaimForTrackTool( station ) )
 			return false;
 		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ) );
-		if ( station.Runtime.Bump is { IsTrackValid: true } )
+		// [BIN:TPW-EXE:0x0052A050 line tool after a placement] the placement starts the line tool itself (mode 3 with its line start), without reading the circuit word that the tool button's click reads (0x5267F2)
+		if ( !justPlaced && station.Runtime.Bump is { IsTrackValid: true } )
 		{
 			// [EXT:online-coop-commands] the cut is a command (CutTrackCommand); the tool moves on from its walk
 			CellTool.Enter( new TrackEditWriter( editor, builder.Family, _ => { }, CancelTrackTool, ( first, second ) => CutTrack( station, editor, first, second ) ), null );
@@ -472,7 +474,8 @@ public partial class Level
 		if ( waterTracks == null || ResolveCommandObject( ride ) is not { } station || !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
 			return ParkCommandResult.Rejected( $"Attraction {ride} lays no kart or water track." );
 		// a closed circuit opens the edit tool instead (EnterTrackTool)
-		if ( station.Runtime.Bump is { IsTrackValid: true } )
+		// a ride no edit has walked reads 1 from its constructor (the placement starts this tool itself): its station-only circuit is open
+		if ( station.Runtime.Bump is { IsTrackValid: true, TrackWordWritten: true } )
 			return ParkCommandResult.Rejected( $"The track of attraction {ride} is a closed circuit." );
 		return ParkCommandResult.Ok( TrackEditorOf( station, layout, builder ).FindOpenEnd() );
 	}
@@ -571,7 +574,7 @@ public partial class Level
 				|| !Enumerable.Range( anchor.X - 2 - margin, 9 + 2 * margin ).All( x => Enumerable.Range( anchor.Y - 1 - margin, depth + 4 + 2 * margin ).All( y => Free( x, y ) ) ) )
 				continue;
 			var station = PlaceObject( entry, cell.X, cell.Y, 0 ) ?? Objects.TryPlace( entry, anchor.X, anchor.Y, 0, out _ );
-			if ( station == null || !trackStations.TryGetValue( station, out var layout ) || !EnterTrackTool( station ) )
+			if ( station == null || !trackStations.TryGetValue( station, out var layout ) || !EnterTrackTool( station, justPlaced: true ) )
 				return null;
 			// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the capture helper opens it as the player's door button would
 			station.Open();
@@ -744,7 +747,7 @@ public partial class Level
 			var circuit = (shared ? RewalkForRestore( station, entry ) : RewalkTrack( station ))
 				?? throw new InvalidDataException( $"Attraction {entry.AttractionId} has no track station." );
 			// a shared-module save may hold a ride the shared pools refused (saved invalid, walking valid): the restore keeps the refusal
-			if ( shared ? entry.IsTrackValid && !circuit.IsValid : circuit.IsValid != entry.IsTrackValid )
+			if ( entry.TrackWordWritten != false && (shared ? entry.IsTrackValid && !circuit.IsValid : circuit.IsValid != entry.IsTrackValid) )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s circuit walks {(circuit.IsValid ? "valid" : "invalid")}, the save says {(entry.IsTrackValid ? "valid" : "invalid")}." );
 			var rebuilt = bump.Sections.Select( section => new TrackSectionSaveData( section.Kind, section.NoBuoy, section.X, section.Y, section.Segment ) ).ToList();
 			if ( !rebuilt.SequenceEqual( entry.Sections.Select( section => section with { AddOnPassing = false } ) ) )

@@ -596,6 +596,7 @@ public class AdvisorScanParkTests
 		Assert.AreEqual( 1, state.RidesBrokenDown );
 		Assert.AreEqual( 2, state.RidesBelowCondition( 25 ), "a broken ride counts whatever its condition" );
 		second.LifeGauge = 0;
+		second.StateWord.Set( RideObjectStates.Condemned );
 		Assert.AreEqual( 0, state.RidesBrokenDown, "a condemned ride (state 4) is not state 1" );
 		Assert.AreEqual( 1, state.RidesBelowCondition( 25 ) );
 		Assert.AreEqual( 1, state.ClosedObjectsOfKind( 0 ), "a condemned ride is closed" );
@@ -792,7 +793,7 @@ public class AdvisorScanParkTests
 		park.EventRaised += events.Add;
 		var ride = park.RegisterExisting( 1100 );
 		ride.ScriptHosted = true;
-		park.ObserveScriptState( ride, false );
+		park.PublishRideState( ride );
 		rides.Set( ride.Id, new RideOperation( true, 5, 50 ) );
 		EconomyTestData.AdvanceToTurn( park, 26 * ParkEconomy.WearInterval );
 		return ride;
@@ -821,7 +822,7 @@ public class AdvisorScanParkTests
 		Assert.AreEqual( 0, events.Count( item => item.Kind == ParkEventKind.RideEnteredBrokenState ), "the ride has not entered its broken state yet" );
 		Assert.IsFalse( Pending( advisor ).Contains( 69 ) || Pending( advisor ).Contains( 68 ), "nothing is said at the request" );
 		mechanic.State = StaffState.Patrolling;
-		park.ObserveScriptState( ride, true );
+		EconomyTestData.RideUpdateEntersBrokenState( park, ride );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.RideEnteredBrokenState ) );
 		Assert.IsFalse( Pending( advisor ).Contains( 69 ), "the mechanic is free when the ride breaks: tp.exe says nothing" );
 	}
@@ -832,12 +833,12 @@ public class AdvisorScanParkTests
 		var (park, advisor) = Attached();
 		var events = new List<ParkEvent>();
 		var ride = WornToTheRequest( park, events );
-		park.ObserveScriptState( ride, true );
+		EconomyTestData.RideUpdateEntersBrokenState( park, ride );
 		CollectionAssert.Contains( Pending( advisor ).ToList(), 68, "no mechanic is hired" );
 		var (busyPark, busyAdvisor) = Attached();
 		var busyRide = WornToTheRequest( busyPark, new List<ParkEvent>() );
 		EconomyTestData.HireBest( busyPark, StaffType.Mechanic ).State = StaffState.Resting;
-		busyPark.ObserveScriptState( busyRide, true );
+		EconomyTestData.RideUpdateEntersBrokenState( busyPark, busyRide );
 		CollectionAssert.Contains( Pending( busyAdvisor ).ToList(), 69, "the only mechanic rests" );
 		Assert.IsFalse( Pending( busyAdvisor ).Contains( 68 ) );
 	}
@@ -849,7 +850,7 @@ public class AdvisorScanParkTests
 		var events = new List<ParkEvent>();
 		var ride = WornToTheRequest( park, events );
 		ride.LifeGauge = 0.5;
-		park.ObserveScriptState( ride, true );
+		EconomyTestData.RideUpdateEntersBrokenState( park, ride );
 		CollectionAssert.Contains( Pending( advisor ).ToList(), 258 );
 		Assert.IsFalse( Pending( advisor ).Contains( 68 ), "a condemned ride sends the other message" );
 		// an economy-only ride (no script) enters the broken state in the step that requests it

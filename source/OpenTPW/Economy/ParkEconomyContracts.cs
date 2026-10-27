@@ -288,8 +288,28 @@ public sealed class ParkObjectState
 	/// </summary>
 	// [BIN:STP-PPC:0x100DAB1C object constructor] every built object starts at 100.0 (TOC −0x2B08) in +0x40, +0x44 and +0x48; the earlier 0.0 store (0x100DA90C) is overwritten on every path
 	public double LifeGauge { get; set; } = 100;
-	public bool IsBrokenDown { get; set; }
-	/// <summary>The ride script reports VAR_BROKEN, which the original's ride update turns into ride state 1 or 4; mirrored each tick by the level, not saved.</summary>
+	/// <summary>
+	/// The ride's state word (<c>+0x19C</c>): the one word the visitor bridge, the economy and the opening guard share (<see cref="RideStateWord"/>). The level hands it to the ride's bridge; the
+	/// economy's headless breakdown, a repair and the import write it too.
+	/// </summary>
+	public RideStateWord StateWord { get; } = new();
+	/// <summary>The state word entered state 1 or 4 and the economy has not published it yet (<see cref="ParkEconomy.PublishRideState"/>); not saved.</summary>
+	internal bool BrokenStatePending { get; set; }
+	/// <summary>The state word's value, for a restore (a save or an import): stored without the change event.</summary>
+	public int RideState { get => StateWord.Value; init => StateWord.Restore( value ); }
+	/// <summary>Whether the ride is in state 1 or 4. Setting it enters state 1 (4 when the life gauge's byte is 0) or leaves to state 0, as <c>SetState</c> does.</summary>
+	public bool IsBrokenDown
+	{
+		get => StateWord.IsBroken;
+		set
+		{
+			if ( value && !StateWord.IsBroken )
+				StateWord.Set( RideStateWord.BrokenStateFor( LifeGauge ) );
+			else if ( !value && StateWord.IsBroken )
+				StateWord.Set( RideObjectStates.Idle );
+		}
+	}
+	/// <summary>The ride script reports VAR_BROKEN (variable 7), which the ride update reads in state 0; mirrored each tick by the level, not saved. The mechanic's job waits while it is above 0.</summary>
 	public bool ScriptBroken { get; set; }
 	/// <summary>
 	/// A script runs the object (the level's objects; mirrored each tick, not saved): the breakdown then goes through the script (VAR_BREAKSTAT, the script's
@@ -300,11 +320,6 @@ public sealed class ParkObjectState
 	public int ScriptBreakStat { get; set; }
 	/// <summary>The script's VAR_WORN, mirrored each tick by the level (and set at once when the economy writes it); not saved.</summary>
 	public int ScriptWorn { get; set; }
-	/// <summary>
-	/// The ride update's state 1 as the level last saw it (the visitor bridge keeps it): its rising edge breaks the object down. Saved; null until the first
-	/// observation (a new object, an older save), which then only records the state.
-	/// </summary>
-	internal bool? ScriptStateBroken { get; set; }
 	/// <summary>
 	/// The attraction's track validity (<c>mIsTrackRideValid</c>, +0x2C on the PC): a water ride whose circuit walk failed does not count for the park points
 	/// (the counts-test's built-track condition). Mirrored each tick by the level, not saved; true for every ride without a track.

@@ -255,6 +255,8 @@ public sealed partial class OriginalObjectRuntime
 			return;
 		Hoarding.StartOpenFade();
 		SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 0 );
+		// [BIN:TPW-EXE:0x004E0E60 SetState 0] the openers write the open word and VAR_RIDECLOSED together with SetState(0) (0x4DE487, 0x4DF438, 0x4DFCB8, 0x4E003C, 0x4E01B6): the ride leaves state 1 or 4
+		Visitors.StateWord.Set( RideObjectStates.Idle );
 	}
 
 	// [BIN:TPW-EXE:0x004DF300 close model call] every closing that writes the open word +0x68 = 0 and VAR_RIDECLOSED = 1 (0x004DF300, 0x004DF150, 0x004DFE30(1), the repair tail's re-close at 0x004DFD3E, SetState 1, 2 and 4, a built object with a queue at 0x004DB712) calls 0x00454550(1) after it: the hoarding rises with the closed set unless another set stands

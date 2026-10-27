@@ -81,7 +81,7 @@ internal sealed class PlayerTicketLedger
 	/// </summary>
 	public IReadOnlyCollection<EarnedTicketIdentity> Cheated => cheated;
 
-	/// <summary>Pure own-ledger foundation; live park purchases do not call this API yet. Info.Id retains the existing host identity semantics.</summary>
+	/// <summary>The player's ticket purchase (tp.exe <c>0x4D4AD0</c> -> <c>0x5AF740</c>): a park spends through it while it is part of the player's progress (<see cref="IPlayerTicketWallet"/>). Info.Id retains the existing host identity semantics.</summary>
 	public TicketPurchaseOutcome TryPurchase( int infoId, int cost )
 	{
 		if ( infoId < 0 || cost <= 0 ) throw new InvalidDataException( "Invalid ticket purchase." );

@@ -95,6 +95,20 @@ public class BumpControllerTests
 
 	// ---- Controller values and commands --------------------------------------------------------------
 
+	/// <summary>The attraction's track word starts at 1 for every ride (tp.exe 0x004DB0DF) and only a circuit walk rewrites it (ARRIVAL-003).</summary>
+	[TestMethod]
+	public void TheTrackWordStartsAtOneForEveryRide()
+	{
+		foreach ( var type in new[] { -1, -4, -5 } )
+		{
+			var controller = new BumpController( BumperTemplates.Get( type ), () => 0 );
+			Assert.IsTrue( controller.IsTrackValid, $"type {type}: the constructor's word" );
+		}
+		var kart = new BumpController( BumperTemplates.Get( -4 ), () => 0 );
+		kart.Rebuild( TrackCircuit.Invalid( "no circuit" ) );
+		Assert.IsFalse( kart.IsTrackValid, "a walk without a circuit rewrites it" );
+	}
+
 	[TestMethod]
 	public void PerformanceInterpolatesTheTemplateRangesWithTruncatingDivision()
 	{

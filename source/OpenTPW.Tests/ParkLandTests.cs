@@ -533,4 +533,24 @@ public class ParkLandTests
 		var landless = flagged with { Cells = flagged.Cells with { Land = null } };
 		Assert.IsTrue( ParkLayoutSnapshot.RestoreCellMap( landless ).FlagsAt( 15, 15 ).HasFlag( ParkCellFlags.Unowned ) );
 	}
+
+	/// <summary>With bit 0x400 of the level word the set-up clicks six posts instead of reading the hoardings table (tp.exe 0x532489): a small enclosure in front of the gate.</summary>
+	[TestMethod]
+	public void TheSixClickFenceEnclosesTheSmallYardInFrontOfTheGate()
+	{
+		var setup = ParkLandSetup.FromLevel( (47, 17), (48, 17), null, sixClickFence: true );
+		Assert.IsNotNull( setup );
+		Assert.AreEqual( (51, 17), setup!.PostA );
+		Assert.AreEqual( (43, 17), setup.PostB );
+		CollectionAssert.AreEqual( ParkLandSetup.SixClicks.ToArray(), setup.Clicks.ToArray() );
+		Assert.IsNull( ParkLandSetup.FromLevel( (47, 17), (48, 17), null ), "without the bit the table is read" );
+		var cells = new ParkCellMap( 128, 128 );
+		var land = ParkLand.NewPark( cells, setup );
+		Assert.IsNotNull( land );
+		cells.SetLand( land );
+		// the clicks run from post A east 2, south 4, west 12 (to x - 10), north 4 and east 2 again: a yard 12 wide and 4 high south of the gate, the walk's ring has the posts of that outline
+		Assert.IsTrue( land!.IsPost( 51, 17 ) && land.IsPost( 53, 17 ) && land.IsPost( 53, 21 ) && land.IsPost( 41, 21 ) && land.IsPost( 41, 17 ) && land.IsPost( 43, 17 ) );
+		var owned = Enumerable.Range( 0, 128 * 128 ).Count( index => !cells.FlagsAt( index % 128, index / 128 ).HasFlag( ParkCellFlags.Unowned ) );
+		Assert.IsTrue( owned > 30 && owned < 200, $"{owned} owned cells" );
+	}
 }

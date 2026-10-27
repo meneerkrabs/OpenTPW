@@ -1483,6 +1483,8 @@ public partial class Level
 	private bool IsQueueBlockedCore( int x, int y, bool terminalPath ) =>
 		!QueueTerrainAllows( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ))
+		// [BIN:TPW-EXE:0x00535670 fence post] the validator refuses a hoarding post and the three cells beside it (its extensions) on owned land as well
+		|| (Guests?.Grid.Cells is { } fenced && fenced.InBounds( x, y ) && QueueCellValidator.StructureTypeAt( fenced, x, y ) == FenceLayer.PostType)
 		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
 		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true)
 		// [EXT:pools-bridges] a bridge's cells and the two outside end cells (bare or with a path) take no queue: a queue there would break the bridge's save and its entrance

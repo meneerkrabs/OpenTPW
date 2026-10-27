@@ -190,6 +190,19 @@ public class ThemeParkIncFrontEndTests
 	}
 
 	[TestMethod]
+	public void TheTitleAndTheQuitCaptionCarryTheTpiCopyAlpha()
+	{
+		var frontEnd = new ThemeParkIncFrontEnd( OriginalUiTests.FakeStrings(), new Calls().Host );
+		var title = (UiLabel)Element( frontEnd, "title" );
+		Assert.IsTrue( title.Shadow );
+		Assert.AreEqual( (byte)0xC8, title.ShadowAlpha, "0x515fe0: the copy's colour alpha" );
+		frontEnd.RequestQuit();
+		var caption = (UiLabel)frontEnd.Stack.Screens.Select( screen => screen.Find( "caption" ) ).OfType<UiLabel>().Single();
+		Assert.IsTrue( caption.Shadow );
+		Assert.AreEqual( (byte)0xC8, caption.ShadowAlpha );
+	}
+
+	[TestMethod]
 	public void ZonesOutsideTheChooserAreRefused()
 	{
 		var frontEnd = new ThemeParkIncFrontEnd( OriginalUiTests.FakeStrings(), new Calls().Host );

@@ -46,7 +46,7 @@ public sealed record LayTrackLineCommand( int Ride, int StartX, int StartY, int 
 /// Backspace in a kart or water ride's track tool: the line from (<paramref name="StartX"/>, <paramref name="StartY"/>) to (<paramref name="EndX"/>, <paramref name="EndY"/>) of the ride whose attraction id is
 /// <paramref name="Ride"/> is taken back by the editor's directional clear (<see cref="TrackEditor.UndoLine"/>), each cleared tile refunded, and the circuit walked again.
 /// </summary>
-public sealed record UndoTrackLineCommand( int Ride, int StartX, int StartY, int EndX, int EndY ) : ParkToolCommand
+public sealed record UndoTrackLineCommand( int Ride, int StartX, int StartY, int EndX, int EndY, bool Last = false ) : ParkToolCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.UndoTrackLine;
 	// a line the tool laid is axis-aligned and whole tiles long (TrackLineWriter.SnapEnd)
@@ -59,9 +59,12 @@ public sealed record UndoTrackLineCommand( int Ride, int StartX, int StartY, int
 		writer.Int( StartY );
 		writer.Int( EndX );
 		writer.Int( EndY );
+		// a trailing 1 only when set: the bytes of a line that is not the stack's first are the format's original ones (recorded logs decode)
+		if ( Last )
+			writer.Bool( true );
 	}
 
-	internal override ParkCommandResult Execute( Level level ) => level.ExecuteTrackLine( Ride, (StartX, StartY), (EndX, EndY), undo: true );
+	internal override ParkCommandResult Execute( Level level ) => level.ExecuteTrackLine( Ride, (StartX, StartY), (EndX, EndY), undo: true, last: Last );
 }
 
 /// <summary>
@@ -113,6 +116,7 @@ public sealed class ParkCommandTrackWriter : ICellLineWriter, IGuestUndoWriter
 	public int Ride { get; }
 	public CellToolMode Mode => Inner.Mode;
 	public bool SnapsToLine => Inner.SnapsToLine;
+	public int VertexCapacity => Inner.VertexCapacity;
 
 	public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) => Inner.Preview( start, cursor );
 
@@ -163,7 +167,7 @@ public sealed class ParkCommandTrackWriter : ICellLineWriter, IGuestUndoWriter
 			continueTool();
 	}
 
-	private UndoTrackLineCommand UndoOf( SegmentResult segment ) => new( Ride, segment.Start.X, segment.Start.Y, segment.SnappedEnd.X, segment.SnappedEnd.Y );
+	private UndoTrackLineCommand UndoOf( SegmentResult segment ) => new( Ride, segment.Start.X, segment.Start.Y, segment.SnappedEnd.X, segment.SnappedEnd.Y, segment.IsFirstLine );
 
 	/// <summary>A guest's Backspace goes to the host first: the ride's claim makes its track the guest's alone, so its last line is the guest's to take back (C3c-1b).</summary>
 	bool IGuestUndoWriter.UndoesByRequest => commands.SendsRequests;

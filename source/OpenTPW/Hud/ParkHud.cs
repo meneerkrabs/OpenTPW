@@ -417,6 +417,7 @@ public sealed partial class ParkHud
 				Selected = () => DisplayedGameSpeed == speed,
 				// [EXT:online-coop-speed] a guest's buttons draw subdued and still take the click, which says the speed is the host's (C4a)
 				Subdued = () => SpeedIsTheHosts,
+				Unclipped = true,
 				Bounds = new UiRect( 1540 + index * 122, 1430, 116, 84 ),
 				Anchor = UiAnchor.BottomRight
 			} );
@@ -721,7 +722,7 @@ public sealed partial class ParkHud
 			SetInfoArm( false );
 		}
 		if ( GameOptions.Current.Confirmations )
-			Stack.Push( UiDialogs.Message( "confirmDelete", () => strings[UIStrings.DeleteItem],
+			Stack.Push( UiDialogs.MessageOfOriginalText( "confirmDelete", () => strings[UIStrings.DeleteItem],
 				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); Remove(); }),
 				(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 		else Remove();
@@ -765,14 +766,14 @@ public sealed partial class ParkHud
 		{
 			(UIStrings.Load, () => { if ( host.CreateLoad != null ) Stack.Push( host.CreateLoad( Stack ) ); }),
 			(UIStrings.Save, SavePark),
-			(UIStrings.RestartPark, () => Stack.Push( UiDialogs.Message( "confirmRestart", () => strings[UIStrings.ConfirmRestartPark],
+			(UIStrings.RestartPark, () => Stack.Push( UiDialogs.MessageOfOriginalText( "confirmRestart", () => strings[UIStrings.ConfirmRestartPark],
 				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); host.RestartPark?.Invoke(); }), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 			(UIStrings.PublishPark, () => host.PublishPark?.Invoke( Stack )),
 			(UIStrings.Options, () => { if ( host.CreateOptions != null ) Stack.Push( host.CreateOptions( Stack, () => { } ) ); }),
 			(UIStrings.GoOnline, () => host.GoOnline?.Invoke( Stack )),
 			(UIStrings.ResumeGame, ResumeGameAfterApplicationPause),
 			(UIStrings.ExitToLobby, () => { if ( menu is { IsRemoved: false } && ReferenceEquals( Stack.Top, menu ) ) ExitToLobbyFromMenu(); }),
-			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
+			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.MessageOfOriginalText( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};
 		// [BIN:TPW-EXE:0x48c150 pause menu selection] game type 1 (0x48c1e3) selects the three online entries before the
@@ -1706,7 +1707,7 @@ public sealed partial class ParkHud
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
-			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt ) );
+			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt, ghost.Symbols ) );
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
@@ -1727,7 +1728,17 @@ public sealed partial class ParkHud
 			cells.AddRange( guestPool.GuestStrokeCells.Select( cell => (cell.X, cell.Y, BlueprintMarker.Allowed) ) );
 		if ( level.BuildEntry == null || !inPark )
 			placementRefused = false;
-		blueprint.Update( delta, paused );
+		// the track symbols turn with the camera's yaw (0x790A38, BlueprintMarkers.SymbolAngle)
+		blueprint.SymbolAngle = Camera.Mode is ParkCameraMode symbolCamera ? ParkCameraMode.OriginalYaw( symbolCamera.Yaw ) : 0f;
+		// [BIN:TPW-EXE:0x005234D0 hover cell] every hover stores the cell under the pointer in 0x8186B8/0x8186B4, which the ghost's glide chases; an edit tool's hover stores its snapped tile (0x527960)
+		// [BIN:TPW-EXE:0x0053DF75 glide tools] the faces glide only while the tool is the placement (4) or an edit tool (0xE, 0x13)
+		var editGhost = level.CellTool.IsActive && level.CellTool.Mode is CellToolMode.KartEdit or CellToolMode.WaterEdit && level.CellTool.Ghost is { } editHover ? editHover.GlideCell : null;
+		if ( editGhost is { } snapped )
+			blueprint.GlideCursor = snapped;
+		else if ( inPark && cursorX >= 0 )
+			blueprint.GlideCursor = (cursorX, cursorY);
+		blueprint.GlideActive = editGhost != null || inPark && level.BuildEntry != null && cursorX >= 0;
+		blueprint.Update( delta, paused, Math.Max( 0, (int)level.SimulationTimeScale ) );
 		blueprint.Show( cells, directions );
 	}
 
@@ -1799,7 +1810,7 @@ public sealed partial class ParkHud
 		var pad = 4 * canvas.TextScale;
 		var rect = new UiRect( (canvas.Width - width) / 2f - pad, canvas.Height * 0.015f, width + pad * 2, height + pad * 2 );
 		context.Batch.AddRectangle( rect, UiColors.HelpBox );
-		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
+		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true );
 	}
 
 	/// <summary>The shared park's status line now (<see cref="HudHost.SessionStatus"/>), for tests.</summary>
@@ -1817,7 +1828,7 @@ public sealed partial class ParkHud
 		var pad = 4 * canvas.TextScale;
 		var rect = new UiRect( (canvas.Width - width) / 2f - pad, canvas.Height * 0.91f - height - pad * 2, width + pad * 2, height + pad * 2 );
 		context.Batch.AddRectangle( rect, UiColors.HelpBox );
-		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
+		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true );
 	}
 
 	public void Draw( UiContext context )

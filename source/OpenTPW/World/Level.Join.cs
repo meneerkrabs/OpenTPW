@@ -49,7 +49,7 @@ public partial class Level
 		if ( state.StaffHands.Count > 0 && StaffHands == null )
 			throw new InvalidDataException( "The join state holds employees in hand, which this park cannot hold." );
 		// [EXT:online-coop-permissions] the host's staff state alone (C4a): a guest's seat hires and carries employees from C4c on, whose release frees them
-		if ( state.StaffHands.FirstOrDefault( hand => hand.Player != ParkCommands.LocalPlayer ) is { Staff: > 0 } guestHand )
+		if ( state.StaffHands.FirstOrDefault( hand => hand.Player != ParkCommands.LocalPlayer ) is { Player: not ParkCommands.LocalPlayer } guestHand )
 			throw new InvalidDataException( $"The join state holds an employee in seat {guestHand.Player}'s hand, which no guest's seat holds yet." );
 		if ( state.PendingHires.FirstOrDefault( row => row.Seat != ParkCommands.LocalPlayer ) is { Candidate: > 0 } guestHire )
 			throw new InvalidDataException( $"The join state holds seat {guestHire.Seat}'s pending hire, which no guest's seat holds yet." );

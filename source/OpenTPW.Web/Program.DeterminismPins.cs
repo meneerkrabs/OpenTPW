@@ -37,6 +37,12 @@ public static partial class Program
 		return result.ToJsonString();
 	}
 
+	private static void RunCleanups( List<MethodInfo> cleanups, object instance )
+	{
+		foreach ( var cleanup in cleanups )
+			cleanup.Invoke( instance, null );
+	}
+
 	/// <summary>Runs one test method (with its class and test initializers and cleanup) and returns { outcome, message, ms }: passed, failed or inconclusive.</summary>
 	[JSExport]
 	public static string DeterminismRun( string className, string methodName )
@@ -69,8 +75,8 @@ public static partial class Program
 			}
 			finally
 			{
-				foreach ( var cleanup in cleanups )
-					cleanup.Invoke( instance, null );
+				// (a helper call: a loop in a finally block overwrote the try's locals in the Mono interpreter's hot tier, tools/test_no_loop_in_finally.py)
+				RunCleanups( cleanups, instance );
 			}
 			outcome = "passed";
 		}

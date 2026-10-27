@@ -727,10 +727,35 @@ public class ParticleSystemPortTests
 	[TestMethod]
 	public void QuadHalfHeightIsSizeOver1024AndOnlyTheWidthGetsAFactor()
 	{
-		var (width, height) = ParticleRenderer.HalfExtents( 2048, 0.2f, 16, 64, 32 );
+		var (width, height) = ParticleRenderer.HalfExtents( 2048, 0.2f, 16, 64, 32, displayAspect: 0.75f );
 		Assert.AreEqual( 2048 / 1024f * 0.2f, height, 1e-6f, "frame pixels never scale the height" );
-		Assert.AreEqual( height * 2, width, 1e-6f, "the width carries the frame's aspect" );
-		var (flatWidth, flatHeight) = ParticleRenderer.HalfExtents( 512, 1f, 0, 4, 4 );
-		Assert.AreEqual( (0.5f, 0.5f), (flatWidth, flatHeight), "an untextured particle has factor 1" );
+		// [BIN:TPW-EXE:0x57C71F quad width] a textured quad's half-width is the half-height x the frame's width / height in clip x, which spans the display's width: on a 4:3 display (aspect word 0.75) the quad is that much wider on the screen
+		Assert.AreEqual( height * 2 / 0.75f, width, 1e-6f, "the width carries the frame's aspect and the display's width over its height" );
+		var (flatWidth, flatHeight) = ParticleRenderer.HalfExtents( 512, 1f, 0, 4, 4, displayAspect: 0.75f );
+		Assert.AreEqual( (0.5f, 0.5f), (flatWidth, flatHeight), "an untextured particle has factor 1 (the aspect word makes it square on the screen)" );
+	}
+
+	[TestMethod]
+	public void ATexturedQuadsWidthOnTheScreenIsTheFrameAspectTimesTheDisplaysWidthOverHeight()
+	{
+		foreach ( var (displayWidth, displayHeight) in new[] { (640, 480), (1280, 720), (1000, 1000) } )
+		{
+			var aspect = (float)displayHeight / displayWidth;
+			var (halfWidth, halfHeight) = ParticleRenderer.HalfExtents( 1024, 1f, 4, 48, 32, aspect );
+			// the aspect-correct world turns a world width into pixels at the display's height over its width: pixels across / pixels up of the quad
+			var pixelsAcross = halfWidth * aspect * displayWidth;
+			var pixelsUp = halfHeight * displayHeight;
+			Assert.AreEqual( 48f / 32f * displayWidth / displayHeight, pixelsAcross / pixelsUp, 1e-4f, $"{displayWidth}x{displayHeight}" );
+		}
+		Assert.AreEqual( 1f, ParticleRenderer.TexturedWidthFactor( 32, 32, 1f ), 1e-6f, "a square frame on a square display stays square" );
+	}
+
+	[TestMethod]
+	public void AScreenSpaceQuadsHalfWidthIsTheFrameAspectWhenTexturedAndTheDisplayAspectWhenNot()
+	{
+		// [BIN:TPW-EXE:0x57C71F screen quad width] flag 0x40000 skips the transform: the half-width is half-height x float +8 or x the aspect word, in clip units
+		Assert.AreEqual( 0.1f * 64 / 32, ParticleRenderer.ScreenHalfWidth( 0.1f, 5, 64, 32, 0.75f ), 1e-6f, "textured: the frame's width over its height, no display factor" );
+		Assert.AreEqual( 0.1f * 0.75f, ParticleRenderer.ScreenHalfWidth( 0.1f, 0, 8, 8, 0.75f ), 1e-6f, "untextured: the display's height over its width" );
+		Assert.AreEqual( 0.1f * 0.5625f, ParticleRenderer.ScreenHalfWidth( 0.1f, 0, 8, 8, 0.5625f ), 1e-6f );
 	}
 }

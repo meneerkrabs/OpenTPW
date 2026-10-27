@@ -22,7 +22,7 @@ container only listens inside the Docker network.
    OPENTPW_DOMAIN=tpw.example.org docker compose -f source/OpenTPW.Server/docker-compose.example.yml up -d --build
    ```
 
-3. Open `https://tpw.example.org/`, choose the game folder, then **Go online**: the server
+3. Open `https://tpw.example.org/`, load your game data (archive.org, an address, a CD image or the game folder), then **Go online**: the server
    address is already filled in with the page's own address.
 
 Desktop players use the same address (`https://tpw.example.org`) in the online login screen.
@@ -379,7 +379,9 @@ browser (CORS, GET only); the official server allows `https://opentpw.io` and
   scripts and `dotnet.js` are revalidated on every load (ETag, answered 304).
   Measurements: [BROWSER-PERFORMANCE.md](BROWSER-PERFORMANCE.md#transfer-and-memory-october-19-2026).
 - The page has a strict content security policy: scripts and connections only to its own
-  address (WebAssembly compilation allowed), no inline scripts or styles, no framing.
+  address (WebAssembly compilation allowed), no inline scripts or styles, no framing. Only `connect-src`
+  also allows `https:`, so the player can load a CD image from an address they choose
+  ([WEB.md](WEB.md#game-data-sources)); scripts, styles, images and frames stay restricted to the page itself.
 
 ## Account e-mail
 

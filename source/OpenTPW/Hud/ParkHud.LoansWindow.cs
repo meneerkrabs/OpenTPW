@@ -278,7 +278,7 @@ public sealed partial class ParkHud
 		}
 		if ( outstandingLoans && row.FinalAmount > economy.Balance )
 		{
-			Stack.Push( UiDialogs.Message( "loanFunds", () => strings[UIStrings.InsufficientFunds],
+			Stack.Push( UiDialogs.MessageOfOriginalText( "loanFunds", () => strings[UIStrings.InsufficientFunds],
 				(() => strings.Extra( OpenTpwText.Back ), () => Stack.Pop()) ) );
 			return;
 		}
@@ -287,7 +287,7 @@ public sealed partial class ParkHud
 		// [EXT:online-coop-commands] a guest's confirmation waits for the host after its Yes: its question and a waiting line, its buttons inert; Escape closes it (C4b)
 		var waiting = false;
 		UiScreen? confirmation = null;
-		confirmation = UiDialogs.Message( "loanConfirm", () => waiting ? $"{prompt} {strings.Extra( OpenTpwText.CoopWaitingForHost )}" : prompt,
+		confirmation = UiDialogs.MessageOfOriginalText( "loanConfirm", () => waiting ? $"{prompt} {strings.Extra( OpenTpwText.CoopWaitingForHost )}" : prompt,
 			(() => strings[UIStrings.Yes], () =>
 			{
 				if ( waiting )
@@ -325,6 +325,9 @@ public sealed partial class ParkHud
 				if ( !waiting )
 					Stack.Pop();
 			}) );
+		// [EXT:strings] the original loan question keeps its clip; the co-op waiting line is OpenTPW-authored and is not cut off.
+		if ( confirmation.Find( "message" ) is UiLabel message )
+			message.Unclipped = () => waiting;
 		confirmation.Back = () => Stack.Pop();
 		confirmation.Removed = () =>
 		{
@@ -388,7 +391,7 @@ public sealed partial class ParkHud
 		Model( "listFrame", Control( 0x12C4BD ) );
 		Model( "summaryFrame", Control( 0x12C4C1 ) );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[outstandingLoans ? UIStrings.GraphOutstandingLoans : UIStrings.GraphAvailableLoans],
-			Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
+			Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
 			Bounds = Control( 0x12C4CA ).Rect, Anchor = UiAnchor.Center } );
 		var captions = new[] { UIStrings.LenderName, UIStrings.Amount, UIStrings.LoanTerm, UIStrings.InterestRate, UIStrings.MonthlyRepayment, UIStrings.TotalPayable };
 		var outstandingCaptions = new[] { UIStrings.LenderName, UIStrings.OriginalAmount, UIStrings.MonthsRemaining, UIStrings.InterestRate, UIStrings.MonthlyRepayment, UIStrings.RemainingBalance };

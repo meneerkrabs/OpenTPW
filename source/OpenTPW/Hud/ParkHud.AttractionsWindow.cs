@@ -315,7 +315,7 @@ public sealed partial class ParkHud
 			EnsureAttractionSelection();
 		}
 		if ( GameOptions.Current.Confirmations )
-			Stack.Push( UiDialogs.Message( "confirmDeleteAttraction", () => strings[DeleteLabelOf( row.Category )] + "\n" + row.Name,
+			Stack.Push( UiDialogs.MessageOfOriginalText( "confirmDeleteAttraction", () => strings[DeleteLabelOf( row.Category )] + "\n" + row.Name,
 				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); Remove(); }),
 				(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 		else Remove();
@@ -356,7 +356,7 @@ public sealed partial class ParkHud
 		Model( "window", table.Root );
 		Model( "listFrame", table.Model( "list_all" ) );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[AttractionCategories.First( tab => tab.Category == attractionCategory ).Title],
-			Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x12C4BE ).Rect, Anchor = UiAnchor.Center } );
+			Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x12C4BE ).Rect, Anchor = UiAnchor.Center } );
 		foreach ( var tab in AttractionCategories )
 		{
 			var category = tab;
@@ -520,8 +520,9 @@ public sealed partial class ParkHud
 					if ( ParkAttractionRoster.IsGauge( kind ) )
 						UiGauge.Draw( context.Batch, cell.Inflate( -cell.Height * 0.2f ), cells[column].Gauge );
 					else
+						// [EXT:strings] the "not simulated yet" text (OpenTpwText.NotSimulated) is OpenTPW's, so it is not cut off at the cell; every other cell text is
 						context.DrawFittedText( context.Fonts.Small, cells[column].Text ?? context.Strings.Extra( OpenTpwText.NotSimulated ), cell, color,
-							kind == AttractionColumnKind.Name ? UiAlign.Left : ParkAttractionRoster.IsMoney( kind ) ? UiAlign.Right : UiAlign.Center );
+							kind == AttractionColumnKind.Name ? UiAlign.Left : ParkAttractionRoster.IsMoney( kind ) ? UiAlign.Right : UiAlign.Center, clip: cells[column].Text != null );
 				}
 			}
 		}

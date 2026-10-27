@@ -163,6 +163,8 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable, IPlayerTicketWal
 			if ( !Ledger.HeldBy( theme, kind ) ) objectives.TakeGoldenTicket( kind );
 		}
 		wonInSession.Clear();
+		// Credit the session's earned tickets before charging what it bought with them.
+		Reconcile();
 		// what the park bought with its own tickets in the session enters the player's account now
 		ReconcilePurchases( runtime.Economy );
 		TryFlush();

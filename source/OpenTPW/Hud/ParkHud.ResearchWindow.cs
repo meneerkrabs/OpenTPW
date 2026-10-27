@@ -254,7 +254,7 @@ public sealed partial class ParkHud
 		// [DATA:Mac research table 0x4c652] Root, title, five panels and the main workload track.
 		Model( "window", "research_wind", Rect( 186, 30, 2018, 1032 ) );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.ResearchLab], Font = fonts => fonts.Title,
-			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 866, 67, 1338, 146 ), Anchor = UiAnchor.Center } );
+			Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 866, 67, 1338, 146 ), Anchor = UiAnchor.Center } );
 		Model( "workload", "effort", Rect( 234, 148, 464, 968 ) );
 		var workloadKnob = screen.Add( new ResearchWorkloadKnob( this ) { Id = "workloadKnob",
 			Bounds = Rect( 267, 220, 334, 701 ), Anchor = UiAnchor.Center } );

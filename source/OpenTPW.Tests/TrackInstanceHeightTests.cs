@@ -6,7 +6,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The tile instances' placement and height (the instancers 0x522B90/0x522D50, 0x463060, 0x466F90, 0x466D70) and the landscape sampler 0x4527F0, asset-free
-/// (docs/TRACKS.md; APPROX:TRACK-001 narrowed, TRACK-003 retired).
+/// (docs/TRACKS.md; TRACK-001 and TRACK-003 retired).
 /// </summary>
 [TestClass]
 public class TrackInstanceHeightTests

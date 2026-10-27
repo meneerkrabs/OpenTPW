@@ -147,28 +147,10 @@ public class GuestRefusedTargetTests
 	}
 
 	// Joint baseline: main 9b8943a9 (ExitRide + balloon presentation), observed on all desktop and browser modes.
+	/// <summary>The fixed run's pin and what the same run hashes with its retained targets zeroed (the legacy replay of <see cref="FixedRunDiffersFromTheLegacyPinOnlyByRetainedTargetIdentity"/>); the other pins' projections moved with the guest destinations (round 9, package G) and are not kept.</summary>
 	private static readonly IReadOnlyDictionary<ulong, ulong> JointMainProjectionPins = new Dictionary<ulong, ulong>
 	{
-		[0xAF6434D38684D562UL] = 0xB7FE34DDDA0A7E62UL,
-		[0x1AABD1698E2E75BEUL] = 0x05C6483AF1DFF71AUL,
-		[0xF29FC9EE9FA2CBC4UL] = 0x36A3AFB8CC43B4BAUL,
-		[0x5467A6E95F5BC676UL] = 0xE4C37292CC801E93UL,
-		[0x0AECF3233FBD5294UL] = 0x110F6215FE085755UL,
-		[0x1CDA6A275C9F3F5BUL] = 0x99D913B64E16B731UL,
-		[0xA8C95CA65160807CUL] = 0xED5A56D5EA8E74CDUL,
-		[0xCB5E98B00C5AAD4CUL] = 0xFDFC0F8656629F55UL,
-		[0x130B524C99334012UL] = 0xC91DF895918FDA7BUL,
-		[0x5AEE05EB1A2D348DUL] = 0x39B8D469AA2703C4UL,
-		[0x72FD6BD04393AED1UL] = 0x9BC6C2CF5078F064UL,
-		[0xEDBB35F77BB53B24UL] = 0x720B828F24ED1BF1UL,
-		[0x0AD27109C2E5643DUL] = 0xC52EB9E19789F97DUL,
-		[0x8ACD297D0155243EUL] = 0x189A6CB279223067UL,
-		[0x92910893AA42DAD7UL] = 0xA7CC0F211F8E8E63UL,
-		[0x46D7114F4B803468UL] = 0x21DEDD2A49E4F1F0UL,
-		[0x5AC8D8A47AAC35D2UL] = 0x7539BB3BB9729317UL,
-		[0x51F09D065798C992UL] = 0x33BAE0D9E1039AF7UL,
-		[0xED306F312346AEC8UL] = 0x23A78F4981EEB303UL,
-		[0xEF00F0D64A9077FEUL] = 0xD2AF869CDF9A7D3DUL,
+		[0x5946C7CB09C6EEE7UL] = 0x307DA54FFB0EC403UL,
 	};
 
 	internal static ulong VerifyRetainedTargetHash( GuestSimulation simulation, Func<ulong> compute, WorldStateSources? sources = null )
@@ -181,24 +163,16 @@ public class GuestRefusedTargetTests
 			&& RetainedStates.Contains( (guest.State, guest.Activity) ) )
 			.Select( guest => (Guest: guest, Target: guest.AttractionId) ).ToArray();
 		foreach ( var pair in retained ) pair.Guest.AttractionId = 0;
-		ulong projected, repeatedProjection;
-		string projectedBeforeFinally, repeatedBeforeFinally;
-		try
-		{
-			var directProjected = DirectHash( simulation, sources );
-			projected = compute();
-			Assert.AreEqual( directProjected, projected, $"direct and delegate hashes agree while targets are zeroed; direct=0x{directProjected:X16}; delegated=0x{projected:X16}" );
-			projectedBeforeFinally = projected.ToString( "X16" );
-			repeatedProjection = compute();
-			repeatedBeforeFinally = repeatedProjection.ToString( "X16" );
-			Assert.AreEqual( projectedBeforeFinally, repeatedBeforeFinally, $"target-only projection repeated inside try; actual=0x{actual:X16}; targets={targets}" );
-		}
-		finally { foreach ( var pair in retained ) pair.Guest.AttractionId = pair.Target; }
+		// No try/finally here on purpose: in the Mono interpreter's hot tier a loop in a finally block overwrote locals assigned in the try (MonoInterpreterTryFinallyProbeTests); nothing between the clearing and
+		// the restoring below can throw (two hashes of a park that is not changed), and the assertions come after the restoring
+		var directProjected = DirectHash( simulation, sources );
+		var projected = compute();
+		var repeatedProjection = compute();
+		foreach ( var pair in retained ) pair.Guest.AttractionId = pair.Target;
+		Assert.AreEqual( directProjected, projected, $"direct and delegate hashes agree while targets are zeroed; direct=0x{directProjected:X16}; delegated=0x{projected:X16}" );
+		Assert.AreEqual( projected, repeatedProjection, $"target-only projection repeated while cleared; actual=0x{actual:X16}; targets={targets}" );
 		Assert.AreEqual( actual, compute(), "diagnostic projection restores the actual hash" );
 		Assert.AreEqual( actual, DirectHash( simulation, sources ), "direct hash after restoration equals the original delegate hash" );
-		Assert.AreEqual( projectedBeforeFinally, projected.ToString( "X16" ), "the first projected scalar survives finally and restoration" );
-		Assert.AreEqual( repeatedBeforeFinally, repeatedProjection.ToString( "X16" ), "the repeated projected scalar survives finally and restoration" );
-		Assert.AreEqual( projected, repeatedProjection, "target-only projection is stable while the selected IDs remain cleared" );
 		if ( JointMainProjectionPins.TryGetValue( actual, out var mainPin ) )
 			Assert.AreEqual( mainPin, projected, "target-only projection retains the independently observed joint-main baseline" );
 		Console.WriteLine( $"GUEST004_JOINT actual=0x{actual:X16} projected=0x{projected:X16} retained={retained.Length}" );
@@ -233,7 +207,7 @@ public class GuestRefusedTargetTests
 			Assert.AreEqual( currentHash, Hash( current ), "diagnostic projection must restore the entire current hash" );
 		}
 		Assert.IsTrue( retainedTicks > 0, "the fixed run must exercise full-room retained targets" );
-		Assert.AreEqual( 0x05C6483AF1DFF71AUL, Hash( legacy ), $"legacy replay: 0x{Hash( legacy ):X16}" );
+		Assert.AreEqual( 0x307DA54FFB0EC403UL, Hash( legacy ), $"legacy replay: 0x{Hash( legacy ):X16}" );
 		static ulong Hash( DeterminismTests.SyntheticPark park ) => WorldStateHash.Compute( new WorldStateSources { Seed = park.Seed, Economy = park.Economy, Guests = park.Guests, Scripts = park.Scripts } );
 		static bool HasRetainedTarget( Guest guest ) => guest.AttractionId != 0 && !guest.IsInQueue
 			&& RetainedStates.Contains( (guest.State, guest.Activity) );
@@ -410,8 +384,12 @@ public class GuestRefusedTargetTests
 		Assert.AreEqual( GuestState.HeldByGuard, guest.State );
 	}
 
+	/// <summary>
+	/// The leaving state's entry clears the target (tp.exe 0x00502305, the write at 0x0050231C: SetState(18) as it does for a held guest's state 17, 0x005022E0), so a refused target does not survive a departure; a
+	/// recalled guest decides again with none, and the removal of the ride it refused is no longer a message to it.
+	/// </summary>
 	[TestMethod]
-	public void DepartureAndRecallRetainTheTargetUntilRemovalOrTheNextChoice()
+	public void DepartureClearsTheTargetAndARecalledGuestDecidesWithNone()
 	{
 		foreach ( var recall in new[] { false, true } )
 		{
@@ -424,16 +402,17 @@ public class GuestRefusedTargetTests
 			rig.Simulation.Settings.ArrivalLaneB = null;
 			guest.ExitLevel = 1;
 			rig.Simulation.ShowCells = () => new[] { (3, 0) }; // wait in state 6 until the needs phase makes the exit counter zero
+			Assert.AreEqual( RideId, guest.AttractionId, "the refused target is kept while the guest decides" );
 			Until( rig, () => guest.State == GuestState.LeavingPark, "state 6 started the actual departure" );
 			rig.Simulation.ShowCells = null;
-			Assert.AreEqual( RideId, guest.AttractionId );
+			Assert.AreEqual( 0, guest.AttractionId, "SetState(18) clears +0x1DC" );
 			if ( recall )
 			{
 				guest.ExitLevel = 10000;
 				rig.Simulation.ShowCells = () => new[] { (guest.CellX + 1, guest.CellY) };
 				Until( rig, () => observer.Recalls.Contains( guest.Id ), "the departure was recalled on the next park turn" );
 				Assert.AreEqual( GuestState.DoingNothing, guest.State );
-				Assert.AreEqual( RideId, guest.AttractionId );
+				Assert.AreEqual( 0, guest.AttractionId );
 				Assert.AreEqual( 0, observer.Decisions.Count );
 			}
 			else
@@ -442,7 +421,7 @@ public class GuestRefusedTargetTests
 				for ( var tick = 0; guest.State != GuestState.WaitingToGoHome && tick < 6000; tick++ )
 				{
 					rig.Step();
-					Assert.AreEqual( RideId, guest.AttractionId );
+					Assert.AreEqual( 0, guest.AttractionId );
 					if ( seen.Add( guest.State ) )
 						Valid( rig.Simulation, RoundTrip( rig.Simulation.CaptureSnapshot() ) );
 				}
@@ -451,10 +430,10 @@ public class GuestRefusedTargetTests
 					Assert.IsTrue( seen.Contains( state ), $"actual departure reached {state}" );
 			}
 			var happiness = guest.Happiness;
+			var state18 = guest.State;
 			rig.Simulation.Unregister( rig.Ride );
-			Assert.AreEqual( happiness - 5, guest.Happiness );
-			Assert.AreEqual( 0, guest.AttractionId );
-			Assert.AreEqual( GuestState.DoingNothing, guest.State );
+			Assert.AreEqual( happiness, guest.Happiness, "the guest no longer names the ride: no small step" );
+			Assert.AreEqual( state18, guest.State );
 		}
 	}
 
@@ -569,7 +548,7 @@ public class GuestRefusedTargetTests
 		var invalid = new List<GuestSimulationSnapshot>();
 		foreach ( var state in new[] { GuestState.CrossingRoad, GuestState.CrossingRoadToPark, GuestState.GoingToTicketBooth,
 			GuestState.WaitingAtBooth, GuestState.AtTicketBooth, GuestState.EnteringPark, GuestState.ThrowingAwayLitter,
-			GuestState.ExitingRide, GuestState.HeldByGuard, GuestState.Gone, GuestState.Using, GuestState.Queueing } )
+			GuestState.HeldByGuard, GuestState.Gone, GuestState.Using, GuestState.Queueing } )
 			invalid.Add( WithGuest( snapshot, guest.Id, item => item with { State = state, BinId = state == GuestState.ThrowingAwayLitter ? 91 : 0 } ) );
 		invalid.Add( WithGuest( snapshot, guest.Id, item => item with { Activity = GuestActivity.CantDecide } ) );
 		invalid.Add( WithGuest( snapshot, guest.Id, item => item with { Activity = (GuestActivity)6 } ) );
@@ -584,7 +563,7 @@ public class GuestRefusedTargetTests
 		foreach ( var corrupt in invalid )
 		{
 			var loaded = RoundTrip( corrupt );
-			Assert.IsFalse( rig.Simulation.ValidateSnapshot( loaded ).IsValid );
+			Assert.IsFalse( rig.Simulation.ValidateSnapshot( loaded ).IsValid, $"corrupt snapshot #{invalid.IndexOf( corrupt )} must be rejected" );
 			Unchanged( rig, before, "validation is observational" );
 			Assert.ThrowsException<InvalidDataException>( () => rig.Simulation.RestoreSnapshot( loaded ) );
 			Assert.AreSame( guest, rig.Simulation.Find( guest.Id ), "failed restore does not replace even the live guest object" );

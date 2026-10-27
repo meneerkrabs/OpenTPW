@@ -26,7 +26,7 @@ public sealed partial class ParkHud
 		var table = OriginalLayoutTables.EmployeeRenameDialog;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.RenameStaffMember], Font = fonts => fonts.Title,
-			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x5DAA ).Rect, Anchor = UiAnchor.Center } );
+			Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x5DAA ).Rect, Anchor = UiAnchor.Center } );
 		var field = screen.Add( new UiTextField { Id = "name", Text = StaffName( member ), MaximumLength = StaffMember.MaximumNameLength,
 			Model = table.Control( 0x5DAB ).Model, Bounds = table.Control( 0x5DAB ).Rect, Anchor = UiAnchor.Center } );
 		bool TargetExists() => EmployeeWindowOpen && ReferenceEquals( employeeScreen, parent )

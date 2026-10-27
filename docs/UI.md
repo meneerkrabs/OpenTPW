@@ -367,9 +367,15 @@ once and have no shadow. The title class (constructor `0x491920`, vtable `0x6FF5
 menu lines) first writes the string in grey (128,128,128) with colour alpha `0x80` on the rectangle moved by (-2, +2) pixels (texel alpha `17 x floor(c x 128 / 255)`, nothing at level 0), then the
 white string over it in the same bitmap (texels written, not blended), and the quads modulate the whole bitmap by the title colour; Theme Park Inc's title class (`0x515DC0`, draw `0x515FE0`) does the same
 with colour alpha `0xC8`. The bitmap is the control's box (slot `+0x28` = `0x48F3D0` -> `0x588940`; width `((R - L) x W) >> 11`, height `(B - T) x H / 1536`, truncated, `0x48F47B-0x48F4C5`), so
-both passes and every plain string are cut off at it. `UiTitleBitmap` composes the title bitmap on the CPU (cached, bounded by count and 16 MB, never dropped in the frame that draws it), and
-`UiBatch.AddTitleText` / `AddText` clip to the box. OpenTPW-authored texts that are wider than their box opt out of the clip: the "not simulated yet" value of the object window (`[EXT:strings]`), the
-online screens' label buttons (`[EXT:ONLINE-UI]`) and the options page's OpenTPW rows (`[EXT:display]`). Smoke scan of the front end, the sandbox and the Jungle level: nothing else draws past its box.
+both passes and every plain string are cut off at it, and the text is aligned inside that size (`0x48F830`: the right and centre bounds are the bitmap's width, `0x48F8BA`, `0x48F943`). One integer box
+serves the placement and the clip (`UiContext.TextBox`: the rounded left and top, because the quad sits at the rectangle's unit position and the rasteriser puts it on the nearest pixel, and the truncated width and
+height). The margins `+0xDE` / `+0xE0` are zero unless the node's attribute word has `0x4000` / `0x8000` (`0x48FCB4-0x48FCCD`; the constructor `0x48FDE0` zeroes them), which the HUD cash control (node `0x2F`, attribute 1)
+does not have, so its balance starts at the bitmap's left edge and the first glyph's one-column left offset is cut off, as in OpenTPW. `UiTitleBitmap` composes the title bitmap on the CPU (cached, bounded by count and 16 MB,
+never dropped in the frame that draws it: one frame counter per frame, in the game flow), and `UiBatch.AddTitleText` / `AddText` clip to the box. An original option label wider than its rectangle is wrapped into it
+(`0x6AEC80`, `UiLabel` -> `DrawTextAt`), at the largest size whose wrapped block stays inside the rectangle (`[EXT:option-label-fit]`, which also skips the clip when no size does). OpenTPW-authored texts that are wider than
+their box opt out of the clip: the "not simulated yet" value of the object window and the attractions list (`[EXT:strings]`), the online screens' labels, label buttons, text fields and column headers (`[EXT:ONLINE-UI]`), the
+options page's OpenTPW rows (`[EXT:display]`), the speed buttons (`[EXT:speed-buttons]`), OpenTPW's dialog texts (`[EXT:own-window-sizes]`, `[EXT:ui-font-tier-by-scale]`) and the fitted-label fallbacks
+(`[EXT:fit-button-text]`). Probe of the front end and the Jungle HUD window cycle in 11 languages: the only clipped ink left is that first glyph column of the HUD balance.
 
 ### Resolution independence
 

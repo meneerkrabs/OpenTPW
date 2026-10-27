@@ -479,17 +479,15 @@ public sealed partial class ParkStaff
 		var thingId = things?.Allocate( ThingModelOf( candidate.Type ) ) ?? 0;
 		if ( things != null && thingId == 0 )
 			throw new InvalidOperationException( $"The thing pool is full ({ThingPool.Capacity} things); no staff member can be placed." );
-		// [BIN:TPW-EXE:0x004F89E1 staff base speed draw] the person base constructor 0x004F8940, which every staff constructor (0x00504B10) runs right after taking the thing id, draws R mod 5 from the world generator and takes that entry of the speed table {60, 80, 100, 120, 140} (0x0075C7F8) as the base speed +0xC0 (the reseed with the thing id is the online avatar's constructor 0x004F7B20, not the staff's)
-		// [BIN:TPW-EXE:0x004D4340 entertainer speed] the entertainer constructor then overwrites +0xC0 with the first table entry (60) after the draw; [BIN:TPW-EXE:0x004D5E02 guard variant] the guard constructor draws its own sprite variant ((R >> 2) mod the guard bank count, 0x00541F70) instead of taking the candidate's
+		// [BIN:TPW-EXE:0x004F89E1 staff base speed draw] the person base constructor 0x004F8940, which every staff constructor (0x00504B10) runs right after taking the thing id, draws R mod 5 from the world generator; the draw is consumed and not kept: the staff constructor's follow-up 0x00504B90 overwrites +0xC0 with 60 below grade 3 and 100 from grade 3 (0x00504C20..0x00504C42), and the entertainer constructor then sets 60 (0x004D43EE); no staff constructor reseeds (0x004F7B7E is the online avatar's)
+		// [BIN:TPW-EXE:0x004D5E02 guard variant] the guard constructor draws its own sprite variant ((R >> 2) mod the guard bank count, 0x00541F70) instead of taking the candidate's
 		// a pool-less (headless) economy has no person things, so it takes no draw
-		var baseSpeed = 60;
+		var baseSpeed = candidate.Type == StaffType.Entertainer || candidate.Grade < 3 ? GuestSpeed.BaseSpeeds[0] : GuestSpeed.BaseSpeeds[2];
 		var variant = candidate.Variant;
 		if ( things != null && random != null )
 		{
-			baseSpeed = GuestSpeed.BaseSpeeds[(int)random.Next( (uint)GuestSpeed.BaseSpeeds.Length )];
-			if ( candidate.Type == StaffType.Entertainer )
-				baseSpeed = GuestSpeed.BaseSpeeds[0];
-			else if ( candidate.Type == StaffType.Guard )
+			random.NextWord();
+			if ( candidate.Type == StaffType.Guard )
 				variant = VariantFrom( StaffType.Guard, random.NextWord() );
 		}
 		MaterializeRoleOrder();

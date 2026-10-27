@@ -205,7 +205,11 @@ public sealed partial class StaffWorldSimulation
 		var navigation = new GuestNavigation { X = (int)(x * Fixed16.One), Y = (int)(y * Fixed16.One) };
 		navigation.SetDestination( navigation.X, navigation.Y, [] );
 		member.Navigation = navigation;
-		member.BaseSpeed = member.Grade < 3 ? GuestSpeed.BaseSpeeds[0] : GuestSpeed.BaseSpeeds[2];
+		// [BIN:TPW-EXE:0x00504C20 staff base speed] 60 below grade 3, else 100; the entertainer constructor then fixes 60 (0x004D43EE), which a later grade does not change
+		if ( member.Type != StaffType.Entertainer )
+			member.BaseSpeed = member.Grade < 3 ? GuestSpeed.BaseSpeeds[0] : GuestSpeed.BaseSpeeds[2];
+		else
+			member.BaseSpeed = GuestSpeed.BaseSpeeds[0];
 		return true;
 	}
 

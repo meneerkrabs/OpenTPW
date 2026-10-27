@@ -252,16 +252,22 @@ public partial class CoopSessionTests
 		} );
 		Rounds( 20, host, guest );
 		host.Enter();
+		var hostView = ViewOf( host );
 		var carried = host.Economy.Staff.Members.Single( item => item.Id == id );
 		var origin = StaffPlacementRules.CellOf( carried )!.Value;
 		Assert.IsTrue( host.Level.StaffPlacement!.PickUp( carried ) );
 		Rounds( 5, host, guest );
+		// the host pauses the park, then dismisses the employee it carries: its hand empties with it, and its next HUD frame, paused, ends the tool
+		Assert.IsTrue( host.Issue( new SetGameSpeedCommand( GameSpeed.Paused ) ).Accepted );
 		Assert.IsTrue( host.Issue( new FireStaffCommand( id ) ).Accepted, "the host dismisses the employee it carries" );
 		Assert.IsNull( host.Level.StaffHands!.Of( 0 ), "and its hand empties with it" );
+		Assert.AreEqual( StaffToolKind.Carry, host.Level.StaffPlacement.Kind );
+		hostView.Update();
+		Assert.AreEqual( StaffToolKind.None, host.Level.StaffPlacement.Kind, "the paused host's frame ended the tool" );
+		Assert.AreEqual( StaffClickResult.None, host.Level.StaffPlacement.Click( origin.X, origin.Y ), "a click places nothing" );
 		// a log of before C4c dropped the dismissed employee's hand by the tool's next click: that drop finds no hand now and changes nothing
 		Assert.IsFalse( host.Issue( new DropStaffCommand( id, origin.X, origin.Y ) ).Accepted );
-		host.Level.StaffPlacement.FollowPark();
-		Assert.AreEqual( StaffToolKind.None, host.Level.StaffPlacement.Kind );
+		Assert.IsTrue( host.Issue( new SetGameSpeedCommand( GameSpeed.Normal ) ).Accepted );
 		Rounds( 20, host, guest );
 		CatchUpAndCompare( host, guest );
 		host.Enter();

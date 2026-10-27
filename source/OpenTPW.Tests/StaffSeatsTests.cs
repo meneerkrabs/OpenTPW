@@ -168,6 +168,7 @@ public class StaffSeatsTests
 			Assert.AreEqual( FireStaffCommand.BeingMovedReason, refused.Reason );
 		}
 		Assert.IsTrue( f.Economy.Staff.Members.Contains( member ) );
+		Assert.AreEqual( member.Id, f.Hands.Of( 1 )!.Value.Staff, "the pick-up's record first: the dismissal changed nothing" );
 		Assert.IsTrue( f.As( 1, new FireStaffCommand( member.Id ) ).Accepted, "one's own carried employee" );
 		Assert.IsNull( f.Hands.Of( 1 ), "the dismissal emptied the hand" );
 		// the host's own carried employee, as a single player's
@@ -175,6 +176,12 @@ public class StaffSeatsTests
 		Assert.IsTrue( f.As( 0, new FireStaffCommand( own.Id ) ).Accepted );
 		Assert.IsNull( f.Hands.Of( 0 ) );
 		Assert.IsFalse( f.As( 0, new DropStaffCommand( own.Id, 6, 3 ) ).Accepted, "nothing is left to put down" );
+		// the dismissal's record first: the pick-up finds no employee and changes nothing
+		var other = f.Standing( StaffType.Mechanic, 8, 3 );
+		Assert.IsTrue( f.As( 0, new FireStaffCommand( other.Id ) ).Accepted );
+		var late = f.As( 1, new PickUpStaffCommand( other.Id ) );
+		Assert.IsFalse( late.Accepted );
+		Assert.AreEqual( ((int?)null, false), (f.Hands.Of( 1 )?.Staff, f.Economy.Staff.Members.Contains( other )) );
 	}
 
 	[TestMethod]
@@ -199,6 +206,17 @@ public class StaffSeatsTests
 		Assert.AreEqual( (StaffState.Idle, 3.5f, 3.5f), (member.State, member.CellX!.Value, member.CellY!.Value) );
 		Assert.IsFalse( f.Hands.Apply( new DropStaffCommand( member.Id, 3, 3 ) { Player = 1 } ).Accepted, "no hand left: nothing changes" );
 		Assert.AreEqual( (3.5f, 3.5f), (member.CellX!.Value, member.CellY!.Value) );
+
+		// through the command funnel under a session's rules: the seat without the right drops its employee back, and a drop elsewhere is refused before it runs
+		f.Level.Commands.Rights = rights;
+		f.Level.Commands.SessionRules = true;
+		Assert.IsTrue( f.Hands.Apply( new PickUpStaffCommand( member.Id ) { Player = 1 } ).Accepted );
+		var elsewhere = f.As( 1, new DropStaffCommand( member.Id, 4, 3 ) );
+		Assert.IsFalse( elsewhere.Accepted );
+		Assert.IsTrue( elsewhere.RightsRefused, $"{elsewhere.Reason}" );
+		Assert.AreEqual( member.Id, f.Hands.Of( 1 )!.Value.Staff, "still in hand" );
+		Assert.IsTrue( f.As( 1, new DropStaffCommand( member.Id, 3, 3 ) ).Accepted, "the drop back needs no right" );
+		Assert.AreEqual( ((int?)null, StaffState.Idle, 3.5f, 3.5f), (f.Hands.Of( 1 )?.Staff, member.State, member.CellX!.Value, member.CellY!.Value) );
 	}
 
 	[TestMethod]

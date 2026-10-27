@@ -36,6 +36,11 @@ public interface ICellLineWriter
 	bool SnapsToLine => true;
 	/// <summary>Discard issuer-local active-segment state when a tool is closed or entered anew.</summary>
 	void ResetToolSession() { }
+	/// <summary>
+	/// How many points the tool's vertex stack holds: the path and queue tools' 1024 (<see cref="CellBuildTool.VertexCapacity"/>), the kart and water tools' 1025 (the PC pusher <c>0x52FBF0</c> stops at
+	/// a count above 0x400, so the stack holds 0x401 points, <see cref="TrackEditor.CornerCapacity"/>).
+	/// </summary>
+	int VertexCapacity => CellBuildTool.VertexCapacity;
 	/// <summary>Whether the tool's Backspace may take a committed segment back ([EXT:online-coop-commands] not a guest's path or queue line, C3a-2).</summary>
 	bool CanUndo => true;
 }
@@ -147,7 +152,7 @@ public sealed class CellBuildTool
 		Start = start;
 		if ( stack != null )
 		{
-			vertices.AddRange( stack.Take( VertexCapacity ) );
+			vertices.AddRange( stack.Take( writer.VertexCapacity ) );
 			segments.AddRange( segmentsBetween!.Take( Math.Max( 0, vertices.Count - 1 ) ) );
 		}
 		else if ( start is { } first )
@@ -198,7 +203,7 @@ public sealed class CellBuildTool
 		}
 		// The original ignores the push's result (0x7bcf4, whose guard is count > 1024, one past the buffer: REVIEW-PATH N2); a full stack ending the tool is an OpenTPW guard.
 		var pushed = false;
-		if ( vertices.Count < VertexCapacity )
+		if ( vertices.Count < Writer.VertexCapacity )
 		{
 			vertices.Add( end );
 			pushed = true;
@@ -248,7 +253,7 @@ public sealed class CellBuildTool
 			return result;
 		}
 		var pushed = false;
-		if ( vertices.Count < VertexCapacity )
+		if ( vertices.Count < Writer.VertexCapacity )
 		{
 			vertices.Add( waiting.End );
 			pushed = true;
@@ -292,7 +297,9 @@ public sealed class CellBuildTool
 				Start = end;
 			return result;
 		}
-		if ( end == start || !result.Completed || result.EndedOnExisting || !pushed )
+		// [BIN:TPW-EXE:0x005252D9 line tool push] the kart and water line click pushes its end through 0x52FBF0 and goes on whatever the answer: a full stack (0x401 points) takes no point and the tool continues from the new end (0x81EDE4/E8), the line laid and no segment recorded; the other tools end on it (an OpenTPW guard)
+		var fullStackEnds = !pushed && Mode is not (CellToolMode.KartTrack or CellToolMode.WaterTrack);
+		if ( end == start || !result.Completed || result.EndedOnExisting || fullStackEnds )
 			End();
 		else
 			Start = end;

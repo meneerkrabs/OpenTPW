@@ -113,6 +113,7 @@ public sealed class ParkCommandTrackWriter : ICellLineWriter, IGuestUndoWriter
 	public int Ride { get; }
 	public CellToolMode Mode => Inner.Mode;
 	public bool SnapsToLine => Inner.SnapsToLine;
+	public int VertexCapacity => Inner.VertexCapacity;
 
 	public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) => Inner.Preview( start, cursor );
 

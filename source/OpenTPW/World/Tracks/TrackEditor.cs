@@ -264,13 +264,8 @@ public sealed class TrackEditor
 	{
 		ArgumentNullException.ThrowIfNull( tool );
 		var open = walked ?? FindOpenEnd();
-		var corners = open.Corners;
-		// The shared tool has a smaller safe capacity than the original collector. If the collector overflowed, no captured point names the
-		// actual end; do not manufacture a straight segment across unrecorded corners. Otherwise retain the most recent complete segments.
-		if ( corners.Count == 0 || corners[^1] != open.End )
-			corners = new[] { open.End };
-		else if ( corners.Count > CellBuildTool.VertexCapacity )
-			corners = corners.Skip( corners.Count - CellBuildTool.VertexCapacity ).ToArray();
+		// [BIN:TPW-EXE:0x00530A87 collector end] the end of the walk is pushed only while the stack has room (a count of at most 0x400), so a walk that recorded 0x401 corner points leaves the stack without it and the tool starts at the end all the same (0x81EDE4/E8): the stack is the collector's, as the original keeps it
+		var corners = open.Corners.Count == 0 ? new[] { open.End } : open.Corners;
 		var segments = corners.Skip( 1 ).Select( (end, index) =>
 			new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = corners[index] } ).ToArray();
 		ICellLineWriter writer = new TrackLineWriter( builder, changed, Owner, this );

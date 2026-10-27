@@ -35,13 +35,13 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>
-	/// A guest's hire (C4c-2): the session's rights first, then the host's own checks (bankruptcy, the role's room, the candidate still in the pool and placed by no other seat), then the start
-	/// goes (<see cref="StartGuestStaff"/>) and the staff window closes. True when the start went.
+	/// A guest's hire (C4c-2): the session's rights first, then one staff request at a time, then the host's own checks (bankruptcy, the role's room, the candidate still in the pool and placed
+	/// by no other seat), then the start goes (<see cref="StartGuestStaff"/>) and the staff window closes. True when the start went.
 	/// </summary>
 	private bool GuestHire( CoopGuestStaff staff, ParkEconomy economy, StaffCandidate candidate )
 	{
 		var start = new BeginStaffHireCommand( candidate.Id );
-		if ( RefusedByRights( start ) )
+		if ( RefusedByRights( start ) || StaffRequestWaits( staff ) )
 		{
 			hireNoteSaid = true;
 			return false;
@@ -57,31 +57,34 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>
-	/// A guest's pick-up from the employee window (C4c-2): the session's rights first, then the host's own check (the employee may be picked up), then the start goes
-	/// (<see cref="StartGuestStaff"/>) and the window closes. True when the start went.
+	/// A guest's pick-up from the employee window (C4c-2): the session's rights first, then one staff request at a time, then the host's own check (the employee may be picked up), then the start
+	/// goes (<see cref="StartGuestStaff"/>) and the window closes. True when the start went.
 	/// </summary>
 	private bool GuestPickUp( CoopGuestStaff staff, StaffMember member )
 	{
 		var start = new PickUpStaffCommand( member.Id );
-		if ( RefusedByRights( start ) || level.Guests?.Grid.Cells is not { } cells || !StaffPlacementRules.CanBePickedUp( member, cells ) || !StartGuestStaff( staff, start ) )
+		if ( RefusedByRights( start ) || StaffRequestWaits( staff ) || level.Guests?.Grid.Cells is not { } cells || !StaffPlacementRules.CanBePickedUp( member, cells )
+			|| !StartGuestStaff( staff, start ) )
 			return false;
 		CloseEmployeeWindow();
 		return true;
 	}
 
+	/// <summary>Whether a staff request of the guest's waits, so a staff click is no click: the waiting note, said once for a run.</summary>
+	private bool StaffRequestWaits( CoopGuestStaff staff )
+	{
+		if ( !staff.HasOpenRequest )
+			return false;
+		level.NoteWaitingClick();
+		return true;
+	}
+
 	/// <summary>
-	/// A guest's hire or pick-up going to the host (C4c-2): one staff request at a time, so a click while one waits is no click (the waiting note, once for a run); every non-staff tool and its
-	/// waits end first (a Move tool's end goes before the start), a staff tool already on stays on, inert, until the start's outcome; then the start goes and the player wants the tool. True
-	/// when it went.
+	/// A guest's hire or pick-up going to the host (C4c-2), its rights and checks passed with no staff request waiting: every non-staff tool and its waits end first (a Move tool's end goes
+	/// before the start), a staff tool already on stays on, inert, until the start's outcome; then the start goes and the player wants the tool. True when it went.
 	/// </summary>
 	private bool StartGuestStaff( CoopGuestStaff staff, ParkCommand start )
 	{
-		if ( staff.HasOpenRequest )
-		{
-			level.NoteWaitingClick();
-			hireNoteSaid = true;
-			return false;
-		}
 		level.EndBuildTools();
 		if ( level.Commands.Issue( start ).Request is not { } request )
 			return false;
@@ -97,12 +100,7 @@ public sealed partial class ParkHud
 	/// </summary>
 	private void ClickGuestStaff( CoopGuestStaff staff, StaffPlacement tool, int x, int y )
 	{
-		if ( staff.HasOpenRequest )
-		{
-			level.NoteWaitingClick();
-			return;
-		}
-		if ( !tool.IsValid( x, y ) || level.Park?.Economy is not { } economy )
+		if ( StaffRequestWaits( staff ) || !tool.IsValid( x, y ) || level.Park?.Economy is not { } economy )
 			return;
 		ParkCommand click;
 		if ( tool is { Kind: StaffToolKind.Place, Candidate: { } candidate } )

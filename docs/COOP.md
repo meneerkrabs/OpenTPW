@@ -1162,14 +1162,18 @@ The scenarios:
   exactly one desync report, the forced one, and takes one capture for it. The run's one resync is that one;
   no link is lost.
 - **staff** (`--scenario staff`, C4c-2): after the lines the host gives the staff right through the rights
-  dialog. The guest hires a guard from the staff window (Enter on the applicant); when its Place tool arms, it
-  forces a desync of its own stream, and after the swap the Place tool arms again from the snapshot's pending
-  hire. A click in the park places the guard. The guest picks it up from its window; when its Carry tool arms
-  it forces a second desync, and the Carry tool arms again from the snapshot's hand. Another click drops it
-  elsewhere. Then it renames the guard, raises the guards' training budget a step and dismisses it (through the
-  confirmation when the options ask for one). Every one of the seven commands is accepted at the same record on
-  both parks. The run's two resyncs are the forced ones, each the host's one desync report of it with one capture;
-  each may count as the join's failure inside the early window, at most those two.
+  dialog. The guest's resyncs are forced ones (the browser resync cases), each with its staff state at the cut.
+  First it hires a guard from the staff window (Enter on the applicant) and, while the hire still waits, forces a
+  desync of its own stream and lets go with Escape before the swap: the hire's record is inside the cut, so the
+  new park holds the pending hire, which is cleaned up with its cancel, and no tool comes. Then it hires another
+  guard, places it with a click in the park and picks it up from its window; with it in hand it forces a second
+  desync, and after the swap the Carry tool arms again from the snapshot's hand. Once the session's early window
+  after that join has passed, a click drops the guard elsewhere and a third desync is forced at once, so the
+  drop's record is inside the cut: no state and no tool after the swap. Then it renames the guard, raises the
+  guards' training budget a step and dismisses it (through the confirmation when the options ask for one). Every
+  one of the nine staff commands is accepted on both parks, at the same record where the guest's park knows it
+  (the two inside a cut have none there). Each forced desync is the host's one report of it with one capture; the
+  first two, inside the early window after a join, may count as that join's failure, at most those two.
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
   HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
   takes its ticks before the host sets the speed, and the host its own when it does. Every five seconds both

@@ -453,7 +453,11 @@ public sealed partial class ParkHud
 			// the P window holds the focus: Escape reaches only its procedure, which ignores it
 			if ( PauseBackdropHoldsFocus )
 				return;
-			if ( IsRiding )
+			// [EXT:online-coop-commands] a guest's hire or pick-up that waits for the host with no staff tool on yet is let go as its tool would be, before anything else takes the key (C4c-2):
+			// only the next Escape closes a window or opens the pause menu
+			if ( GuestStaffStartWaits && level.StaffPlacement is { IsActive: false } waitingStaffTool )
+				waitingStaffTool.Cancel();
+			else if ( IsRiding )
 				StopRide();
 			else if ( CameraPanelOpen )
 				CloseCameraPanel();
@@ -465,9 +469,6 @@ public sealed partial class ParkHud
 				level.ExitCoasterTool();
 			else if ( level.StaffPlacement is { IsActive: true } staffTool )
 				staffTool.Cancel();
-			// [EXT:online-coop-commands] a guest's hire or pick-up that waits for the host with no staff tool on yet is let go as its tool would be (C4c-2): only the next Escape opens the pause menu
-			else if ( GuestStaffStartWaits && level.StaffPlacement is { } waitingStaffTool )
-				waitingStaffTool.Cancel();
 			else if ( level.PatrolTool is { IsActive: true } patrolTool )
 				patrolTool.Cancel();
 			else if ( level.BuyLandTool is { IsActive: true } landTool )

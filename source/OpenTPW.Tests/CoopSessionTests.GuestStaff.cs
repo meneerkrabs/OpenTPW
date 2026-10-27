@@ -297,6 +297,95 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void EscapeLetsGoOfAWaitingHireBeforeItClosesTheObjectWindow()
+	{
+		var (host, guest, view, seat, _) = StaffSession();
+		var staff = GuestStaffOf( guest );
+		var tool = guest.Level.StaffPlacement!;
+		Assert.IsTrue( GuestHires( guest, view, out var candidate ) );
+		// the guest opens an object's window while its first hire waits: Escape goes to the hire first
+		view.Hud.SelectObject( guest.One );
+		view.Update();
+		Assert.IsTrue( view.Hud.InfoArmOpen && staff.StartWaits );
+		view.Escape();
+		Assert.IsFalse( staff.WantsTool, "let go" );
+		Assert.IsTrue( view.Hud.InfoArmOpen, "the window stays for the next Escape" );
+		RoundsUntil( () => !staff.HasOpenRequest && guest.Economy.Staff.PendingHireOf( seat ) == 0 && HostStaffCommandsOf( host, seat ).Length == 2, host, guest, view,
+			"the accepted hire was cancelled" );
+		Assert.AreEqual( StaffToolKind.None, tool.Kind, "no tool came back" );
+		CollectionAssert.AreEqual( IssuedBy( seat, new BeginStaffHireCommand( candidate ), new CancelStaffHireCommand() ), HostStaffCommandsOf( host, seat ) );
+		view.Escape();
+		Assert.IsFalse( view.Hud.InfoArmOpen, "the next Escape closes the window" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void TwoGuestsPlacingForTheRolesLastPlaceRefuseTheLaterRecordWhoseToolEndsWithOneCancel()
+	{
+		// the guards' role takes one employee, alike on every park (set on each park's settings, which the parks may share)
+		var changed = new List<(StaffRoleSettings[] Roles, StaffRoleSettings Saved)>();
+		try
+		{
+			var (host, first, second) = SharedWithTwo( ( park, _ ) =>
+			{
+				var roles = (StaffRoleSettings[])park.Economy.Settings.Roles;
+				if ( changed.Any( item => ReferenceEquals( item.Roles, roles ) ) )
+					return;
+				changed.Add( (roles, roles[(int)StaffType.Guard]) );
+				roles[(int)StaffType.Guard] = roles[(int)StaffType.Guard] with { MaximumInPark = 1 };
+			} );
+			var views = new[] { first, second }.Select( park => (Park: park, View: ViewOf( park )) ).ToArray();
+			foreach ( var (_, view) in views )
+				WithoutStaffNames( view.Hud );
+			void Until( Func<bool> done, string what )
+			{
+				for ( var round = 0; round < 900 && !done(); round++ )
+				{
+					clock += 1 / 60.0;
+					host.Frame( 1 / 60.0 );
+					foreach ( var (park, view) in views )
+					{
+						park.Frame( 1 / 60.0 );
+						park.Session!.Step();
+						view.Update();
+					}
+				}
+				Assert.IsTrue( done(), what );
+			}
+			Until( () => first.Level.TickCount > 20, "the parks run" );
+			var seats = views.Select( item => item.Park.Level.Commands.Player ).ToArray();
+			foreach ( var seat in seats )
+				Assert.IsTrue( host.Issue( new SetSeatRightsCommand( seat, CoopRights.Staff ) ).Accepted );
+			Until( () => views.All( item => item.Park.Level.RightsOf( item.Park.Level.Commands.Player ) == CoopRights.Staff ), "the rights reached both guests" );
+			// each guest hires a guard of its own and its Place tool arms
+			var candidates = new int[2];
+			Assert.IsTrue( GuestHires( first, views[0].View, out candidates[0] ) );
+			Assert.IsTrue( GuestHires( second, views[1].View, out candidates[1], item => item.Id != candidates[0] ) );
+			Until( () => views.All( item => item.Park.Level.StaffPlacement!.Kind == StaffToolKind.Place ), "both Place tools armed" );
+			// both place before either record comes back: the host takes the first's first
+			var cells = new[] { FreeCell( first ), FreeCell( second, FreeCell( first ) ) };
+			ClickCell( first, views[0].View, cells[0].X, cells[0].Y );
+			ClickCell( second, views[1].View, cells[1].X, cells[1].Y );
+			Until( () => views.All( item => !GuestStaffOf( item.Park ).HasOpenRequest && item.Park.Level.StaffPlacement!.Kind == StaffToolKind.None
+				&& item.Park.Economy.Staff.PendingHireOf( item.Park.Level.Commands.Player ) == 0 ), "both placements came back and the refused one's hire ended" );
+			CollectionAssert.AreEqual( IssuedBy( seats[0], new BeginStaffHireCommand( candidates[0] ), new PlaceStaffCommand( candidates[0], cells[0].X, cells[0].Y ) ),
+				HostStaffCommandsOf( host, seats[0] ), "the first placed its guard" );
+			CollectionAssert.AreEqual( IssuedBy( seats[1], new BeginStaffHireCommand( candidates[1] ), new PlaceStaffCommand( candidates[1], cells[1].X, cells[1].Y ), new CancelStaffHireCommand() ),
+				HostStaffCommandsOf( host, seats[1] ), "the second's placement refused, its tool ended and one cancel sent" );
+			Assert.IsTrue( host.Economy.Staff.Members.Any( member => member.Id == candidates[0] ) && host.Economy.Staff.Members.All( member => member.Id != candidates[1] ) );
+			Assert.IsFalse( GuestStaffOf( second ).WantsTool );
+			views[1].View.Update();
+			Assert.AreEqual( 1, views[1].View.Says( OpenTpwText.NotAvailable ), "the refusal's note" );
+			CutAndCompare( host, first, second );
+		}
+		finally
+		{
+			foreach ( var (roles, saved) in changed )
+				roles[(int)StaffType.Guard] = saved;
+		}
+	}
+
+	[TestMethod]
 	public void AToolSwitchThroughTheLevelWhileAReplacementHireWaitsSendsNoSecondStaffRequest()
 	{
 		var (host, guest, view, seat, handyman) = StaffSession();

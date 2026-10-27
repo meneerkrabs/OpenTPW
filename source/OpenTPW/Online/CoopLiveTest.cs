@@ -15,7 +15,7 @@ internal sealed record CoopLiveStep( string What, int Frame, double Started, dou
 /// [EXT:online-coop-session] The live co-op acceptance (C2d-5; docs/COOP.md, "The live acceptance"): one game of a live shared park, the host or the guest, through the real server and the
 /// game's own screens, with the original game's data. <c>--coop-live host|join --coop-live-evidence &lt;folder&gt;</c>; the driver (tools/coop-live.mjs) gives the server, the player's name
 /// and password, and the guest's code in the environment (<c>OPENTPW_COOP_LIVE_SERVER</c>, <c>_NAME</c>, <c>_PASSWORD</c>, <c>_CODE</c>), never in arguments or files, and the
-/// scenario (<c>OPENTPW_COOP_LIVE_SCENARIO</c>: <c>baseline</c>, <c>recovery</c>, <c>endurance</c>, with <c>OPENTPW_COOP_LIVE_MINUTES</c>, or <c>management</c>).
+/// scenario (<c>OPENTPW_COOP_LIVE_SCENARIO</c>: <c>baseline</c>, <c>recovery</c>, <c>endurance</c>, with <c>OPENTPW_COOP_LIVE_MINUTES</c>, <c>management</c> or <c>staff</c>).
 /// <para>
 /// The run is a script of steps (<see cref="HostSteps"/>, <see cref="GuestSteps"/>), each waiting for a condition with a deadline of wall time. It acts on the top screen only, as a
 /// player does: an element is found by its id, of its type, visible and enabled, and a button is activated and a field typed into as the screen's own input would. Keys, the chat

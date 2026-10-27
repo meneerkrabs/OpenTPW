@@ -168,9 +168,10 @@ internal sealed partial class CoopLiveTest
 		// [EXT:online-coop-snapshot-join] the management scenario's one resync is its forced one (C4b-2)
 		if ( scenario == "management" )
 			Require( streams == 2 && TheSession is { FailedJoins: <= 1, GuestStream: { Desyncs: 1, Desync: null } }, "the session followed with one resync, the forced one, and no other desync" );
-		// [EXT:online-coop-snapshot-join] the staff scenario's two resyncs are its forced ones, each inside the early window after a join, so each may count as the join's failure (C4c-2)
+		// [EXT:online-coop-snapshot-join] the staff scenario's three resyncs are its forced ones; the first two come inside the early window after a join, so each may count as the join's
+		// failure, the third after it (C4c-2)
 		else if ( scenario == "staff" )
-			Require( streams == 3 && TheSession is { FailedJoins: <= 2, GuestStream: { Desyncs: 2, Desync: null } }, "the session followed with two resyncs, the forced ones, and no other desync" );
+			Require( streams == 4 && TheSession is { FailedJoins: <= 2, GuestStream: { Desyncs: 3, Desync: null } }, "the session followed with three resyncs, the forced ones, and no other desync" );
 		else if ( scenario != "recovery" )
 			Require( streams == 1 && TheSession is { FailedJoins: 0, GuestStream.Desyncs: 0 }, "the session followed with no resync and no desync" );
 		Publish( "done", true );

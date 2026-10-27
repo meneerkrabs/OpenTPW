@@ -10,8 +10,8 @@
 // desync, the recovery run with the session back and a second line after the restart, the endurance run at the fastest speed for its minutes, and the management run
 // (C4b-2) with the guest's line as its purchase, the attractions right given through the dialog, a guest's typed price and ride door at their records, and exactly one
 // resync, the guest's forced one, with its queued price sent once after it; the staff run (C4c-2) with the staff right given through the dialog and the guest's hire, placement,
-// pick-up, drop, rename, training budget and dismissal, each at its record on both parks, and two resyncs, the guest's forced ones, with its pending hire and then its employee in
-// hand, whose staff tool came back armed from each snapshot.
+// pick-up, drop, rename, training budget and dismissal, each at its record on both parks, and three resyncs, the guest's forced ones: a hire let go inside the cut, the employee
+// in hand armed again from the snapshot, and a drop inside the cut.
 //
 // Usage:
 //   node tools/coop-live.mjs --game <OpenTPW.dll> --server <OpenTPW.Server.dll> --out <directory> [--game-path <Theme Park World>] [--scenario baseline|recovery|endurance|management|staff]
@@ -459,41 +459,54 @@ function checkManagement(host, guest, check) {
 	{ guest: forced, host: seen, streams: guest?.streams, stream: guest?.stream });
 }
 
-/** The staff run's commands of the guest's, in their order (C4c-2, CoopLiveTest.GuestStaff). */
-export const STAFF_COMMANDS = ['BeginStaffHire', 'PlaceStaff', 'PickUpStaff', 'DropStaff', 'RenameStaff', 'SetTrainingBudget', 'FireStaff'];
+/**
+ * The staff run's commands of the guest's, in their order (C4c-2, CoopLiveTest.GuestStaff): a hire let go and its cleanup, a hire and its placement, the employee's pick-up and drop,
+ * its rename, the guards' training budget and its dismissal.
+ */
+export const STAFF_COMMANDS = ['BeginStaffHire', 'CancelStaffHire', 'BeginStaffHire', 'PlaceStaff', 'PickUpStaff', 'DropStaff', 'RenameStaff', 'SetTrainingBudget', 'FireStaff'];
+
+/** How many of the staff run's commands a forced resync's cut holds, so the guest's park knows no record of them: the hire let go and the drop. */
+export const STAFF_INSIDE_A_CUT = 2;
 
 /** The name the staff run gives its employee (CoopLiveTest.StaffName). */
 export const STAFF_NAME = 'Live';
 
 /**
- * The staff run's checks (C4c-2, docs/COOP.md "The live acceptance"): the staff right through the rights dialog, then the guest's hire and its placement, its pick-up and its drop
- * elsewhere, its rename, the guards' training budget and its dismissal, each accepted at the same record on both parks, about one employee; and exactly two resyncs, the guest's
- * forced ones (the C4 plan's browser resync cases), the first with its pending hire and the second with its employee in hand, each staff tool armed again from the snapshot, each
- * desync the host's one report of it with one capture. Each forced desync takes the stream's own path, so within the session's early window after a join it counts as that join's
- * failure, as a real one would: at most those two.
+ * The staff run's checks (C4c-2, docs/COOP.md "The live acceptance"): the staff right through the rights dialog; the guest's commands in their order about its employee; each accepted at
+ * the same record on both parks, the two inside a cut the same on both but for the record the guest's park cannot know; and exactly three resyncs, the guest's forced ones (the browser
+ * resync cases): a hire let go before its record entered the cut (cleaned up, no tool), the employee in hand (its Carry tool armed again from the snapshot) and a drop inside the cut (no
+ * state, no tool), each the host's one desync report of it with one capture. A forced desync takes the stream's own path, so the first two, inside the session's early window after a
+ * join, may count as that join's failure; the third comes after the window.
  */
 function checkStaff(host, guest, check) {
 	check('the host gave the staff right through the rights dialog', host?.staffGrant?.seat > 0 && host.staffGrant.seat === guest?.ownBuild?.seat
 		&& /\bStaff\b/.test(host.staffGrant.rights ?? ''), host?.staffGrant);
 	const mine = guest?.staff?.commands ?? [], theirs = host?.staff?.commands ?? [];
 	const kinds = mine.map(command => command.kind);
-	const employee = mine[0]?.staff;
-	const placed = mine.find(command => command.kind === 'PlaceStaff'), dropped = mine.find(command => command.kind === 'DropStaff');
-	check('the guest hired, placed, picked up, dropped elsewhere, renamed, trained and dismissed one employee, in that order', kinds.length === STAFF_COMMANDS.length
-		&& kinds.every((kind, index) => kind === STAFF_COMMANDS[index]) && Number.isInteger(employee)
-		&& mine.filter(command => 'staff' in command).every(command => command.staff === employee) && mine.find(command => command.kind === 'RenameStaff')?.name === STAFF_NAME
+	const employee = mine[3]?.staff;
+	const placed = mine[3], dropped = mine[5];
+	check('the guest let a hire go, then hired, placed, picked up, dropped elsewhere, renamed, trained and dismissed one employee, in that order',
+		kinds.length === STAFF_COMMANDS.length && kinds.every((kind, index) => kind === STAFF_COMMANDS[index]) && Number.isInteger(employee) && mine[0].staff !== employee
+		&& [2, 3, 4, 5, 6, 8].every(index => mine[index].staff === employee) && mine[6].name === STAFF_NAME
 		&& Array.isArray(placed?.cell) && Array.isArray(dropped?.cell) && (placed.cell[0] !== dropped.cell[0] || placed.cell[1] !== dropped.cell[1]), { guest: mine });
-	check('each of the guest\'s staff commands applied at its record on both parks, accepted', mine.length > 0 && theirs.length === mine.length
-		&& mine.every(command => Number.isInteger(command.record)) && mine.every((command, index) => theirs[index]?.accepted === true
-			&& JSON.stringify({ ...theirs[index], accepted: undefined }) === JSON.stringify({ ...command, accepted: undefined })), { guest: mine, host: theirs });
+	const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+	const without = (command, ...keys) => Object.fromEntries(Object.entries(command).filter(([key]) => !keys.includes(key)));
+	check('each of the guest\'s staff commands applied at its record on both parks, accepted, those inside a cut the same but for the record', mine.length > 0
+		&& theirs.length === mine.length && theirs.every(command => command.accepted === true && Number.isInteger(command.record))
+		&& mine.filter(command => command.record === null).length === STAFF_INSIDE_A_CUT
+		&& mine.every((command, index) => command.record === null ? same(without(theirs[index], 'accepted', 'record'), without(command, 'record'))
+			: same(without(theirs[index], 'accepted'), command)),
+	{ guest: mine, host: theirs });
 	const resyncs = guest?.staff?.resyncs ?? [], seen = host?.staff?.forced;
-	check('exactly two resyncs, the guest\'s forced ones, with its pending hire and then its employee in hand, each tool armed again from the snapshot', guest?.streams === 3
-		&& resyncs.length === 2 && resyncs[0].state === 'hire' && resyncs[1].state === 'hand'
+	check('exactly three resyncs, the guest\'s forced ones: a hire let go inside the cut cleaned up, the employee in hand armed again, a drop inside the cut leaving no tool', guest?.streams === 4
+		&& resyncs.length === 3 && resyncs.map(resync => resync.state).join() === 'hire,hand,drop'
+		&& resyncs[0].request === 'InSnapshot' && resyncs[0].armed === false && resyncs[1].request === null && resyncs[1].armed === true
+		&& resyncs[2].request === 'InSnapshot' && resyncs[2].armed === false
 		&& resyncs.every((resync, index) => resync.desync?.kind === 'Protocol' && resync.desync.reason === FORCED_DESYNC_REASON && resync.desync.id === index + 1
-			&& resync.after?.generation === resync.generation + 1 && resync.after.checks >= 2)
-		&& resyncs[1].generation === resyncs[0].after.generation && guest?.stream?.desyncs === 2 && guest?.stream?.failedJoins <= 2
-		&& seen?.desyncs?.length === 2 && seen.desyncs.every((report, index) => report.id === index + 1 && report.kind === 'Protocol')
-		&& seen.capturesAfter === seen.capturesBefore + 2, { guest: resyncs, host: seen, streams: guest?.streams, stream: guest?.stream });
+			&& resync.after?.generation === resync.generation + 1 && resync.after.checks >= 2 && (index === 0 || resync.generation === resyncs[index - 1].after.generation))
+		&& guest?.stream?.desyncs === 3 && guest?.stream?.failedJoins <= 2
+		&& seen?.desyncs?.length === 3 && seen.desyncs.every((report, index) => report.id === index + 1 && report.kind === 'Protocol')
+		&& seen.capturesAfter === seen.capturesBefore + 3, { guest: resyncs, host: seen, streams: guest?.streams, stream: guest?.stream });
 }
 
 /** How often both games sample the park's ticks at the fastest speed, in seconds (CoopLiveTest.EnduranceSampleSeconds). */

@@ -249,8 +249,9 @@ public static class ObjectAccessCells
 				if ( cells.RawTypeAt( x, y ) != (byte)ParkCellType.Queue || cells.OwnerAt( x, y ) != owner )
 					continue;
 				PathLinkWriter.Unlink( cells, x, y, cardinalOnly: true );
-				cells.SetFlags( x, y, cells.FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
+				// [BIN:TPW-EXE:0x005367A0 queue cell left behind] a removed queue cell is typed 0 with its links, queue link, owner, counter and whole flag word zero
 				cells.SetType( x, y, ParkCellType.Empty );
+				cells.SetFlags( x, y, ParkCellFlags.None );
 			}
 		}
 	}

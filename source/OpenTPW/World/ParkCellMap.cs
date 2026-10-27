@@ -117,6 +117,12 @@ public sealed partial class ParkCellMap
 	/// </summary>
 	public Func<int, int, bool?>? EntranceRideOpens { get; set; }
 
+	/// <summary>
+	/// Whether the MAP file marks the cell as an initial path cell (attribute bit 0x08, tp.exe's cell byte +0x26): the demolition of an object keeps the NoModify flag of such a path cell in front of its
+	/// entrance or exit. The level sets it from its MAP; a map without one has no initial path cells.
+	/// </summary>
+	public Func<int, int, bool>? InitialPathSource { get; set; }
+
 	/// <summary>The effects a path clear carries on this map (<see cref="EntranceReevaluation"/>).</summary>
 	internal LinkEffects ClearEffects => new( null, null, EntranceReevaluation );
 
@@ -482,10 +488,91 @@ public sealed partial class ParkCellMap
 	}
 
 	/// <summary>
+	/// The demolition of an object's cells (tp.exe <c>0x00527EE0</c> after the queue clear): pass 1 frees the path cell in front of an entrance or exit, pass 2 clears flag 0x20 on every cell of the footprint mask and
+	/// runs the cell remover <c>0x005367A0</c> on it, which empties a cell of type 1, 3, 4, 9, 10 or 0x15 entirely (type, links, queue link, owner and the whole flag word) and unlinks its neighbours first. A cell of
+	/// any other type is left as it is. An add-on cell on its ride's track only loses the flag 0x10 (<see cref="ClearFootprint"/>).
+	/// </summary>
+	/// <param name="queueCellRemoved">Called with the owner word of a removed type-3 footprint cell whose owner cell is not empty: the original refunds the queue cell then.</param>
+	// [BIN:TPW-EXE:0x00527EE0 pass 1] for every entrance (9) and exit (10) cell of the mask the cell in front (0x4D97E0 along the opposite of the entrance's queue link +0xD, or along the exit's) is looked at: a path cell with flag 0x20 that fewer than two entrance or exit cells (type 9 or 10, any owner) link to, and whose MAP byte +0x26 has not bit 8 (an initial path cell), loses the flag 0x20
+	// [BIN:TPW-EXE:0x00527EE0 pass 2] for every mask cell inside the map: 0x53A530(0x20), the cell remover 0x5367A0(0, 0) and the structure clear 0x53B280; the oracle ran them on every type (docs/reverse/ORACLE.md, F31)
+	// [BIN:TPW-EXE:0x005367A0 cell remover] types 1 and 10 unlink all eight link bits, 3 and 9 the four cardinal ones (each neighbour loses the opposite bit and is refreshed; with the forced flag 0x81D7A8 clear), then every removed type 1, 3, 4, 9, 10 and 0x15 zeroes the links +0xC, the queue link +0xD, the owner +0x10, the whole flag word +0xE and the type +8 (0x5346D0(0)); types 4 and 0x15 leave the placement counter +0x20, 1, 3, 9 and 10 write it; a type-3 cell credits the queue cell's refund when its owner cell is not empty (0x4D0190), and a path cell removed beside an entrance with an owner runs that ride's re-evaluation 0x4DE1F0 (0x53694B); the other types (0, 2, 5..8, 0xB..0x14, 7, 0x1E ...) write nothing
+	public void DemolishFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint, Action<ushort>? queueCellRemoved = null )
+	{
+		ArgumentNullException.ThrowIfNull( footprint );
+		var mask = footprint.Where( cell => FootprintType( cell.Cell.CellType ) != 0 && InBounds( cell.X, cell.Y ) ).ToList();
+		// pass 1: the path cell in front of an entrance or exit
+		foreach ( var (x, y, _) in mask )
+		{
+			var type = RawTypeAt( x, y );
+			if ( type is not (ParkCellTypes.Entrance or ParkCellTypes.Exit) )
+				continue;
+			var toward = QueueLinkAt( x, y );
+			if ( type == ParkCellTypes.Entrance )
+				toward = (byte)(toward << 4 | toward >> 4);
+			if ( toward == 0 || !System.Numerics.BitOperations.IsPow2( toward ) || (toward & 0x55) == 0 )
+				continue;
+			var (fx, fy) = (x + PathTiles.Offsets[System.Numerics.BitOperations.TrailingZeroCount( toward )].DX, y + PathTiles.Offsets[System.Numerics.BitOperations.TrailingZeroCount( toward )].DY);
+			if ( !InBounds( fx, fy ) || RawTypeAt( fx, fy ) != (byte)ParkCellType.Path || !FlagsAt( fx, fy ).HasFlag( ParkCellFlags.NoModify ) )
+				continue;
+			var accesses = 0;
+			for ( var direction = 0; direction < 4; direction++ )
+			{
+				var (nx, ny) = (fx + GuestPathGrid.Directions[direction].DX, fy + GuestPathGrid.Directions[direction].DY);
+				if ( (LinksAt( fx, fy ) & GuestPathGrid.LinkValue( direction )) != 0 && InBounds( nx, ny ) && RawTypeAt( nx, ny ) is ParkCellTypes.Entrance or ParkCellTypes.Exit )
+					accesses++;
+			}
+			if ( accesses < 2 && InitialPathSource?.Invoke( fx, fy ) != true )
+				SetFlags( fx, fy, FlagsAt( fx, fy ) & ~ParkCellFlags.NoModify );
+		}
+		// pass 2: every cell of the mask
+		foreach ( var (x, y, cell) in mask )
+		{
+			var addOn = cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash;
+			var onTrack = addOn && (TrackCellTypes.IsWalkable( RawTypeAt( x, y ) ) || RawTypeAt( x, y ) == TrackCellTypes.Extension);
+			if ( onTrack )
+			{
+				SetFlags( x, y, FlagsAt( x, y ) & ~ParkCellFlags.AddOn );
+				if ( Tracks.Get( x, y ) is { Type: not 0 } track && (track.Flags & TrackCell.FlagAddOn) != 0 )
+					Tracks.Set( x, y, track with { Flags = (byte)(track.Flags & ~TrackCell.FlagAddOn) } );
+				continue;
+			}
+			if ( FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) )
+				SetFlags( x, y, FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
+			RemoveCell( x, y, queueCellRemoved );
+		}
+	}
+
+	/// <summary>The cell remover <c>0x005367A0(0, 0)</c> on one cell (see <see cref="DemolishFootprint"/>); the flag 0x20 is already off.</summary>
+	private void RemoveCell( int x, int y, Action<ushort>? queueCellRemoved )
+	{
+		var type = RawTypeAt( x, y );
+		switch ( type )
+		{
+			case (byte)ParkCellType.Path or ParkCellTypes.Exit:
+				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false, ClearEffects );
+				break;
+			case (byte)ParkCellType.Queue or ParkCellTypes.Entrance:
+				PathLinkWriter.Unlink( this, x, y, cardinalOnly: true, ClearEffects );
+				if ( type == (byte)ParkCellType.Queue && OwnerAt( x, y ) is var owner and not 0 && RawTypeAt( (owner - 1) & 0x7F, (owner - 1) >> 7 ) != 0 )
+					queueCellRemoved?.Invoke( owner );
+				break;
+			case ParkCellTypes.Object or ParkCellTypes.TrackConnection:
+				break;
+			default:
+				return;
+		}
+		var counter = PlacementCountAt( x, y );
+		SetType( x, y, ParkCellType.Empty );
+		SetFlags( x, y, ParkCellFlags.None );
+		if ( type is ParkCellTypes.Object or ParkCellTypes.TrackConnection && counter != 0 )
+			SetPlacementCount( x, y, counter );
+	}
+
+	/// <summary>
 	/// Empties the footprint cells a removed object typed (those still of its footprint type), unlinking an '@' path cell and taking the add-on flag off a '+' or '#' cell and its track
 	/// layer cell.
 	/// </summary>
-	// [APPROX:ECON-050] the guest grid takes the world init's types and flags (tp.exe 0x00536490 with the terrain test 0x00450420: 7, 2 or 30 where no terrain lies, 1 with flag 0x20 for an InitialPath cell and 0 inside, flag 0x40 on every cell without 0x20, which the level's land then clears inside the fence) and the footprint types a placement writes (0x00528A70: 4, 9 and 10, the owner word, the '@' and add-on cells, the cells outside the entrance and exit), but a removed object empties the cells it typed and its queue (the level clears the ride's queue cells, ObjectAccessCells.ClearQueue), where the original's clear of them is not found (its destructor writes no cell word; the demolition replays the queue tool from the entrance in the Stranger-than-paradise twin, 0x100748A0) and the cells its demolition writes are not traced, and a read-only visit or a Theme Park Inc layout keeps the cells it was given — evidence needed: the cell writes of the sale's clear: tp.exe's destructor 0x004DD0A0 writes no cell word (it credits the scrap value, takes the RegionFX row off, kills the mesh 0x00559060 and posts message type 10, read only by the staff and guest handlers 0x004DA0CC, 0x004D6CFC and 0x004FB36D); the clear is the demolition 0x00527EE0, a caller of 0x0050B780, which credits the scrap percentage 0x004E2290 (0x004D01F0), replays the structure's removal through the loops of 0x0052FE50, then walks the footprint mask over the cells and for each cell inside the map clears the flag 0x20 (0x0053A530), runs the cell remover 0x005367A0 (a switch on the cell type at +8: types 1 and 10 step the path count down, 'Removing path cell with no neighbours') and 0x0053B280 (or clears the flag 0x10 for a moved object), before it lets the thing go; the per-type writes of those helpers are not traced
+	// [BIN:TPW-EXE:0x00527EE0 add-on clear] an add-on's removal clears the flag 0x10 of the cell and of the track layer's cell beneath (the moved-object branch of 0x527EE0 and the add-on cells of 0x53B280); the cells keep their type, which belongs to the ride's track
 	public void ClearFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint )
 	{
 		foreach ( var (x, y, cell) in footprint )

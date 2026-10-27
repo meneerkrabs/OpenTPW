@@ -227,8 +227,14 @@ public partial class Level
 			{
 				if ( Guests?.Grid.Cells is not { } removed )
 					return;
-				removed.ClearFootprint( item.Cells );
+				// the queue goes first, then the demolition's passes over the footprint (0x527EE0); a queue cell of the shape refunds while its owner cell still holds something
 				ObjectAccessCells.ClearQueue( removed, OwnerWord( item ) );
+				removed.DemolishFootprint( item.Cells, owner =>
+				{
+					var ride = Objects.Objects.FirstOrDefault( other => OwnerWord( other ) == owner );
+					if ( Park != null && ride != null && GetEconomyInstance( ride ) is int instance )
+						Park.Economy.RefundQueueCell( instance );
+				} );
 			};
 		}
 		// A placement over path cells clears them (ParkObjects.ClearPath): guests standing there step off

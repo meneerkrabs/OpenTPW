@@ -33,6 +33,7 @@ public partial class CoopShareTests
 		var row = share.State.Members.OrderBy( member => member.Slot ).ToList().FindIndex( member => member.Name == "Guest" );
 		// the host's own row has no rights button; a guest's names none yet
 		Assert.IsFalse( Element<UiButton>( stack, "rights0" ).Visible );
+		Assert.IsTrue( Element<UiButton>( stack, $"rights{row}" ).Unclipped, "the online rights row keeps its authored text unclipped" );
 		Assert.AreEqual( English( OpenTpwText.CoopWatches ), Element<UiButton>( stack, $"rights{row}" ).Text!() );
 		Element<UiButton>( stack, $"rights{row}" ).Clicked!();
 		Assert.AreEqual( UI.OnlineScreens.SeatRightsScreenName, stack.Top!.Name );
@@ -43,6 +44,7 @@ public partial class CoopShareTests
 		foreach ( var right in CoopRightsOffer.Each )
 		{
 			var button = Element<UiButton>( stack, $"right{right}" );
+			Assert.IsTrue( button.Unclipped, $"{right}: an OpenTPW-authored online switch" );
 			Assert.IsFalse( button.Selected!(), $"{right} not given yet" );
 			button.Clicked!();
 			Assert.IsTrue( level.RightsOf( seat ).HasFlag( right ), $"{right} given" );

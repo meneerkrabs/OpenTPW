@@ -240,7 +240,7 @@ public sealed partial class ParkHud
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "listFrame", Model = VisitorListNode.Model!, Bounds = VisitorListNode.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.AllVisitors], Font = fonts => fonts.Title,
-			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x1E498 ).Rect, Anchor = UiAnchor.Center } );
+			Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x1E498 ).Rect, Anchor = UiAnchor.Center } );
 		var rects = VisitorColumnRects;
 		for ( var column = 0; column < ParkVisitorRoster.Columns.Length; column++ )
 			screen.Add( new VisitorHeader( this, column ) { Id = ParkVisitorRoster.Columns[column].Id, Help = strings.Help( ParkVisitorRoster.Columns[column].Help ),

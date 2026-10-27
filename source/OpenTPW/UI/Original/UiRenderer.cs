@@ -30,6 +30,8 @@ internal sealed class UiRenderer : IDisposable
 	private readonly Dictionary<object, (Veldrid.Texture Texture, ResourceSet Set)> textures = new();
 	// Sets for textures rendered by their owners; the textures themselves are not the UI's to dispose.
 	private readonly Dictionary<Veldrid.Texture, ResourceSet> renderedSets = new();
+	// GPU copies of the composed title bitmaps; one goes when the bitmap cache drops it.
+	private readonly Dictionary<UiTitleBitmap, (Veldrid.Texture Texture, ResourceSet Set)> titleTextures = new();
 	private readonly List<DeviceBuffer>[] buffers = Enumerable.Range( 0, Renderer.FramesInFlight ).Select( _ => new List<DeviceBuffer>() ).ToArray();
 	private int frameBuffers;
 	private GpuVertex[] vertices = Array.Empty<GpuVertex>();
@@ -100,6 +102,7 @@ internal sealed class UiRenderer : IDisposable
 	{
 		frameBuffers = 0;
 		preparedImages.Clear();
+		RetireTitleTextures();
 	}
 
 	/// <summary>
@@ -304,6 +307,18 @@ internal sealed class UiRenderer : IDisposable
 			renderedSets[rendered] = renderedSet;
 			return renderedSet;
 		}
+		if ( texture.Title is { } title )
+		{
+			if ( titleTextures.TryGetValue( title, out var titleEntry ) )
+				return titleEntry.Set;
+			// a bitmap the cache has dropped is not given a GPU copy again (the batch composes a fresh one when the title is next drawn)
+			if ( title.Evicted )
+				return null;
+			// one texel per output pixel when the bitmap's factor matches the scale; a capped factor is filtered
+			titleEntry = Create( title.Rgba, title.Width, title.Height, title.Factor == texture.FontScale ? Device.PointSampler : Device.LinearSampler );
+			titleTextures[title] = titleEntry;
+			return titleEntry.Set;
+		}
 		var factor = texture.Atlas != null ? FontSmoothing.Factor( texture.Atlas, texture.FontScale ) : 1;
 		object key = texture.Atlas != null ? (texture.Atlas, factor) : texture.ImagePath ?? "solid";
 		if ( textures.TryGetValue( key, out var entry ) )
@@ -345,6 +360,25 @@ internal sealed class UiRenderer : IDisposable
 			entry = Create( [255, 255, 255, 255], 1, 1, Device.PointSampler );
 		textures[key] = entry;
 		return entry.Set;
+	}
+
+	// A frame with only cached titles (or no titles) must still release GPU copies the CPU cache has dropped. Disposal stays at the renderer's safe boundary.
+	private void RetireTitleTextures()
+	{
+		if ( titleTextures.Count == 0 )
+			return;
+		var dropped = titleTextures.Where( pair => pair.Key.Evicted ).ToList();
+		foreach ( var pair in dropped )
+			titleTextures.Remove( pair.Key );
+		if ( dropped.Count > 0 )
+			Render.ScheduleDelete( () =>
+			{
+				foreach ( var (_, (oldTexture, oldSet)) in dropped )
+				{
+					oldSet.Dispose();
+					oldTexture.Dispose();
+				}
+			} );
 	}
 
 	private (Veldrid.Texture, ResourceSet) Create( byte[] rgba, int width, int height, Sampler sampler )
@@ -407,6 +441,12 @@ internal sealed class UiRenderer : IDisposable
 			texture.Dispose();
 		}
 		textures.Clear();
+		foreach ( var (texture, set) in titleTextures.Values )
+		{
+			set.Dispose();
+			texture.Dispose();
+		}
+		titleTextures.Clear();
 		foreach ( var slot in buffers.Concat( depthBuffers ) )
 		{
 			foreach ( var buffer in slot )

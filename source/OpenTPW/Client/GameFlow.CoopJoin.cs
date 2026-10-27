@@ -392,12 +392,8 @@ internal sealed partial class GameFlow
 				var counted = Stopwatch.GetTimestamp();
 				LoadProfile.Pause();
 				// a section that ran in the slice counts, its time even when the clock saw none of it (a browser's clock is coarse)
-				foreach ( var (name, section) in LoadProfile.Snapshot() )
-				{
-					var (before, ran) = sections.TryGetValue( name, out var earlier ) ? (earlier.Milliseconds, earlier.Count) : (0, 0);
-					if ( section.Count > ran )
-						Timings.Sections[name] = Timings.Sections.GetValueOrDefault( name ) + section.Milliseconds - before;
-				}
+				// (a helper call: a loop in a finally block overwrote the try's locals in the Mono interpreter's hot tier, tools/test_no_loop_in_finally.py)
+				CountSectionsOfSlice( sections );
 				Timings.Frames++;
 				Timings.LongestFrameMilliseconds = Math.Max( Timings.LongestFrameMilliseconds, worked );
 				// the build is over: the profile runs on as it did before it
@@ -407,6 +403,17 @@ internal sealed partial class GameFlow
 			}
 			// the check at the cut and the swap get a frame of their own when this one is spent
 			return complete && !OverBudget();
+		}
+
+		/// <summary>The sections that ran in the slice just taken, against the profile as the slice began, are added to the build's timings.</summary>
+		private void CountSectionsOfSlice( IReadOnlyDictionary<string, (double Milliseconds, int Count)> sections )
+		{
+			foreach ( var (name, section) in LoadProfile.Snapshot() )
+			{
+				var (before, ran) = sections.TryGetValue( name, out var earlier ) ? (earlier.Milliseconds, earlier.Count) : (0, 0);
+				if ( section.Count > ran )
+					Timings.Sections[name] = Timings.Sections.GetValueOrDefault( name ) + section.Milliseconds - before;
+			}
 		}
 
 		/// <summary>

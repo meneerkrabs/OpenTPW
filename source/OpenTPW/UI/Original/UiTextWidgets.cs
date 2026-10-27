@@ -93,7 +93,8 @@ public sealed class UiTextField : UiElement
 		// The selection wash/caret use the host text-field style, not original hilight-art pixel parity.
 		if ( focused && AllSelected && Text.Length > 0 )
 			context.Batch.AddRectangle( textRect, new RgbaByte( 60, 90, 200, 170 ) );
-		context.DrawText( Font( context.Fonts ), shown, textRect, Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
+		// [EXT:ONLINE-UI] the text field template is not decoded, so the text inset and the box are OpenTPW's (this widget draws the online fields and the original dialogs' name and price fields alike, the original's text control clips to its box, 0x48f3d0), and its text is not cut off at them
+		context.DrawText( Font( context.Fonts ), shown, textRect, Enabled && !prompt ? UiColors.Value : UiColors.Disabled, clip: false );
 	}
 }
 
@@ -298,7 +299,8 @@ public sealed class UiScrollList : UiElement, IUiRowList
 			{
 				var width = Bounds.Width - column.Offset - Margin;
 				var header = new UiRect( rect.X + column.Offset * scale, top, width * scale, height );
-				context.DrawText( context.Fonts.Small, column.Text(), header, UiColors.Value );
+				// [EXT:ONLINE-UI] the online screens are OpenTPW's as a whole: their list headers (some of them original UITEXT) are not cut off at the column box
+				context.DrawText( context.Fonts.Small, column.Text(), header, UiColors.Value, clip: false );
 			}
 			top += height;
 		}

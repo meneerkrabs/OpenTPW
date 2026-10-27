@@ -368,7 +368,10 @@ public partial class CoopSessionTests
 		OpenLoans( host, guest, view );
 		var loans = guest.Economy.Loans.Count;
 		var live = LiveWaiters( guest );
-		Confirm( view );
+		Element<UiElement>( view, "loanList" ).Activate();
+		Assert.IsFalse( Element<UiLabel>( view, "message" ).Unclipped?.Invoke() ?? false, "the original loan question keeps its clip" );
+		Element<UiButton>( view, "choice0" ).Activate();
+		Assert.IsTrue( Element<UiLabel>( view, "message" ).Unclipped?.Invoke() ?? false, "the co-op waiting line is not cut off" );
 		Assert.AreEqual( "loanConfirm", Top( view ), "it waits for the host" );
 		Assert.AreEqual( live + 1, LiveWaiters( guest ), "the confirmation waits with its own waiter" );
 		StringAssert.Contains( Element<UiLabel>( view, "message" ).Text!(), view.Strings.Extra( OpenTpwText.CoopWaitingForHost ) );

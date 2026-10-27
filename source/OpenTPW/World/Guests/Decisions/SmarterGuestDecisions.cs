@@ -30,6 +30,9 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 
 	public bool UsesExtensionState => true;
 
+	// [EXT:smarter-guests] the planning, patience and expected-wait rules read a queue's join cell, so this policy keeps scoring only the attractions that have one (the original scores a disconnected real queue back, OriginalGuestDecisions)
+	public bool ScoresDisconnectedQueues => false;
+
 	public bool UsesValueForMoney => true;
 
 	public bool UsesSpreading => true;

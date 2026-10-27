@@ -237,12 +237,26 @@ public class OriginalUiAssetTests
 		var buy = UiModel.Load( "b_buy" );
 		Assert.AreEqual( 6, buy.Frames.Count );
 		CollectionAssert.AreEqual( new[] { "b_buy", "disable", "hilite", "heldown", "hidown", "down" }, buy.Frames.Select( frame => frame.NodeName ).ToArray() );
+		// 0x57a530 composes the ancestors, so the chained state frames sit at their own world offsets; the selected-mesh fit (0x476fd3) cancels that common
+		// translation of geometry and endpoints, so every state draws over the root mesh's place.
+		UiRect rect = new( 100, 200, 118.4f, 118.4f );
+		System.Numerics.Vector2[] Drawn( UiModelFrame frame )
+		{
+			var context = OriginalUiTests.FakeContext();
+			context.DrawFrame( frame, rect );
+			return context.Batch.Draws.SelectMany( draw => draw.Vertices ).Select( vertex => vertex.Position ).ToArray();
+		}
+		var rootDrawn = Drawn( buy.Frames[0] );
+		Assert.AreEqual( 229.3f, buy.Frames[0].Center.X, 0.2f );
+		Assert.AreEqual( 1181.2f, buy.Frames[0].Center.Y, 0.2f );
 		foreach ( var frame in buy.Frames )
 		{
-			Assert.AreEqual( 229.3f, frame.Center.X, 0.2f );
-			Assert.AreEqual( 1181.2f, frame.Center.Y, 0.2f );
 			Assert.AreEqual( 118.4f, frame.Width, 0.2f );
 			Assert.AreEqual( 118.4f, frame.Height, 0.2f );
+			var drawn = Drawn( frame );
+			Assert.AreEqual( rootDrawn.Length, drawn.Length, frame.NodeName );
+			for ( var index = 0; index < drawn.Length; index++ )
+				Assert.AreEqual( 0f, System.Numerics.Vector2.Distance( rootDrawn[index], drawn[index] ), 0.05f, $"{frame.NodeName} vertex {index}" );
 		}
 		// Normal/disabled/highlight use the plain art, the down states the "d" art; V is flipped so the
 		// button occupies the top-left of its texture.

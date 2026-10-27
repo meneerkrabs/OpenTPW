@@ -21,9 +21,15 @@ public static class Camera
 	/// </summary>
 	public static Func<Matrix4x4, float, float?>? ParkFarPlane { get; set; }
 
+	/// <summary>
+	/// The far argument of the first-person views in original units for the camera's view matrix, the display's height over its width and the sine and cosine of half the field of view, or null: the greatest clip depth of the cell boxes
+	/// the view reaches (<c>0x56EA90</c> hands it to <c>0x578CA0</c>, which also sets the weather's depth split); set by the level's terrain.
+	/// </summary>
+	public static Func<Matrix4x4, float, float, float, float?>? EyeViewFarArgument { get; set; }
+
 	private static float FarPlaneOf( CameraMode mode, Matrix4x4 view )
 	{
-		// the ride and walk views' far plane is the greatest depth of the cell boxes 0x56EA90 selects through 0x56E7E0 and 0x561BC0 (at least 100 original units, [this+0x1C], handed to 0x578CA0 at 0x56ED79); not ported, those views keep the default
+		// the ride and walk views' far argument is the greatest depth of the cell boxes 0x56EA90 selects through 0x56E7E0 and 0x561BC0 (at least 100 original units, [this+0x1C], handed to 0x578CA0 at 0x56ED79); it only sets the weather's depth split (EyeViewFarArgument), the engine's projection of those views keeps the default
 		// the heightfield's span selection works on the display's height over its width, the aspect word 0x8BCBCC
 		return mode is ParkCameraMode && ParkFarPlane?.Invoke( view, 1f / Screen.Aspect ) is { } far ? far : OriginalProjection.DefaultFarPlane;
 	}

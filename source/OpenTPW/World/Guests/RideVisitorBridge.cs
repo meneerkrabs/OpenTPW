@@ -187,6 +187,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public (float X, float Y) ExitCellAppearPos { get; set; } = (0.5f, 0.5f);
 	/// <summary>The object's own exit cell (<see cref="IRideVisitorBridge.ExitAccessCell"/>), set when the level registers a placed object; not saved (the level registers it again on load).</summary>
 	public (int X, int Y)? ExitAccessCell { get; set; }
+	/// <summary>The object's access cell (<see cref="IRideVisitorBridge.AccessCell"/>), set when the level registers a placed object; not saved (the level registers it again on load).</summary>
+	public (int X, int Y)? AccessCell { get; set; }
+	/// <summary>The cell the object's thing stands on (<see cref="IRideVisitorBridge.PositionCell"/>), set when the level registers a placed object; not saved.</summary>
+	public (int X, int Y)? PositionCell { get; set; }
 	public int Rotation { get; set; }
 	public bool HasCells { get; set; }
 	/// <summary>Queue rules from the object's .sam data (<see cref="QueueParameters"/>); defaults describe a queue-less object.</summary>
@@ -343,6 +347,17 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		hash.Add( JoinCell is { } join ? join.X : -1 );
 		hash.Add( JoinCell is { } joinCell ? joinCell.Y : -1 );
+		// a ride without a front joins the digest only while it has none (every park without one keeps its pins)
+		if ( IsZeroFront )
+			hash.Add( 0x5A465254L );
+		// a back cell cached before an edit (+0x3A) joins the digest only while it differs from the queue as it stands
+		if ( BackCacheIsStale )
+		{
+			hash.Add( 0x4B434142L );
+			hash.Add( backCache is { } cachedBack ? cachedBack.X : -1 );
+			hash.Add( backCache is { } cachedBackY ? cachedBackY.Y : -1 );
+			hash.Add( sizeCache );
+		}
 		hash.Add( QueueEditCount );
 		hash.Add( calledTurn );
 		hash.Add( HeadNotReadyStreak );
@@ -386,6 +401,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		QueueCells = queueCells.ToArray(),
 		TypedQueueFront = QueueEntryResolver != null && QueueEntranceDirection >= 0 ? QueueFrontCell : null,
 		TypedQueueDirection = QueueEntryResolver != null && QueueFrontCell != null && QueueEntranceDirection >= 0 ? QueueEntranceDirection : null,
+		ZeroFront = IsZeroFront ? true : null,
+		CachedBack = BackCacheIsStale ? backCache : null,
+		CachedBackSize = BackCacheIsStale ? sizeCache : null,
 		QueueEditCount = QueueEditCount,
 		JoinCell = JoinCell,
 		EntranceCell = HasCells ? EntranceCell : null,
@@ -610,6 +628,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		}
 		QueueEditCount = snapshot.QueueEditCount;
 		JoinCell = snapshot.JoinCell;
+		IsZeroFront = snapshot.ZeroFront == true;
+		HasTypedBack = snapshot.TypedQueueFront != null && !IsZeroFront;
+		// a cached back (+0x3A) that an edit left behind is saved with the ride and kept by the load (0x004DE130); a save without one holds the queue as it stands
+		(backCache, sizeCache, backCacheKnown) = (snapshot.CachedBack ?? LiveBack, snapshot.CachedBackSize ?? LiveSize, true);
 		RestoreVisitorCells( snapshot );
 		HeadNotReadyStreak = snapshot.HeadNotReadyStreak;
 		MaximumHeadNotReadyStreak = snapshot.MaximumHeadNotReadyStreak;
@@ -742,10 +764,43 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int QueueEntranceDirection { get; set; } = -1;
 	/// <summary>Queue cells from the front (index 0) to the back; the front may be a path cell.</summary>
 	public IReadOnlyList<(int X, int Y)> QueueCells => queueCells.Count > 0 ? queueCells : new[] { EntranceCell };
-	/// <summary>Cached back-of-queue cell (ride <c>+54</c>).</summary>
+	/// <summary>
+	/// The ride's entrance has no queue direction (tp.exe <c>0x004DE040</c> found no cardinal link bit in the link byte of the entry cell): the original's back-of-queue cell is 0 and its queue size 0, so no guest chooses
+	/// or joins it and every guest queued but the called one leaves at the next re-evaluation. <see cref="QueueCells"/> keeps the host's one-cell geometry (the stand cell of a called guest and the queue tool's front) meanwhile.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DE040 zero front] none of the bits 1, 16, 64 and 4 set writes the cell word 0 (0x4DE0F9): the back-of-queue walk 0x4DE130 returns 0 and writes +0x40 = 0, so 0x4DD920 fails at its back test (0x4DD96C), the choice 0x4FCB10 skips the ride at 0x4FCB84 and the room 0x4DDA20 (count below 4 × +0x40) refuses a joiner
+	public bool IsZeroFront { get; private set; }
+	/// <summary>The front was read from the entry cell's links at the last recompute (<see cref="IRideVisitorBridge.HasTypedBack"/>).</summary>
+	public bool HasTypedBack { get; private set; }
+	/// <summary>The back-of-queue cell the original's <c>0x004DE110</c> returns: the last queue cell, null for a ride without a front.</summary>
+	// [BIN:TPW-EXE:0x004DE130 cached back] the walk returns the cached word +0x3A (and keeps +0x40) while it is non-zero; only the re-evaluation 0x004DE1F0 drops it, a zero front leaves it 0, so a cell edit that runs no re-evaluation (the guests' park turn finds it) leaves the old back and size to the guests, and the next re-evaluation, a ride that has no cache or a load that keeps the saved word refreshes them
+	public (int X, int Y)? BackCell => backCacheKnown ? backCache : LiveBack;
+	private (int X, int Y)? LiveBack => IsZeroFront ? null : QueueCells[^1];
+	private (int X, int Y)? backCache;
+	private int sizeCache;
+	private bool backCacheKnown;
+	/// <summary>The cached back and size (+0x3A, +0x40) differ from the queue as it stands: an edit ran no re-evaluation yet.</summary>
+	public bool BackCacheIsStale => backCacheKnown && (backCache != LiveBack || sizeCache != LiveSize);
+	/// <summary>An original save's cached back cell (<c>+0x3A</c>, cell id y × 128 + x + 1) and size (<c>+0x40</c>): the loader keeps the saved words and <c>0x004DE130</c> returns them until a re-evaluation drops them. 0 (an empty cache) changes nothing. True when the saved cache differs from the queue as it stands.</summary>
+	// [BIN:TPW-EXE:0x004DE130 saved cache kept] the person loader's twin for things stores +0x3A and +0x40 as read; the walk recomputes only a zero word
+	internal bool ImportSavedBackCache( int cellId, int size )
+	{
+		if ( cellId <= 0 )
+			return false;
+		(backCache, sizeCache, backCacheKnown) = (((cellId - 1) % 128, (cellId - 1) / 128), size, true);
+		return BackCacheIsStale;
+	}
+	private int LiveSize => IsZeroFront ? 0 : Math.Max( 1, queueCells.Count );
+	private void RefreshBackCache( bool keep )
+	{
+		if ( keep && backCacheKnown && backCache != null )
+			return;
+		(backCache, sizeCache, backCacheKnown) = (LiveBack, LiveSize, true);
+	}
+	/// <summary>Cached back-of-queue cell (ride <c>+54</c>) for the queue tool's geometry: the one-cell fallback for a ride without a front (<see cref="BackCell"/> is the guests' view).</summary>
 	public (int X, int Y) QueueBackCell => QueueCells[^1];
-	/// <summary>Queue size in cells (ride <c>+60</c>), at least 1.</summary>
-	public int QueueSizeInCells => Math.Max( 1, queueCells.Count );
+	/// <summary>Queue size in cells (ride <c>+60</c>, the original's +0x40): at least 1, and 0 for a ride without a front.</summary>
+	public int QueueSizeInCells => backCacheKnown ? sizeCache : LiveSize;
 	/// <summary>Walkable path cell where guests step onto the back of the queue, or null when the back is not connected to a path.</summary>
 	public (int X, int Y)? JoinCell { get; private set; }
 	/// <summary>Physical room: four guests per queue cell.</summary>
@@ -816,11 +871,46 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// cell and follow queue cells whose link points back at the current cell, at most
 	/// <see cref="QueueWalkGuard"/> steps. Returns true when the cells changed (a queue edit).
 	/// </summary>
-	public bool RecomputeQueue( GuestPathGrid grid )
+	public bool RecomputeQueue( GuestPathGrid grid ) => RecomputeQueue( grid, keepBackCache: false );
+
+	/// <summary>
+	/// <see cref="RecomputeQueue(GuestPathGrid)"/> for a recompute that is no re-evaluation (the park turn's sync after any cell edit, a load): a cached back and size (<c>+0x3A</c>, <c>+0x40</c>) that are
+	/// set stay as they are, as <c>0x004DE130</c> keeps them until <c>0x004DE1F0</c> drops them.
+	/// </summary>
+	public bool RecomputeQueueKeepingBack( GuestPathGrid grid ) => RecomputeQueue( grid, keepBackCache: true );
+
+	private bool RecomputeQueue( GuestPathGrid grid, bool keepBackCache )
+	{
+		var roomBefore = QueueSizeInCells;
+		var changed = RecomputeQueueCells( grid );
+		RefreshBackCache( keepBackCache );
+		// a re-evaluation (0x004DE1F0) that drops a stale cache changes the room the guests were held to, whether or not the cells moved since the sync last found them: the queue's guests re-evaluate
+		if ( !keepBackCache && !changed && QueueSizeInCells != roomBefore )
+		{
+			QueueEditCount++;
+			changed = true;
+		}
+		return changed;
+	}
+
+	private bool RecomputeQueueCells( GuestPathGrid grid )
 	{
 		var previous = queueCells.ToArray();
 		queueCells.Clear();
 		var typedFront = RefreshTypedQueueFront( grid );
+		// [BIN:TPW-EXE:0x004DE040 zero front] an entry cell without a cardinal link bit gives no front: the queue is empty (back cell 0, size 0) and joins nothing; the host keeps its one-cell geometry on the entrance cell
+		var wasZeroFront = IsZeroFront;
+		HasTypedBack = typedFront;
+		IsZeroFront = !typedFront && ReadNativeFront( grid, out var nativeFront, out _ ) && nativeFront == null;
+		if ( IsZeroFront )
+		{
+			queueCells.Add( EntranceCell );
+			JoinCell = null;
+			if ( wasZeroFront && previous.SequenceEqual( queueCells ) )
+				return false;
+			QueueEditCount++;
+			return true;
+		}
 		var front = QueueFrontCell ?? EntranceCell;
 		// A front cell that is neither a queue nor a path cell falls back to EntranceCell, the nearest walkable path cell (a cell nothing laid: restores, the gates; an import takes the save's queue cells), as a one-cell queue.
 		if ( !typedFront && !grid.IsQueue( front.X, front.Y ) && !grid.IsWalkable( front.X, front.Y ) )
@@ -836,7 +926,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			current = next.Value;
 		}
 		JoinCell = FindJoinCell( grid );
-		if ( previous.SequenceEqual( queueCells ) )
+		// a ride that has just gained its front changes its room (0 to 4 positions per cell) even when its cells are the one-cell geometry it had
+		if ( !wasZeroFront && previous.SequenceEqual( queueCells ) )
 			return false;
 		QueueEditCount++;
 		return true;
@@ -874,7 +965,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			};
 			expected.RecomputeQueue( grid );
 		}
-		return saved.QueueCells.SequenceEqual( expected.QueueCells ) && saved.JoinCell == expected.JoinCell
+		// a save from before the zero front (no ZeroFront word) holds the one-cell queue the host kept for a ride without a front; it loads, and the next recompute turns it into the zero front
+		if ( saved.ZeroFront == null && expected.IsZeroFront )
+			return true;
+		return saved.QueueCells.SequenceEqual( expected.QueueCells ) && saved.JoinCell == expected.JoinCell && saved.ZeroFront == (expected.IsZeroFront ? true : null)
 			&& (saved.TypedQueueFront == null || (saved.TypedQueueFront == expected.QueueFrontCell
 				&& saved.TypedQueueDirection == expected.QueueEntranceDirection));
 	}
@@ -922,7 +1016,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// on a path; null when the queue is not connected to a path.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE840 attached path] 0x4DEA2F..0x4DEA57: for the bits 1, 4, 16, 64 of the back cell's +0x0C (0x522770) the neighbour along it (0x4D97E0) is taken when it is type 1 (0x536310); none logs "No path attached to end of queue"
-	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented; supported live typed HasQueue entries derive their front from the actual entry link byte (+0x0C, tp.exe 0x4DE040, bits 1, 16, 64, 4), and a native zero front (no cardinal bit; 0x4DE4A0 reads such a ride as unconnected, which the opening guard still answers permissively under ECON-049) leaves its demolition without a count to undo (0x527FB4) and its re-evaluation without a block stamp; the guests' joining and scoring of a zero-front ride, linkless or unsupported entries and untyped worlds retain the host positive one-cell fallback; divergent imported mEntryPos and the native cache invalidation timing (0x4DE130 keeps +0x3A until the next 0x4DE1F0, where OpenTPW recomputes on every grid change) remain unsupported
+	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented; supported live typed HasQueue entries derive their front from the actual entry link byte (+0x0C, tp.exe 0x4DE040, bits 1, 16, 64, 4), and a native zero front (no cardinal bit; 0x4DE4A0 reads such a ride as unconnected, which the opening guard still answers permissively under ECON-049) leaves its demolition without a count to undo (0x527FB4) and its re-evaluation without a block stamp; a zero-front ride has back cell 0 and size 0 for the guests (they neither score, choose nor join it, and its queued guests but the called one leave at the re-evaluation) with the host's one-cell geometry kept for the called guest's stand cell and the queue tool; unsupported entries (a neighbour off the map) and untyped worlds retain the host positive one-cell fallback; divergent imported mEntryPos and the native cache invalidation timing (0x4DE130 keeps +0x3A until the next 0x4DE1F0, where OpenTPW recomputes on every grid change) remain unsupported
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];

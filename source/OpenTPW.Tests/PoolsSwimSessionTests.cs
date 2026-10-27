@@ -290,7 +290,7 @@ public class PoolsSwimSessionTests
 		}, 600 );
 		Assert.AreEqual( PoolSwimSettings.MinimumCapacity, peak, "the pool filled to its capacity and no further" );
 		Assert.AreEqual( 6 - PoolSwimSettings.MinimumCapacity, guests.Count( guest => !guest.InSwimSession ), "the guests who found it full left the room the normal way" );
-		Assert.IsTrue( guests.Where( guest => !guest.InSwimSession ).All( guest => guest.State is GuestState.ExitingRide or GuestState.DoingNothing or GuestState.WalkingAround && guest.AttractionId == 0 ), "on foot at the room's exit" );
+		Assert.IsTrue( guests.Where( guest => !guest.InSwimSession ).All( guest => guest.State is GuestState.ExitingRide or GuestState.DoingNothing or GuestState.WalkingAround && guest.AttractionId == rig.Ride.AttractionId ), "on foot at the room's exit, the target kept (GUEST-004)" );
 		// a big pool scales with its cells: one body per water cell
 		var big = new Rig();
 		Assert.AreEqual( 36, big.Region.Capacity );
@@ -355,7 +355,7 @@ public class PoolsSwimSessionTests
 		rig.Until( () => dry.State is GuestState.DoingNothing or GuestState.WalkingAround || dry.State == GuestState.Swimming, 900 );
 		Assert.AreNotEqual( GuestState.Swimming, dry.State );
 		Assert.AreEqual( (2, 0), dry.Cell );
-		Assert.AreEqual( 0, dry.AttractionId );
+		Assert.AreEqual( rig.Ride.AttractionId, dry.AttractionId, "the exit walk keeps the target until the next choice (GUEST-004)" );
 		// a swimmer whose pool goes while it swims is put out at once
 		var rig2 = new Rig();
 		var wet = rig2.Send();

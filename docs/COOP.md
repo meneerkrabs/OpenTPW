@@ -1795,12 +1795,15 @@ and kart or water track lines (a tile laid over path clears it) refuse it, and t
 standing (`IParkCommandRights.AllowsPathRemoval`). So is a path cell linked into the ride's entrance cell
 (type 9, which carries the ride's owner word): its clear takes that link off and re-evaluates the ride,
 which recomputes its queue, stamps a block and may open the ride when it is closed (tp.exe `0x53694B`,
-`CoopBuildRights.BesideClaimedEntrance`). The remove click, Backspace, queue lines, placements (the
-paths under them, a queue ride's first queue cell outside its entrance and a fresh kart or water
-station's exit and entry tiles) and kart or water track lines refuse it, as do the host's single-cell
-removal and the undo of a path line that built the cell, and the area clear leaves it standing. A path
-cell beside the entrance that does not link into it, and a queue cell there, re-evaluate nothing when
-cleared, so they are not asked. A path line along such a cell, the path a
+`CoopBuildRights.BesideClaimedEntrance`). The remove click, Backspace, native queue segments laid over
+it and their undo, placements (the paths under them, a queue ride's first queue cell outside its entrance
+and a fresh kart or water station's exit and entry tiles) and kart or water track lines (asked as drawn,
+also past a tile their writer would stop at) refuse it, as do the host's single-cell removal and the undo
+of a path line that built the cell, and the area clear leaves it standing. A path cell beside the
+entrance that does not link into it, and a queue cell there, re-evaluate nothing when cleared, so they are
+not asked; nor is the queue tool's per-cell line, which lays no queue over path, nor a native segment's
+last path cell, where it stops. A path line along such a cell, a Backspace that only counts it down (a
+cell laid more than once loses one placement and stays, `ParkPathBuilder.RemoveOnce`), the path a
 placement lays outside the last exit of a ride with a queue or the last entrance of a type without one
 (only the last entrance and the last exit count, `ObjectAccessCells.Lay`), and a queue line that only ends
 on it (which links the queue to that path, `QueuePaths.Connect`) take no link off. The exit of an object

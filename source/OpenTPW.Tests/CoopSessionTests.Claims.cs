@@ -494,9 +494,10 @@ public partial class CoopSessionTests
 
 	/// <summary>
 	/// [EXT:online-coop-claims] Every command that clears a path cell linked into the entrance of a ride another seat claims leaves it to the claim's holder, the host included: the remove click,
-	/// the host's single-cell removal, Backspace, a path line's undo that built it, a queue line or native segment laid over it, a placement over it and a kart or water track line over it,
-	/// and the area clear leaves it standing. What takes no such link off stays anyone's: a path cell beside the entrance that does not link into it, a queue cell there, a queue line that only
-	/// ends on the cell, a path line along it, an undo that only counts it down, and anything away from it.
+	/// the host's single-cell removal, Backspace, a path line's undo that built it, a native queue segment laid over it and that segment's undo, a placement over it and a kart or water track
+	/// line over it, and the area clear leaves it standing. What takes no such link off stays anyone's: a path cell beside the entrance that does not link into it, a queue cell there, the
+	/// queue tool's per-cell line (which lays no queue over path), a native segment that ends on the cell, a path line along it, an undo or a Backspace that only counts it down, and anything
+	/// away from it.
 	/// </summary>
 	[TestMethod]
 	public void EveryClearOfAPathCellLinkedIntoTheEntranceOfARideAnotherSeatClaimsIsTheClaimsHolders()
@@ -518,8 +519,8 @@ public partial class CoopSessionTests
 			new RemovePathCellCommand( 12, 1 ),
 			new BacktrackCommand( 12, 1 ),
 			new UndoLineCommand( CellToolMode.Path, -1, 12, 1, new[] { (12, 1) }, Array.Empty<(int, int)>() ),
-			new LayLineCommand( CellToolMode.Queue, queueRide, 14, 1, 10, 1 ),
 			new QueueSegmentCommand( queueRide, 14, 1, 10, 1 ),
+			new UndoQueueSegmentCommand( queueRide, 14, 1, 10, 1 ),
 			level.BuildCommand( other.Entry, 12, 1, 0 ),
 			new LayTrackLineCommand( kart, 7, 0, 11, 0 )
 		};
@@ -527,8 +528,11 @@ public partial class CoopSessionTests
 		{
 			new RemoveAtCommand( 13, 1 ),
 			new BacktrackCommand( 13, 1 ),
-			// a queue line that only ends on the cell links the queue to it (QueuePaths.Connect), and a path line along it lays path over path
+			// the queue tool's per-cell line lays no queue over path (QueuePaths.CheckExtend) and only links one it ends on (QueuePaths.Connect); a native segment stops at a last path
+			// cell (QueueSegmentReducer.Commit); a path line along the cell lays path over path
+			new LayLineCommand( CellToolMode.Queue, queueRide, 14, 1, 10, 1 ),
 			new LayLineCommand( CellToolMode.Queue, queueRide, 14, 1, 12, 1 ),
+			new QueueSegmentCommand( queueRide, 14, 1, 12, 1 ),
 			new LayLineCommand( CellToolMode.Path, -1, 14, 1, 10, 1 ),
 			// an undo only counts down a cell its line crossed (ParkPathBuilder.Undo)
 			new UndoLineCommand( CellToolMode.Path, -1, 13, 1, new[] { (13, 1) }, new[] { (12, 1) } ),
@@ -557,6 +561,12 @@ public partial class CoopSessionTests
 			Assert.IsTrue( rights.AllowsPathRemoval( 2, 12, 1 ) && rights.AllowsPathRemoval( 1, 13, 1 ) );
 			foreach ( var command in away )
 				Assert.IsTrue( rights.LeavesClaimsAlone( 1, command ) && rights.LeavesClaimsAlone( ParkCommands.LocalPlayer, command ), $"no link into the entrance: {command}" );
+			// laid twice, the cell only loses a placement to Backspace (ParkPathBuilder.RemoveOnce), which takes no link off; a removal still clears it
+			grid.Cells.SetPlacementCount( 12, 1, 1 );
+			Assert.IsTrue( rights.LeavesClaimsAlone( 1, new BacktrackCommand( 12, 1 ) ), "a Backspace that only counts the cell down" );
+			Assert.IsFalse( rights.LeavesClaimsAlone( 1, new RemoveAtCommand( 12, 1 ) ) || rights.AllowsPathRemoval( 1, 12, 1 ) );
+			grid.Cells.SetPlacementCount( 12, 1, 0 );
+			Assert.IsFalse( rights.LeavesClaimsAlone( 1, new BacktrackCommand( 12, 1 ) ), "the press that clears it" );
 			// a path cell beside the entrance that does not link into it, and a queue cell there linked toward it: neither clear re-evaluates the ride (a queue cell's takes only its cardinal
 			// links off, PathLinkWriter.Unlink)
 			grid.SetPath( 13, 2, true, connections: 0b0111 );

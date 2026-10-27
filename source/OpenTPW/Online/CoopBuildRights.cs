@@ -191,18 +191,23 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// </summary>
 	internal bool LeavesClaimsAlone( int player, ParkCommand command ) => !CanBeClaimedAgainst( player ) || command switch
 	{
-		// a claimed ride's queue lines and their undo; no line crosses its cells (a path line paves a queue end), and no queue line takes the path cell its back joins or one linked into
-		// its entrance (the queue writers lay queue over path); an undo takes the cells its line built off again, which may take a queue's or an entrance's link off; a path line's undo
-		// only counts down the ones it crossed (ParkPathBuilder.Undo), which takes no link off, so those are asked for themselves alone, and a queue line's undo leaves them as they are
-		// (QueueLineWriter.Undo)
+		// a claimed ride's queue lines and their undo; no line crosses its cells (a path line paves a queue end), and no queue line takes the path cell its back joins (the queue writers
+		// lay queue over path); an undo takes the cells its line built off again, which may take a queue's link off, and a path line's undo the link into a claimed ride's entrance; a
+		// path line's undo only counts down the ones it crossed (ParkPathBuilder.Undo), which takes no link off, so those are asked for themselves alone, and a queue line's undo leaves
+		// them as they are (QueueLineWriter.Undo)
 		LayLineCommand line => (line.Mode != CellToolMode.Queue || !ClaimedRide( player, line.Ride ))
 			&& !CrossesClaimedQueue( player, line.StartX, line.StartY, line.EndX, line.EndY, joins: line.Mode == CellToolMode.Queue, endOnPathLinks: line.Mode == CellToolMode.Queue ),
 		UndoLineCommand undo => (undo.Mode != CellToolMode.Queue || !ClaimedRide( player, undo.Ride ))
 			&& !TouchesClaimedQueue( player, undo.Built.ToArray(), joins: true )
 			&& (undo.Mode == CellToolMode.Queue || !TouchesClaimedQueue( player, undo.Existing.ToArray(), joins: false ))
 			&& (undo.Mode != CellToolMode.Path || !ClearsBesideClaimedEntrance( player, undo.Built )),
-		QueueSegmentCommand line => !ClaimedRide( player, line.Ride ) && !CrossesClaimedQueue( player, line.StartX, line.StartY, line.EndX, line.EndY, joins: true ),
-		UndoQueueSegmentCommand undo => !ClaimedRide( player, undo.Ride ) && !CrossesClaimedQueue( player, undo.StartX, undo.StartY, undo.EndX, undo.EndY, joins: true ),
+		// a native segment lays queue over every path cell of its line but a last one, where it stops (QueueSegmentReducer.Commit), and its undo clears the path cells on its line, so
+		// none of those may be linked into a claimed ride's entrance; the queue tool's per-cell line above lays no queue over path (QueuePaths.CheckExtend) and only links a last path
+		// cell (QueuePaths.Connect), so it takes no such link off
+		QueueSegmentCommand line => !ClaimedRide( player, line.Ride ) && !CrossesClaimedQueue( player, line.StartX, line.StartY, line.EndX, line.EndY, joins: true )
+			&& !ClearsBesideClaimedEntrance( player, LineCells( line.StartX, line.StartY, line.EndX, line.EndY )[..^1] ),
+		UndoQueueSegmentCommand undo => !ClaimedRide( player, undo.Ride ) && !CrossesClaimedQueue( player, undo.StartX, undo.StartY, undo.EndX, undo.EndY, joins: true )
+			&& !ClearsBesideClaimedEntrance( player, LineCells( undo.StartX, undo.StartY, undo.EndX, undo.EndY ) ),
 		// no add-on on a claimed ride, nor a placement that demolishes what is claimed or writes over a claimed ride's queue, the path cell its back joins or one linked into its entrance (a
 		// track add-on's as its ride's add-on rule places it)
 		PlaceObjectCommand place => (place.AddOnRide < 0 || !ClaimedRide( player, place.AddOnRide ))
@@ -219,7 +224,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 			Level.BacktrackTarget.PoolBridge => level.PoolBridges?.At( back.X, back.Y ) is not { } standing || !BridgeTouchesClaimedQueue( player, standing ),
 			Level.BacktrackTarget.PoolWater => true,
 			Level.BacktrackTarget.Queue => !ClaimedQueueAt( player, back.X, back.Y ),
-			_ => !PathClearTouchesClaim( player, back.X, back.Y )
+			// a path cell laid more than once only loses a placement (ParkPathBuilder.RemoveOnce), which takes no link off; the press that clears it is asked
+			_ => paths.Cells.PlacementCountAt( back.X, back.Y ) > 0 || !PathClearTouchesClaim( player, back.X, back.Y )
 		},
 		RemoveAttractionCommand sale => level.ResolveCommandObject( sale.Attraction ) is not { IsDeleted: false } item || !ClaimedAgainst( player, item ),
 		EditQueueCommand edit => !ClaimedQueueAt( player, edit.X, edit.Y ),
@@ -228,7 +234,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		RemovePoolBridgeCommand bridge => level.PoolBridges?.At( bridge.X, bridge.Y ) is not { } standing || !BridgeTouchesClaimedQueue( player, standing ),
 		RemovePrototypeCommand => level.PlacedRide is not { IsDeleted: false } prototype || !ClaimedAgainst( player, prototype ),
 		// a track line of a ride another seat claims, and one whose tiles lie over the path cell a claimed queue joins or one linked into a claimed ride's entrance: a tile laid over path
-		// clears it (TrackBuilder.ClearPath), which takes the link of the queue's back cell off or re-evaluates the ride of the entrance, as a path removal does
+		// clears it (TrackBuilder.ClearPath), which takes the link of the queue's back cell off or re-evaluates the ride of the entrance, as a path removal does; the line is asked as it is
+		// drawn, also past a tile its writer would stop at
 		LayTrackLineCommand line => !level.ClaimedAgainst( player, line.Ride ) && !TrackLineTouchesClaim( player, line ),
 		// the track commands and the coaster tool's commands of a ride another seat claims
 		_ => TrackRide( command ) is not { } ride || !level.ClaimedAgainst( player, ride )
@@ -297,18 +304,23 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// <summary>
 	/// Whether a line from (<paramref name="startX"/>, <paramref name="startY"/>) toward (<paramref name="endX"/>, <paramref name="endY"/>), snapped as the line writers snap it, crosses the queue
 	/// cell of a ride claimed against <paramref name="player"/> (a path line paves a queue end; a queue line of another ride may take over a cell no owner word marks yet), or, with
-	/// <paramref name="joins"/> (a queue line, which may lay queue over path), the path cell such a queue joins or a path cell linked into such a ride's entrance (<see cref="BesideClaimedEntrance"/>).
-	/// With <paramref name="endOnPathLinks"/> (the queue tool's line) a last cell that is a path cell only links the queue to that path (<see cref="QueuePaths.Connect"/>), so it takes no link
-	/// off: it is asked for itself alone. The cells' owners are resolved together (<see cref="Level.QueueOwnersAt"/>).
+	/// <paramref name="joins"/> (a queue line, which may lay queue over path), the path cell such a queue joins. With <paramref name="endOnPathLinks"/> (the queue tool's line) a last cell that
+	/// is a path cell only links the queue to that path (<see cref="QueuePaths.Connect"/>), so it takes no joined queue's link off: it is asked for itself alone. The cells' owners are resolved
+	/// together (<see cref="Level.QueueOwnersAt"/>).
 	/// </summary>
 	private bool CrossesClaimedQueue( int player, int startX, int startY, int endX, int endY, bool joins, bool endOnPathLinks = false )
 	{
-		var start = (startX, startY);
-		var cells = ParkPathBuilder.LayLine( start, ParkPathBuilder.SnapEnd( start, (endX, endY) ) ).ToArray();
+		var cells = LineCells( startX, startY, endX, endY );
 		if ( endOnPathLinks && joins && cells.Length > 1 && level.Guests?.Grid is { } grid && grid.IsWalkable( cells[^1].X, cells[^1].Y ) )
-			return TouchesClaimedQueue( player, cells[..^1], joins: true ) || TouchesClaimedQueue( player, cells[^1..], joins: false )
-				|| ClearsBesideClaimedEntrance( player, cells[..^1] );
-		return TouchesClaimedQueue( player, cells, joins ) || (joins && ClearsBesideClaimedEntrance( player, cells ));
+			return TouchesClaimedQueue( player, cells[..^1], joins: true ) || TouchesClaimedQueue( player, cells[^1..], joins: false );
+		return TouchesClaimedQueue( player, cells, joins );
+	}
+
+	/// <summary>The cells of a line from (<paramref name="startX"/>, <paramref name="startY"/>) toward (<paramref name="endX"/>, <paramref name="endY"/>), snapped as the line writers snap it.</summary>
+	private static (int X, int Y)[] LineCells( int startX, int startY, int endX, int endY )
+	{
+		var start = (startX, startY);
+		return ParkPathBuilder.LayLine( start, ParkPathBuilder.SnapEnd( start, (endX, endY) ) ).ToArray();
 	}
 
 	/// <summary>

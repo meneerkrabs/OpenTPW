@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Security;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Online.Packages;
 
 namespace OpenTPW.Tests;
 

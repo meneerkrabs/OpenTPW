@@ -193,7 +193,7 @@ public sealed partial class ParkHud
 		var table = UpgradeTable;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "listFrame", Model = UpgradeListNode.Model!, Bounds = UpgradeListNode.Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.BuyUpgrades], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
+		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.BuyUpgrades], Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
 			Bounds = table.Control( 0x1F4E ).Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UpgradeList( this ) { Id = "upgradeList", Bounds = UpgradeContent, Anchor = UiAnchor.Center } );
 		screen.Add( new UpgradeScrollBar( this ) { Id = "upgradeScroll", Bounds = new UiRect( UpgradeKnob.X, UpgradeTrack.Y, UpgradeTrack.Right - UpgradeKnob.X, UpgradeTrack.Height ), Anchor = UiAnchor.Center } );

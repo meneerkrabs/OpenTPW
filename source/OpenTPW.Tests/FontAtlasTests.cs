@@ -244,7 +244,7 @@ public class FontAtlasTests
 			new SyntheticGlyph( '?', 2, 2, 0, 0, 4 ) ) );
 		var context = new UiContext( null!, null!, null! );
 		context.DrawText( atlas, "a a", new UiRect( 0, 0, 9, 40 ), new RgbaByte( 255, 255, 255, 255 ),
-			UiAlign.Center, wrap: true, shadow: false, textScale: 1 );
+			UiAlign.Center, wrap: true, textScale: 1 );
 
 		var glyphs = context.Batch.Glyphs;
 		Assert.AreEqual( 2, glyphs.Count );
@@ -255,6 +255,186 @@ public class FontAtlasTests
 		Assert.AreEqual( "a a", text.Text );
 		Assert.AreEqual( (2f, 10f, 4f, 20f), (text.Rect.X, text.Rect.Y, text.Rect.Width, text.Rect.Height) );
 		Assert.AreEqual( (0, 2), (text.FirstGlyph, text.GlyphCount) );
+	}
+
+	[TestMethod]
+	public void PlainTextDrawsOnceAndATitleDrawsOneComposedBitmapWithTheCopyTwoPixelsLeftAndBelow()
+	{
+		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ), new SyntheticGlyph( '?', 2, 2, 0, 0, 4 ) ) );
+		var rect = new UiRect( 0, 0, 40, 20 );
+		var yellow = new RgbaByte( 234, 239, 102, 255 );
+		// 0x48f830: plain text is one pass, whatever the default
+		var plain = new UiContext( null!, null!, null! );
+		plain.DrawText( atlas, "a", rect, yellow, UiAlign.Center, textScale: 1 );
+		Assert.AreEqual( 1, plain.Batch.Glyphs.Count );
+		Assert.AreEqual( yellow, plain.Batch.Glyphs[0].Color );
+		Assert.IsNull( plain.Batch.Draws.Single().Texture.Title );
+		// 0x491ab0: one quad of the composed bitmap (copy, then string), modulated by the control colour; the string's glyph stays recorded where it is drawn
+		var title = new UiContext( null!, null!, null! );
+		title.DrawText( atlas, "a", rect, yellow, UiAlign.Center, false, UiBatch.TitleCopyAlpha, textScale: 1 );
+		var glyph = title.Batch.Glyphs.Single();
+		Assert.AreEqual( (plain.Batch.Glyphs[0].X, plain.Batch.Glyphs[0].Y), (glyph.X, glyph.Y), "the copy does not move the string" );
+		Assert.AreEqual( yellow, glyph.Color );
+		Assert.AreEqual( 1, title.Batch.TextDraws.Count );
+		var draw = title.Batch.Draws.Single();
+		Assert.IsNotNull( draw.Texture.Title );
+		Assert.IsTrue( draw.Vertices.All( vertex => vertex.Color == yellow ) );
+		var bitmap = draw.Texture.Title!;
+		Assert.AreEqual( (glyph.X - 2, glyph.Y), (draw.Vertices.Min( vertex => vertex.Position.X ), draw.Vertices.Min( vertex => vertex.Position.Y )), "the bitmap reaches two pixels left of the string and starts at its top" );
+		Assert.AreEqual( (4, 4), (bitmap.TextWidth, bitmap.TextHeight), "the 2 x 2 glyph plus the copy's two pixels in each direction" );
+	}
+
+	[TestMethod]
+	public void ATitleIsPlacedByItsOwnBoxNotByTheCopy()
+	{
+		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ), new SyntheticGlyph( '?', 2, 2, 0, 0, 4 ) ) );
+		var rect = new UiRect( 0, 0, 100, 40 );
+		var white = new RgbaByte( 255, 255, 255, 255 );
+		var plain = new UiContext( null!, null!, null! );
+		plain.DrawTextAt( atlas, 2, "aa", rect, white, UiAlign.Center );
+		var title = new UiContext( null!, null!, null! );
+		title.DrawTextAt( atlas, 2, "aa", rect, white, UiAlign.Center, UiBatch.TitleCopyAlpha );
+		CollectionAssert.AreEqual( plain.Batch.Glyphs.Select( glyph => (glyph.X, glyph.Y) ).ToList(), title.Batch.Glyphs.Select( glyph => (glyph.X, glyph.Y) ).ToList() );
+	}
+
+	[TestMethod]
+	public void TheComposedTitleBitmapWritesTheStringOverTheCopyAndDropsLevelZero()
+	{
+		// coverage 15 and 1 in a 2 x 1 glyph: the copy has levels 7 and 0 (c x 128 / 255), the string 15 and 1
+		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 2, 1, 0, 0, 4, [15, 1] ), new SyntheticGlyph( '?', 2, 1, 0, 0, 4, [15, 1] ) ) );
+		var layout = TextLayout.Create( atlas, "a" );
+		(byte R, byte G, byte B, byte A) Texel( UiTitleBitmap bitmap, int x, int y ) { var at = (y * bitmap.Width + x) * 4; return (bitmap.Rgba[at], bitmap.Rgba[at + 1], bitmap.Rgba[at + 2], bitmap.Rgba[at + 3]); }
+
+		var bitmap = UiTitleBitmap.Compose( atlas, layout, 0x80, 1 );
+		Assert.AreEqual( (4, 3), (bitmap.Width, bitmap.Height), "the 2 x 1 glyph plus two pixels left and two below (the string is at column 2, row 0; the copy at column 0, row 2)" );
+		Assert.AreEqual( ((byte)255, (byte)255, (byte)255, (byte)255), Texel( bitmap, 2, 0 ), "string, coverage 15: white, alpha 255" );
+		Assert.AreEqual( ((byte)255, (byte)255, (byte)255, (byte)17), Texel( bitmap, 3, 0 ), "string, coverage 1: alpha 17" );
+		Assert.AreEqual( ((byte)128, (byte)128, (byte)128, (byte)(7 * 17)), Texel( bitmap, 0, 2 ), "copy, coverage 15: grey, alpha 17 x floor(15 x 128 / 255) = 119" );
+		Assert.AreEqual( ((byte)0, (byte)0, (byte)0, (byte)0), Texel( bitmap, 1, 2 ), "copy, coverage 1: level 0, nothing written" );
+
+		// Theme Park Inc's copy has the colour alpha 0xc8: 15 x 200 / 255 = 11 levels
+		var tpi = UiTitleBitmap.Compose( atlas, layout, 0xC8, 1 );
+		Assert.AreEqual( ((byte)128, (byte)128, (byte)128, (byte)(11 * 17)), Texel( tpi, 0, 2 ) );
+		Assert.AreEqual( ((byte)0, (byte)0, (byte)0, (byte)0), Texel( tpi, 1, 2 ), "coverage 1 x 200 / 255 is level 0 as well" );
+	}
+
+	[TestMethod]
+	public void WhereTheCopyAndTheStringShareATexelTheStringReplacesIt()
+	{
+		// a 3 x 3 glyph: the bitmap's texel (2, 2) is the string's glyph pixel (0, 2) and the copy's glyph pixel (2, 0)
+		(byte R, byte G, byte B, byte A) Shared( byte stringCoverage, byte copyCoverage )
+		{
+			var coverage = new byte[9];
+			coverage[2 * 3 + 0] = stringCoverage;
+			coverage[0 * 3 + 2] = copyCoverage;
+			var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 3, 3, 0, 0, 4, coverage ), new SyntheticGlyph( '?', 3, 3, 0, 0, 4, coverage ) ) );
+			var bitmap = UiTitleBitmap.Compose( atlas, TextLayout.Create( atlas, "a" ), 0x80, 1 );
+			Assert.AreEqual( (5, 5), (bitmap.Width, bitmap.Height) );
+			var at = (2 * bitmap.Width + 2) * 4;
+			return (bitmap.Rgba[at], bitmap.Rgba[at + 1], bitmap.Rgba[at + 2], bitmap.Rgba[at + 3]);
+		}
+		Assert.AreEqual( ((byte)255, (byte)255, (byte)255, (byte)255), Shared( 15, 15 ), "coverage 15 on both: the string's white, alpha 255, not a blend" );
+		Assert.AreEqual( ((byte)255, (byte)255, (byte)255, (byte)17 ), Shared( 1, 15 ), "coverage 1 string over a coverage 15 copy: the string's alpha 17, replacing the copy's 119" );
+		Assert.AreEqual( ((byte)128, (byte)128, (byte)128, (byte)119), Shared( 0, 15 ), "no string texel: the copy's grey, alpha 119" );
+	}
+
+	[TestMethod]
+	public void TheTitleBitmapCacheReturnsOneInstancePerLayoutAndDropsTheOldest()
+	{
+		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ), new SyntheticGlyph( '?', 2, 2, 0, 0, 4 ) ) );
+		var first = UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "a" ), 0x80, 1 )!;
+		Assert.AreSame( first, UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "a" ), 0x80, 1 ) );
+		Assert.AreNotSame( first, UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "a" ), 0xC8, 1 ), "the copy alpha is part of the key" );
+		Assert.AreSame( first.Texture.Title, first );
+		Assert.IsFalse( first.Evicted );
+		for ( var length = 2; length <= UiTitleBitmap.Capacity + 1; length++ )
+		{
+			UiTitleBitmap.BeginFrame();
+			UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, new string( 'a', length ) ), 0x80, 1 );
+		}
+		UiTitleBitmap.BeginFrame();
+		UiTitleBitmap.BeginFrame();
+		UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "aaaa" ), 0x80, 1 );
+		Assert.IsTrue( first.Evicted, "past the capacity the least recently used bitmap is dropped" );
+		Assert.AreNotSame( first, UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "a" ), 0x80, 1 ), "a dropped layout is composed again" );
+	}
+
+	[TestMethod]
+	public void TheTitleBitmapCacheIsAlsoBoundedByItsPixelBytesButNeverWithinAFrame()
+	{
+		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 100, 100, 0, 0, 100 ), new SyntheticGlyph( '?', 100, 100, 0, 0, 100 ) ) );
+		// one frame that needs about 76 MB of title bitmaps keeps all of them (the budget is exceeded for the frame)
+		UiTitleBitmap.BeginFrame();
+		var titles = new List<UiTitleBitmap>();
+		for ( var length = 1; length <= 60; length++ )
+			titles.Add( UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, new string( 'a', length ) ), 0x80, 1 )! );
+		Assert.IsTrue( titles.Sum( title => (long)title.Rgba.Length ) > UiTitleBitmap.ByteBudget );
+		Assert.IsTrue( titles.All( title => !title.Evicted ), "no title of the frame that draws it is dropped" );
+		// two frames later the budget is applied again, oldest first
+		UiTitleBitmap.BeginFrame();
+		UiTitleBitmap.BeginFrame();
+		var latest = UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "aaa" ), 0xC8, 1 )!;
+		Assert.IsTrue( titles[0].Evicted, "past the 16 MB budget the oldest bitmaps are dropped" );
+		Assert.IsFalse( latest.Evicted );
+	}
+
+	[TestMethod]
+	public void ACappedFactorFillsTheEmptyTexelsWithTheNearestColour()
+	{
+		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 2, 1, 0, 0, 4, [15, 0] ), new SyntheticGlyph( '?', 2, 1, 0, 0, 4, [15, 0] ) ) );
+		var bitmap = UiTitleBitmap.Compose( atlas, TextLayout.Create( atlas, "a" ), 0x80, 1, fillEmptyColor: true );
+		// the copy's texel (0, 2) is grey; the empty texel (1, 2) beside it takes its colour and stays invisible; the empty texel (3, 0) beside the string takes white
+		Assert.AreEqual( ((byte)128, (byte)0), (bitmap.Rgba[(2 * bitmap.Width + 1) * 4], bitmap.Rgba[(2 * bitmap.Width + 1) * 4 + 3]) );
+		Assert.AreEqual( ((byte)255, (byte)0), (bitmap.Rgba[3 * 4], bitmap.Rgba[3 * 4 + 3]) );
+	}
+
+	[TestMethod]
+	public void TextIsCutOffAtItsControlBoxUnlessItOptsOut()
+	{
+		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 4, 4, 0, 0, 4 ), new SyntheticGlyph( '?', 4, 4, 0, 0, 4 ) ) );
+		var white = new RgbaByte( 255, 255, 255, 255 );
+		var rect = new UiRect( 10, 10, 6.9f, 6.9f );
+		foreach ( var alpha in new byte[] { UiBatch.TitleCopyAlpha, 0 } )
+		{
+			var context = new UiContext( null!, null!, null! );
+			context.DrawText( atlas, "aaaa", rect, white, UiAlign.Left, false, alpha, textScale: 1 );
+			var vertices = context.Batch.Draws.SelectMany( draw => draw.Vertices ).ToList();
+			Assert.IsTrue( vertices.Count > 0, $"alpha {alpha}" );
+			// the box is 6 x 6 pixels from (10, 10): the width and height are truncated (0x48f47b-0x48f4c5), right and bottom exclusive
+			Assert.IsTrue( vertices.All( vertex => vertex.Position.X >= 10 && vertex.Position.X <= 16 && vertex.Position.Y >= 10 && vertex.Position.Y <= 16 ), $"alpha {alpha}: the drawn quads stay inside the box" );
+			Assert.IsTrue( vertices.Any( vertex => vertex.Position.X == 16 ), $"alpha {alpha}: and reach its right edge" );
+			// a stretched quad would still pass the position test: the texture coordinates must stop short of the whole image
+			var wide = vertices.Where( vertex => vertex.Position.X == 16 ).Select( vertex => vertex.TexCoords.X ).Max();
+			Assert.IsTrue( wide < (alpha == 0 ? (float)(atlas.Glyphs['a'].X + 4) / atlas.Width : 1f), $"alpha {alpha}: the clipped quad's u1 {wide} is cut" );
+		}
+		var open = new UiContext( null!, null!, null! );
+		open.DrawText( atlas, "aaaa", rect, white, UiAlign.Left, false, 0, textScale: 1, clip: false );
+		Assert.IsTrue( open.Batch.Draws.SelectMany( draw => draw.Vertices ).Any( vertex => vertex.Position.X > 16 ), "an opted-out text keeps drawing past its box" );
+	}
+
+	[TestMethod]
+	public void TextAlignedInsideAFractionalBoxKeepsAllItsInk()
+	{
+		// the box is the rounded left and top and the truncated width and height (0x48f47b-0x48f4c5): one box places the text and cuts it off, so no alignment loses a column
+		Assert.AreEqual( new UiRect( 11, 5, 20, 12 ), UiContext.TextBox( new UiRect( 10.6f, 5.2f, 20.7f, 12.9f ) ) );
+		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 4, 4, -1, 0, 4 ), new SyntheticGlyph( '?', 4, 4, -1, 0, 4 ) ) );
+		var white = new RgbaByte( 255, 255, 255, 255 );
+		foreach ( var align in new[] { UiAlign.Left, UiAlign.Center, UiAlign.Right } )
+		{
+			foreach ( var width in new[] { 20.7f, 16.0f, 17.4f } )
+			{
+				var rect = new UiRect( 10.6f, 5.2f, width, 12.9f );
+				var context = new UiContext( null!, null!, null! );
+				context.DrawText( atlas, "aaaa", rect, white, align, textScale: 1 );
+				var box = UiContext.TextBox( rect );
+				var glyphs = context.Batch.Glyphs;
+				// the string is 16 wide with the glyph offset of -1 on the first glyph at the box's left edge for a left alignment, so the first glyph may start one column left of a full box; the right edge never loses ink
+				var inside = glyphs.All( glyph => glyph.X >= box.X - 1 && glyph.X + glyph.Width <= box.Right );
+				Assert.IsTrue( inside, $"{align} width {width}: every glyph stays inside the box {box}" );
+				var drawnRight = context.Batch.Draws.SelectMany( draw => draw.Vertices ).Max( vertex => vertex.Position.X );
+				Assert.AreEqual( glyphs.Max( glyph => glyph.X + glyph.Width ), drawnRight, $"{align} width {width}: the right-most ink column is drawn" );
+			}
+		}
 	}
 
 	[TestMethod]

@@ -8,8 +8,8 @@ public sealed record FontAtlasGlyph( char Character, int SourceIndex, int X, int
 
 /// <summary>
 /// Deterministic single-channel atlas built from a decoded BF4 font. Coverage samples 0–15 map
-/// linearly to alpha 0–255 (value × 17); this is an OpenTPW choice, not an evidenced original
-/// palette or gamma curve. Glyphs are shelf-packed by descending height, descending width and
+/// linearly to alpha 0–255 (value × 17), the original's texel alpha for a text control's glyph samples (the blitter
+/// 0x6B24B0 writes alpha = coverage × 17); no gamma curve is applied. Glyphs are shelf-packed by descending height, descending width and
 /// ascending character with one transparent pixel of padding. The first record of each
 /// character in table order is used; later duplicate records (for example the 58 identical
 /// space slots in the English corpus) are not packed.

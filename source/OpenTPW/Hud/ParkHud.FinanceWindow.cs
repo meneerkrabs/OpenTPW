@@ -120,7 +120,7 @@ public sealed partial class ParkHud
 		Model( "window", "w_park", Rect( 208, 30, 1840, 1007 ) );
 		Model( "graphFrame", "f_graph", Rect( 268, 199, 1648, 846 ) );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.FinancialInformation], Font = fonts => fonts.Title,
-			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 789, 74, 1261, 153 ), Anchor = UiAnchor.Center } );
+			Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 789, 74, 1261, 153 ), Anchor = UiAnchor.Center } );
 		screen.Add( new FinanceGraph( this ) { Id = "graph", Bounds = Rect( 741, 291, 1638, 828 ), Anchor = UiAnchor.Center } );
 		// [DATA:Mac finance table 0x49ee4:74356-74358] three b_stoggle period buttons, 1 / 3 / 12 years.
 		// Finance table 0x751ca8 is not generated. These three are the year radio group (type 8, style 0x11), so they play 0xBD. The series toggles below are not that group and stay on 0x1F.

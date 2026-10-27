@@ -389,7 +389,8 @@ public class TrackEditTests
 		Assert.AreEqual( BlueprintMarker.Break, rig.Editor.GhostSymbol( (14, 12), cut: false ) );
 		Assert.IsNull( rig.Editor.GhostSymbol( (12, 12), cut: false ), "a junction answers 1" );
 		Assert.AreEqual( BlueprintMarker.Erase, rig.Editor.GhostSymbol( (12, 12), cut: true ), "a tile of the cut answers 0xD whatever its arms" );
-		Assert.IsNull( rig.Editor.GhostSymbol( (10, 10), cut: true ), "a station tile is no tile of the cut" );
+		Assert.AreEqual( BlueprintMarker.Refused, rig.Editor.GhostSymbol( (10, 10), cut: true ), "a station tile answers 1 (0x53A351): the red face" );
+		Assert.IsNull( rig.Editor.GhostSymbol( (30, 30), cut: true ), "a cell with no track draws no tile face" );
 		Assert.IsNull( rig.Editor.GhostSymbol( (30, 30), cut: false ) );
 	}
 

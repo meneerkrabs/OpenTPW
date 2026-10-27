@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -201,5 +202,73 @@ public class TrackInitialStationTests
 				Assert.AreEqual( item.Cell, restored.Tracks.Get( item.X, item.Y ) );
 			Assert.AreEqual( fresh ? 1 : 0, restored.Tracks.Get( station.Exit.X, station.Exit.Y ).Overlap );
 		}
+	}
+
+	private static (TrackBuilder Builder, ParkCellMap Cells, TrackStation Station) Fresh( int rotation = 0, Func<int, int, bool>? occupied = null, ParkEconomy? economy = null )
+	{
+		var cells = new ParkCellMap( 64, 64 );
+		var builder = new TrackBuilder( cells, TrackFamily.Kart, () => economy, new Grid(), occupied );
+		return (builder, cells, TrackStation.FromPlacement( 30, 30, rotation ));
+	}
+
+	[TestMethod]
+	public void TheStationLineAloneHasTheArmsOfTheLineAndTheExitAndEntryOpsGiveTheOthers()
+	{
+		foreach ( var rotation in Rotations )
+		{
+			var (builder, cells, station) = Fresh( rotation, occupied: ( x, y ) => false );
+			// every cell of the exit tile is refused and the entry tile is free: the station keeps the arms of its own line plus the entry's hand-written one
+			var blocked = TrackStation.TileCellsOf( station.Exit.X, station.Exit.Y ).ToHashSet();
+			var refusing = new TrackBuilder( cells, TrackFamily.Kart, () => null, new Grid(), ( x, y ) => blocked.Contains( (x, y) ) );
+			refusing.PlaceInitialStation( station );
+			Assert.IsFalse( cells.Tracks.Get( station.Exit.X, station.Exit.Y ).IsOrigin, "the exit's type op was refused" );
+			Assert.AreEqual( TrackHeading.Opposite( station.Heading ), cells.Tracks.Get( station.Second.X, station.Second.Y ).Mask, "no arm toward a tile that was not laid (0x539220 after a refused type op)" );
+			Assert.AreEqual( (byte)(station.Heading | TrackHeading.Opposite( station.Heading )), cells.Tracks.Get( station.First.X, station.First.Y ).Mask, "the entry's arm back is written by hand" );
+			Assert.AreEqual( station.Heading, cells.Tracks.Get( station.Entry.X, station.Entry.Y ).Mask );
+			Assert.AreEqual( station.Heading, cells.Tracks.Get( station.Entry.X, station.Entry.Y ).Link );
+		}
+	}
+
+	[TestMethod]
+	public void ARefusedEntryStillGivesTheFirstStationTileItsArmTowardIt()
+	{
+		foreach ( var rotation in Rotations )
+		{
+			var (_, cells, station) = Fresh( rotation );
+			var blocked = TrackStation.TileCellsOf( station.Entry.X, station.Entry.Y ).ToHashSet();
+			var builder = new TrackBuilder( cells, TrackFamily.Kart, () => null, new Grid(), ( x, y ) => blocked.Contains( (x, y) ) );
+			builder.PlaceInitialStation( station );
+			Assert.IsFalse( cells.Tracks.Get( station.Entry.X, station.Entry.Y ).IsOrigin );
+			Assert.IsTrue( cells.Tracks.Get( station.Exit.X, station.Exit.Y ).IsOrigin );
+			Assert.AreEqual( (byte)(station.Heading | TrackHeading.Opposite( station.Heading )), cells.Tracks.Get( station.First.X, station.First.Y ).Mask, "0x522700 on the cell two on runs whatever the type op answered (0x52572C)" );
+			Assert.AreEqual( (byte)(station.Heading | TrackHeading.Opposite( station.Heading )), cells.Tracks.Get( station.Second.X, station.Second.Y ).Mask );
+		}
+	}
+
+	[TestMethod]
+	public void TheExitAndEntryAreFreeButAParkInDebtLaysNeither()
+	{
+		var broke = EconomyTestData.Park( initialCash: 0 );
+		var (builder, cells, station) = Fresh( 0, economy: broke );
+		builder.PlaceInitialStation( station );
+		Assert.AreEqual( 16, cells.Tracks.Cells().Count(), "no cash needed" );
+		Assert.AreEqual( 0L, broke.Balance, "and none spent" );
+		var debt = EconomyTestData.Park( initialCash: 100 );
+		debt.TrySpendCoasterTrack( 400, force: true );
+		Assert.IsTrue( debt.Balance < 0 );
+		var (indebted, debtCells, other) = Fresh( 0, economy: debt );
+		indebted.PlaceInitialStation( other );
+		Assert.IsFalse( debtCells.Tracks.Get( other.Exit.X, other.Exit.Y ).IsOrigin, "the type op's credit test refuses a free tile while the cash is below zero (0x538FF5)" );
+		Assert.IsFalse( debtCells.Tracks.Get( other.Entry.X, other.Entry.Y ).IsOrigin );
+		Assert.IsTrue( TrackCellTypes.IsStation( debtCells.Tracks.Get( other.First.X, other.First.Y ).Type ), "the station line itself is laid" );
+	}
+
+	[TestMethod]
+	public void TheGiveWayHookSeesEveryCellOfTheExitAndEntryTiles()
+	{
+		var (builder, _, station) = Fresh( 90 );
+		var seen = new List<(int X, int Y)>();
+		builder.PlaceInitialStation( station, ( x, y ) => seen.Add( (x, y) ) );
+		CollectionAssert.AreEquivalent( TrackStation.TileCellsOf( station.Exit.X, station.Exit.Y ).Concat( TrackStation.TileCellsOf( station.Entry.X, station.Entry.Y ) ).ToArray(), seen );
 	}
 }

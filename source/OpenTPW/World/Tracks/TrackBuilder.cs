@@ -163,6 +163,9 @@ public sealed class TrackBuilder
 		var park = free ? null : Economy;
 		if ( park != null && !park.CanSpendCell( Purchase ) )
 			return CellBuildResult.NotEnoughMoney;
+		// [BIN:TPW-EXE:0x00538FC0 type op credit test] a free tile (the placement's) is still refused while the player's cash is below zero (the test is cash - cost >= 0 with a cost of 0)
+		if ( free && Economy is { Balance: < 0 } )
+			return CellBuildResult.NotEnoughMoney;
 		var overPath = false;
 		foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
 			overPath |= ClearPath( cx, cy );
@@ -210,12 +213,19 @@ public sealed class TrackBuilder
 	}
 
 	/// <summary>Writes the two station tiles of a ride (type 13 or 18 origins and type 12 extensions), each with its flow axis connected both ways.</summary>
-	public void PlaceStation( TrackStation station )
+	public void PlaceStation( TrackStation station ) => PlaceStation( station, lineOnly: false );
+
+	/// <summary>
+	/// The station tiles with their flow axis (<paramref name="lineOnly"/> false) or with the arms of the station line alone: the first tile the arm toward the second and the second the arm back, the
+	/// line op's arms (<c>0x539220</c>, each cell after the first gets the arm toward the previous cell and the previous cell the arm back). The exit and entry tiles' ops give the others.
+	/// </summary>
+	private void PlaceStation( TrackStation station, bool lineOnly )
 	{
 		var owner = OwnerOf( station );
 		var axis = (byte)(station.Heading | TrackHeading.Opposite( station.Heading ));
 		foreach ( var (x, y) in station.Tiles )
 		{
+			var tileAxis = !lineOnly ? axis : (x, y) == station.First ? station.Heading : TrackHeading.Opposite( station.Heading );
 			var originIndex = Tracks.IndexOf( x, y );
 			foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
 			{
@@ -226,23 +236,54 @@ public sealed class TrackBuilder
 				var origin = (cx, cy) == (x, y);
 				Cells.SetType( cx, cy, origin ? StartType : TrackCellTypes.Extension );
 				// [BIN:TPW-EXE:0x00524F1E station link] the station tiles' flow link is the heading of the station's rotation (0x524EE9..0x524F19: 0 → 4, 90 → 1, 180 → 0x40, 270 → 0x10)
-				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? axis : (byte)0, Link = origin ? station.Heading : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner, BaseType = baseType } );
+				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? tileAxis : (byte)0, Link = origin ? station.Heading : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner, BaseType = baseType } );
 			}
 		}
 	}
 
-	/// <summary>Fresh placement only: attempts the two free adjacent origins without overriding placement refusals. Loading or migrating a station uses <see cref="PlaceStation"/> instead.</summary>
+	/// <summary>
+	/// Fresh placement only: the station line, then the exit tile and the entry tile laid as the original's placement lays them, free of the tile price. Loading or migrating a station uses
+	/// <see cref="PlaceStation(TrackStation)"/> instead. <paramref name="giveWay"/> demolishes what stands on a cell of the two tiles (the priority demolition of op 0x87), called with each of their cells.
+	/// </summary>
 	// [BIN:TPW-EXE:0x005253E9 initial track] placement sets free byte 0x8186D4; secondary writer 0x538FC0 skips the tile price and debit, not validation or existing-tile overlap.
-	public void PlaceInitialStation( TrackStation station )
+	// [BIN:TPW-EXE:0x0052A1A0 station line] the station line first: the type op, 0x80 (the first tile no arm, the second the arm toward the first and the first the arm back), 0x82 and 0x83 over the two tiles, whose end is the exit cell
+	// [BIN:TPW-EXE:0x005254C5 exit ops] on the exit cell, in this order through 0x53AAC0: 0x87, the tool mode's type op (0x52F840), 0x80, 0x82, 0x83, 0x85, 0x86 and 0x81, then the exit becomes the tool's first vertex (0x52FBF0); the arm op 0x80 gives the exit the arm toward the second station tile and that tile the arm back only when the type op laid the tile (0x539220 reads the type op's answer in 0x816D64, which a refused type op leaves cleared), the flow link op 0x82 has the singleton line's zero step and writes nothing
+	// [BIN:TPW-EXE:0x005255F0 entry ops] the same ops on the entry cell (0x52A420) with the heading's step in the local, then by hand and whatever the type op answered: the arm toward the station (0x522700) and the flow link set to the heading (0x5227E0) on the entry cell, and the arm back (0x4D8C00, 0x522700) on the cell two cells on (0x50C3E0), the first station tile; the arm op 0x80 of the entry writes nothing, its previous step being the exit's zero step
+	// [BIN:TPW-EXE:0x00538FC0 type op free] with the free byte set the tile costs nothing, but the op's credit test (0x538FF5..0x539050) still refuses a tile when the player's cash is below zero; a tile of the same type only counts its overlap word up (0x538FFD)
+	public void PlaceInitialStation( TrackStation station, Action<int, int>? giveWay = null )
 	{
-		PlaceStation( station );
+		PlaceStation( station, lineOnly: true );
 		var owner = OwnerOf( station );
+		var heading = station.Heading;
 		foreach ( var at in new[] { station.Exit, station.Entry } )
 		{
+			if ( giveWay != null )
+			{
+				foreach ( var (cx, cy) in TrackStation.TileCellsOf( at.X, at.Y ) )
+					giveWay( cx, cy );
+			}
 			// A refused adjacent tile remains untouched; placement is not an atomic four-origin transaction.
 			var result = PlaceTile( at.X, at.Y, owner, free: true );
-			if ( at == station.Entry && result is (CellBuildResult.Ok or CellBuildResult.Existing) )
-				ApplyLineLink( at, station.Heading );
+			var laid = result is CellBuildResult.Ok or CellBuildResult.Existing;
+			if ( at == station.Exit )
+			{
+				if ( !laid )
+					continue;
+				AddArm( at, TrackHeading.Opposite( heading ) );
+				AddArm( station.Second, heading );
+				Refresh( at.X, at.Y );
+				Refresh( station.Second.X, station.Second.Y );
+				continue;
+			}
+			// the entry's own arm and link are written whatever the type op answered; a cell that holds no tile has no arm byte anyone reads
+			if ( laid )
+				ApplyLineLink( at, heading );
+			if ( laid )
+				AddArm( at, heading );
+			AddArm( station.First, TrackHeading.Opposite( heading ) );
+			Refresh( station.First.X, station.First.Y );
+			if ( laid )
+				Refresh( at.X, at.Y );
 		}
 	}
 

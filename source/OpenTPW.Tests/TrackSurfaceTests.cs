@@ -67,7 +67,8 @@ public class TrackSurfaceTests
 		foreach ( var mesh in model.Meshes )
 			for ( var face = 0; face < mesh.FaceNormalIndices.Length; face++ )
 				mesh.FaceNormalIndices[face] |= 0x8000;
-		var surface = TrackSurface.FromObject( model );
+		// the synthetic model's only node is the type loader's ground node (the mode-4 mesh, 0x46A5A0)
+		var surface = TrackSurface.FromObject( model, groundNode: records ? -1 : 0 );
 		Assert.AreEqual( records ? TrackSamplerMode.SurfaceRecords : TrackSamplerMode.InstanceMesh, surface.Mode );
 		Assert.AreEqual( triangles.Length, surface.TriangleCount );
 		return surface;

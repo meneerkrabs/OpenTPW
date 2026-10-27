@@ -40,7 +40,7 @@ public sealed class WeatherRenderer : Entity
 	private readonly Func<float> timeScale;
 	private readonly float scale;
 	private readonly float originalFieldOfView;
-	private readonly bool depthSplit;
+	private readonly Func<float, float, float, float?>? farArgument;
 	private readonly WeatherVisualState visual = new();
 	private readonly WeatherBoltRibbon ribbon;
 	// the per-frame inputs of the ribbon's projection, set before a frame's bolts are built (no closure allocated per frame)
@@ -55,7 +55,7 @@ public sealed class WeatherRenderer : Entity
 	private readonly WeatherVertex[] scratch = new WeatherVertex[WeatherVisualState.FieldSize * VerticesPerQuad];
 	private bool deleted;
 
-	/// <summary>Drops and bolt ribbons drawn in the last frame (smoke instrumentation).</summary>
+	/// <summary>Drops (rain streaks or snow flakes, counted once whatever their triangles) and bolt ribbons drawn in the last frame (smoke instrumentation).</summary>
 	public int DrawnDrops { get; private set; }
 	public int DrawnBolts { get; private set; }
 
@@ -63,16 +63,16 @@ public sealed class WeatherRenderer : Entity
 	/// <param name="originalToEngine">Maps an original position (Y up) to engine space; the park maps through its heightfield's origin.</param>
 	/// <param name="timeScale">The simulation's time scale the visuals advance by (0 freezes them); the park passes its own, the lobby 1.</param>
 	/// <param name="engineUnitsPerOriginal">Engine units per original unit: the park's models are drawn at <see cref="OriginalParkPlacement.ModelScale"/>, the lobby at 1.</param>
-	/// <param name="depthSplit">Whether the original's depth value has its linear range (the park views; the lobby never sets the split, 0x578CA0 is not called there).</param>
+	/// <param name="farArgument">The far argument the original's view hands to its projection setup <c>0x578CA0</c> this frame, in original units, from the display's height over its width and the sine and cosine of half the field of view (null result: not known, the first call's 1000 stands); it sets the depth split of the weather's depth value (<see cref="WeatherProjection"/>).</param>
 	/// <param name="fieldOfView">The field of view in degrees the original builds the scene's projection with (the park's <see cref="OriginalProjection.FieldOfView"/>, the lobby's island field of view): the bolt ribbon's width is in the clip units of that projection.</param>
-	public WeatherRenderer( IWeatherVisualSource source, Func<SVector3, SVector3> originalToEngine, Func<float> timeScale, float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale, float fieldOfView = OriginalProjection.FieldOfView, bool depthSplit = true )
+	public WeatherRenderer( IWeatherVisualSource source, Func<SVector3, SVector3> originalToEngine, Func<float> timeScale, float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale, float fieldOfView = OriginalProjection.FieldOfView, Func<float, float, float, float?>? farArgument = null )
 	{
 		this.source = source;
 		this.originalToEngine = originalToEngine;
 		this.timeScale = timeScale;
 		scale = engineUnitsPerOriginal;
 		originalFieldOfView = fieldOfView;
-		this.depthSplit = depthSplit;
+		this.farArgument = farArgument;
 		ribbon = new WeatherBoltRibbon( ProjectBoltPoint );
 		Name = "Weather";
 		// Prepared with the entity — a resumed park creates it inside its load scope, a fresh park on its
@@ -153,14 +153,18 @@ public sealed class WeatherRenderer : Entity
 		var dropVertexCount = 0;
 		var vertexCount = 0;
 
-		// the original's depth split (WeatherProjection): its far argument is 1000 in the eye views and the span selection's farthest corner otherwise; the lobby has no linear range
-		var far = IsEyeView( Camera.Mode ) ? WeatherProjection.OriginalFar : MathF.Max( 1f, MathF.Min( WeatherProjection.OriginalFar, projection.M43 / (projection.M33 + 1f) / scale ) );
+		// the original's depth split (WeatherProjection) follows the far argument of the frame's view, from its span selection; 1000, the value of the first projection setup, stands when the view gives none (no terrain)
+		var halfAngle = originalFieldOfView * MathF.PI / 360f;
+		var sine = MathF.Sin( halfAngle );
+		var far = farArgument?.Invoke( displayAspect, sine, MathF.Cos( halfAngle ) ) is { } given && float.IsFinite( given ) && given > WeatherProjection.OriginalNear ? given : WeatherProjection.OriginalFar;
 		if ( dropMaterial != null && visual.DropCount > 0 )
 		{
 			var written = visual.Snow ? visual.WriteSnow( camera, scratch, displayAspect ) : visual.WriteRain( camera, scratch );
 			var step = visual.Snow ? WeatherVisualState.SnowVerticesPerFlake : VerticesPerQuad / 2;
+			var perDrop = visual.Snow ? WeatherVisualState.SnowVerticesPerFlake : VerticesPerQuad;
 			Span<WeatherRibbonVertex> triangle = stackalloc WeatherRibbonVertex[3];
 			Span<WeatherRibbonVertex> clipped = stackalloc WeatherRibbonVertex[8];
+			var drawnDrop = -1;
 			for ( var index = 0; index + step <= written; index += step )
 			{
 				for ( var corner = 0; corner < step; corner++ )
@@ -183,11 +187,16 @@ public sealed class WeatherRenderer : Entity
 					continue;
 				for ( var fan = 1; fan < count - 1; fan++ )
 				{
-					AddDropVertex( source[0], projection, far, ref vertexCount );
-					AddDropVertex( source[fan], projection, far, ref vertexCount );
-					AddDropVertex( source[fan + 1], projection, far, ref vertexCount );
+					AddDropVertex( source[0], projection, far, sine, ref vertexCount );
+					AddDropVertex( source[fan], projection, far, sine, ref vertexCount );
+					AddDropVertex( source[fan + 1], projection, far, sine, ref vertexCount );
 				}
-				DrawnDrops++;
+				// a rain streak is two triangles, a snow flake one: count a drop once, when its first triangle is drawn
+				if ( index / perDrop != drawnDrop )
+				{
+					drawnDrop = index / perDrop;
+					DrawnDrops++;
+				}
 			}
 			dropVertexCount = vertexCount;
 		}
@@ -220,10 +229,10 @@ public sealed class WeatherRenderer : Entity
 			Draw( commandList, boltMaterial!, boltStart, boltVertexCount );
 	}
 
-	private void AddDropVertex( in WeatherRibbonVertex vertex, System.Numerics.Matrix4x4 projection, float far, ref int vertexCount )
+	private void AddDropVertex( in WeatherRibbonVertex vertex, System.Numerics.Matrix4x4 projection, float far, float sine, ref int vertexCount )
 	{
 		var clip = vertex.Clip;
-		var depth = WeatherProjection.WriteDepth( clip.Z, clip.W, projection, scale, far, depthSplit );
+		var depth = WeatherProjection.WriteDepth( clip.Z, clip.W, projection, scale, far, sine );
 		// clip-space vertex (x w', y w', z w', w): the shader takes w from the tint's third component, so the device interpolates texture and colour perspective-correctly as the original's rhw does
 		vertices[vertexCount++] = new Vertex( new SVector3( clip.X, -clip.Y, depth * clip.W ), new SVector3( vertex.Tint.X, vertex.Tint.Y, clip.W ), vertex.TexCoords );
 	}
@@ -349,8 +358,20 @@ internal static class WeatherRendererModule
 			if ( global::Global.Render == null || Level.Current?.Park == null )
 				return;
 			var level = Level.Current;
-			_ = new WeatherRenderer( new ParkWeatherVisualSource( weather ), position => ToEngine( level, position ), () => level.SimulationTimeScale );
+			_ = new WeatherRenderer( new ParkWeatherVisualSource( weather ), position => ToEngine( level, position ), () => level.SimulationTimeScale, farArgument: ParkFarArgument );
 		};
+	}
+
+	/// <summary>
+	/// The far argument of the park's view in original units: the first-person views' greatest clip depth of the visible cell boxes (<c>0x56EA90</c>, <see cref="TerrainEyeViewFar"/>), the overview's farthest corner distance of the span selection
+	/// (<c>0x56BB00</c>, at least 10, with no upper limit); null when the view has no terrain to ask (the first call's 1000 stands).
+	/// </summary>
+	private static float? ParkFarArgument( float aspectWord, float sine, float cosine )
+	{
+		var view = Camera.ViewMatrix;
+		if ( WeatherRenderer.IsEyeView( Camera.Mode ) )
+			return Camera.EyeViewFarArgument?.Invoke( view, aspectWord, sine, cosine );
+		return Camera.Mode is ParkCameraMode && Camera.ParkFarPlane?.Invoke( view, aspectWord ) is { } far ? far / OriginalParkPlacement.ModelScale : null;
 	}
 
 	/// <summary>An original position (Y up) in engine space: through the heightfield's centring when the level has one, else scaled only.</summary>

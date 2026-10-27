@@ -878,6 +878,26 @@ internal sealed partial class GameFlow : IDisposable
 
 	private Backdrop backdrop = Backdrop.Lobby;
 	/// <summary>The open city lobby's islands (a lobby scene with the city's parks at the island slots).</summary>
+	private TerrainViewSpans? lobbySpans;
+	private ModelHeightfield? lobbySpansField;
+
+	/// <summary>
+	/// The far argument of the lobby's view in original units (the lobby's own units are the engine's): the farthest corner distance of the span selection of the lobby camera over the lobby terrain's heightfield (<c>0x56BB00</c>, at least 10, which
+	/// <c>0x576A00</c> runs before the weather and which hands it to <c>0x578CA0</c>, <c>0x56BD3E</c>); null without a lobby heightfield.
+	/// </summary>
+	private float? LobbyFarArgument( float aspectWord, float sine, float cosine )
+	{
+		if ( Lobby?.Heightfield is not { } field )
+			return null;
+		if ( lobbySpans == null || !ReferenceEquals( lobbySpansField, field ) )
+		{
+			lobbySpans = new TerrainViewSpans( field, engineUnitsPerOriginal: 1f, centred: false ) { RayFieldOfView = LobbyCameraMode.IslandFieldOfView };
+			lobbySpansField = field;
+		}
+		lobbySpans.ViewDistance = RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Distance;
+		return lobbySpans.Update( Camera.ViewMatrix, aspectWord ) ? lobbySpans.FarthestCorner : null;
+	}
+
 	private LobbyScene? cityScene;
 	/// <summary>Islands of the open city lobby (front-end smoke test).</summary>
 	internal int CityIslandCount => cityScene?.IslandCount ?? 0;
@@ -982,7 +1002,7 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		// The lobby's rain and bolts are drawn by the engine's weather renderer, as the original's are (CRain), at the lobby's own scale.
 		if ( lobbyWeather == null || !Entity.All.Contains( lobbyWeather ) )
-			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f, fieldOfView: LobbyCameraMode.IslandFieldOfView, depthSplit: false );
+			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f, fieldOfView: LobbyCameraMode.IslandFieldOfView, farArgument: LobbyFarArgument );
 		lobbyIslands.Clear();
 		foreach ( var (island, slot) in Lobby.Slots )
 		{

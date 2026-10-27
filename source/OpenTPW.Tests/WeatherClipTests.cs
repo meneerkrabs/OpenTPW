@@ -183,6 +183,8 @@ public class WeatherClipTests
 		// [BIN:TPW-EXE:0x583220 depth split] the original's code run offline for D = 1000 (the eye views) and D = 400: the threshold [0x8BCC28] and the slope [0x8BCC34]
 		Assert.AreEqual( 2.9294944f, WeatherProjection.SplitThreshold( 1000f ), 2e-3f );
 		Assert.AreEqual( 1.1294838f, WeatherProjection.SplitThreshold( 400f ), 2e-3f );
+		// the eye views' far argument is at least 100 (0x56EA90): the linear range then ends at a clip z of 0.23, the divided range holds nearly all of the 8-unit drop field
+		Assert.AreEqual( 0.2295f, WeatherProjection.SplitThreshold( 100f ), 2e-3f );
 		// a far argument so small that t stays at the near plane: the linear range ends where the scene's depth is the near plane's
 		Assert.AreEqual( 0f, WeatherProjection.SplitThreshold( 20f ), 0.05f );
 	}
@@ -200,19 +202,25 @@ public class WeatherClipTests
 		var wt = WeatherProjection.ParkSine * t;
 		Assert.AreEqual( t, WeatherProjection.EquivalentDistance( threshold + 1e-5f, wt ), 2e-3f, "continuous across the threshold" );
 		Assert.AreEqual( t, WeatherProjection.EquivalentDistance( threshold - 1e-5f, wt ), 2e-3f );
-		Assert.IsTrue( t > 4.2f && t < 4.3f, $"t = {t}: nearly the whole 8-unit drop field lies in the linear range" );
+		Assert.IsTrue( t > 4.2f && t < 4.3f, $"t = {t}: for the far argument 1000 (the first projection setup's) the linear range reaches 4.24 original units" );
 		foreach ( var distance in new[] { 5f, 10f, 200f } )
 		{
 			var z = m10 * (distance - 0.1f);
 			var w = WeatherProjection.ParkSine * distance;
 			Assert.AreEqual( distance, WeatherProjection.EquivalentDistance( z, w ), distance * 1e-3f, $"v = {distance}" );
 		}
-		// the lobby has no linear range: every vertex takes z / w
-		var flake = 2f;
+		// the lobby has a split of its own, with the sine of its field of view (100 degrees): the same two ranges
+		var lobbySine = MathF.Sin( 50f * MathF.PI / 180f );
+		var lobbyM10 = lobbySine / (1f - 0.1f / 400f);
+		Assert.AreEqual( 0.1f + 0.5f / lobbyM10, WeatherProjection.EquivalentDistance( 0.5f, 0.6f, 400f, lobbySine ), 1e-4f );
+		Assert.AreNotEqual( WeatherProjection.SplitThreshold( 400f, lobbySine ), WeatherProjection.SplitThreshold( 400f ), 1e-4f, "the threshold follows the field of view's sine" );
+		// the divided range alone (a flake in it): the depth value z / w sorts as a surface about twice as far as its depth
+		var flake = 20f;
 		var ratio = (flake + 0.1f) / (flake + 0.1501f);
-		Assert.AreEqual( WeatherProjection.EquivalentDistance( ratio ), WeatherProjection.EquivalentDistance( flake + 0.1f, flake + 0.1501f, split: false ), 1e-4f );
-		Assert.IsTrue( WeatherProjection.EquivalentDistance( ratio ) > 2 * flake, "without the split a flake sorts as a surface about twice as far as its depth" );
-		Assert.IsTrue( float.IsPositiveInfinity( WeatherProjection.EquivalentDistance( 2f, 1.9f, split: false ) ), "beyond the far plane" );
+		Assert.AreEqual( WeatherProjection.DividedDistance( ratio, 1f ), WeatherProjection.EquivalentDistance( flake + 0.1f, flake + 0.1501f ), 1e-3f );
+		Assert.IsTrue( float.IsPositiveInfinity( WeatherProjection.EquivalentDistance( 5f, 4.9f ) ), "beyond the far plane" );
+		// the compare is unsigned: a negative z takes the divided branch
+		Assert.AreEqual( WeatherProjection.DividedDistance( -0.5f, 3f ), WeatherProjection.EquivalentDistance( -0.5f, 3f ), 1e-5f );
 	}
 
 	[TestMethod]
@@ -226,8 +234,8 @@ public class WeatherClipTests
 		Assert.IsTrue( WeatherProjection.EquivalentDistance( 0.09f, 0.15f ) * scale < 0.1f );
 		Assert.AreEqual( 0f, WeatherProjection.WriteDepth( 0.09f, 0.15f, projection, scale ) );
 		Assert.IsTrue( WeatherProjection.WriteDepth( 0.7071f * 499.9f, 0.7071f * 500f, projection, scale ) is > 0 and < 1, "a drop 500 original units away" );
-		Assert.AreEqual( 1f, WeatherProjection.WriteDepth( 2f, 1.9f, projection, scale, split: false ), "beyond the far plane, and no NaN at the pole of the mapping" );
-		Assert.AreEqual( 1f, WeatherProjection.WriteDepth( 1.0001f / (1f - 0.1f / 1000f), 1f, projection, scale, split: false ) );
+		Assert.AreEqual( 1f, WeatherProjection.WriteDepth( 5f, 4.9f, projection, scale ), "beyond the far plane" );
+		Assert.AreEqual( 1f, WeatherProjection.WriteDepth( 100.02f, 100f, projection, scale ), "and no NaN at the pole of the mapping" );
 	}
 
 	[TestMethod]

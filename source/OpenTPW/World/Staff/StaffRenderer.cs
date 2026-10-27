@@ -275,6 +275,11 @@ public sealed class StaffRenderer : Entity
 	internal static (float X, float Y)? DanglePoint( StaffPlacement placement ) =>
 		placement.Cursor ?? (placement.HoverCell is { } cell ? (cell.X + 0.5f, cell.Y + 0.5f) : null);
 
+	/// <summary>The tool sprite's engine-space anchor: the full picked point plus the original-unit lift, or the existing terrain fallback for cell-only callers.</summary>
+	internal static SVector3? DangleAnchor( StaffPlacement placement, ModelHeightfield field ) =>
+		placement.CursorEnginePoint is { } point ? point + SVector3.UnitZ * (DangleLift * OriginalParkPlacement.ModelScale)
+			: DanglePoint( placement ) is var (x, y) ? GuestRenderer.CellToEngine( field, x, y, DangleLift ) : null;
+
 	/// <summary>The CPU portion of the actual world pass, including selection and quad preparation; never called by UI readers.</summary>
 	internal int PrepareWorld()
 	{
@@ -320,7 +325,8 @@ public sealed class StaffRenderer : Entity
 		if ( ++frames % 256 == 0 && views.Count > list.Count )
 			Prune( list );
 		if ( DanglePoint( placement ) is var (danglingX, danglingY) && placement.ToolType is { } toolType
-			&& sprites.AtlasFor( toolType, placement.ToolVariantKey ) is var atlasIndex and >= 0 && atlasIndex < textures.Count )
+			&& sprites.AtlasFor( toolType, placement.ToolVariantKey ) is var atlasIndex and >= 0 && atlasIndex < textures.Count
+			&& DangleAnchor( placement, field ) is { } danglingAnchor )
 		{
 			var atlas = sprites.Atlases[atlasIndex];
 			var (slot, step) = StaffSpriteRules.Resolve( StaffSpriteRules.Dangle, now, atlas.Animations.Animations );
@@ -329,7 +335,7 @@ public sealed class StaffRenderer : Entity
 			var frameIndex = atlas.GetFrame( slot, direction, step );
 			// not pulled: the tool's sprite is made with cleared flags (0x00475A10 through 0x004758F0), and neither the tool's enter 0x0046C730 nor its frame 0x0046C480 (0x00475480 sets
 			// only the position and heading) gives it the pick flag 0x200 that 0x00589B50 pulls
-			AddSprite( ref count, atlasIndex, frameIndex, mirror, GuestRenderer.CellToEngine( field, danglingX, danglingY, DangleLift ), right, up, forward );
+			AddSprite( ref count, atlasIndex, frameIndex, mirror, danglingAnchor, right, up, forward );
 			DrewDangling = true;
 			DangleAt = (danglingX, danglingY);
 			DangleFrameSize = (atlas.Frames[frameIndex].Width, atlas.Frames[frameIndex].Height);

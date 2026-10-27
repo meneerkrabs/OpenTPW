@@ -301,6 +301,7 @@ public class ObjectRayPickTests
 	private CameraMode camera = null!;
 	private NMatrix4x4 view, projection;
 	private bool text;
+	private Input.CursorTypes cursor;
 	private List<InputButton> down = null!, last = null!;
 
 	private static void Set( object o, string f, object v ) => o.GetType().GetField( f, BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( o, v );
@@ -311,6 +312,7 @@ public class ObjectRayPickTests
 	public void Setup()
 	{
 		entities = Entity.All; Entity.All = new(); log = Log; Log = new(); camera = Camera.Mode; view = Camera.ViewMatrix; projection = Camera.ProjMatrix;
+		cursor = Input.CursorType;
 		text = Input.TextEntryActive; Input.TextEntryActive = false; down = Input.KeysDown; last = Input.LastKeysDown; Input.KeysDown = new(); Input.LastKeysDown = new();
 		root = Path.Combine( Path.GetTempPath(), "opentpw-pick-" + Guid.NewGuid().ToString( "N" ) );
 		Directory.CreateDirectory( root );
@@ -350,6 +352,7 @@ public class ObjectRayPickTests
 	{
 		foreach ( var entity in Entity.All.ToArray() ) entity.Delete();
 		Entity.All = entities; Log = log; Camera.Mode = camera; Camera.ViewMatrix = view; Camera.ProjMatrix = projection;
+		Input.CursorType = cursor;
 		Input.TextEntryActive = text; Input.KeysDown = down; Input.LastKeysDown = last; Input.UpdateButtons();
 		Directory.Delete( root, true );
 	}
@@ -392,6 +395,112 @@ public class ObjectRayPickTests
 	}
 
 	private static NVector3 TowerTop() => new( ParkPlacement.MinimumCoordinate + 16.5f * ObjectPlacement.CellSize, ParkPlacement.MinimumCoordinate + 16.2f * ObjectPlacement.CellSize, 17 );
+
+	// Synthetic CPU cursor-height regressions: no original game media, sprite atlas or GPU resource is used.
+	private static ModelHeightfield StaffCursorField() => new( 32, 32, 10, 10, 0, 0,
+		Array.Empty<uint>(), new float[33 * 33], new uint[32 * 32] );
+
+	private static StaffPlacement StaffTool( Level level, bool carry )
+	{
+		var park = EconomyTestData.Park();
+		var grid = new GuestPathGrid( 32, 32 );
+		grid.SetPath( 2, 5, true );
+		var cells = grid.Cells;
+		var tool = StaffPlacementRig.Create( () => park, () => cells, ( x, y ) => level.Objects.FindAt( x, y ) != null );
+		Set( level, "<StaffPlacement>k__BackingField", tool );
+		if ( carry )
+		{
+			var member = EconomyTestData.HireBest( park, StaffType.Handyman );
+			(member.CellX, member.CellY) = (2.5f, 5.5f);
+			Assert.IsTrue( tool.PickUp( member ) );
+		}
+		else
+			Assert.IsTrue( tool.BeginHire( park.Staff.Candidates.First( item => item.Type == StaffType.Handyman ).Id ) );
+		return tool;
+	}
+
+	private static void AssertStaffAnchor( StaffPlacement tool, NVector3 hit )
+	{
+		Assert.AreEqual( hit, tool.CursorEnginePoint );
+		var anchor = StaffRenderer.DangleAnchor( tool, StaffCursorField() );
+		Assert.IsTrue( anchor.HasValue );
+		Assert.AreEqual( hit.X, anchor.Value.X, 1e-4f );
+		Assert.AreEqual( hit.Y, anchor.Value.Y, 1e-4f );
+		// Five original units are ONE engine unit, not five; the model hit's height is not re-sampled from terrain.
+		Assert.AreEqual( hit.Z + 1f, anchor.Value.Z, 1e-4f );
+	}
+
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void TheStaffCursorKeepsTheTowerHitsFullHeightWithoutChangingItsDropCell( bool carry )
+	{
+		var hud = Park( out var level, out _ );
+		var tool = StaffTool( level, carry );
+		var mouse = Screen( TowerTop() );
+		Assert.IsTrue( level.TryGetGroundHit( mouse, Canvas, out var hit ) );
+		Assert.IsTrue( hit.Z > 10, "the synthetic tower, well above the terrain" );
+		Assert.IsTrue( level.TryGetGroundCell( mouse, Canvas, out var x, out var y ) );
+		hud.Update( RideUpgradeIngressTests.Context(), UiInput.Idle( mouse ), false, false, false );
+		AssertStaffAnchor( tool, hit.GetSystemVector3() );
+		Assert.AreEqual( (x, y), tool.Cursor, "the existing cell projection is unchanged" );
+		Assert.AreEqual( (16, 16), tool.HoverCell );
+		Assert.IsFalse( tool.HoverValid, "presentation over the model does not make its occupied cell droppable" );
+		Assert.AreEqual( StaffClickResult.None, tool.Click( 16, 16 ) );
+		Assert.IsTrue( tool.IsActive );
+		AssertStaffAnchor( tool, hit.GetSystemVector3() );
+	}
+
+	[DataTestMethod]
+	[DataRow( false )]
+	[DataRow( true )]
+	public void TheStaffCursorRefreshesFromModelToTerrainAndClearsOnMissAndCancel( bool carry )
+	{
+		var hud = Park( out var level, out _ );
+		var tool = StaffTool( level, carry );
+		var context = RideUpgradeIngressTests.Context();
+		var mouse = Screen( TowerTop() );
+		var towerShape = level.PickShapeOf;
+		hud.Update( context, UiInput.Idle( mouse ), false, false, false );
+		Assert.IsTrue( tool.CursorEnginePoint!.Value.Z > 10 );
+
+		level.PickShapeOf = null; // same pointer, model no longer intersects: the existing pick cache keys the shape delegate
+		hud.Update( context, UiInput.Idle( mouse ), false, false, false );
+		Assert.IsTrue( level.TryGetGroundHit( mouse, Canvas, out var terrain ) );
+		Assert.AreEqual( 0f, terrain.Z, 1e-4f );
+		AssertStaffAnchor( tool, terrain.GetSystemVector3() );
+		Assert.IsTrue( tool.Cursor!.Value.Y > 16, "the terrain point is behind the tower's cell" );
+
+		var outside = Canvas + NVector2.One;
+		Assert.IsFalse( level.TryGetGroundHit( outside, Canvas, out _ ) );
+		hud.Update( context, UiInput.Idle( outside ), false, false, false );
+		Assert.IsNull( tool.Cursor );
+		Assert.IsNull( tool.CursorEnginePoint );
+		Assert.IsNull( tool.HoverCell );
+		Assert.IsNull( StaffRenderer.DangleAnchor( tool, StaffCursorField() ) );
+
+		level.PickShapeOf = towerShape;
+		hud.Update( context, UiInput.Idle( mouse ), false, false, false );
+		Assert.IsTrue( tool.CursorEnginePoint!.Value.Z > 10, "a new model hit is used after the miss" );
+		tool.Cancel();
+		Assert.IsNull( tool.Cursor );
+		Assert.IsNull( tool.CursorEnginePoint );
+		Assert.IsNull( StaffRenderer.DangleAnchor( tool, StaffCursorField() ) );
+	}
+
+	[TestMethod]
+	public void TheStaffAnchorUsesTheTerrainHitWhenTheTowerIsBehindIt()
+	{
+		Park( out var level, out _ );
+		var tool = StaffTool( level, false );
+		var (eye, direction, _) = TopRay();
+		var hill = eye + direction * 0.3f;
+		var tower = Tower();
+		Assert.IsFalse( ObjectRayPick.TryPick( eye, direction, hill, Grid, OwnerAt( tower, 10, 10 ), out _, out _ ) );
+		Assert.AreEqual( 0, tower.Tests );
+		tool.SetCursor( hill.X / 2, hill.Y / 2, hill );
+		AssertStaffAnchor( tool, hill );
+	}
 
 	/// <summary>A press and a release at <paramref name="mouse"/> in the park, as the input source reports a click.</summary>
 	private static void Click( ParkHud hud, UiContext context, NVector2 mouse )

@@ -1370,8 +1370,10 @@ public sealed partial class ParkHud
 		// [APPROX:GUEST-021] where the original's cursor and the person's sprite anchor land on the screen
 		if ( input.Mouse.X >= 0 && input.Mouse.Y >= 0 )
 		{
-			if ( level.TryGetGroundCell( input.Mouse, viewport, out var groundX, out var groundY ) )
-				tool.SetCursor( groundX, groundY );
+			// Keep the cell mapping unchanged, but retain the same cached pick's height for presentation.
+			if ( level.TryGetGroundCell( input.Mouse, viewport, out var groundX, out var groundY )
+				&& level.TryGetGroundHit( input.Mouse, viewport, out var ground ) )
+				tool.SetCursor( groundX, groundY, ground.GetSystemVector3() );
 			else
 				tool.SetCursor( null, null );
 			if ( inPark )

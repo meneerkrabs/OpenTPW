@@ -72,10 +72,26 @@ internal sealed partial class SandboxSmokeTest
 		Require( anchor != null, $"find an on-screen site for a {kind} ride and its circuit" );
 		var economy = level.Park?.Economy;
 		var centre = Level.GetClickCell( entry!, anchor!.Value.X, anchor.Value.Y, 0 );
-		var station = level.PlaceObject( entry!, centre.X, centre.Y, 0 ) ?? level.Objects.TryPlace( entry!, anchor.Value.X, anchor.Value.Y, 0, out _ );
-		Require( station?.Runtime.Bump is not null, $"place a {kind} ride with its controller" );
+		// the player's placement lays the ride's access cells (ObjectAccessCells), which the opening guard reads: the entry's link byte gives the queue its front (tp.exe 0x4DE040, 0x4DE4A0); the fixture makes
+		// the ride available by the research cheat's path when the level's research has not reached it, instead of placing it without access cells
+		economy?.Research.MakeAvailableByCheat( new[] { entry!.InfoId } );
+		var station = level.PlaceObject( entry!, centre.X, centre.Y, 0 );
+		Require( station?.Runtime.Bump is not null, $"place a {kind} ride with its controller ({level.LastActionMessage})" );
+		// the ride's queue has to join a path before it opens (tp.exe 0x4DE4A0 reads a queue with no path behind it, or a ride with no front, as unconnected): the fixture lays one path cell beside the
+		// queue's back outside the circuit's area, as the player lays the path the queue ends on, and ends the queue on it (the queue tool's last click)
+		var guestGrid = level.Guests!.Grid;
+		var queueBack = station!.Visitors.QueueBackCell;
+		// a path cell beside the queue's back, where the site has one (the site's free-area rule keeps the circuit's cells clear, not the paths around it); otherwise one is laid
+		if ( !QueuePaths.TryConnect( guestGrid, station.Visitors ) )
+		{
+			var pathCell = GuestPathGrid.Directions.Select( step => (X: queueBack.X + step.DX, Y: queueBack.Y + step.DY) )
+				.FirstOrDefault( cell => (cell.X < anchor.Value.X - 2 || cell.X > anchor.Value.X + 6 || cell.Y < anchor.Value.Y - 1 || cell.Y > anchor.Value.Y + 6) && level.Paths!.CheckCell( cell.X, cell.Y ) == CellBuildResult.Ok );
+			Require( pathCell != default && level.Paths!.BuildSegment( pathCell, pathCell ).Built.Count > 0, $"lay a path cell beside the queue's back {queueBack}" );
+			Require( QueuePaths.TryConnect( guestGrid, station.Visitors ), "the queue ends on the path" );
+		}
+		Require( ParkGate.QueueConnected( guestGrid, station.Visitors ), "the queue is connected to a path" );
 		// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the fixture opens it as the player would
-		station!.Open();
+		station.Open();
 		run.Station = station;
 		var layout = level.TrackStations[station!];
 		// the line of 0x52A1A0 at rotation 0 runs from (x, y+1) to (x+2, y+1) of the attraction cell (docs/TRACKS.md, "The station")

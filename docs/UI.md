@@ -242,7 +242,12 @@ on one line, centred. Earlier the wrapped fallback broke words between character
 Fitting uses the drawn pixels, not the BF4 line box: glyph offsets put ink above and below the line box,
 so a label measured by its line box could hang out of the button. Horizontally the label's own ink is
 centred; vertically the font's letter box (capitals, ascenders, descenders) is centred, so neighbouring
-buttons share a baseline. The `purple_button` texture holds two button ends, not two whole buttons: the upper half is a bar with
+buttons share a baseline. Vertically, drawn pixels count only where they leave the BF4 line box: the MENU,
+TITLE and SESH fonts keep the rows between the line top and their capitals for diacritics (MENUSMALL's
+letters start 9 rows down; French î, Swedish and Danish å, Polish ń and Hebrew lamed reach rows 4 to 7), and
+the original's text library stacks lines a line height apart (0x6ae1c0), so such a mark never meets the line
+above. Counting it once dropped "Boîte de réception" and its kind to a plain body font at 720p, smaller than
+their neighbours and on a lower baseline. The `purple_button` texture holds two button ends, not two whole buttons: the upper half is a bar with
 a rounded left end (normal), the lower half a lighter bar with a rounded right end (focused/pressed);
 each bar fills 48 of the half's 64 rows and is cut flat at the other end. A button is drawn as that
 piece plus its mirror image, rounded caps at their own aspect and the body stretched to meet in the

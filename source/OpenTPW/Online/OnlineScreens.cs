@@ -350,32 +350,58 @@ public sealed class OnlineScreens
 	/// <summary>The online menu's buttons: the first one's top below the window's title, the step between buttons and their height (ten buttons and the postcard line under them fit the window; the height keeps the label box large enough for the bubbly menu font).</summary>
 	internal const float MenuButtonsTop = 170, MenuButtonStep = 100, MenuButtonHeight = 96;
 
+	/// <summary>
+	/// The online menu window's size and the margin beside its buttons. The width keeps every button label of every shipped language on one line in the
+	/// menu font at the 1280x720 reference size: Hebrew's login line, UITEXT 235 "מתחבר אל www.ThemeParkWorld.com" (the original's "Online Login"), needs
+	/// 934 units of label box, where 1200 gave 868.
+	/// </summary>
+	internal const float MenuWindowWidth = 1280, MenuWindowHeight = 1460, MenuButtonMargin = 130;
+
+	/// <summary>The online menu's buttons in order: id and label, logged in or not.</summary>
+	internal static readonly (string Id, Func<bool, string> Label)[] MenuEntries =
+	{
+		("login", loggedIn => loggedIn ? OnlineStrings.Get( OnlineLabel.LogOut ) : OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" )),
+		("news", _ => OnlineStrings.Get( OnlineLabel.News )),
+		("findParks", _ => OnlineStrings.Ui( OnlineStrings.FindParks, "Find parks" )),
+		("publish", _ => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" )),
+		("sendPostcard", _ => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send postcard" )),
+		("outbox", _ => OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent postcards" )),
+		("inbox", _ => OnlineStrings.Get( OnlineLabel.Inbox )),
+		("chat", _ => OnlineStrings.Get( OnlineLabel.Chat )),
+		("import", _ => OnlineStrings.Get( OnlineLabel.ImportFile )),
+		// [EXT:ONLINE-UI] OpenTPW servers let players delete their own account (docs/SERVER.md).
+		("deleteAccount", _ => OnlineStrings.Get( OnlineLabel.DeleteAccount )),
+	};
+
+	/// <summary>The bounds of the online menu's <paramref name="index"/>th button in <paramref name="window"/>.</summary>
+	internal static UiRect MenuButtonBounds( UiRect window, int index ) =>
+		new( window.X + MenuButtonMargin, window.Y + MenuButtonsTop + index * MenuButtonStep, window.Width - 2 * MenuButtonMargin, MenuButtonHeight );
+
 	/// <summary>OpenTPW's online functions that have no place on the original globe screen.</summary>
 	public void ShowMenu()
 	{
 		// [EXT:ONLINE-UI] the menu has no original counterpart: a window opened from it takes its place, so the menu's buttons do not show around that window
 		var screen = new UiScreen( "onlineMenu" ) { HiddenWhenCovered = true };
-		var window = UiDialogs.CenteredWindow( 1200, 1460 );
+		var window = UiDialogs.CenteredWindow( MenuWindowWidth, MenuWindowHeight );
 		UiDialogs.AddWindow( screen, window, "w_big", () => OnlineStrings.Get( OnlineLabel.OnlineMenu ) );
 		var level = host.Level();
 		// [EXT:ONLINE-UI] a status belongs to the screen it was reported on: a note of an earlier screen does not stay in the menu
 		localStatus = "";
-		var entries = new List<(string Id, Func<string> Label, Action Clicked, Func<bool> Enabled, Func<string?>? Why)>
+		var actions = new Dictionary<string, (Action Clicked, Func<bool> Enabled, Func<string?>? Why)>
 		{
-			("login", () => Session.IsLoggedIn ? OnlineStrings.Get( OnlineLabel.LogOut ) : OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ),
-				() => { if ( Session.IsLoggedIn ) Guard( () => { Session.Disconnect(); localStatus = ""; } ); else ShowLogin(); }, () => true, null),
-			("news", () => OnlineStrings.Get( OnlineLabel.News ), ShowNews, () => Session.Client != null, null),
-			("findParks", () => OnlineStrings.Ui( OnlineStrings.FindParks, "Find parks" ), ShowFindParks, () => Session.IsLoggedIn, null),
+			["login"] = (() => { if ( Session.IsLoggedIn ) Guard( () => { Session.Disconnect(); localStatus = ""; } ); else ShowLogin(); }, () => true, null),
+			["news"] = (ShowNews, () => Session.Client != null, null),
+			["findParks"] = (ShowFindParks, () => Session.IsLoggedIn, null),
 			// [EXT:mods] a greyed Publish park says why on hover: no park open, a visit, a shared park's guest copy, or community mods in the park (ParkSharing.PublishRefusal)
-			("publish", () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ), ShowPublish, () => ParkSharing.PublishRefusal( level ) == null, () => ParkSharing.PublishRefusal( level )),
-			("sendPostcard", () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send postcard" ), ShowSendPostcard, () => true, null),
-			("outbox", () => OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent postcards" ), ShowOutbox, () => true, null),
-			("inbox", () => OnlineStrings.Get( OnlineLabel.Inbox ), ShowInbox, () => true, null),
-			("chat", () => OnlineStrings.Get( OnlineLabel.Chat ), ShowChat, () => Session.IsLoggedIn, null),
-			("import", () => OnlineStrings.Get( OnlineLabel.ImportFile ), ShowImport, () => true, null),
-			// [EXT:ONLINE-UI] OpenTPW servers let players delete their own account (docs/SERVER.md).
-			("deleteAccount", () => OnlineStrings.Get( OnlineLabel.DeleteAccount ), ShowDeleteAccount, () => Session.IsLoggedIn, null),
+			["publish"] = (ShowPublish, () => ParkSharing.PublishRefusal( level ) == null, () => ParkSharing.PublishRefusal( level )),
+			["sendPostcard"] = (ShowSendPostcard, () => true, null),
+			["outbox"] = (ShowOutbox, () => true, null),
+			["inbox"] = (ShowInbox, () => true, null),
+			["chat"] = (ShowChat, () => Session.IsLoggedIn, null),
+			["import"] = (ShowImport, () => true, null),
+			["deleteAccount"] = (ShowDeleteAccount, () => Session.IsLoggedIn, null),
 		};
+		var entries = MenuEntries.Select( entry => (entry.Id, Label: (Func<string>)(() => entry.Label( Session.IsLoggedIn )), actions[entry.Id].Clicked, actions[entry.Id].Enabled, actions[entry.Id].Why) ).ToList();
 		UiButton? lastButton = null;
 		for ( var index = 0; index < entries.Count; index++ )
 		{
@@ -385,7 +411,7 @@ public sealed class OnlineScreens
 				Id = entry.Id,
 				Text = entry.Label,
 				Clicked = entry.Clicked,
-				Bounds = new UiRect( window.X + 130, window.Y + MenuButtonsTop + index * MenuButtonStep, window.Width - 260, MenuButtonHeight ),
+				Bounds = MenuButtonBounds( window, index ),
 				Anchor = UiAnchor.Center
 			} );
 			if ( entry.Why is { } why )

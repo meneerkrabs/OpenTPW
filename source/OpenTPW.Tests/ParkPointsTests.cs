@@ -149,10 +149,13 @@ public class ParkPointsTests
 		var park = Park();
 		EconomyTestData.AdvanceToTurn( park, 1 );
 		var ride = park.RegisterExisting( Tracked );
-		// VAR_BROKEN (script variable 7) makes the original's ride update set state 1 or 4 (0x100E1864), whatever the economy's own breakdown flag says.
+		// VAR_BROKEN (script variable 7) makes the original's ride update set state 1 or 4 (0x100E1864); the counts-test reads that state word, not the variable
 		ride.ScriptBroken = true;
 		Assert.IsFalse( ride.IsBrokenDown );
+		Assert.AreEqual( 30 + 25, park.ParkPoints(), "the variable alone is not the state word" );
+		EconomyTestData.RideUpdateEntersBrokenState( park, ride );
 		Assert.AreEqual( 0, park.ParkPoints() );
+		ride.IsBrokenDown = false;
 		ride.ScriptBroken = false;
 		Assert.AreEqual( 30 + 25, park.ParkPoints() );
 	}

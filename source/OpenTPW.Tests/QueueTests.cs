@@ -1062,7 +1062,7 @@ public class QueueTests
 		Assert.IsTrue( Restored( snapshot ).IsCondemned );
 		// an older save holds no such field: the restored ride is in state 1
 		var third = Restored( snapshot with { Condemned = null } );
-		Assert.IsTrue( third.InBrokenState && third.IsBrokenDown && !third.IsCondemned && third.HoldsQueuedGuests );
+		Assert.IsTrue( third.StateWord.IsBroken && third.IsBrokenDown && !third.IsCondemned && third.HoldsQueuedGuests );
 		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { BrokenDown = false } ).Any( error => error.Contains( "condemned" ) ), "state 4 needs the broken-down state" );
 		var one = new Rig();
 		one.Ride.LifeGauge = 50;
@@ -1072,6 +1072,7 @@ public class QueueTests
 		// leaving the state (opened again) forgets it
 		rig.Script[RideVariables.VAR_BROKEN] = 0;
 		rig.Script[RideVariables.VAR_RIDECLOSED] = 0;
+		ride.StateWord.Set( RideObjectStates.Idle ); // every opener writes SetState(0) with the open word (OriginalObjectRuntime.Open)
 		rig.RunTurns( 2 );
 		Assert.IsFalse( ride.IsBrokenDown || ride.IsCondemned );
 	}
@@ -1502,6 +1503,7 @@ public class QueueTests
 		Assert.IsTrue( ride.IsBrokenDown, "VAR_BROKEN cleared, the ride stays in state 1" );
 		Assert.AreEqual( 1, ride.Queue.Count(), "one head dismissed per turn: 1 on the breakdown turn, 2 on the next" );
 		script[RideVariables.VAR_RIDECLOSED] = 0;
+		ride.StateWord.Set( RideObjectStates.Idle );
 		Assert.IsFalse( ride.IsBrokenDown, "opened again: SetState(0)" );
 		Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 4 ) );
 	}

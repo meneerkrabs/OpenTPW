@@ -247,8 +247,9 @@ public sealed class ParkGate
 	internal bool MayOpen( OriginalObjectRuntime item )
 	{
 		var record = economyOf?.Invoke( item );
-		var state = item.GetVariable( RideVariables.VAR_BROKEN ) != 0 || record is { IsBrokenDown: true } ? RideObjectStates.BrokenDown
-			: record is { } && record.PendingLevel > record.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
+		// [BIN:TPW-EXE:0x004DF290 reopen guard state] the guard reads the state word +0x19C (never VAR_BROKEN): the shared word of the ride's record, or the bridge's own for an object without one
+		var state = record is { } ? ParkEconomy.ObjectState( record )
+			: item.Visitors.StateWord.Value;
 		var coaster = item.Coaster != null;
 		// [BIN:TPW-EXE:0x441970 coaster guard] the guard's coaster test is the guests' predicate: complete, no self-intersection (+0x140 == 0) and not the coaster the tool edits
 		return RideOpening.MayOpen( state, maintenanceFlag: record?.MaintenanceRequested == true, queueConnected: guests == null || QueueConnected( guests.Grid, item.Visitors ), coaster ? RideOpening.CoasterTrackType : 0,

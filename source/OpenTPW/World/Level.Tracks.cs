@@ -261,8 +261,8 @@ public partial class Level
 			return;
 		}
 		var record = EconomyStateOf( runtime );
-		var state = runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0 ? RideObjectStates.BrokenDown
-			: record != null ? ParkEconomy.ObjectState( record ) : RideObjectStates.Idle;
+		// [BIN:TPW-EXE:0x004DF290 reopen guard state] the state word, as the guard reads it
+		var state = record != null ? ParkEconomy.ObjectState( record ) : runtime.Visitors.StateWord.Value;
 		if ( !RideOpening.MayOpen( state, record?.MaintenanceRequested == true,
 			Guests == null || ParkGate.QueueConnected( Guests.Grid, item.Visitors ), 0, true ) )
 			return;

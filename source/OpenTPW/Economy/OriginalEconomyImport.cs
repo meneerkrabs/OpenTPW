@@ -585,10 +585,10 @@ public sealed partial class OriginalEconomyImport
 			case 3 when !choosable:
 				break;
 			case 1 or 4 when choosable:
-				state.IsBrokenDown = true;
-				// OpenTPW tells state 4 from 1 by the life gauge's byte (ParkEconomy.ObjectState), as the ride update 0x004E14E0 sets it
+				// the saved state word is the state word: 1 or 4 as saved (the ride update 0x004E14E0 sets 4 for a life gauge byte of 0, so a save that disagrees with its gauge is reported)
+				state.StateWord.Restore( attraction.State );
 				if ( (attraction.State == 4) != (RideBreakdownRules.GaugeByte( attraction.LifeGauge ) == 0) )
-					adjusted.Add( $"{what} state {attraction.State} with life gauge {attraction.LifeGauge} is imported broken down; OpenTPW reads it as state {ParkEconomy.ObjectState( state )}" );
+					adjusted.Add( $"{what} state {attraction.State} with life gauge {attraction.LifeGauge} disagrees with the state the ride update would enter ({RideStateWord.BrokenStateFor( attraction.LifeGauge )}); the saved state is kept" );
 				break;
 			case 2 when choosable && info!.Upgrades.Count > state.Level + 1:
 				state.PendingLevel = state.Level + 1;

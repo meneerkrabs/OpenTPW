@@ -963,7 +963,7 @@ public sealed class ParkEconomy : IParkEconomy
 				else
 				{
 					item.IsBrokenDown = true;
-					Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
+					PublishRideState( item );
 				}
 				Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
 			}
@@ -992,27 +992,36 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// The level saw the ride update enter state 1 (the script's VAR_BROKEN read in state 0, tp.exe <c>0x004E14E0</c>): the object is broken down and a mechanic
-	/// is sent (<c>0x004DAA90</c> looks for state 1). Only the rising edge of <paramref name="inBrokenState"/> breaks it down, so a repaired ride the level has not yet reopened stays repaired.
+	/// Publishes the ride's entry into state 1 or 4 (the ride update's <c>0x004E14E0</c> wrote the shared state word, <see cref="RideStateWord"/>): the object is broken down and a mechanic is
+	/// sent (<c>0x004DAA90</c> looks for state 1). The level calls it after the bridge's update, so the event comes in the economy's own pass as it did when the level joined the two records.
 	/// </summary>
-	internal void ObserveScriptState( ParkObjectState item, bool inBrokenState )
+	internal void PublishRideState( ParkObjectState item )
 	{
-		if ( inBrokenState && item.ScriptStateBroken == false )
-		{
-			item.IsBrokenDown = true;
+		if ( !item.BrokenStatePending )
+			return;
+		item.BrokenStatePending = false;
+		if ( item.StateWord.IsBroken )
 			Raise( ParkEventKind.RideEnteredBrokenState, 0, item.Id, item.InfoId );
-		}
-		item.ScriptStateBroken = inBrokenState;
+	}
+
+	/// <summary>Notes a change of the ride's state word for <see cref="PublishRideState"/>: only the entry into state 1 or 4.</summary>
+	private static void HookStateWord( ParkObjectState item )
+	{
+		item.StateWord.Changed += ( before, after ) =>
+		{
+			if ( after is RideObjectStates.BrokenDown or RideObjectStates.Condemned && before is not (RideObjectStates.BrokenDown or RideObjectStates.Condemned) )
+				item.BrokenStatePending = true;
+		};
 	}
 
 	/// <summary>
-	/// The ride object's state word as far as OpenTPW can tell it (<see cref="RideObjectStates"/>): broken down or condemned (the life gauge
-	/// truncates to a zero byte) when the economy or the ride script reports a breakdown, upgrading while a purchased upgrade is not installed.
+	/// The ride object's state word (<see cref="RideObjectStates"/>): the shared word's state 1 or 4, upgrading (state 2) while a purchased upgrade is not installed, else idle.
 	/// </summary>
+	// [BIN:TPW-EXE:0x004E0E60 SetState] one word +0x19C: 1 and 4 are written by the ride update (0x4E14E0) and left through SetState(0); the purchased upgrade's state 2 is read from the pending level
 	internal static int ObjectState( ParkObjectState item )
 	{
-		if ( item.IsBrokenDown || item.ScriptBroken )
-			return RideBreakdownRules.GaugeByte( (float)item.LifeGauge ) == 0 ? RideObjectStates.Condemned : RideObjectStates.BrokenDown;
+		if ( item.StateWord.IsBroken )
+			return item.StateWord.Value;
 		return item.PendingLevel > item.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
 	}
 
@@ -1944,7 +1953,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DD920 counts-test] the same tests as 0x100DC834 at the PC offsets (flags +0x32 bit 4, state +0x19C not 1 or 4, open word +0x68); the back of the queue 0x004DE130 walks the queue from the front cell at the entrance and counts its cells (+0x40), so an attraction without queue cells has none and does not count, and 0x004DDF50 called with guest 0 returns the whole list's length, compared with 4 × the cells
 	// [BIN:TPW-EXE:0x004DD9AD counts-test track types] Bumper.WhichTrackType (type +0x9C) 3 needs the coaster test 0x00441970 (cdecl, the thing), 1 and 2 need the track word +0x2C, any other type passes
-	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && !item.ScriptBroken && item.IsOpen && item.QueueHasRoom
+	public static bool CountsForParkPoints( ParkObjectState item, EconomyObjectInfo info ) => info.IsChoosable && !item.IsBrokenDown && item.IsOpen && item.QueueHasRoom
 		&& (info.TrackType is not (1 or 2) || item.TrackValid) && (info.TrackType != 3 || item.CoasterAcceptsGuests);
 
 	/// <summary>Registers an object that already exists (imported original save, fixed item) without charging.</summary>
@@ -1986,6 +1995,7 @@ public sealed class ParkEconomy : IParkEconomy
 			ChanceOfLosingPercent = info.ChanceOfLosingPercent ?? 0
 		};
 		objects.Add( item.Id, item );
+		HookStateWord( item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
 		// [BIN:STP-PPC:0x100DA874 object purchase] the type's park record +28 takes the current turn while it is still 0 (0x100DADEC..0x100DAE14); selling does not clear it
 		// [BIN:TPW-EXE:0x004DB690 first purchase] the constructor stamps the game turn into the type's record +0x1C only while it is 0; at a new park the gates and traffic lights are built after the turn is set to 0 (0x00515865), so fixed items stamp 0 as here
@@ -2750,6 +2760,7 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( !Catalog.TryGet( item.InfoId, out _ ) )
 				throw new InvalidDataException( $"Saved object {item.Id} has Info.Id {item.InfoId}, which the {Settings.Theme} catalogue does not declare." );
 			objects.Add( item.Id, item );
+			HookStateWord( item );
 		}
 		loans.Clear();
 		loans.AddRange( restoredLoans );

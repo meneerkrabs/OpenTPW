@@ -22,6 +22,16 @@ internal static class UnownedLandDim
 	// [BIN:TPW-EXE:0x0044DC28 lighting option] [0x7858B8] equal to 0 ORs 0x1800 into [0x8BCBC8] (0x44DC36), equal to 1 ANDs 0xE7 into its second byte (0x44DC49: clears 0x1800); the draw tests bit 0x800 at 0x56FB09 and 0x56FB9C
 	public static bool Enabled( int lighting ) => lighting != 0;
 
+	/// <summary>
+	/// Whether the terrain is drawn unlit: LIGHTING 0 sets bit 0x800, and with it the terrain colour table fill <c>0x574530</c> copies one constant (white, 0xFFFFFFFF) into every colour instead of summing the
+	/// lights (the sun, the ambient and, here, the point lights); the same bit stops the dimming (<see cref="Enabled"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0057453A terrain colour table] 'test ah, 8' on [0x8BCBC8] (0x574534-0x57453A) picks the branch: bit set copies [light object + 0x2C] (0xFFFFFFFF from its creation, 0x574013; the other writers, 0x577120 and 0x57AB61, are debug highlights restored afterwards) to each of the colours (0x574558-0x574561), clear calls 0x5741B0 for the light sum and writes the clamped fistp colours
+	public static bool Unlit( int lighting ) => lighting == 0;
+
+	/// <summary>The unlit terrain colour: white, each channel 255 (the light object's +0x2C).</summary>
+	public const uint UnlitColour = 0xFFFFFFFF;
+
 	/// <summary>The map cell the land refresh reads for the heightfield cell (<paramref name="x"/>, <paramref name="z"/>): negative indexes become 0 and an index past the map the last cell.</summary>
 	// [BIN:TPW-EXE:0x00450D3D land refresh cell] the column and the row are clamped to 0 below and to [0x7A0314] - 1 and [0x7A0374] - 1 above before the map record is addressed
 	public static (int X, int Z) MapCell( int x, int z, int mapWidth, int mapHeight ) => (Math.Clamp( x, 0, Math.Max( 0, mapWidth - 1 ) ), Math.Clamp( z, 0, Math.Max( 0, mapHeight - 1 ) ));

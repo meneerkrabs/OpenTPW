@@ -124,6 +124,42 @@ public class UnownedLandDimTests
 		Assert.IsFalse( UnownedLandDim.Enabled( new OriginalDetailSettings().Lighting ), "a bare record is LIGHTING 0, which is why the fallback sets it" );
 	}
 
+	[TestMethod]
+	public void LightingZeroSelectsTheUnlitConstantAndNoDimming()
+	{
+		Assert.IsTrue( UnownedLandDim.Unlit( 0 ) );
+		Assert.IsFalse( UnownedLandDim.Unlit( 1 ) );
+		Assert.IsFalse( UnownedLandDim.Unlit( 2 ) );
+		Assert.AreEqual( 0xFFFFFFFFu, UnownedLandDim.UnlitColour, "the light object's +0x2C (0x574013)" );
+		for ( var lighting = 0; lighting < 3; lighting++ )
+			Assert.AreNotEqual( UnownedLandDim.Unlit( lighting ), UnownedLandDim.Enabled( lighting ), "bit 0x800 stops the dimming and selects the constant together" );
+		Assert.IsFalse( UnownedLandDim.Unlit( GraphicsSettingsService.FallbackDetail.Lighting ), "no data: lit, as the zeroed flags" );
+	}
+
+	[TestMethod]
+	public void TheShaderShadesAnUnlitTerrainCornerWithWhiteAndTheEveningTintOnTop()
+	{
+		var text = File.ReadAllText( Path.Combine( RepositoryRoot(), "content", "shaders", "test.shader" ) ).ReplaceLineEndings( "\n" );
+		StringAssert.Contains( text, $"const uint FLAG_TERRAIN_UNLIT = 0x{TextureSlotAddressing.TerrainUnlitFlag:X8}u;" );
+		StringAssert.Contains( text, "if ( terrainUnlit )\n            vShading = vec3( 1.0 );" );
+		StringAssert.Contains( text, "|| terrainUnlit ) && vAmbientTint.x", "the extension's night tint applies on top" );
+		Assert.AreEqual( 0u, TextureSlotAddressing.TerrainUnlitFlag & (TextureSlotAddressing.LandDimFlag | TextureSlotAddressing.SelfLitFlag | TextureSlotAddressing.LightSourceFlag | TextureSlotAddressing.SlushFlag | TextureSlotAddressing.ClampFlag | 0xFFFFu) );
+	}
+
+	[TestMethod]
+	public void TheProceduralMeshCarriesTheUnlitFlagOnEveryCorner()
+	{
+		var data = SyntheticLnd.Build( 3, 3, [48, 40, 40, 90, 68, 40, 97, 30, 55, 50], ( x, y, channel ) => channel == 0 ? (byte)255 : (byte)(x * 11 + y * 7 + channel),
+			( size, image, x, y, channel ) => (byte)(size + image * 5 + x * 3 + y * 11 + channel) );
+		var field = new ModelHeightfield( 5, 4, 10, 10, 0, 0, Array.Empty<uint>(), new float[6 * 5], new uint[20] );
+		var terrain = new ProceduralTerrain( field, new LndFile( new MemoryStream( data ) ), new ProceduralTerrainRectangle( 0, 0, 3, 2 ), new ProceduralTerrainSettings( Size, 40 ), 2, new Pages() ) { Unlit = true };
+		var view = Matrix4x4.CreateLookAt( new System.Numerics.Vector3( 0, 0, 40 ), new System.Numerics.Vector3( 0, 0, 0 ), System.Numerics.Vector3.UnitY );
+		var projection = Matrix4x4.CreatePerspectiveFieldOfView( 90 * MathF.PI / 180, 4f / 3, 0.1f, 1000 );
+		terrain.Refresh( view, projection, null );
+		Assert.IsTrue( terrain.DrawnCells > 0 );
+		Assert.IsTrue( terrain.Vertices.Take( terrain.DrawnCells * 4 ).All( vertex => (vertex.MatFlags & TextureSlotAddressing.TerrainUnlitFlag) != 0 ) );
+	}
+
 	private static string RepositoryRoot()
 	{
 		var directory = new DirectoryInfo( AppContext.BaseDirectory );

@@ -87,6 +87,10 @@ public sealed partial class OriginalTerrain : Entity
 	public Func<int, int, ParkCellFlags>? LandFlagsSource { get; set; }
 
 	private bool landDimEnabled;
+	private bool terrainUnlit;
+
+	/// <summary>The vertex flags every terrain corner carries for the lighting option: the unlit constant at LIGHTING 0.</summary>
+	private uint TerrainFlags => terrainUnlit ? TextureSlotAddressing.TerrainUnlitFlag : 0u;
 
 	/// <summary>Whether the heightfield cell (<paramref name="x"/>, <paramref name="y"/>) is drawn dimmed: the lighting option allows it and the map cell the land refresh reads for it is unowned outside the entrance area.</summary>
 	private bool DimOf( int x, int y )
@@ -248,7 +252,9 @@ public sealed partial class OriginalTerrain : Entity
 	{
 		heightfieldTextures = textures;
 		// the LIGHTING option is applied when a level is loaded, like the procedural textures
-		landDimEnabled = UnownedLandDim.Enabled( IGraphicsSettings.Instance?.Detail.Lighting ?? 1 );
+		var lighting = IGraphicsSettings.Instance?.Detail.Lighting ?? 1;
+		landDimEnabled = UnownedLandDim.Enabled( lighting );
+		terrainUnlit = UnownedLandDim.Unlit( lighting );
 		var field = Park.Heightfield;
 		viewSpans = new TerrainViewSpans( field );
 		Camera.ParkFarPlane = FarPlane;
@@ -293,7 +299,7 @@ public sealed partial class OriginalTerrain : Entity
 		{
 			if ( include != null && !include( x, y ) )
 				continue;
-			AddCell( vertices, indices, Park.Heightfield, x, y, slotIndices[modelSlot], Park.Heightfield.GetCellWord( x, y ), DimOf( x, y ) ? TextureSlotAddressing.LandDimFlag : 0u );
+			AddCell( vertices, indices, Park.Heightfield, x, y, slotIndices[modelSlot], Park.Heightfield.GetCellWord( x, y ), (DimOf( x, y ) ? TextureSlotAddressing.LandDimFlag : 0u) | TerrainFlags );
 		}
 		return new Model( vertices.ToArray(), indices.ToArray(), material );
 	}
@@ -357,6 +363,7 @@ public sealed partial class OriginalTerrain : Entity
 		var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 		material.Set( "Color", slots.ToArray() );
 		procedural = ground;
+		ground.Unlit = terrainUnlit;
 		proceduralPart = AddPart( ground.CreateModel( material ), "procedural heightfield" );
 		ground.LandDim = DimOf;
 		// the path cells the ground reaches carry their tile as art
@@ -573,7 +580,7 @@ public sealed partial class OriginalTerrain : Entity
 			var indices = new List<uint>();
 			for ( var slot = 0; slot < batch.Length; slot++ )
 				foreach ( var cell in byTexture.GetValueOrDefault( batch[slot] ) ?? new() )
-					AddCell( vertices, indices, field, cell.X, cell.Y, slot, WordOf( cell ), WorldTranslucency.OpaqueSlotFlag | (DimOf( cell.X, cell.Y ) ? TextureSlotAddressing.LandDimFlag : 0u) );
+					AddCell( vertices, indices, field, cell.X, cell.Y, slot, WordOf( cell ), WorldTranslucency.OpaqueSlotFlag | TerrainFlags | (DimOf( cell.X, cell.Y ) ? TextureSlotAddressing.LandDimFlag : 0u) );
 			var key = string.Join( ',', batch );
 			if ( !pathMaterials.TryGetValue( key, out var material ) )
 			{

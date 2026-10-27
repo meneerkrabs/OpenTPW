@@ -157,6 +157,9 @@ internal sealed class ProceduralTerrain : IDisposable
 	/// </summary>
 	internal Func<int, int, bool>? LandDim { get; set; }
 
+	/// <summary>Whether the corners carry <see cref="TextureSlotAddressing.TerrainUnlitFlag"/> (the LIGHTING option 0); set once before the first <see cref="Refresh"/>.</summary>
+	internal bool Unlit { get; set; }
+
 	private bool meshStale;
 
 	/// <summary>The cells' dim answers changed: the mesh is written again at the next refresh whatever the list and the slots say.</summary>
@@ -413,7 +416,7 @@ internal sealed class ProceduralTerrain : IDisposable
 			}
 			permuted.CopyTo( coordinates );
 		}
-		var flags = TextureSlotAddressing.ClampFlag | (PathCellWord.HasArt( word ) ? TextureSlotAddressing.SlushFlag : 0u) | (LandDim?.Invoke( x, z ) == true ? TextureSlotAddressing.LandDimFlag : 0u);
+		var flags = TextureSlotAddressing.ClampFlag | (PathCellWord.HasArt( word ) ? TextureSlotAddressing.SlushFlag : 0u) | (LandDim?.Invoke( x, z ) == true ? TextureSlotAddressing.LandDimFlag : 0u) | (Unlit ? TextureSlotAddressing.TerrainUnlitFlag : 0u);
 		// a cell that splits along its other diagonal takes its corners in a turned order: slot 0 is (x + 1, z), 1 is (x + 1, z + 1), 2 is (x, z) and 3 is (x, z + 1), which the fixed index pattern 0 2 3, 3 1 0 turns into the triangles 0 2 1, 1 2 3
 		ReadOnlySpan<int> straight = [0, 1, 2, 3];
 		ReadOnlySpan<int> turned = [1, 3, 0, 2];

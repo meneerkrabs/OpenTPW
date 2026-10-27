@@ -55,6 +55,12 @@ public static class TextureSlotAddressing
 	public const uint LandDimFlag = 0x0100_0000;
 
 	/// <summary>
+	/// OpenTPW's vertex flag for a corner of the terrain while the LIGHTING option is 0 (<see cref="UnownedLandDim.Unlit"/>): <c>test.shader</c> shades it with the constant white tp.exe's colour table fills in
+	/// that case (<c>0x574530</c> copies the light object's +0x2C, 0xFFFFFFFF), no sun, ambient or point light. Bit 23 is free like bits 25 to 31.
+	/// </summary>
+	public const uint TerrainUnlitFlag = 0x0080_0000;
+
+	/// <summary>
 	/// [EXT:evening] Whether a self-lit material's texture name is a real light source: glow, flame, fire, torch, lamp, light, coal or lava in the name (user decisions of October 27, 2026: the glowing coals and the lava are glowing fire). Over the original files these
 	/// are the glow quads of the chests and gems (<c>glow2</c>, <c>b_glow2</c>, <c>h_glow</c>, <c>h_glow2</c>, <c>sc_glow</c>, <c>GEM_GLOW</c>), the flames (<c>flame</c>, <c>h_flame</c>, <c>fire0</c>), the lights
 	/// (<c>s_lights</c>, <c>h_light</c>), the fire pit's coals and the lava (<c>fp_coals</c>, <c>lava2</c>, <c>lava2a</c>, <c>ig_lava2</c>) and the evening extension's own torch flames (<c>tt_*_flame</c>); every other self-lit material (water, signs, beams, the fire pit's stand, panels) takes the night tint.

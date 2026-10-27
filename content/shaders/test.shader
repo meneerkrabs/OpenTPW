@@ -125,6 +125,8 @@ fragment {
     const uint FLAG_SELF_LIT = 0x04000000u;
     // TextureSlotAddressing.LightSourceFlag: a corner of a self-lit material that is a light source itself (glow, flame, fire, torch, lamp, light, coal, lava by its name): at night it stays full-bright [EXT:evening]
     const uint FLAG_LIGHT_SOURCE = 0x02000000u;
+    // TextureSlotAddressing.LandDimFlag: a corner of a terrain cell in unowned land, whose vertex colour the original halves (tp.exe 0x56FB0E: shr 1, and 0x7F7F7F, unless the LIGHTING option cleared it)
+    const uint FLAG_LAND_DIM = 0x01000000u;
 
     // CLAMP on the wrapping sampler: the coordinates stay half a texel of the coarsest mip the footprint can select
     // inside the edges (that mip's real size, floor(size / 2^level) but at least 1, so odd sizes do not bleed either),
@@ -254,6 +256,9 @@ fragment {
         bool selfLit = ( outMatFlags & FLAG_SELF_LIT ) != 0u;
         if ( selfLit )
             vShading = vec3( 1.0 );
+        // the land outside the park: half the lighting colour (the original's vertex colour shifted right by one)
+        if ( ( outMatFlags & FLAG_LAND_DIM ) != 0u )
+            vShading *= 0.5;
         // [EXT:winter-snow] snow and slush on the albedo, after the light is known (so a lit white lands near 0.9 instead of burning out, and the evening's dark ambient still darkens it) and before
         // the evening tint and the fog act on the result (g_flSnowCover 0 skips it)
         if ( g_oUbo.g_flSnowCover != 0.0 && ( outMatFlags & FLAG_TRANSPARENT ) == 0u )

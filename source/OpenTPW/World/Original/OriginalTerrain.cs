@@ -83,6 +83,32 @@ public sealed partial class OriginalTerrain : Entity
 	public Func<int, int, QueueModelTile?>? QueueModelSource { get; set; }
 	/// <summary>Whether a path cell's straight or edge takes the second texture (the chooser's roll, <see cref="PathTileVariants"/>); null: the first.</summary>
 	public Func<int, int, bool>? PathVariantSource { get; set; }
+	/// <summary>The map flags of a cell (<see cref="ParkCellFlags"/>), for the darkening of the land outside the park (<see cref="UnownedLandDim"/>); null: no land is dimmed.</summary>
+	public Func<int, int, ParkCellFlags>? LandFlagsSource { get; set; }
+
+	private bool landDimEnabled;
+
+	/// <summary>Whether the heightfield cell (<paramref name="x"/>, <paramref name="y"/>) is drawn dimmed: the lighting option allows it and the map cell the land refresh reads for it is unowned outside the entrance area.</summary>
+	private bool DimOf( int x, int y )
+	{
+		if ( !landDimEnabled || LandFlagsSource is not { } flags )
+			return false;
+		var (mx, my) = UnownedLandDim.MapCell( x, y, Park.Map.CellCountX, Park.Map.CellCountY );
+		return UnownedLandDim.Dims( flags( mx, my ) );
+	}
+
+	private ulong DimSignature()
+	{
+		var hash = 14695981039346656037UL;
+		if ( !landDimEnabled || LandFlagsSource == null )
+			return hash;
+		var field = Park.Heightfield;
+		for ( var y = 0; y < field.CellCountZ; y++ )
+			for ( var x = 0; x < field.CellCountX; x++ )
+				if ( DimOf( x, y ) )
+					hash = (hash ^ (uint)(y * 4096 + x + 0x20000000)) * 1099511628211UL;
+		return hash;
+	}
 	public int SurfaceCellCount { get; private set; }
 	/// <summary>Path cells that carry a path tile now.</summary>
 	public int PathCellCount { get; private set; }
@@ -115,6 +141,12 @@ public sealed partial class OriginalTerrain : Entity
 			return;
 		ScanCells();
 		SyncProceduralArt();
+		var dim = DimSignature();
+		if ( dim != procedureDimSignature )
+		{
+			procedureDimSignature = dim;
+			procedural?.MarkMeshStale();
+		}
 		DeleteParts( queueParts );
 		DeleteParts( pathPartsOutside );
 		DeleteParts( pathPartsAll );
@@ -168,6 +200,7 @@ public sealed partial class OriginalTerrain : Entity
 	private ulong heightfieldHoleSignature;
 	private ulong heightfieldSkipSignature;
 	private ulong outsideSkipSignature;
+	private ulong procedureDimSignature;
 
 	private ulong HoleSignature()
 	{
@@ -185,7 +218,7 @@ public sealed partial class OriginalTerrain : Entity
 	/// <summary>The signature of the cells the static ground leaves out: the holes (<paramref name="holes"/>) and the path cells, which take a texture of their own.</summary>
 	private ulong SkipSignature( ulong holes )
 	{
-		var hash = holes;
+		var hash = holes ^ DimSignature();
 		var countX = Park.Heightfield.CellCountX;
 		foreach ( var key in pathCells.Keys.Order() )
 			hash = (hash ^ (uint)(key / countX * 4096 + key % countX + 0x40000000)) * 1099511628211UL;
@@ -199,8 +232,8 @@ public sealed partial class OriginalTerrain : Entity
 		var field = Park.Heightfield;
 		for ( var y = 0; y < field.CellCountZ; y++ )
 			for ( var x = 0; x < field.CellCountX; x++ )
-				if ( !ground.IsProcedural( x, y ) && GroundSkips( x, y ) )
-					hash = (hash ^ (uint)(y * 4096 + x)) * 1099511628211UL;
+				if ( !ground.IsProcedural( x, y ) )
+					hash = (hash ^ (uint)(y * 4096 + x + (GroundSkips( x, y ) ? 0 : 0x100000) + (DimOf( x, y ) ? 0x200000 : 0))) * 1099511628211UL;
 		return hash;
 	}
 
@@ -211,6 +244,8 @@ public sealed partial class OriginalTerrain : Entity
 	private IEnumerable<bool> BuildHeightfield( Dictionary<string, Texture> textures )
 	{
 		heightfieldTextures = textures;
+		// the LIGHTING option is applied when a level is loaded, like the procedural textures
+		landDimEnabled = UnownedLandDim.Enabled( IGraphicsSettings.Instance?.Detail.Lighting ?? 1 );
 		var field = Park.Heightfield;
 		viewSpans = new TerrainViewSpans( field );
 		Camera.ParkFarPlane = FarPlane;
@@ -254,7 +289,7 @@ public sealed partial class OriginalTerrain : Entity
 		{
 			if ( include != null && !include( x, y ) )
 				continue;
-			AddCell( vertices, indices, Park.Heightfield, x, y, slotIndices[modelSlot], Park.Heightfield.GetCellWord( x, y ) );
+			AddCell( vertices, indices, Park.Heightfield, x, y, slotIndices[modelSlot], Park.Heightfield.GetCellWord( x, y ), DimOf( x, y ) ? TextureSlotAddressing.LandDimFlag : 0u );
 		}
 		return new Model( vertices.ToArray(), indices.ToArray(), material );
 	}
@@ -319,6 +354,7 @@ public sealed partial class OriginalTerrain : Entity
 		material.Set( "Color", slots.ToArray() );
 		procedural = ground;
 		proceduralPart = AddPart( ground.CreateModel( material ), "procedural heightfield" );
+		ground.LandDim = DimOf;
 		// the path cells the ground reaches carry their tile as art
 		SyncProceduralArt();
 		// the cells the procedural textures do not reach keep the static ground
@@ -533,7 +569,7 @@ public sealed partial class OriginalTerrain : Entity
 			var indices = new List<uint>();
 			for ( var slot = 0; slot < batch.Length; slot++ )
 				foreach ( var cell in byTexture.GetValueOrDefault( batch[slot] ) ?? new() )
-					AddCell( vertices, indices, field, cell.X, cell.Y, slot, WordOf( cell ), WorldTranslucency.OpaqueSlotFlag );
+					AddCell( vertices, indices, field, cell.X, cell.Y, slot, WordOf( cell ), WorldTranslucency.OpaqueSlotFlag | (DimOf( cell.X, cell.Y ) ? TextureSlotAddressing.LandDimFlag : 0u) );
 			var key = string.Join( ',', batch );
 			if ( !pathMaterials.TryGetValue( key, out var material ) )
 			{

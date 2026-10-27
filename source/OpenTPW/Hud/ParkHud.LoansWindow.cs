@@ -254,7 +254,7 @@ public sealed partial class ParkHud
 		Model( "listFrame", Control( 0x12C4BD ) );
 		Model( "summaryFrame", Control( 0x12C4C1 ) );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[outstandingLoans ? UIStrings.GraphOutstandingLoans : UIStrings.GraphAvailableLoans],
-			Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
+			Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
 			Bounds = Control( 0x12C4CA ).Rect, Anchor = UiAnchor.Center } );
 		var captions = new[] { UIStrings.LenderName, UIStrings.Amount, UIStrings.LoanTerm, UIStrings.InterestRate, UIStrings.MonthlyRepayment, UIStrings.TotalPayable };
 		var outstandingCaptions = new[] { UIStrings.LenderName, UIStrings.OriginalAmount, UIStrings.MonthsRemaining, UIStrings.InterestRate, UIStrings.MonthlyRepayment, UIStrings.RemainingBalance };

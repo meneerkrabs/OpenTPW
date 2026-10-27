@@ -232,7 +232,7 @@ public sealed class OnlineScreens
 		stack.RemoveWhere( other => other.Name == ChatParkDetailsScreenName );
 		var window = new UiRect( 248, 30, 1552, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 512, 75, 1024, 80 ), Anchor = UiAnchor.Center, Text = () => scene.Name } );
 		screen.Add( new UiLabel { Id = "theme", Font = fonts => fonts.Label, Bounds = new UiRect( 380, 233, 481, 45 ), Anchor = UiAnchor.Center,
 			Text = () => scene.Level is { } level ? ChatParkThemeRow( level ) : "" } );
@@ -1033,7 +1033,7 @@ public sealed class OnlineScreens
 		var screen = new UiScreen( "onlineNews" );
 		var window = new UiRect( 186, 30, 1832, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 822, 98, 473, 79 ), Anchor = UiAnchor.Center,
 			// [DATA:Language/English/UITEXT.str:266] the original news panel's heading
 			Text = () => OnlineStrings.Ui( OnlineStrings.NewsFromThemeParkWorld, "News from ThemeParkWorld.com" ) } );
@@ -1120,7 +1120,7 @@ public sealed class OnlineScreens
 		var screen = new UiScreen( "onlineLogin" );
 		var window = table.Root.Rect;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = window, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = table.Control( 0x4D ).Rect, Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ) } );
 		// The original fields: 16 characters each, labels inside the field's frame.
 		UiTextField Field( string id, uint control, bool secret )
@@ -1334,7 +1334,7 @@ public sealed class OnlineScreens
 		var screen = new UiScreen( "findParks" );
 		var window = new UiRect( 108, 30, 1832, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 758, 74, 472, 80 ), Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( OnlineStrings.FindParks, "Find Parks" ) } );
 		// The original search field (0xe05a) holds the player whose parks are listed and starts with the player's own name.
 		var search = screen.Add( new UiTextField { Id = "search", MaximumLength = 64, Model = "f_text1", Bounds = new UiRect( 380, 839, 742, 99 ), Anchor = UiAnchor.Center } );
@@ -1407,7 +1407,7 @@ public sealed class OnlineScreens
 		stack.RemoveWhere( other => other.Name == "parkDetails" );
 		var window = new UiRect( 248, 30, 1552, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Id = "parkName", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 512, 75, 1024, 80 ), Anchor = UiAnchor.Center, Text = () => park.Name } );
 		// The eight original label rows, top to bottom (data:0x51150); each shows its original UITEXT label.
 		var rows = new (float Y, Func<string> Label, Func<string> Value)[]
@@ -1475,7 +1475,7 @@ public sealed class OnlineScreens
 		var window = new UiRect( 248, 30, 1552, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
 		// [DATA:Language/English/UITEXT.str:446] "Other Parks In " + the location name (0x1018c880)
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = new UiRect( 767, 67, 472, 79 ), Anchor = UiAnchor.Center,
 			Text = () => OnlineStrings.Ui( OnlineStrings.OtherParksIn, "Other Parks In " ) + city.Name } );
 		var columns = new (float Offset, int Text)[]
@@ -1598,7 +1598,7 @@ public sealed class OnlineScreens
 		var screen = new UiScreen( "publishPark" );
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		var title = table.Control( 0x11E5 );
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = title.Rect, Anchor = UiAnchor.Center,
 			Text = () => { var text = OnlineStrings.Ui( OnlineStrings.PublishParkTitle, OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish Park" ) ); return city == null ? text : $"{text}: {city.Name}"; } } );
 		UiTextField Field( string id, uint control, int maximumLength, string text )
@@ -1684,7 +1684,7 @@ public sealed class OnlineScreens
 		var table = OriginalLayoutTables.PostcardWindow;
 		LayoutNode Control( uint id ) => table.Control( id );
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "heading", Text = () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send Postcard" ), Font = fonts => fonts.Title, Color = UiColors.Title,
+		screen.Add( new UiLabel { Id = "heading", Text = () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send Postcard" ), Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title,
 			Align = UiAlign.Center, Fit = true, Bounds = Control( 0x5D9E ).Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "photo", Model = Control( 0x5D9F ).Model!, Bounds = Control( 0x5D9F ).Rect, Anchor = UiAnchor.Center } );
 		var edited = new HashSet<string>( StringComparer.Ordinal );
@@ -1790,7 +1790,7 @@ public sealed class OnlineScreens
 		var table = OriginalLayoutTables.OutboxWindow;
 		LayoutNode Control( uint id ) => table.Control( id );
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Id = "title", Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Bounds = Control( 0xEE9 ).Rect, Anchor = UiAnchor.Center, Text = () => OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent Postcards" ) } );
 		IReadOnlyList<(string Path, Postcard? Card, string? Error)> cards = Array.Empty<(string, Postcard?, string?)>();
 		void Reload() => cards = Session.Folders.List( Session.Folders.Outbox );

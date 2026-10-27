@@ -45,7 +45,8 @@ public sealed class UiMenuItem : UiElement
 		for ( var count = frames.Advance( context.Delta ); count > 0; count-- )
 			ramp.Step();
 		var color = !Enabled ? UiColors.Disabled : ramp.Color;
-		context.DrawFittedText( Font( context.Fonts ), Text(), ScreenRect( context.Canvas ), color, UiAlign.Center );
+		// [BIN:TPW-EXE:0x48c150 pause menu lines] the lines are made through 0x492f60, which constructs a title control (0x491920 at 0x49309a), so they carry its shadow
+		context.DrawFittedText( Font( context.Fonts ), Text(), ScreenRect( context.Canvas ), color, UiAlign.Center, shadow: true );
 	}
 }
 

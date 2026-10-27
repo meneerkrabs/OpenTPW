@@ -69,7 +69,7 @@ public sealed class UiContext
 	}
 
 	/// <summary>Draws text inside <paramref name="rect"/> as tp.exe's text library places it: the block aligned horizontally, each line aligned inside the block, the block centred vertically.</summary>
-	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = true, int? textScale = null, bool originalPlacement = true )
+	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = false, int? textScale = null, bool originalPlacement = true )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
@@ -104,11 +104,12 @@ public sealed class UiContext
 			ix = (int)MathF.Round( x );
 			iy = (int)MathF.Round( y );
 		}
-		// [BIN:TPW-EXE:0x48f830 text control] one 0x6ae0f0 call into the control's bitmap (texel alpha 17 x coverage, 0x6b24b0), then the sprite quads of the state word 0x7060556 (0x58a010): the control colour blended with coverage / 15
-		// [APPROX:UI-007] drop shadow one text pixel down-right in OpenTPW's own colour; only the original's title controls (0x491ab0) draw one (a grey copy moved by (-2, +2) bitmap pixels under the white string, modulated by the title colour), plain text controls draw their string once — evidence needed: a decision on dropping the shadow from plain text and giving titles the original's darker copy
+		// [BIN:TPW-EXE:0x48f830 text control] one 0x6ae0f0 call into the control's bitmap (texel alpha 17 x coverage, 0x6b24b0), then the sprite quads of the state word 0x7060556 (0x58a010): the control colour blended with coverage / 15; plain text has no shadow
+		// [BIN:TPW-EXE:0x491ab0 title control] a title control (constructor 0x491920) first draws a grey (128,128,128, alpha 0x80) copy on the rectangle moved by (-2, +2) pixels (0x491dd0-0x491e1a), then the white string (0x491e27-0x491e84), both modulated by the control colour
 		if ( shadow )
-			Batch.AddText( font, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
-		Batch.AddText( font, layout, ix, iy, color, scale, text );
+			Batch.AddTitleText( font, layout, ix, iy, color, scale, text );
+		else
+			Batch.AddText( font, layout, ix, iy, color, scale, text );
 	}
 
 	/// <summary>
@@ -118,7 +119,7 @@ public sealed class UiContext
 	/// the line box. Horizontally the text's own ink is aligned; vertically the font's letter box (capitals,
 	/// ascenders and descenders) is centred, so labels on neighbouring buttons share a baseline.
 	/// </summary>
-	public void DrawFittedText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Center, bool shadow = true )
+	public void DrawFittedText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Center, bool shadow = false )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
@@ -154,7 +155,7 @@ public sealed class UiContext
 	}
 
 	/// <summary>Draws single-line text in <paramref name="chosen"/> at whole text scale <paramref name="scale"/>, placed like <see cref="DrawFittedText"/> (ink aligned horizontally, letter box centred vertically).</summary>
-	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool shadow = true )
+	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool shadow = false )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
@@ -172,8 +173,9 @@ public sealed class UiContext
 		var ix = (int)MathF.Round( x );
 		var iy = (int)MathF.Round( y );
 		if ( shadow )
-			Batch.AddText( chosen, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
-		Batch.AddText( chosen, layout, ix, iy, color, scale, text );
+			Batch.AddTitleText( chosen, layout, ix, iy, color, scale, text );
+		else
+			Batch.AddText( chosen, layout, ix, iy, color, scale, text );
 	}
 
 	/// <summary>
@@ -218,7 +220,7 @@ public sealed class UiContext
 
 	private readonly Dictionary<FontAtlas, (int Top, int Bottom)> letterBoxes = new();
 
-	/// <summary>Unscaled box of <paramref name="text"/>'s drawn pixels, widened vertically to the font's letter box and by the drop shadow.</summary>
+	/// <summary>Unscaled box of <paramref name="text"/>'s drawn pixels, widened vertically to the font's letter box and by the title shadow.</summary>
 	private (int Left, int Top, int Right, int Bottom) InkBox( FontAtlas font, string text, bool shadow )
 	{
 		if ( !letterBoxes.TryGetValue( font, out var letters ) )
@@ -228,10 +230,11 @@ public sealed class UiContext
 			letterBoxes[font] = letters;
 		}
 		var layout = Layout( font, text );
-		var extra = shadow ? 1 : 0;
+		// the title shadow's copy sits UiBatch.TitleShadowOffset pixels to the left and below the string
+		var extra = shadow ? UiBatch.TitleShadowOffset : 0;
 		if ( layout.Glyphs.Count == 0 )
-			return (0, letters.Top, layout.Width + extra, letters.Bottom + extra);
-		return (layout.InkLeft, Math.Min( layout.InkTop, letters.Top ), layout.InkRight + extra, Math.Max( layout.InkBottom, letters.Bottom ) + extra);
+			return (-extra, letters.Top, layout.Width, letters.Bottom + extra);
+		return (layout.InkLeft - extra, Math.Min( layout.InkTop, letters.Top ), layout.InkRight, Math.Max( layout.InkBottom, letters.Bottom ) + extra);
 	}
 
 	/// <summary>Draws a model frame stretched so its selected-mesh fit bounds fill <paramref name="rect"/>.</summary>
@@ -356,8 +359,10 @@ public sealed class UiLabel : UiElement
 	public Func<RgbaByte>? ColorSource { get; set; }
 	public UiAlign Align { get; set; } = UiAlign.Left;
 	public bool Wrap { get; set; }
-	/// <summary>Drop shadow under the text; the dark option labels have none.</summary>
-	public bool Shadow { get; set; } = true;
+	/// <summary>
+	/// The title control's shadow (<see cref="UiBatch.AddTitleText"/>): window, screen and lobby titles have it; every other text control of the original draws its string once.
+	/// </summary>
+	public bool Shadow { get; set; }
 	/// <summary>Fit the single line into the rectangle (smaller font, smaller scale) instead of the small-font fallback.</summary>
 	public bool Fit { get; set; }
 	/// <summary>Labels of one group share a single font and scale (<see cref="UiContext.ChooseUniform"/>).</summary>

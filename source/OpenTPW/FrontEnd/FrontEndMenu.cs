@@ -101,7 +101,7 @@ public sealed partial class FrontEndMenu
 		var panel = table.Root;
 		screen.Add( new UiModelImage { Id = "lobbyPanel", Model = panel.Model!, Bounds = panel.Rect, Anchor = UiAnchor.BottomLeft } );
 		screen.Add( new UiModelImage { Id = "lobbyButtons", Model = panel.Model2!, Bounds = panel.Inner!.Value, Anchor = UiAnchor.BottomLeft } );
-		screen.Add( new UiLabel { Id = "islandName", Text = () => SelectedName, Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
+		screen.Add( new UiLabel { Id = "islandName", Text = () => SelectedName, Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
 			Bounds = OriginalLayoutTables.LobbyCity.Control( 0x49D9 ).Rect, Anchor = UiAnchor.BottomLeft } );
 		UiButton LobbyButton( string id, string model, Action clicked ) => screen.Add( new UiButton
 		{
@@ -173,7 +173,7 @@ public sealed partial class FrontEndMenu
 		var window = table.Root.Rect;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = window, Anchor = UiAnchor.Center } );
 		// [EXT:no-player-profiles] the title box shows "Game Mode" where the original's dialog asks for the player's name
-		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.GameMode], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x709 ).Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.GameMode], Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x709 ).Rect, Anchor = UiAnchor.Center } );
 		var toggles = table.All.Where( node => node.Model == "b_ltoggle" ).OrderBy( node => node.Rect.Y ).ToArray();
 		var modes = new (string Id, UIStrings Label, GameMode Mode, int Help)[]
 		{
@@ -266,7 +266,7 @@ public sealed partial class FrontEndMenu
 		var screen = new LoadChooserScreen();
 		var table = OriginalLayoutTables.LoadDialog;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.LoadPark], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.LoadPark], Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center,
 			Fit = true, Bounds = table.Control( 0x23BCE1 ).Rect, Anchor = UiAnchor.Center } );
 		var frame = table.Control( 0x23BCE0 );
 		var content = frame.Inner!.Value;

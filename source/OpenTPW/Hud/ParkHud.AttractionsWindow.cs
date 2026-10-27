@@ -356,7 +356,7 @@ public sealed partial class ParkHud
 		Model( "window", table.Root );
 		Model( "listFrame", table.Model( "list_all" ) );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[AttractionCategories.First( tab => tab.Category == attractionCategory ).Title],
-			Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x12C4BE ).Rect, Anchor = UiAnchor.Center } );
+			Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x12C4BE ).Rect, Anchor = UiAnchor.Center } );
 		foreach ( var tab in AttractionCategories )
 		{
 			var category = tab;

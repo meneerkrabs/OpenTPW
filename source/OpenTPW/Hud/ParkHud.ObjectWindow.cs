@@ -202,7 +202,7 @@ public sealed partial class ParkHud
 			Id = "infoName",
 			Text = () => InfoNow == null ? "" : InfoNow.DisplayName ?? strings.Object( InfoNow.ObjectNameIndex ),
 			Font = fonts => fonts.Heading,
-			Color = UiColors.Title,
+			Shadow = true, Color = UiColors.Title,
 			Align = UiAlign.Center,
 			Fit = true
 		} );

@@ -4,7 +4,9 @@ namespace OpenTPW;
 /// The original's render state word as tp.exe's decoder <c>0x567620</c> reads it. Every primitive record carries one (<c>record+4</c>, built by the face
 /// state builder <c>0x581790</c> for model faces and fixed for the 2D sprite quads of <c>0x58A010</c>); the decoder writes only the bits that changed
 /// since the last primitive. This type decodes the bits whose meaning is read; bits it does not name (for example 0x800000, 0x1000000, 0x2000000 and
-/// 0x4000000, which the decoder handles only as dither, sub-pixel and perspective switches) have no effect on the picture here.
+/// 0x4000000, which the decoder handles only as dither, sub-pixel and perspective switches) have no effect on the picture here. Caveats: stage 0's alpha operation is
+/// MODULATE only when the device supports it, else SELECTARG1 (texture alpha, 0x566A4D-0x566A66); and when the engine flag bit 31 ([0x8BCBC8]) is set the decoder forces the blend factors and blend
+/// enable (0x567930-0x567992); that override is not modelled and no setter of the flag was found.
 /// </summary>
 // [BIN:TPW-EXE:0x567620 state decoder] 0x400 -> ALPHATESTENABLE; 0x200 picks the second alpha reference of the pair at 0x7012D8 (0xF0, else 0x10); 0x100 -> ALPHABLENDENABLE (0x567992); low byte: SRCBLEND = (w >> 4) & 15, DESTBLEND = w & 15 (0x5679B0);
 // 0x8000 -> ZENABLE off; 0x800 -> ZWRITEENABLE off; 0x80000 -> specular; 0x100000 -> fog; 0x400000 -> ADDRESS wrap with a linear MINFILTER (else clamp with a point MINFILTER, 0x567910);

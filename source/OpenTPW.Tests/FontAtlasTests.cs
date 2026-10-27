@@ -258,6 +258,29 @@ public class FontAtlasTests
 	}
 
 	[TestMethod]
+	public void PlainTextDrawsOnceAndATitleDrawsTheGreyCopyTwoPixelsLeftAndBelow()
+	{
+		var atlas = new FontAtlas( CreateFont( 10, new SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ), new SyntheticGlyph( '?', 2, 2, 0, 0, 4 ) ) );
+		var rect = new UiRect( 0, 0, 40, 20 );
+		var yellow = new RgbaByte( 234, 239, 102, 255 );
+		// 0x48f830: plain text is one pass, whatever the default
+		var plain = new UiContext( null!, null!, null! );
+		plain.DrawText( atlas, "a", rect, yellow, UiAlign.Left, textScale: 2 );
+		Assert.AreEqual( 1, plain.Batch.Glyphs.Count );
+		Assert.AreEqual( yellow, plain.Batch.Glyphs[0].Color );
+		// 0x491ab0: the copy (128,128,128, alpha 0x80) on the rectangle moved by (-2, +2) pixels, then the string, both modulated by the control colour
+		var title = new UiContext( null!, null!, null! );
+		title.DrawText( atlas, "a", rect, yellow, UiAlign.Left, shadow: true, textScale: 2 );
+		var glyphs = title.Batch.Glyphs;
+		Assert.AreEqual( 2, glyphs.Count );
+		Assert.AreEqual( (plain.Batch.Glyphs[0].X - 4, plain.Batch.Glyphs[0].Y + 4), (glyphs[0].X, glyphs[0].Y), "two pixels at text scale 2" );
+		Assert.AreEqual( (plain.Batch.Glyphs[0].X, plain.Batch.Glyphs[0].Y), (glyphs[1].X, glyphs[1].Y) );
+		Assert.AreEqual( new RgbaByte( 117, 119, 51, 119 ), glyphs[0].Color );
+		Assert.AreEqual( yellow, glyphs[1].Color );
+		Assert.AreEqual( 1, title.Batch.TextDraws.Count, "only the string is a text draw" );
+	}
+
+	[TestMethod]
 	public void EveryOriginalEnglishFontPacksAllGlyphsWithoutOverlap()
 	{
 		var directory = OriginalFontDirectory();

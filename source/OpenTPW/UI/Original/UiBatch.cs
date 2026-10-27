@@ -153,6 +153,29 @@ public sealed class UiBatch
 		}
 	}
 
+	/// <summary>The title control's shadow offset in text pixels: the copy sits this far to the left and below the string (rectangle (L-2, T+2, R-2, B+2), 0x491dd0-0x491dfb).</summary>
+	public const int TitleShadowOffset = 2;
+
+	/// <summary>
+	/// The colour of a title's shadow copy after the quads modulate it by the control colour: the copy is drawn grey (128,128,128) with colour alpha 0x80, whose
+	/// coverage is scaled to alpha 17 x floor(c x 128 / 255), at most 119 of 255 (0x6b26d0-0x6b2702); OpenTPW scales the glyph alpha by 119/255 instead of the stepped levels.
+	/// </summary>
+	public static RgbaByte TitleShadowColor( RgbaByte color ) =>
+		new( (byte)(color.R * 128 / 255), (byte)(color.G * 128 / 255), (byte)(color.B * 128 / 255), (byte)((color.A * 119 + 127) / 255) );
+
+	/// <summary>
+	/// Draws a title control's text: the shadow copy two text pixels to the left and below the string, then the string over it
+	/// (<see cref="AddText"/>). Where the original writes the string's texels over the copy, the string here blends over it, which tints the string's partly covered edge pixels toward the shadow.
+	/// </summary>
+	// [BIN:TPW-EXE:0x491ab0 title control] the grey copy (128,128,128,0x80) on (L-2, T+2, R-2, B+2), then the white string; the quads modulate both by the control colour
+	// [APPROX:UI-007] the copy's alpha is the coverage scaled by 119/255 (the original steps 17 x floor(c x 128 / 255)) and the string blends over the copy instead of replacing its texels — evidence needed: a CPU-composed title bitmap
+	public void AddTitleText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale = 1, string? text = null )
+	{
+		scale = Math.Max( 1, scale );
+		AddText( atlas, layout, x - TitleShadowOffset * scale, y + TitleShadowOffset * scale, TitleShadowColor( color ), scale );
+		AddText( atlas, layout, x, y, color, scale, text );
+	}
+
 	/// <summary>
 	/// Draws BF4 text with its top-left at (<paramref name="x"/>, <paramref name="y"/>), each atlas texel
 	/// covering <paramref name="scale"/>×<paramref name="scale"/> pixels at integer positions.

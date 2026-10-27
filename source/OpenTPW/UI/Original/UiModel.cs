@@ -49,8 +49,7 @@ public sealed record UiModelFrame( string NodeName, IReadOnlyList<UiModelPart> P
 /// frames. Native drawing composes ancestors, then fits the selected mesh's stored bound endpoints
 /// to the control; a common XY translation of geometry and endpoints cancels in that fit. Each frame's
 /// geometry and bound endpoints use the node's world matrix, its local matrix times its parent's world
-/// matrix (translations included, as the instance traverser 0x57A530 accumulates them); the control
-/// rotation of the original draw is not read (UI-003). Texture V runs bottom-up
+/// matrix (translations included, as the instance traverser 0x57A530 accumulates them); the window angle is applied at draw time (<see cref="UiContext.DrawFrame(UiModelFrame, UiRect, RgbaByte?, float, System.Numerics.Vector2)"/>), and the state selection stays open (UI-003). Texture V runs bottom-up
 /// (as in the 3D shaders): button art occupies the top-left of its texture while the UVs span
 /// v 0.42..1, so V is flipped here.
 /// </summary>
@@ -79,7 +78,7 @@ public sealed class UiModel
 		DrawingKey = UiModels.RootNameKey( RootNodeName );
 		AuthoredCenter = new NVector2( root.Transform.M41, -root.Transform.M42 );
 		var frames = new List<UiModelFrame>();
-		// [BIN:TPW-EXE:0x57a530 instance traverser] a node's world matrix is its local matrix (node+0x10) combined with the accumulated matrices of its ancestors (the root starts from identity at 0x57a55b, children are visited at node+0xc with the accumulated matrices, 0x57a6ec); no corpus child has a rotation or scale, only translations, which cancel in the selected-mesh fit
+		// [BIN:TPW-EXE:0x57a530 instance traverser] a node's world matrix is its local matrix (node+0x10) combined with the accumulated matrices of its ancestors (the root starts as its local matrix times the caller's, the identity set at 0x57a55b is overwritten, children are visited at node+0xc with the accumulated matrices, 0x57a6ec); no corpus child has a rotation or scale, only translations, which cancel in the selected-mesh fit
 		var worlds = new Dictionary<int, NMatrix4x4>();
 		foreach ( var node in OrderedNodes( model ) )
 		{
@@ -88,7 +87,7 @@ public sealed class UiModel
 				: node.Transform * parentWorld;
 			if ( node.MeshIndex < 0 || node.MeshIndex >= model.Meshes.Count )
 				continue;
-			// [APPROX:UI-003] the control rotation of the original draw is not read (no rotation field was seen in the traverser 0x57a530); a UI model is flattened without one — evidence needed: the UI control draw's use of a rotation, if any
+			// [APPROX:UI-003] the original's state selection of a UI model draw beyond the stored selected-mesh endpoints is not traced; the window angle is DrawFrame's turn (0x476c50) — evidence needed: the UI control draw's selection of a state frame
 			var frame = Flatten( model.Meshes[node.MeshIndex], node.Name, worlds[node.Index] );
 			if ( frame != null )
 				frames.Add( frame );

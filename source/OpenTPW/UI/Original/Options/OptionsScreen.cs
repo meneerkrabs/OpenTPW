@@ -124,7 +124,7 @@ public static class OptionsScreen
 		context.Batch.AddRectangle( area, UiColors.HelpBackground );
 		context.DrawFittedText( context.Fonts.Small, text, area with { Height = area.Height * 0.7f }, UiColors.Text );
 		var bar = new UiRect( area.X + area.Width * 0.05f, area.Y + area.Height * 0.74f, area.Width * 0.9f, area.Height * 0.12f );
-		context.Batch.AddRectangle( bar, UiColors.Shadow );
+		context.Batch.AddRectangle( bar, UiColors.ProgressTrack );
 		context.Batch.AddRectangle( bar with { Width = bar.Width * Math.Clamp( fraction, 0f, 1f ) }, UiColors.Value );
 	}
 
@@ -188,7 +188,7 @@ public static class OptionsScreen
 				Id = "title",
 				Text = title,
 				Font = fonts => fonts.Title,
-				Color = UiColors.Title,
+				Shadow = true, Color = UiColors.Title,
 				Align = UiAlign.Center,
 				Fit = true,
 				// [DATA:options table 0x4b0dc:120020] title text rectangle

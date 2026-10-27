@@ -19,7 +19,7 @@ public static class UiDialogs
 			Id = "title",
 			Text = title,
 			Font = fonts => fonts.Title,
-			Color = UiColors.Title,
+			Shadow = true, Color = UiColors.Title,
 			Align = UiAlign.Center,
 			Bounds = new UiRect( rect.X + rect.Width * 0.06f, rect.Y + rect.Height * 0.04f, rect.Width * 0.8f, 110 ),
 			Anchor = UiAnchor.Center
@@ -46,7 +46,7 @@ public static class UiDialogs
 			Id = "caption",
 			Text = () => SplitCaption( text() ).Caption,
 			Font = fonts => fonts.Label,
-			Color = UiColors.Title,
+			Shadow = true, Color = UiColors.Title,
 			Align = UiAlign.Center,
 			Fit = true,
 			Bounds = caption,

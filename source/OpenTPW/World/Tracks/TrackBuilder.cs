@@ -209,19 +209,14 @@ public sealed class TrackBuilder
 		return true;
 	}
 
-	/// <summary>
-	/// Writes the two station tiles of a ride (type 13 or 18 origins and type 12 extensions): each with its flow axis connected both ways, or, with <paramref name="lineArms"/>, with only the arms
-	/// the station's own line writes (the first tile toward the second, the second back toward the first).
-	/// </summary>
-	// [BIN:TPW-EXE:0x0052A1A0 station line] the line ops 0x80 (0x539220) give each cell after the line's first the arm toward the previous cell and the previous cell the arm back (0x522700 twice), the first cell of the line none, so the first station tile has the arm toward the second and the second the arm toward the first; the arms toward the exit and the entry come with their tiles (PlaceInitialStation)
-	public void PlaceStation( TrackStation station, bool lineArms = false )
+	/// <summary>Writes the two station tiles of a ride (type 13 or 18 origins and type 12 extensions), each with its flow axis connected both ways.</summary>
+	public void PlaceStation( TrackStation station )
 	{
 		var owner = OwnerOf( station );
 		var axis = (byte)(station.Heading | TrackHeading.Opposite( station.Heading ));
 		foreach ( var (x, y) in station.Tiles )
 		{
 			var originIndex = Tracks.IndexOf( x, y );
-			var mask = !lineArms ? axis : (x, y) == station.First ? station.Heading : TrackHeading.Opposite( station.Heading );
 			foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
 			{
 				ClearPath( cx, cy );
@@ -231,22 +226,16 @@ public sealed class TrackBuilder
 				var origin = (cx, cy) == (x, y);
 				Cells.SetType( cx, cy, origin ? StartType : TrackCellTypes.Extension );
 				// [BIN:TPW-EXE:0x00524F1E station link] the station tiles' flow link is the heading of the station's rotation (0x524EE9..0x524F19: 0 → 4, 90 → 1, 180 → 0x40, 270 → 0x10)
-				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? mask : (byte)0, Link = origin ? station.Heading : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner, BaseType = baseType } );
+				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? axis : (byte)0, Link = origin ? station.Heading : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner, BaseType = baseType } );
 			}
 		}
 	}
 
-	/// <summary>
-	/// Fresh placement only: the station line with its own arms, then the exit and the entry tile as the placement lays them, free (the byte 0x8186D4) and one after the other, each
-	/// without overriding a placement refusal. A tile that is laid takes the arm toward its station tile and gives that station tile the arm back; a refused one leaves the station tile
-	/// without it. Loading or migrating a station uses <see cref="PlaceStation"/> instead.
-	/// </summary>
+	/// <summary>Fresh placement only: attempts the two free adjacent origins without overriding placement refusals. Loading or migrating a station uses <see cref="PlaceStation"/> instead.</summary>
 	// [BIN:TPW-EXE:0x005253E9 initial track] placement sets free byte 0x8186D4; secondary writer 0x538FC0 skips the tile price and debit, not validation or existing-tile overlap.
-	// [BIN:TPW-EXE:0x005254C5 exit tile] after the station line 0x52A1A0 the placement runs the ops 0x87, the type op (0x52F840: the tool mode 0xB or 0x10), 0x80, 0x82, 0x83, 0x85, 0x86 and 0x81 over the exit cell as a one-tile line and pushes it as the tool's first vertex (0x52FBF0): the op 0x80 of that first cell takes its step from the sentinel 0x763B00/04, which the station line's last tile left at (±2, 0) or (0, ±2) (0x539231..0x53923E, 0x539634), so the exit gets the arm toward the second station tile and that tile the arm toward the exit, while the op 0x82 reads its own zero step (the link stays 0)
-	// [BIN:TPW-EXE:0x00525596 entry tile] the same ops over the entry cell (0x52A420, the tile before the first station tile), then by hand the arm and the flow link toward the first station tile (0x522700, 0x5227E0 with the heading from the entry to 0x7639E0/E4) and the arm back on that tile (0x50C3E0, 0x4D8C00, 0x522700)
 	public void PlaceInitialStation( TrackStation station )
 	{
-		PlaceStation( station, lineArms: true );
+		PlaceStation( station );
 		var owner = OwnerOf( station );
 		foreach ( var at in new[] { station.Exit, station.Entry } )
 		{

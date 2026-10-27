@@ -257,6 +257,30 @@ public class CoopUndoJournalTests
 	}
 
 	[TestMethod]
+	public void AnotherPlayersSegmentFromTheBendCornerSinceTheEarlierSegmentPutsTheBendsClearingInTheWay()
+	{
+		var journaled = NewJournaled();
+		QueueOf( journaled );
+		var cells = journaled.Level.Guests!.Grid.Cells;
+		var first = journaled.Run( 1, Segment( journaled, 10, 2, 8, 2 ) ).Record;
+		// another member's segment up from the first's end (8, 2), then the first's member's segment down from it
+		var up = journaled.Run( 2, Segment( journaled, 8, 2, 8, 0 ) );
+		Assert.IsTrue( up.Result.Accepted, up.Result.Reason );
+		var second = journaled.Run( 1, Segment( journaled, 8, 2, 8, 4 ) );
+		Assert.IsTrue( second.Result.Accepted, second.Result.Reason );
+		var fields = (cells.FieldsAt( 8, 2 ), cells.FieldsAt( 8, 3 ), cells.FieldsAt( 8, 4 ), cells.FieldsAt( 8, 1 ));
+		// the second's undo walks up to (8, 2) and finds it a bend (toward (9, 2) and the other member's (8, 1)), which it clears whatever its counter: the other member's segment would lose
+		// its corner, so the bend's clearing is in the way, nothing changed
+		Assert.AreEqual( TakeBackVerdict.InTheWay, journaled.TakeBack( 1, second.Record ) );
+		Assert.AreEqual( fields, (cells.FieldsAt( 8, 2 ), cells.FieldsAt( 8, 3 ), cells.FieldsAt( 8, 4 ), cells.FieldsAt( 8, 1 )) );
+		// nor does the other member's segment go: the second counted the corner up since, and its own undo would clear that corner too (a bend toward (9, 2) and (8, 3)); each waits on
+		// the other, as no take-back undoes over another player's work, and the removal under the pointer stays for them
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBack( 2, up.Record ) );
+		Assert.AreEqual( fields, (cells.FieldsAt( 8, 2 ), cells.FieldsAt( 8, 3 ), cells.FieldsAt( 8, 4 ), cells.FieldsAt( 8, 1 )) );
+		Assert.AreEqual( TakeBackVerdict.NotLast, journaled.TakeBack( 1, first ) );
+	}
+
+	[TestMethod]
 	public void AnotherPlayersSegmentOnTheEarlierCellBesideTheBendStillRefusesItUntilTakenBack()
 	{
 		var journaled = NewJournaled();

@@ -2478,7 +2478,7 @@ action goes to the host, and the guest's tools and windows follow what came back
 
 `[EXT:online-coop-undo]` C5 makes Backspace in a building tool of a shared park take back the player's own last
 step of that tool, for the host and every guest alike, under the normal refund rules (decision Q14, A), and
-refuses it while a later command still depends on it. The plan (v24, after twenty-four Codex rounds) makes it
+refuses it while a later command still depends on it. The plan (v25, after twenty-five Codex rounds) makes it
 three parts that reach main as one merge: C5-1 the host's undo journal, the path, queue and slide tools;
 C5-2 the pool strokes and the wave machine; C5-3 the kart, water and coaster tools.
 
@@ -2545,7 +2545,8 @@ step of it (a take-back of it made by hand takes nothing), its player removes it
 and a step of another player's it crossed or joined can no longer be taken back. A refused line ends the tool, as
 before, so no segment that laid nothing stays on it. A tool's own chain goes back step by step: a native queue's later segment clears the bend corner it shares with
 the member's own earlier one, as the original's undo does, and the earlier one's take-back then expects it
-empty. The slide mode's Backspace takes back the tool's own newest piece, a guest's behind the pieces it still
+empty; a corner another player's segment left from since is in the way, for both (each one's undo would clear
+it). The slide mode's Backspace takes back the tool's own newest piece, a guest's behind the pieces it still
 waits for; with none, or on a slide finished since (its pieces go only with its tower), it takes nothing,
 quietly.
 

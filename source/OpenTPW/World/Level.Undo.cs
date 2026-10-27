@@ -20,8 +20,9 @@ public sealed partial class Level
 		if ( Guests?.Grid.Cells is not { } cells || Objects == null )
 			return false;
 		var footprint = segment.Built.Concat( segment.Existing ).ToArray();
-		// the step still there: every cell of it a path (a cell another command emptied, even one taken back since, leaves the undo nothing to remove), nothing standing on it
-		if ( footprint.Any( cell => cells.TypeAt( cell.X, cell.Y ) != ParkCellType.Path || StandsOn( cells, cell ) ) )
+		// the step still there: every cell of it a path (a cell another command emptied, even one taken back since, leaves the undo nothing to remove), nothing standing on a cell it clears
+		// (a crossed cell is only counted down: a bridge over it stays as it is)
+		if ( footprint.Any( cell => cells.TypeAt( cell.X, cell.Y ) != ParkCellType.Path ) || segment.Built.Any( cell => StandsOn( cells, cell ) ) )
 			return false;
 		var copy = cells.CopyForPrediction();
 		copy.Changed = ( x, y, _ ) => trace.Add( (x, y) );
@@ -82,8 +83,8 @@ public sealed partial class Level
 		if ( Guests is not { } guests || ResolveCommandRide( ride ) is not { } bridge )
 			return false;
 		var cells = guests.Grid.Cells;
-		// the step still there: every cell of it a queue cell, nothing standing on it
-		if ( footprint.Any( cell => cells.RawTypeAt( cell.X, cell.Y ) != (byte)ParkCellType.Queue || StandsOn( cells, cell ) ) )
+		// the step still there: every cell of it a queue cell
+		if ( footprint.Any( cell => cells.RawTypeAt( cell.X, cell.Y ) != (byte)ParkCellType.Queue ) )
 			return false;
 		var copy = cells.CopyForPrediction();
 		copy.Changed = ( x, y, _ ) => trace.Add( (x, y) );
@@ -100,6 +101,9 @@ public sealed partial class Level
 		foreach ( var cell in footprint )
 		{
 			var cleared = copy.RawTypeAt( cell.X, cell.Y ) == 0;
+			// nothing standing on a cell it clears (one it counts down stays as it is)
+			if ( cleared && StandsOn( cells, cell ) )
+				return false;
 			var countedDown = copy.RawTypeAt( cell.X, cell.Y ) == cells.RawTypeAt( cell.X, cell.Y ) && copy.PlacementCountAt( cell.X, cell.Y ) == cells.PlacementCountAt( cell.X, cell.Y ) - 1;
 			var created = !before.TryGetValue( cell, out var type ) || type != (byte)ParkCellType.Queue;
 			if ( created ? !cleared : !(countedDown || (cleared && sharedBend( cell ))) )

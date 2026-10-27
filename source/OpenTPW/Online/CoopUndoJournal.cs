@@ -40,7 +40,7 @@ internal sealed class CoopUndoJournal
 	private readonly Dictionary<uint, Member> members = new();
 	/// <summary>A live step of each record still in the cells' lists (a batch's pieces share theirs and its effects).</summary>
 	private readonly Dictionary<long, Step> live = new();
-	/// <summary>The take-back decided last and not yet applied: its steps, and the shared bend corner its inverse clears.</summary>
+	/// <summary>The take-back decided last and not yet applied: its steps, and the shared bend corners its inverse clears with their earlier own segments.</summary>
 	private Decision? pending;
 
 	/// <param name="level">The host's park.</param>
@@ -100,7 +100,7 @@ internal sealed class CoopUndoJournal
 		public long Forgot = -1;
 	}
 
-	private sealed record Decision( TakeBackCommand Command, IReadOnlyList<Step> Steps, (int X, int Y)? SharedBend, Step? BendOwner );
+	private sealed record Decision( TakeBackCommand Command, IReadOnlyList<Step> Steps, IReadOnlyList<((int X, int Y) Cell, Step Owner)> Bends );
 
 	/// <summary>
 	/// Whether a fault turned the journal off for the rest of the session (<see cref="Disable"/>): it records nothing and decides every take-back <see cref="TakeBackVerdict.Forgotten"/>, so no
@@ -444,13 +444,16 @@ internal sealed class CoopUndoJournal
 			if ( decided.Steps.Any( step => step.Effects.ContainsKey( cell ) ) )
 				continue;
 			// the shared bend's clearing unlinks the member's own earlier segment beside it: that chain's own writes, no marker (another player's records there stay)
-			if ( decided.BendOwner is { } earlier && (earlier.Effects.ContainsKey( cell ) || earlier.Footprint.Contains( cell )) )
+			if ( decided.Bends.Any( bend => bend.Owner.Effects.ContainsKey( cell ) || bend.Owner.Footprint.Contains( cell ) ) )
 				continue;
 			if ( histories.TryGetValue( cell, out var list ) )
 				Append( list, residue );
 		}
-		if ( decided is { SharedBend: { } bend, BendOwner: { } owner } && owner.Footprint.Remove( bend ) )
-			Untrack( bend );
+		foreach ( var (bend, owner) in decided.Bends )
+		{
+			if ( owner.Footprint.Remove( bend ) )
+				Untrack( bend );
+		}
 	}
 
 	// ---- departures and towers ---------------------------------------------------------------------
@@ -579,32 +582,33 @@ internal sealed class CoopUndoJournal
 				var ride = step.Kind == StepKind.QueueLine ? step.Ride
 					: id == host && request.SelectedRide >= 0 && !level.ClaimedAgainst( ParkCommands.LocalPlayer, request.SelectedRide ) ? request.SelectedRide : -1;
 				var inverse = new UndoLineCommand( step.Mode, ride, step.Start.X, step.Start.Y, step.Segment!.Built.ToArray(), step.Segment.Existing.ToArray() ) { Player = player };
-				return Decided( request, inverse, new[] { step }, null, null, out decision );
+				return Decided( request, inverse, new[] { step }, Array.Empty<((int X, int Y), Step)>(), out decision );
 			}
 			case StepKind.QueueSegment:
 			{
 				var trace = new HashSet<(int X, int Y)>();
-				var bend = default( (int X, int Y)? );
-				var owner = default( Step );
-				// the shared bend corner the original's undo clears with this segment may be the member's own earlier segment's, whose footprint it leaves (an own chain)
+				var bends = new List<((int X, int Y) Cell, Step Owner)>();
+				// a counted-up bend corner the original's undo clears with this segment may be the member's own earlier segment's, which created it and whose own chain alone wrote it since:
+				// that segment's footprint then leaves it (an own chain going back); any other is in the way
 				if ( !level.PredictQueueSegmentUndo( step.Ride, step.Start, step.End, step.Footprint, step.Before, trace, cell =>
 				{
-					owner = member.Steps.LastOrDefault( other => !ReferenceEquals( other, step ) && other.Kind == StepKind.QueueSegment && other.Ride == step.Ride && other.Footprint.Contains( cell ) );
-					if ( owner == null )
+					var owner = member.Steps.LastOrDefault( other => !ReferenceEquals( other, step ) && other.Kind == StepKind.QueueSegment && other.Ride == step.Ride
+						&& other.Footprint.Contains( cell ) && other.ClearsWhole.Contains( cell ) );
+					if ( owner == null || !OwnChainSince( owner, cell ) )
 						return false;
-					bend = cell;
+					bends.Add( (cell, owner) );
 					return true;
 				} ) )
 					return TakeBackVerdict.InTheWay;
 				var inverse = new UndoQueueSegmentCommand( step.Ride, step.Start.X, step.Start.Y, step.End.X, step.End.Y ) { Player = player };
-				return Decided( request, inverse, new[] { step }, bend, owner, out decision );
+				return Decided( request, inverse, new[] { step }, bends, out decision );
 			}
 			case StepKind.SlidePiece:
 			{
 				if ( level.PoolSlides?.Find( step.Group ) is not { } slide || slide.Cells.Count != step.PieceIndex + 1 || slide.Cells[^1] != step.PieceCell )
 					return TakeBackVerdict.Changed;
 				var inverse = new UndoPoolSlidePieceCommand( step.Tower.X, step.Tower.Y ) { Player = player };
-				return Decided( request, inverse, new[] { step }, null, null, out decision );
+				return Decided( request, inverse, new[] { step }, Array.Empty<((int X, int Y), Step)>(), out decision );
 			}
 		}
 		return TakeBackVerdict.NotOwn;
@@ -639,6 +643,25 @@ internal sealed class CoopUndoJournal
 	}
 
 	/// <summary>
+	/// Whether only <paramref name="owner"/>'s member's own live steps wrote <paramref name="cell"/> since <paramref name="owner"/> did: every entry of its list from the owner's record on is a
+	/// record of a live step of that member, so clearing the cell takes back that member's own chain and no other player's work.
+	/// </summary>
+	private bool OwnChainSince( Step owner, (int X, int Y) cell )
+	{
+		if ( !histories.TryGetValue( cell, out var list ) )
+			return false;
+		var first = list.IndexOf( owner.Record );
+		if ( first < 0 )
+			return false;
+		for ( var index = first + 1; index < list.Count; index++ )
+		{
+			if ( list[index] < 0 || !live.TryGetValue( list[index], out var other ) || other.Member != owner.Member )
+				return false;
+		}
+		return true;
+	}
+
+	/// <summary>
 	/// Whether <paramref name="entry"/>, a live step's record, left a cell <paramref name="step"/> only counted up as the step's count-down needs it: the cell's type, flags, counter, owner,
 	/// queue link and residue as they were, its links changed only on bits the step did not change.
 	/// </summary>
@@ -652,13 +675,13 @@ internal sealed class CoopUndoJournal
 			&& ((before.Links ^ after.Links) & (own.Before.Links ^ own.After.Links)) == 0;
 	}
 
-	private static TakeBackVerdict Decided( TakeBackCommand request, ParkCommand inverse, IReadOnlyList<Step> steps, (int X, int Y)? bend, Step? owner,
+	private static TakeBackVerdict Decided( TakeBackCommand request, ParkCommand inverse, IReadOnlyList<Step> steps, IReadOnlyList<((int X, int Y) Cell, Step Owner)> bends,
 		out Decision? decision )
 	{
 		decision = null;
 		if ( ParkCommandCodec.Encode( inverse ).Length > TakeBackCommand.MaximumInverseBytes )
 			return TakeBackVerdict.TooLarge;
-		decision = new Decision( request with { Verdict = TakeBackVerdict.Taken, Inverse = inverse }, steps, bend, owner );
+		decision = new Decision( request with { Verdict = TakeBackVerdict.Taken, Inverse = inverse }, steps, bends );
 		return TakeBackVerdict.Taken;
 	}
 }

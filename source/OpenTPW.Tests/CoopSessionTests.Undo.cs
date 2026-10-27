@@ -729,6 +729,31 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void ALineCrossingAPathCellUnderAPoolBridgeIsTakenBackAndTheBridgeStays()
+	{
+		var (host, guest, view) = UndoSession();
+		PoolOnBoth( host, guest, (12, 10), (14, 20) );
+		Rounds( 5, host, guest );
+		// the host's path to the pool's edge, and its bridge from (10, 15) over the water
+		HostLine( host, (5, 15), (11, 15) ).Cancel();
+		Assert.IsTrue( host.Issue( new PlacePoolBridgeCommand( 10, 15, 1 ) ).Accepted );
+		Assert.IsTrue( host.Level.PoolBridges!.Covers( 10, 15 ) );
+		Rounds( 5, host, guest );
+		var cells = host.Level.Guests!.Grid.Cells;
+		var counter = cells.PlacementCountAt( 10, 15 );
+		// the guest's line down across the bridge's path cell: it only counts that cell up
+		guest.Enter();
+		Assert.IsTrue( guest.Level.EnterPathTool( 10, 11 ) );
+		GuestClick( host, guest, view, (10, 19) );
+		Assert.IsTrue( guest.Level.CellTool.LastCommit is { Completed: true } && cells.PlacementCountAt( 10, 15 ) == counter + 1, "a crossing under the bridge" );
+		Assert.IsTrue( GuestBackspace( host, guest, view ), "its count-down leaves the bridge as it is: taken" );
+		Assert.AreEqual( counter, cells.PlacementCountAt( 10, 15 ) );
+		Assert.IsTrue( host.Level.PoolBridges.Covers( 10, 15 ) && Walkable( host, 10, 15 ) );
+		Assert.IsFalse( Walkable( host, 10, 17 ) || Walkable( guest, 10, 17 ) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
 	public void TwoGuestsPlacingOnOneCellInOneFrameAgreeThatTheEarlierGotIt()
 	{
 		var (host, first, second) = SharedWithTwo();

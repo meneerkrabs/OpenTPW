@@ -200,6 +200,135 @@ public class ParkCommandLevelTests
 		Assert.AreEqual( recorded.Level.Objects.Objects.Count, twin.Level.Objects.Objects.Count );
 	}
 
+	/// <summary>The park's record of the first ride, and the next level researched as the settings tests do (a researcher, nothing on the rides' own research).</summary>
+	private static ParkObjectState ResearchedRide( Park park )
+	{
+		Assert.IsTrue( park.Economy.TryGetObject( park.Level.GetEconomyInstance( park.One )!.Value, out var state ) );
+		EconomyTestData.HireBest( park.Economy, StaffType.Researcher );
+		park.Economy.SetResearchEffort( ResearchCategory.Ride, 0 );
+		for ( var day = 0; day < 100 && !park.Economy.Research.IsAvailable( 1100, 1 ); day++ )
+			park.Economy.AdvanceDays( 1 );
+		Assert.IsTrue( park.Economy.Research.IsAvailable( 1100, 1 ) );
+		return state;
+	}
+
+	/// <summary><paramref name="command"/> as a stream carries it: encoded, decoded and issued.</summary>
+	private static ParkCommandResult IssueDecoded( Level level, ParkCommand command ) => level.Commands.Issue( ParkCommandCodec.Decode( ParkCommandCodec.Encode( command ) ) );
+
+	private static void AssertStale( ParkCommandResult result, string name ) => Assert.AreEqual( (false, ParkSettingCommand.StaleReason), (result.Accepted, result.Reason), name );
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's version-4 cancellation names the pending level and the purchase (C4b-2): it is stale when the ride waits for no level, for another level, or for a later
+	/// purchase of the same level (the host cancelled and bought again), and applies when both match; C4b-1's version-3 cancellation checks the level alone, the host's version-1 neither.
+	/// </summary>
+	[TestMethod]
+	public void AnUpgradeCancellationNamingItsPurchaseIsStaleWhenThePurchaseIsAnother()
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var ride = park.One.Runtime.AttractionId;
+		var state = ResearchedRide( park );
+		// the ride waits for no level
+		var before = level.ComputeStateHash();
+		AssertStale( IssueDecoded( level, new CancelUpgradeCommand( ride, 1, 0 ) ), "no level pending" );
+		Assert.AreEqual( before, level.ComputeStateHash() );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted );
+		Assert.AreEqual( (1, 1), (state.PendingLevel, state.UpgradePurchases) );
+		// another level
+		AssertStale( IssueDecoded( level, new CancelUpgradeCommand( ride, 2, 1 ) ), "another pending level" );
+		Assert.AreEqual( 1, state.PendingLevel, "a stale cancel cancels nothing" );
+		// a later purchase of the same level: the host cancelled and bought again
+		Assert.IsTrue( level.Commands.Issue( new CancelUpgradeCommand( ride ) ).Accepted, "the host's version-1 cancel names neither" );
+		Assert.AreEqual( (0, 1), (state.PendingLevel, state.UpgradePurchases) );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted );
+		Assert.AreEqual( (1, 2), (state.PendingLevel, state.UpgradePurchases) );
+		AssertStale( IssueDecoded( level, new CancelUpgradeCommand( ride, 1, 1 ) ), "the first purchase's cancel meets the second" );
+		Assert.AreEqual( 1, state.PendingLevel, "the new purchase stays" );
+		// both match
+		Assert.IsTrue( IssueDecoded( level, new CancelUpgradeCommand( ride, 1, 2 ) ).Accepted, "the level and the purchase match" );
+		Assert.AreEqual( 0, state.PendingLevel );
+		// C4b-1's cancel with the level alone checks the level alone, whatever the purchase count
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted );
+		Assert.AreEqual( 3, state.UpgradePurchases );
+		AssertStale( IssueDecoded( level, new CancelUpgradeCommand( ride, 2 ) ), "the version-3 cancel of another level" );
+		Assert.IsTrue( IssueDecoded( level, new CancelUpgradeCommand( ride, 1 ) ).Accepted, "the version-3 cancel of the level ignores the purchase" );
+		Assert.AreEqual( (0, 3), (state.PendingLevel, state.UpgradePurchases), "a cancel never lowers the count" );
+	}
+
+	/// <summary>[EXT:online-coop-commands] A guest's buy naming the level is stale when the ride waits for a level already, as the host's buy first makes it (C4b-2).</summary>
+	[TestMethod]
+	public void AnUpgradeBuyNamingItsLevelIsStaleWhenTheRideWaitsForOneAlready()
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var ride = park.One.Runtime.AttractionId;
+		var state = ResearchedRide( park );
+		Assert.IsTrue( IssueDecoded( level, new BuyUpgradeCommand( ride, 1 ) ).Accepted, "the guest's buy of the next level of a ride that waits for none" );
+		Assert.AreEqual( (1, 1), (state.PendingLevel, state.UpgradePurchases) );
+		Assert.IsTrue( level.Commands.Issue( new CancelUpgradeCommand( ride ) ).Accepted );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted, "the host's buy comes first" );
+		var before = level.ComputeStateHash();
+		AssertStale( IssueDecoded( level, new BuyUpgradeCommand( ride, 1 ) ), "the guest's buy of the same level, which the ride waits for" );
+		Assert.AreEqual( (1, 2), (state.PendingLevel, state.UpgradePurchases), "a stale buy counts no purchase" );
+		Assert.AreEqual( before, level.ComputeStateHash() );
+		AssertStale( IssueDecoded( level, new BuyUpgradeCommand( ride, 2 ) ), "another level" );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The count of levels bought is no part of the world hash (an older log that bought an upgrade replays to the checkpoints it recorded) and is part of the session
+	/// digest (C4b-2).
+	/// </summary>
+	[TestMethod]
+	public void TheCountOfLevelsBoughtIsOutOfTheWorldHashAndInTheSessionDigest()
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var state = ResearchedRide( park );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( park.One.Runtime.AttractionId ) ).Accepted );
+		Assert.AreEqual( 1, state.UpgradePurchases );
+		var (world, digest) = (level.ComputeStateHash(), CoopDigest.Compute( level ));
+		state.UpgradePurchases = 5;
+		Assert.AreEqual( world, level.ComputeStateHash(), "another count, the same world hash" );
+		Assert.AreNotEqual( digest, CoopDigest.Compute( level ), "the session digest differs" );
+		state.UpgradePurchases = 0;
+		Assert.AreEqual( world, level.ComputeStateHash(), "the count cleared, the same world hash" );
+		Assert.AreNotEqual( digest, CoopDigest.Compute( level ), "the cleared count differs in the digest too" );
+		state.UpgradePurchases = 1;
+		Assert.AreEqual( digest, CoopDigest.Compute( level ), "the same count, the same digest" );
+	}
+
+	[TestMethod]
+	public void AHostLogThatBuysCancelsAndBuysAnUpgradeReplaysToItsFinalCheckpoint()
+	{
+		var recorded = NewPark();
+		var twin = NewPark();
+		var state = ResearchedRide( recorded );
+		var twinState = ResearchedRide( twin );
+		var level = recorded.Level;
+		var ride = recorded.One.Runtime.AttractionId;
+		level.StartCommandRecording();
+		var interval = ParkCommandRecorder.CheckpointInterval;
+		Run( level, 10, null );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted );
+		Run( level, 10, null );
+		Assert.IsTrue( level.Commands.Issue( new CancelUpgradeCommand( ride ) ).Accepted );
+		Run( level, 10, null );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted );
+		Run( level, 2 * interval, null );
+		Assert.AreEqual( (1, 2), (state.PendingLevel, state.UpgradePurchases) );
+		var log = ParkCommandLogFile.Deserialize( level.CommandLog()!.Serialize() );
+		Assert.AreEqual( twin.Level.ComputeStateHash(), log.StartHash );
+		Assert.IsTrue( log.Checkpoints.Count >= 2, $"{log.Checkpoints.Count} checkpoints" );
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.BuyUpgrade, ParkCommandKind.CancelUpgrade, ParkCommandKind.BuyUpgrade },
+			log.Entries.Select( entry => entry.Command.Kind ).ToArray() );
+		var hashes = new Dictionary<long, ulong>();
+		ParkCommandReplay.Run( twin.Level.Commands, log.Entries, () => twin.Level.Commands.NextTick,
+			() => twin.Level.AdvanceSimulation( FixedStepClock.TickDuration ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
+		Assert.IsNull( ParkCommandReplay.FirstMismatch( log, hashes ), "the replay reaches every recorded world hash" );
+		Assert.AreEqual( (1, 2), (twinState.PendingLevel, twinState.UpgradePurchases), "the twin bought, cancelled and bought again" );
+		Assert.AreEqual( CoopDigest.Compute( level ), CoopDigest.Compute( twin.Level ), "and its session digest matches" );
+	}
+
 	[TestMethod]
 	public void ARecordingSurvivesItsFileAndItsCheckpointsProveTheReplay()
 	{

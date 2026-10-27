@@ -1744,7 +1744,7 @@ public sealed partial class ParkHud
 		var pad = 4 * canvas.TextScale;
 		var rect = new UiRect( (canvas.Width - width) / 2f - pad, canvas.Height * 0.015f, width + pad * 2, height + pad * 2 );
 		context.Batch.AddRectangle( rect, UiColors.HelpBox );
-		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
+		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true );
 	}
 
 	/// <summary>The shared park's status line now (<see cref="HudHost.SessionStatus"/>), for tests.</summary>
@@ -1762,7 +1762,7 @@ public sealed partial class ParkHud
 		var pad = 4 * canvas.TextScale;
 		var rect = new UiRect( (canvas.Width - width) / 2f - pad, canvas.Height * 0.91f - height - pad * 2, width + pad * 2, height + pad * 2 );
 		context.Batch.AddRectangle( rect, UiColors.HelpBox );
-		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
+		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true );
 	}
 
 	public void Draw( UiContext context )

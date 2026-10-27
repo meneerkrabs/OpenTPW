@@ -69,7 +69,7 @@ public sealed class UiContext
 	}
 
 	/// <summary>Draws text inside <paramref name="rect"/> as tp.exe's text library places it: the block aligned horizontally, each line aligned inside the block, the block centred vertically.</summary>
-	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = false, int? textScale = null, bool originalPlacement = true )
+	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, byte shadowAlpha = 0, int? textScale = null, bool originalPlacement = true )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
@@ -106,8 +106,8 @@ public sealed class UiContext
 		}
 		// [BIN:TPW-EXE:0x48f830 text control] one 0x6ae0f0 call into the control's bitmap (texel alpha 17 x coverage, 0x6b24b0), then the sprite quads of the state word 0x7060556 (0x58a010): the control colour blended with coverage / 15; plain text has no shadow
 		// [BIN:TPW-EXE:0x491ab0 title control] a title control (constructor 0x491920) first draws a grey (128,128,128, alpha 0x80) copy on the rectangle moved by (-2, +2) pixels (0x491dd0-0x491e1a), then the white string (0x491e27-0x491e84), both modulated by the control colour
-		if ( shadow )
-			Batch.AddTitleText( font, layout, ix, iy, color, scale, text );
+		if ( shadowAlpha != 0 )
+			Batch.AddTitleText( font, layout, ix, iy, color, shadowAlpha, scale, text );
 		else
 			Batch.AddText( font, layout, ix, iy, color, scale, text );
 	}
@@ -119,7 +119,7 @@ public sealed class UiContext
 	/// the line box. Horizontally the text's own ink is aligned; vertically the font's letter box (capitals,
 	/// ascenders and descenders) is centred, so labels on neighbouring buttons share a baseline.
 	/// </summary>
-	public void DrawFittedText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Center, bool shadow = false )
+	public void DrawFittedText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Center, byte shadowAlpha = 0 )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
@@ -129,8 +129,8 @@ public sealed class UiContext
 		// (a bulk-mark or close button) still shows its whole text; the original's buttons carry art, not these labels
 		foreach ( var body in new[] { Fonts.Label, Fonts.Small }.Where( body => body.LineHeight < candidates[^1].LineHeight && !candidates.Contains( body ) ).OrderByDescending( body => body.LineHeight ) )
 			candidates.Add( body );
-		var boxes = candidates.Select( candidate => InkBox( candidate, text, shadow ) ).ToArray();
-		var fit = UiTextFit.Choose( Canvas.TextScale, boxes.Select( box => (box.Right - box.Left, box.Bottom - box.Top) ).ToArray(), rect.Width, rect.Height );
+		var boxes = candidates.Select( candidate => InkBox( candidate, text ) ).ToArray();
+		var fit = UiTextFit.Choose( Canvas.TextScale, boxes.Select( box => (box.Right - box.Left + FitExtra( shadowAlpha ), box.Bottom - box.Top + FitExtra( shadowAlpha )) ).ToArray(), rect.Width, rect.Height );
 		if ( fit.Wrap )
 		{
 			// [EXT:fit-button-text] before any word is cut between characters, the label is wrapped at its spaces in the largest size whose lines all fit the box
@@ -144,23 +144,23 @@ public sealed class UiContext
 			}, rect.Height );
 			if ( wrapped is { } choice )
 			{
-				DrawText( candidates[choice.Index], text, rect, color, align, true, shadow, choice.Scale, originalPlacement: false );
+				DrawText( candidates[choice.Index], text, rect, color, align, true, shadowAlpha, choice.Scale, originalPlacement: false );
 				return;
 			}
 			// No size fits even wrapped (a box of a few pixels): the smallest size on one line, centred, as the original's unwrapped control text is.
-			DrawTextAt( candidates[^1], 1, text, rect, color, align, shadow );
+			DrawTextAt( candidates[^1], 1, text, rect, color, align, shadowAlpha );
 			return;
 		}
-		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadow );
+		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadowAlpha );
 	}
 
 	/// <summary>Draws single-line text in <paramref name="chosen"/> at whole text scale <paramref name="scale"/>, placed like <see cref="DrawFittedText"/> (ink aligned horizontally, letter box centred vertically).</summary>
-	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool shadow = false )
+	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, byte shadowAlpha = 0 )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
 		align = Drawn( align );
-		var box = InkBox( chosen, text, shadow );
+		var box = InkBox( chosen, text );
 		var width = (box.Right - box.Left) * scale;
 		var x = align switch
 		{
@@ -172,8 +172,8 @@ public sealed class UiContext
 		var layout = Layout( chosen, text );
 		var ix = (int)MathF.Round( x );
 		var iy = (int)MathF.Round( y );
-		if ( shadow )
-			Batch.AddTitleText( chosen, layout, ix, iy, color, scale, text );
+		if ( shadowAlpha != 0 )
+			Batch.AddTitleText( chosen, layout, ix, iy, color, shadowAlpha, scale, text );
 		else
 			Batch.AddText( chosen, layout, ix, iy, color, scale, text );
 	}
@@ -195,7 +195,7 @@ public sealed class UiContext
 		var sizes = new List<(FontAtlas Font, int Scale, int Height)>();
 		foreach ( var candidate in candidates )
 		{
-			var box = InkBox( candidate, "x", false );
+			var box = InkBox( candidate, "x" );
 			for ( var scale = Math.Max( 1, Canvas.TextScale ); scale >= 1; scale-- )
 				sizes.Add( (candidate, scale, (box.Bottom - box.Top) * scale) );
 		}
@@ -208,8 +208,8 @@ public sealed class UiContext
 		var texts = label.Variants?.Invoke().ToList() ?? new List<string> { label.Text() };
 		bool Fits( (FontAtlas Font, int Scale, int Height) size ) => texts.All( text =>
 		{
-			var box = InkBox( size.Font, text, label.Shadow );
-			return (box.Right - box.Left) * size.Scale <= rect.Width;
+			var box = InkBox( size.Font, text );
+			return (box.Right - box.Left + (label.Shadow ? UiBatch.TitleShadowOffset : 0)) * size.Scale <= rect.Width;
 		} );
 		if ( Fits( page ) )
 			return (page.Font, page.Scale);
@@ -220,8 +220,11 @@ public sealed class UiContext
 
 	private readonly Dictionary<FontAtlas, (int Top, int Bottom)> letterBoxes = new();
 
-	/// <summary>Unscaled box of <paramref name="text"/>'s drawn pixels, widened vertically to the font's letter box and by the title shadow.</summary>
-	private (int Left, int Top, int Right, int Bottom) InkBox( FontAtlas font, string text, bool shadow )
+	/// <summary>Extra unscaled pixels a title's copy adds to the width and height a fitted title must have room for; placement ignores the copy, as the original's does.</summary>
+	private static int FitExtra( byte shadowAlpha ) => shadowAlpha != 0 ? UiBatch.TitleShadowOffset : 0;
+
+	/// <summary>Unscaled box of <paramref name="text"/>'s drawn pixels, widened vertically to the font's letter box.</summary>
+	private (int Left, int Top, int Right, int Bottom) InkBox( FontAtlas font, string text )
 	{
 		if ( !letterBoxes.TryGetValue( font, out var letters ) )
 		{
@@ -230,11 +233,9 @@ public sealed class UiContext
 			letterBoxes[font] = letters;
 		}
 		var layout = Layout( font, text );
-		// the title shadow's copy sits UiBatch.TitleShadowOffset pixels to the left and below the string
-		var extra = shadow ? UiBatch.TitleShadowOffset : 0;
 		if ( layout.Glyphs.Count == 0 )
-			return (-extra, letters.Top, layout.Width, letters.Bottom + extra);
-		return (layout.InkLeft - extra, Math.Min( layout.InkTop, letters.Top ), layout.InkRight, Math.Max( layout.InkBottom, letters.Bottom ) + extra);
+			return (0, letters.Top, layout.Width, letters.Bottom);
+		return (layout.InkLeft, Math.Min( layout.InkTop, letters.Top ), layout.InkRight, Math.Max( layout.InkBottom, letters.Bottom ));
 	}
 
 	/// <summary>Draws a model frame stretched so its selected-mesh fit bounds fill <paramref name="rect"/>.</summary>
@@ -363,6 +364,8 @@ public sealed class UiLabel : UiElement
 	/// The title control's shadow (<see cref="UiBatch.AddTitleText"/>): window, screen and lobby titles have it; every other text control of the original draws its string once.
 	/// </summary>
 	public bool Shadow { get; set; }
+	/// <summary>The colour alpha of the title copy when <see cref="Shadow"/> is set: 0x80 for Theme Park World's title control, 0xc8 for Theme Park Inc's.</summary>
+	public byte ShadowAlpha { get; set; } = UiBatch.TitleCopyAlpha;
 	/// <summary>Fit the single line into the rectangle (smaller font, smaller scale) instead of the small-font fallback.</summary>
 	public bool Fit { get; set; }
 	/// <summary>Labels of one group share a single font and scale (<see cref="UiContext.ChooseUniform"/>).</summary>
@@ -379,12 +382,12 @@ public sealed class UiLabel : UiElement
 		if ( Group != null )
 		{
 			var (groupFont, scale) = context.ChooseUniform( Group, this );
-			context.DrawTextAt( groupFont, scale, text, rect, color, Align, Shadow );
+			context.DrawTextAt( groupFont, scale, text, rect, color, Align, Shadow ? ShadowAlpha : (byte)0 );
 			return;
 		}
 		if ( Fit && !Wrap )
 		{
-			context.DrawFittedText( font, text, rect, color, Align, Shadow );
+			context.DrawFittedText( font, text, rect, color, Align, Shadow ? ShadowAlpha : (byte)0 );
 			return;
 		}
 		// [BIN:TPW-EXE:0x6aec80 text wrap] the original's formatter wraps greedily: a line ends at the last break opportunity before the glyph that overflows, trailing spaces dropped, or before that glyph when the line has none
@@ -393,7 +396,7 @@ public sealed class UiLabel : UiElement
 		// Longer translations fall back to the small game font instead of overflowing the art.
 		if ( !Wrap && context.Measure( font, text ).Width > rect.Width )
 			font = context.Fonts.Small;
-		context.DrawText( font, text, rect, color, Align, Wrap, Shadow );
+		context.DrawText( font, text, rect, color, Align, Wrap, Shadow ? ShadowAlpha : (byte)0 );
 	}
 }
 

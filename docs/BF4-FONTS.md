@@ -154,7 +154,7 @@ October 17, 2026. Static analysis of tp.exe (`[BIN:TPW-EXE:...]`), the PC twin o
   sprite object (record at control +0x54, colour at record +0x24 = control +0x78) drawn by the sprite draw `0x58a010` as pre-transformed
   quads of the fixed state word `0x7060556` (`0x58a26c`): alpha blend SRCALPHA/INVSRCALPHA, alpha test at `0x10`, depth test and write, stage 0
   colour = texture MODULATE diffuse (the control colour), point filters (`0x567620`, `0x566840`). The screen result is the control colour blended with
-  coverage `c / 15`, and a black control colour gives exact black text (`UI-037` retired). The title control (constructor `0x491920`, draw `0x491ab0`) draws a grey shadow copy under its string in the same bitmap; OpenTPW ports it (`UiBatch.AddTitleText`) and draws no shadow under plain text.
+  coverage `c / 15`, and a black control colour gives exact black text (`UI-037` retired). The title control (constructor `0x491920`, draw `0x491ab0`) draws a grey shadow copy under its string in the same bitmap; OpenTPW composes that bitmap on the CPU (`UiTitleBitmap`: the copy at (-2, +2) with texel alpha `17 x floor(c x alpha / 255)`, the string's texels written over it, alpha `0x80` for Theme Park World and `0xC8` for Theme Park Inc) and draws no shadow under plain text.
 - **Control text box** (`0x48f830`). Horizontal alignment byte +0xd8 (0 left, 1 centre, 2 right) and vertical byte +0xd9 (0 top, 1 centre, 2 bottom;
   constructor default centre) select the library's modes; margins +0xde and +0xe0 are in 2048 x 1536 units scaled by the screen
   size words `0xfaa5c4` and `0xfaa5c0`; without the wrap byte (+0xda) the box is 0x4000 wide. The bitmap's quad is placed in canvas

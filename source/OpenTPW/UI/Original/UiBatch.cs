@@ -10,8 +10,10 @@ namespace OpenTPW.UI.Original;
 /// owner (the park advisor; linear filtered, not disposed by the UI), or a <see cref="UiDepthImage"/> the
 /// renderer draws first (the model previews).
 /// </summary>
-public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas, int FontScale = 1, Veldrid.Texture? Rendered = null, UiDepthImage? DepthImage = null )
+public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas, int FontScale = 1, Veldrid.Texture? Rendered = null, UiDepthImage? DepthImage = null, UiTitleBitmap? Title = null )
 {
+	/// <summary>A composed title bitmap (<see cref="UiTitleBitmap"/>) drawn at text scale <paramref name="scale"/>.</summary>
+	public static UiTexture Of( UiTitleBitmap title, int scale ) => new( null, null, Math.Max( 1, scale ), Title: title );
 	public static UiTexture Of( UiDepthImage image ) => new( null, null, DepthImage: image );
 	public static UiTexture Of( Veldrid.Texture rendered ) => new( null, null, Rendered: rendered );
 	public static readonly UiTexture Solid = new( null, null );
@@ -153,27 +155,28 @@ public sealed class UiBatch
 		}
 	}
 
-	/// <summary>The title control's shadow offset in text pixels: the copy sits this far to the left and below the string (rectangle (L-2, T+2, R-2, B+2), 0x491dd0-0x491dfb).</summary>
+	/// <summary>The title control's copy offset in text pixels: the copy sits this far to the left and below the string (rectangle (L-2, T+2, R-2, B+2), 0x491dd0-0x491dfb).</summary>
 	public const int TitleShadowOffset = 2;
+	/// <summary>The colour alpha of Theme Park World's title copy (0x491da1-0x491e1a).</summary>
+	public const byte TitleCopyAlpha = 0x80;
+	/// <summary>The colour alpha of Theme Park Inc's title copy (0x5162d2-0x5162f4).</summary>
+	public const byte TpiTitleCopyAlpha = 0xC8;
 
 	/// <summary>
-	/// The colour of a title's shadow copy after the quads modulate it by the control colour: the copy is drawn grey (128,128,128) with colour alpha 0x80, whose
-	/// coverage is scaled to alpha 17 x floor(c x 128 / 255), at most 119 of 255 (0x6b26d0-0x6b2702); OpenTPW scales the glyph alpha by 119/255 instead of the stepped levels.
+	/// Draws a title control's text as the original does: the grey copy (128,128,128, colour alpha <paramref name="copyAlpha"/>) two text pixels to the left and below the string and then the white string
+	/// are written into one bitmap (<see cref="UiTitleBitmap"/>, the string's texels replacing the copy's), which is drawn as one quad modulated by <paramref name="color"/>. The string's glyphs are
+	/// recorded in <see cref="Glyphs"/> and <see cref="TextDraws"/> at their drawn positions, without quads of their own.
 	/// </summary>
-	public static RgbaByte TitleShadowColor( RgbaByte color ) =>
-		new( (byte)(color.R * 128 / 255), (byte)(color.G * 128 / 255), (byte)(color.B * 128 / 255), (byte)((color.A * 119 + 127) / 255) );
-
-	/// <summary>
-	/// Draws a title control's text: the shadow copy two text pixels to the left and below the string, then the string over it
-	/// (<see cref="AddText"/>). Where the original writes the string's texels over the copy, the string here blends over it, which tints the string's partly covered edge pixels toward the shadow.
-	/// </summary>
-	// [BIN:TPW-EXE:0x491ab0 title control] the grey copy (128,128,128,0x80) on (L-2, T+2, R-2, B+2), then the white string; the quads modulate both by the control colour
-	// [APPROX:UI-007] the copy's alpha is the coverage scaled by 119/255 (the original steps 17 x floor(c x 128 / 255)) and the string blends over the copy instead of replacing its texels — evidence needed: a CPU-composed title bitmap
-	public void AddTitleText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale = 1, string? text = null )
+	// [BIN:TPW-EXE:0x491ab0 title control] the grey copy (128,128,128,0x80) on (L-2, T+2, R-2, B+2), then the white string, both written into the control's bitmap and modulated by the control colour
+	// [BIN:TPI-EXE:0x515fe0 title control] the same with the colour alpha 0xc8
+	public void AddTitleText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, byte copyAlpha, int scale = 1, string? text = null )
 	{
 		scale = Math.Max( 1, scale );
-		AddText( atlas, layout, x - TitleShadowOffset * scale, y + TitleShadowOffset * scale, TitleShadowColor( color ), scale );
-		AddText( atlas, layout, x, y, color, scale, text );
+		RecordText( atlas, layout, x, y, color, scale, text );
+		if ( UiTitleBitmap.Get( atlas, layout, copyAlpha, scale ) is not { } bitmap )
+			return;
+		var rect = new UiRect( x + bitmap.Left * scale, y + bitmap.Top * scale, bitmap.TextWidth * scale, bitmap.TextHeight * scale );
+		AddQuad( UiTexture.Of( bitmap, scale ), rect, NVector2.Zero, NVector2.One, color );
 	}
 
 	/// <summary>
@@ -185,6 +188,19 @@ public sealed class UiBatch
 		scale = Math.Max( 1, scale );
 		var texture = UiTexture.Font( atlas, scale );
 		var firstGlyph = glyphs.Count;
+		AddGlyphs( atlas, layout, x, y, color, scale, texture );
+		RecordTextDraw( layout, x, y, scale, text, firstGlyph );
+	}
+
+	private void RecordText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale, string? text )
+	{
+		var firstGlyph = glyphs.Count;
+		AddGlyphs( atlas, layout, x, y, color, scale, null );
+		RecordTextDraw( layout, x, y, scale, text, firstGlyph );
+	}
+
+	private void AddGlyphs( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale, UiTexture? texture )
+	{
 		// indexed rather than foreach: the layout's list is read through its interface, whose enumerator is allocated on every call
 		var layoutGlyphs = layout.Glyphs;
 		for ( var index = 0; index < layoutGlyphs.Count; index++ )
@@ -192,10 +208,15 @@ public sealed class UiBatch
 			var glyph = layoutGlyphs[index];
 			var quad = new UiGlyphQuad( atlas, x + glyph.X * scale, y + glyph.Y * scale, glyph.Glyph.Width * scale, glyph.Glyph.Height * scale, glyph.Glyph.X, glyph.Glyph.Y, scale, color );
 			glyphs.Add( quad );
-			AddQuad( texture, new UiRect( quad.X, quad.Y, quad.Width, quad.Height ),
+			if ( texture != null )
+				AddQuad( texture, new UiRect( quad.X, quad.Y, quad.Width, quad.Height ),
 				new NVector2( (float)glyph.Glyph.X / atlas.Width, (float)glyph.Glyph.Y / atlas.Height ),
 				new NVector2( (float)(glyph.Glyph.X + glyph.Glyph.Width) / atlas.Width, (float)(glyph.Glyph.Y + glyph.Glyph.Height) / atlas.Height ), color );
 		}
+	}
+
+	private void RecordTextDraw( TextLayoutResult layout, int x, int y, int scale, string? text, int firstGlyph )
+	{
 		if ( text != null )
 		{
 			var rect = new UiRect( x, y, layout.Width * scale, layout.Height * scale );

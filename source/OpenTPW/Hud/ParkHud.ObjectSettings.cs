@@ -34,6 +34,14 @@ public sealed partial class ParkHud
 	/// </summary>
 	private readonly ObjectWindowSettings pending = new();
 	internal ObjectWindowSettings PendingSettings => pending;
+	/// <summary>
+	/// [EXT:online-coop-commands] The values the window loaded, kept up by what it applied since (a typed price, an apply-all): a host's window in a shared park applies on close only the
+	/// fields it changed from them (C4b-2, <see cref="ChangedOverPark"/>), so another player's change made while it was open stays. A single player's window applies all, as the original's.
+	/// </summary>
+	private readonly ObjectWindowSettings loaded = new();
+
+	/// <summary>[EXT:online-coop-commands] This machine hosts a shared park: the session's rules, with its own commands the stream's (C4b-2).</summary>
+	private bool HostsSharedPark => level.Commands is { SessionRules: true, FollowsStream: false };
 
 	/// <summary>The varibox range of the shop and sideshow prices (0x4b0735, 0x4b1cd0: 0..500, step 1).</summary>
 	internal const int MaximumPrice = 500;
@@ -115,12 +123,15 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x4af030 ride window load] the speed slider 0x3e30 gets the range MinSpeed..MaxSpeed (type +0x134/+0x138) and the position ride +0x58, the duration slider 0x3e2f MinDuration..MaxDuration and +0x5c (shown only with Info.DurationUnit, +0x70), the capacity slider 0x3e2d MinCapacity..MaxCapacity and +0x5d (hidden with its label 0x3e31 when the two are equal)
 	// [BIN:TPW-EXE:0x4b0950 shop window load] the quality slider 0xc06b (range 0..2, 0x4b06b7) gets the quality byte / 50, the ingredient slider 0xc086 (0..100, 0x4b06d2) the amount byte, the price box 0xc085 (0..500) the price
 	// [BIN:TPW-EXE:0x4b1ee0 sideshow window load] the chance slider 0xa08e (0..100, 0x4b1bc7) gets the win byte +0x190, the price box 0xa08f (0..500) the price +0x194, the prize box 0xa090 (0..10000) the cost of goods +0x188
-	private void LoadObjectSettings( OriginalObject item )
+	private void LoadObjectSettings( OriginalObject item ) => LoadObjectSettings( item, pending );
+
+	/// <summary>Loads the values of <paramref name="item"/> into <paramref name="into"/>, as the window's load sets them.</summary>
+	private void LoadObjectSettings( OriginalObject item, ObjectWindowSettings into )
 	{
 		if ( item.Entry.WhichUIType == (int)BuildCategory.Rides )
 		{
 			var words = item.Runtime.Settings;
-			pending.Ride = new RideSettingWords(
+			into.Ride = new RideSettingWords(
 				SliderPosition( words.Speed, Setting( item, "UsageInfo.MinSpeed" ), Setting( item, "UsageInfo.MaxSpeed" ) ),
 				// [EXT:cheats-ride-vehicles] a ride whose vehicle limit the cheat raised has a larger capacity maximum (OriginalObjectRuntime.MaximumCapacity)
 				SliderPosition( words.Capacity, Setting( item, "UsageInfo.MinCapacity" ), item.Runtime.MaximumCapacity ),
@@ -131,12 +142,33 @@ public sealed partial class ParkHud
 			return;
 		// [BIN:TPW-EXE:0x66a71c variable box SetPos] the variable box class (vtable 0x705af0, slot +0x1c 0x66a6ae) lowers a value above its maximum (+0x13c) to it, else raises one below its minimum (+0x138), and sends 0x800 on a change and always on its first set (flag +0x154 from the constructor 0x66a558); its SetRange 0x66a5c4 clamps the value too
 		// [BIN:TPW-EXE:0x66bb9b slider creation] the original's window object is static and its controls are rebuilt on each open, with sliders that start at position 0 and send 0x800 only on a change (0x66b088); but each slider's ball child forces one notification of the slider's value when it is created (message 0x15 calls 0x66b088 with -2, always sending), which puts 0 into the window's word, and SetRange 0x66b47d only stores the bounds, so the load's SetPos reaches the window as a message whenever it differs from 0 and needs none when it is 0: the window's words always end up as the loaded values, as here
-		pending.Price = SliderPosition( state.Price, 0, MaximumPrice );
-		pending.Prize = SliderPosition( state.CostOfGoods, 0, MaximumPrize );
-		pending.QualityStep = SliderPosition( (state.QualityOfGoods & 0xFF) / 50, 0, 2 );
-		pending.Ingredient = SliderPosition( state.IngredientAmount & 0xFF, 0, 100 );
+		into.Price = SliderPosition( state.Price, 0, MaximumPrice );
+		into.Prize = SliderPosition( state.CostOfGoods, 0, MaximumPrize );
+		into.QualityStep = SliderPosition( (state.QualityOfGoods & 0xFF) / 50, 0, 2 );
+		into.Ingredient = SliderPosition( state.IngredientAmount & 0xFF, 0, 100 );
 		// the win byte +0x190 is 100 less the type's InitChanceOfLoosing at build (0x4db3a1); OpenTPW's economy keeps the chance of losing
-		pending.WinChance = SliderPosition( (100 - state.ChanceOfLosingPercent) & 0xFF, 0, 100 );
+		into.WinChance = SliderPosition( (100 - state.ChanceOfLosingPercent) & 0xFF, 0, 100 );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] What a host's window in a shared park applies to <paramref name="item"/> (C4b-2): the park's values as the window would load them now, with each field the
+	/// window changed from what it loaded (<see cref="loaded"/>), so a field another player changed while it was open keeps their value.
+	/// </summary>
+	private ObjectWindowSettings ChangedOverPark( OriginalObject item )
+	{
+		var values = new ObjectWindowSettings();
+		values.CopyFrom( pending );
+		LoadObjectSettings( item, values );
+		values.Ride = new RideSettingWords(
+			pending.Ride.Speed != loaded.Ride.Speed ? pending.Ride.Speed : values.Ride.Speed,
+			pending.Ride.Capacity != loaded.Ride.Capacity ? pending.Ride.Capacity : values.Ride.Capacity,
+			pending.Ride.Duration != loaded.Ride.Duration ? pending.Ride.Duration : values.Ride.Duration );
+		if ( pending.QualityStep != loaded.QualityStep ) values.QualityStep = pending.QualityStep;
+		if ( pending.Ingredient != loaded.Ingredient ) values.Ingredient = pending.Ingredient;
+		if ( pending.Price != loaded.Price ) values.Price = pending.Price;
+		if ( pending.Prize != loaded.Prize ) values.Prize = pending.Prize;
+		if ( pending.WinChance != loaded.WinChance ) values.WinChance = pending.WinChance;
+		return values;
 	}
 
 	/// <summary>The window's apply for <paramref name="item"/>: the ride window's 0x4af440, the shop window's 0x4b0aa0 or the sideshow window's 0x4b20b0.</summary>
@@ -147,29 +179,41 @@ public sealed partial class ParkHud
 		// [EXT:online-coop-commands] a guest's window sent each change at once and holds nothing to apply (C4b-2)
 		if ( item.IsDeleted || level.IsReadOnlyVisit || !level.Objects.Objects.Contains( item ) || level.Commands.SendsRequests )
 			return;
+		// [EXT:online-coop-commands] a host's window in a shared park applies only the groups it changed, with the fields it changed and the others as the park has them (C4b-2)
+		var changedOnly = HostsSharedPark;
+		var values = changedOnly ? ChangedOverPark( item ) : pending;
 		if ( item.Entry.WhichUIType == (int)BuildCategory.Rides )
 		{
-			if ( item.Runtime.Script != null )
-				level.Commands.Issue( new SetRideSettingsCommand( item.Runtime.AttractionId, pending.Ride.Speed, pending.Ride.Capacity, pending.Ride.Duration ) );
+			if ( item.Runtime.Script != null && (!changedOnly || pending.Ride != loaded.Ride) )
+				level.Commands.Issue( new SetRideSettingsCommand( item.Runtime.AttractionId, values.Ride.Speed, values.Ride.Capacity, values.Ride.Duration ) );
 			return;
 		}
 		if ( TryPriceTarget( item, out var economy, out var state ) )
-			ApplyShopSettings( item, economy, state );
+			ApplyShopSettings( item, economy, state, values, changedOnly );
 	}
 
-	/// <summary>Applies the window's values to a shop or sideshow.</summary>
-	private void ApplyShopSettings( OriginalObject item, ParkEconomy economy, ParkObjectState state )
+	/// <summary>
+	/// Applies <paramref name="values"/> to a shop or sideshow: each of the window's groups, or with <paramref name="changedOnly"/> each group with a field the window changed from what it
+	/// loaded (a host's in a shared park, <see cref="loaded"/>).
+	/// </summary>
+	private void ApplyShopSettings( OriginalObject item, ParkEconomy economy, ParkObjectState state, ObjectWindowSettings values, bool changedOnly = false )
 	{
 		var attraction = item.Runtime.AttractionId;
+		var priceChanged = !changedOnly || pending.Price != loaded.Price;
 		if ( state.Kind == ParkObjectKind.Shop )
 		{
-			level.Commands.Issue( new SetShopSettingsCommand( attraction, (byte)(pending.QualityStep * 50), pending.Ingredient ) );
-			level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
+			if ( !changedOnly || (pending.QualityStep, pending.Ingredient) != (loaded.QualityStep, loaded.Ingredient) )
+				level.Commands.Issue( new SetShopSettingsCommand( attraction, (byte)(values.QualityStep * 50), values.Ingredient ) );
+			if ( priceChanged )
+				level.Commands.Issue( new SetPriceCommand( attraction, values.Price ) );
 		}
 		else if ( IsNonWinnable( item ) )
-			level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
-		else
-			level.Commands.Issue( new SetGamePrizeCommand( attraction, pending.Price, pending.Prize, 100 - (pending.WinChance & 0xFF) ) );
+		{
+			if ( priceChanged )
+				level.Commands.Issue( new SetPriceCommand( attraction, values.Price ) );
+		}
+		else if ( priceChanged || (pending.Prize, pending.WinChance) != (loaded.Prize, loaded.WinChance) )
+			level.Commands.Issue( new SetGamePrizeCommand( attraction, values.Price, values.Prize, 100 - (values.WinChance & 0xFF) ) );
 	}
 
 	/// <summary>Applies the window's values to the object it showed when the window closes or shows another object, then loads the new one.</summary>
@@ -190,7 +234,10 @@ public sealed partial class ParkHud
 			CommitObjectSettings( settingsOwner );
 		settingsOwner = shown;
 		if ( shown != null )
+		{
 			LoadObjectSettings( shown );
+			loaded.CopyFrom( pending );
+		}
 	}
 
 	/// <summary>The shop and sideshow windows' apply-all (0xc081, 0xa0a9): the window's values go to every placed object of the same type, the shown one included.</summary>
@@ -210,8 +257,10 @@ public sealed partial class ParkHud
 			if ( other.IsDeleted || other.Entry.InfoId != owner.Entry.InfoId || level.GetEconomyInstance( other ) is not int instance
 				|| !economy.TryGetObject( instance, out var target ) || target.InfoId != owner.Entry.InfoId )
 				continue;
-			ApplyShopSettings( other, economy, target );
+			ApplyShopSettings( other, economy, target, pending );
 		}
+		// [EXT:online-coop-commands] the shown object has the window's values now: a host's close in a shared park applies only what changes after (C4b-2)
+		loaded.CopyFrom( pending );
 	}
 
 	// ---- controls ----

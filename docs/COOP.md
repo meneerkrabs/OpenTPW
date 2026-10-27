@@ -2314,6 +2314,11 @@ with one difference the queue forces: a guest's window keeps no draft.
   excitement and reliability gauges, draw the drawn values every frame: each field its group's latest entry
   while one is unsent or open, else the park's (a reopened window, the arrows' next object, the window after a
   resync).
+- **The host's close.** A host's window in a shared park keeps its draft and applies it when it closes or shows
+  another object, as the original's, but only what it changed from the values it loaded: each group with a
+  changed field goes, its other fields as the park has them then, so a guest's change made while the host's
+  window was open stays. A typed price and an apply-all count as applied. A single player's window applies all
+  its values, as the original's.
 - **Groups and order.** Each target is one attraction (its attraction id); different attractions go side by
   side under the cap of four open. An attraction's fields go in groups, one writer per field: a ride's speed,
   capacity and duration (`SetRideSettingsCommand`); a shop's quality and ingredient (`SetShopSettingsCommand`)

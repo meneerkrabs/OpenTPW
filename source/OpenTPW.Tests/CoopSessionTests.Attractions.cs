@@ -1216,16 +1216,16 @@ public partial class CoopSessionTests
 
 	/// <summary>
 	/// A claimable ride of ride type 1100 (a kart ride, so its sale, track and tool edits can be claimed, with the economy record and the level's catalogue tier a list needs) placed alike on every
-	/// peer before the session starts, beside <see cref="PlaceKartRide"/>'s own, which sets the level's track builders up.
+	/// peer before the session starts, beside <see cref="PlaceKartRide"/>'s own, which sets the level's track builders up; with <paramref name="settings"/> added to its type's.
 	/// </summary>
-	private OriginalObject PlaceClaimableRide( Park park )
+	private OriginalObject PlaceClaimableRide( Park park, string settings = "" )
 	{
 		PlaceKartRide( park );
 		var root = (string)typeof( UpgradeCatalogueDefaultsTests ).GetField( "root", NonPublic )!.GetValue( fixture )!;
 		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/claimable", new ObjectSettings( new[] { new ObjectSettingsFile(
 				"Info.Id 1100\nInfo.Name SyntheticClaimable\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nBumper.WhichTrackType 1\nBumper.BumperType -4\nUsageInfo.MinCapacity 1\nUsageInfo.MaxCapacity 100\n"
 				+ "UsageInfo.MinDuration 1\nUsageInfo.MaxDuration 200\nUpgrades[0].InitCapacity 1\nUpgrades[0].InitDuration 10\nUpgrades[0].InitSpeed 50\nUpgrades[0].QueueWaitTimeConstant 130\n"
-				+ "Upgrades[1].InitCapacity 3\nUpgrades[1].InitDuration 20\nUpgrades[1].InitSpeed 100\nUpgrades[1].QueueWaitTimeConstant 200\n", "claimable.sam" ) } ),
+				+ "Upgrades[1].InitCapacity 3\nUpgrades[1].InitDuration 20\nUpgrades[1].InitSpeed 100\nUpgrades[1].QueueWaitTimeConstant 200\n" + settings, "claimable.sam" ) } ),
 			new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(),
 			new BaseFileSystem( root ), null );
 		var ride = park.Level.Objects.TryPlace( entry, 26, 9, 0, out var reason )!;

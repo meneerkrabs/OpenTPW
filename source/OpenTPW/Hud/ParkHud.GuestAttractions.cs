@@ -6,7 +6,7 @@ namespace OpenTPW.Hud;
 /// [EXT:online-coop-commands] A guest's attraction windows in a shared park (C4b-2, docs/COOP.md "A guest's management windows"). The object window keeps no draft: its controls draw the
 /// drawn values (each group's latest request not resolved yet, else the park's), and each change goes at once as a click, which the session's rights, a claim or the queue's room may refuse
 /// before anything changes; its close and retarget send nothing. The door, the call button and the upgrade rows are open-state actions, one per object at a time, and the window draws the
-/// object's record as the waiting one will leave it. A host's and a single player's windows stay as they are: they apply their values on close.
+/// object's record as the waiting one will leave it. A host's and a single player's windows apply their values on close, a host's in a shared park only what it changed (<see cref="loaded"/>).
 /// </summary>
 public sealed partial class ParkHud
 {

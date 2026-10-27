@@ -101,8 +101,9 @@ public sealed partial class ParkHud
 				return;
 			}
 			level.Commands.Issue( new SetPriceCommand( owner.Runtime.AttractionId, price ) );
-			// the window's own price follows, so its apply on close keeps the typed price
+			// the window's own price follows, so its apply on close keeps the typed price; [EXT:online-coop-commands] it is applied, so a host's close in a shared park leaves it (C4b-2)
 			PendingSettings.Price = price;
+			loaded.Price = price;
 			Cancel();
 		}
 		number.Submitted = Apply;

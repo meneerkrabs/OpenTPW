@@ -233,6 +233,132 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void AHostsCloseInASharedParkAppliesOnlyWhatItsWindowChangedSoAGuestsChangeMeanwhileStays()
+	{
+		var (host, guest, _, _) = Shared( ( park, _ ) =>
+		{
+			AddPriced( park, shop: true, 20, "UsageInfo.SpecialIngredient 2\n" );
+			AddPriced( park, shop: false, 23 );
+		} );
+		var view = ViewOf( guest );
+		var hostView = ViewOf( host );
+		Rounds( 20, host, guest );
+		GiveRights( host, guest, view, CoopRights.Attractions );
+		var shopId = host.Level.Objects.Objects.Single( item => item.Entry.InfoId == 1203 ).Runtime.AttractionId;
+		var gameId = host.Level.Objects.Objects.Single( item => item.Entry.InfoId == 1303 ).Runtime.AttractionId;
+		var hostSeat = host.Level.Commands.Player;
+		ParkCommand[] HostsSince( int count ) => HostCommandsOf( host, hostSeat ).Skip( count ).ToArray();
+		var shop0 = StateOf( host, shopId );
+		var (ingredient0, price0) = (shop0.IngredientAmount, shop0.Price);
+		Assert.IsTrue( price0 + 10 <= ParkHud.MaximumPrice );
+
+		// the shop: the host's window steps the price and keeps it, the guest's steps the quality, which the host takes while its window is open
+		var (hostOpen, hostClose) = Window( hostView, ObjectOf( host, shopId ) );
+		hostOpen();
+		WindowClick( hostView, "pricePlus" );
+		Assert.AreEqual( price0 + 1, hostView.Hud.PendingSettings.Price, "the host's window keeps its price" );
+		Show( view, ObjectOf( guest, shopId ) );
+		var quality = WindowSlider( view, "shopQuality" );
+		var step = (quality.Value() + 1) % 3;
+		quality.Changed!( step );
+		UntilManaged( host, guest, view );
+		Assert.AreEqual( step * 50, StateOf( host, shopId ).QualityOfGoods, "the guest's quality, taken" );
+		var before = HostCommandsOf( host, hostSeat ).Length;
+		hostClose();
+		CollectionAssert.AreEqual( IssuedBy( hostSeat, new SetPriceCommand( shopId, price0 + 1 ) ), HostsSince( before ), "the host's close applies its price alone" );
+		CatchUpAndCompare( host, guest );
+		foreach ( var park in new[] { host, guest } )
+		{
+			var state = StateOf( park, shopId );
+			Assert.AreEqual( (step * 50, ingredient0, price0 + 1), (state.QualityOfGoods, state.IngredientAmount, state.Price), park == host ? "the host's shop" : "the guest's shop" );
+		}
+
+		// the game: the host's window steps the prize, the guest's the price, which goes with the game's group; the host's close sends that group with its prize and the park's price
+		var game0 = StateOf( host, gameId );
+		var (gamePrice0, prize0, losing0) = (game0.Price, game0.CostOfGoods, game0.ChanceOfLosingPercent);
+		Assert.IsTrue( gamePrice0 < ParkHud.MaximumPrice && prize0 < ParkHud.MaximumPrize );
+		(hostOpen, hostClose) = Window( hostView, ObjectOf( host, gameId ) );
+		hostOpen();
+		WindowClick( hostView, "prizePlus" );
+		Show( view, ObjectOf( guest, gameId ) );
+		WindowClick( view, "pricePlus" );
+		Assert.AreEqual( new SetGamePrizeCommand( gameId, gamePrice0 + 1, prize0, losing0 ), WindowEntry( guest, gameId, ManagementKnob.Game ) );
+		UntilManaged( host, guest, view );
+		before = HostCommandsOf( host, hostSeat ).Length;
+		hostClose();
+		CollectionAssert.AreEqual( IssuedBy( hostSeat, new SetGamePrizeCommand( gameId, gamePrice0 + 1, prize0 + 1, losing0 ) ), HostsSince( before ),
+			"the host's prize with the guest's price" );
+		CatchUpAndCompare( host, guest );
+		foreach ( var park in new[] { host, guest } )
+		{
+			var state = StateOf( park, gameId );
+			Assert.AreEqual( (gamePrice0 + 1, prize0 + 1, losing0), (state.Price, state.CostOfGoods, state.ChanceOfLosingPercent), park == host ? "the host's game" : "the guest's game" );
+		}
+
+		// a typed price goes at once: the host's close after a guest's later price applies nothing, and an untouched window's close nothing either
+		WithPriceEditor( () =>
+		{
+			(hostOpen, hostClose) = Window( hostView, ObjectOf( host, shopId ) );
+			hostOpen();
+			OpenPriceEditor( hostView );
+			TypePrice( hostView, price0 + 8 );
+			Assert.AreEqual( price0 + 8, StateOf( host, shopId ).Price, "the host's typed price applied at once" );
+			CatchUpAndCompare( host, guest );
+			Show( view, ObjectOf( guest, shopId ) );
+			WindowClick( view, "pricePlus" );
+			UntilManaged( host, guest, view );
+			before = HostCommandsOf( host, hostSeat ).Length;
+			hostClose();
+			hostOpen();
+			hostClose();
+			Assert.AreEqual( 0, HostsSince( before ).Length, "nothing left to apply" );
+		} );
+		CatchUpAndCompare( host, guest );
+		foreach ( var park in new[] { host, guest } )
+			Assert.AreEqual( price0 + 9, StateOf( park, shopId ).Price, park == host ? "the guest's later price on the host" : "the guest's later price on the guest" );
+	}
+
+	[TestMethod]
+	public void AHostsCloseInASharedParkAppliesTheRideSettingItsWindowChangedWithTheOthersAsTheParkHasThem()
+	{
+		InParkView( () =>
+		{
+			var (host, guest, _, _) = Shared( ( park, _ ) => PlaceClaimableRide( park, "UsageInfo.MinSpeed 10\nUsageInfo.MaxSpeed 200\n" ) );
+			var view = ViewOf( guest );
+			var hostView = ViewOf( host );
+			Rounds( 20, host, guest );
+			GiveRights( host, guest, view, CoopRights.Attractions );
+			var ride = host.Level.TrackStations.Keys.Single( item => item.Entry.InfoId == 1100 ).Runtime.AttractionId;
+			var hostSeat = host.Level.Commands.Player;
+			var words0 = ObjectOf( host, ride ).Runtime.Settings;
+			Assert.IsTrue( words0.Speed + 5 <= 200 && words0.Capacity + 2 <= 100, $"{words0}" );
+			// the host's window steps the speed and keeps it; the guest's steps the capacity, which goes at once with the speed as drawn and is taken
+			var (hostOpen, hostClose) = Window( hostView, ObjectOf( host, ride ) );
+			hostOpen();
+			var speed = WindowSlider( hostView, "rideSpeed" );
+			speed.Changed!( speed.Value() + 5 );
+			Show( view, ObjectOf( guest, ride ) );
+			var capacity = WindowSlider( view, "rideCapacity" );
+			capacity.Changed!( capacity.Value() + 2 );
+			Assert.AreEqual( new SetRideSettingsCommand( ride, words0.Speed, words0.Capacity + 2, words0.Duration ), WindowEntry( guest, ride, ManagementKnob.RideSettings ) );
+			UntilManaged( host, guest, view );
+			Assert.AreEqual( words0 with { Capacity = words0.Capacity + 2 }, ObjectOf( host, ride ).Runtime.Settings, "the guest's capacity, taken" );
+			var before = HostCommandsOf( host, hostSeat ).Length;
+			hostClose();
+			CollectionAssert.AreEqual( IssuedBy( hostSeat, new SetRideSettingsCommand( ride, words0.Speed + 5, words0.Capacity + 2, words0.Duration ) ),
+				HostCommandsOf( host, hostSeat ).Skip( before ).ToArray(), "the host's speed with the guest's capacity" );
+			// an untouched window's close applies nothing
+			hostOpen();
+			hostClose();
+			Assert.AreEqual( before + 1, HostCommandsOf( host, hostSeat ).Length );
+			CatchUpAndCompare( host, guest );
+			foreach ( var park in new[] { host, guest } )
+				Assert.AreEqual( new RideSettingWords( words0.Speed + 5, words0.Capacity + 2, words0.Duration ), ObjectOf( park, ride ).Runtime.Settings,
+					park == host ? "the host's ride" : "the guest's ride" );
+		} );
+	}
+
+	[TestMethod]
 	public void AGuestsTypedPriceGoesWhenAppliedAndARefusalKeepsTheEditorOpenWithItsNote()
 	{
 		OriginalObject? shop = null;

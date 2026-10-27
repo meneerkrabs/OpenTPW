@@ -3,6 +3,7 @@ import * as webgl from './opentpw-gl.js';
 import * as audio from './opentpw-audio.js';
 import * as storage from './opentpw-storage.js';
 import * as originals from './opentpw-originals.js';
+import * as cdimage from './opentpw-cdimage.js';
 import { plan, importStartup, startSelected } from './opentpw-startup.js';
 import * as inputs from './opentpw-inputs.js';
 import * as text from './opentpw-text.js';
@@ -354,7 +355,7 @@ function keeping(sources, fromFolder) {
 
 let starting = false;
 async function copy(sources, fromFolder = false) {
-	if (starting)
+	if (starting || imageBusy)
 		return;
 	let files;
 	try {
@@ -388,6 +389,9 @@ async function copyAndStart(files, fromFolder) {
 		if (store && keepMode !== 'off' && !keepFailed) {
 			try {
 				await store.begin(keepMode, files.manifestSources.map(([relative, , size]) => [relative, size ?? null]));
+				// a folder chosen over an unfinished image load makes the store the folder's: it no longer needs to be complete
+				if (fromFolder)
+					store.annotate('source', null);
 			} catch (error) {
 				keepFailed = true;
 				console.warn('Keeping the game files could not start', error);
@@ -517,6 +521,9 @@ function startKept() {
 		return false;
 	try {
 		const files = plan(Object.entries(store.manifest.files).map(([relative]) => [relative]), document.getElementById('edition').value);
+		// A store filled from a CD image is ready only when every file it lists is in: a cancelled or failed load must not offer Play.
+		if (store.manifest.source === 'image' && !Object.keys(store.manifest.files).every(relative => store.has(relative)))
+			return false;
 		return files.start.length > 0 && files.start.every(([relative]) => store.has(relative));
 	} catch {
 		return false;
@@ -526,14 +533,15 @@ function updateSetup() {
 	const select = document.getElementById('keep');
 	select.value = keepMode;
 	document.getElementById('keepRow').hidden = !store || keepReleased || perf !== null && !!perfQuery.get('data');
-	document.getElementById('forget').disabled = starting;
-	document.getElementById('edition').disabled = starting;
+	document.getElementById('forget').disabled = starting || imageBusy;
+	document.getElementById('edition').disabled = starting || imageBusy;
 	if (keepNote && !starting && !gameRunning)
 		status.textContent = keepNote;
 	const ready = keepMode !== 'off' && startKept();
 	document.getElementById('kept').hidden = !ready;
 	document.getElementById('folderText').textContent = ready ? 'Choose another folder' : 'Choose folder';
 	document.getElementById('forget').hidden = !store?.manifest || keepReleased;
+	updateImageButtons();
 	if (store?.manifest)
 		document.getElementById('keptSize').textContent = `${(store.bytes.stored / 1048576).toFixed(0)} MB`;
 }
@@ -553,7 +561,206 @@ document.getElementById('play').addEventListener('click', () => {
 	status.textContent = 'Starting with the game files kept in this browser…';
 	copy(Object.entries(store.manifest.files).map(([relative, entry]) => [relative, () => readFromFolder(relative, entry.size), entry.size]));
 });
+
+// ---- Game data sources (opentpw-cdimage.js, docs/WEB.md "Game data sources"): a CD image from archive.org, another address or a local file ----
+// The image is streamed, only the game's data files are cut out of it and kept in the origin-private store; the game then starts from the kept files
+// exactly as after Play. Nothing is fetched before a click. A failed or cancelled load keeps the files already written: loading again skips them.
+const ARCHIVE = {
+	page: 'https://archive.org/details/tpworld_202508',
+	// archive.org's per-member address: it answers cross-origin requests (the item's ZIP download itself does not) and streams the BIN out of the ZIP.
+	stream: 'https://archive.org/download/tpworld_202508/TPWORLD.zip/TPWORLD.bin',
+	bytes: 712674816,
+};
+// (ranges: false above: that endpoint streams the whole member and ignores Range, so no range is tried.)
+const imageUi = {
+	box: document.getElementById('imageProgress'), bar: document.getElementById('imageBar'), text: document.getElementById('imageText'),
+	buttons: ['archiveLoad', 'urlLoad'].map(id => document.getElementById(id)),
+};
+let imageBusy = false;
+let imageAbort = null;
+// decimal megabytes, like the sizes the start screen names (about 713 MB, about 320 MB)
+const megabytes = bytes => `${(bytes / 1e6).toFixed(0)} MB`;
+function imageStorageProblem() {
+	if (!keepSupported)
+		return 'This browser cannot keep files (no writable origin-private storage), which loading a CD image needs. Use a current Chrome, Firefox or Safari, or choose your game folder.';
+	if (!store)
+		return keepNote || 'The browser storage for the game files is not available in this tab.';
+	return '';
+}
+function updateImageButtons() {
+	const unavailable = imageStorageProblem();
+	for (const button of imageUi.buttons)
+		button.disabled = imageBusy || starting || gameRunning || !!unavailable;
+	document.getElementById('imageFile').disabled = imageBusy || starting || gameRunning || !!unavailable;
+	document.getElementById('archiveLoad').title = unavailable;
+}
+function imageErrorText(error, label) {
+	if (error?.name === 'AbortError')
+		return 'Cancelled. The files already written stay and are skipped when you load again, but the download starts over.';
+	// Only a failed fetch is worded as a network/CORS problem; any other error (a storage rejection, say) gets the generic text below.
+	if (error instanceof cdimage.ImageError && error.code === 'network')
+		return `${error.message} This is a network error, or the server does not allow requests from this page (CORS). Check the connection and try again, or download the file and choose it from your disk.`;
+	if (error instanceof cdimage.ImageError)
+		return error.message;
+	if (error?.name === 'QuotaExceededError')
+		return 'This browser has no room for the game files (about 320 MB). Free some disk space, or allow more storage for this site, and load again.';
+	return `Loading the game data failed: ${error?.message ?? error}`;
+}
+async function loadImage(label, makeSource, expectedBytes = null) {
+	if (imageBusy || starting || gameRunning)
+		return;
+	const unavailable = imageStorageProblem();
+	if (unavailable) {
+		status.textContent = unavailable;
+		return;
+	}
+	imageBusy = true;
+	imageAbort = new AbortController();
+	const signal = imageAbort.signal;
+	// Loading a CD image keeps its files (that is what it is for). A player who had chosen "no" is told once, and the choice stays visible
+	// in the keep selector, where it can be changed back.
+	const keepWasOff = keepMode === 'off';
+	if (keepWasOff) {
+		keepMode = 'all';
+		localStorage.setItem('opentpw-keep', keepMode);
+	}
+	keepFailed = false;
+	updateSetup();
+	updateImageButtons();
+	imageUi.box.hidden = false;
+	imageUi.bar.removeAttribute('value');
+	imageUi.text.textContent = `Connecting to ${label}…${keepWasOff ? ' (Keeping the game files was set to "no"; loading a CD image turns it on. You can change it under "Keep the game files in this browser".)' : ''}`;
+	// Ask the browser not to evict the files under storage pressure (it may refuse; the files are then simply kept as usual).
+	try { await navigator.storage.persist?.(); } catch { /* optional */ }
+	let written = 0;
+	let lastShown = 0;
+	// the plan of the image's files (the same one a folder would get): its manifest list is what the store is told about
+	let planned = null;
+	try {
+		const source = await makeSource(signal);
+		await cdimage.extractImage({
+			source, signal,
+			choose: found => {
+				planned = plan(found.map(file => [file.path, null, file.size]), document.getElementById('edition').value);
+				if (!planned.start.some(([relative]) => /^data\//i.test(relative)))
+					throw new cdimage.ImageError('There is no Data folder in that image: it is not a Theme Park World CD.');
+				return planned.all.map(([relative]) => relative);
+			},
+			begin: async taken => {
+				const needed = taken.reduce((sum, file) => sum + file.size, 0);
+				const estimate = await navigator.storage.estimate?.().catch(() => null);
+				if (estimate?.quota != null && estimate.usage != null && estimate.quota - estimate.usage + store.bytes.stored < needed * 1.02)
+					throw new cdimage.ImageError(`This browser allows about ${megabytes(estimate.quota - estimate.usage + store.bytes.stored)} for the game files here but they need ${megabytes(needed)}. Free some disk space or allow more storage for this site.`, 'quota');
+				await store.begin(keepMode, planned.manifestSources.map(([path, , size]) => [path, size ?? null]));
+				// a store filled from an image is complete or it is not ready to play (startKept)
+				store.annotate('source', 'image');
+				written = taken.filter(file => store.has(file.path) && store.manifest.files[file.path].size === file.size).length;
+			},
+			have: (path, size) => store.has(path) && store.manifest.files[path]?.size === size,
+			write: async (path, bytes) => {
+				await store.write(path, bytes);
+				if (++written % 25 === 0)
+					await store.flush();
+			},
+			progress: info => {
+				const now = performance.now();
+				if (now - lastShown < 150)
+					return;
+				lastShown = now;
+				const total = info.total ?? expectedBytes;
+				const part = total ? Math.min(1, info.bytes / total) : null;
+				if (part == null)
+					imageUi.bar.removeAttribute('value');
+				else
+					imageUi.bar.value = part;
+				const files = info.count ? `, ${info.done} of ${info.count} files` : '';
+				imageUi.text.textContent = info.phase === 'directory' ? 'Reading the disc…'
+					: `${megabytes(info.bytes)}${total ? ` of ${megabytes(total)} (${Math.round(100 * part)}%)` : ''}${files}`;
+			},
+		});
+		await store.flush();
+		imageUi.text.textContent = 'Done. Starting the game…';
+		imageUi.box.hidden = true;
+		imageBusy = false;
+		updateSetup();
+		if (!startKept())
+			throw new cdimage.ImageError('The files were kept, but they do not form a complete Theme Park World start (the Start choice above may not match this disc).');
+		status.textContent = 'Starting with the game files kept in this browser…';
+		copy(Object.entries(store.manifest.files).map(([relative, entry]) => [relative, () => readFromFolder(relative, entry.size), entry.size]));
+	} catch (error) {
+		console.warn('Loading the CD image failed', error);
+		imageUi.box.hidden = true;
+		status.textContent = imageErrorText(error, label);
+		try { await store.flush(); } catch (flushError) { console.warn('The list of kept game files could not be written', flushError); }
+	} finally {
+		imageBusy = false;
+		imageAbort = null;
+		updateSetup();
+	}
+}
+document.getElementById('archiveLoad').addEventListener('click', () => loadImage('archive.org', signal => cdimage.urlSource(ARCHIVE.stream, { signal, expectedBytes: ARCHIVE.bytes, ranges: false }), ARCHIVE.bytes));
+document.getElementById('urlLoad').addEventListener('click', () => {
+	const address = document.getElementById('urlInput').value.trim();
+	let url;
+	try {
+		url = new URL(address);
+	} catch {
+		status.textContent = 'Enter the address of a CD image (https://…).';
+		return;
+	}
+	// https only; plain http only for this machine (the smoke check serves its image from 127.0.0.1)
+	if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))) {
+		status.textContent = 'Only https:// addresses can be loaded.';
+		return;
+	}
+	loadImage(url.host, signal => cdimage.urlSource(url.href, { signal }));
+});
+document.getElementById('imageCancel').addEventListener('click', () => imageAbort?.abort());
+// A chosen file: an .iso, a .bin (with its .cue: both may be selected) or a .zip holding one. Read in place, never uploaded.
+async function loadImageFiles(files) {
+	const named = extension => files.filter(file => file.name.toLowerCase().endsWith(extension));
+	const image = named('.zip')[0] ?? named('.iso')[0] ?? named('.bin')[0] ?? named('.img')[0];
+	if (!image) {
+		status.textContent = named('.cue').length > 0 ? 'A cue sheet only describes the image: select the .bin next to it too (both at once).' : 'Choose an .iso, a .bin with its .cue, or a .zip that holds one.';
+		return;
+	}
+	const cue = named('.cue')[0];
+	if (cue) {
+		try {
+			cdimage.checkCue(await cue.text());
+		} catch (error) {
+			status.textContent = error.message;
+			return;
+		}
+	}
+	loadImage(image.name, () => cdimage.blobSource(image), image.size);
+}
+document.getElementById('imageFile').addEventListener('change', event => {
+	const files = [...event.target.files];
+	event.target.value = '';
+	if (files.length > 0)
+		loadImageFiles(files);
+});
+// Files dropped on the setup screen are taken like a chosen image.
+const setupScreen = document.getElementById('setup');
+setupScreen.addEventListener('dragover', event => { if (event.dataTransfer?.types?.includes('Files')) event.preventDefault(); });
+setupScreen.addEventListener('drop', event => {
+	if (!event.dataTransfer?.files?.length)
+		return;
+	event.preventDefault();
+	loadImageFiles([...event.dataTransfer.files]);
+});
+// ?source=<address of a CD image> fills the address box (and opens the alternatives); it never starts a download. archive.org stays the visible default.
+const requestedSource = perfQuery.get('source');
+if (requestedSource && requestedSource !== 'archive') {
+	document.getElementById('urlInput').value = requestedSource;
+	document.getElementById('otherSources').open = true;
+}
+document.getElementById('urlInput').addEventListener('keydown', event => { if (event.key === 'Enter') document.getElementById('urlLoad').click(); });
 updateSetup();
+// A load from a CD image that was cancelled or failed leaves a partial store: Play is not offered, and the player is told how to go on.
+if (store?.manifest?.source === 'image' && !startKept() && Object.values(store.manifest.files).some(file => file.stored))
+	status.textContent = 'Loading the game data was not finished. Load it again (archive.org or your image): the files already written are skipped.';
 
 // ---- Mod inputs: the player's Theme Park Inc files for the Theme Park Inc rides mod (opentpw-inputs.js) ----
 const inputFolder = document.getElementById('inputFolder');

@@ -476,5 +476,8 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = null;
+		// [EXT:online-coop-claims] a coaster any player's tool held leaves the tool on the park left after the session, which runs on alone, so none stays closed and marked (C3c-2); the guest's
+		// own tool closed without a command at the session's end (Level.EndGuestWaits)
+		level.EndSessionCoasters( level.EditedCoasters() );
 	}
 }

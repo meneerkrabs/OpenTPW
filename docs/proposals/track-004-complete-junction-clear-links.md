@@ -1,5 +1,7 @@
 # TRACK-004: Complete junction clear links
 
+- **Superseded (October 27, 2026):** PR #879 (round 9 F) ports the clear op `0x53B280` and the replays from the corner stacks in full and retires `APPROX:TRACK-004` (docs/TRACKS.md, "The clear op"). The rest of this proposal is kept as history.
+
 ## Status and classification
 - Classification: approximation.
 - Baseline: current main `75fdaed088bd20a23b7157dae565d2d52ace7911`.

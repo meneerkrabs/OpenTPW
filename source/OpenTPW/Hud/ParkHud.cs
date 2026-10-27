@@ -590,10 +590,13 @@ public sealed partial class ParkHud
 			level.ResetBuildRotation();
 			return;
 		}
-		if ( item.Runtime.Coaster != null && level.EnterCoasterTool( item ) )
+		// a placed coaster enters its tool; [EXT:online-coop-claims] a guest's tool starts once its claim and its entry are back, with the tool's help then (C3c-2), and no queue tool follows the
+		// placement meanwhile, nor after a refusal (another player's claim, the guest's coaster commands still to send)
+		if ( item.Runtime.Coaster != null && level.BeginCoasterToolEntry( item ) is var coaster and not TrackToolEntry.None )
 		{
 			level.ResetBuildRotation();
-			PostMessage( strings.Help( 0x125 ) );
+			if ( coaster == TrackToolEntry.Entered )
+				PostMessage( strings.Help( 0x125 ) );
 			return;
 		}
 		// [EXT:pools-slides] a placed slide tower enters the slide mode of the pool tool: the player lays the track from the tower down into the pool
@@ -881,6 +884,8 @@ public sealed partial class ParkHud
 		level.WorldPointerRouted = false;
 		level.ParkOwnsRelease = false;
 		frameHostStarts = level.HostToolStarts;
+		// [EXT:online-coop-commands] whether the guest's coaster panel waited for the host before this frame's answers (C3c-2): a press first seen now was made while it waited
+		frameCoasterWaiting = level.CoasterPanel?.IsWaiting == true;
 		UpdatePausingBoxes();
 		// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
 		if ( level.WaitingToolStart != null && !level.NoToolActive )
@@ -895,9 +900,14 @@ public sealed partial class ParkHud
 		CompleteGuestRequests();
 		level.EndCarrylessMove();
 		level.EndStrayCarry( Time.Now );
-		// [EXT:online-coop-claims] and this machine's claim is bound to its track tool's ride (C3c-1)
+		// [EXT:online-coop-commands] the guest's coaster tool says what its waited actions came back with, before the claim is bound: an outcome that ended the tool says why itself (C3c-2)
+		ReportGuestCoasterActions();
+		// [EXT:online-coop-commands] one tool at a time: a coaster tool on together with a tool that started after it ends (C3c-2)
+		level.RetireCoasterToolForOtherTool();
+		// [EXT:online-coop-claims] and this machine's claim is bound to its track or coaster tool's ride (C3c-1, C3c-2)
 		level.SettleClaim( Time.Now );
-		// [EXT:online-coop-commands] a guest's pool strokes send what waits and say what finished (C3b-3)
+		// [EXT:online-coop-commands] a guest's coaster commands go first, then its pool strokes send what waits and say what finished (C3b-3, C3c-2)
+		UpdateGuestCoasterTool();
 		UpdateGuestPoolStrokes();
 		SyncChallengeMessageSuspension();
 		QueueChallengeTerminalTimers();
@@ -1141,6 +1151,12 @@ public sealed partial class ParkHud
 	/// </summary>
 	private int frameHostStarts;
 
+	/// <summary>
+	/// [EXT:online-coop-commands] Whether the guest's coaster panel waited for the host at the start of this frame, before its answers (C3c-2): a press first seen in this frame was made while it
+	/// waited (<see cref="coasterPressWhileWaiting"/>), whatever the answers did to the wait.
+	/// </summary>
+	private bool frameCoasterWaiting;
+
 	/// <summary>The release played the refusal cue (0xAF) for a refused build click: its "Cannot build" message follows without the error feedback of <see cref="SayCannotBuild"/>.</summary>
 	private bool buildRefusalCue;
 
@@ -1165,9 +1181,7 @@ public sealed partial class ParkHud
 		pendingQueueEdit = null;
 		pressConsumed = false;
 		// a pylon being dragged settles where it is, as when the park pointer is suspended: it does not stay on the cursor
-		if ( level.CoasterPanel is { IsDragging: true } panel )
-			panel.Release( null, null );
-		coasterPress = false;
+		EndCoasterGesture();
 		legacyLeftPress = null;
 		pressHostStarts = null;
 		refusalClickState = null;
@@ -1663,7 +1677,7 @@ public sealed partial class ParkHud
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
-			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt ) );
+			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt, ghost.Symbols ) );
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
@@ -1684,7 +1698,17 @@ public sealed partial class ParkHud
 			cells.AddRange( guestPool.GuestStrokeCells.Select( cell => (cell.X, cell.Y, BlueprintMarker.Allowed) ) );
 		if ( level.BuildEntry == null || !inPark )
 			placementRefused = false;
-		blueprint.Update( delta, paused );
+		// the track symbols turn with the camera's yaw (0x790A38, BlueprintMarkers.SymbolAngle)
+		blueprint.SymbolAngle = Camera.Mode is ParkCameraMode symbolCamera ? ParkCameraMode.OriginalYaw( symbolCamera.Yaw ) : 0f;
+		// [BIN:TPW-EXE:0x005234D0 hover cell] every hover stores the cell under the pointer in 0x8186B8/0x8186B4, which the ghost's glide chases; an edit tool's hover stores its snapped tile (0x527960)
+		// [BIN:TPW-EXE:0x0053DF75 glide tools] the faces glide only while the tool is the placement (4) or an edit tool (0xE, 0x13)
+		var editGhost = level.CellTool.IsActive && level.CellTool.Mode is CellToolMode.KartEdit or CellToolMode.WaterEdit && level.CellTool.Ghost is { } editHover ? editHover.GlideCell : null;
+		if ( editGhost is { } snapped )
+			blueprint.GlideCursor = snapped;
+		else if ( inPark && cursorX >= 0 )
+			blueprint.GlideCursor = (cursorX, cursorY);
+		blueprint.GlideActive = editGhost != null || inPark && level.BuildEntry != null && cursorX >= 0;
+		blueprint.Update( delta, paused, Math.Max( 0, (int)level.SimulationTimeScale ) );
 		blueprint.Show( cells, directions );
 	}
 

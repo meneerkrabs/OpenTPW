@@ -535,7 +535,7 @@ public sealed class ThemeParkIncHud
 		Dictionary<(int X, int Y), byte>? directions = null;
 		if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
-			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt ) );
+			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt, ghost.Symbols ) );
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{

@@ -71,7 +71,8 @@ public partial class Level
 		if ( resumeState != null )
 			return;
 		if ( fresh )
-			BuilderOf( item )!.PlaceInitialStation( station );
+			// [BIN:TPW-EXE:0x00538CF0 cell op 0x87] the exit and entry tiles' first op (0x538D76..0x538D9E) demolishes the object owning each of their cells that is a type 4, 9 or 10 cell (0x527EE0, 0x527D60) when 0x818C14 < 0x818C10: the placement's tool priority is the ride's Info.OverwritePriority (5, the hover 0x5234D0 at 0x5236A4) and 0x818C14, the priority of the last owner the footprint's validation met (0x535788), is below it for any placement the validator allowed (0x535D66); the two tiles lie outside the 4-cell footprint, so nothing validated them. A kart or water ride's station cells are no such cells (TrackBuilder.GiveWay), but the map of OpenTPW's objects holds them, so they are skipped there
+			BuilderOf( item )!.PlaceInitialStation( station, ( x, y ) => DemolishObjectAt( x, y ) );
 		else
 			BuilderOf( item )!.PlaceStation( station );
 		// [EXT:track-placement-walk] the original's placement lays the station (0x0052A1A0 from 0x00529E10) and walks nothing; OpenTPW walks the fresh station so its controller has the station's sections at once, without writing the track word (it keeps the constructor's 1 until a track edit, as the original's does), and the pieces take the add-on walk's rule (TrackPieceAnimations.ForWalk), which on the station's open circuit stops clips none of them plays yet
@@ -152,7 +153,7 @@ public partial class Level
 	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool and the kart/water track tool from both station sides to clear the circuit, with one Spend of 2 × cell cost × 0x100E2424() / 100
 	// [BIN:TPW-EXE:0x00527EE0 ride demolition] the replays run with flag 0x81B46C = 1, so ClearCell 0x53B280 refunds every cleared kart or water tile (0x53B54A..0x53B57F: a tile whose overlap word +0x20 went negative is cleared and refunds unless it is an end of the replayed line while the flag is clear; the flag is set, the type 0x19 and online cases aside), and 0x5280F0..0x528179 then debits twice the cell cost × the scrap percentage / 100 once
 	// [BIN:TPW-EXE:0x00527EE0 demolition replays] the two replays of the track tool clear the chain of tiles from the station's exit to the open end of the track (0x530830, then the lines between its corner points) and the chain from the tile before the station (0x530B70), as TrackEditor.Demolish does: a tile no chain reaches stays in the park and refunds nothing, a tile a chain passes with a pass counter left (a junction) loses one pass only
-	// [APPROX:TRACK-007] the replay clears each line between two corner points through the click handler's mode 0x35, whose per-tile arm writes for the line's step (0x53B280 with the line's (±2, 0) or (0, ±2): the arm the line used goes, the other arm stays when a pass remains, a corner's second arm after its second visit) are modelled as one clear per tile in chain order; a two-line full crossing whose laid flow includes the chain's heading takes the line step's rule (the chain's link bit and that axis's arms go, TrackEditor.Replay), but any other junction keeps the pass rule of the cut (0x53B280 with (−1, −1)) for its arms and link, not the line step's
+	// [BIN:TPW-EXE:0x0053B280 replay clears] each line between two corner points of the collected stacks is replayed through the click handler's mode 0x35 (0x52FE50) with the clear op's line step, and the cut's pass rule (-1, -1) applies to a non-line junction: TrackEditor.ClearCell is the full port
 	private void OnTrackStationRemoving( OriginalObject item )
 	{
 		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || BuilderOf( item ) is not { } builder )
@@ -275,15 +276,22 @@ public partial class Level
 	/// The build check of a track add-on (a jump or tunnel, the objects of <c>AddOn.UpgradeType</c> 1) for <paramref name="ride"/>: its '+' and '#' cells must lie on straight, unflagged
 	/// tiles of the ride's track (<see cref="TrackBuilder.CanStandAddOn"/>), its other cells on free ground, as for any object.
 	/// </summary>
-	public OriginalPlacementResult CheckAddOn( ObjectCatalogEntry entry, int x, int y, int rotation, OriginalObject ride )
+	public OriginalPlacementResult CheckAddOn( ObjectCatalogEntry entry, int x, int y, int rotation, OriginalObject ride ) => CheckAddOn( entry, x, y, rotation, ride, out _ );
+
+	/// <summary>
+	/// <see cref="CheckAddOn(ObjectCatalogEntry, int, int, int, OriginalObject)"/> with the objects it would demolish and the path cells it would clear ([EXT:online-coop-claims] a shared park's
+	/// claims ask them, <see cref="CoopBuildRights.PlacementLeavesClaimsAlone"/>).
+	/// </summary>
+	internal OriginalPlacementResult CheckAddOn( ObjectCatalogEntry entry, int x, int y, int rotation, OriginalObject ride, out ObjectPlacementPlan plan )
 	{
+		plan = ObjectPlacementPlan.None;
 		if ( !trackStations.TryGetValue( ride, out var station ) || BuilderOf( ride ) is not { } builder )
 			return OriginalPlacementResult.Blocked;
 		var owner = builder.OwnerOf( station );
 		Objects.AddOnCellRule = ( cx, cy ) => builder.CanStandAddOn( cx, cy, owner );
 		try
 		{
-			return CheckObject( entry, x, y, rotation, out _ );
+			return CheckObject( entry, x, y, rotation, out plan );
 		}
 		finally
 		{
@@ -341,15 +349,22 @@ public partial class Level
 			NoteSessionRefusal( CoopRefusal.Claimed );
 			return TrackToolEntry.Refused;
 		}
-		// [EXT:online-coop-commands] another tool: a guest's queue edit, Move pick-up or track entry that waits for the host starts no tool once it is back (C3b, C3c-1b)
+		// [EXT:online-coop-commands] a guest's coaster commands still to send go first: a claim sent now would come before them (C3c-2)
+		if ( !CoasterCommandsSentBeforeClaim() )
+			return TrackToolEntry.Refused;
+		// [EXT:online-coop-commands] another tool: a guest's queue edit, Move pick-up or track entry that waits for the host starts no tool once it is back (C3b, C3c-1b); the coaster tool ends
+		// first, so no claim moves away from a coaster whose panel is open (C3c-2)
 		DropToolStartWait();
 		StaffPlacement?.Cancel();
+		ExitCoasterTool();
 		var builder = BuilderOf( station )!;
 		CellTool.Cancel();
 		// [EXT:online-coop-claims] a guest's tool claims its ride through the host (C3c-1b): the tool starts from the claim's outcome, the latest entry's alone (an earlier one's wait was
-		// dropped above), and the claim moves from a ride an earlier entry claimed
+		// dropped above), and the claim moves from a ride an earlier entry claimed; the coaster tool that ended sends its last commands first (C3c-2)
 		if ( CoopSession != null && Commands.SendsRequests )
 		{
+			if ( !CoasterCommandsSentBeforeClaim() )
+				return TrackToolEntry.Refused;
 			if ( Commands.Issue( new ClaimRideCommand( station.Runtime.AttractionId ) ).Request is not { } claim )
 				return TrackToolEntry.Refused;
 			WaitingToolStart = claim;
@@ -380,12 +395,12 @@ public partial class Level
 	private static OriginalObject? PlacedQueueStart( OriginalObject item ) => item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells ? item : null;
 
 	/// <summary>
-	/// [EXT:online-coop-claims] A guest's track tool entry that waits for the host (C3c-1b): the request of its claim, then of its open, the ride, whether a placement opened it (its queue
-	/// start), and whether it starts as a placement's (the line tool whatever the circuit).
+	/// [EXT:online-coop-claims] A guest's track or coaster tool entry that waits for the host (C3c-1b, C3c-2): the request of its claim, then of its open (a coaster's: its entry), the ride,
+	/// whether a placement opened a kart or water ride's tool (its queue start), and whether that tool starts as a placement's (the line tool whatever the circuit).
 	/// </summary>
-	private sealed record PendingTrackStart( CoopGuestCommands.Request Request, int Ride, bool Placed, bool JustPlaced );
+	private sealed record PendingTrackStart( CoopGuestCommands.Request Request, int Ride, bool Placed, bool JustPlaced = false );
 
-	/// <summary>[EXT:online-coop-claims] The guest's track tool entry that waits for the host, or null (C3c-1b): <see cref="WaitingToolStart"/> holds its request.</summary>
+	/// <summary>[EXT:online-coop-claims] The guest's track or coaster tool entry that waits for the host, or null (C3c-1b, C3c-2): <see cref="WaitingToolStart"/> holds its request.</summary>
 	private PendingTrackStart? pendingTrackStart;
 
 	/// <summary>
@@ -403,8 +418,12 @@ public partial class Level
 		if ( pendingTrackStart is not { } start || !ReferenceEquals( start.Request, request ) )
 			return TrackToolStart.None;
 		pendingTrackStart = null;
-		if ( !request.Accepted || IsReadOnlyVisit || waterTracks == null || ResolveCommandObject( start.Ride ) is not { IsDeleted: false } station
-			|| !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
+		if ( !request.Accepted || IsReadOnlyVisit || ResolveCommandObject( start.Ride ) is not { IsDeleted: false } station )
+			return TrackToolStart.None;
+		// [EXT:online-coop-claims] a coaster's entry: after the claim the entry's writes go as a second request, whose outcome opens the panel (C3c-2)
+		if ( station.Runtime.Coaster != null )
+			return CompleteCoasterToolStart( request, start, station );
+		if ( waterTracks == null || !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
 			return TrackToolStart.None;
 		if ( ClaimOf( start.Ride ) != Commands.Player )
 			return TrackToolStart.ClaimGone;
@@ -440,11 +459,39 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-claims] The outcome of a guest's coaster tool entry (C3c-2): the claim accepted sends <see cref="BeginCoasterToolCommand"/> as a second request with the same wait; that
+	/// one accepted opens the panel, counted as a tool the host's answer started. Either only while the park view has no tool and the claims still give the coaster to this seat.
+	/// </summary>
+	private TrackToolStart CompleteCoasterToolStart( CoopGuestCommands.Request request, PendingTrackStart start, OriginalObject station )
+	{
+		if ( GetCoasterBuilder( station ) is not { } builder )
+			return TrackToolStart.None;
+		if ( ClaimOf( start.Ride ) != Commands.Player )
+			return TrackToolStart.ClaimGone;
+		if ( !NoToolActive )
+			return TrackToolStart.None;
+		if ( request.Command is ClaimRideCommand )
+		{
+			if ( Commands.Issue( new BeginCoasterToolCommand( start.Ride ) ).Request is not { } begin )
+				return TrackToolStart.None;
+			WaitingToolStart = begin;
+			pendingTrackStart = start with { Request = begin };
+			return TrackToolStart.Pending;
+		}
+		OpenCoasterPanel( station, builder );
+		HostToolStarts++;
+		return TrackToolStart.Entered;
+	}
+
+	/// <summary>
 	/// The edit tool on <paramref name="station"/>'s closed circuit; [EXT:online-coop-commands] its cut is a command (<see cref="CutTrackCommand"/>), a guest's a request whose outcome finishes the edit
 	/// (C3c-1b), and the tool moves on from the cut's walk.
 	/// </summary>
-	private void EnterTrackEditTool( OriginalObject station, TrackEditor editor ) =>
+	private void EnterTrackEditTool( OriginalObject station, TrackEditor editor )
+	{
+		editor.UseEditToolExit();
 		CellTool.Enter( new TrackEditWriter( editor, BuilderOf( station )!.Family, _ => { }, CancelTrackTool, ( first, second ) => SendTrackCut( station, editor, first, second ) ), null );
+	}
 
 	/// <summary>
 	/// The line tool from the open end of <paramref name="station"/>'s track; [EXT:online-coop-commands] its lines and their undo are commands (<see cref="ParkCommandTrackWriter"/>), and a walk that finds the
@@ -529,7 +576,7 @@ public partial class Level
 	/// Runs a track line command (<see cref="LayTrackLineCommand"/>, <see cref="UndoTrackLineCommand"/>) for the ride whose attraction id is <paramref name="ride"/>: the ride's line writer lays the line from
 	/// <paramref name="start"/> toward <paramref name="end"/>, or with <paramref name="undo"/> its editor takes that line back, and a change walks the circuit again (<see cref="WalkTrack"/>).
 	/// </summary>
-	internal ParkCommandResult ExecuteTrackLine( int ride, (int X, int Y) start, (int X, int Y) end, bool undo )
+	internal ParkCommandResult ExecuteTrackLine( int ride, (int X, int Y) start, (int X, int Y) end, bool undo, bool last = false )
 	{
 		if ( waterTracks == null || ResolveCommandObject( ride ) is not { } station || !trackStations.TryGetValue( station, out var layout ) || BuilderOf( station ) is not { } builder )
 			return ParkCommandResult.Rejected( $"Attraction {ride} lays no kart or water track." );
@@ -537,7 +584,7 @@ public partial class Level
 		var writer = new TrackLineWriter( builder, () => walked = WalkTrack( station, TrackWalkCause.Line ), builder.OwnerOf( layout ), TrackEditorOf( station, layout, builder ) );
 		SegmentResult? segment = null;
 		if ( undo )
-			writer.Undo( new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start } );
+			writer.Undo( new SegmentResult( end, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start, IsFirstLine = last } );
 		else
 			segment = writer.Commit( start, end );
 		return ParkCommandResult.Ok( new TrackLineDone( segment, walked?.IsValid ) );
@@ -628,7 +675,7 @@ public partial class Level
 					var entry = first.Entry;
 					var kit = family == TrackFamily.Bumper ? null : TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, family );
 					renderer = new TrackRenderer( entry, kit, () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ), ( x, y ) => Objects.Grid.GetCornerHeight( x, y ), ( x, y ) => Objects.Grid.GetTerrainHeight( x, y ), ( x, y ) => Objects.Grid.GetDrapeHeight( x, y ) )
-						{ AddOnSurfaceAt = AddOnSurfaceAt };
+						{ ObjectSurfaceAt = ObjectSurfaceAt };
 					trackRenderers[family] = renderer;
 				}
 				renderer.Update( waterTracks.Tracks, Objects.ScriptWorld.Bumpers.Controllers.Where( controller => controller.Template.RenderFamily == family ), trackPieceAnimations );

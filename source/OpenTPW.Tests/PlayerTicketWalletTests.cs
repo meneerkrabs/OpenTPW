@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -185,6 +186,84 @@ public class PlayerTicketWalletTests
 			Assert.AreEqual( 0, park.GoldenTicketsAvailable );
 			Assert.IsFalse( account.Dirty, "the purchase was saved" );
 			Assert.AreEqual( 3, PlayerTicketFile.LoadIfPresent( path )!.SpentTickets );
+		}
+		finally { Directory.Delete( root, true ); }
+	}
+
+	/// <summary>A shared park credits newly earned tickets before its purchase enters the player account at hand-back.</summary>
+	[TestMethod]
+	public void ASharedParksNewlyEarnedTicketsPayForItsPurchaseAtHandBack()
+	{
+		var path = NewProfile( out var root );
+		try
+		{
+			var runtime = Runtime();
+			var shared = false;
+			var reports = new List<string>();
+			using var owner = new PlayerProgressRuntimeOwner( path, "jungle", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, reports.Add, () => shared );
+			var before = File.ReadAllText( path );
+			shared = true;
+			owner.Pump();
+			foreach ( var kind in new[] { GoldenTicketKind.Visitors, GoldenTicketKind.PeopleInPark, GoldenTicketKind.Happiness } )
+				runtime.Economy.Objectives.AwardCheatTicket( kind );
+			Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, runtime.Economy.TryBuild( TicketItem, out _ ) );
+			Assert.AreEqual( 3, runtime.Economy.TicketsSpent );
+			Assert.AreEqual( (0, 0, 0), (owner.Ledger.EarnedTickets, owner.Ledger.SpentTickets, owner.Ledger.AvailableTickets), "the player's initially empty account stays untouched while shared" );
+			Assert.AreEqual( before, File.ReadAllText( path ) );
+			shared = false;
+			owner.Pump();
+			Assert.AreEqual( (3, 3, 0), (owner.Ledger.EarnedTickets, owner.Ledger.SpentTickets, owner.Ledger.AvailableTickets), "the session's earned tickets must enter the account before its purchase" );
+			Assert.IsTrue( owner.Ledger.OwnsPurchasedItem( TicketItem ) );
+			Assert.AreEqual( 0, runtime.Economy.GoldenTicketsAvailable );
+			Assert.AreEqual( 0, reports.Count, string.Join( Environment.NewLine, reports ) );
+			Assert.IsFalse( owner.Dirty, "the reconciled hand-back was saved" );
+		}
+		finally { Directory.Delete( root, true ); }
+	}
+
+	[TestMethod]
+	public void RepeatedHandBackAndFileReloadDoNotDuplicateASharedParksTicketPurchase()
+	{
+		var path = NewProfile( out var root );
+		try
+		{
+			var runtime = Runtime();
+			var shared = false;
+			using ( var owner = new PlayerProgressRuntimeOwner( path, "jungle", PlayerTicketFile.ReadIfPresent( path )!, runtime, () => true, _ => Assert.Fail(), () => shared ) )
+			{
+				shared = true;
+				owner.Pump();
+				foreach ( var kind in new[] { GoldenTicketKind.Visitors, GoldenTicketKind.PeopleInPark, GoldenTicketKind.Happiness } )
+					runtime.Economy.Objectives.AwardCheatTicket( kind );
+				Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, runtime.Economy.TryBuild( TicketItem, out _ ) );
+				shared = false;
+				owner.Pump();
+				var saved = File.ReadAllText( path );
+				for ( var repeat = 0; repeat < 2; repeat++ )
+				{
+					shared = true;
+					owner.Pump();
+					shared = false;
+					owner.Pump();
+					owner.Pump();
+					Assert.AreEqual( (3, 3, 0), (owner.Ledger.EarnedTickets, owner.Ledger.SpentTickets, owner.Ledger.AvailableTickets) );
+					Assert.IsTrue( owner.Ledger.OwnsPurchasedItem( TicketItem ) );
+					Assert.AreEqual( saved, File.ReadAllText( path ), "repeated hand-back does not change the saved progress" );
+				}
+			}
+			var reloaded = PlayerTicketFile.LoadIfPresent( path )!;
+			Assert.AreEqual( (3, 3, 0), (reloaded.EarnedTickets, reloaded.SpentTickets, reloaded.AvailableTickets) );
+			Assert.IsTrue( reloaded.OwnsPurchasedItem( TicketItem ) );
+			var resumed = ParkEconomyRuntime.ForResume( runtime.Economy, ParkStartKind.FullSimulation );
+			using var next = new PlayerProgressRuntimeOwner( path, "jungle", PlayerTicketFile.ReadIfPresent( path )!, resumed, () => true, _ => Assert.Fail(), () => shared );
+			shared = true;
+			next.Pump();
+			shared = false;
+			next.Pump();
+			Assert.AreEqual( (3, 3, 0), (next.Ledger.EarnedTickets, next.Ledger.SpentTickets, next.Ledger.AvailableTickets) );
+			Assert.IsTrue( next.Ledger.OwnsPurchasedItem( TicketItem ) );
+			Assert.IsNull( resumed.Economy.ListedTicketCost( TicketItem ), "the reloaded account remembers its purchased item" );
+			Assert.AreEqual( 0, resumed.Economy.GoldenTicketsAvailable );
 		}
 		finally { Directory.Delete( root, true ); }
 	}

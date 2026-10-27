@@ -30,6 +30,7 @@ public partial class Level
 	public OriginalObject? BuildAddOnRide => BuildEntry != null ? buildAddOnRide : null;
 	/// <summary>An add-on being removed and the ride it stood on, from <see cref="ParkObjects.ObjectRemoving"/> to <see cref="ParkObjects.ObjectRemoved"/>.</summary>
 	private (OriginalObject AddOn, OriginalObject Ride)? addOnRemoval;
+	/// <summary>The sampler surface of each catalogue entry's model that a probe has met (<see cref="ObjectSurfaceAt"/>; named for the add-ons it first served).</summary>
 	private readonly Dictionary<ObjectCatalogEntry, TrackSurface?> addOnSurfaces = new();
 
 	/// <summary>
@@ -213,16 +214,25 @@ public partial class Level
 		}
 	}
 
-	/// <summary>The add-on on an add-on tile's cell as the vehicles' height probes sample it (<see cref="TrackRenderer.AddOnSurfaceAt"/>).</summary>
-	private (TrackSurface Surface, System.Numerics.Matrix4x4 GridToModel, float BaseHeight)? AddOnSurfaceAt( int x, int y )
+	/// <summary>
+	/// The object standing on a cell as the vehicles' height probes sample it (<see cref="TrackRenderer.ObjectSurfaceAt"/>): the cell's owner object in its own sampler mode, as the original's
+	/// <c>0x452A60</c> hands <c>0x450EA0</c> the owner thing's instance for a cell whose track tile has no piece instance (an add-on's tile, a station tile) or that holds no track; null when no
+	/// object stands there.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00452A60 cell object] the cell's own instance (0x53BF30: +4 of the cell, its origin's for an extension cell), else the owner thing of the cell (0x527E80) when it is a thing of type 3, its instance +0x20; no thing, no object (0x450AC0 answers 0 and the probe keeps its height)
+	private (TrackSurface Surface, System.Numerics.Matrix4x4 GridToModel, float BaseHeight)? ObjectSurfaceAt( int x, int y )
 	{
-		if ( AddOnAt( x, y ) is not { } addOn )
+		if ( Objects.FindAt( x, y ) is not { IsDeleted: false } addOn )
 			return null;
 		if ( !addOnSurfaces.TryGetValue( addOn.Entry, out var surface ) )
 		{
 			try
 			{
-				surface = TrackSurface.FromObject( addOn.Runtime.Model );
+				// [BIN:TPW-EXE:0x00413C10 object loader] a type that is no fixed item (Info.DontApplyOffset 0) is loaded with the ground node search (0x4629D0 flag 1) over the level's terrain grid; the search's node is the instance's +0x2C, which the mode-4 sampler reads
+				var groundNode = -1;
+				if ( !addOn.Entry.IsFixedItem && OriginalPark?.Heightfield is { } field )
+					groundNode = ObjectHoardingGeometry.SelectGroundNode( addOn.Runtime.Model, ObjectMapGrid.ShapeOf( addOn.Entry.Settings ), HoardingTerrain.Of( field ) ).Node;
+				surface = TrackSurface.FromObject( addOn.Runtime.Model, groundNode: groundNode );
 			}
 			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
 			{

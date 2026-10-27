@@ -229,6 +229,28 @@ public class TrackAssetTests
 		Assert.AreEqual( 10.924f, platforms["Uforia"], 1e-4f );
 	}
 
+	/// <summary>
+	/// The Halloween and space karts' station model is sampled by its faces (<c>0x450EA0</c> mode 2) at the two station tiles, which stand on rows 1 and 2 across the heading of the ride's frame
+	/// (tile centres (10, 20) and (30, 20) at rotation 0): the faces carry a floor there and none over the edge of the tile, where the probe keeps the vehicle's height; the jungle and fantasy
+	/// karts' stations are the terrain plus the header's +0xA0 (TRACK-001).
+	/// </summary>
+	[TestMethod]
+	public void TheFaceSampledKartStationsHaveTheirOwnFloorUnderTheStationTiles()
+	{
+		var floors = new Dictionary<string, float> { ["hallow"] = 2.44f, ["space"] = 3.0f };
+		foreach ( var (theme, floor) in floors )
+		{
+			var entry = KartRide( theme );
+			var surface = TrackSurface.FromObject( ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath ) );
+			Assert.AreEqual( TrackSamplerMode.SurfaceRecords, surface.Mode, theme );
+			foreach ( var (x, y) in new[] { (10f, 20f), (30f, 20f) } )
+				Assert.AreEqual( floor, surface.HeightAt( x, y )!.Value, 0.01f, $"{theme} station tile centre ({x}, {y})" );
+			Assert.IsNull( surface.HeightAt( 10f, 5f ), $"{theme}: no face over the near edge of the tiles" );
+		}
+		foreach ( var theme in new[] { "jungle", "fantasy" } )
+			Assert.AreEqual( TrackSamplerMode.Terrain, TrackSurface.FromObject( ObjectAssets.LoadModel( KartRide( theme ).FileSystem, KartRide( theme ).ModelPath ) ).Mode, theme );
+	}
+
 	[TestMethod]
 	public void EveryShippedHeightProfileIsAWellFormedHmp()
 	{

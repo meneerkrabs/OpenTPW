@@ -40,7 +40,7 @@ public sealed partial class PoolTool
 
 	/// <summary>Whether the tool's writes go to the host as requests (a guest's park in a session, <see cref="ParkCommands.SendsRequests"/>); set by the level.</summary>
 	internal Func<bool>? SendsRequests { get; set; }
-	/// <summary>How many pool requests of this guest are open in the session's requests (<see cref="Level.OpenPoolRequests"/>); set by the level.</summary>
+	/// <summary>How many tool requests of this guest are open in the session's requests, the pool tool's and the coaster tool's (<see cref="Level.OpenToolRequests"/>); set by the level.</summary>
 	internal Func<int>? OpenRequests { get; set; }
 	/// <summary>Asks the player to wait (<see cref="Level.NoteWaitingClick"/>); set by the level.</summary>
 	internal Action? NoteWaiting { get; set; }

@@ -179,7 +179,8 @@ def synthetic_art(seed: int, width: int, height: int, alpha_mode: str) -> bytes:
     for y in range(height):
         for x in range(width):
             blue, green, red = lcg.next(), lcg.next(), lcg.next()
-            alpha = {'zero': 0, 'full': 255, 'mid': 127, 'ramp': (x * 255) // max(1, width - 1)}.get(alpha_mode)
+            border = x < 3 or y < 3 or x >= width - 3 or y >= height - 3
+            alpha = {'zero': 0, 'full': 255, 'mid': 127, 'ramp': (x * 255) // max(1, width - 1), 'path': 0 if border else 252}.get(alpha_mode)
             out += bytes([blue, green, red, lcg.next() if alpha is None else alpha])
     return bytes(out)
 
@@ -218,6 +219,20 @@ def compose_specs() -> list[tuple[int, int, int, int, str, int, int, str]]:
             alpha = ALPHA_MODES[(index * 2 + size_index) % len(ALPHA_MODES)]
             x, z = (index + size_index) % 3, (index // 2 + size_index) % 3
             specs.append((seed, n, x, z, kind, 7000 + 100 * size_index + index, word, alpha))
+    return specs
+
+
+# the words a path tile gives a cell (0x46df50: 0x180, one turn bit for 90, 180 and 270 degrees, the old bits 0x02, 0x04 and 0x200 kept) and the art of a path texture: 128 x 128, opaque (alpha 252) inside a transparent border
+PATH_COMPOSE_WORDS = (0x180, 0x1A0, 0x190, 0x188, 0x182, 0x1A4, 0x196, 0x38A)
+
+
+def path_compose_specs() -> list[tuple[int, int, int, int, str, int, int, str]]:
+    """The composite cases of a path cell: each size with every path word, the 128 x 128 art with the 'path' alpha, other cells of the 'C' mix levels."""
+    specs = []
+    for size_index, n in enumerate((16, 32, 64)):
+        seed = 1000 + size_index
+        for index, word in enumerate(PATH_COMPOSE_WORDS):
+            specs.append((seed, n, (index + 1) % 3, (index // 3 + size_index) % 3, 'big', 9000 + 100 * size_index + index, word, 'path'))
     return specs
 
 

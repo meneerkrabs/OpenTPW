@@ -36,6 +36,10 @@ internal sealed class ProceduralTerrain : IDisposable
 	// the answers before the last change of the hole version (2 = hole): a cell that was a hole and is not any more is dirty, as the original's restore of a cleared cell sets the dirty bit 0x100 on its word
 	private readonly byte[] previousHoleState;
 	private readonly HashSet<int> dirtyCells = new();
+	// the art of the cells whose word has bit 0x80 (the path tiles): composited over the cell's base when it is built, and its turn bits turn the cell's texture coordinates
+	private readonly ProceduralCellArt?[] cellArt;
+	private int artCells;
+	private readonly byte[] baseScratch;
 	private readonly bool[] visibleDirty = new bool[ProceduralTextureCache.MaximumVisibleCells];
 	private readonly SysVector3[] cellNormals;
 	private ulong holeStateVersion;
@@ -130,6 +134,8 @@ internal sealed class ProceduralTerrain : IDisposable
 			for ( var x = 0; x < field.CellCountX; x++ )
 				eligible[z * field.CellCountX + x] = rectangle.Contains( x, z ) && texturer.CanBuild( x, z ) && field.GetCellTextureSlot( x, z ) >= 0;
 		holeState = new byte[eligible.Length];
+		cellArt = new ProceduralCellArt?[eligible.Length];
+		baseScratch = new byte[texturer.TextureBytes];
 		previousHoleState = new byte[eligible.Length];
 		cellNormals = new SysVector3[eligible.Length];
 		// the mesh holds every cell a frame can list (2500), which can be more than the cache has slots for
@@ -145,6 +151,37 @@ internal sealed class ProceduralTerrain : IDisposable
 	/// Whether the procedural texture of a cell can be drawn: it lies inside the rectangle, the weight grid reaches it, and the heightfield has a surface there.
 	/// </summary>
 	public bool IsProcedural( int x, int z ) => (uint)x < (uint)field.CellCountX && (uint)z < (uint)field.CellCountZ && eligible[z * field.CellCountX + x];
+
+	/// <summary>Cells that carry art now.</summary>
+	public int ArtCells => artCells;
+
+	/// <summary>The art the cell (<paramref name="x"/>, <paramref name="z"/>) carries, or null.</summary>
+	internal ProceduralCellArt? ArtOf( int x, int z ) => (uint)x < (uint)field.CellCountX && (uint)z < (uint)field.CellCountZ ? cellArt[z * field.CellCountX + x] : null;
+
+	/// <summary>
+	/// Gives a cell the art of its word, or takes it away (<paramref name="art"/> null: the cell's word is its ground word again). The original's writer (<c>0x46DF50</c>) sets the dirty bit 0x100 of the word
+	/// for a path tile and for a restored cell alike, and <c>0x572440</c> builds the cell again when it hits a cache slot whose recorded word had that bit, so a cell whose art changed is built again the next time
+	/// it is listed, and a cell outside the view keeps the change until then. A cell whose art builds the same texture (<see cref="ProceduralCellArt.Same"/>) is not marked: its pixels would come out the same.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0046DF50 dirty bit] the tile write ORs 0x180, the restore sets byte 1 bit 0 (0x100) and the hole write ORs 0x101; 0x56F090 clears the bit of every cell it lists and records the word it had, 0x572440 builds a hit again when the recorded word has it
+	internal bool SetCellArt( int x, int z, ProceduralCellArt? art )
+	{
+		if ( (uint)x >= (uint)field.CellCountX || (uint)z >= (uint)field.CellCountZ )
+			return false;
+		var index = z * field.CellCountX + x;
+		if ( ProceduralCellArt.Same( cellArt[index], art ) )
+		{
+			// the pixels stay; the art object may be a new one with the same texels
+			if ( art != null )
+				cellArt[index] = art;
+			return false;
+		}
+		artCells += (art != null ? 1 : 0) - (cellArt[index] != null ? 1 : 0);
+		cellArt[index] = art;
+		dirtyCells.Add( x | (z << 16) );
+		MarkSceneChanged();
+		return true;
+	}
 
 	/// <summary>The model, every vertex of the cache's capacity in place and a fixed index list, to be rewritten by <see cref="Refresh"/>.</summary>
 	public Model CreateModel( Material material )
@@ -210,7 +247,7 @@ internal sealed class ProceduralTerrain : IDisposable
 			if ( cell < 0 )
 				continue;
 			var begin = Stopwatch.GetTimestamp();
-			texturer.BuildRgba( cell & 0xFFFF, cell >> 16, atlas.Scratch );
+			BuildCell( cell & 0xFFFF, cell >> 16, atlas.Scratch );
 			var builtAt = Stopwatch.GetTimestamp();
 			atlas.Upload( slot, atlas.Scratch );
 			TexturerMilliseconds += Stopwatch.GetElapsedTime( begin, builtAt ).TotalMilliseconds;
@@ -234,6 +271,20 @@ internal sealed class ProceduralTerrain : IDisposable
 		}
 		WriteMesh();
 		return true;
+	}
+
+	/// <summary>
+	/// The texture of a cell: its procedural base, with the art of its word composited over it when it has some (<c>0x572440</c> builds the cell through <c>0x55F780</c> with the descriptor <c>0x56F090</c> recorded).
+	/// </summary>
+	private void BuildCell( int x, int z, byte[] destination )
+	{
+		if ( cellArt[z * field.CellCountX + x] is not { } art )
+		{
+			texturer.BuildRgba( x, z, destination );
+			return;
+		}
+		texturer.BuildRgba( x, z, baseScratch );
+		ProceduralTerrainTexturer.Compose( baseScratch, texturer.Size, art.Rgba, art.Width, art.Height, (int)(art.Word & 0xFFFF), destination );
 	}
 
 	/// <summary>
@@ -286,7 +337,7 @@ internal sealed class ProceduralTerrain : IDisposable
 
 	// the mesh: one quad per cell in view in the order of the list; a cell's texture coordinates run from the first to the last texel's centre of its tile (ProceduralTerrainAtlas),
 	// u along x and v along z, the tile's first row at the cell's z edge ([BIN:TPW-EXE:0x56F670 cell corners] corner (x, z) takes the tile's (0, 0), (x, z + 1) its (0, 1)); turn and mirror
-	// bits of the cell word do not apply ([BIN:TPW-EXE:0x46DED0] clears them while the texturing is on). The terrain shader flips v, so the page's v goes in as 1 - v.
+	// bits of the cell word do not apply to a cell without art ([BIN:TPW-EXE:0x46DED0] clears them while the texturing is on); a path cell's word keeps them and permutes the corners (WriteCell). The terrain shader flips v, so the page's v goes in as 1 - v.
 	private void WriteMesh()
 	{
 		for ( var index = 0; index < visibleCount; index++ )
@@ -294,7 +345,7 @@ internal sealed class ProceduralTerrain : IDisposable
 			var cell = visibleCells[index];
 			var x = cell & 0xFFFF;
 			var z = cell >> 16;
-			WriteCell( index * 4, x, z, visibleSlots[index] );
+			WriteCell( index * 4, x, z, visibleSlots[index], cellArt[z * field.CellCountX + x]?.Word ?? 0 );
 			previousKeys[index] = visibleKeys[index];
 			previousSlots[index] = visibleSlots[index];
 		}
@@ -312,7 +363,7 @@ internal sealed class ProceduralTerrain : IDisposable
 		}
 	}
 
-	private void WriteCell( int first, int x, int z, int slot )
+	private void WriteCell( int first, int x, int z, int slot, uint word )
 	{
 		var c00 = corners[z * cornerStride + x];
 		var c10 = corners[z * cornerStride + x + 1];
@@ -334,6 +385,20 @@ internal sealed class ProceduralTerrain : IDisposable
 		coordinates[2] = new SysVector2( u0, 1 - v1 );
 		coordinates[3] = new SysVector2( u1, 1 - v1 );
 		var textureIndex = pageBase + atlas.PageOf( slot );
+		// [BIN:TPW-EXE:0x56F4F0 cell corners] the cell word's turn bits permute the texture corners each cell corner takes, for every cell the terrain draws; the procedural cells that have no art lost their turn bits (0x46DED0), and a path tile's stay, which is
+		// what the composite's reading of the base undoes (ProceduralTerrainTexturer.BaseTexel): the base stays upright and the art turns
+		Span<int> cornerOf = [TerrainCellTexture.Cell00, TerrainCellTexture.Cell10, TerrainCellTexture.Cell01, TerrainCellTexture.Cell11];
+		if ( word != 0 )
+		{
+			Span<SysVector2> permuted = stackalloc SysVector2[4];
+			for ( var corner = 0; corner < 4; corner++ )
+			{
+				var (u, v) = TerrainCellTexture.Coordinate( cornerOf[corner], word );
+				permuted[corner] = new SysVector2( u == 0 ? u0 : u1, 1 - (v == 0 ? v0 : v1) );
+			}
+			permuted.CopyTo( coordinates );
+		}
+		var flags = TextureSlotAddressing.ClampFlag | (PathCellWord.HasArt( word ) ? TextureSlotAddressing.SlushFlag : 0u);
 		// a cell that splits along its other diagonal takes its corners in a turned order: slot 0 is (x + 1, z), 1 is (x + 1, z + 1), 2 is (x, z) and 3 is (x, z + 1), which the fixed index pattern 0 2 3, 3 1 0 turns into the triangles 0 2 1, 1 2 3
 		ReadOnlySpan<int> straight = [0, 1, 2, 3];
 		ReadOnlySpan<int> turned = [1, 3, 0, 2];
@@ -341,7 +406,7 @@ internal sealed class ProceduralTerrain : IDisposable
 		for ( var corner = 0; corner < 4; corner++ )
 		{
 			var source = order[corner];
-			vertices[first + corner] = new Vertex { Position = positions[source], Normal = normal, TexCoords = coordinates[source], TexIndex = textureIndex, MatFlags = TextureSlotAddressing.ClampFlag };
+			vertices[first + corner] = new Vertex { Position = positions[source], Normal = normal, TexCoords = coordinates[source], TexIndex = textureIndex, MatFlags = flags };
 		}
 	}
 

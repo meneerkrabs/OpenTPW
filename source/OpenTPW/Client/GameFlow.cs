@@ -1166,6 +1166,7 @@ internal sealed partial class GameFlow : IDisposable
 			RenderLobbyLayers( entities, lobbyWeather, lobbyEffects.Flash && IncFrontEnd == null, drawLobbyFlash ??= DrawLobbyFlash );
 		}
 		Context.Canvas = CurrentCanvas();
+		UiTitleBitmap.BeginFrame();
 		Context.Batch.Clear();
 		// [BIN:STP-PPC:engine_shared 0x1D4B4 lightning flash] LightningFlash() sets a flag; the rain render then draws one full-screen white quad for exactly one frame and clears it (lobby only)
 		// [DATA:video 78:47-78:48] the capture shows the bolt but no inverted frame (the top third's mean luminance stays at 143-149 over 4729.4-4730.8): a flash that lasts one frame at 60 Hz can fall between the capture's frames, so this does not contradict the inverted flash above

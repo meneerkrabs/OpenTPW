@@ -348,7 +348,7 @@ public sealed partial class ParkHud
 		Model( "statsFrame", "f_balance", Rect( 259, 702, 971, 930 ) );
 		Model( "listFrame", "hirestaff", Rect( 1017, 179, 1813, 930 ) );
 		screen.Add( new UiLabel { Id = "title", Text = () => showingEmployedStaff ? strings[UIStrings.AllStaff] : HireTitle, Font = fonts => fonts.Title,
-			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 805, 74, 1277, 153 ), Anchor = UiAnchor.Center } );
+			Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 805, 74, 1277, 153 ), Anchor = UiAnchor.Center } );
 		// [DATA:video 12:00 hire window] the applicant view shows no name or grade: the strip under the portrait is the Vaardigheid (skill) gauge (control 9346); the employee view (EXT) keeps name and grade there
 		screen.Add( new UiLabel { Id = "staffName", Text = () => showingEmployedStaff ? SelectedName : strings[UIStrings.SkillStaff],
 			Font = fonts => fonts.Label, Color = UiColors.Text, Align = showingEmployedStaff ? UiAlign.Center : UiAlign.Left, Fit = true,

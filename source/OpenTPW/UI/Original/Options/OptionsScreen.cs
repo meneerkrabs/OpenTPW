@@ -124,7 +124,7 @@ public static class OptionsScreen
 		context.Batch.AddRectangle( area, UiColors.HelpBackground );
 		context.DrawFittedText( context.Fonts.Small, text, area with { Height = area.Height * 0.7f }, UiColors.Text );
 		var bar = new UiRect( area.X + area.Width * 0.05f, area.Y + area.Height * 0.74f, area.Width * 0.9f, area.Height * 0.12f );
-		context.Batch.AddRectangle( bar, UiColors.Shadow );
+		context.Batch.AddRectangle( bar, UiColors.ProgressTrack );
 		context.Batch.AddRectangle( bar with { Width = bar.Width * Math.Clamp( fraction, 0f, 1f ) }, UiColors.Value );
 	}
 
@@ -188,7 +188,7 @@ public static class OptionsScreen
 				Id = "title",
 				Text = title,
 				Font = fonts => fonts.Title,
-				Color = UiColors.Title,
+				Shadow = true, Color = UiColors.Title,
 				Align = UiAlign.Center,
 				Fit = true,
 				// [DATA:options table 0x4b0dc:120020] title text rectangle
@@ -200,7 +200,7 @@ public static class OptionsScreen
 		public void Panel( string id, string model, UiRect rect ) =>
 			screen.Add( new UiModelImage { Id = id + "Panel", Model = model, Bounds = rect, Anchor = UiAnchor.Center } );
 
-		public void Label( string id, UiRect rect, Func<string> text, Func<IEnumerable<string>>? variants = null )
+		public void Label( string id, UiRect rect, Func<string> text, Func<IEnumerable<string>>? variants = null, bool unclipped = false )
 		{
 			var label = screen.Add( new UiLabel
 			{
@@ -210,6 +210,7 @@ public static class OptionsScreen
 				Font = fonts => fonts.Label,
 				Color = UiColors.OptionText,
 				Shadow = false,
+				Unclipped = unclipped ? () => true : null,
 				Group = Group,
 				Bounds = rect,
 				Anchor = UiAnchor.Center
@@ -392,7 +393,7 @@ public static class OptionsScreen
 					state.TexturePackSelected = false;
 				}
 				if ( graphicsRestart || (languageChanged && languageNow == null) )
-					stack.Push( UiDialogs.Message( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
+					stack.Push( UiDialogs.MessageOfOriginalText( "restart", () => strings[UIStrings.RestartGame], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
 				else if ( languageNow == false )
 					stack.Push( UiDialogs.Message( "languageAfterPark", () => strings.Extra( OpenTpwText.LanguageAfterPark ), (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
 				else
@@ -467,7 +468,8 @@ public static class OptionsScreen
 			var top = 167f + (column == 0 ? rowIndex : rowIndex - 4) * 156f;
 			rowIndex++;
 			page.Panel( id, "f_optpanel", Rect( left, top, left + 633, top + 149 ) );
-			page.Label( id, Rect( left + 70, top + 50, left + 370, top + 95 ), text, variants );
+			// [EXT:display] these rows are OpenTPW's own texts (window mode, scales, language, extensions): in some languages they are wider than the authored label box, so they are not cut off at it
+			page.Label( id, Rect( left + 70, top + 50, left + 370, top + 95 ), text, variants, unclipped: true );
 			var button = page.Toggle( id, "b_on2", Rect( left + 476, top + 23, left + 579, top + 125 ), () => true, () => change( 1 ), true, change );
 			if ( help != null )
 				button.Help = help;
@@ -612,7 +614,7 @@ public static class OptionsScreen
 		void ShowRestored()
 		{
 			stack.Pop();
-			stack.Push( UiDialogs.Message( "restored", () => strings[UIStrings.ChangeScreenResolutionRestored], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
+			stack.Push( UiDialogs.MessageOfOriginalText( "restored", () => strings[UIStrings.ChangeScreenResolutionRestored], (() => strings.Extra( OpenTpwText.Back ), () => { stack.Pop(); closed(); }) ) );
 		}
 		void Keep()
 		{
@@ -631,7 +633,7 @@ public static class OptionsScreen
 			display.Revert();
 			ShowRestored();
 		}
-		var screen = UiDialogs.Message( "confirmDisplay", () => $"{strings[UIStrings.ChangeScreenResolution]}\n\n{display.ConfirmationSecondsRemaining}",
+		var screen = UiDialogs.MessageOfOriginalText( "confirmDisplay", () => $"{strings[UIStrings.ChangeScreenResolution]}\n\n{display.ConfirmationSecondsRemaining}",
 			(() => strings.Value( UIStrings.Yes ), Keep), (() => strings.Value( UIStrings.No ), Restore) );
 		// The display reverts by itself after its timeout; follow it.
 		screen.Updating = _ =>

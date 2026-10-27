@@ -183,7 +183,7 @@ public sealed partial class ParkHud
 			var (width, height) = context.Measure( context.Fonts.Small, name.Name );
 			var plate = new UiRect( pixel.X - width / 2f - pad, pixel.Y - height - pad * 2, width + pad * 2, height + pad * 2 );
 			context.Batch.AddRectangle( plate, VisitNamePlate );
-			context.DrawText( context.Fonts.Small, name.Name, new UiRect( plate.X + pad, plate.Y + pad, width, height ), name.Own ? VisitOwnName : UiColors.Text, UiAlign.Left, shadow: false );
+			context.DrawText( context.Fonts.Small, name.Name, new UiRect( plate.X + pad, plate.Y + pad, width, height ), name.Own ? VisitOwnName : UiColors.Text, UiAlign.Left );
 			drawn.Add( name.Name );
 		}
 	}

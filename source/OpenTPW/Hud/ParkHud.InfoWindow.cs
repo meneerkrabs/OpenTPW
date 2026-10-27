@@ -117,7 +117,7 @@ public sealed partial class ParkHud
 		var screen = new ParkInfoScreen( this );
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		var title = table.Control( 0x4A68C5 );
-		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.ParkInformation], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
+		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.ParkInformation], Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
 			Bounds = title.Rect, Anchor = UiAnchor.Center } );
 		// A read-only visit never runs the owner's economy: the window shows the statistics the owner published
 		// (the original's visitor saw the park as saved; docs/reverse/ONLINE-VISIT.md), never simulated values.

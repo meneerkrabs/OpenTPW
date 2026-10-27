@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
@@ -226,6 +227,8 @@ public partial class CoopSessionTests
 		hostView.Hud.SelectObject( null );
 		hostView.Update();
 		Assert.AreEqual( price0 + 5, StateOf( host, id ).Price, "the host's close applied it" );
+		Assert.AreEqual( (true, false), (WindowSlider( view, "shopQuality" ).AsksOncePerStep!(), WindowSlider( hostView, "shopQuality" ).AsksOncePerStep!()),
+			"a guest's slider asks once per step, a host's as before" );
 		CatchUpAndCompare( host, guest );
 	}
 
@@ -409,6 +412,348 @@ public partial class CoopSessionTests
 				var state = StateOf( park, attraction );
 				Assert.AreEqual( (step * 50, ingredient, price), (state.QualityOfGoods, state.IngredientAmount, state.Price) );
 			}
+		CatchUpAndCompare( host, guest );
+	}
+
+	/// <summary>Frames of the guest alone, its host stalled (the host's frames and link wait): the guest's requests go out and no outcome comes back.</summary>
+	private void HostStalled( Park guest, View view, int frames )
+	{
+		for ( var round = 0; round < frames; round++ )
+		{
+			clock += 1 / 60.0;
+			guest.Frame( 1 / 60.0 );
+			guest.Session!.Step();
+			view.Update();
+		}
+	}
+
+	/// <summary>The guest's entries of <paramref name="attraction"/>'s target that are unsent.</summary>
+	private static int UnsentOf( Park guest, int attraction ) =>
+		Management( guest ).Pending.Count( entry => entry.Target == ManagementTarget.Attraction( attraction ) && entry.State == ManagementEntryState.Unsent );
+
+	[TestMethod]
+	public void AStalledHostsGuestWindowRefusesChangesPastSixteenAndItsCloseAndArrowsLoseNothing()
+	{
+		var shops = new List<OriginalObject>();
+		var (host, guest, _, _) = Shared( ( park, isHost ) =>
+		{
+			var placed = new[] { 20, 23, 26, 29 }.Select( x => AddPriced( park, shop: true, x ) ).ToArray();
+			if ( !isHost )
+				shops.AddRange( placed );
+		} );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		GiveRights( host, guest, view, CoopRights.Attractions );
+		var hud = view.Hud;
+		var seat = guest.Level.Commands.Player;
+		var ids = shops.Select( shop => shop.Runtime.AttractionId ).ToArray();
+		var queue = Management( guest );
+		var expected = new List<ParkCommand>();
+		// three other shops' prices, then the shown shop's quality: four requests go out, and the host takes none
+		foreach ( var other in shops.Skip( 1 ) )
+		{
+			var (openOther, closeOther) = Window( view, other );
+			openOther();
+			WindowClick( view, "pricePlus" );
+			expected.Add( new SetPriceCommand( other.Runtime.AttractionId, hud.PendingSettings.Price ) );
+			closeOther();
+		}
+		var (open, close) = Window( view, shops[0] );
+		open();
+		var quality = WindowSlider( view, "shopQuality" );
+		var step = quality.Value();
+		void Quality()
+		{
+			step = (step + 1) % 3;
+			quality.Changed!( step );
+		}
+		Quality();
+		expected.Add( new SetShopSettingsCommand( ids[0], step * 50, hud.PendingSettings.Ingredient ) );
+		HostStalled( guest, view, 60 );
+		Assert.AreEqual( (CoopManagementRequests.MaximumOpen, 0), (queue.OpenCount, queue.Pending.Count( entry => entry.State == ManagementEntryState.Unsent )), "four open" );
+		// alternating changes of the price and the quality coalesce with nothing: sixteen entries wait
+		for ( var click = 0; click < CoopManagementRequests.MaximumUnsent; click++ )
+		{
+			if ( click % 2 == 0 )
+			{
+				WindowClick( view, "pricePlus" );
+				expected.Add( new SetPriceCommand( ids[0], hud.PendingSettings.Price ) );
+			}
+			else
+			{
+				Quality();
+				expected.Add( new SetShopSettingsCommand( ids[0], step * 50, hud.PendingSettings.Ingredient ) );
+			}
+		}
+		Assert.AreEqual( CoopManagementRequests.MaximumUnsent, UnsentOf( guest, ids[0] ) );
+		// a seventeenth entry is no click: the control returns, and the waiting note waits for the window's lines
+		var drawn = hud.PendingSettings.Price;
+		WindowClick( view, "pricePlus" );
+		Assert.AreEqual( (drawn, CoopManagementRequests.MaximumUnsent), (hud.PendingSettings.Price, UnsentOf( guest, ids[0] )), "refused: the control returned and nothing was added" );
+		Assert.AreEqual( new ManagementNote( ManagementNoteKind.Waiting ), queue.PeekNote()?.Note );
+		// a change of the tail's own group replaces it, so it still fits
+		Quality();
+		expected[^1] = new SetShopSettingsCommand( ids[0], step * 50, hud.PendingSettings.Ingredient );
+		Assert.AreEqual( (step, CoopManagementRequests.MaximumUnsent), (quality.Value(), UnsentOf( guest, ids[0] )), "the tail's group took the change" );
+		Assert.AreEqual( expected[^1], WindowEntry( guest, ids[0], ManagementKnob.ShopSettings ) );
+		// an apply-all is refused whole, and the info arm out longer than a message lasts keeps the note
+		var pending = queue.Pending.Count();
+		WindowClick( view, "applyAll" );
+		Assert.AreEqual( pending, queue.Pending.Count(), "nothing of the apply-all was queued" );
+		view.Pass( ParkHud.MessageSeconds + 1 );
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopWaitingForHost ), "the window hides the lines" );
+		// a box hold refused at its start asks for its step no more in that hold
+		var plus = (UiButton)hud.Screen.Find( "pricePlus" )!;
+		plus.Repeat!.Pressed!();
+		plus.Repeat.Start();
+		Assert.AreEqual( pending, queue.Pending.Count(), "the hold's start was refused" );
+		// the close and the arrows lose nothing, and nothing waits in the window
+		close();
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopWaitingForHost ), "the waiting note, said once the window closed" );
+		open();
+		hud.CycleSelectedObject( 1 );
+		view.Update();
+		hud.CycleSelectedObject( -1 );
+		view.Update();
+		Assert.AreEqual( pending, queue.Pending.Count(), "the close and the arrows took nothing away" );
+		// the host answers: the queued changes apply in click order on every peer; the hold, still on, asks for its refused step no more, and the next press asks again
+		UntilManaged( host, guest, view );
+		Assert.AreSame( shops[0], hud.SelectedObject );
+		plus.Repeat.Tick();
+		Assert.AreEqual( 0, queue.Pending.Count(), "the hold's tick asked nothing for its refused step" );
+		var price = hud.PendingSettings.Price;
+		plus.Repeat.Pressed();
+		plus.Repeat.Start();
+		Assert.AreEqual( new SetPriceCommand( ids[0], price + 1 ), WindowEntry( guest, ids[0], ManagementKnob.Price ), "the next press asks again" );
+		expected.Add( new SetPriceCommand( ids[0], price + 1 ) );
+		close();
+		UntilManaged( host, guest, view );
+		CollectionAssert.AreEqual( IssuedBy( seat, expected.ToArray() ), HostCommandsOf( host, seat ), "every queued change, in click order" );
+		foreach ( var park in new[] { host, guest } )
+		{
+			var state = StateOf( park, ids[0] );
+			Assert.AreEqual( (step * 50, price + 1), (state.QualityOfGoods, state.Price) );
+		}
+		CatchUpAndCompare( host, guest );
+	}
+
+	/// <summary>
+	/// A sale of shop <paramref name="attraction"/> made alike on every peer between two records, as a visitor's purchase makes it (the economy's <see cref="ParkEconomy.TryBuy"/>): whether it
+	/// sold, its price and its quality of goods, the same on every peer.
+	/// </summary>
+	private (bool Sold, int Price, int Quality) Sale( Park host, Park guest, int attraction )
+	{
+		var sales = new List<(bool, int, int)>();
+		Alike( host, guest, economy =>
+		{
+			var state = StateOf( economy == host.Economy ? host : guest, attraction );
+			sales.Add( (economy.TryBuy( state.Id, 10_000, out var paid ), paid, state.QualityOfGoods) );
+		} );
+		Assert.AreEqual( sales[0], sales[1], "the same sale on every peer" );
+		return sales[0];
+	}
+
+	[TestMethod]
+	public void ASaleBetweenRecordsReadsThePriceTheGoodsAndTheDoorOfTheRecordsBeforeIt()
+	{
+		OriginalObject? shop = null;
+		var (host, guest, _, _) = Shared( ( park, isHost ) =>
+		{
+			var placed = AddPriced( park, shop: true, 20 );
+			if ( !isHost )
+				shop = placed;
+		} );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		GiveRights( host, guest, view, CoopRights.Attractions );
+		var hud = view.Hud;
+		var id = shop!.Runtime.AttractionId;
+		var parked = StateOf( guest, id );
+		var (price0, quality0) = (parked.Price, parked.QualityOfGoods);
+		Assert.IsTrue( parked.IsOpen && shop.IsOpen && price0 is not 10 and not 50 );
+		var (open, close) = Window( view, shop );
+		int step = 0;
+		// price 10, the quality, price 50 and the door closed, by the window's controls, then the window closed
+		WithPriceEditor( () =>
+		{
+			open();
+			OpenPriceEditor( view );
+			TypePrice( view, 10 );
+			step = (WindowSlider( view, "shopQuality" ).Value() + 1) % 3;
+			WindowSlider( view, "shopQuality" ).Changed!( step );
+			OpenPriceEditor( view );
+			TypePrice( view, 50 );
+			WindowClick( view, "openRide" );
+			close();
+		} );
+		CollectionAssert.AreEqual( new ParkCommand[] { new SetPriceCommand( id, 10 ), new SetShopSettingsCommand( id, step * 50, parked.IngredientAmount ),
+			new SetPriceCommand( id, 50 ), new SetAttractionOpenCommand( id, false ) }, Management( guest ).Pending.Select( entry => entry.Command ).ToArray(), "four entries, in click order" );
+		// a sale before the first record and after each: each reads the records before it
+		var sales = new List<(bool Sold, int Price, int Quality)> { Sale( host, guest, id ) };
+		for ( var record = 0; record < 4; record++ )
+		{
+			SendNext( guest );
+			for ( var round = 0; round < 600 && Management( guest ).Pending.Count() > 3 - record; round++ )
+				Rounds( 1, host, guest );
+			Assert.AreEqual( 3 - record, Management( guest ).Pending.Count(), $"record {record}" );
+			sales.Add( Sale( host, guest, id ) );
+		}
+		CollectionAssert.AreEqual( new (bool, int, int)[] { (true, price0, quality0), (true, 10, quality0), (true, 10, step * 50), (true, 50, step * 50), (false, 0, step * 50) },
+			sales.ToArray() );
+		CatchUpAndCompare( host, guest );
+	}
+
+	/// <summary>The excitement gauge the guest's object window draws for <paramref name="item"/> (its window values while it shows it).</summary>
+	private static float? Excitement( View view, OriginalObject item )
+	{
+		var window = typeof( ParkHud ).GetMethod( "WindowValues", NonPublic )!.Invoke( view.Hud, new object[] { item } );
+		return (float?)typeof( ParkHud ).GetMethod( "ExcitementGauge", NonPublic )!.Invoke( view.Hud, new[] { item, window } );
+	}
+
+	[TestMethod]
+	public void AGuestsGaugesFollowAWaitingChangeAndReturnWithItsRefusal()
+	{
+		OriginalObject? game = null;
+		var (host, guest, _, _) = Shared( ( park, isHost ) =>
+		{
+			var placed = AddPriced( park, shop: false, 20 );
+			if ( !isHost )
+				game = placed;
+		} );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		GiveRights( host, guest, view, CoopRights.Attractions );
+		var hud = view.Hud;
+		var seat = guest.Level.Commands.Player;
+		var id = game!.Runtime.AttractionId;
+		var (open, close) = Window( view, game );
+		// a free game first, so the prize is its margin
+		WithPriceEditor( () =>
+		{
+			open();
+			OpenPriceEditor( view );
+			TypePrice( view, 0 );
+		} );
+		UntilManaged( host, guest, view );
+		var parked = StateOf( guest, id );
+		var win = (100 - parked.ChanceOfLosingPercent) & 0xFF;
+		var chance = (win + 50) % 101;
+		var asked = RideWindowGauges.SideshowExcitement( parked.CostOfGoods + 1, 0, chance );
+		var park = RideWindowGauges.SideshowExcitement( parked.CostOfGoods, 0, win );
+		Assert.AreNotEqual( park, asked, "the change moves the gauge" );
+		Assert.AreEqual( UiGauge.OfPercent( park ), Excitement( view, game ) );
+		// the prize's click and the chance's step wait as one entry of the game's group: the gauge follows them
+		WindowClick( view, "prizePlus" );
+		WindowSlider( view, "sideshowChance" ).Changed!( chance );
+		view.Update();
+		Assert.AreEqual( 1, Management( guest ).Pending.Count() );
+		Assert.AreEqual( UiGauge.OfPercent( asked ), Excitement( view, game ), "the gauge follows the waiting change" );
+		// refused at its record (the right taken back on its way): the gauge returns
+		SendNext( guest );
+		Assert.IsTrue( host.Issue( new SetSeatRightsCommand( seat, CoopRights.None ) ).Accepted );
+		for ( var round = 0; round < 600 && Management( guest ).Pending.Any(); round++ )
+			Rounds( 1, host, guest );
+		view.Update();
+		Assert.AreEqual( UiGauge.OfPercent( park ), Excitement( view, game ), "the gauge returns with the refusal" );
+		close();
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void OutcomesAfterTheWindowClosedOrMovedOnAreNotesAndTheNextWindowDrawsItsOwnValues()
+	{
+		OriginalObject? shop = null, other = null;
+		var (host, guest, _, _) = Shared( ( park, isHost ) =>
+		{
+			var first = AddPriced( park, shop: true, 20 );
+			var second = AddPriced( park, shop: true, 23 );
+			if ( !isHost )
+				(shop, other) = (first, second);
+		} );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		GiveRights( host, guest, view, CoopRights.Attractions );
+		var hud = view.Hud;
+		var seat = guest.Level.Commands.Player;
+		var (id, otherId) = (shop!.Runtime.AttractionId, other!.Runtime.AttractionId);
+		var (open, close) = Window( view, shop );
+		foreach ( var arrows in new[] { false, true } )
+		{
+			var parked = StateOf( guest, id );
+			var (quality0, price0) = (parked.QualityOfGoods, parked.Price);
+			open();
+			// a quality change and a price change wait; then the window closes, or the arrows move it on
+			WindowSlider( view, "shopQuality" ).Changed!( ((quality0 & 0xFF) / 50 + 1) % 3 );
+			WindowClick( view, "pricePlus" );
+			if ( arrows )
+			{
+				hud.CycleSelectedObject( 1 );
+				view.Update();
+				var shown = StateOf( guest, otherId );
+				Assert.AreEqual( ((shown.QualityOfGoods & 0xFF) / 50, shown.Price), (hud.PendingSettings.QualityStep, hud.PendingSettings.Price), "the next shop draws its own values" );
+			}
+			else
+				close();
+			// the first is refused at its record (the right taken back on its way), the second accepted (the right given back before its send)
+			SendNext( guest );
+			Assert.IsTrue( host.Issue( new SetSeatRightsCommand( seat, CoopRights.None ) ).Accepted );
+			for ( var round = 0; round < 600 && Management( guest ).Pending.Count() > 1; round++ )
+				Rounds( 1, host, guest );
+			Assert.IsTrue( host.Issue( new SetSeatRightsCommand( seat, CoopRights.Attractions ) ).Accepted );
+			for ( var round = 0; round < 600 && guest.Level.RightsOf( seat ) != CoopRights.Attractions; round++ )
+				Rounds( 1, host, guest );
+			UntilManaged( host, guest, view );
+			Assert.AreEqual( arrows ? 0 : 1, view.Says( OpenTpwText.CoopNotPermitted ), arrows ? "the moved-on window still hides the lines" : "the refusal's note, once" );
+			if ( arrows )
+			{
+				close();
+				Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ), "said once the window closed" );
+			}
+			foreach ( var park in new[] { host, guest } )
+				Assert.AreEqual( (quality0, price0 + 1), (StateOf( park, id ).QualityOfGoods, StateOf( park, id ).Price), "the settings refused, the price accepted" );
+			// the reopened window draws the park
+			open();
+			Assert.AreEqual( ((quality0 & 0xFF) / 50, price0 + 1), (hud.PendingSettings.QualityStep, hud.PendingSettings.Price) );
+			close();
+			view.Pass( ParkHud.MessageSeconds + 1 );
+		}
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AGuestsPriceBoxAsksNothingAtItsRangesEnds()
+	{
+		OriginalObject? shop = null;
+		var (host, guest, _, _) = Shared( ( park, isHost ) =>
+		{
+			var placed = AddPriced( park, shop: true, 20 );
+			if ( !isHost )
+				shop = placed;
+		} );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		GiveRights( host, guest, view, CoopRights.Attractions );
+		var hud = view.Hud;
+		var id = shop!.Runtime.AttractionId;
+		var (open, close) = Window( view, shop );
+		foreach ( var (price, button) in new[] { (ParkHud.MaximumPrice, "pricePlus"), (0, "priceMinus") } )
+		{
+			WithPriceEditor( () =>
+			{
+				open();
+				OpenPriceEditor( view );
+				TypePrice( view, price );
+			} );
+			UntilManaged( host, guest, view );
+			Assert.AreEqual( price, StateOf( guest, id ).Price );
+			var box = (UiButton)hud.Screen.Find( button )!;
+			box.Repeat!.Pressed!();
+			box.Repeat.Start();
+			box.Repeat.Tick();
+			box.Activate();
+			Assert.AreEqual( 0, Management( guest ).Pending.Count(), $"{button} at {price}: a step that changes nothing asks nothing" );
+			close();
+		}
 		CatchUpAndCompare( host, guest );
 	}
 }

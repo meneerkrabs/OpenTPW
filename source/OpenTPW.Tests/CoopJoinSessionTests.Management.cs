@@ -51,10 +51,13 @@ public partial class CoopJoinSessionTests
 		var outcomes = queue.TakeOutcomes( waiter );
 		Assert.AreEqual( 2, outcomes.Count );
 		Assert.IsTrue( outcomes.All( outcome => outcome.Kind == ManagementOutcomeKind.Unknown ), "the fee and the take: not known" );
-		Assert.AreEqual( ManagementNoteKind.Unknown, queue.TakeNotes().Single().Note.Kind, "the effort's note" );
-		// the workload is asked against the new park, which no longer gives research: refused at the send, said through the session's path
+		var notes = queue.TakeNotes();
+		CollectionAssert.AreEqual( new[] { ManagementNoteKind.Unknown, ManagementNoteKind.Rights },
+			notes.Select( outcome => outcome.Note.Kind ).ToArray(), "the effort's unknown outcome and the workload's durable refusal" );
+		Assert.AreEqual( CoopRefusal.NotPermitted, notes[1].Note.Refusal );
+		// the workload is asked against the new park, which no longer gives research: its durable note survives without a duplicate transient refusal
 		Assert.AreEqual( 0, FromSeat<SetResearchWorkloadCommand>() );
-		Assert.AreEqual( (1, CoopRefusal.NotPermitted), (guest.Level!.SessionRefusals, guest.Level.LastSessionRefusal) );
+		Assert.AreEqual( 0, guest.Level!.SessionRefusals, "the durable workload refusal is not also sent through the transient session path" );
 		// the refresh and the later fee went once each
 		Assert.AreEqual( refreshes + 1, FromSeat<RefreshLoanOffersCommand>() );
 		Assert.AreEqual( 1, FromSeat<SetEntranceFeeCommand>( command => command == later with { Player = seat } ) );

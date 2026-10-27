@@ -302,12 +302,12 @@ public sealed record LayLineCommand( CellToolMode Mode, int Ride, int StartX, in
 
 /// <summary>
 /// Takes back one committed line of the path or queue tool (Backspace inside the tool): the cells the line built (<paramref name="Built"/>, in the order they were laid) and the
-/// existing path cells whose placement counter it bumped (<paramref name="Existing"/>). <paramref name="Mode"/> and <paramref name="Ride"/> as for <see cref="LayLineCommand"/>.
+/// existing path cells whose placement counter it bumped (<paramref name="Existing"/>). <paramref name="Mode"/> and <paramref name="Ride"/> as for <see cref="LayLineCommand"/>, except that the path tool's undo carries the ride its issuer had selected when it took the segment back (-1 for none, as every older log has): tp.exe's Back re-evaluates the selected ride (0x8186AC, 0x52FFE2).
 /// </summary>
 public sealed record UndoLineCommand( CellToolMode Mode, int Ride, int StartX, int StartY, IReadOnlyList<(int X, int Y)> Built, IReadOnlyList<(int X, int Y)> Existing ) : ParkCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.UndoLine;
-	internal override bool IsWellFormed => ParkCommandCodec.IsLineMode( Mode, Ride ) && IsCell( StartX, StartY ) && Built.Count <= ParkCommandCodec.MaximumCells
+	internal override bool IsWellFormed => ParkCommandCodec.IsUndoLineMode( Mode, Ride ) && IsCell( StartX, StartY ) && Built.Count <= ParkCommandCodec.MaximumCells
 		&& Existing.Count <= ParkCommandCodec.MaximumCells && Built.All( cell => IsCell( cell.X, cell.Y ) ) && Existing.All( cell => IsCell( cell.X, cell.Y ) );
 	internal override void WriteFields( ParkCommandWriter writer )
 	{

@@ -14,10 +14,8 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x54faf7 static countdown] the Boolean (gui_CameraFlags & 0x16) edge resets to 300 ms; 0x54fb20 tests positivity before 0x54fb46 subtracts elapsed wall time
 	public const float RideStaticSeconds = 0.3f;
 
-	/// <summary>A right click leaves the ride view only after it has been open this long, in seconds.</summary>
-	// [BIN:TPW-EXE:0x48a7bd right-click guard] the ride screen's procedure 0x48a740 leaves on the right-button message (0x10006, button 1) only when RMBCancelOn (0x78d911) is set, the clock (0x65968e) is more than 0x7d0 = 2000 ms past the stamp it took on message 0x15 (0x48a789) and the window pointer [0x7c24cc] is not 0; Escape without modifiers (0x1b, 0x48a8a7) leaves under the same pointer test
-	// [APPROX:UI-094] message 0x15 is the window's creation and 0x14 its destruction (0x14 clears [0x7c24cc], which the creator 0x48ac40 fills with the new window at 0x48ad8c), so the pointer test holds for as long as the ride view is open and the two seconds count from its opening, as modelled; the window itself (table 0x74fb20, id 0x5a, (174,500)-(1874,1000)) draws nothing in the video and is not ported
-	internal const float RideRightClickDelaySeconds = 2f;
+	// [BIN:TPW-EXE:0x488aa1 right click] the ride view's procedure 0x488a00 (built at 0x48a1f5 and 0x48a4d4) leaves on the right-button message (button 1) when RMBCancelOn (0x78d911) is set and gui_CameraFlags ([0x790ab0]) & 0x16 is non-zero (0x488ab7), which holds while the eye camera runs; it reads no clock, so a right click leaves at once
+	// ([0x48a740] is the finale's and the loss window's procedure, which has the 2000 ms guard, not this one)
 
 	// The viewfinder and the eject button at the rectangles of the ride-view screen's control table.
 	// [BIN:TPW-EXE:0x74fa98 ride-view screen table] control 1: the viewfinder model at (170,170)-(1878,1366); control 2: the eject button model at (1916,1404)-(2018,1506), help 468 "Left-click to leave camcorder mode (C)"; the screen is created at 0x48a1d0/0x48a4d4 with the message procedure 0x488a00 and the crosshair pointer 0x15 (0x65f11d)
@@ -97,12 +95,9 @@ public sealed partial class ParkHud
 			StopRide();
 			return;
 		}
-		if ( shortcutsAllowed && !mouseCaptured && input.RightPressed && GameOptions.Current.RmbCancel && RideRightClickReady( Time.Now - level.RideViewOpenedAt ) )
+		if ( shortcutsAllowed && !mouseCaptured && input.RightPressed && GameOptions.Current.RmbCancel )
 			StopRide();
 	}
-
-	/// <summary>Whether a right click may leave: more than two seconds since the ride view opened.</summary>
-	internal static bool RideRightClickReady( float secondsOpen ) => secondsOpen > RideRightClickDelaySeconds;
 
 	/// <summary>Draws the prepared frame without changing its timer or noise identity.</summary>
 	private void DrawRideStatic( UiContext context )

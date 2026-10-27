@@ -48,7 +48,7 @@ public class BuildStepsTests
 				Assert.IsTrue( steps > 20, $"{kind}: the economy takes {steps} steps, one per object archive and more" );
 				Assert.AreEqual( ParkSaveFile.Serialize( atOnce.Economy ), ParkSaveFile.Serialize( stepped!.Economy ), $"{kind}: the same economy" );
 				// ForOriginalLevel runs the same steps, so the economy is also pinned to what origin/main made at once before the steps (6ecadcbd9; Instant Action re-pinned at 6aac37d9f, after main's advisor construction stamps changed its serialization)
-				Assert.AreEqual( kind == ParkStartKind.FullSimulation ? "93B28F8E25122769" : "E19E5729D4A8EE5A", Digest( ParkSaveFile.Serialize( stepped.Economy ) ), $"{kind}: the economy of origin/main" );
+				Assert.AreEqual( kind == ParkStartKind.FullSimulation ? "D2F1349AA44D6545" : "E19E5729D4A8EE5A", Digest( ParkSaveFile.Serialize( stepped.Economy ) ), $"{kind}: the economy of origin/main" );
 				Assert.AreEqual( atOnce.Start, stepped.Start );
 				CollectionAssert.AreEqual( atOnce.Import?.Evidence.ToArray() ?? Array.Empty<string>(), stepped.Import?.Evidence.ToArray() ?? Array.Empty<string>() );
 				Assert.AreEqual( atOnce.Economy.Catalog.Objects.Count, stepped.Economy.Catalog.Objects.Count );

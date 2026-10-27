@@ -258,9 +258,7 @@ internal sealed class VisitPresenceSmoke
 				Require( hud.Stack.Top?.Name == "rideView", $"the ride view's screen covers the chat overlay (top screen {hud.Stack.Top?.Name})" );
 				Require( presence.State.Riding && session.Modes.Contains( ChatMoveMode.Hide ), "boarding hides the player's figure for the room" );
 				Require( level.GuestRenderer?.DrawnFigures == Others.Length, $"the riding player's own figure is not drawn ({level.GuestRenderer?.DrawnFigures})" );
-				// the ride view's own exits work over the chat mode: a right click after two seconds (RMB cancel), else Escape
-				if ( GameOptions.Current.RmbCancel && !ParkHud.RideRightClickReady( Time.Now - level.RideViewOpenedAt ) )
-					return;
+				// the ride view's own exits work over the chat mode: a right click (RMB cancel), else Escape
 				var screenMiddle = new System.Numerics.Vector2( context!.Canvas.Width / 2, context.Canvas.Height / 2 );
 				injectInput!( GameOptions.Current.RmbCancel ? new UiInput( screenMiddle, false, false, false, true, UiKeys.None ) : UiInput.Key( UiKeys.Back ) );
 				phase = 15;

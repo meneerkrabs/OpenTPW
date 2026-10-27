@@ -39,6 +39,23 @@ public sealed class UiWindowAnimation
 	/// <summary>The winning banner's interval in milliseconds (0x23).</summary>
 	public const int WinningBannerInterval = 35;
 
+	/// <summary>
+	/// The lost park's banner table (0x74FC38, interval 35 ms): the banner pulses. Nine steps grow it, five of them by one on every side and four by one above and below only, then nine pull its top and bottom edges
+	/// back in by one, five narrow it by one at each side, and a jump to the start: the offsets sum to zero over the loop, so the banner is back at its rectangle again and again.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0074FC38 loss banner animation] 0x48AC40, 0x48A740 (both exits) and 0x48ADB0 start it on the banner with 0x65E72D(0x74FC38, 0x23); entries 0, 2, 4, 6, 8 (-1, -1, 1, 1), 1, 3, 5, 7 (0, -1, 0, 1), 9-17 (0, 1, 0, -1), 18-22 (1, 0, -1, 0), 23 (-9997, 0): the table ends where the winning banner's 0x74FCF8 begins
+	public static readonly IReadOnlyList<Step> LossBanner = Array.AsReadOnly( new[]
+		{
+			Step.Edges( -1, -1, 1, 1 ), Step.Edges( 0, -1, 0, 1 ), Step.Edges( -1, -1, 1, 1 ), Step.Edges( 0, -1, 0, 1 ), Step.Edges( -1, -1, 1, 1 ),
+			Step.Edges( 0, -1, 0, 1 ), Step.Edges( -1, -1, 1, 1 ), Step.Edges( 0, -1, 0, 1 ), Step.Edges( -1, -1, 1, 1 ),
+		}
+		.Concat( Enumerable.Repeat( Step.Edges( 0, 1, 0, -1 ), 9 ) )
+		.Concat( Enumerable.Repeat( Step.Edges( 1, 0, -1, 0 ), 5 ) )
+		.Append( Step.JumpTo( 0 ) ).ToArray() );
+
+	/// <summary>The lost park's banner interval in milliseconds (0x23).</summary>
+	public const int LossBannerInterval = 35;
+
 	private readonly IReadOnlyList<Step> table;
 	private readonly int interval;
 	private long stamp;

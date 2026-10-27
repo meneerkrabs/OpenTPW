@@ -73,6 +73,7 @@ TABLES = [
     ('ChatBuddyPopup', 0x758CD8, 0x1788, (0, 0, 2048, 1536), 0x758E14, 8),
     ('ChatPlayerPopup', 0x758E18, 0x3002, (0, 0, 2048, 1536), 0x758F04, 6),
     ('WinningScreen', 0x74FAF0, 0x321, (102, 536, 1946, 940), 0x74FB1A, 1),
+    ('LossScreen', 0x74FB20, 0x5A, (174, 500, 1874, 1000), 0x74FB4A, 1),
     ('MessageBox', 0x74F920, 0x9873C7, (500, 233, 1516, 830), 0x74F9BA, 4),
 ]
 # The second confirm-dialog table must be the same stream, byte for byte in its decoded tree.
@@ -117,6 +118,7 @@ REQUIRED = {
     'ChatBuddyPopup': ['!f_plain', 'b_bmark', 'b_gopeep', 'b_ignore', 'b_unbuddi', 'b_peeploc', 'b_page'],
     'ChatPlayerPopup': ['!f_plain', 'b_bmark', 'b_gopeep', 'b_ignore', 'b_unbuddi'],
     'WinningScreen': ['s_congrats'],
+    'LossScreen': ['s_bkrupt'],
     'MessageBox': ['wdialog'],
 }
 

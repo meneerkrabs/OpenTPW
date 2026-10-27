@@ -1,9 +1,12 @@
-# Offline focus-loss pause
+# Focus-loss pause
 
 ## Bounded host behavior
 
-A visible, offline TPW park that has been observed focused pauses its local
-simulation when a later frame observes loss of focus. Returning to the window
+A visible TPW park that has been observed focused pauses its local
+simulation when a later frame observes loss of focus, as tp.exe's application
+deactivation does (`0x46B74C` -> `0x4092A0(1)`, which builds the P window). The
+word `[0xF82884]` that the routine tests is 0 in every park (only the front end
+sets it), so a logged-in player's own park pauses too. Returning to the window
 does not automatically resume it. The pause button is selected while stopped,
 but the chosen running speed remains stored.
 
@@ -21,18 +24,19 @@ explicit speed change clears the focus latch. Existing user pause is independent
 
 Initial lack of focus is not a loss event. Offscreen runs do not participate.
 A replacement HUD starts without the old park's focus history. Read-only visits
-and logged-in online sessions are excluded; entering an excluded state clears
-only the focus latch before the next simulation tick, preserving user speed and
-other modal pauses. Co-op sessions are not yet implemented (see COOP.md), and
-future host-only pause ownership must be integrated through the session protocol,
-not inferred from local focus.
+and co-op sessions are excluded (`[EXT:online-coop-lockstep]`: their clock is the
+host's); entering an excluded state clears only the focus latch before the next
+simulation tick, preserving user speed and other modal pauses. Logged-in
+sessions are not excluded.
 
 ## Scope limits
 
-This is a host integration, not complete UI-096 parity. Existing public source
-annotations identify original application deactivation as a pause source. Native
-activation/modal ownership, audio/device suspension and unmapped generic message
-boxes remain unresolved. The focus latch does not become explicit user
+The pause itself matches `0x46B74C`. What `[EXT:offline-focus-pause]` still
+covers is host plumbing: focus sampled per frame, offscreen runs and an initial
+lack of focus not counting as deactivation, and the stopped state shown through
+the speed buttons with the chosen speed stored. The mixer's suspension on
+deactivation (`0x51BCF0`) and the advisor's speech pause are the sound side of
+UI-096 and are not ported. The focus latch does not become explicit user
 challenge-message timer suspension, and it does not change the separate
 `Hud.Paused` predicate. The advisor receives the existing simulation-paused input.
 
@@ -45,7 +49,7 @@ original executable bytes or game media accompany this implementation.
 ApplicationPauseTests uses synthetic, asset-free fixtures and real HUD input,
 speed controls and Escape-menu callbacks. It covers repeated loss/refocus,
 stored speed, explicit user pause, generic versus explicit menu close, named
-modal ownership, initial/offscreen observations, online/read-only eligibility
+modal ownership, initial/offscreen observations, co-op/read-only eligibility
 changes, replacement HUD state and challenge-timer independence. It does not
 exercise an actual OS focus event or render a full game scene.
 

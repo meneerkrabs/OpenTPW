@@ -19,7 +19,7 @@ Invalid slot/frame tracks are ignored defensively. The PC writer is unchecked; t
 - The presence of an APPROX marker alone is not evidence of an absent feature.
 
 ## Evidence status and residuals
-- The [existing consumer trace](https://github.com/meneerkrabs/OpenTPW/blob/6b037fbe6bd6ec6df335c06a3d8af81ce860e43a/docs/reverse/TEXTURE-FRAME-LIFETIME.md#invalid-frame-consumer-md2-901), [October 22 progress entry](https://github.com/meneerkrabs/OpenTPW/blob/6b037fbe6bd6ec6df335c06a3d8af81ce860e43a/docs/progress/2026-10-22-md2-901-consumer-trace.md) and `docs/OBJECTS.md` MD2-901 row already record the evidence closure.
+- The [existing consumer trace](https://github.com/meneerkrabs/OpenTPW/blob/6b037fbe6bd6ec6df335c06a3d8af81ce860e43a/docs/reverse/TEXTURE-FRAME-LIFETIME.md#invalid-frame-consumer-md2-901), [October 22 progress entry](https://github.com/meneerkrabs/OpenTPW/pull/747) (`docs/progress/2026-10-22-md2-901-consumer-trace.md`) and `docs/OBJECTS.md` MD2-901 row already record the evidence closure.
 - The writer's slot access is unchecked. Loader validation and exact slot-array allocation remain untraced; an absent slot is not a consumer-clamping question because consumers follow the part's own slot pointers.
 - This refresh reads public repository source and documentation only; it obtains no new binary trace, original assets, runtime comparison or test result.
 - Any original captures/assets remain private; fixtures should be synthetic or references/hashes, not redistributed game media.

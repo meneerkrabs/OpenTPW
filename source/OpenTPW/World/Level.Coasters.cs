@@ -409,7 +409,9 @@ public partial class Level
 			GuestRequests = CoopSession != null ? CoasterRequests : null,
 			SendsRequests = () => Commands.SendsRequests,
 			HeldEdit = () => CoasterEdits.Of( Commands.Player ) is { } held && held.Station == attraction ? held : null,
-			Completed = () => FinishGuestCoasterTool( station, panel! )
+			Completed = () => FinishGuestCoasterTool( station, panel! ),
+			// [EXT:online-coop-undo] in a shared park Backspace takes back the player's own last pylon (C5-3)
+			InSharedPark = () => Commands.SessionRules || Commands.SendsRequests
 		};
 		CoasterPanel = panel;
 	}
@@ -504,15 +506,18 @@ public partial class Level
 		return false;
 	}
 
-	/// <summary>[EXT:online-coop-commands] A guest's Backspace in the coaster tool (C3c-2): one at a time, not during a drag; otherwise a waiting click is noted. True when it went.</summary>
-	internal bool SendCoasterBackspace()
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's Backspace in the coaster tool (C3c-2), [EXT:online-coop-undo] the take-back of its own last pylon (C5-3): one at a time, not during a drag, when a waiting
+	/// click is noted; none goes when the panel placed no pylon of its own. What it did.
+	/// </summary>
+	internal CoasterBackspace SendCoasterBackspace()
 	{
 		if ( CoasterPanel is not { } panel )
-			return false;
-		if ( panel.SendBackspace() )
-			return true;
-		NoteWaitingClick();
-		return false;
+			return CoasterBackspace.None;
+		var sent = panel.SendBackspace();
+		if ( sent == CoasterBackspace.Waits )
+			NoteWaitingClick();
+		return sent;
 	}
 
 	/// <summary>
@@ -639,6 +644,9 @@ public partial class Level
 		var click = Commands.Issue( new CoasterClickCommand( station.Runtime.AttractionId, x, y, state.Height, state.LoopMode, state.LoopPylonsLeft ) );
 		if ( click.Value is not CoasterClickDone done )
 			return CoasterPlaceResult.NotEditable;
+		// [EXT:online-coop-undo] in a shared park the host's panel keeps the record of each pylon its click placed, which its Backspace takes back (C5-3)
+		if ( done.Placed && click.Accepted && CoasterPanel is { TakesBack: true } panel && UndoJournal?.LastRecord is { } record )
+			panel.PlacedOwnPylon( record );
 		builder.SetToolState( done.Next );
 		if ( done.Completed )
 			FinishCoasterTool( station );

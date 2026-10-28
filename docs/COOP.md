@@ -1819,7 +1819,7 @@ and its target, at execution on every peer, and allows exactly the commands of t
   (its lines and their Backspace, the walk to the open end and the cut, C3c-1b), and the release of its own
   claim, which every guest seat may send, granted or not; a coaster's claim and the coaster tool's commands
   of the coaster whose claim the guest holds (its entry and end, its clicks, Backspace, drags, swaps and
-  cuts, C3c-2).
+  cuts, C3c-2; its Backspace a take-back of its own last pylon since C5-3).
 
 An object a guest may not remove (a fixed item, a ride claimed against it) is also one its area clear
 leaves standing and its placement may not demolish: a command that removes what it finds asks the rights
@@ -2242,9 +2242,9 @@ says who may issue it in a shared park; a test pins each class's kinds:
 - **attractions, staff, research and finance**: the four management rights' (below), a wave machine's
   settings the attractions' since C5-2 (no claim applies: a wave machine is no claimable ride);
 - **the host's tools**: what the host's tools issue and no guest's tool does (the single-cell kinds, the
-  undo of lines, queue segments, pool strokes and since C5 a slide's last piece and a track line, a pool
-  bridge's removal): a guest's Backspace is a take-back of the building class, whose inverse only the host
-  fills;
+  undo of lines, queue segments, pool strokes and since C5 a slide's last piece, a track line and a coaster's
+  last pylon, a pool bridge's removal): a guest's Backspace is a take-back of the building class, whose
+  inverse only the host fills;
 - **the host's alone**: the developer prototype's placement and removal, the finale's dismissal, a
   challenge's answer, the speed, and the session's own kinds (the clock, the grant, a seat's release and its
   rights);
@@ -2655,6 +2655,28 @@ stack's 1,025 corners a session's tool ends before its line goes, where single p
   take-back waited says the claim is lost and ends the tool. A taken take-back renews the claim's lease, as
   any accepted command of its holder naming the ride does.
 
+**The coaster tool (C5-3).** The coaster tool's Backspace takes back the player's own newest pylon of the
+coaster, for the host and every guest alike, as single player's Backspace takes the last pylon off: with no
+refund (the original refunds no deleted pylon), and only while the coaster's last pylon is exactly that one. A
+click that places a pylon is a step (`CoasterClickDone.Placed`); one that closes the circuit or completes the
+track places none. The tool keeps its own pylons for its run, each named by its click's record (a guest's
+comes back with the click's outcome, the host's is its journal's last), and its Backspace sends a
+`TakeBackCommand` for the newest, popped once taken and kept on a refusal; with none of its own it sends
+nothing and says the not-own note. A pylon of an earlier run of the tool is no pylon of the new one.
+- **The decision.** The host puts the pylon's coaster on the take-back as its claimed ride. It asks the
+  inverse's own preconditions first: the coaster in the tool (`CoasterRide.BeingEdited`: a tool closed while
+  its claim stays, or a crafted request after it closed, finds the coaster out of it) and a last pylon that
+  can go (`CoasterTrack.CanRemoveLast`: none on a complete track, the one before the cut on a cut circuit),
+  `InTheWay` otherwise, so the host never streams a take-back its inverse would refuse; then the coaster's
+  last node must be the very pylon the step placed, `Changed` otherwise. The inverse is the tool's own
+  Backspace, `RemoveLastCoasterPylonCommand`, the host's tools' since C5-3: every player's Backspace is a
+  take-back in a shared park.
+- **Tombstones.** A pylon needs its coaster's claim, held since its click, as a track line needs its ride's;
+  and a node edit (a drag's press, its steps or its release), a stack swap or a cut changes the coaster's
+  chain under every pylon, so all of them become tombstones too, whoever placed them: a take-back naming one
+  says `Changed`, or the claim-lost note while the member holds no claim of the coaster, and a pylon placed
+  since is a step again. A tombstone goes with its member's bounds, its departure or its coaster.
+
 **Other rides' tiles (C5-3).** A track line and its take-back leave alone the track of every kart or water ride
 another seat claims; an unclaimed ride's track is any granted player's to join, as in single player. OpenTPW's
 owner word (TRACK-021) keeps tagged rides apart, but an older save's tiles have owner word 0, which every
@@ -2682,9 +2704,10 @@ claimable ride.
 be taken back." (`Changed`), "That cannot be taken back while something is in the way." (`InTheWay`), "Only what
 you built with this tool can be taken back." (not own, not the last, or too long ago); a refusal of the rights
 says the rights' note; a finished slide says nothing. A stroke's take-back says every verdict, its `InTheWay`
-included, and one refused by the rights ends that paint or erase mode alone. A track line's take-back refused
-for its claim says the claim-lost note and ends the line tool, the host's too; the corners a line tool loads
-were laid by no step of its player's, and Backspace on them says the not-own note and sends nothing.
+included, and one refused by the rights ends that paint or erase mode alone. A track line's or a pylon's
+take-back refused for its claim says the claim-lost note and ends the line tool or the coaster tool, the
+host's too; the corners a line tool loads were laid by no step of its player's, and Backspace on them says the
+not-own note and sends nothing, as the coaster tool's Backspace does with no pylon of its own.
 
 **Tests.** `CoopSessionTests.Undo` (path segments and chains, native and legacy queue lines with their refunds
 and their owner words compared on every peer, the money-stopped segment's residue, other players' lines across
@@ -2707,6 +2730,10 @@ lines on a new and an existing tile, for a guest and the host, with and without 
 tool on; an older save's owner-zero track; a counter at its limit; a later line's walk over an earlier line, at
 its start and beyond its own clear (a bridge's ramp); forged rides and flags; a claim lost, expired, released and taken again, handed over, and a cut, with their
 tombstones; the host's own line after its claim went; the lease; the full stack; single player's bytes),
+`CoopSessionTests.UndoCoasters` (a guest's pylons taken back newest first against a twin park of a game of
+one, an older pylon not the last, the request's shape, no pylon of the tool's own; the host's pylons and its
+next run; the tool closed and the coaster complete while the claim stays; a node edit, a stack swap and a cut
+with their tombstones and a pylon placed since; a claim lost while a take-back waits; a claim handed over),
 `CoopSessionTests.UndoTrackClaims` and `TrackProvenanceTests` (owner-zero track joined at a dangling arm and a side
 branch, a one-sided arm, the exit's seed, the circuit walk's straight run, a tagged tile another ride's track
 reaches, an ambiguous tile and an orphan; refused lines and take-backs on every peer, and joined and taken back
@@ -2899,7 +2926,8 @@ changes.
   - Each click of the build buttons is `CoasterClickCommand`, which carries the panel's height and loop
     edit mode, the tool state the placement reads. A click on the closed circuit's station end
     completes the track; the tool's end after it (the panel closes, the queue tool follows) is the
-    issuer's. Backspace is `RemoveLastCoasterPylonCommand`.
+    issuer's. Backspace is `RemoveLastCoasterPylonCommand`; in a shared park it is a take-back of the
+    player's own last pylon (C5-3, "The coaster tool (C5-3)").
   - A drag in the coaster panel is a press (`BeginCoasterNodeEditCommand`, with the drag: move,
     height, rotate, tilt or loop tilt), one command for each step (`EditCoasterNodeCommand`: the loft,
     yaw, bank, incline, loop rotation or cell), as the panel wrote the pylon each frame, and a release

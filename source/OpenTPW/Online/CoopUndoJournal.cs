@@ -133,15 +133,15 @@ internal sealed class CoopUndoJournal
 
 	/// <summary>
 	/// The tools a step belongs to: a take-back takes back the member's last step of its tool (lines: the path and queue tools together; a slide's pieces: per tower; [EXT:online-coop-undo] a
-	/// track's lines: per ride, C5-3).
+	/// track's lines: per ride; a coaster's pylons: per coaster, C5-3).
 	/// </summary>
-	private enum StepTool : byte { Line, SlidePiece, Stroke, Track }
+	private enum StepTool : byte { Line, SlidePiece, Stroke, Track, Pylon }
 
 	/// <summary>
-	/// What a step's undo is: [EXT:online-coop-undo] a kart or water track line's included (C5-3), and its tombstone, a line whose claim ended or changed hands, or whose ride a cut changed: its
-	/// record and ride, no cells, kept in its member's list so a take-back naming it says why it is no longer taken back.
+	/// What a step's undo is: [EXT:online-coop-undo] a kart or water track line's and a coaster pylon's included (C5-3), and their tombstones, a line or pylon whose claim ended or changed hands,
+	/// or whose ride a cut changed (a coaster's also a node edit or a swap): its record and ride, no cells, kept in its member's list so a take-back naming it says why it is no longer taken back.
 	/// </summary>
-	private enum StepKind : byte { PathLine, QueueLine, QueueSegment, SlidePiece, PoolStroke, TrackLine, BuriedTrackLine }
+	private enum StepKind : byte { PathLine, QueueLine, QueueSegment, SlidePiece, PoolStroke, TrackLine, BuriedTrackLine, CoasterPylon, BuriedCoasterPylon }
 
 	/// <summary>[EXT:online-coop-undo] A member's kart or water line tool on one ride as the host follows it from the member's records (C5-3): off (absent), on with its stack's depth, or closed.</summary>
 	private readonly record struct LineTool( bool Closed, int Depth );
@@ -175,8 +175,11 @@ internal sealed class CoopUndoJournal
 		public (int X, int Y) Start { get; init; }
 		public (int X, int Y) End { get; init; }
 		public (int X, int Y) Tower { get; init; }
+		/// <summary>A slide piece's index on its slide and its cell; [EXT:online-coop-undo] a coaster pylon's index on its chain and its cell (C5-3).</summary>
 		public int PieceIndex { get; init; }
 		public (int X, int Y) PieceCell { get; init; }
+		/// <summary>[EXT:online-coop-undo] A coaster pylon's node, which the coaster's last node must be for its take-back (C5-3): a pylon taken off and another placed there since is no longer it.</summary>
+		public CoasterNode? Pylon { get; init; }
 		/// <summary>[EXT:online-coop-undo] A pool stroke's entry (C5-2): the stroke it belongs to, named by the record of its first command; −1 for any other step.</summary>
 		public long Stroke { get; init; } = -1;
 		/// <summary>A stroke entry's erase mode: its cells erased (its inverse paints them again), else painted or river-marked.</summary>
@@ -187,7 +190,7 @@ internal sealed class CoopUndoJournal
 		public IReadOnlyList<(int X, int Y)> RiverMarked { get; init; } = Array.Empty<(int X, int Y)>();
 		/// <summary>[EXT:online-coop-undo] The track tiles of <see cref="Changes"/> with their records before and right after the step's record (C5-3).</summary>
 		public IReadOnlyDictionary<(int X, int Y), (TrackCell Before, TrackCell After)> TrackEffects { get; set; } = new Dictionary<(int X, int Y), (TrackCell Before, TrackCell After)>();
-		/// <summary>[EXT:online-coop-undo] A track line's seat, whose claim of its ride it needs (C5-3).</summary>
+		/// <summary>[EXT:online-coop-undo] A track line's or a pylon's seat, whose claim of its ride it needs (C5-3).</summary>
 		public int Player { get; init; }
 		/// <summary>[EXT:online-coop-undo] The depth of the line tool's stack the line was laid on (C5-3): its take-back's first-line flag is set at depth one.</summary>
 		public int Depth { get; init; }
@@ -201,10 +204,13 @@ internal sealed class CoopUndoJournal
 			StepKind.SlidePiece => StepTool.SlidePiece,
 			StepKind.PoolStroke => StepTool.Stroke,
 			StepKind.TrackLine or StepKind.BuriedTrackLine => StepTool.Track,
+			StepKind.CoasterPylon or StepKind.BuriedCoasterPylon => StepTool.Pylon,
 			_ => StepTool.Line
 		};
+		/// <summary>[EXT:online-coop-undo] Whether it is a step that needs its ride's claim, held since it was laid: a track line or a coaster pylon (C5-3).</summary>
+		public bool NeedsClaim => Kind is StepKind.TrackLine or StepKind.CoasterPylon;
 		/// <summary>[EXT:online-coop-undo] Whether it is a tombstone (C5-3).</summary>
-		public bool IsBuried => Kind == StepKind.BuriedTrackLine;
+		public bool IsBuried => Kind is StepKind.BuriedTrackLine or StepKind.BuriedCoasterPylon;
 		public int Weight => Math.Max( 1, Footprint.Count + Changes.Length );
 	}
 
@@ -228,10 +234,15 @@ internal sealed class CoopUndoJournal
 		public readonly Dictionary<long, int> StrokeEntries = new();
 		/// <summary>[EXT:online-coop-undo] The member's kart and water line tool on each ride (C5-3): a ride whose tool is off has none.</summary>
 		public readonly Dictionary<int, LineTool> TrackTools = new();
-		/// <summary>[EXT:online-coop-undo] How many of the member's track lines on each ride are steps, and how many are tombstones (C5-3).</summary>
+		/// <summary>
+		/// [EXT:online-coop-undo] How many of the member's track lines and coaster pylons on each ride are steps, and how many are tombstones (C5-3): a kart or water ride's lines, a coaster's
+		/// pylons, never both under one ride.
+		/// </summary>
 		public readonly Dictionary<int, int> LiveTracks = new();
 		public readonly Dictionary<int, int> BuriedTracks = new();
-		/// <summary>[EXT:online-coop-undo] The seat the member's track lines were laid by, whose claim they need (C5-3): a member keeps its seat (another member of the seat is another member).</summary>
+		/// <summary>
+		/// [EXT:online-coop-undo] The seat the member's track lines and pylons were laid by, whose claim they need (C5-3): a member keeps its seat (another member of the seat is another member).
+		/// </summary>
 		public int Seat = -1;
 	}
 
@@ -296,7 +307,11 @@ internal sealed class CoopUndoJournal
 
 	/// <summary>[EXT:online-coop-undo] <paramref name="member"/>'s track lines that are steps, and those that are tombstones (tests, C5-3).</summary>
 	internal (int Live, int Buried) TrackEntriesOf( uint member ) => members.TryGetValue( member, out var steps )
-		? (steps.Steps.Count( step => step.Kind == StepKind.TrackLine ), steps.Steps.Count( step => step.IsBuried )) : (0, 0);
+		? (steps.Steps.Count( step => step.Kind == StepKind.TrackLine ), steps.Steps.Count( step => step.Kind == StepKind.BuriedTrackLine )) : (0, 0);
+
+	/// <summary>[EXT:online-coop-undo] <paramref name="member"/>'s coaster pylons that are steps, and those that are tombstones (tests, C5-3).</summary>
+	internal (int Live, int Buried) PylonEntriesOf( uint member ) => members.TryGetValue( member, out var steps )
+		? (steps.Steps.Count( step => step.Kind == StepKind.CoasterPylon ), steps.Steps.Count( step => step.Kind == StepKind.BuriedCoasterPylon )) : (0, 0);
 
 	/// <summary>[EXT:online-coop-undo] The depth a track line of record <paramref name="record"/> was laid on, null for none (tests, C5-3).</summary>
 	internal int? DepthOf( long record ) => members.Values.SelectMany( member => member.Steps ).FirstOrDefault( step => step.Kind == StepKind.TrackLine && step.Record == record )?.Depth;
@@ -397,11 +412,22 @@ internal sealed class CoopUndoJournal
 		}
 		foreach ( var step in made )
 			Bound( step.Member );
-		// [EXT:online-coop-undo] a cut changes its ride's track under every line laid on it: they become tombstones (C5-3)
-		if ( command is CutTrackCommand cut && result.Accepted && result.Error == null )
-			BuryRide( cut.Ride );
+		// [EXT:online-coop-undo] a cut changes its ride's track under every line laid on it, and a coaster's node edit, swap or cut its chain under every pylon: they become tombstones (C5-3)
+		if ( result.Accepted && result.Error == null && BuriedBy( command ) is { } changed )
+			BuryRide( changed );
 		SweepTracks();
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The ride an accepted command changes under every track line or pylon laid on it (C5-3): a kart or water ride's cut; a coaster's node edit (its press, its steps and
+	/// its release), stack swap or cut.
+	/// </summary>
+	private static int? BuriedBy( ParkCommand command ) => command switch
+	{
+		CutTrackCommand cut => cut.Ride,
+		BeginCoasterNodeEditCommand or EditCoasterNodeCommand or EndCoasterNodeEditCommand or SwapCoasterStackCommand or CutCoasterCommand => ((CoasterPanelCommand)command).Station,
+		_ => null
+	};
 
 	/// <summary>
 	/// What a record left changed on <paramref name="cell"/>: its fields from their values before it (<paramref name="before"/>) to now, [EXT:online-coop-undo] and its track tile's
@@ -476,6 +502,9 @@ internal sealed class CoopUndoJournal
 			// [EXT:online-coop-undo] a kart or water track line laid on its member's line tool (C5-3, FollowLineTool)
 			case LayTrackLineCommand line when depth is { } laidOn && result.Value is TrackLineDone { Segment: { } laid }:
 				return TrackLine( record, member, line, laid, laidOn, changes, beforeTracks );
+			// [EXT:online-coop-undo] a pylon a coaster tool's click placed (C5-3)
+			case CoasterClickCommand click when result.Value is CoasterClickDone { Completed: false, Placed: true }:
+				return CoasterPylon( record, member, click, changes );
 			// [EXT:online-coop-undo] a pool stroke's commands, each an entry of its stroke with the cells it wrote (C5-2): a host's cell, a guest's batch paired cell by cell with its writes
 			case PaintPoolCellCommand paint when stroke >= 0 && result.Value is PoolCellWrite write:
 				return StrokeEntry( record, member, stroke, false, write.Result == PoolBuildResult.Ok ? new[] { (paint.X, paint.Y) } : Array.Empty<(int X, int Y)>(),
@@ -620,6 +649,23 @@ internal sealed class CoopUndoJournal
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-undo] A pylon <paramref name="member"/>'s click placed on a coaster (C5-3): its record, the station, its index on the chain (the node new pylons follow, which the placement
+	/// made it, before a cut circuit's gap too), its cell and the node itself; no cells of the map, as a pylon lives in its coaster's builder. Its take-back is the coaster tool's own Backspace,
+	/// which takes the last pylon off with no refund.
+	/// </summary>
+	private Step[] CoasterPylon( long record, uint member, CoasterClickCommand click, (int X, int Y)[] changes )
+	{
+		if ( level.ResolveCommandObject( click.Station ) is not { } station || level.GetCoasterBuilder( station ) is not { } builder )
+			return Array.Empty<Step>();
+		var track = builder.Track;
+		var index = track.LastIndex;
+		if ( index < CoasterTrack.StationNodeCount || index >= track.Nodes.Count || track.Nodes[index] is not { IsPlayerPylon: true } node || (node.X, node.Y) != (click.X, click.Y) )
+			return Array.Empty<Step>();
+		return new[] { new Step { Record = record, Member = member, Kind = StepKind.CoasterPylon, Group = click.Station, Ride = click.Station, Player = click.Player,
+			Footprint = new HashSet<(int X, int Y)>(), Changes = changes, PieceIndex = index, PieceCell = (node.X, node.Y), Pylon = node } };
+	}
+
+	/// <summary>
 	/// [EXT:online-coop-undo] The member's kart or water line tool on a ride, followed from its record (C5-3): every transition of the tool's stack is one of the member's commands, so the host
 	/// knows the stack's depth without seeing it. An entry (the walk to the open end, <see cref="OpenTrackLineToolCommand"/>; a cut that leaves the circuit open, <see cref="CutTrackCommand"/>)
 	/// loads the corners its open end gives, at least one point and at most the stack's 1,025 (<see cref="TrackEditor.EnterLineTool"/>): the tool is on at that depth; any other cut leaves no line
@@ -691,21 +737,24 @@ internal sealed class CoopUndoJournal
 			counts.Remove( ride );
 	}
 
-	/// <summary>[EXT:online-coop-undo] Turns every member's track lines on <paramref name="ride"/> into tombstones (C5-3): a cut changed the ride's track under them.</summary>
+	/// <summary>
+	/// [EXT:online-coop-undo] Turns every member's track lines or pylons on <paramref name="ride"/> into tombstones (C5-3): a cut changed the ride's track under them, or a node edit or a swap the
+	/// coaster's chain.
+	/// </summary>
 	private void BuryRide( int ride )
 	{
 		foreach ( var member in members.Values )
 		{
 			if ( !member.LiveTracks.ContainsKey( ride ) )
 				continue;
-			foreach ( var step in member.Steps.Where( step => step.Kind == StepKind.TrackLine && step.Ride == ride ).ToArray() )
+			foreach ( var step in member.Steps.Where( step => step.NeedsClaim && step.Ride == ride ).ToArray() )
 				Bury( member, step );
 		}
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-undo] After every record (C5-3): a member's track lines on a ride whose claim its seat does not hold now (released, expired, taken by another, gone with its grant) become
-	/// tombstones, so a take-back needs the claim held since the line, and a claim taken again brings none back; every entry of a ride that left the park goes, its tombstones with it.
+	/// [EXT:online-coop-undo] After every record (C5-3): a member's track lines and pylons on a ride whose claim its seat does not hold now (released, expired, taken by another, gone with its
+	/// grant) become tombstones, so a take-back needs the claim held since the step, and a claim taken again brings none back; every entry of a ride that left the park goes, its tombstones with it.
 	/// </summary>
 	private void SweepTracks()
 	{
@@ -717,22 +766,22 @@ internal sealed class CoopUndoJournal
 			{
 				if ( level.ResolveCommandObject( ride ) is not { IsDeleted: false } )
 				{
-					foreach ( var step in member.Steps.Where( step => step.Tool == StepTool.Track && step.Ride == ride ).ToArray() )
+					foreach ( var step in member.Steps.Where( step => step.Tool is StepTool.Track or StepTool.Pylon && step.Ride == ride ).ToArray() )
 						Leave( member, step, takenBack: false );
 					member.TrackTools.Remove( ride );
 					continue;
 				}
 				if ( !member.LiveTracks.ContainsKey( ride ) || level.ClaimOf( ride ) == member.Seat )
 					continue;
-				foreach ( var step in member.Steps.Where( step => step.Kind == StepKind.TrackLine && step.Ride == ride ).ToArray() )
+				foreach ( var step in member.Steps.Where( step => step.NeedsClaim && step.Ride == ride ).ToArray() )
 					Bury( member, step );
 			}
 		}
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-undo] Turns <paramref name="step"/>, a live track line, into its tombstone where it stood in its member's list (C5-3): it leaves as a step left for good (its records stay in
-	/// the cells' lists for good), and the tombstone keeps its record and ride with no cells, weight one in the bounds, until its member's bounds, departure or ride take it.
+	/// [EXT:online-coop-undo] Turns <paramref name="step"/>, a live track line or pylon, into its tombstone where it stood in its member's list (C5-3): it leaves as a step left for good (its records
+	/// stay in the cells' lists for good), and the tombstone keeps its record and ride with no cells, weight one in the bounds, until its member's bounds, departure or ride take it.
 	/// </summary>
 	private void Bury( Member member, Step step )
 	{
@@ -740,7 +789,8 @@ internal sealed class CoopUndoJournal
 		if ( index < 0 )
 			return;
 		Leave( member, step, takenBack: false );
-		var tombstone = new Step { Record = step.Record, Part = step.Part, Member = step.Member, Kind = StepKind.BuriedTrackLine, Group = step.Group, Ride = step.Ride, Player = step.Player,
+		var kind = step.Kind == StepKind.CoasterPylon ? StepKind.BuriedCoasterPylon : StepKind.BuriedTrackLine;
+		var tombstone = new Step { Record = step.Record, Part = step.Part, Member = step.Member, Kind = kind, Group = step.Group, Ride = step.Ride, Player = step.Player,
 			Footprint = new HashSet<(int X, int Y)>(), Changes = Array.Empty<(int X, int Y)>() };
 		member.Steps.Insert( index, tombstone );
 		member.Cells += tombstone.Weight;
@@ -755,7 +805,7 @@ internal sealed class CoopUndoJournal
 		member.Cells += step.Weight;
 		if ( step.Stroke >= 0 )
 			member.StrokeEntries[step.Stroke] = member.StrokeEntries.GetValueOrDefault( step.Stroke ) + 1;
-		if ( step.Kind == StepKind.TrackLine )
+		if ( step.NeedsClaim )
 		{
 			Count( member.LiveTracks, step.Ride, 1 );
 			member.Seat = step.Player;
@@ -793,8 +843,8 @@ internal sealed class CoopUndoJournal
 	{
 		member.Steps.Remove( step );
 		member.Cells -= step.Weight;
-		// [EXT:online-coop-undo] a track line's counts (C5-3)
-		if ( step.Kind == StepKind.TrackLine )
+		// [EXT:online-coop-undo] a track line's or a pylon's counts (C5-3)
+		if ( step.NeedsClaim )
 			Count( member.LiveTracks, step.Ride, -1 );
 		else if ( step.IsBuried )
 			Count( member.BuriedTracks, step.Ride, -1 );
@@ -1120,11 +1170,11 @@ internal sealed class CoopUndoJournal
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-undo] The ride a take-back of <paramref name="id"/>'s is on (C5-3): the track line it names, a step or a tombstone of the member's, puts its ride there; any other step,
-	/// a stroke and no step at all −1, so the rights never ask a ride a request named.
+	/// [EXT:online-coop-undo] The ride a take-back of <paramref name="id"/>'s is on (C5-3): the track line or the pylon it names, a step or a tombstone of the member's, puts its ride there (a
+	/// coaster's station); any other step, a stroke and no step at all −1, so the rights never ask a ride a request named.
 	/// </summary>
 	private int ClaimedRideOf( TakeBackCommand request, uint id ) => !request.Stroke && members.TryGetValue( id, out var member )
-		&& member.Steps.LastOrDefault( candidate => candidate.Record == request.Step && candidate.Part == request.Part ) is { Tool: StepTool.Track } step ? step.Ride : -1;
+		&& member.Steps.LastOrDefault( candidate => candidate.Record == request.Step && candidate.Part == request.Part ) is { Tool: StepTool.Track or StepTool.Pylon } step ? step.Ride : -1;
 
 	private TakeBackVerdict Judge( TakeBackCommand request, uint id, out Decision? decision )
 	{
@@ -1137,8 +1187,8 @@ internal sealed class CoopUndoJournal
 		var step = member.Steps.LastOrDefault( candidate => candidate.Record == request.Step && candidate.Part == request.Part );
 		if ( step == null )
 			return request.Step <= member.Forgot ? TakeBackVerdict.Forgotten : TakeBackVerdict.NotOwn;
-		// [EXT:online-coop-undo] a track line whose claim ended or changed hands, or whose ride a cut changed, is a tombstone: changed, before the last-step check (C5-3); the rights refuse it
-		// first, through its ride's claim, while the member holds no claim of it
+		// [EXT:online-coop-undo] a track line or a pylon whose claim ended or changed hands, or whose ride a cut, a node edit or a swap changed, is a tombstone: changed, before the last-step
+		// check (C5-3); the rights refuse it first, through its ride's claim, while the member holds no claim of it
 		if ( step.IsBuried )
 			return TakeBackVerdict.Changed;
 		// a piece of a slide finished since (its own queued splash, say) is refused before anything else, quietly: a finished slide takes riders, its pieces go only with its tower (C3b-3)
@@ -1203,6 +1253,22 @@ internal sealed class CoopUndoJournal
 				var inverse = new UndoTrackLineCommand( step.Ride, step.Start.X, step.Start.Y, step.End.X, step.End.Y, step.Depth == 1 ) { Player = player };
 				if ( !level.PredictTrackLineUndo( inverse, step.Laid, step.Raised ) )
 					return TakeBackVerdict.InTheWay;
+				return Decided( request, inverse, new[] { step }, Array.Empty<((int X, int Y), Step)>(), out decision );
+			}
+			// [EXT:online-coop-undo] a coaster pylon (C5-3): the coaster tool's own Backspace, which takes the last pylon off
+			case StepKind.CoasterPylon:
+			{
+				if ( level.ResolveCommandObject( step.Ride ) is not { } station || level.GetCoasterBuilder( station ) is not { } builder )
+					return TakeBackVerdict.Changed;
+				// the inverse's own preconditions first, so the host never decides a take-back its inverse refuses: the coaster in the tool (a tool closed while its claim stays, or a crafted
+				// request after it closed), and a last pylon that can go (none on a complete track; the one before the cut on a cut circuit)
+				if ( station.Runtime.Coaster is not { BeingEdited: true } || !builder.CanRemoveLast )
+					return TakeBackVerdict.InTheWay;
+				// the coaster's last pylon must be exactly the step's: the node it placed, where it placed it
+				var track = builder.Track;
+				if ( track.LastIndex != step.PieceIndex || !ReferenceEquals( track.Nodes[track.LastIndex], step.Pylon ) )
+					return TakeBackVerdict.Changed;
+				var inverse = new RemoveLastCoasterPylonCommand( step.Ride ) { Player = player };
 				return Decided( request, inverse, new[] { step }, Array.Empty<((int X, int Y), Step)>(), out decision );
 			}
 		}

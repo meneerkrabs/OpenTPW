@@ -365,6 +365,10 @@ public sealed partial class ParkHud
 			case CoasterGuestAction.Cut when result.Value is CoasterTrack.CutResult.Reopened:
 				PostMessage( strings.Help( 0x125 ) );
 				return;
+			// [EXT:online-coop-undo] a pylon's take-back the host's journal refused keeps the pylon and says why (C5-3)
+			case CoasterGuestAction.Backspace when !result.Accepted:
+				SayTakeBackNote( result.Reason );
+				return;
 		}
 	}
 

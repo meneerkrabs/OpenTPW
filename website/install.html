@@ -123,10 +123,10 @@ cd OpenTPW-linux-x64
 	<h2 id="browser">Play in your browser</h2>
 	<ol>
 		<li>Open <a href="https://play.opentpw.io">play.opentpw.io</a>.</li>
-		<li>Choose your Theme Park World folder, the one that contains <code>Data</code>. The page reads the files locally into browser memory; it does not upload them.</li>
+		<li>Choose where your game data comes from. <strong>Load from archive.org</strong> (one click) streams the CD image of a third-party upload, <a href="https://archive.org/details/tpworld_202508">archive.org/details/tpworld_202508</a>, once (about 713 MB, of which about 320 MB of data files are kept). You choose to load it: OpenTPW ships no game data, reads only data files, requests none of the item's other files, and reads no executable. Or use another address of a CD image, your own CD image (<code>.iso</code>, <code>.bin</code> with its <code>.cue</code>, or a <code>.zip</code>), or your Theme Park World folder, the one that contains <code>Data</code>. Nothing is fetched before you click, and nothing is uploaded.</li>
 		<li>Click or press a key to enable sound, then play. Going online is optional.</li>
 	</ol>
-	<p>The browser needs WebGL2 and WebAssembly. Parks, sound and online play run there, and saves and settings are kept in that browser between visits. You must choose the game folder again on your next visit. Movies and developer panels are not available in the browser yet. See <a href="docs/WEB.html">the browser version</a> for current limits and <a href="privacy.html">privacy</a> for storage details.</p>
+	<p>The browser needs WebGL2 and WebAssembly. Parks, sound and online play run there, and saves and settings are kept in that browser between visits. The game files are kept in that browser too, so your next visit starts with Play and needs no download or folder choice. Movies and developer panels are not available in the browser yet. See <a href="docs/WEB.html">the browser version</a> for current limits and <a href="privacy.html">privacy</a> for storage details.</p>
 
 	<h2 id="updating">Updating OpenTPW</h2>
 	<p>Close OpenTPW, download the new archive for the same system and extract it into a new folder. Start the new executable. Your selected game folder is stored outside the release folder, so setup can reuse it. Keep your original game files and existing saves.</p>

@@ -175,11 +175,25 @@ internal sealed partial class SandboxSmokeTest
 		Require( centre != null, "find an on-screen site for the tour ride" );
 		var ride = level.PlaceObject( entry, centre!.Value.X, centre.Value.Y, 0 ) ?? level.Objects.TryPlace( entry, Level.GetCentredAnchor( entry, centre.Value.X, centre.Value.Y, 0 ).X, Level.GetCentredAnchor( entry, centre.Value.X, centre.Value.Y, 0 ).Y, 0, out _ );
 		Require( ride?.Runtime.UsesTour == true, "place the tour ride" );
+		// a ride the fixture placed through the fallback has no access cells, which a player's placement lays (ObjectAccessCells): without the entry's link the ride has no front and no guest chooses or joins it (tp.exe 0x4DE040, 0x4FCB84)
+		if ( ride!.Visitors.IsZeroFront )
+		{
+			ObjectAccessCells.Lay( level.Guests!.Grid.Cells, ride.AccessPoints, Level.OwnerWord( ride ), ride.Entry.HasQueue );
+			ride.Visitors.RecomputeQueue( level.Guests.Grid );
+		}
+		// its queue has to end on a path for a guest to reach it (tp.exe 0x4DE4A0): the fixture lays the one path cell the player lays and ends the queue on it
+		if ( ride.Visitors.JoinCell == null && !QueuePaths.TryConnect( level.Guests!.Grid, ride.Visitors ) )
+		{
+			var queueBack = ride.Visitors.QueueBackCell;
+			var pathCell = GuestPathGrid.Directions.Select( step => (X: queueBack.X + step.DX, Y: queueBack.Y + step.DY) ).FirstOrDefault( cell => level.Paths!.CheckCell( cell.X, cell.Y ) == CellBuildResult.Ok );
+			Require( pathCell != default && level.Paths!.BuildSegment( pathCell, pathCell ).Built.Count > 0, $"lay a path cell beside the tour queue's back {queueBack}" );
+			Require( QueuePaths.TryConnect( level.Guests.Grid, ride.Visitors ), "the tour queue ends on the path" );
+		}
 		// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the fixture opens it as the player would
 		ride!.Open();
 		run.Ride = ride;
 		Require( ride!.Runtime.Tour == null, "no controller before the script ran TOUR 1" );
-		var entrance = ride.Visitors.EntranceCell;
+		var entrance = ride.Visitors.JoinCell ?? ride.Visitors.EntranceCell;
 		for ( var count = 0; count < 2; count++ )
 		{
 			var guest = level.Guests!.SpawnInPark( entrance.X, entrance.Y );

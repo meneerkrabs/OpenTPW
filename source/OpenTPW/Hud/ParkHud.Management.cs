@@ -77,7 +77,7 @@ public sealed partial class ParkHud
 		var screen = new UiScreen( "staffCosts" );
 		var adjustmentButtons = new List<(UiButton Button, Func<bool> Available)>();
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.StaffTrainingBudgets], Font = fonts => fonts.Label, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
+		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.StaffTrainingBudgets], Font = fonts => fonts.Label, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
 			Bounds = table.Control( 0x2DA ).Rect, Anchor = UiAnchor.Center } );
 		// the mini balance: the current month's money in, staff costs, other costs and what is left
 		var frame = table.Control( 0x2DE );

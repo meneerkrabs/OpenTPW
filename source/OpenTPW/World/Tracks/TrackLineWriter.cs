@@ -25,6 +25,10 @@ public sealed class TrackLineWriter : ICellLineWriter
 	public TrackBuilder Builder => builder;
 	public CellToolMode Mode => builder.Family == TrackFamily.Water ? CellToolMode.WaterTrack : CellToolMode.KartTrack;
 
+	/// <summary>The kart and water tools' stack holds the corner collector's 0x401 points (the pusher <c>0x52FBF0</c>).</summary>
+	// [BIN:TPW-EXE:0x0052FBF0 vertex push] the push answers 0 and stores nothing when the count 0x820A8C is above 0x400, so the stack at 0x81B740 holds 0x401 = 1025 points, the collectors' 0x530830 and 0x530B70 bound (the same test at 0x530C4A)
+	public int VertexCapacity => TrackEditor.CornerCapacity;
+
 	/// <summary>
 	/// The end of a track line from <paramref name="start"/> toward <paramref name="cursor"/>: the axis is X only when |dx| &gt; |dy| (a tie goes to Y),
 	/// the end keeps the start's other coordinate and lies on the axis at start + 2 × floor((cursor − start) / 2), so an odd distance rounds toward the

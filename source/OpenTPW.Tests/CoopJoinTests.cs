@@ -250,10 +250,14 @@ public class CoopJoinTests
 			(state with { StaffHands = new[] { (CoopJoinState.MaximumPlayerEntries, held, 4, 1) } }, "a hand of no seat"),
 			(state with { PendingHires = new[] { (2, spare), (3, spare) } }, "a candidate reserved twice"),
 			(state with { PendingHires = new[] { (2, spare), (2, hires.Length > 0 ? hires[0].Candidate : spare) } }, "a seat with two pending hires"),
+			(state with { StaffHands = new[] { (1, 0, 0, 0) } }, "a zero-id guest hand"),
+			(state with { StaffHands = new[] { (1, 0, 0, 0), (2, twin.Economy.Staff.Members.Last().Id, 6, 1) } }, "a zero-id guest hand before another guest's employee"),
 			(state with { PendingHires = new[] { (0, 9999) } }, "a candidate the pool does not hold")
 		} )
 		{
+			// Check the direct restore as well as the wire path: decoding may reject duplicates earlier, while a zero staff id reaches the whole-row restore check.
 			Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( malformed ), what );
+			Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( CoopJoinState.Decode( malformed.Encode() ) ), what + ": from wire" );
 			Assert.AreEqual( (0, 0), (twin.Level.SeatRights.Count, twin.Level.StaffHands!.All.Count()), $"{what}: nothing applied" );
 		}
 		twin.Level.ApplyJoinState( state );

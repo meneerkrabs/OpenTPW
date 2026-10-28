@@ -195,13 +195,24 @@ public class TypedQueueFrontTests
 	}
 
 	[TestMethod]
-	public void UntypedAndLinklessEntriesKeepExplicitCompatibilityFallback()
+	public void AnUntypedWorldKeepsTheHostOneCellQueueAndALinklessEntryHasNoQueueAtAll()
 	{
-		foreach ( var rig in new[] { Rig( 1, typed: false ), Rig( 0 ), Rig( 2 ) } )
+		var untyped = Rig( 1, typed: false );
+		untyped.Ride.RecomputeQueue( untyped.Grid );
+		Assert.AreEqual( (1, 1), untyped.Ride.QueueBackCell );
+		Assert.AreEqual( 1, untyped.Ride.QueueSizeInCells );
+		Assert.AreEqual( ((int, int)?)(1, 1), untyped.Ride.BackCell, "an untyped world has no entry to read: the host's one-cell queue stays" );
+		Assert.IsFalse( untyped.Ride.IsZeroFront );
+		// [BIN:TPW-EXE:0x004DE040 zero front] an entry without a cardinal link bit (none, or diagonals only) gives back cell 0 and size 0 (QUEUE-003's guest side); the host keeps one cell of geometry for the called guest's stand cell and the queue tool
+		foreach ( var rig in new[] { Rig( 0 ), Rig( 2 ) } )
 		{
 			rig.Ride.RecomputeQueue( rig.Grid );
-			Assert.AreEqual( (1, 1), rig.Ride.QueueBackCell );
-			Assert.AreEqual( 1, rig.Ride.QueueSizeInCells );
+			Assert.IsTrue( rig.Ride.IsZeroFront );
+			Assert.IsNull( rig.Ride.BackCell, "the back-of-queue cell is 0" );
+			Assert.AreEqual( 0, rig.Ride.QueueSizeInCells, "+0x40 is 0" );
+			Assert.IsNull( rig.Ride.JoinCell );
+			Assert.AreEqual( 0, rig.Ride.QueueRoom, "no joiner finds room (0x4DDA20)" );
+			Assert.AreEqual( (1, 1), rig.Ride.QueueBackCell, "the queue tool's geometry keeps its fallback cell" );
 		}
 	}
 

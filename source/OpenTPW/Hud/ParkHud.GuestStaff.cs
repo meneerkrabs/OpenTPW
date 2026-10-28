@@ -15,6 +15,20 @@ public sealed partial class ParkHud
 	/// <summary>Whether a guest's hire or pick-up the player still wants waits for the host: Escape and the park view's right click let go of it also with no staff tool on yet.</summary>
 	private bool GuestStaffStartWaits => GuestStaff is { StartWaits: true };
 
+	/// <summary>The staff request and tool the player saw before this frame takes outcomes: its press cannot place or drop a tool the answer arms or replaces.</summary>
+	private bool frameStaffRequestWaited, frameStaffToolWasActive;
+
+	/// <summary>A first staff start whose tool was not on before this frame's outcomes: Escape still lets it go before closing an object window.</summary>
+	private bool frameStaffStartWithoutTool;
+
+	/// <summary>Keeps the staff input's pre-outcome ownership, including an answer received by the park whose outcome the HUD has not taken yet.</summary>
+	private void RememberGuestStaffInput()
+	{
+		frameStaffRequestWaited = GuestStaff?.HasOpenRequest == true;
+		frameStaffToolWasActive = level.StaffPlacement is { IsActive: true };
+		frameStaffStartWithoutTool = GuestStaffStartWaits && level.StaffPlacement is { IsActive: false };
+	}
+
 	/// <summary>Whether the last hire click said a note of its own (the rights', the wait's): the hire list's refusal then says nothing more.</summary>
 	private bool hireNoteSaid;
 

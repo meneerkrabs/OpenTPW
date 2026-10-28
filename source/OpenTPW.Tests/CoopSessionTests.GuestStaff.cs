@@ -118,6 +118,130 @@ public partial class CoopSessionTests
 	/// <summary>The guest's staff commands the host's log took, in order.</summary>
 	private static ParkCommand[] HostStaffCommandsOf( Park host, int seat ) => HostCommandsOf( host, seat ).Where( command => command is StaffToolCommand ).ToArray();
 
+	/// <summary>Delivers a staff request's answer through the real in-memory session without a HUD frame: the next input frame must still belong to the waiting tool the player saw.</summary>
+	private void ResolveStaffBeforeHud( Park host, Park guest, CoopGuestCommands.Request request )
+	{
+		for ( var round = 0; round < 600 && request.IsOpen; round++ )
+		{
+			Rounds( 1, host, guest );
+			guest.Session!.Step();
+		}
+		Assert.IsFalse( request.IsOpen, "the request resolved before the HUD's next input frame" );
+		Assert.IsTrue( GuestStaffOf( guest ).HasOpenRequest, "the HUD has not taken its outcome" );
+	}
+
+	/// <summary>A first or replacing hire/pick-up resolves just before a frame carrying a park press: it arms its tool, but that press cannot place or drop it; the next click can.</summary>
+	private void StaffStartCompletionDoesNotTakeTheFramesPress( bool pickUp, bool replacing )
+	{
+		var (host, guest, view, seat, handyman) = StaffSession();
+		var staff = GuestStaffOf( guest );
+		var tool = guest.Level.StaffPlacement!;
+		if ( replacing )
+		{
+			// exercise both cross-tool replacements: Place to Carry and Carry to Place
+			Assert.IsTrue( pickUp ? GuestHires( guest, view, out _ ) : GuestPicksUp( guest, view, handyman ) );
+			RoundsUntil( () => tool.IsActive, host, guest, view, "the old staff tool armed" );
+		}
+		var before = tool.Kind;
+		var candidate = 0;
+		Assert.IsTrue( pickUp ? GuestPicksUp( guest, view, handyman ) : GuestHires( guest, view, out candidate ) );
+		var request = guest.Session!.GuestCommands!.LastSubmitted!;
+		ResolveStaffBeforeHud( host, guest, request );
+		Assert.IsTrue( request.Accepted );
+		Assert.AreEqual( before, tool.Kind, "the displayed tool has not changed yet" );
+		var sent = Numbered( guest );
+		var cell = FreeCell( guest );
+		// No idle HUD frame between the answer and the press: this is the completion frame itself.
+		ClickCell( guest, view, cell.X, cell.Y );
+		Assert.AreEqual( sent, Numbered( guest ), "the waiting frame's press sent no placement or drop" );
+		Assert.IsFalse( staff.HasOpenRequest );
+		Assert.AreEqual( pickUp ? StaffToolKind.Carry : StaffToolKind.Place, tool.Kind );
+		Assert.AreEqual( pickUp ? handyman : candidate, pickUp ? tool.Carried!.Id : tool.Candidate!.Id );
+		Assert.IsTrue( staff.WantsTool && guest.Level.HoldsStaff( seat ) );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopWaitingForHost ), "the waiting press was explained" );
+		// The suppression is one frame's, not a sticky wait: a fresh press on the same cell acts normally.
+		ClickCell( guest, view, cell.X, cell.Y );
+		Assert.AreEqual( sent + 1, Numbered( guest ), "the next click sent its request" );
+		Assert.IsTrue( staff.HasOpenRequest );
+		RoundsUntil( () => !staff.HasOpenRequest && !tool.IsActive, host, guest, view, "the fresh click completed" );
+		Assert.IsFalse( guest.Level.HoldsStaff( seat ) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AFirstHiresCompletionFrameDoesNotPlaceItsNewTool() => StaffStartCompletionDoesNotTakeTheFramesPress( pickUp: false, replacing: false );
+
+	[TestMethod]
+	public void AFirstPickUpsCompletionFrameDoesNotDropItsNewTool() => StaffStartCompletionDoesNotTakeTheFramesPress( pickUp: true, replacing: false );
+
+	[TestMethod]
+	public void AHireReplacingACarryDoesNotPlaceOnItsCompletionFramesPress() => StaffStartCompletionDoesNotTakeTheFramesPress( pickUp: false, replacing: true );
+
+	[TestMethod]
+	public void APickUpReplacingAPlaceDoesNotDropOnItsCompletionFramesPress() => StaffStartCompletionDoesNotTakeTheFramesPress( pickUp: true, replacing: true );
+
+	[TestMethod]
+	public void ARightClickStillCancelsWhenTheStaffCompletionFrameAlsoHasALeftPress()
+	{
+		var (host, guest, view, seat, _) = StaffSession();
+		var staff = GuestStaffOf( guest );
+		var tool = guest.Level.StaffPlacement!;
+		Assert.IsTrue( GuestHires( guest, view, out var candidate ) );
+		var request = guest.Session!.GuestCommands!.LastSubmitted!;
+		ResolveStaffBeforeHud( host, guest, request );
+		Assert.IsTrue( request.Accepted );
+		var sent = Numbered( guest );
+		var cell = FreeCell( guest );
+		// The original staff dispatch gives a valid right quick-click priority over a left press in the same frame.
+		AtCell( guest, view, cell.X, cell.Y, input => input with { LeftDown = true, LeftPressed = true, RightReleased = true, RightClicked = true } );
+		Assert.AreEqual( sent, Numbered( guest ), "no placement from the left press" );
+		Assert.IsFalse( staff.WantsTool, "the right click still lets go" );
+		Assert.AreEqual( StaffToolKind.None, tool.Kind );
+		RoundsUntil( () => !staff.HasOpenRequest && !guest.Level.HoldsStaff( seat ) && HostStaffCommandsOf( host, seat ).Length == 2,
+			host, guest, view, "the cancelled start was cleaned up" );
+		CollectionAssert.AreEqual( IssuedBy( seat, new BeginStaffHireCommand( candidate ), new CancelStaffHireCommand() ), HostStaffCommandsOf( host, seat ) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	/// <summary>A first start resolves just before Escape over an object window: Escape still lets the start go, and only the next Escape closes the window.</summary>
+	private void StaffStartCompletionEscapeKeepsTheObjectWindow( bool pickUp )
+	{
+		var (host, guest, view, seat, handyman) = StaffSession();
+		var staff = GuestStaffOf( guest );
+		var tool = guest.Level.StaffPlacement!;
+		var candidate = 0;
+		Assert.IsTrue( pickUp ? GuestPicksUp( guest, view, handyman ) : GuestHires( guest, view, out candidate ) );
+		view.Hud.SelectObject( guest.One );
+		view.Update();
+		Assert.IsTrue( view.Hud.InfoArmOpen && staff.StartWaits );
+		var request = guest.Session!.GuestCommands!.LastSubmitted!;
+		ResolveStaffBeforeHud( host, guest, request );
+		Assert.IsTrue( request.Accepted );
+		Assert.AreEqual( StaffToolKind.None, tool.Kind, "no tool was shown before the Escape frame" );
+		var hand = guest.Level.StaffHands!.Of( seat );
+		// The accepted record arrived, but no HUD frame showed the newly armed tool before this key.
+		view.Escape();
+		Assert.IsFalse( staff.WantsTool, "Escape let go of the start whose outcome arrived this frame" );
+		Assert.AreEqual( StaffToolKind.None, tool.Kind );
+		Assert.IsTrue( view.Hud.InfoArmOpen, "the object window stays for the next Escape" );
+		RoundsUntil( () => !staff.HasOpenRequest && !guest.Level.HoldsStaff( seat ) && HostStaffCommandsOf( host, seat ).Length == 2,
+			host, guest, view, "the accepted start was cleaned up" );
+		ParkCommand start = pickUp ? new PickUpStaffCommand( handyman ) : new BeginStaffHireCommand( candidate );
+		ParkCommand cleanup = pickUp ? new DropStaffCommand( handyman, hand!.Value.X, hand.Value.Y ) : new CancelStaffHireCommand();
+		CollectionAssert.AreEqual( IssuedBy( seat, start, cleanup ), HostStaffCommandsOf( host, seat ), "one start and one cleanup" );
+		view.Escape();
+		Assert.IsFalse( view.Hud.InfoArmOpen, "the next Escape closes the object window" );
+		Rounds( 120, host, guest );
+		Assert.AreEqual( 2, HostStaffCommandsOf( host, seat ).Length, "no repeated cleanup" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void EscapeInAFirstHiresCompletionFrameCancelsBeforeClosingTheObjectWindow() => StaffStartCompletionEscapeKeepsTheObjectWindow( pickUp: false );
+
+	[TestMethod]
+	public void EscapeInAFirstPickUpsCompletionFrameDropsBackBeforeClosingTheObjectWindow() => StaffStartCompletionEscapeKeepsTheObjectWindow( pickUp: true );
+
 	[TestMethod]
 	public void AGuestsHireWaitsForTheHostArmsThePlaceToolAndItsPlacementHiresOnEveryPeer()
 	{

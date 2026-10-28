@@ -47,9 +47,9 @@ public sealed record UiModelFrame( string NodeName, IReadOnlyList<UiModelPart> P
 /// screen with y pointing up; HUD and lobby models are stored at their on-screen place (the root
 /// node translation), generic buttons and windows at the origin. Child nodes are alternative state
 /// frames. Native drawing composes ancestors, then fits the selected mesh's stored bound endpoints
-/// to the control; a common XY translation of geometry and endpoints cancels in that fit. OpenTPW
-/// retains the root-pose shortcut for geometry and transforms the selected bounds identically;
-/// full ancestor/control-rotation parity remains open (UI-003). Texture V runs bottom-up
+/// to the control; a common XY translation of geometry and endpoints cancels in that fit. Each frame's
+/// geometry and bound endpoints use the node's world matrix, its local matrix times its parent's world
+/// matrix (translations included, as the instance traverser 0x57A530 accumulates them); the window angle is applied at draw time (<see cref="UiContext.DrawFrame(UiModelFrame, UiRect, RgbaByte?, float, System.Numerics.Vector2)"/>), and the state selection stays open (UI-003). Texture V runs bottom-up
 /// (as in the 3D shaders): button art occupies the top-left of its texture while the UVs span
 /// v 0.42..1, so V is flipped here.
 /// </summary>
@@ -78,13 +78,17 @@ public sealed class UiModel
 		DrawingKey = UiModels.RootNameKey( RootNodeName );
 		AuthoredCenter = new NVector2( root.Transform.M41, -root.Transform.M42 );
 		var frames = new List<UiModelFrame>();
+		// [BIN:TPW-EXE:0x57a530 instance traverser] a node's world matrix is its local matrix (node+0x10) combined with the accumulated matrices of its ancestors (the root starts as its local matrix times the caller's, the identity set at 0x57a55b is overwritten, children are visited at node+0xc with the accumulated matrices, 0x57a6ec); no corpus child has a rotation or scale, only translations, which cancel in the selected-mesh fit
+		var worlds = new Dictionary<int, NMatrix4x4>();
 		foreach ( var node in OrderedNodes( model ) )
 		{
+			worlds[node.Index] = node.Index == root.Index || !worlds.TryGetValue( node.ParentIndex, out var parentWorld )
+				? node.Transform
+				: node.Transform * parentWorld;
 			if ( node.MeshIndex < 0 || node.MeshIndex >= model.Meshes.Count )
 				continue;
-			// [APPROX:UI-003] selected-mesh endpoint fitting is retained, but state geometry still uses the root-pose shortcut; full ancestor composition, general state traversal and control rotation remain unimplemented — evidence needed: corpus-external hierarchy/rotation validation and rendered comparison
-			var transform = node.Index == root.Index ? root.Transform : WithoutTranslation( node.Transform ) * root.Transform;
-			var frame = Flatten( model.Meshes[node.MeshIndex], node.Name, transform );
+			// [APPROX:UI-003] the original's state selection of a UI model draw beyond the stored selected-mesh endpoints is not traced; the window angle is DrawFrame's turn (0x476c50) — evidence needed: the UI control draw's selection of a state frame
+			var frame = Flatten( model.Meshes[node.MeshIndex], node.Name, worlds[node.Index] );
 			if ( frame != null )
 				frames.Add( frame );
 		}
@@ -134,14 +138,6 @@ public sealed class UiModel
 		}
 	}
 
-	private static NMatrix4x4 WithoutTranslation( NMatrix4x4 matrix )
-	{
-		matrix.M41 = 0;
-		matrix.M42 = 0;
-		matrix.M43 = 0;
-		return matrix;
-	}
-
 	private static UiModelFrame? Flatten( ModelFile.Mesh mesh, string nodeName, NMatrix4x4 transform )
 	{
 		if ( mesh.Vertices.Length == 0 || mesh.Indices.Length < 3 || mesh.TexCoords.Length < mesh.Vertices.Length || mesh.Materials.Length == 0 )
@@ -159,7 +155,7 @@ public sealed class UiModel
 			maxX = Math.Max( maxX, point.X );
 			maxY = Math.Max( maxY, point.Y );
 		}
-		// [APPROX:UI-004] back-to-front by Z per texture group; the original's display object reserves a UI depth range in front of its scene ranges (0x5833c0), so it probably depth-tests (the device init 0x573080 enables Z test LESSEQUAL and Z write when the buffer is on) — evidence needed: the UI model draw call's own depth state and order
+		// [APPROX:UI-004] back-to-front by Z per texture group; the original depth-tests the parts of a UI node in file order (immediate states 0x1256/0x2756, 0x581db0) and defers blended parts far to near (0x5829e0), but how a UI vertex's depth is formed (0x87b1d8 +0xc) and whether the UI pass shares the scene's depth buffer are not read — evidence needed: the UI vertex transform's depth
 		// Group triangles by material texture and order groups back to front (lower Z first), as the
 		// panels layer flat inner faces over their bevels.
 		var groups = new Dictionary<string, List<(float Depth, int A, int B, int C, bool Transparent)>>( StringComparer.OrdinalIgnoreCase );
@@ -201,7 +197,7 @@ public sealed class UiModel
 		}
 		// [BIN:TPW-EXE:0x476fd3..0x47708f selected-mesh fitting] transform only the two stored
 		// endpoints, then order X/Y. This is not the header box, a corner AABB or an eight-corner box.
-		// Keep them in exactly the same flattened space as the vertices above (UI-003 still applies).
+		// Keep them in exactly the same flattened space as the vertices above.
 		var first = NVector3.Transform( mesh.BoundsMin.GetSystemVector3(), transform );
 		var second = NVector3.Transform( mesh.BoundsMax.GetSystemVector3(), transform );
 		return new UiModelFrame( nodeName, parts.ToArray(), minX, minY, maxX, maxY )

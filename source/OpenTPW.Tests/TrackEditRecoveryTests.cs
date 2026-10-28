@@ -158,23 +158,27 @@ public class TrackEditRecoveryTests
 		Assert.IsTrue( tool.Undo() );
 		CollectionAssert.AreEqual( new[] { (16, 10) }, rig.AddOns.ToArray() );
 		Assert.IsFalse( tool.Undo() );
-		Assert.IsFalse( rig.Enter().Undo() );
+		// the walk that ends at the exit leaves it on the stack twice (0x530830), and Backspace takes that zero-length line back with the step (0, 0): the exit counts down and stays
+		Assert.IsTrue( rig.Enter().Undo() );
+		Assert.IsTrue( rig.Cells.Tracks.Get( 14, 10 ).IsOrigin );
 		Assert.AreEqual( 1, rig.AddOns.Count );
 	}
 
 	[TestMethod]
-	public void AForeignTileAndTheStationCannotBeRemovedByAStaleReplay()
+	public void AForeignTileIsNotClearedAndABackspaceReplayClearsTheStationTilesItCovers()
 	{
 		var rig = new Rig();
 		var other = rig.Builder.OwnerOf( TrackStation.FromPlacement( 24, 20, 0 ) );
 		new TrackLineWriter( rig.Builder, owner: other ).Commit( (20, 20), (24, 20) );
 		rig.Editor.UndoLine( new SegmentResult( (24, 20), Array.Empty<(int, int)>(), 0, CellBuildResult.Ok, false ) { Start = (20, 20) } );
+		Assert.AreEqual( other, rig.Cells.Tracks.Get( 22, 20 ).Owner, "a tile of another ride is not this ride's to clear" );
+		var before = rig.Cells.Tracks.Cells().Count( cell => cell.Cell.IsOrigin );
+		// [BIN:TPW-EXE:0x00538CCE line op 0x32] Backspace's per-tile handler calls the clear op on every cell of the line, and the type table (0x53BABC) sends the station types 0xD and 0x12 to the same handler as the track types: a station tile's overlap word is 0 (nothing but the type op and the collectors write it, and the collectors stop before the station), so a line step takes it below zero and the tile clears, without refund (a station tile has no cell cost)
 		rig.Editor.UndoLine( new SegmentResult( rig.Station.Second, Array.Empty<(int, int)>(), 0, CellBuildResult.Ok, false ) { Start = rig.Station.First } );
-		// RepairStation may remove its already-dangling arm toward the empty entry; the station itself and foreign line remain intact.
-		Assert.AreEqual( 5, rig.Cells.Tracks.Cells().Count( cell => cell.Cell.IsOrigin ) );
-		Assert.AreEqual( other, rig.Cells.Tracks.Get( 22, 20 ).Owner );
+		Assert.AreEqual( before - 2, rig.Cells.Tracks.Cells().Count( cell => cell.Cell.IsOrigin ) );
 		Assert.AreEqual( 0, rig.Cleared.Count );
-		Assert.IsTrue( TrackCellTypes.IsStation( rig.Cells.Tracks.Get( rig.Station.First.X, rig.Station.First.Y ).Type ) );
+		Assert.IsFalse( TrackCellTypes.IsStation( rig.Cells.Tracks.Get( rig.Station.First.X, rig.Station.First.Y ).Type ) );
+		Assert.AreEqual( other, rig.Cells.Tracks.Get( 22, 20 ).Owner );
 	}
 
 	[TestMethod]

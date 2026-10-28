@@ -1183,6 +1183,10 @@ The scenarios:
   take-backs (taken, taken, changed, taken) at their records with the host's verdicts on both parks, the host's
   one take-back between the guest's refused one and its last, that both parks applied the same take-backs in
   the same order, and that none of them changed the money on either park (a path's undo refunds nothing).
+  Since C5-2 the guest then starts the pool tool with the buy window's paint row, draws a stroke of four cells
+  (a press, a drag with the button held, a release; in a page through the canvas's own mouse events) and takes
+  it back with Backspace: the driver checks that the take-back named the stroke by its first batch's record,
+  was taken at its record on both parks after the path's, and refunded each of its cells in full on both.
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
   HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
   takes its ticks before the host sets the speed, and the host its own when it does. Every five seconds both

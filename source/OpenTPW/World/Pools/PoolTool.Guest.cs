@@ -82,6 +82,9 @@ public sealed partial class PoolTool
 	/// <summary>[EXT:online-coop-undo] Each run of the tool, from its start to its end (<see cref="Cancel"/>): a guest's stroke keeps the one it was drawn in (C5-2).</summary>
 	private int toolRun;
 
+	/// <summary>[EXT:online-coop-undo] The name of the guest's newest own stroke, which its Backspace takes back, or null (C5-2; the live acceptance reads it).</summary>
+	internal long? NewestOwnStroke => ownStrokes.Count > 0 ? ownStrokes[^1] : null;
+
 	/// <summary>[EXT:online-coop-undo] The newest piece this tool laid on <paramref name="tower"/>'s slide, or null (C5).</summary>
 	private (long Record, int Part)? NewestOwnPiece( (int X, int Y) tower )
 	{

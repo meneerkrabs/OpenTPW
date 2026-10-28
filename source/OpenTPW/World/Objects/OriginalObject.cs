@@ -181,6 +181,8 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			using ( LoadProfile.Measure( "object-hoarding" ) )
 				hoarding = ObjectHoardingRenderer.Create( entry, Runtime.Model, placement, level?.OriginalPark?.Heightfield, level?.OriginalPark?.LevelName, Runtime.Hoarding, level?.HoardingCache );
 			UpdateTransforms();
+			// the instance joins the scene with a key table of its pose at creation (0x463851)
+			Runtime.RefreshKeyPose();
 			// [EXT:object-lights] an object whose model has light dummies shows them through its level's point lights
 			if ( Runtime.Lights != null )
 				Level?.PointLights?.Add( this );
@@ -477,7 +479,7 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			if ( dynamic )
 				vertexParts.Add( (model, part.MeshIndex, part.Vertices, -1) );
 			// [EXT:winter-snow-surfaces] objects (roofs, trees, rides) take snow on their up-facing surfaces; a part on an animated node (it can move or turn) keeps its snow noise in model space, so the patches do not crawl over it
-			parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}", SnowSurface = SnowCover.GroundSurface, SnowNoiseInModelSpace = part.NodeIndex >= 0 }, part.NodeIndex) );
+			parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}", SnowSurface = SnowCover.GroundSurface, SnowNoiseInModelSpace = part.NodeIndex >= 0, Prepared = PresentDrawn }, part.NodeIndex) );
 		}
 		frameTextures.AddRange( frameSlots.Values.Where( frames => frames.Bindings.Count > 0 ) );
 	}
@@ -712,13 +714,55 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 		bank.AppendTo( into, NodeTransforms, Placement.ModelToEngine, hiddenTest );
 	}
 
-	/// <summary>A render frame: the hoarding rises or sinks by the frame's real time and shows its state (tp.exe <c>0x0044E410</c> → <c>0x004548F0</c>).</summary>
+	/// <summary>Instance flag 0x200000: the render callback ran for this instance in the previous frame's drawing, so this frame's list pass leaves it alone.</summary>
+	private bool calledBack;
+	/// <summary>Instance flag 0x800000: this frame's list pass updated the instance without posing it, so its next callback restores the stored pose first.</summary>
+	private bool returnPending;
+	private long callbackFrame = -1;
+
+	/// <summary>
+	/// A render frame, the list pass of the original (tp.exe <c>0x0044E410</c>, once per frame): an instance the callback did not pose in the previous frame's drawing is updated without posing
+	/// and marked, one it did pose only loses its mark; the hoarding rises or sinks by the frame's real time and shows its state (<c>0x004548F0</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x44E49A list pass] per instance of the table [0x7A4614..]: flag 0x200000 set → clear it (0x44E4E0); else, when it has an animation record (+0x14) and flags 0x1000/0x2000 are clear, 0x473C70(instance, 0, 8) updates its channels without sampling (0x4735D0 samples only for a posing call or instance flag 0x400000), hoardings 0x4548F0 for flag 0x20, then flag 0x800000 is set (0x44E4DC)
+	// [BIN:TPW-EXE:0x44E410 ride view list pass] besides the two full passes (argument 3, 0x54E2B3 and 0x54E722) the frame step 0x54FA96 calls it with argument 2: with the ride view's option bit 0x4 of [0x790AB0] the ridden instance [0x790988] is updated and posed (0x473C70(instance, 1, 0), 0x44B510, 0x4548F0), which also rebuilds its key table
+	// [RIDES-032 sim split] this simulation always updates and poses every instance in its tick (the saved node states, the picks and the hash must not depend on the camera); the list pass and the callback of the original decide only what is presented: when the key table is rebuilt (RefreshKeyPose) and when the stored pose is restored (ObjectAnimator.ResetToStored)
 	protected override void OnUpdate()
 	{
 		if ( deleted )
 			return;
 		Runtime.Hoarding.Advance( Time.Delta );
 		hoarding?.Update();
+		if ( Level?.RideView is { } view && ReferenceEquals( view.Ride, this ) )
+			Runtime.RefreshKeyPose();
+		if ( calledBack )
+			calledBack = false;
+		else
+			returnPending = true;
+	}
+
+	/// <summary>
+	/// The render callback (tp.exe <c>0x00463030</c>): the mesh prepare found this instance inside the view for this frame. The first call of a frame rebuilds the key table and flags the instance,
+	/// and, when the previous frame's list pass left it unposed, first restores the stored pose before it is posed again (<c>0x0044E380</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x463030 render callback] 0x44E380(instance from the mesh object +0xB4, 1) then flag 0x200000 (0x463047..0x463052)
+	// [BIN:TPW-EXE:0x44E380 pose] with the posing argument set and flag 0x800000 set: 0x4726D0 (ObjectAnimator.ResetToStored) unless flag 0x80000 is set (no creator on the placed ride's path sets it: 0x463060 builds the flags from 0x211F/0x231F and the argument bits 0x1, 0x2, 0x80), then flag 0x800000 cleared; then 0x473C70(instance, 1, 0) and its key table refresh (0x473E01) and the head tick 0x44B510
+	internal void PresentDrawn()
+	{
+		if ( deleted )
+			return;
+		var frame = global::Global.Render?.FrameNumber ?? 0;
+		if ( callbackFrame == frame && calledBack )
+			return;
+		callbackFrame = frame;
+		if ( returnPending )
+		{
+			returnPending = false;
+			Runtime.Animator.ResetToStored();
+			UpdateTransforms();
+		}
+		calledBack = true;
+		Runtime.RefreshKeyPose();
 	}
 
 	protected override void OnDelete()

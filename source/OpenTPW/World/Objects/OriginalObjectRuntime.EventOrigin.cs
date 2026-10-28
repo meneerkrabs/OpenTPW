@@ -72,7 +72,7 @@ public sealed partial class OriginalObjectRuntime
 		if (eventSoundSpace is not { } toSound || particlePlacement is not { } placement)
 			return EventAnchorStatus.Play;
 		particleKeys ??= new ParticleKeyResolver(Model);
-		var pose = particleKeys.Resolve(key, ParticleKeyResolver.SoundSelector, Animator.NodeTransforms, placement);
+		var pose = particleKeys.Resolve(key, ParticleKeyResolver.SoundSelector, KeyPose, placement);
 		switch (pose.Status)
 		{
 			case ParticleKeyStatus.Resolved:

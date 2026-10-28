@@ -23,7 +23,8 @@ namespace OpenTPW;
 /// texture coordinates (<see cref="GetVertexPositions"/>, <see cref="GetTexCoords"/>); the shared
 /// <see cref="ModelFile"/> is never written.
 /// </summary>
-// [APPROX:RIDES-032] Every instance takes the placement callback route (Mac 0xa7960 with r4 = 1) on every update. PC: the render callback 0x463030 at the model object's +0x140 (the model record's +0x1c; set at 0x4638bd) poses via 0x44e380(inst, 1) and sets instance flag 0x200000; the list pass 0x44e410 (once per frame from 0x54e360) updates the instances without that flag via 0x473c70(inst, 0, 8), whose channel update 0x4735d0 poses only when instance flag 0x400000 is set (the hold route sets it once, 0x4737e8; 0x473c70 clears it at its end), and clears the flag on the others. The list-pass route is not modelled, so an instance the renderer does not pose (the choice depends on the view) is posed here — evidence needed: the callback's call site: no instruction in the executable calls or jumps through +0x140 of that object (the other +0x140 operands, at 0x43752c, 0x439fea, 0x441958, 0x441988, 0x4db378, 0x4fdf32 and the like, belong to other structures) and the renderer (0x579D95) only initialises the word to 0, so the call, if any, goes through a computed address
+// [APPROX:RIDES-032] This simulation updates and poses every instance in its tick, seen or not (the saved node states, picks, point lights and the hash must not depend on the camera); the original's list pass 0x44E410 updates an instance the renderer did not pose in the previous frame without sampling (0x473C70(inst, 0, 8)). What the handshake changes in what is shown is ported (OriginalObject.OnUpdate and PresentDrawn: flags 0x200000 and 0x800000, the stored pose restored on return by ObjectAnimator.ResetToStored, the key table of OriginalObjectRuntime.RefreshKeyPose); the callback's visibility test is each drawn part's, where the original's is the whole mesh object's
+// [BIN:TPW-EXE:0x57A7FC render callback call site] the callback stored at the mesh object's +0x140 (0x4638BD, 0x463030) is called by the mesh prepare 0x57A750 (reached through the thunk 0x57AC63, so no direct call or jump through +0x140 exists) as `call eax` with the mesh object, once per frame (the frame word [0x8BCC40] against the object's, 0x57A7ED), for every mesh object the scene prepares; 0x579D94 only initialises the word to 0
 // [BIN:TPW-EXE:0x473c70 idle restart] The idle restart (Mac 0xa798c–0xa79c8) never fires for placed rides: placement through 0x4db090 → 0x4dd500 (flags 0x361/0x32f) and script-spawned instances (0x55a720, 0x549faf, 0x54a237, 0x54a715; flags 0x101) always set bit 4; the creator 0x463060 sets bit 4 from argument bit 1 and 0x8000 from argument 0x80. (RIDES-034 retired.)
 // [BIN:TPW-EXE:0x00580530 texture frame bind] MD2 texture-frame tracks (trailer word 12) now apply: the clip update 0xa56f8 runs them when trailer bit 0x2 is set and global option bit 0x8 is clear (its only store writes 0), and <see cref="GetTextureFrame"/> exposes the winning frame per slot; the PC writer is 0x4721f0 → 0x470c90 (slot record at model+0x50+slot·8: frame at +2, dirty bit 0x04 in byte +1 when the frame changes; trailer flags & 2 and option 0x7b4980 bit 0x8 clear), and the draw reads it per material group: 0x00580530 (the draw) and 0x0057A420 (the per-slot bind) bind frames[flags 0x40 of 0x8BD550 ? slot word +2 : 0] of the slot record the group points at, the flag being the ANIMATINGTEXTURES option (OriginalObject.TextureFrameToShow), so the material-slot mapping is the original's
 public sealed class ObjectAnimator
@@ -313,7 +314,7 @@ public sealed class ObjectAnimator
 	/// while held-ID12 history survives until another writer or cleanup changes it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00470C90 texture-frame track write] per clip update, for each track entry (slot word, key count word, key array: time in the low word, frame in the high word) it scans the keys from the last backwards for the first whose time is <= the clip time and, when its frame differs from the slot record's frame (model+0x50 + slot*8, frame at +2), stores it and sets dirty bit 0x04 of byte +1; a clip time before the first key writes nothing, so the slot keeps its previous frame; tracks run in array order, so a later track of the same slot overwrites an earlier one; no slot or frame range check
-	// [APPROX:MD2-900] Ordinary set-mode replacement, unbind, replay and held/ended texture lifetimes follow PC 0x472310/0x472f60. The return-from-list-pass aggregate reset (0x44e3a0 → 0x4726d0) and header-flag-4 per-update restore remain outside this animator's always-posed set-mode route; see docs/reverse/TEXTURE-FRAME-LIFETIME.md and RIDES-032.
+	// [BIN:TPW-EXE:0x472310 texture lifetimes] ordinary set-mode replacement, unbind, replay and held/ended texture lifetimes follow 0x472310/0x472f60; the return-from-list-pass aggregate reset (0x44E3A0 -> 0x4726D0) is ObjectAnimator.ResetToStored, called by OriginalObject.PresentDrawn; the header-flag-4 per-update restore (0x473CDB..0x473D0C) does not reach this class: the ride loader strips the flag (0x461F10), only the TrackMaster loader passes it, and those models are played by the coaster rigs (COAST-033, COAST-034). See docs/reverse/TEXTURE-FRAME-LIFETIME.md. (MD2-900 retired.)
 	// [APPROX:MD2-901] Frame indices outside the slot's frame-name list are ignored (no corpus case among 458 in-range tracks; the one out-of-range track, Pmegacostm slot 12, addresses a slot its base model does not have, which the bind also ignores) — the PC writer 0x470C90 stores whatever slot and frame the track holds (it does not check them against the slot array or the frame names), and the traced consumers (binder 0x57A420, draw reader 0x580530) read the frame pointer array unchecked through 0x575F90, so the original's out-of-range behavior is not safely reproduced
 	public int GetTextureFrame( int slot )
 	{
@@ -845,6 +846,51 @@ public sealed class ObjectAnimator
 				continue;
 			SetNodeStateBit( node, true );
 		}
+	}
+
+	/// <summary>
+	/// The return from the list pass: what the render callback does first when the instance was left out of the previous frame's drawing (instance flag 0x800000, unless 0x80000), and what the list pass skipped
+	/// meanwhile, restored before the pose of this frame is sampled again.
+	/// </summary>
+	// [BIN:TPW-EXE:0x44E3A0 return from the list pass] 0x44E380 (the callback's body, 0x463030) calls 0x4726D0 once when instance flag 0x800000 is set and 0x80000 is clear, then clears 0x800000 and poses; the list pass 0x44E410 sets 0x800000 on every instance it updated without posing (the one it leaves alone because the callback ran last frame, 0x200000, only has that flag cleared)
+	// [BIN:TPW-EXE:0x4726D0 aggregate reset] for every channel that is not flagged 0x20 the bound clip's listed nodes (0x4727D5..0x47281D) and every node its tracks write (0x47283B..0x472887) lose node-state bit 0x10 unless bit 31 is set; the stored node, vertex (0x1000) and texture-coordinate (0x10000) data of what the tracks write is copied back (0x472A0F..0x472B11); once, a clip with trailer flag 0x2 resets every slot that has texture flag 0x40 to frame 0 with the dirty bit (0x472B37..0x472B75, option 0x7B4980 bit 0x8 clear); the channel gets its flag 0x10 so the next sample runs (0x472B7D)
+	internal void ResetToStored()
+	{
+		var textureFramesReset = false;
+		foreach ( var channel in ChannelList )
+		{
+			// a channel the hold route stopped is AnimID 12 and has no clip bound: the helper skips it (0x472932)
+			if ( channel.Held )
+				continue;
+			var clip = channel.Clip.Animation;
+			foreach ( var node in clip.NodeList )
+				ClearNodeStateBit( node );
+			foreach ( var track in clip.Tracks )
+			{
+				ClearNodeStateBit( track.NodeIndex );
+				var mesh = meshByNode[track.NodeIndex];
+				if ( mesh < 0 )
+					continue;
+				if ( channel.Vertices[track.NodeIndex] != null || channel.Poses[track.NodeIndex] != null )
+					vertexSources[mesh] = (0L, 0f);
+				if ( channel.Uvs[track.NodeIndex] != null )
+					uvSources[mesh] = (0L, 0f);
+			}
+			if ( !textureFramesReset && clip.TextureFramesEnabled )
+			{
+				textureFramesReset = true;
+				ResetTextureFramesOnUnbind( channel );
+			}
+		}
+		settled = false;
+		Update();
+	}
+
+	private void ClearNodeStateBit( int node )
+	{
+		if ( node >= nodeStateBit.Length || (model.Nodes[node].Type & 0x80000000u) != 0 || nodePinned[node] )
+			return;
+		SetNodeStateBit( node, false );
 	}
 
 	private void SetNodeStateBit( int node, bool value )

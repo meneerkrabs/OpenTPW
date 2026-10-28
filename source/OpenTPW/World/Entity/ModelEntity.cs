@@ -24,6 +24,13 @@ public partial class ModelEntity : Entity
 	/// <summary>Skips the draw while the model's bounds lie wholly outside the view (off for the sky box around the camera).</summary>
 	public bool Cullable { get; set; } = true;
 
+	/// <summary>
+	/// Called when the draw finds the model inside the view, before the first draw of the frame, as the original's mesh prepare calls the render callback of the mesh object
+	/// (<see cref="OriginalObject.PresentDrawn"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x57A750 mesh prepare] the prepare of a mesh object (a virtual method; the thunk 0x57AC63 reaches it, which is why no instruction calls through +0x140) loads the callback word the render callback 0x463030 was stored in at +0x140 (0x4638BD) and calls it with the mesh object (0x57A7E6..0x57A7FC) when the object's frame word differs from the current frame's [0x8BCC40] (0x57A7ED), so once per frame, before the object's meshes are tested one by one (0x57A5A6..0x57A685, 0x561A30) and drawn
+	internal Action? Prepared { get; set; }
+
 	/// <summary>Model parts drawn and skipped as outside the view since the counters were last read (<c>--frame-stats</c>).</summary>
 	internal static int DrawnParts, CulledParts;
 
@@ -74,6 +81,7 @@ public partial class ModelEntity : Entity
 			return;
 		}
 		DrawnParts++;
+		Prepared?.Invoke();
 
 		if ( Model.HasGeometry )
 			DrawModel( Model, model );

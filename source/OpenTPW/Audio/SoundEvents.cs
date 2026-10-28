@@ -185,11 +185,11 @@ public sealed class SoundEventSystem
 	/// <summary>Stops out-of-range samples. Finite catalogue samples and loops retain their owner for a later admitted fresh output.</summary>
 	// [BIN:TPW-EXE:0x6BCA70,0x6B8D60,0x6BB7C0,0x6C8E50,0x6BBE40] range flag 0x800 is set before stop; the successful output callback clears +0x24 and playing bit 1 without making the owner terminal.
 	// [BIN:TPW-EXE:0x6BD800,0x6BC410,0x6B9AB0] the same owner's next admitted tick rebuilds the selected sample request with a zero existing output handle; this is a fresh source, not silent cursor advance.
-	// [APPROX:AUDIO-038] sentence selected-descriptor/refill timing and expiry-exempt nonloop retention remain separate residuals; held-chain children are not recursively range-stopped.
+	// [APPROX:AUDIO-038] a sentence stopped inside the decoder's last look-ahead resumes on its successor in the original (see SoundSentence.TryPlayNext) and replays its segment here; initial submission admission, the group-enable stop and restart (0x6BC760) and the expiry-exempt nonloop retention remain separate residuals; held-chain children are not recursively range-stopped.
 	private void StopVoicesOutOfRange()
 	{
 		foreach ( var (voice, _, flags, _) in oneShots )
-			if ( voice.Position != null && voice.Range > 0 && (flags & AnyDistanceFlag) == 0 && !Audible( voice.Position, voice.Range ) )
+			if ( voice.Position != null && voice.Range > 0 && !SoundVoiceFlags.IsAnyDistance( flags ) && !Audible( voice.Position, voice.Range ) )
 			{
 				// Only catalogue samples with retained parameters can be rebuilt; unrelated voices stop as before.
 				if ( sampleOwners.TryGetValue( voice, out var loop ) )
@@ -232,6 +232,20 @@ public sealed class SoundEventSystem
 	/// </summary>
 	internal static uint PoolRank( uint priority, Vector3? position ) => ((priority & 0xFFFF) << 16) | (uint)PoolKey( position );
 
+	/// <summary>
+	/// The place a voice is ranked at: its own, except that a started voice flagged audible at any distance sits where the sample start put it, (0, 0) on the ground, whatever place its caller gave
+	/// (a voice not started yet, and every voice a caller gave no place, ranks at its caller's place, which for a flat submit is also (0, 0, 0)).
+	/// </summary>
+	// [BIN:TPW-EXE:0x6bc51d flat placement] the sample start of a voice with voice flag 8 overwrites the placeholder's own position (+0x10, the three floats the rank reads) with the raw dwords (0, 1, 0), and the sample start of every one-shot, sentence segment and loop return repeats it
+	// [BIN:TPW-EXE:0x6bbce0 placeholder move] a caller's move stores its place at +0x10 and, while a sample plays (+0x24), a voice with voice flag 8 gets (0, 1, 0) again (0x6bbda4), so a moved any-distance voice keeps ranking at the origin; a voice without a sample (waiting for its decode, a chain's root) keeps its caller's place
+	// [BIN:TPW-EXE:0x6bb9f0 rank distance] the ground distance word is computed from the placeholder's +0x10 and +0x18 against the listener whatever the voice flags, and 0x6bca10 reads it for every voice (the range test only spares voice flag 8 from the stop, 0x6bca44), so a started any-distance voice competes at its distance from the listener to the origin of the sound space
+	internal static Vector3? RankPlace( ushort flags, Vector3? position, bool started )
+	{
+		if ( !SoundVoiceFlags.IsAnyDistance( flags ) )
+			return position;
+		return started ? Vector3.Zero : position ?? Vector3.Zero;
+	}
+
 	private static float GroundDistanceSquared( Vector3 place )
 	{
 		var listener = AudioListener.Position;
@@ -245,7 +259,7 @@ public sealed class SoundEventSystem
 		position is not { } place || range <= 0 || GroundDistanceSquared( place ) <= range * range;
 
 	/// <summary>Whether the pool admits a voice: audible, or flagged audible at any distance (0x6bca10, flag 8 at 0x6bca44).</summary>
-	internal static bool Admitted( Vector3? position, float range, ushort flags ) => (flags & AnyDistanceFlag) != 0 || Audible( position, range );
+	internal static bool Admitted( Vector3? position, float range, ushort flags ) => SoundVoiceFlags.IsAnyDistance( flags ) || Audible( position, range );
 
 	private readonly List<(AudioVoice Voice, uint Priority, ushort Flags, long ExpiresAt)> oneShots = new();
 	private readonly Dictionary<AudioVoice, RetainedSample> sampleOwners = new();
@@ -255,7 +269,7 @@ public sealed class SoundEventSystem
 	{
 		var expiresAt = ExpiryFrame( voice, flags, delay );
 		oneShots.Add( (voice, priority, flags, expiresAt) );
-		if ( parameters != null && (voice.Loops || (flags & 0xC) == 0) ) sampleOwners.Add( voice, new RetainedSample( this, voice, parameters, lifetime, expiresAt, delay ) );
+		if ( parameters != null && (voice.Loops || !SoundVoiceFlags.IsExpiryExempt( flags )) ) sampleOwners.Add( voice, new RetainedSample( this, voice, parameters, lifetime, expiresAt, delay ) );
 	}
 
 	/// <summary>The selected source and parameter state survive output release; the public voice remains the stable Stop/move handle.</summary>
@@ -355,17 +369,17 @@ public sealed class SoundEventSystem
 		poolCandidates.Clear();
 		foreach ( var sentence in sentences )
 			if ( !sentence.IsStopped && Admitted( sentence.Position, sentence.Range, sentence.Event.Flags ) )
-				poolCandidates.Add( (sentence, PoolRank( sentence.Event.Priority, sentence.Position ), sentence.Serial) );
+				poolCandidates.Add( (sentence, PoolRank( sentence.Event.Priority, RankPlace( sentence.Event.Flags, sentence.Position, sentence.HasStarted ) ), sentence.Serial) );
 		foreach ( var placement in placements )
 			if ( Admitted( placement.Position, placement.Range, placement.Flags ) )
-				poolCandidates.Add( (placement, PoolRank( placement.Priority, placement.Position ), placement.Serial) );
+				poolCandidates.Add( (placement, PoolRank( placement.Priority, RankPlace( placement.Flags, placement.Position, started: false ) ), placement.Serial) );
 		foreach ( var (voice, priority, flags, expiresAt) in oneShots )
 			if ( (expiresAt >= 0 || !voice.IsFinished) && Admitted( voice.Position, voice.Range, flags )
 				&& sampleOwners.GetValueOrDefault( voice ) is not { CanAdmit: false } )
-				poolCandidates.Add( (voice, PoolRank( priority, voice.Position ), voice.Serial) );
+				poolCandidates.Add( (voice, PoolRank( priority, RankPlace( flags, voice.Position, started: true ) ), voice.Serial) );
 		foreach ( var chain in chains )
 			if ( !chain.IsStopped && Admitted( chain.Position, chain.Range, chain.Event.Flags ) )
-				poolCandidates.Add( (chain, PoolRank( chain.Event.Priority, chain.Position ), chain.Serial) );
+				poolCandidates.Add( (chain, PoolRank( chain.Event.Priority, RankPlace( chain.Event.Flags, chain.Position, started: false ) ), chain.Serial) );
 		// [BIN:TPW-EXE:0x6b6ba0 pool reset] the pool is cleared every tick with its admission threshold (+0x48) at 0, and 0x6b6bc0 rejects a rank that is not above the threshold, so a voice of rank 0 (priority 0 and past the distance scale) never enters
 		poolCandidates.RemoveAll( candidate => candidate.Rank == 0 );
 		poolCandidates.Sort( ByRankThenNewest );
@@ -403,7 +417,7 @@ public sealed class SoundEventSystem
 	// [BIN:TPW-EXE:0x6bbe90 voice flags from the event] the event flag 0x4 makes voice flag 2 and 0x8 makes 6 (loops, with 2), which exempt a voice from the expiry
 	internal long ExpiryFrame( AudioVoice voice, ushort eventFlags, double delaySeconds )
 	{
-		if ( (eventFlags & 0xC) != 0 )
+		if ( SoundVoiceFlags.IsExpiryExempt( eventFlags ) )
 			return -1;
 		var length = voice.SampleRate > 0 ? voice.Frames / (double)voice.SampleRate : 0;
 		return PoolClock() + mixer.SecondsToFrames( length + ExpiryTailSeconds + delaySeconds );
@@ -722,14 +736,14 @@ public sealed class SoundEventSystem
 		var index = PickSample( sound.Samples, -1, avoidRepeat: false );
 		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
 			return null;
-		// [APPROX:AUDIO-003] the pitch and the delay are applied (Pitch, AudioVoice.SetPitch, DelaySeconds, ExpiryFrame); reverb (SndReverb.map, loaded at 0x6c5d20) is OpenTPW's stand-in (EXT:audio-reverb), chain delays are milliseconds (video, 2026-10-15)
+		// [BIN:TPW-EXE:0x6bc4f4 pitch and delay] the pitch and the delay are applied (Pitch, AudioVoice.SetPitch, DelaySeconds, ExpiryFrame); reverb (SndReverb.map, loaded at 0x6c5d20) is OpenTPW's stand-in, [EXT:audio-reverb]; chain delays are milliseconds (video, 2026-10-15)
 		// [BIN:TPW-EXE:0x6bc4e7 sample setup] the fixed (flat) branch and the positioned branch both reach the loop test 0x6bc621: a placeholder with flag 0x8 (+0x30 bit 4) loops its sample (0x6c5110, 9999 times), so a flat one-shot loops exactly as a positioned one does
 		// [BIN:TPW-EXE:0x006BBF60 placeholder setup] every placeholder class (vtables 0x70a338, 0x70a3e8, 0x70a440, 0x70a498, 0x70a7e0, 0x70a878, 0x70a8d0) sets up at +0x10 with 0x6BBF60 and queries at +0x40 with 0x6BC040: a one-shot whose event has a code or whose sound has a selector gets a table, and a bound volume or pitch reads its slot (0 with no parameter call)
 		var table = SoundParameterTable.ForPlayback( soundEvent, sound );
 		var volume = Volume( sound, table ) / 100f;
 		var voice = mixer.Play( audio, channel, volume );
 		voice.SetPitch( Pitch( sound, table ) );
-		voice.Loops = (soundEvent.Flags & 0x8) != 0;
+		voice.Loops = SoundVoiceFlags.Loop( soundEvent.Flags );
 		// [BIN:TPW-EXE:0x6bc4f4 sample start] the delay is drawn after the volume and the pitch
 		TrackOneShot( voice, soundEvent.Priority, soundEvent.Flags, DelaySeconds( sound ), new PlacedSoundParameters( this, sound, table ) );
 		return voice;
@@ -757,8 +771,9 @@ public sealed class SoundEventSystem
 		var table = SoundParameterTable.ForPlayback( soundEvent, sound );
 		var volume = Volume( sound, table ) / 100f;
 		var voice = mixer.Play( audio, channel, volume, position, range ?? sound.Rolloff );
+		voice.PlacedFlat = SoundVoiceFlags.IsAnyDistance( soundEvent.Flags );
 		voice.SetPitch( Pitch( sound, table ) );
-		voice.Loops = (soundEvent.Flags & 0x8) != 0;
+		voice.Loops = SoundVoiceFlags.Loop( soundEvent.Flags );
 		TrackOneShot( voice, soundEvent.Priority, soundEvent.Flags, DelaySeconds( sound ), new PlacedSoundParameters( this, sound, table ) );
 		return voice;
 	}
@@ -791,7 +806,7 @@ public sealed class SoundEventSystem
 		var table = SoundParameterTable.ForPlayback( soundEvent, sound );
 		var volume = Volume( sound, table ) / 100f;
 		var pitch = Pitch( sound, table );
-		var placed = new PlacedSound( mixer, channel, volume, position, range ?? sound.Rolloff, (soundEvent.Flags & 0x8) != 0,
+		var placed = new PlacedSound( mixer, channel, volume, position, range ?? sound.Rolloff, SoundVoiceFlags.Loop( soundEvent.Flags ),
 			DecodeSentenceAsync( category, sound.Samples[index] ) ) { Priority = soundEvent.Priority, Flags = soundEvent.Flags, PitchValue = pitch, Delay = DelaySeconds( sound ), Parameters = new PlacedSoundParameters( this, sound, table ), Lifetime = lifetime };
 		if ( !placed.Pump() )
 			placements.Add( placed );
@@ -1011,6 +1026,7 @@ public sealed class PlacedSound
 		{
 			Voice = position is { } place ? mixer.Play( audio, channel, volume, place, range ) : mixer.Play( audio, channel, volume );
 			Voice.Serial = Serial;
+			Voice.PlacedFlat = SoundVoiceFlags.IsAnyDistance( Flags );
 			Voice.SetPitch( Pitch );
 			Voice.Loops = loops;
 			Lifetime?.Admit( Voice, (int)MathF.Round( volume * 100 ) );
@@ -1041,6 +1057,10 @@ public sealed class SoundSentence
 	private AudioVoice? voice;
 	private Task<(int Sound, int Sample, Mp2Audio? Audio)>? next;
 	private bool waiting;
+	/// <summary>The segment now playing (or last started): the selected descriptor a range stop leaves in place, which the return replays.</summary>
+	private (int Sound, int Sample, Mp2Audio Audio)? current;
+	/// <summary>True after a range stop of the playing segment: the next start replays <see cref="current"/> from its beginning instead of taking the prefetched successor.</summary>
+	private bool replay;
 	internal HeldSoundLifetime? Lifetime { get; set; }
 	/// <summary>The placeholder's parameter table (+0x4C), null until the event's code, a sound's selector or a parameter call creates it.</summary>
 	private SoundParameterTable? parameters;
@@ -1100,6 +1120,8 @@ public sealed class SoundSentence
 	internal static bool BindsSlot( SoundEntry sound, byte code ) =>
 		code == 0 || sound.Raw.Length >= 28 && (code == sound.Raw[22] || code == sound.Raw[26]);
 	public bool IsPlaying => voice is { IsFinished: false };
+	/// <summary>Whether a segment has been started (the selected descriptor exists): the placeholder's position is then the one its sample start left.</summary>
+	internal bool HasStarted => current != null;
 	public bool IsStopped { get; private set; }
 	public SoundEvent Event => soundEvent;
 
@@ -1165,7 +1187,24 @@ public sealed class SoundSentence
 	/// <summary>Plays the prefetched sample if it is decoded; returns false when it is not ready yet.</summary>
 	private bool TryPlayNext()
 	{
-		if ( IsStopped || Lifetime is { CanAdmit: false } || next is not { IsCompleted: true } task )
+		if ( IsStopped || Lifetime is { CanAdmit: false } )
+			return false;
+		// [BIN:TPW-EXE:0x6BDF50,0x6BC410,0x6B9AB0 stopped sentence resumes] the range stop (0x6BCA70) leaves the placeholder's selected descriptor (+0x0C) alone; the sentence tick 0x6BDF50 starts it again through the sample setup 0x6BC410, which draws the volume, the pitch and the delay and makes a new stream (0x6B9AB0, its cursor starts at 0): a stopped segment replays from its beginning. Only the refill callback 0x6BDE00 (0x6BDF00 -> 0x6B9A60) advances the descriptor, when the decoder's read (0x6BB510, chunks of 0x2400 bytes) runs out of the segment's data, so a stop inside that last look-ahead resumes on the successor; the chooser does not run on a return
+		if ( replay && current is { } resumed )
+		{
+			replay = false;
+			var again = soundEvent.Sounds[resumed.Sound];
+			var restartVolume = Lifetime is { PreserveVolume: true } logicalOwner ? logicalOwner.OwnVolume : system.Volume( again, parameters );
+			var restartPitch = system.Pitch( again, parameters );
+			_ = system.DelaySeconds( again );
+			voice = Position is { } spot ? system.Mixer.Play( resumed.Audio, channel, restartVolume / 100f, spot, Range ) : system.Mixer.Play( resumed.Audio, channel, restartVolume / 100f );
+			voice.PlacedFlat = SoundVoiceFlags.IsAnyDistance( soundEvent.Flags );
+			Lifetime?.Admit( voice, restartVolume );
+			voice.SetPitch( restartPitch );
+			voice.Completed += OnCompleted;
+			return true;
+		}
+		if ( next is not { IsCompleted: true } task )
 			return false;
 		next = null;
 		if ( !task.IsCompletedSuccessfully ) { Stop(); return true; }
@@ -1173,6 +1212,7 @@ public sealed class SoundSentence
 		if ( audio == null ) { Stop(); return true; }
 		soundIndex = sound;
 		lastSample = sample;
+		current = (sound, sample, audio);
 		// [BIN:TPW-EXE:0x6bc8d7 sound change] moving to a sound runs the placeholder's sound setup again (0x6bbf00): slots 1 and 2 take the new sound's selectors, the values stay
 		SoundParameterTable.SelectSound( ref parameters, soundEvent.Sounds[sound] );
 		// [BIN:TPW-EXE:0x6bc410 sample start] a new segment evaluates its volume (0x6bc090) and pitch (0x6bc170) with the values the slot table holds; a later parameter change re-evaluates them (SetParameter)
@@ -1182,6 +1222,7 @@ public sealed class SoundSentence
 		// [BIN:TPW-EXE:0x6bc4f4 sample start] the delay is drawn after the volume and the pitch at every segment; a sentence's voice is ranked as the sentence itself, so the draw is all of it that is observable here
 		_ = system.DelaySeconds( soundEvent.Sounds[sound] );
 		voice = Position is { } place ? system.Mixer.Play( audio, channel, gain, place, Range ) : system.Mixer.Play( audio, channel, gain );
+		voice.PlacedFlat = SoundVoiceFlags.IsAnyDistance( soundEvent.Flags );
 		Lifetime?.Admit( voice, volume );
 		voice.SetPitch( pitch );
 		voice.Completed += OnCompleted;
@@ -1202,7 +1243,7 @@ public sealed class SoundSentence
 		waiting = OutOfRange || !TryPlayNext();
 	}
 
-	private bool OutOfRange => (soundEvent.Flags & SoundEventSystem.AnyDistanceFlag) == 0 && !SoundEventSystem.Audible( Position, Range );
+	private bool OutOfRange => !SoundVoiceFlags.IsAnyDistance( soundEvent.Flags ) && !SoundEventSystem.Audible( Position, Range );
 
 	/// <summary>Moves a positioned sentence and its playing segment (the original's placeholder position call).</summary>
 	// [BIN:TPW-EXE:0x006BBCE0 placeholder position] the place is stored at +0x10 and, while a sample plays (+0x24), handed to it
@@ -1222,7 +1263,6 @@ public sealed class SoundSentence
 		if ( IsStopped || Lifetime is { CanAdmit: false } )
 			return;
 		// [BIN:TPW-EXE:0x6b62b0 sound manager tick] a voice out of range is not admitted to the pool (0x6bca10) and so not ticked, and its sample is stopped (0x6bca70, message 3)
-		// [APPROX:AUDIO-038] the sentence starts its prefetched next segment on return. Native 0x6BDF50 recreates the selected descriptor, which refill 0x6BDE00 may already have advanced before audible completion; mapping this early-prefetch extension remains unresolved.
 		if ( OutOfRange )
 		{
 			if ( voice is { IsFinished: false } playing )
@@ -1231,6 +1271,8 @@ public sealed class SoundSentence
 				Lifetime?.LoseOutputReply();
 				voice = null;
 				waiting = true;
+				// the selected descriptor stays on the segment that was playing: the return replays it (TryPlayNext); the successor chosen and decoded ahead (EXT:sentence-prefetch) waits behind it
+				replay = current != null;
 			}
 			return;
 		}

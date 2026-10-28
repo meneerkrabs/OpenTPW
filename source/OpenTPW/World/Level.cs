@@ -705,6 +705,8 @@ public partial class Level : IDisposable
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield ) );
 		LandBarrier = ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y );
+		// the demolition keeps the NoModify flag of a MAP initial path cell in front of an entrance (tp.exe's cell byte +0x26 bit 8, 0x527EE0)
+		grid.Cells.InitialPathSource = ( x, y ) => park.Map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath );
 		BuyLandTool = grid.Cells.Land != null && !IsReadOnlyVisit
 			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, LandBarrier, command => Commands.Issue( command ) )
 			: null;

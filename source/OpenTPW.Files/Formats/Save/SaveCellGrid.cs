@@ -57,6 +57,10 @@ public readonly struct SaveCell
 	public const int HoardingNeighboursOffset = 81;
 	/// <summary>The structure cell type of a hoarding (park fence post).</summary>
 	public const uint HoardingType = 0x19;
+	/// <summary>The structure cell type of the cells next to a post, which the fence walk types as the post's extension.</summary>
+	public const uint HoardingExtensionType = 0xC;
+	/// <summary>Where the structure cell's base fields start in a TPW record (the map cell's start is at 1).</summary>
+	private const int StructureBaseOffset = 52;
 	private readonly int baseRecordBytes;
 
 	public SaveCell( ReadOnlyMemory<byte> record ) : this( record, RecordBytes ) { }
@@ -123,6 +127,18 @@ public readonly struct SaveCell
 
 	/// <summary>The structure cell's fence links (TPW records).</summary>
 	public byte HoardingNeighbours => Record.Span[HoardingNeighboursOffset];
+
+	/// <summary>The structure cell's <c>mDirection</c> (+0xD): the walk direction the fence walk 0x52BA50 gave a post (TPW records).</summary>
+	public byte StructureDirection => Record.Span[StructureBaseOffset + 1];
+
+	/// <summary>The structure cell's <c>mFlags</c> (+0xE, TPW records).</summary>
+	public ushort StructureFlags => BinaryPrimitives.ReadUInt16LittleEndian( Record.Span.Slice( StructureBaseOffset + 2, 2 ) );
+
+	/// <summary>The structure cell's <c>mOverlapCounter</c> (+0x20, TPW records).</summary>
+	public short StructureOverlapCounter => BinaryPrimitives.ReadInt16LittleEndian( Record.Span.Slice( StructureBaseOffset + 9, 2 ) );
+
+	/// <summary>The structure cell's <c>mParentID</c> (+0x10, TPW records): for the cell next to a post, the post's cell word.</summary>
+	public ushort StructureParentId => BinaryPrimitives.ReadUInt16LittleEndian( Record.Span.Slice( StructureBaseOffset + 11, 2 ) );
 
 	/// <summary>Byte 12 is nonzero on every cell of every placed object's footprint (and its queue cells).</summary>
 	public bool IsOccupied => Record.Span[OccupancyOffset] != 0;

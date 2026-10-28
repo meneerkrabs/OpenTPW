@@ -13,7 +13,7 @@ internal sealed partial class CoopJoinSmokeTest
 	/// The save's parts a session's peers may hold apart, by their full paths: presentation, which no simulation reads and no digest covers (docs/COOP.md, "Checks"). The economy part carries
 	/// the world streams with their own copy of the sound seed.
 	/// </summary>
-	private static readonly HashSet<string> PresentationParts = new( StringComparer.Ordinal ) { "$.SavedUtc", "$.Particles", "$.SnowCover", "$.MessageTube", "$.SoundSeed", "$.Economy.World.SoundSeed" };
+	private static readonly HashSet<string> PresentationParts = new( StringComparer.Ordinal ) { "$.SavedUtc", "$.Particles", "$.SnowCover", "$.SoundSeed", "$.Economy.World.SoundSeed" };
 
 	/// <summary>The first capture's generations: the wrong digest's, the one abandoned part way through its build, and the one swapped in.</summary>
 	private const uint WrongGeneration = 1, AbandonedGeneration = 2, JoinedGeneration = 3;

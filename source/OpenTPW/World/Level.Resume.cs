@@ -6,7 +6,7 @@ public partial class Level
 {
 	/// <summary>
 	/// The park HUD's message tube as a park-resume save captures it (set by the HUD while it is attached; null without a HUD, which saves no tube). tp.exe saves its tag tube with the park
-	/// (SaveTags 0x48EE50 from the world save 0x4164C0).
+	/// (the tube's saver 0x48EE50, called from the world save 0x4164C0).
 	/// </summary>
 	internal Func<MessageTubeSaveData?>? MessageTubeCaptured { get; set; }
 
@@ -270,8 +270,8 @@ public partial class Level
 			SnowCover = CaptureSnowCover(),
 			Staff = StaffWorld?.CaptureSnapshot(),
 			Advisor = advisor?.CaptureSnapshot( advisorMaySpeak ),
-			// [BIN:TPW-EXE:0x48EE50 tube saved] optional: null (left out of the file) while the tube is empty, so such saves keep their bytes
-			MessageTube = MessageTubeCaptured?.Invoke(),
+			// [BIN:TPW-EXE:0x48EE50 tube saved] optional: null (left out of the file) while the tube is empty, so such saves keep their bytes; a join snapshot carries none (the host's messages are not the joiner's, as for the advisor)
+			MessageTube = join ? null : MessageTubeCaptured?.Invoke(),
 			Coasters = CaptureCoastersSnapshot(),
 			Tracks = CaptureTracksSnapshot(),
 			PoolSlides = PoolSlides?.CaptureSnapshot(),

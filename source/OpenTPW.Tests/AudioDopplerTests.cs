@@ -75,6 +75,28 @@ public class AudioDopplerTests
 	}
 
 	[TestMethod]
+	public void ALobbyFrameThenAParkFrameGivesTheParkItsFirstVelocityAndAFlatVoiceTheFactorOfIt()
+	{
+		// the lobby listener, then the park's first update (the Jungle camera of the smoke run: place (475, 46.8, 146.1), pitched down 58 degrees): V = -(place - (0, 0, -50)), the flat voice sits straight ahead
+		AudioListener.ResetMotion();
+		GameAudio.UpdateLobbyListener();
+		var front = new Vector3( 0, -0.8511167f, 0.52497655f );
+		AudioListener.Update( new Vector3( 475, 46.811417f, 146.12628f ), front, new Vector3( 0, 0.52497655f, 0.8511167f ) );
+		Assert.AreEqual( new Vector3( 475, 46.811417f, 196.12628f ), AudioListener.Velocity );
+		var closing = Vector3.Dot( front, -AudioListener.Velocity );
+		Assert.AreEqual( 1f / (1 + closing / 331.36f), AudioListener.DopplerFactor( null ), 1e-4f );
+		AudioListener.DopplerEnabled = true;
+		using var mixer = new AudioMixer( null );
+		mixer.Play( Ramp(), AudioChannel.Effects, 1f );
+		var pcm = mixer.Mix( 3 );
+		var factor = AudioListener.DopplerFactor( null );
+		Assert.AreEqual( 2 * Math.Round( AudioMixer.OutputRate * factor ) / AudioMixer.OutputRate, pcm[4] / 100.0, 0.1, "the third frame reads the source at the stream's rate" );
+		// the next changed update (the camera moves 25 units) replaces the velocity
+		AudioListener.Update( new Vector3( 500, 46.811417f, 146.12628f ), front, new Vector3( 0, 0.52497655f, 0.8511167f ) );
+		Assert.AreEqual( new Vector3( 25, 0, 0 ), AudioListener.Velocity );
+	}
+
+	[TestMethod]
 	public void TheMotionIsCapturedAndRestoredWithTheListener()
 	{
 		MoveBy( new Vector3( 10, 0, 10 ), new Vector3( 0, 0, 4 ) );

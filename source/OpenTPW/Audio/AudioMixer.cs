@@ -157,7 +157,7 @@ public sealed class AudioVoice
 			leftScale *= levelled;
 			rightScale *= levelled;
 		}
-		// [BIN:QMIXER-DLL:0x1800a1df Doppler] every voice without the loop flag takes QMixer's Doppler factor (a voice with the loop flag sets the channel's no-Doppler bit through 0x6bc628 -> 0x6c5110 -> 0x6d22d0, tested at 0x1800a1df): its frequency times 1 / (1 + (direction . relative velocity) / 331.36), at most 10, from the listener velocity of tp.exe's last changed listener update (AudioListener.Velocity, 0x6d27b0); the integer rounding of the stream's own frequency is applied (0x180055c8-0x180055dd); [APPROX:AUDIO-018] the device-unit rounding of the stream frequency (0x1800c760) is not read
+		// [BIN:QMIXER-DLL:0x1800a1df Doppler] every voice without the loop flag takes QMixer's Doppler factor (a voice with the loop flag sets the channel's no-Doppler bit through 0x6bc628 -> 0x6c5110 -> 0x6d22d0, tested at 0x1800a1df): its frequency times 1 / (1 + (direction . relative velocity) / 331.36), at most 10, from the listener velocity of tp.exe's last changed listener update (AudioListener.Velocity, 0x6d27b0); the integer rounding of the stream's own frequency is applied (0x180055c8-0x180055dd); the stage runs only once the channel's wave has its stream reader (0x18005599-0x180055bd, 0x1800bd40: +0x90 set, +0x88 present), which the library's worker creates through 0x18024620 for the memory waves tp.exe opens with OpenWaveEx flag 0x11 (0x180033ad), so a started voice is assumed ready; [APPROX:AUDIO-018] the device-unit rounding of the stream frequency (0x1800c760) is not read
 		var stepNow = step * DopplerRatio();
 		for ( var frame = 0; frame < frames; frame++ )
 		{

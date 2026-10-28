@@ -55,8 +55,11 @@ public static class AudioListener
 	/// </summary>
 	public static Vector3 Velocity { get; private set; }
 
-	/// <summary>Whether voices take QMixer's Doppler factor; tests written before it measure the mixer without it.</summary>
-	internal static bool DopplerEnabled { get; set; } = true;
+	/// <summary>
+	/// Whether voices take QMixer's Doppler factor (<see cref="DopplerFactor"/>); off by default.
+	/// </summary>
+	// [APPROX:AUDIO-018] the factor and the velocity feed are read and pinned (AudioDopplerTests), but a capture of the PC game (v2.0, Dutch) shows no pitch change where the reading predicts one: the lobby's advisor sentence plays at the same speed in the first lobby (the listener velocity (0, 0, -50), a factor of 0.87) and in the lobby after a park (the velocity is the lobby place minus the park's last place), so the reading misses a gate or a reset that keeps the factor at 1; applying it would shift every voice by the first update of a park until the camera moves — evidence needed: the gate (see docs/AUDIO.md, AUDIO-018 row)
+	internal static bool DopplerEnabled { get; set; }
 
 	// the library's previous listener place (+8 of the sound system object, zeroed when the process starts and never reset) and the place, front and up of the last update, which the next update is compared with byte for byte
 	private static Vector3 previousPlace;
@@ -132,12 +135,13 @@ public static class AudioListener
 			Front = Forward;
 			Up = new Vector3( 0, 1, 0 );
 		}
-		// [BIN:TPW-EXE:0x6b8b60 listener update] the library compares the new place, front and up byte for byte with the last ones it was given (all three start as zeros) and does nothing when they are equal
-		if ( SameBits( position, lastPlace ) && SameBits( Front, lastFront ) && SameBits( Up, lastUp ) )
+		// [BIN:TPW-EXE:0x6b8b60 listener update] the library compares the new place, front and up as they were handed in (the place scaled by the sound system's 1.0, not normalised) byte for byte with the last ones it was given (all three start as zeros) and does nothing when they are equal
+		var rawUp = up ?? Vector3.Zero;
+		if ( SameBits( position, lastPlace ) && SameBits( forward, lastFront ) && SameBits( rawUp, lastUp ) )
 			return;
 		lastPlace = position;
-		lastFront = Front;
-		lastUp = Up;
+		lastFront = forward;
+		lastUp = rawUp;
 		// [BIN:TPW-EXE:0x6b79d0 listener velocity] a changed update sends QSWaveMixSetListenerVelocity (0x6d2a10 -> 0x6d27b0) the new place minus the library's previous place (0x6b79f9, +8 of the sound system object, zero when the process starts, then the place of every changed update), then the place itself; nothing resets it for a park, a level or the lobby
 		Velocity = position - previousPlace;
 		previousPlace = position;

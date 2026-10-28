@@ -14,7 +14,5 @@ public static class TestAssembly
 	public static void Initialize( TestContext context )
 	{
 		ParkCommands.Strict = true;
-		// the sound tests written before QMixer's Doppler factor was ported assert sample-exact output while they move the listener; AudioDopplerTests switches it on for its own cases
-		AudioListener.DopplerEnabled = false;
 	}
 }

@@ -947,7 +947,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( hud.VisitorWindowOpen && hud.Stack.Top?.Name == "visitors", "the staff window's visitors button opens the All Visitors window" );
 			var rows = hud.VisitorItems;
 			Require( rows.Count >= 14, "the window lists the park's visitors" );
-			Require( rows.Select( guest => guest.Id ).SequenceEqual( rows.Select( guest => guest.Id ).OrderBy( id => id ) ),
+			Require( rows.Select( guest => (guest.VisitorNumber, guest.Id) ).SequenceEqual( rows.Select( guest => (guest.VisitorNumber, guest.Id) ).OrderBy( key => key.VisitorNumber ).ThenBy( key => key.Id ) ),
 				"the visitor numbers are listed in ascending order" );
 			Require( hud.SelectedVisitorId == rows[0].Id, "the first row is selected" );
 			var capture = CaptureFrame( "visitors.png" );

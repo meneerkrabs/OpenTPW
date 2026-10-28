@@ -602,7 +602,7 @@ stepped by `LobbyEffects` at the 60 Hz reference rate (`[EXT:frame-driven-at-60h
 * **The nearest island** to the camera drives everything, not the selected one.
 * **The lobby's own generator** (state × 0x19660D + 0x3C6EF35F, `0x100904A8`; tp.exe rotates the step right by 13 bits
   and stores and returns the rotated value, `0x5E0F4B`), seeded once from the clock (`0x1008CDBC`). The flying meshes draw from it too (`LobbyFlyingMeshes`); the camera
-  wander that also does is not built, so the rhythm of strikes and one-shots differs (UI-941; the flyers and the islands step in the original's order and at the same frame rate).
+  wander draws from it as well in tp.exe, but the stream is seeded from the clock there too (`0x5D57CD`), so the order of its draws is unobservable (UI-941, retired).
 * **Lightning** (only hallow: `LIGHTNING 63`): a draw with `(draw & LIGHTNING) == 1` strikes; four draws place the top
   within ±50 of the island at height 500 and the bottom within ±10 of it at height 0; the bolt lives 500 ms, the screen
   flashes for one frame and `cat_globallobbysfx` 1 plays flat at once (`0x10095124`, `0x10095310`). The bolt is

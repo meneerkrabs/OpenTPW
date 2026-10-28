@@ -18,9 +18,9 @@ public class RideListPassTests
 	private static ModelFile Geometry() => new( new MemoryStream( Md2ModelFileTests.CreateGeometry() ) );
 	private static ModelAnimation Clip( byte[] data ) => new ModelFile( new MemoryStream( data ) ).Clip!;
 
-	/// <summary>0x4726D0 clears node-state bit 0x10 on the clip's listed nodes and track nodes (unless bit 31) and the sampler then sets it again only where a track keys it.</summary>
+	/// <summary>0x4726D0 clears node-state bit 0x10 on the clip's listed nodes and track nodes (unless bit 31), then the rebind (0x472D70) sets it again on every listed node; only a track-written node that is not listed loses it.</summary>
 	[TestMethod]
-	public void TheReturnFromTheListPassClearsTheListedNodesTheTracksDoNotKey()
+	public void TheReturnFromTheListPassRebindsTheListedNodes()
 	{
 		var animator = new ObjectAnimator( Geometry() );
 		animator.Play( 0, Clip( Md2VertexAnimationTests.CreateAnimationWithNodeList( 1, 30, 0, 1, 7 ) ), "list", loop: false );
@@ -32,7 +32,7 @@ public class RideListPassTests
 
 		animator.ResetToStored();
 
-		Assert.IsFalse( animator.IsNodeHidden( 0 ), "the aggregate reset cleared the bit and nothing sets it again" );
+		Assert.IsTrue( animator.IsNodeHidden( 0 ), "the clear is followed by the rebind, which hides the listed mesh node again" );
 		Assert.IsFalse( animator.GetNodeStateBit( 1 ), "the track's own key is sampled again at the clip's tick" );
 		Assert.AreNotEqual( version, animator.HiddenVersion );
 		Assert.AreNotEqual( poseVersion, animator.PoseVersion, "the pose is sampled again" );
@@ -64,5 +64,31 @@ public class RideListPassTests
 		Assert.AreEqual( left.Value, right.Value, "channels, clock and ticks are the simulation's; the reset touches presentation only" );
 		for ( var node = 0; node < plain.NodeTransforms.Count; node++ )
 			Assert.AreEqual( plain.NodeTransforms[node], reset.NodeTransforms[node], "the pose of the same tick is sampled again" );
+	}
+
+	/// <summary>The reset is what the drawn pose shows: the simulation's save, its picks and its hidden state stay what they were without it.</summary>
+	[TestMethod]
+	public void ASaveAfterDrawingEqualsASaveWithoutDrawing()
+	{
+		ObjectAnimator Make()
+		{
+			var animator = new ObjectAnimator( Geometry() );
+			animator.Play( 0, Clip( Md2VertexAnimationTests.CreateAnimationWithNodeList( 1, 30, 0, 1, 7 ) ), "list", loop: false );
+			animator.Advance( 0.2 );
+			return animator;
+		}
+		var plain = Make();
+		var drawn = Make();
+		drawn.ResetToStored();
+		for ( var node = 0; node < plain.NodeTransforms.Count; node++ )
+			Assert.AreEqual( plain.IsNodeHiddenInSimulation( node ), drawn.IsNodeHiddenInSimulation( node ), $"node {node} picks the same" );
+		Assert.AreEqual(
+			System.Text.Json.JsonSerializer.Serialize( plain.CaptureSnapshot() ),
+			System.Text.Json.JsonSerializer.Serialize( drawn.CaptureSnapshot() ), "the snapshot is the simulation's" );
+		drawn.Advance( 0.1 );
+		plain.Advance( 0.1 );
+		Assert.AreEqual(
+			System.Text.Json.JsonSerializer.Serialize( plain.CaptureSnapshot() ),
+			System.Text.Json.JsonSerializer.Serialize( drawn.CaptureSnapshot() ), "the next simulation step starts from the simulation's state" );
 	}
 }

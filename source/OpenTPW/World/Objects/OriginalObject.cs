@@ -275,8 +275,8 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			return false;
 		var animator = Runtime.Animator;
 		// the floor's vertices are this instance's conformed copy (the original's pick reads the instance's own vertices, 0x450F20); a vertex track's samples win over it, as in what is drawn (DrawnMesh)
-		Func<int, IReadOnlyList<System.Numerics.Vector3>?> positions = floor == null ? animator.GetVertexPositions : mesh => animator.GetVertexPositions( mesh ) ?? floor.ConformedPositions( mesh );
-		return ObjectPickModel.TryHitLine( Runtime.Model, NodeTransforms, animator.IsNodeHidden, positions, Placement.ModelToEngine, origin, direction, out hit );
+		Func<int, IReadOnlyList<System.Numerics.Vector3>?> positions = floor == null ? animator.GetVertexPositionsInSimulation : mesh => animator.GetVertexPositionsInSimulation( mesh ) ?? floor.ConformedPositions( mesh );
+		return ObjectPickModel.TryHitLine( Runtime.Model, NodeTransforms, animator.IsNodeHiddenInSimulation, positions, Placement.ModelToEngine, origin, direction, out hit );
 	}
 
 	/// <summary>

@@ -264,6 +264,12 @@ public sealed class ObjectAnimator
 	// [BIN:TPW-EXE:0x0057A5E3 hidden node mesh] the model draw walk 0x57a530 (and 0x57b610 at 0x57b664) skips a node's own mesh when its state word has any of 0x8210 (0x10 the toggled bit, 0x200 every dummy, 0x8000) but still walks its children (only bit 0x20 prunes the subtree), so bit 0x10 hides exactly that mesh
 	public bool IsNodeHidden( int node ) => meshByNode[node] >= 0 && nodeStateBit[node];
 
+	/// <summary>The simulation's own hidden state of a node (what a pick and a save see), unaffected by the return from the list pass that only the drawn pose shows.</summary>
+	public bool IsNodeHiddenInSimulation( int node ) => meshByNode[node] >= 0 && (stash?.NodeStateBit ?? nodeStateBit)[node];
+
+	/// <summary>The simulation's vertex positions of a mesh (<see cref="GetVertexPositions"/> before the presentation reset); the cache holds the same samples either way.</summary>
+	public IReadOnlyList<NVector3>? GetVertexPositionsInSimulation( int mesh ) => (stash?.Vertex ?? vertexSources)[mesh].Serial != 0 ? vertexPositions[mesh] : null;
+
 	/// <summary>
 	/// Hides or shows a node's mesh from outside the clips, as the circuit walk does with a track add-on's open ends: hiding sets node-state bit 0x10 together with bit 31,
 	/// so no clip's node list sets the node again (<see cref="ApplyNodeList"/>), and showing clears bit 0x10 only.
@@ -271,6 +277,7 @@ public sealed class ObjectAnimator
 	// [BIN:TPW-EXE:0x0052B06D add-on end hide] the walk hides an end with node state |= 0x80000010 (0x0052B06D, 0x0052B120, 0x0052B16B) and shows one with &= ~0x10 (0x0052AFCC, 0x0052B0A8)
 	public void SetNodeHidden( int node, bool hidden )
 	{
+		EndPresentation();
 		if ( (uint)node >= (uint)nodeStateBit.Length )
 			throw new ArgumentOutOfRangeException( nameof( node ) );
 		if ( hidden )
@@ -381,6 +388,7 @@ public sealed class ObjectAnimator
 	/// </summary>
 	public int Trigger( int channel, ModelAnimation? clip, string clipName, int animationId, int variant, bool loop, float speed = 1f, bool defer = false )
 	{
+		EndPresentation();
 		if ( channel < 0 )
 			throw new ArgumentOutOfRangeException( nameof( channel ) );
 		if ( !float.IsFinite( speed ) || speed <= 0 )
@@ -415,6 +423,7 @@ public sealed class ObjectAnimator
 	internal void RestoreSaved( int channel, ModelAnimation clip, string clipName, int animationId, int variant, bool loop, float speed, long elapsedMilliseconds, bool ended,
 		(ModelAnimation Clip, string Name, int AnimationId, int Variant, bool Loop, float Speed)? deferred = null )
 	{
+		EndPresentation();
 		ArgumentNullException.ThrowIfNull( clip );
 		if ( channel < 0 )
 			throw new ArgumentOutOfRangeException( nameof( channel ) );
@@ -457,6 +466,7 @@ public sealed class ObjectAnimator
 	/// </summary>
 	internal void RestoreSavedNodeStates( IReadOnlyList<bool> toggled, IReadOnlyList<bool> pinned )
 	{
+		EndPresentation();
 		ArgumentNullException.ThrowIfNull( toggled );
 		ArgumentNullException.ThrowIfNull( pinned );
 		if ( toggled.Count != nodeStateBit.Length || pinned.Count != nodePinned.Length )
@@ -494,6 +504,7 @@ public sealed class ObjectAnimator
 	/// <summary>FLUSHANIM / FLUSHANIM_CH (0xa6c90): clears only the channel's deferred clip; true when one was queued.</summary>
 	public bool Flush( int channel )
 	{
+		EndPresentation();
 		if ( !channels.TryGetValue( channel, out var state ) || state.Deferred == null )
 			return false;
 		state.Deferred = null;
@@ -503,6 +514,7 @@ public sealed class ObjectAnimator
 	/// <summary>Removes a channel and its clip (an OpenTPW reset; no script opcode does this).</summary>
 	public void Stop( int channel )
 	{
+		EndPresentation();
 		if ( channels.Remove( channel, out var removed ) )
 		{
 			ResetTextureFramesOnUnbind( removed );
@@ -514,6 +526,7 @@ public sealed class ObjectAnimator
 	/// <summary>Removes every channel (object deletion).</summary>
 	public void StopAll()
 	{
+		EndPresentation();
 		foreach ( var channel in ChannelList )
 			ResetTextureFramesOnUnbind( channel );
 		channels.Clear();
@@ -524,6 +537,7 @@ public sealed class ObjectAnimator
 	/// <summary>One object update: advances the clock, replays, ends or follows on clips past their end, resamples.</summary>
 	public void Advance( double seconds )
 	{
+		EndPresentation();
 		if ( !double.IsFinite( seconds ) || seconds < 0 )
 			throw new ArgumentOutOfRangeException( nameof( seconds ) );
 		clockMilliseconds += seconds * 1000.0;
@@ -678,29 +692,29 @@ public sealed class ObjectAnimator
 		var capturedMeshes = Enumerable.Range( 0, model.Meshes.Count ).Select( mesh => new AnimatorMeshCacheSnapshot
 		{
 			Mesh = mesh,
-			VertexVersion = vertexVersions[mesh],
-			VertexSerial = vertexSources[mesh].Serial,
-			VertexTick = vertexSources[mesh].Tick,
+			VertexVersion = vertexVersions[mesh] - vertexBump[mesh],
+			VertexSerial = (stash?.Vertex ?? vertexSources)[mesh].Serial,
+			VertexTick = (stash?.Vertex ?? vertexSources)[mesh].Tick,
 			Positions = vertexPositions[mesh]?.SelectMany( position => new[] { position.X, position.Y, position.Z } ).ToArray(),
-			UvSerial = uvSources[mesh].Serial,
-			UvTick = uvSources[mesh].Tick,
+			UvSerial = (stash?.Uv ?? uvSources)[mesh].Serial,
+			UvTick = (stash?.Uv ?? uvSources)[mesh].Tick,
 			TexCoords = texCoords[mesh]?.SelectMany( coordinate => new[] { coordinate.X, coordinate.Y } ).ToArray()
 		} ).ToArray();
 		return new ObjectAnimatorSnapshot
 		{
 			ClockMilliseconds = clockMilliseconds,
 			Serial = serial,
-			HiddenVersion = hiddenVersion,
+			HiddenVersion = hiddenVersion - hiddenBump,
 			TicksPerSecond = TicksPerSecond,
 			KeepsPoseOnClipChange = keepsPoseOnClipChange,
 			Channels = capturedChannels,
-			NodeStateBits = (bool[])nodeStateBit.Clone(),
+			NodeStateBits = (bool[])(stash?.NodeStateBit ?? nodeStateBit).Clone(),
 			PinnedNodes = nodePinned.Contains( true ) ? Enumerable.Range( 0, nodePinned.Length ).Where( node => nodePinned[node] ).ToArray() : null,
 			TextureFrames = new AnimatorTextureFrameSnapshot
 			{
-				Frames = (int[])frameBySlot.Clone(),
-				AnimatedSlots = (bool[])slotAnimated.Clone(),
-				Version = textureFrameVersion
+				Frames = (int[])(stash?.Frames ?? frameBySlot).Clone(),
+				AnimatedSlots = (bool[])(stash?.Animated ?? slotAnimated).Clone(),
+				Version = textureFrameVersion - textureBump
 			},
 			Meshes = capturedMeshes,
 			VertexLimitations = vertexLimitations.ToArray()
@@ -716,6 +730,7 @@ public sealed class ObjectAnimator
 	/// </summary>
 	internal void RestoreSnapshot( ObjectAnimatorSnapshot snapshot, Func<AnimatorClipIdentity, ResolvedAnimatorClip?> resolveClip )
 	{
+		EndPresentation();
 		ArgumentNullException.ThrowIfNull( snapshot );
 		ArgumentNullException.ThrowIfNull( resolveClip );
 		snapshot.ValidateSnapshot();
@@ -799,6 +814,8 @@ public sealed class ObjectAnimator
 		}
 		serial = snapshot.Serial;
 		hiddenVersion = snapshot.HiddenVersion;
+		hiddenBump = textureBump = 0;
+		Array.Clear( vertexBump );
 		clockMilliseconds = snapshot.ClockMilliseconds;
 		vertexLimitations.Clear();
 		vertexLimitations.UnionWith( snapshot.VertexLimitations );
@@ -853,9 +870,11 @@ public sealed class ObjectAnimator
 	/// meanwhile, restored before the pose of this frame is sampled again.
 	/// </summary>
 	// [BIN:TPW-EXE:0x44E3A0 return from the list pass] 0x44E380 (the callback's body, 0x463030) calls 0x4726D0 once when instance flag 0x800000 is set and 0x80000 is clear, then clears 0x800000 and poses; the list pass 0x44E410 sets 0x800000 on every instance it updated without posing (the one it leaves alone because the callback ran last frame, 0x200000, only has that flag cleared)
-	// [BIN:TPW-EXE:0x4726D0 aggregate reset] for every channel that is not flagged 0x20 the bound clip's listed nodes (0x4727D5..0x47281D) and every node its tracks write (0x47283B..0x472887) lose node-state bit 0x10 unless bit 31 is set; the stored node, vertex (0x1000) and texture-coordinate (0x10000) data of what the tracks write is copied back (0x472A0F..0x472B11); once, a clip with trailer flag 0x2 resets every slot that has texture flag 0x40 to frame 0 with the dirty bit (0x472B37..0x472B75, option 0x7B4980 bit 0x8 clear); the channel gets its flag 0x10 so the next sample runs (0x472B7D)
+	// [BIN:TPW-EXE:0x4726D0 aggregate reset] for every channel that is not flagged 0x20 the bound clip's listed nodes (0x4727D5..0x47281D) and every node its tracks write (0x47283B..0x472887) lose node-state bit 0x10 unless bit 31 is set; the stored node, vertex (0x1000) and texture-coordinate (0x10000) data of what the tracks write is copied back (0x472A0F..0x472B11); once, a clip with trailer flag 0x2 resets every slot that has texture flag 0x40 to frame 0 with the dirty bit (0x472B37..0x472B75, option 0x7B4980 bit 0x8 clear); a channel with flag 0x4 gets its flag 0x10 so the next sample runs (0x472B7D), and the second channel loop (every channel with AnimID other than 12, from 0x472932) ends with the rebind 0x472D70 (call at 0x472B94), which sets node-state bit 0x10 again on every node of the clip's list unless bit 31 (0x472E6B..0x472E78 by id, 0x472ED9 by index); the per-track node flags it also sets (0x40000, 0x200000, 0x400000, 0x100000) are not drawn here
 	internal void ResetToStored()
 	{
+		var before = Versions();
+		stash ??= PresentationStash.Of( nodeStateBit, frameBySlot, slotAnimated, vertexSources, uvSources );
 		var textureFramesReset = false;
 		foreach ( var channel in ChannelList )
 		{
@@ -882,8 +901,73 @@ public sealed class ObjectAnimator
 				ResetTextureFramesOnUnbind( channel );
 			}
 		}
+		// the helper's second loop rebinds every channel it did not skip (0x472B94 -> 0x472D70), which sets the node-state bit on the clip's listed nodes again
+		foreach ( var channel in ChannelList )
+			if ( !channel.Held )
+				ApplyNodeList( channel.Clip.Animation );
 		settled = false;
 		Update();
+		CountBump( before );
+	}
+
+	/// <summary>The simulation state the presentation reset replaced, kept until the simulation touches the animator again (<see cref="EndPresentation"/>).</summary>
+	private sealed record PresentationStash( bool[] NodeStateBit, int[] Frames, bool[] Animated, (long Serial, float Tick)[] Vertex, (long Serial, float Tick)[] Uv )
+	{
+		public static PresentationStash Of( bool[] bits, int[] frames, bool[] animated, (long Serial, float Tick)[] vertex, (long Serial, float Tick)[] uv )
+			=> new( (bool[])bits.Clone(), (int[])frames.Clone(), (bool[])animated.Clone(), vertex.ToArray(), uv.ToArray() );
+	}
+
+	private PresentationStash? stash;
+
+	/// <summary>How far the render-cache counters moved because of presentation resets and their undoing; a save stores the counters without them.</summary>
+	private int hiddenBump, textureBump;
+	private int[]? vertexBumpStore;
+	private int[] vertexBump => vertexBumpStore ??= new int[vertexVersions.Length];
+
+	private (int Hidden, int Texture, int[] Vertex) Versions() => (hiddenVersion, textureFrameVersion, (int[])vertexVersions.Clone());
+
+	private void CountBump( (int Hidden, int Texture, int[] Vertex) before )
+	{
+		hiddenBump += hiddenVersion - before.Hidden;
+		textureBump += textureFrameVersion - before.Texture;
+		for ( var mesh = 0; mesh < vertexVersions.Length; mesh++ )
+			vertexBump[mesh] += vertexVersions[mesh] - before.Vertex[mesh];
+	}
+
+	/// <summary>
+	/// Puts the simulation state back that a presentation reset (<see cref="ResetToStored"/>) replaced. The reset is what the drawn pose shows; the simulation, its saves and its picks never see it, so a park saved after a frame was drawn equals the one saved without drawing.
+	/// </summary>
+	private void EndPresentation()
+	{
+		if ( stash is not { } kept )
+			return;
+		stash = null;
+		var before = Versions();
+		var hiddenChanged = false;
+		for ( var node = 0; node < nodeStateBit.Length; node++ )
+			if ( nodeStateBit[node] != kept.NodeStateBit[node] )
+			{
+				nodeStateBit[node] = kept.NodeStateBit[node];
+				hiddenChanged = true;
+			}
+		if ( hiddenChanged )
+			hiddenVersion++;
+		for ( var slot = 0; slot < frameBySlot.Length; slot++ )
+			if ( frameBySlot[slot] != kept.Frames[slot] )
+			{
+				frameBySlot[slot] = kept.Frames[slot];
+				textureFrameVersion++;
+				updateEffects++;
+			}
+		Array.Copy( kept.Animated, slotAnimated, slotAnimated.Length );
+		for ( var mesh = 0; mesh < vertexSources.Length; mesh++ )
+			if ( vertexSources[mesh] != kept.Vertex[mesh] || uvSources[mesh] != kept.Uv[mesh] )
+			{
+				vertexSources[mesh] = kept.Vertex[mesh];
+				uvSources[mesh] = kept.Uv[mesh];
+				vertexVersions[mesh]++;
+			}
+		CountBump( before );
 	}
 
 	private void ClearNodeStateBit( int node )

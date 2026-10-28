@@ -734,6 +734,22 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void ATakeBackRequestsClaimedRideIsTheHostsToFillSoAForgedOneIsNeverAsked()
+	{
+		// the tools send no claimed ride (-1): the host's decision puts the step's own there (C5-3's track and coaster steps; no path step has one), so a ride a forged request names is
+		// replaced before the rights ask it, and the guest's own line goes back as its Backspace would take it
+		var (host, guest, view) = UndoSession();
+		var seat = guest.Level.Commands.Player;
+		var line = Requested( host, guest, view, new LayLineCommand( CellToolMode.Path, -1, 5, 5, 8, 5 ) );
+		Assert.IsTrue( line.Accepted );
+		var forged = Requested( host, guest, view, new TakeBackCommand( false, line.Record, -1, host.One.Visitors.AttractionId, -1 ) );
+		Assert.IsTrue( forged.Accepted, forged.Result?.Reason );
+		Assert.IsTrue( TakeBacksOf( host, seat ).Single() is { Verdict: TakeBackVerdict.Taken, ClaimedRide: -1 }, "decided with no claimed ride" );
+		Assert.IsFalse( Walkable( host, 6, 5 ), "the line taken back" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
 	public void TheHostsSlideBackspaceTakesBackItsOwnPiecesAndNeverAGuestsLaterOne()
 	{
 		var (host, guest, _, _) = Shared();

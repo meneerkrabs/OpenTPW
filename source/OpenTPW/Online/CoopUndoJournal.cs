@@ -600,14 +600,15 @@ internal sealed class CoopUndoJournal
 
 	/// <summary>
 	/// Decides a take-back before its rights and its run (<see cref="ParkCommands.Prepare"/>): <paramref name="command"/> as the host decided it, of <paramref name="origin"/>'s member (null for
-	/// the host's own). Any other command passes as it is. Whatever verdict and inverse a request carried are replaced.
+	/// the host's own). Any other command passes as it is. Whatever verdict, inverse and claimed ride a request carried are replaced: the claimed ride is the step's own, which the host
+	/// puts there (the track and coaster steps', C5-3; no step of the path, queue and slide tools has one), so the rights never ask a ride a request named.
 	/// </summary>
 	internal ParkCommand Decide( ParkCommand command, uint? origin )
 	{
 		pending = null;
 		if ( command is not TakeBackCommand request )
 			return command;
-		var asked = request with { Verdict = TakeBackVerdict.Undecided, Inverse = null };
+		var asked = request with { Verdict = TakeBackVerdict.Undecided, Inverse = null, ClaimedRide = -1 };
 		if ( Disabled )
 			return asked with { Verdict = TakeBackVerdict.Forgotten };
 		try

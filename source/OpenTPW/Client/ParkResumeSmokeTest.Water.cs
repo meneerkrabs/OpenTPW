@@ -113,8 +113,17 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( addOn != null && economy.Balance < cash, $"buy and place {entry.DisplayName} on the ride's track" );
 		Require( ride.Runtime.Bump!.IsTrackValid && AddOnSections( ride ) > 0, "the walk after the placement links the add-on's sections" );
 		Require( level.WindowTarget( addOn ) == ride, "a click on the add-on opens its ride's window" );
+		// the sale is the demolition 0x527EE0, whose pass 2 clears the record under every cell of the add-on's shape (docs/reverse/ORACLE.md, X37): the tile the add-on stood on goes with it and the
+		// circuit is open; the fixture lays that tile again, as the player would, and the circuit closes before the add-on is bought again
+		var builder = level.BuilderOf( ride )!;
+		var origin = addOn!.Cells.Select( cell => builder.OriginOf( cell.X, cell.Y ) ).First( found => found != null )!.Value;
+		var tile = builder.Tracks.Get( origin.X, origin.Y );
 		level.Objects.Remove( addOn! );
-		Require( ride.Runtime.Bump.IsTrackValid && ride.Runtime.Bump.Sections.All( section => section.Kind is not (12 or 13) ), "selling the add-on walks the circuit back to plain sections" );
+		Require( builder.Tracks.Get( origin.X, origin.Y ).IsEmpty && !ride.Runtime.Bump.IsTrackValid, "selling the add-on takes the tile under it with it and opens the circuit" );
+		Require( builder.PlaceTile( origin.X, origin.Y, tile.Owner ) == CellBuildResult.Ok, "the tile is laid again" );
+		foreach ( var heading in TrackHeading.All.Where( heading => (tile.Mask & heading) != 0 ) )
+			Require( builder.Link( origin, (origin.X + TrackStation.TileCells * TrackHeading.Dx( heading ), origin.Y + TrackStation.TileCells * TrackHeading.Dy( heading )) ), "the laid tile joins its neighbours again" );
+		Require( level.RewalkTrack( ride, TrackWalkCause.Line ) is { IsValid: true } && ride.Runtime.Bump.Sections.All( section => section.Kind is not (12 or 13) ), "the circuit closes again with plain sections" );
 		addOn = Buy();
 		Require( addOn != null && AddOnSections( ride ) > 0, $"buy {entry.DisplayName} again" );
 		Log.Trace( $"Park-resume fixture: add-on {entry.DisplayName} on {ride.Entry.DisplayName}'s track ({AddOnSections( ride )} add-on sections), sold once and bought again." );

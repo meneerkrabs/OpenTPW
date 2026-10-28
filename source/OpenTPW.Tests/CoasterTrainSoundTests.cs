@@ -25,6 +25,19 @@ public class CoasterTrainSoundTests
 		public void Stop() => Stopped = true;
 	}
 
+	private sealed class Scream : ICoasterScreamVoice
+	{
+		public int Band;
+		public readonly List<Vector3> Places = new();
+		public readonly List<(int Level, int Speed)> Levels = new();
+		public bool Stopped;
+		public void MoveTo( Vector3 place ) => Places.Add( place );
+		public void SetLevel( int level, int speed ) => Levels.Add( (level, speed) );
+		public void Stop() => Stopped = true;
+	}
+
+	private static readonly List<Scream> Short = new(), Held = new();
+
 	private static (CoasterRide Ride, CoasterBuilder Builder, List<Voice> Voices, CoasterTrainSounds Sounds) NewRide()
 	{
 		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
@@ -35,7 +48,23 @@ public class CoasterTrainSoundTests
 			voice.Places.Add( place );
 			voices.Add( voice );
 			return voice;
+		},
+		place =>
+		{
+			var voice = new Scream();
+			voice.Places.Add( place );
+			Short.Add( voice );
+			return voice;
+		},
+		( band, place ) =>
+		{
+			var voice = new Scream { Band = band };
+			voice.Places.Add( place );
+			Held.Add( voice );
+			return voice;
 		} );
+		Short.Clear();
+		Held.Clear();
 		ride.TrainSounds = sounds;
 		return (ride, new CoasterBuilder( ride, new CoasterSite( 64, 64 ) ), voices, sounds);
 	}
@@ -77,7 +106,7 @@ public class CoasterTrainSoundTests
 		sounds.SetUp( train );
 		Assert.AreEqual( 2, voices.Count );
 		CollectionAssert.AreEqual( new[] { (22, 100) }, voices[1].Parameters, "0x43978A: an equal state skips the parameter and the store, 0x4397EE sends the occupancy anyway" );
-		ride.SetTrainSoundState( 0, 0x10 );
+		ride.StoreTrainSoundState( 0, 0x10 );
 		voices.Clear();
 		sounds.SetUp( train );
 		CollectionAssert.AreEqual( new[] { (19, 0x1E), (22, 100) }, voices[1].Parameters, "a slot that held another state sends the state parameter to the new loop" );
@@ -163,7 +192,7 @@ public class CoasterTrainSoundTests
 		sounds.SetUp( train );
 		var voice = voices[^1];
 		voice.Parameters.Clear();
-		ride.SetTrainSoundState( 0, 0 );
+		ride.StoreTrainSoundState( 0, 0 );
 		train.BrakingNow = false;
 		Array.Clear( train.OnWinch );
 		setup( train );
@@ -176,28 +205,28 @@ public class CoasterTrainSoundTests
 	{
 		var (ride, builder, voices, sounds) = NewRide();
 		Complete( builder );
-		ride.SetTrainSoundState( 0, 0 );
+		ride.StoreTrainSoundState( 0, 0 );
 		var cars = ride.Definition.CarCount;
 
 		// braking: state 8 (0x5A) with 50 × (round(x⁴) + 1), the rounding to nearest even
 		foreach ( var (factor, expected) in new[] { (0f, 50), (0.4f, 50), (0.5f, 50), (0.51f, 100), (1f, 100) } )
 		{
-			ride.SetTrainSoundState( 0, 0 );
+			ride.StoreTrainSoundState( 0, 0 );
 			ride.BrakeFactor = factor;
 			var sent = StateOf( ride, sounds, voices, train => train.BrakingNow = true );
 			CollectionAssert.AreEqual( new[] { (19, 0x5A), (22, expected) }, sent, $"x⁴ = {factor}" );
 		}
 
 		// a car on a winch: state 2 up to 0.3 of the speed cap, state 4 above, with 100 × cars on winch / the train's cars
-		ride.SetTrainSoundState( 0, 0 );
+		ride.StoreTrainSoundState( 0, 0 );
 		var slow = StateOf( ride, sounds, voices, train => { train.OnWinch[0] = true; train.Speed = 0.29f * ride.SpeedCap; } );
 		CollectionAssert.AreEqual( new[] { (19, 0x1E), (22, 100 / cars) }, slow );
-		ride.SetTrainSoundState( 0, 0 );
+		ride.StoreTrainSoundState( 0, 0 );
 		var fast = StateOf( ride, sounds, voices, train => { train.OnWinch[0] = train.OnWinch[1] = true; train.Speed = 0.5f * ride.SpeedCap; } );
 		CollectionAssert.AreEqual( new[] { (19, 0x46), (22, 200 / cars) }, fast );
 
 		// no braking and no winch: free, state 0x10 (0x32) with 100
-		ride.SetTrainSoundState( 0, 0 );
+		ride.StoreTrainSoundState( 0, 0 );
 		var free = StateOf( ride, sounds, voices, train => train.Speed = 20 );
 		CollectionAssert.AreEqual( new[] { (19, 0x32), (22, 100) }, free );
 
@@ -206,5 +235,60 @@ public class CoasterTrainSoundTests
 		voices[^1].Parameters.Clear();
 		sounds.StateTick();
 		CollectionAssert.AreEqual( new[] { (22, 100) }, voices[^1].Parameters, "the same state again sends only the occupancy, not an early return" );
+	}
+
+	private static void FlagAllSamples( CoasterRide ride, CoasterSampleFlags flags )
+	{
+		var samples = (CoasterSample[])ride.Samples;
+		for ( var index = 0; index < samples.Length; index++ )
+			samples[index].Flags = flags;
+	}
+
+	/// <summary>0x4393E0: a train with riders on a sample with flag 0x2 starts the one-shot scream once and then moves it.</summary>
+	[TestMethod]
+	public void ARiderOnAFlagTwoSampleStartsTheShortScreamOnce()
+	{
+		var (ride, builder, _, _) = NewRide();
+		Complete( builder );
+		FlagAllSamples( ride, CoasterSampleFlags.TerrorScream );
+		for ( var tick = 0; tick < 30; tick++ )
+			ride.Advance( Tick );
+		Assert.AreEqual( 0, Short.Count, "a train without riders (+0x10 = 0) skips the pass" );
+		ride.Trains[0].CarLists[0].Add( 7 );
+		for ( var tick = 0; tick < 30; tick++ )
+			ride.Advance( Tick );
+		Assert.AreEqual( 1, Short.Count, "the handle +0x6C is kept: one start" );
+		Assert.AreEqual( 1, Short[0].Places.Count, "without the train flag 0x100 nothing moves it (0x43945C is behind that flag)" );
+		Assert.AreEqual( 0, Held.Count );
+		FlagAllSamples( ride, CoasterSampleFlags.TerrorScream | CoasterSampleFlags.NormalScream );
+		for ( var tick = 0; tick < 10; tick++ )
+			ride.Advance( Tick );
+		Assert.AreEqual( 1, Short.Count );
+		Assert.IsTrue( Short[0].Places.Count > 5, "with the held scream's flag 0x100 set the live handle is moved on every pass" );
+	}
+
+	/// <summary>0x4393E0: flag 0x4 starts the held chain with the band riders / 2 + 1 and the train flag 0x100; the chain is set to 75 / 75 while it lasts and ends on the first sample without the flag.</summary>
+	[TestMethod]
+	public void AFlagFourSampleHoldsTheScreamChainUntilTheFlagEnds()
+	{
+		var (ride, builder, _, _) = NewRide();
+		Complete( builder );
+		FlagAllSamples( ride, CoasterSampleFlags.NormalScream );
+		var train = ride.Trains[0];
+		train.CarLists[0].AddRange( new[] { 1, 2, 3 } );
+		ride.Advance( Tick );
+		Assert.AreEqual( 1, Held.Count );
+		Assert.AreEqual( 2, Held[0].Band, "3 riders / 2 + 1" );
+		ride.Advance( Tick );
+		ride.Advance( Tick );
+		Assert.AreEqual( 1, Held.Count, "the flag 0x100 and the handle keep it a single chain" );
+		Assert.IsTrue( Held[0].Levels.Count >= 1 && Held[0].Levels.All( level => level == (75, 75) ) );
+		Assert.IsFalse( Held[0].Stopped );
+		FlagAllSamples( ride, CoasterSampleFlags.None );
+		ride.Advance( Tick );
+		Assert.IsTrue( Held[0].Stopped, "0x4394BE stops it" );
+		FlagAllSamples( ride, CoasterSampleFlags.NormalScream );
+		ride.Advance( Tick );
+		Assert.AreEqual( 2, Held.Count, "and the next flagged sample starts a new one" );
 	}
 }

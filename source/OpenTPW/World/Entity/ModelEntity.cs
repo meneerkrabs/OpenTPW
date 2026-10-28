@@ -27,6 +27,9 @@ public partial class ModelEntity : Entity
 	/// <summary>
 	/// Called when the draw finds the model inside the view, before the first draw of the frame, as the original's mesh prepare calls the render callback of the mesh object
 	/// (<see cref="OriginalObject.PresentDrawn"/>).
+	/// Timing: <see cref="Hidden"/> and the culling test are read before the callback runs, so what the reset changes in the hidden state of parts applies from the next part and the next frame on, while the
+	/// vertex and texture data it restores are read after it (<c>DrawModel</c>). No shadow or reflection pass draws a ride object's <see cref="ModelEntity"/> (the bumper vehicles' shadows are models of their own),
+	/// so the callback runs once per frame from the single world pass.
 	/// </summary>
 	// [BIN:TPW-EXE:0x57A750 mesh prepare] the prepare of a mesh object (a virtual method; the thunk 0x57AC63 reaches it, which is why no instruction calls through +0x140) loads the callback word the render callback 0x463030 was stored in at +0x140 (0x4638BD) and calls it with the mesh object (0x57A7E6..0x57A7FC) when the object's frame word differs from the current frame's [0x8BCC40] (0x57A7ED), so once per frame, before the object's meshes are tested one by one (0x57A5A6..0x57A685, 0x561A30) and drawn
 	internal Action? Prepared { get; set; }

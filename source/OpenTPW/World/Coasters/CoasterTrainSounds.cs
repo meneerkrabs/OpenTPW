@@ -18,6 +18,34 @@ internal sealed class HeldTrainVoice : ICoasterTrainVoice
 	public void Stop() => sound.Stop();
 }
 
+/// <summary>A scream the train holds a handle of: what the original's 0x5512D0 (move), 0x551290 (level) and 0x551300 (stop) do to the voice 0x551320 or 0x551130 made.</summary>
+internal interface ICoasterScreamVoice
+{
+	void MoveTo( Vector3 place );
+	void SetLevel( int level, int speed );
+	void Stop();
+}
+
+/// <summary>The one-shot scream of a train (0x551320) as a voice: it only moves.</summary>
+internal sealed class ShortScreamVoice : ICoasterScreamVoice
+{
+	private readonly AudioVoice voice;
+	public ShortScreamVoice( AudioVoice voice ) => this.voice = voice;
+	public void MoveTo( Vector3 place ) => voice.Position = place;
+	public void SetLevel( int level, int speed ) { }
+	public void Stop() { }
+}
+
+/// <summary>The held scream chain of a train (0x551130) as a voice.</summary>
+internal sealed class HeldScreamVoice : ICoasterScreamVoice
+{
+	private readonly SoundChain chain;
+	public HeldScreamVoice( SoundChain chain ) => this.chain = chain;
+	public void MoveTo( Vector3 place ) => chain.MoveTo( place );
+	public void SetLevel( int level, int speed ) => chain.Parameter = GameAudio.ScreamParameter( level, speed );
+	public void Stop() => chain.Stop();
+}
+
 /// <summary>
 /// The loop sound of a coaster train (SAVE-923): two sounds of the ride's EventMap (variables 0 and 1) that follow the train's sound car, one crossfaded by the train's speed and the
 /// other parameterised by what the train is doing (on a lift, braking, free); the parameter codes are EventMap variables 6, 7 and 8. Sounds are presentation: they are in no hash and no save.
@@ -38,18 +66,28 @@ internal sealed class CoasterTrainSounds
 		public ICoasterTrainVoice? VoiceA, VoiceB;
 		/// <summary>Train +0x48 and +0x3C: the position of the sound car and of the camera car, as the tick's car loop left them.</summary>
 		public Vector3 SoundCar, CameraCar;
+		/// <summary>Train +0x6C (the one-shot scream) and +0x70 (the held scream), and the train flag 0x100 the held scream sets.</summary>
+		public ICoasterScreamVoice? Short, Held;
+		public bool HeldFlag;
 	}
 
 	private readonly CoasterRide ride;
 	private readonly Func<int, int?> eventVariable;
 	private readonly Func<int, Vector3, ICoasterTrainVoice?> start;
 	private readonly Dictionary<CoasterTrain, Record> records = new();
+	private readonly Func<Vector3, ICoasterScreamVoice?>? startShortScream;
+	private readonly Func<int, Vector3, ICoasterScreamVoice?>? startHeldScream;
 
 	/// <param name="ride">The coaster whose trains sound.</param>
 	/// <param name="eventVariable">The value of the ride's EventMap child variable at a position (<c>0x55A3E0</c>), null while the ride has no EventMap script.</param>
 	/// <param name="start">Submits a level <c>cat_rides</c> event at a place and keeps its voice (<c>0x51EEB0</c> → <c>0x51BFC0</c>); null for a sound that is not made.</param>
-	public CoasterTrainSounds( CoasterRide ride, Func<int, int?> eventVariable, Func<int, Vector3, ICoasterTrainVoice?> start )
+	/// <param name="startShortScream">0x551320 with band 1 and level 100 at a place; null without a sound service.</param>
+	/// <param name="startHeldScream">0x551130 with a band and level 75 at a place; null without a sound service.</param>
+	public CoasterTrainSounds( CoasterRide ride, Func<int, int?> eventVariable, Func<int, Vector3, ICoasterTrainVoice?> start,
+		Func<Vector3, ICoasterScreamVoice?>? startShortScream = null, Func<int, Vector3, ICoasterScreamVoice?>? startHeldScream = null )
 	{
+		this.startShortScream = startShortScream;
+		this.startHeldScream = startHeldScream;
 		this.ride = ride;
 		this.eventVariable = eventVariable;
 		this.start = start;
@@ -70,7 +108,7 @@ internal sealed class CoasterTrainSounds
 	// [BIN:TPW-EXE:0x4392A0 train sound setup] 0x439670 first (stops +0x64, +0x68 and the scream handle +0x70 and clears +0x54..+0x70 but not +0x38), then 0x55A3E0(type, 5..8) into +0x54, +0x58, +0x5C and +0x60, then 0x51EEB0(type, 0, [0x803A3C], 0 and 1, x, y, z) (event = EventMap variable 0 and 1 of the level cat_rides, at the whole units of +0x48, +0x4C, +0x50) into +0x64 and +0x68, then 0x439780(train, 2, 100)
 	public void SetUp( CoasterTrain train )
 	{
-		TearDown( train );
+		EndLoops( train );
 		var record = new Record
 		{
 			CodeUnused = Variable( FirstCodeVariable ),
@@ -88,12 +126,13 @@ internal sealed class CoasterTrainSounds
 	}
 
 	/// <summary>The sounds of a train that leaves its slot end (<c>0x439670</c>, from <c>0x43BF20</c> and the rating pass 0x43CB88); the slot's state word stays.</summary>
-	public void TearDown( CoasterTrain train )
+	public void EndLoops( CoasterTrain train )
 	{
 		if ( !records.Remove( train, out var record ) )
 			return;
 		record.VoiceA?.Stop();
 		record.VoiceB?.Stop();
+		record.Held?.Stop();
 	}
 
 	/// <summary>The ride is removed or stopped: every loop ends.</summary>
@@ -103,6 +142,7 @@ internal sealed class CoasterTrainSounds
 		{
 			record.VoiceA?.Stop();
 			record.VoiceB?.Stop();
+			record.Held?.Stop();
 		}
 		records.Clear();
 	}
@@ -168,16 +208,16 @@ internal sealed class CoasterTrainSounds
 			};
 			if ( parameter != 0 )
 				record?.VoiceB?.SetParameter( record.CodeState, parameter );
-			ride.SetTrainSoundState( train.Index, (uint)state );
+			ride.StoreTrainSoundState( train.Index, (uint)state );
 		}
 		record?.VoiceB?.SetParameter( record.CodeOccupancy, value );
 	}
 
 	/// <summary>
 	/// After the station step (<c>0x439570</c>): the first loop takes the train's speed in percent of the fastest speed setting and the second the rest to 100, and both move to the sound car
-	/// (the camera car while the player rides the train), each coordinate cut to whole units.
+	/// (the camera car while the player rides the train), each coordinate rounded to a whole unit.
 	/// </summary>
-	// [BIN:TPW-EXE:0x439570 train sound position] ftol(train +0x78 / type +0x50 (fMaxSpeedAtMaxSetting) × 100, 0x6FDF38) goes to +0x64 as 0x51BC40(+0x64, +0x58, percent) and 100 − percent to +0x68; then 0x51C270 moves both to +0x3C (the ride camera's train, 0x42A4E0 against [[train +0x34] +0xC]) or +0x48 through ftol
+	// [BIN:TPW-EXE:0x439570 train sound position] ftol(train +0x78 / type +0x50 (fMaxSpeedAtMaxSetting) × 100, 0x6FDF38) goes to +0x64 as 0x51BC40(+0x64, +0x58, percent) and 100 − percent to +0x68; then 0x51C270 moves both to +0x3C (the ride camera's train, 0x42A4E0 against [[train +0x34] +0xC]) or +0x48, each coordinate through fistp (0x4395EC, 0x4395FE, 0x439610: round to nearest even, unlike the _ftol of the percent and of the setup) and, when the train has riders (+0x10, 0x439640), the scream pass 0x4393E0 follows with the same place
 	public void PositionTick()
 	{
 		var definition = ride.Definition;
@@ -188,9 +228,11 @@ internal sealed class CoasterTrainSounds
 			var percent = (int)(train.Speed / definition.MaxSpeedAtMaxSetting * 100f);
 			record.VoiceA?.SetParameter( record.CodeCrossfade, percent );
 			record.VoiceB?.SetParameter( record.CodeCrossfade, 100 - percent );
-			var place = Whole( IsRidden?.Invoke( train ) == true ? record.CameraCar : record.SoundCar );
+			var place = Nearest( IsRidden?.Invoke( train ) == true ? record.CameraCar : record.SoundCar );
 			record.VoiceA?.MoveTo( place );
 			record.VoiceB?.MoveTo( place );
+			if ( train.Riders != 0 )
+				ScreamTick( train, record, place );
 		}
 	}
 
@@ -205,6 +247,57 @@ internal sealed class CoasterTrainSounds
 		var position = CoasterCarRig.Matrix( pose, yOffset ).Translation;
 		return new Vector3( position.X, position.Y, position.Z );
 	}
+
+	/// <summary>
+	/// The scream pass (<c>0x4393E0</c>) of a train with riders, at the sample the reference car stands on (fistp of train <c>+0x74</c> into the sample table, 56 bytes each): sample flag 0x2 is the one-shot scream
+	/// (the rating's <see cref="CoasterSampleFlags.TerrorScream"/>, handle <c>+0x6C</c>), flag 0x4 the held chain (<see cref="CoasterSampleFlags.NormalScream"/>, handle <c>+0x70</c>, with the train flag 0x100).
+	/// </summary>
+	// [BIN:TPW-EXE:0x4393E0 train scream] flag 0x2: with train flag 0x100 set a live +0x6C is moved by 0x5512D0 (not while [0x785A2C] is set, 0x43942F; a flag-less sample with a live handle moves it too, 0x43945C), a missing one is started by 0x551320(1, 100, 100, place) unless the train brakes (flag 0x10) or the ride is in mode 64 (ride +8 bit 0x40); without train flag 0x100 the start is also gated by [0x785A2C] == 0 (0x4394FE); flag 0x4 (not braking, not mode 64): a missing +0x70 is started by 0x551130(0, riders / 2 + 1, 75, 75, place) when [0x785A2C] == 0 (0x439544..0x439557) and train flag 0x100 is set; a live one is moved by 0x5512D0 and set to 75 / 75 by 0x551290 (0x43949F..0x4394AF); without the flag (or braking, or mode 64) a live +0x70 is stopped by 0x551300, cleared and the flag dropped (0x4394BE..0x4394DF)
+	// [BIN:TPW-EXE:0x785A2C layout replay] every sound call of the scream pass and of the loop setup is gated by [0x785A2C] (the layout-replay flag 0x404140 sets); no writer of it is modelled here, so it counts as clear
+	// [BIN:TPW-EXE:0x439670 scream teardown] the slot setup stops +0x70 (0x551300) and clears +0x6C and +0x70 without stopping the one-shot; the train flag 0x100 is kept apart here (presentation, not hashed) and starts clear with the slot's sounds
+	private void ScreamTick( CoasterTrain train, Record record, Vector3 place )
+	{
+		var samples = ride.Samples;
+		var index = (int)MathF.Round( train.Position, MidpointRounding.ToEven );
+		var flags = (uint)index < (uint)samples.Count ? (uint)samples[index].Flags : 0u;
+		var braking = train.BrakingNow;
+		var broken = ride.IsBroken;
+		var shortScream = (flags & 2) != 0;
+		var heldScream = (flags & 4) != 0;
+		var allowed = !braking && !broken;
+		if ( record.HeldFlag )
+		{
+			if ( shortScream )
+			{
+				if ( record.Short != null )
+					record.Short.MoveTo( place );
+				else if ( allowed )
+					record.Short = startShortScream?.Invoke( place );
+			}
+			else
+				record.Short?.MoveTo( place );
+			if ( heldScream && allowed )
+			{
+				record.Held?.MoveTo( place );
+				record.Held?.SetLevel( 75, 75 );
+				return;
+			}
+			record.Held?.Stop();
+			record.Held = null;
+			record.HeldFlag = false;
+			return;
+		}
+		if ( shortScream && allowed && record.Short == null )
+			record.Short = startShortScream?.Invoke( place );
+		if ( heldScream && allowed )
+		{
+			if ( record.Held == null )
+				record.Held = startHeldScream?.Invoke( train.Riders / 2 + 1, place );
+			record.HeldFlag = true;
+		}
+	}
+
+	private static Vector3 Nearest( Vector3 place ) => new( MathF.Round( place.X, MidpointRounding.ToEven ), MathF.Round( place.Y, MidpointRounding.ToEven ), MathF.Round( place.Z, MidpointRounding.ToEven ) );
 
 	private static Vector3 Whole( Vector3 place ) => new( (int)place.X, (int)place.Y, (int)place.Z );
 }

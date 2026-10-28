@@ -7,7 +7,7 @@ public sealed partial class OriginalObjectRuntime
 	private Matrix4x4[]? keyPose;
 
 	/// <summary>
-	/// The node matrices the EVENT keys, sounds' anchors and walk nodes are read from: the instance's key table once a host registered the instance with the scene
+	/// The node matrices the EVENT keys, sounds' anchors and the walk-off particle's node are read from: the instance's key table once a host registered the instance with the scene
 	/// (<see cref="RefreshKeyPose"/>), else the animator's live pose (a runtime without a scene, as the tests and standalone scripts use it).
 	/// </summary>
 	// [BIN:TPW-EXE:0x556B90 key lookup] the key resolver reads the node's matrix (+0x30..+0x38 position, +0x20.. direction) out of the instance's key table, not out of the node hierarchy; the table is rebuilt by 0x44AB30 only at the refresh points of RefreshKeyPose

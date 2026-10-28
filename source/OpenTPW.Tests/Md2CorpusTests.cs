@@ -645,6 +645,12 @@ public class Md2CorpusTests
 			Assert.AreEqual( y, rotation.Y, 1e-3, $"tick {tick}" );
 			Assert.AreEqual( w, rotation.W, 1e-3, $"tick {tick}" );
 		}
+		// At a key tick the fraction is 0 and the blend returns the key itself: no table-sine error, so these hold to 1e-4.
+		foreach ( var key in cog.Rotations.Take( cog.Rotations.Count - 1 ) )
+		{
+			var atKey = cog.SampleRotation( key.Time )!.Value;
+			Assert.AreEqual( 1f, MathF.Abs( System.Numerics.Quaternion.Dot( System.Numerics.Quaternion.Normalize( key.Rotation ), atKey ) ), 1e-4, $"key at tick {key.Time}" );
+		}
 		Assert.AreEqual( -clip.Tracks[1].SampleRotation( 50 )!.Value.Y, clip.Tracks[2].SampleRotation( 50 )!.Value.Y, 1e-6 );
 
 		// Cart children (seat dummies) follow the animated cart because matrices are parent-relative.

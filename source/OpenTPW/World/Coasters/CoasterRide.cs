@@ -140,7 +140,7 @@ public sealed class CoasterRide
 
 	internal uint TrainSoundState( int slot ) => slot < trainSoundStates.Length ? trainSoundStates[slot] : 0;
 
-	internal void SetTrainSoundState( int slot, uint state )
+	internal void StoreTrainSoundState( int slot, uint state )
 	{
 		if ( slot >= trainSoundStates.Length )
 			Array.Resize( ref trainSoundStates, slot + 1 );
@@ -515,7 +515,7 @@ public sealed class CoasterRide
 			Unload( trains[index], boardingList: false );
 		}
 		for ( var index = count; index < trains.Count; index++ )
-			TrainSounds?.TearDown( trains[index] );
+			TrainSounds?.EndLoops( trains[index] );
 		if ( trains.Count > count )
 			trains.RemoveRange( count, trains.Count - count );
 		while ( trains.Count < count )
@@ -644,7 +644,7 @@ public sealed class CoasterRide
 		foreach ( var train in trains )
 		{
 			UnloadAll( train );
-			TrainSounds?.TearDown( train );
+			TrainSounds?.EndLoops( train );
 		}
 		MoveAdmissionToLeaving();
 		trains.Clear();
@@ -1456,7 +1456,7 @@ public sealed class CoasterRide
 			train.Speed = saved.Speed;
 			train.Flags = saved.Flags;
 			// [BIN:TPW-EXE:0x4383FE sound state load] the loader restores the slot's sound state (+0x38) raw, and no slot setup follows for a slot that is set up (flag 0x1): the loops stay silent until the next setup, which then compares its state with this one
-			SetTrainSoundState( train.Index, saved.SoundState );
+			StoreTrainSoundState( train.Index, saved.SoundState );
 			UpdateExtents( train );
 			trains.Add( train );
 		}

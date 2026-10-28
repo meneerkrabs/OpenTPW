@@ -133,11 +133,41 @@ public class WalkChainTests
 		var serials = snapshot.Actors.ToDictionary( actor => actor.Id, actor => actor.CellSerial );
 		Assert.IsTrue( serials[b.Id] > serials[a.Id] && serials[a.Id] > 0 );
 		world.RestoreSnapshot( snapshot );
-		Assert.AreEqual( serials[a.Id], a.CellSerial );
+		Assert.AreEqual( serials[a.Id], world.CaptureSnapshot().Actors.Single( actor => actor.Id == a.Id ).CellSerial );
 		var older = new StaffWorldSimulation.StaffWorldStateSnapshot( snapshot.Actors.Select( actor => actor with { CellSerial = 0 } ).ToArray() );
 		world.RestoreSnapshot( older );
-		Assert.IsTrue( a.CellSerial < 0 && b.CellSerial < a.CellSerial, "an older save files the members oldest, the first member head-most of them" );
+		var legacy = world.CaptureSnapshot().Actors.ToDictionary( actor => actor.Id, actor => actor.CellSerial );
+		Assert.IsTrue( legacy.Values.All( serial => serial == 0 ), "an older save files the members oldest: the entry numbers below 0 are written as 0, so the next save reloads" );
+		// restore the older save, capture, validate and restore again: the second save loads into the same order
+		var again = world.CaptureSnapshot();
+		world.ValidateSnapshot( again );
+		world.RestoreSnapshot( again );
+		var order = simulation.StaffChain.At( (2, 5) )!.Select( entry => entry.Id ).ToArray();
+		CollectionAssert.AreEqual( new[] { b.Id, a.Id }, order, "the first member is head-most of the legacy order, last in the oldest-first list" );
 		var broken = new StaffWorldSimulation.StaffWorldStateSnapshot( snapshot.Actors.Select( actor => actor with { CellSerial = -5 } ).ToArray() );
 		Assert.ThrowsException<System.IO.InvalidDataException>( () => world.ValidateSnapshot( broken ) );
+	}
+
+	[TestMethod]
+	public void AGoneGuestStillHeadsItsCellForTheHeadTestsButNotForTheSeparationQuery()
+	{
+		// [BIN:TPW-EXE:0x0050B780] a destroyed thing is kind 2 until the turn's deferred destroys unlink it
+		var simulation = Simulation();
+		var first = simulation.SpawnInPark( 2, 5 );
+		var last = simulation.SpawnInPark( 2, 5 );
+		last.State = GuestState.Gone;
+		Assert.AreSame( last, simulation.HeadOfCell( 2, 5 ), "the head test still meets it" );
+		CollectionAssert.AreEqual( new[] { first.Navigation }, Chain( simulation, 2, 5 ), "the separation query skips it" );
+	}
+
+	[TestMethod]
+	public void AGuardsSetDownIsATeleportThatFilesTheGuestAndResetsTheDrawnStart()
+	{
+		var simulation = Simulation();
+		var guest = simulation.SpawnInPark( 2, 5 );
+		((IGuardGuests)simulation).Release( guest.Id, (5, 2), null );
+		Assert.AreSame( guest, simulation.HeadOfCell( guest.CellX, guest.CellY ), "filed on its new cell's chain at once" );
+		Assert.AreEqual( guest.X, guest.StepFromX, 0.0001f, "the drawn start is the new point: no slide from the old cell" );
+		Assert.AreEqual( guest.Y, guest.StepFromY, 0.0001f );
 	}
 }

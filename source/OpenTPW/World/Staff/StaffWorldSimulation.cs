@@ -121,7 +121,7 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 
 	/// <summary>The actors' positions and movement phases for a park save, in member order.</summary>
 	public StaffWorldStateSnapshot CaptureSnapshot() => new( members()
-		.Select( member => new StaffActorSnapshot( member.Id, member.CellX, member.CellY, member.TravelSeconds, Chain.Of( member.Id )?.Serial ?? member.CellSerial ) )
+		.Select( member => new StaffActorSnapshot( member.Id, member.CellX, member.CellY, member.TravelSeconds, Math.Max( 0, Chain.Of( member.Id )?.Serial ?? member.CellSerial ) ) )
 		.ToArray() );
 
 	/// <summary>

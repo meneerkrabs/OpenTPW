@@ -981,7 +981,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( turnStarted )
 		{
 			UpdateSpeed( guest );
-			// [BIN:TPW-EXE:0x004FA870 turn start point] the person's turn update ends with its pilot position copied to +0x190/+0x194, the start of the interpolation (0x004F9F00) until the next turn, whether or not the guest walks
+			// [BIN:TPW-EXE:0x004FA870 turn start point] the person's turn update ends with its walk position copied to +0x190/+0x194, the start of the interpolation (0x004F9F00) until the next turn, whether or not the guest walks
 			(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
 		}
 		if ( turnStarted && bodySpriteHostRunning )
@@ -1237,10 +1237,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return false;
 		if ( !Grid.IsWalkable( cell.X, cell.Y ) )
 			cell = Grid.FindNearestWalkable( cell.X, cell.Y ) ?? cell;
-		PlaceOnGrid( guest, cell.X, cell.Y );
+		// the set-down is the teleport (0x004FA930 with the bytes 0x80, 0x80): the guest joins its new cell's chain at once and the drawn start point is the new point, so nobody slides in from the old cell
+		Teleport( guest, cell, 0x80, 0x80 );
 		var navigation = guest.Navigation;
-		(navigation.X, navigation.Y) = GuestNavigation.Centre( cell );
-		navigation.SetDestination( navigation.X, navigation.Y, [] );
+		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
 		UpdatePresentation( guest );
 		guest.BodySprite.DeletePlayer();
 		CreateBodySprite( guest, VisitorSpriteTemplate.Walk );
@@ -1383,7 +1383,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x005102F0 separation neighbour query] the cells around the stepping thing, rows from the top and each row from the left; in each cell the one thing chain from its head (cell +0x24, next +0x0A): every thing whose kind byte (+2) is 1 (guest), 4 to 8 (staff) or 0x12 (the online avatar) and is not the caller's own, with no test of its state, within the radius by the position words +4/+6, at most five in all (0x51045A..0x51045E)
-	// [BIN:TPW-EXE:0x004FA2A0 thing position] +4/+6 are written by the walk step (the pilot position >> 8, 0x4FA2FC → 0x50B6A0) and by the teleport (0x4FA930 → 0x50B6A0) only: a guest on a ride (state 16) or carried (state 17) keeps the position of its last step, still on the chain and still a neighbour of the guests that step past it; the destroy request unlinks a thing at once (0x50B780 → 0x4F8AE0 → 0x50B980 → 0x4D9280)
+	// [BIN:TPW-EXE:0x004FA2A0 thing position] +4/+6 are written by the walk step (the walk position >> 8, 0x4FA2FC → 0x50B6A0) and by the teleport (0x4FA930 → 0x50B6A0) only: a guest on a ride (state 16) or carried (state 17) keeps the position of its last step, still on the chain and still a neighbour of the guests that step past it; the destroy request unlinks a thing at once (0x50B780 → 0x4F8AE0 → 0x50B980 → 0x4D9280)
 	private (int X, int Y) SeparationForStep( GuestNavigation self )
 	{
 		neighbours.Clear();
@@ -1402,7 +1402,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>
 	/// The things on one cell's chain head first (the guests' and the staff's lists read by entry number): the guests and the staff interleaved by the time each entered the cell.
-	/// A guest that is gone (its destruction unlinks it at once) is not on the chain.
+	/// A guest that is gone is a kind 2 thing until the turn's deferred destroys unlink it (0x0050B780, 0x00516641): the separation query skips it, the head tests (<see cref="ChainHead"/>) do not.
 	/// </summary>
 	internal void AppendCellChain( int x, int y, List<GuestNavigation> into )
 	{
@@ -1428,6 +1428,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		occupants.TryGetValue( cell, out var guestList );
 		var staffList = StaffChain.At( cell );
+		// [BIN:TPW-EXE:0x0050B780 destroy request] a thing that is destroyed turns into kind 2 (+2 = 2, +3 = 1) and is queued (0x00516310); the turn's deferred destroys (0x00516641 → 0x0050B980) unlink it, so until then it still heads its cell's chain and the head tests (the boarding at 0x00500C28) see it, while the separation query (kinds 1, 4 to 8, 0x12) skips it
 		var guest = guestList is { Count: > 0 } ? guestList[^1] : null;
 		if ( staffList != null && (guest == null || staffList[^1].Serial > guest.CellSerial) )
 			return (null, true);

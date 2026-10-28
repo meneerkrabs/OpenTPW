@@ -68,6 +68,8 @@ public sealed partial class StaffWorldSimulation
 		UpdateStaffMemberCore( economy, member, turn );
 		// the member's thing follows the walk's cell onto the head of that cell's chain (WALK-003; the walk step and the teleports end in 0x0050B6A0)
 		Chain.Follow( member.Id, member.Navigation, member.CellSerial );
+		if ( Chain.Of( member.Id ) != null )
+			member.CellSerial = 0;
 		UpdatePresentation( member );
 	}
 
@@ -100,7 +102,7 @@ public sealed partial class StaffWorldSimulation
 		var placed = member.Navigation == null;
 		if ( !Place( member ) )
 			return;
-		// [BIN:TPW-EXE:0x004FA870 turn start point] the person's turn update copies its pilot position to +0x190/+0x194 before the state handler walks: the start of the interpolation until the next turn
+		// [BIN:TPW-EXE:0x004FA870 turn start point] the person's turn update copies its walk position to +0x190/+0x194 before the state handler walks: the start of the interpolation until the next turn
 		(member.TurnFromX, member.TurnFromY, member.TurnTick) = (member.Navigation!.X, member.Navigation.Y, Ticks);
 		// the entertainers' and guards' pre-update moves their RegionFX row with them (the constructor puts it on the first cell)
 		economy.MoveStaffEffect( member, Cell( member ) );
@@ -541,6 +543,9 @@ public sealed partial class StaffWorldSimulation
 			// a restored entry number (the member's, until its entry exists) keeps the counter ahead of it, whichever chain the entry is made in
 			(Guests as GuestSimulation)?.NoteCellSerial( member.CellSerial );
 			chain.Follow( member.Id, member.Navigation, member.CellSerial );
+			// the entry holds the number now; a member still in the hand has no entry, keeps the saved number, and the drop files it with a fresh one
+			if ( chain.Of( member.Id ) != null )
+				member.CellSerial = 0;
 		}
 		chain.KeepOnly( current );
 	}

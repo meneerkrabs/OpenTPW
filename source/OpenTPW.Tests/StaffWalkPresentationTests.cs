@@ -67,7 +67,7 @@ public class StaffWalkPresentationTests
 	}
 
 	[TestMethod]
-	public void TheTurnStartPointIsTheSavedPilotPositionBeforeTheWalkSteps()
+	public void TheTurnStartPointIsTheSavedWalkPositionBeforeTheWalkSteps()
 	{
 		var f = new Fixture();
 		f.Turn();

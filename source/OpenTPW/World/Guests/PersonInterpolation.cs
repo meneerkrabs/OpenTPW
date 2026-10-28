@@ -2,7 +2,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// Where a person (a guest, a staff member or the online avatar) is drawn between two park turns: the point the sub-turn function of tp.exe gives the sprite each frame. The turn's
-/// start point is the pilot position the person's update saves at the start of every turn (+0x190/+0x194, 0x004FA870), the end is its current pilot position, and the factor is the time since the
+/// start point is the walk position the person's update saves at the start of every turn (+0x190/+0x194, 0x004FA870), the end is its current walk position, and the factor is the time since the
 /// park turn started over its 248 ms. Pure rules: no assets, no clock.
 /// </summary>
 public static class PersonInterpolation
@@ -14,7 +14,7 @@ public static class PersonInterpolation
 	public const float TrailTurns = 0.35f;
 
 	/// <summary>
-	/// <c>0x004F9F00</c>: the point at <paramref name="t"/> between the start and the current pilot position, in 16.16 units: start + t × (current − start) with the product and the sum rounded
+	/// <c>0x004F9F00</c>: the point at <paramref name="t"/> between the start and the current walk position, in 16.16 units: start + t × (current − start) with the product and the sum rounded
 	/// to single precision (the thread runs at 24 mantissa bits, X87Precision) and the result truncated to an integer (<c>_ftol</c>). With <paramref name="clamped"/> the factor is held to 0..1,
 	/// without it to −1..2.
 	/// </summary>

@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// theirs here; both take their entry numbers from the one counter, so reading the two lists by number, newest first, is the original's single chain.
 /// </summary>
 // [BIN:TPW-EXE:0x004D91F0 thing chain insert] a thing enters the chain of its cell at the head (cell +0x24 = the id; the thing's next link +0x0A, previous +0x08), the staff things (kinds 4 to 8) exactly as the guests (kind 1)
-// [BIN:TPW-EXE:0x0050B6A0 thing move] a move to another cell unlinks the thing from the old chain (0x004D9280) and inserts it at the new head (0x004D91F0); a move inside the cell only rewrites the position words +4/+6; the destroy request unlinks it (0x0050B980 → 0x004D9280)
+// [BIN:TPW-EXE:0x0050B6A0 thing move] a move to another cell unlinks the thing from the old chain (0x004D9280) and inserts it at the new head (0x004D91F0); a move inside the cell only rewrites the position words +4/+6; the destroy request (0x0050B780) queues it and the turn's deferred destroys unlink it (0x00516641 → 0x0050B980 → 0x004D9280)
 public sealed class StaffCellChain
 {
 	/// <summary>One staff thing in a cell chain.</summary>

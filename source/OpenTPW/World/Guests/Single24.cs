@@ -33,8 +33,8 @@ internal static class Single24
 		return negative ? -value : value;
 	}
 
-	/// <summary><c>_ftol</c> (0x0067A830): the truncation toward zero; a value beyond the 32-bit range, or NaN, is the integer indefinite 0x80000000.</summary>
-	public static int Truncate( float value ) => float.IsNaN( value ) || value >= 2147483648f || value < -2147483648f ? int.MinValue : (int)value;
+	/// <summary><c>_ftol</c> (0x0067A830): the truncation toward zero stored as a 64-bit integer, of which the caller takes the low dword; a value beyond the 64-bit range, NaN or infinity is the 64-bit integer indefinite 0x8000000000000000, whose low dword is 0.</summary>
+	public static int Truncate( float value ) => float.IsNaN( value ) || value >= 9.223372E18f || value < -9.223372E18f ? 0 : unchecked((int)(long)value);
 
 	private static (ulong Mantissa, int Exponent) Split( double value )
 	{

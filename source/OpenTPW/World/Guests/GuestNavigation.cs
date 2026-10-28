@@ -847,7 +847,7 @@ public static class GuestSpeed
 	/// sum is divided as an integer (fild, fidiv), the old speed is multiplied by −3.0 and subtracted (fmul, fsubp) and the result is scaled by 0.25; the multiply and the add are two roundings
 	/// where the Mac's <c>fmadds</c> (<see cref="SmoothFused"/>) is one.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004FA870 speed smoothing] the three words +0xC0 (base), +0xC2 (bonus) and +0xC4 (boost) are added as integers and divided by the word at 0x0075C7FC (100) with fidiv; +0xC8 is multiplied by 0x007006F0 (−3.0) and subtracted (fsubp), the difference multiplied by 0x007006F4 (0.25) and stored back and handed to the speed setter 0x00510190; then +0xC4 = (+0xC4 × 99 as a 16-bit product) / 100 (imul cx, cx, 0x63; the magic 0x51EB851F) and the pilot position is copied to +0x190/+0x194
+	// [BIN:TPW-EXE:0x004FA870 speed smoothing] the three words +0xC0 (base), +0xC2 (bonus) and +0xC4 (boost) are added as integers and divided by the word at 0x0075C7FC (100) with fidiv; +0xC8 is multiplied by 0x007006F0 (−3.0) and subtracted (fsubp), the difference multiplied by 0x007006F4 (0.25) and stored back and handed to the speed setter 0x00510190; then +0xC4 = (+0xC4 × 99 as a 16-bit product) / 100 (imul cx, cx, 0x63; the magic 0x51EB851F) and the walk position is copied to +0x190/+0x194
 	public static float Smooth( float previous, int baseSpeed, int bonus, int boost )
 	{
 		var quotient = (baseSpeed + bonus + boost) / (float)Divisor;

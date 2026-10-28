@@ -123,6 +123,25 @@ public class WanderTests
 	}
 
 	[TestMethod]
+	public void ABuildNextToAStrandedGuestFreesItToWalkOn()
+	{
+		// [BIN:TPW-EXE:0x004F9DFC] the mark; [BIN:TPW-EXE:0x004FA770] held until a block around it is stamped (0x004D8C60 by a cell type change, 0x004DE1F0 by a queue change): the guest's next wander runs again and finds the cell that was built
+		var grid = new GuestPathGrid( 40, 40 );
+		grid.SetPath( 3, 3, true, connections: 0b0010 );
+		grid.SetQueue( 4, 3, 1 );
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 3, 3 );
+		Assert.IsFalse( Wander( simulation, guest ) );
+		Assert.AreNotEqual( 0, guest.StrandedMark );
+		// the player builds a path on the cell the link leads to: the stamp frees the guest and its link now leads onto a path
+		grid.SetPath( 4, 3, true, connections: 0b1000 );
+		guest.Thought = GuestThought.None;
+		Assert.IsTrue( Wander( simulation, guest ), "freed: the wander found a way on" );
+		Assert.AreEqual( 0, guest.StrandedMark );
+		Assert.AreNotEqual( GuestThought.Confused, guest.Thought );
+	}
+
+	[TestMethod]
 	public void TheStrandedMarkIsSavedAndASaveWithoutOneRestoresNone()
 	{
 		var grid = new GuestPathGrid( 12, 12 );

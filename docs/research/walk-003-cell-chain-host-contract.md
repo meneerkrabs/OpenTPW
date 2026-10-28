@@ -1,6 +1,6 @@
 # WALK-003: the cells' thing chains (retired in round 10)
 
-The original keeps one chain per map cell for every thing on it (tp.exe `0x004D91F0` inserts at the head, `0x0050B6A0` moves a thing on every cell change, `0x004D9280` unlinks, the destroy request unlinks at once through `0x0050B980`). The separation query `0x005102F0` walks the chains of the 3 by 3 cells around the stepping thing head first and keeps the kinds 1, 4 to 8 and `0x12` with no test of the state.
+The original keeps one chain per map cell for every kind of thing (the world's singletons and the vehicles sit on cell 1, objects on their own cells; only the people move between cells) (tp.exe `0x004D91F0` inserts at the head, `0x0050B6A0` moves a thing on every cell change, `0x004D9280` unlinks, the destroy request `0x0050B780` turns the thing into kind 2 and queues it, and the turn's deferred destroys `0x00516641` unlink it through `0x0050B980`; until then it still heads its chain for the head tests and the separation query skips it). The separation query `0x005102F0` walks the chains of the 3 by 3 cells around the stepping thing head first and keeps the kinds 1, 4 to 8 and `0x12` with no test of the state.
 
 ## What OpenTPW does
 
@@ -11,6 +11,6 @@ The original keeps one chain per map cell for every thing on it (tp.exe `0x004D9
 
 ## Still outside
 
-The online avatar (kind `0x12`) and the persons of the online game are things OpenTPW does not build (WALK-010), and the objects on a cell's chain are not neighbours (the query skips every other kind).
+The online avatar (kind `0x12`) is a thing the separation query reads like a guest or a staff member; OpenTPW builds no such thing and the persons of the online game either (WALK-010), so those heads and neighbours are missing from its chains, and the objects on a cell's chain are not neighbours (the query skips every other kind).
 
 Tests: `WalkChainTests`, `GuestThingListOrderTests`, `GuestCellChainLifecycleTests`.

@@ -370,9 +370,11 @@ public class EmployeeLivePortraitTests
 		hud.OpenStaffWindow();
 		var candidate = hud.SelectedCandidate!;
 		var hire = (UiSpriteFigure)hud.Stack.Top!.Find( "portraitFigure" )!;
-		Assert.AreEqual( rig.Renderer.PortraitFrame( candidate.Type, StaffSpriteRules.KeyOf( candidate ), 0 ), hire.Frame() );
+		Assert.IsNull( hire.Frame(), "a new hire figure shows nothing before its first due pass (UI-082)" );
+		rig.Prepare( 0.07f );
+		Assert.AreEqual( rig.Renderer.PortraitFrameAtStep( candidate.Type, StaffSpriteRules.KeyOf( candidate ), 0 ), hire.Frame() );
 		rig.Prepare( 0.2f );
-		Assert.AreEqual( rig.Renderer.PortraitFrame( candidate.Type, StaffSpriteRules.KeyOf( candidate ), 0.2f ), hire.Frame() );
+		Assert.AreEqual( rig.Renderer.PortraitFrameAtStep( candidate.Type, StaffSpriteRules.KeyOf( candidate ), 1 ), hire.Frame() );
 		hud.OpenEmployeeWindow( handyman );
 		var employee = (UiSpriteFigure)hud.Stack.Top!.Find( "portraitFigure" )!;
 		Assert.AreEqual( rig.Renderer.EmployeeFrame( handyman ), employee.Frame() );
@@ -382,7 +384,9 @@ public class EmployeeLivePortraitTests
 		Assert.AreEqual( 0.3f, Get<float>( hud, "employeePortraitStart" ), "a live role change must still reset the old fallback key/clock" );
 		mechanic.State = StaffState.Resting; rig.Prepare( 0.5f );
 		Assert.AreEqual( rig.Renderer.PortraitFrame( mechanic.Type, StaffSpriteRules.KeyOf( mechanic ), 0.5f - 0.3f ), employee.Frame() );
-		Assert.AreEqual( rig.Renderer.PortraitFrame( candidate.Type, StaffSpriteRules.KeyOf( candidate ), 0.5f ), hire.Frame(), "employee reads never change the hire callback's independent clock" );
+		Assert.IsNull( hire.Frame(), "opening the employee window closed the hire window, which ended its figure (0x49B7B4): the callback's next figure starts new and shows nothing yet" );
+		rig.Prepare( 0.6f );
+		Assert.AreEqual( rig.Renderer.PortraitFrameAtStep( candidate.Type, StaffSpriteRules.KeyOf( candidate ), 0 ), hire.Frame(), "employee reads never change the hire callback's independent clock" );
 	}
 
 	[TestMethod]

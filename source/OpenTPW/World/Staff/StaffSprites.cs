@@ -182,9 +182,12 @@ public static class StaffSpriteRules
 	/// </summary>
 	// [BIN:TPW-EXE:0x0074F758 hire figure script] register 0x10 (the flags +0xC4) = 0x51000 (0x40000: a screen-space sprite, no camera turn), slot +0xB4 = 1 (0x004768B0), register 0xF (the direction +0xC0) = 5 (0x004766D0), then the frames 0..7 (0x00476940, one per script step) and back to the start (0x00476020)
 	// [BIN:TPW-EXE:0x00542010 sprite draw] the direction is (+0xC0 + 0, a screen sprite taking no camera turn) & 7; above the bank's direction count − 1 it is mirrored and becomes 8 − direction
-	public static (int Slot, int Direction, bool Mirror, int Step) Portrait( float elapsed, int directions )
+	public static (int Slot, int Direction, bool Mirror, int Step) Portrait( float elapsed, int directions ) => PortraitAtStep( (int)MathF.Max( 0, elapsed * FramesPerSecond ), directions );
+
+	/// <summary>The slot, direction, mirroring and frame of the hire figure's <paramref name="steps"/>-th script frame (frame <c>steps</c> mod 8; the first FRAME of the script is step 0).</summary>
+	public static (int Slot, int Direction, bool Mirror, int Step) PortraitAtStep( int steps, int directions )
 	{
-		var step = (int)MathF.Max( 0, elapsed * FramesPerSecond ) % PortraitFrames;
+		var step = Math.Max( 0, steps ) % PortraitFrames;
 		var direction = PortraitDirection;
 		var mirror = direction > directions - 1;
 		return (PortraitSlot, mirror ? 8 - direction : direction, mirror, step);

@@ -22,7 +22,7 @@ public static class RideObjectStates
 /// <summary>
 /// The broken-down part of a ride object's state word (<c>CObject +0x19C</c> on the PC): 0 idle, 1 broken down, 4 condemned. One instance belongs to the ride's economy record and is shared with
 /// its visitor bridge, so the ride update that enters state 1 or 4 (<c>0x4E14E0</c> through <c>SetState</c> <c>0x4E0E60</c>), the repair and every opener (<c>SetState(0)</c>) write the one word the economy,
-/// the guests, the object window and the opening guard read. State 2 (a purchased upgrade not yet installed) is read from the economy's pending level and state 3 (not an attraction) from the type.
+/// the guests, the object window and the opening guard read. States 2 (an upgrade request, which overwrites a breakdown) and 3 (not an attraction) are stored in the economy record's own word (<see cref="ParkObjectState.StoredState"/>), which <see cref="ParkEconomy.ObjectState"/> reads first.
 /// </summary>
 // [BIN:TPW-EXE:0x004E0E60 SetState] states 0 and 3 only store the word; 1, 2 and 4 close the object first; the ride update's state 0 is the only caller of SetState(1) and SetState(4) (0x4E154E, 0x4E1590) and the state is left through SetState(0) (0x4DE487, 0x4DF438, 0x4DFCB8, 0x4E003C, 0x4E01B6)
 public sealed class RideStateWord

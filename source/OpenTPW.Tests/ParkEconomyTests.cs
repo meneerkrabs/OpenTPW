@@ -616,7 +616,7 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
-	public void MechanicsSkipACondemnedRideAndRepairABrokenRideBeforeItsUpgrade()
+	public void MechanicsSkipACondemnedRideAndInstallAnUpgradeRequestedOverABreakdown()
 	{
 		// ORACLE F19: the arrival 0xd9c0c starts a job only for state 1 or 2 or a call, so an uncalled condemned ride (state 4, life gauge 0) gets no mechanic.
 		var park = EconomyTestData.Park();
@@ -628,17 +628,15 @@ public class ParkEconomyTests
 		broken.Repair = 50;
 		broken.PendingLevel = 1;
 		Assert.AreEqual( RideObjectStates.Condemned, ParkEconomy.ObjectState( condemned ) );
-		Assert.AreEqual( RideObjectStates.BrokenDown, ParkEconomy.ObjectState( broken ), "a breakdown outranks a purchased upgrade" );
+		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( broken ), "the request's state 2 was stored over the breakdown (0x4E0086)" );
 		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
 		var second = EconomyTestData.HireBest( park, StaffType.Mechanic );
 		park.Advance( ParkCalendar.TicksForHours( 2 ) );
 		Assert.AreEqual( 0, condemned.MechanicId, "the condemned ride is no job" );
 		Assert.IsTrue( broken.MechanicId == mechanic.Id || broken.MechanicId == second.Id );
-		var work = park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade];
-		EconomyTestData.AdvanceToTurn( park, park.Turn + work + 2 );
-		Assert.IsFalse( broken.IsBrokenDown, "the breakdown is repaired first" );
-		Assert.AreEqual( 0, broken.Level, "the repair does not install the upgrade" );
-		Assert.AreEqual( 1, broken.PendingLevel );
+		park.Advance( ParkCalendar.TicksForHours( 200 ) );
+		// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the routine installs the upgrade for a ride in state 2, which the request left it in over the breakdown, and ends in SetState(0)
+		Assert.AreEqual( (1, 0, false), (broken.Level, broken.PendingLevel, broken.IsBrokenDown), "the upgrade is installed and the word is 0" );
 		Assert.AreEqual( 0, condemned.MechanicId );
 	}
 

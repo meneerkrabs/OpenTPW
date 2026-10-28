@@ -70,7 +70,7 @@ public sealed class LobbyEffects
 	/// <summary>The generator's next draw: the LCG step rotated right by 13 bits, which is also the stored state.</summary>
 	// [BIN:STP-PPC:0x100904A8 lobby generator] state = state × 0x19660D + 0x3C6EF35F, stored at +0x34 (inlined in the islands update)
 	// [BIN:TPW-EXE:0x5e0f4b lobby generator draw] tp.exe stores the step at lobby +0x34, rotates it right by 13 (ror 0xd) and stores and uses the rotated value; every inlined draw does the same (0x5d98d1 flying-mesh placement, 0x5da0d4 flying-mesh spawn, 0x5e113f island one-shots)
-	// [APPROX:UI-941] the islands' draws and the flying meshes (LobbyFlyingMeshes) advance the generator, in the original's order and at the same frame rate, but the original's camera wander draws from it too (0x5e09da, Mac 0x1009476C), so the strikes come in a different rhythm
+	// [BIN:TPW-EXE:0x5d57cd lobby generator seed] the front-end object's constructor stores time(NULL) (0x67d3f0 with 0) at +0x34, and the camera wander's draws (0x5e09da and the retargets) take from the same state as the islands (0x5e0f4b) and the flyers (0x5d98d1); a stream seeded from the clock has no order to keep, so the wander's draws, which only shift which draw an island tick meets, change nothing a player can tell, and the draws are uniform whoever takes them
 	public uint Draw()
 	{
 		state = System.Numerics.BitOperations.RotateRight( unchecked(state * 0x19660Du + 0x3C6EF35Fu), 13 );

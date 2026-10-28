@@ -169,6 +169,17 @@ public class RideWindowGaugeTests
 	}
 
 	[TestMethod]
+	public void TheLocalHappinessWalkWrapsItsLowColumnOntoTheRowAbove()
+	{
+		// 0x4cd8fd: the cell id ((y << 7) + x + 1) & 0xFFFF of column x = -1 on row y is y * 128, which is cell (127, y - 1)
+		var guests = new[] { (127, 4, 60f), (127, 5, 90f), (127, 6, 30f), (0, 5, 10f), (1, 6, 10f), (127, 3, 100f), (127, 7, 100f) };
+		Assert.AreEqual( (100 + 60 + 90 + 10 + 10) / 5, ParkHud.LocalHappiness( guests, 0, 5 ), "the east edge cells of rows 3 to 5 (the row above each walked row) count for an object in column 0 of row 5" );
+		Assert.AreEqual( 50, ParkHud.LocalHappiness( new[] { (127, 0, 50f), (127, 1, 70f), (127, 127, 99f) }, 0, 0 ), "row 0: y = -1 gives ids 0xFF7F and up and x = -1 on row 0 id 0, outside the table (nothing counted; and unreachable, no object stands on row 0); x = -1 on row 1 is id 128, cell (127, 0)" );
+		Assert.AreEqual( 50, ParkHud.LocalHappiness( new[] { (127, 0, 50f) }, 0, 1 ), "column x = -1 on row 1 reads id 128, which is cell (127, 0)" );
+		Assert.AreEqual( (10 + 70 + 20) / 3, ParkHud.LocalHappiness( new[] { (127, 126, 10f), (0, 126, 70f), (127, 125, 20f), (127, 127, 99f) }, 0, 127 ), "rows 126 and 127 (the high row clamps at 0x7f): the wrapped column reads (127, 125) and (127, 126), not (127, 127)" );
+	}
+
+	[TestMethod]
 	public void ASliderWithoutAnInnerRectangleRunsItsBallAlongItsWholeRectangle()
 	{
 		// 0x66ac00: attribute 0x40 copies the control's own rectangle into the track; the ride sliders have the layout command 3, the shop's and sideshow's do not

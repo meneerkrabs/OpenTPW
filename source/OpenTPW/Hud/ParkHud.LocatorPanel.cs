@@ -259,6 +259,7 @@ public sealed partial class ParkHud
 	private void CloseArmPanel()
 	{
 		CloseMessagePanel();
+		CloseCameraPanel();
 		CloseLocator();
 	}
 

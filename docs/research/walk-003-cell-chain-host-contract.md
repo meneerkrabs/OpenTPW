@@ -1,31 +1,16 @@
-# WALK-003: guest cell-chain host contract
+# WALK-003: the cells' thing chains (retired in round 10)
 
-Public-source audit at `f4be81cbbe120d1638cfb0355a701bdac3d59f1e` (2026-10-22). This is synthetic host regression coverage, not recovered mixed-person native behavior. Proposal #551 remains incomplete.
+The original keeps one chain per map cell for every thing on it (tp.exe `0x004D91F0` inserts at the head, `0x0050B6A0` moves a thing on every cell change, `0x004D9280` unlinks, the destroy request unlinks at once through `0x0050B980`). The separation query `0x005102F0` walks the chains of the 3 by 3 cells around the stepping thing head first and keeps the kinds 1, 4 to 8 and `0x12` with no test of the state.
 
-## Current source contract
+## What OpenTPW does
 
-- `GuestSimulation.cs`, `Occupy`: each guest has one `OccupiedCell`. Moving removes the old list member, appends to the destination list and assigns an increasing `CellSerial`. Appending implements head insertion because readers traverse in reverse. Repeating placement within the same cell is a no-op for membership and serials.
-- `RebuildOccupants`: restore sorts by saved serial, then guest-array index; zero serials provide legacy fallback. Positive saved serials are retained, and the allocator advances beyond the largest restored value.
-- `GuestSimulation.Swimming.cs`, `LeaveCellLists`: removes the old entry and clears `OccupiedCell`. Swim sessions take this route; this is an explicit host extension, not evidence of native ride/held membership.
-- `GuestSimulation.cs`, `SeparationForStep`: visits the surrounding 3 by 3 cells in row order, skips out-of-grid cells, reads guests head-first excluding Using/HeldByGuard/Gone, then appends staff with navigation on that cell.
-- `StaffWorldSimulation.Handymen.cs`, `StaffSeparation`: likewise appends members after guest walkers, in member enumeration order. Picked-up/resting staff are filtered. Neither path supplies a persistent mixed-person entry order.
+- Guests keep a list per cell (`GuestSimulation.Occupy`, oldest entry first, the head is the last) and the staff keep theirs (`StaffCellChain`). Both take their entry numbers from the one counter (`GuestSimulation.cellSerial`), so reading the two lists by number, newest first (`AppendCellChain`), is the original's single chain. Guests save their number (`Guest.CellSerial`); the staff actors' numbers are in `StaffActorSnapshot.CellSerial` (0 in an older save, which files the staff oldest, first member head-most).
+- A staff thing enters its cell's chain when its member first has a walk, goes to the head of another cell's chain when the walk's cell changes (`StaffWorldSimulation.UpdateStaffMember`, `BeginStaffTurn`), keeps its place while the member is in the player's hand (the position words are written only by the walk step `0x004FA2A0` and the teleport `0x004FA930`, the drop is `0x00505EA0`) and leaves it when the member is fired.
+- A guest on a ride (state 16) or carried by a guard (state 17) keeps the position of its last walked point and stays on the chain, so it is a neighbour like any other thing. Swimmers and guests changing are in no chain (`[EXT:pools-swim]`).
+- The heads of a cell's chain read by the original (the guest that waits at the entrance booth, the head of the arrival vehicle's stop cells, state 21) are the real head: a staff member that entered later heads the cell.
 
-## Added regression coverage
+## Still outside
 
-`GuestCellChainLifecycleTests` adds three asset-free tests:
+The online avatar (kind `0x12`) and the persons of the online game are things OpenTPW does not build (WALK-010), and the objects on a cell's chain are not neighbours (the query skips every other kind).
 
-1. Moving interior/head members between two cells removes every old link, preserves all remaining entries in order, and leaves no stale head after emptying a cell.
-2. Repeated same-cell placements preserve complete ordering and every saved serial; the next actual move consumes exactly one serial.
-3. Restoring a multi-cell snapshot retains complete chains, and the next movement receives the same next serial and ordering as uninterrupted execution.
-
-Existing `GuestThingListOrderTests` already covers newest-first guests, head preservation and legacy zero serials, as well as happiness-read invariants. The new cases specifically check complete migration chains and post-restore allocator continuation. Happiness values are unique synthetic labels used only to observe existing chain enumeration; tests do not change happiness policy or use it as native evidence.
-
-## Mixed-person design boundary
-
-A future shared chain needs typed identity (guest/staff/avatar), one shared entry sequence, explicit enter/leave hooks, saved membership/sequence, and the same ordered enumeration for both separation callers. Guest and staff IDs must not be assumed to share a namespace or timeline. Rebuilding by guest order followed by staff order cannot recover lost interleaving.
-
-Before implementing that model, collect witnessed timing and positions for staff cell entry, picked-up/resting staff, riding/held/leaving guests, and online-avatar scope. Restore/migration must specify behavior for saves with no mixed sequence. Coordinate GuestSimulation runtime changes with umbrella work and the ECON-022/SAVE-002 owners. No runtime change is made here, and no native acceptance item is marked passed.
-
-## Validation boundary
-
-Source/API inspection and a separate Python list/serial model check are available. C# compilation, actual test execution, browser checks and native executable runs have not been performed for this patch. CI must compile and run the new tests before any test-pass claim.
+Tests: `WalkChainTests`, `GuestThingListOrderTests`, `GuestCellChainLifecycleTests`.

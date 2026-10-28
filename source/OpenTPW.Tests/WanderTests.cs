@@ -288,14 +288,13 @@ public class WanderTests
 		var simulation = new GuestSimulation( Row( 10 ), settings, 3 ) { ArrivalsEnabled = false };
 		var guest = simulation.SpawnInPark( 4, 0 );
 		var staffWalk = new GuestNavigation { X = guest.Navigation.X + (1 << 13), Y = guest.Navigation.Y };
-		simulation.StaffOnMapView = () => [new GuestSimulation.StaffOnMap( 1, false, false, staffWalk.Cell, staffWalk )];
+		simulation.StaffChain.Follow( 1, staffWalk );
 		simulation.Tick( GuestSnapshotTests.Tick );
 		var separation = (Func<GuestNavigation, (int X, int Y)>)Delegate.CreateDelegate( typeof( Func<GuestNavigation, (int X, int Y)> ), simulation,
 			typeof( GuestSimulation ).GetMethod( "SeparationForStep", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )! );
 		var (x, y) = separation( guest.Navigation );
 		Assert.IsTrue( x < 0 && y == 0, $"the staff member stands on the +X side, so the push is toward −X ({x}, {y})" );
-		simulation.StaffOnMapView = null;
-		simulation.Tick( GuestSnapshotTests.Tick );
+		simulation.StaffChain.Remove( 1 );
 		Assert.AreEqual( (0, 0), separation( guest.Navigation ) );
 	}
 

@@ -90,6 +90,8 @@ public sealed class StaffMember
 	public float? CellY { get; set; }
 	/// <summary>Fraction of the host's next one-cell movement interval, persisted across loads.</summary>
 	public double TravelSeconds { get; set; }
+	/// <summary>The entry number the member's thing held on its cell's chain when a save was taken (<see cref="StaffCellChain"/>), until the world files it again; 0 when none.</summary>
+	internal long CellSerial { get; set; }
 	public bool IsAvailable => BusyTicks == 0 && State is not (StaffState.OnStrike or StaffState.PickedUp or StaffState.Resting);
 
 	// A handyman, entertainer or guard in a world (IStaffWorld): the original's state machine and walk (docs/reverse/WANDER-plan.md §4; tp.exe offsets in brackets).

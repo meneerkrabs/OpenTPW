@@ -53,6 +53,7 @@ public sealed partial class StaffWorldSimulation
 		if ( voices.Count > MaxQueuedVoices )
 			voices.RemoveRange( 0, voices.Count - MaxQueuedVoices );
 		Synchronize();
+		SyncChain();
 		// members loaded from an original save walk on to their saved destination and take back the claims of their jobs before any member updates
 		foreach ( var member in economy.Staff.Members.Where( member => member.ResumeDestination != null && member.Navigation == null && economy.DrivenByWorld( member ) ).ToList() )
 			Resume( economy, member );
@@ -63,6 +64,15 @@ public sealed partial class StaffWorldSimulation
 
 	/// <summary>One member's update of a turn: its place, its pre-update and its state handler (nothing for a member the economy does not hand to this world).</summary>
 	public void UpdateStaffMember( ParkEconomy economy, StaffMember member, long turn )
+	{
+		UpdateStaffMemberCore( economy, member, turn );
+		// the member's thing follows the walk's cell onto the head of that cell's chain (WALK-003; the walk step and the teleports end in 0x0050B6A0)
+		Chain.Follow( member.Id, member.Navigation, member.CellSerial );
+		if ( member.Navigation != null )
+			member.CellSerial = 0;
+	}
+
+	private void UpdateStaffMemberCore( ParkEconomy economy, StaffMember member, long turn )
 	{
 		if ( !economy.DrivenByWorld( member ) )
 			return;
@@ -463,7 +473,7 @@ public sealed partial class StaffWorldSimulation
 	/// separation's neighbours for a stepping member (tp.exe <c>0x005102F0</c>): the guests and the other placed staff on the 3 × 3 cells around his
 	/// cell, rows from the top and each row from the left, a cell's guests before its staff.
 	/// </summary>
-	// Approximation (ECON-022, registered at UpdateStaff): a cell's walkers are its guests in OpenTPW's cell lists (WALK-003) followed by the staff on it in member order, where the original walks the cell's head-inserted thing list (0x0050B6A0) of every class
+	// [BIN:TPW-EXE:0x005102F0 staff separation query] the same query as the guests': the cell's one thing chain from its head, guests and staff interleaved by the time each entered the cell (WALK-003), every state
 	private (int X, int Y) StaffSeparation( GuestNavigation self )
 	{
 		separationNeighbours.Clear();
@@ -474,15 +484,44 @@ public sealed partial class StaffWorldSimulation
 			{
 				if ( !grid.InBounds( x, y ) )
 					continue;
-				if ( Guests != null )
-					separationNeighbours.AddRange( Guests.WalkersOn( x, y ) );
-				foreach ( var other in members() )
-					if ( other.Navigation is { } walk && !ReferenceEquals( walk, self ) && walk.Cell == (x, y)
-						&& other.Job is not (StaffJob.PickedUp or StaffJob.Resting) && other.State != StaffState.PickedUp )
-						separationNeighbours.Add( walk );
+				if ( Guests is GuestSimulation guests )
+					guests.AppendCellChain( x, y, separationNeighbours );
+				else
+				{
+					// a world without a guest simulation (tests): only the staff are on the chains
+					if ( Guests != null )
+						separationNeighbours.AddRange( Guests.WalkersOn( x, y ) );
+					if ( Chain.At( (x, y) ) is { } chain )
+						for ( var index = chain.Count - 1; index >= 0; index-- )
+							separationNeighbours.Add( chain[index].Walk );
+				}
 			}
 		}
 		return GuestNavigation.Separation( self, separationNeighbours );
+	}
+
+	private StaffCellChain? ownChain;
+	private long ownSerial;
+
+	/// <summary>The staff's lists of the cell chains: the guest simulation's when there is one, so that guests and staff share one entry counter.</summary>
+	private StaffCellChain Chain => (Guests as GuestSimulation)?.StaffChain ?? (ownChain ??= new StaffCellChain( () => ++ownSerial ));
+
+	/// <summary>Files every placed member's thing on its cell's chain, and takes off those of members that no longer exist (a fire, a replaced economy).</summary>
+	private void SyncChain()
+	{
+		var chain = Chain;
+		var current = new HashSet<int>();
+		foreach ( var member in members() )
+		{
+			current.Add( member.Id );
+			chain.Follow( member.Id, member.Navigation, member.CellSerial );
+			if ( member.Navigation != null )
+			{
+				(Guests as GuestSimulation)?.NoteCellSerial( chain.Of( member.Id )?.Serial ?? 0 );
+				member.CellSerial = 0;
+			}
+		}
+		chain.KeepOnly( current );
 	}
 
 	private readonly List<GuestNavigation> separationNeighbours = new();

@@ -105,7 +105,8 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 	/// <summary>One staff actor's world position and movement phase for a park save.</summary>
 	/// <param name="CellX">Cell-unit position, null while the actor has not been attached to a world.</param>
 	/// <param name="TravelSeconds">Fraction of the next one-cell movement interval (<see cref="StaffMember.TravelSeconds"/>).</param>
-	public sealed record StaffActorSnapshot( int Id, float? CellX, float? CellY, double TravelSeconds );
+	/// <param name="CellSerial">The entry number the actor's thing holds on its cell's chain (WALK-003, <see cref="StaffCellChain"/>); 0 in a save made before the staff were on the chains, which files them oldest.</param>
+	public sealed record StaffActorSnapshot( int Id, float? CellX, float? CellY, double TravelSeconds, long CellSerial = 0 );
 
 	/// <summary>
 	/// The staff actors' positions for a park save: one record per employee, in hire order. Restoring writes
@@ -117,7 +118,7 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 
 	/// <summary>The actors' positions and movement phases for a park save, in member order.</summary>
 	public StaffWorldStateSnapshot CaptureSnapshot() => new( members()
-		.Select( member => new StaffActorSnapshot( member.Id, member.CellX, member.CellY, member.TravelSeconds ) )
+		.Select( member => new StaffActorSnapshot( member.Id, member.CellX, member.CellY, member.TravelSeconds, Chain.Of( member.Id )?.Serial ?? member.CellSerial ) )
 		.ToArray() );
 
 	/// <summary>
@@ -146,6 +147,7 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 					$"actor {actor.Id} stands outside the grid" );
 			Require( double.IsFinite( actor.TravelSeconds ) && actor.TravelSeconds >= 0 && actor.TravelSeconds < SecondsPerCell,
 				$"actor {actor.Id} travel fraction outside one interval" );
+			Require( actor.CellSerial >= 0, $"actor {actor.Id} has a negative chain entry number" );
 		}
 		var current = members().Select( member => member.Id ).ToHashSet();
 		Require( ids.SetEquals( current ), "the snapshot's actors must be exactly the current employees" );
@@ -165,6 +167,13 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 			member.CellX = actor.CellX;
 			member.CellY = actor.CellY;
 			member.TravelSeconds = actor.TravelSeconds;
+			member.CellSerial = actor.CellSerial;
 		}
+		// the members' things are filed again from the saved entry numbers; a save without them files the members oldest, first member head-most (the order the staff stood after the guests in)
+		Chain.Clear();
+		var legacy = 0;
+		foreach ( var member in members() )
+			if ( member.CellSerial == 0 )
+				member.CellSerial = --legacy;
 	}
 }

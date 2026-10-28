@@ -39,6 +39,7 @@ internal sealed record MessageTubeSaveData
 /// <param name="ContextInt">The int context word of a challenge row.</param>
 /// <param name="Lifetime">A terminal row's lifetime in unscaled milliseconds (0 for the others).</param>
 /// <param name="Read">The terminal row was read: its timers are stopped (the loader 0x0048EF70 sends such a record through the selection routine 0x0048D9C0); an unread row restarts both timers from the full lifetime.</param>
+[JsonConverter( typeof( MessageTubeRowSaveConverter ) )]
 internal sealed record MessageTubeRowSave( int Kind, string Text, int Tag, short ContextShort, int ContextInt, int Lifetime, bool Read )
 {
 	public const int Message = 0, Offer = 1, Progress = 2, Terminal = 3;

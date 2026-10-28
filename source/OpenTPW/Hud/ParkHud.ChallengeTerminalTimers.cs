@@ -7,6 +7,8 @@ public sealed partial class ParkHud
 	{
 		/// <summary>A challenge offer (tag record with the accept and decline actions 0x1A and 0x1B): reading it leaves its timers running, and removing it declines.</summary>
 		public bool IsOffer { get; } = isOffer;
+		public ActiveChallenge? OfferIdentity { get; init; }
+		public ActiveChallenge? PendingOfferIdentity { get; set; }
 		public ChallengeMessageIdentity Identity { get; } = identity;
 		public int Lifetime { get; } = lifetime;
 		public bool IsTerminal => Lifetime > 0 && !IsOffer;
@@ -37,7 +39,7 @@ public sealed partial class ParkHud
 	/// <summary>Injected monotonic, unscaled milliseconds. Set before posting rows; null uses the host monotonic clock.</summary>
 	internal Func<long>? ChallengeMessageClock { get; set; }
 	private long ChallengeUiMilliseconds => ChallengeMessageClock?.Invoke() ?? Environment.TickCount64;
-	internal const int ChallengeTerminalReleaseDelay = 500;
+	internal const int ChallengeTerminalReleaseDelay = MessageTubeSaveData.MaximumOfferReleaseDelay;
 
 	/// <summary>An offer's tag lifetime: 90 s (the tag records of the offers, 0x4d3220), its warning timer 5 s earlier.</summary>
 	internal const int ChallengeOfferLifetime = 90000;
@@ -178,6 +180,9 @@ public sealed partial class ParkHud
 	{
 		if ( !row.Visible )
 			return;
+		// Bind before hiding: cleanup of an answered/stale offer must never decline a newer follow-up.
+		if ( row.IsOffer )
+			row.PendingOfferIdentity = SameUnansweredOffer( row.OfferIdentity, CurrentUnansweredOffer ) ? row.OfferIdentity : null;
 		row.Read();
 		row.ReleaseAt = ChallengeUiMilliseconds + ChallengeTerminalReleaseDelay;
 		if ( closePanel && ReferenceEquals( openedChallengeRow, row ) )

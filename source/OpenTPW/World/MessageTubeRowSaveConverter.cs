@@ -5,7 +5,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// Reads the current tube row and the own-format row emitted by #888. Only the old read/stopped state survives migration:
-/// unread rows still restart their full lifetime, as #891 requires. Neither obsolete elapsed time nor queued delivery is restored.
+/// unread rows still restart their full lifetime, as #891 requires. Neither obsolete elapsed time nor legacy queued delivery is restored.
 /// The two wire shapes are disjoint; unknown members and a mixture of Read and the legacy timer fields remain errors.
 /// </summary>
 internal sealed class MessageTubeRowSaveConverter : JsonConverter<MessageTubeRowSave>
@@ -24,12 +24,12 @@ internal sealed class MessageTubeRowSaveConverter : JsonConverter<MessageTubeRow
 			return legacy.ToCurrent();
 		}
 		var current = value.Deserialize<CurrentRow>( options ) ?? throw new JsonException( "A message tube row is missing." );
-		return new( current.Kind, current.Text, current.Tag, current.ContextShort, current.ContextInt, current.Lifetime, current.Read );
+		return new( current.Kind, current.Text, current.Tag, current.ContextShort, current.ContextInt, current.Lifetime, current.Read ) { OfferReleaseDelayMs = current.OfferReleaseDelayMs };
 	}
 
 	public override void Write( Utf8JsonWriter writer, MessageTubeRowSave value, JsonSerializerOptions options )
 	{
-		// Keep #891's exact field order and shape, including false Read; never emit the obsolete fields again.
+		// Ordinary rows keep #891's exact field order and shape, including false Read; only pending offer removals add a delay.
 		writer.WriteStartObject();
 		writer.WriteNumber( nameof( value.Kind ), value.Kind );
 		writer.WriteString( nameof( value.Text ), value.Text );
@@ -38,11 +38,16 @@ internal sealed class MessageTubeRowSaveConverter : JsonConverter<MessageTubeRow
 		writer.WriteNumber( nameof( value.ContextInt ), value.ContextInt );
 		writer.WriteNumber( nameof( value.Lifetime ), value.Lifetime );
 		writer.WriteBoolean( nameof( value.Read ), value.Read );
+		if ( value.OfferReleaseDelayMs is { } delay )
+			writer.WriteNumber( nameof( value.OfferReleaseDelayMs ), delay );
 		writer.WriteEndObject();
 	}
 
 	[JsonUnmappedMemberHandling( JsonUnmappedMemberHandling.Disallow )]
-	private sealed record CurrentRow( int Kind, string Text, int Tag, short ContextShort, int ContextInt, int Lifetime, bool Read );
+	private sealed record CurrentRow( int Kind, string Text, int Tag, short ContextShort, int ContextInt, int Lifetime, bool Read )
+	{
+		public int? OfferReleaseDelayMs { get; init; }
+	}
 
 	[JsonUnmappedMemberHandling( JsonUnmappedMemberHandling.Disallow )]
 	private sealed class LegacyRow

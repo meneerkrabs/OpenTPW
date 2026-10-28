@@ -45,3 +45,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## Demolition's record clear and the placed station (round 10, package B)
 
 `demolition_oracle.py` runs the object demolition `0x527EE0` with the second layer's record clear `0x53B280` on synthetic cells; `demolition_golden.py` writes `ParkDemolitionTrackGolden.cs` from 17 cases (both accept `--check FILE`). `station_oracle.py` runs a kart or water station's placement (`0x528A70`, the station line, the exit and entry tiles) and the net worth `0x4C7DB0`; `station_golden.py` writes `StationFootprintGolden.cs`. Findings X37 and X38 in `docs/reverse/ORACLE.md` section 7.25.
+
+## Track records on the fence's cells (round 10, package B)
+
+`fence_track_oracle.py` lays synthetic second-layer track records on the fence sandbox's cells and runs purchases over them; `fence_track_golden.py` writes `ParkFenceTrackGolden.cs` from 16 cases (`--check FILE`, about eight minutes). Finding X39 in `docs/reverse/ORACLE.md` section 7.26.

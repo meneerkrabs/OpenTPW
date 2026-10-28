@@ -1,4 +1,4 @@
-"""Second-layer track records on the park fence's cells, run in the x86 oracle (docs/reverse/ORACLE.md, finding X37; PATH-007).
+"""Second-layer track records on the park fence's cells, run in the x86 oracle (docs/reverse/ORACLE.md, finding X39; PATH-007).
 
 `fence_oracle.FenceOracle` runs tp.exe's own fence routines on a synthetic 128 x 128 map whose structure records are all blank. This module lays synthetic track records on it (the records the track
 tool writes: kart or water origin 0xB / 0x10, station 0xD / 0x12, extension 0xC; the track-mode links +0xC, the walk link +0xD, the flags +0xE with the bridge bits and the add-on bit 0x10, the word +0x10: the

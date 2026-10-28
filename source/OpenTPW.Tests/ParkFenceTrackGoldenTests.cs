@@ -7,7 +7,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The park fence over track records against tp.exe's own routines (docs/reverse/ORACLE.md X37, PATH-007): the cases of <see cref="ParkFenceTrackGolden"/> were produced by running the executable's fence set-up
+/// The park fence over track records against tp.exe's own routines (docs/reverse/ORACLE.md X39, PATH-007): the cases of <see cref="ParkFenceTrackGolden"/> were produced by running the executable's fence set-up
 /// 0x5323F0, the Buy Land validator 0x531A50 and the purchase 0x5327E0 in the x86 oracle on synthetic maps whose second layer also holds track tiles (origins, stations and extensions). The fence routines read and write the
 /// same 0x28-byte record a track tile lives in, so <see cref="FenceEngine"/> must leave the cell flags, the fence's own records and every field of a tile's record (type, link, flags, word, counter, the fence links)
 /// as the executable does, answer the validator the same and refuse the purchases on which the executable hangs or crashes.

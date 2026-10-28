@@ -19,7 +19,7 @@ Code: `source/OpenTPW/World/Tracks/`, the track layer in `ParkCellMap`, the tool
   chosen, and the controller rebuilds its sections, collision objects and buoys. A valid circuit ends the tool and starts the queue tool.
 - The ride's own `Wateride.RSE` drives a `BumpController`: it waits for a valid track (`BUMP 5`), opens (`BUMP 7`), takes guests (`BUMP 1`),
   launches boats (`BUMP 4`) and hands guests back (`BUMP 2`). Boats run the traced integer physics around the loop and unload at the station.
-- Pieces are drawn from the ride's `wr_trck*.md2` meshes, boats from the supplemental mesh `wr_ring.md2`; rider k of a boat hangs its head from the boat's head dummy k (1 to 5, `0x549C60`, TRACK-026), as a kart's riders do.
+- Pieces are drawn from the ride's `wr_trck*.md2` meshes, boats from the supplemental mesh `wr_ring.md2`; rider k of a boat hangs its head from the boat's head dummy k (1 to 5, `0x549C60`, the joining list's order: the newest joiner is rider 1; TRACK-026 retired), as a kart's riders do. A guest on the joining list (BUMP 1, `0x54AA80`) has no head until the vehicle takes the list.
 - The cells, the controller and its boats are saved in the park-resume envelope (optional `Tracks` part) and restored exactly.
 - Jumps, tunnels and the Space Racers Teleport ("Add-ons"): a kart or water ride's upgrade list offers its researched add-ons, the build tool puts one on the
   ride's straight track in place of its pieces, and the vehicles drive over or through it (the Teleport hides them between its two gates).
@@ -560,7 +560,7 @@ what `0x51C270` returns besides the handle is not read); OpenTPW keeps the voice
 four-probe height, pitch and roll over the sampled pieces ("Vehicle height").
 Space and fantasy karts hover 1.6 units above the front/back mean with a sine bob (±0.43 units, period 512/6 ticks), have no roll of their own, bank into turns
 (`roll += yaw / 13 · π/2` with no clamp, `[TPW-EXE:0x5469C3]`; TRACK-024 retired. The original's roll is the negative of this pose's slope roll with the bank added in its own sign, so the
-bank's sign relative to the slope is the original's and the absolute roll sign is a rendering convention, `[EXT:kart-roll-convention]`) and stand on a `gk_shadow` instance on the four-probe mean. The riders' heads are `RideHeadRenderer` sources at the kart's head dummies (TRACK-026).
+bank's sign relative to the slope is the original's and the absolute roll sign is a rendering convention, `[EXT:kart-roll-convention]`) and stand on a `gk_shadow` instance on the four-probe mean. The riders' heads are `RideHeadRenderer` sources at the kart's head dummies (`0x549C60`).
 `--debug-kart-track` (Debug builds) places Dino Karts with a circuit, three karts and a long race for captures.
 
 ### Saves

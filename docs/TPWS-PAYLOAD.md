@@ -683,7 +683,7 @@ derived again by the node constructor (the loader runs the loop setup `0x442cd0`
 rotation float for 0x10). The section words are named: `section+112` is the node's mesh instance (re-attached
 through `0x463ab0`), `+216` bank, `+220` incline, `+224` yaw, `+232` the height parameter and `+248`
 the loop rotation (setters `0x444150`, `0x4441d0`, `0x444270`). The header's remaining track flags
-(SAVE-921) are kept raw. The placement cell `+28`/`+32` is dead data (the loader hands it to `0x436ac0`, which never reads it); the train words `+0x38` (the state of the train loop sound routine `0x439780`) and `+0x68` (its handle) and `+0x64` are restored raw by the loader and not played here (SAVE-923); the car byte `+0x44` is the car's seat share, which `0x43ba90` computes and the import's seats per train reproduce. A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
+(SAVE-921) are kept raw. The placement cell `+28`/`+32` is dead data (the loader hands it to `0x436ac0`, which never reads it); the train words `+0x38` (the state of the train loop sound routine `0x439780`) and `+0x68` (its handle) and `+0x64` are restored raw by the loader; the state seeds the slot's sound state (`CoasterTrainSounds`) and no loop plays until the slot's next setup (SAVE-923, narrowed to the saved handles); the car byte `+0x44` is the car's seat share, which `0x43ba90` computes and the import's seats per train reproduce. A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
 split). `OriginalParkImport.Import` runs the reader on every save and exposes the result as
 `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell queries and `CoasterSections` joins that require both cell
 and object `Info.Id` to attach attraction ids. Missing or ambiguous scene matches remain visible;
@@ -1042,7 +1042,7 @@ RideSystem, attraction and economy readers over the second fixture set
   extra paths, so those readers are still proven on Easymode alone. A Theme Park World
   save with a built coaster does not exist in any available corpus: the Coasters block's
   nonempty shape rests on the static Mac contract and the Theme Park Inc cross-check.
-- The meaning of the coaster header's track flags (SAVE-920, SAVE-921) and the train sound words (SAVE-923); the train layout is decoded from the loader and the saver but
+- The meaning of the coaster header's track flags (SAVE-920, SAVE-921) and the train sound handles (SAVE-923); the train layout is decoded from the loader and the saver but
   no Theme Park World save with a coaster exists to check it on real bytes.
 - The control manager and the macro AI before the calendar (their widths are traced, their bodies are not), the guest, analyser and weather bodies, record
   fields marked raw above, the extension data, the RideSystem control and embedded words and the remaining

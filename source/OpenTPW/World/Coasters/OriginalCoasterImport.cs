@@ -172,7 +172,7 @@ internal static class OriginalCoasterImport
 				if ( !float.IsFinite( slot.Position ) || slot.Position < 0 || !float.IsFinite( slot.Speed ) || slot.Speed < 0 )
 					throw new InvalidDataException( $"{what}: train {index} stands at {slot.Position} with the speed {slot.Speed}." );
 				// [BIN:TPW-EXE:0x43CE20 train flags] the train's flags 0x10 (braking), 0x20 (in the station), 0x40 (bumped) and 0x80 (headway) are what the train step and the station step read; bits 0, 1 and 2 mark the slot set up, which every train in service is
-				trains.Add( new CoasterRide.OriginalTrain( slot.Position, slot.Speed, (CoasterTrainFlags)(slot.Flags & 0xF0) ) );
+				trains.Add( new CoasterRide.OriginalTrain( slot.Position, slot.Speed, (CoasterTrainFlags)(slot.Flags & 0xF0), slot.Word38 ) );
 			}
 			for ( var index = inService; index < slots.Count; index++ )
 			{

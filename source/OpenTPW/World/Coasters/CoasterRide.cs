@@ -51,6 +51,7 @@ public sealed class CoasterTrain
 		cars = new List<int>[count];
 		boarding = new List<int>[count];
 		Seats = new int[count];
+		OnWinch = new bool[count];
 		for ( var car = 0; car < count; car++ )
 		{
 			cars[car] = new List<int>();
@@ -59,6 +60,15 @@ public sealed class CoasterTrain
 	}
 
 	public int Index { get; }
+	/// <summary>
+	/// Per car: whether its last hop found it on a winch section (car flag <c>0x2</c>). Inputs of the train loop sound (<see cref="CoasterTrainSounds"/>), not part of the hash or of a save: a restored train
+	/// has none until its first hop, as a loaded original train's flags hold what the last tick before the save left.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43d1ee winch car flag] the hop sets car flag 0x2 when the sample's section has flag 0x800 (0x43d192..0x43d1ee) and clears it otherwise (0x43d23e); the sound pass counts the cars with it (0x43d73d)
+	internal bool[] OnWinch { get; }
+	/// <summary>Whether the last hop braked the train (train flag <c>0x10</c>): kept apart from <see cref="Flags"/>, which are hashed and saved.</summary>
+	// [BIN:TPW-EXE:0x43d2e9 braking flag] the braking branch of the hop sets flag 0x10 (a car past the braking start and flag 0x40 clear, 0x43d28e..0x43d294); the other branch clears it (0x43d345)
+	internal bool BrakingNow { get; set; }
 	/// <summary>
 	/// Controller time when slot setup started the non-bend cars' looping wheel clips. Presentation only: all cars of a
 	/// train start together, independent of their visibility or renderer lifetime. A restored train starts a fresh clip.
@@ -121,6 +131,22 @@ public sealed class CoasterRide
 	private CoasterKnot[] curveSecondRail = Array.Empty<CoasterKnot>();
 	private (System.Numerics.Vector3 Back, System.Numerics.Vector3 Forward)[] curveSecondControls = Array.Empty<(System.Numerics.Vector3, System.Numerics.Vector3)>();
 	private HashSet<int> winchSections = new();
+	/// <summary>The loop sound of the trains (<see cref="CoasterTrainSounds"/>), set by the object's runtime; null in a host without one.</summary>
+	internal CoasterTrainSounds? TrainSounds { get; set; }
+	/// <summary>The state word of each train slot's loop sound (train <c>+0x38</c>), which outlives the train in the slot as the slot's array does.</summary>
+	private uint[] trainSoundStates = Array.Empty<uint>();
+	/// <summary>The last braking hop's x⁴ of the current tick (the motion tick's local at <c>ebp-0x38</c>), which the sound pass reads for a braking train.</summary>
+	internal float BrakeFactor { get; set; }
+
+	internal uint TrainSoundState( int slot ) => slot < trainSoundStates.Length ? trainSoundStates[slot] : 0;
+
+	internal void SetTrainSoundState( int slot, uint state )
+	{
+		if ( slot >= trainSoundStates.Length )
+			Array.Resize( ref trainSoundStates, slot + 1 );
+		trainSoundStates[slot] = state;
+	}
+
 	// The hop queue of MoveTrains, kept between ticks so a tick allocates nothing.
 	private float[] hopBudgets = Array.Empty<float>();
 	private bool[] hopFriction = Array.Empty<bool>();
@@ -451,12 +477,16 @@ public sealed class CoasterRide
 
 	/// <summary>Station braking (<c>0x40bb8</c>): x = (front − start)/(n − start), 1 outside [0, 1]; v(1 − x⁴) + floor·x⁴.</summary>
 	// [BIN:STP-PPC:0x10040BB8 station braking] x = (front − ctl+308)/(n − ctl+308), x = 1 outside [0, 1]; v = fmadds(v, 1 − x⁴, W·x⁴)
-	public static float BrakeBlend( float speed, float floor, float front, float start, float total )
+	public static float BrakeBlend( float speed, float floor, float front, float start, float total ) => BrakeBlend( speed, floor, front, start, total, out _ );
+
+	/// <summary><see cref="BrakeBlend(float, float, float, float, float)"/> that also gives x⁴, which the motion tick keeps for the train loop sound.</summary>
+	// [BIN:TPW-EXE:0x43d2f2 braking factor] the braking branch stores x⁴ (x squared, then squared again) in the tick's local at ebp-0x38 (0x43d2e5..0x43d2f2), where the sound pass reads it (0x43d76a)
+	public static float BrakeBlend( float speed, float floor, float front, float start, float total, out float x4 )
 	{
 		var x = (front - start) / (total - start);
 		if ( x < 0 || x > 1 || float.IsNaN( x ) )
 			x = 1;
-		var x4 = x * x * (x * x);
+		x4 = x * x * (x * x);
 		return MathF.FusedMultiplyAdd( speed, 1f - x4, floor * x4 );
 	}
 
@@ -484,6 +514,8 @@ public sealed class CoasterRide
 			Unload( trains[index], boardingList: true );
 			Unload( trains[index], boardingList: false );
 		}
+		for ( var index = count; index < trains.Count; index++ )
+			TrainSounds?.TearDown( trains[index] );
 		if ( trains.Count > count )
 			trains.RemoveRange( count, trains.Count - count );
 		while ( trains.Count < count )
@@ -491,6 +523,8 @@ public sealed class CoasterRide
 			var train = new CoasterTrain( trains.Count, Definition.CarCount, TimeSeconds );
 			RebuildSeats( train );
 			trains.Add( train );
+			// [BIN:TPW-EXE:0x43be10 slot setup] a train that comes below the count gets the slot setup, which starts its loop sound (0x4392A0)
+			TrainSounds?.SetUp( train );
 		}
 		if ( count == 0 || samples.Length == 0 )
 			return;
@@ -608,7 +642,10 @@ public sealed class CoasterRide
 		// The idle train slot keeps its cars' coordinates (0x43bf20 clears only the flags), so the next placement starts where train 0's last car stood.
 		LeadCarCoordinate = LeadCoordinate();
 		foreach ( var train in trains )
+		{
 			UnloadAll( train );
+			TrainSounds?.TearDown( train );
+		}
 		MoveAdmissionToLeaving();
 		trains.Clear();
 		IntersectionCount = 0;
@@ -1028,11 +1065,15 @@ public sealed class CoasterRide
 		MoveTrains( budget );
 		foreach ( var train in trains )
 			ClearHeadway( train );
+		TrainSounds?.StateTick();
 		// [BIN:TPW-EXE:0x43b8b0 coaster station] the station step is skipped entirely in mode 64 (breakdown); an arriving train unloads open or closed and boarding needs state 4; the tick also skips the station step (and 0x439570) for a train whose flag bit 0x2 is clear (0x435ce5 test byte [esi],2); the slot setup 0x43be10 sets it (0x43be45) on each train 0x43cad6 brings below the count, and 0x43cb08..0x43cb97 clear it (0x43cb95, under controller flag 0x800) on the trains at or past it, which leave the list here, so every train in the list counts as having it set (the stride-0x60 car flags at 0x43d1ee/0x43d23e are another word)
-		if ( IsBroken || State is CoasterControllerState.Built )
-			return;
-		foreach ( var train in trains )
-			StationStep( train );
+		if ( !(IsBroken || State is CoasterControllerState.Built) )
+		{
+			foreach ( var train in trains )
+				StationStep( train );
+		}
+		// [BIN:TPW-EXE:0x435cf6 train sounds] every train with flag 0x2 gets 0x439570 after its station step (open and closed outside mode 64) or without one (0x435d1c)
+		TrainSounds?.PositionTick();
 	}
 
 	/// <summary>The ride's state change (<c>0x435730</c>) with what it does to the trains and the rings; see <see cref="State"/>.</summary>
@@ -1044,7 +1085,10 @@ public sealed class CoasterRide
 			case (CoasterControllerState.Incomplete, CoasterControllerState.Built):
 				// 0x435730 runs slot setup for every train on 1 → 2; other state changes do not restart the clips.
 				foreach ( var train in trains )
+				{
 					train.WheelAnimationStartSeconds = TimeSeconds;
+					TrainSounds?.SetUp( train );
+				}
 				break;
 			case (CoasterControllerState.Built, CoasterControllerState.Incomplete):
 			case (CoasterControllerState.Open, CoasterControllerState.Incomplete):
@@ -1103,6 +1147,8 @@ public sealed class CoasterRide
 			hopFriction = new bool[count];
 		}
 		hopQueue.Clear();
+		// the tick's local starts as a pointer read as a float (0x43cea4), which rounds to 0
+		BrakeFactor = 0;
 		for ( var index = 0; index < count; index++ )
 		{
 			hopBudgets[index] = budget;
@@ -1157,14 +1203,23 @@ public sealed class CoasterRide
 				at += count;
 			var winch = winchSections.Contains( SampleAt( at + Hop ).Section );
 			anyWinch |= winch;
+			train.OnWinch[car] = winch;
 			sum += CarSpeed( Definition, speed, SampleAt( at ).Position.Y, SampleAt( at + Hop ).Position.Y, winch ? winchFloor : minimumFloor );
 			pastBraking |= BrakingStart < at;
 		}
 		var next = sum / cars;
 		if ( pastBraking && (train.Flags & CoasterTrainFlags.Bumped) == 0 )
-			next = BrakeBlend( next, winchFloor, Definition.CarOffsets[0] / Spacing + position, BrakingStart, count );
-		else if ( friction )
-			next *= Definition.FrictionMultiplier;
+		{
+			next = BrakeBlend( next, winchFloor, Definition.CarOffsets[0] / Spacing + position, BrakingStart, count, out var factor );
+			train.BrakingNow = true;
+			BrakeFactor = factor;
+		}
+		else
+		{
+			train.BrakingNow = false;
+			if ( friction )
+				next *= Definition.FrictionMultiplier;
+		}
 		next = MathF.Max( next, anyWinch ? winchFloor : minimumFloor );
 		next = MathF.Min( next, SpeedCap );
 		var distance = System.Numerics.Vector3.Distance( SampleAt( position ).Position, SampleAt( position + Hop ).Position );
@@ -1352,7 +1407,7 @@ public sealed class CoasterRide
 	// ---- Original save import -------------------------------------------------------------------------
 
 	/// <summary>One saved train slot of an original Coasters block as the import restores it: the reference car's position (train <c>+0x74</c>), the speed (<c>+0x78</c>) and the flags (<c>+0</c>).</summary>
-	internal readonly record struct OriginalTrain( float Position, float Speed, CoasterTrainFlags Flags );
+	internal readonly record struct OriginalTrain( float Position, float Speed, CoasterTrainFlags Flags, uint SoundState = 0 );
 
 	/// <summary>
 	/// Restores a coaster block of an original save into this fresh ride (<see cref="OriginalCoasterImport"/>): its station was placed, which built the three station
@@ -1400,6 +1455,8 @@ public sealed class CoasterRide
 			train.Position = saved.Position;
 			train.Speed = saved.Speed;
 			train.Flags = saved.Flags;
+			// [BIN:TPW-EXE:0x4383FE sound state load] the loader restores the slot's sound state (+0x38) raw, and no slot setup follows for a slot that is set up (flag 0x1): the loops stay silent until the next setup, which then compares its state with this one
+			SetTrainSoundState( train.Index, saved.SoundState );
 			UpdateExtents( train );
 			trains.Add( train );
 		}

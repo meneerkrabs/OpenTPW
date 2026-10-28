@@ -174,6 +174,9 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 				() => Placement.GridOrigin );
 			Runtime.SetTourStation( ComputeTourStation );
 			Runtime.SetNodeEngine( GetNodeTransform );
+			// the train loops of a coaster lie at the camera car while the player rides the train
+			if ( Runtime.Coaster?.TrainSounds is { } trainSounds )
+				trainSounds.IsRidden = train => Level?.RideView is { } view && ReferenceEquals( view.Ride, this ) && view.Train == train.Index;
 			using ( LoadProfile.Measure( "object-models" ) )
 				BuildModels();
 			// the type's hoarding (docs/OBJECTS.md, "Hoarding"), on the level's terrain at this footprint; its state lives in the runtime

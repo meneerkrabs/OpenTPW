@@ -150,11 +150,20 @@ public class ParkCommandCodecTests
 		(new PoolCellsCommand( false, true, new[] { (20, 21), (21, 21) } ) { Player = 1, First = true }, "0a4e02000104282a2a2a"),
 	};
 
+	/// <summary>
+	/// [EXT:online-coop-undo] A shared park's track line whose click keeps the line tool after a close (C5-3): version 6, the kind's own fields; the same line without the flag keeps the schema's
+	/// version-1 bytes.
+	/// </summary>
+	internal static readonly (ParkCommand Command, string Hex)[] TrackToolSchema =
+	{
+		(new LayTrackLineCommand( 17, 40, 50, 40, 56 ) { Player = 2, KeepsTool = true }, "0c50042250645070"),
+	};
+
 	[TestMethod]
 	public void EveryCommandKindHasPinnedBytesUnderTheCurrentVersion()
 	{
-		Assert.AreEqual( (5, 2, 3, 4, 5), (ParkCommandCodec.Version, ParkCommandCodec.QueueVersion, ParkCommandCodec.ExpectationVersion, ParkCommandCodec.PurchaseVersion,
-			ParkCommandCodec.StrokeVersion),
+		Assert.AreEqual( (6, 2, 3, 4, 5, 6), (ParkCommandCodec.Version, ParkCommandCodec.QueueVersion, ParkCommandCodec.ExpectationVersion, ParkCommandCodec.PurchaseVersion,
+			ParkCommandCodec.StrokeVersion, ParkCommandCodec.TrackToolVersion),
 			"each generation adds its own pinned table beside this one, which holds versions 1 and 2" );
 		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>(), Schema.Select( row => row.Command.Kind ).ToArray(), "one schema row per kind, no kind without one" );
 		var types = typeof( ParkCommand ).Assembly.GetTypes().Where( type => type.IsSubclassOf( typeof( ParkCommand ) ) && !type.IsAbstract ).ToArray();
@@ -366,6 +375,34 @@ public class ParkCommandCodecTests
 			var bytes = Convert.FromHexString( hex );
 			bytes[0] = 10;
 			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes ), $"{command.Kind} as version 5" );
+		}
+	}
+
+	[TestMethod]
+	public void AKeptTrackToolIsALinesOwnGenerationAndSinglePlayersLinesKeepTheirBytes()
+	{
+		foreach ( var (command, hex) in TrackToolSchema )
+		{
+			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ) );
+			var bytes = Convert.FromHexString( hex );
+			var decoded = ParkCommandCodec.Decode( bytes );
+			Assert.AreEqual( command, decoded );
+			Assert.IsTrue( decoded is LayTrackLineCommand { KeepsTool: true } );
+			CollectionAssert.AreEqual( bytes, ParkCommandCodec.Encode( decoded ) );
+			// without the flag, the same line is the schema's version 1, as a single player's
+			var plain = Schema.Single( row => row.Command.Kind == command.Kind );
+			Assert.AreEqual( plain.Hex[..4] + "04" + plain.Hex[6..], ParkCommandCodec.ToHex( (LayTrackLineCommand)command with { KeepsTool = false } ) );
+			Assert.AreEqual( "0" + "c" + plain.Hex[2..4] + "04" + plain.Hex[6..], hex, "only the generation differs" );
+			for ( var length = 0; length < bytes.Length; length++ )
+				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"cut to {length} bytes" );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), "with a trailing byte" );
+		}
+		// version 6 is the track line's alone
+		foreach ( var (command, hex) in Schema.Concat( ExpectationSchema ).Concat( PurchaseSchema ).Concat( StrokeSchema ).Where( row => row.Command is not LayTrackLineCommand ) )
+		{
+			var bytes = Convert.FromHexString( hex );
+			bytes[0] = 12;
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes ), $"{command.Kind} as version 6" );
 		}
 	}
 

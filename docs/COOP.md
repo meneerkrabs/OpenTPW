@@ -2102,11 +2102,12 @@ kart or water ride's track through its claim, with the host's tools' rules, ever
   valid circuit ending it, following the queue, or keeping the line tool when the click held exactly
   Ctrl. A continuation that ended, replaced or restarted the tool stops the click there
   (`CellBuildTool`'s generation).
-- **Backspace.** The claim makes the track the guest's alone, so its Backspace takes its last line back
-  (`UndoTrackLineCommand`), one at a time: nothing is popped until the outcome (`CellBuildTool.WaitingUndo`),
+- **Backspace.** The claim makes the track the guest's alone, so its Backspace takes its last line back,
+  one at a time: nothing is popped until the outcome (`CellBuildTool.WaitingUndo`),
   the tool takes no click meanwhile, and the outcome pops the line and moves the tool on as the host's
   undo does. A refusal of the rights ends the tool and says why; one of the park takes nothing back,
-  quietly; one without a record leaves the line for another try; an outcome not known ends the tool.
+  quietly; one without a record leaves the line for another try; an outcome not known ends the tool. Since
+  C5-3 the Backspace is a take-back the host's journal decides (see "The track tools (C5-3)").
 - **The cut.** The edit tool's second click sends `CutTrackCommand` and waits with the cut as its ghost;
   the outcome finishes the edit as the host's does (a valid circuit ends the tool, an open one turns it
   into the line tool from its open end, the claim kept).
@@ -2241,8 +2242,9 @@ says who may issue it in a shared park; a test pins each class's kinds:
 - **attractions, staff, research and finance**: the four management rights' (below), a wave machine's
   settings the attractions' since C5-2 (no claim applies: a wave machine is no claimable ride);
 - **the host's tools**: what the host's tools issue and no guest's tool does (the single-cell kinds, the
-  undo of lines, queue segments, pool strokes and since C5 a slide's last piece, a pool bridge's removal):
-  a guest's Backspace is a take-back of the building class, whose inverse only the host fills;
+  undo of lines, queue segments, pool strokes and since C5 a slide's last piece and a track line, a pool
+  bridge's removal): a guest's Backspace is a take-back of the building class, whose inverse only the host
+  fills;
 - **the host's alone**: the developer prototype's placement and removal, the finale's dismissal, a
   challenge's answer, the speed, and the session's own kinds (the clock, the grant, a seat's release and its
   rights);
@@ -2496,9 +2498,10 @@ action goes to the host, and the guest's tools and windows follow what came back
 
 `[EXT:online-coop-undo]` C5 makes Backspace in a building tool of a shared park take back the player's own last
 step of that tool, for the host and every guest alike, under the normal refund rules (decision Q14, A), and
-refuses it while a later command still depends on it. The plan (v33, after thirty-two Codex rounds) makes it
+refuses it while a later command still depends on it. The plan (v38, after thirty-seven Codex rounds) makes it
 three parts that reach main as one merge: C5-1 the host's undo journal, the path, queue and slide tools;
-C5-2 the pool strokes and the wave machine; C5-3 the kart, water and coaster tools.
+C5-2 the pool strokes and the wave machine; C5-3 the kart, water and coaster tools (the kart and water
+tools first, then the coaster's pylons).
 
 **What stays as it was.** Undo stays where the original has it: Backspace inside a building tool, which takes
 back that tool's last step; there is no general undo key across tools. A placed object has no undo: it leaves
@@ -2612,6 +2615,62 @@ strokes, so its Backspace takes back only strokes drawn since. A guest's tool ke
 as the host's stroke stack does: once the tool ends, Backspace takes none of them back, and a late outcome of a
 stroke drawn before names none of the next run.
 
+**The track tools (C5-3).** The kart and water line tools' Backspace takes back the player's own newest
+line of the ride, for the host and every guest alike, as single player's Backspace takes it back: a twin park
+of a game of one, given the same clicks and Backspaces, ends with the same tiles and the same money. A line is
+a step when it leaves its tool on: its footprint is the tiles it laid and the tiles whose overlap counter it
+raised, which its inverse, the directional clear (`UndoTrackLineCommand`), takes back; every other real
+write of its record (the arms it gave its neighbours, the circuit walk's refresh of earlier tiles and the
+station) is its changes, which a later step's dependency check sees and its own take-back does not compare.
+The track layer reports each tile whose record really changed, as the map's setters report its cells. A line
+whose walk closed the circuit is no step, wherever it ended, nor is one the park refused or that ended its tool
+otherwise (on its start, stopped short, on existing track), as the original keeps no take-back for it; at the
+stack's 1,025 corners a session's tool ends before its line goes, where single player's goes on.
+- **The line tool, followed by the host.** Backspace's first-line flag (the repair of the station's exit when
+  the pop leaves one point) depends on the tool's stack, which the host does not see; a request names no flag
+  (`TakeBackCommand` gains no field). So the host follows each member's line tool per ride from its records:
+  an entry (the walk to the open end, or a cut that leaves the circuit open) loads its corners, at least one
+  point and at most 1,025; each step pushes one; a closing line ends it, or, when the click held exactly Ctrl
+  with no queue start pending, restarts it without a start. That restart is the issuer's own, so a shared
+  park's line carries it (`LayTrackLineCommand.KeepsTool`, a codec generation of its own, 6, that only a
+  session writes: single player's lines keep their bytes), and the issuer's continuation follows the flag its
+  line carried. A line laid with the tool off (after its end, before an entry) is no step. The host fills
+  the inverse's flag from the depth the step was laid on: set at one, as the tool's own pop would set it.
+- **What the clear spares.** The directional clear spares the ride's exit and entry tiles, as single player's
+  Backspace does: a line laid from a station whose exit was never laid (its placement there refused, or a
+  migrated station of an older save, which lays only its two station tiles) leaves that exit standing when
+  it is taken back, counted down and refunded nothing, and the station's next line from it is a step again.
+  A line that crossed a tile whose counter was at its limit (`short.MaxValue`) raised nothing there, and the
+  clear counts every tile down: its take-back is `InTheWay`.
+- **Tombstones.** A line needs its ride's claim, held since the line: when the claim ends or changes hands
+  (released, expired, taken by another, gone with the grant), or a cut changes the ride's track, the line
+  becomes a tombstone in its member's list, its record and ride with no cells. A take-back naming it is decided
+  on its ride and `Changed`, which the rights refuse first, in the claim's words, while the member holds no
+  claim of the ride; a claim taken again later brings no line back. A tombstone goes with its member's bounds,
+  its departure or its ride; other members' steps never push it out.
+- **Rights.** `UndoTrackLineCommand` is the host's tools' since C5-3: no guest names a line by its content.
+  The host puts the step's own ride on the take-back as its claimed ride (−1 when the member has no such step,
+  whatever ride a request named), and the rights ask that claim of the take-back's player, the host's own
+  included; for a take-back they ask it before another player's claim, so a claim another player took while the
+  take-back waited says the claim is lost and ends the tool. A taken take-back renews the claim's lease, as
+  any accepted command of its holder naming the ride does.
+
+**Other rides' tiles (C5-3).** A track line and its take-back leave alone the track of every kart or water ride
+another seat claims; an unclaimed ride's track is any granted player's to join, as in single player. OpenTPW's
+owner word (TRACK-021) keeps tagged rides apart, but an older save's tiles have owner word 0, which every
+builder joins and every editor clears, so a ride's track is read by provenance (`TrackProvenance`): its tagged
+tiles, its seeds (its station's tiles and the laid tiles at its entry and its exit), the tiles its own walks
+visit (the circuit walk, which goes straight on through a tile whose arms are across its heading, and the open-end
+collector), run as they are on a throwaway copy of the park, and every tile a flood from all of these reaches over
+every arm, whether or not the tile reached points back, through tiles of any owner word. A tile is each ride's
+whose track holds it. The test is of real effects: the line's own writer, or the take-back's clear, repair and
+walk, runs on a copy of the park with a copy of the bank's balance and inert callbacks, and no ride state is
+rebuilt; for each other ride claimed against the player, no tile of its track may change (each cell's record
+compared, so a neighbour's refresh that writes the same values is nothing), and its track must stay the same
+tiles (a new tile joined to its dangling arm, or a cut, changes it). A refused line says the claim's note,
+nothing laid, on every peer: the guest's own park refuses it before it goes, and the host at its record; a
+refused take-back is `InTheWay`, the park, the rides and the ledger as they were.
+
 **The wave machine (C5-2).** A wave machine's settings are of the attractions class: a guest with the
 attractions right applies them through the management queue (a `Waves` knob on the machine's attraction
 target), its rights asked first, and the window opens on the settings it asked for until they are back. A
@@ -2623,7 +2682,9 @@ claimable ride.
 be taken back." (`Changed`), "That cannot be taken back while something is in the way." (`InTheWay`), "Only what
 you built with this tool can be taken back." (not own, not the last, or too long ago); a refusal of the rights
 says the rights' note; a finished slide says nothing. A stroke's take-back says every verdict, its `InTheWay`
-included, and one refused by the rights ends that paint or erase mode alone.
+included, and one refused by the rights ends that paint or erase mode alone. A track line's take-back refused
+for its claim says the claim-lost note and ends the line tool, the host's too; the corners a line tool loads
+were laid by no step of its player's, and Backspace on them says the not-own note and sends nothing.
 
 **Tests.** `CoopSessionTests.Undo` (path segments and chains, native and legacy queue lines with their refunds
 and their owner words compared on every peer, the money-stopped segment's residue, other players' lines across
@@ -2639,8 +2700,18 @@ settings, the clipped strokes' set),
 `CoopSessionTests.UndoPools` (a guest's strokes with their refunds and charges, the host's Backspace kept on a
 refusal, the split at the cell bound, a first batch the host could not take, a stroke of an earlier run of the
 tool, a slide's splash on a stroke's cell until its tower's sale, swimmers in a stroke's water on both parks until they are
-out, the wave machine through the queue), `CoopJoinSessionTests.Undo` (take-backs and a stroke across a resync), the codec's pinned bytes and
-the class table.
+out, the wave machine through the queue), `CoopSessionTests.UndoTracks` (a guest's and the host's lines taken
+back newest first against a twin park of a game of one, tiles and money; the first-line flag after a one-point
+entry, after loaded corners and on a restart's first line; a fresh and a migrated station's unlaid exit; closing
+lines on a new and an existing tile, for a guest and the host, with and without the restart; a line laid with no
+tool on; an older save's owner-zero track; a counter at its limit; a later line's walk over an earlier line;
+forged rides and flags; a claim lost, expired, released and taken again, handed over, and a cut, with their
+tombstones; the host's own line after its claim went; the lease; the full stack; single player's bytes),
+`CoopSessionTests.UndoTrackClaims` and `TrackProvenanceTests` (owner-zero track joined at a dangling arm and a side
+branch, a one-sided arm, the exit's seed, the circuit walk's straight run, a tagged tile another ride's track
+reaches, an ambiguous tile and an orphan; refused lines and take-backs on every peer, and joined and taken back
+once the ride is unclaimed), `CoopJoinSessionTests.Undo` (take-backs and a stroke across a resync), the codec's
+pinned bytes and the class table.
 
 ## The command layer (C1)
 

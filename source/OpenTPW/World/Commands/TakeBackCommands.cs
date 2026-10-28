@@ -52,9 +52,9 @@ public sealed record TakeBackCommand( bool Stroke, long Step, int Part, int Clai
 		&& (Verdict == TakeBackVerdict.Taken) == (Inverse != null)
 		&& (Inverse == null || (IsInverseKind( Inverse.Kind ) && (Inverse.Kind == ParkCommandKind.UndoPoolStroke) == Stroke && Inverse.Player == Player && Inverse.IsWellFormed));
 
-	/// <summary>The kinds an inverse may be: the building tools' own undo of a step; a pool stroke's (C5-2) for a stroke's take-back alone.</summary>
+	/// <summary>The kinds an inverse may be: the building tools' own undo of a step; a pool stroke's (C5-2) for a stroke's take-back alone; a kart or water track line's (C5-3).</summary>
 	internal static bool IsInverseKind( ParkCommandKind kind ) => kind is ParkCommandKind.UndoLine or ParkCommandKind.UndoQueueSegment or ParkCommandKind.UndoPoolSlidePiece
-		or ParkCommandKind.UndoPoolStroke;
+		or ParkCommandKind.UndoPoolStroke or ParkCommandKind.UndoTrackLine;
 
 	internal override void WriteFields( ParkCommandWriter writer )
 	{

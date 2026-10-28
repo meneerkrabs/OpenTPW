@@ -334,7 +334,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.Starting = undo.Begin;
 		undoCells = level.Guests?.Grid.Cells;
 		if ( undoCells != null )
+		{
 			undoCells.Changed = undo.Changed;
+			// [EXT:online-coop-undo] and every change of a track tile (C5-3)
+			undoCells.Tracks.Changed = undo.TrackChanged;
+		}
 		level.UndoJournal = undo;
 		commands.Applied += OnApplied;
 		level.TickEnded += OnTickEnded;
@@ -962,6 +966,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		BeginCoasterToolCommand begin => begin.Station,
 		EndCoasterToolCommand end => end.Station,
 		CoasterPanelCommand panel => panel.Station,
+		// [EXT:online-coop-undo] a take-back on a claimed ride, the step's ride the host put there (C5-3)
+		TakeBackCommand { ClaimedRide: >= 0 } takeBack => takeBack.ClaimedRide,
 		_ => null
 	};
 
@@ -1541,7 +1547,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.Prepare = null;
 		commands.Starting = null;
 		if ( undoCells != null )
+		{
 			undoCells.Changed = null;
+			undoCells.Tracks.Changed = null;
+		}
 		if ( level.UndoJournal == undo )
 			level.UndoJournal = null;
 		undo.Clear();

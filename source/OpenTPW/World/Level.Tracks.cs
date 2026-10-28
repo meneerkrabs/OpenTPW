@@ -219,9 +219,10 @@ public partial class Level
 	/// <summary>
 	/// The track tool's step after a walk that found <paramref name="item"/>'s circuit valid: the tool on that ride ends and, while a placement's queue start is pending
 	/// (<see cref="placedQueueStart"/>), the queue tool follows that ride's queue; with none pending, a live line click with exactly Ctrl restarts the line tool without a start.
-	/// The issuer's machine alone takes it ([EXT:online-coop-commands]: a peer's or a replayed command moves no tool).
+	/// The issuer's machine alone takes it ([EXT:online-coop-commands]: a peer's or a replayed command moves no tool). [EXT:online-coop-undo] In a shared park a line's continuation follows the
+	/// restart its line carried (<paramref name="keeps"/>, <see cref="LayTrackLineCommand.KeepsTool"/>), which the host's journal reads too (C5-3); null takes the click's own.
 	/// </summary>
-	internal void ContinueTrackTool( OriginalObject item, TrackWalkCause cause )
+	internal void ContinueTrackTool( OriginalObject item, TrackWalkCause cause, bool? keeps = null )
 	{
 		// [BIN:TPW-EXE:0x0052A970 circuit walk] a valid circuit closes the tool; the walk itself posts no advisor or event message (it calls no message builder 0x0059B590)
 		// [BIN:TPW-EXE:0x00526D41 track tool help] the kart and water tool posts tool help 0xCC (204) only for a click with no line start (0x0081EDE4/E8 = −1), which sets the start (0x00525A1C → 0x00526CB3); the placement presets the start at the station's exit (0x0052A1A0), so it is reached only when the tool stays on without one after a line closes with exactly Ctrl and no queue start pending (0x00526FB3, UI-031), and the HUD's report of that click posts it (ParkHud.ReportCellToolClick, AdvisorToolHelp.TrackLineStart); 0xB8, 0xD6 and 0x151 are the path and queue tool's help (0x005272F5, 0x00527351, 0x00527620)
@@ -232,7 +233,7 @@ public partial class Level
 			var queue = cause != TrackWalkCause.Edit && placedQueueStart is { IsDeleted: false } placed ? placed : null;
 			// UI-031: the live line click with exactly Ctrl and no queue start keeps this mode, with no start.
 			// The circuit refresh above is identical; only the issuer's local tool continuation differs.
-			if ( cause == TrackWalkCause.Line && keepTrackToolAfterLine && queue == null && CellTool.Writer is ParkCommandTrackWriter or TrackLineWriter )
+			if ( cause == TrackWalkCause.Line && (keeps ?? (keepTrackToolAfterLine && queue == null)) && CellTool.Writer is ParkCommandTrackWriter or TrackLineWriter )
 			{
 				CellTool.Enter( CellTool.Writer!, null );
 				return;
@@ -498,7 +499,14 @@ public partial class Level
 	/// circuit valid moves the tool on (<see cref="ContinueTrackTool"/>).
 	/// </summary>
 	private void EnterTrackLineTool( OriginalObject station, TrackEditor editor, TrackOpenEnd open ) =>
-		editor.EnterLineTool( CellTool, null, inner => new ParkCommandTrackWriter( inner, Commands, station.Runtime.AttractionId, () => ContinueTrackTool( station, TrackWalkCause.Line ) ), open );
+		editor.EnterLineTool( CellTool, null, inner => new ParkCommandTrackWriter( inner, Commands, station.Runtime.AttractionId, keeps => ContinueTrackTool( station, TrackWalkCause.Line, keeps ),
+			() => KeepsTrackTool, () => UndoJournal?.LastRecord ), open );
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The restart a track line's click asks for after a close (UI-031): its exactly Ctrl with no placement's queue start pending (<see cref="ContinueTrackTool"/>), read at the
+	/// click, which a shared park's line carries (C5-3).
+	/// </summary>
+	private bool KeepsTrackTool => keepTrackToolAfterLine && placedQueueStart is not { IsDeleted: false };
 
 	/// <summary>
 	/// The edit tool's cut of <paramref name="station"/>'s track between two picked tiles, through the command: done at once (null when it is refused, which ends the tool), or [EXT:online-coop-commands]

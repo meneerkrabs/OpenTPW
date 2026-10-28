@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// vertex stack, its start and its ghost stay the issuer's own state. [EXT:online-coop-undo] In a shared park a segment keeps the record that laid it, and its undo is a take-back the
 /// host decides (<see cref="TakeBackCommand"/>, C5): a guest's goes to the host and waits, the host's runs at once; either pops the segment only once taken.
 /// </summary>
-public sealed class ParkCommandLineWriter : ICellLineWriter, IGuestUndoWriter
+public sealed class ParkCommandLineWriter : ICellLineWriter, ITakeBackWriter
 {
 	private readonly ParkCommands commands;
 	private readonly Func<int>? selectedRide;
@@ -95,6 +95,12 @@ public sealed class ParkCommandLineWriter : ICellLineWriter, IGuestUndoWriter
 	/// <summary>[EXT:online-coop-undo] The host's own take-back of <paramref name="segment"/> in a shared park (C5): its result, at once.</summary>
 	internal ParkCommandResult TakeBack( SegmentResult segment ) => segment.Record is { } record
 		? commands.Issue( TakeBackOf( record ) ) : ParkCommandResult.Rejected( TakeBackCommand.NotOwnReason );
+
+	bool ITakeBackWriter.TakesBack => TakesBack;
+
+	bool ITakeBackWriter.HasWork( SegmentResult segment ) => HasWork( segment );
+
+	ParkCommandResult ITakeBackWriter.TakeBack( SegmentResult segment ) => TakeBack( segment );
 
 	bool IGuestUndoWriter.UndoesByRequest => commands.SendsRequests;
 

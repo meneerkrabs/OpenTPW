@@ -69,13 +69,14 @@ public class CoopRightsTests
 		// a kind in no class throws, and a kind is in one class by the table's form: the pins hold each class to its kinds
 		var classes = KindsByClass();
 		CollectionAssert.AreEquivalent( Enum.GetValues<CoopCommandClass>(), classes.Keys.ToArray(), "every class holds a kind" );
-		Assert.AreEqual( "1 2 4 5 10 14 15 16 18 54 76 78 79 80 81 82 83 90 91 92 93 94 95 96 97 98 103 106", classes[CoopCommandClass.GuestBuilding], "C3's building, claim-checked; the take-back (C5)" );
+		Assert.AreEqual( "1 2 4 5 10 14 15 16 18 54 76 78 79 80 82 83 90 91 92 93 94 95 96 97 98 103 106", classes[CoopCommandClass.GuestBuilding],
+			"C3's building, claim-checked; the take-back (C5); a track line's undo is the host's since C5-3" );
 		Assert.AreEqual( "6 104", classes[CoopCommandClass.SeatCleanup], "a Move's end and a claim's release" );
 		Assert.AreEqual( "32 33 34 35 36 43 44 45 73", classes[CoopCommandClass.Attractions], "the attractions' management; a wave machine's settings (C5-2)" );
 		Assert.AreEqual( "37 47 48 49 60 61 62 63 64", classes[CoopCommandClass.Staff] );
 		Assert.AreEqual( "38 39 40", classes[CoopCommandClass.Research] );
 		Assert.AreEqual( "30 31 41 42 50 53", classes[CoopCommandClass.Finance] );
-		Assert.AreEqual( "3 11 12 13 17 70 71 72 74 75 77", classes[CoopCommandClass.HostTools], "what only the host's tools issue: every undo a take-back names (C5)" );
+		Assert.AreEqual( "3 11 12 13 17 70 71 72 74 75 77 81", classes[CoopCommandClass.HostTools], "what only the host's tools issue: every undo a take-back names (C5, a track line's since C5-3)" );
 		Assert.AreEqual( "20 21 23 46 51 100 101 102 105", classes[CoopCommandClass.HostOnly] );
 		Assert.AreEqual( "22 25 52", classes[CoopCommandClass.RefusedInSession], "the cheats and the developer kinds a session refuses" );
 		// the management classes are the four rights'; the others are no right's

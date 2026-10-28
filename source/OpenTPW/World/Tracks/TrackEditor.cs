@@ -180,10 +180,22 @@ public sealed class TrackEditor
 	}
 
 	/// <summary>
-	/// The corner collector of <c>0x530830</c> as the original leaves its stack: the exit (when it is a laid tile), every corner and the end of the walk, each pushed while the stack holds
-	/// at most <see cref="CornerCapacity"/> points (so a walk that ends at the exit leaves the exit twice). The walk also writes the overlap word of every tile it passes.
+	/// [EXT:online-coop-claims] The tiles the open-end collector passes, the station tile it stops on included (C5-3, a ride's protected track: <see cref="TrackProvenance"/>). It runs as
+	/// <see cref="FindOpenEnd"/> runs, writing the overlap words it writes, so it runs on a throwaway copy of the track layer.
 	/// </summary>
-	private (List<(int X, int Y)> Corners, (int X, int Y) Last, bool Reached) CollectForward()
+	internal IReadOnlyList<(int X, int Y)> CollectorTiles()
+	{
+		var visited = new List<(int X, int Y)>();
+		CollectForward( visited );
+		return visited;
+	}
+
+	/// <summary>
+	/// The corner collector of <c>0x530830</c> as the original leaves its stack: the exit (when it is a laid tile), every corner and the end of the walk, each pushed while the stack holds
+	/// at most <see cref="CornerCapacity"/> points (so a walk that ends at the exit leaves the exit twice). The walk also writes the overlap word of every tile it passes, and hands each
+	/// to <paramref name="visited"/>.
+	/// </summary>
+	private (List<(int X, int Y)> Corners, (int X, int Y) Last, bool Reached) CollectForward( List<(int X, int Y)>? visited = null )
 	{
 		var corners = new List<(int X, int Y)>();
 		var heading = station.Heading;
@@ -197,6 +209,7 @@ public sealed class TrackEditor
 			if ( !IsLaidTile( cell ) )
 				break;
 			last = position;
+			visited?.Add( position );
 			if ( steps == 0 && corners.Count < CornerCapacity )
 				corners.Add( position );
 			var stop = false;
@@ -224,6 +237,7 @@ public sealed class TrackEditor
 					reached = true;
 					position = nextOrigin;
 					last = position;
+					visited?.Add( position );
 					break;
 				}
 			}

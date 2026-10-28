@@ -191,6 +191,26 @@ public sealed partial class ParkHud
 	public void SetBuyFirstRow( int first ) => buy.SetFirstRow( first );
 	public void SortBuyList( BuySortColumn column ) => buy.SortBy( column );
 
+	/// <summary>
+	/// [EXT:online-coop-undo] Where a click lands on the open buy list's row of the item with <paramref name="infoId"/> (the list scrolled to show it first, as its scroll bar does), the
+	/// live acceptance's click on a row (C5-2); false when the window is shut or lists no such row.
+	/// </summary>
+	internal bool BuyRowPoint( UiCanvas canvas, int infoId, out NVector2 point )
+	{
+		point = default;
+		var index = -1;
+		for ( var row = 0; row < BuyItems.Count && index < 0; row++ )
+			if ( BuyItems[row].InfoId == infoId )
+				index = row;
+		if ( !BuyWindowOpen || buyList == null || index < 0 )
+			return false;
+		if ( index < buy.FirstRow || index >= buy.FirstRow + BuyVisibleRows )
+			SetBuyFirstRow( Math.Min( index, BuyMaxFirstRow ) );
+		var rect = canvas.Map( new UiRect( BuyContent.X, BuyContent.Y + (index - buy.FirstRow) * BuyRowHeight, BuyContent.Width, BuyRowHeight ), buyList.Anchor );
+		point = new NVector2( rect.X + rect.Width / 2, rect.Y + rect.Height / 2 );
+		return true;
+	}
+
 	/// <summary>Starts placing the selected item (the same checks as <see cref="BeginPlacing"/>); the window closes when placement starts.</summary>
 	public void BuySelected()
 	{

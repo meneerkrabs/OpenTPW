@@ -98,6 +98,12 @@ public enum ParkCellFlags : ushort
 }
 
 /// <summary>
+/// [EXT:online-coop-undo] The fields of one map cell that a change compares (C5, <see cref="ParkCellMap.Changed"/>): its type, flags, placement counter, links, queue link, owner word, and
+/// whether it is queue-pass residue.
+/// </summary>
+internal readonly record struct CellFields( byte Type, ushort Flags, short Placements, byte Links, byte QueueLink, ushort Owner, bool Residue );
+
+/// <summary>
 /// The CPU-only park cell map shared by the path and queue tools (PATH-plan §9.1/§9.6): per cell the
 /// original type byte, flags, the same-type placement counter, the cardinal links (1, 4, 16, 64) and the
 /// queue link. It is the source of truth for path and queue cells: <see cref="GuestPathGrid"/> is a view
@@ -142,6 +148,41 @@ public sealed partial class ParkCellMap
 	private readonly int[] blockStamps;
 	/// <summary>Cells per side of a stamp block (the original's 16 × 16-cell blocks).</summary>
 	public const int StampBlock = 16;
+
+	/// <summary>
+	/// [EXT:online-coop-undo] A disposable copy of <paramref name="source"/> for a take-back's prediction (C5, <see cref="CopyForPrediction"/>): every cell array, the residue's provenance, the
+	/// stamps and the track layer, copied; the pool bridges and the land shared, which an undo only reads; no hook, no re-evaluation.
+	/// </summary>
+	private ParkCellMap( ParkCellMap source )
+	{
+		Width = source.Width;
+		Height = source.Height;
+		types = (byte[])source.types.Clone();
+		coasterGenerations = (int[])source.coasterGenerations.Clone();
+		flags = (ushort[])source.flags.Clone();
+		placements = (short[])source.placements.Clone();
+		links = (byte[])source.links.Clone();
+		queueLinks = (byte[])source.queueLinks.Clone();
+		owners = (ushort[])source.owners.Clone();
+		typeCounts = (int[])source.typeCounts.Clone();
+		BlocksX = source.BlocksX;
+		BlocksY = source.BlocksY;
+		blockStamps = (int[])source.blockStamps.Clone();
+		StampCounter = source.StampCounter;
+		Tracks = source.Tracks.Copy();
+		Land = source.Land;
+		PoolBridges = source.PoolBridges;
+		Version = source.Version;
+		PoolWrites = source.PoolWrites;
+		foreach ( var index in source.queuePassCells )
+			queuePassCells.Add( index );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] A copy of the map a take-back's prediction runs the step's own undo on (C5, <see cref="CoopUndoJournal"/>): it may write anything, and the park's own map never
+	/// sees it. The pool bridges are the park's (read only by an undo's rules).
+	/// </summary>
+	internal ParkCellMap CopyForPrediction() => new( this );
 
 	public ParkCellMap( int width, int height )
 	{
@@ -661,9 +702,29 @@ public sealed partial class ParkCellMap
 	/// </summary>
 	internal int PoolWrites { get; private set; }
 
+	/// <summary>
+	/// [EXT:online-coop-undo] Told of every real change of a cell's fields (<see cref="FieldsAt"/>), with the cell and its fields before the change: the host's undo journal while a
+	/// session runs (C5, <see cref="CoopUndoJournal"/>), null otherwise. A setter that writes the value the cell already holds tells nothing.
+	/// </summary>
+	internal Action<int, int, CellFields>? Changed { get; set; }
+
+	/// <summary>[EXT:online-coop-undo] The fields of the cell at <paramref name="index"/> that a change compares (C5): every array a setter writes, and the queue-pass residue's provenance.</summary>
+	private CellFields FieldsAt( int index ) => new( types[index], flags[index], placements[index], links[index], queueLinks[index], owners[index], queuePassCells.Contains( index ) );
+
+	/// <summary>[EXT:online-coop-undo] The fields of (<paramref name="x"/>, <paramref name="y"/>) that a change compares (C5).</summary>
+	internal CellFields FieldsAt( int x, int y ) => FieldsAt( Index( x, y ) );
+
+	/// <summary>[EXT:online-coop-undo] Tells <see cref="Changed"/> of the cell's change when its fields differ from <paramref name="before"/> (C5).</summary>
+	private void NoteChange( int x, int y, int index, CellFields before )
+	{
+		if ( Changed is { } changed && FieldsAt( index ) != before )
+			changed( x, y, before );
+	}
+
 	public void SetType( int x, int y, byte type )
 	{
 		var index = Index( x, y );
+		var before = Changed != null ? FieldsAt( index ) : default;
 		coasterGenerations[index]++;
 		if ( types[index] == ParkCellTypes.PoolWater || type == ParkCellTypes.PoolWater )
 			PoolWrites++;
@@ -684,46 +745,61 @@ public sealed partial class ParkCellMap
 		Version++;
 		if ( changed )
 			blockStamps[y / StampBlock * BlocksX + x / StampBlock] = ++StampCounter;
+		NoteChange( x, y, index, before );
 	}
 
 	public void SetType( int x, int y, ParkCellType type ) => SetType( x, y, (byte)type );
 
 	public void SetLinks( int x, int y, byte value )
 	{
-		links[Index( x, y )] = value;
-		NormalizeQueuePassCell( Index( x, y ) );
+		var index = Index( x, y );
+		var before = Changed != null ? FieldsAt( index ) : default;
+		links[index] = value;
+		NormalizeQueuePassCell( index );
 		Version++;
+		NoteChange( x, y, index, before );
 	}
 
 	public void SetQueueLink( int x, int y, byte value )
 	{
-		queueLinks[Index( x, y )] = value;
-		NormalizeQueuePassCell( Index( x, y ) );
+		var index = Index( x, y );
+		var before = Changed != null ? FieldsAt( index ) : default;
+		queueLinks[index] = value;
+		NormalizeQueuePassCell( index );
 		Version++;
+		NoteChange( x, y, index, before );
 	}
 
 	public void SetFlags( int x, int y, ParkCellFlags value )
 	{
 		var index = Index( x, y );
+		var before = Changed != null ? FieldsAt( index ) : default;
 		// [EXT:pools-river] a change of a pool cell's flags (river, waves) counts as a pool write, so the water's regions and mesh are made again
 		if ( types[index] == ParkCellTypes.PoolWater && flags[index] != (ushort)value )
 			PoolWrites++;
 		flags[index] = (ushort)value;
 		Version++;
+		NoteChange( x, y, index, before );
 	}
 
 	public void SetPlacementCount( int x, int y, short value )
 	{
-		placements[Index( x, y )] = value;
+		var index = Index( x, y );
+		var before = Changed != null ? FieldsAt( index ) : default;
+		placements[index] = value;
 		Version++;
+		NoteChange( x, y, index, before );
 	}
 
 	/// <summary>Sets the owner word (<see cref="OwnerAt"/>). Not part of the state digest: it is derived from the placed objects and the queues' rides.</summary>
 	public void SetOwner( int x, int y, ushort value )
 	{
-		owners[Index( x, y )] = value;
-		NormalizeQueuePassCell( Index( x, y ) );
+		var index = Index( x, y );
+		var before = Changed != null ? FieldsAt( index ) : default;
+		owners[index] = value;
+		NormalizeQueuePassCell( index );
 		Version++;
+		NoteChange( x, y, index, before );
 	}
 
 	/// <summary>Marks the map changed without a cell write (cached walk fields are rebuilt).</summary>

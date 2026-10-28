@@ -13,10 +13,11 @@ public static class ParkCommandCodec
 {
 	/// <summary>
 	/// The newest command format. Each kind writes its own generation (<see cref="VersionOf"/>): version 1 for every legacy kind, <see cref="QueueVersion"/> for the native queue kinds,
-	/// [EXT:online-coop-commands] <see cref="ExpectationVersion"/> for a stale-checked command that carries its expectation (C4b), and <see cref="PurchaseVersion"/> for a guest's upgrade
-	/// cancellation that names its purchase too (C4b-2), so every command an older build wrote keeps its bytes.
+	/// [EXT:online-coop-commands] <see cref="ExpectationVersion"/> for a stale-checked command that carries its expectation (C4b), <see cref="PurchaseVersion"/> for a guest's upgrade
+	/// cancellation that names its purchase too (C4b-2), and [EXT:online-coop-undo] <see cref="StrokeVersion"/> for a pool stroke's first command in a shared park (C5-2) and
+	/// <see cref="TrackToolVersion"/> for a track line that keeps its tool in a shared park (C5-3), so every command an older build wrote keeps its bytes.
 	/// </summary>
-	public const int Version = 4;
+	public const int Version = 6;
 	/// <summary>The native queue kinds' generation (<see cref="QueueSegmentCommand"/>, <see cref="UndoQueueSegmentCommand"/>).</summary>
 	public const int QueueVersion = 2;
 	/// <summary>
@@ -29,10 +30,23 @@ public static class ParkCommandCodec
 	/// its two expectations follow its own field. C4b-1's version-3 cancellation with the level alone keeps its bytes.
 	/// </summary>
 	public const int PurchaseVersion = 4;
+	/// <summary>
+	/// [EXT:online-coop-undo] The generation of a pool stroke's first command in a shared park (C5-2, <see cref="IPoolStrokeCommand.First"/>): a paint or erase cell of the host's or a guest's
+	/// batch that opens a stroke, which the host's undo journal names the stroke by. Its fields are the kind's own; the generation alone says it is first, so a single player's commands, which
+	/// never are, keep their version-1 bytes.
+	/// </summary>
+	public const int StrokeVersion = 5;
+	/// <summary>
+	/// [EXT:online-coop-undo] The generation of a track line in a shared park whose click keeps the line tool after a close (C5-3, <see cref="LayTrackLineCommand.KeepsTool"/>): its fields are
+	/// the kind's own; the generation alone says it, so a line without the flag, single player's always, keeps its version-1 bytes.
+	/// </summary>
+	public const int TrackToolVersion = 6;
 	internal static bool IsNativeQueue( ParkCommand command ) => command is QueueSegmentCommand or UndoQueueSegmentCommand;
 	/// <summary>The generation <paramref name="command"/> is written in.</summary>
 	internal static int VersionOf( ParkCommand command ) => IsNativeQueue( command ) ? QueueVersion : command is CancelUpgradeCommand { ExpectedPurchase: not null } ? PurchaseVersion
-		: command is IStaleChecked { HasExpectation: true } ? ExpectationVersion : 1;
+		: command is IStaleChecked { HasExpectation: true } ? ExpectationVersion : command is IPoolStrokeCommand { First: true } ? StrokeVersion
+		: command is LayTrackLineCommand { KeepsTool: true } ? TrackToolVersion : 1;
+	private static bool IsStrokeKind( ParkCommandKind kind ) => kind is ParkCommandKind.PaintPoolCell or ParkCommandKind.ErasePoolCell or ParkCommandKind.PoolCells;
 	private static bool IsStaleCheckedKind( ParkCommandKind kind ) => kind is ParkCommandKind.BuyUpgrade or ParkCommandKind.CancelUpgrade or ParkCommandKind.MoveResearch;
 	/// <summary>The bound of a cell coordinate a command may carry (the largest park map is far smaller).</summary>
 	public const int MaximumCoordinate = 4096;
@@ -88,7 +102,7 @@ public static class ParkCommandCodec
 			throw new InvalidDataException( $"A command of {bytes.Length} bytes is longer than {MaximumBytes}." );
 		var reader = new ParkCommandReader( bytes.ToArray() );
 		var version = reader.Int();
-		if ( version is not (1 or QueueVersion or ExpectationVersion or PurchaseVersion) )
+		if ( version is not (1 or QueueVersion or ExpectationVersion or PurchaseVersion or StrokeVersion or TrackToolVersion) )
 			throw new InvalidDataException( $"Park command version {version} is none of 1 to {Version}." );
 		var kind = (ParkCommandKind)reader.Byte();
 		if ( version == 1 && kind is ParkCommandKind.QueueSegment or ParkCommandKind.UndoQueueSegment )
@@ -101,6 +115,12 @@ public static class ParkCommandCodec
 		// [EXT:online-coop-commands] version 4 is a guest's upgrade cancellation that names the purchase too (C4b-2)
 		if ( version == PurchaseVersion && kind != ParkCommandKind.CancelUpgrade )
 			throw new InvalidDataException( $"A {kind} command has no version {PurchaseVersion} form." );
+		// [EXT:online-coop-undo] version 5 is a pool stroke's first command in a shared park (C5-2)
+		if ( version == StrokeVersion && !IsStrokeKind( kind ) )
+			throw new InvalidDataException( $"A {kind} command has no version {StrokeVersion} form." );
+		// [EXT:online-coop-undo] version 6 is a track line that keeps its tool in a shared park (C5-3)
+		if ( version == TrackToolVersion && kind != ParkCommandKind.LayTrackLine )
+			throw new InvalidDataException( $"A {kind} command has no version {TrackToolVersion} form." );
 		reader.Version = version;
 		var player = reader.Int();
 		if ( player < 0 )
@@ -131,6 +151,10 @@ public static class ParkCommandCodec
 		if ( !reader.AtEnd )
 			throw new InvalidDataException( $"A {kind} command has {reader.Remaining} bytes after its fields." );
 		command = command with { Player = player };
+		if ( version == StrokeVersion )
+			command = ((IPoolStrokeCommand)command).AsFirst();
+		if ( version == TrackToolVersion )
+			command = (LayTrackLineCommand)command with { KeepsTool = true };
 		if ( !command.IsWellFormed )
 			throw new InvalidDataException( $"A {kind} command has fields out of range." );
 		return command;

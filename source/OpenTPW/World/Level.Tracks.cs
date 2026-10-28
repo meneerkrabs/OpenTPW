@@ -541,12 +541,41 @@ public partial class Level
 			{
 				if ( Objects.FindAt( x, y ) is { IsDeleted: false } addOn && addOn != ride )
 				{
-					Objects.Remove( addOn );
+					// [BIN:TPW-EXE:0x0053B703 add-on of a cleared tile] the tile's clear demolishes the add-on with the third argument 1: its pass 2 takes the flag 0x10 off the records and clears no tile again
+					removingAddOnOfClearedTile = true;
+					try { Objects.Remove( addOn ); }
+					finally { removingAddOnOfClearedTile = false; }
 					return;
 				}
 			}
 		}
 	};
+
+	/// <summary>The demolition's passes over the footprint of a removed object (<see cref="ParkCellMap.DemolishFootprint"/>), with the records of the second layer cleared by their ride's track editor.</summary>
+	internal void DemolishFootprintCells( OriginalObject item, ParkCellMap cells, Action<ushort>? queueCellRemoved ) =>
+		cells.DemolishFootprint( item.Cells, queueCellRemoved, ClearTrackRecordUnder, moved: removingAddOnOfClearedTile );
+
+	/// <summary>Set while the clear of a tile removes the add-on object standing on it (<see cref="ParkCellMap.DemolishFootprint"/>'s <c>moved</c>).</summary>
+	private bool removingAddOnOfClearedTile;
+
+	/// <summary>
+	/// The record clear of a demolition's second pass on the second layer's record under the mask cell (x, y): the ride the tile belongs to clears it through its track editor
+	/// (<see cref="TrackEditor.ClearUnderDemolition"/>, with the refund and the add-on removal of the cut's hooks); a tile no ride owns goes alone.
+	/// </summary>
+	private bool ClearTrackRecordUnder( int x, int y )
+	{
+		if ( Guests?.Grid.Cells is not { } cells || cells.Tracks.Get( x, y ) is not { IsEmpty: false } cell )
+			return false;
+		(int X, int Y) origin = cell.IsExtension && cell.Parent >= 0 ? cells.Tracks.CellOf( cell.Parent ) : (x, y);
+		var head = cells.Tracks.Get( origin.X, origin.Y );
+		foreach ( var (ride, station) in trackStations )
+		{
+			if ( BuilderOf( ride ) is { } builder && head.Owner != 0 && builder.OwnerOf( station ) == head.Owner )
+				return TrackEditorOf( ride, station, builder ).ClearUnderDemolition( (x, y) );
+		}
+		// a tile laid without a ride (a rig's, an old save's) has no exit or entry tile to spare
+		return cells.ClearTrackRecord( x, y );
+	}
 
 	/// <summary>
 	/// After a committed cut: the walk of the circuit again (the controller closes, the pieces start or stop) and, when the circuit is open, the line tool from the end of the track.

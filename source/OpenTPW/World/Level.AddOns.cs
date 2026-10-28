@@ -192,8 +192,9 @@ public partial class Level
 		addOnRemoval = null;
 		if ( removal.Ride.IsDeleted || Guests?.Grid.Cells is not { } cells )
 			return;
-		// the flags come off before the walk reads them, whichever removal handler runs first (the footprint's own handler takes them off again)
-		cells.ClearFootprint( item.Cells.Where( cell => cell.Cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash ) );
+		// the demolition's passes over the add-on's cells come before the walk reads the track, whichever removal handler runs first (the footprint's own handler runs them again on cells that are done):
+		// the flags come off and, unless the add-on is the one a cleared tile takes, the tile under it goes with it (0x527EE0 pass 2, ORACLE.md X37)
+		DemolishFootprintCells( item, cells, null );
 		WalkAfterAddOn( removal.Ride );
 	}
 

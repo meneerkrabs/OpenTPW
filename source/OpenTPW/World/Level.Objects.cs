@@ -232,7 +232,7 @@ public partial class Level
 				// the refund is the native credit 0x4D0190 of the demolished ride, found before it was removed
 				var ownerWord = OwnerWord( item );
 				var instance = demolishingInstances != null && demolishingInstances.Remove( item, out var kept ) ? kept : null;
-				removed.DemolishFootprint( item.Cells, owner =>
+				DemolishFootprintCells( item, removed, owner =>
 				{
 					if ( owner == ownerWord && Park != null && instance is int rideInstance )
 						Park.Economy.RefundQueueCellNative( rideInstance );

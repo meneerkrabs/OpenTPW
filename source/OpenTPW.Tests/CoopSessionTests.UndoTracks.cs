@@ -439,6 +439,62 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
+	public void ALaterLinesWalkChangingAnEarlierLinesTileOutsideItsOwnClearLeavesTheEarlierLineTakenBackAfterIt()
+	{
+		// the first line runs over two tiles of path: a bridge, whose ends are ramps by their bridged neighbours along the flow
+		var bridge = new[] { (6, 0), (8, 0) };
+		void Paths( Park park, OriginalObject placed )
+		{
+			var cells = park.Level.Guests!.Grid.Cells;
+			foreach ( var (x, y) in bridge.Select( tile => KartAt( park, placed, tile.Item1, tile.Item2 ) ) )
+			{
+				foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
+					cells.SetType( cx, cy, ParkCellType.Path );
+			}
+		}
+		var (host, guest, view, kart, ride, seat, member) = UndoKart( Paths );
+		var (twin, twinKart) = TwinKart( Paths );
+		GuestTrackTool( host, guest, view, kart );
+		TwinTool( twin, twinKart );
+		var hostKart = host.Level.TrackStations.Keys.Single();
+		var tracks = host.Level.Guests!.Grid.Cells.Tracks;
+		var lines = new[] { (10, 0), (10, 6), (8, 6), (8, -4) };
+		var ramps = new[] { KartAt( host, hostKart, 6, 0 ) };
+		TrackCell[]? laid = null;
+		foreach ( var (x, y) in lines )
+		{
+			// the last line crosses the bridge's second tile, which then has four arms and is no bridge: the ramp before it, the first line's tile and none of the last line's, is a plain bridge
+			if ( (x, y) == lines[^1] )
+				laid = ramps.Select( tile => tracks.Get( tile.X, tile.Y ) ).ToArray();
+			GuestTrackLine( host, guest, view, KartAt( guest, kart, x, y ) );
+			TwinClick( twin, KartAt( twin, twinKart, x, y ) );
+		}
+		Assert.AreEqual( TrackCellsOf( twin ), TrackCellsOf( host ), "the lines laid as single player's" );
+		Assert.IsTrue( laid!.All( tile => (tile.Flags & TrackBuilder.FlagOverPath) != 0 && (tile.Flags & TrackCell.BridgeMask) == TrackCell.FlagBridgeUp ), "the bridge's first tile was a ramp" );
+		for ( var index = 0; index < ramps.Length; index++ )
+			Assert.IsFalse( laid[index].SameAs( tracks.Get( ramps[index].X, ramps[index].Y ) ), "the last line's walk changed a tile of the first line's beyond its own" );
+		Assert.AreEqual( (lines.Length, 0), host.Level.UndoJournal!.TrackEntriesOf( member ) );
+		var (taken, refund) = GuestTrackBackspace( host, guest, view );
+		Assert.IsTrue( taken, "the last line's own take-back" );
+		Assert.AreEqual( TwinBackspace( twin ), refund );
+		Assert.AreEqual( TrackCellsOf( twin ), TrackCellsOf( host ) );
+		for ( var index = 0; index < ramps.Length; index++ )
+			Assert.IsTrue( laid[index].SameAs( tracks.Get( ramps[index].X, ramps[index].Y ) ), "its undo's walk made the ramp again" );
+		for ( var line = lines.Length - 1; line > 0; line-- )
+		{
+			(taken, refund) = GuestTrackBackspace( host, guest, view );
+			Assert.IsTrue( taken, $"line {line} taken back after it, the first line's tiles no change of a later step's any more" );
+			Assert.AreEqual( TwinBackspace( twin ), refund, "its tiles' refunds, as single player's" );
+			Assert.AreEqual( TrackCellsOf( twin ), TrackCellsOf( host ), "the track as single player's Backspace leaves it" );
+		}
+		Assert.AreEqual( (0, 0), host.Level.UndoJournal.TrackEntriesOf( member ) );
+		Assert.IsTrue( ramps.All( tile => host.Level.UndoJournal.HistoryAt( tile.X, tile.Y ) == null ), "no step tracks the ramp any more" );
+		Assert.IsTrue( TakeBacksOf( host, seat ).All( command => command.Verdict == TakeBackVerdict.Taken ) );
+		CatchUpAndCompare( host, guest );
+		Assert.AreEqual( TrackCellsOf( host ), TrackCellsOf( guest ) );
+	}
+
+	[TestMethod]
 	public void ATakeBackIsDecidedOnItsStepsRideWhateverRideItsRequestNames()
 	{
 		var (host, guest, view, kart, ride, seat, member) = UndoKart();

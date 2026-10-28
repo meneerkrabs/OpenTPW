@@ -2704,8 +2704,8 @@ out, the wave machine through the queue), `CoopSessionTests.UndoTracks` (a guest
 back newest first against a twin park of a game of one, tiles and money; the first-line flag after a one-point
 entry, after loaded corners and on a restart's first line; a fresh and a migrated station's unlaid exit; closing
 lines on a new and an existing tile, for a guest and the host, with and without the restart; a line laid with no
-tool on; an older save's owner-zero track; a counter at its limit; a later line's walk over an earlier line;
-forged rides and flags; a claim lost, expired, released and taken again, handed over, and a cut, with their
+tool on; an older save's owner-zero track; a counter at its limit; a later line's walk over an earlier line, at
+its start and beyond its own clear (a bridge's ramp); forged rides and flags; a claim lost, expired, released and taken again, handed over, and a cut, with their
 tombstones; the host's own line after its claim went; the lease; the full stack; single player's bytes),
 `CoopSessionTests.UndoTrackClaims` and `TrackProvenanceTests` (owner-zero track joined at a dangling arm and a side
 branch, a one-sided arm, the exit's seed, the circuit walk's straight run, a tagged tile another ride's track

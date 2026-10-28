@@ -236,6 +236,55 @@ public partial class CoopSessionTests
 		Assert.AreEqual( host.Economy.Balance, guest.Economy.Balance );
 	}
 
+	[TestMethod]
+	public void SwimmersInAStrokesWaterKeepItsTakeBackOnBothParksUntilTheyAreOut()
+	{
+		// the park's first ride is a changing room whose back opens on (12, 12), water there on both parks before their first frame; its exit is a path cell, where swimmers start
+		var (host, guest, _, _) = Shared( ( park, _ ) =>
+		{
+			park.Enter();
+			park.One.Visitors.IsChangingRoom = true;
+			park.One.Visitors.PoolAccessCandidates = new[] { (12, 12) };
+			park.One.Visitors.ExitCell = (4, 1);
+			park.Level.PoolBuilder!.PaintCells( new[] { (12, 12) } );
+		} );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var seat = guest.Level.Commands.Player;
+		var cost = host.Economy.CellCost( CellPurchase.Pool );
+		// the guest's stroke widens the room's water by two cells
+		GuestPoolStroke( host, guest, view, (13, 12), (14, 12) );
+		// three swimmers, as many as the three cells take, start alike on both parks at one tick: two bodies keep apart, so one swims in the stroke's water at least
+		CatchUpAndCompare( host, guest );
+		foreach ( var park in new[] { host, guest } )
+		{
+			park.Enter();
+			Assert.AreEqual( 3, park.Level.Guests!.DebugStartSwimmers( park.One.Visitors, 3 ), "three swimmers" );
+		}
+		bool InStroke( Park park ) => park.Level.Guests!.Guests.Any( swimmer => (swimmer.IsSwimming || swimmer.InPoolActivity) && (swimmer.CellX, swimmer.CellY) is (13, 12) or (14, 12) );
+		bool InWater( Park park ) => park.Level.Guests!.Guests.Any( swimmer => swimmer.IsSwimming || swimmer.InPoolActivity );
+		Assert.IsTrue( InStroke( host ) && InStroke( guest ) );
+		var balance = host.Economy.Balance;
+		GuestPoolBackspace( host, guest, view );
+		view.Update();
+		Assert.AreEqual( TakeBackVerdict.InTheWay, StrokeTakeBacksOf( host, seat ).Last().Verdict, "a swimmer in its water" );
+		Assert.IsTrue( AllWater( host, (13, 12), (14, 12) ) && AllWater( guest, (13, 12), (14, 12) ), "both cells kept on both parks" );
+		Assert.AreEqual( balance, host.Economy.Balance, "nothing refunded" );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopUndoInTheWay ) );
+		CatchUpAndCompare( host, guest );
+		// once the swimmers have finished their swims (40 to 70 seconds) and climbed out, the stroke goes back whole on both parks
+		RoundsUntil( () => !InWater( host ) && !InWater( guest ), host, guest, view, "the swimmers left the water", 12000 );
+		balance = host.Economy.Balance;
+		GuestPoolBackspace( host, guest, view );
+		Assert.AreEqual( TakeBackVerdict.Taken, StrokeTakeBacksOf( host, seat ).Last().Verdict );
+		Assert.IsFalse( AnyWater( host, (13, 12), (14, 12) ) || AnyWater( guest, (13, 12), (14, 12) ) );
+		Assert.IsTrue( IsWater( host, 12, 12 ) && IsWater( guest, 12, 12 ), "the room's water stays" );
+		Assert.AreEqual( balance + 2 * cost, host.Economy.Balance, "each cell refunded" );
+		CatchUpAndCompare( host, guest );
+		Assert.AreEqual( host.Economy.Balance, guest.Economy.Balance );
+	}
+
 	/// <summary>A synthetic two-cell wave machine (water side north) at (14, 31) beside a pool painted over (14..17, 30), alike on every park before its session.</summary>
 	private static void AddWaveMachine( Park park )
 	{

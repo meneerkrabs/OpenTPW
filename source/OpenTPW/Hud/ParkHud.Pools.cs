@@ -38,9 +38,6 @@ public sealed partial class ParkHud
 
 	private bool IsPoolRowAvailable() => FeatureGates.Pools && !level.IsReadOnlyVisit && level.PoolTool != null;
 
-	/// <summary>[EXT:online-coop-undo] The buy window's paint or erase row's own action (<see cref="BeginPoolTool"/>), as the live acceptance's undo scenario takes it (C5-2).</summary>
-	internal void BeginPoolRow( bool erase ) => BeginPoolTool( erase ? PoolEraseRow : PoolPaintRow );
-
 	/// <summary>
 	/// Starts the pool tool in the paint or erase mode after ending the other park tools; closes the window. Choosing the other row while the tool is on switches the mode and keeps
 	/// the strokes that can be undone.

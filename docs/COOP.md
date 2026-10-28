@@ -1183,7 +1183,7 @@ The scenarios:
   take-backs (taken, taken, changed, taken) at their records with the host's verdicts on both parks, the host's
   one take-back between the guest's refused one and its last, that both parks applied the same take-backs in
   the same order, and that none of them changed the money on either park (a path's undo refunds nothing).
-  Since C5-2 the guest then starts the pool tool with the buy window's paint row, draws a stroke of four cells
+  Since C5-2 the guest then opens the buy window and clicks its paint row, which starts the pool tool, draws a stroke of four cells
   (a press, a drag with the button held, a release; in a page through the canvas's own mouse events) and takes
   it back with Backspace: the driver checks that the take-back named the stroke by its first batch's record,
   was taken at its record on both parks after the path's, and refunded each of its cells in full on both.
@@ -2638,7 +2638,8 @@ tests at the 32-bit edge, an employee and a swimmer in the way, a wave machine's
 settings, the clipped strokes' set),
 `CoopSessionTests.UndoPools` (a guest's strokes with their refunds and charges, the host's Backspace kept on a
 refusal, the split at the cell bound, a first batch the host could not take, a stroke of an earlier run of the
-tool, a slide's splash on a stroke's cell until its tower's sale, the wave machine through the queue), `CoopJoinSessionTests.Undo` (take-backs and a stroke across a resync), the codec's pinned bytes and
+tool, a slide's splash on a stroke's cell until its tower's sale, swimmers in a stroke's water on both parks until they are
+out, the wave machine through the queue), `CoopJoinSessionTests.Undo` (take-backs and a stroke across a resync), the codec's pinned bytes and
 the class table.
 
 ## The command layer (C1)

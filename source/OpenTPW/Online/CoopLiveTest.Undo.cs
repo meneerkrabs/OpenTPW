@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using OpenTPW.Hud;
 using OpenTPW.UI.Original;
 
 namespace OpenTPW;
@@ -254,7 +255,7 @@ internal sealed partial class CoopLiveTest
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-undo] The guest's pool stroke of the undo scenario (C5-2): the buy window's paint row starts the pool tool; a press on a free owned cell and a drag to the cell
+	/// [EXT:online-coop-undo] The guest's pool stroke of the undo scenario (C5-2): a click on the buy window's paint row starts the pool tool; a press on a free owned cell and a drag to the cell
 	/// <see cref="StrokeLength"/> beyond lay the stroke in batches, the first of which names it; Backspace takes it back whole, each cell refunded on both parks; Escape ends the tool. Its
 	/// cells, name, cell cost and take-back go to <paramref name="evidence"/>.
 	/// </summary>
@@ -269,8 +270,15 @@ internal sealed partial class CoopLiveTest
 		var (cells, startPoint, endPoint) = found!.Value;
 		foreach ( var cell in cells )
 			avoid.Add( cell );
-		TheHud.BeginPoolRow( erase: false );
-		Require( tool.IsActive && !tool.IsErasing && !tool.IsRiver && !tool.IsSlide && !tool.IsBridge, "the buy window's paint row started the pool tool" );
+		// the buy window's paint row, clicked as a player clicks it: a row's click buys it, which starts the pool tool and shuts the window
+		TheHud.OpenBuyWindow();
+		TheHud.SelectCategory( BuildCategory.Features );
+		Require( TheHud.BuyRowPoint( flow.Context.Canvas, ParkHud.PoolPaintRow.InfoId, out var rowPoint ), "the buy window lists the pool's paint row" );
+		Require( TheHud.BuyItems.Single( item => item.InfoId == ParkHud.PoolPaintRow.InfoId ) is var row && TheHud.IsBuyAvailable( row ), "the paint row can be used" );
+		foreach ( var step in ClickThrough( rowPoint ) )
+			yield return step;
+		yield return Wait( "the paint row's click started the pool tool", () => InputGiven && tool.IsActive && !TheHud.BuyWindowOpen, 10 );
+		Require( !tool.IsErasing && !tool.IsRiver && !tool.IsSlide && !tool.IsBridge, "the paint row armed the paint mode" );
 		foreach ( var step in DragThrough( startPoint, endPoint ) )
 			yield return step;
 		yield return Wait( "the stroke's batches back, its cells painted", () => InputGiven && !tool.IsDragging && !tool.HasGuestBatches && ArePools( cells ), 120 );

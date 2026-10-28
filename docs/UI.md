@@ -1056,7 +1056,7 @@ These register IDs were closed as OpenTPW design choices, with the label at the 
 
 - `APPROX:UI-061` is `[EXT:entry-price-window]`: the entry-price window is a host layout over the economy values with the original's range and one-pound step.
 - `APPROX:UI-940` is `[EXT:frame-driven-at-60hz]` (first `[EXT:lobby-fixed-step]`, at 30 ticks a second, now merged into the 60 Hz reference label, docs/COMPATIBILITY.md "Frame-driven timing"): the lobby effects advance at a fixed 60 Hz, independent of the frame rate.
-- `UI-041`, `UI-100`, `UI-905`, `UI-907` and `UI-941` kept their IDs for the original behaviour that remained (UI-905 and UI-907 are retired since); their design-choice parts are `[EXT:no-player-profiles]`, `[EXT:software-pointers]` (the pointer art drawn by the UI), `[EXT:list-selection-by-id]` and `[EXT:frame-driven-at-60hz]` (the islands and the flyers now step at the same 60 Hz).
+- `UI-041`, `UI-100`, `UI-905`, `UI-907` and `UI-941` (retired: the lobby generator is clock-seeded, `0x5D57CD`) kept their IDs for the original behaviour that remained (UI-905 and UI-907 are retired since); their design-choice parts are `[EXT:no-player-profiles]`, `[EXT:software-pointers]` (the pointer art drawn by the UI), `[EXT:list-selection-by-id]` and `[EXT:frame-driven-at-60hz]` (the islands and the flyers now step at the same 60 Hz).
 - `APPROX:UI-044` is `[EXT:list-row-pitch]`, `APPROX:UI-942` is `[EXT:online-globe-audio]` and the visitor info window of `UI-091` is `[EXT:visitor-info-window]`; see the EXT table above.
 
 ## Open

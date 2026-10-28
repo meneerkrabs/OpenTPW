@@ -63,6 +63,22 @@ internal interface IGuestUndoWriter
 }
 
 /// <summary>
+/// [EXT:online-coop-undo] A line writer whose Backspace in a shared park is a take-back the host decides (docs/COOP.md, "Conflicts and undo (C5)"): the path and queue tools' (C5-1) and the kart and
+/// water track tools' (C5-3). A segment keeps the record that laid it; one the tool loaded (no record) was laid by no step of its player's.
+/// </summary>
+internal interface ITakeBackWriter : IGuestUndoWriter
+{
+	/// <summary>Whether the tool's Backspace is a take-back now: in a shared park, the host's and a guest's alike.</summary>
+	bool TakesBack { get; }
+	/// <summary>Whether <paramref name="segment"/> has work a take-back takes back, or names no step of its own (its Backspace then says so); one that laid nothing pops at once, as in single player.</summary>
+	bool HasWork( SegmentResult segment );
+	/// <summary>The host's own take-back of <paramref name="segment"/>: its result, at once.</summary>
+	ParkCommandResult TakeBack( SegmentResult segment );
+	/// <summary>The tool's step after the host's own take-back <paramref name="taken"/> was taken and its segment popped (the track tools' walk that found a valid circuit moves the tool on).</summary>
+	void AfterTakenBack( ParkCommandResult taken ) { }
+}
+
+/// <summary>
 /// The path and queue build tool (PATH-plan §4.3, §9.4), CPU-only and shared by both modes: a start cell, the
 /// 1024-entry vertex stack, a ghost preview on cursor moves (the <c>mode | 0x100</c> LayLine) and a commit on
 /// clicks (the raw-mode LayLine). A click whose ghost has a refused cell (laying nothing), whose snapped end is the
@@ -203,8 +219,9 @@ public sealed class CellBuildTool
 		}
 		// The original ignores the push's result (0x7bcf4, whose guard is count > 1024, one past the buffer: REVIEW-PATH N2); a full stack ending the tool is an OpenTPW guard.
 		// [EXT:online-coop-undo] in a shared park that guard ends the tool before the line goes, so the host, which sees no tool's stack, is never left a line that ended its tool as a
-		// step (C5: such a line has no take-back)
-		if ( vertices.Count >= VertexCapacity && Writer is ParkCommandLineWriter { TakesBack: true } )
+		// step (C5: such a line has no take-back); the kart and water tools too, whose full stack goes on in single player (C5-3: a line laid there would be the journal's newest, which no
+		// segment of the tool names)
+		if ( vertices.Count >= Writer.VertexCapacity && Writer is ITakeBackWriter { TakesBack: true } )
 		{
 			End();
 			return null;
@@ -367,9 +384,9 @@ public sealed class CellBuildTool
 		var segment = segments[^1];
 		// [BIN:TPW-EXE:0x0052FF73 last line flag] the pop that leaves one point on the stack sets the repair's flag
 		segment.IsFirstLine = vertices.Count == 2;
-		// [EXT:online-coop-undo] in a shared park a path or queue segment is taken back through the host's journal (C5): one that laid nothing pops as in single player (none stays on the
-		// stack today: a refused command ends the tool); one the tool loaded (no record) was laid by no step of its player's, and stays
-		if ( Writer is ParkCommandLineWriter { TakesBack: true } lines )
+		// [EXT:online-coop-undo] in a shared park a path, queue (C5-1) or track (C5-3) segment is taken back through the host's journal: one that laid nothing pops as in single player
+		// (none stays on the stack today: a refused command ends the tool); one the tool loaded (no record) was laid by no step of its player's, and stays
+		if ( Writer is ITakeBackWriter { TakesBack: true } lines )
 		{
 			if ( !lines.HasWork( segment ) )
 			{
@@ -381,7 +398,7 @@ public sealed class CellBuildTool
 				undoRefusal = ParkCommandResult.Rejected( TakeBackCommand.NotOwnReason );
 				return false;
 			}
-			if ( !((IGuestUndoWriter)lines).UndoesByRequest )
+			if ( !lines.UndoesByRequest )
 			{
 				var taken = lines.TakeBack( segment );
 				if ( !taken.Accepted )
@@ -390,6 +407,7 @@ public sealed class CellBuildTool
 					return false;
 				}
 				PopSegment( segment );
+				lines.AfterTakenBack( taken );
 				return true;
 			}
 		}

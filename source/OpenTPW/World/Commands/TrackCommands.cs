@@ -28,6 +28,13 @@ public sealed record OpenTrackLineToolCommand( int Ride ) : ParkToolCommand
 /// </summary>
 public sealed record LayTrackLineCommand( int Ride, int StartX, int StartY, int EndX, int EndY ) : ParkToolCommand
 {
+	/// <summary>
+	/// [EXT:online-coop-undo] In a shared park, the issuer's continuation after a line that closes the circuit (C5-3): its click's exactly Ctrl with no queue start pending (UI-031), so the line
+	/// tool restarts without a start. The issuer's continuation follows it, and the host's undo journal reads it, so it knows the restart's first line from a line laid after the tool's end. Its
+	/// own codec generation (<see cref="ParkCommandCodec.TrackToolVersion"/>) says it, so single player's lines, which never set it, keep their version-1 bytes.
+	/// </summary>
+	public bool KeepsTool { get; init; }
+
 	public override ParkCommandKind Kind => ParkCommandKind.LayTrackLine;
 	internal override bool IsWellFormed => Ride >= 0 && IsCell( StartX, StartY ) && IsCell( EndX, EndY );
 	internal override void WriteFields( ParkCommandWriter writer )
@@ -92,21 +99,29 @@ public sealed record CutTrackCommand( int Ride, int FirstX, int FirstY, int Seco
 /// [EXT:online-coop-commands] The line writer a kart or water ride's track tool holds: previews and the start check stay local (<see cref="Inner"/>, no writes), and each commit and undo of a line becomes one
 /// command (<see cref="LayTrackLineCommand"/>, <see cref="UndoTrackLineCommand"/>). When the command walked the circuit to a valid one, the tool moves on as the walk once moved it
 /// (<see cref="Level.ContinueTrackTool"/>: it ends, follows the queue or restarts), on the issuer's machine only. A guest's line and Backspace go to the host as requests under the ride's claim
-/// (C3c-1b): the tool waits for each outcome, which lays or takes back the line and moves the tool on from there.
+/// (C3c-1b): the tool waits for each outcome, which lays or takes back the line and moves the tool on from there. [EXT:online-coop-undo] In a shared park a line keeps the record that laid it and
+/// carries its click's restart (<see cref="LayTrackLineCommand.KeepsTool"/>), which its continuation follows; its Backspace is a take-back the host decides (<see cref="TakeBackCommand"/>, C5-3):
+/// a guest's goes to the host and waits, the host's runs at once; either pops the line only once taken.
 /// </summary>
-public sealed class ParkCommandTrackWriter : ICellLineWriter, IGuestUndoWriter
+public sealed class ParkCommandTrackWriter : ICellLineWriter, ITakeBackWriter
 {
 	private readonly ParkCommands commands;
-	private readonly Action continueTool;
+	private readonly Action<bool?> continueTool;
+	private readonly Func<bool>? keepsTool;
+	private readonly Func<long?>? hostRecord;
 
 	/// <param name="inner">The ride's line writer, whose previews the tool shows.</param>
 	/// <param name="ride">The attraction id of the ride whose track the tool lays.</param>
-	/// <param name="continueTool">The issuer's tool step after a walk that found a valid circuit.</param>
-	public ParkCommandTrackWriter( ICellLineWriter inner, ParkCommands commands, int ride, Action continueTool )
+	/// <param name="continueTool">The issuer's tool step after a walk that found a valid circuit: [EXT:online-coop-undo] in a shared park with the restart its line carried, else null (the click's own).</param>
+	/// <param name="keepsTool">[EXT:online-coop-undo] The issuer's restart after a closing line, read at its click (exactly Ctrl and no queue start pending, UI-031); a shared park's line carries it (C5-3).</param>
+	/// <param name="hostRecord">[EXT:online-coop-undo] On a session's host: the record its stream took last, the record of a line the host just laid (C5-3); null elsewhere.</param>
+	public ParkCommandTrackWriter( ICellLineWriter inner, ParkCommands commands, int ride, Action<bool?> continueTool, Func<bool>? keepsTool = null, Func<long?>? hostRecord = null )
 	{
 		Inner = inner ?? throw new ArgumentNullException( nameof( inner ) );
 		this.commands = commands ?? throw new ArgumentNullException( nameof( commands ) );
 		this.continueTool = continueTool ?? throw new ArgumentNullException( nameof( continueTool ) );
+		this.keepsTool = keepsTool;
+		this.hostRecord = hostRecord;
 		Ride = ride;
 	}
 
@@ -122,27 +137,36 @@ public sealed class ParkCommandTrackWriter : ICellLineWriter, IGuestUndoWriter
 
 	public bool CanStart( (int X, int Y) cell ) => Inner.CanStart( cell );
 
+	/// <summary>[EXT:online-coop-undo] Whether the tool's Backspace is a take-back the host decides (C5-3): in a shared park, the host's and a guest's alike.</summary>
+	internal bool TakesBack => commands.SessionRules || commands.SendsRequests;
+
 	public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end )
 	{
-		var result = commands.Issue( new LayTrackLineCommand( Ride, start.X, start.Y, end.X, end.Y ) );
-		// a guest's line goes to the host (C3c-1b): nothing is laid yet, and the tool waits for the line's outcome, whose walk moves the tool on from there
+		// [EXT:online-coop-undo] a shared park's line carries its click's restart, which its continuation follows and the host's journal reads (C5-3); single player's lines keep their bytes
+		var keeps = TakesBack && keepsTool?.Invoke() == true;
+		var result = commands.Issue( new LayTrackLineCommand( Ride, start.X, start.Y, end.X, end.Y ) { KeepsTool = keeps } );
+		// a guest's line goes to the host (C3c-1b): nothing is laid yet, and the tool waits for the line's outcome, whose walk moves the tool on from there; [EXT:online-coop-undo] its segment
+		// keeps its request's record (C5-3)
 		if ( result.Request is { } request )
 			return new SegmentResult( start, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false )
 			{
 				Start = start,
 				Line = LineCells( start, TrackLineWriter.SnapEnd( start, end ) ),
-				Waiting = new WaitingLineCommit( request, outcome => Complete( start, end, outcome ) )
+				Waiting = new WaitingLineCommit( request, outcome => Complete( start, end, outcome, keeps ) with { Record = request.Record } )
 			};
-		return Complete( start, end, result );
+		// [EXT:online-coop-undo] the host's segment keeps the record its stream just took, read before the continuation (C5-3)
+		var record = result.Accepted && commands.SessionRules ? hostRecord?.Invoke() : null;
+		var laid = Complete( start, end, result, keeps );
+		return record is { } taken ? laid with { Record = taken } : laid;
 	}
 
 	/// <summary>The segment a line's command laid, from its result (at once, or a guest's request's once its record applied in the guest's park), after the tool's step when the walk found the circuit valid.</summary>
-	private SegmentResult Complete( (int X, int Y) start, (int X, int Y) end, ParkCommandResult result )
+	private SegmentResult Complete( (int X, int Y) start, (int X, int Y) end, ParkCommandResult result, bool keeps )
 	{
 		if ( result.Value is TrackLineDone { Segment: { } segment } done )
 		{
 			if ( done.Valid == true )
-				continueTool();
+				continueTool( TakesBack ? keeps : null );
 			return segment;
 		}
 		// a refused command lays nothing: the tool sees a line stopped at its first cell; one that threw while it ran may have laid some (CommandRefused stays false)
@@ -164,10 +188,30 @@ public sealed class ParkCommandTrackWriter : ICellLineWriter, IGuestUndoWriter
 	{
 		ArgumentNullException.ThrowIfNull( segment );
 		if ( commands.Issue( UndoOf( segment ) ).Value is TrackLineDone { Valid: true } )
-			continueTool();
+			continueTool( null );
 	}
 
 	private UndoTrackLineCommand UndoOf( SegmentResult segment ) => new( Ride, segment.Start.X, segment.Start.Y, segment.SnappedEnd.X, segment.SnappedEnd.Y, segment.IsFirstLine );
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The take-back of a line by its record (C5-3): a request names no ride and no first-line flag, which the host's journal derives from the line's own step.
+	/// </summary>
+	private static TakeBackCommand TakeBackOf( long record ) => new( false, record, -1, -1, -1 );
+
+	bool ITakeBackWriter.TakesBack => TakesBack;
+
+	/// <summary>[EXT:online-coop-undo] Every line that reaches the stack laid or met a tile; a segment the tool loaded (no record) was laid by no step of its player's, which its Backspace says (C5-3).</summary>
+	bool ITakeBackWriter.HasWork( SegmentResult segment ) => segment.Record == null || segment.Built.Count > 0 || segment.Existing.Count > 0;
+
+	ParkCommandResult ITakeBackWriter.TakeBack( SegmentResult segment ) => segment.Record is { } record
+		? commands.Issue( TakeBackOf( record ) ) : ParkCommandResult.Rejected( TakeBackCommand.NotOwnReason );
+
+	/// <summary>[EXT:online-coop-undo] The host's taken take-back moves the tool on as its undo's walk once moved it (C5-3).</summary>
+	void ITakeBackWriter.AfterTakenBack( ParkCommandResult taken )
+	{
+		if ( taken.Value is TrackLineDone { Valid: true } )
+			continueTool( null );
+	}
 
 	/// <summary>A guest's Backspace goes to the host first: the ride's claim makes its track the guest's alone, so its last line is the guest's to take back (C3c-1b).</summary>
 	bool IGuestUndoWriter.UndoesByRequest => commands.SendsRequests;
@@ -175,6 +219,9 @@ public sealed class ParkCommandTrackWriter : ICellLineWriter, IGuestUndoWriter
 	CoopGuestCommands.Request? IGuestUndoWriter.SendUndo( SegmentResult segment )
 	{
 		ArgumentNullException.ThrowIfNull( segment );
+		// [EXT:online-coop-undo] in a shared park a take-back by the line's record (C5-3)
+		if ( TakesBack )
+			return segment.Record is { } record ? commands.Issue( TakeBackOf( record ) ).Request : null;
 		return commands.Issue( UndoOf( segment ) ).Request;
 	}
 
@@ -182,11 +229,12 @@ public sealed class ParkCommandTrackWriter : ICellLineWriter, IGuestUndoWriter
 	{
 		ArgumentNullException.ThrowIfNull( outcome );
 		ArgumentNullException.ThrowIfNull( pop );
+		// a taken take-back's result is its inverse's
 		if ( outcome.Value is not TrackLineDone done )
 			return false;
 		pop();
 		if ( done.Valid == true )
-			continueTool();
+			continueTool( null );
 		return true;
 	}
 }

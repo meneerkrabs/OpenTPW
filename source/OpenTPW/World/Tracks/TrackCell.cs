@@ -118,6 +118,11 @@ public struct TrackCell
 	public readonly bool IsExtension => Type == TrackCellTypes.Extension;
 	public readonly bool IsOrigin => TrackCellTypes.IsOrigin( Type );
 
+	/// <summary>[EXT:online-coop-undo] Whether every field of <paramref name="other"/> equals this record's (C5-3): what a change of a tile compares, so a write of the same values is none.</summary>
+	internal readonly bool SameAs( in TrackCell other ) => Type == other.Type && BaseType == other.BaseType && Mask == other.Mask && Link == other.Link && Flags == other.Flags
+		&& Parent == other.Parent && Family == other.Family && Piece == other.Piece && Rotation == other.Rotation && Overlap == other.Overlap && AltMask == other.AltMask
+		&& Segment == other.Segment && Owner == other.Owner;
+
 	public const byte FlagBridge = 0x01;
 	public const byte FlagBridgeUp = 0x02;
 	public const byte FlagBridgeAbove = 0x04;
@@ -168,14 +173,23 @@ public sealed class TrackCellLayer
 
 	public TrackCell Get( int x, int y ) => InBounds( x, y ) ? cells[y * Width + x] : default;
 
+	/// <summary>
+	/// [EXT:online-coop-undo] Told of every real change of a tile's record (<see cref="TrackCell.SameAs"/>), with the cell and its record before the change: the host's undo journal while a
+	/// session runs (C5-3, <see cref="CoopUndoJournal"/>), null otherwise. A write of the record the cell already holds tells nothing.
+	/// </summary>
+	internal Action<int, int, TrackCell>? Changed { get; set; }
+
 	public void Set( int x, int y, TrackCell cell )
 	{
 		if ( !InBounds( x, y ) )
 			throw new ArgumentOutOfRangeException( nameof( x ) );
 		ref var slot = ref cells[y * Width + x];
+		var before = slot;
 		Count += (cell.Type != 0 ? 1 : 0) - (slot.Type != 0 ? 1 : 0);
 		slot = cell;
 		Version++;
+		if ( Changed is { } changed && !before.SameAs( cell ) )
+			changed( x, y, before );
 	}
 
 	public void Clear( int x, int y ) => Set( x, y, default );

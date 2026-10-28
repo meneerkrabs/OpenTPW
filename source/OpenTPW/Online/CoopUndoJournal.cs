@@ -60,6 +60,10 @@ internal sealed class CoopUndoJournal
 	private readonly uint host;
 	/// <summary>The cells the running command changed, with their fields before its first change of each (<see cref="ParkCellMap.Changed"/> between <see cref="Begin"/> and <see cref="Applied"/>).</summary>
 	private readonly Dictionary<(int X, int Y), CellFields> running = new();
+	/// <summary>[EXT:online-coop-undo] The track tiles the running command changed, with their records before its first change of each (<see cref="TrackCellLayer.Changed"/>, C5-3).</summary>
+	private readonly Dictionary<(int X, int Y), TrackCell> runningTracks = new();
+	/// <summary>Whether the command the next record is of started (<see cref="Begin"/>): one the rights refused before it ran changed nothing.</summary>
+	private bool begun;
 	/// <summary>For each tracked cell, the records still in effect that changed it, oldest first.</summary>
 	private readonly Dictionary<(int X, int Y), List<long>> histories = new();
 	/// <summary>How many live steps' footprints include each tracked cell.</summary>
@@ -69,11 +73,34 @@ internal sealed class CoopUndoJournal
 	private readonly Dictionary<long, Step> live = new();
 	/// <summary>
 	/// What a marker left changed on its cell: link bits, any other field (type, flags but a wave machine's, counter, owner, queue link, residue), and [EXT:online-coop-undo] a wave
-	/// machine's bits (<see cref="ParkCellFlags.PoolWaveBits"/>, C5-2), kept apart so a river mark's take-back can pass a later wave setting.
+	/// machine's bits (<see cref="ParkCellFlags.PoolWaveBits"/>, C5-2), kept apart so a river mark's take-back can pass a later wave setting; and of the cell's track tile (C5-3) its identity,
+	/// counter or arms (type, base type, parent, owner, overlap counter, mask: what a count-down reads), and its other fields (flow link, flags, piece, step number), kept apart so a line's
+	/// count-down can pass a later walk's refresh.
 	/// </summary>
-	private readonly record struct Stayed( byte Links, bool Fields, bool Waves = false )
+	private readonly record struct Stayed( byte Links, bool Fields, bool Waves = false, bool TrackTile = false, bool TrackShape = false )
 	{
-		public Stayed With( Stayed other ) => new( (byte)(Links | other.Links), Fields || other.Fields, Waves || other.Waves );
+		/// <summary>Everything, for a change whose fields are not known.</summary>
+		public static readonly Stayed Everything = new( 0xFF, true, true, true, true );
+
+		public Stayed With( Stayed other ) => new( (byte)(Links | other.Links), Fields || other.Fields, Waves || other.Waves, TrackTile || other.TrackTile, TrackShape || other.TrackShape );
+
+		/// <summary>
+		/// [EXT:online-coop-undo] What differs between the track tile records <paramref name="was"/> and <paramref name="now"/> (C5-3): of the fields <paramref name="after"/> differs from
+		/// <paramref name="was"/> in when given (what a step changed, bit by bit for the mask, link and flags), else of every field.
+		/// </summary>
+		public static Stayed OfTrack( TrackCell was, TrackCell now, TrackCell? after = null )
+		{
+			var changed = after ?? default;
+			var all = after == null;
+			bool Moved( int before, int then, int later ) => before != then && (all || before != later);
+			bool Bits( int before, int then, int later ) => ((before ^ then) & (all ? 0xFF : before ^ later)) != 0;
+			var tile = Moved( was.Type, now.Type, changed.Type ) || Moved( was.BaseType, now.BaseType, changed.BaseType ) || Moved( was.Parent, now.Parent, changed.Parent )
+				|| Moved( was.Owner, now.Owner, changed.Owner ) || Moved( was.Overlap, now.Overlap, changed.Overlap ) || Bits( was.Mask, now.Mask, changed.Mask );
+			var shape = Bits( was.Link, now.Link, changed.Link ) || Bits( was.Flags, now.Flags, changed.Flags ) || Moved( was.Family, now.Family, changed.Family )
+				|| Moved( was.Piece, now.Piece, changed.Piece ) || Moved( was.Rotation, now.Rotation, changed.Rotation ) || Moved( was.AltMask, now.AltMask, changed.AltMask )
+				|| Moved( was.Segment, now.Segment, changed.Segment );
+			return new( 0, false, false, tile, shape );
+		}
 
 		/// <summary>What differs between <paramref name="was"/> and <paramref name="now"/>, of the fields <paramref name="changed"/> marks (a field set there, a link bit set there).</summary>
 		public static Stayed Of( CellFields was, CellFields now, CellFields changed )
@@ -104,11 +131,20 @@ internal sealed class CoopUndoJournal
 		this.host = host;
 	}
 
-	/// <summary>The tools a step belongs to: a take-back takes back the member's last step of its tool (lines: the path and queue tools together; a slide's pieces: per tower).</summary>
-	private enum StepTool : byte { Line, SlidePiece, Stroke }
+	/// <summary>
+	/// The tools a step belongs to: a take-back takes back the member's last step of its tool (lines: the path and queue tools together; a slide's pieces: per tower; [EXT:online-coop-undo] a
+	/// track's lines: per ride, C5-3).
+	/// </summary>
+	private enum StepTool : byte { Line, SlidePiece, Stroke, Track }
 
-	/// <summary>What a step's undo is.</summary>
-	private enum StepKind : byte { PathLine, QueueLine, QueueSegment, SlidePiece, PoolStroke }
+	/// <summary>
+	/// What a step's undo is: [EXT:online-coop-undo] a kart or water track line's included (C5-3), and its tombstone, a line whose claim ended or changed hands, or whose ride a cut changed: its
+	/// record and ride, no cells, kept in its member's list so a take-back naming it says why it is no longer taken back.
+	/// </summary>
+	private enum StepKind : byte { PathLine, QueueLine, QueueSegment, SlidePiece, PoolStroke, TrackLine, BuriedTrackLine }
+
+	/// <summary>[EXT:online-coop-undo] A member's kart or water line tool on one ride as the host follows it from the member's records (C5-3): off (absent), on with its stack's depth, or closed.</summary>
+	private readonly record struct LineTool( bool Closed, int Depth );
 
 	private sealed class Step
 	{
@@ -149,7 +185,26 @@ internal sealed class CoopUndoJournal
 		public IReadOnlyList<(int X, int Y)> Written { get; init; } = Array.Empty<(int X, int Y)>();
 		/// <summary>A paint entry's cells that already were pool water and took the river flag alone, in order: its inverse clears that flag and nothing else.</summary>
 		public IReadOnlyList<(int X, int Y)> RiverMarked { get; init; } = Array.Empty<(int X, int Y)>();
-		public StepTool Tool => Kind switch { StepKind.SlidePiece => StepTool.SlidePiece, StepKind.PoolStroke => StepTool.Stroke, _ => StepTool.Line };
+		/// <summary>[EXT:online-coop-undo] The track tiles of <see cref="Changes"/> with their records before and right after the step's record (C5-3).</summary>
+		public IReadOnlyDictionary<(int X, int Y), (TrackCell Before, TrackCell After)> TrackEffects { get; set; } = new Dictionary<(int X, int Y), (TrackCell Before, TrackCell After)>();
+		/// <summary>[EXT:online-coop-undo] A track line's seat, whose claim of its ride it needs (C5-3).</summary>
+		public int Player { get; init; }
+		/// <summary>[EXT:online-coop-undo] The depth of the line tool's stack the line was laid on (C5-3): its take-back's first-line flag is set at depth one.</summary>
+		public int Depth { get; init; }
+		/// <summary>[EXT:online-coop-undo] The tiles a track line laid, and those whose overlap counter it raised by one (C5-3).</summary>
+		public IReadOnlyList<(int X, int Y)> Laid { get; init; } = Array.Empty<(int X, int Y)>();
+		public IReadOnlyList<(int X, int Y)> Raised { get; init; } = Array.Empty<(int X, int Y)>();
+		/// <summary>[EXT:online-coop-undo] A track line visited a tile at the counter's limit, which rose by nothing: its clear would count it down all the same (C5-3).</summary>
+		public bool Saturated { get; init; }
+		public StepTool Tool => Kind switch
+		{
+			StepKind.SlidePiece => StepTool.SlidePiece,
+			StepKind.PoolStroke => StepTool.Stroke,
+			StepKind.TrackLine or StepKind.BuriedTrackLine => StepTool.Track,
+			_ => StepTool.Line
+		};
+		/// <summary>[EXT:online-coop-undo] Whether it is a tombstone (C5-3).</summary>
+		public bool IsBuried => Kind == StepKind.BuriedTrackLine;
 		public int Weight => Math.Max( 1, Footprint.Count + Changes.Length );
 	}
 
@@ -171,6 +226,13 @@ internal sealed class CoopUndoJournal
 		public readonly HashSet<long> Clipped = new();
 		/// <summary>[EXT:online-coop-undo] How many entries of each of the member's strokes are steps (C5-2).</summary>
 		public readonly Dictionary<long, int> StrokeEntries = new();
+		/// <summary>[EXT:online-coop-undo] The member's kart and water line tool on each ride (C5-3): a ride whose tool is off has none.</summary>
+		public readonly Dictionary<int, LineTool> TrackTools = new();
+		/// <summary>[EXT:online-coop-undo] How many of the member's track lines on each ride are steps, and how many are tombstones (C5-3).</summary>
+		public readonly Dictionary<int, int> LiveTracks = new();
+		public readonly Dictionary<int, int> BuriedTracks = new();
+		/// <summary>[EXT:online-coop-undo] The seat the member's track lines were laid by, whose claim they need (C5-3): a member keeps its seat (another member of the seat is another member).</summary>
+		public int Seat = -1;
 	}
 
 	private sealed record Decision( TakeBackCommand Command, IReadOnlyList<Step> Steps, IReadOnlyList<((int X, int Y) Cell, Step Owner)> Bends );
@@ -187,8 +249,11 @@ internal sealed class CoopUndoJournal
 	/// <summary>The outermost command starts: its changes are collected afresh.</summary>
 	internal void Begin( ParkCommand command )
 	{
-		if ( !Disabled )
-			running.Clear();
+		if ( Disabled )
+			return;
+		running.Clear();
+		runningTracks.Clear();
+		begun = true;
 	}
 
 	/// <summary>A real change of a cell's fields inside the running command (<see cref="ParkCellMap.Changed"/>): it only adds to a set, so it cannot fail the command it observes.</summary>
@@ -197,6 +262,16 @@ internal sealed class CoopUndoJournal
 		if ( !Disabled )
 			running.TryAdd( (x, y), before );
 	}
+
+	/// <summary>[EXT:online-coop-undo] A real change of a track tile inside the running command (<see cref="TrackCellLayer.Changed"/>, C5-3): it only adds to a set.</summary>
+	internal void TrackChanged( int x, int y, TrackCell before )
+	{
+		if ( !Disabled )
+			runningTracks.TryAdd( (x, y), before );
+	}
+
+	/// <summary>The park's track layer, which every kart and water ride's tiles share.</summary>
+	private TrackCellLayer? Tracks => level.Guests?.Grid.Cells.Tracks;
 
 	/// <summary>A fault in the journal's recording or its decision: it logs it, empties itself and stays off for the session.</summary>
 	private void Disable( Exception error )
@@ -211,6 +286,20 @@ internal sealed class CoopUndoJournal
 
 	/// <summary>[EXT:online-coop-undo] The strokes of <paramref name="member"/> the bounds clipped that keep an entry (tests, C5-2).</summary>
 	internal int ClippedOf( uint member ) => members.TryGetValue( member, out var steps ) ? steps.Clipped.Count : 0;
+
+	/// <summary>The host's own member id (tests).</summary>
+	internal uint Host => host;
+
+	/// <summary>[EXT:online-coop-undo] <paramref name="member"/>'s line tool on <paramref name="ride"/> as the journal follows it: null off, else closed or on with its depth (tests, C5-3).</summary>
+	internal (bool Closed, int Depth)? LineToolOf( uint member, int ride ) =>
+		members.TryGetValue( member, out var steps ) && steps.TrackTools.TryGetValue( ride, out var tool ) ? (tool.Closed, tool.Depth) : null;
+
+	/// <summary>[EXT:online-coop-undo] <paramref name="member"/>'s track lines that are steps, and those that are tombstones (tests, C5-3).</summary>
+	internal (int Live, int Buried) TrackEntriesOf( uint member ) => members.TryGetValue( member, out var steps )
+		? (steps.Steps.Count( step => step.Kind == StepKind.TrackLine ), steps.Steps.Count( step => step.IsBuried )) : (0, 0);
+
+	/// <summary>[EXT:online-coop-undo] The depth a track line of record <paramref name="record"/> was laid on, null for none (tests, C5-3).</summary>
+	internal int? DepthOf( long record ) => members.Values.SelectMany( member => member.Steps ).FirstOrDefault( step => step.Kind == StepKind.TrackLine && step.Record == record )?.Depth;
 
 	/// <summary>Whether <paramref name="member"/>'s weight in the bounds is exactly its live steps' (tests).</summary>
 	internal bool WeightAgrees( uint member ) => !members.TryGetValue( member, out var steps ) || steps.Cells == steps.Steps.Sum( step => step.Weight );
@@ -255,14 +344,19 @@ internal sealed class CoopUndoJournal
 
 	private void Record( long record, uint? origin, ParkCommand command, ParkCommandResult result )
 	{
-		var before = new Dictionary<(int X, int Y), CellFields>( running );
-		var changes = before.Keys.ToArray();
+		// a command the rights refused before it ran changed nothing: what the simulation changed since the last record is no command's
+		var before = begun ? new Dictionary<(int X, int Y), CellFields>( running ) : new Dictionary<(int X, int Y), CellFields>();
+		var beforeTracks = begun ? new Dictionary<(int X, int Y), TrackCell>( runningTracks ) : new Dictionary<(int X, int Y), TrackCell>();
+		var changes = before.Keys.Union( beforeTracks.Keys ).ToArray();
 		running.Clear();
+		runningTracks.Clear();
+		begun = false;
 		var decided = pending;
 		pending = null;
 		if ( command is TakeBackCommand { Verdict: TakeBackVerdict.Taken } && decided != null && result.Accepted && result.Error == null )
 		{
-			Complete( decided, before );
+			Complete( decided, before, beforeTracks, result );
+			SweepTracks();
 			return;
 		}
 		var member = MemberOf( origin );
@@ -270,16 +364,23 @@ internal sealed class CoopUndoJournal
 		var stroke = command is IPoolStrokeCommand pool ? OpenStroke( member, record, pool ) : -1;
 		if ( command is TakeBackCommand && members.TryGetValue( member, out var takingBack ) )
 			takingBack.OpenStroke = null;
-		var made = result.Accepted && result.Error == null ? StepsOf( record, member, origin != null, command, result, changes, before, stroke ) : Array.Empty<Step>();
+		// [EXT:online-coop-undo] the member's kart or water line tool follows its track commands, accepted or not; a line laid on it is a step at its depth (C5-3)
+		var depth = FollowLineTool( member, command, result );
+		var made = result.Accepted && result.Error == null ? StepsOf( record, member, origin != null, command, result, changes, before, beforeTracks, stroke, depth ) : Array.Empty<Step>();
 		// any other step of the member closes its open stroke
 		if ( made.Any( step => step.Kind != StepKind.PoolStroke ) && members.TryGetValue( member, out var stepping ) )
 			stepping.OpenStroke = null;
 		if ( made.Length > 0 && level.Guests?.Grid.Cells is { } map )
 		{
-			// each step keeps its effects, its cells' fields before and right after it: a take-back removes its record only where it reversed every one (Reversed)
+			// each step keeps its effects, its cells' fields before and right after it, [EXT:online-coop-undo] and its track tiles' (C5-3): a take-back removes its record only where it
+			// reversed every one (Reversed)
 			var effects = before.ToDictionary( pair => pair.Key, pair => (pair.Value, map.FieldsAt( pair.Key.X, pair.Key.Y )) );
+			var trackEffects = beforeTracks.ToDictionary( pair => pair.Key, pair => (pair.Value, map.Tracks.Get( pair.Key.X, pair.Key.Y )) );
 			foreach ( var step in made )
+			{
 				step.Effects = effects;
+				step.TrackEffects = trackEffects;
+			}
 		}
 		foreach ( var step in made )
 			Add( step );
@@ -292,10 +393,75 @@ internal sealed class CoopUndoJournal
 			if ( removable )
 				Append( list, record );
 			else
-				Append( list, NewPermanent( before.TryGetValue( cell, out var was ) && level.Guests?.Grid.Cells is { } now ? Whole( was, now.FieldsAt( cell.X, cell.Y ) ) : new Stayed( 0xFF, true ) ) );
+				Append( list, NewPermanent( WholeAt( cell, before, beforeTracks ) ) );
 		}
 		foreach ( var step in made )
 			Bound( step.Member );
+		// [EXT:online-coop-undo] a cut changes its ride's track under every line laid on it: they become tombstones (C5-3)
+		if ( command is CutTrackCommand cut && result.Accepted && result.Error == null )
+			BuryRide( cut.Ride );
+		SweepTracks();
+	}
+
+	/// <summary>
+	/// What a record left changed on <paramref name="cell"/>: its fields from their values before it (<paramref name="before"/>) to now, [EXT:online-coop-undo] and its track tile's
+	/// (<paramref name="beforeTracks"/>, C5-3); everything when neither is known.
+	/// </summary>
+	private Stayed WholeAt( (int X, int Y) cell, IReadOnlyDictionary<(int X, int Y), CellFields> before, IReadOnlyDictionary<(int X, int Y), TrackCell> beforeTracks )
+	{
+		if ( level.Guests?.Grid.Cells is not { } map )
+			return Stayed.Everything;
+		var known = false;
+		var stayed = new Stayed( 0, false );
+		if ( before.TryGetValue( cell, out var was ) )
+		{
+			stayed = stayed.With( Whole( was, map.FieldsAt( cell.X, cell.Y ) ) );
+			known = true;
+		}
+		if ( beforeTracks.TryGetValue( cell, out var tile ) )
+		{
+			stayed = stayed.With( Stayed.OfTrack( tile, map.Tracks.Get( cell.X, cell.Y ) ) );
+			known = true;
+		}
+		return known ? stayed : Stayed.Everything;
+	}
+
+	/// <summary>What <paramref name="step"/> changed on <paramref name="cell"/>: its fields and its track tile from before it to right after it; everything when neither is known.</summary>
+	private static Stayed EffectOf( Step step, (int X, int Y) cell )
+	{
+		var known = false;
+		var stayed = new Stayed( 0, false );
+		if ( step.Effects.TryGetValue( cell, out var effect ) )
+		{
+			stayed = stayed.With( Whole( effect.Before, effect.After ) );
+			known = true;
+		}
+		if ( step.TrackEffects.TryGetValue( cell, out var tile ) )
+		{
+			stayed = stayed.With( Stayed.OfTrack( tile.Before, tile.After ) );
+			known = true;
+		}
+		return known ? stayed : Stayed.Everything;
+	}
+
+	/// <summary>What of <paramref name="step"/>'s changes on <paramref name="cell"/> stays now: each field and track field it changed that is not back to its value from before it.</summary>
+	private Stayed StayedOf( Step step, (int X, int Y) cell )
+	{
+		if ( level.Guests?.Grid.Cells is not { } map )
+			return Stayed.Everything;
+		var known = false;
+		var stayed = new Stayed( 0, false );
+		if ( step.Effects.TryGetValue( cell, out var effect ) )
+		{
+			stayed = stayed.With( Stayed.Of( effect.Before, map.FieldsAt( cell.X, cell.Y ), Differing( effect.Before, effect.After ) ) );
+			known = true;
+		}
+		if ( step.TrackEffects.TryGetValue( cell, out var tile ) )
+		{
+			stayed = stayed.With( Stayed.OfTrack( tile.Before, map.Tracks.Get( cell.X, cell.Y ), tile.After ) );
+			known = true;
+		}
+		return known ? stayed : Stayed.Everything;
 	}
 
 	/// <summary>
@@ -303,10 +469,13 @@ internal sealed class CoopUndoJournal
 	/// take-back, as in single player (the user's decision 7 of the plan): it is no step, and its record stays in the cells' lists for good.
 	/// </summary>
 	private Step[] StepsOf( long record, uint member, bool guest, ParkCommand command, ParkCommandResult result, (int X, int Y)[] changes, IReadOnlyDictionary<(int X, int Y), CellFields> before,
-		long stroke )
+		IReadOnlyDictionary<(int X, int Y), TrackCell> beforeTracks, long stroke, int? depth )
 	{
 		switch ( command )
 		{
+			// [EXT:online-coop-undo] a kart or water track line laid on its member's line tool (C5-3, FollowLineTool)
+			case LayTrackLineCommand line when depth is { } laidOn && result.Value is TrackLineDone { Segment: { } laid }:
+				return TrackLine( record, member, line, laid, laidOn, changes, beforeTracks );
 			// [EXT:online-coop-undo] a pool stroke's commands, each an entry of its stroke with the cells it wrote (C5-2): a host's cell, a guest's batch paired cell by cell with its writes
 			case PaintPoolCellCommand paint when stroke >= 0 && result.Value is PoolCellWrite write:
 				return StrokeEntry( record, member, stroke, false, write.Result == PoolBuildResult.Ok ? new[] { (paint.X, paint.Y) } : Array.Empty<(int X, int Y)>(),
@@ -421,6 +590,163 @@ internal sealed class CoopUndoJournal
 			PieceCell = slide.Cells[first + ordinal] } ).ToArray();
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-undo] A kart or water track line of <paramref name="member"/>'s, laid on its tool at <paramref name="depth"/> (C5-3): the tiles it laid (all four cells of each) and the
+	/// tiles whose overlap counter it raised by one, by their records before it, are its footprint, which its inverse, the directional clear, takes back; every other real write of its record
+	/// (the arms it added to neighbours, the walk's refresh of earlier tiles and the station) is its changes, which a later step's dependency check sees and its own take-back does not compare
+	/// with its footprint. A tile at the counter's limit rose by nothing, and the clear counts down every tile it visits: such a line is still a step, whose take-back is in the way. The ride's
+	/// exit and entry tiles a line laid are spared by the clear, as single player's Backspace spares them: they are counted down, not cleared, and keep its record as its member's residue.
+	/// </summary>
+	private Step[] TrackLine( long record, uint member, LayTrackLineCommand line, SegmentResult laid, int depth, (int X, int Y)[] changes,
+		IReadOnlyDictionary<(int X, int Y), TrackCell> beforeTracks )
+	{
+		if ( level.ResolveCommandObject( line.Ride ) is not { } station || !level.TrackStations.TryGetValue( station, out var layout ) || Tracks is not { } tracks )
+			return Array.Empty<Step>();
+		var raised = new List<(int X, int Y)>();
+		var saturated = false;
+		foreach ( var tile in laid.Existing )
+		{
+			if ( beforeTracks.TryGetValue( tile, out var was ) && tracks.Get( tile.X, tile.Y ).Overlap == was.Overlap + 1 )
+				raised.Add( tile );
+			else
+				saturated = true;
+		}
+		var spared = laid.Built.Where( tile => tile == layout.Exit || tile == layout.Entry ).ToArray();
+		return new[] { new Step { Record = record, Member = member, Kind = StepKind.TrackLine, Group = line.Ride, Ride = line.Ride, Player = line.Player,
+			Footprint = laid.Built.SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ).Concat( raised ).ToHashSet(), Changes = changes,
+			Start = (line.StartX, line.StartY), End = laid.SnappedEnd, Depth = depth, Laid = laid.Built.ToArray(), Raised = raised, Saturated = saturated,
+			ClearsWhole = laid.Built.Except( spared ).SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ).ToHashSet(),
+			CountedUp = raised.Concat( spared ).ToHashSet() } };
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The member's kart or water line tool on a ride, followed from its record (C5-3): every transition of the tool's stack is one of the member's commands, so the host
+	/// knows the stack's depth without seeing it. An entry (the walk to the open end, <see cref="OpenTrackLineToolCommand"/>; a cut that leaves the circuit open, <see cref="CutTrackCommand"/>)
+	/// loads the corners its open end gives, at least one point and at most the stack's 1,025 (<see cref="TrackEditor.EnterLineTool"/>): the tool is on at that depth; any other cut leaves no line
+	/// tool. A line of the member on the ride is judged in this order: one whose walk found the circuit valid is no step, wherever it ended (the issuer's tool reads that first), and the tool is
+	/// closed when the line carried the issuer's restart (<see cref="LayTrackLineCommand.KeepsTool"/>), off when it did not; one the park refused, or that ended the tool otherwise (it ended on its
+	/// start, stopped short or ended on existing track, as <see cref="CellBuildTool"/> ends it; a full stack ends a shared park's tool before its line goes), is no step and the tool is off; one
+	/// laid while the tool is off (no tool sends one: after its end a line needs an entry) is no step; any other is a step at the depth the tool is on, a restart's first line at depth one, and the
+	/// tool is one point deeper. Ending or cancelling a tool is the issuer's own: the tool stays on here, and the member's next entry sets it again. Returns a step's depth, else null.
+	/// </summary>
+	private int? FollowLineTool( uint id, ParkCommand command, ParkCommandResult result )
+	{
+		var done = result.Accepted && result.Error == null;
+		switch ( command )
+		{
+			case OpenTrackLineToolCommand entry:
+				if ( done && result.Value is TrackOpenEnd end )
+					MemberFor( id ).TrackTools[entry.Ride] = new LineTool( false, DepthOf( end ) );
+				return null;
+			case CutTrackCommand cut:
+				if ( done && result.Value is TrackCutDone { Valid: false, Open: { } open } )
+					MemberFor( id ).TrackTools[cut.Ride] = new LineTool( false, DepthOf( open ) );
+				else if ( members.TryGetValue( id, out var cutting ) )
+					cutting.TrackTools.Remove( cut.Ride );
+				return null;
+			case LayTrackLineCommand line:
+			{
+				if ( done && result.Value is TrackLineDone { Valid: true } )
+				{
+					if ( line.KeepsTool )
+						MemberFor( id ).TrackTools[line.Ride] = new LineTool( true, 0 );
+					else if ( members.TryGetValue( id, out var closing ) )
+						closing.TrackTools.Remove( line.Ride );
+					return null;
+				}
+				if ( !members.TryGetValue( id, out var member ) || !member.TrackTools.TryGetValue( line.Ride, out var tool ) )
+					return null;
+				if ( !done || result.Value is not TrackLineDone { Segment: { } laid } || laid.SnappedEnd == (line.StartX, line.StartY) || !laid.Completed || laid.EndedOnExisting )
+				{
+					member.TrackTools.Remove( line.Ride );
+					return null;
+				}
+				var depth = tool.Closed ? 1 : tool.Depth;
+				member.TrackTools[line.Ride] = new LineTool( false, depth + 1 );
+				return depth;
+			}
+			default:
+				return null;
+		}
+	}
+
+	/// <summary>The depth of the line tool's stack an entry's open end loads: its corners, at least one point, at most the stack holds (<see cref="TrackEditor.CornerCapacity"/>).</summary>
+	private static int DepthOf( TrackOpenEnd open ) => Math.Min( Math.Max( open.Corners.Count, 1 ), TrackEditor.CornerCapacity );
+
+	/// <summary>The member of <paramref name="id"/>, made when it has none yet.</summary>
+	private Member MemberFor( uint id )
+	{
+		if ( !members.TryGetValue( id, out var member ) )
+			members[id] = member = new Member();
+		return member;
+	}
+
+	/// <summary>Adds <paramref name="delta"/> to <paramref name="ride"/>'s count, which goes when it reaches zero.</summary>
+	private static void Count( Dictionary<int, int> counts, int ride, int delta )
+	{
+		var count = counts.GetValueOrDefault( ride ) + delta;
+		if ( count > 0 )
+			counts[ride] = count;
+		else
+			counts.Remove( ride );
+	}
+
+	/// <summary>[EXT:online-coop-undo] Turns every member's track lines on <paramref name="ride"/> into tombstones (C5-3): a cut changed the ride's track under them.</summary>
+	private void BuryRide( int ride )
+	{
+		foreach ( var member in members.Values )
+		{
+			if ( !member.LiveTracks.ContainsKey( ride ) )
+				continue;
+			foreach ( var step in member.Steps.Where( step => step.Kind == StepKind.TrackLine && step.Ride == ride ).ToArray() )
+				Bury( member, step );
+		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] After every record (C5-3): a member's track lines on a ride whose claim its seat does not hold now (released, expired, taken by another, gone with its grant) become
+	/// tombstones, so a take-back needs the claim held since the line, and a claim taken again brings none back; every entry of a ride that left the park goes, its tombstones with it.
+	/// </summary>
+	private void SweepTracks()
+	{
+		foreach ( var member in members.Values )
+		{
+			if ( member.LiveTracks.Count == 0 && member.BuriedTracks.Count == 0 )
+				continue;
+			foreach ( var ride in member.LiveTracks.Keys.Union( member.BuriedTracks.Keys ).ToArray() )
+			{
+				if ( level.ResolveCommandObject( ride ) is not { IsDeleted: false } )
+				{
+					foreach ( var step in member.Steps.Where( step => step.Tool == StepTool.Track && step.Ride == ride ).ToArray() )
+						Leave( member, step, takenBack: false );
+					member.TrackTools.Remove( ride );
+					continue;
+				}
+				if ( !member.LiveTracks.ContainsKey( ride ) || level.ClaimOf( ride ) == member.Seat )
+					continue;
+				foreach ( var step in member.Steps.Where( step => step.Kind == StepKind.TrackLine && step.Ride == ride ).ToArray() )
+					Bury( member, step );
+			}
+		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] Turns <paramref name="step"/>, a live track line, into its tombstone where it stood in its member's list (C5-3): it leaves as a step left for good (its records stay in
+	/// the cells' lists for good), and the tombstone keeps its record and ride with no cells, weight one in the bounds, until its member's bounds, departure or ride take it.
+	/// </summary>
+	private void Bury( Member member, Step step )
+	{
+		var index = member.Steps.IndexOf( step );
+		if ( index < 0 )
+			return;
+		Leave( member, step, takenBack: false );
+		var tombstone = new Step { Record = step.Record, Part = step.Part, Member = step.Member, Kind = StepKind.BuriedTrackLine, Group = step.Group, Ride = step.Ride, Player = step.Player,
+			Footprint = new HashSet<(int X, int Y)>(), Changes = Array.Empty<(int X, int Y)>() };
+		member.Steps.Insert( index, tombstone );
+		member.Cells += tombstone.Weight;
+		Count( member.BuriedTracks, tombstone.Ride, 1 );
+	}
+
 	private void Add( Step step )
 	{
 		if ( !members.TryGetValue( step.Member, out var member ) )
@@ -429,6 +755,11 @@ internal sealed class CoopUndoJournal
 		member.Cells += step.Weight;
 		if ( step.Stroke >= 0 )
 			member.StrokeEntries[step.Stroke] = member.StrokeEntries.GetValueOrDefault( step.Stroke ) + 1;
+		if ( step.Kind == StepKind.TrackLine )
+		{
+			Count( member.LiveTracks, step.Ride, 1 );
+			member.Seat = step.Player;
+		}
 		live.TryAdd( step.Record, step );
 		foreach ( var cell in step.Footprint )
 		{
@@ -462,6 +793,11 @@ internal sealed class CoopUndoJournal
 	{
 		member.Steps.Remove( step );
 		member.Cells -= step.Weight;
+		// [EXT:online-coop-undo] a track line's counts (C5-3)
+		if ( step.Kind == StepKind.TrackLine )
+			Count( member.LiveTracks, step.Ride, -1 );
+		else if ( step.IsBuried )
+			Count( member.BuriedTracks, step.Ride, -1 );
 		// [EXT:online-coop-undo] a stroke's last entry takes the stroke out of the member's sets (C5-2)
 		if ( step.Stroke >= 0 && member.StrokeEntries.TryGetValue( step.Stroke, out var entries ) )
 		{
@@ -494,13 +830,9 @@ internal sealed class CoopUndoJournal
 					Normalize( list );
 				}
 				else if ( !takenBack )
-					Mark( list, step.Record, NewPermanent( step.Effects.TryGetValue( cell, out var kept ) ? Whole( kept.Before, kept.After ) : new Stayed( 0xFF, true ) ) );
+					Mark( list, step.Record, NewPermanent( EffectOf( step, cell ) ) );
 				else if ( list.Contains( step.Record ) )
-				{
-					var stayed = step.Effects.TryGetValue( cell, out var effect ) && level.Guests?.Grid.Cells is { } map
-						? Stayed.Of( effect.Before, map.FieldsAt( cell.X, cell.Y ), Differing( effect.Before, effect.After ) ) : new Stayed( 0xFF, true );
-					Mark( list, step.Record, NewResidue( step.Member, stayed ) );
-				}
+					Mark( list, step.Record, NewResidue( step.Member, StayedOf( step, cell ) ) );
 			}
 		}
 		foreach ( var cell in step.Footprint )
@@ -513,17 +845,27 @@ internal sealed class CoopUndoJournal
 	/// </summary>
 	private bool Reversed( Step step, (int X, int Y) cell )
 	{
-		if ( !step.Effects.TryGetValue( cell, out var effect ) || level.Guests?.Grid.Cells is not { } map )
+		if ( level.Guests?.Grid.Cells is not { } map )
 			return false;
-		var (before, after) = effect;
-		var now = map.FieldsAt( cell.X, cell.Y );
-		return (before.Type == after.Type || now.Type == before.Type)
-			&& ((before.Flags ^ after.Flags) & (now.Flags ^ before.Flags)) == 0
-			&& (before.Placements == after.Placements || now.Placements == before.Placements)
-			&& ((before.Links ^ after.Links) & (now.Links ^ before.Links)) == 0
-			&& (before.QueueLink == after.QueueLink || now.QueueLink == before.QueueLink)
-			&& (before.Owner == after.Owner || now.Owner == before.Owner)
-			&& (before.Residue == after.Residue || now.Residue == before.Residue);
+		var onMap = step.Effects.TryGetValue( cell, out var effect );
+		// [EXT:online-coop-undo] and its track tile's, field by field, the mask, link and flags bit by bit (C5-3)
+		var onTrack = step.TrackEffects.TryGetValue( cell, out var tile );
+		if ( !onMap && !onTrack )
+			return false;
+		if ( onMap )
+		{
+			var (before, after) = effect;
+			var now = map.FieldsAt( cell.X, cell.Y );
+			if ( !((before.Type == after.Type || now.Type == before.Type)
+				&& ((before.Flags ^ after.Flags) & (now.Flags ^ before.Flags)) == 0
+				&& (before.Placements == after.Placements || now.Placements == before.Placements)
+				&& ((before.Links ^ after.Links) & (now.Links ^ before.Links)) == 0
+				&& (before.QueueLink == after.QueueLink || now.QueueLink == before.QueueLink)
+				&& (before.Owner == after.Owner || now.Owner == before.Owner)
+				&& (before.Residue == after.Residue || now.Residue == before.Residue)) )
+				return false;
+		}
+		return !onTrack || Stayed.OfTrack( tile.Before, map.Tracks.Get( cell.X, cell.Y ), tile.After ) is { TrackTile: false, TrackShape: false };
 	}
 
 	private void Untrack( (int X, int Y) cell )
@@ -632,7 +974,7 @@ internal sealed class CoopUndoJournal
 	/// the cells its run changed, with their fields before it; its clear unlinking a neighbour's bit another command set) gets its member's residue marker, a write of that member's own, with
 	/// what it changed there, unless it is the earlier own segment's whose shared bend corner it cleared; and that corner leaves the earlier segment's footprint and its weight.
 	/// </summary>
-	private void Complete( Decision decided, IReadOnlyDictionary<(int X, int Y), CellFields> run )
+	private void Complete( Decision decided, IReadOnlyDictionary<(int X, int Y), CellFields> run, IReadOnlyDictionary<(int X, int Y), TrackCell> runTracks, ParkCommandResult result )
 	{
 		foreach ( var step in decided.Steps )
 		{
@@ -641,18 +983,28 @@ internal sealed class CoopUndoJournal
 		}
 		var by = decided.Steps[0].Member;
 		if ( members.TryGetValue( by, out var taker ) )
-			taker.OpenStroke = null;
-		foreach ( var (cell, was) in run )
 		{
-			if ( decided.Steps.Any( step => step.Effects.ContainsKey( cell ) ) )
+			taker.OpenStroke = null;
+			// [EXT:online-coop-undo] a taken track line pops the member's line tool back to the depth it was laid on; a take-back whose walk found the circuit valid ends the tool, as the
+			// tool's own undo does (its continuation runs outside a click) (C5-3)
+			if ( decided.Steps[0] is { Kind: StepKind.TrackLine } line )
+			{
+				if ( result.Value is TrackLineDone { Valid: true } )
+					taker.TrackTools.Remove( line.Ride );
+				else
+					taker.TrackTools[line.Ride] = new LineTool( false, line.Depth );
+			}
+		}
+		foreach ( var cell in run.Keys.Union( runTracks.Keys ) )
+		{
+			if ( decided.Steps.Any( step => step.Effects.ContainsKey( cell ) || step.TrackEffects.ContainsKey( cell ) ) )
 				continue;
 			// the shared bend's clearing unlinks the member's own earlier segment beside it: that chain's own writes, no marker (another player's records there stay)
 			if ( decided.Bends.Any( bend => bend.Owner.Effects.ContainsKey( cell ) || bend.Owner.Footprint.Contains( cell ) ) )
 				continue;
-			if ( !histories.TryGetValue( cell, out var list ) || level.Guests?.Grid.Cells is not { } map )
+			if ( !histories.TryGetValue( cell, out var list ) )
 				continue;
-			var now = map.FieldsAt( cell.X, cell.Y );
-			Append( list, NewResidue( by, Whole( was, now ) ) );
+			Append( list, NewResidue( by, WholeAt( cell, run, runTracks ) ) );
 		}
 		foreach ( var (bend, owner) in decided.Bends )
 		{
@@ -729,6 +1081,8 @@ internal sealed class CoopUndoJournal
 		histories.Clear();
 		tracked.Clear();
 		running.Clear();
+		runningTracks.Clear();
+		begun = false;
 		pending = null;
 	}
 
@@ -750,6 +1104,8 @@ internal sealed class CoopUndoJournal
 		try
 		{
 			Fault?.Invoke();
+			// [EXT:online-coop-undo] the claimed ride is the step's own, live or a tombstone, whatever verdict follows (C5-3): the rights ask its claim of the member
+			asked = asked with { ClaimedRide = ClaimedRideOf( asked, MemberOf( origin ) ) };
 			var verdict = Judge( asked, MemberOf( origin ), out var decision );
 			if ( verdict != TakeBackVerdict.Taken || decision == null )
 				return asked with { Verdict = verdict };
@@ -763,6 +1119,13 @@ internal sealed class CoopUndoJournal
 		}
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-undo] The ride a take-back of <paramref name="id"/>'s is on (C5-3): the track line it names, a step or a tombstone of the member's, puts its ride there; any other step,
+	/// a stroke and no step at all −1, so the rights never ask a ride a request named.
+	/// </summary>
+	private int ClaimedRideOf( TakeBackCommand request, uint id ) => !request.Stroke && members.TryGetValue( id, out var member )
+		&& member.Steps.LastOrDefault( candidate => candidate.Record == request.Step && candidate.Part == request.Part ) is { Tool: StepTool.Track } step ? step.Ride : -1;
+
 	private TakeBackVerdict Judge( TakeBackCommand request, uint id, out Decision? decision )
 	{
 		decision = null;
@@ -774,6 +1137,10 @@ internal sealed class CoopUndoJournal
 		var step = member.Steps.LastOrDefault( candidate => candidate.Record == request.Step && candidate.Part == request.Part );
 		if ( step == null )
 			return request.Step <= member.Forgot ? TakeBackVerdict.Forgotten : TakeBackVerdict.NotOwn;
+		// [EXT:online-coop-undo] a track line whose claim ended or changed hands, or whose ride a cut changed, is a tombstone: changed, before the last-step check (C5-3); the rights refuse it
+		// first, through its ride's claim, while the member holds no claim of it
+		if ( step.IsBuried )
+			return TakeBackVerdict.Changed;
 		// a piece of a slide finished since (its own queued splash, say) is refused before anything else, quietly: a finished slide takes riders, its pieces go only with its tower (C3b-3)
 		if ( step.Kind == StepKind.SlidePiece && level.PoolSlides?.Find( step.Group ) is { IsComplete: true } )
 			return TakeBackVerdict.InTheWay;
@@ -825,6 +1192,17 @@ internal sealed class CoopUndoJournal
 				if ( level.PoolSlides?.Find( step.Group ) is not { } slide || slide.Cells.Count != step.PieceIndex + 1 || slide.Cells[^1] != step.PieceCell )
 					return TakeBackVerdict.Changed;
 				var inverse = new UndoPoolSlidePieceCommand( step.Tower.X, step.Tower.Y ) { Player = player };
+				return Decided( request, inverse, new[] { step }, Array.Empty<((int X, int Y), Step)>(), out decision );
+			}
+			// [EXT:online-coop-undo] a kart or water track line (C5-3): its tool's own Backspace, the directional clear with the first-line flag its depth gives (the pop that leaves one point)
+			case StepKind.TrackLine:
+			{
+				// a tile at the counter's limit rose by nothing, and the clear counts down every tile it visits
+				if ( step.Saturated )
+					return TakeBackVerdict.InTheWay;
+				var inverse = new UndoTrackLineCommand( step.Ride, step.Start.X, step.Start.Y, step.End.X, step.End.Y, step.Depth == 1 ) { Player = player };
+				if ( !level.PredictTrackLineUndo( inverse, step.Laid, step.Raised ) )
+					return TakeBackVerdict.InTheWay;
 				return Decided( request, inverse, new[] { step }, Array.Empty<((int X, int Y), Step)>(), out decision );
 			}
 		}
@@ -924,9 +1302,16 @@ internal sealed class CoopUndoJournal
 	/// </summary>
 	private bool ResidueLeavesCountAlone( Step step, (int X, int Y) cell, long entry )
 	{
-		if ( entry >= 0 || !residueOf.TryGetValue( entry, out var residue ) || !step.Effects.TryGetValue( cell, out var own ) )
+		if ( entry >= 0 || !residueOf.TryGetValue( entry, out var residue ) )
 			return false;
-		return !residue.Stayed.Fields && !residue.Stayed.Waves && (residue.Stayed.Links & (own.Before.Links ^ own.After.Links)) == 0;
+		var stayed = residue.Stayed;
+		// [EXT:online-coop-undo] on a track tile a marker that left the tile's identity, counter and arms alone (a walk's refresh: its flow link, step number, piece) leaves the count-down as
+		// it needs it (C5-3)
+		if ( stayed.Fields || stayed.Waves || stayed.TrackTile )
+			return false;
+		if ( stayed.Links == 0 )
+			return true;
+		return step.Effects.TryGetValue( cell, out var own ) && (stayed.Links & (own.Before.Links ^ own.After.Links)) == 0;
 	}
 
 	/// <summary>
@@ -936,8 +1321,8 @@ internal sealed class CoopUndoJournal
 	private bool LeavesRiverAlone( (int X, int Y) cell, long entry )
 	{
 		if ( entry < 0 )
-			return residueOf.TryGetValue( entry, out var marker ) && !marker.Stayed.Fields;
-		if ( !live.TryGetValue( entry, out var other ) || !other.Effects.TryGetValue( cell, out var effect ) )
+			return residueOf.TryGetValue( entry, out var marker ) && !marker.Stayed.Fields && !marker.Stayed.TrackTile && !marker.Stayed.TrackShape;
+		if ( !live.TryGetValue( entry, out var other ) || !other.Effects.TryGetValue( cell, out var effect ) || other.TrackEffects.ContainsKey( cell ) )
 			return false;
 		var (before, after) = effect;
 		return (before with { Flags = (ushort)(before.Flags & ~WaveBits) }) == (after with { Flags = (ushort)(after.Flags & ~WaveBits) });
@@ -949,12 +1334,24 @@ internal sealed class CoopUndoJournal
 	/// </summary>
 	private bool LeavesCountAlone( Step step, (int X, int Y) cell, long entry )
 	{
-		if ( entry < 0 || !live.TryGetValue( entry, out var other ) || !other.Effects.TryGetValue( cell, out var effect ) || !step.Effects.TryGetValue( cell, out var own ) )
+		if ( entry < 0 || !live.TryGetValue( entry, out var other ) )
 			return false;
-		var (before, after) = effect;
-		return before.Type == after.Type && before.Flags == after.Flags && before.Placements == after.Placements && before.Owner == after.Owner && before.QueueLink == after.QueueLink
-			&& before.Residue == after.Residue
-			&& ((before.Links ^ after.Links) & (own.Before.Links ^ own.After.Links)) == 0;
+		var onMap = other.Effects.TryGetValue( cell, out var effect );
+		var onTrack = other.TrackEffects.TryGetValue( cell, out var tile );
+		if ( !onMap && !onTrack )
+			return false;
+		if ( onMap )
+		{
+			if ( !step.Effects.TryGetValue( cell, out var own ) )
+				return false;
+			var (before, after) = effect;
+			if ( !(before.Type == after.Type && before.Flags == after.Flags && before.Placements == after.Placements && before.Owner == after.Owner && before.QueueLink == after.QueueLink
+				&& before.Residue == after.Residue
+				&& ((before.Links ^ after.Links) & (own.Before.Links ^ own.After.Links)) == 0) )
+				return false;
+		}
+		// [EXT:online-coop-undo] a track tile's identity, counter and arms as they were: what the count-down reads (C5-3)
+		return !onTrack || !Stayed.OfTrack( tile.Before, tile.After ).TrackTile;
 	}
 
 	private static TakeBackVerdict Decided( TakeBackCommand request, ParkCommand inverse, IReadOnlyList<Step> steps, IReadOnlyList<((int X, int Y) Cell, Step Owner)> bends,

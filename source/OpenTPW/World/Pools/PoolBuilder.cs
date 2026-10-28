@@ -65,28 +65,6 @@ public sealed record PoolStroke( bool Erase, IReadOnlyList<(int X, int Y)> Cells
 }
 
 /// <summary>
-/// [EXT:online-coop-undo] A copy of the bank's balance a take-back's prediction pays with (C5-2, <see cref="PoolBuilder.PredictionMoney"/>): the bank's own two tests on it, the preview's
-/// (<see cref="ParkEconomy.CanPreviewLine"/>) and the commit's (<see cref="ParkEconomy.CanSpendCell"/>), and each charge taken off it as the bank takes it (nothing while its withdrawals are off).
-/// </summary>
-internal sealed class PoolPredictionMoney( long balance, long cellCost, bool withdrawals )
-{
-	public long Balance { get; private set; } = balance;
-	public long CellCost => cellCost;
-	public bool CanPreviewLine( long pending ) => ParkEconomy.PreviewsLine( pending, Balance );
-	public bool CanSpendCell() => ParkEconomy.Affords( Balance, cellCost );
-
-	/// <summary>One pool cell's charge, as the bank posts it (<see cref="ParkEconomy.TrySpendCell"/>).</summary>
-	public void SpendCell()
-	{
-		if ( withdrawals )
-			Balance -= cellCost;
-	}
-
-	/// <summary>The bank of <paramref name="economy"/> as it stands now.</summary>
-	public static PoolPredictionMoney Of( ParkEconomy economy ) => new( economy.Balance, economy.CellCost( CellPurchase.Pool ), economy.WithdrawalsEnabled );
-}
-
-/// <summary>
 /// The headless pool builder of the <c>opentpw.pools</c> extension (docs/POOLS.md): validates, paints, charges and erases pool water cells on the shared
 /// <see cref="ParkCellMap"/>. CPU-only, as <see cref="ParkPathBuilder"/> is, so the level's tool and the tests both call it; guests see every write at once because
 /// they read the same map (a pool cell is not walkable: <see cref="GuestPathGrid.IsWalkable"/> is true for path cells alone).
@@ -136,7 +114,7 @@ public sealed class PoolBuilder
 	/// [EXT:online-coop-undo] The money a take-back's prediction pays with (C5-2): set, the builder's money tests and charges read and spend this copy of the bank's balance, by the bank's own
 	/// arithmetic, in place of the park's economy, so a repaint predicted on a copy of the cells meets each test against the balance its earlier cells left.
 	/// </summary>
-	internal PoolPredictionMoney? PredictionMoney { get; init; }
+	internal CellPredictionMoney? PredictionMoney { get; init; }
 
 	/// <summary>The spread of the four corner heights of cell (<paramref name="x"/>, <paramref name="y"/>): the highest minus the lowest, in engine units.</summary>
 	public static float CornerSpread( IParkGrid terrain, int x, int y )

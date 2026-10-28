@@ -1625,7 +1625,16 @@ public sealed partial class ParkHud
 			if ( level.Commands.SendsRequests && tool.IsWaiting )
 				level.NoteWaitingClick();
 			else if ( !tool.Undo() && tool.TakeUndoRefusal() is { } refused )
-				SayTakeBackNote( refused.Reason );
+			{
+				// [EXT:online-coop-undo] a take-back on a ride whose claim the host no longer holds ends its tool in the claim's words, as a guest's does (C5-3)
+				if ( refused.Reason == CoopBuildRights.ClaimLostReason )
+				{
+					tool.Cancel();
+					SayGuestNote( OpenTpwText.CoopClaimLost );
+				}
+				else
+					SayTakeBackNote( refused.Reason );
+			}
 		}
 		if ( parkRightClick )
 		{

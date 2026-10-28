@@ -230,8 +230,8 @@ public sealed class LobbyScene : OriginalModelScene
 			return null;
 		// the scene's own textures from the session's composed halves: another lobby scene (the city lobby) may draw the same sign, and each releases its own
 		if ( !signTextures.TryGetValue( model, out var textures ) )
-			signTextures[model] = textures = (new Texture( images.Left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ),
-				new Texture( images.Right, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ));
+			signTextures[model] = textures = (new Texture( images.Left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ).AsComposedSign(),
+				new Texture( images.Right, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ).AsComposedSign());
 		return side == 0 ? textures.Left : textures.Right;
 	}
 

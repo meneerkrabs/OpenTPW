@@ -227,8 +227,16 @@ public partial class Level
 			{
 				if ( Guests?.Grid.Cells is not { } removed )
 					return;
-				removed.ClearFootprint( item.Cells );
+				// the queue goes first, then the demolition's passes over the footprint (0x527EE0); a queue cell of the shape refunds while its owner cell still holds something
 				ObjectAccessCells.ClearQueue( removed, OwnerWord( item ) );
+				// the refund is the native credit 0x4D0190 of the demolished ride, found before it was removed
+				var ownerWord = OwnerWord( item );
+				var instance = demolishingInstances != null && demolishingInstances.Remove( item, out var kept ) ? kept : null;
+				removed.DemolishFootprint( item.Cells, owner =>
+				{
+					if ( owner == ownerWord && Park != null && instance is int rideInstance )
+						Park.Economy.RefundQueueCellNative( rideInstance );
+				} );
 			};
 		}
 		// A placement over path cells clears them (ParkObjects.ClearPath): guests standing there step off
@@ -249,6 +257,8 @@ public partial class Level
 		// A ride with queue cells takes them with it: the refunds are settled while the cells are laid, the cells go once its guests are set down
 		// [BIN:TPW-EXE:0x004DD2D6 selection cleared] destroying the selected object clears the selection
 		Objects.ObjectRemoved += item => { if ( ReferenceEquals( selection, item ) ) selection = null; };
+		if ( typesFootprints )
+			Objects.ObjectRemoving += item => ( demolishingInstances ??= new() )[item] = Park != null ? GetEconomyInstance( item ) : null;
 		Objects.ObjectRemoving += SettleDemolishedQueue;
 		Objects.ObjectRemoved += ClearDemolishedQueue;
 		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
@@ -1441,6 +1451,7 @@ public partial class Level
 	}
 
 	private readonly HashSet<OriginalObject> demolishedQueues = new();
+	private Dictionary<OriginalObject, int?>? demolishingInstances;
 
 	/// <summary>
 	/// The money side of a ride's demolition for its queue, while the cells are still laid: each queue cell refunds <c>Costs.QueueCell</c> × the ride's scrap percentage
@@ -1490,12 +1501,19 @@ public partial class Level
 	private bool IsQueueBlocked( int x, int y ) => IsQueueBlockedCore( x, y, terminalPath: false );
 
 	private bool IsQueueBlockedCore( int x, int y, bool terminalPath ) =>
-		!QueueTerrainAllows( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
-		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ))
+		!QueueCellRulesAllow( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath, Objects.FindAt( x, y ) != null && QueueGivesWay( x, y ) )
+		|| (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
 		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true)
 		// [EXT:pools-bridges] a bridge's cells and the two outside end cells (bare or with a path) take no queue: a queue there would break the bridge's save and its entrance
 		|| PoolBridges?.Reserves( x, y ) == true;
+
+	/// <summary>The host queue admission's terrain, ownership and cell-validator rules; object and reservation exclusions stay with the caller.</summary>
+	// [BIN:TPW-EXE:0x00535670 queue cell] the validator refuses hoarding posts and their extensions, track corners and junctions and the coaster marker; its final path case returns 8 before testing NoModify
+	internal static bool QueueCellRulesAllow( IParkGrid grid, ParkCellMap? cells, int x, int y, bool terminalPath = false, bool givesWay = false ) =>
+		QueueTerrainAllows( grid, cells, x, y, terminalPath )
+		&& (cells == null || !cells.InBounds( x, y ) || (!cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned )
+			&& (cells.RawTypeAt( x, y ) == (byte)ParkCellType.Queue || !QueueCellValidator.Refuses( cells, 3, x, y, givesWay, lastCell: terminalPath ))));
 
 	/// <summary>The terrain rule for a queue cell; its path cells (the save's and the map start's) are the live cell map's to judge, as for objects.</summary>
 	internal static bool QueueTerrainAllows( IParkGrid grid, ParkCellMap? cells, int x, int y, bool terminalPath = false ) => grid.CheckTerrain( x, y ) switch

@@ -107,11 +107,13 @@ public sealed record BuyLandCommand( int CornerX, int CornerY, int PostX, int Po
 		if ( BuyLandTool.Snap( CornerX, CornerY, land.PostA, map.Width, map.Height ) != corner || BuyLandTool.Snap( PostX, PostY, land.PostA, map.Width, map.Height ) != post )
 			return ParkCommandResult.Rejected( "The land tool's corners are fence posts." );
 		var check = land.CheckPurchase( map, corner, post, barrier, economy?.CellCost( CellPurchase.Land ) ?? 0, economy?.Balance );
-		if ( !check.Allowed || land.Merge( corner, post ) is not { } merged )
+		if ( !check.Allowed )
 			return new ParkCommandResult( false, $"The land cannot be bought: {check.Refusal}.", check );
-		// the purchase and its debit in the order the tool's click made them (BuyLandTool.Click)
-		map.SetLand( merged );
-		merged.ClaimEnclosedCells( map );
+		// the purchase and its debit in the order the tool's click made them (BuyLandTool.Click): the fence tool lays the rectangle, the walk and the fill own the land, the bank pays
+		// [BIN:TPW-EXE:0x524960 Buy Land click] the second click runs the validator (0x531A50), then the purchase (0x5327E0), then charges the price (0x5195D0, 0x4D01F0)
+		if ( !land.Purchase( map, corner, post ) )
+			return new ParkCommandResult( false, "The land cannot be bought: the fence walk never ends.", check );
+		map.Touch();
 		economy?.ChargeLand( check.Cost, check.Cells );
 		return ParkCommandResult.Ok( check );
 	}

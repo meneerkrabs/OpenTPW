@@ -228,6 +228,9 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		var terrain = Terrain.CheckTerrain( x, y );
 		if ( terrain is not (OriginalPlacementResult.Allowed or OriginalPlacementResult.Path) )
 			return terrain == OriginalPlacementResult.OutsideTerrain ? CellBuildResult.OutsideTerrain : CellBuildResult.Terrain;
+		// [BIN:TPW-EXE:0x535670 fence post] the validator refuses a cell whose structure record is a hoarding post (or an extension of one, which it follows to the parent) for the path tool as for the queue tool, on owned land as well (QueueCellValidator)
+		if ( Cells.RawTypeAt( x, y ) != (byte)ParkCellType.Queue && QueueCellValidator.Refuses( Cells, 1, x, y, givesWay ) )
+			return CellBuildResult.Occupied;
 		// [BIN:STP-PPC:0x10084550 placement validator] money test while game+36 == 0: the 32-bit pending line cost (this cell included) is refused when greater than the balance, a zero sum passes; the commit only runs SetCellType's test (WritePath)
 		if ( pending is { } before && Economy is { } park && !park.CanPreviewLine( before + CellCost ) )
 			return CellBuildResult.NotEnoughMoney;

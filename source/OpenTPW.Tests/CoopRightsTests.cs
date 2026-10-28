@@ -149,6 +149,28 @@ public class CoopRightsTests
 		Assert.IsNull( rights.RefusalReason( seat, new SetGameSpeedCommand( GameSpeed.Fast ) ) );
 	}
 
+	/// <summary>
+	/// The Ctrl copy of an object (<c>ParkHud.CopyObject</c>, tp.exe 0x4879D0) arms the tool of its type and its placement is the same <see cref="PlaceObjectCommand"/> any placement issues, so a guest the
+	/// host has not let build gets the grant's refusal there, and a ride claimed against the guest does not stop a copy of its type from being placed on free ground.
+	/// </summary>
+	[TestMethod]
+	public void ACopyOfAnObjectIsPlacedUnderTheSameRightsAsAnyPlacement()
+	{
+		var (level, one) = NewPark();
+		var rights = new CoopBuildRights( level );
+		const int seat = 2;
+		var copy = level.BuildCommand( one.Entry, 40, 40, one.Placement.Rotation );
+		Assert.IsFalse( rights.Allows( seat, copy ), "no grant, no placement" );
+		Assert.AreEqual( CoopBuildRights.NotGrantedReason, rights.RefusalReason( seat, copy ) );
+		level.SetSeatRights( seat, CoopRights.Build );
+		var claims = (SortedDictionary<int, int>?)typeof( Level ).GetField( "rideClaims", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( level ) ?? new SortedDictionary<int, int>();
+		claims[one.Runtime.AttractionId] = ParkCommands.LocalPlayer;
+		typeof( Level ).GetField( "rideClaims", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level, claims );
+		Assert.IsTrue( level.ClaimedAgainst( seat, one.Runtime.AttractionId ), "the object is claimed against the guest" );
+		Assert.AreEqual( rights.Allows( seat, level.BuildCommand( one.Entry, 44, 44, 0 ) ), rights.Allows( seat, copy ), "a copy's placement is a placement like the first one's" );
+		Assert.AreNotEqual( Level.ClaimedReason, rights.RefusalReason( seat, copy ), "the claim guards the ride, not the type" );
+	}
+
 	[TestMethod]
 	public void OneReducerSetsASeatsRightsForBothCommandsThatWriteThem()
 	{

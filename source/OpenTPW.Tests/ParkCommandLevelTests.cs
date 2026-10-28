@@ -20,6 +20,15 @@ public class ParkCommandLevelTests
 	private AutomaticCheckpointCpuRendererScope? renderer;
 	private UpgradeCatalogueDefaultsTests? fixture;
 
+	private sealed class InitialPathGrid( IParkGrid inner, (int X, int Y) path ) : IParkGrid
+	{
+		public int Width => inner.Width;
+		public int Height => inner.Height;
+		public System.Numerics.Vector2 Origin => inner.Origin;
+		public OriginalPlacementResult CheckTerrain( int x, int y ) => (x, y) == path ? OriginalPlacementResult.Path : inner.CheckTerrain( x, y );
+		public float GetCellHeight( int x, int y ) => inner.GetCellHeight( x, y );
+	}
+
 	private sealed record Park( Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two );
 
 	[TestInitialize]
@@ -83,6 +92,21 @@ public class ParkCommandLevelTests
 		var count = map.PlacementCountAt( 10, 20 );
 		Assert.IsTrue( Decoded( new LayLineCommand( CellToolMode.Queue, ride.AttractionId, 10, 20, 11, 20 ) ).Accepted );
 		Assert.AreEqual( count, map.PlacementCountAt( 10, 20 ), "legacy kind retains old per-cell behavior inside mixed execution" );
+	}
+
+	/// <summary>The queue tool's line may end on a NoModify path cell (an initial path, a path outside an entrance): the validator answers 8 for a final path before it tests the flag, so the level's terminal rule accepts it.</summary>
+	[TestMethod]
+	public void ANativeQueueSegmentMayEndOnANoModifyPathCell()
+	{
+		var park = NewPark(); var level = park.Level; var map = level.Guests!.Grid.Cells;
+		var ride = park.One.Visitors; ride.OwnerWord = Level.OwnerWord( park.One );
+		map.SetType( 10, 20, ParkCellType.Queue ); map.SetOwner( 10, 20, ride.OwnerWord );
+		map.SetType( 13, 20, ParkCellType.Path ); map.SetFlags( 13, 20, ParkCellFlags.NoModify );
+		// the sandbox grid knows no map-start path: this one calls (13, 20) an initial path cell, as the original levels' terrain does
+		typeof( ParkObjects ).GetField( "<Grid>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level.Objects, new InitialPathGrid( level.Objects.Grid, (13, 20) ) );
+		var result = level.Commands.Issue( ParkCommandCodec.Decode( ParkCommandCodec.Encode( new QueueSegmentCommand( ride.AttractionId, 10, 20, 13, 20 ) ) ) );
+		Assert.IsTrue( result.Accepted, result.Reason );
+		Assert.AreEqual( ParkCellType.Queue, map.TypeAt( 12, 20 ) );
 	}
 
 	private static void Run( Level level, int ticks, List<ulong>? hashes )

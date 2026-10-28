@@ -20,10 +20,11 @@ public enum LandPurchaseRefusal
 	NoNewLand,
 	/// <summary>The merged park would enclose land it does not own.</summary>
 	Pocket,
-	/// <summary>The rectangle covers the open side of the park gate (not modelled).</summary>
-	Gate,
-	/// <summary>The merged fence cannot be walked from post A to post B (not modelled).</summary>
-	Ring,
+	/// <summary>
+	/// The original's validator accepts the rectangle, but the fence routines it then runs fault on it: the walk from post A never ends or the fill reads the cell beyond the map's edge (tp.exe hangs or crashes there).
+	/// OpenTPW refuses it instead.
+	/// </summary>
+	Fence,
 	/// <summary>The land costs more than the bank balance.</summary>
 	Money
 }
@@ -37,14 +38,22 @@ public readonly record struct LandPurchaseCheck( LandPurchaseRefusal Refusal, in
 /// <summary>Where a level's park fence starts and how the shipped <c>Hoardings.sam</c> lays it.</summary>
 /// <param name="PostA">The fence's first post, three cells east of the entrance's B cell.</param>
 /// <param name="PostB">The fence's last post, four cells west of the entrance's A cell.</param>
-/// <param name="Clicks">The <c>HoardingClicks</c> offsets from post A, without the 512 terminator.</param>
+/// <param name="Clicks">The offsets from post A the fence tool is clicked at, without the 512 terminator: the <c>HoardingClicks</c> of <c>Hoardings.sam</c>, or the six clicks of the short fence.</param>
 public sealed record ParkLandSetup( (int X, int Y) PostA, (int X, int Y) PostB, IReadOnlyList<(int X, int Y)> Clicks )
 {
-	/// <summary>The setup of a level from its entrance cells and its <c>Hoardings.sam</c> text; null when either is missing or unusable.</summary>
+	/// <summary>The clicks of the fence set-up when bit 0x400 of the level word 0x79D86C is set: a small enclosure in front of the gate, from post A east two cells, south four, west twelve, north four and east two.</summary>
+	// [BIN:TPW-EXE:0x00532489 six-click fence] with bit 0x400 of 0x79D86C the set-up clicks the fence tool at A, A + (2, 0), A + (2, 4), A - (10, -4), A - (10, 0) and A - (8, 0) instead of reading the Hoardings.sam table; the bit is copied from the options word 0x78D954 by 0x449E78 and cleared by the new game set-up 0x44DE2B
+	public static readonly IReadOnlyList<(int X, int Y)> SixClicks = new[] { (0, 0), (2, 0), (2, 4), (-10, 4), (-10, 0), (-8, 0) };
+
+	/// <summary>The setup of a level from its entrance cells and its <c>Hoardings.sam</c> text (or, with <paramref name="sixClickFence"/>, the six-click fence); null when either entrance cell or the clicks are missing.</summary>
 	// [BIN:TPW-EXE:0x5323f0 park fence] post B is the entrance's first cell (0x7855bc/0x7855c0, FixedItemInfo.EntranceA) moved 4 cells west, post A its second cell (0x7855c4/0x7855c8, EntranceB) moved 3 cells east (0x4d8690 gives both cells)
-	public static ParkLandSetup? FromLevel( (int X, int Y)? entranceA, (int X, int Y)? entranceB, string? hoardingsText )
+	public static ParkLandSetup? FromLevel( (int X, int Y)? entranceA, (int X, int Y)? entranceB, string? hoardingsText, bool sixClickFence = false )
 	{
-		if ( entranceA is not { } a || entranceB is not { } b || hoardingsText == null )
+		if ( entranceA is not { } a || entranceB is not { } b )
+			return null;
+		if ( sixClickFence )
+			return new ParkLandSetup( (b.X + 3, b.Y), (a.X - 4, a.Y), SixClicks );
+		if ( hoardingsText == null )
 			return null;
 		var clicks = ParkLand.ParseHoardingClicks( hoardingsText );
 		return clicks.Count == 0 ? null : new ParkLandSetup( (b.X + 3, b.Y), (a.X - 4, a.Y), clicks );
@@ -52,12 +61,11 @@ public sealed record ParkLandSetup( (int X, int Y) PostA, (int X, int Y) PostB, 
 }
 
 /// <summary>
-/// The park's land (tp.exe's hoardings, docs/reverse/PATH-plan.md "PATH-LAND"): the fence ring of posts from post A, east
-/// of the gate, round the park to post B, west of it, the lattice squares it encloses (closed along the gate), and the
-/// rules that turn the ring into owned cells (cell flag 0x40 clear) and that buy more land. Immutable: a purchase
-/// returns a new land. Fence posts stand on a lattice of every second cell anchored on post A; a square is the 2 × 2
-/// cells between four posts, named by its smallest corner post.
+/// The park's land (tp.exe's hoardings, docs/reverse/PATH-plan.md "PATH-LAND"): the fence of posts on the second map layer (<see cref="FenceLayer"/>) from post A, east of the gate, round the park to post B, west of
+/// it, and the rules that turn it into owned cells (cell flag 0x40 clear) and that buy more land. The fence is laid by the original's own routines (<see cref="FenceEngine"/>: the line tool, the walk and the fill),
+/// so the cells it owns are the ones the original leaves; a purchase runs them again on the live fence. Fence posts stand on a lattice of every second cell anchored on post A.
 /// </summary>
+// [APPROX:PATH-007] a purchase that crashes or hangs the original is refused, the six-click fence's level bit has no traced source, and a fence cell holding a foreign structure takes click-handler branches the oracle did not run (the register)
 public sealed class ParkLand
 {
 	/// <summary>The <c>HoardingClicks</c> X value that ends the list.</summary>
@@ -70,12 +78,18 @@ public sealed class ParkLand
 	public const int MapSize = 128;
 
 	private const int North = 1, East = 4, South = 0x10, West = 0x40;
-	private readonly (int X, int Y)[] ring;
-	private readonly HashSet<(int X, int Y)> posts;
-	private readonly HashSet<(int X, int Y)> squares;
+	private (int X, int Y)[] ring;
+	private HashSet<(int X, int Y)> posts;
+	private FenceLayer? layer;
+	private readonly ParkLandSetup? setup;
 
-	/// <summary>A land from its ring: every post from <paramref name="postA"/> to <paramref name="postB"/>, two cells apart along one axis.</summary>
+	/// <summary>A land from its ring: every post from <paramref name="postA"/> to <paramref name="postB"/>, two cells apart along one axis. Its fence records are made from the ring when a map needs them.</summary>
 	public ParkLand( (int X, int Y) postA, (int X, int Y) postB, IReadOnlyList<(int X, int Y)> ring )
+		: this( postA, postB, ring, null )
+	{
+	}
+
+	private ParkLand( (int X, int Y) postA, (int X, int Y) postB, IReadOnlyList<(int X, int Y)> ring, ParkLandSetup? setup )
 	{
 		ArgumentNullException.ThrowIfNull( ring );
 		if ( ring.Count < 2 || ring.Count > MaximumPosts )
@@ -100,12 +114,16 @@ public sealed class ParkLand
 		PostB = postB;
 		this.ring = ring.ToArray();
 		posts = this.ring.ToHashSet();
-		squares = Enclosed( this.ring );
-		// the walks and the fill keep the land on the right of the heading, as every shipped fence does (east from post A, then round)
-		var (dx, dy) = (ring[1].X - postA.X, ring[1].Y - postA.Y);
-		var first = dx > 0 ? East : dx < 0 ? West : dy > 0 ? South : North;
-		if ( !IsBoundary( squares, postA, first ) )
-			throw new InvalidDataException( "The park fence does not keep the park on its right from post A." );
+		this.setup = setup;
+	}
+
+	private ParkLand( (int X, int Y) postA, (int X, int Y) postB, FenceLayer layer, (int X, int Y)[] ring )
+	{
+		PostA = postA;
+		PostB = postB;
+		this.layer = layer;
+		this.ring = ring;
+		posts = ring.ToHashSet();
 	}
 
 	/// <summary>The fence's first post (the ring's start, east of the gate; the walks start here heading east).</summary>
@@ -114,11 +132,20 @@ public sealed class ParkLand
 	public (int X, int Y) PostB { get; }
 	/// <summary>Every post from <see cref="PostA"/> to <see cref="PostB"/> in walking order; a post the fence passes twice is listed twice.</summary>
 	public IReadOnlyList<(int X, int Y)> Ring => ring;
-	/// <summary>The enclosed squares by their smallest corner post.</summary>
-	public IReadOnlyCollection<(int X, int Y)> Squares => squares;
+
+	/// <summary>The fence records of the land on a map of <paramref name="width"/> × <paramref name="height"/> cells: the live ones, or those a ring without a map implies.</summary>
+	public FenceLayer LayerFor( int width, int height )
+	{
+		if ( layer == null || layer.Width != width || layer.Height != height )
+			layer = LayerFromRing( ring, width, height );
+		return layer;
+	}
 
 	/// <summary>Whether a fence post (a hoarding, cell type 0x19) stands on cell (<paramref name="x"/>, <paramref name="y"/>).</summary>
-	public bool IsPost( int x, int y ) => posts.Contains( (x, y) );
+	public bool IsPost( int x, int y ) => layer != null ? layer.IsPost( x, y ) : posts.Contains( (x, y) );
+
+	/// <summary>Whether the fence's record on the cell counts 50 for the net worth and the big park ticket (<see cref="FenceLayer.CountsAsStructure"/>), on a map of <paramref name="width"/> × <paramref name="height"/> cells.</summary>
+	public bool CountsAsStructure( int x, int y, int width, int height ) => LayerFor( width, height ).CountsAsStructure( x, y );
 
 	/// <summary>The <c>HoardingClicks[n].X/Y</c> pairs of a <c>Hoardings.sam</c>, up to the 512 terminator, a missing pair or 64 pairs.</summary>
 	// [BIN:TPW-EXE:0x407f20 Hoardings loader] the theme's hoardings.sam (name 0x74782c, string object 0x786bd8) fills the click table 0x784e30, whose pairs start at 0x784e3c; endhoardings.sam fills a second table 0x784c20 the park fence does not read
@@ -141,9 +168,10 @@ public sealed class ParkLand
 		return clicks;
 	}
 
+
 	/// <summary>
-	/// The fence a new park starts with: a straight run of posts from each click to the next, the first click on post A and
-	/// the last on post B. Throws <see cref="InvalidDataException"/> when the clicks do not draw such a fence.
+	/// The fence a new park starts with, as a ring: a straight run of posts from each click to the next, the first click on post A and
+	/// the last on post B. Throws <see cref="InvalidDataException"/> when the clicks do not draw such a fence. <see cref="ApplyToNewPark"/> lays the fence itself with the click list kept here.
 	/// </summary>
 	public static ParkLand FromClicks( ParkLandSetup setup )
 	{
@@ -169,98 +197,247 @@ public sealed class ParkLand
 		}
 		if ( ring[^1] != setup.PostB )
 			throw new InvalidDataException( "The fence's last click is not on post B." );
-		return new ParkLand( setup.PostA, setup.PostB, ring );
+		return new ParkLand( setup.PostA, setup.PostB, ring, setup );
 	}
 
 	/// <summary>
-	/// The fence of an imported save: its hoarding posts walked from post A by their neighbour bits
-	/// (<c>mHoardingNeighbours</c>; 1 north, 4 east, 16 south, 64 west), the leftmost branch first, up to post B.
-	/// Null when the walk does not reach post B.
+	/// The land of a fence that stands in <paramref name="layer"/>: the walk from post A (0x52BA50's choice of link) up to post B gives its ring. Null when the walk does not reach post B.
 	/// </summary>
-	// [BIN:TPW-EXE:0x52ba50 ring walk] the walk starts on post A heading east (bit 4); a corner turns to its other link, a junction (0x53ae90) takes the first link counting from the left of the heading (0x4d8c20 with 0x40) and turning right (0x4d8c20 with 4); it ends on post B
-	public static ParkLand? FromFenceLinks( (int X, int Y) postA, (int X, int Y) postB, Func<int, int, byte?> links )
+	public static ParkLand? FromLayer( (int X, int Y) postA, (int X, int Y) postB, FenceLayer layer )
+	{
+		ArgumentNullException.ThrowIfNull( layer );
+		return WalkRing( layer, postA, postB ) is { } walked ? new ParkLand( postA, postB, layer, walked ) : null;
+	}
+
+	/// <summary>
+	/// The land of an imported save's fence from its hoardings' links (<c>mHoardingNeighbours</c>; 1 north, 4 east, 16 south, 64 west), walked from post A to post B. Null when the walk does not reach post B.
+	/// </summary>
+	public static ParkLand? FromFenceLinks( (int X, int Y) postA, (int X, int Y) postB, Func<int, int, byte?> links, int width = MapSize, int height = MapSize )
 	{
 		ArgumentNullException.ThrowIfNull( links );
-		var ring = new List<(int X, int Y)> { postA };
-		var (position, heading) = (postA, East);
-		while ( ring.Count <= MaximumPosts )
+		var fence = new FenceLayer( width, height );
+		for ( var y = 0; y < height; y++ )
 		{
-			if ( position == postB && ring.Count > 1 )
-				return new ParkLand( postA, postB, ring );
-			if ( links( position.X, position.Y ) is not { } bits )
+			for ( var x = 0; x < width; x++ )
+			{
+				if ( links( x, y ) is { } bits )
+				{
+					fence.Type[y * width + x] = FenceLayer.PostType;
+					fence.Links[y * width + x] = bits;
+				}
+			}
+		}
+		return FromLayer( postA, postB, fence );
+	}
+
+	/// <summary>
+	/// The ring of a fence in a layer: the walk of 0x52BA50 from post A heading east without its writes. A corner turns to the link it did not come by; at a junction the walk takes the first link counting from
+	/// its left (left, ahead, right) and drops the others for the rest of the walk. Null when the walk leaves the posts, leaves the map or does not reach post B.
+	/// </summary>
+	// [BIN:TPW-EXE:0x52ba50 ring walk] the walk starts on post A heading east (bit 4); a corner turns to its other link (0x53ae00), a junction (0x53ae90) takes the first link counting from the left of the heading (0x4d8c20 with 0x40, then 4) and keeps only that link and the one it came by (or, ahead, the line); it ends on post B
+	public static (int X, int Y)[]? WalkRing( FenceLayer layer, (int X, int Y) postA, (int X, int Y) postB )
+	{
+		ArgumentNullException.ThrowIfNull( layer );
+		var links = (byte[])layer.Links.Clone();
+		var ring = new List<(int X, int Y)>();
+		var (x, y) = postA;
+		var heading = East;
+		for ( var steps = 0; steps <= MaximumPosts; steps++ )
+		{
+			if ( (uint)x >= (uint)layer.Width || (uint)y >= (uint)layer.Height )
 				return null;
-			var next = Turns( heading ).FirstOrDefault( turn => (bits & turn) != 0 );
-			if ( next == 0 )
+			var index = y * layer.Width + x;
+			ring.Add( (x, y) );
+			var bits = (int)links[index];
+			if ( layer.Type[index] != FenceLayer.PostType && System.Numerics.BitOperations.PopCount( (uint)bits ) == 0 )
 				return null;
-			heading = next;
-			position = Step( position, heading );
-			ring.Add( position );
+			var cardinal = ((bits & 1) != 0 ? 1 : 0) + ((bits & 4) != 0 ? 1 : 0) + ((bits & 0x10) != 0 ? 1 : 0) + ((bits & 0x40) != 0 ? 1 : 0);
+			if ( cardinal == 2 && (((bits & 1) != 0 && ((bits & 4) != 0 || (bits & 0x40) != 0)) || ((bits & 0x10) != 0 && ((bits & 4) != 0 || (bits & 0x40) != 0))) )
+			{
+				var back = Opposite( heading );
+				if ( (back & bits) == 0 )
+					back = heading;
+				heading = bits ^ back;
+			}
+			if ( cardinal >= 3 )
+			{
+				var found = 0;
+				var candidate = Rotate( heading, 0x40 );
+				do
+				{
+					if ( (candidate & bits) != 0 )
+						found = candidate;
+					candidate = Rotate( candidate, 4 );
+				}
+				while ( found == 0 );
+				links[index] &= (byte)(heading == found ? (Opposite( heading ) | heading) : ~(heading | Opposite( found )));
+				heading = found;
+			}
+			if ( x == postB.X && y == postB.Y )
+				return ring.ToArray();
+			switch ( heading )
+			{
+				case North:
+					y -= 2;
+					break;
+				case East:
+					x += 2;
+					break;
+				case South:
+					y += 2;
+					break;
+				case West:
+					x -= 2;
+					break;
+				default:
+					return null;
+			}
 		}
 		return null;
 	}
 
+	private static int Opposite( int direction ) => direction == 0 ? 0 : direction < 0x10 ? (direction & 0xFF) << 4 : (direction & 0xFF) >> 4;
+
+	private static int Rotate( int direction, int value )
+	{
+		var count = 0;
+		var bits = (byte)direction;
+		while ( bits > 1 )
+		{
+			bits >>= 1;
+			count++;
+		}
+		var shifted = (value & 0xFF) << count;
+		return shifted > 0x80 ? shifted >> 8 : (byte)(value << count);
+	}
+
+	/// <summary>The fence records a ring implies: a post on every ring cell with the links toward its ring neighbours, the walk's direction (toward the next post), and the three cells beside it typed as its extension.</summary>
+	public static FenceLayer LayerFromRing( IReadOnlyList<(int X, int Y)> ring, int width, int height )
+	{
+		var layer = new FenceLayer( width, height );
+		for ( var index = 0; index < ring.Count; index++ )
+		{
+			var (x, y) = ring[index];
+			if ( (uint)x >= (uint)width || (uint)y >= (uint)height )
+				continue;
+			var cell = y * width + x;
+			layer.Type[cell] = FenceLayer.PostType;
+			if ( index + 1 < ring.Count )
+			{
+				var (nx, ny) = ring[index + 1];
+				var forward = nx > x ? East : nx < x ? West : ny > y ? South : North;
+				layer.Links[cell] |= (byte)forward;
+				layer.Direction[cell] = (byte)forward;
+				if ( (uint)nx < (uint)width && (uint)ny < (uint)height )
+					layer.Links[ny * width + nx] |= (byte)Opposite( forward );
+			}
+			else if ( index > 0 )
+				layer.Direction[cell] = layer.Direction[ring[index - 1].Y * width + ring[index - 1].X];
+		}
+		for ( var index = 0; index < ring.Count; index++ )
+		{
+			var (x, y) = ring[index];
+			if ( (uint)x >= (uint)width || (uint)y >= (uint)height )
+				continue;
+			foreach ( var (dx, dy) in new[] { (0, 1), (1, 0), (1, 1) } )
+			{
+				var (ex, ey) = (x + dx, y + dy);
+				if ( (uint)ex >= (uint)width || (uint)ey >= (uint)height )
+					continue;
+				var cell = ey * width + ex;
+				if ( layer.Type[cell] == 0 )
+				{
+					layer.Type[cell] = FenceLayer.ExtensionType;
+					layer.Owner[cell] = (ushort)(y * width + x + 1);
+				}
+			}
+		}
+		return layer;
+	}
+
+	/// <summary>The click list that lays a ring: post A, then every post where the fence turns, then the last post, as offsets from post A.</summary>
+	private static IEnumerable<(int X, int Y)> ClicksOfRing( (int X, int Y) postA, IReadOnlyList<(int X, int Y)> ring )
+	{
+		yield return (0, 0);
+		for ( var index = 1; index < ring.Count; index++ )
+		{
+			var last = index == ring.Count - 1;
+			if ( last || ring[index + 1].X - ring[index].X != ring[index].X - ring[index - 1].X || ring[index + 1].Y - ring[index].Y != ring[index].Y - ring[index - 1].Y )
+				yield return (ring[index].X - postA.X, ring[index].Y - postA.Y);
+		}
+	}
+
 	/// <summary>
-	/// A new park's ownership: every cell but the fixed (<see cref="ParkCellFlags.NoModify"/>) ones is unowned, then the fence's
-	/// land and the strip in front of the gate are owned.
+	/// A new park's land on <paramref name="cells"/>: the world init's unowned flag on every cell without NoModify, then the fence the level's clicks lay and the land the original's fill and walk give it (<see cref="FenceEngine"/>).
+	/// Null when the fence cannot be laid (the walk never reaches post B); the cells are then left as they were.
 	/// </summary>
 	// [BIN:TPW-EXE:0x536490 map init] flag 0x40 is set on every cell whose flags lack 0x20 (0x53654b, 0x5365ad); the level start 0x52f050 runs it on every cell before it lays the fence (0x5323f0)
-	// [BIN:TPW-EXE:0x5325a4 gate strip] after the fill, 0x40 is cleared on the two cells (x, A.y) and (x, A.y + 1) for every x from post B + 2 up to post A − 1
+	public static ParkLand? NewPark( ParkCellMap cells, ParkLandSetup setup )
+	{
+		ArgumentNullException.ThrowIfNull( cells );
+		ArgumentNullException.ThrowIfNull( setup );
+		var fence = new FenceLayer( cells.Width, cells.Height );
+		var engine = new FenceEngine( cells, fence, setup.PostA, setup.PostB );
+		try
+		{
+			engine.InitialiseOwnership();
+			engine.LayInitialFence( setup.Clicks );
+		}
+		catch ( FenceFaultException )
+		{
+			return null;
+		}
+		var walked = WalkRing( fence, setup.PostA, setup.PostB );
+		if ( walked == null )
+			return null;
+		engine.Commit();
+		return new ParkLand( setup.PostA, setup.PostB, fence, walked );
+	}
+
+	/// <summary>
+	/// A new park's ownership on <paramref name="cells"/> with this land's gate posts and clicks: every cell but the fixed (<see cref="ParkCellFlags.NoModify"/>) ones is unowned, then the fence is laid and its land is owned.
+	/// A land made from a ring lays the clicks that draw the ring.
+	/// </summary>
 	public void ApplyToNewPark( ParkCellMap cells )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
-		for ( var y = 0; y < cells.Height; y++ )
-		{
-			for ( var x = 0; x < cells.Width; x++ )
-			{
-				var flags = cells.FlagsAt( x, y );
-				if ( (flags & (ParkCellFlags.NoModify | ParkCellFlags.Unowned)) == 0 )
-					cells.SetFlags( x, y, flags | ParkCellFlags.Unowned );
-			}
-		}
-		ClaimEnclosedCells( cells );
-		for ( var x = PostB.X + 2; x < PostA.X; x++ )
-		{
-			Claim( cells, x, PostA.Y );
-			Claim( cells, x, PostA.Y + 1 );
-		}
+		var fence = new FenceLayer( cells.Width, cells.Height );
+		var engine = new FenceEngine( cells, fence, PostA, PostB );
+		engine.InitialiseOwnership();
+		engine.LayInitialFence( setup?.Clicks ?? ClicksOfRing( PostA, ring ).ToArray() );
+		var walked = WalkRing( fence, PostA, PostB ) ?? throw new InvalidDataException( "The park fence cannot be laid: its walk does not reach post B." );
+		engine.Commit();
+		layer = fence;
+		ring = walked;
+		posts = ring.ToHashSet();
 	}
 
-	/// <summary>Clears the unowned flag on every cell the fence encloses (cells are never made unowned here).</summary>
-	// [BIN:TPW-EXE:0x5311c0 fence fill] the fill walks the ring from post A (posts marked with thing flag 0x20 by 0x531040) and from every post scans to the right of the heading two cells at a time, clearing 0x40 on 2 × 2 cells (offsets (0,1), (1,1), (1,0) from 0x7cdba8, 0x7cdbb8, 0x7cdbc8) until it meets a marked post; it never sets 0x40
-	// [APPROX:PATH-007] the fill's cell outcome is modelled, not its scan: a cell (x, y) is owned when the point (x − ½, y − ½) lies inside the ring closed along the gate, and so are the four cells round every ring corner that turns away from the land (three of its four squares enclosed); this reproduces the Jungle Easymode save's 0x40 flags on all 16,384 cells from that save's own fence — still open: the scan's 2 × 2 stepping (0x5311c0) is not reconciled with that outcome, and the six-click fence the fence setup lays instead when bit 0x400 of the level word 0x79d86c is set (meaning not traced) is not modelled
-	public void ClaimEnclosedCells( ParkCellMap cells )
+	/// <summary>
+	/// Buys the rectangle between the fence posts <paramref name="first"/> and <paramref name="second"/> on <paramref name="cells"/> as the Buy Land tool does (0x5327E0 after the validator): the fence tool lays the
+	/// rectangle, the walk from post A rewrites the fence and the fill owns the land it encloses. False, with the park as it was, when the original's walk would never end.
+	/// </summary>
+	public bool Purchase( ParkCellMap cells, (int X, int Y) first, (int X, int Y) second )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
-		foreach ( var (sx, sy) in squares )
+		var fence = LayerFor( cells.Width, cells.Height ).Clone();
+		var engine = new FenceEngine( cells, fence, PostA, PostB );
+		try
 		{
-			for ( var dy = 1; dy <= 2; dy++ )
-				for ( var dx = 1; dx <= 2; dx++ )
-					Claim( cells, sx + dx, sy + dy );
+			engine.LayPurchase( first.X, first.Y, second.X, second.Y );
 		}
-		var corners = new HashSet<(int X, int Y)>();
-		foreach ( var (sx, sy) in squares )
-			for ( var dy = 0; dy <= 2; dy += 2 )
-				for ( var dx = 0; dx <= 2; dx += 2 )
-					corners.Add( (sx + dx, sy + dy) );
-		foreach ( var (vx, vy) in corners )
+		catch ( FenceFaultException )
 		{
-			var enclosed = (squares.Contains( (vx - 2, vy - 2) ) ? 1 : 0) + (squares.Contains( (vx, vy - 2) ) ? 1 : 0)
-				+ (squares.Contains( (vx - 2, vy) ) ? 1 : 0) + (squares.Contains( (vx, vy) ) ? 1 : 0);
-			if ( enclosed != 3 )
-				continue;
-			for ( var dy = 0; dy <= 1; dy++ )
-				for ( var dx = 0; dx <= 1; dx++ )
-					Claim( cells, vx + dx, vy + dy );
+			return false;
 		}
-	}
-
-	private static void Claim( ParkCellMap cells, int x, int y )
-	{
-		if ( !cells.InBounds( x, y ) )
-			return;
-		var flags = cells.FlagsAt( x, y );
-		if ( flags.HasFlag( ParkCellFlags.Unowned ) )
-			cells.SetFlags( x, y, flags & ~ParkCellFlags.Unowned );
+		var walked = WalkRing( fence, PostA, PostB );
+		engine.Commit();
+		layer = fence;
+		if ( walked != null )
+		{
+			ring = walked;
+			posts = ring.ToHashSet();
+		}
+		return true;
 	}
 
 	/// <summary>
@@ -375,15 +552,30 @@ public sealed class ParkLand
 			return Refused( LandPurchaseRefusal.NoNewLand );
 		if ( LeavesPocket( cells, xmin, ymin, xmax, ymax ) )
 			return Refused( LandPurchaseRefusal.Pocket );
-		// [APPROX:PATH-007] a rectangle that covers a square on the open side of the gate (between posts B and A) is refused, and so is one whose merged fence cannot be walked from post A to post B; the original's validator accepts some rectangles in front of the gate (e.g. Jungle (45, 11)-(49, 17)) and its purchase lays the fence across that ground (0x5327e0); reading the code, the ring walk 0x52ba50 then likely keeps the old ring and the refill drops the new hoardings (the land is charged but none is gained), or the walk may not terminate — still open: that outcome is not confirmed at run time
-		if ( CoversGate( xmin, ymin, xmax, ymax ) )
-			return Refused( LandPurchaseRefusal.Gate );
-		if ( Merge( first, second ) == null )
-			return Refused( LandPurchaseRefusal.Ring );
 		var (count, total) = Price( cells, xmin, ymin, xmax, ymax, cellCost, balance, out var tooDear );
-		return new LandPurchaseCheck( tooDear ? LandPurchaseRefusal.Money : LandPurchaseRefusal.None, count, total );
+		if ( tooDear )
+			return new LandPurchaseCheck( LandPurchaseRefusal.Money, count, total );
+		// the validator has no more refusals: the purchase runs the fence routines, which fault (hang or crash) on some accepted rectangles
+		// [BIN:TPW-EXE:0x5311c0 fill] a scan towards the map's edge reads the block beyond it through 0x4d96f0's null (the fill never tests it), and the walk 0x52ba50 loops on a cell that is no post: a rectangle that leaves the old park outside the walk's ring does the first
+		return new LandPurchaseCheck( PurchaseFaults( cells, first, second ) ? LandPurchaseRefusal.Fence : LandPurchaseRefusal.None, count, total );
 
 		static LandPurchaseCheck Refused( LandPurchaseRefusal refusal ) => new( refusal, 0, 0 );
+	}
+
+	/// <summary>Whether the purchase of the rectangle would fault in the original (it hangs or crashes): the routines are run on a copy of the fence and the cells' flags are not written.</summary>
+	private bool PurchaseFaults( ParkCellMap cells, (int X, int Y) first, (int X, int Y) second )
+	{
+		var scratch = LayerFor( cells.Width, cells.Height ).Clone();
+		var engine = new FenceEngine( cells, scratch, PostA, PostB );
+		try
+		{
+			engine.LayPurchase( first.X, first.Y, second.X, second.Y );
+			return false;
+		}
+		catch ( FenceFaultException )
+		{
+			return true;
+		}
 	}
 
 	/// <summary>
@@ -482,112 +674,6 @@ public sealed class ParkLand
 				if ( grid[i, j] is Unowned or Hoarding )
 					return true;
 		return false;
-	}
-
-	private bool CoversGate( int xmin, int ymin, int xmax, int ymax )
-	{
-		if ( PostA.Y != PostB.Y )
-			return false;
-		for ( var x = Math.Min( PostA.X, PostB.X ); x < Math.Max( PostA.X, PostB.X ); x += 2 )
-		{
-			var square = (X: x, Y: PostA.Y - 2);
-			if ( square.X >= xmin && square.X + 2 <= xmax && square.Y >= ymin && square.Y + 2 <= ymax && !squares.Contains( square ) )
-				return true;
-		}
-		return false;
-	}
-
-	/// <summary>
-	/// The land after buying the rectangle between two posts: the enclosed squares and the rectangle's, with the fence
-	/// walked round them from post A to post B keeping the outer branches. Null when that walk does not reach post B.
-	/// </summary>
-	// [BIN:TPW-EXE:0x5327e0 land purchase] the purchase lays hoardings round the rectangle by five clicks of the fence tool (mode 0x19), then walks the ring from post A to post B (0x52ba50, which drops the links of the branches it does not take) and refills the land (0x531040, 0x5311c0, whose last pass removes every hoarding the walk did not mark)
-	public ParkLand? Merge( (int X, int Y) first, (int X, int Y) second )
-	{
-		var (xmin, xmax) = (Math.Min( first.X, second.X ), Math.Max( first.X, second.X ));
-		var (ymin, ymax) = (Math.Min( first.Y, second.Y ), Math.Max( first.Y, second.Y ));
-		var region = new HashSet<(int X, int Y)>( squares );
-		for ( var y = ymin; y + 2 <= ymax; y += 2 )
-			for ( var x = xmin; x + 2 <= xmax; x += 2 )
-				region.Add( (x, y) );
-		var ring = new List<(int X, int Y)> { PostA };
-		var (position, heading) = (PostA, East);
-		while ( ring.Count <= MaximumPosts )
-		{
-			if ( position == PostB && ring.Count > 1 )
-			{
-				var merged = new ParkLand( PostA, PostB, ring );
-				return merged.squares.SetEquals( region ) ? merged : null;
-			}
-			var next = Turns( heading ).FirstOrDefault( turn => IsBoundary( region, position, turn ) );
-			if ( next == 0 )
-				return null;
-			heading = next;
-			position = Step( position, heading );
-			ring.Add( position );
-		}
-		return null;
-	}
-
-	/// <summary>Whether the side from <paramref name="post"/> toward <paramref name="direction"/> has an enclosed square on its right and none on its left.</summary>
-	private static bool IsBoundary( HashSet<(int X, int Y)> region, (int X, int Y) post, int direction )
-	{
-		var (x, y) = post;
-		var (right, left) = direction switch
-		{
-			East => ((x, y), (x, y - 2)),
-			South => ((x - 2, y), (x, y)),
-			West => ((x - 2, y - 2), (x - 2, y)),
-			_ => ((x, y - 2), (x - 2, y - 2)),
-		};
-		return region.Contains( right ) && !region.Contains( left );
-	}
-
-	/// <summary>The headings a walk tries at a post: left of <paramref name="heading"/>, straight on, then right.</summary>
-	private static int[] Turns( int heading ) => new[] { Rotate( heading, 3 ), heading, Rotate( heading, 1 ) };
-
-	private static int Rotate( int heading, int quarterTurns )
-	{
-		var bit = heading switch { North => 0, East => 1, South => 2, _ => 3 };
-		return ((bit + quarterTurns) % 4) switch { 0 => North, 1 => East, 2 => South, _ => West };
-	}
-
-	private static (int X, int Y) Step( (int X, int Y) post, int heading ) => heading switch
-	{
-		North => (post.X, post.Y - 2),
-		East => (post.X + 2, post.Y),
-		South => (post.X, post.Y + 2),
-		_ => (post.X - 2, post.Y),
-	};
-
-	/// <summary>The squares inside the ring closed from post B back to post A (each square's centre tested against the polygon).</summary>
-	private static HashSet<(int X, int Y)> Enclosed( (int X, int Y)[] ring )
-	{
-		var (minX, maxX) = (ring.Min( post => post.X ), ring.Max( post => post.X ));
-		var (minY, maxY) = (ring.Min( post => post.Y ), ring.Max( post => post.Y ));
-		var enclosed = new HashSet<(int X, int Y)>();
-		for ( var sy = minY; sy + 2 <= maxY; sy += 2 )
-		{
-			for ( var sx = minX; sx + 2 <= maxX; sx += 2 )
-			{
-				// even-odd ray cast eastward from the square's centre; centres never lie on a post row, so no vertex is hit
-				var (cx, cy) = (sx + 1.0, sy + 1.0);
-				var inside = false;
-				for ( var index = 0; index < ring.Length; index++ )
-				{
-					var (x1, y1) = ring[index];
-					var (x2, y2) = ring[(index + 1) % ring.Length];
-					if ( (y1 > cy) == (y2 > cy) )
-						continue;
-					var crossing = x1 + (cy - y1) * (x2 - x1) / (y2 - y1);
-					if ( crossing > cx )
-						inside = !inside;
-				}
-				if ( inside )
-					enclosed.Add( (sx, sy) );
-			}
-		}
-		return enclosed;
 	}
 
 	/// <summary>

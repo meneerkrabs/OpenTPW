@@ -65,6 +65,11 @@ public sealed class CoasterToolPanel
 	private CoasterGuestAction? waitingAction;
 	/// <summary>Set by <see cref="Close"/>: a closed panel's outcomes change no tool.</summary>
 	private bool closed;
+	/// <summary>
+	/// [EXT:online-coop-undo] The records of the pylons this panel's clicks placed in a shared park, oldest first (C5-3): its Backspace takes back the newest, and pops it once taken. A panel keeps
+	/// them for its own run of the tool, as single player's Backspace takes back only what is on the open chain.
+	/// </summary>
+	private readonly List<long> ownPylons = new();
 
 	/// <summary>
 	/// [EXT:online-coop-commands] A guest's queue to the host (the level's, C3c-2): the panel's commands go through it as requests, and their outcomes come back to the panel; null for the host and in
@@ -77,6 +82,20 @@ public sealed class CoasterToolPanel
 	internal Func<CoasterEdits.Held?>? HeldEdit { get; init; }
 	/// <summary>[EXT:online-coop-commands] A guest's completing click came back to this open panel: the level finishes the tool, or closes it when the claim went meanwhile (C3c-2).</summary>
 	internal Action? Completed { get; init; }
+	/// <summary>
+	/// [EXT:online-coop-undo] Whether the park is a shared one (C5-3): Backspace is then a take-back of the player's own last pylon, the host's and every guest's alike, which the host's journal
+	/// decides; single player's takes the last pylon off.
+	/// </summary>
+	internal Func<bool>? InSharedPark { get; init; }
+
+	/// <summary>[EXT:online-coop-undo] Whether the panel's Backspace takes back its player's own last pylon (C5-3, <see cref="InSharedPark"/>).</summary>
+	internal bool TakesBack => InSharedPark?.Invoke() == true;
+
+	/// <summary>[EXT:online-coop-undo] The records of the panel's own pylons its Backspace can still take back, oldest first (tests, C5-3).</summary>
+	internal IReadOnlyList<long> OwnPylonRecords => ownPylons;
+
+	/// <summary>[EXT:online-coop-undo] The host's click placed a pylon in a shared park: the record its Backspace takes back (C5-3; a guest's comes back with its click's outcome).</summary>
+	internal void PlacedOwnPylon( long record ) => ownPylons.Add( record );
 
 	/// <summary>[EXT:online-coop-commands] Whether the panel's commands go to the host as requests (a guest's).</summary>
 	private bool Guest => GuestRequests != null && SendsRequests?.Invoke() == true;
@@ -756,6 +775,9 @@ public sealed class CoasterToolPanel
 			if ( !closed && outcome.Result?.Value is CoasterClickDone done )
 			{
 				builder.SetToolState( done.Next );
+				// [EXT:online-coop-undo] a pylon it placed is the player's own, named by its record, which the panel's Backspace takes back (C5-3)
+				if ( done.Placed && outcome.Result.Accepted && outcome.Record is { } record )
+					ownPylons.Add( record );
 				if ( done.Completed )
 					Completed?.Invoke();
 			}
@@ -763,14 +785,42 @@ public sealed class CoasterToolPanel
 		return true;
 	}
 
-	/// <summary>[EXT:online-coop-commands] A guest's Backspace (C3c-2): the last pylon's removal goes to the host and the panel waits. False when a request waits already or a drag runs.</summary>
-	internal bool SendBackspace()
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's Backspace (C3c-2): [EXT:online-coop-undo] a take-back of its newest own pylon goes to the host and the panel waits (C5-3); it pops that pylon once
+	/// taken, and a refusal keeps it. It waits while a request of the panel waits or a drag runs, and sends nothing when the panel placed no pylon of its own.
+	/// </summary>
+	internal CoasterBackspace SendBackspace()
 	{
 		if ( IsWaiting || drag != null || !Guest )
-			return false;
-		SendAction( CoasterGuestAction.Backspace, new RemoveLastCoasterPylonCommand( station ), _ => { } );
-		return true;
+			return CoasterBackspace.Waits;
+		if ( ownPylons.Count == 0 )
+			return CoasterBackspace.NotOwn;
+		var record = ownPylons[^1];
+		SendAction( CoasterGuestAction.Backspace, TakeBackOf( record ), outcome =>
+		{
+			if ( outcome.Result is { Accepted: true } )
+				ownPylons.Remove( record );
+		} );
+		return CoasterBackspace.Sent;
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The host's Backspace in a shared park (C5-3): a take-back of its newest own pylon, issued at once, which its journal decides as a guest's; the pylon is popped once
+	/// taken and kept on a refusal. Its result, or null when the panel placed no pylon of its own (nothing goes).
+	/// </summary>
+	internal ParkCommandResult? TakeBackOwnPylon()
+	{
+		if ( ownPylons.Count == 0 )
+			return null;
+		var record = ownPylons[^1];
+		var result = issue( TakeBackOf( record ) );
+		if ( result.Accepted )
+			ownPylons.Remove( record );
+		return result;
+	}
+
+	/// <summary>[EXT:online-coop-undo] The take-back of the pylon of <paramref name="record"/>: a request names it by its record alone, and the host fills its ride (C5-3).</summary>
+	private static TakeBackCommand TakeBackOf( long record ) => new( false, record, -1, -1, -1 );
 
 	/// <summary>
 	/// Queues a guest's waited action: the panel waits for it, and its outcome runs <paramref name="answered"/>, then is reported, with whether the panel was still open when it came back (a closed
@@ -794,12 +844,25 @@ public sealed class CoasterToolPanel
 		GuestRequests!.Reports.Add( new CoasterGuestReport( action, outcome, open, closing ) );
 }
 
+/// <summary>[EXT:online-coop-undo] What a guest's Backspace in the coaster tool did (C5-3, <see cref="CoasterToolPanel.SendBackspace"/>).</summary>
+internal enum CoasterBackspace
+{
+	/// <summary>No coaster tool is open: nothing happened.</summary>
+	None,
+	/// <summary>The take-back of the player's own last pylon went to the host.</summary>
+	Sent,
+	/// <summary>A request of the panel waits, or a drag runs: nothing went, and the player is asked to wait.</summary>
+	Waits,
+	/// <summary>The panel placed no pylon of its own: nothing went.</summary>
+	NotOwn
+}
+
 /// <summary>[EXT:online-coop-commands] A guest's coaster tool action that waits for the host (C3c-2).</summary>
 internal enum CoasterGuestAction
 {
 	/// <summary>A build click (<see cref="CoasterClickCommand"/>).</summary>
 	Click,
-	/// <summary>Backspace (<see cref="RemoveLastCoasterPylonCommand"/>).</summary>
+	/// <summary>Backspace: [EXT:online-coop-undo] the take-back of the player's own last pylon (<see cref="TakeBackCommand"/>, C5-3).</summary>
 	Backspace,
 	/// <summary>A stack swap (<see cref="SwapCoasterStackCommand"/>).</summary>
 	Swap,

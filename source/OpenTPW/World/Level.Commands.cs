@@ -122,6 +122,12 @@ public partial class Level
 		_ => ParkCommandResult.Rejected( $"The park does not take {command.Kind} commands." )
 	};
 
+	/// <summary>
+	/// [EXT:online-coop-undo] Runs the inverse a take-back carries (<see cref="TakeBackCommand"/>, C5): the tool's own undo of the step, as the take-back's player, inside the take-back's run
+	/// (the rights asked the take-back, and its inverse's claims, before it).
+	/// </summary>
+	internal ParkCommandResult ExecuteTakenBack( ParkCommand inverse ) => ExecuteParkCommand( inverse );
+
 	private ParkCommandResult Outcome( bool done, object? value = null ) =>
 		done ? ParkCommandResult.Ok( value ) : ParkCommandResult.Rejected( string.IsNullOrEmpty( LastActionMessage ) ? "Refused." : LastActionMessage );
 

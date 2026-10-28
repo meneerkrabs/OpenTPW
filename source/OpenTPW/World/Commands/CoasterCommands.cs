@@ -21,7 +21,14 @@ public enum CoasterNodeField : byte
 /// What a click of the coaster tool did (<see cref="CoasterClickCommand"/>): the validator's verdict, whether the click completed the track (the tool then ends), the action message the park shows and
 /// the tool state the placement left (the loop edit mode counts its pylons down), which the issuer's builder takes.
 /// </summary>
-public sealed record CoasterClickDone( CoasterPlaceResult Result, bool Completed, string Message, CoasterToolState Next );
+public sealed record CoasterClickDone( CoasterPlaceResult Result, bool Completed, string Message, CoasterToolState Next )
+{
+	/// <summary>
+	/// [EXT:online-coop-undo] Whether the click placed a pylon (a close or a completion places none): a shared park's journal makes it a step of its player's, and the issuer's panel keeps its record
+	/// for its Backspace (C5-3).
+	/// </summary>
+	public bool Placed { get; init; }
+}
 
 /// <summary>
 /// [EXT:online-coop-commands] The coaster tool's entry (<see cref="Level.EnterCoasterTool"/>) on the station whose attraction id is <paramref name="Station"/>: the ride closes, its controller
@@ -165,7 +172,7 @@ public sealed record CoasterClickCommand( int Station, int X, int Y, float Heigh
 			: $"Placed a pylon marked invalid: {result}.";
 		// a pylon marked invalid is placed (and charged) all the same: only a click that changed nothing is refused
 		var changed = track.Version != version;
-		return new ParkCommandResult( changed, changed ? null : message, new CoasterClickDone( result, false, message, next ) );
+		return new ParkCommandResult( changed, changed ? null : message, new CoasterClickDone( result, false, message, next ) { Placed = track.Nodes.Count > count } );
 	}
 
 	private protected override void AfterApply( Level level, OriginalObject station, ParkCommandResult result )
@@ -175,7 +182,10 @@ public sealed record CoasterClickCommand( int Station, int X, int Y, float Heigh
 	}
 }
 
-/// <summary>Backspace in the coaster tool: the last pylon of the open chain goes, with no refund (<see cref="CoasterBuilder.RemoveLast"/>); every pylon edit on the coaster is released first.</summary>
+/// <summary>
+/// Backspace in the coaster tool: the last pylon of the open chain goes, with no refund (<see cref="CoasterBuilder.RemoveLast"/>); every pylon edit on the coaster is released first.
+/// [EXT:online-coop-undo] In a shared park it is the host's tools' alone: every player's Backspace is a take-back of its own last pylon, which the host's journal decides (C5-3).
+/// </summary>
 public sealed record RemoveLastCoasterPylonCommand( int Station ) : CoasterPanelCommand( Station )
 {
 	public override ParkCommandKind Kind => ParkCommandKind.RemoveLastCoasterPylon;

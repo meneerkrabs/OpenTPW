@@ -165,6 +165,8 @@ public enum ParkCommandKind : byte
 	ReleaseRide = 104,
 	/// <summary>[EXT:online-coop-permissions] The host sets a guest seat's rights (<see cref="SetSeatRightsCommand"/>, C4a).</summary>
 	SetSeatRights = 105,
+	/// <summary>[EXT:online-coop-undo] A building tool's Backspace in a shared park, decided by the host's undo journal (<see cref="TakeBackCommand"/>, C5).</summary>
+	TakeBack = 106,
 }
 
 /// <summary>

@@ -150,7 +150,7 @@ public class GuestRefusedTargetTests
 	/// <summary>The fixed run's pin and what the same run hashes with its retained targets zeroed (the legacy replay of <see cref="FixedRunDiffersFromTheLegacyPinOnlyByRetainedTargetIdentity"/>); the other pins' projections moved with the guest destinations (round 9, package G) and are not kept.</summary>
 	private static readonly IReadOnlyDictionary<ulong, ulong> JointMainProjectionPins = new Dictionary<ulong, ulong>
 	{
-		[0x5946C7CB09C6EEE7UL] = 0x307DA54FFB0EC403UL,
+		[0xB4AEC10551DF2738UL] = 0x3B23DA342C6DDC55UL,
 	};
 
 	internal static ulong VerifyRetainedTargetHash( GuestSimulation simulation, Func<ulong> compute, WorldStateSources? sources = null )
@@ -207,7 +207,7 @@ public class GuestRefusedTargetTests
 			Assert.AreEqual( currentHash, Hash( current ), "diagnostic projection must restore the entire current hash" );
 		}
 		Assert.IsTrue( retainedTicks > 0, "the fixed run must exercise full-room retained targets" );
-		Assert.AreEqual( 0x307DA54FFB0EC403UL, Hash( legacy ), $"legacy replay: 0x{Hash( legacy ):X16}" );
+		Assert.AreEqual( 0x3B23DA342C6DDC55UL, Hash( legacy ), $"legacy replay: 0x{Hash( legacy ):X16}" );
 		static ulong Hash( DeterminismTests.SyntheticPark park ) => WorldStateHash.Compute( new WorldStateSources { Seed = park.Seed, Economy = park.Economy, Guests = park.Guests, Scripts = park.Scripts } );
 		static bool HasRetainedTarget( Guest guest ) => guest.AttractionId != 0 && !guest.IsInQueue
 			&& RetainedStates.Contains( (guest.State, guest.Activity) );

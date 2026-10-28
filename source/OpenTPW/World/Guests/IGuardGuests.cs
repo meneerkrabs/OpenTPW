@@ -16,7 +16,7 @@ public interface IGuardGuests
 	bool Release( int guestId, (int X, int Y) cell, int? side = null );
 	/// <summary>Whether a guest stands on the map within a square of the given radius.</summary>
 	bool AnyGuestWithin( (int X, int Y) cell, int radius );
-	/// <summary>The walks of the guests standing on a cell that separation pushes away from (those outside rides, held guests and gone ones), in the cell's order.</summary>
+	/// <summary>The walks on a cell's thing chain that separation pushes away from, head first: the guests (on a ride or carried too) and the staff interleaved by the time each entered the cell.</summary>
 	IEnumerable<GuestNavigation> WalkersOn( int x, int y ) => [];
 	/// <summary>Arrival lane A (0) or B (1), bus stop first and park entrance last; null when the level has none.</summary>
 	(int X, int Y)[]? Lane( int side );

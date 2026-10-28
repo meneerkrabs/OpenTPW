@@ -3,7 +3,7 @@
 - Classification: **approximation**.
 - Mode: Evidence-gated implementation design only.
 - Baseline: provided main `5ccddcab` source snapshot; source inspected locally on 2026-10-18.
-- Status: PLAN ONLY. No runtime implementation, identifier retirement or merge is claimed.
+- Status: superseded in round 10: GuestWander walks the links of a cell of any type with the four removals of tp.exe `0x4F9490`, checked against the routine in the x86 oracle (X19) and retired as GUEST-010.
 
 ## Current residual
 GuestWander rejects linked cells other than path or queue and restricts candidate link types.

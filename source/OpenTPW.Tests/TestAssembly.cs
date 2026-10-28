@@ -11,5 +11,8 @@ public static class TestAssembly
 	/// so does a command that throws, so neither goes unnoticed.
 	/// </summary>
 	[AssemblyInitialize]
-	public static void Initialize( TestContext context ) => ParkCommands.Strict = true;
+	public static void Initialize( TestContext context )
+	{
+		ParkCommands.Strict = true;
+	}
 }

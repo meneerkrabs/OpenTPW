@@ -173,7 +173,7 @@ public class EmployeePortraitGeometryTests
 					AssertDraw( figure, width, height, a, b, 526, 476, 2.4f );
 					foreach ( var now in new[] { 10f, 10.07f, 10.14f, 10.21f } )
 					{
-						if ( now > 10 ) rig.Member.CellX += heading * 0.1f;
+						if ( now > 10 ) rig.Member.Step( heading * 0.1f );
 						Assert.AreEqual( 12, rig.Prepare( now ) );
 					}
 					Assert.IsTrue( rig.Player.Steps > 0 );
@@ -199,11 +199,11 @@ public class EmployeePortraitGeometryTests
 		var observed = new Rig(); var figure = Figure( observed.Hud ); var control = new Rig();
 		foreach ( var now in new[] { 0f, 0.07f, 0.14f } )
 		{
-			if ( now > 0 ) { observed.Member.CellX -= 0.1f; control.Member.CellX -= 0.1f; }
+			if ( now > 0 ) { observed.Member.Step( -0.1f ); control.Member.Step( -0.1f ); }
 			observed.Prepare( now ); control.Prepare( now );
 		}
-		observed.Member.CellY += 0.25f; control.Member.CellY += 0.25f;
-		Set( observed.View, "StepLength", 5432f ); Set( control.View, "StepLength", 5432f );
+		observed.Member.Step( 0, 0.25f ); control.Member.Step( 0, 0.25f );
+		observed.Member.PendingInterval = 148; control.Member.PendingInterval = 148;
 		Level.Current = observed.Level; var before = observed.State();
 		var save = ParkSaveFile.Serialize( observed.Economy ); var random = observed.Economy.World.State;
 		var controlSave = ParkSaveFile.Serialize( control.Economy ); var controlRandom = control.Economy.World.State;

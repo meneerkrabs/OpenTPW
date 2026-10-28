@@ -58,7 +58,7 @@ public sealed class StaffMember
 	public int PhaseId => ThingId != 0 ? ThingId : Id;
 	public required StaffType Type { get; init; }
 	public required int NameIndex { get; init; }
-	/// <summary>The sprite variant the member was hired with (the candidate's, tp.exe member +0x20); -1 for a member of an original save (the save holds none) or of an older park save, whose bank derives from its name and id.</summary>
+	/// <summary>The sprite variant the member was hired with (the candidate's, tp.exe member +0x20); -1 for a member of an older OpenTPW park save from before the variant was kept (an original save's member takes the saved mSpriteID, tp.exe 0x4F8B10), whose bank derives from its name and id.</summary>
 	public int Variant { get; init; } = -1;
 	/// <summary>
 	/// The member's own name, stored inline in an original save (the staff suffix's <c>mName[i]</c>, +0x1A0, which the employee panels show); null
@@ -122,8 +122,15 @@ public sealed class StaffMember
 
 	/// <summary>Whether the member has a patrol rectangle of its own.</summary>
 	public bool HasPatrolArea => PatrolArea != WholeMap;
-	/// <summary>Base speed [+0xc0]: 60, 80, 100, 120 or 140 by energy.</summary>
-	public int BaseSpeed { get; set; } = 60;
+	private int baseSpeed = 60;
+	/// <summary>Whether a constructor or saved world state supplied the speed; legacy members without either take the grade fallback once when placed.</summary>
+	internal bool HasInitializedBaseSpeed { get; private set; }
+	/// <summary>Base speed [+0xc0], supplied by the constructor or saved world state; creating a navigation state must not replace it.</summary>
+	public int BaseSpeed
+	{
+		get => baseSpeed;
+		set { baseSpeed = value; HasInitializedBaseSpeed = true; }
+	}
 	/// <summary>Speed bonus [+0xc2]: 25 while walking to a job.</summary>
 	public int SpeedBonus { get; set; }
 	/// <summary>The smoothed speed [+200] (<see cref="GuestSpeed.Update"/>).</summary>
@@ -470,7 +477,7 @@ public sealed partial class ParkStaff
 	public bool CanHire( StaffType type ) => OfType( type ).Count() < settings[type].MaximumInPark;
 
 	// [BIN:STP-PPC:0x100F61D0 hiring is free] the hire button's handler queues a command (0xf61d0, executor 0x6c034, thing factory 0xb882c) and nothing on that path debits the bank: the 16 direct callers of Spend 0xcbfdc include no hire routine, and BaseCostPerStaff (+700) and CostPerQualityLevel (+704) are never read; the wage is paid at the month's end and dismissing one costs one more (ParkEconomy.Fire, ORACLE.md F28)
-	public StaffMember Hire( int candidateId, long tick )
+	public StaffMember Hire( int candidateId, long tick, WorldRng? random = null )
 	{
 		var candidate = candidates.FirstOrDefault( item => item.Id == candidateId ) ?? throw new InvalidOperationException( $"No staff candidate {candidateId}." );
 		if ( !CanHire( candidate.Type ) )
@@ -479,9 +486,24 @@ public sealed partial class ParkStaff
 		var thingId = things?.Allocate( ThingModelOf( candidate.Type ) ) ?? 0;
 		if ( things != null && thingId == 0 )
 			throw new InvalidOperationException( $"The thing pool is full ({ThingPool.Capacity} things); no staff member can be placed." );
+		// [BIN:TPW-EXE:0x004F89E1 staff base speed draw] the person base constructor 0x004F8940, which every staff constructor (0x00504B10) runs right after taking the thing id, draws R mod 5 from the world generator and takes that entry of the speed table {60, 80, 100, 120, 140} (0x0075C7F8) as the base speed +0xC0 (the reseed with the thing id is the online avatar's constructor 0x004F7B20, not the staff's)
+		// [BIN:TPW-EXE:0x004D4340 entertainer speed] the entertainer constructor then overwrites +0xC0 with the first table entry (60) after the draw; [BIN:TPW-EXE:0x004D5E02 guard variant] the guard constructor draws its own sprite variant ((R >> 2) mod the guard bank count, 0x00541F70) instead of taking the candidate's
+		// a pool-less (headless) economy has no person things, so it takes no draw
+		int? baseSpeed = null;
+		var variant = candidate.Variant;
+		if ( things != null && random != null )
+		{
+			baseSpeed = GuestSpeed.BaseSpeeds[(int)random.Next( (uint)GuestSpeed.BaseSpeeds.Length )];
+			if ( candidate.Type == StaffType.Entertainer )
+				baseSpeed = GuestSpeed.BaseSpeeds[0];
+			else if ( candidate.Type == StaffType.Guard )
+				variant = VariantFrom( StaffType.Guard, random.NextWord() );
+		}
 		MaterializeRoleOrder();
 		candidates.Remove( candidate );
-		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = candidate.Variant };
+		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = variant };
+		if ( baseSpeed is { } drawnSpeed )
+			member.BaseSpeed = drawnSpeed;
 		members.Add( member );
 		roleOrder![(int)member.Type].Insert( 0, member.Id );
 		return member;
@@ -571,10 +593,10 @@ public sealed partial class ParkStaff
 		_ => StaffState.Working
 	};
 
-	/// <summary>Adds an employee taken from an original save (not hired from the pool).</summary>
-	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0 )
+	/// <summary>Adds an employee taken from an original save (not hired from the pool); <paramref name="variant"/> is the sprite variant its person record saves (-1: none).</summary>
+	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0, int variant = -1 )
 	{
-		var member = new StaffMember { Id = AllocateId(), ThingId = thingId, Type = type, NameIndex = 0, Name = name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
+		var member = new StaffMember { Id = AllocateId(), Variant = variant, ThingId = thingId, Type = type, NameIndex = 0, Name = name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
 		AdoptThing( member );
 		MaterializeRoleOrder();
 		members.Add( member );

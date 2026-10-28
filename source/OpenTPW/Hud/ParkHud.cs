@@ -135,6 +135,11 @@ public sealed partial class ParkHud
 			HookStaffStrikeMessages();
 			HookChallengeMessages();
 			HookLossEvents();
+			// the park's save takes this HUD's message tube, and a resumed park's saved tube comes back (tp.exe saves its tag tube with the park, 0x48EE50)
+			level.MessageTubeCaptured = CaptureMessageTube;
+			var resumedTube = level.ResumedMessageTube;
+			level.ResumedMessageTube = null;
+			RestoreMessageTube( resumedTube );
 		}
 		catch
 		{
@@ -161,6 +166,8 @@ public sealed partial class ParkHud
 		if ( (CellBuildTool?)level.CellTool is { } cellTool )
 			cellTool.Ended -= OnCellToolEnded;
 		level.BuildToolsEnded -= OnBuildToolsEnded;
+		if ( level.MessageTubeCaptured?.Target == this )
+			level.MessageTubeCaptured = null;
 		if ( guestPatrolArea != null && ReferenceEquals( level.GuestPatrolArea, guestPatrolArea ) )
 			level.GuestPatrolArea = null;
 		if ( level.Park != null )
@@ -550,6 +557,34 @@ public sealed partial class ParkHud
 		}
 		if ( item.Entry is not { } entry )
 			return;
+		ArmBuildTool( item, entry );
+	}
+
+	/// <summary>
+	/// Ctrl and a left click on a placed object arms a copy of it: the build tool of the object's type, turned to the object's own angle, the same tool the buy window's row arms. A money balance
+	/// below the price plays the error cue and arms nothing (the click then opens no window), and no window of the object opens.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4879D0 object copy] the click dispatcher's mode 4 (the hovered cell's owner, 0x527e80) tests GetAsyncKeyState(VK_CONTROL) (0x487b0b: either Ctrl key): without it the object's window opens (0x486920), with it the type record of the thing's Info id (+0xE, 0x4D3D10) is read, the bank's balance (0x5195D0, +0xC) below the record's price (+4) plays cat_ui 0x1D (0x487bf1) and returns, else the build tool object of mode 4 for that Info id (0x46C5A0(4, id), the call the buy row makes at 0x4AC6EF after the same comparison at 0x4AC6C7) becomes the tool (0x46C350) and the tool's angle takes the thing's +0x10 (0x52F1B0)
+	// in a shared park the copy arms its tool as a buy row does and the rights (the host's build grant, the claims) are asked at the placement like for every placement, so a guest the host has not let build gets the refusal there (CoopBuildRights)
+	private bool CopyObject( OriginalObject clicked )
+	{
+		if ( BuyItemOf( clicked.Entry ) is not { } item || clicked.Entry is not { } entry )
+			return false;
+		if ( RejectReadOnlyAction() )
+			return true;
+		if ( Status.HasEconomy && (Status.PriceOf( item ) ?? item.Cost) > Status.Money )
+		{
+			PostMessage( strings.Help( 152 ) );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
+			return true;
+		}
+		ArmBuildTool( item, entry );
+		level.SetBuildRotation( clicked.Placement.Rotation );
+		return true;
+	}
+
+	private void ArmBuildTool( BuildItem item, ObjectCatalogEntry entry )
+	{
 		level.CellTool.Cancel();
 		level.StaffPlacement?.Cancel();
 		level.PatrolTool?.Cancel();
@@ -1347,8 +1382,9 @@ public sealed partial class ParkHud
 			// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected opens its settings window; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
 			if ( !ChatMode && clicked != null && clicked == selectedObject && IsWaveMachine( clicked ) )
 				OpenWaveSettings( clicked );
+			// [BIN:TPW-EXE:0x487b0b object copy] Ctrl at the click arms a copy of the object instead of opening its window (CopyObject); the chat mode has no object window
 			// a click on a track add-on opens its ride's window (Level.WindowTarget); the chat mode has no object window
-			if ( !ChatMode )
+			if ( !ChatMode && !(clicked != null && (Input.ModifierMaskDown & 0xC) != 0 && CopyObject( clicked )) )
 				SelectObject( level.WindowTarget( clicked ) );
 		}
 		// [EXT:online-avatar-click] in a visit with other players a click on the ground walks the player's figure there (manual p. 68: "Left click to walk to destination"): in the

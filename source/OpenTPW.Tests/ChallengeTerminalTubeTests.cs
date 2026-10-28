@@ -423,7 +423,7 @@ public class ChallengeTerminalTubeTests
 		old.Hud.QueueChallengeTerminalTimers();
 		old.Hud.SetChallengeMessageTimersSuspended( true );
 		var loaded = new Clock { Now = 30000 };
-		Assert.AreEqual( 0, loaded.Hud.PendingMessages.Count, "tube state is not persisted (UI-025)" );
+		Assert.AreEqual( 0, loaded.Hud.PendingMessages.Count, "a HUD that is given no saved tube starts empty" );
 		Post( loaded );
 		old.Hud.DispatchChallengeTerminalTimers();
 		old.Pump( 30500 );

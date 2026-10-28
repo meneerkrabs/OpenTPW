@@ -106,7 +106,7 @@ first byte (0x541FA0), and 0x540C70 returns entry e as program (byte 0 − 1, th
 (byte 1 − 1) and two program registers (bytes 2 and 3). Their only user is the entertainer's search 0x4D46D0, which
 starts a performance as script 13 + (r mod (n − 1)), or 13 for one entry (scripts 13–16 hold entries 0–3), and
 0x475B80 plays it. Exactly the twelve entertainer banks have one: `01 05 00 00` (program 0 on slot 4) in eleven and
-`01 05 02 28` in Hallow SPR_DR, so every entertainer performs slot 4; the program's registers 0x11 and 0x12 are SPR_DR's 2 and 40: frames 0-2 once, then for ever the frames from 2 on and 41 steps of frame 0 (`StaffScripts.PerformanceFrame`, GUEST-015).
+`01 05 02 28` in Hallow SPR_DR, so every entertainer performs slot 4; the program's registers 0x11 and 0x12 are SPR_DR's 2 and 40: frames 0-2 once, then for ever the frames from 2 on and 41 steps of frame 0 (`StaffScripts.PerformanceFrame`). The entry a performance plays follows the search's second draw, saved per member (`StaffMember.PerformanceDraw`; GUEST-015 retired).
 
 **Writing a sprite set** (`SpriteBankWriter`, `SpriteAnimationWriter`, `SpriteSetBuilder`). A usable set is the `.ESP` plus its `.TPC`, the
 bank the game and OpenTPW draw (`GuestSpriteAtlas.LoadSets`); a set with byte 0x10C also ships an `.FPC`, which nothing opens. The `.FPS`/`.TPS` files the ESP names are never shipped and

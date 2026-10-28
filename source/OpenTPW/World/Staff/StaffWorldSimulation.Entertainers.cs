@@ -10,7 +10,7 @@ public sealed partial class StaffWorldSimulation
 	public const uint PerformanceEndEvent = 135;
 
 	// [BIN:TPW-EXE:0x004D4810 entertainer update] 0 idle: a world draw, (draw & 15) == 0 plays cat_staff 165, then waits while the turn is at most IdleDuration[grade] + the idle stamp +0x200; 1 patrol: a world draw for cat_staff 164, a walk step (0x004FA2A0), the walk drain while walking (0x005066A0); 14 performing: the work drain (0x00506760), then once the turn passes the stamp +0x214 + EntertainerConstsPerGrade[grade].WorkDuration (0x00785398 + 16 × grade) cat_staff 135 at the actor (0x0051BFC0); every end of an idle, a walk or a performance runs the search 0x004D46D0; 2, 3 and the others are the generic staff handlers
-	// Approximation (ECON-022, registered at UpdateStaff): an entertainer's performance has no animation (the original picks one of 13 + n − 1 by a draw, 0x00541FA0) (the guests do turn to watch him, as in the original: GUEST-010)
+	// the performance's animation is the draw's script (PerformanceDraw, StaffSpriteRules.Perform); the guests turn to watch him as in the original (GUEST-010)
 	private void UpdateEntertainer( ParkEconomy economy, StaffMember member, long turn, int maxSpeed, int maxForce )
 	{
 		var settings = economy.Settings;
@@ -52,7 +52,8 @@ public sealed partial class StaffWorldSimulation
 		if ( !StaffVitals.IsBelowRestLevel( member.Energy, economy.Settings.RestLevel ) && Draw( economy ) % 3 == 0
 			&& Guests?.AnyGuestWithin( cell, economy.Settings.EntertainerActivationDistance[member.Grade] ) == true )
 		{
-			Draw( economy ); // the performance's animation
+			// [BIN:TPW-EXE:0x004D47B5 performance draw] the second draw picks the performance's script: 13 + (draw mod (n - 1)) of the bank's n entries, 13 when n is 1 (StaffSpriteRules.Perform)
+			member.PerformanceDraw = Draw( economy );
 			SetJob( economy, member, StaffJob.Performing, turn );
 			return;
 		}

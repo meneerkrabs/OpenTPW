@@ -106,7 +106,7 @@ public static class StaffSpriteRules
 	/// <paramref name="moving"/> is whether the member is being moved now; <paramref name="performances"/> (the bank's performance entries,
 	/// <see cref="SpriteAnimationFile.Performances"/>) give an entertainer's performance.
 	/// </summary>
-	// [APPROX:GUEST-015] tp.exe (0x4D46D0) queues script 13 + (r mod (n − 1)) from a second world draw r, or 13 when n is 1, n being the bank's present performance entries (0x541FA0); scripts 13..16 of the table 0x75A418 hold the entry indices 0..3, so a full bank never plays its fourth entry, and 0x475B80 runs the entry's program on its slot (StaffScripts.PerformanceFrame plays program 0 with the entry's intro and hold). Every shipped entertainer bank has exactly one entry, so the draw never matters; for a bank of several entries (none shipped) OpenTPW picks by the member's id instead of the draw
+	// [BIN:TPW-EXE:0x004D46D0 performance start] the clip of a performing member is the script its search queued: 13 + (r mod (n − 1)) from the search's second world draw r (StaffMember.PerformanceDraw), 13 when the bank's n present entries (0x541FA0) is 1; scripts 13..16 of the table 0x75A418 hold the entry indices 0..3, and 0x475B80 runs the entry's program on its slot (StaffScripts.PerformanceFrame plays program 0 with the entry's intro and hold). An entertainer of an original save in state 14 has no saved draw: it plays entry 0 until its next performance (GUEST-015 retired)
 	public static StaffClip? SelectClip( StaffMember member, bool moving, IReadOnlyList<SpritePerformance>? performances = null, int performanceCount = 0 )
 	{
 		// a resting member is inside the Staff Room (0x5054d0 state 3 removes the model); a carried one is the dangling sprite instead
@@ -132,7 +132,7 @@ public static class StaffSpriteRules
 			case StaffType.Guard:
 				return member.Job == StaffJob.Escorting ? CatchAndCarry : moving ? (member.Job == StaffJob.Chasing ? Run : Walk) : Stand;
 			default:
-				return member.Job == StaffJob.Performing && !moving ? Perform( member.Id, performances, performanceCount ) : moving ? Walk : Stand;
+				return member.Job == StaffJob.Performing && !moving ? Perform( member.PerformanceDraw, performances, performanceCount ) : moving ? Walk : Stand;
 		}
 	}
 
@@ -142,13 +142,14 @@ public static class StaffSpriteRules
 
 	/// <summary>
 	/// An entertainer's performance clip: entry 0 when the bank has one (or none: <see cref="DefaultPerformanceSlot"/>), else entry
-	/// <paramref name="seed"/> mod (count − 1) as the original's script choice, its slot looping.
+	/// <paramref name="draw"/> mod (count − 1), the original's script choice (the search's second draw, <see cref="StaffMember.PerformanceDraw"/>), its slot looping.
 	/// </summary>
-	public static StaffClip Perform( int seed, IReadOnlyList<SpritePerformance>? performances, int count )
+	// [BIN:TPW-EXE:0x004D47D8 performance script] n = the bank's count of present entries (0x541FA0): 13 when n is 1, else 13 + (draw mod (n - 1)), queued on the member's sprite (0x4217F0); a full bank of four never plays its fourth entry
+	public static StaffClip Perform( uint draw, IReadOnlyList<SpritePerformance>? performances, int count )
 	{
 		if ( performances == null || count <= 0 || performances.Count == 0 )
 			return new StaffClip( 13, DefaultPerformanceSlot );
-		var entry = count == 1 ? 0 : (int)((uint)seed % (uint)(count - 1));
+		var entry = count == 1 ? 0 : (int)(draw % (uint)(count - 1));
 		var slot = performances[Math.Min( entry, performances.Count - 1 )].Slot;
 		return new StaffClip( 13 + entry, slot is >= 0 and < SpriteAnimationFile.SlotCount ? slot : DefaultPerformanceSlot, performances[Math.Min( entry, performances.Count - 1 )].Intro, performances[Math.Min( entry, performances.Count - 1 )].Hold );
 	}

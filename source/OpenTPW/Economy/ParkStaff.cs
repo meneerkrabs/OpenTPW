@@ -165,6 +165,11 @@ public sealed class StaffMember
 	public int BubbleThought { get; set; }
 	/// <summary>The park turn the member's last bubble appeared.</summary>
 	public long BubbleTurn { get; set; }
+	/// <summary>
+	/// The second world draw the entertainer's search took when it started a performance (tp.exe <c>0x004D47B5</c>): the performance's script is 13 + (draw mod (n - 1)) of the bank's n entries
+	/// (13 when n is 1, <c>0x004D47CC</c>). Saved only while it is not 0.
+	/// </summary>
+	public uint PerformanceDraw { get; set; }
 	/// <summary>The rest area (an object with <c>UsageInfo.ChillsYouOut</c>) a member walks to or rests in [+0x208], 0 when none.</summary>
 	public int RestAreaId { get; set; }
 	/// <summary>

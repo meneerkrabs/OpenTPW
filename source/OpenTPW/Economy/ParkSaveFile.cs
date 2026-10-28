@@ -368,6 +368,9 @@ public static class ParkSaveFile
 		/// <summary>The littered cell a handyman sweeps (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int[]? LitterCell { get; init; }
+		/// <summary>An initialized speed while no world-state record exists (before the first world update or in a headless economy); absent in legacy saves. Never combined with WorldState.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? BaseSpeed { get; init; }
 		/// <summary>A handyman's, entertainer's or guard's state machine in a world (absent: none yet).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public StaffWorldData? WorldState { get; init; }
@@ -772,6 +775,9 @@ public static class ParkSaveFile
 			Rings = RingsOf( item )
 		} ).ToList();
 
+	private static bool HasStaffWorldState( StaffMember member ) => member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null || member.HasPatrolArea
+		|| member.Thought != 0 || member.BubbleThought != 0 || member.BubbleTurn != 0;
+
 	private static StaffData CaptureStaff( ParkEconomy park ) =>
 		new StaffData
 		{
@@ -795,8 +801,9 @@ public static class ParkSaveFile
 				AwaitingJobArrival = member.AwaitingJobArrival,
 				AssignedInstanceId = member.AssignedInstanceId,
 				LitterCell = member.LitterCell is { } litter ? new[] { litter.X, litter.Y } : null,
-				WorldState = (member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null || member.HasPatrolArea
-					|| member.Thought != 0 || member.BubbleThought != 0 || member.BubbleTurn != 0) ? StaffWorldData.Capture( member ) : null,
+				// Do not invent WorldState for a headless timed job: its absence distinguishes that job from the world state machine.
+				BaseSpeed = member.HasInitializedBaseSpeed && !HasStaffWorldState( member ) ? member.BaseSpeed : null,
+				WorldState = HasStaffWorldState( member ) ? StaffWorldData.Capture( member ) : null,
 				CellX = member.CellX,
 				CellY = member.CellY,
 				TravelSeconds = member.TravelSeconds
@@ -1002,6 +1009,7 @@ public static class ParkSaveFile
 			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
 			Require( member.ResumeClaimTurn is not { } resumeTurn || resumeTurn >= 0 && resumeTurn <= ParkCalendar.Turn( data.Tick ), $"staff {member.Id} resume claim turn" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
+			Require( member.BaseSpeed is null || (member.WorldState is null && member.BaseSpeed is >= 0 and <= 255), $"staff {member.Id} base speed without world state" );
 			Require( member.WorldState is not { } world || (StaffWorldData.Fits( member.Type, world.Job ) && world.PatrolArea is { Length: 4 } area
 				&& area[0] is >= 0 and < ParkLitter.MapSize && area[2] >= area[0] && area[2] < ParkLitter.MapSize && area[1] is >= 0 and < ParkLitter.MapSize
 				&& area[3] >= area[1] && area[3] < ParkLitter.MapSize && world.BaseSpeed is >= 0 and <= 255 && world.SpeedBonus is >= 0 and <= 255
@@ -1166,6 +1174,8 @@ public static class ParkSaveFile
 		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
 		park.Staff.RestoreRoleOrder( data.Staff.RoleOrder );
 		park.Staff.RestoreHaveEverTrained( data.Staff.HaveEverTrained ?? data.Staff.TrainingBudgets.Any( budget => budget > 0 ) );
+		foreach ( var saved in data.Staff.Members.Where( member => member.BaseSpeed != null ) )
+			park.Staff.Members.Single( member => member.Id == saved.Id ).BaseSpeed = saved.BaseSpeed!.Value;
 		foreach ( var saved in data.Staff.Members.Where( member => member.WorldState != null ) )
 			saved.WorldState!.Apply( park.Staff.Members.Single( member => member.Id == saved.Id ) );
 		park.ApplyStaffEffects();

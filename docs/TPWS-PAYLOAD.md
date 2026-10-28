@@ -600,8 +600,8 @@ The header fields as tp.exe's loader treats them (`SaveCoaster` names them):
 | +8 u16 | +0xC | coaster type id (`TypeId`) | no, the constructor set it |
 | +0xA u16 | +0x10 | station mesh instance id (`StationMeshInstanceId`), the bind key | used to bind |
 | +0xC u16 | +0x14 | slot in the table `0x790BD0` (`Slot`, at most 255), the scripts' coaster handle | as the saved slot, which the allocator assigns as given |
-| +0xE u16 | +0x1C | placement value 1 from `0x466F90` (SAVE-922) | no |
-| +0x10 u16 | +0x20 | placement value 2 from `0x466F90` (SAVE-922) | no |
+| +0xE u16 | +0x1C | the station's placement cell x from `0x466F90`, dead data | no |
+| +0x10 u16 | +0x20 | the station's placement cell z from `0x466F90`, dead data | no |
 | +0x12 f32 | +0x2C | power factor 0 or 1 | yes |
 | +0x16 u16 | — | section count | — |
 | +0x18 u16 | +0xF4 | trains in service (`TrainsInService`; the loop bound of `0x435784`, `0x43BA35`, `0x43CD36`) | yes |
@@ -683,8 +683,7 @@ derived again by the node constructor (the loader runs the loop setup `0x442cd0`
 rotation float for 0x10). The section words are named: `section+112` is the node's mesh instance (re-attached
 through `0x463ab0`), `+216` bank, `+220` incline, `+224` yaw, `+232` the height parameter and `+248`
 the loop rotation (setters `0x444150`, `0x4441d0`, `0x444270`). The header's remaining track flags
-(SAVE-921), the placement values `+28`/`+32` (SAVE-922) and the train words `+0x38`, `+0x64`, `+0x68` and the car flag and
-byte `+0x44` (SAVE-923) are kept raw. A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
+(SAVE-921) are kept raw. The placement cell `+28`/`+32` is dead data (the loader hands it to `0x436ac0`, which never reads it); the train words `+0x38` (the sound state of `0x439780`), `+0x64`, `+0x68` (its handles) are restored raw by the loader and read only by the sound routine; the car byte `+0x44` is the car's seat share, which `0x43ba90` computes and the import's seats per train reproduce. A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
 split). `OriginalParkImport.Import` runs the reader on every save and exposes the result as
 `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell queries and `CoasterSections` joins that require both cell
 and object `Info.Id` to attach attraction ids. Missing or ambiguous scene matches remain visible;
@@ -1043,8 +1042,7 @@ RideSystem, attraction and economy readers over the second fixture set
   extra paths, so those readers are still proven on Easymode alone. A Theme Park World
   save with a built coaster does not exist in any available corpus: the Coasters block's
   nonempty shape rests on the static Mac contract and the Theme Park Inc cross-check.
-- The meaning of the coaster header's track flags and controller words and of the train words
-  `+0x38`, `+0x64`, `+0x68` (SAVE-920 to SAVE-923); the train layout is decoded from the loader and the saver but
+- The meaning of the coaster header's track flags (SAVE-920, SAVE-921); the train layout is decoded from the loader and the saver but
   no Theme Park World save with a coaster exists to check it on real bytes.
 - The control manager and the macro AI before the calendar (their widths are traced, their bodies are not), the guest, analyser and weather bodies, record
   fields marked raw above, the extension data, the RideSystem control and embedded words and the remaining

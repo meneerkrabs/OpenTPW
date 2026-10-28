@@ -424,6 +424,9 @@ public sealed partial class ParkCellMap
 				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false, effects );
 				SetType( x, y, ParkCellType.Empty );
 			}
+			// [BIN:TPW-EXE:0x00528A70 station under its footprint] the placement stamps the footprint's first-layer types (0x00532FC0 with the type, 4 for the shape's '*') before the station line and the exit and entry tiles are laid on the second layer (0x00525432..0x0052577C), which write no cell type; the level lays the station tiles first, so the type the footprint stamps goes under a station tile as its base type (oracle X37: a kart or water ride's two station tiles cover eight of its footprint cells, each type 4 beneath a structure record 13 or 12)
+			if ( Tracks.Get( x, y ) is { IsEmpty: false } tile && RawTypeAt( x, y ) == tile.Type && tile.BaseType != type && IsStationTile( tile ) )
+				Tracks.Set( x, y, tile with { BaseType = type } );
 			var fresh = RawTypeAt( x, y ) == 0;
 			if ( fresh )
 				SetType( x, y, type );
@@ -634,6 +637,17 @@ public sealed partial class ParkCellMap
 	public static byte FootprintType( int shapeType ) => shapeType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash or ObjectShapeSymbols.TypeTrackEnd
 		? ParkCellTypes.Object
 		: (byte)Math.Clamp( shapeType, 0, 255 );
+
+	/// <summary>Whether a track cell belongs to a ride's station: a station origin (type 13 or 18) or an extension of one.</summary>
+	private bool IsStationTile( TrackCell tile )
+	{
+		if ( TrackCellTypes.IsStation( tile.Type ) )
+			return true;
+		if ( tile.Type != TrackCellTypes.Extension || tile.Parent < 0 )
+			return false;
+		var (px, py) = Tracks.CellOf( tile.Parent );
+		return TrackCellTypes.IsStation( Tracks.Get( px, py ).Type );
+	}
 
 	private void SetPath( int x, int y, byte cellLinks )
 	{

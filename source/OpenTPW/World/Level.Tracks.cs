@@ -879,6 +879,12 @@ public partial class Level
 				SetTrackStation( ride, track, TrackStation.FromPlacementLegacy( ride.Placement.X, ride.Placement.Y, ride.Placement.Rotation ) );
 		}
 		TrackSave.RestoreCells( Guests.Grid.Cells, saved );
+		// [BIN:TPW-EXE:0x00528A70 station under its footprint] a save written before the footprint's type went under the station tiles holds base type 0 there (0 points for the net worth, not 2): the footprint writer puts the type under them again, as a fresh placement does; a join keeps the host's cells exactly (EXT:online-coop-snapshot-join)
+		if ( joinRestore == null )
+		{
+			foreach ( var station in controllers.Where( item => trackStations.ContainsKey( item ) ) )
+				Guests.Grid.Cells.WriteFootprint( station.Cells, OwnerWord( station ), station.Placement.Rotation );
+		}
 		var module = Objects.ScriptWorld.Bumpers;
 		// a save of the shared module (it carries the module clock and every controller's object slots) is trusted: saved pool slots, verdicts and object slots
 		var shared = saved.FrameCount != null;

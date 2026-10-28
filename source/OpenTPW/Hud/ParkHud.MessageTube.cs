@@ -127,8 +127,8 @@ public sealed partial class ParkHud
 	{
 		if ( pendingChallengeRows![index] is { } row && ReferenceEquals( openedChallengeRow, row ) )
 			CloseMessagePanel();
-		if ( pendingChallengeRows[index] is { IsOffer: true } )
-			DeclineRemovedOffer();
+		if ( pendingChallengeRows[index] is { IsOffer: true } offer )
+			DeclineRemovedOffer( offer.ReleaseAt != null ? offer.PendingOfferIdentity : offer.OfferIdentity );
 		pendingMessages!.RemoveAt( index );
 		pendingActions!.RemoveAt( index );
 		pendingChallengeRows.RemoveAt( index );

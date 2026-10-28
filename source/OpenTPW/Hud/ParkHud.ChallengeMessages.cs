@@ -124,21 +124,31 @@ public sealed partial class ParkHud
 	/// <summary>Posts an offer as a tube row with its 90 s expiry and 5 s earlier warning timers (0x48ecce-0x48ed0e); reading it does not stop them.</summary>
 	private bool PostChallengeOffer( string text, int tag, int lifetime, Func<ParkEconomy?>? economy = null )
 	{
-		if ( !PostGameMessage( text, ChallengeActions( economy ?? ( () => level?.Park?.Economy ) ) ) )
+		var source = economy ?? ( () => level?.Park?.Economy );
+		if ( !PostGameMessage( text, ChallengeActions( source ) ) )
 			return false;
-		pendingChallengeRows![^1] = new ChallengeTubeRow( new( tag, 0, 0 ), lifetime, ChallengeUiMilliseconds, isOffer: true );
+		pendingChallengeRows![^1] = new ChallengeTubeRow( new( tag, 0, 0 ), lifetime, ChallengeUiMilliseconds, isOffer: true )
+		{
+			OfferIdentity = source()?.Objectives.Current is { Accepted: false } offer ? offer : null
+		};
 		return true;
 	}
 
-	/// <summary>The decline that runs when an offer's tag is removed: it acts only while an offer waits for its answer (+0x3DA), so an answered offer is untouched.</summary>
-	private void DeclineRemovedOffer()
+	private ActiveChallenge? CurrentUnansweredOffer => level?.Park?.Economy?.Objectives.Current is { Accepted: false } offer ? offer : null;
+
+	// The command layer's existing identity convention: definition and offered day, not a new challenge generation.
+	private static bool SameUnansweredOffer( ActiveChallenge? expected, ActiveChallenge? current ) => expected != null && current is { Accepted: false }
+		&& expected.DefinitionIndex == current.DefinitionIndex && expected.OfferedDay == current.OfferedDay;
+
+	/// <summary>The delayed decline stays bound to the offer in this runtime. Answered cleanup is inert.</summary>
+	private void DeclineRemovedOffer( ActiveChallenge? expected )
 	{
-		if ( level == null || level.IsReadOnlyVisit || level.Park?.Economy?.Objectives.Current is not { Accepted: false } offer )
+		if ( level == null || level.IsReadOnlyVisit || !SameUnansweredOffer( expected, CurrentUnansweredOffer ) )
 			return;
 		// the answer is the host's (CoopBuildRights), so a guest's removal leaves the offer to the host's own timer
 		if ( level.Commands.Rights is { } rights && !rights.Allows( level.Commands.Player, ParkCommandKind.AnswerChallenge ) )
 			return;
-		level.Commands.Issue( new AnswerChallengeCommand( offer.DefinitionIndex, offer.OfferedDay, false ) );
+		level.Commands.Issue( new AnswerChallengeCommand( expected!.DefinitionIndex, expected.OfferedDay, false ) );
 	}
 
 	private static bool IsChallengeAction( GameMessageAction action ) => action.Kind is GameMessageKind.Accept or GameMessageKind.Decline;

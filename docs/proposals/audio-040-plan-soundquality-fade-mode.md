@@ -2,7 +2,7 @@
 
 ## Status
 
-The bounded runtime lifecycle is implemented. AUDIO-040 remains open for the managed group quantization and host scheduling policies below. This supersedes the earlier evidence-only proposal and its immediate-stop fallback; it does not claim complete sound-library parity.
+The bounded runtime lifecycle is implemented. AUDIO-040 remains open for the host scheduling policy below and the unrecoverable saved quality preference; the group arithmetic follows the worker thread's x87 precision since October 28, 2026. This supersedes the earlier evidence-only proposal and its immediate-stop fallback; it does not claim complete sound-library parity.
 
 ## Static evidence and configuration
 
@@ -25,7 +25,7 @@ A never-admitted sample has no logical handle: if its first poll precedes readin
 
 `HeldSoundLifetime` keeps own volume, last device volume and live logical sample/reply state separately from transient AudioVoice. Category record +8 supplies group bits: master 1, Music 2, Speech 4, Effects 8, in that order (`0x6C0510`, `0x6BBF91`, `0x6BB447`). Supplied category masks are 9/3/5; RSE types 3..9 use mask 9. Speech ducking and DIPMUSIC change these same factors. Ordinary group changes recompute device volume without overwriting own volume. A fade folds the enabled current group product back into own volume each poll. Exact injected Effects 0.5 gives 100 -> 30 -> 9. The mixer bypasses its usual channel multiplication for these final device writes.
 
-Managed compatibility policy: float32 group multiplication in bit order, float32 own-volume product, nearest-even integer conversion, then signed integer ratio division. Nonfinite injected host factors become zero before integer conversion. The original `0x6BB860` uses x87 FISTP after a float32 store without forcing the caller's control word. Its exact nonintegral/tie results are still unresolved. Tests with exact unity and 0.5 are stable arithmetic oracles; tests for other fractions assert the stated host policy, not original parity.
+Arithmetic (October 28, 2026): `0x6BB860` multiplies the own volume by the enabled group floats in the x87 registers, stores the product once as a float and converts it with `FISTP` (round to nearest even). The fade poll runs on the library's own `_beginthread` worker (`0x6B6260`, `0x6B9E30`; the manager tick `0x6B62B0` runs the update only when the manager byte `+0x50` is set, which `0x6B9F66` clears), a new thread at the operating system's control word `0x27F` (53-bit precision); the main thread is at `0x7F` (24 bits, `DDSCL_FPUSETUP` at `0x563914`), and the only other control-word writers are the CRT wrappers and the font generator (`0x591220`, `0x591240`). `HeldSoundLifetime.PollEffectiveVolume` therefore multiplies in doubles and rounds to a float once; group writes and sample starts (`MainEffectiveVolume`) multiply in floats. Master 0.75 and effects 0.7 on a volume of 60 are 32 for the poll and 31 for a main-thread computation (`AudioPollPrecisionTests`). Nonfinite injected host factors still become zero before the conversion.
 
 ## Subtypes and continuation
 

@@ -10,6 +10,9 @@ internal static class OriginalSineTable
 	private const float Scale = Size * 0.15915494f;
 	private static readonly float[] Table = Build();
 
+	/// <summary>The table's entries, for the rotation blend of the clip sampler (<see cref="ModelRotationBlend"/>).</summary>
+	internal static ReadOnlySpan<float> Entries => Table;
+
 	private static float[] Build()
 	{
 		var table = new float[Size];

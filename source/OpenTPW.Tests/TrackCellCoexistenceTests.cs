@@ -130,6 +130,16 @@ public class TrackCellCoexistenceTests
 	}
 
 	[TestMethod]
+	public void TheHostsQueueRulesTakeAStraightTileAndRefuseAJunction()
+	{
+		var (cells, _, _, _) = Rig();
+		Assert.IsTrue( Level.QueueCellRulesAllow( new FlatGrid(), cells, 7, 8 ), "a straight tile's extension cell" );
+		Assert.IsTrue( Level.QueueCellRulesAllow( new FlatGrid(), cells, 4, 9 ), "a stub tile" );
+		var (junction, _, _, _) = Rig( corner: true );
+		Assert.IsFalse( Level.QueueCellRulesAllow( new FlatGrid(), junction, 7, 8 ), "a three-arm tile's cell" );
+	}
+
+	[TestMethod]
 	public void TheReducerRefusesACornerTileAndItsExtensions()
 	{
 		var (cells, _, _, _) = Rig( corner: true );

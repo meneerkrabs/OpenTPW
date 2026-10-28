@@ -159,7 +159,7 @@ public partial class Level
 	}
 
 	/// <summary>The ride a track add-on stands on: the ride of the track under its first '+' or '#' cell, or null.</summary>
-	private OriginalObject? RideUnder( OriginalObject addOn )
+	internal OriginalObject? RideUnder( OriginalObject addOn )
 	{
 		foreach ( var (x, y, cell) in addOn.Cells )
 			if ( cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash && TrackRideAt( x, y ) is { } ride )

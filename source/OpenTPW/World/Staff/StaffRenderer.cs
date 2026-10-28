@@ -16,8 +16,6 @@ public sealed class StaffRenderer : Entity
 	/// <summary>[EXT:pools-bridges] Optional elevated walking height, in engine units.</summary>
 	public Func<float, float, float?>? FeetHeight { get; init; }
 	private const int VerticesPerSprite = 12;
-	/// <summary>A park turn in seconds (the simulation's 248 ms).</summary>
-	private const float ParkTurnSeconds = 0.248f;
 	/// <summary>Height of the dangling sprite above the mouse's world point, in original units.</summary>
 	// [BIN:TPW-EXE:0x0046C480 tool frame] every frame the tool's sprite is placed at the mouse's world point (0x0045D610 returns 0x007A1C90) 5 units up, with heading 4 (0x00475480 stores x, y + 5, z at +0x88..+0x90 and the heading byte at +0xC0)
 	public const float DangleLift = 5f;
@@ -26,14 +24,11 @@ public sealed class StaffRenderer : Entity
 
 	private sealed class MemberView
 	{
-		public float X, Y, LastX, LastY;
-		public float HeadingX, HeadingY = 1;
-		public float MovedAt = float.NegativeInfinity;
+		/// <summary>Where the member was last drawn, in cells.</summary>
+		public float X, Y;
 		public int ClipKey = -1;
 		public bool Initialised;
 		public SpritePlayer Player = null!;
-		/// <summary>The length of the member's latest step in the walk step's 16.16 units per park turn, until a clip has taken the interval it asks for; 0 when none is waiting.</summary>
-		public float StepLength;
 		public PublishedFrame? Published;
 	}
 
@@ -203,9 +198,8 @@ public sealed class StaffRenderer : Entity
 		if ( !HasAtlas( atlasIndex ) )
 			return null;
 		var atlas = sprites.Atlases[atlasIndex];
-		// the world-driven roles steer continuously; mechanics are moved one cell per second, so their steps are further apart
-		var moving = now - view.MovedAt < (member.Type == StaffType.Mechanic ? 1.3f : 0.6f);
-		if ( StaffSpriteRules.SelectClip( member, moving, atlas.Animations.Performances, atlas.Animations.PerformanceCount ) is not { } clip )
+		// [BIN:TPW-EXE:0x004FA2A0 walk clip] a walk step that is still walking asks for the walk clip (0x004FA3B3..0x004FA3F8) and a state entry stands the person again: the world's walk step records it (StaffMember.IsWalking)
+		if ( StaffSpriteRules.SelectClip( member, member.IsWalking, atlas.Animations.Performances, atlas.Animations.PerformanceCount ) is not { } clip )
 			return null;
 		var key = clip.Script << 8 | clip.Slot;
 		if ( view.ClipKey != key )
@@ -213,14 +207,14 @@ public sealed class StaffRenderer : Entity
 			view.ClipKey = key;
 			view.Player.Restart();
 		}
-		if ( view.StepLength > 0f )
+		if ( member.PendingInterval >= 0 )
 		{
-			// [BIN:TPW-EXE:0x004FA2A0 walk step] the interval a step of that length asks for takes effect with the clip playing (the run clip does not double the speed); a clip that is not a walk keeps the interval the last step left
-			view.Player.SetInterval( SpritePlayer.IntervalFor( view.StepLength, clip == StaffSpriteRules.Run ) );
-			view.StepLength = 0f;
+			// [BIN:TPW-EXE:0x004FA2A0 walk step] the interval the person's own step of the turn asked for (StaffWorldSimulation.Walk) takes effect with the sprite; a clip that is not a walk keeps the interval the last step left
+			view.Player.SetInterval( member.PendingInterval );
+			member.PendingInterval = -1;
 		}
 		var (slot, step) = StaffSpriteRules.ResolveSteps( clip, view.Player.Steps, atlas.Animations.Animations );
-		var (frame, mirror) = FrameFor( atlas, slot, step, view.HeadingX, view.HeadingY, cameraRight, cameraForward );
+		var (frame, mirror) = FrameFor( atlas, slot, step, member.HeadingX, member.HeadingY, cameraRight, cameraForward );
 		return new Selection( atlasIndex, frame, mirror, clip, slot, step );
 	}
 
@@ -232,44 +226,13 @@ public sealed class StaffRenderer : Entity
 		return (atlas.GetFrame( slot, direction, step % atlas.FramesPerDirection( slot ) ), mirror);
 	}
 
-	/// <summary>Follows the member's position: smooths the drawn position, tracks the heading and when it last moved.</summary>
-	private static void Track( StaffMember member, MemberView view, float now, float delta )
-	{
-		if ( member.CellX is not { } x || member.CellY is not { } y )
-			return;
-		if ( !view.Initialised )
-		{
-			(view.X, view.Y, view.LastX, view.LastY, view.Initialised) = (x, y, x, y, true);
-			return;
-		}
-		var dx = x - view.LastX;
-		var dy = y - view.LastY;
-		var step = MathF.Sqrt( dx * dx + dy * dy );
-		if ( step > 1e-4f )
-		{
-			view.HeadingX = dx / step;
-			view.HeadingY = dy / step;
-			// the step of one park turn: the displacement over the time since the previous change, scaled to a turn (the world moves most roles once a turn, mechanics once a second)
-			var elapsed = now - view.MovedAt;
-			var turns = float.IsFinite( elapsed ) ? Math.Clamp( elapsed, 0.05f, 2f ) / ParkTurnSeconds : 1f;
-			view.StepLength = step / turns * Fixed16.One;
-			view.MovedAt = now;
-			(view.LastX, view.LastY) = (x, y);
-		}
-		// a drop or a placement jumps; a walk is followed smoothly between the world's steps
-		var gap = MathF.Sqrt( (x - view.X) * (x - view.X) + (y - view.Y) * (y - view.Y) );
-		if ( gap > 2f || step > 1.5f )
-		{
-			(view.X, view.Y) = (x, y);
-			view.MovedAt = float.NegativeInfinity;
-		}
-		else
-		{
-			var blend = MathF.Min( 1f, MathF.Max( 0f, delta ) * 10f );
-			view.X += (x - view.X) * blend;
-			view.Y += (y - view.Y) * blend;
-		}
-	}
+	/// <summary>
+	/// The point a member is drawn at: between the position at the start of his turn and his current one (<see cref="PersonInterpolation.Point"/>, the staff world's <c>UpdatePresentation</c>), or
+	/// his plain position while the world has not placed him.
+	/// </summary>
+	private static (float X, float Y)? DrawPoint( StaffMember member ) =>
+		member.Navigation != null && !float.IsNaN( member.DrawX ) && !float.IsNaN( member.DrawY ) ? (member.DrawX, member.DrawY)
+		: member.CellX is { } x && member.CellY is { } y ? (x, y) : null;
 
 	/// <summary>Where the tool's sprite hangs this frame in cell units: the exact pointer ground point, else the hovered cell's centre; null when neither is known.</summary>
 	internal static (float X, float Y)? DanglePoint( StaffPlacement placement ) =>
@@ -304,7 +267,9 @@ public sealed class StaffRenderer : Entity
 				views[member] = memberView = new MemberView { Player = new SpritePlayer( nowMs ) };
 			if ( !CanPlaceMember( member ) )
 				continue;
-			Track( member, memberView, now, Time.Delta );
+			// a member without a point (one coordinate missing) keeps the place he was last drawn at, the established world pass gate
+			if ( DrawPoint( member ) is { } point )
+				(memberView.X, memberView.Y, memberView.Initialised) = (point.X, point.Y, true);
 			memberView.Player.Tick( nowMs );
 			if ( Select( member, memberView, now, right, forward ) is not { } chosen )
 				continue;
@@ -314,7 +279,7 @@ public sealed class StaffRenderer : Entity
 			var (feet, share) = GuestRenderer.PullTowardsEye( position, eye, forward );
 			AddSprite( ref count, chosen.Atlas, chosen.Frame, chosen.Mirror, feet, right * share, up * share, forward );
 			memberView.Published = new PublishedFrame( Level, Level?.RenderPass ?? 0, rendererPass, assetGeneration,
-				member, member.ThingId, chosen.Atlas, chosen.Slot, chosen.Step, memberView.HeadingX, memberView.HeadingY );
+				member, member.ThingId, chosen.Atlas, chosen.Slot, chosen.Step, member.HeadingX, member.HeadingY );
 			DrawnStaff++;
 		}
 		if ( ++frames % 256 == 0 && views.Count > list.Count )

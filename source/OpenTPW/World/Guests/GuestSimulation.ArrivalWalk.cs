@@ -231,8 +231,8 @@ public sealed partial class GuestSimulation
 		EnterGuestState( guest, GuestState.EnteringPark );
 	}
 
-	/// <summary>Whether the guest heads the thing list of the cell it stands on (the first of the cell's things in the original, the last of OpenTPW's occupant list; WALK-003).</summary>
-	private bool HeadsItsCell( Guest guest ) => occupants.TryGetValue( guest.Navigation.Cell, out var list ) && list.Count > 0 && list[^1] == guest;
+	/// <summary>Whether the guest heads the thing list of the cell it stands on (the first of the cell's things in the original, a staff member that entered the cell later heading it instead; WALK-003).</summary>
+	private bool HeadsItsCell( Guest guest ) => ChainHead( guest.Navigation.Cell ).Guest == guest;
 
 	/// <summary>
 	/// State 5 (tp.exe <c>0x004FFB20</c>): the walk to the entrance cell. A closed park or a shut gate sends the guest back to a booth (state 2); arriving numbers the visitor

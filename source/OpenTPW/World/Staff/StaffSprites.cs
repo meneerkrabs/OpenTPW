@@ -41,7 +41,8 @@ public static class StaffSpriteRules
 	/// Steps per second of a sprite that keeps the interval it was created with, 62 ms (the dangling cursor sprite and the hire window's figure). A walking member's interval comes from
 	/// <see cref="SpritePlayer"/>.
 	/// </summary>
-	// [APPROX:GUEST-016] the 'moving' test (a position change within the last 0.6 s, 1.3 s for members the world moves a cell per second), the smoothing of the drawn position and the step length OpenTPW takes from the displacement between two position changes stand in for tp.exe's: the walk step 0x4FA2A0 takes the length of the person's own step of the turn (evidence needed: how the drawn position follows the movement position, the sub-turn position 0x004F9F00 gives the sprite each frame)
+	// [APPROX:GUEST-016] SpritePlayer ticks once per renderer call, one step past due, where tp.exe's scheduler (0x475360) runs on even 31 ms substeps; the walk step's own interval (0x4FA2A0) and the sub-turn point (0x4F9F00) are ported
+	// [BIN:TPW-EXE:0x004FA2A0 walk step interval] the sprite's interval is the step's own length times 0x007006E8, doubled unless the thing is a guest or a guard with a speed bonus, as clamp(trunc(62 / v), 0, 250) (0x004D41D0)
 	public const float FramesPerSecond = 1000f / SpritePlayer.DefaultInterval;
 
 	/// <summary>The slot an entertainer performs when the bank lists no performance (every shipped entertainer bank lists slot 4).</summary>

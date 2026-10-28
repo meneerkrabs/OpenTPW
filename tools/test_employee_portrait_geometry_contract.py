@@ -79,7 +79,7 @@ class EmployeePortraitGeometryContract(unittest.TestCase):
                       "(employee, 526, 476, 2.4f)", "(hire, 626, 362, 2.4f)", "(visitor, 598, 450, 3.6f)", "(generic, 518, 478, 3.2f)",
                       "Assert.IsNull( portrait.Inner )", "20, 30, 7, 15, 21, 17", "385, 279, 650, 544, 525, 476",
                       "StaffSpriteRules.Sweep", "step > 0", "StaffState.Resting", '"employeePortraitStart"',
-                      "ParkSaveFile.Serialize", "observed.Economy.World.State", '"StepLength", 5432f',
+                      "ParkSaveFile.Serialize", "observed.Economy.World.State", 'PendingInterval = 148',
                       "control.State()", 'Get<long>( Player, "due" )', "Get<Vertex[]>( control.Renderer", "StaffSpriteSet.Empty"):
             self.assertIn(token, self.tests)
 

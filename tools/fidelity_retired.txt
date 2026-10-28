@@ -174,6 +174,7 @@ GUEST-004 docs/GUESTS.md
 GUEST-005 docs/GUESTS.md
 GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
+GUEST-010 docs/GUESTS.md
 GUEST-011 docs/CLOSED-RIDE-ADMISSION.md
 GUEST-012 docs/GUESTS.md
 GUEST-014 docs/GUESTS.md
@@ -327,6 +328,7 @@ TRACK-031 docs/PROGRESS.md
 UI-001 docs/reverse/APPROX-TRACE.md
 UI-002 docs/UI.md
 UI-005 docs/UI.md
+UI-007 docs/UI.md
 UI-009 docs/reverse/APPROX-TRACE.md
 UI-010 docs/reverse/APPROX-TRACE.md
 UI-011 docs/reverse/APPROX-TRACE.md
@@ -397,6 +399,7 @@ VM-901 docs/PROGRESS.md
 VM-902 docs/DETERMINISM.md
 WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
+WALK-003 docs/GUESTS.md
 WALK-004 docs/GUESTS.md
 WALK-006 docs/GUESTS.md
 WALK-007 docs/GUESTS.md

@@ -31,7 +31,7 @@ class EmployeeLivePortraitContract(unittest.TestCase):
         self.assertLess(render.index("PrepareWorld()"), render.index("commandList.UpdateBuffer"))
         prepare = body(self.renderer, "internal int PrepareWorld()")
         ordered = ["rendererPass++", "if ( !CanRender )", "new MemberView", "if ( !CanPlaceMember",
-                   "Track( member, memberView", "memberView.Player.Tick", "Select( member, memberView",
+                   "DrawPoint( member )", "memberView.Player.Tick", "Select( member, memberView",
                    "AddSprite( ref count, chosen", "memberView.Published =", "DrawnStaff++"]
         offsets = [prepare.index(token) for token in ordered]
         self.assertEqual(sorted(offsets), offsets)
@@ -40,7 +40,7 @@ class EmployeeLivePortraitContract(unittest.TestCase):
     def test_selection_retains_existing_mutation_order_and_describe_cannot_publish(self):
         select = body(self.renderer, "private Selection? Select(")
         ordered = ["StaffSpriteRules.SelectClip", "view.Player.Restart()", "view.Player.SetInterval",
-                   "view.StepLength = 0f", "StaffSpriteRules.ResolveSteps", "FrameFor(", "return new Selection"]
+                   "member.PendingInterval = -1", "StaffSpriteRules.ResolveSteps", "FrameFor(", "return new Selection"]
         offsets = [select.index(token) for token in ordered]
         self.assertEqual(sorted(offsets), offsets)
         describe = body(self.renderer, "internal (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Describe(")
@@ -49,7 +49,7 @@ class EmployeeLivePortraitContract(unittest.TestCase):
 
     def test_accessor_is_read_only_and_uses_literal_yaw_zero(self):
         read = body(self.renderer, "internal UI.Original.UiSpriteFrame? EmployeeFrame(")
-        for token in ["Describe(", "Select(", "Track(", ".Tick(", ".Restart(", ".SetInterval(", "StepLength", "new MemberView", "Random"]:
+        for token in ["Describe(", "Select(", "DrawPoint(", ".Tick(", ".Restart(", ".SetInterval(", "PendingInterval", "new MemberView", "Random"]:
             self.assertNotIn(token, read)
         self.assertIn("output.HeadingX, output.HeadingY, 0f, atlas.DirectionsOf", read)
         for token in ["!CanRender", "Level.Current", "Level.StaffRenderer, this", "Entity.All.Contains( this )",

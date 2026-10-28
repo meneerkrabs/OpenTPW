@@ -252,11 +252,12 @@ class RegisterFindings(unittest.TestCase):
         for label in ('GATE-002', 'GATE-003', 'GATE-004', 'GATE-005'):
             self.assertIn(f'`{label}`', retired)
 
-    def test_walk_003_says_which_thing_types_are_left_out(self):
-        """WV2-3 (closed): 0x10087c keeps thing types 1, 4-8 and 18; OpenTPW's neighbours are guests only, which
-        WALK-003's register line now says."""
-        entry = next(line for line in current('source/OpenTPW/World/Guests/WalkApproximations.cs').splitlines() if '"WALK-003"' in line)
-        self.assertRegex(entry, r'4.{0,3}8|18')
+    def test_walk_003_is_retired_with_the_staff_on_the_chains(self):
+        """WV2-3 (closed, then retired in round 10): the staff are on the cells' thing chains, so the register no longer
+        declares WALK-003."""
+        approx = current('source/OpenTPW/World/Guests/WalkApproximations.cs')
+        self.assertNotIn('("WALK-003"', approx)
+        self.assertIn('0x5102F0', approx)
 
     def test_oracle_seams_name_both_bounce_helpers(self):
         """WV2-5 (closed): ORACLE.md's seam list called TakeUnbounced private and left out TakeBounceSlot."""

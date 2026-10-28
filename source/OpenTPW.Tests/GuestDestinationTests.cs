@@ -18,6 +18,13 @@ public partial class GuestTests
 		grid.Cells.SetType( cell.X, cell.Y, ParkCellTypes.Entrance );
 		grid.Cells.SetLinks( cell.X, cell.Y, links );
 		grid.Cells.SetQueueLink( cell.X, cell.Y, links );
+		// the path cell the entrance links to links back (the edge test from an entrance onto a path cell reads the path cell's link, 0x004D8750), as the path builder lays it
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			if ( GuestPathGrid.LinkValue( direction ) == links && grid.IsWalkable( cell.X + dx, cell.Y + dy ) )
+				grid.Cells.SetLinks( cell.X + dx, cell.Y + dy, (byte)(grid.Cells.LinksAt( cell.X + dx, cell.Y + dy ) | GuestPathGrid.LinkValue( (direction + 2) & 3 )) );
+		}
 	}
 
 	private const byte LinkUp = 0x01, LinkRight = 0x04, LinkDown = 0x10, LinkLeft = 0x40;

@@ -80,7 +80,7 @@ class EmployeeLivePortraitContract(unittest.TestCase):
         self.assertIn("Frame = EmployeePortraitFrame", self.hud)
         hire = source("source/OpenTPW/Hud/ParkHud.Staff.cs")
         self.assertNotIn("EmployeeFrame", hire)
-        self.assertIn("PortraitFrame( chosen.Type, chosen.Variant, Time.Now - portraitStart )", hire)
+        self.assertIn("PortraitFrameAtStep( chosen.Type, chosen.Variant, player.Steps - 1 )", hire)
         flow = source("source/OpenTPW/Client/GameFlow.cs")
         self.assertLess(flow.index("Level.Render()"), flow.index("Hud.Draw( Context )"))
 

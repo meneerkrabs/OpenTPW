@@ -48,3 +48,10 @@ Local validation is limited to source review, whitespace checks and Python docum
 4. Exact codec/device buffering has not been captured from the original. Synthetic fresh-source tests are not an acoustic cross-device parity claim.
 
 Do not publish original media or private game data in fixtures or commits. Keep the residual annotation and review/CI gates visible.
+
+## Update, October 28, 2026 (round 10 package G)
+
+- A sentence stopped by range replays its segment from the beginning. The range stop leaves the selected descriptor (`+0x0C`) alone; the sentence tick `0x6BDF50` starts it again through `0x6BC410` (volume, pitch and delay draws, a new stream with its cursor at 0, `0x6B9AB0`); only the refill `0x6BDE00` (`0x6BDF00` -> `0x6B9A60`) advances the descriptor, when the decoder's `0x2400`-byte read (`0x6BB510`, the double-buffered producer around `0x6BB5E0`) reaches the end of the segment's data. `SoundSentence` keeps the playing segment and the successor chosen ahead (`[EXT:sentence-prefetch]`) and replays the former first (`AudioQmixerVoiceTests`). A stop inside that last look-ahead resumes on the successor in the original; the look-ahead (the producer thread's lead plus QMixer's stream buffer) was not read, so that window stays open.
+- A started any-distance voice is ranked at the origin of the sound space: its sample start puts the raw dwords (0, 1, 0) into the placeholder's position (`0x6BC51D`) and `0x6BB9F0` ranks every voice by the ground distance of that position (`SoundEventSystem.RankPlace`).
+- Still open: the initial submission's admission, and the group-enable stop and restart of a voice (`0x6BC760`, the enable bytes `+0x44`..`+0x47` of the sound system, fed by the sound service `0x51BD70`).
+

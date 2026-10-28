@@ -96,7 +96,7 @@ internal sealed record ParkResumeSnapshot
 	public double? SnowCover { get; init; }
 	/// <summary>
 	/// The HUD's message tube (the pending tags, at most ten), or null while it holds none: left out of the file then, so a park without messages saves the same bytes as before, and a save from before the
-	/// tube was saved loads with an empty one. tp.exe saves its tag tube with the park (the saver 0x48EE50). Presentation: no simulation reads it and no world hash covers it. Validated on load.
+	/// tube was saved loads with an empty one. tp.exe saves its tag tube with the park (the saver 0x48EE50). Unhashed HUD state, including an optional hidden offer awaiting its ordinary rights-checked decline command. Validated on load.
 	/// </summary>
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public MessageTubeSaveData? MessageTube { get; init; }

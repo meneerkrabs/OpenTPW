@@ -120,5 +120,6 @@ public sealed record TakeBackCommand( bool Stroke, long Step, int Part, int Clai
 		&& ClaimedRide == other.ClaimedRide && SelectedRide == other.SelectedRide && Verdict == other.Verdict
 		&& (Inverse == null ? other.Inverse == null : other.Inverse != null && ParkCommandCodec.Encode( Inverse ).AsSpan().SequenceEqual( ParkCommandCodec.Encode( other.Inverse ) ));
 
-	public override int GetHashCode() => HashCode.Combine( Stroke, Step, Part, ClaimedRide, SelectedRide, Verdict );
+	/// <summary>The fields' hash, combined without <see cref="HashCode"/>, whose per-process seed the command layer keeps out (as the other commands' hashes do).</summary>
+	public override int GetHashCode() => (Stroke ? 1 : 0) ^ (int)Step ^ (int)(Step >> 32) ^ (Part << 4) ^ (ClaimedRide << 8) ^ (SelectedRide << 16) ^ ((int)Verdict << 24);
 }

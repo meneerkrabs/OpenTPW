@@ -86,6 +86,8 @@ sequential for every message (below).
 
 Round 10 (October 28, 2026): the fixed run's pin `0x5946C7CB09C6EEE7` does not move (its run hires no staff). The Instant Action economy digest of `BuildStepsTests` moves from `E19E5729D4A8EE5A` to `4DCABA51A693C7D7`, because the seed's imported staff now carry their saved sprite variant in the park save (GUEST-014, `0x4F8B10`); no draw is added or removed by it. A hired member (a placing click with a thing pool) now consumes one draw for the base constructor's base speed (`0x4F89E1`) and a guard a second for its own sprite variant (`0x4D5E02`).
 
+Round 10, package B (cells under track, October 28, 2026): no pin moves (the fixed run's `0x5946C7CB09C6EEE7` and the economy digest of `BuildStepsTests` stay as they are; the with-data suite passes unchanged). The map's type byte and the track layer hold a path or queue cell over a straight or stub tile and the demolition clears the second layer's records, but every state the pinned runs reach is the one they reached before: no run lays a path over a tile or sells an add-on. The cell digest gains no field (the track layer joins it only while a track exists, as before); the new states hash through the type byte and the records already hashed. No draw is added or removed.
+
 ### The substep scheduler (DET-013)
 
 The original's main loop (tp.exe `0x54F4BF`) runs a 31 ms substep, and every eighth substep is a park turn. Each substep, in

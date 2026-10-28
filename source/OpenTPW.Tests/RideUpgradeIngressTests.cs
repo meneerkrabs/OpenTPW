@@ -224,19 +224,17 @@ public class RideUpgradeIngressTests
 	}
 
 	[TestMethod]
-	public void ABrokenDownRideWhoseUpgradeWaitsListsNeitherItsLevelNorTheCancel()
+	public void ABrokenDownRideWhoseUpgradeWasRequestedIsInTheUpgradingStateAndListsTheCancel()
 	{
 		Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out _, out _ );
 		Research( economy );
 		economy.TryGetObject( level.GetEconomyInstance( owner )!.Value, out var state );
-		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuyUpgrade( state.Id ) );
-		Assert.AreEqual( RideUpgradeRowKind.CancelLevel, level.UpgradeOffer( owner ).Rows.Single().Kind, "a waiting ride lists its cancel row (state 2)" );
-		// OpenTPW's state keeps a breakdown and the waiting upgrade together, the original's one state word either: the level was asked for already
 		state.IsBrokenDown = true;
 		Assert.AreEqual( RideObjectStates.BrokenDown, ParkEconomy.ObjectState( state ) );
-		var offer = level.UpgradeOffer( owner );
-		Assert.AreEqual( 0, offer.Rows.Count );
-		Assert.AreEqual( UIStrings.NoUpgrades, offer.Message );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuyUpgrade( state.Id ) );
+		// [BIN:TPW-EXE:0x004E0086 upgrade request] the request stores state 2 whatever the state was: a ride that was broken down is upgrading now
+		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( state ) );
+		Assert.AreEqual( RideUpgradeRowKind.CancelLevel, level.UpgradeOffer( owner ).Rows.Single().Kind, "a waiting ride lists its cancel row (state 2)" );
 	}
 
 	[TestMethod]

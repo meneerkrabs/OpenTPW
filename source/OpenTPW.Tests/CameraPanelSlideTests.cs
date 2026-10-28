@@ -33,20 +33,39 @@ public class CameraPanelSlideTests
 		slide.Close();
 		Assert.IsFalse( slide.Update( 0.18f ) );
 		Assert.AreEqual( 1, slide.Step );
-		Assert.IsTrue( slide.Update( 0.02f ), "the finished slide in is reported once (cat_ui 0xC2)" );
+		Assert.IsFalse( slide.Update( 0.02f ), "the tenth move is not the end" );
+		Assert.AreEqual( 0, slide.Step );
+		Assert.IsTrue( slide.Update( 0.02f ), "the eleventh tick, with the count at zero, ends the slide in once (cat_ui 0xC2, 0x4a18d8)" );
 		Assert.IsFalse( slide.Update( 0.02f ) );
 	}
 
 	[TestMethod]
-	public void ThePanelStartsLeftOfTheArmAndEndsAtItsTablePlace()
+	public void TheCameraPanelStartsLeftOfTheArmAndEndsAtTheDrawersRuntimePlace()
 	{
 		// arm left 331, panel width 319: the panel starts at 331 - 319 - 50 = -38, 504 left of its table place 466
-		Assert.AreEqual( -504f, ParkHud.CameraPanelOffset( 0 ), 1e-3 );
-		Assert.AreEqual( -252f, ParkHud.CameraPanelOffset( 5 ), 1e-3 );
-		Assert.AreEqual( 0f, ParkHud.CameraPanelOffset( ArmSlide.Steps ) );
+		Assert.AreEqual( (-504, -110), ParkHud.CameraPanelShift( 0 ), "vertical: 1069 + 213 - 76 = 1206 against the table's 1316" );
+		// the step is (439 - 331 + 319 + 100) / 10 = 52 (527 / 10 truncated), added ten times: the end is 482, 16 right of the table place
+		Assert.AreEqual( (-244, -110), ParkHud.CameraPanelShift( 5 ) );
+		Assert.AreEqual( (16, -110), ParkHud.CameraPanelShift( ArmSlide.Steps ) );
 		// a child shows only once its right edge passes the arm's left edge
 		Assert.IsFalse( ParkHud.ArmChildShown( new UiRect( 200, 1316, 131, 153 ) ) );
 		Assert.IsTrue( ParkHud.ArmChildShown( new UiRect( 200, 1316, 132, 153 ) ) );
+	}
+
+	[TestMethod]
+	public void TheDrawersArithmeticFollowsTheRuntimeRectangles()
+	{
+		Assert.AreEqual( 361, ArmDrawer.ArmRestRight, "the arm is shortened by (its left - its handle's left) at 0x4a23e2: 1006 + (331 - 976)" );
+		Assert.AreEqual( 52, ArmDrawer.TickStep( 319 ) );
+		Assert.AreEqual( 482, ArmDrawer.EndLeft( 319 ), "-38 + 10 * 52, nine units short of the full travel 527" );
+		Assert.AreEqual( 82, ArmDrawer.TickStep( 615 ) );
+		Assert.AreEqual( 486, ArmDrawer.EndLeft( 615 ) );
+		Assert.AreEqual( 1112, ArmDrawer.Top( 341 ), "the message panel: 1069 + 426 / 2 - 341 / 2 (halves rounded toward zero)" );
+		Assert.AreEqual( 1206, ArmDrawer.Top( 153 ) );
+		Assert.AreEqual( (28, 11), ParkHud.MessagePanelShift( ArmSlide.Steps ), "the message panel ends 28 right and 11 below its table place (458,1101)" );
+		Assert.AreEqual( 361 + 10 * 52, ArmDrawer.ArmRight( 319, ArmSlide.Steps ) );
+		// a slide in steps by (the arm's left - the handle's left) / 10 with the handle moved along: it undoes the slide out exactly
+		Assert.AreEqual( -ArmDrawer.TickStep( 319 ), (ArmDrawer.ArmLeft - (ArmDrawer.ArmLeft + 10 * ArmDrawer.TickStep( 319 ))) / ArmDrawer.Ticks );
 	}
 
 	[TestMethod]
@@ -79,7 +98,8 @@ public class CameraPanelSlideTests
 		Frame( 0.2f );
 		var camcorder = hud.Screen.Find( "cameraCamcorder" )!;
 		Assert.IsTrue( camcorder.Visible );
-		Assert.AreEqual( OriginalLayoutTables.CameraPanel.Model( "b_1person" ).Rect, camcorder.Bounds, "out at the table place" );
+		var table = OriginalLayoutTables.CameraPanel.Model( "b_1person" ).Rect;
+		Assert.AreEqual( table with { X = table.X + 16, Y = table.Y - 110 }, camcorder.Bounds, "out at the drawer's end place" );
 		hud.ToggleCameraPanel();
 		CollectionAssert.AreEqual( new[] { "post 305", "withdraw 305" }, events );
 		Frame( 0.2f );

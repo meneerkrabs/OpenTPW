@@ -156,7 +156,7 @@ public class VisitorInfoWindowTests
 		hud.OpenVisitorWindow();
 		Assert.AreEqual( 1L, hud.VisitorValuesOf( first ).Hours, "new-row quarter value, not the zero from floored seconds" );
 		var order = hud.VisitorItems.Select( guest => guest.Id ).ToArray();
-		CollectionAssert.AreEqual( new[] { 1, 8 }, order, "membership is the existing in-park projection" );
+		CollectionAssert.AreEquivalent( new[] { 1, 8, 9 }, order, "[BIN:TPW-EXE:0x481bc0] membership is every live guest thing, a guest outside the park included" );
 		first.DisplayTimeInParkTurns = 12;
 		var context = Context();
 		var input = UiInput.Idle( new System.Numerics.Vector2( 1, 1 ) );

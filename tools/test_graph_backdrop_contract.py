@@ -160,7 +160,7 @@ class GraphBackdropContract(unittest.TestCase):
             self.assertIn(token, register)
         self.assertNotIn("sets three interior", register)
         canonical = next(line for line in read("source/OpenTPW/UI/Original/UiApproximations.cs").splitlines() if '("UI-060",' in line)
-        for token in ("ten horizontal", "twelve", "sample-to-month", "raster", "Signed 128-bit"):
+        for token in ("ten horizontal", "twelve", "ring's months", "raster", "Signed 128-bit"):
             self.assertIn(token, canonical)
         self.assertNotIn("three interior", canonical)
         self.assertIn("[APPROX:UI-060]", self.helper)

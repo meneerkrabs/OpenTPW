@@ -403,3 +403,4 @@ WALK-007 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
 UI-007 docs/UI.md
+UI-941 docs/AUDIO.md

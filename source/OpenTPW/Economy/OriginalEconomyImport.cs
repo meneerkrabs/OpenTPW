@@ -595,6 +595,7 @@ public sealed partial class OriginalEconomyImport
 				break;
 			case 2 when choosable && info!.Upgrades.Count > state.Level + 1:
 				state.PendingLevel = state.Level + 1;
+				state.StoredState = RideObjectStates.Upgrading;
 				state.UpgradeCostDue = true;
 				break;
 			default:

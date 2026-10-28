@@ -957,7 +957,7 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( RideBreakdownRules.BreaksDown( info.ProvidesRelief, item.ScriptHosted ? item.ScriptBreakStat : 0, (float)item.LifeGauge, (float)item.Repair ) )
 			{
 				item.LifeGauge = RideBreakdownRules.LifeAfterBreakdown( (float)item.LifeGauge );
-				// [APPROX:ECON-023] [EXT:headless-economy-breakdown] (user-approved) an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 writes the shared state word and calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN); the headless test and tool economy without ride scripts breaks an object down at once (the same word) and repairs it without the wait, where a level runs the scripts; state 2 is read from the pending level (the register row)
+				// [APPROX:ECON-023] [EXT:headless-economy-breakdown] (user-approved) an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 writes the shared state word and calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN); the headless test and tool economy without ride scripts breaks an object down at once (the same word) and repairs it without the wait, where a level runs the scripts; the visitor bridge keeps the single shared word (the register row)
 				if ( item.ScriptHosted )
 					WriteScript( item, RideVariables.VAR_BREAKSTAT, 1 );
 				else
@@ -1015,15 +1015,21 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// The ride object's state word (<see cref="RideObjectStates"/>): the shared word's state 1 or 4, upgrading (state 2) while a purchased upgrade is not installed, else idle.
+	/// The ride object's state word (<see cref="RideObjectStates"/>): the stored 3 (not an attraction) or 2 (an upgrade was requested, which overwrites a breakdown), else the shared word's 1 or 4, else idle.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004E0E60 SetState] one word +0x19C: 1 and 4 are written by the ride update (0x4E14E0) and left through SetState(0); the purchased upgrade's state 2 is read from the pending level
+	// [BIN:TPW-EXE:0x004E0E60 SetState] one word +0x19C, stored last by every case (each of the cases 1, 2 and 4 ends in a jump to 0x4E11B0, whose store of the argument into +0x19C is the function's tail): 1 and 4 are written by the ride update (0x4E14E0) and left through SetState(0)
+	// [BIN:TPW-EXE:0x004E0086 upgrade request] the request 0x4E0050(1) calls SetState(2) after the choosable test (+0x32 bit 4) and nothing tests the current state, so a ride in state 1 or 4 goes to state 2; the completion 0x4DF8F0 and the cancel end in SetState(0) (0x4DFCB8, 0x4E01B6)
 	internal static int ObjectState( ParkObjectState item )
 	{
-		if ( item.StateWord.IsBroken )
-			return item.StateWord.Value;
-		return item.PendingLevel > item.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
+		if ( item.StoredState is RideObjectStates.Upgrading or RideObjectStates.NotAnAttraction )
+			return item.StoredState;
+		return item.StateWord.IsBroken ? item.StateWord.Value : RideObjectStates.Idle;
 	}
+
+	/// <summary>The stored state a record starts with: 3 for a type that is not choosable (0x4DB4FB), 2 while an upgrade is waiting, else 0.</summary>
+	private int InitialStoredState( ParkObjectState item ) =>
+		!Catalog.TryGet( item.InfoId, out var info ) || !info.IsChoosable ? RideObjectStates.NotAnAttraction
+			: item.PendingLevel > item.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
 
 	/// <summary>One original wear step (0x100DEC2C) of a ride whose script reports it running.</summary>
 	private void Wear( ParkObjectState item )
@@ -1109,13 +1115,16 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the repair or the upgrade clears the call (+0x64 = 0) and the claim (+0x5E) and writes VAR_WORN = 0; a repair (not in state 2) also writes VAR_BREAKSTAT = 0
 		item.MaintenanceRequested = false;
 		WriteScript( item, RideVariables.VAR_WORN, 0 );
-		// 0xdef2c installs the upgrade only for a ride in state 2; a broken ride with a purchased upgrade is repaired first
+		// 0xdef2c installs the upgrade only for a ride in state 2; the request stores 2 over a breakdown (0x4E0086), so a purchased upgrade is installed even on a broken ride
 		if ( ObjectState( item ) == RideObjectStates.Upgrading )
 		{
 			// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the routine's common entry, before its state-2 upgrade branch, sets the state of repair (+0x44) to 100.0 for an upgrade too
 			item.Repair = RideRepair.FullGauge;
 			item.Level = item.PendingLevel;
 			item.PendingLevel = 0;
+			// [BIN:TPW-EXE:0x004DFCB8 upgrade installed] the routine ends in SetState(0) on this path too
+			item.StoredState = RideObjectStates.Idle;
+			item.IsBrokenDown = false;
 			// [BIN:TPW-EXE:0x004DFA96 upgrade installed] the completion 0x004DF8F0 raises the level byte +0x50 by one and debits Upgrades[new level].CostOfUpgrade (type record +0x1B8 + 0x40 · level, 0x004DFA81) through 0x004D01F0, without a balance test
 			if ( item.UpgradeCostDue && Catalog.TryGet( item.InfoId, out var upgraded ) && item.Level < upgraded.Upgrades.Count )
 			{
@@ -1470,7 +1479,7 @@ public sealed class ParkEconomy : IParkEconomy
 	// [BIN:TPW-EXE:0x004D0370 bank month] the routine compares the months in the red only with 5 (above it posts type 2 at 0x004D0557): it gives no warnings before
 	// [BIN:TPW-EXE:0x0054F8BB lost park sound] the main loop's sound update sends the music parameter and the crowd count as 0 while the world state is 4 (0x0054F86D, 0x0054F8BD), which GameAudio does for a bankrupt park
 	// [BIN:TPW-EXE:0x0059B620 advisor caption] the advice 106 the bank's message brings says the responses 274 and 275, whose tag 128 shows TAG_SYSTEM entry 127 ("the banks have closed your park") in the message tube (AutomaticAdvisor.PostCaption); the money warnings are the captions of the advice messages 102 to 105 (entries 123 to 126)
-	// [APPROX:ECON-030] the lost park follows the bank handler, thing-loop stop, zero arrival target and silent music/crowd; AutomaticAdvisor already produces money advice 102-105 through AdvisorScan and captions advice 106 on each bank message. The five-entry pause menu (0x48C150), the loss window 0x7472 with its gate camera (0x5168F0 -> 0x481B50 -> 0x48AC40, handler 0x48A740, layout 0x74FB20, banner table 0x74FC38), its dismissal into the hidden-HUD overlay (0x4A29D0) and the loaded-loss restore without the camera (0x4815E0 -> 0x48ADB0) are ported for single-player parks. Still open: OpenTPW's direct economic guards (purchase, hire, open) are not proved against the overlay (0x4A2925 admits Escape to the menu, 0x4A2AC9 skips pause/play work; neither is a refusal), the exact banner draw timing against the original's property-table animation, and the loss scene in co-op and visits (gated off until the co-op owner decides) — evidence needed: a separate audit of the direct economic guards under the loss overlay, the banner's per-frame draw against the original, and the co-op owner's decision for the loss scene in shared parks
+	// [APPROX:ECON-030] the lost park follows the bank handler, thing-loop stop, zero arrival target and silent music/crowd; AutomaticAdvisor already produces money advice 102-105 through AdvisorScan and captions advice 106 on each bank message. The five-entry pause menu (0x48C150), the loss window 0x7472 with its gate camera (0x5168F0 -> 0x481B50 -> 0x48AC40, handler 0x48A740, layout 0x74FB20, banner table 0x74FC38), its dismissal into the hidden-HUD overlay (0x4A29D0) and the loaded-loss restore without the camera (0x4815E0 -> 0x48ADB0) are ported for single-player parks. The audit of the economic guards is done: tp.exe reads the world state 4 only at the bank handler (0x4D030F), the arrival target (0x4CF5BC, zero), the thing loop (0x516390), the music and crowd sound (0x54F862, 0x54F8B2), the load restore (0x4815F2), the pause menu's entries (0x48C27C) and the HUD's overlay (the key branch 0x4A2925, which lets only an Escape without modifiers through to the pause menu, and the hide toggle's early-out 0x4A2AC9); no purchase, hire, loan, build or open routine tests it, so the original refuses nothing in a lost park itself and its HUD, which holds every such control, is hidden. OpenTPW's overlay does the same for a single-player park (every shortcut and click is off under it, ParkHud.ParkShortcutsAllowed) and its economy-level refusals (ParkEconomy.IsBankrupt) stay as the stand-in where the overlay is not shown (co-op, visits, Theme Park Inc), where they are the only refusal. Still open: the exact banner draw timing against the original's property-table animation, and the loss scene in co-op and visits (gated off until the co-op owner decides) — evidence needed: a separate audit of the direct economic guards under the loss overlay, the banner's per-frame draw against the original, and the co-op owner's decision for the loss scene in shared parks
 	private void HandleBankruptcyMessage()
 	{
 		if ( IsBankrupt || WinningSequenceActive?.Invoke() == true )
@@ -1995,6 +2004,8 @@ public sealed class ParkEconomy : IParkEconomy
 			CostOfGoods = info.CostOfGoods ?? 0,
 			ChanceOfLosingPercent = info.ChanceOfLosingPercent ?? 0
 		};
+		// [BIN:TPW-EXE:0x004DB4FB object state] the constructor stores 0 for a choosable type and 3 for any other (SetState at 0x4DB508)
+		item.StoredState = info.IsChoosable ? RideObjectStates.Idle : RideObjectStates.NotAnAttraction;
 		objects.Add( item.Id, item );
 		HookStateWord( item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
@@ -2094,6 +2105,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Catalog.TryGet( item.InfoId, out var info );
 		var cost = info.Upgrades[level].CostOfUpgrade;
 		item.PendingLevel = level;
+		item.StoredState = RideObjectStates.Upgrading;
 		item.UpgradeCostDue = true;
 		// [EXT:online-coop-commands] the purchase's identity, which a guest's cancellation names (C4b-2)
 		item.UpgradePurchases++;
@@ -2136,6 +2148,9 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !objects.TryGetValue( instanceId, out var item ) || ObjectState( item ) != RideObjectStates.Upgrading )
 			return false;
 		item.PendingLevel = 0;
+		// [BIN:TPW-EXE:0x004E01B6 upgrade cancelled] the cancel ends in SetState(0): the stored 2 goes and a breakdown it had overwritten is the ride update's to find again
+		item.StoredState = RideObjectStates.Idle;
+		item.IsBrokenDown = false;
 		item.UpgradeCostDue = false;
 		Raise( ParkEventKind.UpgradeCancelled, 0, item.Id, item.InfoId );
 		return true;
@@ -2785,6 +2800,7 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			if ( !Catalog.TryGet( item.InfoId, out _ ) )
 				throw new InvalidDataException( $"Saved object {item.Id} has Info.Id {item.InfoId}, which the {Settings.Theme} catalogue does not declare." );
+			item.StoredState = InitialStoredState( item );
 			objects.Add( item.Id, item );
 			HookStateWord( item );
 		}

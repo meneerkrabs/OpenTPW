@@ -38,3 +38,12 @@ Confirm no later frame +8 rescale and how clip-space half-extents project; rebas
 - Stop at a reviewable design/evidence package; this draft authorizes no tag removal or parity claim.
 - Do not publish original media or private game data in fixtures, screenshots, or commits.
 - A future implementation needs its own reviewed evidence and acceptance results; do not treat this proposal as merge-ready.
+
+## Source-only reconciliation (2026-10-27)
+
+The preceding plan is preserved as the 2026-10-18 baseline, not a statement that the aspect implementation is still missing. At reviewed main `eb8e3d2018eeeb726b5143caf51f75ce9f0681e1`, `docs/PARTICLES.md:154-160` and `tools/fidelity_retired.txt:224` record PTCL-904 as retired by merged [PR #874, weather and particles](https://github.com/meneerkrabs/OpenTPW/pull/874) (merge `35b78bff94a34273ad1708481e713f61ac6f925b`). Implementation and retirement were added in `66f15a77e4c46685abae2cfcdd97e7e74fc47488`.
+
+- Current source at that main: `source/OpenTPW/World/Particles/ParticleRenderer.cs:251-270,282,312` implements and consumes `TexturedWidthFactor` (frame aspect divided by display height/width) and `ScreenHalfWidth` (frame aspect for textured quads, display height/width for untextured quads). The separate `particle-world-scale` extension remains at line 280.
+- CPU regression source in `source/OpenTPW.Tests/ParticleSystemPortTests.cs:727-759` covers half-extents, textured aspect at 4:3, 16:9 and square displays, and screen-space width factors. It was inspected, not executed here. The no-later-frame-rescale claim is the merged source's recorded analysis, not a new binary inspection or original-game observation by this reconciliation.
+
+Proposed disposition: treat the missing-aspect-implementation premise as superseded; do not duplicate the merged runtime work. Preserve the original evidence, acceptance and completion gates and draft status pending a separate disposition review. This note supplies no fresh CPU-test pass, GPU/native acceptance, original-game trace or retirement decision; it changes no gameplay, register or progress fragment and opens no additional GPU work.

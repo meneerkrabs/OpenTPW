@@ -1486,7 +1486,7 @@ public partial class Level
 			QueuePaths.ClearAll( Guests.Grid, ride );
 	}
 
-	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows (Objects.Grid.CheckTerrain: the map start's cell types, with saved occupancy used only before the live map is attached), no object footprint of the queue tool's overwrite priority 3 or more (a lower one is demolished, QueueGivesWay) and owned land; tp.exe's cell validator 0x00535670 for the queue tool refuses a cell whose flag byte +0x0E has bit 0x40 (the park's land, ParkCellMap.Land), compares an object cell's owner priority with 0x818C10 = 3 (0x535D66), allows empty cells, lets a queue replace a nonterminal path cell unless NoModify (+0x0E bit 0x20), while a terminal path connects without replacement before that check and reads no MAP terrain bit (map setup turns inside water, blocked and walkway cells into type 0) — evidence needed: none for the validator; the no-live-map fallback still uses saved occupancy (ECON-050)
+	// [APPROX:QUEUE-012] the terrain rule for a queue cell is OpenTPW's (Objects.Grid.CheckTerrain: the map start's cell types, with saved occupancy used only before the live map is attached) where tp.exe's cell validator 0x00535670 reads the cell's own type alone and the map setup turns inside water, blocked and walkway cells into type 0; the validator's refusals run on top of it (QueueCellValidator, the register) — evidence needed: none for the validator; the no-live-map fallback still uses saved occupancy (ECON-050)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] a cell with flag 0x40 is refused for a queue as for a path or an object
 	private bool IsQueueBlocked( int x, int y ) => IsQueueBlockedCore( x, y, terminalPath: false );
 

@@ -142,7 +142,7 @@ public partial class Level
 		if ( TrackToolStation == item )
 			CellTool.Cancel();
 		trackToolStation = null;
-		DemolishTrack( station, BuilderOf( item )! );
+		DemolishTrack( item, station, BuilderOf( item )! );
 		item.Runtime.Bump?.Rebuild( TrackCircuit.Invalid( "removed" ) );
 	}
 
@@ -173,11 +173,19 @@ public partial class Level
 	private TrackEditor TrackEditorOf( OriginalObject item, TrackStation station, TrackBuilder builder ) => new( builder, station, TrackEditHooksOf( item, builder ) );
 
 	/// <summary>
-	/// Removes the station tiles of a ride; the tiles its replays cleared are gone already (<see cref="OnTrackStationRemoving"/>) and a tile no replay reached stays, as in the original.
+	/// Removes the station tiles of a ride (pass 2 of the demolition); the tiles its replays cleared are gone already (<see cref="OnTrackStationRemoving"/>) and a tile no replay reached stays, as in the original.
 	/// A type without a queue runs no replay and leaves its whole track.
 	/// </summary>
-	private void DemolishTrack( TrackStation station, TrackBuilder builder )
+	private void DemolishTrack( OriginalObject item, TrackStation station, TrackBuilder builder )
 	{
+		// pass 2 of the demolition clears the record under every cell of the ride's shape with 0x53B280(0, 0, 1): the station tiles go through the record clear, which takes the arms of the tiles beside them
+		var editor = TrackEditorOf( item, station, builder );
+		foreach ( var (x, y, cell) in item.Cells )
+		{
+			if ( ParkCellMap.FootprintType( cell.CellType ) != 0 && builder.Cells.InBounds( x, y ) )
+				editor.ClearUnderDemolition( (x, y) );
+		}
+		// a station tile outside the shape (a legacy layout) goes as it always did
 		builder.RemoveStation( station );
 	}
 

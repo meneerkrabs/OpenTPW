@@ -130,14 +130,12 @@ public class HudVideoRoundTests
 		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
 		Assert.AreEqual( 1, hud.PendingMessages.Count );
 		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "once is enough while it is in the tube" );
-		// deleted unread
-		Assert.IsTrue( hud.DeletePendingMessage( 0 ) );
-		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
-		// opened, then closed without an answer
+		// opened, then closed without an answer: an offer stays in the tube when it is read (0x48d9c0 removes nothing), so there is nothing to post again
 		Assert.IsTrue( hud.OpenPendingMessage( 0 ) );
 		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "the open panel holds it" );
 		hud.CloseMessagePanel();
-		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "the offer's own row is still in the tube" );
+		Assert.AreEqual( 1, hud.PendingMessages.Count );
 		// Incoming ordinary messages cannot push the waiting offer out.
 		for ( var index = 0; index < ParkHud.MessageTubeCapacity; index++ )
 			hud.PostGameMessage( $"m{index}" );
@@ -146,6 +144,47 @@ public class HudVideoRoundTests
 		hud.OpenedActions[0].Clicked();
 		Assert.IsTrue( park.Objectives.Current!.Accepted );
 		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "an answered offer is not posted again" );
+	}
+
+	[TestMethod]
+	public void ADeletedOrExpiredOfferIsDeclinedWhenItsHiddenRowIsReleased()
+	{
+		// [BIN:TPW-EXE:0x48db94 offer removal] the removal's message 5 runs the action 0x1B (the decline) first for a tag whose second action is 0x1B
+		long now = 0;
+		var hud = Hud();
+		hud.ChallengeMessageClock = () => now;
+		var park = EconomyTestData.Park(); park.OpenPark();
+		Attach( hud, park );
+		park.AdvanceDays( 541 );
+		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
+		Assert.IsTrue( hud.DeletePendingMessage( 0 ), "a right click hides the row at once" );
+		Assert.IsFalse( hud.IsPendingMessageVisible( 0 ) );
+		Assert.IsNotNull( park.Objectives.Current, "but the removal itself comes 500 ms later" );
+		now += ParkHud.ChallengeTerminalReleaseDelay - 1;
+		hud.ReleaseChallengeTerminalRows();
+		Assert.IsNotNull( park.Objectives.Current );
+		now += 1;
+		hud.ReleaseChallengeTerminalRows();
+		Assert.IsNull( park.Objectives.Current, "the offer is declined" );
+		Assert.AreEqual( 0, hud.PendingMessages.Count );
+
+		// an unread offer expires after 90 s (the expiry timer 0x80080), unlike a terminal row an opened offer keeps its timers
+		var expiring = EconomyTestData.Park(); expiring.OpenPark();
+		Attach( hud, expiring );
+		expiring.AdvanceDays( 541 );
+		now = 1000;
+		Assert.IsTrue( hud.KeepChallengeOfferPosted( expiring ) );
+		Assert.IsTrue( hud.OpenPendingMessage( 0 ) );
+		now = 1000 + ParkHud.ChallengeOfferLifetime - 1;
+		hud.QueueChallengeTerminalTimers(); hud.DispatchChallengeTerminalTimers(); hud.ReleaseChallengeTerminalRows();
+		Assert.IsNotNull( hud.OpenedMessage, "still within its 90 s although it is open" );
+		now = 1000 + ParkHud.ChallengeOfferLifetime;
+		hud.QueueChallengeTerminalTimers(); hud.DispatchChallengeTerminalTimers();
+		Assert.IsNull( hud.OpenedMessage, "the expiry puts the panel away" );
+		Assert.IsNotNull( expiring.Objectives.Current );
+		now += ParkHud.ChallengeTerminalReleaseDelay;
+		hud.ReleaseChallengeTerminalRows();
+		Assert.IsNull( expiring.Objectives.Current, "the expired offer is declined" );
 	}
 
 	[TestMethod]

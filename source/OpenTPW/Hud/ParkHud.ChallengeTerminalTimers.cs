@@ -3,11 +3,15 @@ namespace OpenTPW.Hud;
 public sealed partial class ParkHud
 {
 	// A replacement identity can name multiple terminal rows. Selection and queued events own the instance instead.
-	private sealed class ChallengeTubeRow( ChallengeMessageIdentity identity, int lifetime = 0, long origin = 0 )
+	private sealed class ChallengeTubeRow( ChallengeMessageIdentity identity, int lifetime = 0, long origin = 0, bool isOffer = false )
 	{
+		/// <summary>A challenge offer (tag record with the accept and decline actions 0x1A and 0x1B): reading it leaves its timers running, and removing it declines.</summary>
+		public bool IsOffer { get; } = isOffer;
+		public ActiveChallenge? OfferIdentity { get; init; }
+		public ActiveChallenge? PendingOfferIdentity { get; set; }
 		public ChallengeMessageIdentity Identity { get; } = identity;
 		public int Lifetime { get; } = lifetime;
-		public bool IsTerminal => Lifetime > 0;
+		public bool IsTerminal => Lifetime > 0 && !IsOffer;
 		public long Origin { get; set; } = origin;
 		public bool Active { get; set; } = lifetime > 0;
 		public bool PreExpiryEnabled { get; set; } = lifetime > 0;
@@ -19,6 +23,9 @@ public sealed partial class ParkHud
 
 		public void Read()
 		{
+			// [BIN:TPW-EXE:0x48d9e9 offer keeps its timers] the selection routine 0x48D9C0 kills both timers of a selected tag (0x48d9ee-0x48da06) unless the tag's sixth parameter, its second action, is 0x1B (the decline of an offer)
+			if ( IsOffer )
+				return;
 			Active = false;
 			PreExpiryEnabled = false;
 		}
@@ -32,7 +39,10 @@ public sealed partial class ParkHud
 	/// <summary>Injected monotonic, unscaled milliseconds. Set before posting rows; null uses the host monotonic clock.</summary>
 	internal Func<long>? ChallengeMessageClock { get; set; }
 	private long ChallengeUiMilliseconds => ChallengeMessageClock?.Invoke() ?? Environment.TickCount64;
-	internal const int ChallengeTerminalReleaseDelay = 500;
+	internal const int ChallengeTerminalReleaseDelay = MessageTubeSaveData.MaximumOfferReleaseDelay;
+
+	/// <summary>An offer's tag lifetime: 90 s (the tag records of the offers, 0x4d3220), its warning timer 5 s earlier.</summary>
+	internal const int ChallengeOfferLifetime = 90000;
 
 	internal bool IsPendingMessageVisible( int index ) => index >= 0 && index < (pendingMessages?.Count ?? 0)
 		&& pendingChallengeRows![index]?.Visible != false;
@@ -161,7 +171,8 @@ public sealed partial class ParkHud
 				// Effect 90 on first visibility and effect 91 at this boundary remain omitted; never borrow world emitter slots.
 			}
 			else
-				BeginChallengeTerminalRemoval( row, closePanel: false );
+				// [BIN:TPW-EXE:0x48dd53 tag expiry] timer 0x80080 hides the tag and posts the removal 0x100002 (0x48dd5d-0x48dd7b); the removal puts the panel away when the tag is the selected one (0x48dd19-0x48dd28)
+				BeginChallengeTerminalRemoval( row, closePanel: true );
 		}
 	}
 
@@ -169,6 +180,9 @@ public sealed partial class ParkHud
 	{
 		if ( !row.Visible )
 			return;
+		// Bind before hiding: cleanup of an answered/stale offer must never decline a newer follow-up.
+		if ( row.IsOffer )
+			row.PendingOfferIdentity = SameUnansweredOffer( row.OfferIdentity, CurrentUnansweredOffer ) ? row.OfferIdentity : null;
 		row.Read();
 		row.ReleaseAt = ChallengeUiMilliseconds + ChallengeTerminalReleaseDelay;
 		if ( closePanel && ReferenceEquals( openedChallengeRow, row ) )

@@ -4,7 +4,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// The park HUD's message tube as a park-resume save holds it: the occupied slots, oldest first (the lowest icon first). tp.exe saves its tag tube with the park (the tube's saver 0x48EE50: the count of
-/// occupied slots, then per slot the tag id, the text, the lifetime and the tag's context words); the tube is presentation, so nothing here reaches a simulation or a hash.
+/// occupied slots, then per slot the tag id, the text, the lifetime and the tag's context words). Unhashed HUD state; a hidden offer can carry its pending removal, which later issues the ordinary rights-checked decline command.
 /// </summary>
 internal sealed record MessageTubeSaveData
 {
@@ -12,6 +12,7 @@ internal sealed record MessageTubeSaveData
 	public const int MaximumRows = 10;
 	public const int MaximumTextLength = 4096;
 	public const int MaximumLifetime = 600_000;
+	public const int MaximumOfferReleaseDelay = 500;
 
 	public required IReadOnlyList<MessageTubeRowSave> Rows { get; init; }
 
@@ -43,8 +44,14 @@ internal sealed record MessageTubeSaveData
 internal sealed record MessageTubeRowSave( int Kind, string Text, int Tag, short ContextShort, int ContextInt, int Lifetime, bool Read )
 {
 	public const int Message = 0, Offer = 1, Progress = 2, Terminal = 3;
+	/// <summary>A hidden offer awaiting its delayed decline/removal; absent for visible rows. Zero means already due, not absent.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public int? OfferReleaseDelayMs { get; init; }
+
 	public string? Problem()
 	{
+		if ( OfferReleaseDelayMs is { } delay && (Kind != Offer || delay < 0 || delay > MessageTubeSaveData.MaximumOfferReleaseDelay) )
+			return "a pending offer removal has an invalid kind or delay";
 		if ( Kind is < Message or > Terminal )
 			return $"the message tube row kind {Kind} is unknown";
 		if ( string.IsNullOrWhiteSpace( Text ) || Text.Length > MessageTubeSaveData.MaximumTextLength )

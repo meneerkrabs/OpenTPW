@@ -404,3 +404,4 @@ WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
 UI-007 docs/UI.md
 AUDIO-003 docs/AUDIO.md
+ADVISOR-012 docs/LIPS.md

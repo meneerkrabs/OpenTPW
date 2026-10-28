@@ -757,6 +757,7 @@ public sealed class SoundEventSystem
 		var table = SoundParameterTable.ForPlayback( soundEvent, sound );
 		var volume = Volume( sound, table ) / 100f;
 		var voice = mixer.Play( audio, channel, volume, position, range ?? sound.Rolloff );
+		voice.PlacedFlat = SoundVoiceFlags.IsAnyDistance( soundEvent.Flags );
 		voice.SetPitch( Pitch( sound, table ) );
 		voice.Loops = SoundVoiceFlags.Loop( soundEvent.Flags );
 		TrackOneShot( voice, soundEvent.Priority, soundEvent.Flags, DelaySeconds( sound ), new PlacedSoundParameters( this, sound, table ) );
@@ -1011,6 +1012,7 @@ public sealed class PlacedSound
 		{
 			Voice = position is { } place ? mixer.Play( audio, channel, volume, place, range ) : mixer.Play( audio, channel, volume );
 			Voice.Serial = Serial;
+			Voice.PlacedFlat = SoundVoiceFlags.IsAnyDistance( Flags );
 			Voice.SetPitch( Pitch );
 			Voice.Loops = loops;
 			Lifetime?.Admit( Voice, (int)MathF.Round( volume * 100 ) );
@@ -1182,6 +1184,7 @@ public sealed class SoundSentence
 		// [BIN:TPW-EXE:0x6bc4f4 sample start] the delay is drawn after the volume and the pitch at every segment; a sentence's voice is ranked as the sentence itself, so the draw is all of it that is observable here
 		_ = system.DelaySeconds( soundEvent.Sounds[sound] );
 		voice = Position is { } place ? system.Mixer.Play( audio, channel, gain, place, Range ) : system.Mixer.Play( audio, channel, gain );
+		voice.PlacedFlat = SoundVoiceFlags.IsAnyDistance( soundEvent.Flags );
 		Lifetime?.Admit( voice, volume );
 		voice.SetPitch( pitch );
 		voice.Completed += OnCompleted;

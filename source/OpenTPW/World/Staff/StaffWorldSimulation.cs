@@ -178,5 +178,6 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 		foreach ( var member in members() )
 			if ( member.CellSerial == 0 )
 				member.CellSerial = --legacy;
+		SyncChain();
 	}
 }

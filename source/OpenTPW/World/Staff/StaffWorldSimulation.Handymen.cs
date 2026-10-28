@@ -68,8 +68,6 @@ public sealed partial class StaffWorldSimulation
 		UpdateStaffMemberCore( economy, member, turn );
 		// the member's thing follows the walk's cell onto the head of that cell's chain (WALK-003; the walk step and the teleports end in 0x0050B6A0)
 		Chain.Follow( member.Id, member.Navigation, member.CellSerial );
-		if ( member.Navigation != null )
-			member.CellSerial = 0;
 		UpdatePresentation( member );
 	}
 
@@ -540,12 +538,9 @@ public sealed partial class StaffWorldSimulation
 		foreach ( var member in members() )
 		{
 			current.Add( member.Id );
+			// a restored entry number (the member's, until its entry exists) keeps the counter ahead of it, whichever chain the entry is made in
+			(Guests as GuestSimulation)?.NoteCellSerial( member.CellSerial );
 			chain.Follow( member.Id, member.Navigation, member.CellSerial );
-			if ( member.Navigation != null )
-			{
-				(Guests as GuestSimulation)?.NoteCellSerial( chain.Of( member.Id )?.Serial ?? 0 );
-				member.CellSerial = 0;
-			}
 		}
 		chain.KeepOnly( current );
 	}

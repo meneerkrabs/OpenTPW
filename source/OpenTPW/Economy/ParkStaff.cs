@@ -90,7 +90,7 @@ public sealed class StaffMember
 	public float? CellY { get; set; }
 	/// <summary>Fraction of the host's next one-cell movement interval, persisted across loads.</summary>
 	public double TravelSeconds { get; set; }
-	/// <summary>The entry number the member's thing held on its cell's chain when a save was taken (<see cref="StaffCellChain"/>), until the world files it again; 0 when none.</summary>
+	/// <summary>The entry number the member's thing held on its cell's chain when a save was taken (<see cref="StaffCellChain"/>), which the world gives it when it files the thing again; 0 when none.</summary>
 	internal long CellSerial { get; set; }
 
 	// Presentation of the walk (not saved, not hashed): the point at the start of the member's last turn update (+0x190/+0x194, 16.16) and the tick it was taken, the drawn point between the turns

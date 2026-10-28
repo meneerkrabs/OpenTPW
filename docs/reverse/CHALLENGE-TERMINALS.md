@@ -94,16 +94,9 @@ There is no established HUD UI-emitter ownership/rendering interface here. Both 
 under PTCL-908; the implementation consumes the pre-expiry timer but invents no visuals or warning audio
 and does not borrow world-particle handles. No original particle appearance was observed.
 
-Tube state is not saved (UI-025). A newly created HUD after loading has no old rows, selection or queued
-timer events. If a new terminal is emitted it receives a fresh lifetime; this is not restoration of the
-original saved row or remaining timer. In-place economy replacement keeps the existing HUD policy and
-is not a new tube-persistence implementation.
+Offer rows are saved and restored with their 90 s timers (UI-025); terminal rows are not saved. A newly created HUD after loading restores offer rows only; if a new terminal is emitted it receives a fresh lifetime, which is not restoration of the original saved remaining timer.
 
-Original offers have a 90000 ms lifetime and their final action-27 removal attempts Decline against the
-then-current awaiting offer, including a new offer that arrived during the 500 ms release gap. That
-conflicts with the retained repost extension. This slice adds neither offer auto-expiry/auto-decline
-nor an identity guard, and does not label either possible policy as original behavior. The adjacent
-Accept/Decline control-order discrepancy is outside this change.
+Original offers have a 90000 ms lifetime and their final action-27 removal declines the then-current awaiting offer (0x48DB94); OpenTPW ports both (an offer keeps its timers when read, and a guest peer leaves the answer to the host). The repost of a refused or loaded-park offer stays an extension.
 
 ## Validation
 

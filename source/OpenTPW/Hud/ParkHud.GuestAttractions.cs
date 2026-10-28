@@ -139,6 +139,7 @@ public sealed partial class ParkHud
 				&& ParkEconomy.ObjectState( copy ) == RideObjectStates.Upgrading:
 				copy.PendingLevel = 0;
 				copy.UpgradeCostDue = false;
+				copy.IsBrokenDown = false;
 				copy.IsOpen = true;
 				break;
 		}

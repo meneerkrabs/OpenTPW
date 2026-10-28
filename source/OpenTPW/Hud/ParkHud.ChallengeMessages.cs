@@ -9,7 +9,7 @@ public sealed partial class ParkHud
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D2C50 challenge offer] the offer posts a message of type 25 (CMsgChallenge, 0x0040F7A0, vtable 0x006FD830 returns 0x19) to the bus, with a type-dependent text tag (0x004D3220), separate spoken advice and the slot's prize, time and objects
 	// [BIN:TPW-EXE:0x0048E0F0 message buttons] the message panel's action 0x1A calls the accept 0x004D2DF0 and action 0x1B the decline 0x004D2EC0; both act only while an offer waits for its answer (+0x3DA) and answer the current slot (+0x3CC)
-	// Offer wording/buttons stay the existing OpenTPW description. Progress and terminal rows use recovered TAG_SYSTEM bindings; the offer lifecycle remains ECON-058.
+	// Offer wording/buttons stay the existing OpenTPW description. Progress and terminal rows use recovered TAG_SYSTEM bindings; the offer's 90 s expiry and decline on removal follow 0x48DB94; the repost of a refused or loaded-park offer is an extension.
 	private void HookChallengeMessages()
 	{
 		if ( level.Park != null )
@@ -134,6 +134,9 @@ public sealed partial class ParkHud
 	private void DeclineRemovedOffer()
 	{
 		if ( level == null || level.IsReadOnlyVisit || level.Park?.Economy?.Objectives.Current is not { Accepted: false } offer )
+			return;
+		// the answer is the host's (CoopBuildRights), so a guest's removal leaves the offer to the host's own timer
+		if ( level.Commands.Rights is { } rights && !rights.Allows( level.Commands.Player, ParkCommandKind.AnswerChallenge ) )
 			return;
 		level.Commands.Issue( new AnswerChallengeCommand( offer.DefinitionIndex, offer.OfferedDay, false ) );
 	}

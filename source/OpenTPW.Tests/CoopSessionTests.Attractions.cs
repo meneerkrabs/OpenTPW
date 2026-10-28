@@ -876,7 +876,58 @@ public partial class CoopSessionTests
 		} );
 	}
 
-	// A breakdown entering an upgrading ride before a guest's waiting cancel arrives cannot happen any more: the request stores state 2 over a breakdown and the ride update, which finds breakdowns, runs only in state 0 (0x4E0086, 0x4E0E00).
+	[TestMethod]
+	public void AGuestsRemovedChallengeOfferIsLeftToTheHost()
+	{
+		InParkView( () =>
+		{
+			var (host, guest, view) = AttractionsSession();
+			long now = 0;
+			var hud = view.Hud;
+			hud.ChallengeMessageClock = () => now;
+			AlikeIn( host, guest, park => { park.Economy.OpenPark(); park.Economy.AdvanceDays( 541 ); } );
+			var economy = guest.Level.Park!.Economy;
+			Assert.IsNotNull( economy.Objectives.Current );
+			view.Update();
+			Assert.IsTrue( hud.PendingMessages.Count > 0 || hud.KeepChallengeOfferPosted( economy ), "the offer waits in the tube" );
+			Assert.IsTrue( hud.DeletePendingMessage( 0 ) );
+			now += ParkHud.ChallengeTerminalReleaseDelay;
+			hud.ReleaseChallengeTerminalRows();
+			// the answer is the host's (HostOnly): a guest issues no command, so nothing is refused and the host's offer stays
+			Assert.AreEqual( 0, guest.Level.SessionRefusals );
+			Assert.IsNotNull( economy.Objectives.Current );
+		} );
+	}
+
+	[TestMethod]
+	public void ABreakdownBeforeAGuestsWaitingCancelLeavesTheCancelAcceptedAndTheRideOpen()
+	{
+		InParkView( () =>
+		{
+			var (host, guest, view) = AttractionsSession();
+			var ride = guest.One;
+			var id = ride.Runtime.AttractionId;
+			var instance = guest.Level.GetEconomyInstance( ride )!.Value;
+			Show( view, ride );
+			OpenUpgradeList( view );
+			ActivateRow( view );
+			UntilManaged( host, guest, view );
+			OpenUpgradeList( view );
+			ActivateRow( view );
+			Assert.AreEqual( new CancelUpgradeCommand( id, 1, 1 ), Waiting( guest, id ) );
+			// a breakdown reaches the record before the cancel: the stored state 2 still wins (0x4E0086), so the cancel is accepted and ends in state 0 (0x4E01B6)
+			AlikeIn( host, guest, park =>
+			{
+				Assert.IsTrue( park.Economy.TryGetObject( instance, out var record ) );
+				record.IsBrokenDown = true;
+			} );
+			UntilManaged( host, guest, view );
+			Assert.AreEqual( (0, 0), (Management( guest ).TakeNotes().Count, guest.Level.SessionRefusals) );
+			foreach ( var park in new[] { host, guest } )
+				Assert.AreEqual( (0, false, true), (StateOf( park, id ).PendingLevel, StateOf( park, id ).IsBrokenDown, ObjectOf( park, id ).IsOpen), "the cancel was carried out" );
+			CutAndCompare( host, guest );
+		} );
+	}
 
 	/// <summary>The host's list row for the shown ride, clicked: its next level bought, or its pending one cancelled, at once (the list closes after the row).</summary>
 	private static void HostRow( View hostView, OriginalObject ride, RideUpgradeRowKind expected )

@@ -1115,7 +1115,7 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the repair or the upgrade clears the call (+0x64 = 0) and the claim (+0x5E) and writes VAR_WORN = 0; a repair (not in state 2) also writes VAR_BREAKSTAT = 0
 		item.MaintenanceRequested = false;
 		WriteScript( item, RideVariables.VAR_WORN, 0 );
-		// 0xdef2c installs the upgrade only for a ride in state 2; a broken ride with a purchased upgrade is repaired first
+		// 0xdef2c installs the upgrade only for a ride in state 2; the request stores 2 over a breakdown (0x4E0086), so a purchased upgrade is installed even on a broken ride
 		if ( ObjectState( item ) == RideObjectStates.Upgrading )
 		{
 			// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the routine's common entry, before its state-2 upgrade branch, sets the state of repair (+0x44) to 100.0 for an upgrade too

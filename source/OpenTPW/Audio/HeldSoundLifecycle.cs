@@ -7,6 +7,7 @@ internal sealed record SoundFadeSettings( int DefaultQuality = 50, int FadeThres
 	internal static SoundFadeSettings Read( SamSettings settings ) => new(
 		Math.Clamp( settings.GetInt( "SoundInfo.DEFAULTQUALITY", 50, optional: true ), 0, 100 ),
 		Math.Clamp( settings.GetInt( "SoundInfo.FADETOGGLE", 30, optional: true ), 0, 100 ) );
+	// a missing host SoundQuality takes the loaded default; the original user's saved preference is not recoverable (see AUDIO-040)
 	internal int Resolve( int? saved ) => Math.Clamp( saved ?? DefaultQuality, 0, 100 );
 }
 
@@ -83,16 +84,31 @@ internal sealed class HeldSoundLifetime
 		}
 	}
 
-	// [APPROX:AUDIO-040] Managed compatibility: float32 product in group-bit order, nearest-even effective integer;
-	// the caller-thread x87 control word is unresolved. Exact 1 and 0.5 factors are stable test oracles.
-	private int EffectiveVolume()
+	// [BIN:TPW-EXE:0x6BB860 effective volume] the own volume (+0x18) times the product of the enabled group floats (mask +0x24: bit 0 master, 1 music, 2 speech, 3 effects, read in that order from the table +0x34, starting at the float 0x70A7DC) is formed in the x87 registers without a store between the multiplications, stored once as a float (fstp dword) and converted with fistp (round to nearest even); no mask gives the own volume unchanged
+	// [BIN:TPW-EXE:0x6B6260,0x6B9E30,0x67E050 fade thread] the released-tail poll (0x6B6260 sends every fading placeholder its fade update, vf+0x2c = 0x6BCB80 -> 0x6C50D0 -> 0x6C570B -> 0x6BB860) runs on the sound library's own worker, started with the CRT's _beginthread (0x6B9EF0); the manager tick 0x6B62B0 calls the same update only when the manager byte +0x50 is set, and 0x6B9F66 clears it before the worker starts
+	// [BIN:TPW-EXE:0x00576EC0 control word] the only code that rewrites the x87 control word besides the CRT's save-and-restore wrappers (_ftol 0x67A830) is the font generator's pair 0x591220 / 0x591240 (its only callers are at 0x576FA7, 0x577304 and 0x577310, nowhere near the sound library); the main thread is at 0x7F (24-bit precision) after DDSCL_FPUSETUP at 0x563914 and the D3DIM device creation (docs/COASTERS.md), but the worker is a new thread: it keeps the operating system's default 0x27F (53-bit precision, round to nearest even), and QMixer.dll only restores the word around its own truncating conversions (0x18018179, 0x180181DD)
+	// main-thread callers (a group change, a sample's start) multiply at 24 bits, so every intermediate is a float; the poll multiplies at 53 bits, so the group product and the volume product are doubles and only the final store rounds to a float
+	private int EffectiveVolume( bool pollThread = false )
 	{
 		if ( GroupMask == 0 ) return OwnVolume;
+		if ( pollThread )
+		{
+			var wide = 1.0;
+			for ( var index = 0; index < 4; index++ )
+				if ( (GroupMask & (1u << index)) != 0 ) wide *= groups[index];
+			return (int)MathF.Round( (float)(OwnVolume * wide), MidpointRounding.ToEven );
+		}
 		var product = 1f;
 		for ( var index = 0; index < 4; index++ )
 			if ( (GroupMask & (1u << index)) != 0 ) product *= groups[index];
 		return (int)MathF.Round( OwnVolume * product, MidpointRounding.ToEven );
 	}
+
+	/// <summary>The volume the fade poll computes (the worker thread's 53-bit arithmetic), exposed for the tests.</summary>
+	internal int PollEffectiveVolume() => EffectiveVolume( pollThread: true );
+
+	/// <summary>The volume a main-thread caller computes (24-bit arithmetic), exposed for the tests.</summary>
+	internal int MainEffectiveVolume() => EffectiveVolume();
 
 	/// <summary>An explicit host range stop releases the output; unlike a normal segment gap it has no live reply.</summary>
 	internal void LoseOutputReply()
@@ -106,7 +122,7 @@ internal sealed class HeldSoundLifetime
 	{
 		if ( !Fading || Terminal ) return;
 		if ( !HasSample || Suspended || !ReplyAvailable ) { MarkStop(); return; }
-		OwnVolume = EffectiveVolume() * 60 / 100;
+		OwnVolume = EffectiveVolume( pollThread: true ) * 60 / 100;
 		DeviceVolume = OwnVolume;
 		WriteDevice();
 		if ( OwnVolume == 0 ) MarkStop();
@@ -183,7 +199,7 @@ internal sealed class HeldSoundService
 			sound.Lifetime.Poll();
 		}
 		// [BIN:TPW-EXE:0x6B9E30] post-scan Sleep(100/250), counting fades before their update.
-		// AUDIO-040 host policy: one scan per due callback, then delay from now; no catch-up burst.
+		// [APPROX:AUDIO-040] host policy: one scan per due callback, then delay from now; no catch-up burst. The original's worker Sleeps 100 or 250 ms (0x6B9E30) at the mercy of the operating system's scheduler, so its phase against the main thread's group refresh and admissions has no rule to port
 		NextPoll = now + (count > 0 ? 100 : 250);
 	}
 	internal void ProcessStops()

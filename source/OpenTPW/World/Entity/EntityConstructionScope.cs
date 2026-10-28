@@ -23,10 +23,10 @@ internal sealed class EntityConstructionScope : IDisposable
 	internal int StagedEntities => entities.Count;
 
 	private readonly record struct SceneState( List<Entity> Entities, Level? Level, CameraMode Camera,
-		float TargetExtent, Vector3 InitialTarget, Vector3 ListenerPosition, Vector3 ListenerForward, Vector3 ListenerFront, Vector3 ListenerUp )
+		float TargetExtent, Vector3 InitialTarget, Vector3 ListenerPosition, Vector3 ListenerForward, Vector3 ListenerFront, Vector3 ListenerUp, AudioListener.Motion ListenerMotion )
 	{
 		public static SceneState Capture() => new( Entity.All, global::OpenTPW.Level.Current, global::OpenTPW.Camera.Mode,
-			ParkCameraMode.TargetExtent, ParkCameraMode.InitialTarget, AudioListener.Position, AudioListener.Forward, AudioListener.Front, AudioListener.Up );
+			ParkCameraMode.TargetExtent, ParkCameraMode.InitialTarget, AudioListener.Position, AudioListener.Forward, AudioListener.Front, AudioListener.Up, AudioListener.CaptureMotion() );
 
 		public void Restore()
 		{
@@ -37,6 +37,7 @@ internal sealed class EntityConstructionScope : IDisposable
 			ParkCameraMode.InitialTarget = InitialTarget;
 			AudioListener.RestoreCaptured( ListenerPosition, ListenerForward );
 			AudioListener.RestoreCapturedAxes( ListenerFront, ListenerUp );
+			AudioListener.RestoreMotion( ListenerMotion );
 		}
 	}
 

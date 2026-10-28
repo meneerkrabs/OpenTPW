@@ -33,7 +33,7 @@ internal readonly record struct CellValidatorInput( int Mode, byte Type, ushort 
 /// The decision order of tp.exe's cell validator <c>0x00535670</c> for the path and queue tools without the park's money (the money test only adds a refusal when the pending cost exceeds the bank). The answers:
 /// 1 refuses the cell, 0 accepts it (empty or replaceable), 0xB accepts it where the line meets an existing cell of its own kind, 8 accepts it where the line ends on a path (queue) or a queue (path).
 /// </summary>
-// [BIN:TPW-EXE:0x00535670 cell validator] ported from the executable's own answers: tools/ppc-analysis/oracle_x86/validator_golden.py runs the real routine on every combination of mode, cell type, flags, structure record, links, owner and latch state and QueueCellValidatorTests replays a sample of them; the routine reads no MAP terrain bit (the terrain answer is the cell's type alone, which the map init 0x536490 wrote), and it tests the flag 0x40 first
+// [BIN:TPW-EXE:0x00535670 cell validator] ported from the executable's own answers: tools/ppc-analysis/oracle_x86/validator_golden.py runs the real routine on every combination of mode, cell type, flags, structure record, links, owner and latch state and QueueCellValidatorTests replays all 14,256 of them; the routine reads no MAP terrain bit (the terrain answer is the cell's type alone, which the map init 0x536490 wrote), and it tests the flag 0x40 first
 internal static class QueueCellValidator
 {
 	private const int Refused = 1;
@@ -172,7 +172,8 @@ internal static class QueueCellValidator
 	/// The cell's type is its own (a track tile keeps the type of the ground or the base type of a station under it).
 	/// </summary>
 	/// <param name="givesWay">An object cell the tool may cover (its owner's overwrite priority is below the tool's).</param>
-	public static bool Refuses( ParkCellMap cells, int mode, int x, int y, bool givesWay )
+	/// <param name="lastCell">The cell ends the line: a path cell then connects (answer 8) before its NoModify flag is tested.</param>
+	public static bool Refuses( ParkCellMap cells, int mode, int x, int y, bool givesWay, bool lastCell = false )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
 		if ( !cells.InBounds( x, y ) )
@@ -194,7 +195,7 @@ internal static class QueueCellValidator
 			neighbour = cells.RawTypeAt( x + dx, y + dy );
 		}
 		var toolPriority = mode == 3 ? 3 : 2;
-		var input = new CellValidatorInput( mode, type, (ushort)cells.FlagsAt( x, y ), StructureTypeAt( cells, x, y ), origin.IsEmpty ? (byte)0 : origin.Mask, links, false, false, false, neighbour,
+		var input = new CellValidatorInput( mode, type, (ushort)cells.FlagsAt( x, y ), StructureTypeAt( cells, x, y ), origin.IsEmpty ? (byte)0 : origin.Mask, links, false, lastCell, false, neighbour,
 			givesWay ? 0 : toolPriority, toolPriority );
 		var latches = new CellValidatorLatches();
 		return Check( input, ref latches ) == 1;

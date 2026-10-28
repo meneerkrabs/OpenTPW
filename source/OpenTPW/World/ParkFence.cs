@@ -234,7 +234,7 @@ public sealed class FenceEngine
 	{
 		var (x, y) = (X( index ), Y( index ));
 		var track = cells.Tracks.Get( x, y );
-		// a ride's track tile (origin or extension) carries its ride's word, which the link-back test compares with the tool's; a fence record carries the walk's parent
+		// a ride's track tile carries its ride's word (OpenTPW's own owner field; in the original an extension's +0x10 holds its parent, which is harmless here because 0x539220 links only origin types 0xB, 0xD, 0x10, 0x12 and 0x19); a fence record carries the walk's parent
 		return track.Type != 0 ? Math.Min( track.Owner, ushort.MaxValue ) : layer.Owner[index];
 	}
 

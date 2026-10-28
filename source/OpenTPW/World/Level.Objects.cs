@@ -257,7 +257,8 @@ public partial class Level
 		// A ride with queue cells takes them with it: the refunds are settled while the cells are laid, the cells go once its guests are set down
 		// [BIN:TPW-EXE:0x004DD2D6 selection cleared] destroying the selected object clears the selection
 		Objects.ObjectRemoved += item => { if ( ReferenceEquals( selection, item ) ) selection = null; };
-		Objects.ObjectRemoving += item => ( demolishingInstances ??= new() )[item] = Park != null ? GetEconomyInstance( item ) : null;
+		if ( typesFootprints )
+			Objects.ObjectRemoving += item => ( demolishingInstances ??= new() )[item] = Park != null ? GetEconomyInstance( item ) : null;
 		Objects.ObjectRemoving += SettleDemolishedQueue;
 		Objects.ObjectRemoved += ClearDemolishedQueue;
 		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
@@ -1489,7 +1490,7 @@ public partial class Level
 		!QueueTerrainAllows( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ))
 		// [BIN:TPW-EXE:0x00535670 queue cell] the validator's own answer for the cell refuses it on top of the rules above: a hoarding post or one of its extension cells on owned land, a corner or junction track tile, the coaster marker, water and no terrain, another ride's cell
-		|| (Guests?.Grid.Cells is { } judged && judged.InBounds( x, y ) && judged.RawTypeAt( x, y ) != (byte)ParkCellType.Queue && QueueCellValidator.Refuses( judged, 3, x, y, Objects.FindAt( x, y ) != null && QueueGivesWay( x, y ) ))
+		|| (Guests?.Grid.Cells is { } judged && judged.InBounds( x, y ) && judged.RawTypeAt( x, y ) != (byte)ParkCellType.Queue && QueueCellValidator.Refuses( judged, 3, x, y, Objects.FindAt( x, y ) != null && QueueGivesWay( x, y ), lastCell: terminalPath ))
 		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
 		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true)
 		// [EXT:pools-bridges] a bridge's cells and the two outside end cells (bare or with a path) take no queue: a queue there would break the bridge's save and its entrance

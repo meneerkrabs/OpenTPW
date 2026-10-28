@@ -103,7 +103,7 @@ public class QueueSegmentReducerTests
 	public void TerminalPathBypassesNoModifyButInteriorPathDoesNotAndPreviewNeverWrites()
 	{
 		var map = new ParkCellMap( 12, 12 );
-		map.SetType( 2, 3, ParkCellType.Queue );
+		map.SetType( 2, 3, ParkCellType.Queue ); map.SetOwner( 2, 3, 17 );
 		map.SetType( 4, 3, ParkCellType.Path ); map.SetFlags( 4, 3, ParkCellFlags.NoModify );
 		var before = map.Version;
 		Assert.IsTrue( Reducer( map ).Preview( (2, 3), (4, 3) ).Completed );

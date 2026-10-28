@@ -391,7 +391,7 @@ public partial class CoopSessionTests
 		foreach ( var park in new[] { host, guest } )
 		{
 			park.Enter();
-			ConfigureQueue( park.Level.Guests!.Grid, park.One, 10, 5 );
+			ConfigureQueue( park.Level.Guests!.Grid, park.One, 10, 5, join: false );
 		}
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );

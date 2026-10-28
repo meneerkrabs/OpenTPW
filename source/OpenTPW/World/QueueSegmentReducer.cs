@@ -64,7 +64,8 @@ internal sealed class QueueSegmentReducer
 			if ( type == 1 && cells.FlagsAt( p.X, p.Y ).HasFlag( ParkCellFlags.NoModify ) ) return Result( CellBuildResult.NoModify, p );
 			if ( type == 3 )
 			{
-				if ( cells.OwnerAt( p.X, p.Y ) != 0 && cells.OwnerAt( p.X, p.Y ) != owner ) return Result( CellBuildResult.Occupied, p );
+				// [BIN:TPW-EXE:0x00535670 own queue cell] a queue cell is accepted by the queue tool only when its owner word is the tool's ride (0x818698) and it does not hold two links (popcount 2): the ride's own two-link cell and any other ride's cell refuse
+				if ( cells.OwnerAt( p.X, p.Y ) != owner || System.Numerics.BitOperations.PopCount( cells.LinksAt( p.X, p.Y ) ) == 2 ) return Result( CellBuildResult.Occupied, p );
 				continue;
 			}
 			built.Add( p );

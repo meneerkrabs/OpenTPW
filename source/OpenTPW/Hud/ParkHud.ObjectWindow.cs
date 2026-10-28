@@ -303,6 +303,13 @@ public sealed partial class ParkHud
 			return;
 		SetInfoArm( false );
 		LeaveBuildTool();
+		// the button takes the queue edit a click on one of its cells takes (EditQueueAt): the edit takes the link between the queue's back cell and the path it ends on off before the tool lays on from that cell (0x530379), and the cell validator 0x535670 refuses the ride's own queue cell while it holds two links
+		if ( item.Visitors.QueueFrontCell is { } front && level.CanEditQueueAt( front.X, front.Y ) )
+		{
+			if ( level.EditQueueAt( front.X, front.Y ) )
+				PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
+			return;
+		}
 		if ( level.EnterQueueTool( item.Visitors ) )
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
 	}

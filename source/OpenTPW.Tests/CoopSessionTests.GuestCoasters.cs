@@ -46,7 +46,7 @@ public partial class CoopSessionTests
 		{
 			// The synthetic '*' shape has no entrance: give its ride the queue tests' geometry and register it as a queue command target on every peer.
 			station!.Visitors.HasCells = true;
-			ConfigureQueue( level.Guests!.Grid, station, 10, 5 );
+			ConfigureQueue( level.Guests!.Grid, station, 10, 5, join: false );
 			level.Guests.Register( station.Visitors );
 		}
 		return station!;

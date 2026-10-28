@@ -1526,7 +1526,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.MediumHappinessChange );
 			if ( ((int)guest.Happiness & 0xFF) != 0 )
 			{
-				// [APPROX:ARRIVAL-006] the wait is counted in executed park turns, but OpenTPW's fixed-step loop drops none (the original's loop drops at most 3 per pass, 0x0054F680)
+				// [APPROX:ARRIVAL-006] the wait is counted in executed park turns, but OpenTPW's fixed-step loop drops none (the original's loop runs at most 3 of up to eight due turns per pass and skips the rest, 0x0054F493, 0x0054F680)
 				guest.BoothWait = wait;
 				return;
 			}
@@ -3190,7 +3190,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>The guest leaves the queue without riding: state 6 where it stood.</summary>
 	// [BIN:TPW-EXE:0x005004AA queue exit position] every state-11 exit (0x005004AA: unlink 0x004DDD20, dismissal 0x005012F0, SetState(6)) and the queue-edit exit write no position: the guest stays where it stood, in state 6, until the decision handler 0x004FEC90 starts its next walk from there (a route search from a queue cell, or a wander along the cell's links minus its own queue link)
-	// [APPROX:QUEUE-010] a guest leaving a queue (0x5004AA, the queue edit's dismissal 0x501390, a removed ride's message 0x4FB360) stays where it stands in state 6 on every placed ride, whatever its cell is now (a path, a queue cell, the owned stand cell, or a cell the queue's undo or a demolition emptied), and decides from there by the ported wander (0x4F9490); a bridge without placed cells (no owner word or no exit cell: the gates, the test rigs, the Theme Park Inc slice) and the exits of a guest whose attraction is gone retain the front/nearest-path relocation, whose cells carry no links to walk off by
+	// [APPROX:QUEUE-010] a guest leaving a queue (0x5004AA, the queue edit's dismissal 0x501390, a removed ride's message 0x4FB360) stays where it stands in state 6 on every placed ride, whatever its cell is now (a path, a queue cell, the owned stand cell, or a cell the queue's undo or a demolition emptied), and decides from there by the ported wander (0x4F9490); a bridge without placed cells (no owner word or no exit cell: the gates, the test rigs, the Theme Park Inc slice) retains the front/nearest-path relocation, whose cells carry no links to walk off by; the exit of a guest whose attraction is already gone (a safety net: the original has no such poll, only the removal message 0x4FB360) now stays where it stands too
 	private void LeaveQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
 	{
 		attraction.LeaveQueue( guest.Id );
@@ -3251,7 +3251,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		NoteQueueEnd( guest, guest.AttractionId, QueueEndReason.AttractionRemoved );
 		ClearQueueState( guest );
-		ReturnToPath( guest, (guest.CellX, guest.CellY) );
+		// [BIN:TPW-EXE:0x004FB360 removal message] the original has no poll for a vanished attraction: the removal message is the only way a guest loses its target, and it writes no position (the small step, +0x1DC = 0, SetState(6) at 0x00501DB0), so the safety net for a guest whose attraction is already gone does the same
+		guest.AttractionId = 0;
+		StayWhereItStands( guest );
 		guest.BodySprite.QueueTemplate( VisitorSpriteTemplate.Stand );
 	}
 

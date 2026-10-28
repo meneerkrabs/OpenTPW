@@ -48,13 +48,14 @@ public static class StaffSpriteRules
 	public const int DefaultPerformanceSlot = 4;
 
 	/// <summary>The key a person's sprite bank derives from: the same for the candidate and the member it becomes.</summary>
-	// [APPROX:GUEST-014] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010): OpenTPW keeps the drawn variant on the candidate and its member (KeyOf), but a member of an original save carries none (the staff serializer saves no variant: its bank is (NameIndex + Id) modulo the folder's banks, in file order, and so is an older save's; the loaded banks are GUEST-020)
+	// [BIN:TPW-EXE:0x541f70 sprite variant draw] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010): OpenTPW keeps the drawn variant on the candidate and its member (KeyOf)
+	// [BIN:TPW-EXE:0x4f8b10 saved sprite variant] a member of an original save takes the saved mSpriteID modulo the role's banks (the serializer saves it and reduces it by the category's bank count on load); the name-and-id key below is only for a candidate or member of an OpenTPW park save from before the variant was kept (the loaded banks are GUEST-020)
 	public static int VariantKey( int nameIndex, int id ) => (nameIndex + id) & int.MaxValue;
 
 	/// <summary>The key a candidate's sprite bank derives from: its variant (the drawn or saved one), else the name-and-id key of a pool from before the variant was kept.</summary>
 	public static int KeyOf( StaffCandidate candidate ) => candidate.Variant >= 0 ? candidate.Variant : VariantKey( candidate.NameIndex, candidate.Id );
 
-	/// <summary>The key a member's sprite bank derives from: the variant it was hired with, else the name-and-id key (a member of an original save carries none).</summary>
+	/// <summary>The key a member's sprite bank derives from: the variant it was hired with, else the name-and-id key (a member of an OpenTPW park save from before the variant was kept).</summary>
 	public static int KeyOf( StaffMember member ) => member.Variant >= 0 ? member.Variant : VariantKey( member.NameIndex, member.Id );
 
 	/// <summary>Index of a variant's bank among <paramref name="count"/> banks.</summary>

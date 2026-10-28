@@ -51,7 +51,7 @@ public class StaffVariantTests
 		Assert.AreEqual( -1, candidate.Variant );
 		Assert.AreEqual( StaffSpriteRules.VariantKey( 3, 7 ), StaffSpriteRules.KeyOf( candidate ) );
 		var member = new StaffMember { Id = 8, Type = StaffType.Guard, NameIndex = 4, Grade = 1 };
-		Assert.AreEqual( StaffSpriteRules.VariantKey( 4, 8 ), StaffSpriteRules.KeyOf( member ), "a member of an original save holds no variant" );
+		Assert.AreEqual( StaffSpriteRules.VariantKey( 4, 8 ), StaffSpriteRules.KeyOf( member ), "a member of an OpenTPW park save from before the variant was kept holds no variant" );
 	}
 
 	[TestMethod]
@@ -80,6 +80,33 @@ public class StaffVariantTests
 			{
 				var banks = StaffSpriteRules.Banks( economy.Staff.Candidates[index].Type, economy.Settings.Theme )!.Banks.Count;
 				Assert.AreEqual( saved[index].SubType < banks ? saved[index].SubType : -1, economy.Staff.Candidates[index].Variant, $"{name}: candidate {index}" );
+			}
+		} );
+	}
+
+	[TestMethod]
+	public void AMemberOfAnOriginalSaveKeepsTheSavedSpriteVariant()
+	{
+		// [BIN:TPW-EXE:0x4F8B10] the person record's mSpriteID reduced by the category's bank count: a sprite id past the role's banks wraps
+		var park = EconomyTestData.Park();
+		var banks = StaffSpriteRules.Banks( StaffType.Mechanic, park.Settings.Theme )!.Banks.Count;
+		Assert.IsTrue( banks >= 2 );
+		var member = park.Staff.AddImported( StaffType.Mechanic, 1, 0, 50f, StaffState.Idle, 0, thingId: 77, variant: (int)(7u % (uint)banks) );
+		Assert.AreEqual( (int)(7u % (uint)banks), member.Variant );
+		Assert.AreEqual( member.Variant, StaffSpriteRules.KeyOf( member ) );
+		Assert.AreEqual( StaffSpriteRules.BankIndex( StaffSpriteRules.KeyOf( member ), banks ), member.Variant, "the bank is the saved variant's" );
+	}
+
+	[TestMethod]
+	public void EveryCorpusSavesStaffKeepTheirSavedSpriteVariant()
+	{
+		OriginalSaveImportCorpusTests.ForEachSave( ( name, save, economy, import ) =>
+		{
+			foreach ( var saved in save.Staff )
+			{
+				var member = economy.Staff.Members.Single( candidate => candidate.ThingId == saved.Id );
+				var banks = StaffSpriteRules.Banks( member.Type, economy.Settings.Theme )!.Banks.Count;
+				Assert.AreEqual( (int)(saved.Person.SpriteId % (uint)banks), member.Variant, $"{name}: staff thing {saved.Id}" );
 			}
 		} );
 	}

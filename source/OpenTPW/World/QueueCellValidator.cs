@@ -168,11 +168,11 @@ internal static class QueueCellValidator
 	}
 
 	/// <summary>
-	/// Whether the validator refuses the cell for the tool in <paramref name="mode"/> as a single cell of a fresh drag (no latch set, not part of a line): the per-cell routes use it as a refusal on top of their own rules.
+	/// Whether the validator refuses the cell for the tool in <paramref name="mode"/> with a fresh drag's latches: the per-cell routes use it as a refusal on top of their own rules and identify a terminal cell explicitly.
 	/// The cell's type is its own (a track tile keeps the type of the ground or the base type of a station under it).
 	/// </summary>
 	/// <param name="givesWay">An object cell the tool may cover (its owner's overwrite priority is below the tool's).</param>
-	/// <param name="lastCell">The cell ends the line: a path cell then connects (answer 8) before its NoModify flag is tested.</param>
+	/// <param name="lastCell">The last cell of the line: a queue may end on a path before its NoModify flag is tested.</param>
 	public static bool Refuses( ParkCellMap cells, int mode, int x, int y, bool givesWay, bool lastCell = false )
 	{
 		ArgumentNullException.ThrowIfNull( cells );

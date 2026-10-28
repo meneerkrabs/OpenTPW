@@ -276,6 +276,127 @@ class StageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'runtime config properties'):
             self.assets()
 
+    def test_runtime_property_allowlist_is_unchanged(self):
+        self.assertEqual(stage.RUNTIME_PROPERTIES, {
+            'System.Globalization.Invariant', 'System.Globalization.PredefinedCulturesOnly',
+            'System.Resources.UseSystemResourceKeys', 'System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault',
+            'System.Diagnostics.Debugger.IsSupported', 'System.Diagnostics.Tracing.EventSource.IsSupported',
+            'System.Reflection.Metadata.MetadataUpdater.IsSupported', 'System.Reflection.NullabilityInfoContext.IsSupported',
+            'System.Runtime.InteropServices.BuiltInComInterop.IsSupported',
+            'System.Runtime.InteropServices.EnableConsumingManagedCodeFromNativeHosting',
+            'System.Runtime.InteropServices.EnableCppCLIHostActivation',
+            'System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization',
+            'System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported',
+            'System.ComponentModel.TypeDescriptor.IsReflectionSupported', 'System.Linq.Enumerable.IsSizeOptimized',
+            'System.Net.Http.EnableActivityPropagation', 'System.Net.Http.UseNativeHttpHandler',
+            'System.Threading.Thread.EnableAutoreleasePool', 'System.Threading.ThreadPool.MaxThreads',
+            'System.Threading.ThreadPool.MinThreads', 'System.Xml.XmlResolver.IsNetworkingEnabled',
+        })
+
+    def test_missing_runtime_config_dictionaries_remain_optional(self):
+        expected = self.assets()  # No runtimeConfig at all.
+        for config in [{}, {'runtimeOptions': {}}, {'runtimeOptions': {'configProperties': {}}}]:
+            with self.subTest(config=config):
+                self.boot['runtimeConfig'] = config
+                self.assertEqual(self.assets(), expected)
+
+    def test_runtime_config_wrong_container_diagnostics(self):
+        for field in ['runtimeConfig', 'runtimeOptions', 'configProperties']:
+            for value, kind in [(None, 'null'), (False, 'boolean'), (0, 'integer'),
+                                (1.0, 'number'), ('PRIVATE_VALUE', 'string'), ([], 'array')]:
+                with self.subTest(field=field, kind=kind):
+                    config = value
+                    if field == 'configProperties':
+                        config = {'configProperties': config}
+                    if field != 'runtimeConfig':
+                        config = {'runtimeOptions': config}
+                    self.boot['runtimeConfig'] = config
+                    with self.assertRaises(ValueError) as caught:
+                        self.assets()
+                    self.assertIn(f'{field} must be an object (got {kind})', str(caught.exception))
+                    self.assertNotIn('PRIVATE_VALUE', str(caught.exception))
+
+    def test_unknown_runtime_wrapper_fields_do_not_log_keys_or_values(self):
+        for config, prefix in [({'PRIVATE_KEY': 'PRIVATE_VALUE'}, 'unknown runtime config'),
+                               ({'runtimeOptions': {'PRIVATE_KEY': 'PRIVATE_VALUE'}}, 'unknown runtime options')]:
+            with self.subTest(prefix=prefix):
+                self.boot['runtimeConfig'] = config
+                with self.assertRaises(ValueError) as caught:
+                    self.assets()
+                self.assertEqual(str(caught.exception), prefix + ': unexpected fields')
+
+    def test_runtime_properties_keep_exact_types_and_integer_boundaries(self):
+        accepted = [False, True, -2147483648, -1, 0, 1, 2147483647]
+        rejected = [None, '', 'PRIVATE_VALUE', [], {}, 0.0, 1.0, float('nan'), float('inf'),
+                    -2147483649, 2147483648]
+        for key in sorted(stage.RUNTIME_PROPERTIES):
+            for value in accepted + rejected:
+                with self.subTest(key=key, kind=stage.runtime_value_kind(value), value=value):
+                    self.boot['runtimeConfig'] = {'runtimeOptions': {'configProperties': {key: value}}}
+                    # Freeze the pre-diagnostic validator's exact predicate.
+                    allowed = type(value) in {bool, int} and -2147483648 <= value <= 2147483647
+                    if allowed:
+                        self.assets()
+                    else:
+                        with self.assertRaises(ValueError) as caught:
+                            self.assets()
+                        reason = 'out-of-range integer' if type(value) is int else 'invalid type'
+                        self.assertIn(reason + ' for ' + key, str(caught.exception))
+                        self.assertNotIn('PRIVATE_VALUE', str(caught.exception))
+                        if type(value) is int:
+                            self.assertNotIn(str(value), str(caught.exception))
+
+    def test_unknown_runtime_property_reports_safe_name_and_type_not_value(self):
+        for value, kind in [(True, 'boolean'), (1, 'integer'), ('PRIVATE_VALUE', 'string'),
+                            ({'PRIVATE_KEY': 'PRIVATE_VALUE'}, 'object')]:
+            with self.subTest(kind=kind):
+                self.boot['runtimeConfig'] = {'runtimeOptions': {'configProperties': {'System.NewSdkFlag': value}}}
+                with self.assertRaises(ValueError) as caught:
+                    self.assets()
+                self.assertEqual(str(caught.exception),
+                                 'unsupported runtime config properties: unknown property System.NewSdkFlag '
+                                 f'(value type {kind})')
+
+    def test_unknown_runtime_property_names_are_bounded_and_redacted_not_truncated(self):
+        safe = 'System.' + 'A' * 121  # Exactly 128 characters.
+        keys = ['', 'PRIVATE_KEY', 'System.A\nPRIVATE_KEY', 'System.A\x1b[31m',
+                'System.A/B', 'System.A=PRIVATE_KEY', 'System..A', 'System.A_', 'System.\u00e9', safe + 'Z']
+        self.assertEqual(stage.runtime_property_label(safe), safe)
+        for key in keys:
+            with self.subTest(key=key):
+                self.boot['runtimeConfig'] = {'runtimeOptions': {'configProperties': {key: 'PRIVATE_VALUE'}}}
+                with self.assertRaises(ValueError) as caught:
+                    self.assets()
+                self.assertEqual(str(caught.exception),
+                                 'unsupported runtime config properties: unknown property <redacted property name> '
+                                 '(value type string)')
+
+    def test_runtime_diagnostics_do_not_stringify_non_json_objects(self):
+        class Opaque:
+            def __repr__(self):
+                raise AssertionError('must not represent rejected payloads')
+
+            __str__ = __repr__
+
+        self.assertEqual(stage.runtime_value_kind(Opaque()), 'non-JSON')
+        self.assertEqual(stage.runtime_property_label(Opaque()), '<redacted property name>')
+        self.boot['runtimeConfig'] = {'runtimeOptions': {'configProperties': {'System.Globalization.Invariant': Opaque()}}}
+        with self.assertRaisesRegex(ValueError, 'got non-JSON; expected boolean or integer'):
+            self.assets()
+
+    def test_runtime_rejections_never_create_stage(self):
+        key = 'System.Globalization.Invariant'
+        for config in [None, {'runtimeOptions': []}, {'runtimeOptions': {'configProperties': None}},
+                       {'runtimeOptions': {'configProperties': {key: True, 'System.NewSdkFlag': True}}},
+                       {'runtimeOptions': {'configProperties': {key: 'PRIVATE_VALUE'}}},
+                       {'runtimeOptions': {'configProperties': {key: 2147483648}}}]:
+            with self.subTest(config=config):
+                self.boot['runtimeConfig'] = config
+                self.save_boot()
+                with self.assertRaises(ValueError):
+                    self.run_stage()
+                self.assertFalse(Path(self.args.output).exists())
+
     def test_dirty_checkout_rejected(self):
         with patch.object(stage.subprocess, 'check_output', side_effect=[b'1' * 40 + b'\n', b'?? original-media.bin\n']):
             with self.assertRaisesRegex(ValueError, 'not clean'):

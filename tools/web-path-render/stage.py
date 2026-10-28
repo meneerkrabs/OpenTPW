@@ -61,6 +61,20 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def runtime_value_kind(value):
+    """Fixed diagnostic labels only; never stringify rejected configuration values."""
+    return {type(None): 'null', bool: 'boolean', int: 'integer', float: 'number',
+            str: 'string', list: 'array', dict: 'object'}.get(type(value), 'non-JSON')
+
+
+def runtime_property_label(key):
+    """Only report bounded SDK-style names, not arbitrary keys or key fragments."""
+    if (type(key) is str and len(key) <= 128
+            and re.fullmatch(r'System(?:\.[A-Za-z][A-Za-z0-9]*)+', key)):
+        return key
+    return '<redacted property name>'
+
+
 def unique_object(pairs):
     result = {}
     for key, value in pairs:
@@ -144,13 +158,24 @@ def boot_assets(boot, web):
     require('globalizationMode' not in boot or boot['globalizationMode'] in ['all', 'sharded', 'invariant'],
             'unsupported globalization mode')
     config = boot.get('runtimeConfig', {})
-    require(isinstance(config, dict) and not set(config) - {'runtimeOptions'}, 'unknown runtime config')
+    require(isinstance(config, dict),
+            f'unknown runtime config: runtimeConfig must be an object (got {runtime_value_kind(config)})')
+    require(not set(config) - {'runtimeOptions'}, 'unknown runtime config: unexpected fields')
     options = config.get('runtimeOptions', {})
-    require(isinstance(options, dict) and not set(options) - {'configProperties'}, 'unknown runtime options')
+    require(isinstance(options, dict),
+            f'unknown runtime options: runtimeOptions must be an object (got {runtime_value_kind(options)})')
+    require(not set(options) - {'configProperties'}, 'unknown runtime options: unexpected fields')
     props = options.get('configProperties', {})
-    require(isinstance(props, dict) and all(key in RUNTIME_PROPERTIES and type(value) in {bool, int}
-            and -2147483648 <= value <= 2147483647 for key, value in props.items()),
-            'unsupported runtime config properties')
+    require(isinstance(props, dict),
+            f'unsupported runtime config properties: configProperties must be an object (got {runtime_value_kind(props)})')
+    for key, value in props.items():
+        label, kind = runtime_property_label(key), runtime_value_kind(value)
+        require(key in RUNTIME_PROPERTIES,
+                f'unsupported runtime config properties: unknown property {label} (value type {kind})')
+        require(type(value) in {bool, int},
+                f'unsupported runtime config properties: invalid type for {label} (got {kind}; expected boolean or integer)')
+        require(-2147483648 <= value <= 2147483647,
+                f'unsupported runtime config properties: out-of-range integer for {label} (expected signed 32-bit)')
     require(len(json.dumps(boot)) < 1024 * 1024, 'oversized boot configuration')
     resources = boot.get('resources')
     require(isinstance(resources, dict), 'missing boot resources')

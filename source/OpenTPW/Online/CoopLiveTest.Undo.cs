@@ -268,7 +268,9 @@ internal sealed partial class CoopLiveTest
 			var start = (X: cross.X + from * px, Y: cross.Y + from * py);
 			var end = (X: cross.X + to * px, Y: cross.Y + to * py);
 			var line = ParkPathBuilder.LayLine( start, end ).ToArray();
-			if ( !line.Where( cell => cell != cross ).All( cell => level.Paths!.CheckCell( cell.X, cell.Y ) == CellBuildResult.Ok && !avoid.Contains( cell ) ) )
+			// the line's own cells free, and the whole line as the tool's click asks it: its preview completes (FreeLine)
+			if ( !line.Where( cell => cell != cross ).All( cell => level.Paths!.CheckCell( cell.X, cell.Y ) == CellBuildResult.Ok && !avoid.Contains( cell ) )
+				|| level.Paths!.Preview( start, end ) is not { Completed: true } )
 				continue;
 			if ( !(PointOf( start, out _ ) && PointOf( end, out _ )) )
 				Look( (cross.X + 0.5f, cross.Y + 0.5f) );

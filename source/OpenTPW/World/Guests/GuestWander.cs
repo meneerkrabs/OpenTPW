@@ -23,31 +23,72 @@ public static class GuestWander
 	public readonly record struct Destination( (int X, int Y) Cell, int ByteX, int ByteY );
 
 	/// <summary>
-	/// The links of <paramref name="cell"/> the original keeps as candidates of a step (<c>0x004F9490</c>): every cardinal link except, on a path cell, those toward
-	/// queue cells (types 3 and 9), on a queue cell (not the ride's entrance cell) its own queue link's direction, and on any cell those toward type-10 cells. A guest
-	/// whose count is 0 is stranded.
+	/// The links of <paramref name="cell"/> the original keeps as candidates of a step (<c>0x004F9490</c>): every link bit of the cell (the four cardinal ones, to a cell of any type) except the
+	/// four removals, in this order: for a staff member the links to cells outside his patrol rectangle (<paramref name="inArea"/>), on a path cell those toward queue cells (types 3 and 9), on a queue
+	/// cell (type 3) the direction of its own queue link, and on any cell those toward type-10 (exit) cells. A step whose count is 0 strands the walker.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004F97E4 candidate removals] a type-1 cell loses the links to queue cells (0x00536310, 0x00536320); a queue cell (0x00536320 and not 0x00536340) loses the direction of its own queue link (0x00522850); every cell loses the links to type-10 cells (0x00536350); a count below 2 takes the first one left, none left is stranded
-	public static int OriginalCandidates( GuestPathGrid grid, (int X, int Y) cell )
+	// [BIN:TPW-EXE:0x004F95F7 candidate links] the cell's link byte (0x00522770, & 0x55) names the candidates in the order 16, 4, 1, 64 (+Y, +X, −Y, −X) whatever the type of the cell it leads to, and 0x00522810 counts them
+	// [BIN:TPW-EXE:0x004F96FB removal 1] a staff thing (kinds 4 to 8) with the area test on (the flag [esp+0x30] clear) drops each candidate whose cell fails 0x00506ED0 (the member's rectangle); the last one dropped ends the step at 0x004F9D60
+	// [BIN:TPW-EXE:0x004F9733 removal 2] a type-1 cell (0x00536310) drops the candidates whose cell is a queue cell (0x00536320: type 3 or 9)
+	// [BIN:TPW-EXE:0x004F977B removal 3] a queue cell (0x00536320) that is not an entrance (0x00536340: type 9) drops the candidate in the direction of its own queue link (0x00522850, the byte +0x0D: 1, 0x10, 4 or 0x40)
+	// [BIN:TPW-EXE:0x004F97E4 removal 4] every cell drops the candidates whose cell is of type 10 (0x00536350); fewer than two left take the first in order with no draw, none left is 0x004F9D64
+	public static int OriginalCandidates( GuestPathGrid grid, (int X, int Y) cell, Func<int, int, bool>? inArea = null )
+	{
+		Span<int> candidates = stackalloc int[4];
+		return Candidates( grid, cell, inArea, candidates );
+	}
+
+	/// <summary>
+	/// Fills <paramref name="candidates"/> (by <see cref="CandidateOrder"/> position: the direction, or −1 for a removed or absent link) and returns the original's own counter of them
+	/// (<c>ebp</c>): the link count less one for every removal, which for the own queue link is taken whether or not that direction is among the cell's links (0x004F97E3), so the counter
+	/// can be one lower than the candidates left; it decides whether a draw picks the step.
+	/// </summary>
+	private static int Candidates( GuestPathGrid grid, (int X, int Y) cell, Func<int, int, bool>? inArea, Span<int> candidates )
 	{
 		var links = (byte)(grid.LinksAt( cell.X, cell.Y ) & AllLinks);
 		var type = grid.Cells.RawTypeAt( cell.X, cell.Y );
+		var pathCell = grid.IsWalkable( cell.X, cell.Y );
+		// removal 3: a queue cell that is no entrance loses the way of its own queue link
 		var ownQueueLink = type == (byte)ParkCellType.Queue ? grid.Cells.QueueLinkAt( cell.X, cell.Y ) : (byte)0;
-		var count = 0;
-		for ( var direction = 0; direction < 4; direction++ )
+		var counter = System.Numerics.BitOperations.PopCount( (uint)links );
+		for ( var index = 0; index < 4; index++ )
 		{
+			var direction = CandidateOrder[index];
+			candidates[index] = -1;
 			var bit = GuestPathGrid.LinkValue( direction );
-			if ( (links & bit) == 0 || bit == ownQueueLink )
+			if ( (links & bit) == 0 )
 				continue;
 			var (dx, dy) = GuestPathGrid.Directions[direction];
-			if ( !BridgeEdgeAllowed( grid, cell, direction ) )
+			var (x, y) = (cell.X + dx, cell.Y + dy);
+			if ( !grid.InBounds( x, y ) || !BridgeEdgeAllowed( grid, cell, direction ) )
+			{
+				counter--;
 				continue;
-			var target = grid.Cells.RawTypeAt( cell.X + dx, cell.Y + dy );
-			if ( target == 10 || (grid.IsWalkable( cell.X, cell.Y ) && target is (byte)ParkCellType.Queue or 9) )
+			}
+			var target = grid.Cells.RawTypeAt( x, y );
+			if ( inArea != null && !inArea( x, y ) )
+			{
+				counter--;
 				continue;
-			count++;
+			}
+			if ( pathCell && target is (byte)ParkCellType.Queue or ParkCellTypes.Entrance )
+			{
+				counter--;
+				continue;
+			}
+			if ( bit == ownQueueLink )
+				continue;
+			if ( target == ParkCellTypes.Exit )
+			{
+				counter--;
+				continue;
+			}
+			candidates[index] = direction;
 		}
-		return count;
+		// the own queue link's removal takes its direction out of the counter even when no link of the cell leads that way (0x004F9795..0x004F97E3: the dec at 0x004F97E3 follows each of the four compares, not a test of the slot)
+		if ( ownQueueLink is 1 or 4 or 16 or 64 )
+			counter--;
+		return counter;
 	}
 
 	/// <summary>Keep original candidate behavior away from bridges, including asymmetric ground links.</summary>
@@ -107,19 +148,19 @@ public static class GuestWander
 
 	/// <summary>
 	/// Picks the destination from <paramref name="start"/>, drawing from <paramref name="draw"/> in the original's order: the step
-	/// count, a start index for every step with two or more candidates, then the two sub-cell bytes. A path cell without links gives
-	/// its own centre; linked entrance/exit cells can walk out to paths. Other nonpath starts or a step with no supported candidates give null.
+	/// count, a start index for every step with two or more candidates, then the two sub-cell bytes. A start cell without links gives null (the caller's off-path search,
+	/// <see cref="OffPath"/>), as does a step with no candidate left (<paramref name="stranded"/>).
 	/// </summary>
-	// [BIN:TPW-EXE:0x004F9490 wander destination] rand % 5 at entry (0x004F9534); a do-while over the steps whose counter becomes 1 again when a step ends on the start cell with the counter at 0 (0x004F98F5); per step the current cell's links (0x00522770, & 0x55) in the order 16, 4, 1, 64, the count from 0x00522810; fewer than two left: the first in order (no draw); else the first from rand & 3 (0x004F9874) that is neither empty nor the way back ((i − 2) & 3 of the last step, 9999 before the first); then two draws & 0x7F, each clamped to 5..123 (0x004F9922)
+	// [BIN:TPW-EXE:0x004F9490 wander destination] rand % 5 at entry (0x004F9534); a do-while over the steps whose counter becomes 1 again when a step ends on the start cell with the counter at 0 (0x004F98F5); per step the current cell's links (0x00522770, & 0x55) in the order 16, 4, 1, 64, the count from 0x00522810, whatever the cell's type; fewer than two left after the four removals: the first in order (no draw); else the first from rand & 3 (0x004F9874) that is neither empty nor the way back ((i − 2) & 3 of the last step, 9999 before the first); then two draws & 0x7F, each clamped to 5..123 (0x004F9922)
 	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea = null ) =>
 		Pick( grid, start, draw, inArea, out _ );
 
 	/// <summary>
-	/// <see cref="Pick(GuestPathGrid, (int X, int Y), Func{uint}, Func{int, int, bool}?)"/>; <paramref name="areaBlocked"/> is true when a step had
-	/// candidates but <paramref name="inArea"/> removed them all (a staff member at its patrol rectangle's edge; the original then looks for a cell inside it).
+	/// <see cref="Pick(GuestPathGrid, (int X, int Y), Func{uint}, Func{int, int, bool}?)"/>; <paramref name="stranded"/> is true when a step had no candidate left after the four removals (the original's
+	/// 0x004F9D64: a guest is marked stranded, a staff member looks for a cell inside his rectangle instead).
 	/// </summary>
-	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea, out bool areaBlocked ) =>
-		Pick( grid, start, draw, inArea, out areaBlocked, default, out _ );
+	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea, out bool stranded ) =>
+		Pick( grid, start, draw, inArea, out stranded, default, out _ );
 
 	/// <summary>The most cells of a walk <see cref="Pick(GuestPathGrid, (int X, int Y), Func{uint}, Func{int, int, bool}?, out bool, Span{ValueTuple{int, int}}, out int)"/> reports; a longer walk reports its last ones.</summary>
 	public const int TrailCapacity = 8;
@@ -129,43 +170,21 @@ public static class GuestWander
 	/// (<paramref name="trail"/> receives at most its length of them; a walk longer than that reports its last ones). The walk, its draws and its result are the original's, whether the caller wants the trail or not:
 	/// the trail is only a copy of cells the search already visited (docs/SMARTER-GUESTS.md, phase 6). <paramref name="trailCount"/> is 0 for a start without links, which has no walk.
 	/// </summary>
-	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea, out bool areaBlocked, Span<(int X, int Y)> trail, out int trailCount )
+	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea, out bool stranded, Span<(int X, int Y)> trail, out int trailCount )
 	{
-		areaBlocked = false;
+		stranded = false;
 		trailCount = 0;
 		var remaining = draw() % 5;
-		// [APPROX:GUEST-010] linked entrance/exit starts use the existing path-candidate walk; other nonpath start types and generalized candidate types remain unsupported (the original walks links of any cell type, 0x4F9490). GuestNavigation can route from access cells; the path-grid route is only bookkeeping.
-		// [BIN:TPW-EXE:0x004F9490 queue start] the link walk starts from any cell that has links, a queue cell (type 3) included: a guest the queue let go stands on its queue cell and wanders from there (QUEUE-010)
-		var linkedAccess = grid.Cells.RawTypeAt( start.X, start.Y ) is ParkCellTypes.Entrance or ParkCellTypes.Exit
-			&& (grid.LinksAt( start.X, start.Y ) & AllLinks) != 0;
-		if ( !grid.IsWalkable( start.X, start.Y ) && !grid.IsQueue( start.X, start.Y ) && !linkedAccess )
-			return null;
+		// [BIN:TPW-EXE:0x004F95B9 start without links] the link count of the start cell (0x00522810) below 1 takes the off-path search (0x004F9A05), whatever the cell's type
 		if ( (grid.LinksAt( start.X, start.Y ) & AllLinks) == 0 )
-			return new Destination( start, CentreByte, CentreByte );
+			return null;
 		var cell = start;
 		var back = -1;
 		Span<int> candidates = stackalloc int[4];
 		while ( true )
 		{
-			var count = 0;
-			var outside = 0;
-			var links = grid.LinksAt( cell.X, cell.Y );
-			// [BIN:TPW-EXE:0x004F9490 candidates of a queue cell] on a queue cell (type 3, not the ride's entrance cell 9) the direction of its own queue link (0x00522850, toward the front) is removed (0x004F9718..0x004F97E0); a path cell removes its links to queue cells (0x00536320), a queue cell keeps them
-			var onQueue = grid.IsQueue( cell.X, cell.Y );
-			var queueLink = onQueue ? grid.Cells.QueueLinkAt( cell.X, cell.Y ) : 0;
-			for ( var index = 0; index < 4; index++ )
-			{
-				var direction = CandidateOrder[index];
-				var (dx, dy) = GuestPathGrid.Directions[direction];
-				// [APPROX:GUEST-010] a candidate is a link of the current cell to a path cell; the original keeps every link except to queue cells (removed on a path cell, 0x00536310 / 0x00536320), its own queue link's direction on a queue cell (0x00522850), cell type 10 (0x00536350) and, for staff, cells outside the patrol rectangle (0x00506ED0); this bounded adapter retains path targets (and queue targets from queue starts), including for linked access starts; generalized target types remain gated
-				// staff keep to their patrol rectangle (0x00506ED0 removes the candidates outside it)
-				var linked = (links & GuestPathGrid.LinkValue( direction )) != 0 && (grid.IsWalkable( cell.X + dx, cell.Y + dy ) || onQueue && grid.IsQueue( cell.X + dx, cell.Y + dy ))
-					&& !(onQueue && queueLink == GuestPathGrid.LinkValue( direction ))
-					&& BridgeEdgeAllowed( grid, cell, direction );
-				candidates[index] = linked && (inArea == null || inArea( cell.X + dx, cell.Y + dy )) ? direction : -1;
-				count += candidates[index] >= 0 ? 1 : 0;
-				outside += linked && candidates[index] < 0 ? 1 : 0;
-			}
+			// [BIN:TPW-EXE:0x004F9490 candidates of a step] the link walk starts from any cell that has links (a queue cell, an entrance or an exit included: a guest the queue let go stands on its queue cell and wanders from there, QUEUE-010) and takes every link the four removals leave
+			var count = Candidates( grid, cell, inArea, candidates );
 			int chosen;
 			if ( count < 2 )
 			{
@@ -173,7 +192,7 @@ public static class GuestWander
 				chosen = candidates.IndexOfAnyExcept( -1 );
 				if ( chosen < 0 )
 				{
-					areaBlocked = outside > 0;
+					stranded = true;
 					return null;
 				}
 			}

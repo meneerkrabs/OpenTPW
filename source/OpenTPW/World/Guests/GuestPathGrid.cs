@@ -79,10 +79,33 @@ public sealed class GuestPathGrid
 		if ( isPath )
 		{
 			Cells.SetType( x, y, ParkCellType.Path );
-			Cells.SetLinks( x, y, ToCellLinks( connections ?? 0x0F ) );
+			if ( connections is { } limited )
+				Cells.SetLinks( x, y, ToCellLinks( limited ) );
+			else
+			{
+				// a link leads to a path cell and is kept on both sides, as the path builder writes them: the wander walks the links of any target type (tp.exe 0x4F9490), so a link to bare ground would be a way into it
+				byte own = 0;
+				for ( var direction = 0; direction < 4; direction++ )
+				{
+					var (dx, dy) = Directions[direction];
+					if ( !InBounds( x + dx, y + dy ) || Cells.TypeAt( x + dx, y + dy ) != ParkCellType.Path )
+						continue;
+					own |= LinkValue( direction );
+					Cells.SetLinks( x + dx, y + dy, (byte)(Cells.LinksAt( x + dx, y + dy ) | LinkValue( (direction + 2) & 3 )) );
+				}
+				Cells.SetLinks( x, y, own );
+			}
 		}
 		else if ( Cells.TypeAt( x, y ) == ParkCellType.Path )
+		{
 			Cells.SetType( x, y, ParkCellType.Empty );
+			for ( var direction = 0; direction < 4; direction++ )
+			{
+				var (dx, dy) = Directions[direction];
+				if ( InBounds( x + dx, y + dy ) && Cells.TypeAt( x + dx, y + dy ) == ParkCellType.Path )
+					Cells.SetLinks( x + dx, y + dy, (byte)(Cells.LinksAt( x + dx, y + dy ) & ~LinkValue( (direction + 2) & 3 )) );
+			}
+		}
 		Invalidate();
 	}
 

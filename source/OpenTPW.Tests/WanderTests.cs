@@ -78,8 +78,12 @@ public class WanderTests
 	{
 		var grid = new GuestPathGrid( 12, 12 );
 		grid.SetPath( 0, 0, true, connections: 0 );
-		Assert.AreEqual( new GuestWander.Destination( (0, 0), 0x80, 0x80 ), GuestWander.Pick( grid, (0, 0), Draws( 3 ) ) );
-		Assert.IsNull( GuestWander.Pick( grid, (5, 5), Draws( 3 ) ), "no path cell" );
+		// a start without links is the off-path search's: its first pattern is the start cell itself (the guest's own centre) once a route reaches it
+		Assert.IsNull( GuestWander.Pick( grid, (0, 0), Draws( 3 ) ) );
+		(int X, int Y)? found = null;
+		Assert.IsTrue( GuestWander.OffPath( grid, (0, 0), Draws( 3 ), cell => { found = cell; return true; } ) );
+		Assert.AreEqual( (0, 0), found );
+		Assert.IsNull( GuestWander.Pick( grid, (5, 5), Draws( 3 ) ), "no links" );
 		// Links that lead to no path cell (here a queue cell) leave no candidate: stranded (x86 oracle X19).
 		grid.SetPath( 0, 0, true, connections: 0b0010 );
 		grid.SetQueue( 1, 0, 1 );
@@ -111,7 +115,7 @@ public class WanderTests
 		Assert.IsFalse( Wander( simulation, guest ) );
 		Assert.AreNotEqual( 0, guest.StrandedMark );
 		// an edit of a cell beside it releases the guest: the next search runs again (and strands it again, its link still leads nowhere)
-		grid.SetPath( 2, 3, true );
+		grid.SetPath( 2, 3, true, connections: 0 );
 		var stamp = guest.StrandedMark;
 		Assert.IsFalse( Wander( simulation, guest ) );
 		Assert.AreNotEqual( draws, simulation.RandomState, "the search drew again" );

@@ -1559,7 +1559,9 @@ def wander_binary(sb: Sandbox, x: dict, log) -> tuple:
     for address, (dx, dy) in WANDER_DIRECTIONS.items():
         sb.write(address, 'i', dx)
         sb.write(address + 4, 'i', dy)
-    cells = sb.object(0x44 * 0x80 * 0x80)
+    # the cell records are the game object's own array: the step's readers take them through the global 0x8023A0, the type-10 removal
+    # 0x536350 through the game pointer plus 0x294 (the record of id 1 is game + 0x2D8 on both)
+    cells = state.game + 0x2D8
     sb.write(STATE6_CELLS, 'I', cells)
     for cx, cy, kind, links, queue_link in x['cells']:
         record = cells + 0x44 * (cy * 0x80 + cx)
@@ -1583,9 +1585,13 @@ def wander_binary(sb: Sandbox, x: dict, log) -> tuple:
 
 
 def wander_plan(x: dict, either_side: bool = False) -> tuple:
-    """GuestWander.Pick: candidates are the current cell's links (& 0x55) to path cells, in the order +Y, +X, -Y, -X; fewer than two:
-    the first (none: stranded); else the first from draw & 3 that is not the way back; draw % 5 steps plus one, one more each time the
-    last ends on the start; bytes draw & 0x7f clamped to 5..123. A path cell without links gives its own centre."""
+    """GuestWander.Pick (GUEST-010): the candidates are every link bit of the current cell (& 0x55, whatever the type of the cell it leads
+    to) in the order +Y, +X, -Y, -X, less four removals: on a path cell (type 1) the links to queue cells (types 3 and 9), on a queue cell
+    (type 3) the direction of its own queue link, on any cell the links to type 10 cells (a staff member's rectangle does not apply to a
+    guest); the original's counter takes the own queue link's removal off even when no link leads that way (0x4f97e3), so it can be one
+    below the candidates left; a counter below two: the first candidate (none: stranded); else the first from draw & 3 that is not the way back; draw % 5 steps plus one, one
+    more each time the last ends on the start; bytes draw & 0x7f clamped to 5..123. A path cell without links gives its own centre (the
+    off-path search's first pattern)."""
     draws = list(x['draws'])
     used = 0
 
@@ -1595,28 +1601,43 @@ def wander_plan(x: dict, either_side: bool = False) -> tuple:
         return draws.pop(0)
     cells = {(cx, cy): (kind, links, queue_link) for cx, cy, kind, links, queue_link in x['cells']}
 
-    def path(c):
-        return cells.get(c, (0, 0, 0))[0] == 1
+    def kind(c):
+        return cells.get(c, (0, 0, 0))[0]
     order = [(0, 1), (1, 0), (0, -1), (-1, 0)]
     start = tuple(x['start'])
     remaining = draw() % 5
-    if not path(start):
-        return None, used, False
     cell, back = start, -1
 
     def linked(d):
         n = (cell[0] + d[0], cell[1] + d[1])
-        back_link = either_side and path(n) and cells[n][1] & LINK_OF[(-d[0], -d[1])]
-        return path(n) and bool(cells[cell][1] & LINK_OF[d] or back_link)
+        links, queue_link = cells[cell][1], cells[cell][2]
+        back_link = either_side and kind(n) == 1 and cells[n][1] & LINK_OF[(-d[0], -d[1])]
+        if not (links & LINK_OF[d] or back_link):
+            return False
+        if kind(cell) == 1 and kind(n) in (3, 9):
+            return False
+        if kind(cell) == 3 and queue_link == LINK_OF[d]:
+            return False
+        return kind(n) != 10
     # The step branch needs a link of the start cell (0x522810); either-side links count a neighbour's link back as one.
-    if not (any(linked(d) for d in order) if either_side else cells[start][1] & 0x55):
-        return start, 0x80, 0x80, used
+    if not (any(linked(d) for d in order) or cells[start][1] & 0x55 if either_side else cells[start][1] & 0x55):
+        return (start, 0x80, 0x80, used) if kind(start) == 1 else (None, used, False)
     while True:
         candidates = [d if linked(d) else None for d in order]
         count = sum(1 for d in candidates if d)
+        # the counter: the cell's link count less one per removal; the own queue link's removal counts although no link leads that way
+        links, queue_link = cells[cell][1], cells[cell][2]
+        counter = count if either_side else bin(links & 0x55).count('1')
+        if not either_side:
+            for d in order:
+                n = (cell[0] + d[0], cell[1] + d[1])
+                if links & LINK_OF[d] and not linked(d) and not (kind(cell) == 3 and queue_link == LINK_OF[d]):
+                    counter -= 1
+            if kind(cell) == 3 and queue_link in (1, 4, 16, 64):
+                counter -= 1
         if count == 0:
             return None, used, True
-        if count < 2:
+        if counter < 2:
             chosen = next(i for i, d in enumerate(candidates) if d)
         else:
             first = draw() & 3
@@ -1641,7 +1662,8 @@ def wander_plan(x: dict, either_side: bool = False) -> tuple:
 def wander_inputs(rng: random.Random, n: int) -> list:
     ox, oy = WANDER_ORIGIN
 
-    def grid(queues: float, density: float) -> dict:
+    def grid(queues: float, density: float, access: float = 0.0) -> dict:
+        """Path cells (type 1), queue cells (type 3, with a queue link) and, with probability `access`, ride entrance (9) and exit (10) cells."""
         cells = {}
         for cx in range(ox, ox + WANDER_SIZE):
             for cy in range(oy, oy + WANDER_SIZE):
@@ -1650,6 +1672,8 @@ def wander_inputs(rng: random.Random, n: int) -> list:
                     cells[(cx, cy)] = [1, 0, 0]
                 elif roll < density + queues:
                     cells[(cx, cy)] = [3, 0, rng.choice([1, 4, 16, 64])]
+                elif roll < density + queues + access:
+                    cells[(cx, cy)] = [rng.choice([9, 10]), 0, 0]
         for (cx, cy), cell in cells.items():
             if cell[0] != 1:
                 continue
@@ -1665,13 +1689,28 @@ def wander_inputs(rng: random.Random, n: int) -> list:
                         other[1] |= LINK_OF[(-d[0], -d[1])]
                 elif other[0] == 3 and rng.random() < 0.5:
                     cell[1] |= link
+                elif other[0] in (9, 10) and rng.random() < 0.7:
+                    cell[1] |= link
+                    if rng.random() < 0.7:
+                        other[1] |= LINK_OF[(-d[0], -d[1])]
+        # queue cells link to their neighbours too (the queue builder links a cell to the next, and an entrance cell to the last)
+        for (cx, cy), cell in cells.items():
+            if cell[0] not in (3, 9):
+                continue
+            for d, link in LINK_OF.items():
+                other = cells.get((cx + d[0], cy + d[1]))
+                if other is not None and other[0] in (1, 3, 9, 10) and rng.random() < 0.4:
+                    cell[1] |= link
         return {c: tuple(v) for c, v in cells.items()}
 
-    def make(queues=0.15, density=0.6, linked=True) -> dict:
+    def make(queues=0.15, density=0.6, linked=True, access=0.0, any_start=False) -> dict:
         while True:
-            cells = grid(queues, density)
-            starts = [c for c, v in cells.items() if v[0] == 1 and (not linked or any(
-                cells.get((c[0] + d[0], c[1] + d[1]), (0,))[0] == 1 and v[1] & link for d, link in LINK_OF.items()))]
+            cells = grid(queues, density, access)
+            if any_start:
+                starts = [c for c, v in cells.items() if v[1] & 0x55]
+            else:
+                starts = [c for c, v in cells.items() if v[0] == 1 and (not linked or any(
+                    cells.get((c[0] + d[0], c[1] + d[1]), (0,))[0] == 1 and v[1] & link for d, link in LINK_OF.items()))]
             if starts:
                 return {'cells': sorted((c[0], c[1]) + v for c, v in cells.items()), 'start': rng.choice(sorted(starts)),
                         'draws': [rng.randrange(0, 1 << 31) for _ in range(24)]}
@@ -1681,7 +1720,8 @@ def wander_inputs(rng: random.Random, n: int) -> list:
         return {'cells': cells, 'start': (ox, oy), 'draws': draws + [0] * 20}
     edges = [corridor(2, [k]) for k in range(5)] + [corridor(1, [3]), corridor(5, [4, 0, 0, 0, 0, 0x7F, 0xFF])]
     edges += [make(linked=False, density=0.2) for _ in range(20)]
-    return edges + [make() for _ in range(n)]
+    # the walk of any linked cell: queue, entrance and exit cells as starts, with entrances and exits among the targets
+    return edges + [make() for _ in range(n)] + [make(queues=0.2, density=0.45, access=0.15, any_start=True) for _ in range(n)]
 
 
 WANDER_TARGET = Target(

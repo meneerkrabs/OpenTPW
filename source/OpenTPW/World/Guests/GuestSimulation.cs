@@ -2254,10 +2254,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [EXT:smarter-guests-paths] a policy that weighs the path's comfort gets the cells the original's walk visited (a copy: the walk and its draws are the same)
 		Span<(int X, int Y)> trail = decisions.UsesPathComfort ? stackalloc (int X, int Y)[GuestWander.TrailCapacity] : default;
 		var trailCount = 0;
-		if ( GuestWander.Pick( Grid, start, () => random.NextWord(), null, out _, trail, out trailCount ) is not { } destination )
+		if ( GuestWander.Pick( Grid, start, () => random.NextWord(), null, out var stranded, trail, out trailCount ) is not { } destination )
 		{
-			// [BIN:TPW-EXE:0x004F9D6E stranded] a guest (not a staff member) whose cell has links but no candidate is "stranded at time": thought Confused and the mark, raised stamp counter
-			if ( (Grid.IsWalkable( start.X, start.Y ) || Grid.IsQueue( start.X, start.Y )) && GuestWander.OriginalCandidates( Grid, start ) == 0 && (Grid.LinksAt( start.X, start.Y ) & 0x55) != 0 )
+			// [BIN:TPW-EXE:0x004F9D6E stranded] a guest (not a staff member) with a step that has no candidate left, at the start or further along the walk, is "stranded at time": thought Confused and the mark, the raised stamp counter
+			if ( stranded )
 			{
 				Think( guest, GuestThought.Confused );
 				guest.StrandedMark = cells.StampCounter + 1;

@@ -61,7 +61,7 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	internal static CoopCommandClass ClassOf( ParkCommandKind kind ) => kind switch
 	{
 		ParkCommandKind.PlaceObject or ParkCommandKind.RemoveAt or ParkCommandKind.RemoveAttraction or ParkCommandKind.PickUpObject or ParkCommandKind.LayLine or ParkCommandKind.Backtrack
-			or ParkCommandKind.EditQueue or ParkCommandKind.QueueSegment or ParkCommandKind.ClearArea or ParkCommandKind.BuyLand or ParkCommandKind.UndoPoolSlidePiece
+			or ParkCommandKind.EditQueue or ParkCommandKind.QueueSegment or ParkCommandKind.ClearArea or ParkCommandKind.BuyLand or ParkCommandKind.TakeBack
 			or ParkCommandKind.PlacePoolBridge or ParkCommandKind.PoolCells or ParkCommandKind.LayPoolSlidePieces or ParkCommandKind.LayTrackLine or ParkCommandKind.UndoTrackLine
 			or ParkCommandKind.CutTrack or ParkCommandKind.OpenTrackLineTool or ParkCommandKind.BeginCoasterTool or ParkCommandKind.EndCoasterTool or ParkCommandKind.CoasterClick
 			or ParkCommandKind.RemoveLastCoasterPylon or ParkCommandKind.BeginCoasterNodeEdit or ParkCommandKind.EditCoasterNode or ParkCommandKind.EndCoasterNodeEdit
@@ -74,10 +74,11 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		ParkCommandKind.SetResearchEffort or ParkCommandKind.SetResearchWorkload or ParkCommandKind.MoveResearch => CoopCommandClass.Research,
 		ParkCommandKind.SetParkOpen or ParkCommandKind.SetEntranceFee or ParkCommandKind.TakeLoan or ParkCommandKind.RepayLoan or ParkCommandKind.RenamePark
 			or ParkCommandKind.RefreshLoanOffers => CoopCommandClass.Finance,
-		// what the host's tools issue and no guest's tool does: single cells, the line and queue undo, the pool strokes' undo and their single cells, a bridge's removal
+		// what the host's tools issue and no guest's tool does: single cells, the line and queue undo, the pool strokes' undo and their single cells, a bridge's removal;
+		// [EXT:online-coop-undo] and every undo a step's content names: a guest's Backspace is a take-back the host decides (C5), so the slide's last piece is the host's alone too
 		ParkCommandKind.RemoveObjectAt or ParkCommandKind.UndoLine or ParkCommandKind.RemovePathCell or ParkCommandKind.RemoveQueueCell or ParkCommandKind.UndoQueueSegment
 			or ParkCommandKind.PaintPoolCell or ParkCommandKind.ErasePoolCell or ParkCommandKind.UndoPoolStroke or ParkCommandKind.LayPoolSlidePiece
-			or ParkCommandKind.RemovePoolBridge => CoopCommandClass.HostTools,
+			or ParkCommandKind.RemovePoolBridge or ParkCommandKind.UndoPoolSlidePiece => CoopCommandClass.HostTools,
 		// the host's alone: the developer prototype's placement and removal (a session's host may issue them, so an older log replays as it did), the finale's dismissal and a challenge's
 		// answer (they bind the whole park), the speed (Q8), the wave machine (C5), and the session's own kinds
 		ParkCommandKind.PlacePrototype or ParkCommandKind.RemovePrototype or ParkCommandKind.DismissFinale or ParkCommandKind.AnswerChallenge or ParkCommandKind.SetGameSpeed
@@ -197,7 +198,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		// not finished (a finished slide takes riders: its pieces are the host's, or go with its tower; a slide with no piece to take back is the park's to refuse, quietly, as the host's
 		// Backspace is)
 		PoolCellsCommand or LayPoolSlidePiecesCommand or PlacePoolBridgeCommand => true,
-		UndoPoolSlidePieceCommand undo => level.PoolSlides?.Find( PoolSlide.KeyOf( undo.TowerX, undo.TowerY ) ) is not { IsComplete: true },
+		// [EXT:online-coop-undo] a take-back, whose step the host's journal decides (C5): the guest's own park asks the grant alone, the host and every peer the decided record's claims too
+		TakeBackCommand => true,
 		// [EXT:online-coop-claims] C3c-1: a ride's claim (never the developer prototype; a missing ride or one that is no track ride or coaster is the park's to refuse), and the track
 		// commands, of the ride whose claim the guest holds; C3c-2: a coaster's claim too, and its coaster tool's commands
 		ClaimRideCommand claim => level.ResolveCommandObject( claim.Ride ) is not { IsDeleted: false } item || !ReferenceEquals( item, level.PlacedRide ),
@@ -223,6 +225,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		BeginCoasterToolCommand begin => begin.Station,
 		EndCoasterToolCommand end => end.Station,
 		CoasterPanelCommand panel => panel.Station,
+		// [EXT:online-coop-undo] a take-back on a claimed ride names it whatever the host decided, so a claim lost on its way refuses it by the rights (C5)
+		TakeBackCommand { ClaimedRide: >= 0 } takeBack => takeBack.ClaimedRide,
 		_ => null
 	};
 
@@ -275,6 +279,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		PickUpObjectCommand pick => level.ResolveCommandObject( pick.Attraction ) is not { IsDeleted: false } item || !ClaimedAgainst( player, item ),
 		PlacePoolBridgeCommand bridge => !BridgeTouchesClaimedQueue( player, new PoolBridge( bridge.X, bridge.Y, bridge.Direction, 0 ) ),
 		RemovePoolBridgeCommand bridge => level.PoolBridges?.At( bridge.X, bridge.Y ) is not { } standing || !BridgeTouchesClaimedQueue( player, standing ),
+		// [EXT:online-coop-undo] a take-back asks what its inverse would ask (C5); undecided, or refused by the host, it changes nothing
+		TakeBackCommand takeBack => takeBack.Inverse is not { } inverse || LeavesClaimsAlone( player, inverse ),
 		RemovePrototypeCommand => level.PlacedRide is not { IsDeleted: false } prototype || !ClaimedAgainst( player, prototype ),
 		// a track line of a ride another seat claims, and one whose tiles lie over the path cell a claimed queue joins or one linked into a claimed ride's entrance: a tile laid over path
 		// clears it (TrackBuilder.ClearPath), which takes the link of the queue's back cell off or re-evaluates the ride of the entrance, as a path removal does; the line is asked as it is

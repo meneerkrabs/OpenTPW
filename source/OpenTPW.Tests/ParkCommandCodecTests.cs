@@ -103,6 +103,21 @@ public class ParkCommandCodecTests
 		(new ReleaseRideCommand( 17 ), "02680022"),
 		// [EXT:online-coop-permissions] the host gives seat 3 building through the seat's rights (C4a)
 		(new SetSeatRightsCommand( 3, CoopRights.Build ), "0269000602"),
+		// [EXT:online-coop-undo] seat 2's Backspace on its path step of record 41, its selected ride 7, as it leaves the guest: undecided, no inverse (C5)
+		(new TakeBackCommand( false, 41, -1, -1, 7 ) { Player = 2 }, "026a04005201010e0000"),
+	};
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The take-back as the host decided it (C5): taken with its inverse nested as a whole command of its own bytes, and refused with each verdict, a slide piece's part
+	/// and a claimed ride; version 1 like the request.
+	/// </summary>
+	internal static readonly (ParkCommand Command, string Hex)[] TakeBackSchema =
+	{
+		(new TakeBackCommand( false, 41, -1, -1, 7, TakeBackVerdict.Taken,
+			new UndoLineCommand( CellToolMode.Path, -1, 4, 5, new[] { (4, 5), (5, 5) }, new[] { (6, 5) } ) { Player = 1 } ) { Player = 1 }, "026a02005201010e011e020b020101080a04080a0a0a020c0a"),
+		(new TakeBackCommand( false, 300, 2, -1, -1, TakeBackVerdict.Taken, new UndoPoolSlidePieceCommand( 30, 40 ) { Player = 3 } ) { Player = 3 }, "026a0600d804040101010a024b063c50"),
+		(new TakeBackCommand( false, 41, -1, 17, -1, TakeBackVerdict.Changed ) { Player = 2 }, "026a0400520122010200"),
+		(new TakeBackCommand( true, 0, -1, -1, -1, TakeBackVerdict.TooLarge ) { Player = 1 }, "026a0201000101010700"),
 	};
 
 	/// <summary>
@@ -135,6 +150,48 @@ public class ParkCommandCodecTests
 		CollectionAssert.AreEquivalent( types, Schema.Select( row => row.Command.GetType() ).ToArray(), "every command type has a schema row" );
 		foreach ( var (command, hex) in Schema )
 			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ), command.Kind.ToString() );
+	}
+
+	[TestMethod]
+	public void ATakeBackCarriesItsDecisionAndItsInverseAsAWholeCommand()
+	{
+		foreach ( var (command, hex) in TakeBackSchema )
+		{
+			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ), command.ToString() );
+			var bytes = Convert.FromHexString( hex );
+			Assert.AreEqual( command, ParkCommandCodec.Decode( bytes ), command.ToString() );
+			CollectionAssert.AreEqual( bytes, ParkCommandCodec.Encode( ParkCommandCodec.Decode( bytes ) ) );
+			for ( var length = 0; length < bytes.Length; length++ )
+				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"{command} cut to {length} bytes" );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), $"{command} with a trailing byte" );
+		}
+		// a guest's request is a few bytes, whatever its step
+		Assert.IsTrue( ParkCommandCodec.Encode( new TakeBackCommand( false, long.MaxValue, 4095, int.MaxValue, int.MaxValue ) { Player = 64 } ).Length <= 32 );
+		// an inverse of another kind than the tools' undo, of another player than the take-back's, and a taken verdict without one or a refusal with one are no take-back
+		var place = ParkCommandCodec.Encode( new PlaceObjectCommand( "x", 1, 1, 90 ) { Player = 1 } );
+		var writer = new ParkCommandWriter();
+		writer.Int( 1 ); writer.Byte( (byte)ParkCommandKind.TakeBack ); writer.Int( 1 );
+		writer.Bool( false ); writer.Long( 41 ); writer.Int( -1 ); writer.Int( -1 ); writer.Int( -1 ); writer.Byte( (byte)TakeBackVerdict.Taken ); writer.Bytes( place );
+		Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( writer.ToArray() ), "a foreign inner kind" );
+		var inverse = new UndoLineCommand( CellToolMode.Path, -1, 4, 5, new[] { (4, 5) }, Array.Empty<(int X, int Y)>() );
+		foreach ( var malformed in new[]
+		{
+			new TakeBackCommand( false, 41, -1, -1, -1, TakeBackVerdict.Taken, inverse with { Player = 2 } ) { Player = 1 },
+			new TakeBackCommand( false, 41, -1, -1, -1, TakeBackVerdict.Taken ) { Player = 1 },
+			new TakeBackCommand( false, 41, -1, -1, -1, TakeBackVerdict.Changed, inverse with { Player = 1 } ) { Player = 1 },
+			new TakeBackCommand( false, -1, -1, -1, -1 ),
+			new TakeBackCommand( false, 1, -2, -1, -1 ),
+			new TakeBackCommand( false, 1, -1, -2, -1 ),
+			new TakeBackCommand( false, 1, -1, -1, -1, (TakeBackVerdict)8 ),
+		} )
+		{
+			Assert.IsFalse( malformed.IsWellFormed, malformed.ToString() );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( ParkCommandCodec.Encode( malformed ) ), malformed.ToString() );
+		}
+		// the reasons name their verdicts for the tools that read a refusal
+		foreach ( var verdict in Enum.GetValues<TakeBackVerdict>().Where( verdict => verdict != TakeBackVerdict.Taken ) )
+			Assert.AreEqual( verdict, TakeBackCommand.VerdictOf( TakeBackCommand.ReasonOf( verdict ) ) );
+		Assert.IsNull( TakeBackCommand.VerdictOf( "Not enough money." ) );
 	}
 
 	[TestMethod]

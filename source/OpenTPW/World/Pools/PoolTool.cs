@@ -153,6 +153,9 @@ public sealed partial class PoolTool
 		if ( !FeatureGates.Pools || Slides == null || Slides.TowerAt( towerX, towerY ) == null || Slides.Find( PoolSlide.KeyOf( towerX, towerY ) ) is { IsComplete: true } )
 			return false;
 		Release();
+		// [EXT:online-coop-undo] a slide mode takes back only the pieces it laid itself, as a line tool its own segments (C5)
+		ownPieces.Clear();
+		slideSession++;
 		IsActive = true;
 		bridgeMode = false;
 		HoverCell = null;
@@ -308,6 +311,17 @@ public sealed partial class PoolTool
 		return stroke;
 	}
 
+	/// <summary>[EXT:online-coop-undo] Why the host's last Backspace in the slide mode took nothing back in a shared park (C5): its refused take-back.</summary>
+	private ParkCommandResult? undoRefusal;
+
+	/// <summary>[EXT:online-coop-undo] The refusal of the last Backspace, once (C5).</summary>
+	internal ParkCommandResult? TakeUndoRefusal()
+	{
+		var refusal = undoRefusal;
+		undoRefusal = null;
+		return refusal;
+	}
+
 	/// <summary>
 	/// Takes back the last stroke: a paint stroke is erased again (each cell refunded) and an erase stroke painted again (each cell charged again). False when there is none.
 	/// A cell that cannot be repainted (the ground changed, no money) stays as it is.
@@ -326,6 +340,20 @@ public sealed partial class PoolTool
 			{
 				ReleaseGuestStroke();
 				return QueueGuestSlideUndo( tower );
+			}
+			// [EXT:online-coop-undo] the host's in a shared park takes back its own newest piece through its journal (C5): with none, nothing, quietly
+			if ( TakesBack?.Invoke() == true )
+			{
+				if ( Slides == null || NewestOwnPiece( tower ) is not { } piece )
+					return false;
+				var taken = issue( new TakeBackCommand( false, piece.Record, piece.Part, -1, -1 ) );
+				if ( !taken.Accepted )
+				{
+					undoRefusal = taken;
+					return false;
+				}
+				ownPieces.RemoveAll( own => own.Record == piece.Record && own.Part == piece.Part );
+				return true;
 			}
 			return Slides != null && issue( new UndoPoolSlidePieceCommand( tower.X, tower.Y ) ).Accepted;
 		}
@@ -418,6 +446,9 @@ public sealed partial class PoolTool
 			var slide = piece.Result;
 			if ( slide == PoolSlideResult.Ok )
 			{
+				// [EXT:online-coop-undo] the host's piece in a shared park is its own, by the record its stream just took (C5)
+				if ( TakesBack?.Invoke() == true && HostRecord?.Invoke() is { } record )
+					ownPieces.Add( (tower, record, 0) );
 				pending.Add( (x, y) );
 				pendingMoney += piece.Money;
 				return PoolBuildResult.Ok;

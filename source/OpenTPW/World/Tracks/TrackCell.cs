@@ -142,6 +142,19 @@ public sealed class TrackCellLayer
 		cells = new TrackCell[width * height];
 	}
 
+	/// <summary>[EXT:online-coop-undo] A copy of <paramref name="source"/> that a prediction may write (C5, <see cref="ParkCellMap.CopyForPrediction"/>).</summary>
+	private TrackCellLayer( TrackCellLayer source )
+	{
+		Width = source.Width;
+		Height = source.Height;
+		cells = (TrackCell[])source.cells.Clone();
+		Count = source.Count;
+		Version = source.Version;
+	}
+
+	/// <summary>[EXT:online-coop-undo] A disposable copy of the layer (C5).</summary>
+	internal TrackCellLayer Copy() => new( this );
+
 	public int Width { get; }
 	public int Height { get; }
 	/// <summary>Cells whose type is not 0.</summary>

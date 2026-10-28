@@ -255,6 +255,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// (it takes none between the digests: a full park's world hash is most of a digest's cost).
 	/// </summary>
 	private readonly ParkCommandRecorder recorder;
+	/// <summary>[EXT:online-coop-undo] The host's undo journal, which decides every take-back of the session (C5).</summary>
+	private readonly CoopUndoJournal undo;
+	/// <summary>[EXT:online-coop-undo] The cell map the journal hears the changes of, unhooked at the end.</summary>
+	private readonly ParkCellMap? undoCells;
 	private long nextStream = 1;
 	private ulong nextSeq;
 	private ulong sendNext;
@@ -324,6 +328,14 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		level.ClearGuestStaff();
 		seatMembers = SeatMembers();
 		recorder = new ParkCommandRecorder( commands, level.LevelName ?? "", level.Seed.Value, level.TickCount, level.ComputeStateHash() ) { SessionRules = true };
+		// [EXT:online-coop-undo] the journal decides every take-back before its rights and its log, and hears every command's cell changes (C5)
+		undo = new CoopUndoJournal( level, session.You );
+		commands.Prepare = command => undo.Decide( command, applyingOrigin?.Member );
+		commands.Starting = undo.Begin;
+		undoCells = level.Guests?.Grid.Cells;
+		if ( undoCells != null )
+			undoCells.Changed = undo.Changed;
+		level.UndoJournal = undo;
 		commands.Applied += OnApplied;
 		level.TickEnded += OnTickEnded;
 		transport.Resumed += OnResumed;
@@ -480,6 +492,8 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		}
 		var flags = result.Error != null ? CoopRecordFlags.Errored : result.Accepted ? CoopRecordFlags.Accepted : CoopRecordFlags.None;
 		var number = nextStream++;
+		// [EXT:online-coop-undo] the journal takes the record: a step of its member's, a taken take-back's end, every change of a cell it tracks (C5)
+		undo.Applied( number, applyingOrigin?.Member, entry.Command, result );
 		// [EXT:online-coop-claims] a guest's claim, and every accepted command of its holder naming its ride, renews the claim's lease
 		if ( result.Accepted && entry.Command.Player > 0 && RideNamedBy( entry.Command ) is { } claimed && level.ClaimOf( claimed ) == entry.Command.Player )
 			claimLeases[claimed] = guestCommandsSeconds;
@@ -826,9 +840,13 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		// the seats wait for its next state instead of all counting as left
 		var known = transport.Session != null;
 		var members = known ? SeatMembers() : seatMembers;
-		var changed = seatMembers.Where( pair => !members.TryGetValue( pair.Key, out var member ) || member != pair.Value ).Select( pair => pair.Key )
+		var departed = seatMembers.Where( pair => !members.TryGetValue( pair.Key, out var member ) || member != pair.Value ).ToArray();
+		var changed = departed.Select( pair => pair.Key )
 			.Concat( level.HoldingGuestSeats().Where( seat => known && !members.ContainsKey( seat ) ) ).ToArray();
 		seatMembers = members;
+		// [EXT:online-coop-undo] a member that left its seat (or whose seat another took) takes back nothing any more: its steps leave the journal as they are (C5)
+		foreach ( var (_, member) in departed )
+			undo.Depart( member );
 		if ( leftSeats.Count > 0 || changed.Length > 0 )
 		{
 			var seats = leftSeats.Concat( changed ).Distinct().OrderBy( seat => seat ).ToArray();
@@ -1519,6 +1537,14 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.InTick = previousInTick;
 		commands.Rights = previousRights;
 		commands.Player = previousPlayer;
+		// [EXT:online-coop-undo] the journal is its session's (C5)
+		commands.Prepare = null;
+		commands.Starting = null;
+		if ( undoCells != null )
+			undoCells.Changed = null;
+		if ( level.UndoJournal == undo )
+			level.UndoJournal = null;
+		undo.Clear();
 		// [EXT:online-coop-permissions] rights are their session's: the park runs on alone without any (the guests' were released above), and without what a guest's seat carried (C3b-2)
 		level.ClearSeatRights();
 		// [EXT:online-coop-claims] and the rides' claims (C3c-1): the host's own, as the guests' went above

@@ -123,7 +123,8 @@ public sealed partial class ParkHud
 	/// <summary>
 	/// [EXT:online-coop-claims] The guest's Backspace in its track tool comes back (C3c-1b): applied, the line it took back goes off the tool's stacks and the tool moves on as the walk once
 	/// moved it; a refusal of the rights ends the tool and says why (its claim or its grant went), and a refusal of the park takes nothing back, quietly, as the host's; a refusal without a
-	/// record leaves the line, and the player tries again; an outcome not known ends the tool.
+	/// record leaves the line, and the player tries again; an outcome not known ends the tool. [EXT:online-coop-undo] A path or queue take-back (C5) refused by the host's journal says why
+	/// and keeps the segment and the tool, and so does one another player's claim refused; the grant gone ends the tool.
 	/// </summary>
 	private void CompleteTrackUndo( CoopGuestCommands.Request request )
 	{
@@ -136,8 +137,19 @@ public sealed partial class ParkHud
 				level.HostToolStarts++;
 				return;
 			}
+			// [EXT:online-coop-undo] a take-back the host's journal refused keeps the segment and says why (C5); the track tool's park refusals stay quiet, as the host's
 			if ( !outcome.RightsRefused )
+			{
+				if ( request.Command is TakeBackCommand )
+					SayTakeBackNote( outcome.Reason );
 				return;
+			}
+			// [EXT:online-coop-undo] another player's claim on the cells its undo would touch keeps the segment and the tool, as a line refused there: its note alone (C5)
+			if ( request.Command is TakeBackCommand && CoopBuildRights.RefusalOf( outcome.Reason ) == CoopRefusal.Claimed )
+			{
+				SayGuestNote( OpenTpwText.CoopClaimed );
+				return;
+			}
 			level.HostToolStarts++;
 			tool.Cancel();
 			SayGuestNote( RightsRefusalText( outcome.Reason ) );
@@ -152,6 +164,28 @@ public sealed partial class ParkHud
 		level.HostToolStarts++;
 		tool.Cancel();
 		SayOutcome( request, null );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] What a refused take-back says (C5): another's later change, something in its way, or a step not the player's (or not its last, or forgotten) each its note; a
+	/// claim of another player its note; any other refusal nothing (the park's own, as for the host).
+	/// </summary>
+	private void SayTakeBackNote( string? reason )
+	{
+		switch ( TakeBackCommand.VerdictOf( reason ) )
+		{
+			case TakeBackVerdict.Changed:
+				SayGuestNote( OpenTpwText.CoopUndoChanged );
+				return;
+			case TakeBackVerdict.InTheWay:
+				SayGuestNote( OpenTpwText.CoopUndoInTheWay );
+				return;
+			case TakeBackVerdict.NotOwn or TakeBackVerdict.NotLast or TakeBackVerdict.Forgotten:
+				SayGuestNote( OpenTpwText.CoopUndoNotOwn );
+				return;
+		}
+		if ( reason == Level.ClaimedReason )
+			SayGuestNote( OpenTpwText.CoopClaimed );
 	}
 
 	/// <summary>
@@ -346,7 +380,7 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// A guest's finished pool stroke, said as <see cref="ReportPoolStroke"/> says the host's at its release: the lay sound when it wrote, the slide's done message, one refusal with its
-	/// marker; and its notes: a refusal by the rights, a request the host could not take, an outcome not known.
+	/// marker; and its notes: a refusal by the rights, a request the host could not take, an outcome not known, [EXT:online-coop-undo] a slide's take-back the host's journal refused (C5).
 	/// </summary>
 	private void ReportGuestPoolStroke( PoolGuestReport report )
 	{
@@ -354,25 +388,25 @@ public sealed partial class ParkHud
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( report.SlideDone )
 			PostMessage( strings.Extra( OpenTpwText.PoolSlideDone ) );
-		if ( report.RightsRefused is { } refused && !MetFinishedSlide( refused, report.RightsReason ) )
+		if ( report.RightsRefused != null )
+		{
 			SayGuestNote( RightsRefusalText( report.RightsReason ) );
+			// [EXT:online-coop-undo] a slide take-back the rights refused (the grant taken back on its way) ends the slide mode it was sent from, as it ends the line tools (C5)
+			if ( report.RightsRefused is TakeBackCommand && level.PoolTool is { } slideTool && slideTool.InSlideSession( report.SlideSession ) )
+				slideTool.Cancel();
+		}
 		else if ( report.NotTaken )
 			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
 		else if ( report.Unknown )
 			SayGuestNote( OpenTpwText.CoopBuildUnknown );
+		else if ( report.TakeBackRefusal is { } takeBack )
+			SayTakeBackNote( takeBack );
 		if ( report.Refusal is not { } refusal )
 			return;
 		// the stroke's press was released before its report: the refusal cue plays now, as a guest's line released before its outcome plays it (FinishLineClick)
 		GameAudio.PlayPathRefused( refusal.Cell.X, refusal.Cell.Y );
 		PostMessage( strings.Extra( report.BridgeRefusal is { } bridge ? BridgeRefusalText( bridge ) : PoolRefusalText( refusal.Reason, report.SlideRefusal ) ) );
 	}
-
-	/// <summary>
-	/// [EXT:online-coop-permissions] Whether a refusal of <paramref name="command"/> by the session's rights, for the <paramref name="reason"/> they gave where and when it was refused, met a
-	/// finished slide: a slide undo refused for any reason but a grant the host took back (no claim refuses one), whose slide the pieces before it finished
-	/// (<see cref="CoopBuildRights.Builds"/>). Nothing is said for it, as the host's slide mode ended with the splash and its Backspace says nothing; one refused for want of a grant is said.
-	/// </summary>
-	private static bool MetFinishedSlide( ParkCommand command, string? reason ) => command is UndoPoolSlidePieceCommand && reason != CoopBuildRights.NotGrantedReason;
 
 	/// <summary>
 	/// [EXT:online-coop-permissions] What a refusal by the session's rights says, from the <paramref name="reason"/> they gave where and when it was refused: [EXT:online-coop-claims] another

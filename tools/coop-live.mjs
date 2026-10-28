@@ -14,7 +14,7 @@
 // in hand armed again from the snapshot, and a drop inside the cut.
 //
 // Usage:
-//   node tools/coop-live.mjs --game <OpenTPW.dll> --server <OpenTPW.Server.dll> --out <directory> [--game-path <Theme Park World>] [--scenario baseline|recovery|endurance|management|staff]
+//   node tools/coop-live.mjs --game <OpenTPW.dll> --server <OpenTPW.Server.dll> --out <directory> [--game-path <Theme Park World>] [--scenario baseline|recovery|endurance|management|staff|undo]
 //        [--minutes M] [--config-source <directory>] [--host native|page] [--guest native|page] [--web <published wwwroot>] [--runtime aot|interpreter]
 //        [--chrome <executable>] [--headed] [--timeout-minutes T]
 // A page side (C2d-5b, tools/coop-live-page.mjs) is the game in a page in a Chrome of its own, through a local server of its own in front of the real one, which then
@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 import { sleep } from './web-perf/lib.mjs';
 import { checkPageSides, checkPictures, PAGE_START_SECONDS, PageSide } from './coop-live-page.mjs';
 
-const SCENARIOS = ['baseline', 'recovery', 'endurance', 'management', 'staff'];
+const SCENARIOS = ['baseline', 'recovery', 'endurance', 'management', 'staff', 'undo'];
 const SIDES = ['native', 'page'];
 const DEFAULT_CHROME = {
 	darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -403,6 +403,8 @@ export function checkEvidence(host, guest, scenario, minutes) {
 		checkManagement(host, guest, check);
 	if (scenario === 'staff')
 		checkStaff(host, guest, check);
+	if (scenario === 'undo')
+		checkUndo(host, guest, check);
 	if (scenario === 'endurance') {
 		const endurance = host?.endurance;
 		const samples = endurance?.samples ?? [];
@@ -507,6 +509,36 @@ function checkStaff(host, guest, check) {
 		&& guest?.stream?.desyncs === 3 && guest?.stream?.failedJoins <= 2
 		&& seen?.desyncs?.length === 3 && seen.desyncs.every((report, index) => report.id === index + 1 && report.kind === 'Protocol')
 		&& seen.capturesAfter === seen.capturesBefore + 3, { guest: resyncs, host: seen, streams: guest?.streams, stream: guest?.stream });
+}
+
+/**
+ * The undo run's checks (C5-1, docs/COOP.md "The live acceptance"): the guest's two segments taken back by two Backspaces, the newest first; its kept line's take-back refused as changed
+ * while the host's line crossed it; the host's own Backspace taking its line back; then the guest's line taken; each take-back at its record with the host's verdict on both parks, and
+ * both parks' logs holding the same take-backs in the same order.
+ */
+function checkUndo(host, guest, check) {
+	const mine = guest?.undo?.takeBacks ?? [], theirs = host?.undo?.takeBacks ?? [];
+	const seat = host?.undo?.seat;
+	const guests = theirs.filter(item => item.player === seat), hosts = theirs.filter(item => item.player === 0);
+	const segments = guest?.undo?.segments ?? [], kept = guest?.undo?.kept;
+	check('the guest took its two segments back with two Backspaces, the newest first; its kept line\'s take-back was refused as changed while the host\'s line crossed it, and taken after',
+		Number.isInteger(seat) && seat > 0 && seat === guest?.ownBuild?.seat && mine.length === 4 && segments.length === 2
+		&& mine.map(item => item.verdict).join() === 'Taken,Taken,Changed,Taken' && mine.map(item => item.accepted).join() === 'true,true,false,true'
+		&& mine.every(item => item.player === seat) && mine[0].step === segments[1].record && mine[1].step === segments[0].record
+		&& Number.isInteger(kept?.record) && mine[2].step === kept.record && mine[3].step === kept.record,
+	{ guest: mine, segments, kept, seat });
+	check('each of the guest\'s take-backs applied at its record with the host\'s verdict on both parks', guests.length === mine.length && mine.length > 0
+		&& mine.every((item, index) => Number.isInteger(item.record) && JSON.stringify(item) === JSON.stringify(guests[index])),
+	{ guest: mine, host: guests });
+	// the host's line crosses one of the guest's inner cells (five cells), or by the park's edge links into one from beside it (four)
+	check('the host\'s own Backspace took its line across or into the guest\'s back between the guest\'s refused take-back and its last', hosts.length === 1 && hosts[0].verdict === 'Taken'
+		&& hosts[0].accepted === true && Number.isInteger(hosts[0].record) && hosts[0].record > mine[2]?.record && hosts[0].record < mine[3]?.record
+		&& [4, 5].includes((host?.undo?.crossed ?? []).length), { host: hosts, crossed: host?.undo?.crossed });
+	check('both parks applied the same take-backs in the same order', (guest?.undo?.applied ?? []).length === 5
+		&& JSON.stringify(host?.undo?.applied ?? null) === JSON.stringify(guest.undo.applied), { host: host?.undo?.applied, guest: guest?.undo?.applied });
+	// a path's undo refunds nothing, as the original's, and a refused take-back changes nothing: every take-back left the money as it was, on both parks
+	check('no take-back changed the money on either park', [host?.undo?.applied, guest?.undo?.applied].every(applied => (applied ?? []).length === 5
+		&& applied.every(item => item.money === 0)), { host: host?.undo?.applied, guest: guest?.undo?.applied });
 }
 
 /** How often both games sample the park's ticks at the fastest speed, in seconds (CoopLiveTest.EnduranceSampleSeconds). */

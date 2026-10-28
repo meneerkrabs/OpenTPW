@@ -376,8 +376,8 @@ public partial class CoopStreamTests
 			new PoolCellsCommand( true, false, new[] { (8, 8) } ),
 			new LayPoolSlidePiecesCommand( 13, 19, new[] { (15, 19) } ),
 			new PlacePoolBridgeCommand( 10, 15, 1 ),
-			// the undo of a slide piece unless the slide is finished: one with nothing to take back is the park's to refuse, quietly
-			new UndoPoolSlidePieceCommand( 13, 19 ),
+			// [EXT:online-coop-undo] Backspace in a building tool: a take-back the host's journal decides (C5), one with no step of the guest's refused by the journal
+			new TakeBackCommand( false, 1, -1, -1, -1 ),
 			// a ride's claim (C3c-1: the park refuses one of a ride that is no track ride)
 			new ClaimRideCommand( peer.One.Runtime.AttractionId )
 		};
@@ -405,6 +405,8 @@ public partial class CoopStreamTests
 			new ErasePoolCellCommand( 8, 8 ),
 			new LayPoolSlidePieceCommand( 13, 19, 15, 19 ),
 			new UndoPoolStrokeCommand( false, new[] { (8, 8) }, Array.Empty<(int, int)>() ),
+			// the slide's last piece (C5: a guest's slide Backspace is a take-back of its own piece)
+			new UndoPoolSlidePieceCommand( 13, 19 ),
 			new RemovePoolBridgeCommand( 10, 15 ),
 			new SetPoolWavesCommand( peer.Two.Runtime.AttractionId, true, 2, 1 )
 		};

@@ -94,9 +94,10 @@ public sealed partial class ParkHud
 			tool.Cancel();
 			return true;
 		}
-		// Backspace takes back the last stroke
-		if ( input.Backspaces > 0 && !tool.IsDragging )
-			tool.Undo();
+		// Backspace takes back the last stroke; [EXT:online-coop-undo] the host's slide take-back in a shared park that the journal refused says why, one that met a finished slide nothing (C5)
+		if ( input.Backspaces > 0 && !tool.IsDragging && !tool.Undo() && tool.TakeUndoRefusal() is { } refused
+			&& TakeBackCommand.VerdictOf( refused.Reason ) != TakeBackVerdict.InTheWay )
+			SayTakeBackNote( refused.Reason );
 		if ( !inPark )
 		{
 			// a drag that leaves the park view ends there

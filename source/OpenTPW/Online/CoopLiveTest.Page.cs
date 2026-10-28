@@ -147,6 +147,18 @@ internal sealed partial class CoopLiveTest
 		return Array.Empty<CoopLiveWait>();
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-undo] Backspace: natively the game's input, one Backspace of the frame as the window's typed keys give it (a tap of the keyboard holds a key's binding, which
+	/// Backspace has none of), in the page the key through the canvas (C5).
+	/// </summary>
+	private IEnumerable<CoopLiveWait> BackspaceThrough()
+	{
+		if ( page )
+			return PageInput( new JsonObject { ["keys"] = new JsonArray( "Backspace" ) }, "key Backspace" );
+		Give( UiInput.Type( "", backspaces: 1 ) );
+		return Array.Empty<CoopLiveWait>();
+	}
+
 	/// <summary>A key tapped through the keyboard: natively the window's keyboard (<see cref="Tap"/>), in the page through the canvas.</summary>
 	private IEnumerable<CoopLiveWait> TapThrough( Veldrid.Key key, string domKey )
 	{

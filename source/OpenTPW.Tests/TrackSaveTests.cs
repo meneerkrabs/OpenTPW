@@ -61,6 +61,23 @@ public class TrackSaveTests
 		Rejects( ordinary, "without a station origin" );
 	}
 
+	/// <summary>The cell map's byte shows the tile's type, or the path or queue cell that lies over the tile (ParkCellMap.PrimaryTypeAt); any other type there contradicts the tile.</summary>
+	[TestMethod]
+	public void ThePathOrQueueCellOverATileIsTheMapsTypeThereAndNothingElseIs()
+	{
+		ParkResumeSnapshot WithMapType( byte type )
+		{
+			var snapshot = WithTracks();
+			var index = snapshot.Layout.Cells.Cells.FindIndex( cell => cell.X == 5 && cell.Y == 2 );
+			snapshot.Layout.Cells.Cells[index] = snapshot.Layout.Cells.Cells[index] with { Type = type };
+			return snapshot;
+		}
+		ParkResumeSaveFile.ValidateShape( WithMapType( (byte)ParkCellType.Path ) );
+		ParkResumeSaveFile.ValidateShape( WithMapType( (byte)ParkCellType.Queue ) );
+		Rejects( WithMapType( ParkCellTypes.Object ), "is not that type in the saved cell map" );
+		Rejects( WithMapType( 0 ), "is not that type in the saved cell map" );
+	}
+
 	[TestMethod]
 	public void AWellFormedTrackPartPassesTheShapeCheckAndTheCodec()
 	{

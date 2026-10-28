@@ -114,7 +114,8 @@ public class FootprintRemovalLayerIsolationTests
 		cells.Tracks.Set( 3, 3, track );
 		var trackVersion = cells.Tracks.Version;
 		cells.ClearFootprint( footprint );
-		Assert.AreEqual( new CellState( 0, retainedFlags, 0, 0, 0, 0 ), State( cells, 3, 3 ) );
+		// the @ cell's own type goes; the type byte then shows the track tile that lies beneath (ParkCellMap.PrimaryTypeAt)
+		Assert.AreEqual( new CellState( TrackCellTypes.KartOrigin, retainedFlags, 0, 0, 0, 0 ), State( cells, 3, 3 ) );
 		Assert.AreEqual( (byte)ParkCellType.Path, cells.RawTypeAt( 4, 3 ) );
 		Assert.AreEqual( 0, cells.LinksAt( 4, 3 ) & 0x40 );
 		Assert.AreEqual( 1, cells.CountOf( ParkCellType.Path ) );

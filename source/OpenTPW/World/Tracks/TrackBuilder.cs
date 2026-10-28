@@ -295,11 +295,7 @@ public sealed class TrackBuilder
 		foreach ( var (cx, cy) in GiveWayCells( at ) )
 		{
 			giveWay( cx, cy );
-			if ( Tracks.Get( cx, cy ).Type != 0 )
-			{
-				Tracks.Clear( cx, cy );
-				Cells.SetType( cx, cy, ParkCellType.Empty );
-			}
+			Cells.ClearTrackRecord( cx, cy );
 		}
 	}
 
@@ -337,11 +333,7 @@ public sealed class TrackBuilder
 	{
 		foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
 		{
-			if ( Tracks.Get( cx, cy ).Type != 0 )
-			{
-				Tracks.Clear( cx, cy );
-				Cells.SetType( cx, cy, ParkCellType.Empty );
-			}
+			Cells.ClearTrackRecord( cx, cy );
 		}
 	}
 

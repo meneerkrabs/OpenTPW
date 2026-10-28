@@ -51,6 +51,11 @@ public static class ParkCellTypes
 	// [BIN:TPW-EXE:0x0053AD30 track cell] true for the cell types 0xB, 0xD, 0x10, 0x12 and 0x19
 	public static bool IsTrackCell( byte type ) => type is TrackCellTypes.KartOrigin or TrackCellTypes.KartStart or TrackCellTypes.WaterOrigin or TrackCellTypes.WaterStart or Hoarding;
 
+	/// <summary>
+	/// Whether a type byte is one OpenTPW shows for a track tile of the second layer while the cell's own type is empty (<see cref="ParkCellMap.PrimaryTypeAt"/>): the kart and water origins, stations and extensions and the water table's second type.
+	/// </summary>
+	public static bool IsTrackShown( byte type ) => type is TrackCellTypes.KartOrigin or TrackCellTypes.Extension or TrackCellTypes.KartStart or TrackCellTypes.WaterOrigin or 0x11 or TrackCellTypes.WaterStart or TrackCellTypes.WaterAlternate;
+
 	/// <summary>The types of a track tile's extension cells, whose head the cell lookups follow through the owner word: <c>0x53AD90</c>.</summary>
 	// [BIN:TPW-EXE:0x0053AD90 track extension] true for the cell types 0xC and 0x11
 	public static bool IsTrackExtension( byte type ) => type is TrackCellTypes.Extension or 0x11;
@@ -637,6 +642,21 @@ public sealed partial class ParkCellMap
 	/// <summary>The original type byte (map cell <c>+8</c>); 0 outside the map.</summary>
 	public byte RawTypeAt( int x, int y ) => InBounds( x, y ) ? types[y * Width + x] : (byte)0;
 	public ParkCellType TypeAt( int x, int y ) => (ParkCellType)RawTypeAt( x, y );
+
+	/// <summary>
+	/// The type of the cell's own (map) layer: what the type byte holds, except where it only shows a track tile of the second layer (<see cref="Tracks"/>), which the original keeps apart from the cell
+	/// (the cell's type stays what the ground was, 0 on plain ground, a station's overwritten base type). A path or queue cell laid over a straight or stub track tile is the cell's type and the tile lies beneath it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D0AF0 structure records] a cell's structure record is not part of the cell: the 0x28-byte records of the second layer (game +0x10FFD8) are an array of their own, and the track type op 0x538FC0 writes the type of the record and never the cell's (0x539017..0x53908C); the cell validator 0x535670 reads both (the cell's +8 and the record's type, with an extension followed to its parent), so a path or queue cell can lie over a straight or stub tile
+	// [DATA:OpenTPW type byte] OpenTPW's type byte shows the tile's type while the cell is otherwise empty, so every reader of "not 0" still sees an occupied cell; a write of a path or queue type replaces that view and clearing the cell restores it
+	public byte PrimaryTypeAt( int x, int y )
+	{
+		var raw = RawTypeAt( x, y );
+		if ( raw == 0 || Tracks.Count == 0 )
+			return raw;
+		var track = Tracks.Get( x, y );
+		return !track.IsEmpty && raw == track.Type ? track.BaseType : raw;
+	}
 	public ParkCellFlags FlagsAt( int x, int y ) => InBounds( x, y ) ? (ParkCellFlags)flags[y * Width + x] : ParkCellFlags.None;
 	/// <summary>Extra placements of the same type (map cell <c>+32</c>).</summary>
 	public short PlacementCountAt( int x, int y ) => InBounds( x, y ) ? placements[y * Width + x] : (short)0;
@@ -669,13 +689,17 @@ public sealed partial class ParkCellMap
 			PoolWrites++;
 		// tp.exe's cell setter 0x5346D0 returns early for the same non-zero type only: clearing always stamps.
 		var changed = types[index] != type || type == 0;
+		var cleared = type == 0;
+		// clearing the cell's own layer leaves the type byte showing the track tile that lies beneath (PrimaryTypeAt)
+		if ( cleared && Tracks.Count != 0 && Tracks.Get( x, y ) is { IsEmpty: false } beneath )
+			type = beneath.Type;
 		typeCounts[types[index]]--;
 		typeCounts[type]++;
 		types[index] = type;
 		queuePassCells.Remove( index );
 		if ( !ParkCellTypes.CarriesQueueLink( type ) )
 			queueLinks[index] = 0;
-		if ( type == 0 )
+		if ( cleared )
 		{
 			links[index] = 0;
 			placements[index] = 0;
@@ -687,6 +711,22 @@ public sealed partial class ParkCellMap
 	}
 
 	public void SetType( int x, int y, ParkCellType type ) => SetType( x, y, (byte)type );
+
+	/// <summary>
+	/// Removes the track tile record of (<paramref name="x"/>, <paramref name="y"/>) from the second layer and empties the type byte where it only showed the tile; a path or queue cell that lies over the tile stays
+	/// (<see cref="PrimaryTypeAt"/>), as the original's record clear 0x5367A0 touches the record and never the cell. False when the cell held no tile.
+	/// </summary>
+	internal bool ClearTrackRecord( int x, int y )
+	{
+		var track = Tracks.Get( x, y );
+		if ( track.IsEmpty )
+			return false;
+		var shown = RawTypeAt( x, y ) == track.Type;
+		Tracks.Clear( x, y );
+		if ( shown )
+			SetType( x, y, ParkCellType.Empty );
+		return true;
+	}
 
 	public void SetLinks( int x, int y, byte value )
 	{

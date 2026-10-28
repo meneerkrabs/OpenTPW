@@ -35,16 +35,35 @@ internal sealed class QueueSegmentReducer
 	}
 
 	/// <summary>An object the queue tool may cover stands on the cell: its cell types are 4, 9 and 10, or 0 in a world whose footprints are not typed.</summary>
-	private bool CoveredObjectCell( (int X, int Y) p ) => cells.RawTypeAt( p.X, p.Y ) is 0 or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit && givesWay?.Invoke( p.X, p.Y ) == true;
+	private bool CoveredObjectCell( (int X, int Y) p ) => cells.PrimaryTypeAt( p.X, p.Y ) is 0 or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit && givesWay?.Invoke( p.X, p.Y ) == true;
+
+	/// <summary>
+	/// A straight or stub track tile of the second layer lies under the queue cell as it lies under a path (the cell validator refuses the four cells of a corner or junction tile and a hoarding post, never a straight piece);
+	/// the tile itself is not touched by the passes.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00535670 structure record] the validator takes the cell's record of the second layer (an extension followed to its parent) and refuses a fence post (0x19), a corner (0x53AE00) or a junction (0x53AE90); every other piece lets the cell through, so a queue cell is laid over it
+	private bool TrackAllows( (int X, int Y) p )
+	{
+		var track = cells.Tracks.Get( p.X, p.Y );
+		if ( track.IsEmpty )
+			return true;
+		var head = track;
+		if ( track.IsExtension && track.Parent >= 0 )
+		{
+			var (px, py) = cells.Tracks.CellOf( track.Parent );
+			head = cells.Tracks.Get( px, py );
+		}
+		return head.Type != ParkCellTypes.Hoarding && !QueueCellValidator.IsCornerOrJunction( head.Mask );
+	}
 
 	internal bool Supports( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, true );
 	internal bool SupportsAdmission( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, false );
 	internal bool SupportsUndo( (int X, int Y) start, (int X, int Y) end ) => SupportsDomain( start, end, false, terminalException: false );
 	private bool SupportsDomain( (int X, int Y) start, (int X, int Y) end, bool increments, (int X, int Y)? terminal = null, bool terminalException = true ) => owner is > 0 and <= 16384
 		&& ParkPathBuilder.LayLine( start, ParkPathBuilder.SnapEnd( start, end ) ).All( p =>
-			cells.InBounds( p.X, p.Y ) && (cells.RawTypeAt( p.X, p.Y ) is 0 or 1 or 3 || CoveredObjectCell( p ))
-			&& (!increments || cells.RawTypeAt( p.X, p.Y ) != 3 || cells.PlacementCountAt( p.X, p.Y ) < short.MaxValue)
-			&& cells.Tracks.Get( p.X, p.Y ).Equals( default(TrackCell) )
+			cells.InBounds( p.X, p.Y ) && (cells.PrimaryTypeAt( p.X, p.Y ) is 0 or 1 or 3 || CoveredObjectCell( p ))
+			&& (!increments || cells.PrimaryTypeAt( p.X, p.Y ) != 3 || cells.PlacementCountAt( p.X, p.Y ) < short.MaxValue)
+			&& TrackAllows( p )
 			&& cells.PoolBridges?.Reserves( p.X, p.Y ) != true
 			// The host may admit its initial path only as the actual terminal cell; undo has no such exception.
 			&& (!excluded( p.X, p.Y ) || (terminalException && p == (terminal ?? ParkPathBuilder.SnapEnd( start, end )) && terminalAllowed?.Invoke( p.X, p.Y ) == true)) );
@@ -58,7 +77,7 @@ internal sealed class QueueSegmentReducer
 		{
 			if ( !SupportsDomain( p, p, true, end ) ) return Result( CellBuildResult.Occupied, p );
 			if ( cells.FlagsAt( p.X, p.Y ).HasFlag( ParkCellFlags.Unowned ) ) return Result( CellBuildResult.NotOwned, p );
-			var type = cells.RawTypeAt( p.X, p.Y );
+			var type = cells.PrimaryTypeAt( p.X, p.Y );
 			// Native validator returns 8 for a final path before testing its NoModify bit.
 			if ( p == end && type == 1 ) break;
 			if ( type == 1 && cells.FlagsAt( p.X, p.Y ).HasFlag( ParkCellFlags.NoModify ) ) return Result( CellBuildResult.NoModify, p );
@@ -72,8 +91,8 @@ internal sealed class QueueSegmentReducer
 			if ( !previewMoney( built.Count * price() ) ) return Result( CellBuildResult.NotEnoughMoney, p );
 		}
 		return Result( CellBuildResult.Ok, null );
-		SegmentResult Result( CellBuildResult failure, (int X, int Y)? at ) => new( end, built, built.Count * price(), failure, cells.RawTypeAt( end.X, end.Y ) is 1 or 3 )
-		{ Start = start, Line = line, StoppedAt = at, LinkPointer = failure == CellBuildResult.Ok && cells.RawTypeAt( end.X, end.Y ) == 1 };
+		SegmentResult Result( CellBuildResult failure, (int X, int Y)? at ) => new( end, built, built.Count * price(), failure, cells.PrimaryTypeAt( end.X, end.Y ) is 1 or 3 )
+		{ Start = start, Line = line, StoppedAt = at, LinkPointer = failure == CellBuildResult.Ok && cells.PrimaryTypeAt( end.X, end.Y ) == 1 };
 	}
 
 	internal SegmentResult Commit( (int X, int Y) start, (int X, int Y) end )
@@ -83,7 +102,7 @@ internal sealed class QueueSegmentReducer
 		var line = ParkPathBuilder.LayLine( start, end );
 		var built = new List<(int X, int Y)>();
 		var existing = new List<(int X, int Y)>();
-		var endedOnExisting = cells.RawTypeAt( end.X, end.Y ) is 1 or 3;
+		var endedOnExisting = cells.PrimaryTypeAt( end.X, end.Y ) is 1 or 3;
 		(int X, int Y)? stopped = null;
 		long charged = 0;
 		var finalEndFlag = false;
@@ -96,7 +115,7 @@ internal sealed class QueueSegmentReducer
 		}
 		foreach ( var p in line )
 		{
-			var type = cells.RawTypeAt( p.X, p.Y );
+			var type = cells.PrimaryTypeAt( p.X, p.Y );
 			// 534589 resets the latch for each visited type cell; only the visited last old path/queue sets it.
 			finalEndFlag = p == end && type is 1 or 3;
 			if ( p == end && type == 1 ) break;
@@ -162,12 +181,12 @@ internal sealed class QueueSegmentReducer
 		if ( receipt.Start == ParkPathBuilder.SnapEnd( receipt.Start, receipt.End ) || !SupportsUndo( receipt.Start, receipt.End ) ) throw new InvalidOperationException( "Queue undo leaves the supported plain domain." );
 		// 52FE50: the prior corner currently being a path suppresses the second removal click altogether.
 		// [BIN:TPW-EXE:0x0052FFEC Back's re-evaluation] the popped point is still clicked and the mode restored, and 0x4DE1F0 runs after every undo that popped a point, so a suppressed second click re-evaluates too
-		if ( cells.RawTypeAt( receipt.Start.X, receipt.Start.Y ) == 1 ) { changed?.Invoke(); return; }
+		if ( cells.PrimaryTypeAt( receipt.Start.X, receipt.Start.Y ) == 1 ) { changed?.Invoke(); return; }
 		var line = ParkPathBuilder.LayLine( receipt.End, receipt.Start );
 		var cleared = new HashSet<(int X, int Y)>();
 		foreach ( var p in line )
 		{
-			var type = cells.RawTypeAt( p.X, p.Y );
+			var type = cells.PrimaryTypeAt( p.X, p.Y );
 			if ( type == 0 ) continue; // Empty residue survives; mode32 continues rather than stopping.
 			if ( cells.FlagsAt( p.X, p.Y ).HasFlag( ParkCellFlags.NoModify ) && (type == 3 || cells.LinksAt( p.X, p.Y ) != 0) ) continue;
 			var mask = cells.LinksAt( p.X, p.Y );

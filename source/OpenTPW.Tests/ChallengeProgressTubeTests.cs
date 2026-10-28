@@ -172,8 +172,12 @@ public class ChallengeProgressTubeTests
 		var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
 		park.Objectives.Update( 540 * ParkCalendar.SecondsPerDay, 1, _ => 0 ).ToList();
 		var hud = Hud();
+		long now = 0;
+		hud.ChallengeMessageClock = () => now;
 		hud.ApplyChallengePresentation( Message( 19, ChallengePresentationKind.Offer ), null, _ => null, _ => null );
 		hud.DeletePendingMessage( 0 );
+		now += ParkHud.ChallengeTerminalReleaseDelay;
+		hud.ReleaseChallengeTerminalRows();
 		hud.PostChallengeProgress( 306, "retained during repost" );
 		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
 		Assert.AreEqual( "retained during repost", hud.PendingMessages[0] );

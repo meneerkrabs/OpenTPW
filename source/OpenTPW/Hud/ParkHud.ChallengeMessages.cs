@@ -89,7 +89,7 @@ public sealed partial class ParkHud
 			RemoveChallengeProgress( record.ReplacementTag );
 		if ( message.Kind == ChallengePresentationKind.Offer )
 		{
-			PostGameMessage( message.OfferText, ChallengeActions( () => level?.Park?.Economy ) );
+			PostChallengeOffer( message.OfferText, record.Tag, record.Lifetime > 0 ? record.Lifetime : ChallengeOfferLifetime );
 			return true;
 		}
 		if ( !ChallengeMessageText.TryFormat( templates, message, objectName, staffEntry, out var text ) )
@@ -111,14 +111,31 @@ public sealed partial class ParkHud
 	/// message (it was closed, deleted, or the park was loaded), the offer is posted again when a slot is free.
 	/// Returns true only on insertion. A full tube leaves the offer awaiting its answer for a later ordinary update to retry.
 	/// </summary>
-	// [EXT:challenge-offer-repost] an offer whose message is deleted unanswered is posted again, so the challenge system (which waits on the answer) never stalls; the original removal path invokes Decline for action 27, whereas this existing extension keeps offers answerable; expiry/removal parity is separate from progress refresh
+	// [EXT:challenge-offer-repost] an offer that the tube refused (it was full) or that a loaded park lacks is posted again, so the challenge system (which waits on the answer) never stalls; a deleted or expired offer is declined as the original does (DeclineRemovedOffer)
 	internal bool KeepChallengeOfferPosted( ParkEconomy? economy )
 	{
 		if ( economy?.Objectives.Current is not { Accepted: false } || economy.Objectives.CurrentDefinition is not { } definition )
 			return false;
 		if ( openedActions?.Any( IsChallengeAction ) == true || pendingActions != null && pendingActions.Any( actions => actions.Any( IsChallengeAction ) ) )
 			return false;
-		return PostGameMessage( economy.Objectives.Describe( definition ), ChallengeActions( () => economy ) );
+		return PostChallengeOffer( economy.Objectives.Describe( definition ), 0, ChallengeOfferLifetime, () => economy );
+	}
+
+	/// <summary>Posts an offer as a tube row with its 90 s expiry and 5 s earlier warning timers (0x48ecce-0x48ed0e); reading it does not stop them.</summary>
+	private bool PostChallengeOffer( string text, int tag, int lifetime, Func<ParkEconomy?>? economy = null )
+	{
+		if ( !PostGameMessage( text, ChallengeActions( economy ?? ( () => level?.Park?.Economy ) ) ) )
+			return false;
+		pendingChallengeRows![^1] = new ChallengeTubeRow( new( tag, 0, 0 ), lifetime, ChallengeUiMilliseconds, isOffer: true );
+		return true;
+	}
+
+	/// <summary>The decline that runs when an offer's tag is removed: it acts only while an offer waits for its answer (+0x3DA), so an answered offer is untouched.</summary>
+	private void DeclineRemovedOffer()
+	{
+		if ( level == null || level.IsReadOnlyVisit || level.Park?.Economy?.Objectives.Current is not { Accepted: false } offer )
+			return;
+		level.Commands.Issue( new AnswerChallengeCommand( offer.DefinitionIndex, offer.OfferedDay, false ) );
 	}
 
 	private static bool IsChallengeAction( GameMessageAction action ) => action.Kind is GameMessageKind.Accept or GameMessageKind.Decline;
@@ -138,7 +155,11 @@ public sealed partial class ParkHud
 		// the command names the offer the message showed, so an answer that arrives late (a session's frame) never answers a newer one
 		if ( !level.Commands.Issue( new AnswerChallengeCommand( offer.DefinitionIndex, offer.OfferedDay, accept ) ).Accepted )
 			return false;
-		CloseMessagePanel();
+		// the action's result 2 removes the selected tag (0x48e531-0x48e544): the offer's row is hidden and released after 500 ms
+		if ( openedChallengeRow is { IsOffer: true } row )
+			BeginChallengeTerminalRemoval( row, closePanel: true );
+		else
+			CloseMessagePanel();
 		return true;
 	}
 }

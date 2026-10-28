@@ -15,7 +15,9 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x4a1278,0x65f447] attaching a reused slot appends it after surviving rows, represented here by list order.
 	// [EXT:message-tube-art] the red tube body is drawn as rectangles and the white icons as discs, the growth per message (77 units) read off the video, instead of the original's tube art
 	// [BIN:TPW-EXE:0x48EE50 tube saved] the tube is saved with the park (ParkHud.MessageTubeSave.cs; the original's tube saver writes the occupied slots with their tag, text, lifetime and context words)
-	// [APPROX:UI-025] original offer removal, timer integration and other action-bearing sources remain incomplete; the original's own tag save record is not imported or written.
+	// [BIN:TPW-EXE:0x48db94 offer removal] the tag window's removal (message 5, sent 500 ms after the removal 0x100002 hides it, 0x4a13e8) runs the action 0x1B first when the tag's second action is 0x1B (0x48db8b-0x48dbb0 -> 0x48e0f0 -> 0x48e269 -> the decline 0x4d2ec0), so an offer that is deleted, expires or is answered leaves a declined (or already answered) challenge
+	// [BIN:TPW-EXE:0x48ede0 offer post] the post wrapper opens a tag at once only when the record's byte +0x24 is 1 (0x48edeb); the tag system's record builder 0x509bf0 clears that byte on every path, so an offer is added like any message (0x48ee09) and never opens by itself
+	// [APPROX:UI-025] the original's own tag save record is not imported or written, and a generic message still leaves the tube when it is opened (the original keeps every tag until it is deleted, answered or expired)
 	public const int MessageTubeCapacity = 10;
 
 	/// <summary>The advisor help the open message panel carries (0x11C, 284).</summary>
@@ -125,6 +127,8 @@ public sealed partial class ParkHud
 	{
 		if ( pendingChallengeRows![index] is { } row && ReferenceEquals( openedChallengeRow, row ) )
 			CloseMessagePanel();
+		if ( pendingChallengeRows[index] is { IsOffer: true } )
+			DeclineRemovedOffer();
 		pendingMessages!.RemoveAt( index );
 		pendingActions!.RemoveAt( index );
 		pendingChallengeRows.RemoveAt( index );
@@ -163,7 +167,7 @@ public sealed partial class ParkHud
 	{
 		if ( !IsPendingMessageVisible( index ) )
 			return false;
-		if ( pendingChallengeRows![index] is { IsTerminal: true } row )
+		if ( pendingChallengeRows![index] is { Lifetime: > 0 } row )
 			BeginChallengeTerminalRemoval( row, closePanel: true );
 		else
 			RemovePendingMessageAt( index );

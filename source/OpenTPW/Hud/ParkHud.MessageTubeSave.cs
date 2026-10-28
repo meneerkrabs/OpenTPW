@@ -19,7 +19,9 @@ public sealed partial class ParkHud
 			var text = pendingMessages[index];
 			if ( pendingChallengeRows![index] is { } row )
 			{
-				if ( row.IsTerminal )
+				if ( row.IsOffer )
+					rows.Add( new MessageTubeRowSave( MessageTubeRowSave.Offer, text, 0, 0, 0, 0, false ) );
+				else if ( row.IsTerminal )
 					rows.Add( new MessageTubeRowSave( MessageTubeRowSave.Terminal, text, row.Identity.Tag, row.Identity.ContextShort, row.Identity.ContextInt, row.Lifetime, !row.Active ) );
 				else
 					rows.Add( new MessageTubeRowSave( MessageTubeRowSave.Progress, text, row.Identity.Tag, row.Identity.ContextShort, row.Identity.ContextInt, 0, false ) );
@@ -54,6 +56,7 @@ public sealed partial class ParkHud
 			var identity = new ChallengeMessageIdentity( row.Tag, row.ContextShort, row.ContextInt );
 			pendingChallengeRows.Add( row.Kind switch
 			{
+				MessageTubeRowSave.Offer => new ChallengeTubeRow( identity, ChallengeOfferLifetime, now, isOffer: true ),
 				MessageTubeRowSave.Progress => new ChallengeTubeRow( identity ),
 				MessageTubeRowSave.Terminal => new ChallengeTubeRow( identity, row.Lifetime, now )
 				{

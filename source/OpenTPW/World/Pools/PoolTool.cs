@@ -11,6 +11,20 @@ public sealed partial class PoolTool
 	/// <summary>Strokes kept for <see cref="Undo"/>.</summary>
 	public const int UndoCapacity = 64;
 
+	/// <summary>
+	/// [EXT:online-coop-undo] The cells a stroke tries at most in a shared park (C5-2): there the tool ends a stroke that has tried this many and the drag goes on as a new one, for the host and a
+	/// guest alike, so every stroke's take-back fits one command (<see cref="ParkCommandCodec.MaximumCells"/>); single player keeps its strokes whole.
+	/// </summary>
+	public const int SessionStrokeCells = ParkCommandCodec.MaximumCells;
+
+	/// <summary>[EXT:online-coop-undo] The cells this tool's stroke tries at most in a shared park: <see cref="SessionStrokeCells"/> (a test lowers it).</summary>
+	internal int StrokeCellBound { get; set; } = SessionStrokeCells;
+
+	/// <summary>[EXT:online-coop-undo] The host's stroke in a shared park (C5-2): its next paint or erase command opens it (the first marker), its name, and the cells it tried.</summary>
+	private bool strokeOpening;
+	private long? strokeName;
+	private int strokeCells;
+
 	private readonly PoolBuilder builder;
 	private readonly Func<ParkCommand, ParkCommandResult> issue;
 	private readonly List<PoolStroke> strokes = new();
@@ -122,6 +136,8 @@ public sealed partial class PoolTool
 		slideTower = null;
 		SlideCompleted = false;
 		IsRiver = river && !erase;
+		// [EXT:online-coop-undo] a paint or erase mode's Backspace refused by the rights ends that mode alone (C5-2)
+		paintSession++;
 		last = null;
 		pending.Clear();
 		pendingMarked.Clear();
@@ -239,6 +255,8 @@ public sealed partial class PoolTool
 			BeginGuestStroke( x, y );
 			return null;
 		}
+		// [EXT:online-coop-undo] the host's press opens a stroke in a shared park: its first command says so (C5-2)
+		(strokeOpening, strokeName, strokeCells) = (true, null, 0);
 		return Write( x, y );
 	}
 
@@ -258,6 +276,12 @@ public sealed partial class PoolTool
 				if ( !AddGuestCell( cell.X, cell.Y ) )
 					break;
 				continue;
+			}
+			// [EXT:online-coop-undo] in a shared park a stroke that tried its most cells ends, and the drag goes on as a new one (C5-2)
+			if ( slideTower == null && TakesBack?.Invoke() == true && strokeCells >= StrokeCellBound )
+			{
+				KeepStroke();
+				(strokeOpening, strokeName, strokeCells) = (true, null, 0);
 			}
 			Write( cell.X, cell.Y );
 		}
@@ -295,7 +319,7 @@ public sealed partial class PoolTool
 			Ended?.Invoke();
 			return LastStroke;
 		}
-		var stroke = new PoolStroke( IsErasing, cells, IsErasing ? 0 : pendingMoney, IsErasing ? -pendingMoney : 0, LastRefusal ) { RiverMarked = pendingMarked.ToArray() };
+		var stroke = new PoolStroke( IsErasing, cells, IsErasing ? 0 : pendingMoney, IsErasing ? -pendingMoney : 0, LastRefusal ) { RiverMarked = pendingMarked.ToArray(), Name = strokeName };
 		pendingMarked.Clear();
 		pendingMoney = 0;
 		// [EXT:pools-slides] the pieces of a slide are taken back by Backspace in the slide mode, not by the pool strokes' undo (which would erase the pool cells of the track)
@@ -309,6 +333,27 @@ public sealed partial class PoolTool
 			strokes.RemoveAt( 0 );
 		LastStroke = stroke;
 		return stroke;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The host's stroke that tried its most cells in a shared park ends where the drag is (C5-2): what it wrote goes onto the stack as a stroke of its own, as a release
+	/// would put it, and the drag goes on.
+	/// </summary>
+	private void KeepStroke()
+	{
+		if ( pending.Count == 0 && pendingMarked.Count == 0 )
+			return;
+		var stroke = new PoolStroke( IsErasing, pending.ToArray(), IsErasing ? 0 : pendingMoney, IsErasing ? -pendingMoney : 0, LastRefusal )
+		{
+			RiverMarked = pendingMarked.ToArray(),
+			Name = strokeName
+		};
+		pending.Clear();
+		pendingMarked.Clear();
+		pendingMoney = 0;
+		strokes.Add( stroke );
+		if ( strokes.Count > UndoCapacity )
+			strokes.RemoveAt( 0 );
 	}
 
 	/// <summary>[EXT:online-coop-undo] Why the host's last Backspace in the slide mode took nothing back in a shared park (C5): its refused take-back.</summary>
@@ -357,11 +402,33 @@ public sealed partial class PoolTool
 			}
 			return Slides != null && issue( new UndoPoolSlidePieceCommand( tower.X, tower.Y ) ).Accepted;
 		}
-		// [EXT:online-coop-commands] a guest's strokes are the host's to undo: their undo names its cells freely (undo is C5, as for lines)
+		// [EXT:online-coop-commands] a guest's strokes are the host's to undo: their undo names its cells freely; [EXT:online-coop-undo] in a shared park its Backspace is a take-back of its own
+		// newest stroke, which the host's journal decides, queued behind its own unsent batches (C5-2)
 		if ( SendsRequests?.Invoke() == true )
-			return false;
+		{
+			if ( !IsActive || TakesBack?.Invoke() != true )
+				return false;
+			last = null;
+			ReleaseGuestStroke();
+			return QueueGuestStrokeUndo();
+		}
 		if ( strokes.Count == 0 )
 			return false;
+		// [EXT:online-coop-undo] the host's in a shared park takes back its own newest stroke through its journal, and pops it only when it was taken (C5-2)
+		if ( TakesBack?.Invoke() == true )
+		{
+			if ( strokes[^1].Name is not { } name )
+				return false;
+			var taken = issue( new TakeBackCommand( true, name, -1, -1, -1 ) );
+			if ( !taken.Accepted )
+			{
+				undoRefusal = taken;
+				return false;
+			}
+			strokes.RemoveAt( strokes.Count - 1 );
+			last = null;
+			return true;
+		}
 		var stroke = strokes[^1];
 		strokes.RemoveAt( strokes.Count - 1 );
 		// [EXT:online-coop-commands] the stroke's cells are painted or erased again by commands (UndoPoolStrokeCommand): one, or chunks for a stroke longer than a command takes;
@@ -458,8 +525,16 @@ public sealed partial class PoolTool
 			LastSlideRefusal ??= slide;
 			return mapped;
 		}
-		var write = issue( IsErasing ? new ErasePoolCellCommand( x, y ) : new PaintPoolCellCommand( x, y, IsRiver ) ).Value is PoolCellWrite written
-			? written : new PoolCellWrite( PoolBuildResult.Occupied, 0 );
+		// [EXT:online-coop-undo] in a shared park the stroke's first command says so, and its record names the stroke (C5-2)
+		var opens = strokeOpening && TakesBack?.Invoke() == true;
+		ParkCommand cell = IsErasing ? new ErasePoolCellCommand( x, y ) { First = opens } : new PaintPoolCellCommand( x, y, IsRiver ) { First = opens };
+		var write = issue( cell ).Value is PoolCellWrite written ? written : new PoolCellWrite( PoolBuildResult.Occupied, 0 );
+		if ( opens )
+		{
+			strokeOpening = false;
+			strokeName = HostRecord?.Invoke();
+		}
+		strokeCells++;
 		var result = write.Result;
 		if ( result == PoolBuildResult.Ok )
 		{

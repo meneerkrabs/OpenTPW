@@ -112,6 +112,33 @@ public sealed partial class Level
 		return OnlyLinksBeside( cells, copy, trace, footprint );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-undo] Whether a pool stroke's inverse <paramref name="inverse"/> would take the stroke back whole now (C5-2): its own code (<see cref="UndoPoolStrokeCommand"/>) runs on a
+	/// copy of the cells with a copy of the bank's balance (<see cref="PoolPredictionMoney"/>), the rules it asks bound to the copy where they read cells (the last water cell of an attraction's
+	/// water side, the land a slide reserves) and to the park where they read the guests, the staff and the objects, which the inverse does not change. Every erased cell must be painted again,
+	/// each meeting the paint's refusals and both money tests in its order against the balance the earlier cells left; or every river mark's flag must come off and every painted cell be erased,
+	/// none refused; and nothing outside the stroke's <paramref name="footprint"/> may change.
+	/// </summary>
+	internal bool PredictPoolStrokeUndo( UndoPoolStrokeCommand inverse, IReadOnlySet<(int X, int Y)> footprint )
+	{
+		if ( PoolBuilder == null || Guests?.Grid.Cells is not { } cells || Objects == null )
+			return false;
+		// a river mark the inverse would pass over (no pool cell any more, or no river flag on it) is no exact take-back
+		if ( !inverse.Erase && inverse.RiverMarked.Any( cell => cells.RawTypeAt( cell.X, cell.Y ) != ParkCellTypes.PoolWater
+			|| !cells.FlagsAt( cell.X, cell.Y ).HasFlag( ParkCellFlags.PoolRiver ) ) )
+			return false;
+		var copy = cells.CopyForPrediction();
+		var trace = new HashSet<(int X, int Y)>();
+		copy.Changed = ( x, y, _ ) => trace.Add( (x, y) );
+		var predicted = new PoolBuilder( copy, () => null, Objects.Grid, ( x, y ) => IsPathBlockedOn( x, y, copy ), IsStoodOn, ( x, y ) => PoolEraseBlock( x, y, copy ) )
+		{
+			PredictionMoney = Park?.Economy is { } economy ? PoolPredictionMoney.Of( economy ) : null
+		};
+		if ( inverse.Apply( predicted, null, null ).Value is not PoolStroke done || done.FirstRefusal != null || done.RanOutOfMoney || done.Cells.Count != inverse.Cells.Count )
+			return false;
+		return trace.All( footprint.Contains );
+	}
+
 	/// <summary>Whether something stands on <paramref name="cell"/> that no path or queue step lays: an object's footprint, a pool bridge, a slide piece.</summary>
 	private bool StandsOn( ParkCellMap cells, (int X, int Y) cell ) =>
 		Objects?.FindAt( cell.X, cell.Y ) != null || cells.PoolBridges?.Covers( cell.X, cell.Y ) == true || PoolSlides?.SlideAt( cell.X, cell.Y ) != null;

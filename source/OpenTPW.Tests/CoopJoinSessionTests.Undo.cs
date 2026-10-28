@@ -43,4 +43,46 @@ public partial class CoopJoinSessionTests
 		Build( 60, 65 );
 		CatchUpAndCompare( guest );
 	}
+
+	[TestMethod]
+	public void AStrokeFromBeforeAResyncIsNoneOfTheNewToolsAndItsBackspaceTakesBackOnlyANewOne()
+	{
+		var guest = Hosted( 1 ).Single();
+		Build( 60, 64 );
+		var seat = guest.Link.Slot;
+		host.Issue( new SetBuildGrantCommand( seat, true ) );
+		RoundsUntil( () => guest.Level!.HasBuildGrant( seat ), "the grant reached the guest" );
+		var view = new StaffView( guest );
+		guest.AfterFrame = () => view.Update();
+		// a stroke the guest drew before the resync, its record the host's
+		var requests = guest.Session!.GuestCommands!;
+		var before = requests.Submit( new PoolCellsCommand( false, false, new[] { (14, 26), (15, 26) } ) { First = true } );
+		RoundsUntil( () => !before.IsOpen, "the stroke came back" );
+		Assert.IsTrue( before.Accepted );
+		BeginResync( guest );
+		FinishResync( guest, () => true, "the park was swapped in" );
+		// the swapped-in park's tool knows no stroke of before: Backspace takes back the stroke drawn since, by its own name, and only that one
+		guest.Enter();
+		var tool = guest.Level!.PoolTool!;
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		tool.Press( 20, 26 );
+		tool.Hover( 21, 26 );
+		tool.Release();
+		RoundsUntil( () => !tool.HasGuestBatches, "the new stroke came back" );
+		guest.Enter();
+		Assert.IsTrue( tool.Undo() );
+		RoundsUntil( () => !tool.HasGuestBatches, "its take-back came back" );
+		var taken = host.Level!.Commands.Log.Select( entry => entry.Command ).OfType<TakeBackCommand>().Where( command => command.Player == seat ).ToArray();
+		Assert.AreEqual( 1, taken.Length );
+		Assert.AreEqual( TakeBackVerdict.Taken, taken[0].Verdict );
+		Assert.IsTrue( taken[0].Stroke && taken[0].Step > before.Record, "named by the new stroke's own record" );
+		foreach ( var level in new[] { host.Level!, guest.Level! } )
+		{
+			var cells = level.Guests!.Grid.Cells;
+			Assert.IsTrue( cells.RawTypeAt( 14, 26 ) == ParkCellTypes.PoolWater && cells.RawTypeAt( 15, 26 ) == ParkCellTypes.PoolWater, "the stroke of before stays" );
+			Assert.IsFalse( cells.RawTypeAt( 20, 26 ) == ParkCellTypes.PoolWater || cells.RawTypeAt( 21, 26 ) == ParkCellTypes.PoolWater, "the new one is taken back" );
+		}
+		Build( 60, 65 );
+		CatchUpAndCompare( guest );
+	}
 }

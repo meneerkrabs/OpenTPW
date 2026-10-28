@@ -54,11 +54,36 @@ public sealed record PoolStroke( bool Erase, IReadOnlyList<(int X, int Y)> Cells
 	/// <summary>[EXT:pools-river] Cells that already were pool cells and got the river flag in this stroke (undone by clearing it). Painted river cells are in <see cref="Cells"/>.</summary>
 	public IReadOnlyList<(int X, int Y)> RiverMarked { get; init; } = Array.Empty<(int X, int Y)>();
 
+	/// <summary>[EXT:online-coop-undo] In a shared park, the stroke's name: the record of its first command, which its take-back names (C5-2); null elsewhere.</summary>
+	public long? Name { get; init; }
+
 	/// <summary>True when no cell of the stroke was refused.</summary>
 	public bool Completed => FirstRefusal == null;
 
 	/// <summary>True when the stroke ended at a cell it could not pay for (<see cref="PoolBuilder.PaintCells"/> writes no cell after it).</summary>
 	public bool RanOutOfMoney { get; init; }
+}
+
+/// <summary>
+/// [EXT:online-coop-undo] A copy of the bank's balance a take-back's prediction pays with (C5-2, <see cref="PoolBuilder.PredictionMoney"/>): the bank's own two tests on it, the preview's
+/// (<see cref="ParkEconomy.CanPreviewLine"/>) and the commit's (<see cref="ParkEconomy.CanSpendCell"/>), and each charge taken off it as the bank takes it (nothing while its withdrawals are off).
+/// </summary>
+internal sealed class PoolPredictionMoney( long balance, long cellCost, bool withdrawals )
+{
+	public long Balance { get; private set; } = balance;
+	public long CellCost => cellCost;
+	public bool CanPreviewLine( long pending ) => ParkEconomy.PreviewsLine( pending, Balance );
+	public bool CanSpendCell() => ParkEconomy.Affords( Balance, cellCost );
+
+	/// <summary>One pool cell's charge, as the bank posts it (<see cref="ParkEconomy.TrySpendCell"/>).</summary>
+	public void SpendCell()
+	{
+		if ( withdrawals )
+			Balance -= cellCost;
+	}
+
+	/// <summary>The bank of <paramref name="economy"/> as it stands now.</summary>
+	public static PoolPredictionMoney Of( ParkEconomy economy ) => new( economy.Balance, economy.CellCost( CellPurchase.Pool ), economy.WithdrawalsEnabled );
 }
 
 /// <summary>
@@ -105,7 +130,13 @@ public sealed class PoolBuilder
 	public ParkEconomy? Economy => economy();
 
 	/// <summary>Cost of one pool cell (<see cref="ParkEconomy.PoolCellCost"/>), or 0 without an economy.</summary>
-	public long CellCost => Economy?.CellCost( CellPurchase.Pool ) ?? 0;
+	public long CellCost => PredictionMoney?.CellCost ?? Economy?.CellCost( CellPurchase.Pool ) ?? 0;
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The money a take-back's prediction pays with (C5-2): set, the builder's money tests and charges read and spend this copy of the bank's balance, by the bank's own
+	/// arithmetic, in place of the park's economy, so a repaint predicted on a copy of the cells meets each test against the balance its earlier cells left.
+	/// </summary>
+	internal PoolPredictionMoney? PredictionMoney { get; init; }
 
 	/// <summary>The spread of the four corner heights of cell (<paramref name="x"/>, <paramref name="y"/>): the highest minus the lowest, in engine units.</summary>
 	public static float CornerSpread( IParkGrid terrain, int x, int y )
@@ -145,7 +176,7 @@ public sealed class PoolBuilder
 			return ground == OriginalPlacementResult.OutsideTerrain ? PoolBuildResult.OutsideTerrain : PoolBuildResult.Terrain;
 		if ( CornerSpread( Terrain, x, y ) > MaximumCornerSpread )
 			return PoolBuildResult.TooSteep;
-		if ( Economy is { } park && !park.CanPreviewLine( pending + CellCost ) )
+		if ( PredictionMoney is { } money ? !money.CanPreviewLine( pending + CellCost ) : Economy is { } park && !park.CanPreviewLine( pending + CellCost ) )
 			return PoolBuildResult.NotEnoughMoney;
 		return PoolBuildResult.Ok;
 	}
@@ -176,14 +207,18 @@ public sealed class PoolBuilder
 		if ( check != PoolBuildResult.Ok )
 			return check;
 		var park = Economy;
-		if ( park != null && !park.CanSpendCell( CellPurchase.Pool ) )
+		var predicted = PredictionMoney;
+		if ( predicted != null ? !predicted.CanSpendCell() : park != null && !park.CanSpendCell( CellPurchase.Pool ) )
 			return PoolBuildResult.NotEnoughMoney;
-		var before = park?.Balance ?? 0;
+		var before = predicted?.Balance ?? park?.Balance ?? 0;
 		Cells.SetType( x, y, ParkCellType.PoolWater );
 		if ( river )
 			Cells.SetFlags( x, y, Cells.FlagsAt( x, y ) | ParkCellFlags.PoolRiver );
-		park?.TrySpendCell( CellPurchase.Pool );
-		LastCharged = before - (park?.Balance ?? 0);
+		if ( predicted != null )
+			predicted.SpendCell();
+		else
+			park?.TrySpendCell( CellPurchase.Pool );
+		LastCharged = before - (predicted?.Balance ?? park?.Balance ?? 0);
 		Painted?.Invoke();
 		return PoolBuildResult.Ok;
 	}

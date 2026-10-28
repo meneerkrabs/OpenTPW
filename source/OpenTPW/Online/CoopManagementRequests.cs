@@ -56,7 +56,9 @@ internal enum ManagementKnobKind : byte
 	/// <summary>An employee's patrol area, set or cleared (<see cref="SetPatrolAreaCommand"/>).</summary>
 	Patrol = 13,
 	/// <summary>A role's training budget (<see cref="ManagementKnob.Index"/> is the role, <see cref="SetTrainingBudgetCommand"/>).</summary>
-	TrainingBudget = 14
+	TrainingBudget = 14,
+	/// <summary>[EXT:online-coop-commands] A wave machine's settings (<see cref="SetPoolWavesCommand"/>, C5-2).</summary>
+	Waves = 15
 }
 
 /// <summary>[EXT:online-coop-commands] A control within a target (<see cref="ManagementKnobKind"/>), with its index where a target has several of a kind.</summary>
@@ -76,6 +78,7 @@ internal readonly record struct ManagementKnob( ManagementKnobKind Kind, int Ind
 	public static ManagementKnob StaffName => new( ManagementKnobKind.StaffName );
 	public static ManagementKnob Patrol => new( ManagementKnobKind.Patrol );
 	public static ManagementKnob TrainingBudget( StaffType role ) => new( ManagementKnobKind.TrainingBudget, (int)role );
+	public static ManagementKnob Waves => new( ManagementKnobKind.Waves );
 }
 
 /// <summary>[EXT:online-coop-commands] One command of a window's action, for <see cref="CoopManagementRequests.Enqueue"/>: its target and its knob, if it has one.</summary>
@@ -198,7 +201,7 @@ internal sealed record ManagementOutcome( ManagementEntry Entry, ManagementOutco
 	/// <summary>
 	/// What a park's refusal of <paramref name="command"/> says: the loans' as their confirmation says it, a stale action that it is no longer there, a dismissal of an employee another player
 	/// carries that it is being moved, any other refusal of a staff window's action (the employee gone) or of the staff tool's (a candidate gone or reserved, a member that cannot be picked
-	/// up, a cell that takes no one) that it is no longer there (C4c-2), anything else nothing.
+	/// up, a cell that takes no one) that it is no longer there (C4c-2), a wave machine gone that it is no longer there (C5-2), anything else nothing.
 	/// </summary>
 	private static ManagementNote ParkRefusalNote( ParkCommand command, ParkCommandResult? result ) => command switch
 	{
@@ -206,6 +209,8 @@ internal sealed record ManagementOutcome( ManagementEntry Entry, ManagementOutco
 		IStaleChecked when result?.Reason == ParkSettingCommand.StaleReason => new ManagementNote( ManagementNoteKind.NotAvailable ),
 		FireStaffCommand when result?.Reason == FireStaffCommand.BeingMovedReason => new ManagementNote( ManagementNoteKind.BeingMoved ),
 		RenameStaffCommand or FireStaffCommand or SetPatrolAreaCommand or SetTrainingBudgetCommand or StaffToolCommand => new ManagementNote( ManagementNoteKind.NotAvailable ),
+		// [EXT:online-coop-commands] a wave machine removed while its settings waited, or left without water, is no longer there; the same settings set meanwhile say nothing (C5-2)
+		SetPoolWavesCommand when result?.Reason == SetPoolWavesCommand.NoMachineReason => new ManagementNote( ManagementNoteKind.NotAvailable ),
 		_ => ManagementNote.None
 	};
 }

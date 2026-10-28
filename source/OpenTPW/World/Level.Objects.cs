@@ -611,7 +611,14 @@ public partial class Level
 	/// [EXT:pools-swim] Why a pool cell cannot be erased: a swimmer is in it, or it lies beside the back of a changing room (the room needs its pool, and a save that holds a changing room
 	/// records the extension). Null when it can go.
 	/// </summary>
-	internal PoolBuildResult? PoolEraseBlock( int x, int y )
+	internal PoolBuildResult? PoolEraseBlock( int x, int y ) => PoolEraseBlock( x, y, null );
+
+	/// <summary>
+	/// <see cref="PoolEraseBlock(int, int)"/> with the rules that read the cells read on <paramref name="map"/> (null: the park's): [EXT:online-coop-undo] a take-back's prediction asks it of its
+	/// copy of the cells, so a cell its walk erased earlier counts for the later ones (the last water cell of an attraction's water side, its current access cell), while the swimmers, the
+	/// slides' riders, the bridges and the objects are the park's, which the inverse does not change (C5-2).
+	/// </summary>
+	internal PoolBuildResult? PoolEraseBlock( int x, int y, ParkCellMap? map )
 	{
 		if ( PoolBridges?.Covers( x, y ) == true ) return PoolBuildResult.Occupied;
 		if ( Guests?.IsSwimmerIn( x, y ) == true )
@@ -626,9 +633,9 @@ public partial class Level
 		if ( PoolExtras.NeedsWater( PoolExtras.Sites( Objects ), x, y ) )
 			return PoolBuildResult.ExtraNeedsWater;
 		// [EXT:pools-attractions] the last water cell of a water attraction's water side stays, and so does its current access cell while somebody is using it
-		if ( PoolSites.IsAccessCell( x, y ) )
+		if ( map == null ? PoolSites.IsAccessCell( x, y ) : PoolSites.IsAccessCell( x, y, map ) )
 			return PoolBuildResult.AttractionAccess;
-		foreach ( var site in PoolSites.All )
+		foreach ( var site in map == null ? PoolSites.All : PoolSites.SitesOn( map ) )
 			if ( site.Access == (x, y) && Guests?.Guests.Any( guest => guest.InPoolActivity && guest.PoolActivityTarget == site.ObjectId ) == true )
 				return PoolBuildResult.Swimmers;
 		return null;
@@ -879,7 +886,11 @@ public partial class Level
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
 	// overwrite priority than the path's gives way instead (ParkPathBuilder.ObjectGivesWay).
-	private bool IsPathBlocked( int x, int y ) => PoolBridges?.Reserves( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+	private bool IsPathBlocked( int x, int y ) => IsPathBlockedOn( x, y, Guests?.Grid.Cells );
+
+	/// <summary><see cref="IsPathBlocked(int, int)"/> with the land a slide reserves read on <paramref name="map"/> ([EXT:online-coop-undo] a take-back's prediction's copy, C5-2).</summary>
+	private bool IsPathBlockedOn( int x, int y, ParkCellMap? map ) => PoolBridges?.Reserves( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y )
+		|| (Guests != null && map != null && PoolSlides?.ReservesLand( x, y, map ) == true);
 
 	/// <summary>[EXT:pools-bridges] The same rule for laying a path, except that the cells just outside a bridge's two ends stay open: a bridge needs no path there, so the player lays one later.</summary>
 	private bool IsPathBuildBlocked( int x, int y ) => PoolBridges?.Covers( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);

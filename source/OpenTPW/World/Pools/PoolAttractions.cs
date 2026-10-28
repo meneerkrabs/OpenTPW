@@ -176,24 +176,36 @@ public sealed class PoolAttractionSites
 				return Array.Empty<PoolAttractionSite>();
 			if ( cached != null && cachedWrites == map.PoolWrites )
 				return cached;
-			var sites = new List<PoolAttractionSite>();
-			foreach ( var item in objects() )
-			{
-				var kind = item.IsDeleted ? PoolAttractionKind.None : PoolAttractions.KindOf( item.Entry );
-				if ( kind == PoolAttractionKind.None || item.ThingId == 0 )
-					continue;     // an object without a thing slot (no park pool) cannot be named by a guest's activity target
-				var placement = item.Placement;
-				foreach ( var (x, y) in PoolAttractions.AccessCandidates( item.Entry, placement.X, placement.Y, placement.Rotation ) )
-					if ( map.InBounds( x, y ) && map.RawTypeAt( x, y ) == ParkCellTypes.PoolWater )
-					{
-						sites.Add( new PoolAttractionSite( item.ThingId, kind, item.Cells.Select( cell => (cell.X, cell.Y) ).ToArray(), (x, y) ) );
-						break;
-					}
-			}
+			var sites = Derive( map );
 			cachedWrites = map.PoolWrites;
 			Version++;
 			return cached = sites;
 		}
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The sites as <paramref name="map"/> holds their water, uncached: a take-back's prediction reads its copy of the cells (C5-2). Sites given directly are those.
+	/// </summary>
+	internal IReadOnlyList<PoolAttractionSite> SitesOn( ParkCellMap map ) => fixedSites != null ? fixedSites() : !FeatureGates.Pools ? Array.Empty<PoolAttractionSite>() : Derive( map );
+
+	/// <summary>Every placed water attraction whose water side holds pool water on <paramref name="map"/>, in placement order, its access cell the first candidate with water.</summary>
+	private List<PoolAttractionSite> Derive( ParkCellMap map )
+	{
+		var sites = new List<PoolAttractionSite>();
+		foreach ( var item in objects() )
+		{
+			var kind = item.IsDeleted ? PoolAttractionKind.None : PoolAttractions.KindOf( item.Entry );
+			if ( kind == PoolAttractionKind.None || item.ThingId == 0 )
+				continue;     // an object without a thing slot (no park pool) cannot be named by a guest's activity target
+			var placement = item.Placement;
+			foreach ( var (x, y) in PoolAttractions.AccessCandidates( item.Entry, placement.X, placement.Y, placement.Rotation ) )
+				if ( map.InBounds( x, y ) && map.RawTypeAt( x, y ) == ParkCellTypes.PoolWater )
+				{
+					sites.Add( new PoolAttractionSite( item.ThingId, kind, item.Cells.Select( cell => (cell.X, cell.Y) ).ToArray(), (x, y) ) );
+					break;
+				}
+		}
+		return sites;
 	}
 
 	/// <summary>The site of the object with this attraction id, or null when it is gone or has no water on its water side.</summary>
@@ -225,7 +237,13 @@ public sealed class PoolAttractionSites
 	/// Whether the pool cell (x, y) is the water side of a water attraction: erasing it would leave the attraction without its pool, so the pool tool refuses it
 	/// (<see cref="PoolBuildResult.AttractionAccess"/>), as it does for a changing room. Reads the objects, not the cached sites: the cell must be refused whichever cell of the water side holds the water.
 	/// </summary>
-	public bool IsAccessCell( int x, int y )
+	public bool IsAccessCell( int x, int y ) => IsAccessCell( x, y, cells() );
+
+	/// <summary>
+	/// <see cref="IsAccessCell(int, int)"/> read on <paramref name="map"/>: [EXT:online-coop-undo] a take-back's prediction asks it of its copy of the cells, so a water cell its walk erased earlier
+	/// counts for the later ones (C5-2).
+	/// </summary>
+	internal bool IsAccessCell( int x, int y, ParkCellMap? map )
 	{
 		foreach ( var item in objects() )
 		{
@@ -236,8 +254,7 @@ public sealed class PoolAttractionSites
 			if ( !candidates.Contains( (x, y) ) )
 				continue;
 			// the object only needs one water cell: a cell is protected when it is the last water cell of the object's water side
-			var cellsMap = cells();
-			var others = candidates.Count( candidate => candidate != (x, y) && cellsMap != null && cellsMap.InBounds( candidate.X, candidate.Y ) && cellsMap.RawTypeAt( candidate.X, candidate.Y ) == ParkCellTypes.PoolWater );
+			var others = candidates.Count( candidate => candidate != (x, y) && map != null && map.InBounds( candidate.X, candidate.Y ) && map.RawTypeAt( candidate.X, candidate.Y ) == ParkCellTypes.PoolWater );
 			if ( others == 0 )
 				return true;
 		}

@@ -391,9 +391,10 @@ public sealed partial class ParkHud
 		if ( report.RightsRefused != null )
 		{
 			SayGuestNote( RightsRefusalText( report.RightsReason ) );
-			// [EXT:online-coop-undo] a slide take-back the rights refused (the grant taken back on its way) ends the slide mode it was sent from, as it ends the line tools (C5)
-			if ( report.RightsRefused is TakeBackCommand && level.PoolTool is { } slideTool && slideTool.InSlideSession( report.SlideSession ) )
-				slideTool.Cancel();
+			// [EXT:online-coop-undo] a slide or stroke take-back the rights refused (the grant taken back on its way) ends the slide, paint or erase mode it was sent from, as it ends the line tools
+			// (C5, C5-2)
+			if ( report.RightsRefused is TakeBackCommand && level.PoolTool is { } poolTool && (poolTool.InSlideSession( report.SlideSession ) || poolTool.InPaintSession( report.PaintSession )) )
+				poolTool.Cancel();
 		}
 		else if ( report.NotTaken )
 			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );

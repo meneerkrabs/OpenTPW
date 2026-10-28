@@ -38,7 +38,13 @@ public sealed class TrackBuilder
 
 	/// <summary>Cost of one tile (<c>Costs.WaterTrackCell</c> or <c>Costs.KartTrackCell</c>), or 0 without an economy.</summary>
 	// [DATA:Standard.sam:Costs.KartTrackCell/WaterTrackCell] one cell cost per tile, charged when the tile is written; the original spends nothing while the free-build byte 0x7DE2D is set (PATH-009)
-	public long TileCost => Economy?.CellCost( Purchase ) ?? 0;
+	public long TileCost => PredictionMoney?.CellCost ?? Economy?.CellCost( Purchase ) ?? 0;
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The money a prediction pays with (C5-3, a line predicted on a copy of the park): set, the builder's money tests and charges read and spend this copy of the bank's
+	/// balance, by the bank's own arithmetic, in place of the park's economy, so the copy's line stops where the park's would.
+	/// </summary>
+	internal CellPredictionMoney? PredictionMoney { get; init; }
 
 	// ---- Reading -----------------------------------------------------------------------------------
 
@@ -132,7 +138,7 @@ public sealed class TrackBuilder
 		if ( existing != 0 )
 			return CellBuildResult.Occupied;
 		// [BIN:STP-PPC:0x10084550 placement validator] the preview refuses a line whose pending cost exceeds the balance (the path tool's test)
-		if ( pending is { } before && Economy is { } park && !park.CanPreviewLine( before + TileCost ) )
+		if ( pending is { } before && (PredictionMoney is { } money ? !money.CanPreviewLine( before + TileCost ) : Economy is { } park && !park.CanPreviewLine( before + TileCost )) )
 			return CellBuildResult.NotEnoughMoney;
 		return CellBuildResult.Ok;
 	}
@@ -160,11 +166,15 @@ public sealed class TrackBuilder
 		}
 		if ( check != CellBuildResult.Ok )
 			return check;
-		var park = free ? null : Economy;
+		// [EXT:online-coop-undo] a prediction pays with its copy of the balance (C5-3)
+		var money = free ? null : PredictionMoney;
+		var park = free || money != null ? null : Economy;
+		if ( money != null && !money.CanSpendCell() )
+			return CellBuildResult.NotEnoughMoney;
 		if ( park != null && !park.CanSpendCell( Purchase ) )
 			return CellBuildResult.NotEnoughMoney;
 		// [BIN:TPW-EXE:0x00538FC0 type op credit test] a free tile (the placement's) is still refused while the player's cash is below zero (the test is cash - cost >= 0 with a cost of 0)
-		if ( free && Economy is { Balance: < 0 } )
+		if ( free && (PredictionMoney is { } shadow ? shadow.Balance < 0 : Economy is { Balance: < 0 }) )
 			return CellBuildResult.NotEnoughMoney;
 		var overPath = false;
 		foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
@@ -182,6 +192,7 @@ public sealed class TrackBuilder
 				Owner = owner
 			} );
 		}
+		money?.SpendCell();
 		park?.TrySpendCell( Purchase );
 		ConnectDangling( x, y, owner );
 		Refresh( x, y );

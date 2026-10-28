@@ -2223,7 +2223,10 @@ public sealed class ParkEconomy : IParkEconomy
 	/// cell, balance − cost ≥ 0 as a wrapping 32-bit difference of the original's signed balance word.
 	/// </summary>
 	// [BIN:STP-PPC:0x10082BC8 SetCellType money test] subf balance − cost in 32 bits, then the sign bit: balance −2^31 with cost 1 wraps to affordable, balance 2^31 − 1 with cost −1 to refused
-	public bool CanSpendCell( CellPurchase kind ) => unchecked( (int)Balance - (int)CellCost( kind ) ) >= 0;
+	public bool CanSpendCell( CellPurchase kind ) => Affords( Balance, CellCost( kind ) );
+
+	/// <summary>The commit's money test of <see cref="CanSpendCell"/> on a given <paramref name="balance"/>: balance − cost ≥ 0 in 32 bits ([EXT:online-coop-undo] a take-back's prediction pays with its own copy of the balance, C5-2).</summary>
+	internal static bool Affords( long balance, long cost ) => unchecked( (int)balance - (int)cost ) >= 0;
 
 	/// <summary>
 	/// The preview's money test (the placement validator, PATH-plan §3.3): <paramref name="pendingLineCost"/> is the
@@ -2232,10 +2235,13 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <see cref="CanSpendCell"/> only at the 32-bit edges and for a zero sum.
 	/// </summary>
 	// [BIN:STP-PPC:0x1007BCC0 pending line cost] add (no overflow trap) of the cell price; [BIN:STP-PPC:0x10084534 placement validator] a zero pending cost skips the test; [BIN:STP-PPC:0x10084550 placement validator] cmpw pending, balance and refuse when greater
-	public bool CanPreviewLine( long pendingLineCost )
+	public bool CanPreviewLine( long pendingLineCost ) => PreviewsLine( pendingLineCost, Balance );
+
+	/// <summary>The preview's money test of <see cref="CanPreviewLine"/> on a given <paramref name="balance"/> ([EXT:online-coop-undo] a take-back's prediction pays with its own copy, C5-2).</summary>
+	internal static bool PreviewsLine( long pendingLineCost, long balance )
 	{
 		var pending = unchecked( (int)pendingLineCost );
-		return pending == 0 || pending <= unchecked( (int)Balance );
+		return pending == 0 || pending <= unchecked( (int)balance );
 	}
 
 	/// <summary><see cref="CanPreviewLine"/> for <paramref name="cells"/> cells of one kind (this cell included).</summary>

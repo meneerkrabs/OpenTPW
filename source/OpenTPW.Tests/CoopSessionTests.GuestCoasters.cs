@@ -84,7 +84,7 @@ public partial class CoopSessionTests
 		Assert.IsTrue( panel.IsWaiting );
 		var waits = guest.Level.WaitingClicks;
 		Assert.IsFalse( guest.Level.SendCoasterClick( x, y, closing ), "no other click while it waits" );
-		Assert.IsFalse( guest.Level.SendCoasterBackspace(), "nor a Backspace" );
+		Assert.AreEqual( CoasterBackspace.Waits, guest.Level.SendCoasterBackspace(), "nor a Backspace" );
 		Assert.IsFalse( panel.Select( CoasterToolButton.Height ), "nor a button" );
 		Assert.AreEqual( waits + 2, guest.Level.WaitingClicks );
 		RoundsUntil( () => !panel.IsWaiting, host, guest, view, "the click came back" );
@@ -268,15 +268,16 @@ public partial class CoopSessionTests
 		var pylons = builder.Track.Nodes.Count;
 		guest.Enter();
 		var panel = guest.Level.CoasterPanel!;
-		Assert.IsTrue( guest.Level.SendCoasterBackspace() );
+		Assert.AreEqual( CoasterBackspace.Sent, guest.Level.SendCoasterBackspace() );
 		Assert.IsTrue( panel.IsWaiting );
 		Assert.AreEqual( pylons, builder.Track.Nodes.Count, "nothing taken off yet" );
 		var waits = guest.Level.WaitingClicks;
-		Assert.IsFalse( guest.Level.SendCoasterBackspace(), "one at a time" );
+		Assert.AreEqual( CoasterBackspace.Waits, guest.Level.SendCoasterBackspace(), "one at a time" );
 		Assert.AreEqual( waits + 1, guest.Level.WaitingClicks );
 		RoundsUntil( () => !panel.IsWaiting, host, guest, view, "the Backspace came back" );
 		Assert.AreEqual( (pylons - 1, pylons - 1), (builder.Track.Nodes.Count, hostBuilder.Track.Nodes.Count), "the last pylon went on both parks" );
-		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is RemoveLastCoasterPylonCommand ) );
+		// [EXT:online-coop-undo] the Backspace is the take-back of the guest's own last pylon, whose inverse takes the last pylon off (C5-3)
+		Assert.AreEqual( 1, TakeBacksOf( host, seat ).Count( command => command is { Verdict: TakeBackVerdict.Taken, Inverse: RemoveLastCoasterPylonCommand } ) );
 		Assert.AreEqual( (seat, seat), (host.Level.ClaimOf( ride ), guest.Level.ClaimOf( ride )) );
 		CatchUpAndCompare( host, guest );
 	}
@@ -590,10 +591,14 @@ public partial class CoopSessionTests
 		var rights = (CoopBuildRights)guest.Level.Commands.Rights!;
 		ParkCommand[] commands =
 		{
-			new BeginCoasterToolCommand( ride ), new EndCoasterToolCommand( ride ), new CoasterClickCommand( ride, 24, 20, 40, false, 0 ), new RemoveLastCoasterPylonCommand( ride ),
+			new BeginCoasterToolCommand( ride ), new EndCoasterToolCommand( ride ), new CoasterClickCommand( ride, 24, 20, 40, false, 0 ),
 			new BeginCoasterNodeEditCommand( ride, CoasterTrack.StationNodeCount, CoasterDrag.Height ), new EditCoasterNodeCommand( ride, CoasterNodeField.Loft, 0.5f, 0, 0 ),
 			new EndCoasterNodeEditCommand( ride ), new SwapCoasterStackCommand( ride, CoasterTrack.StationNodeCount, true ), new CutCoasterCommand( ride, 3, 4 )
 		};
+		// [EXT:online-coop-undo] the last pylon's removal is the host's tools' since C5-3: every player's Backspace is a take-back of its own last pylon, claim or not
+		var removeLast = new RemoveLastCoasterPylonCommand( ride ) { Player = seat };
+		Assert.IsFalse( rights.Allows( seat, removeLast ) );
+		Assert.IsNull( rights.RefusalReason( seat, removeLast ), "what only the host's tools issue" );
 		// without the claim, a granted guest's coaster commands are refused: the host let it go, or it never took it
 		foreach ( var command in commands )
 		{
@@ -606,9 +611,10 @@ public partial class CoopSessionTests
 		GuestCoasterTool( host, guest, view, coaster );
 		foreach ( var command in commands )
 			Assert.IsTrue( rights.Allows( seat, command with { Player = seat } ), $"{command.Kind} under the claim" );
+		Assert.IsFalse( rights.Allows( seat, removeLast ), "the last pylon's removal under the claim" );
 		// the host claims what no seat holds, and every coaster command of a coaster another seat claims is refused it
 		var hostRights = (CoopBuildRights)host.Level.Commands.Rights!;
-		foreach ( var command in commands )
+		foreach ( var command in commands.Append( new RemoveLastCoasterPylonCommand( ride ) ) )
 			Assert.AreEqual( Level.ClaimedReason, hostRights.RefusalReason( ParkCommands.LocalPlayer, command ), $"the host's {command.Kind}" );
 		// a guest without the grant has none of them, and its grant's record let go of its claim, which ended the coaster's tool state (C3c-1b)
 		Grant( host, guest, view, false );
@@ -756,14 +762,14 @@ public partial class CoopSessionTests
 			Assert.AreEqual( clicks + 1, Clicks() );
 			// a press held from before a wait keeps its release: the Backspace's outcome changes no gesture
 			Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = true } );
-			Assert.IsTrue( guest.Level.SendCoasterBackspace() );
+			Assert.AreEqual( CoasterBackspace.Sent, guest.Level.SendCoasterBackspace() );
 			RoundsUntil( () => !panel.IsWaiting, host, guest, view, "the Backspace came back" );
 			Hud( UiInput.Idle( point ) with { LeftReleased = true } );
 			Assert.IsTrue( panel.IsWaiting, "the release clicked" );
 			RoundsUntil( () => !panel.IsWaiting, host, guest, view, "the click came back" );
 			Assert.AreEqual( clicks + 2, Clicks() );
 			// a press while a request still waits asks the player to wait, and its release is nobody's either
-			Assert.IsTrue( guest.Level.SendCoasterBackspace() );
+			Assert.AreEqual( CoasterBackspace.Sent, guest.Level.SendCoasterBackspace() );
 			waits = guest.Level.WaitingClicks;
 			Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = true } );
 			Assert.AreEqual( waits + 1, guest.Level.WaitingClicks );

@@ -191,10 +191,37 @@ public sealed partial class ParkHud
 		// Backspace waits for the drag: it would delete the pylon the drag holds ([EXT:online-coop-commands] each one a command; a guest's goes to the host one at a time, C3c-2)
 		for ( var index = 0; index < input.Backspaces && !panel.IsDragging && level.CoasterToolStation is { } station; index++ )
 		{
-			if ( !panel.SendsToHost )
-				level.Commands.Issue( new RemoveLastCoasterPylonCommand( station.Runtime.AttractionId ) );
-			else if ( !level.SendCoasterBackspace() )
+			if ( panel.SendsToHost )
+			{
+				// [EXT:online-coop-undo] a guest's is the take-back of its own last pylon; with none of its own nothing goes, and it says so (C5-3)
+				var sent = level.SendCoasterBackspace();
+				if ( sent == CoasterBackspace.NotOwn )
+					SayTakeBackNote( TakeBackCommand.NotOwnReason );
+				if ( sent != CoasterBackspace.Sent )
+					break;
+			}
+			else if ( panel.TakesBack )
+			{
+				// [EXT:online-coop-undo] the host's in a shared park takes back its own last pylon, decided by its journal as a guest's is (C5-3): a refusal keeps the pylon and says why, and one
+				// refused for the claim ends the tool in the claim's words (the claim's end left the coaster's tool state already)
+				if ( panel.TakeBackOwnPylon() is not { } taken )
+				{
+					SayTakeBackNote( TakeBackCommand.NotOwnReason );
+					break;
+				}
+				if ( taken.Accepted )
+					continue;
+				if ( taken.Reason == CoopBuildRights.ClaimLostReason )
+				{
+					level.CloseCoasterToolLocally();
+					SayGuestNote( OpenTpwText.CoopClaimLost );
+					return true;
+				}
+				SayTakeBackNote( taken.Reason );
 				break;
+			}
+			else
+				level.Commands.Issue( new RemoveLastCoasterPylonCommand( station.Runtime.AttractionId ) );
 		}
 		if ( parkRightClick )
 		{

@@ -1620,14 +1620,21 @@ public sealed partial class ParkHud
 		}
 		if ( input.Backspaces > 0 )
 		{
-			// [EXT:online-coop-commands] a guest's Backspace in the path or queue tool takes nothing back: its lines are the host's to undo (C3a-2); in its track tool it goes to the host, one at
-			// a time, under the ride's claim (C3c-1b); a line or Backspace that waits for the host is not done yet
+			// [EXT:online-coop-commands] a guest's Backspace in its track tool goes to the host, one at a time, under the ride's claim (C3c-1b); a line or Backspace that waits for the host is not
+			// done yet; [EXT:online-coop-undo] in a shared park a path or queue segment is a take-back the host decides (C5): the host's refusal, or a segment no step of the player's laid, says why
 			if ( level.Commands.SendsRequests && tool.IsWaiting )
 				level.NoteWaitingClick();
-			else if ( level.Commands.SendsRequests && tool.SegmentCount > 0 && tool.Writer is { CanUndo: false } )
-				SayGuestNote( OpenTpwText.CoopGuestUndo );
-			else
-				tool.Undo();
+			else if ( !tool.Undo() && tool.TakeUndoRefusal() is { } refused )
+			{
+				// [EXT:online-coop-undo] a take-back on a ride whose claim the host no longer holds ends its tool in the claim's words, as a guest's does (C5-3)
+				if ( refused.Reason == CoopBuildRights.ClaimLostReason )
+				{
+					tool.Cancel();
+					SayGuestNote( OpenTpwText.CoopClaimLost );
+				}
+				else
+					SayTakeBackNote( refused.Reason );
+			}
 		}
 		if ( parkRightClick )
 		{

@@ -141,7 +141,7 @@ internal sealed class CoasterRequestQueue
 		sent.RemoveAt( index );
 		var outcome = request switch
 		{
-			{ State: CoopGuestRequestState.Applied, Result: { Error: null } result } => new CoasterOutcome( result, false, false ),
+			{ State: CoopGuestRequestState.Applied, Result: { Error: null } result } => new CoasterOutcome( result, false, false ) { Record = request.Record },
 			{ State: CoopGuestRequestState.Refused } => new CoasterOutcome( null, true, false ),
 			_ => new CoasterOutcome( null, false, true )
 		};
@@ -202,4 +202,8 @@ internal sealed class CoasterRequestQueue
 /// [EXT:online-coop-commands] What became of a guest's coaster tool command (C3c-2): its result (in the guest's park once its record applied there, or here when the rights refused it before it went),
 /// or none, when the host took no record of it (<see cref="NotTaken"/>) or its outcome is not known (<see cref="Unknown"/>: an error, a lost answer, a snapshot, the session's end).
 /// </summary>
-internal readonly record struct CoasterOutcome( ParkCommandResult? Result, bool NotTaken, bool Unknown );
+internal readonly record struct CoasterOutcome( ParkCommandResult? Result, bool NotTaken, bool Unknown )
+{
+	/// <summary>[EXT:online-coop-undo] The stream record that holds the command once it applied, null for none: a click's names the pylon it placed, which the panel's Backspace takes back (C5-3).</summary>
+	public long? Record { get; init; }
+}

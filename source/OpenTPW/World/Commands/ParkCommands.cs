@@ -205,6 +205,16 @@ public sealed class ParkCommands : IManagementIssuer
 	/// <summary>[EXT:online-coop-lockstep] Raised when a session's rights refuse a command of this machine (<see cref="SessionRules"/>), which leaves no trace in the log.</summary>
 	public event Action<ParkCommand>? SessionRefused;
 
+	/// <summary>
+	/// [EXT:online-coop-undo] The host's decision of a command before its rights, its run and its log (C5): a take-back gets its verdict and inverse from the host's undo journal
+	/// (<see cref="CoopUndoJournal"/>), for a guest's command (<see cref="ApplyRemote"/>) and the host's own alike, so the log and the stream carry the decided command. Null on every other
+	/// park (a guest's, a replay's, single player's): their commands apply as they come.
+	/// </summary>
+	internal Func<ParkCommand, ParkCommand>? Prepare { get; set; }
+
+	/// <summary>[EXT:online-coop-undo] Raised before the outermost command runs, after its rights allowed it (C5): the host's undo journal starts collecting its cell changes.</summary>
+	internal Action<ParkCommand>? Starting { get; set; }
+
 	/// <summary>Whether a command is being executed now (an edit inside an edit runs directly, unlogged, as part of the outer command).</summary>
 	public bool IsExecuting => depth > 0;
 
@@ -242,6 +252,13 @@ public sealed class ParkCommands : IManagementIssuer
 		// a malformed command never reaches the park and has no byte form to log: it is refused before the log
 		if ( !command.IsWellFormed )
 			return ParkCommandResult.Rejected( $"The {command.Kind} command has fields out of range." );
+		// [EXT:online-coop-undo] the host decides a take-back before its rights and its log, so both see the decided command (C5); a scheduled one (a replay) applies as it was decided
+		if ( Prepare is { } prepare && !applyingDue )
+		{
+			command = prepare( command );
+			if ( !command.IsWellFormed )
+				throw new InvalidOperationException( $"The host's decision made the {command.Kind} command malformed." );
+		}
 		// [EXT:online-coop-lockstep] in a session a command of this machine the rights refuse leaves no trace: a guest's own issues stay out of its log, which is the host's stream. A held
 		// command (the host's stream) is refused as usual and logged, so the stream sees that it was refused here. A guest's park takes none of its own, granted or not (C3)
 		if ( SessionRules && !applyingDue && !applyingRemote && command.Player >= 0 && (FollowsStream || Refuses( command )) )
@@ -476,7 +493,10 @@ public sealed class ParkCommands : IManagementIssuer
 		if ( depth == 0 && Refuses( command ) )
 			return RightsRefusal( command );
 		if ( depth == 0 )
+		{
 			running = command;
+			Starting?.Invoke( command );
+		}
 		depth++;
 		try
 		{

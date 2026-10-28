@@ -72,6 +72,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopShareTests.Join.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopShareTests.OpenList.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopShareTests.Figures.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopShareTests.Rights.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PostcardEmailTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/PoolSpriteDeliveryTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SecurityHardeningTests.cs" />
@@ -124,13 +125,23 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.GuestPools.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.Claims.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.GuestWindows.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.Attractions.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.GuestTracks.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.InitialTrackPreflight.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.GuestCoasters.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.Rights.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.Management.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.Staff.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSessionTests.GuestStaff.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.GameFlow.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Attempt.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Lobby.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Figures.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.GuestCommands.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.GuestCoasters.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Staff.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopJoinSessionTests.Management.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/CoopSnapshotDownloadTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/BrowserPinsExclusionTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/StrictCommandsGameTests.cs" />
@@ -180,7 +191,7 @@
 
 	<!-- A wildcard over a folder that is missing (a build context that does not copy it, as the server image's once did for umbrellas and winter) embeds nothing and still builds: the page then ships without the
 	     extension's shops. Fail the build instead. -->
-	<Target Name="RequireExtensionContent" BeforeTargets="BeforeBuild">
+	<Target Name="RequireExtensionContent" BeforeTargets="BeforeBuild" Condition="'$(OpenTpwPathRenderOracle)' != 'true'">
 		<Error Condition="!Exists('../../content/pools/objects.json')" Text="content/pools/objects.json is missing: the browser page would ship without the pools extension's objects." />
 		<Error Condition="!Exists('../../content/umbrellas/objects.json')" Text="content/umbrellas/objects.json is missing: the browser page would ship without the brolly shops." />
 		<Error Condition="!Exists('../../content/winter/objects.json')" Text="content/winter/objects.json is missing: the browser page would ship without the winter shops." />
@@ -205,5 +216,8 @@
 		<!-- The online API records are read and written by reflection-based System.Text.Json. -->
 		<TrimmerRootAssembly Include="OpenTPW.Online" />
 	</ItemGroup>
+
+	<!-- Optional isolated path diagnostic; ordinary game/pin builds are unchanged. -->
+	<Import Project="PathRenderOracle.targets" />
 
 </Project>

@@ -126,12 +126,20 @@ public sealed partial class ParkHud
 			if ( (CellBuildTool?)level.CellTool is { } cellTool )
 				cellTool.Ended += OnCellToolEnded;
 			level.BuildToolsEnded += OnBuildToolsEnded;
+			// [EXT:online-coop-commands] a guest's patrol area goes through its management queue (C4c-2)
+			guestPatrolArea = QueueGuestPatrolArea;
+			level.GuestPatrolArea = guestPatrolArea;
 			hud = new UiScreen( "hud" ) { Modal = false };
 			Stack.Push( hud );
 			Build();
 			HookStaffStrikeMessages();
 			HookChallengeMessages();
 			HookLossEvents();
+			// the park's save takes this HUD's message tube, and a resumed park's saved tube comes back (tp.exe saves its tag tube with the park, 0x48EE50)
+			level.MessageTubeCaptured = CaptureMessageTube;
+			var resumedTube = level.ResumedMessageTube;
+			level.ResumedMessageTube = null;
+			RestoreMessageTube( resumedTube );
 		}
 		catch
 		{
@@ -148,6 +156,9 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>Removes every handler the constructor puts on the level and its park (removing one that was not added is a no-op).</summary>
+	/// <summary>This HUD's route of a guest's patrol area into its management queue, as the level holds it (<see cref="Level.GuestPatrolArea"/>).</summary>
+	private Func<SetPatrolAreaCommand, bool>? guestPatrolArea;
+
 	private void UnhookLevel()
 	{
 		if ( level.Objects is { } objects )
@@ -155,6 +166,10 @@ public sealed partial class ParkHud
 		if ( (CellBuildTool?)level.CellTool is { } cellTool )
 			cellTool.Ended -= OnCellToolEnded;
 		level.BuildToolsEnded -= OnBuildToolsEnded;
+		if ( level.MessageTubeCaptured?.Target == this )
+			level.MessageTubeCaptured = null;
+		if ( guestPatrolArea != null && ReferenceEquals( level.GuestPatrolArea, guestPatrolArea ) )
+			level.GuestPatrolArea = null;
 		if ( level.Park != null )
 		{
 			level.Park.EventRaised -= OnStaffStrikeEvent;
@@ -280,7 +295,7 @@ public sealed partial class ParkHud
 		new( 255, 0, 0, 255 ), new( 250, 90, 0, 255 ), new( 255, 175, 0, 255 ), new( 255, 200, 0, 255 ), new( 255, 255, 150, 255 ), new( 255, 255, 255, 255 ),
 	};
 	public static Veldrid.RgbaByte CashColor( long balance ) => CashColors[(int)Math.Clamp( (Math.Clamp( balance, -999, 6000 ) + 999) / 1000, 0, CashColors.Length - 1 )];
-	private string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
+	internal string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
 
 	/// <summary>
 	/// The frame of the trend arrow beside the balance (control 49, <c>green_up</c>): 1 (the red down arrow) when the last closed month spent more than it took, else 0;
@@ -320,12 +335,15 @@ public sealed partial class ParkHud
 	internal static string CounterText( int count ) => string.Create( System.Globalization.CultureInfo.InvariantCulture, $"{count}  x" );
 	public string DateText => !Status.HasEconomy ? "" : string.Format( strings.Extra( OpenTpwText.DateFormat ), Status.Date.Year, Status.Date.Month, Status.Date.Day );
 
+	/// <summary>How many feedback lines the HUD keeps: a fourth message pushes the oldest out.</summary>
+	internal const int MaximumFeedbackLines = 3;
+
 	public void PostMessage( string text )
 	{
 		if ( string.IsNullOrWhiteSpace( text ) )
 			return;
 		messages.Add( (text, 0) );
-		if ( messages.Count > 3 )
+		if ( messages.Count > MaximumFeedbackLines )
 			messages.RemoveAt( 0 );
 	}
 
@@ -412,6 +430,9 @@ public sealed partial class ParkHud
 				Font = fonts => fonts.Label,
 				Clicked = () => SetUserGameSpeed( speed ),
 				Selected = () => DisplayedGameSpeed == speed,
+				// [EXT:online-coop-speed] a guest's buttons draw subdued and still take the click, which says the speed is the host's (C4a)
+				Subdued = () => SpeedIsTheHosts,
+				Unclipped = true,
 				Bounds = new UiRect( 1540 + index * 122, 1430, 116, 84 ),
 				Anchor = UiAnchor.BottomRight
 			} );
@@ -440,7 +461,11 @@ public sealed partial class ParkHud
 			// the P window holds the focus: Escape reaches only its procedure, which ignores it
 			if ( PauseBackdropHoldsFocus )
 				return;
-			if ( IsRiding )
+			// [EXT:online-coop-commands] a guest's hire or pick-up that waits for the host with no staff tool on yet is let go as its tool would be, before anything else takes the key (C4c-2):
+			// only the next Escape closes a window or opens the pause menu
+			if ( level.StaffPlacement is { } waitingStaffTool && (frameStaffStartWithoutTool || GuestStaffStartWaits && !waitingStaffTool.IsActive) )
+				waitingStaffTool.Cancel();
+			else if ( IsRiding )
 				StopRide();
 			else if ( CameraPanelOpen )
 				CloseCameraPanel();
@@ -477,8 +502,9 @@ public sealed partial class ParkHud
 	/// <summary>The info arm's contents as computed once at the start of the frame (the draw lambdas read it).</summary>
 	private ObjectInfo? InfoNow => infoNow ?? SelectedInfo;
 
+	// [EXT:online-coop-commands] a guest's open word as drawn: projected while an open-state action of the object waits (C4b-2)
 	public ObjectInfo? SelectedInfo => InfoArmOpen && selectedObject is { IsDeleted: false } item
-		? new ObjectInfo( item.Entry.ObjectNameIndex ?? -1, item.IsOpen, item.Runtime.IsAttraction, ObjectStats( item ), EntryName( item.Entry ) ) : null;
+		? new ObjectInfo( item.Entry.ObjectNameIndex ?? -1, DrawnIsOpen( item ), item.Runtime.IsAttraction, ObjectStats( item ), EntryName( item.Entry ) ) : null;
 
 	/// <summary>The live economy record behind a placed object, null in a visit or without an economy.</summary>
 	private ParkObjectState? LiveState( OriginalObject item ) =>
@@ -531,6 +557,34 @@ public sealed partial class ParkHud
 		}
 		if ( item.Entry is not { } entry )
 			return;
+		ArmBuildTool( item, entry );
+	}
+
+	/// <summary>
+	/// Ctrl and a left click on a placed object arms a copy of it: the build tool of the object's type, turned to the object's own angle, the same tool the buy window's row arms. A money balance
+	/// below the price plays the error cue and arms nothing (the click then opens no window), and no window of the object opens.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4879D0 object copy] the click dispatcher's mode 4 (the hovered cell's owner, 0x527e80) tests GetAsyncKeyState(VK_CONTROL) (0x487b0b: either Ctrl key): without it the object's window opens (0x486920), with it the type record of the thing's Info id (+0xE, 0x4D3D10) is read, the bank's balance (0x5195D0, +0xC) below the record's price (+4) plays cat_ui 0x1D (0x487bf1) and returns, else the build tool object of mode 4 for that Info id (0x46C5A0(4, id), the call the buy row makes at 0x4AC6EF after the same comparison at 0x4AC6C7) becomes the tool (0x46C350) and the tool's angle takes the thing's +0x10 (0x52F1B0)
+	// in a shared park the copy arms its tool as a buy row does and the rights (the host's build grant, the claims) are asked at the placement like for every placement, so a guest the host has not let build gets the refusal there (CoopBuildRights)
+	private bool CopyObject( OriginalObject clicked )
+	{
+		if ( BuyItemOf( clicked.Entry ) is not { } item || clicked.Entry is not { } entry )
+			return false;
+		if ( RejectReadOnlyAction() )
+			return true;
+		if ( Status.HasEconomy && (Status.PriceOf( item ) ?? item.Cost) > Status.Money )
+		{
+			PostMessage( strings.Help( 152 ) );
+			GameAudio.PlayUi( GameAudio.ErrorEvent );
+			return true;
+		}
+		ArmBuildTool( item, entry );
+		level.SetBuildRotation( clicked.Placement.Rotation );
+		return true;
+	}
+
+	private void ArmBuildTool( BuildItem item, ObjectCatalogEntry entry )
+	{
 		level.CellTool.Cancel();
 		level.StaffPlacement?.Cancel();
 		level.PatrolTool?.Cancel();
@@ -590,10 +644,13 @@ public sealed partial class ParkHud
 			level.ResetBuildRotation();
 			return;
 		}
-		if ( item.Runtime.Coaster != null && level.EnterCoasterTool( item ) )
+		// a placed coaster enters its tool; [EXT:online-coop-claims] a guest's tool starts once its claim and its entry are back, with the tool's help then (C3c-2), and no queue tool follows the
+		// placement meanwhile, nor after a refusal (another player's claim, the guest's coaster commands still to send)
+		if ( item.Runtime.Coaster != null && level.BeginCoasterToolEntry( item ) is var coaster and not TrackToolEntry.None )
 		{
 			level.ResetBuildRotation();
-			PostMessage( strings.Help( 0x125 ) );
+			if ( coaster == TrackToolEntry.Entered )
+				PostMessage( strings.Help( 0x125 ) );
 			return;
 		}
 		// [EXT:pools-slides] a placed slide tower enters the slide mode of the pool tool: the player lays the track from the tower down into the pool
@@ -676,6 +733,12 @@ public sealed partial class ParkHud
 			return;
 		if ( selectedObject is not { IsDeleted: false } item || !item.Runtime.IsAttraction )
 			return;
+		// [EXT:online-coop-commands] a guest's door is an open-state action of its object, from the drawn state (C4b-2)
+		if ( GuestManagement is { } queue )
+		{
+			RequestAttractionDoor( queue, item );
+			return;
+		}
 		// the command asks the reopening guard before it opens (SetAttractionOpenCommand)
 		level.Commands.Issue( new SetAttractionOpenCommand( item.Runtime.AttractionId, !item.IsOpen ) );
 	}
@@ -706,7 +769,7 @@ public sealed partial class ParkHud
 			SetInfoArm( false );
 		}
 		if ( GameOptions.Current.Confirmations )
-			Stack.Push( UiDialogs.Message( "confirmDelete", () => strings[UIStrings.DeleteItem],
+			Stack.Push( UiDialogs.MessageOfOriginalText( "confirmDelete", () => strings[UIStrings.DeleteItem],
 				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); Remove(); }),
 				(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 		else Remove();
@@ -750,14 +813,14 @@ public sealed partial class ParkHud
 		{
 			(UIStrings.Load, () => { if ( host.CreateLoad != null ) Stack.Push( host.CreateLoad( Stack ) ); }),
 			(UIStrings.Save, SavePark),
-			(UIStrings.RestartPark, () => Stack.Push( UiDialogs.Message( "confirmRestart", () => strings[UIStrings.ConfirmRestartPark],
+			(UIStrings.RestartPark, () => Stack.Push( UiDialogs.MessageOfOriginalText( "confirmRestart", () => strings[UIStrings.ConfirmRestartPark],
 				(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); host.RestartPark?.Invoke(); }), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 			(UIStrings.PublishPark, () => host.PublishPark?.Invoke( Stack )),
 			(UIStrings.Options, () => { if ( host.CreateOptions != null ) Stack.Push( host.CreateOptions( Stack, () => { } ) ); }),
 			(UIStrings.GoOnline, () => host.GoOnline?.Invoke( Stack )),
 			(UIStrings.ResumeGame, ResumeGameAfterApplicationPause),
 			(UIStrings.ExitToLobby, () => { if ( menu is { IsRemoved: false } && ReferenceEquals( Stack.Top, menu ) ) ExitToLobbyFromMenu(); }),
-			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.Message( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
+			(UIStrings.QuitGame, () => Stack.Push( UiDialogs.MessageOfOriginalText( "confirmQuit", () => strings[UIStrings.ConfirmQuit],
 				(() => strings.Value( UIStrings.Yes ), host.Quit), (() => strings.Value( UIStrings.No ), Stack.Pop) ) )),
 		};
 		// [BIN:TPW-EXE:0x48c150 pause menu selection] game type 1 (0x48c1e3) selects the three online entries before the
@@ -881,6 +944,10 @@ public sealed partial class ParkHud
 		level.WorldPointerRouted = false;
 		level.ParkOwnsRelease = false;
 		frameHostStarts = level.HostToolStarts;
+		// [EXT:online-coop-commands] staff presses and Escape belong to the state seen before this frame takes a start's or a click's outcome (C4c-2)
+		RememberGuestStaffInput();
+		// [EXT:online-coop-commands] whether the guest's coaster panel waited for the host before this frame's answers (C3c-2): a press first seen now was made while it waited
+		frameCoasterWaiting = level.CoasterPanel?.IsWaiting == true;
 		UpdatePausingBoxes();
 		// [EXT:online-coop-commands] a guest's queue edit or Move pick-up that waits for the host starts no tool once any tool was on meanwhile (C3b): the HUD's own tools, the pools', the staff's
 		if ( level.WaitingToolStart != null && !level.NoToolActive )
@@ -895,9 +962,20 @@ public sealed partial class ParkHud
 		CompleteGuestRequests();
 		level.EndCarrylessMove();
 		level.EndStrayCarry( Time.Now );
-		// [EXT:online-coop-claims] and this machine's claim is bound to its track tool's ride (C3c-1)
+		// [EXT:online-coop-commands] the staff tool follows what the park holds for this player, every frame, paused too and whatever the pointer is over, before any pointer's dispatch (C4c); a
+		// guest's follows its seat's state through its staff requests (C4c-2)
+		if ( GuestStaff is { } guestStaff )
+			FollowGuestStaff( guestStaff );
+		else
+			level.StaffPlacement?.FollowPark();
+		// [EXT:online-coop-commands] the guest's coaster tool says what its waited actions came back with, before the claim is bound: an outcome that ended the tool says why itself (C3c-2)
+		ReportGuestCoasterActions();
+		// [EXT:online-coop-commands] one tool at a time: a coaster tool on together with a tool that started after it ends (C3c-2)
+		level.RetireCoasterToolForOtherTool();
+		// [EXT:online-coop-claims] and this machine's claim is bound to its track or coaster tool's ride (C3c-1, C3c-2)
 		level.SettleClaim( Time.Now );
-		// [EXT:online-coop-commands] a guest's pool strokes send what waits and say what finished (C3b-3)
+		// [EXT:online-coop-commands] a guest's coaster commands go first, then its pool strokes send what waits and say what finished (C3b-3, C3c-2)
+		UpdateGuestCoasterTool();
 		UpdateGuestPoolStrokes();
 		SyncChallengeMessageSuspension();
 		QueueChallengeTerminalTimers();
@@ -906,6 +984,8 @@ public sealed partial class ParkHud
 			// The full-screen owner consumes input, not the unscaled UI timer/delayed-release pumps.
 			if ( !finaleObservedCamera )
 				rideStatic.SkipFrame(); // the frame that retires the screen observes no camera and refreshes no timestamp
+			// [EXT:online-coop-commands] the management windows' outcomes are taken under the research finale too (C4b)
+			CompleteGuestManagement();
 			FinishChallengeMessageFrame();
 			return true;
 		}
@@ -940,7 +1020,8 @@ public sealed partial class ParkHud
 		{
 			// a visit reads the published state while drawing instead (the snapshot stays empty)
 			infoNow = level.IsReadOnlyVisit ? null : SelectedInfo;
-			openButton.Enabled = !level.IsReadOnlyVisit && infoNow?.CanOpen == true && objectDoorAllowed;
+			// [EXT:online-coop-commands] greyed while an open-state action of a guest's object waits (C4b-2)
+			openButton.Enabled = !level.IsReadOnlyVisit && infoNow?.CanOpen == true && objectDoorAllowed && !(selectedObject is { } waiting && OpenStateWaits( waiting ));
 		}
 		if ( hud.Find( "deleteRide" ) is UiButton deleteButton )
 			// [EXT:online-coop-commands] not while this guest's sale of the object waits for the host (C3b), nor [EXT:online-coop-claims] for a ride claimed against this player (C3c-1)
@@ -973,6 +1054,9 @@ public sealed partial class ParkHud
 			FocusChatEntry();
 			overUi = consumed = true;
 		}
+		// [EXT:online-coop-commands] the management windows' outcomes, after the screens took this frame's input (C4b): a confirmation the player closed this frame already detached, so an
+		// outcome that came this frame is its note, never a dialog its own Back would close unseen
+		CompleteGuestManagement();
 		// [BIN:TPW-EXE:0x488aa1 RMBCancelOn] the original's screens read the option (+0x39) before a right click leaves them; the object window leaves on it too
 		if ( InfoArmOpen && Stack.Screens.Count == 1 && !IsRiding && input.RightPressed && GameOptions.Current.RmbCancel && !Input.TextEntryActive )
 		{
@@ -1030,17 +1114,28 @@ public sealed partial class ParkHud
 		if ( shortcutsAllowed && !IsRiding && FinanceEconomy is { } doorEconomy && !level.IsReadOnlyVisit )
 		{
 			// [BIN:TPW-EXE:0x0040C410 close-park handler] the shortcut calls the door routine 0x519EF0 whatever the park's state, which posts event 4 (0x51A1C6, also from a closed park) or, for opening, event 3 (0x51A033) every time
-			if ( Input.Pressed( InputButton.OpenPark ) )
+			// [EXT:online-coop-commands] a guest's keys ask the host for the state they name, unless the door is drawn in it already, and the advisor's event follows the accepted request (C4b)
+			if ( GuestManagement is { } doorQueue )
 			{
-				if ( !doorEconomy.IsParkOpen )
-					level.Commands.Issue( new SetParkOpenCommand( true ) );
-				host?.ParkDoorPressed?.Invoke( true );
+				if ( Input.Pressed( InputButton.OpenPark ) )
+					RequestParkDoor( doorQueue, true );
+				if ( Input.Pressed( InputButton.ClosePark ) )
+					RequestParkDoor( doorQueue, false );
 			}
-			if ( Input.Pressed( InputButton.ClosePark ) )
+			else
 			{
-				if ( doorEconomy.IsParkOpen )
-					level.Commands.Issue( new SetParkOpenCommand( false ) );
-				host?.ParkDoorPressed?.Invoke( false );
+				if ( Input.Pressed( InputButton.OpenPark ) )
+				{
+					if ( !doorEconomy.IsParkOpen )
+						level.Commands.Issue( new SetParkOpenCommand( true ) );
+					host?.ParkDoorPressed?.Invoke( true );
+				}
+				if ( Input.Pressed( InputButton.ClosePark ) )
+				{
+					if ( doorEconomy.IsParkOpen )
+						level.Commands.Issue( new SetParkOpenCommand( false ) );
+					host?.ParkDoorPressed?.Invoke( false );
+				}
 			}
 		}
 
@@ -1141,6 +1236,12 @@ public sealed partial class ParkHud
 	/// </summary>
 	private int frameHostStarts;
 
+	/// <summary>
+	/// [EXT:online-coop-commands] Whether the guest's coaster panel waited for the host at the start of this frame, before its answers (C3c-2): a press first seen in this frame was made while it
+	/// waited (<see cref="coasterPressWhileWaiting"/>), whatever the answers did to the wait.
+	/// </summary>
+	private bool frameCoasterWaiting;
+
 	/// <summary>The release played the refusal cue (0xAF) for a refused build click: its "Cannot build" message follows without the error feedback of <see cref="SayCannotBuild"/>.</summary>
 	private bool buildRefusalCue;
 
@@ -1165,9 +1266,7 @@ public sealed partial class ParkHud
 		pendingQueueEdit = null;
 		pressConsumed = false;
 		// a pylon being dragged settles where it is, as when the park pointer is suspended: it does not stay on the cursor
-		if ( level.CoasterPanel is { IsDragging: true } panel )
-			panel.Release( null, null );
-		coasterPress = false;
+		EndCoasterGesture();
 		legacyLeftPress = null;
 		pressHostStarts = null;
 		refusalClickState = null;
@@ -1283,8 +1382,9 @@ public sealed partial class ParkHud
 			// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected opens its settings window; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
 			if ( !ChatMode && clicked != null && clicked == selectedObject && IsWaveMachine( clicked ) )
 				OpenWaveSettings( clicked );
+			// [BIN:TPW-EXE:0x487b0b object copy] Ctrl at the click arms a copy of the object instead of opening its window (CopyObject); the chat mode has no object window
 			// a click on a track add-on opens its ride's window (Level.WindowTarget); the chat mode has no object window
-			if ( !ChatMode )
+			if ( !ChatMode && !(clicked != null && (Input.ModifierMaskDown & 0xC) != 0 && CopyObject( clicked )) )
 				SelectObject( level.WindowTarget( clicked ) );
 		}
 		// [EXT:online-avatar-click] in a visit with other players a click on the ground walks the player's figure there (manual p. 68: "Left click to walk to destination"): in the
@@ -1358,12 +1458,25 @@ public sealed partial class ParkHud
 	private bool UpdateStaffTool( UiInput input, bool inPark, NVector2 viewport )
 	{
 		var tool = level.StaffPlacement;
+		// [EXT:online-coop-commands] a press made while the staff tool waited is no click even when this frame's outcome armed, replaced or ended it (C4c-2). A first start still waiting
+		// with no tool on keeps the idle park's selections, as before; the next frame samples the new state and can take a fresh staff press.
+		if ( inPark && input.LeftPressed && !parkRightClick && frameStaffRequestWaited && (frameStaffToolWasActive || tool is { IsActive: true }) )
+		{
+			level.NoteWaitingClick();
+			return true;
+		}
 		if ( tool == null || !tool.IsActive )
 		{
 			if ( staffCursorSet )
 			{
 				staffCursorSet = false;
 				Input.CursorType = Input.CursorTypes.Normal;
+			}
+			// [EXT:online-coop-commands] a guest's right click lets go of a hire or pick-up that waits for the host with no staff tool on yet, before any other tool takes it (C4c-2)
+			if ( parkRightClick && tool != null && GuestStaffStartWaits )
+			{
+				tool.Cancel();
+				return true;
 			}
 			return false;
 		}
@@ -1393,6 +1506,12 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x46C8E0 staff placement press] the hire and carry tools are not the tool object: their own classes (vtables 0x6FEA40 and 0x6FEA70) take the left PRESS (slot +4 = 0x46C8E0 / 0x46CC40) and ignore the release (slot +8 is empty)
 		if ( !inPark || !input.LeftPressed )
 			return false;
+		// [EXT:online-coop-commands] a guest's click is a request to the host (C4c-2)
+		if ( GuestStaff is { } guestStaff )
+		{
+			ClickGuestStaff( guestStaff, tool, cursorX, cursorY );
+			return true;
+		}
 		// a click on an invalid cell only logs in the original ("Can't put staff here"): no player text, the tool stays
 		tool.Click( cursorX, cursorY );
 		return true;
@@ -1663,7 +1782,7 @@ public sealed partial class ParkHud
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
-			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt ) );
+			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt, ghost.Symbols ) );
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
@@ -1684,7 +1803,17 @@ public sealed partial class ParkHud
 			cells.AddRange( guestPool.GuestStrokeCells.Select( cell => (cell.X, cell.Y, BlueprintMarker.Allowed) ) );
 		if ( level.BuildEntry == null || !inPark )
 			placementRefused = false;
-		blueprint.Update( delta, paused );
+		// the track symbols turn with the camera's yaw (0x790A38, BlueprintMarkers.SymbolAngle)
+		blueprint.SymbolAngle = Camera.Mode is ParkCameraMode symbolCamera ? ParkCameraMode.OriginalYaw( symbolCamera.Yaw ) : 0f;
+		// [BIN:TPW-EXE:0x005234D0 hover cell] every hover stores the cell under the pointer in 0x8186B8/0x8186B4, which the ghost's glide chases; an edit tool's hover stores its snapped tile (0x527960)
+		// [BIN:TPW-EXE:0x0053DF75 glide tools] the faces glide only while the tool is the placement (4) or an edit tool (0xE, 0x13)
+		var editGhost = level.CellTool.IsActive && level.CellTool.Mode is CellToolMode.KartEdit or CellToolMode.WaterEdit && level.CellTool.Ghost is { } editHover ? editHover.GlideCell : null;
+		if ( editGhost is { } snapped )
+			blueprint.GlideCursor = snapped;
+		else if ( inPark && cursorX >= 0 )
+			blueprint.GlideCursor = (cursorX, cursorY);
+		blueprint.GlideActive = editGhost != null || inPark && level.BuildEntry != null && cursorX >= 0;
+		blueprint.Update( delta, paused, Math.Max( 0, (int)level.SimulationTimeScale ) );
 		blueprint.Show( cells, directions );
 	}
 
@@ -1756,7 +1885,7 @@ public sealed partial class ParkHud
 		var pad = 4 * canvas.TextScale;
 		var rect = new UiRect( (canvas.Width - width) / 2f - pad, canvas.Height * 0.015f, width + pad * 2, height + pad * 2 );
 		context.Batch.AddRectangle( rect, UiColors.HelpBox );
-		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
+		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true );
 	}
 
 	/// <summary>The shared park's status line now (<see cref="HudHost.SessionStatus"/>), for tests.</summary>
@@ -1774,7 +1903,7 @@ public sealed partial class ParkHud
 		var pad = 4 * canvas.TextScale;
 		var rect = new UiRect( (canvas.Width - width) / 2f - pad, canvas.Height * 0.91f - height - pad * 2, width + pad * 2, height + pad * 2 );
 		context.Batch.AddRectangle( rect, UiColors.HelpBox );
-		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
+		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true );
 	}
 
 	public void Draw( UiContext context )

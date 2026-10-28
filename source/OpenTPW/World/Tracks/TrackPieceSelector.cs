@@ -132,7 +132,7 @@ public static class TrackPieceSelector
 		if ( type == TrackCellTypes.WaterOrigin && piece is >= PieceCrossing and <= 8 )
 		{
 			// [BIN:TPW-EXE:0x00539670 junction links] the multi-bit links come from the line op (op 0x82 of 0x53AAC0, handler 0x539670): a tile with more than two arms ORs the line's direction into +0xD (a crossing of two lines gets 0x14, 0x41, 0x50 or 0x05), a tile with two arms or fewer takes the direction alone; the circuit walk 0x52A970 writes +0xD only at corners (0x52B1A9..0x52B1F5)
-			// [APPROX:TRACK-004] the clear op (ClearCell 0x53B280 -> 0x5227F0) ANDs the line's direction bits out of a junction's link and, in its (-1, -1) form, clears the other axis' bit pair (0x522730), where OpenTPW removes the whole tile or only counts the overlap down; the other writers of +0xD (the type-25 walk 0x52BA50 takes the first linked arm by rotation, the edit sub-modes 0x52B400) have no counterpart
+			// [BIN:TPW-EXE:0x0053B280 clear op] the clear op (ClearCell 0x53B280 -> 0x5227F0) ANDs the line's direction bits out of a junction's link and, in its (-1, -1) form, clears the other axis' bit pair (0x522730, linked by 0x522850); TrackEditor.ClearCell ports it
 			if ( link == 0x14 )
 				rotation = 90;
 			else if ( link == 0x41 )

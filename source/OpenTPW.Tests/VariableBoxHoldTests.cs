@@ -95,4 +95,87 @@ public class VariableBoxHoldTests
 		CollectionAssert.AreEqual( new[] { "start", "tick", "tick" }, log, "the release of a repeating button posts no click (0x668eff)" );
 		Assert.AreEqual( 0, button.HoldState );
 	}
+
+	private static void FrameAt( UiScreen screen, float time, float x, bool down = false, bool pressed = false, bool released = false )
+	{
+		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
+		var context = new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ), new UiModels( n => throw new System.IO.FileNotFoundException( n ) ) )
+			{ Canvas = new UiCanvas( 2048, 1536 ), Time = time, ResolveTexture = _ => null };
+		screen.Update( context, new UiInput( new NVector2( x, 50 ), down || pressed, pressed, released, false, UiKeys.None ) );
+	}
+
+	/// <summary>A plus button on a value as the object window wires it, <paramref name="guest"/> adding the press's <see cref="UiButtonRepeat.Pressed"/>.</summary>
+	private static (UiScreen Screen, ParkHud.VariableBoxHold Hold, Func<int> Value) PlusBox( bool guest )
+	{
+		var value = 100;
+		var hold = new ParkHud.VariableBoxHold();
+		var screen = new UiScreen( "box" );
+		screen.Add( new UiButton
+		{
+			Id = "plus", Model = null, Bounds = new UiRect( 0, 0, 100, 100 ), Anchor = UiAnchor.TopLeft,
+			Repeat = new UiButtonRepeat( ParkHud.VariableBoxHold.Delay, ParkHud.VariableBoxHold.Interval, () => value = hold.Start( value, true, 0, 10000 ), () => value = hold.Tick( value, true, 0, 10000 ) )
+			{
+				Pressed = guest ? hold.Press : null
+			}
+		} );
+		return (screen, hold, () => value);
+	}
+
+	/// <summary>A hold over the button from its press to 20 ticks and the release: the increment ends at ten.</summary>
+	private static float HoldToTens( UiScreen screen, ParkHud.VariableBoxHold hold )
+	{
+		FrameAt( screen, 0, 50, pressed: true );
+		FrameAt( screen, 0.2f, 50, down: true );
+		var time = 0.2f;
+		for ( var tick = 0; tick < 20; tick++ )
+			FrameAt( screen, time += 0.06f, 50, down: true );
+		FrameAt( screen, time, 50, released: true );
+		Assert.AreEqual( 10, hold.Increment, "the first hold reached increments of ten" );
+		return time;
+	}
+
+	[TestMethod]
+	public void TheScreenRunsPressedAtTheButtonsPressAndPressStartsTheHoldAfreshWithoutThePlusStep()
+	{
+		var (screen, hold, value) = PlusBox( guest: true );
+		hold.Start( 0, true, 0, 10 );
+		for ( var tick = 0; tick < 20; tick++ )
+			hold.Tick( 0, true, 0, 10 );
+		hold.LastAsked = 7;
+		Assert.AreEqual( 10, hold.Increment );
+		FrameAt( screen, 5, 50, pressed: true );
+		Assert.AreEqual( 20, hold.Counter, "the press restarts the count" );
+		Assert.AreEqual( 1, hold.Increment, "and the increment" );
+		Assert.IsNull( hold.LastAsked, "and empties the memory" );
+		Assert.AreEqual( 100, value(), "without the plus step, which only the hold's start takes" );
+	}
+
+	[TestMethod]
+	public void AGuestsHoldWhosePointerMissedItsStartStepsByOneAtItsFirstTickAfterAnEarlierHoldOfTens()
+	{
+		var (screen, hold, value) = PlusBox( guest: true );
+		var time = HoldToTens( screen, hold ) + 1;
+		var before = value();
+		FrameAt( screen, time, 50, pressed: true );
+		FrameAt( screen, time + 0.1f, 500, down: true );
+		FrameAt( screen, time + 0.2f, 500, down: true );
+		Assert.AreEqual( before, value(), "the start was skipped: the pointer was outside at the delay" );
+		FrameAt( screen, time + 0.26f, 50, down: true );
+		Assert.AreEqual( before + 1, value(), "the first tick steps by exactly one" );
+		Assert.AreEqual( 1, hold.Increment );
+	}
+
+	[TestMethod]
+	public void AHostsBoxWithoutPressedKeepsTheOriginalArithmeticOfTheSameSequence()
+	{
+		var (screen, hold, value) = PlusBox( guest: false );
+		var time = HoldToTens( screen, hold ) + 1;
+		var before = value();
+		FrameAt( screen, time, 50, pressed: true );
+		FrameAt( screen, time + 0.1f, 500, down: true );
+		FrameAt( screen, time + 0.2f, 500, down: true );
+		FrameAt( screen, time + 0.26f, 50, down: true );
+		Assert.AreEqual( before + 10, value(), "only the start resets the increment, so the missed start leaves the earlier hold's ten" );
+		Assert.AreEqual( 10, hold.Increment );
+	}
 }

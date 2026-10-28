@@ -112,6 +112,8 @@ public sealed class ThemeParkIncFrontEnd
 			Id = "title",
 			Text = () => Text( ThemeParkIncText.PersonnelFileTitle ),
 			Font = TitleFont,
+			// [BIN:TPI-EXE:0x515fe0 title control] Theme Park Inc's title class (constructor 0x515dc0, vtable 0x93c368; set by 0x501d50, called at 0x56ae29 for this title) draws the same (-2, +2) copy as the Theme Park World one, with colour alpha 0xc8 (0x5162d2-0x5162f4)
+			Shadow = true, ShadowAlpha = UiBatch.TpiTitleCopyAlpha,
 			Color = UiColors.Title,
 			Align = UiAlign.Center,
 			Fit = true,
@@ -253,7 +255,8 @@ public sealed class ThemeParkIncFrontEnd
 		dialog.Add( new UiModelImage { Id = "window", Model = root.Model!, Bounds = root.Rect, Anchor = UiAnchor.Center } );
 		var (caption, body) = UiDialogs.SplitCaption( strings.Entry( ThemeParkIncText.QuitConfirmation ) );
 		var captionRect = table.Control( 0xEA64 ).Rect;
-		dialog.Add( new UiLabel { Id = "caption", Text = () => caption, Font = TitleFont, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = captionRect, Anchor = UiAnchor.Center } );
+		// [BIN:TPI-EXE:0x515fe0 title control] the quit caption is a title control too (set by 0x501d50 at 0x4f4902, box 0xea64): the copy alpha is 0xc8
+		dialog.Add( new UiLabel { Id = "caption", Text = () => caption, Font = TitleFont, Shadow = true, ShadowAlpha = UiBatch.TpiTitleCopyAlpha, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = captionRect, Anchor = UiAnchor.Center } );
 		// [BIN:TPI-EXE:0x4f48c2 confirm text] the builder 0x4f47f0 cuts the text at its blank line (0x8717ed finds the separator 0x9b19c4): the first part is the caption box 0xea64 and the rest is the window's own text
 		// [EXT:tpi-front-end-phase1] the window's own text area is not traced: the question is centred below the caption and left of the buttons
 		var okay = table.Control( 0xEA62 );

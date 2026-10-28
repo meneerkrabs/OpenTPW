@@ -67,8 +67,8 @@ public class CoopJoinTests
 	private static CoopJoinState SampleState() => new(
 		new[] { (0, "jungle/ride.wad#3"), (2, "jungle/shop.wad#1") },
 		new[] { (0, 5, 3, 1), (3, 7, -1, 12) },
-		9, 4, new[] { 12, 40 }, new DateTime( 2026, 10, 21, 15, 0, 0 ).Ticks,
-		new[] { (12, 30, 41, true), (12, 31, 41, false), (40, 5, -2, true) }, new[] { 1, 3 }, new[] { (7, 0), (19, 2) } );
+		new[] { (0, 9), (2, 11) }, 4, new[] { 12, 40 }, new DateTime( 2026, 10, 21, 15, 0, 0 ).Ticks,
+		new[] { (12, 30, 41, true), (12, 31, 41, false), (40, 5, -2, true) }, new[] { (1, CoopRights.Build), (3, CoopRights.Build) }, new[] { (7, 0), (19, 2) } );
 
 	private static CoopJoinPayload SamplePayload() => new( 7, 120, 3600, 88, 0x1234_5678_9ABC_DEF0, 0x0FED_CBA9_8765_4321, SampleState(),
 		Enumerable.Range( 0, 5000 ).Select( index => (byte)(index * 31) ).ToArray() );
@@ -77,10 +77,11 @@ public class CoopJoinTests
 	{
 		CollectionAssert.AreEqual( expected.CarriedEntries.ToArray(), actual.CarriedEntries.ToArray() );
 		CollectionAssert.AreEqual( expected.StaffHands.ToArray(), actual.StaffHands.ToArray() );
-		Assert.AreEqual( (expected.PendingHire, expected.StaleOnPointer, expected.SessionClockTicks), (actual.PendingHire, actual.StaleOnPointer, actual.SessionClockTicks) );
+		CollectionAssert.AreEqual( expected.PendingHires.ToArray(), actual.PendingHires.ToArray() );
+		Assert.AreEqual( (expected.StaleOnPointer, expected.SessionClockTicks), (actual.StaleOnPointer, actual.SessionClockTicks) );
 		CollectionAssert.AreEqual( expected.CoastersBeingEdited.ToArray(), actual.CoastersBeingEdited.ToArray() );
 		CollectionAssert.AreEqual( expected.CoasterUnheldCells.ToArray(), actual.CoasterUnheldCells.ToArray() );
-		CollectionAssert.AreEqual( (expected.BuildGrants ?? Array.Empty<int>()).ToArray(), (actual.BuildGrants ?? Array.Empty<int>()).ToArray() );
+		CollectionAssert.AreEqual( (expected.SeatRights ?? Array.Empty<(int, CoopRights)>()).ToArray(), (actual.SeatRights ?? Array.Empty<(int, CoopRights)>()).ToArray() );
 		CollectionAssert.AreEqual( (expected.RideClaims ?? Array.Empty<(int, int)>()).ToArray(), (actual.RideClaims ?? Array.Empty<(int, int)>()).ToArray() );
 	}
 
@@ -142,9 +143,12 @@ public class CoopJoinTests
 			state with { StaffHands = new[] { (2, 1, 0, 0), (2, 2, 0, 0) } },
 			state with { CoastersBeingEdited = new[] { 5, 5 } },
 			state with { CoasterUnheldCells = new[] { (12, 30, 41, true), (12, 30, 41, false) } },
-			state with { BuildGrants = new[] { 2, 2 } }
+			state with { SeatRights = new[] { (2, CoopRights.Build), (2, CoopRights.Build) } },
+			state with { PendingHires = new[] { (2, 9), (2, 11) } },
+			state with { PendingHires = new[] { (0, 9), (2, 9) } }
 		} )
-			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( twice.Encode() ), "a player, a coaster, a coaster's cell or a granted seat named twice" );
+			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( twice.Encode() ),
+				"a player, a coaster, a coaster's cell, a seat's rights or pending hire, or a hire's candidate named twice" );
 		// [EXT:online-coop-claims] one claim a ride and a seat, the host's seat 0 included, never a seat past the session's players (C3c-1)
 		foreach ( var twice in new[] { state with { RideClaims = new[] { (7, 1), (7, 2) } }, state with { RideClaims = new[] { (7, 1), (8, 1) } } } )
 			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( twice.Encode() ), "a ride claimed twice, or a seat with two claims" );
@@ -153,16 +157,40 @@ public class CoopJoinTests
 		AssertSameState( state with { RideClaims = null }, CoopJoinState.Decode( (state with { RideClaims = null }).Encode() ) );
 		Assert.ThrowsException<InvalidOperationException>( () => (state with { RideClaims = Enumerable.Range( 0, CoopProtocol.MaximumPlayers + 1 ).Select( seat => (seat + 10, seat) ).ToArray() }).Encode(),
 			"more claims than a session has seats" );
-		// [EXT:online-coop-permissions] a grant names a guest's seat: never the host's 0, never past the per-player bound
+		// [EXT:online-coop-permissions] a seat's rights name a guest's seat: never the host's 0, never past the per-player bound; a row holds a right, and only one this build offers (C4a)
 		foreach ( var seat in new[] { 0, CoopJoinState.MaximumPlayerEntries } )
-			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { BuildGrants = new[] { seat } }).Encode() ), $"a grant for seat {seat}" );
-		AssertSameState( state with { BuildGrants = null }, CoopJoinState.Decode( (state with { BuildGrants = null }).Encode() ) );
+			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { SeatRights = new[] { (seat, CoopRights.Build) } }).Encode() ), $"rights for seat {seat}" );
+		foreach ( var rights in new[] { CoopRights.None, (CoopRights)0x20, CoopRights.Attractions | (CoopRights)0x20, (CoopRights)0x80 } )
+			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { SeatRights = new[] { (2, rights) } }).Encode() ), $"a row of {rights}" );
+		// [EXT:online-coop-permissions] the staff right is offered since C4c-2
+		AssertSameState( state with { SeatRights = new[] { (2, CoopRights.Staff | CoopRights.Research) } },
+			CoopJoinState.Decode( (state with { SeatRights = new[] { (2, CoopRights.Staff | CoopRights.Research) } }).Encode() ) );
+		AssertSameState( state with { SeatRights = null }, CoopJoinState.Decode( (state with { SeatRights = null }).Encode() ) );
+		// [EXT:online-coop-permissions] the attractions right is offered since C4b-2
+		AssertSameState( state with { SeatRights = new[] { (2, CoopRights.Attractions | CoopRights.Build) } },
+			CoopJoinState.Decode( (state with { SeatRights = new[] { (2, CoopRights.Attractions | CoopRights.Build) } }).Encode() ) );
+		// a pending hire names a seat in the per-player bound and a candidate
+		foreach ( var row in new[] { (CoopJoinState.MaximumPlayerEntries, 9), (1, 0) } )
+			Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { PendingHires = new[] { row } }).Encode() ), $"a pending hire {row}" );
+		AssertSameState( state with { PendingHires = Array.Empty<(int, int)>() }, CoopJoinState.Decode( (state with { PendingHires = Array.Empty<(int, int)>() }).Encode() ) );
 		Assert.ThrowsException<InvalidOperationException>( () => (state with { CoasterUnheldCells = Enumerable.Range( 0, CoopJoinState.MaximumUnheldCells + 1 )
 			.Select( index => (1, index, 0, false) ).ToArray() }).Encode(), "more unheld cells than a join state carries" );
-		Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { PendingHire = -1 }).Encode() ), "a negative id" );
+		Assert.ThrowsException<InvalidDataException>( () => CoopJoinState.Decode( (state with { StaleOnPointer = -1 }).Encode() ), "a negative id" );
 		// a carried catalogue entry's key may be as long as a command's string (a mod's entry), so every park a command can make is captured
 		var longest = state with { CarriedEntries = new[] { (1, new string( 'k', ParkCommandCodec.MaximumString )) } };
 		AssertSameState( longest, CoopJoinState.Decode( longest.Encode() ) );
+	}
+
+	[TestMethod]
+	public void TheSessionStatesLayoutIsPinned()
+	{
+		// version 5 (C4a): the pending hires as rows of seat and candidate, then the stale candidate, the marks, the clock and the unheld cells as before, then the rights as rows of seat
+		// and mask, then the claims
+		var state = new CoopJoinState( Array.Empty<(int, string)>(), Array.Empty<(int, int, int, int)>(), new[] { (0, 9) }, 4, new[] { 12 }, 638_000_000_000_000_000,
+			new[] { (12, 30, 41, true) }, new[] { (2, CoopRights.Build) }, new[] { (7, 2) } );
+		Assert.AreEqual( "0500" + "00" + "00" + "01" + "00000000" + "09000000" + "04000000" + "0100" + "0C000000" + "01" + "0000B3A69EA1DA08" + "0100" + "0C000000" + "1E000000" + "29000000" + "01"
+			+ "01" + "02000000" + "01" + "01" + "07000000" + "02000000", Convert.ToHexString( state.Encode() ) );
+		AssertSameState( state, CoopJoinState.Decode( state.Encode() ) );
 	}
 
 	[TestMethod]
@@ -175,13 +203,16 @@ public class CoopJoinTests
 			Enter( park );
 			var commands = park.Level.Commands;
 			Assert.IsTrue( commands.Issue( new PickUpObjectCommand( park.One.Visitors.AttractionId ) ).Accepted, "a Move tool's pick-up: the carried entry" );
-			// an employee in two players' hands (the hands are the level's state, set as a pick-up's command sets them)
+			// an employee in the host's hand (the hands are the level's state, set as a pick-up's command sets them: the hand and the picked-up state)
 			park.Level.StaffHands!.Carry( 0, park.Economy.Staff.Members.First().Id, (4, 1) );
-			park.Level.StaffHands.Carry( 2, park.Economy.Staff.Members.Last().Id, (6, 1) );
+			park.Economy.Staff.Members.First().State = StaffState.PickedUp;
 			if ( park.Economy.Staff.Candidates.FirstOrDefault() is { } candidate )
 				Assert.IsTrue( commands.Issue( new BeginStaffHireCommand( candidate.Id ) ).Accepted, "a pending hire" );
 			park.Economy.Staff.StaleOnPointerId = 3;
 			Assert.IsTrue( commands.Issue( new SetSessionClockCommand( 63_900_000_000 ) ).Accepted, "the session clock" );
+			// [EXT:online-coop-permissions] the guests' seats' rights (C4a)
+			Assert.IsTrue( commands.Issue( new SetSeatRightsCommand( 2, CoopRights.Build ) ).Accepted, "a seat's rights" );
+			Assert.IsTrue( commands.Issue( new SetBuildGrantCommand( 5, true ) ).Accepted, "and another's grant" );
 		}
 		Enter( host );
 		var digest = CoopDigest.Compute( host.Level, out var world );
@@ -195,16 +226,49 @@ public class CoopJoinTests
 		twin.Economy.Staff.StaleOnPointerId = 0;
 		twin.Level.Objects.ScriptWorld.SessionTime = null;
 		Assert.AreNotEqual( digest, CoopDigest.Compute( twin.Level ) );
+		twin.Level.ClearSeatRights();
 
 		Enter( host );
 		var state = CoopJoinState.Decode( host.Level.CaptureJoinState().Encode() );
 		Assert.AreEqual( 1, state.CarriedEntries.Count );
-		Assert.AreEqual( 2, state.StaffHands.Count );
+		Assert.AreEqual( 1, state.StaffHands.Count );
 		Assert.IsNotNull( state.SessionClockTicks );
+		CollectionAssert.AreEqual( new[] { (2, CoopRights.Build), (5, CoopRights.Build) }, state.SeatRights!.ToArray() );
 		Enter( twin );
+		// [EXT:online-coop-permissions] the staff rows are checked whole before any of the state applies (C4c)
+		var (held, hand) = (state.StaffHands.Single().Staff, state.StaffHands.Single());
+		var notHeld = twin.Economy.Staff.Members.First( member => member.Id != held ).Id;
+		var hires = state.PendingHires.ToArray();
+		var spare = twin.Economy.Staff.Candidates.Select( candidate => candidate.Id ).FirstOrDefault( id => hires.All( row => row.Candidate != id ) );
+		Assert.AreNotEqual( 0, spare, "a candidate no seat places" );
+		foreach ( var (malformed, what) in new[]
+		{
+			(state with { StaffHands = state.StaffHands.Append( (2, held, 6, 1) ).ToArray() }, "an employee in two hands"),
+			(state with { StaffHands = new[] { (2, held, hand.X, hand.Y) }, PendingHires = hires.Append( (2, spare) ).ToArray() }, "a guest seat with a hand and a pending hire"),
+			(state with { StaffHands = new[] { (0, notHeld, 4, 1) } }, "an employee the park does not hold picked up"),
+			(state with { StaffHands = new[] { (0, held, 999, 1) } }, "a hand from outside the grid"),
+			(state with { StaffHands = new[] { (CoopJoinState.MaximumPlayerEntries, held, 4, 1) } }, "a hand of no seat"),
+			(state with { PendingHires = new[] { (2, spare), (3, spare) } }, "a candidate reserved twice"),
+			(state with { PendingHires = new[] { (2, spare), (2, hires.Length > 0 ? hires[0].Candidate : spare) } }, "a seat with two pending hires"),
+			(state with { StaffHands = new[] { (1, 0, 0, 0) } }, "a zero-id guest hand"),
+			(state with { StaffHands = new[] { (1, 0, 0, 0), (2, twin.Economy.Staff.Members.Last().Id, 6, 1) } }, "a zero-id guest hand before another guest's employee"),
+			(state with { PendingHires = new[] { (0, 9999) } }, "a candidate the pool does not hold")
+		} )
+		{
+			// Check the direct restore as well as the wire path: decoding may reject duplicates earlier, while a zero staff id reaches the whole-row restore check.
+			Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( malformed ), what );
+			Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( CoopJoinState.Decode( malformed.Encode() ) ), what + ": from wire" );
+			Assert.AreEqual( (0, 0), (twin.Level.SeatRights.Count, twin.Level.StaffHands!.All.Count()), $"{what}: nothing applied" );
+		}
 		twin.Level.ApplyJoinState( state );
+		CollectionAssert.AreEqual( new[] { 2, 5 }, twin.Level.BuildGrants.ToArray() );
 		Assert.AreEqual( digest, CoopDigest.Compute( twin.Level, out var twinWorld ), "the session state brought back what the digest covers beyond the save" );
 		Assert.AreEqual( world, twinWorld );
+		// a guest's seat's employee in hand and another's pending hire restore (C4c), and the digest covers them
+		twin.Level.ApplyJoinState( state with { StaffHands = new[] { (2, held, hand.X, hand.Y) }, PendingHires = new[] { (3, spare) } } );
+		Assert.AreEqual( (held, spare), (twin.Level.StaffHands!.Of( 2 )!.Value.Staff, twin.Economy.Staff.PendingHireOf( 3 )) );
+		Assert.AreNotEqual( digest, CoopDigest.Compute( twin.Level ) );
+		twin.Level.ApplyJoinState( state );
 		Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( state with { CoastersBeingEdited = new[] { 999 } } ), "a coaster the park does not hold" );
 		Assert.ThrowsException<InvalidDataException>( () => twin.Level.ApplyJoinState( state with { CoasterUnheldCells = new[] { (999, 1, 1, true) } } ),
 			"marker cells of a coaster the park does not hold" );
@@ -226,7 +290,8 @@ public class CoopJoinTests
 		var state = host.Level.CaptureJoinState();
 		Assert.AreEqual( before, (CoopDigest.Compute( host.Level, out world ), world, host.Level.Commands.Log.Count),
 			"the capture runs no save preparation: no command ends the hire, and the hand keeps its employee" );
-		Assert.AreEqual( (employee.Id, candidate.Id), (state.StaffHands.Single().Staff, state.PendingHire) );
+		Assert.AreEqual( employee.Id, state.StaffHands.Single().Staff );
+		CollectionAssert.AreEqual( new[] { (ParkCommands.LocalPlayer, candidate.Id) }, state.PendingHires.ToArray(), "the host's pending hire, as seat 0's row" );
 		Assert.IsNull( ParkResumeSaveFile.Deserialize( save ).Advisor, "no advisor state: each player's advisor is its own" );
 
 		// a missing economy binding is refused, not repaired: a shared park changes only through its commands

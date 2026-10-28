@@ -80,7 +80,10 @@ public sealed partial class ParkHud
 	{
 		if ( upgradeOwner is not { IsDeleted: false } owner )
 			return Array.Empty<UpgradeListRow>();
-		var offer = level.UpgradeOffer( owner );
+		// [EXT:online-coop-commands] a guest's list waits for its level or cancel row's outcome with a waiting line, and reads the ride's record as its waiting open-state action will leave it (C4b-2)
+		if ( upgradeWaiter != null )
+			return new[] { new UpgradeListRow( strings.Extra( OpenTpwText.CoopWaitingForHost ), "", null ) };
+		var offer = level.UpgradeOffer( owner, ProjectedRecord( owner ) );
 		if ( offer.Message is { } message )
 			return strings[message].Split( '\n' ).Where( line => line.Length > 0 ).Select( line => new UpgradeListRow( line, "", null ) ).ToArray();
 		return offer.Rows.Select( row => new UpgradeListRow( row.Kind switch
@@ -118,6 +121,7 @@ public sealed partial class ParkHud
 
 	private void CloseRideUpgrade()
 	{
+		DetachUpgradeWaiter();
 		if ( upgradeScreen == null || !RideUpgradeOpen )
 			return;
 		while ( Stack.Top != upgradeScreen && Stack.Screens.Count > 1 )
@@ -144,6 +148,20 @@ public sealed partial class ParkHud
 		if ( upgradeSelected < 0 || upgradeSelected >= rows.Count || rows[upgradeSelected].Row is not { } row || upgradeOwner is not { IsDeleted: false } owner
 			|| !IsUpgradeListTarget( owner ) || FinanceEconomy is not { } economy || level.GetEconomyInstance( owner ) == null )
 			return;
+		// [EXT:online-coop-commands] a guest's level and cancel rows wait with the list (C4b-2); its add-on row asks the building grant before its price (the grant's note)
+		if ( GuestManagement is { } queue )
+		{
+			if ( row.Kind is RideUpgradeRowKind.Level or RideUpgradeRowKind.CancelLevel )
+			{
+				ActivateGuestUpgradeRow( queue, owner, row );
+				return;
+			}
+			if ( row.AddOn is { } refused && RefusesAddOnWithoutGrant( owner, refused ) )
+			{
+				CloseRideUpgrade();
+				return;
+			}
+		}
 		switch ( row.Kind )
 		{
 			case RideUpgradeRowKind.AddOn:
@@ -193,7 +211,7 @@ public sealed partial class ParkHud
 		var table = UpgradeTable;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "listFrame", Model = UpgradeListNode.Model!, Bounds = UpgradeListNode.Rect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.BuyUpgrades], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
+		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.BuyUpgrades], Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
 			Bounds = table.Control( 0x1F4E ).Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UpgradeList( this ) { Id = "upgradeList", Bounds = UpgradeContent, Anchor = UiAnchor.Center } );
 		screen.Add( new UpgradeScrollBar( this ) { Id = "upgradeScroll", Bounds = new UiRect( UpgradeKnob.X, UpgradeTrack.Y, UpgradeTrack.Right - UpgradeKnob.X, UpgradeTrack.Height ), Anchor = UiAnchor.Center } );
@@ -209,7 +227,20 @@ public sealed partial class ParkHud
 		var exit = table.Model( "b_exit" );
 		screen.Add( new UiButton { Id = "cancel", Model = exit.Model, Help = strings.Help( 2 ), Clicked = CloseRideUpgrade, Bounds = exit.Rect, Anchor = UiAnchor.Center } );
 		screen.Back = CloseRideUpgrade;
+		screen.Removed = DetachUpgradeWaiter;
 		return screen;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's list whose screen goes while its row waits (Escape, its exit, the window moving on, a screen that clears the stack) leaves the outcome a note
+	/// (C4b-2): its waiter is detached.
+	/// </summary>
+	private void DetachUpgradeWaiter()
+	{
+		if ( upgradeWaiter is not { } waiter )
+			return;
+		upgradeWaiter = null;
+		waiter.Queue.Detach( waiter );
 	}
 
 	private sealed class RideUpgradeScreen : UiScreen

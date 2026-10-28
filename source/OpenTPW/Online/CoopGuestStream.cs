@@ -437,6 +437,12 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 			Fail( CoopDesyncKind.Digest, $"the digest after tick {ticks} differs", ticks, digest, mine );
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-snapshot-join] The live test's resync (<c>--coop-live</c>, the management scenario, C4b-2): a desync of this stream's own, taken as a mismatched digest takes one, so the
+	/// session resyncs. Its reason goes to the log alone (a report carries none); no game path calls it.
+	/// </summary>
+	internal void ForceDesync( string why ) => Fail( CoopDesyncKind.Protocol, why );
+
 	/// <summary>A desync: the guest's clock stops, and it reports the desync with every progress until the host has seen it.</summary>
 	private void Fail( CoopDesyncKind kind, string reason, long? tick = null, ulong hostDigest = 0, ulong guestDigest = 0 )
 	{
@@ -469,12 +475,17 @@ internal sealed class CoopGuestStream : ILevelSessionStream, IDisposable
 		commands.Player = previousPlayer;
 		commands.FollowsStream = previousFollows;
 		// [EXT:online-coop-permissions] a grant is its session's: the park left after the session (or replaced by a resync's) keeps none, nor what a guest's seat carried (C3b-2)
-		level.ClearBuildGrants();
+		level.ClearSeatRights();
 		// [EXT:online-coop-claims] and the rides' claims (C3c-1)
 		level.ClearRideClaims();
 		level.ClearGuestCarries();
+		// [EXT:online-coop-permissions] and what the guests' seats held of the staff, its employees in hand dropped back where they were picked up (C4c)
+		level.ClearGuestStaff();
 		// the park's scripts read the machine's own clock again
 		if ( level.Objects?.ScriptWorld is { } scripts )
 			scripts.SessionTime = null;
+		// [EXT:online-coop-claims] a coaster any player's tool held leaves the tool on the park left after the session, which runs on alone, so none stays closed and marked (C3c-2); the guest's
+		// own tool closed without a command at the session's end (Level.EndGuestWaits)
+		level.EndSessionCoasters( level.EditedCoasters() );
 	}
 }

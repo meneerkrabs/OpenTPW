@@ -1,0 +1,44 @@
+<Project>
+  <!-- This default-off mode is NOT the ordinary pin bundle: it contains no test corpus or extension media. -->
+  <ItemGroup Condition="'$(OpenTpwPathRenderOracle)' != 'true'">
+    <Compile Remove="Program.PathRenderOracle.cs" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(OpenTpwPathRenderOracle)' == 'true'">
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <!-- Inspect the actual published PE assemblies; do not hide resources behind WebCIL/native app code. -->
+    <UseMonoRuntime>true</UseMonoRuntime>
+    <WasmEnableWebcil>false</WasmEnableWebcil>
+    <WasmBuildNative>false</WasmBuildNative>
+    <RunAOTCompilation>false</RunAOTCompilation>
+    <PublishTrimmed>false</PublishTrimmed>
+    <DebugType>None</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OpenTpwPathRenderOracle)' == 'true'">
+    <EmbeddedResource Remove="@(EmbeddedResource)" />
+    <Content Remove="@(Content)" />
+    <None Remove="@(None)" />
+    <Compile Include="../OpenTPW.Tests/SyntheticLnd.cs" Link="PathOracle/SyntheticLnd.cs" />
+    <EmbeddedResource Include="../../content/shaders/blit.shader" LogicalName="content/shaders/blit.shader" />
+    <EmbeddedResource Include="../../content/shaders/web/blit.json" LogicalName="content/shaders/web/blit.json" />
+    <EmbeddedResource Include="../../content/shaders/test.shader" LogicalName="content/shaders/test.shader" />
+    <EmbeddedResource Include="../../content/shaders/web/test.json" LogicalName="content/shaders/web/test.json" />
+    <Content Include="PathOracle/index.html" Link="wwwroot/index.html" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="PathOracle/main.js" Link="wwwroot/main.js" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="wwwroot/opentpw-gl.js" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="wwwroot/opentpw-text.js" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="ValidatePathOracleIsolation" BeforeTargets="PrepareForBuild" Condition="'$(OpenTpwPathRenderOracle)' == 'true'">
+    <Error Condition="'$(OpenTpwDeterminismPins)' == 'true'" Text="Path oracle isolation excludes the full determinism test/corpus bundle." />
+    <Error Condition="'$(UseMonoRuntime)' != 'true' Or '$(WasmEnableWebcil)' != 'false' Or '$(RunAOTCompilation)' != 'false' Or '$(WasmBuildNative)' != 'false' Or '$(PublishTrimmed)' != 'false'" Text="The auditable path artifact requires interpreter PE assemblies (WebCIL/native app compilation disabled)." />
+    <Error Condition="'$(PathOracleAuditDirectory)' == ''" Text="Set PathOracleAuditDirectory to a fresh evidence directory." />
+  </Target>
+  <Target Name="RecordPathOracleInputs" BeforeTargets="CoreCompile" Condition="'$(OpenTpwPathRenderOracle)' == 'true'">
+    <MakeDir Directories="$(PathOracleAuditDirectory)" />
+    <WriteLinesToFile File="$(PathOracleAuditDirectory)/compile.txt" Lines="@(Compile->'%(FullPath)')" Overwrite="true" />
+    <WriteLinesToFile File="$(PathOracleAuditDirectory)/resources.txt" Lines="@(EmbeddedResource->'%(FullPath)|%(LogicalName)')" Overwrite="true" />
+    <WriteLinesToFile File="$(PathOracleAuditDirectory)/content.txt" Lines="@(Content->'%(FullPath)|%(Link)')" Overwrite="true" />
+  </Target>
+</Project>

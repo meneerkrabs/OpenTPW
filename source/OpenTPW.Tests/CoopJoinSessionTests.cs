@@ -99,7 +99,11 @@ public partial class CoopJoinSessionTests
 			Time.Update( (float)seconds );
 			Level.AdvanceFrame( seconds );
 			(Flow?.Presence ?? Presence)?.Update( (float)seconds );
+			AfterFrame?.Invoke();
 		}
+
+		/// <summary>[EXT:online-coop-commands] What runs after the member's frame, as the game's HUD update does (C4c-2: a guest's staff tool follows its seat's state there).</summary>
+		public Action? AfterFrame { get; set; }
 
 		public ParkCommandResult Issue( ParkCommand command )
 		{

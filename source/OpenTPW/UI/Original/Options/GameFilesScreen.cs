@@ -146,7 +146,8 @@ public static class GameFilesScreen
 		screen.Add( new UiButton { Id = "back", Text = () => strings.Extra( OpenTpwText.Back ), Clicked = stack.Pop,
 			Bounds = new UiRect( x, window.Bottom - 150, 420, 104 ), Anchor = UiAnchor.Center } );
 		// [EXT:tpi-viewer] choosing the experimental Theme Park Inc edition; the browser has no Game files screen at all.
-		var editionButton = screen.Add( new UiButton { Id = "edition", Text = () => strings.Extra( OpenTpwText.Edition ),
+		// [EXT:strings] the label is OpenTPW's own text on OpenTPW's own screen, so it is not cut off at the button's box (a French "Édition..." reaches two pixels above it)
+		var editionButton = screen.Add( new UiButton { Id = "edition", Unclipped = true, Text = () => strings.Extra( OpenTpwText.Edition ),
 			Clicked = () => stack.Push( CreateEdition( stack, strings, settingsPath, editionInspect, () => { saved = SetupSettings.Load( settingsPath ); status = strings.Extra( OpenTpwText.EditionRestart ); } ) ),
 			Bounds = new UiRect( x + 460, window.Bottom - 150, 560, 104 ), Anchor = UiAnchor.Center } );
 		screen.Back = stack.Pop;

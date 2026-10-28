@@ -82,4 +82,19 @@ public class AttractionRemovalGuestTests
 		rig.Simulation.Unregister( rig.Ride );
 		Assert.AreEqual( 0f, guest.Happiness );
 	}
+
+	[TestMethod]
+	public void AQueuedGuestWhoseAttractionVanishedWithoutTheMessageStaysWhereItStands()
+	{
+		// [BIN:TPW-EXE:0x004FB360] the original has no poll for a vanished attraction; the safety net does what the removal message does: state 6, no position written
+		var rig = new QueueTests.Rig();
+		var queued = Enumerable.Range( 0, 3 ).Select( _ => rig.Send( 80 ) ).ToList();
+		rig.RunTurns( 120 );
+		var guest = queued.First( candidate => candidate.State == GuestState.Queueing );
+		var cell = guest.Navigation.Cell;
+		guest.AttractionId = 999;
+		rig.RunTurns( 1 );
+		Assert.AreEqual( (GuestState.DoingNothing, 0, -1), (guest.State, guest.AttractionId, guest.QueuePosition) );
+		Assert.AreEqual( cell, guest.Navigation.Cell, "no position is written" );
+	}
 }

@@ -68,12 +68,20 @@ public sealed class UiContext
 		return (layout.Width * Canvas.TextScale, layout.Height * Canvas.TextScale);
 	}
 
+	/// <summary>
+	/// The control's box in whole pixels, one box for the placement and the clip: tp.exe's text control makes its bitmap [control+0x3c] x [control+0x3e] pixels
+	/// ((R - L) x W >> 11 and (B - T) x H / 1536, truncated, 0x48f47b-0x48f4c5) and aligns the text inside that size (the right and centre bounds of 0x48f8ba and 0x48f943 are the width); the
+	/// bitmap's own position stays the rectangle's left and top in 2048 x 1536 units (the quad of 0x48fbb9), which the sprite draw 0x58a010 turns into whole pixels with fistp (0x58a15f, 0x58a1c6: round half to even, as MathF.Round), so the box starts at the rounded left and top.
+	/// </summary>
+	public static UiRect TextBox( UiRect rect ) => new( MathF.Round( rect.X ), MathF.Round( rect.Y ), MathF.Floor( rect.Width ), MathF.Floor( rect.Height ) );
+
 	/// <summary>Draws text inside <paramref name="rect"/> as tp.exe's text library places it: the block aligned horizontally, each line aligned inside the block, the block centred vertically.</summary>
-	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = true, int? textScale = null, bool originalPlacement = true )
+	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, byte shadowAlpha = 0, int? textScale = null, bool originalPlacement = true, bool clip = true )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
 		align = Drawn( align );
+		rect = TextBox( rect );
 		var scale = textScale ?? Canvas.TextScale;
 		var layout = Layout( font, text, wrap ? (int)rect.Width : 0, scale );
 		var textAlignment = align switch { UiAlign.Center => TextAlignment.Center, UiAlign.Right => TextAlignment.Right, _ => TextAlignment.Left };
@@ -84,11 +92,9 @@ public sealed class UiContext
 		{
 			// [BIN:TPW-EXE:0x6ae550 line offset] a centred or right aligned multi-line text moves each line inside the widest one
 			layout = layout.AlignLines( textAlignment );
-			// [BIN:TPW-EXE:0x6aeb10 block box] whole-pixel block placement; a block taller than the box is still centred (the original's control bitmap cuts it off at both ends; OpenTPW does not clip)
-			var left = (int)MathF.Round( rect.X );
-			var top = (int)MathF.Round( rect.Y );
-			ix = TextPlacement.BlockLeft( textAlignment, left, (int)MathF.Round( rect.Right ), width );
-			iy = TextPlacement.BlockTopCentered( top, (int)MathF.Round( rect.Bottom ), height );
+			// [BIN:TPW-EXE:0x6aeb10 block box] whole-pixel block placement; a block taller than the box is still centred (the original's control bitmap cuts it off at both ends, 0x48f3d0, and so does the clip)
+			ix = TextPlacement.BlockLeft( textAlignment, (int)rect.X, (int)rect.Right, width );
+			iy = TextPlacement.BlockTopCentered( (int)rect.Y, (int)rect.Bottom, height );
 		}
 		else
 		{
@@ -104,10 +110,13 @@ public sealed class UiContext
 			ix = (int)MathF.Round( x );
 			iy = (int)MathF.Round( y );
 		}
-		// [APPROX:UI-007] drop shadow one text pixel down-right; the original's control text renderer (0x48f830) draws each string once, without a shadow, and the engine's sprite draw 0x58a010 submits the control's quads with the control colour as their only diffuse colour (no offset pass) — evidence needed: the blend and texture-stage state of those quads, to tell whether the capture's apparent shadow is a render-state effect
-		if ( shadow )
-			Batch.AddText( font, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
-		Batch.AddText( font, layout, ix, iy, color, scale, text );
+		// [BIN:TPW-EXE:0x48f3d0 control bitmap] every text control's bitmap is its box, so a string is cut off at it (UiBatch.TryClip); OpenTPW-authored texts that are wider than their box opt out (UiLabel.Unclipped, UiButton.Unclipped)
+		// [BIN:TPW-EXE:0x48f830 text control] one 0x6ae0f0 call into the control's bitmap (texel alpha 17 x coverage, 0x6b24b0), then the sprite quads of the state word 0x7060556 (0x58a010): the control colour blended with coverage / 15; plain text has no shadow
+		// [BIN:TPW-EXE:0x491ab0 title control] a title control (constructor 0x491920) first draws a grey (128,128,128, alpha 0x80) copy on the rectangle moved by (-2, +2) pixels (0x491dd0-0x491e1a), then the white string (0x491e27-0x491e84), both modulated by the control colour
+		if ( shadowAlpha != 0 )
+			Batch.AddTitleText( font, layout, ix, iy, color, shadowAlpha, clip ? rect : null, scale, text );
+		else
+			Batch.AddText( font, layout, ix, iy, color, scale, text, clip ? rect : null );
 	}
 
 	/// <summary>
@@ -117,21 +126,23 @@ public sealed class UiContext
 	/// the line box. Horizontally the text's own ink is aligned; vertically the font's letter box (capitals,
 	/// ascenders and descenders) is centred, so labels on neighbouring buttons share a baseline.
 	/// </summary>
-	public void DrawFittedText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Center, bool shadow = true )
+	public void DrawFittedText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Center, byte shadowAlpha = 0, bool clip = true )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
+		rect = TextBox( rect );
 		var candidates = new List<FontAtlas> { font };
 		candidates.AddRange( Fonts.Smaller( font ) );
 		// [EXT:fit-button-text] a label that fits no size of its own family goes on to the body fonts, smaller than the last size tried, so a small icon button
 		// (a bulk-mark or close button) still shows its whole text; the original's buttons carry art, not these labels
 		foreach ( var body in new[] { Fonts.Label, Fonts.Small }.Where( body => body.LineHeight < candidates[^1].LineHeight && !candidates.Contains( body ) ).OrderByDescending( body => body.LineHeight ) )
 			candidates.Add( body );
-		var boxes = candidates.Select( candidate => InkBox( candidate, text, shadow ) ).ToArray();
-		var fit = UiTextFit.Choose( Canvas.TextScale, boxes.Select( box => (box.Right - box.Left, box.Bottom - box.Top) ).ToArray(), rect.Width, rect.Height );
+		var boxes = candidates.Select( candidate => InkBox( candidate, text ) ).ToArray();
+		var fit = UiTextFit.Choose( Canvas.TextScale, boxes.Select( box => (box.Right - box.Left + FitExtra( shadowAlpha ), box.Bottom - box.Top + FitExtra( shadowAlpha )) ).ToArray(), rect.Width, rect.Height );
 		if ( fit.Wrap )
 		{
 			// [EXT:fit-button-text] before any word is cut between characters, the label is wrapped at its spaces in the largest size whose lines all fit the box
+			// [EXT:fit-button-text] these fallbacks (the wrapped label and the smallest size on one line) are OpenTPW's own layout of a label that fits no size, so they are not cut off at the box
 			var words = text.Split( new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries );
 			var wrapped = UiTextFit.ChooseWrapped( Canvas.TextScale, candidates.Count, ( index, scale ) =>
 			{
@@ -142,23 +153,36 @@ public sealed class UiContext
 			}, rect.Height );
 			if ( wrapped is { } choice )
 			{
-				DrawText( candidates[choice.Index], text, rect, color, align, true, shadow, choice.Scale, originalPlacement: false );
+				DrawText( candidates[choice.Index], text, rect, color, align, true, shadowAlpha, choice.Scale, originalPlacement: false, clip: false );
 				return;
 			}
 			// No size fits even wrapped (a box of a few pixels): the smallest size on one line, centred, as the original's unwrapped control text is.
-			DrawTextAt( candidates[^1], 1, text, rect, color, align, shadow );
+			DrawTextAt( candidates[^1], 1, text, rect, color, align, shadowAlpha, clip: false );
 			return;
 		}
-		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadow );
+		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadowAlpha, clip );
 	}
 
 	/// <summary>Draws single-line text in <paramref name="chosen"/> at whole text scale <paramref name="scale"/>, placed like <see cref="DrawFittedText"/> (ink aligned horizontally, letter box centred vertically).</summary>
-	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool shadow = true )
+	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, byte shadowAlpha = 0, bool clip = true, bool wrap = false )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
 		align = Drawn( align );
-		var box = InkBox( chosen, text, shadow );
+		rect = TextBox( rect );
+		var box = InkBox( chosen, text );
+		// [BIN:TPW-EXE:0x6aec80 text wrap] the original does not shrink or cut an option label that is wider than its rectangle: the text library wraps it greedily into the rectangle (a line ends at the last space before the overflowing glyph, a word longer than the line is broken between characters), the block centred vertically (0x6aeb10) and cut off at the box (0x48f3d0)
+		// [EXT:option-label-fit] the wrap triggers on the label's ink width; 0x6aec80 compares the pen advances with the bitmap's width, which can differ by the glyph offsets (a pixel or two)
+		if ( wrap && (box.Right - box.Left) * scale > rect.Width )
+		{
+			// [EXT:option-label-fit] when even the wrapped block is taller than the rectangle (the original would cut it off at both ends), the label stays on one line and, like the other OpenTPW fits, is not cut off at the box
+			if ( Layout( chosen, text, (int)rect.Width, scale ).Height * scale <= rect.Height )
+			{
+				DrawText( chosen, text, rect, color, align, true, shadowAlpha, scale, clip: clip );
+				return;
+			}
+			clip = false;
+		}
 		var width = (box.Right - box.Left) * scale;
 		var x = align switch
 		{
@@ -170,9 +194,10 @@ public sealed class UiContext
 		var layout = Layout( chosen, text );
 		var ix = (int)MathF.Round( x );
 		var iy = (int)MathF.Round( y );
-		if ( shadow )
-			Batch.AddText( chosen, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
-		Batch.AddText( chosen, layout, ix, iy, color, scale, text );
+		if ( shadowAlpha != 0 )
+			Batch.AddTitleText( chosen, layout, ix, iy, color, shadowAlpha, clip ? rect : null, scale, text );
+		else
+			Batch.AddText( chosen, layout, ix, iy, color, scale, text, clip ? rect : null );
 	}
 
 	/// <summary>
@@ -182,7 +207,7 @@ public sealed class UiContext
 	/// otherwise it takes the largest smaller size that fits, or the smallest size when none does.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4a43b0 options label font] the original's options labels take font slot 6 of the screen mode's bank ([0x7537b4], 0x4a443c) with no fitting
-	// [EXT:option-label-fit] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles), shared per page; a label whose widest value does not fit drops alone to the largest size that does; the original does no fitting and wraps an overflowing label into its rectangle through the text library (0x6ae930, 0x6aeb10, 0x6aec80), where OpenTPW shrinks it
+	// [EXT:option-label-fit] (it also skips the clip: a label wider than its box that cannot be wrapped into it is drawn on one line, uncut) option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles), shared per page; a label whose widest value does not fit drops alone to the largest size that does; the original does no fitting and wraps an overflowing label into its rectangle through the text library (0x6ae930, 0x6aeb10, 0x6aec80), where OpenTPW shrinks it
 	// [BIN:TPW-EXE:0x4a443c bank font] slot 6 is GAME5AA/GAME7/GAME8/GAME9 for banks 0-3; which shipped font serves the label per size tier is [EXT:ui-font-tier-by-scale], and a label that overflows is not shrunk in the original but laid out by the text library (wrapped into its rectangle: 0x6ae930, 0x6aeb10, 0x6aec80)
 	public (FontAtlas Font, int Scale) ChooseUniform( UiLabelGroup group, UiLabel label )
 	{
@@ -192,7 +217,7 @@ public sealed class UiContext
 		var sizes = new List<(FontAtlas Font, int Scale, int Height)>();
 		foreach ( var candidate in candidates )
 		{
-			var box = InkBox( candidate, "x", false );
+			var box = InkBox( candidate, "x" );
 			for ( var scale = Math.Max( 1, Canvas.TextScale ); scale >= 1; scale-- )
 				sizes.Add( (candidate, scale, (box.Bottom - box.Top) * scale) );
 		}
@@ -201,30 +226,44 @@ public sealed class UiContext
 		var target = maximum * UiLabelGroup.TargetHeight;
 		var page = sizes.Where( size => size.Height <= maximum ).OrderBy( size => Math.Abs( size.Height - target ) ).ThenByDescending( size => size.Height ).Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault()
 			?? sizes.OrderBy( size => size.Height ).First();
-		var rect = label.ScreenRect( Canvas );
+		var rect = TextBox( label.ScreenRect( Canvas ) );
 		var texts = label.Variants?.Invoke().ToList() ?? new List<string> { label.Text() };
 		bool Fits( (FontAtlas Font, int Scale, int Height) size ) => texts.All( text =>
 		{
-			var box = InkBox( size.Font, text, label.Shadow );
-			return (box.Right - box.Left) * size.Scale <= rect.Width;
+			var box = InkBox( size.Font, text );
+			return (box.Right - box.Left + (label.Shadow ? UiBatch.TitleShadowOffset : 0)) * size.Scale <= rect.Width;
 		} );
 		if ( Fits( page ) )
 			return (page.Font, page.Scale);
 		var smaller = sizes.Where( size => size.Height <= page.Height ).OrderByDescending( size => size.Height ).ToList();
-		var fit = smaller.Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault( size => Fits( size!.Value ) ) ?? smaller[^1];
-		return (fit.Font, fit.Scale);
+		var fit = smaller.Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault( size => Fits( size!.Value ) );
+		if ( fit is { } single )
+			return (single.Font, single.Scale);
+		// [BIN:TPW-EXE:0x6aec80 text wrap] a label that fits no size on one line is wrapped into its rectangle (UiLabel.Draw -> DrawTextAt), as the original's text library does; [EXT:option-label-fit] OpenTPW takes the largest size whose
+		// wrapped block (no word cut) stays inside the rectangle, so the lines are not cut off at both ends, and the smallest size when none does
+		var wrapped = smaller.Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault( size => texts.All( text =>
+		{
+			var layout = Layout( size!.Value.Font, text, (int)rect.Width, size.Value.Scale );
+			var available = (int)(rect.Width / size.Value.Scale);
+			return layout.Height * size.Value.Scale <= rect.Height && text.Split( ' ', StringSplitOptions.RemoveEmptyEntries ).All( word => Layout( size.Value.Font, word ).Width <= available );
+		} ) );
+		var chosen = wrapped ?? smaller[^1];
+		return (chosen.Font, chosen.Scale);
 	}
 
 	private readonly Dictionary<FontAtlas, (int Top, int Bottom)> letterBoxes = new();
 
+	/// <summary>Extra unscaled pixels a title's copy adds to the width and height a fitted title must have room for; placement ignores the copy, as the original's does.</summary>
+	private static int FitExtra( byte shadowAlpha ) => shadowAlpha != 0 ? UiBatch.TitleShadowOffset : 0;
+
 	/// <summary>
-	/// Unscaled box of <paramref name="text"/>'s drawn pixels, widened by the drop shadow. Vertically it is the font's letter box, and drawn pixels
+	/// Unscaled box of <paramref name="text"/>'s drawn pixels (the title copy is not part of it, see <see cref="FitExtra"/>). Vertically it is the font's letter box, and drawn pixels
 	/// count only where they leave the font's line box: the MENU, TITLE and SESH fonts keep the rows between the line top and their capitals for
 	/// diacritics (the MENUSMALL letter box starts 9 rows down; French î and Swedish å reach row 4 or 5), and the original's text library stacks lines a
 	/// line height apart (its block box is lines times line height, 0x6ae1c0), so a mark inside the line box never meets the line above. Counting those marks would shrink an accented label below its
 	/// neighbours, or drop it out of its family, and move its baseline.
 	/// </summary>
-	private (int Left, int Top, int Right, int Bottom) InkBox( FontAtlas font, string text, bool shadow )
+	private (int Left, int Top, int Right, int Bottom) InkBox( FontAtlas font, string text )
 	{
 		if ( !letterBoxes.TryGetValue( font, out var letters ) )
 		{
@@ -233,12 +272,11 @@ public sealed class UiContext
 			letterBoxes[font] = letters;
 		}
 		var layout = Layout( font, text );
-		var extra = shadow ? 1 : 0;
 		if ( layout.Glyphs.Count == 0 )
-			return (0, letters.Top, layout.Width + extra, letters.Bottom + extra);
+			return (0, letters.Top, layout.Width, letters.Bottom);
 		var top = layout.InkTop < 0 ? Math.Min( layout.InkTop, letters.Top ) : letters.Top;
 		var bottom = layout.InkBottom > font.LineHeight ? Math.Max( layout.InkBottom, letters.Bottom ) : letters.Bottom;
-		return (layout.InkLeft, top, layout.InkRight + extra, bottom + extra);
+		return (layout.InkLeft, top, layout.InkRight, bottom);
 	}
 
 	/// <summary>Draws a model frame stretched so its selected-mesh fit bounds fill <paramref name="rect"/>.</summary>
@@ -363,8 +401,14 @@ public sealed class UiLabel : UiElement
 	public Func<RgbaByte>? ColorSource { get; set; }
 	public UiAlign Align { get; set; } = UiAlign.Left;
 	public bool Wrap { get; set; }
-	/// <summary>Drop shadow under the text; the dark option labels have none.</summary>
-	public bool Shadow { get; set; } = true;
+	/// <summary>
+	/// The title control's shadow (<see cref="UiBatch.AddTitleText"/>): window, screen and lobby titles have it; every other text control of the original draws its string once.
+	/// </summary>
+	public bool Shadow { get; set; }
+	/// <summary>When it returns true the text is not cut off at the label's box (every other text is, 0x48f3d0): OpenTPW-authored texts that are wider than their box, each cited where it is set.</summary>
+	public Func<bool>? Unclipped { get; set; }
+	/// <summary>The colour alpha of the title copy when <see cref="Shadow"/> is set: 0x80 for Theme Park World's title control, 0xc8 for Theme Park Inc's.</summary>
+	public byte ShadowAlpha { get; set; } = UiBatch.TitleCopyAlpha;
 	/// <summary>Fit the single line into the rectangle (smaller font, smaller scale) instead of the small-font fallback.</summary>
 	public bool Fit { get; set; }
 	/// <summary>Labels of one group share a single font and scale (<see cref="UiContext.ChooseUniform"/>).</summary>
@@ -381,12 +425,12 @@ public sealed class UiLabel : UiElement
 		if ( Group != null )
 		{
 			var (groupFont, scale) = context.ChooseUniform( Group, this );
-			context.DrawTextAt( groupFont, scale, text, rect, color, Align, Shadow );
+			context.DrawTextAt( groupFont, scale, text, rect, color, Align, Shadow ? ShadowAlpha : (byte)0, !(Unclipped?.Invoke() ?? false), wrap: Unclipped == null );
 			return;
 		}
 		if ( Fit && !Wrap )
 		{
-			context.DrawFittedText( font, text, rect, color, Align, Shadow );
+			context.DrawFittedText( font, text, rect, color, Align, Shadow ? ShadowAlpha : (byte)0, !(Unclipped?.Invoke() ?? false) );
 			return;
 		}
 		// [BIN:TPW-EXE:0x6aec80 text wrap] the original's formatter wraps greedily: a line ends at the last break opportunity before the glyph that overflows, trailing spaces dropped, or before that glyph when the line has none
@@ -395,7 +439,7 @@ public sealed class UiLabel : UiElement
 		// Longer translations fall back to the small game font instead of overflowing the art.
 		if ( !Wrap && context.Measure( font, text ).Width > rect.Width )
 			font = context.Fonts.Small;
-		context.DrawText( font, text, rect, color, Align, Wrap, Shadow );
+		context.DrawText( font, text, rect, color, Align, Wrap, Shadow ? ShadowAlpha : (byte)0, clip: !(Unclipped?.Invoke() ?? false) );
 	}
 }
 
@@ -537,7 +581,14 @@ public sealed class UiImageElement : UiElement
 
 /// <summary>The timer of a repeating button: after <see cref="Delay"/> held it calls <see cref="Start"/>, then <see cref="Tick"/> every time more than <see cref="Interval"/> has passed.</summary>
 // [BIN:TPW-EXE:0x668dd9 button hold timer] the per-frame message 0x1e of a pressed button with style bit 0x20 (+0x48): state +0x15a 1 waits until now - +0x144 >= +0x13c (the delay), then sets state 2 and posts 0x10009 to the parent; state 2 posts 0x10008 each time now - +0x144 > +0x140 (the interval); both only while the button's pressed bit (+0x138 & 2) is set, and they restart +0x144; the ctor 0x6688b3 stores +0x13c = 500 ms and +0x140 = 0x7d = 125 ms for every button, and only a button with style bit 0x20 repeats (the scroll arrows are style 0x21); the press 0x668ecf sets state 1 and +0x144, the release 0x668eff clears the state and the click (0x100) follows only when it was not 2
-public sealed record UiButtonRepeat( float Delay, float Interval, Action Start, Action Tick );
+public sealed record UiButtonRepeat( float Delay, float Interval, Action Start, Action Tick )
+{
+	/// <summary>
+	/// [EXT:online-coop-commands] Run at the button's press, where the screen starts the hold's state (C4b-2): a hold whose <see cref="Start"/> the pointer misses (outside the button at the
+	/// delay) still begins from its press. Null: nothing.
+	/// </summary>
+	public Action? Pressed { get; init; }
+}
 
 /// <summary>
 /// Button. With <see cref="Model"/> it draws the original state frames (0 normal, 1 disabled,
@@ -556,6 +607,8 @@ public sealed class UiButton : UiElement
 
 	public string? Model { get; set; }
 	public Func<string>? Text { get; set; }
+	/// <summary>The label is not cut off at the button's box: OpenTPW's own label buttons of the online screens ([EXT:ONLINE-UI]) draw their text on a purple bar whose label box can be narrower than the text.</summary>
+	public bool Unclipped { get; set; }
 	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Menu;
 	public Action? Clicked { get; set; }
 	/// <summary>
@@ -593,20 +646,26 @@ public sealed class UiButton : UiElement
 	public UiAlign Align { get; set; } = UiAlign.Center;
 	/// <summary>A button that only shows its <see cref="Selected"/> state: drawn like an enabled one (the down frame while selected), never focused, hit or activated.</summary>
 	public bool Inert { get; set; }
+	/// <summary>
+	/// [EXT:online-coop-speed] While true, the button draws as a disabled one (the down frame still while selected or pressed) but keeps its hit target and its click, and plays no click
+	/// sound: a control whose action is refused says why when clicked, as a disabled one could not (a guest's speed buttons: the speed is the host's, docs/COOP.md, "Money and rights (C4)").
+	/// </summary>
+	public Func<bool>? Subdued { get; set; }
+	private bool IsSubdued => Subdued?.Invoke() == true;
 	public override bool Focusable => Visible && Enabled && !Inert;
 
 	public override void Adjust( int direction ) => Adjusted?.Invoke( direction );
 
 	/// <summary>The model frame the button draws in this state.</summary>
 	internal int StateFrame( bool focused, bool pressed ) =>
-		!Enabled ? DisabledFrame : pressed || Selected?.Invoke() == true ? DownFrame : focused && !KeepNormalFrameWhenFocused ? HighlightFrame : NormalFrame;
+		!Enabled ? DisabledFrame : pressed || Selected?.Invoke() == true ? DownFrame : IsSubdued ? DisabledFrame : focused && !KeepNormalFrameWhenFocused ? HighlightFrame : NormalFrame;
 
 	public override void Activate()
 	{
 		if ( !Enabled || Inert )
 			return;
 		// [BIN:TPW-EXE:0x485780 UI message hook] installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and called for every control message by the dispatcher 0x658d9f and the queue pump 0x658e42 (the call at 0x658eb2) before the control's own procedure. Message 0x100 plays cat_ui 0x1F, or 0xBD when the receiver's style word +0x48 has bit 0x10 (the choice at 0x4857cb). The button class 0x668f9c is the only sender of 0x100 for a mouse release over a button: it posts to the button's parent ([+0x60]) at 0x6691eb through the queue 0x658ccc, on a release over the button that was pressed. Window procedures also send 0x100 to their own window (0x48d83b, 0x49973e, 0x49ec53, 0x4a6df5 (via the dispatcher 0x658d9f), 0x4b640a, 0x4b9f06, 0x4bb020 and 0x4bfc29; ids -1, -2 and 0xe059, on 0x802 or 0x804), and the hook clicks for those too by that window's own style (style 1 in all eight: 0x1F); OpenTPW's dialogs route Enter to their tick's Activate there (docs/AUDIO.md, "List owners"). A release after auto-repeat has started (hold state +0x15a is 2, 0x668eff) returns false and posts no 0x100, so the sound is skipped then too.
-		if ( HoldState != 2 )
+		if ( HoldState != 2 && !IsSubdued )
 			GameAudio.PlayUi( ClickSound );
 		Clicked?.Invoke();
 	}
@@ -625,23 +684,24 @@ public sealed class UiButton : UiElement
 				tint = DisabledTint;
 			frame = NormalFrame;
 		}
+		var subdued = IsSubdued;
 		if ( Model != null && context.DrawModel( Model, frame, rect, tint ) )
 		{
 			if ( Text != null )
-				context.DrawFittedText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );
+				context.DrawFittedText( Font( context.Fonts ), Text(), rect, subdued ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align, clip: !Unclipped );
 			return;
 		}
-		// [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons
+		// [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed; no UI model of the PC's ui.wad names it — evidence needed: which PC screens draw a model-less text button and with which art, or a capture of the original front-end buttons
 		var art = context.ResolveTexture( "purple_button" );
 		var inner = PurpleLabelRect( rect, art != null );
 		if ( art != null )
 		{
-			var lit = focused || pressed || Selected?.Invoke() == true;
-			DrawPurpleBar( context, UiTexture.Image( art ), PurpleBar( rect ), lit, Enabled ? RgbaByte.White : new RgbaByte( 160, 160, 160, 255 ) );
+			var lit = focused && !subdued || pressed || Selected?.Invoke() == true;
+			DrawPurpleBar( context, UiTexture.Image( art ), PurpleBar( rect ), lit, Enabled && !subdued ? RgbaByte.White : new RgbaByte( 160, 160, 160, 255 ) );
 		}
 		else
 			context.Batch.AddRectangle( rect, focused ? UiColors.Highlight : UiColors.HelpBackground );
-		context.DrawFittedText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
+		context.DrawFittedText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled || subdued ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align, clip: !Unclipped );
 	}
 
 	/// <summary>The purple bar of a text button in <paramref name="rect"/>: the texture's bar rows, centred.</summary>
@@ -716,6 +776,31 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 	public override bool Focusable => Visible && Enabled;
 
 	/// <summary>
+	/// [EXT:online-coop-commands] Whether a pointer gesture asks for each value once (a guest's windows, C4b-2): its press's page step and its grabbed held frames ask for a value only when it
+	/// differs from the drawn one and from the last one the gesture asked for, and neither its release frame nor its release's click asks anything, so a refused step is not asked again while
+	/// the pointer stays on it, nor at the release. A key asks as before. Null or false: every path as before (a host's and a single player's sliders).
+	/// </summary>
+	public Func<bool>? AsksOncePerStep { get; set; }
+	/// <summary>The value the gesture last asked for (<see cref="AsksOncePerStep"/>), cleared only at the next press.</summary>
+	private int? lastAsked;
+	private bool OncePerStep => AsksOncePerStep?.Invoke() == true;
+	bool IUiDragTarget.FollowsRelease => !OncePerStep;
+
+	/// <summary>A pointer's value: set as before, or [EXT:online-coop-commands] asked once in the gesture where <see cref="AsksOncePerStep"/>.</summary>
+	private void Ask( int value )
+	{
+		if ( !OncePerStep )
+		{
+			Set( value );
+			return;
+		}
+		if ( value == lastAsked || value == Value() )
+			return;
+		lastAsked = value;
+		Changed?.Invoke( value );
+	}
+
+	/// <summary>
 	/// Authored ball rectangle for <paramref name="value"/>: the ball's centre moves linearly from half a ball
 	/// inside the track's left end to half a ball inside its right end.
 	/// </summary>
@@ -759,6 +844,7 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 	void IUiDragTarget.DragBegin( UiCanvas canvas, NVector2 point )
 	{
 		pressMode = PressMode.None;
+		lastAsked = null;
 		if ( !Truncates || !Enabled || ScreenRect( canvas ).Width <= 0 )
 			return;
 		var x = AuthoredX( canvas, point );
@@ -775,7 +861,7 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 		{
 			pressMode = PressMode.Page;
 			var steps = Math.Max( 2, Steps() );
-			Set( Math.Clamp( Value() + (x < knob.Right ? -Page : Page), 0, steps - 1 ) );
+			Ask( Math.Clamp( Value() + (x < knob.Right ? -Page : Page), 0, steps - 1 ) );
 		}
 	}
 
@@ -795,7 +881,15 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 			if ( !Enabled || ScreenRect( canvas ).Width <= 0 )
 				return;
 			// [BIN:TPW-EXE:0x66af19 slider drag] the thumb follows the pointer at the grabbed offset; the value is read from the thumb's left edge
-			Set( ValueAt( AuthoredX( canvas, point ) - grabOffset ) );
+			Ask( ValueAt( AuthoredX( canvas, point ) - grabOffset ) );
+			return;
+		}
+		// [EXT:online-coop-commands] with no press mode a once-a-step slider's pointer is the release's click (UiScreen.Click after DragEnd): it asks nothing, the press and the grab having
+		// asked already; a slider without the original's press (not Truncates) asks once from the pointer
+		if ( OncePerStep )
+		{
+			if ( !Truncates && Enabled && ScreenRect( canvas ) is { Width: > 0 } rect )
+				Ask( ValueAt( Bounds.X + (point.X - rect.X) / rect.Width * Bounds.Width ) );
 			return;
 		}
 		SetFromMouse( canvas, point );

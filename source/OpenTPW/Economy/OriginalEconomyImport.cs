@@ -467,7 +467,10 @@ public sealed partial class OriginalEconomyImport
 			if ( points != staff.GradePercentage )
 				adjusted.Add( $"{saved.Model} thing {saved.Id} grade percentage {staff.GradePercentage} imported as {points} (OpenTPW promotes at {ParkStaff.TrainingPointsPerGrade})" );
 			var name = staff.Name.Length <= StaffMember.MaximumNameLength ? staff.Name : null;
-			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, StaffState.Idle, hired, energy, name, thingId: saved.Id );
+			// [BIN:TPW-EXE:0x004F8B10 person sprite variant] the person serializer saves mSpriteID (+0x20) and mESPSprite (+0x24, the sprite category) and, once both are read, reduces the id modulo the category's loaded bank count (0x00541F60: the variant the placement drew, 0x00541F70); the staff serializer 0x00504DE0 calls it, so a member of an original save keeps his bank. The loaded count is the role's banks here (GUEST-020)
+			var banks = StaffSpriteRules.Banks( type, economy.Settings.Theme )?.Banks.Count ?? 0;
+			var variant = banks > 0 ? (int)(saved.Person.SpriteId % (uint)banks) : -1;
+			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, StaffState.Idle, hired, energy, name, thingId: saved.Id, variant: variant );
 			membersByThing.Add( saved.Id, member );
 			// [DATA:SaveThingBase] exact base position is in 1/256-cell units, including the sub-cell offset.
 			member.CellX = saved.Base.X / 256f;
@@ -875,7 +878,7 @@ public sealed partial class OriginalEconomyImport
 				evidence.Add( $"Research cheat: {research.MakeAvailableByCheat( cheatAvailable )} objects the cheated save marks researched without a finished project are available to build ({string.Join( ", ", cheatAvailable )})." );
 			evidence.Add( $"Research object controls: {controls.Controls.Count} records, {controls.Controls.Count( control => control.Researched )} researched, {checkedControls} research items checked against OpenTPW's research, {(disagreements.Count == 0 ? "none" : string.Join( ", ", disagreements ))} disagree." );
 		}
-		// a lab project of an object this install's level archives do not define (a modified save) names no research item here and cannot be kept; the saved current projects are kept as saved (SelectAsSaved), and a current project of no category's table is reported as well; neither occurs in the 11 corpus labs, which OriginalSaveImportCorpusTests pins
+		// [APPROX:SAVE-007] projects of objects the level archives do not define, and current project identities absent from their category's reconstructed table, are dropped and reported; the 11 corpus labs contain neither case. Known current projects are kept as saved even when the picker would not offer them (SelectAsSaved). Evidence needed: original continuation with missing object/project identities, or an explicit supported-save scope decision for those cases.
 		var dropped = new List<string>();
 		if ( unknown.Count > 0 )
 			dropped.Add( $"projects of objects the level archives do not define ({string.Join( ", ", unknown )})" );

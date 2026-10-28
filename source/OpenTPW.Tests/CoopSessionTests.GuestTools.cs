@@ -27,15 +27,22 @@ public partial class CoopSessionTests
 		public Action Escape { get; init; } = null!;
 		/// <summary>The HUD's frame with the left button pressed (and held), the pointer off the park.</summary>
 		public Action Press { get; init; } = null!;
+		/// <summary>The HUD's frame with the given input.</summary>
+		public Action<UiInput> Input { get; init; } = null!;
+		/// <summary>The HUD's frame after <paramref name="seconds"/> of its own time (its lines age by them), the pointer as in a plain frame.</summary>
+		public Action<float> Pass { get; init; } = null!;
 		/// <summary>How many of the HUD's lines (the last three) say <paramref name="text"/>.</summary>
 		public int Says( OpenTpwText text ) => Hud.Messages.Count( message => message == Strings.Extra( text ) );
 	}
 
-	private View ViewOf( Park park, IBuildCatalog? catalog = null )
+	/// <summary>Where the views' plain frames hold the pointer, in canvas pixels: off the park, unless a test moves it for a drag the HUD follows (C3c-2).</summary>
+	private N.Vector2 hudPointer = new( -1 );
+
+	private View ViewOf( Park park, IBuildCatalog? catalog = null, HudHost? hudHost = null )
 	{
 		park.Enter();
 		var strings = OriginalUiTests.FakeStrings();
-		var hud = new ParkHud( park.Level, strings, new EconomyParkStatus( () => park.Economy ), catalog ?? new NoItems(), new HudHost() );
+		var hud = new ParkHud( park.Level, strings, new EconomyParkStatus( () => park.Economy ), catalog ?? new NoItems(), hudHost ?? new HudHost() );
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 		var context = new UiContext( strings, new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) )
 		{ Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };
@@ -46,17 +53,35 @@ public partial class CoopSessionTests
 			Update = () =>
 			{
 				park.Enter();
-				hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
+				hud.Update( context, UiInput.Idle( hudPointer ), false, false, false );
 			},
 			Escape = () =>
 			{
 				park.Enter();
 				hud.Update( context, UiInput.Key( UiKeys.Back ), false, false, false );
 			},
+			Pass = seconds =>
+			{
+				park.Enter();
+				context.Delta = seconds;
+				try
+				{
+					hud.Update( context, UiInput.Idle( hudPointer ), false, false, false );
+				}
+				finally
+				{
+					context.Delta = 0;
+				}
+			},
 			Press = () =>
 			{
 				park.Enter();
 				hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ) with { LeftDown = true, LeftPressed = true }, false, false, false );
+			},
+			Input = input =>
+			{
+				park.Enter();
+				hud.Update( context, input, false, false, false );
 			}
 		};
 	}

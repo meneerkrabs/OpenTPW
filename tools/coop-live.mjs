@@ -7,10 +7,14 @@
 // recovery scenario, stops both games when one fails, and checks both games' evidence
 // against each other once both completed: one session, the guest's build of the host's park, the host's line applied by the guest with checkpoints compared after it,
 // the figures seen both ways, the guest's refused line, the chat both ways, Go to, and the session's end; the baseline and the endurance run with no resync and no
-// desync, the recovery run with the session back and a second line after the restart, and the endurance run at the fastest speed for its minutes.
+// desync, the recovery run with the session back and a second line after the restart, the endurance run at the fastest speed for its minutes, and the management run
+// (C4b-2) with the guest's line as its purchase, the attractions right given through the dialog, a guest's typed price and ride door at their records, and exactly one
+// resync, the guest's forced one, with its queued price sent once after it; the staff run (C4c-2) with the staff right given through the dialog and the guest's hire, placement,
+// pick-up, drop, rename, training budget and dismissal, each at its record on both parks, and three resyncs, the guest's forced ones: a hire let go inside the cut, the employee
+// in hand armed again from the snapshot, and a drop inside the cut.
 //
 // Usage:
-//   node tools/coop-live.mjs --game <OpenTPW.dll> --server <OpenTPW.Server.dll> --out <directory> [--game-path <Theme Park World>] [--scenario baseline|recovery|endurance]
+//   node tools/coop-live.mjs --game <OpenTPW.dll> --server <OpenTPW.Server.dll> --out <directory> [--game-path <Theme Park World>] [--scenario baseline|recovery|endurance|management|staff]
 //        [--minutes M] [--config-source <directory>] [--host native|page] [--guest native|page] [--web <published wwwroot>] [--runtime aot|interpreter]
 //        [--chrome <executable>] [--headed] [--timeout-minutes T]
 // A page side (C2d-5b, tools/coop-live-page.mjs) is the game in a page in a Chrome of its own, through a local server of its own in front of the real one, which then
@@ -30,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 import { sleep } from './web-perf/lib.mjs';
 import { checkPageSides, checkPictures, PAGE_START_SECONDS, PageSide } from './coop-live-page.mjs';
 
-const SCENARIOS = ['baseline', 'recovery', 'endurance'];
+const SCENARIOS = ['baseline', 'recovery', 'endurance', 'management', 'staff'];
 const SIDES = ['native', 'page'];
 const DEFAULT_CHROME = {
 	darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -389,11 +393,16 @@ export function checkEvidence(host, guest, scenario, minutes) {
 				guest: guest?.recovery && { atRestart: guest.recovery.linksAtRestart, after: guest.recovery.links } });
 		check('the guest saw the host\'s figure move after the restart', sighting(guest, 'host-moved-again', host?.player), guest?.sightings);
 	} else {
-		check('the session ran with no resync and no desync', guest?.streams === 1 && guest?.stream?.desyncs === 0 && guest?.stream?.failedJoins === 0
-			&& !(guest?.phases ?? []).includes('guest resyncing'), { streams: guest?.streams, stream: guest?.stream, phases: guest?.phases });
+		if (scenario !== 'management' && scenario !== 'staff')
+			check('the session ran with no resync and no desync', guest?.streams === 1 && guest?.stream?.desyncs === 0 && guest?.stream?.failedJoins === 0
+				&& !(guest?.phases ?? []).includes('guest resyncing'), { streams: guest?.streams, stream: guest?.stream, phases: guest?.phases });
 		check('neither game\'s link was lost', [host, guest].every(evidence => evidence?.links?.resumes === 0
 			&& !(evidence.links.states ?? []).some(item => item.state === 'Reconnecting') && evidence.links.chatReconnects === 0), { host: host?.links, guest: guest?.links });
 	}
+	if (scenario === 'management')
+		checkManagement(host, guest, check);
+	if (scenario === 'staff')
+		checkStaff(host, guest, check);
 	if (scenario === 'endurance') {
 		const endurance = host?.endurance;
 		const samples = endurance?.samples ?? [];
@@ -416,6 +425,88 @@ export function checkEvidence(host, guest, scenario, minutes) {
 			slowestHostRate: Math.min(...rates), slowestGuestRate: Math.min(...guestRates), longestFrameGaps: { host: host?.longestFrameGap ?? null, guest: guest?.longestFrameGap ?? null } });
 	}
 	return checks;
+}
+
+/** The reason the guest's forced desync logs (CoopLiveTest.ForcedDesyncReason). */
+export const FORCED_DESYNC_REASON = 'forced by the live test';
+
+/**
+ * The management run's checks (C4b-2, docs/COOP.md "The live acceptance"): the guest's own line as its purchase on both parks, the attractions right through the dialog, the
+ * guest's typed price and its ride door at their records on both parks, and exactly one resync, the guest's forced one, whose queued price was sent once after it. The forced
+ * desync takes the stream's own path, so within the session's early window after the join it counts as the join's failure, as a real one would: at most that one.
+ */
+function checkManagement(host, guest, check) {
+	const purchase = host?.guestPurchase, own = guest?.ownPurchase;
+	const same = (left, right, keys) => keys.every(key => left?.[key] !== undefined && left[key] === right?.[key]);
+	check('the guest\'s line was a purchase: each park\'s balance at its record fell by its charge, the same on both', Number.isFinite(purchase?.charged) && purchase.charged > 0
+		&& purchase.before - purchase.after === purchase.charged && purchase.cells === 6 && same(purchase, own, ['before', 'after', 'charged', 'cells']),
+	{ host: purchase, guest: own });
+	check('the host gave the attractions right through the rights dialog', host?.attractionsGrant?.seat > 0 && host.attractionsGrant.seat === guest?.ownBuild?.seat
+		&& /\bAttractions\b/.test(host.attractionsGrant.rights ?? ''), host?.attractionsGrant);
+	const price = guest?.management?.price, hostPrice = host?.management?.price;
+	check('the guest\'s typed price applied at its record on both parks', Number.isInteger(price?.record) && same(price, hostPrice, ['shop', 'price', 'record']),
+		{ guest: price, host: hostPrice });
+	const doors = guest?.management?.doors ?? [], hostDoors = host?.management?.doors ?? [];
+	check('the guest\'s ride door closed and opened again, each at its record on both parks', doors.length === 2 && doors[0].open === false && doors[1].open === true
+		&& doors.every(door => Number.isInteger(door.record)) && hostDoors.length === 2 && doors.every((door, index) => same(door, hostDoors[index], ['ride', 'open', 'record'])),
+	{ guest: doors, host: hostDoors });
+	const forced = guest?.management?.forced, seen = host?.management?.forced;
+	check('exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap', guest?.streams === 2 && forced?.entry === 'Unsent'
+		&& forced?.desync?.kind === 'Protocol' && forced.desync.reason === FORCED_DESYNC_REASON && forced?.after?.generation === forced.generation + 1 && forced.after.checks >= 2
+		&& forced.after.desyncs === forced.desync.id && guest?.stream?.desyncs === forced.desync.id && forced.failedJoinsBefore === 0 && forced.failedJoinsAfter <= 1
+		&& guest?.stream?.failedJoins === forced.failedJoinsAfter && seen?.desyncs?.length === 1 && seen.desyncs[0].id === forced.desync.id
+		&& seen.desyncs[0].kind === 'Protocol' && seen.capturesAfter === seen.capturesBefore + 1 && seen.secondPriceRecords === 1,
+	{ guest: forced, host: seen, streams: guest?.streams, stream: guest?.stream });
+}
+
+/**
+ * The staff run's commands of the guest's, in their order (C4c-2, CoopLiveTest.GuestStaff): a hire let go and its cleanup, a hire and its placement, the employee's pick-up and drop,
+ * its rename, the guards' training budget and its dismissal.
+ */
+export const STAFF_COMMANDS = ['BeginStaffHire', 'CancelStaffHire', 'BeginStaffHire', 'PlaceStaff', 'PickUpStaff', 'DropStaff', 'RenameStaff', 'SetTrainingBudget', 'FireStaff'];
+
+/** How many of the staff run's commands a forced resync's cut holds, so the guest's park knows no record of them: the hire let go and the drop. */
+export const STAFF_INSIDE_A_CUT = 2;
+
+/** The name the staff run gives its employee (CoopLiveTest.StaffName). */
+export const STAFF_NAME = 'Live';
+
+/**
+ * The staff run's checks (C4c-2, docs/COOP.md "The live acceptance"): the staff right through the rights dialog; the guest's commands in their order about its employee; each accepted at
+ * the same record on both parks, the two inside a cut the same on both but for the record the guest's park cannot know; and exactly three resyncs, the guest's forced ones (the browser
+ * resync cases): a hire let go before its record entered the cut (cleaned up, no tool), the employee in hand (its Carry tool armed again from the snapshot) and a drop inside the cut (no
+ * state, no tool), each the host's one desync report of it with one capture. A forced desync takes the stream's own path, so the first two, inside the session's early window after a
+ * join, may count as that join's failure; the third comes after the window.
+ */
+function checkStaff(host, guest, check) {
+	check('the host gave the staff right through the rights dialog', host?.staffGrant?.seat > 0 && host.staffGrant.seat === guest?.ownBuild?.seat
+		&& /\bStaff\b/.test(host.staffGrant.rights ?? ''), host?.staffGrant);
+	const mine = guest?.staff?.commands ?? [], theirs = host?.staff?.commands ?? [];
+	const kinds = mine.map(command => command.kind);
+	const employee = mine[3]?.staff;
+	const placed = mine[3], dropped = mine[5];
+	check('the guest let a hire go, then hired, placed, picked up, dropped elsewhere, renamed, trained and dismissed one employee, in that order',
+		kinds.length === STAFF_COMMANDS.length && kinds.every((kind, index) => kind === STAFF_COMMANDS[index]) && Number.isInteger(employee) && mine[0].staff !== employee
+		&& [2, 3, 4, 5, 6, 8].every(index => mine[index].staff === employee) && mine[6].name === STAFF_NAME
+		&& Array.isArray(placed?.cell) && Array.isArray(dropped?.cell) && (placed.cell[0] !== dropped.cell[0] || placed.cell[1] !== dropped.cell[1]), { guest: mine });
+	const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+	const without = (command, ...keys) => Object.fromEntries(Object.entries(command).filter(([key]) => !keys.includes(key)));
+	check('each of the guest\'s staff commands applied at its record on both parks, accepted, those inside a cut the same but for the record', mine.length > 0
+		&& theirs.length === mine.length && theirs.every(command => command.accepted === true && Number.isInteger(command.record))
+		&& mine.filter(command => command.record === null).length === STAFF_INSIDE_A_CUT
+		&& mine.every((command, index) => command.record === null ? same(without(theirs[index], 'accepted', 'record'), without(command, 'record'))
+			: same(without(theirs[index], 'accepted'), command)),
+	{ guest: mine, host: theirs });
+	const resyncs = guest?.staff?.resyncs ?? [], seen = host?.staff?.forced;
+	check('exactly three resyncs, the guest\'s forced ones: a hire let go inside the cut cleaned up, the employee in hand armed again, a drop inside the cut leaving no tool', guest?.streams === 4
+		&& resyncs.length === 3 && resyncs.map(resync => resync.state).join() === 'hire,hand,drop'
+		&& resyncs[0].request === 'InSnapshot' && resyncs[0].armed === false && resyncs[1].request === null && resyncs[1].armed === true
+		&& resyncs[2].request === 'InSnapshot' && resyncs[2].armed === false
+		&& resyncs.every((resync, index) => resync.desync?.kind === 'Protocol' && resync.desync.reason === FORCED_DESYNC_REASON && resync.desync.id === index + 1
+			&& resync.after?.generation === resync.generation + 1 && resync.after.checks >= 2 && (index === 0 || resync.generation === resyncs[index - 1].after.generation))
+		&& guest?.stream?.desyncs === 3 && guest?.stream?.failedJoins <= 2
+		&& seen?.desyncs?.length === 3 && seen.desyncs.every((report, index) => report.id === index + 1 && report.kind === 'Protocol')
+		&& seen.capturesAfter === seen.capturesBefore + 3, { guest: resyncs, host: seen, streams: guest?.streams, stream: guest?.stream });
 }
 
 /** How often both games sample the park's ticks at the fastest speed, in seconds (CoopLiveTest.EnduranceSampleSeconds). */

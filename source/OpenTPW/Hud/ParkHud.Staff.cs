@@ -143,6 +143,10 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x46c890 place tool end] the advisor help 0x135 (309) is posted after the window closes and withdrawn when the Place tool ends (ParkHud.StaffPlacementHelp); no message-area line
 	public bool HireSelectedStaff()
 	{
+		hireNoteSaid = false;
+		// [EXT:online-coop-commands] a guest's hire asks the session's rights before the park's own checks, and goes to the host as a request (C4c-2)
+		if ( !showingEmployedStaff && !level.IsReadOnlyVisit && GuestStaff is { } guestStaff && Status.EconomySource is ParkEconomy shared )
+			return SelectedCandidate is { } chosen && ReferenceEquals( level.Park?.Economy, shared ) && GuestHire( guestStaff, shared, chosen ) && ResetStaffSelection();
 		if ( showingEmployedStaff || RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy || economy.IsBankrupt )
 			return false;
 		var candidate = SelectedCandidate;
@@ -153,6 +157,12 @@ public sealed partial class ParkHud
 			return false;
 		level.EndBuildTools();
 		CloseStaffWindow();
+		return ResetStaffSelection();
+	}
+
+	/// <summary>A hire's selection goes back to the list's first applicant; always true.</summary>
+	private bool ResetStaffSelection()
+	{
 		selectedStaffId = 0;
 		EnsureStaffSelection();
 		return true;
@@ -162,7 +172,8 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x49b988 hire row] the hire window's row activation (0x400) calls the hire 0x507bf0 (which returns 0 for an empty slot and builds the staff tool otherwise), closes the window and posts advisor help 0x135; no direct call chain from the window procedure 0x49b650 reaches a cat_ui sound, so the refusal plays no error sound (the message is OpenTPW's)
 	internal void RefuseHire()
 	{
-		if ( showingEmployedStaff )
+		// [EXT:online-coop-commands] a guest's hire that said its own note (the rights', the wait's) says nothing more (C4c-2)
+		if ( showingEmployedStaff || hireNoteSaid )
 			return;
 		PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
 	}
@@ -348,7 +359,7 @@ public sealed partial class ParkHud
 		Model( "statsFrame", "f_balance", Rect( 259, 702, 971, 930 ) );
 		Model( "listFrame", "hirestaff", Rect( 1017, 179, 1813, 930 ) );
 		screen.Add( new UiLabel { Id = "title", Text = () => showingEmployedStaff ? strings[UIStrings.AllStaff] : HireTitle, Font = fonts => fonts.Title,
-			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 805, 74, 1277, 153 ), Anchor = UiAnchor.Center } );
+			Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 805, 74, 1277, 153 ), Anchor = UiAnchor.Center } );
 		// [DATA:video 12:00 hire window] the applicant view shows no name or grade: the strip under the portrait is the Vaardigheid (skill) gauge (control 9346); the employee view (EXT) keeps name and grade there
 		screen.Add( new UiLabel { Id = "staffName", Text = () => showingEmployedStaff ? SelectedName : strings[UIStrings.SkillStaff],
 			Font = fonts => fonts.Label, Color = UiColors.Text, Align = showingEmployedStaff ? UiAlign.Center : UiAlign.Left, Fit = true,

@@ -600,8 +600,8 @@ The header fields as tp.exe's loader treats them (`SaveCoaster` names them):
 | +8 u16 | +0xC | coaster type id (`TypeId`) | no, the constructor set it |
 | +0xA u16 | +0x10 | station mesh instance id (`StationMeshInstanceId`), the bind key | used to bind |
 | +0xC u16 | +0x14 | slot in the table `0x790BD0` (`Slot`, at most 255), the scripts' coaster handle | as the saved slot, which the allocator assigns as given |
-| +0xE u16 | +0x1C | placement value 1 from `0x466F90` (SAVE-922) | no |
-| +0x10 u16 | +0x20 | placement value 2 from `0x466F90` (SAVE-922) | no |
+| +0xE u16 | +0x1C | the station's placement cell x from `0x466F90`, dead data | no |
+| +0x10 u16 | +0x20 | the station's placement cell z from `0x466F90`, dead data | no |
 | +0x12 f32 | +0x2C | power factor 0 or 1 | yes |
 | +0x16 u16 | — | section count | — |
 | +0x18 u16 | +0xF4 | trains in service (`TrainsInService`; the loop bound of `0x435784`, `0x43BA35`, `0x43CD36`) | yes |
@@ -683,8 +683,7 @@ derived again by the node constructor (the loader runs the loop setup `0x442cd0`
 rotation float for 0x10). The section words are named: `section+112` is the node's mesh instance (re-attached
 through `0x463ab0`), `+216` bank, `+220` incline, `+224` yaw, `+232` the height parameter and `+248`
 the loop rotation (setters `0x444150`, `0x4441d0`, `0x444270`). The header's remaining track flags
-(SAVE-921), the placement values `+28`/`+32` (SAVE-922) and the train words `+0x38`, `+0x64`, `+0x68` and the car flag and
-byte `+0x44` (SAVE-923) are kept raw. A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
+(SAVE-921) are kept raw. The placement cell `+28`/`+32` is dead data (the loader hands it to `0x436ac0`, which never reads it); the train words `+0x38` (the sound state of `0x439780`), `+0x64`, `+0x68` (its handles) are restored raw by the loader and read only by the sound routine; the car byte `+0x44` is the car's seat share, which `0x43ba90` computes and the import's seats per train reproduce. A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
 split). `OriginalParkImport.Import` runs the reader on every save and exposes the result as
 `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell queries and `CoasterSections` joins that require both cell
 and object `Info.Id` to attach attraction ids. Missing or ambiguous scene matches remain visible;
@@ -899,7 +898,7 @@ Imported: park turn and date, the world generator state `mRandomSeed` (`World.Re
 object's price, cost of goods, upgrade level, state of repair, life gauge, walk-away count, operating state, chance of winning, quality of goods, customer
 count and time stamp (also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, energy, name, job, hire time, idle stamp and patrol), the hiring pool, the staff HQ's training budgets and strike levels, research (finished and started projects, each category's effort and current project, the work load and the highest open groups), the analyser's four recent-research rings, the challenges, the park
 open flag, and the advisor's pending advice and history of bound messages. The saved guests are restored by `GuestSimulation.ImportOriginal`: states 0–10, 18, 19 and 21 keep their thing id, type, cash, meters and destination and walk on; guests queueing or boarding (11–14), leaving a ride (15), using an attraction (16), held by a guard (17), or walking to the arrival vehicle (20) are not imported (SAVE-002); a park guest (states 6–10) standing off the paths is imported where it stands and recovers through its own state handlers, as tp.exe's load leaves it (`0x4F9407`, `0x4F9490`).
-Still read and not imported, each reported with its SAVE approximation: those dropped guests (SAVE-002), a research project of an object the archives lack or a current project the picker would not offer (reported; none in the corpus), the hiring
+Still read and not imported, each reported and tracked by a SAVE approximation: those dropped guests (SAVE-002), unknown research object/project identities absent from the reconstructed lab (SAVE-007; reported; none in the corpus; known current projects are kept as saved even when the picker would not offer them), the hiring
 pool's candidates saved on the pointer (SAVE-004), the advisor presentation block, the world state, the arrival variables and bytes, the calendar session start, the advisor
 controller's presentation words (its current record is the last tutorial advice when an automatic advisor attaches) and the weather, park analyser apart from its recent-research rings,
 tag system, mechanic HQ and UI receiver things (SAVE-010). The Scripts block's sprite scripts, the saved guests' and litter's animations, are decoded and not applied (SAVE-013): guests and staff animate from their state and litter from the cell. The Particles pool is restored, minus the emitter and effector fields SAVE-013 drops. The RSSE block's script ids, list order, next id, pass counter and run state are applied (`SavedScriptImport`, `RideVM.ImportSavedRunState`: the program counter, stack, variables, limbo table, waits and timers on the saved game clock); the records' animation controls (below AnimID 12, on the saved game clock, ended or looping as saved, with their deferred clip) and node bits 0x10/0x80000000 are restored (`OriginalObjectRuntime.RestoreSavedScene`, loader 0x4647A0); the RSSE records' object lists, object node tables, bounce and walk tables, and controls held on the first frame (flag 0x2) or on the unscaled clock (flag 0x40) are not. A script with a saved child or sound child keeps its fresh state; saved child records are left for their parent to recreate. Of the Sound block a park started from an original save applies its volumes and on-flags for the session (see "Sound block"); the rest of it, the message-centre lists and the Track and Flying ride chunks are not restored (`[EXT:original-engine-state-dumps]`). Staff
@@ -1043,8 +1042,7 @@ RideSystem, attraction and economy readers over the second fixture set
   extra paths, so those readers are still proven on Easymode alone. A Theme Park World
   save with a built coaster does not exist in any available corpus: the Coasters block's
   nonempty shape rests on the static Mac contract and the Theme Park Inc cross-check.
-- The meaning of the coaster header's track flags and controller words and of the train words
-  `+0x38`, `+0x64`, `+0x68` (SAVE-920 to SAVE-923); the train layout is decoded from the loader and the saver but
+- The meaning of the coaster header's track flags (SAVE-920, SAVE-921); the train layout is decoded from the loader and the saver but
   no Theme Park World save with a coaster exists to check it on real bytes.
 - The control manager and the macro AI before the calendar (their widths are traced, their bodies are not), the guest, analyser and weather bodies, record
   fields marked raw above, the extension data, the RideSystem control and embedded words and the remaining

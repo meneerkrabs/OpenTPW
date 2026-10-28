@@ -100,7 +100,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// The park's world generator (tp.exe 0x00516330): the economy's staff pool and the staff walks draw from it, and the level attaches the guests'
 	/// and the scripts' draws to the same instance (<see cref="AttachWorld"/>), as the original has one generator for everything.
 	/// </summary>
-	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, but the staff members have no person-thing constructor draws (base speed, reseed, sprite variant), and the weather stays off the stream ([BIN:TPW-EXE:0x59A796 advisor pick] the advisor's update takes no draw: all 351 descriptor rows are in the sequential mode 2, the mode-3 draw 0x59A7AC is unreachable)
+	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, but the staff constructors' role searches run on the member's first update instead of inside the constructor ([BIN:TPW-EXE:0x004F89E1 staff base speed] the base-speed draw, the entertainer's fixed speed and the guard's variant draw are taken at the hire, see ParkStaff.Hire; no staff constructor reseeds, 0x4F7B7E is the online avatar's), and the weather stays off the stream ([BIN:TPW-EXE:0x59A796 advisor pick] the advisor's update takes no draw: all 351 descriptor rows are in the sequential mode 2, the mode-3 draw 0x59A7AC is unreachable)
 	public WorldRng World { get; private set; }
 
 	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>
@@ -2082,10 +2082,35 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( IsBankrupt )
 			return PurchaseResult.Bankrupt;
-		// [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead
+		// the checks in their order, an absent object asked for only past the game type's (UpgradePurchaseRefusal)
 		if ( !Features.Upgrades )
 			return Rules.Staff ? PurchaseResult.NotAvailableInInstantAction : PurchaseResult.NeedsStaff;
 		var item = RequireObject( instanceId );
+		var result = UpgradePurchaseRefusal( item );
+		if ( result != PurchaseResult.Ok )
+			return result;
+		var level = item.Level + 1;
+		Catalog.TryGet( item.InfoId, out var info );
+		var cost = info.Upgrades[level].CostOfUpgrade;
+		item.PendingLevel = level;
+		item.UpgradeCostDue = true;
+		// [EXT:online-coop-commands] the purchase's identity, which a guest's cancellation names (C4b-2)
+		item.UpgradePurchases++;
+		Raise( ParkEventKind.UpgradeBought, cost, item.Id, item.InfoId, $"level {level}" );
+		return PurchaseResult.Ok;
+	}
+
+	/// <summary>
+	/// What <see cref="TryBuyUpgrade"/> would answer for <paramref name="item"/> now, without buying (null: the park is bankrupt): its checks alone, so [EXT:online-coop-commands] a guest's
+	/// window projects a waiting buy only when its record would take it (C4b-2).
+	/// </summary>
+	internal PurchaseResult UpgradePurchaseRefusal( ParkObjectState? item )
+	{
+		if ( IsBankrupt || item == null )
+			return PurchaseResult.Bankrupt;
+		// [BIN:STP-PPC:0x10165A0C upgrade list] game type 2 (Instant Action) lists no upgrades and shows UITEXT 27 instead
+		if ( !Features.Upgrades )
+			return Rules.Staff ? PurchaseResult.NotAvailableInInstantAction : PurchaseResult.NeedsStaff;
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || item.Kind != ParkObjectKind.Ride )
 			return PurchaseResult.NotBuyable;
 		if ( item.PendingLevel > item.Level )
@@ -2097,13 +2122,7 @@ public sealed class ParkEconomy : IParkEconomy
 			return PurchaseResult.NotResearched;
 		// [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff
 		// [BIN:TPW-EXE:0x004AF4E9 upgrade purchase] the buy handler compares the signed balance (bank +0xC) with Upgrades[level].CostOfUpgrade (type record +0x1B8 + 0x40 · level) and requests the upgrade (0x004E0050(1): state 2, a mechanic called) only when the balance is greater; nothing is debited here
-		var cost = info.Upgrades[level].CostOfUpgrade;
-		if ( Balance <= cost )
-			return PurchaseResult.NotEnoughMoney;
-		item.PendingLevel = level;
-		item.UpgradeCostDue = true;
-		Raise( ParkEventKind.UpgradeBought, cost, item.Id, item.InfoId, $"level {level}" );
-		return PurchaseResult.Ok;
+		return Balance <= info.Upgrades[level].CostOfUpgrade ? PurchaseResult.NotEnoughMoney : PurchaseResult.Ok;
 	}
 
 	/// <summary>
@@ -2399,7 +2418,7 @@ public sealed class ParkEconomy : IParkEconomy
 		RequireSystem( Rules.Staff, "staff" );
 		if ( IsBankrupt )
 			throw new InvalidOperationException( "A bankrupt park cannot hire staff." );
-		var member = Staff.Hire( candidateId, Tick );
+		var member = Staff.Hire( candidateId, Tick, World );
 		member.State = StaffState.Patrolling;
 		Raise( ParkEventKind.StaffHired, Staff.MonthlyWage( member ), member.Id, (int)member.Type );
 		return member;

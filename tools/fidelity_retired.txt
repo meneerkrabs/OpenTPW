@@ -175,6 +175,7 @@ GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
 GUEST-011 docs/CLOSED-RIDE-ADMISSION.md
 GUEST-012 docs/GUESTS.md
+GUEST-014 docs/GUESTS.md
 GUEST-018 docs/GUESTS.md
 GUEST-019 docs/GUESTS.md
 GUEST-022 docs/progress/2026-10-18-tpc-sprite-banks.md
@@ -285,9 +286,10 @@ SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
 SAVE-004 docs/progress/2026-10-18-round8-saves-econ.md
 SAVE-005 docs/ECONOMY.md
-SAVE-007 docs/ECONOMY.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
 SAVE-009 docs/SAVE-THINGS.md
+SAVE-922 docs/TPWS-PAYLOAD.md
+SAVE-923 docs/TPWS-PAYLOAD.md
 SAVE-941 docs/THEME-PARK-INC.md
 SAVE-942 docs/THEME-PARK-INC.md
 SAVE-943 docs/THEME-PARK-INC.md
@@ -299,8 +301,12 @@ TOUR-007 docs/TOURS.md
 TOUR-008 docs/TOURS.md
 TOUR-009 docs/PROGRESS.md
 TOUR-010 docs/PROGRESS.md
+TRACK-001 docs/TRACKS.md
 TRACK-003 docs/TRACKS.md
+TRACK-004 docs/TRACKS.md
+TRACK-005 docs/TRACKS.md
 TRACK-006 docs/TRACKS.md
+TRACK-007 docs/TRACKS.md
 TRACK-008 docs/TRACKS.md
 TRACK-009 docs/PROGRESS.md
 TRACK-011 docs/PROGRESS.md
@@ -310,6 +316,7 @@ TRACK-014 docs/TRACKS.md
 TRACK-015 docs/PROGRESS.md
 TRACK-016 docs/PROGRESS.md
 TRACK-017 docs/PROGRESS.md
+TRACK-018 docs/TRACKS.md
 TRACK-019 docs/TRACKS.md
 TRACK-023 docs/PROGRESS.md
 TRACK-024 docs/PROGRESS.md
@@ -339,8 +346,10 @@ UI-029 docs/reverse/APPROX-TRACE.md
 UI-030 docs/reverse/APPROX-TRACE.md
 UI-032 docs/UI.md
 UI-033 docs/reverse/APPROX-TRACE.md
+UI-034 docs/UI.md
 UI-035 docs/reverse/PPC-review.md
 UI-036 docs/UI.md
+UI-037 docs/UI.md
 UI-038 docs/PROGRESS.md
 UI-039 docs/UI.md
 UI-040 docs/PROGRESS.md
@@ -393,3 +402,4 @@ WALK-006 docs/GUESTS.md
 WALK-007 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
+UI-007 docs/UI.md

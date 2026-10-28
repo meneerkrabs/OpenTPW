@@ -92,4 +92,21 @@ public class RideStateWordTests
 		park.PublishRideState( record );
 		Assert.AreEqual( 0, events.Count( item => item.Kind == ParkEventKind.RideEnteredBrokenState ) );
 	}
+
+	[TestMethod]
+	public void AGuestWindowsProjectionCopiesTheWordsValueAndNeverWritesTheRecordsWord()
+	{
+		// [EXT:online-coop-commands] a guest's window projects a waiting open-state action onto a copy of the record (C4b-2): the copy reads the same state, and nothing written to it
+		// reaches the shared word or its listeners
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var record );
+		var changes = 0;
+		record!.StateWord.Changed += ( _, _ ) => changes++;
+		record.IsBrokenDown = true;
+		var copy = record.Projection();
+		Assert.AreNotSame( record.StateWord, copy.StateWord );
+		Assert.AreEqual( (RideObjectStates.BrokenDown, RideObjectStates.BrokenDown), (ParkEconomy.ObjectState( record ), ParkEconomy.ObjectState( copy )) );
+		copy.IsBrokenDown = false;
+		Assert.AreEqual( (true, false, 1), (record.IsBrokenDown, copy.IsBrokenDown, changes), "the copy's repair leaves the record's word alone and raises nothing" );
+	}
 }

@@ -28,13 +28,20 @@ public sealed partial class ParkHud
 	}
 
 	private OriginalObject? settingsOwner;
-	private readonly ObjectWindowSettings pending = new();
 	/// <summary>
-	/// [EXT:online-coop-commands] The values the window loaded, which a guest's apply compares with its own: a guest's window sends only what its player changed, where the original's apply
-	/// on every close would be a request the guest's rights refuse with a note the player never asked for, or one that writes back the values the park holds.
+	/// The window's values. [EXT:online-coop-commands] A guest's window keeps no draft (C4b-2): they are its drawn values, taken again every frame, and each change goes at once
+	/// (<see cref="SendWindowGroup"/>).
+	/// </summary>
+	private readonly ObjectWindowSettings pending = new();
+	internal ObjectWindowSettings PendingSettings => pending;
+	/// <summary>
+	/// [EXT:online-coop-commands] The values the window loaded, kept up by what it applied since (a typed price, an apply-all): a host's window in a shared park applies on close only the
+	/// fields it changed from them (C4b-2, <see cref="ChangedOverPark"/>), so another player's change made while it was open stays. A single player's window applies all, as the original's.
 	/// </summary>
 	private readonly ObjectWindowSettings loaded = new();
-	internal ObjectWindowSettings PendingSettings => pending;
+
+	/// <summary>[EXT:online-coop-commands] This machine hosts a shared park: the session's rules, with its own commands the stream's (C4b-2).</summary>
+	private bool HostsSharedPark => level.Commands is { SessionRules: true, FollowsStream: false };
 
 	/// <summary>The varibox range of the shop and sideshow prices (0x4b0735, 0x4b1cd0: 0..500, step 1).</summary>
 	internal const int MaximumPrice = 500;
@@ -64,6 +71,21 @@ public sealed partial class ParkHud
 
 		public int Counter { get; private set; }
 		public int Increment { get; private set; } = 1;
+
+		/// <summary>[EXT:online-coop-commands] The value a guest's box last asked for in this hold (C4b-2): a step to it again asks nothing; emptied at the press (<see cref="Press"/>).</summary>
+		public int? LastAsked { get; set; }
+
+		/// <summary>
+		/// [EXT:online-coop-commands] A guest's box's press (C4b-2, <see cref="UiButtonRepeat.Pressed"/>): the hold's arithmetic starts again as <see cref="Start"/> sets it, without its plus
+		/// step, and its memory empties, so a hold whose start the pointer missed (outside the button at the delay) steps by one, not by an earlier hold's tens. A host's box keeps the
+		/// original's arithmetic, which only the start resets.
+		/// </summary>
+		public void Press()
+		{
+			Counter = 20;
+			Increment = 1;
+			LastAsked = null;
+		}
 
 		/// <summary>The hold start (message 0x10009): arms the count; the plus button steps by one now. Returns the new value.</summary>
 		public int Start( int value, bool plus, int minimum, int maximum )
@@ -101,30 +123,52 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x4af030 ride window load] the speed slider 0x3e30 gets the range MinSpeed..MaxSpeed (type +0x134/+0x138) and the position ride +0x58, the duration slider 0x3e2f MinDuration..MaxDuration and +0x5c (shown only with Info.DurationUnit, +0x70), the capacity slider 0x3e2d MinCapacity..MaxCapacity and +0x5d (hidden with its label 0x3e31 when the two are equal)
 	// [BIN:TPW-EXE:0x4b0950 shop window load] the quality slider 0xc06b (range 0..2, 0x4b06b7) gets the quality byte / 50, the ingredient slider 0xc086 (0..100, 0x4b06d2) the amount byte, the price box 0xc085 (0..500) the price
 	// [BIN:TPW-EXE:0x4b1ee0 sideshow window load] the chance slider 0xa08e (0..100, 0x4b1bc7) gets the win byte +0x190, the price box 0xa08f (0..500) the price +0x194, the prize box 0xa090 (0..10000) the cost of goods +0x188
-	private void LoadObjectSettings( OriginalObject item )
+	private void LoadObjectSettings( OriginalObject item ) => LoadObjectSettings( item, pending );
+
+	/// <summary>Loads the values of <paramref name="item"/> into <paramref name="into"/>, as the window's load sets them.</summary>
+	private void LoadObjectSettings( OriginalObject item, ObjectWindowSettings into )
 	{
 		if ( item.Entry.WhichUIType == (int)BuildCategory.Rides )
 		{
 			var words = item.Runtime.Settings;
-			pending.Ride = new RideSettingWords(
+			into.Ride = new RideSettingWords(
 				SliderPosition( words.Speed, Setting( item, "UsageInfo.MinSpeed" ), Setting( item, "UsageInfo.MaxSpeed" ) ),
 				// [EXT:cheats-ride-vehicles] a ride whose vehicle limit the cheat raised has a larger capacity maximum (OriginalObjectRuntime.MaximumCapacity)
 				SliderPosition( words.Capacity, Setting( item, "UsageInfo.MinCapacity" ), item.Runtime.MaximumCapacity ),
 				SliderPosition( words.Duration, Setting( item, "UsageInfo.MinDuration" ), Setting( item, "UsageInfo.MaxDuration" ) ) );
-			loaded.CopyFrom( pending );
 			return;
 		}
 		if ( !TryPriceTarget( item, out _, out var state ) )
 			return;
 		// [BIN:TPW-EXE:0x66a71c variable box SetPos] the variable box class (vtable 0x705af0, slot +0x1c 0x66a6ae) lowers a value above its maximum (+0x13c) to it, else raises one below its minimum (+0x138), and sends 0x800 on a change and always on its first set (flag +0x154 from the constructor 0x66a558); its SetRange 0x66a5c4 clamps the value too
 		// [BIN:TPW-EXE:0x66bb9b slider creation] the original's window object is static and its controls are rebuilt on each open, with sliders that start at position 0 and send 0x800 only on a change (0x66b088); but each slider's ball child forces one notification of the slider's value when it is created (message 0x15 calls 0x66b088 with -2, always sending), which puts 0 into the window's word, and SetRange 0x66b47d only stores the bounds, so the load's SetPos reaches the window as a message whenever it differs from 0 and needs none when it is 0: the window's words always end up as the loaded values, as here
-		pending.Price = SliderPosition( state.Price, 0, MaximumPrice );
-		pending.Prize = SliderPosition( state.CostOfGoods, 0, MaximumPrize );
-		pending.QualityStep = SliderPosition( (state.QualityOfGoods & 0xFF) / 50, 0, 2 );
-		pending.Ingredient = SliderPosition( state.IngredientAmount & 0xFF, 0, 100 );
+		into.Price = SliderPosition( state.Price, 0, MaximumPrice );
+		into.Prize = SliderPosition( state.CostOfGoods, 0, MaximumPrize );
+		into.QualityStep = SliderPosition( (state.QualityOfGoods & 0xFF) / 50, 0, 2 );
+		into.Ingredient = SliderPosition( state.IngredientAmount & 0xFF, 0, 100 );
 		// the win byte +0x190 is 100 less the type's InitChanceOfLoosing at build (0x4db3a1); OpenTPW's economy keeps the chance of losing
-		pending.WinChance = SliderPosition( (100 - state.ChanceOfLosingPercent) & 0xFF, 0, 100 );
-		loaded.CopyFrom( pending );
+		into.WinChance = SliderPosition( (100 - state.ChanceOfLosingPercent) & 0xFF, 0, 100 );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] What a host's window in a shared park applies to <paramref name="item"/> (C4b-2): the park's values as the window would load them now, with each field the
+	/// window changed from what it loaded (<see cref="loaded"/>), so a field another player changed while it was open keeps their value.
+	/// </summary>
+	private ObjectWindowSettings ChangedOverPark( OriginalObject item )
+	{
+		var values = new ObjectWindowSettings();
+		values.CopyFrom( pending );
+		LoadObjectSettings( item, values );
+		values.Ride = new RideSettingWords(
+			pending.Ride.Speed != loaded.Ride.Speed ? pending.Ride.Speed : values.Ride.Speed,
+			pending.Ride.Capacity != loaded.Ride.Capacity ? pending.Ride.Capacity : values.Ride.Capacity,
+			pending.Ride.Duration != loaded.Ride.Duration ? pending.Ride.Duration : values.Ride.Duration );
+		if ( pending.QualityStep != loaded.QualityStep ) values.QualityStep = pending.QualityStep;
+		if ( pending.Ingredient != loaded.Ingredient ) values.Ingredient = pending.Ingredient;
+		if ( pending.Price != loaded.Price ) values.Price = pending.Price;
+		if ( pending.Prize != loaded.Prize ) values.Prize = pending.Prize;
+		if ( pending.WinChance != loaded.WinChance ) values.WinChance = pending.WinChance;
+		return values;
 	}
 
 	/// <summary>The window's apply for <paramref name="item"/>: the ride window's 0x4af440, the shop window's 0x4b0aa0 or the sideshow window's 0x4b20b0.</summary>
@@ -132,57 +176,68 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x4b20b0 sideshow window apply] SetPrice(window +0x2c) 0x4e2770, then, unless type +0x10c, the win byte (window +0x24) 0x4e21c0 into +0x190 and the cost of goods (window +0x28) 0x4e1a20 into +0x188
 	private void CommitObjectSettings( OriginalObject item )
 	{
-		if ( item.IsDeleted || level.IsReadOnlyVisit || !level.Objects.Objects.Contains( item ) )
+		// [EXT:online-coop-commands] a guest's window sent each change at once and holds nothing to apply (C4b-2)
+		if ( item.IsDeleted || level.IsReadOnlyVisit || !level.Objects.Objects.Contains( item ) || level.Commands.SendsRequests )
 			return;
-		// [EXT:online-coop-commands] a guest's window sends only the commands whose values its player changed (loaded)
-		var unchanged = level.Commands.SendsRequests ? loaded : null;
-		if ( unchanged != null && pending.SameAs( unchanged ) )
-			return;
+		// [EXT:online-coop-commands] a host's window in a shared park applies only the groups it changed, with the fields it changed and the others as the park has them (C4b-2)
+		var changedOnly = HostsSharedPark;
+		var values = changedOnly ? ChangedOverPark( item ) : pending;
 		if ( item.Entry.WhichUIType == (int)BuildCategory.Rides )
 		{
-			if ( item.Runtime.Script != null )
-				level.Commands.Issue( new SetRideSettingsCommand( item.Runtime.AttractionId, pending.Ride.Speed, pending.Ride.Capacity, pending.Ride.Duration ) );
+			if ( item.Runtime.Script != null && (!changedOnly || pending.Ride != loaded.Ride) )
+				level.Commands.Issue( new SetRideSettingsCommand( item.Runtime.AttractionId, values.Ride.Speed, values.Ride.Capacity, values.Ride.Duration ) );
 			return;
 		}
 		if ( TryPriceTarget( item, out var economy, out var state ) )
-			ApplyShopSettings( item, economy, state, unchanged );
+			ApplyShopSettings( item, economy, state, values, changedOnly );
 	}
 
 	/// <summary>
-	/// Applies the window's values to a shop or sideshow; [EXT:online-coop-commands] with <paramref name="unchanged"/> (a guest's apply on close) only the commands whose values differ from
-	/// those, where the original's apply writes them all.
+	/// Applies <paramref name="values"/> to a shop or sideshow: each of the window's groups, or with <paramref name="changedOnly"/> each group with a field the window changed from what it
+	/// loaded (a host's in a shared park, <see cref="loaded"/>).
 	/// </summary>
-	private void ApplyShopSettings( OriginalObject item, ParkEconomy economy, ParkObjectState state, ObjectWindowSettings? unchanged = null )
+	private void ApplyShopSettings( OriginalObject item, ParkEconomy economy, ParkObjectState state, ObjectWindowSettings values, bool changedOnly = false )
 	{
 		var attraction = item.Runtime.AttractionId;
-		var price = unchanged == null || pending.Price != unchanged.Price;
+		var priceChanged = !changedOnly || pending.Price != loaded.Price;
 		if ( state.Kind == ParkObjectKind.Shop )
 		{
-			if ( unchanged == null || pending.QualityStep != unchanged.QualityStep || pending.Ingredient != unchanged.Ingredient )
-				level.Commands.Issue( new SetShopSettingsCommand( attraction, (byte)(pending.QualityStep * 50), pending.Ingredient ) );
-			if ( price )
-				level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
+			if ( !changedOnly || (pending.QualityStep, pending.Ingredient) != (loaded.QualityStep, loaded.Ingredient) )
+				level.Commands.Issue( new SetShopSettingsCommand( attraction, (byte)(values.QualityStep * 50), values.Ingredient ) );
+			if ( priceChanged )
+				level.Commands.Issue( new SetPriceCommand( attraction, values.Price ) );
 		}
 		else if ( IsNonWinnable( item ) )
 		{
-			if ( price )
-				level.Commands.Issue( new SetPriceCommand( attraction, pending.Price ) );
+			if ( priceChanged )
+				level.Commands.Issue( new SetPriceCommand( attraction, values.Price ) );
 		}
-		else if ( price || pending.Prize != unchanged!.Prize || pending.WinChance != unchanged.WinChance )
-			level.Commands.Issue( new SetGamePrizeCommand( attraction, pending.Price, pending.Prize, 100 - (pending.WinChance & 0xFF) ) );
+		else if ( priceChanged || (pending.Prize, pending.WinChance) != (loaded.Prize, loaded.WinChance) )
+			level.Commands.Issue( new SetGamePrizeCommand( attraction, values.Price, values.Prize, 100 - (values.WinChance & 0xFF) ) );
 	}
 
 	/// <summary>Applies the window's values to the object it showed when the window closes or shows another object, then loads the new one.</summary>
 	private void SyncObjectSettings()
 	{
 		var shown = InfoArmOpen && selectedObject is { IsDeleted: false, Runtime: not null } item ? item : null;
+		// [EXT:online-coop-commands] a guest's window draws its drawn values, taken again every frame, and sends each change at once: its close and retarget apply nothing (C4b-2)
+		if ( GuestManagement != null )
+		{
+			settingsOwner = shown;
+			if ( shown != null )
+				LoadDrawnSettings( shown );
+			return;
+		}
 		if ( ReferenceEquals( shown, settingsOwner ) )
 			return;
 		if ( settingsOwner != null )
 			CommitObjectSettings( settingsOwner );
 		settingsOwner = shown;
 		if ( shown != null )
+		{
 			LoadObjectSettings( shown );
+			loaded.CopyFrom( pending );
+		}
 	}
 
 	/// <summary>The shop and sideshow windows' apply-all (0xc081, 0xa0a9): the window's values go to every placed object of the same type, the shown one included.</summary>
@@ -191,16 +246,21 @@ public sealed partial class ParkHud
 	{
 		if ( selectedObject is not { IsDeleted: false } owner || !TryPriceTarget( owner, out var economy, out _ ) || RejectReadOnlyAction() )
 			return;
+		// [EXT:online-coop-commands] a guest's apply-all goes through its queue, whole or not at all (C4b-2)
+		if ( GuestManagement is { } queue )
+		{
+			ApplyGuestSettingsToAll( queue, owner, economy );
+			return;
+		}
 		foreach ( var other in level.Objects.Objects )
 		{
 			if ( other.IsDeleted || other.Entry.InfoId != owner.Entry.InfoId || level.GetEconomyInstance( other ) is not int instance
 				|| !economy.TryGetObject( instance, out var target ) || target.InfoId != owner.Entry.InfoId )
 				continue;
-			ApplyShopSettings( other, economy, target );
+			ApplyShopSettings( other, economy, target, pending );
 		}
-		// [EXT:online-coop-commands] the shown object's values went with the click: a guest's close does not send them again
-		if ( level.Commands.SendsRequests )
-			loaded.CopyFrom( pending );
+		// [EXT:online-coop-commands] the shown object has the window's values now: a host's close in a shared park applies only what changes after (C4b-2)
+		loaded.CopyFrom( pending );
 	}
 
 	// ---- controls ----
@@ -250,12 +310,19 @@ public sealed partial class ParkHud
 			infoElements.Add( hud.Add( element ) );
 			return element;
 		}
-		UiSlider Slider( string id, Func<OriginalObject, (int Min, int Max)> range, Func<int> value, Action<int> set ) => Info( new UiSlider
+		// [EXT:online-coop-commands] a guest's change goes at once with its group (C4b-2), and its gesture asks for each step once
+		UiSlider Slider( string id, Func<OriginalObject, (int Min, int Max)> range, Func<int> value, Action<int> set, Func<OriginalObject, ManagementKnob> group ) => Info( new UiSlider
 		{
-			Id = id, Knob = "b_scrollera", Truncates = true,
+			Id = id, Knob = "b_scrollera", Truncates = true, AsksOncePerStep = () => GuestManagement != null,
 			Steps = () => selectedObject is { } item ? Math.Max( 1, range( item ).Max - range( item ).Min + 1 ) : 2,
 			Value = () => selectedObject is { } item ? value() - range( item ).Min : 0,
-			Changed = index => { if ( selectedObject is { } item ) set( range( item ).Min + index ); }
+			Changed = index =>
+			{
+				if ( selectedObject is not { } item )
+					return;
+				set( range( item ).Min + index );
+				SendWindowGroup( group( item ) );
+			}
 		} );
 		UiLabel Label( string id, Func<string> text ) => Info( new UiLabel { Id = id, Text = text, Font = fonts => fonts.Small, Color = UiColors.Text, Align = UiAlign.Center, Fit = true } );
 
@@ -263,16 +330,16 @@ public sealed partial class ParkHud
 		(int, int) Capacities( OriginalObject item ) => (Setting( item, "UsageInfo.MinCapacity" ), item.Runtime.MaximumCapacity);
 		(int, int) Durations( OriginalObject item ) => (Setting( item, "UsageInfo.MinDuration" ), Setting( item, "UsageInfo.MaxDuration" ));
 
-		rideSpeedSlider = Slider( "rideSpeed", Speeds, () => pending.Ride.Speed, value => pending.Ride = pending.Ride with { Speed = value } );
-		rideCapacitySlider = Slider( "rideCapacity", Capacities, () => pending.Ride.Capacity, value => pending.Ride = pending.Ride with { Capacity = value } );
-		rideDurationSlider = Slider( "rideDuration", Durations, () => pending.Ride.Duration, value => pending.Ride = pending.Ride with { Duration = value } );
+		rideSpeedSlider = Slider( "rideSpeed", Speeds, () => pending.Ride.Speed, value => pending.Ride = pending.Ride with { Speed = value }, _ => ManagementKnob.RideSettings );
+		rideCapacitySlider = Slider( "rideCapacity", Capacities, () => pending.Ride.Capacity, value => pending.Ride = pending.Ride with { Capacity = value }, _ => ManagementKnob.RideSettings );
+		rideDurationSlider = Slider( "rideDuration", Durations, () => pending.Ride.Duration, value => pending.Ride = pending.Ride with { Duration = value }, _ => ManagementKnob.RideSettings );
 		rideSpeedRedLine = Info( new SliderRedLine( () => selectedObject is { } item ? RedLineFraction( RedLine( item, "RedLineSpeed" ), Speeds( item ).Item1, Speeds( item ).Item2 ) : 0f ) { Id = "rideSpeedRedLine" } );
 		rideCapacityRedLine = Info( new SliderRedLine( () => selectedObject is { } item ? RedLineFraction( RedLine( item, "RedLineCapacity" ), Capacities( item ).Item1, Capacities( item ).Item2 ) : 0f ) { Id = "rideCapacityRedLine" } );
 		rideSpeedLabel = Label( "rideSpeedLabel", () => strings.Format( UIStrings.Speed, SettingNumber( pending.Ride.Speed ) ) );
 		rideCapacityLabel = Label( "rideCapacityLabel", () => selectedObject is { } item ? strings.Format( CapacityLabel( Setting( item, "Bumper.WhichTrackType" ) ), SettingNumber( pending.Ride.Capacity ) ) : "" );
 		rideDurationLabel = Label( "rideDurationLabel", () => selectedObject is { } item && DurationLabel( Setting( item, "Info.DurationUnit" ), pending.Ride.Duration ) is { } label ? strings.Format( label, SettingNumber( pending.Ride.Duration ) ) : "" );
 
-		shopQualitySlider = Slider( "shopQuality", _ => (0, 2), () => pending.QualityStep, value => pending.QualityStep = value );
+		shopQualitySlider = Slider( "shopQuality", _ => (0, 2), () => pending.QualityStep, value => pending.QualityStep = value, _ => ManagementKnob.ShopSettings );
 		// [BIN:TPW-EXE:0x4b0b30 quality lamps] the shop window procedure turns a quality step s (message 0x800 from 0xc06b) into the value 1 << s of the group 0xc07f, which lights lamp s of the group 0xc07f (value 1 << s: l_low, l_med, l_high)
 		// [BIN:TPW-EXE:0x66c85a light switch] the type-13 control's SetValue(mask) sets the type-6 child 0x11100000 | i to lit for each set bit i and unlit for each clear one (0x65d3a3), and a lamp's SetState (0x66da4d) sends its two models message 1 carrying the state (1 lit, 0 unlit), which OpenTPW draws as the model's frame 1 and frame 0
 		for ( var lamp = 0; lamp < qualityLamps.Length; lamp++ )
@@ -281,27 +348,46 @@ public sealed partial class ParkHud
 			qualityLamps[lamp] = Info( new UiModelImage { Id = $"qualityLamp{lamp}", Model = new[] { "l_low", "l_med", "l_high" }[lamp], Frame = () => pending.QualityStep == index ? 1 : 0 } );
 		}
 		shopQualityLabel = Label( "shopQualityLabel", () => strings[UIStrings.QualityOfGoods] );
-		shopIngredientSlider = Slider( "shopIngredient", _ => (0, 100), () => pending.Ingredient, value => pending.Ingredient = value );
+		shopIngredientSlider = Slider( "shopIngredient", _ => (0, 100), () => pending.Ingredient, value => pending.Ingredient = value, _ => ManagementKnob.ShopSettings );
 		shopIngredientLabel = Label( "shopIngredientLabel", () => selectedObject is { } item && ShopIngredient( item ) is > 0 and var ingredient ? strings.Ingredient( ingredient - 1 ) : "" );
 		priceLabel = Label( "priceLabel", () => selectedObject is { } item ? strings[item.Entry.WhichUIType == (int)BuildCategory.Shops ? UIStrings.SalePrice : IsNonWinnable( item ) ? UIStrings.PriceOfEntry : UIStrings.PriceOfGame] : "" );
-		sideshowChanceSlider = Slider( "sideshowChance", _ => (0, 100), () => pending.WinChance, value => pending.WinChance = value );
+		sideshowChanceSlider = Slider( "sideshowChance", _ => (0, 100), () => pending.WinChance, value => pending.WinChance = value, _ => ManagementKnob.Game );
 		sideshowChanceLabel = Label( "sideshowChanceLabel", () => strings[UIStrings.ChanceOfWinning] );
 		sideshowPrizeLabel = Label( "sideshowPrizeLabel", () => strings[UIStrings.CostOfPrize] );
 		prizeBox = Info( new ValueBox( () => SettingNumber( pending.Prize ) ) { Id = "prizeBox" } );
 		// [BIN:TPW-EXE:0x4b0735 price box] the variable boxes step by 1 (0x66a68d) through b_minus and b_plus, which the table creates with attributes 0x21: 0x20 is the repeat style (the callback 0x66aa61 sets their delay to 200 ms and their interval to 50 ms)
-		(UiButton Minus, UiButton Plus) Steps( string minusId, string plusId, Func<int> value, Action<int> set, int maximum )
+		(UiButton Minus, UiButton Plus) Steps( string minusId, string plusId, Func<int> value, Action<int> set, int maximum, Func<OriginalObject, ManagementKnob> group )
 		{
 			var hold = new VariableBoxHold();
-			void Change( bool plus, Func<int, bool, int, int, int> how ) { if ( !RejectReadOnlyAction() ) set( how( value(), plus, 0, maximum ) ); }
+			// [EXT:online-coop-commands] a guest's step goes at once with its group (C4b-2): a step that changes nothing, or that its hold asked for already, asks nothing
+			void Ask( int next, bool held )
+			{
+				if ( GuestManagement == null )
+				{
+					set( next );
+					return;
+				}
+				if ( next == value() || held && next == hold.LastAsked || selectedObject is not { } item )
+					return;
+				if ( held )
+					hold.LastAsked = next;
+				set( next );
+				SendWindowGroup( group( item ) );
+			}
+			void Change( bool plus, Func<int, bool, int, int, int> how ) { if ( !RejectReadOnlyAction() ) Ask( how( value(), plus, 0, maximum ), held: true ); }
 			UiButton Step( string id, string model, bool plus ) => Info( new UiButton
 			{
-				Id = id, Model = model, Clicked = () => { if ( !RejectReadOnlyAction() ) set( SliderPosition( value() + (plus ? 1 : -1), 0, maximum ) ); },
+				Id = id, Model = model, Clicked = () => { if ( !RejectReadOnlyAction() ) Ask( SliderPosition( value() + (plus ? 1 : -1), 0, maximum ), held: false ); },
 				Repeat = new UiButtonRepeat( VariableBoxHold.Delay, VariableBoxHold.Interval, () => Change( plus, hold.Start ), () => Change( plus, hold.Tick ) )
+				{
+					// a guest's press starts its hold afresh, whether the hold's start runs or the pointer misses it (C4b-2)
+					Pressed = () => { if ( GuestManagement != null ) hold.Press(); }
+				}
 			} );
 			return (Step( minusId, "b_minus", false ), Step( plusId, "b_plus", true ));
 		}
-		(priceMinus, pricePlus) = Steps( "priceMinus", "pricePlus", () => pending.Price, value => pending.Price = value, MaximumPrice );
-		(prizeMinus, prizePlus) = Steps( "prizeMinus", "prizePlus", () => pending.Prize, value => pending.Prize = value, MaximumPrize );
+		(priceMinus, pricePlus) = Steps( "priceMinus", "pricePlus", () => pending.Price, value => pending.Price = value, MaximumPrice, PriceKnob );
+		(prizeMinus, prizePlus) = Steps( "prizeMinus", "prizePlus", () => pending.Prize, value => pending.Prize = value, MaximumPrize, _ => ManagementKnob.Game );
 	}
 
 	private static LayoutNode? Control( LayoutTable table, uint id ) => table.All.FirstOrDefault( node => node.Id == id );

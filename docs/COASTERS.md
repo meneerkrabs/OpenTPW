@@ -155,6 +155,9 @@ button at its original place and `ParkHud.EditTrack` is its click, so select a c
 The build buttons' pylon click is the tool object's release (`0x524960`, mode 0x15: the click sound `0x65`, the placement and the help `0xCD`, at the cell under the pointer at the release); the move, height, rotate and tilt buttons pick a pylon up on the press (`0x524790` in mode 0x16 and the drag class `0x6FEAA0`, `0x446300(1)`) and settle on the release (`0x446300(0)`), as before; a quick right click leaves the tool on its release.
 A drag does not fit the controller on every pointer move (the original rebuilds the track each frame): the renderer draws the nodes as they are and the track is fitted, rated and the trains
 placed once on the release. Backspace waits for a drag; a drag let go while the game is paused ends there. A save taken while the tool is open lets the ride out of state 2 on load, as leaving the tool would. `CoasterToolPanel` is the headless controller, `ParkHud.CoasterPanel.cs` the pointer side.
+One tool is on at a time, as the original has one tool mode: the coaster tool's entry ends every other tool, the track tool's entry ends the coaster tool, and a coaster tool still on next to a tool that started after it ends at the HUD's next frame; the track button on the coaster whose tool is on starts nothing again.
+
+**Shared parks.** In a co-op session the coaster tool works through the coaster's claim, as a kart or water ride's track tool does: one player edits a coaster at a time, a guest's clicks, Backspace, swaps and cuts wait for the host one at a time, and a guest's drags go to the host as their latest values at most every 0.2 s (`[EXT:online-coop-claims]`, `[EXT:online-coop-commands]`; docs/COOP.md, "A guest's coaster tool (C3c-2)"). The claim's end leaves the coaster's tool state as the tool's end does, so no player that leaves leaves a coaster closed.
 
 - **Enable mask** (`0x445910`): the seven edit buttons always; build unless the first pylon of a loop pair waits for its second; loop when the coaster has a
   loop pylon; a finished circuit (complete, not cut open) turns build and loop off, any other track turns demolish off. The tool opens on build (loop while a
@@ -361,7 +364,7 @@ block, 34-byte sections with links, and the train slots and cars once the coaste
 type's train and car counts are known; docs/TPWS-PAYLOAD.md "Coasters block") — proven
 on the tp.exe saver and loader, the Easymode empty boundary and a labelled Theme Park
 Inc cross-check of the sections — but nothing is imported into a runtime coaster and
-nothing is written (SAVE-920 to SAVE-923). `CoasterSections` exposes recognized scene records and attraction
+nothing is written (SAVE-920, SAVE-921). `CoasterSections` exposes recognized scene records and attraction
 ids joined by cell and `Info.Id`; this does not identify a controller's station.
 Nonempty original TPW controllers are refused at `ParkObjects.ImportOriginal`
 before any runtime object is created. This includes controllers with no saved

@@ -98,18 +98,25 @@ public class TrackDemolitionFlowTests
 		rig.Editor.Demolish();
 		Assert.AreEqual( before, rig.Cells.Tracks.Get( x, 12 ).Link, "do not infer laid flow from backward traversal or normalize every saved link" );
 	}
+
+	/// <summary>
+	/// The line step of the clear op (0x53B280 with (0, ±2): the replay of the line from (14, 16) back to the exit runs along −Y, dy = −2) takes the opposite bit, +Y (0x10), out of a link with two or
+	/// more bits, whatever the other bits are, and both arms of the axis out of the mask; the original does not look at which combinations a line can write.
+	/// </summary>
 	[DataTestMethod]
-	[DataRow( 0x55 )]
-	[DataRow( 0x11 )]
-	[DataRow( 0x94 )]
-	public void UnsupportedFlowCombinationsAreNotNormalized( int link )
+	[DataRow( 0x55, 0x45 )]
+	[DataRow( 0x11, 0x01 )]
+	[DataRow( 0x94, 0x84 )]
+	public void TheLineStepTakesItsOppositeBitOutOfAnyLinkWithTwoOrMoreBits( int link, int expected )
 	{
 		var rig = new Rig( TrackFamily.Water );
 		rig.Cross( 14, reverseHorizontal: false );
 		var cell = rig.Cells.Tracks.Get( 14, 12 );
 		rig.Cells.Tracks.Set( 14, 12, cell with { Link = (byte)link } );
 		rig.Editor.Demolish();
-		Assert.AreEqual( (byte)link, rig.Cells.Tracks.Get( 14, 12 ).Link );
+		var survivor = rig.Cells.Tracks.Get( 14, 12 );
+		Assert.AreEqual( (byte)expected, survivor.Link );
+		Assert.AreEqual( 0x44, survivor.Mask, "the vertical axis goes, the horizontal one stays" );
+		Assert.AreEqual( 0, survivor.Overlap, "the crossing's one pass of this chain" );
 	}
-
 }

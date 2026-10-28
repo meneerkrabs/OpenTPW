@@ -979,7 +979,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
 			guest.TimeInParkSeconds = elapsed + dt;
 		if ( turnStarted )
+		{
 			UpdateSpeed( guest );
+			// [BIN:TPW-EXE:0x004FA870 turn start point] the person's turn update ends with its pilot position copied to +0x190/+0x194, the start of the interpolation (0x004F9F00) until the next turn, whether or not the guest walks
+			(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
+		}
 		if ( turnStarted && bodySpriteHostRunning )
 			guest.BodySprite.ApplyPending();
 		if ( turnStarted )
@@ -1070,26 +1074,34 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		(guest.SmoothedSpeed, guest.Boost, guest.MaxSpeed, guest.MaxForce) = GuestSpeed.Update( guest.SmoothedSpeed, guest.BaseSpeed, guest.ToiletBonus, guest.Boost );
 	}
 
-	/// <summary>Presentation only: the drawn position moves from the position before the last step to the current one over a park turn.</summary>
+	/// <summary>
+	/// Presentation only: the drawn position moves from the position at the start of the guest's turn to its current one over the park turn (<see cref="PersonInterpolation.Point"/>,
+	/// tp.exe <c>0x004F9F00</c> with its flag set, as <c>0x004FA030</c> places the sprite).
+	/// </summary>
 	private void UpdatePresentation( Guest guest )
 	{
-		var t = Math.Clamp( (TickCount - guest.StepTick) / TicksPerTurn, 0f, 1f );
-		guest.DrawX = guest.StepFromX + (guest.X - guest.StepFromX) * t;
-		guest.DrawY = guest.StepFromY + (guest.Y - guest.StepFromY) * t;
-		guest.DrawDistanceWalked = guest.StepFromDistance + (guest.DistanceWalked - guest.StepFromDistance) * t;
+		var t = (TickCount - guest.StepTick) / TicksPerTurn;
+		var (x, y) = PersonInterpolation.Point( Fixed( guest.StepFromX ), Fixed( guest.StepFromY ), guest.Navigation.X, guest.Navigation.Y, t, clamped: true );
+		guest.DrawX = x / (float)Fixed16.One;
+		guest.DrawY = y / (float)Fixed16.One;
+		var along = Math.Clamp( t, 0f, 1f );
+		guest.DrawDistanceWalked = guest.StepFromDistance + (guest.DistanceWalked - guest.StepFromDistance) * along;
 	}
 
+	private static int Fixed( float cells ) => (int)(cells * Fixed16.One);
+
 	/// <summary>
-	/// Presentation only: where the guest was drawn <paramref name="turnsAgo"/> park turns ago along its last step, the fraction clamped to −1..2 as
-	/// tp.exe <c>0x004F9F00</c> does with its flag 0 (the balloon's trailing point).
+	/// Presentation only: where the guest was drawn <paramref name="turnsAgo"/> park turns ago along its turn, the factor without the 0..1 clamp and held to −1..2 as tp.exe <c>0x004F9F00</c> does
+	/// with its flag clear (the balloon's trailing point, <c>0x004FA030</c> passes the time less 0.35).
 	/// </summary>
-	// [BIN:TPW-EXE:0x004F9F00 position at a fraction] previous position (+0x190, +0x194) + (current − previous) × t, t clamped to 0..1 with the flag set and to −1..2 without it, in world units (cells × 10)
+	// [BIN:TPW-EXE:0x004FA030 balloon point] the first call of the sprite placement is the time less 0x0075C910 (0.35) with the flag clear, the second the time itself with the flag set; the balloon (+0x210) hangs at the first call's point
 	public (float X, float Y) DrawPositionBefore( Guest guest, float turnsAgo )
 	{
 		if ( guest.StepTick < 0 )
 			return (guest.X, guest.Y);
-		var t = Math.Clamp( Math.Clamp( (TickCount - guest.StepTick) / TicksPerTurn, 0f, 1f ) - turnsAgo, -1f, 2f );
-		return (guest.StepFromX + (guest.X - guest.StepFromX) * t, guest.StepFromY + (guest.Y - guest.StepFromY) * t);
+		var t = (TickCount - guest.StepTick) / TicksPerTurn - turnsAgo;
+		var (x, y) = PersonInterpolation.Point( Fixed( guest.StepFromX ), Fixed( guest.StepFromY ), guest.Navigation.X, guest.Navigation.Y, t, clamped: false );
+		return (x / (float)Fixed16.One, y / (float)Fixed16.One);
 	}
 
 	private const float TicksPerTurn = ParkCalendar.TicksPerSecond * ParkCalendar.TurnMilliseconds / 1000f;

@@ -165,7 +165,7 @@ public class EmployeeLivePortraitTests
 		Assert.AreEqual( 12, rig.Prepare( 0 ) );
 		foreach ( var now in new[] { 0.07f, 0.14f, 0.21f } )
 		{
-			if ( kind == "walk" ) member.CellX -= 0.1f;
+			if ( kind == "walk" ) member.Step( -0.1f );
 			Assert.AreEqual( 12, rig.Prepare( now ) );
 		}
 		var clip = kind switch { "walk" => StaffSpriteRules.Walk, "sweep" => StaffSpriteRules.Sweep, "repair" => StaffSpriteRules.Repair,
@@ -185,12 +185,11 @@ public class EmployeeLivePortraitTests
 		Level.Current = observed.Level;
 		foreach ( var now in new[] { 0f, 0.07f, 0.14f } )
 		{
-			if ( now > 0 ) { observedMember.CellX -= 0.1f; controlMember.CellX -= 0.1f; }
+			if ( now > 0 ) { observedMember.Step( -0.1f ); controlMember.Step( -0.1f ); }
 			observed.Prepare( now ); control.Prepare( now );
 		}
-		observedMember.CellY += 0.25f; controlMember.CellY += 0.25f;
-		Set( observed.View( observedMember ), "StepLength", 5432f );
-		Set( control.View( controlMember ), "StepLength", 5432f );
+		observedMember.Step( 0, 0.25f ); controlMember.Step( 0, 0.25f );
+		observedMember.PendingInterval = 148; controlMember.PendingInterval = 148;
 		var before = observed.State( observedMember );
 		var frame = observed.Renderer.EmployeeFrame( observedMember );
 		Assert.IsNotNull( frame );
@@ -209,7 +208,7 @@ public class EmployeeLivePortraitTests
 	public void CameraRotationChangesWorldBankButNeverPortraitYawOrMirror( int directions )
 	{
 		var member = Member(); var rig = new Rig( member, directions );
-		rig.Prepare( 0 ); member.CellX -= 0.1f; rig.Prepare( 0.07f );
+		rig.Prepare( 0 ); member.Step( -0.1f ); rig.Prepare( 0.07f );
 		rig.Prepare( 0.14f );
 		var expected = rig.Expected( 1, 1, -1, 0 );
 		var world = Get<Vertex[]>( rig.Renderer, "vertices" )[0].TexCoords;
@@ -239,7 +238,7 @@ public class EmployeeLivePortraitTests
 	{
 		var first = Member(); var second = Member( id: 2 );
 		var rig = new Rig( first ); rig.Prepare( 0 );
-		first.CellX -= 0.1f; rig.Prepare( 0.07f ); rig.Prepare( 0.14f );
+		first.Step( -0.1f ); rig.Prepare( 0.07f ); rig.Prepare( 0.14f );
 		rig.Members.Add( second ); rig.Prepare( 0.21f );
 		var firstFrame = rig.Renderer.EmployeeFrame( first ); var secondFrame = rig.Renderer.EmployeeFrame( second );
 		Assert.IsNotNull( firstFrame ); Assert.IsNotNull( secondFrame ); Assert.AreNotEqual( firstFrame, secondFrame );

@@ -87,6 +87,9 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 	{
 		if ( !float.IsFinite( seconds ) || seconds < 0 ) throw new ArgumentOutOfRangeException( nameof( seconds ) );
 		Synchronize();
+		ownTicks++;
+		foreach ( var member in members() )
+			UpdatePresentation( member );
 		foreach ( var member in members() )
 		{
 			if ( seconds == 0 || !CanTravel( member, out var target, out var x, out var y ) || (x, y) == target ) continue;

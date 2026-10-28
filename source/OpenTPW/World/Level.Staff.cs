@@ -59,7 +59,7 @@ public partial class Level
 		{
 			StaffSpriteSet sprites;
 			using ( LoadProfile.Measure( "staff-sprites" ) )
-				sprites = StaffSpriteSet.Load( LevelName );
+				sprites = StaffSpriteSet.Load( LevelName, StaffSpriteRules.BankLimitOf( IGraphicsSettings.Instance ) );
 			NextStepIsLong = true;
 			yield return true;
 			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement )

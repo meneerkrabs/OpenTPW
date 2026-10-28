@@ -72,8 +72,22 @@ public static class StaffSpriteRules
 		_ => null
 	};
 
-	// [APPROX:GUEST-020] every bank of a role's folder is loaded in file order whatever the graphics setting: tp.exe's 0x541310 flags the staff folders handymen, mechanics, guards and researchers and stops them at the limit of 0x41AA40 (1 bank on the lowest graphics setting 0x7858D0 = 0, else 2; the shipped mechanics folder holds two banks, the others one), takes the banks in the archive's enumeration order (0x41D570, 0x41D710) and leaves the entertainers' folders unflagged (evidence needed: whether the graphics setting changes while a park runs)
+	// [BIN:TPW-EXE:0x541310 staff bank load] the banks of a folder are sorted by file name (0x541210: a bubble sort over the name compare 0x424CC0, the case-insensitive _stricmp 0x67DF40, which GuestSpriteAtlas.LoadSets does) and the folders handymen, mechanics, guards and researchers (0x7640C8..0x7640A8) stop at the staff limit 0x41AA40; the entertainers' theme folders are not flagged and load whole; the load chain 0x54E360 -> 0x540900 -> 0x541D90 -> 0x541310 is reached from the program's start only (0x45A960, 0x5503F0), so one run keeps its banks (StaffSpriteSet.Load takes the limit once, when a level builds its staff)
+	// [APPROX:GUEST-020] the staff bank limit follows the preset's GameOptions.NUMKIDS (the original's detail word 0x7858D0, read only by 0x41A9D0 and 0x41AA40) and not the hardware-class path of 0x41AA40 (the flags word 0x79D86C a configuration file sets, class 0x4000: 1 or 2 by the memory word 0x44A5D0), which has no counterpart here; and a park started after a settings change loads the limit its level start reads, where the original reads it at the program's start
 	// [BIN:TPW-EXE:0x763f88 sprite categories] by thing type: handymen Generic\Handymen SPR_HA; mechanics Generic\Mechanics SPR_FA, SPR_OM; guards Generic\Guards SPR_GU; researchers Generic\Researchers SPR_RE; entertainers per theme: Jungle DI, EX, NA; Fantasy FL, GN, LA; Hallow DR, FK, HU; Space MO, SM, SP
+	/// <summary>
+	/// How many banks of a flagged staff folder (handymen, mechanics, guards, researchers) the game loads for a detail word <paramref name="numKids"/> (the preset's <c>GameOptions.NUMKIDS</c>): 1 for 0, else 2.
+	/// </summary>
+	// [BIN:TPW-EXE:0x41AA40 staff bank limit] the jump table 0x41AA84 holds 1 for the word 0 and 2 for 1, 2, 3 and anything above (low.sam 0, med.sam and high.sam 2); the kid sets' own limit 0x41A9D0 takes 2, 4, 6 and 8 from the same word
+	public static int BankLimit( int numKids ) => numKids == 0 ? 1 : 2;
+
+	/// <summary>The limit <paramref name="settings"/> give, or null for no limit: no settings, or a preset whose original file is missing (the data this limit belongs to is then missing too).</summary>
+	public static int? BankLimitOf( IGraphicsSettings? settings ) =>
+		settings != null && settings.GetPresetValues( settings.Current.Preset ) is { } detail ? BankLimit( detail.NumKids ) : null;
+
+	/// <summary>Whether tp.exe flags a role's folder for the limit (all but the entertainers' theme folders, 0x541310).</summary>
+	public static bool IsBankLimited( StaffType type ) => type != StaffType.Entertainer;
+
 	/// <summary>The sprite folder and banks of a role; entertainers belong to the level's theme (null for an unknown level).</summary>
 	public static StaffBankSet? Banks( StaffType type, string level )
 	{
@@ -211,7 +225,8 @@ public sealed class StaffSpriteSet
 	public static StaffSpriteSet Empty { get; } = new( Array.Empty<GuestSpriteAtlas>(), new (int, int)[RoleCount] );
 
 	/// <summary>Loads the banks of every role for a level; a role whose folder is missing from the game data has none.</summary>
-	public static StaffSpriteSet Load( string level )
+	/// <param name="bankLimit">The banks a flagged folder loads (<see cref="StaffSpriteRules.BankLimit"/>); null loads them all.</param>
+	public static StaffSpriteSet Load( string level, int? bankLimit = null )
 	{
 		var atlases = new List<GuestSpriteAtlas>();
 		var ranges = new (int First, int Count)[RoleCount];
@@ -221,6 +236,8 @@ public sealed class StaffSpriteSet
 				continue;
 			// [BIN:TPW-EXE:0x0046C730 staff tool enter] the hire and carry tools' sprite is script 0x15 (0x0074ED98, slot 6 frames 0-3 looping) of the role's sprite type (0x00475A10: mechanics 6, handymen 5, entertainers 4, guards 7, researchers 8; table 0x00763F88) with the candidate's variant (+0x11): the person's own bank
 			var banks = GuestSpriteAtlas.LoadSets( set.Folder, $"staff-{type.ToString().ToLowerInvariant()}" );
+			if ( bankLimit is { } limit && StaffSpriteRules.IsBankLimited( type ) && banks.Count > limit )
+				banks.RemoveRange( limit, banks.Count - limit );
 			ranges[(int)type] = (atlases.Count, banks.Count);
 			atlases.AddRange( banks );
 		}

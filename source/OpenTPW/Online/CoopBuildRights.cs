@@ -15,8 +15,9 @@ namespace OpenTPW;
 /// <item>C3c-1: a track ride's claim (<see cref="ClaimRideCommand"/>) and the track commands of the ride whose claim the guest holds; the release of its own claim
 /// (<see cref="ReleaseRideCommand"/>), which every guest seat may issue, granted or not; bumper rides, which a guest now places (their queue tool follows); and since C3c-1b kart and
 /// water rides, whose track tool follows through the claim;</item>
-/// <item>C3c-2: a coaster's claim and the coaster tool's commands of the coaster whose claim the guest holds (its entry and end, <see cref="CoasterPanelCommand"/>); coasters, which a guest now
-/// places (the coaster tool follows through the claim); and a kart or water ride's track add-on on its own ride (<see cref="GuestMayPlaceAddOn"/>).</item>
+/// <item>C3c-2: a coaster's claim and the coaster tool's commands of the coaster whose claim the guest holds (its entry and end, <see cref="CoasterPanelCommand"/>; its last pylon's removal is a
+/// take-back since C5-3); coasters, which a guest now places (the coaster tool follows through the claim); and a kart or water ride's track add-on on its own ride
+/// (<see cref="GuestMayPlaceAddOn"/>).</item>
 /// </list>
 /// [EXT:online-coop-claims] A claim guards its ride against every other player, the host included (<see cref="LeavesClaimsAlone"/>): its track (a coaster's tool and pylons), its sale, its
 /// removal and its pick-up, its demolition by a placement, an add-on on it, its queue's lines, edit and cells, the path cell its back joins, and a path cell linked into its entrance, whose
@@ -65,7 +66,7 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 			or ParkCommandKind.EditQueue or ParkCommandKind.QueueSegment or ParkCommandKind.ClearArea or ParkCommandKind.BuyLand or ParkCommandKind.TakeBack
 			or ParkCommandKind.PlacePoolBridge or ParkCommandKind.PoolCells or ParkCommandKind.LayPoolSlidePieces or ParkCommandKind.LayTrackLine
 			or ParkCommandKind.CutTrack or ParkCommandKind.OpenTrackLineTool or ParkCommandKind.BeginCoasterTool or ParkCommandKind.EndCoasterTool or ParkCommandKind.CoasterClick
-			or ParkCommandKind.RemoveLastCoasterPylon or ParkCommandKind.BeginCoasterNodeEdit or ParkCommandKind.EditCoasterNode or ParkCommandKind.EndCoasterNodeEdit
+			or ParkCommandKind.BeginCoasterNodeEdit or ParkCommandKind.EditCoasterNode or ParkCommandKind.EndCoasterNodeEdit
 			or ParkCommandKind.SwapCoasterStack or ParkCommandKind.CutCoaster or ParkCommandKind.ClaimRide => CoopCommandClass.GuestBuilding,
 		ParkCommandKind.EndMove or ParkCommandKind.ReleaseRide => CoopCommandClass.SeatCleanup,
 		ParkCommandKind.SetAttractionOpen or ParkCommandKind.SetRideSettings or ParkCommandKind.SetPrice or ParkCommandKind.SetGamePrize or ParkCommandKind.SetShopSettings
@@ -79,10 +80,10 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 			or ParkCommandKind.RefreshLoanOffers => CoopCommandClass.Finance,
 		// what the host's tools issue and no guest's tool does: single cells, the line and queue undo, the pool strokes' undo and their single cells, a bridge's removal;
 		// [EXT:online-coop-undo] and every undo a step's content names: a guest's Backspace is a take-back the host decides (C5), so the slide's last piece is the host's alone too, and a
-		// track line's undo (C5-3)
+		// track line's undo and a coaster's last pylon (C5-3)
 		ParkCommandKind.RemoveObjectAt or ParkCommandKind.UndoLine or ParkCommandKind.RemovePathCell or ParkCommandKind.RemoveQueueCell or ParkCommandKind.UndoQueueSegment
 			or ParkCommandKind.PaintPoolCell or ParkCommandKind.ErasePoolCell or ParkCommandKind.UndoPoolStroke or ParkCommandKind.LayPoolSlidePiece
-			or ParkCommandKind.RemovePoolBridge or ParkCommandKind.UndoPoolSlidePiece or ParkCommandKind.UndoTrackLine => CoopCommandClass.HostTools,
+			or ParkCommandKind.RemovePoolBridge or ParkCommandKind.UndoPoolSlidePiece or ParkCommandKind.UndoTrackLine or ParkCommandKind.RemoveLastCoasterPylon => CoopCommandClass.HostTools,
 		// the host's alone: the developer prototype's placement and removal (a session's host may issue them, so an older log replays as it did), the finale's dismissal and a challenge's
 		// answer (they bind the whole park), the speed (Q8), and the session's own kinds
 		ParkCommandKind.PlacePrototype or ParkCommandKind.RemovePrototype or ParkCommandKind.DismissFinale or ParkCommandKind.AnswerChallenge or ParkCommandKind.SetGameSpeed
@@ -212,6 +213,8 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		// commands, of the ride whose claim the guest holds; C3c-2: a coaster's claim too, and its coaster tool's commands
 		ClaimRideCommand claim => level.ResolveCommandObject( claim.Ride ) is not { IsDeleted: false } item || !ReferenceEquals( item, level.PlacedRide ),
 		OpenTrackLineToolCommand or LayTrackLineCommand or CutTrackCommand => true,
+		// [EXT:online-coop-undo] a coaster's last pylon goes by a take-back of the player's own (C5-3): the command itself is the host's tools'
+		RemoveLastCoasterPylonCommand => false,
 		BeginCoasterToolCommand or EndCoasterToolCommand or CoasterPanelCommand => true,
 		_ => false
 	};

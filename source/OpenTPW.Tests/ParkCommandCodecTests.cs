@@ -118,6 +118,8 @@ public class ParkCommandCodecTests
 		(new TakeBackCommand( false, 300, 2, -1, -1, TakeBackVerdict.Taken, new UndoPoolSlidePieceCommand( 30, 40 ) { Player = 3 } ) { Player = 3 }, "026a0600d804040101010a024b063c50"),
 		(new TakeBackCommand( false, 41, -1, 17, -1, TakeBackVerdict.Changed ) { Player = 2 }, "026a0400520122010200"),
 		(new TakeBackCommand( true, 0, -1, -1, -1, TakeBackVerdict.TooLarge ) { Player = 1 }, "026a0201000101010700"),
+		// [EXT:online-coop-undo] seat 2's own last pylon of the coaster of attraction 17 taken back, the coaster its claimed ride (C5-3)
+		(new TakeBackCommand( false, 41, -1, 17, -1, TakeBackVerdict.Taken, new RemoveLastCoasterPylonCommand( 17 ) { Player = 2 } ) { Player = 2 }, "026a0400520122010108025d0422"),
 	};
 
 	/// <summary>

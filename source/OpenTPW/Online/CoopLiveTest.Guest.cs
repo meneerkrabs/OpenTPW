@@ -128,6 +128,11 @@ internal sealed partial class CoopLiveTest
 		Publish( "ownBuilt", own.Evidence );
 		yield return Wait( "the host's park has the guest's line", () => OtherSays( "sawGuestBuild" ), 180 );
 
+		// [EXT:online-coop-undo] the undo scenario (C5-1)
+		if ( scenario == "undo" )
+			foreach ( var step in GuestUndo( avoid ) )
+				yield return step;
+
 		if ( scenario == "management" )
 			foreach ( var step in GuestManagement() )
 				yield return step;

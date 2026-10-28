@@ -34,7 +34,9 @@ public partial class CoopSessionTests
 			if ( field.GetValue( level ) == null )
 				field.SetValue( level, value );
 		}
-		typeof( Level ).GetMethod( "SetupTracks", NonPublic )!.Invoke( level, null );
+		// a second ride shares the level's builders
+		if ( level.KartTracks == null )
+			typeof( Level ).GetMethod( "SetupTracks", NonPublic )!.Invoke( level, null );
 		var root = (string)typeof( UpgradeCatalogueDefaultsTests ).GetField( "root", NonPublic )!.GetValue( fixture )!;
 		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/karts", new ObjectSettings( new[] { new ObjectSettingsFile(
 				"Info.Id 1150\nInfo.Name SyntheticKarts\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nBumper.WhichTrackType 1\nBumper.BumperType -4\n" + (hasQueue ? "Info.HasQueue 1\n" : ""), "karts.sam" ) } ),

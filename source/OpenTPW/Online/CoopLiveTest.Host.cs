@@ -140,6 +140,11 @@ internal sealed partial class CoopLiveTest
 		}
 		Publish( "sawGuestBuild", true );
 
+		// [EXT:online-coop-undo] the undo scenario (C5-1)
+		if ( scenario == "undo" )
+			foreach ( var step in HostUndo( seat, avoid ) )
+				yield return step;
+
 		if ( scenario == "management" )
 			foreach ( var step in HostManagement( guestName, seat ) )
 				yield return step;

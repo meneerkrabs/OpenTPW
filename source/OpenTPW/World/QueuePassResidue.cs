@@ -23,12 +23,14 @@ public sealed partial class ParkCellMap
 		if ( types[index] is not (0 or 1 or 3) || direction is not (0 or 1 or 4 or 16 or 64) || owner > 128 * 128
 			|| Tracks.Get( x, y ) is { Type: not 0 } || PoolBridges?.Covers( x, y ) == true )
 			throw new InvalidOperationException( "Unsupported queue pass cell or metadata." );
+		var before = Changed != null ? FieldsAt( index ) : default;
 		queueLinks[index] = direction;
 		owners[index] = owner;
 		if ( types[index] is 0 or 1 )
 			queuePassCells.Add( index );
 		NormalizeQueuePassCell( index );
 		Version++;
+		NoteChange( x, y, index, before );
 	}
 
 	private void NormalizeQueuePassCell( int index )

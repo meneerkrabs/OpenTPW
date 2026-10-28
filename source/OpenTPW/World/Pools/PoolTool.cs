@@ -463,6 +463,9 @@ public sealed partial class PoolTool
 		HoverResult = null;
 		HoverSlideResult = null;
 		strokes.Clear();
+		// [EXT:online-coop-undo] a guest's own strokes go with the run, as the host's stack does: a late outcome of this run names none of the next (C5-2)
+		ownStrokes.Clear();
+		toolRun++;
 		Ended?.Invoke();
 	}
 

@@ -75,9 +75,12 @@ public sealed partial class PoolTool
 
 	/// <summary>
 	/// [EXT:online-coop-undo] The guest's own strokes in a shared park that wrote something, oldest first, each by its name: the record of the batch that opened it (C5-2). Backspace takes back
-	/// the newest; a stroke drawn before a resync is none of this tool's.
+	/// the newest; as the host's stroke stack, they go when the tool ends, and a stroke drawn before a resync is none of this tool's.
 	/// </summary>
 	private readonly List<long> ownStrokes = new();
+
+	/// <summary>[EXT:online-coop-undo] Each run of the tool, from its start to its end (<see cref="Cancel"/>): a guest's stroke keeps the one it was drawn in (C5-2).</summary>
+	private int toolRun;
 
 	/// <summary>[EXT:online-coop-undo] The newest piece this tool laid on <paramref name="tower"/>'s slide, or null (C5).</summary>
 	private (long Record, int Part)? NewestOwnPiece( (int X, int Y) tower )
@@ -96,8 +99,10 @@ public sealed partial class PoolTool
 	private sealed class GuestStroke( GuestWrite write, bool erase, bool river, (int X, int Y)? tower, int direction )
 	{
 		public GuestWrite Write { get; } = write;
-		/// <summary>[EXT:online-coop-undo] The slide mode it was drawn in (C5).</summary>
+		/// <summary>[EXT:online-coop-undo] The slide mode it was drawn in (C5); for a stroke's take-back, the paint or erase mode it was sent from (C5-2).</summary>
 		public int Session { get; init; }
+		/// <summary>[EXT:online-coop-undo] The tool's run it was drawn in (<see cref="toolRun"/>): a late outcome of a run the tool has left names no stroke of the new one (C5-2).</summary>
+		public int Run { get; init; }
 		public bool Erase { get; } = erase;
 		public bool River { get; } = river;
 		public (int X, int Y)? Tower { get; } = tower;
@@ -167,7 +172,7 @@ public sealed partial class PoolTool
 	private void BeginGuestStroke( int x, int y )
 	{
 		var write = bridgeMode ? GuestWrite.Bridge : slideTower != null ? GuestWrite.Slide : GuestWrite.Cells;
-		guestStroke = new GuestStroke( write, IsErasing, IsRiver, slideTower, bridgeDirection ) { Session = slideSession };
+		guestStroke = new GuestStroke( write, IsErasing, IsRiver, slideTower, bridgeDirection ) { Session = slideSession, Run = toolRun };
 		AddGuestCell( x, y );
 	}
 
@@ -180,7 +185,7 @@ public sealed partial class PoolTool
 		if ( stroke.Write == GuestWrite.Cells && TakesBack?.Invoke() == true && stroke.Cells >= StrokeCellBound )
 		{
 			ReleaseGuestStroke();
-			guestStroke = stroke = new GuestStroke( GuestWrite.Cells, stroke.Erase, stroke.River, null, 0 ) { Session = slideSession };
+			guestStroke = stroke = new GuestStroke( GuestWrite.Cells, stroke.Erase, stroke.River, null, 0 ) { Session = slideSession, Run = toolRun };
 		}
 		stroke.Cells++;
 		// a full queue stops the stroke at the cell it could not take: later cells would leave a hole (a slide's next piece would not follow its last)
@@ -223,7 +228,7 @@ public sealed partial class PoolTool
 			NoteWaiting?.Invoke();
 			return false;
 		}
-		var stroke = new GuestStroke( GuestWrite.StrokeUndo, IsErasing, IsRiver, null, 0 ) { Released = true, Session = paintSession };
+		var stroke = new GuestStroke( GuestWrite.StrokeUndo, IsErasing, IsRiver, null, 0 ) { Released = true, Session = paintSession, Run = toolRun };
 		var batch = new GuestBatch( stroke, first: true );
 		stroke.Batches.Add( batch );
 		unsentBatches.Add( batch );
@@ -366,13 +371,13 @@ public sealed partial class PoolTool
 		}
 		else if ( batch is { Stroke.Write: GuestWrite.SlideUndo, Piece: { } taken } && request.Accepted )
 			ownPieces.RemoveAll( piece => piece.Record == taken.Record && piece.Part == taken.Part );
-		// [EXT:online-coop-undo] a batch that opened its stroke names it by its record when the host applied it, accepted or refused by the park; a stroke that wrote is the tool's own; a taken
-		// take-back's stroke is no longer (C5-2)
+		// [EXT:online-coop-undo] a batch that opened its stroke names it by its record when the host applied it, accepted or refused by the park; a stroke that wrote is the tool's own while
+		// the tool's run it was drawn in goes on; a taken take-back's stroke is no longer (C5-2)
 		if ( batch.Stroke.Write == GuestWrite.Cells )
 		{
 			if ( batch.Opens && request.State == CoopGuestRequestState.Applied )
 				batch.Stroke.Name = request.Record;
-			if ( batch.Stroke.Name is { } name && request is { Accepted: true, Result.Value: PoolCellWrite[] } && (ownStrokes.Count == 0 || ownStrokes[^1] != name) )
+			if ( batch.Stroke.Name is { } name && batch.Stroke.Run == toolRun && request is { Accepted: true, Result.Value: PoolCellWrite[] } && (ownStrokes.Count == 0 || ownStrokes[^1] != name) )
 				ownStrokes.Add( name );
 		}
 		else if ( batch is { Stroke.Write: GuestWrite.StrokeUndo, StrokeName: { } takenStroke } && request.Accepted )

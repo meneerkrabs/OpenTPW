@@ -839,6 +839,12 @@ public class CoopUndoJournalTests
 		Assert.AreEqual( 2, journaled.Journal.StepsOf( 1 ) );
 		Assert.AreEqual( TakeBackVerdict.Forgotten, journaled.TakeBackStroke( 1, older ) );
 		Assert.AreEqual( TakeBackVerdict.NotOwn, journaled.TakeBackStroke( 1, 999_999 ), "no stroke of the member's" );
+		Assert.AreEqual( 1, journaled.Journal.ClippedOf( 1 ), "only the stroke that keeps an entry is kept as clipped" );
+		// its last entries go too: the stroke leaves the clipped set, and the bounds' cutoff still says it is too long ago
+		journaled.Run( 1, Batch( true, false, false, (21, 26) ) );
+		journaled.Run( 1, Batch( true, false, false, (22, 26) ) );
+		Assert.AreEqual( 0, journaled.Journal.ClippedOf( 1 ) );
+		Assert.AreEqual( TakeBackVerdict.Forgotten, journaled.TakeBackStroke( 1, stroke ) );
 		Assert.IsTrue( journaled.Journal.WeightAgrees( 1 ) );
 	}
 
@@ -891,6 +897,27 @@ public class CoopUndoJournalTests
 		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, erase ) );
 		Assert.AreEqual( 8 * cost, economy.Balance, "both cells paid for" );
 		Assert.IsTrue( journaled.IsWater( 14, 26 ) && journaled.IsWater( 15, 26 ) );
+	}
+
+	[TestMethod]
+	public void ASwimmerInACellAPaintStrokesUndoWouldEraseIsInTheWayWhole()
+	{
+		var journaled = NewJournaled();
+		var stroke = journaled.Run( 1, Batch( true, false, false, (14, 26), (15, 26) ) ).Record;
+		var balance = journaled.Economy.Balance;
+		// a guest swimming in the cell the undo erases last (its swim set by hand: the asset-free park has no changing room), so the first cell alone could go
+		var swimmer = journaled.Level.Guests!.SpawnInPark( 4, 1 );
+		var (state, x, y) = (swimmer.State, swimmer.CellX, swimmer.CellY);
+		(swimmer.State, swimmer.CellX, swimmer.CellY) = (GuestState.Swimming, 14, 26);
+		Assert.IsTrue( journaled.Level.Guests.IsSwimmerIn( 14, 26 ) );
+		Assert.AreEqual( TakeBackVerdict.InTheWay, journaled.TakeBackStroke( 1, stroke ) );
+		Assert.IsTrue( journaled.IsWater( 14, 26 ) && journaled.IsWater( 15, 26 ), "both cells kept" );
+		Assert.AreEqual( balance, journaled.Economy.Balance, "nothing refunded" );
+		Assert.AreEqual( 1, journaled.Journal.StepsOf( 1 ), "the stroke kept" );
+		// out of the water: taken whole
+		(swimmer.State, swimmer.CellX, swimmer.CellY) = (state, x, y);
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, stroke ) );
+		Assert.IsFalse( journaled.IsWater( 14, 26 ) || journaled.IsWater( 15, 26 ) );
 	}
 
 	[TestMethod]

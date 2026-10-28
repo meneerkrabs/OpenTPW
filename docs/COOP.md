@@ -2604,7 +2604,9 @@ for the host and a guest alike (single player keeps its strokes whole), so every
 Backspace takes back the last part first. A stroke one of whose entries the journal's bounds forgot is too long
 ago as a whole. The host's own Backspace pops its stroke only once taken, and says why otherwise. A resync
 changes nothing of this: the names are the host's records, and a guest's new tool knows none of its old
-strokes, so its Backspace takes back only strokes drawn since.
+strokes, so its Backspace takes back only strokes drawn since. A guest's tool keeps its own strokes for one run,
+as the host's stroke stack does: once the tool ends, Backspace takes none of them back, and a late outcome of a
+stroke drawn before names none of the next run.
 
 **The wave machine (C5-2).** A wave machine's settings are of the attractions class: a guest with the
 attractions right applies them through the management queue (a `Waves` knob on the machine's attraction
@@ -2628,10 +2630,11 @@ pieces and its sold tower), `CoopUndoJournalTests` (the setters, the histories, 
 residue of an own chain and of another member, the lists' normal form, departures, the bounds, the own bend
 chain, a fault; since C5-2 a stroke's entries and its name, river marks, another player's write and a repaint
 across it, the modes and the first marker, a refused first batch, the bounds, the size limit, the bank's two
-tests at the 32-bit edge and an employee in the way, a wave machine's water-side cells and its settings),
+tests at the 32-bit edge, an employee and a swimmer in the way, a wave machine's water-side cells and its
+settings, the clipped strokes' set),
 `CoopSessionTests.UndoPools` (a guest's strokes with their refunds and charges, the host's Backspace kept on a
-refusal, the split at the cell bound, a first batch the host could not take, the wave machine through the
-queue), `CoopJoinSessionTests.Undo` (take-backs and a stroke across a resync), the codec's pinned bytes and
+refusal, the split at the cell bound, a first batch the host could not take, a stroke of an earlier run of the
+tool, a slide's splash on a stroke's cell until its tower's sale, the wave machine through the queue), `CoopJoinSessionTests.Undo` (take-backs and a stroke across a resync), the codec's pinned bytes and
 the class table.
 
 ## The command layer (C1)

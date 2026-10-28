@@ -171,6 +171,71 @@ public partial class CoopSessionTests
 		CatchUpAndCompare( host, guest );
 	}
 
+	[TestMethod]
+	public void AStrokeOfAnEarlierRunOfTheGuestsToolIsNoneOfItsOwnAndALateOutcomeNamesNone()
+	{
+		var (host, guest, view) = UndoSession();
+		var seat = guest.Level.Commands.Player;
+		GuestPoolStroke( host, guest, view, (14, 26), (16, 26) );
+		guest.Enter();
+		var tool = guest.Level.PoolTool!;
+		// the tool ends and starts again: its Backspace takes nothing of the earlier run back, as the host's emptied stack does
+		tool.Cancel();
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		GuestPoolBackspace( host, guest, view );
+		// a stroke whose batch is still on its way when the tool ends: its outcome names no stroke of the next run
+		tool.Press( 20, 26 );
+		tool.SendGuestBatches( Time.Now );
+		tool.Release();
+		tool.Cancel();
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		RoundsUntil( () => !tool.HasGuestBatches && IsWater( guest, 20, 26 ), host, guest, view, "the stroke's outcome came back" );
+		GuestPoolBackspace( host, guest, view );
+		Rounds( 5, host, guest );
+		Assert.AreEqual( 0, StrokeTakeBacksOf( host, seat ).Length, "nothing went to the host" );
+		Assert.IsTrue( AllWater( host, Row( 14, 16, 26 ) ) && IsWater( host, 20, 26 ), "nothing taken back" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void ASlidesSplashOnAStrokesCellKeepsItsTakeBackUntilTheTowerIsSold()
+	{
+		var (host, guest, _, _) = Shared();
+		var tower = TowerOnBoth( host, guest );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var seat = guest.Level.Commands.Player;
+		var cost = host.Economy.CellCost( CellPurchase.Pool );
+		// the guest erases two cells of the pool and paints them again: the paint is its newest stroke
+		GuestPoolStroke( host, guest, view, (16, 18), (17, 18), erase: true );
+		GuestPoolStroke( host, guest, view, (16, 18), (17, 18) );
+		// the host lays a slide whose splash lands on the stroke's second cell
+		host.Enter();
+		foreach ( var (x, y) in new[] { (15, 19), (16, 19), (17, 19), (17, 18) } )
+			Assert.IsTrue( host.Issue( new LayPoolSlidePieceCommand( 13, 19, x, y ) ).Accepted, $"the slide's piece at ({x}, {y})" );
+		RoundsUntil( () => SlideOf( guest ) is { IsComplete: true }, host, guest, view, "the slide reached the guest" );
+		var balance = host.Economy.Balance;
+		// the splash needs its water: the take-back is refused whole on every park, and says why
+		GuestPoolBackspace( host, guest, view );
+		view.Update();
+		Assert.AreEqual( TakeBackVerdict.InTheWay, StrokeTakeBacksOf( host, seat ).Last().Verdict );
+		Assert.IsTrue( AllWater( host, (16, 18), (17, 18) ) && AllWater( guest, (16, 18), (17, 18) ), "both cells kept on both parks" );
+		Assert.AreEqual( balance, host.Economy.Balance, "nothing refunded" );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopUndoInTheWay ) );
+		// the tower sold, its slide goes: the stroke is taken back, then the erase before it
+		Assert.IsTrue( host.Issue( new RemoveAttractionCommand( tower.Runtime.AttractionId ) ).Accepted );
+		RoundsUntil( () => SlideOf( guest ) == null && SlideOf( host ) == null, host, guest, view, "the sale took the slide on both parks" );
+		balance = host.Economy.Balance;
+		GuestPoolBackspace( host, guest, view );
+		Assert.IsFalse( AnyWater( host, (16, 18), (17, 18) ) || AnyWater( guest, (16, 18), (17, 18) ), "the paint taken back" );
+		Assert.AreEqual( balance + 2 * cost, host.Economy.Balance, "and refunded" );
+		GuestPoolBackspace( host, guest, view );
+		Assert.IsTrue( AllWater( host, (16, 18), (17, 18) ) && AllWater( guest, (16, 18), (17, 18) ), "the erase taken back" );
+		CatchUpAndCompare( host, guest );
+		Assert.AreEqual( host.Economy.Balance, guest.Economy.Balance );
+	}
+
 	/// <summary>A synthetic two-cell wave machine (water side north) at (14, 31) beside a pool painted over (14..17, 30), alike on every park before its session.</summary>
 	private static void AddWaveMachine( Park park )
 	{

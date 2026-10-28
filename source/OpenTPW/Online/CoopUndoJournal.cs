@@ -164,8 +164,13 @@ internal sealed class CoopUndoJournal
 		/// one, accepted or not; one without continues it while the mode is its own; any other step of the member, its take-back and its departure close it.
 		/// </summary>
 		public (long Name, bool Erase, bool River)? OpenStroke;
-		/// <summary>[EXT:online-coop-undo] The strokes the bounds took an entry of: their take-back is too long ago (C5-2).</summary>
+		/// <summary>
+		/// [EXT:online-coop-undo] The strokes the bounds took an entry of and that keep another: their take-back is too long ago (C5-2). A stroke leaves with its last entry, after which the
+		/// newest record the bounds dropped (<see cref="Forgot"/>) answers its take-back, so the set holds only strokes still in the member's list.
+		/// </summary>
 		public readonly HashSet<long> Clipped = new();
+		/// <summary>[EXT:online-coop-undo] How many entries of each of the member's strokes are steps (C5-2).</summary>
+		public readonly Dictionary<long, int> StrokeEntries = new();
 	}
 
 	private sealed record Decision( TakeBackCommand Command, IReadOnlyList<Step> Steps, IReadOnlyList<((int X, int Y) Cell, Step Owner)> Bends );
@@ -203,6 +208,9 @@ internal sealed class CoopUndoJournal
 
 	/// <summary>The steps <paramref name="member"/> keeps, oldest first (tests).</summary>
 	internal int StepsOf( uint member ) => members.TryGetValue( member, out var steps ) ? steps.Steps.Count : 0;
+
+	/// <summary>[EXT:online-coop-undo] The strokes of <paramref name="member"/> the bounds clipped that keep an entry (tests, C5-2).</summary>
+	internal int ClippedOf( uint member ) => members.TryGetValue( member, out var steps ) ? steps.Clipped.Count : 0;
 
 	/// <summary>Whether <paramref name="member"/>'s weight in the bounds is exactly its live steps' (tests).</summary>
 	internal bool WeightAgrees( uint member ) => !members.TryGetValue( member, out var steps ) || steps.Cells == steps.Steps.Sum( step => step.Weight );
@@ -419,6 +427,8 @@ internal sealed class CoopUndoJournal
 			members[step.Member] = member = new Member();
 		member.Steps.Add( step );
 		member.Cells += step.Weight;
+		if ( step.Stroke >= 0 )
+			member.StrokeEntries[step.Stroke] = member.StrokeEntries.GetValueOrDefault( step.Stroke ) + 1;
 		live.TryAdd( step.Record, step );
 		foreach ( var cell in step.Footprint )
 		{
@@ -452,6 +462,17 @@ internal sealed class CoopUndoJournal
 	{
 		member.Steps.Remove( step );
 		member.Cells -= step.Weight;
+		// [EXT:online-coop-undo] a stroke's last entry takes the stroke out of the member's sets (C5-2)
+		if ( step.Stroke >= 0 && member.StrokeEntries.TryGetValue( step.Stroke, out var entries ) )
+		{
+			if ( entries > 1 )
+				member.StrokeEntries[step.Stroke] = entries - 1;
+			else
+			{
+				member.StrokeEntries.Remove( step.Stroke );
+				member.Clipped.Remove( step.Stroke );
+			}
+		}
 		// a record shared by a batch's pieces stays while another of its pieces is a step
 		var shared = member.Steps.Any( other => other.Record == step.Record );
 		if ( shared )

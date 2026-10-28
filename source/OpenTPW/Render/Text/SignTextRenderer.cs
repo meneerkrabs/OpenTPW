@@ -78,7 +78,7 @@ public sealed class SignTextRenderer
 	public (Texture Left, Texture Right, IReadOnlyList<string> Diagnostics, int TextPixelCount) RenderSign( SignFile sign, IReadOnlyList<string?> lines, (byte R, byte G, byte B, byte A) background )
 	{
 		var composed = ComposeSign( sign, lines, background );
-		return (new Texture( composed.Left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ), new Texture( composed.Right, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ), composed.Diagnostics, composed.TextPixelCount);
+		return (new Texture( composed.Left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ).AsComposedSign(), new Texture( composed.Right, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ).AsComposedSign(), composed.Diagnostics, composed.TextPixelCount);
 	}
 
 	/// <summary>The GPU-free part of <see cref="RenderSign"/>: the RGBA bytes of the left (<c>sign1</c>) and right (<c>sign2</c>) halves.</summary>

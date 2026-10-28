@@ -501,6 +501,24 @@ public class ObjectRayPickTests
 		CollectionAssert.Contains( cues, GameAudio.ErrorEvent );
 	}
 
+	/// <summary>A read-only visit builds nothing, so Ctrl does not swallow the click: it opens the object's window as without Ctrl.</summary>
+	[TestMethod]
+	public void CtrlAndAPressInAReadOnlyVisitStillOpensTheWindow()
+	{
+		var hud = Park( out var level, out var tower, new MoneyStatus( 10_000 ), catalog: true );
+		Set( level, "<Visit>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( OpenTPW.ParkVisitInfo ) ) );
+		var context = RideUpgradeIngressTests.Context();
+		hud.SelectObject( null );
+		Input.SetFrameForTests( new[] { Veldrid.Key.ControlLeft }, null );
+		try
+		{
+			hud.Update( context, new UiInput( Screen( TowerTop() ), true, true, false, false, UiKeys.None ), false, false, false );
+		}
+		finally { Input.ResetFrameStateForTests(); }
+		Assert.AreSame( tower, hud.SelectedObject );
+		Assert.IsNull( level.BuildEntry );
+	}
+
 	/// <summary>Without Ctrl the same press opens the window and arms nothing.</summary>
 	[TestMethod]
 	public void APressWithoutCtrlStillOpensTheWindowAndArmsNoCopy()

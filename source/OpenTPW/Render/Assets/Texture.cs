@@ -17,6 +17,18 @@ public partial class Texture : Asset
 	/// </summary>
 	internal TextureAlphaType AlphaType { get; private set; }
 
+	/// <summary>
+	/// Marks this texture as a composed sign image: the sign builder sets bit 0x80 on the model's slot entry (<c>or word ptr [edi], 0x480</c>, 0x467D09 and 0x467D69), which makes the binder build the texture
+	/// straight from the composed 128 x 128 record with the entry flags 0x1000240, alpha type 0x200: <see cref="TextureAlphaType.Translucent"/>, the state 0x556 (alpha blend, alpha test at 0x10/255,
+	/// drawn after the opaque list far to near). Returns this texture.
+	/// </summary>
+	// [BIN:TPW-EXE:0x575CF0 sign texture branch] the binder 0x575C60 tests bit 0x80 of the slot entry (0x575CF0), builds the texture from the record's width (+6, 0x590A80) and writes the entry flags 0x1000240 (0x575DAB); 0x590C40 reads only bits 0x30000 (the wrap bit 0x400000), 0x4000000 and the alpha type 0x300 of them, and 0x581790 tests no other bit of the word, so the bits 0x40 and 0x1000000 change no state
+	internal Texture AsComposedSign()
+	{
+		AlphaType = TextureAlphaType.Translucent;
+		return this;
+	}
+
 	private static readonly Lazy<Texture> missing = new( () => new Texture( [255, 255, 255, 255], 1, 1 ) );
 
 	/// <summary>

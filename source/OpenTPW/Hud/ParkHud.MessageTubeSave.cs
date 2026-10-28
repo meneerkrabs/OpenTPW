@@ -37,10 +37,12 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x48EF70 tube loader] each saved record goes through the add routine 0x48EB20: the expiry timer 0x80080 is set to the lifetime and the warning timer 0x80081 to 5000 ms less (0x48ECD2..0x48ED0E) and cat_ui 0x1E plays (0x48EDBD); a record saved as read is then selected through 0x48D9C0, which stops the timers
 	internal void RestoreMessageTube( MessageTubeSaveData? saved )
 	{
-		if ( saved == null || saved.Rows.Count == 0 || (pendingMessages?.Count ?? 0) != 0 )
+		if ( saved == null )
 			return;
 		if ( saved.Problem() is { } problem )
 			throw new InvalidDataException( $"The saved message tube is invalid: {problem}." );
+		if ( saved.Rows.Count == 0 || (pendingMessages?.Count ?? 0) != 0 )
+			return;
 		pendingMessages = new List<string>();
 		pendingActions = new List<GameMessageAction[]>();
 		pendingChallengeRows = new List<ChallengeTubeRow?>();

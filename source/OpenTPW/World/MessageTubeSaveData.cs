@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace OpenTPW;
 
 /// <summary>
@@ -19,8 +21,12 @@ internal sealed record MessageTubeSaveData
 		if ( Rows == null || Rows.Count > MaximumRows )
 			return $"the message tube holds more than {MaximumRows} rows";
 		foreach ( var row in Rows )
-			if ( row?.Problem() is { } problem )
+		{
+			if ( row == null )
+				return "a message tube row is missing";
+			if ( row.Problem() is { } problem )
 				return problem;
+		}
 		return null;
 	}
 }
@@ -36,7 +42,6 @@ internal sealed record MessageTubeSaveData
 internal sealed record MessageTubeRowSave( int Kind, string Text, int Tag, short ContextShort, int ContextInt, int Lifetime, bool Read )
 {
 	public const int Message = 0, Offer = 1, Progress = 2, Terminal = 3;
-
 	public string? Problem()
 	{
 		if ( Kind is < Message or > Terminal )

@@ -122,8 +122,15 @@ public sealed class StaffMember
 
 	/// <summary>Whether the member has a patrol rectangle of its own.</summary>
 	public bool HasPatrolArea => PatrolArea != WholeMap;
-	/// <summary>Base speed [+0xc0]: 60, 80, 100, 120 or 140 by energy.</summary>
-	public int BaseSpeed { get; set; } = 60;
+	private int baseSpeed = 60;
+	/// <summary>Whether a constructor or saved world state supplied the speed; legacy members without either take the grade fallback once when placed.</summary>
+	internal bool HasInitializedBaseSpeed { get; private set; }
+	/// <summary>Base speed [+0xc0], supplied by the constructor or saved world state; creating a navigation state must not replace it.</summary>
+	public int BaseSpeed
+	{
+		get => baseSpeed;
+		set { baseSpeed = value; HasInitializedBaseSpeed = true; }
+	}
 	/// <summary>Speed bonus [+0xc2]: 25 while walking to a job.</summary>
 	public int SpeedBonus { get; set; }
 	/// <summary>The smoothed speed [+200] (<see cref="GuestSpeed.Update"/>).</summary>
@@ -492,7 +499,9 @@ public sealed partial class ParkStaff
 		}
 		MaterializeRoleOrder();
 		candidates.Remove( candidate );
-		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = variant, BaseSpeed = baseSpeed };
+		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = variant };
+		if ( things != null && random != null )
+			member.BaseSpeed = baseSpeed;
 		members.Add( member );
 		roleOrder![(int)member.Type].Insert( 0, member.Id );
 		return member;

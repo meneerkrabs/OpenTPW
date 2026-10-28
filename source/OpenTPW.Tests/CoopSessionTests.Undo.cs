@@ -195,29 +195,111 @@ public partial class CoopSessionTests
 		QueueCellsAlike( host, guest );
 	}
 
-	[TestMethod]
-	public void ALegacyQueueLinesTakeBackOverTheRidesExitCellLeavesTheRideAlikeOnEveryPeer()
+	/// <summary>The lone path cell <see cref="AddEntranceRide"/>'s entrance opens onto, which no guest reaches.</summary>
+	private static readonly (int X, int Y) EntranceRideOutside = (15, 10);
+
+	/// <summary>
+	/// A ride with an entrance on <paramref name="park"/>, placed before the session starts: one cell at (16, 10) whose entrance opens west onto the lone path cell
+	/// <see cref="EntranceRideOutside"/>, with no economy record and no queue, its visitor cells set to <paramref name="resolved"/> as if they had resolved there (a ride whose own cells go
+	/// resolves to the nearest walkable cell, <see cref="Level.WalkableNear"/>). The access refresh resolves them again (<see cref="Level.ResolveVisitorCells"/>): to the outside cell
+	/// itself, a path cell.
+	/// </summary>
+	private OriginalObject AddEntranceRide( Park park, (int X, int Y) resolved )
 	{
-		// the queue tests' geometry, with the ride's exit cell on a cell the line will build: the take-back's removal runs the ride's access refresh for it (Level.AfterAccessCellRemoved:
-		// the entrance and exit resolved again, the queue recomputed), the inverse's own effect on ride state, which every peer runs alike from the same cells
+		var root = (string)typeof( UpgradeCatalogueDefaultsTests ).GetField( "root", NonPublic )!.GetValue( fixture )!;
+		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/entrance-ride", new ObjectSettings( new[] { new ObjectSettingsFile(
+				"Info.Id 9201\nInfo.Name SyntheticEntranceRide\nInfo.WhichUIType 0\nInfo.IsChoosable 1\n", "entrance-ride.sam" ) } ),
+			new ObjectShape( new[] { "6" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(),
+			new BaseFileSystem( root ), null );
+		park.Level.Guests!.Grid.SetPath( EntranceRideOutside.X, EntranceRideOutside.Y, true );
+		var placed = park.Level.Objects.TryPlace( entry, 16, 10, 0, out _ )!;
+		Assert.IsNotNull( placed );
+		Assert.IsTrue( placed.Runtime.IsAttraction, "the access refresh asks every attraction" );
+		Assert.AreEqual( EntranceRideOutside, placed.AccessPoints.Select( point => (point.OutsideX, point.OutsideY) ).Single(), "its entrance opens onto the lone path cell" );
+		placed.Visitors.EntranceCell = placed.Visitors.ExitCell = resolved;
+		placed.Visitors.HasCells = true;
+		return placed;
+	}
+
+	/// <summary>The cells <paramref name="park"/>'s <see cref="AddEntranceRide"/> resolved to.</summary>
+	private static ((int X, int Y) Entrance, (int X, int Y) Exit) EntranceRideCells( Park park )
+	{
+		var ride = park.Level.Objects.FindAt( 16, 10 )!.Visitors;
+		return (ride.EntranceCell, ride.ExitCell);
+	}
+
+	[TestMethod]
+	public void ALegacyQueueLinesTakeBackResolvesTheCellsOfARideWhoseExitItClearedOnEveryPeer()
+	{
+		// the queue tests' geometry, and a ride whose exit had resolved to a cell the line will build (7, 2): the legacy line's removal runs the access refresh over the cells it clears
+		// (Level.UndoQueueCell through Level.AfterAccessCellRemoved), the inverse's own effect on ride state, so that ride resolves its cells again, to its entrance's outside cell, on every peer
 		var (host, guest, _, _) = Shared( ( park, _ ) =>
 		{
 			QueueOf( park );
 			park.Level.Guests!.Grid.SetQueue( 9, 2, towards: GuestPathGrid.DirectionBetween( 9, 2, 10, 2 ) );
-			park.One.Visitors.ExitCell = (7, 2);
-			park.One.Visitors.HasCells = true;
+			AddEntranceRide( park, (7, 2) );
 		} );
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );
 		Grant( host, guest, view );
 		var line = Requested( host, guest, view, new LayLineCommand( CellToolMode.Queue, host.One.Visitors.AttractionId, 9, 2, 7, 2 ) );
 		Assert.IsTrue( line.Accepted );
+		Assert.AreEqual( ((7, 2), (7, 2)), EntranceRideCells( host ), "laying the line refreshes nothing" );
 		Assert.IsTrue( Requested( host, guest, view, new TakeBackCommand( false, line.Record, -1, -1, -1 ) ).Accepted );
 		Assert.AreEqual( 0, host.Level.Guests!.Grid.Cells.RawTypeAt( 7, 2 ), "the exit's cell went" );
 		CatchUpAndCompare( host, guest );
-		Assert.AreEqual( (host.One.Visitors.EntranceCell, host.One.Visitors.ExitCell), (guest.One.Visitors.EntranceCell, guest.One.Visitors.ExitCell), "the ride's cells alike on both parks" );
-		Assert.AreEqual( QueueState( host.One.Visitors ), QueueState( guest.One.Visitors ), "and its queue" );
+		foreach ( var park in new[] { host, guest } )
+			Assert.AreEqual( (EntranceRideOutside, EntranceRideOutside), EntranceRideCells( park ), "the ride resolved its cells again" );
+		Assert.AreEqual( QueueState( host.One.Visitors ), QueueState( guest.One.Visitors ), "the queue's ride alike" );
 		QueueCellsAlike( host, guest );
+	}
+
+	[TestMethod]
+	public void ANativeQueueSegmentsTakeBackResolvesTheCellsOfARideWhoseExitItClearedOnEveryPeer()
+	{
+		// a ride whose exit had resolved to a cell a guest's native segment builds (8, 4): the native undo runs the access refresh over the cells it clears (QueueSegmentReducer.Undo's
+		// cleared cells through Level.AfterAccessCellRemoved), so that ride resolves its cells again on every peer
+		var (host, guest, _, _) = Shared( ( park, _ ) =>
+		{
+			QueueOf( park );
+			AddEntranceRide( park, (8, 4) );
+		} );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		guest.Enter();
+		Assert.IsTrue( guest.Level.EnterQueueTool( guest.One.Visitors ) );
+		GuestClick( host, guest, view, (8, 2) );
+		GuestClick( host, guest, view, (8, 4) );
+		Assert.IsTrue( host.One.Visitors.QueueCells.Contains( (8, 4) ) );
+		Assert.AreEqual( ((8, 4), (8, 4)), EntranceRideCells( host ), "laying the segments refreshes nothing" );
+		Assert.IsTrue( GuestBackspace( host, guest, view ), "the second segment taken back" );
+		Assert.AreEqual( 0, host.Level.Guests!.Grid.Cells.RawTypeAt( 8, 4 ), "the exit's cell went" );
+		CatchUpAndCompare( host, guest );
+		foreach ( var park in new[] { host, guest } )
+			Assert.AreEqual( (EntranceRideOutside, EntranceRideOutside), EntranceRideCells( park ), "the ride resolved its cells again" );
+		guest.Level.CellTool.Cancel();
+		QueueCellsAlike( host, guest );
+	}
+
+	[TestMethod]
+	public void APathTakeBackLeavesTheCellsOfARideWhoseExitItClearedAsSinglePlayersBackspaceDoes()
+	{
+		// a ride whose exit had resolved to a cell a guest's path line builds (6, 5): a path line's undo runs no access refresh (ParkPathBuilder.Undo; ExecuteUndoLine re-evaluates the
+		// selected ride alone), and the take-back's inverse is the UndoLineCommand single player's Backspace issues, so the ride keeps the cell on every peer, as that Backspace leaves it
+		var (host, guest, _, _) = Shared( ( park, _ ) => AddEntranceRide( park, (6, 5) ) );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var line = Requested( host, guest, view, new LayLineCommand( CellToolMode.Path, -1, 5, 5, 8, 5 ) );
+		Assert.IsTrue( line.Accepted );
+		var taken = Requested( host, guest, view, new TakeBackCommand( false, line.Record, -1, -1, -1 ) );
+		Assert.IsTrue( taken.Accepted, taken.Result?.Reason );
+		Assert.IsTrue( TakeBacksOf( host, guest.Level.Commands.Player ).Single() is { Verdict: TakeBackVerdict.Taken, Inverse: UndoLineCommand { Mode: CellToolMode.Path } } );
+		Assert.AreEqual( 0, host.Level.Guests!.Grid.Cells.RawTypeAt( 6, 5 ), "the exit's cell went" );
+		CatchUpAndCompare( host, guest );
+		foreach ( var park in new[] { host, guest } )
+			Assert.AreEqual( ((6, 5), (6, 5)), EntranceRideCells( park ), "the ride keeps its cells: a path undo refreshes none" );
 	}
 
 	[TestMethod]

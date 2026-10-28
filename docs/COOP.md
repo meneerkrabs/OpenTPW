@@ -2490,7 +2490,7 @@ action goes to the host, and the guest's tools and windows follow what came back
 
 `[EXT:online-coop-undo]` C5 makes Backspace in a building tool of a shared park take back the player's own last
 step of that tool, for the host and every guest alike, under the normal refund rules (decision Q14, A), and
-refuses it while a later command still depends on it. The plan (v29, after twenty-nine Codex rounds) makes it
+refuses it while a later command still depends on it. The plan (v30, after twenty-nine Codex rounds) makes it
 three parts that reach main as one merge: C5-1 the host's undo journal, the path, queue and slide tools;
 C5-2 the pool strokes and the wave machine; C5-3 the kart, water and coaster tools.
 
@@ -2538,8 +2538,9 @@ cells, must do exactly the step's work back, refusing, skipping and adding nothi
 cells beside it (`InTheWay`: an object, a pool bridge or a slide piece on its cells, a native undo that would
 change another player's path, a queue removal that would reach past its cells); the copy runs the undo's own
 cell code (the path undo, the native undo, a queue removal's walk and its cell writes), and what follows from
-those cells (refunds, the queue's recompute, the access refresh, re-evaluations) is the inverse's own, alike on
-every peer, and refuses nothing. Taken, the record carries the inverse, the tool's own undo of the step (`UndoLineCommand`, `UndoQueueSegmentCommand`,
+those cells (refunds, the queue's recompute, re-evaluations, and a queue undo's access refresh: a ride whose
+entrance or exit had resolved onto a cell it clears resolves them again, which a path undo does not, as in single
+player) is the inverse's own, alike on every peer, and refuses nothing. Taken, the record carries the inverse, the tool's own undo of the step (`UndoLineCommand`, `UndoQueueSegmentCommand`,
 `UndoPoolSlidePieceCommand`), which every peer runs as the take-back's player with its refunds; refused, it
 carries its verdict, and every peer refuses it alike; a guest's tool reads the verdict back from the result's
 reason, one constant per verdict. The rights check the decided record again with its inverse: a grant taken

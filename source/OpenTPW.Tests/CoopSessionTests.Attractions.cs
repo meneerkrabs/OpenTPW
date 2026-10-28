@@ -270,7 +270,7 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
-	public void ABoughtLevelOnABrokenRideKeepsTheBreakdownsStatus()
+	public void ABoughtLevelOnABrokenRideTakesTheUpgradesStatus()
 	{
 		InParkView( () =>
 		{
@@ -293,13 +293,13 @@ public partial class CoopSessionTests
 			ActivateRow( view );
 			Assert.AreEqual( new BuyUpgradeCommand( id, 1 ), Waiting( guest, id ) );
 			view.Update();
-			// the projected record holds the pending level, and still the breakdown's status and a closed door
+			// the projected record holds the pending level: the request stores state 2 over the breakdown (0x4E0086), so the status is the upgrade's, and the door stays closed
 			var drawn = LookOf( view );
-			Assert.AreEqual( (true, false, view.Strings[UIStrings.BrokenDown], false), (drawn.Closed, drawn.DoorEnabled, drawn.Banner, drawn.InfoOpen) );
+			Assert.AreEqual( (true, false, view.Strings[UIStrings.UpgradeNoMechanics], false), (drawn.Closed, drawn.DoorEnabled, drawn.Banner, drawn.InfoOpen) );
 			UntilManaged( host, guest, view );
 			foreach ( var park in new[] { host, guest } )
 				Assert.AreEqual( (1, false, true), (StateOf( park, id ).PendingLevel, park.One.IsOpen, StateOf( park, id ).IsBrokenDown) );
-			Assert.AreEqual( view.Strings[UIStrings.BrokenDown], Banner( view ), "the park's status after the record: the breakdown still comes first" );
+			Assert.AreEqual( view.Strings[UIStrings.UpgradeNoMechanics], Banner( view ), "the park's status after the record: the upgrade's state 2 came over the breakdown" );
 			CutAndCompare( host, guest );
 			Show( view, null! );
 			Assert.AreEqual( (0, 0), (view.Hud.Messages.Count, guest.Level.SessionRefusals) );
@@ -876,45 +876,7 @@ public partial class CoopSessionTests
 		} );
 	}
 
-	[TestMethod]
-	public void ABreakdownBeforeAGuestsWaitingCancelRefusesItSilentlyAndTheCopyKeepsTheRideClosed()
-	{
-		InParkView( () =>
-		{
-			var (host, guest, view) = AttractionsSession();
-			var ride = guest.One;
-			var id = ride.Runtime.AttractionId;
-			var instance = guest.Level.GetEconomyInstance( ride )!.Value;
-			Show( view, ride );
-			OpenUpgradeList( view );
-			ActivateRow( view );
-			UntilManaged( host, guest, view );
-			Assert.AreEqual( (1, 1, false), (StateOf( guest, id ).PendingLevel, StateOf( guest, id ).UpgradePurchases, ride.IsOpen) );
-			// the cancel row, clicked and held
-			OpenUpgradeList( view );
-			CollectionAssert.AreEqual( new RideUpgradeRowKind?[] { RideUpgradeRowKind.CancelLevel }, RowKinds( view ) );
-			ActivateRow( view );
-			Assert.AreEqual( new CancelUpgradeCommand( id, 1, 1 ), Waiting( guest, id ) );
-			view.Update();
-			Assert.AreEqual( (false, true), (LookOf( view ).Closed, LookOf( view ).InfoOpen), "the cancel projected: no level pending and the ride open" );
-			// the ride breaks down on every peer before the record: it is no upgrading ride then, and the record refuses the cancel
-			AlikeIn( host, guest, park =>
-			{
-				Assert.IsTrue( park.Economy.TryGetObject( instance, out var record ) );
-				record.IsBrokenDown = true;
-			} );
-			view.Update();
-			var look = LookOf( view );
-			Assert.AreEqual( (true, false), (look.Closed, look.InfoOpen), "refused by the record's checks: the copy keeps the ride closed, no projected reopening" );
-			CollectionAssert.Contains( new[] { view.Strings[UIStrings.BrokenDown], view.Strings[UIStrings.RepairsInProgress] }, look.Banner );
-			UntilManaged( host, guest, view );
-			Assert.AreEqual( "hud", Top( view ), "the list closed as after every row" );
-			Assert.AreEqual( (0, 0), (Management( guest ).TakeNotes().Count, guest.Level.SessionRefusals), "refused silently, as the host's list refuses" );
-			foreach ( var park in new[] { host, guest } )
-				Assert.AreEqual( (1, true, false), (StateOf( park, id ).PendingLevel, StateOf( park, id ).IsBrokenDown, ObjectOf( park, id ).IsOpen), "nothing was cancelled" );
-			CutAndCompare( host, guest );
-		} );
-	}
+	// A breakdown entering an upgrading ride before a guest's waiting cancel arrives cannot happen any more: the request stores state 2 over a breakdown and the ride update, which finds breakdowns, runs only in state 0 (0x4E0086, 0x4E0E00).
 
 	/// <summary>The host's list row for the shown ride, clicked: its next level bought, or its pending one cancelled, at once (the list closes after the row).</summary>
 	private static void HostRow( View hostView, OriginalObject ride, RideUpgradeRowKind expected )

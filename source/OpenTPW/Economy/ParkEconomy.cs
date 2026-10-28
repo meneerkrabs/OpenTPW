@@ -957,7 +957,7 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( RideBreakdownRules.BreaksDown( info.ProvidesRelief, item.ScriptHosted ? item.ScriptBreakStat : 0, (float)item.LifeGauge, (float)item.Repair ) )
 			{
 				item.LifeGauge = RideBreakdownRules.LifeAfterBreakdown( (float)item.LifeGauge );
-				// [APPROX:ECON-023] [EXT:headless-economy-breakdown] (user-approved) an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 writes the shared state word and calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN); the headless test and tool economy without ride scripts breaks an object down at once (the same word) and repairs it without the wait, where a level runs the scripts; state 2 is read from the pending level (the register row)
+				// [APPROX:ECON-023] [EXT:headless-economy-breakdown] (user-approved) an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 writes the shared state word and calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN); the headless test and tool economy without ride scripts breaks an object down at once (the same word) and repairs it without the wait, where a level runs the scripts; the visitor bridge keeps the single shared word (the register row)
 				if ( item.ScriptHosted )
 					WriteScript( item, RideVariables.VAR_BREAKSTAT, 1 );
 				else
@@ -1015,15 +1015,21 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// The ride object's state word (<see cref="RideObjectStates"/>): the shared word's state 1 or 4, upgrading (state 2) while a purchased upgrade is not installed, else idle.
+	/// The ride object's state word (<see cref="RideObjectStates"/>): the stored 3 (not an attraction) or 2 (an upgrade was requested, which overwrites a breakdown), else the shared word's 1 or 4, else idle.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004E0E60 SetState] one word +0x19C: 1 and 4 are written by the ride update (0x4E14E0) and left through SetState(0); the purchased upgrade's state 2 is read from the pending level
+	// [BIN:TPW-EXE:0x004E0E60 SetState] one word +0x19C, stored last by every case (each of the cases 1, 2 and 4 ends in a jump to 0x4E11B0, whose store of the argument into +0x19C is the function's tail): 1 and 4 are written by the ride update (0x4E14E0) and left through SetState(0)
+	// [BIN:TPW-EXE:0x004E0086 upgrade request] the request 0x4E0050(1) calls SetState(2) after the choosable test (+0x32 bit 4) and nothing tests the current state, so a ride in state 1 or 4 goes to state 2; the completion 0x4DF8F0 and the cancel end in SetState(0) (0x4DFCB8, 0x4E01B6)
 	internal static int ObjectState( ParkObjectState item )
 	{
-		if ( item.StateWord.IsBroken )
-			return item.StateWord.Value;
-		return item.PendingLevel > item.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
+		if ( item.StoredState is RideObjectStates.Upgrading or RideObjectStates.NotAnAttraction )
+			return item.StoredState;
+		return item.StateWord.IsBroken ? item.StateWord.Value : RideObjectStates.Idle;
 	}
+
+	/// <summary>The stored state a record starts with: 3 for a type that is not choosable (0x4DB4FB), 2 while an upgrade is waiting, else 0.</summary>
+	private int InitialStoredState( ParkObjectState item ) =>
+		!Catalog.TryGet( item.InfoId, out var info ) || !info.IsChoosable ? RideObjectStates.NotAnAttraction
+			: item.PendingLevel > item.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
 
 	/// <summary>One original wear step (0x100DEC2C) of a ride whose script reports it running.</summary>
 	private void Wear( ParkObjectState item )
@@ -1116,6 +1122,9 @@ public sealed class ParkEconomy : IParkEconomy
 			item.Repair = RideRepair.FullGauge;
 			item.Level = item.PendingLevel;
 			item.PendingLevel = 0;
+			// [BIN:TPW-EXE:0x004DFCB8 upgrade installed] the routine ends in SetState(0) on this path too
+			item.StoredState = RideObjectStates.Idle;
+			item.IsBrokenDown = false;
 			// [BIN:TPW-EXE:0x004DFA96 upgrade installed] the completion 0x004DF8F0 raises the level byte +0x50 by one and debits Upgrades[new level].CostOfUpgrade (type record +0x1B8 + 0x40 · level, 0x004DFA81) through 0x004D01F0, without a balance test
 			if ( item.UpgradeCostDue && Catalog.TryGet( item.InfoId, out var upgraded ) && item.Level < upgraded.Upgrades.Count )
 			{
@@ -1995,6 +2004,8 @@ public sealed class ParkEconomy : IParkEconomy
 			CostOfGoods = info.CostOfGoods ?? 0,
 			ChanceOfLosingPercent = info.ChanceOfLosingPercent ?? 0
 		};
+		// [BIN:TPW-EXE:0x004DB4FB object state] the constructor stores 0 for a choosable type and 3 for any other (SetState at 0x4DB508)
+		item.StoredState = info.IsChoosable ? RideObjectStates.Idle : RideObjectStates.NotAnAttraction;
 		objects.Add( item.Id, item );
 		HookStateWord( item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
@@ -2094,6 +2105,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Catalog.TryGet( item.InfoId, out var info );
 		var cost = info.Upgrades[level].CostOfUpgrade;
 		item.PendingLevel = level;
+		item.StoredState = RideObjectStates.Upgrading;
 		item.UpgradeCostDue = true;
 		// [EXT:online-coop-commands] the purchase's identity, which a guest's cancellation names (C4b-2)
 		item.UpgradePurchases++;
@@ -2136,6 +2148,9 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !objects.TryGetValue( instanceId, out var item ) || ObjectState( item ) != RideObjectStates.Upgrading )
 			return false;
 		item.PendingLevel = 0;
+		// [BIN:TPW-EXE:0x004E01B6 upgrade cancelled] the cancel ends in SetState(0): the stored 2 goes and a breakdown it had overwritten is the ride update's to find again
+		item.StoredState = RideObjectStates.Idle;
+		item.IsBrokenDown = false;
 		item.UpgradeCostDue = false;
 		Raise( ParkEventKind.UpgradeCancelled, 0, item.Id, item.InfoId );
 		return true;
@@ -2779,6 +2794,7 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			if ( !Catalog.TryGet( item.InfoId, out _ ) )
 				throw new InvalidDataException( $"Saved object {item.Id} has Info.Id {item.InfoId}, which the {Settings.Theme} catalogue does not declare." );
+			item.StoredState = InitialStoredState( item );
 			objects.Add( item.Id, item );
 			HookStateWord( item );
 		}

@@ -99,6 +99,22 @@ public class CoopUndoJournalTests
 		}
 
 		public long[] History( int x, int y ) => Journal.HistoryAt( x, y )?.ToArray() ?? Array.Empty<long>();
+
+		/// <summary>[EXT:online-coop-undo] Member <paramref name="id"/>'s take-back of its pool stroke named <paramref name="stroke"/> (C5-2): the verdict the host decided.</summary>
+		public TakeBackVerdict TakeBackStroke( uint? id, long stroke )
+		{
+			Run( id, new TakeBackCommand( true, stroke, -1, -1, -1 ) );
+			return LastTakeBack.Verdict;
+		}
+
+		/// <summary>The take-back the host decided last, as its record holds it.</summary>
+		public TakeBackCommand LastTakeBack => Level.Commands.Log.Select( entry => entry.Command ).OfType<TakeBackCommand>().Last();
+
+		public ParkEconomy Economy => Level.Park!.Economy;
+
+		public ParkCellMap Cells => Level.Guests!.Grid.Cells;
+
+		public bool IsWater( int x, int y ) => Cells.RawTypeAt( x, y ) == ParkCellTypes.PoolWater;
 	}
 
 	private Journaled NewJournaled()
@@ -630,5 +646,328 @@ public class CoopUndoJournalTests
 		Assert.IsNull( refused.Inverse );
 		var result = refused.Execute( journaled.Level );
 		Assert.AreEqual( TakeBackVerdict.NotOwn, TakeBackCommand.VerdictOf( result.Reason ) );
+	}
+
+	// ---- [EXT:online-coop-undo] pool strokes (C5-2) ----------------------------------------------------------------------------------
+
+	/// <summary>A guest's batch of a pool stroke (<see cref="PoolCellsCommand"/>), the stroke's first when <paramref name="first"/>.</summary>
+	private static PoolCellsCommand Batch( bool first, bool erase, bool river, params (int X, int Y)[] cells ) => new( erase, river, cells ) { First = first };
+
+	/// <summary>The host's single cell of a pool stroke, the stroke's first when <paramref name="first"/>.</summary>
+	private static PaintPoolCellCommand HostPaint( bool first, int x, int y ) => new( x, y, false ) { First = first };
+
+	/// <summary>A synthetic two-cell wave machine whose water side is north (as the pools' attraction tests build one), with a thing slot so its pool site is found.</summary>
+	private static ObjectCatalogEntry WaveMachine( Journaled journaled, int id )
+	{
+		journaled.Level.Objects.Things ??= new ThingPool();
+		var settings = new ObjectSettings( new[] { new ObjectSettingsFile( $"Info.Id {id}\nInfo.Name Synthetic{id}\nInfo.IsChoosable 0\nInfo.OverwritePriority 5\nPools.Attraction wavemachine\nPools.WaterSide N\n", $"synthetic{id}.sam" ) } );
+		return new ObjectCatalogEntry( "jungle", ObjectCategory.Feature, "/synthetic", settings, new ObjectShape( new[] { "**" } ), "/model.MD2", null, "/script.RSE",
+			Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), journaled.One.Entry.FileSystem, null );
+	}
+
+	/// <summary>Sets the bank's balance to <paramref name="balance"/> by a posting of the difference.</summary>
+	private static void BalanceAt( Journaled journaled, long balance )
+	{
+		var economy = journaled.Economy;
+		if ( balance >= economy.Balance )
+			economy.Ledger.Post( LedgerCategory.OtherIncome, balance - economy.Balance );
+		else
+			economy.Ledger.Post( LedgerCategory.OtherCosts, economy.Balance - balance );
+		Assert.AreEqual( balance, economy.Balance );
+	}
+
+	[TestMethod]
+	public void AStrokesCommandsFromItsFirstAreOneStepSetWhichItsTakeBackUndoesWholeWithTheirRefunds()
+	{
+		var journaled = NewJournaled();
+		var economy = journaled.Economy;
+		var (paid, cost) = (economy.Balance, economy.CellCost( CellPurchase.Pool ));
+		Assert.IsTrue( cost > 0 );
+		var stroke = journaled.Run( 1, Batch( true, false, false, (14, 26), (15, 26) ) ).Record;
+		// a later batch of the drag, its last cell sent twice: the second write finds water
+		Assert.IsTrue( journaled.Run( 1, Batch( false, false, false, (16, 26), (16, 26) ) ).Result.Accepted );
+		Assert.AreEqual( paid - 3 * cost, economy.Balance );
+		Assert.AreEqual( 2, journaled.Journal.StepsOf( 1 ), "an entry per batch" );
+		// the stroke is named by its first batch's record alone
+		Assert.AreEqual( TakeBackVerdict.NotOwn, journaled.TakeBackStroke( 1, stroke + 1 ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, stroke ) );
+		Assert.IsTrue( journaled.LastTakeBack.Inverse is UndoPoolStrokeCommand { Erase: false } inverse
+			&& inverse.Cells.SequenceEqual( new[] { (14, 26), (15, 26), (16, 26) } ) && inverse.RiverMarked.Count == 0, "one inverse over the stroke's cells" );
+		Assert.IsFalse( journaled.IsWater( 14, 26 ) || journaled.IsWater( 15, 26 ) || journaled.IsWater( 16, 26 ) );
+		Assert.AreEqual( paid, economy.Balance, "each erased cell refunded in full, as the tool's own undo refunds it" );
+		Assert.AreEqual( 0, journaled.Journal.StepsOf( 1 ) );
+		Assert.IsNull( journaled.Journal.HistoryAt( 14, 26 ), "no step tracks its cells any more" );
+		Assert.IsTrue( journaled.Journal.WeightAgrees( 1 ) );
+	}
+
+	[TestMethod]
+	public void ABatchThatOnlyMarksWaterIsAStrokesStepAndItsTakeBackTakesTheMarksOffAlone()
+	{
+		var journaled = NewJournaled();
+		var cells = journaled.Cells;
+		bool River( int x, int y ) => cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.PoolRiver );
+		// the host's pool, a stroke of its own single cells
+		var pool = journaled.Run( null, HostPaint( true, 14, 26 ) ).Record;
+		journaled.Run( null, HostPaint( false, 15, 26 ) );
+		journaled.Run( null, HostPaint( false, 16, 26 ) );
+		Assert.AreEqual( 3, journaled.Journal.StepsOf( Host ) );
+		// a guest's river stroke marks the water and paints one cell beyond it
+		var river = journaled.Run( 1, Batch( true, false, true, (14, 26), (15, 26) ) ).Record;
+		Assert.IsTrue( journaled.Run( 1, Batch( false, false, true, (16, 26), (17, 26) ) ).Result.Accepted );
+		Assert.IsTrue( River( 14, 26 ) && River( 15, 26 ) && River( 16, 26 ) && River( 17, 26 ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, river ) );
+		Assert.IsTrue( journaled.LastTakeBack.Inverse is UndoPoolStrokeCommand { Erase: false } inverse && inverse.Cells.SequenceEqual( new[] { (17, 26) } )
+			&& inverse.RiverMarked.SequenceEqual( new[] { (14, 26), (15, 26), (16, 26) } ) );
+		Assert.IsTrue( journaled.IsWater( 14, 26 ) && journaled.IsWater( 15, 26 ) && journaled.IsWater( 16, 26 ), "the water stayed" );
+		Assert.IsFalse( River( 14, 26 ) || River( 15, 26 ) || River( 16, 26 ), "its marks went" );
+		Assert.IsFalse( journaled.IsWater( 17, 26 ), "and the cell it painted" );
+		// a stroke of marks alone is a step too
+		var marks = journaled.Run( 1, Batch( true, false, true, (15, 26) ) ).Record;
+		Assert.IsTrue( River( 15, 26 ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, marks ) );
+		Assert.IsFalse( River( 15, 26 ) );
+		// nothing of the guest's stands on the host's pool any more: the host's stroke goes back whole
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( null, pool ) );
+		Assert.IsFalse( journaled.IsWater( 14, 26 ) || journaled.IsWater( 15, 26 ) || journaled.IsWater( 16, 26 ) );
+	}
+
+	[TestMethod]
+	public void AnotherPlayersWriteOverAStrokesCellRefusesItsTakeBackUntilItIsTakenBackItself()
+	{
+		var journaled = NewJournaled();
+		var stroke = journaled.Run( 1, Batch( true, false, false, (14, 26), (15, 26), (16, 26) ) ).Record;
+		var erase = journaled.Run( null, new ErasePoolCellCommand( 15, 26 ) { First = true } ).Record;
+		var balance = journaled.Economy.Balance;
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBackStroke( 1, stroke ) );
+		Assert.IsTrue( journaled.IsWater( 14, 26 ) && journaled.IsWater( 16, 26 ) && !journaled.IsWater( 15, 26 ), "nothing changed" );
+		Assert.AreEqual( balance, journaled.Economy.Balance );
+		Assert.AreEqual( 1, journaled.Journal.StepsOf( 1 ), "the stroke kept" );
+		// the host's erase taken back: nothing of it stands on the stroke's cells, which go back whole
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( null, erase ) );
+		Assert.IsTrue( journaled.IsWater( 15, 26 ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, stroke ) );
+		Assert.IsFalse( journaled.IsWater( 14, 26 ) || journaled.IsWater( 15, 26 ) || journaled.IsWater( 16, 26 ) );
+		// a stroke that painted a cell, another player erased it, and the stroke's later batch painted it again: refused, nothing changed
+		var again = journaled.Run( 1, Batch( true, false, false, (20, 26) ) ).Record;
+		journaled.Run( null, new ErasePoolCellCommand( 20, 26 ) { First = true } );
+		Assert.IsTrue( journaled.Run( 1, Batch( false, false, false, (20, 26), (21, 26) ) ).Result.Accepted );
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBackStroke( 1, again ) );
+		Assert.IsTrue( journaled.IsWater( 20, 26 ) && journaled.IsWater( 21, 26 ) );
+	}
+
+	[TestMethod]
+	public void EachStrokeIsItsOwnStepSetTakenBackNewestFirstWhateverItsMode()
+	{
+		var journaled = NewJournaled();
+		var economy = journaled.Economy;
+		var cost = economy.CellCost( CellPurchase.Pool );
+		var paint = journaled.Run( 1, Batch( true, false, false, (14, 26), (15, 26), (16, 26), (17, 26) ) ).Record;
+		var erase = journaled.Run( 1, Batch( true, true, false, (16, 26), (17, 26) ) ).Record;
+		var more = journaled.Run( 1, Batch( true, false, false, (20, 26), (21, 26) ) ).Record;
+		Assert.AreEqual( TakeBackVerdict.NotLast, journaled.TakeBackStroke( 1, paint ) );
+		Assert.AreEqual( TakeBackVerdict.NotLast, journaled.TakeBackStroke( 1, erase ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, more ), "two strokes of one mode in a row are two step sets" );
+		Assert.IsTrue( journaled.IsWater( 14, 26 ) && !journaled.IsWater( 20, 26 ) );
+		var balance = economy.Balance;
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, erase ) );
+		Assert.IsTrue( journaled.IsWater( 16, 26 ) && journaled.IsWater( 17, 26 ), "the erased cells painted again" );
+		Assert.AreEqual( balance - 2 * cost, economy.Balance, "and paid for" );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, paint ) );
+		Assert.IsFalse( Enumerable.Range( 14, 4 ).Any( x => journaled.IsWater( x, 26 ) ) );
+	}
+
+	[TestMethod]
+	public void ABatchWithoutTheFirstMarkerInAnotherModeOrAfterAnotherStepOpensAStrokeOfItsOwn()
+	{
+		var journaled = NewJournaled();
+		// a forged erase batch that claims to go on with a paint stroke: a stroke of its own, taken back alone
+		var paint = journaled.Run( 1, Batch( true, false, false, (14, 26), (15, 26) ) ).Record;
+		var forged = journaled.Run( 1, Batch( false, true, false, (15, 26) ) ).Record;
+		Assert.AreEqual( TakeBackVerdict.NotLast, journaled.TakeBackStroke( 1, paint ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, forged ) );
+		Assert.IsTrue( journaled.IsWater( 14, 26 ) && journaled.IsWater( 15, 26 ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, paint ) );
+		// a batch without the marker after another tool's step of its member: a stroke of its own too
+		var before = journaled.Run( 1, Batch( true, false, false, (20, 26) ) ).Record;
+		var line = journaled.Run( 1, Line( 5, 20, 12, 20 ) ).Record;
+		Assert.AreEqual( 2, journaled.Journal.StepsOf( 1 ), "the line is a step" );
+		var after = journaled.Run( 1, Batch( false, false, false, (21, 26) ) ).Record;
+		Assert.AreEqual( TakeBackVerdict.NotLast, journaled.TakeBackStroke( 1, before ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, after ) );
+		Assert.IsTrue( journaled.IsWater( 20, 26 ) && !journaled.IsWater( 21, 26 ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, before ), "the line is another tool's step" );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, line ) );
+	}
+
+	[TestMethod]
+	public void ADragWhoseFirstBatchWasRefusedIsOneStrokeNamedByThatBatch()
+	{
+		var journaled = NewJournaled();
+		journaled.Journal.StepBound = 2;
+		// older steps of the member, which the bound forgets, and a stroke before the drag
+		journaled.Run( 1, Line( 5, 20, 12, 20 ) );
+		journaled.Run( 1, Line( 5, 22, 12, 22 ) );
+		var before = journaled.Run( 1, Batch( true, false, false, (20, 26) ) ).Record;
+		// the drag's first batch meets a path cell: refused, it changed nothing, and still opens the stroke its later batch goes on with
+		var first = journaled.Run( 1, Batch( true, false, false, (5, 20) ) );
+		Assert.IsFalse( first.Result.Accepted );
+		Assert.IsTrue( journaled.Run( 1, Batch( false, false, false, (14, 26), (15, 26) ) ).Result.Accepted );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, first.Record ) );
+		Assert.IsFalse( journaled.IsWater( 14, 26 ) || journaled.IsWater( 15, 26 ) );
+		Assert.IsTrue( journaled.IsWater( 20, 26 ), "the stroke before it untouched" );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, before ) );
+		// the same as a member's first stroke of the session
+		var opening = journaled.Run( 2, Batch( true, false, false, (5, 22) ) );
+		Assert.IsFalse( opening.Result.Accepted );
+		Assert.IsTrue( journaled.Run( 2, Batch( false, false, false, (24, 26) ) ).Result.Accepted );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 2, opening.Record ) );
+		Assert.IsFalse( journaled.IsWater( 24, 26 ) );
+	}
+
+	[TestMethod]
+	public void AStrokeThatLostAnEntryToTheBoundsIsForgottenWhole()
+	{
+		var journaled = NewJournaled();
+		journaled.Journal.StepBound = 2;
+		var older = journaled.Run( 1, Batch( true, false, false, (20, 26) ) ).Record;
+		var stroke = journaled.Run( 1, Batch( true, false, false, (14, 26) ) ).Record;
+		journaled.Run( 1, Batch( false, false, false, (15, 26) ) );
+		journaled.Run( 1, Batch( false, false, false, (16, 26) ) );
+		Assert.AreEqual( 2, journaled.Journal.StepsOf( 1 ) );
+		Assert.AreEqual( TakeBackVerdict.Forgotten, journaled.TakeBackStroke( 1, stroke ), "its first entry went: too long ago as a whole" );
+		Assert.IsTrue( journaled.IsWater( 14, 26 ) && journaled.IsWater( 15, 26 ) && journaled.IsWater( 16, 26 ), "nothing changed" );
+		Assert.AreEqual( 2, journaled.Journal.StepsOf( 1 ) );
+		Assert.AreEqual( TakeBackVerdict.Forgotten, journaled.TakeBackStroke( 1, older ) );
+		Assert.AreEqual( TakeBackVerdict.NotOwn, journaled.TakeBackStroke( 1, 999_999 ), "no stroke of the member's" );
+		Assert.AreEqual( 1, journaled.Journal.ClippedOf( 1 ), "only the stroke that keeps an entry is kept as clipped" );
+		// its last entries go too: the stroke leaves the clipped set, and the bounds' cutoff still says it is too long ago
+		journaled.Run( 1, Batch( true, false, false, (21, 26) ) );
+		journaled.Run( 1, Batch( true, false, false, (22, 26) ) );
+		Assert.AreEqual( 0, journaled.Journal.ClippedOf( 1 ) );
+		Assert.AreEqual( TakeBackVerdict.Forgotten, journaled.TakeBackStroke( 1, stroke ) );
+		Assert.IsTrue( journaled.Journal.WeightAgrees( 1 ) );
+	}
+
+	[TestMethod]
+	public void AStrokeTooLongForOneInverseIsKeptAndSaysSo()
+	{
+		var journaled = NewJournaled();
+		// a forged drag past the tool's split (the asset-free park is too small for a stroke of more than a command's cells: a seam lowers the limit)
+		journaled.Journal.StrokeCellLimit = 3;
+		var stroke = journaled.Run( 1, Batch( true, false, false, (14, 26), (15, 26) ) ).Record;
+		Assert.IsTrue( journaled.Run( 1, Batch( false, false, false, (16, 26), (17, 26) ) ).Result.Accepted );
+		Assert.AreEqual( TakeBackVerdict.TooLarge, journaled.TakeBackStroke( 1, stroke ) );
+		Assert.IsTrue( Enumerable.Range( 14, 4 ).All( x => journaled.IsWater( x, 26 ) ), "nothing changed" );
+		Assert.AreEqual( 2, journaled.Journal.StepsOf( 1 ), "the stroke kept" );
+		// within the limit it goes
+		journaled.Journal.StrokeCellLimit = 4;
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, stroke ) );
+	}
+
+	[TestMethod]
+	public void ARepaintTheBankOrAStandingEmployeeAllowsOnlyInPartIsInTheWayWhole()
+	{
+		var journaled = NewJournaled();
+		var economy = journaled.Economy;
+		var cost = economy.CellCost( CellPurchase.Pool );
+		journaled.Run( 1, Batch( true, false, false, (14, 26), (15, 26) ) );
+		var erase = journaled.Run( 1, Batch( true, true, false, (14, 26), (15, 26) ) ).Record;
+		void Refused( long balance, string why )
+		{
+			BalanceAt( journaled, balance );
+			Assert.AreEqual( TakeBackVerdict.InTheWay, journaled.TakeBackStroke( 1, erase ), why );
+			Assert.AreEqual( balance, economy.Balance, $"{why}: nothing paid" );
+			Assert.IsFalse( journaled.IsWater( 14, 26 ) || journaled.IsWater( 15, 26 ), $"{why}: nothing painted" );
+			Assert.AreEqual( 2, journaled.Journal.StepsOf( 1 ), $"{why}: the stroke kept" );
+		}
+		// money for one of the two cells
+		Refused( cost, "money for one cell" );
+		// at the 32-bit edge the bank's two tests disagree: 2^31 passes the commit's wrapping difference and fails the preview's comparison, which a repaint meets first
+		Assert.IsTrue( ParkEconomy.Affords( 1L << 31, cost ) && !ParkEconomy.PreviewsLine( cost, 1L << 31 ) );
+		Refused( 1L << 31, "the preview's test" );
+		// 2^32 and one cell: each cell alone passes against the bank's balance, but the first one's charge leaves the second none in 32 bits
+		Refused( (1L << 32) + cost, "the balance the first cell left" );
+		// an employee standing on a cell the repaint would paint
+		BalanceAt( journaled, 10 * cost );
+		var member = economy.Staff.Members.First();
+		(member.CellX, member.CellY) = (15.5f, 26.5f);
+		Assert.AreEqual( TakeBackVerdict.InTheWay, journaled.TakeBackStroke( 1, erase ), "someone stands there" );
+		Assert.IsFalse( journaled.IsWater( 14, 26 ) || journaled.IsWater( 15, 26 ) );
+		(member.CellX, member.CellY) = (40.5f, 40.5f);
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, erase ) );
+		Assert.AreEqual( 8 * cost, economy.Balance, "both cells paid for" );
+		Assert.IsTrue( journaled.IsWater( 14, 26 ) && journaled.IsWater( 15, 26 ) );
+	}
+
+	[TestMethod]
+	public void ASwimmerInACellAPaintStrokesUndoWouldEraseIsInTheWayWhole()
+	{
+		var journaled = NewJournaled();
+		var stroke = journaled.Run( 1, Batch( true, false, false, (14, 26), (15, 26) ) ).Record;
+		var balance = journaled.Economy.Balance;
+		// a guest swimming in the cell the undo erases last (its swim set by hand: the asset-free park has no changing room), so the first cell alone could go
+		var swimmer = journaled.Level.Guests!.SpawnInPark( 4, 1 );
+		var (state, x, y) = (swimmer.State, swimmer.CellX, swimmer.CellY);
+		(swimmer.State, swimmer.CellX, swimmer.CellY) = (GuestState.Swimming, 14, 26);
+		Assert.IsTrue( journaled.Level.Guests.IsSwimmerIn( 14, 26 ) );
+		Assert.AreEqual( TakeBackVerdict.InTheWay, journaled.TakeBackStroke( 1, stroke ) );
+		Assert.IsTrue( journaled.IsWater( 14, 26 ) && journaled.IsWater( 15, 26 ), "both cells kept" );
+		Assert.AreEqual( balance, journaled.Economy.Balance, "nothing refunded" );
+		Assert.AreEqual( 1, journaled.Journal.StepsOf( 1 ), "the stroke kept" );
+		// out of the water: taken whole
+		(swimmer.State, swimmer.CellX, swimmer.CellY) = (state, x, y);
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, stroke ) );
+		Assert.IsFalse( journaled.IsWater( 14, 26 ) || journaled.IsWater( 15, 26 ) );
+	}
+
+	[TestMethod]
+	public void AStrokeWhoseUndoWouldEraseBothWaterSideCellsOfAWaveMachineIsInTheWayWhole()
+	{
+		var journaled = NewJournaled();
+		var stroke = journaled.Run( 1, Batch( true, false, false, (14, 26), (15, 26), (16, 26) ) ).Record;
+		// a wave machine along the stroke: its two water-side cells are the stroke's; one of them is all it needs
+		var machine = journaled.Level.Objects.TryPlace( WaveMachine( journaled, 9301 ), 14, 27, 0, out _ );
+		Assert.IsNotNull( machine, "the machine stands with water to its north" );
+		Assert.IsNull( journaled.Level.PoolEraseBlock( 15, 26 ), "either water-side cell alone may go" );
+		var balance = journaled.Economy.Balance;
+		// the undo erases the stroke from its end: the first water-side cell may go, the second is then the machine's last
+		Assert.AreEqual( TakeBackVerdict.InTheWay, journaled.TakeBackStroke( 1, stroke ) );
+		Assert.IsTrue( journaled.IsWater( 14, 26 ) && journaled.IsWater( 15, 26 ) && journaled.IsWater( 16, 26 ), "nothing erased" );
+		Assert.AreEqual( balance, journaled.Economy.Balance );
+		Assert.AreEqual( 1, journaled.Journal.StepsOf( 1 ), "the stroke kept" );
+	}
+
+	[TestMethod]
+	public void AWaveSettingOverARiverMarkLetsItsTakeBackPassButOverAPaintedCellStaysAChange()
+	{
+		var journaled = NewJournaled();
+		var cells = journaled.Cells;
+		// the host's pool and a wave machine at its south edge
+		journaled.Run( null, HostPaint( true, 14, 26 ) );
+		journaled.Run( null, HostPaint( false, 15, 26 ) );
+		var machine = journaled.Level.Objects.TryPlace( WaveMachine( journaled, 9302 ), 14, 27, 0, out _ );
+		Assert.IsNotNull( machine );
+		// a guest's river stroke over the machine's access cell, then another player's wave settings there: the take-back takes the marks off and leaves the settings
+		var river = journaled.Run( 1, Batch( true, false, true, (14, 26), (15, 26) ) ).Record;
+		Assert.IsTrue( journaled.Run( null, new SetPoolWavesCommand( machine!.Runtime.AttractionId, true, 3, 0 ) ).Result.Accepted );
+		Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), journaled.Level.PoolWavesOf( machine ) );
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBackStroke( 1, river ) );
+		Assert.IsFalse( cells.FlagsAt( 14, 26 ).HasFlag( ParkCellFlags.PoolRiver ) || cells.FlagsAt( 15, 26 ).HasFlag( ParkCellFlags.PoolRiver ) );
+		Assert.AreEqual( new PoolWaveSettings( true, 3, 0 ), journaled.Level.PoolWavesOf( machine ), "the settings intact" );
+		// a guest's paint stroke under a second machine, another player's wave settings in its access cell, the machine removed: the paint's take-back would erase the settings
+		var paint = journaled.Run( 1, Batch( true, false, false, (20, 26), (21, 26) ) ).Record;
+		var second = journaled.Level.Objects.TryPlace( WaveMachine( journaled, 9303 ), 20, 27, 0, out _ );
+		Assert.IsNotNull( second );
+		Assert.IsTrue( journaled.Run( null, new SetPoolWavesCommand( second!.Runtime.AttractionId, false, 1, 2 ) ).Result.Accepted );
+		var flags = (cells.FlagsAt( 20, 26 ), cells.FlagsAt( 21, 26 ));
+		Assert.AreNotEqual( (ParkCellFlags.None, ParkCellFlags.None), flags, "the settings are in a cell's flags" );
+		// the fixture's park is built without its field initializers: the removal's table of demolished queues
+		var demolished = typeof( Level ).GetField( "demolishedQueues", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
+		if ( demolished.GetValue( journaled.Level ) == null )
+			demolished.SetValue( journaled.Level, new HashSet<OriginalObject>() );
+		Assert.IsTrue( journaled.Level.Objects.Remove( second ) );
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBackStroke( 1, paint ) );
+		Assert.IsTrue( journaled.IsWater( 20, 26 ) && journaled.IsWater( 21, 26 ) );
+		Assert.AreEqual( flags, (cells.FlagsAt( 20, 26 ), cells.FlagsAt( 21, 26 )), "the settings intact" );
 	}
 }

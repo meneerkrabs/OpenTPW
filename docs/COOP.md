@@ -1183,6 +1183,10 @@ The scenarios:
   take-backs (taken, taken, changed, taken) at their records with the host's verdicts on both parks, the host's
   one take-back between the guest's refused one and its last, that both parks applied the same take-backs in
   the same order, and that none of them changed the money on either park (a path's undo refunds nothing).
+  Since C5-2 the guest then opens the buy window and clicks its paint row, which starts the pool tool, draws a stroke of four cells
+  (a press, a drag with the button held, a release; in a page through the canvas's own mouse events) and takes
+  it back with Backspace: the driver checks that the take-back named the stroke by its first batch's record,
+  was taken at its record on both parks after the path's, and refunded each of its cells in full on both.
 - **endurance** (`--scenario endurance --minutes M`): after the chat, the host runs the fastest speed (the
   HUD's `>>>`) for M whole minutes of wall time, from setting it to setting the normal speed back. The guest
   takes its ticks before the host sets the speed, and the host its own when it does. Every five seconds both
@@ -1849,10 +1853,10 @@ path and access neighbours'), which takes no
 link off, so it is asked nothing. A queue cell's ride is resolved as its removal resolves it: the rides'
 cached lines, then each line walked again (on a copy) for the cells they miss, once per question of the
 rights (the area clear asks it for each path cell it would clear). Everything else stays the host's:
-pause and speed (Q8), cheats (Q17), money, staff and the park's management (C4) with a wave machine's
-settings, undo lines and pool strokes (whose cells a request could name freely: since C5 a guest's
-Backspace is a take-back the host decides, see "Conflicts and undo (C5)"), the single-cell removals and the
-pools' single-cell kinds no guest's tool issues, the grants and the release of a departed seat.
+pause and speed (Q8), cheats (Q17), money, staff and the park's management (C4; a wave machine's settings
+are the attractions right's since C5-2), undo lines and pool strokes (whose cells a request could name freely:
+since C5 a guest's Backspace is a take-back the host decides, see "Conflicts and undo (C5)"), the single-cell
+removals and the pools' single-cell kinds no guest's tool issues, the grants and the release of a departed seat.
 
 **A guest's tools (C3a-2).** On a guest's park `ParkCommands.Issue` sends a command to the host instead
 of applying it (`ParkCommands.Submit`, set by the session), after the checks `Apply` makes before it runs
@@ -1993,8 +1997,9 @@ A guest's strokes go in batches instead, and the host's tool writes at once, as 
   outcome not known and a refusal by the rights are said once for the stroke. The refusal cue plays with
   the report, as a guest's line released before its outcome plays it.
 - **Bridges and undo.** A bridge click is a request of its own through the same queue. Backspace in the
-  paint or erase mode takes nothing back: a stroke's undo names its cells freely, as a line's does (C5-2
-  makes it a take-back). In the slide mode Backspace is a take-back of the tool's own newest piece since
+  paint or erase mode is a take-back of the tool's own newest stroke since C5-2 ("Conflicts and undo (C5)"),
+  behind its strokes' cells still queued and one at a time; with no stroke of its own it sends nothing and
+  says nothing. In the slide mode Backspace is a take-back of the tool's own newest piece since
   C5-1 ("Conflicts and undo (C5)"), behind the pieces still queued and one at a time; with no piece of its
   own, or on a slide finished since, it sends nothing and says nothing, as the host's Backspace does. A
   finished slide's pieces go only with its tower (riders use it). A take-back the rights refused for want
@@ -2013,8 +2018,8 @@ A guest's strokes go in batches instead, and the host's tool writes at once, as 
 
 A slide tower is a guest's to place, sell, clear, move and remove, and its removal takes its slide and
 refunds it, on every peer alike. No claim keeps a slide to one player: two players laying one slide take
-turns piece by piece, since each piece must follow the last. A wave machine's settings stay the host's
-(C4).
+turns piece by piece, since each piece must follow the last. A wave machine's settings are the attractions
+right's since C5-2, through the management queue ("Conflicts and undo (C5)").
 
 **Claims (C3c-1).** `[EXT:online-coop-claims]` A kart or water ride's track, and since C3c-2 a coaster, is
 edited by one player at a time: the player whose track or coaster tool is on the ride holds its claim, and
@@ -2233,13 +2238,14 @@ says who may issue it in a shared park; a test pins each class's kinds:
   targets and claims;
 - **every seat's cleanup**: the Move tool's end and a claim's release, which a guest issues with or without
   a right;
-- **attractions, staff, research and finance**: the four management rights' (below);
+- **attractions, staff, research and finance**: the four management rights' (below), a wave machine's
+  settings the attractions' since C5-2 (no claim applies: a wave machine is no claimable ride);
 - **the host's tools**: what the host's tools issue and no guest's tool does (the single-cell kinds, the
   undo of lines, queue segments, pool strokes and since C5 a slide's last piece, a pool bridge's removal):
   a guest's Backspace is a take-back of the building class, whose inverse only the host fills;
 - **the host's alone**: the developer prototype's placement and removal, the finale's dismissal, a
-  challenge's answer, the speed, the wave machine, and the session's own kinds (the clock, the grant, a
-  seat's release and its rights);
+  challenge's answer, the speed, and the session's own kinds (the clock, the grant, a seat's release and its
+  rights);
 - **refused in a session** for every seat, the host included, by the session's rules: the cheats and the
   developer kinds 22 and 25.
 
@@ -2522,7 +2528,8 @@ leave and stays as a permanent marker. Each marker keeps what it left changed th
 records are kept as the set the rule reads (a run with a permanent marker is that marker alone, holding what
 every marker of the run left, any other one residue per member), and a departed member's residue turns
 permanent, so a cell's history stays short whatever ran. The journal keeps a member's
-newest 16,384 steps within 262,144 cells; an older step's take-back says it is too long ago. A member that
+newest 16,384 steps within 262,144 cells; an older step's take-back says it is too long ago, and a pool
+stroke that lost an entry so is too long ago as a whole. A member that
 leaves its seat leaves its steps behind for good, and a slide tower's removal drops its slide's steps. Any fault
 of the journal turns it off for the rest of the session: it then takes nothing back, so nothing is decided on
 incomplete histories.
@@ -2549,7 +2556,8 @@ reason, one constant per verdict. The rights check the decided record again with
 back while the take-back waited refuses it and ends the tool (a line tool or the slide mode); another seat's claim on what its undo would
 touch (a claimed ride's queue, or a path cell it would clear that links to that ride's entrance, whose unlinking
 re-evaluates the ride and may open it) refuses it with the claim's note and keeps the step and the tool, as a line refused
-there. A path undo re-evaluates the
+there. A pool stroke's take-back names the stroke instead (see "The pool strokes (C5-2)"), and its inverse is
+`UndoPoolStrokeCommand`; a decided record's inverse must be the stroke kind exactly when it names a stroke. A path undo re-evaluates the
 issuer's selected ride only for the host's own take-back, and never a ride another seat claims. The tools'
 scope is the interface's: the host checks own and last, so a crafted request for a member's own last step
 takes back only that step, under every check.
@@ -2570,10 +2578,52 @@ waits for; with none, or on a slide finished since (its pieces go only with its 
 quietly. A stroke keeps the slide mode it was drawn in: a late outcome of an earlier one adds no piece to a new
 one and ends no new one.
 
+**The pool strokes (C5-2).** The paint and erase modes' Backspace takes back the player's own newest stroke, whole
+or not at all, for the host and every guest alike. A stroke's commands carry a first marker on its first command
+(a guest's first batch, the host's first cell), in a codec generation of its own (5) that only a session writes,
+so single player's bytes stay as they were; the journal names a stroke by the record of that command, whether the
+park accepted it or not (a drag whose first batch met only a path still opens the stroke its later batches go on
+with). A command without the marker goes on with its member's open stroke when that stroke's mode (paint or
+erase, and the river option) is its own, and otherwise opens a stroke of its own; any other step of the member, a
+take-back of its own and its departure close the open stroke, so two strokes are never one step set, modes never
+mix within one, and a forged continuation can only extend its own member's stroke of its mode. Each accepted
+command is an entry of the stroke: the cells it painted or erased and, for a river stroke, those it only marked
+(a batch's writes pair with its cells one by one, so a batch that only marked existing water is a step too). A
+guest's later batches wait for the answer of the batch that opens the stroke: with a record, they go on with the
+stroke it named; with none (the host could not take it: its rate limit, a full queue), the next batch opens the
+stroke again, so no continuation goes while its stroke's opening is unknown. The tool learns each stroke's name
+(a guest's from that batch's answer, the host's from its own record), and its Backspace sends that name, a few
+bytes behind its own batches still queued; the host takes the member's entries of that stroke as one step set
+when it is the member's newest stroke (`NotLast` otherwise), none of its cells changed since by anyone else
+(a later wave setting on a cell the stroke only marked is no change: its take-back takes the river flag off and
+nothing else), and fills one `UndoPoolStrokeCommand` (an erase stroke's cells painted again; a paint stroke's
+marks taken off and its cells erased, from its end). The inverse is predicted on a copy of the cells with a copy
+of the bank's balance: each repainted cell meets the bank's two money tests (the preview's and the commit's
+32-bit test) against what the earlier cells left, and the erase's guards read the copy (the last water-side cell
+of a wave machine counts once an earlier cell of the walk erased its other one), while the stand, occupancy and
+swimmer checks read the park's guests, which the inverse does not change; a stroke whose undo would refuse,
+skip or stop at any cell is `InTheWay` whole, the ledger and the stroke as they were. A session's stroke is
+split as it is laid: once a stroke has tried 4,096 cells the tool ends it and the drag goes on as a new stroke,
+for the host and a guest alike (single player keeps its strokes whole), so every take-back fits one command and
+Backspace takes back the last part first. A stroke one of whose entries the journal's bounds forgot is too long
+ago as a whole. The host's own Backspace pops its stroke only once taken, and says why otherwise. A resync
+changes nothing of this: the names are the host's records, and a guest's new tool knows none of its old
+strokes, so its Backspace takes back only strokes drawn since. A guest's tool keeps its own strokes for one run,
+as the host's stroke stack does: once the tool ends, Backspace takes none of them back, and a late outcome of a
+stroke drawn before names none of the next run.
+
+**The wave machine (C5-2).** A wave machine's settings are of the attractions class: a guest with the
+attractions right applies them through the management queue (a `Waves` knob on the machine's attraction
+target), its rights asked first, and the window opens on the settings it asked for until they are back. A
+machine no longer there when they arrive (removed meanwhile, or left without water) says the not-available
+note; settings another player set the same meanwhile say nothing. No claim applies: a wave machine is no
+claimable ride.
+
 **Notes.** A refused take-back keeps the step and says why: "Someone has changed that since, so it can no longer
 be taken back." (`Changed`), "That cannot be taken back while something is in the way." (`InTheWay`), "Only what
 you built with this tool can be taken back." (not own, not the last, or too long ago); a refusal of the rights
-says the rights' note; a finished slide says nothing.
+says the rights' note; a finished slide says nothing. A stroke's take-back says every verdict, its `InTheWay`
+included, and one refused by the rights ends that paint or erase mode alone.
 
 **Tests.** `CoopSessionTests.Undo` (path segments and chains, native and legacy queue lines with their refunds
 and their owner words compared on every peer, the money-stopped segment's residue, other players' lines across
@@ -2582,8 +2632,15 @@ bridge in the way, forged and stale take-backs, the grant taken back on the way 
 claimed ride's entrance beside the step, conflicts in one frame, the sale's full first-year scrap, the slide's
 pieces and its sold tower), `CoopUndoJournalTests` (the setters, the histories, the permanent marker, the
 residue of an own chain and of another member, the lists' normal form, departures, the bounds, the own bend
-chain, a fault), `CoopJoinSessionTests.Undo` (take-backs across a
-resync), the codec's pinned bytes and the class table.
+chain, a fault; since C5-2 a stroke's entries and its name, river marks, another player's write and a repaint
+across it, the modes and the first marker, a refused first batch, the bounds, the size limit, the bank's two
+tests at the 32-bit edge, an employee and a swimmer in the way, a wave machine's water-side cells and its
+settings, the clipped strokes' set),
+`CoopSessionTests.UndoPools` (a guest's strokes with their refunds and charges, the host's Backspace kept on a
+refusal, the split at the cell bound, a first batch the host could not take, a stroke of an earlier run of the
+tool, a slide's splash on a stroke's cell until its tower's sale, swimmers in a stroke's water on both parks until they are
+out, the wave machine through the queue), `CoopJoinSessionTests.Undo` (take-backs and a stroke across a resync), the codec's pinned bytes and
+the class table.
 
 ## The command layer (C1)
 

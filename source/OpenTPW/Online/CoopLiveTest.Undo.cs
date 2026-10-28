@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using OpenTPW.Hud;
 using OpenTPW.UI.Original;
 
 namespace OpenTPW;
@@ -7,7 +8,8 @@ namespace OpenTPW;
 /// [EXT:online-coop-undo] The live acceptance's undo scenario (C5-1; docs/COOP.md, "The live acceptance"): after the baseline's lines the guest lays a path line of two segments through the
 /// HUD and takes it back with two Backspaces, each a take-back the host decides and every park takes; then it lays a line with its tool kept on, the host lays a line across one of its
 /// cells, and the guest's Backspace is refused as changed on both parks, with its note; the host takes its own line back with its Backspace, and the guest's next Backspace takes its line
-/// back. Both games keep every take-back record they applied, and the driver compares them.
+/// back. Since C5-2 the guest then draws a pool stroke with the buy window's paint row and takes it back with Backspace. Both games keep every take-back record they applied, and the driver
+/// compares them.
 /// </summary>
 internal sealed partial class CoopLiveTest
 {
@@ -19,12 +21,16 @@ internal sealed partial class CoopLiveTest
 		["step"] = takeBack.Step,
 		["verdict"] = takeBack.Verdict.ToString(),
 		["accepted"] = accepted,
+		["stroke"] = takeBack.Stroke,
 	};
 
 	private static JsonArray CellsEvidence( IEnumerable<(int X, int Y)> cells ) => new( cells.Select( cell => (JsonNode?)new JsonArray( cell.X, cell.Y ) ).ToArray() );
 
 	/// <summary>Whether every one of <paramref name="cells"/> is a path cell of this game's park.</summary>
 	private bool ArePaths( IEnumerable<(int X, int Y)> cells ) => cells.All( cell => ThePark.Guests!.Grid.Cells.RawTypeAt( cell.X, cell.Y ) == (byte)ParkCellType.Path );
+
+	/// <summary>[EXT:online-coop-undo] Whether every one of <paramref name="cells"/> is a pool water cell of this game's park (C5-2).</summary>
+	private bool ArePools( IEnumerable<(int X, int Y)> cells ) => cells.All( cell => ThePark.Guests!.Grid.Cells.RawTypeAt( cell.X, cell.Y ) == ParkCellTypes.PoolWater );
 
 	/// <summary>Whether every one of <paramref name="cells"/> is an empty cell of this game's park (no path, no queue, nothing).</summary>
 	private bool AreFree( IEnumerable<(int X, int Y)> cells ) => cells.All( cell => ThePark.Guests!.Grid.Cells.RawTypeAt( cell.X, cell.Y ) == (byte)ParkCellType.Empty );
@@ -201,6 +207,9 @@ internal sealed partial class CoopLiveTest
 		yield return Wait( "checkpoints compared after the last take-back", () => TheSession.GuestStream is { Stopped: false } stream && stream.Checks >= checks + 2, 60 );
 		Give( UiInput.Key( UiKeys.Back ) );
 		yield return Wait( "Escape ends the path tool", () => InputGiven && !ThePark.CellTool.IsActive, 10 );
+		// [EXT:online-coop-undo] a pool stroke drawn with the buy window's paint row, taken back whole by Backspace (C5-2)
+		foreach ( var step in GuestPoolStroke( avoid, evidence ) )
+			yield return step;
 		}
 		finally
 		{
@@ -208,6 +217,94 @@ internal sealed partial class CoopLiveTest
 		}
 		Keep( "undo", evidence );
 		Publish( "undoDone", true );
+	}
+
+	/// <summary>The cells of the live pool stroke beyond its first (four cells in all, C5-2).</summary>
+	private const int StrokeLength = 3;
+
+	/// <summary>
+	/// [EXT:online-coop-undo] A free owned row of <see cref="StrokeLength"/> + 1 cells the pool tool paints (C5-2), whose ends a click reaches in the middle of the view, clear of
+	/// <paramref name="avoid"/>; the view moves over it as for <see cref="FreeLine"/>. Null when the park has none.
+	/// </summary>
+	private ((int X, int Y)[] Cells, System.Numerics.Vector2 StartPoint, System.Numerics.Vector2 EndPoint)? FreeStroke( ICollection<(int X, int Y)> avoid )
+	{
+		var level = ThePark;
+		var canvas = flow.Context.Canvas;
+		var viewport = new System.Numerics.Vector2( canvas.Width, canvas.Height );
+		bool Clickable( (int X, int Y) cell, out System.Numerics.Vector2 point ) =>
+			level.TryProjectCell( cell.X, cell.Y, viewport, out point )
+			&& point.X > canvas.Width * 0.3f && point.X < canvas.Width * 0.7f && point.Y > canvas.Height * 0.2f && point.Y < canvas.Height * 0.6f
+			&& !TheHud.Stack.Covers( canvas, point )
+			&& level.TryGetGridCell( point, viewport, out var x, out var y ) && (x, y) == cell;
+		var grid = level.Guests!.Grid;
+		for ( var index = 0; index < grid.CountX * grid.CountY; index++ )
+		{
+			var cell = (X: index % grid.CountX, Y: index / grid.CountX);
+			foreach ( var (dx, dy) in GuestPathGrid.Directions )
+			{
+				var cells = Enumerable.Range( 0, StrokeLength + 1 ).Select( step => (X: cell.X + dx * step, Y: cell.Y + dy * step) ).ToArray();
+				if ( !cells.All( each => level.PoolBuilder!.Check( each.X, each.Y ) == PoolBuildResult.Ok && !avoid.Contains( each ) ) )
+					continue;
+				if ( !(Clickable( cells[0], out _ ) && Clickable( cells[^1], out _ )) )
+					Look( (cell.X + dx * StrokeLength / 2f + 0.5f, cell.Y + dy * StrokeLength / 2f + 0.5f) );
+				if ( Clickable( cells[0], out var startPoint ) && Clickable( cells[^1], out var endPoint ) )
+					return (cells, startPoint, endPoint);
+			}
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The guest's pool stroke of the undo scenario (C5-2): a click on the buy window's paint row starts the pool tool; a press on a free owned cell and a drag to the cell
+	/// <see cref="StrokeLength"/> beyond lay the stroke in batches, the first of which names it; Backspace takes it back whole, each cell refunded on both parks; Escape ends the tool. Its
+	/// cells, name, cell cost and take-back go to <paramref name="evidence"/>.
+	/// </summary>
+	private IEnumerable<CoopLiveWait> GuestPoolStroke( ICollection<(int X, int Y)> avoid, JsonObject evidence )
+	{
+		var level = ThePark;
+		Require( level.PoolTool != null && level.PoolBuilder != null, "the park has the pool tool" );
+		var tool = level.PoolTool!;
+		yield return Wait( "the park's base screen alone, no tool armed", () => TheHud.Stack.Screens.Count == 1 && !level.CellTool.IsActive && !tool.IsActive && InputGiven, 30 );
+		var found = FreeStroke( avoid );
+		Require( found != null, "the park has a free owned row for a pool stroke in reach of a click" );
+		var (cells, startPoint, endPoint) = found!.Value;
+		foreach ( var cell in cells )
+			avoid.Add( cell );
+		// the buy window's paint row, clicked as a player clicks it: a row's click buys it, which starts the pool tool and shuts the window
+		TheHud.OpenBuyWindow();
+		TheHud.SelectCategory( BuildCategory.Features );
+		Require( TheHud.BuyRowPoint( flow.Context.Canvas, ParkHud.PoolPaintRow.InfoId, out var rowPoint ), "the buy window lists the pool's paint row" );
+		Require( TheHud.BuyItems.Single( item => item.InfoId == ParkHud.PoolPaintRow.InfoId ) is var row && TheHud.IsBuyAvailable( row ), "the paint row can be used" );
+		foreach ( var step in ClickThrough( rowPoint ) )
+			yield return step;
+		yield return Wait( "the paint row's click started the pool tool", () => InputGiven && tool.IsActive && !TheHud.BuyWindowOpen, 10 );
+		Require( !tool.IsErasing && !tool.IsRiver && !tool.IsSlide && !tool.IsBridge, "the paint row armed the paint mode" );
+		foreach ( var step in DragThrough( startPoint, endPoint ) )
+			yield return step;
+		yield return Wait( "the stroke's batches back, its cells painted", () => InputGiven && !tool.IsDragging && !tool.HasGuestBatches && ArePools( cells ), 120 );
+		var name = tool.NewestOwnStroke;
+		Require( name != null, "the stroke is the tool's own, named by its first batch's record" );
+		Publish( "stroked", new JsonObject { ["cells"] = CellsEvidence( cells ) } );
+		var requests = TheSession.GuestCommands!;
+		var before = requests.LastSubmitted;
+		foreach ( var step in BackspaceThrough() )
+			yield return step;
+		yield return Wait( "the stroke's take-back sent to the host", () => InputGiven && !ReferenceEquals( requests.LastSubmitted, before ), 10 );
+		var request = requests.LastSubmitted!;
+		Require( request.Command is TakeBackCommand { Stroke: true } takeBack && takeBack.Step == name, $"Backspace sent the stroke's take-back ({request.Command.Kind})" );
+		yield return Wait( "the stroke's take-back outcome", () => !request.IsOpen && !tool.HasGuestBatches, 120 );
+		Require( request.Accepted && AreFree( cells ), $"the stroke was taken back whole ({request.Result?.Reason})" );
+		evidence["stroke"] = new JsonObject
+		{
+			["name"] = name,
+			["cells"] = CellsEvidence( cells ),
+			["cost"] = level.Park!.Economy.CellCost( CellPurchase.Pool ),
+			["takeBack"] = RequestEvidence( request ),
+		};
+		var checks = TheSession.GuestStream!.Checks;
+		yield return Wait( "checkpoints compared after the stroke's take-back", () => TheSession.GuestStream is { Stopped: false } stream && stream.Checks >= checks + 2, 60 );
+		Give( UiInput.Key( UiKeys.Back ) );
+		yield return Wait( "Escape ends the pool tool", () => InputGiven && !tool.IsActive, 10 );
 	}
 
 	/// <summary>
@@ -235,6 +332,7 @@ internal sealed partial class CoopLiveTest
 				["step"] = takeBack.Step,
 				["verdict"] = takeBack.Verdict.ToString(),
 				["money"] = before is { } was && ThePark.Park is { } park ? park.Economy.Balance - was : null,
+				["stroke"] = takeBack.Stroke,
 			} );
 			before = null;
 		}
@@ -332,6 +430,9 @@ internal sealed partial class CoopLiveTest
 			Publish( "hostUndone", true );
 			yield return Wait( "the guest took its line back", () => OtherSays( "undoDone" ), 300 );
 			Require( AreFree( guestLine ), "the guest's line is gone from the host's park" );
+			// [EXT:online-coop-undo] the guest's pool stroke, laid and taken back (C5-2)
+			var stroke = Other( "stroked" ) is JsonObject stroked ? Cells( stroked["cells"] ) : Array.Empty<(int X, int Y)>();
+			Require( stroke.Length > 0 && AreFree( stroke ), "the guest's pool stroke is gone from the host's park" );
 		}
 		finally
 		{

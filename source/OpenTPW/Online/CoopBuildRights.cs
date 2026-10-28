@@ -22,8 +22,8 @@ namespace OpenTPW;
 /// removal and its pick-up, its demolition by a placement, an add-on on it, its queue's lines, edit and cells, the path cell its back joins, and a path cell linked into its entrance, whose
 /// clear re-evaluates it. The host's cleanup leaves the claims alone by itself: its release of any claim, a departed seat's release and the grants.
 /// Everything else stays the host's: speed and pause (Q8), cheats (Q17), the developer kinds, the park's management a seat has no offered right for (C4: research and finance since
-/// C4b-1, the attractions and staff later) with a wave machine's settings, undo lines and pool strokes (C5), the pools' single-cell kinds no guest's tool issues, the rights, the
-/// grants and the release of a departed seat. Every command kind is of one class (<see cref="ClassOf"/>, C4a), which says who may issue it; the management rights
+/// C4b-1, the attractions and staff later; a wave machine's settings are the attractions right's since C5-2), every undo a take-back names (C5), the pools' single-cell kinds no guest's
+/// tool issues, the rights, the grants and the release of a departed seat. Every command kind is of one class (<see cref="ClassOf"/>, C4a), which says who may issue it; the management rights
 /// (<see cref="CoopRights"/>) take their classes once a part offers them (<see cref="CoopRightsOffer"/>).
 /// Asked at execution on every peer, of the same park, the answer is the same everywhere.
 /// </summary>
@@ -68,7 +68,9 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 			or ParkCommandKind.SwapCoasterStack or ParkCommandKind.CutCoaster or ParkCommandKind.ClaimRide => CoopCommandClass.GuestBuilding,
 		ParkCommandKind.EndMove or ParkCommandKind.ReleaseRide => CoopCommandClass.SeatCleanup,
 		ParkCommandKind.SetAttractionOpen or ParkCommandKind.SetRideSettings or ParkCommandKind.SetPrice or ParkCommandKind.SetGamePrize or ParkCommandKind.SetShopSettings
-			or ParkCommandKind.BuyUpgrade or ParkCommandKind.CancelUpgrade or ParkCommandKind.RequestMaintenance => CoopCommandClass.Attractions,
+			or ParkCommandKind.BuyUpgrade or ParkCommandKind.CancelUpgrade or ParkCommandKind.RequestMaintenance
+			// [EXT:online-coop-permissions] a wave machine's settings under the attractions right, through the management queue (C5-2); a wave machine is no claimable ride
+			or ParkCommandKind.SetPoolWaves => CoopCommandClass.Attractions,
 		ParkCommandKind.SetTrainingBudget or ParkCommandKind.RenameStaff or ParkCommandKind.FireStaff or ParkCommandKind.SetPatrolArea or ParkCommandKind.BeginStaffHire
 			or ParkCommandKind.CancelStaffHire or ParkCommandKind.PlaceStaff or ParkCommandKind.PickUpStaff or ParkCommandKind.DropStaff => CoopCommandClass.Staff,
 		ParkCommandKind.SetResearchEffort or ParkCommandKind.SetResearchWorkload or ParkCommandKind.MoveResearch => CoopCommandClass.Research,
@@ -80,9 +82,9 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 			or ParkCommandKind.PaintPoolCell or ParkCommandKind.ErasePoolCell or ParkCommandKind.UndoPoolStroke or ParkCommandKind.LayPoolSlidePiece
 			or ParkCommandKind.RemovePoolBridge or ParkCommandKind.UndoPoolSlidePiece => CoopCommandClass.HostTools,
 		// the host's alone: the developer prototype's placement and removal (a session's host may issue them, so an older log replays as it did), the finale's dismissal and a challenge's
-		// answer (they bind the whole park), the speed (Q8), the wave machine (C5), and the session's own kinds
+		// answer (they bind the whole park), the speed (Q8), and the session's own kinds
 		ParkCommandKind.PlacePrototype or ParkCommandKind.RemovePrototype or ParkCommandKind.DismissFinale or ParkCommandKind.AnswerChallenge or ParkCommandKind.SetGameSpeed
-			or ParkCommandKind.SetPoolWaves or ParkCommandKind.SetSessionClock or ParkCommandKind.SetBuildGrant or ParkCommandKind.ReleaseSeat
+			or ParkCommandKind.SetSessionClock or ParkCommandKind.SetBuildGrant or ParkCommandKind.ReleaseSeat
 			or ParkCommandKind.SetSeatRights => CoopCommandClass.HostOnly,
 		// refused in a session for every seat, the host included, by the session's rules (Q17 and C2b-2)
 		ParkCommandKind.SetPrototypeRunning or ParkCommandKind.SetAllObjectsOpen or ParkCommandKind.QueueCheat => CoopCommandClass.RefusedInSession,

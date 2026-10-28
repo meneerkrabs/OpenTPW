@@ -400,7 +400,7 @@ public partial class CoopStreamTests
 			new SetSessionClockCommand( 5 ),
 			new UndoLineCommand( CellToolMode.Path, -1, 5, 20, new[] { (5, 20) }, Array.Empty<(int, int)>() ),
 			new PlacePrototypeCommand( 1, 2, 3 ),
-			// the pools' single-cell kinds no guest's tool issues, a stroke's undo (C5), a wave machine's settings (C4)
+			// the pools' single-cell kinds no guest's tool issues, a stroke's undo (C5)
 			new PaintPoolCellCommand( 8, 8, false ),
 			new ErasePoolCellCommand( 8, 8 ),
 			new LayPoolSlidePieceCommand( 13, 19, 15, 19 ),
@@ -408,6 +408,7 @@ public partial class CoopStreamTests
 			// the slide's last piece (C5: a guest's slide Backspace is a take-back of its own piece)
 			new UndoPoolSlidePieceCommand( 13, 19 ),
 			new RemovePoolBridgeCommand( 10, 15 ),
+			// [EXT:online-coop-permissions] a wave machine's settings are the attractions right's, which no build grant gives (C5-2)
 			new SetPoolWavesCommand( peer.Two.Runtime.AttractionId, true, 2, 1 )
 		};
 		foreach ( var command in building.Concat( hostOnly ) )

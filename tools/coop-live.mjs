@@ -514,12 +514,13 @@ function checkStaff(host, guest, check) {
 /**
  * The undo run's checks (C5-1, docs/COOP.md "The live acceptance"): the guest's two segments taken back by two Backspaces, the newest first; its kept line's take-back refused as changed
  * while the host's line crossed it; the host's own Backspace taking its line back; then the guest's line taken; each take-back at its record with the host's verdict on both parks, and
- * both parks' logs holding the same take-backs in the same order.
+ * both parks' logs holding the same take-backs in the same order. Since C5-2 the guest's pool stroke follows: named by its first batch, taken back whole by its Backspace, each cell
+ * refunded on both parks.
  */
 function checkUndo(host, guest, check) {
 	const mine = guest?.undo?.takeBacks ?? [], theirs = host?.undo?.takeBacks ?? [];
 	const seat = host?.undo?.seat;
-	const guests = theirs.filter(item => item.player === seat), hosts = theirs.filter(item => item.player === 0);
+	const guests = theirs.filter(item => item.player === seat && !item.stroke), hosts = theirs.filter(item => item.player === 0);
 	const segments = guest?.undo?.segments ?? [], kept = guest?.undo?.kept;
 	check('the guest took its two segments back with two Backspaces, the newest first; its kept line\'s take-back was refused as changed while the host\'s line crossed it, and taken after',
 		Number.isInteger(seat) && seat > 0 && seat === guest?.ownBuild?.seat && mine.length === 4 && segments.length === 2
@@ -534,11 +535,21 @@ function checkUndo(host, guest, check) {
 	check('the host\'s own Backspace took its line across or into the guest\'s back between the guest\'s refused take-back and its last', hosts.length === 1 && hosts[0].verdict === 'Taken'
 		&& hosts[0].accepted === true && Number.isInteger(hosts[0].record) && hosts[0].record > mine[2]?.record && hosts[0].record < mine[3]?.record
 		&& [4, 5].includes((host?.undo?.crossed ?? []).length), { host: hosts, crossed: host?.undo?.crossed });
-	check('both parks applied the same take-backs in the same order', (guest?.undo?.applied ?? []).length === 5
+	// [EXT:online-coop-undo] the guest's pool stroke (C5-2): its take-back names the stroke by its first batch's record and comes after the path's
+	const stroke = guest?.undo?.stroke, strokeBacks = theirs.filter(item => item.player === seat && item.stroke);
+	check('the guest\'s pool stroke was taken back whole by its Backspace, named by its first batch, at its record on both parks', Number.isInteger(stroke?.name)
+		&& (stroke?.cells ?? []).length === 4 && Number.isInteger(stroke?.cost) && stroke.cost > 0 && stroke.takeBack?.stroke === true && stroke.takeBack.player === seat
+		&& stroke.takeBack.step === stroke.name && stroke.takeBack.verdict === 'Taken' && stroke.takeBack.accepted === true && Number.isInteger(stroke.takeBack.record)
+		&& Number.isInteger(mine[3]?.record) && stroke.name > mine[3].record && stroke.takeBack.record > stroke.name
+		&& strokeBacks.length === 1 && JSON.stringify(strokeBacks[0]) === JSON.stringify(stroke.takeBack),
+	{ guest: stroke, host: strokeBacks });
+	check('both parks applied the same take-backs in the same order', (guest?.undo?.applied ?? []).length === 6
 		&& JSON.stringify(host?.undo?.applied ?? null) === JSON.stringify(guest.undo.applied), { host: host?.undo?.applied, guest: guest?.undo?.applied });
-	// a path's undo refunds nothing, as the original's, and a refused take-back changes nothing: every take-back left the money as it was, on both parks
-	check('no take-back changed the money on either park', [host?.undo?.applied, guest?.undo?.applied].every(applied => (applied ?? []).length === 5
-		&& applied.every(item => item.money === 0)), { host: host?.undo?.applied, guest: guest?.undo?.applied });
+	// a path's undo refunds nothing, as the original's, and a refused take-back changes nothing; a pool stroke's refunds each of its cells in full (docs/POOLS.md): on both parks
+	check('no path take-back changed the money and the stroke\'s refunded each of its cells on either park', [host?.undo?.applied, guest?.undo?.applied].every(applied =>
+		(applied ?? []).length === 6 && applied.slice(0, 5).every(item => item.money === 0 && item.stroke === false)
+		&& applied[5].stroke === true && Number.isInteger(stroke?.cost) && applied[5].money === (stroke?.cells ?? []).length * stroke.cost),
+	{ host: host?.undo?.applied, guest: guest?.undo?.applied, stroke });
 }
 
 /** How often both games sample the park's ticks at the fastest speed, in seconds (CoopLiveTest.EnduranceSampleSeconds). */

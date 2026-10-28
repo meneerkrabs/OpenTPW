@@ -241,6 +241,9 @@ internal sealed partial class CoopLiveTest
 
 	private static UiInput Release( System.Numerics.Vector2 point ) => new( point, false, false, true, false, UiKeys.None );
 
+	/// <summary>[EXT:online-coop-undo] A frame with the left button held at <paramref name="point"/> (a drag, C5-2).</summary>
+	private static UiInput Held( System.Numerics.Vector2 point ) => new( point, true, false, false, false, UiKeys.None );
+
 	private static (int X, int Y)[] LineCells( (int X, int Y) start, (int X, int Y) end ) => Enumerable.Range( 0, LineLength + 1 )
 		.Select( step => (start.X + Math.Sign( end.X - start.X ) * step, start.Y + Math.Sign( end.Y - start.Y ) * step) ).ToArray();
 

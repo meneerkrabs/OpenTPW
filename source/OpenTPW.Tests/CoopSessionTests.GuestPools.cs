@@ -73,7 +73,6 @@ public partial class CoopSessionTests
 		foreach ( var (x, y) in Row( 14, 25, 26 ) )
 			Assert.IsTrue( IsWater( host, x, y ) && IsWater( guest, x, y ), $"({x}, {y}) is water on both parks" );
 		Assert.AreEqual( 0, view.Says( OpenTpwText.CannotBuildHere ) + view.Says( OpenTpwText.CoopHostCouldNotTake ) + view.Says( OpenTpwText.CoopNotGranted ) );
-		Assert.IsFalse( tool.Undo(), "a guest's strokes are the host's to undo" );
 		Assert.AreEqual( 0, guest.Level.OpenPoolRequests );
 		CatchUpAndCompare( host, guest );
 	}
@@ -150,9 +149,13 @@ public partial class CoopSessionTests
 		var tool = guest.Level.PoolTool!;
 		Assert.IsTrue( tool.Begin( erase: false ) );
 		var waits = guest.Level.WaitingClicks;
-		// the host takes nothing meanwhile: the requests stay open, and the drag goes back and forth over 24 cells a pass
+		// [EXT:online-coop-undo] the stroke's later batches go once the batch that opened it is back (C5-2); then the host takes nothing: the requests stay open, and the drag goes back and
+		// forth over 24 cells a pass
 		tool.Press( 4, 20 );
 		tool.SendGuestBatches( Time.Now );
+		var opener = guest.Session!.GuestCommands!.LastSubmitted!;
+		GuestFramesUntil( () => !opener.IsOpen, host, guest, "the stroke's first batch came back" );
+		Assert.IsTrue( tool.CompleteGuestRequest( opener ) );
 		for ( var pass = 0; pass < 24; pass++ )
 		{
 			tool.Hover( pass % 2 == 0 ? 28 : 4, 20 );
@@ -167,7 +170,8 @@ public partial class CoopSessionTests
 		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the strokes came back" );
 		var batches = HostCommandsOf( host, seat ).OfType<PoolCellsCommand>().ToArray();
 		Assert.IsTrue( batches.All( batch => batch.Cells.Count <= PoolCellsCommand.MaximumCells ) );
-		Assert.AreEqual( PoolTool.MaximumUnsentCells, batches.Skip( PoolTool.MaximumOpenRequests ).Sum( batch => batch.Cells.Count ), "the queue's cells went after the first four" );
+		Assert.AreEqual( PoolTool.MaximumUnsentCells, batches.Skip( 1 + PoolTool.MaximumOpenRequests ).Sum( batch => batch.Cells.Count ),
+			"the queue's cells went after the first batch and the four" );
 		Assert.IsTrue( Row( 4, 28, 20 ).All( cell => IsWater( host, cell.X, cell.Y ) && IsWater( guest, cell.X, cell.Y ) ) );
 		CatchUpAndCompare( host, guest );
 	}
@@ -736,15 +740,23 @@ public partial class CoopSessionTests
 		var seat = guest.Level.Commands.Player;
 		var tool = guest.Level.PoolTool!;
 		Assert.IsTrue( tool.Begin( erase: false ) );
-		// the press is on a path cell (refused at its record); with it, forty requests spend the host's burst, so the next batch is too fast and answered without a record
-		tool.Press( 6, 1 );
+		// the press opens the stroke on free land; [EXT:online-coop-undo] its later batches go once it is back (C5-2)
+		tool.Press( 6, 5 );
 		tool.SendGuestBatches( Time.Now );
 		var requests = guest.Session!.GuestCommands!;
-		var first = requests.LastSubmitted!;
-		var burst = Enumerable.Range( 0, 39 ).Select( _ => requests.Submit( new LayLineCommand( CellToolMode.Path, -1, 30, 30, 30, 30 ) { Player = seat } ) ).ToArray();
-		tool.Hover( 6, 4 );
-		GuestFrames( 1, host, guest, hostRuns: false );
+		var opener = requests.LastSubmitted!;
+		GuestFramesUntil( () => !opener.IsOpen, host, guest, "the stroke's first batch came back" );
+		Assert.IsTrue( tool.CompleteGuestRequest( opener ) );
+		// the next batch ends on a path cell (refused at its record); with it, forty requests spend the host's burst, so the batch after it is too fast and answered without a record
+		tool.Hover( 6, 1 );
+		GuestFrames( 15, host, guest, hostRuns: false );
 		tool.SendGuestBatches( Time.Now + 1 );
+		var first = requests.LastSubmitted!;
+		Assert.IsInstanceOfType( first.Command, typeof( PoolCellsCommand ) );
+		var burst = Enumerable.Range( 0, 39 ).Select( _ => requests.Submit( new LayLineCommand( CellToolMode.Path, -1, 30, 30, 30, 30 ) { Player = seat } ) ).ToArray();
+		tool.Hover( 9, 1 );
+		GuestFrames( 15, host, guest, hostRuns: false );
+		tool.SendGuestBatches( Time.Now + 2 );
 		var later = requests.LastSubmitted!;
 		Assert.IsInstanceOfType( later.Command, typeof( PoolCellsCommand ) );
 		tool.Release();
@@ -759,9 +771,9 @@ public partial class CoopSessionTests
 		Assert.AreEqual( 0, tool.TakeGuestReports().Count, "the stroke waits for its earlier batch" );
 		Assert.IsTrue( tool.CompleteGuestRequest( first ) );
 		var report = tool.TakeGuestReports().Single();
-		Assert.AreEqual( ((6, 1), PoolBuildResult.Occupied), report.Refusal, "the path cell under the press" );
+		Assert.AreEqual( ((6, 1), PoolBuildResult.Occupied), report.Refusal, "the path cell at the drag's turn" );
 		Assert.IsTrue( report.NotTaken );
-		Assert.IsFalse( report.Wrote );
+		Assert.IsTrue( report.Wrote, "the cells before it" );
 		CatchUpAndCompare( host, guest );
 	}
 

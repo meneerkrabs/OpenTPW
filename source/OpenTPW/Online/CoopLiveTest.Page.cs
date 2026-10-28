@@ -148,6 +148,27 @@ internal sealed partial class CoopLiveTest
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-undo] A drag from <paramref name="from"/> to <paramref name="to"/> with the left button held (C5-2): natively a press, a frame held at the end and a release, one a frame;
+	/// in the page the button pressed, the pointer moved with it held and the button released through the canvas, a moment apart so the game's frames read each.
+	/// </summary>
+	private IEnumerable<CoopLiveWait> DragThrough( System.Numerics.Vector2 from, System.Numerics.Vector2 to )
+	{
+		if ( !page )
+		{
+			Give( Press( from ), Held( to ), Release( to ) );
+			yield break;
+		}
+		foreach ( var step in PageInput( new JsonObject { ["down"] = new JsonArray( from.X, from.Y ) }, "press" ) )
+			yield return step;
+		yield return Pause( "the press's frame", 0.25 );
+		foreach ( var step in PageInput( new JsonObject { ["held"] = new JsonArray( to.X, to.Y ) }, "drag" ) )
+			yield return step;
+		yield return Pause( "the drag's frame", 0.25 );
+		foreach ( var step in PageInput( new JsonObject { ["up"] = new JsonArray( to.X, to.Y ) }, "release" ) )
+			yield return step;
+	}
+
+	/// <summary>
 	/// [EXT:online-coop-undo] Backspace: natively the game's input, one Backspace of the frame as the window's typed keys give it (a tap of the keyboard holds a key's binding, which
 	/// Backspace has none of), in the page the key through the canvas (C5).
 	/// </summary>

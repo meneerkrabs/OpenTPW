@@ -53,6 +53,9 @@ internal sealed class CoopUndoJournal
 	internal int StepBound { get; set; } = MaximumSteps;
 	internal int CellBound { get; set; } = MaximumCells;
 
+	/// <summary>[EXT:online-coop-undo] The most cells of each list a pool stroke's one inverse takes (<see cref="ParkCommandCodec.MaximumCells"/>, C5-2; a test lowers it).</summary>
+	internal int StrokeCellLimit { get; set; } = ParkCommandCodec.MaximumCells;
+
 	private readonly Level level;
 	private readonly uint host;
 	/// <summary>The cells the running command changed, with their fields before its first change of each (<see cref="ParkCellMap.Changed"/> between <see cref="Begin"/> and <see cref="Applied"/>).</summary>
@@ -64,16 +67,27 @@ internal sealed class CoopUndoJournal
 	private readonly Dictionary<uint, Member> members = new();
 	/// <summary>A live step of each record still in the cells' lists (a batch's pieces share theirs and its effects).</summary>
 	private readonly Dictionary<long, Step> live = new();
-	/// <summary>What a marker left changed on its cell: link bits, and any other field (type, flags, counter, owner, queue link, residue).</summary>
-	private readonly record struct Stayed( byte Links, bool Fields )
+	/// <summary>
+	/// What a marker left changed on its cell: link bits, any other field (type, flags but a wave machine's, counter, owner, queue link, residue), and [EXT:online-coop-undo] a wave
+	/// machine's bits (<see cref="ParkCellFlags.PoolWaveBits"/>, C5-2), kept apart so a river mark's take-back can pass a later wave setting.
+	/// </summary>
+	private readonly record struct Stayed( byte Links, bool Fields, bool Waves = false )
 	{
-		public Stayed With( Stayed other ) => new( (byte)(Links | other.Links), Fields || other.Fields );
+		public Stayed With( Stayed other ) => new( (byte)(Links | other.Links), Fields || other.Fields, Waves || other.Waves );
 
 		/// <summary>What differs between <paramref name="was"/> and <paramref name="now"/>, of the fields <paramref name="changed"/> marks (a field set there, a link bit set there).</summary>
-		public static Stayed Of( CellFields was, CellFields now, CellFields changed ) => new( (byte)((was.Links ^ now.Links) & changed.Links),
-			(changed.Type != 0 && was.Type != now.Type) || (changed.Flags != 0 && was.Flags != now.Flags) || (changed.Placements != 0 && was.Placements != now.Placements)
-			|| (changed.QueueLink != 0 && was.QueueLink != now.QueueLink) || (changed.Owner != 0 && was.Owner != now.Owner) || (changed.Residue && was.Residue != now.Residue) );
+		public static Stayed Of( CellFields was, CellFields now, CellFields changed )
+		{
+			var flags = changed.Flags != 0 ? (ushort)(was.Flags ^ now.Flags) : (ushort)0;
+			return new( (byte)((was.Links ^ now.Links) & changed.Links),
+				(changed.Type != 0 && was.Type != now.Type) || (flags & ~WaveBits) != 0 || (changed.Placements != 0 && was.Placements != now.Placements)
+				|| (changed.QueueLink != 0 && was.QueueLink != now.QueueLink) || (changed.Owner != 0 && was.Owner != now.Owner) || (changed.Residue && was.Residue != now.Residue),
+				(flags & WaveBits) != 0 );
+		}
 	}
+
+	/// <summary>A wave machine's bits of a pool cell's flags.</summary>
+	private const ushort WaveBits = (ushort)ParkCellFlags.PoolWaveBits;
 
 	/// <summary>A mask of the fields that differ between <paramref name="a"/> and <paramref name="b"/>: each field nonzero where it differs, links bit by bit.</summary>
 	private static CellFields Differing( CellFields a, CellFields b ) => new( (byte)(a.Type != b.Type ? 1 : 0), (ushort)(a.Flags != b.Flags ? 1 : 0), (short)(a.Placements != b.Placements ? 1 : 0),
@@ -91,10 +105,10 @@ internal sealed class CoopUndoJournal
 	}
 
 	/// <summary>The tools a step belongs to: a take-back takes back the member's last step of its tool (lines: the path and queue tools together; a slide's pieces: per tower).</summary>
-	private enum StepTool : byte { Line, SlidePiece }
+	private enum StepTool : byte { Line, SlidePiece, Stroke }
 
 	/// <summary>What a step's undo is.</summary>
-	private enum StepKind : byte { PathLine, QueueLine, QueueSegment, SlidePiece }
+	private enum StepKind : byte { PathLine, QueueLine, QueueSegment, SlidePiece, PoolStroke }
 
 	private sealed class Step
 	{
@@ -127,7 +141,15 @@ internal sealed class CoopUndoJournal
 		public (int X, int Y) Tower { get; init; }
 		public int PieceIndex { get; init; }
 		public (int X, int Y) PieceCell { get; init; }
-		public StepTool Tool => Kind == StepKind.SlidePiece ? StepTool.SlidePiece : StepTool.Line;
+		/// <summary>[EXT:online-coop-undo] A pool stroke's entry (C5-2): the stroke it belongs to, named by the record of its first command; −1 for any other step.</summary>
+		public long Stroke { get; init; } = -1;
+		/// <summary>A stroke entry's erase mode: its cells erased (its inverse paints them again), else painted or river-marked.</summary>
+		public bool Erases { get; init; }
+		/// <summary>A stroke entry's cells in the order it wrote them: painted or erased.</summary>
+		public IReadOnlyList<(int X, int Y)> Written { get; init; } = Array.Empty<(int X, int Y)>();
+		/// <summary>A paint entry's cells that already were pool water and took the river flag alone, in order: its inverse clears that flag and nothing else.</summary>
+		public IReadOnlyList<(int X, int Y)> RiverMarked { get; init; } = Array.Empty<(int X, int Y)>();
+		public StepTool Tool => Kind switch { StepKind.SlidePiece => StepTool.SlidePiece, StepKind.PoolStroke => StepTool.Stroke, _ => StepTool.Line };
 		public int Weight => Math.Max( 1, Footprint.Count + Changes.Length );
 	}
 
@@ -137,6 +159,18 @@ internal sealed class CoopUndoJournal
 		public int Cells;
 		/// <summary>The newest record of a step the bounds dropped (−1 for none): an older record is forgotten.</summary>
 		public long Forgot = -1;
+		/// <summary>
+		/// [EXT:online-coop-undo] The member's open pool stroke (C5-2): its name (the record of its first command), its mode and its river option. A command with the first marker opens a new
+		/// one, accepted or not; one without continues it while the mode is its own; any other step of the member, its take-back and its departure close it.
+		/// </summary>
+		public (long Name, bool Erase, bool River)? OpenStroke;
+		/// <summary>
+		/// [EXT:online-coop-undo] The strokes the bounds took an entry of and that keep another: their take-back is too long ago (C5-2). A stroke leaves with its last entry, after which the
+		/// newest record the bounds dropped (<see cref="Forgot"/>) answers its take-back, so the set holds only strokes still in the member's list.
+		/// </summary>
+		public readonly HashSet<long> Clipped = new();
+		/// <summary>[EXT:online-coop-undo] How many entries of each of the member's strokes are steps (C5-2).</summary>
+		public readonly Dictionary<long, int> StrokeEntries = new();
 	}
 
 	private sealed record Decision( TakeBackCommand Command, IReadOnlyList<Step> Steps, IReadOnlyList<((int X, int Y) Cell, Step Owner)> Bends );
@@ -174,6 +208,9 @@ internal sealed class CoopUndoJournal
 
 	/// <summary>The steps <paramref name="member"/> keeps, oldest first (tests).</summary>
 	internal int StepsOf( uint member ) => members.TryGetValue( member, out var steps ) ? steps.Steps.Count : 0;
+
+	/// <summary>[EXT:online-coop-undo] The strokes of <paramref name="member"/> the bounds clipped that keep an entry (tests, C5-2).</summary>
+	internal int ClippedOf( uint member ) => members.TryGetValue( member, out var steps ) ? steps.Clipped.Count : 0;
 
 	/// <summary>Whether <paramref name="member"/>'s weight in the bounds is exactly its live steps' (tests).</summary>
 	internal bool WeightAgrees( uint member ) => !members.TryGetValue( member, out var steps ) || steps.Cells == steps.Steps.Sum( step => step.Weight );
@@ -229,7 +266,14 @@ internal sealed class CoopUndoJournal
 			return;
 		}
 		var member = MemberOf( origin );
-		var made = result.Accepted && result.Error == null ? StepsOf( record, member, origin != null, command, result, changes, before ) : Array.Empty<Step>();
+		// [EXT:online-coop-undo] a pool stroke's command opens or continues its member's stroke, accepted or not (C5-2); a take-back of the member's closes it
+		var stroke = command is IPoolStrokeCommand pool ? OpenStroke( member, record, pool ) : -1;
+		if ( command is TakeBackCommand && members.TryGetValue( member, out var takingBack ) )
+			takingBack.OpenStroke = null;
+		var made = result.Accepted && result.Error == null ? StepsOf( record, member, origin != null, command, result, changes, before, stroke ) : Array.Empty<Step>();
+		// any other step of the member closes its open stroke
+		if ( made.Any( step => step.Kind != StepKind.PoolStroke ) && members.TryGetValue( member, out var stepping ) )
+			stepping.OpenStroke = null;
 		if ( made.Length > 0 && level.Guests?.Grid.Cells is { } map )
 		{
 			// each step keeps its effects, its cells' fields before and right after it: a take-back removes its record only where it reversed every one (Reversed)
@@ -258,10 +302,30 @@ internal sealed class CoopUndoJournal
 	/// The steps an accepted record makes: a path or queue line that leaves its tool on, a native queue segment that does, the slide pieces it laid. A line that ends its tool has no
 	/// take-back, as in single player (the user's decision 7 of the plan): it is no step, and its record stays in the cells' lists for good.
 	/// </summary>
-	private Step[] StepsOf( long record, uint member, bool guest, ParkCommand command, ParkCommandResult result, (int X, int Y)[] changes, IReadOnlyDictionary<(int X, int Y), CellFields> before )
+	private Step[] StepsOf( long record, uint member, bool guest, ParkCommand command, ParkCommandResult result, (int X, int Y)[] changes, IReadOnlyDictionary<(int X, int Y), CellFields> before,
+		long stroke )
 	{
 		switch ( command )
 		{
+			// [EXT:online-coop-undo] a pool stroke's commands, each an entry of its stroke with the cells it wrote (C5-2): a host's cell, a guest's batch paired cell by cell with its writes
+			case PaintPoolCellCommand paint when stroke >= 0 && result.Value is PoolCellWrite write:
+				return StrokeEntry( record, member, stroke, false, write.Result == PoolBuildResult.Ok ? new[] { (paint.X, paint.Y) } : Array.Empty<(int X, int Y)>(),
+					write.Result == PoolBuildResult.RiverMarked ? new[] { (paint.X, paint.Y) } : Array.Empty<(int X, int Y)>(), changes );
+			case ErasePoolCellCommand erase when stroke >= 0 && result.Value is PoolCellWrite { Result: PoolBuildResult.Ok }:
+				return StrokeEntry( record, member, stroke, true, new[] { (erase.X, erase.Y) }, Array.Empty<(int X, int Y)>(), changes );
+			case PoolCellsCommand batch when stroke >= 0 && result.Value is PoolCellWrite[] writes:
+			{
+				var written = new List<(int X, int Y)>();
+				var marked = new List<(int X, int Y)>();
+				for ( var index = 0; index < writes.Length && index < batch.Cells.Count; index++ )
+				{
+					if ( writes[index].Result == PoolBuildResult.Ok )
+						written.Add( batch.Cells[index] );
+					else if ( !batch.Erase && writes[index].Result == PoolBuildResult.RiverMarked )
+						marked.Add( batch.Cells[index] );
+				}
+				return StrokeEntry( record, member, stroke, batch.Erase, written, marked, changes );
+			}
 			case LayLineCommand line when result.Value is SegmentResult laid && level.Guests?.Grid.Cells is { } map:
 			{
 				if ( EndsItsTool( laid, (line.StartX, line.StartY), guest ) )
@@ -321,6 +385,31 @@ internal sealed class CoopUndoJournal
 		return laid.QueueFinalEndsTool ?? (laid.EndedOnExisting && reachedLast);
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-undo] The member's stroke a pool command belongs to (C5-2): a new one named by <paramref name="record"/> when the command is a stroke's first, the member has none open, or
+	/// the open one's mode is another; otherwise the open one, which it continues.
+	/// </summary>
+	private long OpenStroke( uint id, long record, IPoolStrokeCommand pool )
+	{
+		if ( !members.TryGetValue( id, out var member ) )
+			members[id] = member = new Member();
+		if ( pool.First || member.OpenStroke is not { } open || open.Erase != pool.Erases || open.River != pool.PaintsRiver )
+			member.OpenStroke = (record, pool.Erases, pool.PaintsRiver);
+		return member.OpenStroke!.Value.Name;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] An entry of <paramref name="stroke"/> (C5-2): the cells it painted or erased (<paramref name="written"/>) and those it only river-marked, its footprint; its inverse
+	/// erases a painted cell whole, paints an erased one again and takes a river mark's flag off. None when it wrote nothing.
+	/// </summary>
+	private static Step[] StrokeEntry( long record, uint member, long stroke, bool erase, IReadOnlyList<(int X, int Y)> written, IReadOnlyList<(int X, int Y)> marked, (int X, int Y)[] changes )
+	{
+		if ( written.Count == 0 && marked.Count == 0 )
+			return Array.Empty<Step>();
+		return new[] { new Step { Record = record, Member = member, Kind = StepKind.PoolStroke, Group = 0, Stroke = stroke, Erases = erase, Written = written, RiverMarked = marked,
+			Footprint = written.Concat( marked ).ToHashSet(), Changes = changes, ClearsWhole = erase ? new HashSet<(int X, int Y)>() : written.ToHashSet() } };
+	}
+
 	/// <summary>The <paramref name="laid"/> pieces a record laid last on the slide of <paramref name="tower"/>, each a step with its ordinal within the record.</summary>
 	private Step[] SlidePieces( long record, uint member, (int X, int Y) tower, int laid, (int X, int Y)[] changes )
 	{
@@ -338,6 +427,8 @@ internal sealed class CoopUndoJournal
 			members[step.Member] = member = new Member();
 		member.Steps.Add( step );
 		member.Cells += step.Weight;
+		if ( step.Stroke >= 0 )
+			member.StrokeEntries[step.Stroke] = member.StrokeEntries.GetValueOrDefault( step.Stroke ) + 1;
 		live.TryAdd( step.Record, step );
 		foreach ( var cell in step.Footprint )
 		{
@@ -356,6 +447,9 @@ internal sealed class CoopUndoJournal
 		{
 			var oldest = member.Steps[0];
 			member.Forgot = Math.Max( member.Forgot, oldest.Record );
+			// [EXT:online-coop-undo] a stroke that lost an entry is too long ago as a whole (C5-2)
+			if ( oldest.Stroke >= 0 )
+				member.Clipped.Add( oldest.Stroke );
 			Leave( member, oldest, takenBack: false );
 		}
 	}
@@ -368,6 +462,17 @@ internal sealed class CoopUndoJournal
 	{
 		member.Steps.Remove( step );
 		member.Cells -= step.Weight;
+		// [EXT:online-coop-undo] a stroke's last entry takes the stroke out of the member's sets (C5-2)
+		if ( step.Stroke >= 0 && member.StrokeEntries.TryGetValue( step.Stroke, out var entries ) )
+		{
+			if ( entries > 1 )
+				member.StrokeEntries[step.Stroke] = entries - 1;
+			else
+			{
+				member.StrokeEntries.Remove( step.Stroke );
+				member.Clipped.Remove( step.Stroke );
+			}
+		}
 		// a record shared by a batch's pieces stays while another of its pieces is a step
 		var shared = member.Steps.Any( other => other.Record == step.Record );
 		if ( shared )
@@ -535,6 +640,8 @@ internal sealed class CoopUndoJournal
 				Leave( member, step, takenBack: true );
 		}
 		var by = decided.Steps[0].Member;
+		if ( members.TryGetValue( by, out var taker ) )
+			taker.OpenStroke = null;
 		foreach ( var (cell, was) in run )
 		{
 			if ( decided.Steps.Any( step => step.Effects.ContainsKey( cell ) ) )
@@ -659,8 +766,10 @@ internal sealed class CoopUndoJournal
 	private TakeBackVerdict Judge( TakeBackCommand request, uint id, out Decision? decision )
 	{
 		decision = null;
-		// C5-1 takes back single steps; a stroke's take-back is C5-2's
-		if ( request.Stroke || !members.TryGetValue( id, out var member ) )
+		// [EXT:online-coop-undo] a pool stroke's take-back takes its entries as one step set (C5-2)
+		if ( request.Stroke )
+			return JudgeStroke( request, id, out decision );
+		if ( !members.TryGetValue( id, out var member ) )
 			return TakeBackVerdict.NotOwn;
 		var step = member.Steps.LastOrDefault( candidate => candidate.Record == request.Step && candidate.Part == request.Part );
 		if ( step == null )
@@ -723,6 +832,43 @@ internal sealed class CoopUndoJournal
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-undo] A pool stroke's take-back (C5-2): the member's entries of the stroke it names (its first command's record), taken as one step set when it is the member's newest
+	/// stroke, none of its cells changed since by anyone else, and its one inverse (<see cref="UndoPoolStrokeCommand"/>: the erased cells painted again, or the river marks' flags off and the
+	/// painted cells erased) predicted whole on a copy of the cells with a copy of the balance.
+	/// </summary>
+	private TakeBackVerdict JudgeStroke( TakeBackCommand request, uint id, out Decision? decision )
+	{
+		decision = null;
+		if ( !members.TryGetValue( id, out var member ) )
+			return TakeBackVerdict.NotOwn;
+		if ( member.Clipped.Contains( request.Step ) )
+			return TakeBackVerdict.Forgotten;
+		// the live stroke is found before the age cutoff: a stroke whose refused first batch named it is older than its entries
+		var entries = member.Steps.Where( step => step.Kind == StepKind.PoolStroke && step.Stroke == request.Step ).ToArray();
+		if ( entries.Length == 0 )
+			return request.Step <= member.Forgot ? TakeBackVerdict.Forgotten : TakeBackVerdict.NotOwn;
+		if ( member.Steps.LastOrDefault( step => step.Tool == StepTool.Stroke ) is not { } newest || newest.Stroke != request.Step )
+			return TakeBackVerdict.NotLast;
+		var records = entries.Select( step => step.Record ).ToHashSet();
+		foreach ( var entry in entries )
+		{
+			foreach ( var cell in entry.Footprint )
+			{
+				if ( ChangedSince( entry, cell, records ) )
+					return TakeBackVerdict.Changed;
+			}
+		}
+		var written = entries.SelectMany( step => step.Written ).ToArray();
+		var marked = entries.SelectMany( step => step.RiverMarked ).ToArray();
+		if ( written.Length > StrokeCellLimit || marked.Length > StrokeCellLimit )
+			return TakeBackVerdict.TooLarge;
+		var inverse = new UndoPoolStrokeCommand( entries[0].Erases, written, marked ) { Player = request.Player };
+		if ( !level.PredictPoolStrokeUndo( inverse, entries.SelectMany( step => step.Footprint ).ToHashSet() ) )
+			return TakeBackVerdict.InTheWay;
+		return Decided( request, inverse, entries, Array.Empty<((int X, int Y), Step)>(), out decision );
+	}
+
+	/// <summary>
 	/// Whether a command still in effect that is none of the step set's (<paramref name="records"/>) changed <paramref name="cell"/> since the set first did: its list must hold, from the set's
 	/// first record on, only the set's records and these exceptions, so a step that wrote a cell on both sides of another player's write is refused (for a step of one record, its list ends
 	/// with it): <paramref name="step"/>'s member's own residue marker on a cell its inverse clears whole, which leaves nothing of that residue behind; and on a cell the step only counted up,
@@ -741,11 +887,12 @@ internal sealed class CoopUndoJournal
 			return true;
 		var clearsWhole = step.ClearsWhole.Contains( cell );
 		var countedUp = step.CountedUp.Contains( cell );
+		var riverOnly = step.Kind == StepKind.PoolStroke && step.RiverMarked.Contains( cell );
 		for ( var index = first + 1; index < list.Count; index++ )
 		{
 			var entry = list[index];
 			if ( records.Contains( entry ) || (clearsWhole && IsResidue( entry ) && residueOf[entry].Member == step.Member)
-				|| (countedUp && (LeavesCountAlone( step, cell, entry ) || ResidueLeavesCountAlone( step, cell, entry ))) )
+				|| (countedUp && (LeavesCountAlone( step, cell, entry ) || ResidueLeavesCountAlone( step, cell, entry ))) || (riverOnly && LeavesRiverAlone( cell, entry )) )
 				continue;
 			return true;
 		}
@@ -779,7 +926,21 @@ internal sealed class CoopUndoJournal
 	{
 		if ( entry >= 0 || !residueOf.TryGetValue( entry, out var residue ) || !step.Effects.TryGetValue( cell, out var own ) )
 			return false;
-		return !residue.Stayed.Fields && (residue.Stayed.Links & (own.Before.Links ^ own.After.Links)) == 0;
+		return !residue.Stayed.Fields && !residue.Stayed.Waves && (residue.Stayed.Links & (own.Before.Links ^ own.After.Links)) == 0;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] Whether <paramref name="entry"/>, a later change of a cell a stroke only river-marked, leaves that mark's take-back exact (C5-2): the inverse takes the river flag off
+	/// and nothing else, so a change of a wave machine's bits alone (its settings, a record of no step) passes, as a link would; anything else stays a change.
+	/// </summary>
+	private bool LeavesRiverAlone( (int X, int Y) cell, long entry )
+	{
+		if ( entry < 0 )
+			return residueOf.TryGetValue( entry, out var marker ) && !marker.Stayed.Fields;
+		if ( !live.TryGetValue( entry, out var other ) || !other.Effects.TryGetValue( cell, out var effect ) )
+			return false;
+		var (before, after) = effect;
+		return (before with { Flags = (ushort)(before.Flags & ~WaveBits) }) == (after with { Flags = (ushort)(after.Flags & ~WaveBits) });
 	}
 
 	/// <summary>

@@ -140,10 +140,21 @@ public class ParkCommandCodecTests
 		(new CancelUpgradeCommand( 17, 2, 1 ), "082c00220402"),
 	};
 
+	/// <summary>
+	/// [EXT:online-coop-undo] A pool stroke's first command in a shared park (C5-2): version 5, the kind's own fields; the same commands not first keep the schema's version-1 bytes.
+	/// </summary>
+	internal static readonly (ParkCommand Command, string Hex)[] StrokeSchema =
+	{
+		(new PaintPoolCellCommand( 20, 21, true ) { First = true }, "0a4600282a01"),
+		(new ErasePoolCellCommand( 20, 21 ) { Player = 1, First = true }, "0a4702282a"),
+		(new PoolCellsCommand( false, true, new[] { (20, 21), (21, 21) } ) { Player = 1, First = true }, "0a4e02000104282a2a2a"),
+	};
+
 	[TestMethod]
 	public void EveryCommandKindHasPinnedBytesUnderTheCurrentVersion()
 	{
-		Assert.AreEqual( (4, 2, 3, 4), (ParkCommandCodec.Version, ParkCommandCodec.QueueVersion, ParkCommandCodec.ExpectationVersion, ParkCommandCodec.PurchaseVersion),
+		Assert.AreEqual( (5, 2, 3, 4, 5), (ParkCommandCodec.Version, ParkCommandCodec.QueueVersion, ParkCommandCodec.ExpectationVersion, ParkCommandCodec.PurchaseVersion,
+			ParkCommandCodec.StrokeVersion),
 			"each generation adds its own pinned table beside this one, which holds versions 1 and 2" );
 		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>(), Schema.Select( row => row.Command.Kind ).ToArray(), "one schema row per kind, no kind without one" );
 		var types = typeof( ParkCommand ).Assembly.GetTypes().Where( type => type.IsSubclassOf( typeof( ParkCommand ) ) && !type.IsAbstract ).ToArray();
@@ -323,6 +334,39 @@ public class ParkCommandCodecTests
 		// a purchase names its level too, and neither is negative
 		foreach ( var partial in new ParkCommand[] { new CancelUpgradeCommand( 17, null, 1 ), new CancelUpgradeCommand( 17, 2, -1 ), new CancelUpgradeCommand( 17, -1, 1 ) } )
 			Assert.IsFalse( partial.IsWellFormed, partial.ToString() );
+	}
+
+	[TestMethod]
+	public void APoolStrokesFirstCommandIsVersionFiveAloneAndEveryOtherKeepsItsBytes()
+	{
+		foreach ( var (command, hex) in StrokeSchema )
+		{
+			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ), command.Kind.ToString() );
+			var bytes = Convert.FromHexString( hex );
+			var decoded = ParkCommandCodec.Decode( bytes );
+			Assert.AreEqual( command, decoded, command.Kind.ToString() );
+			Assert.IsTrue( decoded is IPoolStrokeCommand { First: true } );
+			CollectionAssert.AreEqual( bytes, ParkCommandCodec.Encode( decoded ) );
+			// not first, the same command is the schema's version 1, as a single player's
+			var plain = Schema.Single( row => row.Command.Kind == command.Kind );
+			Assert.AreEqual( plain.Hex, ParkCommandCodec.ToHex( ((IPoolStrokeCommand)command) switch
+			{
+				PaintPoolCellCommand paint => paint with { First = false },
+				ErasePoolCellCommand erase => erase with { First = false },
+				_ => (PoolCellsCommand)command with { First = false }
+			} ) );
+			Assert.AreEqual( "0" + "a" + plain.Hex[2..], hex, "only the generation differs" );
+			for ( var length = 0; length < bytes.Length; length++ )
+				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"{command.Kind} cut to {length} bytes" );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), $"{command.Kind} with a trailing byte" );
+		}
+		// version 5 is the three stroke kinds' alone
+		foreach ( var (command, hex) in Schema.Concat( ExpectationSchema ).Concat( PurchaseSchema ).Where( row => row.Command is not IPoolStrokeCommand ) )
+		{
+			var bytes = Convert.FromHexString( hex );
+			bytes[0] = 10;
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes ), $"{command.Kind} as version 5" );
+		}
 	}
 
 	/// <summary>A log recorded before the undo's last-line flag decodes as it was written, and a flag byte that is present must be 1.</summary>

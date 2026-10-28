@@ -1,4 +1,4 @@
-"""tp.exe's object placement of a kart or water station run in the x86 oracle sandbox (docs/reverse/ORACLE.md, finding X37; ECON-026).
+"""tp.exe's object placement of a kart or water station run in the x86 oracle sandbox (docs/reverse/ORACLE.md, finding X38; ECON-026).
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified tp.exe (OPENTPW_TPW_EXE, SHA-256 pinned) are needed, nothing here is shipped. The sandbox of the park fence (fence_oracle.FenceOracle: a
 synthetic 128 x 128 map, the cells at G + 0x294 + id * 0x44 and the second-layer structure records at G + (id + 0x6cde) * 0x28, id = y * 128 + x + 1) runs the click handler's placement

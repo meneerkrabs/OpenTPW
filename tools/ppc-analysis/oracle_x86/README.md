@@ -41,3 +41,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## Park fence, demolition and cell validator (round 9, package H)
 
 `fence_oracle.py` runs the fence set-up `0x5323F0`, the Buy Land validator `0x531A50` and purchase `0x5327E0` on a synthetic 128 x 128 map; `fence_golden.py` writes `source/OpenTPW.Tests/ParkFenceGolden.cs` from 20 cases and `validator_golden.py` writes `QueueCellValidatorGolden.cs` from the cell validator `0x535670` (both accept `--check FILE`). Findings X35 and X36 in `docs/reverse/ORACLE.md` section 7.24.
+
+## Demolition's record clear and the placed station (round 10, package B)
+
+`demolition_oracle.py` runs the object demolition `0x527EE0` with the second layer's record clear `0x53B280` on synthetic cells; `demolition_golden.py` writes `ParkDemolitionTrackGolden.cs` from 17 cases (both accept `--check FILE`). `station_oracle.py` runs a kart or water station's placement (`0x528A70`, the station line, the exit and entry tiles) and the net worth `0x4C7DB0`; `station_golden.py` writes `StationFootprintGolden.cs`. Findings X37 and X38 in `docs/reverse/ORACLE.md` section 7.25.

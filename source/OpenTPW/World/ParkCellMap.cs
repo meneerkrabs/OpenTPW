@@ -424,7 +424,7 @@ public sealed partial class ParkCellMap
 				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false, effects );
 				SetType( x, y, ParkCellType.Empty );
 			}
-			// [BIN:TPW-EXE:0x00528A70 station under its footprint] the placement stamps the footprint's first-layer types (0x00532FC0 with the type, 4 for the shape's '*') before the station line and the exit and entry tiles are laid on the second layer (0x00525432..0x0052577C), which write no cell type; the level lays the station tiles first, so the type the footprint stamps goes under a station tile as its base type (oracle X37: a kart or water ride's two station tiles cover eight of its footprint cells, each type 4 beneath a structure record 13 or 12)
+			// [BIN:TPW-EXE:0x00528A70 station under its footprint] the placement stamps the footprint's first-layer types (0x00532FC0 with the type, 4 for the shape's '*') before the station line and the exit and entry tiles are laid on the second layer (0x00525432..0x0052577C), which write no cell type; the level lays the station tiles first, so the type the footprint stamps goes under a station tile as its base type (oracle X38: a kart or water ride's two station tiles cover eight of its footprint cells, each type 4 beneath a structure record 13 or 12)
 			if ( Tracks.Get( x, y ) is { IsEmpty: false } tile && RawTypeAt( x, y ) == tile.Type && tile.BaseType != type && IsStationTile( tile ) )
 				Tracks.Set( x, y, tile with { BaseType = type } );
 			var fresh = RawTypeAt( x, y ) == 0;

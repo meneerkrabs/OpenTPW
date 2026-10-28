@@ -7,7 +7,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The cells a kart or water ride's placement leaves (docs/reverse/ORACLE.md, X37; ECON-026): <see cref="StationFootprintGolden"/> holds, from tp.exe's own placement routines run in the x86 oracle (the commit
+/// The cells a kart or water ride's placement leaves (docs/reverse/ORACLE.md, X38; ECON-026): <see cref="StationFootprintGolden"/> holds, from tp.exe's own placement routines run in the x86 oracle (the commit
 /// 0x528A70, the station line, the exit and entry tiles), every cell near a placed station and the net worth 0x4C7DB0 of the map. The level's placement (the track set-up's station handler first, then the
 /// footprint and the access cells, as <c>Level</c> wires them) must leave the same cells.
 /// </summary>

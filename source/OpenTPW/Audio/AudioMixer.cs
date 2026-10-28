@@ -157,7 +157,8 @@ public sealed class AudioVoice
 			leftScale *= levelled;
 			rightScale *= levelled;
 		}
-		// [APPROX:AUDIO-018] QMixer's Doppler factor is not applied: every voice without the loop flag (voice flag 4 sets the channel's no-Doppler bit through 0x6c5110 -> 0x6d22d0, tested at 0x1800a1df) plays at its sample rate times 1 / (1 + v / 331.36) (0x1800a24c-0x1800a2b7, at most 10, applied by 0x18005550), with v the relative velocity of listener and source along the line between them (the source has none: no QSWaveMixSetSourceVelocity import) and the listener velocity the position change per listener update that tp.exe sends (0x6b79d0 -> 0x6d2a10 -> 0x6d27b0 -> QSWaveMixSetListenerVelocity: current minus previous position, previous starting at the origin, no time base, only sent when the camera changed, 0x6b8b60); OpenTPW plays these voices at their own pitch
+		// [BIN:QMIXER-DLL:0x1800a1df Doppler] every voice without the loop flag takes QMixer's Doppler factor (a voice with the loop flag sets the channel's no-Doppler bit through 0x6bc628 -> 0x6c5110 -> 0x6d22d0, tested at 0x1800a1df): its frequency times 1 / (1 + (direction . relative velocity) / 331.36), at most 10, from the listener velocity of tp.exe's last changed listener update (AudioListener.Velocity, 0x6d27b0); the integer rounding of the stream's own frequency is applied (0x180055c8-0x180055dd); [APPROX:AUDIO-018] the device-unit rounding of the stream frequency (0x1800c760) is not read
+		var stepNow = step * DopplerRatio();
 		for ( var frame = 0; frame < frames; frame++ )
 		{
 			if ( Loops && Frames > 0 && sampleOutput.Position >= Frames )
@@ -183,11 +184,23 @@ public sealed class AudioVoice
 			}
 			mix[2 * frame] += left * total * leftScale;
 			mix[2 * frame + 1] += right * total * rightScale;
-			sampleOutput.Position += step;
+			sampleOutput.Position += stepNow;
 		}
 		if ( sampleOutput.Position >= Frames && !Loops )
 			IsFinished = true;
 		return frames;
+	}
+
+	/// <summary>The factor the stream's frequency takes from QMixer's Doppler stage: the sample's frequency times the Doppler factor, rounded to an integer, over the sample's frequency.</summary>
+	private double DopplerRatio()
+	{
+		if ( Loops || !AudioListener.DopplerEnabled )
+			return 1;
+		var factor = AudioListener.DopplerFactor( PlacedFlat ? null : Position );
+		if ( factor == 1f )
+			return 1;
+		var frequency = Math.Max( 1, (int)MathF.Round( (float)(SampleRate * (double)factor), MidpointRounding.ToEven ) );
+		return frequency / (double)SampleRate;
 	}
 
 	internal void RaiseCompleted()

@@ -10,8 +10,12 @@ random cameras. The flat voices are read too: an event with the any-distance fla
 advisor's speech included) is placed by `0x6BC51D` through `QSWaveMixSetPosition` with the integers 0, 1, 0, which QMixer turns
 into azimuth 0, distance 9.2e-5 (`0x18007ABD`, `0x18009DC0`): distance gain 1 and `SetPan(0)`. `AudioVoice.PlacedFlat` now makes
 such a voice centred and never turned down by distance even when its caller gave it a place and range. ADVISOR-012 is retired.
-AUDIO-018 stays, narrowed to QMixer's Doppler factor (`0x1800A1DF`-`0x1800A2B7`), which `tp.exe` feeds from the position change
-of each listener update (`0x6D27B0`) and which OpenTPW does not apply; that is a new finding, not a port.
+QMixer's Doppler is ported (`0x1800A178`-`0x1800A2C3`, `0x18005550`): every voice without the loop flag plays at its frequency times
+1 / (1 + x), x = (direction . relative velocity) / 331.36, at most 10, from the listener velocity of `tp.exe` (`0x6D27B0`): the position
+change of each changed listener update, the previous position starting at the origin and never reset for a park, so a park's first update
+(measured from the lobby listener at (0, 0, -50), `GameAudio.UpdateLobbyListener`) gives its whole position as a velocity. A flat voice
+sits straight ahead. `AudioDopplerTests` pins it on the offline mixer. AUDIO-018 stays, narrowed to the pause's listener height (UI-096),
+the dB quantisation of the volume product and the device-unit frequency rounding (`0x1800C760`).
 
 **AUDIO-003.** The fixed-pitch flag `0x10000` is unreachable: `SoundVoiceFlags.FromEvent` mirrors the builder `0x6BBE90`, every
 other write to a voice's flag word was scanned, and a test covers all 65,536 event words. AUDIO-003 is retired (its reverb part

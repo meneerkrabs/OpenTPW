@@ -737,6 +737,7 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		GameAudio.EnsureStarted();
 		GameAudio.PlayStartupSound();
+		GameAudio.UpdateLobbyListener();
 		GameAudio.Update();
 		UpdateGlobeView();
 		Camera.Update();

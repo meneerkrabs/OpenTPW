@@ -49,6 +49,41 @@ public static class AudioListener
 	/// <summary>The listener's up axis in sound space, normalised.</summary>
 	public static Vector3 Up { get; private set; } = new( 0, 1, 0 );
 
+	/// <summary>
+	/// The listener velocity tp.exe hands QMixer: the change of the listener's place at the last listener update that changed anything (sound units per update, no time base),
+	/// which stays until the next such update.
+	/// </summary>
+	public static Vector3 Velocity { get; private set; }
+
+	/// <summary>Whether voices take QMixer's Doppler factor; tests written before it measure the mixer without it.</summary>
+	internal static bool DopplerEnabled { get; set; } = true;
+
+	// the library's previous listener place (+8 of the sound system object, zeroed when the process starts and never reset) and the place, front and up of the last update, which the next update is compared with byte for byte
+	private static Vector3 previousPlace;
+	private static Vector3 lastPlace, lastFront, lastUp;
+
+	/// <summary>The velocity bookkeeping a scene transaction captures with the listener.</summary>
+	internal readonly record struct Motion( Vector3 Velocity, Vector3 Previous, Vector3 Place, Vector3 Front, Vector3 Up );
+
+	internal static Motion CaptureMotion() => new( Velocity, previousPlace, lastPlace, lastFront, lastUp );
+
+	internal static void RestoreMotion( Motion motion )
+	{
+		Velocity = motion.Velocity;
+		previousPlace = motion.Previous;
+		lastPlace = motion.Place;
+		lastFront = motion.Front;
+		lastUp = motion.Up;
+	}
+
+	/// <summary>Forgets every velocity (the process-start state); the tests use it between cases.</summary>
+	internal static void ResetMotion() => RestoreMotion( default );
+
+	private static bool SameBits( Vector3 a, Vector3 b ) =>
+		BitConverter.SingleToInt32Bits( a.X ) == BitConverter.SingleToInt32Bits( b.X )
+		&& BitConverter.SingleToInt32Bits( a.Y ) == BitConverter.SingleToInt32Bits( b.Y )
+		&& BitConverter.SingleToInt32Bits( a.Z ) == BitConverter.SingleToInt32Bits( b.Z );
+
 	/// <summary>Reinstates an already captured listener exactly when a scene transaction rolls back.</summary>
 	internal static void RestoreCaptured( Vector3 position, Vector3 forward )
 	{
@@ -97,6 +132,15 @@ public static class AudioListener
 			Front = Forward;
 			Up = new Vector3( 0, 1, 0 );
 		}
+		// [BIN:TPW-EXE:0x6b8b60 listener update] the library compares the new place, front and up byte for byte with the last ones it was given (all three start as zeros) and does nothing when they are equal
+		if ( SameBits( position, lastPlace ) && SameBits( Front, lastFront ) && SameBits( Up, lastUp ) )
+			return;
+		lastPlace = position;
+		lastFront = Front;
+		lastUp = Up;
+		// [BIN:TPW-EXE:0x6b79d0 listener velocity] a changed update sends QSWaveMixSetListenerVelocity (0x6d2a10 -> 0x6d27b0) the new place minus the library's previous place (0x6b79f9, +8 of the sound system object, zero when the process starts, then the place of every changed update), then the place itself; nothing resets it for a park, a level or the lobby
+		Velocity = position - previousPlace;
+		previousPlace = position;
 	}
 
 	/// <summary>
@@ -162,6 +206,54 @@ public static class AudioListener
 		if ( gain <= 0 )
 			return (0, 0);
 		return (gain, range > 0 ? DirectSoundPan( Azimuth( offset ) ) : 0);
+	}
+
+	/// <summary>The relative speed of sound QMixer divides the closing speed by (0x1802e684).</summary>
+	private const float SpeedOfSound = 331.36f;
+
+	/// <summary>
+	/// QMixer's Doppler factor of a voice, the multiplier of its frequency: 1 for a voice without it. <paramref name="place"/> is the voice's place, or null for a voice placed flat
+	/// (straight ahead of the listener at 9.2e-5 units).
+	/// </summary>
+	// [BIN:QMIXER-DLL:0x1800a178 Doppler] the voice's velocity (none: tp.exe never sets a source velocity) minus the listener's is the relative velocity V; V is made a unit vector by its length when that is neither 0 nor 1 (0x1800a1f9-0x1800a238, the length a single from its square sum, 0x1800cde0); d = unit direction from the listener to the source . V (0x1800a23d, the direction normalised by the distance at 0x18009f6f-0x18009f94 unless that is 0 or 1) times the length over 331.36 (0x1802e684, doppler factors +0x88 and +0x90 are 1) is x = (direction . V) / 331.36; the factor is 10 for x <= -1, else 1 / (x + 1) held to at most 10 (0x1800a262-0x1800a2b7)
+	// [BIN:QMIXER-DLL:0x180055c1 Doppler applied] the sample's own frequency times the factor, stored as a single and rounded to an integer (0x180055c8-0x180055dd) sets the stream, then tp.exe's pitch frequency is applied as the ratio of the two
+	internal static float DopplerFactor( Vector3? place )
+	{
+		float dx, dy, dz;
+		if ( place is { } source )
+		{
+			var rx = source.X - Position.X;
+			var ry = source.Y - Position.Y;
+			var rz = source.Z - Position.Z;
+			var distance = (float)Math.Sqrt( (float)((double)rx * rx + (double)ry * ry + (double)rz * rz) );
+			if ( distance != 0 && distance != 1 )
+			{
+				var scale = (float)(1.0 / distance);
+				rx = (float)(rx * (double)scale);
+				ry = (float)(ry * (double)scale);
+				rz = (float)(rz * (double)scale);
+			}
+			dx = rx; dy = ry; dz = rz;
+		}
+		else
+		{
+			dx = Front.X; dy = Front.Y; dz = Front.Z;
+		}
+		float vx = 0 - Velocity.X, vy = 0 - Velocity.Y, vz = 0 - Velocity.Z;
+		var length = (float)Math.Sqrt( (float)((double)vx * vx + (double)vy * vy + (double)vz * vz) );
+		if ( length != 0 && length != 1 )
+		{
+			var scale = (float)(1.0 / length);
+			vx = (float)(vx * (double)scale);
+			vy = (float)(vy * (double)scale);
+			vz = (float)(vz * (double)scale);
+		}
+		var closing = (double)dx * vx + (double)dy * vy + (double)dz * vz;
+		var x = closing * 1.0 * length / SpeedOfSound * 1.0;
+		if ( x <= -1 )
+			return 10f;
+		var factor = 1.0 / (x + 1.0);
+		return factor <= 10 ? (float)factor : 10f;
 	}
 
 	internal static void ValidatePosition( Vector3 position, string parameter )

@@ -14,26 +14,40 @@ internal sealed class CoopUndoJournal
 	/// <summary>The most cells a member's steps keep, footprints and changes together, a step without cells counting one.</summary>
 	internal const int MaximumCells = 262144;
 	/// <summary>
-	/// A cell's record no take-back can remove any more (a command that is no step, a step forgotten, dropped or departed). A list's entries are typed: a record (0 or more), this permanent
-	/// marker, or a residue (below −1, <see cref="NewResidue"/>); a list is kept in its normal form (<see cref="Normalize"/>).
+	/// The value <see cref="HistoryAt"/> reports for a permanent marker: a cell's record no take-back can remove any more (a command that is no step, a step forgotten, dropped or departed, a
+	/// departed member's residue). A list's entries are typed: a record (0 or more), or a marker (below 0, <see cref="NewResidue"/>): a member's residue or a permanent marker
+	/// (<see cref="Nobody"/>'s); a list is kept in its normal form (<see cref="Normalize"/>).
 	/// </summary>
 	private const long Permanent = -1;
 
+	/// <summary>The member a permanent marker is of: no one's, so no take-back's own exception passes it.</summary>
+	internal const uint Nobody = uint.MaxValue;
+
 	/// <summary>
-	/// The residues in the cells' lists, each its own entry (below −1): the member whose taken-back step (or whose take-back's own write) left it, and what it left changed on its cell. A
-	/// residue is that step's record on a cell where an effect of it stayed. Every other member's step meets it as a change; the member's own earlier step whose inverse clears that cell
-	/// whole passes over it, since that inverse leaves nothing of it behind; and on a cell a step only counted up, one that left only link bits the step did not change passes too.
+	/// The markers in the cells' lists, each its own entry (below 0): the member whose taken-back step (or whose take-back's own write) left it, <see cref="Nobody"/> for a permanent marker,
+	/// and what it left changed on its cell. A residue is that step's record on a cell where an effect of it stayed. Every other member's step meets a marker as a change; the member's own
+	/// earlier step whose inverse clears that cell whole passes over its own residue, since that inverse leaves nothing of it behind; and on a cell a step only counted up, a marker that left
+	/// only link bits the step did not change passes too, a permanent one included (another line's link into the cell from elsewhere, laid by a line that ended its tool).
 	/// </summary>
 	private readonly Dictionary<long, (uint Member, Stayed Stayed)> residueOf = new();
 	private long nextResidue = Permanent - 1;
 
-	/// <summary>A new residue entry of <paramref name="member"/>'s, which left <paramref name="stayed"/> changed on its cell.</summary>
+	/// <summary>A new marker of <paramref name="member"/>'s (<see cref="Nobody"/>'s for a permanent one), which left <paramref name="stayed"/> changed on its cell.</summary>
 	private long NewResidue( uint member, Stayed stayed )
 	{
 		var entry = nextResidue--;
 		residueOf[entry] = (member, stayed);
 		return entry;
 	}
+
+	/// <summary>A new permanent marker, which left <paramref name="stayed"/> changed on its cell.</summary>
+	private long NewPermanent( Stayed stayed ) => NewResidue( Nobody, stayed );
+
+	/// <summary>Whether <paramref name="entry"/> is a member's residue: a marker of a member present.</summary>
+	private bool IsResidue( long entry ) => entry < 0 && residueOf[entry].Member != Nobody;
+
+	/// <summary>What a change from <paramref name="was"/> to <paramref name="now"/> left changed: every field and link bit that differs.</summary>
+	private static Stayed Whole( CellFields was, CellFields now ) => Stayed.Of( was, now, Differing( was, now ) );
 
 	/// <summary>The bounds a member's steps are kept within (<see cref="MaximumSteps"/>, <see cref="MaximumCells"/>; a test lowers them).</summary>
 	internal int StepBound { get; set; } = MaximumSteps;
@@ -50,7 +64,7 @@ internal sealed class CoopUndoJournal
 	private readonly Dictionary<uint, Member> members = new();
 	/// <summary>A live step of each record still in the cells' lists (a batch's pieces share theirs and its effects).</summary>
 	private readonly Dictionary<long, Step> live = new();
-	/// <summary>What a residue left changed on its cell: link bits, and any other field (type, flags, counter, owner, queue link, residue).</summary>
+	/// <summary>What a marker left changed on its cell: link bits, and any other field (type, flags, counter, owner, queue link, residue).</summary>
 	private readonly record struct Stayed( byte Links, bool Fields )
 	{
 		public Stayed With( Stayed other ) => new( (byte)(Links | other.Links), Fields || other.Fields );
@@ -166,10 +180,13 @@ internal sealed class CoopUndoJournal
 
 	/// <summary>The records still in effect on (<paramref name="x"/>, <paramref name="y"/>), oldest first, −1 for the permanent marker and −2 − member for a member's residue; null for a cell no step tracks (tests).</summary>
 	internal IReadOnlyList<long>? HistoryAt( int x, int y ) => histories.TryGetValue( (x, y), out var list )
-		? list.Select( entry => entry < Permanent ? -2 - (long)residueOf[entry].Member : entry ).ToArray() : null;
+		? list.Select( entry => entry >= 0 ? entry : residueOf[entry].Member == Nobody ? Permanent : -2 - (long)residueOf[entry].Member ).ToArray() : null;
 
-	/// <summary>The link bits the residue at <paramref name="index"/> of (<paramref name="x"/>, <paramref name="y"/>)'s list left changed, null for an entry that is no residue (tests).</summary>
-	internal byte? ResidueLinksAt( int x, int y, int index ) => histories.TryGetValue( (x, y), out var list ) && list[index] < Permanent ? residueOf[list[index]].Stayed.Links : null;
+	/// <summary>The link bits the marker at <paramref name="index"/> of (<paramref name="x"/>, <paramref name="y"/>)'s list left changed, null for a record (tests).</summary>
+	internal byte? ResidueLinksAt( int x, int y, int index ) => histories.TryGetValue( (x, y), out var list ) && list[index] < 0 ? residueOf[list[index]].Stayed.Links : null;
+
+	/// <summary>Whether the marker at <paramref name="index"/> of (<paramref name="x"/>, <paramref name="y"/>)'s list left a field other than links changed, null for a record (tests).</summary>
+	internal bool? MarkerFieldsAt( int x, int y, int index ) => histories.TryGetValue( (x, y), out var list ) && list[index] < 0 ? residueOf[list[index]].Stayed.Fields : null;
 
 	/// <summary>The record the journal took last: the host's tools read the record of the command they just issued (<see cref="SegmentResult.Record"/>).</summary>
 	internal long? LastRecord { get; private set; }
@@ -223,11 +240,15 @@ internal sealed class CoopUndoJournal
 		foreach ( var step in made )
 			Add( step );
 		var removable = made.Length > 0;
-		// the record goes into the list of every tracked cell it changed, and of every cell of its own steps' footprints
+		// the record goes into the list of every tracked cell it changed, and of every cell of its own steps' footprints; a record of no step as a permanent marker, with what it changed
 		foreach ( var cell in changes.Concat( made.SelectMany( step => step.Footprint ) ).Distinct() )
 		{
-			if ( histories.TryGetValue( cell, out var list ) )
-				Append( list, removable ? record : Permanent );
+			if ( !histories.TryGetValue( cell, out var list ) )
+				continue;
+			if ( removable )
+				Append( list, record );
+			else
+				Append( list, NewPermanent( before.TryGetValue( cell, out var was ) && level.Guests?.Grid.Cells is { } now ? Whole( was, now.FieldsAt( cell.X, cell.Y ) ) : new Stayed( 0xFF, true ) ) );
 		}
 		foreach ( var step in made )
 			Bound( step.Member );
@@ -368,7 +389,7 @@ internal sealed class CoopUndoJournal
 					Normalize( list );
 				}
 				else if ( !takenBack )
-					Mark( list, step.Record, Permanent );
+					Mark( list, step.Record, NewPermanent( step.Effects.TryGetValue( cell, out var kept ) ? Whole( kept.Before, kept.After ) : new Stayed( 0xFF, true ) ) );
 				else if ( list.Contains( step.Record ) )
 				{
 					var stayed = step.Effects.TryGetValue( cell, out var effect ) && level.Guests?.Grid.Cells is { } map
@@ -425,21 +446,18 @@ internal sealed class CoopUndoJournal
 			Normalize( list );
 	}
 
-	/// <summary>Turns the entries of a list that <paramref name="match"/> into <paramref name="marker"/>, keeping the list in its normal form (<see cref="Normalize"/>).</summary>
-	private void Mark( List<long> list, Func<long, bool> match, long marker )
+	/// <summary>Turns the record <paramref name="record"/> of a list into <paramref name="marker"/>, keeping the list in its normal form (<see cref="Normalize"/>).</summary>
+	private void Mark( List<long> list, long record, long marker )
 	{
-		for ( var index = 0; index < list.Count; index++ )
+		var index = list.IndexOf( record );
+		if ( index < 0 )
 		{
-			if ( match( list[index] ) )
-			{
-				residueOf.Remove( list[index] );
-				list[index] = marker;
-			}
+			residueOf.Remove( marker );
+			return;
 		}
+		list[index] = marker;
 		Normalize( list );
 	}
-
-	private void Mark( List<long> list, long record, long marker ) => Mark( list, entry => entry == record, marker );
 
 	/// <summary>Puts a list in its normal form (<see cref="Normalize(List{long}, Func{long, uint}, Action{long, long}, Action{long})"/>), its residues' provenance kept and merged.</summary>
 	private void Normalize( List<long> list ) => Normalize( list, entry => residueOf[entry].Member,
@@ -447,10 +465,11 @@ internal sealed class CoopUndoJournal
 
 	/// <summary>
 	/// Puts a cell's list in its normal form. The changed-since rule reads the markers between two records as a set (any entry after a step's first record that is not its own and no
-	/// exception refuses it), so each run of markers is kept as that set: a run with the permanent marker is that marker alone (no step before it can pass it), and any other run keeps one
-	/// residue per member (<paramref name="memberOf"/>), the later ones of the same member merged into it (<paramref name="merged"/>: what each left changed, joined). A residue in another
-	/// run, on the other side of a record, stays apart with what it left. A list so holds its records, each a live step's, and between two of them one permanent marker or at most one
-	/// residue per member. <paramref name="dropped"/> hears each residue that left the list.
+	/// exception refuses it), so each run of markers is kept as that set: a run with a permanent marker (<see cref="Nobody"/>'s, <paramref name="memberOf"/>) is that marker alone, every
+	/// other marker of the run merged into it (no step's own exception passes it; what each left changed joins what it left, for the count-only exception), and any other run keeps one
+	/// residue per member, the later ones of the same member merged into it (<paramref name="merged"/>: what each left changed, joined). A marker in another run, on the other side of a
+	/// record, stays apart with what it left. A list so holds its records, each a live step's, and between two of them one permanent marker or at most one residue per member.
+	/// <paramref name="dropped"/> hears each marker that left the list.
 	/// </summary>
 	internal static void Normalize( List<long> list, Func<long, uint> memberOf, Action<long, long>? merged = null, Action<long>? dropped = null )
 	{
@@ -465,21 +484,27 @@ internal sealed class CoopUndoJournal
 				run = write;
 				continue;
 			}
-			if ( write > run && list[run] == Permanent )
+			if ( write > run && memberOf( list[run] ) == Nobody )
 			{
-				if ( entry != Permanent )
+				if ( entry != list[run] )
+				{
+					merged?.Invoke( list[run], entry );
 					dropped?.Invoke( entry );
-				continue;
-			}
-			if ( entry == Permanent )
-			{
-				for ( var index = run; index < write; index++ )
-					dropped?.Invoke( list[index] );
-				write = run;
-				list[write++] = Permanent;
+				}
 				continue;
 			}
 			var member = memberOf( entry );
+			if ( member == Nobody )
+			{
+				for ( var index = run; index < write; index++ )
+				{
+					merged?.Invoke( entry, list[index] );
+					dropped?.Invoke( list[index] );
+				}
+				write = run;
+				list[write++] = entry;
+				continue;
+			}
 			var same = -1;
 			for ( var index = run; index < write && same < 0; index++ )
 			{
@@ -520,7 +545,7 @@ internal sealed class CoopUndoJournal
 			if ( !histories.TryGetValue( cell, out var list ) || level.Guests?.Grid.Cells is not { } map )
 				continue;
 			var now = map.FieldsAt( cell.X, cell.Y );
-			Append( list, NewResidue( by, Stayed.Of( was, now, Differing( was, now ) ) ) );
+			Append( list, NewResidue( by, Whole( was, now ) ) );
 		}
 		foreach ( var (bend, owner) in decided.Bends )
 		{
@@ -537,8 +562,8 @@ internal sealed class CoopUndoJournal
 	// ---- departures and towers ---------------------------------------------------------------------
 
 	/// <summary>
-	/// A member left its seat (or another took it): its steps leave as they are, never taken back; their records stay in the cells' lists for good, and so does its residue, now as the
-	/// permanent marker (no step of its passes it any more), so a list holds the residue of the members present alone.
+	/// A member left its seat (or another took it): its steps leave as they are, never taken back; their records stay in the cells' lists for good, and so does its residue, now a
+	/// permanent marker with what it left (no step of its passes it any more), so a list holds the residue of the members present alone.
 	/// </summary>
 	internal void Depart( uint id )
 	{
@@ -550,8 +575,12 @@ internal sealed class CoopUndoJournal
 				Leave( member, step, takenBack: false );
 			foreach ( var list in histories.Values )
 			{
-				if ( list.Any( entry => entry < Permanent && residueOf[entry].Member == id ) )
-					Mark( list, entry => entry < Permanent && residueOf[entry].Member == id, Permanent );
+				var own = list.Where( entry => entry < 0 && residueOf[entry].Member == id ).ToArray();
+				if ( own.Length == 0 )
+					continue;
+				foreach ( var entry in own )
+					residueOf[entry] = (Nobody, residueOf[entry].Stayed);
+				Normalize( list );
 			}
 		}
 		catch ( Exception error ) when ( error is not OutOfMemoryException )
@@ -713,7 +742,7 @@ internal sealed class CoopUndoJournal
 		for ( var index = first + 1; index < list.Count; index++ )
 		{
 			var entry = list[index];
-			if ( records.Contains( entry ) || (clearsWhole && entry < Permanent && residueOf[entry].Member == step.Member)
+			if ( records.Contains( entry ) || (clearsWhole && IsResidue( entry ) && residueOf[entry].Member == step.Member)
 				|| (countedUp && (LeavesCountAlone( step, cell, entry ) || ResidueLeavesCountAlone( step, cell, entry ))) )
 				continue;
 			return true;
@@ -741,12 +770,12 @@ internal sealed class CoopUndoJournal
 	}
 
 	/// <summary>
-	/// Whether <paramref name="entry"/>, a member's residue marker, left a cell <paramref name="step"/> only counted up as the step's count-down needs it: what it left changed there is link
-	/// bits alone, none of them one the step changed (a diagonal another member's taken-back line left).
+	/// Whether <paramref name="entry"/>, a marker (a member's residue or a permanent marker), left a cell <paramref name="step"/> only counted up as the step's count-down needs it: what it
+	/// left changed there is link bits alone, none of them one the step changed (a diagonal another member's taken-back line left, a link into the cell from a line that ended its tool).
 	/// </summary>
 	private bool ResidueLeavesCountAlone( Step step, (int X, int Y) cell, long entry )
 	{
-		if ( entry >= Permanent || !residueOf.TryGetValue( entry, out var residue ) || !step.Effects.TryGetValue( cell, out var own ) )
+		if ( entry >= 0 || !residueOf.TryGetValue( entry, out var residue ) || !step.Effects.TryGetValue( cell, out var own ) )
 			return false;
 		return !residue.Stayed.Fields && (residue.Stayed.Links & (own.Before.Links ^ own.After.Links)) == 0;
 	}

@@ -200,11 +200,11 @@ public partial class CoopSessionTests
 
 	/// <summary>
 	/// A ride with an entrance on <paramref name="park"/>, placed before the session starts: one cell at (16, 10) whose entrance opens west onto the lone path cell
-	/// <see cref="EntranceRideOutside"/>, with no economy record and no queue, its visitor cells set to <paramref name="resolved"/> as if they had resolved there (a ride whose own cells go
-	/// resolves to the nearest walkable cell, <see cref="Level.WalkableNear"/>). The access refresh resolves them again (<see cref="Level.ResolveVisitorCells"/>): to the outside cell
-	/// itself, a path cell.
+	/// <see cref="EntranceRideOutside"/>, with no economy record and no queue, its entrance resolved to that cell and its exit set to <paramref name="resolvedExit"/> as if it had resolved there
+	/// (a ride whose own cells go resolves to the nearest walkable cell, <see cref="Level.WalkableNear"/>), so only its exit is on a cell a step clears. The access refresh resolves both
+	/// again (<see cref="Level.ResolveVisitorCells"/>): to the outside cell itself, a path cell.
 	/// </summary>
-	private OriginalObject AddEntranceRide( Park park, (int X, int Y) resolved )
+	private OriginalObject AddEntranceRide( Park park, (int X, int Y) resolvedExit )
 	{
 		var root = (string)typeof( UpgradeCatalogueDefaultsTests ).GetField( "root", NonPublic )!.GetValue( fixture )!;
 		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/entrance-ride", new ObjectSettings( new[] { new ObjectSettingsFile(
@@ -216,7 +216,8 @@ public partial class CoopSessionTests
 		Assert.IsNotNull( placed );
 		Assert.IsTrue( placed.Runtime.IsAttraction, "the access refresh asks every attraction" );
 		Assert.AreEqual( EntranceRideOutside, placed.AccessPoints.Select( point => (point.OutsideX, point.OutsideY) ).Single(), "its entrance opens onto the lone path cell" );
-		placed.Visitors.EntranceCell = placed.Visitors.ExitCell = resolved;
+		placed.Visitors.EntranceCell = EntranceRideOutside;
+		placed.Visitors.ExitCell = resolvedExit;
 		placed.Visitors.HasCells = true;
 		return placed;
 	}
@@ -244,7 +245,7 @@ public partial class CoopSessionTests
 		Grant( host, guest, view );
 		var line = Requested( host, guest, view, new LayLineCommand( CellToolMode.Queue, host.One.Visitors.AttractionId, 9, 2, 7, 2 ) );
 		Assert.IsTrue( line.Accepted );
-		Assert.AreEqual( ((7, 2), (7, 2)), EntranceRideCells( host ), "laying the line refreshes nothing" );
+		Assert.AreEqual( (EntranceRideOutside, (7, 2)), EntranceRideCells( host ), "laying the line refreshes nothing" );
 		Assert.IsTrue( Requested( host, guest, view, new TakeBackCommand( false, line.Record, -1, -1, -1 ) ).Accepted );
 		Assert.AreEqual( 0, host.Level.Guests!.Grid.Cells.RawTypeAt( 7, 2 ), "the exit's cell went" );
 		CatchUpAndCompare( host, guest );
@@ -272,7 +273,7 @@ public partial class CoopSessionTests
 		GuestClick( host, guest, view, (8, 2) );
 		GuestClick( host, guest, view, (8, 4) );
 		Assert.IsTrue( host.One.Visitors.QueueCells.Contains( (8, 4) ) );
-		Assert.AreEqual( ((8, 4), (8, 4)), EntranceRideCells( host ), "laying the segments refreshes nothing" );
+		Assert.AreEqual( (EntranceRideOutside, (8, 4)), EntranceRideCells( host ), "laying the segments refreshes nothing" );
 		Assert.IsTrue( GuestBackspace( host, guest, view ), "the second segment taken back" );
 		Assert.AreEqual( 0, host.Level.Guests!.Grid.Cells.RawTypeAt( 8, 4 ), "the exit's cell went" );
 		CatchUpAndCompare( host, guest );
@@ -299,7 +300,7 @@ public partial class CoopSessionTests
 		Assert.AreEqual( 0, host.Level.Guests!.Grid.Cells.RawTypeAt( 6, 5 ), "the exit's cell went" );
 		CatchUpAndCompare( host, guest );
 		foreach ( var park in new[] { host, guest } )
-			Assert.AreEqual( ((6, 5), (6, 5)), EntranceRideCells( park ), "the ride keeps its cells: a path undo refreshes none" );
+			Assert.AreEqual( (EntranceRideOutside, (6, 5)), EntranceRideCells( park ), "the ride keeps its cells: a path undo refreshes none" );
 	}
 
 	[TestMethod]

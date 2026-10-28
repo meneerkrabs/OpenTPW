@@ -455,10 +455,42 @@ public class CoopUndoJournalTests
 		var list = new List<long> { 5, -3, -4, -6, 7, -3, -1, -4, 9, -1, -1, -5 };
 		CoopUndoJournal.Normalize( list, MemberOf, ( kept, gone ) => merged.Add( (kept, gone) ) );
 		CollectionAssert.AreEqual( new long[] { 5, -3, -4, 7, -1, 9, -1 }, list, "each member's residue once in a run, the later merged into it; a run with the permanent marker that marker alone" );
-		CollectionAssert.AreEqual( new[] { (-3L, -6L) }, merged, "within a run only: the residue after the record 7 stays apart" );
+		CollectionAssert.AreEqual( new[] { (-3L, -6L), (-1L, -3L), (-1L, -4L), (-1L, -5L) }, merged,
+			"within a run only: the residue after the record 7 stays apart; a permanent marker takes in what every marker of its run left" );
 		var permanentFirst = new List<long> { -1, -3, -1, 4 };
 		CoopUndoJournal.Normalize( permanentFirst, MemberOf );
 		CollectionAssert.AreEqual( new long[] { -1, 4 }, permanentFirst );
+	}
+
+	[TestMethod]
+	public void ALinkIntoACellALineOnlyCrossedFromALineThatEndedItsToolIsNoDependency()
+	{
+		var journaled = NewJournaled();
+		var cells = journaled.Level.Guests!.Grid.Cells;
+		// member 3's column ends at (8, 20), and its path along y = 24 waits below; member 1's row crosses the column there and builds on both sides
+		var column = journaled.Run( 3, Line( 8, 17, 8, 20 ) ).Record;
+		Assert.IsTrue( journaled.Run( 3, Line( 5, 24, 12, 24 ) ).Result.Accepted );
+		var counter = cells.PlacementCountAt( 8, 20 );
+		var row = journaled.Run( 1, Line( 5, 20, 12, 20 ) );
+		Assert.IsTrue( row.Result.Value is SegmentResult { Completed: true, EndedOnExisting: false } && cells.PlacementCountAt( 8, 20 ) == counter + 1, "a crossing" );
+		// member 2's line down from (8, 21) links into (8, 20) from below and ends its tool on the path at (8, 24): no step, its record a permanent marker there, which left a link alone
+		var below = journaled.Run( 2, Line( 8, 21, 8, 24 ) );
+		Assert.IsTrue( below.Result.Value is SegmentResult { Completed: true, EndedOnExisting: true }, "it joined the path below" );
+		CollectionAssert.AreEqual( new[] { column, row.Record, -1L }, journaled.History( 8, 20 ) );
+		Assert.AreEqual( false, journaled.Journal.MarkerFieldsAt( 8, 20, 2 ), "a link bit alone" );
+		// the row's undo counts (8, 20) down and unlinks its own cells there alone, which leaves that link as it is: no dependency, as for a line still a step
+		Assert.AreEqual( TakeBackVerdict.Taken, journaled.TakeBack( 1, row.Record ) );
+		Assert.AreEqual( counter, cells.PlacementCountAt( 8, 20 ) );
+		Assert.IsTrue( journaled.Level.Guests.Grid.IsWalkable( 8, 22 ) && !journaled.Level.Guests.Grid.IsWalkable( 9, 20 ) );
+		Assert.AreNotEqual( 0, cells.LinksAt( 8, 20 ) & GuestPathGrid.LinkValue( GuestPathGrid.DirectionBetween( 8, 20, 8, 21 ) ), "the link from below stays" );
+		CollectionAssert.AreEqual( new[] { column, -1L }, journaled.History( 8, 20 ), "its record left, the marker stays" );
+		// a line that ends its tool across a cell a line only crossed counts it up: a dependency for good, as decision 7 says
+		var again = journaled.Run( 1, Line( 5, 20, 12, 20 ) );
+		Assert.IsTrue( again.Result.Value is SegmentResult { Completed: true } );
+		var through = journaled.Run( 2, Line( 8, 18, 8, 22 ) );
+		Assert.IsTrue( through.Result.Value is SegmentResult { EndedOnExisting: true }, "it ends on the path it laid below" );
+		Assert.AreEqual( true, journaled.Journal.MarkerFieldsAt( 8, 20, journaled.History( 8, 20 ).Length - 1 ), "its counter raised" );
+		Assert.AreEqual( TakeBackVerdict.Changed, journaled.TakeBack( 1, again.Record ) );
 	}
 
 	[TestMethod]

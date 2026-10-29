@@ -686,9 +686,9 @@ class 0 the land (not 2, 7, 30), class 1 the built cells (1, 3, 9, 10, 4, 21 and
 **The queue.** `0x4CCB00` walks the thing list from its head (the newest object) for an attraction whose flag word +0x32 has the bits 4 (`Info.IsChoosable`) and 8 (`Info.HasQueue`) and for which the back-of-queue test
 `0x4DE4A0` answers 0 (ECON-049's `ParkGate.QueueConnected`), skipping the selected object (`0x527930` = `0x8186AC`, `Level.Selection`). The level answers it through `ParkEconomy.FirstUnconnectedQueueRide`.
 
-**The excitement.** `0x4CCBF0` keeps a cache (value +0x1F0F8, valid +0x1F0FC, stamp +0x1F0F4) counted again when it is invalid or `(turn >> 2) - (stamp >> 2)` exceeds the reader's age (10 here: 40 turns), the mean of the low
+**The excitement.** `0x4CCBF0` keeps a cache (value +0x1F0F8, valid +0x1F0FC, stamp +0x1F0F4) counted again when it is invalid or `(turn >> 2) - (stamp >> 2)` exceeds the reader's age (10 here: the quarter-turn age at most 10, 40 to 43 turns), the mean of the low
 byte of `0x4E0860(thing, 0)` over the attractions whose type has `Info.WhichUIType` 0 (a signed division, 0 without one); the byte is `RideVisitorBridge.LiveExcitement` (ECON/QUEUE join rules), through `ParkEconomy.RideLiveExcitement`.
-The cache is not in the park save (a load starts it invalid, as the original's does).
+The cache is saved (the serializer `0x4C5D70` keeps value, valid byte and stamp, `0x4C6243`, `0x4C6261`, `0x4C6E62`) in OpenTPW's unhashed `AnalyserCaches`; an original save's copy is not imported, as its net-worth cache is not.
 
 **What stays unread.** The word +4 of the scan object (the subject of 113 and 141: a thing id) reaches only the advice record's builder (`0x59B6BE` copies it into the queued record, +4/+8), whose readers are the open
 question of GUEST-007; it is not kept. The researchers' lab flag (`0x5041F0`, `ParkStaff.LabActive`; the ResearchLab thing's `mLabActive` byte +0x1468, which no code but the edge test and the save reads) posts message 5 (a

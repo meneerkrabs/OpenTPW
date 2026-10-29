@@ -67,8 +67,15 @@ public sealed partial class ParkEconomy
 				if ( !inClass )
 					continue;
 				counted++;
-				if ( areas.Any( area => x >= area.X0 && x <= area.X1 && y >= area.Y0 && y <= area.Y1 ) )
-					marked++;
+				for ( var index = 0; index < areas.Length; index++ )
+				{
+					var area = areas[index];
+					if ( x >= area.X0 && x <= area.X1 && y >= area.Y0 && y <= area.Y1 )
+					{
+						marked++;
+						break;
+					}
+				}
 			}
 		}
 		return counted == 0 ? 0 : unchecked( marked * 100 ) / counted;
@@ -86,14 +93,20 @@ public sealed partial class ParkEconomy
 	/// </summary>
 	public Func<int>? FirstUnconnectedQueueRide { get; set; }
 
+	/// <summary>The excitement cache (the park save), null until a read has counted it.</summary>
+	internal (int Value, long Stamp)? CachedExcitement => excitementCached ? (excitementValue, excitementStamp) : null;
+
+	/// <summary>Restores a saved excitement cache (<c>0x4C6243</c>, <c>0x4C6261</c>).</summary>
+	internal void RestoreExcitementCache( int value, long stamp ) => (excitementValue, excitementStamp, excitementCached) = (value, stamp, true);
+
 	private bool excitementCached;
 	private int excitementValue;
 	private long excitementStamp;
 
 	/// <summary>
-	/// The mean live excitement of the rides as the analyser's cached reader sees it (tp.exe <c>0x004CCBF0</c>): the cached mean while (turn >> 2) - (stamp >> 2) is at most
-	/// <paramref name="maximumAge"/> (unsigned), else the byte of <c>0x004E0860(0)</c> of every ride object (the types with <c>Info.WhichUIType</c> 0) added up and divided by their number, a signed division, 0 without a ride, stamped
-	/// with the current turn. Null without a world that reads the rides' excitement. Not saved: the original's park save holds no such cache, a load starts it invalid.
+	/// The mean live excitement of the rides as the analyser's cached reader sees it (tp.exe <c>0x004CCBF0</c>): the cached mean while the quarter-turn age (turn >> 2) - (stamp >> 2) is at most
+	/// <paramref name="maximumAge"/> (unsigned, 40 to 43 turns for 10), else the byte of <c>0x004E0860(0)</c> of every ride object (the types with <c>Info.WhichUIType</c> 0) added up and divided by their number, a signed division, 0 without a ride, stamped
+	/// with the current turn. Null without a world that reads the rides' excitement. Saved with the analyser's caches (the original's serializer keeps the value, the valid byte and the stamp: 0x4C6243, 0x4C6261, 0x4C6E62), so a resumed park reads the same cached mean.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004CCBF0 average excitement] valid byte +0x1F0FC, value +0x1F0F8, stamp +0x1F0F4 (0x41A960 stores the turn, 0x41A990 answers (turn >> 2) - (stamp >> 2)); the walk over the things takes the attractions (type 3) whose type record +0x4AC (WhichUIType) is 0, counts them and adds the low byte of 0x4E0860(thing, 0)
 	internal int? AverageRideExcitement( uint maximumAge )
@@ -104,7 +117,7 @@ public sealed partial class ParkEconomy
 		if ( !excitementCached || maximumAge < age )
 		{
 			int count = 0, sum = 0;
-			foreach ( var item in objects.Values.OrderBy( item => item.Id ) )
+			foreach ( var item in objects.Values )
 			{
 				if ( !Catalog.TryGet( item.InfoId, out var info ) || info.RatingType != 0 )
 					continue;

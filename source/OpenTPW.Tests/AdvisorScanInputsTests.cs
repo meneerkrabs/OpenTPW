@@ -528,4 +528,25 @@ public class AdvisorScanInputsTests
 		CollectionAssert.AreEqual( new[] { 6 }, messages );
 		Assert.IsFalse( Park().Staff.LabActive, "a new park has no active lab" );
 	}
+
+	[TestMethod]
+	public void TheExcitementCacheSurvivesASaveSoMessage141ReadsTheSameInput()
+	{
+		var park = Park();
+		var excitement = new Dictionary<int, int>();
+		park.RideLiveExcitement = instance => excitement.GetValueOrDefault( instance );
+		var ride = park.RegisterExisting( 1100 );
+		excitement[ride.Id] = 80;
+		var state = new EconomyParkState( park );
+		Assert.AreEqual( 80, state.AverageRideExcitement( 10 ) );
+		excitement[ride.Id] = 10;
+		var json = ParkSaveFile.Serialize( park );
+		Assert.IsTrue( json.Contains( "Excitement", StringComparison.Ordinal ) );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), EconomyTestData.Settings( 500000 ), EconomyTestData.Catalog() );
+		restored.RideLiveExcitement = instance => excitement.GetValueOrDefault( instance );
+		Assert.AreEqual( 80, new EconomyParkState( restored ).AverageRideExcitement( 10 ), "the stale cached mean, as the uninterrupted run reads it" );
+		Assert.AreEqual( park.CachedExcitement, restored.CachedExcitement );
+		// a save written before the cache has none: the first read counts
+		Assert.IsNull( Park().CachedExcitement );
+	}
 }

@@ -586,6 +586,8 @@ public static class ParkSaveFile
 		public CachedCount? NetWorth { get; init; }
 		/// <summary>The cached guest census (tp.exe 0x004C7FA0); absent in saves written before it and while no read has counted it.</summary>
 		public CachedCount? GuestCensus { get; init; }
+		/// <summary>The cached mean ride excitement (tp.exe 0x004CCBF0, saved by 0x4C5D70 as mVal, mWorkedOut and the stamp); absent while no read has counted it and in older saves.</summary>
+		public CachedCount? Excitement { get; init; }
 		/// <summary>The park turn the main loop's step counter started from, which times the crowd reads (every fourth turn after it); absent in older saves, which take the turn they load at.</summary>
 		public long? CrowdPhaseTurn { get; init; }
 		public List<CachedBlock> LitteredBlocks { get; init; } = new();
@@ -699,6 +701,7 @@ public static class ParkSaveFile
 			AnalyserCaches = new AnalyserCacheData
 			{
 				NetWorth = park.CachedNetWorth is { } worth ? new CachedCount { Value = worth.Value, Stamp = worth.Stamp } : null,
+				Excitement = park.CachedExcitement is { } excitement ? new CachedCount { Value = excitement.Value, Stamp = excitement.Stamp } : null,
 				GuestCensus = park.CachedCensus is { } census ? new CachedCount { Value = census.Value, Stamp = census.Stamp } : null,
 				CrowdPhaseTurn = park.CrowdPhaseTurn,
 				LitteredBlocks = park.Litter.LitteredBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList(),
@@ -1075,6 +1078,7 @@ public static class ParkSaveFile
 		if ( data.AnalyserCaches is { } caches )
 		{
 			Require( caches.NetWorth is null || caches.NetWorth.Stamp >= 0, "net worth cache" );
+			Require( caches.Excitement is null || caches.Excitement.Stamp >= 0, "excitement cache" );
 			Require( caches.GuestCensus is null || caches.GuestCensus.Stamp >= 0 && caches.GuestCensus.Value >= 0, "guest census cache" );
 			Require( caches.CrowdPhaseTurn is null or >= 0, "crowd read phase" );
 			foreach ( var blocks in new[] { caches.LitteredBlocks, caches.PathBlocks } )
@@ -1156,6 +1160,8 @@ public static class ParkSaveFile
 		{
 			if ( caches.NetWorth is { } worth )
 				park.RestoreNetWorthCache( worth.Value, worth.Stamp );
+			if ( caches.Excitement is { } excitementCache )
+				park.RestoreExcitementCache( excitementCache.Value, excitementCache.Stamp );
 			if ( caches.GuestCensus is { } census )
 				park.RestoreCensusCache( census.Value, census.Stamp, caches.CrowdPhaseTurn );
 			else

@@ -104,6 +104,30 @@ public class StaffConstructorSearchTests
 		Assert.IsTrue( patrols.Count >= 3, $"the first update was checked for a patrolling member of {patrols.Count} roles" );
 	}
 
+	private static readonly (StaffType Type, uint State, StaffJob Job, (int X, int Y)? Destination)[] Pins =
+	{
+		(StaffType.Handyman, 169346220u, StaffJob.Patrol, (2, 5)), (StaffType.Mechanic, 169346220u, StaffJob.Patrol, (2, 5)),
+		(StaffType.Entertainer, 663873947u, StaffJob.Idle, null), (StaffType.Guard, 1490415135u, StaffJob.Idle, null),
+		(StaffType.Researcher, 2622474534u, StaffJob.Patrol, (6, 5))
+	};
+
+	/// <summary>The click path's pin: the world generator's state, the job and the route's destination right after the placing click, per role.</summary>
+	[TestMethod]
+	public void ThePlacingClickLeavesPinnedGeneratorStateJobAndDestinationPerRole()
+	{
+		foreach ( var pin in Pins )
+		{
+			var park = PoolPark();
+			var level = park.Level;
+			var cell = PathCell( level );
+			Assert.IsTrue( level.StaffPlacement!.BeginHire( Candidate( park.Economy, pin.Type ).Id ) );
+			Assert.AreEqual( StaffClickResult.Placed, level.StaffPlacement.Click( cell.X, cell.Y ) );
+			var member = level.StaffPlacement.LastPlaced!;
+			var destination = member.Navigation is { } walk && member.Job != StaffJob.Idle ? (walk.TargetX >> 16, walk.TargetY >> 16) : ((int, int)?)null;
+			Assert.AreEqual( (pin.State, pin.Job, pin.Destination), (park.Economy.World.State, member.Job, destination), pin.Type.ToString() );
+		}
+	}
+
 	[TestMethod]
 	public void AHeadlessEconomyKeepsTheFirstUpdateSearch()
 	{

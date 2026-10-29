@@ -1023,8 +1023,8 @@ public class CoasterTests
 			}
 			return WorldStateHash.Compute( new WorldStateSources { Scripts = scripts } );
 		}
-		Assert.AreEqual( "1ABA458D0079E09C", Run( reopen: false ).ToString( "X16" ), "the built coaster's fixed run" );
-		Assert.AreEqual( "045BFFE59994F3E7", Run( reopen: true ).ToString( "X16" ), "the reopened coaster's fixed run" );
+		Assert.AreEqual( "0FE29AA5CBF09FDB", Run( reopen: false ).ToString( "X16" ), "the built coaster's fixed run" );
+		Assert.AreEqual( "E71F6F7026ACA2B3", Run( reopen: true ).ToString( "X16" ), "the reopened coaster's fixed run" );
 	}
 
 	[TestMethod]

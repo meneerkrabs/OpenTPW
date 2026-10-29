@@ -228,9 +228,9 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		{
 			var knot = knots[index];
 			var (backFactor, forwardFactor) = SideFactors( knot.LoopPylon, knot.Reversed, knot.PreviousIsLoopNode, knot.NextIsLoopNode, knot.LoopSideFactor, curviness );
-			// [BIN:STP-PPC:0x10032990 knot chord] without a neighbour the chord is 1.0
+			// [BIN:TPW-EXE:0x004329f5 knot chords] the back chord of the first knot and the forward chord of the last one are 1.0: the chord routine takes the neighbour across a node boundary from the raw links (+0x68 / +0x64), and the station end node of a closed circuit has no next link (the rebuild walks the +0x64 links from the head to a null, 0x43eb70), so the end knot's forward control is its direction over fCurviness times 1.0 and the closing pair's curve starts from it (the sampler takes S1's first knot as its end, 0x440ede)
 			var backChord = index > 0 ? Chord( knots[index - 1].Position, knot.Position ) : 1f;
-			var forwardChord = index < count - 1 ? Chord( knot.Position, knots[index + 1].Position ) : closed && count > 1 ? Chord( knot.Position, knots[ClosingKnot( knots )].Position ) : 1f;
+			var forwardChord = index < count - 1 ? Chord( knot.Position, knots[index + 1].Position ) : 1f;
 			controls[index] = KnotControls( knot.Position, knot.Direction, backChord, forwardChord, backFactor, forwardFactor );
 		}
 		return controls;
@@ -447,7 +447,8 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 				// [BIN:TPW-EXE:0x4410e0 knot projection] the rest (knot − last walked point) is scaled by the cosine between its direction and the direction from the last walked point to the new pair's curve point at the new t (t − 1), unless the rest's normalised x is NaN (_isnan 0x67b410, a zero rest)
 				var rest = knots[pair + 1].Position - previousPoint;
 				var restLength = CoasterX87.Length( rest.X, rest.Y, rest.Z );
-				if ( restLength > 0 )
+				// [BIN:TPW-EXE:0x004414ca closing projection] when the pair the walk enters is the closing pair (its end node is null) the routine jumps over the projection (0x4414ca -> 0x4417eb -> 0x4415e4): the end knot's coordinate takes the rest unscaled
+				if ( restLength > 0 && pair + 1 < count - 1 )
 				{
 					var toCurve = Point( pair + 1, t - 1f ) - previousPoint;
 					var curveLength = CoasterX87.Length( toCurve.X, toCurve.Y, toCurve.Z );

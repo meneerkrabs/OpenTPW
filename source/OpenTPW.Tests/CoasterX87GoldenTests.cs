@@ -59,7 +59,7 @@ public class CoasterX87GoldenTests
 				kinds["table"] = 1;
 				continue;
 			}
-			var expected = parts[0] == "tangent" ? Array.Empty<float>() : Singles( sides[1] );
+			var expected = parts[0] is "tangent" or "sampler" ? Array.Empty<float>() : Singles( sides[1] );
 			kinds[parts[0]] = (kinds.TryGetValue( parts[0], out var seen ) ? seen : 0) + 1;
 			switch ( parts[0] )
 			{
@@ -163,11 +163,57 @@ public class CoasterX87GoldenTests
 					Same( expected, CoasterTrack.PylonCost( pylon, CoasterTrack.CostLength( position[0] - other[0], position[1] - other[1] ), CoasterTrack.CostHeight( pylon, v[0] ), parts[5] == "1" ) );
 					break;
 				}
+				case "sampler":
+				{
+					var curviness = Singles( parts[1] )[0];
+					var counts = parts[2].Split( ' ' ).Select( int.Parse ).ToArray();
+					var values = Singles( parts[3] );
+					var knots = new System.Collections.Generic.List<CoasterKnot>();
+					var at = 0;
+					for ( var node = 0; node < counts.Length; node++ )
+					{
+						for ( var j = 0; j < counts[node]; j++ )
+						{
+							knots.Add( new CoasterKnot( new SVector3( values[at], values[at + 1], values[at + 2] ), CoasterX87.Normalize( new SVector3( values[at + 3], values[at + 4], values[at + 5] ) ), 0f, node ) );
+							at += 6;
+						}
+					}
+					var outputs = sides[1].Split( " | " );
+					var head = outputs[0].Split( ' ' );
+					var n = int.Parse( head[0] );
+					var sampling = HermiteCoasterCurve.Instance.Sample( knots, curviness );
+					Assert.IsTrue( sampling.Samples.Length == n || sampling.Samples.Length == n + 1, $"sample count {sampling.Samples.Length} against {n} in {current}" );
+					var samples = outputs[3].Split( ' ', StringSplitOptions.RemoveEmptyEntries );
+					var expectedControls = Singles( outputs[2] );
+					var controls = HermiteCoasterCurve.Controls( knots, curviness, true );
+					var rail = HermiteCoasterCurve.SecondRail( knots );
+					var secondControls = HermiteCoasterCurve.Controls( rail, curviness, true );
+					for ( var k = 0; k < knots.Count; k++ )
+					{
+						current = $"controls of knot {k} in " + row;
+						Same( expectedControls.Skip( 6 * k ).Take( 6 ).ToArray(), controls[k].Back.X, controls[k].Back.Y, controls[k].Back.Z, controls[k].Forward.X, controls[k].Forward.Y, controls[k].Forward.Z );
+						Same( expectedControls.Skip( 6 * (knots.Count + k) ).Take( 6 ).ToArray(), secondControls[k].Back.X, secondControls[k].Back.Y, secondControls[k].Back.Z, secondControls[k].Forward.X, secondControls[k].Forward.Y, secondControls[k].Forward.Z );
+					}
+					current = row;
+					for ( var i = 0; i < n; i++ )
+					{
+						var s = sampling.Samples[i];
+						var e = Singles( string.Join( ' ', samples.Skip( 8 * i ).Take( 7 ) ) );
+						var label = $"sample {i} of {n}";
+						current = label + " in " + row;
+						Same( e, s.Position.X, s.Position.Y, s.Position.Z, s.Yaw, s.Pitch, s.Bank, s.T );
+						Assert.AreEqual( int.Parse( samples[8 * i + 7] ), s.Knot, label );
+					}
+					current = row;
+					Same( Singles( head[1] ), sampling.KnotCoordinates[^1] ); // the end knot's coordinate sits at the last knot's slot
+					Same( Singles( outputs[1] ), sampling.KnotCoordinates );
+					break;
+				}
 				default:
 					Assert.Fail( "unknown row kind " + parts[0] );
 					break;
 			}
 		}
-		Assert.IsTrue( kinds.Count >= 10, string.Join( ", ", kinds ) );
+		Assert.IsTrue( kinds.Count >= 11, string.Join( ", ", kinds ) );
 	}
 }

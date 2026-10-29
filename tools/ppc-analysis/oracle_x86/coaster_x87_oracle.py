@@ -359,6 +359,129 @@ class CoasterOracle:
         result = sb.call(0x447830, (box['control'], 1 if charge else 0, box['node'], 0, 0, 0, 0))
         return self.st0(sb, result)
 
+    # ------------------------------------------------------------------------------ the sampler
+    @staticmethod
+    def _write_model_controls(sb, tables, nodes, curviness):
+        def chord(a, b):
+            dx = f32(b[0] - a[0])
+            dy = f32(f32(b[1] * f32(0.7)) - f32(a[1] * f32(0.7)))
+            dz = f32(b[2] - a[2])
+            return f32(math.sqrt(f32(f32(f32(dx * dx) + f32(dy * dy)) + f32(dz * dz))))
+
+        flat = [(k, 0) for knots in nodes for k in knots]
+        for rail in (0, 1):
+            positions = [tuple(f32(p[j] + (1.0 if (rail == 1 and j == 1) else 0.0)) for j in range(3)) for (p, d), _ in flat]
+            index = 0
+            for node_index, (first, second, size) in enumerate(tables):
+                for i in range(size):
+                    (position, direction), _ = flat[index]
+                    # the node pass normalises the node's first record's direction for every knot (0x4322d7), here all knots of a node share one vector
+                    norm = f32(math.sqrt(f32(f32(f32(direction[0] * direction[0]) + f32(direction[1] * direction[1])) + f32(direction[2] * direction[2]))))
+                    unit = [f32(direction[j] / norm) for j in range(3)]
+                    back_chord = chord(positions[index - 1], positions[index]) if index > 0 else 1.0
+                    forward_chord = chord(positions[index], positions[index + 1]) if index + 1 < len(positions) else 1.0
+                    n2 = f32(math.sqrt(f32(f32(f32(unit[0] * unit[0]) + f32(unit[1] * unit[1])) + f32(unit[2] * unit[2]))))
+                    scale_back = f32(f32(back_chord * curviness) / n2)
+                    scale_forward = f32(f32(forward_chord * curviness) / n2)
+                    third = f32(-0.3333333432674408)
+                    base = (first if rail == 0 else second) + 0x58 * i
+                    for j in range(3):
+                        back = f32(positions[index][j] - f32(f32(-unit[j] * scale_back) * third))
+                        forward = f32(positions[index][j] - f32(f32(unit[j] * scale_forward) * third))
+                        sb.write(base + 0x34 + 4 * j, 'f', back)
+                        sb.write(base + 0x4C + 4 * j, 'f', forward)
+                    index += 1
+
+    def sampler(self, nodes, curviness: float, spacing: float = 3.0, model_controls: bool = False):
+        """0x440C10 over a chain of nodes whose knots are `nodes[i] = [(position, direction), ...]` (the first node is the head S0, the last the end node, whose raw next link is null).
+        The knot controls come from 0x4321C0 (the node pass, each node without a pylon model), the second rail's points are the knots' positions plus (0, 1, 0). Returns the samples
+        (position, yaw, pitch, roll, t, knot record index), the sample count n (+0xA4), the end coordinate (+0xA8), every knot record's coordinate (+8) and every node's sample index (+0xFC)."""
+        sb = self.prepare()
+        sb.stubs[0x45B9D0] = lambda box: (box.alloc(box.arg(0) + 64), 0)
+        sb.stubs[0x45BA00] = lambda box: (0, 0)
+        sb.stubs[0x43B750] = lambda box: (0, 0)
+        records = []
+        node_addresses = []
+        table_addresses = []
+        previous_record = 0
+        for knots in nodes:
+            node = sb.alloc(0x200)
+            node_addresses.append(node)
+            table = sb.alloc(0x20)
+            first = sb.alloc(0x58 * len(knots) + 0x20)
+            second = sb.alloc(0x58 * len(knots) + 0x20)
+            sb.write(table, 'I', len(knots))
+            sb.write(table + 4, 'I', first)
+            sb.write(table + 8, 'I', second)
+            sb.write(node + 0x90, 'I', table)
+            sb.write(node + 0x100, 'I', sb.alloc(0x100))
+            table_addresses.append((first, second, len(knots)))
+            for i, (position, direction) in enumerate(knots):
+                for rail, base in ((0, first), (1, second)):
+                    record = base + 0x58 * i
+                    for k in range(3):
+                        sb.write(record + 0x40 + 4 * k, 'f', f32(position[k] + (1.0 if (rail == 1 and k == 1) else 0.0)))
+                        sb.write(record + 0x28 + 4 * k, 'f', direction[k])
+                    sb.write(record + 0x10, 'I', node)
+                    if rail == 0:
+                        sb.write(record + 0x14, 'I', previous_record)
+                if True:
+                    previous_record = first + 0x58 * i
+        flat_records = [first + 0x58 * i for first, second, size in table_addresses for i in range(size)]
+        flat_second = [second + 0x58 * i for first, second, size in table_addresses for i in range(size)]
+        for a, b in zip(flat_records, flat_records[1:]):
+            sb.write(a + 0x18, 'I', b)
+        for a, b in zip(flat_second, flat_second[1:]):
+            sb.write(a + 0x18, 'I', b)
+            sb.write(b + 0x14, 'I', a)
+        for i, node in enumerate(node_addresses):
+            if i + 1 < len(node_addresses):
+                sb.write(node + 0x64, 'I', node_addresses[i + 1])
+            if i > 0:
+                sb.write(node + 0x68, 'I', node_addresses[i - 1])
+        definition = sb.alloc(0x100)
+        sb.write(definition + 8, 'f', curviness)
+        sb.write(definition + 0x10, 'f', 4.0)
+        holder = sb.alloc(0x20)
+        sb.write(holder + 4, 'I', definition)
+        sb.write(0x792218, 'I', holder)
+        game = sb.alloc(0x40)
+        sb.write(game + 0x18, 'I', node_addresses[0])
+        sb.write(0x790FE4, 'I', game)
+        if model_controls:
+            # nodes with several knots stand for pylons whose tags the node pass reads from the model: the controls are written from the verified single steps instead
+            self._write_model_controls(sb, table_addresses, nodes, curviness)
+        else:
+            for node in node_addresses:
+                sb.call(0x4321C0, (node, 0))
+        controller = sb.alloc(0x400)
+        sb.write(controller + 0x54, 'I', node_addresses[0])
+        sb.write(controller + 0xAC, 'f', spacing)
+        sb.call(0x440C10, (controller,))
+        array = sb.read(controller + 0x9C, 'I')
+        count = sb.read(controller + 0xA4, 'I')
+        samples = []
+        by_record = {}
+        for n, (first, second, size) in enumerate(table_addresses):
+            for i in range(size):
+                by_record[first + 0x58 * i] = (n, i)
+        flat = {}
+        index = 0
+        for n, (first, second, size) in enumerate(table_addresses):
+            for i in range(size):
+                flat[first + 0x58 * i] = index
+                index += 1
+        for i in range(count + 1):
+            base = array + 0x38 * i
+            record = sb.read(base + 0x2C, 'I')
+            samples.append((tuple(sb.read(base + 4 + 4 * k, 'f') for k in range(3)), sb.read(base + 0x10, 'f'), sb.read(base + 0x14, 'f'), sb.read(base + 0x18, 'f'),
+                            sb.read(base + 0x34, 'f'), flat.get(record, -1)))
+        coordinates = [sb.read(first + 0x58 * i + 8, 'f') for first, second, size in table_addresses for i in range(size)]
+        indexes = [sb.read(node + 0xFC, 'I') for node in node_addresses]
+        self.last_controls = [[tuple(sb.read(base + 0x58 * i + off + 4 * k, 'f') for k in range(3)) for off in (0x34, 0x4C)] for first, second, size in table_addresses for base in (first,) for i in range(size)]
+        self.last_controls2 = [[tuple(sb.read(base + 0x58 * i + off + 4 * k, 'f') for k in range(3)) for off in (0x34, 0x4C)] for first, second, size in table_addresses for base in (second,) for i in range(size)]
+        return samples, count, sb.read(controller + 0xA8, 'f'), coordinates, indexes, sb.read(controller + 0xA0, 'I')
+
 
 def main() -> int:
     import random

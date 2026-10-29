@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -306,5 +307,53 @@ public class ParkWeatherTests
 		Assert.AreEqual( 4, new ParkWeather( Keys( Seasons( 4 ) ), 1, 10, 10 ).Roll( december ), "four seasons stored (every shipped layer)" );
 		Assert.AreEqual( 3, new ParkWeather( Keys( Seasons( 3 ) ), 1, 10, 10 ).Roll( december ), "the count follows the stored indices" );
 		Assert.AreEqual( 52, new ParkWeather( Keys( Seasons( 4 ) ), 1, 10, 10 ).Roll( ParkCalendar.TickAtMonth( 6 ) ), "month 7 is season 2 (month / 3)" );
+	}
+
+	/// <summary>
+	/// The wind (tp.exe weather constructor 0x511F70 and converter 0x512F00): 90 degrees and 0.5 at the start; every applied change sets the strength to (100 - quality) / 100 and turns the
+	/// direction by -45 to +44 degrees inside 0 to 360, from a stream of its own, so the weather's own draws are unchanged.
+	/// </summary>
+	[TestMethod]
+	public void EveryAppliedChangeTurnsTheWindAndLeavesTheWeathersOwnDraws()
+	{
+		var weather = new ParkWeather( Jungle(), 7, 10, 10 );
+		Assert.AreEqual( (90f, 0.5f), (weather.WindDirection, weather.WindStrength) );
+		var directions = new List<float>();
+		for ( var change = 0; change < 200; change++ )
+		{
+			var before = weather.WindDirection;
+			var stream = weather.CaptureSnapshot().RandomState;
+			weather.ApplyQuality( 100 - change % 100 );
+			Assert.AreEqual( Math.Clamp( (change % 100) * 0.01f, 0f, 1f ), weather.WindStrength, 1e-6f );
+			Assert.IsTrue( weather.WindDirection is >= 0f and <= 360f );
+			var turn = (weather.WindDirection - before + 540f) % 360f - 180f;
+			Assert.IsTrue( turn is >= -45f and < 45f, $"turn {turn}" );
+			directions.Add( weather.WindDirection );
+			// the jungle has no snow band, so the converter itself draws nothing (no rain/snow tie): the weather's stream stands still
+			Assert.AreEqual( stream, weather.CaptureSnapshot().RandomState, "the wind does not draw from the weather's stream" );
+		}
+		Assert.IsTrue( directions.Distinct().Count() > 50, "the direction wanders" );
+	}
+
+	[TestMethod]
+	public void TheWindIsSavedAndASaveFromBeforeItStartsFromTheConstructorsWind()
+	{
+		var weather = new ParkWeather( Jungle(), 5, 10, 10 );
+		weather.AdvanceTo( 0 );
+		weather.AdvanceTo( ParkCalendar.TickAtDay( 30 ) );
+		weather.ApplyQuality( 30 );
+		weather.ApplyQuality( 60 );
+		var snapshot = weather.CaptureSnapshot();
+		var restored = new ParkWeather( Jungle(), 5, 10, 10 );
+		restored.RestoreSnapshot( snapshot );
+		Assert.AreEqual( (weather.WindDirection, weather.WindStrength), (restored.WindDirection, restored.WindStrength) );
+		weather.ApplyQuality( 45 );
+		restored.ApplyQuality( 45 );
+		Assert.AreEqual( weather.WindDirection, restored.WindDirection, "the wind's stream continues" );
+		var legacy = new ParkWeather( Jungle(), 5, 10, 10 );
+		legacy.RestoreSnapshot( snapshot with { WindDirection = null, WindStrength = null, WindRandomState = null } );
+		Assert.AreEqual( (90f, 0.5f), (legacy.WindDirection, legacy.WindStrength) );
+		Assert.ThrowsException<InvalidDataException>( () => legacy.ValidateSnapshot( snapshot with { WindDirection = 400 } ) );
+		Assert.ThrowsException<InvalidDataException>( () => legacy.ValidateSnapshot( snapshot with { WindStrength = -0.5f } ) );
 	}
 }

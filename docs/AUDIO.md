@@ -804,7 +804,9 @@ not day indices, and OpenTPW's `ParkWeather` follows it on game seconds sampled 
 * The weather's draws come from the park's own weather stream (`[EXT:weather-stream]`); the PC draws them from the
   world LCG `0x516330` (`ror13(s * 0x19660D + 0x3C6EF35F)`, the rotated value stored; seeded with
   `time(NULL)` at world creation, `0x51586b`), shared by about 139 call sites, so reproducing its draw
-  order needs every user of that LCG ([DETERMINISM.md](DETERMINISM.md)).
+  order needs every user of that LCG ([DETERMINISM.md](DETERMINISM.md)). The converter's wind turn (`0x512F00`) draws from a
+  stream of the wind's own, so the weather's own draws are the ones they were before the wind ([COMPATIBILITY.md](COMPATIBILITY.md),
+  "Harbour waves and flags").
 
 The thing's own rain voice follows its **mode** (`0x5131f0`): rain starts a flat, unparameterised
 `cat_ambient` 0x21 voice, snow and clear stop it (`GameAudio.SetWeatherRain`), while the level-driven voice

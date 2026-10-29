@@ -425,6 +425,9 @@ public static class ParkSaveFile
 		public int BubbleThought { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public long BubbleTurn { get; init; }
+		/// <summary>The draw that chose an entertainer's performance (absent: 0).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public uint PerformanceDraw { get; init; }
 
 		internal static StaffWorldData Capture( StaffMember member ) => new()
 		{
@@ -444,7 +447,8 @@ public static class ParkSaveFile
 			OffGridLeg = member.OffGridLeg.Count == 0 ? null : member.OffGridLeg.SelectMany( point => new[] { point.X, point.Y, point.ByteX, point.ByteY } ).ToArray(),
 			Thought = member.Thought,
 			BubbleThought = member.BubbleThought,
-			BubbleTurn = member.BubbleTurn
+			BubbleTurn = member.BubbleTurn,
+			PerformanceDraw = member.PerformanceDraw
 		};
 
 		internal void Apply( StaffMember member )
@@ -466,6 +470,7 @@ public static class ParkSaveFile
 			member.Thought = Thought is 0 or (>= 18 and <= 22) ? Thought : throw new InvalidDataException( $"Staff thought {Thought} is not a staff thought." );
 			member.BubbleThought = BubbleThought is 0 or (>= 18 and <= 22) ? BubbleThought : throw new InvalidDataException( $"Staff bubble {BubbleThought} is not a staff thought." );
 			member.BubbleTurn = BubbleTurn >= 0 ? BubbleTurn : throw new InvalidDataException( "A staff bubble's turn is negative." );
+			member.PerformanceDraw = PerformanceDraw;
 		}
 
 		/// <summary>The states a role's state machine takes: the shared 0–7 and the role's own.</summary>
@@ -776,7 +781,7 @@ public static class ParkSaveFile
 		} ).ToList();
 
 	private static bool HasStaffWorldState( StaffMember member ) => member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null || member.HasPatrolArea
-		|| member.Thought != 0 || member.BubbleThought != 0 || member.BubbleTurn != 0;
+		|| member.Thought != 0 || member.BubbleThought != 0 || member.BubbleTurn != 0 || member.PerformanceDraw != 0;
 
 	private static StaffData CaptureStaff( ParkEconomy park ) =>
 		new StaffData

@@ -178,6 +178,7 @@ GUEST-010 docs/GUESTS.md
 GUEST-011 docs/CLOSED-RIDE-ADMISSION.md
 GUEST-012 docs/GUESTS.md
 GUEST-014 docs/GUESTS.md
+GUEST-015 docs/GUESTS.md
 GUEST-018 docs/GUESTS.md
 GUEST-019 docs/GUESTS.md
 GUEST-022 docs/progress/2026-10-18-tpc-sprite-banks.md
@@ -393,6 +394,7 @@ UI-907 docs/UI.md
 UI-908 docs/PROGRESS.md
 UI-920 docs/PROGRESS.md
 UI-940 docs/UI.md
+UI-941 docs/AUDIO.md
 UI-942 docs/UI.md
 VM-900 docs/PROGRESS.md
 VM-901 docs/PROGRESS.md

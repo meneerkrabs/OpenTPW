@@ -99,6 +99,27 @@ public class GuardEntertainerTests
 	}
 
 	[TestMethod]
+	public void APerformanceKeepsTheSecondDrawThatChoseItsScript()
+	{
+		// tp.exe 0x004D47B5: after the draw divisible by 3 and the audience test, a second world draw r picks the script, 13 + (r mod (n - 1)) of the bank's n entries
+		var f = new Fixture();
+		var entertainer = f.Hire( StaffType.Entertainer );
+		f.Guests.SpawnInPark( 2, 5 );
+		uint? kept = null;
+		for ( var turn = 0; turn < 400 && kept == null; turn++ )
+		{
+			var mirror = new WorldRng( f.Park.World.State );
+			var draws = Enumerable.Range( 0, 400 ).Select( _ => mirror.NextWord() ).ToArray();
+			f.Turns( 1 );
+			if ( entertainer.Job != StaffJob.Performing )
+				continue;
+			kept = entertainer.PerformanceDraw;
+			Assert.IsTrue( Enumerable.Range( 1, draws.Length - 1 ).Any( i => draws[i - 1] % 3 == 0 && draws[i] == kept ), "the draw right after the one divisible by 3" );
+		}
+		Assert.IsNotNull( kept, "he performed" );
+	}
+
+	[TestMethod]
 	public void WithoutGuestsAnEntertainerPatrolsAndNeverPerforms()
 	{
 		var f = new Fixture();

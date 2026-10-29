@@ -36,11 +36,14 @@ public partial class CoopSessionTests
 		var pylons = string.Join( "\n", CoasterTests.PcSettings().Select( pair => $"{pair.Key} {pair.Value}" ) );
 		var queue = withQueue ? "Info.HasQueue 1\n" : "";
 		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/coaster", new ObjectSettings( new[] { new ObjectSettingsFile(
-				$"Info.Id 1160\nInfo.Name SyntheticCoaster\nInfo.WhichUIType 0\nInfo.IsChoosable 1\n{queue}Bumper.WhichTrackType {CoasterDefinition.TrackType}\n{pylons}\n", "coaster.sam" ) } ),
+				$"Info.Id 1180\nInfo.Name SyntheticCoaster\nInfo.WhichUIType 0\nInfo.IsChoosable 1\n{queue}Bumper.WhichTrackType {CoasterDefinition.TrackType}\nUpgrades[0].CostOfUpgrade 10000\nUpgrades[1].CostOfUpgrade 5000\n{pylons}\n", "coaster.sam" ) } ),
 			new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(),
 			new BaseFileSystem( root ), null );
 		var station = level.Objects.TryPlace( entry, CoasterCell.X, CoasterCell.Y, 0, out _ );
 		Assert.IsNotNull( station?.Runtime.Coaster, "the coaster's station and its ride" );
+		// a placed coaster owns its economy record as every ride does (its tier binds through it, Level.CatalogueTier)
+		typeof( Level ).GetMethod( "LinkEconomy", NonPublic )!.Invoke( level, new object[] { station!, level.Park!.Economy.RegisterExisting( entry.InfoId ).Id } );
+		Assert.AreEqual( 0, station!.Runtime.CatalogueTier, "the coaster binds its tier" );
 		CoasterTests.PlaceStation( level.GetCoasterBuilder( station! )!, CoasterCell );
 		if ( withQueue )
 		{
@@ -649,7 +652,7 @@ public partial class CoopSessionTests
 			{
 				("kartjump", $"Info.Id 1170\nAddOn.UpgradesId 1150\nAddOn.UpgradeType {TrackAddOns.TrackUpgradeType}\n", 12),
 				("otherjump", $"Info.Id 1171\nAddOn.UpgradesId 1151\nAddOn.UpgradeType {TrackAddOns.TrackUpgradeType}\n", 14),
-				("coasterjump", $"Info.Id 1172\nAddOn.UpgradesId 1160\nAddOn.UpgradeType {TrackAddOns.TrackUpgradeType}\n", 16)
+				("coasterjump", $"Info.Id 1172\nAddOn.UpgradesId 1180\nAddOn.UpgradeType {TrackAddOns.TrackUpgradeType}\n", 16)
 			} )
 				Assert.IsNotNull( park.Level.Objects.TryPlace( SyntheticEntry( name, settings ), 29, y, 0, out var placed ), $"{name}: {placed}" );
 		} );

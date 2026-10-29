@@ -253,6 +253,20 @@ public class StaffCreationDrawTests
 	}
 
 	[TestMethod]
+	public void APerformanceDrawSurvivesTheOwnSaveAndIsOptional()
+	{
+		var economy = EconomyTestData.Park();
+		var member = EconomyTestData.HireBest( economy, StaffType.Entertainer );
+		var json = ParkSaveFile.Serialize( economy );
+		Assert.IsFalse( json.Contains( nameof( StaffMember.PerformanceDraw ) ), "a member that never performed adds no field" );
+		member.PerformanceDraw = 0xDEADBEEF;
+		json = ParkSaveFile.Serialize( economy );
+		Assert.IsTrue( json.Contains( nameof( StaffMember.PerformanceDraw ) ) );
+		var loaded = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), economy.Settings, economy.Catalog ).Staff.Members.Single();
+		Assert.AreEqual( 0xDEADBEEF, loaded.PerformanceDraw );
+	}
+
+	[TestMethod]
 	public void AParkWithoutAThingPoolTakesNoDraw()
 	{
 		var economy = EconomyTestData.Park();

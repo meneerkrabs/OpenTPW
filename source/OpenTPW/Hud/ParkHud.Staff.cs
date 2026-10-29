@@ -83,6 +83,7 @@ public sealed partial class ParkHud
 		if ( StaffWindowOpen )
 			return;
 		staffFilter = StaffType.Handyman;
+		EndPortrait();
 		ShowEmployedStaff( false );
 		hireBalanceSample = FinanceEconomy is { } economy ? HireBalanceSample( economy.Ledger.History ) : null;
 		staffScreen ??= CreateStaffScreen();
@@ -98,7 +99,11 @@ public sealed partial class ParkHud
 			Stack.Pop();
 		if ( Stack.Top == staffScreen )
 			Stack.Pop();
+		EndPortrait();
 	}
+
+	/// <summary>The window's close ends the hire figure (0x0049B7B4): the next open starts a new one.</summary>
+	private void EndPortrait() => (portraitKey, portraitPlayer, portraitOfEmployee) = (null, null, false);
 
 	public void FilterStaff( StaffType? type )
 	{
@@ -325,23 +330,35 @@ public sealed partial class ParkHud
 		return template.Contains( "%d" ) ? template.Replace( "%d", number ) : template + number;
 	}
 	private (StaffType Type, int Variant)? portraitKey;
-	private float portraitStart;
+	private SpritePlayer? portraitPlayer;
+	private bool portraitOfEmployee;
 
 	/// <summary>
 	/// The figure in the hire window's portrait box: the selected candidate's (or, in the employee view, employee's) role and variant walking on
-	/// the spot, restarting whenever another role or variant is selected.
+	/// the spot. A new role or variant starts a new figure, which shows nothing until its script's first due pass, and an applicant the list does not
+	/// have keeps the figure that stands (the employee view is OpenTPW's own and clears it); closing the window ends it.
 	/// </summary>
+	// [BIN:TPW-EXE:0x0049BA00 hire figure phases] an applicant the pool does not return (0x507BD0) leaves the figure as it is; the same role and variant byte as the cached pair (0x7523E8, 0x7523EC) keeps it; else the old figure goes (0x475550) and a new script (0x74F758) starts, whose first FRAME shows after the first due pass (0x4758F0: deadline = clock + 62, 0x475360: strictly later), so no frame shows at once
+	// [BIN:TPW-EXE:0x0049B7B4 hire window close] the close deletes the figure (0x475550) and writes -1 to the cached pair, so the next open starts a new one
 	private UiSpriteFrame? PortraitFrame()
 	{
-		(StaffType Type, int Variant)? key = showingEmployedStaff
-			? SelectedStaff is { } member ? (member.Type, StaffSpriteRules.KeyOf( member )) : null
-			: SelectedCandidate is { } candidate ? (candidate.Type, StaffSpriteRules.KeyOf( candidate )) : null;
-		if ( key != portraitKey )
+		var nowMs = (long)(Time.Now * 1000f);
+		(StaffType Type, int Variant)? key;
+		if ( showingEmployedStaff )
+			key = SelectedStaff is { } member ? (member.Type, StaffSpriteRules.KeyOf( member )) : null;
+		else
+			key = SelectedCandidate is { } candidate ? (candidate.Type, StaffSpriteRules.KeyOf( candidate )) : portraitOfEmployee ? null : portraitKey;
+		if ( key != portraitKey || key != null && portraitPlayer == null )
 		{
 			portraitKey = key;
-			portraitStart = Time.Now;
+			portraitPlayer = key == null ? null : new SpritePlayer( nowMs );
 		}
-		return key is { } chosen ? level.StaffRenderer?.PortraitFrame( chosen.Type, chosen.Variant, Time.Now - portraitStart ) : null;
+		portraitOfEmployee = showingEmployedStaff;
+		if ( portraitPlayer is not { } player || portraitKey is not { } chosen )
+			return null;
+		player.Tick( nowMs );
+		// the script's first FRAME comes with its first due pass: until then the figure shows nothing
+		return player.Steps == 0 ? null : level.StaffRenderer?.PortraitFrameAtStep( chosen.Type, chosen.Variant, player.Steps - 1 );
 	}
 
 	private string HireTitle => strings[(UIStrings)( (int)UIStrings.HireCleaners + (int)( staffFilter ?? StaffType.Handyman ) )];
@@ -370,8 +387,7 @@ public sealed partial class ParkHud
 		screen.Add( new UiGaugeBar { Id = "skillGauge", Value = () => showingEmployedStaff ? null : SkillGauge( SelectedCandidate ),
 			Bounds = Rect( 722, 538, 957, 573 ), Anchor = UiAnchor.Center } );
 		// [BIN:TPW-EXE:0x0049BA00 hire figure] when the selected candidate's role (+0) or variant byte (+9) changes, the old figure goes (0x00475550) and a new one of thing type 5, 6, 4, 7 or 8 for the roles 0..4 (handyman, entertainer, mechanic, guard, researcher) with that variant is created in control 9348's rectangle (0x00475A10 with the script 0x0074F758), and its register 8 is set to 8.0 (0x004755D0)
-		// [APPROX:UI-082] nominal inner-rectangle geometry and 2.4 scale are traced; native delayed FRAME/start/close/invalid-selection phase,
-		// global rotation/depth and viewport/raster parity remain qualified (docs/proposals/ui-082-verify-staff-portrait-scaling.md).
+		// [APPROX:UI-082] nominal inner-rectangle geometry and 2.4 scale are traced; the figure follows the native hire phases (no frame before the first due pass, an unknown applicant keeps it, a close ends it) on the host's renderer-call clock rather than the substep passes; global rotation/depth and viewport/raster parity remain qualified (docs/proposals/ui-082-verify-staff-portrait-scaling.md).
 		// [EXT:staff-employee-view] the employed tab deliberately shares this hire-box layout and the existing role/variant walking loop.
 		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = PortraitFrame, Bounds = HirePortraitGeometry.Inner,
 			FeetInCanvas = HirePortraitGeometry.FeetInCanvas, CanvasUnitsPerPixel = HirePortraitGeometry.CanvasUnitsPerPixel, Anchor = UiAnchor.Center } );

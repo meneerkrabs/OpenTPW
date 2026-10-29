@@ -127,7 +127,7 @@ public enum TextureFilterMode
 }
 
 /// <summary>What the renderer actually uses for a set of detail settings.</summary>
-public sealed record RenderQuality( TextureFilterMode Filter, int MaxAnisotropy, bool Mipmaps, float ViewDistanceScale, int SkyLayers = RenderQuality.AllSkyLayers )
+public sealed record RenderQuality( TextureFilterMode Filter, int MaxAnisotropy, bool Mipmaps, float ViewDistanceScale, int SkyLayers = RenderQuality.AllSkyLayers, bool SkyObjects = false )
 {
 	/// <summary>The most sky cloud layers the engine draws (SKYQUALITY 4, the engine's default before the options apply, 0x584EF0).</summary>
 	public const int AllSkyLayers = 4;
@@ -221,7 +221,9 @@ public static class GraphicsPresets
 		return new RenderQuality( filter, filter == TextureFilterMode.Anisotropic ? Math.Clamp( anisotropy, 1, MaximumAnisotropy ) : 1, detail.Mipmap != 0,
 			Math.Clamp( viewDistanceScale, MinimumViewDistanceScale, MaximumViewDistanceScale ),
 			// [BIN:TPW-EXE:0x44D8F0 sky quality] the option apply hands 0, 1, 2 or 4 to the sky's layer count (0x585710) and ignores any other value, which leaves the constructor's 4 (0x584EF0)
-			detail.SkyQuality is 0 or 1 or 2 or 4 ? detail.SkyQuality : RenderQuality.AllSkyLayers );
+			detail.SkyQuality is 0 or 1 or 2 or 4 ? detail.SkyQuality : RenderQuality.AllSkyLayers,
+			// [BIN:TPW-EXE:0x44DA1C sky detail] the option apply sets the engine flag 0x400000 of [0x8BCBC8] for SKYDETAIL 1 and clears it for 0 (0x44DA2D-0x44DA44); the sky objects draw only with it (0x5860DB), and any other value leaves the flag as it was
+			detail.SkyDetail == 1 );
 	}
 
 	/// <summary>How each original option is handled by OpenTPW today (docs/COMPATIBILITY.md mirrors this).</summary>
@@ -236,7 +238,7 @@ public static class GraphicsPresets
 		["GraphicalOptions.PROCEDURALTEXTURECACHE"] = "Applied at the next level load: the number of cell textures the procedural terrain keeps, 1500 (0), 2000 (1) or 2500 (2).",
 		["GraphicalOptions.ANIMATINGTEXTURES"] = "Applied: object texture-frame animations (0 shows each slot's first frame, as the original's bind does).",
 		["GraphicalOptions.SKYQUALITY"] = "Applied: the number of scrolling cloud layers of the sky (0 draws no sky, as the original does).",
-		["GraphicalOptions.SKYDETAIL"] = "Not applied.",
+		["GraphicalOptions.SKYDETAIL"] = "Applied: the sky objects of a level (the moons of the hallow and space themes) draw with 1 and not with 0.",
 		["GraphicalOptions.SKYSHADOW"] = "Not applied: no cloud shadows.",
 		["GraphicalOptions.MESHSHADOW"] = "Not applied: no shadows.",
 		["GraphicalOptions.SPRITESHADOW"] = "Not applied: no guest sprites/shadows yet.",

@@ -49,3 +49,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## Track records on the fence's cells (round 10, package B)
 
 `fence_track_oracle.py` lays synthetic second-layer track records on the fence sandbox's cells and runs purchases over them; `fence_track_golden.py` writes `ParkFenceTrackGolden.cs` from 16 cases (`--check FILE`, about eight minutes). Finding X39 in `docs/reverse/ORACLE.md` section 7.26.
+
+## The sky objects' quad (round 10, package D2)
+
+`moon_oracle.py` runs the sky object draw `0x5860D0` with its point transform `0x578D20` and sprite rotation `0x591430` on a synthetic sky object and prints the four corner offsets for a few camera rolls; `SkyTests` pins them (finding X40).

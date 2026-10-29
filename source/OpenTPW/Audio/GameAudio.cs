@@ -672,7 +672,7 @@ public static class GameAudio
 			{
 				crowd = events.StartSentence( Kids, CrowdEvent, AudioChannel.Effects );
 				if ( crowd != null )
-					Log.Trace( $"Sound: crowd sentence started ({guestsNearCamera} guests within {GameFlow.CrowdRadiusCells} cells of the camera)." );
+					Log.Trace( $"Sound: crowd sentence started ({guestsNearCamera} guests within {GameFlow.CrowdRadiusCells} cells of the cursor)." );
 			}
 			if ( crowd != null )
 			{

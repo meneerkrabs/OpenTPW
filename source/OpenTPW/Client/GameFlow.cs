@@ -515,21 +515,19 @@ internal sealed partial class GameFlow : IDisposable
 	};
 
 	/// <summary>
-	/// Guests whose cell is within four cells of the camera's ground target — the crowd sentence's parameter
+	/// Guests whose cell is within four cells of the cursor's cell — the crowd sentence's parameter
 	/// (<c>cat_kids</c> 0x5B, capped at 100). The original's park turn counts them the same way each turn.
 	/// </summary>
 	// [BIN:STP-PPC:0x101C2490 park turn] guests within four cells of the camera are counted (0x100C313C, radius argument 4) for the crowd sentence
+	// [BIN:TPW-EXE:0x54f875 crowd cell] the PC's count takes the hover cell 0x7B05CC (Level.HoverCell: the cell the cursor ray last hit in the park overview, kept in the eye views) and not the camera's target: 0x54f875 reads that word for the call 0x54f899
 	private static int GuestsNearCamera( Level level )
 	{
-		// [APPROX:UI-094] in the ride view the park camera's target stays where it was and the count keeps using it (the camera cell of the crowd call 0x54f899 is not traced to its source; the ride moves only the eye matrix 0x790990, never the target 0x7908f0)
-		if ( level.Guests == null || (Camera.Mode as ParkCameraMode ?? level.ParkCameraWhileRiding) is not { } camera )
-			return 0;
-		if ( !level.TryGetGridCell( camera.Target.X, camera.Target.Y, out var x, out var y ) )
+		if ( level.Guests == null || level.HoverCell is not { } cell )
 			return 0;
 		var count = 0;
 		foreach ( var guest in level.Guests.Guests )
 		{
-			if ( Math.Max( Math.Abs( guest.Cell.X - x ), Math.Abs( guest.Cell.Y - y ) ) <= CrowdRadiusCells )
+			if ( Math.Max( Math.Abs( guest.Cell.X - cell.X ), Math.Abs( guest.Cell.Y - cell.Y ) ) <= CrowdRadiusCells )
 				count++;
 		}
 		return count;

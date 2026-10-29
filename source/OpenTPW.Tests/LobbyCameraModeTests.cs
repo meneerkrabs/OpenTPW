@@ -116,6 +116,27 @@ public class LobbyCameraModeTests
 	}
 
 	[TestMethod]
+	public void TheGlobeSharesTheLobbyCamerasProjectionWithFarOneThousand()
+	{
+		// tp.exe 0x5dd034 sets 60.0 in the same camera object whose method 0x5d8cb0 builds the projection: screen matrix and far 1000
+		var saved = Camera.Mode;
+		try
+		{
+			Camera.Mode = new GlobeCameraMode();
+			Assert.IsTrue( Camera.Mode.UsesOriginalProjection );
+			Camera.Update();
+			var expected = OriginalProjection.Create( Screen.Aspect, 60f, 1000f );
+			Assert.AreEqual( expected.M22, Camera.ProjMatrix.M22, 1e-6f );
+			Assert.AreEqual( expected.M33, Camera.ProjMatrix.M33, 1e-6f );
+			Assert.AreEqual( 1f / (0.5f * System.MathF.Tan( System.MathF.PI / 6 )), Camera.ProjMatrix.M22, 1e-4f, "half height 0.5 x tan(30 degrees)" );
+		}
+		finally
+		{
+			Camera.Mode = saved;
+		}
+	}
+
+	[TestMethod]
 	public void TheEnterTurnsToTheIslandAnglePlusPiThenOpensTheGateAndZooms()
 	{
 		// tp.exe 0x5e0490 states 1 and 2: 0.05 × step a frame the short way round, the gate within half a step, then the zoom

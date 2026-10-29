@@ -33,10 +33,16 @@ public static class Camera
 	/// </summary>
 	public static Func<Matrix4x4, float, float?>? LobbyFarPlane { get; set; }
 
+	/// <summary>The far plane of the online globe's view: the camera method's 1000.</summary>
+	public const float GlobeFarPlane = 1000f;
+
 	private static float FarPlaneOf( CameraMode mode, Matrix4x4 view )
 	{
 		// the ride and walk views' far argument is the greatest depth of the cell boxes 0x56EA90 selects through 0x56E7E0 and 0x561BC0 (at least 100 original units, [this+0x1C], handed to 0x578CA0 at 0x56ED79); it only sets the weather's depth split (EyeViewFarArgument), the engine's projection of those views keeps the default
 		// the heightfield's span selection works on the display's height over its width, the aspect word 0x8BCBCC
+		// [BIN:TPW-EXE:0x5d8cc4 globe far plane] the camera method builds every projection with far 1000 (0x447a0000) and only a terrain's span selection (0x56bb00 -> 0x578ca0) changes it: the globe has none
+		if ( mode is GlobeCameraMode )
+			return GlobeFarPlane;
 		if ( mode is LobbyCameraMode && LobbyFarPlane?.Invoke( view, 1f / Screen.Aspect ) is { } lobbyFar && float.IsFinite( lobbyFar ) && lobbyFar > 0.1f )
 			return lobbyFar;
 		return mode is ParkCameraMode && ParkFarPlane?.Invoke( view, 1f / Screen.Aspect ) is { } far ? far : OriginalProjection.DefaultFarPlane;

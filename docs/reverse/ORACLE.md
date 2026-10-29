@@ -2593,3 +2593,14 @@ Code: `oracle_x86/fence_track_oracle.py` (synthetic second-layer track records l
 - The previous-step words `0x763B00/04` persist between line operations; the tool's start (`0x5275D4`) and the click handler (`0x525C06`) leave them at 0x80, which is where every OpenTPW purchase starts. The sandbox's set-up followed directly by a purchase keeps the set-up's last step, which the track oracle undoes by starting from 0x80.
 
 About 285 seeded random layouts (tiles on and beside purchase edges, all kinds, flags, words, counters, terrain types) agree with `FenceEngine` after the port; before it, stations' flow link differed in the realistic runs and word, counter, type, flags and the pocket verdict in the unrestricted ones. `FenceEngine` reads and writes type, flow link, flags, word and counter through the tile's own record (`TrackCell`: Type, Link, Flags, Owner or Parent + 1, Overlap), the fence links +0x22 stay in the fence layer, and a record the fence retypes leaves the track layer with its fields and goes on as a fence record.
+
+### 7.27 Finding X40: the coaster's x87 steps (round 10, package J)
+
+Code: `oracle_x86/coaster_x87_oracle.py` (isolated runs of the executable's coaster routines on a synthetic memory with the sine table built at `0x27F`) and `coaster_x87_golden.py` (writes `CoasterX87Golden.cs`: the table, curve, chord, knot controls, orientation, node tangent, auto bank and speed, loop knot factor, pylon cost, sampler and prism rows). `CoasterX87GoldenTests` replays every row bit-exactly against OpenTPW's single-step arithmetic.
+
+- The thread runs at CW `0x7F`, so one single-precision operation per instruction; the collision pass `0x439AB0` sets `0xC7F` (truncate toward zero) and every step in it truncates (`Trunc24`), except the acos routine inside, which rounds to the nearest.
+- The PC acos rounds its intermediates at 24 bits (`CoasterX87.Acos`); the node turn differs from a double acos by one ulp otherwise.
+- The prism pose reads the three angles once from the first sample (`0x43A2D7`); the loop jumps past them, so the second sample's points use the first sample's yaw, pitch and roll.
+- The Bezier and derivative components have distinct shapes per axis (first axis, first two axes); the last knot's forward chord is 1.0.
+- Not run: the knot pass over a pylon model's posed track tags, the rating pass and the ride motion; the descriptor-equality skip of the link test (`0x439C5F..0x439C81`) found no crossing in an oracle scenario and stays unported.
+

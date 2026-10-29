@@ -45,7 +45,7 @@ public static class CoasterCollision
 	/// before it. The last node starts no link.
 	/// </summary>
 	// [BIN:TPW-EXE:0x439ab0 intersection pass] a node marked 0x200000 (and not 0x10000) first drops its entries (0x43ad50), clears 0x600000, then tests its link against the links starting two nodes after it, and then those starting two nodes before it, with 0x439c40; the pass runs with the rounding mode set to truncate (0x439ac4), so every sine-table index below truncates
-	// [APPROX:COAST-004] the descriptor-equality skips (0x439c5f..0x439c81) have no case in OpenTPW's tracks; the x87 intermediates are carried in double (COAST-032); the lists (+0xb4, eight slots up to +0xd4) are read only by the drop 0x43ad50 and the save writer 0x437300 as far as traced (the other +0xb4 loads 0x43b159, 0x43b3e5 and 0x43b63f belong to a ring buffer of another object with its capacity at +0xb0 and cursors at +0xc4/+0xc8, 0x44ace9 is a stack slot; the objects of the loads at 0x430867, 0x43420a, 0x443087 and 0x44309c are not decoded); the count (+0xb0) feeds the section builder 0x43f4e0 (material variant 2 for a crossing link)
+	// [APPROX:COAST-004] the descriptor-equality skips (0x439c5f..0x439c81) have no case in OpenTPW's tracks (the node carries no descriptor cell here); the x87 arithmetic is built and oracle-compared; the lists (+0xb4, eight slots up to +0xd4) are read only by the drop 0x43ad50 and the save writer 0x437300 as far as traced (the other +0xb4 loads 0x43b159, 0x43b3e5 and 0x43b63f belong to a ring buffer of another object with its capacity at +0xb0 and cursors at +0xc4/+0xc8, 0x44ace9 is a stack slot; the objects of the loads at 0x430867, 0x43420a, 0x443087 and 0x44309c are not decoded); the count (+0xb0) feeds the section builder 0x43f4e0 (material variant 2 for a crossing link)
 	public static Result Run( IReadOnlyList<Node> nodes, IReadOnlyList<CoasterSample> samples, IReadOnlyList<(float X, float Y)>? points = null, int maxPasses = MaxPasses )
 	{
 		ArgumentNullException.ThrowIfNull( nodes );
@@ -200,8 +200,9 @@ public static class CoasterCollision
 	private static List<Segment> Segments( Node first, Node second, Box shared, IReadOnlyList<CoasterSample> samples )
 	{
 		var radius = first.Radius ?? second.Radius ?? 0f;
-		var (minX, minY, minZ) = (shared.MinX - radius, shared.MinY - radius, shared.MinZ - radius);
-		var (maxX, maxY, maxZ) = (shared.MaxX + radius, shared.MaxY + radius, shared.MaxZ + radius);
+		// [BIN:TPW-EXE:0x0043a0c0 truncated boxes] the shared box grown by the radius (0x43a0c0..0x43a105) and every segment's box (0x43a1f0..0x43a275) are single steps rounded toward zero (the pass's rounding control, Trunc24): min − radius and max + radius
+		var (minX, minY, minZ) = (Trunc24.Sub( shared.MinX, radius ), Trunc24.Sub( shared.MinY, radius ), Trunc24.Sub( shared.MinZ, radius ));
+		var (maxX, maxY, maxZ) = (Trunc24.Add( shared.MaxX, radius ), Trunc24.Add( shared.MaxY, radius ), Trunc24.Add( shared.MaxZ, radius ));
 		bool Inside( SVector3 p ) => p.X >= minX && p.X <= maxX && p.Y >= minY && p.Y <= maxY && p.Z >= minZ && p.Z <= maxZ;
 		var segments = new List<Segment>();
 		var last = Math.Min( second.SampleIndex, samples.Count - 1 );
@@ -214,8 +215,8 @@ public static class CoasterCollision
 			segments.Add( new Segment
 			{
 				Index = index,
-				MinX = Math.Min( p.X, q.X ) - radius, MinY = Math.Min( p.Y, q.Y ) - radius, MinZ = Math.Min( p.Z, q.Z ) - radius,
-				MaxX = Math.Max( p.X, q.X ) + radius, MaxY = Math.Max( p.Y, q.Y ) + radius, MaxZ = Math.Max( p.Z, q.Z ) + radius
+				MinX = Trunc24.Sub( Math.Min( p.X, q.X ), radius ), MinY = Trunc24.Sub( Math.Min( p.Y, q.Y ), radius ), MinZ = Trunc24.Sub( Math.Min( p.Z, q.Z ), radius ),
+				MaxX = Trunc24.Add( Math.Max( p.X, q.X ), radius ), MaxY = Trunc24.Add( Math.Max( p.Y, q.Y ), radius ), MaxZ = Trunc24.Add( Math.Max( p.Z, q.Z ), radius )
 			} );
 		}
 		return segments;
@@ -223,26 +224,27 @@ public static class CoasterCollision
 
 	/// <summary>
 	/// The points of a profile posed at two samples (<c>0x43a2b0</c>): the point (x, y, 0) turned about z by the roll, about x by the pitch and
-	/// about y by the yaw with the sine table under the truncating rounding mode, then moved to the sample. The first sample's points come
+	/// about y by the yaw with the sine table, then moved to the sample; every step one single rounded toward zero (<see cref="Trunc24"/>). The first sample's points come
 	/// first, then the second's.
 	/// </summary>
-	// [BIN:TPW-EXE:0x43a33b pose points] roll: x' = x·cos − y·sin, y' = x·sin + y·cos; pitch: y' = y·cos − z·sin, z' = y·sin + z·cos; yaw: x' = x·cos + z·sin, z' = z·cos − x·sin; the sin index is fistp(f32(angle · scale)) & mask and the cos index fistp(f32(scale · f32(angle − (−π/2)))) & mask, truncating (the pass sets the control word 0xC00); sample +0x10 yaw, +0x14 pitch, +0x18 roll
+	// [BIN:TPW-EXE:0x43a33b pose points] roll: x' = x·cos − sin·y, y' = cos·y + x·sin; pitch: y' = y·cos − sin·z, z' = cos·z + y·sin; yaw: x' = sin·z + x·cos, z' = cos·z − x·sin (0x43a39d..0x43a4b8); the sin index is fistp(f32(angle · scale)) & mask and the cos index fistp(f32(scale · f32(angle − (−π/2)))) & mask, every product, sum and fistp truncating; the sample's position is added last (0x43a4a1..0x43a4b8)
 	internal static float[][] Pose( IReadOnlyList<(float X, float Y)> points, CoasterSample first, CoasterSample second )
 	{
 		var posed = new float[points.Count * 2][];
 		for ( var half = 0; half < 2; half++ )
 		{
+			// [BIN:TPW-EXE:0x0043a2d7 pose angles] the three angles are read once, from the first sample (0x43a2d7..0x43a2e6); the loop over the two samples jumps back to 0x43a2f6, past them, so the second sample's points are posed with the first sample's yaw, pitch and roll and only its position differs
 			var sample = half == 0 ? first : second;
 			for ( var index = 0; index < points.Count; index++ )
 			{
-				double x = points[index].X, y = points[index].Y, z = 0;
-				var (sin, cos) = (CoasterTrig.PcSinTruncated( sample.Bank ), CoasterTrig.PcCosTruncated( sample.Bank ));
-				(x, y) = ((float)(x * cos - y * sin), (float)(x * sin + y * cos));
-				(sin, cos) = (CoasterTrig.PcSinTruncated( sample.Pitch ), CoasterTrig.PcCosTruncated( sample.Pitch ));
-				(y, z) = ((float)(y * cos - z * sin), (float)(y * sin + z * cos));
-				(sin, cos) = (CoasterTrig.PcSinTruncated( sample.Yaw ), CoasterTrig.PcCosTruncated( sample.Yaw ));
-				(x, z) = ((float)(x * cos + z * sin), (float)(z * cos - x * sin));
-				posed[half * points.Count + index] = new[] { (float)(x + sample.Position.X), (float)(y + sample.Position.Y), (float)(z + sample.Position.Z) };
+				float x = points[index].X, y = points[index].Y, z = 0f;
+				var (sin, cos) = (CoasterTrig.PcSinTruncated( first.Bank ), CoasterTrig.PcCosTruncated( first.Bank ));
+				(x, y) = (Trunc24.Sub( Trunc24.Mul( x, cos ), Trunc24.Mul( sin, y ) ), Trunc24.Add( Trunc24.Mul( cos, y ), Trunc24.Mul( x, sin ) ));
+				(sin, cos) = (CoasterTrig.PcSinTruncated( first.Pitch ), CoasterTrig.PcCosTruncated( first.Pitch ));
+				(y, z) = (Trunc24.Sub( Trunc24.Mul( y, cos ), Trunc24.Mul( sin, z ) ), Trunc24.Add( Trunc24.Mul( cos, z ), Trunc24.Mul( y, sin ) ));
+				(sin, cos) = (CoasterTrig.PcSinTruncated( first.Yaw ), CoasterTrig.PcCosTruncated( first.Yaw ));
+				(x, z) = (Trunc24.Add( Trunc24.Mul( sin, z ), Trunc24.Mul( x, cos ) ), Trunc24.Sub( Trunc24.Mul( cos, z ), Trunc24.Mul( x, sin ) ));
+				posed[half * points.Count + index] = new[] { Trunc24.Add( sample.Position.X, x ), Trunc24.Add( y, sample.Position.Y ), Trunc24.Add( z, sample.Position.Z ) };
 			}
 		}
 		return posed;
@@ -253,9 +255,12 @@ public static class CoasterCollision
 	/// of P0, P1 and P2) every profile edge of the second prism at its first sample and every edge from its first to its second sample is cut with the
 	/// plane; a cut inside the segment lies in the face when the angles the face's four corners span from it sum to at least 2π − 0.001.
 	/// </summary>
-	// [BIN:TPW-EXE:0x43a5f4 face plane] n = normalise((P1 − P0) × (P1 − P2)), d = −(P1 · n); t = −(n · B + d) / (n · e) for the edge B → B + e, accepted for 0 ≤ t ≤ 1 (0x43a718, 0x43a8d0)
-	// [BIN:TPW-EXE:0x43a8b3 face test] the corners P0, P1, P2, P3 give unit vectors u from the cut point; the sum acos(u0·u1) + acos(u1·u2) + acos(u2·u3) + acos(u3·u0) must not be below 6.2821855; the same pairs, in the same order, are summed by the longitudinal edge's test 0x43aa10
-	internal static bool PrismsIntersect( CoasterSample firstA, CoasterSample secondA, CoasterSample firstB, CoasterSample secondB, IReadOnlyList<(float X, float Y)> points )
+	// [BIN:TPW-EXE:0x43a5f4 face plane] with v = P1 − P0 and w = P1 − P2 (singles), n = (w.z·v.y − w.y·v.z, w.x·v.z − w.z·v.x, v.x·w.y − w.x·v.y) over its length sqrt((nx² + ny²) + nz²), each component divided by it, d = −(((P1.x·n.x) + (P1.y·n.y)) + (P1.z·n.z)) (0x43a56a..0x43a64d); for the edge B → B + e, dist = ((n.z·B.z + n.y·B.y) + n.x·B.x) + d and t = −(dist / ((n.x·e.x + n.y·e.y) + n.z·e.z)), accepted for 0 ≤ t ≤ 1 (0x43a675..0x43a72f, 0x43a8d0)
+	// [BIN:TPW-EXE:0x43a8b3 face test] the corners P0..P3 give vectors v from the cut point (q = t·e + B), each divided by its length; the angles are acos of the dot products ((y·y + z·z) + x·x) of the pairs (v0, v1), (v1, v2), (v2, v3), (v3, v0), the first stored as a single, each next one an extended acos added to the single sum; the face holds the point when the sum is not below 6.2821855 (0x43a839..0x43a8b3); the longitudinal edge's test 0x43aa10 sums the pairs (v1, v2), (v1, v0), (v2, v3), (v3, v0) with the dot orders (y, z, x), (z, y, x), (y, z, x), (y, z, x)
+	internal static bool PrismsIntersect( CoasterSample firstA, CoasterSample secondA, CoasterSample firstB, CoasterSample secondB, IReadOnlyList<(float X, float Y)> points ) =>
+		PrismsIntersect( firstA, secondA, firstB, secondB, points, null );
+
+	internal static bool PrismsIntersect( CoasterSample firstA, CoasterSample secondA, CoasterSample firstB, CoasterSample secondB, IReadOnlyList<(float X, float Y)> points, List<float>? sums )
 	{
 		var a = Pose( points, firstA, secondA );
 		var b = Pose( points, firstB, secondB );
@@ -266,54 +271,74 @@ public static class CoasterCollision
 			var p1 = a[(i + 1) % n];
 			var p2 = a[i + n];
 			var p3 = a[(i + 1) % n + n];
-			// v1 = P1 − P0 stays unrounded, w = P1 − P2 is stored as single
-			var v1 = new[] { (double)p1[0] - p0[0], (double)p1[1] - p0[1], (double)p1[2] - p0[2] };
-			var w = new[] { (float)(p1[0] - (double)p2[0]), (float)(p1[1] - (double)p2[1]), (float)(p1[2] - (double)p2[2]) };
-			var nx = (float)(w[2] * v1[1] - w[1] * v1[2]);
-			var ny = (float)(w[0] * v1[2] - w[2] * v1[0]);
-			var nzExtended = w[1] * v1[0] - w[0] * v1[1];
-			var length = Math.Sqrt( (double)nx * nx + (double)ny * ny + nzExtended * nzExtended );
-			var normal = new[] { (float)(nx / length), (float)(ny / length), (float)(nzExtended / length) };
-			var d = (float)-((double)p1[0] * normal[0] + (double)p1[1] * normal[1] + (double)p1[2] * normal[2]);
+			var v = new[] { Trunc24.Sub( p1[0], p0[0] ), Trunc24.Sub( p1[1], p0[1] ), Trunc24.Sub( p1[2], p0[2] ) };
+			var w = new[] { Trunc24.Sub( p1[0], p2[0] ), Trunc24.Sub( p1[1], p2[1] ), Trunc24.Sub( p1[2], p2[2] ) };
+			var nx = Trunc24.Sub( Trunc24.Mul( w[2], v[1] ), Trunc24.Mul( w[1], v[2] ) );
+			var ny = Trunc24.Sub( Trunc24.Mul( w[0], v[2] ), Trunc24.Mul( w[2], v[0] ) );
+			var nz = Trunc24.Sub( Trunc24.Mul( v[0], w[1] ), Trunc24.Mul( w[0], v[1] ) );
+			var length = Trunc24.Sqrt( Trunc24.Add( Trunc24.Add( Trunc24.Mul( nx, nx ), Trunc24.Mul( ny, ny ) ), Trunc24.Mul( nz, nz ) ) );
+			var normal = new[] { Trunc24.Div( nx, length ), Trunc24.Div( ny, length ), Trunc24.Div( nz, length ) };
+			var d = -Trunc24.Add( Trunc24.Add( Trunc24.Mul( p1[0], normal[0] ), Trunc24.Mul( p1[1], normal[1] ) ), Trunc24.Mul( p1[2], normal[2] ) );
 			for ( var j = 0; j < n; j++ )
 			{
 				var start = b[j];
 				var profile = b[(j + 1) % n];
 				var along = b[j + n];
-				var e1 = new[] { (float)(profile[0] - (double)start[0]), (float)(profile[1] - (double)start[1]), (float)(profile[2] - (double)start[2]) };
-				var e2 = new[] { (float)(along[0] - (double)start[0]), (float)(along[1] - (double)start[1]), (float)(along[2] - (double)start[2]) };
-				var distance = (double)normal[2] * start[2] + (double)normal[1] * start[1] + (double)normal[0] * start[0] + d;
-				var t1 = (float)-(distance / ((double)normal[0] * e1[0] + (double)normal[1] * e1[1] + (double)normal[2] * e1[2]));
-				var t2 = (float)-(distance / ((double)normal[0] * e2[0] + (double)normal[1] * e2[1] + (double)normal[2] * e2[2]));
-				if ( t1 >= 0 && t1 <= 1 && InFace( start, e1, t1, p0, p1, p2, p3 ) )
+				var e1 = new[] { Trunc24.Sub( profile[0], start[0] ), Trunc24.Sub( profile[1], start[1] ), Trunc24.Sub( profile[2], start[2] ) };
+				var e2 = new[] { Trunc24.Sub( along[0], start[0] ), Trunc24.Sub( along[1], start[1] ), Trunc24.Sub( along[2], start[2] ) };
+				var distance = Trunc24.Add( Trunc24.Add( Trunc24.Add( Trunc24.Mul( normal[2], start[2] ), Trunc24.Mul( normal[1], start[1] ) ), Trunc24.Mul( normal[0], start[0] ) ), d );
+				var t1 = -Trunc24.Div( distance, Trunc24.Add( Trunc24.Add( Trunc24.Mul( normal[0], e1[0] ), Trunc24.Mul( normal[1], e1[1] ) ), Trunc24.Mul( normal[2], e1[2] ) ) );
+				var t2 = -Trunc24.Div( distance, Trunc24.Add( Trunc24.Add( Trunc24.Mul( normal[0], e2[0] ), Trunc24.Mul( normal[1], e2[1] ) ), Trunc24.Mul( normal[2], e2[2] ) ) );
+				if ( t1 >= 0 && t1 <= 1 && InFace( start, e1, t1, p0, p1, p2, p3, sums ) )
 					return true;
-				if ( t2 >= 0 && t2 <= 1 && InFace( start, e2, t2, p0, p1, p2, p3 ) )
+				if ( t2 >= 0 && t2 <= 1 && InFaceAlong( start, e2, t2, p0, p1, p2, p3, sums ) )
 					return true;
 			}
 		}
 		return false;
 	}
 
-	/// <summary>Whether the point start + t·edge, on the face's plane, lies in the face: the angle sum of <see cref="PrismsIntersect"/>.</summary>
-	private static bool InFace( float[] start, float[] edge, float t, float[] p0, float[] p1, float[] p2, float[] p3 )
+	/// <summary>The unit vector the face test takes from a corner to the cut point: the difference, each component over the length (0x43a7cf..0x43a837, 0x43a9a0).</summary>
+	private static float[] Unit( float[] corner, float x, float y, float z )
 	{
-		var x = t * (double)edge[0] + start[0];
-		var y = (float)(t * (double)edge[1] + start[1]);
-		var z = (float)(t * (double)edge[2] + start[2]);
-		float[] Unit( float[] corner )
-		{
-			var vx = (float)(corner[0] - x);
-			var vy = (float)(corner[1] - (double)y);
-			var vz = (float)(corner[2] - (double)z);
-			var length = Math.Sqrt( (double)vx * vx + (double)vy * vy + (double)vz * vz );
-			return new[] { (float)(vx / length), (float)(vy / length), (float)(vz / length) };
-		}
-		var (u0, u1, u2, u3) = (Unit( p0 ), Unit( p1 ), Unit( p2 ), Unit( p3 ));
-		// [EXT:deterministic-math] the runtime's acos in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
-		double Angle( float[] one, float[] other ) => DetMath.Acos( (double)one[0] * other[0] + (double)one[1] * other[1] + (double)one[2] * other[2] );
-		var sum = (float)Angle( u0, u1 );
-		sum = (float)(sum + Angle( u1, u2 ));
-		sum = (float)(sum + Angle( u2, u3 ));
-		return sum + Angle( u3, u0 ) >= AngleSumThreshold;
+		float vx = Trunc24.Sub( corner[0], x ), vy = Trunc24.Sub( corner[1], y ), vz = Trunc24.Sub( corner[2], z );
+		var length = Trunc24.Sqrt( Trunc24.Add( Trunc24.Add( Trunc24.Mul( vx, vx ), Trunc24.Mul( vy, vy ) ), Trunc24.Mul( vz, vz ) ) );
+		return new[] { Trunc24.Div( vx, length ), Trunc24.Div( vy, length ), Trunc24.Div( vz, length ) };
+	}
+
+	/// <summary>The dot product 0x43a970 takes: (y·y + z·z) + x·x.</summary>
+	private static float DotYzx( float[] a, float[] b ) => Trunc24.Add( Trunc24.Add( Trunc24.Mul( a[1], b[1] ), Trunc24.Mul( a[2], b[2] ) ), Trunc24.Mul( a[0], b[0] ) );
+
+	/// <summary>The (z, y, x) order of the longitudinal edge's second angle (0x43acc7).</summary>
+	private static float DotZyx( float[] a, float[] b ) => Trunc24.Add( Trunc24.Add( Trunc24.Mul( a[2], b[2] ), Trunc24.Mul( a[1], b[1] ) ), Trunc24.Mul( a[0], b[0] ) );
+
+	/// <summary>Whether the point start + t·edge, on the face's plane, lies in the face: the angle sum of <see cref="PrismsIntersect"/> for a profile edge.</summary>
+	private static bool InFace( float[] start, float[] edge, float t, float[] p0, float[] p1, float[] p2, float[] p3, List<float>? sums )
+	{
+		var x = Trunc24.Add( Trunc24.Mul( t, edge[0] ), start[0] );
+		var y = Trunc24.Add( Trunc24.Mul( t, edge[1] ), start[1] );
+		var z = Trunc24.Add( Trunc24.Mul( t, edge[2] ), start[2] );
+		var (u0, u1, u2, u3) = (Unit( p0, x, y, z ), Unit( p1, x, y, z ), Unit( p2, x, y, z ), Unit( p3, x, y, z ));
+		var sum = Trunc24.Add( CoasterX87.AcosTruncated( DotYzx( u0, u1 ) ), 0d );
+		sum = Trunc24.Add( CoasterX87.AcosTruncated( DotYzx( u1, u2 ) ), sum );
+		sum = Trunc24.Add( CoasterX87.AcosTruncated( DotYzx( u2, u3 ) ), sum );
+		sum = Trunc24.Add( CoasterX87.AcosTruncated( DotYzx( u3, u0 ) ), sum );
+		sums?.Add( sum );
+		return sum >= AngleSumThreshold;
+	}
+
+	/// <summary>The face test of the edge from the first sample to the second (<c>0x43aa10</c>): the same corners, the pairs and the dot orders of its own.</summary>
+	private static bool InFaceAlong( float[] start, float[] edge, float t, float[] p0, float[] p1, float[] p2, float[] p3, List<float>? sums )
+	{
+		var x = Trunc24.Add( Trunc24.Mul( t, edge[0] ), start[0] );
+		var y = Trunc24.Add( Trunc24.Mul( edge[1], t ), start[1] );
+		var z = Trunc24.Add( Trunc24.Mul( edge[2], t ), start[2] );
+		var (u0, u1, u2, u3) = (Unit( p0, x, y, z ), Unit( p1, x, y, z ), Unit( p2, x, y, z ), Unit( p3, x, y, z ));
+		var sum = Trunc24.Add( CoasterX87.AcosTruncated( DotYzx( u1, u2 ) ), 0d );
+		sum = Trunc24.Add( CoasterX87.AcosTruncated( DotZyx( u1, u0 ) ), sum );
+		sum = Trunc24.Add( CoasterX87.AcosTruncated( DotYzx( u2, u3 ) ), sum );
+		sum = Trunc24.Add( CoasterX87.AcosTruncated( DotYzx( u3, u0 ) ), sum );
+		sums?.Add( sum );
+		return sum >= AngleSumThreshold;
 	}
 }

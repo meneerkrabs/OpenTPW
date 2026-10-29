@@ -508,6 +508,7 @@ public sealed class CoasterRide
 	/// </summary>
 	private float LeadCoordinate() => trains.Count > 0 && samples.Length > 0 ? CarCoordinate( trains[0], trains[0].CarLists.Length - 1 ) : LeadCarCoordinate;
 
+	// [APPROX:COAST-032] the rating pass 0x43c450 with its step and final (0x43dc50, 0x43df90, 0x43dbf0), the suspended swing 0x43c76c and the ride motion are built in single steps from the instruction sequences but no isolated tp.exe run has compared them bit-exactly
 	/// <summary>
 	/// The trains after a rating pass (<c>0x43c450</c>): the train count changes (<c>0x43ba20</c>: a train past the new count gives up its riders and
 	/// its slot), new trains are set up, then every train is placed again: train 0 keeps its last car where it was and each next train's last car stands

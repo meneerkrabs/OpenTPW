@@ -12,3 +12,11 @@
 - **Guests leaving a ride (state 15) are imported** and walk on to their saved destination.
 - Still dropped, with their reasons reported: guests using an attraction (16) and held by a guard
   (17).
+- **A saved Coasters block ends where its reader stops (SAVE-011, narrowed).** tp.exe's block
+  loader (`0x415270`) runs each reader and compares the next four bytes with the tag (`0x415371`);
+  the coasters' reader reads the type's train slots and cars per train (`0x437B60`) and nothing
+  searches. The park import now passes the park's coaster types to the payload split
+  (`SavePayloadLayout.Parse(payload, coasterTrains)`, `SaveCoasterBlock.TryMeasure`), so a saved
+  coaster whose riders' ids hold the delimiter's bytes no longer depends on a delimiter search.
+  Callers without the types and a World the loader's readers do not measure (a synthetic payload)
+  keep the delimiter search.

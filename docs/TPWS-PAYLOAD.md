@@ -126,8 +126,10 @@ the TrackRides block, `KOLC`'s word is VanillaTime, `RYLF` holds RSSE, `SAOC`'s
   16-byte count and globals. The World block is the loader's own readers
   (`SaveBlockWidths.TryMeasureWorld`: the 64 variable bytes, the control manager 4,806, the macro AI 670 + 28 + 18, 0x4000
   status-byte cells of 1 + 52 / 31 / 10 bytes by status bits 0 / 1 / 2, and the self-closing thing list) and agrees with the Jungle
-  Easymode save to the byte. Only a Coasters block with a coaster (its trains and cars depend on the coaster type's counts) and a World block that does
-  not read that way (a synthetic payload) are located by their delimiter's bytes, and the payload must split in exactly one way there; a copy of those delimiters
+  Easymode save to the byte. A Coasters block with a coaster (its trains and cars depend on the coaster type's counts) ends where its reader stops when the caller
+  knows the coaster types (`SavePayloadLayout.Parse(payload, coasterTrains)`: the park import's station mesh instance finds the type's `uiMaxTrains` and `uiMaxCars`, `SaveCoasterBlock.TryMeasure`, tag at `0x415371`) and the World
+  reads as the original's; without the types, and a World block that does
+  not read that way (a synthetic payload), are located by their delimiter's bytes, and the payload must split in exactly one way there; a copy of those delimiters
   that forms a second valid split throws, as does a payload holding one of them more than 256 times, although the
   count-based original loader accepts those cases (SAVE-011). A missing or out-of-order delimiter, a block that does not
   read as its block and a block not followed by its tag throw as well;

@@ -274,7 +274,7 @@ public sealed class OriginalParkImport
 	public static OriginalParkImport Import( ReadOnlyMemory<byte> payload, MapFile map, Func<int, SaveCoasterTrainLayout?>? coasterTrains = null, Func<int, int?>? controlCounts = null )
 	{
 		ArgumentNullException.ThrowIfNull( map );
-		var layout = SavePayloadLayout.Parse( payload.Span );
+		var layout = SavePayloadLayout.Parse( payload.Span, coasterTrains );
 		var world = SaveWorld.Parse( payload, layout, map.CellCountX, map.CellCountY );
 		var cells = world.Cells;
 		var paths = new List<(int X, int Y)>();

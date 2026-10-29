@@ -221,7 +221,33 @@ public sealed record SaveCoasterBlock( uint Count, uint Global1, uint Global2, u
 	/// block that lists more than one coaster.
 	/// </summary>
 	public static SaveCoasterBlock ParseBlock( ReadOnlySpan<byte> data, int countX, int countY, int baseOffset = 0,
-		Func<ushort, SaveCoasterTrainLayout?>? trainLayouts = null )
+		Func<ushort, SaveCoasterTrainLayout?>? trainLayouts = null ) =>
+		ParseCore( data, countX, countY, baseOffset, trainLayouts, measure: false ).Block;
+
+	/// <summary>
+	/// How many bytes the Coasters block takes at the start of <paramref name="data"/>, read as the loader reads it (header, auxiliary block, sections and the type's train slots and
+	/// cars of every coaster in turn) with no delimiter searched; false when a coaster's type is unknown to <paramref name="trainLayouts"/> or the bytes do not read as the block.
+	/// The coaster cells are not bounded here (the map is not known); <see cref="ParseBlock"/> checks them.
+	/// </summary>
+	// [BIN:TPW-EXE:0x415270 block loader] each block's own reader runs and the next four bytes are compared with the block's tag (0x415371): the Coasters reader 0x437B60 consumes its bytes by the types' train and car counts and nothing searches for the tag
+	public static bool TryMeasure( ReadOnlySpan<byte> data, Func<ushort, SaveCoasterTrainLayout?> trainLayouts, out int width )
+	{
+		ArgumentNullException.ThrowIfNull( trainLayouts );
+		width = 0;
+		try
+		{
+			var (_, consumed) = ParseCore( data, int.MaxValue, int.MaxValue, 0, trainLayouts, measure: true );
+			width = consumed;
+			return true;
+		}
+		catch ( InvalidDataException )
+		{
+			return false;
+		}
+	}
+
+	private static (SaveCoasterBlock Block, int Consumed) ParseCore( ReadOnlySpan<byte> data, int countX, int countY, int baseOffset,
+		Func<ushort, SaveCoasterTrainLayout?>? trainLayouts, bool measure )
 	{
 		if ( countX <= 0 || countY <= 0 )
 			throw new ArgumentOutOfRangeException( countX <= 0 ? nameof( countX ) : nameof( countY ) );
@@ -236,9 +262,9 @@ public sealed record SaveCoasterBlock( uint Count, uint Global1, uint Global2, u
 		var global3 = reader.U32();
 		if ( count == 0 )
 		{
-			if ( data.Length != EmptyBlockBytes )
+			if ( !measure && data.Length != EmptyBlockBytes )
 				throw new InvalidDataException( $"Save coasters block has no coaster but {data.Length} bytes; an empty block is {EmptyBlockBytes}." );
-			return new SaveCoasterBlock( 0, global1, global2, global3, Array.Empty<SaveCoaster>() );
+			return (new SaveCoasterBlock( 0, global1, global2, global3, Array.Empty<SaveCoaster>() ), EmptyBlockBytes);
 		}
 
 		var coasters = new SaveCoaster[(int)count];
@@ -309,6 +335,8 @@ public sealed record SaveCoasterBlock( uint Count, uint Global1, uint Global2, u
 			// Without them it is whatever remains of the block, which only the last coaster can claim.
 			var trainsOffset = reader.Position;
 			var layout = trainLayouts?.Invoke( controller16 );
+			if ( measure && layout == null )
+				throw new InvalidDataException( $"Save {what}'s type is unknown, so its train payload cannot be measured." );
 			IReadOnlyList<SaveCoasterTrain>? slots = null;
 			byte[] trainBytes;
 			if ( layout is { } known )
@@ -327,6 +355,8 @@ public sealed record SaveCoasterBlock( uint Count, uint Global1, uint Global2, u
 				ordinals, sections, trainBytes, baseOffset + trainsOffset, slots );
 			if ( index + 1 >= count )
 			{
+				if ( measure )
+					return (new SaveCoasterBlock( count, global1, global2, global3, coasters ), reader.Position);
 				if ( slots != null && reader.Position != data.Length )
 					throw new InvalidDataException( $"Save coasters block's last train payload ends at {reader.Position}, but the block has {data.Length} bytes; the coaster type's train and car counts do not match the save." );
 				continue;
@@ -337,6 +367,6 @@ public sealed record SaveCoasterBlock( uint Count, uint Global1, uint Global2, u
 					? $"Save coasters block lists {count} coasters but ends after {what}; coaster {index + 1}'s header is missing."
 					: $"Save coasters block lists {count} coasters; the train payload that follows {what}'s sections needs the coaster type's train and car counts, so coaster {index + 1}'s header cannot be located." );
 		}
-		return new SaveCoasterBlock( count, global1, global2, global3, coasters );
+		return (new SaveCoasterBlock( count, global1, global2, global3, coasters ), reader.Position);
 	}
 }

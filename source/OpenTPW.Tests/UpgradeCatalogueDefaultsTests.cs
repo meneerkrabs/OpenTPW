@@ -217,6 +217,17 @@ public class UpgradeCatalogueDefaultsTests
 		// the installation's reopen (0x4df8f0's tail) keeps a track ride (WhichTrackType 3) closed while its coaster takes no guests (0x441970): this one has no track
 		Assert.IsFalse( w.One.IsOpen );
 	}
+	/// <summary>A coaster rebuilt from a save of its upgraded record takes the saved tier's defaults, as an ordinary ride does (<see cref="RebuiltBindingFromSavedCompletedTierMustDeriveTierDefaults"/>).</summary>
+	[TestMethod]
+	public void ARebuiltCoasterDerivesItsSavedTier()
+	{
+		var w = World( "Bumper.WhichTrackType 3\n" ); w.State.Level = 1;
+		var saved = ParkSaveFile.Serialize( w.Economy ); var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( saved ) ), EconomyTestData.Settings(), EconomyTestData.Catalog() );
+		Assert.IsTrue( restored.TryGetObject( w.State.Id, out var state ) ); Assert.AreEqual( 1, state.Level );
+		var level = Empty<Level>(); var objects = new ParkObjects( null!, new SandboxParkGrid() ); Set( level, "<Park>k__BackingField", ParkEconomyRuntime.ForResume( restored, ParkStartKind.FullSimulation ) ); Set( level, "<Objects>k__BackingField", objects ); Set( level, "economyInstances", new Dictionary<OriginalObject, int>() );
+		var candidate = new OriginalObject( w.One.Entry, new ObjectPlacement( 1, 1, 0, System.Numerics.Vector2.Zero, 0 ), objects.ScriptWorld ); ((List<OriginalObject>)objects.Objects).Add( candidate ); Call( level, "LinkEconomy", candidate, state.Id );
+		Assert.IsNotNull( candidate.Runtime.Coaster ); Assert.AreEqual( 1, candidate.Runtime.CatalogueTier ); Assert.AreEqual( 200f, candidate.Visitors.Parameters.QueueWaitTimeConstant );
+	}
 	[TestMethod]
 	public void FirstInvalidBindingAbortsBeforeMappingButUnsupportedContextsSkipMetadata()
 	{

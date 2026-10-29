@@ -9,4 +9,4 @@
   tier like any ride. This also lets the coaster panel's loop button work, which
   needs level 1 (`0x4980D6`). A with-data test checks that every coaster binds its
   tier and seeds its level's capacity into its own `Coaster.RSE` variables, and a
-  co-op join carries an upgraded coaster's tier.
+  coaster rebuilt from a save of its upgraded record takes the saved tier.

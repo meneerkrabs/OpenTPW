@@ -957,7 +957,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 			if ( RideBreakdownRules.BreaksDown( info.ProvidesRelief, item.ScriptHosted ? item.ScriptBreakStat : 0, (float)item.LifeGauge, (float)item.Repair ) )
 			{
 				item.LifeGauge = RideBreakdownRules.LifeAfterBreakdown( (float)item.LifeGauge );
-				// [APPROX:ECON-023] [EXT:headless-economy-breakdown] (user-approved) an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 writes the shared state word and calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN); the headless test and tool economy without ride scripts breaks an object down at once (the same word) and repairs it without the wait, where a level runs the scripts; the visitor bridge keeps the single shared word (the register row)
+				// [BIN:TPW-EXE:0x4e0e00 ride state dispatch] [EXT:headless-economy-breakdown] (user-approved) an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 writes the shared state word and calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN); the headless test and tool economy without ride scripts breaks an object down at once (the same word) and repairs it without the wait, where a level runs the scripts; the visitor bridge reads the same word whole (RideStateWord.Current: the stored 2 and 3 as well as the ride update's 1 and 4), so an upgrading ride runs the head step and the script dismiss only, as the dispatch does
 				if ( item.ScriptHosted )
 					WriteScript( item, RideVariables.VAR_BREAKSTAT, 1 );
 				else
@@ -1021,9 +1021,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 	// [BIN:TPW-EXE:0x004E0086 upgrade request] the request 0x4E0050(1) calls SetState(2) after the choosable test (+0x32 bit 4) and nothing tests the current state, so a ride in state 1 or 4 goes to state 2; the completion 0x4DF8F0 and the cancel end in SetState(0) (0x4DFCB8, 0x4E01B6)
 	internal static int ObjectState( ParkObjectState item )
 	{
-		if ( item.StoredState is RideObjectStates.Upgrading or RideObjectStates.NotAnAttraction )
-			return item.StoredState;
-		return item.StateWord.IsBroken ? item.StateWord.Value : RideObjectStates.Idle;
+		return item.StateWord.Current;
 	}
 
 	/// <summary>The stored state a record starts with: 3 for a type that is not choosable (0x4DB4FB), 2 while an upgrade is waiting, else 0.</summary>

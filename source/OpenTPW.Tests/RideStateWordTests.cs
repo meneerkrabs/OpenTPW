@@ -109,4 +109,58 @@ public class RideStateWordTests
 		copy.IsBrokenDown = false;
 		Assert.AreEqual( (true, false, 1), (record.IsBrokenDown, copy.IsBrokenDown, changes), "the copy's repair leaves the record's word alone and raises nothing" );
 	}
+
+	[TestMethod]
+	public void TheStoredPartRidesInTheSharedWordAndTheDispatchReadsItWhole()
+	{
+		var word = new RideStateWord();
+		word.Set( RideObjectStates.BrokenDown );
+		Assert.AreEqual( RideObjectStates.BrokenDown, word.Current );
+		word.Store( RideObjectStates.Upgrading );
+		Assert.AreEqual( RideObjectStates.Upgrading, word.Current, "an upgrade request overwrites a breakdown (0x4E0086)" );
+		Assert.AreEqual( RideObjectStates.BrokenDown, word.Value, "the ride update's own 1 is kept for the cancel to find again" );
+		word.Store( RideObjectStates.Idle );
+		Assert.AreEqual( RideObjectStates.BrokenDown, word.Current );
+		word.Store( RideObjectStates.NotAnAttraction );
+		Assert.AreEqual( RideObjectStates.NotAnAttraction, word.Current );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => word.Store( RideObjectStates.Condemned ) );
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var record );
+		record!.StoredState = RideObjectStates.Upgrading;
+		Assert.AreEqual( RideObjectStates.Upgrading, record.StateWord.Current );
+		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( record ) );
+		Assert.AreEqual( RideObjectStates.Upgrading, record.Projection().StateWord.Current, "a projection keeps the stored part" );
+	}
+
+	[DataTestMethod]
+	[DataRow( RideObjectStates.Idle, true )]
+	[DataRow( RideObjectStates.Upgrading, false )]
+	[DataRow( RideObjectStates.NotAnAttraction, false )]
+	public void OnlyStateZeroReadsTheScriptsBrokenVariable( int stored, bool entersBrokenState )
+	{
+		// tp.exe 0x4E0E00: state 0 runs 0x4E14E0 (VAR_BROKEN, SetState(1) or (4)), states 1, 2 and 4 the head step and the script dismiss, state 3 nothing
+		var rig = new QueueTests.Rig { KeepNeedsEmpty = true };
+		rig.HoldAdmission();
+		rig.Ride.StateWord.Store( stored );
+		rig.Script[RideVariables.VAR_BROKEN] = 1;
+		rig.RunTurns( 40 );
+		Assert.AreEqual( entersBrokenState, rig.Ride.IsBrokenDown );
+	}
+
+	[TestMethod]
+	public void AnUpgradingRideDismissesItsQueueHeadLikeABrokenOne()
+	{
+		var rig = new QueueTests.Rig { KeepNeedsEmpty = true };
+		rig.HoldAdmission();
+		var guests = Enumerable.Range( 0, 2 ).Select( _ => rig.Send() ).ToList();
+		rig.RunTurns( 120 );
+		var head = QueueTests.Rig.InQueueOrder( guests )[0];
+		Assert.IsTrue( head.IsInQueue );
+		rig.Ride.StateWord.Store( RideObjectStates.Upgrading );
+		var turn = rig.Simulation.ParkTurn;
+		while ( head.IsInQueue && rig.Simulation.ParkTurn < turn + 8 )
+			rig.Step();
+		Assert.IsFalse( head.IsInQueue, "state 2 runs the head step (0x4E0450) every update" );
+		Assert.IsFalse( rig.Ride.IsBrokenDown, "and never the breakdown's read of VAR_BROKEN" );
+	}
 }

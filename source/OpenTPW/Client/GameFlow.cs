@@ -193,7 +193,7 @@ internal sealed partial class GameFlow : IDisposable
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
 		LobbyCameraMode.IslandFieldOfView = lobbyDefinition.FieldOfView;
 		// [BIN:TPW-EXE:0x56bd3e lobby far plane] the lobby view's projection is rebuilt with the span selection's farthest corner distance as its far plane, as the park's is (0x56bb00 -> 0x578ca0)
-		Camera.LobbyFarPlane = ( view, aspectWord ) => LobbyFarArgument( aspectWord, 0f, 0f );
+		Camera.LobbyFarPlane = lobbyFarPlane = ( view, aspectWord ) => LobbyFarArgument( view, aspectWord );
 		FrontEndMenu? createdMenu = null;
 		createdMenu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
@@ -880,6 +880,8 @@ internal sealed partial class GameFlow : IDisposable
 	private enum Backdrop { Lobby, Globe, City }
 
 	private Backdrop backdrop = Backdrop.Lobby;
+	private Func<System.Numerics.Matrix4x4, float, float?>? lobbyFarPlane;
+	private (System.Numerics.Matrix4x4 View, float Aspect, ModelHeightfield Field, float FieldOfView, float Distance, float? Far)? lobbyFarCache;
 	private TerrainViewSpans? lobbySpans;
 	private ModelHeightfield? lobbySpansField;
 
@@ -887,7 +889,7 @@ internal sealed partial class GameFlow : IDisposable
 	/// The far argument of the lobby's view in original units (the lobby's own units are the engine's): the farthest corner distance of the span selection of the lobby camera over the lobby terrain's heightfield (<c>0x56BB00</c>, at least 10, which
 	/// <c>0x576A00</c> runs before the weather and which hands it to <c>0x578CA0</c>, <c>0x56BD3E</c>); null without a lobby heightfield.
 	/// </summary>
-	private float? LobbyFarArgument( float aspectWord, float sine, float cosine )
+	private float? LobbyFarArgument( System.Numerics.Matrix4x4 view, float aspectWord )
 	{
 		if ( Lobby?.Heightfield is not { } field )
 			return null;
@@ -896,8 +898,14 @@ internal sealed partial class GameFlow : IDisposable
 			lobbySpans = new TerrainViewSpans( field, engineUnitsPerOriginal: 1f, centred: false ) { RayFieldOfView = LobbyCameraMode.IslandFieldOfView };
 			lobbySpansField = field;
 		}
-		lobbySpans.ViewDistance = RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Distance;
-		return lobbySpans.Update( Camera.ViewMatrix, aspectWord ) ? lobbySpans.FarthestCorner : null;
+		var distance = RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Distance;
+		// the projection and the weather both ask each frame: the last answer stands for the same view, aspect, field, angle and distance
+		if ( lobbyFarCache is { } last && last.View == view && last.Aspect == aspectWord && ReferenceEquals( last.Field, field ) && last.FieldOfView == LobbyCameraMode.IslandFieldOfView && last.Distance == distance )
+			return last.Far;
+		lobbySpans.ViewDistance = distance;
+		var far = lobbySpans.Update( view, aspectWord ) ? lobbySpans.FarthestCorner : (float?)null;
+		lobbyFarCache = (view, aspectWord, field, LobbyCameraMode.IslandFieldOfView, distance, far);
+		return far;
 	}
 
 	/// <summary>The open city lobby's islands (a lobby scene with the city's parks at the island slots).</summary>
@@ -1005,7 +1013,7 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		// The lobby's rain and bolts are drawn by the engine's weather renderer, as the original's are (CRain), at the lobby's own scale.
 		if ( lobbyWeather == null || !Entity.All.Contains( lobbyWeather ) )
-			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f, fieldOfView: LobbyCameraMode.IslandFieldOfView, farArgument: LobbyFarArgument );
+			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f, fieldOfView: LobbyCameraMode.IslandFieldOfView, farArgument: ( aspectWord, sine, cosine ) => LobbyFarArgument( Camera.ViewMatrix, aspectWord ) );
 		lobbyIslands.Clear();
 		foreach ( var (island, slot) in Lobby.Slots )
 		{
@@ -1320,6 +1328,9 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Dispose()
 	{
+		// the static far-plane hook would keep this flow alive
+		if ( ReferenceEquals( Camera.LobbyFarPlane, lobbyFarPlane ) )
+			Camera.LobbyFarPlane = null;
 		// [EXT:online-coop-lockstep] quitting leaves a shared park's session while the link can still say so (a host's leave ends it for everyone)
 		LeaveCoopSession( "The player quit the game." );
 		FlushRestartSnapshot();

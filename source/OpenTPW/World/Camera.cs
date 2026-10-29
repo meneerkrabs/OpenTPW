@@ -34,7 +34,10 @@ public static class Camera
 	public static Func<Matrix4x4, float, float?>? LobbyFarPlane { get; set; }
 
 	/// <summary>The far plane of the online globe's view: the camera method's 1000.</summary>
-	public const float GlobeFarPlane = 1000f;
+	public const float FrontEndFarPlane = 1000f;
+
+	/// <summary>The globe's far plane: the same builder argument.</summary>
+	public const float GlobeFarPlane = FrontEndFarPlane;
 
 	private static float FarPlaneOf( CameraMode mode, Matrix4x4 view )
 	{
@@ -45,6 +48,8 @@ public static class Camera
 			return GlobeFarPlane;
 		if ( mode is LobbyCameraMode && LobbyFarPlane?.Invoke( view, 1f / Screen.Aspect ) is { } lobbyFar && float.IsFinite( lobbyFar ) && lobbyFar > 0.1f )
 			return lobbyFar;
+		if ( mode is LobbyCameraMode )
+			return FrontEndFarPlane;
 		return mode is ParkCameraMode && ParkFarPlane?.Invoke( view, 1f / Screen.Aspect ) is { } far ? far : OriginalProjection.DefaultFarPlane;
 	}
 

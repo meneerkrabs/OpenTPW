@@ -77,7 +77,10 @@ public class LocatorPanelTests
 		Assert.IsTrue( hud.LocatorSlide.Out );
 		Frame( hud, context, 0.1f );
 		Assert.AreEqual( 5, hud.LocatorSlide.Step );
-		Assert.IsFalse( hud.Screen.Find( "locatorStaffPanel" )!.Visible && !ParkHud.ArmChildShown( hud.Screen.Find( "locatorStaffPanel" )!.Bounds ), "a control shows only once its right edge passed the arm's left edge" );
+		var plain = OriginalLayoutTables.LocatorPanels.Roots[0].Children.Single().Rect;
+		var panel = hud.Screen.Find( "locatorStaffPanel" )!;
+		Assert.AreEqual( plain with { X = plain.X - 660 + 5 * 67, Y = plain.Y - 32 }, panel.Bounds, "five ticks of 67 from the start place" );
+		Assert.AreEqual( ParkHud.ArmChildShown( panel.Bounds ), panel.Visible );
 		Slide( hud, context );
 		Assert.AreEqual( ArmSlide.Steps, hud.LocatorSlide.Step );
 		Assert.AreEqual( table with { X = table.X + 10, Y = table.Y - 32 }, button.Bounds, "out at the drawer's end place" );

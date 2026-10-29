@@ -45,4 +45,16 @@ public class CrowdHoverCellTests
 		typeof( Level ).GetProperty( "HoverCell", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level, null );
 		Assert.AreEqual( 0, Count( level ), "the word is 0 and the counter's rectangle is empty (0x45d601, 0x4c8d30)" );
 	}
+
+	[TestMethod]
+	public void AnOffGridHitLandsOnTheEdgeCell()
+	{
+		// 0x45d59c-0x45d5df clamp the hit before the bounds test, so a real hit is never refused
+		var size = ObjectPlacement.CellSize;
+		Assert.AreEqual( (31, 31), Level.HoverCellOf( 32 * size, 40 * size, 0, 0, 32, 32 ) );
+		Assert.AreEqual( (0, 0), Level.HoverCellOf( -5, -0.1f, 0, 0, 32, 32 ) );
+		Assert.AreEqual( (3, 7), Level.HoverCellOf( 3.5f * size, 7.5f * size, 0, 0, 32, 32 ) );
+		Assert.IsNull( Level.HoverCellOf( float.NaN, 0, 0, 0, 32, 32 ) );
+		Assert.IsNull( Level.HoverCellOf( 0, 0, 0, 0, 0, 0 ) );
+	}
 }

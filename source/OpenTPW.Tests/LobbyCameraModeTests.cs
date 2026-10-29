@@ -106,7 +106,7 @@ public class LobbyCameraModeTests
 			Assert.AreEqual( expected.M43, Camera.ProjMatrix.M43, 1e-5f );
 			Camera.LobbyFarPlane = null;
 			Camera.Update();
-			Assert.AreEqual( OriginalProjection.Create( Screen.Aspect, LobbyCameraMode.IslandFieldOfView ).M33, Camera.ProjMatrix.M33, 1e-9f );
+			Assert.AreEqual( OriginalProjection.Create( Screen.Aspect, LobbyCameraMode.IslandFieldOfView, 1000f ).M33, Camera.ProjMatrix.M33, 1e-9f, "the builder's 1000 stands until 0x578ca0" );
 		}
 		finally
 		{

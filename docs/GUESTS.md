@@ -70,6 +70,8 @@ WAD contains a kid/peep/visitor model (all 312 WADs listed). The sprites live in
 | `Generic/{Balloons,Litter,Particles,SpecialFX}` | `.ESP/.TPC` | balloons (`BalloonRenderer`), litter (`LitterRenderer`), particles, the upgrade balloon (`UpgradeBalloonRenderer`) |
 | `Generic/{Guards,Handymen,Mechanics,Researchers}`, `<Theme>/{Entertainers,Costumes,Costumeheads}` | | staff and entertainer sprites |
 
+**Which kid sets load, and which one a guest wears.** tp.exe's folder loader (`0x541310`) stops the `kids` and `kidsheads` folders at the limit of `0x41A9D0`, read from the preset's `GameOptions.NUMKIDS` (`0x7858D0`): 2, 4, 6 and 8 sets for 0, 1, 2 and 3 (low.sam 0 loads 2, med.sam and high.sam 2 load 6; the enhanced-game-options fix's 3 loads 8). It loads `SPR_BI`, `SPR_KI`, `SPR_TA` and `SPR_SU` first (the table `0x764030`) and the others by name after them (BE, CH, FR, SA), and a guest's set is its draw (the first draw after the reseed with its thing id, shifted right by 2) modulo the number loaded, so the guest's set is its place in that order (`KidSetLoad`). Because 6 does not divide 8 a guest keeps the raw draw (`Guest.KidSetDraw`, saved but not hashed: the simulation never reads it and it is the draw the constructor already takes); a guest of an original save keeps the sprite bank its person record holds (`0x4F8B10` reduces it by the loaded count). The swim sets of the pools extension and the extension's 2x kid and head sets take the same places. Theme Park Inc keeps its folder order.
+
 **`.FPC` / `.TPC` sprite bank** (little-endian): `u16 3, u16 3, u32 frameCount,
 u32 0`, then 255 palette entries of 4 bytes **B, G, R, A** (alpha varies: anti-
 aliased edges), then per frame: `u32 dataSize, u16 width, u16 height, u16 128,

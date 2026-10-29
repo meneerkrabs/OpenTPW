@@ -541,7 +541,9 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 	/// [EXT:online-coop-claims] Whether <paramref name="item"/> is claimed against <paramref name="player"/>: a track ride (C3c-1) or a coaster (C3c-2) whose claim another seat holds.
 	/// </summary>
 	private bool ClaimedAgainst( int player, OriginalObject item ) => (level.TrackStations.ContainsKey( item ) || item.Runtime?.Coaster != null) && item.Runtime is { } runtime
-		&& level.ClaimedAgainst( player, runtime.AttractionId );
+		&& level.ClaimedAgainst( player, runtime.AttractionId )
+		// the demolition of a track add-on takes the tile it stands on (ORACLE.md X37, ECON-050), so it edits the track of the ride under it
+		|| TrackAddOns.IsTrackAddOn( item.Entry ) && level.RideUnder( item ) is { } ride && ClaimedAgainst( player, ride );
 }
 
 /// <summary>[EXT:online-coop-permissions] What a refusal by a shared park's rights says to its player (<see cref="CoopBuildRights.RefusalOf"/>).</summary>

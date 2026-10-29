@@ -636,6 +636,22 @@ public sealed class TrackEditor
 		return false;
 	}
 
+	/// <summary>
+	/// The record clear of the demolition's second pass on the record under one mask cell (<c>0x53B280(0, 0, 1)</c>, called by <c>0x527EE0</c> for every cell of the demolished object's shape): an extension cell
+	/// hands the clear to its origin with the same arguments, a tile that is no track record is left alone, and the origin goes through <see cref="ClearCell(ValueTuple{int, int}, int, int, bool)"/> as a forced clear (0, 0)
+	/// with the flag 0x81B46C clear, which no replay sets there. A surviving tile (the exit and the entry tile of the tool, <see cref="ToolExit"/>) loses one count of its overlap word for each mask cell that reaches it.
+	/// Returns whether a tile was cleared.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052852D record clear] pass 2 calls 0x53B280(0, 0, 1) (0x528525..0x52852D) on the record 0x4D0AF0 finds for the mask cell when the object is not the add-on a cleared tile takes with it (0x527EE0's third argument, 1 only from 0x53B703), else only the flag 0x10 of the record (0x528518..0x52851E); the third argument chooses the piece again for the neighbour tiles (0x53B7B4..0x53B83B), which ClearOrigin always does; 0x81B46C is 0 there: only the replays at 0x528059..0x5280BB set it, and the nested demolition runs the flag clear alone
+	internal bool ClearUnderDemolition( (int X, int Y) at )
+	{
+		var cell = Tracks.Get( at.X, at.Y );
+		if ( cell.IsEmpty )
+			return false;
+		var origin = cell.IsExtension && cell.Parent >= 0 ? Tracks.CellOf( cell.Parent ) : at;
+		return ClearCell( origin, 0, 0 );
+	}
+
 	private void ClearLink( (int X, int Y) at, byte bits ) => Update( at, cell => { cell.Link &= (byte)~bits; return cell; } );
 
 	/// <summary>The cell <paramref name="heading"/> two cells from <paramref name="at"/> as the original's <c>0x50C3E0(heading, 2)</c> answers it: any cell of the grid (the raw cell, an extension cell as it is), none outside.</summary>

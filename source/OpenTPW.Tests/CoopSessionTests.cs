@@ -553,7 +553,8 @@ public partial class CoopSessionTests
 	}
 
 	/// <summary>A queue of <paramref name="count"/> cells for <paramref name="item"/> from (<paramref name="x"/>, 6) up toward the path row (the queue removal tests' synthetic geometry).</summary>
-	private static void ConfigureQueue( GuestPathGrid grid, OriginalObject item, int x, int count )
+	/// <param name="join">Whether the queue's back cell joins the path row (the state a finished queue is in until its edit takes the link off); a tool that lays on from the back cell starts from an unjoined one (the validator <c>0x535670</c> refuses the ride's own queue cell with two links).</param>
+	private static void ConfigureQueue( GuestPathGrid grid, OriginalObject item, int x, int count, bool join = true )
 	{
 		var ride = item.Visitors;
 		ride.EntranceCell = ride.ExitCell = (x, 1);
@@ -562,7 +563,8 @@ public partial class CoopSessionTests
 		ride.OwnerWord = ParkCellMap.CellWord( item.Placement.X, item.Placement.Y );
 		ride.Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 );
 		Assert.AreEqual( count, QueuePaths.TryExtend( grid, ride, Enumerable.Range( 0, count ).Select( index => (x, 6 - index) ) ) );
-		QueuePaths.TryConnect( grid, ride );
+		if ( join )
+			QueuePaths.TryConnect( grid, ride );
 		grid.Cells.SetFlags( x, 6, grid.Cells.FlagsAt( x, 6 ) | ParkCellFlags.NoModify );
 		grid.Cells.SetPlacementCount( x, 6, 1 );
 		grid.Cells.SetType( x, 7, ParkCellTypes.Entrance );

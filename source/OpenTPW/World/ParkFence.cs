@@ -123,7 +123,9 @@ public sealed class FenceEngine
 	private readonly FenceLayer layer;
 	private readonly int width, height;
 	private readonly Dictionary<int, ushort> pendingFlags = new();
-	private readonly Dictionary<int, ushort> pendingTrackFlags = new();
+	private readonly Dictionary<int, TrackCell> pendingTracks = new();
+	/// <summary>The fence's mark (flag 0x20) on the records that hold a track tile: the tile's own flag 0x20 is the host's over-path memory (<see cref="TrackBuilder.FlagOverPath"/>), so the mark is kept here for the run and never written to the tile.</summary>
+	private readonly HashSet<int> trackMarks = new();
 	private readonly List<int> pendingStamps = new();
 
 	// the line tool's globals: 0x816D64 the last op, 0x763B00/04 the previous step, 0x820AC8 first step, 0x820AD0 last step, 0x820AE8 segment end, 0x81EDE4/8 the stored click
@@ -201,41 +203,136 @@ public sealed class FenceEngine
 		return shifted > 0x80 ? shifted >> 8 : (byte)(value << count);
 	}
 
+	// ---------------------------------------------------------------- one record, two layers
+	// The fence's structure record and a track tool's record are the same 0x28 bytes of tp.exe's second layer (0x4D0AF0). The fence routines read and write the type (+8), the walk direction (+0xD, a track tile's
+	// flow link), the flag word (+0xE), the word (+0x10: the walk's parent in a fence record, the ride word of a track origin, the origin's word in a track extension) and the counter (+0x20, a track tile's overlap
+	// counter) of a cell that holds a track tile exactly as they do on a post, and its links in +0x22 (the fence mode's link byte, 0x522770). OpenTPW keeps a tile's record in its own layer (TrackCell: Type, Link, Flags,
+	// Owner or Parent, Overlap), so every access goes to the tile's record where one exists and to the fence layer where none does; the writes are buffered and <see cref="Commit"/> applies them. A record the fence
+	// retypes (0x538FC0 with type 0 from the post clear, or a record flagged 0x40) leaves the track layer with the fields it had and goes on as a fence record. Checked against the x86 oracle (ORACLE.md X39).
+	// [BIN:TPW-EXE:0x00538FC0 type write] +8 is written unless the record's flag word has no 0x40 and holds another type than the one asked for (the fence tool's 0x19 then still answers true), so a tile is never retyped by a post
+	// [BIN:TPW-EXE:0x00539670 direction] op 0x82 (called from 0x538146 in the step 0x5370E0) writes +0xD of every record but the types 0xB, 0xC, 0x10, 0x11 (and a cell of type 0x15): a station (0xD, 0x12) takes the walk direction in its flow link
+	// [BIN:TPW-EXE:0x0052BC43 owner word] the walk 0x52BA50 writes the post's word into +0x10 of the three cells next to it (0x539210 at 0x52BC43, 0x52BC82, 0x52BCC1) and then types them 0xC (0x538FC0 at 0x52BC4C, 0x52BC8B, 0x52BCCA), whatever they hold; the post clear 0x53B280 reads that word back and clears the neighbours that name the post (0x53B739 and the three after it)
+
+	private TrackCell TrackOf( int index )
+	{
+		if ( index < 0 )
+			return default;
+		return pendingTracks.TryGetValue( index, out var pending ) ? pending : cells.Tracks.Get( X( index ), Y( index ) );
+	}
+
+	private bool HasTrack( int index ) => TrackOf( index ).Type != 0;
+
+	private static int WordOf( in TrackCell track ) => track.IsExtension ? track.Parent + 1 : track.Owner;
+
 	private int TypeOf( int index )
 	{
 		if ( index < 0 )
 			return 0;
-		var track = cells.Tracks.Get( X( index ), Y( index ) ).Type;
+		var track = TrackOf( index ).Type;
 		return track != 0 ? track : layer.Type[index];
+	}
+
+	/// <summary>0x538FC0's write of the record's type (+8). A tile's record that changes type leaves the track layer with its fields and goes on as a fence record.</summary>
+	private void SetTypeOf( int index, int type )
+	{
+		var track = TrackOf( index );
+		if ( track.Type != 0 )
+		{
+			layer.Direction[index] = track.Link;
+			layer.Flags[index] = (ushort)FlagsOf( index );
+			trackMarks.Remove( index );
+			layer.Owner[index] = (ushort)Math.Clamp( WordOf( track ), 0, ushort.MaxValue );
+			layer.Counter[index] = track.Overlap;
+			pendingTracks[index] = default;
+		}
+		layer.Type[index] = (byte)type;
 	}
 
 	private int FlagsOf( int index )
 	{
-		var (x, y) = (X( index ), Y( index ));
-		if ( cells.Tracks.Get( x, y ).Type != 0 )
-			return pendingTrackFlags.TryGetValue( index, out var pendingTrack ) ? pendingTrack : cells.Tracks.Get( x, y ).Flags;
-		return layer.Flags[index];
+		var track = TrackOf( index );
+		return track.Type != 0 ? (track.Flags & ~TrackBuilder.FlagOverPath) | (trackMarks.Contains( index ) ? TrackBuilder.FlagOverPath : 0) : layer.Flags[index];
 	}
 
 	private void SetFlagsOf( int index, int value )
 	{
-		var (x, y) = (X( index ), Y( index ));
-		if ( cells.Tracks.Get( x, y ).Type != 0 )
-			pendingTrackFlags[index] = (byte)value;
+		var track = TrackOf( index );
+		if ( track.Type != 0 )
+		{
+			// the mark (0x20) stays with the run, the tile's own 0x20 (over path) is kept
+			if ( (value & TrackBuilder.FlagOverPath) != 0 )
+				trackMarks.Add( index );
+			else
+				trackMarks.Remove( index );
+			track.Flags = (byte)((value & ~TrackBuilder.FlagOverPath) | (track.Flags & TrackBuilder.FlagOverPath));
+			pendingTracks[index] = track;
+		}
 		else
 			layer.Flags[index] = (ushort)value;
 	}
 
+	private int DirectionOf( int index )
+	{
+		var track = TrackOf( index );
+		return track.Type != 0 ? track.Link : layer.Direction[index];
+	}
+
+	private void SetDirectionOf( int index, int value )
+	{
+		var track = TrackOf( index );
+		if ( track.Type != 0 )
+		{
+			track.Link = (byte)value;
+			pendingTracks[index] = track;
+		}
+		else
+			layer.Direction[index] = (byte)value;
+	}
+
+	private int CounterOf( int index )
+	{
+		var track = TrackOf( index );
+		return track.Type != 0 ? track.Overlap : layer.Counter[index];
+	}
+
+	private void SetCounterOf( int index, int value )
+	{
+		var track = TrackOf( index );
+		if ( track.Type != 0 )
+		{
+			track.Overlap = (short)value;
+			pendingTracks[index] = track;
+		}
+		else
+			layer.Counter[index] = (short)value;
+	}
+
 	/// <summary>The ride word the tool compares an owner with (0x818698): the fence tool runs with none.</summary>
 	// [BIN:TPW-EXE:0x539220 link back] the other record links only when its +0x10 is 0 or 0x818698, the tool's ride; the fence setup and a purchase run with 0x818698 = 0
+	// [BIN:TPW-EXE:0x0052F175 tool ride] the level start stores 0 into 0x818698 just before the set-up 0x5323F0, whose own tool switch 0x5276D0 (0x532483) clears it again; only the track tools write it (0x524C94, 0x5251D2, 0x525815, 0x527751, 0x527859) and every tool switch 0x5276D0 (the HUD's tool buttons, e.g. 0x4988F8) stores 0 into it (0x5276DF)
 	private const int ToolOwner = 0;
 
+	/// <summary>The word of the record (+0x10): a track tile's ride word (origin) or origin word (extension, OpenTPW's Parent), else the fence record's.</summary>
 	private int OwnerOf( int index )
 	{
-		var (x, y) = (X( index ), Y( index ));
-		var track = cells.Tracks.Get( x, y );
-		// a ride's track tile carries its ride's word (OpenTPW's own owner field; in the original an extension's +0x10 holds its parent, which is harmless here because 0x539220 links only origin types 0xB, 0xD, 0x10, 0x12 and 0x19); a fence record carries the walk's parent
-		return track.Type != 0 ? Math.Min( track.Owner, ushort.MaxValue ) : layer.Owner[index];
+		var track = TrackOf( index );
+		return track.Type != 0 ? Math.Clamp( WordOf( track ), 0, ushort.MaxValue ) : layer.Owner[index];
+	}
+
+	// 0x539210: the record's word; a tile's extension names its origin by Parent (index), an origin keeps the ride word in Owner (the EXT field track-tile-owner)
+	private void SetOwnerOf( int index, int value )
+	{
+		var track = TrackOf( index );
+		if ( track.Type == 0 )
+		{
+			layer.Owner[index] = (ushort)value;
+			return;
+		}
+		if ( track.IsExtension )
+			track.Parent = value - 1;
+		else
+			track.Owner = value;
+		pendingTracks[index] = track;
 	}
 
 	private int CellFlags( int index ) => pendingFlags.TryGetValue( index, out var pending ) ? pending : (ushort)cells.FlagsAt( X( index ), Y( index ) );
@@ -292,12 +389,12 @@ public sealed class FenceEngine
 			return op == 0x19;
 		if ( type == op )
 		{
-			layer.Counter[index]++;
+			SetCounterOf( index, CounterOf( index ) + 1 );
 			return true;
 		}
 		if ( op != 0x19 && !BankNotNegative && op != 0 && op != 7 )
 			return false;
-		layer.Type[index] = (byte)op;
+		SetTypeOf( index, op );
 		pendingStamps.Add( index );
 		return true;
 	}
@@ -517,28 +614,28 @@ public sealed class FenceEngine
 		var type = TypeOf( index );
 		if ( type is 0xB or 0xC or 0x10 or 0x11 || CellType( index ) == 0x15 )
 			return;
-		var current = layer.Direction[index];
+		var current = DirectionOf( index );
 		if ( PopCardinal( LinksOf( index ) ) < 3 )
 		{
 			if ( dx == -2 )
-				layer.Direction[index] = 0x40;
+				SetDirectionOf( index, 0x40 );
 			if ( dx == 2 )
-				layer.Direction[index] = 4;
+				SetDirectionOf( index, 4 );
 			if ( dy == -2 )
-				layer.Direction[index] = 1;
+				SetDirectionOf( index, 1 );
 			if ( dy == 2 )
-				layer.Direction[index] = 0x10;
+				SetDirectionOf( index, 0x10 );
 		}
 		else
 		{
 			if ( dx == -2 )
-				layer.Direction[index] = (byte)(current | 0x40);
+				SetDirectionOf( index, current | 0x40 );
 			if ( dx == 2 )
-				layer.Direction[index] = (byte)(current | 4);
+				SetDirectionOf( index, current | 4 );
 			if ( dy == -2 )
-				layer.Direction[index] = (byte)(current | 1);
+				SetDirectionOf( index, current | 1 );
 			if ( dy == 2 )
-				layer.Direction[index] = (byte)(current | 0x10);
+				SetDirectionOf( index, current | 0x10 );
 		}
 	}
 
@@ -598,7 +695,7 @@ public sealed class FenceEngine
 		if ( type == 0x19 )
 		{
 			bool owned = false, east = false, south = false, southEast = false;
-			var direction = layer.Direction[index];
+			var direction = (byte)DirectionOf( index );
 			var links = LinksOf( index );
 			var special = (direction == 1 && links == 0x41) || (direction == 0x10 && links == 0x14) || (direction == 4 && links == 5) || (direction == 0x40 && (links == 0x50 || links == 0x14))
 				|| (direction == 1 && links == 0x50) || (direction == 4 && links == 0x41) || (direction == 0x10 && links == 5);
@@ -830,7 +927,7 @@ public sealed class FenceEngine
 				var record = At( column, row );
 				if ( TypeOf( record ) is 0xC or 0x11 )
 				{
-					var parent = layer.Owner[record];
+					var parent = OwnerOf( record );
 					record = parent == 0 ? -1 : parent - 1;
 				}
 				if ( record < 0 || TypeOf( record ) != 0x19 || Marked( record ) )
@@ -839,7 +936,7 @@ public sealed class FenceEngine
 					ClearStructure( record );
 				else
 					ClearPost( record );
-				layer.Counter[record] = 0;
+				SetCounterOf( record, 0 );
 				ClearBlock( record, force: true );
 			}
 		}
@@ -858,20 +955,20 @@ public sealed class FenceEngine
 	private void ClearStructure( int index )
 	{
 		layer.Links[index] = 0;
-		layer.Direction[index] = 0;
-		layer.Flags[index] = 0;
+		SetDirectionOf( index, 0 );
+		SetFlagsOf( index, 0 );
 		Place( index, 0 );
-		layer.Owner[index] = 0;
+		SetOwnerOf( index, 0 );
 		foreach ( var direction in new[] { South, East, 8 } )
 		{
 			var other = Neighbour( index, direction, 1 );
 			if ( other < 0 )
 				continue;
 			layer.Links[other] = 0;
-			layer.Direction[other] = 0;
-			layer.Flags[other] = 0;
+			SetDirectionOf( other, 0 );
+			SetFlagsOf( other, 0 );
 			Place( other, 0 );
-			layer.Owner[other] = 0;
+			SetOwnerOf( other, 0 );
 		}
 	}
 
@@ -881,7 +978,7 @@ public sealed class FenceEngine
 	/// </summary>
 	private void ClearPost( int index )
 	{
-		layer.Counter[index] = 0;
+		SetCounterOf( index, 0 );
 		for ( var bit = 1; ; bit = Rotate( bit, 4 ) )
 		{
 			if ( (bit & LinksOf( index )) != 0 )
@@ -894,30 +991,30 @@ public sealed class FenceEngine
 					if ( PopAll( LinksOf( other ) ) == 1 )
 					{
 						var links = LinksOf( other );
-						if ( layer.Direction[other] != links && layer.Direction[other] != Opposite( links ) )
-							layer.Direction[other] = (byte)Opposite( links );
+						if ( DirectionOf( other ) != links && DirectionOf( other ) != Opposite( links ) )
+							SetDirectionOf( other, Opposite( links ) );
 					}
 				}
 			}
 			if ( Rotate( bit, 4 ) == 1 )
 				break;
 		}
-		layer.Direction[index] = 0;
-		layer.Flags[index] = 0;
+		SetDirectionOf( index, 0 );
+		SetFlagsOf( index, 0 );
 		Place( index, 0 );
-		layer.Owner[index] = 0;
+		SetOwnerOf( index, 0 );
 		var self = index + 1;
 		foreach ( var direction in new[] { South, East, 8 } )
 		{
 			var other = Neighbour( index, direction, 1 );
-			if ( other < 0 || layer.Owner[other] != self )
+			if ( other < 0 || OwnerOf( other ) != self )
 				continue;
 			layer.Links[other] = 0;
-			layer.Direction[other] = 0;
-			layer.Flags[other] = 0;
+			SetDirectionOf( other, 0 );
+			SetFlagsOf( other, 0 );
 			Place( other, 0 );
-			layer.Counter[other] = 0;
-			layer.Owner[other] = 0;
+			SetCounterOf( other, 0 );
+			SetOwnerOf( other, 0 );
 		}
 	}
 
@@ -962,7 +1059,7 @@ public sealed class FenceEngine
 					}
 					else
 					{
-						layer.Direction[index] = (byte)found;
+						SetDirectionOf( index, found );
 						layer.Links[index] &= (byte)~heading_;
 						clear = Opposite( found );
 					}
@@ -975,9 +1072,9 @@ public sealed class FenceEngine
 				heading_ = 0;
 			if ( x == PostB.X && y == PostB.Y )
 				done = true;
-			if ( rewrite && index >= 0 && layer.Direction[index] != heading_ )
+			if ( rewrite && index >= 0 && DirectionOf( index ) != heading_ )
 			{
-				layer.Direction[index] = (byte)heading_;
+				SetDirectionOf( index, heading_ );
 				Finish( index );
 			}
 			if ( index >= 0 )
@@ -987,7 +1084,7 @@ public sealed class FenceEngine
 					var other = Neighbour( index, direction, 1 );
 					if ( other < 0 )
 						continue;
-					layer.Owner[other] = (ushort)(index + 1);
+					SetOwnerOf( other, index + 1 );
 					Place( other, 0xC );
 				}
 			}
@@ -1062,7 +1159,7 @@ public sealed class FenceEngine
 		MarkFence( false );
 	}
 
-	/// <summary>Writes the buffered cell flags, track flags and block stamps to the cell map.</summary>
+	/// <summary>Writes the buffered cell flags, track records and block stamps to the cell map.</summary>
 	public void Commit()
 	{
 		foreach ( var (index, value) in pendingFlags )
@@ -1071,16 +1168,22 @@ public sealed class FenceEngine
 			if ( (ushort)cells.FlagsAt( x, y ) != value )
 				cells.SetFlags( x, y, (ParkCellFlags)value );
 		}
-		foreach ( var (index, value) in pendingTrackFlags )
+		foreach ( var (index, track) in pendingTracks )
 		{
 			var (x, y) = (X( index ), Y( index ));
-			if ( cells.Tracks.Get( x, y ) is { Type: not 0 } track && track.Flags != (byte)value )
-				cells.Tracks.Set( x, y, track with { Flags = (byte)value } );
+			var before = cells.Tracks.Get( x, y );
+			if ( before.Type == 0 && track.Type == 0 )
+				continue;
+			if ( track.Type == 0 )
+				cells.ClearTrackRecord( x, y );
+			else if ( !before.Equals( track ) )
+				cells.Tracks.Set( x, y, track );
 		}
 		foreach ( var index in pendingStamps )
 			cells.StampBlockAt( X( index ), Y( index ) );
 		pendingFlags.Clear();
-		pendingTrackFlags.Clear();
+		pendingTracks.Clear();
+		trackMarks.Clear();
 		pendingStamps.Clear();
 	}
 }

@@ -29,6 +29,27 @@ public class QueueCellValidatorTests
 		}
 	}
 
+	/// <summary>
+	/// The owner priority 0x818C14 belongs to a pass over a line: a class-3 owner stores its type's priority (0x535788), an owner that is none leaves what the pass held (0 after the hover's reset, 0x523522),
+	/// and the cell is accepted while that is below the tool's priority; the latches start clean with the pass.
+	/// </summary>
+	[TestMethod]
+	public void TheOwnerPriorityIsCarriedFromCellToCellOfOnePassAndAFreshPassStartsAtZero()
+	{
+		CellValidatorInput Object( int? owner ) => new( 3, 4, 0, 0, 0, 0, false, false, false, 0, owner, 3 );
+		var latches = new CellValidatorLatches();
+		Assert.AreEqual( 0, QueueCellValidator.Check( Object( null ), ref latches ), "no class-3 owner: the pass's 0 is below the tool's 3" );
+		Assert.AreEqual( 0, QueueCellValidator.Check( Object( 1 ), ref latches ) );
+		Assert.AreEqual( 1, latches.OwnerPriority );
+		Assert.AreEqual( 0, QueueCellValidator.Check( Object( null ), ref latches ), "an owner that is none keeps the 1" );
+		Assert.AreEqual( 1, QueueCellValidator.Check( Object( 3 ), ref latches ), "a class-3 owner of the tool's priority refuses" );
+		Assert.AreEqual( 3, latches.OwnerPriority );
+		Assert.IsTrue( latches.Refuse );
+		Assert.AreEqual( 1, QueueCellValidator.Check( Object( null ), ref latches ), "and the refusal and the priority mark the rest of the pass" );
+		var fresh = new CellValidatorLatches();
+		Assert.AreEqual( 0, QueueCellValidator.Check( Object( null ), ref fresh ), "the next pass starts clean" );
+	}
+
 	/// <summary>A queue cell on a fence post or on one of the three cells beside it is refused whoever owns the land (the structure record is a post, or an extension of one).</summary>
 	[TestMethod]
 	public void AQueueCellOnAHoardingPostOrItsExtensionIsRefusedOnOwnedLandToo()

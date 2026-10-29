@@ -11,6 +11,8 @@ internal struct CellValidatorLatches
 	public bool EndsOnPath;
 	/// <summary>0x816D4C: the line meets an existing cell of its own kind.</summary>
 	public bool MeetsOwn;
+	/// <summary>0x818C14: the overwrite priority of the last class-3 owner an object cell met (0 at the start of a pass); a cell whose owner is no class-3 thing leaves it as it was.</summary>
+	public int OwnerPriority;
 }
 
 /// <summary>What the validator reads of one cell (the cell record, its structure record and the line state).</summary>
@@ -24,10 +26,10 @@ internal struct CellValidatorLatches
 /// <param name="LastCell">The cell is the last one of the line (0x820AB8).</param>
 /// <param name="InsideLine">The line has started and its ride is known (0x820AA4 and 0x818688).</param>
 /// <param name="NeighbourType">For a queue cell with one link under the path tool, the type of the cell that link points to.</param>
-/// <param name="OwnerPriority">The overwrite priority of the object the cell belongs to (0x818C14), for the types 4, 9 and 10.</param>
+/// <param name="OwnerPriority">The overwrite priority of the class-3 thing that owns the cell (the type record's +0x54, which the validator stores in 0x818C14), for the types 4, 9 and 10; null when no class-3 thing owns it, which leaves 0x818C14 as the pass had it (<see cref="CellValidatorLatches.OwnerPriority"/>).</param>
 /// <param name="ToolPriority">The tool's overwrite priority (0x818C10): 2 for the path tool, 3 for the queue tool.</param>
 internal readonly record struct CellValidatorInput( int Mode, byte Type, ushort Flags, byte StructureType, byte StructureLinks, byte Links, bool OwnedByTool, bool LastCell, bool InsideLine,
-	byte NeighbourType, int OwnerPriority, int ToolPriority );
+	byte NeighbourType, int? OwnerPriority, int ToolPriority );
 
 /// <summary>
 /// The decision order of tp.exe's cell validator <c>0x00535670</c> for the path and queue tools without the park's money (the money test only adds a refusal when the pending cost exceeds the bank). The answers:
@@ -43,13 +45,16 @@ internal static class QueueCellValidator
 	{
 		var mode = cell.Mode;
 		var type = cell.Type;
+		// [BIN:TPW-EXE:0x0053570E owner priority] before anything else a type 4, 9 or 10 cell looks up the thing on its owner word's cell (0x4D99E0, 0x7CFB90): a thing of class 3 (byte +2) stores its type record's +0x54 in 0x818C14 (0x535788); any other owner leaves 0x818C14 as it was, which the hover resets to 0 (0x523522) and the passes carry from cell to cell
+		if (type is 4 or 9 or 10 && cell.OwnerPriority is { } found)
+			latches.OwnerPriority = found;
 		// the cell is not the player's land
 		if ((cell.Flags & 0x40) != 0)
 			return Refused;
 		// an object's cell, the entrance and the exit: acceptable only when the owner's priority is below the tool's, for the first cell that is refused or meets no refusal before
 		if (type is 4 or 9 or 10)
 		{
-			if (cell.OwnerPriority < cell.ToolPriority && !latches.Pending && !latches.Refuse)
+			if (latches.OwnerPriority < cell.ToolPriority && !latches.Pending && !latches.Refuse)
 				return 0;
 			latches.Refuse = true;
 			return Refused;
@@ -168,12 +173,24 @@ internal static class QueueCellValidator
 	}
 
 	/// <summary>
-	/// Whether the validator refuses the cell for the tool in <paramref name="mode"/> with a fresh drag's latches: the per-cell routes use it as a refusal on top of their own rules and identify a terminal cell explicitly.
-	/// The cell's type is its own (a track tile keeps the type of the ground or the base type of a station under it).
+	/// Whether the validator refuses the cell for the tool in <paramref name="mode"/> with the latches of a fresh pass (<see cref="Refuses(ParkCellMap, int, int, int, int?, ref CellValidatorLatches, bool, bool)"/>): the per-cell routes use it
+	/// as a refusal on top of their own rules and identify a terminal cell explicitly. The cell's type is its own (<see cref="ParkCellMap.PrimaryTypeAt"/>: a track tile lies beneath it, or shows its type while the cell is empty).
 	/// </summary>
-	/// <param name="givesWay">An object cell the tool may cover (its owner's overwrite priority is below the tool's).</param>
+	/// <param name="ownerPriority">The overwrite priority of the class-3 thing that owns an object cell (types 4, 9 and 10), or null when there is none.</param>
 	/// <param name="lastCell">The last cell of the line: a queue may end on a path before its NoModify flag is tested.</param>
-	public static bool Refuses( ParkCellMap cells, int mode, int x, int y, bool givesWay, bool lastCell = false )
+	public static bool Refuses( ParkCellMap cells, int mode, int x, int y, int? ownerPriority, bool lastCell = false )
+	{
+		var latches = new CellValidatorLatches();
+		return Refuses( cells, mode, x, y, ownerPriority, ref latches, lastCell );
+	}
+
+	/// <summary>
+	/// <see cref="Refuses(ParkCellMap, int, int, int, int?, bool)"/> in the middle of a pass: the latches and the owner priority 0x818C14 carry from cell to cell of one pass over a line, as the original keeps them
+	/// until the next reset (the hover 0x5234D0 at 0x5234F2, 0x5234F8 and 0x523522, the commit's pass set-up 0x527C30 at 0x527C52 and 0x527C5C for the two refusal latches, the tool's mode change 0x52F11B for all of them).
+	/// </summary>
+	/// <param name="insideLine">The line has started and its ride is known (0x820AA4 and 0x818688).</param>
+	// [BIN:TPW-EXE:0x005234F2 latch reset] the hover handler clears the drag state 0x816D48, 0x816D50 (refuse), 0x816D58 (pending), 0x816D54, 0x816D60 (ends on a path), 0x816D5C and 0x816D4C (meets its own kind) and then the tool priority 0x818C10 and the owner priority 0x818C14 (0x523522); the commit's pass set-up 0x527C30 clears 0x816D48, 0x816D50 and 0x816D58 alone before its LayLine, and the mode change 0x52F11B clears 0x816D50, 0x816D58, 0x816D60, 0x816D5C and 0x816D4C: no cell of a drag resets them, so every pass over a line starts clean and a refusal marks the rest of that pass
+	public static bool Refuses( ParkCellMap cells, int mode, int x, int y, int? ownerPriority, ref CellValidatorLatches latches, bool lastCell = false, bool insideLine = false )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
 		if ( !cells.InBounds( x, y ) )
@@ -185,8 +202,7 @@ internal static class QueueCellValidator
 			var (px, py) = cells.Tracks.CellOf( track.Parent );
 			origin = cells.Tracks.Get( px, py );
 		}
-		var raw = cells.RawTypeAt( x, y );
-		var type = !track.IsEmpty && raw == track.Type ? track.BaseType : raw;
+		var type = cells.PrimaryTypeAt( x, y );
 		var links = cells.LinksAt( x, y );
 		byte neighbour = 0;
 		if ( mode == 1 && type == 3 && System.Numerics.BitOperations.PopCount( links ) == 1 )
@@ -195,9 +211,8 @@ internal static class QueueCellValidator
 			neighbour = cells.RawTypeAt( x + dx, y + dy );
 		}
 		var toolPriority = mode == 3 ? 3 : 2;
-		var input = new CellValidatorInput( mode, type, (ushort)cells.FlagsAt( x, y ), StructureTypeAt( cells, x, y ), origin.IsEmpty ? (byte)0 : origin.Mask, links, false, lastCell, false, neighbour,
-			givesWay ? 0 : toolPriority, toolPriority );
-		var latches = new CellValidatorLatches();
+		var input = new CellValidatorInput( mode, type, (ushort)cells.FlagsAt( x, y ), StructureTypeAt( cells, x, y ), origin.IsEmpty ? (byte)0 : origin.Mask, links, false, lastCell, insideLine, neighbour,
+			ownerPriority, toolPriority );
 		return Check( input, ref latches ) == 1;
 	}
 }

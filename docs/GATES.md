@@ -62,7 +62,7 @@ The grid holds the original's types: the world init types the cells without terr
   from its queue link, so a queue whose back has lost its path stays closed); a queue ride whose entry has no cardinal link bit has no front and is unconnected
   (`0x4DE040`, `0x4DE130`); a ride on OpenTPW's one-cell queue and an object without a queue on untyped geometry are taken as connected, because OpenTPW's ride entrance cells
   keep no link byte there.
-- `ECON-050`: a removed object leaves the cells the demolition leaves (`DemolishFootprint`); the second-layer clear `0x0053B280`, the moved-object variant and the track replays are not ported.
+- `ECON-050`: a removed object leaves the cells the demolition leaves (`DemolishFootprint`), with the second layer's record clear `0x0053B280(0, 0, 1)` under each cell of its shape (a sold add-on takes the tile it stands on); the queue's corner stack replay `0x530120` is not ported.
 - `GUEST-011` (retired): a paid visitor walks in only while the entrance gate's script variable 1 (`VAR_STATUS`, `0x51a290`) is 1, else it goes home as at a closed park (`0x4ff814`, `GuestSimulation.EntranceGateOpen`);
   the closed-ride queue turn-away is the original's (the door closes the rides, whose update dismisses the queue head, one per turn), and the close clears a called guest's loading slot at once (`0x4df300`, [CLOSED-RIDE-ADMISSION.md](CLOSED-RIDE-ADMISSION.md)).
 - The keyboard shortcuts are the door button's own help rows; the original's shortcut table row for Ctrl-C

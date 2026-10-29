@@ -4,6 +4,7 @@
 - Classification: approximation; TRACK-032 remains open.
 - PR #597 began as a plan-only proposal. The October 20 structural-reader increment adds immutable decoding and synthetic tests, not runtime restoration.
 - Baseline for this increment: main d655ed1b, retaining the original proposal ancestry.
+- Round 10 (October 29) adds `Level.ImportOriginalTracks` (the saved track cells, the circuit walk and the chunk-3 words); TRACK-032 stays open for the vehicles, the waypoint chain and the riders.
 - No `Level.Tracks` or `RewalkTrack` integration is included; that runtime area has separate active ownership.
 
 ## Corrected native evidence
@@ -15,7 +16,7 @@ Static examination of authorized tp.exe corrects the original proposal's termino
 - Chunk 6 serializes only a ride handle. It chooses from the separate **0x1c waypoint chain** at ride+0xa8, not from chunk 5's raw records.
 - Chunk 3's station/grid construction and chunk 4's tile geometry create that waypoint chain. Native selector `0x5439bb..0x5439e4` finds the first flag-4 waypoint, always advances at least once, wraps a null successor to the head, and skips flag-2 candidates. Its initial marker scan has no wrap/null guard.
 
-The verified field layout, addresses and parser policy are documented in [TPWS-PAYLOAD](../TPWS-PAYLOAD.md#trackrides-structural-reader-track-032-remains-open).
+The verified field layout, addresses and parser policy are documented in [TPWS-PAYLOAD](../TPWS-PAYLOAD.md#trackrides-structural-reader-and-track-import-track-032-narrowed).
 
 ## Bounded implemented scope
 

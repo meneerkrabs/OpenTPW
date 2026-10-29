@@ -116,8 +116,9 @@ A Theme Park Inc payload splits on the same principle with its own reader rules
 `ThemeParkIncSaveWorld`; see [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-park-save-layout)).
 Every block but a Coasters block with a coaster ends where its tp.exe
 reader stops (`SaveBlockWidths`, the World included), like the original loader, which runs each block's own
-reader and then checks the block's tag (`0x415270`); only that one (and a World that does not read as the original's, a synthetic
-payload) is found by its delimiter's bytes, so a payload that splits in more than one way there, or holds its delimiter's bytes more than 256 times, is rejected although the original loader would
+reader and then checks the block's tag (`0x415270`); a Coasters block with a coaster ends where its reader stops too when the park import
+passes the park's coaster types (`SavePayloadLayout.Parse(payload, coasterTrains)`, `SaveCoasterBlock.TryMeasure`: the train slots and the cars per train the type holds). Without the types, and for a World that does not read as the original's (a synthetic
+payload), the block is found by its delimiter's bytes, so a payload that splits in more than one way there, or holds its delimiter's bytes more than 256 times, is rejected although the original loader would
 read it (SAVE-011).
 The four local `scape.omp` files start with `OBJ_`; this is not evidence that they
 are terrain tile grids. Original saves can be written: `SaveContainerWriter` and

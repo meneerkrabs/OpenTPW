@@ -76,9 +76,13 @@ public static class SaveBlockWidths
 	/// <c>0x50C200</c> (the base and a 2-byte segment number) when bit 1 is set and the effects record <c>0x502490</c> (five words) when bit 2 is set; the thing list follows and closes itself.
 	/// </remarks>
 	// [BIN:TPW-EXE:0x5179C0 World loader] variables, 0x4D3AA0, 0x4D7A70 (0x507850, 0x4F7F30, 0x4CF050), 0x4D7EA0 (status byte, 0x4D8DD0, 0x50C200, 0x502490 per cell), "Used Thing Head" and the things; a status byte's other bits are not read
-	public static bool TryMeasureWorld( ReadOnlySpan<byte> payload, int offset, out int width )
+	public static bool TryMeasureWorld( ReadOnlySpan<byte> payload, int offset, out int width ) => TryMeasureWorld( payload, offset, out width, out _ );
+
+	/// <summary><see cref="TryMeasureWorld(ReadOnlySpan{byte}, int, out int)"/> that also gives the offset where the thing list (<c>Used Thing Head</c>) starts.</summary>
+	public static bool TryMeasureWorld( ReadOnlySpan<byte> payload, int offset, out int width, out int thingsStart )
 	{
 		width = 0;
+		thingsStart = 0;
 		try
 		{
 			var position = checked( offset + SaveWorldVariables.Bytes + SaveObjectControls.Bytes + SaveStaffPool.Bytes + SaveCalendar.Bytes + SaveWorld.ArrivalBytes );
@@ -92,6 +96,7 @@ public static class SaveBlockWidths
 			if ( position > payload.Length )
 				return false;
 			width = SaveThingChain.End( payload, position ) - offset;
+			thingsStart = position;
 			return true;
 		}
 		catch ( InvalidDataException )

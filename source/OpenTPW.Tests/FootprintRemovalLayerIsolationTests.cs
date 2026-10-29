@@ -119,8 +119,12 @@ public class FootprintRemovalLayerIsolationTests
 		Assert.AreEqual( (byte)ParkCellType.Path, cells.RawTypeAt( 4, 3 ) );
 		Assert.AreEqual( 0, cells.LinksAt( 4, 3 ) & 0x40 );
 		Assert.AreEqual( 1, cells.CountOf( ParkCellType.Path ) );
-		Assert.AreEqual( track, cells.Tracks.Get( 3, 3 ), "an @ removal has no track-layer mutation" );
-		Assert.AreEqual( trackVersion, cells.Tracks.Version );
+		// the removal writes no record of its own; the only change is the bridge re-test of the tile the path cell lay over (0x538A92: the neighbour's path cell (4, 3) still lies over the tile, so it stays a bridge; the piece is picked again)
+		var after = cells.Tracks.Get( 3, 3 );
+		Assert.AreEqual( track.Type, after.Type );
+		Assert.AreEqual( track.Flags, after.Flags, "the add-on flag and the bridge stay" );
+		Assert.AreEqual( track.Owner, after.Owner );
+		Assert.AreEqual( track.Mask, after.Mask );
 	}
 
 	private readonly record struct CellState( byte Type, ParkCellFlags Flags, ushort Owner, byte Links, byte QueueLink, short Placements );

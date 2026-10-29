@@ -1043,6 +1043,7 @@ public sealed partial class ParkHud
 		if ( researchHum != null && !ResearchWindowOpen )
 			StopResearchSounds();
 		UpdateLocatorPanels();
+		UpdateLocatorSlide( context.Delta );
 		SampleHappiness( context.Delta );
 		var admittedPointerEvents = orderedPointerFrame ? AdmitPointerEvents( context, pointerFrameInput ) : null;
 		var paused = Paused;

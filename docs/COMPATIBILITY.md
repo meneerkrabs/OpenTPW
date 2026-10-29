@@ -344,8 +344,8 @@ Besides the blueprint markers, tp.exe builds two dynamic meshes every park frame
   patches of it (`0x53CAB0`: 10 x 11 cells from the grid's corner and 4 x 6 from column 10, 134 faces) start at the level's
   `WaterStartPos` (380, -5, -180 in every `Standard.sam`), above the static sea. Each face takes one of the surf textures `gby_sur1` to
   `gby_sur3` (translucent) from a table of 110 entries that the mesh creation (`0x53BFE0`) fills with `rand() % 3`; each patch reads
-  the table from its start. The table comes from the process's C runtime `rand()`, which start-up seeds with `GetTickCount` (`0x54DDE3`),
-  so every run draws a different sea; OpenTPW keeps one such process stream (`CrtProcessRandom`), seeded the same way. The original's
+  the table from its start. The table comes from the game thread's C runtime `rand()`, which start-up seeds with `GetTickCount` (`0x54DDE3`),
+  so every run draws a different sea; OpenTPW keeps one such stream (`CrtProcessRandom`), seeded the same way when the game starts. The original's
   other `rand()` callers draw from that stream before a park starts; OpenTPW's stand-ins for them keep streams of their own, so the
   number of draws before the table is not matched (it depends on the clock-seeded run anyway).
 - **The FlagsMesh.** Eight cloth flags hang from the terrain's `flag_pole` meshes by the entrance (the table `0x763CF4`: x 411.25,

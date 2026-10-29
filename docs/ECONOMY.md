@@ -465,7 +465,7 @@ The ride window's `b_upgrade` opens the ride's upgrade list (tp.exe `0x4AE560`, 
 A list without rows shows its message instead (UITEXT 27 in Instant Action, 28 at level 2, 26 otherwise), one line per row, which a click ignores. The ride window's
 refresh fills the list again while it is open (`0x4ADE40`), and the list closes when its ride is no longer the selected one or loses its economy record, so a row acts
 only on the ride it was opened for (`ParkHud.UpgradeListCurrent`). The button shows for a Theme Park World ride with an economy record outside a read-only visit (not for the developer prototype);
-sparse, custom, stopped or faulted runtimes and coasters get no level row, and neither does a broken-down ride whose upgrade waits (OpenTPW's state keeps both, the
+sparse, custom, stopped or faulted runtimes get no level row (coasters list theirs as any ride does: every shipped coaster has two researchable levels, and neither `0x004AE140` nor `0x4df8f0` tests the track type), and neither does a broken-down ride whose upgrade waits (OpenTPW's state keeps both, the
 original's one state word holds either). A save written while OpenTPW charged at purchase keeps such a pending upgrade paid. Completion
 applies only the existing minimum catalogue-default contract: live CAP/DUR remain authored, with no native reset or full performance claim. Authored CAP9/DUR77, an active
 WAIT deadline and occupied rider/head slots survive a purchase from the list and the mechanic's completion; the other instance keeps its prior fallback capacity

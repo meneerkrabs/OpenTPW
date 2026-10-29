@@ -100,17 +100,14 @@ public class CoasterCostHudTests
 	}
 
 	[TestMethod]
-	public void TheLandAndClearAreaToolsShowTheirCostAsEveryTypeThreeModeDoes()
+	public void TheClearAreaToolHidesTheCostLineAsItsHoverSetsTheHiddenMarker()
 	{
 		var (hud, level, _) = Fixture();
 		Set( level, "<CoasterPanel>k__BackingField", null );
 		Set( level, "<CoasterToolStation>k__BackingField", null );
-		Assert.IsNull( hud.BuildActionCost );
 		var clear = new AreaClearTool( ( _, _ ) => ParkCommandResult.Rejected( "synthetic" ) );
 		Set( level, "<AreaClearTool>k__BackingField", clear );
 		clear.Begin();
-		Assert.AreEqual( 0L, hud.BuildActionCost, "the Clear Area tool writes no cost: the line shows 0 (0x4a0cdd shows every type-3 mode)" );
-		clear.Cancel();
-		Assert.IsNull( hud.BuildActionCost );
+		Assert.IsNull( hud.BuildActionCost, "0x523c18 stores -10000, which 0x4a0d68 hides" );
 	}
 }

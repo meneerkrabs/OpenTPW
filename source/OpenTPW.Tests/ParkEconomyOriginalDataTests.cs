@@ -49,7 +49,7 @@ public class ParkEconomyOriginalDataTests
 
 	/// <summary>
 	/// Every theme's staff room is not choosable (Features.sam Info.IsChoosable 0), so its record holds state 3 (0x4DB4FB); a standing staff room is no closed one
-	/// (0x4E0440 reads the open word only), and the advisor's StaffroomClosed message 263, whose only response plays the z_error placeholder, waits for one the player closed (issue #829).
+	/// (0x4E0440 reads the open word only), and the advisor's StaffroomClosed message 263, whose only response plays the z_error placeholder, waits for one whose open word is clear (issue #829).
 	/// </summary>
 	[TestMethod]
 	public void EveryThemesStaffRoomIsAnOpenRestAreaForTheAdvisor()

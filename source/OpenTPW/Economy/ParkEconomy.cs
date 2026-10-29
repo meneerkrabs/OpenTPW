@@ -21,7 +21,7 @@ public enum CellPurchase
 /// time advances in whole fixed ticks. Values come from the original settings wherever they exist;
 /// every approximation is listed in docs/ECONOMY.md and in the member documentation.
 /// </summary>
-public sealed class ParkEconomy : IParkEconomy
+public sealed partial class ParkEconomy : IParkEconomy
 {
 	/// <summary>Advisor.sam <c>StaffHireMechanics1.PoorerStateThan</c>: below this state of repair a ride is worn and gets a mechanic.</summary>
 	// [DATA:Advisor/Advisor.sam:StaffHireMechanics1.PoorerStateThan]
@@ -1421,6 +1421,7 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler fills the statistics rings the park information window graphs: the arrivals, the guests in the park (this census), the mean happiness (0x4C7BB0) and the mean stay
 		var rating = ParkRating;
 		StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census, rating );
+		CloseMisbehavingMonth();
 		var closed = Ledger.CloseMonth( nextMonthIndex, rating, NetWorth( 0 ) );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )

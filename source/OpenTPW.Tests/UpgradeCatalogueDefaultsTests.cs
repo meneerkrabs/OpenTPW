@@ -199,11 +199,23 @@ public class UpgradeCatalogueDefaultsTests
 	}
 
 	[TestMethod]
-	public void CommonFactoryCompatibilityIsUnchangedAndNullScriptOrCoasterRefusesBinding()
+	public void CommonFactoryCompatibilityIsUnchangedAndNullScriptRefusesBinding()
 	{
 		var entry = Entry(); Assert.AreEqual( OriginalObjectRuntime.CreateQueueParameters( entry ), OriginalObjectRuntime.CreateQueueParameters( entry, 0 ) );
 		var noScript = new ObjectCatalogEntry( entry.Theme, entry.Category, entry.ArchivePath, entry.Settings, entry.Shape, entry.ModelPath, null, null, entry.Scripts, entry.Animations, entry.AuxiliaryModels, entry.Models, entry.FileSystem, null ); var runtime = new OriginalObjectRuntime( noScript ); Assert.IsFalse( runtime.TryInitializeCatalogueTier( 1, out _ ) ); Assert.IsFalse( runtime.TryApplyCatalogueTierDefaults( 1, out _ ) ); Assert.IsNull( runtime.CatalogueTier );
-		var coaster = World( "Bumper.WhichTrackType 3\n" ); Assert.IsNotNull( coaster.One.Runtime.Coaster ); Assert.IsFalse( coaster.One.Runtime.TryApplyCatalogueTierDefaults( 1, out _ ) ); Assert.IsNull( coaster.One.Runtime.CatalogueTier );
+	}
+	/// <summary>A coaster binds its economy tier like any ride and its installed level reaches its queue defaults and words (tp.exe 0x4df8f0 has no track-type branch).</summary>
+	[TestMethod]
+	public void ACoasterBindsItsTierAndItsCompletedLevelReachesItsDefaults()
+	{
+		var w = World( "Bumper.WhichTrackType 3\n" ); Assert.IsNotNull( w.One.Runtime.Coaster ); Assert.AreEqual( 0, w.One.Runtime.CatalogueTier );
+		EconomyTestData.HireBest( w.Economy, StaffType.Researcher ); w.Economy.SetResearchEffort( ResearchCategory.Ride, 0 );
+		for ( var i = 0; i < 100 && !w.Economy.Research.IsAvailable( 1100, 1 ); i++ ) w.Economy.AdvanceDays( 1 );
+		EconomyTestData.HireBest( w.Economy, StaffType.Mechanic ); Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, w.Economy.TryBuyUpgrade( w.State.Id ) );
+		for ( var i = 0; i < 20 && w.State.Level < 1; i++ ) w.Economy.AdvanceDays( 1 );
+		Assert.AreEqual( 1, w.State.Level ); Assert.AreEqual( 1, w.One.Runtime.CatalogueTier ); Assert.AreEqual( 200f, w.One.Visitors.Parameters.QueueWaitTimeConstant ); Assert.AreEqual( 3, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) );
+		// the installation's reopen (0x4df8f0's tail) keeps a track ride (WhichTrackType 3) closed while its coaster takes no guests (0x441970): this one has no track
+		Assert.IsFalse( w.One.IsOpen );
 	}
 	[TestMethod]
 	public void FirstInvalidBindingAbortsBeforeMappingButUnsupportedContextsSkipMetadata()

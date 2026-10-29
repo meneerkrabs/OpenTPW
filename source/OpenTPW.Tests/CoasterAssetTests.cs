@@ -43,6 +43,26 @@ public class CoasterAssetTests
 		ObjectCatalog.Themes.SelectMany( theme => ObjectCatalog.Load( theme ).Entries ).Where( entry => !entry.IsBonus && CoasterDefinition.IsCoaster( entry.Settings ) );
 
 	/// <summary>
+	/// Every shipped coaster has two researchable levels above its base (issue #903: Temple Of Gloom's Upgrades[1] and [2] at research 750 and 500), and its own Coaster.RSE takes
+	/// a level as any ride's script does: the catalogue tier binds, so the upgrade list (tp.exe 0x004AE140, Level.UpgradeOffer) offers it and the installation 0x4df8f0 writes it.
+	/// </summary>
+	[TestMethod]
+	public void EveryCoasterHasResearchableLevelsWhichItsScriptTakes()
+	{
+		var coasters = PcCoasters().ToArray();
+		Assert.AreEqual( 12, coasters.Length );
+		foreach ( var entry in coasters )
+		{
+			CollectionAssert.AreEqual( new[] { 0, 1, 2 }, entry.Upgrades.Select( row => row.Level ).ToArray(), $"{entry.InfoId}: its levels" );
+			Assert.IsTrue( entry.Upgrades.Skip( 1 ).All( row => row.GetInt( "CostOfResearch" ) > 0 && row.GetInt( "CostOfUpgrade" ) > 0 ), $"{entry.InfoId}: its levels are researched and bought" );
+			var runtime = new OriginalObjectRuntime( entry );
+			Assert.IsTrue( runtime.SupportsCatalogueTier, $"{entry.InfoId}: the coaster binds its tier" );
+			Assert.IsTrue( runtime.TryInitializeCatalogueTier( 1, out var reason ), $"{entry.InfoId}: {reason}" );
+			Assert.AreEqual( entry.Upgrades[1].GetInt( "InitCapacity" ), runtime.GetVariable( RideVariables.VAR_CAPACITY ), $"{entry.InfoId}: the level's capacity" );
+		}
+	}
+
+	/// <summary>
 	/// The car metrics come from the car models (<c>0x430130</c>): the header bounds around the root node plus the distance adds and the head sockets;
 	/// the caterpillar (4185) seats only its four bodies, 4 heads each, and the trains of every coaster seat one train's head sockets.
 	/// </summary>

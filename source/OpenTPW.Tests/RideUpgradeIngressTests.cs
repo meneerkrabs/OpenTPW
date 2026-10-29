@@ -106,6 +106,27 @@ public class RideUpgradeIngressTests
 		EconomyTestData.HireBest( economy, StaffType.Mechanic ); for ( var i = 0; i < 20 && state.Level < 1; i++ ) economy.AdvanceDays( 1 );
 		Assert.AreEqual( 1, state.Level ); Assert.AreEqual( 400L, state.TotalSpent ); Assert.IsFalse( state.UpgradeCostDue ); Assert.AreEqual( 3, first.Visitors.Capacity ); Assert.AreEqual( 1, second.Visitors.Capacity ); Assert.AreEqual( 3, first.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "the completion 0x4df8f0 writes the level's InitCapacity through SetCapacity 0x4dd7f0" ); Assert.AreEqual( 1, second.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) );
 	}
+	/// <summary>
+	/// A coaster's upgrade list asks for its next level as any ride's does, and the installation raises the coaster's tier: every shipped coaster has researchable levels
+	/// (Temple Of Gloom: Upgrades[1] and [2] at research 750 and 500), and neither the list nor the installation has a branch for a track ride.
+	/// </summary>
+	// tp.exe 0x004AE140 lists the level row for every ride by its level byte and research; the installation 0x4df8f0 raises the level and writes SPEED, CAPACITY and DURATION without a track-type test
+	[TestMethod]
+	public void ACoastersUpgradeListAsksForItsNextLevelAndTheInstallationRaisesItsTier()
+	{
+		File.WriteAllBytes( Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
+		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var coaster, out _, out _, extra: "Bumper.WhichTrackType 3\n" ); var context = Context();
+		Assert.IsNotNull( coaster.Runtime.Coaster );
+		Assert.AreEqual( 0, coaster.Runtime.CatalogueTier, "the coaster binds its economy tier" );
+		Research( economy ); Open( hud, context );
+		var row = Rows( hud ).Single();
+		Assert.AreEqual( RideUpgradeRowKind.Level, row.Row!.Value.Kind ); Assert.AreEqual( context.Strings.Format( UIStrings.UpgradeToLevel, "2" ), row.Text );
+		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
+		economy.TryGetObject( level.GetEconomyInstance( coaster )!.Value, out var state );
+		Assert.AreEqual( 1, state.PendingLevel ); Assert.IsFalse( coaster.IsOpen, "the upgrade closes the coaster" );
+		EconomyTestData.HireBest( economy, StaffType.Mechanic ); for ( var i = 0; i < 20 && state.Level < 1; i++ ) economy.AdvanceDays( 1 );
+		Assert.AreEqual( 1, state.Level ); Assert.AreEqual( 1, coaster.Runtime.CatalogueTier ); Assert.AreEqual( 3, coaster.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "the installation writes the level's InitCapacity" );
+	}
 	private static void Research( ParkEconomy economy )
 	{
 		EconomyTestData.HireBest( economy, StaffType.Researcher ); economy.SetResearchEffort( ResearchCategory.Ride, 0 );
@@ -262,17 +283,15 @@ public class RideUpgradeIngressTests
 		Assert.IsFalse( Rows( hud ).Any( row => row.Row?.Kind == RideUpgradeRowKind.AddOn ) );
 	}
 
-	[DataTestMethod, DataRow( "custom" ), DataRow( "stop" ), DataRow( "sparse" ), DataRow( "coaster" ), DataRow( "prototype" ), DataRow( "tpi" ), DataRow( "readonly" ), DataRow( "noeconomy" ), DataRow( "delete" ), DataRow( "unmap" ), DataRow( "ambiguous" ), DataRow( "removedDuplicate" ), DataRow( "fault" ), DataRow( "tierMismatch" ), DataRow( "full" )]
+	[DataTestMethod, DataRow( "custom" ), DataRow( "stop" ), DataRow( "sparse" ), DataRow( "prototype" ), DataRow( "tpi" ), DataRow( "readonly" ), DataRow( "noeconomy" ), DataRow( "delete" ), DataRow( "unmap" ), DataRow( "ambiguous" ), DataRow( "removedDuplicate" ), DataRow( "fault" ), DataRow( "tierMismatch" ), DataRow( "full" )]
 	public void UnsupportedTargetRefusesBeforeCharge( string gate )
 	{
-		if ( gate == "coaster" ) File.WriteAllBytes( Path.Combine( root, "script.RSE" ), new RideVMTests.Asm().I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
-		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out var other, out _, extra: gate == "coaster" ? "Bumper.WhichTrackType 3\n" : "" ); var context = Context(); Research( economy );
+		var hud = Fixture( BuildCategory.Rides, out var level, out var economy, out var owner, out var other, out _ ); var context = Context(); Research( economy );
 		economy.TryGetObject( level.GetEconomyInstance( owner )!.Value, out var state ); var map = (Dictionary<OriginalObject, int>)typeof( Level ).GetField( "economyInstances", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( level )!;
 		if ( gate == "custom" ) owner.Visitors.Parameters = owner.Visitors.Parameters with { }; if ( gate == "stop" ) owner.Runtime.Stop(); if ( gate == "tpi" ) GameEditions.Select( GameEdition.ThemeParkInc );
 		if ( gate == "readonly" ) Set( level, "<Visit>k__BackingField", Empty<ParkVisitInfo>() ); if ( gate == "noeconomy" ) Set( hud, "<Status>k__BackingField", new NoEconomyStatus() ); if ( gate == "delete" ) owner.Delete(); if ( gate == "unmap" ) map.Remove( owner ); if ( gate is "ambiguous" or "removedDuplicate" ) map[other] = state.Id; if ( gate == "removedDuplicate" ) other.Delete(); if ( gate == "fault" ) owner.Script!.RestoreStoppedFault( "synthetic" );
 		if ( gate == "tierMismatch" ) state.Level = 1; if ( gate == "full" ) { state.Level = 1; Assert.IsTrue( owner.Runtime.TryApplyCatalogueTierDefaults( 1, out _ ) ); }
 		if ( gate == "sparse" ) Set( owner.Entry, "<Upgrades>k__BackingField", owner.Entry.Upgrades.Where( row => row.Level != 1 ).ToArray() );
-		if ( gate == "coaster" ) Assert.IsNotNull( owner.Runtime.Coaster );
 		if ( gate == "prototype" ) { var prototype = Empty<PrototypeRide>(); typeof( OriginalObject ).GetField( "<Runtime>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( prototype, owner.Runtime ); hud.SelectObject( prototype ); }
 		var cash = economy.Balance; hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
 		var button = (UiButton)hud.Screen.Find( "rideUpgrade" )!;

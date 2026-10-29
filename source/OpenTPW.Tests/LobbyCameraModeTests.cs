@@ -77,6 +77,45 @@ public class LobbyCameraModeTests
 	}
 
 	[TestMethod]
+	public void TheIslandViewUsesTheScreenMatrixSoTheVerticalExtentIsHalfTheTangent()
+	{
+		// tp.exe 0x5d8cb0 builds the lobby's projection with the park's builder (0x578be0) at ISLANDFOV, and the screen matrix of 0x5781d0 scales it as in the park:
+		// the visible half height at unit depth is 0.5 x tan(50 degrees) for ISLANDFOV 100, not tan(50 degrees)
+		LobbyCameraMode.IslandFieldOfView = 100;
+		var camera = new LobbyCameraMode();
+		Assert.IsTrue( camera.UsesOriginalProjection );
+		var half = 0.5f * System.MathF.Tan( 50f * System.MathF.PI / 180f );
+		var projection = OriginalProjection.Create( 4f / 3f, camera.FieldOfView );
+		var clip = System.Numerics.Vector4.Transform( new System.Numerics.Vector4( 0f, half, -1f, 1f ), projection );
+		Assert.AreEqual( 1f, clip.Y / clip.W, 1e-4f );
+	}
+
+	[TestMethod]
+	public void TheIslandViewFarPlaneIsTheSpanSelectionsFarthestCornerDistance()
+	{
+		// tp.exe 0x56bb00 hands the farthest corner distance to 0x578ca0, which rebuilds the projection with it, for the lobby as for the park
+		var saved = Camera.Mode;
+		var savedFar = Camera.LobbyFarPlane;
+		try
+		{
+			Camera.Mode = new LobbyCameraMode();
+			Camera.LobbyFarPlane = ( _, _ ) => 321f;
+			Camera.Update();
+			var expected = OriginalProjection.Create( Screen.Aspect, LobbyCameraMode.IslandFieldOfView, 321f );
+			Assert.AreEqual( expected.M33, Camera.ProjMatrix.M33, 1e-6f );
+			Assert.AreEqual( expected.M43, Camera.ProjMatrix.M43, 1e-5f );
+			Camera.LobbyFarPlane = null;
+			Camera.Update();
+			Assert.AreEqual( OriginalProjection.Create( Screen.Aspect, LobbyCameraMode.IslandFieldOfView ).M33, Camera.ProjMatrix.M33, 1e-9f );
+		}
+		finally
+		{
+			Camera.Mode = saved;
+			Camera.LobbyFarPlane = savedFar;
+		}
+	}
+
+	[TestMethod]
 	public void TheEnterTurnsToTheIslandAnglePlusPiThenOpensTheGateAndZooms()
 	{
 		// tp.exe 0x5e0490 states 1 and 2: 0.05 × step a frame the short way round, the gate within half a step, then the zoom

@@ -27,10 +27,18 @@ public static class Camera
 	/// </summary>
 	public static Func<Matrix4x4, float, float, float, float?>? EyeViewFarArgument { get; set; }
 
+	/// <summary>
+	/// The lobby view's far plane in engine units (the lobby's units are the original's) for the camera's view matrix and the display's height over its width, or null: the farthest corner distance of the span selection over the lobby terrain
+	/// (<c>0x56BB00</c> hands it to <c>0x578CA0</c> before the weather, as in the park); set by the game flow while the front end shows its lobby.
+	/// </summary>
+	public static Func<Matrix4x4, float, float?>? LobbyFarPlane { get; set; }
+
 	private static float FarPlaneOf( CameraMode mode, Matrix4x4 view )
 	{
 		// the ride and walk views' far argument is the greatest depth of the cell boxes 0x56EA90 selects through 0x56E7E0 and 0x561BC0 (at least 100 original units, [this+0x1C], handed to 0x578CA0 at 0x56ED79); it only sets the weather's depth split (EyeViewFarArgument), the engine's projection of those views keeps the default
 		// the heightfield's span selection works on the display's height over its width, the aspect word 0x8BCBCC
+		if ( mode is LobbyCameraMode && LobbyFarPlane?.Invoke( view, 1f / Screen.Aspect ) is { } lobbyFar && float.IsFinite( lobbyFar ) && lobbyFar > 0.1f )
+			return lobbyFar;
 		return mode is ParkCameraMode && ParkFarPlane?.Invoke( view, 1f / Screen.Aspect ) is { } far ? far : OriginalProjection.DefaultFarPlane;
 	}
 

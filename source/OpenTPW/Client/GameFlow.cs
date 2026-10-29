@@ -192,6 +192,8 @@ internal sealed partial class GameFlow : IDisposable
 		LobbyCameraMode.VerticalOffset = lobbyDefinition.VerticalOffset;
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
 		LobbyCameraMode.IslandFieldOfView = lobbyDefinition.FieldOfView;
+		// [BIN:TPW-EXE:0x56bd3e lobby far plane] the lobby view's projection is rebuilt with the span selection's farthest corner distance as its far plane, as the park's is (0x56bb00 -> 0x578ca0)
+		Camera.LobbyFarPlane = ( view, aspectWord ) => LobbyFarArgument( aspectWord, 0f, 0f );
 		FrontEndMenu? createdMenu = null;
 		createdMenu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{

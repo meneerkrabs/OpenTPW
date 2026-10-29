@@ -21,7 +21,7 @@ public partial class Level
 
 	private void InitializeCatalogueBinding( OriginalObject owner, int instance, bool alreadyBound )
 	{
-		// Shops/features/coasters/prototypes keep their existing controllers and construction semantics.
+		// Shops/features/prototypes keep their existing controllers and construction semantics; coasters bind like any ride (tp.exe 0x4df8f0 has no track-type branch).
 		if ( IsReadOnlyVisit || Park == null || owner is PrototypeRide || !owner.Runtime.SupportsCatalogueTier ) return;
 		if ( !CatalogueOwner( owner, instance, out var state, out var reason ) )
 			throw new InvalidDataException( $"Catalogue tier binding refused: {reason}." );

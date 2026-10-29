@@ -29,6 +29,8 @@ internal sealed partial class GameFlow : IDisposable
 
 	public GameFlow()
 	{
+		// [BIN:TPW-EXE:0x0054DDE3 rand seed] the start-up seeds the C runtime's rand() with GetTickCount, once
+		CrtProcessRandom.Seed( unchecked((uint)Environment.TickCount) );
 		UiApproximations.LogOnce();
 		using ( LoadProfile.Measure( "strings" ) )
 			Strings = UiStringTable.Load( GameLanguage.Current );

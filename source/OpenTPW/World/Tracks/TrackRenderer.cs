@@ -611,7 +611,8 @@ public sealed class TrackRenderer : IDisposable
 	/// water rides' <c>wr_ring</c> boats).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0044B410 head draw] the seat's dummy node is found by class 0x80 and its number (0x0044B220); each rider is drawn as the guest's head sprite at that node (0x00475A10), the ADDHEAD mechanism
-	// [APPROX:TRACK-026] the head sprites hang from the dummies through the ride-head renderer (seat order as traced: [BIN:TPW-EXE:0x00549C60] gives rider i of the car's rider list dummy i); 0x44B410 is the PC twin of ADDHEAD (it marks the head record and has 0x475A10 create the head thing; the sprite draw is the shared thing renderer, sizes under the HEADS entries) and the boarding guest drawn between BUMP 1 and the car's creation is not traced
+	// [BIN:TPW-EXE:0x00549C60 seat order] 0x549C60 walks the joining list the vehicle holds (vehicle +0x30, the newest joiner first because the join 0x54AA80 puts a guest at the front) and numbers its nodes 1 to n (node +0xC), looks up the head dummy n of class 0x80 (0x44B220) and hangs the guest's head there (0x44B410, which marks the head record and has 0x475A10 create the head thing, drawn by the shared thing renderer, sizes under the HEADS entries); a node with no dummy keeps head node -1 and is counted all the same (controller +0x60)
+	// [BIN:TPW-EXE:0x0054AA80 joining node] a guest on the joining list is not drawn: the join writes the node {guest, ride, head node -1} (0x54AB11..0x54AB16) and no head hangs before the vehicle takes the list, at its creation (0x549DB0 calls 0x549C60 with the beam flag 0, 0x549FF5) or its load (0x549B80 with 1); the other callers of 0x44B410 are the coaster boarding (0x43B70D), the vehicle's show (0x54900C), the script's ADDHEAD (0x554D13, 0x557EB9) and the flyers (0x55D654). (TRACK-026 retired.)
 	internal void CollectHeads( List<HeadSource> sources, int? onlyAttraction )
 	{
 		foreach ( var visual in visuals )

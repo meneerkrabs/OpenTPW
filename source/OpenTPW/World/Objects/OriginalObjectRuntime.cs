@@ -51,6 +51,12 @@ public sealed partial class OriginalObjectRuntime
 			Visitors.ExcitementSource = () => Coaster.GuestExcitement;
 			// [BIN:TPW-EXE:0x4398cd coaster crash sound] two trains bumping hard play the global cat_rides crash sound 12 at the bump's whole-unit place
 			Coaster.Crashed += place => GameAudio.PlayRidesAt( GameAudio.CoasterCrashEvent, new Vector3( place.X, place.Y, place.Z ) );
+			// [BIN:TPW-EXE:0x4392A0 train loop sound] the trains' two loops are the EventMap's events 0 and 1 of the level cat_rides, kept as held voices
+			Coaster.TrainSounds = new CoasterTrainSounds( Coaster, EventMapVariable, ( eventId, place ) =>
+				GameAudio.StartHeldRseEvent( 3, (uint)eventId, place, SoundSource ) is { } sound ? new HeldTrainVoice( sound ) : null,
+				// [BIN:TPW-EXE:0x4393E0 train scream submit] 0x551320(1, 100, 100, place) is the band-1 one-shot at index 3 (cat_kids 78); 0x551130(0, riders / 2 + 1, 75, 75, place) the held chain of that band at level 75
+				place => GameAudio.SingleScream( 1, 100, place, 100 ) is { } voice ? new ShortScreamVoice( voice ) : null,
+				( band, place ) => GameAudio.StartScream( band, 75, place, 75 ) is { } chain ? new HeldScreamVoice( chain ) : null );
 		}
 		// A water ride (Bumper.WhichTrackType 2) or a go-kart ride (1) gets a bump-ride controller (docs/TRACKS.md).
 		if ( BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { } template )
@@ -370,6 +376,7 @@ public sealed partial class OriginalObjectRuntime
 		Visitors.ReleaseAll();
 		if ( Coaster != null )
 		{
+			Coaster.TrainSounds?.Stop();
 			Coaster.ClearTrains();
 			Coaster.World.Remove( Coaster );
 		}

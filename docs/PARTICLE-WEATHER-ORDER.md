@@ -21,7 +21,7 @@ snapshots using the actual sealed renderer types without invoking graphics.
 Real `Level.Render` tests cover snapshot mutations and exception propagation.
 These are source-level tests pending exact-head CI, not rendered image evidence.
 
-PTCL-909 remains open for native HUD/advisor ordering. The lobby render loop is
+PTCL-909 is retired: the HUD windows and the advisor's model are drawn after the particle pass (docs/PARTICLES.md). The lobby render loop is
 unchanged. Depth/blend fidelity and rendered weather/particle overlap still need
 separate visual acceptance; this change does not establish full layering parity.
 

@@ -364,7 +364,7 @@ block, 34-byte sections with links, and the train slots and cars once the coaste
 type's train and car counts are known; docs/TPWS-PAYLOAD.md "Coasters block") — proven
 on the tp.exe saver and loader, the Easymode empty boundary and a labelled Theme Park
 Inc cross-check of the sections — but nothing is imported into a runtime coaster and
-nothing is written (SAVE-920, SAVE-921, SAVE-923). `CoasterSections` exposes recognized scene records and attraction
+nothing is written (SAVE-920, SAVE-921 (SAVE-923 is retired)). `CoasterSections` exposes recognized scene records and attraction
 ids joined by cell and `Info.Id`; this does not identify a controller's station.
 Nonempty original TPW controllers are refused at `ParkObjects.ImportOriginal`
 before any runtime object is created. This includes controllers with no saved

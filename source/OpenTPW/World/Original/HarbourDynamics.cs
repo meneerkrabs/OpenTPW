@@ -94,15 +94,18 @@ public sealed class HarbourDynamics : ModelEntity
 		return Read( "WaterStartPos.X" ) is { } x && Read( "WaterStartPos.Y" ) is { } y && Read( "WaterStartPos.Z" ) is { } z ? new System.Numerics.Vector3( x, y, z ) : null;
 	}
 
-	/// <summary>The per-face sea textures: the C runtime's <c>rand() % 3</c>, 110 times.</summary>
-	// [EXT:harbour-sea-seed] the original draws them from the process's rand() stream, seeded with the time at start-up (0x54DDE3) and shared with every other rand() caller, so any start draws a
-	// different sea; OpenTPW draws them from a stream of the same generator seeded with 1 (the C runtime's default seed), as the advisor's own stream is (AdvisorRandom)
-	internal static int[] SeaTextureTable()
+	/// <summary>The per-face sea textures: <c>rand() % 3</c>, 110 times, from the process's C runtime stream (<see cref="CrtProcessRandom"/>), so every run draws its own sea.</summary>
+	// [BIN:TPW-EXE:0x0053C03A sea texture table] the mesh creation fills the table from the process's rand() 0x67B5C0, which start-up seeded with GetTickCount (0x54DDE3); the original's
+	// other rand() callers between the seed and the park's start (its advisor sequences, path tile rolls, lobby clips) draw from that one stream, and OpenTPW's stand-ins for them keep
+	// streams of their own, so only the generator, the seed and the table's own order are matched, not how many draws precede the table
+	internal static int[] SeaTextureTable() => SeaTextureTable( CrtProcessRandom.Next );
+
+	/// <summary>The table drawn from <paramref name="rand"/> (a C runtime <c>rand()</c>), in the original's order.</summary>
+	internal static int[] SeaTextureTable( Func<int> rand )
 	{
-		var random = new AdvisorRandom();
 		var table = new int[SeaTextureTableSize];
 		for ( var index = 0; index < table.Length; index++ )
-			table[index] = random.Next() % SeaTextureCount;
+			table[index] = rand() % SeaTextureCount;
 		return table;
 	}
 

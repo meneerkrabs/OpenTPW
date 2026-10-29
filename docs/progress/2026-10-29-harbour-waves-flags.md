@@ -8,7 +8,6 @@
   ports the wave grid, the cloth grid, the sea's patches, the flags and their
   phases. The weather now keeps the wind's direction and strength
   (`0x511FDF`, `0x512F00`); the wind's turn has its own draw stream, so weather
-  rolls are unchanged. The wind is saved with the weather. A new EXT label,
-  `[EXT:harbour-sea-seed]`, covers the sea's texture table, which OpenTPW draws
-  from the C runtime's generator seeded with 1. The original seeds its process
-  stream with the time.
+  rolls are unchanged. The wind is saved with the weather. The sea's texture
+  table draws from the process's C runtime `rand()` stream, seeded from the
+  tick count at start-up as tp.exe's is, so every run draws its own sea.

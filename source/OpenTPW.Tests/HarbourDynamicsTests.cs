@@ -87,13 +87,17 @@ public class HarbourDynamicsTests
 	}
 
 	[TestMethod]
-	public void TheSeaTexturesAreTheRuntimesRandModThree()
+	public void TheSeaTexturesAreTheProcessRandModThree()
 	{
-		var table = HarbourDynamics.SeaTextureTable();
+		// in order from the C runtime's rand(): from seed 1 it draws 41, 18467, 6334, 26500, 19169
+		var crt = new AdvisorRandom();
+		var table = HarbourDynamics.SeaTextureTable( crt.Next );
 		Assert.AreEqual( 110, table.Length );
-		// the C runtime's rand() from seed 1: 41, 18467, 6334, 26500, 19169
 		CollectionAssert.AreEqual( new[] { 41 % 3, 18467 % 3, 6334 % 3, 26500 % 3, 19169 % 3 }, table.Take( 5 ).ToArray() );
 		Assert.IsTrue( table.All( slot => slot is >= 0 and < 3 ) );
+		// the game's own table comes from the process's stream, seeded from the clock: every park draws on from where the last left off
+		var process = HarbourDynamics.SeaTextureTable();
+		Assert.IsTrue( process.All( slot => slot is >= 0 and < 3 ) );
 	}
 
 	[TestMethod]

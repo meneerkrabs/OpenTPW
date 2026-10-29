@@ -2038,6 +2038,11 @@ public partial class Level
 			Park?.Import?.Report( line );
 			Log.Trace( $"Park script import: {line}" );
 		}
+		foreach ( var line in Guests?.ReconcileOriginalAdmissions() ?? new List<string>() )
+		{
+			Park?.Import?.Report( line );
+			Log.Trace( $"Park queue import: {line}" );
+		}
 	}
 
 	/// <summary>

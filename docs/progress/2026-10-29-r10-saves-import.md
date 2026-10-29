@@ -31,3 +31,4 @@
   against the saver's shapes and OpenTPW's own tracks only.
 - **SAVE-921 narrowed**: a scan of the coaster module finds no user of the controller's track flags
   0x20, 0x40, 0x80, 0x100, 0x200 and 0x400 besides the saver and the loader.
+- **Review round 1.** A state-14 head whose script does not hold it in `VAR_LETMEON` after the script import is demoted to a called head at the stand point (state 13). A guest of a refused or absent queue is imported deciding (as before this round, no guest is dropped for that). Saved track cells on this park's object, entrance or exit cells are skipped and counted. No corpus or Easymode save holds a guest in states 8/11-15 or a set `mFirstInQ`: the queue import is checked on synthetic saves only.

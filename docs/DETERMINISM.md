@@ -498,6 +498,10 @@ that is not ahead of the saved clock imports as 0 (October 18; it was -1, which 
 hashed state differs from before until it next runs an animation opcode, and tp.exe treats 0 and a reached deadline alike
 (`0x5538EB`). Only Jungle's shipped save holds such a deadline, and no pinned run starts from it.
 
+Round 10 package F (saves import): the imported queue links (head, links, called guest), the bridge's called and letMeOnWritten words and called turn, the guests' queue fields, the state-15 exits
+and the imported kart and water track cells and controller words join the hash for imported parks only. No corpus or Easymode save holds any of it (no guest in states 8/11-15, no set mFirstInQ,
+no kart or water ride), so no pinned run reads it and no pin moves.
+
 Other OpenTPW state that is **not in the hash**:
 
 | State | Why it is outside |

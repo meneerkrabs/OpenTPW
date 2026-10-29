@@ -24,7 +24,7 @@ public partial class Level
 	{
 		var lines = new List<string>();
 		if ( problem != null )
-			lines.Add( $"[EXT:original-engine-state-dumps] The TrackRides block does not read in the writer's shapes ({problem}): its rides are not restored." );
+			lines.Add( $"[APPROX:TRACK-032] The TrackRides block does not read in the writer's shapes ({problem}): its rides are not restored." );
 		if ( Guests == null || waterTracks == null || kartTracks == null )
 			return lines;
 		var rides = block?.Chunks.Where( chunk => chunk.Ride != null ).Select( chunk => chunk.Ride! ).ToList() ?? new List<SaveTrackRideHeader>();
@@ -54,11 +54,18 @@ public partial class Level
 		var written = 0;
 		var strayTiles = 0;
 		var unknownFlags = 0;
+		var blocked = 0;
 		var stationCells = new HashSet<(int X, int Y)>( skipped.SelectMany( item => trackStations[item].Tiles.SelectMany( tile => TrackStation.TileCellsOf( tile.X, tile.Y ) ) ) );
 		foreach ( var saved in savedCells )
 		{
 			if ( !cells.InBounds( saved.X, saved.Y ) || stationCells.Contains( (saved.X, saved.Y) ) )
 				continue;
+			// a cell the park's own placement holds as an object, entrance or exit is not given to a track by the save: the placement is what this park built (a path or queue cell is what a track bridges)
+			if ( cells.RawTypeAt( saved.X, saved.Y ) is ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit )
+			{
+				blocked++;
+				continue;
+			}
 			var cell = OriginalTrackImport.ToCell( saved, layer.Width, layer.Height );
 			if ( OriginalTrackImport.HasUnknownFlags( saved ) )
 				unknownFlags++;
@@ -80,6 +87,8 @@ public partial class Level
 			layer.Set( saved.X, saved.Y, cell );
 			written++;
 		}
+		if ( blocked > 0 )
+			lines.Add( $"Track cells skipped: {blocked} saved track cells lie on cells this park holds as an object, entrance or exit." );
 		if ( written > 0 )
 		{
 			TrackBuilder.RefreshAll( layer );
@@ -116,7 +125,7 @@ public partial class Level
 		var vehicles = chunks.Count( chunk => chunk.RawRecord != null );
 		var peeps = chunks.Count( chunk => chunk.Type is 7 or 8 or 9 );
 		if ( vehicles > 0 || peeps > 0 )
-			lines.Add( $"[EXT:original-engine-state-dumps] Track ride vehicles not restored: {vehicles} vehicle records and {peeps} rider and peep chunks (the guests riding are not imported either)." );
+			lines.Add( $"[APPROX:TRACK-032] Track ride vehicles not restored: {vehicles} vehicle records and {peeps} rider and peep chunks (the guests riding are not imported either)." );
 		return lines;
 	}
 }

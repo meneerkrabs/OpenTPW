@@ -15,7 +15,7 @@ Static examination of authorized tp.exe corrects the original proposal's termino
 - Chunk 6 serializes only a ride handle. It chooses from the separate **0x1c waypoint chain** at ride+0xa8, not from chunk 5's raw records.
 - Chunk 3's station/grid construction and chunk 4's tile geometry create that waypoint chain. Native selector `0x5439bb..0x5439e4` finds the first flag-4 waypoint, always advances at least once, wraps a null successor to the head, and skips flag-2 candidates. Its initial marker scan has no wrap/null guard.
 
-The verified field layout, addresses and parser policy are documented in [TPWS-PAYLOAD](../TPWS-PAYLOAD.md#trackrides-structural-reader-track-032-remains-open).
+The verified field layout, addresses and parser policy are documented in [TPWS-PAYLOAD](../TPWS-PAYLOAD.md#trackrides-structural-reader-and-track-import-track-032-narrowed).
 
 ## Bounded implemented scope
 

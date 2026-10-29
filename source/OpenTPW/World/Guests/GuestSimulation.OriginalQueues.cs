@@ -106,6 +106,26 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>
+	/// Run after the scripts are imported: a head imported as handed to the script (state 14) whose script does not hold it in <c>VAR_LETMEON</c> is demoted to a called head at the stand point
+	/// (state 13), as it was not admitted. Returns the report lines.
+	/// </summary>
+	internal List<string> ReconcileOriginalAdmissions()
+	{
+		var notes = new List<string>();
+		foreach ( var ride in attractions.OfType<RideVisitorBridge>().ToList() )
+		{
+			var demoted = ride.ReconcileImportedAdmission();
+			if ( demoted == 0 || !byId.TryGetValue( demoted, out var guest ) || guest.State != GuestState.WaitingToBoard )
+				continue;
+			guest.State = GuestState.Boarding;
+			guest.QueueCalled = false;
+			guest.QueueTargetIndex = 0;
+			notes.Add( $"guest {demoted} (queue state 14) is called but not admitted: the script of attraction {ride.AttractionId} does not hold it in VAR_LETMEON, so it presents itself at the stand point again" );
+		}
+		return notes;
+	}
+
+	/// <summary>
 	/// A guest of an accepted saved queue: it stays at its saved place with the saved position, move-up delay and admission flag; a guest moving up (12) or called forward (13) walks on to its
 	/// saved accurate destination along the queue cells, as the loader routes every person again (<c>0x004FA5F0</c>), and one handed to the script (14) waits for it.
 	/// </summary>

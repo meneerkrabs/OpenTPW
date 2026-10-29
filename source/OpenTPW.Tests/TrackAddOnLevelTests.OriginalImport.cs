@@ -120,6 +120,22 @@ public partial class TrackAddOnLevelTests
 	}
 
 	[TestMethod]
+	public void ASavedTrackCellOnAnObjectCellOfThisParkIsSkippedAndCounted()
+	{
+		var (source, _, _) = World();
+		var cells = SavedCells( source.Guests!.Grid.Cells.Tracks );
+		var (target, targetRide, _) = World( laid: false );
+		targetRide.ThingId = RideThing;
+		var plain = cells.First( cell => cell.Type != TrackCellTypes.Extension && !TrackCellTypes.IsStation( cell.Type ) );
+		var map = target.Guests!.Grid.Cells;
+		map.SetType( plain.X, plain.Y, ParkCellTypes.Object );
+		Assert.AreEqual( ParkCellTypes.Object, map.RawTypeAt( plain.X, plain.Y ), "precondition" );
+		var lines = target.ApplyOriginalTracks( cells, ( _, _ ) => 0, null, null, new[] { RideThingOf( 0 ) } );
+		StringAssert.Contains( string.Join( "\n", lines ), "Track cells skipped: 1 saved track cells lie on cells this park holds as an object" );
+		Assert.AreEqual( ParkCellTypes.Object, map.RawTypeAt( plain.X, plain.Y ), "the park's object cell is not given to the track" );
+	}
+
+	[TestMethod]
 	public void StationTilesWhereThePlacementDoesNotLayThemKeepThePlacementsStation()
 	{
 		var (source, sourceRide, _) = World();
@@ -131,7 +147,6 @@ public partial class TrackAddOnLevelTests
 		var lines = target.ApplyOriginalTracks( cells.Where( cell => cell.X >= 20 && cell.Y >= 14 ).ToList(), ( _, _ ) => 0, null, null, new[] { RideThingOf( 0 ) } );
 		StringAssert.Contains( string.Join( "\n", lines ), "its saved station tiles are not at" );
 		Assert.AreEqual( placed, target.KartTracks.Tracks.Get( station.First.X, station.First.Y ), "the placement's station tile is not overwritten" );
-		Assert.IsFalse( target.KartTracks.IsTile( station.Exit.X, station.Exit.Y ) && target.KartTracks.Tracks.Get( station.Exit.X, station.Exit.Y ).Owner != 0 && false );
 	}
 
 	[TestMethod]

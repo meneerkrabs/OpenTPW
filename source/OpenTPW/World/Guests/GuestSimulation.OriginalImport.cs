@@ -76,9 +76,12 @@ public sealed partial class GuestSimulation
 			var person = save.Person;
 			var what = $"guest {save.Id}";
 			var queued = IsOriginalQueueMember( save );
-			if ( queued ? !queuePlans.ContainsKey( save.Id ) : !ImportsOriginalState( save.State ) )
+			// a guest of a refused or absent queue is dismissed to DoingNothing at its cell, as the original's state-11 update ends a queue its ride does not hold (0x00500136, "Problem with a
+			// queue"; the interlude returns to 11 at 0x004FC890 and is dismissed the same way): that is the state an import without a queue gave a state-8 guest, and the one every queue guest gets now
+			var orphan = queued && !queuePlans.ContainsKey( save.Id ) && (attractions != null || save.State == 8);
+			if ( queued ? !queuePlans.ContainsKey( save.Id ) && !orphan : !ImportsOriginalState( save.State ) )
 			{
-				dropped.Add( queued && attractions != null ? $"{what} (state {save.State}, in no saved queue this import accepts)" : $"{what} (state {save.State})" );
+				dropped.Add( $"{what} (state {save.State})" );
 				ReleaseDroppedThing( save.Id );
 				continue;
 			}
@@ -309,6 +312,8 @@ public sealed partial class GuestSimulation
 			default:
 				if ( save.State is 9 or 10 )
 					adjusted.Add( $"guest {guest.Id} state {save.State} target thing {save.MajorDest} is not imported, imported deciding (state 6)" );
+				else if ( IsOriginalQueueMember( save ) )
+					adjusted.Add( $"guest {guest.Id} (state {save.State}) is in no saved queue this import accepts, imported deciding (state 6)" );
 				guest.State = GuestState.DoingNothing;
 				// states 6 and 8 (an activity, decided again at once) keep the target too
 				if ( save.State is 6 or 8 )

@@ -815,7 +815,27 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		tail = chain.Count > 0 ? chain[^1] : 0;
 		called = waitingForScript ? chain[0] : calledGuest;
 		letMeOnWritten = waitingForScript;
+		importedAdmissionPending = waitingForScript;
 		calledTurn = called != 0 ? Host?.ParkTurn ?? -1 : -1;
+	}
+
+	private bool importedAdmissionPending;
+
+	/// <summary>
+	/// After the scripts are imported: a head restored as handed to the script (state 14) keeps that only while the script holds it in <c>VAR_LETMEON</c>. When the script import was refused
+	/// (or the variable is not the head) the head is called but not admitted: the written flag drops, so the host step does not board it and it presents itself at the stand point again.
+	/// Returns the demoted guest, or 0 when nothing changed.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E0A70 state 14 test] the state-14 test compares the script's first variable with mFirstInQ; a script that does not hold the head does not hold it admitted
+	internal int ReconcileImportedAdmission()
+	{
+		if ( !importedAdmissionPending )
+			return 0;
+		importedAdmissionPending = false;
+		if ( !letMeOnWritten || called == 0 || Get( RideVariables.VAR_LETMEON ) == called )
+			return 0;
+		letMeOnWritten = false;
+		return called;
 	}
 
 	private int LiveSize => IsZeroFront ? 0 : Math.Max( 1, queueCells.Count );
@@ -1044,7 +1064,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// on a path; null when the queue is not connected to a path.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE840 attached path] 0x4DEA2F..0x4DEA57: for the bits 1, 4, 16, 64 of the back cell's +0x0C (0x522770) the neighbour along it (0x4D97E0) is taken when it is type 1 (0x536310); none logs "No path attached to end of queue"
-	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented; supported live typed HasQueue entries derive their front from the actual entry link byte (+0x0C, tp.exe 0x4DE040, bits 1, 16, 64, 4), and a native zero front (no cardinal bit; 0x4DE4A0 reads such a ride as unconnected, which the opening guard still answers permissively under ECON-049) leaves its demolition without a count to undo (0x527FB4) and its re-evaluation without a block stamp; a zero-front ride has back cell 0 and size 0 for the guests (they neither score, choose nor join it, and its queued guests but the called one leave at the re-evaluation) with the host's one-cell geometry kept for the called guest's stand cell and the queue tool; unsupported entries (a neighbour off the map) and untyped worlds retain the host positive one-cell fallback; a saved mEntryPos that differs from the placement's access cell is reported and the placement's kept (the constructor 0x004DB090 derives it from the shape); an original save's head, links and called guest (mFirstInQ, mQNext, mQPrev, mPersonBeingLoaded) and its cached back cell and size (+0x3A, +0x40) are imported as read; the native cache invalidation timing (0x4DE130 keeps +0x3A until the next 0x4DE1F0, where OpenTPW recomputes on every grid change) remains unsupported
+	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented; supported live typed HasQueue entries derive their front from the actual entry link byte (+0x0C, tp.exe 0x4DE040, bits 1, 16, 64, 4), and a native zero front (no cardinal bit; 0x4DE4A0 reads such a ride as unconnected, which the opening guard still answers permissively under ECON-049) leaves its demolition without a count to undo (0x527FB4) and its re-evaluation without a block stamp; a zero-front ride has back cell 0 and size 0 for the guests (they neither score, choose nor join it, and its queued guests but the called one leave at the re-evaluation) with the host's one-cell geometry kept for the called guest's stand cell and the queue tool; unsupported entries (a neighbour off the map) and untyped worlds retain the host positive one-cell fallback; a saved mEntryPos that differs from the placement's access cell is reported and the placement's kept (the constructor 0x004DB090 derives it from the shape); an original save's head, links and called guest (mFirstInQ, mQNext, mQPrev, mPersonBeingLoaded) and its cached back cell and size (+0x3A, +0x40) are imported as read; the native cache invalidation timing (0x4DE130 keeps +0x3A until the next 0x4DE1F0, where OpenTPW recomputes on every grid change) remains unsupported. No corpus or Easymode save holds a guest in states 8/11-15 or a set mFirstInQ; the queue import is checked on synthetic saves only.
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];

@@ -255,6 +255,8 @@ internal static class SaveTestPayloads
 		public (ushort X, ushort Y)? Destination { get; init; }
 		public ushort BaseSpeed { get; init; } = 100;
 		public uint EspSprite { get; init; }
+		/// <summary>mSpriteID (person +0x20), the sprite bank number the person serializer reduces by the loaded count.</summary>
+		public uint SpriteId { get; init; }
 		public uint PreviousSpeed { get; init; } = 0x3F800000;
 		/// <summary>The walk mask nav_mode of the navigation state (navigation +48, walk +0xB4, person +0x188).</summary>
 		public int NavMode { get; init; }
@@ -318,6 +320,8 @@ internal static class SaveTestPayloads
 		BinaryPrimitives.WriteInt32LittleEndian( person.AsSpan( 35 + 48 ), fields.NavMode );
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 ), fields.PreviousSpeed );
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 + 12 ), fields.StrandedTime );
+		// mPurposeSpeed (u16), mSetDestSuccessfully, mSpriteAngle, then mSpriteID
+		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 + 16 + 2 + 8 ), fields.SpriteId );
 		// the thought block (0x50BAD0) closes the person block: head, 32 ring slots, mLastThought, mThoughtScript, mTimeBubbleShown
 		var thought = SaveThingChain.PersonBytes - (4 + 4 * 32 + 12);
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( thought ), fields.ActionHistIndex );

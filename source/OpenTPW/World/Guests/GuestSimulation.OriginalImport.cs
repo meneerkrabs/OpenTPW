@@ -38,10 +38,10 @@ public sealed partial class GuestSimulation
 
 	/// <summary>
 	/// Whether the import restores a guest in this saved state (guest <c>+0x220</c>, the <c>KIDSTATES</c> index): the arrival and departure states
-	/// 0–5, 18, 19 and 21, and the park states 6–10 (on a path or off the paths). The queue states 11–14 are restored through their attraction's saved queue
-	/// (<see cref="IsOriginalQueueMember"/>); a guest leaving a ride (15), using an attraction (16) and one held by a guard (17) are not restored.
+	/// 0–5, 18, 19 and 21, the park states 6–10 (on a path or off the paths), a guest leaving a ride (15) and one held by a guard (17, with its escorting guard's state 18 restored by the
+	/// staff import). The queue states 11–14 are restored through their attraction's saved queue (<see cref="IsOriginalQueueMember"/>); a guest using an attraction (16) is not restored.
 	/// </summary>
-	public static bool ImportsOriginalState( uint state ) => state is <= 10 or 15 or 18 or 19 or 21;
+	public static bool ImportsOriginalState( uint state ) => state is <= 10 or 15 or 17 or 18 or 19 or 21;
 
 	/// <summary>
 	/// Adds the saved guests to an empty simulation without drawing from its random stream. <paramref name="parkTurn"/> is the park turn of the save,
@@ -101,8 +101,9 @@ public sealed partial class GuestSimulation
 			}
 			// [BIN:TPW-EXE:0x004FB530 off-path guest] the load reads the position and mState straight in and nothing moves a park guest standing off the paths (a path deleted
 			// under it, an object built over it, a wander across grass): it stays where it stands and its own state handlers recover it, the wander's off-path search 0x004F9490 included
-			var inPark = save.State is >= 6 and <= 15 || save.State == 18 && Grid.IsWalkable( cell.X, cell.Y );
-			if ( inPark && save.State is not (15 or 18) && !Grid.IsWalkable( cell.X, cell.Y ) )
+			// [BIN:TPW-EXE:0x004FEB10 held guest] a guest held by a guard (state 17) is off the map and stands nowhere: its saved cell only has to be on the map
+			var inPark = save.State is >= 6 and <= 15 or 17 || save.State == 18 && Grid.IsWalkable( cell.X, cell.Y );
+			if ( inPark && save.State is not (15 or 17 or 18) && !Grid.IsWalkable( cell.X, cell.Y ) )
 				recovery.Add( $"guest {save.Id} state {save.State} imported off the paths at ({cell.X}, {cell.Y}) (cell type {Grid.Cells.RawTypeAt( cell.X, cell.Y )}); it recovers through its state handler (0x004F9490 off-path search)" );
 			if ( !inPark && !HasArrivalLane )
 			{
@@ -243,7 +244,7 @@ public sealed partial class GuestSimulation
 			evidence.Add( $"Guest value adjusted on import: {line}." );
 		foreach ( var line in recovery.Concat( stranded ) )
 			evidence.Add( $"[BIN:TPW-EXE:0x004F8B10] {line}." );
-		// [APPROX:SAVE-002] a saved guest using an attraction (16) or held by a guard (17) is not imported (the riders sit in the ride script's walk, bounce and head tables, which the import does not restore, DET-013; a held guest needs its escorting guard, whose state 18 the staff import restores idle), and a guest in a queue (states 11–14, or its idle interlude, state 8 with mSavedState 11) is imported only when its attraction's saved queue (mFirstInQ, mQNext, mQPrev, mPersonBeingLoaded) reads as the loader's chain of guests of that ride; an imported guest in an activity (state 8) decides again at once, one at the booth (4) that was not yet weighed waits OpenTPW's booth time (ARRIVAL-006), a turn stamp before the save's turn counts from the import, and the saved state (mSavedState) outside the queue interlude, the admission flag (mBeenAdmitted) of a guest that is not in state 11 or in its interlude, and the 32-slot event ring (AddEvent 0x50C100) are not imported — evidence needed: the ride script's walk, bounce and head tables for the riders (16) and the escorting guard's state for a held guest (17)
+		// [APPROX:SAVE-002] a saved guest using an attraction (16) is not imported (the riders sit in the ride script's walk, bounce and head tables, which the import does not restore, DET-013); a guest held by a guard (17) is imported held, and kept only while a guard in state 18 holds it as its perpetrator, as its first update (0x00501C94) decides, and a guest in a queue (states 11–14, or its idle interlude, state 8 with mSavedState 11) is imported only when its attraction's saved queue (mFirstInQ, mQNext, mQPrev, mPersonBeingLoaded) reads as the loader's chain of guests of that ride; an imported guest in an activity (state 8) decides again at once, one at the booth (4) that was not yet weighed waits OpenTPW's booth time (ARRIVAL-006), a turn stamp before the save's turn counts from the import, and the saved state (mSavedState) outside the queue interlude, the admission flag (mBeenAdmitted) of a guest that is not in state 11 or in its interlude, and the 32-slot event ring (AddEvent 0x50C100) are not imported — evidence needed: the ride script's walk, bounce and head tables for the riders (16) and the escorting guard's state for a held guest (17)
 		if ( dropped.Count > 0 )
 			evidence.Add( $"[APPROX:SAVE-002] Guests not imported: {string.Join( ", ", dropped )}." );
 		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}, queue links of guests outside an imported queue {string.Join( "/", saved.Where( item => !queuePlans.ContainsKey( item.Id ) ).Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}." );
@@ -308,6 +309,18 @@ public sealed partial class GuestSimulation
 				break;
 			case 18:
 				guest.State = GuestState.LeavingPark;
+				break;
+			case 17:
+				// [BIN:TPW-EXE:0x004FEB10 held guest] the state setter's entry for 17 (0x005022DA) only runs on a change of state, and a load reads mState straight in: the guest stands as the hold left it, balloon gone (0x004FE950 clears
+				// mBalloonScript, whose life stays), model off the map (0x004D4170), thought bubble gone (0x0050C0D0), no walk and no ride or bin; its first update (0x00501C94) keeps it only while a guard in state 18 holds it as its perpetrator (+0x212, 0x004D6350), else it is destroyed (0x0050B780)
+				guest.State = GuestState.HeldByGuard;
+				if ( guest.HasBalloon )
+				{
+					adjusted.Add( $"guest {guest.Id} held by a guard saved with a balloon script, imported without the balloon the hold takes away" );
+					guest.HasBalloon = false;
+				}
+				guest.BubbleThought = GuestThought.None;
+				guest.Activity = GuestActivity.None;
 				break;
 			case >= 11 and <= 14 or 8 when queuePlans.TryGetValue( save.Id, out var queue ):
 				ImportQueued( guest, save, cell, destination, queue, recovery, parkTurn );

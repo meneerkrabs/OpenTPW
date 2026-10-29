@@ -436,6 +436,8 @@ public sealed partial class OriginalEconomyImport
 		var membersByThing = new Dictionary<int, StaffMember>();
 		// a guard chases a guest the guest import restores in the park (states 6–10, GuestSimulation.ImportsOriginalState)
 		var chaseable = save.Guests.Where( guest => guest.State is >= 6 and <= 10 ).Select( guest => guest.Id ).ToHashSet();
+		// a guard escorting a guest (state 18) carries a guest the import restores held (state 17)
+		var heldGuests = save.Guests.Where( guest => guest.State == 17 ).Select( guest => guest.Id ).ToHashSet();
 		foreach ( var saved in save.Staff )
 		{
 			var type = saved.Model switch
@@ -484,7 +486,7 @@ public sealed partial class OriginalEconomyImport
 			// [BIN:TPW-EXE:0x005054D0 staff state setter] +0x200 is the turn an idle spell started (0 after any state but a patrol), which the idle states compare with IdleDuration[grade]
 			member.IdleStamp = staff.TimeStartedIdling;
 			ImportPatrolArea( saved, member, adjusted );
-			ImportJob( economy, saved, member, things, save.Attractions, chaseable, jobs, resumedClaims, save.Litter );
+			ImportJob( economy, saved, member, things, save.Attractions, chaseable, heldGuests, jobs, resumedClaims, save.Litter );
 			// [BIN:TPW-EXE:0x004F8B10 person serializer] the loader routes the person again to mAccurateDestX/Y (+0x18/+0x1A, 1/256 cell) once it is read (0x004FA5F0 at 0x004F9407);
 			// the walk speeds are the person's mBaseSpeed (+0xC0), mPurposeSpeed (+0xC2, the bonus a walk to a job or a chase takes) and mPreviousSpeed (+0xC8)
 			var person = saved.Person;
@@ -641,7 +643,7 @@ public sealed partial class OriginalEconomyImport
 	// [BIN:TPW-EXE:0x004D4460 entertainer serializer] mTimeStartedEntertaining (+0x214); [BIN:TPW-EXE:0x00502760 researcher serializer] mTimeStartedResearching (+0x214)
 	// [BIN:TPW-EXE:0x004D6000 guard serializer] mPerp (+0x212), mProsecutionTimestamp (+0x214, the chase timer the state setter 0x004D65D0 sets)
 	// [BIN:TPW-EXE:0x00506D10 rest end] mRestArea (+0x208) names the rest area only while the member walks to it (state 2) or rests in it (state 3): the rest's end clears it
-	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, List<string> evidence, ISet<int> resumedClaims, IReadOnlyList<SaveLitter> litter )
+	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, IReadOnlySet<int> heldGuests, List<string> evidence, ISet<int> resumedClaims, IReadOnlyList<SaveLitter> litter )
 	{
 		var word = saved.Staff.State;
 		var what = $"{saved.Model} thing {saved.Id}";
@@ -704,9 +706,13 @@ public sealed partial class OriginalEconomyImport
 				member.TargetGuestId = saved.RoleTarget;
 				member.JobStamp = saved.RoleTimer;
 				break;
+			case StaffJob.Escorting when heldGuests.Contains( saved.RoleTarget ):
+				// [BIN:TPW-EXE:0x004D6350 escort state] state 18 carries its perpetrator (+0x212, mPerp) to the ticket booth: the guest is the one the import holds (state 17), the walk goes on to the saved destination (0x004F9407) and the arrival sets the guest down (0x004D6A50)
+				member.TargetGuestId = saved.RoleTarget;
+				break;
 			case StaffJob.Chasing or StaffJob.Escorting:
-				// [APPROX:SAVE-002] a guard escorting a guest (state 18) is imported idle, as is one chasing a guest the import does not restore: a held guest (state 17) is not imported
-				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park." );
+				// [APPROX:SAVE-002] [BIN:TPW-EXE:0x004D6350 escort state] a guard chasing a guest the import does not restore (a rider, state 16), or escorting one that the save does not hold (state 17), is imported idle
+				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park (or not held)." );
 				job = StaffJob.Idle;
 				break;
 			case StaffJob.Performing or StaffJob.Researching:

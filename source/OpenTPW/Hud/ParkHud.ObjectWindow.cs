@@ -303,7 +303,7 @@ public sealed partial class ParkHud
 			return;
 		SetInfoArm( false );
 		LeaveBuildTool();
-		// the button takes the queue edit a click on one of its cells takes (EditQueueAt): the edit takes the link between the queue's back cell and the path it ends on off before the tool lays on from that cell (0x530379), and the cell validator 0x535670 refuses the ride's own queue cell while it holds two links
+		// [BIN:TPW-EXE:0x004AF200 queue tool start] the original's start of the queue tool is the branch of 0x4AF200 for argument 0 (reached from the ride window's dispatcher 0x4AF600): the tool switch 0x5276D0(1), tool 0x14, then the click handler 0x524960(0, 0, 0, 0); that this branch is the b_queue button's (help 9) is inferred from the tool number, not traced through the window's control table, and which cell the first click of the original takes is not traced either, so taking the front cell here is an inference: the button takes the queue edit a click on one of its cells takes (EditQueueAt): the edit takes the link between the queue's back cell and the path it ends on off before the tool lays on from that cell (0x530379), and the cell validator 0x535670 refuses the ride's own queue cell while it holds two links
 		if ( item.Visitors.QueueFrontCell is { } front && level.CanEditQueueAt( front.X, front.Y ) )
 		{
 			if ( level.EditQueueAt( front.X, front.Y ) )

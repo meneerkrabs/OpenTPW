@@ -65,7 +65,9 @@ public sealed record ParkLandSetup( (int X, int Y) PostA, (int X, int Y) PostB, 
 /// it, and the rules that turn it into owned cells (cell flag 0x40 clear) and that buy more land. The fence is laid by the original's own routines (<see cref="FenceEngine"/>: the line tool, the walk and the fill),
 /// so the cells it owns are the ones the original leaves; a purchase runs them again on the live fence. Fence posts stand on a lattice of every second cell anchored on post A.
 /// </summary>
-// [APPROX:PATH-007] a purchase that crashes or hangs the original is refused, the six-click fence's level bit has no traced source, and a purchase starts from a fresh line tool where the original keeps the last step of the line before it (the register)
+// [EXT:land-purchase-fault-refusal] a purchase on which the original's fill reads the cell beyond the map's edge (a null block, a crash) or whose ring walk never ends (a cell that is no post, a hang) is refused and charges nothing, where the original crashes or hangs; refusing is OpenTPW's choice, approved by the user on 2026-10-29 (docs/PATHS.md)
+// [BIN:TPW-EXE:0x0044DE2B six-click bit] the six-click fence (bit 0x400 of the level word 0x79D86C) is traced never set: the writers 0x44D993, 0x44DA92, 0x44DDF3, 0x44DE34, 0x44DEFD, 0x44E306 and 0x44E322 set other bits or clear, only a whole-dword copy of the settings blob read from dialog.tcf (0x424A60 to 0x78D8D8, then 0x449E78 copies +0x7C) could, and 0x44DE2B clears it when no settings load, so a stock install never lays it; the engine lays it when asked and OpenTPW reads no dialog.tcf
+// Host storage (not an approximation): a track tile's fence links +0x22 stay in the fence layer instead of the track layer's alternate mask, and a save without its structure records (written before the fence port) derives the layer from its ring (LayerFromRing)
 public sealed class ParkLand
 {
 	/// <summary>The <c>HoardingClicks</c> X value that ends the list.</summary>

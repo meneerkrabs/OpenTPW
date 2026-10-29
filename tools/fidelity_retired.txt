@@ -410,3 +410,4 @@ ECON-026 docs/ECONOMY.md
 AUDIO-003 docs/AUDIO.md
 ADVISOR-012 docs/LIPS.md
 UI-941 docs/AUDIO.md
+PATH-007 docs/PATHS.md

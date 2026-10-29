@@ -21,7 +21,7 @@ public enum CellPurchase
 /// time advances in whole fixed ticks. Values come from the original settings wherever they exist;
 /// every approximation is listed in docs/ECONOMY.md and in the member documentation.
 /// </summary>
-public sealed class ParkEconomy : IParkEconomy
+public sealed partial class ParkEconomy : IParkEconomy
 {
 	/// <summary>Advisor.sam <c>StaffHireMechanics1.PoorerStateThan</c>: below this state of repair a ride is worn and gets a mechanic.</summary>
 	// [DATA:Advisor/Advisor.sam:StaffHireMechanics1.PoorerStateThan]
@@ -100,7 +100,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// The park's world generator (tp.exe 0x00516330): the economy's staff pool and the staff walks draw from it, and the level attaches the guests'
 	/// and the scripts' draws to the same instance (<see cref="AttachWorld"/>), as the original has one generator for everything.
 	/// </summary>
-	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, and the staff constructors' role searches run inside the placing click of a level ([BIN:TPW-EXE:0x004D4340 constructor searches] StaffWorldSimulation.Constructed after the hire's draws: [BIN:TPW-EXE:0x004F89E1 staff base speed] the consumed base-speed draw and the guard's variant draw, see ParkStaff.Hire; no staff constructor reseeds, 0x4F7B7E is the online avatar's); a headless economy has no staff world and searches on the member's first update, the researcher constructor's message 5 or 6 (0x5041F0) is not posted, and the weather stays off the stream ([BIN:TPW-EXE:0x59A796 advisor pick] the advisor's update takes no draw: all 351 descriptor rows are in the sequential mode 2, the mode-3 draw 0x59A7AC is unreachable)
+	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, and the staff constructors' role searches run inside the placing click of a level ([BIN:TPW-EXE:0x004D4340 constructor searches] StaffWorldSimulation.Constructed after the hire's draws: [BIN:TPW-EXE:0x004F89E1 staff base speed] the consumed base-speed draw and the guard's variant draw, see ParkStaff.Hire; no staff constructor reseeds, 0x4F7B7E is the online avatar's); a headless economy has no staff world and searches on the member's first update, the researcher constructor's last call 0x5041F0 runs at a researcher's hire and removal without a draw ([BIN:TPW-EXE:0x005041F0 researchers flag] ParkStaff.LabActive, message 5 or 6 on a change; the advisor's reaction is ADVISOR-009's), and the weather stays off the stream ([BIN:TPW-EXE:0x59A796 advisor pick] the advisor's update takes no draw: all 351 descriptor rows are in the sequential mode 2, the mode-3 draw 0x59A7AC is unreachable)
 	public WorldRng World { get; private set; }
 
 	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>
@@ -1421,6 +1421,7 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler fills the statistics rings the park information window graphs: the arrivals, the guests in the park (this census), the mean happiness (0x4C7BB0) and the mean stay
 		var rating = ParkRating;
 		StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census, rating );
+		CloseMisbehavingMonth();
 		var closed = Ledger.CloseMonth( nextMonthIndex, rating, NetWorth( 0 ) );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )

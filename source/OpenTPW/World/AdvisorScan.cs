@@ -82,7 +82,7 @@ internal sealed class AdvisorScan
 	public const int NoMessage = 0x160;
 
 	/// <summary>The <c>Advisor.sam</c> thresholds the ported callbacks read (beyond their flat scores): integers and single-precision floats.</summary>
-	public static readonly IReadOnlyList<string> IntegerParameterKeys = new[] { "WealthHigh.MoreMoneyThan", "WagesHigh.AverageOverMonths" }.Concat( AdvisorParkCallbacks.IntegerKeys ).Concat( AdvisorStaffCallbacks.IntegerKeys ).Concat( AdvisorQueuesCallbacks.IntegerKeys ).Concat( AdvisorChallengeCallbacks.IntegerKeys ).ToArray();
+	public static readonly IReadOnlyList<string> IntegerParameterKeys = new[] { "WealthHigh.MoreMoneyThan", "WagesHigh.AverageOverMonths" }.Concat( AdvisorParkCallbacks.IntegerKeys ).Concat( AdvisorStaffCallbacks.IntegerKeys ).Concat( AdvisorQueuesCallbacks.IntegerKeys ).Concat( AdvisorChallengeCallbacks.IntegerKeys ).Concat( AdvisorInputsCallbacks.IntegerKeys ).ToArray();
 	public static readonly IReadOnlyList<string> FloatParameterKeys = new[] { "WealthHighRepayLoan.Margin", "WagesHigh.WagesTimesHigherThanIncome" }.Concat( AdvisorParkCallbacks.FloatKeys ).Concat( AdvisorChallengeCallbacks.FloatKeys ).ToArray();
 	public static IEnumerable<string> ParameterKeys => IntegerParameterKeys.Concat( FloatParameterKeys );
 
@@ -183,7 +183,7 @@ internal static class AdvisorScanCallbacks
 		[InTheRedThreeMonths] = context => InTheRed( context, "InTheRedThreeMonths.Score", months => months is >= 3 and < 5 ),
 		[InTheRedMonthLeft] = context => InTheRed( context, "InTheRedMonthLeft.Score", months => months == 5 ),
 		[WagesHigh] = WagesHighScore,
-	}.Concat( AdvisorParkCallbacks.Callbacks ).Concat( AdvisorStaffCallbacks.Callbacks ).Concat( AdvisorQueuesCallbacks.Callbacks ).Concat( AdvisorChallengeCallbacks.Callbacks ).ToDictionary( entry => entry.Key, entry => entry.Value );
+	}.Concat( AdvisorParkCallbacks.Callbacks ).Concat( AdvisorStaffCallbacks.Callbacks ).Concat( AdvisorQueuesCallbacks.Callbacks ).Concat( AdvisorChallengeCallbacks.Callbacks ).Concat( AdvisorInputsCallbacks.Callbacks ).ToDictionary( entry => entry.Key, entry => entry.Value );
 
 	/// <summary>Loans taken: the bought records among the eight (<c>0x004D0690</c>).</summary>
 	public static int LoansTaken( IAdvisorMoneyState money ) => money.LoanSlots.Count( slot => slot.Bought );

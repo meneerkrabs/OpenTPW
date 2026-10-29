@@ -1120,8 +1120,9 @@ public class CoasterTests
 		var level = CoasterTrack.ForwardTangent( a, p, b, 1.25f, 1.25f, -0.999f, false, loopNeighbour: true );
 		Assert.AreEqual( (curve.X, 0f, curve.Z), (level.X, level.Y, level.Z), "a non-loop pylon next to a loop pylon is level" );
 		Assert.AreNotEqual( 0f, CoasterTrack.ForwardTangent( a, p, b, 1.25f, 1.25f, null, false, loopNeighbour: true ).Y, "pylon-less nodes keep Y" );
-		Assert.AreEqual( 0x400DB70Du, Bits( CoasterTrack.TurnAngleXZ( a, p, b ) ) );
-		Assert.AreEqual( -2.2142975f, CoasterTrack.TurnAngleXZ( a, p, new SVector3( 75, 30, -35 ) ), 1e-6f );
+		// the turn is what the PC routine stores: its acos runs at 24 bits (0x67b518), the x86 oracle gives 0x400DB70C for this node (ORACLE.md X40)
+		Assert.AreEqual( 0x400DB70Cu, Bits( CoasterTrack.TurnAngleXZ( a, p, b ) ) );
+		Assert.AreEqual( 0xC00DB70Cu, Bits( CoasterTrack.TurnAngleXZ( a, p, new SVector3( 75, 30, -35 ) ) ) );
 		Assert.AreEqual( 0x3D5643C0u, Bits( CoasterTrack.AutoBank( 20, 2.2f, 40, 50 ) ) );
 		Assert.AreEqual( 0xBD5643C0u, Bits( CoasterTrack.AutoBank( 20, -2.2f, 40, 50 ) ) );
 		Assert.AreEqual( 0f, CoasterTrack.AutoBank( 5, 0, 1, 1 ) );

@@ -151,6 +151,126 @@ class CoasterOracle:
         r = box['record']
         return (sb.read(r + 4, 'f'), sb.read(r + 8, 'f'))
 
+    # ------------------------------------------------------------------------------ the node tangent
+    def node_tangent(self, position, previous=None, following=None, previous_of_previous=None, definition=None, reversed_=False, loop_node=False,
+                     previous_loop=None, next_loop=None, head_next=None, straight_divisor=2.0, curviness=1.0, suspended=False, flags_in=0,
+                     drop_previous=False, drop_next=False, use_head_next=False):
+        """0x431660(node, definition, controller) on a node with the given neighbours (None = no link). `definition` is None (a pylon-less node) or (loop_flag, straight_dot); the neighbours'
+        definitions are None (no pylon), False (a pylon without the loop flag) or True (a loop pylon). Returns (back, forward, turn, flags_after, written)."""
+        box = {}
+        SENTINEL = 12345.0
+
+        def setup(sb):
+            def pylon(loop):
+                if loop is None:
+                    return sb.alloc(0x200)  # a descriptor whose +0x18 is 0: no definition
+                descriptor = sb.alloc(0x200)
+                definition_ = sb.alloc(0x100)
+                sb.write(definition_, 'I', 0x4000 if loop else 0)
+                sb.write(descriptor + 0x18, 'I', definition_)
+                return descriptor
+
+            def node(position_, loop, flags=0):
+                address = sb.alloc(0x200)
+                sb.write(address + 8, 'I', flags)
+                for k in range(3):
+                    sb.write(address + 0x4C + 4 * k, 'f', position_[k])
+                sb.write(address + 0x100, 'I', pylon(loop))
+                return address
+
+            flags = flags_in | (0x80 if reversed_ else 0) | (0x40 if loop_node else 0) | (0x80000 if drop_previous else 0) | (0x40000 if drop_next else 0) | (0x100000 if use_head_next else 0)
+            this = sb.alloc(0x200)
+            sb.write(this + 8, 'I', flags)
+            for k in range(3):
+                sb.write(this + 0x4C + 4 * k, 'f', position[k])
+            descriptor = sb.alloc(0x200)
+            if definition is not None:
+                own = sb.alloc(0x100)
+                sb.write(own, 'I', 0x4000 if definition[0] else 0)
+                sb.write(own + 0xB0, 'f', definition[1])
+                sb.write(descriptor + 0x18, 'I', own)
+            sb.write(this + 0x100, 'I', descriptor)
+            if previous is not None:
+                prev = node(previous, previous_loop)
+                sb.write(this + 0x68, 'I', prev)
+                if previous_of_previous is not None:
+                    sb.write(prev + 0x68, 'I', node(previous_of_previous, None))
+            if following is not None:
+                sb.write(this + 0x64, 'I', node(following, next_loop))
+            defn = sb.alloc(0x40)
+            sb.write(defn, 'I', 8 if suspended else 0)
+            sb.write(defn + 8, 'f', curviness)
+            sb.write(defn + 0xC, 'f', straight_divisor)
+            ctl = sb.alloc(0x40)
+            head = sb.alloc(0x200)
+            if head_next is not None:
+                sb.write(head + 0x64, 'I', node(head_next, None))
+            sb.write(ctl + 0x18, 'I', head)
+            for offset in (0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C, 0x94):
+                sb.write(this + offset, 'f', SENTINEL)
+            box.update(this=this, defn=defn, ctl=ctl)
+
+        sb = self.prepare()
+        setup(sb)
+        sb.call(0x431660, (box['this'], box['defn'], box['ctl']))
+        t = box['this']
+        values = [sb.read(t + o, 'f') for o in (0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C, 0x94)]
+        written = values[6] != SENTINEL or values[0] != SENTINEL
+        return (tuple(values[0:3]), tuple(values[3:6]), values[6], sb.read(t + 8, 'I'), written)
+
+    # ------------------------------------------------------------------------------ the bank pass
+    def st0(self, sb, result) -> float:
+        """The top of the x87 stack after a call (a routine returning its answer in st0), as a single."""
+        top = (sb.x87_state()['fpsw'] >> 11) & 7
+        mantissa, exponent = result.fpu[top]
+        sign = -1.0 if exponent & 0x8000 else 1.0
+        biased = exponent & 0x7FFF
+        if mantissa == 0:
+            return 0.0 * sign
+        return f32(sign * math.ldexp(mantissa, biased - 16383 - 63))
+
+    def speed_estimate(self, per_height, uphill, downhill, speed, floor, y, y_next):
+        """0x43BFB0(definition, speed, floor, y, y_next): the next speed estimate of the bank pass (the definition's +0x24, +0x28, +0x2C)."""
+        box = {}
+
+        def setup(sb):
+            definition = sb.alloc(0x40)
+            sb.write(definition + 0x24, 'f', per_height)
+            sb.write(definition + 0x28, 'f', uphill)
+            sb.write(definition + 0x2C, 'f', downhill)
+            box['d'] = definition
+
+        sb = self.prepare()
+        setup(sb)
+        result = sb.call(0x43BFB0, (box['d'], bits(speed), bits(floor), bits(y), bits(y_next)))
+        return self.st0(sb, result)
+
+    def auto_bank(self, position, previous, following, turn, speed, divisor, flags=0):
+        """0x43C160(controller, node, speed): the node's auto-bank over its raw neighbours; the controller's definition (+4) holds the divisor at +0x10."""
+        box = {}
+
+        def setup(sb):
+            definition = sb.alloc(0x40)
+            sb.write(definition + 0x10, 'f', divisor)
+            controller = sb.alloc(0x40)
+            sb.write(controller + 4, 'I', definition)
+            node = sb.alloc(0x200)
+            prev = sb.alloc(0x200)
+            nxt = sb.alloc(0x200)
+            for address, point in ((node, position), (prev, previous), (nxt, following)):
+                for k in range(3):
+                    sb.write(address + 0x4C + 4 * k, 'f', point[k])
+            sb.write(node + 0x94, 'f', turn)
+            sb.write(node + 8, 'I', flags)
+            sb.write(node + 0x68, 'I', prev)
+            sb.write(node + 0x64, 'I', nxt)
+            box.update(controller=controller, node=node)
+
+        sb = self.prepare()
+        setup(sb)
+        result = sb.call(0x43C160, (box['controller'], box['node'], bits(speed)))
+        return self.st0(sb, result)
+
 
 def main() -> int:
     import random

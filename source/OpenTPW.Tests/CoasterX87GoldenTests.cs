@@ -29,11 +29,13 @@ public class CoasterX87GoldenTests
 		return new SVector3( v[0], v[1], v[2] );
 	}
 
+	private static string current = "";
+
 	private static void Same( float[] expected, params float[] actual )
 	{
 		Assert.AreEqual( expected.Length, actual.Length );
 		for ( var i = 0; i < expected.Length; i++ )
-			Assert.AreEqual( BitConverter.SingleToUInt32Bits( expected[i] ), BitConverter.SingleToUInt32Bits( actual[i] ), $"value {i}: expected {expected[i]:R}, got {actual[i]:R}" );
+			Assert.AreEqual( BitConverter.SingleToUInt32Bits( expected[i] ), BitConverter.SingleToUInt32Bits( actual[i] ), $"value {i}: expected {expected[i]:R}, got {actual[i]:R} in {current}" );
 	}
 
 	[TestMethod]
@@ -44,6 +46,7 @@ public class CoasterX87GoldenTests
 		var kinds = new System.Collections.Generic.Dictionary<string, int>();
 		foreach ( var row in rows )
 		{
+			current = row;
 			var sides = row.Split( " > " );
 			var parts = sides[0].Split( " | " );
 			if ( parts[0] == "table" )
@@ -56,7 +59,7 @@ public class CoasterX87GoldenTests
 				kinds["table"] = 1;
 				continue;
 			}
-			var expected = Singles( sides[1] );
+			var expected = parts[0] == "tangent" ? Array.Empty<float>() : Singles( sides[1] );
 			kinds[parts[0]] = (kinds.TryGetValue( parts[0], out var seen ) ? seen : 0) + 1;
 			switch ( parts[0] )
 			{
@@ -91,11 +94,47 @@ public class CoasterX87GoldenTests
 					Same( expected, yaw, pitch );
 					break;
 				}
+				case "tangent":
+				{
+					SVector3? Optional( string text ) => text == "-" ? null : Vector( text );
+					var def = parts[5].Split( ' ' );
+					var flags = parts[6].Split( ' ' );
+					var scalars = Singles( parts[7] );
+					var hasDefinition = def[0] == "d";
+					var input = new CoasterNodeTangentInput( Vector( parts[1] ), Optional( parts[2] ), Optional( parts[3] ), Optional( parts[4] ), hasDefinition, hasDefinition && def[1] == "1",
+						hasDefinition ? Singles( def[2] )[0] : 0f, flags[0] == "1", flags[1] == "1", flags[2] == "1", flags[3] == "1", scalars[0], scalars[1], flags[4] == "1" );
+					var result = CoasterNodeTangent.Compute( input );
+					if ( sides[1] == "none" )
+					{
+						Assert.IsNull( result, row );
+						break;
+					}
+					var values = sides[1].Split( ' ' );
+					var exp = Singles( string.Join( ' ', values.Take( 7 ) ) );
+					Assert.IsNotNull( result, row );
+					var r = result.Value;
+					Same( exp, r.Back.X, r.Back.Y, r.Back.Z, r.Forward.X, r.Forward.Y, r.Forward.Z, r.Turn );
+					Assert.AreEqual( values[7], r.TurnedBack.ToString().ToLowerInvariant(), row );
+					break;
+				}
+				case "bank":
+				{
+					var settings = Singles( parts[4] );
+					var position = Vector( parts[1] );
+					Same( expected, CoasterTrack.AutoBank( settings[1], settings[0], CoasterX87.Length( Vector( parts[2] ) - position ), CoasterX87.Length( Vector( parts[3] ) - position ), settings[2] ) );
+					break;
+				}
+				case "speed":
+				{
+					var v = Singles( parts[1] );
+					Same( expected, CoasterX87.SpeedEstimate( v[0], v[1], v[2], v[3], v[4], v[5], v[6] ) );
+					break;
+				}
 				default:
 					Assert.Fail( "unknown row kind " + parts[0] );
 					break;
 			}
 		}
-		Assert.IsTrue( kinds.Count >= 5, string.Join( ", ", kinds ) );
+		Assert.IsTrue( kinds.Count >= 8, string.Join( ", ", kinds ) );
 	}
 }

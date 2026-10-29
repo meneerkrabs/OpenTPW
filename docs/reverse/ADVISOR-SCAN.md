@@ -438,7 +438,7 @@ bit 2 of `+0x32`) whose open word is 0. The coverage rows (19, 21, 27) and the p
 | 170 | wired | cb 0x59FA60 | park open, visitors ever >= MinVisitorsEver, no staff at all: flat HireStaffGeneral.Score | speech only |
 | 171 | wired | cb 0x59FAC0 | staff > MinStaffForMessage and nobody has a patrol area (0x4C9B40): flat SetPatrolsGeneral.Score | speech only |
 | 172 | wired | cb 0x59FB10 | all staff > MinStaffForMessage and the staff HQ's mHaveEverTrained byte (+0x20 of 0x519450, set once a training budget above 0 is stored) is clear: flat TrainStaffGeneral.Score | speech only |
-| 263 | wired | cb 0x5A0490 | staff rooms closed (0x4CA0C0) x 100 / staff rooms > MoreThanThisPercentClosed: flat StaffroomClosed.Score | speech only |
+| 263 | wired | cb 0x5A0490 | staff rooms closed (0x4CA0C0: open word +0x68 is 0; the staff room's state 3, not choosable, is no closed one) x 100 / staff rooms > MoreThanThisPercentClosed: flat StaffroomClosed.Score | speech only (response 513 plays the z_error placeholder) |
 
 ## Research
 

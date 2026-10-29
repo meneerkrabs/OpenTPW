@@ -165,6 +165,11 @@ public sealed class StaffMember
 	public int BubbleThought { get; set; }
 	/// <summary>The park turn the member's last bubble appeared.</summary>
 	public long BubbleTurn { get; set; }
+	/// <summary>
+	/// The second world draw the entertainer's search took when it started a performance (tp.exe <c>0x004D47B5</c>): the performance's script is 13 + (draw mod (n - 1)) of the bank's n entries
+	/// (13 when n is 1, <c>0x004D47CC</c>). Saved only while it is not 0.
+	/// </summary>
+	public uint PerformanceDraw { get; set; }
 	/// <summary>The rest area (an object with <c>UsageInfo.ChillsYouOut</c>) a member walks to or rests in [+0x208], 0 when none.</summary>
 	public int RestAreaId { get; set; }
 	/// <summary>
@@ -460,8 +465,8 @@ public sealed partial class ParkStaff
 
 	private StaffCandidate CreateCandidate( StaffRoleSettings role, WorldRng random, long tick )
 	{
-		// [BIN:TPW-EXE:0x0050761C staff candidate draws] the constructor 0x00507600 draws, in order: the sprite variant (0x00541F70: (R >> 2) mod the role category's bank count, candidate +9), one draw it discards (0x0050762D), the grade (0x00507638), the name (0x00507580) and the timeout
-		// [BIN:TPW-EXE:0x00541F70 sprite variant] (draw >> 2) mod the role category's loaded bank count (StaffSprites.Banks), kept as the candidate's variant and handed on to the member it becomes (Hire)
+		// [BIN:TPW-EXE:0x0050761C staff candidate draws] the constructor 0x00507600 draws, in order: the sprite variant (0x00541F70: (R >> 2) mod the role category's loaded bank count, candidate +9; here the static folder count, GUEST-020), one draw it discards (0x0050762D), the grade (0x00507638), the name (0x00507580) and the timeout
+		// [BIN:TPW-EXE:0x00541F70 sprite variant] (draw >> 2) mod the role category's bank count; the original divides by the LOADED count (table entry +8, filled by 0x541E7D from 0x541310 after the limit), here it is the static folder count (StaffSprites.Banks) and the reduction to the loaded banks happens only when drawing (GUEST-020), kept as the candidate's variant and handed on to the member it becomes (Hire)
 		var variantDraw = random.NextWord();
 		random.NextWord();
 		// [BIN:STP-PPC:0x100F5B64 staff candidate] grade = (AvgGradeOf* + random % 3 - 1) & 0xFF, stored as 4 when above 4 (so -1 wraps to 4); ChanceToGetGreat* is never read
@@ -482,7 +487,7 @@ public sealed partial class ParkStaff
 		return new StaffCandidate( NextId++, role.Type, name, grade, TickAfterUnits( tick, timeout ), VariantFrom( role.Type, variantDraw ) );
 	}
 
-	/// <summary>The sprite variant a draw gives a role: (draw &gt;&gt; 2) mod the loaded bank count of the role's category, -1 when the level has no bank for it.</summary>
+	/// <summary>The variant a draw gives: (draw >> 2) modulo the static bank count of the role's folder, not the loaded count (GUEST-020).</summary>
 	private int VariantFrom( StaffType type, uint draw ) => StaffSpriteRules.Banks( type, settings.Theme )?.Banks.Count is > 0 and var count ? (int)((draw >> 2) % (uint)count) : -1;
 
 	/// <summary>Whether a pool candidate or an employee of the role already has the name (tp.exe <c>0x005083F0</c>).</summary>

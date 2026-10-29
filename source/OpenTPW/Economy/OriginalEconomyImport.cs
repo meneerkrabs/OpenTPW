@@ -499,19 +499,24 @@ public sealed partial class OriginalEconomyImport
 			evidence.Add( $"Staff value adjusted on import: {adjustment}." );
 		foreach ( var job in jobs )
 			evidence.Add( job );
-		// [BIN:TPW-EXE:0x004E0220 claim lapse] an otherwise unheld claim remains reserved through its saved turn + 100; only a later claimant query releases it.
+		// [BIN:TPW-EXE:0x004E01F0 claim] the claim is two words of the attraction, the claimant's thing id (+0x5E) and the turn it was made (+0x60), saved and loaded as they are (the attraction serializer reads them back with no check against any job)
+		// [BIN:TPW-EXE:0x004E0220 claim lapse] the query lets a claim lapse once the turn is above its stamp + 100 (unsigned) and the claimant thing's 0x00506580 is false: a mechanic whose ride +0x218 is the object, a handyman whose toilet +0x21A is the object, any other thing "Invalid call" and false, a dead one as well; ParkEconomy.Claimant is that query, so each claim not taken again by a resumed job is imported as it was saved
 		foreach ( var held in save.Attractions.Where( item => item.AssignedStaffMember != 0 && !resumedClaims.Contains( item.Id ) ) )
 		{
-			if ( things.TryGetValue( held.Id, out var attraction ) && membersByThing.TryGetValue( held.AssignedStaffMember, out var claimant )
-				&& claimant.Type is StaffType.Mechanic or StaffType.Handyman && held.TimeMarkedForMaintenance <= economy.Turn )
+			if ( !things.TryGetValue( held.Id, out var attraction ) )
 			{
-				attraction.MechanicId = claimant.Id;
-				attraction.ClaimTurn = held.TimeMarkedForMaintenance;
-				evidence.Add( $"Attraction thing {held.Id} claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} imported for lazy expiry." );
+				evidence.Add( $"Attraction thing {held.Id} (Info.Id {held.InfoId}) claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} has no imported attraction to stay on." );
 				continue;
 			}
-			// [APPROX:SAVE-006] unresolved attraction/claimant identities, unsupported claimant roles and future claim stamps have no supported ownership contract.
-			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {held.Id} (Info.Id {held.InfoId}) claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} not imported: unresolved attraction or staff, unsupported claimant role, or future claim turn." );
+			// the claimant is an imported member where the save has one; a thing the import does not hold (a guest, a destroyed thing's slot) is a claimant that is allocated to nothing, which a negative word stands for: it keeps the attraction claimed until the query lapses it
+			var claimant = membersByThing.GetValueOrDefault( held.AssignedStaffMember );
+			// a stamp ahead of the save's own clock cannot come from the game (the turn only grows); the claim is taken as made now
+			var stamp = Math.Min( held.TimeMarkedForMaintenance, economy.Turn );
+			if ( stamp != held.TimeMarkedForMaintenance )
+				evidence.Add( $"Staff value adjusted on import: attraction thing {held.Id} claim stamp {held.TimeMarkedForMaintenance} lies after the save's turn {economy.Turn}, imported as made on that turn." );
+			attraction.MechanicId = claimant?.Id ?? -(int)held.AssignedStaffMember;
+			attraction.ClaimTurn = stamp;
+			evidence.Add( $"Attraction thing {held.Id} claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} imported as saved{(claimant == null ? " (the claimant is no imported staff member)" : "")}, lapsing at the first query after turn {stamp + ParkEconomy.ClaimLapseTurns}." );
 		}
 		// [BIN:TPW-EXE:0x00504BDC staff constructor] mJobsDone (+0x204) is set to 0 here and otherwise touched only by the serializer (0x00504EFC, 0x005052ED): nothing reads it, so it needs no import
 		if ( imported != 0 )

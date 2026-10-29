@@ -277,6 +277,23 @@ public class ParkLandTests
 			command => command is BuyLandCommand buy ? buy.Apply( cells, economy, ( _, _ ) => false ) : ParkCommandResult.Rejected( "Not a land command." ) );
 
 	[TestMethod]
+	public void TheToolKeepsTheHoveredPriceForTheHudCostLine()
+	{
+		var cells = NewPark();
+		var tool = Tool( cells, Economy( 50000, 100 ) );
+		Assert.AreEqual( 0L, tool.HoverCost, "the tool start clears the cost (0x52f087)" );
+		Assert.IsTrue( tool.Begin() );
+		Assert.AreEqual( 0L, tool.HoverCost );
+		Assert.AreEqual( BuyLandClick.CornerStored, tool.Click( 26, 12 ) );
+		tool.Hover( 34, 22 );
+		Assert.AreEqual( 4800L, tool.HoverCost, "the price 0x532303 adds for every unowned cell of the rectangle" );
+		tool.Hover( 26, 12 );
+		Assert.AreEqual( 0L, tool.HoverCost, "a refusal before the price leaves the cleared cost" );
+		tool.Cancel();
+		Assert.AreEqual( 0L, tool.HoverCost );
+	}
+
+	[TestMethod]
 	public void TheToolBuysOneRectanglePerActivation()
 	{
 		var cells = NewPark();

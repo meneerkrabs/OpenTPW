@@ -34,9 +34,19 @@ public static class GuestAppearance
 	{
 		if ( sets <= 0 )
 			return 0;
-		var generator = new WorldRng( (ushort)guestId );
-		return (int)((generator.NextWord() >> 2) % (uint)sets);
+		return (int)(RawKidDraw( guestId ) % (uint)sets);
 	}
+
+	/// <summary>
+	/// The draw a guest's kid set comes from, before the modulo: the world generator reseeded with the guest's thing id (zero-extended u16), its first draw shifted right by 2 (a 30-bit value).
+	/// The reseed makes it a function of the id alone, which is also the draw the constructor takes at the guest's creation (<see cref="Guest.KidSetDraw"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00541F70 kid set draw] (word >> 2) is the value the category's loaded count divides (the entry +8 that 0x00541E7D fills with 0x00541310's result): 6 does not divide 8, so the raw value, not its remainder, is what a guest keeps
+	public static uint RawKidDraw( int guestId ) => new WorldRng( (ushort)guestId ).NextWord() >> 2;
+
+	/// <summary>The kid set a guest is drawn with among <paramref name="sets"/> loaded sets: its kept draw (<see cref="Guest.KidSetDraw"/>) modulo the count, as 0x00541F70 divides and the person serializer reduces a loaded value (0x004F93AA).</summary>
+	// [BIN:TPW-EXE:0x004F93AA saved sprite reduction] the person serializer reduces a loaded sprite id by the category's loaded count (0x00541F60: the entry +8), for every person, so a guest's bank is its kept value modulo the count loaded now
+	public static int KidSet( Guest guest, int sets ) => sets <= 0 ? 0 : (int)(guest.KidSetDraw % (uint)sets);
 
 	/// <summary>
 	/// The colour (the animation slot) of a guest's balloon: the world generator reseeded with the guest's thing id, a first draw for the sprite set (one set, so always the first) and a second,

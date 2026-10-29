@@ -153,7 +153,7 @@ public sealed class RideHeadRenderer : Entity
 			// [BIN:STP-PPC:0x100E8F70] the kidsheads art, or costumeheads when the visitor's costume flag (+0x24) is 2 (set index +0x20); a rider in costume gets the theme's costume head (Level.SetupGuests), and in Fantasy and Hallow, which ship none, its kid head (GUEST-017)
 			// [EXT:empty-costume-heads-keep-kid-head] a rider in costume in Fantasy and Hallow, which ship no costume heads, keeps its kid head: the original's pick 0x00541F70 / 0x00541FD0 takes a modulo by the group's count, which is 0 there, so matching it would divide by zero
 			// [BIN:TPW-EXE:0x005890E0 sprite placement] a head is the body's pixel size (20 / 128 x sqrt(2) world units, SpriteScale) times the scale property 0.685 (0x0074CED0); the roll's reference is HEADS-004
-			var atlasIndex = GuestAppearance.KidSet( guest!.Id, Math.Min( 8, atlases.Count ) );
+			var atlasIndex = GuestAppearance.KidSet( guest!, Math.Min( 8, atlases.Count ) );
 			var atlas = atlases[atlasIndex];
 			// The head art is 7 directions (rows, from the pole) of 8 frames (azimuth steps): frame 8 * row + column.
 			var frame = atlas.Frames[atlas.GetFrame( GuestSpriteAtlas.StandSlot, placement.Row, placement.Column )];

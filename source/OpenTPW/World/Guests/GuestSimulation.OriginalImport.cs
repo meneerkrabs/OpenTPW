@@ -148,6 +148,9 @@ public sealed partial class GuestSimulation
 			// [BIN:TPW-EXE:0x004FE1E0 balloon] the guest holds its balloon while mBalloonScript (+0x210) names the balloon model; a costume is sprite category 2 (person +0x24, mESPSprite)
 			guest.HasBalloon = save.BalloonScript != 0 && guest.BalloonLife > 0;
 			guest.InCostume = person.EspSprite == 2;
+			// [BIN:TPW-EXE:0x004F93AA saved sprite bank] the person serializer saves the sprite bank (+0x20) and reduces it by the loaded count of the person's own category (+0x24, 0x00541F60); a guest in costume holds the costume bank there, and the kid set it returns to is the draw its thing id gives again (0x004FE6A1)
+			if ( !guest.InCostume )
+				guest.KidSetDraw = person.SpriteId;
 			var baseSpeed = GuestSpeed.BaseSpeeds.Contains( person.BaseSpeed ) ? person.BaseSpeed : GuestSpeed.BaseSpeeds[0];
 			if ( baseSpeed != person.BaseSpeed )
 				adjusted.Add( $"{what} base speed {person.BaseSpeed} imported as {baseSpeed}" );

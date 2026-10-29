@@ -61,6 +61,9 @@ public sealed record GuestSnapshot
 	/// <summary>Optional exact display age, 0..uint.MaxValue turns. Requires known seconds and a saved display phase; absent in older saves, which retain their seconds fallback.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public long? DisplayTimeInParkTurns { get; init; }
+	/// <summary>Optional kid-set draw (the original's bank number before the modulo by the loaded count, 0..uint.MaxValue); older saves omit it and the draw is the one the guest's thing id gives. Presentation only: not hashed.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public long? KidSetDraw { get; init; }
 	public required float SecondsSinceRide { get; init; }
 	public required int RidesTaken { get; init; }
 	/// <summary>The shops visited. Absent in older saves (0).</summary>

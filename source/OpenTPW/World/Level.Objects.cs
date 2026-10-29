@@ -773,6 +773,9 @@ public partial class Level
 			Log.Warning( $"No swim sprite sets found in '{PoolSwimSprites.Directory}': swimmers are drawn with the normal guest sprites." );
 			return null;
 		}
+		// [EXT:pools-swim] a swimmer wears the swimwear of the kid set it has on land: the swim sets take the same places as the kid sets (KidSetLoad), so the guest's draw picks the same kid in both
+		if ( !GameEditions.IsThemeParkInc )
+			swim = KidSetLoad.Order( swim, atlas => atlas.Name, KidSetLoad.LimitOf( IGraphicsSettings.Instance ) );
 		return new GuestRenderer( guests, park.Heightfield, swim )
 		{
 			// [EXT:pools-slides] a rider inside a closed tube is not drawn (presentation only)

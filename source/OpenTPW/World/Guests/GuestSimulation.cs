@@ -475,8 +475,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.ExitLevel = start.ExitLevel;
 		// [BIN:TPW-EXE:0x004FB19E guest reseed] the constructor then reseeds the world generator with the thing's id (zero-extended u16, through 0x0050B350), so everything the guest and the world draw after its creation starts from a state that depends on the id alone
 		random.Reseed( (ushort)guest.Id );
-		// [BIN:TPW-EXE:0x004FB1A7 guest sprite variant] the next call, 0x00541F70 with category 0, draws (R >> 2) mod the category's bank count (0x00541F85) for the guest's sprite bank +0x20: the draw is taken, its value is not used (the sprite choice is OpenTPW's own, GUEST-017)
-		random.NextWord();
+		// [BIN:TPW-EXE:0x004FB1A7 guest sprite variant] the next call, 0x00541F70 with category 0, draws (R >> 2) mod the category's bank count (0x00541F85) for the guest's sprite bank +0x20: the guest keeps the draw (the renderers take it modulo the sets loaded, KidSetLoad), which the reseed makes the one its thing id gives (GuestAppearance.RawKidDraw)
+		guest.KidSetDraw = random.NextWord() >> 2;
 		CreateBodySprite( guest, VisitorSpriteTemplate.Walk );
 		// A guest placed without the arrival constructor's position draws (the park's own start cell, tests, imports) is spread by a stable hash of its id: OpenTPW's own placement
 		// jitter, not a draw of the world generator (presentation of the start; the original sets +0x18/+0x1A from the entrance draws of SpawnArrival)
@@ -3891,6 +3891,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			ExitLevel = guest.ExitLevel,
 			TimeInParkSeconds = guest.TimeInParkSeconds,
 			DisplayTimeInParkTurns = guest.TimeInParkSeconds == null ? null : guest.DisplayTimeInParkTurns,
+			KidSetDraw = guest.KidSetDraw,
 			SecondsSinceRide = guest.SecondsSinceRide,
 			RidesTaken = guest.RidesTaken,
 			ShopsVisited = guest.ShopsVisited,
@@ -4209,6 +4210,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} bubble {(int)guest.BubbleThought} at turn {guest.BubbleTurn} is not a thought bubble." );
 			if ( (uint)guest.Type >= (uint)typeCount )
 				Error( $"Guest {guest.Id} type {guest.Type} is not one of the park's {typeCount} guest types." );
+			if ( guest.KidSetDraw is < 0 or > uint.MaxValue )
+				Error( $"Guest {guest.Id} kid set draw {guest.KidSetDraw} is not an unsigned 32-bit number." );
 			// Schema 1 grew hunger, thirst and toilet to the old model's 150 cap; the meter model (schema 2 on) holds 0..100.
 			var needCeiling = snapshot.SchemaVersion == 1 ? 150 : 100;
 			Bounded( guest.Id, guest.Hunger, nameof( guest.Hunger ), 0, needCeiling );
@@ -4595,6 +4598,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.ExitLevel = (int)Math.Truncate( snapshot.ExitLevel );
 		guest.TimeInParkSeconds = snapshot.TimeInParkSeconds;
 		guest.DisplayTimeInParkTurns = snapshot.DisplayTimeInParkTurns;
+		guest.KidSetDraw = snapshot.KidSetDraw is { } kidSetDraw ? (uint)kidSetDraw : GuestAppearance.RawKidDraw( guest.Id );
 		guest.SecondsSinceRide = snapshot.SecondsSinceRide;
 		guest.RidesTaken = snapshot.RidesTaken;
 		(guest.ShopsVisited, guest.SideshowsVisited, guest.SideshowsWon) = (snapshot.ShopsVisited, snapshot.SideshowsVisited, snapshot.SideshowsWon);

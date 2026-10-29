@@ -242,6 +242,16 @@ public sealed class Guest
 	public double? TimeInParkSeconds { get; internal set; }
 	/// <summary>Display-only age in unsigned 32-bit park turns, or null for a legacy seconds-based duration. Never used by gameplay.</summary>
 	public long? DisplayTimeInParkTurns { get; internal set; }
+	/// <summary>
+	/// The draw the guest's kid set comes from, before the modulo by the loaded count (the sprite bank <c>+0x20</c> of the original: 0x00541F70's (word >> 2), which 0x004FB1A7 takes right after the reseed with the thing id).
+	/// The renderers read it modulo the sets loaded now (<see cref="GuestAppearance.KidSet(Guest, int)"/>); the simulation never reads it, so it is saved but not hashed. A guest of an original save keeps the saved bank number.
+	/// </summary>
+	public uint KidSetDraw
+	{
+		get => kidSetDraw ?? GuestAppearance.RawKidDraw( Id );
+		internal set => kidSetDraw = value;
+	}
+	private uint? kidSetDraw;
 	/// <summary>Own-format/display duration bound; no original timing limit is inferred.</summary>
 	public static double MaximumTimeInParkSeconds => TimeSpan.MaxValue.TotalSeconds;
 	public float SecondsSinceRide { get; internal set; }

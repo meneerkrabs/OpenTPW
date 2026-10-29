@@ -271,6 +271,94 @@ class CoasterOracle:
         result = sb.call(0x43C160, (box['controller'], box['node'], bits(speed)))
         return self.st0(sb, result)
 
+    # ------------------------------------------------------------------------------ the loop knot
+    def turn_fraction(self, yaw: float) -> float:
+        """The knot pass's node field +0xEC (0x43110C..0x431157): the fractional part of the node's yaw over 2 pi, plus 1 when negative."""
+        sb = self.prepare()
+        node = sb.alloc(0x200)
+        frame = sb.alloc(0x400) + 0x300
+        sb.write(node + 0xE0, 'f', yaw)
+        sb.call(0x43110C, (), regs={'esi': node, 'ebp': frame}, stop=0x431157)
+        return sb.read(node + 0xEC, 'f')
+
+    def loop_knot(self, curviness, position, direction, back_chord, forward_chord, loop_flag=True, reversed_=False, neighbour=None, neighbour_flags=0,
+                  turn_fraction=0.0, loop_rotate=0.0, previous=None, previous_flags=0, following=None, following_flags=0):
+        """0x432430 on a knot of a node with a pylon definition: `neighbour` is the position of the raw link the loop side reads (the previous node, or the next one with node flag 0x80);
+        previous/following are the raw links' positions and flags for the side factors. Returns (back control, forward control)."""
+        box = {}
+
+        def setup(sb):
+            control = sb.alloc(0x40)
+            sb.write(control + 8, 'f', curviness)
+            vector = sb.alloc(16)
+            record = sb.alloc(0x100)
+            node = sb.alloc(0x200)
+            definition = sb.alloc(0x100)
+            sb.write(definition, 'I', 0x4000 if loop_flag else 0)
+            for k in range(3):
+                sb.write(vector + 4 * k, 'f', direction[k])
+                sb.write(record + 0x40 + 4 * k, 'f', position[k])
+                sb.write(node + 0x4C + 4 * k, 'f', 0.0)
+            # the node stands at `position`'s x and z for the side's neighbour difference
+            sb.write(node + 0x4C, 'f', position[0])
+            sb.write(node + 0x54, 'f', position[2])
+            sb.write(node + 8, 'I', 0x80 if reversed_ else 0)
+            sb.write(node + 0xEC, 'f', turn_fraction)
+            sb.write(node + 0xF8, 'f', loop_rotate)
+            sb.write(record + 0x10, 'I', node)
+
+            def link(point, flags):
+                address = sb.alloc(0x200)
+                sb.write(address + 8, 'I', flags)
+                for k in range(3):
+                    sb.write(address + 0x4C + 4 * k, 'f', point[k])
+                return address
+            if previous is not None:
+                sb.write(node + 0x68, 'I', link(previous, previous_flags))
+            if following is not None:
+                sb.write(node + 0x64, 'I', link(following, following_flags))
+            box.update(control=control, vector=vector, record=record, definition=definition)
+
+        sb = self.prepare()
+        setup(sb)
+        sb.call(0x432430, (box['control'], box['vector'], box['record'], bits(back_chord), bits(forward_chord), box['definition'], 0, 0, 0, 0))
+        r = box['record']
+        return (tuple(sb.read(r + 0x34 + 4 * k, 'f') for k in range(3)), tuple(sb.read(r + 0x4C + 4 * k, 'f') for k in range(3)))
+
+    # ------------------------------------------------------------------------------ the pylon cost
+    def pylon_cost(self, t, low, high, position, other, unit, length_rate, height_rate, charge=True):
+        """0x447830(controller, charge, node, ...) over a node whose own pylon definition has the given mesh heights and rates (no special flags, so its own rates apply) and a previous node at `other`."""
+        box = {}
+
+        def setup(sb):
+            control = sb.alloc(0x40)
+            definition = sb.alloc(0x100)
+            sb.write(control + 4, 'I', definition)
+            own = sb.alloc(0x100)
+            sb.write(own + 0x5C, 'f', unit)
+            sb.write(own + 0x60, 'f', length_rate)
+            sb.write(own + 0x64, 'f', height_rate)
+            sb.write(own + 0xBC, 'f', low)
+            sb.write(own + 0xC0, 'f', high)
+            descriptor = sb.alloc(0x100)
+            sb.write(descriptor + 0x18, 'I', own)
+            node = sb.alloc(0x200)
+            previous = sb.alloc(0x200)
+            sb.write(node + 0x100, 'I', descriptor)
+            sb.write(node + 0xE8, 'f', t)
+            sb.write(node + 0x68, 'I', previous)
+            sb.write(node + 8, 'I', 0)
+            sb.write(node + 0x4C, 'f', position[0])
+            sb.write(node + 0x54, 'f', position[1])
+            sb.write(previous + 0x4C, 'f', other[0])
+            sb.write(previous + 0x54, 'f', other[1])
+            box.update(control=control, node=node)
+
+        sb = self.prepare()
+        setup(sb)
+        result = sb.call(0x447830, (box['control'], 1 if charge else 0, box['node'], 0, 0, 0, 0))
+        return self.st0(sb, result)
+
 
 def main() -> int:
     import random

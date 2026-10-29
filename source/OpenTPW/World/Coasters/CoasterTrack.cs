@@ -500,9 +500,9 @@ public sealed class CoasterTrack
 		return (height, t);
 	}
 
-	/// <summary>The pylon height of a stored parameter: h0 + t(h1 − h0) (<c>0x369bc</c>).</summary>
-	// [BIN:STP-PPC:0x100369BC pylon height] height = fmadds(t, h1 − h0, h0) from the pylon mesh heights +188/+192 (0x100369C8)
-	public static float PylonHeight( CoasterPylonControl pylon, float t ) => MathF.FusedMultiplyAdd( t, pylon.MeshHeightHigh - pylon.MeshHeightLow, pylon.MeshHeightLow );
+	/// <summary>The pylon height of a stored parameter: (h1 − h0) · t + h0, one rounding per operation (<c>0x4346a0</c>, and inline at <c>0x430f6f</c> in the knot pass).</summary>
+	// [BIN:TPW-EXE:0x004346a0 pylon height] st0 = mesh height high (+0xc0), minus low (+0xbc), times t, plus low, each a single at the thread's 24-bit precision; the same four instructions stand in the knot pass (0x430f6f..0x430f81); the Mac's fused multiply-add is not what the PC does
+	public static float PylonHeight( CoasterPylonControl pylon, float t ) => (pylon.MeshHeightHigh - pylon.MeshHeightLow) * t + pylon.MeshHeightLow;
 
 	/// <summary>
 	/// Adds a pylon after the last node of an open chain; returns it. A loop pylon comes in pairs: <paramref name="second"/> is the second of the pair
@@ -1051,7 +1051,8 @@ public sealed class CoasterTrack
 		var lift = PylonHeight( Definition.Pylon( node.LoopPylon ), node.T );
 		var below = node.StackIndex > 0 ? StackBelow( node ) : null;
 		// [BIN:TPW-EXE:0x433280 stacked height] the height of a stacked node is the sum over the nodes below it of (h0 + t(h1 − h0) + stack offset) of the node's own pylon, then its own h0 + t(h1 − h0): each level adds the pylon's stack offset (+0xc4)
-		var y = below is { } under ? NodePosition( site, under ).Y + Definition.Pylon( node.LoopPylon ).StackOffset + lift : site.GroundHeight( node.X, node.Y ) + lift;
+		// [BIN:TPW-EXE:0x00430f89 stacked node height] lift + the pylon's stack offset (+0xc4) first, then the node below's height plus that (0x430f89..0x430f9e): y = below.y + (lift + offset), an unstacked node lift + the ground height
+		var y = below is { } under ? NodePosition( site, under ).Y + (lift + Definition.Pylon( node.LoopPylon ).StackOffset) : site.GroundHeight( node.X, node.Y ) + lift;
 		return new SVector3( x, y, z );
 	}
 
@@ -1298,11 +1299,10 @@ public sealed class CoasterTrack
 			var factor = 0f;
 			if ( node.LoopPylon )
 			{
-				// [BIN:TPW-EXE:0x4324a0 loop knot side] the loop factor's side term is the node's rotate parameter (+0xec, the yaw's turn fraction) against the heading of its neighbour
-				var heading = Next( index ) is int towards ? new SVector3( positions[towards].X - positions[index].X, 0, positions[towards].Z - positions[index].Z ) : SVector3.Zero;
-				// [EXT:deterministic-math] the x87's sine in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
-				var axis = applyManual || (node.Flags & CoasterNodeFlags.ManualYaw) == 0 ? new SVector3( DetMathF.Sin( yaw ), 0, DetMathF.Cos( yaw ) ) : new SVector3( DetMathF.Sin( yaws[index] ), 0, DetMathF.Cos( yaws[index] ) );
-				var side = heading.LengthSquared() > 0 ? SVector3.Dot( SVector3.Normalize( heading ), axis ) : 0;
+				// [BIN:TPW-EXE:0x4324a0 loop knot side] the side term is the node's turn fraction (+0xec, the fraction of its yaw over 2π) against the horizontal direction to its raw link: the previous node, or the next one with node flag 0x80 (CoasterX87.LoopSide)
+				var reversedNode = (node.Flags & CoasterNodeFlags.LoopFirst) != 0;
+				int? link = reversedNode ? (index + 1 < count ? index + 1 : null) : (index > 0 ? index - 1 : null);
+				var side = CoasterX87.LoopSide( CoasterX87.TurnFraction( applyManual || (node.Flags & CoasterNodeFlags.ManualYaw) == 0 ? yaw : yaws[index] ), link is int l ? positions[l].X - positions[index].X : 0f, link is int m ? positions[m].Z - positions[index].Z : 0f, link != null );
 				factor = HermiteCoasterCurve.LoopKnotFactor( Definition.Curviness, side, node.LoopRotate );
 			}
 			var nextIsLoop = after != null && (after.Flags & CoasterNodeFlags.Loop) != 0;

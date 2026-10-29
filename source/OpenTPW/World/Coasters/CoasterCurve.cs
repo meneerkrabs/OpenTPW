@@ -207,6 +207,15 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		return (yaw, DetMathF.Atan2( -tangent.Y, z ));
 	}
 
+	/// <summary>The factor each side of a knot's controls takes: fCurviness, on a loop pylon K or 1.7.</summary>
+	// [BIN:TPW-EXE:0x00432671 loop knot sides] with node flag 0x80 clear a loop pylon's back side always uses K and its forward side K when the next node has flag 0x40, else 1.7 (0x4326d5..0x432753); with node flag 0x80 set the back side uses K only when the previous node has flag 0x40, else 1.7, and the forward side K (0x432673..0x4326d0); a plain knot uses fCurviness on both sides (0x432755..0x4327c4)
+	internal static (float Back, float Forward) SideFactors( bool loopPylon, bool reversed, bool previousIsLoopNode, bool nextIsLoopNode, float k, float curviness )
+	{
+		if ( !loopPylon )
+			return (curviness, curviness);
+		return reversed ? (previousIsLoopNode ? k : LoopExitTangent, k) : (k, nextIsLoopNode ? k : LoopExitTangent);
+	}
+
 	/// <summary>
 	/// The knot controls of every knot; the first knot has no previous neighbour and the last none after it (a closed chain's last knot, the station
 	/// end node, has the second knot as its next one), so those chords are 1.0.
@@ -218,10 +227,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		for ( var index = 0; index < count; index++ )
 		{
 			var knot = knots[index];
-			// [BIN:STP-PPC:0x100326DC loop knot sides] with node flag 0x80 clear a loop pylon's back side always uses K and its forward side K when the next node has flag 0x40, else 1.7 (0x80 set mirrors this, 0x10032600..0x100326D8); plain knots use fCurviness
-			// the first pylon of a loop pair (node flag 0x80) mirrors the rule: its forward side always uses K and its back side K only after a loop node
-			var backFactor = knot.LoopPylon ? (knot.Reversed ? (knot.PreviousIsLoopNode ? knot.LoopSideFactor : LoopExitTangent) : knot.LoopSideFactor) : curviness;
-			var forwardFactor = knot.LoopPylon ? (knot.Reversed ? knot.LoopSideFactor : knot.NextIsLoopNode ? knot.LoopSideFactor : LoopExitTangent) : curviness;
+			var (backFactor, forwardFactor) = SideFactors( knot.LoopPylon, knot.Reversed, knot.PreviousIsLoopNode, knot.NextIsLoopNode, knot.LoopSideFactor, curviness );
 			// [BIN:STP-PPC:0x10032990 knot chord] without a neighbour the chord is 1.0
 			var backChord = index > 0 ? Chord( knots[index - 1].Position, knot.Position ) : 1f;
 			var forwardChord = index < count - 1 ? Chord( knot.Position, knots[index + 1].Position ) : closed && count > 1 ? Chord( knot.Position, knots[ClosingKnot( knots )].Position ) : 1f;

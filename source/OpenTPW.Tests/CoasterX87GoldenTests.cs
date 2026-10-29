@@ -130,11 +130,44 @@ public class CoasterX87GoldenTests
 					Same( expected, CoasterX87.SpeedEstimate( v[0], v[1], v[2], v[3], v[4], v[5], v[6] ) );
 					break;
 				}
+				case "loopknot":
+				{
+					SVector3? Optional( string text ) => text == "-" ? null : Vector( text );
+					var settings = Singles( parts[1] );
+					var chords = Singles( parts[4] );
+					var previousParts = parts[5].Split( ' ' );
+					var nextParts = parts[6].Split( ' ' );
+					var previous = previousParts[0] == "-" ? (SVector3?)null : Vector( string.Join( ' ', previousParts.Take( 3 ) ) );
+					var next = nextParts[0] == "-" ? (SVector3?)null : Vector( string.Join( ' ', nextParts.Take( 3 ) ) );
+					var previousIsLoop = previous != null && previousParts[^1] == "1";
+					var nextIsLoop = next != null && nextParts[^1] == "1";
+					var reversed = parts[7] == "1";
+					var position = Vector( parts[2] );
+					var link = reversed ? next : previous;
+					var fraction = CoasterX87.TurnFraction( settings[1] );
+					Same( new[] { expected[0] }, fraction );
+					var side = CoasterX87.LoopSide( fraction, link is { } l ? l.X - position.X : 0f, link is { } m ? m.Z - position.Z : 0f, link != null );
+					var k = HermiteCoasterCurve.LoopKnotFactor( settings[0], side, settings[2] );
+					var (back, forward) = HermiteCoasterCurve.SideFactors( true, reversed, previousIsLoop, nextIsLoop, k, settings[0] );
+					var (b, f) = HermiteCoasterCurve.KnotControls( position, Vector( parts[3] ), chords[0], chords[1], back, forward );
+					Same( expected.Skip( 1 ).ToArray(), b.X, b.Y, b.Z, f.X, f.Y, f.Z );
+					break;
+				}
+				case "cost":
+				{
+					var v = Singles( parts[1] );
+					var position = Singles( parts[2] );
+					var other = Singles( parts[3] );
+					var rates = Singles( parts[4] );
+					var pylon = new CoasterPylonControl { MeshHeightLow = v[1], MeshHeightHigh = v[2], CostPerUnit = rates[0], CostPer2DLength = rates[1], CostPerHeight = rates[2] };
+					Same( expected, CoasterTrack.PylonCost( pylon, CoasterTrack.CostLength( position[0] - other[0], position[1] - other[1] ), CoasterTrack.CostHeight( pylon, v[0] ), parts[5] == "1" ) );
+					break;
+				}
 				default:
 					Assert.Fail( "unknown row kind " + parts[0] );
 					break;
 			}
 		}
-		Assert.IsTrue( kinds.Count >= 8, string.Join( ", ", kinds ) );
+		Assert.IsTrue( kinds.Count >= 10, string.Join( ", ", kinds ) );
 	}
 }

@@ -336,7 +336,7 @@ public class CoasterTests
 		var pylon = new CoasterPylonControl { MeshHeightLow = 10f, MeshHeightHigh = 25f };
 		const float t = 0.5605103373527527f;
 		Assert.AreEqual( 18.40765380859375f, CoasterTrack.CostHeight( pylon, t ) );
-		Assert.AreNotEqual( CoasterTrack.CostHeight( pylon, t ), CoasterTrack.PylonHeight( pylon, t ), "the fused form of the Mac rounds once" );
+		Assert.AreEqual( CoasterTrack.CostHeight( pylon, t ), CoasterTrack.PylonHeight( pylon, t ), "the knot pass stands a node at the same four instructions (0x430f6f..0x430f81), not at the Mac's fused form" );
 		var low = new CoasterPylonControl { MeshHeightLow = 5f, MeshHeightHigh = 40f };
 		Assert.AreEqual( 17.382545471191406f, CoasterTrack.CostHeight( low, 0.35378697514533997f ) );
 	}

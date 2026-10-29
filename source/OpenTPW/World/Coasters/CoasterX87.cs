@@ -61,4 +61,32 @@ internal static class CoasterX87
 		var value = (y - yNext) * perHeight * modifier + speed;
 		return value > floor ? value : floor;
 	}
+
+	/// <summary>The node field +0xEC of the knot pass: the fractional part of the node's yaw times f32(1/2π), plus 1 when it is negative.</summary>
+	// [BIN:TPW-EXE:0x0043110c node turn fraction] st0 = yaw · f32(1/2π) (0x6fdea8), modf (0x67b280), the fraction plus 1.0 (fsub −1.0) when it is below 0, stored as a single in +0xEC (0x431112..0x431151)
+	public static float TurnFraction( float yaw )
+	{
+		var turns = yaw * 0.15915494f;
+		var fraction = turns - MathF.Truncate( turns );
+		return fraction < 0f ? fraction + 1f : fraction;
+	}
+
+	/// <summary>
+	/// The side term of a loop pylon's knot factor: the sum of the table sine and cosine of the node's turn fraction (negated) with the unit direction of the node's horizontal link, before
+	/// its absolute value and clamp (<see cref="HermiteCoasterCurve.LoopKnotFactor"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004324a0 loop knot side] the link is the raw previous node (+0x68), or the next one (+0x64) with node flag 0x80; (dx, dz) is its position minus the node's (+0x4c, +0x54), (0, 1) without a link; u = (dx, dz)/sqrt(dx² + dz²) with each component a single, (0, 1) when the quotient is NaN (0x4324be..0x432516); i1 = round(f32(f32(turn · 2π) · scale)) and i2 = round(f32(f32(f32(turn · 2π) − (−π/2)) · scale)) index the PC table (0x432519..0x43255c), the side is ((−T[i1]) · u.x) + ((−T[i2]) · u.z) (0x43256e..0x432582)
+	public static float LoopSide( float turnFraction, float dx, float dz, bool hasLink )
+	{
+		if ( !hasLink )
+			(dx, dz) = (0f, 1f);
+		var length = MathF.Sqrt( dx * dx + dz * dz );
+		float ux = dx / length, uz = dz / length;
+		if ( float.IsNaN( ux ) )
+			(ux, uz) = (0f, 1f);
+		var angle = turnFraction * 6.2831855f;
+		var first = (int)MathF.Round( angle * CoasterTrig.PcScale ) & (CoasterTrig.Size - 1);
+		var second = (int)MathF.Round( (angle - -1.5707964f) * CoasterTrig.PcScale ) & (CoasterTrig.Size - 1);
+		return CoasterTrig.PcEntry( first ) * -1f * ux + CoasterTrig.PcEntry( second ) * -1f * uz;
+	}
 }

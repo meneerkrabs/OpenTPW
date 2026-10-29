@@ -587,6 +587,7 @@ public static class ParkSaveFile
 		/// <summary>The cached guest census (tp.exe 0x004C7FA0); absent in saves written before it and while no read has counted it.</summary>
 		public CachedCount? GuestCensus { get; init; }
 		/// <summary>The cached mean ride excitement (tp.exe 0x004CCBF0, saved by 0x4C5D70 as mVal, mWorkedOut and the stamp); absent while no read has counted it and in older saves.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public CachedCount? Excitement { get; init; }
 		/// <summary>The park turn the main loop's step counter started from, which times the crowd reads (every fourth turn after it); absent in older saves, which take the turn they load at.</summary>
 		public long? CrowdPhaseTurn { get; init; }

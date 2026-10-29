@@ -33,6 +33,9 @@ public sealed class ParkWeather
 
 	private readonly WeatherSettings settings;
 	private readonly DeterministicRandom random;
+	/// <summary>The wind's own draws (<see cref="TurnWind"/>), apart from the weather's so the weather rolls are the ones they were before the wind.</summary>
+	private readonly DeterministicRandom windRandom;
+	private const ulong WindStreamOffset = 0x57494E44UL;
 	private readonly bool wintryDecembers;
 	private readonly bool alwaysWinter;
 	private readonly int groundX;
@@ -69,6 +72,7 @@ public sealed class ParkWeather
 		this.alwaysWinter = alwaysWinter;
 		settings = WeatherSettings.From( standard );
 		random = new DeterministicRandom( seed );
+		windRandom = new DeterministicRandom( seed + WindStreamOffset );
 		groundX = cellsX * 10;
 		groundZ = cellsY * 10;
 		Created?.Invoke( this );
@@ -84,6 +88,15 @@ public sealed class ParkWeather
 	public int CurrentDrops { get; private set; }
 	/// <summary>The drops the rain is ramping to (<c>+0x34</c>).</summary>
 	public int TargetDrops { get; private set; }
+	/// <summary>The wind's direction in degrees, 0 to 360 (the thing's <c>+0x5C</c>), which the harbour's flags turn to (<see cref="HarbourDynamics"/>).</summary>
+	// [BIN:TPW-EXE:0x511fdf weather constructor] the direction starts at 90.0 and the strength (+0x60) at 0.5
+	public float WindDirection { get; private set; } = InitialWindDirection;
+	/// <summary>The wind's strength, 0 to 1 (the thing's <c>+0x60</c>): set by every applied change, read by nothing the park draws but the rain's fall (straight down at these values).</summary>
+	public float WindStrength { get; private set; } = InitialWindStrength;
+	/// <summary>The constructor's wind direction, degrees.</summary>
+	public const float InitialWindDirection = 90f;
+	/// <summary>The constructor's wind strength.</summary>
+	public const float InitialWindStrength = 0.5f;
 	/// <summary>How long a drawn bolt lives, in milliseconds (<c>WeatherEffects.LightningTime</c>, 2000 in the shipped Standard.sam).</summary>
 	// [DATA:Standard.sam:WeatherEffects.LightningTime] 2000 ms in every shipped layer; presentation only, never read by the simulation
 	public int LightningTimeMilliseconds => settings.LightningTime;
@@ -295,6 +308,12 @@ public sealed class ParkWeather
 		/// <summary>The last strike's bolt top, the position the pending thunder plays at.</summary>
 		public required ThunderStrikeSnapshot LastTop { get; init; }
 		public required IReadOnlyList<ThunderStrikeSnapshot> PendingStrikes { get; init; }
+		/// <summary>The wind's direction in degrees (null in a save from before the wind: the constructor's 90).</summary>
+		public float? WindDirection { get; init; }
+		/// <summary>The wind's strength (null in a save from before the wind: the constructor's 0.5).</summary>
+		public float? WindStrength { get; init; }
+		/// <summary>The wind's draw stream (null in a save from before the wind: the stream the park's seed starts).</summary>
+		public ulong? WindRandomState { get; init; }
 		/// <summary>Bound for <see cref="PendingStrikes"/>: at most one thunder per park turn can be due, and frames drain them.</summary>
 		public const int MaximumPendingStrikes = 4096;
 	}
@@ -319,7 +338,10 @@ public sealed class ParkWeather
 		Bolts = bolts,
 		ThunderCountdown = thunderCountdown,
 		LastTop = new ThunderStrikeSnapshot( lastTop.X, lastTop.Y, lastTop.Z ),
-		PendingStrikes = strikes.Select( strike => new ThunderStrikeSnapshot( strike.X, strike.Y, strike.Z ) ).ToArray()
+		PendingStrikes = strikes.Select( strike => new ThunderStrikeSnapshot( strike.X, strike.Y, strike.Z ) ).ToArray(),
+		WindDirection = WindDirection,
+		WindStrength = WindStrength,
+		WindRandomState = windRandom.State
 	};
 
 	/// <summary>
@@ -341,6 +363,10 @@ public sealed class ParkWeather
 		Require( snapshot.PendingStrikes.Count <= ParkWeatherSnapshot.MaximumPendingStrikes, "too many pending thunder strikes" );
 		Require( snapshot.PendingStrikes.All( strike => float.IsFinite( strike.X ) && float.IsFinite( strike.Y ) && float.IsFinite( strike.Z ) ), "a bolt top is not finite" );
 		Require( float.IsFinite( snapshot.LastTop.X ) && float.IsFinite( snapshot.LastTop.Y ) && float.IsFinite( snapshot.LastTop.Z ), "the last bolt top is not finite" );
+		Require( snapshot.WindDirection is null or (>= 0f and <= 360f), "wind direction outside 0..360" );
+		Require( snapshot.WindStrength is null or (>= 0f and <= 1f), "wind strength outside 0..1" );
+		Require( (snapshot.WindDirection is null) == (snapshot.WindStrength is null) && (snapshot.WindDirection is null) == (snapshot.WindRandomState is null),
+			"the wind's direction, strength and stream must be saved together" );
 		if ( !snapshot.Started )
 		{
 			Require( snapshot.Quality == 0 && !snapshot.Snow && !snapshot.Rain && !snapshot.Lightning
@@ -415,6 +441,10 @@ public sealed class ParkWeather
 		bolts = snapshot.Bolts;
 		thunderCountdown = snapshot.ThunderCountdown;
 		lastTop = new Vector3( snapshot.LastTop.X, snapshot.LastTop.Y, snapshot.LastTop.Z );
+		WindDirection = snapshot.WindDirection ?? InitialWindDirection;
+		WindStrength = snapshot.WindStrength ?? InitialWindStrength;
+		if ( snapshot.WindRandomState is { } windState )
+			windRandom.Restore( windState );
 		strikes.Clear();
 		// The visual bolt queue is presentation-only; a restored weather starts its flashes fresh.
 		boltTops.Clear();
@@ -513,6 +543,23 @@ public sealed class ParkWeather
 			var intensity = width == 0 ? 100 : (quality - low) * 100 / width;
 			TargetDrops = Math.Min( (100 - intensity) * settings.MaxRaindrops / 100, settings.MaxRaindrops );
 		}
+		TurnWind( quality );
+	}
+
+	/// <summary>
+	/// The converter's wind step: the strength is (100 − quality) / 100, the direction moves by −45 to +44 degrees (one draw, after the converter's other draw) and is brought back into 0 to 360.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5130bc converter wind] strength = (float)(100 - quality) x 0.01 clamped to 0..1 (+0x60); direction = (direction - 45) + (float)(rand() % 90) (+0x5C), 360 added while below 0 and taken while above 360; then 0x57D920 hands both to the rain
+	// [EXT:weather-stream] the draw comes from a stream of the wind's own beside the weather's (the PC's rand() is the world LCG 0x516330 for both), so the wind leaves the weather's own draws as they were
+	private void TurnWind( int quality )
+	{
+		WindStrength = Math.Clamp( (100 - quality) * 0.01f, 0f, 1f );
+		var direction = WindDirection - 45f + windRandom.Next( 90 );
+		while ( direction < 0f )
+			direction += 360f;
+		while ( direction > 360f )
+			direction -= 360f;
+		WindDirection = direction;
 	}
 
 	/// <summary>One step of the drops toward the target: a move of SpeedOfChange, none once within one step (so 588 settles at 580).</summary>

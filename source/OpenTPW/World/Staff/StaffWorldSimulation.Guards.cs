@@ -159,6 +159,8 @@ public sealed partial class StaffWorldSimulation
 			Abandon( economy, member, turn );
 			return;
 		}
+		// [BIN:TPW-EXE:0x004D691B caught kid counted] the analyser's misbehaving-kids call (0x004C74F0 with a nonzero argument) runs right after the catch succeeds (0x004FEC10), before the sound and the hold: the month and lifetime words
+		economy.RecordGuardChase( caught: true );
 		member.SpeedBonus = 0;
 		Sound( member, CatchEvent );
 		Guests.Hold( member.TargetGuestId );
@@ -178,8 +180,10 @@ public sealed partial class StaffWorldSimulation
 		Abandon( economy, member, turn );
 	}
 
+	// [BIN:TPW-EXE:0x004D6A01 abandoned chase] every way out of the chase that gives it up (no target or timer, a failed route, the held guest, the failed catch, the failed second route) reaches this tail: "Guard: abandoned chase" (0x75A944), the analyser's misbehaving-kids call with 0 (0x004D6A1F: the month, lifetime and got-away words), the state back to idle (0x4D65D0 with 0, the target +0x212 cleared)
 	private static void Abandon( ParkEconomy economy, StaffMember member, long turn )
 	{
+		economy.RecordGuardChase( caught: false );
 		member.SpeedBonus = 0;
 		SetJob( economy, member, StaffJob.Idle, turn );
 	}

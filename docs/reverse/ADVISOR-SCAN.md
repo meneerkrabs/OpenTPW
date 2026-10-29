@@ -22,9 +22,9 @@ Message 204 is the kart and water line tool's help: the click that gives the too
 
 | Status | Messages | Meaning |
 | --- | ---: | --- |
-| wired | 236 | OpenTPW produces the message today |
+| wired | 245 | OpenTPW produces the message today |
 | ready | 0 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
-| blocked | 12 | an input is missing or approximated |
+| blocked | 3 | an input is missing or approximated (the help windows 285, 307 and 308) |
 | none | 103 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 82 have no producer in `tp.exe` at all |
 
 | Kind | Messages | Producer |
@@ -40,22 +40,22 @@ Message 204 is the kart and water line tool's help: the click that gives the too
 | Money | 8 | 0 | 0 | 0 | 8 |
 | Cleanliness | 8 | 0 | 0 | 0 | 8 |
 | Rides, shops, sideshows and features | 22 | 0 | 0 | 0 | 22 |
-| Queues and prices | 22 | 0 | 1 | 0 | 23 |
-| Guest mood and thoughts | 9 | 0 | 2 | 0 | 11 |
-| Staff | 63 | 0 | 6 | 0 | 69 |
+| Queues and prices | 23 | 0 | 0 | 0 | 23 |
+| Guest mood and thoughts | 11 | 0 | 0 | 0 | 11 |
+| Staff | 69 | 0 | 0 | 0 | 69 |
 | Research | 19 | 0 | 0 | 0 | 19 |
 | Weather | 0 | 0 | 0 | 0 | 0 |
 | Challenges and golden tickets | 30 | 0 | 0 | 0 | 30 |
 | Tutorial and help | 46 | 0 | 3 | 35 | 84 |
 | Other | 9 | 0 | 0 | 68 | 77 |
-| Total | 236 | 0 | 12 | 103 | 351 |
+| Total | 245 | 0 | 3 | 103 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **236** have their producer here: 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
-68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311, 315 and 344), 43 help messages of windows and tools OpenTPW has, and 125 scored by the ported scan (the money
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **245** have their producer here: 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
+68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311, 315 and 344), 43 help messages of windows and tools OpenTPW has, and 134 scored by the ported scan (the money
 batch: 100-105 and 107; the 31 park callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262; the 38 staff callbacks: 11, 13, 14, 18, 20, 23, 26, 28-32,
 108-112, 114-123, 144, 146-150, 169-172 and 263; the 31 callbacks of the queues, prices and research batches: 15-17, 61, 63, 64, 72, 76, 80, 91, 92 and 238-257; and the 18 callbacks
-of the park-opening, congratulation, tutorial and golden ticket group: 1, 2, 124, 140, 156, 157, 185, 274-276, 278-282, 314, 316 and 317, see "Challenges and golden tickets").
+of the park-opening, congratulation, tutorial and golden ticket group: 1, 2, 124, 140, 156, 157, 185, 274-276, 278-282, 314, 316 and 317, see "Challenges and golden tickets"; and the last 9: 12, 19, 21, 22, 27, 98, 113, 141 and 264, see "The last nine callbacks").
 `AutomaticAdvisor.GlobalTicketMovedMessage` posts 234-237 when a global golden ticket moves here, and `AdvisorTables` now defines them (the four rows
 `(234-237, "AwardMoved.Score")` in `EventScoreKeys`; their group 2 controls are read when the settings file has them). 66, 68, 69 and 258 are posted by the ride events
 (`AdvisorRideEvents`, see "Park callbacks").
@@ -87,7 +87,7 @@ state of that moment (no history is kept except what the helpers read).
 not ported scores 0, like the stub `0x5D60C0`. `AdvisorController.ScanOnce` adds step 4: the score must be above `MinScoreForConsideration`, then the record
 (message, the callback's score) goes through `AdvisorScoreQueue.Enqueue`, which repeats the eligibility check as `0x59A940` does. The cursor is part of
 `AdvisorControllerSnapshot` (a snapshot without one restores it at 0; an original save import starts at 0: no save word for it was found). The advisor is presentation state
-outside the simulation hash, so the scan moves no determinism pin. `AutomaticAdvisor.ScanPark` calls the scan once per park turn: `0x516380` increments the turn word and walks the thing list only while the world state `+0x1DA738` is not 4, and the advisor's case (`0x50B3F1`-`0x50B437`) calls `0x59A550` unless the game type is 1, so turns that pass while paused or lost are never scanned, and the same call serves the queue at its end (`AutomaticAdvisor.Update`: one service per scan call; ADVISOR-017, retired). Ported callbacks: the money batch below; the other 9 computed callbacks (the `blocked` scan rows, which need an input OpenTPW does not have) and the 21 constant-zero stubs score 0.
+outside the simulation hash, so the scan moves no determinism pin. `AutomaticAdvisor.ScanPark` calls the scan once per park turn: `0x516380` increments the turn word and walks the thing list only while the world state `+0x1DA738` is not 4, and the advisor's case (`0x50B3F1`-`0x50B437`) calls `0x59A550` unless the game type is 1, so turns that pass while paused or lost are never scanned, and the same call serves the queue at its end (`AutomaticAdvisor.Update`: one service per scan call; ADVISOR-017, retired). Ported callbacks: the money batch below; the 21 constant-zero stubs score 0 (every computed callback is ported).
 
 Callback conventions: the world is `[0x80239C]` (also `[[0x7CF6EC]]`). `0x519510` returns the **park thing** (handle at world `+0x1DA720`,
 pool `0x7CFB90`, stride `0x14`); the park thing holds the statistics the helpers read (visitor counter `+0x21C08`, visitor ring
@@ -222,7 +222,7 @@ Event posts: **66** is raised by the wear step (`ParkEconomy.Wear`, `ParkEventKi
 `+0x250` and `+0x578` (`RideCondemned.Score`, added to `EventScoreKeys`).
 
 Tests: `AdvisorScanParkTests` (each callback at its thresholds over hand-built states, the real queue through a whole scan pass, the statistics over a real `ParkEconomy`, the guest bridge, the ride
-events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 117 scanned callbacks remained unported then (21 constant-zero stubs, 96 computed); the queues, prices and research batch ported 31 of the 96, so, with the 38 staff callbacks and the 18 of the challenges batch, 9 computed ones remain (and the 21 constant-zero stubs: 30 scanned messages in all, 9 `blocked` and 21 `scan-zero` rows).
+events) and `AdvisorProducerInventoryTests` (every ported callback is "wired"). 117 scanned callbacks remained unported then (21 constant-zero stubs, 96 computed); the queues, prices and research batch ported 31 of the 96, so, with the 38 staff callbacks and the 18 of the challenges batch, 9 computed ones remained (and the 21 constant-zero stubs: 30 scanned messages in all, 9 `blocked` and 21 `scan-zero` rows); round 10 ported those 9 ("The last nine callbacks"), which leaves only the 21 stubs.
 
 ## Queues, prices and research callbacks
 
@@ -307,7 +307,7 @@ Tests: `AdvisorScanQueuesTests` (each callback below, at and above its threshold
 | ---: | --- | --- | --- | --- |
 | 91 | wired | cb 0x59E730 | perception ring 0 (the booth's opinion of the entrance fee: 0x4FF5B0 records the PeepInfo.OpinionFor* byte of its verdict) holds 50 values (0x4C9920) and its mean (0x4C9830, a byte) is below TicketSatisfactionUnder: flat PricingTicketTooExpensive.Score | 94 |
 | 92 | wired | cb 0x59E790 | same ring, mean above TicketSatisfactionOver: flat PricingTicketTooCheap.Score | 95 |
-| 113 | blocked | cb 0x59EF60 | a queue that no path reaches (0x4CCB00): flat QueueUnconnected.Score | 134 |
+| 113 | wired | cb 0x59EF60 | a queue ride that joins no path (0x4CCB00, the selected object left out): flat QueueUnconnected.Score | 134 |
 | 238 | wired | cb 0x59FB60 | Food: the lowest value (walk-aways of the 30-day ring x 100 / customers of the customers ring, 0x4CADF0) among attractions older than 30 days with customers, below ValueWorseThan: (value - ValueWorseThan) x ScorePerPoint, value first, so negative for a positive ScorePerPoint and never passing | speech only |
 | 239 | wired | cb 0x59FBD0 | Shops: the lowest value (walk-aways of the 30-day ring x 100 / customers of the customers ring, 0x4CB640) among attractions older than 30 days with customers, below ValueWorseThan: (value - ValueWorseThan) x ScorePerPoint, value first, so negative for a positive ScorePerPoint and never passing | speech only |
 | 240 | wired | cb 0x59FC40 | Restaurant: the lowest value (walk-aways of the 30-day ring x 100 / customers of the customers ring, 0x4CADF0) among attractions older than 30 days with customers, below ValueWorseThan: (value - ValueWorseThan) x ScorePerPoint, value first, so negative for a positive ScorePerPoint and never passing | speech only |
@@ -339,11 +339,11 @@ Tests: `AdvisorScanQueuesTests` (each callback below, at and above its threshold
 | 125 | wired | prank message (type 0xE, sender 0x4FF2EA); 0x59B060 case at 0x59B3C6 posts 125 | kind word 2 -> 127, 1 -> 126, 0 -> 125 (prankster id modulo 3) | 146 |
 | 126 | wired | prank message type 0xE; 0x59B060 case at 0x59B348 | kind word 1 | 147 |
 | 127 | wired | prank message type 0xE; 0x59B060 case at 0x59B2CA | kind word 2 | 148 |
-| 141 | blocked | cb 0x59F4F0 | rides >= MinimumRides and the average ride fear (0x4CCBF0, cached for a second) > AverageScarierThan: flat VisitorsTooScared.Score | 159 |
+| 141 | wired | cb 0x59F4F0 | park open, rides >= MinimumRides and the mean live excitement of the rides (0x4CCBF0 with the age 10) > AverageScarierThan: flat VisitorsTooScared.Score | 159 |
 | 145 | wired | cb 0x59F5E0 | guests in the park >= MinimumVisitors and the mean happiness (0x4C7BB0) >= HappierThan (equality passes): flat CongratVisitorsHappy.Score | speech only |
 | 158 | wired | cb 0x59F940 | guests holding a balloon (0x4C9530, +0x210 nonzero) > CongratBalloons.MoreThan: flat Score | 174 |
 | 159 | wired | cb 0x59F970 | guests in costume (0x4C95D0, +0x24 == 2) > CongratCostumes.MoreThan: flat Score | 175 |
-| 264 | blocked | cb 0x5A04F0 | pranksters (0x4C94A0 arg 0) > MorePrankstersThan: flat LotsOfPranks.Score | speech only |
+| 264 | wired | cb 0x5A04F0 | the kids the guards went after this month (0x4C94A0 of 0) > MorePrankstersThan: flat LotsOfPranks.Score; no park-open test | speech only |
 
 ## Staff callbacks
 
@@ -364,24 +364,24 @@ to `IAdvisorParkState`; a park state without it, and a settings file without a t
 The remaining inputs: busy points `0x4C81E0` = half the guests on census cells, at most 100 (the same census as `0x4C9130`); unhappy percent `0x4C9750(30)` = the census guests whose happiness byte is below 30 x 100 / the census
 (`IParkGuestStatistics.CensusPercentBelowHappiness`); tired staff `0x4C9AA0` = energy byte below `RestLevel` (`0x506680`); staff with a patrol area `0x4C9B40(role)` = area corner words other than 1 and `0x4000` (`StaffMember.HasPatrolArea`; argument 0 counts every role);
 all staff `0x4C9A10` (every thing of the models 4 to 8, where `0x4C9960` also tests the flag byte `+3`); visitors so far `0x4C94C0` = the lifetime counter `+0x21C08` (`ParkCounters.Admissions`); staff rooms `0x4CA030` / closed `0x4CA0C0` = the attractions with the rest-area flag (`UsageInfo.ChillsYouOut`,
-bit 2 of `+0x32`) whose open word is 0. The coverage rows (19, 21, 27) and the prank rows (12, 22, 98) stay blocked.
+bit 2 of `+0x32`) whose open word is 0. The coverage rows (19, 21, 27) and the prank rows (12, 22, 98) were ported in round 10 ("The last nine callbacks").
 
 ## Staff
 
 | Msg | Status | Producer | Condition and score | TAG_SYSTEM caption |
 | ---: | --- | --- | --- | --- |
 | 11 | wired | cb 0x59CCB0 | park open, days since the newest hire (the hire stamp) >= DaysForStaff, no guard: (busy points (0x4C81E0 = min(100, guests in the park / 2)) - AtLeastThisBusy) x ScorePerExtraBusyPoint, not clamped | 17 |
-| 12 | blocked | cb 0x59CD30 | park open, no guard: StaffHireGuards2.Score + misbehaving kids (0x4C94A0 arg 0) x AdditionalPerMisbehavingKid | 18 |
+| 12 | wired | cb 0x59CD30 | park open, no guard: StaffHireGuards2.Score + the kids the guards went after this month (0x4C94A0 of 0) x AdditionalPerMisbehavingKid | 18 |
 | 13 | wired | cb 0x59CD90 | park open, days since the newest hire >= DaysForStaff, developed cells >= MinCellsForConsideration: (cells - guards x IdealDevelopedCellsPerGuard) x ScorePerExtra10Cells while above 0 | 19 |
 | 14 | wired | cb 0x59CE30 | park open, no entertainer, more than 30 percent of the guests have a happiness byte below 30 (0x4C9750 of 30): (busy points - AtLeastThisBusy) x ScorePerExtraBusyPoint | 20 |
 | 18 | wired | cb 0x59D0C0 | park months (clock / 30 days) >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40 x 100 / staff) <= DontBotherIfPatrolledUp: (100 - percent) x ScorePerUnpatrolledPct | speech only |
-| 19 | blocked | cb 0x59D180 | months in game >= threshold, role count >= AtLeastThisMany, some patrol area set: uncovered-cell percent (0x4CD500) x ScorePerNonCoveredPercent, at least the coverage Score | speech only |
+| 19 | wired | cb 0x59D180 | months in game >= the area line's months word, mechanics >= AtLeastThisMany, one with an area of his own (0x4C9B40 of 4): (100 - the percent of the entrance cells the mechanics' rectangles cover, 0x4CD500 of 4, 2) x ScorePerNonCoveredPercent, 0 below the coverage Score | speech only |
 | 20 | wired | cb 0x59D250 | park months (clock / 30 days) >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40 x 100 / staff) <= DontBotherIfPatrolledUp: (100 - percent) x ScorePerUnpatrolledPct | speech only |
-| 21 | blocked | cb 0x59D310 | months in game >= threshold, role count >= AtLeastThisMany, some patrol area set: uncovered-cell percent (0x4CD500) x ScorePerNonCoveredPercent, at least the coverage Score | speech only |
-| 22 | blocked | cb 0x59D3B0 | a guard exists and the escape counter (0x4C94A0 arg 1) > StaffGuardBuildCamera.AcceptableTrouble: flat Score | 28 |
+| 21 | wired | cb 0x59D310 | months in game >= the area line's months word, one handyman (no minimum count and no area test): (100 - the percent of the path and queue cells the handymen's rectangles cover, 0x4CD500 of 5, 3) x ScorePerNonCoveredPercent, 0 below the coverage Score | speech only |
+| 22 | wired | cb 0x59D3B0 | a guard exists and the kids that got away this month (0x4C94A0 of 1) > StaffGuardBuildCamera.AcceptableTrouble: flat Score | 28 |
 | 23 | wired | cb 0x59D400 | park months (clock / 30 days) >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40 x 100 / staff) <= DontBotherIfPatrolledUp: (100 - percent) x ScorePerUnpatrolledPct | speech only |
 | 26 | wired | cb 0x59D4C0 | park months (clock / 30 days) >= MonthsIntoGameForConsideration, staff of the role >= AtLeastThisMany, percent with a patrol area set (0x4C9B40 x 100 / staff) <= DontBotherIfPatrolledUp: (100 - percent) x ScorePerUnpatrolledPct | speech only |
-| 27 | blocked | cb 0x59D580 | months in game >= threshold, role count >= AtLeastThisMany, some patrol area set: uncovered-cell percent (0x4CD500) x ScorePerNonCoveredPercent, at least the coverage Score | speech only |
+| 27 | wired | cb 0x59D580 | months in game >= the area line's months word, one entertainer (no minimum count and no area test): (100 - the percent of the built cells the entertainers' rectangles cover, 0x4CD500 of 6, 1) x ScorePerNonCoveredPercent, 0 below the coverage Score | speech only |
 | 28 | wired | cb 0x59D620 | role exists, its training budget in the staff HQ (0x519450 +0xC to +0x1C) is not above 0, average training (0x4C9C00 = 20 x grades / members) < WorseThan: flat Score | 33 |
 | 29 | wired | cb 0x59D680 | role exists, its training budget in the staff HQ (0x519450 +0xC to +0x1C) is not above 0, average training (0x4C9C00 = 20 x grades / members) < WorseThan: flat Score | 34 |
 | 30 | wired | cb 0x59D6E0 | role exists, its training budget in the staff HQ (0x519450 +0xC to +0x1C) is not above 0, average training (0x4C9C00 = 20 x grades / members) < WorseThan: flat Score | 35 |
@@ -412,7 +412,7 @@ bit 2 of `+0x32`) whose open word is 0. The coverage rows (19, 21, 27) and the p
 | 55 | wired | CMsgStaffInfo (type 0x17) from the staff manager month routine 0x509031-0x5092AA; 0x59AFC0 posts 33 + 5 x kind + role (0x59B034) | kind 0 unhappy, 1 very unhappy, 2 striking, 3 happier, 4 strike over; role order handyman, mechanic, guard, entertainer, researcher | 60 |
 | 56 | wired | CMsgStaffInfo (type 0x17) from the staff manager month routine 0x509031-0x5092AA; 0x59AFC0 posts 33 + 5 x kind + role (0x59B034) | kind 0 unhappy, 1 very unhappy, 2 striking, 3 happier, 4 strike over; role order handyman, mechanic, guard, entertainer, researcher | 61 |
 | 57 | wired | CMsgStaffInfo (type 0x17) from the staff manager month routine 0x509031-0x5092AA; 0x59AFC0 posts 33 + 5 x kind + role (0x59B034) | kind 0 unhappy, 1 very unhappy, 2 striking, 3 happier, 4 strike over; role order handyman, mechanic, guard, entertainer, researcher | 62 |
-| 98 | blocked | cb 0x59E840 | escaped pranksters (0x4C94A0 arg 1) > MoreThanThisGotAway: count x ScorePerGetAway | 119 |
+| 98 | wired | cb 0x59E840 | the kids that got away this month (0x4C94A0 of 1) > MoreThanThisGotAway: count x ScorePerGetAway; no park-open test | 119 |
 | 108 | wired | cb 0x59EDD0 | handymen hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 129 |
 | 109 | wired | cb 0x59EE20 | entertainers hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 130 |
 | 110 | wired | cb 0x59EE70 | mechanics hired > attractions (0x4CA8E0 kind 0) + FudgeFactor: flat Score | 131 |
@@ -654,10 +654,52 @@ stranded-people and condemned keys); else the extension's own constant, document
 - **No input to trigger from**: 90 (leaving guests with low energy, no such leaving rule), 155 (kart speed record, caption only and no speed measure), 67 (the ride-name variant of 66, which batch 2 posts), 168 (a surprise animation OpenTPW does not model), 266 and 296 (the Home key hint needs a lost-camera detector), 288 and 338-343 (the track editor's pylon, pivot and winch buttons are not in OpenTPW's coaster panel), 330 and 336 (chat-park details and back in the own lobby), 142 (new downloads on the original web site), 143 (a text message from the web site: saying it as the news screen opens is redundant and the news has no other event), 174-179 and 310 (the lobby and new-player tutorial: the front end has no advisor).
 - Overlaps with batch 2 (82 and 66 are ported): 83 is the **escalation** of 82, said only after 82 has been said (`RestoredAdviceEntry.AfterMessage`) while there is still no toilet and over twice `MorePeopleThanThisNeeding` guests need one, so it never repeats 82; 67 stays skipped, 66 says the breakdown warning.
 
+## The last nine callbacks
+
+Ported in round 10 by `AdvisorInputsCallbacks` (`source/OpenTPW/World/AdvisorScanInputs.cs`) over `IAdvisorParkState`, `IAdvisorStaffState` and the new `IAdvisorInputsState`, which `EconomyParkState` also implements. The
+thresholds are words of the `Advisor.sam` object (`AdvisorInputsCallbacks.IntegerKeys`); a key the file lacks, or a park state without the view, leaves a callback at 0. Offsets below are the object's, read from the bytes of each callback.
+
+| Msg | Callback | Reads |
+| ---: | --- | --- |
+| 12 | `0x59CD30` | the park open (0x51A280), no guard (0x4C9960 of 7), the kids the guards went after (0x4C94A0 of 0) x word +0xFC (AdditionalPerMisbehavingKid) + word +0xF8 (Score) |
+| 19 | `0x59D180` | months >= +0x138, mechanics >= +0x12C, `0x4C9B40(4) != 0`, (100 - `0x4CD500(4, 2)`) x +0x140, below +0x13C gives 0 |
+| 21 | `0x59D310` | months >= +0x150, a handyman (0x4C9960 of 5 != 0, no minimum and no area test), (100 - `0x4CD500(5, 3)`) x +0x158, below +0x154 gives 0 |
+| 27 | `0x59D580` | months >= +0x188, an entertainer (of 6 != 0), (100 - `0x4CD500(6, 1)`) x +0x190, below +0x18C gives 0 |
+| 22 | `0x59D3B0` | a guard exists, the kids that got away (0x4C94A0 of 1) > +0x15C: +0x160 |
+| 98 | `0x59E840` | the kids that got away > +0x314: that count x +0x318 (no park-open test) |
+| 113 | `0x59EF60` | the first queue ride that joins no path (0x4CCB00 with the flag 0) gives +0x388; it stores the ride's thing id in the scan object's word +4 |
+| 141 | `0x59F4F0` | the park open (0x4C9050), rides (0x4CA8E0 of 0, 0) >= +0x41C, the mean live excitement of the rides (0x4CCBF0 with the age 10) > +0x418: +0x420; it then asks the scariest ride (0x4CCD10) for the word +4 |
+| 264 | `0x5A04F0` | the kids the guards went after > +0x5A8: +0x5AC (no park-open test) |
+
+**The chase counters.** `0x4C74F0` raises the analyser's month word (+0x21BFC) and lifetime word (+0x21C04) and, only for the argument 0, the got-away word (+0x21C00). Its only callers are the guard's chase `0x4D6790`:
+`0x4D691B` (argument 2) right after the catch `0x4FEC10` succeeds, `0x4D6A1F` (argument 0) in the abandon tail `0x4D6A01` (logged "Guard: abandoned chase", 0x75A944), which every way out of the chase that gives it up reaches:
+no target or a timer of 0, a failed route, the held guest (`0x4FA2A0` result 2), the failed catch, the failed second route to the booth (a kid caught and then set down counts twice). The getter `0x4C94A0` returns the got-away
+word for a nonzero argument and the month word for 0; the month close (`0x4C7720`, 0x4C79EB and 0x4C79F1) zeroes the month and got-away words, not the lifetime word. In OpenTPW the three words are `ParkEconomy.MisbehavingKids` and `MisbehavingKidsEver`, raised by `StaffWorldSimulation.Chase` through `ParkEconomy.RecordGuardChase`, zeroed in the month close, saved as the optional
+`ParkSaveFile.Data.AnalyserChase` (written when any is nonzero; only the advisor reads them, so the field is left out of the run hash like the analyser's caches and no pin moves), and an original save's three words (the
+serializer `0x4C5D70`; `SaveAnalyserCounters`) are imported as they are.
+
+**The coverage.** `0x4CD500(role, class)` first marks (`0x4CD340`): every cell's mark word (+0x3C of the 0x44-byte record) is cleared, then each staff thing of the model with an area of its own (`0x506EB0`) marks the cells of its
+rectangle (the corner words +0x20A and +0x20C, columns and rows inclusive; a rectangle whose first column is past the second marks nothing). A jump table over the class (`0x4CD708`) counts the cells by the cell type word (+8):
+class 0 the land (not 2, 7, 30), class 1 the built cells (1, 3, 9, 10, 4, 21 and the structure test `0x5363F0`), class 2 the entrance cells (9), class 3 the path and queue cells (1, 3, 9); the result is marked x 100 / counted
+(signed), 0 when nothing is counted. `ParkEconomy.PatrolCoveragePercent` reads OpenTPW's cell map with the same type rules as the net worth (`CellForValue`).
+
+**The queue.** `0x4CCB00` walks the thing list from its head (the newest object) for an attraction whose flag word +0x32 has the bits 4 (`Info.IsChoosable`) and 8 (`Info.HasQueue`) and for which the back-of-queue test
+`0x4DE4A0` answers 0 (ECON-049's `ParkGate.QueueConnected`), skipping the selected object (`0x527930` = `0x8186AC`, `Level.Selection`). The level answers it through `ParkEconomy.FirstUnconnectedQueueRide`.
+
+**The excitement.** `0x4CCBF0` keeps a cache (value +0x1F0F8, valid +0x1F0FC, stamp +0x1F0F4) counted again when it is invalid or `(turn >> 2) - (stamp >> 2)` exceeds the reader's age (10 here: the quarter-turn age at most 10, 40 to 43 turns), the mean of the low
+byte of `0x4E0860(thing, 0)` over the attractions whose type has `Info.WhichUIType` 0 (a signed division, 0 without one); the byte is `RideVisitorBridge.LiveExcitement` (ECON/QUEUE join rules), through `ParkEconomy.RideLiveExcitement`.
+The cache is saved (the serializer `0x4C5D70` keeps value, valid byte and stamp, `0x4C6243`, `0x4C6261`, `0x4C6E62`) in OpenTPW's unhashed `AnalyserCaches`; an original save's copy is not imported, as its net-worth cache is not.
+
+**What stays unread.** The word +4 of the scan object (the subject of 113 and 141: a thing id) reaches only the advice record's builder (`0x59B6BE` copies it into the queued record, +4/+8), whose readers are the open
+question of GUEST-007; it is not kept. The researchers' lab flag (`0x5041F0`, `ParkStaff.LabActive`; the ResearchLab thing's `mLabActive` byte +0x1468, which no code but the edge test and the save reads) posts message 5 (a
+researcher is in the list and the byte was clear) or 6 (none and it was set) through `0x40FB10`; only the advisor subscribes to 5 (`0x599EDB`, with 8, 14, 17, 19, 23 and 25), nobody to 6. The advisor's handler `0x59B060`
+takes the type 5 as an advice message: it reads a prebuilt record at message +8 with its valid byte at +0x1C and passes it to `0x59A940`; the researchers' message is a plain 12-byte object, so the record is the poster's stack
+frame (message id word -1, which no descriptor holds, score the poster's return address). Whether `0x59ABC0` lets that record into the queue is not traced, so the handler is not ported.
+
 ## Confidence and open points
 
 - Every address and callback was read from the bytes of `tp.exe`; the polarity of the gates (a jump over a `ret 0` or into it) was checked against the
-  captions. Formulas are readings of the instruction sequence; the coverage `0x4CD500` still needs a line-by-line port from the bytes before it is implemented (`0x4CCA40` is computed and discarded by 85; the litter points `0x4CCDF0` and the other helpers below are ported).
+  captions. Formulas are readings of the instruction sequence; the coverage `0x4CD500` was ported line by line in round 10 (`0x4CCA40` is computed and discarded by 85; the litter points `0x4CCDF0` and the other helpers below are ported).
 - The poster search lists every caller of `0x59B590`, `0x59A940`, `0x486B00` and the seven bus message types the controller registers
   (5, 8, 14, 17, 19, 23, 25 - `0x59B060` dispatch table). The constant-id scan inside the posting functions agrees; an id computed at run time
   from a table would not show up, so "no producer" means "no producer found". The search read the id pushed in each call's own block, so it missed 204, whose push
@@ -672,8 +714,8 @@ stranded-people and condemned keys); else the extension's own constant, document
 2. **Money** (102, 103, 104, 105, then 100, 101, 107): the most visible warnings, all inputs exist and the numbers are small.
 3. **Rides and breakdowns** (5, 6, 7, 60, 62, 66, 68, 69, 71, 73-75, 77-79, 81, 85, 258-261): done (see "Park callbacks"); 70 was already wired.
 4. **Cleanliness** (8, 9, 10, 86-89, 262): done.
-5. **Guest mood** (3, 4, 82, 145, 158, 159): done (the census members are on `IParkGuestStatistics`); 141 and 264 stay blocked.
+5. **Guest mood** (3, 4, 82, 145, 158, 159): done (the census members are on `IParkGuestStatistics`); 141 and 264 followed in round 10 ("The last nine callbacks").
 6. **Staff** (11, 13, 14, 18, 20, 23, 26, 28-32, 108-112, 114-123, 144, 146-150, 169-172, 263): done (see "Staff callbacks"); **research** (15-17, 61, 63, 64, 72, 76, 80): done (see "Queues, prices and research callbacks").
 7. **Prices** (91, 92, then 238-257): done (see "Queues, prices and research callbacks"); the booth fills ring 0.
 8. **Challenges and golden tickets** (270, 272, 273, 215-227, 311, 315, 274-281, 314, 316, 317) and the park-opening, congratulation and tutorial callbacks (1, 2, 124, 140, 156, 157, 185, 282): done (see "Challenges and golden tickets"); 277 and 318 (the profit hints) stay with the restored advice.
-9. **Blocked**: coverage (19, 21, 27), pranks (12, 22, 98, 264), queue links (113), ride fear (141), and the three help windows.
+9. **The last nine** (round 10): coverage (19, 21, 27), pranks (12, 22, 98, 264), queue links (113), ride excitement (141): done ("The last nine callbacks"). Blocked: the three help windows (285, 307, 308).

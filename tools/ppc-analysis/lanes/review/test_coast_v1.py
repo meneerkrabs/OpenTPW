@@ -167,7 +167,7 @@ class Source(unittest.TestCase):
         self.assertTrue('force: true' in place or 'APPROX:COAST-' in place)
 
     def test_cv6_straight_case_on_loop_pylons(self):
-        self.assertIn('if ( straightDot != null && loopPylon )', self.track)
+        self.assertIn('if ( i.HasPylonDefinition && i.LoopPylon', text(COASTERS / 'CoasterNodeTangent.cs'))
 
     def test_cv13_determinism_doc_cites_the_registered_ids(self):
         # The generator is COAST-027 and the save gap COAST-025; DETERMINISM.md cites COAST-024 and COAST-022.

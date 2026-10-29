@@ -161,7 +161,8 @@ class Source(unittest.TestCase):
         self.assertIn('1 => 64, 2 => 32', self.ride)
 
     def test_derivative_is_the_power_form(self):
-        self.assertIn('return c1 + MathF.FusedMultiplyAdd( t, c3, c2 );', self.curve)
+        # The PC executable's shape (round 10, X40): unfused singles, c1 - (c2 * -2 - c3 * t * 3) * t.
+        self.assertIn('return c1 - (c2 * -2f - c3 * t * 3f) * t;', self.curve)
 
 
 class Git(unittest.TestCase):

@@ -75,6 +75,8 @@ public class LobbyCameraMode : CameraMode
 
 	public LobbyCameraMode()
 	{
+		// [BIN:TPW-EXE:0x5d8cb0 lobby projection] the camera method builds the scene projection with the same builder as the park (0x578be0: near 0.1, far 1000, angle [this+4] = ISLANDFOV), so the view-projection is multiplied by the screen matrix of 0x5781d0 as well: the visible half height at unit depth is 0.5 x tan(ISLANDFOV / 2), not tan(ISLANDFOV / 2)
+		UsesOriginalProjection = true;
 		target = Target;
 		eye = DesiredEye();
 		Apply();

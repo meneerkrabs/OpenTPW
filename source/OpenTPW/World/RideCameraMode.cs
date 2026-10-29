@@ -10,7 +10,7 @@ namespace OpenTPW;
 /// (the player rides with <see cref="Level.EnterRideView"/>) and by read-only visits of a shared park. A coaster takes the seat of its first train's front car model.
 /// </summary>
 // [BIN:TPW-EXE:0x42b1c0 camera update] the per-frame camera update: with the ride flag set, the camera matrix is the seat node's world matrix (0x790a30) with the three rotation rows blended with the node's matrix of the previous frame (0x790948) and the translation copied exactly (0x42ca04-0x42cb96), then the free-look rotation is multiplied in (0x42cba0-0x42cbdf)
-// [BIN:TPW-EXE:0x42a990 ride projection] the ride camera never changes the projection (0x578be0, built once with the argument 90 at 0x42a990 and 0x54e860), so the ride view uses the park camera's projection (OriginalProjection). [APPROX:UI-094] the car 0x436880 selects is decoded (the train with the smallest position, its car 0 or the second car behind a front car of another type), the eye is its model's camera seat; the signs of the look rotations are read from the video (the view turns right and down with the pointer, 77:20-77:21), not from the matrix code; which of the seat's axes is the view direction (the model's Z) is taken from the car models
+// [BIN:TPW-EXE:0x42a990 ride projection] the ride camera never changes the projection (0x578be0, built once with the argument 90 at 0x42a990 and 0x54e860), so the ride view uses the park camera's projection (OriginalProjection). [APPROX:UI-094] the car 0x436880 selects is decoded (the train with the smallest position, its car 0 or the second car behind a front car of another type), the eye is its model's camera seat; the view direction is the matrix's third row (0x56b940, see SeatAxes) and the look rotations are the matrix code's (0x46f350, 0x46f650, LookAngles), which the video confirms (the view turns right and down with the pointer, 77:20-77:21); the blended basis stays orthonormal here and the first frame of a ride starts unblended (BlendFactor)
 public sealed class RideCameraMode : CameraMode
 {
 	/// <summary>Engine units above the front car's sample the eye sits at when a coaster's car model has no seat (half of the drawn car height, CoasterRenderer).</summary>
@@ -116,13 +116,19 @@ public sealed class RideCameraMode : CameraMode
 	}
 
 	/// <summary>
-	/// The weight of the previous frame's orientation in the blend: <c>(1000 - clamp(dt, 1, 1000)) * 0.0005</c> with the frame time in milliseconds,
-	/// about 0.48 at 30 frames a second and never more than 0.4995.
+	/// The weight of the previous frame's orientation in the blend: <c>(1000 - dt) * 0.0005</c> with <c>dt</c> the frame time in whole milliseconds plus one, 100 when that is above 200
+	/// (a stalled frame), about 0.48 at 30 frames a second and never more than 0.4995.
 	/// </summary>
-	// [BIN:TPW-EXE:0x42cba0 view smoothing] 0x42ca88-0x42cb0b: dt = (current millisecond tick + 1) - the last frame's tick (0x42b1c0), clamped to [1, 1000], a = (1000 - dt) * 0.0005 (0x6fde34 is 0.0005), and every one of the three rotation rows is node * (1 - a) + previousNode * a; the previous matrix (0x790948) is then overwritten with the node's matrix, not with the blend, so the smoothing is a one-frame average, not an accumulating ease
+	// [BIN:TPW-EXE:0x42b2a0 frame time] dt = (the millisecond tick now (0x402d80) + 1) - the last frame's tick ([0x7909e4], stored at 0x42cce7), an integer millisecond count: the host's float milliseconds are cut to whole milliseconds first
+	// [BIN:TPW-EXE:0x42b2c7 frame time limits] a dt above 200 becomes 100.0 (0x42b2d4: the stall of a hitch counts as 100 ms, not 200 or more) and one of 0 or less becomes 1.0 (0x42b2ed)
+	// [BIN:TPW-EXE:0x42cba0 view smoothing] 0x42ca88-0x42cb0b: a = (1000 - dt) * 0.0005 (0x6fde34 is 0.0005; the clamp of dt to [1, 1000] at 0x42ca1b-0x42ca59 never acts after the 200 limit), and every one of the nine rotation words (the three rows of the three) is node * (1 - a) + previousNode * a with the fourth column and the translation copied from the node; the previous matrix (0x790948) is then overwritten with the node's matrix, not with the blend (0x42cb9c), so the smoothing is a one-frame average, not an accumulating ease
+	// [BIN:TPW-EXE:0x42cc7c view not renormalised] the blended basis is not made orthonormal again: 0x42b070 only compares it with the last frame's matrix and 0x578bc0 copies it into the camera; OpenTPW's Blend orthonormalises its axes (a difference of the order of the square of the turn between two frames)
 	public static float BlendFactor( float deltaMilliseconds )
 	{
-		var dt = float.IsFinite( deltaMilliseconds ) ? Math.Clamp( deltaMilliseconds, 1f, 1000f ) : 1f;
+		var whole = float.IsFinite( deltaMilliseconds ) ? MathF.Floor( Math.Max( deltaMilliseconds, 0f ) ) : 0f;
+		var dt = whole + 1f;
+		if ( dt > 200f )
+			dt = 100f;
 		return (1000f - dt) * 0.0005f;
 	}
 
@@ -146,6 +152,7 @@ public sealed class RideCameraMode : CameraMode
 	public static NVector2 PointerOffset( float pointerX, float pointerY, float width, float height ) =>
 		new( Math.Clamp( (pointerX - width / 2f) / (width / 2f), -1f, 1f ), Math.Clamp( -(pointerY - height / 2f) / (height / 2f), -1f, 1f ) );
 
+	// [BIN:TPW-EXE:0x56b940 camera axes] the camera matrix [0x87afe8] the update 0x42b1c0 fills (0x578bc0) is a camera-to-world matrix: its translation words +0x30..+0x38 are the eye (read at 0x56bbea), and the view's corner rays (x, y, 1) are carried through it by 0x578d20 (case 3, row vector times matrix, 0x56b940-0x56b95f), so the view direction is the matrix's third row (the node's local Z), its up the second row and its right the first
 	/// <summary>
 	/// The forward and up axes of a seat matrix in engine axes. A node's local Z (the model's forward) and Y (up) are the engine matrix's second and third rows
 	/// (<see cref="ObjectPlacement.SwapAxes"/> swaps Y and Z); the placement's scale is divided out.

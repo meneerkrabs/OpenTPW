@@ -1043,6 +1043,10 @@ public sealed partial class ParkHud
 		if ( researchHum != null && !ResearchWindowOpen )
 			StopResearchSounds();
 		UpdateLocatorPanels();
+		UpdateLocatorSlide( context.Delta );
+		// [BIN:TPW-EXE:0x54e2b8 hover cell refresh] the park loop refreshes the hover cell from the pointer ray every frame while the camera is the overview (the crowd count reads it, GameFlow.GuestsNearCamera); the eye views leave it
+		if ( Camera.Mode is ParkCameraMode && input.Mouse is { X: >= 0, Y: >= 0 } hoverPointer )
+			level.RefreshHoverCell( hoverPointer, new NVector2( context.Canvas.Width, context.Canvas.Height ) );
 		SampleHappiness( context.Delta );
 		var admittedPointerEvents = orderedPointerFrame ? AdmitPointerEvents( context, pointerFrameInput ) : null;
 		var paused = Paused;

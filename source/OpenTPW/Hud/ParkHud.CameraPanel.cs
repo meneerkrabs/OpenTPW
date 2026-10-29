@@ -179,6 +179,9 @@ internal sealed class ArmSlide
 	public int Step { get; private set; }
 	public bool Out { get; private set; }
 
+	/// <summary>Whether the slide has finished: out and still, or in with its ending tick done.</summary>
+	public bool Settled => Step == (Out ? Steps : 0) && !finishing;
+
 	public void Open()
 	{
 		if ( Out )

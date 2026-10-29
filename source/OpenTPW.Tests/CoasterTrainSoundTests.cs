@@ -31,7 +31,8 @@ public class CoasterTrainSoundTests
 		public readonly List<Vector3> Places = new();
 		public readonly List<(int Level, int Speed)> Levels = new();
 		public bool Stopped;
-		public void MoveTo( Vector3 place ) => Places.Add( place );
+		public bool MoveTo( Vector3 place ) { Places.Add( place ); return !Ended; }
+		public bool Ended;
 		public void SetLevel( int level, int speed ) => Levels.Add( (level, speed) );
 		public void Stop() => Stopped = true;
 	}
@@ -257,14 +258,22 @@ public class CoasterTrainSoundTests
 		ride.Trains[0].CarLists[0].Add( 7 );
 		for ( var tick = 0; tick < 30; tick++ )
 			ride.Advance( Tick );
-		Assert.AreEqual( 1, Short.Count, "the handle +0x6C is kept: one start" );
-		Assert.AreEqual( 1, Short[0].Places.Count, "without the train flag 0x100 nothing moves it (0x43945C is behind that flag)" );
+		Assert.IsTrue( Short.Count > 20, "without the train flag 0x100 the branch 0x4394E8 starts a scream on every pass, with no look at +0x6C" );
+		Assert.IsTrue( Short.All( voice => voice.Places.Count == 1 ), "and nothing moves them (0x43945C is behind that flag)" );
 		Assert.AreEqual( 0, Held.Count );
 		FlagAllSamples( ride, CoasterSampleFlags.TerrorScream | CoasterSampleFlags.NormalScream );
 		for ( var tick = 0; tick < 10; tick++ )
 			ride.Advance( Tick );
-		Assert.AreEqual( 1, Short.Count );
-		Assert.IsTrue( Short[0].Places.Count > 5, "with the held scream's flag 0x100 set the live handle is moved on every pass" );
+		var before = Short.Count;
+		var last = Short[^1];
+		for ( var tick = 0; tick < 10; tick++ )
+			ride.Advance( Tick );
+		Assert.AreEqual( before, Short.Count, "with the held scream's flag 0x100 set a live handle is only moved, not started again" );
+		Assert.IsTrue( last.Places.Count > 5, "on every pass" );
+		last.Ended = true;
+		ride.Advance( Tick );
+		ride.Advance( Tick );
+		Assert.AreEqual( before + 1, Short.Count, "a move that returns 0 (the voice ended) clears the handle, and the next flagged pass starts a new scream" );
 	}
 
 	/// <summary>0x4393E0: flag 0x4 starts the held chain with the band riders / 2 + 1 and the train flag 0x100; the chain is set to 75 / 75 while it lasts and ends on the first sample without the flag.</summary>

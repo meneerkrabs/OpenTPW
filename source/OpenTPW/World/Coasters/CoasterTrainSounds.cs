@@ -21,17 +21,24 @@ internal sealed class HeldTrainVoice : ICoasterTrainVoice
 /// <summary>A scream the train holds a handle of: what the original's 0x5512D0 (move), 0x551290 (level) and 0x551300 (stop) do to the voice 0x551320 or 0x551130 made.</summary>
 internal interface ICoasterScreamVoice
 {
-	void MoveTo( Vector3 place );
+	/// <summary>Moves the voice and says whether it is still alive: the original stores 0x5512D0's return back into the handle, and it is 0 once the voice ended.</summary>
+	bool MoveTo( Vector3 place );
 	void SetLevel( int level, int speed );
 	void Stop();
 }
 
-/// <summary>The one-shot scream of a train (0x551320) as a voice: it only moves.</summary>
+/// <summary>The one-shot scream of a train (0x551320) as a voice: it only moves, and is gone once it has played.</summary>
 internal sealed class ShortScreamVoice : ICoasterScreamVoice
 {
 	private readonly AudioVoice voice;
 	public ShortScreamVoice( AudioVoice voice ) => this.voice = voice;
-	public void MoveTo( Vector3 place ) => voice.Position = place;
+	public bool MoveTo( Vector3 place )
+	{
+		if ( voice.IsFinished )
+			return false;
+		voice.Position = place;
+		return true;
+	}
 	public void SetLevel( int level, int speed ) { }
 	public void Stop() { }
 }
@@ -41,7 +48,11 @@ internal sealed class HeldScreamVoice : ICoasterScreamVoice
 {
 	private readonly SoundChain chain;
 	public HeldScreamVoice( SoundChain chain ) => this.chain = chain;
-	public void MoveTo( Vector3 place ) => chain.MoveTo( place );
+	public bool MoveTo( Vector3 place )
+	{
+		chain.MoveTo( place );
+		return !chain.IsStopped;
+	}
 	public void SetLevel( int level, int speed ) => chain.Parameter = GameAudio.ScreamParameter( level, speed );
 	public void Stop() => chain.Stop();
 }
@@ -97,7 +108,14 @@ internal sealed class CoasterTrainSounds
 	public Func<CoasterTrain, bool>? IsRidden { get; set; }
 
 	/// <summary>The trains that hold a loop (tests).</summary>
-	internal int SoundingTrains => records.Count;
+	internal int SoundingTrains => records.Values.Count( record => record.VoiceA != null || record.VoiceB != null );
+
+	private Record RecordOf( CoasterTrain train )
+	{
+		if ( !records.TryGetValue( train, out var record ) )
+			records[train] = record = new Record();
+		return record;
+	}
 
 	private int Variable( int index ) => eventVariable( index ) ?? 0;
 
@@ -156,12 +174,10 @@ internal sealed class CoasterTrainSounds
 		var definition = ride.Definition;
 		foreach ( var train in ride.Trains )
 		{
-			records.TryGetValue( train, out var record );
-			if ( record != null && (record.VoiceA != null || record.VoiceB != null) )
-			{
-				record.SoundCar = CarPosition( train, definition.ReferenceCar );
-				record.CameraCar = CarPosition( train, 0 );
-			}
+			// every in-service train gets its places (0x43D5A6..), whether its slot was set up or not; the record is made when the scream pass needs it
+			var record = RecordOf( train );
+			record.SoundCar = CarPosition( train, definition.ReferenceCar );
+			record.CameraCar = CarPosition( train, 0 );
 			int state, value;
 			if ( train.BrakingNow )
 			{
@@ -223,8 +239,7 @@ internal sealed class CoasterTrainSounds
 		var definition = ride.Definition;
 		foreach ( var train in ride.Trains )
 		{
-			if ( !records.TryGetValue( train, out var record ) )
-				continue;
+			var record = RecordOf( train );
 			var percent = (int)(train.Speed / definition.MaxSpeedAtMaxSetting * 100f);
 			record.VoiceA?.SetParameter( record.CodeCrossfade, percent );
 			record.VoiceB?.SetParameter( record.CodeCrossfade, 100 - percent );
@@ -270,15 +285,15 @@ internal sealed class CoasterTrainSounds
 			if ( shortScream )
 			{
 				if ( record.Short != null )
-					record.Short.MoveTo( place );
+					record.Short = record.Short.MoveTo( place ) ? record.Short : null;
 				else if ( allowed )
 					record.Short = startShortScream?.Invoke( place );
 			}
-			else
-				record.Short?.MoveTo( place );
+			else if ( record.Short != null )
+				record.Short = record.Short.MoveTo( place ) ? record.Short : null;
 			if ( heldScream && allowed )
 			{
-				record.Held?.MoveTo( place );
+				_ = record.Held?.MoveTo( place );
 				record.Held?.SetLevel( 75, 75 );
 				return;
 			}
@@ -287,7 +302,7 @@ internal sealed class CoasterTrainSounds
 			record.HeldFlag = false;
 			return;
 		}
-		if ( shortScream && allowed && record.Short == null )
+		if ( shortScream && allowed )
 			record.Short = startShortScream?.Invoke( place );
 		if ( heldScream && allowed )
 		{

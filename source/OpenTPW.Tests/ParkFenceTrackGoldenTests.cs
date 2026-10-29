@@ -33,12 +33,14 @@ public class ParkFenceTrackGoldenTests
 	}
 
 	/// <summary>The track tool's records on the layer: an extension names its origin (the word is the origin's cell id), an origin carries its ride word.</summary>
-	private static void LayTracks( ParkCellMap cells, ParkFenceTrackGolden.Case golden )
+	private static void LayTracks( ParkCellMap cells, ParkFenceTrackGolden.Case golden, bool throughTypeByte = false )
 	{
 		foreach ( var laid in golden.Tracks )
 		{
 			var extension = laid.Type == TrackCellTypes.Extension;
 			var origin = extension ? golden.Tracks.First( other => other.Y * Side + other.X + 1 == laid.Word ) : laid;
+			if ( throughTypeByte )
+				cells.SetType( laid.X, laid.Y, (byte)laid.Type ); // the byte shows the tile as the track tool leaves it
 			cells.Tracks.Set( laid.X, laid.Y, new TrackCell
 			{
 				Type = (byte)laid.Type, Mask = (byte)laid.Mask, Link = (byte)laid.Link, Flags = (byte)laid.Flags, Overlap = (short)laid.Counter,
@@ -84,7 +86,8 @@ public class ParkFenceTrackGoldenTests
 			var land = ParkLand.NewPark( cells, new ParkLandSetup( golden.PostA, golden.PostB, golden.Clicks ) );
 			Assert.IsNotNull( land, golden.Name );
 			cells.SetLand( land );
-			LayTracks( cells, golden );
+			// the first case with tiles lays them through the type byte as the track tool does, so a record the fence retypes or clears must not leave a stale byte
+			LayTracks( cells, golden, golden == ParkFenceTrackGolden.Cases.First( other => other.Tracks.Length > 0 ) );
 			foreach ( var buy in golden.Buys )
 			{
 				var before = ParkFenceGoldenTests.FlagRuns( cells );
@@ -116,6 +119,8 @@ public class ParkFenceTrackGoldenTests
 			for ( var i = 0; i < golden.Tracks.Length; i++ )
 			{
 				var laid = golden.Tracks[i];
+				if ( cells.Tracks.Get( laid.X, laid.Y ).IsEmpty )
+					Assert.AreNotEqual( (byte)laid.Type, cells.RawTypeAt( laid.X, laid.Y ), $"{golden.Name}: a cleared record leaves no stale type byte at ({laid.X}, {laid.Y})" );
 				Assert.AreEqual( golden.Records[i], RecordOf( cells, layer, laid, golden.Records[i] ), $"{golden.Name}: record ({laid.X}, {laid.Y}) laid as type {laid.Type}" );
 			}
 		}

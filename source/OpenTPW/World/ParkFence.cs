@@ -124,6 +124,8 @@ public sealed class FenceEngine
 	private readonly int width, height;
 	private readonly Dictionary<int, ushort> pendingFlags = new();
 	private readonly Dictionary<int, TrackCell> pendingTracks = new();
+	/// <summary>The fence's mark (flag 0x20) on the records that hold a track tile: the tile's own flag 0x20 is the host's over-path memory (<see cref="TrackBuilder.FlagOverPath"/>), so the mark is kept here for the run and never written to the tile.</summary>
+	private readonly HashSet<int> trackMarks = new();
 	private readonly List<int> pendingStamps = new();
 
 	// the line tool's globals: 0x816D64 the last op, 0x763B00/04 the previous step, 0x820AC8 first step, 0x820AD0 last step, 0x820AE8 segment end, 0x81EDE4/8 the stored click
@@ -237,7 +239,8 @@ public sealed class FenceEngine
 		if ( track.Type != 0 )
 		{
 			layer.Direction[index] = track.Link;
-			layer.Flags[index] = track.Flags;
+			layer.Flags[index] = (ushort)FlagsOf( index );
+			trackMarks.Remove( index );
 			layer.Owner[index] = (ushort)Math.Clamp( WordOf( track ), 0, ushort.MaxValue );
 			layer.Counter[index] = track.Overlap;
 			pendingTracks[index] = default;
@@ -248,7 +251,7 @@ public sealed class FenceEngine
 	private int FlagsOf( int index )
 	{
 		var track = TrackOf( index );
-		return track.Type != 0 ? track.Flags : layer.Flags[index];
+		return track.Type != 0 ? (track.Flags & ~TrackBuilder.FlagOverPath) | (trackMarks.Contains( index ) ? TrackBuilder.FlagOverPath : 0) : layer.Flags[index];
 	}
 
 	private void SetFlagsOf( int index, int value )
@@ -256,7 +259,12 @@ public sealed class FenceEngine
 		var track = TrackOf( index );
 		if ( track.Type != 0 )
 		{
-			track.Flags = (byte)value;
+			// the mark (0x20) stays with the run, the tile's own 0x20 (over path) is kept
+			if ( (value & TrackBuilder.FlagOverPath) != 0 )
+				trackMarks.Add( index );
+			else
+				trackMarks.Remove( index );
+			track.Flags = (byte)((value & ~TrackBuilder.FlagOverPath) | (track.Flags & TrackBuilder.FlagOverPath));
 			pendingTracks[index] = track;
 		}
 		else
@@ -1167,7 +1175,7 @@ public sealed class FenceEngine
 			if ( before.Type == 0 && track.Type == 0 )
 				continue;
 			if ( track.Type == 0 )
-				cells.Tracks.Clear( x, y );
+				cells.ClearTrackRecord( x, y );
 			else if ( !before.Equals( track ) )
 				cells.Tracks.Set( x, y, track );
 		}
@@ -1175,6 +1183,7 @@ public sealed class FenceEngine
 			cells.StampBlockAt( X( index ), Y( index ) );
 		pendingFlags.Clear();
 		pendingTracks.Clear();
+		trackMarks.Clear();
 		pendingStamps.Clear();
 	}
 }

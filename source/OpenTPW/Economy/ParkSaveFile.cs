@@ -87,6 +87,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public AnalyserCacheData? AnalyserCaches { get; init; }
+		/// <summary>
+		/// The analyser's three misbehaving-kids words (<see cref="ParkEconomy.MisbehavingKids"/>: the guards' chases this month, the abandoned ones of it, all of them), which only the advisor reads; absent while they are all 0
+		/// and in older saves (they start at 0). Not part of the run hash, like <see cref="AnalyserCaches"/>.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public MisbehavingKidsData? AnalyserChase { get; init; }
 		public required List<ObjectData> Objects { get; init; }
 		public required List<LoanData> Loans { get; init; }
 		public required List<int> TakenLoanOffers { get; init; }
@@ -565,6 +571,14 @@ public static class ParkSaveFile
 		}
 	}
 
+	/// <summary>The analyser's three chase words (tp.exe <c>+0x21BFC</c>, <c>+0x21C00</c>, <c>+0x21C04</c>).</summary>
+	public sealed class MisbehavingKidsData
+	{
+		public required int Month { get; init; }
+		public required int GotAway { get; init; }
+		public required int Ever { get; init; }
+	}
+
 	/// <summary>The analyser's caches (<see cref="ParkEconomy.NetWorth"/>, <see cref="ParkLitter.LitteredInBlock"/>, <see cref="ParkLitter.PathCellsInBlock"/>): only the valid entries.</summary>
 	public sealed class AnalyserCacheData
 	{
@@ -690,6 +704,8 @@ public static class ParkSaveFile
 				LitteredBlocks = park.Litter.LitteredBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList(),
 				PathBlocks = park.Litter.PathBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList()
 			},
+			AnalyserChase = park.MisbehavingKids( false ) == 0 && park.MisbehavingKids( true ) == 0 && park.MisbehavingKidsEver == 0 ? null
+				: new MisbehavingKidsData { Month = park.MisbehavingKids( false ), GotAway = park.MisbehavingKids( true ), Ever = park.MisbehavingKidsEver },
 			TicketsSpent = park.TicketsSpent,
 			TicketItems = park.TicketItems.Order().ToList(),
 			NextObjectId = park.NextObjectId,
@@ -1134,6 +1150,8 @@ public static class ParkSaveFile
 				CostsRing = RingAt( item, 0 ), TakingsRing = RingAt( item, 1 ), CustomersRing = RingAt( item, 2 ), WinnersRing = RingAt( item, 3 ), SatisfactionRing = RingAt( item, 4 )
 			} ),
 			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
+		if ( data.AnalyserChase is { } chase )
+			park.RestoreMisbehavingKids( chase.Month, chase.GotAway, chase.Ever );
 		if ( data.AnalyserCaches is { } caches )
 		{
 			if ( caches.NetWorth is { } worth )

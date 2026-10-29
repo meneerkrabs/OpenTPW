@@ -98,9 +98,7 @@ public sealed partial class OriginalEconomyImport
 		// [BIN:TPW-EXE:0x004C5D70 analyser serializer] the guards' chase counters are three raw words, read back as they are: the advisor's guard and prank lines (12, 22, 98, 264) test them
 		if ( save.AnalyserCounters is { } misbehaving )
 		{
-			economy.Counters.Set( ParkCounters.MisbehavingKidsMonth, misbehaving.MisbehavingKids );
-			economy.Counters.Set( ParkCounters.MisbehavingKidsGotAway, misbehaving.GotAway );
-			economy.Counters.Set( ParkCounters.MisbehavingKidsEver, misbehaving.Ever );
+			economy.RestoreMisbehavingKids( misbehaving.MisbehavingKids, misbehaving.GotAway, misbehaving.Ever );
 			evidence.Add( $"Park analyser: the guards' chase counters imported (this month {misbehaving.MisbehavingKids}, got away {misbehaving.GotAway}, ever {misbehaving.Ever})." );
 		}
 		var (objects, fixedItems, things) = ImportObjects( economy, save, evidence );

@@ -22,9 +22,6 @@ public sealed class ParkCounters
 
 	public void Max( string key, long value ) => values[key] = Math.Max( values.GetValueOrDefault( key ), value );
 
-	/// <summary>Writes a counter as it is (the analyser's month close zeroes two of its words, <see cref="MisbehavingKidsMonth"/> and <see cref="MisbehavingKidsGotAway"/>).</summary>
-	internal void Set( string key, long value ) => values[key] = value;
-
 	internal void Restore( IReadOnlyDictionary<string, long> restored )
 	{
 		values.Clear();
@@ -43,10 +40,6 @@ public sealed class ParkCounters
 	public static string Record( ParkRecordKind kind, int infoId ) => $"record:{kind}:{infoId}";
 	public static string Researched( ResearchCategory category ) => $"researched:{category}";
 	public const string Admissions = "admissions";
-	// [BIN:TPW-EXE:0x004C74F0 misbehaving kids] the analyser's three counters (+0x21BFC, +0x21C00, +0x21C04; the saved names mMisbehavingKids, mMisbehavingKidsThatGotAwayWithIt and mMisbehavingKidsEver) are raised only by a guard's chase (0x004D6790): a caught kid adds to the month and the lifetime word, an abandoned chase to those and to the got-away word; the month close zeroes the month and got-away words (0x004C79EB, 0x004C79F1)
-	public const string MisbehavingKidsMonth = "analyser:misbehaving-month";
-	public const string MisbehavingKidsGotAway = "analyser:misbehaving-got-away";
-	public const string MisbehavingKidsEver = "analyser:misbehaving-ever";
 	public const string ShopProfit = "profit:shop";
 	public const string SideshowProfit = "profit:sideshow";
 }

@@ -45,7 +45,7 @@ tags = [
   { tag = "toilets", ready = true, state = "ParkObjectState of relief features (Repair gauge, IsOpen)" },
   { tag = "litter", ready = true, state = "ParkLitter (Count, TypeAt, cells)" },
   { tag = "cells", ready = true, state = "ParkCellMap (block stamps, developed cells)" },
-  { tag = "pranks", ready = true, state = "ParkCounters.MisbehavingKidsMonth / MisbehavingKidsGotAway / MisbehavingKidsEver (the analyser's three words +0x21BFC, +0x21C00, +0x21C04, raised by a guard's chase, saved with the park and read from an original save)" },
+  { tag = "pranks", ready = true, state = "ParkEconomy.MisbehavingKids / MisbehavingKidsEver (the analyser's three words +0x21BFC, +0x21C00, +0x21C04, raised by a guard's chase, saved with the park, left out of the run hash, and read from an original save)" },
   { tag = "queueLinks", ready = true, state = "Level.FirstUnconnectedQueue (ParkGate.QueueConnected over the level's rides, the selected ride left out) through ParkEconomy.FirstUnconnectedQueueRide" },
   { tag = "rideFear", ready = true, state = "ParkEconomy.AverageRideExcitement (the mean of the rides' live excitement, RideVisitorBridge.LiveExcitement through ParkEconomy.RideLiveExcitement; the original's 0x4E0860 is an excitement byte)" },
   { tag = "arrival", ready = true, state = "the advisor's record of the arrival group sizes (AdvisorArrivalRing, fed by GuestSimulation.ArrivalGroupStarted at the start of every group, 0x4CF3E0; saved in its snapshot)" },

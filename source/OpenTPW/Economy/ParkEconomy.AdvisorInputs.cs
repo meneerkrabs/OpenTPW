@@ -6,32 +6,37 @@ namespace OpenTPW;
 /// </summary>
 public sealed partial class ParkEconomy
 {
+	private int misbehavingMonth, misbehavingGotAway, misbehavingEver;
+
 	/// <summary>
 	/// A guard's chase ends (tp.exe <c>0x004C74F0</c>, called from <c>0x004D691B</c> with a nonzero argument when the guard catches the kid and from <c>0x004D6A1F</c> with 0 when he gives the chase up):
 	/// both raise the month word (+0x21BFC) and the lifetime word (+0x21C04); only the abandoned chase raises the got-away word (+0x21C00).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004C74F0 misbehaved] +0x21BFC and +0x21C04 are raised, +0x21C00 only when the argument is 0 (TEST EAX, EAX; JNE over the INC); nothing else in tp.exe writes them but the constructor (0x4C5BBE-0x4C5BCA), the month close and the save load
+	// [BIN:TPW-EXE:0x004C94A0 misbehaving kids] only the advisor reads the three words (the getter 0x4C94A0 and the serializer 0x4C5D70): the simulation never does, so they are presentation state and stay out of the run hash, like the analyser's caches
 	internal void RecordGuardChase( bool caught )
 	{
-		Counters.Add( ParkCounters.MisbehavingKidsMonth, 1 );
-		Counters.Add( ParkCounters.MisbehavingKidsEver, 1 );
+		misbehavingMonth = unchecked( misbehavingMonth + 1 );
+		misbehavingEver = unchecked( misbehavingEver + 1 );
 		if ( !caught )
-			Counters.Add( ParkCounters.MisbehavingKidsGotAway, 1 );
+			misbehavingGotAway = unchecked( misbehavingGotAway + 1 );
 	}
 
 	/// <summary>The analyser's misbehaving-kids words (<c>0x004C94A0</c>): the month word for 0, the got-away word for a nonzero argument.</summary>
 	// [BIN:TPW-EXE:0x004C94A0 misbehaving kids] a nonzero argument returns +0x21C00 (the kids that got away this month), 0 returns +0x21BFC (the kids a guard went after this month)
-	internal int MisbehavingKids( bool gotAway ) => unchecked( (int)Counters[gotAway ? ParkCounters.MisbehavingKidsGotAway : ParkCounters.MisbehavingKidsMonth] );
+	internal int MisbehavingKids( bool gotAway ) => gotAway ? misbehavingGotAway : misbehavingMonth;
+
+	/// <summary>The lifetime word (<c>+0x21C04</c>, <c>mMisbehavingKidsEver</c>): every chase a guard began to end, caught or given up.</summary>
+	internal int MisbehavingKidsEver => misbehavingEver;
+
+	/// <summary>Restores the three words as a save holds them (the month word, the got-away word, the lifetime word).</summary>
+	internal void RestoreMisbehavingKids( int month, int gotAway, int ever ) => (misbehavingMonth, misbehavingGotAway, misbehavingEver) = (month, gotAway, ever);
 
 	/// <summary>
 	/// The month close zeroes the month word and the got-away word, not the lifetime word.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004C79EB month close] the month handler 0x004C7720 ends by storing 0 in +0x21BFC and +0x21C00
-	private void CloseMisbehavingMonth()
-	{
-		Counters.Set( ParkCounters.MisbehavingKidsMonth, 0 );
-		Counters.Set( ParkCounters.MisbehavingKidsGotAway, 0 );
-	}
+	private void CloseMisbehavingMonth() => (misbehavingMonth, misbehavingGotAway) = (0, 0);
 
 	/// <summary>
 	/// The share of a class of cells that the patrol rectangles of a role's staff cover, in whole percent (tp.exe <c>0x004CD500</c>, arguments role and class); null without a cell map.

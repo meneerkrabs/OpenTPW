@@ -369,12 +369,25 @@ public class AdvisorScanInputsTests
 		park.RecordGuardChase( caught: true );
 		park.RecordGuardChase( caught: false );
 		Assert.AreEqual( (3, 1), (state.MisbehavingKids( false ), state.MisbehavingKids( true )), "every chase counts, only an abandoned one got away" );
-		Assert.AreEqual( 3L, park.Counters[ParkCounters.MisbehavingKidsEver] );
+		Assert.AreEqual( 3, park.MisbehavingKidsEver );
 		// the month close of the analyser
 		park.AdvanceMonths( 1 );
 		Assert.IsTrue( park.Ledger.History.Count >= 1, "a month closed" );
 		Assert.AreEqual( (0, 0), (state.MisbehavingKids( false ), state.MisbehavingKids( true )), "the month close zeroes the month and got-away words" );
-		Assert.AreEqual( 3L, park.Counters[ParkCounters.MisbehavingKidsEver], "the lifetime word stays" );
+		Assert.AreEqual( 3, park.MisbehavingKidsEver, "the lifetime word stays" );
+	}
+
+	[TestMethod]
+	public void TheChaseCountersLeaveTheRunHashAndASaveWithoutThemAlone()
+	{
+		// only the advisor reads them: the run hash does not see them and a park without a chase writes no field
+		var quiet = Park();
+		var chased = Park();
+		chased.RecordGuardChase( caught: false );
+		chased.RecordGuardChase( caught: true );
+		Assert.AreEqual( WorldStateHash.Compute( new WorldStateSources { Economy = quiet } ), WorldStateHash.Compute( new WorldStateSources { Economy = chased } ) );
+		Assert.IsFalse( ParkSaveFile.Serialize( quiet ).Contains( "AnalyserChase", StringComparison.Ordinal ), "a park that never chased writes nothing new" );
+		Assert.IsTrue( ParkSaveFile.Serialize( chased ).Contains( "AnalyserChase", StringComparison.Ordinal ) );
 	}
 
 	[TestMethod]
@@ -386,7 +399,7 @@ public class AdvisorScanInputsTests
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( park ) ) ), EconomyTestData.Settings( 500000 ), EconomyTestData.Catalog() );
 		var state = new EconomyParkState( restored );
 		Assert.AreEqual( (2, 1), (state.MisbehavingKids( false ), state.MisbehavingKids( true )) );
-		Assert.AreEqual( 2L, restored.Counters[ParkCounters.MisbehavingKidsEver] );
+		Assert.AreEqual( 2, restored.MisbehavingKidsEver );
 		// a save written before the counters has none: the words start at 0
 		Assert.AreEqual( (0, 0), (new EconomyParkState( Park() ).MisbehavingKids( false ), new EconomyParkState( Park() ).MisbehavingKids( true )) );
 	}

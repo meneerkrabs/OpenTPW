@@ -173,7 +173,7 @@ public class AdvisorSavedStampsTests
 		var (economy, import) = Imported( save, settings );
 		var state = new EconomyParkState( economy );
 		Assert.AreEqual( (4, 2), (state.MisbehavingKids( false ), state.MisbehavingKids( true )) );
-		Assert.AreEqual( 9L, economy.Counters[ParkCounters.MisbehavingKidsEver] );
+		Assert.AreEqual( 9, economy.MisbehavingKidsEver );
 		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Park analyser: the guards' chase counters imported (this month 4, got away 2, ever 9)", StringComparison.Ordinal ) ) );
 		// a save that names no analyser has none
 		var (plain, _) = Imported( Save( settings, Start, Start, analyser: false ), settings );

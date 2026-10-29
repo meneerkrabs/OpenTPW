@@ -674,9 +674,9 @@ thresholds are words of the `Advisor.sam` object (`AdvisorInputsCallbacks.Intege
 **The chase counters.** `0x4C74F0` raises the analyser's month word (+0x21BFC) and lifetime word (+0x21C04) and, only for the argument 0, the got-away word (+0x21C00). Its only callers are the guard's chase `0x4D6790`:
 `0x4D691B` (argument 2) right after the catch `0x4FEC10` succeeds, `0x4D6A1F` (argument 0) in the abandon tail `0x4D6A01` (logged "Guard: abandoned chase", 0x75A944), which every way out of the chase that gives it up reaches:
 no target or a timer of 0, a failed route, the held guest (`0x4FA2A0` result 2), the failed catch, the failed second route to the booth (a kid caught and then set down counts twice). The getter `0x4C94A0` returns the got-away
-word for a nonzero argument and the month word for 0; the month close (`0x4C7720`, 0x4C79EB and 0x4C79F1) zeroes the month and got-away words, not the lifetime word. In OpenTPW the counters are `ParkCounters`
-(`MisbehavingKidsMonth`, `MisbehavingKidsGotAway`, `MisbehavingKidsEver`), raised by `StaffWorldSimulation.Chase` through `ParkEconomy.RecordGuardChase`, zeroed in the month close, saved with the park's counters, and an
-original save's three words (the serializer `0x4C5D70`; `SaveAnalyserCounters`) are imported as they are.
+word for a nonzero argument and the month word for 0; the month close (`0x4C7720`, 0x4C79EB and 0x4C79F1) zeroes the month and got-away words, not the lifetime word. In OpenTPW the three words are `ParkEconomy.MisbehavingKids` and `MisbehavingKidsEver`, raised by `StaffWorldSimulation.Chase` through `ParkEconomy.RecordGuardChase`, zeroed in the month close, saved as the optional
+`ParkSaveFile.Data.AnalyserChase` (written when any is nonzero; only the advisor reads them, so the field is left out of the run hash like the analyser's caches and no pin moves), and an original save's three words (the
+serializer `0x4C5D70`; `SaveAnalyserCounters`) are imported as they are.
 
 **The coverage.** `0x4CD500(role, class)` first marks (`0x4CD340`): every cell's mark word (+0x3C of the 0x44-byte record) is cleared, then each staff thing of the model with an area of its own (`0x506EB0`) marks the cells of its
 rectangle (the corner words +0x20A and +0x20C, columns and rows inclusive; a rectangle whose first column is past the second marks nothing). A jump table over the class (`0x4CD708`) counts the cells by the cell type word (+8):

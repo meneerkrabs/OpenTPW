@@ -129,6 +129,61 @@ public class TrackCellCoexistenceTests
 		Assert.AreEqual( TrackCellTypes.Extension, cells.RawTypeAt( 7, 8 ), "the undo shows the tile again" );
 	}
 
+	private static bool IsBridge( ParkCellMap cells, int x, int y ) => (cells.Tracks.Get( x, y ).Flags & TrackCell.BridgeMask) != 0;
+
+	[TestMethod]
+	public void APathLaidOverAStraightTileMakesItABridgeAndRemovingItTakesTheBridgeAway()
+	{
+		// tp.exe 0x538A92 reads map types 1 and 3 on the tile's four cells; the path op 0x85 re-runs it
+		var (cells, _, _, paths) = Rig();
+		Assert.IsFalse( IsBridge( cells, 6, 8 ) );
+		Assert.IsTrue( paths.BuildSegment( (7, 6), (7, 11) ).Completed );
+		Assert.IsTrue( IsBridge( cells, 6, 8 ), "the path over the tile's extension cells makes it a bridge" );
+		Assert.IsFalse( IsBridge( cells, 4, 8 ), "a tile the path does not cross stays flat" );
+		Assert.AreEqual( CellBuildResult.Ok, paths.Remove( 7, 8 ) );
+		Assert.AreEqual( CellBuildResult.Ok, paths.Remove( 7, 9 ) );
+		Assert.IsFalse( IsBridge( cells, 6, 8 ), "no path cell is left over the tile" );
+	}
+
+	[TestMethod]
+	public void AQueueCommittedOverAStraightTileMakesItABridgeAndTheUndoTakesItAway()
+	{
+		var (cells, _, _, _) = Rig();
+		const ushort owner = 17;
+		cells.SetType( 7, 5, ParkCellType.Queue );
+		cells.SetOwner( 7, 5, owner );
+		var reducer = new QueueSegmentReducer( cells, owner, ( _, _ ) => false, () => true, _ => true, () => 10, _ => { } );
+		var result = reducer.Commit( (7, 5), (7, 10) );
+		Assert.AreEqual( CellBuildResult.Ok, result.StoppedBy );
+		Assert.IsTrue( IsBridge( cells, 6, 8 ) );
+		reducer.Undo( result.QueueReceipt! );
+		Assert.IsFalse( IsBridge( cells, 6, 8 ) );
+	}
+
+	[TestMethod]
+	public void ABridgeOverAPathChangesTheRampOfItsNeighbour()
+	{
+		var (cells, _, _, paths) = Rig();
+		// the line crosses the middle tile only: its neighbours along the flow are flat, so it is the plain bridge piece
+		Assert.IsTrue( paths.BuildSegment( (7, 6), (7, 11) ).Completed );
+		Assert.AreEqual( TrackCell.FlagBridge, cells.Tracks.Get( 6, 8 ).Flags & TrackCell.BridgeMask );
+		// a path laid over the end tile too makes the pair ramp and deck
+		Assert.IsTrue( paths.BuildSegment( (9, 6), (9, 11) ).Completed );
+		Assert.IsTrue( IsBridge( cells, 8, 8 ) );
+		Assert.AreNotEqual( TrackCell.FlagBridge, cells.Tracks.Get( 6, 8 ).Flags & TrackCell.BridgeMask, "the middle tile's neighbour is a bridge now" );
+	}
+
+	[TestMethod]
+	public void APathOverATileMakesABridgeAfterARestoreToo()
+	{
+		var (cells, _, _, paths) = Rig();
+		Assert.IsTrue( paths.BuildSegment( (7, 6), (7, 11) ).Completed );
+		var tile = cells.Tracks.Get( 6, 8 );
+		cells.Tracks.Set( 6, 8, tile with { Flags = (byte)(tile.Flags & ~TrackCell.BridgeMask) } );
+		TrackBuilder.RefreshAll( cells.Tracks, cells );
+		Assert.IsTrue( IsBridge( cells, 6, 8 ) );
+	}
+
 	[TestMethod]
 	public void TheHostsQueueRulesTakeAStraightTileAndRefuseAJunction()
 	{

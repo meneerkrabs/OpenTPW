@@ -39,7 +39,7 @@ public sealed partial class OriginalObjectRuntime
 		if ( stopped || particlePlacement is not { } placement )
 			return null;
 		particleKeys ??= new ParticleKeyResolver( Model );
-		var pose = particleKeys.Resolve( startNode, ParticleKeyResolver.WalkSelector, Animator.NodeTransforms, placement );
+		var pose = particleKeys.Resolve( startNode, ParticleKeyResolver.WalkSelector, KeyPose, placement );
 		return pose.Status switch
 		{
 			ParticleKeyStatus.Resolved => new ParticleEventRequest( AttractionId, 0, 1, startNode, WalkOffEffectId, 1000, pose.EnginePosition!.Value, null, pose.AttributeIndex, pose.NodeIndex, WholeUnits: true ),
@@ -75,7 +75,7 @@ public sealed partial class OriginalObjectRuntime
 					new ParticleEventRequest(AttractionId, scriptId, type, key, effect, control, NVector3.Zero, null, -1, -1, AtWorldOrigin: true));
 		}
 		particleKeys ??= new ParticleKeyResolver(Model);
-		var pose = particleKeys.Resolve(key, ParticleKeyResolver.EventSelector, Animator.NodeTransforms, placement, includeDirection: type == 2);
+		var pose = particleKeys.Resolve(key, ParticleKeyResolver.EventSelector, KeyPose, placement, includeDirection: type == 2);
 		return pose.Status switch
 		{
 			ParticleKeyStatus.Resolved => new ParticleEventAttempt(AttractionId, scriptId, type, key, effect, ParticleEventPreparationStatus.Prepared, pose.Status,
@@ -134,7 +134,7 @@ public sealed partial class OriginalObjectRuntime
 		{
 			if (type is not (1 or 2) || key < 0) continue;
 			particleKeys ??= new ParticleKeyResolver(Model);
-			var pose = particleKeys.Resolve(key, ParticleKeyResolver.EventSelector, Animator.NodeTransforms, placement, includeDirection: type == 2);
+			var pose = particleKeys.Resolve(key, ParticleKeyResolver.EventSelector, KeyPose, placement, includeDirection: type == 2);
 			if (pose.Status == ParticleKeyStatus.Resolved)
 				follow(handle, new ParticleFollow(pose.EnginePosition!.Value, type == 2 ? pose.EngineUnitDirection : null, false));
 			else if (pose.Status == ParticleKeyStatus.ResolvedAtWorldOrigin)

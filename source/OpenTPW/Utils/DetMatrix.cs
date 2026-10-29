@@ -42,29 +42,9 @@ public static class DetMatrix
 	public static NVector3 Lerp( NVector3 a, NVector3 b, float t ) => new( a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t, a.Z + (b.Z - a.Z) * t );
 
 	/// <summary>
-	/// The sign-preserving slerp of <c>ModelAnimationTrack.Slerp</c> with DetMath's acos and sin and plain arithmetic: the dot product summed left to right,
-	/// the blend of <c>Quaternion.Lerp</c> when the angle's sine is below 1e-5, and the result divided by its length.
+	/// The sign-preserving slerp of <c>ModelAnimationTrack.Slerp</c>, the original's table-sine blend (<see cref="ModelRotationBlend"/>) with the deterministic table (<see cref="OriginalSineTable"/>) and DetMath's arc cosine.
 	/// </summary>
-	public static Quaternion Slerp( Quaternion from, Quaternion to, float fraction )
-	{
-		var dot = Math.Clamp( from.X * to.X + from.Y * to.Y + from.Z * to.Z + from.W * to.W, -1f, 1f );
-		var angle = DetMathF.Acos( dot );
-		var sine = DetMathF.Sin( angle );
-		Quaternion result;
-		if ( sine < 1e-5f )
-		{
-			// Quaternion.Lerp's blend: (1 − t)·from ± t·to, the sign of the raw dot product's
-			var inverse = 1 - fraction;
-			var b = from.X * to.X + from.Y * to.Y + from.Z * to.Z + from.W * to.W >= 0 ? fraction : -fraction;
-			result = new Quaternion( inverse * from.X + b * to.X, inverse * from.Y + b * to.Y, inverse * from.Z + b * to.Z, inverse * from.W + b * to.W );
-		}
-		else
-		{
-			var a = DetMathF.Sin( (1 - fraction) * angle ) / sine;
-			var b = DetMathF.Sin( fraction * angle ) / sine;
-			result = new Quaternion( from.X * a + to.X * b, from.Y * a + to.Y * b, from.Z * a + to.Z * b, from.W * a + to.W * b );
-		}
-		var length = MathF.Sqrt( result.X * result.X + result.Y * result.Y + result.Z * result.Z + result.W * result.W );
-		return new Quaternion( result.X / length, result.Y / length, result.Z / length, result.W / length );
-	}
+	public static Quaternion Slerp( Quaternion from, Quaternion to, float fraction ) => ModelRotationBlend.Blend( from, to, fraction, OriginalSineTable.Entries, DeterministicAcos );
+
+	private static readonly Func<float, float> DeterministicAcos = value => DetMathF.Acos( value );
 }

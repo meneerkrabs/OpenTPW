@@ -252,7 +252,7 @@ a placeholder's four slots hold the event's code (event `+0x12`), the current so
 recomputes the volume (unless a fade is in progress) and redraws the pitch. The crowd event's code is 7 and sounds
 1-6 of its twelve bind 7 in slot 1 under the volume mask, so every crowd update moves the playing section's volume
 and pitch; sounds 7-12 have selector 0. Every sentence holds this table (`SoundParameterTable`): the crowd, the ride
-and tour vehicles' engines (EventMap variable 10, `0x51BC40`), the level rain voice (code 8, `0x51E870`; its
+and tour vehicles' engines (EventMap variable 10, `0x51BC40`), the coaster trains' loops (EventMap variables 6 to 8, see "Coaster train loops"), the level rain voice (code 8, `0x51E870`; its
 sounds bind 8 under the volume mask, so the drop level also sets the rain's volume within 1 to 2..5 percent) and the park music
 (code 4, `0x51E79E`; no music sound binds a selector, so it only steers the branching) go through the same call, and only a call with the event's own code (slot 0) sets the value the branch
 picker reads (`0x6be5e0` → `0x6be450`, table `+4`). One-shots and chains build the same table from the event and
@@ -1059,3 +1059,14 @@ source length refuses before reporting size; Forget clears cached size refusals
 and retired categories do not retain them again. These are synthetic CPU tests.
 
 Retired in the audio, advisor and effects sweep (2026-10-16): `APPROX:AUDIO-008` (the repair band is the script's variable slot 5), `APPROX:AUDIO-025` (December's average is the Seasons array's count slot) and `APPROX:AUDIO-903` (CRain's dt zeroing); AUDIO-037 is `[EXT:sound-chooser-seed]`.
+
+## Coaster train loops
+
+Each coaster train holds two loops of the ride's `EventMap` (variables 0 and 1, level `cat_rides`, started at the slot setup `0x4392A0` at the train's sound car, the car `ReferenceCar`; `CoasterTrainSounds`).
+The variables 5 to 8 are read into the train at the setup: 6 is the parameter code of the speed crossfade, 7 the code of the state parameter and 8 the code of the occupancy (Jungle: 20, 19, 22).
+After each station step (`0x439570`) the first loop is given the train's speed in percent of `fMaxSpeedAtMaxSetting` and the second the rest to 100, both then move to the sound car (the first car while the
+player rides the train, `0x42A4E0`), each coordinate truncated. At the end of each motion tick (`0x43D7D8`, `0x439780`) the train's state goes to the second loop: braking (flag 0x10) is state 8 with 50 or 100 by x⁴ of the last braking hop,
+a car on a winch with the power on is state 2 (speed up to 0.3 of the speed cap) or 4 with 100 x cars on winch / cars per train, anything else is state 0x10 with 100; a state that differs from the slot's sends
+0xF, 0x1E, 0x46, 0x5A or 0x32 (states 1, 2, 4, 8, 0x10) on the state code and is stored in the slot (it outlives the train, and a loaded slot keeps the saved word), and every call sends the occupancy value on the occupancy code.
+Setting a slot up ends the old loops first (`0x439670`) and gives the new second loop the state parameter only when the slot's state differs from 2, which the rating pass and the state change 1 to 2 make visible.
+The sounds are in no hash and no save; a loaded train has none until its next setup. The trains' scream pass (`0x4393E0`, handles `+0x6C` and `+0x70`) is ported with the rest: with riders, sample flag `0x2` (the rating's terror flag) starts the band-1 one-shot at level 100 (on every pass of a train that does not hold the scream flag; once it does, a live voice is moved and a voice that ended is started again) and sample flag `0x4` (the normal flag) holds a scream chain of band riders / 2 + 1 at level 75, moved with the train and stopped on the first sample without the flag; both are silent while the train brakes or the ride is in mode 64. Positions of the loops and screams are rounded to nearest even (`fistp`), not truncated.

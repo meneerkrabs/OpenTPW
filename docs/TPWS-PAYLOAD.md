@@ -759,7 +759,7 @@ Checked but not imported (evidence lines in the import report):
 - the track flags (SAVE-921);
 - surplus set-up slots;
 - the riders on the trains. Each car's two guest lists and the train's rider count are dropped (SAVE-920), because the
-  guests riding or seated (states 15 and 16) are not imported (SAVE-002).
+  guests riding or seated (state 16) are not imported (SAVE-002).
 
 Shapes the original's own editing never leaves are refused with the reason. Examples: a cut on an incomplete track, a
 state that does not fit the track, a word with bits beyond the state and the mode, a power factor that does not fit the

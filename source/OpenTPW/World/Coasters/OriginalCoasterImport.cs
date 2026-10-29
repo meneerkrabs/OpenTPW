@@ -182,7 +182,7 @@ internal static class OriginalCoasterImport
 		}
 		else if ( inService != 0 )
 			evidence.Add( $"{what}: {inService} trains in service on a track that does not run; the state change to 1 removed them (0x43BF20)." );
-		// [APPROX:SAVE-920] the riders of the saved trains (each car's two guest lists and the train's rider count +0x10) are not restored: the guests riding or seated (states 15 and 16) are not imported (SAVE-002)
+		// [APPROX:SAVE-920] the riders of the saved trains (each car's two guest lists and the train's rider count +0x10) are not restored: the guests riding or seated (state 16) are not imported (SAVE-002)
 		var riders = slots.Take( runnable ? inService : 0 ).Sum( slot => slot.Cars.Sum( car => car.HeadsA.Length + car.HeadsB.Length ) );
 		if ( riders > 0 )
 			evidence.Add( $"{what}: {riders} riders on its trains are not restored (SAVE-920); their guests are not imported." );

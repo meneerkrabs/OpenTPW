@@ -766,7 +766,7 @@ public class AdvisorScanStaffTests
 	{
 		if ( !staffRoom )
 			return EconomyTestData.Park( initialCash: 500000 );
-		var room = EconomyTestData.Catalog().Objects.First( info => info.InfoId == 1402 ) with { InfoId = 1450, Name = "Staff Room", ProvidesRelief = false, ChillsYouOut = true };
+		var room = EconomyTestData.Catalog().Objects.First( info => info.InfoId == 1402 ) with { InfoId = 1450, Name = "Staff Room", ProvidesRelief = false, ChillsYouOut = true, IsChoosable = false };
 		return new ParkEconomy( EconomyTestData.Settings( 500000 ), new EconomyObjectCatalog( EconomyTestData.Catalog().Objects.Append( room ) ), ParkGameMode.FullSimulation, 7 );
 	}
 
@@ -882,7 +882,9 @@ public class AdvisorScanStaffTests
 		park.RegisterExisting( 1402 );
 		park.RegisterExisting( 1100 );
 		Assert.AreEqual( 2, state.StaffRooms, "only the objects with the rest-area flag" );
-		Assert.AreEqual( 0, state.ClosedStaffRooms );
+		// the shipped staff rooms are not choosable (Features.sam Info.IsChoosable 0), so their records hold state 3 (0x4DB4FB), which is no closed one (0x4E0440 reads the open word only)
+		Assert.AreEqual( RideObjectStates.NotAnAttraction, ParkEconomy.ObjectState( first ) );
+		Assert.AreEqual( 0, state.ClosedStaffRooms, "open staff rooms are no closed ones (issue #829: the advisor said message 263 with the placeholder sample for every staff room)" );
 		first.IsOpen = false;
 		Assert.AreEqual( 1, state.ClosedStaffRooms );
 		second.IsOpen = false;

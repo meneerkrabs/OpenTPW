@@ -113,8 +113,10 @@ internal sealed partial class EconomyParkState : IAdvisorParkState
 	// [BIN:TPW-EXE:0x004CA8E0 standing objects] the attractions (thing type 3) whose type's WhichUIType is the kind; for a ride (kind 0) its upgrade level byte (+0x50) must be at least the argument
 	public int ObjectsOfKind( int kind, int minimumLevel ) => Standing( kind ).Count( entry => kind != 0 || (byte)entry.Item.Level >= minimumLevel );
 
-	// [BIN:TPW-EXE:0x004E0440 closed] the open word +0x68 is 0: the ride was closed, and entering the broken, upgrading and condemned states (0x4E0FD8, 0x4E10DC, the condemn case of 0x4E0E60) clears it
-	private static bool IsClosed( ParkObjectState item ) => !item.IsOpen || ParkEconomy.ObjectState( item ) != RideObjectStates.Idle;
+	// [BIN:TPW-EXE:0x004E0440 closed] the open word +0x68 is 0: the ride was closed, and entering the broken, upgrading and condemned states (0x4E0FD8, 0x4E10DC, the condemn case of 0x4E0E60) clears it;
+	// state 3, which the constructor gives a type nobody may choose (0x4DB4FB: the staff room and the other features), is no closing state and leaves the word as the object's script sets it
+	private static bool IsClosed( ParkObjectState item ) =>
+		!item.IsOpen || ParkEconomy.ObjectState( item ) is not (RideObjectStates.Idle or RideObjectStates.NotAnAttraction);
 
 	// [BIN:TPW-EXE:0x004CA9B0 closed objects] the attractions of the kind whose open word is 0
 	public int ClosedObjectsOfKind( int kind ) => Standing( kind ).Count( entry => IsClosed( entry.Item ) );

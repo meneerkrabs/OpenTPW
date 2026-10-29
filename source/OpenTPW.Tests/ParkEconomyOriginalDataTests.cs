@@ -47,6 +47,27 @@ public class ParkEconomyOriginalDataTests
 			Assert.IsFalse( BalanceSettings.HasEasyLayer( theme ) );
 	}
 
+	/// <summary>
+	/// Every theme's staff room is not choosable (Features.sam Info.IsChoosable 0), so its record holds state 3 (0x4DB4FB); a standing staff room is no closed one
+	/// (0x4E0440 reads the open word only), and the advisor's StaffroomClosed message 263, whose only response plays the z_error placeholder, waits for one whose open word is clear (issue #829).
+	/// </summary>
+	[TestMethod]
+	public void EveryThemesStaffRoomIsAnOpenRestAreaForTheAdvisor()
+	{
+		UseOriginalData();
+		foreach ( var theme in Themes )
+		{
+			var park = ParkEconomy.CreateForTheme( theme, easy: false );
+			var room = park.Catalog.Objects.Single( info => info.ChillsYouOut );
+			Assert.IsFalse( room.IsChoosable, $"{theme}: {room.Name}" );
+			var record = park.RegisterExisting( room.InfoId );
+			var state = new EconomyParkState( park );
+			Assert.AreEqual( (1, 0), (state.StaffRooms, state.ClosedStaffRooms), theme );
+			record.IsOpen = false;
+			Assert.AreEqual( 1, state.ClosedStaffRooms, theme );
+		}
+	}
+
 	// ORACLE F23 (ECON-039): every shipped theme's GoldenTicketLocal.ProfitYear is the strict signed threshold of the award, with no factor.
 	[TestMethod]
 	public void TheShippedProfitTicketThresholdsAreStrictAndUnscaled()

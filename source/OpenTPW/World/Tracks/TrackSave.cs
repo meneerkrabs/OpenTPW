@@ -105,6 +105,6 @@ internal static class TrackSave
 				Rotation = item.Rotation, Overlap = item.Overlap, AltMask = item.AltMask, Segment = item.Segment, Owner = item.Owner, BaseType = item.BaseType
 			} );
 		}
-		TrackBuilder.RefreshAll( cells.Tracks );
+		TrackBuilder.RefreshAll( cells.Tracks, cells );
 	}
 }

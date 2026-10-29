@@ -103,7 +103,7 @@ public class QueueSegmentReducerTests
 	public void TerminalPathBypassesNoModifyButInteriorPathDoesNotAndPreviewNeverWrites()
 	{
 		var map = new ParkCellMap( 12, 12 );
-		map.SetType( 2, 3, ParkCellType.Queue );
+		map.SetType( 2, 3, ParkCellType.Queue ); map.SetOwner( 2, 3, 17 );
 		map.SetType( 4, 3, ParkCellType.Path ); map.SetFlags( 4, 3, ParkCellFlags.NoModify );
 		var before = map.Version;
 		Assert.IsTrue( Reducer( map ).Preview( (2, 3), (4, 3) ).Completed );
@@ -114,6 +114,24 @@ public class QueueSegmentReducerTests
 		Assert.AreEqual( (byte)64, map.QueueLinkAt( 4, 3 ) );
 		Assert.IsTrue( map.FlagsAt( 4, 3 ).HasFlag( ParkCellFlags.NoModify ) );
 	}
+	/// <summary>The validator 0x535670 takes an own queue cell (mode 3 over type 3) only when its owner word is the tool's ride and it does not hold two links: the ride's own two-link cell, another ride's cell and a cell no ride owns are refused.</summary>
+	[TestMethod]
+	public void AnOwnQueueCellIsCrossedOnlyWithAnOwnerWordOfTheToolAndWithoutTwoLinks()
+	{
+		var map = new ParkCellMap( 12, 12 );
+		map.SetType( 2, 3, ParkCellType.Queue );
+		map.SetOwner( 2, 3, 17 );
+		map.SetLinks( 2, 3, 4 );
+		Assert.IsTrue( Reducer( map ).Preview( (2, 3), (3, 3) ).Completed, "one link, the tool's ride" );
+		map.SetLinks( 2, 3, 4 | 64 );
+		Assert.AreEqual( CellBuildResult.Occupied, Reducer( map ).Preview( (2, 3), (3, 3) ).StoppedBy, "two links" );
+		map.SetLinks( 2, 3, 4 );
+		map.SetOwner( 2, 3, 18 );
+		Assert.AreEqual( CellBuildResult.Occupied, Reducer( map ).Preview( (2, 3), (3, 3) ).StoppedBy, "another ride's cell" );
+		map.SetOwner( 2, 3, 0 );
+		Assert.AreEqual( CellBuildResult.Occupied, Reducer( map ).Preview( (2, 3), (3, 3) ).StoppedBy, "no owner word is not the tool's ride" );
+	}
+
 	[TestMethod]
 	public void CounterOverflowDomainIsExplicitAndForeignOwnerGhostRefuses()
 	{

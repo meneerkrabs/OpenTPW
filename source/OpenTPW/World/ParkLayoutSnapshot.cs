@@ -177,7 +177,9 @@ public static class ParkLayoutSnapshot
 				var links = cells.LinksAt( x, y );
 				var queueLink = cells.QueueLinkAt( x, y );
 				var residue = cells.HasQueuePassResidue( x, y );
-				if ( !residue && (type == 0 && cells.OwnerAt( x, y ) != 0 || type is 0 or 1 && queueLink != 0) )
+				// the cell's own type: a track tile shown in the type byte is no cell type (ParkCellMap.PrimaryTypeAt)
+				var own = cells.PrimaryTypeAt( x, y );
+				if ( !residue && (own == 0 && cells.OwnerAt( x, y ) != 0 || own is 0 or 1 && queueLink != 0) )
 					throw new InvalidDataException( "Unclassified queue metadata cannot be saved as an ordinary cell." );
 				if ( !residue && type == 0 && flags == 0 && placements == 0 && links == 0 && queueLink == 0 )
 					continue;
@@ -339,7 +341,7 @@ public static class ParkLayoutSnapshot
 		foreach ( var residue in residues )
 		{
 			if ( residue == null || residue.X < 0 || residue.Y < 0 || residue.X >= map.Width || residue.Y >= map.Height
-				|| !seen.Add( (residue.X, residue.Y) ) || residue.Type is not (0 or 1)
+				|| !seen.Add( (residue.X, residue.Y) ) || residue.Type is not (0 or 1) && !ParkCellTypes.IsTrackShown( residue.Type )
 				|| residue.QueueLink is not (0 or 1 or 4 or 16 or 64) || residue.Owner > 128 * 128 )
 				throw new InvalidDataException( "Invalid queue pass residue." );
 			if ( !ordinary.TryGetValue( (residue.X, residue.Y), out var cell ) )

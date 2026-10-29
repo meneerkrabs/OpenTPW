@@ -232,7 +232,7 @@ public partial class Level
 				// the refund is the native credit 0x4D0190 of the demolished ride, found before it was removed
 				var ownerWord = OwnerWord( item );
 				var instance = demolishingInstances != null && demolishingInstances.Remove( item, out var kept ) ? kept : null;
-				removed.DemolishFootprint( item.Cells, owner =>
+				DemolishFootprintCells( item, removed, owner =>
 				{
 					if ( owner == ownerWord && Park != null && instance is int rideInstance )
 						Park.Economy.RefundQueueCellNative( rideInstance );
@@ -860,6 +860,7 @@ public partial class Level
 					GameAudio.PlayUiAt( GameAudio.QueueJoinEvent, GameAudio.QueueNeighbourSoundPosition( x, y ) );
 			}, ReevaluateRideOfOwner ),
 			ObjectGivesWay = ( x, y ) => Objects.GivesWay( x, y, ParkObjects.PathOverwritePriority ),
+			ObjectOwnerPriority = OwnerPriorityAt,
 			DemolishObject = DemolishObjectAt
 		};
 		// [BIN:TPW-EXE:0x0053481F queue edit] a path laid over a queue cell edits the queue of the ride that owns the cell (owner word): its queue is recomputed, its back cell stamped and the re-evaluation 0x004DE1F0 run
@@ -912,6 +913,9 @@ public partial class Level
 			return null;
 		if ( cells.TypeAt( x, y ) != ParkCellType.Path )
 			return ObjectPathCell.None;
+		// a path that lies over a track tile (the type byte holds the path, the second layer the tile) takes no object: the placement validator refuses a cell whose second-layer record is a track (0x535831)
+		if ( !cells.Tracks.Get( x, y ).IsEmpty )
+			return ObjectPathCell.FixedPath;
 		return cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) ? ObjectPathCell.FixedPath : ObjectPathCell.Path;
 	}
 
@@ -1496,12 +1500,12 @@ public partial class Level
 			QueuePaths.ClearAll( Guests.Grid, ride );
 	}
 
-	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows (Objects.Grid.CheckTerrain: the map start's cell types, with saved occupancy used only before the live map is attached), no object footprint of the queue tool's overwrite priority 3 or more (a lower one is demolished, QueueGivesWay) and owned land; tp.exe's cell validator 0x00535670 for the queue tool refuses a cell whose flag byte +0x0E has bit 0x40 (the park's land, ParkCellMap.Land), compares an object cell's owner priority with 0x818C10 = 3 (0x535D66), allows empty cells, lets a queue replace a nonterminal path cell unless NoModify (+0x0E bit 0x20), while a terminal path connects without replacement before that check and reads no MAP terrain bit (map setup turns inside water, blocked and walkway cells into type 0) — evidence needed: none for the validator; the no-live-map fallback still uses saved occupancy (ECON-050)
+	// [APPROX:QUEUE-012] the terrain rule for a queue cell is OpenTPW's (Objects.Grid.CheckTerrain: the map start's cell types, with saved occupancy used only before the live map is attached) where tp.exe's cell validator 0x00535670 reads the cell's own type alone and the map setup turns inside water, blocked and walkway cells into type 0; the validator's refusals run on top of it (QueueCellValidator, the register) — evidence needed: none for the validator; the no-live-map fallback still uses saved occupancy (ECON-050)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] a cell with flag 0x40 is refused for a queue as for a path or an object
 	private bool IsQueueBlocked( int x, int y ) => IsQueueBlockedCore( x, y, terminalPath: false );
 
 	private bool IsQueueBlockedCore( int x, int y, bool terminalPath ) =>
-		!QueueCellRulesAllow( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath, Objects.FindAt( x, y ) != null && QueueGivesWay( x, y ) )
+		!QueueCellRulesAllow( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath, OwnerPriorityAt( x, y ) )
 		|| (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
 		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true)
@@ -1510,10 +1514,10 @@ public partial class Level
 
 	/// <summary>The host queue admission's terrain, ownership and cell-validator rules; object and reservation exclusions stay with the caller.</summary>
 	// [BIN:TPW-EXE:0x00535670 queue cell] the validator refuses hoarding posts and their extensions, track corners and junctions and the coaster marker; its final path case returns 8 before testing NoModify
-	internal static bool QueueCellRulesAllow( IParkGrid grid, ParkCellMap? cells, int x, int y, bool terminalPath = false, bool givesWay = false ) =>
+	internal static bool QueueCellRulesAllow( IParkGrid grid, ParkCellMap? cells, int x, int y, bool terminalPath = false, int? ownerPriority = null ) =>
 		QueueTerrainAllows( grid, cells, x, y, terminalPath )
 		&& (cells == null || !cells.InBounds( x, y ) || (!cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned )
-			&& (cells.RawTypeAt( x, y ) == (byte)ParkCellType.Queue || !QueueCellValidator.Refuses( cells, 3, x, y, givesWay, lastCell: terminalPath ))));
+			&& (cells.RawTypeAt( x, y ) == (byte)ParkCellType.Queue || !QueueCellValidator.Refuses( cells, 3, x, y, ownerPriority, lastCell: terminalPath ))));
 
 	/// <summary>The terrain rule for a queue cell; its path cells (the save's and the map start's) are the live cell map's to judge, as for objects.</summary>
 	internal static bool QueueTerrainAllows( IParkGrid grid, ParkCellMap? cells, int x, int y, bool terminalPath = false ) => grid.CheckTerrain( x, y ) switch
@@ -1523,6 +1527,9 @@ public partial class Level
 			|| (terminalPath && cells.InBounds( x, y ) && cells.RawTypeAt( x, y ) == (byte)ParkCellType.Path)),
 		_ => false
 	};
+
+	/// <summary>The overwrite priority of the placed object that owns an object cell (the class-3 thing the validator finds on its owner word's cell, <c>Info.OverwritePriority</c>), or null when no object stands there.</summary>
+	private int? OwnerPriorityAt( int x, int y ) => Objects.FindAt( x, y )?.Entry.OverwritePriority;
 
 	/// <summary>An object a queue cell may cover and demolish: its overwrite priority is below the queue tool's (tp.exe <c>0x818C10</c> = 3).</summary>
 	private bool QueueGivesWay( int x, int y ) => Objects.GivesWay( x, y, ParkObjects.QueueOverwritePriority );

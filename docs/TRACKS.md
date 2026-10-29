@@ -19,7 +19,7 @@ Code: `source/OpenTPW/World/Tracks/`, the track layer in `ParkCellMap`, the tool
   chosen, and the controller rebuilds its sections, collision objects and buoys. A valid circuit ends the tool and starts the queue tool.
 - The ride's own `Wateride.RSE` drives a `BumpController`: it waits for a valid track (`BUMP 5`), opens (`BUMP 7`), takes guests (`BUMP 1`),
   launches boats (`BUMP 4`) and hands guests back (`BUMP 2`). Boats run the traced integer physics around the loop and unload at the station.
-- Pieces are drawn from the ride's `wr_trck*.md2` meshes, boats from the supplemental mesh `wr_ring.md2`; rider k of a boat hangs its head from the boat's head dummy k (1 to 5, `0x549C60`, TRACK-026), as a kart's riders do.
+- Pieces are drawn from the ride's `wr_trck*.md2` meshes, boats from the supplemental mesh `wr_ring.md2`; rider k of a boat hangs its head from the boat's head dummy k (1 to 5, `0x549C60`, the joining list's order: the newest joiner is rider 1; TRACK-026 retired), as a kart's riders do. A guest on the joining list (BUMP 1, `0x54AA80`) has no head until the vehicle takes the list.
 - The cells, the controller and its boats are saved in the park-resume envelope (optional `Tracks` part) and restored exactly.
 - Jumps, tunnels and the Space Racers Teleport ("Add-ons"): a kart or water ride's upgrade list offers its researched add-ons, the build tool puts one on the
   ride's straight track in place of its pieces, and the vehicles drive over or through it (the Teleport hides them between its two gates).
@@ -460,9 +460,12 @@ captures a ride with an add-on through `--debug-kart-track` or `--debug-water-tr
   the surface records of the kart add-ons, the terrain mode of the water tunnels. `TrackRenderer.ObjectSurfaceAt`.
 - **Window** (`0x486920`): the placement links an add-on to the clicked tile's ride (thing +0x30, `0x52A023`), and a click on the add-on opens that ride's window; the
   window code's walks over the objects of a type skip add-ons (`0x4E2710`), so the window's arrows do too. `Level.WindowTarget`.
-- **Removal**: an add-on is removed as any object; the demolition `0x527EE0` clears the flag under it but makes no pieces and walks nothing (the pieces come back with the
-  circuit's next walk, until then the sections keep the add-on's kind). `[EXT:addon-sale-walk]`: OpenTPW clears the flag and walks the circuit at once, as after a placement
-  (the walk ends the vehicles' runs and opens a valid ride), because a save of the stale sections could not be restored: the restore walks the cells.
+- **Removal** (October 28, 2026, ORACLE.md X37): an add-on is removed as any object, by the demolition `0x527EE0` (its callers all pass 0 for the third argument except the tile clear's own,
+  `0x53B703`), whose pass 2 runs the record clear `0x53B280(0, 0, 1)` on the second layer's record under every cell of the add-on's shape: **the tile the add-on stands on goes with it**, with the
+  refund of the track cell cost and the arms of the tiles beside it, unless it is the track tool's exit or entry tile (`0x7639E0/E4`, `0x7639E8/EC`; OpenTPW takes the ride's own). The add-on that a
+  cleared tile takes (`0x53B6E5` calls the demolition with 1) only loses the flag 0x10 of the records. The demolition makes no pieces and walks nothing (the pieces come back with the
+  circuit's next walk, until then the sections keep the add-on's kind). `[EXT:addon-sale-walk]`: OpenTPW walks the circuit at once, as after a placement (the walk ends the vehicles' runs and
+  opens a valid ride; after a sale the circuit is open, the tile being gone), because a save of the stale sections could not be restored: the restore walks the cells.
 
 Not traced: whether a ride's demolition takes the add-ons on its track with it (OpenTPW leaves them standing, without a window), and the Extra Tube's window (the
 dispatcher opens `0x4B6AE0` for an add-on of type 2; OpenTPW shows the ride window).
@@ -561,7 +564,7 @@ what `0x51C270` returns besides the handle is not read); OpenTPW keeps the voice
 four-probe height, pitch and roll over the sampled pieces ("Vehicle height").
 Space and fantasy karts hover 1.6 units above the front/back mean with a sine bob (±0.43 units, period 512/6 ticks), have no roll of their own, bank into turns
 (`roll += yaw / 13 · π/2` with no clamp, `[TPW-EXE:0x5469C3]`; TRACK-024 retired. The original's roll is the negative of this pose's slope roll with the bank added in its own sign, so the
-bank's sign relative to the slope is the original's and the absolute roll sign is a rendering convention, `[EXT:kart-roll-convention]`) and stand on a `gk_shadow` instance on the four-probe mean. The riders' heads are `RideHeadRenderer` sources at the kart's head dummies (TRACK-026).
+bank's sign relative to the slope is the original's and the absolute roll sign is a rendering convention, `[EXT:kart-roll-convention]`) and stand on a `gk_shadow` instance on the four-probe mean. The riders' heads are `RideHeadRenderer` sources at the kart's head dummies (`0x549C60`).
 `--debug-kart-track` (Debug builds) places Dino Karts with a circuit, three karts and a long race for captures.
 
 ### Saves

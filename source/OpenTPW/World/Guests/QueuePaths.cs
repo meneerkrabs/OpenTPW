@@ -56,7 +56,7 @@ public static class QueuePaths
 		// CanChangeCellType allows a queue over an empty cell (and over a path except on a line's last cell); this per-cell route also refuses path cells, where 0x535670 replaces a path cell unless it is NoModify; the placed rides' lines run through QueueSegmentReducer, which replaces them.
 		// [BIN:TPW-EXE:0x535D66 overwrite priority] the queue tool's 0x818C10 is 3: an object cell whose owner's priority is below it is allowed (features of priority 0 or 1)
 		var covers = givesWay?.Invoke( x, y ) == true;
-		if ( (!covers && (grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.RawTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )))
+		if ( (!covers && ((ParkCellType)grid.Cells.PrimaryTypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.PrimaryTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )))
 			|| grid.IsWalkable( x, y ) || isBlocked?.Invoke( x, y ) == true || pending.Contains( (x, y) ) )
 			return QueueBuildResult.Blocked;
 		// [BIN:TPW-EXE:0x00535670 queue cell validator] the validator tests the cell alone: it asks that the next cell of a line touches the previous one only in the line walk (0x536100), never against the ride's back cell, so a queue cell may stand free (an orphan, owned by the ride through its owner word but in no chain)

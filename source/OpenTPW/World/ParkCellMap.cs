@@ -51,6 +51,11 @@ public static class ParkCellTypes
 	// [BIN:TPW-EXE:0x0053AD30 track cell] true for the cell types 0xB, 0xD, 0x10, 0x12 and 0x19
 	public static bool IsTrackCell( byte type ) => type is TrackCellTypes.KartOrigin or TrackCellTypes.KartStart or TrackCellTypes.WaterOrigin or TrackCellTypes.WaterStart or Hoarding;
 
+	/// <summary>
+	/// Whether a type byte is one OpenTPW shows for a track tile of the second layer while the cell's own type is empty (<see cref="ParkCellMap.PrimaryTypeAt"/>): the kart and water origins, stations and extensions and the water table's second type.
+	/// </summary>
+	public static bool IsTrackShown( byte type ) => type is TrackCellTypes.KartOrigin or TrackCellTypes.Extension or TrackCellTypes.KartStart or TrackCellTypes.WaterOrigin or 0x11 or TrackCellTypes.WaterStart or TrackCellTypes.WaterAlternate;
+
 	/// <summary>The types of a track tile's extension cells, whose head the cell lookups follow through the owner word: <c>0x53AD90</c>.</summary>
 	// [BIN:TPW-EXE:0x0053AD90 track extension] true for the cell types 0xC and 0x11
 	public static bool IsTrackExtension( byte type ) => type is TrackCellTypes.Extension or 0x11;
@@ -460,6 +465,9 @@ public sealed partial class ParkCellMap
 				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false, effects );
 				SetType( x, y, ParkCellType.Empty );
 			}
+			// [BIN:TPW-EXE:0x00528A70 station under its footprint] the placement stamps the footprint's first-layer types (0x00532FC0 with the type, 4 for the shape's '*') before the station line and the exit and entry tiles are laid on the second layer (0x00525432..0x0052577C), which write no cell type; the level lays the station tiles first, so the type the footprint stamps goes under a station tile as its base type (oracle X38: a kart or water ride's two station tiles cover eight of its footprint cells, each type 4 beneath a structure record 13 or 12)
+			if ( Tracks.Get( x, y ) is { IsEmpty: false } tile && RawTypeAt( x, y ) == tile.Type && tile.BaseType != type && IsStationTile( tile ) )
+				Tracks.Set( x, y, tile with { BaseType = type } );
 			var fresh = RawTypeAt( x, y ) == 0;
 			if ( fresh )
 				SetType( x, y, type );
@@ -537,8 +545,11 @@ public sealed partial class ParkCellMap
 	// [BIN:TPW-EXE:0x00527EE0 pass 1] for every entrance (9) and exit (10) cell of the mask the cell in front (0x4D97E0 along the opposite of the entrance's queue link +0xD, or along the exit's) is looked at: a path cell with flag 0x20 that fewer than two entrance or exit cells (type 9 or 10, any owner) link to, and whose MAP byte +0x26 has not bit 8 (an initial path cell), loses the flag 0x20
 	// [BIN:TPW-EXE:0x00527EE0 pass 2] for every mask cell inside the map: 0x53A530(0x20), the cell remover 0x5367A0(0, 0) and the structure clear 0x53B280; the oracle ran them on every type (docs/reverse/ORACLE.md, X36)
 	// [BIN:TPW-EXE:0x005367A0 cell remover] types 1 and 10 unlink all eight link bits, 3 and 9 the four cardinal ones (each neighbour loses the opposite bit and is refreshed; with the forced flag 0x81D7A8 clear), then every removed type 1, 3, 4, 9, 10 and 0x15 zeroes the links +0xC, the queue link +0xD, the owner +0x10, the whole flag word +0xE and the type +8 (0x5346D0(0)); types 4 and 0x15 leave the placement counter +0x20, 1, 3, 9 and 10 write it; a type-3 cell credits the queue cell's refund when its owner cell is not empty (0x4D0190), and a path cell removed beside an entrance with an owner runs that ride's re-evaluation 0x4DE1F0 (0x53694B); the other types (0, 2, 5..8, 0xB..0x14, 7, 0x1E ...) write nothing
-	// [APPROX:ECON-050] the station and track tiles under the mask go through the ride's own demolition rather than 0x53B280 itself, and the queue is cleared by the owner scan and the ride's chain rather than the corner stack replay 0x530120 (the register)
-	public void DemolishFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint, Action<ushort>? queueCellRemoved = null )
+	// [BIN:TPW-EXE:0x0053B280 record clear] the record under a mask cell is cleared by the record clear with the forced arguments (0, 0, 1) unless the demolition is the add-on's own (clearRecord, TrackEditor.ClearUnderDemolition; ORACLE.md X37)
+	// [APPROX:ECON-050] the queue is cleared by the owner scan and the ride's chain rather than the corner stack replay 0x530120, a map without a level has no ride whose track editor takes the record clears, and the track tool's exit and entry tiles that the clear spares (0x7639E0/E4, 0x7639E8/EC) are the ride's own (the register)
+	/// <param name="clearRecord">The record clear of pass 2 (<c>0x53B280(0, 0, 1)</c>) on the second layer's record under a mask cell that holds one (the level: <see cref="TrackEditor.ClearUnderDemolition"/> of the ride the tile belongs to); null leaves the records as they are.</param>
+	/// <param name="moved">The demolition the clear of a tile starts for the add-on object standing on it (<c>0x527EE0</c>'s third argument, 1 only from <c>0x53B703</c>): the records keep their tiles and lose the flag 0x10 alone.</param>
+	public void DemolishFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint, Action<ushort>? queueCellRemoved = null, Func<int, int, bool>? clearRecord = null, bool moved = false )
 	{
 		ArgumentNullException.ThrowIfNull( footprint );
 		var mask = footprint.Where( cell => FootprintType( cell.Cell.CellType ) != 0 && InBounds( cell.X, cell.Y ) ).ToList();
@@ -567,27 +578,48 @@ public sealed partial class ParkCellMap
 				SetFlags( fx, fy, FlagsAt( fx, fy ) & ~ParkCellFlags.NoModify );
 		}
 		// pass 2: every cell of the mask
+		var records = new List<(int X, int Y, bool OnTrack)>();
 		foreach ( var (x, y, cell) in mask )
 		{
 			var addOn = cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash;
 			var onTrack = addOn && (TrackCellTypes.IsWalkable( RawTypeAt( x, y ) ) || RawTypeAt( x, y ) == TrackCellTypes.Extension);
 			if ( onTrack )
 			{
-				SetFlags( x, y, FlagsAt( x, y ) & ~ParkCellFlags.AddOn );
-				if ( Tracks.Get( x, y ) is { Type: not 0 } track && (track.Flags & TrackCell.FlagAddOn) != 0 )
-					Tracks.Set( x, y, track with { Flags = (byte)(track.Flags & ~TrackCell.FlagAddOn) } );
-				continue;
+				// the add-on's cell is a type-4 cell of the original, which the remover empties: its flag word and owner go, the type byte keeps showing the tile
+				SetFlags( x, y, ParkCellFlags.None );
+				SetOwner( x, y, 0 );
 			}
-			if ( FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) )
-				SetFlags( x, y, FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
-			RemoveCell( x, y, queueCellRemoved );
+			else
+			{
+				if ( FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) )
+					SetFlags( x, y, FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
+				RemoveCell( x, y, queueCellRemoved );
+			}
+			records.Add( (x, y, onTrack) );
+		}
+		// the records, in the mask's order: the cells above are done first because a record clear that empties a tile also empties the type byte that showed it on the other three cells
+		foreach ( var (x, y, onTrack) in records )
+		{
+			if ( Tracks.Get( x, y ) is not { Type: not 0 } track )
+				continue;
+			if ( moved )
+			{
+				// the flag 0x10 of the record alone (0x53A530(0x10) at 0x52851E)
+				if ( (track.Flags & TrackCell.FlagAddOn) != 0 )
+					Tracks.Set( x, y, track with { Flags = (byte)(track.Flags & ~TrackCell.FlagAddOn) } );
+			}
+			else if ( clearRecord != null )
+				clearRecord( x, y );
+			else if ( onTrack && (track.Flags & TrackCell.FlagAddOn) != 0 )
+				Tracks.Set( x, y, track with { Flags = (byte)(track.Flags & ~TrackCell.FlagAddOn) } );
 		}
 	}
 
 	/// <summary>The cell remover <c>0x005367A0(0, 0)</c> on one cell (see <see cref="DemolishFootprint"/>); the flag 0x20 is already off.</summary>
 	private void RemoveCell( int x, int y, Action<ushort>? queueCellRemoved )
 	{
-		var type = RawTypeAt( x, y );
+		// the cell's own type: a track tile that only shows in the type byte is no cell type (the remover 0x5367A0 reads the cell, never the record)
+		var type = PrimaryTypeAt( x, y );
 		switch ( type )
 		{
 			case (byte)ParkCellType.Path or ParkCellTypes.Exit:
@@ -647,6 +679,17 @@ public sealed partial class ParkCellMap
 		? ParkCellTypes.Object
 		: (byte)Math.Clamp( shapeType, 0, 255 );
 
+	/// <summary>Whether a track cell belongs to a ride's station: a station origin (type 13 or 18) or an extension of one.</summary>
+	private bool IsStationTile( TrackCell tile )
+	{
+		if ( TrackCellTypes.IsStation( tile.Type ) )
+			return true;
+		if ( tile.Type != TrackCellTypes.Extension || tile.Parent < 0 )
+			return false;
+		var (px, py) = Tracks.CellOf( tile.Parent );
+		return TrackCellTypes.IsStation( Tracks.Get( px, py ).Type );
+	}
+
 	private void SetPath( int x, int y, byte cellLinks )
 	{
 		SetType( x, y, ParkCellType.Path );
@@ -678,6 +721,21 @@ public sealed partial class ParkCellMap
 	/// <summary>The original type byte (map cell <c>+8</c>); 0 outside the map.</summary>
 	public byte RawTypeAt( int x, int y ) => InBounds( x, y ) ? types[y * Width + x] : (byte)0;
 	public ParkCellType TypeAt( int x, int y ) => (ParkCellType)RawTypeAt( x, y );
+
+	/// <summary>
+	/// The type of the cell's own (map) layer: what the type byte holds, except where it only shows a track tile of the second layer (<see cref="Tracks"/>), which the original keeps apart from the cell
+	/// (the cell's type stays what the ground was, 0 on plain ground, a station's overwritten base type). A path or queue cell laid over a straight or stub track tile is the cell's type and the tile lies beneath it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D0AF0 structure records] a cell's structure record is not part of the cell: the 0x28-byte records of the second layer (game +0x10FFD8) are an array of their own, and the track type op 0x538FC0 writes the type of the record and never the cell's (0x539017..0x53908C); the cell validator 0x535670 reads both (the cell's +8 and the record's type, with an extension followed to its parent), so a path or queue cell can lie over a straight or stub tile
+	// [DATA:OpenTPW type byte] OpenTPW's type byte shows the tile's type while the cell is otherwise empty, so every reader of "not 0" still sees an occupied cell; a write of a path or queue type replaces that view and clearing the cell restores it
+	public byte PrimaryTypeAt( int x, int y )
+	{
+		var raw = RawTypeAt( x, y );
+		if ( raw == 0 || Tracks.Count == 0 )
+			return raw;
+		var track = Tracks.Get( x, y );
+		return !track.IsEmpty && raw == track.Type ? track.BaseType : raw;
+	}
 	public ParkCellFlags FlagsAt( int x, int y ) => InBounds( x, y ) ? (ParkCellFlags)flags[y * Width + x] : ParkCellFlags.None;
 	/// <summary>Extra placements of the same type (map cell <c>+32</c>).</summary>
 	public short PlacementCountAt( int x, int y ) => InBounds( x, y ) ? placements[y * Width + x] : (short)0;
@@ -730,13 +788,18 @@ public sealed partial class ParkCellMap
 			PoolWrites++;
 		// tp.exe's cell setter 0x5346D0 returns early for the same non-zero type only: clearing always stamps.
 		var changed = types[index] != type || type == 0;
+		var cleared = type == 0;
+		var wasPathOrQueue = types[index] is (byte)ParkCellType.Path or (byte)ParkCellType.Queue;
+		// clearing the cell's own layer leaves the type byte showing the track tile that lies beneath (PrimaryTypeAt)
+		if ( cleared && Tracks.Count != 0 && Tracks.Get( x, y ) is { IsEmpty: false } beneath )
+			type = beneath.Type;
 		typeCounts[types[index]]--;
 		typeCounts[type]++;
 		types[index] = type;
 		queuePassCells.Remove( index );
 		if ( !ParkCellTypes.CarriesQueueLink( type ) )
 			queueLinks[index] = 0;
-		if ( type == 0 )
+		if ( cleared )
 		{
 			links[index] = 0;
 			placements[index] = 0;
@@ -746,9 +809,28 @@ public sealed partial class ParkCellMap
 		if ( changed )
 			blockStamps[y / StampBlock * BlocksX + x / StampBlock] = ++StampCounter;
 		NoteChange( x, y, index, before );
+		// a path or queue cell laid over a track tile, or cleared from it, changes the tile's bridge test (the original's ops 0x85 and 0x86 re-run it, 0x538A92)
+		if ( (wasPathOrQueue || type is (byte)ParkCellType.Path or (byte)ParkCellType.Queue) && Tracks.Count != 0 && !Tracks.Get( x, y ).IsEmpty )
+			TrackBuilder.RefreshUnder( this, x, y );
 	}
 
 	public void SetType( int x, int y, ParkCellType type ) => SetType( x, y, (byte)type );
+
+	/// <summary>
+	/// Removes the track tile record of (<paramref name="x"/>, <paramref name="y"/>) from the second layer and empties the type byte where it only showed the tile; a path or queue cell that lies over the tile stays
+	/// (<see cref="PrimaryTypeAt"/>), as the original's record clear 0x5367A0 touches the record and never the cell. False when the cell held no tile.
+	/// </summary>
+	internal bool ClearTrackRecord( int x, int y )
+	{
+		var track = Tracks.Get( x, y );
+		if ( track.IsEmpty )
+			return false;
+		var shown = RawTypeAt( x, y ) == track.Type;
+		Tracks.Clear( x, y );
+		if ( shown )
+			SetType( x, y, ParkCellType.Empty );
+		return true;
+	}
 
 	public void SetLinks( int x, int y, byte value )
 	{

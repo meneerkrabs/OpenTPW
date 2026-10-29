@@ -641,8 +641,15 @@ public class Md2CorpusTests
 		foreach ( var (tick, y, w) in new[] { (50f, 0.9555728f, -0.2947551f), (88.5f, -0.1675061f, -0.9858710f), (181f, 0.5440980f, 0.8390217f), (300f, 0.7829279f, -0.6221125f) } )
 		{
 			var rotation = cog.SampleRotation( tick )!.Value;
-			Assert.AreEqual( y, rotation.Y, 1e-4, $"tick {tick}" );
-			Assert.AreEqual( w, rotation.W, 1e-4, $"tick {tick}" );
+			// The decoder's values use exact sines; the clip sampler blends with the table sines of 0x4742A0 (ModelRotationBlend), which differ by up to a few 1e-4.
+			Assert.AreEqual( y, rotation.Y, 1e-3, $"tick {tick}" );
+			Assert.AreEqual( w, rotation.W, 1e-3, $"tick {tick}" );
+		}
+		// At a key tick the fraction is 0 and the blend returns the key itself: no table-sine error, so these hold to 1e-4.
+		foreach ( var key in cog.Rotations.Take( cog.Rotations.Count - 1 ) )
+		{
+			var atKey = cog.SampleRotation( key.Time )!.Value;
+			Assert.AreEqual( 1f, MathF.Abs( System.Numerics.Quaternion.Dot( System.Numerics.Quaternion.Normalize( key.Rotation ), atKey ) ), 1e-4, $"key at tick {key.Time}" );
 		}
 		Assert.AreEqual( -clip.Tracks[1].SampleRotation( 50 )!.Value.Y, clip.Tracks[2].SampleRotation( 50 )!.Value.Y, 1e-6 );
 

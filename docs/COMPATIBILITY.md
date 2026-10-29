@@ -330,8 +330,35 @@ alpha-reference index of devices that fail the 0x567270 probe are not reproduced
 
 In tp.exe the terrain instance plays its `base` clip every rendered frame, in the lobby and in a park: the lobby's `Basem1.MD2` scrolls the two sea meshes one texture repeat per 200 ticks, and the Jungle
 terrain's `basem.MD2` (eleven UV tracks, 100 ticks, +1 U per cycle) scrolls the river and the waterfall (a render callback, `0x54e2b0` → `0x44e510`, runs it in a park). The clock is the game's scaled clock, so
-the water stands still while the park is paused and follows the game speed. OpenTPW plays both on the scene clock ([MD2-MODELS.md](MD2-MODELS.md), "Terrain clips"; issue 829). The harbour sea is static in
-the data and the other two park themes have no terrain clip.
+the water stands still while the park is paused and follows the game speed. OpenTPW plays both on the scene clock ([MD2-MODELS.md](MD2-MODELS.md), "Terrain clips"; issue 829). The terrain's own harbour sea
+(`Line01`, `jri_lak2`, y -11 to -10) is static in the data, and the other two park themes have no terrain clip; the harbour's waves are
+drawn by code (below).
+
+## Harbour waves and flags
+
+Besides the blueprint markers, tp.exe builds two dynamic meshes every park frame (`0x53C3F0`, called from the render callback
+`0x54E2B0`; `HarbourDynamics`), in every theme:
+
+- **The WaterMesh.** A grid of 16 x 19 points 20 units apart (`0x53D380`) rolls a travelling cosine 1.7 high: angle
+  `x k cos 10° - z k sin 10° - phase / 2` with `k = 2π / 3`, sines from the 4096-entry table, normal `(sin, 1, sin)` normalised. Two
+  patches of it (`0x53CAB0`: 10 x 11 cells from the grid's corner and 4 x 6 from column 10, 134 faces) start at the level's
+  `WaterStartPos` (380, -5, -180 in every `Standard.sam`), above the static sea. Each face takes one of the surf textures `gby_sur1` to
+  `gby_sur3` (translucent) from a table of 110 entries that the mesh creation (`0x53BFE0`) fills with `rand() % 3`; each patch reads
+  the table from its start. The table comes from the game thread's C runtime `rand()`, which start-up seeds with `GetTickCount` (`0x54DDE3`),
+  so every run draws a different sea; OpenTPW keeps one such stream (`CrtProcessRandom`), seeded the same way when the game starts. The original's
+  other `rand()` callers draw from that stream before a park starts; OpenTPW's stand-ins for them keep streams of their own, so the
+  number of draws before the table is not matched (it depends on the clock-seeded run anyway).
+- **The FlagsMesh.** Eight cloth flags hang from the terrain's `flag_pole` meshes by the entrance (the table `0x763CF4`: x 411.25,
+  451.25, 511.25, 551.25 at z 38.75 and 50.75, top y 22). A 7 x 5 cloth grid 1.8 apart (`0x53D570`) hangs from the pole and ripples
+  out from it, more toward the free end, which also sags; each flag (`0x53CDA0`) is 6 x 4 of its cells, each a front face (normals
+  reversed) and a back face, turned about the pole by the wind's direction. The flags alternate the two halves of `gte_lgo1` (the
+  Theme Park World logo; slots 18 and 19).
+- **The phases.** Unless the game is paused, both phases gain 0.4 x the clock's time scale per frame (`0x53C776`); OpenTPW steps them
+  once per 1/30 s of real time, as it steps the blueprint ripple (`[EXT:blueprint-phase-step]`).
+- **The wind.** The weather thing starts with direction 90° and strength 0.5 (`0x511FDF`); every applied change (`0x512F00`) sets the
+  strength to `(100 - quality) / 100` and turns the direction by `rand() % 90 - 45` degrees, kept in 0 to 360. OpenTPW draws that turn from
+  a stream of the wind's own beside the weather's (`[EXT:weather-stream]`), so the weather's rolls are unchanged, and saves the
+  direction, the strength and the stream with the weather (a save from before them starts from 90° and 0.5).
 
 ## Tests
 

@@ -1719,9 +1719,10 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D0AF0 structure records] a cell's structure record is not part of the cell: the records (0x28 bytes, the type in +8, 0x0B to 0x19) are an array of their own indexed by the cell id, 0x004D0AF0 (the array at game +0x10FFD8), and an extension record (types 0x0C and 0x11) names its parent through +0x10 (0x0053B280, 0x005363F0); the cell keeps its own type in +8 of its 0x44-byte record (0x536300..0x5363E0), whose only immediate writers in the map code are the init 0x00536490 (7, 2, 30, 5, 1, 0)
 	// [BIN:TPW-EXE:0x0053AD90 counted structures] 0x005363F0 counts 50 for the record of a cell when its type is 0x0B, 0x0D, 0x10, 0x12 or 0x19, or when it is an extension (0x0C, 0x11) of such a record: the fence walk types the three cells beside every post (east, south, south-east) as extensions of it (0x52BA50), so a hoarding post counts its whole 2 x 2 block, each cell judged by its own flag 0x40
-	// [APPROX:ECON-026] a map without the level's land counts every cell over the terrain as owned (EXT:no-land-maps), and a kart station's second-layer tiles are not read against its object footprint; the rest is the original's rule (the register)
+	// [EXT:no-land-maps] a map without the level's land counts every cell over the terrain as owned: the rest is the original's rule (ORACLE.md X35 and X38: the cell points of the saves' own cells, a station's footprint cells and an add-on's cells equal the oracle's net worth)
+	// [BIN:TPW-EXE:0x00528A70 station under its footprint] a kart or water ride's two station tiles lie on eight of its footprint cells (rows 1 and 2 across the heading): the commit stamped those cells type 4 before the station line wrote the second layer, so they count 0 + 50, not 2 + 50 (ParkCellMap.WriteFootprint keeps the stamped type as the tile's base type)
 	// [BIN:TPW-EXE:0x004C7DB0 net worth] the cell's type is its own map type: under a track tile the map keeps what the ground was (0 on plain ground, the base type a station overwrote), which is what this reads
-	private static (byte Type, bool Structure) CellForValue( ParkCellMap cells, int x, int y )
+	internal static (byte Type, bool Structure) CellForValue( ParkCellMap cells, int x, int y )
 	{
 		var track = cells.Tracks.Get( x, y );
 		// [BIN:TPW-EXE:0x005323F0 park fence] the fence setup lays the level's Hoardings.sam clicks with the track tool in mode 0x19 (0x00524960), each post a structure record of type 25, which the net worth
@@ -1735,6 +1736,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 			record = cells.Tracks.Get( px, py ).Type;
 		}
 		var type = cells.RawTypeAt( x, y ) == track.Type ? track.BaseType : cells.RawTypeAt( x, y );
+		// [BIN:TPW-EXE:0x00528A70 add-on over its tile] an add-on's commit stamps type 4 on the first-layer cell (0x00532FC0, '+' stored as 4, 0x005290C7..0x005290EE) under the ride's straight tile, which stays on the second layer: the four cells of a placed add-on are type 4 (0 points) beneath their structure records, in the x86 oracle (ORACLE.md X38)
+		if ( (track.Flags & TrackCell.FlagAddOn) != 0 )
+			type = ParkCellTypes.Object;
 		return (type, ParkValueRules.IsCountedStructure( record ));
 	}
 

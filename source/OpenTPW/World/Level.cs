@@ -60,6 +60,8 @@ public partial class Level : IDisposable
 	public OriginalTerrain? OriginalTerrain { get; private set; }
 	/// <summary>The build tools' blueprint markers (original levels only).</summary>
 	public BlueprintMarkers? Blueprint { get; private set; }
+	/// <summary>The harbour's waves and flags (<see cref="HarbourDynamics"/>), or null for a park without them (Theme Park Inc, a sandbox, a level without <c>WaterStartPos</c>).</summary>
+	public HarbourDynamics? Harbour { get; private set; }
 	/// <summary>Park management simulation (money, clock, staff, research); original levels only for now.</summary>
 	public ParkEconomyRuntime? Park { get; private set; }
 	private ParkLitterEffects? litterEffects;
@@ -540,6 +542,9 @@ public partial class Level : IDisposable
 			yield return 0.35f;
 			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield, BlueprintHeightOffset );
 			Blueprint.WarmUp();
+			// [BIN:TPW-EXE:0x0053BFE0 dynamic meshes] the park's start creates the BlueprintMesh, the WaterMesh and the FlagsMesh together; Theme Park Inc's own build is not read here
+			if ( GameEditions.Current == GameEdition.ThemeParkWorld && HarbourDynamics.LoadWaterStart( OriginalPark.LevelName ) is { } waterStart )
+				Harbour = new HarbourDynamics( OriginalPark.Heightfield, waterStart, OriginalPark.LevelName );
 			yield return 0.35f;
 			foreach ( var _ in SetupParkNameSteps() )
 				yield return 0.35f;

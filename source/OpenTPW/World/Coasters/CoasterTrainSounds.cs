@@ -79,7 +79,6 @@ internal sealed class CoasterTrainSounds
 		public Vector3 SoundCar, CameraCar;
 		/// <summary>Train +0x6C (the one-shot scream) and +0x70 (the held scream), and the train flag 0x100 the held scream sets.</summary>
 		public ICoasterScreamVoice? Short, Held;
-		public bool HeldFlag;
 	}
 
 	private readonly CoasterRide ride;
@@ -269,7 +268,7 @@ internal sealed class CoasterTrainSounds
 	/// </summary>
 	// [BIN:TPW-EXE:0x4393E0 train scream] flag 0x2: with train flag 0x100 set a live +0x6C is moved by 0x5512D0 (not while [0x785A2C] is set, 0x43942F; a flag-less sample with a live handle moves it too, 0x43945C), a missing one is started by 0x551320(1, 100, 100, place) unless the train brakes (flag 0x10) or the ride is in mode 64 (ride +8 bit 0x40); without train flag 0x100 the start is also gated by [0x785A2C] == 0 (0x4394FE); flag 0x4 (not braking, not mode 64): a missing +0x70 is started by 0x551130(0, riders / 2 + 1, 75, 75, place) when [0x785A2C] == 0 (0x439544..0x439557) and train flag 0x100 is set; a live one is moved by 0x5512D0 and set to 75 / 75 by 0x551290 (0x43949F..0x4394AF); without the flag (or braking, or mode 64) a live +0x70 is stopped by 0x551300, cleared and the flag dropped (0x4394BE..0x4394DF)
 	// [BIN:TPW-EXE:0x785A2C layout replay] every sound call of the scream pass and of the loop setup is gated by [0x785A2C] (the layout-replay flag 0x404140 sets); no writer of it is modelled here, so it counts as clear
-	// [BIN:TPW-EXE:0x439670 scream teardown] the slot setup stops +0x70 (0x551300) and clears +0x6C and +0x70 without stopping the one-shot; the train flag 0x100 is kept apart here (presentation, not hashed) and starts clear with the slot's sounds
+	// [BIN:TPW-EXE:0x439670 scream teardown] the slot setup stops +0x70 (0x551300) and clears +0x6C and +0x70 without stopping the one-shot; the train flag 0x100 is kept apart here (presentation, not hashed) and, like the flags word of the slot, stays across a setup and is saved and restored with the train flags (0x4377F4, 0x4383DA)
 	private void ScreamTick( CoasterTrain train, Record record, Vector3 place )
 	{
 		var samples = ride.Samples;
@@ -280,7 +279,7 @@ internal sealed class CoasterTrainSounds
 		var shortScream = (flags & 2) != 0;
 		var heldScream = (flags & 4) != 0;
 		var allowed = !braking && !broken;
-		if ( record.HeldFlag )
+		if ( ride.TrainScreamFlag( train.Index ) )
 		{
 			if ( shortScream )
 			{
@@ -299,7 +298,7 @@ internal sealed class CoasterTrainSounds
 			}
 			record.Held?.Stop();
 			record.Held = null;
-			record.HeldFlag = false;
+			ride.StoreTrainScreamFlag( train.Index, false );
 			return;
 		}
 		if ( shortScream && allowed )
@@ -308,7 +307,7 @@ internal sealed class CoasterTrainSounds
 		{
 			if ( record.Held == null )
 				record.Held = startHeldScream?.Invoke( train.Riders / 2 + 1, place );
-			record.HeldFlag = true;
+			ride.StoreTrainScreamFlag( train.Index, true );
 		}
 	}
 

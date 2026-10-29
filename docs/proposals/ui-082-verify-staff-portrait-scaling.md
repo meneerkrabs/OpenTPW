@@ -67,15 +67,12 @@ reverses U. With A=256/B=64, origin and size use factors 1.2 and 4.8 respectivel
 
 ## Explicit residuals
 
-- The host returns frame zero immediately. A fresh native hire player starts
-  invisible and first emits on a scheduled FRAME instruction.
-- Host elapsed-time playback differs from the native strict due-time scheduler,
-  its sampled-time rebasing, pause behavior and long-frame handling.
-- Invalid selection clears the host key/frame. A native invalid applicant lookup
-  can retain the previous player. Initial default-selection/hover order also
-  remains qualified.
-- Host close/reopen can retain phase for an unchanged role/variant. Native close
-  and role reset invalidate the player and cached key.
+October 28 (round 10, package C): the hire figure now follows the native phases of `0x49BA00` and the close `0x49B7B4`. A new role or variant byte deletes the old
+figure and starts a new script whose first FRAME shows after the first due pass (`0x4758F0`: deadline = clock + 62; `0x475360`: strictly later), so no frame shows
+at the selection; an applicant the pool does not return (`0x507BD0`) leaves the figure that stands; the close deletes it and writes -1 to the cached pair, so a reopened window starts a
+new one. The employed tab (the host extension) keeps clearing its figure on an invalid selection.
+
+- Host elapsed-time playback differs from the native strict due-time scheduler on even substeps: the figure ticks once per renderer call (`SpritePlayer`), like the staff's body sprites (GUEST-016).
 - The hire script enables a global rotation path. The host still draws an
   unrotated quad; the global angle is not assumed to be zero.
 - Native control depth, screen depth adjustment and full occlusion are not

@@ -169,7 +169,11 @@ public sealed class StaffRenderer : Entity
 	/// The hire window's figure of a role and variant <paramref name="elapsed"/> seconds after it appeared (<see cref="StaffSpriteRules.Portrait"/>);
 	/// null when the role has no bank loaded.
 	/// </summary>
-	internal UI.Original.UiSpriteFrame? PortraitFrame( StaffType type, int variantKey, float elapsed )
+	internal UI.Original.UiSpriteFrame? PortraitFrame( StaffType type, int variantKey, float elapsed ) =>
+		PortraitFrameAtStep( type, variantKey, (int)MathF.Max( 0, elapsed * StaffSpriteRules.FramesPerSecond ) );
+
+	/// <summary>The hire window's figure at its <paramref name="steps"/>-th script frame (<see cref="StaffSpriteRules.PortraitAtStep"/>); null when the role has no bank loaded.</summary>
+	internal UI.Original.UiSpriteFrame? PortraitFrameAtStep( StaffType type, int variantKey, int steps )
 	{
 		var atlasIndex = sprites.AtlasFor( type, variantKey );
 		if ( deleted || atlasIndex < 0 || atlasIndex >= textures.Count )
@@ -177,7 +181,7 @@ public sealed class StaffRenderer : Entity
 		var atlas = sprites.Atlases[atlasIndex];
 		var animations = atlas.Animations.Animations;
 		var directions = StaffSpriteRules.PortraitSlot < animations.Count ? animations[StaffSpriteRules.PortraitSlot].Directions : 1;
-		var (slot, direction, mirror, step) = StaffSpriteRules.Portrait( elapsed, directions );
+		var (slot, direction, mirror, step) = StaffSpriteRules.PortraitAtStep( steps, directions );
 		var frame = atlas.Frames[atlas.GetFrame( slot, direction, step % atlas.FramesPerDirection( slot ) )];
 		return new UI.Original.UiSpriteFrame( textures[atlasIndex].NativeTexture, atlas.Width, atlas.Height, frame.X, frame.Y, frame.Width, frame.Height,
 			frame.OriginX, frame.OriginY, mirror, frame.ScaleX, frame.ScaleY );

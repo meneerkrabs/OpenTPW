@@ -1095,7 +1095,8 @@ public class CoasterTests
 	public void BezierChordAndKnotControlsMatchTheWitness()
 	{
 		var q = HermiteCoasterCurve.Bezier( new SVector3( 0, 0, 0 ), new SVector3( 10, 5, 0 ), new SVector3( 20, 5, 10 ), new SVector3( 30, 0, 10 ), 0.35f );
-		Assert.AreEqual( (0x41280000u, 0x405A6666u, 0x403451EBu), (Bits( q.X ), Bits( q.Y ), Bits( q.Z )) );
+		// the PC routine 0x43e1b0 evaluates the point in single steps (no fused operations); its z here is 0x403451EC in the x86 oracle (ORACLE.md X40), where the Mac's fused steps gave ...EB
+		Assert.AreEqual( (0x41280000u, 0x405A6666u, 0x403451ECu), (Bits( q.X ), Bits( q.Y ), Bits( q.Z )) );
 		q = HermiteCoasterCurve.Bezier( new SVector3( 1.5f, -2, 7 ), new SVector3( 4.25f, 3, 7.5f ), new SVector3( 9, 1, -3 ), new SVector3( 12, 0.5f, -6 ), 0.05f );
 		Assert.AreEqual( (0x3FF6A8F6u, 0xBFA69581u, 0x40DFD581u), (Bits( q.X ), Bits( q.Y ), Bits( q.Z )) );
 		Assert.AreEqual( 0x4249F353u, Bits( HermiteCoasterCurve.Chord( new SVector3( 0, 0, 0 ), new SVector3( 30, 10, 40 ) ) ), "height weighted 0.7" );

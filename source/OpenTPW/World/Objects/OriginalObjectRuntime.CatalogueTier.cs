@@ -18,7 +18,7 @@ public sealed partial class OriginalObjectRuntime
 	}
 
 	internal bool SupportsCatalogueTier => GameEditions.Current == GameEdition.ThemeParkWorld
-		&& Script != null && ObjectCatalog.Themes.Contains( Entry.Theme ) && Entry.Category == ObjectCategory.Ride && IsAttraction && Coaster == null;
+		&& Script != null && ObjectCatalog.Themes.Contains( Entry.Theme ) && Entry.Category == ObjectCategory.Ride && IsAttraction;
 
 	private bool CanConfigureCatalogue( out string reason )
 	{

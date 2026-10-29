@@ -44,6 +44,12 @@ class CoasterOracle:
             raise RuntimeError('needs OPENTPW_TPW_EXE')
         self.image = Image.load(path)
         self.sandbox = Sandbox(self.image, [(0x401000, 0x6F0000)], budget=budget)
+        # the CRT's math error path reads and writes the last error
+        for name, stub in (('kernel32.dll!GetLastError', lambda box: (0, 0)), ('kernel32.dll!SetLastError', lambda box: (0, 4)), ('kernel32.dll!TlsGetValue', lambda box: (box.alloc(0x1000), 4))):
+            try:
+                self.sandbox.stubs[self.image.import_trap(name)] = stub
+            except Exception:
+                pass
         # the PC sine table is built at run time by 0x4708D0(4096): run it once and keep the table's bytes (scale +0x7B095C, mask +0x7B0960, entries from +0x7B0968)
         sb = self.sandbox
         sb.reset()
@@ -481,6 +487,128 @@ class CoasterOracle:
         self.last_controls = [[tuple(sb.read(base + 0x58 * i + off + 4 * k, 'f') for k in range(3)) for off in (0x34, 0x4C)] for first, second, size in table_addresses for base in (first,) for i in range(size)]
         self.last_controls2 = [[tuple(sb.read(base + 0x58 * i + off + 4 * k, 'f') for k in range(3)) for off in (0x34, 0x4C)] for first, second, size in table_addresses for base in (second,) for i in range(size)]
         return samples, count, sb.read(controller + 0xA8, 'f'), coordinates, indexes, sb.read(controller + 0xA0, 'I')
+
+    # ------------------------------------------------------------------------------ the self-intersection pass
+    def prism(self, samples_a, samples_b, points, control_word=0xC7F, capture=()):
+        """0x43A2B0 on two links' segments: the pass runs at the thread's word with the rounding mode set to truncate (0xC7F, 0x439AC4). `samples_a/b` are (position, yaw, pitch, roll) of the
+        segment's two samples; `points` the collision profile. Returns (hit, poses A, poses B, the angle sums the face test compared (st0 at 0x43A8B3, in order))."""
+        box = {}
+
+        def setup(sb):
+            def write_samples(samples):
+                base = sb.alloc(0x38 * 2 + 8)
+                for i, (position, yaw, pitch, roll) in enumerate(samples):
+                    for k in range(3):
+                        sb.write(base + 0x38 * i + 4 + 4 * k, 'f', position[k])
+                    sb.write(base + 0x38 * i + 0x10, 'f', yaw)
+                    sb.write(base + 0x38 * i + 0x14, 'f', pitch)
+                    sb.write(base + 0x38 * i + 0x18, 'f', roll)
+                return base
+
+            array = sb.alloc(8 * len(points) + 8)
+            for i, (x, y) in enumerate(points):
+                sb.write(array + 8 * i, 'f', x)
+                sb.write(array + 8 * i + 4, 'f', y)
+            point_object = sb.alloc(0x20)
+            sb.write(point_object, 'I', array)
+            sb.write(point_object + 4, 'I', len(points))
+            sb.write(0x7922DC, 'I', point_object)
+            sb.write(0x792244, 'I', point_object)
+            sb.write(0x79223C, 'I', write_samples(samples_a))
+            sb.write(0x792240, 'I', write_samples(samples_b))
+
+        sb = self.prepare()
+        setup(sb)
+        sb.set_fpcw(control_word)
+        sums = []
+        self.captured = []
+
+        def on_code(uc, address, size, user):
+            if address in capture:
+                top = (sb.x87_state()['fpsw'] >> 11) & 7
+                mantissa, exponent = uc.reg_read(x86_const.UC_X86_REG_FP0 + top)
+                self.captured.append((address, mantissa, exponent))
+            if address in (0x43A8B3, 0x43AD2B):
+                top = (sb.x87_state()['fpsw'] >> 11) & 7
+                mantissa, exponent = uc.reg_read(x86_const.UC_X86_REG_FP0 + top)
+                sign = -1.0 if exponent & 0x8000 else 1.0
+                sums.append(float('nan') if (exponent & 0x7FFF) == 0x7FFF else (f32(sign * math.ldexp(mantissa, (exponent & 0x7FFF) - 16383 - 63)) if mantissa else 0.0))
+
+        import unicorn as unicorn_module
+        from unicorn import x86_const
+        handle = sb.uc.hook_add(unicorn_module.UC_HOOK_CODE, on_code, begin=0x43A600, end=0x43AD30)
+        try:
+            result = sb.call(0x43A2B0, (0, 0))
+        finally:
+            sb.uc.hook_del(handle)
+        count = len(points)
+        poses_a = [tuple(sb.read(0x7922F0 + 12 * i + 4 * k, 'f') for k in range(3)) for i in range(2 * count)]
+        poses_b = [tuple(sb.read(0x792248 + 12 * i + 4 * k, 'f') for k in range(3)) for i in range(2 * count)]
+        return (result.eax & 0xFF) != 0, poses_a, poses_b, sums
+
+    def link_test(self, samples, nodes, points, radius_values, cut_end=False, same_cell=(False, False), pylonless=(False, False, False, False), first_ordinal_zero=(False, False)):
+        """The whole link test 0x439C40(ctl, ctl, A, B, C, D) over a chain of four nodes A -> B -> C -> D laid on `samples` (position, yaw, pitch, roll per sample, stride 0x38); `nodes` are the
+        four nodes' sample indexes; `radius_values` the radius each node's pylon definition gives (None: no definition). The link boxes come from 0x439920, run first at the thread's word.
+        Returns the crossing lists of A and C (partner node ordinals), their counts, the controller's crossing count and the nodes' overflow flags."""
+        box = {}
+
+        def setup(sb):
+            definition = sb.alloc(0x400)
+            array = sb.alloc(8 * len(points) + 8)
+            for i, (x, y) in enumerate(points):
+                sb.write(array + 8 * i, 'f', x)
+                sb.write(array + 8 * i + 4, 'f', y)
+            sb.write(definition + 0x9C, 'I', array)
+            sb.write(definition + 0x9C + 4, 'I', len(points))
+            controller = sb.alloc(0x400)
+            sb.write(controller + 4, 'I', definition)
+            sample_array = sb.alloc(0x38 * len(samples) + 8)
+            for i, (position, yaw, pitch, roll) in enumerate(samples):
+                for k in range(3):
+                    sb.write(sample_array + 0x38 * i + 4 + 4 * k, 'f', position[k])
+                sb.write(sample_array + 0x38 * i + 0x10, 'f', yaw)
+                sb.write(sample_array + 0x38 * i + 0x14, 'f', pitch)
+                sb.write(sample_array + 0x38 * i + 0x18, 'f', roll)
+            sb.write(controller + 0x9C, 'I', sample_array)
+            sb.write(controller + 0xA0, 'I', len(samples))
+            shared_descriptor = sb.alloc(0x100)
+            addresses = []
+            for i, (index, radius) in enumerate(zip(nodes, radius_values)):
+                node = sb.alloc(0x200)
+                descriptor = sb.alloc(0x100)
+                sb.write(descriptor + 4, 'B', 1 if pylonless[i] else 0)
+                if radius is not None:
+                    pylon = sb.alloc(0x100)
+                    sb.write(pylon + 0x58, 'f', radius)
+                    sb.write(descriptor + 0x18, 'I', pylon)
+                sb.write(node + 0x100, 'I', descriptor)
+                sb.write(node + 0xFC, 'I', index)
+                sb.write(node, 'I', 0 if (i in (2,) and first_ordinal_zero[0]) or (i == 0 and first_ordinal_zero[1]) else i + 1)
+                sb.write(node + 8, 'I', 0x10000 if (cut_end and i == 2) else 0)
+                addresses.append(node)
+            # descriptors shared by nodes in one cell: B and C (same_cell[0]), A and D (same_cell[1])
+            if same_cell[0]:
+                sb.write(addresses[1] + 0x100, 'I', sb.read(addresses[2] + 0x100, 'I'))
+            if same_cell[1]:
+                sb.write(addresses[3] + 0x100, 'I', sb.read(addresses[0] + 0x100, 'I'))
+            for a, b in zip(addresses, addresses[1:]):
+                sb.write(a + 0x64, 'I', b)
+                sb.write(b + 0x68, 'I', a)
+            sb.write(controller + 0x54, 'I', addresses[0])
+            for global_, size in ((0x792238, 0x1C * len(samples)), (0x792230, 0x1C * len(samples)), (0x7922E8, 0x1000), (0x7922E4, 0x1000)):
+                sb.write(global_, 'I', sb.alloc(size + 0x40))
+            box.update(controller=controller, nodes=addresses)
+
+        sb = self.prepare()
+        setup(sb)
+        sb.call(0x439920, (box['controller'],))
+        sb.set_fpcw(0xC7F)
+        a, b, c, d = box['nodes']
+        sb.call(0x439C40, (box['controller'], box['controller'], a, b, c, d))
+        node_index = {address: i for i, address in enumerate(box['nodes'])}
+        def lst(address):
+            return [node_index.get(sb.read(address + 0xB4 + 4 * k, 'I'), -1) for k in range(sb.read(address + 0xB0, 'I'))]
+        return lst(a), lst(c), sb.read(box['controller'] + 0x140, 'I'), sb.read(a + 8, 'I'), sb.read(c + 8, 'I')
 
 
 def main() -> int:

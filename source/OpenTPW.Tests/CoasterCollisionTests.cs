@@ -131,8 +131,12 @@ public class CoasterCollisionTests
 		// Zero angles: the profile (x, y, 0) at the sample position.
 		var plain = CoasterCollision.Pose( CoasterCollision.DefaultPoints, new CoasterSample { Position = new SVector3( 1, 2, 3 ) }, new CoasterSample { Position = new SVector3( 1, 2, 6 ) } );
 		Assert.AreEqual( 10, plain.Length );
-		CollectionAssert.AreEqual( new[] { 5f, 10f, 3f }, plain[0], "the first point (4, 8) at the first sample" );
-		CollectionAssert.AreEqual( new[] { 5f, 10f, 6f }, plain[5], "and at the second sample" );
+		// The truncating table's cosine of zero is just under one, so the posed point sits a few ulps below the exact one (oracle-verified rows in CoasterX87Golden).
+		for ( var axis = 0; axis < 3; axis++ )
+		{
+			Assert.AreEqual( new[] { 5f, 10f, 3f }[axis], plain[0][axis], 1e-3f, "the first point (4, 8) at the first sample" );
+			Assert.AreEqual( new[] { 5f, 10f, 6f }[axis], plain[5][axis], 1e-3f, "and at the second sample" );
+		}
 		// A yaw of π/2 turns x into −z (x' = x·cos + z·sin, z' = z·cos − x·sin) with the table's truncated indices: sin = T[1024], cos = T[0]-ish.
 		var turned = CoasterCollision.Pose( CoasterCollision.DefaultPoints, new CoasterSample { Yaw = MathF.PI / 2 }, new CoasterSample { Yaw = MathF.PI / 2 } );
 		Assert.AreEqual( 0f, turned[0][0], 1e-2f );

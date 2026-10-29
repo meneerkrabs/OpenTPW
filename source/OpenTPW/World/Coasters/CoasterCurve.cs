@@ -517,8 +517,8 @@ public static class CoasterTrig
 	// [BIN:TPW-EXE:0x43c7d0 cos index] fld a; fsub [0x6fe040] (the single −π/2); fmul [0x7b095c]; fstp dword; fistp: the subtraction and the product each round to a single at the thread's 24-bit precision ([BIN:TPW-EXE:0x00563914 control word]), where an extended difference would not
 	public static float PcCos( float angle ) => PcTable[(int)MathF.Round( (angle - MinusHalfPi) * PcScale ) & (Size - 1)];
 
-	/// <summary>sin a with the truncating index of the self-intersection pass, which runs with the rounding mode set to truncate (<c>0x439ac4</c>).</summary>
-	public static float PcSinTruncated( float angle ) => PcTable[(int)(angle * PcScale) & (Size - 1)];
-	/// <summary>cos a with the truncating index: the pass stores f32(a − (−π/2)) first, then f32(scale · that) (<c>0x43a33b..0x43a35b</c>).</summary>
-	public static float PcCosTruncated( float angle ) => PcTable[(int)(PcScale * (angle - MinusHalfPi)) & (Size - 1)];
+	/// <summary>sin a with the truncating index of the self-intersection pass, which runs with the rounding mode set to truncate (<c>0x439ac4</c>): the product is a single rounded toward zero, then fistp truncates.</summary>
+	public static float PcSinTruncated( float angle ) => PcTable[Trunc24.ToInt( Trunc24.Mul( angle, PcScale ) ) & (Size - 1)];
+	/// <summary>cos a with the truncating index: the pass stores f32(a − (−π/2)) first, then f32(scale · that), both rounded toward zero (<c>0x43a33b..0x43a35b</c>).</summary>
+	public static float PcCosTruncated( float angle ) => PcTable[Trunc24.ToInt( Trunc24.Mul( PcScale, Trunc24.Sub( angle, MinusHalfPi ) ) ) & (Size - 1)];
 }

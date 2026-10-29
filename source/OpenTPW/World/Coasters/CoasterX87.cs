@@ -89,4 +89,21 @@ internal static class CoasterX87
 		var second = (int)MathF.Round( (angle - -1.5707964f) * CoasterTrig.PcScale ) & (CoasterTrig.Size - 1);
 		return CoasterTrig.PcEntry( first ) * -1f * ux + CoasterTrig.PcEntry( second ) * -1f * uz;
 	}
+
+	/// <summary>
+	/// The C library's acos (<c>0x67b4e0</c>) called from the self-intersection pass: its operations round to nearest, as in <see cref="Acos"/> (the routine sets the control word to its own
+	/// exceptions-masked value with the rounding control cleared, 0x686185, and restores the pass's word after the fpatan); the extended result is returned unrounded, held in a double, because the
+	/// pass adds it to its running sum without storing it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00686185 acos rounding] edx = (control word & 0x300) | 0x7f: the precision stays at 24 bits and the rounding control becomes nearest for the routine's own 1 + x, 1 − x, product and square root (0x67b518..0x67b522); the pass's truncating word returns at 0x68620e
+	public static double AcosTruncated( float x )
+	{
+		if ( x >= 1f )
+			return x == 1f ? 0d : double.NaN;
+		if ( x <= -1f )
+			return x == -1f ? Math.PI : double.NaN;
+		var root = MathF.Sqrt( (1f + x) * (1f - x) );
+		// [EXT:deterministic-math] fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+		return DetMath.Atan2( root, x );
+	}
 }

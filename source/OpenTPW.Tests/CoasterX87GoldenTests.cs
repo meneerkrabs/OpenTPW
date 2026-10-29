@@ -35,7 +35,11 @@ public class CoasterX87GoldenTests
 	{
 		Assert.AreEqual( expected.Length, actual.Length );
 		for ( var i = 0; i < expected.Length; i++ )
+		{
+			if ( float.IsNaN( expected[i] ) && float.IsNaN( actual[i] ) )
+				continue;
 			Assert.AreEqual( BitConverter.SingleToUInt32Bits( expected[i] ), BitConverter.SingleToUInt32Bits( actual[i] ), $"value {i}: expected {expected[i]:R}, got {actual[i]:R} in {current}" );
+		}
 	}
 
 	[TestMethod]
@@ -59,7 +63,7 @@ public class CoasterX87GoldenTests
 				kinds["table"] = 1;
 				continue;
 			}
-			var expected = parts[0] is "tangent" or "sampler" ? Array.Empty<float>() : Singles( sides[1] );
+			var expected = parts[0] is "tangent" or "sampler" or "prism" ? Array.Empty<float>() : Singles( sides[1] );
 			kinds[parts[0]] = (kinds.TryGetValue( parts[0], out var seen ) ? seen : 0) + 1;
 			switch ( parts[0] )
 			{
@@ -209,11 +213,32 @@ public class CoasterX87GoldenTests
 					Same( Singles( outputs[1] ), sampling.KnotCoordinates );
 					break;
 				}
+				case "prism":
+				{
+					var pointValues = Singles( parts[1] );
+					var points = Enumerable.Range( 0, pointValues.Length / 2 ).Select( k => (pointValues[2 * k], pointValues[2 * k + 1]) ).ToArray();
+					CoasterSample Sample( string text )
+					{
+						var v = Singles( text );
+						return new CoasterSample { Position = new SVector3( v[0], v[1], v[2] ), Yaw = v[3], Pitch = v[4], Bank = v[5] };
+					}
+					var (a0, a1, b0, b1) = (Sample( parts[2] ), Sample( parts[3] ), Sample( parts[4] ), Sample( parts[5] ));
+					var outputs = sides[1].Split( " | " );
+					var posesA = CoasterCollision.Pose( points, a0, a1 );
+					var posesB = CoasterCollision.Pose( points, b0, b1 );
+					Same( Singles( outputs[1] ), posesA.SelectMany( p => p ).ToArray() );
+					Same( Singles( outputs[2] ), posesB.SelectMany( p => p ).ToArray() );
+					var sums = new System.Collections.Generic.List<float>();
+					var hit = CoasterCollision.PrismsIntersect( a0, a1, b0, b1, points, sums );
+					Assert.AreEqual( outputs[0] == "1", hit, row );
+					Same( Singles( outputs.Length > 3 ? outputs[3] : "" ), sums.ToArray() );
+					break;
+				}
 				default:
 					Assert.Fail( "unknown row kind " + parts[0] );
 					break;
 			}
 		}
-		Assert.IsTrue( kinds.Count >= 11, string.Join( ", ", kinds ) );
+		Assert.IsTrue( kinds.Count >= 12, string.Join( ", ", kinds ) );
 	}
 }

@@ -217,8 +217,8 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	}
 
 	/// <summary>
-	/// The knot controls of every knot; the first knot has no previous neighbour and the last none after it (a closed chain's last knot, the station
-	/// end node, has the second knot as its next one), so those chords are 1.0.
+	/// The knot controls of every knot (<c>0x4329f5</c>): the first knot's back chord and the last knot's forward chord are 1.0, because the chord routine reads the raw
+	/// node links and the station end node has no next link (+0x64 is null). <paramref name="closed"/> is kept for the callers' sake; the rule is the same for every chain.
 	/// </summary>
 	internal static (SVector3 Back, SVector3 Forward)[] Controls( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed )
 	{

@@ -160,7 +160,7 @@ class Source(unittest.TestCase):
         self.assertIn('if ( parameter is >= 0 and <= 2 )', self.ride)
         self.assertIn('1 => 64, 2 => 32', self.ride)
 
-    def test_derivative_is_the_power_form(self):
+    def test_derivative_is_the_pc_horner_shape(self):
         # The PC executable's shape (round 10, X40): unfused singles, c1 - (c2 * -2 - c3 * t * 3) * t.
         self.assertIn('return c1 - (c2 * -2f - c3 * t * 3f) * t;', self.curve)
 

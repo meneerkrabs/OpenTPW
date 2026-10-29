@@ -712,15 +712,15 @@ public class AdvisorScanStaffTests
 	}
 
 	[TestMethod]
-	public void TheBlockedStaffRowsStayWithoutACallback()
+	public void TheCoverageAndPrankRowsScoreZeroForAParkWithoutTheInputsView()
 	{
 		var park = new StaffPark { Census = 400, Cells = 900, Total = 8, Unhappy = 100, StartDays = 3000 };
 		foreach ( var role in Enum.GetValues<StaffType>() )
 			park.Counts[role] = 4;
-		// coverage (19, 21, 27) and the pranks (12, 22, 98) need counters the park does not have: their rows score 0 as the original's constant-zero stub does
+		// coverage (19, 21, 27) and the pranks (12, 22, 98) read the chase counters and the patrol coverage through IAdvisorInputsState (AdvisorScanInputsTests): a park state without that view scores 0
 		foreach ( var message in new[] { 12, 19, 21, 22, 27, 98 } )
 		{
-			Assert.IsFalse( AdvisorScanCallbacks.Implemented.ContainsKey( AdvisorDescriptorTable.Rows[message].Callback ), $"message {message} is not ported" );
+			Assert.IsTrue( AdvisorScanCallbacks.Implemented.ContainsKey( AdvisorDescriptorTable.Rows[message].Callback ), $"message {message} is ported" );
 			Assert.AreEqual( 0, Score( message, park ) );
 		}
 	}

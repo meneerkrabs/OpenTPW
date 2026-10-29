@@ -255,7 +255,7 @@ internal static class AdvisorStaffCallbacks
 	}
 
 	/// <summary>The park months of the clock (<c>0x004F8800</c> divided by 30 days with <c>__alldiv</c>), from the whole days.</summary>
-	private static int Months( IAdvisorParkState park ) => park.DaysSinceStart / 30;
+	internal static int Months( IAdvisorParkState park ) => park.DaysSinceStart / 30;
 
 	/// <summary>Reads the staff view of the park and the thresholds as the words they are; false when the park has no staff statistics or one key is missing.</summary>
 	private static bool Read( AdvisorScanContext context, out IAdvisorParkState park, out IAdvisorStaffState staff, out int[] values, params string[] keys )

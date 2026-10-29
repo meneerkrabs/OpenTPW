@@ -1309,6 +1309,7 @@ public partial class Level : IDisposable
 		AreaClearTool?.Cancel();
 		PoolTool?.Cancel();
 		AttachStaffWorld();
+		AttachAdvisorProbes();
 		AttachCoasterChallenges();
 		// The gate holds the economy it was built over; the load replaced it.
 		if ( Park != null && Gate != null )

@@ -524,7 +524,40 @@ public sealed partial class ParkStaff
 			member.BaseSpeed = baseSpeed;
 		members.Add( member );
 		roleOrder![(int)member.Type].Insert( 0, member.Id );
+		if ( member.Type == StaffType.Researcher )
+			ResearchersChanged();
 		return member;
+	}
+
+	private bool labActive;
+
+	/// <summary>The research lab's active byte (<c>mLabActive</c>, the ResearchLab thing's <c>+0x1468</c>): set while the park employs a researcher, as the researchers' hires and removals leave it.</summary>
+	public bool LabActive => labActive;
+
+	/// <summary>
+	/// Raised when <see cref="LabActive"/> changes through a hire or a removal, with the message the original posts: 5 when the lab becomes active, 6 when it stops. The original delivers the message at once
+	/// to the things subscribed to its type (the advisor subscribes to 5 only, <c>0x00599EDB</c>; nobody subscribes to 6); OpenTPW's advisor has no reaction to it.
+	/// </summary>
+	public event Action<int>? LabMessage;
+
+	/// <summary>
+	/// The researchers' flag update (tp.exe <c>0x005041F0</c>), run by a researcher's constructor after its search (<c>0x00502742</c>) and by its removal (<c>0x00502952</c>): with a researcher in the list
+	/// (the word game +0x1DA742) the byte is set and message 5 posted when it was clear (<c>0x00504090</c>), with none it is cleared and message 6 posted when it was set (<c>0x00504140</c>). It takes no draw.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005041F0 researchers flag] the byte +0x1468 of the ResearchLab thing (the object 0x519550 returns) is tested first, so the message goes out on a change only: 0x40F630 builds a plain message of the type 5 or 6 and 0x40FB10 delivers it through the lazily created bus 0x788D3C
+	private void ResearchersChanged()
+	{
+		var any = members.Any( member => member.Type == StaffType.Researcher );
+		if ( any && !labActive )
+		{
+			labActive = true;
+			LabMessage?.Invoke( 5 );
+		}
+		else if ( !any && labActive )
+		{
+			labActive = false;
+			LabMessage?.Invoke( 6 );
+		}
 	}
 
 	public StaffMember Fire( int staffId )
@@ -536,6 +569,8 @@ public sealed partial class ParkStaff
 		// [BIN:TPW-EXE:0x00505790 staff removal] a dismissed member's thing is destroyed through the destroy request (0x0050B780 → 0x00516310): its slot is freed at the turn's end
 		if ( things != null && member.ThingId != 0 )
 			things.QueueDestroy( member.ThingId );
+		if ( member.Type == StaffType.Researcher )
+			ResearchersChanged();
 		return member;
 	}
 
@@ -585,6 +620,8 @@ public sealed partial class ParkStaff
 					things.Release( old.ThingId );
 		members.Clear();
 		members.AddRange( restoredMembers );
+		// a restored park's lab flag is what its researchers make of it (the original's flag byte agrees with the list after every hire and removal)
+		labActive = members.Any( member => member.Type == StaffType.Researcher );
 		// Legacy saves resolve against the current pool only when read; attachment never replaces an explicit order.
 		roleOrder = null;
 		if ( things != null )
@@ -619,6 +656,7 @@ public sealed partial class ParkStaff
 		MaterializeRoleOrder();
 		members.Add( member );
 		roleOrder![(int)member.Type].Insert( 0, member.Id );
+		labActive |= member.Type == StaffType.Researcher;
 		return member;
 	}
 

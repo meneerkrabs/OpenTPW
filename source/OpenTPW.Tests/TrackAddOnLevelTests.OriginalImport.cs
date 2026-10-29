@@ -120,6 +120,22 @@ public partial class TrackAddOnLevelTests
 	}
 
 	[TestMethod]
+	public void ASavedBridgeTileOverAQueueCellKeepsTheQueueCellsType()
+	{
+		var (source, _, _) = World();
+		var cells = SavedCells( source.Guests!.Grid.Cells.Tracks );
+		var (target, targetRide, _) = World( laid: false );
+		targetRide.ThingId = RideThing;
+		var bridge = cells.First( cell => cell.Type != TrackCellTypes.Extension && !TrackCellTypes.IsStation( cell.Type ) && TrackBuilder.IsBridgeShape( (byte)cell.Mask ) );
+		var map = target.Guests!.Grid.Cells;
+		map.SetType( bridge.X, bridge.Y, ParkCellType.Queue );
+		target.ApplyOriginalTracks( cells, ( _, _ ) => 0, null, null, new[] { RideThingOf( 0 ) } );
+		Assert.AreEqual( (byte)ParkCellType.Queue, map.RawTypeAt( bridge.X, bridge.Y ), "tp.exe's track type op never writes the cell's type (0x538FC0): the queue cell stays" );
+		Assert.AreEqual( bridge.Type, map.Tracks.Get( bridge.X, bridge.Y ).Type, "the tile lies beneath it as its own record" );
+		Assert.AreEqual( (byte)ParkCellType.Queue, map.PrimaryTypeAt( bridge.X, bridge.Y ) );
+	}
+
+	[TestMethod]
 	public void ASavedTrackCellOnAnObjectCellOfThisParkIsSkippedAndCounted()
 	{
 		var (source, _, _) = World();

@@ -83,7 +83,12 @@ public partial class Level
 				if ( underPath )
 					cell.Flags |= TrackBuilder.FlagOverPath;
 			}
-			cells.SetType( saved.X, saved.Y, saved.Type );
+			// [BIN:TPW-EXE:0x538FC0 track type op] the track type op writes the type of the record and never the cell's (0x539017..0x53908C): a straight or stub tile over a path or queue cell keeps that cell's own type and lies
+			// beneath it as a separate record (ParkCellMap.PrimaryTypeAt), so the queue chain and the guests on it stay
+			var bridged = cells.RawTypeAt( saved.X, saved.Y ) is (byte)ParkCellType.Path or (byte)ParkCellType.Queue
+				&& origins.TryGetValue( origin, out var head ) && !TrackCellTypes.IsStation( head.Type ) && TrackBuilder.IsBridgeShape( head.Mask );
+			if ( !bridged )
+				cells.SetType( saved.X, saved.Y, saved.Type );
 			layer.Set( saved.X, saved.Y, cell );
 			written++;
 		}

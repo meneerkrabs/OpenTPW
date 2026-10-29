@@ -4,6 +4,7 @@
 - Classification: approximation; TRACK-032 remains open.
 - PR #597 began as a plan-only proposal. The October 20 structural-reader increment adds immutable decoding and synthetic tests, not runtime restoration.
 - Baseline for this increment: main d655ed1b, retaining the original proposal ancestry.
+- Round 10 (October 29) adds `Level.ImportOriginalTracks` (the saved track cells, the circuit walk and the chunk-3 words); TRACK-032 stays open for the vehicles, the waypoint chain and the riders.
 - No `Level.Tracks` or `RewalkTrack` integration is included; that runtime area has separate active ownership.
 
 ## Corrected native evidence

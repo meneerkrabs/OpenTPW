@@ -826,7 +826,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// (or the variable is not the head) the head is called but not admitted: the written flag drops, so the host step does not board it and it presents itself at the stand point again.
 	/// Returns the demoted guest, or 0 when nothing changed.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004E0A70 state 14 test] the state-14 test compares the script's first variable with mFirstInQ; a script that does not hold the head does not hold it admitted
+	// [BIN:TPW-EXE:0x004E0A70 state 14 test] the state-14 test compares the script's first variable with mFirstInQ; tp.exe sends a head the script does not hold straight to state 16
+	// [APPROX:SAVE-002] the demotion to a called head (state 13) stands in for that state 16, which needs the ride script's walk, bounce and head tables the import does not restore (DET-013)
 	internal int ReconcileImportedAdmission()
 	{
 		if ( !importedAdmissionPending )

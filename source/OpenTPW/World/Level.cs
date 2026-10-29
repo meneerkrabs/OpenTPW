@@ -666,6 +666,7 @@ public partial class Level : IDisposable
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
 			ImportOriginalScripts();
+			ReconcileOriginalAdmissions();
 			yield return 0.95f;
 			ImportOriginalCoasters();
 			ImportOriginalRetainedRideStates();

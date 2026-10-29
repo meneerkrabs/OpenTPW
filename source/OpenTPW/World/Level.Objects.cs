@@ -2038,6 +2038,16 @@ public partial class Level
 			Park?.Import?.Report( line );
 			Log.Trace( $"Park script import: {line}" );
 		}
+	}
+
+	/// <summary>
+	/// Run after <see cref="ImportOriginalScripts"/> for every park started from an original save, whether or not its RSSE block read: a head imported as handed to the script whose script does not
+	/// hold it is demoted (<see cref="GuestSimulation.ReconcileOriginalAdmissions"/>).
+	/// </summary>
+	private void ReconcileOriginalAdmissions()
+	{
+		if ( resumeState != null || OriginalPark?.Save == null )
+			return;
 		foreach ( var line in Guests?.ReconcileOriginalAdmissions() ?? new List<string>() )
 		{
 			Park?.Import?.Report( line );

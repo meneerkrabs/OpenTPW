@@ -238,6 +238,20 @@ public class OriginalQueueImportTests
 	}
 
 	[TestMethod]
+	public void TheAdmissionReconcileRunsForEveryOriginalParkWhetherOrNotItsRsseBlockReads()
+	{
+		var root = Directory.GetCurrentDirectory();
+		while ( root != null && !File.Exists( Path.Combine( root, "source/OpenTPW/World/Level.cs" ) ) )
+			root = Path.GetDirectoryName( root );
+		Assert.IsNotNull( root, "the repository root" );
+		var level = File.ReadAllText( Path.Combine( root, "source/OpenTPW/World/Level.cs" ) );
+		StringAssert.Matches( level, new System.Text.RegularExpressions.Regex( @"ImportOriginalScripts\(\);\s*ReconcileOriginalAdmissions\(\);" ) );
+		var objects = File.ReadAllText( Path.Combine( root, "source/OpenTPW/World/Level.Objects.cs" ) );
+		var scripts = objects.Split( "private void ImportOriginalScripts()" )[1].Split( "\n\t}\n" )[0];
+		Assert.IsFalse( scripts.Contains( "ReconcileOriginalAdmissions" ), "the Rsse == null early return of the script import must not skip it" );
+	}
+
+	[TestMethod]
 	public void AHeadTheScriptHoldsStaysHandedToIt()
 	{
 		var rig = NewRig( takesGuests: true );

@@ -1,4 +1,4 @@
-"""tp.exe's sky object draw 0x5860D0 run in the x86 oracle sandbox (docs/reverse/ORACLE.md, finding X40; UI-107).
+"""tp.exe's sky object draw 0x5860D0 run in the x86 oracle sandbox (docs/reverse/ORACLE.md, finding X41; UI-107).
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified tp.exe (OPENTPW_TPW_EXE, SHA-256 pinned) are needed, nothing here is shipped. The sky object draw runs with its real
 callees, the point transform 0x578D20 and the sprite rotation 0x591430, on a synthetic sky object (the clip matrix, the object's X, Y, Z and size, the roll and the aspect word are set); the

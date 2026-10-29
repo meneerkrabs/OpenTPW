@@ -8,7 +8,7 @@ the screen after the particle pass). The track seat order and joining node (TRAC
 
 The reset lives in a presentation stash the simulation puts back before its next step, so saves, joins
 and picks stay view-independent. Coaster trains hold their two loop sounds and their scream pass
-(SAVE-923 narrowed to the saved voice handles): speed crossfade, lift, braking and free state parameters,
+(SAVE-923 retired, its saved handles folded into AUDIO-018): speed crossfade, lift, braking and free state parameters,
 occupancy, the one-shot and held screams, following the sound car or the camera car, all presentation and
 in no hash. The clip sampler's rotation blend now uses the table sines of 0x4742A0 (COAST-033 narrowed); the
 pinned digest of DetMatrix.Slerp changes (D65FD1F808A2F9A0 -> 835A114DD5A79937), world pins do not move.

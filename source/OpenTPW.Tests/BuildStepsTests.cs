@@ -47,8 +47,8 @@ public class BuildStepsTests
 				Assert.IsNotNull( stepped );
 				Assert.IsTrue( steps > 20, $"{kind}: the economy takes {steps} steps, one per object archive and more" );
 				Assert.AreEqual( ParkSaveFile.Serialize( atOnce.Economy ), ParkSaveFile.Serialize( stepped!.Economy ), $"{kind}: the same economy" );
-				// ForOriginalLevel runs the same steps, so the economy is also pinned to what origin/main made at once before the steps (6ecadcbd9; Instant Action re-pinned at 6aac37d9f and again by the round 10 quick ports (E19E5729D4A8EE5A to 4DCABA51A693C7D7: the seed's staff now carry their saved sprite variant, GUEST-014; Full Simulation D2F1349AA44D6545 to 7876695A107A2FE7 and Instant Action 4DCABA51A693C7D7 to 98703AF4AFE3C8A3 by the round 10 coaster x87 port, the jungle's original coasters), after main's advisor construction stamps changed its serialization)
-				Assert.AreEqual( kind == ParkStartKind.FullSimulation ? "7876695A107A2FE7" : "98703AF4AFE3C8A3", Digest( ParkSaveFile.Serialize( stepped.Economy ) ), $"{kind}: the economy of origin/main" );
+				// ForOriginalLevel runs the same steps, so the economy is also pinned to what origin/main made at once before the steps (6ecadcbd9; Instant Action re-pinned at 6aac37d9f and again by the round 10 quick ports (E19E5729D4A8EE5A to 4DCABA51A693C7D7: the seed's staff now carry their saved sprite variant, GUEST-014), after main's advisor construction stamps changed its serialization)
+				Assert.AreEqual( kind == ParkStartKind.FullSimulation ? "D2F1349AA44D6545" : "4DCABA51A693C7D7", Digest( ParkSaveFile.Serialize( stepped.Economy ) ), $"{kind}: the economy of origin/main" );
 				Assert.AreEqual( atOnce.Start, stepped.Start );
 				CollectionAssert.AreEqual( atOnce.Import?.Evidence.ToArray() ?? Array.Empty<string>(), stepped.Import?.Evidence.ToArray() ?? Array.Empty<string>() );
 				Assert.AreEqual( atOnce.Economy.Catalog.Objects.Count, stepped.Economy.Catalog.Objects.Count );

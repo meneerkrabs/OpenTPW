@@ -33,6 +33,8 @@ public class GlobeCameraMode : CameraMode
 	public GlobeCameraMode()
 	{
 		FieldOfView = 60;
+		// [BIN:TPW-EXE:0x5dd034 globe projection] the globe's camera is the lobby's object (0xf83778): its angle 60.0 goes through the same camera method 0x5d8cb0 into the park's projection builder (near 0.1, far 1000), so the screen matrix applies here too: the visible half height at unit depth is 0.5 x tan(30 degrees), and the sphere of radius 116 seen from 475 fills nearly the whole height
+		UsesOriginalProjection = true;
 		Update();
 	}
 

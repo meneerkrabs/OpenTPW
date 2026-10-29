@@ -8,6 +8,12 @@ public sealed record ImportedCoasterSection( SaveCoasterSection Section, IReadOn
 /// <summary>A Theme Park Inc RideSystem scene record joined to its attraction thing: the same mesh instance id (the record's u32 after its leading byte, the thing's MeshInstanceID) and Info.Id, and for a placed object the same cell.</summary>
 public readonly record struct ImportedThemeParkIncObject( SaveObject Record, ThemeParkIncAttraction Attraction );
 
+/// <summary>
+/// One kart or water track cell of a save's structure layer (the 31-byte track cell, base <c>0x4D0B30</c> and the segment <c>0x50C200</c>): the origin cell of a tile (type 11 or 13 kart, 16 or 18 water) or one of its three
+/// extension cells (type 12, whose parent is the origin). <see cref="Parent"/> is the cell word y × 128 + x + 1 of the origin, 0 for none.
+/// </summary>
+public readonly record struct SaveTrackCell( int X, int Y, byte Type, byte Mask, byte Link, ushort Flags, ushort Parent, int Family, int Piece, int Rotation, short Overlap, byte Alternate, ushort Segment, uint MeshInstance );
+
 /// <summary>A placed object whose footprint was cross-checked against the save cell grid.</summary>
 public readonly record struct ImportedParkObject( SaveObject Record, int MinX, int MinY, int MaxX, int MaxY );
 
@@ -94,6 +100,51 @@ public sealed class OriginalParkImport
 		return null;
 	}
 	public SaveCellGrid Cells => cells;
+
+	private IReadOnlyList<SaveTrackCell>? trackCells;
+
+	/// <summary>
+	/// The kart and water track cells of the structure layer (a Theme Park World save), in row order: cells whose structure type is a track tile origin (11, 13, 16, 18), and the type-12 extension cells whose parent word names such an origin
+	/// (a hoarding's extension cells share type 12 and name a post).
+	/// </summary>
+	public IReadOnlyList<SaveTrackCell> TrackCells => trackCells ??= world == null ? Array.Empty<SaveTrackCell>() : ReadTrackCells();
+
+	/// <summary>
+	/// The structure types of a track tile's origin cell: the kart tile 11 and station 13, the water tile 16 and station 18. Type 25 (0x19) is a hoarding's post (<see cref="SaveCell.HoardingType"/>), which the
+	/// walk's second water type shares: the structure layer of every corpus save holds posts of it and no tile.
+	/// </summary>
+	public static bool IsTrackOriginType( uint type ) => type is 11 or 13 or 16 or 18;
+
+	private IReadOnlyList<SaveTrackCell> ReadTrackCells()
+	{
+		var found = new List<SaveTrackCell>();
+		for ( var y = 0; y < cells.CountY; y++ )
+		{
+			for ( var x = 0; x < cells.CountX; x++ )
+			{
+				var cell = cells[x, y];
+				var type = cell.StructureType;
+				if ( !IsTrackOriginType( type ) )
+				{
+					if ( type != SaveCell.HoardingExtensionType || cell.StructureParentId == 0 )
+						continue;
+					var parent = cell.StructureParentId - 1;
+					if ( parent / 128 >= cells.CountY || parent % 128 >= cells.CountX || !IsTrackOriginType( cells[parent % 128, parent / 128].StructureType ) )
+						continue;
+				}
+				var tile = cell.StructureTile;
+				found.Add( new SaveTrackCell( x, y, (byte)type, cell.StructureMask, cell.StructureDirection, cell.StructureFlags, cell.StructureParentId, tile.Family, tile.Piece, tile.Rotation,
+					cell.StructureOverlapCounter, cell.StructureAlternate, cell.StructureSegment, cell.StructureMeshInstance ) );
+			}
+		}
+		return found;
+	}
+
+	/// <summary>The TrackRides block as a chunk stream (<see cref="SaveTrackRideBlock"/>), or null when it does not read in the writer's shapes (<see cref="TrackRidesProblem"/> says why).</summary>
+	public SaveTrackRideBlock? TrackRides { get; private init; }
+
+	/// <summary>Why <see cref="TrackRides"/> is null; null when the block read.</summary>
+	public string? TrackRidesProblem { get; private init; }
 
 	private IReadOnlyList<SaveLitter>? litter;
 
@@ -276,7 +327,7 @@ public sealed class OriginalParkImport
 	public static OriginalParkImport Import( ReadOnlyMemory<byte> payload, MapFile map, Func<int, SaveCoasterTrainLayout?>? coasterTrains = null, Func<int, int?>? controlCounts = null )
 	{
 		ArgumentNullException.ThrowIfNull( map );
-		var layout = SavePayloadLayout.Parse( payload.Span );
+		var layout = SavePayloadLayout.Parse( payload.Span, coasterTrains );
 		var world = SaveWorld.Parse( payload, layout, map.CellCountX, map.CellCountY );
 		var cells = world.Cells;
 		var paths = new List<(int X, int Y)>();
@@ -357,9 +408,21 @@ public sealed class OriginalParkImport
 		var coasters = SaveCoasterBlock.Parse( span, layout, map.CellCountX, map.CellCountY, trainLayouts );
 		var clockBlock = layout[SaveBlock.Clock];
 		var savedClock = clockBlock.Length == SavePayloadLayout.FixedBlockBytes[SaveBlock.Clock] ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( span.Slice( clockBlock.Offset + 4, 4 ) ) : (uint?)null;
+		SaveTrackRideBlock? trackRides = null;
+		string? trackRidesProblem = null;
+		try
+		{
+			trackRides = SaveTrackRideBlock.ParseContainer( layout.Slice( span, SaveBlock.TrackRides ) );
+		}
+		catch ( InvalidDataException problem )
+		{
+			trackRidesProblem = problem.Message;
+		}
 		return new OriginalParkImport( map, layout, world, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly(),
 			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters, rideSystem )
 		{
+			TrackRides = trackRides,
+			TrackRidesProblem = trackRidesProblem,
 			RuntimeBlocks = SaveRuntimeBlocks.Read( span, layout ),
 			Sound = OriginalSavePayload.TryReadSound( span, layout ),
 			Rsse = SaveRsseBlock.Read( span, layout ),

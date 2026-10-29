@@ -140,6 +140,23 @@ public readonly struct SaveCell
 	/// <summary>The structure cell's <c>mParentID</c> (+0x10, TPW records): for the cell next to a post, the post's cell word.</summary>
 	public ushort StructureParentId => BinaryPrimitives.ReadUInt16LittleEndian( Record.Span.Slice( StructureBaseOffset + 11, 2 ) );
 
+	/// <summary>The structure (track) cell's <c>mMeshInstance</c> (+4, TPW records): the piece's mesh instance the RideSystem block recreates.</summary>
+	public uint StructureMeshInstance => BinaryPrimitives.ReadUInt32LittleEndian( Record.Span.Slice( StructureBaseOffset + 4, 4 ) );
+
+	/// <summary>The structure cell's <c>mNeighbours</c> (+0xC, TPW records): the track tile's connection mask, 1 (−Y), 4 (+X), 16 (+Y) and 64 (−X).</summary>
+	public byte StructureMask => Record.Span[StructureBaseOffset + 8];
+
+	/// <summary>The structure cell's <c>mTileData</c> (+0x14, +0x18, +0x1C, TPW records): the chosen piece family, piece and rotation of a track cell.</summary>
+	public (int Family, int Piece, int Rotation) StructureTile => (BinaryPrimitives.ReadInt32LittleEndian( Record.Span.Slice( StructureBaseOffset + 13, 4 ) ),
+		BinaryPrimitives.ReadInt32LittleEndian( Record.Span.Slice( StructureBaseOffset + 17, 4 ) ), BinaryPrimitives.ReadInt32LittleEndian( Record.Span.Slice( StructureBaseOffset + 21, 4 ) ));
+
+	/// <summary>The structure cell's byte at <c>+0x22</c> (TPW records): the fence links of a hoarding, the alternate mask a track cell holds while a tool previews.</summary>
+	public byte StructureAlternate => Record.Span[StructureBaseOffset + 29];
+
+	/// <summary>The track cell's circuit segment number (TPW records): the two bytes the track cell serializer <c>0x50C200</c> writes after the cell base.</summary>
+	// [BIN:TPW-EXE:0x50C200 track cell] the structure cell is the 29-byte base (0x4D0B30) and a 2-byte segment number: 31 bytes
+	public ushort StructureSegment => BinaryPrimitives.ReadUInt16LittleEndian( Record.Span.Slice( StructureBaseOffset + 30, 2 ) );
+
 	/// <summary>Byte 12 is nonzero on every cell of every placed object's footprint (and its queue cells).</summary>
 	public bool IsOccupied => Record.Span[OccupancyOffset] != 0;
 

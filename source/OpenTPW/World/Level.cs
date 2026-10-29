@@ -662,9 +662,11 @@ public partial class Level : IDisposable
 				}
 			}
 			yield return 0.95f;
+			ImportOriginalTracks();
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
 			ImportOriginalScripts();
+			ReconcileOriginalAdmissions();
 			yield return 0.95f;
 			ImportOriginalCoasters();
 			ImportOriginalRetainedRideStates();

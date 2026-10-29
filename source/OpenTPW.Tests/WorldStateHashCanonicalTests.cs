@@ -22,6 +22,7 @@ public class WorldStateHashCanonicalTests
 		{
 			root.Remove( nameof( ParkSaveFile.Data.AnalyserCaches ) );
 			root.Remove( nameof( ParkSaveFile.Data.StatisticsHistory ) );
+			root.Remove( nameof( ParkSaveFile.Data.AnalyserChase ) );
 			if ( root[nameof( ParkSaveFile.Data.Research )] is JsonObject research )
 				research.Remove( nameof( ParkSaveFile.ResearchData.RecentItems ) );
 			if ( root[nameof( ParkSaveFile.Data.Staff )] is JsonObject staff )
@@ -86,7 +87,7 @@ public class WorldStateHashCanonicalTests
 		// digest leaves out, at its place and elsewhere
 		var json = """
 			{"zé":"café <b>&'+\"\\/ \u0001","a":1.50E+2,"Ångström":[true,false,null,{"k":"🎢"}],
-			 "AnalyserCaches":{"x":1},"StatisticsHistory":[1,2],"Research":{"RecentItems":[1],"Done":2},"Staff":{"RoleOrder":[3],"Members":[]},
+			 "AnalyserCaches":{"x":1},"StatisticsHistory":[1,2],"AnalyserChase":{"Month":1,"GotAway":0,"Ever":2},"Research":{"RecentItems":[1],"Done":2},"Staff":{"RoleOrder":[3],"Members":[]},
 			 "Objectives":{"Current":{"RawValue":5,"Baseline":4},"RawValue":6},"Nested":{"RecentItems":7,"RoleOrder":8,"AnalyserCaches":9},"":0,"B":-0.0}
 			""";
 		var bytes = Encoding.UTF8.GetBytes( json );

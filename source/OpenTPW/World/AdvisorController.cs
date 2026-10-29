@@ -193,7 +193,7 @@ internal static class AdvisorTables
 		(243, "FoodPoorSatisfaction.ScorePerPoint", null), (244, "ShopsPoorSatisfaction.ScorePerPoint", null), (245, "RestaurantPoorSatisfaction.ScorePerPoint", null), (246, "DrinksPoorSatisfaction.ScorePerPoint", null), (247, "SideshowsPoorSatisfaction.ScorePerPoint", null),
 		(248, "FoodGreatValue.ScorePerPoint", null), (249, "ShopsGreatValue.ScorePerPoint", null), (250, "RestaurantGreatValue.ScorePerPoint", null), (251, "DrinksGreatValue.ScorePerPoint", null), (252, "SideshowsGreatValue.ScorePerPoint", null),
 		(253, "FoodGreatSatisfaction.ScorePerPoint", null), (254, "ShopsGreatSatisfaction.ScorePerPoint", null), (255, "RestaurantGreatSatisfaction.ScorePerPoint", null), (256, "DrinksGreatSatisfaction.ScorePerPoint", null), (257, "SideshowsGreatSatisfaction.ScorePerPoint", null),
-	}.Concat( AdvisorStaffCallbacks.ScoreKeys ).Concat( AdvisorChallengeMessages.ScanScoreKeys ).ToArray();
+	}.Concat( AdvisorStaffCallbacks.ScoreKeys ).Concat( AdvisorChallengeMessages.ScanScoreKeys ).Concat( AdvisorInputsCallbacks.ScoreKeys ).ToArray();
 
 	private static IReadOnlyList<AdvisorMessageDefinition>? events;
 

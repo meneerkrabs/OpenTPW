@@ -190,7 +190,7 @@ public static class WorldStateHash
 	/// <summary>Whether the member <paramref name="name"/> of an object at <paramref name="part"/> is left out (<see cref="CanonicalEconomy"/>).</summary>
 	private static bool LeftOut( EconomyPart part, string name ) => part switch
 	{
-		EconomyPart.Save => name is nameof( ParkSaveFile.Data.AnalyserCaches ) or nameof( ParkSaveFile.Data.StatisticsHistory ),
+		EconomyPart.Save => name is nameof( ParkSaveFile.Data.AnalyserCaches ) or nameof( ParkSaveFile.Data.StatisticsHistory ) or nameof( ParkSaveFile.Data.AnalyserChase ),
 		EconomyPart.Research => name == nameof( ParkSaveFile.ResearchData.RecentItems ),
 		EconomyPart.Staff => name == nameof( ParkSaveFile.StaffData.RoleOrder ),
 		EconomyPart.Challenge => name == nameof( ActiveChallenge.RawValue ),

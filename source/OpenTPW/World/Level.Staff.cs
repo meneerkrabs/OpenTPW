@@ -48,6 +48,7 @@ public partial class Level
 				StaffWorld?.ReportPrank( Park.Economy, guest.Id );
 		};
 		AttachStaffWorld();
+		AttachAdvisorProbes();
 		StaffHands = new StaffHands( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, () => StaffWorld );
 		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, command => Commands.Issue( command ), StaffHands.IsCarried, StaffHands.Of,
 			() => Commands.Player, GuestStaffExit );

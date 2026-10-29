@@ -87,6 +87,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public AnalyserCacheData? AnalyserCaches { get; init; }
+		/// <summary>
+		/// The analyser's three misbehaving-kids words (<see cref="ParkEconomy.MisbehavingKids"/>: the guards' chases this month, the abandoned ones of it, all of them), which only the advisor reads; absent while they are all 0
+		/// and in older saves (they start at 0). Not part of the run hash, like <see cref="AnalyserCaches"/>.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public MisbehavingKidsData? AnalyserChase { get; init; }
 		public required List<ObjectData> Objects { get; init; }
 		public required List<LoanData> Loans { get; init; }
 		public required List<int> TakenLoanOffers { get; init; }
@@ -565,6 +571,14 @@ public static class ParkSaveFile
 		}
 	}
 
+	/// <summary>The analyser's three chase words (tp.exe <c>+0x21BFC</c>, <c>+0x21C00</c>, <c>+0x21C04</c>).</summary>
+	public sealed class MisbehavingKidsData
+	{
+		public required int Month { get; init; }
+		public required int GotAway { get; init; }
+		public required int Ever { get; init; }
+	}
+
 	/// <summary>The analyser's caches (<see cref="ParkEconomy.NetWorth"/>, <see cref="ParkLitter.LitteredInBlock"/>, <see cref="ParkLitter.PathCellsInBlock"/>): only the valid entries.</summary>
 	public sealed class AnalyserCacheData
 	{
@@ -572,6 +586,8 @@ public static class ParkSaveFile
 		public CachedCount? NetWorth { get; init; }
 		/// <summary>The cached guest census (tp.exe 0x004C7FA0); absent in saves written before it and while no read has counted it.</summary>
 		public CachedCount? GuestCensus { get; init; }
+		/// <summary>The cached mean ride excitement (tp.exe 0x004CCBF0, saved by 0x4C5D70 as mVal, mWorkedOut and the stamp); absent while no read has counted it and in older saves.</summary>
+		public CachedCount? Excitement { get; init; }
 		/// <summary>The park turn the main loop's step counter started from, which times the crowd reads (every fourth turn after it); absent in older saves, which take the turn they load at.</summary>
 		public long? CrowdPhaseTurn { get; init; }
 		public List<CachedBlock> LitteredBlocks { get; init; } = new();
@@ -685,11 +701,14 @@ public static class ParkSaveFile
 			AnalyserCaches = new AnalyserCacheData
 			{
 				NetWorth = park.CachedNetWorth is { } worth ? new CachedCount { Value = worth.Value, Stamp = worth.Stamp } : null,
+				Excitement = park.CachedExcitement is { } excitement ? new CachedCount { Value = excitement.Value, Stamp = excitement.Stamp } : null,
 				GuestCensus = park.CachedCensus is { } census ? new CachedCount { Value = census.Value, Stamp = census.Stamp } : null,
 				CrowdPhaseTurn = park.CrowdPhaseTurn,
 				LitteredBlocks = park.Litter.LitteredBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList(),
 				PathBlocks = park.Litter.PathBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList()
 			},
+			AnalyserChase = park.MisbehavingKids( false ) == 0 && park.MisbehavingKids( true ) == 0 && park.MisbehavingKidsEver == 0 ? null
+				: new MisbehavingKidsData { Month = park.MisbehavingKids( false ), GotAway = park.MisbehavingKids( true ), Ever = park.MisbehavingKidsEver },
 			TicketsSpent = park.TicketsSpent,
 			TicketItems = park.TicketItems.Order().ToList(),
 			NextObjectId = park.NextObjectId,
@@ -1059,6 +1078,7 @@ public static class ParkSaveFile
 		if ( data.AnalyserCaches is { } caches )
 		{
 			Require( caches.NetWorth is null || caches.NetWorth.Stamp >= 0, "net worth cache" );
+			Require( caches.Excitement is null || caches.Excitement.Stamp >= 0, "excitement cache" );
 			Require( caches.GuestCensus is null || caches.GuestCensus.Stamp >= 0 && caches.GuestCensus.Value >= 0, "guest census cache" );
 			Require( caches.CrowdPhaseTurn is null or >= 0, "crowd read phase" );
 			foreach ( var blocks in new[] { caches.LitteredBlocks, caches.PathBlocks } )
@@ -1134,10 +1154,14 @@ public static class ParkSaveFile
 				CostsRing = RingAt( item, 0 ), TakingsRing = RingAt( item, 1 ), CustomersRing = RingAt( item, 2 ), WinnersRing = RingAt( item, 3 ), SatisfactionRing = RingAt( item, 4 )
 			} ),
 			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
+		if ( data.AnalyserChase is { } chase )
+			park.RestoreMisbehavingKids( chase.Month, chase.GotAway, chase.Ever );
 		if ( data.AnalyserCaches is { } caches )
 		{
 			if ( caches.NetWorth is { } worth )
 				park.RestoreNetWorthCache( worth.Value, worth.Stamp );
+			if ( caches.Excitement is { } excitementCache )
+				park.RestoreExcitementCache( excitementCache.Value, excitementCache.Stamp );
 			if ( caches.GuestCensus is { } census )
 				park.RestoreCensusCache( census.Value, census.Stamp, caches.CrowdPhaseTurn );
 			else

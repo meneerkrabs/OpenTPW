@@ -374,6 +374,11 @@ public class OriginalCoasterSaveTests
 		var park = OriginalParkImport.Import( payload, new MapFile( mapStream ) );
 		Assert.IsNotNull( park.CoasterBlock );
 		Assert.AreEqual( 0u, park.CoasterBlock.Count );
+		// the TrackRides block is the build-stamp chunk (type 2, 32 bytes) alone: no kart, water or bumper ride was built, and no track cell stands in the structure layer (TRACK-032)
+		Assert.IsNull( park.TrackRidesProblem );
+		CollectionAssert.AreEqual( new uint[] { 2 }, park.TrackRides!.Chunks.Select( chunk => chunk.Type ).ToArray() );
+		Assert.AreEqual( 32u, park.TrackRides.Chunks.Single().Size );
+		Assert.AreEqual( 0, park.TrackCells.Count );
 	}
 
 	// [DATA:PreBuilt/prebuilt.TPWS:COAS] the sibling Theme Park Inc prebuilt save's coaster body follows the traced Theme Park World contract (power factor 1.0, one section, no collisions); a structural cross-check on real nonempty bytes, not a Theme Park World proof

@@ -20,3 +20,14 @@
   coaster whose riders' ids hold the delimiter's bytes no longer depends on a delimiter search.
   Callers without the types and a World the loader's readers do not measure (a synthetic payload)
   keep the delimiter search.
+- **A saved kart or water track comes back (TRACK-032, narrowed).** The loader `0x543560` rebuilds a
+  ride from a chunk stream while the track itself sits in the World block's structure layer
+  (31-byte track cells, `0x4D0B30` and `0x50C200`). The import now writes those cells (kart tiles 11
+  and 13, water 16 and 18, their type-12 extensions; type 25 is a hoarding post), owns each tile by
+  reach from its ride's station, walks the circuit from them, compares it with chunk 4's section
+  list and applies chunk 3's laps, performance and phase. Vehicles, riders and the pending and
+  leaving lists (chunks 5, 7, 8, 9) are reported, not restored. No save available to us holds a
+  ride or a track cell (every TrackRides block is the 44-byte build-stamp chunk), so this is tested
+  against the saver's shapes and OpenTPW's own tracks only.
+- **SAVE-921 narrowed**: a scan of the coaster module finds no user of the controller's track flags
+  0x20, 0x40, 0x80, 0x100, 0x200 and 0x400 besides the saver and the loader.

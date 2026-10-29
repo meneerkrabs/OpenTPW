@@ -1053,7 +1053,7 @@ RideSystem, attraction and economy readers over the second fixture set
 - Money/time/guest state needs known-state reference saves before import.
 
 
-## TrackRides structural reader (TRACK-032 remains open)
+## TrackRides: structural reader and track import (TRACK-032 narrowed)
 
 `SaveTrackRideBlock.ParseContainer` accepts exactly the full type-1 container, including its 12-byte header.
 `ParseBody` accepts only subchunks, as stored in `OriginalSavePayload.TrackRides`; check `TrackRidesType == 1`
@@ -1087,5 +1087,18 @@ Chunk 3's `0x545890` creates station/grid waypoints; chunk 4's `0x54b2f0` append
 Chunk 6 (`0x5439bb..0x5439e4`) scans from the head to the first flag-4 waypoint, **always advances once**, wraps a null
 successor to the head, and skips flag-2 candidates. The first scan has no wrap/null guard in the original.
 No reference index can be obtained from chunk-5 record order. Geometry-specific waypoint reconstruction, safe handling
-of malformed chains and runtime restore semantics remain future work; the structural reader does not fresh-walk a map
-or retire TRACK-032.
+of malformed chains and the vehicles' runtime restore remain future work; the structural reader does not fresh-walk a map.
+
+### Track import (`Level.ImportOriginalTracks`)
+
+The loader `0x543560` reads chunk 2 (the build stamp: the time `15:25:02` and date `Mar 17 2000` strings, 32 bytes with the header), then per chunk: 3 builds the ride's
+controller through `0x545890` (the handle, the station cell `+0xB4`/`+0xB8`, the orientation `+0xB0`, then the words `+0x10`, `+0x1C` (performance), `+0x14`, `+0x18`, the duration `+4` ("Set Ride Duration to %d") and the
+phase `+0x50`; the handle the constructor gives must equal the saved one), 4 hands each section's type word and corner to the section builder `0x54B2F0` (which rebuilds the buoy and waypoint chain), 5 reads a vehicle (the 0xAC-byte
+record, not a controller record: its `+0x34`/`+0x38` place a vehicle on its tile, `+0x7C` is its aimed waypoint), 6 selects the reference waypoint (the first flag-4 buoy, then the next that is not flag 2: the open routine
+`0x544840`'s choice), 7 and 8 add guests to the ride's leaving and pending lists (`0x54ABD0`, `0x54AA80`) and 9 links riders' heads. The track itself is the structure layer of the World block: the 31-byte track cells (the base
+`0x4D0B30` and the segment word `0x50C200`: `SaveCell.StructureMask`, `StructureTile`, `StructureSegment`), the kart tiles (type 11, station 13), the water tiles (16, station 18) and their type-12 extension cells; type 25 (`0x19`) is a hoarding post.
+
+The import writes the saved track cells (the ride of a tile is the one whose station reaches it through the masks), walks each ride's circuit from them (`WalkTrack`), compares it with chunk 4's section list and applies chunk 3's laps,
+performance and phase. What is not imported (vehicles, riders and the pending and leaving lists; the words `+0x10`/`+0x14`/`+0x18`; a racing or over phase of a kart or bumper ride) is reported. No save of the corpus or Easymode holds
+a ride or a track cell, so the import is tested against the saver's shapes and OpenTPW's own tracks (`TrackAddOnLevelTests.OriginalImport`) and not against a real Theme Park World track.
+

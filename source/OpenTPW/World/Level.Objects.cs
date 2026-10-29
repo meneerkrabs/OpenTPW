@@ -2061,7 +2061,7 @@ public partial class Level
 			var taken = runtime.RestoreOriginalSettingWords( attraction.OperatingSpeed, attraction.OperatingCapacity, attraction.OperatingDuration );
 			// [BIN:TPW-EXE:0x004DB33C access cell] the saved entry cell (mEntryPos, +0x36) is the constructor's turned entrance symbol, which the placement derives again: a save whose word differs (a cell id y x 128 + x + 1) keeps the placement's, reported
 			if ( attraction.EntryPos != 0 && runtime.Visitors is RideVisitorBridge entryBridge && entryBridge.AccessCell is { } access && attraction.EntryPos != access.Y * 128 + access.X + 1 )
-				import.Report( $"[APPROX:QUEUE-003] Attraction thing {attraction.Id}: the saved entry cell {attraction.EntryPos} is not the placement's access cell ({access.X}, {access.Y}); the placement's is kept." );
+				import.Report( $"Attraction thing {attraction.Id} (QUEUE-003): the saved entry cell {attraction.EntryPos} is not the placement's access cell ({access.X}, {access.Y}); the placement's is kept." );
 			// [BIN:TPW-EXE:0x004DE130 saved cache kept] the saved back cell (+0x3A) and queue size (+0x40) are kept as read
 			if ( runtime.Visitors is RideVisitorBridge savedQueue && savedQueue.ImportSavedBackCache( attraction.BackOfQueueCell, attraction.QueueSizeInCells ) )
 				import.Report( $"Attraction thing {attraction.Id}: the saved cached back-of-queue cell {attraction.BackOfQueueCell} (size {attraction.QueueSizeInCells}) differs from the queue as it stands and is kept (0x004DE130)." );

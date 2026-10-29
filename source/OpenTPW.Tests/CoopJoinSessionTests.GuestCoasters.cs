@@ -63,4 +63,24 @@ public partial class CoopJoinSessionTests
 		Assert.IsFalse( guest.Level.ResolveCommandObject( ride )!.Runtime.Coaster!.BeingEdited );
 		CatchUpAndCompare( guest );
 	}
+
+	/// <summary>A joiner gets an upgraded coaster at its tier: the host's capture writes the coaster's catalogue tier as any ride's (issue #903).</summary>
+	[TestMethod]
+	public void AJoinerGetsAnUpgradedCoasterAtItsTier()
+	{
+		prepareParks = level =>
+		{
+			var station = CoopSessionTests.PlaceCoasterOn( level, fixture! );
+			Assert.IsTrue( level.Park!.Economy.TryGetObject( level.GetEconomyInstance( station )!.Value, out var state ) );
+			state.Level = 1;
+			Assert.IsTrue( station.Runtime.TryApplyCatalogueTierDefaults( 1, out var reason ), reason );
+		};
+		var other = Hosted( 1 ).Single();
+		var joiner = Joiner();
+		RoundsUntil( () => joiner.Level != null, "the joiner swapped its capture in" );
+		Assert.AreEqual( 1, host.Session!.HostStream!.CapturesTaken );
+		var coaster = joiner.Level!.Objects.Objects.Single( item => item.Runtime.Coaster != null );
+		Assert.AreEqual( 1, coaster.Runtime.CatalogueTier );
+		CatchUpAndCompare( joiner, other );
+	}
 }

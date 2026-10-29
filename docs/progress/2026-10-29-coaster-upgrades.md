@@ -7,5 +7,6 @@
   researched". tp.exe lists the level for every ride (`0x004AE140`) and its
   installation (`0x4df8f0`) has no track-type branch, so coasters now bind their
   tier like any ride. This also lets the coaster panel's loop button work, which
-  needs level 1 (`0x4980D6`). A with-data test checks that every coaster's own
-  `Coaster.RSE` takes its levels.
+  needs level 1 (`0x4980D6`). A with-data test checks that every coaster binds its
+  tier and seeds its level's capacity into its own `Coaster.RSE` variables, and a
+  co-op join carries an upgraded coaster's tier.

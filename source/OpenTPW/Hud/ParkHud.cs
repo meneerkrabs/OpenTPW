@@ -1198,11 +1198,6 @@ public sealed partial class ParkHud
 			(inPark, toolClick) = DispatchParkPointer( context, input, overUi, consumed, rideOwnsInput, paused,
 				mouseCaptured.Value, keyboardCaptured.Value, textCaptured.Value );
 		UpdateBlueprint( inPark && !rideOwnsInput, context.Delta, paused || Status.Speed == GameSpeed.Paused );
-		if ( level.Harbour is { } harbour )
-		{
-			harbour.WindDirection = level.Weather?.WindDirection ?? ParkWeather.InitialWindDirection;
-			harbour.Update( context.Delta, paused || Status.Speed == GameSpeed.Paused, Math.Max( 0, (int)level.SimulationTimeScale ) );
-		}
 
 		for ( var index = messages.Count - 1; index >= 0; index-- )
 		{

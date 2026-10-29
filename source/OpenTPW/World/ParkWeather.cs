@@ -365,6 +365,8 @@ public sealed class ParkWeather
 		Require( float.IsFinite( snapshot.LastTop.X ) && float.IsFinite( snapshot.LastTop.Y ) && float.IsFinite( snapshot.LastTop.Z ), "the last bolt top is not finite" );
 		Require( snapshot.WindDirection is null or (>= 0f and <= 360f), "wind direction outside 0..360" );
 		Require( snapshot.WindStrength is null or (>= 0f and <= 1f), "wind strength outside 0..1" );
+		Require( (snapshot.WindDirection is null) == (snapshot.WindStrength is null) && (snapshot.WindDirection is null) == (snapshot.WindRandomState is null),
+			"the wind's direction, strength and stream must be saved together" );
 		if ( !snapshot.Started )
 		{
 			Require( snapshot.Quality == 0 && !snapshot.Snow && !snapshot.Rain && !snapshot.Lightning

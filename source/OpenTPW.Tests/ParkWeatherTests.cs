@@ -355,5 +355,6 @@ public class ParkWeatherTests
 		Assert.AreEqual( (90f, 0.5f), (legacy.WindDirection, legacy.WindStrength) );
 		Assert.ThrowsException<InvalidDataException>( () => legacy.ValidateSnapshot( snapshot with { WindDirection = 400 } ) );
 		Assert.ThrowsException<InvalidDataException>( () => legacy.ValidateSnapshot( snapshot with { WindStrength = -0.5f } ) );
+		Assert.ThrowsException<InvalidDataException>( () => legacy.ValidateSnapshot( snapshot with { WindRandomState = null } ), "all three wind fields or none" );
 	}
 }

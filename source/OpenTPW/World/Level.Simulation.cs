@@ -55,6 +55,12 @@ public partial class Level
 				AdvanceSimulation( frameSeconds * SimulationTimeScale );
 		}
 		FrameStats.EndSimulation( simulationStart );
+		// the harbour's flush (0x53C3F0) steps unless the game clock is paused (0x402DF0): a window that keeps the clock running keeps it moving
+		if ( Harbour is { } harbour )
+		{
+			harbour.WindDirection = Weather?.WindDirection ?? ParkWeather.InitialWindDirection;
+			harbour.Update( (float)frameSeconds, SimulationTimeScale <= 0, Math.Max( 0, (int)SimulationTimeScale ) );
+		}
 		if ( !updateEntities )
 			return;
 		using ( FrameMarks.Measure( "level.entities" ) )

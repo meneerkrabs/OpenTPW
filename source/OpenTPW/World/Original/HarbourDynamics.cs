@@ -51,6 +51,7 @@ public sealed class HarbourDynamics : ModelEntity
 	private readonly Material material;
 	private readonly int[] seaTextures;
 	private readonly HarbourPhases phases = new();
+	private readonly HarbourBuffers buffers = new();
 	private Vertex[] vertices = [];
 
 	/// <summary>The wind's direction in degrees the flags turn to (the weather's <see cref="ParkWeather.WindDirection"/>).</summary>
@@ -120,8 +121,14 @@ public sealed class HarbourDynamics : ModelEntity
 	// [BIN:TPW-EXE:0x0053D380 wave grid] k = 2 pi x 1/3; with s = table sin(10 deg), c = table cos(10 deg): angle = x k c - z k s - phase x 0.5; y = table cos(angle) x 1.7; the normal (sin, 1, sin) of the angle normalised; x steps across a row, z down the rows
 	internal static (System.Numerics.Vector3[,] Positions, System.Numerics.Vector3[,] Normals) WaveGrid( float phase )
 	{
-		var positions = new System.Numerics.Vector3[WaveColumns, WaveRows];
-		var normals = new System.Numerics.Vector3[WaveColumns, WaveRows];
+		var grid = (new System.Numerics.Vector3[WaveColumns, WaveRows], new System.Numerics.Vector3[WaveColumns, WaveRows]);
+		WaveGrid( phase, grid.Item1, grid.Item2 );
+		return grid;
+	}
+
+	/// <summary><see cref="WaveGrid(float)"/> into the given arrays.</summary>
+	internal static void WaveGrid( float phase, System.Numerics.Vector3[,] positions, System.Numerics.Vector3[,] normals )
+	{
 		var k = 6.2831850f * 0.33333334f;
 		var tilt = 0.017453300f * 10f;
 		var along = OriginalSineTable.Cos( tilt ) * k;
@@ -142,7 +149,6 @@ public sealed class HarbourDynamics : ModelEntity
 			}
 			z += WaveStep;
 		}
-		return (positions, normals);
 	}
 
 	/// <summary>
@@ -152,8 +158,14 @@ public sealed class HarbourDynamics : ModelEntity
 	// position (x, 2a x table cos(2 pi x 0.25 x d) x 0.3 + y0 - 0.02 x^2, table cos(k d) x a x 0.3) with k = 2 pi x 1/3; normal (table sin(k d) x a, the same, 1) normalised
 	internal static (System.Numerics.Vector3[,] Positions, System.Numerics.Vector3[,] Normals) ClothGrid( float phase )
 	{
-		var positions = new System.Numerics.Vector3[ClothColumns, ClothRows];
-		var normals = new System.Numerics.Vector3[ClothColumns, ClothRows];
+		var grid = (new System.Numerics.Vector3[ClothColumns, ClothRows], new System.Numerics.Vector3[ClothColumns, ClothRows]);
+		ClothGrid( phase, grid.Item1, grid.Item2 );
+		return grid;
+	}
+
+	/// <summary><see cref="ClothGrid(float)"/> into the given arrays.</summary>
+	internal static void ClothGrid( float phase, System.Numerics.Vector3[,] positions, System.Numerics.Vector3[,] normals )
+	{
 		var k = 6.2831850f * 0.33333334f;
 		var height = ClothRows * ClothStep;
 		var width = (ClothColumns - 4) * ClothStep;
@@ -181,7 +193,6 @@ public sealed class HarbourDynamics : ModelEntity
 			}
 			top -= ClothStep;
 		}
-		return (positions, normals);
 	}
 
 	/// <summary>The sea's faces from <paramref name="start"/> over the wave grid: the two patches, each square in its table texture.</summary>
@@ -247,14 +258,24 @@ public sealed class HarbourDynamics : ModelEntity
 	// [BIN:TPW-EXE:0x0053C6B1 flags] the flags alternate the textures 18 and 19 from the first, and turn by the weather thing's +0x5C (0x519590 over world +0x1DA724) x 0.0174533
 	internal static List<HarbourFace> Faces( System.Numerics.Vector3 start, IReadOnlyList<int> seaTextures, float wavePhase, float flagPhase, float windDirection )
 	{
-		var faces = new List<HarbourFace>( 134 + FlagPoles.Length * FlagCellColumns * FlagCellRows * 2 );
-		var (waves, waveNormals) = WaveGrid( wavePhase );
-		faces.AddRange( SeaFaces( start, waves, waveNormals, seaTextures ) );
-		var (cloth, clothNormals) = ClothGrid( flagPhase );
+		var buffers = new HarbourBuffers();
+		Faces( start, seaTextures, wavePhase, flagPhase, windDirection, buffers );
+		return buffers.Faces;
+	}
+
+	/// <summary><see cref="Faces(System.Numerics.Vector3, IReadOnlyList{int}, float, float, float)"/> into reused grids and list (a frame's rebuild allocates none of them).</summary>
+	internal static void Faces( System.Numerics.Vector3 start, IReadOnlyList<int> seaTextures, float wavePhase, float flagPhase, float windDirection, HarbourBuffers buffers )
+	{
+		var faces = buffers.Faces;
+		faces.Clear();
+		WaveGrid( wavePhase, buffers.Waves, buffers.WaveNormals );
+		foreach ( var face in SeaFaces( start, buffers.Waves, buffers.WaveNormals, seaTextures ) )
+			faces.Add( face );
+		ClothGrid( flagPhase, buffers.Cloth, buffers.ClothNormals );
 		var angle = windDirection * 0.017453300f;
 		for ( var flag = 0; flag < FlagPoles.Length; flag++ )
-			faces.AddRange( FlagFaces( FlagPoles[flag], cloth, clothNormals, flag % 2 == 0, angle ) );
-		return faces;
+			foreach ( var face in FlagFaces( FlagPoles[flag], buffers.Cloth, buffers.ClothNormals, flag % 2 == 0, angle ) )
+				faces.Add( face );
 	}
 
 	/// <summary>
@@ -313,7 +334,8 @@ public sealed class HarbourDynamics : ModelEntity
 		if ( Model != null && state == built )
 			return;
 		built = state;
-		var faces = Faces( waterStart, seaTextures, phases.Waves, phases.Flags, WindDirection );
+		Faces( waterStart, seaTextures, phases.Waves, phases.Flags, WindDirection, buffers );
+		var faces = buffers.Faces;
 		if ( vertices.Length != faces.Count * 4 )
 			vertices = new Vertex[faces.Count * 4];
 		WriteVertices( field, faces, vertices );
@@ -377,4 +399,14 @@ internal sealed class HarbourPhases
 			Flags += Step * timeScale;
 		}
 	}
+}
+
+/// <summary>The grids and the face list one frame's rebuild fills (<see cref="HarbourDynamics.Faces(System.Numerics.Vector3, IReadOnlyList{int}, float, float, float, HarbourBuffers)"/>).</summary>
+internal sealed class HarbourBuffers
+{
+	public readonly System.Numerics.Vector3[,] Waves = new System.Numerics.Vector3[HarbourDynamics.WaveColumns, HarbourDynamics.WaveRows];
+	public readonly System.Numerics.Vector3[,] WaveNormals = new System.Numerics.Vector3[HarbourDynamics.WaveColumns, HarbourDynamics.WaveRows];
+	public readonly System.Numerics.Vector3[,] Cloth = new System.Numerics.Vector3[HarbourDynamics.ClothColumns, HarbourDynamics.ClothRows];
+	public readonly System.Numerics.Vector3[,] ClothNormals = new System.Numerics.Vector3[HarbourDynamics.ClothColumns, HarbourDynamics.ClothRows];
+	public readonly List<HarbourFace> Faces = new( 134 + 8 * HarbourDynamics.FlagCellColumns * HarbourDynamics.FlagCellRows * 2 );
 }

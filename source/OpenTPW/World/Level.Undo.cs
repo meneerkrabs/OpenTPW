@@ -27,7 +27,8 @@ public sealed partial class Level
 		var copy = cells.CopyForPrediction();
 		copy.Changed = ( x, y, _ ) => trace.Add( (x, y) );
 		new ParkPathBuilder( copy, null, (ParkEconomy?)null, Objects.Grid ).Undo( segment );
-		return segment.Built.All( cell => copy.RawTypeAt( cell.X, cell.Y ) == 0 )
+		// the cell's own type: a straight tile that lies beneath a path shows in the type byte once the path is gone (ParkCellMap.PrimaryTypeAt)
+		return segment.Built.All( cell => copy.PrimaryTypeAt( cell.X, cell.Y ) == 0 )
 			&& segment.Existing.All( cell => copy.TypeAt( cell.X, cell.Y ) == ParkCellType.Path && copy.PlacementCountAt( cell.X, cell.Y ) == cells.PlacementCountAt( cell.X, cell.Y ) - 1 )
 			&& OnlyLinksBeside( cells, copy, trace, footprint.ToHashSet() );
 	}
@@ -100,7 +101,7 @@ public sealed partial class Level
 		}
 		foreach ( var cell in footprint )
 		{
-			var cleared = copy.RawTypeAt( cell.X, cell.Y ) == 0;
+			var cleared = copy.PrimaryTypeAt( cell.X, cell.Y ) == 0;
 			// nothing standing on a cell it clears (one it counts down stays as it is)
 			if ( cleared && StandsOn( cells, cell ) )
 				return false;

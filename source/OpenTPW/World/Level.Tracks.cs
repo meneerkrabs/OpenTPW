@@ -142,7 +142,7 @@ public partial class Level
 		if ( TrackToolStation == item )
 			CellTool.Cancel();
 		trackToolStation = null;
-		DemolishTrack( station, BuilderOf( item )! );
+		DemolishTrack( item, station, BuilderOf( item )! );
 		item.Runtime.Bump?.Rebuild( TrackCircuit.Invalid( "removed" ) );
 	}
 
@@ -173,11 +173,19 @@ public partial class Level
 	private TrackEditor TrackEditorOf( OriginalObject item, TrackStation station, TrackBuilder builder ) => new( builder, station, TrackEditHooksOf( item, builder ) );
 
 	/// <summary>
-	/// Removes the station tiles of a ride; the tiles its replays cleared are gone already (<see cref="OnTrackStationRemoving"/>) and a tile no replay reached stays, as in the original.
+	/// Removes the station tiles of a ride (pass 2 of the demolition); the tiles its replays cleared are gone already (<see cref="OnTrackStationRemoving"/>) and a tile no replay reached stays, as in the original.
 	/// A type without a queue runs no replay and leaves its whole track.
 	/// </summary>
-	private void DemolishTrack( TrackStation station, TrackBuilder builder )
+	private void DemolishTrack( OriginalObject item, TrackStation station, TrackBuilder builder )
 	{
+		// pass 2 of the demolition clears the record under every cell of the ride's shape with 0x53B280(0, 0, 1): the station tiles go through the record clear, which takes the arms of the tiles beside them
+		var editor = TrackEditorOf( item, station, builder );
+		foreach ( var (x, y, cell) in item.Cells )
+		{
+			if ( ParkCellMap.FootprintType( cell.CellType ) != 0 && builder.Cells.InBounds( x, y ) )
+				editor.ClearUnderDemolition( (x, y) );
+		}
+		// a station tile outside the shape (a legacy layout) goes as it always did
 		builder.RemoveStation( station );
 	}
 
@@ -549,12 +557,41 @@ public partial class Level
 			{
 				if ( Objects.FindAt( x, y ) is { IsDeleted: false } addOn && addOn != ride )
 				{
-					Objects.Remove( addOn );
+					// [BIN:TPW-EXE:0x0053B703 add-on of a cleared tile] the tile's clear demolishes the add-on with the third argument 1: its pass 2 takes the flag 0x10 off the records and clears no tile again
+					removingAddOnOfClearedTile = true;
+					try { Objects.Remove( addOn ); }
+					finally { removingAddOnOfClearedTile = false; }
 					return;
 				}
 			}
 		}
 	};
+
+	/// <summary>The demolition's passes over the footprint of a removed object (<see cref="ParkCellMap.DemolishFootprint"/>), with the records of the second layer cleared by their ride's track editor.</summary>
+	internal void DemolishFootprintCells( OriginalObject item, ParkCellMap cells, Action<ushort>? queueCellRemoved ) =>
+		cells.DemolishFootprint( item.Cells, queueCellRemoved, ClearTrackRecordUnder, moved: removingAddOnOfClearedTile );
+
+	/// <summary>Set while the clear of a tile removes the add-on object standing on it (<see cref="ParkCellMap.DemolishFootprint"/>'s <c>moved</c>).</summary>
+	private bool removingAddOnOfClearedTile;
+
+	/// <summary>
+	/// The record clear of a demolition's second pass on the second layer's record under the mask cell (x, y): the ride the tile belongs to clears it through its track editor
+	/// (<see cref="TrackEditor.ClearUnderDemolition"/>, with the refund and the add-on removal of the cut's hooks); a tile no ride owns goes alone.
+	/// </summary>
+	private bool ClearTrackRecordUnder( int x, int y )
+	{
+		if ( Guests?.Grid.Cells is not { } cells || cells.Tracks.Get( x, y ) is not { IsEmpty: false } cell )
+			return false;
+		(int X, int Y) origin = cell.IsExtension && cell.Parent >= 0 ? cells.Tracks.CellOf( cell.Parent ) : (x, y);
+		var head = cells.Tracks.Get( origin.X, origin.Y );
+		foreach ( var (ride, station) in trackStations )
+		{
+			if ( BuilderOf( ride ) is { } builder && head.Owner != 0 && builder.OwnerOf( station ) == head.Owner )
+				return TrackEditorOf( ride, station, builder ).ClearUnderDemolition( (x, y) );
+		}
+		// a tile laid without a ride (a rig's, an old save's) has no exit or entry tile to spare
+		return cells.ClearTrackRecord( x, y );
+	}
 
 	/// <summary>
 	/// After a committed cut: the walk of the circuit again (the controller closes, the pieces start or stop) and, when the circuit is open, the line tool from the end of the track.
@@ -858,6 +895,12 @@ public partial class Level
 				SetTrackStation( ride, track, TrackStation.FromPlacementLegacy( ride.Placement.X, ride.Placement.Y, ride.Placement.Rotation ) );
 		}
 		TrackSave.RestoreCells( Guests.Grid.Cells, saved );
+		// [BIN:TPW-EXE:0x00528A70 station under its footprint] a save written before the footprint's type went under the station tiles holds base type 0 there (0 points for the net worth, not 2): the footprint writer puts the type under them again, as a fresh placement does; a join keeps the host's cells exactly (EXT:online-coop-snapshot-join)
+		if ( joinRestore == null )
+		{
+			foreach ( var station in controllers.Where( item => trackStations.ContainsKey( item ) ) )
+				Guests.Grid.Cells.WriteFootprint( station.Cells, OwnerWord( station ), station.Placement.Rotation );
+		}
 		var module = Objects.ScriptWorld.Bumpers;
 		// a save of the shared module (it carries the module clock and every controller's object slots) is trusted: saved pool slots, verdicts and object slots
 		var shared = saved.FrameCount != null;

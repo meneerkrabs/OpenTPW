@@ -460,9 +460,12 @@ captures a ride with an add-on through `--debug-kart-track` or `--debug-water-tr
   the surface records of the kart add-ons, the terrain mode of the water tunnels. `TrackRenderer.ObjectSurfaceAt`.
 - **Window** (`0x486920`): the placement links an add-on to the clicked tile's ride (thing +0x30, `0x52A023`), and a click on the add-on opens that ride's window; the
   window code's walks over the objects of a type skip add-ons (`0x4E2710`), so the window's arrows do too. `Level.WindowTarget`.
-- **Removal**: an add-on is removed as any object; the demolition `0x527EE0` clears the flag under it but makes no pieces and walks nothing (the pieces come back with the
-  circuit's next walk, until then the sections keep the add-on's kind). `[EXT:addon-sale-walk]`: OpenTPW clears the flag and walks the circuit at once, as after a placement
-  (the walk ends the vehicles' runs and opens a valid ride), because a save of the stale sections could not be restored: the restore walks the cells.
+- **Removal** (October 28, 2026, ORACLE.md X37): an add-on is removed as any object, by the demolition `0x527EE0` (its callers all pass 0 for the third argument except the tile clear's own,
+  `0x53B703`), whose pass 2 runs the record clear `0x53B280(0, 0, 1)` on the second layer's record under every cell of the add-on's shape: **the tile the add-on stands on goes with it**, with the
+  refund of the track cell cost and the arms of the tiles beside it, unless it is the track tool's exit or entry tile (`0x7639E0/E4`, `0x7639E8/EC`; OpenTPW takes the ride's own). The add-on that a
+  cleared tile takes (`0x53B6E5` calls the demolition with 1) only loses the flag 0x10 of the records. The demolition makes no pieces and walks nothing (the pieces come back with the
+  circuit's next walk, until then the sections keep the add-on's kind). `[EXT:addon-sale-walk]`: OpenTPW walks the circuit at once, as after a placement (the walk ends the vehicles' runs and
+  opens a valid ride; after a sale the circuit is open, the tile being gone), because a save of the stale sections could not be restored: the restore walks the cells.
 
 Not traced: whether a ride's demolition takes the add-ons on its track with it (OpenTPW leaves them standing, without a window), and the Extra Tube's window (the
 dispatcher opens `0x4B6AE0` for an add-on of type 2; OpenTPW shows the ride window).

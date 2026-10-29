@@ -61,7 +61,7 @@ public partial class CoopSessionTests
 	private static void QueueOf( Park park )
 	{
 		park.Enter();
-		ConfigureQueue( park.Level.Guests!.Grid, park.One, 10, 5 );
+		ConfigureQueue( park.Level.Guests!.Grid, park.One, 10, 5, join: false );
 	}
 
 	private static string QueueCellsOf( Park park ) => string.Join( " ", park.One.Visitors.QueueCells );

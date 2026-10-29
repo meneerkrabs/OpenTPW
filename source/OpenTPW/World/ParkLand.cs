@@ -65,7 +65,9 @@ public sealed record ParkLandSetup( (int X, int Y) PostA, (int X, int Y) PostB, 
 /// it, and the rules that turn it into owned cells (cell flag 0x40 clear) and that buy more land. The fence is laid by the original's own routines (<see cref="FenceEngine"/>: the line tool, the walk and the fill),
 /// so the cells it owns are the ones the original leaves; a purchase runs them again on the live fence. Fence posts stand on a lattice of every second cell anchored on post A.
 /// </summary>
-// [APPROX:PATH-007] a purchase that crashes or hangs the original is refused, the six-click fence's level bit has no traced source, and a fence cell holding a foreign structure takes click-handler branches the oracle did not run (the register)
+// [EXT:land-purchase-fault-refusal] a purchase on which the original's fill reads the cell beyond the map's edge (a null block, a crash) or whose ring walk never ends (a cell that is no post, a hang) is refused and charges nothing, where the original crashes or hangs; refusing is OpenTPW's choice, approved by the user on 2026-10-29 (docs/PATHS.md)
+// [BIN:TPW-EXE:0x0044DE2B six-click bit] the six-click fence (bit 0x400 of the level word 0x79D86C) is traced never set: the writers 0x44D993, 0x44DA92, 0x44DDF3, 0x44DE34, 0x44DEFD, 0x44E306 and 0x44E322 set other bits or clear, only a whole-dword copy of the settings blob read from dialog.tcf (0x424A60 to 0x78D8D8, then 0x449E78 copies +0x7C) could, and 0x44DE2B clears it when no settings load, so a stock install never lays it; the engine lays it when asked and OpenTPW reads no dialog.tcf
+// Host storage (not an approximation): a track tile's fence links +0x22 stay in the fence layer instead of the track layer's alternate mask, and a save without its structure records (written before the fence port) derives the layer from its ring (LayerFromRing)
 public sealed class ParkLand
 {
 	/// <summary>The <c>HoardingClicks</c> X value that ends the list.</summary>
@@ -644,6 +646,9 @@ public sealed class ParkLand
 				var (x, y) = (2 * i + 1, 2 * j + 1);
 				if ( !cells.InBounds( x, y ) )
 					continue;
+				// [BIN:TPW-EXE:0x5329D9 pocket grid extension] 0x532960 follows an extension record (0x53AD90: type 0xC or 0x11, a track tile's too) to the record its word +0x10 names (the tile's origin) before it tests the hoarding type (0x53AD60) and the flag 0x40 of that record's cell
+				if ( cells.Tracks.Get( x, y ) is { IsExtension: true, Parent: >= 0 } extension && extension.Parent < cells.Width * cells.Height )
+					(x, y) = cells.Tracks.CellOf( extension.Parent );
 				grid[i + 1, j + 1] = IsPost( x, y ) ? Hoarding : cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ) ? Unowned : Owned;
 			}
 		}

@@ -70,6 +70,11 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 	internal long? Record { get; init; }
 	/// <summary>A successful preview visited the path/queue validator's link branch; only completed ghosts expose it in the HUD.</summary>
 	public bool LinkPointer { get; init; }
+	/// <summary>
+	/// A preview ended on a cell of the tool's own kind (the validator's code 0xB, which sets the end flag 0x816D4C that the pointer switch turns into the end pointer): the path tool's last cell is an existing path
+	/// cell, the queue tool's last cell is the ride's own queue cell. Only completed ghosts expose it in the HUD.
+	/// </summary>
+	public bool EndPointer { get; init; }
 	/// <summary>True when no cell of the line was refused.</summary>
 	public bool Completed => StoppedBy is CellBuildResult.Ok or CellBuildResult.Existing;
 }
@@ -351,7 +356,9 @@ public sealed class ParkPathBuilder : ICellLineWriter
 			Line = line,
 			Existing = existing,
 			StoppedAt = stoppedAt,
-			LinkPointer = linkPointer
+			LinkPointer = linkPointer,
+			// [BIN:TPW-EXE:0x535AFB code 0xB] the path tool's validator answers 0xB (and sets 0x816D4C) for a path cell of the line's own type when it is the last cell (0x820AB8) or the line is one cell (0x818688): the ghost's last existing path cell
+			EndPointer = !write && stoppedAt == null && existing.Count > 0 && existing[^1] == last
 		};
 	}
 

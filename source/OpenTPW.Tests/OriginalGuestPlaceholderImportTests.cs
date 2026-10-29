@@ -38,7 +38,6 @@ public class OriginalGuestPlaceholderImportTests
 	[DataRow( 12u )]
 	[DataRow( 13u )]
 	[DataRow( 14u )]
-	[DataRow( 15u )]
 	[DataRow( 16u )]
 	[DataRow( 17u )]
 	[DataRow( 20u )] // WalkingToVehicle still needs arrival-vehicle identity and script restoration.
@@ -71,9 +70,9 @@ public class OriginalGuestPlaceholderImportTests
 	[TestMethod]
 	public void MixedUnsupportedStatesSurvivePoolResumeWithoutRecyclingTheirIds()
 	{
-		var unsupported = Enumerable.Range( 11, 7 ).Append( 20 ).ToArray();
+		var unsupported = new[] { 11, 12, 13, 14, 16, 17, 20 };
 		// Deliberately non-numeric used-list order: import sorting must not reorder the saved pool.
-		var slots = new[] { 17, 20, 13, 30, 11, 16, 12, 15, 14 }.Select( id => new ThingSlot( id, SaveThingModel.Guest ) ).ToArray();
+		var slots = new[] { 17, 20, 13, 30, 11, 16, 12, 14 }.Select( id => new ThingSlot( id, SaveThingModel.Guest ) ).ToArray();
 		var pool = new ThingPool();
 		pool.Restore( slots );
 		var simulation = Simulation( pool );

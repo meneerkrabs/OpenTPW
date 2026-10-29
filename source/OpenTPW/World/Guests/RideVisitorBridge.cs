@@ -790,6 +790,34 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		(backCache, sizeCache, backCacheKnown) = (((cellId - 1) % 128, (cellId - 1) / 128), size, true);
 		return BackCacheIsStale;
 	}
+	/// <summary>
+	/// An original save's queue as the loader leaves it: the guest list from the head <c>mFirstInQ</c> (<c>+0x3C</c>) along the guests' <c>mQNext</c> links, front first, and the guest called forward
+	/// (<c>mPersonBeingLoaded</c>, <c>+0x6C</c>; 0 when none, and 0 for a head already admitted to the script, whose id waits in <c>VAR_LETMEON</c>). The ride must hold no queue yet. A head in
+	/// <paramref name="waitingForScript"/> (a guest in state 14) is kept as the pending visitor with its id taken as written to <c>VAR_LETMEON</c>, which the host step boards once the script has taken
+	/// it (the state-14 test 0x004E0A70 compares the script's first variable with <c>mFirstInQ</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] mFirstInQ and mPersonBeingLoaded are read back as saved, and no pass relinks the guests (the guest serializer 0x004FB530 reads mQNext and mQPrev the same way): the chain, the head and the called guest are the saved ones
+	// [BIN:TPW-EXE:0x004E0A70 state 14 test] a guest in state 14 goes on to state 16 once the script's variable 0 (VAR_LETMEON) no longer equals the ride's mFirstInQ (+0x3C)
+	internal void ImportSavedQueue( IReadOnlyList<int> chain, int calledGuest, bool waitingForScript )
+	{
+		ArgumentNullException.ThrowIfNull( chain );
+		if ( links.Count != 0 )
+			throw new InvalidOperationException( $"Attraction {AttractionId} already holds a queue." );
+		if ( chain.Count != chain.Distinct().Count() || chain.Any( guest => guest <= 0 ) )
+			throw new InvalidDataException( $"The saved queue of attraction {AttractionId} lists a guest twice or a guest 0." );
+		if ( calledGuest != 0 && !chain.Contains( calledGuest ) )
+			throw new InvalidDataException( $"The saved queue of attraction {AttractionId} calls guest {calledGuest}, who is not in it." );
+		if ( waitingForScript && (chain.Count == 0 || calledGuest != 0 && calledGuest != chain[0]) )
+			throw new InvalidDataException( $"The saved queue of attraction {AttractionId} has a guest waiting for the script that is not its head." );
+		for ( var index = 0; index < chain.Count; index++ )
+			links.Add( chain[index], (index + 1 < chain.Count ? chain[index + 1] : 0, index > 0 ? chain[index - 1] : 0) );
+		head = chain.Count > 0 ? chain[0] : 0;
+		tail = chain.Count > 0 ? chain[^1] : 0;
+		called = waitingForScript ? chain[0] : calledGuest;
+		letMeOnWritten = waitingForScript;
+		calledTurn = called != 0 ? Host?.ParkTurn ?? -1 : -1;
+	}
+
 	private int LiveSize => IsZeroFront ? 0 : Math.Max( 1, queueCells.Count );
 	private void RefreshBackCache( bool keep )
 	{
@@ -1016,7 +1044,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// on a path; null when the queue is not connected to a path.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE840 attached path] 0x4DEA2F..0x4DEA57: for the bits 1, 4, 16, 64 of the back cell's +0x0C (0x522770) the neighbour along it (0x4D97E0) is taken when it is type 1 (0x536310); none logs "No path attached to end of queue"
-	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented; supported live typed HasQueue entries derive their front from the actual entry link byte (+0x0C, tp.exe 0x4DE040, bits 1, 16, 64, 4), and a native zero front (no cardinal bit; 0x4DE4A0 reads such a ride as unconnected, which the opening guard still answers permissively under ECON-049) leaves its demolition without a count to undo (0x527FB4) and its re-evaluation without a block stamp; a zero-front ride has back cell 0 and size 0 for the guests (they neither score, choose nor join it, and its queued guests but the called one leave at the re-evaluation) with the host's one-cell geometry kept for the called guest's stand cell and the queue tool; unsupported entries (a neighbour off the map) and untyped worlds retain the host positive one-cell fallback; divergent imported mEntryPos and the native cache invalidation timing (0x4DE130 keeps +0x3A until the next 0x4DE1F0, where OpenTPW recomputes on every grid change) remain unsupported
+	// [APPROX:QUEUE-003] back-cell admission and fourth-slot path geometry are implemented; supported live typed HasQueue entries derive their front from the actual entry link byte (+0x0C, tp.exe 0x4DE040, bits 1, 16, 64, 4), and a native zero front (no cardinal bit; 0x4DE4A0 reads such a ride as unconnected, which the opening guard still answers permissively under ECON-049) leaves its demolition without a count to undo (0x527FB4) and its re-evaluation without a block stamp; a zero-front ride has back cell 0 and size 0 for the guests (they neither score, choose nor join it, and its queued guests but the called one leave at the re-evaluation) with the host's one-cell geometry kept for the called guest's stand cell and the queue tool; unsupported entries (a neighbour off the map) and untyped worlds retain the host positive one-cell fallback; a saved mEntryPos that differs from the placement's access cell is reported and the placement's kept (the constructor 0x004DB090 derives it from the shape); an original save's head, links and called guest (mFirstInQ, mQNext, mQPrev, mPersonBeingLoaded) and its cached back cell and size (+0x3A, +0x40) are imported as read; the native cache invalidation timing (0x4DE130 keeps +0x3A until the next 0x4DE1F0, where OpenTPW recomputes on every grid change) remains unsupported
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];

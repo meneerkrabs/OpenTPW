@@ -2001,7 +2001,7 @@ public partial class Level
 		var bins = LitterBins().Select( bin => bin.Id ).ToHashSet();
 		int Attraction( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bridges.TryGetValue( instance, out var id ) ? id : 0;
 		int Bin( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bins.Contains( instance ) ? instance : 0;
-		foreach ( var line in Guests.ImportOriginal( save.Guests, save.World.Variables.GameTick, Attraction, Bin, save.World.Variables.NumberOfVisitorsToDate ) )
+		foreach ( var line in Guests.ImportOriginal( save.Guests, save.World.Variables.GameTick, Attraction, Bin, save.World.Variables.NumberOfVisitorsToDate, save.Attractions ) )
 		{
 			import.Report( line );
 			Log.Trace( $"Park economy import: {line}" );
@@ -2059,6 +2059,9 @@ public partial class Level
 			if ( !import.AttractionInstances.TryGetValue( attraction.Id, out var instance ) || !runtimes.TryGetValue( instance, out var runtime ) )
 				continue;
 			var taken = runtime.RestoreOriginalSettingWords( attraction.OperatingSpeed, attraction.OperatingCapacity, attraction.OperatingDuration );
+			// [BIN:TPW-EXE:0x004DB33C access cell] the saved entry cell (mEntryPos, +0x36) is the constructor's turned entrance symbol, which the placement derives again: a save whose word differs (a cell id y x 128 + x + 1) keeps the placement's, reported
+			if ( attraction.EntryPos != 0 && runtime.Visitors is RideVisitorBridge entryBridge && entryBridge.AccessCell is { } access && attraction.EntryPos != access.Y * 128 + access.X + 1 )
+				import.Report( $"[APPROX:QUEUE-003] Attraction thing {attraction.Id}: the saved entry cell {attraction.EntryPos} is not the placement's access cell ({access.X}, {access.Y}); the placement's is kept." );
 			// [BIN:TPW-EXE:0x004DE130 saved cache kept] the saved back cell (+0x3A) and queue size (+0x40) are kept as read
 			if ( runtime.Visitors is RideVisitorBridge savedQueue && savedQueue.ImportSavedBackCache( attraction.BackOfQueueCell, attraction.QueueSizeInCells ) )
 				import.Report( $"Attraction thing {attraction.Id}: the saved cached back-of-queue cell {attraction.BackOfQueueCell} (size {attraction.QueueSizeInCells}) differs from the queue as it stands and is kept (0x004DE130)." );

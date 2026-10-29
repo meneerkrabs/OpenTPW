@@ -38,10 +38,10 @@ public sealed partial class GuestSimulation
 
 	/// <summary>
 	/// Whether the import restores a guest in this saved state (guest <c>+0x220</c>, the <c>KIDSTATES</c> index): the arrival and departure states
-	/// 0–5, 18, 19 and 21, and the park states 6–10 (on a path or off the paths). The queue states 11–14, a guest leaving a ride (15), using an attraction (16) and one held by a
-	/// guard (17) are not restored.
+	/// 0–5, 18, 19 and 21, and the park states 6–10 (on a path or off the paths). The queue states 11–14 are restored through their attraction's saved queue
+	/// (<see cref="IsOriginalQueueMember"/>); a guest leaving a ride (15), using an attraction (16) and one held by a guard (17) are not restored.
 	/// </summary>
-	public static bool ImportsOriginalState( uint state ) => state is <= 10 or 18 or 19 or 21;
+	public static bool ImportsOriginalState( uint state ) => state is <= 10 or 15 or 18 or 19 or 21;
 
 	/// <summary>
 	/// Adds the saved guests to an empty simulation without drawing from its random stream. <paramref name="parkTurn"/> is the park turn of the save,
@@ -52,7 +52,7 @@ public sealed partial class GuestSimulation
 	// mLastPosX/Y, the litter byte (+0x1B4), mMajorDest (+0x1DC), the ride, shop, sideshow and win counts, mPaidAdmission, mParkOpeningWaitingTime (+0x200), mPersonType (+0x1F0), mPrankeryIndex (+0x1C0),
 	// mPreviousRides[i] / mPreviousTemporaryRides[i] interleaved (+0x1E0 / +0x1E8), mQNext, mQPrev, mQueueMoveDelay (+0x1F4), mQueuePos (+0x1F1), mRemainingBalloonLife (+0x214), mSavedMajorDest,
 	// mSavedState (+0x224), mState (+0x220), the thirst byte (+0x1A4), mTimeOfLastSpotAnim (+0x208), mTimeStartedIdling (+0x1FC), and the bytes of +0x1B8, toilet (+0x1AC) and illness (+0x1B0)
-	internal IReadOnlyList<string> ImportOriginal( IReadOnlyList<SaveGuest> saved, long parkTurn, Func<int, int> attraction, Func<int, int> bin, uint visitorsToDate = 0 )
+	internal IReadOnlyList<string> ImportOriginal( IReadOnlyList<SaveGuest> saved, long parkTurn, Func<int, int> attraction, Func<int, int> bin, uint visitorsToDate = 0, IReadOnlyList<SaveAttraction>? attractions = null )
 	{
 		ArgumentNullException.ThrowIfNull( saved );
 		if ( guests.Count != 0 )
@@ -70,13 +70,15 @@ public sealed partial class GuestSimulation
 		var keptTargets = 0;
 		var savedMajors = 0;
 		long Relative( uint stamp ) => Math.Max( 0, stamp - parkTurn );
+		var (queuePlans, queueNotes) = PlanOriginalQueues( saved, attractions, attraction );
 		foreach ( var save in saved.OrderBy( item => item.Id ) )
 		{
 			var person = save.Person;
 			var what = $"guest {save.Id}";
-			if ( !ImportsOriginalState( save.State ) )
+			var queued = IsOriginalQueueMember( save );
+			if ( queued ? !queuePlans.ContainsKey( save.Id ) : !ImportsOriginalState( save.State ) )
 			{
-				dropped.Add( $"{what} (state {save.State})" );
+				dropped.Add( queued && attractions != null ? $"{what} (state {save.State}, in no saved queue this import accepts)" : $"{what} (state {save.State})" );
 				ReleaseDroppedThing( save.Id );
 				continue;
 			}
@@ -96,8 +98,8 @@ public sealed partial class GuestSimulation
 			}
 			// [BIN:TPW-EXE:0x004FB530 off-path guest] the load reads the position and mState straight in and nothing moves a park guest standing off the paths (a path deleted
 			// under it, an object built over it, a wander across grass): it stays where it stands and its own state handlers recover it, the wander's off-path search 0x004F9490 included
-			var inPark = save.State is >= 6 and <= 10 || save.State == 18 && Grid.IsWalkable( cell.X, cell.Y );
-			if ( inPark && save.State != 18 && !Grid.IsWalkable( cell.X, cell.Y ) )
+			var inPark = save.State is >= 6 and <= 15 || save.State == 18 && Grid.IsWalkable( cell.X, cell.Y );
+			if ( inPark && save.State is not (15 or 18) && !Grid.IsWalkable( cell.X, cell.Y ) )
 				recovery.Add( $"guest {save.Id} state {save.State} imported off the paths at ({cell.X}, {cell.Y}) (cell type {Grid.Cells.RawTypeAt( cell.X, cell.Y )}); it recovers through its state handler (0x004F9490 off-path search)" );
 			if ( !inPark && !HasArrivalLane )
 			{
@@ -201,8 +203,8 @@ public sealed partial class GuestSimulation
 			byId.Add( guest.Id, guest );
 			if ( inPark )
 			{
-				ImportInPark( guest, save, cell, destination, attraction, bin, adjusted, recovery );
-				if ( (guest.AttractionId != 0 || guest.BinId != 0) && guest.State is not (GuestState.GoingToRide or GuestState.ThrowingAwayLitter) )
+				ImportInPark( guest, save, cell, destination, attraction, bin, adjusted, recovery, queuePlans, parkTurn );
+				if ( (guest.AttractionId != 0 || guest.BinId != 0) && guest.State is not (GuestState.GoingToRide or GuestState.ThrowingAwayLitter) && !guest.IsInQueue )
 					keptTargets++;
 				// [BIN:TPW-EXE:0x4FD950 time in park] mArrivalDate (+0x1D4) is the world's game tick at the stamp and the hours the visitor lists show are (tick − stamp) >> 2 turns (the roster's cell); the saved stamp gives the elapsed park turns, a stamp after the save's own turn is not a date
 				if ( save.ArrivalDate <= parkTurn )
@@ -225,15 +227,20 @@ public sealed partial class GuestSimulation
 			states.Add( $"{guest.Id}:{save.State}→{(int)guest.State}" );
 		}
 		evidence.Add( $"Guest destinations imported: {keptTargets} kept targets (mMajorDest, +0x1DC: an attraction or a litter bin, of guests deciding or wandering) and {savedMajors} saved major destinations (mSavedMajorDest, +0x1DE)." );
+		var queues = RestoreOriginalQueues( queuePlans );
+		if ( queuePlans.Count > 0 )
+			evidence.Add( $"Attraction queues imported: {queues} saved queues ({queuePlans.Count} guests in states 11–14) with their saved head, links and called guest (mFirstInQ, mQNext, mQPrev, mPersonBeingLoaded)." );
+		foreach ( var note in queueNotes )
+			evidence.Add( $"[APPROX:SAVE-002] Saved {note}." );
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Guest value adjusted on import: {line}." );
 		foreach ( var line in recovery.Concat( stranded ) )
 			evidence.Add( $"[BIN:TPW-EXE:0x004F8B10] {line}." );
-		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported; an imported guest in an activity (state 8) decides again at once, one at the booth (4) that was not yet weighed waits OpenTPW's booth time (ARRIVAL-006), a turn stamp before the save's turn counts from the import, and the admission flag (mBeenAdmitted, set by OnAdmittance 0x5012B0 and cleared by the dismissal 0x5012F0, which also clears the queue links), the 32-slot event ring (AddEvent 0x50C100) and the queue links (mQNext, mQPrev) are not imported — evidence needed: an OpenTPW queue and rider restore for original guests
+		// [APPROX:SAVE-002] a saved guest using an attraction (16) or held by a guard (17) is not imported (the riders sit in the ride script's walk, bounce and head tables, which the import does not restore, DET-013; a held guest needs its escorting guard, whose state 18 the staff import restores idle), and a guest in a queue (states 11–14, or its idle interlude, state 8 with mSavedState 11) is imported only when its attraction's saved queue (mFirstInQ, mQNext, mQPrev, mPersonBeingLoaded) reads as the loader's chain of guests of that ride; an imported guest in an activity (state 8) decides again at once, one at the booth (4) that was not yet weighed waits OpenTPW's booth time (ARRIVAL-006), a turn stamp before the save's turn counts from the import, and the saved state (mSavedState) outside the queue interlude, the admission flag (mBeenAdmitted) of a guest that is not in state 11 or in its interlude, and the 32-slot event ring (AddEvent 0x50C100) are not imported — evidence needed: the ride script's walk, bounce and head tables for the riders (16) and the escorting guard's state for a held guest (17)
 		if ( dropped.Count > 0 )
 			evidence.Add( $"[APPROX:SAVE-002] Guests not imported: {string.Join( ", ", dropped )}." );
-		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: queue links {string.Join( "/", saved.Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}, saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}." );
+		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}, queue links of guests outside an imported queue {string.Join( "/", saved.Where( item => !queuePlans.ContainsKey( item.Id ) ).Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}." );
 		return evidence;
 	}
 
@@ -250,7 +257,7 @@ public sealed partial class GuestSimulation
 			guest.BinId = bin( thingId );
 	}
 
-	private void ImportInPark( Guest guest, SaveGuest save, (int X, int Y) cell, (int X, int Y) destination, Func<int, int> attraction, Func<int, int> bin, List<string> adjusted, List<string> recovery )
+	private void ImportInPark( Guest guest, SaveGuest save, (int X, int Y) cell, (int X, int Y) destination, Func<int, int> attraction, Func<int, int> bin, List<string> adjusted, List<string> recovery, Dictionary<int, OriginalQueuePlan> queuePlans, long parkTurn )
 	{
 		guest.OnGrid = true;
 		guest.Lane = null;
@@ -286,8 +293,18 @@ public sealed partial class GuestSimulation
 				guest.AttractionId = ride;
 				WalkOn();
 				break;
+			case 15:
+				// [BIN:TPW-EXE:0x004F9407 load re-route] a guest leaving a ride walks on to its saved accurate destination, the cell beyond the exit (ExitRide 0x005014E0 asked the route that set it), whatever it stands on; mMajorDest (+0x1DC) keeps the ride it left through the walk (0x005014E0 writes no +0x1DC), which the removal of the attraction still reaches
+				guest.State = GuestState.ExitingRide;
+				guest.AttractionId = attraction( save.MajorDest );
+				guest.StateTimer = 0;
+				WalkOn();
+				break;
 			case 18:
 				guest.State = GuestState.LeavingPark;
+				break;
+			case >= 11 and <= 14 or 8 when queuePlans.TryGetValue( save.Id, out var queue ):
+				ImportQueued( guest, save, cell, destination, queue, recovery, parkTurn );
 				break;
 			default:
 				if ( save.State is 9 or 10 )

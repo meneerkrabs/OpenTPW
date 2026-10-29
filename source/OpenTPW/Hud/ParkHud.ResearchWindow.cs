@@ -380,6 +380,9 @@ public sealed partial class ParkHud
 		return (int)MathF.Floor( above * WorkloadKnobRange / (701 - 220 - 67) + 1e-4f );
 	}
 
+	/// <summary>The knob ball's top in the research layout (0xd2d10's child rectangle 267,399-334,466); the ball stays there until its first placement.</summary>
+	public const float AuthoredKnobBallTop = 399;
+
 	/// <summary>The ball's height in table units (the b_scroller model, 67).</summary>
 	public const float KnobBallHeight = 67;
 
@@ -417,7 +420,7 @@ public sealed partial class ParkHud
 		private bool Editable => Visible && Enabled && !owner.level.IsReadOnlyVisit && owner.ResearchEconomy is { Features.ResearchPanel: true };
 		internal int Value { get; private set; }
 		internal int Limit { get; private set; } = WorkloadKnobRange;
-		internal float BallTop { get; private set; } = WorkloadKnobTop( 0 );
+		internal float BallTop { get; private set; } = AuthoredKnobBallTop;
 		internal UiRect BallRect => Rect( 267, BallTop, 334, BallTop + KnobBallHeight );
 		private int ability;
 		/// <summary>[EXT:online-coop-commands] The workload the knob stands for: what its player last asked for, or the workload it last projected (C4b).</summary>
@@ -432,10 +435,14 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x4aacce initial workload] new slider value 0; project the saved workload through SetPos, which only notifies when its raw value changes.
 		internal void Reset()
 		{
-			CancelInteraction();
+			pressMode = PressMode.None;
+			releasedPage = false;
 			Value = 0;
-			// [APPROX:UI-064] raw-zero startup keeps the existing host-normalized bottom (634); native construction can retain authored top399 when SetPos is unchanged, but later startup normalization is not fully traced.
-			BallTop = WorkloadKnobTop( Value );
+			// [BIN:TPW-EXE:0x66ad6a knob construction] the slider is built with raw value 0 and its ball at the layout's authored top (399, the table row of 0xd2d10); its SetPos slot 0x66b508 -> 0x66b088
+			// returns before touching the ball when the value is unchanged and the mode is not the refresh -2 (0x66b201-0x66b20d), so the first projection of raw 0 leaves the ball at 399 (not the track
+			// bottom, 634); only a non-zero projection, a click, a release (0x66bd75) or a cancel (the next lines of SetValue) place it from the raw value, and no message 0x15 reaches the slider
+			// after its base constructor (0x65bffd)
+			BallTop = AuthoredKnobBallTop;
 			(ability, Limit) = owner.WorkloadStaffing();
 			SetValue( KnobFromWorkload( owner.DrawnResearchWorkload, Limit ), writeWorkload: WritesProjection );
 			shownWorkload = owner.DrawnResearchWorkload;

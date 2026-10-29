@@ -246,8 +246,9 @@ public class OriginalQueueImportTests
 		Assert.IsNotNull( root, "the repository root" );
 		var level = File.ReadAllText( Path.Combine( root, "source/OpenTPW/World/Level.cs" ) );
 		StringAssert.Matches( level, new System.Text.RegularExpressions.Regex( @"ImportOriginalScripts\(\);\s*ReconcileOriginalAdmissions\(\);" ) );
+		// A Windows checkout has CRLF line ends: the body ends at the next member's doc comment, whatever the line ends.
 		var objects = File.ReadAllText( Path.Combine( root, "source/OpenTPW/World/Level.Objects.cs" ) );
-		var scripts = objects.Split( "private void ImportOriginalScripts()" )[1].Split( "\n\t}\n" )[0];
+		var scripts = objects.Split( "private void ImportOriginalScripts()" )[1].Split( "/// <summary>" )[0];
 		Assert.IsFalse( scripts.Contains( "ReconcileOriginalAdmissions" ), "the Rsse == null early return of the script import must not skip it" );
 	}
 

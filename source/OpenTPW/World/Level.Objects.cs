@@ -1042,7 +1042,7 @@ public partial class Level
 			// [BIN:TPW-EXE:0x005367A0 cell clear] the clear writes no guest: the undo's cells go and the re-evaluation that follows (0x4DE1F0 at 0x52FFEC) dismisses by place alone, so a guest on an emptied cell stays there
 			new LinkEffects( RefreshTile, null, ReevaluateRideOfOwner ), removed => AfterAccessCellRemoved( removed, setDownGuests: false ),
 			() => ResolveQueueEntrance( Objects, Guests.Grid.Cells, ride.OwnerWord ),
-			terminalAllowed: ( x, y ) => !IsReadOnlyVisit && Objects.FindAt( x, y ) == null && Objects.Grid.CheckTerrain( x, y ) == OriginalPlacementResult.Path
+			terminalAllowed: ( x, y ) => !IsReadOnlyVisit && Objects.FindAt( x, y ) == null && (TypesFootprints || Objects.Grid.CheckTerrain( x, y ) == OriginalPlacementResult.Path)
 				&& Guests.Grid.Cells.RawTypeAt( x, y ) == (byte)ParkCellType.Path && !IsQueueBlockedCore( x, y, terminalPath: true ),
 			givesWay: QueueGivesWay, demolish: DemolishObjectAt ) );
 
@@ -1504,22 +1504,24 @@ public partial class Level
 			QueuePaths.ClearAll( Guests.Grid, ride );
 	}
 
-	// [APPROX:QUEUE-012] the terrain rule for a queue cell is OpenTPW's (Objects.Grid.CheckTerrain: the map start's cell types, with saved occupancy used only before the live map is attached) where tp.exe's cell validator 0x00535670 reads the cell's own type alone and the map setup turns inside water, blocked and walkway cells into type 0; the validator's refusals run on top of it (QueueCellValidator, the register) — evidence needed: none for the validator; the no-live-map fallback still uses saved occupancy (ECON-050)
+	// [BIN:TPW-EXE:0x00535670 no terrain read] the cell validator reads the cell's own type, flags, owner and record and no MAP terrain bit: what the terrain does to a cell (water, blocked and walkway land, no land at all) is already in the type and flags the world init wrote (0x536490), so a typed world (TypesFootprints) asks the validator alone
+	// [APPROX:QUEUE-012] a Theme Park Inc layout and a read-only visit keep the cells they were given and type none of their footprints (RIDES-031), so they still ask OpenTPW's terrain rule (Objects.Grid.CheckTerrain: the map start's cell types, with saved occupancy used only before the live map is attached) on top of the validator's refusals; the per-cell route for rides without an owner word and the bridge re-test of a path or queue laid over a track tile are listed with the validator's own text in the register
+	// [EXT:untyped-harness-world] a harness world that types no footprints (the gates and test rigs) asks the same terrain rule (user-approved 2026-10-30)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] a cell with flag 0x40 is refused for a queue as for a path or an object
 	private bool IsQueueBlocked( int x, int y ) => IsQueueBlockedCore( x, y, terminalPath: false );
 
 	private bool IsQueueBlockedCore( int x, int y, bool terminalPath ) =>
-		!QueueCellRulesAllow( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath, OwnerPriorityAt( x, y ) )
+		!QueueCellRulesAllow( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath, OwnerPriorityAt( x, y ), terrainRule: !TypesFootprints )
 		|| (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
 		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true)
 		// [EXT:pools-bridges] a bridge's cells and the two outside end cells (bare or with a path) take no queue: a queue there would break the bridge's save and its entrance
 		|| PoolBridges?.Reserves( x, y ) == true;
 
-	/// <summary>The host queue admission's terrain, ownership and cell-validator rules; object and reservation exclusions stay with the caller.</summary>
+	/// <summary>The host queue admission's cell-validator rules, and OpenTPW's terrain rule where <paramref name="terrainRule"/> (a world that types no footprints); object and reservation exclusions stay with the caller.</summary>
 	// [BIN:TPW-EXE:0x00535670 queue cell] the validator refuses hoarding posts and their extensions, track corners and junctions and the coaster marker; its final path case returns 8 before testing NoModify
-	internal static bool QueueCellRulesAllow( IParkGrid grid, ParkCellMap? cells, int x, int y, bool terminalPath = false, int? ownerPriority = null ) =>
-		QueueTerrainAllows( grid, cells, x, y, terminalPath )
+	internal static bool QueueCellRulesAllow( IParkGrid grid, ParkCellMap? cells, int x, int y, bool terminalPath = false, int? ownerPriority = null, bool terrainRule = true ) =>
+		(!terrainRule || QueueTerrainAllows( grid, cells, x, y, terminalPath ))
 		&& (cells == null || !cells.InBounds( x, y ) || (!cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned )
 			&& (cells.RawTypeAt( x, y ) == (byte)ParkCellType.Queue || !QueueCellValidator.Refuses( cells, 3, x, y, ownerPriority, lastCell: terminalPath ))));
 

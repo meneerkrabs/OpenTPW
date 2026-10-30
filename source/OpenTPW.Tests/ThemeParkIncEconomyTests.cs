@@ -285,11 +285,16 @@ public class ThemeParkIncEconomyTests
 		var settings = GuestTests.CreateSettings();
 		settings.ExitLevelSeconds = 10_000;
 		var simulation = new GuestSimulation( grid, settings, 5 ) { ArrivalsEnabled = false };
-		var info = kind == RideVisitorKind.Shop ? Shop( 1, price, 6 ) : PaidRide( 1, price );
+		var info = kind switch
+		{
+			RideVisitorKind.Shop => Shop( 1, price, 6 ),
+			RideVisitorKind.Sideshow => Shop( 1, price, 6 ) with { Kind = ParkObjectKind.Sideshow, ChanceOfLosingPercent = 0 },
+			_ => PaidRide( 1, price )
+		};
 		var economy = themeParkInc ? Economy( info ) : TpwEconomy( info );
 		economy.TryBuild( 1, out var state );
 		var ride = new RideVisitorBridge( 1, "Ride", kind, 1, 60, 30, price: price ) { ExitCell = (6, 5) };
-		ride.Sideshow = new SideshowTerms( 0, state!.Price, 0 );
+		ride.Sideshow = new SideshowTerms( state!.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
 		simulation.Register( ride );
 		var bridge = new GuestEconomyBridge( () => economy, simulation );
 		bridge.Link( 1, state.Id );
@@ -332,26 +337,56 @@ public class ThemeParkIncEconomyTests
 	}
 
 	[TestMethod]
-	public void ARefusedShopAdmissionBooksNoSaleAtTheExit()
+	public void ARejectedDeferredAdmissionDoesNotBecomeAFreeShopSaleOrSideshowPlay()
 	{
-		// [BIN:TPI-EXE:0x6126D0 fare taken] the exit books what the attraction's call recorded; a refused call (the purse is below the price) records nothing, so no sale, goods or customer is booked
-		var (simulation, _, shop, state, economy) = FareRig( themeParkInc: true, price: 30, kind: RideVisitorKind.Shop );
-		var host = (IRideVisitorHost)simulation;
-		var poor = simulation.SpawnInPark( 6, 5 );
-		poor.Money = 10;
-		var balance = economy.Balance;
-		host.OnVisitorBoarded( shop, poor.Id );
-		host.OnVisitorReleased( shop, poor.Id );
-		Assert.AreEqual( (10L, balance), (poor.Money, economy.Balance), "a refused admission moves no money" );
-		Assert.AreEqual( 0L, state.TakingsThisMonth );
-		Assert.AreEqual( 0L, state.CustomersThisMonth, "and counts no customer" );
-		Assert.AreEqual( 0L, state.PendingMonthlyCosts, "and books no goods" );
-		var rich = simulation.SpawnInPark( 7, 5 );
-		rich.Money = 100;
-		host.OnVisitorBoarded( shop, rich.Id );
-		host.OnVisitorReleased( shop, rich.Id );
-		Assert.AreEqual( (70L, balance + 30), (rich.Money, economy.Balance), "an accepted admission pays at the exit" );
-		Assert.AreEqual( 1L, state.CustomersThisMonth );
+		foreach ( var kind in new[] { RideVisitorKind.Shop, RideVisitorKind.Sideshow } )
+		{
+			var (simulation, _, ride, state, economy) = FareRig( true, price: 0, kind: kind );
+			var host = (IRideVisitorHost)simulation;
+			var guest = simulation.SpawnInPark( 6, 5 );
+			guest.Money = 10;
+			Assert.IsFalse( simulation.TooExpensive( guest, ride ), "the stand-point check admits the initial free price" );
+			// Model the live-price change after the stand-point check but before the script consumes VAR_LETMEON.
+			// OnVisitorBoarded historically ignores a failed payment: this regression protects the new deferred booking, not that existing admission policy.
+			state.Price = 20;
+			var balance = economy.Balance;
+			host.OnVisitorBoarded( ride, guest.Id );
+			Assert.IsFalse( guest.PendingVisitSettlement, kind.ToString() );
+			Assert.AreEqual( 10L, guest.Money, "a rejected deferred admission takes no fee" );
+			host.OnVisitorReleased( ride, guest.Id );
+			Assert.AreEqual( balance, economy.Balance, kind.ToString() );
+			Assert.AreEqual( 0L, state.PendingMonthlyCosts, "a refused admission cannot book goods or a prize" );
+			Assert.AreEqual( 0L, state.CustomersThisMonth, "a refused admission is not a zero-price sale/play" );
+			Assert.AreEqual( 0L, state.CostsRing.Today );
+		}
+	}
+
+	[TestMethod]
+	public void SuccessfulDeferredVisitsIncludingFreeOnesSettleOnlyOnce()
+	{
+		foreach ( var kind in new[] { RideVisitorKind.Shop, RideVisitorKind.Sideshow } )
+			foreach ( var price in new[] { 0, 10 } )
+			{
+				var (simulation, _, ride, state, economy) = FareRig( true, price, kind );
+				var host = (IRideVisitorHost)simulation;
+				var guest = simulation.SpawnInPark( 6, 5 );
+				guest.Money = 100;
+				var balance = economy.Balance;
+				host.OnVisitorBoarded( ride, guest.Id );
+				Assert.IsTrue( guest.PendingVisitSettlement, "a free admitted visit still needs settlement" );
+				Assert.AreEqual( 0L, state.CustomersThisMonth, "boarding books nothing" );
+				host.OnVisitorReleased( ride, guest.Id );
+				Assert.IsFalse( guest.PendingVisitSettlement );
+				Assert.AreEqual( balance + price, economy.Balance );
+				Assert.AreEqual( 1L, state.CustomersThisMonth );
+				var costs = state.PendingMonthlyCosts;
+				Assert.AreEqual( kind == RideVisitorKind.Shop ? 3L : 6L, costs );
+				// Even if a host repeats its completion callback, settlement must not charge/book again.
+				host.OnVisitorReleased( ride, guest.Id );
+				Assert.AreEqual( balance + price, economy.Balance );
+				Assert.AreEqual( 1L, state.CustomersThisMonth );
+				Assert.AreEqual( costs, state.PendingMonthlyCosts );
+			}
 	}
 
 	[TestMethod]

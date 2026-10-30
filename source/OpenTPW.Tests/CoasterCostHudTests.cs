@@ -108,6 +108,6 @@ public class CoasterCostHudTests
 		var clear = new AreaClearTool( ( _, _ ) => ParkCommandResult.Rejected( "synthetic" ) );
 		Set( level, "<AreaClearTool>k__BackingField", clear );
 		clear.Begin();
-		Assert.IsNull( hud.BuildActionCost, "0x523c18 stores -10000, which 0x4a0d68 hides" );
+		Assert.IsNull( hud.BuildActionCost, "0x523c18 stores -9999, which 0x4a0d68 hides" );
 	}
 }

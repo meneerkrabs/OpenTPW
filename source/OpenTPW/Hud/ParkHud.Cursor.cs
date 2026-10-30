@@ -81,6 +81,7 @@ public sealed partial class ParkHud
 		mode is (int)CellToolMode.Path or (int)CellToolMode.Queue && ghost is { Completed: true, EndPointer: true };
 
 	/// <summary>Whether the line preview has a refused cell, which the pointer switch turns into the no-place pointer (0x527950 reads the latch 0x816D48 that 0x533933 sets when the validator refuses a cell).</summary>
+	// [BIN:TPW-EXE:0x537A1B track ghost latch] the kart and water line modes set the same latch when their ghost routine 0x5370E0 refuses a tile (0x537A1B -> 0x527940(1)), as the path and queue validator does at 0x533933 inside 0x532FC0
 	// [BIN:TPW-EXE:0x52F9F3 no-place pointer] after the tool's own pointer the switch asks 0x527950 (the ghost's refusal latch 0x816D48) and sets pointer 8, then lets the cash pointer (0x816D5C) win; a ghost that stopped only at OpenTPW's own queue-length bound is no refusal of the validator
 	internal static bool GhostRefused( int mode, SegmentResult? ghost ) =>
 		mode is (int)CellToolMode.Path or (int)CellToolMode.Queue or (int)CellToolMode.KartTrack or (int)CellToolMode.WaterTrack && ghost is { Completed: false, StoppedByOwnLimit: false };

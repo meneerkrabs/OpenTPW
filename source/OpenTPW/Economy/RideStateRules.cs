@@ -42,12 +42,15 @@ public sealed class RideStateWord
 	/// <summary>The word as the ride update's dispatch <c>0x4E0E00</c> reads it: the stored 2 or 3, else the ride update's 0, 1 or 4.</summary>
 	public int Current => Stored != RideObjectStates.Idle ? Stored : Value;
 
-	/// <summary>Stores 0, 2 (an upgrade request) or 3 (not an attraction) without the change event, which only the ride update's 1 and 4 raise.</summary>
+	/// <summary>Stores 0, 2 (an upgrade request, which clears a breakdown) or 3 (not an attraction) without the change event, which only the ride update's 1 and 4 raise.</summary>
 	public void Store( int state )
 	{
 		if ( state is not (RideObjectStates.Idle or RideObjectStates.Upgrading or RideObjectStates.NotAnAttraction) )
 			throw new ArgumentOutOfRangeException( nameof( state ), state, "The stored part holds 0, 2 or 3." );
 		Stored = state;
+		// SetState(2) (0x4E0086) writes the one word, so an upgrade request overwrites a breakdown: the ride update's 1 or 4 is gone (the cancel and the completion end in SetState(0))
+		if ( state == RideObjectStates.Upgrading && IsBroken )
+			Value = RideObjectStates.Idle;
 	}
 
 	/// <summary>Raised when the word changes: the old value, then the new one.</summary>

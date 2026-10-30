@@ -298,7 +298,7 @@ public partial class CoopSessionTests
 			Assert.AreEqual( (true, false, view.Strings[UIStrings.UpgradeNoMechanics], false), (drawn.Closed, drawn.DoorEnabled, drawn.Banner, drawn.InfoOpen) );
 			UntilManaged( host, guest, view );
 			foreach ( var park in new[] { host, guest } )
-				Assert.AreEqual( (1, false, true), (StateOf( park, id ).PendingLevel, park.One.IsOpen, StateOf( park, id ).IsBrokenDown) );
+				Assert.AreEqual( (1, false, false), (StateOf( park, id ).PendingLevel, park.One.IsOpen, StateOf( park, id ).IsBrokenDown), "SetState(2) wrote the one word: the breakdown is gone" );
 			Assert.AreEqual( view.Strings[UIStrings.UpgradeNoMechanics], Banner( view ), "the park's status after the record: the upgrade's state 2 came over the breakdown" );
 			CutAndCompare( host, guest );
 			Show( view, null! );

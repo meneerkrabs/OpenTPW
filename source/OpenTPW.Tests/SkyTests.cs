@@ -302,4 +302,15 @@ public class SkyTests
 		Assert.IsTrue( GraphicsPresets.ToRenderQuality( detail with { SkyDetail = 1 }, 16, 1 ).SkyObjects );
 		Assert.IsFalse( RenderQuality.Legacy.SkyObjects );
 	}
+
+	[TestMethod]
+	public void TheMoonDepthFollowsTheProjectionsFarPlane()
+	{
+		Assert.AreEqual( 500f, Sky.MoonDepth( System.Numerics.Matrix4x4.CreatePerspectiveFieldOfView( 1f, 1.5f, 0.1f, 1000f ) ), 1f );
+		var near = Sky.MoonDepth( System.Numerics.Matrix4x4.CreatePerspectiveFieldOfView( 1f, 1.5f, 0.1f, 30f ) );
+		Assert.AreEqual( 15f, near, 0.1f, "a far plane under 100 takes half of it, which is inside the range" );
+		var projection = OriginalProjection.Create( 16f / 9f, farPlane: 30f );
+		Assert.IsTrue( Sky.TryMoonQuad( new SVector3( 2f, 11f, 15f ), 5f, System.Numerics.Matrix4x4.CreateLookTo( SVector3.Zero, SVector3.Normalize( Sky.ToEngine( new SVector3( 2f, 11f, 15f ) ) ), SVector3.UnitZ ), projection, 0f, out var corners ) );
+		Assert.IsTrue( corners.All( corner => corner.Length() < 30f ), "inside the far plane" );
+	}
 }

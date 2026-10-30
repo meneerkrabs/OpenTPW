@@ -118,9 +118,10 @@ public class RideStateWordTests
 		Assert.AreEqual( RideObjectStates.BrokenDown, word.Current );
 		word.Store( RideObjectStates.Upgrading );
 		Assert.AreEqual( RideObjectStates.Upgrading, word.Current, "an upgrade request overwrites a breakdown (0x4E0086)" );
-		Assert.AreEqual( RideObjectStates.BrokenDown, word.Value, "the ride update's own 1 is kept for the cancel to find again" );
+		Assert.AreEqual( RideObjectStates.Idle, word.Value, "SetState(2) writes the one word: the breakdown is gone" );
+		Assert.IsFalse( word.IsBroken );
 		word.Store( RideObjectStates.Idle );
-		Assert.AreEqual( RideObjectStates.BrokenDown, word.Current );
+		Assert.AreEqual( RideObjectStates.Idle, word.Current );
 		word.Store( RideObjectStates.NotAnAttraction );
 		Assert.AreEqual( RideObjectStates.NotAnAttraction, word.Current );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => word.Store( RideObjectStates.Condemned ) );
@@ -162,5 +163,21 @@ public class RideStateWordTests
 			rig.Step();
 		Assert.IsFalse( head.IsInQueue, "state 2 runs the head step (0x4E0450) every update" );
 		Assert.IsFalse( rig.Ride.IsBrokenDown, "and never the breakdown's read of VAR_BROKEN" );
+	}
+
+	[TestMethod]
+	public void AnUpgradeBoughtOnABrokenRideClearsTheBreakdownTheBridgeAndTheEconomySee()
+	{
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var record );
+		var ride = new RideVisitorBridge( 1, "Synthetic", RideVisitorKind.Ride, 5, 55, 30 ) { StateWord = record!.StateWord };
+		record.IsBrokenDown = true;
+		Assert.IsTrue( ride.HoldsQueuedGuests && ride.IsBrokenDown );
+		record.StoredState = RideObjectStates.Upgrading;   // 0x4E0086: SetState(2) over the breakdown
+		Assert.IsFalse( ride.HoldsQueuedGuests, "tp.exe 0x4E0370 tests the word == 1: queued guests walk on during an upgrade" );
+		Assert.IsFalse( ride.IsBrokenDown || ride.IsCondemned || record.IsBrokenDown );
+		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( record ) );
+		record.StoredState = RideObjectStates.Idle;
+		Assert.AreEqual( RideObjectStates.Idle, ParkEconomy.ObjectState( record ), "the cancel leaves state 0; the ride update finds a breakdown again" );
 	}
 }

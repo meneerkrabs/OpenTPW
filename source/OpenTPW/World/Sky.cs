@@ -188,8 +188,28 @@ public sealed class Sky : IDisposable
 		return (cosine, sine);
 	}
 
-	/// <summary>The depth along the camera's forward axis that <see cref="TryMoonQuad"/> places a quad at: inside the projection's range whatever the original's own distance of the object was.</summary>
-	internal const float MoonDepth = 50f;
+	/// <summary>The quad's corner offsets in units of the half size: top left, top right, bottom right, bottom left.</summary>
+	private static readonly (float X, float Y)[] MoonUnit = { (-1f, 1f), (1f, 1f), (1f, -1f), (-1f, -1f) };
+	/// <summary>The texture page corners of a standalone file, 0..1 each way, in the corner order of <see cref="MoonUnit"/>.</summary>
+	private static readonly SVector2[] MoonUv = { new( 0f, 0f ), new( 1f, 0f ), new( 1f, 1f ), new( 0f, 1f ) };
+	/// <summary>The corners of the two triangles of a quad.</summary>
+	private static readonly int[] MoonCorners = { 0, 1, 2, 0, 2, 3 };
+	private readonly Vertex[] moonVertices = new Vertex[6];
+
+	/// <summary>
+	/// The depth along the camera's forward axis that <see cref="TryMoonQuad"/> places a quad at: half the projection's far plane (the park view's far plane is the span selection's
+	/// farthest corner distance of each frame), or the midpoint of the near and far planes when that is not beyond the near plane, so the quad is never clipped by the depth range.
+	/// </summary>
+	internal static float MoonDepth( System.Numerics.Matrix4x4 projection )
+	{
+		// System.Numerics perspective: M33 = far / (near - far), M43 = near * far / (near - far)
+		var near = projection.M43 / projection.M33;
+		var far = projection.M43 / (projection.M33 + 1f);
+		if ( !float.IsFinite( near ) || !float.IsFinite( far ) || !(far > near) || !(near > 0f) )
+			return 50f;
+		var depth = 0.5f * far;
+		return depth > near ? depth : 0.5f * (near + far);
+	}
 
 	/// <summary>
 	/// The four corners (camera-relative engine positions, top left, top right, bottom right, bottom left) of a sky object, or false when it is behind the camera.
@@ -198,7 +218,7 @@ public sealed class Sky : IDisposable
 	/// <param name="projection">The camera's projection.</param>
 	/// <param name="rollTurns">The camera roll, <see cref="CameraRoll"/>.</param>
 	// [BIN:TPW-EXE:0x5860D0 sky object draw] the point (X, Y, Z) goes through the sky's clip matrix (the view without its translation times the projection, 0x5865AA, case 0 of 0x578D20) to (x, y, z, w); the quad takes the offsets (-+h, +-h), h = Size x 0.5 (0x701F50), turns them by the camera roll (0x591430), scales the x offsets by the aspect word 0x8BCBCC (height over width) and adds them to x and y in clip space, keeping z and w: a square on the screen whose half height is h / w, its size falling with the depth; 0x565F90 mode -3 clips it against the frustum and takes it white (0xFFFFFFFF) with the corner coordinates of the texture page
-	// the quad is built here at the depth MoonDepth along the same direction with the clip offsets scaled with it, which projects to the same picture (it depends only on the direction and on h / w) and keeps the quad inside the projection's depth range
+	// the quad is built here at the depth MoonDepth(projection) along the same direction with the clip offsets scaled with it, which projects to the same picture (it depends only on the direction and on h / w) and keeps the quad inside the projection's depth range
 	internal static bool TryMoonQuad( SVector3 position, float size, System.Numerics.Matrix4x4 viewRotation, System.Numerics.Matrix4x4 projection, float rollTurns, out SVector3[] corners )
 	{
 		corners = Array.Empty<SVector3>();
@@ -208,16 +228,15 @@ public sealed class Sky : IDisposable
 		var clip = System.Numerics.Vector4.Transform( new System.Numerics.Vector4( ToEngine( position ), 1f ), clipMatrix );
 		if ( !(clip.W > 1e-4f) || !float.IsFinite( clip.W ) )
 			return false;
-		var scale = MoonDepth / clip.W;
+		var scale = MoonDepth( projection ) / clip.W;
 		clip *= scale;
 		var half = size * 0.5f * scale;
 		var aspect = projection.M11 / projection.M22;
 		var (cosine, sine) = RollRotation( rollTurns );
-		var unit = new (float X, float Y)[] { (-1f, 1f), (1f, 1f), (1f, -1f), (-1f, -1f) };
 		corners = new SVector3[4];
 		for ( var index = 0; index < 4; index++ )
 		{
-			var (x, y) = unit[index];
+			var (x, y) = MoonUnit[index];
 			var turned = (X: cosine * x + sine * y, Y: cosine * y - sine * x);
 			var corner = System.Numerics.Vector4.Transform( new System.Numerics.Vector4( clip.X + turned.X * aspect * half, clip.Y + turned.Y * half, clip.Z, clip.W ), inverse );
 			if ( !(MathF.Abs( corner.W ) > 1e-9f) )
@@ -282,11 +301,11 @@ public sealed class Sky : IDisposable
 			if ( moon.Definition.Front != front || !TryMoonQuad( moon.Definition.Position, moon.Definition.Size, uniforms.g_mView, uniforms.g_mProj, roll, out var corners ) )
 				continue;
 			// the corner coordinates of the texture page of a standalone file: 0..1 each way, the file's first stored row at the top vertices (like the clouds')
+			// [BIN:TPW-EXE:0x565f90 sky object colour] the corners are submitted white (0xFFFFFFFF) and take no evening tint
 			var white = Tint( 255, 255, 255, 255 );
-			var vertices = new Vertex[6];
-			var uv = new[] { new SVector2( 0f, 0f ), new SVector2( 1f, 0f ), new SVector2( 1f, 1f ), new SVector2( 0f, 1f ) };
-			foreach ( var (slot, corner) in new[] { (0, 0), (1, 1), (2, 2), (3, 0), (4, 2), (5, 3) } )
-				vertices[slot] = new Vertex( corners[corner], white, Upload( uv[corner] ) );
+			var vertices = moonVertices;
+			for ( var slot = 0; slot < vertices.Length; slot++ )
+				vertices[slot] = new Vertex( corners[MoonCorners[slot]], white, Upload( MoonUv[MoonCorners[slot]] ) );
 			var size = (uint)vertices.Length * VertexStride;
 			moon.Buffer ??= Device.ResourceFactory.CreateBuffer( new BufferDescription( size, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
 			commandList.UpdateBuffer( moon.Buffer, 0, ref MemoryMarshal.GetArrayDataReference( vertices ), size );
@@ -605,11 +624,11 @@ public sealed class Sky : IDisposable
 		cloudMaterial.Set( "ObjectUniformBuffer", uniforms );
 		cylinderMaterial.Set( "ObjectUniformBuffer", uniforms );
 		// [BIN:TPW-EXE:0x5863C0 sky object passes] the objects of mask 2 are drawn before the cloud layers (0x5865AC) and those of mask 1 after the cylinder (0x586C9E)
-		DrawMoons( commandList, front: false, uniforms );
+		DrawMoons( commandList, front: false, uniforms with { g_vLightColor = SVector3.Zero } );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		DrawRange( commandList, cloudMaterial, 0, cloudCount );
 		DrawRange( commandList, cylinderMaterial, cloudCount, staged.Length - cloudCount );
-		DrawMoons( commandList, front: true, uniforms );
+		DrawMoons( commandList, front: true, uniforms with { g_vLightColor = SVector3.Zero } );
 	}
 
 	/// <summary>The sky's vertices for the layer count last drawn: built once per layer count, then only the clouds' texture coordinates are rewritten per frame.</summary>

@@ -16,6 +16,7 @@ public readonly record struct CoasterMeshVertex( SVector3 Position, SVector3 Nor
 // [BIN:TPW-EXE:0x43f5e2 ring re-emission] when the slice's cross-section run changes (the run pointer advances), when the emitter switches between the run lists (normal, winch 0x7923f0 or the marker run 0x7925e8) and when the dynamic model's chunk is flushed, the previous slice's ring is emitted again with the new section first, so the strips of a section never join another section's ring
 // [BIN:TPW-EXE:0x43f150 mesh chunks] the original fills a dynamic model in chunks and takes the fractional part of V whenever a chunk is flushed, so the texture repeats every six world units along the track
 // [BIN:TPW-EXE:0x43f4e0 marker links] a link whose node has crossings (+0xb0 nonzero) or node flag 0x1000000, or whose next node has 0x800000 or 0x2000 (the build cursor's spare node), is drawn with the marker run: the copy of the invalid cross section (definition +0x80) with every edge's texture set to the coaster's texture count − 1 + v, v = 2 (red.tga) for crossings or a next node with 0x4000, 3 (blue.tga) for a next node with 0x800000/0x2000 alone, 0x7925d0 (always 0) for a node with 0x1000000 alone
+// [BIN:TPW-EXE:0x4402d0 run table] a normal link reads its section from the run table of the sampled track (CoasterExtrusionRunBuilder): a change of section or run emits the previous slice's ring again, and a transition run blends the section's points to its blend-to row along the sample coordinate
 // [APPROX:COAST-026] vertices are shared within each texture (a point an edge of another texture also uses gets its own vertex, the shader takes one texture per vertex) where the original's ring is one vertex per point for every texture; the strips leaving the marker run join a ring emitted again, where the original continues from the marker ring
 public sealed class CoasterTrackMesh
 {
@@ -64,7 +65,8 @@ public sealed class CoasterTrackMesh
 	/// <paramref name="marker"/> gives the marker variant of a pair (its node and the node its end knot belongs to: the same node inside a pylon), null for the
 	/// normal section. A closed chain joins its last slice to the first.
 	/// </summary>
-	public static CoasterTrackMesh Build( CoasterCrossSections sections, IReadOnlyList<CoasterSlice> slices, bool closed, IReadOnlyCollection<int>? winch = null, Func<int, int, int?>? marker = null, bool startParity = false )
+	public static CoasterTrackMesh Build( CoasterCrossSections sections, IReadOnlyList<CoasterSlice> slices, bool closed, IReadOnlyCollection<int>? winch = null, Func<int, int, int?>? marker = null, bool startParity = false,
+		IReadOnlyList<CoasterExtrusionRun>? runs = null )
 	{
 		ArgumentNullException.ThrowIfNull( sections );
 		ArgumentNullException.ThrowIfNull( slices );
@@ -76,7 +78,8 @@ public sealed class CoasterTrackMesh
 		var textureCount = Math.Max( 1, sections.Textures.Count );
 		var v = 0f;
 		var parity = startParity;
-		(int Section, int Marker)? ringIdentity = null;
+		(int Section, int Marker, int Run)? ringIdentity = null;
+		var run = 0;
 		var previous = new Dictionary<(int Point, int Texture), uint>();
 		var current = new Dictionary<(int Point, int Texture), uint>();
 		for ( var index = 0; index < segments; index++ )
@@ -89,9 +92,24 @@ public sealed class CoasterTrackMesh
 			var next = a.NextSection >= 0 ? a.NextSection : b.Section;
 			var variant = marker?.Invoke( a.Section, next );
 			var isWinch = winch != null && winch.Contains( a.Section );
-			var section = variant != null ? sections.InvalidSectionIndex : sections.SelectSection( (a.Pitch + b.Pitch) * 0.5f, isWinch );
+			// [BIN:TPW-EXE:0x43f4e0 run list] a normal link reads the run table (0x792600): the run pointer moves on while its key is below the slice's key (0x43f96d..0x43f990), and the section is the run's (0x43f994); a chain-lift link and a marker link read their own single-run lists (0x7923f0, 0x7925e8)
+			var winchSection = isWinch && sections.WinchSection >= 1 && sections.WinchSection <= sections.Sections.Count;
+			var usesRuns = variant == null && !winchSection && runs is { Count: > 0 } && !float.IsNaN( b.Key );
+			var runIndex = -1;
+			int section;
+			if ( usesRuns )
+			{
+				while ( run < runs!.Count - 1 && runs[run].Key < b.Key )
+					run++;
+				runIndex = run;
+				section = runs[run].Section;
+			}
+			else
+				section = variant != null ? sections.InvalidSectionIndex : sections.SelectSection( (a.Pitch + b.Pitch) * 0.5f, isWinch );
 			var (points, edges) = sections.Resolve( section );
-			var identity = (section, variant ?? -1);
+			var blendTo = usesRuns && section >= 0 && section < sections.Sections.Count && sections.Sections[section].BlendToPointBlock is > 0 and var blendBlock && blendBlock <= sections.PointBlocks.Count
+				&& sections.PointBlocks[blendBlock - 1].Count == points.Count ? sections.PointBlocks[blendBlock - 1] : null;
+			var identity = (section, variant ?? -1, runIndex);
 			var (rightA, upA) = Frame( a.Yaw, a.Pitch, a.Roll );
 			var (rightB, upB) = Frame( b.Yaw, b.Pitch, b.Roll );
 			if ( ringIdentity != identity )
@@ -103,12 +121,15 @@ public sealed class CoasterTrackMesh
 			}
 			current.Clear();
 			mesh.Rings++;
-			uint Ring( Dictionary<(int, int), uint> ring, int point, int texture, SVector3 origin, SVector3 right, SVector3 up, float vertexV )
+			uint Ring( Dictionary<(int, int), uint> ring, int point, int texture, SVector3 origin, SVector3 right, SVector3 up, float vertexV, float coordinate )
 			{
 				if ( ring.TryGetValue( (point, texture), out var existing ) )
 					return existing;
 				var created = (uint)mesh.Vertices.Count;
-				mesh.Vertices.Add( Vertex( points[point], origin, right, up, vertexV, texture ) );
+				var source = points[point];
+				if ( blendTo != null )
+					source = Blend( source, blendTo[point], BlendWeight( sections.Sections[section], runs!, runIndex, coordinate ) );
+				mesh.Vertices.Add( Vertex( source, origin, right, up, vertexV, texture ) );
 				ring[(point, texture)] = created;
 				return created;
 			}
@@ -117,10 +138,10 @@ public sealed class CoasterTrackMesh
 				if ( edge.From < 0 || edge.To < 0 || edge.From >= points.Count || edge.To >= points.Count )
 					continue;
 				var texture = variant is int markerVariant ? MarkerTexture( textureCount, markerVariant ) : Math.Clamp( edge.Texture, 0, textureCount - 1 );
-				var pf = Ring( previous, edge.From, texture, a.Position, rightA, upA, v );
-				var pt = Ring( previous, edge.To, texture, a.Position, rightA, upA, v );
-				var cf = Ring( current, edge.From, texture, b.Position, rightB, upB, vb );
-				var ct = Ring( current, edge.To, texture, b.Position, rightB, upB, vb );
+				var pf = Ring( previous, edge.From, texture, a.Position, rightA, upA, v, a.Coordinate );
+				var pt = Ring( previous, edge.To, texture, a.Position, rightA, upA, v, a.Coordinate );
+				var cf = Ring( current, edge.From, texture, b.Position, rightB, upB, vb, b.Coordinate );
+				var ct = Ring( current, edge.To, texture, b.Position, rightB, upB, vb, b.Coordinate );
 				if ( !parity )
 					mesh.Indices.AddRange( new[] { pf, cf, pt, ct, pt, cf } );
 				else
@@ -133,6 +154,31 @@ public sealed class CoasterTrackMesh
 		}
 		mesh.EndParity = parity;
 		return mesh;
+	}
+
+	/// <summary>
+	/// How far a ring at sample coordinate <paramref name="coordinate"/> has blended from the section's own points to its blend-to row (<c>0x43fd60</c>): the coordinate's place between the previous run's position
+	/// and this run's, times the run's weight, plus 1 − weight for a positive blend length, clamped to [0, 1].
+	/// </summary>
+	// [BIN:TPW-EXE:0x43fd91 blend weight] r = (T − A) / (B − A) × w, with A the previous run's position (+0x4 of the record before), B this run's and w its weight (+0x8); a blend length (section +0x14) above zero adds 1 − w (0x43fdaf..0x43fdb8); r is clamped to [0, 1] with a NaN taken as 0 (0x43fdbc..0x43fde0) and each point blends as own × (1 − r) + blend-to × r over all five floats (0x43fe11..0x43fe6a)
+	internal static float BlendWeight( CoasterCrossSection section, IReadOnlyList<CoasterExtrusionRun> runs, int runIndex, float coordinate )
+	{
+		var run = runs[runIndex];
+		var start = runIndex > 0 ? runs[runIndex - 1].Position : 0f;
+		var ratio = (coordinate - start) / (run.Position - start) * run.Weight;
+		if ( section.BlendLength > 0f )
+			ratio += 1f - run.Weight;
+		if ( !(ratio > 0f) )
+			ratio = 0f;
+		if ( !(ratio < 1f) )
+			ratio = 1f;
+		return ratio;
+	}
+
+	internal static CoasterSectionPoint Blend( CoasterSectionPoint own, CoasterSectionPoint other, float ratio )
+	{
+		var rest = 1f - ratio;
+		return new CoasterSectionPoint( own.X * rest + other.X * ratio, own.Y * rest + other.Y * ratio, own.U * rest + other.U * ratio, own.Nx * rest + other.Nx * ratio, own.Ny * rest + other.Ny * ratio );
 	}
 
 	private static CoasterMeshVertex Vertex( CoasterSectionPoint point, SVector3 origin, SVector3 right, SVector3 up, float v, int texture )

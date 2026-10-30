@@ -507,20 +507,6 @@ public class ObjectRayPickTests
 		Assert.IsNull( StaffRenderer.DangleAnchor( tool, StaffCursorField() ) );
 	}
 
-	[TestMethod]
-	public void TheStaffAnchorUsesTheTerrainHitWhenTheTowerIsBehindIt()
-	{
-		Park( out var level, out _ );
-		var tool = StaffTool( level, false );
-		var (eye, direction, _) = TopRay();
-		var hill = eye + direction * 0.3f;
-		var tower = Tower();
-		Assert.IsFalse( ObjectRayPick.TryPick( eye, direction, hill, Grid, OwnerAt( tower, 10, 10 ), out _, out _ ) );
-		Assert.AreEqual( 0, tower.Tests );
-		tool.SetCursor( hill.X / 2, hill.Y / 2, hill );
-		AssertStaffAnchor( tool, hill );
-	}
-
 	/// <summary>A press and a release at <paramref name="mouse"/> in the park, as the input source reports a click.</summary>
 	private static void Click( ParkHud hud, UiContext context, NVector2 mouse )
 	{

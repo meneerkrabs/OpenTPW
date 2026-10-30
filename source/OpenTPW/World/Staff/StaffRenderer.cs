@@ -59,6 +59,8 @@ public sealed class StaffRenderer : Entity
 	public bool DrewDangling { get; private set; }
 	/// <summary>Where the last frame hung the tool's dangling sprite, in cell units; null when it was not drawn.</summary>
 	internal (float X, float Y)? DangleAt { get; private set; }
+	/// <summary>The engine-space anchor the last dangling sprite was placed at, before the depth pull; null when it was not drawn.</summary>
+	internal SVector3? DangleAnchorAt { get; private set; }
 	/// <summary>The size in pixels of the frame the last dangling sprite showed; null when it was not drawn.</summary>
 	internal (int Width, int Height)? DangleFrameSize { get; private set; }
 
@@ -254,6 +256,7 @@ public sealed class StaffRenderer : Entity
 		DrawnStaff = 0;
 		DrewDangling = false;
 		DangleAt = null;
+		DangleAnchorAt = null;
 		DangleFrameSize = null;
 		if ( !CanRender )
 			return 0;
@@ -307,6 +310,7 @@ public sealed class StaffRenderer : Entity
 			AddSprite( ref count, atlasIndex, frameIndex, mirror, danglingAnchor, right, up, forward );
 			DrewDangling = true;
 			DangleAt = (danglingX, danglingY);
+			DangleAnchorAt = danglingAnchor;
 			DangleFrameSize = (atlas.Frames[frameIndex].Width, atlas.Frames[frameIndex].Height);
 		}
 		return count;

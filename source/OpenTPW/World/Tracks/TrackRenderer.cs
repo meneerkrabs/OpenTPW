@@ -623,12 +623,14 @@ public sealed class TrackRenderer : IDisposable
 			// a hidden vehicle's riders are taken down with it (0x00548E80 → 0x0044B4C0) and hung again when it shows
 			if ( (vehicle.Flags & BumpVehicle.Hidden) != 0 )
 				continue;
-			for ( var seat = 0; seat < vehicle.Riders.Count && seat < geometry.HeadNodes.Length; seat++ )
+			for ( var index = 0; index < vehicle.Riders.Count; index++ )
 			{
-				if ( geometry.HeadNodes[seat] is not { } rest )
+				// a rider sits at the head dummy of its seat number (a vehicle of an original save keeps the numbers of its list's nodes)
+				var seat = vehicle.SeatOf( index );
+				if ( seat < 0 || seat >= geometry.HeadNodes.Length || geometry.HeadNodes[seat] is not { } rest )
 					continue;
 				var node = ObjectPlacement.SwapAxes( rest ) * visual.Transform;
-				sources.Add( new HeadSource( vehicle.Riders[seat], controller.AttractionId, ObjectPlacement.SwapAxes( node ), geometry.HeadFlags[seat] ) );
+				sources.Add( new HeadSource( vehicle.Riders[index], controller.AttractionId, ObjectPlacement.SwapAxes( node ), geometry.HeadFlags[seat] ) );
 			}
 		}
 	}

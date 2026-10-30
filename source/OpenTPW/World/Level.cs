@@ -675,6 +675,8 @@ public partial class Level : IDisposable
 			ImportOriginalScripts();
 			ImportOriginalGuests();
 			ReconcileOriginalAdmissions();
+			// the vehicles of the kart and water rides carry guests the guest import restored as riders
+			ImportOriginalTrackRiders();
 			yield return 0.95f;
 			ImportOriginalCoasters();
 			ImportOriginalRetainedRideStates();

@@ -9,7 +9,7 @@ namespace OpenTPW;
 /// </summary>
 // [EXT:bump-pre-shared-save-order] a park-resume save from before the shared pools restores their order from the restore (controllers by attraction id), where the original's pools only ever fill in build order; kept so older saves load; [EXT:bump-foreign-object-forget] a vehicle whose foreign object is rebuilt loses it (BumpWorld.ForgetObjectsOf)
 
-public sealed class BumpController
+public sealed partial class BumpController
 {
 	/// <summary>The controller's duration unit: BUMP 13 stores seconds × 30. It is not the tick rate (<see cref="TickSeconds"/>).</summary>
 	// [BIN:TPW-EXE:0x00554980 BUMP 13] BUMP 13 stores parameter × 30 and BUMP 14 −parameter into controller +4 through the duration setter 0x00545100; the unit 30 is the original's constant
@@ -693,7 +693,7 @@ public sealed class BumpController
 		vehicle.Riders.AddRange( Pending );
 		Pending.Clear();
 		vehicle.Flags |= BumpVehicle.FirstLaunch;
-		vehicle.Variant = VehicleCount % Template.ModelCount + Template.ModelBase;
+		vehicle.Variant = VehicleCount % ModelCount + ModelBase;
 		// [BIN:TPW-EXE:0x00549DB0 create vehicle] the 0xAC-byte record is zeroed (rep stosd, 0x2B dwords) and neither 0x549DB0, 0x549C60 nor the water and kart cases of 0x54A040 write the steering heading +0x50 or the drawn heading +0x54: a boat or kart starts at heading 0 (+Y) and its first steering turns it; only a bumper car takes a random heading at its first launch (RelaunchBumper)
 		vehicle.Heading = 0;
 		vehicle.VisualHeading = 0;
@@ -741,6 +741,7 @@ public sealed class BumpController
 		if ( vehicle == null )
 			return false;
 		vehicle.Riders.AddRange( Pending );
+		vehicle.SeatNumbers = null;
 		RiderCount += Pending.Count;
 		Pending.Clear();
 		// [BIN:TPW-EXE:0x00549B80 load vehicle] the loading hangs the riders' heads with the beam flag (0x549C60(vehicle, 1)): each rider whose seat has a head dummy gets particle 0x13 at the vehicle's drawn place (its root matrix translation times 1024; OpenTPW uses the simulation position, PTCL-908); the creation (0x549DB0) hangs with 0, no beam; the load is shared by every vehicle family, so boats and karts beam too
@@ -822,6 +823,7 @@ public sealed class BumpController
 			RiderCount--;
 		}
 		vehicle.Riders.Clear();
+		vehicle.SeatNumbers = null;
 		StopSmoke( vehicle );
 		if ( IsWater )
 		{
@@ -1902,6 +1904,12 @@ public sealed class BumpController
 		// [EXT:cheats-ride-vehicles] a raised limit joins the hash; every other controller keeps its pins
 		if ( VehicleLimit != Template.MaxVehicles )
 			hash.Add( VehicleLimit );
+		// the model words (+0x14, +0x18) join the hash only where a save gave a ride words other than its template's
+		if ( !HasTemplateModelWords )
+		{
+			hash.Add( ModelBase );
+			hash.Add( ModelCount );
+		}
 		hash.Add( vehicles.Count );
 		foreach ( var vehicle in vehicles )
 		{
@@ -1972,6 +1980,14 @@ public sealed class BumpController
 		if ( data.VehicleLimit is { } limit && (!CanRaiseVehicleLimit || limit != RaisedVehicleLimit) )
 			throw new InvalidDataException( $"A saved controller of type {Type} has the vehicle limit {limit}, which only a raised bumper or kart ride ({RaisedVehicleLimit}) has." );
 		VehicleLimit = data.VehicleLimit ?? Template.MaxVehicles;
+		if ( data.ModelBase.HasValue != data.ModelCount.HasValue )
+			throw new InvalidDataException( "A saved controller holds only one of its two model words." );
+		foreach ( var saved in data.Vehicles )
+		{
+			if ( saved.SeatNumbers is { } seats && (seats.Count != saved.Riders.Count || seats.Any( seat => seat is < 1 or > 255 ) || seats.Distinct().Count() != seats.Count) )
+				throw new InvalidDataException( "A saved vehicle's seat numbers do not match its riders." );
+		}
+		RestoreModelWords( data.ModelBase, data.ModelCount );
 		// a ride no edit has walked keeps the constructor's word (an older save holds no such field: its word was written)
 		if ( data.TrackWordWritten == false )
 		{
@@ -2015,6 +2031,7 @@ public sealed class BumpController
 				Controller = this, RestoredObjectAttraction = saved.ObjectAttraction
 			};
 			vehicle.Riders.AddRange( saved.Riders );
+			vehicle.SeatNumbers = saved.SeatNumbers?.ToArray();
 			// the saved pool slot; a save from before the shared pool may name a slot another ride's vehicle took, which then gets the first free one
 			vehicle.Slot = module.PlaceVehicle( vehicle, saved.Slot );
 			if ( vehicle.Slot < 0 )

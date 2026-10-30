@@ -32,7 +32,7 @@ public partial class TrackAddOnLevelTests
 		var chunks = new List<byte>();
 		// the build stamp chunk: the time and the date strings the saver writes ("15:25:02", "Mar 17 2000" and its terminator)
 		chunks.AddRange( Words( 2, 0, 32 ).Concat( System.Text.Encoding.ASCII.GetBytes( "15:25:02Mar 17 2000\0" ) ) );
-		chunks.AddRange( ChunkBytes( 3, handle, (uint)bump.StationX, (uint)bump.StationY, (uint)bump.Orientation, 0x10, (uint)bump.Performance, 0x14, 0x18, unchecked( (uint)bump.Laps ), (uint)bump.Phase ) );
+		chunks.AddRange( ChunkBytes( 3, handle, (uint)bump.StationX, (uint)bump.StationY, (uint)bump.Orientation, RideThing, (uint)bump.Performance, (uint)bump.ModelBase, (uint)bump.ModelCount, unchecked( (uint)bump.Laps ), (uint)bump.Phase ) );
 		foreach ( var section in bump.Sections )
 			chunks.AddRange( ChunkBytes( 4, handle, (uint)section.KindWord, (uint)section.X, (uint)section.Y ) );
 		var body = chunks.ToArray();
@@ -163,22 +163,5 @@ public partial class TrackAddOnLevelTests
 		var lines = target.ApplyOriginalTracks( cells.Where( cell => cell.X >= 20 && cell.Y >= 14 ).ToList(), ( _, _ ) => 0, null, null, new[] { RideThingOf( 0 ) } );
 		StringAssert.Contains( string.Join( "\n", lines ), "its saved station tiles are not at" );
 		Assert.AreEqual( placed, target.KartTracks.Tracks.Get( station.First.X, station.First.Y ), "the placement's station tile is not overwritten" );
-	}
-
-	[TestMethod]
-	public void ARideChunkOfAnotherKindOrWithVehiclesAndPeepsIsReportedNotApplied()
-	{
-		var (source, sourceRide, _) = World();
-		var cells = SavedCells( source.Guests!.Grid.Cells.Tracks );
-		var bump = sourceRide.Runtime.Bump!;
-		var handle = unchecked( (uint)(-9 << 8 | 3) );
-		var body = ChunkBytes( 3, handle, 1, 2, 3, 4, 5, 6, 7, 8, 9 ).Concat( ChunkBytes( 5, new uint[49].Select( ( _, index ) => index == 0 ? handle : 0u ).ToArray() ) ).Concat( ChunkBytes( 7, handle, 1 ) ).ToArray();
-		var block = SaveTrackRideBlock.ParseContainer( Words( 1, 0, (uint)(12 + body.Length) ).Concat( body ).ToArray() );
-		var (target, targetRide, _) = World( laid: false );
-		targetRide.ThingId = RideThing;
-		var lines = string.Join( "\n", target.ApplyOriginalTracks( cells, ( _, _ ) => 0, block, null, new[] { RideThingOf( handle ) } ) );
-		Assert.AreNotEqual( -9, targetRide.Runtime.Bump!.Type, "the kart ride of this level is a type -4 controller" );
-		StringAssert.Contains( lines, "not applied: its kind -9 is not the controller type -4" );
-		StringAssert.Contains( lines, "1 vehicle records and 1 rider and peep chunks" );
 	}
 }

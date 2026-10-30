@@ -124,6 +124,14 @@ public sealed class BumpVehicle
 	public bool Smoke { get; set; }
 	/// <summary>The guests aboard, in boarding order.</summary>
 	public List<int> Riders { get; } = new();
+	/// <summary>
+	/// The seat number (the head dummy number, from 1) each rider of <see cref="Riders"/> holds, in the same order; null while the riders sit in their list order (the vehicle hung them itself, 0x549C60, which numbers the
+	/// list from its head). A vehicle an original save brought keeps the numbers of its nodes while the loader reverses their order (0x543F24). Presentation: not hashed.
+	/// </summary>
+	public int[]? SeatNumbers { get; set; }
+
+	/// <summary>The seat (index from 0 into the model's head dummies) of the rider at <paramref name="index"/> of <see cref="Riders"/>.</summary>
+	public int SeatOf( int index ) => SeatNumbers is { } numbers && numbers.Length == Riders.Count ? numbers[index] - 1 : index;
 	/// <summary>Spray particles the boat made (cosmetic counter).</summary>
 	public int Sprays { get; set; }
 

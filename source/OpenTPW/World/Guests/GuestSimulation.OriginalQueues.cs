@@ -109,7 +109,7 @@ public sealed partial class GuestSimulation
 	/// Run after the scripts are imported: a head imported as handed to the script (state 14) whose script does not hold it in <c>VAR_LETMEON</c> is demoted to a called head at the stand point
 	/// (state 13), as it was not admitted. Returns the report lines.
 	/// </summary>
-	// [APPROX:SAVE-002] the demotion to a called head (state 13) stands in for the state 16 tp.exe's test 0x004E0A70 enters at once; see RideVisitorBridge.ReconcileImportedAdmission
+	// [APPROX:SAVE-002] the demotion to a called head (state 13) stands in for the state 16 tp.exe's test 0x004E0A70 enters at once, only where the ride's script run state was not imported; a ride whose state was imported boards the head at the first host step (RideVisitorBridge.ReconcileImportedAdmission)
 	internal List<string> ReconcileOriginalAdmissions()
 	{
 		var notes = new List<string>();

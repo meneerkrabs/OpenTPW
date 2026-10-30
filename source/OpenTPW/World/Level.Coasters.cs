@@ -714,10 +714,13 @@ public partial class Level
 			if ( station?.Runtime.Coaster is not { } ride )
 				throw new InvalidDataException( $"The save's coaster of station mesh {saved.StationMeshInstanceId} binds to attraction thing {attraction.Id} (Info.Id {attraction.InfoId}), which this park does not place as a coaster station; the original would crash here (0x437CD5)." );
 			var plan = OriginalCoasterImport.Map( saved, ride );
+			// the guests were imported before the coasters (Level import order): a train whose car list names a guest who is no rider of the ride loses its lists (reported)
+			var (checkedPlan, riderLines) = OriginalCoasterImport.CheckRiders( plan, station.Runtime.Visitors.Riders, station.Runtime.Visitors.SavedRunStateImported, $"The saved coaster of attraction thing {attraction.Id}" );
+			plan = checkedPlan;
 			ride.ImportOriginal( plan.Track, plan.State, plan.BreakdownState, plan.SeatsPerTrain, plan.Trains );
 			// the first frame after the load: no substep runs (0x415140), its coaster update rebuilds keeping the saved trains and runs the controller's first motion tick, which takes no time
 			ride.UpdateFirstFrameAfterLoad();
-			var lines = plan.Evidence.Concat( OriginalCoasterImport.Compare( saved, ride ) ).ToList();
+			var lines = plan.Evidence.Concat( riderLines ).Concat( OriginalCoasterImport.Compare( saved, ride ) ).ToList();
 			// [BIN:TPW-EXE:0x468760 coaster slot] the header's +0xC goes to the slot allocator as the preferred slot, which stores the controller in 0x790BD0[slot]: a station script whose +0xE0 holds that slot reaches this controller
 			var owners = scripts.Where( record => record.ThingId == station.ThingId ).ToList();
 			if ( owners.Count == 1 && owners[0].Coast != 0 )

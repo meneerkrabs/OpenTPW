@@ -17,7 +17,7 @@ internal static class OriginalCoasterBlockWriter
 	internal sealed record HeaderWords( ushort StationMesh, ushort Slot = 1, ushort TypeId = 19, ushort Placement1 = 69, ushort Placement2 = 65, uint TrackFlags = 0 );
 
 	/// <summary>One coaster's bytes (header, auxiliary block, sections, every train slot) as the saver writes them.</summary>
-	internal static byte[] Coaster( CoasterRide ride, HeaderWords words, Func<int, int, IReadOnlyList<int>>? riders = null )
+	internal static byte[] Coaster( CoasterRide ride, HeaderWords words, Func<int, int, IReadOnlyList<int>>? riders = null, Func<int, int, IReadOnlyList<int>>? seated = null, int? riderCount = null )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
@@ -78,6 +78,7 @@ internal static class OriginalCoasterBlockWriter
 		{
 			var train = slot < ride.Trains.Count ? ride.Trains[slot] : null;
 			var carRiders = Enumerable.Range( 0, definition.CarCount ).Select( car => train == null ? Array.Empty<int>() : riders?.Invoke( slot, car ) ?? Array.Empty<int>() ).ToList();
+			var carSeated = Enumerable.Range( 0, definition.CarCount ).Select( car => train == null ? Array.Empty<int>() : seated?.Invoke( slot, car ) ?? Array.Empty<int>() ).ToList();
 			// a slot the rating pass set up carries bits 0 and 2 (0x43CAD6) and 0x2 from the slot set-up (0x43BE10); the loader ORs 4 again
 			writer.Write( train == null ? 0u : 0x7u | (uint)train.Flags );
 			writer.Write( (byte)definition.CarCount );
@@ -86,15 +87,17 @@ internal static class OriginalCoasterBlockWriter
 			writer.Write( 0u );
 			writer.Write( 0u );
 			writer.Write( 0u );
-			writer.Write( (ushort)carRiders.Sum( list => list.Count ) );
+			writer.Write( (ushort)(riderCount ?? carRiders.Sum( list => list.Count ) + carSeated.Sum( list => list.Count )) );
 			for ( var car = 0; car < definition.CarCount; car++ )
 			{
 				writer.Write( train == null ? 0u : 1u );
 				writer.Write( (byte)carRiders[car].Count );
-				writer.Write( (byte)0 );
+				writer.Write( (byte)carSeated[car].Count );
 				writer.Write( (byte)(train?.Seats[car] ?? 0) );
 				writer.Write( 2000u + (uint)(slot * 16 + car) );
 				foreach ( var guest in carRiders[car] )
+					writer.Write( (uint)guest );
+				foreach ( var guest in carSeated[car] )
 					writer.Write( (uint)guest );
 			}
 		}

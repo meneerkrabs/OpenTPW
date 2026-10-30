@@ -52,6 +52,15 @@ public sealed class SaveTrackRawRecord
 /// <summary>Chunk 6 requests reference-waypoint selection for a ride. It does not contain a section index.</summary>
 public sealed record SaveTrackReferenceRequest( SaveTrackRideIdentity Identity );
 
+/// <summary>
+/// Chunks 7 and 8: one guest on a ride's leaving list (7) or joining list (8), by the ride's handle and the guest's thing id. The saver writes the lists from their head; the loader pushes every node on the head again, so a
+/// list comes back in the opposite order (<c>0x54ABD0</c>, <c>0x54AA80</c>).
+/// </summary>
+public sealed record SaveTrackPeepLink( SaveTrackRideIdentity Ride, uint Guest );
+
+/// <summary>Chunk 9: one rider of a vehicle's list (the vehicle is the last one the loader made for the ride): the guest's thing id and its seat number, the head dummy number the vehicle's model was asked for.</summary>
+public sealed record SaveTrackSeatLink( SaveTrackRideIdentity Ride, uint Guest, uint Seat );
+
 /// <summary>One immutable framed chunk, including all header words and opaque bytes even for untyped chunk kinds.</summary>
 public sealed class SaveTrackRideChunk
 {
@@ -66,6 +75,12 @@ public sealed class SaveTrackRideChunk
 	public SaveTrackTile? Tile { get; }
 	public SaveTrackRawRecord? RawRecord { get; }
 	public SaveTrackReferenceRequest? ReferenceRequest { get; }
+	/// <summary>Chunk 7: a guest of the ride's leaving list.</summary>
+	public SaveTrackPeepLink? Leaving { get; }
+	/// <summary>Chunk 8: a guest of the ride's joining list.</summary>
+	public SaveTrackPeepLink? Joining { get; }
+	/// <summary>Chunk 9: a rider of the vehicle the ride's last chunk 5 made.</summary>
+	public SaveTrackSeatLink? Seat { get; }
 
 	internal SaveTrackRideChunk( int offset, uint type, uint word, uint size, ReadOnlySpan<byte> data )
 	{
@@ -90,6 +105,15 @@ public sealed class SaveTrackRideChunk
 			case 6:
 				ReferenceRequest = new( new( U32( 0 ) ) );
 				break;
+			case 7:
+				Leaving = new( new( U32( 0 ) ), U32( 4 ) );
+				break;
+			case 8:
+				Joining = new( new( U32( 0 ) ), U32( 4 ) );
+				break;
+			case 9:
+				Seat = new( new( U32( 0 ) ), U32( 4 ), U32( 8 ) );
+				break;
 		}
 	}
 }
@@ -99,9 +123,9 @@ public sealed class SaveTrackRideChunk
 /// unknown chunks and opaque bytes. It does not import rides, follow pointers, resolve waypoints or validate runtime ownership.
 /// </summary>
 /// <remarks>
-/// Typed chunks require the exact sizes produced by tp.exe's writer: 3=52, 4=28, 5=208, 6=16 including their headers.
+/// Typed chunks require the exact sizes produced by tp.exe's writer: 3=52, 4=28, 5=208, 6=16, 7=20, 8=20, 9=24 including their headers.
 /// This is a managed strict writer-shape policy, not native malformed-input behavior (the native loader can zero-fill short reads
-/// and skip excess bytes). Theme Park Inc is unverified. TRACK-032 remains open.
+/// and skip excess bytes). Theme Park Inc is unverified.
 /// </remarks>
 public sealed class SaveTrackRideBlock
 {
@@ -151,7 +175,7 @@ public sealed class SaveTrackRideBlock
 			var size = BinaryPrimitives.ReadUInt32LittleEndian( remaining[8..] );
 			if ( size < HeaderBytes || size > (uint)remaining.Length )
 				throw new InvalidDataException( $"TrackRides subchunk at {position + HeaderBytes} has an invalid size {size}." );
-			var expected = type switch { 3 => 52, 4 => 28, 5 => 208, 6 => 16, _ => 0 };
+			var expected = type switch { 3 => 52, 4 => 28, 5 => 208, 6 => 16, 7 => 20, 8 => 20, 9 => 24, _ => 0 };
 			if ( expected != 0 && size != expected )
 				throw new InvalidDataException( $"TrackRides chunk {type} has size {size}; the strict TPW writer shape requires {expected}." );
 			chunks.Add( new( position + HeaderBytes, type, word, size, remaining.Slice( HeaderBytes, (int)size - HeaderBytes ) ) );

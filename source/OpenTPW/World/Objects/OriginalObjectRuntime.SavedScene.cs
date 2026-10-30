@@ -79,6 +79,8 @@ public sealed partial class OriginalObjectRuntime
 	{
 		ArgumentNullException.ThrowIfNull( record );
 		var gaps = new List<string>();
+		SavedSceneRestored = true;
+		SavedChannelGaps.Clear();
 		if ( record.NodeCount == Model.Nodes.Count && record.EmbeddedCount == Model.DummyAttributes.Count )
 		{
 			// [BIN:TPW-EXE:0x00464AF6 node state load] saved bit 0 becomes the node flag 0x10 (toggled: the draw skips the node's mesh) and saved bit 10 the flag 0x80000000 (no node list sets the node); the record's nodes are the model's mesh nodes, then its dummies, the order of the model's own nodes
@@ -89,9 +91,18 @@ public sealed partial class OriginalObjectRuntime
 			gaps.Add( $"node states not restored: the record stores {record.NodeCount} nodes and {record.EmbeddedCount} embedded nodes, the model has {Model.Nodes.Count} and {Model.DummyAttributes.Count} (the loader skips them too)" );
 		for ( var channel = 0; channel < record.Controls.Length; channel++ )
 			if ( RestoreSavedControl( channel, record.Controls[channel], clockWord ) is { } gap )
+			{
 				gaps.Add( $"channel {channel}: {gap}" );
+				SavedChannelGaps.Add( channel );
+			}
 		return gaps;
 	}
+
+	/// <summary>True once <see cref="RestoreSavedScene"/> ran for this object (its RideSystem record was applied).</summary>
+	internal bool SavedSceneRestored { get; private set; }
+
+	/// <summary>The channels whose saved control <see cref="RestoreSavedScene"/> reported a gap for (the control held a clip it could not restore).</summary>
+	internal HashSet<int> SavedChannelGaps { get; } = new();
 
 	/// <summary>One saved control on its channel (<see cref="ObjectAnimator.RestoreSaved"/>); null when restored or when the control holds no clip, else why not.</summary>
 	private string? RestoreSavedControl( int channel, SaveRideSystemControl control, uint? clockWord )

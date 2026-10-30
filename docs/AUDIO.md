@@ -353,7 +353,7 @@ nothing. OpenTPW does the same for every park started from an original save, a p
   save's master holds for the rest of the process; `GameAudio.MasterVolume` does the same.
 - **Restart Park.** The original's `restart.INTS` is written at park entry (state 15, `0x550B30`) with the shadows the park
   started with, and the restart reloads it through `0x414D40`, so the start's volumes play again. OpenTPW's restart snapshot is its
-  own format (SAVE-012), so the flow keeps the Sound block the park started from with it and applies it again after the reload.
+  own format (`[EXT:restart-snapshot-per-start]`), so the flow keeps the Sound block the park started from with it and applies it again after the reload.
 - **Not applied:** a read-only online visit (its park is not an original save file) and a resumed OpenTPW park (its save has no
   Sound block). All twelve corpus files hold the defaults (master 100, 75/60/75, all on), so with default options loading them, or
   starting an Instant Action park from the shipped seed, changes nothing audible.

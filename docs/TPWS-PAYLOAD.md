@@ -69,7 +69,7 @@ all eleven saves, the four restart saves included.
 Initial state of the INTS saves (an unplayed park): the macro-AI calendar is the constructor's (`0x4F7E80`: start 2000-01-01, month cache 0,
 day cache -1, rate 15000, park turn 0) and every attraction history ring is the empty ring of `0x51ADE0` (current entry -1, 30 entries, no wrap).
 The loaders (`0x4F7F30`, `0x4E2C10`) take both unchecked; `SaveWorld.Parse` and `SaveAttraction.Read` accept exactly these two states besides the played ones.
-OpenTPW's Restart Park reloads its own snapshot of the same moment, not these files (SAVE-012).
+OpenTPW's Restart Park reloads its own snapshot of the same moment, not these files (`[EXT:restart-snapshot-per-start]`).
 
 The balances (about 1.2 billion) come from the cheat, so money is not a reference value.
 Named saves and their autosaves decode to the same layout; only small sections differ.

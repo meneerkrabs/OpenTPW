@@ -421,3 +421,7 @@ WALK-006 docs/GUESTS.md
 WALK-007 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
+DET-015 docs/DETERMINISM.md
+ARRIVAL-006 docs/GUESTS.md
+UI-041 docs/UI.md
+UI-051 docs/UI.md

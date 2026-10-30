@@ -1578,7 +1578,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.MediumHappinessChange );
 			if ( ((int)guest.Happiness & 0xFF) != 0 )
 			{
-				// [APPROX:ARRIVAL-006] the wait is counted in executed park turns, but OpenTPW's fixed-step loop drops none (the original's loop runs at most 3 of up to eight due turns per pass and skips the rest, 0x0054F493, 0x0054F680)
+				// [EXT:fixed-catch-up-cap] the wait is counted in executed park turns, but OpenTPW's fixed-step loop drops none (the original's loop runs at most 3 of up to eight due turns per pass and skips the rest, 0x0054F493, 0x0054F680; a host-speed effect of its unbounded frame loop, same mechanism as the clock's cap in ParkCalendar; user-approved 2026-10-18: never drop park turns)
 				guest.BoothWait = wait;
 				return;
 			}

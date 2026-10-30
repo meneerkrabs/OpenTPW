@@ -345,7 +345,7 @@ version-2 saves is still accepted, ignored and written as `false` (the stand-in 
 Original flow that OpenTPW does not reproduce (Mac, static; docs/reverse/PPC-scenarios.md, "Park
 entry"): leaving a park saves `<player>:<theme>:autosave.TPWS`, and the next entry resumes the
 newest save there, so each player keeps one running park per theme. The PC build agrees on the timing: its park-save writer is called when a park is left, not on a timer (tp.exe, REA 2026-10-18; PARK-SAVES.md, "Periodic autosave"), which OpenTPW's periodic autosave extends (`[EXT:periodic-autosave]`). A park entry also writes a
-`restart.INTS` snapshot; OpenTPW writes its own restart snapshot there too (`SAVE-012`). OpenTPW starts a new park on every front-end entry (`[EXT:no-player-profiles]`).
+`restart.INTS` snapshot; OpenTPW writes its own restart snapshot there too (`[EXT:restart-snapshot-per-start]`). OpenTPW starts a new park on every front-end entry (`[EXT:no-player-profiles]`).
 
 Not implemented: player profiles and the per-player mode choice (`[EXT:no-player-profiles]`), theme keys and the
 Instant Action "no key check" rule (the front end has no key gate), the research and finance

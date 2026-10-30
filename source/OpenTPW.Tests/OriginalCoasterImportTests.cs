@@ -54,9 +54,9 @@ public class OriginalCoasterImportTests
 		return ride;
 	}
 
-	private static SaveCoaster RoundTrip( CoasterRide ride, ushort stationMesh = 4, Func<int, int, IReadOnlyList<int>>? riders = null )
+	private static SaveCoaster RoundTrip( CoasterRide ride, ushort stationMesh = 4, Func<int, int, IReadOnlyList<int>>? riders = null, Func<int, int, IReadOnlyList<int>>? seated = null, int? riderCount = null )
 	{
-		var block = OriginalCoasterBlockWriter.Block( 1, 0, 2, OriginalCoasterBlockWriter.Coaster( ride, new( stationMesh ), riders ) );
+		var block = OriginalCoasterBlockWriter.Block( 1, 0, 2, OriginalCoasterBlockWriter.Coaster( ride, new( stationMesh ), riders, seated, riderCount ) );
 		return OriginalCoasterBlockWriter.Parse( block, ride.Definition ).Coasters.Single();
 	}
 
@@ -386,16 +386,103 @@ public class OriginalCoasterImportTests
 		Assert.AreEqual( "010C244879E72489", first.Imported.ToString( "X16" ), "the imported coaster's fixed run" );
 	}
 
+	// [BIN:TPW-EXE:0x437B60 train rider lists] each car's two lists and the train's rider count come back as saved, in the car and the seat order of the list
 	[TestMethod]
-	public void RidersOnTheSavedTrainsAreReportedAndNotRestored()
+	public void RidersOnTheSavedTrainsSitInTheirCarsAndSeatsAgain()
+	{
+		var definition = Definition();
+		var native = RunningCircuit( definition );
+		var saved = RoundTrip( native, riders: ( train, car ) => train == 0 && car == 1 ? new[] { 502, 501 } : train == 0 && car == 0 ? new[] { 503 } : Array.Empty<int>(),
+			seated: ( train, car ) => train == 0 && car == 2 ? new[] { 504 } : Array.Empty<int>() );
+		Assert.AreEqual( 4, saved.TrainSlots![0].Riders );
+		var (imported, plan) = Import( saved, definition );
+		var train = imported.Trains[0];
+		CollectionAssert.AreEqual( new[] { 503 }, train.Cars[0].ToArray() );
+		CollectionAssert.AreEqual( new[] { 502, 501 }, train.Cars[1].ToArray(), "the seat is the list index" );
+		CollectionAssert.AreEqual( new[] { 504 }, train.BoardingCars[2].ToArray() );
+		Assert.AreEqual( 4, train.Riders );
+		Assert.AreEqual( 4, imported.RidersOnBoard );
+		Assert.IsFalse( plan.Evidence.Any( line => line.Contains( "SAVE-920" ) ), string.Join( "\n", plan.Evidence ) );
+		for ( var other = 1; other < imported.Trains.Count; other++ )
+			Assert.AreEqual( 0, imported.Trains[other].Riders );
+	}
+
+	[TestMethod]
+	public void ARiderCountThatDisagreesWithTheCarListsIsRefused()
+	{
+		var definition = Definition();
+		var saved = RoundTrip( RunningCircuit( definition ), riders: ( train, car ) => train == 0 && car == 1 ? new[] { 501, 502 } : Array.Empty<int>(), riderCount: 3 );
+		var refusal = Refused( saved, definition );
+		StringAssert.Contains( refusal.Message, "rider count 3" );
+	}
+
+	[TestMethod]
+	public void ACarListLongerThanTheCarsHeadSocketsIsRefused()
+	{
+		var definition = Definition();
+		var native = RunningCircuit( definition );
+		var sockets = definition.CarMetrics( 0 ).Heads;
+		var saved = RoundTrip( native, riders: ( train, car ) => train == 0 && car == 0 ? Enumerable.Range( 600, sockets + 1 ).ToArray() : Array.Empty<int>() );
+		StringAssert.Contains( Refused( saved, definition ).Message, "head sockets" );
+	}
+
+	[TestMethod]
+	public void AGuestOnTwoSeatsOrAZeroEntryIsRefused()
+	{
+		var definition = Definition();
+		var native = RunningCircuit( definition );
+		var twice = RoundTrip( native, riders: ( train, car ) => train == 0 && car == 0 ? new[] { 501 } : Array.Empty<int>(), seated: ( train, car ) => train == 0 && car == 1 ? new[] { 501 } : Array.Empty<int>() );
+		StringAssert.Contains( Refused( twice, definition ).Message, "twice" );
+		var zero = RoundTrip( native, riders: ( train, car ) => train == 0 && car == 0 ? new[] { 0 } : Array.Empty<int>() );
+		StringAssert.Contains( Refused( zero, definition ).Message, "guest id 0" );
+	}
+
+	// [BIN:TPW-EXE:0x501A08 state 16 update] a list entry must be a rider the guest import seated aboard the ride; a rider on no list stays aboard (the rings are not saved, no sweep exists)
+	[TestMethod]
+	public void EveryGuestOnACarListMustBeARiderOfTheRideAndRidersOnNoListAreReported()
 	{
 		var definition = Definition();
 		var native = RunningCircuit( definition );
 		var saved = RoundTrip( native, riders: ( train, car ) => train == 0 && car == 1 ? new[] { 501, 502 } : Array.Empty<int>() );
-		Assert.AreEqual( 2, saved.TrainSlots![0].Riders );
-		var (imported, plan) = Import( saved, definition );
-		Assert.AreEqual( 0, imported.RidersOnBoard );
-		Assert.IsTrue( plan.Evidence.Any( line => line.Contains( "2 riders" ) && line.Contains( "SAVE-920" ) ), string.Join( "\n", plan.Evidence ) );
+		var (_, plan) = Import( saved, definition );
+		Assert.AreEqual( 0, OriginalCoasterImport.CheckRiders( plan, new[] { 501, 502 }, "coaster" ).Count );
+		var lost = OriginalCoasterImport.CheckRiders( plan, new[] { 501, 502, 700 }, "coaster" );
+		Assert.AreEqual( 1, lost.Count );
+		StringAssert.Contains( lost[0], "1 of its 3 riders sit on no car list" );
+		var stray = Assert.ThrowsException<InvalidDataException>( () => OriginalCoasterImport.CheckRiders( plan, new[] { 501 }, "coaster" ) );
+		StringAssert.Contains( stray.Message, "guest 502" );
+	}
+
+	[TestMethod]
+	public void ImportedLapRidersGetOffAtTheStationAndWaitForTheScriptToLetThemOff()
+	{
+		var definition = Definition();
+		var native = RunningCircuit( definition );
+		// a train out on the lap: a train in the station holds no lap riders, they got off at its arrival
+		for ( var tick = 0; tick < 120 * FixedStepClock.TicksPerSecond && (native.Trains[0].Flags & CoasterTrainFlags.InStation) != 0; tick++ )
+			native.Advance( Tick );
+		Assert.AreEqual( CoasterTrainFlags.None, native.Trains[0].Flags & CoasterTrainFlags.InStation );
+		var saved = RoundTrip( native, riders: ( train, car ) => train == 0 && car == 1 ? new[] { 501, 502 } : Array.Empty<int>() );
+		var (ride, _) = Load( saved, definition );
+		ride.BindImportedScript();
+		Assert.AreEqual( 2, ride.RidersOnBoard );
+		for ( var tick = 0; tick < 240 * FixedStepClock.TicksPerSecond && ride.RidersOnBoard > 0; tick++ )
+			ride.Advance( Tick );
+		Assert.AreEqual( 0, ride.RidersOnBoard, "the train came round and unloaded" );
+		CollectionAssert.AreEquivalent( new[] { 501, 502 }, ride.LeavingRiders.ToArray() );
+	}
+
+	[TestMethod]
+	public void ImportedRidersSurviveTheParkResumeRoundTrip()
+	{
+		var definition = Definition();
+		var saved = RoundTrip( RunningCircuit( definition ), riders: ( train, car ) => train == 0 && car == 1 ? new[] { 501, 502 } : Array.Empty<int>(), seated: ( train, car ) => train == 0 && car == 0 ? new[] { 503 } : Array.Empty<int>() );
+		var (imported, _) = Import( saved, definition );
+		var captured = ParkResumeJson.Deserialize<CoasterRideSaveData>( ParkResumeJson.Serialize( CoasterSave.CaptureRide( imported, attractionId: 7 ) ) );
+		var (_, resumed) = Station( definition );
+		resumed.RestoreSnapshot( captured );
+		Assert.AreEqual( Hash( imported ), Hash( resumed ) );
+		Assert.AreEqual( 3, resumed.RidersOnBoard );
 	}
 
 	// ---- Hand-made blocks -------------------------------------------------------------------------------

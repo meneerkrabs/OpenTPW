@@ -1422,7 +1422,8 @@ public sealed class CoasterRide
 	// ---- Original save import -------------------------------------------------------------------------
 
 	/// <summary>One saved train slot of an original Coasters block as the import restores it: the reference car's position (train <c>+0x74</c>), the speed (<c>+0x78</c>) and the flags (<c>+0</c>).</summary>
-	internal readonly record struct OriginalTrain( float Position, float Speed, CoasterTrainFlags Flags, uint SoundState = 0, bool ScreamHeld = false );
+	internal readonly record struct OriginalTrain( float Position, float Speed, CoasterTrainFlags Flags, uint SoundState = 0, bool ScreamHeld = false,
+		IReadOnlyList<IReadOnlyList<int>>? Lap = null, IReadOnlyList<IReadOnlyList<int>>? Boarding = null );
 
 	/// <summary>
 	/// Restores a coaster block of an original save into this fresh ride (<see cref="OriginalCoasterImport"/>): its station was placed, which built the three station
@@ -1474,6 +1475,14 @@ public sealed class CoasterRide
 			StoreTrainSoundState( train.Index, saved.SoundState );
 			// [BIN:TPW-EXE:0x4383DA train flags load] the flags word is restored raw, so a saved train that held its scream (flag 0x100, set by 0x4393E0 and saved by 0x4377F4) goes on holding it; the handle +0x70 is not saved (only +0x38, +0x64 and +0x68, 0x43780A..0x437821)
 			StoreTrainScreamFlag( train.Index, saved.ScreamHeld );
+			// [BIN:TPW-EXE:0x437B60 train rider lists] the loader fills each car's two lists as saved (list +0x28 the riders on the lap, +0x2C the guests seated at the station) without hanging a head (0x43853E..0x43859F; 0x44B410 is not called from the loader, and the controllers are built afresh with sockets nobody hung: the system reset 0x437150 destroys every controller and unhangs its cars' sockets through 0x43BD20); the seats are the list indices and the heads come back with the sprite scripts of the Scripts block (SAVE-013)
+			for ( var car = 0; car < train.CarLists.Length; car++ )
+			{
+				if ( saved.Lap is { } lap && car < lap.Count )
+					train.CarLists[car].AddRange( lap[car] );
+				if ( saved.Boarding is { } boarding && car < boarding.Count )
+					train.BoardingLists[car].AddRange( boarding[car] );
+			}
 			UpdateExtents( train );
 			trains.Add( train );
 		}

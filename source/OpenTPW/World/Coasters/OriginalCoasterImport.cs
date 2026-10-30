@@ -157,6 +157,7 @@ internal static class OriginalCoasterImport
 
 		// [BIN:TPW-EXE:0x438386 train slots] every one of the type's train slots is read; the train passes run over the trains in service (+0xF4, 0x435784, 0x43CD36), the slots the rating pass set up (bit 0)
 		var trains = new List<CoasterRide.OriginalTrain>();
+		var seen = new HashSet<int>();
 		var inService = saved.TrainsInService;
 		if ( runnable )
 		{
@@ -172,7 +173,8 @@ internal static class OriginalCoasterImport
 				if ( !float.IsFinite( slot.Position ) || slot.Position < 0 || !float.IsFinite( slot.Speed ) || slot.Speed < 0 )
 					throw new InvalidDataException( $"{what}: train {index} stands at {slot.Position} with the speed {slot.Speed}." );
 				// [BIN:TPW-EXE:0x43CE20 train flags] the train's flags 0x10 (braking), 0x20 (in the station), 0x40 (bumped) and 0x80 (headway) are what the train step and the station step read; bits 0, 1 and 2 mark the slot set up, which every train in service is
-				trains.Add( new CoasterRide.OriginalTrain( slot.Position, slot.Speed, (CoasterTrainFlags)(slot.Flags & 0xF0), slot.Word38, (slot.Flags & 0x100) != 0 ) );
+				var (lap, boarding) = Riders( slot, definition, what, index, seen );
+				trains.Add( new CoasterRide.OriginalTrain( slot.Position, slot.Speed, (CoasterTrainFlags)(slot.Flags & 0xF0), slot.Word38, (slot.Flags & 0x100) != 0, lap, boarding ) );
 			}
 			for ( var index = inService; index < slots.Count; index++ )
 			{
@@ -182,13 +184,79 @@ internal static class OriginalCoasterImport
 		}
 		else if ( inService != 0 )
 			evidence.Add( $"{what}: {inService} trains in service on a track that does not run; the state change to 1 removed them (0x43BF20)." );
-		// [APPROX:SAVE-920] the riders of the saved trains (each car's two guest lists and the train's rider count +0x10) are not restored: the guests riding or seated (state 16) are not imported (SAVE-002)
-		var riders = slots.Take( runnable ? inService : 0 ).Sum( slot => slot.Cars.Sum( car => car.HeadsA.Length + car.HeadsB.Length ) );
-		if ( riders > 0 )
-			evidence.Add( $"{what}: {riders} riders on its trains are not restored (SAVE-920); their guests are not imported." );
+		// [BIN:TPW-EXE:0x437B60 train rider lists] the loader reads each car's list A (+0x28, count +0x30) and then list B (+0x2C, count +0x34) raw into the car's own buffers of one entry per head socket (0x43853E..0x43859F; the buffers are the slot setup's, 0x436D10) and stores the train's rider count +0x10 as a u16 (0x438424); a slot that is not in service (or any slot of a track that does not run) keeps its lists, but no train pass reads them, so its guests stay aboard with nobody to let them off, as in the original
+		var unread = slots.Skip( runnable ? inService : 0 ).Sum( slot => slot.Cars.Sum( car => car.HeadsA.Length + car.HeadsB.Length ) );
+		if ( unread > 0 )
+			evidence.Add( $"{what}: {unread} riders are listed in train slots that no train pass reads; they stay aboard the ride and nobody lets them off, as in the original." );
 
 		return new Plan( new CoasterTrackSaveData( track.DepartCell, track.ReturnCell, complete && !cut, complete, track.Version + 1, nodes, cutAfter ),
 			state, breakdown, saved.SeatsPerTrain, trains, evidence );
+	}
+
+	/// <summary>
+	/// One train in service's rider lists, checked against the buffers the original loads them into: a car's lists hold at most one entry per head socket of its car type (the loader reads
+	/// the saved count raw into a buffer of that size), an entry is a guest's thing id (0x43B600 seats only a non-zero id), a guest sits in one seat, and the train's rider count +0x10 is
+	/// the number of entries in both lists of all its cars (+1 per seat in 0x43B600, -1 per unload in 0x43B480, unchanged by the swap at departure).
+	/// </summary>
+	// [BIN:TPW-EXE:0x436D10 car list buffers] each car's two buffers (+0x28, +0x2C) are the car type's head count (+0x30) entries of 4 bytes, the type picked by the car's place in the train (front, rear, centre); the loader's count is a byte and unbounded (0x43853E), so a longer list would overrun the next car's buffer
+	// [BIN:TPW-EXE:0x43B600 seat guests] the list entry is the guest's id as the script handed it over (0x554AE2 -> 0x43B0E0 pushes it on the ring); the seat is the list index (socket k of the car type), the train's +0x10 counts one more rider
+	private static (IReadOnlyList<IReadOnlyList<int>> Lap, IReadOnlyList<IReadOnlyList<int>> Boarding) Riders( SaveCoasterTrain slot, CoasterDefinition definition, string what, int train, HashSet<int> seen )
+	{
+		var lap = new List<IReadOnlyList<int>>();
+		var boarding = new List<IReadOnlyList<int>>();
+		var total = 0;
+		for ( var car = 0; car < slot.Cars.Count; car++ )
+		{
+			var sockets = definition.CarMetrics( car ).Heads;
+			var saved = slot.Cars[car];
+			foreach ( var (name, list, target) in new[] { ("lap", saved.HeadsA, lap), ("station", saved.HeadsB, boarding) } )
+			{
+				if ( list.Length > sockets )
+					throw new InvalidDataException( $"{what}: train {train} car {car} lists {list.Length} guests on its {name} list but the car type has {sockets} head sockets." );
+				var guests = new List<int>( list.Length );
+				foreach ( var entry in list )
+				{
+					if ( entry == 0 || entry > int.MaxValue )
+						throw new InvalidDataException( $"{what}: train {train} car {car} lists the guest id {entry} on its {name} list; the seating routine (0x43B600) stores only a guest's thing id." );
+					if ( !seen.Add( (int)entry ) )
+						throw new InvalidDataException( $"{what}: guest {entry} sits twice on the trains (train {train} car {car}, {name} list)." );
+					guests.Add( (int)entry );
+				}
+				target.Add( guests );
+				total += guests.Count;
+			}
+		}
+		if ( slot.Riders != total )
+			throw new InvalidDataException( $"{what}: train {train} holds the rider count {slot.Riders} but {total} guests on its car lists; the original keeps the two equal (0x43B600, 0x43B480)." );
+		return (lap, boarding);
+	}
+
+	/// <summary>
+	/// Every guest on a plan's train lists must be one of the riders the ride's saved script run state accepted (a guest in state 16 that names the ride, <see cref="RideVisitorBridge.ImportSavedRiders"/>): a list entry
+	/// the guest import did not seat aboard names a guest the save does not hold on this ride. Returns the evidence lines (riders of the ride that no list holds).
+	/// </summary>
+	// [BIN:TPW-EXE:0x501A08 state 16 update] a guest in state 16 does nothing but look its ride up, so a guest of the coaster that no car list holds is not in the train code's reach: the controller lets guests off only from its leaving ring (0x43B220), which the saver does not write
+	// [BIN:TPW-EXE:0x437300 coaster saver] the admission ring (+0xB0) and the leaving ring (+0xD0) are not saved, and no tp.exe routine outside the coaster code, the COAST commands (0x554AB4..0x554BF4) and the station window (0x4E0628) reads the controller tables 0x790BD0 and 0x790FE0, so the original has no sweep after a load that hands such a guest back
+	internal static IReadOnlyList<string> CheckRiders( Plan plan, IReadOnlyCollection<int> aboard, string what )
+	{
+		ArgumentNullException.ThrowIfNull( plan );
+		ArgumentNullException.ThrowIfNull( aboard );
+		var listed = new HashSet<int>();
+		for ( var train = 0; train < plan.Trains.Count; train++ )
+		{
+			foreach ( var list in (plan.Trains[train].Lap ?? Array.Empty<IReadOnlyList<int>>()).Concat( plan.Trains[train].Boarding ?? Array.Empty<IReadOnlyList<int>>() ) )
+			{
+				foreach ( var guest in list )
+				{
+					if ( !aboard.Contains( guest ) )
+						throw new InvalidDataException( $"{what}: train {train} seats guest {guest}, who is not a rider of the ride (a guest in state 16 whose major destination is the ride, with the ride's script run state imported)." );
+					listed.Add( guest );
+				}
+			}
+		}
+		var lost = aboard.Count( guest => !listed.Contains( guest ) );
+		return lost == 0 ? Array.Empty<string>()
+			: new[] { $"{what}: {lost} of its {aboard.Count} riders sit on no car list (the admission and leaving rings are not saved); they stay aboard and nobody lets them off, as in the original." };
 	}
 
 	/// <summary>The saved words the rebuild re-derives, compared with what it derived: the self-intersection count and the collision lists (the auxiliary block is station node S2's).</summary>

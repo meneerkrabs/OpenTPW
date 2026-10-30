@@ -18,7 +18,7 @@ public partial class Level
 	}
 
 	/// <summary>The attractions whose vehicles <see cref="ApplyOriginalTrackRiders"/> restored.</summary>
-	private readonly HashSet<OriginalObject> restoredVehicleRides = new();
+	private HashSet<OriginalObject>? restoredVehicleRides;
 
 	/// <summary>
 	/// A guest in state 16 is a rider only while the ride's carrier state is restored: a ride whose rider tables did not read, a tour ride (its cars are not imported) and a kart, water or flying ride
@@ -39,7 +39,7 @@ public partial class Level
 			var saved = attractions.FirstOrDefault( attraction => attraction.Id == item.ThingId );
 			var reason = bridge.RidersRefusal
 				?? (item.Runtime.UsesTour ? "its tour cars are not imported"
-				: saved is { TrackRideHandle: not 0 } && !restoredVehicleRides.Contains( item ) ? "its track ride's vehicles were not imported" : null);
+				: saved is { TrackRideHandle: not 0 } && restoredVehicleRides?.Contains( item ) != true ? "its track ride's vehicles were not imported" : null);
 			if ( reason == null )
 				continue;
 			var dropped = Guests.DropImportedRiders( bridge );
@@ -56,7 +56,7 @@ public partial class Level
 	internal IReadOnlyList<string> ApplyOriginalTrackRiders( SaveTrackRideBlock? block )
 	{
 		var lines = new List<string>();
-		restoredVehicleRides.Clear();
+		restoredVehicleRides = new();
 		var read = OriginalTrackVehicles.Read( block );
 		if ( read.Problem != null )
 		{
@@ -91,7 +91,7 @@ public partial class Level
 				lines.Add( $"[APPROX:TRACK-032] Track ride vehicles not restored for {what}: {refusal}." );
 				continue;
 			}
-			restoredVehicleRides.Add( match.Item );
+			restoredVehicleRides!.Add( match.Item );
 			// the engine voices and break-smoke emitters of the vehicles the save brought start again, as after a park resume (presentation: nothing is drawn from the generator)
 			match.Item.Runtime.ResumeBumpEffects();
 			if ( !any )

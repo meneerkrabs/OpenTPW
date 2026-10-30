@@ -673,6 +673,8 @@ public partial class Level : IDisposable
 			// the scripts come before the guests: a guest in state 16 is a rider the ride's saved script state holds (its walk, bounce and head tables), so the guest import needs to know which scripts were restored
 			ImportOriginalScripts();
 			ImportOriginalGuests();
+			// the vehicles carry guests the guest import restored as riders
+			ImportOriginalTrackRiders();
 			ReconcileOriginalAdmissions();
 			yield return 0.95f;
 			ImportOriginalCoasters();

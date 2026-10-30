@@ -20,9 +20,13 @@ public partial class Level
 
 	// [APPROX:TRACK-032] an original save's kart or water track is imported from the structure layer's track cells (the 31-byte cells, loader 0x4D0B30 and 0x50C200: the type 11 and 13 kart and 16 and 18 water tiles and their type-12 extensions with their connection mask, flow link, flags, origin, chosen piece, overlap, alternate mask and segment; the ride of a tile is the one whose station reaches it through the masks) and each ride's circuit is walked from them, compared with chunk 4's section list and given chunk 3's laps, performance and phase (Level.ImportOriginalTracks; loader 0x543560: the ride chunk 0x543638, the section chunk 0x543FF4 through the section builder 0x54B2F0); not imported: the vehicles (chunk 5, the 0xAC-byte records with their tile and waypoint keys) with their riders and the pending and leaving lists (chunks 7, 8 and 9: the guests riding are not imported either, SAVE-002), the ride words +0x10, +0x14 and +0x18 OpenTPW's controller does not hold, a kart or bumper phase of racing or over (it loads in loading, where a water ride keeps its running phase), the chunk-6 reference waypoint (the open routine 0x544840 picks the same one: the first flag-4 buoy, then the next that is not flag 2), the cells' mesh instances (the piece instances are made again) and the flag bits OpenTPW's cells do not hold; a straight or stub tile over a path or queue cell keeps that cell's type and lies beneath it (0x538FC0); a corner or junction tile replaces the cell, with the bridge remembered through the saved map layer (TRACK-010); no save of the corpus or Easymode holds a kart, water or bumper ride (their TrackRides block is the 44-byte build-stamp chunk), so the import is checked against the saver's shapes and OpenTPW's own tracks only
 	/// <summary>The import of <see cref="ImportOriginalTracks"/> over the pieces of a save (the cells, the map type under a cell, the ride chunks and the attraction things): the evidence lines.</summary>
+	/// <summary>The rides of the last <see cref="ApplyOriginalTracks"/> whose ride chunk was applied: their station, controller and chunk, for the vehicle and rider step (<see cref="ApplyOriginalTrackRiders"/>).</summary>
+	private readonly List<(OriginalObject Item, BumpController Bump, SaveTrackRideHeader Ride)> importedTrackRides = new();
+
 	internal IReadOnlyList<string> ApplyOriginalTracks( IReadOnlyList<SaveTrackCell> savedCells, Func<int, int, uint> mapTypeAt, SaveTrackRideBlock? block, string? problem, IReadOnlyList<SaveAttraction> attractions )
 	{
 		var lines = new List<string>();
+		importedTrackRides.Clear();
 		if ( problem != null )
 			lines.Add( $"[APPROX:TRACK-032] The TrackRides block does not read in the writer's shapes ({problem}): its rides are not restored." );
 		if ( Guests == null || waterTracks == null || kartTracks == null )
@@ -118,6 +122,11 @@ public partial class Level
 			var words = OriginalTrackImport.WordsOf( ride );
 			var kept = bump.RestoreOriginalWords( words.Laps, words.Performance, words.Phase );
 			var details = new List<string> { $"laps {words.Laps}, performance {Math.Clamp( words.Performance, 0, 100 )}, phase {kept}" };
+			// [BIN:TPW-EXE:0x543638 ride chunk] the words +0x14 and +0x18 (the model range: a new vehicle's variant is its count modulo +0x18 plus +0x14, 0x549DB0) are stored as saved after the constructor copied the template's; the word +0x10 goes to the constructor as the thing the ride belongs to (0x529F6A passes the thing being placed)
+			if ( !bump.TryRestoreModelWords( unchecked((int)ride.Field14), unchecked((int)ride.Field18) ) )
+				details.Add( $"the saved model words {unchecked((int)ride.Field14)} and {unchecked((int)ride.Field18)} are no range of vehicle models and the template's stay" );
+			if ( (ride.Field10 & 0xFFFF) != (uint)item.ThingId )
+				details.Add( $"the saved ride word +0x10 ({ride.Field10}) is not the attraction's thing id ({item.ThingId})" );
 			var sections = chunks.Where( chunk => chunk.Tile is { } tile && tile.Identity.Value == ride.Identity.Value ).Select( chunk => chunk.Tile! ).ToList();
 			var differences = circuit == null ? new List<string> { "no circuit walked" } : OriginalTrackImport.CompareSections( sections, bump.Sections ).ToList();
 			details.Add( differences.Count == 0 ? $"{sections.Count} saved sections equal the walked circuit" : $"saved sections differ from the walked circuit ({string.Join( "; ", differences.Take( 3 ) )})" );
@@ -126,11 +135,8 @@ public partial class Level
 			if ( words.StationX != bump.StationX || words.StationY != bump.StationY || words.Orientation != bump.Orientation )
 				details.Add( $"the saved station reference ({words.StationX}, {words.StationY}, orientation {words.Orientation}) differs from the placement's ({bump.StationX}, {bump.StationY}, {bump.Orientation})" );
 			lines.Add( $"Track ride imported for {what}: {string.Join( "; ", details )}." );
+			importedTrackRides.Add( (item, bump, ride) );
 		}
-		var vehicles = chunks.Count( chunk => chunk.RawRecord != null );
-		var peeps = chunks.Count( chunk => chunk.Type is 7 or 8 or 9 );
-		if ( vehicles > 0 || peeps > 0 )
-			lines.Add( $"[APPROX:TRACK-032] Track ride vehicles not restored: {vehicles} vehicle records and {peeps} rider and peep chunks (the guests riding are not imported either)." );
 		return lines;
 	}
 }

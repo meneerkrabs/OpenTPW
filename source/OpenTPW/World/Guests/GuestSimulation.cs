@@ -4503,6 +4503,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			var guest = new Guest( guestSnapshot.Id, guestSnapshot.Type );
 			ApplyGuestSnapshot( guest, guestSnapshot, snapshot.SchemaVersion );
+			// [BIN:TPW-EXE:0x004F93AA saved sprite bank] a load writes the reduced bank back: a later save must keep it, not recover the earlier bank when more sets load.
+			// A costume guest's kid value is not its current sprite bank; returning the costume redraws and reduces it in ApplyAppearance.
+			if ( !guest.InCostume )
+				guest.KidSetDraw = ReduceKidDraw( guest.KidSetDraw );
 			if ( guest.Lane != null )
 				ConvertLegacyLane( guest );
 			if ( guestSnapshot.BodySprite == null )
@@ -4965,3 +4969,4 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return hash;
 	}
 }
+

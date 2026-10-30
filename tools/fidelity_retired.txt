@@ -427,3 +427,4 @@ UI-041 docs/UI.md
 UI-051 docs/UI.md
 MD2-901 docs/OBJECTS.md
 ECON-059 docs/ECONOMY.md
+COAST-015 docs/COASTERS.md

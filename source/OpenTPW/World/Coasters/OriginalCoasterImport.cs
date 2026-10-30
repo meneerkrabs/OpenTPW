@@ -43,7 +43,7 @@ internal static class OriginalCoasterImport
 			throw new InvalidDataException( $"{what} is cut open (wire 0x2) without a complete track (wire 0x1)." );
 		if ( (saved.Flags & ~0x1FFu) != 0 )
 			throw new InvalidDataException( $"{what} carries the unknown wire bits 0x{saved.Flags & ~0x1FFu:X} in its flag word." );
-		// [APPROX:SAVE-921] the track flags (wire 0x4..0x100, controller +0 0x20..0x800) are not modelled by the coaster runtime beyond the trains-set-up bit (0x800); a scan of tp.exe's coaster module finds no user of the others outside the saver and the loader, and the import reports them
+		// [APPROX:SAVE-921] the track flags (wire 0x4..0x100, controller +0 0x20..0x800) are not modelled by the coaster runtime beyond the trains-set-up bit (0x800); a static data-flow scan of tp.exe (tools/ppc-analysis/controller_flag_readers.py) finds no reader of the others outside the saver and the loader, and the import reports them
 		if ( (saved.Flags & 0x1FC) != 0 )
 			evidence.Add( $"{what}: the track flags 0x{(saved.Flags & 0x1FC) >> 2 << 5:X} (wire 0x{saved.Flags & 0x1FC:X}) are not modelled (SAVE-921)." );
 

@@ -15,7 +15,7 @@ header flag word, the loader 0x437B60 reads them back) other than the saver and 
    0x790FEC. The scan lists every place of the whole image that names those three addresses and requires them all to lie in the coaster module.
 2. Flow. From the functions holding those places it follows pointer values to a fixpoint through registers, stack frames (exact esp offsets, out
    parameters, pointers to locals), direct calls (only the registers and stack arguments the callee reads, `ret N` and `add esp` pops, the returned
-   eax), the controller's own fields, global holders and the fields of the other constant-size records the code allocates (nodes, cars, ...). A value
+   eax), the controller's own fields, global holders and the fields of the other constant-size records the code allocates (descriptors, nodes, ...). A value
    is a token (kind, offset): ('C', k) is the controller + k, ('H48', k) a 0x48-byte record + k. Every memory operand whose base carries a controller
    token and whose byte range meets controller +0..3 is a reader; a second pass follows the loaded value (masks, compares, copies, returns) and
    says which bits it can observe. Over-approximation is the rule: the flow ignores branch conditions (except the null edge of a zero test), merges
@@ -26,7 +26,7 @@ header flag word, the loader 0x437B60 reads them back) other than the saver and 
    assignment of its base register, whether or not the flow reaches it.
 
 What the scan does not do: follow pointers through arrays inside records (indexed element stores and loads), through records of unknown size, or
-through the thing table 0x7A4610 (+0xD4 holds a car); it assumes the 0x10 bytes a pointer argument reaches in the caller's frame and non-negative
+through the thing table 0x7A4610 (+0xD4 holds a node); it assumes the 0x10 bytes a pointer argument reaches in the caller's frame and non-negative
 indexes. The report states these as UNTYPED stores; docs/reverse/COAST-plan.md section 24 gives the reading.
 """
 from __future__ import annotations
@@ -59,7 +59,7 @@ SEED_ADDRESSES = {
 MODULE = (0x42F000, 0x44C000)       # the coaster module; the seed sites must all lie inside
 SAVER, LOADER = 0x437300, 0x437B60
 # Heap records the flow tells apart by their allocation size: the controller (0x14C bytes); every other constant size is a kind 'H<size>' (the 0x48-byte
-# track node, built by 0x432C10, keeps the edited controller 0x790FEC in its +0x14, so a node leads back to its controller; the 0x104-byte cars, ...).
+# descriptor, built by 0x432C10, keeps the edited controller 0x790FEC in its +0x14, so a descriptor leads back to its controller; the 0x104-byte track nodes, ...).
 CONTROLLER_ALLOCATION = 0x14C
 NON_POINTERS = ('S', 'G', 'P')      # token kinds that are not pointers to tracked heap records
 
@@ -1394,12 +1394,12 @@ def immediate_track_tests(analysis: Analysis):
 # Hand-reviewed dispositions (each read in tp.exe; the scan prints every hit that is not listed here as NEW and `--check` fails on it)
 # ------------------------------------------------------------------------------------------------------------------------------------
 REVIEWED_READERS = {
-    0x43F641: 'cmp [edi], 0 of 0x43F4E0 tests `*param_1`, a car record, not the controller: the callers 0x43EF5F and 0x43EFCC (0x43EB70) push the car walked '
+    0x43F641: 'cmp [edi], 0 of 0x43F4E0 tests `*param_1`, a track node, not the controller: the callers 0x43EF5F and 0x43EFCC (0x43EB70) push the node walked '
               'from [[0x790FE4]+0x18] (controller +0x54) through its +0x64 links; the controller enters the loop only as the end sentinel in ebp '
-              '(0x43EEA9, when there is no car), a path on which esi is zero and the loop is left at 0x43EEEB',
+              '(0x43EEA9, when there is no node), a path on which esi is zero and the loop is left at 0x43EEEB',
 }
 REVIEWED_HOLDERS = {
-    0x43392A: 'the global-array copy of 0x4338E0: [ebx - 4] reads the last slot of 0x791D08 + n * 0x104 (n < 5, the car count at 0x791020 bounds the loop), '
+    0x43392A: 'the global-array copy of 0x4338E0: [ebx - 4] reads the last slot of 0x791D08 + n * 0x104 (n < 5, the node count at 0x791020 bounds the loop), '
               'never the adjacent 0x792218',
     0x43BA09: '0x43B8B0 reuses its first argument slot as an out parameter (`&param_1` goes to 0x43B7E0), the stored value is the section index it returns, '
               'not the controller the slot held on entry',
@@ -1412,7 +1412,7 @@ REVIEWED_ESCAPES = {
     0x5F5E31: 'the save stream\'s Read through its vtable (0x5F5E20): fills a buffer, reads no controller memory',
     0x5F5E61: 'the save stream\'s Write through its vtable (0x5F5E50): the saver passes the address of its local wire words (0x437300), not the controller',
 }
-# Stores of a car, node or other record pointer into a record the scan has no type for (an array element, a thing record at 0x7A4610 +0xD4, ...):
+# Stores of a node, descriptor or other record pointer into a record the scan has no type for (an array element, a thing record at 0x7A4610 +0xD4, ...):
 # none stores the controller (those are the two reviewed C entries above). The scan lists them so a change shows; they are not reviewed one by one.
 UNTYPED_STORES = (0x433D7B, 0x434296, 0x434551, 0x438288, 0x439FE3, 0x43A01D, 0x43EC0C, 0x43EC17, 0x43EC3D, 0x43EC59, 0x43ECA3, 0x43ECB5, 0x44106F, 0x44108C,
                   0x4424F7, 0x4424FD, 0x467CFD, 0x467D5D)

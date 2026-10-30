@@ -292,6 +292,6 @@ public class RideStateRulesTests
 		ride.StoredState = RideObjectStates.Upgrading;
 		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( ride ), "the stored 2 overwrites the breakdown" );
 		ride.StoredState = RideObjectStates.Idle;
-		Assert.AreEqual( RideObjectStates.BrokenDown, ParkEconomy.ObjectState( ride ), "SetState(0) leaves the shared word to the ride update" );
+		Assert.AreEqual( RideObjectStates.Idle, ParkEconomy.ObjectState( ride ), "SetState(2) wrote the one word, so SetState(0) leaves state 0: the ride update finds a breakdown again" );
 	}
 }

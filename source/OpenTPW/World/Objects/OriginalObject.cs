@@ -396,14 +396,19 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 		}
 	}
 
-	/// <summary>The art of a model texture slot's first frame as the floor composite reads it (RGBA, in the order the file decodes), or null when no searched directory has it.</summary>
+	/// <summary>
+	/// The art of a model texture slot's first frame as the floor composite reads it (RGBA, in the order the file decodes), or null when no searched directory has it. The decoder follows the
+	/// resolved file's extension, as <see cref="TryLoadTexture(ObjectCatalogEntry, string)"/>'s does: Theme Park Inc's own data resolves its slots to <c>.fsh</c> and <c>.tga</c> files
+	/// (the science Log Mill's <c>ns_cnr04</c> is <c>sharetex/ns_cnr04.fsh</c>), which the WCT reader cannot read.
+	/// </summary>
 	internal static ObjectFloorBase.SlotArt? DecodeSlotArt( ObjectCatalogEntry entry, string name )
 	{
 		var resolved = ObjectAssets.ResolveTexture( entry, name );
 		if ( resolved == null )
 			return null;
 		var (fileSystem, path) = resolved.Value;
-		var (data, width, height) = fileSystem == FileSystem ? Texture.DecodeWct( path ) : Texture.DecodeImage( fileSystem, path );
+		// a game-data .wct goes through DecodeWct for the texture pack; everything else decodes by its extension
+		var (data, width, height) = fileSystem == FileSystem && path.HasExtension( ".wct" ) ? Texture.DecodeWct( path ) : Texture.DecodeImage( fileSystem, path );
 		return new ObjectFloorBase.SlotArt( data, width, height );
 	}
 

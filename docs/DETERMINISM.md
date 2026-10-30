@@ -9,7 +9,7 @@ covers the DET-I1 slice of the contract in
 60 Hz `FixedStepClock` (`EXT:fixed-60hz-clock`; ECON-001 keeps the substeps) and, since the world generator was ported,
 draws every random decision from the original's one generator (below). A park turn now runs in the original's order
 (the thing sweep, below) and inside the original's 31 ms substeps (the script pass, the bump module and the tour cars,
-below); what remains of DET-I2 (DET-013 to DET-015) is listed under "What is still unlike the original".
+below); what remains of DET-I2 (DET-013 and DET-014; DET-015 is retired) is listed under "What is still unlike the original".
 
 ### External host civil time
 
@@ -254,7 +254,7 @@ Windows, Linux and macOS, and the browser check checks them in WebAssembly.
 Simulation code calls DetMath for every elementary function. `[EXT:deterministic-math]` (user decision, 2026-10-19: "Als EXT:
 deterministic-math"): tp.exe evaluates them on the x87 in extended precision (`fsin`, `fpatan`, `fyl2x`) or through its C runtime
 (`pow`, `acos`). OpenTPW evaluated them before through the platform's double `Math`, and now through DetMath. That is the same
-double precision, now identical everywhere, and the change moved no pin. The x87 control word is 24 bits on the one simulation thread of the hardware renderer path (`COAST-032`; `ECON-059` keeps the software path). The call sites:
+double precision, now identical everywhere, and the change moved no pin. The x87 control word is 24 bits on the one simulation thread of the hardware renderer path (`COAST-032`; the software path is `[EXT:hardware-d3d-path]`, ECON-059 retired). The call sites:
 
 | Site | Function | Original |
 | --- | --- | --- |

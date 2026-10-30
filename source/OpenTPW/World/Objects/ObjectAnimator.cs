@@ -1157,7 +1157,7 @@ public sealed class ObjectAnimator
 			foreach ( var track in channel.FrameTracks )
 			{
 				slotAnimated[track.Slot] = true;
-				// Invalid or missing art remains a defensive host extension (MD2-901).
+				// Invalid or missing art remains a defensive host extension ([EXT:original-undefined-reads]).
 				if ( track.FrameAt( channel.Player.Tick ) is { } frame && frame < model.Textures[track.Slot].FrameNames.Count
 					&& (availableFramesBySlot[track.Slot] == null || availableFramesBySlot[track.Slot]![frame]) )
 					sampledFrameBySlot[track.Slot] = frame;

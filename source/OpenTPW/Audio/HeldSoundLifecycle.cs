@@ -7,7 +7,7 @@ internal sealed record SoundFadeSettings( int DefaultQuality = 50, int FadeThres
 	internal static SoundFadeSettings Read( SamSettings settings ) => new(
 		Math.Clamp( settings.GetInt( "SoundInfo.DEFAULTQUALITY", 50, optional: true ), 0, 100 ),
 		Math.Clamp( settings.GetInt( "SoundInfo.FADETOGGLE", 30, optional: true ), 0, 100 ) );
-	// a missing host SoundQuality takes the loaded default; the original user's saved preference is not recoverable (see AUDIO-040)
+	// a missing host SoundQuality takes the loaded default; the original user's saved preference is not recoverable ([EXT:fade-poll-host-timing])
 	internal int Resolve( int? saved ) => Math.Clamp( saved ?? DefaultQuality, 0, 100 );
 }
 

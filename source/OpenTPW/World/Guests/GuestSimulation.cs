@@ -444,6 +444,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 	}
 
+	/// <summary>
+	/// The kid sets the park loaded (<see cref="KidSetLoad"/>), set by the level once its sprites are in; null where the simulation runs without graphics. Presentation only: a guest made while it is known keeps its
+	/// draw reduced by it, as the original's draw divides by the loaded count.
+	/// </summary>
+	public int? KidSetCount { get; set; }
+
+	private uint ReduceKidDraw( uint raw ) => KidSetCount is > 0 and var count ? raw % (uint)count : raw;
+
 	private Guest? Create()
 	{
 		// [BIN:TPW-EXE:0x004F896A thing id] the base constructor 0x004F8940 takes the thing's id from the pool (0x0050AFE0 → the allocator 0x00516270) before its first draw; a full pool logs a fatal error and gives id 0 (here: no guest)
@@ -475,8 +483,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.ExitLevel = start.ExitLevel;
 		// [BIN:TPW-EXE:0x004FB19E guest reseed] the constructor then reseeds the world generator with the thing's id (zero-extended u16, through 0x0050B350), so everything the guest and the world draw after its creation starts from a state that depends on the id alone
 		random.Reseed( (ushort)guest.Id );
-		// [BIN:TPW-EXE:0x004FB1A7 guest sprite variant] the next call, 0x00541F70 with category 0, draws (R >> 2) mod the category's bank count (0x00541F85) for the guest's sprite bank +0x20: the guest keeps the draw (the renderers take it modulo the sets loaded, KidSetLoad), which the reseed makes the one its thing id gives (GuestAppearance.RawKidDraw)
-		guest.KidSetDraw = random.NextWord() >> 2;
+		// [BIN:TPW-EXE:0x004FB1A7 guest sprite variant] the next call, 0x00541F70 with category 0, draws (R >> 2) mod the category's loaded bank count (0x00541F85, div esi) and 0x004FB1B5 stores the remainder as the guest's sprite bank +0x20: the guest keeps it reduced by the kid sets loaded (KidSetCount, the raw draw where unknown), and the renderers reduce it again by the count loaded now (0x004F93AA, KidSetLoad); the reseed makes the raw draw the one its thing id gives (GuestAppearance.RawKidDraw)
+		guest.KidSetDraw = ReduceKidDraw( random.NextWord() >> 2 );
 		CreateBodySprite( guest, VisitorSpriteTemplate.Walk );
 		// A guest placed without the arrival constructor's position draws (the park's own start cell, tests, imports) is spread by a stable hash of its id: OpenTPW's own placement
 		// jitter, not a draw of the world generator (presentation of the start; the original sets +0x18/+0x1A from the entrance draws of SpawnArrival)
@@ -3735,7 +3743,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			case GuestAppearance.Costume:
 				if ( guest.InCostume )
 					random.Reseed( (ushort)guest.Id );
-				random.NextWord();   // the sprite bank's variant (the guest's own on return, the costume's on putting one on): taken, not used
+				var variant = random.NextWord() >> 2;   // the sprite bank's variant (the guest's own on return, the costume's on putting one on)
+				// [BIN:TPW-EXE:0x004FE6AA costume return] the draw is written back to the bank +0x20 (0x004FE6B2): on return it is the kid set again, reduced by the loaded count; putting one on stores the costume bank, which the costume renderer reads (one set per theme)
+				if ( guest.InCostume )
+					guest.KidSetDraw = ReduceKidDraw( variant );
 				guest.InCostume = !guest.InCostume;
 				break;
 		}

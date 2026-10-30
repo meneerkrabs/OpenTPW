@@ -66,23 +66,32 @@ public class KidSetLoadTests
 	}
 
 	[TestMethod]
-	public void AGuestsKeptDrawIsTheCreationDrawAndTheRendererTakesItModuloTheLoadedCount()
+	public void AGuestKeepsItsDrawReducedByTheSetsLoadedAndTheRendererReducesItAgain()
 	{
-		var grid = new GuestPathGrid( 20, 10 );
-		for ( var x = 0; x < 20; x++ ) grid.SetPath( x, 5, true );
-		var settings = GuestTests.CreateSettings();
-		var park = new GuestSimulation( grid, settings, 11 ) { ArrivalsEnabled = false };
-		var guests = Enumerable.Range( 0, 40 ).Select( _ => park.SpawnArrival() ).OfType<Guest>().ToArray();
-		Assert.IsTrue( guests.Length > 20 );
-		foreach ( var guest in guests )
+		// [BIN:TPW-EXE:0x541F70 kid set draw] the function returns (word >> 2) mod the loaded count and 0x4FB1B5 stores that; a load reduces it again (0x4F93AA): (raw mod 8) mod 6
+		GuestSimulation Park( int? sets )
 		{
-			Assert.AreEqual( GuestAppearance.RawKidDraw( guest.Id ), guest.KidSetDraw, $"guest {guest.Id}: the reseed makes the creation draw a function of the id" );
-			Assert.AreEqual( (int)(guest.KidSetDraw % 6), GuestAppearance.KidSet( guest, 6 ) );
+			var grid = new GuestPathGrid( 20, 10 );
+			for ( var x = 0; x < 20; x++ ) grid.SetPath( x, 5, true );
+			return new GuestSimulation( grid, GuestTests.CreateSettings(), 11 ) { ArrivalsEnabled = false, KidSetCount = sets };
+		}
+		var loaded8 = Park( 8 );
+		var headless = Park( null );
+		var withEight = Enumerable.Range( 0, 40 ).Select( _ => loaded8.SpawnArrival() ).OfType<Guest>().ToArray();
+		var raw = Enumerable.Range( 0, 40 ).Select( _ => headless.SpawnArrival() ).OfType<Guest>().ToArray();
+		Assert.IsTrue( withEight.Length > 20 && raw.Length == withEight.Length );
+		foreach ( var guest in withEight )
+		{
+			var draw = GuestAppearance.RawKidDraw( guest.Id );
+			Assert.AreEqual( draw % 8, guest.KidSetDraw, $"guest {guest.Id}: the stored bank is the draw modulo the eight loaded" );
+			Assert.AreEqual( (int)((draw % 8) % 6), GuestAppearance.KidSet( guest, 6 ), "and a park that loads six reduces it again" );
 			Assert.AreEqual( GuestAppearance.KidSet( guest.Id, 8 ), GuestAppearance.KidSet( guest, 8 ) );
 		}
-		// 6 does not divide 8: a value reduced by 8 at creation and again by 6 would be a different set for some guests
-		Assert.IsTrue( guests.Any( guest => (int)(guest.KidSetDraw % 6) != (int)((guest.KidSetDraw % 8) % 6) ), "the raw draw, not its remainder, is kept" );
-		Assert.AreEqual( 0, GuestAppearance.KidSet( guests[0], 0 ) );
+		foreach ( var guest in raw )
+			Assert.AreEqual( GuestAppearance.RawKidDraw( guest.Id ), guest.KidSetDraw, "without a known count the raw draw is kept" );
+		// 6 does not divide 8: reducing twice is not reducing once
+		Assert.IsTrue( withEight.Any( guest => GuestAppearance.KidSet( guest, 6 ) != (int)(GuestAppearance.RawKidDraw( guest.Id ) % 6) ), "the double reduction differs from a single one" );
+		Assert.AreEqual( 0, GuestAppearance.KidSet( withEight[0], 0 ) );
 	}
 
 	[TestMethod]

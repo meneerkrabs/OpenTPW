@@ -743,6 +743,7 @@ public partial class Level : IDisposable
 			var kidLimit = KidSetLoad.LimitOf( IGraphicsSettings.Instance );
 			sprites = KidSetLoad.Order( sprites, atlas => atlas.Name, kidLimit );
 			headSprites = KidSetLoad.Order( headSprites, atlas => atlas.Name, kidLimit );
+			Guests!.KidSetCount = sprites.Count;
 		}
 		yield return true;
 		// [EXT:pools-swim] the swim sets (64 MiB decoded) are decoded on a worker only for a park that has pool water already; any other park starts that when its first pool cell is painted (PreloadSwimSprites)

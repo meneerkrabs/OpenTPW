@@ -7,11 +7,12 @@
   `0x541310`). A guest's set is its creation draw (`0x541F70`, the first draw after
   the reseed with its thing id, shifted right by 2) modulo the number loaded, so the
   set a guest wears is its place in that order, not in the alphabetical one. The
-  guest now keeps the raw draw (`Guest.KidSetDraw`, saved as an optional field, not
+  function returns the draw modulo the count and the guest stores that remainder
+  (`0x4FB1B5`), which a load reduces again (`0x4F93AA`), so the guest keeps its draw
+  reduced by the sets loaded (`Guest.KidSetDraw`, saved as an optional field, not
   hashed: the simulation never reads it and the constructor already took the draw,
-  so the random stream and the pins are unchanged) because 6 does not divide 8; a
-  guest of an original save keeps the bank its person record holds (`0x4F8B10`
-  reduces it by the loaded count). The pools extension's kid, head and swim sets take the
+  so the random stream and the pins are unchanged); a guest of an original save keeps
+  the bank its person record holds, and a costume return redraws it. The pools extension's kid, head and swim sets take the
   same places. GUEST-017 loses its kid-set clause.
 - **Guests held by a guard are imported.** An original save's guest in state 17 is
   imported held (no walk, balloon, ride or bin, as the hold `0x4FEB10` leaves it),

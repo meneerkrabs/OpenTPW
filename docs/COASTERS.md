@@ -543,7 +543,7 @@ knot pass's write-back of the clamped height parameter and the no-model fallback
 without the model; COAST-029 lost its middle-knot height-adjust clause, the knots taking no `fTrackHeightAdjust`). Saves record
 the knot pass (`KnotPass`): a save from before it places the trains of a coaster with pylon models again and its riders leave. The same round traced the
 stack parts (`0x432df0`) and the kept half turn (COAST-033 narrowed), the mesh's slices, shared rings, winding and marker links
-(COAST-026 narrowed to the cross-section runs and blends, lighting and the Add-mode UV animation) and the cursor link (COAST-035
+(COAST-026 narrowed to the cross-section runs and blends, lighting and the Add-mode UV animation; the runs, blends and UV keys were built on October 30) and the cursor link (COAST-035
 narrowed: the ribbon is gone; the closing target's marks are not set).
 
 The coaster rest round of October 16 settled COAST-017 and COAST-030 and narrowed COAST-011 and COAST-034. COAST-017: a sample's roll is the
@@ -597,3 +597,6 @@ demolish button cut open has no sample list here and keeps the per-segment pitch
 with tp.exe (ORACLE X43, `CoasterBendGolden`; the PC acos at single precision was an ulp off); the bend writes only the body mesh's vertices, so a rider's head socket
 stays unbent as ported; the Croc and Maggot boats' vertices all lie inside their tables. The boats' own clips (no start behind the bend flag was found) and the widening of a bend
 type's model bounds (`0x4302AA..0x43041A`) stay open.
+The pylons' loft, incline and bank clips carry texture-coordinate keys (record flag `0x10000`: the Jungle pylon's loft adds 14.985 to the V of its top corners over the
+clip); the add mode adds them to the stored coordinates (`0x4745C0` through `0x471860`, `ModelUvAnimation.AddTo`), so a lofted pylon's texture repeats along its height
+instead of stretching over it (`CoasterPylonRig.Pose`).

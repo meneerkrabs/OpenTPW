@@ -357,4 +357,24 @@ public class CoasterPresentationAssetTests
 			}
 		}
 	}
+
+	/// <summary>
+	/// The pylons' loft clips carry texture-coordinate keys (record flag 0x10000) which the add mode adds to the stored coordinates (0x4745c0): a lofted pylon's texture repeats along its height instead of
+	/// stretching over it. The Jungle pylon's loft adds 14.985 to the V of its top corners over the clip.
+	/// </summary>
+	[TestMethod]
+	public void ALoftedPylonsTextureRepeatsAlongItsHeight()
+	{
+		var entry = PcCoasters().Single( entry => entry.InfoId == 1180 );
+		var definition = CoasterDefinition.FromEntry( entry );
+		var control = definition.Pylon( false );
+		var name = control.MeshName;
+		var rig = new CoasterPylonRig( Find( entry, name )!, Find( entry, name + "L" )?.Clip, (Find( entry, name + "R" ) ?? Find( entry, name + "R1" ))?.Clip, control,
+			Find( entry, name + "I" )?.Clip, Find( entry, name + "B" )?.Clip, Find( entry, name + "R2" )?.Clip );
+		float MaxV( float loft ) => rig.Pose( new CoasterPylonPose( loft ) ).SelectMany( part => part.Vertices ).Max( vertex => vertex.TexCoords.Y );
+		float MinV( float loft ) => rig.Pose( new CoasterPylonPose( loft ) ).SelectMany( part => part.Vertices ).Min( vertex => vertex.TexCoords.Y );
+		Assert.IsTrue( MaxV( 1f ) - MaxV( 0f ) > 10f, $"the V of the top corners grows by the loft clip's key: {MaxV( 0f )} to {MaxV( 1f )}" );
+		Assert.AreEqual( MinV( 0f ), MinV( 1f ), 1e-3f, "the bottom corners' keys stay at 0" );
+		Assert.AreEqual( 14.985f, MaxV( 1f ) - MaxV( 0f ), 0.5f );
+	}
 }

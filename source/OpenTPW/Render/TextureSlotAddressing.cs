@@ -75,6 +75,11 @@ public static class TextureSlotAddressing
 	public static uint VertexFlags( ModelFile.MaterialData material ) =>
 		VertexFlags( material.Flags ) | ((material.Pad & ModelBuilder.SelfLitMaterialFlag) != 0 ? SelfLitFlag | (IsLightSource( material.Name ) ? LightSourceFlag : 0u) : 0u);
 
+	/// <summary>The vertex flags for a corner of a material whose shared texture object may already wrap: <paramref name="wraps"/> adds the wrap flag the slot itself lacks.</summary>
+	// [BIN:TPW-EXE:0x575E10 shared texture bits] the texture cache 0x575870 hands out one object per (texture directory, frame name); the slot setup ORs 0x10000/0x20000 into that shared object (0x575EA1, 0x575EB3) and a rebinding of a texture set ORs 0x30000 when a slot has flag 0x10 or 0x20 (0x575C95..0x575CA5); nothing clears the bits (0x590FA0 clears only 0x4000), so every model that names the same texture wraps once one of them has a wrap slot
+	public static uint VertexFlags( ModelFile.MaterialData material, bool wraps ) =>
+		VertexFlags( wraps ? new ModelFile.MaterialData { Flags = material.Flags | 0x10, Pad = material.Pad, Name = material.Name } : material );
+
 	/// <summary>Whether tp.exe wraps a slot with these flags (else it clamps).</summary>
 	public static bool Wraps( uint slotFlags ) => (slotFlags & WrapFlags) != 0;
 

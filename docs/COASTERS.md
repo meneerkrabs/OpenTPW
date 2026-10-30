@@ -598,6 +598,6 @@ with tp.exe (ORACLE X43, `CoasterBendGolden`; the PC acos at single precision wa
 stays unbent as ported; the Croc and Maggot boats' vertices all lie inside their tables. The boats' own clips (no start behind the bend flag was found) and the widening of a bend
 type's model bounds (`0x4302AA..0x43041A`) stay open.
 The pylons' loft, incline and bank clips carry texture-coordinate keys (record flag `0x10000`: the Jungle pylon's loft adds 14.985 to the V of its top corners over the
-clip); the add mode adds them to the stored coordinates (`0x4745C0` through `0x471860`, `ModelUvAnimation.AddTo`), so a lofted pylon's coordinates run past 1 along its height. A slot with the wrap flag (0x10 or 0x20, Space's sc_pylon) repeats there; the other slots
-(the Jungle, Coaster and Candy pylons, flags 0x3) clamp, because the only writer of the wrap bits is the texture setup `0x575E9C` and the stage decoder `0x567620` clamps without them, so
-the original draws those pylons with the edge row smeared too (`CoasterPylonRig.Pose`, pinned by `ALoftedPylonsTextureRepeatsAlongItsHeight`).
+clip); the add mode adds them to the stored coordinates (`0x4745C0` through `0x471860`, `ModelUvAnimation.AddTo`), so a lofted pylon's coordinates run past 1 along its height. Whether they wrap or clamp follows the shared texture's accumulated flags: the texture cache `0x575870` keeps one object per (directory, name),
+the slot setup `0x575E10` and the rebinding `0x575C60` OR the wrap bits into it for good (nothing clears them, `0x590FA0` clears only 0x4000), so a clamping slot wraps as soon as any model of the ride
+(the other pylon, the P* previews) wraps the same texture (`CoasterAssets.WrapNames`, `ASlotThatClampsWrapsWhenAnotherModelOfTheRideWrapsTheSameTexture`). Open: whether a preview's texture object outlives the build menu.

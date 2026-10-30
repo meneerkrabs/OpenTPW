@@ -199,7 +199,7 @@ internal sealed class HeldSoundService
 			sound.Lifetime.Poll();
 		}
 		// [BIN:TPW-EXE:0x6B9E30] post-scan Sleep(100/250), counting fades before their update.
-		// [APPROX:AUDIO-040] host policy: one scan per due callback, then delay from now; no catch-up burst. The original's worker Sleeps 100 or 250 ms (0x6B9E30) at the mercy of the operating system's scheduler, so its phase against the main thread's group refresh and admissions has no rule to port
+		// [EXT:fade-poll-host-timing] (user-approved 2026-10-30, AUDIO-040 converted: the original's phase depends on the host operating system's scheduler and, for a missing host SoundQuality, on the user's saved preference, which OpenTPW does not read) host policy: one scan per due callback, then delay from now; no catch-up burst. The original's worker Sleeps 100 or 250 ms (0x6B9E30) at the mercy of the operating system's scheduler, so its phase against the main thread's group refresh and admissions has no rule to port
 		NextPoll = now + (count > 0 ? 100 : 250);
 	}
 	internal void ProcessStops()

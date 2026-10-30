@@ -428,3 +428,4 @@ UI-051 docs/UI.md
 MD2-901 docs/OBJECTS.md
 ECON-059 docs/ECONOMY.md
 COAST-015 docs/COASTERS.md
+AUDIO-040 docs/AUDIO.md

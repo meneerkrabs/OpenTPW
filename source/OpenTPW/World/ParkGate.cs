@@ -267,7 +267,8 @@ public sealed class ParkGate
 	/// tool, <see cref="QueuePaths.Connect"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE4A0 queue link test] thing flag +0x32 bit 8 (Info.HasQueue, type record +0x40, set at 0x4DB425): the back cell (0x4DE130, the cached +0x3A) must exist and its +0x0C (0x522770) differ from its +0x0D (0x522850); without the flag the entrance cell's link toward the cell in front (by the rotation +0x10: 0 → 16, 90 → 4, 180 → 1, 270 → 64) and that type-1 cell's link back are both needed
-	// [APPROX:ECON-049] a queue ride with no front is unconnected, and typed, owned TPW no-queue entrances use reciprocal entrance/path links; untyped or unmatched geometry, prototypes and TPI, and queue rides whose front holds no queue cell, retain the permissive fallback. These checks never close an already-open ride
+	// [APPROX:ECON-049] a queue ride with no front is unconnected, and typed, owned TPW no-queue entrances use reciprocal entrance/path links; unmatched geometry, prototypes and TPI, and queue rides whose front holds no queue cell, retain the permissive fallback. These checks never close an already-open ride
+	// [EXT:untyped-harness-world] untyped geometry (the gates and test rigs, whose ride entrances are not typed map cells with a link byte) retains the permissive answer too (user-approved 2026-10-30)
 	internal static bool QueueConnected( GuestPathGrid grid, RideVisitorBridge ride )
 	{
 		if ( !ride.HasQueue )

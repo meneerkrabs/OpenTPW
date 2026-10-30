@@ -26,16 +26,14 @@ public sealed class StaffRenderer : Entity
 	{
 		/// <summary>Where the member was last drawn, in cells.</summary>
 		public float X, Y;
-		public int ClipKey = -1;
 		public bool Initialised;
-		public SpritePlayer Player = null!;
 		public PublishedFrame? Published;
 	}
 
 	// Value-only output of this renderer's successful world preparation. Never retain a GPU handle in a member view.
 	private readonly record struct PublishedFrame( Level Owner, long WorldPass, long RendererPass, long Assets,
 		StaffMember Member, int ThingId, int Atlas, int Slot, int Step, float HeadingX, float HeadingY );
-	private readonly record struct Selection( int Atlas, int Frame, bool Mirror, StaffClip Clip, int Slot, int Step );
+	private readonly record struct Selection( int Atlas, int Frame, bool Mirror, int Slot, int Step );
 
 	private readonly Func<IReadOnlyList<StaffMember>> members;
 	private readonly ModelHeightfield field;
@@ -189,39 +187,31 @@ public sealed class StaffRenderer : Entity
 			frame.OriginX, frame.OriginY, mirror, frame.ScaleX, frame.ScaleY );
 	}
 
-	/// <summary>The atlas, slot and frame a member is drawn with: for the lifecycle checks and tests; null when the member is not drawn.</summary>
-	internal (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Describe( StaffMember member, SVector3 cameraRight, SVector3 cameraForward )
+	/// <summary>The atlas, frame, mirroring, slot and step a member is drawn with: for the lifecycle checks and tests; null when the member is not drawn.</summary>
+	internal (int Atlas, int Frame, bool Mirror, int Slot, int Step)? Describe( StaffMember member, SVector3 cameraRight, SVector3 cameraForward )
 	{
 		if ( !views.TryGetValue( member, out var view ) )
 			return null;
-		return Select( member, view, Time.Now, cameraRight, cameraForward ) is { } chosen
-			? (chosen.Atlas, chosen.Frame, chosen.Mirror, chosen.Clip) : null;
+		return Select( member, view, cameraRight, cameraForward ) is { } chosen
+			? (chosen.Atlas, chosen.Frame, chosen.Mirror, chosen.Slot, chosen.Step) : null;
 	}
 
-	private Selection? Select( StaffMember member, MemberView view, float now, SVector3 cameraRight, SVector3 cameraForward )
+	/// <summary>
+	/// The frame the member's sprite source shows: the sprite pass draws every sprite whose output word is set (a source shows nothing until the scheduler's first pass has yielded a frame, and a member
+	/// without a source, resting or carried, is not drawn), at the slot and frame the source's registers hold.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00542010 sprite pass] the pass draws a record whose output word (+0x114 on the record: set by FRAME, cleared by an unset frame) is valid, from the bank of its kind and variant at the slot register and the frame register (0x00476940 writes it); the sprite's own clock, not the frame's, advanced it
+	private Selection? Select( StaffMember member, MemberView view, SVector3 cameraRight, SVector3 cameraForward )
 	{
 		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.KeyOf( member ) );
-		if ( !HasAtlas( atlasIndex ) )
+		// the state setters delete the source of a resting or carried member; a source that outlived its state is never drawn
+		if ( !HasAtlas( atlasIndex ) || !StaffSpriteRules.HasBodySprite( member ) || member.Sprite.Output is not var (slot, step) )
 			return null;
 		var atlas = sprites.Atlases[atlasIndex];
-		// [BIN:TPW-EXE:0x004FA2A0 walk clip] a walk step that is still walking asks for the walk clip (0x004FA3B3..0x004FA3F8) and a state entry stands the person again: the world's walk step records it (StaffMember.IsWalking)
-		if ( StaffSpriteRules.SelectClip( member, member.IsWalking, atlas.Animations.Performances, atlas.Animations.PerformanceCount ) is not { } clip )
+		if ( slot >= atlas.Animations.Animations.Count )
 			return null;
-		var key = clip.Script << 8 | clip.Slot;
-		if ( view.ClipKey != key )
-		{
-			view.ClipKey = key;
-			view.Player.Restart();
-		}
-		if ( member.PendingInterval >= 0 )
-		{
-			// [BIN:TPW-EXE:0x004FA2A0 walk step] the interval the person's own step of the turn asked for (StaffWorldSimulation.Walk) takes effect with the sprite; a clip that is not a walk keeps the interval the last step left
-			view.Player.SetInterval( member.PendingInterval );
-			member.PendingInterval = -1;
-		}
-		var (slot, step) = StaffSpriteRules.ResolveSteps( clip, view.Player.Steps, atlas.Animations.Animations );
 		var (frame, mirror) = FrameFor( atlas, slot, step, member.HeadingX, member.HeadingY, cameraRight, cameraForward );
-		return new Selection( atlasIndex, frame, mirror, clip, slot, step );
+		return new Selection( atlasIndex, frame, mirror, slot, step );
 	}
 
 	private static (int Frame, bool Mirror) FrameFor( GuestSpriteAtlas atlas, int slot, int step, float headingX, float headingY, SVector3 cameraRight, SVector3 cameraForward )
@@ -269,21 +259,18 @@ public sealed class StaffRenderer : Entity
 		var needed = (list.Count + 1) * VerticesPerSprite;
 		if ( vertices.Length < needed )
 			vertices = new Vertex[Math.Max( needed, 16 * VerticesPerSprite ) * 2];
-		var now = Time.Now;
-		var nowMs = (long)(now * 1000f);
 		var count = 0;
 		for ( var index = 0; index < list.Count; index++ )
 		{
 			var member = list[index];
 			if ( !views.TryGetValue( member, out var memberView ) )
-				views[member] = memberView = new MemberView { Player = new SpritePlayer( nowMs ) };
+				views[member] = memberView = new MemberView();
 			if ( !CanPlaceMember( member ) )
 				continue;
 			// a member without a point (one coordinate missing) keeps the place he was last drawn at, the established world pass gate
 			if ( DrawPoint( member ) is { } point )
 				(memberView.X, memberView.Y, memberView.Initialised) = (point.X, point.Y, true);
-			memberView.Player.Tick( nowMs );
-			if ( Select( member, memberView, now, right, forward ) is not { } chosen )
+			if ( Select( member, memberView, right, forward ) is not { } chosen )
 				continue;
 			// a member's sprite is pickable, so the original pulls it towards the camera like a visitor's (SpriteScale.PulledDepthShare)
 			var position = GuestRenderer.CellToEngine( field, memberView.X, memberView.Y );
@@ -298,13 +285,13 @@ public sealed class StaffRenderer : Entity
 			Prune( list );
 		if ( DanglePoint( placement ) is var (danglingX, danglingY) && placement.ToolType is { } toolType
 			&& sprites.AtlasFor( toolType, placement.ToolVariantKey ) is var atlasIndex and >= 0 && atlasIndex < textures.Count
+			&& placement.ToolSpriteOutput is var (slot, step) && slot < sprites.Atlases[atlasIndex].Animations.Animations.Count
 			&& DangleAnchor( placement, field ) is { } danglingAnchor )
 		{
 			var atlas = sprites.Atlases[atlasIndex];
-			var (slot, step) = StaffSpriteRules.Resolve( StaffSpriteRules.Dangle, now, atlas.Animations.Animations );
 			// [BIN:TPW-EXE:0x00542010 direction] the heading byte plus the camera's yaw sector, mirrored past the last stored direction, as for any sprite (the tool's sprite has no flag 0x40000: 0x004758F0 clears +0xC4)
 			var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( DangleHeading, GuestSpriteAtlas.CameraYaw( right, forward, Camera.Mode is ParkCameraMode ), atlas.DirectionsOf( slot ) );
-			var frameIndex = atlas.GetFrame( slot, direction, step );
+			var frameIndex = atlas.GetFrame( slot, direction, step % atlas.FramesPerDirection( slot ) );
 			// not pulled: the tool's sprite is made with cleared flags (0x00475A10 through 0x004758F0), and neither the tool's enter 0x0046C730 nor its frame 0x0046C480 (0x00475480 sets
 			// only the position and heading) gives it the pick flag 0x200 that 0x00589B50 pulls
 			AddSprite( ref count, atlasIndex, frameIndex, mirror, danglingAnchor, right, up, forward );

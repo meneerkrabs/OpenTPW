@@ -61,6 +61,9 @@ public partial class Level
 			StaffSpriteSet sprites;
 			using ( LoadProfile.Measure( "staff-sprites" ) )
 				sprites = StaffSpriteSet.Load( LevelName, StaffSpriteRules.BankLimitOf( IGraphicsSettings.Instance ) );
+			// the sources resolve a performance template against these banks (tp.exe 0x00475B80 reads the bank of the sprite's kind and variant)
+			if ( Park != null )
+				Park.Economy.Staff.SpriteBanks = sprites;
 			NextStepIsLong = true;
 			yield return true;
 			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement )

@@ -93,16 +93,18 @@ public sealed class StaffMember
 	/// <summary>The entry number the member's thing held on its cell's chain when a save was taken (<see cref="StaffCellChain"/>), which the world gives it when it files the thing again; 0 when none.</summary>
 	internal long CellSerial { get; set; }
 
-	// Presentation of the walk (not saved, not hashed): the point at the start of the member's last turn update (+0x190/+0x194, 16.16) and the tick it was taken, the drawn point between the turns
-	// (tp.exe 0x004F9F00), whether the walk step asked for the walk clip, and the sprite interval that step asked for (0x004FA2A0, 0x004D41D0; -1: none waiting)
+	// Presentation of the walk (not hashed): the point at the start of the member's last turn update (+0x190/+0x194, 16.16) and the tick it was taken, and the drawn point between the turns
+	// (tp.exe 0x004F9F00)
 	internal int TurnFromX, TurnFromY;
 	internal long TurnTick = -1;
 	/// <summary>Where the member is drawn, in cells; NaN until the staff world has updated him once.</summary>
 	internal float DrawX = float.NaN;
 	internal float DrawY = float.NaN;
-	/// <summary>True while the member's last walk step was still walking: the walk step queues the walk clip (0x004FA3B3..0x004FA3F8) and the next state entry stands him again.</summary>
-	internal bool IsWalking;
-	internal int PendingInterval = -1;
+	/// <summary>
+	/// The member's sprite wrapper and source (tp.exe: the person's words +0xC to +0x14, <see cref="StaffSpriteState"/>): the walk step and the state setters queue templates and intervals on it, the
+	/// pre-update applies them and the sprite scheduler (the even 31 ms substeps) steps the source. Saved in the park's resume file only (the staff world's actors), not hashed.
+	/// </summary>
+	internal StaffSpriteState Sprite { get; } = new();
 	/// <summary>The direction of the member's last step (unit vector in cells), as the sprite's facing reads it.</summary>
 	internal float HeadingX, HeadingY = 1;
 	public bool IsAvailable => BusyTicks == 0 && State is not (StaffState.OnStrike or StaffState.PickedUp or StaffState.Resting);
@@ -219,6 +221,12 @@ public sealed partial class ParkStaff
 	public ParkStaff( BalanceSettings settings ) => this.settings = settings;
 
 	private ThingPool? things;
+
+	/// <summary>The host clock sample the sprite sources are created and stepped at (<see cref="GuestSimulation.BodySpriteSampleAtTick"/>, set by the level every tick; 0 without a level).</summary>
+	internal int SpriteClockMilliseconds { get; set; }
+
+	/// <summary>The sprite banks a performance template is resolved against (the level's loaded staff sprites); null in a headless run.</summary>
+	internal IStaffSpriteBanks? SpriteBanks { get; set; }
 
 	/// <summary>The park's thing pool, once attached (<see cref="AttachThings"/>): a hired member takes a slot as its thing id and a dismissed one's slot is freed at the turn's end.</summary>
 	public ThingPool? Things => things;

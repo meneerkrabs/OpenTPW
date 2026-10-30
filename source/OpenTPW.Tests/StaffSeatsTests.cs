@@ -47,7 +47,7 @@ public class StaffSeatsTests
 		public StaffMember Standing( StaffType type, int x, int y )
 		{
 			var member = EconomyTestData.HireBest( Economy, type );
-			StaffPlacement.PutDown( member, x, y );
+			StaffPlacement.PutDown( Economy.Staff, member, x, y );
 			return member;
 		}
 

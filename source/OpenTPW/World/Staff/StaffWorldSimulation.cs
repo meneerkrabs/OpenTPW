@@ -105,11 +105,22 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 		}
 	}
 
+	/// <summary>
+	/// The sprite scheduler's pass over the staff (tp.exe <c>0x00475360</c>, called from the main loop on the even 31 ms substeps, <c>0x0054F5D7</c> to <c>0x0054F5FB</c>): every source whose due time is before the shared
+	/// clock sample <paramref name="nowMilliseconds"/> takes one step.
+	/// </summary>
+	public void ScheduleSprites( int nowMilliseconds )
+	{
+		foreach ( var member in members() )
+			member.Sprite.Tick( nowMilliseconds );
+	}
+
 	/// <summary>One staff actor's world position and movement phase for a park save.</summary>
 	/// <param name="CellX">Cell-unit position, null while the actor has not been attached to a world.</param>
 	/// <param name="TravelSeconds">Fraction of the next one-cell movement interval (<see cref="StaffMember.TravelSeconds"/>).</param>
 	/// <param name="CellSerial">The entry number the actor's thing holds on its cell's chain (WALK-003, <see cref="StaffCellChain"/>); 0 in a save made before the staff were on the chains, which files them oldest.</param>
-	public sealed record StaffActorSnapshot( int Id, float? CellX, float? CellY, double TravelSeconds, long CellSerial = 0 );
+	/// <param name="Sprite">The member's sprite wrapper and source (<see cref="StaffSpriteState"/>), null in a save made before they were kept: the member then gets a fresh source at its first update.</param>
+	public sealed record StaffActorSnapshot( int Id, float? CellX, float? CellY, double TravelSeconds, long CellSerial = 0, StaffSpriteStateSnapshot? Sprite = null );
 
 	/// <summary>
 	/// The staff actors' positions for a park save: one record per employee, in hire order. Restoring writes
@@ -121,7 +132,7 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 
 	/// <summary>The actors' positions and movement phases for a park save, in member order.</summary>
 	public StaffWorldStateSnapshot CaptureSnapshot() => new( members()
-		.Select( member => new StaffActorSnapshot( member.Id, member.CellX, member.CellY, member.TravelSeconds, Math.Max( 0, Chain.Of( member.Id )?.Serial ?? member.CellSerial ) ) )
+		.Select( member => new StaffActorSnapshot( member.Id, member.CellX, member.CellY, member.TravelSeconds, Math.Max( 0, Chain.Of( member.Id )?.Serial ?? member.CellSerial ), member.Sprite.CaptureSnapshot() ) )
 		.ToArray() );
 
 	/// <summary>
@@ -151,6 +162,17 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 			Require( double.IsFinite( actor.TravelSeconds ) && actor.TravelSeconds >= 0 && actor.TravelSeconds < SecondsPerCell,
 				$"actor {actor.Id} travel fraction outside one interval" );
 			Require( actor.CellSerial >= 0, $"actor {actor.Id} has a negative chain entry number" );
+			if ( actor.Sprite is { } sprite )
+			{
+				try
+				{
+					StaffSpriteState.ValidateSnapshot( sprite );
+				}
+				catch ( InvalidDataException )
+				{
+					Require( false, $"actor {actor.Id} has an inconsistent sprite" );
+				}
+			}
 		}
 		var current = members().Select( member => member.Id ).ToHashSet();
 		Require( ids.SetEquals( current ), "the snapshot's actors must be exactly the current employees" );
@@ -171,6 +193,11 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 			member.CellY = actor.CellY;
 			member.TravelSeconds = actor.TravelSeconds;
 			member.CellSerial = actor.CellSerial;
+			// a snapshot without the sprite (an older save) leaves the member's own: a fresh source is made at its first update (StaffSpriteEvents.PreUpdate)
+			if ( actor.Sprite is { } sprite )
+				member.Sprite.RestoreSnapshot( sprite );
+			else
+				member.Sprite.Reset();
 		}
 		// the members' things are filed again from the saved entry numbers; a save without them files the members oldest, first member head-most (the order the staff stood after the guests in)
 		Chain.Clear();

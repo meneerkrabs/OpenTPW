@@ -38,11 +38,10 @@ public static class StaffSpriteRules
 	public static readonly StaffClip CatchAndCarry = new( 0x16, 7 );
 
 	/// <summary>
-	/// Steps per second of a sprite that keeps the interval it was created with, 62 ms (the dangling cursor sprite and the hire window's figure). A walking member's interval comes from
-	/// <see cref="SpritePlayer"/>.
+	/// Steps per second of a sprite that keeps the interval it was created with, 62 ms: the hire window's figure, whose passes run on the host's renderer-call clock (UI-082 qualifies that). The staff members'
+	/// and the tools' sprites are sources stepped by the sprite scheduler (<see cref="StaffSpriteState"/>).
 	/// </summary>
-	// [APPROX:GUEST-016] SpritePlayer ticks once per renderer call, one step past due, where tp.exe's scheduler (0x475360) runs on even 31 ms substeps; the walk step's own interval (0x4FA2A0) and the sub-turn point (0x4F9F00) are ported
-	// [BIN:TPW-EXE:0x004FA2A0 walk step interval] the sprite's interval is the step's own length times 0x007006E8, doubled unless the thing is a guest or a guard with a speed bonus, as clamp(trunc(62 / v), 0, 250) (0x004D41D0)
+	// [BIN:TPW-EXE:0x004758F0 sprite interval] a sprite is created with the interval 62 ms (+0x80 = 0x3E) and the first due time 62 ms later; a walk step's own interval (0x004FA2A0, 0x004D41D0) is the clamp(trunc(62 / v), 0, 250) of its length times 0x007006E8
 	public const float FramesPerSecond = 1000f / SpritePlayer.DefaultInterval;
 
 	/// <summary>The slot an entertainer performs when the bank lists no performance (every shipped entertainer bank lists slot 4).</summary>
@@ -115,58 +114,9 @@ public static class StaffSpriteRules
 		}
 	}
 
-	/// <summary>
-	/// The clip of a placed member (null: not drawn). Resting members have no sprite (state 3) and a carried one is the dangling sprite instead.
-	/// <paramref name="moving"/> is whether the member is being moved now; <paramref name="performances"/> (the bank's performance entries,
-	/// <see cref="SpriteAnimationFile.Performances"/>) give an entertainer's performance.
-	/// </summary>
-	// [BIN:TPW-EXE:0x004D46D0 performance start] the clip of a performing member is the script its search queued: 13 + (r mod (n − 1)) from the search's second world draw r (StaffMember.PerformanceDraw), 13 when the bank's n present entries (0x541FA0) is 1; scripts 13..16 of the table 0x75A418 hold the entry indices 0..3, and 0x475B80 runs the entry's program on its slot (StaffScripts.PerformanceFrame plays program 0 with the entry's intro and hold). An entertainer of an original save in state 14 has no saved draw: it plays entry 0 until its next performance (GUEST-015 retired)
-	public static StaffClip? SelectClip( StaffMember member, bool moving, IReadOnlyList<SpritePerformance>? performances = null, int performanceCount = 0 )
-	{
-		// a resting member is inside the Staff Room (0x5054d0 state 3 removes the model); a carried one is the dangling sprite instead
-		if ( !HasBodySprite( member ) )
-			return null;
-		if ( member.Job == StaffJob.ToStrike )
-			return moving ? WalkHalf : Stand;
-		if ( member.State == StaffState.OnStrike || member.Job == StaffJob.Striking )
-			return Strike;
-		switch ( member.Type )
-		{
-			case StaffType.Handyman:
-				return member.Job switch
-				{
-					StaffJob.Sweeping or StaffJob.Cleaning => Sweep,
-					StaffJob.Patrol or StaffJob.ToLitter or StaffJob.ToToilet => moving ? WalkHalf : Stand,
-					_ => moving ? Walk : Stand
-				};
-			case StaffType.Mechanic:
-				return member.BusyTicks > 0 && !member.AwaitingJobArrival && !moving ? Repair : moving ? Walk : Stand;
-			case StaffType.Researcher:
-				return member.Job == StaffJob.Researching && !moving ? Research : moving ? Walk : Stand;
-			case StaffType.Guard:
-				return member.Job == StaffJob.Escorting ? CatchAndCarry : moving ? (member.Job == StaffJob.Chasing ? Run : Walk) : Stand;
-			default:
-				return member.Job == StaffJob.Performing && !moving ? Perform( member.PerformanceDraw, performances, performanceCount ) : moving ? Walk : Stand;
-		}
-	}
-
-	/// <summary>The body-existence exclusions shared by clip selection and read-only employee output.</summary>
+	/// <summary>The body-existence exclusions: a resting member is inside the Staff Room (state 3 deletes the source) and a carried one is the dangling sprite instead (state 7 deletes it).</summary>
 	internal static bool HasBodySprite( StaffMember member ) =>
 		member.State is not (StaffState.Resting or StaffState.PickedUp) && member.Job is not (StaffJob.Resting or StaffJob.PickedUp);
-
-	/// <summary>
-	/// An entertainer's performance clip: entry 0 when the bank has one (or none: <see cref="DefaultPerformanceSlot"/>), else entry
-	/// <paramref name="draw"/> mod (count − 1), the original's script choice (the search's second draw, <see cref="StaffMember.PerformanceDraw"/>), its slot looping.
-	/// </summary>
-	// [BIN:TPW-EXE:0x004D47D8 performance script] n = the bank's count of present entries (0x541FA0): 13 when n is 1, else 13 + (draw mod (n - 1)), queued on the member's sprite (0x4217F0); a full bank of four never plays its fourth entry
-	public static StaffClip Perform( uint draw, IReadOnlyList<SpritePerformance>? performances, int count )
-	{
-		if ( performances == null || count <= 0 || performances.Count == 0 )
-			return new StaffClip( 13, DefaultPerformanceSlot );
-		var entry = count == 1 ? 0 : (int)(draw % (uint)(count - 1));
-		var slot = performances[Math.Min( entry, performances.Count - 1 )].Slot;
-		return new StaffClip( 13 + entry, slot is >= 0 and < SpriteAnimationFile.SlotCount ? slot : DefaultPerformanceSlot, performances[Math.Min( entry, performances.Count - 1 )].Intro, performances[Math.Min( entry, performances.Count - 1 )].Hold );
-	}
 
 	/// <summary>The hire window's figure: the walk slot (ESP slot 1), frames 0..7 in turn, looping.</summary>
 	public const int PortraitSlot = 1;
@@ -193,11 +143,10 @@ public static class StaffSpriteRules
 		return (PortraitSlot, mirror ? 8 - direction : direction, mirror, step);
 	}
 
-	/// <summary>The slot and frame step of a clip <paramref name="elapsed"/> seconds after it started, at the interval a sprite is created with.</summary>
-	public static (int Slot, int Step) Resolve( StaffClip clip, float elapsed, IReadOnlyList<SpriteAnimation> animations ) =>
-		ResolveSteps( clip, (int)MathF.Max( 0, elapsed * FramesPerSecond ), animations );
-
-	/// <summary>The slot and frame the clip shows at its <paramref name="steps"/>-th script step (the entertainers' performance scripts, which follow the bank, loop all frames of their slot).</summary>
+	/// <summary>
+	/// The slot and frame the clip's script shows at its <paramref name="steps"/>-th step: the flattened frame formula the bounded sprite VM's programs are checked against (the tests); the game plays the VM
+	/// (<see cref="StaffSpriteVm"/>, <see cref="StaffSpriteState"/>).
+	/// </summary>
 	public static (int Slot, int Step) ResolveSteps( StaffClip clip, int steps, IReadOnlyList<SpriteAnimation> animations )
 	{
 		if ( StaffScripts.At( clip.Script, steps ) is { } shown )
@@ -211,7 +160,7 @@ public static class StaffSpriteRules
 /// The decoded sprite banks of the staff roles of one level, in the order their atlas textures are bound: handymen, mechanics, guards, researchers, the theme's
 /// entertainers. Loaded through the same <see cref="GuestSpriteAtlas"/> path as the guests' kids.
 /// </summary>
-public sealed class StaffSpriteSet
+public sealed class StaffSpriteSet : IStaffSpriteBanks
 {
 	private const int RoleCount = 5;
 	private readonly (int First, int Count)[] ranges = new (int, int)[RoleCount];
@@ -246,6 +195,9 @@ public sealed class StaffSpriteSet
 		}
 		return new StaffSpriteSet( atlases, ranges );
 	}
+
+	/// <summary>The animation file of the bank a person of a role and variant is drawn from, null when the role has none.</summary>
+	public SpriteAnimationFile? AnimationsOf( StaffType type, int variantKey ) => AtlasFor( type, variantKey ) is >= 0 and var index ? Atlases[index].Animations : null;
 
 	/// <summary>The atlas index drawing a person of a role and variant, -1 when the role has no bank.</summary>
 	public int AtlasFor( StaffType type, int variantKey )

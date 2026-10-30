@@ -130,6 +130,39 @@ public sealed class StaffPlacement
 	/// <summary>Raised whenever the tool ends (a click that finished it, a cancel, an abandon).</summary>
 	public event Action? Ended;
 
+	/// <summary>The host clock sample of the latest simulation tick (<see cref="GuestSimulation.BodySpriteSampleAtTick"/>), which the tool's sprite is created and stepped at; 0 without a level.</summary>
+	internal int SpriteClockMilliseconds { get; set; }
+
+	/// <summary>
+	/// The tool's dangling person (tp.exe: the sprite the tool's enter 0x0046C730 makes through 0x00475A10 with template 0x15, slot 6 frames 0 to 3 looping, of the role's category and variant), null while no tool
+	/// runs. It shows nothing before its first scheduler pass (62 ms after it was made) and is stepped by the same sprite scheduler as every other sprite (<see cref="ScheduleSprite"/>).
+	/// </summary>
+	internal StaffSpriteVmState? ToolSprite { get; private set; }
+
+	/// <summary>The frame the tool's sprite shows, as (slot, frame), null while it shows none.</summary>
+	internal (int Slot, int Frame)? ToolSpriteOutput =>
+		ToolSprite is { HasOutput: true } sprite && sprite[StaffSpriteRegister.Slot] <= int.MaxValue && sprite[StaffSpriteRegister.Frame] <= int.MaxValue
+			? ((int)sprite[StaffSpriteRegister.Slot], (int)sprite[StaffSpriteRegister.Frame]) : null;
+
+	/// <summary>One scheduler opportunity of the tool's sprite (<c>0x00475360</c>).</summary>
+	internal void ScheduleSprite( int nowMilliseconds )
+	{
+		if ( ToolSprite != null )
+			StaffSpriteVm.Tick( ToolSprite, nowMilliseconds );
+	}
+
+	// [BIN:TPW-EXE:0x0046C730 staff tool enter] the tool makes its sprite when it becomes the current tool (0x00475A10: template 0x15 of the role's sprite category, the candidate's or the member's variant +0x11) and deletes it when it ends (0x00475550)
+	private void StartToolSprite()
+	{
+		ToolSprite = null;
+		if ( ToolType is not { } type )
+			return;
+		var sprite = StaffSpriteVm.Create( StaffSpriteProgram.Dangling, SpriteClockMilliseconds );
+		sprite[StaffSpriteRegister.Kind] = (uint)StaffSpriteState.CategoryOf( type );
+		sprite[StaffSpriteRegister.Variant] = unchecked( (uint)ToolVariantKey );
+		ToolSprite = sprite;
+	}
+
 	/// <summary>The role being placed or carried.</summary>
 	public StaffType? ToolType => Kind switch { StaffToolKind.Place => Candidate?.Type, StaffToolKind.Carry => Carried?.Type, _ => null };
 
@@ -164,6 +197,7 @@ public sealed class StaffPlacement
 		HoverCell = null;
 		HoverValid = false;
 		SetCursor( null, null );
+		StartToolSprite();
 		return true;
 	}
 
@@ -187,6 +221,7 @@ public sealed class StaffPlacement
 		HoverCell = null;
 		HoverValid = false;
 		SetCursor( null, null );
+		StartToolSprite();
 		return true;
 	}
 
@@ -287,6 +322,7 @@ public sealed class StaffPlacement
 	/// <summary>Ends a tool without touching a member (the economy was replaced by a load).</summary>
 	public void Abandon()
 	{
+		ToolSprite = null;
 		Kind = StaffToolKind.None;
 		Candidate = null;
 		Carried = null;
@@ -326,6 +362,7 @@ public sealed class StaffPlacement
 		HoverCell = null;
 		HoverValid = false;
 		Cursor = null;
+		StartToolSprite();
 	}
 
 	/// <summary>
@@ -366,6 +403,7 @@ public sealed class StaffPlacement
 	private void End()
 	{
 		var wasActive = IsActive;
+		ToolSprite = null;
 		Kind = StaffToolKind.None;
 		Candidate = null;
 		Carried = null;
@@ -382,7 +420,7 @@ public sealed class StaffPlacement
 	/// job fields. The patrol rectangle is never touched.
 	/// </summary>
 	// [BIN:TPW-EXE:0x505ea0 drop] teleport to the cell centre (0x4fa930), SetState(0) idle and +0x200 = 0 (idle stamp reset); the pool's +0x60 is cleared
-	internal static void PutDown( StaffMember member, int x, int y )
+	internal static void PutDown( ParkStaff staff, StaffMember member, int x, int y, bool constructed = false )
 	{
 		member.CellX = x + 0.5f;
 		member.CellY = y + 0.5f;
@@ -393,6 +431,8 @@ public sealed class StaffPlacement
 		member.Job = StaffJob.Idle;
 		member.IdleStamp = 0;
 		member.OffGridLeg.Clear();
+		// [BIN:TPW-EXE:0x00505EA0 drop sprite] the drop makes a fresh stand source and queues the stand (state 0); a placing click's constructor makes the source and runs the role's search instead (constructed)
+		StaffSpriteEvents.PutDown( staff, member, constructed );
 	}
 
 	/// <summary>

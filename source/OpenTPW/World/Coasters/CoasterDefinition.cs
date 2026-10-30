@@ -437,7 +437,7 @@ public sealed class CoasterDefinition
 	{
 		ArgumentNullException.ThrowIfNull( entry );
 		var definition = FromEntry( entry );
-		using var assets = new CoasterAssets( entry, definition );
+		using var assets = new CoasterAssets( entry, definition ) { ResolveWrap = false };
 		// [BIN:TPW-EXE:0x42fbde car models] the loader reads the centre car type's model, then the front and the rear type's when they are other types (0x430130 at 0x42fbde, 0x42fbf3, 0x42fc08) before the pair distances and head sums
 		var used = new HashSet<int> { definition.CarTypes.FrontIndex, definition.CarTypes.CentreIndex, definition.CarTypes.RearIndex };
 		definition.ApplyCarModels( index => used.Contains( index ) ? assets.GetCar( index ) : null );

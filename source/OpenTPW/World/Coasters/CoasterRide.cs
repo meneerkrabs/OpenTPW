@@ -1014,6 +1014,8 @@ public sealed class CoasterRide
 				{
 					list.Add( guest );
 					seated = true;
+					// [BIN:TPW-EXE:0x0043B70D seat head] the seated guest's head is hung on the car's node (0x44B410, no node test)
+					World.Scripts?.HeadHung( guest );
 				}
 				else if ( ++car >= first + count )
 					car = first;

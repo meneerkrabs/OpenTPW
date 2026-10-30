@@ -7,6 +7,9 @@ namespace OpenTPW;
 // [BIN:TPW-EXE:0x0055A5B0 module init] the table of 99 controller pointers at 0x8791F8 (slot 0 unused), a 4096-entry sine table at 0x8791C8 and the four bounds at 0x7660B8..0x7660C4
 public sealed class TourWorld
 {
+	/// <summary>The park's script world, which takes the head-hang draw (<see cref="RideScriptWorld.HeadHung"/>); null for a module of its own.</summary>
+	internal RideScriptWorld? Scripts { get; set; }
+
 	/// <summary>Controllers the module holds (slots 1..99 of the original's table).</summary>
 	public const int MaximumControllers = 99;
 	/// <summary>The flight area, in module units: x from <see cref="MinimumX"/> up to (excluding) <see cref="MaximumX"/>, z likewise.</summary>

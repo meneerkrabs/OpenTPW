@@ -214,6 +214,9 @@ public sealed class TourController
 	public bool Ready { get; private set; }
 	/// <summary>+0x40: the heading word of the station: 0x400 minus the rotation.</summary>
 	public int Heading { get; }
+
+	/// <summary>How many consecutively numbered head dummies the car mesh holds (the original's car +0xDC); set by the ride from its mesh, 0 where none is known (a bare controller).</summary>
+	public int HeadNodes { get; init; }
 	/// <summary>+0x44 (<c>TOUR 12</c>): cars take off and approach along the station's heading rather than their own.</summary>
 	public int ApproachMode { get; private set; }
 	/// <summary>+0x48: the riders aboard all cars.</summary>
@@ -330,6 +333,9 @@ public sealed class TourController
 		car.RiderCount++;
 		Riders++;
 		Boarded++;
+		// [BIN:TPW-EXE:0x0055D91E tour head hang] a car mesh with head nodes (+0xDC, +0x138 not zero) looks up the rider's node (always found: the nodes are numbered from 1) and hangs the head through 0x44B410
+		if ( HeadNodes > 0 )
+			world.Scripts?.HeadHung( guest );
 		return true;
 	}
 

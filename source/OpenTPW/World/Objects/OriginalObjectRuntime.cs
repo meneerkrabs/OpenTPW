@@ -79,6 +79,8 @@ public sealed partial class OriginalObjectRuntime
 		if ( Model.Kind != ModelFileKind.Geometry )
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
 		Visitors.Heads = RideHeadSpace.Create( Model, world.NextWorldDraw );
+		if ( Visitors.Heads != null )
+			Visitors.Heads.HeadHung = world.HeadHung;
 		// [EXT:object-lights] the light dummies of the model (none in any shipped model), with the object's .sam keys over them
 		Lights = ObjectLightBank.Create( Model, entry.Settings, entry.DisplayName );
 		// Fixed items keep their last vertex pose when a clip ends (ObjectAnimator.UpdateVertices).

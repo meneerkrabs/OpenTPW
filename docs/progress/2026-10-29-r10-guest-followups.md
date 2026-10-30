@@ -26,5 +26,8 @@
   guard escorts a guest and an escort of a guest the guest import did not keep held
   goes idle. A park without costume heads (Fantasy, Hallow) picks every rider's head by
   the thing id (`0x4FCAC0`), a costume return rewrites the kid set (`0x4FE6AA`), and a
-  Custom preset reads the resolved `NUMKIDS`. Not ported: the world-generator reseed
-  and draw that `0x4FCAC0` makes on every head hang of such a theme (follow-up).
+  Custom preset reads the resolved `NUMKIDS`. In such a theme every
+  head hung on a ride also reseeds the world generator with the rider and draws once
+  (`0x44B410` → `0x4FCAC0`), now taken at ADDHEAD, WALKON, the coaster seating, the
+  vehicle creation and load and the tour boarding; the Fantasy and Hallow pins move.
+  Every guard naming a restored guest escorts it (`0x4D6A50` tests no state).

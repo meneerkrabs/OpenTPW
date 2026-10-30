@@ -13,6 +13,9 @@ public sealed class BumpWorld
 	public const int ObjectPool = TrackSections.MaximumCollisionObjects;
 	public const int BuoyPool = TrackSections.MaximumBuoys;
 
+	/// <summary>The park's script world, which takes the head-hang draw (<see cref="RideScriptWorld.HeadHung"/>); null for a module of its own.</summary>
+	internal RideScriptWorld? Scripts { get; set; }
+
 	private readonly List<BumpController> controllers = new();
 	private readonly BumpVehicle?[] vehicleSlots = new BumpVehicle?[VehiclePool];
 	private readonly CollisionObject?[] objectSlots = new CollisionObject?[ObjectPool];

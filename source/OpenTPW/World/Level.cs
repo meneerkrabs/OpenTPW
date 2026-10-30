@@ -755,6 +755,8 @@ public partial class Level : IDisposable
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		yield return true;
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
+		// [BIN:TPW-EXE:0x004FCAC0 head pick] a theme without costume heads (Fantasy, Hallow) reseeds the world generator with the rider and draws once on every head hung on a ride (RideScriptWorld.HeadHung)
+		Objects.ScriptWorld.HeadHangReseeds = !GameEditions.IsThemeParkInc && costumeHeads.Count == 0;
 		NextStepIsLong = true;
 		yield return true;
 		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear

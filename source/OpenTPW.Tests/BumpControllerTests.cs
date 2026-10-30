@@ -32,7 +32,7 @@ public class BumpControllerTests
 		public readonly TrackCircuit Circuit;
 		private uint rng = 12345;
 
-		public Loop( int type = -5 )
+		public Loop( int type = -5, BumpWorld? world = null )
 		{
 			Builder = new TrackBuilder( Cells, TrackFamily.Water, () => null, new TestGrid() );
 			Builder.PlaceStation( Station );
@@ -41,7 +41,7 @@ public class BumpControllerTests
 			writer.Commit( (14, 12), (8, 12) );
 			writer.Commit( (8, 12), (8, 10) );
 			Circuit = TrackCircuitWalker.WalkAndRefresh( Builder, Station );
-			Controller = new BumpController( BumperTemplates.Get( type ), () => { rng = unchecked( rng * 1664525u + 1013904223u ); return rng >> 8; } );
+			Controller = new BumpController( BumperTemplates.Get( type ), () => { rng = unchecked( rng * 1664525u + 1013904223u ); return rng >> 8; }, world );
 			var centre = Station.Reference;
 			Controller.SetStation( centre.X, centre.Y, Station.Heading );
 			Controller.Rebuild( Circuit );
@@ -127,6 +127,26 @@ public class BumpControllerTests
 		var kart = new BumpController( BumperTemplates.Get( -4 ), () => 0 );
 		kart.SetPerformance( 50 );
 		Assert.AreEqual( (23, 955, 26, 900), (kart.Accel, kart.Damping, kart.TurnRate, kart.Restitution), "kart damping falls with performance: (950−960)·50/100 = −5" );
+	}
+
+	[TestMethod]
+	public void TheVehicleCreationHangsEachSeatedRidersHeadThroughTheWorldGeneratorOnlyWithoutCostumeHeads()
+	{
+		// [BIN:TPW-EXE:0x00549CAF seat heads] each rider whose seat has a head dummy goes through 0x44B410, which reseeds the world generator with it when the theme has no costume heads
+		var states = new List<ulong>();
+		foreach ( var reseeds in new[] { false, true } )
+		{
+			var scripts = new RideScriptWorld( 1 ) { HeadHangReseeds = reseeds };
+			var loop = new Loop( -5, scripts.Bumpers );
+			loop.Controller.SeatHeadSource = _ => new[] { true, false };
+			loop.Controller.Command( 7, 0 );
+			loop.Controller.Command( 1, 7 );
+			loop.Controller.Command( 1, 8 );
+			loop.Controller.Command( 4, 0 );
+			states.Add( scripts.World.State );
+			Assert.AreEqual( 2, loop.Controller.RiderCount );
+		}
+		Assert.AreNotEqual( states[0], states[1], "the head hang took the world generator's state" );
 	}
 
 	[TestMethod]

@@ -252,6 +252,42 @@ public sealed class TourRenderer : IDisposable
 		}
 	}
 
+	private static readonly Dictionary<string, int> headNodeCounts = new();
+
+	/// <summary>The head dummies a tour ride's car mesh holds, numbered consecutively from 1 (0 when the ride has no readable car mesh); the simulation's head-hang draw reads it.</summary>
+	internal static int CarHeadNodes( ObjectCatalogEntry entry )
+	{
+		lock ( headNodeCounts )
+		{
+			if ( headNodeCounts.TryGetValue( entry.ArchivePath, out var cached ) )
+				return cached;
+		}
+		var count = 0;
+		try
+		{
+			var name = entry.Settings["SupplementalMeshes[0].FileName"];
+			var files = entry.FileSystem.GetFiles( entry.ArchivePath ).ToList();
+			var path = name == null ? null : files.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), name.Trim( '"', ' ' ), StringComparison.OrdinalIgnoreCase ) );
+			if ( path != null && ObjectAssets.LoadModel( entry.FileSystem, path ) is { Kind: ModelFileKind.Geometry } model )
+			{
+				for ( var id = 1; id <= MaximumSeats; id++ )
+				{
+					var node = RideHeadSpace.NodeForHead( model, id );
+					if ( node < 0 || node >= model.Nodes.Count )
+						break;
+					count++;
+				}
+			}
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
+		{
+			count = 0;
+		}
+		lock ( headNodeCounts )
+			headNodeCounts[entry.ArchivePath] = count;
+		return count;
+	}
+
 	private CarGeometry? Mesh( ObjectCatalogEntry entry )
 	{
 		if ( meshes.TryGetValue( entry.ArchivePath, out var cached ) )

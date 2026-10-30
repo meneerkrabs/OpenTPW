@@ -357,6 +357,45 @@ public class CoasterPanelTests
 		Assert.AreEqual( balance + oldCost - newCost, economy.Balance, "0x441a00: credit trunc(old cost), debit ceil(new cost)" );
 	}
 
+	/// <summary>
+	/// UI-047: bit 0 of 0x79c658 is set only by the height press (0x441a5d), so the HUD's cost line shows during a height drag and not during a rotate or tilt drag (0x447990); a button selected while a
+	/// drag runs ends it through the sub-mode's second action (the switch of 0x446fa0's deselect path at 0x44700e, 0x447032 for the height drag), which settles the money as the release does.
+	/// </summary>
+	[TestMethod]
+	public void OnlyTheHeightDragShowsTheCostAndAButtonClickEndsADragAsItsRelease()
+	{
+		var economy = EconomyTestData.Park( initialCash: 50000 );
+		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ), () => economy );
+		CoasterTests.PlaceStation( builder, (20, 20) );
+		builder.Height = 20;
+		builder.Place( 24, 20 );
+		builder.Place( 28, 24 );
+		var panel = CoasterPanelRig.Create( builder );
+		panel.Select( CoasterToolButton.Rotate );
+		Assert.IsFalse( panel.ShowsActionCost, "the edit modes show the cost line only while bit 0 is set" );
+		Assert.IsTrue( panel.Press( First, new NVector2( 100, 100 ), 24, 20 ) );
+		Assert.IsFalse( panel.ShowsActionCost, "the rotate press sets bit 1 (0x441edd), not bit 0" );
+		panel.Release( First, (24, 20) );
+		panel.Select( CoasterToolButton.Tilt );
+		Assert.IsTrue( panel.Press( First, new NVector2( 100, 100 ), 24, 20 ) );
+		Assert.IsFalse( panel.ShowsActionCost, "the tilt press sets bit 2 and 0x2000 (0x44205b), not bit 0" );
+		panel.Release( First, (24, 20) );
+		panel.Select( CoasterToolButton.Height );
+		Assert.IsFalse( panel.ShowsActionCost, "no height drag yet" );
+		var balance = economy.Balance;
+		var oldCost = CoasterTrack.Truncate( builder.Track.NodeCost( First, false ) );
+		Assert.IsTrue( panel.Press( First, new NVector2( 100, 100 ), 24, 20 ) );
+		Assert.IsTrue( panel.ShowsActionCost, "the height press sets bit 0 (0x441a5d)" );
+		panel.Drag( new NVector2( 100, 40 ), 0, null );
+		var newCost = CoasterTrack.RoundUp( builder.Track.NodeCost( First, false ) );
+		Assert.AreEqual( balance, economy.Balance, "nothing moves while the drag runs" );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Rotate ) );
+		Assert.IsFalse( panel.IsDragging, "the selection ended the drag" );
+		Assert.IsFalse( panel.ShowsActionCost, "the second action cleared bit 0 (0x441ae1)" );
+		Assert.AreEqual( balance + oldCost - newCost, economy.Balance, "0x441a00 credits trunc(old cost) and debits ceil(new cost) as the release does" );
+	}
+
 	[TestMethod]
 	public void TheRotateDragTurnsThePylonWithinTheDeviationAndSetsFlag1()
 	{

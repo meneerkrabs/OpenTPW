@@ -242,6 +242,8 @@ public sealed class Guest
 	public double? TimeInParkSeconds { get; internal set; }
 	/// <summary>Theme Park Inc: the fee recorded at boarding, which the exit takes (IGuestPayments.SettlesAtExit); not saved, a Theme Park Inc run is not.</summary>
 	internal int PendingFee;
+	/// <summary>A successful Theme Park Inc admission still to settle, including a free visit; transient like PendingFee (no Theme Park Inc continuation saves).</summary>
+	internal bool PendingVisitSettlement;
 	/// <summary>Display-only age in unsigned 32-bit park turns, or null for a legacy seconds-based duration. Never used by gameplay.</summary>
 	public long? DisplayTimeInParkTurns { get; internal set; }
 	/// <summary>Own-format/display duration bound; no original timing limit is inferred.</summary>

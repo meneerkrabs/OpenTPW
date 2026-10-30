@@ -3392,15 +3392,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.HasWaypoint = false;
 		var price = 0;
 		guest.SideshowWon = null;
+		guest.PendingFee = 0;
+		guest.PendingVisitSettlement = false;
 		if ( Payments != null )
 		{
 			// [BIN:TPW-EXE:0x00501F3C state 14 entry] a sideshow's play is decided as it starts (+0x1F1 from 0x004E2670) and read when the visit ends (0x004FD970)
-			Payments.TryPayVisit( ride, guest.Money, out price, out var won );
+			var admitted = Payments.TryPayVisit( ride, guest.Money, out price, out var won );
 			guest.SideshowWon = ride.Kind == RideVisitorKind.Sideshow ? won : null;
 			if ( Payments.SettlesAtExit )
 			{
 				// [BIN:TPI-EXE:0x619670 fee recorded] the fee is kept and the purse and the bank stay as they are until the exit (0x6126D0)
 				guest.PendingFee = price;
+				// A refused payment is not a free sale. Keep the successful-admission bit separately because a legitimate free visit still books goods or a prize.
+				guest.PendingVisitSettlement = admitted;
 				price = 0;
 			}
 		}
@@ -3575,11 +3579,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [BIN:TPW-EXE:0x4fe1cb till] the use routine's price step (0x4fe1a0, before the lost-sideshow test) takes the object's current price when it is not 0 and plays cat_kids 0xD0 at the guest
 		if ( ride.Price != 0 )
 			Voiced?.Invoke( guest, TillVoiceEvent );
-		if ( Payments is { SettlesAtExit: true } )
+		if ( Payments is { SettlesAtExit: true } && guest.PendingVisitSettlement )
 		{
 			// [BIN:TPI-EXE:0x6126D0 fare taken] the exit's payment step (called at 0x61193B inside 0x6118D0, reached from 0x619A8E before the exit state is entered): the recorded fee leaves the purse and the bank takes it, and the cost booking follows for a won play or a sale (0x6119A1); a use cut short never gets here
 			var fee = guest.PendingFee;
 			guest.PendingFee = 0;
+			guest.PendingVisitSettlement = false;
 			Payments.SettleVisit( ride, fee, ride.Kind == RideVisitorKind.Sideshow ? guest.SideshowWon : null );
 			if ( fee > 0 )
 			{

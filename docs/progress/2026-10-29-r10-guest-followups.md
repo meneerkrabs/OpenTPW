@@ -29,5 +29,5 @@
   Custom preset reads the resolved `NUMKIDS`. In such a theme every
   head hung on a ride also reseeds the world generator with the rider and draws once
   (`0x44B410` → `0x4FCAC0`), now taken at ADDHEAD, WALKON, the coaster seating, the
-  vehicle creation and load and the tour boarding; the Fantasy and Hallow pins move.
+  vehicle creation and load and the tour boarding; no pin moves, as no asset-free digest covers a theme without costume heads (a new fixed-run pin covers the draw).
   Every guard naming a restored guest escorts it (`0x4D6A50` tests no state).

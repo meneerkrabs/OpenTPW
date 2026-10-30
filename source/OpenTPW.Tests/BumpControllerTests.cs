@@ -13,7 +13,7 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class BumpControllerTests
 {
-	private sealed class TestGrid : IParkGrid
+	internal sealed class TestGrid : IParkGrid
 	{
 		public int Width => 40;
 		public int Height => 40;
@@ -23,7 +23,7 @@ public class BumpControllerTests
 	}
 
 	/// <summary>The eight-tile loop of the circuit tests with a controller on it: station (10,10), (12,10), corners at (14,10), (14,12), (8,12), (8,10).</summary>
-	private sealed class Loop
+	internal sealed class Loop
 	{
 		public readonly ParkCellMap Cells = new( 40, 40 );
 		public readonly TrackBuilder Builder;
@@ -147,6 +147,34 @@ public class BumpControllerTests
 			Assert.AreEqual( 2, loop.Controller.RiderCount );
 		}
 		Assert.AreNotEqual( states[0], states[1], "the head hang took the world generator's state" );
+	}
+
+	[TestMethod]
+	public void LoadingWaitingGuestsHangsTheirHeadsLikeTheCreationDoes()
+	{
+		// [BIN:TPW-EXE:0x00549B80 load vehicle] the load calls 0x549C60 for the riders it takes; the last seated rider with a head dummy leaves the generator reseeded with it
+		var scripts = new RideScriptWorld( 1 ) { HeadHangReseeds = true };
+		var loop = new Loop( -5, scripts.Bumpers );
+		loop.Controller.SeatHeadSource = _ => new[] { true, true };
+		loop.Controller.Command( 7, 0 );
+		loop.Controller.Command( 4, 0 );
+		Assert.AreEqual( 0, loop.Controller.RiderCount, "a boat without riders" );
+		var untouched = scripts.World.State;
+		loop.Controller.Command( 1, 7 );
+		loop.Controller.Command( 1, 8 );
+		Assert.AreEqual( untouched, scripts.World.State, "waiting guests are not hung" );
+		Assert.AreEqual( 1, loop.Controller.Command( 12, 0 ) );
+		Assert.AreEqual( 2, loop.Controller.RiderCount );
+		// the relaunch of the loaded boat may draw (aiming jitter), so the load's hang is read by replaying it on a fresh run without the hook
+		var plain = new RideScriptWorld( 1 );
+		var other = new Loop( -5, plain.Bumpers );
+		other.Controller.SeatHeadSource = _ => new[] { true, true };
+		other.Controller.Command( 7, 0 );
+		other.Controller.Command( 4, 0 );
+		other.Controller.Command( 1, 7 );
+		other.Controller.Command( 1, 8 );
+		other.Controller.Command( 12, 0 );
+		Assert.AreNotEqual( plain.World.State, scripts.World.State, "the load's hang changed the generator" );
 	}
 
 	[TestMethod]

@@ -436,8 +436,8 @@ public sealed partial class OriginalEconomyImport
 		var membersByThing = new Dictionary<int, StaffMember>();
 		// a guard chases a guest the guest import restores in the park (states 6–10, GuestSimulation.ImportsOriginalState)
 		var chaseable = save.Guests.Where( guest => guest.State is >= 6 and <= 10 ).Select( guest => guest.Id ).ToHashSet();
-		// a guard escorting a guest (state 18) names a saved guest (+0x212); the guest import decides which of them are restored (IdleEscortsWithoutAHeldGuest)
-		var heldGuests = save.Guests.Select( guest => guest.Id ).ToHashSet();
+		// a guard escorting a guest (state 18) names a saved guest (+0x212); the guest import decides which of them are restored (IdleEscortsWithoutARestoredGuest)
+		var savedGuests = save.Guests.Select( guest => guest.Id ).ToHashSet();
 		foreach ( var saved in save.Staff )
 		{
 			var type = saved.Model switch
@@ -486,7 +486,7 @@ public sealed partial class OriginalEconomyImport
 			// [BIN:TPW-EXE:0x005054D0 staff state setter] +0x200 is the turn an idle spell started (0 after any state but a patrol), which the idle states compare with IdleDuration[grade]
 			member.IdleStamp = staff.TimeStartedIdling;
 			ImportPatrolArea( saved, member, adjusted );
-			ImportJob( economy, saved, member, things, save.Attractions, chaseable, heldGuests, jobs, resumedClaims, save.Litter );
+			ImportJob( economy, saved, member, things, save.Attractions, chaseable, savedGuests, jobs, resumedClaims, save.Litter );
 			// [BIN:TPW-EXE:0x004F8B10 person serializer] the loader routes the person again to mAccurateDestX/Y (+0x18/+0x1A, 1/256 cell) once it is read (0x004FA5F0 at 0x004F9407);
 			// the walk speeds are the person's mBaseSpeed (+0xC0), mPurposeSpeed (+0xC2, the bonus a walk to a job or a chase takes) and mPreviousSpeed (+0xC8)
 			var person = saved.Person;
@@ -639,7 +639,7 @@ public sealed partial class OriginalEconomyImport
 	/// After the guests are imported: a guard imported escorting a guest the guest import did not restore at all (dropped) is idle, as the import gives every guard whose guest is missing
 	/// (SAVE-002). A guest restored in any state keeps its escorts: the set-down (0x004FEB50) does not look at the state. Returns the evidence lines.
 	/// </summary>
-	internal static IReadOnlyList<string> IdleEscortsWithoutAHeldGuest( ParkEconomy economy, Func<int, bool> isImported )
+	internal static IReadOnlyList<string> IdleEscortsWithoutARestoredGuest( ParkEconomy economy, Func<int, bool> isImported )
 	{
 		var lines = new List<string>();
 		foreach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Guard && member.Job == StaffJob.Escorting && !isImported( member.TargetGuestId ) ) )
@@ -663,7 +663,7 @@ public sealed partial class OriginalEconomyImport
 	// [BIN:TPW-EXE:0x004D4460 entertainer serializer] mTimeStartedEntertaining (+0x214); [BIN:TPW-EXE:0x00502760 researcher serializer] mTimeStartedResearching (+0x214)
 	// [BIN:TPW-EXE:0x004D6000 guard serializer] mPerp (+0x212), mProsecutionTimestamp (+0x214, the chase timer the state setter 0x004D65D0 sets)
 	// [BIN:TPW-EXE:0x00506D10 rest end] mRestArea (+0x208) names the rest area only while the member walks to it (state 2) or rests in it (state 3): the rest's end clears it
-	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, ISet<int> heldGuests, List<string> evidence, ISet<int> resumedClaims, IReadOnlyList<SaveLitter> litter )
+	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, ISet<int> savedGuests, List<string> evidence, ISet<int> resumedClaims, IReadOnlyList<SaveLitter> litter )
 	{
 		var word = saved.Staff.State;
 		var what = $"{saved.Model} thing {saved.Id}";
@@ -726,7 +726,7 @@ public sealed partial class OriginalEconomyImport
 				member.TargetGuestId = saved.RoleTarget;
 				member.JobStamp = saved.RoleTimer;
 				break;
-			case StaffJob.Escorting when heldGuests.Contains( saved.RoleTarget ):
+			case StaffJob.Escorting when savedGuests.Contains( saved.RoleTarget ):
 				// [BIN:TPW-EXE:0x004D6A50 escort arrival] state 18 carries its perpetrator (+0x212, mPerp) to the ticket booth and its arrival sets that thing down (0x004FEB50) without testing its state (0x004D6A72..0x004D6AC6), so every guard naming a saved guest escorts, duplicates included; the walk goes on to the saved destination (0x004F9407) and the arrival sets the guest down (0x004D6A50)
 				member.TargetGuestId = saved.RoleTarget;
 				break;

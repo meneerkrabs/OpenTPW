@@ -1657,7 +1657,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			{
 				entry.State = 2;
 				entry.Began = now;
-				if ( entry.Mode == 4 && Heads != null && onRide.Contains( entry.Guest ) )
+				// [BIN:TPW-EXE:0x00557E75 WALKON head] the walk-on that ends with the head action 4 hangs the head after the head-id lookup alone (0x00557E75..0x00557EB9 test nothing about the ride's riders)
+				if ( entry.Mode == 4 && Heads != null )
 					Heads.Hang( entry.Target, entry.Guest );
 				if ( entry.Mode == 2 )
 					WalkOnEffect?.Invoke( entry.Target );

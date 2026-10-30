@@ -188,7 +188,7 @@ public class HeldGuestImportTests
 		var grid = Grid();
 		var guests = new GuestSimulation( grid, GuestTests.CreateSettings(), 5 ) { ArrivalsEnabled = false };
 		guests.ImportOriginal( save.Guests, ParkCalendar.Turn( park.Tick ), _ => 0, _ => 0 );
-		Assert.AreEqual( 0, OriginalEconomyImport.IdleEscortsWithoutAHeldGuest( park, id => guests.Find( id ) != null ).Count, "a restored guest keeps its escorts" );
+		Assert.AreEqual( 0, OriginalEconomyImport.IdleEscortsWithoutARestoredGuest( park, id => guests.Find( id ) != null ).Count, "a restored guest keeps its escorts" );
 		var world = new StaffWorldSimulation( grid, () => park.Staff.Members, _ => null, (0, 5) ) { Guests = guests };
 		guests.IsEscorted = world.IsEscorting;
 		park.StaffWorld = world;
@@ -205,7 +205,7 @@ public class HeldGuestImportTests
 		Assert.IsTrue( guards.All( item => item.Job != StaffJob.Escorting ), "both arrived" );
 		Assert.AreEqual( 2, setDowns, "both set the guest down (cat_kids 128 twice)" );
 		// the guest import kept nobody: every escort goes idle
-		Assert.AreEqual( 0, OriginalEconomyImport.IdleEscortsWithoutAHeldGuest( park, _ => true ).Count );
+		Assert.AreEqual( 0, OriginalEconomyImport.IdleEscortsWithoutARestoredGuest( park, _ => true ).Count );
 	}
 
 	[TestMethod]
@@ -218,7 +218,7 @@ public class HeldGuestImportTests
 		var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 		OriginalEconomyImport.Apply( park, save );
 		var member = park.Staff.Members.Single( item => item.Type == StaffType.Guard );
-		var lines = OriginalEconomyImport.IdleEscortsWithoutAHeldGuest( park, _ => false );
+		var lines = OriginalEconomyImport.IdleEscortsWithoutARestoredGuest( park, _ => false );
 		Assert.AreEqual( 1, lines.Count );
 		Assert.AreEqual( (StaffJob.Idle, 0), (member.Job, member.TargetGuestId) );
 	}

@@ -1028,6 +1028,34 @@ public class CoasterTests
 	}
 
 	[TestMethod]
+	public void ASeatedGuestsHeadHangsThroughTheWorldGeneratorOnlyWithoutCostumeHeads()
+	{
+		// [BIN:TPW-EXE:0x0043B70D seat head] each guest the station step seats goes through 0x44B410, which reseeds the world generator with it in a theme without costume heads
+		foreach ( var reseeds in new[] { false, true } )
+		{
+			var scripts = new RideScriptWorld( 99 ) { HeadHangReseeds = reseeds };
+			var start = scripts.World.State;
+			var ride = new CoasterRide( CoasterDefinition.FromValues( PcSettings() ), scripts.Coasters );
+			var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+			PlaceStation( builder, Depart );
+			BuildCircuit( builder );
+			CloseAndComplete( builder );
+			ride.Command( 8, 0 );
+			ride.Command( 6, 6 );
+			ride.Command( 5, 0 );
+			ride.Board( 101 );
+			ride.Board( 102 );
+			for ( var tick = 0; tick < 240 * 60 && ride.RidersOnBoard < 2; tick++ )
+				ride.Advance( Tick );
+			Assert.AreEqual( 2, ride.RidersOnBoard, "both guests were seated" );
+			var expected = new WorldRng( 1 );
+			expected.Reseed( 102 );
+			expected.NextWord();
+			Assert.AreEqual( reseeds ? expected.State : start, scripts.World.State, reseeds ? "the last seated guest reseeded the generator and drew once" : "nothing touches the generator" );
+		}
+	}
+
+	[TestMethod]
 	public void CoasterStateIsInTheCanonicalHashAndReproducible()
 	{
 		ulong Run( int guest )

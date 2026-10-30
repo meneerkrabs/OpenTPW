@@ -252,14 +252,16 @@ public sealed class TourRenderer : IDisposable
 		}
 	}
 
-	private static readonly Dictionary<string, int> headNodeCounts = new();
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<object, Dictionary<string, int>> headNodeCounts = new();
 
 	/// <summary>The head dummies a tour ride's car mesh holds, numbered consecutively from 1 (0 when the ride has no readable car mesh); the simulation's head-hang draw reads it.</summary>
 	internal static int CarHeadNodes( ObjectCatalogEntry entry )
 	{
-		lock ( headNodeCounts )
+		// the count is simulation state: cached per file system (a mod's overlay changes the mesh) and archive path
+		var perSystem = headNodeCounts.GetValue( entry.FileSystem, _ => new Dictionary<string, int>() );
+		lock ( perSystem )
 		{
-			if ( headNodeCounts.TryGetValue( entry.ArchivePath, out var cached ) )
+			if ( perSystem.TryGetValue( entry.ArchivePath, out var cached ) )
 				return cached;
 		}
 		var count = 0;
@@ -283,8 +285,8 @@ public sealed class TourRenderer : IDisposable
 		{
 			count = 0;
 		}
-		lock ( headNodeCounts )
-			headNodeCounts[entry.ArchivePath] = count;
+		lock ( perSystem )
+			perSystem[entry.ArchivePath] = count;
 		return count;
 	}
 

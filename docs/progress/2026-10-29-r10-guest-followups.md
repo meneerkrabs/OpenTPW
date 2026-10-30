@@ -21,3 +21,10 @@
   held guest no guard holds is destroyed at its first update (`0x501C94`). No corpus
   save holds such a guest, so this is checked on synthetic saves. SAVE-002 narrows
   to the riders (state 16).
+- **Review round 1.** An imported escorting guard keeps his saved walk mask (nav_mode,
+  `0x4D6977`), so an escort on the off-path route to the booth still finds it; only one
+  guard escorts a guest and an escort of a guest the guest import did not keep held
+  goes idle. A park without costume heads (Fantasy, Hallow) picks every rider's head by
+  the thing id (`0x4FCAC0`), a costume return rewrites the kid set (`0x4FE6AA`), and a
+  Custom preset reads the resolved `NUMKIDS`. Not ported: the world-generator reseed
+  and draw that `0x4FCAC0` makes on every head hang of such a theme (follow-up).

@@ -66,7 +66,7 @@ reaches them; only the writer's stray access does. Invalid-frame native outcomes
 trace does not establish a portable fallback, deterministic crash, or safe
 wrapping rule. The host's slot filtering, invalid-frame refusal, and separate
 missing-decoded-art policy remain deliberate defensive extensions. MD2-901
-is retained as that documented divergence, not a missing consumer trace.
+is retired (October 30, 2026): the divergence is `[EXT:original-undefined-reads]`, OpenTPW's defined behaviour where the original reads undefined memory (user-approved).
 Existing invalid-slot/frame and held-history tests cover these host policies;
 this evidence closure adds no runtime behavior or duplicate tests.
 

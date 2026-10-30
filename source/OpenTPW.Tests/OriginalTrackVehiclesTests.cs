@@ -70,7 +70,7 @@ public class OriginalTrackVehiclesTests
 		public int Draws;
 		private uint rng = 4242;
 
-		public Loop( int type )
+		public Loop( int type, BumpWorld? world = null )
 		{
 			var family = BumperTemplates.Get( type ).IsKart ? TrackFamily.Kart : TrackFamily.Water;
 			var builder = new TrackBuilder( new ParkCellMap( 40, 40 ), family, () => null, new BumpControllerTests.TestGrid() );
@@ -80,7 +80,7 @@ public class OriginalTrackVehiclesTests
 			writer.Commit( (14, 12), (8, 12) );
 			writer.Commit( (8, 12), (8, 10) );
 			Circuit = TrackCircuitWalker.WalkAndRefresh( builder, Station );
-			Controller = new BumpController( BumperTemplates.Get( type ), () => { Draws++; rng = unchecked( rng * 1664525u + 1013904223u ); return rng >> 8; } );
+			Controller = new BumpController( BumperTemplates.Get( type ), () => { Draws++; rng = unchecked( rng * 1664525u + 1013904223u ); return rng >> 8; }, world );
 			var centre = Station.Reference;
 			Controller.SetStation( centre.X, centre.Y, Station.Heading );
 			Controller.Rebuild( Circuit );
@@ -344,6 +344,32 @@ public class OriginalTrackVehiclesTests
 		CollectionAssert.AreEqual( new[] { (43, 1) }, ride.Vehicles[1].Seats );
 		CollectionAssert.AreEqual( new[] { 61 }, ride.Leaving );
 		CollectionAssert.AreEqual( new[] { 51 }, ride.Joining );
+	}
+
+	[TestMethod]
+	public void TheVehiclesOfSeveralRidesTakeTheFirstFreeRecordsOfTheSharedPoolInTheFilesOrder()
+	{
+		var first = Ride( -4, out var firstHandle ).Controller;
+		var second = Ride( -5, out var secondHandle ).Controller;
+		first.Open();
+		second.Open();
+		Launch( first, 41 );
+		Launch( first, 42 );
+		Launch( second, 43 );
+		// one block with the two rides' chunks, one after the other, as the saver writes them
+		var body = Block( first, firstHandle ).Chunks.Concat( Block( second, secondHandle ).Chunks.Where( chunk => chunk.Type != 2 ) )
+			.SelectMany( chunk => Words( chunk.Type, chunk.HeaderWord, chunk.Size ).Concat( chunk.Payload.ToArray() ) ).ToArray();
+		var read = OriginalTrackVehicles.Read( SaveTrackRideBlock.ParseBody( body ) );
+		Assert.IsNull( read.Problem );
+		CollectionAssert.AreEqual( new[] { 0, 1 }, read.Rides.Select( ride => ride.Ordinal ).ToArray() );
+
+		var world = new BumpWorld();
+		var (a, b) = (new Loop( -4, world ).Controller, new Loop( -5, world ).Controller);
+		Assert.IsNull( a.ImportOriginalVehicles( read.Rides[0], _ => true, out _ ) );
+		Assert.IsNull( b.ImportOriginalVehicles( read.Rides[1], _ => true, out _ ) );
+		CollectionAssert.AreEqual( new[] { 0, 1 }, a.Vehicles.Select( vehicle => vehicle.Slot ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 2 }, b.Vehicles.Select( vehicle => vehicle.Slot ).ToArray() );
+		Assert.AreEqual( 3, world.LiveVehicles.Count() );
 	}
 
 	[TestMethod]

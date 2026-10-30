@@ -61,6 +61,12 @@ public sealed class StaffMember
 	/// <summary>The sprite variant the member was hired with (the candidate's, tp.exe member +0x20); -1 for a member of an older OpenTPW park save from before the variant was kept (an original save's member takes the saved mSpriteID, tp.exe 0x4F8B10), whose bank derives from its name and id.</summary>
 	public int Variant { get; init; } = -1;
 	/// <summary>
+	/// The sprite draw as the original stores it (tp.exe member <c>+0x20</c>, the person's <c>mSpriteID</c>): <c>(R &gt;&gt; 2)</c> reduced by the category's LOADED bank count when the candidate was made (0x00541F70) and
+	/// again by the count of every load of the member (the person serializer 0x004F8B10, at 0x004F93AA), so a park made on a preset that loads fewer banks keeps only those; raw while no banks are loaded (a headless run), and -1 for a member of a
+	/// save from before it was kept. Presentation only: not hashed, so peers with other presets keep one world; the bank drawn is this modulo the banks loaded now.
+	/// </summary>
+	public int SpriteDraw { get; internal set; } = -1;
+	/// <summary>
 	/// The member's own name, stored inline in an original save (the staff suffix's <c>mName[i]</c>, +0x1A0, which the employee panels show); null
 	/// for a member hired in OpenTPW, whose name is <see cref="NameIndex"/> in the role's name table.
 	/// </summary>
@@ -93,16 +99,18 @@ public sealed class StaffMember
 	/// <summary>The entry number the member's thing held on its cell's chain when a save was taken (<see cref="StaffCellChain"/>), which the world gives it when it files the thing again; 0 when none.</summary>
 	internal long CellSerial { get; set; }
 
-	// Presentation of the walk (not saved, not hashed): the point at the start of the member's last turn update (+0x190/+0x194, 16.16) and the tick it was taken, the drawn point between the turns
-	// (tp.exe 0x004F9F00), whether the walk step asked for the walk clip, and the sprite interval that step asked for (0x004FA2A0, 0x004D41D0; -1: none waiting)
+	// Presentation of the walk (not hashed): the point at the start of the member's last turn update (+0x190/+0x194, 16.16) and the tick it was taken, and the drawn point between the turns
+	// (tp.exe 0x004F9F00)
 	internal int TurnFromX, TurnFromY;
 	internal long TurnTick = -1;
 	/// <summary>Where the member is drawn, in cells; NaN until the staff world has updated him once.</summary>
 	internal float DrawX = float.NaN;
 	internal float DrawY = float.NaN;
-	/// <summary>True while the member's last walk step was still walking: the walk step queues the walk clip (0x004FA3B3..0x004FA3F8) and the next state entry stands him again.</summary>
-	internal bool IsWalking;
-	internal int PendingInterval = -1;
+	/// <summary>
+	/// The member's sprite wrapper and source (tp.exe: the person's words +0xC to +0x14, <see cref="StaffSpriteState"/>): the walk step and the state setters queue templates and intervals on it, the
+	/// pre-update applies them and the sprite scheduler (the even 31 ms substeps) steps the source. Saved in the park's resume file only (the staff world's actors), not hashed.
+	/// </summary>
+	internal StaffSpriteState Sprite { get; } = new();
 	/// <summary>The direction of the member's last step (unit vector in cells), as the sprite's facing reads it.</summary>
 	internal float HeadingX, HeadingY = 1;
 	public bool IsAvailable => BusyTicks == 0 && State is not (StaffState.OnStrike or StaffState.PickedUp or StaffState.Resting);
@@ -194,7 +202,8 @@ public sealed class StaffMember
 
 /// <summary>A job applicant in the hiring pool; leaves the pool at <see cref="ExpiresTick"/>.</summary>
 /// <param name="Variant">The sprite variant (tp.exe candidate +9, <c>StaffSpriteRules.BankIndex</c> picks the bank): drawn when the candidate is made, or the saved sub-type of an original save's pool; -1 for a candidate of a save from before the variant was kept, whose bank derives from its name and id.</param>
-public sealed record StaffCandidate( int Id, StaffType Type, int NameIndex, int Grade, long ExpiresTick, int Variant = -1 );
+/// <param name="SpriteDraw">The draw as the original stores it, reduced by the loaded bank count when it was made (<see cref="StaffMember.SpriteDraw"/>), raw for an original save's candidate (the constructors copy +9 as it is); null for a candidate of a save from before it was kept. Not hashed.</param>
+public sealed record StaffCandidate( int Id, StaffType Type, int NameIndex, int Grade, long ExpiresTick, int Variant = -1, [property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] int? SpriteDraw = null );
 
 /// <summary>
 /// Hiring pool, employees, wages and training. Data-driven values: pool sizes, grade chances,
@@ -219,6 +228,32 @@ public sealed partial class ParkStaff
 	public ParkStaff( BalanceSettings settings ) => this.settings = settings;
 
 	private ThingPool? things;
+
+	/// <summary>The host clock sample the sprite sources are created and stepped at (<see cref="GuestSimulation.BodySpriteSampleAtTick"/>, set by the level every tick; 0 without a level).</summary>
+	internal int SpriteClockMilliseconds { get; set; }
+
+	/// <summary>The sprite banks a performance template is resolved against and the stored sprite draws are reduced by (the level's loaded staff sprites); null in a headless run.</summary>
+	internal IStaffSpriteBanks? SpriteBanks { get; private set; }
+
+	/// <summary>
+	/// The loaded banks of this park's level: the stored sprite draws of the members take the loaded count of their category again, as every load does (the person serializer <c>0x004F8B10</c> reduces the id
+	/// read from a save, <c>0x004F93AA</c>, by <c>0x00541F60</c>, the category's loaded count). The pool's candidates are not reduced: the staff constructors copy a candidate's <c>+9</c> raw (the handyman's at <c>0x004D6BED</c> to <c>0x004D6C17</c>). The level runs it when it loads the banks and again when a load replaced the economy.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004F93AA sprite id reduction] the person serializer 0x004F8B10 stores mSpriteID % the category's loaded bank count (0x00541F60 reads the table entry 0x00763F90 that 0x00541E7D filled from the loader's result): a count below the one the park was made at wraps the draw for good
+	internal void AttachSpriteBanks( IStaffSpriteBanks? banks )
+	{
+		SpriteBanks = banks;
+		if ( banks == null )
+			return;
+		foreach ( var member in members )
+			if ( member.SpriteDraw >= 0 && banks.BankCount( member.Type ) is > 0 and var count )
+				member.SpriteDraw %= count;
+	}
+
+	/// <summary>The sprite draw a world draw gives: <c>R &gt;&gt; 2</c> reduced by the category's loaded bank count (no banks loaded yet: the folder's own bank count, the divisor the variant takes, so a pool made before the level loads its banks holds draws a byte can hold, as the original's candidate +9 does).</summary>
+	// [BIN:TPW-EXE:0x00541F70 sprite draw] (R >> 2) % the category's loaded count (the divisor is the table entry 0x00763F90 of 0x00541F60), returned to the constructors, which store it (0x004FB1B5 for a guest, 0x00507600 for a candidate)
+	private int SpriteDrawFrom( StaffType type, uint draw ) =>
+		SpriteBanks?.BankCount( type ) is > 0 and var count ? (int)((draw >> 2) % (uint)count) : VariantFrom( type, draw ) is >= 0 and var folder ? folder : (int)(draw >> 2);
 
 	/// <summary>The park's thing pool, once attached (<see cref="AttachThings"/>): a hired member takes a slot as its thing id and a dismissed one's slot is freed at the turn's end.</summary>
 	public ThingPool? Things => things;
@@ -470,8 +505,8 @@ public sealed partial class ParkStaff
 
 	private StaffCandidate CreateCandidate( StaffRoleSettings role, WorldRng random, long tick )
 	{
-		// [BIN:TPW-EXE:0x0050761C staff candidate draws] the constructor 0x00507600 draws, in order: the sprite variant (0x00541F70: (R >> 2) mod the role category's loaded bank count, candidate +9; here the static folder count, GUEST-020), one draw it discards (0x0050762D), the grade (0x00507638), the name (0x00507580) and the timeout
-		// [BIN:TPW-EXE:0x00541F70 sprite variant] (draw >> 2) mod the role category's bank count; the original divides by the LOADED count (table entry +8, filled by 0x541E7D from 0x541310 after the limit), here it is the static folder count (StaffSprites.Banks) and the reduction to the loaded banks happens only when drawing (GUEST-020), kept as the candidate's variant and handed on to the member it becomes (Hire)
+		// [BIN:TPW-EXE:0x0050761C staff candidate draws] the constructor 0x00507600 draws, in order: the sprite variant (0x00541F70: (R >> 2) mod the role category's loaded bank count, candidate +9; here ParkStaff.SpriteDrawFrom takes the loaded count of the level's banks, the raw draw in a headless run, and VariantFrom the folder's count for the hashed variant), one draw it discards (0x0050762D), the grade (0x00507638), the name (0x00507580) and the timeout
+		// [BIN:TPW-EXE:0x00541F70 sprite variant] (draw >> 2) mod the role category's LOADED bank count (table entry +8, filled by 0x541E7D from 0x541310 after the limit): StaffCandidate.SpriteDraw, handed on to the member it becomes (Hire) and reduced again by the loaded count of every load (AttachSpriteBanks); the hashed Variant below is the same draw modulo the folder's own bank count (StaffSprites.Banks), so peers with other presets keep one world hash
 		var variantDraw = random.NextWord();
 		random.NextWord();
 		// [BIN:STP-PPC:0x100F5B64 staff candidate] grade = (AvgGradeOf* + random % 3 - 1) & 0xFF, stored as 4 when above 4 (so -1 wraps to 4); ChanceToGetGreat* is never read
@@ -489,10 +524,10 @@ public sealed partial class ParkStaff
 		while ( NameTaken( role.Type, name ) && draws < MaximumNameDraws );
 		// [BIN:TPW-EXE:0x507600 staff candidate] the timeout (+0x10) is StaffTimeoutTime + R % (StaffTimeoutTime >> 1)
 		var timeout = settings.StaffTimeoutTime + (settings.StaffTimeoutTime >> 1 > 0 ? random.Next( settings.StaffTimeoutTime >> 1 ) : 0);
-		return new StaffCandidate( NextId++, role.Type, name, grade, TickAfterUnits( tick, timeout ), VariantFrom( role.Type, variantDraw ) );
+		return new StaffCandidate( NextId++, role.Type, name, grade, TickAfterUnits( tick, timeout ), VariantFrom( role.Type, variantDraw ), SpriteDrawFrom( role.Type, variantDraw ) );
 	}
 
-	/// <summary>The variant a draw gives: (draw >> 2) modulo the static bank count of the role's folder, not the loaded count (GUEST-020).</summary>
+	/// <summary>The variant a draw gives: (draw >> 2) modulo the static bank count of the role's folder, not the loaded count: the hashed variant (the stored draw, which the loaded count reduces, is <see cref="SpriteDrawFrom"/>).</summary>
 	private int VariantFrom( StaffType type, uint draw ) => StaffSpriteRules.Banks( type, settings.Theme )?.Banks.Count is > 0 and var count ? (int)((draw >> 2) % (uint)count) : -1;
 
 	/// <summary>Whether a pool candidate or an employee of the role already has the name (tp.exe <c>0x005083F0</c>).</summary>
@@ -516,15 +551,20 @@ public sealed partial class ParkStaff
 		// a pool-less (headless) economy has no person things, so it takes no draw
 		var baseSpeed = candidate.Type == StaffType.Entertainer || candidate.Grade < 3 ? GuestSpeed.BaseSpeeds[0] : GuestSpeed.BaseSpeeds[2];
 		var variant = candidate.Variant;
+		var spriteDraw = candidate.SpriteDraw ?? -1;
 		if ( things != null && random != null )
 		{
 			random.NextWord();
 			if ( candidate.Type == StaffType.Guard )
-				variant = VariantFrom( StaffType.Guard, random.NextWord() );
+			{
+				var guardDraw = random.NextWord();
+				variant = VariantFrom( StaffType.Guard, guardDraw );
+				spriteDraw = SpriteDrawFrom( StaffType.Guard, guardDraw );
+			}
 		}
 		MaterializeRoleOrder();
 		candidates.Remove( candidate );
-		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = variant };
+		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = variant, SpriteDraw = spriteDraw };
 		if ( things != null && random != null )
 			member.BaseSpeed = baseSpeed;
 		members.Add( member );
@@ -653,10 +693,10 @@ public sealed partial class ParkStaff
 		_ => StaffState.Working
 	};
 
-	/// <summary>Adds an employee taken from an original save (not hired from the pool); <paramref name="variant"/> is the sprite variant its person record saves (-1: none).</summary>
-	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0, int variant = -1 )
+	/// <summary>Adds an employee taken from an original save (not hired from the pool); <paramref name="variant"/> is the sprite variant its person record saves reduced by the folder's bank count and <paramref name="spriteDraw"/> the id as saved (-1: none).</summary>
+	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0, int variant = -1, int spriteDraw = -1 )
 	{
-		var member = new StaffMember { Id = AllocateId(), Variant = variant, ThingId = thingId, Type = type, NameIndex = 0, Name = name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
+		var member = new StaffMember { Id = AllocateId(), Variant = variant, SpriteDraw = spriteDraw, ThingId = thingId, Type = type, NameIndex = 0, Name = name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
 		AdoptThing( member );
 		MaterializeRoleOrder();
 		members.Add( member );
@@ -679,7 +719,8 @@ public sealed partial class ParkStaff
 		{
 			// [BIN:TPW-EXE:0x00507600 staff candidate] the sub-type (+9) is the sprite variant the placement object takes when the candidate is picked up (0x507BF0); one past the role's banks is no variant this install can draw
 			var banks = StaffSpriteRules.Banks( type, settings.Theme )?.Banks.Count ?? 0;
-			candidates.Add( new StaffCandidate( AllocateId(), type, name, grade, TickAfterUnits( ParkCalendar.TickOfTurn( made ), timeout ), subType >= 0 && subType < banks ? subType : -1 ) );
+			var variant = subType >= 0 && subType < banks ? subType : -1;
+			candidates.Add( new StaffCandidate( AllocateId(), type, name, grade, TickAfterUnits( ParkCalendar.TickOfTurn( made ), timeout ), variant, variant < 0 ? null : variant ) );
 			// the carry tool holds one candidate: the first flagged one is kept by the flag
 			if ( StaleOnPointerId == 0 && onPointer != null && position < onPointer.Count && onPointer[position] )
 				StaleOnPointerId = candidates[^1].Id;

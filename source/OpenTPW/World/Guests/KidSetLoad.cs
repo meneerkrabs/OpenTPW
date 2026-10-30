@@ -13,7 +13,7 @@ public static class KidSetLoad
 	/// <summary>
 	/// How many sets the <c>kids</c> and <c>kidsheads</c> folders load for a detail word <paramref name="numKids"/> (the preset's <c>GameOptions.NUMKIDS</c>): 2, 4, 6 and 8 for 0, 1, 2 and 3, and 8 for anything above (the word is unsigned).
 	/// </summary>
-	// [BIN:TPW-EXE:0x0041A9D0 kid set limit] the jump table 0x0041AA24 holds 2 (0x0041AA09), 4, 6 and 8 for the word at 0x007858D0 below 4 and 8 above it; the hardware-class path in front of it (the flags word 0x0079D86C, class 0x4000) gives 8 for the memory word 8, 6 for 0x10, 4 for 0x20 and 0 otherwise
+	// [BIN:TPW-EXE:0x0041A9D0 kid set limit] the jump table 0x0041AA24 holds 2 (0x0041AA09), 4, 6 and 8 for the word at 0x007858D0 below 4 and 8 above it; [EXT:no-launcher-machine-class] the launcher machine-class path in front of it (the flags word 0x0079D86C, bit 0x4000; the memory word 0x44A5D0 only ever returns 8, 0x10 or 0x20) gives 8 for 8, 6 for 0x10 and 4 for 0x20 and depends on the player's PC: OpenTPW always follows the graphics preset
 	public static int Limit( int numKids ) => (uint)numKids switch
 	{
 		0 => 2,

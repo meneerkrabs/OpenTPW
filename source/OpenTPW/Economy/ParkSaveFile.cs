@@ -357,6 +357,9 @@ public static class ParkSaveFile
 		/// <summary>The sprite variant the member was hired with (<see cref="StaffMember.Variant"/>); absent for a member of an original save and in older saves.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int? Variant { get; init; }
+		/// <summary>The sprite draw as the original stores it (<see cref="StaffMember.SpriteDraw"/>), reduced by the loaded bank count; absent in older saves. Not hashed.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? SpriteDraw { get; init; }
 		public required int Grade { get; init; }
 		public required int TrainingPoints { get; init; }
 		public required long HiredTick { get; init; }
@@ -820,6 +823,7 @@ public static class ParkSaveFile
 				ResumeMask = member.ResumeMask,
 				ResumeClaimTurn = member.ResumeClaimTurn,
 				Variant = member.Variant >= 0 ? member.Variant : null,
+				SpriteDraw = member.SpriteDraw >= 0 && member.SpriteDraw != member.Variant ? member.SpriteDraw : null,
 				Grade = member.Grade,
 				TrainingPoints = member.TrainingPoints,
 				HiredTick = member.HiredTick,
@@ -838,7 +842,7 @@ public static class ParkSaveFile
 				TravelSeconds = member.TravelSeconds
 			} ).ToList(),
 			RoleOrder = park.Staff.CaptureRoleOrder(),
-			Candidates = park.Staff.Candidates.ToList(),
+			Candidates = park.Staff.Candidates.Select( candidate => candidate with { SpriteDraw = candidate.SpriteDraw is { } draw && draw != candidate.Variant ? draw : null } ).ToList(),
 			TrainingBudgets = Enum.GetValues<StaffType>().Select( park.Staff.GetTrainingBudget ).ToList(),
 			NextId = park.Staff.NextId,
 			NextPoolUpdateTick = park.Staff.NextPoolUpdateTick,
@@ -1032,7 +1036,7 @@ public static class ParkSaveFile
 		{
 			Require( member.Id > 0 && member.Id < data.Staff.NextId && staffIds.Add( member.Id ), $"staff id {member.Id}" );
 			Require( member.ThingId is >= 0 and <= ThingPool.Capacity && (member.ThingId == 0 || staffThingIds.Add( member.ThingId )), $"staff {member.Id} thing id {member.ThingId}" );
-			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade && member.Variant is null or >= 0, $"staff {member.Id}" );
+			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade && member.Variant is null or >= 0 && member.SpriteDraw is null or >= 0, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
 			Require( member.Name is null || (member.Name.Length <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
 			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
@@ -1066,7 +1070,7 @@ public static class ParkSaveFile
 			Require( member.CellX.HasValue == member.CellY.HasValue && (!member.CellX.HasValue || (float.IsFinite( member.CellX.Value ) && float.IsFinite( member.CellY!.Value ))) && double.IsFinite( member.TravelSeconds ) && member.TravelSeconds >= 0 && member.TravelSeconds < StaffWorldSimulation.SecondsPerCell, $"staff {member.Id} position" );
 		}
 		foreach ( var candidate in data.Staff.Candidates )
-			Require( candidate.Id > 0 && candidate.Id < data.Staff.NextId && staffIds.Add( candidate.Id ) && candidate.Grade is >= 0 and < BalanceSettings.GradeCount && candidate.Variant >= -1, $"candidate {candidate.Id}" );
+			Require( candidate.Id > 0 && candidate.Id < data.Staff.NextId && staffIds.Add( candidate.Id ) && candidate.Grade is >= 0 and < BalanceSettings.GradeCount && candidate.Variant >= -1 && candidate.SpriteDraw is null or >= 0, $"candidate {candidate.Id}" );
 		Require( data.Staff.TrainingBudgets.Count == BalanceSettings.StaffTypeCount && data.Staff.TrainingBudgets.All( value => value >= 0 ), "training budgets" );
 		if ( data.Staff.Strikes is { } strikes )
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
@@ -1194,6 +1198,7 @@ public static class ParkSaveFile
 			ResumeMask = member.ResumeMask,
 			ResumeClaimTurn = member.ResumeClaimTurn,
 			Variant = member.Variant ?? -1,
+			SpriteDraw = member.SpriteDraw ?? member.Variant ?? -1,
 			Grade = member.Grade,
 			TrainingPoints = member.TrainingPoints,
 			HiredTick = member.HiredTick,
@@ -1207,7 +1212,7 @@ public static class ParkSaveFile
 			CellX = member.CellX,
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds
-		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
+		} ), data.Staff.Candidates.Select( candidate => candidate.SpriteDraw == null && candidate.Variant >= 0 ? candidate with { SpriteDraw = candidate.Variant } : candidate ).ToList(), data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
 		park.Staff.RestoreRoleOrder( data.Staff.RoleOrder );
 		park.Staff.RestoreHaveEverTrained( data.Staff.HaveEverTrained ?? data.Staff.TrainingBudgets.Any( budget => budget > 0 ) );
 		foreach ( var saved in data.Staff.Members.Where( member => member.BaseSpeed != null ) )

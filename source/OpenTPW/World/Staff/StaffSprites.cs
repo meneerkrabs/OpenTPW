@@ -38,11 +38,10 @@ public static class StaffSpriteRules
 	public static readonly StaffClip CatchAndCarry = new( 0x16, 7 );
 
 	/// <summary>
-	/// Steps per second of a sprite that keeps the interval it was created with, 62 ms (the dangling cursor sprite and the hire window's figure). A walking member's interval comes from
-	/// <see cref="SpritePlayer"/>.
+	/// Steps per second of a sprite that keeps the interval it was created with, 62 ms: the hire window's figure, whose passes run on the host's renderer-call clock (UI-082 qualifies that). The staff members'
+	/// and the tools' sprites are sources stepped by the sprite scheduler (<see cref="StaffSpriteState"/>).
 	/// </summary>
-	// [APPROX:GUEST-016] SpritePlayer ticks once per renderer call, one step past due, where tp.exe's scheduler (0x475360) runs on even 31 ms substeps; the walk step's own interval (0x4FA2A0) and the sub-turn point (0x4F9F00) are ported
-	// [BIN:TPW-EXE:0x004FA2A0 walk step interval] the sprite's interval is the step's own length times 0x007006E8, doubled unless the thing is a guest or a guard with a speed bonus, as clamp(trunc(62 / v), 0, 250) (0x004D41D0)
+	// [BIN:TPW-EXE:0x004758F0 sprite interval] a sprite is created with the interval 62 ms (+0x80 = 0x3E) and the first due time 62 ms later; a walk step's own interval (0x004FA2A0, 0x004D41D0) is the clamp(trunc(62 / v), 0, 250) of its length times 0x007006E8
 	public const float FramesPerSecond = 1000f / SpritePlayer.DefaultInterval;
 
 	/// <summary>The slot an entertainer performs when the bank lists no performance (every shipped entertainer bank lists slot 4).</summary>
@@ -50,14 +49,14 @@ public static class StaffSpriteRules
 
 	/// <summary>The key a person's sprite bank derives from: the same for the candidate and the member it becomes.</summary>
 	// [BIN:TPW-EXE:0x541f70 sprite variant draw] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010): OpenTPW keeps the drawn variant on the candidate and its member (KeyOf)
-	// [BIN:TPW-EXE:0x4f8b10 saved sprite variant] a member of an original save takes the saved mSpriteID modulo the role's banks (the serializer saves it and reduces it by the category's bank count on load); the name-and-id key below is only for a candidate or member of an OpenTPW park save from before the variant was kept (the loaded banks are GUEST-020)
+	// [BIN:TPW-EXE:0x4f8b10 saved sprite variant] a member of an original save takes the saved mSpriteID modulo the role's banks (the serializer saves it and reduces it by the category's bank count on load); the name-and-id key below is only for a candidate or member of an OpenTPW park save from before the variant was kept (the stored draw is reduced by the loaded count, StaffMember.SpriteDraw)
 	public static int VariantKey( int nameIndex, int id ) => (nameIndex + id) & int.MaxValue;
 
 	/// <summary>The key a candidate's sprite bank derives from: its variant (the drawn or saved one), else the name-and-id key of a pool from before the variant was kept.</summary>
-	public static int KeyOf( StaffCandidate candidate ) => candidate.Variant >= 0 ? candidate.Variant : VariantKey( candidate.NameIndex, candidate.Id );
+	public static int KeyOf( StaffCandidate candidate ) => candidate.SpriteDraw is >= 0 and var draw ? draw : candidate.Variant >= 0 ? candidate.Variant : VariantKey( candidate.NameIndex, candidate.Id );
 
 	/// <summary>The key a member's sprite bank derives from: the variant it was hired with, else the name-and-id key (a member of an OpenTPW park save from before the variant was kept).</summary>
-	public static int KeyOf( StaffMember member ) => member.Variant >= 0 ? member.Variant : VariantKey( member.NameIndex, member.Id );
+	public static int KeyOf( StaffMember member ) => member.SpriteDraw >= 0 ? member.SpriteDraw : member.Variant >= 0 ? member.Variant : VariantKey( member.NameIndex, member.Id );
 
 	/// <summary>Index of a variant's bank among <paramref name="count"/> banks.</summary>
 	public static int BankIndex( int variantKey, int count ) => count <= 0 ? -1 : variantKey % count;
@@ -73,7 +72,9 @@ public static class StaffSpriteRules
 	};
 
 	// [BIN:TPW-EXE:0x541310 staff bank load] the banks of a folder are sorted by file name (0x541210: a bubble sort over the name compare 0x424CC0, the case-insensitive _stricmp 0x67DF40, which GuestSpriteAtlas.LoadSets does) and the folders handymen, mechanics, guards and researchers (0x7640C8..0x7640A8) stop at the staff limit 0x41AA40; the entertainers' theme folders are not flagged and load whole; the load chain 0x54E360 -> 0x540900 -> 0x541D90 -> 0x541310 is reached from the program's start only (0x45A960, 0x5503F0), so one run keeps its banks (StaffSpriteSet.Load takes the limit once, when a level builds its staff)
-	// [APPROX:GUEST-020] the staff bank limit follows the preset's GameOptions.NUMKIDS (the original's detail word 0x7858D0, read only by 0x41A9D0 and 0x41AA40) and not the hardware-class path of 0x41AA40 (the flags word 0x79D86C a configuration file sets, class 0x4000: 1 for the memory word 0x20, 2 for 8 or 0x10, 0 for any other), which has no counterpart here; the original's stored variant is drawn modulo the loaded count (0x541F70 divides by the entry +8 that 0x541E7D fills from 0x541310's result), OpenTPW's modulo the static folder count with the reduction at drawing only, so the simulation stays independent of graphics; and a park started after a settings change loads the limit its level start reads, where the original reads it at the program's start
+	// [APPROX:GUEST-020] the original loads the banks inside the sprite system's start (0x540900: the main loop 0x54E360 calls it at 0x54E688 and 0x54ED2C), so the limit is the detail word 0x7858D0 of that moment; OpenTPW's StaffSpriteSet.Load reads the preset when a level builds its staff, so a park started after a settings change takes the new limit
+	// [BIN:TPW-EXE:0x541F70 stored variant] the stored variant is (R >> 2) mod the category's LOADED count (0x541F70 divides by the entry +8 that 0x541E7D fills from 0x541310's result) and is reduced by the loaded count again at every load of a member (the person serializer 0x4F8B10 at 0x4F93AA; the candidates are copied raw, 0x4D6BED to 0x4D6C17): StaffMember.SpriteDraw and StaffCandidate.SpriteDraw, kept out of the hash like the guests' kid-set draw so peers with other presets hash alike
+	// [EXT:no-launcher-machine-class] 0x41AA40 first tests the hardware class (0x44A590: the flags word 0x79D86C, bit 0x4000) and then the memory word (0x44A5D0, which only ever returns 8, 0x10 or 0x20: the staff limit is 1 for 0x20 and 2 for 8 or 0x10; the kid sets' limit 0x41A9D0 has the same path: 4 for 0x20, 6 for 0x10, 8 for 8); no code sets those bits (the writers 0x44D93E to 0x44E322 set 0x200, 0x400, 0x80, 0x40 and 1, 2, 4 only): the word is the launcher file dialog.tcf's, copied whole from the blob's +0x7C (0x449E78, from 0x78D954); bit 0x4000 only skips the class-preset load 0x44DC60 (0x44E1BF), and the software renderer path inside 0x44DD50 is chosen by bit 0x40 (0x44DDC0), not by 0x4000; OpenTPW always follows the graphics preset, where the original's launcher machine class (bit 0x4000 with memory sub-classes) depends on the player's PC (under class 0x4000, 0x41AA40 gives the staff limit 2, 2 or 1 and 0x41A9D0 the kid-set limit 8, 6 or 4, 0x41A9E1 to 0x41A9F4, for the memory words 8, 0x10 and 0x20)
 	// [BIN:TPW-EXE:0x763f88 sprite categories] by thing type: handymen Generic\Handymen SPR_HA; mechanics Generic\Mechanics SPR_FA, SPR_OM; guards Generic\Guards SPR_GU; researchers Generic\Researchers SPR_RE; entertainers per theme: Jungle DI, EX, NA; Fantasy FL, GN, LA; Hallow DR, FK, HU; Space MO, SM, SP
 	/// <summary>
 	/// How many banks of a flagged staff folder (handymen, mechanics, guards, researchers) the game loads for a detail word <paramref name="numKids"/> (the preset's <c>GameOptions.NUMKIDS</c>): 1 for 0, else 2.
@@ -115,58 +116,9 @@ public static class StaffSpriteRules
 		}
 	}
 
-	/// <summary>
-	/// The clip of a placed member (null: not drawn). Resting members have no sprite (state 3) and a carried one is the dangling sprite instead.
-	/// <paramref name="moving"/> is whether the member is being moved now; <paramref name="performances"/> (the bank's performance entries,
-	/// <see cref="SpriteAnimationFile.Performances"/>) give an entertainer's performance.
-	/// </summary>
-	// [BIN:TPW-EXE:0x004D46D0 performance start] the clip of a performing member is the script its search queued: 13 + (r mod (n − 1)) from the search's second world draw r (StaffMember.PerformanceDraw), 13 when the bank's n present entries (0x541FA0) is 1; scripts 13..16 of the table 0x75A418 hold the entry indices 0..3, and 0x475B80 runs the entry's program on its slot (StaffScripts.PerformanceFrame plays program 0 with the entry's intro and hold). An entertainer of an original save in state 14 has no saved draw: it plays entry 0 until its next performance (GUEST-015 retired)
-	public static StaffClip? SelectClip( StaffMember member, bool moving, IReadOnlyList<SpritePerformance>? performances = null, int performanceCount = 0 )
-	{
-		// a resting member is inside the Staff Room (0x5054d0 state 3 removes the model); a carried one is the dangling sprite instead
-		if ( !HasBodySprite( member ) )
-			return null;
-		if ( member.Job == StaffJob.ToStrike )
-			return moving ? WalkHalf : Stand;
-		if ( member.State == StaffState.OnStrike || member.Job == StaffJob.Striking )
-			return Strike;
-		switch ( member.Type )
-		{
-			case StaffType.Handyman:
-				return member.Job switch
-				{
-					StaffJob.Sweeping or StaffJob.Cleaning => Sweep,
-					StaffJob.Patrol or StaffJob.ToLitter or StaffJob.ToToilet => moving ? WalkHalf : Stand,
-					_ => moving ? Walk : Stand
-				};
-			case StaffType.Mechanic:
-				return member.BusyTicks > 0 && !member.AwaitingJobArrival && !moving ? Repair : moving ? Walk : Stand;
-			case StaffType.Researcher:
-				return member.Job == StaffJob.Researching && !moving ? Research : moving ? Walk : Stand;
-			case StaffType.Guard:
-				return member.Job == StaffJob.Escorting ? CatchAndCarry : moving ? (member.Job == StaffJob.Chasing ? Run : Walk) : Stand;
-			default:
-				return member.Job == StaffJob.Performing && !moving ? Perform( member.PerformanceDraw, performances, performanceCount ) : moving ? Walk : Stand;
-		}
-	}
-
-	/// <summary>The body-existence exclusions shared by clip selection and read-only employee output.</summary>
+	/// <summary>The body-existence exclusions: a resting member is inside the Staff Room (state 3 deletes the source) and a carried one is the dangling sprite instead (state 7 deletes it).</summary>
 	internal static bool HasBodySprite( StaffMember member ) =>
 		member.State is not (StaffState.Resting or StaffState.PickedUp) && member.Job is not (StaffJob.Resting or StaffJob.PickedUp);
-
-	/// <summary>
-	/// An entertainer's performance clip: entry 0 when the bank has one (or none: <see cref="DefaultPerformanceSlot"/>), else entry
-	/// <paramref name="draw"/> mod (count − 1), the original's script choice (the search's second draw, <see cref="StaffMember.PerformanceDraw"/>), its slot looping.
-	/// </summary>
-	// [BIN:TPW-EXE:0x004D47D8 performance script] n = the bank's count of present entries (0x541FA0): 13 when n is 1, else 13 + (draw mod (n - 1)), queued on the member's sprite (0x4217F0); a full bank of four never plays its fourth entry
-	public static StaffClip Perform( uint draw, IReadOnlyList<SpritePerformance>? performances, int count )
-	{
-		if ( performances == null || count <= 0 || performances.Count == 0 )
-			return new StaffClip( 13, DefaultPerformanceSlot );
-		var entry = count == 1 ? 0 : (int)(draw % (uint)(count - 1));
-		var slot = performances[Math.Min( entry, performances.Count - 1 )].Slot;
-		return new StaffClip( 13 + entry, slot is >= 0 and < SpriteAnimationFile.SlotCount ? slot : DefaultPerformanceSlot, performances[Math.Min( entry, performances.Count - 1 )].Intro, performances[Math.Min( entry, performances.Count - 1 )].Hold );
-	}
 
 	/// <summary>The hire window's figure: the walk slot (ESP slot 1), frames 0..7 in turn, looping.</summary>
 	public const int PortraitSlot = 1;
@@ -193,11 +145,10 @@ public static class StaffSpriteRules
 		return (PortraitSlot, mirror ? 8 - direction : direction, mirror, step);
 	}
 
-	/// <summary>The slot and frame step of a clip <paramref name="elapsed"/> seconds after it started, at the interval a sprite is created with.</summary>
-	public static (int Slot, int Step) Resolve( StaffClip clip, float elapsed, IReadOnlyList<SpriteAnimation> animations ) =>
-		ResolveSteps( clip, (int)MathF.Max( 0, elapsed * FramesPerSecond ), animations );
-
-	/// <summary>The slot and frame the clip shows at its <paramref name="steps"/>-th script step (the entertainers' performance scripts, which follow the bank, loop all frames of their slot).</summary>
+	/// <summary>
+	/// The slot and frame the clip's script shows at its <paramref name="steps"/>-th step: the flattened frame formula the bounded sprite VM's programs are checked against (the tests); the game plays the VM
+	/// (<see cref="StaffSpriteVm"/>, <see cref="StaffSpriteState"/>).
+	/// </summary>
 	public static (int Slot, int Step) ResolveSteps( StaffClip clip, int steps, IReadOnlyList<SpriteAnimation> animations )
 	{
 		if ( StaffScripts.At( clip.Script, steps ) is { } shown )
@@ -211,7 +162,7 @@ public static class StaffSpriteRules
 /// The decoded sprite banks of the staff roles of one level, in the order their atlas textures are bound: handymen, mechanics, guards, researchers, the theme's
 /// entertainers. Loaded through the same <see cref="GuestSpriteAtlas"/> path as the guests' kids.
 /// </summary>
-public sealed class StaffSpriteSet
+public sealed class StaffSpriteSet : IStaffSpriteBanks
 {
 	private const int RoleCount = 5;
 	private readonly (int First, int Count)[] ranges = new (int, int)[RoleCount];
@@ -246,6 +197,12 @@ public sealed class StaffSpriteSet
 		}
 		return new StaffSpriteSet( atlases, ranges );
 	}
+
+	/// <summary>The animation file of the bank a person of a role and variant is drawn from, null when the role has none.</summary>
+	public SpriteAnimationFile? AnimationsOf( StaffType type, int variantKey ) => AtlasFor( type, variantKey ) is >= 0 and var index ? Atlases[index].Animations : null;
+
+	/// <summary>How many banks the role's folder loaded (after the staff limit), 0 for none.</summary>
+	public int BankCount( StaffType type ) => ranges[(int)type].Count;
 
 	/// <summary>The atlas index drawing a person of a role and variant, -1 when the role has no bank.</summary>
 	public int AtlasFor( StaffType type, int variantKey )

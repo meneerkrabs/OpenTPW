@@ -8,7 +8,7 @@ public readonly record struct StaffSpriteTickResult( StaffSpriteTickStatus Statu
 
 /// <summary>
 /// Bounded staff control semantics. Tick accepts one signed clock sample and never decides scheduler ordering.
-/// This independently testable core is not yet consumed by gameplay, world rendering, windows or saves.
+/// The world's staff sprite sources (StaffSpriteState) are its consumer; the hire and employee windows' portraits are not.
 /// </summary>
 public static class StaffSpriteVm
 {
@@ -44,12 +44,12 @@ public static class StaffSpriteVm
 		state.IfDepth = state.CallDepth = state.LoopDepth = 0;
 	}
 
-	/// <summary>Applies already resolved bank metadata; intro and hold remain the existing words, as in template replacement.</summary>
+	/// <summary>Applies already resolved bank metadata; intro and hold remain the existing words, as in template replacement. The frame count is stored as the bank gives it (a byte, 0x00540C60 to +0xBC, unchecked: 0 keeps program 1 on frame 0 and program 0 counting).</summary>
 	public static void ApplyPerformance( StaffSpriteVmState state, int program, int slot, int frameCount )
 	{
 		ArgumentNullException.ThrowIfNull( state );
-		if ( program is < 0 or > 3 || slot < 0 || frameCount <= 0 )
-			throw new ArgumentOutOfRangeException( nameof( program ), "Performance metadata must identify a supported program, slot and positive frame count." );
+		if ( program is < 0 or > 3 || slot < 0 || frameCount < 0 )
+			throw new ArgumentOutOfRangeException( nameof( program ), "Performance metadata must identify a supported program, slot and non-negative frame count." );
 		ApplyTemplate( state, (StaffSpriteProgram)((int)StaffSpriteProgram.Performance0 + program) );
 		state[StaffSpriteRegister.Slot] = (uint)slot;
 		state[StaffSpriteRegister.FrameCount] = (uint)frameCount;

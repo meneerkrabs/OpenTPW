@@ -2,10 +2,11 @@ using System;
 
 namespace OpenTPW.Tests;
 
-/// <summary>The world's walk step as the renderer tests stage it: the member moves, faces the way he moved and is walking (the staff world writes the same fields, StaffWorldSimulation.Walk).</summary>
+/// <summary>The world's walk step as the renderer tests stage it: the member moves, faces the way he moved and asks for the walk template (the staff world does the same, StaffWorldSimulation.Walk).</summary>
 internal static class StaffTestWalk
 {
-	public static void Step( this StaffMember member, float dx, float dy = 0 )
+	/// <param name="walks">Whether the step is a walk step (a member at work, sweeping or repairing, does not walk).</param>
+	public static void Step( this StaffMember member, float dx, float dy = 0, bool walks = true )
 	{
 		member.CellX += dx;
 		member.CellY += dy;
@@ -13,6 +14,7 @@ internal static class StaffTestWalk
 		if ( length <= 0 )
 			return;
 		(member.HeadingX, member.HeadingY) = (dx / length, dy / length);
-		member.IsWalking = true;
+		if ( walks )
+			StaffSpriteEvents.Walking( member );
 	}
 }

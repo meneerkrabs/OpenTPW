@@ -105,6 +105,7 @@ public class EmployeeLivePortraitTests
 		public readonly StaffRenderer Renderer;
 		public readonly StaffPlacement Placement = StaffPlacementRig.Create( () => null, () => null, (_, _) => false );
 		public List<Texture> Textures => Get<List<Texture>>( Renderer, "textures" );
+		private readonly Dictionary<StaffMember, int> yields = new( ReferenceEqualityComparer.Instance );
 		public Rig( StaffMember member, int directions = 5, Level? level = null, List<StaffMember>? members = null )
 		{
 			Members = members ?? new() { member };
@@ -116,25 +117,48 @@ public class EmployeeLivePortraitTests
 			// Construct the ordinary no-assets renderer, then install synthetic CPU banks and managed resource sentinels.
 			Renderer = new StaffRenderer( () => Members, new ModelHeightfield( 10, 10, 10, 10, 0, 0, Array.Empty<uint>(), new float[121], new uint[100] ), StaffSpriteSet.Empty, Placement );
 			Set( Renderer, "sprites", set );
+			Banks = set;
 			Set( Renderer, "material", Empty<Material<ObjectUniformBuffer>>() );
 			Textures.Add( TextureSentinel() );
 			Set( Level, "<StaffRenderer>k__BackingField", Renderer );
 		}
+		/// <summary>A source the member would have at this point of its life: a stand source made long enough ago to be due at once, then the template its job queues (the world's setters), applied.</summary>
+		public void Ready( StaffMember member )
+		{
+			member.Sprite.Create( member.Type, StaffSpriteRules.KeyOf( member ), StaffSpriteEvents.Stand, -1000, Banks );
+			var template = member.Job == StaffJob.Performing ? StaffSpriteState.FirstPerformanceTemplate : StaffSpriteEvents.TemplateOf( member.Type, member.Job );
+			if ( member.State == StaffState.OnStrike )
+				template = StaffSpriteEvents.Strike;
+			if ( template > 0 )
+				member.Sprite.QueueTemplate( template );
+			member.Sprite.ApplyPending( member.Type, StaffSpriteRules.KeyOf( member ), Banks );
+		}
+		public readonly IStaffSpriteBanks Banks;
+		/// <summary>One frame of the host: the sprite scheduler's pass over the members at the clock (a member that should show a sprite and has none gets a source), then the renderer's world pass.</summary>
 		public int Prepare( float now )
 		{
 			Time.Delta = 0.07f;
 			Time.Now = now;
+			foreach ( var member in Members )
+			{
+				if ( member.Sprite.Source == null && StaffSpriteRules.HasBodySprite( member ) )
+					Ready( member );
+				// the pre-update applies what the walk step queued, then the scheduler steps the source
+				member.Sprite.ApplyPending( member.Type, StaffSpriteRules.KeyOf( member ), Banks );
+				if ( member.Sprite.Tick( (int)(now * 1000f) ).Status == StaffSpriteTickStatus.Yielded )
+					yields[member] = yields.GetValueOrDefault( member ) + 1;
+			}
 			return Renderer.PrepareWorld();
 		}
 		public object View( StaffMember member ) => ((IDictionary)Field( Renderer, "views" ).GetValue( Renderer )!)[member]!;
-		public SpritePlayer Player( StaffMember member ) => Get<SpritePlayer>( View( member ), "Player" );
+		/// <summary>The frames the member's source has yielded since the rig made it: the script step its frame is.</summary>
+		public int Steps( StaffMember member ) => yields.GetValueOrDefault( member );
 		public string State( StaffMember member )
 		{
 			var view = View( member );
-			var state = view.GetType().GetFields().Where( field => field.Name is not ("Player" or "Published") )
+			var state = view.GetType().GetFields().Where( field => field.Name is not "Published" )
 				.Select( field => $"{field.Name}={field.GetValue( view )}" );
-			var player = Player( member );
-			return string.Join( ";", state ) + $";steps={player.Steps};interval={player.Interval};due={Get<long>( player, "due" )};member={JsonSerializer.Serialize( member )}";
+			return string.Join( ";", state ) + $";sprite={JsonSerializer.Serialize( member.Sprite.CaptureSnapshot() )};member={JsonSerializer.Serialize( member )}";
 		}
 		public UiSpriteFrame Expected( int slot, int step, float headingX = 0, float headingY = 1 )
 		{
@@ -158,7 +182,7 @@ public class EmployeeLivePortraitTests
 		var type = kind switch { "repair" => StaffType.Mechanic, "research" => StaffType.Researcher, "performance" => StaffType.Entertainer, _ => StaffType.Handyman };
 		var member = Member( type );
 		member.Job = kind switch { "sweep" => StaffJob.Sweeping, "research" => StaffJob.Researching, "performance" => StaffJob.Performing, _ => StaffJob.Idle };
-		if ( kind == "repair" ) member.BusyTicks = 5;
+		if ( kind == "repair" ) member.Job = StaffJob.Repairing;
 		if ( kind == "strike" ) member.State = StaffState.OnStrike;
 		var rig = new Rig( member );
 		Assert.IsNull( rig.Renderer.EmployeeFrame( member ), "no first world output yet" );
@@ -168,13 +192,14 @@ public class EmployeeLivePortraitTests
 			if ( kind == "walk" ) member.Step( -0.1f );
 			Assert.AreEqual( 12, rig.Prepare( now ) );
 		}
+		// the performance program of the bank's entry: the synthetic bank lists intro 2 and hold 2, which the source does not use (0x00475B80 reads them into locals; only a sprite created with a performance entry stores them)
 		var clip = kind switch { "walk" => StaffSpriteRules.Walk, "sweep" => StaffSpriteRules.Sweep, "repair" => StaffSpriteRules.Repair,
-			"strike" => StaffSpriteRules.Strike, "research" => StaffSpriteRules.Research, "performance" => new StaffClip( 13, 4, 2, 2 ), _ => StaffSpriteRules.Stand };
-		Assert.IsTrue( rig.Player( member ).Steps > 0 );
-		var (slot, step) = StaffSpriteRules.ResolveSteps( clip, rig.Player( member ).Steps, rig.Atlas.Animations.Animations );
+			"strike" => StaffSpriteRules.Strike, "research" => StaffSpriteRules.Research, "performance" => new StaffClip( 13, 4 ), _ => StaffSpriteRules.Stand };
+		Assert.IsTrue( rig.Steps( member ) > 0 );
+		// the first yield is the first frame of the script, so the n-th yield shows script step n - 1; the walk replaced the stand after its first yield
+		var (slot, step) = StaffSpriteRules.ResolveSteps( clip, rig.Steps( member ) - 1 - (kind == "walk" ? 1 : 0), rig.Atlas.Animations.Animations );
 		Assert.AreEqual( kind == "walk" ? rig.Expected( slot, step, -1, 0 ) : rig.Expected( slot, step ), rig.Renderer.EmployeeFrame( member )!.Value );
 		Assert.AreEqual( 1, rig.Renderer.DrawnStaff );
-		Assert.AreEqual( clip.Script << 8 | clip.Slot, Get<int>( rig.View( member ), "ClipKey" ) );
 	}
 
 	[TestMethod]
@@ -189,7 +214,7 @@ public class EmployeeLivePortraitTests
 			observed.Prepare( now ); control.Prepare( now );
 		}
 		observedMember.Step( 0, 0.25f ); controlMember.Step( 0, 0.25f );
-		observedMember.PendingInterval = 148; controlMember.PendingInterval = 148;
+		observedMember.Sprite.QueueInterval( 148 ); controlMember.Sprite.QueueInterval( 148 );
 		var before = observed.State( observedMember );
 		var frame = observed.Renderer.EmployeeFrame( observedMember );
 		Assert.IsNotNull( frame );

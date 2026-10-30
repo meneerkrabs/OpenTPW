@@ -12,6 +12,8 @@ internal sealed partial class SandboxSmokeTest
 {
 	private int staffStage;
 	private int staffStageFrame;
+	private bool staffSpriteSeen;
+	private int staffDangleWait;
 	private (int X, int Y) staffCellA, staffCellB;
 	private System.Numerics.Vector2 staffPointA, staffPointB;
 	private StaffMember? smokeHandyman;
@@ -44,14 +46,20 @@ internal sealed partial class SandboxSmokeTest
 			return false;
 		}
 		var point = StaffProbePoint( origin, staffProbe );
+		// the tool's sprite shows from the sprite scheduler's first pass (62 ms of game time after the tool started): wait for it, bounded
+		if ( !renderer.DrewDangling && ++staffDangleWait < 600 )
+			return false;
+		staffDangleWait = 0;
 		Require( renderer.DrewDangling && renderer.DangleAt != null, $"the {tool} tool draws the dangling sprite at probe {staffProbe}" );
 		Require( renderer.DangleFrameSize is { Width: > 16, Height: > 16 }, $"the {tool} tool's dangling frame has art, not a 2 x 2 placeholder ({renderer.DangleFrameSize})" );
 		var at = renderer.DangleAt!.Value;
 		Require( level.TryGetGroundCell( point, viewport, out var wantX, out var wantY ), "the probe point hits the ground" );
 		Require( Math.Abs( at.X - wantX ) < 0.02f && Math.Abs( at.Y - wantY ) < 0.02f, $"the {tool} sprite hangs at the pointer's ground point ({at} vs {(wantX, wantY)}), not at a cell centre" );
+		// the person hangs 5 units above the pick's engine point plus the terrain's height under it (the sprite pass adds the terrain to the height the tool stores, StaffRenderer.DangleAnchor)
+		var lift = StaffRenderer.DangleLift + (level.OriginalPark?.Heightfield.GetHeight( at.X, at.Y ) ?? 0f);
 		Require( level.TryGetGroundHit( point, viewport, out var pickHit ) && renderer.DangleAnchorAt is { } anchor
-			&& System.Numerics.Vector3.Distance( anchor, pickHit.GetSystemVector3() + System.Numerics.Vector3.UnitZ * (StaffRenderer.DangleLift * OriginalParkPlacement.ModelScale) ) < 0.01f,
-			$"the {tool} sprite's anchor is the pick's engine point lifted by 5 x ModelScale ({renderer.DangleAnchorAt} vs {pickHit})" );
+			&& System.Numerics.Vector3.Distance( anchor, pickHit.GetSystemVector3() + System.Numerics.Vector3.UnitZ * (lift * OriginalParkPlacement.ModelScale) ) < 0.01f,
+			$"the {tool} sprite's anchor is the pick's engine point lifted by (5 + the terrain's height) x ModelScale ({renderer.DangleAnchorAt} vs {pickHit}, lift {lift})" );
 		Require( !hud!.StaffWindowOpen && !hud.EmployeeWindowOpen && hud.Stack.Screens.Count == 1, $"no hire or employee window covers the park while the {tool} tool runs" );
 		// [EXT:debug-hud] OPENTPW_STAFF_CAPTURE=1 also saves the world with the interface for each probe (artifacts/native-smoke-staff-<tool>-<probe>.png), for the visual check of the fix
 		if ( Environment.GetEnvironmentVariable( "OPENTPW_STAFF_CAPTURE" ) == "1" )
@@ -149,8 +157,20 @@ internal sealed partial class SandboxSmokeTest
 				break;
 			}
 			case 1:
+				// a placed person's sprite shows from the sprite scheduler's first pass (62 ms of game time after the drop), so wait for it, then two more frames for the readback
+				if ( !staffSpriteSeen )
+				{
+					if ( renderer.DrawnStaff == 0 || !smokeHandyman!.Sprite.HasOutput )
+					{
+						Require( frame < staffStageFrame + 600, "draw the placed handyman's sprite (the sprite scheduler's first pass never came)" );
+						return;
+					}
+					staffSpriteSeen = true;
+					staffStageFrame = frame;
+				}
 				if ( frame < staffStageFrame + 2 )
 					return;
+				staffSpriteSeen = false;
 				Require( renderer.DrawnStaff > 0, "draw the placed handyman's sprite" );
 				staffVisiblePixels = CaptureFrame( "staff-placed.png" ).Pixels;
 				renderer.Visible = false;
@@ -203,6 +223,9 @@ internal sealed partial class SandboxSmokeTest
 				// the real HUD update of a frame runs before its draw and reads the real pointer: inject the pointer over the target cell for the next frame
 				injectInput?.Invoke( UiInput.Idle( staffPointB ) );
 				if ( frame < staffStageFrame + 2 )
+					return;
+				// the tool's sprite shows from the sprite scheduler's first pass (62 ms of game time), so wait for it, bounded
+				if ( !renderer.DrewDangling && frame < staffStageFrame + 600 )
 					return;
 				Require( renderer.DrewDangling, "the Carry tool draws the dangling sprite" );
 				Require( placement.HoverCell == staffCellB && placement.HoverValid, "the Carry tool follows the hovered cell" );

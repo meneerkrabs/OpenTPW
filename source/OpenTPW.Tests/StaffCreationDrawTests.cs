@@ -155,7 +155,7 @@ public class StaffCreationDrawTests
 		world.UpdateStaff( restored, 1 );
 		Assert.IsNull( loaded.CellX, "Synchronize must not spawn an unplaced member in hand" );
 		Assert.IsNull( loaded.Navigation );
-		StaffPlacement.PutDown( loaded, 5, 5 );
+		StaffPlacement.PutDown( restored.Staff, loaded, 5, 5 );
 		world.UpdateStaff( restored, 2 );
 		Assert.AreEqual( speed, loaded.BaseSpeed );
 	}
@@ -217,7 +217,7 @@ public class StaffCreationDrawTests
 		world.UpdateStaff( restored, 1 );
 		Assert.AreEqual( 100, loaded.BaseSpeed, "legacy grade fallback is retained" );
 		loaded.Grade = 1;
-		StaffPlacement.PutDown( loaded, 6, 5 );
+		StaffPlacement.PutDown( restored.Staff, loaded, 6, 5 );
 		world.UpdateStaff( restored, 2 );
 		Assert.AreEqual( 100, loaded.BaseSpeed, "drop does not reinterpret an already initialized speed" );
 	}

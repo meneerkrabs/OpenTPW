@@ -65,7 +65,7 @@ public sealed class StaffHands
 		if ( economy() is not { } park || park.Staff.Members.FirstOrDefault( item => item.Id == hand.Staff ) is not { } member )
 			return null;
 		StaffPlacement.ReleaseAssignments( park, member );
-		StaffPlacement.PutDown( member, hand.X, hand.Y );
+		StaffPlacement.PutDown( park.Staff, member, hand.X, hand.Y );
 		return member;
 	}
 
@@ -94,7 +94,7 @@ public sealed class StaffHands
 				walks.Add( HeldWalk.Of( member ) );
 				// the put-down's clear empties a list of its own: the member gets its own back
 				member.OffGridLeg = new();
-				StaffPlacement.PutDown( member, hand.X, hand.Y );
+				StaffPlacement.PutDown( park.Staff, member, hand.X, hand.Y );
 			}
 		}
 		catch
@@ -108,10 +108,10 @@ public sealed class StaffHands
 
 	/// <summary>The fields of a held employee's walk that a put-down writes (<see cref="StaffPlacement.PutDown"/>), to give back after a save's captures.</summary>
 	private sealed record HeldWalk( StaffMember Member, float? CellX, float? CellY, double TravelSeconds, GuestNavigation? Navigation, StaffState State, int SpeedBonus, StaffJob Job,
-		long IdleStamp, List<(int X, int Y, int ByteX, int ByteY)> OffGridLeg )
+		long IdleStamp, List<(int X, int Y, int ByteX, int ByteY)> OffGridLeg, StaffSpriteStateSnapshot Sprite )
 	{
 		public static HeldWalk Of( StaffMember member ) => new( member, member.CellX, member.CellY, member.TravelSeconds, member.Navigation, member.State, member.SpeedBonus, member.Job,
-			member.IdleStamp, member.OffGridLeg );
+			member.IdleStamp, member.OffGridLeg, member.Sprite.CaptureSnapshot() );
 
 		public void Restore()
 		{
@@ -124,6 +124,8 @@ public sealed class StaffHands
 			Member.Job = Job;
 			Member.IdleStamp = IdleStamp;
 			Member.OffGridLeg = OffGridLeg;
+			// the put-down made the member a stand source; the member goes back to the hand it was in (no source)
+			Member.Sprite.RestoreSnapshot( Sprite );
 		}
 	}
 

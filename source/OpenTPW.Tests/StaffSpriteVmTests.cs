@@ -655,7 +655,7 @@ public class StaffSpriteVmTests
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => StaffSpriteVm.ApplyTemplate( state, StaffSpriteProgram.Performance0Loop ) );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => StaffSpriteVm.ApplyPerformance( state, 4, 7, 8 ) );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => StaffSpriteVm.ApplyPerformance( state, 0, -1, 8 ) );
-		Assert.ThrowsException<ArgumentOutOfRangeException>( () => StaffSpriteVm.ApplyPerformance( state, 0, 7, 0 ) );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => StaffSpriteVm.ApplyPerformance( state, 0, 7, -1 ) );
 		CollectionAssert.AreEqual( before, Words( state ) );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => new StaffSpritePc( StaffSpriteProgram.Run, -1 ) );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => new StaffSpritePc( StaffSpriteProgram.Run, 65536 ) );

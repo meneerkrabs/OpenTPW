@@ -44,7 +44,8 @@ public sealed partial class StaffWorldSimulation
 			case StaffJob.Escorting:
 				if ( Walk( member, maxSpeed, maxForce ) == WalkResult.Walking )
 					return;
-				// [BIN:TPW-EXE:0x004D6A50 escort] on arrival (or a broken walk) the guest is set down on the guard's cell (0x004FEB50), +0x188 = 0, and the guard routes to the park entrance (0x004D8690, the turn's bit 0): state 19, else 0
+				// [BIN:TPW-EXE:0x004D6A50 escort] on arrival (or a broken walk) the guard queues template 0x18 (the release), the guest is set down on the guard's cell (0x004FEB50), +0x188 = 0, and the guard routes to the park entrance (0x004D8690, the turn's bit 0): state 19, else 0
+				StaffSpriteEvents.GuardReleased( member );
 				SetDown( economy, member );
 				member.Navigation!.Mask = 0;
 				SetJob( economy, member, RouteToGate( member, GateCell.Entrance, turn ) ? StaffJob.ReturningFromEscort : StaffJob.Idle, turn );
@@ -162,6 +163,8 @@ public sealed partial class StaffWorldSimulation
 		// [BIN:TPW-EXE:0x004D691B caught kid counted] the analyser's misbehaving-kids call (0x004C74F0 with a nonzero argument) runs right after the catch succeeds (0x004FEC10), before the sound and the hold: the month and lifetime words
 		economy.RecordGuardChase( caught: true );
 		member.SpeedBonus = 0;
+		// [BIN:TPW-EXE:0x004D6790 caught a kid] right after the catch (0x004FEC10) the guard queues template 0x16 (the catch, which hands over to the hold), before the guest is held
+		StaffSpriteEvents.GuardCaught( member );
 		Sound( member, CatchEvent );
 		Guests.Hold( member.TargetGuestId );
 		if ( RouteToGate( member, GateCell.TicketBooth, turn ) )

@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x004b6080 employee window] the opener stores the member, builds table 0x756f48 through 0x48cea0 (handler 0x4b5cb0, frames 0x511 and 0x512) and
 // posts help 0xc0; 0x48cea0 first closes the window that is open (0x485b40), so the All Staff list (0x496088, its row message 0x400) gives way to it
 // [BIN:TPW-EXE:0x00486920 thing info] a click on a staff thing (types 4-8) opens this window too; OpenTPW opens it from the staff list (no staff click in the park)
-// [APPROX:UI-092] the employee portrait reads the current world output at yaw zero, with the existing hire loop when unavailable; this is not the original independent clone (0x486530 / 0x486610). Clone timing/state/flag semantics, source-loss lifecycle, native depth/occlusion and viewport/raster parity remain open; employee-only nominal geometry is 2.4 with authored feet (526,476).
+// [APPROX:UI-092] the employee portrait reads the member's world source output at yaw zero (the source is the original's, StaffSpriteState), with the existing hire loop when no source shows a frame; this is not the original independent clone (0x486530 / 0x486610). The clone's timing/state/flag history, its source-loss lifecycle, native depth/occlusion and viewport/raster parity remain open; employee-only nominal geometry is 2.4 with authored feet (526,476).
 public sealed partial class ParkHud
 {
 	private static LayoutTable EmployeeTable => OriginalLayoutTables.EmployeeWindow;

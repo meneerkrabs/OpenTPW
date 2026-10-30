@@ -219,7 +219,7 @@ public sealed record PlaceStaffCommand( int Candidate, int X, int Y ) : StaffToo
 		var member = economy.Hire( candidate.Id );
 		// [BIN:TPW-EXE:0x46c8e0 new member] position = cell centre (sub-cell 0x80), happiness and energy 100.0 (the member's own defaults), patrol rectangle = the whole map (+0x20a = 1, +0x20c = 0x4000: PatrolArea's default); each role's constructor then runs its first search (Constructed below)
 		member.PatrolArea = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
-		StaffPlacement.PutDown( member, X, Y );
+		StaffPlacement.PutDown( economy.Staff, member, X, Y, constructed: true );
 		// [BIN:TPW-EXE:0x46c8e0 new member] the role's constructor runs the first search inside the click (0x4D4340, 0x4D5D40, 0x4D6B60, 0x4D9EB0, 0x502600), so its draws come after the hire's base-speed and variant draws and before the turn's sweep; a headless economy has no world and searches on its first update
 		hands.StaffWorld?.Constructed( economy, member );
 		return ParkCommandResult.Ok( member );
@@ -255,8 +255,9 @@ public sealed record PickUpStaffCommand( int Staff ) : StaffToolCommand
 		var origin = StaffPlacementRules.CellOf( member )!.Value;
 		StaffPlacement.ReleaseAssignments( economy, member );
 		member.State = StaffState.PickedUp;
-		// state 7 takes the thought bubble away (0x005054D0 → 0x0050C0D0)
+		// state 7 takes the thought bubble away (0x005054D0 → 0x0050C0D0) and deletes the sprite source (0x004D4170)
 		member.BubbleThought = 0;
+		StaffSpriteEvents.PickUp( member );
 		hands.Carry( Player, member.Id, origin );
 		return ParkCommandResult.Ok( origin );
 	}
@@ -292,7 +293,7 @@ public sealed record DropStaffCommand( int Staff, int X, int Y ) : StaffToolComm
 		if ( economy.Staff.Members.FirstOrDefault( item => item.Id == Staff ) is not { } member )
 			return ParkCommandResult.Ok();
 		StaffPlacement.ReleaseAssignments( economy, member );
-		StaffPlacement.PutDown( member, X, Y );
+		StaffPlacement.PutDown( economy.Staff, member, X, Y );
 		return ParkCommandResult.Ok( member );
 	}
 }

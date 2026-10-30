@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
 
-/// <summary>GUEST-016: what a staff member's walk step leaves for his sprite, in the original's own terms (tp.exe 0x004FA2A0, 0x004D41D0, 0x004FA870).</summary>
+/// <summary>What a staff member's walk step leaves for his sprite, in the original's own terms (tp.exe 0x004FA2A0, 0x004D41D0, 0x004FA870).</summary>
 [TestClass]
 public class StaffWalkPresentationTests
 {
@@ -38,13 +38,13 @@ public class StaffWalkPresentationTests
 		for ( var turn = 0; turn < 300 && steps < 20; turn++ )
 		{
 			var before = f.Member.Navigation is { } start ? (start.X, start.Y) : (0, 0);
-			f.Member.PendingInterval = -1;
 			f.Turn();
 			var navigation = f.Member.Navigation;
-			if ( navigation == null || !f.Member.IsWalking || f.Member.PendingInterval < 0 )
+			// the walk step queues the interval (0 asks for none) on the wrapper; the next turn's pre-update applies it
+			if ( navigation == null || f.Member.Sprite.PendingInterval <= 0 )
 				continue;
 			steps++;
-			Assert.AreEqual( GuestSimulation.BodyIntervalForStep( before.Item1, before.Item2, navigation.X, navigation.Y, false ), f.Member.PendingInterval, "the interval comes from the step's own displacement" );
+			Assert.AreEqual( GuestSimulation.BodyIntervalForStep( before.Item1, before.Item2, navigation.X, navigation.Y, false ), f.Member.Sprite.PendingInterval, "the interval comes from the step's own displacement" );
 			var (dx, dy) = ((double)navigation.X - before.Item1, (double)navigation.Y - before.Item2);
 			if ( dx != 0 || dy != 0 )
 				Assert.AreEqual( 1.0, Math.Sqrt( f.Member.HeadingX * (double)f.Member.HeadingX + f.Member.HeadingY * (double)f.Member.HeadingY ), 1e-5 );
@@ -53,17 +53,17 @@ public class StaffWalkPresentationTests
 	}
 
 	[TestMethod]
-	public void ASetJobStandsTheMemberAgainUntilTheNextStepAsksForTheWalk()
+	public void AWalkStepQueuesTheWalkUnlessTheSourceRestartsThereAndAStateEntryQueuesItsOwnTemplate()
 	{
 		var f = new Fixture();
-		for ( var turn = 0; turn < 300 && !f.Member.IsWalking; turn++ )
+		for ( var turn = 0; turn < 300 && f.Member.Sprite.PendingInterval <= 0; turn++ )
 			f.Turn();
-		Assert.IsTrue( f.Member.IsWalking );
+		Assert.IsTrue( f.Member.Sprite.PendingInterval > 0, "the member walked" );
 		Assert.IsTrue( f.Member.TurnTick >= 0, "the turn's start point was taken" );
-		f.Member.Job = StaffJob.Idle;
+		f.Member.Job = StaffJob.Patrol;
 		var method = typeof( StaffWorldSimulation ).GetMethod( "SetJob", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic )!;
 		method.Invoke( null, [f.Park, f.Member, StaffJob.Idle, f.Park.Turn] );
-		Assert.IsFalse( f.Member.IsWalking, "a state entry queues the state's own clip" );
+		Assert.AreEqual( StaffSpriteEvents.Stand, f.Member.Sprite.PendingTemplate, "a state entry queues the state's own template (0x005054D0 state 0 queues 3)" );
 	}
 
 	[TestMethod]

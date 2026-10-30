@@ -218,6 +218,16 @@ public class ThemeParkIncEconomyTests
 	}
 
 	[TestMethod]
+	public void TheHeadlessHandymanDispatchOfAParkWithoutStaffReadsNoStaffRole()
+	{
+		// the slice has no staff world, so every park turn ends in the headless dispatch; its settings hold no roles (indexing them threw on the science smoke)
+		var economy = Economy();
+		Assert.AreEqual( 0, economy.Settings.Roles.Count );
+		economy.DispatchHandymen();
+		Assert.AreEqual( 0, economy.Staff.Members.Count );
+	}
+
+	[TestMethod]
 	public void TheScrapValueRefundsByAgeAndRefusesACondemnedObjectOnlyForThemeParkInc()
 	{
 		var tpi = Economy( Ride( 1, 1000, 0 ) );

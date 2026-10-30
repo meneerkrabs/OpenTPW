@@ -72,7 +72,7 @@ any of these saves (the smokes load only Easymode), so "rebuilt" for the fixed i
 
 ### Coasters
 
-None of the eleven saves holds a coaster: every Coasters block is the empty boundary (count 0, globals 0, 0, 1, 16 bytes), so no train and no car, and none of them has a track ride or flying ride (the TrackRides block is the 44 bytes and the FlyingRides block the 452 bytes of Easymode's empty ones in all eleven). The coaster saves SAVE-920 and SAVE-921 (SAVE-923 is retired) wait for are therefore still missing: a save made after building a coaster (stations, track and train) is needed.
+None of the eleven saves holds a coaster: every Coasters block is the empty boundary (count 0, globals 0, 0, 1, 16 bytes), so no train and no car, and none of them has a track ride or flying ride (the TrackRides block is the 44 bytes and the FlyingRides block the 452 bytes of Easymode's empty ones in all eleven). The coaster save SAVE-921 waits for is therefore still missing: a save made after building a coaster (stations, track and train) is needed.
 
 ### The restart saves
 

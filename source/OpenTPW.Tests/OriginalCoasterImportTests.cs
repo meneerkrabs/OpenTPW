@@ -451,8 +451,10 @@ public class OriginalCoasterImportTests
 		StringAssert.Contains( lostLines[0], "1 of its 3 riders sit on no car list" );
 		// a listed guest the import did not seat, or a ride whose run state was not imported, drops the train's lists and the park still loads
 		var (strayPlan, strayLines) = OriginalCoasterImport.CheckRiders( plan, new[] { 501 }, true, "coaster" );
-		Assert.IsTrue( strayLines.Any( line => line.Contains( "lists are dropped" ) ) );
-		Assert.IsTrue( strayPlan.Trains.All( train => train.Lap == null && train.Boarding == null ) );
+		Assert.IsTrue( strayLines.Any( line => line.Contains( "entries are dropped" ) ) );
+		// only the stray entry (guest 502) goes; guest 501 stays on its list
+		var kept = strayPlan.Trains.SelectMany( train => (train.Lap ?? Array.Empty<IReadOnlyList<int>>()).Concat( train.Boarding ?? Array.Empty<IReadOnlyList<int>>() ) ).SelectMany( list => list ).ToList();
+		CollectionAssert.AreEqual( new[] { 501 }, kept );
 		var (_, notImported) = OriginalCoasterImport.CheckRiders( plan, Array.Empty<int>(), false, "coaster" );
 		StringAssert.Contains( notImported[0], "run state was not imported" );
 	}

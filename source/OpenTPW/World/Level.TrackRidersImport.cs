@@ -10,7 +10,11 @@ public partial class Level
 	{
 		if ( resumeState != null || Park?.Import is not { } import || OriginalPark?.Save is not { } save || GameEditions.IsThemeParkInc )
 			return;
-		foreach ( var line in ApplyOriginalTrackRiders( save.TrackRides ).Concat( DropRidersWithoutCarrier( save.Attractions ) ) )
+		var lines = ApplyOriginalTrackRiders( save.TrackRides ).Concat( DropRidersWithoutCarrier() ).ToList();
+		// a guard chasing or escorting a rider who was just put off has no guest left: it is imported idle, as for a guest the import dropped at once
+		if ( Guests != null && Park != null )
+			lines.AddRange( OriginalEconomyImport.IdleEscortsWithoutARestoredGuest( Park.Economy, id => Guests.Find( id ) != null ) );
+		foreach ( var line in lines )
 		{
 			import.Report( line );
 			Log.Trace( $"Park track import: {line}" );
@@ -26,7 +30,7 @@ public partial class Level
 	/// Coasters keep their riders: their trains restore, and the original keeps a rider of no car list aboard too.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00501A08 state 16 update] the original's rider does nothing in state 16 on its own: the ride's script and its vehicles let it off, so a rider of a carrier that is not restored would stay aboard for good
-	internal IReadOnlyList<string> DropRidersWithoutCarrier( IReadOnlyList<SaveAttraction> attractions )
+	internal IReadOnlyList<string> DropRidersWithoutCarrier()
 	{
 		var lines = new List<string>();
 		if ( Guests == null )
@@ -36,10 +40,9 @@ public partial class Level
 			var bridge = item.Visitors!;
 			if ( bridge.Riders.Count == 0 || item.Runtime.Coaster != null )
 				continue;
-			var saved = attractions.FirstOrDefault( attraction => attraction.Id == item.ThingId );
 			var reason = bridge.RidersRefusal
 				?? (item.Runtime.UsesTour ? "its tour cars are not imported"
-				: saved is { TrackRideHandle: not 0 } && restoredVehicleRides?.Contains( item ) != true ? "its track ride's vehicles were not imported" : null);
+				: item.Runtime.Bump is { Template.IsBumper: false } && restoredVehicleRides?.Contains( item ) != true ? "its track ride's vehicles were not imported" : null);
 			if ( reason == null )
 				continue;
 			var dropped = Guests.DropImportedRiders( bridge );

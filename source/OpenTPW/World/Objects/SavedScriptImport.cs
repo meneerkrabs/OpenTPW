@@ -87,11 +87,17 @@ public static class SavedScriptImport
 			StageRiderTables( vm, record, owner.Visitors, clockWord, notes );
 		else if ( record.WalkEntries.Any( entry => !entry.IsFree ) || record.BounceEntries.Any( entry => !entry.IsFree ) || record.HeadSlots.Any( slot => slot != 0 ) )
 			notes.Add( $"[APPROX:DET-013] script {record.ScriptId} is a child script and holds rider tables: they are not kept (the object has one set of them, its root's)." );
-		// [BIN:TPW-EXE:0x00552CD3 TRIGWAITANIM compare] the token is cleared only when a channel of the object shows AnimID + 1 (0x00552D08..0x00552D11, jump 0x005535D6): a script saved inside the wait whose channel was not restored would rewind its instruction for good, so the token goes and the instruction triggers again
-		if ( vm.TriggerWaitToken != 0 && owner.Runtime is { } scene && !Enumerable.Range( 0, 16 ).Any( channel => scene.Animator.GetAnimationId( channel ) + 1 == vm.TriggerWaitToken ) )
+		// [BIN:TPW-EXE:0x00552CD3 TRIGWAITANIM compare] a saved non-zero token means the instruction's channel did not show the triggered AnimID when the game was saved (a deferred clip, or a clip without a member): tp.exe goes on waiting on that channel after the load, so the token is kept. Only when the object's saved scene could not give that channel back (a gap reported for it, or no scene record or no object at all) would the compare rewind for good; the token then goes and the instruction triggers again
+		if ( vm.TriggerWaitToken != 0 && vm.ProgramCounter < vm.Script.Instructions.Count && vm.Script.Instructions[vm.ProgramCounter] is var waiting && (waiting.Opcode == (ushort)Opcode.TRIGWAITANIM || waiting.Opcode == (ushort)Opcode.TRIGWAITANIM_CH) )
 		{
-			vm.TriggerWaitToken = 0;
-			notes.Add( $"[APPROX:DET-013] script {record.ScriptId} was saved inside a TRIGWAITANIM whose animation channel was not restored; the instruction triggers its animation again." );
+			var channel = 0;
+			if ( waiting.Opcode == (ushort)Opcode.TRIGWAITANIM_CH && waiting.Operands.Count > 3 )
+				channel = waiting.Operands[3].Kind == RideScriptOperandKind.Variable ? vm.Variables[waiting.Operands[3].Value] : (short)waiting.Operands[3].Value;
+			if ( owner.Runtime is not { } scene || !scene.SavedSceneRestored || scene.SavedChannelGaps.Contains( channel ) )
+			{
+				vm.TriggerWaitToken = 0;
+				notes.Add( $"[APPROX:DET-013] script {record.ScriptId} was saved inside a TRIGWAITANIM whose animation channel {channel} was not restored; the instruction triggers its animation again." );
+			}
 		}
 		if ( owner.Runtime != null )
 			foreach ( var gap in owner.Runtime.RestoreSavedObjects( record ) )

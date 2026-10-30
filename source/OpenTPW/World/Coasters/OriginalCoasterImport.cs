@@ -244,26 +244,31 @@ internal static class OriginalCoasterImport
 		ArgumentNullException.ThrowIfNull( aboard );
 		var lines = new List<string>();
 		var listed = new HashSet<int>();
+		var seated = runStateImported ? aboard : Array.Empty<int>();
 		var trains = new List<CoasterRide.OriginalTrain>( plan.Trains.Count );
 		for ( var train = 0; train < plan.Trains.Count; train++ )
 		{
 			var saved = plan.Trains[train];
-			var guests = (saved.Lap ?? Array.Empty<IReadOnlyList<int>>()).Concat( saved.Boarding ?? Array.Empty<IReadOnlyList<int>>() ).SelectMany( list => list ).ToList();
-			if ( guests.Count > 0 && (!runStateImported || guests.Any( guest => !aboard.Contains( guest ) )) )
+			var stray = 0;
+			IReadOnlyList<IReadOnlyList<int>>? Keep( IReadOnlyList<IReadOnlyList<int>>? lists ) => lists?.Select( list =>
 			{
+				var kept = list.Where( guest => seated.Contains( guest ) ).ToList();
+				stray += list.Count - kept.Count;
+				foreach ( var guest in kept )
+					listed.Add( guest );
+				return (IReadOnlyList<int>)kept;
+			} ).ToList();
+			var lap = Keep( saved.Lap );
+			var boarding = Keep( saved.Boarding );
+			if ( stray > 0 )
 				lines.Add( runStateImported
-					? $"{what}: train {train} seats {guests.Count} guests, some of whom are no rider of the ride (not imported or not in state 16 on it); its car lists are dropped (SAVE-002)."
-					: $"{what}: the ride's script run state was not imported, so train {train}'s {guests.Count} listed guests are not riders; its car lists are dropped (SAVE-002)." );
-				trains.Add( saved with { Lap = null, Boarding = null } );
-				continue;
-			}
-			foreach ( var guest in guests )
-				listed.Add( guest );
-			trains.Add( saved );
+					? $"{what}: train {train} lists {stray} guests who are no rider of the ride (not imported or not in state 16 on it); those entries are dropped from its car lists and the riders left keep their order (SAVE-002)."
+					: $"{what}: the ride's script run state was not imported, so train {train}'s {stray} listed guests are not riders; its car lists are dropped (SAVE-002)." );
+			trains.Add( saved with { Lap = lap, Boarding = boarding } );
 		}
 		var lost = aboard.Count( guest => !listed.Contains( guest ) );
 		if ( lost > 0 )
-			lines.Add( $"{what}: {lost} of its {aboard.Count} riders sit on no car list (the admission and leaving rings are not saved); they stay aboard and nobody lets them off, as in the original." );
+			lines.Add( $"{what}: {lost} of its {aboard.Count} riders sit on no car list (the admission and leaving rings are not saved); they stay aboard and nobody lets them off." );
 		return (plan with { Trains = trains }, lines);
 	}
 

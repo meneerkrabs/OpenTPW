@@ -95,4 +95,35 @@ public partial class TrackAddOnLevelTests
 		StringAssert.Contains( lines, "its ride chunk was not applied" );
 		Assert.AreEqual( 0, targetRide.Runtime.Bump.VehicleCount );
 	}
+
+	// [BIN:TPW-EXE:0x00501A08 state 16 update] a rider of a kart ride whose vehicles were refused has nothing that would let it off: the guests are put off the ride and the report says so
+	[TestMethod]
+	public void RidersOfAKartRideWhoseVehiclesWereRefusedArePutOffTheRide()
+	{
+		var (cells, block, handle, _) = SavedRace();
+		var (target, targetRide, _) = World( laid: false );
+		targetRide.ThingId = RideThing;
+		var lines = target.ApplyOriginalTracks( cells, ( _, _ ) => 0, block, null, new[] { RideThingOf( handle ) } ).ToList();
+		var bridge = targetRide.Visitors;
+		bridge.SavedRunStateImported = true;
+		SaveGuest Rider( int id ) => SaveGuest.Read( Payload( SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields { Position = (3 * 256 + 128, 3 * 256 + 128), State = 16, MajorDest = (ushort)RideThing } ) ), new SaveThing( id, SaveThingModel.Guest, 0, 0, 8, SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields() ).Length ) );
+		// guests 41, 43 and 44 are riders of the ride; guest 42, whom a kart carries, was not imported, so the vehicles are refused
+		target.Guests!.Register( bridge );
+		var imported = target.Guests.ImportOriginal( new[] { Rider( 41 ), Rider( 43 ), Rider( 44 ) }, 1000, thing => thing == RideThing ? bridge.AttractionId : 0, _ => 0, 3, new[] { SaveAttraction.Read( SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields() ), 0, RideThing ) } );
+		Assert.AreEqual( 3, bridge.Riders.Count, string.Join( "\n", imported ) );
+		lines.AddRange( target.ApplyOriginalTrackRiders( block ) );
+		lines.AddRange( target.DropRidersWithoutCarrier() );
+		StringAssert.Contains( string.Join( "\n", lines ), "put off the ride" );
+		Assert.AreEqual( 0, bridge.Riders.Count );
+		Assert.IsNull( target.Guests.Find( 41 ) );
+		var validation = target.Guests.ValidateSnapshot( target.Guests.CaptureSnapshot() );
+		Assert.IsTrue( validation.IsValid, string.Join( "; ", validation.Errors ) );
+	}
+
+	private static byte[] Payload( byte[] body )
+	{
+		var payload = new byte[8 + body.Length];
+		body.CopyTo( payload, 8 );
+		return payload;
+	}
 }

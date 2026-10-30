@@ -602,7 +602,7 @@ public class SavedScriptGraphImportTests
 	[DataTestMethod]
 	[DataRow( false )]
 	[DataRow( true )]
-	public void WaitAnimResumesAndTriggerWaitAnimDropsItsSavedTokenWhenNoChannelShowsTheAnimation( bool trigger )
+	public void WaitAnimResumesAndTriggerWaitAnimDropsItsSavedTokenWhenItsChannelWasNotRestored( bool trigger )
 	{
 		using var f = new Fixture();
 		var asm = new Asm();
@@ -623,7 +623,7 @@ public class SavedScriptGraphImportTests
 		if ( trigger )
 		{
 			Assert.AreEqual( 0, vm.CaptureSnapshot().TriggerWaitToken );
-			StringAssert.Contains( string.Join( "; ", report ), "TRIGWAITANIM whose animation channel was not restored" );
+			StringAssert.Contains( string.Join( "; ", report ), "TRIGWAITANIM whose animation channel 0 was not restored" );
 		}
 		Assert.AreEqual( 0L, vm.ExecutedInstructions );
 	}

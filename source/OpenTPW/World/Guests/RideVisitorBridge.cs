@@ -1927,7 +1927,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				// [BIN:TPW-EXE:0x00555753 BOUNCE deadline] the deadline is the clock plus the second operand x 1000 ms (a wrapping 32-bit product), whatever its value: a duration of 0 is a deadline that has already passed. The four shipped scripts pass VAR_DURATION, which ride init sets above 0 (WalkNodeCorpusTests)
 				var seconds = call.Argument( 1 );
 				// [BIN:TPW-EXE:0x00555780 BOUNCE result] the flag word takes 1 when an entry was free and 0 with a full table
-				// [APPROX:DET-013] OpenTPW's host takes a bounce only for a rider that is not bouncing yet: tp.exe's BOUNCE (0x00555674..0x0055577C) takes the first free entry for any guest and tests neither (a script that bounces a guest twice, or a guest who is not aboard, is not modelled)
+				// [APPROX:TOUR-011] OpenTPW's host takes a bounce only for a rider that is not bouncing yet: tp.exe's BOUNCE (0x00555674..0x0055577C) takes the first free entry for any guest and tests neither (a script that bounces a guest twice, or a guest who is not aboard, is not modelled)
 				if ( onRide.Contains( guest ) && !bouncing.Any( entry => entry.Guest == guest ) )
 					result = TakeBounceSlot( bouncing, call.VM.Script.BounceSize, guest, now + seconds * 1000.0, now ) ? 1 : 0;
 				if ( result == 1 )

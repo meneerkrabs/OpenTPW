@@ -1069,6 +1069,9 @@ TPW writer shapes (12-byte framing included in total):
 | 4 | 16 | 28 | handle, tile/type word, two coordinates |
 | 5 | 196 | 208 | handle, raw 0xac record, two fallback tile coordinates, waypoint owner handle and two waypoint coordinates |
 | 6 | 4 | 16 | ride handle requesting reference selection, not a section index |
+| 7 | 8 | 20 | ride handle, guest of the ride's leaving list (`0x54ABD0`, ride +0xC8) |
+| 8 | 8 | 20 | ride handle, guest of the ride's joining list (`0x54AA80`, ride +0xC4) |
+| 9 | 12 | 24 | ride handle, guest riding the ride's last vehicle, its seat number (the head dummy number; node +0xC) |
 
 Evidence: writer `0x542b05..0x542bda`, `0x542ccb..0x542d06`, `0x542e3b..0x542f6c`, `0x54335b..0x5433b5`;
 reader dispatch `0x544124`. The reader requires these exact typed sizes as a **managed strict writer-shape policy**.
@@ -1077,10 +1080,11 @@ Other chunk types retain their opaque bytes; Theme Park Inc has not been verifie
 
 The 0xd0 ride size is an **in-memory stride**, not chunk 3's serialized width. Chunk 5's raw records come from the
 0x877b68 pool, in pool order, not circuit order. Their raw pointer-looking fields are not followed. Raw +0x34/+0x38
-locate a tile; trailing coordinates provide a fallback. The trailing waypoint key is resolved natively against an
+are the vehicle's place (section units); the trailing coordinates are the place of its collision object, the fallback of
+the object search. The trailing waypoint key is resolved natively against an
 owner ride's separate +0xa8 chain by waypoint +8/+c coordinates (`0x543df6..0x543e48`): first match supplies +4,
 no match stores 0, and absent owner stores -1. The structural reader leaves every nonzero-owner key **unresolved**,
-even if a matching ride header exists. Duplicate raw positions are legitimate structural data, not duplicate waypoint identities.
+even if a matching ride header exists; the import resolves it against the walked circuit (below). Duplicate raw positions are legitimate structural data, not duplicate waypoint identities.
 
 Chunk 3's `0x545890` creates station/grid waypoints; chunk 4's `0x54b2f0` appends derived waypoints
 (`0x54bae5..0x54bb49`). These are distinct 0x1c records at 0x877b78, not the raw 0xac records.
@@ -1094,11 +1098,31 @@ of malformed chains and the vehicles' runtime restore remain future work; the st
 The loader `0x543560` reads chunk 2 (the build stamp: the time `15:25:02` and date `Mar 17 2000` strings, 32 bytes with the header), then per chunk: 3 builds the ride's
 controller through `0x545890` (the handle, the station cell `+0xB4`/`+0xB8`, the orientation `+0xB0`, then the words `+0x10`, `+0x1C` (performance), `+0x14`, `+0x18`, the duration `+4` ("Set Ride Duration to %d") and the
 phase `+0x50`; the handle the constructor gives must equal the saved one), 4 hands each section's type word and corner to the section builder `0x54B2F0` (which rebuilds the buoy and waypoint chain), 5 reads a vehicle (the 0xAC-byte
-record, not a controller record: its `+0x34`/`+0x38` place a vehicle on its tile, `+0x7C` is its aimed waypoint), 6 selects the reference waypoint (the first flag-4 buoy, then the next that is not flag 2: the open routine
-`0x544840`'s choice), 7 and 8 add guests to the ride's leaving and pending lists (`0x54ABD0`, `0x54AA80`) and 9 links riders' heads. The track itself is the structure layer of the World block: the 31-byte track cells (the base
+record, not a controller record: its `+0x34`/`+0x38` are the vehicle's place and `+0x7C` its aimed waypoint), 6 selects the reference waypoint (the first flag-4 buoy, then the next that is not flag 2: the open routine
+`0x544840`'s choice), 7 and 8 add guests to the ride's leaving and joining lists (`0x54ABD0`, `0x54AA80`) and 9 links a vehicle's riders and their head dummies (no head is hung). The track itself is the structure layer of the World block: the 31-byte track cells (the base
 `0x4D0B30` and the segment word `0x50C200`: `SaveCell.StructureMask`, `StructureTile`, `StructureSegment`), the kart tiles (type 11, station 13), the water tiles (16, station 18) and their type-12 extension cells; type 25 (`0x19`) is a hoarding post.
 
-The import writes the saved track cells (the ride of a tile is the one whose station reaches it through the masks), walks each ride's circuit from them (`WalkTrack`), compares it with chunk 4's section list and applies chunk 3's laps,
-performance and phase. What is not imported (vehicles, riders and the pending and leaving lists; the words `+0x10`/`+0x14`/`+0x18`; a racing or over phase of a kart or bumper ride) is reported. No save of the corpus or Easymode holds
-a ride or a track cell, so the import is tested against the saver's shapes and OpenTPW's own tracks (`TrackAddOnLevelTests.OriginalImport`) and not against a real Theme Park World track.
+The import writes the saved track cells (the ride of a tile is the one whose station reaches it through the masks), walks each ride's circuit from them (`WalkTrack`), compares it with chunk 4's section list and applies chunk 3's
+words: the laps, the performance, the model words `+0x14` and `+0x18` (the loader stores them raw after the constructor copied the template's: a new vehicle's variant is its count modulo `+0x18` plus `+0x14`, `0x549DB0`; the
+controller holds them per ride when they differ from the template's, a saved optional field) and the word `+0x10` (the ride's thing id, which the import compares). The phase is read raw by the loader and nothing restarts it.
+
+**Vehicles, riders and lists (`Level.ImportOriginalTrackRiders`, `BumpController.ImportOriginalVehicles`).** They come after the guest import, as the guests in state 16 that name the ride are the riders every chunk 5, 7, 8 and 9 names
+(a guest that is not a rider of the ride refuses the ride's vehicles with its reason). tp.exe's loader (`0x543B3C..0x543F24`) takes, for each chunk 5 whose handle names a ride, the first free record of the vehicle pool (256 records of
+0xAC bytes, `0x549B50`: the vehicles of the file take the first free records in the file's order), reads the 0xAC bytes raw (a short chunk is zero-filled), links it to the ride (`+0x9C`, ride `+0xCC`, count `+0x5C`), zeroes the rider list
+(`+0x30`), the word `+0x94` and a NaN height (`+0xA0`), finds its collision object (`+0x98`) as the first used object of the module pool that is not a keep-out circle and holds its place (`+0x34`, `+0x38`; `0x5493F0`) or else the fallback place
+the chunk adds, binds its model instances again (`0x463AB0`), makes it the ride's first vehicle for flag `0x400000`, resolves the waypoint key (owner handle and the corner of the waypoint) against the ride's chain (the first node with that
+corner gives `+0x7C`; owner 0 gives -1, no match 0) and zeroes the buoy countdown (`+0x8C`) of a chasing car (flag 4). The record's words: flags `+0x00`, variant `+0x04`, mesh `+0x08`, wake or shadow mesh `+0x0C`, animation `+0x10`,
+effect request `+0x14` and latch `+0x18`, engine voice `+0x20`, break-smoke emitter `+0x2C` (-1 for none), riders `+0x30`, place `+0x34`/`+0x38`, velocity `+0x3C`/`+0x40`, the velocity after damping `+0x44`/`+0x48`, speed `+0x4C`,
+heading `+0x50`, drawn heading `+0x54`, a boat's wall spin `+0x58` and its roll or a car's yaw rate `+0x5C`, yaw change `+0x60`, radius `+0x64`, thrust bias `+0x68`, aim `+0x6C`/`+0x70`, jitter `+0x74`/`+0x78`, aimed waypoint `+0x7C`,
+chase target `+0x80` (a pool slot, kept as saved although the slots of the loaded vehicles are the first free ones), laps `+0x88`, buoy countdown `+0x8C`, age `+0x90`, object `+0x98`, ride `+0x9C`, height `+0xA0` (float),
+wall hits `+0xA4` and window `+0xA8`; the words `+0x1C`, `+0x24`, `+0x28` and `+0x84` are read by no code of the bump module (`+0x24` and `+0x28` are the sparks and horn node numbers the model gives). Chunk 9 pushes a node
+{guest, ride, head dummy of the saved number (`0x44B220`), number} on the head of the ride's last vehicle's list and counts it in the ride (`+0x60`); chunk 7 puts a guest on the head of the ride's leaving list and chunk 8 on its joining
+list (refused for a ride in phase 0 and, as chunk 7, when the shared peep list of 1024 nodes is empty; chunk 9 takes its node without looking). The saver writes each list from its head and the loader pushes every node on the head again, so
+the riders of a vehicle and both lists come back in the opposite order (a second save and load restores it); each rider keeps its seat number (`BumpVehicle.SeatNumbers`, the head dummy the renderer hangs its head on). Chunk 6 selects the
+reference waypoint (`ride +0xA4`) exactly as the open routine `0x544840` does and as the walk already did. **The loader draws nothing from the world generator for any of it:** it neither launches a vehicle (`0x54A040`) nor hangs a head
+(`0x44B410`, which `0x549C60` calls at creation and load only). A ride whose chunks do not read like the saver's, whose vehicle stands in no collision object (the module tick `0x546C80` reads the object unchecked), that aims at another
+ride's waypoint or names a guest that is not a rider of it is refused with its reason and keeps no vehicle; a kart or bumper ride saved racing or over then waits in loading. What is still not imported (TRACK-032): the flag bits of the track
+cells above 0x1F, the mesh-instance words of cells and vehicles and the voice and emitter handles of a vehicle (a boat's voice and a smoking car's emitter start again, as after a park resume). No save of the corpus or Easymode holds a ride
+or a track cell, so the import is tested against the saver's shapes and OpenTPW's own tracks (`TrackAddOnLevelTests.OriginalImport`, `TrackAddOnLevelTests.OriginalVehicles`, `OriginalTrackVehiclesTests`) and not against a real Theme Park
+World track.
 

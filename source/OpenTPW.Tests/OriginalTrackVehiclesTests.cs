@@ -371,6 +371,18 @@ public class OriginalTrackVehiclesTests
 	}
 
 	[TestMethod]
+	public void TheLevelPlacesTheVehiclesAfterTheGuestImportAndTheReconcile()
+	{
+		var root = System.IO.Directory.GetCurrentDirectory();
+		while ( root != null && !System.IO.File.Exists( System.IO.Path.Combine( root, "source/OpenTPW/World/Level.cs" ) ) )
+			root = System.IO.Path.GetDirectoryName( root );
+		Assert.IsNotNull( root, "the repository root" );
+		var level = System.IO.File.ReadAllText( System.IO.Path.Combine( root, "source/OpenTPW/World/Level.cs" ) );
+		// whatever the line ends: the riders the vehicles carry are the guests of state 16 the guest import restored
+		StringAssert.Matches( level, new System.Text.RegularExpressions.Regex( @"ImportOriginalGuests\(\);\s*ReconcileOriginalAdmissions\(\);(\s*//[^\r\n]*)*\s*ImportOriginalTrackRiders\(\);" ) );
+	}
+
+	[TestMethod]
 	public void SeatNumbersAndModelWordsSurviveAParkResumeSaveAndAnOldSaveLoadsWithoutThem()
 	{
 		var source = Ride( -4, out var handle ).Controller;

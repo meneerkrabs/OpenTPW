@@ -28,7 +28,7 @@ public partial class Level
 		var read = OriginalTrackVehicles.Read( block );
 		if ( read.Problem != null )
 		{
-			lines.Add( $"Track ride vehicles not restored: the TrackRides block does not lay out its chunks as the saver does ({read.Problem})." );
+			lines.Add( $"[APPROX:TRACK-032] Track ride vehicles not restored: the TrackRides block does not lay out its chunks as the saver does ({read.Problem})." );
 			return lines;
 		}
 		var made = new List<BumpController>();
@@ -40,7 +40,7 @@ public partial class Level
 			if ( match.Item == null )
 			{
 				if ( any )
-					lines.Add( $"Track ride vehicles not restored for {what}: its ride chunk was not applied." );
+					lines.Add( $"[APPROX:TRACK-032] Track ride vehicles not restored for {what}: its ride chunk was not applied." );
 				continue;
 			}
 			made.Add( match.Bump );
@@ -48,7 +48,7 @@ public partial class Level
 			var stray = ride.Guests.Where( guest => !bridge.Riders.Contains( guest ) ).Distinct().Order().ToList();
 			if ( stray.Count > 0 )
 			{
-				lines.Add( $"Track ride vehicles not restored for {what}: its vehicles and lists name guests who are not riders of it ({string.Join( ", ", stray )})." );
+				lines.Add( $"[APPROX:TRACK-032] Track ride vehicles not restored for {what}: its vehicles and lists name guests who are not riders of it ({string.Join( ", ", stray )})." );
 				continue;
 			}
 			// the loader makes the rides in the file's order: a vehicle finds its collision object among the objects of the rides made so far
@@ -56,9 +56,11 @@ public partial class Level
 			var refusal = match.Bump.ImportOriginalVehicles( ride, item => item.Owner is { } owner && visible.Contains( owner ), out var result );
 			if ( refusal != null )
 			{
-				lines.Add( $"Track ride vehicles not restored for {what}: {refusal}." );
+				lines.Add( $"[APPROX:TRACK-032] Track ride vehicles not restored for {what}: {refusal}." );
 				continue;
 			}
+			// the engine voices and break-smoke emitters of the vehicles the save brought start again, as after a park resume (presentation: nothing is drawn from the generator)
+			match.Item.Runtime.ResumeBumpEffects();
 			if ( !any )
 				continue;
 			var parts = new List<string> { $"{result!.Vehicles} vehicles with {result.Riders} riders, {result.Joining} joining and {result.Leaving} leaving guests, phase {match.Bump.Phase}" };

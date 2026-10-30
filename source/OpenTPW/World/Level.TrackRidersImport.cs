@@ -34,7 +34,7 @@ public partial class Level
 		var made = new List<BumpController>();
 		foreach ( var ride in read.Rides )
 		{
-			var match = importedTrackRides.FirstOrDefault( item => item.Ride.Identity.Value == ride.Header.Identity.Value );
+			var match = importedTrackRides?.FirstOrDefault( item => item.Ride.Identity.Value == ride.Header.Identity.Value ) ?? default;
 			var what = match.Item != null ? $"attraction thing {match.Item.ThingId}" : $"ride {ride.Header.Identity.Value:X8}";
 			var any = ride.Vehicles.Count > 0 || ride.Joining.Count > 0 || ride.Leaving.Count > 0 || ride.DroppedJoining > 0 || ride.DroppedNodes > 0;
 			if ( match.Item == null )

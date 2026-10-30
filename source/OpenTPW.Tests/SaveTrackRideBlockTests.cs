@@ -121,12 +121,23 @@ public class SaveTrackRideBlockTests
 	[TestMethod]
 	public void StrictTypedSizesRejectShortAndLongShapes()
 	{
-		foreach ( var (type, length) in new[] { (3u, 40), (4u, 16), (5u, 196), (6u, 4) } )
+		foreach ( var (type, length) in new[] { (3u, 40), (4u, 16), (5u, 196), (6u, 4), (7u, 8), (8u, 8), (9u, 12) } )
 			foreach ( var delta in new[] { -1, 1 } )
 				Assert.ThrowsException<InvalidDataException>( () => SaveTrackRideBlock.ParseContainer( Container( Chunk( type, new byte[length + delta] ) ) ) );
 		// Native ride stride is not chunk 3's wire size; raw172 is not the whole chunk5 payload.
 		Assert.ThrowsException<InvalidDataException>( () => SaveTrackRideBlock.ParseContainer( Container( Chunk( 3, new byte[208] ) ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => SaveTrackRideBlock.ParseContainer( Container( Chunk( 5, new byte[172] ) ) ) );
+	}
+
+	[TestMethod]
+	public void RiderAndListChunksCarryTheirRideTheGuestAndTheSeat()
+	{
+		var chunks = SaveTrackRideBlock.ParseContainer( Container( Chunk( 7, Words( Ride, 61 ) ), Chunk( 8, Words( Ride, 51 ) ), Chunk( 9, Words( Ride, 41, 2 ) ) ) ).Chunks;
+		Assert.AreEqual( new SaveTrackPeepLink( new( Ride ), 61 ), chunks[0].Leaving );
+		Assert.AreEqual( new SaveTrackPeepLink( new( Ride ), 51 ), chunks[1].Joining );
+		Assert.AreEqual( new SaveTrackSeatLink( new( Ride ), 41, 2 ), chunks[2].Seat );
+		Assert.IsNull( chunks[0].Joining );
+		Assert.IsNull( chunks[2].Leaving );
 	}
 
 	[TestMethod]

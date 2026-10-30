@@ -661,7 +661,8 @@ public sealed class ParkObjects
 	/// Imported objects are opened (the saved open word is not imported, SAVE-006). Each object takes the hoarding state, node states and animation channels of its RideSystem record (<see cref="OriginalObjectRuntime.RestoreSavedScene"/>); what could not be restored is listed in <see cref="SavedSceneGaps"/>.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object is not built: its open word comes from the save in the original (mCanLoad), which this port does not import and opens every imported object instead
-	// [APPROX:SAVE-006] an imported object's saved open word, its sign lines other than the park gate's (0x75B5EC) and its raw links are not taken from the save: the placement and the queue rebuild them (the staff claims, 0x004E01F0, are imported as saved)
+	// [APPROX:SAVE-006] an imported object's saved open word and its sign lines other than the park gate's (0x75B5EC) are not taken from the save (the staff claims, 0x004E01F0, are imported as saved)
+	// [EXT:original-engine-state-dumps] its raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent, balloon sprite) are not taken from the save either: the placement and the queue rebuild them in OpenTPW's own engines (user-approved 2026-10-16)
 	public int ImportOriginal( OriginalParkImport save ) => ImportOriginalSteps( save ).LastOrDefault().Placed;
 
 	private readonly List<string> savedSceneGaps = new();

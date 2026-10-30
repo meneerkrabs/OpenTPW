@@ -355,7 +355,7 @@ internal sealed partial class GameFlow : IDisposable
 			StartLevel( "jungle", original: false, developerPanels: false, overFrames: overFrames, ready: level => level.LoadSandbox() );
 		else
 			// [EXT:no-player-profiles] a loaded shipped park is the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen, a design choice: OpenTPW has no player profiles to hold the mode ([EXT:lobby-load])
-			// [APPROX:UI-041] a loaded park takes no game type from the park: the original derives GameType from flag bits 0x2000000/0x1000000 of 0x7a1a8c (0x550ca0), set by a front-end toggle (0x4bbf63) — evidence needed: whether a park file of the PC build can carry the game type
+			// a loaded park takes no game type from the park; the original's comes from the player's front-end choice, which OpenTPW does not keep ([EXT:no-player-profiles]; UI-041 converted 2026-10-30, user-approved 2026-10-18)
 			StartLevel( entry.Level, original: true, developerPanels: false, overFrames: overFrames );
 	}
 

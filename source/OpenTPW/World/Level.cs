@@ -165,7 +165,8 @@ public partial class Level : IDisposable
 	/// Renames the park (the ticket price window's rename dialog): stores the two lines and redraws the gate sign. False for
 	/// a read-only visit, a level without a park name, or lines a save could not hold (<see cref="ParkNameLines.IsValid"/>).
 	/// </summary>
-	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0), but the handler's other effects are not built: the setters 0x4E2950/0x4E2A50 also copy the lines to the online park record (0x409410, 0x5B0940/0x5B0970: wide characters into +0x34 and +0x76 of the 0x50-byte record DAT_00F7C58C with its dirty byte +0xB8, unless the GameType word is 1), and the secret name's 0x4053C0(1) (built below: the cheat mode, docs/CHEATS.md) also posts a message of type 0x15 (0x40FB10), which is not; gate lines of a user-supplied original save are imported by SavedGateName from SaveAttraction.NameLine1/2 when valid (the shipped Easymode seed keeps the default lines); exact original-save import equivalence still needs corpus evidence — evidence needed: what the listeners of message type 0x15 do (runtime subscriptions of the message centre 0x788D3C)
+	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0), but the handler's other effects are not built: the secret name's 0x4053C0(1) (built below: the cheat mode, docs/CHEATS.md) also posts a message of type 0x15 (0x40FB10), which is not; gate lines of a user-supplied original save are imported by SavedGateName from SaveAttraction.NameLine1/2 when valid (the shipped Easymode seed keeps the default lines); exact original-save import equivalence still needs corpus evidence — evidence needed: what the listeners of message type 0x15 do (runtime subscriptions of the message centre 0x788D3C)
+	// [EXT:online-park-record-copy] the setters 0x4E2950/0x4E2A50 also copy the lines to the original's online park record (0x409410, 0x5B0940/0x5B0970: wide characters into +0x34 and +0x76 of the 0x50-byte record DAT_00F7C58C with its dirty byte +0xB8, unless the GameType word is 1); OpenTPW's online extension keeps its own park records on the server and publishes the name from the park, so the copy is not made (user-approved 2026-10-30)
 	public bool RenamePark( string line1, string line2 )
 	{
 		if ( IsReadOnlyVisit || ParkName == null || line1 == null || line2 == null )
@@ -1390,6 +1391,7 @@ public partial class Level : IDisposable
 		// [EXT:point-lights] the lights of the objects that have any, for every draw of this frame
 		var viewProjection = Camera.ViewMatrix * Camera.ProjMatrix;
 		PointLights?.Gather( viewProjection );
+		OriginalTerrain?.PrepareRender();
 		var snapshot = WeatherAfterParticles( Entity.All.ToArray() );
 		var before = lateBefore ??= new List<Entity>();
 		var after = lateAfter ??= new List<Entity>();

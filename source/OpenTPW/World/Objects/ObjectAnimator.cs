@@ -322,7 +322,7 @@ public sealed class ObjectAnimator
 	/// </summary>
 	// [BIN:TPW-EXE:0x00470C90 texture-frame track write] per clip update, for each track entry (slot word, key count word, key array: time in the low word, frame in the high word) it scans the keys from the last backwards for the first whose time is <= the clip time and, when its frame differs from the slot record's frame (model+0x50 + slot*8, frame at +2), stores it and sets dirty bit 0x04 of byte +1; a clip time before the first key writes nothing, so the slot keeps its previous frame; tracks run in array order, so a later track of the same slot overwrites an earlier one; no slot or frame range check
 	// [BIN:TPW-EXE:0x472310 texture lifetimes] ordinary set-mode replacement, unbind, replay and held/ended texture lifetimes follow 0x472310/0x472f60; the return-from-list-pass aggregate reset (0x44E3A0 -> 0x4726D0) is ObjectAnimator.ResetToStored, called by OriginalObject.PresentDrawn; the header-flag-4 per-update restore (0x473CDB..0x473D0C) does not reach this class: the ride loader strips the flag (0x461F10), only the TrackMaster loader passes it, and those models are played by the coaster rigs (COAST-033, COAST-034). See docs/reverse/TEXTURE-FRAME-LIFETIME.md. (MD2-900 retired.)
-	// [APPROX:MD2-901] Frame indices outside the slot's frame-name list are ignored (no corpus case among 458 in-range tracks; the one out-of-range track, Pmegacostm slot 12, addresses a slot its base model does not have, which the bind also ignores) — the PC writer 0x470C90 stores whatever slot and frame the track holds (it does not check them against the slot array or the frame names), and the traced consumers (binder 0x57A420, draw reader 0x580530) read the frame pointer array unchecked through 0x575F90, so the original's out-of-range behavior is not safely reproduced
+	// [EXT:original-undefined-reads] (user-approved 2026-10-30; MD2-901 converted) the original reads undefined memory here, OpenTPW's defined behaviour is to ignore: frame indices outside the slot's frame-name list are ignored (no corpus case among 458 in-range tracks; the one out-of-range track, Pmegacostm slot 12, addresses a slot its base model does not have, which the bind also ignores) — the PC writer 0x470C90 stores whatever slot and frame the track holds (it does not check them against the slot array or the frame names), and the traced consumers (binder 0x57A420, draw reader 0x580530) read the frame pointer array unchecked through 0x575F90, so the original's out-of-range behavior is not safely reproduced
 	public int GetTextureFrame( int slot )
 	{
 		if ( (uint)slot >= (uint)frameBySlot.Length )
@@ -1157,7 +1157,7 @@ public sealed class ObjectAnimator
 			foreach ( var track in channel.FrameTracks )
 			{
 				slotAnimated[track.Slot] = true;
-				// Invalid or missing art remains a defensive host extension (MD2-901).
+				// Invalid or missing art remains a defensive host extension ([EXT:original-undefined-reads]).
 				if ( track.FrameAt( channel.Player.Tick ) is { } frame && frame < model.Textures[track.Slot].FrameNames.Count
 					&& (availableFramesBySlot[track.Slot] == null || availableFramesBySlot[track.Slot]![frame]) )
 					sampledFrameBySlot[track.Slot] = frame;

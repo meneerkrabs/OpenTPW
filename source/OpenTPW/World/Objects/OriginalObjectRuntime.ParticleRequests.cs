@@ -66,6 +66,7 @@ public sealed partial class OriginalObjectRuntime
 		if (key < 0)
 		{
 			// [BIN:TPW-EXE:0x556B90 negative key] a negative key (or an object without a model) is the footprint box's middle at the object's base height (0x466B70, as the EVENT sounds use it), and (0, 0, 0) when the object has no box; the direction output is not written, so a type-2 effect would take the dispatcher's unset buffer (0x5573D0 local_c)
+			// [EXT:original-undefined-reads] a type-2 effect with a negative key takes the dispatcher's unset direction buffer in the original (undefined stack memory; the only shipped use is Fantasy's bugstv ADDOBJ effect 16): OpenTPW starts nothing instead of reading undefined memory (user-approved 2026-10-30)
 			if (type == 2) return Refuse(ParticleEventPreparationStatus.UnresolvedKey);
 			if (particleFootprint is not { } footprint) return Refuse(ParticleEventPreparationStatus.NoPlacement);
 			return footprint() is { } box

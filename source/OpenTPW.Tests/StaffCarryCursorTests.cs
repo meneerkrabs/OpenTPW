@@ -61,6 +61,35 @@ public class StaffCarryCursorTests
 		Assert.IsNull( placement.Cursor, "an idle placement ignores the pointer" );
 	}
 
+	[TestMethod]
+	public void CellOnlyCursorUpdatesAndToolReplacementCannotReuseAnOldModelHeight()
+	{
+		var placement = Placement( out var park );
+		var candidate = park.Staff.Candidates.First( item => item.Type == StaffType.Handyman );
+		var field = new ModelHeightfield( 20, 20, 10, 10, 0, 0, Array.Empty<uint>(), new float[21 * 21], new uint[20 * 20] );
+		var elevated = new System.Numerics.Vector3( 4, 5, 19 );
+		Assert.IsTrue( placement.BeginHire( candidate.Id ) );
+		placement.SetCursor( 6.3f, 5.9f, elevated );
+		Assert.AreEqual( 20f, StaffRenderer.DangleAnchor( placement, field )!.Value.Z );
+
+		placement.SetCursor( 6.4f, 5.4f );
+		Assert.IsNull( placement.CursorEnginePoint, "a cell-only refresh must not reuse the previous model hit" );
+		Assert.AreEqual( GuestRenderer.CellToEngine( field, 6.4f, 5.4f, StaffRenderer.DangleLift ), StaffRenderer.DangleAnchor( placement, field ) );
+		placement.Hover( 6, 5 );
+		placement.SetCursor( null, null );
+		Assert.AreEqual( GuestRenderer.CellToEngine( field, 6.5f, 5.5f, StaffRenderer.DangleLift ), StaffRenderer.DangleAnchor( placement, field ), "the existing hover fallback is unchanged" );
+
+		placement.SetCursor( 6.3f, 5.9f, elevated );
+		Assert.IsTrue( placement.BeginHire( candidate.Id ) );
+		Assert.IsNull( placement.CursorEnginePoint, "replacing the tool begins without a stale point" );
+		placement.SetCursor( 6.3f, 5.9f, elevated );
+		placement.Abandon();
+		Assert.IsNull( placement.CursorEnginePoint, "a replacement park drops the old presentation point" );
+		placement.SetCursor( 6.3f, 5.9f, elevated );
+		Assert.IsNull( placement.CursorEnginePoint, "an inactive tool cannot retain a hit" );
+		Assert.IsNull( StaffRenderer.DangleAnchor( placement, field ) );
+	}
+
 	private static byte[] BankBytes( byte blue, params (int Width, int Height)[] sizes )
 	{
 		var palette = new byte[SpriteBankFile.PaletteEntries * 4];

@@ -39,7 +39,8 @@ public static class StaffPlacementRules
 	/// A cell a staff member may be put on: inside the map, owned, of a drop type and under no ride, shop or feature footprint
 	/// (<paramref name="occupied"/>: any placed object or the prototype ride).
 	/// </summary>
-	// [APPROX:GUEST-013] tp.exe's drop 0x46cc40 (and the place click 0x46c8e0, inlined) also refuses a cell whose track record ([0x8023a0] + 0x10ffd8 + 40 × the cell's id word, kind at +8) is of kind 11, 13, 16, 18 or 25, directly or through the parent (+0x10) of a kind 12 or 17 record (0x5363f0, 0x536450, 0x53ad30, 0x53ad60, 0x53ad90; the circuit walk 0x52a970 uses the same kind tests); OpenTPW has no track-record test (its track tiles carry map types the type test refuses), and a park that types its footprint cells (ParkCellMap.WriteFootprint, 0x528A70: 4 and 10 refuse, the entrance's 9 takes a drop) needs no object list, while a world that keeps the cells it was given (a visit, a Theme Park Inc layout) refuses every cell under a placed object or the prototype ride by occupancy — evidence needed: the track records (TRACK-002)
+	// [APPROX:GUEST-013] tp.exe's drop 0x46cc40 (and the place click 0x46c8e0, inlined) also refuses a cell whose track record ([0x8023a0] + 0x10ffd8 + 40 × the cell's id word, kind at +8) is of kind 11, 13, 16, 18 or 25, directly or through the parent (+0x10) of a kind 12 or 17 record (0x5363f0, 0x536450, 0x53ad30, 0x53ad60, 0x53ad90; the circuit walk 0x52a970 uses the same kind tests); OpenTPW has no track-record test (its track tiles carry map types the type test refuses) — evidence needed: the track records (TRACK-002)
+	// [EXT:staff-drop-occupancy-refusal] a park that types its footprint cells (ParkCellMap.WriteFootprint, 0x528A70: 4 and 10 refuse, the entrance's 9 takes a drop) needs no object list, while a world that keeps the cells it was given (a visit, a Theme Park Inc layout) has no such types and refuses every cell under a placed object or the prototype ride by occupancy instead (user-approved 2026-10-18)
 	public static bool IsValidDropCell( ParkCellMap cells, int x, int y, Func<int, int, bool>? occupied )
 	{
 		if ( !cells.InBounds( x, y ) || (cells.FlagsAt( x, y ) & ParkCellFlags.Unowned) != 0 )
@@ -120,6 +121,8 @@ public sealed class StaffPlacement
 	/// </summary>
 	// [BIN:TPW-EXE:0x46c480 tool frame] every frame the tool draws its sprite (0x475480) at the world point under the mouse (0x45d610 → 0x7a1c90: x, y + 5, z), whatever is under the pointer
 	public (float X, float Y)? Cursor { get; private set; }
+	/// <summary>The full terrain-or-model hit in engine space, for the dangling sprite only; never used to decide a hover or drop cell.</summary>
+	public System.Numerics.Vector3? CursorEnginePoint { get; private set; }
 	/// <summary>Whether a click on <see cref="HoverCell"/> would work.</summary>
 	public bool HoverValid { get; private set; }
 	/// <summary>The member placed or dropped by the last <see cref="Click"/>.</summary>
@@ -160,7 +163,7 @@ public sealed class StaffPlacement
 		Candidate = candidate;
 		HoverCell = null;
 		HoverValid = false;
-		Cursor = null;
+		SetCursor( null, null );
 		return true;
 	}
 
@@ -183,12 +186,19 @@ public sealed class StaffPlacement
 		Origin = origin;
 		HoverCell = null;
 		HoverValid = false;
-		Cursor = null;
+		SetCursor( null, null );
 		return true;
 	}
 
-	/// <summary>Sets the exact pointer position in cell units (null: no ground under the pointer).</summary>
-	public void SetCursor( float? x, float? y ) => Cursor = IsActive && x is { } cellX && y is { } cellY ? (cellX, cellY) : null;
+	/// <summary>Sets cell-only pointer coordinates, clearing any previous model hit and retaining the terrain fallback.</summary>
+	public void SetCursor( float? x, float? y ) => SetCursor( x, y, null );
+
+	/// <summary>Sets the pointer's cell coordinates and full engine hit (presentation only). Null coordinates clear both.</summary>
+	public void SetCursor( float? x, float? y, System.Numerics.Vector3? enginePoint )
+	{
+		Cursor = IsActive && x is { } cellX && y is { } cellY ? (cellX, cellY) : null;
+		CursorEnginePoint = Cursor.HasValue ? enginePoint : null;
+	}
 
 	/// <summary>Cursor move: the hovered cell and whether it is valid; null leaves the park view.</summary>
 	public void Hover( int? x, int? y )
@@ -283,7 +293,7 @@ public sealed class StaffPlacement
 		Origin = null;
 		HoverCell = null;
 		HoverValid = false;
-		Cursor = null;
+		SetCursor( null, null );
 		Ended?.Invoke();
 	}
 
@@ -362,7 +372,7 @@ public sealed class StaffPlacement
 		Origin = null;
 		HoverCell = null;
 		HoverValid = false;
-		Cursor = null;
+		SetCursor( null, null );
 		if ( wasActive )
 			Ended?.Invoke();
 	}

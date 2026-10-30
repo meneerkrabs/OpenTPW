@@ -407,7 +407,7 @@ public sealed class CoasterDefinition
 		return pylon;
 	}
 
-	// [APPROX:COAST-015] without the pylon model (no game data) the pylon mesh heights at loft t = 0 and t = 1 (+188/+192) are taken as fMinHeight and fMaxHeight; ApplyPylonModel replaces them with the model's track dummy heights h0 and h1 when the model is read
+	// [EXT:coaster-pylon-fallback] (user-approved 2026-10-30, COAST-015 converted: the original always has its pylon models, so a definition built without game data, in tests and tools, exists only in OpenTPW) without the pylon model (no game data) the pylon mesh heights at loft t = 0 and t = 1 (+188/+192) are taken as fMinHeight and fMaxHeight; ApplyPylonModel replaces them with the model's track dummy heights h0 and h1 when the model is read
 	private static void SetMeshHeights( CoasterPylonControl pylon )
 	{
 		pylon.MeshHeightLow = pylon.MinHeight;

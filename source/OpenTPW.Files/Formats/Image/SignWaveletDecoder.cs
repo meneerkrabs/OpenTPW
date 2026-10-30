@@ -11,6 +11,7 @@ public static class SignWaveletDecoder
 	private const int MaximumSide = 256;
 
 	// [BIN:STP-PPC:0x100ABDAC Bitmap::load_wavelet] the engine reads four float scales, two compressed lengths and ARGB output.
+	// [EXT:hardware-d3d-path] OpenTPW models the 24-bit x87 precision of a machine with a hardware Direct3D device only; a driver that lacks DrawPrimitives2 (the software path) would leave the C runtime's 53 bits, a host-hardware dependence of the original that OpenTPW does not follow (user-approved 2026-10-30)
 	// [APPROX:COMPAT-018] the arithmetic after the inflate step is tp.exe's, instruction for instruction at the thread's x87 precision (24 bits; the D4 coefficients at 53 bits, from a static initialiser): scale at the dequantisation, row and column inverse, colour and alpha conversion. The header floats feed Y, Cb, Cr, alpha in file order (the PC board reader 0x5E7990 passes them to 0x592000, once for colour with three scales and once for alpha with the fourth). Still open: the GPU row orientation of the uploaded texture and original-platform board pixels
 	public static byte[] Decode( SignBitmap bitmap ) => Decode( bitmap, X87Precision.Bits != 24 );
 

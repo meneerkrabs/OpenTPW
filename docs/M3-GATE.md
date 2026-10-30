@@ -48,7 +48,7 @@ which cannot exercise anything. Reading "in-game minutes" as simulation minutes 
 OpenTPW's own harness unit, `[EXT:m3-gate-minute]` (formerly `APPROX:GATE-001`): the
 original has no gate and paces play by scaled real time, a park turn every eighth 31 ms
 substep (tp.exe `0x54f4c4`, `0x54f668`) and 3,750 park-clock seconds per turn (the rate
-15,000 / 4, `0x4f7e80`, `0x4f8260`). The gate's registered assumption, **[APPROX:GATE-006]**,
+15,000 / 4, `0x4f7e80`, `0x4f8260`). The gate's registered assumption, **[EXT:m3-gate-walk-bound]** (retired `APPROX:GATE-006`, user-approved 2026-10-30),
 covers its queue walk terms, which come from enumerating the steering OpenTPW runs since
 WALK-I (below).
 
@@ -181,7 +181,7 @@ or on the boarding bound below:
   now retired): 84 and 50 turns with ORACLE-F's 6 cells, 194 and 50 with the 25-cell queue
   before it, 326 before S1. With 6 cells the derived bound is looser than the retired one
   (218 against 84 turns, 83 against 50); the owner accepted that on October 10, 2026 on
-  the condition that it is registered (`[APPROX:GATE-006]`, at `HeadNotReadyBound`) and
+  the condition that it is registered (`[EXT:m3-gate-walk-bound]`, at `HeadNotReadyBound`) and
   that each head is also held to its own walk:
 
   **The head's own limit** (`HeadNotReadyLimit`, review WV-3). Where it is smaller, the
@@ -228,7 +228,7 @@ DUR ≤ 30 s. Every term is read at run time:
 | w | **20** | the original's state-13 walk from slot 0 to the stand point, from its traced steering ([WALK-plan.md](reverse/WALK-plan.md) §9, `tools/ppc-analysis/lanes/walk/walk_evidence.py`): 12 with slot 0 at the entrance edge, 20 with the slot axis reversed; the link compass is not pinned, so the larger |
 | w₂ | **15** | the original's state-12 move-up from slots 1–3 to slot 0 (WALK-plan §9) |
 | H | 20 + 20 + 15 = **55** | H₀ + w + w₂ |
-| C | **27** per queue cell | one queue walk across k cells to a slot takes at most k × C + w₂ updates: the bounded enumeration of tp.exe's walk as OpenTPW ports it (whole-walk destination 0x510100; the worst walks are the short cornered ones around a neighbour, 3 crossings 93, 4 crossings 118; a long straight queue stays near 14 per cell), `[APPROX:GATE-006]` |
+| C | **27** per queue cell | one queue walk across k cells to a slot takes at most k × C + w₂ updates: the bounded enumeration of tp.exe's walk as OpenTPW ports it (whole-walk destination 0x510100; the worst walks are the short cornered ones around a neighbour, 3 crossings 93, 4 crossings 118; a long straight queue stays near 14 per cell), `[EXT:m3-gate-walk-bound]` |
 | J(p) | (N − cell of p) × 27 + 15 | the join walk from the join cell to the slot of position p: **177** turns at p = 0 for N = 6, 42 at p = 20 |
 
 The walk terms rest on the speed floor at `0xffe38` (max speed ≥ 655 = 0.01 cell per
@@ -278,7 +278,7 @@ walk-related assumptions of review GATE-V4 (B1/B2) are retired by WALK-I:
 `[APPROX:GATE-004]` (the head bound walked N + 4 cells at OpenTPW's own 1 cell/s × 0.7)
 and `[APPROX:GATE-005]` (W(p) and the head check left out the walk from the join cell).
 Both now use C = 9 from enumerating the steering OpenTPW runs, which is registered as
-`[APPROX:GATE-006]`: that steering is the traced step except for the walk register's
+`[EXT:m3-gate-walk-bound]`: that steering is the traced step except for the walk register's
 WALK-001 (boost increments), WALK-002 (avoid_walls' corner branches, since ported), WALK-003
 (separation's neighbour set, since ported: guests and staff on one chain per cell; the enumeration runs separation off and at its maximum
 against the walk), WALK-004 (OpenTPW's routes), WALK-005/006 (walkability: the walk's
@@ -480,7 +480,7 @@ and after ORACLE-F they cast the BOUNCE slots to the old (guest, deadline) pairs
 (`Navigation.X/Y` with the velocity zeroed; the slots' deadline set with `with { Until = … }`).
 Every mutation that failed a row at c6c19ea still fails it. The pins that moved:
 - the baseline's W_max includes J(Qmax − 1) = 24 (WALK-I; the pin predated it);
-- the head bound was 110 / 65 / 65 turns at that time (218 / 83 / 83 with C = 27 since the original walk) (`[APPROX:GATE-006]`), and rule (a) holds each head
+- the head bound was 110 / 65 / 65 turns at that time (218 / 83 / 83 with C = 27 since the original walk) (`[EXT:m3-gate-walk-bound]`), and rule (a) holds each head
   to its own remaining walk + 26: `head-held-250-turns`, `head-delayed-170-turns` and
   `head-delayed-60-turns` now fail rule (a) itself ("bound 26 from its own walk"); at WALK-I
   the first passed rule (a) (259 ≤ 281) and the last passed the row;

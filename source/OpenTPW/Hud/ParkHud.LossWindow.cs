@@ -37,7 +37,8 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>
-	/// The loss window and its overlay are this park's own, local presentation: not in a shared park, whose HUD keeps what it shows now (the co-op owner decides, docs/COOP.md), nor in a visit, which runs no park.
+	/// The loss window and its overlay are this park's own, local presentation: not in a shared park, whose HUD keeps what it shows now, nor in a visit, which runs no park.
+	/// [EXT:online-coop-money] a shared park and a visit keep the economy's refusals (ParkEconomy.IsBankrupt) and get no loss scene, so that every peer decides alike; a solo park gets the scene (user-approved 2026-10-30, ECON-030's co-op and visit part).
 	/// </summary>
 	private bool LossPresentationAllowed => level.Park != null && !level.IsReadOnlyVisit && level.CoopRole == CoopRole.None
 		// Theme Park Inc has no bankrupt.MD2 banner (its levels carry none), so its lost park keeps what it did before; its own exe's loss scene is not read

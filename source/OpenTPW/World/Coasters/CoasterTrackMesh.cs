@@ -23,7 +23,7 @@ public sealed class CoasterTrackMesh
 	/// <summary>World units of track per texture repeat along V.</summary>
 	public const float MetersPerRepeat = 6f;
 	/// <summary>The marker textures the loader appends after the coaster's own textures (<c>0x42f390</c>, table <c>0x74cde0</c>): <c>m_erase.tga</c>, <c>red.tga</c>, <c>blue.tga</c>.</summary>
-	// [BIN:TPW-EXE:0x42f390 marker textures] the track model's texture list is the coaster's asTextureData entries followed by the three entries of 0x74cde0 (count 0x74ce10 = 3): m_erase.tga, red.tga and blue.tga, each with texture flags 7 (self-illuminated)
+	// [BIN:TPW-EXE:0x42f390 marker textures] the track model's texture list is the coaster's asTextureData entries followed by the three entries of 0x74cde0 (count 0x74ce10 = 3): m_erase.tga, red.tga and blue.tga, each with texture flags 7 (read as self-illuminated; see COAST-026)
 	public static readonly string[] MarkerTextureNames = { "m_erase", "red", "blue" };
 	/// <summary>The marker variant of a crossing or refused link (texture count − 1 + 2: <c>red.tga</c>).</summary>
 	public const int RefusedMarker = 2;
@@ -99,6 +99,7 @@ public sealed class CoasterTrackMesh
 			int section;
 			if ( usesRuns )
 			{
+				// [EXT:original-undefined-reads] a run position outside the sample list makes the original read memory outside the list; OpenTPW's key walk stays clamped to the last run, a defined result (user-approved 2026-10-30; the out-of-sample read of COAST-026)
 				while ( run < runs!.Count - 1 && runs[run].Key < b.Key )
 					run++;
 				runIndex = run;

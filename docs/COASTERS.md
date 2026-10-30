@@ -544,7 +544,7 @@ without the model; COAST-029 lost its middle-knot height-adjust clause, the knot
 the knot pass (`KnotPass`): a save from before it places the trains of a coaster with pylon models again and its riders leave. The same round traced the
 stack parts (`0x432df0`) and the kept half turn (COAST-033 narrowed), the mesh's slices, shared rings, winding and marker links
 (COAST-026 narrowed to the cross-section runs and blends, lighting and the Add-mode UV animation; the runs, blends and UV keys were built on October 30) and the cursor link (COAST-035
-narrowed: the ribbon is gone; the closing target's marks are not set).
+narrowed: the ribbon is gone; the closing target's marks are not set). COAST-015 is retired (October 30, 2026): the only difference left, the pylon heights of a definition built without game data (tests and tools), is `[EXT:coaster-pylon-fallback]`, user-approved.
 
 The coaster rest round of October 16 settled COAST-017 and COAST-030 and narrowed COAST-011 and COAST-034. COAST-017: a sample's roll is the
 angle of the second rail's point about the sample's tangent (`0x440c10`), a slice's or a car frame's adds the lerp of the nodes' tag rolls
@@ -597,6 +597,7 @@ demolish button cut open has no sample list here and keeps the per-segment pitch
 with tp.exe (ORACLE X43, `CoasterBendGolden`; the PC acos at single precision was an ulp off); the bend writes only the body mesh's vertices, so a rider's head socket
 stays unbent as ported; the Croc and Maggot boats' vertices all lie inside their tables. The boats' own clips (no start behind the bend flag was found) and the widening of a bend
 type's model bounds (`0x4302AA..0x43041A`) stay open.
+The track mesh's vertices carry the texture's lighting as an assumption: a texture with `bIsSelfIlluminating` gets the texture flag 4 (`0x42f390`: 2, plus 4 for a nonzero flag word before the scroll rate, plus `0x20` when it scrolls) and the three marker textures flags 7, and their corners take the renderer's self-lit vertex flag (`TextureSlotAddressing.SelfLitFlag`, `CoasterRenderer.TrackVertex`); a self-lit texture named like a light source (`IsLightSource`) also takes the evening extension's light-source flag, the markers do not. That the original's dynamic model draw reads texture flag 4 as "constant colour instead of the scene light" is **not traced** (the only traced unlit path, `0x580C51`, tests the model material word `+0xC` bit `0x1`); it stays in COAST-026. The shader (native and the web JSON build) already honours both vertex flags.
 The pylons' loft, incline and bank clips carry texture-coordinate keys (record flag `0x10000`: the Jungle pylon's loft adds 14.985 to the V of its top corners over the
 clip); the add mode adds them to the stored coordinates (`0x4745C0` through `0x471860`, `ModelUvAnimation.AddTo`), so a lofted pylon's coordinates run past 1 along its height. Whether they wrap or clamp follows the shared texture's accumulated flags: the texture cache `0x575870` keeps one object per (directory, name),
 the slot setup `0x575E10` and the rebinding `0x575C60` OR the wrap bits into it for good (nothing clears them, `0x590FA0` clears only 0x4000), so a clamping slot wraps as soon as any model of the ride

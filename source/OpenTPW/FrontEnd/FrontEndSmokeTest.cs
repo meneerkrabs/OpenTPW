@@ -1713,7 +1713,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Log.Trace( "Guest lifecycle: second park exit released all ten owned guest assets." );
 			Require( flow.StartKind == ParkStartKind.OriginalSaveReference && flow.Level!.Park!.Economy.Mode == ParkGameMode.FullSimulation
 				&& flow.Level.Park.Economy.Settings.IsEasy && flow.Level.OriginalPark!.Save != null,
-				"Load Park opens the shipped save as the reference start whatever mode was chosen before (UI-041)" );
+				"Load Park opens the shipped save as the reference start whatever mode was chosen before ([EXT:no-player-profiles])" );
 			flow.ShowFrontEnd( "jungle" );
 		} );
 		Wait( "lobby before the park built over frames", 3 );

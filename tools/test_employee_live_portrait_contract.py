@@ -31,7 +31,7 @@ class EmployeeLivePortraitContract(unittest.TestCase):
         self.assertLess(render.index("PrepareWorld()"), render.index("commandList.UpdateBuffer"))
         prepare = body(self.renderer, "internal int PrepareWorld()")
         ordered = ["rendererPass++", "if ( !CanRender )", "new MemberView", "if ( !CanPlaceMember",
-                   "DrawPoint( member )", "memberView.Player.Tick", "Select( member, memberView",
+                   "DrawPoint( member )", "Select( member, memberView",
                    "AddSprite( ref count, chosen", "memberView.Published =", "DrawnStaff++"]
         offsets = [prepare.index(token) for token in ordered]
         self.assertEqual(sorted(offsets), offsets)
@@ -39,11 +39,12 @@ class EmployeeLivePortraitContract(unittest.TestCase):
 
     def test_selection_retains_existing_mutation_order_and_describe_cannot_publish(self):
         select = body(self.renderer, "private Selection? Select(")
-        ordered = ["StaffSpriteRules.SelectClip", "view.Player.Restart()", "view.Player.SetInterval",
-                   "member.PendingInterval = -1", "StaffSpriteRules.ResolveSteps", "FrameFor(", "return new Selection"]
+        ordered = ["StaffSpriteRules.HasBodySprite", "member.Sprite.Output", "FrameFor(", "return new Selection"]
         offsets = [select.index(token) for token in ordered]
         self.assertEqual(sorted(offsets), offsets)
-        describe = body(self.renderer, "internal (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Describe(")
+        for mutation in ("Tick(", "Queue", "Restart(", "Create(", "Delete(", "Apply"):
+            self.assertNotIn(mutation, select)
+        describe = body(self.renderer, "internal (int Atlas, int Frame, bool Mirror, int Slot, int Step)? Describe(")
         self.assertNotIn("Published", describe)
         self.assertNotIn("PrepareWorld", describe)
 
@@ -86,7 +87,7 @@ class EmployeeLivePortraitContract(unittest.TestCase):
 
     def test_body_exclusions_are_shared_without_selecting_again_in_ui(self):
         rules = source("source/OpenTPW/World/Staff/StaffSprites.cs")
-        self.assertIn("if ( !HasBodySprite( member ) )", body(rules, "public static StaffClip? SelectClip("))
+        self.assertIn("internal static bool HasBodySprite( StaffMember member )", rules)
         self.assertIn("member.State is not (StaffState.Resting or StaffState.PickedUp)", rules)
         self.assertIn("member.Job is not (StaffJob.Resting or StaffJob.PickedUp)", rules)
 

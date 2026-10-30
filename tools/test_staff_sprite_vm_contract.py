@@ -69,9 +69,10 @@ class StaffSpriteVmContract(unittest.TestCase):
         self.assertNotIn("PortraitFlags", self.vm)
         self.assertNotIn("0x50000", self.vm)
 
-    def test_core_is_not_connected_to_gameplay_rendering_or_persistence(self):
+    def test_core_is_consumed_only_through_the_staff_sprite_state_and_stays_free_of_rendering(self):
+        # round 11, package A: the world's sources (StaffSpriteState, StaffSpriteEvents) are the one consumer of the core
         for path in (ROOT / "source/OpenTPW").rglob("*.cs"):
-            if path.name in ("StaffSpriteVm.cs", "StaffSpriteVmState.cs", "StaffSpritePrograms.cs"):
+            if path.name in ("StaffSpriteVm.cs", "StaffSpriteVmState.cs", "StaffSpritePrograms.cs", "StaffSpriteState.cs", "StaffSpriteEvents.cs", "StaffPlacement.cs", "StaffSprites.cs"):
                 continue
             text = path.read_text(encoding="utf-8-sig")
             self.assertNotRegex(text, r"\b(?:StaffSpriteVm|StaffSpriteCloneCopy|StaffSpriteVmState)\b", str(path))

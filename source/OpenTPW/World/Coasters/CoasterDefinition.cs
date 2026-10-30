@@ -8,6 +8,8 @@ public enum CoasterPylonFlags : uint
 {
 	None = 0,
 	Standard = 0x4,
+	/// <summary>Pylon flag 0x10 (<c>bDontDisableBaseOnStack</c>, <c>0x42ec47</c>): the model's ground node stays visible on the pylons stacked above the first.</summary>
+	KeepBaseOnStack = 0x10,
 	Loop = 0x4000,
 	Trough = 0x8000
 }
@@ -562,6 +564,9 @@ public sealed class CoasterDefinition
 		float Rate( string key ) => TryFloat( values, prefix + key, out var value ) ? value : 0;
 		if ( values.TryGetValue( prefix + "pcMeshFilename", out var mesh ) )
 			pylon.MeshName = mesh;
+		// [BIN:TPW-EXE:0x42ec47 pylon base flag] a pylon control whose bDontDisableBaseOnStack setting (+0x38b0 of the 0xbc-byte record) is nonzero gets pylon flag 0x10; 0x432df0 then leaves the ground node visible on stacked nodes
+		if ( TryInt( values, prefix + "bDontDisableBaseOnStack", out var keepBase ) && keepBase != 0 )
+			pylon.Flags |= CoasterPylonFlags.KeepBaseOnStack;
 		pylon.MinPlaceDistance = Int( "uiMinPlaceDist", pylon.MinPlaceDistance );
 		pylon.MaxPlaceDistance = Int( "uiMaxPlaceDist", pylon.MaxPlaceDistance );
 		pylon.EntranceMinAngleAtMinDistance = Angle( "fEntranceMinXZAngleAtMinDist", pylon.EntranceMinAngleAtMinDistance );

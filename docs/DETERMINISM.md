@@ -1413,3 +1413,9 @@ The coaster's knot chord, Bezier and derivative shapes, knot controls, node tang
 Saves: none changed.
 
 The Theme Park Inc weather spells (`ThemeParkIncWeatherSpells`, `[EXT:tpi-weather-spell-seed]`) take their draws from the economy's world stream, one or two at each month message of a Theme Park Inc economy only; Theme Park World runs draw nothing there, so no pin moves.
+
+## Head-hang draw (round 10, package L, October 30, 2026)
+
+In a theme without costume heads (Fantasy, Hallow) every head hung on a ride reseeds the world generator with the rider's thing id and takes one draw (`0x44B410` → `0x4FCAC0`: `0x516370`, then `0x541F70` with category 1). `RideScriptWorld.HeadHung` takes it at ADDHEAD (`0x554D13`), WALKON action 4 (`0x557EB9`), each coaster guest the station step seats (`0x43B70D`), a bump ride's vehicle creation and load (`0x549CAF`) and a tour boarding (`0x55D91E`), and the level switches it on from the costume heads it loaded (`RideScriptWorld.HeadHangReseeds`). No existing pin moved: every asset-free digest runs without the flag, and none covers a theme without costume heads. New pin `DeterminismTests.HeadHangFixedRunHash` = `0xE998936EFFF3BAE5` (old: none): a script world with the flag on runs a bump creation and load, a tour boarding and ADDHEAD and WALKON hangs, so the draw is under the interpreter and AOT pin jobs. The guests' kid-set draw (`0x4FB1A7`) was already taken in the original's order and is presentation only, so it moved nothing either.
+
+Saves: none changed (the guest's `KidSetDraw` and the staff `ResumeMask` are optional, unhashed fields).

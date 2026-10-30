@@ -27,6 +27,9 @@ namespace OpenTPW;
 /// </summary>
 internal sealed partial class FrontEndSmokeTest : IDisposable
 {
+	/// <summary>The kid sets (and heads) a park loads: the preset's limit of tp.exe 0x41A9D0 (KidSetLoad), of the eight the game ships.</summary>
+	private static int ExpectedKidSets => GameEditions.IsThemeParkInc ? 8 : Math.Min( 8, KidSetLoad.LimitOf( IGraphicsSettings.Instance ) ?? 8 );
+
 	private const int MaximumFrames = 3000;
 	private readonly GameFlow flow;
 	private readonly BaseFileSystem originalSaveFileSystem;
@@ -211,9 +214,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			{
 				before = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
 				guestsBefore = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
-				Require( guestsBefore.Length == 10, "the park owns eight guest atlas textures, its material and shader before switching" );
+				Require( guestsBefore.Length == ExpectedKidSets + 2, "the park owns its kid-set atlas textures (the preset's limit, KidSetLoad), its material and shader before switching" );
 				beforePixels = before.OfType<Texture>().Select( texture => texture.ReadPixels() ).ToArray();
-				Require( before.OfType<Texture>().Count() == 8, "the park owns eight head atlases before switching" );
+				Require( before.OfType<Texture>().Count() == ExpectedKidSets, "the park owns its head atlases (the preset's limit) before switching" );
 				textureSwitch = TexturePackSwitch.Begin( name, new List<string>(), smokePacks );
 				Require( textureSwitch != null, "the live park texture switch starts" );
 			} );
@@ -718,8 +721,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Hud.DateText, "HUD date" );
 			firstParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
 			firstParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
-			Require( firstParkGuestAssets.Length == 10, "the park owns eight guest atlas textures, its material and shader" );
-			Require( firstParkHeadAssets.Length == 10, "the park owns eight head atlas textures, its material and shader" );
+			Require( firstParkGuestAssets.Length == ExpectedKidSets + 2, "the park owns its kid-set atlas textures (the preset's limit, KidSetLoad), its material and shader" );
+			Require( firstParkHeadAssets.Length == ExpectedKidSets + 2, "the park owns its head atlas textures (the preset's limit), its material and shader" );
 			var economy = flow.Level!.Park!.Economy;
 			Require( flow.StartKind == ParkStartKind.FullSimulation && economy.Mode == ParkGameMode.FullSimulation && !economy.Settings.IsEasy
 				&& flow.Level.OriginalPark!.Save == null && flow.Level.Park.Import == null, "Full Simulation starts with standard balance and without the Easymode seed" );
@@ -1685,7 +1688,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( Texture.Missing.NativeTexture is { IsDisposed: false } && Asset.All.OfType<Texture>().All( texture => texture.NativeTexture is not { IsDisposed: true } ), "the deferred release of the first park's materials left every live texture's GPU texture alone" );
 			secondParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
 			secondParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
-			Require( secondParkGuestAssets.Length == 10 && secondParkGuestAssets.All( Asset.All.Contains ), "a second park owns a fresh guest atlas, material and shader set" );
+			Require( secondParkGuestAssets.Length == ExpectedKidSets + 2 && secondParkGuestAssets.All( Asset.All.Contains ), "a second park owns a fresh guest atlas, material and shader set" );
 			flow.ShowFrontEnd( "jungle" );
 			Require( secondParkHeadAssets.All( asset => !Asset.All.Contains( asset ) ), "second park exit also removes every owned head asset" );
 			Require( secondParkGuestAssets.All( asset => !Asset.All.Contains( asset ) ), "second park exit also removes every owned guest asset" );

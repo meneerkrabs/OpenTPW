@@ -1022,6 +1022,43 @@ public class DeterminismTests
 	/// </summary>
 	internal const ulong SmarterGuestsFixedRunHash = 0xFD4DAA23C3C5C5A8UL;
 
+	/// <summary>
+	/// The pinned hash of the head-hang draw of a theme without costume heads (docs/DETERMINISM.md): a script world with <see cref="RideScriptWorld.HeadHangReseeds"/> on runs a bump ride's vehicle creation and a load, a tour
+	/// boarding and ADDHEAD and WALKON hangs; each hang reseeds the world generator with the rider and draws once (tp.exe 0x44B410 → 0x4FCAC0). No asset is read, so CI pins it on every runtime.
+	/// </summary>
+	internal const ulong HeadHangFixedRunHash = 0xE998936EFFF3BAE5UL;
+
+	[TestMethod]
+	public void HeadHangDrawFixedRunHashIsTheSameInEveryProcess()
+	{
+		ulong Run( bool reseeds )
+		{
+			var scripts = new RideScriptWorld( 7 ) { HeadHangReseeds = reseeds };
+			var loop = new BumpControllerTests.Loop( -5, scripts.Bumpers );
+			loop.Controller.SeatHeadSource = _ => new[] { true, true };
+			loop.Controller.Command( 7, 0 );
+			loop.Controller.Command( 1, 21 );
+			loop.Controller.Command( 1, 22 );
+			loop.Controller.Command( 4, 0 );
+			loop.Controller.Command( 4, 0 );
+			loop.Controller.Command( 1, 23 );
+			loop.Controller.Command( 12, 0 );
+			loop.Run( 600 );
+			var tour = new TourController( TourStation.Default, scripts.NextWorldDraw, scripts.Tours ) { HeadNodes = 3 };
+			tour.Board( 31 );
+			tour.Board( 32 );
+			var space = RideHeadSpace.Of( new[] { 3, 4, 5 }, scripts.NextWorldDraw );
+			space.HeadHung = scripts.HeadHung;
+			space.Add( 41 );
+			space.Hang( 2, 42 );
+			return WorldStateHash.Compute( new WorldStateSources { Scripts = scripts } );
+		}
+		var hash = Run( reseeds: true );
+		Assert.AreEqual( hash, Run( reseeds: true ), "the run repeats" );
+		Assert.AreNotEqual( hash, Run( reseeds: false ), "the head-hang draws are in the hash" );
+		Assert.AreEqual( HeadHangFixedRunHash, hash, $"0x{hash:X16}" );
+	}
+
 	[TestMethod]
 	public void SmarterGuestsFixedRunHashIsTheSameInEveryProcess()
 	{

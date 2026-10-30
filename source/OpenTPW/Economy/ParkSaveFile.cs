@@ -348,6 +348,9 @@ public static class ParkSaveFile
 		/// <summary>The point (1/256 cell, x and y) an original-save member still walks on to once a world places it (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int[]? ResumeDestination { get; init; }
+		/// <summary>The walk mask an original-save member is routed again with (absent: 0).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? ResumeMask { get; init; }
 		/// <summary>The turn an original save recorded for the claim this member's job takes again once a world places it (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public long? ResumeClaimTurn { get; init; }
@@ -814,6 +817,7 @@ public static class ParkSaveFile
 				NameIndex = member.NameIndex,
 				Name = member.Name,
 				ResumeDestination = member.ResumeDestination is { } resume ? new[] { resume.X, resume.Y } : null,
+				ResumeMask = member.ResumeMask,
 				ResumeClaimTurn = member.ResumeClaimTurn,
 				Variant = member.Variant >= 0 ? member.Variant : null,
 				Grade = member.Grade,
@@ -1032,6 +1036,7 @@ public static class ParkSaveFile
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
 			Require( member.Name is null || (member.Name.Length <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
 			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
+			Require( member.ResumeMask is null || member.ResumeMask == 1 && member.ResumeDestination != null, $"staff {member.Id} resume walk mask" );
 			Require( member.ResumeClaimTurn is not { } resumeTurn || resumeTurn >= 0 && resumeTurn <= ParkCalendar.Turn( data.Tick ), $"staff {member.Id} resume claim turn" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
 			Require( member.BaseSpeed is null || (member.WorldState is null && member.BaseSpeed is >= 0 and <= 255), $"staff {member.Id} base speed without world state" );
@@ -1186,6 +1191,7 @@ public static class ParkSaveFile
 			NameIndex = member.NameIndex,
 			Name = member.Name,
 			ResumeDestination = member.ResumeDestination is [var resumeX, var resumeY] ? (resumeX, resumeY) : null,
+			ResumeMask = member.ResumeMask,
 			ResumeClaimTurn = member.ResumeClaimTurn,
 			Variant = member.Variant ?? -1,
 			Grade = member.Grade,

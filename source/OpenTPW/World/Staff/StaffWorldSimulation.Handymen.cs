@@ -184,6 +184,9 @@ public sealed partial class StaffWorldSimulation
 			return;
 		member.BaseSpeed = baseSpeed;
 		var cell = (destination.X >> 8, destination.Y >> 8);
+		// the saved walk mask (nav_mode) goes with the route (0x004F9407): a guard's escort to the booth may leave the paths
+		member.Navigation!.Mask = member.ResumeMask ?? 0;
+		member.ResumeMask = null;
 		if ( grid.InBounds( cell.Item1, cell.Item2 ) )
 			Route( member, cell, destination.X & 0xFF, destination.Y & 0xFF );
 		var claimed = member.Job switch

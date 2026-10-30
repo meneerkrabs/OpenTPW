@@ -743,6 +743,14 @@ public partial class Level : IDisposable
 		var headSprites = poolGuestSprites?.Heads ?? GuestSpriteAtlas.LoadKidHeads();
 		if ( poolGuestSprites != null )
 			sprites = poolGuestSprites.Kids;
+		// [BIN:TPW-EXE:0x0041A9D0 kid set limit] the kid and head folders load the sets in the original's order (BI, KI, TA and SU first) up to the preset's limit (2, 4, 6 or 8), and a guest's draw picks among those (KidSetLoad); the pools sets take the same places, as the game's own do
+		if ( !GameEditions.IsThemeParkInc )
+		{
+			var kidLimit = KidSetLoad.LimitOf( IGraphicsSettings.Instance );
+			sprites = KidSetLoad.Order( sprites, atlas => atlas.Name, kidLimit );
+			headSprites = KidSetLoad.Order( headSprites, atlas => atlas.Name, kidLimit );
+			Guests!.KidSetCount = sprites.Count;
+		}
 		yield return true;
 		// [EXT:pools-swim] the swim sets (64 MiB decoded) are decoded on a worker only for a park that has pool water already; any other park starts that when its first pool cell is painted (PreloadSwimSprites)
 		swimSpriteSets = null;
@@ -753,6 +761,8 @@ public partial class Level : IDisposable
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		yield return true;
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
+		// [BIN:TPW-EXE:0x004FCAC0 head pick] a theme without costume heads (Fantasy, Hallow) reseeds the world generator with the rider and draws once on every head hung on a ride (RideScriptWorld.HeadHung)
+		Objects.ScriptWorld.HeadHangReseeds = !GameEditions.IsThemeParkInc && costumeHeads.Count == 0;
 		NextStepIsLong = true;
 		yield return true;
 		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear
@@ -770,7 +780,7 @@ public partial class Level : IDisposable
 		GuestRenderer.BounceRiders = bounceRiders;
 		if ( CostumeRenderer != null )
 			CostumeRenderer.BounceRiders = bounceRiders;
-		RideHeadRenderer = new RideHeadRenderer( Guests, headSprites, Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
+		RideHeadRenderer = new RideHeadRenderer( Guests, headSprites, Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume, PickByThingId = costumeHeads.Count == 0 };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
 		AddCoasterHeads( RideHeadRenderer );

@@ -774,6 +774,9 @@ public partial class Level
 			Log.Warning( $"No swim sprite sets found in '{PoolSwimSprites.Directory}': swimmers are drawn with the normal guest sprites." );
 			return null;
 		}
+		// [EXT:pools-swim] a swimmer wears the swimwear of the kid set it has on land: the swim sets take the same places as the kid sets (KidSetLoad), so the guest's draw picks the same kid in both
+		if ( !GameEditions.IsThemeParkInc )
+			swim = KidSetLoad.Order( swim, atlas => atlas.Name, KidSetLoad.LimitOf( IGraphicsSettings.Instance ) );
 		return new GuestRenderer( guests, park.Heightfield, swim )
 		{
 			// [EXT:pools-slides] a rider inside a closed tube is not drawn (presentation only)
@@ -2010,6 +2013,12 @@ public partial class Level
 		int Attraction( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bridges.TryGetValue( instance, out var id ) ? id : 0;
 		int Bin( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bins.Contains( instance ) ? instance : 0;
 		foreach ( var line in Guests.ImportOriginal( save.Guests, save.World.Variables.GameTick, Attraction, Bin, save.World.Variables.NumberOfVisitorsToDate, save.Attractions ) )
+		{
+			import.Report( line );
+			Log.Trace( $"Park economy import: {line}" );
+		}
+		// a guard imported escorting a guest the guest import did not restore walks on idle
+		foreach ( var line in OriginalEconomyImport.IdleEscortsWithoutARestoredGuest( Park.Economy, id => Guests.Find( id ) != null ) )
 		{
 			import.Report( line );
 			Log.Trace( $"Park economy import: {line}" );

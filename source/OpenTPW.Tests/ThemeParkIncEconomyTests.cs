@@ -247,6 +247,29 @@ public class ThemeParkIncEconomyTests
 	}
 
 	[TestMethod]
+	public void AnObjectThatRequiresWateringTakesItsScrapPercentFromItsScriptCondition()
+	{
+		// [BIN:TPI-EXE:0x5E75F9 scrap percentage] the thing-flag branch comes before the condemned test: 100, 67, 34, 0 for the counts 0 to 3, then 1 + ftol((3 - n) x 33.333332)
+		CollectionAssert.AreEqual( new[] { 100, 67, 34, 0, -32, -65 }, Enumerable.Range( 0, 6 ).Select( ParkEconomy.ThemeParkIncWateringPercent ).ToArray() );
+		var plant = new EconomyObjectInfo( 1, "Plant", ParkObjectKind.Feature, ResearchCategory.Ride, 7, new List<UpgradeLevelInfo> { new( 0, 1000, 0, 0, 0, new[] { 50, 30, 20, 10 } ) }, null, null, null, 0, 0, 0, 0, 0, 0, "/x", RequiresWatering: true );
+		var tpi = Economy( plant );
+		tpi.TryBuild( 1, out var item );
+		Assert.AreEqual( 100, tpi.ScrapPercent( item! ), "no script: the lookup answers 0, so 100 percent" );
+		item!.ScriptCondition = 2;
+		Assert.AreEqual( 34, tpi.ScrapPercent( item ) );
+		Assert.AreEqual( 340L, tpi.ScrapValue( item ) );
+		item.ScriptCondition = 3;
+		Assert.AreEqual( 0, tpi.ScrapPercent( item ), "a dead plant refunds nothing" );
+		item.ScriptCondition = 0;
+		item.StateWord.Set( RideObjectStates.Condemned );
+		Assert.AreEqual( 100, tpi.ScrapPercent( item ), "the flag branch precedes the condemned test" );
+		var tpw = TpwEconomy( plant );
+		tpw.TryBuild( 1, out var same );
+		same!.ScriptCondition = 2;
+		Assert.AreEqual( 100, tpw.ScrapPercent( same ), "Theme Park World has no such branch" );
+	}
+
+	[TestMethod]
 	public void ThemeParkIncHasNoBuyLandNoUpgradePurchaseNoStaffAndNoResearchGate()
 	{
 		var tpi = Economy( Ride( 1, 1000, 0, research: 500, level1Running: 10 ) );

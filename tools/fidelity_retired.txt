@@ -163,6 +163,7 @@ ECON-054 docs/ECONOMY.md
 ECON-055 docs/ECONOMY.md
 ECON-056 docs/progress/2026-10-16-economy-and-saves-sweep.md
 ECON-057 docs/progress/2026-10-18-round8-saves-econ.md
+ECON-061 docs/THEME-PARK-INC.md
 ECON-063 docs/progress/2026-10-26-pause-and-loss.md
 GATE-001 docs/M3-GATE.md
 GATE-002 docs/reverse/PATH-plan.md

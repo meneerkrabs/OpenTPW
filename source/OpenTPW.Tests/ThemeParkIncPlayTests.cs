@@ -194,6 +194,19 @@ public class ThemeParkIncPlayTests
 	}
 
 	[TestMethod]
+	public void EveryWorldHasPlantsThatRequireWateringAndNoRideDoes()
+	{
+		// [BIN:TPI-EXE:0x5DB654 thing flag +0x43 bit 0x10] the flag comes from the type's UsageInfo.RequiresWatering (the plants' bushes, trees and flower beds), which selects the scrap percentage's script branch (ECON-061)
+		UseTpiData();
+		foreach ( var world in new[] { "arabian", "science", "water" } )
+		{
+			var flagged = EconomyObjectCatalog.Load( world, easy: false ).Objects.Where( info => info.RequiresWatering ).ToList();
+			Assert.IsTrue( flagged.Count >= 5, $"{world}: {flagged.Count} flagged objects" );
+			Assert.IsTrue( flagged.All( info => info.Kind == ParkObjectKind.Feature ), $"{world}: only features require watering" );
+		}
+	}
+
+	[TestMethod]
 	public void EveryWorldHasABuildableQueueRideBesideItsPaths()
 	{
 		UseTpiData();

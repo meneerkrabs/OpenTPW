@@ -1511,6 +1511,15 @@ public sealed partial class ParkEconomy : IParkEconomy
 		return unchecked( (uint)((int)info.Upgrades[0].CostOfUpgrade * ScrapPercent( item )) ) / 100;
 	}
 
+	/// <summary>The scrap percentage of an object that requires watering (<c>0x5E75F0</c> first branch): 100, 67, 34 and 0 for a count of 0 to 3, negative above.</summary>
+	// [BIN:TPI-EXE:0x5E7613 watering percentage] fild n; fsubr 3.0 (0x93AD54); times 33.33333206176758 (0x93B818, a single) in the x87's extended precision; the product is truncated toward zero (0x86FAB0); 3 - n compared with 0.0 (0x93A038): equal returns the truncated product, else 1 + it
+	public static int ThemeParkIncWateringPercent( int count )
+	{
+		var remaining = 3.0 - count;
+		var truncated = (int)(remaining * 33.33333206176758);
+		return remaining == 0.0 ? truncated : 1 + truncated;
+	}
+
 	/// <summary>
 	/// The object's scrap percentage (0xE2424): the age is the park clock since the build, in 365-day years (0, 1, 2, anything
 	/// else uses year 4), read from the current level's row <c>Upgrades[level].ScrapValueYearN</c>. An object nobody has used
@@ -1523,8 +1532,10 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
+		// [BIN:TPI-EXE:0x005E75F9 scrap percentage] the routine tests the thing flag +0x43 bit 0x10 first (set for a type with UsageInfo.RequiresWatering, 0x5DB654): the script variable 0 of the thing's script (0x6B0740 finds it by the thing id +0x2C, 0x6B0C90 reads variable 0; no script reads 0) is the count n, and the answer is ftol((3 - n) x 33.333332) plus 1 unless 3 - n is exactly 0: 100, 67, 34, 0 for n = 0..3, then -32, -65 and so on (0x5E7613..0x5E764F); the condemned test follows only for the other objects
+		if ( Rules.ThemeParkInc && info.RequiresWatering )
+			return ThemeParkIncWateringPercent( item.ScriptCondition );
 		// [BIN:TPI-EXE:0x005E765B scrap percentage] Theme Park Inc's percentage routine 0x005E75F0 refuses a condemned object (state +0xA0 = 4) any refund before it reaches the year rule it shares with tp.exe 0x004E2290
-		// [APPROX:ECON-061] the routine's first branch (thing flag +0x43 bit 0x10, which gives 100, 67, 34 or 0 percent from a count read through a script-side lookup) is left out: what sets the flag and what the count is are not traced, so such an object takes the year rule — evidence needed: the writer of flag +0x43 (no site of TPI Game.exe sets the bit directly: the 16 that touch +0x43 only test it) and the lookup behind 0x40AE89 / 0x4078BA, whose count n gives (3 - n) x 33.33 percent, 1 plus the truncated product unless it is exactly 0 (100, 67, 34 and 0 for n = 0 to 3, negative above, 0x5E7613..0x5E764F)
 		if ( Rules.ThemeParkInc && ObjectState( item ) == RideObjectStates.Condemned )
 			return 0;
 		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );

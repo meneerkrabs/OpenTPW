@@ -60,7 +60,8 @@ public sealed record EconomyObjectInfo(
 	bool IsFireworks = false,
 	int ExpectedPrice = 0,
 	int WorkingLife = 0,
-	bool NotResearched = false )
+	bool NotResearched = false,
+	bool RequiresWatering = false )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
@@ -175,7 +176,9 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			// [BIN:TPW-EXE:0x004DB090 object constructor] UsageInfo.IsFireworks (type +0x110, thing +0x32 bit 0x80) adds RegionFX row 7: Hallow's Firework Show and Space's Laser Show
 			settings.GetInt( "UsageInfo.IsFireworks", 0, optional: true ) != 0,
 			// [BIN:TPI-EXE:0x005DEFFF type record] Theme Park Inc only: Info.ExpectedPrice (+0x88) and Info.WorkingLife (+0x8C); neither is used yet
-			settings.GetInt( "Info.ExpectedPrice", 0, optional: true ), settings.GetInt( "Info.WorkingLife", 0, optional: true ) );
+			settings.GetInt( "Info.ExpectedPrice", 0, optional: true ), settings.GetInt( "Info.WorkingLife", 0, optional: true ),
+			// [BIN:TPI-EXE:0x5DB654 thing flag +0x43 bit 0x10] a nonzero type word +0x1AC (UsageInfo.RequiresWatering, between HoldsLitter 0x1A8 and ChillsYouOut 0x1B0 in the key order) makes the thing builder set the flag (or word [thing+0x42], 0x1000) that selects the scrap percentage's first branch (0x5E75F9)
+			RequiresWatering: settings.GetInt( "UsageInfo.RequiresWatering", 0, optional: true ) != 0 );
 	}
 
 	/// <summary>

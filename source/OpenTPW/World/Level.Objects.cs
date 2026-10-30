@@ -2171,6 +2171,8 @@ public partial class Level
 			state.ScriptHosted = item.Runtime.Script != null;
 			state.ScriptBreakStat = item.Runtime.GetVariable( RideVariables.VAR_BREAKSTAT );
 			state.ScriptWorn = item.Runtime.GetVariable( RideVariables.VAR_WORN );
+			// [BIN:TPI-EXE:0x6B0C90 script variable 0] Theme Park Inc's scrap percentage of an object that requires watering reads variable 0 of its script (VAR_CONDITION of the plants' script); 0 without a script
+			state.ScriptCondition = item.Runtime.Script is { } script && script.Variables.Length > 0 ? script.Variables[0] : 0;
 			// the ride's state word is one: the economy record's word is the bridge's too (tp.exe +0x19C), and the entry into state 1 or 4 is published to the economy's mechanics here
 			item.Visitors.StateWord = state.StateWord;
 			Park.Economy.PublishRideState( state );

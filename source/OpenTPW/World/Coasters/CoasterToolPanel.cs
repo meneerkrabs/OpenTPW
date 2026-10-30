@@ -32,7 +32,7 @@ public readonly record struct CoasterCursor( int X, int Y, CoasterPlaceResult Re
 
 /// <summary>
 /// The coaster tool's panel (COAST-028), headless: which of the nine buttons is selected and enabled, and what a press, a drag and a release do in each sub-mode. The HUD feeds it the pointer; tests drive it
-/// directly. Every sub-mode follows the original's handler (see the comments at each method); the mouse-to-value rates are the original's, in pixels of the original's 1024-wide screen.
+/// directly. Every sub-mode follows the original's handler (see the comments at each method); the mouse-to-value rates are the original's, per device pixel of the render resolution (0x42a760: the pointer is a whole pixel of the resolution the game renders at).
 /// </summary>
 public sealed class CoasterToolPanel
 {

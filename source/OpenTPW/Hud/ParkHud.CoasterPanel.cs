@@ -208,8 +208,9 @@ public sealed partial class ParkHud
 		coasterPanelShown = shown;
 	}
 
-	/// <summary>The pointer in the original's pixels: 1024 across the screen, which the drag rates are meant for.</summary>
-	private static NVector2 OriginalPixels( UiContext context, NVector2 mouse ) => mouse * (1024f / Math.Max( 1f, context.Canvas.Width ));
+	/// <summary>The pointer in whole device pixels of the render resolution, which the drag rates count in.</summary>
+	// [BIN:TPW-EXE:0x42a760 mouse pixels] the mouse handler stores the pointer as integers of the selected render resolution (0x790ac8 = x * W / 0x800, 0x790acc = y * H / 0x600 with W, H the words 0xfaa5c4 and 0xfaa5c0 that 0x46b600 takes from the screen mode: 160 x 120 up to 2048 x 1536, 640 x 480 by default) converted to floats (0x42a855..0x42a863); the coaster drags copy them (0x441b00, 0x441d68, 0x441f29, 0x4420b1) and subtract them (0x4433ad..0x4434e5), so 0.005, 0.02 and 0.01 per pixel are per pixel of the resolution the game renders at, not of a fixed 1024-wide screen: OpenTPW renders at the output's framebuffer size, whose pixels these are
+	internal static NVector2 OriginalPixels( UiContext context, NVector2 mouse ) => new( MathF.Truncate( mouse.X ), MathF.Truncate( mouse.Y ) );
 
 	/// <summary>
 	/// The pylon under the pointer: the pylon on the hovered cell, in a stack the piece whose projected position is nearest the pointer (the original picks the pylon model under the pointer).

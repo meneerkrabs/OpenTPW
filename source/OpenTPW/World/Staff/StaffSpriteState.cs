@@ -134,7 +134,9 @@ public sealed class StaffSpriteState
 			var performance = animations != null && entry < animations.Performances.Count ? animations.Performances[entry] : (SpritePerformance?)null;
 			var program = performance is { Program: >= 0 and <= 3 } ? performance.Value.Program : 0;
 			var slot = performance is { Slot: >= 0 and < SpriteAnimationFile.SlotCount } ? performance.Value.Slot : StaffSpriteRules.DefaultPerformanceSlot;
-			StaffSpriteVm.ApplyPerformance( source, program, slot, FramesOfSlot( animations, slot ) );
+			// the frame count is the bank's own, stored as it is (0x00475C16, 0x00475C1B); the core refuses 0, which only a slot without metadata (no bank loaded) gives, and then 1 stands in
+			var frames = FramesOfSlot( animations, slot );
+			StaffSpriteVm.ApplyPerformance( source, program, slot, frames > 0 ? frames : 1 );
 			return;
 		}
 		StaffSpriteVm.ApplyTemplate( source, ProgramOf( template )!.Value );

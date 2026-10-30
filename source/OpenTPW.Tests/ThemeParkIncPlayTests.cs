@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using OpenTPW.UI.Original;
 
 namespace OpenTPW.Tests;
 
@@ -68,6 +69,10 @@ public class ThemeParkIncPlayTests
 		StringAssert.Contains( note, "money only", "the note names what runs" );
 		foreach ( var refused in new[] { "staff", "research", "challenges", "advisor", "missions", "Global Master Save", "COS", "saves", "sharing" } )
 			StringAssert.Contains( note, refused, $"the note names the refused '{refused}'" );
+		// the slice HUD's limits line shows the note in the selected language; its English column is the note itself (the --tpi-smoke-test compares them on screen)
+		Assert.AreEqual( note, SupplementaryStrings.Get( OpenTpwText.TpiLimits, "English" ) );
+		foreach ( var language in SupplementaryStrings.SupportedLanguages )
+			StringAssert.Contains( SupplementaryStrings.Get( OpenTpwText.TpiLimits, language ), "Personnel", $"the {language} limits line names the Personnel File start screen" );
 		StringAssert.Contains( GameEditions.SliceNotice, "not verified" );
 		StringAssert.Contains( GameEditions.SliceNotice, "money" );
 	}

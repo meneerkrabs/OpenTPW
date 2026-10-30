@@ -16,12 +16,10 @@ public sealed record CoasterTrackTexture( string FileName, float ScrollRate, boo
 public sealed record CoasterCrossSection( int PointBlock, int EdgeBlock, int TrackEdge, int BlendToPointBlock, float BlendLength );
 
 /// <summary>One cross-section select (<c>asCrossSectionSelects[i]</c>): the section it picks (1-based), the pitch window in degrees it applies to and, for a blend select, its two sections.</summary>
+/// <param name="Windows">The eight window singles of the original's table entry, in radians: minimum and maximum of the speed, direction, pitch and bank ranges, -FLT_MAX and FLT_MAX where the sam names none (all zero counts as none). Null for a select built without them.</param>
 public sealed record CoasterSectionSelect( int CrossSection, float? PitchMin, float? PitchMax, int BlendFrom, int BlendTo, IReadOnlyList<float>? Windows = null )
 {
-	/// <summary>
-	/// The eight window singles of the original's table entry, in radians: minimum and maximum of the speed, direction, pitch and bank ranges, -FLT_MAX and FLT_MAX where the sam names none
-	/// (all zero counts as none). Null for a select built without them.
-	/// </summary>
+	/// <summary>Whether the select is a blend select (it names a from and a to section).</summary>
 	public bool IsBlend => BlendFrom != 0 || BlendTo != 0;
 
 	public bool Matches( float pitchDegrees ) => (PitchMin == null || pitchDegrees >= PitchMin) && (PitchMax == null || pitchDegrees <= PitchMax);

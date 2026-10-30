@@ -360,7 +360,7 @@ public class CoasterPresentationAssetTests
 
 	/// <summary>
 	/// The pylons' loft clips carry texture-coordinate keys (record flag 0x10000) which the add mode adds to the stored coordinates (0x4745c0): a lofted pylon's texture repeats along its height instead of
-	/// stretching over it. The Jungle pylon's loft adds 14.985 to the V of its top corners over the clip.
+	/// stretching over it. The Jungle pylon's loft adds 14.985 to the V of its top corners over the clip; its slot has no wrap flag, so tp.exe clamps those coordinates (0x575E9C, 0x567620) and every corner past 1 carries the clamp flag.
 	/// </summary>
 	[TestMethod]
 	public void ALoftedPylonsTextureRepeatsAlongItsHeight()
@@ -376,5 +376,8 @@ public class CoasterPresentationAssetTests
 		Assert.IsTrue( MaxV( 1f ) - MaxV( 0f ) > 10f, $"the V of the top corners grows by the loft clip's key: {MaxV( 0f )} to {MaxV( 1f )}" );
 		Assert.AreEqual( MinV( 0f ), MinV( 1f ), 1e-3f, "the bottom corners' keys stay at 0" );
 		Assert.AreEqual( 14.985f, MaxV( 1f ) - MaxV( 0f ), 0.5f );
+		var past = rig.Pose( new CoasterPylonPose( 1f ) ).SelectMany( part => part.Vertices ).Where( vertex => vertex.TexCoords.Y > 1.01f ).ToArray();
+		Assert.IsTrue( past.Length > 0 );
+		Assert.IsTrue( past.All( vertex => (vertex.MatFlags & TextureSlotAddressing.ClampFlag) != 0 ), "Jungle pylon slots do not wrap: coordinates past 1 clamp, as in tp.exe" );
 	}
 }

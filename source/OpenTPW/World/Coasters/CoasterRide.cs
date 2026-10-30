@@ -423,11 +423,11 @@ public sealed class CoasterRide
 	/// </summary>
 	// [BIN:TPW-EXE:0x43eb70 rebuild order] the only caller of 0x430ed0 (knot pass), 0x440c10 (sampler) and 0x439ab0 (pass), called from 0x435a30, 0x447d30 and 0x447d60; the sampler treats the chain's last node as the end node whatever the chain is
 	// [APPROX:COAST-004] a chain cut open by the demolish button is not sampled here (the original's sampler across the cut ends is not traced) and shows no build-time crossings
-	internal static IReadOnlyList<IReadOnlyList<int>> ChainCrossings( ICoasterCurve curve, IReadOnlyList<CoasterNode> chain, CoasterKnotPass pass, CoasterDefinition definition )
+	internal static IReadOnlyList<IReadOnlyList<int>> ChainCrossings( ICoasterCurve curve, IReadOnlyList<CoasterNode> chain, CoasterKnotPass pass, CoasterDefinition definition, CoasterSampling? sampling = null )
 	{
 		if ( chain.Count < 3 || pass.Knots.Length < 3 || chain.Any( node => (node.Flags & (CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart)) != 0 ) )
 			return Array.Empty<IReadOnlyList<int>>();
-		var sampling = curve.Sample( pass.Knots, definition.Curviness );
+		sampling ??= curve.Sample( pass.Knots, definition.Curviness );
 		// one sweep, as the original runs per frame: the live marker must stay cheap on a tangled chain (the repeats cost up to 16x)
 		return CoasterCollision.Run( NodesForCollision( chain, pass, sampling.KnotCoordinates, definition ), sampling.Samples, maxPasses: 1 ).Lists;
 	}

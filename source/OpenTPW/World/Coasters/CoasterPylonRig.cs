@@ -378,7 +378,7 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 							animation.ApplyStaticGroup( positions, add: true );
 						animation.ApplyAnimatedGroups( ticks[slot], positions, add: true );
 					}
-					// Add mode: every clip's texture-coordinate keys are added to the stored coordinates as well (0x4745c0 through 0x471860): a lofted pylon's texture repeats along its height
+					// Add mode: every clip's texture-coordinate keys are added to the stored coordinates as well (0x4745c0 through 0x471860): a lofted pylon's coordinates run past 1 along its height (wrap-flag slots repeat, the others clamp as tp.exe does, 0x575E9C)
 					if ( tracks[slot][node]?.UvAnimation is { } uv && uv.CornerCount == mesh.TexCoords.Length )
 					{
 						texCoords ??= mesh.TexCoords.Select( coordinate => new NVector2( coordinate.X, coordinate.Y ) ).ToArray();

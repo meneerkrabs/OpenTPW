@@ -98,7 +98,7 @@ public sealed record CoasterSliceKeys( IReadOnlyList<CoasterExtrusionRun> Runs, 
 /// <summary>
 /// The slice frame (<c>0x43e6b0</c>) of the knot pairs of a chain: the Bézier point, the yaw and pitch of its derivative and the roll about it, at any parameter of a pair.
 /// </summary>
-internal sealed class CoasterSliceFrames
+public sealed class CoasterSliceFrames
 {
 	private readonly IReadOnlyList<CoasterKnot> knots;
 	private readonly (SVector3 Back, SVector3 Forward)[] controls;
@@ -366,13 +366,13 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	// [BIN:TPW-EXE:0x43e6b0 slice frame] the slice position is the cubic Bézier of the knot pair (0x43e1b0: P0, P0 + T+/3, P1 + T−/3, P1 at +0x40/+0x4c/+0x34/+0x40), its yaw and pitch come from the tangent and its roll from the second rail plus the tag roll lerp (FrameRoll)
 	// [BIN:TPW-EXE:0x43eb70 slice lists] for every node the mesh builder lists, when the node has more than one knot, one value per knot over its own knot pairs (0x43f030 with the node as both ends: a value per knot, scaled by the count − 1), then 0xb values i/10 over the link to its next node; the slice emitter 0x43f4e0 skips each list's first value, the previous list's last
 	// [BIN:TPW-EXE:0x43f030 run boundaries] with the run table of 0x4402d0 (CoasterExtrusionRunBuilder) the lists also hold every run key that lies strictly between two neighbouring values of a list, in key order (0x43f0f3..0x43f127); a slice at such a key takes the frame and the sample coordinate of its place on the knot pair like any other (0x43f4e0)
-	public static CoasterSlice[] Slices( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed, int segments = SliceSegments, CoasterSuspendedRolls? suspended = null, CoasterSliceKeys? keys = null )
+	public static CoasterSlice[] Slices( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed, int segments = SliceSegments, CoasterSuspendedRolls? suspended = null, CoasterSliceKeys? keys = null, CoasterSliceFrames? frames = null )
 	{
 		ArgumentNullException.ThrowIfNull( knots );
 		var count = knots.Count;
 		if ( count < 2 || segments < 1 )
 			return Array.Empty<CoasterSlice>();
-		var frames = new CoasterSliceFrames( knots, curviness, closed, suspended );
+		frames ??= new CoasterSliceFrames( knots, curviness, closed, suspended );
 		var pairs = count - 1;
 		var slices = new List<CoasterSlice>( pairs * segments + 1 );
 		for ( var pair = 0; pair < pairs; pair++ )
@@ -418,7 +418,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	/// </summary>
 	// [BIN:TPW-EXE:0x440a30 run key] the sample index is the whole part of the coordinate; the walk starts at the knot record the sample points at (sample +0x2c) and goes on while the next knot's coordinate (+8) lies below the coordinate; the fraction is (c − this knot's) / (next's − this knot's), 0 when there is no next knot, and the key the knot's number (+0, the knot's index along the chain) plus the fraction (0x440a63..0x440ac2)
 	// [BIN:TPW-EXE:0x43c0a0 frame at a coordinate] the frame of a coordinate takes the same pair and fraction: the slice frame 0x43e6b0 over the two knot records (and the second rail's), with the fraction as its parameter (0x43c0de..0x43c144)
-	public static List<CoasterExtrusionRun> ExtrusionRuns( CoasterCrossSections sections, IReadOnlyList<CoasterKnot> knots, float curviness, CoasterSampling sampling, CoasterSuspendedRolls? suspended = null )
+	public static List<CoasterExtrusionRun> ExtrusionRuns( CoasterCrossSections sections, IReadOnlyList<CoasterKnot> knots, float curviness, CoasterSampling sampling, CoasterSuspendedRolls? suspended = null, CoasterSliceFrames? frames = null )
 	{
 		ArgumentNullException.ThrowIfNull( sections );
 		ArgumentNullException.ThrowIfNull( knots );
@@ -427,7 +427,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		var coordinates = sampling.KnotCoordinates;
 		if ( count < 3 || coordinates.Length < count || sampling.Samples.Length == 0 || sections.Selects.Count == 0 )
 			return new List<CoasterExtrusionRun>();
-		var frames = new CoasterSliceFrames( knots, curviness, true, suspended );
+		frames ??= new CoasterSliceFrames( knots, curviness, true, suspended );
 		(int Pair, float Ratio) Locate( float position )
 		{
 			var index = Math.Clamp( (int)position, 0, sampling.Samples.Length - 1 );

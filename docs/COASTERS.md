@@ -592,11 +592,12 @@ flume: sections 3 and 4 blend point blocks 2 and 3 over +1 and -1 sample coordin
 a length of zero or below puts it before the change, and two blends that meet share the stretch by their lengths (`CoasterExtrusionRunBuilder`). The slice lists `0x43F030` hold
 every run key strictly inside two neighbouring values, a ring is emitted again when the run moves, and a transition run's rings blend the section's points to its
 blend-to row by (coordinate - previous run's position) / (this run's position - previous run's position) x weight, plus 1 - weight for a positive length
-(`CoasterTrackMesh.BlendWeight`, `0x43FD60`). The run table is compared bit-exactly with isolated tp.exe runs (ORACLE X42, `CoasterRunsGolden`); a chain the
+(`CoasterTrackMesh.BlendWeight`, `0x43FD60`). The run table is compared bit-exactly with isolated tp.exe runs (ORACLE X42, `CoasterRunsGolden`: non-suspended chains of single-knot nodes with zero rolls only); a chain the
 demolish button cut open has no sample list here and keeps the per-segment pitch selection. **COAST-034:** the bend car's tables `0x438AB0` are compared bit-exactly
 with tp.exe (ORACLE X43, `CoasterBendGolden`; the PC acos at single precision was an ulp off); the bend writes only the body mesh's vertices, so a rider's head socket
 stays unbent as ported; the Croc and Maggot boats' vertices all lie inside their tables. The boats' own clips (no start behind the bend flag was found) and the widening of a bend
 type's model bounds (`0x4302AA..0x43041A`) stay open.
 The pylons' loft, incline and bank clips carry texture-coordinate keys (record flag `0x10000`: the Jungle pylon's loft adds 14.985 to the V of its top corners over the
-clip); the add mode adds them to the stored coordinates (`0x4745C0` through `0x471860`, `ModelUvAnimation.AddTo`), so a lofted pylon's texture repeats along its height
-instead of stretching over it (`CoasterPylonRig.Pose`).
+clip); the add mode adds them to the stored coordinates (`0x4745C0` through `0x471860`, `ModelUvAnimation.AddTo`), so a lofted pylon's coordinates run past 1 along its height. A slot with the wrap flag (0x10 or 0x20, Space's sc_pylon) repeats there; the other slots
+(the Jungle, Coaster and Candy pylons, flags 0x3) clamp, because the only writer of the wrap bits is the texture setup `0x575E9C` and the stage decoder `0x567620` clamps without them, so
+the original draws those pylons with the edge row smeared too (`CoasterPylonRig.Pose`, pinned by `ALoftedPylonsTextureRepeatsAlongItsHeight`).

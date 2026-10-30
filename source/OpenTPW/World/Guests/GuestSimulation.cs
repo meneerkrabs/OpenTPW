@@ -383,6 +383,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		attraction.LeaveQueue( guest.Id );
 		ClearQueueState( guest );
 		guest.SideshowWon = null;
+		guest.PendingFee = 0;
+		guest.PendingVisitSettlement = false;
 		guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.SmallHappinessChange & 0xFF) );
 		// [EXT:pools-swim] demolishing a changing room gets its swimmers out of the water: they step out on its path-side exit
 		if ( guest.InSwimSession )
@@ -931,7 +933,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( Settings.ArrivalWeatherPercentages is { } percentages )
 		{
 			// [BIN:TPI-EXE:0x005BCD60 arrival group] Theme Park Inc's group: 0 in world state 4; else ftol( weather percentage (rain, storm, snow or heatwave by the weather thing's state, else 100.0) x 0.01f x (NewParkBonus + park points) / PointsPerVisitor ), the factor and the divide in floating point (the oracle's X7 agrees on 532 of 532 inputs read at 53 bits); then at least MinPeople and the same cut as tp.exe's (500 online, else 1500)
-			// [APPROX:ARRIVAL-008] OpenTPW runs no Theme Park Inc weather (its weather thing's state word +0x70 is not traced), so the percentage is always 100 and the rain, storm, snow and heatwave modifiers never apply; the routine's other exit (a mode object answering 3, 0x005BCD7A) has no OpenTPW counterpart — evidence needed: the weather thing's states and what sets mode 3
+			// [BIN:TPI-EXE:0x5BCD7A mode exit] a mode object (0xA06558, +0x14) answering 3 gives no group: the object holds a mode 0..3 that the options dialog's radio group sets (0x498940..0x4989C7) and a mode of -1 becomes 3 at start-up (0x6A32D7); what the modes are is not read, so the exit is never taken here
+			// [APPROX:ARRIVAL-008] the weather state is rolled by the economy as 0x642770 does ([EXT:tpi-weather-spell-seed]); the mode exit above, the tail words of the roll table and the spell effects are not modelled
 			var state = ArrivalWeatherState?.Invoke() ?? 0;
 			double percent = state is >= 1 and <= 4 ? percentages[WeatherStateIndex[state - 1]] : 100.0;
 			var points = unchecked( Settings.ArrivalNewParkBonus + (ParkPoints?.Invoke() ?? 0) );
@@ -1031,6 +1034,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
+		// [BIN:TPI-EXE:0x60aedc umbrella cell close] the per-frame placement 0x60AE00 closes a shown umbrella (state 4 or 1) of a guest on a kart or water track cell (0x60AF32, 0x6142E0: state 2, sprite destroyed); a park turn here stands for the frames, and nothing but a pending change's due word is dropped with the state
+		if ( guest.UmbrellaState is UmbrellaRules.StateOpen or UmbrellaRules.StateClosing && StandsOnTrackCell( guest ) )
+		{
+			guest.UmbrellaState = UmbrellaRules.StateClosed;
+			guest.UmbrellaDueTurn = 0;
+		}
 		// [BIN:TPI-EXE:0x611334 umbrella switch] the switch on the state reads it once at the top of the rule: only a guest who is already open (4) when the rule starts gets the happiness modifier, never one the step below opens (1 to 4 at 0x6111E3, a due 3 at 0x611206)
 		var umbrellaWasOpen = guest.UmbrellaState == UmbrellaRules.StateOpen;
 		// [EXT:umbrellas-extension] the umbrella rule runs first on the guest's own phase, as Theme Park Inc's weather rule opens its needs block; only a guest who owns an umbrella is touched
@@ -3011,8 +3020,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use. A shop or sideshow with a price
 	/// records the guest's view of it in the park's statistics (<see cref="QueueJoinRules.PriceStatistics"/>), whether it pays or refuses.
 	/// </summary>
-	private bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
+	internal bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
 	{
+		if ( attraction.Kind == RideVisitorKind.Ride && Payments is { SettlesAtExit: true } )
+		{
+			// [BIN:TPI-EXE:0x61243A cash test] a Theme Park Inc ride with a fee refuses a guest whose purse is below it (unsigned); the willingness test before it is not ported (ECON-062). Theme Park World's rides are free
+			var fee = unchecked( (uint)PriceTermsOf( attraction ).Price );
+			return fee != 0 && fee > unchecked( (uint)guest.Money );
+		}
 		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
 			return false;
 		var terms = PriceTermsOf( attraction );
@@ -3387,11 +3402,21 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.HasWaypoint = false;
 		var price = 0;
 		guest.SideshowWon = null;
+		guest.PendingFee = 0;
+		guest.PendingVisitSettlement = false;
 		if ( Payments != null )
 		{
 			// [BIN:TPW-EXE:0x00501F3C state 14 entry] a sideshow's play is decided as it starts (+0x1F1 from 0x004E2670) and read when the visit ends (0x004FD970)
-			Payments.TryPayVisit( ride, guest.Money, out price, out var won );
+			var admitted = Payments.TryPayVisit( ride, guest.Money, out price, out var won );
 			guest.SideshowWon = ride.Kind == RideVisitorKind.Sideshow ? won : null;
+			if ( Payments.SettlesAtExit )
+			{
+				// [BIN:TPI-EXE:0x619670 fee recorded] the fee is kept and the purse and the bank stay as they are until the exit (0x6126D0)
+				guest.PendingFee = price;
+				// A refused payment is not a free sale. Keep the successful-admission bit separately because a legitimate free visit still books goods or a prize.
+				guest.PendingVisitSettlement = admitted;
+				price = 0;
+			}
 		}
 		else if ( ride.Price > 0 && guest.Money >= ride.Price )
 			price = ride.Price;
@@ -3564,6 +3589,20 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [BIN:TPW-EXE:0x4fe1cb till] the use routine's price step (0x4fe1a0, before the lost-sideshow test) takes the object's current price when it is not 0 and plays cat_kids 0xD0 at the guest
 		if ( ride.Price != 0 )
 			Voiced?.Invoke( guest, TillVoiceEvent );
+		if ( Payments is { SettlesAtExit: true } && guest.PendingVisitSettlement )
+		{
+			// [BIN:TPI-EXE:0x6126D0 fare taken] the exit's payment step (called at 0x61193B inside 0x6118D0, reached from 0x619A8E before the exit state is entered): the recorded fee leaves the purse and the bank takes it, and the cost booking follows for a won play or a sale (0x6119A1); a use cut short never gets here
+			var fee = guest.PendingFee;
+			guest.PendingFee = 0;
+			guest.PendingVisitSettlement = false;
+			Payments.SettleVisit( ride, fee, ride.Kind == RideVisitorKind.Sideshow ? guest.SideshowWon : null );
+			if ( fee > 0 )
+			{
+				guest.Money -= fee;
+				Observer?.Spent( guest, fee, ride.AttractionId );
+				MoneySpent?.Invoke( guest, fee, ride.AttractionId );
+			}
+		}
 		Payments?.VisitFinished( ride );
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
 		if ( decisions.RememberUse( ContextNow(), ViewOf( guest ), ViewOf( ride, guest ) ).PushUsedHistory )

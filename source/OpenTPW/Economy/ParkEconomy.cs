@@ -64,6 +64,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		// so its first update 0x004F8260 posts one day message whatever the date (0x004F8321 compares the computed day with the cache): the pending first day, consumed by the first actual turn
 		// ([EXT:tpi-money-only] Theme Park Inc has no traced calendar of its own: its park keeps the synchronised start)
 		PendingInitialDay = !Rules.ThemeParkInc;
+		if ( Rules.ThemeParkInc && settings.Weather is { } weather )
+			TpiWeather = new ThemeParkIncWeatherSpells( weather );
 		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
 		foreach ( var offer in settings.Loans )
 			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;
@@ -102,6 +104,12 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// </summary>
 	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, and the staff constructors' role searches run inside the placing click of a level ([BIN:TPW-EXE:0x004D4340 constructor searches] StaffWorldSimulation.Constructed after the hire's draws: [BIN:TPW-EXE:0x004F89E1 staff base speed] the consumed base-speed draw and the guard's variant draw, see ParkStaff.Hire; no staff constructor reseeds, 0x4F7B7E is the online avatar's); a headless economy has no staff world and searches on the member's first update, the researcher constructor's last call 0x5041F0 runs at a researcher's hire and removal without a draw ([BIN:TPW-EXE:0x005041F0 researchers flag] ParkStaff.LabActive, message 5 or 6 on a change; the advisor's reaction is ADVISOR-009's), and the weather stays off the stream ([BIN:TPW-EXE:0x59A796 advisor pick] the advisor's update takes no draw: all 351 descriptor rows are in the sequential mode 2, the mode-3 draw 0x59A7AC is unreachable)
 	public WorldRng World { get; private set; }
+
+	/// <summary>Theme Park Inc's weather spells (null in Theme Park World and where the settings hold no weather).</summary>
+	public ThemeParkIncWeatherSpells? TpiWeather { get; private set; }
+
+	/// <summary>The weather thing's state word for the arrival group: 1 heatwave, 2 rain, 3 storm, 4 snow, 0 none.</summary>
+	public int TpiWeatherState => TpiWeather?.State ?? 0;
 
 	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>
 	public void AttachWorld( WorldRng world ) => World = world ?? throw new ArgumentNullException( nameof( world ) );
@@ -428,7 +436,11 @@ public sealed partial class ParkEconomy : IParkEconomy
 		if ( changes.HasFlag( CalendarChange.Day ) )
 			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
 		if ( changes.HasFlag( CalendarChange.Month ) )
+		{
 			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
+			// the calendar's month field is zero-based (mMonthAtLastUpdate); the weather reads the date's month, 1 to 12
+			TpiWeather?.OnMonth( stored.Month + 1, stored.Year - ParkCalendar.Epoch.Year, bound => (int)World.Next( (uint)bound ) );
+		}
 		if ( changes.HasFlag( CalendarChange.Year ) )
 			Ledger.StartYear();
 		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
@@ -1434,11 +1446,13 @@ public sealed partial class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// Theme Park Inc's monthly running costs: every object is charged its current level's <c>Upgrades[n].RunningCost</c>, nothing in ride state 1 (broken down) or 4
-	/// (condemned). Theme Park World has no such cost. Each object is one debit that also enters its cost statistics (the month's cost, the 30-day cost ring and the total profit).
+	/// Theme Park Inc's monthly costs: every object is debited its current level's <c>Upgrades[n].RunningCost</c> (nothing in ride state 1 or 4) plus the costs its sales and plays booked during the month, as one debit
+	/// that also enters its cost statistics (the month's cost, the 30-day cost ring and the total profit). Theme Park World has no such cost and debits its goods and prizes at the sale.
 	/// </summary>
-	// [BIN:TPI-EXE:0x005DEFFF monthly object cost] the object's month message (type 0xC) takes 0 in state 1 or 4, else the type record's running cost (thing +0x84, the current level's Upgrades[n].RunningCost) plus the amount its statistics block accumulated (+0x938), writes the sum into the cost rings (+0xDD8, +0xB88), rolls them, and debits the bank (0x5C07B0, the twin of tp.exe 0x4D01F0), adding the sum to the game's money-out word (+0x20F28)
-	// [APPROX:ECON-060] only the running cost is charged: the accumulator +0x938 the statistics block adds to it is the monthly-costs ring that 0x5E60E0 raises with every booked cost (the cost of goods 0x5E6220, a ride's 0x5E63E0, the guest step 0x612740), but who handles the messages 0xC and 0xD it then posts is not traced (whether the cost of goods and prizes OpenTPW books at once (TryBuy, PlaySideshow) are debited there at the month's end instead, which would charge the month's sum twice), and Theme Park Inc's statistics are monthly rings (+0xB88 costs, +0x1028 profit, rolled by the same message) where OpenTPW's are the daily 30-day rings of Theme Park World (ECON-057), so the cost enters today's slot of the daily ring, and the order of this debit against the bank's own month handler (the batch credit, the loan instalments) is not read, so it runs after the wages' place and before the loans — evidence needed: the handlers of the messages 0xC and 0xD that 0x5E60E0 posts and the listener order of the month message
+	// [BIN:TPI-EXE:0x005DEFFF monthly object cost] the object's month message takes 0 in state 1 or 4, else the type record's running cost (thing +0x84, the current level's Upgrades[n].RunningCost), adds the amount its statistics block accumulated (+0x938, 0x5DF029..0x5DF042, whatever the state), writes the running cost into +0xDD8 and the sum into the cost ring +0xB88, takes profit +0x1028 = takings +0x6E8 - the sum, clears the accumulators and the monthly rings it rolls, and debits the bank (0x5C07B0, the twin of tp.exe 0x4D01F0) with the sum, adding it to the game's costs word (+0x20F28)
+	// [BIN:TPI-EXE:0x5E60E0 cost booking] raises the daily cost ring (+0x88) and the month accumulator (+0x938) and posts the negated cost as message 0xC (a shop) or 0xD (a sideshow) to the analyser object (0x408EE5, 0x4082C9, 0x4020BD): the statistics' own feed; no debit
+	// [BIN:TPI-EXE:0x5C07B0 bank debit] balance -= amount at once; every site that debits is a purchase, an upgrade, a wage or this month message: the guest's use outcome never does
+	// [APPROX:ECON-060] Theme Park Inc's statistics are monthly rings (+0xB88 costs, +0x1028 profit, rolled by the same message) where OpenTPW's are the daily 30-day rings of Theme Park World (ECON-057), so the month's cost enters today's slot of the daily ring (the sales' own costs already did at the sale), and the order of this debit against the bank's own month handler (the batch credit, the loan instalments) is not read, so OpenTPW debits the running costs after the wages' place and before the loan instalments
 	private void PayRunningCosts()
 	{
 		if ( !Rules.ThemeParkInc )
@@ -1447,13 +1461,15 @@ public sealed partial class ParkEconomy : IParkEconomy
 		var charged = 0;
 		foreach ( var item in objects.Values )
 		{
-			var cost = RunningCost( item );
+			var running = RunningCost( item );
+			var cost = running + item.PendingMonthlyCosts;
+			item.PendingMonthlyCosts = 0;
 			if ( cost == 0 )
 				continue;
 			Post( LedgerCategory.OtherCosts, cost );
 			item.CostsThisMonth += cost;
 			// the month message also writes the sum into the object's cost statistics and its profit (0x5DF070..0x5DF0A4: costs +0xB88, profit = takings +0x6E8 - costs)
-			item.CostsRing.Today += unchecked( (int)cost );
+			item.CostsRing.Today += unchecked( (int)running );
 			item.TotalProfit -= cost;
 			total += cost;
 			charged++;
@@ -1515,6 +1531,15 @@ public sealed partial class ParkEconomy : IParkEconomy
 		return unchecked( (uint)((int)info.Upgrades[0].CostOfUpgrade * ScrapPercent( item )) ) / 100;
 	}
 
+	/// <summary>The scrap percentage of an object that requires watering (<c>0x5E75F0</c> first branch): 100, 67, 34 and 0 for a count of 0 to 3, negative above.</summary>
+	// [BIN:TPI-EXE:0x5E7613 watering percentage] fild n; fsubr 3.0 (0x93AD54); times 33.33333206176758 (0x93B818, a single) in the x87's extended precision; the product is truncated toward zero (0x86FAB0); 3 - n compared with 0.0 (0x93A038): equal returns the truncated product, else 1 + it
+	public static int ThemeParkIncWateringPercent( int count )
+	{
+		var remaining = 3.0 - count;
+		var truncated = (int)(remaining * 33.33333206176758);
+		return remaining == 0.0 ? truncated : 1 + truncated;
+	}
+
 	/// <summary>
 	/// The object's scrap percentage (0xE2424): the age is the park clock since the build, in 365-day years (0, 1, 2, anything
 	/// else uses year 4), read from the current level's row <c>Upgrades[level].ScrapValueYearN</c>. An object nobody has used
@@ -1527,8 +1552,10 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || info.Upgrades.Count == 0 )
 			return 0;
+		// [BIN:TPI-EXE:0x005E75F9 scrap percentage] the routine tests the thing flag +0x43 bit 0x10 first (set for a type with UsageInfo.RequiresWatering, 0x5DB654): the script variable 0 of the thing's script (0x6B0740 finds it by the thing id +0x2C, 0x6B0C90 reads variable 0; no script reads 0) is the count n, and the answer is ftol((3 - n) x 33.333332) plus 1 unless 3 - n is exactly 0: 100, 67, 34, 0 for n = 0..3, then -32, -65 and so on (0x5E7613..0x5E764F); the condemned test follows only for the other objects
+		if ( Rules.ThemeParkInc && info.RequiresWatering )
+			return ThemeParkIncWateringPercent( item.ScriptCondition );
 		// [BIN:TPI-EXE:0x005E765B scrap percentage] Theme Park Inc's percentage routine 0x005E75F0 refuses a condemned object (state +0xA0 = 4) any refund before it reaches the year rule it shares with tp.exe 0x004E2290
-		// [APPROX:ECON-061] the routine's first branch (thing flag +0x43 bit 0x10, which gives 100, 67, 34 or 0 percent from a count read through a script-side lookup) is left out: what sets the flag and what the count is are not traced, so such an object takes the year rule — evidence needed: the writer of flag +0x43 (no site of TPI Game.exe sets the bit directly: the 16 that touch +0x43 only test it) and the lookup behind 0x40AE89 / 0x4078BA, whose count n gives (3 - n) x 33.33 percent, 1 plus the truncated product unless it is exactly 0 (100, 67, 34 and 0 for n = 0 to 3, negative above, 0x5E7613..0x5E764F)
 		if ( Rules.ThemeParkInc && ObjectState( item ) == RideObjectStates.Condemned )
 			return 0;
 		var level = Math.Min( item.Level, info.Upgrades.Count - 1 );
@@ -2007,7 +2034,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 			BuiltTick = Math.Clamp( builtTick ?? Tick, 0, Tick ),
 			Imported = imported,
 			TimesUsed = timesUsed,
-			Price = info.PricePerUse ?? 0,
+			Price = info.PricePerUse ?? (Rules.ThemeParkInc && info.Kind == ParkObjectKind.Ride ? info.RidePricePerUse : 0),
 			CostOfGoods = info.CostOfGoods ?? 0,
 			ChanceOfLosingPercent = info.ChanceOfLosingPercent ?? 0
 		};
@@ -2549,29 +2576,46 @@ public sealed partial class ParkEconomy : IParkEconomy
 		if ( !objects.TryGetValue( instanceId, out var item ) || item.Kind != ParkObjectKind.Shop || !item.IsOpen || IsBankrupt || visitorCash < item.Price )
 			return false;
 		pricePaid = item.Price;
+		BookShopSale( item, item.Price );
+		return true;
+	}
+
+	private void BookShopSale( ParkObjectState item, int price )
+	{
 		// [BIN:TPW-EXE:0x004FE1A0 price taken] the use routine's price step takes the price (+0x194) only when it is not 0: the takings 0x004E16B0 (bank money in, the
 		// shop row, the per-type sale count and the challenge accumulators), the till sound and the guest's money; a free sale skips all of it, while the cost of
 		// goods (0x004FE1E0 → 0x004E1920) and the customer count (0x004E1690) are still booked
-		if ( item.Price != 0 )
+		if ( price != 0 )
 		{
-			Post( LedgerCategory.ShopTakings, item.Price );
-			item.TakingsThisMonth += item.Price;
-			item.TakingsRing.Today += item.Price;
+			Post( LedgerCategory.ShopTakings, price );
+			item.TakingsThisMonth += price;
+			item.TakingsRing.Today += price;
 			if ( Catalog.TryGet( item.InfoId, out var info ) )
 				Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
 		}
 		// [BIN:TPW-EXE:0x004FE1E0 shop use] a shop (WhichUIType 1) books 0x004E1B40's value (ShopGoodsCost: the cost of goods scaled by the quality and special-ingredient bytes) through 0x004E1920: the bank debit, the object's cost rings and the challenge types 12 and 13 all take the same number
-		var goods = Catalog.TryGet( item.InfoId, out var shopInfo ) ? ShopGoodsCost.Of( item.CostOfGoods, item.QualityOfGoods, item.IngredientAmount, shopInfo.SpecialIngredient ) : item.CostOfGoods;
-		Post( LedgerCategory.OtherCosts, goods );
+		var hasShopInfo = Catalog.TryGet( item.InfoId, out var shopInfo );
+		// [BIN:TPI-EXE:0x612740 use outcome] Theme Park Inc's shop sale books its cost of goods (0x5E63E0, ThemeParkIncGoodsCost) through 0x5E60E0, which raises the object's daily cost ring (+0x88) and its month accumulator (+0x938) and debits nothing: the month message pays the accumulator with the running cost (ECON-060)
+		var tpiGoods = Rules.ThemeParkInc && hasShopInfo;
+		var goods = tpiGoods ? ThemeParkIncGoodsCost.Of( item.CostOfGoods, item.QualityOfGoods, item.IngredientAmount, ThemeParkIncGoodsCost.BuiltThirdByte, shopInfo!.SpecialIngredient, shopInfo.ShopType )
+			: hasShopInfo ? ShopGoodsCost.Of( item.CostOfGoods, item.QualityOfGoods, item.IngredientAmount, shopInfo!.SpecialIngredient ) : item.CostOfGoods;
 		item.CustomersThisMonth++;
 		item.CustomersRing.Today++;
-		item.CostsThisMonth += goods;
 		item.CostsRing.Today += goods;
-		item.TotalProfit += item.Price - goods;
-		Counters.Add( ParkCounters.ShopProfit, item.Price - goods );
-		if ( item.Price != 0 )
-			Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.ShopTakings ) );
-		return true;
+		if ( Rules.ThemeParkInc )
+		{
+			item.PendingMonthlyCosts += goods;
+			item.TotalProfit += price;
+		}
+		else
+		{
+			Post( LedgerCategory.OtherCosts, goods );
+			item.CostsThisMonth += goods;
+			item.TotalProfit += price - goods;
+		}
+		Counters.Add( ParkCounters.ShopProfit, price - goods );
+		if ( price != 0 )
+			Raise( ParkEventKind.GuestPaid, price, item.Id, item.InfoId, nameof( LedgerCategory.ShopTakings ) );
 	}
 
 	/// <summary>
@@ -2590,32 +2634,124 @@ public sealed partial class ParkEconomy : IParkEconomy
 			return false;
 		pricePaid = item.Price;
 		won = SideshowWins( item.ChanceOfLosingPercent, (int)World.Next( 100u ) );
+		BookSideshowPlay( item, item.Price, won );
+		return true;
+	}
+
+	private void BookSideshowPlay( ParkObjectState item, int price, bool won )
+	{
 		var prize = won ? item.CostOfGoods : 0;
 		// [BIN:TPW-EXE:0x004FE1A0 price taken] a free play skips the takings (0x004E16B0) as a free sale does; the prize is still paid
-		if ( item.Price != 0 )
+		if ( price != 0 )
 		{
-			Post( LedgerCategory.SideshowTakings, item.Price );
-			item.TakingsThisMonth += item.Price;
-			item.TakingsRing.Today += item.Price;
+			Post( LedgerCategory.SideshowTakings, price );
+			item.TakingsThisMonth += price;
+			item.TakingsRing.Today += price;
 		}
-		Post( LedgerCategory.OtherCosts, prize );
 		item.CustomersThisMonth++;
 		item.CustomersRing.Today++;
-		item.CostsThisMonth += prize;
 		item.CostsRing.Today += prize;
-		item.TotalProfit += item.Price - prize;
+		if ( Rules.ThemeParkInc )
+		{
+			// [BIN:TPI-EXE:0x612789 sideshow cost] a won play (the use outcome 0x612740 runs for +0x21B set) books the thing's +0x88 through 0x5E60E0, the month accumulator again (ECON-060)
+			item.PendingMonthlyCosts += prize;
+			item.TotalProfit += price;
+		}
+		else
+		{
+			Post( LedgerCategory.OtherCosts, prize );
+			item.CostsThisMonth += prize;
+			item.TotalProfit += price - prize;
+		}
 		if ( won )
 		{
 			item.WinnersThisMonth++;
 			item.WinnersRing.Today++;
 		}
-		Counters.Add( ParkCounters.SideshowProfit, item.Price - prize );
-		if ( item.Price != 0 )
-			Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.SideshowTakings ) );
+		Counters.Add( ParkCounters.SideshowProfit, price - prize );
+		if ( price != 0 )
+			Raise( ParkEventKind.GuestPaid, price, item.Id, item.InfoId, nameof( LedgerCategory.SideshowTakings ) );
+	}
+
+	/// <summary>
+	/// Theme Park Inc: the checks a guest passes when it boards (the object is open, the park is not bankrupt, the purse holds the price) and the price it will pay at the exit; a sideshow's play is drawn here (the
+	/// result is kept by the guest and read at the exit). Nothing is booked: <see cref="SettleVisit"/> does that when the guest leaves. False refuses the visit (a ride's too, when its fee is above 0).
+	/// </summary>
+	// [BIN:TPI-EXE:0x619670 fee recorded] the attraction's call records the price (+0x1B4 of the guest, the thing's +0x94) and nothing is paid; the money moves in the exit's payment step (0x6126D0, called at 0x61193B inside 0x6118D0, reached from 0x619A8E just before the exit state 0x13 is entered)
+	public bool TryAdmitVisit( int instanceId, long visitorCash, out int price, out bool? won )
+	{
+		price = 0;
+		won = null;
+		if ( !objects.TryGetValue( instanceId, out var item ) )
+			return true;
+		switch ( item.Kind )
+		{
+			case ParkObjectKind.Shop:
+				if ( !item.IsOpen || IsBankrupt || visitorCash < item.Price )
+					return false;
+				price = item.Price;
+				return true;
+			case ParkObjectKind.Sideshow:
+				if ( !item.IsOpen || IsBankrupt || visitorCash < item.Price )
+					return false;
+				price = item.Price;
+				won = SideshowWins( item.ChanceOfLosingPercent, (int)World.Next( 100u ) );
+				return true;
+			case ParkObjectKind.Ride:
+				if ( item.Price == 0 )
+					return true;
+				if ( IsBankrupt || visitorCash < item.Price )
+					return false;
+				price = item.Price;
+				return true;
+			default:
+				return true;
+		}
+	}
+
+	/// <summary>Theme Park Inc: the payment step and the cost booking of a finished use (see <see cref="TryAdmitVisit"/>): the fee the guest recorded is credited at once, the goods or the prize go to the object's month accumulator.</summary>
+	// [BIN:TPI-EXE:0x6126D0 fare taken] the exit's payment step takes the recorded fee whenever it is above 0 (0x6126E3..0x61270A): the income booking 0x5E5DE0 credits the bank at once (0x5C0760), adds it to the object's takings and, for a shop, posts message 0xC; the guest's purse (+0x1C0) falls and its spent word (+0x1C4) rises, for every kind
+	// [BIN:TPI-EXE:0x612740 use outcome] then, for a guest whose +0x21B is set (a won sideshow, a shop's sale), the cost booking: a shop's goods (0x5E63E0) or a sideshow's prize (+0x88) through 0x5E60E0 (0x6119A1)
+	public void SettleVisit( int instanceId, int price, bool? won )
+	{
+		if ( !objects.TryGetValue( instanceId, out var item ) )
+			return;
+		switch ( item.Kind )
+		{
+			case ParkObjectKind.Shop: BookShopSale( item, price ); break;
+			case ParkObjectKind.Sideshow: BookSideshowPlay( item, price, won == true ); break;
+			case ParkObjectKind.Ride: if ( price != 0 ) BookRideFare( item, price ); break;
+		}
+	}
+
+	/// <summary>
+	/// A Theme Park Inc ride's fee for one use: the price (<see cref="ParkObjectState.Price"/>, <c>UsageInfo.InitPricePerUse</c>) when it is above 0 and the guest holds that much: the takings are credited at once, the
+	/// object's takings and total profit rise and the guest's purse falls (the caller). Theme Park World's rides are free; true there and for a free ride.
+	/// </summary>
+	// [BIN:TPI-EXE:0x6126D0 fare taken] the use's payment step takes the fee the guest recorded when the attraction called it (+0x1B4, the thing's price +0x94 at 0x619670) whenever it is above 0: the income booking 0x5E5DE0 credits the bank at once (0x5C0760: balance += fee), adds it to the object's takings (+0x0, +0x6E8) and, for a shop, posts message 0xC; then the guest's purse (+0x1C0) falls and its spent word (+0x1C4) rises, for every kind
+	// [BIN:TPI-EXE:0x61243A cash test] the price test refuses a guest whose purse (+0x1C0) is below the price (unsigned), before the use
+	public bool TryPayRideFare( int instanceId, long visitorCash, out int pricePaid )
+	{
+		pricePaid = 0;
+		if ( !Rules.ThemeParkInc || !objects.TryGetValue( instanceId, out var item ) || item.Kind != ParkObjectKind.Ride || item.Price == 0 )
+			return true;
+		if ( IsBankrupt || visitorCash < item.Price )
+			return false;
+		pricePaid = item.Price;
+		BookRideFare( item, item.Price );
 		return true;
 	}
 
-	/// <summary>Rides have no per-ride price in the original data; use is counted for statistics and challenges.</summary>
+	private void BookRideFare( ParkObjectState item, int price )
+	{
+		Post( LedgerCategory.OtherIncome, price );
+		item.TakingsThisMonth += price;
+		item.TakingsRing.Today += price;
+		item.TotalProfit += price;
+		Raise( ParkEventKind.GuestPaid, price, item.Id, item.InfoId, nameof( LedgerCategory.OtherIncome ) );
+	}
+
+	/// <summary>Rides have no per-ride price in the original data of Theme Park World; use is counted for statistics and challenges.</summary>
 	public void RecordRideUse( int instanceId )
 	{
 		if ( !objects.TryGetValue( instanceId, out var item ) )

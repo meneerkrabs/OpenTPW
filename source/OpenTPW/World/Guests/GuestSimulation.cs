@@ -5008,4 +5008,3 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return hash;
 	}
 }
-

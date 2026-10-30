@@ -239,4 +239,3 @@ public class HeldGuestImportTests
 		Assert.AreEqual( (StaffJob.Idle, 0), (member.Job, member.TargetGuestId) );
 	}
 }
-

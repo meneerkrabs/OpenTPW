@@ -176,4 +176,3 @@ public class KidSetLoadTests
 		return hash.Value;
 	}
 }
-

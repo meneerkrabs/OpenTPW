@@ -12,7 +12,7 @@
   reduced by the sets loaded (`Guest.KidSetDraw`, saved as an optional field, not
   hashed: the simulation never reads it and the constructor already took the draw,
   so the random stream and the pins are unchanged); a guest of an original save keeps
-  the bank its person record holds, and a costume return redraws it. The pools extension's kid, head and swim sets take the
+  the bank its person record holds, reduced by the kid sets loaded at every load (0x4F93AA), and a costume return redraws it. The pools extension's kid, head and swim sets take the
   same places. GUEST-017 loses its kid-set clause.
 - **Guests held by a guard are imported.** An original save's guest in state 17 is
   imported held (no walk, balloon, ride or bin, as the hold `0x4FEB10` leaves it),

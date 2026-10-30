@@ -249,7 +249,7 @@ public sealed class Guest
 	/// <summary>
 	/// The guest's sprite bank <c>+0x20</c> as the original stores it: 0x00541F70's (word >> 2) modulo the kid sets loaded when the guest was made (0x004FB1A7, 0x004FB1B5), the raw draw only where that count is
 	/// not known (a headless run, <see cref="GuestSimulation.KidSetCount"/>). The renderers read it modulo the sets loaded now (<see cref="GuestAppearance.KidSet(Guest, int)"/>), the second reduction of a load (0x004F93AA);
-	/// the simulation never reads it, so it is saved but not hashed. A guest of an original save keeps the saved bank number.
+	/// the simulation never reads it, so it is saved but not hashed. A guest of an original save keeps the saved bank number, reduced by the kid sets loaded (0x4F93AA), as every load reduces it.
 	/// </summary>
 	public uint KidSetDraw
 	{

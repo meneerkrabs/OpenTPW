@@ -1,4 +1,5 @@
 using System.Numerics;
+using NVector2 = System.Numerics.Vector2;
 using NVector3 = System.Numerics.Vector3;
 
 namespace OpenTPW;
@@ -364,18 +365,28 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 			if ( node >= 0 )
 			{
 				NVector3[]? positions = null;
+				NVector2[]? texCoords = null;
 				for ( var slot = 0; slot < SlotCount; slot++ )
 				{
-					if ( clips[slot] is not { } clip || tracks[slot][node]?.VertexAnimation is not { } animation || animation.GetPoseLimitation( mesh.Positions.Length, clip.Duration ) != null )
+					if ( clips[slot] is not { } clip )
 						continue;
-					positions ??= mesh.Positions.Select( position => position.GetSystemVector3() ).ToArray();
-					// Add mode: every clip's vertex keys are added to the stored mesh (0x471860).
-					if ( animation.HasStaticGroup )
-						animation.ApplyStaticGroup( positions, add: true );
-					animation.ApplyAnimatedGroups( ticks[slot], positions, add: true );
+					if ( tracks[slot][node]?.VertexAnimation is { } animation && animation.GetPoseLimitation( mesh.Positions.Length, clip.Duration ) == null )
+					{
+						positions ??= mesh.Positions.Select( position => position.GetSystemVector3() ).ToArray();
+						// Add mode: every clip's vertex keys are added to the stored mesh (0x471860).
+						if ( animation.HasStaticGroup )
+							animation.ApplyStaticGroup( positions, add: true );
+						animation.ApplyAnimatedGroups( ticks[slot], positions, add: true );
+					}
+					// Add mode: every clip's texture-coordinate keys are added to the stored coordinates as well (0x4745c0 through 0x471860): a lofted pylon's coordinates run past 1 along its height (wrap-flag slots repeat, the others clamp as tp.exe does, 0x575E9C)
+					if ( tracks[slot][node]?.UvAnimation is { } uv && uv.CornerCount == mesh.TexCoords.Length )
+					{
+						texCoords ??= mesh.TexCoords.Select( coordinate => new NVector2( coordinate.X, coordinate.Y ) ).ToArray();
+						uv.AddTo( ticks[slot], texCoords );
+					}
 				}
-				if ( positions != null )
-					source = WithPositions( mesh, positions );
+				if ( positions != null || texCoords != null )
+					source = WithAnimated( mesh, positions, texCoords );
 			}
 			var bake = node >= 0 ? matrices[node] : Matrix4x4.Identity;
 			foreach ( var (vertices, indices, textures, _) in ObjectAssets.ConvertMeshParts( source, bake ) )
@@ -384,18 +395,22 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 		return parts;
 	}
 
-	private static ModelFile.Mesh WithPositions( ModelFile.Mesh mesh, NVector3[] positions )
+	private static ModelFile.Mesh WithAnimated( ModelFile.Mesh mesh, NVector3[]? positions, NVector2[]? texCoords )
 	{
-		var vertices = new ModelFile.Vertex[mesh.Vertices.Length];
-		for ( var index = 0; index < vertices.Length; index++ )
-			vertices[index] = new ModelFile.Vertex { Position = positions[mesh.CornerPositionIndices[index]], TextureIndex = mesh.Vertices[index].TextureIndex };
+		var vertices = mesh.Vertices;
+		if ( positions != null )
+		{
+			vertices = new ModelFile.Vertex[mesh.Vertices.Length];
+			for ( var index = 0; index < vertices.Length; index++ )
+				vertices[index] = new ModelFile.Vertex { Position = positions[mesh.CornerPositionIndices[index]], TextureIndex = mesh.Vertices[index].TextureIndex };
+		}
 		return new ModelFile.Mesh
 		{
 			Name = mesh.Name,
 			NodeIndex = mesh.NodeIndex,
 			Vertices = vertices,
 			Normals = mesh.Normals,
-			TexCoords = mesh.TexCoords,
+			TexCoords = texCoords == null ? mesh.TexCoords : texCoords.Select( coordinate => new Vector2( coordinate.X, coordinate.Y ) ).ToArray(),
 			Materials = mesh.Materials,
 			Indices = mesh.Indices
 		};

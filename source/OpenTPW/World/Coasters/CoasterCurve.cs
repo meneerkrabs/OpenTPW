@@ -69,12 +69,65 @@ public sealed record CoasterKnotPass( CoasterKnot[] Knots, int[] FirstKnot, int[
 /// <summary>
 /// One cross-section slice of the drawn track mesh: the curve point at a parameter step of one knot pair, the yaw and
 /// pitch of its tangent, the roll, the pair's section (the node the pair starts at) and the node its end knot belongs to
-/// (<see cref="NextSection"/>: the same node for a pair between two tags of one pylon, the next node for a link).
+/// (<see cref="NextSection"/>: the same node for a pair between two tags of one pylon, the next node for a link). With the sampler's output it also holds its key (the knot number plus the
+/// fraction, NaN without) and its sample coordinate (the lerp of the pair's two knot coordinates, NaN without), which the run table reads.
 /// </summary>
-public readonly record struct CoasterSlice( SVector3 Position, float Yaw, float Pitch, float Roll, int Section, float T, int NextSection = -1 )
+public readonly record struct CoasterSlice( SVector3 Position, float Yaw, float Pitch, float Roll, int Section, float T, int NextSection = -1, float Key = float.NaN, float Coordinate = float.NaN )
 {
 	/// <summary>Whether the slice lies on a pair between two knots of one node (the tags of one pylon).</summary>
 	public bool InsideNode => NextSection == Section;
+}
+
+/// <summary>
+/// The sampler's output a chain's slices read to take their place on the run table: the runs, the sample coordinate of every knot of the chain and the index of the span's first knot along the chain.
+/// </summary>
+public sealed record CoasterSliceKeys( IReadOnlyList<CoasterExtrusionRun> Runs, IReadOnlyList<float> Coordinates, int FirstKnot = 0 )
+{
+	/// <summary>The slice at <paramref name="key"/> on knot pair <paramref name="pair"/> of the span whose first knot has the key <paramref name="baseKey"/>.</summary>
+	// [BIN:TPW-EXE:0x43f8a6 slice coordinate] the slice's sample coordinate is the first knot's coordinate times (1 − t) plus the second knot's times t, with t the key minus the first knot's key
+	internal CoasterSlice Slice( CoasterSliceFrames frames, int pair, float key, float baseKey )
+	{
+		var t = key - baseKey;
+		var slice = frames.At( pair, t );
+		var global = FirstKnot + pair;
+		var coordinate = global + 1 < Coordinates.Count ? Coordinates[global] * (1f - t) + Coordinates[global + 1] * t : float.NaN;
+		return slice with { Key = key, Coordinate = coordinate };
+	}
+}
+
+/// <summary>
+/// The slice frame (<c>0x43e6b0</c>) of the knot pairs of a chain: the Bézier point, the yaw and pitch of its derivative and the roll about it, at any parameter of a pair.
+/// </summary>
+public sealed class CoasterSliceFrames
+{
+	private readonly IReadOnlyList<CoasterKnot> knots;
+	private readonly (SVector3 Back, SVector3 Forward)[] controls;
+	private readonly CoasterKnot[] rail;
+	private readonly (SVector3 Back, SVector3 Forward)[] secondControls;
+	private readonly CoasterSuspendedRolls? suspended;
+
+	public CoasterSliceFrames( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed, CoasterSuspendedRolls? suspended )
+	{
+		this.knots = knots;
+		this.suspended = suspended;
+		controls = HermiteCoasterCurve.Controls( knots, curviness, closed );
+		rail = HermiteCoasterCurve.SecondRail( knots );
+		secondControls = HermiteCoasterCurve.Controls( rail, curviness, closed );
+	}
+
+	/// <summary>The slice of knot pair <paramref name="pair"/> (to the next knot) at parameter <paramref name="t"/>.</summary>
+	public CoasterSlice At( int pair, float t )
+	{
+		var next = pair + 1;
+		var position = HermiteCoasterCurve.Bezier( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
+		var tangent = HermiteCoasterCurve.Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
+		var (yaw, pitch) = tangent.LengthSquared() > 0 ? CoasterTrack.PcOrientation( tangent ) : (0f, 0f);
+		var second = HermiteCoasterCurve.Bezier( rail[pair].Position, secondControls[pair].Forward, secondControls[next].Back, rail[next].Position, t );
+		var roll = suspended is { } rolls
+			? HermiteCoasterCurve.FrameRoll( position, second, yaw, pitch, knots[pair], knots[next], t, rolls.Samples, rolls.Coordinate( pair ), rolls.Coordinate( next ) )
+			: HermiteCoasterCurve.FrameRoll( position, second, yaw, pitch, knots[pair], knots[next], t );
+		return new CoasterSlice( position, yaw, pitch, roll, knots[pair].Section, t, knots[next].Section );
+	}
 }
 
 /// <summary>
@@ -312,16 +365,14 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	/// </summary>
 	// [BIN:TPW-EXE:0x43e6b0 slice frame] the slice position is the cubic Bézier of the knot pair (0x43e1b0: P0, P0 + T+/3, P1 + T−/3, P1 at +0x40/+0x4c/+0x34/+0x40), its yaw and pitch come from the tangent and its roll from the second rail plus the tag roll lerp (FrameRoll)
 	// [BIN:TPW-EXE:0x43eb70 slice lists] for every node the mesh builder lists, when the node has more than one knot, one value per knot over its own knot pairs (0x43f030 with the node as both ends: a value per knot, scaled by the count − 1), then 0xb values i/10 over the link to its next node; the slice emitter 0x43f4e0 skips each list's first value, the previous list's last
-	// [APPROX:COAST-026] the cross-section run boundaries the builder adds to these lists (0x43f030 inserts the run positions of 0x4402d0, found on the sample coordinate in steps of 0.25) are not inserted: a section change takes effect at the slice before the segment that changes — evidence needed: the run list builder 0x4402d0 and the blend path of 0x43fd60 run on a real flume track
-	public static CoasterSlice[] Slices( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed, int segments = SliceSegments, CoasterSuspendedRolls? suspended = null )
+	// [BIN:TPW-EXE:0x43f030 run boundaries] with the run table of 0x4402d0 (CoasterExtrusionRunBuilder) the lists also hold every run key that lies strictly between two neighbouring values of a list, in key order (0x43f0f3..0x43f127); a slice at such a key takes the frame and the sample coordinate of its place on the knot pair like any other (0x43f4e0)
+	public static CoasterSlice[] Slices( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed, int segments = SliceSegments, CoasterSuspendedRolls? suspended = null, CoasterSliceKeys? keys = null, CoasterSliceFrames? frames = null )
 	{
 		ArgumentNullException.ThrowIfNull( knots );
 		var count = knots.Count;
 		if ( count < 2 || segments < 1 )
 			return Array.Empty<CoasterSlice>();
-		var controls = Controls( knots, curviness, closed );
-		var rail = SecondRail( knots );
-		var secondControls = Controls( rail, curviness, closed );
+		frames ??= new CoasterSliceFrames( knots, curviness, closed, suspended );
 		var pairs = count - 1;
 		var slices = new List<CoasterSlice>( pairs * segments + 1 );
 		for ( var pair = 0; pair < pairs; pair++ )
@@ -330,20 +381,74 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			// a pair between two tags of one pylon gets the slices of its knots alone
 			var steps = knots[pair].Section == knots[next].Section ? 1 : segments;
 			var last = pair == pairs - 1 ? steps : steps - 1;
+			if ( keys == null )
+			{
+				for ( var step = 0; step <= last; step++ )
+					slices.Add( frames.At( pair, (float)step / steps ) );
+				continue;
+			}
+			// [BIN:TPW-EXE:0x43f030 list values] the values of a link are the key of its first knot plus i/10 (single operations: i/10 times the span 1.0, plus the key), of a pair inside a node the key plus i; the frame's parameter is the value minus the key of the first knot (0x43f7da..0x43f8d5, 0x43f8da..0x43f96b)
+			var baseKey = (float)(keys.FirstKnot + pair);
+			var run = 0;
+			while ( run < keys.Runs.Count && keys.Runs[run].Key < baseKey )
+				run++;
+			float Value( int step ) => steps == 1 ? baseKey + step : (float)step / steps * 1f + baseKey;
 			for ( var step = 0; step <= last; step++ )
 			{
-				var t = (float)step / steps;
-				var position = Bezier( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
-				var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
-				var (yaw, pitch) = tangent.LengthSquared() > 0 ? CoasterTrack.PcOrientation( tangent ) : (0f, 0f);
-				var second = Bezier( rail[pair].Position, secondControls[pair].Forward, secondControls[next].Back, rail[next].Position, t );
-				var roll = suspended is { } rolls
-					? FrameRoll( position, second, yaw, pitch, knots[pair], knots[next], t, rolls.Samples, rolls.Coordinate( pair ), rolls.Coordinate( next ) )
-					: FrameRoll( position, second, yaw, pitch, knots[pair], knots[next], t );
-				slices.Add( new CoasterSlice( position, yaw, pitch, roll, knots[pair].Section, t, knots[next].Section ) );
+				var value = Value( step );
+				slices.Add( keys.Slice( frames, pair, value, baseKey ) );
+				if ( step >= steps )
+					continue;
+				var following = Value( step + 1 );
+				while ( run < keys.Runs.Count && keys.Runs[run].Key >= value && keys.Runs[run].Key < following )
+				{
+					var key = keys.Runs[run].Key;
+					if ( key != value )
+						slices.Add( keys.Slice( frames, pair, key, baseKey ) );
+					run++;
+				}
 			}
 		}
 		return slices.ToArray();
+	}
+
+	/// <summary>
+	/// The cross-section runs of a chain's track mesh (<c>0x4402d0</c>) over the sampler's output for the chain's knots: the frame at a sample coordinate is the slice frame of the knot pair the coordinate lies on,
+	/// and its key the pair's knot number plus the fraction to the next knot. Null without a table.
+	/// </summary>
+	// [BIN:TPW-EXE:0x440a30 run key] the sample index is the whole part of the coordinate; the walk starts at the knot record the sample points at (sample +0x2c) and goes on while the next knot's coordinate (+8) lies below the coordinate; the fraction is (c − this knot's) / (next's − this knot's), 0 when there is no next knot, and the key the knot's number (+0, the knot's index along the chain) plus the fraction (0x440a63..0x440ac2)
+	// [BIN:TPW-EXE:0x43c0a0 frame at a coordinate] the frame of a coordinate takes the same pair and fraction: the slice frame 0x43e6b0 over the two knot records (and the second rail's), with the fraction as its parameter (0x43c0de..0x43c144)
+	public static List<CoasterExtrusionRun> ExtrusionRuns( CoasterCrossSections sections, IReadOnlyList<CoasterKnot> knots, float curviness, CoasterSampling sampling, CoasterSuspendedRolls? suspended = null, CoasterSliceFrames? frames = null )
+	{
+		ArgumentNullException.ThrowIfNull( sections );
+		ArgumentNullException.ThrowIfNull( knots );
+		ArgumentNullException.ThrowIfNull( sampling );
+		var count = knots.Count;
+		var coordinates = sampling.KnotCoordinates;
+		if ( count < 3 || coordinates.Length < count || sampling.Samples.Length == 0 || sections.Selects.Count == 0 )
+			return new List<CoasterExtrusionRun>();
+		frames ??= new CoasterSliceFrames( knots, curviness, true, suspended );
+		(int Pair, float Ratio) Locate( float position )
+		{
+			var index = Math.Clamp( (int)position, 0, sampling.Samples.Length - 1 );
+			var piece = Math.Clamp( sampling.Samples[index].Knot, 0, count - 1 );
+			while ( piece + 1 < count && coordinates[piece + 1] < position )
+				piece++;
+			var ratio = piece + 1 < count ? (position - coordinates[piece]) / (coordinates[piece + 1] - coordinates[piece]) : 0f;
+			return (piece, ratio);
+		}
+		float KeyAt( float position )
+		{
+			var (pair, ratio) = Locate( position );
+			return (float)(pair + (double)ratio);
+		}
+		CoasterExtrusionRunBuilder.Frame FrameAt( float position )
+		{
+			var (pair, ratio) = Locate( position );
+			var slice = frames.At( Math.Min( pair, count - 2 ), ratio );
+			return new CoasterExtrusionRunBuilder.Frame( slice.Yaw, slice.Pitch, slice.Roll );
+		}
+		return CoasterExtrusionRunBuilder.Build( sections, coordinates[count - 1], FrameAt, KeyAt );
 	}
 
 	public CoasterSampling Sample( IReadOnlyList<CoasterKnot> knots, float curviness )

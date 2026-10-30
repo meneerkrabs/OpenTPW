@@ -74,6 +74,27 @@ public sealed class ModelUvAnimation
 		return new NVector2( MathF.FusedMultiplyAdd( inverse, from.X, fraction * to.X ), MathF.FusedMultiplyAdd( inverse, from.Y, fraction * to.Y ) );
 	}
 
+	/// <summary>
+	/// Adds every corner's sample to <paramref name="texCoords"/> (add mode, the PC UV pass 0x4745c0 for a relative model: the pylons' clips of the coaster mesh builder): the key segment is found as
+	/// <see cref="FindKey"/> does and the sample is <c>a × (1 − t) + b × t</c> in single steps (no fused multiply-add), added to the corner's stored coordinate.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4745c0 UV add pass] for every corner of the block the clip time at +0x20 is truncated (ftol 0x474623), the first key whose tick is above it ends the segment (0x47462d..0x474650, the key before it starts it, t = (time − tick before) / (tick − tick before), 0x474745..0x47477f) or the last segment holds with t = 1 (0x474652); u = u1 × t + u0 × (1 − t) and v the same (0x474663..0x4746a3), and the add path (the model's relative flag, argument 4) adds them to the corner's stored U and V (0x4746ae..0x4746c0: the coordinates live in groups of four, the four Us then the four Vs, 0x20 bytes per group); the set path 0x4746d6 stores them
+	// [BIN:TPW-EXE:0x47219a UV pass gate] 0x471860 calls the UV pass for a record with flag 0x10000 (0x4721b7) in add mode always (0x4721aa: the model's relative flag at +0x30 bit 2), in set mode only while the global option 0x7b4980 bit 4 and the instance flag 0x4000 are clear (0x47219a..0x4721a8)
+	public void AddTo( float time, Span<NVector2> texCoords )
+	{
+		if ( texCoords.Length != CornerCount )
+			throw new ArgumentException( $"The block animates {CornerCount} corners, the mesh has {texCoords.Length}.", nameof( texCoords ) );
+		for ( var corner = 0; corner < firsts.Length; corner++ )
+		{
+			var key = FindKey( corner, time, out var fraction );
+			var first = firsts[corner];
+			var from = keys[first + key];
+			var to = keys[first + key + 1];
+			var inverse = 1f - fraction;
+			texCoords[corner] = new NVector2( texCoords[corner].X + (to.X * fraction + from.X * inverse), texCoords[corner].Y + (to.Y * fraction + from.Y * inverse) );
+		}
+	}
+
 	/// <summary>Writes every corner's sample to <paramref name="texCoords"/> (set mode; the corners must match).</summary>
 	public void Apply( float time, Span<NVector2> texCoords )
 	{

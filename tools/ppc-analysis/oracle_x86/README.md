@@ -57,3 +57,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## Theme Park Inc's shop cost of goods (round 10, package K)
 
 `tpi_goods_cost_oracle.py` runs the routine `0x5E6260` of the Theme Park Inc no-CD `Game.exe` (`OPENTPW_TPI_EXE`) with a synthetic thing and type record on random inputs and compares it with the formula `ThemeParkIncGoodsCost` ports (400 cases at the control words `0x27F` and `0x7F`, no mismatch).
+
+## The coaster's run table and bend tables (round 10, package N)
+
+`coaster_x87_oracle.py` runs the run builder `0x4402D0` over a sampled synthetic chain (`sampler(..., extrusion=...)`) and the bend car's tables `0x438AB0` (`bend_tables`); `coaster_runs_golden.py` writes `CoasterRunsGolden.cs` from 60 chains and `coaster_bend_golden.py` writes `CoasterBendGolden.cs` from 120 cars (both accept `--check FILE`). Findings X42 and X43 in `docs/reverse/ORACLE.md` section 7.29.

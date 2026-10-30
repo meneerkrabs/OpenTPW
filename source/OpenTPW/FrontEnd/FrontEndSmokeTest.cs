@@ -1688,7 +1688,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( Texture.Missing.NativeTexture is { IsDisposed: false } && Asset.All.OfType<Texture>().All( texture => texture.NativeTexture is not { IsDisposed: true } ), "the deferred release of the first park's materials left every live texture's GPU texture alone" );
 			secondParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
 			secondParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
-			Require( secondParkGuestAssets.Length == 10 && secondParkGuestAssets.All( Asset.All.Contains ), "a second park owns a fresh guest atlas, material and shader set" );
+			Require( secondParkGuestAssets.Length == ExpectedKidSets + 2 && secondParkGuestAssets.All( Asset.All.Contains ), "a second park owns a fresh guest atlas, material and shader set" );
 			flow.ShowFrontEnd( "jungle" );
 			Require( secondParkHeadAssets.All( asset => !Asset.All.Contains( asset ) ), "second park exit also removes every owned head asset" );
 			Require( secondParkGuestAssets.All( asset => !Asset.All.Contains( asset ) ), "second park exit also removes every owned guest asset" );

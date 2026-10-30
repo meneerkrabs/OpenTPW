@@ -67,7 +67,7 @@ internal sealed class AdvisorArrivalRing
 	/// and hype (124) or big-busload (140) scores can differ until real arrivals replace the relevant unknown values. At attachment, validated original-save rings replace this stand-in, including a known empty ring
 	/// (<see cref="SaveArrivalRing"/>, <see cref="SaveThemeParkIncArrivalRing"/>). The separate advisor snapshot restore policy still applies this fallback to null or explicitly empty histories when admissions exist.
 	/// </summary>
-	// [APPROX:ADVISOR-028] the ring of a legacy OpenTPW save is unknown: full when the park has had admissions, where tp.exe's saved ring holds the real sizes (0x4CE660)
+	// [EXT:legacy-save-arrival-waves] (user-approved 2026-10-30, ADVISOR-028's legacy part: the situation exists only in OpenTPW, which the original's saves never had) the ring of a legacy OpenTPW save is unknown: full when the park has had admissions, where tp.exe's saved ring holds the real sizes (0x4CE660)
 	public void AssumeFilled()
 	{
 		while ( sizes.Count < Capacity )

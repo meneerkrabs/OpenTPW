@@ -136,6 +136,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		}
 		// [BIN:TPW-EXE:0x4C5D70 analyser serializer] a park from an original save takes its saved arrival groups, including an authoritative empty ring, instead of the stand-in for an unrecorded one
 		// [EXT:tpi-arrival-readiness] manual attachment to the real TPI money runtime may use its source ring without fabricating an economy import. GameFlow still creates no advisor for TPI.
+		// [APPROX:ADVISOR-028] what remains of the TPI advisor: the import and the guarded manual attachment are data readiness only, the public TPI slice still creates no advisor, keeps fresh money and clocks and does not support full saved-game resume
 		if ( started.OriginalPark?.Save is { ArrivalGroups: { } savedGroups } source
 			&& (started.Park?.Import is not null || started.Park?.Economy.Rules == EconomyRules.ThemeParkIncMoney && source.ThemeParkIncWorld is not null) )
 			arrivalRing.Restore( savedGroups );

@@ -217,6 +217,7 @@ class TpiArrivalRingContract(unittest.TestCase):
         self.assertIn("group count or sizes", register)
         self.assertIn("null or explicitly empty", register)
         self.assertIn("public TPI slice still creates no advisor", register)
+        self.assertIn("[EXT:legacy-save-arrival-waves]", register)
         self.assertNotIn("one to four", register)
         self.assertNotIn("only the first-group", register)
         document = read("docs/reverse/ADVISOR-SCAN.md")

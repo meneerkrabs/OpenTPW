@@ -636,6 +636,23 @@ public sealed partial class OriginalEconomyImport
 	}
 
 	/// <summary>
+	/// After the guests are imported: a guard imported escorting a guest the guest import did not keep held (dropped, or not state 17) is idle, as the import gives every guard whose guest is missing
+	/// (SAVE-002). Returns the evidence lines.
+	/// </summary>
+	internal static IReadOnlyList<string> IdleEscortsWithoutAHeldGuest( ParkEconomy economy, Func<int, bool> isHeld )
+	{
+		var lines = new List<string>();
+		foreach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Guard && member.Job == StaffJob.Escorting && !isHeld( member.TargetGuestId ) ) )
+		{
+			lines.Add( $"[APPROX:SAVE-002] guard {member.Id} escorting guest {member.TargetGuestId} imported idle: the guest import did not keep that guest held." );
+			member.TargetGuestId = 0;
+			member.Job = StaffJob.Idle;
+			member.State = ParkStaff.DisplayState( (uint)StaffJob.Idle );
+		}
+		return lines;
+	}
+
+	/// <summary>
 	/// The member's own state word (+0x19C) and what it works on: a mechanic's ride (<c>mObjectToRepair</c>) and repair timer (<c>mDurationOfRepair</c>), a
 	/// handyman's toilet (<c>mToiletToClean</c>) and cleaning start, an entertainer's or researcher's work start, a guard's chase timer, and the rest area
 	/// (<c>mRestArea</c>) of a member walking to or resting in one. Thing ids name the reloaded attraction things. A word that is no state of the role, or
@@ -646,7 +663,7 @@ public sealed partial class OriginalEconomyImport
 	// [BIN:TPW-EXE:0x004D4460 entertainer serializer] mTimeStartedEntertaining (+0x214); [BIN:TPW-EXE:0x00502760 researcher serializer] mTimeStartedResearching (+0x214)
 	// [BIN:TPW-EXE:0x004D6000 guard serializer] mPerp (+0x212), mProsecutionTimestamp (+0x214, the chase timer the state setter 0x004D65D0 sets)
 	// [BIN:TPW-EXE:0x00506D10 rest end] mRestArea (+0x208) names the rest area only while the member walks to it (state 2) or rests in it (state 3): the rest's end clears it
-	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, IReadOnlySet<int> heldGuests, List<string> evidence, ISet<int> resumedClaims, IReadOnlyList<SaveLitter> litter )
+	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, ISet<int> heldGuests, List<string> evidence, ISet<int> resumedClaims, IReadOnlyList<SaveLitter> litter )
 	{
 		var word = saved.Staff.State;
 		var what = $"{saved.Model} thing {saved.Id}";
@@ -712,10 +729,12 @@ public sealed partial class OriginalEconomyImport
 			case StaffJob.Escorting when heldGuests.Contains( saved.RoleTarget ):
 				// [BIN:TPW-EXE:0x004D6350 escort state] state 18 carries its perpetrator (+0x212, mPerp) to the ticket booth: the guest is the one the import holds (state 17), the walk goes on to the saved destination (0x004F9407) and the arrival sets the guest down (0x004D6A50)
 				member.TargetGuestId = saved.RoleTarget;
+				// one guard holds a guest: another saved state-18 guard naming the same guest is imported idle (0x00501C94 stops at the first guard that holds it)
+				heldGuests.Remove( saved.RoleTarget );
 				break;
 			case StaffJob.Chasing or StaffJob.Escorting:
 				// [APPROX:SAVE-002] [BIN:TPW-EXE:0x004D6350 escort state] a guard chasing a guest the import does not restore (a rider, state 16), or escorting one that the save does not hold (state 17), is imported idle
-				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park (or not held)." );
+				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park, not held, or already escorted by another guard." );
 				job = StaffJob.Idle;
 				break;
 			case StaffJob.Performing or StaffJob.Researching:

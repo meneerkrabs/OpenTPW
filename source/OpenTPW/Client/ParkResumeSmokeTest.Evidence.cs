@@ -180,21 +180,6 @@ internal sealed partial class ParkResumeSmokeTest
 	internal static string SectionSha256<T>( T section ) =>
 		Convert.ToHexString( SHA256.HashData( ParkResumeJson.Serialize( section ) ) ).ToLowerInvariant();
 
-	/// <summary>
-	/// The economy section's digest without the staff's stored sprite draws (<c>SpriteDraw</c>): presentation, not hashed by <c>WorldStateHash</c>, and a load reduces a member's draw by the loaded banks
-	/// (tp.exe's person serializer 0x004F8B10 at 0x004F93AA) where the member hired after the banks were loaded copied its candidate's raw one (0x004D6BED), so a capture and its restore may hold different ones.
-	/// </summary>
-	internal static string EconomySectionSha256( ParkSaveFile.Data economy )
-	{
-		var node = System.Text.Json.Nodes.JsonNode.Parse( ParkResumeJson.Serialize( economy ) )!;
-		if ( node["Staff"] is System.Text.Json.Nodes.JsonObject staff )
-			foreach ( var list in new[] { "Members", "Candidates" } )
-				if ( staff[list] is System.Text.Json.Nodes.JsonArray entries )
-					foreach ( var entry in entries.OfType<System.Text.Json.Nodes.JsonObject>() )
-						entry.Remove( "SpriteDraw" );
-		return Convert.ToHexString( SHA256.HashData( System.Text.Encoding.UTF8.GetBytes( node.ToJsonString() ) ) ).ToLowerInvariant();
-	}
-
 	/// <summary>SHA-256 of a manifest as pure content identity: sorted "key=hash" lines, so dictionary order never matters.</summary>
 	internal static string CanonicalManifestSha256( IReadOnlyDictionary<string, string>? manifest )
 	{

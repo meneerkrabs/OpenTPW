@@ -250,10 +250,10 @@ public sealed partial class ParkStaff
 				member.SpriteDraw %= count;
 	}
 
-	/// <summary>The sprite draw a world draw gives: <c>R &gt;&gt; 2</c> reduced by the category's loaded bank count (raw while no banks are loaded).</summary>
+	/// <summary>The sprite draw a world draw gives: <c>R &gt;&gt; 2</c> reduced by the category's loaded bank count (no banks loaded yet: the folder's own bank count, the divisor the variant takes, so a pool made before the level loads its banks holds draws a byte can hold, as the original's candidate +9 does).</summary>
 	// [BIN:TPW-EXE:0x00541F70 sprite draw] (R >> 2) % the category's loaded count (the divisor is the table entry 0x00763F90 of 0x00541F60), returned to the constructors, which store it (0x004FB1B5 for a guest, 0x00507600 for a candidate)
 	private int SpriteDrawFrom( StaffType type, uint draw ) =>
-		SpriteBanks?.BankCount( type ) is > 0 and var count ? (int)((draw >> 2) % (uint)count) : (int)(draw >> 2);
+		SpriteBanks?.BankCount( type ) is > 0 and var count ? (int)((draw >> 2) % (uint)count) : VariantFrom( type, draw ) is >= 0 and var folder ? folder : (int)(draw >> 2);
 
 	/// <summary>The park's thing pool, once attached (<see cref="AttachThings"/>): a hired member takes a slot as its thing id and a dismissed one's slot is freed at the turn's end.</summary>
 	public ThingPool? Things => things;

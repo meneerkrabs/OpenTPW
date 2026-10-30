@@ -134,9 +134,9 @@ public sealed class StaffSpriteState
 			var performance = animations != null && entry < animations.Performances.Count ? animations.Performances[entry] : (SpritePerformance?)null;
 			var program = performance is { Program: >= 0 and <= 3 } ? performance.Value.Program : 0;
 			var slot = performance is { Slot: >= 0 and < SpriteAnimationFile.SlotCount } ? performance.Value.Slot : StaffSpriteRules.DefaultPerformanceSlot;
-			// the frame count is the bank's own, stored as it is (0x00475C16, 0x00475C1B); the core refuses 0, which only a slot without metadata (no bank loaded) gives, and then 1 stands in
+			// [BIN:TPW-EXE:0x00475C16 frame count] the count is the bank's own byte, stored as it is (0x00475C1B, from 0x00540C60), and an empty slot of a loaded bank gives 0 too; only without banks (headless) is there nothing to read, and 1 stands in
 			var frames = FramesOfSlot( animations, slot );
-			StaffSpriteVm.ApplyPerformance( source, program, slot, frames > 0 ? frames : 1 );
+			StaffSpriteVm.ApplyPerformance( source, program, slot, animations == null ? 1 : frames );
 			return;
 		}
 		StaffSpriteVm.ApplyTemplate( source, ProgramOf( template )!.Value );
@@ -195,7 +195,6 @@ public sealed class StaffSpriteState
 		var registers = source.Registers;
 		Require( registers[(int)StaffSpriteRegister.Kind] <= 8 && registers[(int)StaffSpriteRegister.Variant] <= int.MaxValue );
 		Require( registers[(int)StaffSpriteRegister.Slot] < SpriteAnimationFile.SlotCount );
-		Require( registers[(int)StaffSpriteRegister.Frame] <= 0xFFFF || registers[(int)StaffSpriteRegister.Frame] == uint.MaxValue );
 		Require( registers[(int)StaffSpriteRegister.FrameCount] <= 0xFF );
 		// a source that shows a frame shows one of its slot's
 		Require( source.OutputValid == 0 || registers[(int)StaffSpriteRegister.Frame] != uint.MaxValue );

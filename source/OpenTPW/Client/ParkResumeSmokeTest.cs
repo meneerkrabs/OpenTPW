@@ -747,7 +747,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		var snapshot = level.CaptureResumeSnapshot( Advisor, "park-resume smoke", verifiedAssets );
 		var sections = new Dictionary<string, string>
 		{
-			["economy"] = EconomySectionSha256( snapshot.Economy ),
+			["economy"] = SectionSha256( snapshot.Economy ),
 			["layout"] = SectionSha256( snapshot.Layout ),
 			["guests"] = SectionSha256( snapshot.Guests ),
 			["scripts"] = SectionSha256( snapshot.Scripts ),

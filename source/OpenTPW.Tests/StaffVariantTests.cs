@@ -22,8 +22,8 @@ public class StaffVariantTests
 		{
 			var banks = StaffSpriteRules.Banks( candidate.Type, park.Settings.Theme )!.Banks.Count;
 			Assert.IsTrue( candidate.Variant >= 0 && candidate.Variant < banks, $"{candidate.Type} variant {candidate.Variant} of {banks} banks" );
-			// a headless pool keeps the raw draw (no bank is loaded to reduce it by); the bank is the draw modulo the banks there are
-			Assert.IsTrue( candidate.SpriteDraw >= 0 );
+			// a pool made before any bank is loaded takes the draw modulo the folder's banks (a byte, as the original's candidate +9), so it is the variant
+			Assert.AreEqual( candidate.Variant, candidate.SpriteDraw );
 			Assert.AreEqual( candidate.Variant, StaffSpriteRules.KeyOf( candidate ) % banks );
 		}
 		var hired = EconomyTestData.HireBest( park, StaffType.Mechanic );
@@ -126,7 +126,8 @@ public class StaffVariantTests
 		// [BIN:TPW-EXE:0x00541F70 / 0x004F93AA] (R >> 2) % the loaded count when a candidate is made, a member's stored id % the loaded count at every load (the person serializer 0x004F8B10): a lower count wraps the draw for good; the staff constructors copy a candidate's +9 raw (0x004D6BED to 0x004D6C17), so a load leaves the pool's draws alone
 		var park = EconomyTestData.Park();
 		var raw = park.Staff.Candidates.Select( candidate => candidate.SpriteDraw!.Value ).ToArray();
-		Assert.IsTrue( raw.Any( draw => draw > 8 ), "a headless pool holds the raw draws" );
+		Assert.IsTrue( raw.All( draw => draw is >= 0 and < 256 ), "a pool made before the banks are loaded holds draws a byte can hold" );
+		CollectionAssert.AreEqual( park.Staff.Candidates.Select( candidate => candidate.Variant ).ToArray(), raw, "and they are the variants" );
 		var one = new Loaded( Enumerable.Repeat( 1, 5 ).ToArray() );
 		var two = new Loaded( Enumerable.Repeat( 2, 5 ).ToArray() );
 		park.Staff.AttachSpriteBanks( one );
@@ -148,7 +149,8 @@ public class StaffVariantTests
 		made.CreateInitialPool( new WorldRng( 0x1234 ), 0 );
 		var rawPool = new ParkStaff( EconomyTestData.Settings() );
 		rawPool.CreateInitialPool( new WorldRng( 0x1234 ), 0 );
-		CollectionAssert.AreEqual( rawPool.Candidates.Select( candidate => candidate.SpriteDraw!.Value % 2 ).ToArray(), made.Candidates.Select( candidate => candidate.SpriteDraw!.Value ).ToArray() );
+		Assert.IsTrue( made.Candidates.All( candidate => candidate.SpriteDraw is 0 or 1 ), "a candidate made with two banks loaded takes (R >> 2) mod 2" );
+		Assert.AreEqual( rawPool.Candidates.Count, made.Candidates.Count );
 		// no loaded bank of a role (an unloaded folder) leaves its draws as they are
 		var unloaded = EconomyTestData.Park();
 		unloaded.Staff.AttachSpriteBanks( new Loaded( 0, 0, 0, 0, 0 ) );
@@ -160,9 +162,8 @@ public class StaffVariantTests
 	{
 		var plain = EconomyTestData.Park();
 		var reduced = EconomyTestData.Park();
-		var plainMechanic = EconomyTestData.HireBest( plain, StaffType.Mechanic );
-		var reducedMechanic = EconomyTestData.HireBest( reduced, StaffType.Mechanic );
-		Assert.IsTrue( reducedMechanic.SpriteDraw > 8, "a headless member holds the raw draw" );
+		foreach ( var park in new[] { plain, reduced } )
+			park.Staff.AddImported( StaffType.Mechanic, 1, 0, 50f, StaffState.Idle, 0, thingId: 77, variant: 1, spriteDraw: 3 );
 		reduced.Staff.AttachSpriteBanks( new Loaded( Enumerable.Repeat( 1, 5 ).ToArray() ) );
 		var before = WorldStateHash.Compute( new WorldStateSources { Economy = plain } );
 		Assert.AreNotEqual( ParkSaveFile.Serialize( plain ), ParkSaveFile.Serialize( reduced ), "the saves hold different draws" );

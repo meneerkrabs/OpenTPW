@@ -1,26 +1,33 @@
 """Static data-flow scan of tp.exe for every reader of the coaster controller's first dword (the "track flags", controller +0).
 
-Usage: python3 -I tools/ppc-analysis/controller_flag_readers.py [TP_EXE]      (TP_EXE defaults to $OPENTPW_TPW_EXE)
+Usage: python3 -I tools/ppc-analysis/controller_flag_readers.py [--check] [--verbose] [TP_EXE]       (TP_EXE defaults to $OPENTPW_TPW_EXE)
 
-Needs the dev-only `capstone` package; without it, or without the identified tp.exe (SHA-256 pinned by
-oracle_x86/x86_harness.py), the script prints a skip line and exits 0 (CI has neither).  The executable is only read; its bytes
-are never written anywhere and nothing is printed from it but addresses and instruction text of the reader sites.
+Dev tool for the evidence of SAVE-921 (docs/reverse/COAST-plan.md, section 24). It needs the dev-only `capstone` package and the identified tp.exe
+(SHA-256 pinned, the same file the x86 oracle accepts, tools/ppc-analysis/oracle_x86/x86_harness.py); without either it prints a skip line and exits 0,
+so CI, which has neither, passes it by. The executable is only read: nothing from it is written anywhere, and the report prints addresses and the
+text of the instructions it names, nothing else.
 
-What it does (see docs/reverse/COAST-plan.md "Track flags at controller +0 (SAVE-921)"):
+The question: does any code of tp.exe observe bits 0x20..0x400 of the controller's first dword (the saver 0x437300 writes them to the Coasters block
+header flag word, the loader 0x437B60 reads them back) other than the saver and the loader themselves? The scan answers it in four layers.
 
-1. Seeds.  Every controller is a record of the coaster module whose pointer is obtained in exactly three ways: the thing pool
-   table at 0x790BD0 (indexed by the thing id the constructor 0x4368F0 hands out), the list head 0x790FE0 (next link at +0x18) and
-   the "being built" global 0x790FEC.  The scan lists every place of the whole image that names those three addresses (as an
-   immediate, so also `push`, `lea` and `mov reg, imm`) and requires each to lie in the coaster module.
-2. Taint.  From the functions holding those places it follows pointer values through registers, the stack frame (pushes, locals,
-   arguments with the exact esp offset), the controller's own fields, global and heap holders, direct calls (argument and return
-   values, `ret N` callee pops) until nothing changes.  A value is the token ('C', k): the controller pointer plus k.
-3. Readers.  Every memory operand whose base carries a controller token and whose byte range meets controller +0..3 is an event;
-   so is every access through a token of unknown offset, every escape (a controller pointer stored into a holder the scan cannot
-   follow, passed to an indirect or imported callee, returned from a function called from outside) and every unresolved
-   indirect jump or esp loss.  Events are printed as a table: address, function, instruction, access, bits it can observe.
+1. Seeds. A controller is the 0x14C-byte record the constructor 0x4368F0 allocates, and its pointer is obtained in exactly three ways: the thing-pool
+   table at 0x790BD0 (indexed by the id the constructor hands out), the list head 0x790FE0 (next link at +0x18) and the "being built" global
+   0x790FEC. The scan lists every place of the whole image that names those three addresses and requires them all to lie in the coaster module.
+2. Flow. From the functions holding those places it follows pointer values to a fixpoint through registers, stack frames (exact esp offsets, out
+   parameters, pointers to locals), direct calls (only the registers and stack arguments the callee reads, `ret N` and `add esp` pops, the returned
+   eax), the controller's own fields, global holders and the fields of the other constant-size records the code allocates (nodes, cars, ...). A value
+   is a token (kind, offset): ('C', k) is the controller + k, ('H48', k) a 0x48-byte record + k. Every memory operand whose base carries a controller
+   token and whose byte range meets controller +0..3 is a reader; a second pass follows the loaded value (masks, compares, copies, returns) and
+   says which bits it can observe. Over-approximation is the rule: the flow ignores branch conditions (except the null edge of a zero test), merges
+   all callers of a function, and treats the register-and-stack state of a loop as one; what it cannot place is reported, not dropped.
+3. Residue. Stores of a tracked pointer into memory the flow cannot type, calls it cannot follow and unresolved jumps are listed; every hit that is
+   neither harmless nor listed in REVIEWED_* below is NEW and makes `--check` fail. The REVIEWED_* entries were read by hand in tp.exe.
+4. Independent layer. Every `test [reg+0..3], imm` of the whole image whose immediate selects a track flag (67 of them) is listed with the last
+   assignment of its base register, whether or not the flow reaches it.
 
-Nothing is committed from the executable: the script reads the file named on the command line at run time.
+What the scan does not do: follow pointers through arrays inside records (indexed element stores and loads), through records of unknown size, or
+through the thing table 0x7A4610 (+0xD4 holds a car); it assumes the 0x10 bytes a pointer argument reaches in the caller's frame and non-negative
+indexes. The report states these as UNTYPED stores; docs/reverse/COAST-plan.md section 24 gives the reading.
 """
 from __future__ import annotations
 
@@ -28,6 +35,7 @@ import hashlib
 import os
 import struct
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -50,16 +58,27 @@ SEED_ADDRESSES = {
 }
 MODULE = (0x42F000, 0x44C000)       # the coaster module; the seed sites must all lie inside
 SAVER, LOADER = 0x437300, 0x437B60
+# Heap records the flow tells apart by their allocation size: the controller (0x14C bytes); every other constant size is a kind 'H<size>' (the 0x48-byte
+# track node, built by 0x432C10, keeps the edited controller 0x790FEC in its +0x14, so a node leads back to its controller; the 0x104-byte cars, ...).
+CONTROLLER_ALLOCATION = 0x14C
+NON_POINTERS = ('S', 'G', 'P')      # token kinds that are not pointers to tracked heap records
+
+
+def is_pointer(token):
+    return token[0] not in NON_POINTERS
+
+
 MASK32 = 0xFFFFFFFF
-IMPORT_POPS: dict[str, int] = {}     # stdcall imports the coaster module reaches (none is known to receive a controller pointer)
-DESCEND: set[int] = set()           # callees outside the module the data-flow follows into (reviewed by hand)
-CALL_REGISTERS = ('ecx', 'edx')        # `this` and the second fastcall register; any other register input is reported (see register_inputs)
+IMPORT_POPS: dict[str, int] = {}     # stack bytes popped by the imports the followed code calls (none is known: noted, assumed 0)
+CALL_REGISTERS = ('ecx', 'edx')        # `this` and the second fastcall register (MSVC passes nothing else in registers)
 ALLOCATOR = 0x45B9D0                # the heap allocator the constructor 0x4368F0 calls with the controller size
-CONTROLLER_SIZE = 0x14C
+# The thing-id pool library, read by hand (it only stores or clears the pointer in the table it is given and never dereferences it): alloc(..., table, pointer, id) is
+# arg 4 = table, arg 5 = pointer; free(..., table, id) stores a zero. Modelled instead of followed, because its one body serves every pool in the game.
+POOL_ALLOC, POOL_FREE = 0x468760, 0x468810
 UNKNOWN = '?'
 REALIGNED = 0x100000                # esp origin after `and esp, -8`
 ARG_SLOTS = 8                       # stack arguments passed on to a callee
-REG32 = ('eax', 'ecx', 'edx', 'ebx', 'esi', 'edi', 'ebp')
+FRAME_OBJECT = 0x10                 # bytes of a caller's frame a pointer argument is taken to reach (pointers held there are followed)
 PARENT = {}
 for _name, _subs in {'eax': ('ax', 'al', 'ah'), 'ecx': ('cx', 'cl', 'ch'), 'edx': ('dx', 'dl', 'dh'), 'ebx': ('bx', 'bl', 'bh'),
                      'esi': ('si',), 'edi': ('di',), 'ebp': ('bp',), 'esp': ('sp',)}.items():
@@ -67,29 +86,48 @@ for _name, _subs in {'eax': ('ax', 'al', 'ah'), 'ecx': ('cx', 'cl', 'ch'), 'edx'
     for _sub in _subs:
         PARENT[_sub] = _name
 
-# Token kinds: ('C', k) controller pointer + k (k int or '?'); ('S', k) caller-frame pointer = entry esp + k; ('G', a) address a of a seed global
-# (or a pointer to the pool table, which the pool library indexes); ('P',) pointer into a caller's frame, seen from a callee.
+# Token kinds: ('C', k) controller + k; ('H<size>', k) a heap record of that size (hex) + k; ('S', k) a pointer into the current frame (entry esp + k);
+# ('G', a) the address a of a data object; ('P', argkey, k) a pointer into a caller's frame (argkey names the parameter it came in by) + k, seen
+# from a callee. An offset k is an int (exact), ('R', lo) (at least lo: an indexed access, indexes never negative) or '?' (unknown).
 EMPTY = frozenset()
 
 
 def _shift(tokens, delta):
+    """Pointer arithmetic by a known amount. Offsets are an int (exact), ('R', lo) (at least lo: indexed access) or '?'."""
     out = set()
     for token in tokens:
-        if token[0] in 'CSG' and isinstance(token[1], int):
+        if len(token) == 2 and isinstance(token[1], int):
             out.add((token[0], token[1] + delta))
+        elif len(token) == 2 and isinstance(token[1], tuple):
+            out.add((token[0], ('R', token[1][1] + delta)))
+        elif len(token) == 3 and isinstance(token[2], int):
+            out.add((token[0], token[1], token[2] + delta))
+        else:
+            out.add(token)
+    return frozenset(out)
+
+
+def _range(tokens):
+    """The result of adding a non-negative unknown amount (an index): the same object, at least the old offset."""
+    out = set()
+    for token in tokens:
+        if len(token) == 2 and isinstance(token[1], int):
+            out.add((token[0], ('R', token[1])))
+        elif len(token) == 3 and isinstance(token[2], int):
+            out.add((token[0], token[1], UNKNOWN))
         else:
             out.add(token)
     return frozenset(out)
 
 
 def _blur(tokens):
-    """The result of pointer arithmetic with an unknown amount: the same object, unknown offset."""
+    """The result of bit operations or other arithmetic with an unknown amount: the same object, unknown offset."""
     out = set()
     for token in tokens:
-        if token[0] == 'C':
-            out.add(('C', UNKNOWN))
-        elif token[0] in 'SG':
+        if len(token) == 2:
             out.add((token[0], UNKNOWN))
+        elif len(token) == 3:
+            out.add((token[0], token[1], UNKNOWN))
         else:
             out.add(token)
     return frozenset(out)
@@ -111,6 +149,9 @@ class Image:
 
     def in_text(self, va):
         return any(lo <= va < hi for lo, hi in self.text)
+
+    def in_data(self, va):
+        return any(self.base + s.rva <= va < self.base + s.rva + max(s.virtual_size, s.raw_size) for s in self.pe.sections if not s.executable)
 
     def u32(self, va):
         return struct.unpack_from('<I', self.flat, va - self.base)[0]
@@ -181,6 +222,13 @@ class Function:
             self.pop = next(iter(self.pops))
         elif self.pops:
             self.pop = max(self.pops)
+        self.order = sorted(self.insns)
+
+    def covers(self, site):
+        """Whether `site` lies inside an instruction of this function."""
+        import bisect
+        index = bisect.bisect_right(self.order, site) - 1
+        return index >= 0 and site < self.order[index] + self.insns[self.order[index]].size
 
     def _table(self, image, insn, table):
         """The targets of a `jmp [reg*4 + table]`: the dwords that point into this image's code near the jump."""
@@ -251,26 +299,25 @@ class Analysis:
         self.entry_args: dict[int, dict] = defaultdict(dict)
         self.ret_regs: dict[int, dict] = defaultdict(dict)
         self.analyzed: set[int] = set()
-        self.table_holders = {0x790BD0}
-        self.abs_holders = {0x790FE0, 0x790FEC}
-        self.ctrl_fields: set[int] = set()
-        self.field_disps: set[int] = set()
-        self.alloc_sites: set[int] = set()
+        # holders: what the flow has seen stored where, as pointer tokens ('C' controller, 'N' node record) with their offsets
+        self.abs_holders: dict[int, frozenset] = {0x790FE0: frozenset({('C', 0)}), 0x790FEC: frozenset({('C', 0)})}
+        self.table_holders: dict[int, frozenset] = {0x790BD0: frozenset({('C', 0)})}
+        self.fields: dict[tuple, frozenset] = {}          # (kind, offset) of a tracked object -> tokens stored there
+        self.alloc_sites: dict[int, str] = {}
+        self.pcontents: dict[tuple, frozenset] = {}      # (callee, argkey) -> tracked pointers held in the caller frame a parameter points into
+        self.out_stores: dict[tuple, dict] = {}         # (function, argkey) -> {offset: tokens}: pointers it stores through a frame pointer parameter
         self.events: dict[tuple, Event] = {}
         self.holder_stores: dict[int, str] = {}
         self.escapes: dict[tuple, str] = {}
         self.notes: dict[tuple, str] = {}
-        self.calls_out: dict[int, set[int]] = defaultdict(set)
         self.changed = False
-        self.descend_all = False
-        self.watch: dict[int, dict] = {}
+        self.verbose = False
         self.current = None
         self.call_sites: dict[int, list[int]] = defaultdict(list)
         self.starts: list[int] = []
         self.data_refs: dict[int, list[int]] = defaultdict(list)
         self.input_cache: dict[int, tuple] = {}
         self.probing = False
-        self.seen_pointer_into_frame = False
 
     # --- infrastructure -------------------------------------------------------------------------------------------------------------
     def func(self, entry):
@@ -278,8 +325,13 @@ class Analysis:
             self.functions[entry] = Function(self.image, entry)
         return self.functions[entry]
 
-    def add_entry(self, callee, regs, args):
+    def add_entry(self, callee, regs, args, pcont=None):
         changed = False
+        for argkey, tokens in (pcont or {}).items():
+            old = self.pcontents.get((callee, argkey), EMPTY)
+            if not tokens <= old:
+                self.pcontents[(callee, argkey)] = old | tokens
+                changed = True
         for reg, tokens in regs.items():
             old = self.entry_regs[callee].get(reg, EMPTY)
             if not tokens <= old:
@@ -294,14 +346,6 @@ class Analysis:
             self.analyzed.add(callee)
             changed = True
         if changed:
-            self.changed = True
-
-    def add_set(self, target, value):
-        """Register a holder; stores made outside the coaster module are only listed (self.outside_stores), never followed."""
-        if self.current is not None and not MODULE[0] <= self.current < MODULE[1]:
-            return
-        if value not in target:
-            target.add(value)
             self.changed = True
 
     # --- operand evaluation ----------------------------------------------------------------------------------------------------------
@@ -325,7 +369,8 @@ class Analysis:
             st.regs.pop(name, None)
 
     def global_token(self, imm):
-        if imm in SEED_ADDRESSES or imm in self.abs_holders or imm in self.table_holders:
+        """An immediate that is the address of a data object: pointer to it, so stores through it reach the holder tables."""
+        if self.image.in_data(imm):
             return frozenset({('G', imm)})
         return EMPTY
 
@@ -338,28 +383,31 @@ class Analysis:
         index = bool(mem.index)
         out = set()
         if base is None:
-            if mem.disp in self.table_holders or (not index and mem.disp in self.abs_holders):
-                out.add(('C', 0))
+            if mem.disp in self.table_holders:
+                out |= self.table_holders[mem.disp]
+            if not index and mem.disp in self.abs_holders:
+                out |= self.abs_holders[mem.disp]
             return frozenset(out)
-        tokens = self.reg_tokens(st, base)
-        if not tokens:
-            return frozenset(out)
-        for token in tokens:
+        for token in self.reg_tokens(st, base):
             kind = token[0]
             if kind == 'S':
                 if isinstance(token[1], int) and not index and st.esp is not None:
                     out |= st.stack.get(token[1] + mem.disp, EMPTY)
-            elif kind == 'C':
-                field = token[1] + mem.disp if isinstance(token[1], int) and not index else None
-                if (field is not None and field in self.ctrl_fields) or (field is None and mem.disp in self.ctrl_fields):
-                    out.add(('C', 0))
+            elif kind not in NON_POINTERS:
+                if isinstance(token[1], int) and not index:
+                    out |= self.fields.get((kind, token[1] + mem.disp), EMPTY)
+                else:
+                    self.notes[(insn.address, 'indexed-load')] = f'indexed load through a {kind} pointer: elements of arrays inside records are not followed'
             elif kind == 'G':
                 a = token[1] + mem.disp if isinstance(token[1], int) else None
-                if (token[1] in self.table_holders) or (a is not None and (a in self.abs_holders or (index and a in self.table_holders))):
-                    out.add(('C', 0))
+                if token[1] in self.table_holders:
+                    out |= self.table_holders[token[1]]
+                if a is not None and a in self.abs_holders:
+                    out |= self.abs_holders[a]
+                if a is not None and index and a in self.table_holders:
+                    out |= self.table_holders[a]
             elif kind == 'P':
-                if self.seen_pointer_into_frame:
-                    self.notes[(insn.address, 'frame-load')] = 'load through a pointer into a caller frame that holds a controller pointer'
+                out |= self.pcontents.get((self.current, token[1]), EMPTY)
         return frozenset(out)
 
     def value(self, insn, op, st):
@@ -371,25 +419,39 @@ class Analysis:
             return self.load(insn, op, st)
         return EMPTY
 
+    def hold(self, table, key, tokens):
+        """Record that `tokens` were stored at `key` of a holder table; stores made outside the coaster module are listed, never followed."""
+        if self.current is not None and not MODULE[0] <= self.current < MODULE[1]:
+            return
+        old = table.get(key, EMPTY)
+        if not tokens <= old:
+            table[key] = old | tokens
+            self.changed = True
+
+    def record_out_store(self, function, argkey, rel, tokens):
+        table = self.out_stores.setdefault((function, argkey), {})
+        old = table.get(rel, EMPTY)
+        if not tokens <= old:
+            table[rel] = old | tokens
+            self.changed = True
+
     def store(self, insn, op, st, tokens):
         mem = op.mem
         if insn.reg_name(mem.segment) in ('fs', 'gs'):
             return
         base = insn.reg_name(mem.base) if mem.base else None
         index = bool(mem.index)
-        has_c = any(t[0] == 'C' for t in tokens)
+        pointers = frozenset(t for t in tokens if is_pointer(t))
+        text = f'{insn.mnemonic} {insn.op_str} [{"|".join(sorted({t[0] for t in pointers}))}]'
         if base is None:
-            if has_c:
-                if index:
-                    self.add_set(self.table_holders, mem.disp)
-                else:
-                    self.add_set(self.abs_holders, mem.disp)
-                self.holder_stores.setdefault(insn.address, f'{insn.mnemonic} {insn.op_str} (absolute holder 0x{mem.disp:X})')
+            if pointers:
+                self.hold(self.table_holders if index else self.abs_holders, mem.disp, pointers)
+                self.holder_stores.setdefault(insn.address, f'{text} (absolute holder 0x{mem.disp:X})')
             return
         base_tokens = self.reg_tokens(st, base)
         if not base_tokens:
-            if has_c:
-                self.holder_stores.setdefault(insn.address, f'{insn.mnemonic} {insn.op_str} (object field +0x{mem.disp & MASK32:X}, base unknown)')
+            if pointers:
+                self.holder_stores.setdefault(insn.address, f'{text} (object field +0x{mem.disp & MASK32:X}, base unknown)')
             return
         for token in base_tokens:
             kind = token[0]
@@ -397,24 +459,24 @@ class Analysis:
                 if isinstance(token[1], int) and not index and st.esp is not None:
                     key = token[1] + mem.disp
                     st.stack[key] = frozenset(tokens) if len(base_tokens) == 1 else st.stack.get(key, EMPTY) | tokens
-            elif kind == 'C':
-                if has_c:
+            elif kind not in NON_POINTERS:
+                if pointers:
                     if isinstance(token[1], int) and not index:
-                        self.add_set(self.ctrl_fields, token[1] + mem.disp)
-                        self.holder_stores.setdefault(insn.address, f'{insn.mnemonic} {insn.op_str} (controller field +0x{token[1] + mem.disp:X})')
+                        self.hold(self.fields, (kind, token[1] + mem.disp), pointers)
+                        self.holder_stores.setdefault(insn.address, f'{text} ({kind} field +0x{token[1] + mem.disp:X})')
                     else:
-                        self.holder_stores.setdefault(insn.address, f'{insn.mnemonic} {insn.op_str} (controller field, offset unknown)')
+                        self.holder_stores.setdefault(insn.address, f'{text} ({kind} array element, not followed)')
             elif kind == 'G':
-                if has_c:
+                if pointers:
                     a = token[1] + mem.disp if isinstance(token[1], int) else None
                     if index or a is None:
-                        self.add_set(self.table_holders, token[1] if isinstance(token[1], int) else mem.disp)
+                        self.hold(self.table_holders, token[1] if isinstance(token[1], int) else mem.disp, pointers)
                     else:
-                        self.add_set(self.abs_holders, a)
-                    self.holder_stores.setdefault(insn.address, f'{insn.mnemonic} {insn.op_str} (global holder)')
+                        self.hold(self.abs_holders, a, pointers)
+                    self.holder_stores.setdefault(insn.address, f'{text} (global holder)')
             elif kind == 'P':
-                if has_c:
-                    self.holder_stores.setdefault(insn.address, f'{insn.mnemonic} {insn.op_str} (caller frame)')
+                if pointers:
+                    self.record_out_store(self.current, token[1], token[2] + mem.disp if isinstance(token[2], int) and not index else UNKNOWN, pointers)
 
     # --- events ----------------------------------------------------------------------------------------------------------------------
     def access(self, insn, op, st, entry):
@@ -427,13 +489,17 @@ class Analysis:
                 continue
             size = op.size or 4
             string = insn.mnemonic.startswith(('rep', 'movs', 'cmps', 'lods', 'scas', 'stos'))
-            if isinstance(token[1], int) and not mem.index:
-                lo = token[1] + mem.disp
+            offset = token[1]
+            if isinstance(offset, int) and not mem.index:
+                lo = offset + mem.disp
                 hi = None if string else lo + size
                 if not ((hi is None and lo < 4) or (hi is not None and lo < 4 and hi > 0)):
                     continue
                 why = 'string operation from the controller' if string else ''
             else:
+                low = offset if isinstance(offset, int) else offset[1] if isinstance(offset, tuple) else 0     # '?' only comes from widening: forward
+                if low + mem.disp >= 4:
+                    continue            # indexes and offsets reach forward only: past +3
                 lo, hi = None, None
                 why = 'unplaceable offset'
                 if mem.disp > 0x400 and not string:
@@ -526,7 +592,7 @@ class Analysis:
             else:
                 tokens = _shift(self.reg_tokens(st, base), mem.disp)
                 if mem.index:
-                    tokens = _blur(tokens)
+                    tokens = _range(tokens)
             self.set_reg(st, insn.reg_name(dst.reg), tokens)
             return
         if m in ('add', 'sub') and ops[0].type == cx.X86_OP_REG and ops[0].size == 4:
@@ -548,7 +614,7 @@ class Analysis:
                 elif m == 'sub' and other:
                     self.set_reg(st, name, EMPTY)
                 else:
-                    self.set_reg(st, name, _blur(tokens | other))
+                    self.set_reg(st, name, _range(tokens | other) if m == 'add' else _blur(tokens | other))
             return
         if m in ('and', 'or', 'xor', 'adc', 'sbb') and ops[0].type == cx.X86_OP_REG and ops[0].size == 4:
             name = PARENT[insn.reg_name(ops[0].reg)]
@@ -606,57 +672,107 @@ class Analysis:
             elif name:
                 st.regs.pop(name, None)
 
+    def argument_count(self, insn, target):
+        """How many stack arguments the call pushes: `ret N` of the callee, else the `add esp, N` that follows the call (None when unknown)."""
+        callee = self.func(target)
+        if callee.pop:
+            return callee.pop // 4
+        nxt = self.image.decode(insn.address + insn.size)
+        if nxt is not None and nxt.mnemonic == 'add' and nxt.operands[0].type == cx.X86_OP_REG and nxt.operands[0].reg == cx.X86_REG_ESP \
+                and nxt.operands[1].type == cx.X86_OP_IMM:
+            return (nxt.operands[1].imm & MASK32) // 4
+        return None
+
+    def apply_out_stores(self, entry, callee, pmap, st):
+        """What the callee stored through its frame-pointer parameters lands in this frame (or goes on to this function's own caller)."""
+        for (function, argkey), table in list(self.out_stores.items()):
+            if function != callee:
+                continue
+            for rel, tokens in list(table.items()):
+                for token in pmap.get(argkey, ()):
+                    if token[0] == 'S' and isinstance(token[1], int) and isinstance(rel, int) and st.esp is not None:
+                        key = token[1] + rel
+                        st.stack[key] = st.stack.get(key, EMPTY) | tokens
+                    elif token[0] == 'P':
+                        self.record_out_store(entry, token[1], token[2] + rel if isinstance(token[2], int) and isinstance(rel, int) else UNKNOWN, tokens)
+
     def is_import_thunk(self, entry):
         first = self.func(entry).insns.get(entry)
         return first is not None and first.mnemonic == 'jmp' and first.operands[0].type == cx.X86_OP_MEM
 
     def do_call(self, entry, insn, st):
         op = insn.operands[0]
-        regs = {}
+        regs, args, pmap, pcont = {}, {}, {}, {}
+
+        def convert(argkey, tokens):
+            """Frame pointers become parameter-relative ('P', argkey, 0); pmap remembers what they pointed at in this frame."""
+            out = set()
+            for token in tokens:
+                if token[0] in ('S', 'P'):
+                    out.add(('P', argkey, 0))
+                    pmap.setdefault(argkey, set()).add(token)
+                    if token[0] == 'S' and isinstance(token[1], int):
+                        held = frozenset(t for key, ts in st.stack.items() if token[1] <= key < token[1] + FRAME_OBJECT for t in ts if is_pointer(t))
+                    else:
+                        held = self.pcontents.get((entry, token[1]), EMPTY) if token[0] == 'P' else EMPTY
+                    if held:
+                        pcont[argkey] = pcont.get(argkey, EMPTY) | held
+                else:
+                    out.add(token)
+            return frozenset(out)
+
         for reg in CALL_REGISTERS:
             tokens = st.regs.get(reg, EMPTY)
             if tokens:
-                regs[reg] = frozenset(('P',) if t[0] == 'S' else t for t in tokens)
-        args = {}
+                regs[reg] = convert(('r', reg), tokens)
         if st.esp is not None:
             for index in range(ARG_SLOTS):
                 tokens = st.stack.get(st.esp + 4 * index, EMPTY)
                 if tokens:
-                    args[index] = frozenset(('P',) if t[0] == 'S' else t for t in tokens)
-        if op.type == cx.X86_OP_IMM and not self.probing and (regs or args):
+                    args[index] = convert(('a', index), tokens)
+        direct = op.type == cx.X86_OP_IMM
+        if direct and args:
+            count = self.argument_count(insn, op.imm)
+            if count is not None:
+                args = {index: tokens for index, tokens in args.items() if index < count}
+        if direct and not self.probing and (regs or args):
             callee_entry = op.imm
             if self.func(callee_entry).insns and not self.is_import_thunk(callee_entry):
                 live, touched = self.inputs(callee_entry)
                 regs = {reg: tokens for reg, tokens in regs.items() if reg in live}
                 args = {index: tokens for index, tokens in args.items() if index in touched}
-        tainted = any(t[0] == 'C' for ts in list(regs.values()) + list(args.values()) for t in ts)
-        frame_pointer = any(t[0] == 'P' for ts in list(regs.values()) + list(args.values()) for t in ts)
-        if frame_pointer and any(t[0] == 'C' for ts in st.stack.values() for t in ts) and not self.seen_pointer_into_frame:
-            self.seen_pointer_into_frame = True
-            self.changed = True
+        tainted = any(is_pointer(t) or (t[0] == 'P' and pcont) for ts in list(regs.values()) + list(args.values()) for t in ts)
         result = {}
         pop = 0
         if op.type != cx.X86_OP_IMM:
             if tainted:
-                self.escapes[(insn.address, 'indirect')] = f'call {insn.op_str} with a controller or pool pointer in a register or argument'
+                self.escapes[(insn.address, 'indirect')] = f'call {insn.op_str} with a controller or node pointer in a register or argument'
             st.regs.pop('eax', None)
             st.regs.pop('ecx', None)
             st.regs.pop('edx', None)
             return
         target = op.imm
+        if target in (POOL_ALLOC, POOL_FREE) and not self.probing:
+            if target == POOL_ALLOC:
+                for table in args.get(4, EMPTY):
+                    if table[0] == 'G':
+                        self.hold(self.table_holders, table[1], frozenset(t for t in args.get(5, EMPTY) if is_pointer(t)))
+            for reg in ('eax', 'ecx', 'edx'):
+                st.regs.pop(reg, None)
+            return
         callee = self.func(target)
         first = callee.insns.get(target)
         external = first is None
         if first is not None and first.mnemonic == 'jmp' and first.operands and first.operands[0].type == cx.X86_OP_MEM \
                 and first.operands[0].mem.base == 0 and not first.operands[0].mem.index:
             external = self.image.imports.get(first.operands[0].mem.disp, 'indirect jump')
-        outside = not external and not (self.descend_all or MODULE[0] <= target < MODULE[1] or target in DESCEND)
         if tainted:
-            if external or outside:
-                self.escapes[(insn.address, target)] = f'call 0x{target:X} ({external if isinstance(external, str) else "outside the module"}) with a controller or pool pointer'
+            if external:
+                self.escapes[(insn.address, target)] = f'call 0x{target:X} ({external if isinstance(external, str) else "undecodable"}) with a controller or node pointer'
             else:
-                self.add_entry(target, regs, args)
-            self.calls_out[entry].add(target)
+                self.add_entry(target, regs, args, pcont)
+        if direct and not external and not self.probing:
+            self.apply_out_stores(entry, target, pmap, st)
         if external:
             pop = IMPORT_POPS.get(external, 0) if isinstance(external, str) else 0
             if isinstance(external, str) and external not in IMPORT_POPS:
@@ -670,7 +786,7 @@ class Analysis:
             if tokens:
                 st.regs['eax'] = tokens
         if insn.address in self.alloc_sites:
-            st.regs['eax'] = frozenset({('C', 0)})
+            st.regs['eax'] = frozenset({(self.alloc_sites[insn.address], 0)})
         if st.esp is not None:
             st.esp += pop
 
@@ -699,9 +815,6 @@ class Analysis:
                 continue
             before = states[va]
             st = before.copy()
-            if va in self.watch and not probe:
-                self.watch[va].setdefault(entry, {})
-                self.watch[va][entry] = {r: sorted(str(t) for t in tokens) for r, tokens in st.regs.items()}
             if probe:
                 self.probe_reads(entry, insn, st)
             self.step(entry, insn, st)
@@ -744,10 +857,10 @@ class Analysis:
         return self.input_cache[entry]
 
     def analysis_state(self):
-        return (set(self.abs_holders), set(self.table_holders), set(self.ctrl_fields), self.seen_pointer_into_frame)
+        return (dict(self.abs_holders), dict(self.table_holders), dict(self.fields), dict(self.pcontents), {k: dict(v) for k, v in self.out_stores.items()})
 
     def restore_state(self, state):
-        self.abs_holders, self.table_holders, self.ctrl_fields, self.seen_pointer_into_frame = state
+        self.abs_holders, self.table_holders, self.fields, self.pcontents, self.out_stores = state
 
     def probe_reads(self, entry, insn, st):
         live, args = self.input_cache[entry]
@@ -789,13 +902,19 @@ class Analysis:
 
     @staticmethod
     def cap(st):
-        """Widen a state so loops cannot grow a register's token set without bound."""
+        """Widen a state so loops cannot grow a register's token set without bound: more than six offsets of one object become 'unknown'."""
         for table in (st.regs, st.stack):
             for key, tokens in list(table.items()):
-                for kind in 'CSG':
-                    same = [t for t in tokens if t[0] == kind and isinstance(t[1], int)]
-                    if len(same) > 6:
-                        tokens = frozenset(t for t in tokens if t not in same) | {(kind, UNKNOWN)}
+                groups = defaultdict(list)
+                for t in tokens:
+                    if len(t) == 2:
+                        groups[(t[0], 'int' if isinstance(t[1], int) else 'range' if isinstance(t[1], tuple) else None)].append(t)
+                    elif len(t) == 3 and isinstance(t[2], int):
+                        groups[(t[0], t[1], 'int')].append(t)
+                for head, same in groups.items():
+                    if head[-1] is not None and len(same) > 6:
+                        unknown = (head[0], UNKNOWN) if len(head) == 2 else (head[0], head[1], UNKNOWN)
+                        tokens = frozenset(t for t in tokens if t not in same) | {unknown}
                         table[key] = tokens
         return st
 
@@ -827,7 +946,7 @@ class Analysis:
         best = None
         for start in reversed(starts[max(0, index - 80):index]):
             f = self.func(start)
-            if any(va <= site < va + insn.size for va, insn in f.insns.items()):
+            if f.covers(site):
                 best = start
         return best
 
@@ -847,27 +966,28 @@ class Analysis:
         return out
 
     def find_alloc_sites(self):
-        """Calls of the allocator preceded by `push CONTROLLER_SIZE`: the constructor's allocation (the only controller source besides the seeds)."""
-        flat = self.image.flat
-        pattern = b'\x68' + struct.pack('<I', CONTROLLER_SIZE)
-        out = []
-        for lo, hi in self.image.text:
-            at = lo - self.image.base
-            end = hi - self.image.base
-            while True:
-                at = flat.find(pattern, at, end)
-                if at < 0:
-                    break
-                va = self.image.base + at
-                for _ in range(6):
-                    insn = self.image.decode(va)
-                    if insn is None:
-                        break
-                    if insn.mnemonic == 'call' and insn.operands[0].type == cx.X86_OP_IMM and insn.operands[0].imm == ALLOCATOR:
-                        out.append(insn.address)
-                        break
-                    va += insn.size
-                at += 1
+        """Every call of the allocator whose size argument is a pushed constant: {call address: record kind}. The controller is the 0x14C-byte
+        record ('C'); any other size is a record kind of its own ('H<size>'). A call whose size is not a constant is listed as a note."""
+        out = {}
+        for site in self.call_sites.get(ALLOCATOR, ()):
+            entry = self.enclosing(self.starts, site)
+            size = None
+            if entry is not None:
+                insns = self.func(entry).insns
+                order = sorted(insns)
+                if site in insns:
+                    for va in reversed(order[max(0, order.index(site) - 6):order.index(site)]):
+                        insn = insns[va]
+                        if insn.mnemonic == 'call':
+                            break
+                        if insn.mnemonic == 'push':      # the last push before the call is the first (size) argument
+                            if insn.operands[0].type == cx.X86_OP_IMM:
+                                size = insn.operands[0].imm & MASK32
+                            break
+            if size is None:
+                self.notes[(site, 'alloc')] = 'allocation whose size is not a pushed constant: the record is not followed'
+                continue
+            out[site] = 'C' if size == CONTROLLER_ALLOCATION else f'H{size:X}'
         return out
 
     def occurrences(self, address):
@@ -886,7 +1006,7 @@ class Analysis:
     def expand(self):
         """New analysis roots: the functions naming a holder global or table, and the callers of functions that return a controller."""
         roots = set()
-        for address in sorted(self.abs_holders | self.table_holders):
+        for address in sorted(a for a in {*self.abs_holders, *self.table_holders} if self.image.in_data(a)):
             for site in self.occurrences(address):
                 if not self.image.in_text(site):
                     if site not in self.data_refs[address]:
@@ -897,12 +1017,12 @@ class Analysis:
                     self.notes[(site, 'orphan')] = f'0x{address:X} named at 0x{site:X} outside every function found'
                 elif entry not in self.analyzed:
                     roots.add(entry)
-        for entry in sorted(self.analyzed):
-            if any(t[0] == 'C' for t in self.ret_regs.get(entry, {}).get('eax', EMPTY)):
-                for site in self.call_sites.get(entry, ()):
-                    caller = self.enclosing(self.starts, site)
-                    if caller is not None and caller not in self.analyzed:
-                        roots.add(caller)
+        returning = [e for e in sorted(self.analyzed) if any(is_pointer(t) for t in self.ret_regs.get(e, {}).get('eax', EMPTY))]
+        for entry in returning:
+            for site in self.call_sites.get(entry, ()):
+                caller = self.enclosing(self.starts, site)
+                if caller is not None and caller not in self.analyzed:
+                    roots.add(caller)
         return roots
 
     def solve(self, roots, limit=80):
@@ -912,9 +1032,15 @@ class Analysis:
         while True:
             for _ in range(limit):
                 rounds += 1
+                if self.verbose:
+                    print(f'round {rounds}: {len(self.analyzed)} functions', file=sys.stderr, flush=True)
                 self.changed = False
+                self.holder_stores = {}      # only the last, complete round counts: stores that looked unknown early may have a known base later
                 for entry in sorted(self.analyzed):
+                    began = time.monotonic()
                     self.run(entry)
+                    if self.verbose and time.monotonic() - began > 3:
+                        print(f'  slow: 0x{entry:X} {time.monotonic() - began:.1f}s', file=sys.stderr, flush=True)
                 if not self.changed:
                     break
             else:
@@ -926,7 +1052,7 @@ class Analysis:
 
     def initial_roots(self):
         self.starts = self.call_targets()
-        self.alloc_sites = set(self.find_alloc_sites())
+        self.alloc_sites = self.find_alloc_sites()
         roots, orphans = set(), []
         for site, seed in self.seed_sites():
             if not self.image.in_text(site):
@@ -937,7 +1063,7 @@ class Analysis:
                 orphans.append(site)
             else:
                 roots.add(entry)
-        for site in self.alloc_sites:
+        for site in (a for a, kind in self.alloc_sites.items() if kind == 'C'):
             entry = self.enclosing(self.starts, site)
             if entry is None:
                 orphans.append(site)
@@ -965,6 +1091,7 @@ class Verdict:
     def __init__(self):
         self.observed = 0
         self.stored_back = False
+        self.returned = False
         self.unclassified: list[str] = []
         self.notes: list[str] = []
 
@@ -976,7 +1103,7 @@ class Verdict:
             return f'OBSERVES 0x{self.observed & TRACK_BITS:X} of the track flags; bits read 0x{self.observed:X}{notes}'
         if self.observed:
             return f'observes bits 0x{self.observed:X} only{notes}'
-        return 'observes no bit (value merged back unchanged where it is not dropped)' + notes
+        return 'observes no bit (read-modify-write, or the value is dropped)' + notes
 
 
 class Classifier:
@@ -1035,6 +1162,12 @@ class Classifier:
             return v
         if m in ('mov', 'movzx', 'movsx') and mem_index == 1 and ops[0].type == cx.X86_OP_REG:
             self.follow(v, insn, entry, ops[0], loaded, lo, mem)
+            if v.returned:
+                used = [site for site in self.a.call_sites.get(entry, ()) if not self.eax_unused_after(site)]
+                if used or not self.a.call_sites.get(entry):
+                    v.unclassified.append('value returned in eax' + (f' and read by the caller at 0x{used[0]:X}' if used else ' to an unknown caller'))
+                else:
+                    v.notes.append('value returned in eax, which no caller reads')
             return v
         if m == 'mov' and mem_index == 0:
             v.notes.append('plain store')
@@ -1054,6 +1187,46 @@ class Classifier:
             return v
         v.unclassified.append(f'{m} reads the word')
         return v
+
+    def consumed_by_noop(self, push):
+        """A `push` whose value reaches a call of a function that is only `ret`/`ret N` (the retail build's empty debug print)."""
+        va = push.address + push.size
+        for _ in range(14):
+            insn = self.image.decode(va)
+            if insn is None or insn.mnemonic in ('jmp', 'ret') or insn.mnemonic.startswith('j'):
+                return False
+            if insn.mnemonic == 'call':
+                if insn.operands[0].type != cx.X86_OP_IMM:
+                    return False
+                first = self.image.decode(insn.operands[0].imm)
+                return first is not None and first.mnemonic == 'ret'
+            va += insn.size
+        return False
+
+    def eax_unused_after(self, call_site):
+        """Whether the instruction stream after the call at `call_site` overwrites eax before reading it."""
+        va = call_site + 5
+        for _ in range(10):
+            insn = self.image.decode(va)
+            if insn is None:
+                return False
+            try:
+                read, written = insn.regs_access()
+            except capstone.CsError:
+                return False
+            read32 = {PARENT.get(insn.reg_name(r)) for r in read}
+            write32 = {PARENT.get(insn.reg_name(r)) for r in written}
+            if insn.mnemonic in ('xor', 'sub') and len(insn.operands) == 2 and insn.operands[0].type == insn.operands[1].type == cx.X86_OP_REG \
+                    and insn.operands[0].reg == insn.operands[1].reg:
+                read32 = set()
+            if 'eax' in read32:
+                return False
+            if 'eax' in write32:
+                return True
+            if insn.mnemonic in ('jmp', 'ret', 'call') or insn.mnemonic.startswith('j'):
+                return False
+            va += insn.size
+        return False
 
     @staticmethod
     def same_location(insn, mem):
@@ -1158,12 +1331,14 @@ class Classifier:
                     if dest != reg:
                         new.add((dest, shift, live, in_place))
                     new.add(a)
+                elif m == 'push' and self.consumed_by_noop(insn):
+                    v.notes.append('passed to a function that returns at once')
+                    new.add(a)
                 else:
                     v.unclassified.append(f'0x{insn.address:X} {m} {insn.op_str}')
             if m == 'ret':
-                for a in new:
-                    if a[0] == 'eax':
-                        v.unclassified.append('value returned in eax')
+                if any(a[0] == 'eax' for a in new):
+                    v.returned = True
                 continue
             if base is not None and base in written32:
                 new = {(a[0], a[1], a[2], False) for a in new}
@@ -1171,35 +1346,76 @@ class Classifier:
                 queue.append((nxt, frozenset(new)))
 
 
-def module_instructions(analysis: Analysis):
-    """address -> (instruction, owning function start) for every instruction of the coaster module reached from a call target in it."""
-    owners = {}
-    for start in analysis.starts:
-        if MODULE[0] <= start < MODULE[1]:
-            for va, insn in analysis.func(start).insns.items():
-                if MODULE[0] <= va < MODULE[1] and (va not in owners or start < owners[va][1]):
-                    owners[va] = (insn, start)
-    return owners
-
-
-def crosscheck(analysis: Analysis):
-    """Second layer: every other `[reg+0..3]` access of the coaster module (not an event of the flow), run through the same value follower.
-
-    These are accesses whose base the data-flow does not take for a controller (descriptors, sections, nodes, other records). The ones that would
-    observe a track flag if the base *were* a controller are the ones to look at by hand."""
-    classifier = Classifier(analysis)
-    seen = {e.address for e in analysis.events.values()}
+def immediate_track_tests(analysis: Analysis):
+    """Third layer, independent of the flow: every `test [reg+0..3], imm` anywhere in the image whose immediate selects one of the track flags
+    (0x20..0x400 of the dword at that address), with the last assignment of its base register seen just before it."""
+    image = analysis.image
+    cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+    cs.detail = True
+    cs.skipdata = True
+    events = {e.address for e in analysis.events.values()}
     rows = []
-    for va, (insn, start) in sorted(module_instructions(analysis).items()):
-        if va in seen or insn.mnemonic in ('lea', 'nop') or insn.mnemonic.startswith('f'):
-            continue
-        for op in insn.operands:
-            if op.type == cx.X86_OP_MEM and op.mem.base and not op.mem.index and 0 <= op.mem.disp <= 3 and insn.reg_name(op.mem.base) != 'esp' \
-                    and insn.reg_name(op.mem.segment) not in ('fs', 'gs') and 'r' in ('r' if op.access & 1 else ''):
-                event = Event(va, f'{insn.mnemonic} {insn.op_str}', 'r', op.mem.disp, None, '')
-                rows.append((insn, start, classifier.verdict(event, start)))
-                break
+    for lo, hi in image.text:
+        recent = []
+        offset = lo - image.base
+        for insn in cs.disasm(bytes(image.flat[offset:offset + hi - lo]), lo):
+            if insn.id == 0:
+                recent.clear()
+                continue
+            recent.append(insn)
+            del recent[:-12]
+            if insn.mnemonic not in ('test', 'bt') or len(insn.operands) != 2:
+                continue
+            mem, imm = insn.operands
+            if mem.type != cx.X86_OP_MEM or imm.type != cx.X86_OP_IMM:
+                continue
+            if not mem.mem.base or mem.mem.index or not 0 <= mem.mem.disp <= 3 or insn.reg_name(mem.mem.base) == 'esp' or insn.reg_name(mem.mem.segment) in ('fs', 'gs'):
+                continue
+            size = mem.size or 4
+            bits = ((imm.imm & ((1 << (8 * size)) - 1)) << (8 * mem.mem.disp)) & MASK32
+            if insn.mnemonic == 'bt':
+                bits = (1 << (imm.imm & 31)) << (8 * mem.mem.disp) & MASK32
+            if not bits & TRACK_BITS:
+                continue
+            base = PARENT[insn.reg_name(mem.mem.base)]
+            source = ''
+            for before in reversed(recent[:-1]):
+                try:
+                    if base in {PARENT.get(before.reg_name(r)) for r in before.regs_access()[1]}:
+                        source = f'{before.mnemonic} {before.op_str}'
+                        break
+                except capstone.CsError:
+                    break
+            rows.append((insn.address, f'{insn.mnemonic} {insn.op_str}', insn.address in events, source))
     return rows
+
+
+# ------------------------------------------------------------------------------------------------------------------------------------
+# Hand-reviewed dispositions (each read in tp.exe; the scan prints every hit that is not listed here as NEW and `--check` fails on it)
+# ------------------------------------------------------------------------------------------------------------------------------------
+REVIEWED_READERS = {
+    0x43F641: 'cmp [edi], 0 of 0x43F4E0 tests `*param_1`, a car record, not the controller: the callers 0x43EF5F and 0x43EFCC (0x43EB70) push the car walked '
+              'from [[0x790FE4]+0x18] (controller +0x54) through its +0x64 links; the controller enters the loop only as the end sentinel in ebp '
+              '(0x43EEA9, when there is no car), a path on which esi is zero and the loop is left at 0x43EEEB',
+}
+REVIEWED_HOLDERS = {
+    0x43392A: 'the global-array copy of 0x4338E0: [ebx - 4] reads the last slot of 0x791D08 + n * 0x104 (n < 5, the car count at 0x791020 bounds the loop), '
+              'never the adjacent 0x792218',
+    0x43BA09: '0x43B8B0 reuses its first argument slot as an out parameter (`&param_1` goes to 0x43B7E0), the stored value is the section index it returns, '
+              'not the controller the slot held on entry',
+}
+REVIEWED_ESCAPES = {
+    **{a: 'action-record log write (COAST-plan section 23): the stream object stores the value of a local through its vtable' for a in
+       (0x403D25, 0x403D33, 0x403D85, 0x403D93, 0x403DA1, 0x403EF5, 0x403F03, 0x403F11)},
+    0x45BA09: 'GlobalFree of the freed record (the wrapper 0x45BA00): the pointer is released, not read',
+    0x4680F9: 'GetDC(window handle from 0x7A130C), not a controller',
+    0x5F5E31: 'the save stream\'s Read through its vtable (0x5F5E20): fills a buffer, reads no controller memory',
+    0x5F5E61: 'the save stream\'s Write through its vtable (0x5F5E50): the saver passes the address of its local wire words (0x437300), not the controller',
+}
+# Stores of a car, node or other record pointer into a record the scan has no type for (an array element, a thing record at 0x7A4610 +0xD4, ...):
+# none stores the controller (those are the two reviewed C entries above). The scan lists them so a change shows; they are not reviewed one by one.
+UNTYPED_STORES = (0x433D7B, 0x434296, 0x434551, 0x438288, 0x439FE3, 0x43A01D, 0x43EC0C, 0x43EC17, 0x43EC3D, 0x43EC59, 0x43ECA3, 0x43ECB5, 0x44106F, 0x44108C,
+                  0x4424F7, 0x4424FD, 0x467CFD, 0x467D5D)
 
 
 # ------------------------------------------------------------------------------------------------------------------------------------
@@ -1214,74 +1430,134 @@ def load_image(path: Path) -> Image:
 
 def run_analysis(image: Image) -> tuple[Analysis, int, list[int]]:
     analysis = Analysis(image)
-    analysis.descend_all = True
     roots, orphans = analysis.initial_roots()
     rounds = analysis.solve(roots)
     return analysis, rounds, orphans
 
 
-def report(analysis: Analysis, rounds: int, orphans: list[int], out=sys.stdout) -> int:
+def describe(tokens) -> str:
+    return '|'.join(sorted(f'{t[0]}+{t[1]:#x}' if isinstance(t[1], int) else f'{t[0]}+?' for t in tokens if len(t) == 2))
+
+
+def report(analysis: Analysis, rounds: int, orphans: list[int], out=sys.stdout) -> list[str]:
+    """Print the evidence; return the problems (empty when every hit is either harmless or reviewed)."""
     image = analysis.image
+    problems: list[str] = []
     classifier = Classifier(analysis)
     inside = sorted(e for e in analysis.analyzed if MODULE[0] <= e < MODULE[1])
     outside = sorted(e for e in analysis.analyzed if not MODULE[0] <= e < MODULE[1])
-    print(f'functions followed: {len(inside)} in the coaster module 0x{MODULE[0]:X}..0x{MODULE[1]:X}, {len(outside)} outside it; {rounds} data-flow rounds', file=out)
+    print(f'tp.exe controller +0 reader scan: {len(inside)} functions of the coaster module 0x{MODULE[0]:X}..0x{MODULE[1]:X} and {len(outside)} outside it '
+          f'followed, {rounds} data-flow rounds', file=out)
     sites = analysis.seed_sites()
     for seed, name in SEED_ADDRESSES.items():
         where = sorted(a for a, s in sites if s == seed and image.in_text(a))
-        data = sorted(a for a, s in sites if s == seed and not image.in_text(a))
-        span = f'0x{where[0]:X}..0x{where[-1]:X}' if where else 'none'
-        print(f'seed 0x{seed:X} ({name}): {len(where)} code sites {span}, {len(data)} data references; all in the module: '
-              f'{all(MODULE[0] <= a < MODULE[1] for a in where)}', file=out)
-    print(f'controller allocations: {", ".join("0x%X" % a for a in sorted(analysis.alloc_sites))} (push 0x{CONTROLLER_SIZE:X} then the allocator 0x{ALLOCATOR:X})', file=out)
-    print(f'holders: globals {", ".join("0x%X" % a for a in sorted(analysis.abs_holders))}; tables {", ".join("0x%X" % a for a in sorted(analysis.table_holders))}; '
-          f'controller fields {", ".join("+0x%X" % a for a in sorted(analysis.ctrl_fields))}', file=out)
+        data = [a for a, s in sites if s == seed and not image.in_text(a)]
+        inside_module = all(MODULE[0] <= a < MODULE[1] for a in where)
+        print(f'seed 0x{seed:X} ({name}): {len(where)} code sites in 0x{where[0]:X}..0x{where[-1]:X}, {len(data)} data references, all in the module: {inside_module}', file=out)
+        if not inside_module or data:
+            problems.append(f'seed 0x{seed:X} is named outside the coaster module')
+    kinds = sorted(set(analysis.alloc_sites.values()))
+    print(f'controller allocation: {", ".join("0x%X" % a for a, k in sorted(analysis.alloc_sites.items()) if k == "C")} (the only 0x{CONTROLLER_ALLOCATION:X}-byte '
+          f'allocation of {len(analysis.alloc_sites)} constant-size calls of 0x{ALLOCATOR:X}, {len(kinds)} record kinds)', file=out)
+    print('holders found: ' + ', '.join(f'0x{a:X}={describe(t)}' for a, t in sorted(analysis.abs_holders.items())) + '; pool table '
+          + ', '.join(f'0x{a:X}={describe(t)}' for a, t in sorted(analysis.table_holders.items())), file=out)
+    print('fields found that hold a tracked pointer: ' + ', '.join(
+        f'{k}+{hex(off)}={describe(t)}' for (k, off), t in sorted(analysis.fields.items(), key=lambda kv: (kv[0][0], kv[0][1])) if isinstance(off, int)
+        and any(x[0] in ('C', 'H48') for x in t)), file=out)
     if orphans:
-        print('sites outside every function found: ' + ', '.join(f'0x{a:X}' for a in orphans), file=out)
+        problems.append('seed sites outside every function found: ' + ', '.join(f'0x{a:X}' for a in orphans))
     print(file=out)
-    placed = [e for e in analysis.events.values() if e.lo is not None and 'r' in e.access]
-    unplaced = [e for e in analysis.events.values() if e.lo is None]
-    print('READERS of controller +0..3 (address, function context, access, instruction, verdict)', file=out)
-    bad = 0
-    for event in sorted(placed, key=lambda e: (e.address, e.lo)):
-        entry = min(event.functions)
-        verdict = classifier.verdict(event, entry)
+    print('READERS of controller +0..3 (address, function, offset, access, instruction -> what it does with the word)', file=out)
+    bits = 0
+    for event in sorted((e for e in analysis.events.values() if e.lo is not None and 'r' in e.access), key=lambda e: (e.address, e.lo)):
+        verdict = classifier.verdict(event, min(event.functions))
         expected = bool({SAVER, LOADER} & event.functions)
-        flag = 'saver/loader' if expected else ''
-        if (verdict.observed & TRACK_BITS or verdict.unclassified) and not expected:
-            bad += 1
-        print(f'0x{event.address:X}  {",".join("0x%X" % f for f in sorted(event.functions))}  +{event.lo} {event.access}  {event.text}  -> {verdict.text()} {flag}', file=out)
+        tag = 'saver/loader' if expected else ''
+        flagged = bool(verdict.observed & TRACK_BITS or verdict.unclassified)
+        if flagged and not expected:
+            if event.address in REVIEWED_READERS:
+                tag = 'REVIEWED: ' + REVIEWED_READERS[event.address]
+            else:
+                tag = 'NEW'
+                problems.append(f'reader 0x{event.address:X} ({event.text}): {verdict.text()}')
+        elif not expected:
+            bits |= verdict.observed
+        print(f'0x{event.address:X}  0x{min(event.functions):X}  +{event.lo} {event.access}  {event.text}  -> {verdict.text()}  {tag}', file=out)
+    stale = [a for a in REVIEWED_READERS if not any(e.address == a for e in analysis.events.values())]
+    problems += [f'reviewed reader 0x{a:X} no longer found' for a in stale]
+    print(f'bits observed by the readers outside the saver and loader (reviewed hits left out): 0x{bits:X}; of the track flags (0x{TRACK_BITS:X}): 0x{bits & TRACK_BITS:X}', file=out)
+    unplaced = [e for e in analysis.events.values() if e.lo is None]
+    if unplaced:
+        problems.append(f'{len(unplaced)} accesses through a controller pointer of unknown offset')
+        for event in sorted(unplaced, key=lambda e: e.address)[:20]:
+            print(f'UNPLACED 0x{event.address:X}  {event.text}', file=out)
     print(file=out)
-    print('UNPLACED accesses through a controller pointer of unknown offset', file=out)
-    for event in sorted(unplaced, key=lambda e: e.address):
-        print(f'0x{event.address:X}  {",".join("0x%X" % f for f in sorted(event.functions))}  {event.access}  {event.text}', file=out)
-    print(file=out)
-    print('HOLDER STORES the flow cannot follow (a controller pointer stored through a base it does not know)', file=out)
+    print('STORES of a tracked pointer through a base the scan does not know', file=out)
     for address, text in sorted(analysis.holder_stores.items()):
-        if 'base unknown' in text or 'caller frame' in text or not MODULE[0] <= address < MODULE[1]:
-            print(f'0x{address:X}  {text}', file=out)
-    print('ESCAPES', file=out)
-    for (address, kind), text in sorted(analysis.escapes.items(), key=lambda kv: kv[0][0]):
-        print(f'0x{address:X}  {text}', file=out)
-    print('NOTES', file=out)
-    for key, text in sorted(analysis.notes.items(), key=lambda kv: str(kv[0])):
-        print(f'{key[0] if isinstance(key[0], str) else hex(key[0])}  {text}', file=out)
+        if 'base unknown' not in text and 'not followed' not in text:
+            continue
+        controller = ' [C]' in text
+        if address in REVIEWED_HOLDERS:
+            tag = 'REVIEWED: ' + REVIEWED_HOLDERS[address]
+        elif address in UNTYPED_STORES and not controller:
+            tag = 'untyped record pointer, never the controller'
+        else:
+            tag = 'NEW'
+            problems.append(f'store 0x{address:X}: {text}')
+        print(f'0x{address:X}  {text}  {tag}', file=out)
+    problems += [f'reviewed store 0x{a:X} no longer found' for a in REVIEWED_HOLDERS if a not in analysis.holder_stores]
     print(file=out)
-    print(f'readers outside the saver and loader that observe the track flags or are unclassified: {bad}', file=out)
-    return bad
+    print('ESCAPES (a tracked pointer in a call the scan cannot follow)', file=out)
+    for (address, kind), text in sorted(analysis.escapes.items(), key=lambda kv: kv[0][0]):
+        if address in REVIEWED_ESCAPES:
+            tag = 'REVIEWED: ' + REVIEWED_ESCAPES[address]
+        else:
+            tag = 'NEW'
+            problems.append(f'escape 0x{address:X}: {text}')
+        print(f'0x{address:X}  {text}  {tag}', file=out)
+    problems += [f'reviewed escape 0x{a:X} no longer found' for a in REVIEWED_ESCAPES if not any(k[0] == a for k in analysis.escapes)]
+    print(file=out)
+    jumps = [(e, u) for e in sorted(analysis.analyzed) for u in analysis.func(e).unresolved]
+    print(f'UNRESOLVED CONTROL FLOW in the followed functions: {len(jumps)}', file=out)
+    for entry, (address, why) in jumps:
+        print(f'0x{address:X}  in 0x{entry:X}: {why}', file=out)
+        problems.append(f'unresolved control flow at 0x{address:X}: {why}')
+    print(file=out)
+    tests = immediate_track_tests(analysis)
+    print(f'TESTS of a track flag at [reg+0..3] anywhere in the image (third layer, independent of the flow): {len(tests)}, '
+          f'{sum(1 for t in tests if MODULE[0] <= t[0] < MODULE[1])} in the coaster module', file=out)
+    for address, text, flow, source in tests:
+        place = 'module' if MODULE[0] <= address < MODULE[1] else 'outside'
+        who = 'saver/loader' if address in analysis.func(SAVER).insns or address in analysis.func(LOADER).insns else (
+            'flow reader' if flow else 'not a controller pointer in the flow')
+        print(f'0x{address:X}  {place:7}  {text}   (base set by: {source or "an earlier block"})  {who}', file=out)
+    print(file=out)
+    print('PROBLEMS: ' + ('none' if not problems else str(len(problems))), file=out)
+    for problem in problems:
+        print('  ' + problem, file=out)
+    return problems
 
 
 def main(argv) -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    parser.add_argument('exe', nargs='?', help='the identified tp.exe (default: $OPENTPW_TPW_EXE)')
+    parser.add_argument('--check', action='store_true', help='exit 1 when a hit is neither harmless nor reviewed')
+    parser.add_argument('--verbose', action='store_true', help='print the data-flow rounds to stderr')
+    args = parser.parse_args(argv[1:])
     if capstone is None:
         print('SKIP: needs the dev-only capstone package (pip install capstone)')
         return 0
-    path = argv[1] if len(argv) > 1 else os.environ.get('OPENTPW_TPW_EXE')
+    path = args.exe or os.environ.get('OPENTPW_TPW_EXE')
     if not path or not Path(path).is_file():
         print('SKIP: pass the identified tp.exe or set OPENTPW_TPW_EXE')
         return 0
-    analysis, rounds, orphans = run_analysis(load_image(Path(path)))
-    report(analysis, rounds, orphans)
-    return 0
+    analysis = Analysis(load_image(Path(path)))
+    analysis.verbose = args.verbose
+    roots, orphans = analysis.initial_roots()
+    rounds = analysis.solve(roots)
+    problems = report(analysis, rounds, orphans)
+    return 1 if args.check and problems else 0
 
 
 if __name__ == '__main__':

@@ -106,6 +106,7 @@ public static class QueuePaths
 		// a free-standing cell has no predecessor: no queue link and no links, only the ride's owner word
 		var towards = !continues ? -1 : first ? ride.QueueEntranceDirection : GuestPathGrid.DirectionBetween( x, y, back.X, back.Y );
 		grid.SetQueue( x, y, towards );
+		// [EXT:untyped-harness-world] a ride without an owner word (the gates and test rigs, harness worlds that exist only in OpenTPW) takes its own route rules and leaves no owner stamp (user-approved 2026-10-30)
 		if ( ride.OwnerWord != 0 )
 			grid.Cells.SetOwner( x, y, ride.OwnerWord );
 		if ( !continues )

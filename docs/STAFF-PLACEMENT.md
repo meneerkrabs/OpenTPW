@@ -24,7 +24,7 @@ The per-employee window (opened from the staff window's employee view) has a Pic
 it came from; only one carry runs at a time (a new pick-up drops the previous member back); there is no guest pick-up.
 
 Valid cell: inside the map, not unowned, type grass, path, queue or queue end, under no placed object or the prototype ride (GUEST-013: tp.exe `0x46cc40` also
-refuses a cell whose track record is a walkable track kind, and refuses object footprints by cell type rather than by occupancy). An invalid click
+refuses a cell whose track record is a walkable track kind, and refuses object footprints by cell type rather than by occupancy; the occupancy refusal stays for a world that keeps the cells it was given, `[EXT:staff-drop-occupancy-refusal]`, user-approved 2026-10-18, and GUEST-013 keeps only the track-record test). An invalid click
 does nothing and the tool stays. The cursor is `Input.CursorTypes.Carry` (the original's cursor 9; `[EXT:software-pointers]`), an invalid hovered cell shows the blueprint's red
 ground marker (UI-099).
 

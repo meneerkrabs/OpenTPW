@@ -11,7 +11,8 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x751720 camera panel] panel id 0x62 (466,1316)-(785,1469) with b_1person 0x63 (474,1316)-(627,1469) help 479 and b_postcard 0x64 (632,1316)-(785,1469) help 480
 	// [DATA:video 8:20-8:40] the green panel right of the HUD shows those two buttons at the table's positions
 	// [BIN:TPW-EXE:0x751720 no view button] the panel's table holds only the panel and its two buttons; no control of the HUD arm (0x7529dc), the camera panel, the ride, shop, sideshow, visitor or employee windows (0x755150, 0x755908, 0x755e80, 0x7575e0, 0x756f48) changes the zoom or the yaw: the locate jumps (0x4867b0, 0x486860, 0x4868d0, the map click 0x5f1050) call 0x42aab0 with the zoom and yaw arguments null and move only the target, so the original has no view-cycle button and OpenTPW has none either
-	// [APPROX:UI-042] a left click on the camcorder button only arms it (the walk starts on the next click, as with the C key); the postcard window (8:42) is the host composer
+	// [APPROX:UI-042] a left click on the camcorder button only arms it (the walk starts on the next click, as with the C key)
+	// [EXT:online-postcard-address-book] the postcard window (8:42) is the host composer that sends through OpenTPW's own server (user-approved 2026-10-30)
 	private static readonly LayoutTable CameraPanelTable = OriginalLayoutTables.CameraPanel;
 	private static readonly string[] CameraPanelIds = { "cameraPanel", "cameraArmPane", "cameraArmHandle", "cameraCamcorder", "cameraPostcard" };
 

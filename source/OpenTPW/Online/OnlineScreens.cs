@@ -1759,8 +1759,8 @@ public sealed class OnlineScreens
 	// (0x4a8600: to the outbox while offline) and closes the window; b_exit closes it
 	// [EXT:postcard-player-names] OpenTPW accepts player names and e-mail addresses together. Tokens with '@' use the shared address validator;
 	// other tokens use the player-name rules (the original only accepted addresses, 0x4a7f6c).
-	// [APPROX:UI-042] the photo frame stays empty and the preview and address book buttons are disabled: the 640x240 camcorder photo (0x4a9280), its preview redraw
-	// (0x4a84c0) and the address book window (table 0x7542b8, 0x4a8140) are not ported
+	// [APPROX:UI-042] the photo frame stays empty and the preview button is disabled: the 640x240 camcorder photo (0x4a9280) and its preview redraw (0x4a84c0) are not ported
+	// [EXT:online-postcard-address-book] the address book window (table 0x7542b8, 0x4a8140) is not ported and the button stays disabled: recipients are typed (player names or addresses) and the postcard goes through OpenTPW's own server, not the original's outbox (user-approved 2026-10-30)
 	public void ShowSendPostcard()
 	{
 		var screen = new UiScreen( "sendPostcard" );

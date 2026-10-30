@@ -28,6 +28,7 @@ ARRIVAL-002 docs/GUESTS.md
 ARRIVAL-003 docs/GUESTS.md
 ARRIVAL-004 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 ARRIVAL-005 docs/GUESTS.md
+ARRIVAL-006 docs/GUESTS.md
 ARRIVAL-007 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 AUDIO-002 docs/AUDIO.md
 AUDIO-003 docs/AUDIO.md
@@ -50,6 +51,7 @@ AUDIO-035 docs/AUDIO.md
 AUDIO-036 docs/PROGRESS.md
 AUDIO-037 docs/AUDIO.md
 AUDIO-039 docs/AUDIO.md
+AUDIO-040 docs/AUDIO.md
 AUDIO-041 docs/AUDIO.md
 AUDIO-900 docs/AUDIO.md
 AUDIO-901 docs/AUDIO.md
@@ -70,6 +72,7 @@ COAST-010 docs/reverse/COAST-plan.md
 COAST-011 docs/reverse/COAST-plan.md
 COAST-012 docs/reverse/COAST-plan.md
 COAST-013 docs/reverse/COAST-plan.md
+COAST-015 docs/COASTERS.md
 COAST-016 docs/COASTERS.md
 COAST-017 docs/reverse/COAST-plan.md
 COAST-018 docs/COASTERS.md
@@ -111,6 +114,7 @@ DET-009 docs/reverse/DET-plan.md
 DET-010 docs/reverse/DET-plan.md
 DET-011 docs/reverse/DET-plan.md
 DET-012 docs/reverse/DET-plan.md
+DET-015 docs/DETERMINISM.md
 DET-016 docs/DETERMINISM.md
 ECON-001 docs/ECONOMY.md
 ECON-002 docs/reverse/APPROX-TRACE.md
@@ -163,6 +167,7 @@ ECON-054 docs/ECONOMY.md
 ECON-055 docs/ECONOMY.md
 ECON-056 docs/progress/2026-10-16-economy-and-saves-sweep.md
 ECON-057 docs/progress/2026-10-18-round8-saves-econ.md
+ECON-059 docs/ECONOMY.md
 ECON-061 docs/THEME-PARK-INC.md
 ECON-063 docs/progress/2026-10-26-pause-and-loss.md
 GATE-001 docs/M3-GATE.md
@@ -170,6 +175,7 @@ GATE-002 docs/reverse/PATH-plan.md
 GATE-003 docs/reverse/BOARD-plan.md
 GATE-004 docs/M3-GATE.md
 GATE-005 docs/M3-GATE.md
+GATE-006 docs/M3-GATE.md
 GATEM4-001 docs/M4-GATE.md
 GATEM4-002 docs/M4-GATE.md
 GUEST-001 docs/PROGRESS.md
@@ -194,6 +200,7 @@ HEADS-003 docs/PROGRESS.md
 HEADS-005 docs/GUESTS.md
 HEADS-008 docs/GUESTS.md
 MD2-900 docs/reverse/TEXTURE-FRAME-LIFETIME.md
+MD2-901 docs/OBJECTS.md
 MD2-902 docs/MD2-MODELS.md
 ONLINE-001 docs/ONLINE.md
 ONLINE-002 docs/reverse/APPROX-TRACE.md
@@ -297,8 +304,10 @@ SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
 SAVE-004 docs/progress/2026-10-18-round8-saves-econ.md
 SAVE-005 docs/ECONOMY.md
+SAVE-007 docs/ECONOMY.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
 SAVE-009 docs/SAVE-THINGS.md
+SAVE-011 docs/SAVE-CONTAINER.md
 SAVE-922 docs/TPWS-PAYLOAD.md
 SAVE-923 docs/TPWS-PAYLOAD.md
 SAVE-941 docs/THEME-PARK-INC.md
@@ -367,6 +376,7 @@ UI-037 docs/UI.md
 UI-038 docs/PROGRESS.md
 UI-039 docs/UI.md
 UI-040 docs/PROGRESS.md
+UI-041 docs/UI.md
 UI-043 docs/PROGRESS.md
 UI-044 docs/UI.md
 UI-045 docs/PROGRESS.md
@@ -374,6 +384,7 @@ UI-046 docs/progress/2026-10-18-round8-ui-windows.md
 UI-048 docs/PROGRESS.md
 UI-049 docs/PROGRESS.md
 UI-050 docs/UI.md
+UI-051 docs/UI.md
 UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md

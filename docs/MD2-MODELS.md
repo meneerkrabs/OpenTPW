@@ -495,7 +495,7 @@ ascending order, the last non-null `FrameAt` wins (hyenasm1 carries two tracks
 on slot 15; its constant 0 loses to the face cycle), a null sample before a
 track's first key keeps the previous frame (initially 0), and a slot no clip
 addresses any more shows frame 0 again (MD2-900; frame or slot indices outside
-the model are ignored, MD2-901). The renderer binds the effect:
+the model are ignored, `[EXT:original-undefined-reads]`). The renderer binds the effect:
 `ObjectRenderPart.TextureSlots` carries each part texture's MD2 slot, and
 Static batching keeps distinct model slots separate even when their frame-0
 art has the same name. `OriginalObject` decodes each animated slot's frames

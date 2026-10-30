@@ -267,7 +267,7 @@ checked against the one park save that exists, `prebuilt.TPWS` (decoded 1,692,64
 fields: [SAVE-CONTAINER.md](SAVE-CONTAINER.md). The payload loader (`0x43fad0`, writer `0x441060`)
 uses the same 17 delimiters in the same order as `tp.exe` (`0x415270`), so `SavePayloadLayout.Parse(payload,
 SavePayloadProfile.ThemeParkInc)` splits it by the blocks' own reader widths; only a Coasters block with a
-coaster is still found by its delimiter (SAVE-011). `ParseThemeParkInc` is that call.
+coaster is still found by its delimiter (`[EXT:delimiter-split-for-tools]`). `ParseThemeParkInc` is that call.
 
 | Block | Prebuilt bytes | Reader rule (Theme Park Inc against Theme Park World) |
 | --- | ---: | --- |

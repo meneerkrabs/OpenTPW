@@ -71,19 +71,26 @@ public sealed class CoasterBuilder
 		loopPylonsLeft = state.LoopMode ? Math.Clamp( state.LoopPylonsLeft, 0, LoopPair ) : 0;
 	}
 
-	/// <summary>The loop button exists: the coaster has a loop pylon and its ride is upgraded to level 1 or more (a station without an economy counts as unlocked).</summary>
-	// [BIN:TPW-EXE:0x004980D1 loop button] the panel enables the loop button only when the ride's level byte (thing +0x50) is at least 1 (0x4980D6); see CoasterToolPanel.EnabledMask
-	public bool LoopUnlocked => Ride.Definition.HasLoopPylon && (UpgradeLevel is not int level || level >= 1);
+	/// <summary>The loop button is shown: the ride is upgraded to level 1 or more (a station without an economy counts as unlocked); whether the coaster has a loop pylon is <see cref="LoopUnlocked"/>.</summary>
+	// [BIN:TPW-EXE:0x004980D1 loop button] the panel enables the loop button only when the ride's level byte (thing +0x50) is at least 1 (0x4980D6) and hides it at level 0 (0x49880F, 0x4987f0); nothing there looks at the coaster's loop pylon, so the button also shows on a coaster without one (see LoopUnlocked); see CoasterToolPanel.EnabledMask
+	public bool LoopButtonShown => UpgradeLevel is not int level || level >= 1;
+
+	/// <summary>The loop edit mode can start: the coaster has a loop pylon control and the loop button is shown.</summary>
+	// [BIN:TPW-EXE:0x42fd57 definition flag 2] the definition builder 0x42fad0 sets definition +0 bit 2 when pylon control 1 (the loop pylon, definition +0x1c8) has a mesh name (0x42fcef..0x42fd59; bit 1 for control 0, 0x42fcd9..0x42fce4); no other writer of the definition's flags sets it (0x42f499, 0x42f9ed, 0x42fa4a, 0x42fa5e, 0x42fa70, 0x42fa86 write 4, 0x100, 0xa0, 0x20, 0x10 and 8), and the pylon loader 0x42eb70 fails the whole definition for a control without mesh name, uiPylonTypeUniqueID or fCollisionPossibleRadius, so the bit means that asPylonControls[1] exists (CoasterDefinition.HasLoopPylon)
+	// [BIN:TPW-EXE:0x442cd0 loop gate] the loop button's mode starter 0x442cd0, the endpoint resumption 0x442d10, the pending test 0x444c00, the mode setters 0x444c50 and 0x444c80, the loop selection 0x4445b0(2) and the replayed action 0x447a10 all test that bit of the controller's definition ([0x790fec] +4) first and do nothing without it, so on a coaster without a loop pylon the loop button only selects the build mode (0x4445b0 ends with [0x79c644] = 2 and 0x434f10)
+	public bool LoopUnlocked => Ride.Definition.HasLoopPylon && LoopButtonShown;
 
 	/// <summary>The editable chain endpoint still needs the second pylon of a loop pair, even after the loop tool has been left.</summary>
-	// [BIN:TPW-EXE:0x444c00 pending loop endpoint] an incomplete track tests its tail (+0x58), a complete cut track its cut predecessor (+0x60), and a complete uncut track returns false; only node flag 0x80 is tested, independently of mode bit 0x40
-	public bool LoopPairPending => (!Track.IsComplete || Track.IsCut) && Track.LastIndex >= 0
+	// [BIN:TPW-EXE:0x444c00 pending loop endpoint] with the definition's loop bit (LoopUnlocked's gate): an incomplete track tests its tail (+0x58), a complete cut track its cut predecessor (+0x60), and a complete uncut track returns false; only node flag 0x80 is tested, independently of mode bit 0x40
+	public bool LoopPairPending => Ride.Definition.HasLoopPylon && (!Track.IsComplete || Track.IsCut) && Track.LastIndex >= 0
 		&& (Track.Nodes[Track.LastIndex].Flags & CoasterNodeFlags.LoopFirst) != 0;
 
 	/// <summary>Resumes the endpoint's pending second loop pylon, or starts a new pair unless loop mode is already active.</summary>
-	// [BIN:TPW-EXE:0x442d10 resume loop pair] a pending endpoint sets counter 0x79c664 to 1 and mode bit 0x40; the loop selection then calls 0x442cd0, which starts at 2 only when that mode bit is clear
+	// [BIN:TPW-EXE:0x442d10 resume loop pair] a pending endpoint sets counter 0x79c664 to 1 and mode bit 0x40; the loop selection then calls 0x442cd0, which starts at 2 only when that mode bit is clear; without the definition's loop bit (0x442d10, 0x442cd0, 0x4445b0 test it) neither does anything
 	internal void StartOrResumeLoopPair()
 	{
+		if ( !Ride.Definition.HasLoopPylon )
+			return;
 		if ( LoopPairPending )
 		{
 			loopMode = true;

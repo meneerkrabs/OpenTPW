@@ -1,0 +1,5 @@
+## Coaster tool, fidelity round 11 package G (October 30, 2026)
+
+Package G read the coaster tool's open items in tp.exe (REA, `dis.py`, Unicorn-free static reading; the Mac decomp only pointed to the code):
+
+- **COAST-035 (retired)**: the auxiliary dispatcher `0x447a10` is the layout replay's action `0x38` (its only caller is the replayer `0x4045b0` at `0x40463e`; the replayer `0x785a08` rebuilds a downloaded online park from its recorded actions), so OpenTPW, which runs no layout replay, has no counterpart. The controller/definition flag-2 gate is the definition's loop bit: the definition builder `0x42fad0` sets definition `+0` bit 2 when pylon control 1 (the loop pylon) has a mesh (`0x42fd57`), and `0x442cd0`, `0x442d10`, `0x444c00`, `0x444c50`, `0x444c80` and `0x4445b0` test it first. `CoasterBuilder.LoopUnlocked`, `LoopPairPending` and `StartOrResumeLoopPair` apply it. The loop button itself follows the ride's level only (`0x4980D6`, `0x4987f0`), so a coaster without a loop pylon shows and enables it and its selection just picks the build mode (OpenTPW used to hide it, COAST-028).

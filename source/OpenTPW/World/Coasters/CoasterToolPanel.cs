@@ -163,7 +163,7 @@ public sealed class CoasterToolPanel
 	/// turns the two build buttons off and any other track the demolish button.
 	/// </summary>
 	// [BIN:TPW-EXE:0x445910 enabled buttons] the mask starts at 0x1fc; bit 1 (build) is added unless the last node is the first of a loop pair (0x444c00 / node flag 0x80), bit 2 (loop) with definition flag 0x80 and 0x200 with 0x100; then a complete track whose circuit is not cut open (controller flags &1 set, &2 clear) clears bits 1 and 2, any other track clears bit 0x40
-	// [BIN:TPW-EXE:0x004980D1 loop button] the panel enables the loop button (control 0x20) only when the mask has bit 2 and the ride's level byte (thing +0x50, the upgrade level 0x4DF8F0 raises) is at least 1 (0x4980D6), and the refresh 0x4987F0 hides it at level 0 (0x49880F); the descriptor's flag 0x80 is set for every coaster (the loader ORs 0xA0), so the level is the only gate; OpenTPW adds that the coaster has a loop pylon control
+	// [BIN:TPW-EXE:0x004980D1 loop button] the panel enables the loop button (control 0x20) only when the mask has bit 2 and the ride's level byte (thing +0x50, the upgrade level 0x4DF8F0 raises) is at least 1 (0x4980D6), and the refresh 0x4987F0 hides it at level 0 (0x49880F); the descriptor's flag 0x80 is set for every coaster (the loader ORs 0xA0), so the level is the only gate (a coaster without a loop pylon shows the button too, and its selection only picks the build mode, CoasterBuilder.LoopUnlocked)
 	public CoasterToolButton EnabledMask
 	{
 		get
@@ -171,7 +171,7 @@ public sealed class CoasterToolPanel
 			var mask = (uint)0x1fc;
 			if ( !PairPending )
 				mask |= 1;
-			if ( LoopUnlocked )
+			if ( LoopButtonShown )
 				mask |= 2;
 			if ( IsFinished )
 				mask &= ~3u;
@@ -181,7 +181,10 @@ public sealed class CoasterToolPanel
 		}
 	}
 
-	/// <summary>The loop button exists: the coaster has a loop pylon and its ride is upgraded to level 1 or more (a station without an economy counts as unlocked).</summary>
+	/// <summary>The loop button is shown and enabled: the ride is upgraded to level 1 or more (a station without an economy counts as unlocked), as the original's panel does whether or not the coaster has a loop pylon.</summary>
+	public bool LoopButtonShown => builder.LoopButtonShown;
+
+	/// <summary>The loop mode can start: <see cref="LoopButtonShown"/> and the coaster has a loop pylon control (the definition's flag 2, <see cref="CoasterBuilder.LoopUnlocked"/>).</summary>
 	public bool LoopUnlocked => builder.LoopUnlocked;
 
 	/// <summary>Whether the chain endpoint is the first pylon of a loop pair: leaving loop mode does not remove the pending second pylon.</summary>

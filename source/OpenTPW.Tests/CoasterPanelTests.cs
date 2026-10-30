@@ -223,8 +223,13 @@ public class CoasterPanelTests
 		Assert.IsFalse( builder.FirstOfPair );
 	}
 
+	/// <summary>
+	/// COAST-035: the loop mode needs the definition's flag 2 (a loop pylon control, tp.exe 0x42fd57; 0x442cd0, 0x442d10, 0x444c00 and 0x4445b0 test it), but the panel's loop button
+	/// does not (0x4980D6, 0x4987f0 look at the ride's level only): on a coaster without a loop pylon the button is shown and enabled, its selection starts no loop mode, a stray node flag 0x80
+	/// is no pending pair, and the build button stays on.
+	/// </summary>
 	[TestMethod]
-	public void APendingEndpointDoesNotBypassTheAvailableLoopPylonGate()
+	public void ACoasterWithoutALoopPylonKeepsTheLoopButtonButStartsNoLoopMode()
 	{
 		var settings = CoasterTests.PcSettings();
 		foreach ( var key in settings.Keys.Where( key => key.StartsWith( "asPylonControls[1].", StringComparison.Ordinal ) ).ToArray() )
@@ -232,17 +237,22 @@ public class CoasterPanelTests
 		var (builder, _) = NewCoaster( settings );
 		var panel = CoasterPanelRig.Create( builder );
 		Assert.AreEqual( CoasterToolButton.Build, panel.Selected );
-		Assert.IsFalse( panel.Select( CoasterToolButton.Loop ) );
+		Assert.IsTrue( panel.LoopButtonShown );
+		Assert.IsFalse( panel.LoopUnlocked );
+		Assert.AreEqual( CoasterToolButton.Loop, panel.EnabledMask & CoasterToolButton.Loop );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
+		Assert.AreEqual( CoasterToolButton.Loop, panel.Selected );
+		Assert.IsFalse( builder.LoopMode, "0x442cd0 and 0x4445b0 do nothing without the definition's flag 2" );
+		Assert.AreEqual( 0, builder.LoopPylonsLeft );
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		Assert.IsFalse( builder.Track.Nodes[builder.Track.LastIndex].LoopPylon, "the pylon is a standard one" );
 		builder.Track.Nodes[builder.Track.LastIndex].Flags |= CoasterNodeFlags.LoopFirst;
 		panel.Refresh();
-		Assert.IsTrue( panel.PairPending );
-		Assert.IsFalse( panel.LoopUnlocked );
-		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
-		Assert.IsFalse( panel.Select( CoasterToolButton.Build ) );
-		Assert.IsFalse( panel.Select( CoasterToolButton.Loop ) );
+		Assert.IsFalse( panel.PairPending, "0x444c00 returns false without the flag" );
+		Assert.AreEqual( CoasterToolButton.Build, panel.EnabledMask & CoasterToolButton.Build );
+		Assert.AreEqual( CoasterToolButton.Loop, panel.Selected );
 		panel.Open();
-		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
+		Assert.AreEqual( CoasterToolButton.Build, panel.Selected );
 		Assert.IsFalse( builder.LoopMode );
 	}
 
@@ -1066,9 +1076,11 @@ public class CoasterPanelTests
 		Assert.IsTrue( builder.Ride.Definition.HasLoopPylon );
 		Assert.AreEqual( 0, builder.UpgradeLevel );
 		Assert.IsFalse( panel.LoopUnlocked );
+		Assert.IsFalse( panel.LoopButtonShown );
 		Assert.AreEqual( CoasterToolButton.None, panel.EnabledMask & CoasterToolButton.Loop, "level 0 hides the loop button" );
 		state!.Level = 1;
 		Assert.IsTrue( panel.LoopUnlocked );
+		Assert.IsTrue( panel.LoopButtonShown );
 		Assert.AreEqual( CoasterToolButton.Loop, panel.EnabledMask & CoasterToolButton.Loop );
 		var (sandbox, _) = NewCoaster();
 		Assert.IsNull( sandbox.UpgradeLevel );

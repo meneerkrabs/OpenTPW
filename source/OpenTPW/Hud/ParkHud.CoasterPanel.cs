@@ -88,8 +88,16 @@ public sealed partial class ParkHud
 		{
 			var element = coasterPanelElements[index];
 			var spec = CoasterButtons[index];
-			// the loop button is hidden below ride level 1 (0x49880F) and on a coaster without a loop pylon
-			element.Visible = panel != null && (spec.Button != CoasterToolButton.Loop || panel.LoopUnlocked);
+			// the loop button is hidden below ride level 1 (0x49880F, 0x4987f0) and nowhere else: a coaster without a loop pylon shows it too
+			element.Visible = panel != null && (spec.Button != CoasterToolButton.Loop || panel.LoopButtonShown);
+			// [BIN:TPW-EXE:0x4987f0 loop button art] the panel's refresh swaps the loop button's model for cb_trough (ui.wad) and its two hover help ids from the table's 565 to 0x134 (308) when the mask has
+			// bit 0x200 (definition flag 0x100: the flume coasters), else to 0x132 (306): "select loop pylons" or "select splashdown pylons" with their pair notes
+			if ( spec.Button == CoasterToolButton.Loop && panel != null && element is UiButton loopButton )
+			{
+				var trough = (panel.Builder.Ride.Definition.Flags & CoasterDefinition.TroughFlag) != 0;
+				loopButton.Model = trough ? "cb_trough" : spec.Model;
+				loopButton.Help = strings.Help( trough ? 0x134 : 0x132 );
+			}
 			element.Enabled = panel != null && panel.IsEnabled( spec.Button );
 		}
 	}

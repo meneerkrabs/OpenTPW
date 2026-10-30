@@ -244,7 +244,7 @@ last position and stores the constant 6 into both state and saved state (6 in ev
   words, event type then value (the constructor `0x50BA80` clears them as words at +4+4i and +6+4i; `SavePerson.ThoughtEvents`, `SaveThoughtEvent`). `AddEvent(type, value)` (`0x50C100`) writes the slot at
   the head, advances it with `(head + 1) & 0x1F` and skips a pair equal to the previous slot (head − 1, wrapped). Its only callers (25 direct sites in `0x4F`–`0x53`, none elsewhere in the code section) pass types 1 to
   0x19, so the reader refuses a head above 31 or a type above 0x19. The type numbers have no names in the code; the only non-empty ring in the corpus is the fantasy state-20 guest (head 1, slot 0 = type
-  0x13, value 0, written at `0x502312`). The ring is not imported (SAVE-002).
+  0x13, value 0, written at `0x502312`). The ring is not imported (`[EXT:guest-event-ring]`).
 - Nothing else is non-default beyond the arrival phase: all 35 corpus guests (Easymode 13, the seven private `.TPWS` 22) are unnumbered (`mArrivalIndex` 0), unqueued, never admitted and
   hold saved state 6; `EveryGuestBodyOfEverySaveIsConsumedExactly` reads every one to the last byte. The queue, admission, balloon-position and ring-wrap fields therefore rest on the code, not on a
   saved guest in a queue, and a save of a park with guests in queues and on rides would test them.

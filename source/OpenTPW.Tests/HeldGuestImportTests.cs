@@ -71,6 +71,22 @@ public class HeldGuestImportTests
 	}
 
 	[TestMethod]
+	public void AnOriginalSavedBankIsReducedBeforeTheFirstOwnFormatSave()
+	{
+		var simulation = Simulation();
+		simulation.KidSetCount = 6;
+		var random = simulation.CaptureSnapshot().RandomState;
+		simulation.ImportOriginal( new[] { Decode( new SaveTestPayloads.GuestFields { Position = (At( 6 ), At( 5 )), State = 17, SpriteId = 7 }, 41 ) }, 755, _ => 0, _ => 0 );
+		Assert.AreEqual( 1u, simulation.Find( 41 )!.KidSetDraw, "0x4F93AA writes the loaded bank modulo six back" );
+		Assert.AreEqual( random, simulation.CaptureSnapshot().RandomState, "normalization takes no draw" );
+		var bytes = ParkResumeJson.Serialize( simulation.CaptureSnapshot() );
+		var restored = Simulation();
+		restored.KidSetCount = 8;
+		restored.RestoreSnapshot( ParkResumeJson.Deserialize<GuestSimulationSnapshot>( bytes ) );
+		Assert.AreEqual( 1u, restored.Find( 41 )!.KidSetDraw, "loading more sets must not recover the original bank seven" );
+	}
+
+	[TestMethod]
 	public void AHeldGuestIsKeptOnlyWhileAGuardEscortsItAndOtherwiseDestroyedAtItsFirstUpdate()
 	{
 		foreach ( var escorted in new[] { true, false } )
@@ -223,3 +239,4 @@ public class HeldGuestImportTests
 		Assert.AreEqual( (StaffJob.Idle, 0), (member.Job, member.TargetGuestId) );
 	}
 }
+

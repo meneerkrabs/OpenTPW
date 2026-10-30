@@ -151,7 +151,7 @@ public sealed partial class GuestSimulation
 			guest.InCostume = person.EspSprite == 2;
 			// [BIN:TPW-EXE:0x004F93AA saved sprite bank] the person serializer saves the sprite bank (+0x20) and reduces it by the loaded count of the person's own category (+0x24, 0x00541F60); a guest in costume holds the costume bank there, and the kid set it returns to is the draw its thing id gives again (0x004FE6A1)
 			if ( !guest.InCostume )
-				guest.KidSetDraw = person.SpriteId;
+				guest.KidSetDraw = ReduceKidDraw( person.SpriteId );
 			var baseSpeed = GuestSpeed.BaseSpeeds.Contains( person.BaseSpeed ) ? person.BaseSpeed : GuestSpeed.BaseSpeeds[0];
 			if ( baseSpeed != person.BaseSpeed )
 				adjusted.Add( $"{what} base speed {person.BaseSpeed} imported as {baseSpeed}" );
@@ -408,3 +408,4 @@ public sealed partial class GuestSimulation
 		}
 	}
 }
+

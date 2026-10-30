@@ -137,6 +137,38 @@ public class KidSetLoadTests
 		Assert.IsFalse( park.ValidateSnapshot( ParkResumeJson.Deserialize<GuestSimulationSnapshot>( Encoding.UTF8.GetBytes( tooBig.ToJsonString() ) ) ).IsValid );
 	}
 
+	[TestMethod]
+	public void ALoadedBankIsReducedBeforeResavingAndDoesNotReturnWhenMoreSetsLoad()
+	{
+		GuestSimulation Park( int? count )
+		{
+			var grid = new GuestPathGrid( 20, 10 );
+			for ( var x = 0; x < 20; x++ ) grid.SetPath( x, 5, true );
+			return new GuestSimulation( grid, GuestTests.CreateSettings(), 11 ) { ArrivalsEnabled = false, KidSetCount = count };
+		}
+		var source = Park( 8 );
+		var guest = source.SpawnArrival()!;
+		guest.KidSetDraw = 7;
+		var snapshot = source.CaptureSnapshot();
+		foreach ( var count in new int?[] { 6, 2, null, 0 } )
+		{
+			var loaded = Park( count );
+			loaded.RestoreSnapshot( snapshot );
+			var expected = count is > 0 ? 7u % (uint)count.Value : 7u;
+			Assert.AreEqual( expected, loaded.Find( guest.Id )!.KidSetDraw, "a known count reduces the stored bank; headless/empty counts leave it alone" );
+			Assert.AreEqual( Canonical( source ), Canonical( loaded ), "presentation normalization must not change canonical state" );
+			var bytes = ParkResumeJson.Serialize( loaded.CaptureSnapshot() );
+			var moreSets = Park( 8 );
+			moreSets.RestoreSnapshot( ParkResumeJson.Deserialize<GuestSimulationSnapshot>( bytes ) );
+			Assert.AreEqual( expected, moreSets.Find( guest.Id )!.KidSetDraw, "the second save keeps the reduced bank" );
+			Assert.AreEqual( (int)expected, GuestAppearance.KidSet( moreSets.Find( guest.Id )!, 8 ) );
+		}
+		guest.InCostume = true;
+		var costume = Park( 6 );
+		costume.RestoreSnapshot( source.CaptureSnapshot() );
+		Assert.AreEqual( 7u, costume.Find( guest.Id )!.KidSetDraw, "the saved kid value is not a costume guest's current sprite bank" );
+	}
+
 	private static ulong Canonical( GuestSimulation park )
 	{
 		var hash = new StateHasher();
@@ -144,3 +176,4 @@ public class KidSetLoadTests
 		return hash.Value;
 	}
 }
+

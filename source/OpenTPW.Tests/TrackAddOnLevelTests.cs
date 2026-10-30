@@ -54,8 +54,8 @@ public partial class TrackAddOnLevelTests
 			"/synthetic/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), FileSystem, null );
 
 	/// <summary>A go-kart ride (the Dino Karts' controller type −4) and its jump (the Dino Karts Jump's footprint and Bumper.*Adjust).</summary>
-	private (ObjectCatalogEntry Ride, ObjectCatalogEntry Jump) Entries( bool hasQueue = false ) =>
-		(Entry( ObjectCategory.Ride, "Info.Id 1150\nInfo.Name SyntheticKarts\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nBumper.WhichTrackType 1\nBumper.BumperType -4\n" + (hasQueue ? "Info.HasQueue 1\n" : ""), "*" ),
+	private (ObjectCatalogEntry Ride, ObjectCatalogEntry Jump) Entries( bool hasQueue = false, bool bumper = false ) =>
+		(Entry( ObjectCategory.Ride, "Info.Id 1150\nInfo.Name SyntheticKarts\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nBumper.WhichTrackType " + (bumper ? "0" : "1") + "\nBumper.BumperType " + (bumper ? "-1" : "-4") + "\n" + (hasQueue ? "Info.HasQueue 1\n" : ""), "*" ),
 		Entry( ObjectCategory.Upgrade, "Info.Id 1500\nInfo.Name SyntheticJump\nInfo.WhichUIType 0\nAddOn.UpgradesId 1150\nAddOn.UpgradeType 1\nBumper.WhichTrackType 1\n"
 			+ "Bumper.NorthXAdjust 1\nBumper.NorthYAdjust 0\nBumper.EastXAdjust 0\nBumper.EastYAdjust 0\nBumper.SouthXAdjust 0\nBumper.SouthYAdjust -1\nBumper.WestXAdjust 1\nBumper.WestYAdjust -1\n", "++", "++" ));
 
@@ -66,9 +66,9 @@ public partial class TrackAddOnLevelTests
 	/// (14, 10) … (28, 10) and (28, 14) … (10, 14) between the corners (30, 10), (30, 14), (8, 14) and (8, 10). Without <paramref name="laid"/> the station stands alone;
 	/// <paramref name="extra"/> joins the catalogue.
 	/// </summary>
-	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false, bool laid = true, ObjectCatalogEntry? extra = null, (int X, int Y)? extraAt = null )
+	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false, bool laid = true, ObjectCatalogEntry? extra = null, (int X, int Y)? extraAt = null, bool bumper = false )
 	{
-		var (rideEntry, jump) = Entries( hasQueue );
+		var (rideEntry, jump) = Entries( hasQueue, bumper );
 		var entries = extra == null ? new[] { rideEntry, jump } : new[] { rideEntry, jump, extra };
 		var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), Private, null, new object[] { "jungle", entries }, null )!;
 		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
@@ -92,6 +92,8 @@ public partial class TrackAddOnLevelTests
 			Assert.IsNotNull( objects.TryPlace( extra, blocker.X, blocker.Y, 0, out _ ), "the object standing where the ride's exit tile goes" );
 		var ride = objects.TryPlace( rideEntry, 10, 9, 0, out _ );
 		Assert.IsNotNull( ride?.Runtime.Bump, "the kart ride and its controller" );
+		if ( bumper )
+			return (level, ride!, jump);
 		var station = level.TrackStations[ride!];
 		Assert.AreEqual( (10, 10), station.First );
 		if ( !laid )

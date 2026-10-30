@@ -25,7 +25,7 @@ public partial class Level
 	private HashSet<OriginalObject>? restoredVehicleRides;
 
 	/// <summary>
-	/// A guest in state 16 is a rider only while the ride's carrier state is restored: a ride whose rider tables did not read, a tour ride (its cars are not imported) and a kart, water or flying ride
+	/// A guest in state 16 is a rider only while the ride's carrier state is restored: a ride whose rider tables did not read, a tour ride (its cars are not imported) and a kart, water or bumper ride
 	/// whose vehicles were not imported leave their riders with nothing that would ever let them off, so the guests are put off the ride (<see cref="GuestSimulation.DropImportedRiders"/>) and the report says so.
 	/// Coasters keep their riders: their trains restore, and the original keeps a rider of no car list aboard too.
 	/// </summary>
@@ -42,7 +42,7 @@ public partial class Level
 				continue;
 			var reason = bridge.RidersRefusal
 				?? (item.Runtime.UsesTour ? "its tour cars are not imported"
-				: item.Runtime.Bump is { Template.IsBumper: false } && restoredVehicleRides?.Contains( item ) != true ? "its track ride's vehicles were not imported" : null);
+				: item.Runtime.Bump != null && restoredVehicleRides?.Contains( item ) != true ? "its track ride's vehicles were not imported" : null);
 			if ( reason == null )
 				continue;
 			var dropped = Guests.DropImportedRiders( bridge );

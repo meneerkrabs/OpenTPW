@@ -120,6 +120,38 @@ public partial class TrackAddOnLevelTests
 		Assert.IsTrue( validation.IsValid, string.Join( "; ", validation.Errors ) );
 	}
 
+	// [BIN:TPW-EXE:0x00543560 TrackRides loader] a bumper ride's chunks are saved and loaded as a kart ride's, but OpenTPW applies none of them, so its state-16 guests have no vehicle to ride: they are put off the ride, and a guard chasing or escorting one goes idle
+	[TestMethod]
+	public void RidersOfABumperRideArePutOffTheRideAndTheirGuardGoesIdle()
+	{
+		var (target, targetRide, _) = World( laid: false, bumper: true );
+		targetRide.ThingId = RideThing;
+		Assert.IsTrue( targetRide.Runtime.Bump!.Template.IsBumper );
+		var bridge = targetRide.Visitors;
+		bridge.SavedRunStateImported = true;
+		SaveGuest Rider( int id ) => SaveGuest.Read( Payload( SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields { Position = (3 * 256 + 128, 3 * 256 + 128), State = 16, MajorDest = (ushort)RideThing } ) ), new SaveThing( id, SaveThingModel.Guest, 0, 0, 8, SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields() ).Length ) );
+		target.Guests!.Register( bridge );
+		var imported = target.Guests.ImportOriginal( new[] { Rider( 41 ), Rider( 43 ) }, 1000, thing => thing == RideThing ? bridge.AttractionId : 0, _ => 0, 3, new[] { SaveAttraction.Read( SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields() ), 0, RideThing ) } );
+		Assert.AreEqual( 2, bridge.Riders.Count, string.Join( "\n", imported ) );
+		// a guard escorting guest 41 (the economy import keeps it while the guest is imported)
+		var settings = OriginalSaveImportTests.Settings();
+		var guard = SaveTestPayloads.Staff( SaveThingModel.Guard, state: 18, role: new byte[] { 41, 0, 9, 0, 0, 0 }, position: (3 * 256 + 128, 5 * 256 + 128), destination: (4 * 256 + 128, 5 * 256 + 128) );
+		var guestBody = SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields { Position = (3 * 256 + 128, 3 * 256 + 128), State = 17 } );
+		var save = OriginalSaveImportTests.Park( settings, extraThings: new[] { (43u, (uint)SaveThingModel.Guard, guard), (41u, (uint)SaveThingModel.Guest, guestBody) } );
+		var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		OriginalEconomyImport.Apply( park, save );
+		var member = park.Staff.Members.Single( item => item.Type == StaffType.Guard );
+		Assert.AreNotEqual( StaffJob.Idle, member.Job, "the guard escorts a guest the import restored" );
+		var lines = target.DropRidersWithoutCarrier().ToList();
+		StringAssert.Contains( string.Join( "\n", lines ), "put off the ride" );
+		Assert.AreEqual( 0, bridge.Riders.Count );
+		Assert.IsNull( target.Guests.Find( 41 ) );
+		lines.AddRange( OriginalEconomyImport.IdleEscortsWithoutARestoredGuest( park, id => target.Guests.Find( id ) != null ) );
+		Assert.AreEqual( (StaffJob.Idle, 0), (member.Job, member.TargetGuestId) );
+		var validation = target.Guests.ValidateSnapshot( target.Guests.CaptureSnapshot() );
+		Assert.IsTrue( validation.IsValid, string.Join( "; ", validation.Errors ) );
+	}
+
 	private static byte[] Payload( byte[] body )
 	{
 		var payload = new byte[8 + body.Length];

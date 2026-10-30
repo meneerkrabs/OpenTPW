@@ -262,7 +262,7 @@ internal static class OriginalCoasterImport
 			var boarding = Keep( saved.Boarding );
 			if ( stray > 0 )
 				lines.Add( runStateImported
-					? $"{what}: train {train} lists {stray} guests who are no rider of the ride (not imported or not in state 16 on it); those entries are dropped from its car lists and the riders left keep their order (SAVE-002)."
+					? $"{what}: train {train} lists {stray} guests who are no rider of the ride (not imported or not in state 16 on it); those entries are dropped from its car lists and the later riders of a list move up one socket (a seat is the list index, 0x43B600) (SAVE-002)."
 					: $"{what}: the ride's script run state was not imported, so train {train}'s {stray} listed guests are not riders; its car lists are dropped (SAVE-002)." );
 			trains.Add( saved with { Lap = lap, Boarding = boarding } );
 		}

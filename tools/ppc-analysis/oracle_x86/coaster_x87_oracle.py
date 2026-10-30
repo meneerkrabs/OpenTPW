@@ -398,7 +398,7 @@ class CoasterOracle:
                         sb.write(base + 0x4C + 4 * j, 'f', forward)
                     index += 1
 
-    def sampler(self, nodes, curviness: float, spacing: float = 3.0, model_controls: bool = False):
+    def sampler(self, nodes, curviness: float, spacing: float = 3.0, model_controls: bool = False, extrusion=None):
         """0x440C10 over a chain of nodes whose knots are `nodes[i] = [(position, direction), ...]` (the first node is the head S0, the last the end node, whose raw next link is null).
         The knot controls come from 0x4321C0 (the node pass, each node without a pylon model), the second rail's points are the knots' positions plus (0, 1, 0). Returns the samples
         (position, yaw, pitch, roll, t, knot record index), the sample count n (+0xA4), the end coordinate (+0xA8), every knot record's coordinate (+8) and every node's sample index (+0xFC)."""
@@ -484,9 +484,57 @@ class CoasterOracle:
                             sb.read(base + 0x34, 'f'), flat.get(record, -1)))
         coordinates = [sb.read(first + 0x58 * i + 8, 'f') for first, second, size in table_addresses for i in range(size)]
         indexes = [sb.read(node + 0xFC, 'I') for node in node_addresses]
+        self.last_runs = self._extrusion_runs(sb, controller, extrusion, table_addresses) if extrusion is not None else None
         self.last_controls = [[tuple(sb.read(base + 0x58 * i + off + 4 * k, 'f') for k in range(3)) for off in (0x34, 0x4C)] for first, second, size in table_addresses for base in (first,) for i in range(size)]
         self.last_controls2 = [[tuple(sb.read(base + 0x58 * i + off + 4 * k, 'f') for k in range(3)) for off in (0x34, 0x4C)] for first, second, size in table_addresses for base in (second,) for i in range(size)]
         return samples, count, sb.read(controller + 0xA8, 'f'), coordinates, indexes, sb.read(controller + 0xA0, 'I')
+
+    # ------------------------------------------------------------------------------ the cross-section run builder
+    def _extrusion_runs(self, sb, controller, extrusion, table_addresses):
+        """0x4402D0 over the sampled controller. `extrusion` = (selects, lengths, transitions): `selects` is the type's table, one entry per select as
+        (windows, answer, from, to) with the eight window singles (speed, direction, pitch, bank: min, max), the answer's section index and the transition's
+        from and to section indexes or None; `lengths` the section records' +0x14 singles; `transitions` the type's flag +0x74 bit 0. Returns the run table's
+        entries (key, position, weight, section index) up to and including the sentinel."""
+        selects, lengths, transitions = extrusion
+        # the mesh builder numbers the knot records of both rails along the chain (0x43ECC9..0x43ECDA); the run keys are that number plus the fraction to the next knot
+        number = 0
+        for first, second, size in table_addresses:
+            for i in range(size):
+                sb.write(first + 0x58 * i, 'I', number)
+                sb.write(second + 0x58 * i, 'I', number)
+                number += 1
+        sections = sb.alloc(0x18 * (len(lengths) + 1))
+        for index, length in enumerate(lengths):
+            sb.write(sections + 0x18 * index + 0x14, 'f', length)
+
+        def pointer(index):
+            return 0 if index is None else sections + 0x18 * index
+        table = sb.alloc(0x2C * len(selects) + 0x20)
+        for index, (windows, answer, source, target) in enumerate(selects):
+            entry = table + 0x2C * index
+            for k, value in enumerate(windows):
+                sb.write(entry + 4 * k, 'f', value)
+            sb.write(entry + 0x20, 'I', pointer(answer))
+            sb.write(entry + 0x24, 'I', pointer(source))
+            sb.write(entry + 0x28, 'I', pointer(target))
+        kind = sb.alloc(0x100)
+        sb.write(kind + 0x74, 'I', 1 if transitions else 0)
+        sb.write(kind + 0x78, 'I', table)
+        sb.write(kind + 0x7C, 'I', len(selects))
+        sb.write(kind + 0x80, 'I', sections + 0x18 * len(lengths))
+        sb.write(kind + 0x84, 'I', sections)
+        sb.write(controller + 4, 'I', kind)
+        sb.write(0x792218, 'I', controller)
+        sb.write(0x790FE4, 'I', sb.alloc(0x100))
+        sb.call(0x4402D0, ())
+        runs = []
+        for index in range(2560):
+            base = 0x792600 + 0x10 * index
+            key, position, weight, section = (sb.read(base, 'f'), sb.read(base + 4, 'f'), sb.read(base + 8, 'f'), sb.read(base + 12, 'I'))
+            runs.append((key, position, weight, (section - sections) // 0x18 if section else -1))
+            if key >= 100000.0:
+                break
+        return runs
 
     # ------------------------------------------------------------------------------ the self-intersection pass
     def prism(self, samples_a, samples_b, points, control_word=0xC7F, capture=()):

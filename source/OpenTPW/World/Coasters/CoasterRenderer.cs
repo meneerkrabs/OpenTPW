@@ -381,24 +381,28 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 			var matrix = owner.ToEngine();
 			// A circuit the demolish button cut open is two chains: the nodes before the cut and the nodes after it (the cut ends are marked, 0x446740), each drawn on its own.
 			// [BIN:TPW-EXE:0x43ef02 cut end] the mesh builder stops drawing at a node with 0x10000 (neither its own knot pairs nor its link) and starts again at one with 0x20000 (0x43ef0d)
+			// [BIN:TPW-EXE:0x43eb70 rebuild order] the original samples the chain before the mesh is extruded and the run table reads that sample list (0x4402d0); a chain cut open by the demolish button is not sampled here
+			var sampling = chain.Count >= 3 && knots.Length >= 3 && !chain.Any( node => (node.Flags & (CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart)) != 0 ) ? Ride.Curve.Sample( knots, definition.Curviness ) : null;
 			foreach ( var (first, final, isClosed) in CoasterRenderer.ChainSpans( chain, pass, closed ) )
-				BuildChain( knots[first..(final + 1)], first, definition.Curviness, isClosed, Marker, matrix );
+				BuildChain( knots[first..(final + 1)], first, definition.Curviness, isClosed, Marker, matrix, first == 0 && final == knots.Length - 1 ? sampling : null );
 			BuildPylons( chain, pass, matrix );
 		}
 
 		/// <summary>Draws one chain of knots: the track through them, the links <paramref name="marker"/> names in a marker texture.</summary>
-		private void BuildChain( CoasterKnot[] knots, int firstKnot, float curviness, bool closed, Func<int, int, int?> marker, Matrix4x4 matrix )
+		private void BuildChain( CoasterKnot[] knots, int firstKnot, float curviness, bool closed, Func<int, int, int?> marker, Matrix4x4 matrix, CoasterSampling? sampling )
 		{
 			// [BIN:TPW-EXE:0x43e6b0 suspended roll] a suspended coaster's slices take the swing's sample rolls at the knots' coordinates (the controller's samples; none before the track is finished)
 			var suspended = Ride.Definition.IsSuspended ? new CoasterSuspendedRolls( Ride.Samples, Ride.KnotCoordinates, firstKnot ) : null;
-			BuildTrack( HermiteCoasterCurve.Slices( knots, curviness, closed, suspended: suspended ), Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), marker, matrix );
+			var runs = sampling == null ? null : HermiteCoasterCurve.ExtrusionRuns( assets.Sections, knots, curviness, sampling, suspended );
+			var keys = runs is { Count: > 0 } && sampling != null ? new CoasterSliceKeys( runs, sampling.KnotCoordinates, firstKnot ) : null;
+			BuildTrack( HermiteCoasterCurve.Slices( knots, curviness, closed, suspended: suspended, keys: keys ), Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), marker, matrix, keys == null ? null : runs );
 		}
 
-		private void BuildTrack( CoasterSlice[] slices, IReadOnlyCollection<int> winch, Func<int, int, int?> marker, Matrix4x4 matrix )
+		private void BuildTrack( CoasterSlice[] slices, IReadOnlyCollection<int> winch, Func<int, int, int?> marker, Matrix4x4 matrix, IReadOnlyList<CoasterExtrusionRun>? runs )
 		{
 			var sections = assets.Sections;
 			// The slices of a finished track end on the station end node, which stands on S0's track dummy: the mesh needs no wrap segment.
-			var mesh = CoasterTrackMesh.Build( sections, slices, closed: false, winch, marker, meshParity );
+			var mesh = CoasterTrackMesh.Build( sections, slices, closed: false, winch, marker, meshParity, runs );
 			meshParity = mesh.EndParity;
 			trackTriangles += mesh.TriangleCount;
 			if ( mesh.TriangleCount == 0 )

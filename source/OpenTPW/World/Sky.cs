@@ -315,6 +315,23 @@ public sealed class Sky : IDisposable
 		}
 	}
 
+	/// <summary>
+	/// <paramref name="projection"/> with its far plane removed: the same near plane and the same picture, but nothing beyond the near plane is clipped by depth. The sky has no depth test or
+	/// write, so only the clipping changes. The park and lobby views' far plane is the span selection's farthest corner distance, nearer than most of the sky.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5863C0 sky clip mask] the clouds and the cylinder go through the triangle clipper 0x565960 with the mask 2, which it leaves out of the outcodes (~mask); the outcode table that
+	// 0x561840 fills gives 2 for z > w (the far plane), 1 for z < 0 (the near plane) and 4 to 32 for the four sides, so the sky is cut by the near plane and the screen's sides but never by the far plane
+	internal static System.Numerics.Matrix4x4 WithoutFarPlane( System.Numerics.Matrix4x4 projection )
+	{
+		// System.Numerics perspective: M33 = far / (near - far), M43 = near * far / (near - far); a far plane at infinity leaves M33 = -1 and M43 = -near
+		var near = projection.M43 / projection.M33;
+		if ( !float.IsFinite( near ) || !(near > 0f) )
+			return projection;
+		projection.M33 = -1f;
+		projection.M43 = -near;
+		return projection;
+	}
+
 	// ---- geometry in the original's axes (X, Y up, Z) -------------------------------------------------------------------------------------
 
 	/// <summary>The cloud grid's vertex at column <paramref name="xi"/> (along X) and row <paramref name="zi"/> (along Z), index <c>xi * 16 + zi</c> in the original's array.</summary>
@@ -615,7 +632,7 @@ public sealed class Sky : IDisposable
 		{
 			g_mModel = System.Numerics.Matrix4x4.Identity,
 			g_mView = view,
-			g_mProj = Camera.ProjMatrix,
+			g_mProj = WithoutFarPlane( Camera.ProjMatrix ),
 			g_vCameraPos = SVector3.Zero,
 			// [EXT:evening] the sky's tint at dusk and night rides in the light colour particle.shader never used (zero: no tint)
 			g_vLightColor = tint ?? SVector3.Zero,
@@ -623,12 +640,14 @@ public sealed class Sky : IDisposable
 		};
 		cloudMaterial.Set( "ObjectUniformBuffer", uniforms );
 		cylinderMaterial.Set( "ObjectUniformBuffer", uniforms );
+		// the moons keep the view's own projection: TryMoonQuad places them inside its depth range
+		var moonUniforms = uniforms with { g_mProj = Camera.ProjMatrix, g_vLightColor = SVector3.Zero };
 		// [BIN:TPW-EXE:0x5863C0 sky object passes] the objects of mask 2 are drawn before the cloud layers (0x5865AC) and those of mask 1 after the cylinder (0x586C9E)
-		DrawMoons( commandList, front: false, uniforms with { g_vLightColor = SVector3.Zero } );
+		DrawMoons( commandList, front: false, moonUniforms );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		DrawRange( commandList, cloudMaterial, 0, cloudCount );
 		DrawRange( commandList, cylinderMaterial, cloudCount, staged.Length - cloudCount );
-		DrawMoons( commandList, front: true, uniforms with { g_vLightColor = SVector3.Zero } );
+		DrawMoons( commandList, front: true, moonUniforms );
 	}
 
 	/// <summary>The sky's vertices for the layer count last drawn: built once per layer count, then only the clouds' texture coordinates are rewritten per frame.</summary>

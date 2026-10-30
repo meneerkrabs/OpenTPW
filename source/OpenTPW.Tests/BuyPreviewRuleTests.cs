@@ -116,4 +116,23 @@ public class BuyPreviewRuleTests
 		Assert.AreEqual( "/r/Ptotemm.md2", PreviewIcon.BuyClipMember( "/r/Ptotem.md2", new[] { "/r/Ptotem.md2", "/r/Ptotemm.md2" } )?.Path );
 		Assert.IsNull( PreviewIcon.BuyClipMember( "/r/Ptotem.md2", new[] { "/r/Ptotem.md2", "/r/Ptotemm2.md2", "/r/totemm1.md2" } ) );
 	}
+
+	/// <summary>
+	/// A clip moves a mesh's stored positions, which its corners share: each corner of the preview takes the position it was built from (CornerPositionIndices), as the park's parts do, so a
+	/// mesh with fewer positions than corners (most shops) keeps its shape; without a clip the corner keeps its own rest position.
+	/// </summary>
+	[TestMethod]
+	public void ACornerTakesTheClipsPositionItWasBuiltFrom()
+	{
+		var mesh = new ModelFile.Mesh
+		{
+			Positions = new[] { new Vector3( 0, 0, 0 ), new Vector3( 1, 0, 0 ), new Vector3( 0, 1, 0 ) },
+			CornerPositionIndices = new ushort[] { 0, 1, 2, 1 },
+			Vertices = new[] { new ModelFile.Vertex { Position = new Vector3( 0, 0, 0 ) }, new ModelFile.Vertex { Position = new Vector3( 1, 0, 0 ) },
+				new ModelFile.Vertex { Position = new Vector3( 0, 1, 0 ) }, new ModelFile.Vertex { Position = new Vector3( 1, 0, 0 ) } }
+		};
+		var posed = new[] { new NVector3( 0, 0, 5 ), new NVector3( 1, 0, 5 ), new NVector3( 0, 1, 5 ) };
+		CollectionAssert.AreEqual( new[] { posed[0], posed[1], posed[2], posed[1] }, Enumerable.Range( 0, 4 ).Select( corner => PreviewIcon.PosedCorner( mesh, posed, corner ) ).ToArray() );
+		Assert.AreEqual( new NVector3( 1, 0, 0 ), PreviewIcon.PosedCorner( mesh, null, 3 ) );
+	}
 }

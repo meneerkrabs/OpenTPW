@@ -44,7 +44,7 @@ public static class ObjectAssets
 		return null;
 	}
 
-	public static Vertex[] ConvertMesh( ModelFile.Mesh mesh, System.Numerics.Matrix4x4? bake = null )
+	public static Vertex[] ConvertMesh( ModelFile.Mesh mesh, System.Numerics.Matrix4x4? bake = null, ISet<string>? wrapNames = null )
 	{
 		if ( mesh.Vertices.Length == 0 || mesh.Indices.Length == 0 || mesh.Indices.Length % 3 != 0 || mesh.Materials.Length == 0 || mesh.Materials.Length > 16 || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
 			throw new InvalidDataException( $"Invalid object mesh buffers: {mesh.Name}" );
@@ -78,7 +78,7 @@ public static class ObjectAssets
 				Normal = ConvertAxes( normal ),
 				TexCoords = texCoords,
 				TexIndex = (int)sourceVertex.TextureIndex,
-				MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[(int)sourceVertex.TextureIndex] )
+				MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[(int)sourceVertex.TextureIndex], wrapNames?.Contains( mesh.Materials[(int)sourceVertex.TextureIndex].Name ) == true )
 					| ( TextureSlotAddressing.IsPathLikeTexture( mesh.Materials[(int)sourceVertex.TextureIndex].Name ) ? TextureSlotAddressing.SlushFlag : 0u )
 			};
 		}
@@ -92,12 +92,12 @@ public static class ObjectAssets
 	/// and <c>Slots</c> the MD2 texture-slot index each name came from (-1 for untextured materials), so a
 	/// texture-frame track of that slot can swap the rendered frame.
 	/// </summary>
-	public static IReadOnlyList<(Vertex[] Vertices, uint[] Indices, string[] Textures, int[] Slots)> ConvertMeshParts( ModelFile.Mesh mesh, System.Numerics.Matrix4x4? bake = null )
+	public static IReadOnlyList<(Vertex[] Vertices, uint[] Indices, string[] Textures, int[] Slots)> ConvertMeshParts( ModelFile.Mesh mesh, System.Numerics.Matrix4x4? bake = null, ISet<string>? wrapNames = null )
 	{
 		if ( mesh.Vertices.Length == 0 || mesh.Indices.Length == 0 || mesh.Materials.Length == 0 )
 			return Array.Empty<(Vertex[], uint[], string[], int[])>();
 		if ( mesh.Materials.Length <= 16 )
-			return new[] { (ConvertMesh( mesh, bake ), mesh.Indices.ToArray(), mesh.Materials.Select( material => material.Name ).ToArray(),
+			return new[] { (ConvertMesh( mesh, bake, wrapNames ), mesh.Indices.ToArray(), mesh.Materials.Select( material => material.Name ).ToArray(),
 				mesh.Materials.Select( material => material.TextureIndex ).ToArray()) };
 		var parts = new List<(Vertex[], uint[], string[], int[])>();
 		foreach ( var (first, count) in PartMaterialRanges( mesh ) )
@@ -115,7 +115,7 @@ public static class ObjectAssets
 					.SelectMany( face => mesh.Indices.Skip( face * 3 ).Take( 3 ) ).ToArray()
 			};
 			if ( chunk.Indices.Length > 0 )
-				parts.Add( (ConvertMesh( chunk, bake ), chunk.Indices, chunk.Materials.Select( material => material.Name ).ToArray(),
+				parts.Add( (ConvertMesh( chunk, bake, wrapNames ), chunk.Indices, chunk.Materials.Select( material => material.Name ).ToArray(),
 					chunk.Materials.Select( material => material.TextureIndex ).ToArray()) );
 		}
 		return parts;

@@ -97,7 +97,7 @@ public readonly record struct CoasterCarPose( NVector3 Position, float Yaw, floa
 // [APPROX:COAST-034] the flume boats' own clips (CrocCarM1..M3, MAGGOTM1..M2) are not played: the only start of a car clip in the coaster code lies behind the bend flag and no other clip starter that addresses a train slot's car model was found (a complete call-graph exclusion is not made); the widening of a bend type's model bounds to a symmetric box (0x4302aa..0x43041a, a culling aid) is not modelled
 public sealed class CoasterCarRig
 {
-	public CoasterCarRig( ModelFile model )
+	public CoasterCarRig( ModelFile model, ISet<string>? wrapNames = null )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		if ( model.Kind != ModelFileKind.Geometry )
@@ -117,7 +117,7 @@ public sealed class CoasterCarRig
 				continue;
 			var node = mesh.NodeIndex >= 0 && mesh.NodeIndex < model.Nodes.Count ? mesh.NodeIndex : model.RootNodeIndex;
 			var bake = (node >= 0 ? rest[node] : Matrix4x4.Identity) * shift;
-			foreach ( var (vertices, indices, textures, _) in ObjectAssets.ConvertMeshParts( mesh, bake ) )
+			foreach ( var (vertices, indices, textures, _) in ObjectAssets.ConvertMeshParts( mesh, bake, wrapNames ) )
 			{
 				foreach ( var vertex in vertices )
 				{

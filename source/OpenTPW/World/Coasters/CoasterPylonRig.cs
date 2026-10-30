@@ -305,6 +305,8 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 	}
 
 	public ModelFile Model => model;
+	/// <summary>The texture names whose shared texture object wraps (<see cref="CoasterAssets.WrapNames"/>); null draws every slot by its own flags.</summary>
+	public ISet<string>? WrapNames { get; init; }
 	/// <summary>The node the track attaches to (<c>TrackDummyCentre</c>, <c>TrackCentreDummy</c> or the first animated dummy), -1 when the model has none.</summary>
 	public int TagNode { get; }
 	public int Duration { get; }
@@ -378,7 +380,7 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 							animation.ApplyStaticGroup( positions, add: true );
 						animation.ApplyAnimatedGroups( ticks[slot], positions, add: true );
 					}
-					// Add mode: every clip's texture-coordinate keys are added to the stored coordinates as well (0x4745c0 through 0x471860): a lofted pylon's coordinates run past 1 along its height (wrap-flag slots repeat, the others clamp as tp.exe does, 0x575E9C)
+					// Add mode: every clip's texture-coordinate keys are added to the stored coordinates as well (0x4745c0 through 0x471860): a lofted pylon's coordinates run past 1 along its height (wrapping or clamping per the shared texture's accumulated flags, 0x575E10)
 					if ( tracks[slot][node]?.UvAnimation is { } uv && uv.CornerCount == mesh.TexCoords.Length )
 					{
 						texCoords ??= mesh.TexCoords.Select( coordinate => new NVector2( coordinate.X, coordinate.Y ) ).ToArray();
@@ -389,7 +391,7 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 					source = WithAnimated( mesh, positions, texCoords );
 			}
 			var bake = node >= 0 ? matrices[node] : Matrix4x4.Identity;
-			foreach ( var (vertices, indices, textures, _) in ObjectAssets.ConvertMeshParts( source, bake ) )
+			foreach ( var (vertices, indices, textures, _) in ObjectAssets.ConvertMeshParts( source, bake, WrapNames ) )
 				parts.Add( new CoasterModelPart( mesh.Name, textures, vertices, indices ) );
 		}
 		return parts;

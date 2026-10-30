@@ -114,7 +114,7 @@ internal sealed class CoasterAssets : IDisposable
 				var incline = FindModel( name + "I" )?.Clip;
 				var bank = FindModel( name + "B" )?.Clip;
 				var loopTilt = FindModel( name + "R2" )?.Clip;
-				rig = new CoasterPylonRig( geometry, loft, rotate, Definition.Pylon( loop ), incline, bank, loopTilt );
+				rig = new CoasterPylonRig( geometry, loft, rotate, Definition.Pylon( loop ), incline, bank, loopTilt ) { WrapNames = WrapSource };
 				// [BIN:TPW-EXE:0x430590 pylon capabilities] the model's animations by type: loft L, rotate R or R1, incline I, bank B and the second rotate clip R2
 				rig.Capabilities = (loft != null ? CoasterPylonCapabilities.Loft : 0) | (rotate != null ? CoasterPylonCapabilities.Rotate : 0)
 					| (incline != null ? CoasterPylonCapabilities.Incline : 0) | (bank != null ? CoasterPylonCapabilities.Bank : 0)
@@ -159,7 +159,7 @@ internal sealed class CoasterAssets : IDisposable
 			{
 				if ( !string.IsNullOrEmpty( name ) && FindModel( name ) is { Kind: ModelFileKind.Geometry } geometry )
 				{
-					rig = new CoasterCarRig( geometry ) { Bend = CarTypes.Types[typeIndex].Bend };
+					rig = new CoasterCarRig( geometry, WrapSource ) { Bend = CarTypes.Types[typeIndex].Bend };
 					// [BIN:TPW-EXE:0x43be10 wheel clip] a car of a type without the bend flag starts the model's animation id 5 (the letter m of the animation table: <model>m1, else <model>m), sub 0, looping on channel 0 (0x4732a0)
 					if ( !CarTypes.Types[typeIndex].Bend )
 						rig.SetWheelClip( FindWheelClip( name ) );
@@ -209,6 +209,54 @@ internal sealed class CoasterAssets : IDisposable
 		var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 		material.Set( "Color", SlotsFor( rig.Parts[part].Textures ) );
 		return new Model( rig.Parts[part].Vertices, rig.Parts[part].Indices, material, dynamicVertices );
+	}
+
+	/// <summary>
+	/// The texture names of this ride's archive whose shared texture object wraps: the texture cache keeps one object per (directory, name) and a slot with flag 0x10 or 0x20 of any model the ride loads sets
+	/// the wrap bits on it for good (0x575E10, 0x575C60), so a clamped slot of another model, the pylons and the previews among them, wraps as well.
+	/// </summary>
+	// [BIN:TPW-EXE:0x575870 texture cache] the cache is keyed by the slot's texture directory string and the frame name and returns the same object to every model; the wrap bits are ORed into it and never cleared (0x590FA0 clears only 0x4000); the models of one ride archive (main and preview models, StdPylon, LoopPylon, cars) are taken to resolve their textures in the ride's directory (not traced to the loader write of the description's +4)
+	public ISet<string> WrapNames => wrapNames ??= ComputeWrapNames();
+
+	/// <summary>Whether the rigs built here read <see cref="WrapNames"/> (every archive model is parsed for it). A caller that builds rigs only for their sizes, such as the definition loader, turns it off so the models stay unparsed.</summary>
+	public bool ResolveWrap { get; init; } = true;
+
+	private ISet<string>? WrapSource => ResolveWrap ? WrapNames : null;
+	private HashSet<string>? wrapNames;
+
+	private HashSet<string> ComputeWrapNames()
+	{
+		var names = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+		string[] files;
+		try
+		{
+			files = Entry.FileSystem.GetFiles( Entry.ArchivePath ).Where( file => file.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) ).ToArray();
+		}
+		catch ( Exception exception ) when ( exception is DirectoryNotFoundException or FileNotFoundException )
+		{
+			return names;
+		}
+		foreach ( var file in files )
+		{
+			try
+			{
+				var model = ObjectAssets.LoadModel( Entry.FileSystem, file );
+				if ( model.Kind != ModelFileKind.Geometry )
+					continue;
+				foreach ( var mesh in model.Meshes )
+				{
+					foreach ( var material in mesh.Materials )
+					{
+						if ( TextureSlotAddressing.Wraps( material.Flags ) && !string.IsNullOrEmpty( material.Name ) )
+							names.Add( material.Name );
+					}
+				}
+			}
+			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException )
+			{
+			}
+		}
+		return names;
 	}
 
 	/// <summary>

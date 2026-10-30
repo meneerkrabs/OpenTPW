@@ -359,25 +359,61 @@ public class CoasterPresentationAssetTests
 	}
 
 	/// <summary>
-	/// The pylons' loft clips carry texture-coordinate keys (record flag 0x10000) which the add mode adds to the stored coordinates (0x4745c0): a lofted pylon's texture repeats along its height instead of
-	/// stretching over it. The Jungle pylon's loft adds 14.985 to the V of its top corners over the clip; its slot has no wrap flag, so tp.exe clamps those coordinates (0x575E9C, 0x567620) and every corner past 1 carries the clamp flag.
+	/// The pylons' loft clips carry texture-coordinate keys (record flag 0x10000) which the add mode adds to the stored coordinates (0x4745c0): the Jungle pylon's loft adds 14.985 to the V of its top
+	/// corners, so its coordinates run past 1. Whether they wrap or clamp follows the shared texture's accumulated flags (0x575E10): a corner clamps only when no model of the ride wraps its texture.
 	/// </summary>
 	[TestMethod]
-	public void ALoftedPylonsTextureRepeatsAlongItsHeight()
+	public void ALoftedPylonsTextureCoordinatesRunPastOne()
 	{
 		var entry = PcCoasters().Single( entry => entry.InfoId == 1180 );
 		var definition = CoasterDefinition.FromEntry( entry );
-		var control = definition.Pylon( false );
-		var name = control.MeshName;
-		var rig = new CoasterPylonRig( Find( entry, name )!, Find( entry, name + "L" )?.Clip, (Find( entry, name + "R" ) ?? Find( entry, name + "R1" ))?.Clip, control,
-			Find( entry, name + "I" )?.Clip, Find( entry, name + "B" )?.Clip, Find( entry, name + "R2" )?.Clip );
+		using var assets = new CoasterAssets( entry, definition );
+		var rig = assets.GetPylon( false )!;
 		float MaxV( float loft ) => rig.Pose( new CoasterPylonPose( loft ) ).SelectMany( part => part.Vertices ).Max( vertex => vertex.TexCoords.Y );
 		float MinV( float loft ) => rig.Pose( new CoasterPylonPose( loft ) ).SelectMany( part => part.Vertices ).Min( vertex => vertex.TexCoords.Y );
 		Assert.IsTrue( MaxV( 1f ) - MaxV( 0f ) > 10f, $"the V of the top corners grows by the loft clip's key: {MaxV( 0f )} to {MaxV( 1f )}" );
 		Assert.AreEqual( MinV( 0f ), MinV( 1f ), 1e-3f, "the bottom corners' keys stay at 0" );
 		Assert.AreEqual( 14.985f, MaxV( 1f ) - MaxV( 0f ), 0.5f );
-		var past = rig.Pose( new CoasterPylonPose( 1f ) ).SelectMany( part => part.Vertices ).Where( vertex => vertex.TexCoords.Y > 1.01f ).ToArray();
-		Assert.IsTrue( past.Length > 0 );
-		Assert.IsTrue( past.All( vertex => (vertex.MatFlags & TextureSlotAddressing.ClampFlag) != 0 ), "Jungle pylon slots do not wrap: coordinates past 1 clamp, as in tp.exe" );
+		foreach ( var part in rig.Pose( new CoasterPylonPose( 1f ) ) )
+		{
+			foreach ( var vertex in part.Vertices )
+				Assert.AreEqual( !assets.WrapNames.Contains( part.Textures[vertex.TexIndex] ), (vertex.MatFlags & TextureSlotAddressing.ClampFlag) != 0, part.Textures[vertex.TexIndex] );
+		}
+	}
+
+	/// <summary>
+	/// The texture cache shares one object per (directory, name) and the wrap bits are never cleared (0x575E10, 0x575C60): where one pylon model of a ride wraps a texture its slot clamps in the other, the
+	/// clamping model wraps too. The ride's own pylons: 4185 trunk03, 3180 S_RAIL_TRIANGLE, 2190 TESTWall (StdPylon 0x1 or LoopPylon 0x1, the other model 0x21 or 0x31) and 1190 A_TY_ON.
+	/// </summary>
+	[TestMethod]
+	public void ASlotThatClampsWrapsWhenAnotherModelOfTheRideWrapsTheSameTexture()
+	{
+		foreach ( var (id, texture) in new[] { (4185, "trunk03"), (3180, "S_RAIL_TRIANGLE"), (2190, "TESTWall"), (1190, "A_TY_ON") } )
+		{
+			var entry = PcCoasters().Single( entry => entry.InfoId == id );
+			var definition = CoasterDefinition.FromEntry( entry );
+			using var assets = new CoasterAssets( entry, definition );
+			Assert.IsTrue( assets.WrapNames.Contains( texture ), $"{id}: {texture} wraps in one model of the ride" );
+			var seen = 0;
+			foreach ( var loop in new[] { false, true } )
+			{
+				if ( assets.GetPylon( loop ) is not { } rig )
+					continue;
+				foreach ( var part in rig.Pose( new CoasterPylonPose( 0.5f ) ) )
+				{
+					for ( var slot = 0; slot < part.Textures.Length; slot++ )
+					{
+						if ( !string.Equals( part.Textures[slot], texture, StringComparison.OrdinalIgnoreCase ) )
+							continue;
+						foreach ( var vertex in part.Vertices.Where( vertex => vertex.TexIndex == slot ) )
+						{
+							Assert.AreEqual( 0u, vertex.MatFlags & TextureSlotAddressing.ClampFlag, $"{id} {texture}: wraps in both pylons" );
+							seen++;
+						}
+					}
+				}
+			}
+			Assert.IsTrue( seen > 0, $"{id}: a pylon draws {texture}" );
+		}
 	}
 }

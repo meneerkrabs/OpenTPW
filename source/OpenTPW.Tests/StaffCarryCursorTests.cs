@@ -62,6 +62,25 @@ public class StaffCarryCursorTests
 	}
 
 	[TestMethod]
+	public void TheDanglingPersonHangsAtTheTerrainsHeightAgainAbovePickedPointPlusFive()
+	{
+		// [BIN:TPW-EXE:0x00542010 / 0x0046C480] the tool stores the picker's absolute height + 5 and the sprite pass adds the terrain's height under the sprite to the stored word (the sprite's flag 0x1000000 is clear)
+		var placement = Placement( out var park );
+		var candidate = park.Staff.Candidates.First( item => item.Type == StaffType.Handyman );
+		var heights = Enumerable.Repeat( 30f, 21 * 21 ).ToArray();
+		var raised = new ModelHeightfield( 20, 20, 10, 10, 0, 0, Array.Empty<uint>(), heights, new uint[20 * 20] );
+		Assert.IsTrue( placement.BeginHire( candidate.Id ) );
+		// the picked point on a model 19 engine units up over ground 30 original units (6 engine units) high: 5 + 30 original units on top of the point
+		var picked = new System.Numerics.Vector3( 4, 5, 19 );
+		placement.SetCursor( 6.3f, 5.9f, picked );
+		Assert.AreEqual( 19f + (5f + 30f) * OriginalParkPlacement.ModelScale, StaffRenderer.DangleAnchor( placement, raised )!.Value.Z, 1e-4f );
+		// the terrain-only point: the ground (30), then the stored 30 + 5 on top
+		placement.SetCursor( 6.4f, 5.4f );
+		Assert.AreEqual( GuestRenderer.CellToEngine( raised, 6.4f, 5.4f, 35f ), StaffRenderer.DangleAnchor( placement, raised ) );
+		Assert.AreEqual( GuestRenderer.CellToEngine( raised, 6.4f, 5.4f ).Z + 35f * OriginalParkPlacement.ModelScale, StaffRenderer.DangleAnchor( placement, raised )!.Value.Z, 1e-4f );
+	}
+
+	[TestMethod]
 	public void CellOnlyCursorUpdatesAndToolReplacementCannotReuseAnOldModelHeight()
 	{
 		var placement = Placement( out var park );

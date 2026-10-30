@@ -20,7 +20,7 @@ public partial class CoopSessionTests
 		var member = EconomyTestData.HireBest( park.Economy, StaffType.Handyman );
 		var placement = park.Level.StaffPlacement!;
 		var cell = Enumerable.Range( 0, 12 ).SelectMany( dx => Enumerable.Range( 0, 6 ).Select( dy => (X: x + dx, Y: y + dy) ) ).First( cell => placement.IsValid( cell.X, cell.Y ) );
-		StaffPlacement.PutDown( member, cell.X, cell.Y );
+		StaffPlacement.PutDown( park.Economy.Staff, member, cell.X, cell.Y );
 		return member;
 	}
 

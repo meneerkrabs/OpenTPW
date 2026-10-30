@@ -122,8 +122,16 @@ public partial class Level
 		// [BIN:TPW-EXE:0x00516380 world update] a lost park (world state 4, ParkEconomy.IsBankrupt) runs no thing updates: the guests and the staff walks stop, the ride scripts (the RSSE tick) go on
 		var lost = Park?.Economy.IsBankrupt == true;
 		Guests?.SetBodySpriteHostRunning( substep.Running );
+		var spriteClock = GuestSimulation.BodySpriteSampleAtTick( (Park?.Economy.Tick ?? simulationClock.TickCount) + 1 );
 		if ( substep.Running )
-			Guests?.SetBodySpriteClock( GuestSimulation.BodySpriteSampleAtTick( (Park?.Economy.Tick ?? simulationClock.TickCount) + 1 ) );
+		{
+			Guests?.SetBodySpriteClock( spriteClock );
+			// the staff's sprite sources and the staff tool's sprite keep the same sample (the native scheduler reads one clock sample per pass)
+			if ( Park != null )
+				Park.Economy.Staff.SpriteClockMilliseconds = spriteClock;
+			if ( StaffPlacement != null )
+				StaffPlacement.SpriteClockMilliseconds = spriteClock;
+		}
 		// A park whose guests take their ids from the level's thing pool runs its turns as the original does (0x00516380): the tick that starts a turn runs the substep's ride scripts, then the sweep over the
 		// pool newest first, the gate retry, the turn's destroys and the arrival update. Without a park or its guests in the pool, in a lost park or where the economy and the guests count turns apart (a paused
 		// economy) the turn is not swept: the things update in the order of the ticks between turns, and the destroys are freed at the end of each tick.
@@ -138,7 +146,7 @@ public partial class Level
 		if ( sweeping )
 		{
 			using var sweepMark = FrameMarks.Measure( "sim.sweptTurn" );
-			SimulateSweptTurn( deltaTime, substep );
+			SimulateSweptTurn( deltaTime, substep, spriteClock );
 		}
 		else
 		{
@@ -151,7 +159,7 @@ public partial class Level
 				Objects.Simulate( deltaTime, substep, PlacedRide );
 			// The non-pooled host keeps its existing guest-before-object order; only pooled turn sweeps provide native scheduler-before-guest ordering.
 			if ( substep.TourDue )
-				Guests?.ScheduleBodySprites();
+				ScheduleSprites( spriteClock );
 			using ( FrameMarks.Measure( "sim.economy" ) )
 				Park?.FixedTick();
 			if ( !lost )
@@ -191,6 +199,18 @@ public partial class Level
 	// normal speed) is unchanged. A frame without a tick runs no pose phase: tp.exe's walk update still runs on a frame without a substep and reads the free-running scaled timer 0x785970
 	// (0x00557AFF -> 0x00402D70), but OpenTPW's phase reads the script and body clocks, which only the ticks advance, so on such a frame it only repeated the requests of the frame before, unless
 	// the park changed between the two (a load, an edit), when the bodies now follow at the next tick's end instead
+	/// <summary>
+	/// The sprite scheduler's pass (tp.exe <c>0x00475360</c> from <c>0x0054F5FB</c>, on the even substeps, after the tour cars and before the turn): the guests' bodies and balloons, the staff's sources and the staff
+	/// tool's sprite step on the substep's one clock sample.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0054F5D7 sprite pass] bit 0 of the substep counter clear: 0x0055ABF0, the clock sample 0x00878698, then the scheduler walks the whole sprite registry (0x007B49F0) in handle order: every sprite whose due time is before the sample runs once, whoever owns it
+	private void ScheduleSprites( int clock )
+	{
+		Guests?.ScheduleBodySprites();
+		StaffWorld?.ScheduleSprites( clock );
+		StaffPlacement?.ScheduleSprite( clock );
+	}
+
 	private void PrepareRideBodyPoses()
 	{
 		if ( Guests != null && (Park == null || Park.Economy.Speed != GameSpeed.Paused) )
@@ -220,7 +240,7 @@ public partial class Level
 	/// the bump module of the substep, then the economy's turn, whose thing sweep (<see cref="LevelThingSweep"/>) updates every thing newest first.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0054F4F2 world substep] each 31 ms substep runs 0x520130, the bump module 0x546C80 (0x54F55F) and the RSSE tick 0x5516B0 (0x54F56B); every eighth substep (0x54F668) then calls the park turn (0x54F7BB)
-	private void SimulateSweptTurn( float deltaTime, SimulationSubstep substep )
+	private void SimulateSweptTurn( float deltaTime, SimulationSubstep substep, int spriteClock )
 	{
 		Guests!.BeginSweepTick( deltaTime );
 		var items = Objects.Objects.Concat( PlacedRide is { IsDeleted: false } prototype ? new OriginalObject[] { prototype } : [] ).ToArray();
@@ -236,7 +256,7 @@ public partial class Level
 			ResumeAdmissions( items );
 		}
 		if ( substep.TourDue )
-			Guests!.ScheduleBodySprites();
+			ScheduleSprites( spriteClock );
 		Park!.Economy.ThingSweep = new LevelThingSweep( this );
 		try
 		{

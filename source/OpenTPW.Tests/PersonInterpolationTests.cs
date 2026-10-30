@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
 
-/// <summary>GUEST-016: the people are drawn at the sub-turn point between the position the turn started at and the current one (tp.exe 0x004F9F00, 0x004FA030, 0x004FA870).</summary>
+/// <summary>The people are drawn at the sub-turn point between the position the turn started at and the current one (tp.exe 0x004F9F00, 0x004FA030, 0x004FA870).</summary>
 [TestClass]
 public class PersonInterpolationTests
 {

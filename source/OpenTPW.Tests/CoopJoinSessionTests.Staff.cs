@@ -91,7 +91,7 @@ public partial class CoopJoinSessionTests
 		var member = EconomyTestData.HireBest( level.Park!.Economy, StaffType.Handyman );
 		var placement = level.StaffPlacement!;
 		var cell = Enumerable.Range( 0, 12 ).SelectMany( dx => Enumerable.Range( 0, 6 ).Select( dy => (X: 18 + dx, Y: 12 + dy) ) ).First( cell => placement.IsValid( cell.X, cell.Y ) );
-		StaffPlacement.PutDown( member, cell.X, cell.Y );
+		StaffPlacement.PutDown( level.Park!.Economy.Staff, member, cell.X, cell.Y );
 		return member.Id;
 	}
 

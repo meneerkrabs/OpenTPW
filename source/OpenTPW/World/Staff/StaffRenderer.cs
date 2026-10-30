@@ -16,7 +16,7 @@ public sealed class StaffRenderer : Entity
 	/// <summary>[EXT:pools-bridges] Optional elevated walking height, in engine units.</summary>
 	public Func<float, float, float?>? FeetHeight { get; init; }
 	private const int VerticesPerSprite = 12;
-	/// <summary>Height of the dangling sprite above the mouse's world point, in original units.</summary>
+	/// <summary>The lift the tool adds to the mouse's world point, in original units (the terrain's own height comes on top, <see cref="DangleAnchor"/>).</summary>
 	// [BIN:TPW-EXE:0x0046C480 tool frame] every frame the tool's sprite is placed at the mouse's world point (0x0045D610 returns 0x007A1C90) 5 units up, with heading 4 (0x00475480 stores x, y + 5, z at +0x88..+0x90 and the heading byte at +0xC0)
 	public const float DangleLift = 5f;
 	/// <summary>The heading sector of the tools' dangling person (tp.exe 0x0046C480); the sprite pass adds the camera's yaw sector (0x00542010), so the person turns with the camera.</summary>
@@ -26,16 +26,14 @@ public sealed class StaffRenderer : Entity
 	{
 		/// <summary>Where the member was last drawn, in cells.</summary>
 		public float X, Y;
-		public int ClipKey = -1;
 		public bool Initialised;
-		public SpritePlayer Player = null!;
 		public PublishedFrame? Published;
 	}
 
 	// Value-only output of this renderer's successful world preparation. Never retain a GPU handle in a member view.
 	private readonly record struct PublishedFrame( Level Owner, long WorldPass, long RendererPass, long Assets,
 		StaffMember Member, int ThingId, int Atlas, int Slot, int Step, float HeadingX, float HeadingY );
-	private readonly record struct Selection( int Atlas, int Frame, bool Mirror, StaffClip Clip, int Slot, int Step );
+	private readonly record struct Selection( int Atlas, int Frame, bool Mirror, int Slot, int Step );
 
 	private readonly Func<IReadOnlyList<StaffMember>> members;
 	private readonly ModelHeightfield field;
@@ -189,39 +187,31 @@ public sealed class StaffRenderer : Entity
 			frame.OriginX, frame.OriginY, mirror, frame.ScaleX, frame.ScaleY );
 	}
 
-	/// <summary>The atlas, slot and frame a member is drawn with: for the lifecycle checks and tests; null when the member is not drawn.</summary>
-	internal (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Describe( StaffMember member, SVector3 cameraRight, SVector3 cameraForward )
+	/// <summary>The atlas, frame, mirroring, slot and step a member is drawn with: for the lifecycle checks and tests; null when the member is not drawn.</summary>
+	internal (int Atlas, int Frame, bool Mirror, int Slot, int Step)? Describe( StaffMember member, SVector3 cameraRight, SVector3 cameraForward )
 	{
 		if ( !views.TryGetValue( member, out var view ) )
 			return null;
-		return Select( member, view, Time.Now, cameraRight, cameraForward ) is { } chosen
-			? (chosen.Atlas, chosen.Frame, chosen.Mirror, chosen.Clip) : null;
+		return Select( member, view, cameraRight, cameraForward ) is { } chosen
+			? (chosen.Atlas, chosen.Frame, chosen.Mirror, chosen.Slot, chosen.Step) : null;
 	}
 
-	private Selection? Select( StaffMember member, MemberView view, float now, SVector3 cameraRight, SVector3 cameraForward )
+	/// <summary>
+	/// The frame the member's sprite source shows: the sprite pass draws every sprite whose output word is set (a source shows nothing until the scheduler's first pass has yielded a frame, and a member
+	/// without a source, resting or carried, is not drawn), at the slot and frame the source's registers hold.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00542010 sprite pass] the pass skips a record whose output word +0x114 is 0 (0x0054201D: FRAME sets it, 0x00476940) or whose frame register +0xB8 is -1 (0x00542029) and draws any other from the bank of its kind +0xAC and variant +0xB0 at the slot register +0xB4 and the frame register: the frame is whatever the scheduler's last pass left, however late the frame is drawn
+	private Selection? Select( StaffMember member, MemberView view, SVector3 cameraRight, SVector3 cameraForward )
 	{
 		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.KeyOf( member ) );
-		if ( !HasAtlas( atlasIndex ) )
+		// the state setters delete the source of a resting or carried member; a source that outlived its state is never drawn
+		if ( !HasAtlas( atlasIndex ) || !StaffSpriteRules.HasBodySprite( member ) || member.Sprite.Output is not var (slot, step) )
 			return null;
 		var atlas = sprites.Atlases[atlasIndex];
-		// [BIN:TPW-EXE:0x004FA2A0 walk clip] a walk step that is still walking asks for the walk clip (0x004FA3B3..0x004FA3F8) and a state entry stands the person again: the world's walk step records it (StaffMember.IsWalking)
-		if ( StaffSpriteRules.SelectClip( member, member.IsWalking, atlas.Animations.Performances, atlas.Animations.PerformanceCount ) is not { } clip )
+		if ( slot >= atlas.Animations.Animations.Count )
 			return null;
-		var key = clip.Script << 8 | clip.Slot;
-		if ( view.ClipKey != key )
-		{
-			view.ClipKey = key;
-			view.Player.Restart();
-		}
-		if ( member.PendingInterval >= 0 )
-		{
-			// [BIN:TPW-EXE:0x004FA2A0 walk step] the interval the person's own step of the turn asked for (StaffWorldSimulation.Walk) takes effect with the sprite; a clip that is not a walk keeps the interval the last step left
-			view.Player.SetInterval( member.PendingInterval );
-			member.PendingInterval = -1;
-		}
-		var (slot, step) = StaffSpriteRules.ResolveSteps( clip, view.Player.Steps, atlas.Animations.Animations );
 		var (frame, mirror) = FrameFor( atlas, slot, step, member.HeadingX, member.HeadingY, cameraRight, cameraForward );
-		return new Selection( atlasIndex, frame, mirror, clip, slot, step );
+		return new Selection( atlasIndex, frame, mirror, slot, step );
 	}
 
 	private static (int Frame, bool Mirror) FrameFor( GuestSpriteAtlas atlas, int slot, int step, float headingX, float headingY, SVector3 cameraRight, SVector3 cameraForward )
@@ -244,10 +234,18 @@ public sealed class StaffRenderer : Entity
 	internal static (float X, float Y)? DanglePoint( StaffPlacement placement ) =>
 		placement.Cursor ?? (placement.HoverCell is { } cell ? (cell.X + 0.5f, cell.Y + 0.5f) : null);
 
-	/// <summary>The tool sprite's engine-space anchor: the full picked point plus the original-unit lift, or the existing terrain fallback for cell-only callers.</summary>
-	internal static SVector3? DangleAnchor( StaffPlacement placement, ModelHeightfield field ) =>
-		placement.CursorEnginePoint is { } point ? point + SVector3.UnitZ * (DangleLift * OriginalParkPlacement.ModelScale)
-			: DanglePoint( placement ) is var (x, y) ? GuestRenderer.CellToEngine( field, x, y, DangleLift ) : null;
+	/// <summary>
+	/// The tool sprite's engine-space anchor: the full picked point lifted by the tool's 5 original units and by the terrain's height under it, or the same on the terrain for cell-only callers.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00542010 sprite height] a sprite whose flag 0x1000000 is clear (the dangling script sets only 0x1200, 0x0074ED98) is drawn at the terrain's height under its x and z (0x004527F0, the pass adds it at 0x005420F3) plus the stored height word +0x8C, which every other caller makes relative (a guest stores its height minus the terrain's, 0x004F9E60; a litter item 0)
+	// [BIN:TPW-EXE:0x0046C480 tool height] but the tool stores the picker's absolute height (0x7A1C90 + 4: the intersection with the terrain triangle or the model, 0x0045BF90) plus 5, so the person hangs at the terrain's height again above the picked point, which only differs from the point's own on ground above the level's zero
+	internal static SVector3? DangleAnchor( StaffPlacement placement, ModelHeightfield field )
+	{
+		if ( DanglePoint( placement ) is not var (x, y) )
+			return null;
+		var lift = DangleLift + field.GetHeight( x, y );
+		return placement.CursorEnginePoint is { } point ? point + SVector3.UnitZ * (lift * OriginalParkPlacement.ModelScale) : GuestRenderer.CellToEngine( field, x, y, lift );
+	}
 
 	/// <summary>The CPU portion of the actual world pass, including selection and quad preparation; never called by UI readers.</summary>
 	internal int PrepareWorld()
@@ -269,21 +267,18 @@ public sealed class StaffRenderer : Entity
 		var needed = (list.Count + 1) * VerticesPerSprite;
 		if ( vertices.Length < needed )
 			vertices = new Vertex[Math.Max( needed, 16 * VerticesPerSprite ) * 2];
-		var now = Time.Now;
-		var nowMs = (long)(now * 1000f);
 		var count = 0;
 		for ( var index = 0; index < list.Count; index++ )
 		{
 			var member = list[index];
 			if ( !views.TryGetValue( member, out var memberView ) )
-				views[member] = memberView = new MemberView { Player = new SpritePlayer( nowMs ) };
+				views[member] = memberView = new MemberView();
 			if ( !CanPlaceMember( member ) )
 				continue;
 			// a member without a point (one coordinate missing) keeps the place he was last drawn at, the established world pass gate
 			if ( DrawPoint( member ) is { } point )
 				(memberView.X, memberView.Y, memberView.Initialised) = (point.X, point.Y, true);
-			memberView.Player.Tick( nowMs );
-			if ( Select( member, memberView, now, right, forward ) is not { } chosen )
+			if ( Select( member, memberView, right, forward ) is not { } chosen )
 				continue;
 			// a member's sprite is pickable, so the original pulls it towards the camera like a visitor's (SpriteScale.PulledDepthShare)
 			var position = GuestRenderer.CellToEngine( field, memberView.X, memberView.Y );
@@ -298,13 +293,13 @@ public sealed class StaffRenderer : Entity
 			Prune( list );
 		if ( DanglePoint( placement ) is var (danglingX, danglingY) && placement.ToolType is { } toolType
 			&& sprites.AtlasFor( toolType, placement.ToolVariantKey ) is var atlasIndex and >= 0 && atlasIndex < textures.Count
+			&& placement.ToolSpriteOutput is var (slot, step) && slot < sprites.Atlases[atlasIndex].Animations.Animations.Count
 			&& DangleAnchor( placement, field ) is { } danglingAnchor )
 		{
 			var atlas = sprites.Atlases[atlasIndex];
-			var (slot, step) = StaffSpriteRules.Resolve( StaffSpriteRules.Dangle, now, atlas.Animations.Animations );
 			// [BIN:TPW-EXE:0x00542010 direction] the heading byte plus the camera's yaw sector, mirrored past the last stored direction, as for any sprite (the tool's sprite has no flag 0x40000: 0x004758F0 clears +0xC4)
 			var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( DangleHeading, GuestSpriteAtlas.CameraYaw( right, forward, Camera.Mode is ParkCameraMode ), atlas.DirectionsOf( slot ) );
-			var frameIndex = atlas.GetFrame( slot, direction, step );
+			var frameIndex = atlas.GetFrame( slot, direction, step % atlas.FramesPerDirection( slot ) );
 			// not pulled: the tool's sprite is made with cleared flags (0x00475A10 through 0x004758F0), and neither the tool's enter 0x0046C730 nor its frame 0x0046C480 (0x00475480 sets
 			// only the position and heading) gives it the pick flag 0x200 that 0x00589B50 pulls
 			AddSprite( ref count, atlasIndex, frameIndex, mirror, danglingAnchor, right, up, forward );

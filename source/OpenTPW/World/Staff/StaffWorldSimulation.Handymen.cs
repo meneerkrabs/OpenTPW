@@ -104,6 +104,8 @@ public sealed partial class StaffWorldSimulation
 			return;
 		// [BIN:TPW-EXE:0x004FA870 turn start point] the person's turn update copies its walk position to +0x190/+0x194 before the state handler walks: the start of the interpolation until the next turn
 		(member.TurnFromX, member.TurnFromY, member.TurnTick) = (member.Navigation!.X, member.Navigation.Y, Ticks);
+		// [BIN:TPW-EXE:0x004FA91F pending request application] the same pre-update then applies the sprite wrapper's pending template and interval (0x004D4190), before the role's state handler makes its next requests
+		StaffSpriteEvents.PreUpdate( economy.Staff, member );
 		// the entertainers' and guards' pre-update moves their RegionFX row with them (the constructor puts it on the first cell)
 		economy.MoveStaffEffect( member, Cell( member ) );
 		// [BIN:TPW-EXE:0x00505490 staff pre-update] on the member's phase ((thing id & 3) == (turn & 3); the roster id where the economy has no thing pool) the thought object's update 0x0050BE40 takes an old bubble away
@@ -118,13 +120,16 @@ public sealed partial class StaffWorldSimulation
 					SetDown( economy, member );
 					member.TargetGuestId = 0;
 				}
+				StaffSpriteEvents.EnterJob( economy.Staff, member, StaffJob.PickedUp, member.Job );
 				member.Job = StaffJob.PickedUp;
 				return;
 			// a strike or rest the economy started without a walk (an older save): the member strikes or rests where he stands
 			case StaffState.OnStrike when member.Job is not (StaffJob.ToStrike or StaffJob.Striking):
+				StaffSpriteEvents.EnterJob( economy.Staff, member, StaffJob.Striking, member.Job );
 				member.Job = StaffJob.Striking;
 				break;
 			case StaffState.Resting when member.Job is not (StaffJob.ToRestArea or StaffJob.Resting):
+				StaffSpriteEvents.EnterJob( economy.Staff, member, StaffJob.Resting, member.Job );
 				member.Job = StaffJob.Resting;
 				break;
 		}
@@ -568,7 +573,9 @@ public sealed partial class StaffWorldSimulation
 	private WalkResult Walk( StaffMember member, int maxSpeed, int maxForce )
 	{
 		var result = WalkStep( member, maxSpeed, maxForce );
-		member.IsWalking = result == WalkResult.Walking;
+		// [BIN:TPW-EXE:0x004FA3B3 walk request] a step that is still walking asks its sprite for the walk, run or hold template; arrived and stuck steps (0x004FA2A0 returns before the request) ask for nothing
+		if ( result == WalkResult.Walking )
+			StaffSpriteEvents.Walking( member );
 		return result;
 	}
 
@@ -588,7 +595,7 @@ public sealed partial class StaffWorldSimulation
 			if ( stepped == OpenTPW.WalkResult.Walking )
 			{
 				// [BIN:TPW-EXE:0x004FA3F8 walk step interval] a step that is still walking asks its sprite for the interval clamp(trunc(62 / v), 0, 250) ms, v the step's own length (the squared integer displacement, fild, fsqrt) times 0x007006E8, doubled unless the thing is a guest or a guard with a speed bonus above 0 (+0xC2, 0x0075C7F0): the run
-				member.PendingInterval = GuestSimulation.BodyIntervalForStep( beforeX, beforeY, navigation.X, navigation.Y, member.Type == StaffType.Guard && unchecked( (ushort)member.SpeedBonus ) > 0 );
+				StaffSpriteEvents.Interval( member, GuestSimulation.BodyIntervalForStep( beforeX, beforeY, navigation.X, navigation.Y, member.Type == StaffType.Guard && unchecked( (ushort)member.SpeedBonus ) > 0 ) );
 			}
 			switch ( stepped )
 			{
@@ -641,8 +648,8 @@ public sealed partial class StaffWorldSimulation
 	// [BIN:TPW-EXE:0x004D65D0 guard state setter] 0: the target +0x212 = 0, then 0x005054D0(0); 16: +0xC2 = 25 (0x0075C7F2) and the chase timer +0x214 = GuardConstsPerGrade[grade].WorkDuration (0x00785498 + 8 × grade); 18, 19 and the others: +0xC2 = 0 (0x0075C7F0); 7 from 18 sets the guest down first
 	private static void SetJob( ParkEconomy economy, StaffMember member, StaffJob job, long turn )
 	{
-		// a state entry queues the state's own clip, so the walk the last step asked for ends (the next walk step asks again)
-		member.IsWalking = false;
+		// a state entry queues the state's own template (or deletes the source), as the state setters do; the next walk step asks again for the walk
+		StaffSpriteEvents.EnterJob( economy.Staff, member, job, member.Job );
 		switch ( job )
 		{
 			case StaffJob.ToLitter or StaffJob.ToToilet:
@@ -670,6 +677,8 @@ public sealed partial class StaffWorldSimulation
 				break;
 			case StaffJob.Striking:
 				member.SpeedBonus = 0;
+				// [BIN:TPW-EXE:0x005054D0 striking] state 5 clears the person's angle (+0x1C = 0, the sprite heading sector 4: facing towards -Y) before it queues template 0x13
+				(member.HeadingX, member.HeadingY) = (0f, -1f);
 				break;
 			// states 3 (resting) and 7 (picked up) take the thought bubble away (0x0050C0D0)
 			case StaffJob.Resting or StaffJob.PickedUp:

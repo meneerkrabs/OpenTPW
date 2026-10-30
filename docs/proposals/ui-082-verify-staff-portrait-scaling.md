@@ -72,7 +72,7 @@ figure and starts a new script whose first FRAME shows after the first due pass 
 at the selection; an applicant the pool does not return (`0x507BD0`) leaves the figure that stands; the close deletes it and writes -1 to the cached pair, so a reopened window starts a
 new one. The employed tab (the host extension) keeps clearing its figure on an invalid selection.
 
-- Host elapsed-time playback differs from the native strict due-time scheduler on even substeps: the figure ticks once per renderer call (`SpritePlayer`), like the staff's body sprites (GUEST-016).
+- Host elapsed-time playback differs from the native strict due-time scheduler on even substeps: the figure ticks once per renderer call (`SpritePlayer`), while the staff's body sprites run on the sprite scheduler's sources (GUEST-016 retired, round 11).
 - The hire script enables a global rotation path. The host still draws an
   unrotated quad; the global angle is not assumed to be zero.
 - Native control depth, screen depth adjustment and full occlusion are not

@@ -50,95 +50,6 @@ public class StaffSpriteTests
 	}
 
 	[TestMethod]
-	public void HandymenPlayTheirScriptsByJob()
-	{
-		var handyman = Member( StaffType.Handyman );
-		StaffClip? Clip( StaffJob job, bool moving, StaffState state = StaffState.Working )
-		{
-			handyman.Job = job;
-			handyman.State = state;
-			return StaffSpriteRules.SelectClip( handyman, moving );
-		}
-		Assert.AreEqual( StaffSpriteRules.Stand, Clip( StaffJob.Idle, false, StaffState.Idle ) );
-		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( StaffJob.Patrol, true, StaffState.Patrolling ), "the patrol walks at half rate (script 9)" );
-		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( StaffJob.ToLitter, true ) );
-		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( StaffJob.ToToilet, true ) );
-		Assert.AreEqual( StaffSpriteRules.WalkHalf, Clip( StaffJob.ToStrike, true ) );
-		Assert.AreEqual( StaffSpriteRules.Stand, Clip( StaffJob.Patrol, false, StaffState.Patrolling ), "between two walks" );
-		Assert.AreEqual( StaffSpriteRules.Sweep, Clip( StaffJob.Sweeping, false ) );
-		Assert.AreEqual( StaffSpriteRules.Sweep, Clip( StaffJob.Cleaning, false ) );
-		Assert.AreEqual( StaffSpriteRules.Strike, Clip( StaffJob.Striking, false, StaffState.OnStrike ) );
-		Assert.IsNull( Clip( StaffJob.Resting, false, StaffState.Resting ), "a resting member has no sprite (state 3)" );
-		Assert.IsNull( Clip( StaffJob.PickedUp, false, StaffState.PickedUp ), "a carried member is the dangling sprite instead" );
-		Assert.AreEqual( 5, StaffSpriteRules.Strike.Slot );
-		Assert.AreEqual( 4, StaffSpriteRules.Sweep.Slot );
-		Assert.AreEqual( 1, StaffSpriteRules.WalkHalf.Slot );
-	}
-
-	[TestMethod]
-	public void OtherRolesPlayWalkWorkResearchAndGuardClips()
-	{
-		var mechanic = Member( StaffType.Mechanic, StaffState.Working );
-		mechanic.BusyTicks = 5;
-		Assert.AreEqual( StaffSpriteRules.Repair, StaffSpriteRules.SelectClip( mechanic, false ), "repairing: slot 4, 8 frames looping" );
-		mechanic.AwaitingJobArrival = true;
-		Assert.AreEqual( StaffSpriteRules.Walk, StaffSpriteRules.SelectClip( mechanic, true ) );
-		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( mechanic, false ), "waiting for the arrival is not working yet" );
-		mechanic.AwaitingJobArrival = false;
-		mechanic.BusyTicks = 0;
-		mechanic.State = StaffState.Idle;
-		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( mechanic, false ) );
-		Assert.AreEqual( 8, StaffScripts.Get( StaffSpriteRules.Repair.Script )!.Frames.Count );
-
-		var researcher = Member( StaffType.Researcher );
-		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( researcher, false ) );
-		researcher.Job = StaffJob.Researching;
-		Assert.AreEqual( StaffSpriteRules.Research, StaffSpriteRules.SelectClip( researcher, false ), "researching: slot 4, four frames then four steps of the first, looping" );
-		Assert.AreEqual( StaffSpriteRules.Walk, StaffSpriteRules.SelectClip( researcher, true ) );
-
-		var guard = Member( StaffType.Guard );
-		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( guard, false ) );
-		guard.Job = StaffJob.Escorting;
-		Assert.AreEqual( StaffSpriteRules.CatchAndCarry, StaffSpriteRules.SelectClip( guard, false ), "slot 7 once, then slot 8 looping" );
-		guard.Job = StaffJob.Chasing;
-		Assert.AreEqual( StaffSpriteRules.Run, StaffSpriteRules.SelectClip( guard, true ), "a chasing guard runs (script 2)" );
-		guard.Job = StaffJob.Idle;
-		guard.State = StaffState.OnStrike;
-		Assert.AreEqual( StaffSpriteRules.Strike, StaffSpriteRules.SelectClip( guard, false ) );
-		guard.State = StaffState.Resting;
-		Assert.IsNull( StaffSpriteRules.SelectClip( guard, false ) );
-	}
-
-	[TestMethod]
-	public void EntertainersPerformTheirBanksEntryAndStandWhenIdle()
-	{
-		var entertainer = Member( StaffType.Entertainer );
-		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( entertainer, false ) );
-		entertainer.Job = StaffJob.Performing;
-		// Every shipped entertainer bank: one entry, 01 05 00 00 (program 0 on slot 4); tp.exe's script choice is 13 when n is 1.
-		var shipped = new[] { new SpritePerformance( 0, 4, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ) };
-		var clip = StaffSpriteRules.SelectClip( entertainer, false, shipped, 1 )!.Value;
-		Assert.AreEqual( (13, 4), (clip.Script, clip.Slot) );
-		Assert.IsTrue( Enumerable.Range( 0, 8 ).All( id => StaffSpriteRules.Perform( (uint)id * 2654435761u, shipped, 1 ).Slot == 4 ), "every draw plays the one entry" );
-		// A bank without entries performs slot 4 too.
-		Assert.AreEqual( 4, StaffSpriteRules.SelectClip( entertainer, false )!.Value.Slot );
-		// Several entries (none shipped): script 13 + (r mod (n - 1)), so the last entry is never played.
-		var four = new[] { new SpritePerformance( 0, 4, 0, 0 ), new SpritePerformance( 0, 10, 0, 0 ), new SpritePerformance( 0, 3, 0, 0 ), new SpritePerformance( 0, 11, 0, 0 ) };
-		var slots = Enumerable.Range( 0, 9 ).Select( draw => StaffSpriteRules.Perform( (uint)draw, four, 4 ).Slot ).Distinct().OrderBy( slot => slot ).ToArray();
-		CollectionAssert.AreEqual( new[] { 3, 4, 10 }, slots, "entries 0..2 of four" );
-		// the entry is the performance's own draw (tp.exe 0x4D47D8), not the member: two entertainers with the same draw play the same entry and one member's next performance may change it
-		entertainer.PerformanceDraw = 1;
-		var second = Member( StaffType.Entertainer );
-		second.Job = StaffJob.Performing;
-		second.PerformanceDraw = 1;
-		Assert.AreEqual( (14, 10), (StaffSpriteRules.SelectClip( entertainer, false, four, 4 )!.Value.Script, StaffSpriteRules.SelectClip( entertainer, false, four, 4 )!.Value.Slot) );
-		Assert.AreEqual( StaffSpriteRules.SelectClip( entertainer, false, four, 4 ), StaffSpriteRules.SelectClip( second, false, four, 4 ) );
-		entertainer.PerformanceDraw = 5;
-		Assert.AreEqual( (15, 3), (StaffSpriteRules.SelectClip( entertainer, false, four, 4 )!.Value.Script, StaffSpriteRules.SelectClip( entertainer, false, four, 4 )!.Value.Slot), "5 mod 3 = 2" );
-		Assert.AreEqual( StaffSpriteRules.Walk, StaffSpriteRules.SelectClip( entertainer, true, shipped, 1 ) );
-	}
-
-	[TestMethod]
 	public void ClipsPlayTheScriptsFramesStepByStep()
 	{
 		var animations = Enumerable.Range( 0, 20 ).Select( slot => new SpriteAnimation( slot, 0, slot switch { 0 => 1, 1 => 8, 4 => 8, 5 => 4, 6 => 5, 7 => 8, 8 => 8, _ => 0 }, 5 ) ).ToArray();
@@ -158,7 +69,6 @@ public class StaffSpriteTests
 		Assert.AreEqual( (8, 2), At( StaffSpriteRules.CatchAndCarry, 10 ), "the catch plays once, then the carry (script 0x17) loops" );
 		Assert.AreEqual( (8, 0), At( StaffSpriteRules.CatchAndCarry, 16 ) );
 		Assert.AreEqual( 6, StaffSpriteRules.Dangle.Slot );
-		Assert.AreEqual( (6, 3), StaffSpriteRules.Resolve( StaffSpriteRules.Dangle, 0.2f, animations ), "62 ms a step when the sprite keeps the interval it was created with" );
 	}
 
 	[TestMethod]
@@ -202,7 +112,7 @@ public class StaffSpriteTests
 	{
 		int[] Frames( int intro, int hold, int count, int steps ) => Enumerable.Range( 0, steps ).Select( step => StaffScripts.PerformanceFrame( intro, hold, count, step ) ).ToArray();
 		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 0, 1, 2, 3 }, Frames( 0, 0, 4, 8 ), "every shipped entry but one: the slot's frames, looping" );
-		// Hallow SPR_DR: intro 2, hold 40 on an 8-frame slot: frames 0-2 once, then 2-7 and 41 steps of frame 0, round and round
+		// the flattened formula of performance program 0 for registers intro 2 and hold 40 on an 8-frame slot (Hallow SPR_DR's bank bytes, which tp.exe does not load into the staff source's registers: StaffSpriteSourceTests): frames 0-2 once, then 2-7 and 41 steps of frame 0, round and round
 		var dr = Frames( 2, 40, 8, 3 + 47 + 7 );
 		CollectionAssert.AreEqual( new[] { 0, 1, 2 }, dr.Take( 3 ).ToArray() );
 		CollectionAssert.AreEqual( new[] { 2, 3, 4, 5, 6, 7 }, dr.Skip( 3 ).Take( 6 ).ToArray() );

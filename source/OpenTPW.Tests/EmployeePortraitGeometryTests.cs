@@ -87,7 +87,8 @@ public class EmployeePortraitGeometryTests
 		public readonly StaffSpriteSet Sprites;
 		public List<Texture> Textures => Get<List<Texture>>( Renderer, "textures" );
 		public object View => ((IDictionary)Field( Renderer, "views" ).GetValue( Renderer )!)[Member]!;
-		public SpritePlayer Player => Get<SpritePlayer>( View, "Player" );
+		private int yields;
+		public int Steps => yields;
 		public Rig( int directions = 5, int a = 128, int b = 128 )
 		{
 			((List<StaffMember>)Economy.Staff.Members).Add( Member );
@@ -104,6 +105,16 @@ public class EmployeePortraitGeometryTests
 		public int Prepare( float now )
 		{
 			OpenTPW.Level.Current = Level; Time.Delta = 0.07f; Time.Now = now;
+			if ( Member.Sprite.Source == null && StaffSpriteRules.HasBodySprite( Member ) )
+			{
+				// a source made long enough ago to be due at once, in the sweep the member's job queued
+				Member.Sprite.Create( Member.Type, StaffSpriteRules.KeyOf( Member ), StaffSpriteEvents.Stand, -1000, Sprites );
+				Member.Sprite.QueueTemplate( StaffSpriteEvents.TemplateOf( Member.Type, Member.Job ) );
+				Member.Sprite.ApplyPending( Member.Type, StaffSpriteRules.KeyOf( Member ), Sprites );
+			}
+			Member.Sprite.ApplyPending( Member.Type, StaffSpriteRules.KeyOf( Member ), Sprites );
+			if ( Member.Sprite.Tick( (int)(now * 1000f) ).Status == StaffSpriteTickStatus.Yielded )
+				yields++;
 			return Renderer.PrepareWorld();
 		}
 		public UiSpriteFrame Expected( int slot, int step, int direction, bool mirror )
@@ -114,9 +125,9 @@ public class EmployeePortraitGeometryTests
 		}
 		public string State()
 		{
-			var state = View.GetType().GetFields().Where( field => field.Name is not ("Player" or "Published") )
+			var state = View.GetType().GetFields().Where( field => field.Name is not "Published" )
 				.Select( field => $"{field.Name}={field.GetValue( View )}" );
-			return string.Join( ";", state ) + $";steps={Player.Steps};interval={Player.Interval};due={Get<long>( Player, "due" )};member={JsonSerializer.Serialize( Member )}";
+			return string.Join( ";", state ) + $";sprite={JsonSerializer.Serialize( Member.Sprite.CaptureSnapshot() )};member={JsonSerializer.Serialize( Member )}";
 		}
 	}
 
@@ -173,13 +184,13 @@ public class EmployeePortraitGeometryTests
 					AssertDraw( figure, width, height, a, b, 526, 476, 2.4f );
 					foreach ( var now in new[] { 10f, 10.07f, 10.14f, 10.21f } )
 					{
-						if ( now > 10 ) rig.Member.Step( heading * 0.1f );
+						if ( now > 10 ) rig.Member.Step( heading * 0.1f, walks: false );
 						Assert.AreEqual( 12, rig.Prepare( now ) );
 					}
-					Assert.IsTrue( rig.Player.Steps > 0 );
-					var (slot, step) = StaffSpriteRules.ResolveSteps( StaffSpriteRules.Sweep, rig.Player.Steps, rig.Atlas.Animations.Animations );
+					Assert.IsTrue( rig.Steps > 0 );
+					// the first yield is the script's first frame
+					var (slot, step) = StaffSpriteRules.ResolveSteps( StaffSpriteRules.Sweep, rig.Steps - 1, rig.Atlas.Animations.Animations );
 					Assert.AreEqual( 4, slot ); Assert.IsTrue( step > 0, "exercise a nonzero live non-walk phase" );
-					Assert.AreEqual( (StaffSpriteRules.Sweep.Script << 8) | 4, Get<int>( rig.View, "ClipKey" ) );
 					var mirror = heading < 0 && directions == 5; var direction = heading < 0 && directions == 8 ? 6 : 2;
 					Assert.AreEqual( rig.Expected( slot, step, direction, mirror ), figure.Frame()!.Value );
 					AssertDraw( figure, width, height, a, b, 526, 476, 2.4f );
@@ -199,11 +210,11 @@ public class EmployeePortraitGeometryTests
 		var observed = new Rig(); var figure = Figure( observed.Hud ); var control = new Rig();
 		foreach ( var now in new[] { 0f, 0.07f, 0.14f } )
 		{
-			if ( now > 0 ) { observed.Member.Step( -0.1f ); control.Member.Step( -0.1f ); }
+			if ( now > 0 ) { observed.Member.Step( -0.1f, walks: false ); control.Member.Step( -0.1f, walks: false ); }
 			observed.Prepare( now ); control.Prepare( now );
 		}
-		observed.Member.Step( 0, 0.25f ); control.Member.Step( 0, 0.25f );
-		observed.Member.PendingInterval = 148; control.Member.PendingInterval = 148;
+		observed.Member.Step( 0, 0.25f, walks: false ); control.Member.Step( 0, 0.25f, walks: false );
+		observed.Member.Sprite.QueueInterval( 148 ); control.Member.Sprite.QueueInterval( 148 );
 		Level.Current = observed.Level; var before = observed.State();
 		var save = ParkSaveFile.Serialize( observed.Economy ); var random = observed.Economy.World.State;
 		var controlSave = ParkSaveFile.Serialize( control.Economy ); var controlRandom = control.Economy.World.State;

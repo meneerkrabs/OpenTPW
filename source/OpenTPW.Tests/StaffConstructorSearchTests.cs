@@ -84,7 +84,7 @@ public class StaffConstructorSearchTests
 			twin.Economy.Staff.EndPlacement( 0, placed: true );
 			var hired = twin.Economy.Hire( twinCandidate.Id );
 			hired.PatrolArea = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
-			StaffPlacement.PutDown( hired, cell.X, cell.Y );
+			StaffPlacement.PutDown( twin.Economy.Staff, hired, cell.X, cell.Y, constructed: true );
 			Assert.AreEqual( hireDraws.State, twin.Economy.World.State, $"{type}: nothing but the hire's draws before the constructor's search" );
 			Assert.IsNull( hired.Navigation );
 			Assert.IsTrue( twin.Level.StaffWorld!.Constructed( twin.Economy, hired ) );

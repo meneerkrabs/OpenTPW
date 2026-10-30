@@ -146,8 +146,11 @@ The coaster tool shows the original's slide-out panel (COAST-028, tp.exe `0x4982
 build (`cb_track`, control `0x1f`) and loop (`cb_loop`, `0x20`) buttons, a middle box with move (`cb_move`, `0x1b`), height (`cb_loft`, `0x1a`),
 stack up (`cb_swapup`, `0x1e`), rotate (`cb_rotate`, `0x1c`), tilt (`cb_incline`, `0x19`) and stack down (`cb_swapdown`, `0x1d`), and the demolish
 button (`cb_dellast`, `0x21`) at the right. The rectangles, models and tooltip help ids come from the table; the click help is `0x486b00` with `0x125`
-(build), `0x126`/`0x127` (loop), `0x121` (move) and `0x124` (demolish). The panel's window position is measured from the video (`APPROX`), and it appears
-at once instead of sliding out. Its background takes the clicks of the area it covers.
+(build), `0x126`/`0x127` (loop), `0x121` (move) and `0x124` (demolish). The tool's entry puts the panel into the HUD arm (`0x4988c0`: `0x4a2590`, message 10 of the arm drawer `0x4a14f0`), so it slides out as the camera and
+message panels do: the 675 x 274 root (859, 916) starts at the arm's left less its width less 50, centred on the arm, and moves right by 88 units per 20 ms tick
+to left 486, top 1145 (the video's measured offset (−372, +232) was these (−373, +229) within a pixel or three); the tool's exit and the arm's retract button
+slide it in, and another panel that takes the arm ends the tool (message `0x1001d8`, `0x4a17dc`). The loop button's model and help follow the flume flag
+(`cb_trough`, help `0x134`; else help `0x132`, `0x4987f0`). Its background takes the clicks of the area it covers.
 
 **Way in.** The ride window's track button (`b_track`, control `0x3e2a`, help 10; shown when the object's type record has a track type, `0x4ad53a`) calls `0x4af200`, which sends a coaster
 (type 3) to `0x4988c0`: it enters the tool (`0x4474d0`, state 2 for a finished circuit) and selects the first button (`0x4455c0`). The table-driven ride window (`ParkHud.ObjectWindow.cs`) has that

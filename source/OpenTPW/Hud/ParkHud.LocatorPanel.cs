@@ -279,6 +279,8 @@ public sealed partial class ParkHud
 		CloseMessagePanel();
 		CloseCameraPanel();
 		CloseLocator();
+		if ( level.IsCoasterToolActive && CoasterSlide.Out )
+			coasterPanelRetracted = true;
 	}
 
 	public void CloseLocator()
@@ -411,7 +413,7 @@ public sealed partial class ParkHud
 		}
 		// [BIN:TPW-EXE:0x4a1725 arm retract] the arm's retract button is shown by the slide out and hidden again by the start of the slide in, whichever panel the arm carries
 		if ( hud.Find( "messageClose" ) is { } close )
-			close.Visible = MessageSlide.Out || CameraSlide.Out || LocatorSlide.Out;
+			close.Visible = MessageSlide.Out || CameraSlide.Out || LocatorSlide.Out || CoasterSlide.Out;
 	}
 
 	private Dictionary<UiElement, UiRect>? locatorPanelRects;

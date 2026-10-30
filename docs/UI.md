@@ -730,9 +730,8 @@ glyph in all 14 UI fonts of each language.
 
 While the coaster tool is active the HUD shows the original's slide-out panel (tp.exe table `0x751530`, click handler `0x4982a0`, docs/COASTERS.md "The tool panel"): the green drawer art
 (`panel`) with two `!f_plain` boxes and nine buttons of the `cb_*` models (`cb_track`, `cb_loop`, `cb_move`, `cb_loft`, `cb_swapup`, `cb_rotate`, `cb_incline`, `cb_swapdown`, `cb_dellast`) at the
-table's rectangles, offset by the window position measured from the video (`(−372, +232)`, `APPROX`). The selected button shows its pressed frame, a disabled one its grey frame (the enable mask
-`0x445910`); the tooltips are help 564, 565, 296, 297, 302, 300, 569, 303 and 304 and a click on build, loop, move or demolish shows help `0x125`, `0x126`/`0x127`, `0x121` or `0x124`. The panel appears
-at once (the original slides it out), and the park's pointer handling (press, drag, release on pylons, the blueprint-marker cursor and placement area) is `ParkHud.CoasterPanel.cs`.
+table's rectangles, carried out of the HUD arm by the arm drawer like the camera panel (end place left 486, top 1145: a shift of (−373, +229); `0x4988c0`, `0x4a2590`, `0x4a14f0`). The selected button shows its pressed frame, a disabled one its grey frame (the enable mask
+`0x445910`); the tooltips are help 564, 306 (308 on a flume; the table's 565 until the panel's refresh `0x4987f0` replaces it), 296, 297, 302, 300, 569, 303 and 304 and a click on build, loop, move or demolish shows help `0x125`, `0x126`/`0x127`, `0x121` or `0x124`. The panel slides out and in with the arm's drawer, and the park's pointer handling (press, drag, release on pylons, the blueprint-marker cursor and placement area) is `ParkHud.CoasterPanel.cs`.
 
 ## Verification
 

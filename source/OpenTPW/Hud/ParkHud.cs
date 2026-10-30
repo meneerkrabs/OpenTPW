@@ -454,7 +454,6 @@ public sealed partial class ParkHud
 		hud.DrawOverlay = context => { DrawFeedback( context ); DrawSessionStatus( context ); DrawRideStatic( context ); };
 		hud.DrawBackground = context =>
 		{
-			DrawCoasterPanelBackground( context );
 			DrawMessagePanel( context );
 		};
 		BuildCoasterPanel();
@@ -1035,7 +1034,7 @@ public sealed partial class ParkHud
 		if ( hud.Find( "rideView" ) is UiButton rideButton )
 			rideButton.Enabled = IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate ));
 
-		UpdateCoasterPanelElements();
+		UpdateCoasterPanelElements( context.Delta );
 		UpdateShopPriceButton( mouseCaptured, keyboardCaptured, textCaptured );
 		UpdateWaveSettingsButton();
 		UpdateRideUpgradeButton( input );

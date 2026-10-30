@@ -10,17 +10,24 @@ namespace OpenTPW.Hud;
 /// </summary>
 public sealed partial class ParkHud
 {
-	/// <summary>The panel's table rectangles are relative to the panel window; the window sits this far from them on the 2048 x 1536 canvas (measured from the original's video, 73:20).</summary>
+	/// <summary>The panel window's root rectangle of table 0x751530 (control 0x17) and the two boxes on it; the HUD arm's drawer carries the whole panel out from its table place (<see cref="ArmDrawer.Shift"/>).</summary>
 	// [BIN:TPW-EXE:0x751530 coaster panel table] root 0x17 (859, 916)-(1534, 1190) with !f_plain boxes 0x22 (859..1003) and 0x18 (1037..1407) and the nine buttons 0x19..0x21; the table holds no window position
-	// [APPROX:COAST-028] the offset (-372, +232) puts the left box 2.3 cells right of the main panel as the video shows it; the table 0x751530 holds no window position, its handler is 0x4982a0 and its builder 0x498790 hands the table to the window code 0x65fd0e; the panel appears at once instead of sliding out — evidence needed: that window code's placement and slide
-	private const float CoasterPanelDx = -372, CoasterPanelDy = 232;
+	// [BIN:TPW-EXE:0x4988c0 coaster panel slide] the tool's entry (0x4988c0, from the ride window's track button 0x4af200) puts the panel into the HUD arm like the camera and message panels: 0x4a25f0(1), then 0x4a2590 (message 0xb retracts the panel the arm carries, message 10 starts the slide out of the panel window 0x7ca1c8 that 0x498790 built from the table with the handler 0x4982a0); the drawer 0x4a14f0 places it at the arm's left less its width less 50, centred on the arm, and moves it right by (the HUD window's right - the arm's left + its width + 100) / 10 per 20 ms tick, so the 675 x 274 panel ends at left 486, top 1145 (the -372, +232 measured from the video are these -373, +229 within a pixel or three); the tool's exit (0x4989d0) retracts it (0x4a25f0(0))
+	// [BIN:TPW-EXE:0x4a17dc arm takeover] a slide out that starts while the arm carries another panel first sends that panel message 0x1001d8, which for the coaster panel ends the tool (0x4982a0: 0x446fa0(0, 4), 0x497f00, 0x4474d0(0, 0)): another panel taking the arm ends the coaster tool at once (YieldCoasterPanelToArm)
+	private static readonly UiRect CoasterRoot = Rect( 859, 916, 1534, 1190 );
+	private static readonly UiRect CoasterLeftBox = Rect( 859, 916, 1003, 1190 );
+	private static readonly UiRect CoasterMiddleBox = Rect( 1037, 916, 1407, 1190 );
 
-	private static UiRect CoasterRect( float left, float top, float right, float bottom ) => Rect( left + CoasterPanelDx, top + CoasterPanelDy, right + CoasterPanelDx, bottom + CoasterPanelDy );
+	/// <summary>The panel's slide: 0 when it is in, <see cref="ArmSlide.Steps"/> when it is out.</summary>
+	internal ArmSlide CoasterSlide => coasterSlide ??= new();
+	private ArmSlide? coasterSlide;
+	private bool coasterLoopButtonShown;
+	/// <summary>The arm's retract button put the coaster panel away while the tool stays open (0x4a187a: message 0xb only slides the panel in; it does not end the tool).</summary>
+	private bool coasterPanelRetracted;
+	private readonly List<UiElement> coasterArmElements = new();
+	private readonly List<UiElement> coasterBoxElements = new();
 
-	/// <summary>The green arm the panel slides out of (the main panel's drawer art) and the two blue boxes on it.</summary>
-	private static readonly UiRect CoasterArmRect = Rect( 405, 1090, 1360, 1445 );
-	private static readonly UiRect CoasterLeftBox = CoasterRect( 859, 916, 1003, 1190 );
-	private static readonly UiRect CoasterMiddleBox = CoasterRect( 1037, 916, 1407, 1190 );
+	private static UiRect CoasterRect( float left, float top, float right, float bottom ) => Rect( left, top, right, bottom );
 
 	/// <summary>One of the panel's buttons: the control id, the model, the table rectangle, the tooltip help (UIHELPTEXT index) and the help the click shows (<c>0x486b00</c>), or -1.</summary>
 	private readonly record struct CoasterButtonSpec( CoasterToolButton Button, int Control, string Model, UiRect Rect, int Help, int ToolHelp );
@@ -52,11 +59,25 @@ public sealed partial class ParkHud
 
 	private void BuildCoasterPanel()
 	{
-		// the panel's backdrop takes the clicks of the area it covers, so a click beside a button does not reach the park
-		var shield = hud.Add( new UiLabel { Id = "coasterPanelShield", Text = () => "", Bounds = CoasterArmRect, Anchor = UiAnchor.BottomLeft, Visible = false } );
+		// [BIN:TPW-EXE:0x4a15c8 arm panel depth] as the camera panel (BuildCameraPanel): the panel lies under the main panel while the drawer carries it out, and the arm's own art grows out from under the HUD
+		var mainPanel = hud.Find( "mainPanel" );
+		T Add<T>( T element ) where T : UiElement
+		{
+			element.Anchor = UiAnchor.BottomLeft;
+			element.Visible = false;
+			return mainPanel == null ? hud.Add( element ) : hud.InsertBefore( mainPanel, element );
+		}
+		// the panel's backdrop takes the clicks of the area it covers, so a click beside a button does not reach the park: the arm's bar under the panel
+		var shield = Add( new UiLabel { Id = "coasterPanelShield", Text = () => "", Bounds = ArmPieces( (int)CoasterRoot.Width, 0 ).Bar } );
+		var (bar, pane, handle) = ArmPieces( (int)CoasterRoot.Width, 0 );
+		coasterArmElements.Add( Add( new UiModelImage { Id = "coasterArm", Model = "panel", Frame = () => 0, Bounds = bar } ) );
+		coasterArmElements.Add( Add( new UiModelImage { Id = "coasterArmPane", Model = ArmPaneModel, Frame = () => 0, Bounds = pane } ) );
+		coasterArmElements.Add( Add( new UiModelImage { Id = "coasterArmHandle", Model = ArmHandleModel, Frame = () => 0, Bounds = handle } ) );
+		coasterBoxElements.Add( Add( new UiModelImage { Id = "coasterLeftBox", Model = "!f_plain", Frame = () => 0, Bounds = CoasterLeftBox } ) );
+		coasterBoxElements.Add( Add( new UiModelImage { Id = "coasterMiddleBox", Model = "!f_plain", Frame = () => 0, Bounds = CoasterMiddleBox } ) );
 		foreach ( var spec in CoasterButtons )
 		{
-			var button = hud.Add( new UiButton
+			var button = Add( new UiButton
 			{
 				Id = $"coaster{spec.Button}",
 				Model = spec.Model,
@@ -65,31 +86,82 @@ public sealed partial class ParkHud
 				ClickSound = GameAudio.SelectClickEvent,
 				Clicked = () => SelectCoasterButton( spec ),
 				Selected = () => level.CoasterPanel?.Selected == spec.Button,
-				Bounds = spec.Rect,
-				Anchor = UiAnchor.BottomLeft,
-				Visible = false
+				Bounds = spec.Rect
 			} );
 			coasterPanelElements.Add( button );
 		}
 		coasterPanelElements.Add( shield );
 	}
 
-	/// <summary>Shows or hides the panel with the tool and sets which buttons are enabled (the enable mask <c>0x445910</c>).</summary>
-	private void UpdateCoasterPanelElements()
+	/// <summary>
+	/// The arm takes another panel (the camera, message or locator panel starts to slide out): the panel it carries gets message 0x1001d8, which ends the coaster tool (0x4a17dc, 0x4982a0).
+	/// </summary>
+	private void YieldCoasterPanelToArm()
+	{
+		if ( level.IsCoasterToolActive )
+			level.ExitCoasterTool();
+	}
+
+	/// <summary>Shows or hides the panel with the tool and sets which buttons are enabled (the enable mask <c>0x445910</c>); the arm's drawer slides it out and in.</summary>
+	private void UpdateCoasterPanelElements( float delta )
 	{
 		// harnesses that build the HUD without its constructor have no panel buttons
 		if ( coasterPanelElements == null || coasterPanelElements.Count != CoasterButtons.Length + 1 )
 			return;
 		var panel = level.IsCoasterToolActive ? level.CoasterPanel : null;
+		// another panel that opened while the coaster panel is out takes the arm and ends the tool (0x4a17dc)
+		if ( panel != null && CoasterSlide.Out && !coasterPanelRetracted && (OpenedMessage != null || CameraPanelOpen || Locator.Mode != LocatorMode.None) )
+		{
+			YieldCoasterPanelToArm();
+			panel = null;
+		}
 		ReportCoasterPanelClosed( panel != null );
 		panel?.Refresh();
-		coasterPanelElements[^1].Visible = panel != null;
+		if ( panel == null )
+			coasterPanelRetracted = false;
+		// [BIN:TPW-EXE:0x4988c0 panel open] the tool's entry puts the panel into the arm (0x4a2590), which retracts the panel it carried (message 0xb); the tool's exit retracts it (0x4a25f0(0)), and so does the arm's retract button (message 0xb)
+		if ( panel != null && !coasterPanelRetracted )
+		{
+			if ( !CoasterSlide.Out )
+			{
+				CloseMessagePanel();
+				CloseCameraPanel();
+				CloseLocator();
+			}
+			CoasterSlide.Open();
+		}
+		else
+			CoasterSlide.Close();
+		CoasterSlide.Update( delta );
+		var step = CoasterSlide.Step;
+		var (shiftX, shiftY) = ArmDrawer.Shift( CoasterRoot, step );
+		UiRect Moved( UiRect rect ) => rect with { X = rect.X + shiftX, Y = rect.Y + shiftY };
+		// the arm's own pieces grow with the slide (ArmDrawer.ArmRight); the shield is the bar under the panel
+		var (bar, pane, handle) = ArmPieces( (int)CoasterRoot.Width, step );
+		var arm = new[] { bar, pane, handle };
+		for ( var index = 0; index < coasterArmElements.Count; index++ )
+		{
+			coasterArmElements[index].Bounds = arm[index];
+			coasterArmElements[index].Visible = step > 0 && ArmChildShown( arm[index] );
+		}
+		var boxes = new[] { CoasterLeftBox, CoasterMiddleBox };
+		for ( var index = 0; index < coasterBoxElements.Count; index++ )
+		{
+			coasterBoxElements[index].Bounds = Moved( boxes[index] );
+			coasterBoxElements[index].Visible = step > 0 && ArmChildShown( coasterBoxElements[index].Bounds );
+		}
+		coasterPanelElements[^1].Bounds = bar;
+		coasterPanelElements[^1].Visible = step > 0 && panel != null;
+		if ( panel != null )
+			coasterLoopButtonShown = panel.LoopButtonShown;
 		for ( var index = 0; index < CoasterButtons.Length; index++ )
 		{
 			var element = coasterPanelElements[index];
 			var spec = CoasterButtons[index];
+			element.Bounds = Moved( spec.Rect );
 			// the loop button is hidden below ride level 1 (0x49880F, 0x4987f0) and nowhere else: a coaster without a loop pylon shows it too
-			element.Visible = panel != null && (spec.Button != CoasterToolButton.Loop || panel.LoopButtonShown);
+			element.Visible = step > 0 && ArmChildShown( element.Bounds ) && (spec.Button != CoasterToolButton.Loop || coasterLoopButtonShown);
+			element.Enabled = panel != null && panel.IsEnabled( spec.Button );
 			// [BIN:TPW-EXE:0x4987f0 loop button art] the panel's refresh swaps the loop button's model for cb_trough (ui.wad) and its two hover help ids from the table's 565 to 0x134 (308) when the mask has
 			// bit 0x200 (definition flag 0x100: the flume coasters), else to 0x132 (306): "select loop pylons" or "select splashdown pylons" with their pair notes
 			if ( spec.Button == CoasterToolButton.Loop && panel != null && element is UiButton loopButton )
@@ -98,7 +170,6 @@ public sealed partial class ParkHud
 				loopButton.Model = trough ? "cb_trough" : spec.Model;
 				loopButton.Help = strings.Help( trough ? 0x134 : 0x132 );
 			}
-			element.Enabled = panel != null && panel.IsEnabled( spec.Button );
 		}
 	}
 
@@ -135,17 +206,6 @@ public sealed partial class ParkHud
 			foreach ( var message in AdvisorToolHelp.CoasterPanelMessages )
 				host?.HelpWithdrawn?.Invoke( message );
 		coasterPanelShown = shown;
-	}
-
-	/// <summary>The panel's backdrop: the green arm out of the main panel and the two blue boxes, under the HUD's buttons.</summary>
-	private void DrawCoasterPanelBackground( UiContext context )
-	{
-		if ( !level.IsCoasterToolActive )
-			return;
-		var canvas = context.Canvas;
-		context.DrawModel( "panel", 0, canvas.Map( CoasterArmRect, UiAnchor.BottomLeft ) );
-		context.DrawModel( "!f_plain", 0, canvas.Map( CoasterLeftBox, UiAnchor.BottomLeft ) );
-		context.DrawModel( "!f_plain", 0, canvas.Map( CoasterMiddleBox, UiAnchor.BottomLeft ) );
 	}
 
 	/// <summary>The pointer in the original's pixels: 1024 across the screen, which the drag rates are meant for.</summary>

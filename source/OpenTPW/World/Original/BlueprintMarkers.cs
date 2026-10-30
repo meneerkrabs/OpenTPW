@@ -8,7 +8,7 @@ public enum BlueprintMarker
 	Allowed = 0,
 	/// <summary>A cell the tool refuses (including a cell it cannot afford).</summary>
 	Refused = 1,
-	/// <summary>A cell of the coaster tool's placement area: a yellow and black chequered face (the original draws face type 0x11f from <c>0x5234d0</c>).</summary>
+	/// <summary>A cell of the coaster tool's placement area: the level's translucent orange face (face type 0x11f, <c>0x5243a6</c>, table slot 2).</summary>
 	Area = 2,
 	/// <summary>The entrance's outside cell: <c>m_enter</c>, an arrow turned to the direction byte (texture 3).</summary>
 	Enter = 3,
@@ -52,13 +52,13 @@ public sealed class BlueprintMarkers : ModelEntity
 
 	private readonly ModelHeightfield field;
 	private readonly Material material;
-	/// <summary>The placement area's texture: made from bytes for these markers alone, so it goes with them (<see cref="OnDelete"/>).</summary>
+	/// <summary>The placement area's texture (the level's orange.wct, a shared game texture that stays when the markers go).</summary>
 	private readonly Texture areaTexture;
 	private (int X, int Y, BlueprintMarker Marker)[] shown = [];
 	private readonly Func<int, int, float?>? heightOffset;
 	private Dictionary<(int X, int Y), float?> shownHeights = [];
 
-	public BlueprintMarkers( ModelHeightfield field, Func<int, int, float?>? heightOffset = null )
+	public BlueprintMarkers( ModelHeightfield field, Func<int, int, float?>? heightOffset = null, string? levelName = null )
 	{
 		this.field = field;
 		this.heightOffset = heightOffset;
@@ -66,7 +66,7 @@ public sealed class BlueprintMarkers : ModelEntity
 		Hidden = true;
 		material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 		var textures = TextureNames.Select( name => LoadTexture( $"/generic/dynamic/textures/{name}.wct" ) ).ToList();
-		areaTexture = AreaTexture();
+		areaTexture = AreaTexture( levelName );
 		textures.Add( areaTexture );
 		while ( textures.Count < TextureSlots )
 			textures.Add( textures[0] );
@@ -78,27 +78,29 @@ public sealed class BlueprintMarkers : ModelEntity
 	}
 
 	/// <summary>
-	/// The placement area's texture: translucent yellow and black squares, two by two to a cell.
+	/// The placement area's texture: the level's own <c>orange.wct</c> (table slot 2), from the level's dynamic archive (<c>Levels/&lt;level&gt;/dynamic.wad</c>, <c>textures</c>, or <c>stexture</c> in the low-detail set).
 	/// </summary>
-	// [BIN:TPW-EXE:0x5243a6 area face] the cells of the coaster tool's placement area get face type 0x11f; the video (73:20-75:58) shows them as a translucent yellow with dark mottling, and the dynamic texture table holds no such texture (orange.tga is not on the PC CD)
-	// [APPROX:COAST-028] the texture is generated: 4 x 4 squares of yellow (255, 214, 0) and near-black (40, 34, 0), both at alpha 205 — evidence needed: the original texture behind face type 0x11f (the dynamic texture table 0x763b3c lists blue, red, orange, m_enter, m_exit; orange.tga is not on the PC CD, and the slot of face type 0x11f is not traced)
-	private static Texture AreaTexture()
+	// [BIN:TPW-EXE:0x5243a6 area face] the cells of the coaster tool's placement area get face type 0x11f (the area loop 0x5243a6..0x524458 calls 0x536100(0x11f, x, y) → 0x532fc0, whose test of bit 0x100 at 0x533014 selects the dynamic face branch): its kind is the verdict 0x535670(0x1f, 0) at 0x5331b5, and 0x535670 opens with "type 0x1f → 2", so the face builder 0x53c8d0 stores kind 2 and the face renderer (0x53da77, 0x53dadd) takes the 16-byte record 2 of the dynamic texture table 0x763b38: orange.tga
+	// [BIN:TPW-EXE:0x53d790 dynamic texture folder] the table's file names get the level's dynamic folder (Data\Levels\<level>\Dynamic\Textures, \STexture in the low-detail set, 0x54dcc0); each level's dynamic.wad holds orange.wct in both folders (records 0 to 14 of the table 0x763b38 all carry texture flags 7, so the area face is drawn as the other markers; the video's translucent yellow with dark mottling: average rgba 216,161,1 at alpha 192 in the jungle, 158 in the space level), not the generic folder, which has no orange
+	private static Texture AreaTexture( string? levelName )
 	{
-		const int Size = 8, Square = 4;
-		var data = new byte[Size * Size * 4];
-		for ( var y = 0; y < Size; y++ )
+		if ( AreaTexturePath( levelName ) is { } path )
+			return new Texture( path, TextureFlags.Repeat );
+		Log.Warning( $"Blueprint markers: the level's dynamic archive has no orange.wct ({levelName ?? "no level"})." );
+		return Texture.Missing;
+	}
+
+	/// <summary>The file of the placement area's orange texture in <paramref name="levelName"/>'s dynamic archive (the low-detail folder first in the low-detail set), or null.</summary>
+	internal static string? AreaTexturePath( string? levelName )
+	{
+		if ( string.IsNullOrEmpty( levelName ) )
+			return null;
+		foreach ( var directory in ObjectAssets.TextureDirectoryNames( $"/levels/{levelName}/dynamic", levelName ) )
 		{
-			for ( var x = 0; x < Size; x++ )
-			{
-				var dark = ((x / Square) + (y / Square)) % 2 == 1;
-				var offset = (y * Size + x) * 4;
-				data[offset] = dark ? (byte)40 : (byte)255;
-				data[offset + 1] = dark ? (byte)34 : (byte)214;
-				data[offset + 2] = 0;
-				data[offset + 3] = 205;
-			}
+			if ( ResolveTexturePath( $"{directory}/orange.wct" ) is { } path )
+				return path;
 		}
-		return new Texture( data, Size, Size, TextureFlags.Repeat );
+		return null;
 	}
 
 	/// <summary>A texture of the dynamic texture folder (<c>Data/Generic/Dynamic/Textures</c>) by name, <see cref="Texture.Missing"/> when absent.</summary>
@@ -253,8 +255,7 @@ public sealed class BlueprintMarkers : ModelEntity
 	private IReadOnlyDictionary<(int X, int Y), byte> shownDirections = new Dictionary<(int X, int Y), byte>();
 
 	/// <summary>
-	/// Leaving the park releases the marker model, the markers' own material and the area texture they made from bytes (every park made a new
-	/// one, and each stayed for the session); the marker textures loaded by path are shared game textures and stay.
+	/// Leaving the park releases the marker model and the markers' own material; the marker textures loaded by path (the area's orange included) are shared game textures and stay.
 	/// </summary>
 	protected override void OnDelete()
 	{

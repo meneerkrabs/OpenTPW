@@ -167,7 +167,7 @@ One tool is on at a time, as the original has one tool mode: the coaster tool's 
   pair is pending) for an unfinished track and on height for a finished one (`0x4455c0`).
 - **Build and loop**: a click places a pylon (loop mode places a pair, `0x442cd0`); the cursor cell is a blue or red blueprint face, the cost shows beside
   it, and the **placement area** is the box of the maximum place distance + 1 cells around the last node (`0x434f10`) whose cells pass the validator and
-  pass the original's cell test (`0x5243a6`, `Level.IsCoasterAreaCell`: cell flag `0x40` clear, no track tile or fence post, none of the cell types 3, 4, 7, 9, 10 and `0x1e`, no path with flag `0x20`), drawn yellow and black (`BlueprintMarker.Area`, `APPROX`: the texture). Hovering the chain start marks it
+  pass the original's cell test (`0x5243a6`, `Level.IsCoasterAreaCell`: cell flag `0x40` clear, no track tile or fence post, none of the cell types 3, 4, 7, 9, 10 and `0x1e`, no path with flag `0x20`), drawn with the level's own translucent orange texture (`BlueprintMarker.Area`: face type `0x11f` takes slot 2 of the dynamic textures, `0x535670`, which is `orange.wct` of the level's `dynamic.wad`). Hovering the chain start marks it
   as the closing target; a click closes the circuit.
 - **Height** (`0x441a00`): a press on a pylon picks it up; the loft parameter follows the pointer at 0.005 per pixel upward within `[max(0, (fMinHeight − h0)/(h1 − h0)),
   t + (fMaxHeight − the stack top's height)/(h1 − h0)]`; a clamped value moves the drag's origin so the pointer has to come back; the release credits

@@ -9,7 +9,8 @@
   `QMixer.dll` found no gate that makes the original skip the Doppler factor, and
   ruled out several candidates (default channel flags, the start path's flag
   mapping, the listener velocity bookkeeping, the voice-to-channel update chain).
-  One precise lead is written into the register text: the request word's `0xc0`
-  (`0x6bc2af`) and the reverb test (`0x6b9acb`) feed a second EnableChannel
-  (`0x6c5690`) that could exempt voices from Doppler when reverb is on. The
-  capture-based evidence and the off-by-default switch are unchanged.
+  The request word's `0xc0` (`0x6bc2af`) with the reverb test (`0x6b9acb`) feeds a
+  second EnableChannel (`0x6c5690`), but it runs before the start's own
+  (`0x6d2380`) and is replaced by it. The capture-based evidence and the
+  off-by-default switch are unchanged; the register text lists what is still
+  open.

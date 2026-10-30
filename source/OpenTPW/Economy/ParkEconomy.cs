@@ -1265,10 +1265,14 @@ public sealed partial class ParkEconomy : IParkEconomy
 	// [EXT:headless-economy-dispatch] (user-approved, test and tool economy only; a level runs the staff world): without a world the handymen have no position, so a free handyman takes the first unclaimed littered cell in the finder's scan order, park-wide, else the dirtiest toilet, timed from the dispatch
 	internal void DispatchHandymen()
 	{
+		var handymen = Staff.OfType( StaffType.Handyman ).Where( member => member.IsAvailable && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ).ToList();
+		// no free handyman, no job: the role is read only for one (Theme Park Inc's settings hold no staff roles, and its slice runs this dispatch every turn without a staff world)
+		if ( handymen.Count == 0 )
+			return;
 		var role = Settings[StaffType.Handyman];
 		List<ParkObjectState>? dirty = null;
 		using var litter = Litter.Littered().Where( cell => Litter.CollectorAt( cell.X, cell.Y ) == 0 ).GetEnumerator();
-		foreach ( var handyman in Staff.OfType( StaffType.Handyman ).Where( member => member.IsAvailable && !Staff.Strikes.IsActive( member.Type ) && !(HasRestArea && StaffVitals.Byte( member.Energy ) <= Settings.RestLevel) ).OrderBy( member => member.Id ).ToList() )
+		foreach ( var handyman in handymen )
 		{
 			if ( litter.MoveNext() )
 			{

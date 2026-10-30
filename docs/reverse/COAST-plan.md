@@ -1013,3 +1013,29 @@ Static caller inspection refines the formerly generic "placement-in-progress" la
 - Height handler `0x441A00` sets bit 0 at `0x441A5D` after its capability/selection checks, clears it at `0x441ADE` on the second action, and clears it on the failed-start path `0x441C27`. Rotation and tilt use different low bits, so a generic "any drag" predicate would be wrong.
 
 `CoasterToolPanel.ShowsActionCost` maps the existing host state to this distinction: Build/Loop/Move, or an active height drag. The HUD uses it only to hide control 48's cost; cost values, bank transactions and the separate cursor-cost presentation are unchanged. Initial/host mode-stack equivalence and the unidentified original type-4 mode remain UI-047 qualifications. No original execution or new rendered comparison is claimed.
+
+## 24. Who reads the controller's track flags (SAVE-921, round 11)
+
+The saver `0x437300` writes controller `+0x3C` bits 0 and 1 and the track flags (`+0` bits `0x20`..`0x800`) into the Coasters block header's flag word, and the loader `0x437B60` sets
+them again [BIN:TPW-EXE:0x43743C..0x4374D0 the saver's tests, 0x4380D4..0x438335 the loader's sets]. OpenTPW keeps the word raw; whether anything else reads `0x20`, `0x40`, `0x80`, `0x100`,
+`0x200` or `0x400` was open (an earlier scan covered immediate masks on the controller pointer only). `tools/ppc-analysis/controller_flag_readers.py` (capstone, dev-only; it skips without the identified
+tp.exe, `--check` fails on any new hit) answers it in four layers, run on the identified PC `tp.exe`:
+
+- **Pointer sources.** A controller is the `0x14C`-byte record of the only such allocation [BIN:TPW-EXE:0x4368FC `push 0x14c` for the allocator `0x45B9D0` in the constructor `0x4368F0`] and its pointer comes from the
+  thing-pool table `0x790BD0` (15 inline lookups), the list head `0x790FE0` (next link `+0x18`) or the edited global `0x790FEC` (240 sites): every place of the image naming one of the three is inside the coaster
+  module (`0x42F000..0x44C000`). The pool library `0x468760`/`0x468810` only stores and clears the pointer in the table it is given [BIN:TPW-EXE:0x468760 alloc stores arg 5 at table arg 4, 0x468810 stores 0].
+- **Flow.** From those sites the scan follows the pointer to a fixpoint through registers, stack frames (exact esp offsets, out parameters, pointers to locals), direct calls (the module has no indirect call and
+  23 switch tables), the controller's fields (only `+0x18` holds a controller), global holders (`0x790FE4` = controller `+0x3C`, `0x792218` the current controller) and the fields of the other constant-size
+  records the code allocates (the `0x48`-byte descriptor of `0x432C10` keeps the edited controller in `+0x14`; the `0x104`-byte track nodes hold descriptors). 207 functions of the module and 106 outside it are followed.
+  It finds 87 accesses at controller `+0..3`; each loaded word is followed to what it does with it (test, compare, mask, merge back, copy, return). Outside the saver and the loader they observe bits
+  `0x1`, `0x4`, `0x8`, `0x10`, `0x800`, `0x1000`, `0x2000`, `0x4000` and `0x8000` and **none of `0x20`..`0x400`**, except one false hit read by hand (`0x43F641` tests the node walked from controller `+0x54`, not the controller; the
+  controller is only the loop's end sentinel in a path on which the loop is left).
+- **Residue, read by hand.** Two controller pointers the flow sees stored through an unknown base are artefacts (`0x43392A`: the last slot of the node-copy array `0x791D08 + n * 0x104`, n < 5; `0x43BA09`: an argument slot
+  reused as an out parameter); 12 calls with a tracked pointer in a register or argument it cannot follow are the action-record writes (section 23), `GlobalFree`, `GetDC` and the save stream's read and write through its
+  vtable (`0x5F5E20`, `0x5F5E50`), none of which reads controller memory.
+- **Independent layer.** All 67 `test [reg+0..3], imm` instructions of the image whose immediate selects a track flag are listed with the last assignment of their base register: besides the saver's three and the
+  loader's two (the descriptor `[controller+4]`, flag `0x20`) they test descriptors (`[x+4]`, `[x+0x18]`), section chunks and records of other systems (`0x462xxx`..`0x57xxxx`), none reached by the flow.
+
+What the scan does **not** follow, so SAVE-921 stays open on exactly this: arrays inside records (indexed element stores and loads), the node pointer at `+0xD4` of the thing records (table `0x7A4610`) and
+18 stores of node and descriptor pointers into records it has no type for (the report marks them as untyped; none stores a controller), and it assumes non-negative indexes and that a pointer
+argument reaches 16 bytes of its caller's frame. A reader reaching the controller only through those containers, and by a pattern other than a `test` of the layer above, would be missed.

@@ -82,8 +82,9 @@ internal readonly record struct GraphBackdrop( int Width, int Height, int Sample
 /// <summary>Adapts the immutable bitmap backdrop to the host UI batch; it never reads graph histories or changes the park.</summary>
 internal static class GraphBackdropRenderer
 {
-	// [APPROX:UI-060] one bitmap pixel remains two canvas units, at least one framebuffer pixel. Original display-mode calibration,
-	// finance sample/month correspondence, palette, fonts and composited raster fidelity remain unqualified.
+	// [EXT:graph-pixel-adapter] one bitmap pixel is two canvas units, at least one framebuffer pixel: the original draws at its display mode's pixel size, which
+	// follows the host's resolution, and this is the adapter (user-approved 2026-10-30).
+	// [APPROX:UI-060] finance sample/month correspondence, palette, fonts and composited raster fidelity remain unqualified.
 	internal static float Pixel( UiCanvas canvas ) => Math.Max( 1f, canvas.Scale * 2f );
 
 	internal static UiRect ToScreen( UiRect bitmap, UiRect frame, float pixel ) =>

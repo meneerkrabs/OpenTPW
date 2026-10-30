@@ -198,11 +198,22 @@ public sealed class PreviewIcon
 			var positions = animator.GetVertexPositions( part.Mesh );
 			var points = animatedBuffers[part.Index] ??= new NVector3[mesh.Vertices.Length];
 			for ( var index = 0; index < points.Length; index++ )
-				points[index] = NVector3.Transform( positions != null && index < positions.Count ? positions[index] : mesh.Vertices[index].Position.GetSystemVector3(), world );
+				points[index] = NVector3.Transform( PosedCorner( mesh, positions, index ), world );
 			animatedPoints[part.Index] = points;
 			animatedTexCoords[part.Index] = animator.GetTexCoords( part.Mesh );
 		}
 		return (animatedPoints, animatedTexCoords);
+	}
+
+	/// <summary>
+	/// The model-space position of corner <paramref name="corner"/> of <paramref name="mesh"/> under a clip's <paramref name="positions"/> (null: the rest pose). A clip's positions are the mesh's
+	/// stored positions (<see cref="ModelFile.Mesh.Positions"/>), which corners share, so each corner takes the one it was built from (<see cref="ModelFile.Mesh.CornerPositionIndices"/>),
+	/// as the park's parts do (<see cref="ObjectRenderParts.WritePositions"/>).
+	/// </summary>
+	internal static NVector3 PosedCorner( ModelFile.Mesh mesh, IReadOnlyList<NVector3>? positions, int corner )
+	{
+		var corners = mesh.CornerPositionIndices;
+		return positions != null && corner < corners.Length && corners[corner] < positions.Count ? positions[corners[corner]] : mesh.Vertices[corner].Position.GetSystemVector3();
 	}
 
 	private static int? RootOf( ModelFile model, int nodeIndex )

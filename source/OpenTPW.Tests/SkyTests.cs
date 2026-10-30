@@ -313,4 +313,29 @@ public class SkyTests
 		Assert.IsTrue( Sky.TryMoonQuad( new SVector3( 2f, 11f, 15f ), 5f, System.Numerics.Matrix4x4.CreateLookTo( SVector3.Zero, SVector3.Normalize( Sky.ToEngine( new SVector3( 2f, 11f, 15f ) ) ), SVector3.UnitZ ), projection, 0f, out var corners ) );
 		Assert.IsTrue( corners.All( corner => corner.Length() < 30f ), "inside the far plane" );
 	}
+
+	/// <summary>
+	/// The clouds and the cylinder take the view's projection without its far plane (0x5863C0 hands the clipper 0x565960 the mask 2, which leaves out the far plane's outcode): a sky point
+	/// beyond a short far plane, as the lobby's and the park's span selections give, stays inside the clip volume, lands where the projection puts it, and the near plane is unchanged.
+	/// </summary>
+	[TestMethod]
+	public void TheSkyIsNotCutByTheFarPlane()
+	{
+		var projection = OriginalProjection.Create( 16f / 9f, 60f, farPlane: 300f );
+		var sky = Sky.WithoutFarPlane( projection );
+		// the cylinder's front, straight ahead at its radius (720), beyond the far plane of 300
+		var point = new System.Numerics.Vector4( 0f, 50f, -Sky.CylinderRadius, 1f );
+		var clipped = System.Numerics.Vector4.Transform( point, projection );
+		Assert.IsTrue( clipped.Z > clipped.W, "the view's own projection puts it beyond the far plane" );
+		var drawn = System.Numerics.Vector4.Transform( point, sky );
+		Assert.IsTrue( drawn.Z >= 0f && drawn.Z <= drawn.W, "inside the depth range" );
+		Assert.AreEqual( clipped.X / clipped.W, drawn.X / drawn.W, 1e-6f );
+		Assert.AreEqual( clipped.Y / clipped.W, drawn.Y / drawn.W, 1e-6f );
+		// far away along any direction stays in range, and the near plane still cuts at 0.1
+		var distant = System.Numerics.Vector4.Transform( new System.Numerics.Vector4( 0f, 0f, -1e6f, 1f ), sky );
+		Assert.IsTrue( distant.Z <= distant.W );
+		var near = System.Numerics.Vector4.Transform( new System.Numerics.Vector4( 0f, 0f, -0.1f, 1f ), sky );
+		Assert.AreEqual( 0f, near.Z, 1e-6f );
+		Assert.AreEqual( projection.M43 / projection.M33, sky.M43 / sky.M33, 1e-6f );
+	}
 }

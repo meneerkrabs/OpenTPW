@@ -1340,7 +1340,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		// [BIN:STP-PPC:0x100E1864 breakdown noticed] in state 0 the ride update runs the admission (0xe1404) first and only then reads VAR_BROKEN and enters state 1 (4 when the life gauge is 0): SetState(1) runs the head step once, zeroes the pending visitor and writes VAR_RIDECLOSED = 1 with the open word 0 (the oracle target ride-set-state executes it, ORACLE.md F27)
 		// [BIN:TPW-EXE:0x4e0e00 ride state dispatch] state 0 runs 0x4e14e0 (VAR_BROKEN, script slot 7: SetState(1), or 4 when the life gauge +0x48 truncates to 0); states 1, 2 and 4 run the head step 0x4e0450 and the script dismiss 0x4e1410; nothing in states 1, 2 or 4 reads VAR_BROKEN
 		// [BIN:TPW-EXE:0x004E0E60 SetState 1, 2 and 4] states 1, 2 and 4 each run the head step 0x004E0450, write the open word +0x68 = 0 and VAR_RIDECLOSED = 1 (script slot 6), and are left only through SetState(0) (the repair 0x004DF8F0 opens the ride first; the reopen guard 0x004DF290 refuses 1, 2 and 4); state 2 (upgrading) is the economy's closed ride (ECON-023); the bridge keeps state 1 and state 4 apart by the life gauge (condemned), because the guest's state 11 holds its move-up only in state 1 (0x004E0370 at 0x00500523)
-		if ( stateWord.IsBroken )
+		// [BIN:TPW-EXE:0x4e0e00 ride state dispatch] the word is read whole: 3 (not an attraction) returns at once (0x4e0e3d), 1, 2 and 4 run the head step and the script dismiss and nothing else, so an upgrading ride (state 2) never reads VAR_BROKEN or runs the admission, whatever its script reports; 0 runs the update below
+		if ( stateWord.Current == RideObjectStates.NotAnAttraction )
+			return;
+		if ( stateWord.IsBroken || stateWord.Current == RideObjectStates.Upgrading )
 		{
 			DismissHead();
 			DismissLetOff();

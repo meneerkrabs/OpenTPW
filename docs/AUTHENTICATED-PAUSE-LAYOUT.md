@@ -25,4 +25,4 @@ is claimed. The mapping follows tp.exe's own lifecycle: its net-session field
 login reply "Authorization OK" (`0x5b6363`); every other store writes 0: every other
 login reply (`0x5b6375`-`0x5b63dd`), the login teardown (`0x5b6588`) and the other
 session resets (`0x5b595f`, `0x5b5e7d`, `0x5b7a84`, `0x5b7d6a`, `0x5b7f0b`). It is not font-bank
-parity and does not retire UI-013.
+parity; UI-013 is retired since round 10, its font bank pick being `[EXT:ui-font-tier-by-scale]`.

@@ -68,7 +68,7 @@ internal static class CompatibilityStartup
 			service.Apply( service.Current );
 		IGraphicsSettings.Instance = service;
 		CompatibilityRuntime.RenderQuality = service.Effective;
-		service.Changed += () => CompatibilityRuntime.RenderQuality = CompatibilityRuntime.RenderQuality with { ViewDistanceScale = service.Effective.ViewDistanceScale, SkyLayers = service.Effective.SkyLayers };
+		service.Changed += () => CompatibilityRuntime.RenderQuality = CompatibilityRuntime.RenderQuality with { ViewDistanceScale = service.Effective.ViewDistanceScale, SkyLayers = service.Effective.SkyLayers, SkyObjects = service.Effective.SkyObjects };
 		TexturePack.Activate( service.Current.TexturePackName, graphicsDiagnostics );
 		foreach ( var diagnostic in graphicsDiagnostics.Concat( service.Diagnostics ) )
 			Log.Warning( $"Graphics settings: {diagnostic}" );

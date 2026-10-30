@@ -67,6 +67,7 @@ public sealed class QueueLineWriter : ICellLineWriter
 		var stoppedBy = CellBuildResult.Ok;
 		var ownLimit = false;
 		var linkPointer = false;
+		var endPointer = false;
 		(int X, int Y)? stoppedAt = null;
 		var last = line[^1];
 		// [BIN:TPW-EXE:0x5345A1 end flag] the last cell ends the tool when it held a path or any queue cell (type 1 or 3) before the write, this ride's own queue included
@@ -76,6 +77,8 @@ public sealed class QueueLineWriter : ICellLineWriter
 			if ( grid.IsQueue( x, y ) && Ride.QueueCells.Contains( (x, y) ) )
 			{
 				existing.Add( (x, y) );
+				// [BIN:TPW-EXE:0x535AD8 code 0xB] the queue tool's own queue cell (owner word = the tool's ride, not a two-link cell) on the line's last cell answers 0xB and sets the end flag 0x816D4C
+				endPointer = !write && (x, y) == last;
 				continue;
 			}
 			// The preview validates every new cell as the commit would, with the ghost's earlier new cells taken as laid.
@@ -110,7 +113,8 @@ public sealed class QueueLineWriter : ICellLineWriter
 			Existing = existing,
 			StoppedAt = stoppedAt,
 			StoppedByOwnLimit = ownLimit,
-			LinkPointer = linkPointer
+			LinkPointer = linkPointer,
+			EndPointer = endPointer && stoppedBy == CellBuildResult.Ok
 		};
 	}
 }

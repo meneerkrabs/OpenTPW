@@ -49,6 +49,9 @@ public sealed class BuyLandTool
 	public bool HoverRefused => HoverCheck is { Allowed: false };
 	/// <summary>Whether the hovered rectangle costs more than the balance (the cash pointer, flag 0x816d5c).</summary>
 	public bool HoverTooDear => HoverCheck is { Refusal: LandPurchaseRefusal.Money };
+	/// <summary>The price the tool keeps for the HUD's cost line (0x81af4c): the validator's price of the hovered rectangle, 0 before the first click and where the validator refused before it priced.</summary>
+	// [BIN:TPW-EXE:0x531b11 land cost] the validator 0x531a50 clears the tool's cost, the price 0x532303 adds the cell price 0x78560c for every unowned cell of the rectangle (0x532360-0x532374), and the tool start 0x52f050 clears it (0x52f087)
+	public long HoverCost => HoverCheck?.Cost ?? 0;
 	/// <summary>The last purchase or refusal, for the HUD's message.</summary>
 	public LandPurchaseCheck? LastResult { get; private set; }
 

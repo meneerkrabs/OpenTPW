@@ -308,6 +308,20 @@ async function upgradeThrough(origin, pathname, clients) {
 /** The next chunk a socket receives. */
 const nextChunk = socket => new Promise(resolve => socket.once('data', chunk => resolve(chunk.toString())));
 
+/**
+ * Resolves once the local server of `harness` holds no connection, or fails naming `what` after `milliseconds`. An upgrade's place is free only once the server's own end
+ * of its socket has closed, which can come after the client has read the whole answer: a test that needs the place again waits for this first.
+ */
+async function placesFreed(harness, milliseconds, what) {
+	const deadline = Date.now() + milliseconds;
+	const count = () => new Promise((resolve, reject) => harness.server.getConnections((error, connections) => error ? reject(error) : resolve(connections)));
+	while (await count() > 0) {
+		if (Date.now() > deadline)
+			throw new Error(`${what} did not happen within ${milliseconds} ms`);
+		await new Promise(resolve => setTimeout(resolve, 5));
+	}
+}
+
 /** `promise`, or a failure naming `what` after `milliseconds`: a regression fails its test instead of hanging it. */
 function within(promise, milliseconds, what) {
 	let timer;
@@ -456,8 +470,10 @@ test('an upstream answer that refuses an upgrade is bounded in time and size, an
 	const started = Date.now();
 	assert.equal((await upgradeThrough(harness.origin, '/api/stalled', handles.clients)).status, 504, 'an answer that never ends times out');
 	assert.ok(Date.now() - started < 5000);
-	// each answer freed its place (one at a time here)
+	// each answer frees its place (one at a time here) once its socket has closed, which can come just after the client read the answer
+	await placesFreed(harness, 5000, 'the timed-out answer\'s place');
 	assert.equal((await upgradeThrough(harness.origin, '/api/long', handles.clients)).status, 502, 'a refusal past the size limit');
+	await placesFreed(harness, 5000, 'the oversized refusal\'s place');
 	assert.equal((await upgradeThrough(harness.origin, '/api/cut', handles.clients)).status, 502, 'a refusal cut off before its end');
 	assert.deepEqual(harness.log.filter(item => item.upgrade).map(item => item.status), [504, 502, 502]);
 }));

@@ -298,16 +298,16 @@ public partial class CoopSessionTests
 		var node = CoasterTrack.StationNodeCount;
 		var start = builder.Track.Nodes[node].T;
 		var (low, high) = builder.Track.LoftRange( builder.Site, node );
-		// the press goes to the host (the pointer at (500, 400) of the original's screen, which is twice the views' canvas): the drag starts from its outcome, and the pointer's moves
+		// the press goes to the host (the pointer at (1000, 790) of the HUD's canvas, whose pixels the drag counts): the drag starts from its outcome, and the pointer's moves
 		// meanwhile are kept
-		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), CoasterCell.X + 4, CoasterCell.Y ) );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 1000, 790 ), CoasterCell.X + 4, CoasterCell.Y ) );
 		Assert.IsTrue( panel.PressWaits && panel.IsWaiting && !panel.IsDragging );
 		hudPointer = new N.Vector2( 1000, 780 );
 		RoundsUntil( () => panel.IsDragging, host, guest, view, "the press came back and the drag started" );
 		// sixty frames of pointer moves the HUD follows: each frame a new height, a step at most every 0.2 s
 		for ( var frame = 1; frame <= 60; frame++ )
 		{
-			hudPointer = new N.Vector2( 1000, 780 - 2 * frame );
+			hudPointer = new N.Vector2( 1000, 780 - frame );
 			Rounds( 1, host, guest );
 			guest.Session!.Step();
 			view.Update();
@@ -397,7 +397,7 @@ public partial class CoopSessionTests
 		var start = builder.Track.Nodes[node].T;
 		var (low, high) = builder.Track.LoftRange( builder.Site, node );
 		hudPointer = new N.Vector2( 1000, 800 );
-		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), CoasterCell.X + 4, CoasterCell.Y ) );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 1000, 800 ), CoasterCell.X + 4, CoasterCell.Y ) );
 		RoundsUntil( () => panel.IsDragging && guest.Level.CoasterRequests.IsEmpty, host, guest, view, "the press came back" );
 		Rounds( 120, host, guest );
 		// a step goes in a frame whose burst the host cannot take; the next value waits for its 0.2 s when the tool ends
@@ -414,7 +414,7 @@ public partial class CoopSessionTests
 		RoundsUntil( () => guest.Level.CoasterRequests.IsEmpty && burst.All( request => !request.IsOpen ), host, guest, view, "the drag's last commands came back" );
 		Assert.IsTrue( burst.All( request => request.State == CoopGuestRequestState.Applied ), "the burst spent the host's bucket: the step after it was too fast" );
 		Assert.AreEqual( retried, guest.Level.CoasterRequests.Retried, "the later value replaced it: it did not go again" );
-		var latest = Math.Clamp( start + 20 * CoasterToolPanel.HeightRate, low, high );
+		var latest = Math.Clamp( start + 40 * CoasterToolPanel.HeightRate, low, high );
 		Assert.AreEqual( latest, builder.Track.Nodes[node].T, 1e-5f, "the drag ended at its latest value, as the host's ends at its own" );
 		Assert.AreEqual( builder.Track.Nodes[node].T, hostBuilder.Track.Nodes[node].T );
 		Assert.IsNull( host.Level.CoasterEdits.Of( seat ), "and its end applied" );

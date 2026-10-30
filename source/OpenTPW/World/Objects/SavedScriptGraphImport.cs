@@ -3,7 +3,7 @@ using System.Text;
 
 namespace OpenTPW;
 
-/// <summary>Transactional, ordinary-child-only RSSE continuation. Sound and animation/table residuals remain DET-013.</summary>
+/// <summary>Transactional RSSE continuation for records with ordinary child and sound child scripts: all or nothing, then the roots' rider tables and every record's kept effects.</summary>
 internal static class SavedScriptGraphImport
 {
 	private const int MaximumNodes = 4096, MaximumCandidates = 4096;
@@ -13,16 +13,23 @@ internal static class SavedScriptGraphImport
 	{
 		Action commit;
 		RideVM[] nodes;
-		try { (commit, nodes) = Prepare( world, block, candidates, clock ); }
+		List<(SaveRsseRecord Record, SavedScriptImport.Candidate Owner, RideVM Vm, bool Root)> restores;
+		try { (commit, nodes, restores) = Prepare( world, block, candidates, clock ); }
 		catch ( Exception error ) when ( error is InvalidDataException or IOException or ArgumentException or OverflowException )
 		{
-			return new[] { $"[APPROX:DET-013] RSSE ordinary-child graph refused without changes: {error.Message}" };
+			return new[] { $"[APPROX:DET-013] RSSE child-script graph refused without changes: {error.Message}" };
 		}
 		commit();
 		// Presentation follows a completed commit; callback failures are never represented as atomic refusal.
 		foreach ( var node in nodes )
 			if ( node.MusicDuckByte != 0 ) node.RequestMusicDuck( node.MusicDuckByte );
-		return new[] { $"RSSE ordinary-child graph imported: {nodes.Length} scripts, saved clock {clock}, pass {block.TickCounter}; reverse saved list order. [APPROX:DET-013] Sound graphs remain unsupported; NAME, animation, object, node, bounce and walk state remain unrestored; TRIGWAITANIM retains its retrigger gate." };
+		// what the records hold beyond the run state: the roots' rider tables and every record's kept effects
+		var notes = new List<string>();
+		foreach ( var (record, owner, vm, root) in restores )
+			SavedScriptImport.RestoreRecordState( vm, record, owner, clock!.Value, root, notes );
+		var lines = new List<string> { $"RSSE child-script graph imported: {nodes.Length} scripts with their child and sound child scripts, saved clock {clock}, pass {block.TickCounter}; reverse saved list order." };
+		lines.AddRange( notes );
+		return lines;
 	}
 
 	private static void Require( bool condition, string message )
@@ -30,7 +37,7 @@ internal static class SavedScriptGraphImport
 		if ( !condition ) throw new InvalidDataException( message );
 	}
 
-	private static (Action, RideVM[]) Prepare( RideScriptWorld world, SaveRsseBlock block, IEnumerable<SavedScriptImport.Candidate> candidates, uint? clock )
+	private static (Action, RideVM[], List<(SaveRsseRecord Record, SavedScriptImport.Candidate Owner, RideVM Vm, bool Root)>) Prepare( RideScriptWorld world, SaveRsseBlock block, IEnumerable<SavedScriptImport.Candidate> candidates, uint? clock )
 	{
 		Require( GameEditions.Current == GameEdition.ThemeParkWorld, "ordinary graph evidence is limited to Theme Park World" );
 		Require( clock.HasValue, "a saved clock is required" );
@@ -43,24 +50,29 @@ internal static class SavedScriptGraphImport
 		{
 			Require( r.Raw.Length == SaveRsseRecord.Bytes, "invalid record struct" );
 			Require( r.ScriptId > 0 && r.ScriptId < block.NextScriptId && byId.TryAdd( r.ScriptId, r ), "duplicate, invalid or out-of-frontier script ID" );
-			Require( r.SoundScriptId == 0, $"script {r.ScriptId} has an unsupported sound edge" );
 			stateBytes += r.Raw.LongLength + r.Code.LongLength + r.Stack.LongLength + r.Variables.LongLength + r.Strings.LongLength + r.Limbo.LongLength + r.Bounce.LongLength + r.Walk.LongLength + r.Nodes.LongLength;
 			Require( stateBytes <= MaximumBytes, "saved graph exceeds the aggregate state bound" );
 		}
 		var incoming = new HashSet<uint>();
 		foreach ( var r in records )
 		{
+			// [BIN:TPW-EXE:0x00555168 SPAWNCHILD] the ordinary child is created with thing id 0 and takes the parent's thing id (+0xAC, 0x0055516E) and mesh instance (+0xC8, 0x0055519A) afterwards
 			if ( r.ChildScriptId != 0 )
 				Require( r.ChildScriptId != r.ScriptId && incoming.Add( r.ChildScriptId ) && byId.TryGetValue( r.ChildScriptId, out var child ) && child.ParentScriptId == r.ScriptId && child.ThingId == r.ThingId && child.MeshInstance == r.MeshInstance,
 					$"script {r.ScriptId} has an unresolved, duplicate or inconsistent child" );
+			// [BIN:TPW-EXE:0x00555255 SPAWNSOUND] the sound child is stored at +0x14 and keeps the thing id 0 and mesh instance 0 it is created with (0x00558D2B..0x00558D68 set +0xC8 only for a nonzero thing id): nothing is copied from the parent
+			if ( r.SoundScriptId != 0 )
+				Require( r.SoundScriptId != r.ScriptId && r.SoundScriptId != r.ChildScriptId && incoming.Add( r.SoundScriptId ) && byId.TryGetValue( r.SoundScriptId, out var sound ) && sound.ParentScriptId == r.ScriptId && sound.ThingId == 0 && sound.MeshInstance == 0,
+					$"script {r.ScriptId} has an unresolved, duplicate or inconsistent sound child" );
 			if ( r.ParentScriptId != 0 )
-				Require( byId.TryGetValue( r.ParentScriptId, out var parent ) && parent.ChildScriptId == r.ScriptId, $"script {r.ScriptId} is orphaned" );
+				Require( byId.TryGetValue( r.ParentScriptId, out var parent ) && (parent.ChildScriptId == r.ScriptId || parent.SoundScriptId == r.ScriptId), $"script {r.ScriptId} is orphaned" );
 		}
 		var roots = records.Where( r => r.ParentScriptId == 0 ).ToArray();
 		Require( roots.Length > 0, "graph has no root (cycle)" );
 		var pool = candidates.Take( MaximumNodes + 1 ).ToArray();
 		Require( pool.Length <= MaximumNodes && world.Scripts.Count == roots.Length && world.ClockMilliseconds == 0 && world.PassCounter == 0, "world is not an exact fresh root set" );
 		var vms = new Dictionary<uint, RideVM>();
+		var recordOwners = new Dictionary<uint, SavedScriptImport.Candidate>();
 		var entries = new Dictionary<uint, ObjectCatalogEntry>();
 		var preparations = new List<Action>();
 		var files = new Dictionary<ObjectCatalogEntry, List<(string Path, RideScriptFile File)>>();
@@ -77,7 +89,7 @@ internal static class SavedScriptGraphImport
 			Require( c.Entry.Root.IsData && OriginalObjectRuntime.HasCatalogResolver( c.Script, c.Entry ), "root has no trusted data-catalog resolver" );
 			Require( c.Entry.ScriptPath != null && Folder( r.Folder ) == DirectoryOf( c.Entry.ScriptPath ), $"root {r.ScriptId} folder does not match" );
 			Require( Matches( c.Script.Script, r, ref comparedBytes ), $"root {r.ScriptId} embedded identity differs" );
-			vms.Add( r.ScriptId, c.Script ); entries.Add( r.ScriptId, c.Entry );
+			vms.Add( r.ScriptId, c.Script ); entries.Add( r.ScriptId, c.Entry ); recordOwners.Add( r.ScriptId, c );
 		}
 		var queue = new Queue<SaveRsseRecord>( roots );
 		var visited = new HashSet<uint>();
@@ -89,10 +101,13 @@ internal static class SavedScriptGraphImport
 			var reason = vm.PrepareSavedRunState( r, clock!.Value, true, false, out var apply );
 			Require( reason == null, $"script {r.ScriptId}: {reason}" );
 			preparations.Add( apply! );
-			if ( r.ChildScriptId == 0 ) continue;
-			var child = byId[r.ChildScriptId];
+			foreach ( var (childId, sound) in new[] { (r.ChildScriptId, false), (r.SoundScriptId, true) } )
+			{
+			if ( childId == 0 ) continue;
+			var child = byId[childId];
+			var kind = sound ? "sound child" : "child";
 			var entry = entries[r.ScriptId];
-			Require( Folder( child.Folder ) == Folder( r.Folder ), $"child {child.ScriptId} folder differs" );
+			Require( Folder( child.Folder ) == Folder( r.Folder ), $"{kind} {child.ScriptId} folder differs" );
 			if ( !files.TryGetValue( entry, out var catalog ) )
 			{
 				catalog = new();
@@ -108,19 +123,22 @@ internal static class SavedScriptGraphImport
 			}
 			var matches = new List<(string Path, RideScriptFile File)>();
 			foreach ( var file in catalog ) if ( Matches( file.File, child, ref comparedBytes ) ) matches.Add( file );
-			Require( matches.Count == 1, $"child {child.ScriptId} has no unique embedded identity" );
+			Require( matches.Count == 1, $"{kind} {child.ScriptId} has no unique embedded identity" );
 			var chosen = matches[0];
 			var name = Path.GetFileName( chosen.Path );
 			Require( !name.Contains( '\\' ) && !name.Contains( '/' ), "unsupported resolver filename separators" );
 			Require( entry.Scripts.Count( p => string.Equals( Path.GetFileName( p ), name, StringComparison.OrdinalIgnoreCase ) ) == 1, "ambiguous resolver filename" );
 			var staged = new RideVM( chosen.File, new RideVMOptions { World = world, Effects = vm.Options.Effects, ResolveScript = vm.Options.ResolveScript, SourceName = $"{vm.SourceName} > {name}", Seed = null }, vm, register: false );
-			vms.Add( child.ScriptId, staged ); entries.Add( child.ScriptId, entry ); queue.Enqueue( child );
+			vms.Add( child.ScriptId, staged ); entries.Add( child.ScriptId, entry ); recordOwners.Add( child.ScriptId, recordOwners[r.ScriptId] ); queue.Enqueue( child );
+			}
 		}
 		Require( visited.Count == records.Length, "orphaned cycle or unreachable record" );
 		var ordered = records.Select( r => (Vm: vms[r.ScriptId], Id: (int)r.ScriptId) ).ToArray();
 		var finish = world.PrepareOriginalGraphCommit( ordered, (int)block.NextScriptId, block.TickCounter, clock!.Value );
-		var links = records.Where( r => r.ChildScriptId != 0 ).Select( r => (Parent: vms[r.ScriptId], Child: vms[r.ChildScriptId]) ).ToArray();
-		return (() => { foreach ( var apply in preparations ) apply(); foreach ( var (parent, child) in links ) parent.AdoptChild( child, false ); finish(); }, ordered.Select( pair => pair.Vm ).ToArray());
+		var links = records.Where( r => r.ChildScriptId != 0 ).Select( r => (Parent: vms[r.ScriptId], Child: vms[r.ChildScriptId], Sound: false) )
+			.Concat( records.Where( r => r.SoundScriptId != 0 ).Select( r => (Parent: vms[r.ScriptId], Child: vms[r.SoundScriptId], Sound: true) ) ).ToArray();
+		var restores = records.Select( r => (Record: r, Owner: recordOwners[r.ScriptId], Vm: vms[r.ScriptId], Root: r.ParentScriptId == 0) ).ToList();
+		return (() => { foreach ( var apply in preparations ) apply(); foreach ( var (parent, child, sound) in links ) parent.AdoptChild( child, sound ); finish(); }, ordered.Select( pair => pair.Vm ).ToArray(), restores);
 	}
 
 	// Reserve both budgets before every read, including an EOF probe. Exact exhaustion is conservatively refused.

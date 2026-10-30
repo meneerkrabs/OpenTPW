@@ -171,6 +171,8 @@ public sealed record SaveRsseRecord
 	public uint Timer => U32( 0xC4 );
 	/// <summary>The mesh instance the script animates (+0xC8); an attraction's <see cref="SaveAttraction.MeshInstanceId"/>.</summary>
 	public uint MeshInstance => U32( 0xC8 );
+	/// <summary>The repair effect's emitter handle (+0xCC): REPAIREFFECT keeps it, the script's destruction ends it (0x0055853E, 0x00558553); 0 when none.</summary>
+	public uint RepairEffect => U32( 0xCC );
 	public uint Scream => U32( 0xD0 );
 	public uint SoundEmitter => U32( 0xD4 );
 	public uint Reverb => U32( 0xD8 );

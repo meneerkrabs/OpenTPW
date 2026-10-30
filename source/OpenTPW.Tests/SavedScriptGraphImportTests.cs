@@ -33,8 +33,8 @@ public class SavedScriptGraphImportTests
 		public RideVM Root => Runtime.Script!;
 		public List<string> Members { get; } = new();
 		public byte[][] Programs { get; }
-		public SaveRsseRecord[] Records { get; }
-		public SavedScriptImport.Candidate[] Candidates => new[] { new SavedScriptImport.Candidate( 11, Entry, Root ) };
+		public SaveRsseRecord[] Records { get; set; }
+		public SavedScriptImport.Candidate[] Candidates => new[] { new SavedScriptImport.Candidate( 11, Entry, Root, Runtime ) };
 		public SaveRsseBlock Block => new( 1, 97036, 30, (uint)Records.Length, 0, Records, 0 );
 
 		public Fixture( bool waits = false, int? seed = null, bool randomProgram = false )
@@ -76,17 +76,17 @@ public class SavedScriptGraphImportTests
 		public void Dispose() { Runtime.Stop(); Directory.Delete( directory, true ); }
 	}
 
-	private static SaveRsseRecord Record( byte[] rse, uint id, uint parent, uint child )
+	private static SaveRsseRecord Record( byte[] rse, uint id, uint parent, uint child, uint sound = 0, uint thing = 11, uint mesh = 110 )
 	{
 		var script = new RideScriptFile( new MemoryStream( rse ) );
 		var raw = new byte[SaveRsseRecord.Bytes];
-		Put( raw, 0x08, id ); Put( raw, 0x0C, child ); Put( raw, 0x10, parent );
+		Put( raw, 0x08, id ); Put( raw, 0x0C, child ); Put( raw, 0x10, parent ); Put( raw, 0x14, sound );
 		Put( raw, 0x40, (uint)script.StackSize - 1 ); Put( raw, 0x50, (uint)script.CodeWordCount );
 		Put( raw, 0x54, (uint)script.StackSize ); Put( raw, 0x58, (uint)script.LimboSize );
 		Put( raw, 0x64, (uint)script.BounceSize ); Put( raw, 0x7C, (uint)script.WalkSize );
 		Put( raw, 0x8C, (uint)script.VariableCount ); Put( raw, 0x90, (uint)script.StringBlobLength );
-		Put( raw, 0x94, (uint)script.TimeSlice ); Put( raw, 0x98, uint.MaxValue ); Put( raw, 0xA8, 0xFFFF );
-		Put( raw, 0xAC, 11 ); Put( raw, 0xC0, 50 ); Put( raw, 0xC8, 110 ); raw[0xE6] = raw[0xE7] = 0xFF;
+		Put( raw, 0x74, uint.MaxValue ); Put( raw, 0x94, (uint)script.TimeSlice ); Put( raw, 0x98, uint.MaxValue ); Put( raw, 0xA8, 0xFFFF );
+		Put( raw, 0xAC, thing ); Put( raw, 0xC0, 50 ); Put( raw, 0xC8, mesh ); raw[0xE6] = raw[0xE7] = 0xFF;
 		return new SaveRsseRecord
 		{
 			Raw = raw, Code = rse.AsSpan( 52, script.CodeWordCount * 4 ).ToArray(),
@@ -109,6 +109,97 @@ public class SavedScriptGraphImportTests
 		CollectionAssert.AreEqual( root, ParkResumeJson.Serialize( fixture.Root.CaptureSnapshot() ) );
 		CollectionAssert.AreEqual( runtime, ParkResumeJson.Serialize( fixture.Runtime.CaptureSnapshot() ) );
 		CollectionAssert.AreEqual( list, fixture.World.ListOrder.ToArray() );
+	}
+
+	// ---- Sound children (SPAWNSOUND 0x005551AE) ----
+
+	[TestMethod]
+	public void ASoundChildIsRestoredBesideTheOrdinaryChain()
+	{
+		using var f = new Fixture();
+		// root 12 spawned the ordinary child 3 and the sound child 19; the sound script keeps the thing id 0 and mesh instance 0 it was created with (0x00558D2B..0x00558D68)
+		f.Records = new[] { Record( f.Programs[2], 19, 12, 0, thing: 0, mesh: 0 ), Record( f.Programs[1], 3, 12, 0 ), Record( f.Programs[0], 12, 0, 3, sound: 19 ) };
+		var report = f.Apply();
+		Assert.AreEqual( 3, f.World.Scripts.Count, string.Join( "; ", report ) );
+		StringAssert.StartsWith( report[0], "RSSE child-script graph imported: 3 scripts" );
+		Assert.AreEqual( 3, f.Root.Child!.ScriptId );
+		Assert.AreEqual( 19, f.Root.SoundChild!.ScriptId );
+		Assert.AreSame( f.Root, f.Root.SoundChild.Parent );
+		Assert.IsNull( f.Root.Child.Child );
+		Assert.AreEqual( 12, f.Root.ScriptId );
+	}
+
+	[TestMethod]
+	public void ASoundChildThatTakesTheParentsThingOrAMeshIsRefusedUnchanged()
+	{
+		using var f = new Fixture();
+		f.Records = new[] { Record( f.Programs[2], 19, 12, 0 ), Record( f.Programs[1], 3, 12, 0 ), Record( f.Programs[0], 12, 0, 3, sound: 19 ) };
+		AssertRefusedUnchanged( f );
+		using var g = new Fixture();
+		g.Records = new[] { Record( g.Programs[2], 19, 12, 0, thing: 0, mesh: 110 ), Record( g.Programs[1], 3, 12, 0 ), Record( g.Programs[0], 12, 0, 3, sound: 19 ) };
+		AssertRefusedUnchanged( g );
+	}
+
+	[TestMethod]
+	public void ASoundLinkTheSoundChildDoesNotAnswerIsRefusedUnchanged()
+	{
+		using var f = new Fixture();
+		f.Records = new[] { Record( f.Programs[2], 19, 4, 0, thing: 0, mesh: 0 ), Record( f.Programs[0], 12, 0, 0, sound: 19 ) };
+		AssertRefusedUnchanged( f );
+		using var same = new Fixture();
+		// one record cannot be both the ordinary and the sound child
+		same.Records = new[] { Record( same.Programs[1], 3, 12, 0 ), Record( same.Programs[0], 12, 0, 3, sound: 3 ) };
+		AssertRefusedUnchanged( same );
+	}
+
+	// ---- What the records hold beyond the run state ----
+
+	[TestMethod]
+	public void TheRootsRiderTablesKeptEffectsAndRepairEffectComeWithTheGraph()
+	{
+		using var f = new Fixture();
+		var sound = Record( f.Programs[2], 19, 12, 0, thing: 0, mesh: 0 );
+		var root = Record( f.Programs[0], 12, 0, 0, sound: 19 );
+		// walk entry 1: rider 41 on board (state 2) between the nodes 2 and 3, started 4 s before the saved clock
+		BitConverter.GetBytes( (ushort)2 ).CopyTo( root.Walk, 32 );
+		BitConverter.GetBytes( (ushort)3 ).CopyTo( root.Walk, 34 );
+		BitConverter.GetBytes( Clock - 4000 ).CopyTo( root.Walk, 32 + 8 );
+		BitConverter.GetBytes( Clock - 3000 ).CopyTo( root.Walk, 32 + 12 );
+		BitConverter.GetBytes( 41u ).CopyTo( root.Walk, 32 + 0x10 );
+		BitConverter.GetBytes( (ushort)1 ).CopyTo( root.Walk, 32 + 0x16 );
+		BitConverter.GetBytes( (ushort)2 ).CopyTo( root.Walk, 32 + 0x18 );
+		// the object list: a kept effect (type 1, key 1, slot 1, emitter handle 0x7A0014 as the shipped Jungle coconut shop holds it) and a kept sound (type 8); the repair effect handle at +0xCC
+		root = root with { Objects = new[] { new SaveRsseObject( 0, 0, 3, 0x1320063, 0xFFFFFFFF, 0xFFFFFFFF, 1 ), new SaveRsseObject( 0, 0, 1, 0x7A0014, 1, 0, 1 ) } };
+		Put( root.Raw, 0xCC, 0x330005 );
+		f.Records = new[] { sound, root };
+		var report = f.Apply();
+		Assert.AreEqual( 2, f.World.Scripts.Count, string.Join( "; ", report ) );
+		Assert.IsTrue( f.Runtime.Visitors.SavedRunStateImported, "the root's bridge holds the saved state" );
+		var effects = f.Runtime.CaptureSnapshot().ParticleObjects!;
+		Assert.AreEqual( (1, 0x7A0014, 1, 1), (effects.Single().Slot, effects.Single().Handle, effects.Single().Type, effects.Single().Key), "the kept effect is the saved node, the sound is a gap" );
+		Assert.AreEqual( 0x330005, f.Runtime.RepairParticleHandle );
+		StringAssert.Contains( string.Join( "; ", report ), "1 kept sounds" );
+		// the rider tables are the root's: the rider joins once the guest import knows it
+		Assert.AreEqual( 0, f.Runtime.Visitors.ImportSavedRiders( new[] { 41 } ).Count );
+		var walkers = new List<RideVisitorBridge.WalkerView>();
+		f.Runtime.Visitors.CollectWalkers( walkers );
+		Assert.AreEqual( (41, 2, -4000d, -3000d), (walkers.Single().Guest, walkers.Single().State, walkers.Single().Began, walkers.Single().Ends) );
+	}
+
+	[TestMethod]
+	public void AChildScriptsOwnRiderTablesAreNotKept()
+	{
+		using var f = new Fixture();
+		var sound = Record( f.Programs[2], 19, 12, 0, thing: 0, mesh: 0 );
+		BitConverter.GetBytes( 55u ).CopyTo( sound.Walk, 0x10 );
+		BitConverter.GetBytes( (ushort)1 ).CopyTo( sound.Walk, 0x18 );
+		f.Records = new[] { sound, Record( f.Programs[0], 12, 0, 0, sound: 19 ) };
+		var report = f.Apply();
+		StringAssert.Contains( string.Join( "; ", report ), "script 19 is a child script and holds rider tables" );
+		var walkers = new List<RideVisitorBridge.WalkerView>();
+		f.Runtime.Visitors.ImportSavedRiders( Array.Empty<int>() );
+		f.Runtime.Visitors.CollectWalkers( walkers );
+		Assert.AreEqual( 0, walkers.Count );
 	}
 
 	private static void WithIsolatedMusicDuck( Action<AudioMixer> test )
@@ -511,7 +602,7 @@ public class SavedScriptGraphImportTests
 	[DataTestMethod]
 	[DataRow( false )]
 	[DataRow( true )]
-	public void WaitAnimResumesButTriggerWaitAnimRetainsItsSeparateResetApproximation( bool trigger )
+	public void WaitAnimResumesAndTriggerWaitAnimKeepsItsSavedTokenForTheRestoredChannel( bool trigger )
 	{
 		using var f = new Fixture();
 		var asm = new Asm();
@@ -528,7 +619,8 @@ public class SavedScriptGraphImportTests
 		Assert.AreEqual( trigger ? RideVMState.Running : RideVMState.Waiting, vm.State );
 		Assert.AreEqual( trigger ? 0 : 1, vm.ProgramCounter );
 		Assert.AreEqual( trigger ? 0d : 500d, vm.WakeTimeMilliseconds );
-		if ( trigger ) Assert.AreEqual( 0, vm.CaptureSnapshot().TriggerWaitToken, "animation state is unavailable: the trigger must run again, not claim exact continuation" );
+		// the token is the saved word (0x00552CD3): the object's channels come back with the RideSystem record, so the instruction compares them with it again instead of triggering a second time
+		if ( trigger ) Assert.AreEqual( 123, vm.CaptureSnapshot().TriggerWaitToken );
 		Assert.AreEqual( 0L, vm.ExecutedInstructions );
 	}
 

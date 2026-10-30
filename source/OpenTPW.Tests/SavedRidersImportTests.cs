@@ -87,6 +87,7 @@ public class SavedRidersImportTests
 		Set( 0x70, nodeBase );
 		Set( 0x7C, (uint)walkSize );
 		Set( 0x8C, (uint)vm.Variables.Length );
+		Set( 0x74, 0xFFFFFFFF );
 		Set( 0x94, 50 );
 		Set( 0x98, 0xFFFFFFFF );
 		Set( 0xA8, 0xFFFF );

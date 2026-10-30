@@ -436,8 +436,8 @@ public sealed partial class OriginalEconomyImport
 		var membersByThing = new Dictionary<int, StaffMember>();
 		// a guard chases a guest the guest import restores in the park (states 6–10, GuestSimulation.ImportsOriginalState)
 		var chaseable = save.Guests.Where( guest => guest.State is >= 6 and <= 10 ).Select( guest => guest.Id ).ToHashSet();
-		// a guard escorting a guest (state 18) carries a guest the import restores held (state 17)
-		var heldGuests = save.Guests.Where( guest => guest.State == 17 ).Select( guest => guest.Id ).ToHashSet();
+		// a guard escorting a guest (state 18) names a saved guest (+0x212); the guest import decides which of them are restored (IdleEscortsWithoutAHeldGuest)
+		var heldGuests = save.Guests.Select( guest => guest.Id ).ToHashSet();
 		foreach ( var saved in save.Staff )
 		{
 			var type = saved.Model switch
@@ -495,7 +495,7 @@ public sealed partial class OriginalEconomyImport
 			else
 				adjusted.Add( $"{saved.Model} thing {saved.Id} walk destination ({person.AccurateDestX}, {person.AccurateDestY}) lies outside the map, not walked to" );
 			// [BIN:TPW-EXE:0x004D6977 escort walk mask] the walk mask +0x188 is saved in the navigation state (nav_mode) and the loader's route uses it: a guard escorting by the second try (+0x188 = 1) walks off the paths to the booth
-			if ( person.NavigationState.NavMode == 1 )
+			if ( person.NavigationState.NavMode == 1 && member.ResumeDestination != null )
 				member.ResumeMask = 1;
 			if ( GuestSpeed.BaseSpeeds.Contains( person.BaseSpeed ) )
 				member.BaseSpeed = person.BaseSpeed;
@@ -636,15 +636,15 @@ public sealed partial class OriginalEconomyImport
 	}
 
 	/// <summary>
-	/// After the guests are imported: a guard imported escorting a guest the guest import did not keep held (dropped, or not state 17) is idle, as the import gives every guard whose guest is missing
-	/// (SAVE-002). Returns the evidence lines.
+	/// After the guests are imported: a guard imported escorting a guest the guest import did not restore at all (dropped) is idle, as the import gives every guard whose guest is missing
+	/// (SAVE-002). A guest restored in any state keeps its escorts: the set-down (0x004FEB50) does not look at the state. Returns the evidence lines.
 	/// </summary>
-	internal static IReadOnlyList<string> IdleEscortsWithoutAHeldGuest( ParkEconomy economy, Func<int, bool> isHeld )
+	internal static IReadOnlyList<string> IdleEscortsWithoutAHeldGuest( ParkEconomy economy, Func<int, bool> isImported )
 	{
 		var lines = new List<string>();
-		foreach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Guard && member.Job == StaffJob.Escorting && !isHeld( member.TargetGuestId ) ) )
+		foreach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Guard && member.Job == StaffJob.Escorting && !isImported( member.TargetGuestId ) ) )
 		{
-			lines.Add( $"[APPROX:SAVE-002] guard {member.Id} escorting guest {member.TargetGuestId} imported idle: the guest import did not keep that guest held." );
+			lines.Add( $"[APPROX:SAVE-002] guard {member.Id} escorting guest {member.TargetGuestId} imported idle: the guest import did not restore that guest." );
 			member.TargetGuestId = 0;
 			member.Job = StaffJob.Idle;
 			member.State = ParkStaff.DisplayState( (uint)StaffJob.Idle );
@@ -727,14 +727,12 @@ public sealed partial class OriginalEconomyImport
 				member.JobStamp = saved.RoleTimer;
 				break;
 			case StaffJob.Escorting when heldGuests.Contains( saved.RoleTarget ):
-				// [BIN:TPW-EXE:0x004D6350 escort state] state 18 carries its perpetrator (+0x212, mPerp) to the ticket booth: the guest is the one the import holds (state 17), the walk goes on to the saved destination (0x004F9407) and the arrival sets the guest down (0x004D6A50)
+				// [BIN:TPW-EXE:0x004D6A50 escort arrival] state 18 carries its perpetrator (+0x212, mPerp) to the ticket booth and its arrival sets that thing down (0x004FEB50) without testing its state (0x004D6A72..0x004D6AC6), so every guard naming a saved guest escorts, duplicates included; the walk goes on to the saved destination (0x004F9407) and the arrival sets the guest down (0x004D6A50)
 				member.TargetGuestId = saved.RoleTarget;
-				// one guard holds a guest: another saved state-18 guard naming the same guest is imported idle (0x00501C94 stops at the first guard that holds it)
-				heldGuests.Remove( saved.RoleTarget );
 				break;
 			case StaffJob.Chasing or StaffJob.Escorting:
 				// [APPROX:SAVE-002] [BIN:TPW-EXE:0x004D6350 escort state] a guard chasing a guest the import does not restore (a rider, state 16), or escorting one that the save does not hold (state 17), is imported idle
-				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park, not held, or already escorted by another guard." );
+				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park, or the save holds no such guest." );
 				job = StaffJob.Idle;
 				break;
 			case StaffJob.Performing or StaffJob.Researching:

@@ -2016,8 +2016,8 @@ public partial class Level
 			import.Report( line );
 			Log.Trace( $"Park economy import: {line}" );
 		}
-		// a guard imported escorting a guest the guest import did not keep held walks on idle
-		foreach ( var line in OriginalEconomyImport.IdleEscortsWithoutAHeldGuest( Park.Economy, id => Guests.Find( id ) is { State: GuestState.HeldByGuard } ) )
+		// a guard imported escorting a guest the guest import did not restore walks on idle
+		foreach ( var line in OriginalEconomyImport.IdleEscortsWithoutAHeldGuest( Park.Economy, id => Guests.Find( id ) != null ) )
 		{
 			import.Report( line );
 			Log.Trace( $"Park economy import: {line}" );

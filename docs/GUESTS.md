@@ -981,7 +981,7 @@ CPU from `.TPC`). Direction comes from the guest's heading relative to the
 camera; the walk frame advances 20 frames per cell walked (10 running). Sprite world size
 is read from the original: one pixel is 20 / 128 x sqrt(2) = 0.2210 world units (ten a cell), 0.0442 engine units (`SpriteScale`: the quad placement 0x5890E0 adds 20 sprite extent units a sprite unit
 of 128 pixels in clip space, and the projection builder 0x578BE0 runs a 90 degree field of view with the clip x and y scaled by cos 45 degrees); a kid of 43 pixels stands 0.95 cell.
-A kid's set is the original's own draw at its creation, the world generator reseeded with its thing id and the first draw shifted right by 2 modulo the 8 sets (`GuestAppearance.KidSet`), not its peep type;
+A kid's set is the original's own draw at its creation, the world generator reseeded with its thing id and the first draw shifted right by 2 modulo the sets loaded (`KidSetLoad`, `GuestAppearance.KidSet`), not its peep type;
 a walking kid steps its 8-frame walk 20 times a cell (0x4FA2A0: the interval is 62 ms over twice the speed).
 Not drawn: shadows, riders' bodies on a ride (their heads are drawn, see below).
 
@@ -1221,7 +1221,7 @@ The All Attractions shop/sideshow business rows display the counters already mai
 - `APPROX:QUEUE-022`, closed as `[EXT:synthetic-ride-zero-guard]` (only synthetic objects lack operating values).
 - `APPROX:ARRIVAL-002`, closed as `[EXT:online-visit-settings]` (the online visit is a read-only extension).
 - GUEST-006 keeps its original-behaviour remainder; `[EXT:online-bubbles-on]` covers the bubbles in a visit.
-- GUEST-017 keeps the native import/host-clock/placement remainder (see [timing contract](reverse/BALLOON-TIMING.md)); a theme without costume heads (Fantasy, Hallow) draws every rider's head by its thing id (`0x4FCAC0`, no division by zero), which the renderer follows; the original also reseeds and draws the world generator on each such head hang (`0x44B410`), which is not ported (follow-up). The costume return needs no change: the reseed with the thing id makes the kid set repeat.
+- GUEST-017 keeps the native import/host-clock/placement remainder (see [timing contract](reverse/BALLOON-TIMING.md)); a theme without costume heads (Fantasy, Hallow) draws every rider's head by its thing id (`0x4FCAC0`, no division by zero), which the renderer follows; the original also reseeds and draws the world generator on each such head hang (`0x44B410`), which is not ported (follow-up). The costume return writes the redrawn, reduced kid set back (`0x4FE6AA`).
 - Round 7 (sprites in the game): the sprite pixel size, the kid sets, the balloon colour, bob and fade, the staff scripts and their sprite clock, the entertainers' program, the staff variant, litter and the upgrade balloon are read and drawn (GUEST-014 to 017 narrowed, HEADS-004 narrowed). The balloon give-back after a ride reseeds the world generator and takes two draws (0x502053).
 - PATH-007 (retired) keeps the land rules, with `[EXT:land-purchase-fault-refusal]` for the purchases that crash the original; `[EXT:no-land-maps]` covers maps without a fence setup, Theme Park Inc and visits.
 - GUEST-014 is retired (October 27, 2026: an original save's staff sprite variant is imported); GUEST-020 holds the flagged-folder bank limits. PATH-013 is retired: PATH-017 holds the P window's layer. TRACK-032 is new: the saved-ride controller.

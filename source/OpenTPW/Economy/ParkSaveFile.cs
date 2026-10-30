@@ -1036,7 +1036,7 @@ public static class ParkSaveFile
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
 			Require( member.Name is null || (member.Name.Length <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
 			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
-			Require( member.ResumeMask is null or 1, $"staff {member.Id} resume walk mask" );
+			Require( member.ResumeMask is null || member.ResumeMask == 1 && member.ResumeDestination != null, $"staff {member.Id} resume walk mask" );
 			Require( member.ResumeClaimTurn is not { } resumeTurn || resumeTurn >= 0 && resumeTurn <= ParkCalendar.Turn( data.Tick ), $"staff {member.Id} resume claim turn" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
 			Require( member.BaseSpeed is null || (member.WorldState is null && member.BaseSpeed is >= 0 and <= 255), $"staff {member.Id} base speed without world state" );

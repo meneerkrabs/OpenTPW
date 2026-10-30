@@ -85,7 +85,7 @@ public class HeldGuestImportTests
 	}
 
 	[TestMethod]
-	public void AGuardEscortingAHeldGuestKeepsHisEscortAndOneWithoutAHeldGuestIsIdle()
+	public void AGuardEscortingASavedGuestKeepsHisEscort()
 	{
 		var settings = OriginalSaveImportTests.Settings();
 		foreach ( var guestState in new[] { 17u, 7u } )
@@ -94,18 +94,10 @@ public class HeldGuestImportTests
 			var guest = SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields { State = guestState } );
 			var save = OriginalSaveImportTests.Park( settings, extraThings: new[] { (43u, (uint)SaveThingModel.Guard, guard), (41u, (uint)SaveThingModel.Guest, guest) } );
 			var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
-			var import = OriginalEconomyImport.Apply( economy, save );
+			OriginalEconomyImport.Apply( economy, save );
 			var member = economy.Staff.Members.Single( item => item.Type == StaffType.Guard );
-			if ( guestState == 17 )
-			{
-				Assert.AreEqual( (StaffJob.Escorting, 41), (member.Job, member.TargetGuestId), "mPerp (+0x212) names the held guest, whose thing id is its guest id" );
-				Assert.AreEqual( (14 * 256 + 128, 5 * 256 + 128), member.ResumeDestination, "the walk goes on to the saved destination (0x004F9407)" );
-			}
-			else
-			{
-				Assert.AreEqual( (StaffJob.Idle, 0), (member.Job, member.TargetGuestId), "a guest that is not held is nobody's escort" );
-				Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "[APPROX:SAVE-002]", StringComparison.Ordinal ) && line.Contains( "perpetrator thing 41", StringComparison.Ordinal ) ) );
-			}
+			Assert.AreEqual( (StaffJob.Escorting, 41), (member.Job, member.TargetGuestId), "mPerp (+0x212) names the guest, whose thing id is its guest id, whatever state it is in (0x004D6A72 tests none)" );
+			Assert.AreEqual( (14 * 256 + 128, 5 * 256 + 128), member.ResumeDestination, "the walk goes on to the saved destination (0x004F9407)" );
 		}
 	}
 
@@ -181,22 +173,53 @@ public class HeldGuestImportTests
 		}
 	}
 	[TestMethod]
-	public void OnlyOneGuardEscortsAGuestAndAnEscortOfAGuestThatWasNotKeptHeldIsIdled()
+	public void EveryGuardNamingARestoredGuestEscortsItAndBothSetItDown()
 	{
+		// [BIN:TPW-EXE:0x004D6A50 escort arrival] the arrival sets down whatever thing +0x212 names without a state test, and 0x00501C94 never changes a guard's state
 		var settings = OriginalSaveImportTests.Settings();
 		byte[] Guard() => SaveTestPayloads.Staff( SaveThingModel.Guard, state: 18, role: new byte[] { 41, 0, 9, 0, 0, 0 }, position: (At( 10 ), At( 5 )), destination: (At( 14 ), At( 5 )) );
 		var guest = SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields { Position = (At( 9 ), At( 5 )), State = 17 } );
 		var save = OriginalSaveImportTests.Park( settings, extraThings: new[] { (44u, (uint)SaveThingModel.Guard, Guard()), (43u, (uint)SaveThingModel.Guard, Guard()), (41u, (uint)SaveThingModel.Guest, guest) } );
-		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
-		var import = OriginalEconomyImport.Apply( economy, save );
-		var guards = economy.Staff.Members.Where( item => item.Type == StaffType.Guard ).ToList();
-		Assert.AreEqual( 1, guards.Count( item => item.Job == StaffJob.Escorting && item.TargetGuestId == 41 ), "one guard holds the guest" );
-		Assert.AreEqual( 1, guards.Count( item => item.Job == StaffJob.Idle ), "the other is idle" );
-		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "already escorted by another guard", StringComparison.Ordinal ) ) );
-		// the guest import kept nobody held: the remaining escort goes idle
-		var lines = OriginalEconomyImport.IdleEscortsWithoutAHeldGuest( economy, _ => false );
+		var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		OriginalEconomyImport.Apply( park, save );
+		var guards = park.Staff.Members.Where( item => item.Type == StaffType.Guard ).ToList();
+		Assert.AreEqual( 2, guards.Count( item => item.Job == StaffJob.Escorting && item.TargetGuestId == 41 ), "both guards escort" );
+		park.OpenPark();
+		var grid = Grid();
+		var guests = new GuestSimulation( grid, GuestTests.CreateSettings(), 5 ) { ArrivalsEnabled = false };
+		guests.ImportOriginal( save.Guests, ParkCalendar.Turn( park.Tick ), _ => 0, _ => 0 );
+		Assert.AreEqual( 0, OriginalEconomyImport.IdleEscortsWithoutAHeldGuest( park, id => guests.Find( id ) != null ).Count, "a restored guest keeps its escorts" );
+		var world = new StaffWorldSimulation( grid, () => park.Staff.Members, _ => null, (0, 5) ) { Guests = guests };
+		guests.IsEscorted = world.IsEscorting;
+		park.StaffWorld = world;
+		world.Synchronize();
+		var setDowns = 0;
+		for ( var turn = 0; turn < 80 && guards.Any( item => item.Job == StaffJob.Escorting ); turn++ )
+		{
+			var next = park.Turn + 1;
+			while ( ParkCalendar.Turn( guests.TickCount ) < next )
+				guests.Tick( GuestSnapshotTests.Tick );
+			EconomyTestData.AdvanceToTurn( park, next );
+			setDowns += world.TakeVoices().Count( voice => voice.Event == StaffWorldSimulation.SetDownEvent );
+		}
+		Assert.IsTrue( guards.All( item => item.Job != StaffJob.Escorting ), "both arrived" );
+		Assert.AreEqual( 2, setDowns, "both set the guest down (cat_kids 128 twice)" );
+		// the guest import kept nobody: every escort goes idle
+		Assert.AreEqual( 0, OriginalEconomyImport.IdleEscortsWithoutAHeldGuest( park, _ => true ).Count );
+	}
+
+	[TestMethod]
+	public void AnEscortOfAGuestTheImportDidNotRestoreIsIdled()
+	{
+		var settings = OriginalSaveImportTests.Settings();
+		var guard = SaveTestPayloads.Staff( SaveThingModel.Guard, state: 18, role: new byte[] { 41, 0, 9, 0, 0, 0 }, position: (At( 10 ), At( 5 )), destination: (At( 14 ), At( 5 )) );
+		var guest = SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields { Position = (At( 9 ), At( 5 )), State = 17 } );
+		var save = OriginalSaveImportTests.Park( settings, extraThings: new[] { (43u, (uint)SaveThingModel.Guard, guard), (41u, (uint)SaveThingModel.Guest, guest) } );
+		var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		OriginalEconomyImport.Apply( park, save );
+		var member = park.Staff.Members.Single( item => item.Type == StaffType.Guard );
+		var lines = OriginalEconomyImport.IdleEscortsWithoutAHeldGuest( park, _ => false );
 		Assert.AreEqual( 1, lines.Count );
-		Assert.IsTrue( guards.All( item => item.Job == StaffJob.Idle && item.TargetGuestId == 0 ) );
-		Assert.AreEqual( 0, OriginalEconomyImport.IdleEscortsWithoutAHeldGuest( economy, _ => true ).Count );
+		Assert.AreEqual( (StaffJob.Idle, 0), (member.Job, member.TargetGuestId) );
 	}
 }

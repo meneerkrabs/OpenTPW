@@ -758,8 +758,11 @@ Checked but not imported (evidence lines in the import report):
   (COAST-004);
 - the track flags (SAVE-921);
 - surplus set-up slots;
-- the riders on the trains. Each car's two guest lists and the train's rider count are dropped (SAVE-920), because the
-  guests riding or seated (state 16) are not imported (SAVE-002).
+- (the riders on the trains are imported since SAVE-920 was retired: each car's lap list and station list fill the
+  train's car lists as saved, without hanging a head; every listed guest must be a rider of the ride, the train's rider
+  count must equal its listed guests, and a list longer than the car type's head sockets is refused. The admission and
+  leaving rings are not saved, so a rider on no list stays aboard with nobody to let it off, as in tp.exe, which has
+  no sweep after a load. Only synthetic blocks test this: no corpus save holds a coaster with riders.)
 
 Shapes the original's own editing never leaves are refused with the reason. Examples: a cut on an incomplete track, a
 state that does not fit the track, a word with bits beyond the state and the mode, a power factor that does not fit the

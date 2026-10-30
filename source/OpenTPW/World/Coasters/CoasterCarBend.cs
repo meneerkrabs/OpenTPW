@@ -26,26 +26,30 @@ public sealed class CoasterBendTables
 /// </summary>
 public static class CoasterCarBend
 {
-	// [BIN:TPW-EXE:0x43e480 yaw lerp] the shortest-arc lerp of two angles: (1 − f)·a + f·b when they are at most π apart, else the way over ±π, wrapped to [−π, π) by fmod(angle + π, 2π) − π
-	private static double AngleLerp( float a, float b, float f )
+	// [BIN:TPW-EXE:0x43e480 yaw lerp] the shortest-arc lerp of two angles: (1 − f)·a + f·b when they are at most π apart (|a − b| against the single 0x6fe120), else the way over ±π: t = 2π − |a − b| (the single 0x6fe124), angle = (1 − f)·t + b for a negative a and t·f + a otherwise, wrapped to [−π, π) by fmod(angle + π, 2π) − π (the doubles 0x6fe128 and 0x6fe130, the single 0x6fe120)
+	// [BIN:TPW-EXE:0x43e480 single steps] the thread's x87 rounds every add, subtract and multiply to a single (the 24-bit control word), so each step here is one single operation; the wrap's two additions are exact in double and round once, fmod is exact
+	private static float AngleLerp( float a, float b, float f )
 	{
-		var distance = Math.Abs( (double)a - b );
-		if ( distance <= 3.1415927410125732 )
-			return (1.0 - f) * a + (double)b * f;
-		var t = (float)(6.2831854820251465 - distance);
-		var angle = a < 0f ? (1.0 - f) * t + b : t * (double)f + a;
-		return ((angle + 3.1415927410125732) % 6.2831854820251465) - 3.1415927410125732;
+		var distance = MathF.Abs( a - b );
+		if ( distance <= 3.1415927f )
+			return (1f - f) * a + b * f;
+		var t = 6.2831855f - distance;
+		var angle = a < 0f ? (1f - f) * t + b : t * f + a;
+		var shifted = (float)((double)angle + 3.1415927410125732);
+		return (float)(((double)shifted % 6.2831854820251465) - 3.1415927410125732);
 	}
 
 	/// <summary>acos clamped as the original clamps its dot product: below 0 it is 0 (a quarter turn at most), above 1 it is 1.</summary>
 	// [BIN:TPW-EXE:0x438e43 dot clamp] the dot product of the two unit directions is set to 0 when it is below 0.0 and to 1.0 when it is above 1.0 before the acos (0x67b4e0 = atan2(sqrt((1 + x)(1 − x)), x)), so an angle never exceeds a quarter turn
+	// [BIN:TPW-EXE:0x67b4e0 acos steps] the routine runs at the thread's 24-bit significand (the control word 0x7F is not the CRT's 0x27F, so the helper 0x686185 only restores round-to-nearest): 1 + x, 1 − x, their product and its square root each round to a single, and the fpatan result is stored as a single
+	// [EXT:deterministic-math] fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
 	private static float Angle( float dot )
 	{
 		if ( !(0f <= dot) )
 			dot = 0f;
 		if ( 1f < dot )
 			dot = 1f;
-		return (float)Math.Atan2( Math.Sqrt( (1.0 + dot) * (1.0 - dot) ), dot );
+		return (float)DetMath.Atan2( MathF.Sqrt( (1f + dot) * (1f - dot) ), dot );
 	}
 
 	/// <summary>
@@ -76,7 +80,7 @@ public static class CoasterCarBend
 		var a = Sample( whole );
 		var b = Sample( whole + 1 );
 		var point = new NVector3( b.Position.X * f + a.Position.X * g, b.Position.Y * f + a.Position.Y * g, b.Position.Z * f + a.Position.Z * g );
-		var yaw = (float)AngleLerp( a.Yaw, b.Yaw, f );
+		var yaw = AngleLerp( a.Yaw, b.Yaw, f );
 		// the car's heading: the horizontal part of its direction, and its (y, z) after turning by the sample yaw
 		var h = MathF.Sqrt( forward.X * forward.X + forward.Z * forward.Z );
 		// a car pointing straight up or down has no heading (the original divides by zero): its tables stay empty and the mesh is not bent
@@ -117,7 +121,8 @@ public static class CoasterCarBend
 				return (0f, 0f);
 			var dxn = dx / horizontal;
 			var dzn = dz / horizontal;
-			var sampleYaw = MathF.Atan2( dx, dz );
+			// [EXT:deterministic-math] fpatan in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
+			var sampleYaw = DetMathF.Atan2( dx, dz );
 			var rotated = CoasterTrack.TurnY( new NVector3( dx, dy, dz ), -sampleYaw );
 			var vertical = MathF.Sqrt( rotated.Z * rotated.Z + dy * dy );
 			if ( !(vertical > 1e-6f) )

@@ -61,3 +61,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## Theme Park Inc's weather spell roll (round 10, package K)
 
 `tpi_weather_roll_oracle.py` runs the spell roll `0x642770` of the Theme Park Inc no-CD `Game.exe` (`OPENTPW_TPI_EXE`) with the calendar reads and the CRT `rand()` stubbed and synthetic table and quality words, and compares the spell record with the model `ThemeParkIncWeatherSpells` ports (3000 random cases, no mismatch; ARRIVAL-008, `[EXT:tpi-weather-spell-seed]`).
+
+## The coaster's run table and bend tables (round 10, package N)
+
+`coaster_x87_oracle.py` runs the run builder `0x4402D0` over a sampled synthetic chain (`sampler(..., extrusion=...)`) and the bend car's tables `0x438AB0` (`bend_tables`); `coaster_runs_golden.py` writes `CoasterRunsGolden.cs` from 60 chains and `coaster_bend_golden.py` writes `CoasterBendGolden.cs` from 120 cars (both accept `--check FILE`). Findings X42 and X43 in `docs/reverse/ORACLE.md` section 7.29.

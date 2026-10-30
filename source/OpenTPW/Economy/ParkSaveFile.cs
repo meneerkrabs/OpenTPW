@@ -823,7 +823,7 @@ public static class ParkSaveFile
 				ResumeMask = member.ResumeMask,
 				ResumeClaimTurn = member.ResumeClaimTurn,
 				Variant = member.Variant >= 0 ? member.Variant : null,
-				SpriteDraw = member.SpriteDraw >= 0 ? member.SpriteDraw : null,
+				SpriteDraw = member.SpriteDraw >= 0 && member.SpriteDraw != member.Variant ? member.SpriteDraw : null,
 				Grade = member.Grade,
 				TrainingPoints = member.TrainingPoints,
 				HiredTick = member.HiredTick,
@@ -842,7 +842,7 @@ public static class ParkSaveFile
 				TravelSeconds = member.TravelSeconds
 			} ).ToList(),
 			RoleOrder = park.Staff.CaptureRoleOrder(),
-			Candidates = park.Staff.Candidates.ToList(),
+			Candidates = park.Staff.Candidates.Select( candidate => candidate with { SpriteDraw = candidate.SpriteDraw is { } draw && draw != candidate.Variant ? draw : null } ).ToList(),
 			TrainingBudgets = Enum.GetValues<StaffType>().Select( park.Staff.GetTrainingBudget ).ToList(),
 			NextId = park.Staff.NextId,
 			NextPoolUpdateTick = park.Staff.NextPoolUpdateTick,
@@ -1198,7 +1198,7 @@ public static class ParkSaveFile
 			ResumeMask = member.ResumeMask,
 			ResumeClaimTurn = member.ResumeClaimTurn,
 			Variant = member.Variant ?? -1,
-			SpriteDraw = member.SpriteDraw ?? -1,
+			SpriteDraw = member.SpriteDraw ?? member.Variant ?? -1,
 			Grade = member.Grade,
 			TrainingPoints = member.TrainingPoints,
 			HiredTick = member.HiredTick,
@@ -1212,7 +1212,7 @@ public static class ParkSaveFile
 			CellX = member.CellX,
 			CellY = member.CellY,
 			TravelSeconds = member.TravelSeconds
-		} ), data.Staff.Candidates, data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
+		} ), data.Staff.Candidates.Select( candidate => candidate.SpriteDraw == null && candidate.Variant >= 0 ? candidate with { SpriteDraw = candidate.Variant } : candidate ).ToList(), data.Staff.TrainingBudgets, data.Staff.NextId, data.Staff.NextPoolUpdateTick );
 		park.Staff.RestoreRoleOrder( data.Staff.RoleOrder );
 		park.Staff.RestoreHaveEverTrained( data.Staff.HaveEverTrained ?? data.Staff.TrainingBudgets.Any( budget => budget > 0 ) );
 		foreach ( var saved in data.Staff.Members.Where( member => member.BaseSpeed != null ) )

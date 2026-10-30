@@ -134,7 +134,7 @@ public sealed class StaffSpriteState
 			var performance = animations != null && entry < animations.Performances.Count ? animations.Performances[entry] : (SpritePerformance?)null;
 			var program = performance is { Program: >= 0 and <= 3 } ? performance.Value.Program : 0;
 			var slot = performance is { Slot: >= 0 and < SpriteAnimationFile.SlotCount } ? performance.Value.Slot : StaffSpriteRules.DefaultPerformanceSlot;
-			StaffSpriteVm.ApplyPerformance( source, program, slot, Math.Max( 1, FramesOfSlot( animations, slot ) ) );
+			StaffSpriteVm.ApplyPerformance( source, program, slot, FramesOfSlot( animations, slot ) );
 			return;
 		}
 		StaffSpriteVm.ApplyTemplate( source, ProgramOf( template )!.Value );

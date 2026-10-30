@@ -69,7 +69,7 @@ class StaffSpriteVmContract(unittest.TestCase):
         self.assertNotIn("PortraitFlags", self.vm)
         self.assertNotIn("0x50000", self.vm)
 
-    def test_core_is_consumed_only_through_the_staff_sprite_state_and_stays_free_of_rendering(self):
+    def test_core_is_consumed_only_by_the_staff_sprite_state_the_events_and_the_tool_sprite_and_stays_free_of_rendering(self):
         # round 11, package A: the world's sources (StaffSpriteState, StaffSpriteEvents) are the one consumer of the core
         for path in (ROOT / "source/OpenTPW").rglob("*.cs"):
             if path.name in ("StaffSpriteVm.cs", "StaffSpriteVmState.cs", "StaffSpritePrograms.cs", "StaffSpriteState.cs", "StaffSpriteEvents.cs", "StaffPlacement.cs", "StaffSprites.cs"):

@@ -111,8 +111,9 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 	/// </summary>
 	public void ScheduleSprites( int nowMilliseconds )
 	{
-		foreach ( var member in members() )
-			member.Sprite.Tick( nowMilliseconds );
+		var list = members();
+		for ( var index = 0; index < list.Count; index++ )
+			list[index].Sprite.Tick( nowMilliseconds );
 	}
 
 	/// <summary>One staff actor's world position and movement phase for a park save.</summary>

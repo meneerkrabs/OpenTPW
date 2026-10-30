@@ -8,7 +8,7 @@ public readonly record struct StaffSpriteTickResult( StaffSpriteTickStatus Statu
 
 /// <summary>
 /// Bounded staff control semantics. Tick accepts one signed clock sample and never decides scheduler ordering.
-/// This independently testable core is not yet consumed by gameplay, world rendering, windows or saves.
+/// The world's staff sprite sources (StaffSpriteState) are its consumer; the hire and employee windows' portraits are not.
 /// </summary>
 public static class StaffSpriteVm
 {

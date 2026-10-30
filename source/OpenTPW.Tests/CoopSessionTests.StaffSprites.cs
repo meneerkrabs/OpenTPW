@@ -43,7 +43,7 @@ public partial class CoopSessionTests
 				drawn++;
 		}
 		Assert.IsTrue( stepped > 20, $"the source stepped {stepped} times in 400 ticks (a pass is due every 62 ms)" );
-		Assert.IsTrue( drawn > 0 && !member.Sprite.HasOutput == false, "the stand shows a frame after its first pass" );
+		Assert.IsTrue( drawn > 0 && member.Sprite.HasOutput, "the stand shows a frame after its first pass" );
 		// the sample stands still between the even substeps: 400 ticks hold 215 substeps and 107 even ones, a source at 62 ms steps at most once in each
 		Assert.IsTrue( stepped <= 108, $"{stepped} steps in 400 ticks" );
 	}

@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
 
-/// <summary>GUEST-016: what a staff member's walk step leaves for his sprite, in the original's own terms (tp.exe 0x004FA2A0, 0x004D41D0, 0x004FA870).</summary>
+/// <summary>What a staff member's walk step leaves for his sprite, in the original's own terms (tp.exe 0x004FA2A0, 0x004D41D0, 0x004FA870).</summary>
 [TestClass]
 public class StaffWalkPresentationTests
 {

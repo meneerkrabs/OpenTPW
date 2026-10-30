@@ -634,6 +634,9 @@ public partial class Level : IDisposable
 			// [BIN:TPI-EXE:0x613ea0 track-cell stand-down] the scheduling and the carrying out of an umbrella change stand down on a kart or water track cell of the map's second layer (UMB-002)
 			if ( Guests != null )
 				Guests.UmbrellaOnTrackCell = ( x, y ) => UmbrellaRules.OnTrackCell( Guests.Grid.Cells.Tracks, x, y );
+			// [BIN:TPI-EXE:0x5BCDDE arrival weather] Theme Park Inc's arrival group reads the weather thing's state word (+0x70), the running spell's kind (ThemeParkIncWeatherSpells); Theme Park World's park weather has no such state
+			if ( Guests != null && GameEditions.IsThemeParkInc )
+				Guests.ArrivalWeatherState = () => Park?.Economy.TpiWeatherState ?? 0;
 			// [EXT:winter-season-terms] the winter shops read the park's calendar month (the economy's clock, which the weather steps on too) and their own weather signal, which reads snow as snow even with lightning (Halloween's snow band is its lightning band)
 			if ( Guests != null )
 				Guests.WinterWeatherState = () => Weather is { } weather ? WinterRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;

@@ -64,6 +64,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		// so its first update 0x004F8260 posts one day message whatever the date (0x004F8321 compares the computed day with the cache): the pending first day, consumed by the first actual turn
 		// ([EXT:tpi-money-only] Theme Park Inc has no traced calendar of its own: its park keeps the synchronised start)
 		PendingInitialDay = !Rules.ThemeParkInc;
+		if ( Rules.ThemeParkInc && settings.Weather is { } weather )
+			TpiWeather = new ThemeParkIncWeatherSpells( weather );
 		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
 		foreach ( var offer in settings.Loans )
 			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;
@@ -104,6 +106,12 @@ public sealed partial class ParkEconomy : IParkEconomy
 	public WorldRng World { get; private set; }
 
 	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>
+	/// <summary>Theme Park Inc's weather spells (null in Theme Park World and where the settings hold no weather).</summary>
+	public ThemeParkIncWeatherSpells? TpiWeather { get; private set; }
+
+	/// <summary>The weather thing's state word for the arrival group: 1 heatwave, 2 rain, 3 storm, 4 snow, 0 none.</summary>
+	public int TpiWeatherState => TpiWeather?.State ?? 0;
+
 	public void AttachWorld( WorldRng world ) => World = world ?? throw new ArgumentNullException( nameof( world ) );
 	public ParkLedger Ledger { get; }
 	public ParkStaff Staff { get; }
@@ -428,7 +436,11 @@ public sealed partial class ParkEconomy : IParkEconomy
 		if ( changes.HasFlag( CalendarChange.Day ) )
 			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
 		if ( changes.HasFlag( CalendarChange.Month ) )
+		{
 			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
+			// the calendar's month field is zero-based (mMonthAtLastUpdate); the weather reads the date's month, 1 to 12
+			TpiWeather?.OnMonth( stored.Month + 1, stored.Year - ParkCalendar.Epoch.Year, bound => (int)World.Next( (uint)bound ) );
+		}
 		if ( changes.HasFlag( CalendarChange.Year ) )
 			Ledger.StartYear();
 		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)

@@ -924,7 +924,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			// [BIN:TPI-EXE:0x005BCD60 arrival group] Theme Park Inc's group: 0 in world state 4; else ftol( weather percentage (rain, storm, snow or heatwave by the weather thing's state, else 100.0) x 0.01f x (NewParkBonus + park points) / PointsPerVisitor ), the factor and the divide in floating point (the oracle's X7 agrees on 532 of 532 inputs read at 53 bits); then at least MinPeople and the same cut as tp.exe's (500 online, else 1500)
 			// [BIN:TPI-EXE:0x5BCD7A mode exit] a mode object (0xA06558, +0x14) answering 3 gives no group: the object holds a mode 0..3 that the options dialog's radio group sets (0x498940..0x4989C7) and a mode of -1 becomes 3 at start-up (0x6A32D7); what the modes are is not read, so the exit is never taken here
-			// [APPROX:ARRIVAL-008] OpenTPW runs no Theme Park Inc weather (the slice refuses it): the weather thing's state word +0x70, the kind of the spell the thing runs (1 heatwave, 2 rain, 3 storm, 4 snow; 0x642A80), would come from spells that 0x642770 rolls with the C runtime's time-seeded rand(), so the percentage is always 100 and the rain, storm, snow and heatwave modifiers never apply; the mode exit above is not modelled
+			// [APPROX:ARRIVAL-008] the weather state is rolled by the economy as 0x642770 does ([EXT:tpi-weather-spell-seed]); the mode exit above, the tail words of the roll table and the spell effects are not modelled
 			var state = ArrivalWeatherState?.Invoke() ?? 0;
 			double percent = state is >= 1 and <= 4 ? percentages[WeatherStateIndex[state - 1]] : 100.0;
 			var points = unchecked( Settings.ArrivalNewParkBonus + (ParkPoints?.Invoke() ?? 0) );

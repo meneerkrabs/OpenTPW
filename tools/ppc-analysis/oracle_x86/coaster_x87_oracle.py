@@ -489,6 +489,41 @@ class CoasterOracle:
         self.last_controls2 = [[tuple(sb.read(base + 0x58 * i + off + 4 * k, 'f') for k in range(3)) for off in (0x34, 0x4C)] for first, second, size in table_addresses for base in (second,) for i in range(size)]
         return samples, count, sb.read(controller + 0xA8, 'f'), coordinates, indexes, sb.read(controller + 0xA0, 'I')
 
+    # ------------------------------------------------------------------------------ the bend car's tables
+    def bend_tables(self, samples, spacing: float, low: float, high: float, rear_extent: float, front_extent: float, direction, coordinate: float):
+        """0x438AB0 over a controller whose `samples` are (flags, position, yaw, pitch) records (the 56-byte layout: flags +0, position +4, yaw +0x10, pitch +0x14; the slot after the last
+        repeats it, 0x441783) for a car of a type with the given extents (+0x24 front, +0x28 rear) and direction (car +0x10), at `coordinate` on the sample list. The definition's bend
+        elevations are +0x58 (low) and +0x5C (high). Returns the rear count, the three 128-entry tables (yaw, pitch, elevation) and the sample count."""
+        sb = self.prepare()
+        count = len(samples)
+        array = sb.alloc(0x38 * (count + 1))
+        for index, (flags, position, yaw, pitch) in enumerate(list(samples) + [samples[-1]]):
+            base = array + 0x38 * index
+            sb.write(base, 'I', flags)
+            for k in range(3):
+                sb.write(base + 4 + 4 * k, 'f', position[k])
+            sb.write(base + 0x10, 'f', yaw)
+            sb.write(base + 0x14, 'f', pitch)
+        definition = sb.alloc(0x100)
+        sb.write(definition + 0x58, 'f', low)
+        sb.write(definition + 0x5C, 'f', high)
+        controller = sb.alloc(0x200)
+        sb.write(controller + 4, 'I', definition)
+        sb.write(controller + 0x9C, 'I', array)
+        sb.write(controller + 0xA4, 'I', count)
+        sb.write(controller + 0xAC, 'f', spacing)
+        kind = sb.alloc(0x100)
+        sb.write(kind + 0x24, 'f', front_extent)
+        sb.write(kind + 0x28, 'f', rear_extent)
+        car = sb.alloc(0x100)
+        sb.write(car + 4, 'I', kind)
+        for k in range(3):
+            sb.write(car + 0x10 + 4 * k, 'f', direction[k])
+        tables = [sb.alloc(0x200) for _ in range(3)]
+        rear = sb.alloc(16)
+        sb.call(0x438AB0, (controller, car, tables[0], tables[1], tables[2], 0x80, bits(coordinate), rear))
+        return sb.read(rear, 'I'), [[sb.read(table + 4 * k, 'f') for k in range(128)] for table in tables]
+
     # ------------------------------------------------------------------------------ the cross-section run builder
     def _extrusion_runs(self, sb, controller, extrusion, table_addresses):
         """0x4402D0 over the sampled controller. `extrusion` = (selects, lengths, transitions): `selects` is the type's table, one entry per select as

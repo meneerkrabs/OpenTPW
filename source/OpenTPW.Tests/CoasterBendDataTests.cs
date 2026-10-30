@@ -39,11 +39,14 @@ public class CoasterBendDataTests
 	private static IEnumerable<ObjectCatalogEntry> PcCoasters() =>
 		ObjectCatalog.Themes.SelectMany( theme => ObjectCatalog.Load( theme ).Entries ).Where( entry => !entry.IsBonus && CoasterDefinition.IsCoaster( entry.Settings ) );
 
+	/// <summary>
+	/// A vertex of a bend car beyond the tables reads the neighbouring stack arrays in the original (0x438800 has no bound); the PC bend cars (CrocCar, maggot) never do: every vertex's table position lies
+	/// inside the entries the car's extents give, so CoasterCarBend.Bend's clamp is not reached on PC data (COAST-034).
+	/// </summary>
 	[TestMethod]
 	public void EveryVertexOfABendCarLiesInsideTheTablesOfItsExtents()
 	{
-		var checkedCars = 0;
-		var lines = new List<string>();
+		var checkedCars = new List<string>();
 		foreach ( var entry in PcCoasters() )
 		{
 			var definition = CoasterDefinition.FromCatalogEntry( entry );
@@ -57,27 +60,24 @@ public class CoasterBendDataTests
 				Assert.IsNotNull( rig, $"{entry.InfoId} car {index}" );
 				var metrics = definition.CarTypeMetrics( index );
 				var rear = (int)(metrics.RearExtent / 3f) + 1;
-				var wantAhead = (int)(metrics.FrontExtent / 3f) + 1;
-				var count = rear + 1 + wantAhead;
-				var low = float.MaxValue;
-				var high = float.MinValue;
-				foreach ( var part in rig!.Parts )
+				var count = rear + 1 + (int)(metrics.FrontExtent / 3f) + 1;
+				var vertices = 0;
+				// the bend body is the one record with the most points; these cars have a single mesh node, so every part is it
+				Assert.AreEqual( 1, rig!.Model.Meshes.Count, $"{entry.InfoId}: one mesh node" );
+				foreach ( var part in rig.Parts.Where( part => part.Local != null ) )
 				{
-					if ( part.Local == null )
-						continue;
-					foreach ( var vertex in part.Local )
+					foreach ( var vertex in part.Local! )
 					{
 						var position = (rear * 3f + vertex.Z) / 3f;
-						low = Math.Min( low, position );
-						high = Math.Max( high, position );
+						var whole = (int)MathF.Truncate( position );
+						Assert.IsTrue( position >= 0 && whole <= count - 2, $"{entry.InfoId} {type.MeshName}: a vertex at table position {position} against {count} entries" );
+						vertices++;
 					}
 				}
-				lines.Add( $"  parts: {string.Join( ", ", rig.Parts.Select( part => $"{part.MeshName}[node {part.NodeIndex}, local {part.Local?.Length}]" ) )}; meshes {rig.Model.Meshes.Count}, nodes {rig.Model.Nodes.Count}, root {rig.Model.RootNodeIndex}" );
-				lines.Add( $"{entry.InfoId} {type.MeshName}: extents {metrics.RearExtent:F3}/{metrics.FrontExtent:F3}, adds {type.RearAdd}/{type.FrontAdd}, table {count}, vertex positions {low:F3}..{high:F3}" );
-				checkedCars++;
+				Assert.IsTrue( vertices > 0, $"{entry.InfoId}: bent vertices" );
+				checkedCars.Add( type.MeshName );
 			}
 		}
-		Console.WriteLine( string.Join( "\n", lines ) );
-		Assert.IsTrue( checkedCars > 0 );
+		CollectionAssert.AreEquivalent( new[] { "CrocCar", "maggot" }, checkedCars, "the Croc and the Maggot flume boats are the PC's bend cars" );
 	}
 }

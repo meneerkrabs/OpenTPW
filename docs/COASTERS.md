@@ -534,8 +534,8 @@ transition (`0x435730`, 1 → 2) starts every slot again, while opening, closing
 changing power do not. A replacement renderer reads the same live slot epoch; a removed and reactivated slot gets a fresh
 one. The existing `WheelTick` arithmetic and its current-speed multiplier are unchanged. This is presentation-only state,
 excluded from the simulation hash and save format: restoring a park initializes fresh clips at the restored controller time,
-without promising wheel-phase continuity across saves. COAST-034 remains open for bend sampling/endpoints, the untraced flume
-clip invocation and unbent rider sockets. CPU phase-query and private-asset UV fixtures cover this slice; they do not establish
+without promising wheel-phase continuity across saves. COAST-034 was narrowed by the presentation follow-up of October 30 (below) to the untraced flume
+clip invocation. CPU phase-query and private-asset UV fixtures cover this slice; they do not establish
 GPU or full original-game visual parity.
 
 The pylon tag round of October 16 built the knot pass over the pylon models' posed track tags (COAST-015 narrowed to the
@@ -584,3 +584,16 @@ code reads the value slots of COASTERSMOOTHNESS (`0x7858C0`) or `Info.FirstPerso
 rounds to a single, which C#'s single arithmetic does one operation at a time. The pylon cost (`0x447830`, `0x4346a0`), the suspended swing (`0x43C76C`), its cosine index (`0x43C7D0`) and the loop
 knot factor (`0x432430`) are now built from the instruction sequences (`fpatan` and `fmod` are exact, the subtractions with the double constants round to a single); the knot chord, the knot norms
 and tangents and the self-intersection pass are still to be read on the PC side.
+
+The presentation follow-up of October 30 (round 10, package N) built the track mesh's run table and compared the bend tables. **COAST-026:** the
+section of a normal link is read from the run table `0x4402D0` builds over the sampled track (steps of 0.25 on the sample coordinate, the select
+table `0x43E9C0` with its speed, direction, pitch and bank windows in radians, a run written at every change of the answer), and a type whose sections blend (the Jungle
+flume: sections 3 and 4 blend point blocks 2 and 3 over +1 and -1 sample coordinates) adds the transition runs: a positive length opens the blend after the change,
+a length of zero or below puts it before the change, and two blends that meet share the stretch by their lengths (`CoasterExtrusionRunBuilder`). The slice lists `0x43F030` hold
+every run key strictly inside two neighbouring values, a ring is emitted again when the run moves, and a transition run's rings blend the section's points to its
+blend-to row by (coordinate - previous run's position) / (this run's position - previous run's position) x weight, plus 1 - weight for a positive length
+(`CoasterTrackMesh.BlendWeight`, `0x43FD60`). The run table is compared bit-exactly with isolated tp.exe runs (ORACLE X42, `CoasterRunsGolden`); a chain the
+demolish button cut open has no sample list here and keeps the per-segment pitch selection. **COAST-034:** the bend car's tables `0x438AB0` are compared bit-exactly
+with tp.exe (ORACLE X43, `CoasterBendGolden`; the PC acos at single precision was an ulp off); the bend writes only the body mesh's vertices, so a rider's head socket
+stays unbent as ported; the Croc and Maggot boats' vertices all lie inside their tables. The boats' own clips (no start behind the bend flag was found) and the widening of a bend
+type's model bounds (`0x4302AA..0x43041A`) stay open.

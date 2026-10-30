@@ -53,3 +53,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## The sky objects' quad (round 10, package D2)
 
 `moon_oracle.py` runs the sky object draw `0x5860D0` with its point transform `0x578D20` and sprite rotation `0x591430` on a synthetic sky object and prints the four corner offsets for a few camera rolls; `SkyTests` pins them (finding X41).
+
+## The coaster's run table and bend tables (round 10, package N)
+
+`coaster_x87_oracle.py` runs the run builder `0x4402D0` over a sampled synthetic chain (`sampler(..., extrusion=...)`) and the bend car's tables `0x438AB0` (`bend_tables`); `coaster_runs_golden.py` writes `CoasterRunsGolden.cs` from 60 chains and `coaster_bend_golden.py` writes `CoasterBendGolden.cs` from 120 cars (both accept `--check FILE`). Findings X42 and X43 in `docs/reverse/ORACLE.md` section 7.29.

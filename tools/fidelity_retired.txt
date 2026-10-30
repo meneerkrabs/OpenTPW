@@ -13,6 +13,7 @@ ADVISOR-007 docs/reverse/APPROX-TRACE.md
 ADVISOR-008 docs/reverse/APPROX-TRACE.md
 ADVISOR-010 docs/reverse/APPROX-TRACE.md
 ADVISOR-011 docs/reverse/APPROX-TRACE.md
+ADVISOR-012 docs/LIPS.md
 ADVISOR-013 docs/reverse/APPROX-TRACE.md
 ADVISOR-014 docs/reverse/APPROX-TRACE.md
 ADVISOR-016 docs/PROGRESS.md
@@ -29,6 +30,7 @@ ARRIVAL-004 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-e
 ARRIVAL-005 docs/GUESTS.md
 ARRIVAL-007 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 AUDIO-002 docs/AUDIO.md
+AUDIO-003 docs/AUDIO.md
 AUDIO-004 docs/AUDIO.md
 AUDIO-008 docs/AUDIO.md
 AUDIO-009 docs/AUDIO.md
@@ -131,8 +133,10 @@ ECON-018 docs/reverse/APPROX-TRACE.md
 ECON-019 docs/reverse/APPROX-TRACE.md
 ECON-020 docs/ECONOMY.md
 ECON-021 docs/reverse/APPROX-TRACE.md
+ECON-023 docs/ECONOMY.md
 ECON-024 docs/reverse/APPROX-TRACE.md
 ECON-025 docs/reverse/APPROX-TRACE.md
+ECON-026 docs/ECONOMY.md
 ECON-027 docs/reverse/APPROX-TRACE.md
 ECON-028 docs/reverse/APPROX-TRACE.md
 ECON-029 docs/reverse/APPROX-TRACE.md
@@ -216,6 +220,7 @@ PATH-003 docs/PROGRESS.md
 PATH-004 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
 PATH-005 docs/PATHS.md
 PATH-006 docs/progress/2026-10-16-original-build-check.md
+PATH-007 docs/PATHS.md
 PATH-008 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
 PATH-009 docs/PROGRESS.md
 PATH-011 docs/PROGRESS.md
@@ -294,6 +299,7 @@ SAVE-005 docs/ECONOMY.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
 SAVE-009 docs/SAVE-THINGS.md
 SAVE-922 docs/TPWS-PAYLOAD.md
+SAVE-923 docs/TPWS-PAYLOAD.md
 SAVE-941 docs/THEME-PARK-INC.md
 SAVE-942 docs/THEME-PARK-INC.md
 SAVE-943 docs/THEME-PARK-INC.md
@@ -337,6 +343,7 @@ UI-009 docs/reverse/APPROX-TRACE.md
 UI-010 docs/reverse/APPROX-TRACE.md
 UI-011 docs/reverse/APPROX-TRACE.md
 UI-012 docs/UI.md
+UI-013 docs/UI.md
 UI-014 docs/reverse/APPROX-TRACE.md
 UI-015 docs/reverse/APPROX-TRACE.md
 UI-016 docs/reverse/APPROX-TRACE.md
@@ -369,6 +376,7 @@ UI-050 docs/UI.md
 UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md
+UI-064 docs/UI.md
 UI-065 docs/PROGRESS.md
 UI-066 docs/COMPATIBILITY.md
 UI-080 docs/UI.md
@@ -399,6 +407,7 @@ UI-920 docs/PROGRESS.md
 UI-940 docs/UI.md
 UI-941 docs/AUDIO.md
 UI-942 docs/UI.md
+UMB-002 docs/UMBRELLAS.md
 VM-900 docs/PROGRESS.md
 VM-901 docs/PROGRESS.md
 VM-902 docs/DETERMINISM.md
@@ -410,13 +419,3 @@ WALK-006 docs/GUESTS.md
 WALK-007 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
-UI-007 docs/UI.md
-ECON-026 docs/ECONOMY.md
-AUDIO-003 docs/AUDIO.md
-ADVISOR-012 docs/LIPS.md
-UI-941 docs/AUDIO.md
-PATH-007 docs/PATHS.md
-SAVE-923 docs/TPWS-PAYLOAD.md
-UI-064 docs/UI.md
-UI-013 docs/UI.md
-ECON-023 docs/ECONOMY.md

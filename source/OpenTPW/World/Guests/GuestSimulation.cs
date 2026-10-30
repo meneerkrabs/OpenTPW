@@ -1025,6 +1025,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var turn = (uint)ParkTurn;
 		// [BIN:TPI-EXE:0x611334 umbrella switch] the switch on the state reads it once at the top of the rule: only a guest who is already open (4) when the rule starts gets the happiness modifier, never one the step below opens (1 to 4 at 0x6111E3, a due 3 at 0x611206)
 		var umbrellaWasOpen = guest.UmbrellaState == UmbrellaRules.StateOpen;
+		// [BIN:TPI-EXE:0x60aedc umbrella cell close] the per-frame placement 0x60AE00 closes a shown umbrella (state 4 or 1) of a guest on a kart or water track cell (0x60AF32, 0x6142E0: state 2, sprite destroyed); a park turn here stands for the frames, and nothing but a pending change's due word is dropped with the state
+		if ( guest.UmbrellaState is UmbrellaRules.StateOpen or UmbrellaRules.StateClosing && StandsOnTrackCell( guest ) )
+		{
+			guest.UmbrellaState = UmbrellaRules.StateClosed;
+			guest.UmbrellaDueTurn = 0;
+		}
 		// [EXT:umbrellas-extension] the umbrella rule runs first on the guest's own phase, as Theme Park Inc's weather rule opens its needs block; only a guest who owns an umbrella is touched
 		if ( guest.UmbrellaState != UmbrellaRules.StateNone && NeedsUpdate.IsPhase( turn, guest.Id ) )
 			UpdateUmbrella( guest, turn );

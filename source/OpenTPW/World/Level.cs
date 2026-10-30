@@ -631,6 +631,9 @@ public partial class Level : IDisposable
 			// [EXT:umbrellas-weather-map] rain without lightning is Theme Park Inc's rain, lightning a storm, snow snow (the flags of the park's weather, not its drops: the umbrella rules ask what the weather is, not how hard it falls)
 			if ( Guests != null )
 				Guests.UmbrellaWeatherState = () => Weather is { } weather ? UmbrellaRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
+			// [BIN:TPI-EXE:0x613ea0 track-cell stand-down] the scheduling and the carrying out of an umbrella change stand down on a kart or water track cell of the map's second layer (UMB-002)
+			if ( Guests != null )
+				Guests.UmbrellaOnTrackCell = ( x, y ) => UmbrellaRules.OnTrackCell( Guests.Grid.Cells.Tracks, x, y );
 			// [EXT:winter-season-terms] the winter shops read the park's calendar month (the economy's clock, which the weather steps on too) and their own weather signal, which reads snow as snow even with lightning (Halloween's snow band is its lightning band)
 			if ( Guests != null )
 				Guests.WinterWeatherState = () => Weather is { } weather ? WinterRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;

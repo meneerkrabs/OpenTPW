@@ -209,4 +209,39 @@ public class UmbrellaRulesTests
 			foreach ( var term in new[] { 0, 25, 50 } )
 				Assert.AreEqual( state is 1 or 3 or 4 ? 0 : term, UmbrellaRules.SpeedTerm( state, term ), $"state {state}, term {term}" );
 	}
+
+	[TestMethod]
+	public void OnlyAKartOrWaterTrackRecordWhoseHeadIsATrackCellStopsTheReaction()
+	{
+		// [BIN:TPI-EXE:0x613ea0 track-cell stand-down] 0x685680 accepts the record types 0xB, 0xC, 0x10, 0x11 and 0x67F890 ends on the track predicate 0x6856D0 (0xB, 0xD, 0x10, 0x12, 0x19), through the head for an extension
+		for ( var type = 0; type < 256; type++ )
+		{
+			var recordTypeOk = type is 0xB or 0xC or 0x10 or 0x11;
+			var isExtension = type is 0xC or 0x11;
+			foreach ( var head in new byte[] { 0, 0xB, 0xC, 0xD, 0x10, 0x12, 0x19, 0x1E } )
+			{
+				var effective = isExtension ? head : (byte)type;
+				var expected = recordTypeOk && effective is 0xB or 0xD or 0x10 or 0x12 or 0x19;
+				Assert.AreEqual( expected, UmbrellaRules.OnTrackCell( (byte)type, head ), $"record {type:X}, head {head:X}" );
+			}
+		}
+		Assert.IsTrue( UmbrellaRules.OnTrackCell( TrackCellTypes.KartOrigin, 0 ), "a kart origin" );
+		Assert.IsTrue( UmbrellaRules.OnTrackCell( TrackCellTypes.Extension, TrackCellTypes.WaterOrigin ), "an extension of a water origin" );
+		Assert.IsFalse( UmbrellaRules.OnTrackCell( TrackCellTypes.Extension, 0 ), "an extension without a head" );
+		Assert.IsFalse( UmbrellaRules.OnTrackCell( TrackCellTypes.KartStart, TrackCellTypes.KartStart ), "a station record is not in the first test's list" );
+	}
+
+	[TestMethod]
+	public void TheTrackLayerTestFollowsAnExtensionToItsOrigin()
+	{
+		var tracks = new TrackCellLayer( 8, 8 );
+		tracks.Set( 2, 2, new TrackCell { Type = TrackCellTypes.KartOrigin, Parent = -1 } );
+		tracks.Set( 3, 2, new TrackCell { Type = TrackCellTypes.Extension, Parent = tracks.IndexOf( 2, 2 ) } );
+		tracks.Set( 5, 5, new TrackCell { Type = TrackCellTypes.Extension, Parent = tracks.IndexOf( 6, 6 ) } );
+		Assert.IsTrue( UmbrellaRules.OnTrackCell( tracks, 2, 2 ) );
+		Assert.IsTrue( UmbrellaRules.OnTrackCell( tracks, 3, 2 ) );
+		Assert.IsFalse( UmbrellaRules.OnTrackCell( tracks, 5, 5 ), "an extension whose origin cell holds no track" );
+		Assert.IsFalse( UmbrellaRules.OnTrackCell( tracks, 4, 4 ), "an empty cell" );
+		Assert.IsFalse( UmbrellaRules.OnTrackCell( tracks, 20, 20 ), "outside the map" );
+	}
 }

@@ -150,7 +150,7 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			upgrades.RemoveAt( upgrades.Count - 1 );
 		int? Optional( string key ) => settings.Contains( key ) ? settings.GetInt( key ) : null;
 		// [BIN:TPW-EXE:0x004FE1A0 price taken] only shops and sideshows carry a price per use in Theme Park World; Theme Park Inc's rides read theirs through RidePricePerUse
-		// [APPROX:ECON-062] a Theme Park Inc ride's fee is charged and a guest without the cash is refused (0x6125E7, 0x61243A), but the willingness test of Game.exe's price test 0x6120C0 (Info.ExpectedPrice as its base, the attraction's rating byte 0x5E3DF0 against the guest's expected byte) is not ported, so no ride is refused for its price
+		// [APPROX:ECON-062] a Theme Park Inc ride's fee is charged and a guest without the cash is refused (0x6126D0 (called at 0x61193B inside 0x6118D0, from 0x619A8E), 0x61243A), but the willingness test of Game.exe's price test 0x6120C0 (Info.ExpectedPrice as its base, the attraction's rating byte 0x5E3DF0 against the guest's expected byte) is not ported, so no ride is refused for its price
 		var hasPrices = kind is ParkObjectKind.Shop or ParkObjectKind.Sideshow;
 		return new EconomyObjectInfo( id, settings.Contains( "Info.Name" ) ? settings.GetString( "Info.Name" ).Trim() : $"Info.Id {id}", kind,
 			(ResearchCategory)Math.Clamp( researchCategory, 0, 4 ), settings.GetInt( "Research.Group", 0, optional: true ), upgrades,

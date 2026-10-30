@@ -408,6 +408,7 @@ UI-920 docs/PROGRESS.md
 UI-940 docs/UI.md
 UI-941 docs/AUDIO.md
 UI-942 docs/UI.md
+UMB-001 docs/UMBRELLAS.md
 UMB-002 docs/UMBRELLAS.md
 VM-900 docs/PROGRESS.md
 VM-901 docs/PROGRESS.md

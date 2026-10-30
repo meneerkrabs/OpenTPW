@@ -158,7 +158,7 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>A change is scheduled (state 1 or 3): not while the guest is inside an attraction; due after the reaction delay.</summary>
-	// [BIN:TPI-EXE:0x613ea0 schedule] +0x38 and +0x3C zero (not inside) and not on a track cell, then the delay from rand() (UMB-001), the balloon's lengthening, the due word +0x23C = (clock >> 2) + delay and the state written
+	// [BIN:TPI-EXE:0x613ea0 schedule] +0x38 and +0x3C zero (not inside) and not on a track cell, then the delay from rand() ([EXT:tpi-time-seeded-rand]), the balloon's lengthening, the due word +0x23C = (clock >> 2) + delay and the state written
 	private void Schedule( Guest guest, long turn, int state )
 	{
 		if ( IsInsideAttraction( guest ) || StandsOnTrackCell( guest ) )

@@ -1024,14 +1024,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
-		// [BIN:TPI-EXE:0x611334 umbrella switch] the switch on the state reads it once at the top of the rule: only a guest who is already open (4) when the rule starts gets the happiness modifier, never one the step below opens (1 to 4 at 0x6111E3, a due 3 at 0x611206)
-		var umbrellaWasOpen = guest.UmbrellaState == UmbrellaRules.StateOpen;
 		// [BIN:TPI-EXE:0x60aedc umbrella cell close] the per-frame placement 0x60AE00 closes a shown umbrella (state 4 or 1) of a guest on a kart or water track cell (0x60AF32, 0x6142E0: state 2, sprite destroyed); a park turn here stands for the frames, and nothing but a pending change's due word is dropped with the state
 		if ( guest.UmbrellaState is UmbrellaRules.StateOpen or UmbrellaRules.StateClosing && StandsOnTrackCell( guest ) )
 		{
 			guest.UmbrellaState = UmbrellaRules.StateClosed;
 			guest.UmbrellaDueTurn = 0;
 		}
+		// [BIN:TPI-EXE:0x611334 umbrella switch] the switch on the state reads it once at the top of the rule: only a guest who is already open (4) when the rule starts gets the happiness modifier, never one the step below opens (1 to 4 at 0x6111E3, a due 3 at 0x611206)
+		var umbrellaWasOpen = guest.UmbrellaState == UmbrellaRules.StateOpen;
 		// [EXT:umbrellas-extension] the umbrella rule runs first on the guest's own phase, as Theme Park Inc's weather rule opens its needs block; only a guest who owns an umbrella is touched
 		if ( guest.UmbrellaState != UmbrellaRules.StateNone && NeedsUpdate.IsPhase( turn, guest.Id ) )
 			UpdateUmbrella( guest, turn );
@@ -3010,14 +3010,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use. A shop or sideshow with a price
 	/// records the guest's view of it in the park's statistics (<see cref="QueueJoinRules.PriceStatistics"/>), whether it pays or refuses.
 	/// </summary>
-	private bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
+	internal bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
 	{
-		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
+		if ( attraction.Kind == RideVisitorKind.Ride && Payments is { SettlesAtExit: true } )
 		{
-			// [BIN:TPI-EXE:0x61243A cash test] a ride with a fee (Theme Park Inc's) refuses a guest whose purse is below it (unsigned); the willingness test before it is not ported (ECON-062). Theme Park World's rides are free
+			// [BIN:TPI-EXE:0x61243A cash test] a Theme Park Inc ride with a fee refuses a guest whose purse is below it (unsigned); the willingness test before it is not ported (ECON-062). Theme Park World's rides are free
 			var fee = unchecked( (uint)PriceTermsOf( attraction ).Price );
 			return fee != 0 && fee > unchecked( (uint)guest.Money );
 		}
+		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
+			return false;
 		var terms = PriceTermsOf( attraction );
 		if ( Payments != null && terms.Price != 0 )
 		{
@@ -3395,6 +3397,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [BIN:TPW-EXE:0x00501F3C state 14 entry] a sideshow's play is decided as it starts (+0x1F1 from 0x004E2670) and read when the visit ends (0x004FD970)
 			Payments.TryPayVisit( ride, guest.Money, out price, out var won );
 			guest.SideshowWon = ride.Kind == RideVisitorKind.Sideshow ? won : null;
+			if ( Payments.SettlesAtExit )
+			{
+				// [BIN:TPI-EXE:0x619670 fee recorded] the fee is kept and the purse and the bank stay as they are until the exit (0x6126D0)
+				guest.PendingFee = price;
+				price = 0;
+			}
 		}
 		else if ( ride.Price > 0 && guest.Money >= ride.Price )
 			price = ride.Price;
@@ -3567,6 +3575,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [BIN:TPW-EXE:0x4fe1cb till] the use routine's price step (0x4fe1a0, before the lost-sideshow test) takes the object's current price when it is not 0 and plays cat_kids 0xD0 at the guest
 		if ( ride.Price != 0 )
 			Voiced?.Invoke( guest, TillVoiceEvent );
+		if ( Payments is { SettlesAtExit: true } )
+		{
+			// [BIN:TPI-EXE:0x6126D0 fare taken] the exit's payment step (called at 0x61193B inside 0x6118D0, reached from 0x619A8E before the exit state is entered): the recorded fee leaves the purse and the bank takes it, and the cost booking follows for a won play or a sale (0x6119A1); a use cut short never gets here
+			var fee = guest.PendingFee;
+			guest.PendingFee = 0;
+			Payments.SettleVisit( ride, fee, ride.Kind == RideVisitorKind.Sideshow ? guest.SideshowWon : null );
+			if ( fee > 0 )
+			{
+				guest.Money -= fee;
+				Observer?.Spent( guest, fee, ride.AttractionId );
+				MoneySpent?.Invoke( guest, fee, ride.AttractionId );
+			}
+		}
 		Payments?.VisitFinished( ride );
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
 		if ( decisions.RememberUse( ContextNow(), ViewOf( guest ), ViewOf( ride, guest ) ).PushUsedHistory )

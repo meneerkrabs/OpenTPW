@@ -64,6 +64,13 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 		if ( !instances.TryGetValue( attraction.AttractionId, out var instance ) )
 			return true;
 		var economy = Economy();
+		if ( economy.Rules.ThemeParkInc )
+		{
+			// [BIN:TPI-EXE:0x619670 fee recorded] Theme Park Inc's boarding records the price and moves no money (SettlesAtExit)
+			if ( attraction.Kind == RideVisitorKind.Ride )
+				economy.RecordRideUse( instance );
+			return economy.TryAdmitVisit( instance, guestMoney, out pricePaid, out won );
+		}
 		switch ( attraction.Kind )
 		{
 			case RideVisitorKind.Shop:
@@ -76,6 +83,14 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 				economy.RecordRideUse( instance );
 				return economy.TryPayRideFare( instance, guestMoney, out pricePaid );
 		}
+	}
+
+	public bool SettlesAtExit => Economy().Rules.ThemeParkInc;
+
+	public void SettleVisit( IRideVisitorBridge attraction, int fee, bool? won )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().SettleVisit( instance, fee, won );
 	}
 
 	public void ReliefUsed( IRideVisitorBridge attraction, int toiletByte )

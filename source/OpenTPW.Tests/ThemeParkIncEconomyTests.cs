@@ -253,7 +253,7 @@ public class ThemeParkIncEconomyTests
 	[TestMethod]
 	public void ARideChargesItsFeeAtOnceAndRefusesAGuestWithoutTheCash()
 	{
-		// [BIN:TPI-EXE:0x6125E7 fare taken] the recorded fee (the thing's price, initially UsageInfo.InitPricePerUse) is credited to the bank at once and enters the object's takings; the price test refuses a purse below it (0x61243A)
+		// [BIN:TPI-EXE:0x6126D0 (called at 0x61193B inside 0x6118D0, from 0x619A8E) fare taken] the recorded fee (the thing's price, initially UsageInfo.InitPricePerUse) is credited to the bank at once and enters the object's takings; the price test refuses a purse below it (0x61243A)
 		var tpi = Economy( PaidRide( 1, 20 ) );
 		tpi.TryBuild( 1, out var ride );
 		Assert.AreEqual( 20, ride!.Price, "the thing's price starts as InitPricePerUse" );
@@ -275,6 +275,71 @@ public class ThemeParkIncEconomyTests
 		Assert.AreEqual( 0, same!.Price, "Theme Park World's rides are free whatever the key" );
 		Assert.IsTrue( tpw.TryPayRideFare( same.Id, 0, out var tpwPaid ) );
 		Assert.AreEqual( 0, tpwPaid );
+	}
+
+	private static (GuestSimulation Simulation, GuestEconomyBridge Bridge, RideVisitorBridge Ride, ParkObjectState State, ParkEconomy Economy) FareRig( bool themeParkInc, int price = 20 )
+	{
+		var grid = new GuestPathGrid( 16, 16 );
+		for ( var x = 0; x < 12; x++ )
+			grid.SetPath( x, 5, true );
+		var settings = GuestTests.CreateSettings();
+		settings.ExitLevelSeconds = 10_000;
+		var simulation = new GuestSimulation( grid, settings, 5 ) { ArrivalsEnabled = false };
+		var economy = themeParkInc ? Economy( PaidRide( 1, price ) ) : TpwEconomy( PaidRide( 1, price ) );
+		economy.TryBuild( 1, out var state );
+		var ride = new RideVisitorBridge( 1, "Ride", RideVisitorKind.Ride, 1, 60, 30, price: price ) { ExitCell = (6, 5) };
+		ride.Sideshow = new SideshowTerms( 0, state!.Price, 0 );
+		simulation.Register( ride );
+		var bridge = new GuestEconomyBridge( () => economy, simulation );
+		bridge.Link( 1, state.Id );
+		simulation.Payments = bridge;
+		return (simulation, bridge, ride, state, economy);
+	}
+
+	[TestMethod]
+	public void ARideFareMovesAtTheExitAndAUseCutShortPaysNothing()
+	{
+		// [BIN:TPI-EXE:0x6126D0 fare taken] the fee is recorded at the call and taken in the exit's payment step (0x61193B, inside 0x6118D0, from 0x619A8E)
+		var (simulation, _, ride, state, economy) = FareRig( themeParkInc: true );
+		var host = (IRideVisitorHost)simulation;
+		var guest = simulation.SpawnInPark( 6, 5 );
+		guest.Money = 100;
+		var balance = economy.Balance;
+		host.OnVisitorBoarded( ride, guest.Id );
+		Assert.AreEqual( (100L, balance), (guest.Money, economy.Balance), "boarding moves no money" );
+		host.OnVisitorReleased( ride, guest.Id );
+		Assert.AreEqual( (80L, balance + 20), (guest.Money, economy.Balance), "the exit takes the fee" );
+		Assert.AreEqual( 20L, state.TakingsThisMonth );
+		// a second visit that never reaches the exit (a breakdown, a demolition) pays nothing
+		var other = simulation.SpawnInPark( 7, 5 );
+		other.Money = 100;
+		host.OnVisitorBoarded( ride, other.Id );
+		Assert.AreEqual( (100L, balance + 20), (other.Money, economy.Balance) );
+		var tpw = FareRig( themeParkInc: false );
+		var tpwGuest = tpw.Simulation.SpawnInPark( 6, 5 );
+		tpwGuest.Money = 100;
+		((IRideVisitorHost)tpw.Simulation).OnVisitorBoarded( tpw.Ride, tpwGuest.Id );
+		Assert.AreEqual( 100L, tpwGuest.Money, "Theme Park World's rides are free" );
+	}
+
+	[TestMethod]
+	public void AGuestWithoutTheCashRefusesAThemeParkIncRideOnlyAndOnlyThere()
+	{
+		// [BIN:TPI-EXE:0x61243A cash test] the purse test applies to a ride with a fee in Theme Park Inc and to nothing else
+		var inc = FareRig( themeParkInc: true );
+		var poor = inc.Simulation.SpawnInPark( 6, 5 );
+		poor.Money = 19;
+		Assert.IsTrue( inc.Simulation.TooExpensive( poor, inc.Ride ) );
+		poor.Money = 20;
+		Assert.IsFalse( inc.Simulation.TooExpensive( poor, inc.Ride ) );
+		var facility = new RideVisitorBridge( 2, "Cabin", RideVisitorKind.Facility, 1, 60, 30, price: 5 ) { ExitCell = (6, 5) };
+		inc.Simulation.Register( facility );
+		poor.Money = 0;
+		Assert.IsFalse( inc.Simulation.TooExpensive( poor, facility ), "a facility is not a ride" );
+		var tpw = FareRig( themeParkInc: false );
+		var broke = tpw.Simulation.SpawnInPark( 6, 5 );
+		broke.Money = 0;
+		Assert.IsFalse( tpw.Simulation.TooExpensive( broke, tpw.Ride ), "Theme Park World's ride, whatever price an import carried" );
 	}
 
 	[TestMethod]

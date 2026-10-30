@@ -20,7 +20,7 @@
   the month message debits the running cost and that accumulator as one debit per object
   (`0x5DEFFF`). A shop's cost of goods is the executable's own routine (`0x5E6260`, checked
   in Unicorn on random inputs). Rides charge `InitPricePerUse` at each use and refuse a guest
-  without the cash (`0x6125E7`, `0x61243A`); the willingness test of `0x6120C0` is not ported.
+  without the cash (`0x6126D0 (called at 0x61193B inside 0x6118D0, from 0x619A8E)`, `0x61243A`); the willingness test of `0x6120C0` is not ported.
 - **Arrival weather, footprints, fixed models (ARRIVAL-008, RIDES-031, RIDES-040
   narrowed).** The weather state is the running spell's kind (`0x642A80`) and the spells use
   the time-seeded `rand()`; the footprint commit is the twin of tp.exe's (`0x668552`); a

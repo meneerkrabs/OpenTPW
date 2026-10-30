@@ -18,7 +18,8 @@ public sealed record ThemeParkIncWeatherSettings( IReadOnlyList<int> Seasons, IR
 			foreach ( var kind in new[] { "Heatwave", "Rain", "Storm", "Snow" } )
 				rows.Add( standard.GetInt( $"Seasons[{season}].PercentageChanceFor{kind}", 0, optional: true ) );
 		int Quality( string key ) => standard.GetInt( $"WeatherEffects.QualityFor{key}", 0, optional: true );
-		// [BIN:TPI-EXE:0x642A27 settings tail] the words after the four rows are the table's count (4) and the two online-only keys, 0 when a file does not set them (an absent key reading 0 is not read in the loader)
+		// [BIN:TPI-EXE:0x64280F, 0x64289F, 0x642857 row reads] the roll reads the table by row, eax = row * 16 (four words of 4 bytes per row); the schema record Seasons has count 4
+		// [APPROX:ARRIVAL-008] the three words after the four rows are the count and two online-only keys that the offline data does not set; the value 4 for the count is assumed here, the keys read 0 when a file does not set them
 		return new ThemeParkIncWeatherSettings( rows, new[] { 4, standard.GetInt( "Weather.DaysOfWarning", 0, optional: true ), standard.GetInt( "Weather.DaysBetweenChanges", 0, optional: true ) },
 			standard.GetInt( "Weather.YearsBeforeFirstFreakWeather", 0, optional: true ),
 			(Quality( "NormalLow" ), Quality( "NormalHigh" )), (Quality( "HeatWaveLow" ), Quality( "HeatWaveHigh" )), (Quality( "SnowLow" ), Quality( "SnowHigh" )),

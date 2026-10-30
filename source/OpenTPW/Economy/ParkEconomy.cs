@@ -105,13 +105,13 @@ public sealed partial class ParkEconomy : IParkEconomy
 	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, and the staff constructors' role searches run inside the placing click of a level ([BIN:TPW-EXE:0x004D4340 constructor searches] StaffWorldSimulation.Constructed after the hire's draws: [BIN:TPW-EXE:0x004F89E1 staff base speed] the consumed base-speed draw and the guard's variant draw, see ParkStaff.Hire; no staff constructor reseeds, 0x4F7B7E is the online avatar's); a headless economy has no staff world and searches on the member's first update, the researcher constructor's last call 0x5041F0 runs at a researcher's hire and removal without a draw ([BIN:TPW-EXE:0x005041F0 researchers flag] ParkStaff.LabActive, message 5 or 6 on a change; the advisor's reaction is ADVISOR-009's), and the weather stays off the stream ([BIN:TPW-EXE:0x59A796 advisor pick] the advisor's update takes no draw: all 351 descriptor rows are in the sequential mode 2, the mode-3 draw 0x59A7AC is unreachable)
 	public WorldRng World { get; private set; }
 
-	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>
 	/// <summary>Theme Park Inc's weather spells (null in Theme Park World and where the settings hold no weather).</summary>
 	public ThemeParkIncWeatherSpells? TpiWeather { get; private set; }
 
 	/// <summary>The weather thing's state word for the arrival group: 1 heatwave, 2 rain, 3 storm, 4 snow, 0 none.</summary>
 	public int TpiWeatherState => TpiWeather?.State ?? 0;
 
+	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>
 	public void AttachWorld( WorldRng world ) => World = world ?? throw new ArgumentNullException( nameof( world ) );
 	public ParkLedger Ledger { get; }
 	public ParkStaff Staff { get; }

@@ -56,7 +56,7 @@ public class ThemeParkIncWeatherTests
 		CollectionAssert.AreEqual( new[] { 2, 5, 8, 11 }, rolled.Where( item => item.Year >= 2 ).Select( item => item.Month ).Distinct().ToArray(), "after the first years only the third months roll" );
 		var early = Run( Science, 36, index => 0 );
 		Assert.IsTrue( early.Where( item => item.Year < 3 ).All( item => item.State == 0 ), "before the third year the rolls are normal weather" );
-		Assert.IsTrue( early.Where( item => item.Year >= 3 ).Any( item => item.State != 0 ) || Run( Science, 60, index => 0 ).Any( item => item.Year >= 3 && item.State != 0 ), "from the years setting on a low roll gives freak weather" );
+		Assert.AreEqual( "002221113331112221113331", string.Concat( Run( Science, 60, index => 0 ).Where( item => item.Year >= 3 ).Select( item => item.State ) ), "from year 3 on, a fixed draw of 0 gives these states per month (the spells follow the quarter rows)" );
 	}
 
 	[TestMethod]

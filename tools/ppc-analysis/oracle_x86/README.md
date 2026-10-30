@@ -57,3 +57,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## Theme Park Inc's shop cost of goods (round 10, package K)
 
 `tpi_goods_cost_oracle.py` runs the routine `0x5E6260` of the Theme Park Inc no-CD `Game.exe` (`OPENTPW_TPI_EXE`) with a synthetic thing and type record on random inputs and compares it with the formula `ThemeParkIncGoodsCost` ports (400 cases at the control words `0x27F` and `0x7F`, no mismatch).
+
+## Theme Park Inc's weather spell roll (round 10, package K)
+
+`tpi_weather_roll_oracle.py` runs the spell roll `0x642770` of the Theme Park Inc no-CD `Game.exe` (`OPENTPW_TPI_EXE`) with the calendar reads and the CRT `rand()` stubbed and synthetic table and quality words, and compares the spell record with the model `ThemeParkIncWeatherSpells` ports (3000 random cases, no mismatch; ARRIVAL-008, `[EXT:tpi-weather-spell-seed]`).

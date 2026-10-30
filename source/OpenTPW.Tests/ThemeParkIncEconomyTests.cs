@@ -277,7 +277,7 @@ public class ThemeParkIncEconomyTests
 		Assert.AreEqual( 0, tpwPaid );
 	}
 
-	private static (GuestSimulation Simulation, GuestEconomyBridge Bridge, RideVisitorBridge Ride, ParkObjectState State, ParkEconomy Economy) FareRig( bool themeParkInc, int price = 20 )
+	private static (GuestSimulation Simulation, GuestEconomyBridge Bridge, RideVisitorBridge Ride, ParkObjectState State, ParkEconomy Economy) FareRig( bool themeParkInc, int price = 20, RideVisitorKind kind = RideVisitorKind.Ride )
 	{
 		var grid = new GuestPathGrid( 16, 16 );
 		for ( var x = 0; x < 12; x++ )
@@ -285,9 +285,10 @@ public class ThemeParkIncEconomyTests
 		var settings = GuestTests.CreateSettings();
 		settings.ExitLevelSeconds = 10_000;
 		var simulation = new GuestSimulation( grid, settings, 5 ) { ArrivalsEnabled = false };
-		var economy = themeParkInc ? Economy( PaidRide( 1, price ) ) : TpwEconomy( PaidRide( 1, price ) );
+		var info = kind == RideVisitorKind.Shop ? Shop( 1, price, 6 ) : PaidRide( 1, price );
+		var economy = themeParkInc ? Economy( info ) : TpwEconomy( info );
 		economy.TryBuild( 1, out var state );
-		var ride = new RideVisitorBridge( 1, "Ride", RideVisitorKind.Ride, 1, 60, 30, price: price ) { ExitCell = (6, 5) };
+		var ride = new RideVisitorBridge( 1, "Ride", kind, 1, 60, 30, price: price ) { ExitCell = (6, 5) };
 		ride.Sideshow = new SideshowTerms( 0, state!.Price, 0 );
 		simulation.Register( ride );
 		var bridge = new GuestEconomyBridge( () => economy, simulation );
@@ -315,11 +316,42 @@ public class ThemeParkIncEconomyTests
 		other.Money = 100;
 		host.OnVisitorBoarded( ride, other.Id );
 		Assert.AreEqual( (100L, balance + 20), (other.Money, economy.Balance) );
+		simulation.Unregister( ride );
+		Assert.AreEqual( (100L, balance + 20), (other.Money, economy.Balance), "the demolition with the guest on board takes nothing" );
+		Assert.AreEqual( 20L, state.TakingsThisMonth );
+		// the ride is built again: the guest's next completed visit charges exactly one fee (the dropped record is gone)
+		simulation.Register( ride );
+		host.OnVisitorBoarded( ride, other.Id );
+		host.OnVisitorReleased( ride, other.Id );
+		Assert.AreEqual( (80L, balance + 40), (other.Money, economy.Balance), "exactly one fee" );
 		var tpw = FareRig( themeParkInc: false );
 		var tpwGuest = tpw.Simulation.SpawnInPark( 6, 5 );
 		tpwGuest.Money = 100;
 		((IRideVisitorHost)tpw.Simulation).OnVisitorBoarded( tpw.Ride, tpwGuest.Id );
 		Assert.AreEqual( 100L, tpwGuest.Money, "Theme Park World's rides are free" );
+	}
+
+	[TestMethod]
+	public void ARefusedShopAdmissionBooksNoSaleAtTheExit()
+	{
+		// [BIN:TPI-EXE:0x6126D0 fare taken] the exit books what the attraction's call recorded; a refused call (the purse is below the price) records nothing, so no sale, goods or customer is booked
+		var (simulation, _, shop, state, economy) = FareRig( themeParkInc: true, price: 30, kind: RideVisitorKind.Shop );
+		var host = (IRideVisitorHost)simulation;
+		var poor = simulation.SpawnInPark( 6, 5 );
+		poor.Money = 10;
+		var balance = economy.Balance;
+		host.OnVisitorBoarded( shop, poor.Id );
+		host.OnVisitorReleased( shop, poor.Id );
+		Assert.AreEqual( (10L, balance), (poor.Money, economy.Balance), "a refused admission moves no money" );
+		Assert.AreEqual( 0L, state.TakingsThisMonth );
+		Assert.AreEqual( 0L, state.CustomersThisMonth, "and counts no customer" );
+		Assert.AreEqual( 0L, state.PendingMonthlyCosts, "and books no goods" );
+		var rich = simulation.SpawnInPark( 7, 5 );
+		rich.Money = 100;
+		host.OnVisitorBoarded( shop, rich.Id );
+		host.OnVisitorReleased( shop, rich.Id );
+		Assert.AreEqual( (70L, balance + 30), (rich.Money, economy.Balance), "an accepted admission pays at the exit" );
+		Assert.AreEqual( 1L, state.CustomersThisMonth );
 	}
 
 	[TestMethod]

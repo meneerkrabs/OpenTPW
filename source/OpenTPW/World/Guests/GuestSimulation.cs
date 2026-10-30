@@ -3012,7 +3012,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
 	{
 		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
-			return false;
+		{
+			// [BIN:TPI-EXE:0x61243A cash test] a ride with a fee (Theme Park Inc's) refuses a guest whose purse is below it (unsigned); the willingness test before it is not ported (ECON-062). Theme Park World's rides are free
+			var fee = unchecked( (uint)PriceTermsOf( attraction ).Price );
+			return fee != 0 && fee > unchecked( (uint)guest.Money );
+		}
 		var terms = PriceTermsOf( attraction );
 		if ( Payments != null && terms.Price != 0 )
 		{

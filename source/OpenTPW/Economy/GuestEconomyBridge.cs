@@ -74,7 +74,7 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 				return played;
 			default:
 				economy.RecordRideUse( instance );
-				return true;
+				return economy.TryPayRideFare( instance, guestMoney, out pricePaid );
 		}
 	}
 

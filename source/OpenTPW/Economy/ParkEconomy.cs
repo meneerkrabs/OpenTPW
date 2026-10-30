@@ -1430,11 +1430,13 @@ public sealed partial class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// Theme Park Inc's monthly running costs: every object is charged its current level's <c>Upgrades[n].RunningCost</c>, nothing in ride state 1 (broken down) or 4
-	/// (condemned). Theme Park World has no such cost. Each object is one debit that also enters its cost statistics (the month's cost, the 30-day cost ring and the total profit).
+	/// Theme Park Inc's monthly costs: every object is debited its current level's <c>Upgrades[n].RunningCost</c> (nothing in ride state 1 or 4) plus the costs its sales and plays booked during the month, as one debit
+	/// that also enters its cost statistics (the month's cost, the 30-day cost ring and the total profit). Theme Park World has no such cost and debits its goods and prizes at the sale.
 	/// </summary>
-	// [BIN:TPI-EXE:0x005DEFFF monthly object cost] the object's month message (type 0xC) takes 0 in state 1 or 4, else the type record's running cost (thing +0x84, the current level's Upgrades[n].RunningCost) plus the amount its statistics block accumulated (+0x938), writes the sum into the cost rings (+0xDD8, +0xB88), rolls them, and debits the bank (0x5C07B0, the twin of tp.exe 0x4D01F0), adding the sum to the game's money-out word (+0x20F28)
-	// [APPROX:ECON-060] only the running cost is charged: the accumulator +0x938 the statistics block adds to it is the monthly-costs ring that 0x5E60E0 raises with every booked cost (the cost of goods 0x5E6220, a ride's 0x5E63E0, the guest step 0x612740), but who handles the messages 0xC and 0xD it then posts is not traced (whether the cost of goods and prizes OpenTPW books at once (TryBuy, PlaySideshow) are debited there at the month's end instead, which would charge the month's sum twice), and Theme Park Inc's statistics are monthly rings (+0xB88 costs, +0x1028 profit, rolled by the same message) where OpenTPW's are the daily 30-day rings of Theme Park World (ECON-057), so the cost enters today's slot of the daily ring, and the order of this debit against the bank's own month handler (the batch credit, the loan instalments) is not read, so it runs after the wages' place and before the loans — evidence needed: the handlers of the messages 0xC and 0xD that 0x5E60E0 posts and the listener order of the month message
+	// [BIN:TPI-EXE:0x005DEFFF monthly object cost] the object's month message takes 0 in state 1 or 4, else the type record's running cost (thing +0x84, the current level's Upgrades[n].RunningCost), adds the amount its statistics block accumulated (+0x938, 0x5DF029..0x5DF042, whatever the state), writes the running cost into +0xDD8 and the sum into the cost ring +0xB88, takes profit +0x1028 = takings +0x6E8 - the sum, clears the accumulators and the monthly rings it rolls, and debits the bank (0x5C07B0, the twin of tp.exe 0x4D01F0) with the sum, adding it to the game's costs word (+0x20F28)
+	// [BIN:TPI-EXE:0x5E60E0 cost booking] raises the daily cost ring (+0x88) and the month accumulator (+0x938) and posts the negated cost as message 0xC (a shop) or 0xD (a sideshow) to the analyser object (0x408EE5, 0x4082C9, 0x4020BD): the statistics' own feed; no debit
+	// [BIN:TPI-EXE:0x5C07B0 bank debit] balance -= amount at once; every site that debits is a purchase, an upgrade, a wage or this month message: the guest's use outcome never does
+	// [APPROX:ECON-060] Theme Park Inc's statistics are monthly rings (+0xB88 costs, +0x1028 profit, rolled by the same message) where OpenTPW's are the daily 30-day rings of Theme Park World (ECON-057), so the month's cost enters today's slot of the daily ring (the sales' own costs already did at the sale), and the order of this debit against the bank's own month handler (the batch credit, the loan instalments) is not read, so OpenTPW debits the running costs after the wages' place and before the loan instalments
 	private void PayRunningCosts()
 	{
 		if ( !Rules.ThemeParkInc )
@@ -1443,13 +1445,15 @@ public sealed partial class ParkEconomy : IParkEconomy
 		var charged = 0;
 		foreach ( var item in objects.Values )
 		{
-			var cost = RunningCost( item );
+			var running = RunningCost( item );
+			var cost = running + item.PendingMonthlyCosts;
+			item.PendingMonthlyCosts = 0;
 			if ( cost == 0 )
 				continue;
 			Post( LedgerCategory.OtherCosts, cost );
 			item.CostsThisMonth += cost;
 			// the month message also writes the sum into the object's cost statistics and its profit (0x5DF070..0x5DF0A4: costs +0xB88, profit = takings +0x6E8 - costs)
-			item.CostsRing.Today += unchecked( (int)cost );
+			item.CostsRing.Today += unchecked( (int)running );
 			item.TotalProfit -= cost;
 			total += cost;
 			charged++;
@@ -2014,7 +2018,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 			BuiltTick = Math.Clamp( builtTick ?? Tick, 0, Tick ),
 			Imported = imported,
 			TimesUsed = timesUsed,
-			Price = info.PricePerUse ?? 0,
+			Price = info.PricePerUse ?? (Rules.ThemeParkInc && info.Kind == ParkObjectKind.Ride ? info.RidePricePerUse : 0),
 			CostOfGoods = info.CostOfGoods ?? 0,
 			ChanceOfLosingPercent = info.ChanceOfLosingPercent ?? 0
 		};
@@ -2568,13 +2572,25 @@ public sealed partial class ParkEconomy : IParkEconomy
 				Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
 		}
 		// [BIN:TPW-EXE:0x004FE1E0 shop use] a shop (WhichUIType 1) books 0x004E1B40's value (ShopGoodsCost: the cost of goods scaled by the quality and special-ingredient bytes) through 0x004E1920: the bank debit, the object's cost rings and the challenge types 12 and 13 all take the same number
-		var goods = Catalog.TryGet( item.InfoId, out var shopInfo ) ? ShopGoodsCost.Of( item.CostOfGoods, item.QualityOfGoods, item.IngredientAmount, shopInfo.SpecialIngredient ) : item.CostOfGoods;
-		Post( LedgerCategory.OtherCosts, goods );
+		var hasShopInfo = Catalog.TryGet( item.InfoId, out var shopInfo );
+		// [BIN:TPI-EXE:0x612740 use outcome] Theme Park Inc's shop sale books its cost of goods (0x5E63E0, ThemeParkIncGoodsCost) through 0x5E60E0, which raises the object's daily cost ring (+0x88) and its month accumulator (+0x938) and debits nothing: the month message pays the accumulator with the running cost (ECON-060)
+		var tpiGoods = Rules.ThemeParkInc && hasShopInfo;
+		var goods = tpiGoods ? ThemeParkIncGoodsCost.Of( item.CostOfGoods, item.QualityOfGoods, item.IngredientAmount, ThemeParkIncGoodsCost.BuiltThirdByte, shopInfo!.SpecialIngredient, shopInfo.ShopType )
+			: hasShopInfo ? ShopGoodsCost.Of( item.CostOfGoods, item.QualityOfGoods, item.IngredientAmount, shopInfo!.SpecialIngredient ) : item.CostOfGoods;
 		item.CustomersThisMonth++;
 		item.CustomersRing.Today++;
-		item.CostsThisMonth += goods;
 		item.CostsRing.Today += goods;
-		item.TotalProfit += item.Price - goods;
+		if ( Rules.ThemeParkInc )
+		{
+			item.PendingMonthlyCosts += goods;
+			item.TotalProfit += item.Price;
+		}
+		else
+		{
+			Post( LedgerCategory.OtherCosts, goods );
+			item.CostsThisMonth += goods;
+			item.TotalProfit += item.Price - goods;
+		}
 		Counters.Add( ParkCounters.ShopProfit, item.Price - goods );
 		if ( item.Price != 0 )
 			Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.ShopTakings ) );
@@ -2605,12 +2621,21 @@ public sealed partial class ParkEconomy : IParkEconomy
 			item.TakingsThisMonth += item.Price;
 			item.TakingsRing.Today += item.Price;
 		}
-		Post( LedgerCategory.OtherCosts, prize );
 		item.CustomersThisMonth++;
 		item.CustomersRing.Today++;
-		item.CostsThisMonth += prize;
 		item.CostsRing.Today += prize;
-		item.TotalProfit += item.Price - prize;
+		if ( Rules.ThemeParkInc )
+		{
+			// [BIN:TPI-EXE:0x612789 sideshow cost] a won play (the use outcome 0x612740 runs for +0x21B set) books the thing's +0x88 through 0x5E60E0, the month accumulator again (ECON-060)
+			item.PendingMonthlyCosts += prize;
+			item.TotalProfit += item.Price;
+		}
+		else
+		{
+			Post( LedgerCategory.OtherCosts, prize );
+			item.CostsThisMonth += prize;
+			item.TotalProfit += item.Price - prize;
+		}
 		if ( won )
 		{
 			item.WinnersThisMonth++;
@@ -2622,7 +2647,29 @@ public sealed partial class ParkEconomy : IParkEconomy
 		return true;
 	}
 
-	/// <summary>Rides have no per-ride price in the original data; use is counted for statistics and challenges.</summary>
+	/// <summary>
+	/// A Theme Park Inc ride's fee for one use: the price (<see cref="ParkObjectState.Price"/>, <c>UsageInfo.InitPricePerUse</c>) when it is above 0 and the guest holds that much: the takings are credited at once, the
+	/// object's takings and total profit rise and the guest's purse falls (the caller). Theme Park World's rides are free; true there and for a free ride.
+	/// </summary>
+	// [BIN:TPI-EXE:0x6125E7 fare taken] the use's payment step takes the fee the guest recorded when the attraction called it (+0x1B4, the thing's price +0x94 at 0x619670) whenever it is above 0: the income booking 0x5E5DE0 credits the bank at once (0x5C0760: balance += fee), adds it to the object's takings (+0x0, +0x6E8) and, for a shop, posts message 0xC; then the guest's purse (+0x1C0) falls and its spent word (+0x1C4) rises, for every kind
+	// [BIN:TPI-EXE:0x61243A cash test] the price test refuses a guest whose purse (+0x1C0) is below the price (unsigned), before the use
+	public bool TryPayRideFare( int instanceId, long visitorCash, out int pricePaid )
+	{
+		pricePaid = 0;
+		if ( !Rules.ThemeParkInc || !objects.TryGetValue( instanceId, out var item ) || item.Kind != ParkObjectKind.Ride || item.Price == 0 )
+			return true;
+		if ( IsBankrupt || visitorCash < item.Price )
+			return false;
+		pricePaid = item.Price;
+		Post( LedgerCategory.OtherIncome, item.Price );
+		item.TakingsThisMonth += item.Price;
+		item.TakingsRing.Today += item.Price;
+		item.TotalProfit += item.Price;
+		Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.OtherIncome ) );
+		return true;
+	}
+
+	/// <summary>Rides have no per-ride price in the original data of Theme Park World; use is counted for statistics and challenges.</summary>
 	public void RecordRideUse( int instanceId )
 	{
 		if ( !objects.TryGetValue( instanceId, out var item ) )

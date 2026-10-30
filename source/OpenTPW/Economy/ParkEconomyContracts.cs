@@ -406,6 +406,11 @@ public sealed class ParkObjectState
 	public long WinnersThisMonth { get; set; }
 	public long WinnersLastMonth { get; set; }
 	public long TotalProfit { get; set; }
+	/// <summary>
+	/// Theme Park Inc only: what the object's sales and plays booked as costs this month and the month's debit has not taken yet (the statistics block's accumulator <c>+0x938</c>, raised by <c>0x5E60E0</c>); the month
+	/// message debits it together with the running cost and clears it. Always 0 in Theme Park World, whose costs are debited at once. Not saved (a Theme Park Inc run is not saved).
+	/// </summary>
+	public long PendingMonthlyCosts { get; set; }
 	public long ProfitLastMonth => TakingsLastMonth - CostsLastMonth;
 	/// <summary>The costs ring (<c>+0xF8</c>): the cost of goods and prizes of each of the last 30 days; today's running value is <see cref="DailyRing.Today"/>.</summary>
 	public DailyRing CostsRing { get; set; } = new();

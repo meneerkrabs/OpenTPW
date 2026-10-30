@@ -27,7 +27,8 @@ public sealed record UpgradeLevelInfo( int Level, long CostOfUpgrade, int CostOf
 /// object's own <c>.sam</c> and, in easy mode, its <c>Easy_</c> override. The rides/objects slice may
 /// build these from its own catalog through <see cref="IEconomyObjectCatalog"/>.
 /// </summary>
-/// <param name="ExpectedPrice">Theme Park Inc only: <c>Info.ExpectedPrice</c> (type record +0x88); read, not used by the money slice (meaning not traced); 0 in Theme Park World.</param>
+/// <param name="ExpectedPrice">Theme Park Inc only: <c>Info.ExpectedPrice</c> (type record +0x88): the base of the guest's willingness to pay for every kind but a sideshow (Game.exe <c>0x6120FC</c>); read, not used by OpenTPW's price test (ECON-062); 0 in Theme Park World.</param>
+/// <param name="RidePricePerUse">Theme Park Inc only: a ride's <c>UsageInfo.InitPricePerUse</c>, the fee each use takes (ECON-062); 0 in Theme Park World, whose rides are free.</param>
 /// <param name="NotResearched">[EXT:mods] True for an object of an <c>objects.json</c> that declares <c>"research": false</c> (the pools extension's): it is never a research project, so it is in no research table, never in the saved completed set, does not count in the group statistics and is available from the start; the golden ticket's "everything built" does not ask for it.</param>
 /// <param name="WorkingLife">Theme Park Inc only: <c>Info.WorkingLife</c> (+0x8C); read, not used by the money slice (meaning not traced); 0 in Theme Park World.</param>
 public sealed record EconomyObjectInfo(
@@ -61,7 +62,8 @@ public sealed record EconomyObjectInfo(
 	int ExpectedPrice = 0,
 	int WorkingLife = 0,
 	bool NotResearched = false,
-	bool RequiresWatering = false )
+	bool RequiresWatering = false,
+	int RidePricePerUse = 0 )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
@@ -147,7 +149,8 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 		while ( upgrades.Count > 1 && upgrades[^1].CostOfUpgrade == 0 && upgrades[^1].CostOfResearch == 0 )
 			upgrades.RemoveAt( upgrades.Count - 1 );
 		int? Optional( string key ) => settings.Contains( key ) ? settings.GetInt( key ) : null;
-		// [APPROX:ECON-062] only shops and sideshows carry a price per use: a Theme Park Inc ride also declares UsageInfo.InitPricePerUse (20) and Info.ExpectedPrice (25), which are read without being charged
+		// [BIN:TPW-EXE:0x004FE1A0 price taken] only shops and sideshows carry a price per use in Theme Park World; Theme Park Inc's rides read theirs through RidePricePerUse
+		// [APPROX:ECON-062] a Theme Park Inc ride's fee is charged and a guest without the cash is refused (0x6125E7, 0x61243A), but the willingness test of Game.exe's price test 0x6120C0 (Info.ExpectedPrice as its base, the attraction's rating byte 0x5E3DF0 against the guest's expected byte) is not ported, so no ride is refused for its price
 		var hasPrices = kind is ParkObjectKind.Shop or ParkObjectKind.Sideshow;
 		return new EconomyObjectInfo( id, settings.Contains( "Info.Name" ) ? settings.GetString( "Info.Name" ).Trim() : $"Info.Id {id}", kind,
 			(ResearchCategory)Math.Clamp( researchCategory, 0, 4 ), settings.GetInt( "Research.Group", 0, optional: true ), upgrades,
@@ -178,7 +181,9 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			// [BIN:TPI-EXE:0x005DEFFF type record] Theme Park Inc only: Info.ExpectedPrice (+0x88) and Info.WorkingLife (+0x8C); neither is used yet
 			settings.GetInt( "Info.ExpectedPrice", 0, optional: true ), settings.GetInt( "Info.WorkingLife", 0, optional: true ),
 			// [BIN:TPI-EXE:0x5DB654 thing flag +0x43 bit 0x10] a nonzero type word +0x1AC (UsageInfo.RequiresWatering, between HoldsLitter 0x1A8 and ChillsYouOut 0x1B0 in the key order) makes the thing builder set the flag (or word [thing+0x42], 0x1000) that selects the scrap percentage's first branch (0x5E75F9)
-			RequiresWatering: settings.GetInt( "UsageInfo.RequiresWatering", 0, optional: true ) != 0 );
+			RequiresWatering: settings.GetInt( "UsageInfo.RequiresWatering", 0, optional: true ) != 0,
+			// [BIN:TPI-EXE:0x5DB58D thing price] the thing's price per use (+0x94) starts as the type's UsageInfo.InitPricePerUse (+0x194) for every kind, a ride's included (20 in Rides.sam); Theme Park World's rides carry no such key
+			RidePricePerUse: kind == ParkObjectKind.Ride ? settings.GetInt( "UsageInfo.InitPricePerUse", 0, optional: true ) : 0 );
 	}
 
 	/// <summary>

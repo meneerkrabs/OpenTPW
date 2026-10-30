@@ -213,7 +213,7 @@ The object catalogue adds the keys only Theme Park Inc's type record has: `Info.
 | entry-fee judgement | `0x6157D0` (divisor word `0x00A01A90`) | `0x4FF5C0` | same routine; the divisor is data: 6 in Theme Park Inc's global file (4 in arabian's layer), 4 in Theme Park World's |
 | object purchase, upgrade purchase | `0x5DBE3C`, `0x5E2A99` | `0x4DB090`, `0x4AF4E9` | the build charges `Upgrades[0].CostOfUpgrade`; the upgrade needs a mechanic, so it stays refused (`NeedsStaff`) |
 | scrap value | `0x5E7890`, percentage `0x5E75F0` | `0x4E2400`, `0x4E2290` | by year of age, 100 % if unused within 30 days, plus a condemned object (state 4) refunds nothing; an object that requires watering (the plants) takes 100, 67, 34 or 0 % from its script's variable 0, `VAR_CONDITION` (`0x5E75F9`, `0x6B0C90`; ECON-061 retired; the slice has no weather and no handymen, `[EXT:tpi-money-only]`, so a plant's condition stays at its first value) |
-| running costs | month message `0x5DEFFF` | none | each object pays its current level's `Upgrades[n].RunningCost` every month, nothing in ride state 1 or 4 (ECON-060) |
+| running costs | month message `0x5DEFFF` | none | each object pays its current level's `Upgrades[n].RunningCost` every month, nothing in ride state 1 or 4, together with the costs its sales and plays booked that month (the accumulator `+0x938`: a sale books its cost of goods, `ThemeParkIncGoodsCost`, and pays it at the month end; ECON-060) |
 | arrival group | `0x5BCD60` (words `0x00A02240`..`0x00A02250`) | `0x4CF5B0` | `GuestSimulation.ArrivalGroupSize` with `Arrival.*PercentageModifier`, single-precision 0.01 (oracle X7); OpenTPW runs no Theme Park Inc weather (the original simulates one: thunder countdown and wind, see the weather body below), so the percentage is always 100 (ARRIVAL-008) |
 
 **What runs.** Starting cash and admission fee; the build, path, queue and kart/water track charges (a refused purchase says why); scrap refunds when an object
@@ -226,9 +226,8 @@ loans start fresh in the new session, like the guests.
 
 **What stays refused.** Staff (no pool, no wages, no mechanics, handymen or entertainers), so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge and no litter is dropped, because no handyman would ever clean it (`[EXT:tpi-no-maintenance-wear]`), and no
 upgrade is installed; research (the whole catalogue is on offer, `[EXT:tpi-no-research]`); challenges, golden tickets and the missions; the shares game; Theme Park Inc's
-weather; the advisor; every save format. Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data, but the guests pay
-nothing for a ride, as in Theme Park World (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
-not verified for it. The statistics block's accumulator (`+0x938`), which the month message adds to the running cost, is not traced (ECON-060).
+weather; the advisor; every save format. Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data: the fee is charged at each use and a guest without the cash is refused, but no ride is refused for a price above the guest's willingness to pay (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
+not verified for it. The statistics block's accumulator (`+0x938`) is the month's booked costs, which the month message debits with the running cost (ECON-060).
 
 ### Prebuilt science save
 

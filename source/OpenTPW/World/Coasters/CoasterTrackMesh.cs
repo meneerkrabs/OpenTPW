@@ -99,6 +99,7 @@ public sealed class CoasterTrackMesh
 			int section;
 			if ( usesRuns )
 			{
+				// [EXT:original-undefined-reads] a run position outside the sample list makes the original read memory outside the list; OpenTPW's key walk stays clamped to the last run, a defined result (user-approved 2026-10-30; the out-of-sample read of COAST-026)
 				while ( run < runs!.Count - 1 && runs[run].Key < b.Key )
 					run++;
 				runIndex = run;

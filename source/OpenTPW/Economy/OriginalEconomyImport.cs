@@ -492,6 +492,9 @@ public sealed partial class OriginalEconomyImport
 			var person = saved.Person;
 			if ( person.AccurateDestX < ParkLitter.MapSize * 256 && person.AccurateDestY < ParkLitter.MapSize * 256 )
 				member.ResumeDestination = (person.AccurateDestX, person.AccurateDestY);
+			// [BIN:TPW-EXE:0x004D6977 escort walk mask] the walk mask +0x188 is saved in the navigation state (nav_mode) and the loader's route uses it: a guard escorting by the second try (+0x188 = 1) walks off the paths to the booth
+			if ( person.NavigationState.NavMode == 1 )
+				member.ResumeMask = 1;
 			else
 				adjusted.Add( $"{saved.Model} thing {saved.Id} walk destination ({person.AccurateDestX}, {person.AccurateDestY}) lies outside the map, not walked to" );
 			if ( GuestSpeed.BaseSpeeds.Contains( person.BaseSpeed ) )

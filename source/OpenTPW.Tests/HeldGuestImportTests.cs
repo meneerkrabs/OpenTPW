@@ -148,4 +148,36 @@ public class HeldGuestImportTests
 		Assert.AreNotEqual( StaffJob.Escorting, member.Job, "he arrived and set it down" );
 		Assert.AreNotEqual( GuestState.HeldByGuard, guests.Find( 41 )?.State, "set down (or destroyed where no gate is reachable)" );
 	}
+	[TestMethod]
+	public void AnEscortOnTheOffPathRouteKeepsItsWalkMaskAndReachesABoothOffTheConcretePaths()
+	{
+		// [BIN:TPW-EXE:0x004D6977 escort walk mask] the second try to the booth runs with +0x188 = 1, which the saved nav_mode keeps; the loader's route uses it
+		foreach ( var navMode in new[] { 1, 0 } )
+		{
+			var settings = OriginalSaveImportTests.Settings();
+			var guard = SaveTestPayloads.Staff( SaveThingModel.Guard, state: 18, role: new byte[] { 41, 0, 9, 0, 0, 0 }, position: (At( 10 ), At( 5 )), destination: (At( 12 ), At( 8 )), navMode: navMode );
+			var guest = SaveTestPayloads.Guest( new SaveTestPayloads.GuestFields { Position = (At( 9 ), At( 5 )), State = 17 } );
+			var save = OriginalSaveImportTests.Park( settings, extraThings: new[] { (43u, (uint)SaveThingModel.Guard, guard), (41u, (uint)SaveThingModel.Guest, guest) } );
+			var park = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+			OriginalEconomyImport.Apply( park, save );
+			var member = park.Staff.Members.Single( item => item.Type == StaffType.Guard );
+			Assert.AreEqual( navMode == 1 ? 1 : (int?)null, member.ResumeMask );
+			park.OpenPark();
+			var grid = Grid();
+			var guests = new GuestSimulation( grid, GuestTests.CreateSettings(), 5 ) { ArrivalsEnabled = false };
+			guests.ImportOriginal( save.Guests, ParkCalendar.Turn( park.Tick ), _ => 0, _ => 0 );
+			var world = new StaffWorldSimulation( grid, () => park.Staff.Members, _ => null, (0, 5) ) { Guests = guests };
+			guests.IsEscorted = world.IsEscorting;
+			park.StaffWorld = world;
+			world.Synchronize();
+			world.BeginStaffTurn( park, park.Turn );
+			var walking = member.Job == StaffJob.Escorting && member.Navigation!.Mask == navMode;
+			Assert.IsTrue( navMode == 1 ? walking : member.Navigation!.Mask == 0, "the mask the route runs with is the saved one" );
+			if ( navMode == 1 )
+			{
+				Assert.AreEqual( StaffJob.Escorting, member.Job, "the route off the paths is found, so the escort goes on" );
+				Assert.IsTrue( member.Navigation!.Cell != (12, 8) );
+			}
+		}
+	}
 }

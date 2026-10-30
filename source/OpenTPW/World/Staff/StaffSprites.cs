@@ -83,7 +83,7 @@ public static class StaffSpriteRules
 
 	/// <summary>The limit <paramref name="settings"/> give, or null for no limit: no settings, or a preset whose original file is missing (the data this limit belongs to is then missing too).</summary>
 	public static int? BankLimitOf( IGraphicsSettings? settings ) =>
-		settings != null && settings.GetPresetValues( settings.Current.Preset ) is { } detail ? BankLimit( detail.NumKids ) : null;
+		settings != null && settings.GetPresetValues( settings.Current.Preset ) != null ? BankLimit( settings.Detail.NumKids ) : null;
 
 	/// <summary>Whether tp.exe flags a role's folder for the limit (all but the entertainers' theme folders, 0x541310).</summary>
 	public static bool IsBankLimited( StaffType type ) => type != StaffType.Entertainer;

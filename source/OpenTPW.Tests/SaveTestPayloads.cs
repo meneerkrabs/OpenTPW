@@ -215,7 +215,7 @@ internal static class SaveTestPayloads
 	/// </summary>
 	public static byte[] Staff( SaveThingModel model, int grade = 2, float happiness = 97, string name = "Nicholas Ricks", uint state = 1, byte percentage = 0,
 		long hired = 125_935_884_000_000_000, ushort roleNext = 0, ushort patrolLow = 1, ushort patrolHigh = 0x4000, ushort restArea = 0, uint idle = 0, uint jobsDone = 0,
-		byte[]? role = null, (ushort X, ushort Y) position = default, (ushort X, ushort Y)? destination = null )
+		byte[]? role = null, (ushort X, ushort Y) position = default, (ushort X, ushort Y)? destination = null, int navMode = 0 )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
@@ -225,6 +225,7 @@ internal static class SaveTestPayloads
 		var (destX, destY) = destination ?? position;
 		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 20 ), destX );
 		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 22 ), destY );
+		BinaryPrimitives.WriteInt32LittleEndian( person.AsSpan( 35 + 48 ), navMode );
 		writer.Write( person );
 		writer.Write( grade );
 		writer.Write( happiness );

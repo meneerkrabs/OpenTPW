@@ -28,7 +28,7 @@ namespace OpenTPW;
 internal sealed partial class FrontEndSmokeTest : IDisposable
 {
 	/// <summary>The kid sets (and heads) a park loads: the preset's limit of tp.exe 0x41A9D0 (KidSetLoad), of the eight the game ships.</summary>
-	private static int ExpectedKidSets => Math.Min( 8, KidSetLoad.LimitOf( IGraphicsSettings.Instance ) ?? 8 );
+	private static int ExpectedKidSets => GameEditions.IsThemeParkInc ? 8 : Math.Min( 8, KidSetLoad.LimitOf( IGraphicsSettings.Instance ) ?? 8 );
 
 	private const int MaximumFrames = 3000;
 	private readonly GameFlow flow;

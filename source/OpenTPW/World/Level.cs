@@ -772,7 +772,7 @@ public partial class Level : IDisposable
 		GuestRenderer.BounceRiders = bounceRiders;
 		if ( CostumeRenderer != null )
 			CostumeRenderer.BounceRiders = bounceRiders;
-		RideHeadRenderer = new RideHeadRenderer( Guests, headSprites, Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
+		RideHeadRenderer = new RideHeadRenderer( Guests, headSprites, Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume, PickByThingId = costumeHeads.Count == 0 };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
 		AddCoasterHeads( RideHeadRenderer );

@@ -24,7 +24,8 @@ public static class KidSetLoad
 
 	/// <summary>The limit <paramref name="settings"/> give, or null for no limit: no settings, or a preset whose original file is missing (the data this limit belongs to is then missing too).</summary>
 	public static int? LimitOf( IGraphicsSettings? settings ) =>
-		settings != null && settings.GetPresetValues( settings.Current.Preset ) is { } detail ? Limit( detail.NumKids ) : null;
+		// the resolved detail (Custom's simulation options are reset to High's unless the enhanced-game-options fix is on), as the particle density reads it
+		settings != null && settings.GetPresetValues( settings.Current.Preset ) != null ? Limit( settings.Detail.NumKids ) : null;
 
 	/// <summary>
 	/// The sets the original keeps, in its load order, from <paramref name="sorted"/> (the folder's loadable sets in name order): the priority names present first, then the rest in name order, each pass

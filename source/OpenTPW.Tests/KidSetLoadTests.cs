@@ -45,6 +45,18 @@ public class KidSetLoadTests
 	}
 
 	[TestMethod]
+	public void ACustomPresetsNumKidsFallsBackToHighUnlessTheEnhancedOptionsFixIsOn()
+	{
+		var flags = CompatibilityFlags.Original;
+		var service = new GraphicsSettingsService( Presets, GraphicsSettings.Default with { Preset = GraphicsPreset.High }, null, () => flags );
+		service.Apply( new GraphicsSettings { Preset = GraphicsPreset.Custom, Detail = new OriginalDetailSettings { NumKids = 3 } } );
+		Assert.AreEqual( 6, KidSetLoad.LimitOf( service ), "the raw custom value 3 is reset to High's 2 without the fix" );
+		Assert.AreEqual( 2, StaffSpriteRules.BankLimitOf( service ) );
+		flags = CompatibilityFlags.Custom( new[] { CompatibilityFixes.EnhancedGameOptions } );
+		Assert.AreEqual( 8, KidSetLoad.LimitOf( service ), "with the fix the custom value stands" );
+	}
+
+	[TestMethod]
 	public void TheFourNamedSetsLoadFirstAndTheRestFollowInNameOrder()
 	{
 		// [BIN:TPW-EXE:0x764030 table] BI, KI, TA, SU first; the second pass takes the others by name (BE, CH, FR, SA)

@@ -58,6 +58,9 @@ public sealed class RideHeadRenderer : Entity
 	private bool deleted;
 
 	public bool Visible { get; set; } = true;
+
+	/// <summary>True for the kid-head renderer of a theme without costume heads: the original's head pick then draws by the thing id (0x004FCAC0) and not by the guest's bank +0x20.</summary>
+	public bool PickByThingId { get; init; }
 	/// <summary>Which riders this renderer draws a head for (null: all): the kid heads leave riders in costume to the costume heads where the theme has them.</summary>
 	public Func<Guest, bool>? Draws { get; init; }
 	/// <summary>Head quads submitted in the last frame; this count alone does not prove visible pixels.</summary>
@@ -151,9 +154,9 @@ public sealed class RideHeadRenderer : Entity
 			if ( !placement.Visible )
 				continue;
 			// [BIN:STP-PPC:0x100E8F70] the kidsheads art, or costumeheads when the visitor's costume flag (+0x24) is 2 (set index +0x20); a rider in costume gets the theme's costume head (Level.SetupGuests), and in Fantasy and Hallow, which ship none, its kid head (GUEST-017)
-			// [EXT:empty-costume-heads-keep-kid-head] a rider in costume in Fantasy and Hallow, which ship no costume heads, keeps its kid head: the original's pick 0x00541F70 / 0x00541FD0 takes a modulo by the group's count, which is 0 there, so matching it would divide by zero
+			// [BIN:TPW-EXE:0x004FCAC0 head pick] the head hang (0x0044B410 at 0x0044B471) asks 0x004FCAC0: with costume heads loaded (the count of category 3, 0x00541F60) the guest's own bank +0x20 (costume heads for a guest in costume); with none (Fantasy and Hallow) every rider, costume or not, gets a kid head drawn by its thing id (the world generator reseeded with it, 0x00541F70 with category 1), so there is no division by zero. Not ported: that reseed and draw of the world generator on every head hang
 			// [BIN:TPW-EXE:0x005890E0 sprite placement] a head is the body's pixel size (20 / 128 x sqrt(2) world units, SpriteScale) times the scale property 0.685 (0x0074CED0); the roll's reference is HEADS-004
-			var atlasIndex = GuestAppearance.KidSet( guest!, Math.Min( 8, atlases.Count ) );
+			var atlasIndex = PickByThingId ? GuestAppearance.KidSet( guest!.Id, Math.Min( 8, atlases.Count ) ) : GuestAppearance.KidSet( guest!, Math.Min( 8, atlases.Count ) );
 			var atlas = atlases[atlasIndex];
 			// The head art is 7 directions (rows, from the pole) of 8 frames (azimuth steps): frame 8 * row + column.
 			var frame = atlas.Frames[atlas.GetFrame( GuestSpriteAtlas.StandSlot, placement.Row, placement.Column )];

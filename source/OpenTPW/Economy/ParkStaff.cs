@@ -183,6 +183,11 @@ public sealed class StaffMember
 	/// places the member; null otherwise.
 	/// </summary>
 	public (int X, int Y)? ResumeDestination { get; set; }
+	/// <summary>
+	/// The walk mask (+0x188, saved as the navigation's nav_mode) the member is routed again with: 1 lets the walk leave the paths, as a guard's escort to the ticket booth does (0x004D6977); null: 0.
+	/// Taken with <see cref="ResumeDestination"/> when a world places the member.
+	/// </summary>
+	public int? ResumeMask { get; set; }
 	/// <summary>The turn an original save's claim of this member's ride or toilet was made (<c>+0x60</c>); the world that places him takes the claim again with it. Not saved: a member placed later claims at the current turn.</summary>
 	public long? ResumeClaimTurn { get; set; }
 }

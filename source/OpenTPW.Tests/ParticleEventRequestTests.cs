@@ -64,6 +64,22 @@ public class ParticleEventRequestTests
 		Emit(placed.Runtime, 2); Assert.IsTrue(N.Vector3.Distance(new N.Vector3(dx, dy, 0), placed.Runtime.LastParticleEventAttempt!.Value.Request!.Value.EngineUnitDirection!.Value) < .0001f);
 		Assert.AreEqual(0, mixer.Voices.Count); Assert.IsTrue(mixer.Mix(4).All(value => value == 0));
 	}
+	[TestMethod]
+	public void AKeyReadsTheKeyTableAndTheSceneRefreshesItOnlyForADrawnFrame()
+	{
+		// [BIN:TPW-EXE:0x556b90, 0x44ab30, 0x463030] the key resolver reads the instance's key table, rebuilt at creation and by the render callback of a frame the scene drew the instance in
+		var placed = Placed();
+		Emit(placed.Runtime, 1); var atCreation = placed.Runtime.LastParticleEventAttempt!.Value.Request!.Value.EnginePosition;
+		placed.Runtime.Animator.Play(0, new ModelFile(new MemoryStream(Md2AnimationTests.CreateAnimation())).Clip!, "rigid", loop: true);
+		placed.Simulate(0.4);
+		Assert.AreNotEqual(placed.Runtime.Animator.RestTransforms[1], placed.Runtime.Animator.NodeTransforms[1], "the clip moved the key node");
+		Emit(placed.Runtime, 1); Assert.AreEqual(atCreation, placed.Runtime.LastParticleEventAttempt!.Value.Request!.Value.EnginePosition, "not drawn since creation: the table still holds the creation pose");
+		placed.PresentDrawn();
+		Emit(placed.Runtime, 1); var drawn = placed.Runtime.LastParticleEventAttempt!.Value.Request!.Value.EnginePosition;
+		Assert.AreNotEqual(atCreation, drawn, "the callback rebuilt the table from the pose of the drawn frame");
+		placed.Simulate(0.4);
+		Emit(placed.Runtime, 1); Assert.AreEqual(drawn, placed.Runtime.LastParticleEventAttempt!.Value.Request!.Value.EnginePosition, "the table is as stale as the last drawn frame");
+	}
 	[DataTestMethod]
 	[DataRow(0)][DataRow(3)][DataRow(4)][DataRow(5)][DataRow(6)][DataRow(7)][DataRow(8)][DataRow(9)][DataRow(10)]
 	public void OtherEventTypesDoNotMutateParticleDiagnostic(int type)
@@ -123,7 +139,7 @@ public class ParticleEventRequestTests
 	public void ChildOwnerIsolationCurrentAnimationAndTeardownUseRealRuntime()
 	{
 		var world = new RideScriptWorld(); var first = Placed(world: world); var second = Placed(90, world); Emit(first.Runtime, 2); var old = first.Runtime.LastParticleEventAttempt!.Value;
-		var clip = new ModelFile(new MemoryStream(Md2AnimationTests.CreateAnimation())).Clip!; first.Runtime.Animator.Play(0, clip, "synthetic", false); first.Runtime.Animator.Advance(.6); Emit(first.Runtime, 2);
+		var clip = new ModelFile(new MemoryStream(Md2AnimationTests.CreateAnimation())).Clip!; first.Runtime.Animator.Play(0, clip, "synthetic", false); first.Runtime.Animator.Advance(.6); first.PresentDrawn(); Emit(first.Runtime, 2);
 		Assert.AreNotEqual(old.Request!.Value.EnginePosition, first.Runtime.LastParticleEventAttempt!.Value.Request!.Value.EnginePosition); Assert.IsTrue(N.Vector3.Distance(new N.Vector3(-.8f, 20.6f, 9.4f), old.Request.Value.EnginePosition) < .0001f, "retained value does not follow later animation");
 		Assert.IsNull(second.Runtime.LastParticleEventAttempt); second.Script!.SpawnChild("child.RSE", false); second.Runtime.Simulate(FixedStepClock.TickDuration);
 		Assert.AreEqual(second.Visitors.AttractionId, second.Runtime.LastParticleEventAttempt!.Value.Request!.Value.OwnerAttractionId); Assert.AreEqual(second.Script.Child!.ScriptId, second.Runtime.LastParticleEventAttempt.Value.ScriptId);

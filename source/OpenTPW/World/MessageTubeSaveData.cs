@@ -3,15 +3,16 @@ using System.Text.Json.Serialization;
 namespace OpenTPW;
 
 /// <summary>
-/// The park HUD's message tube as a park-resume save holds it: the occupied slots, oldest first (the lowest icon first). tp.exe saves its tag tube with the park (SaveTags 0x48EE50: the count of
-/// occupied slots, then per slot the tag id, the text, the lifetime and the tag's context words); the tube is presentation, so nothing here reaches a simulation or a hash.
+/// The park HUD's message tube as a park-resume save holds it: the occupied slots, oldest first (the lowest icon first). tp.exe saves its tag tube with the park (the tube's saver 0x48EE50: the count of
+/// occupied slots, then per slot the tag id, the text, the lifetime and the tag's context words). Unhashed HUD state; a hidden offer can carry its pending removal, which later issues the ordinary rights-checked decline command.
 /// </summary>
 internal sealed record MessageTubeSaveData
 {
-	/// <summary>The most slots a tube holds (the original's configured count, 0x750610 = 10, read by AddATag 0x48EB20).</summary>
+	/// <summary>The most slots a tube holds (the original's configured count, 0x750610 = 10, read by the tube's add routine 0x48EB20).</summary>
 	public const int MaximumRows = 10;
 	public const int MaximumTextLength = 4096;
 	public const int MaximumLifetime = 600_000;
+	public const int MaximumOfferReleaseDelay = 500;
 
 	public required IReadOnlyList<MessageTubeRowSave> Rows { get; init; }
 
@@ -38,22 +39,19 @@ internal sealed record MessageTubeSaveData
 /// <param name="ContextShort">The short context word of a challenge row.</param>
 /// <param name="ContextInt">The int context word of a challenge row.</param>
 /// <param name="Lifetime">A terminal row's lifetime in unscaled milliseconds (0 for the others).</param>
-/// <param name="ElapsedMs">How much of the lifetime had passed, in unscaled milliseconds (the original's tag timers, 0x80080 at the lifetime and 0x80081 5 s before it).</param>
-/// <param name="Active">The terminal row's expiry timer still runs (it stops when the row is read).</param>
-/// <param name="PreExpiryEnabled">The warning timer (5 s before the expiry) has not fired and was not stopped.</param>
-/// <param name="PreExpiryReached">The warning timer has fired.</param>
-internal sealed record MessageTubeRowSave( int Kind, string Text, int Tag, short ContextShort, int ContextInt, int Lifetime, long ElapsedMs, bool Active, bool PreExpiryEnabled, bool PreExpiryReached )
+/// <param name="Read">The terminal row was read: its timers are stopped (the loader 0x0048EF70 sends such a record through the selection routine 0x0048D9C0); an unread row restarts both timers from the full lifetime.</param>
+[JsonConverter( typeof( MessageTubeRowSaveConverter ) )]
+internal sealed record MessageTubeRowSave( int Kind, string Text, int Tag, short ContextShort, int ContextInt, int Lifetime, bool Read )
 {
 	public const int Message = 0, Offer = 1, Progress = 2, Terminal = 3;
-	/// <summary>An undelivered warning, not the sticky runtime queued latch; optional in older saves.</summary>
-	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
-	public bool PendingPreExpiry { get; init; }
-	/// <summary>An undelivered expiry. Input may still read the restored row before dispatch and cancel it.</summary>
-	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
-	public bool PendingExpiry { get; init; }
+	/// <summary>A hidden offer awaiting its delayed decline/removal; absent for visible rows. Zero means already due, not absent.</summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public int? OfferReleaseDelayMs { get; init; }
 
 	public string? Problem()
 	{
+		if ( OfferReleaseDelayMs is { } delay && (Kind != Offer || delay < 0 || delay > MessageTubeSaveData.MaximumOfferReleaseDelay) )
+			return "a pending offer removal has an invalid kind or delay";
 		if ( Kind is < Message or > Terminal )
 			return $"the message tube row kind {Kind} is unknown";
 		if ( string.IsNullOrWhiteSpace( Text ) || Text.Length > MessageTubeSaveData.MaximumTextLength )
@@ -65,12 +63,10 @@ internal sealed record MessageTubeRowSave( int Kind, string Text, int Tag, short
 			return "a challenge tube row has no tag";
 		if ( Kind == Terminal )
 		{
-			if ( Lifetime is <= 0 or > MessageTubeSaveData.MaximumLifetime || ElapsedMs < 0 || ElapsedMs > Lifetime + MessageTubeSaveData.MaximumLifetime )
-				return "a terminal tube row's lifetime or elapsed time is out of range";
-			if ( PendingExpiry && !Active || PendingPreExpiry && (!Active || !PreExpiryEnabled || PreExpiryReached) )
-				return "a terminal tube row has inconsistent pending timers";
+			if ( Lifetime is <= 0 or > MessageTubeSaveData.MaximumLifetime )
+				return "a terminal tube row's lifetime is out of range";
 			return null;
 		}
-		return Lifetime != 0 || ElapsedMs != 0 || Active || PreExpiryEnabled || PreExpiryReached || PendingPreExpiry || PendingExpiry ? "a tube row that is no terminal carries timer state" : null;
+		return Lifetime != 0 || Read ? "a tube row that is no terminal carries timer state" : null;
 	}
 }

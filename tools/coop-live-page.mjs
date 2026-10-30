@@ -427,7 +427,10 @@ export class PageSide {
 				ratio: window.devicePixelRatio || 1 }; })()`);
 	}
 
-	/** Gives the run's input through the browser's own events on the canvas: keys pressed and released, a line typed, the pointer moved or pressed and released. */
+	/**
+	 * Gives the run's input through the browser's own events on the canvas: keys pressed and released, a line typed, the pointer moved or pressed and released, or (a drag, C5-2) the left
+	 * button pressed, the pointer moved with it held, or the button released.
+	 */
 	async #input(input) {
 		const send = (method, params) => this.cdp.send(method, params, this.sessionId, 30000);
 		await this.eval(`document.getElementById('canvas').focus()`);
@@ -436,7 +439,7 @@ export class PageSide {
 			await send('Input.dispatchKeyEvent', { type: 'keyDown', ...event });
 			await send('Input.dispatchKeyEvent', { type: 'keyUp', ...event, text: undefined });
 		}
-		const element = (input.move || input.click) ? await this.#canvas() : null;
+		const element = (input.move || input.click || input.down || input.held || input.up) ? await this.#canvas() : null;
 		if (input.move) {
 			const { x, y } = pagePoint(input.move, input.canvas, element);
 			await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
@@ -445,6 +448,19 @@ export class PageSide {
 			const { x, y } = pagePoint(input.click, input.canvas, element);
 			await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
 			await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+			await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
+		}
+		if (input.down) {
+			const { x, y } = pagePoint(input.down, input.canvas, element);
+			await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+			await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+		}
+		if (input.held) {
+			const { x, y } = pagePoint(input.held, input.canvas, element);
+			await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'left', buttons: 1 });
+		}
+		if (input.up) {
+			const { x, y } = pagePoint(input.up, input.canvas, element);
 			await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1 });
 		}
 	}

@@ -55,8 +55,12 @@ public sealed partial class ParkHud
 	public int VisitorFirstRow => visitorFirstRow;
 	/// <summary>The sorted column (0-5) and its direction.</summary>
 	public (int Column, bool Descending) VisitorSort => (visitorSortColumn, visitorSortDescending);
-	private IEnumerable<Guest> ListedGuests => (level.Guests?.Guests ?? Array.Empty<Guest>()).Where( guest => level.Guests?.IsInPark( guest ) ?? false );
-	/// <summary>Live in-park visitors in list order.</summary>
+	/// <summary>
+	/// Every live guest thing, whatever cell it stands on.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4fb2a5 roster add] the guest constructor posts message 0x1C (ctor 0x40f8b0, vtable 0x6fd840) to the bus [0x788d3c] and the generic thing deletion 0x50b780 posts 0x1B (ctor 0x40f900, vtable 0x6fd848); the UI receiver adds (0x481920) and removes (0x4818c0) a row for each, with no in-park test; the first fill 0x481bc0 takes every type-1 thing (flag 0x40, 0x493611)
+	private IEnumerable<Guest> ListedGuests => (level.Guests?.Guests ?? Array.Empty<Guest>()).Where( guest => guest.State != GuestState.Gone );
+	/// <summary>Live visitors in list order.</summary>
 	public IReadOnlyList<Guest> VisitorItems => OrderVisitors( ListedGuests.ToArray() );
 
 	/// <summary>The row order the open list holds (visitor ids); null before the window's first fill and after a header press, which sort it afresh.</summary>

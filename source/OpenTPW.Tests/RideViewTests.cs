@@ -10,12 +10,22 @@ namespace OpenTPW.Tests;
 public class RideViewTests
 {
 	[TestMethod]
-	public void BlendWeightIsAboutHalfAtThirtyFramesAndClamped()
+	public void BlendWeightIsAboutHalfAtThirtyFramesAndAtLeastOneMillisecond()
 	{
-		Assert.AreEqual( 0.4835f, RideCameraMode.BlendFactor( 33f ), 0.0005f );
+		// dt is whole milliseconds plus one (0x42b2a0): 33 ms is 34
+		Assert.AreEqual( 0.483f, RideCameraMode.BlendFactor( 33f ), 0.0001f );
 		Assert.AreEqual( 0.4995f, RideCameraMode.BlendFactor( 0f ), 0.0001f, "the frame time is at least 1 ms" );
-		Assert.AreEqual( 0f, RideCameraMode.BlendFactor( 5000f ), 0.0001f, "and at most 1000 ms" );
 		Assert.AreEqual( 0.4995f, RideCameraMode.BlendFactor( float.NaN ), 0.0001f );
+		Assert.AreEqual( 0.4995f, RideCameraMode.BlendFactor( -5f ), 0.0001f );
+	}
+
+	[TestMethod]
+	public void AStalledFrameCountsAsOneHundredMilliseconds()
+	{
+		// 0x42b2c7: a dt above 200 becomes 100.0, so the weight is not monotonic: 199 ms (dt 200) 0.4, 200 ms (dt 201) and any stall 0.45
+		Assert.AreEqual( 0.4f, RideCameraMode.BlendFactor( 199f ), 0.0001f );
+		Assert.AreEqual( 0.45f, RideCameraMode.BlendFactor( 200f ), 0.0001f );
+		Assert.AreEqual( 0.45f, RideCameraMode.BlendFactor( 5000f ), 0.0001f );
 	}
 
 	[TestMethod]

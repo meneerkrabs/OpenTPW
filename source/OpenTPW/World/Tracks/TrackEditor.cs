@@ -180,10 +180,22 @@ public sealed class TrackEditor
 	}
 
 	/// <summary>
-	/// The corner collector of <c>0x530830</c> as the original leaves its stack: the exit (when it is a laid tile), every corner and the end of the walk, each pushed while the stack holds
-	/// at most <see cref="CornerCapacity"/> points (so a walk that ends at the exit leaves the exit twice). The walk also writes the overlap word of every tile it passes.
+	/// [EXT:online-coop-claims] The tiles the open-end collector passes, the station tile it stops on included (C5-3, a ride's protected track: <see cref="TrackProvenance"/>). It runs as
+	/// <see cref="FindOpenEnd"/> runs, writing the overlap words it writes, so it runs on a throwaway copy of the track layer.
 	/// </summary>
-	private (List<(int X, int Y)> Corners, (int X, int Y) Last, bool Reached) CollectForward()
+	internal IReadOnlyList<(int X, int Y)> CollectorTiles()
+	{
+		var visited = new List<(int X, int Y)>();
+		CollectForward( visited );
+		return visited;
+	}
+
+	/// <summary>
+	/// The corner collector of <c>0x530830</c> as the original leaves its stack: the exit (when it is a laid tile), every corner and the end of the walk, each pushed while the stack holds
+	/// at most <see cref="CornerCapacity"/> points (so a walk that ends at the exit leaves the exit twice). The walk also writes the overlap word of every tile it passes, and hands each
+	/// to <paramref name="visited"/>.
+	/// </summary>
+	private (List<(int X, int Y)> Corners, (int X, int Y) Last, bool Reached) CollectForward( List<(int X, int Y)>? visited = null )
 	{
 		var corners = new List<(int X, int Y)>();
 		var heading = station.Heading;
@@ -197,6 +209,7 @@ public sealed class TrackEditor
 			if ( !IsLaidTile( cell ) )
 				break;
 			last = position;
+			visited?.Add( position );
 			if ( steps == 0 && corners.Count < CornerCapacity )
 				corners.Add( position );
 			var stop = false;
@@ -224,6 +237,7 @@ public sealed class TrackEditor
 					reached = true;
 					position = nextOrigin;
 					last = position;
+					visited?.Add( position );
 					break;
 				}
 			}
@@ -620,6 +634,22 @@ public sealed class TrackEditor
 		if ( isExit && !replay )
 			RestoreExit( at );
 		return false;
+	}
+
+	/// <summary>
+	/// The record clear of the demolition's second pass on the record under one mask cell (<c>0x53B280(0, 0, 1)</c>, called by <c>0x527EE0</c> for every cell of the demolished object's shape): an extension cell
+	/// hands the clear to its origin with the same arguments, a tile that is no track record is left alone, and the origin goes through <see cref="ClearCell(ValueTuple{int, int}, int, int, bool)"/> as a forced clear (0, 0)
+	/// with the flag 0x81B46C clear, which no replay sets there. A surviving tile (the exit and the entry tile of the tool, <see cref="ToolExit"/>) loses one count of its overlap word for each mask cell that reaches it.
+	/// Returns whether a tile was cleared.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052852D record clear] pass 2 calls 0x53B280(0, 0, 1) (0x528525..0x52852D) on the record 0x4D0AF0 finds for the mask cell when the object is not the add-on a cleared tile takes with it (0x527EE0's third argument, 1 only from 0x53B703), else only the flag 0x10 of the record (0x528518..0x52851E); the third argument chooses the piece again for the neighbour tiles (0x53B7B4..0x53B83B), which ClearOrigin always does; 0x81B46C is 0 there: only the replays at 0x528059..0x5280BB set it, and the nested demolition runs the flag clear alone
+	internal bool ClearUnderDemolition( (int X, int Y) at )
+	{
+		var cell = Tracks.Get( at.X, at.Y );
+		if ( cell.IsEmpty )
+			return false;
+		var origin = cell.IsExtension && cell.Parent >= 0 ? Tracks.CellOf( cell.Parent ) : at;
+		return ClearCell( origin, 0, 0 );
 	}
 
 	private void ClearLink( (int X, int Y) at, byte bits ) => Update( at, cell => { cell.Link &= (byte)~bits; return cell; } );

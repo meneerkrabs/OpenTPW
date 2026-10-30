@@ -151,7 +151,7 @@ public sealed class LocatorModel
 /// name, the staff state icon or the visitor's thought). Ctrl+S and Ctrl+V open them; a radio locates its role's next actor and the camera follows it.
 /// </summary>
 // [EXT:visitor-info-window] the visitor info window that Ctrl+V tests ([0x7cc418], window object 0x7cc408) is not ported, by design: a left click on an All Visitors row or a visitor picked in the park stands in for opening it and it closes with the All Visitors window, where the original's stays open on its own
-// [APPROX:UI-091] staff locator radios preserve independent saved role chains (+0x210), with qualified original-malformation and legacy-save reconstruction; visitor radios use the live ThingPool chain with an explicit out-of-pool fixture fallback; visitor position failure still clears the selection; camera follow lacks the original per-frame smoothing (0x42b1c0), panel sliding remains unimplemented — evidence needed: slide geometry; camera and real-data visual comparison
+// [APPROX:UI-091] staff locator radios preserve independent saved role chains (+0x210), with qualified original-malformation and legacy-save reconstruction; visitor radios use the live ThingPool chain with an explicit out-of-pool fixture fallback; visitor position failure still clears the selection; the slide of the panels follows the arm drawer, but what the arm's retract message 0x1001d8 does to a locator opened while one is out is not ported (see the register row) — evidence needed: real-data visual comparison
 public sealed partial class ParkHud
 {
 	private static LayoutTable LocatorTable => OriginalLayoutTables.LocatorPanels;
@@ -169,30 +169,48 @@ public sealed partial class ParkHud
 	private List<UiElement> locatorStaffElements => staffLocatorElements ??= new();
 	private List<UiElement> locatorVisitorElements => visitorLocatorElements ??= new();
 	private List<UiElement> locatorStripElements => stripLocatorElements ??= new();
+	private List<UiElement>? armLocatorElements;
+	private List<UiElement> locatorArmElements => armLocatorElements ??= new();
+	private ArmSlide? locatorSlide;
+	/// <summary>The locator panel's slide in the HUD arm (the drawer 0x4a14f0 through 0x4a2590, shared with the camera and message panels).</summary>
+	internal ArmSlide LocatorSlide => locatorSlide ??= new();
+	/// <summary>The panel the arm carries now or is putting away (tp.exe's panel slot, 0x7cc2fc staff or 0x7cc300 visitors); None once it is in.</summary>
+	private LocatorMode locatorShown;
+	/// <summary>The rectangle of a locator panel's table root: its width and height place the drawer's slide.</summary>
+	private static UiRect LocatorPanelRoot( LocatorMode mode ) => LocatorTable.Roots[mode == LocatorMode.Visitor ? 1 : 0].Rect;
 	private Vector3? locatorCameraTarget;
 
 	private void BuildLocatorPanels()
 	{
-		T Add<T>( T element, List<UiElement> group ) where T : UiElement
+		// [BIN:TPW-EXE:0x4a15c8 arm panel depth] a panel the arm carries lies under the HUD (the drawer lowers its depth by 3 after attaching it, 0x4a15b1-0x4a15cd), so the two locator panels are added under the main panel as the camera panel is
+		var mainPanel = hud.Find( "mainPanel" );
+		T Add<T>( T element, List<UiElement> group, bool underHud = false ) where T : UiElement
 		{
 			element.Anchor = UiAnchor.BottomLeft;
 			element.Visible = false;
 			group.Add( element );
-			return hud.Add( element );
+			if ( underHud )
+				LocatorTableRects[element] = element.Bounds;
+			return underHud && mainPanel != null ? hud.InsertBefore( mainPanel, element ) : hud.Add( element );
 		}
 		var staffRoot = LocatorTable.Roots[0];
 		var visitorRoot = LocatorTable.Roots[1];
+		// the arm's own art (bar 0x21, pane 0x22, handle 0x23) grows out under the panel with the slide, whichever panel the arm carries
+		var (armBar, armPane, armHandle) = ArmPieces( (int)staffRoot.Rect.Width, 0 );
+		Add( new UiModelImage { Id = "locatorArmBar", Model = "panel", Frame = () => 0, Bounds = armBar }, locatorArmElements, underHud: true );
+		Add( new UiModelImage { Id = "locatorArmPane", Model = ArmPaneModel, Frame = () => 0, Bounds = armPane }, locatorArmElements, underHud: true );
+		Add( new UiModelImage { Id = "locatorArmHandle", Model = ArmHandleModel, Frame = () => 0, Bounds = armHandle }, locatorArmElements, underHud: true );
 		foreach ( var (root, group) in new[] { (staffRoot, locatorStaffElements), (visitorRoot, locatorVisitorElements) } )
 		{
 			var plain = root.Children.Single( node => node.Model == "!f_plain" );
-			Add( new UiModelImage { Id = root == staffRoot ? "locatorStaffPanel" : "locatorVisitorPanel", Model = plain.Model!, Bounds = plain.Rect }, group );
+			Add( new UiModelImage { Id = root == staffRoot ? "locatorStaffPanel" : "locatorVisitorPanel", Model = plain.Model!, Bounds = plain.Rect }, group, underHud: true );
 			foreach ( var node in plain.Children )
 			{
 				var role = LocatorRadios.Single( radio => radio.Model == node.Model ).Role;
 				// [BIN:TPW-EXE:0x004b3bd1 locator group] a radio press chooses that radio and posts 0x101 to the panel, also when it is already chosen
 				Add( new UiButton { Id = $"locatorRole{role}", Model = node.Model, Help = strings.Help( node.Help ), Bounds = node.Rect,
 					Selected = () => Locator.RadioChosen && Locator.Role == role,
-					Clicked = () => PressLocatorRole( role ) }, group );
+					Clicked = () => PressLocatorRole( role ) }, group, underHud: true );
 			}
 		}
 		var strip = LocatorStripTable.Root;
@@ -259,6 +277,7 @@ public sealed partial class ParkHud
 	private void CloseArmPanel()
 	{
 		CloseMessagePanel();
+		CloseCameraPanel();
 		CloseLocator();
 	}
 
@@ -307,6 +326,7 @@ public sealed partial class ParkHud
 	}
 
 	// [BIN:TPW-EXE:0x004b3656 locator follow] on every message 0x1e while flag 0x1000 is set the panel centres the camera on the actor (0x486860)
+	// [BIN:TPW-EXE:0x42ca0d view blend] the follow has no smoothing of its own: the camera update 0x42b1c0 builds the park view matrix directly from yaw and pitch (0x42cbe9, 0x42cc02) and blends matrices only under [0x790ab0] & 0x3c (0x42ca0d), and the camera setter 0x42ab20 writes only the bits 2 (the walk) and 4 (the ride) of that byte; the blend is the ride view's (RideCameraMode.BlendFactor)
 	private void FollowLocatorActor()
 	{
 		if ( Camera.Mode is not ParkCameraMode camera || !TryLocatorActorPosition( out var position ) )
@@ -336,12 +356,6 @@ public sealed partial class ParkHud
 		}
 		if ( hud == null )
 			return;
-		if ( Locator.Mode != LocatorMode.None && hud.Find( "messageClose" ) is { } close )
-			close.Visible = true;
-		foreach ( var element in locatorStaffElements )
-			element.Visible = Locator.Mode == LocatorMode.Staff;
-		foreach ( var element in locatorVisitorElements )
-			element.Visible = Locator.Mode == LocatorMode.Visitor;
 		foreach ( var element in locatorStripElements )
 			element.Visible = Locator.Mode != LocatorMode.None && Locator.StripShown;
 		// [BIN:TPW-EXE:0x004b4099 locator icons] the staff state icon shows outside the visitor role, the thought icon in it
@@ -350,6 +364,59 @@ public sealed partial class ParkHud
 		if ( hud.Find( "locatorThought" ) is { } thought )
 			thought.Visible &= Locator.Role == LocatorModel.VisitorRole && LocatorThoughtFrame != null;
 	}
+
+	/// <summary>
+	/// The locator panel's slide in the HUD arm. Opening a panel goes through 0x4a2590, which sends the arm the retract message 0xb and then 10 with the panel: the panel in the arm first slides in, then the new one slides out
+	/// (a panel of the other kind waits in the arm's slot 2 until the retract ends, 0x4a1535, 0x4a19a7-0x4a19c2).
+	/// </summary>
+	// [BIN:TPW-EXE:0x4b3d0f locator panels] the two panels (windows 0x95c staff and 0x963 visitors of table 0x756950) are built hidden once; 0x4b3f60 puts the one of the actor's kind into the arm with 0x4a2590 (0x4b3fae) and the red X, the close key and every other arm content retract it
+	// [BIN:TPW-EXE:0x4a1631 locator panel place] the drawer places them as every arm panel (ArmDrawer): the staff panel (474,1159)-(941,1470), 467 wide, starts at 331 - 467 - 50 = -186, steps by (439 - 331 + 467 + 100) / 10 = 67 and ends at 484, centred on the arm at top 1127; the visitors' panel (-37,1159)-(429,1470), 466 wide, starts at -185, steps by 67 and ends at 485, also at top 1127
+	private void UpdateLocatorSlide( float delta )
+	{
+		if ( hud == null )
+			return;
+		var wanted = Locator.Mode;
+		if ( locatorShown != LocatorMode.None && wanted != locatorShown )
+		{
+			// the arm puts the panel it carries away first
+			LocatorSlide.Close();
+			if ( LocatorSlide.Settled )
+				locatorShown = LocatorMode.None;
+		}
+		if ( locatorShown == LocatorMode.None && wanted != LocatorMode.None )
+			locatorShown = wanted;
+		if ( locatorShown != LocatorMode.None && locatorShown == wanted )
+			LocatorSlide.Open();
+		LocatorSlide.Update( delta );
+		if ( wanted == LocatorMode.None && LocatorSlide.Settled )
+			locatorShown = LocatorMode.None;
+		var shown = locatorShown;
+		var step = LocatorSlide.Step;
+		var (shiftX, shiftY) = shown == LocatorMode.None ? (0, 0) : ArmDrawer.Shift( LocatorPanelRoot( shown ), step );
+		foreach ( var (group, mode) in new[] { (locatorStaffElements, LocatorMode.Staff), (locatorVisitorElements, LocatorMode.Visitor) } )
+		{
+			foreach ( var element in group )
+			{
+				var table = LocatorTableRects[element];
+				element.Bounds = table with { X = table.X + (mode == shown ? shiftX : 0), Y = table.Y + (mode == shown ? shiftY : 0) };
+				element.Visible = mode == shown && step > 0 && ArmChildShown( element.Bounds );
+			}
+		}
+		var arm = shown == LocatorMode.None ? default : ArmPieces( (int)LocatorPanelRoot( shown ).Width, step );
+		var pieces = new[] { arm.Bar, arm.Pane, arm.Handle };
+		for ( var index = 0; index < locatorArmElements.Count; index++ )
+		{
+			locatorArmElements[index].Bounds = pieces[index];
+			locatorArmElements[index].Visible = shown != LocatorMode.None && step > 0 && ArmChildShown( pieces[index] );
+		}
+		// [BIN:TPW-EXE:0x4a1725 arm retract] the arm's retract button is shown by the slide out and hidden again by the start of the slide in, whichever panel the arm carries
+		if ( hud.Find( "messageClose" ) is { } close )
+			close.Visible = MessageSlide.Out || CameraSlide.Out || LocatorSlide.Out;
+	}
+
+	private Dictionary<UiElement, UiRect>? locatorPanelRects;
+	/// <summary>The table rectangles of the locator panels' controls (before the arm's slide moves them); created with the HUD's panels.</summary>
+	private Dictionary<UiElement, UiRect> LocatorTableRects => locatorPanelRects ??= new();
 
 	/// <summary>The strip's text: the staff member's name (0x506860), or "Visitor #" with the visitor's number (UITEXT 455; 456 "New Visitor" without one).</summary>
 	// [BIN:TPW-EXE:0x004b3490 locator strip text] staff show their name, visitors format 0x1c8 with their number (+0x1d8), 0x1c9 when it is 0; tp.exe's UITEXT ids above 237 are OpenTPW's + 1

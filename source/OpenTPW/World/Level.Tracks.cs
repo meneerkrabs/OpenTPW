@@ -142,7 +142,7 @@ public partial class Level
 		if ( TrackToolStation == item )
 			CellTool.Cancel();
 		trackToolStation = null;
-		DemolishTrack( station, BuilderOf( item )! );
+		DemolishTrack( item, station, BuilderOf( item )! );
 		item.Runtime.Bump?.Rebuild( TrackCircuit.Invalid( "removed" ) );
 	}
 
@@ -173,11 +173,19 @@ public partial class Level
 	private TrackEditor TrackEditorOf( OriginalObject item, TrackStation station, TrackBuilder builder ) => new( builder, station, TrackEditHooksOf( item, builder ) );
 
 	/// <summary>
-	/// Removes the station tiles of a ride; the tiles its replays cleared are gone already (<see cref="OnTrackStationRemoving"/>) and a tile no replay reached stays, as in the original.
+	/// Removes the station tiles of a ride (pass 2 of the demolition); the tiles its replays cleared are gone already (<see cref="OnTrackStationRemoving"/>) and a tile no replay reached stays, as in the original.
 	/// A type without a queue runs no replay and leaves its whole track.
 	/// </summary>
-	private void DemolishTrack( TrackStation station, TrackBuilder builder )
+	private void DemolishTrack( OriginalObject item, TrackStation station, TrackBuilder builder )
 	{
+		// pass 2 of the demolition clears the record under every cell of the ride's shape with 0x53B280(0, 0, 1): the station tiles go through the record clear, which takes the arms of the tiles beside them
+		var editor = TrackEditorOf( item, station, builder );
+		foreach ( var (x, y, cell) in item.Cells )
+		{
+			if ( ParkCellMap.FootprintType( cell.CellType ) != 0 && builder.Cells.InBounds( x, y ) )
+				editor.ClearUnderDemolition( (x, y) );
+		}
+		// a station tile outside the shape (a legacy layout) goes as it always did
 		builder.RemoveStation( station );
 	}
 
@@ -219,9 +227,10 @@ public partial class Level
 	/// <summary>
 	/// The track tool's step after a walk that found <paramref name="item"/>'s circuit valid: the tool on that ride ends and, while a placement's queue start is pending
 	/// (<see cref="placedQueueStart"/>), the queue tool follows that ride's queue; with none pending, a live line click with exactly Ctrl restarts the line tool without a start.
-	/// The issuer's machine alone takes it ([EXT:online-coop-commands]: a peer's or a replayed command moves no tool).
+	/// The issuer's machine alone takes it ([EXT:online-coop-commands]: a peer's or a replayed command moves no tool). [EXT:online-coop-undo] In a shared park a line's continuation follows the
+	/// restart its line carried (<paramref name="keeps"/>, <see cref="LayTrackLineCommand.KeepsTool"/>), which the host's journal reads too (C5-3); null takes the click's own.
 	/// </summary>
-	internal void ContinueTrackTool( OriginalObject item, TrackWalkCause cause )
+	internal void ContinueTrackTool( OriginalObject item, TrackWalkCause cause, bool? keeps = null )
 	{
 		// [BIN:TPW-EXE:0x0052A970 circuit walk] a valid circuit closes the tool; the walk itself posts no advisor or event message (it calls no message builder 0x0059B590)
 		// [BIN:TPW-EXE:0x00526D41 track tool help] the kart and water tool posts tool help 0xCC (204) only for a click with no line start (0x0081EDE4/E8 = −1), which sets the start (0x00525A1C → 0x00526CB3); the placement presets the start at the station's exit (0x0052A1A0), so it is reached only when the tool stays on without one after a line closes with exactly Ctrl and no queue start pending (0x00526FB3, UI-031), and the HUD's report of that click posts it (ParkHud.ReportCellToolClick, AdvisorToolHelp.TrackLineStart); 0xB8, 0xD6 and 0x151 are the path and queue tool's help (0x005272F5, 0x00527351, 0x00527620)
@@ -232,7 +241,7 @@ public partial class Level
 			var queue = cause != TrackWalkCause.Edit && placedQueueStart is { IsDeleted: false } placed ? placed : null;
 			// UI-031: the live line click with exactly Ctrl and no queue start keeps this mode, with no start.
 			// The circuit refresh above is identical; only the issuer's local tool continuation differs.
-			if ( cause == TrackWalkCause.Line && keepTrackToolAfterLine && queue == null && CellTool.Writer is ParkCommandTrackWriter or TrackLineWriter )
+			if ( cause == TrackWalkCause.Line && (keeps ?? (keepTrackToolAfterLine && queue == null)) && CellTool.Writer is ParkCommandTrackWriter or TrackLineWriter )
 			{
 				CellTool.Enter( CellTool.Writer!, null );
 				return;
@@ -498,7 +507,14 @@ public partial class Level
 	/// circuit valid moves the tool on (<see cref="ContinueTrackTool"/>).
 	/// </summary>
 	private void EnterTrackLineTool( OriginalObject station, TrackEditor editor, TrackOpenEnd open ) =>
-		editor.EnterLineTool( CellTool, null, inner => new ParkCommandTrackWriter( inner, Commands, station.Runtime.AttractionId, () => ContinueTrackTool( station, TrackWalkCause.Line ) ), open );
+		editor.EnterLineTool( CellTool, null, inner => new ParkCommandTrackWriter( inner, Commands, station.Runtime.AttractionId, keeps => ContinueTrackTool( station, TrackWalkCause.Line, keeps ),
+			() => KeepsTrackTool, () => UndoJournal?.LastRecord ), open );
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The restart a track line's click asks for after a close (UI-031): its exactly Ctrl with no placement's queue start pending (<see cref="ContinueTrackTool"/>), read at the
+	/// click, which a shared park's line carries (C5-3).
+	/// </summary>
+	private bool KeepsTrackTool => keepTrackToolAfterLine && placedQueueStart is not { IsDeleted: false };
 
 	/// <summary>
 	/// The edit tool's cut of <paramref name="station"/>'s track between two picked tiles, through the command: done at once (null when it is refused, which ends the tool), or [EXT:online-coop-commands]
@@ -541,12 +557,41 @@ public partial class Level
 			{
 				if ( Objects.FindAt( x, y ) is { IsDeleted: false } addOn && addOn != ride )
 				{
-					Objects.Remove( addOn );
+					// [BIN:TPW-EXE:0x0053B703 add-on of a cleared tile] the tile's clear demolishes the add-on with the third argument 1: its pass 2 takes the flag 0x10 off the records and clears no tile again
+					removingAddOnOfClearedTile = true;
+					try { Objects.Remove( addOn ); }
+					finally { removingAddOnOfClearedTile = false; }
 					return;
 				}
 			}
 		}
 	};
+
+	/// <summary>The demolition's passes over the footprint of a removed object (<see cref="ParkCellMap.DemolishFootprint"/>), with the records of the second layer cleared by their ride's track editor.</summary>
+	internal void DemolishFootprintCells( OriginalObject item, ParkCellMap cells, Action<ushort>? queueCellRemoved ) =>
+		cells.DemolishFootprint( item.Cells, queueCellRemoved, ClearTrackRecordUnder, moved: removingAddOnOfClearedTile );
+
+	/// <summary>Set while the clear of a tile removes the add-on object standing on it (<see cref="ParkCellMap.DemolishFootprint"/>'s <c>moved</c>).</summary>
+	private bool removingAddOnOfClearedTile;
+
+	/// <summary>
+	/// The record clear of a demolition's second pass on the second layer's record under the mask cell (x, y): the ride the tile belongs to clears it through its track editor
+	/// (<see cref="TrackEditor.ClearUnderDemolition"/>, with the refund and the add-on removal of the cut's hooks); a tile no ride owns goes alone.
+	/// </summary>
+	private bool ClearTrackRecordUnder( int x, int y )
+	{
+		if ( Guests?.Grid.Cells is not { } cells || cells.Tracks.Get( x, y ) is not { IsEmpty: false } cell )
+			return false;
+		(int X, int Y) origin = cell.IsExtension && cell.Parent >= 0 ? cells.Tracks.CellOf( cell.Parent ) : (x, y);
+		var head = cells.Tracks.Get( origin.X, origin.Y );
+		foreach ( var (ride, station) in trackStations )
+		{
+			if ( BuilderOf( ride ) is { } builder && head.Owner != 0 && builder.OwnerOf( station ) == head.Owner )
+				return TrackEditorOf( ride, station, builder ).ClearUnderDemolition( (x, y) );
+		}
+		// a tile laid without a ride (a rig's, an old save's) has no exit or entry tile to spare
+		return cells.ClearTrackRecord( x, y );
+	}
 
 	/// <summary>
 	/// After a committed cut: the walk of the circuit again (the controller closes, the pieces start or stop) and, when the circuit is open, the line tool from the end of the track.
@@ -850,6 +895,12 @@ public partial class Level
 				SetTrackStation( ride, track, TrackStation.FromPlacementLegacy( ride.Placement.X, ride.Placement.Y, ride.Placement.Rotation ) );
 		}
 		TrackSave.RestoreCells( Guests.Grid.Cells, saved );
+		// [BIN:TPW-EXE:0x00528A70 station under its footprint] a save written before the footprint's type went under the station tiles holds base type 0 there (0 points for the net worth, not 2): the footprint writer puts the type under them again, as a fresh placement does; a join keeps the host's cells exactly (EXT:online-coop-snapshot-join)
+		if ( joinRestore == null )
+		{
+			foreach ( var station in controllers.Where( item => trackStations.ContainsKey( item ) ) )
+				Guests.Grid.Cells.WriteFootprint( station.Cells, OwnerWord( station ), station.Placement.Rotation );
+		}
 		var module = Objects.ScriptWorld.Bumpers;
 		// a save of the shared module (it carries the module clock and every controller's object slots) is trusted: saved pool slots, verdicts and object slots
 		var shared = saved.FrameCount != null;
@@ -910,7 +961,6 @@ public partial class Level
 		}
 	}
 
-	// [APPROX:TRACK-032] the controller of a saved ride is rebuilt from its circuit and the saved verdict, where tp.exe's loader 0x543560 reads the ride record, the circuit's section records as raw 0xac-byte copies and the reference section from a chunk stream and the ride's handle +0x28 then points at the controller (evidence needed: the section record's fields beyond the kind, place and segment)
 	/// <summary>Walks a station's circuit for a restore of a shared-module save and rebuilds it with the saved verdict (<see cref="BumpController.RestoreCircuit"/>).</summary>
 	private TrackCircuit? RewalkForRestore( OriginalObject item, BumpControllerSaveData entry )
 	{

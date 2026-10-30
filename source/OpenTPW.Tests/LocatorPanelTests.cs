@@ -29,25 +29,84 @@ public class LocatorPanelTests
 		return (hud, context, (OriginalObject)args[3]!);
 	}
 
-	private static void Frame( ParkHud hud, UiContext context ) => hud.Update( context, UiInput.Idle( new System.Numerics.Vector2( -1 ) ), false, false, false );
+	private static void Frame( ParkHud hud, UiContext context, float delta = 0 )
+	{
+		context.Delta = delta;
+		hud.Update( context, UiInput.Idle( new System.Numerics.Vector2( -1 ) ), false, false, false );
+	}
+
+	/// <summary>Frames long enough for the arm to finish a slide out or in (ten steps of 20 ms, then the ending tick).</summary>
+	private static void Slide( ParkHud hud, UiContext context )
+	{
+		Frame( hud, context, 0.5f );
+		Frame( hud, context, 0.5f );
+	}
 
 	[TestMethod]
 	public void TheKeysOpenTheArmPanelsAndTheArmsOtherContentsPutThemAway()
 	{
 		var (hud, context, owner) = Hud();
-		hud.OpenStaffLocator(); Frame( hud, context );
+		hud.OpenStaffLocator(); Slide( hud, context );
 		Assert.IsTrue( hud.Screen.Find( "locatorStaffPanel" )!.Visible && hud.Screen.Find( "locatorRole1" )!.Visible && !hud.Screen.Find( "locatorRole6" )!.Visible );
 		Assert.IsFalse( hud.Screen.Find( "locatorStrip" )!.Visible, "no actor yet, no strip" );
 		Assert.IsTrue( hud.Screen.Find( "messageClose" )!.Visible, "the arm's red X puts the panel away" );
-		((UiButton)hud.Screen.Find( "messageClose" )!).Clicked!(); Frame( hud, context );
+		((UiButton)hud.Screen.Find( "messageClose" )!).Clicked!(); Slide( hud, context );
 		Assert.AreEqual( LocatorMode.None, hud.Locator.Mode ); Assert.IsFalse( hud.Screen.Find( "locatorStaffPanel" )!.Visible );
-		hud.OpenVisitorLocator(); Frame( hud, context );
+		hud.OpenVisitorLocator(); Slide( hud, context );
 		Assert.IsTrue( hud.Screen.Find( "locatorVisitorPanel" )!.Visible && !hud.Screen.Find( "locatorStaffPanel" )!.Visible );
 		Assert.AreEqual( (LocatorModel.VisitorRole, false), (hud.Locator.Role, hud.Locator.RadioChosen) );
 		hud.SelectObject( owner ); Frame( hud, context );
 		Assert.AreEqual( LocatorMode.None, hud.Locator.Mode, "the info arm takes the arm's slot" );
 		hud.OpenStaffLocator(); Assert.IsFalse( hud.InfoArmOpen, "the locator puts the info arm away" );
 		hud.ToggleCameraPanel(); Frame( hud, context ); Assert.AreEqual( LocatorMode.None, hud.Locator.Mode, "the camera panel puts the locator away" );
+	}
+
+	[TestMethod]
+	public void TheLocatorPanelsSlideOutOfTheArmAndInAgainAsTheDrawerDoes()
+	{
+		// the two panels (tables 0x756950, 474 / -37 left, 467 / 466 wide) start a panel width and 50 left of the arm's left edge (331) and step by 67 a tick: 484 and 485 at rest, both centred on the arm at top 1127
+		Assert.AreEqual( (-660, -32), ArmDrawer.Shift( OriginalLayoutTables.LocatorPanels.Roots[0].Rect, 0 ) );
+		Assert.AreEqual( (10, -32), ArmDrawer.Shift( OriginalLayoutTables.LocatorPanels.Roots[0].Rect, ArmSlide.Steps ) );
+		Assert.AreEqual( (-148, -32), ArmDrawer.Shift( OriginalLayoutTables.LocatorPanels.Roots[1].Rect, 0 ) );
+		Assert.AreEqual( (522, -32), ArmDrawer.Shift( OriginalLayoutTables.LocatorPanels.Roots[1].Rect, ArmSlide.Steps ) );
+		var (hud, context, _) = Hud();
+		var button = hud.Screen.Find( "locatorRole1" )!;
+		var table = OriginalLayoutTables.LocatorPanels.Roots[0].Children.Single().Children.Single( node => node.Model == "b_shandy" ).Rect;
+		hud.OpenStaffLocator(); Frame( hud, context );
+		Assert.IsFalse( button.Visible, "still behind the HUD in the first frame" );
+		Assert.IsTrue( hud.LocatorSlide.Out );
+		Frame( hud, context, 0.1f );
+		Assert.AreEqual( 5, hud.LocatorSlide.Step );
+		var plain = OriginalLayoutTables.LocatorPanels.Roots[0].Children.Single().Rect;
+		var panel = hud.Screen.Find( "locatorStaffPanel" )!;
+		Assert.AreEqual( plain with { X = plain.X - 660 + 5 * 67, Y = plain.Y - 32 }, panel.Bounds, "five ticks of 67 from the start place" );
+		Assert.AreEqual( ParkHud.ArmChildShown( panel.Bounds ), panel.Visible );
+		Slide( hud, context );
+		Assert.AreEqual( ArmSlide.Steps, hud.LocatorSlide.Step );
+		Assert.AreEqual( table with { X = table.X + 10, Y = table.Y - 32 }, button.Bounds, "out at the drawer's end place" );
+		var elements = hud.Screen.Elements.ToList();
+		Assert.IsTrue( elements.IndexOf( button ) < elements.IndexOf( hud.Screen.Find( "mainPanel" )! ), "the panel lies under the HUD while it slides" );
+		hud.CloseLocator(); Frame( hud, context, 0.1f );
+		Assert.AreEqual( ArmSlide.Steps - 5, hud.LocatorSlide.Step, "the panel slides back in" );
+		Assert.IsFalse( hud.Screen.Find( "locatorStrip" )!.Visible, "the strip goes at once" );
+		Slide( hud, context );
+		Assert.IsFalse( button.Visible );
+		Assert.IsFalse( hud.Screen.Find( "messageClose" )!.Visible, "the retract button goes with the slide in" );
+	}
+
+	[TestMethod]
+	public void APanelOfTheOtherKindWaitsUntilTheArmHasPutTheFirstAway()
+	{
+		var (hud, context, _) = Hud();
+		hud.OpenStaffLocator(); Slide( hud, context );
+		Assert.IsTrue( hud.Screen.Find( "locatorRole1" )!.Visible );
+		hud.OpenVisitorLocator(); Frame( hud, context, 0.1f );
+		Assert.AreEqual( LocatorMode.Visitor, hud.Locator.Mode );
+		Assert.IsFalse( hud.Screen.Find( "locatorVisitorPanel" )!.Visible, "the visitors' panel waits for the retract" );
+		Assert.IsTrue( hud.Screen.Find( "locatorStaffPanel" )!.Visible, "the staff panel slides in meanwhile" );
+		Slide( hud, context ); Slide( hud, context );
+		Assert.IsTrue( hud.Screen.Find( "locatorVisitorPanel" )!.Visible && !hud.Screen.Find( "locatorStaffPanel" )!.Visible );
+		Assert.AreEqual( ArmSlide.Steps, hud.LocatorSlide.Step );
 	}
 
 	// two roles: handymen 30, 20, 10 (newest first) and guards 7

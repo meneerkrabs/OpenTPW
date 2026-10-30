@@ -87,6 +87,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public AnalyserCacheData? AnalyserCaches { get; init; }
+		/// <summary>
+		/// The analyser's three misbehaving-kids words (<see cref="ParkEconomy.MisbehavingKids"/>: the guards' chases this month, the abandoned ones of it, all of them), which only the advisor reads; absent while they are all 0
+		/// and in older saves (they start at 0). Not part of the run hash, like <see cref="AnalyserCaches"/>.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public MisbehavingKidsData? AnalyserChase { get; init; }
 		public required List<ObjectData> Objects { get; init; }
 		public required List<LoanData> Loans { get; init; }
 		public required List<int> TakenLoanOffers { get; init; }
@@ -342,6 +348,9 @@ public static class ParkSaveFile
 		/// <summary>The point (1/256 cell, x and y) an original-save member still walks on to once a world places it (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int[]? ResumeDestination { get; init; }
+		/// <summary>The walk mask an original-save member is routed again with (absent: 0).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? ResumeMask { get; init; }
 		/// <summary>The turn an original save recorded for the claim this member's job takes again once a world places it (absent: none).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public long? ResumeClaimTurn { get; init; }
@@ -425,6 +434,9 @@ public static class ParkSaveFile
 		public int BubbleThought { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public long BubbleTurn { get; init; }
+		/// <summary>The draw that chose an entertainer's performance (absent: 0).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public uint PerformanceDraw { get; init; }
 
 		internal static StaffWorldData Capture( StaffMember member ) => new()
 		{
@@ -444,7 +456,8 @@ public static class ParkSaveFile
 			OffGridLeg = member.OffGridLeg.Count == 0 ? null : member.OffGridLeg.SelectMany( point => new[] { point.X, point.Y, point.ByteX, point.ByteY } ).ToArray(),
 			Thought = member.Thought,
 			BubbleThought = member.BubbleThought,
-			BubbleTurn = member.BubbleTurn
+			BubbleTurn = member.BubbleTurn,
+			PerformanceDraw = member.PerformanceDraw
 		};
 
 		internal void Apply( StaffMember member )
@@ -466,6 +479,7 @@ public static class ParkSaveFile
 			member.Thought = Thought is 0 or (>= 18 and <= 22) ? Thought : throw new InvalidDataException( $"Staff thought {Thought} is not a staff thought." );
 			member.BubbleThought = BubbleThought is 0 or (>= 18 and <= 22) ? BubbleThought : throw new InvalidDataException( $"Staff bubble {BubbleThought} is not a staff thought." );
 			member.BubbleTurn = BubbleTurn >= 0 ? BubbleTurn : throw new InvalidDataException( "A staff bubble's turn is negative." );
+			member.PerformanceDraw = PerformanceDraw;
 		}
 
 		/// <summary>The states a role's state machine takes: the shared 0–7 and the role's own.</summary>
@@ -560,6 +574,14 @@ public static class ParkSaveFile
 		}
 	}
 
+	/// <summary>The analyser's three chase words (tp.exe <c>+0x21BFC</c>, <c>+0x21C00</c>, <c>+0x21C04</c>).</summary>
+	public sealed class MisbehavingKidsData
+	{
+		public required int Month { get; init; }
+		public required int GotAway { get; init; }
+		public required int Ever { get; init; }
+	}
+
 	/// <summary>The analyser's caches (<see cref="ParkEconomy.NetWorth"/>, <see cref="ParkLitter.LitteredInBlock"/>, <see cref="ParkLitter.PathCellsInBlock"/>): only the valid entries.</summary>
 	public sealed class AnalyserCacheData
 	{
@@ -567,6 +589,9 @@ public static class ParkSaveFile
 		public CachedCount? NetWorth { get; init; }
 		/// <summary>The cached guest census (tp.exe 0x004C7FA0); absent in saves written before it and while no read has counted it.</summary>
 		public CachedCount? GuestCensus { get; init; }
+		/// <summary>The cached mean ride excitement (tp.exe 0x004CCBF0, saved by 0x4C5D70 as mVal, mWorkedOut and the stamp); absent while no read has counted it and in older saves.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public CachedCount? Excitement { get; init; }
 		/// <summary>The park turn the main loop's step counter started from, which times the crowd reads (every fourth turn after it); absent in older saves, which take the turn they load at.</summary>
 		public long? CrowdPhaseTurn { get; init; }
 		public List<CachedBlock> LitteredBlocks { get; init; } = new();
@@ -680,11 +705,14 @@ public static class ParkSaveFile
 			AnalyserCaches = new AnalyserCacheData
 			{
 				NetWorth = park.CachedNetWorth is { } worth ? new CachedCount { Value = worth.Value, Stamp = worth.Stamp } : null,
+				Excitement = park.CachedExcitement is { } excitement ? new CachedCount { Value = excitement.Value, Stamp = excitement.Stamp } : null,
 				GuestCensus = park.CachedCensus is { } census ? new CachedCount { Value = census.Value, Stamp = census.Stamp } : null,
 				CrowdPhaseTurn = park.CrowdPhaseTurn,
 				LitteredBlocks = park.Litter.LitteredBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList(),
 				PathBlocks = park.Litter.PathBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList()
 			},
+			AnalyserChase = park.MisbehavingKids( false ) == 0 && park.MisbehavingKids( true ) == 0 && park.MisbehavingKidsEver == 0 ? null
+				: new MisbehavingKidsData { Month = park.MisbehavingKids( false ), GotAway = park.MisbehavingKids( true ), Ever = park.MisbehavingKidsEver },
 			TicketsSpent = park.TicketsSpent,
 			TicketItems = park.TicketItems.Order().ToList(),
 			NextObjectId = park.NextObjectId,
@@ -776,7 +804,7 @@ public static class ParkSaveFile
 		} ).ToList();
 
 	private static bool HasStaffWorldState( StaffMember member ) => member.Navigation != null || member.Job != StaffJob.Idle || member.EffectCell != null || member.HasPatrolArea
-		|| member.Thought != 0 || member.BubbleThought != 0 || member.BubbleTurn != 0;
+		|| member.Thought != 0 || member.BubbleThought != 0 || member.BubbleTurn != 0 || member.PerformanceDraw != 0;
 
 	private static StaffData CaptureStaff( ParkEconomy park ) =>
 		new StaffData
@@ -789,6 +817,7 @@ public static class ParkSaveFile
 				NameIndex = member.NameIndex,
 				Name = member.Name,
 				ResumeDestination = member.ResumeDestination is { } resume ? new[] { resume.X, resume.Y } : null,
+				ResumeMask = member.ResumeMask,
 				ResumeClaimTurn = member.ResumeClaimTurn,
 				Variant = member.Variant >= 0 ? member.Variant : null,
 				Grade = member.Grade,
@@ -1007,6 +1036,7 @@ public static class ParkSaveFile
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
 			Require( member.Name is null || (member.Name.Length <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
 			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
+			Require( member.ResumeMask is null || member.ResumeMask == 1 && member.ResumeDestination != null, $"staff {member.Id} resume walk mask" );
 			Require( member.ResumeClaimTurn is not { } resumeTurn || resumeTurn >= 0 && resumeTurn <= ParkCalendar.Turn( data.Tick ), $"staff {member.Id} resume claim turn" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
 			Require( member.BaseSpeed is null || (member.WorldState is null && member.BaseSpeed is >= 0 and <= 255), $"staff {member.Id} base speed without world state" );
@@ -1054,6 +1084,7 @@ public static class ParkSaveFile
 		if ( data.AnalyserCaches is { } caches )
 		{
 			Require( caches.NetWorth is null || caches.NetWorth.Stamp >= 0, "net worth cache" );
+			Require( caches.Excitement is null || caches.Excitement.Stamp >= 0, "excitement cache" );
 			Require( caches.GuestCensus is null || caches.GuestCensus.Stamp >= 0 && caches.GuestCensus.Value >= 0, "guest census cache" );
 			Require( caches.CrowdPhaseTurn is null or >= 0, "crowd read phase" );
 			foreach ( var blocks in new[] { caches.LitteredBlocks, caches.PathBlocks } )
@@ -1129,10 +1160,14 @@ public static class ParkSaveFile
 				CostsRing = RingAt( item, 0 ), TakingsRing = RingAt( item, 1 ), CustomersRing = RingAt( item, 2 ), WinnersRing = RingAt( item, 3 ), SatisfactionRing = RingAt( item, 4 )
 			} ),
 			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
+		if ( data.AnalyserChase is { } chase )
+			park.RestoreMisbehavingKids( chase.Month, chase.GotAway, chase.Ever );
 		if ( data.AnalyserCaches is { } caches )
 		{
 			if ( caches.NetWorth is { } worth )
 				park.RestoreNetWorthCache( worth.Value, worth.Stamp );
+			if ( caches.Excitement is { } excitementCache )
+				park.RestoreExcitementCache( excitementCache.Value, excitementCache.Stamp );
 			if ( caches.GuestCensus is { } census )
 				park.RestoreCensusCache( census.Value, census.Stamp, caches.CrowdPhaseTurn );
 			else
@@ -1156,6 +1191,7 @@ public static class ParkSaveFile
 			NameIndex = member.NameIndex,
 			Name = member.Name,
 			ResumeDestination = member.ResumeDestination is [var resumeX, var resumeY] ? (resumeX, resumeY) : null,
+			ResumeMask = member.ResumeMask,
 			ResumeClaimTurn = member.ResumeClaimTurn,
 			Variant = member.Variant ?? -1,
 			Grade = member.Grade,

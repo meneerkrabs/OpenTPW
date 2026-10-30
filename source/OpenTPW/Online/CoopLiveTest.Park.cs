@@ -241,12 +241,15 @@ internal sealed partial class CoopLiveTest
 
 	private static UiInput Release( System.Numerics.Vector2 point ) => new( point, false, false, true, false, UiKeys.None );
 
+	/// <summary>[EXT:online-coop-undo] A frame with the left button held at <paramref name="point"/> (a drag, C5-2).</summary>
+	private static UiInput Held( System.Numerics.Vector2 point ) => new( point, true, false, false, false, UiKeys.None );
+
 	private static (int X, int Y)[] LineCells( (int X, int Y) start, (int X, int Y) end ) => Enumerable.Range( 0, LineLength + 1 )
 		.Select( step => (start.X + Math.Sign( end.X - start.X ) * step, start.Y + Math.Sign( end.Y - start.Y ) * step) ).ToArray();
 
 	/// <summary>
-	/// A free owned line of <see cref="LineLength"/> + 1 cells whose ends a click reaches in the middle of the view, clear of <paramref name="avoid"/>; the view moves over it, as a player
-	/// scrolls to free land (the native smoke's search, SandboxSmokeTest.Paths.cs). Null when the park has none.
+	/// A free owned line of <see cref="LineLength"/> + 1 cells, which the path tool's preview lays whole (the bank pays it), whose ends a click reaches in the middle of the view, clear of
+	/// <paramref name="avoid"/>; the view moves over it, as a player scrolls to free land (the native smoke's search, SandboxSmokeTest.Paths.cs). Null when the park has none.
 	/// </summary>
 	private ((int X, int Y) Start, (int X, int Y) End, System.Numerics.Vector2 StartPoint, System.Numerics.Vector2 EndPoint)? FreeLine( ICollection<(int X, int Y)> avoid )
 	{
@@ -267,7 +270,9 @@ internal sealed partial class CoopLiveTest
 			{
 				var last = (X: cell.X + dx * LineLength, Y: cell.Y + dy * LineLength);
 				var cells = LineCells( cell, last );
-				if ( !cells.All( each => level.Paths!.CheckCell( each.X, each.Y ) == CellBuildResult.Ok && !avoid.Contains( each ) ) )
+				// each cell free, and the whole line as the tool's click asks it: its preview completes (a balance that pays one cell but not the line refuses it there)
+				if ( !cells.All( each => level.Paths!.CheckCell( each.X, each.Y ) == CellBuildResult.Ok && !avoid.Contains( each ) )
+					|| level.Paths!.Preview( cell, last ) is not { Completed: true } )
 					continue;
 				if ( !(Clickable( cell, out _ ) && Clickable( last, out _ )) )
 					Look( (cell.X + dx * LineLength / 2f + 0.5f, cell.Y + dy * LineLength / 2f + 0.5f) );

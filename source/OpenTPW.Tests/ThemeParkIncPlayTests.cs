@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using OpenTPW.UI.Original;
 
 namespace OpenTPW.Tests;
 
@@ -68,6 +69,10 @@ public class ThemeParkIncPlayTests
 		StringAssert.Contains( note, "money only", "the note names what runs" );
 		foreach ( var refused in new[] { "staff", "research", "challenges", "advisor", "missions", "Global Master Save", "COS", "saves", "sharing" } )
 			StringAssert.Contains( note, refused, $"the note names the refused '{refused}'" );
+		// the slice HUD's limits line shows the note in the selected language; its English column is the note itself (the --tpi-smoke-test compares them on screen)
+		Assert.AreEqual( note, SupplementaryStrings.Get( OpenTpwText.TpiLimits, "English" ) );
+		foreach ( var language in SupplementaryStrings.SupportedLanguages )
+			StringAssert.Contains( SupplementaryStrings.Get( OpenTpwText.TpiLimits, language ), "Personnel", $"the {language} limits line names the Personnel File start screen" );
 		StringAssert.Contains( GameEditions.SliceNotice, "not verified" );
 		StringAssert.Contains( GameEditions.SliceNotice, "money" );
 	}
@@ -191,6 +196,19 @@ public class ThemeParkIncPlayTests
 		park.Occupied.ExceptWith( ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) ) );
 		Assert.AreEqual( OriginalPlacementResult.Allowed, ParkObjects.Check( park.BuildGrid, park.IsBlocked, entry, anchor.X, anchor.Y, rotation ),
 			"the freed site builds again" );
+	}
+
+	[TestMethod]
+	public void EveryWorldHasPlantsThatRequireWateringAndNoRideDoes()
+	{
+		// [BIN:TPI-EXE:0x5DB654 thing flag +0x43 bit 0x10] the flag comes from the type's UsageInfo.RequiresWatering (the plants' bushes, trees and flower beds), which selects the scrap percentage's script branch (ECON-061)
+		UseTpiData();
+		foreach ( var world in new[] { "arabian", "science", "water" } )
+		{
+			var flagged = EconomyObjectCatalog.Load( world, easy: false ).Objects.Where( info => info.RequiresWatering ).ToList();
+			Assert.IsTrue( flagged.Count >= 5, $"{world}: {flagged.Count} flagged objects" );
+			Assert.IsTrue( flagged.All( info => info.Kind == ParkObjectKind.Feature ), $"{world}: only features require watering" );
+		}
 	}
 
 	[TestMethod]

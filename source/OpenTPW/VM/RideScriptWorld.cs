@@ -37,9 +37,9 @@ public sealed class RideScriptWorld
 	public RideScriptWorld( ulong seed, Func<DateTime>? clock )
 	{
 		world = new WorldRng( WorldRng.StateFromSeed( seed ) );
-		Coasters = new CoasterWorld( seed );
-		Bumpers = new BumpWorld();
-		Tours = new TourWorld();
+		Coasters = new CoasterWorld( seed ) { Scripts = this };
+		Bumpers = new BumpWorld { Scripts = this };
+		Tours = new TourWorld { Scripts = this };
 		civilTime = GameEditions.Current == GameEdition.ThemeParkWorld ? clock ?? (() => DateTime.Now) : null;
 	}
 
@@ -78,6 +78,24 @@ public sealed class RideScriptWorld
 
 	/// <summary>Makes <paramref name="generator"/> this world's generator (the level's shared one); its state is not touched.</summary>
 	public void AttachWorld( WorldRng generator ) => world = generator ?? throw new ArgumentNullException( nameof( generator ) );
+
+	/// <summary>
+	/// True in a theme without costume heads (Fantasy, Hallow; set by the level from the costume heads it loaded): every head hung on a ride then reseeds the world generator with the rider's thing id and takes one draw.
+	/// </summary>
+	public bool HeadHangReseeds { get; set; }
+
+	/// <summary>
+	/// A rider's head is hung on a ride (the head-hang routine 0x0044B410 with a rider). In a theme without costume heads the head pick 0x004FCAC0 reseeds the world generator with the rider's thing id (0x00516370) and draws
+	/// the kid head by it (0x00541F70, category 1): one draw, after which the generator's state is a function of the id alone. Nothing happens with a zero rider (0x0044B440 skips the pick).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0044B471 head pick] 0x0044B410 calls 0x004FCAC0 for a non-zero visitor; with no costume heads (the count of category 3, 0x00541F60) it reseeds the world generator 0x0080239C with the thing's id word (0x004FCAF7) and draws once (0x00541F85 → 0x00516330); callers: ADDHEAD 0x00554D13, WALKON action 4 0x00557EB9, the coaster seating 0x0043B70D, the vehicle creation and load 0x00549CAF and the tour boarding 0x0055D91E (the show 0x0054900C passes no rider)
+	internal void HeadHung( int visitor )
+	{
+		if ( !HeadHangReseeds || visitor == 0 )
+			return;
+		world.Reseed( (ushort)visitor );
+		world.NextWord();
+	}
 
 	/// <summary>A draw of the world generator for the bump rides' aiming jitter and the tour rides (the original's 0x516330).</summary>
 	internal uint NextWorldDraw() => world.NextWord();

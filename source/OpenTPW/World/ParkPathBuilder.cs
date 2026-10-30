@@ -63,8 +63,18 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 	/// (<see cref="CellBuildTool.CompleteWaiting"/>).
 	/// </summary>
 	internal WaitingLineCommit? Waiting { get; init; }
+	/// <summary>
+	/// [EXT:online-coop-undo] The record of the session's stream that laid the segment (C5): the host's own from its stream, a guest's from its request; null in single player, and for a
+	/// segment a tool loaded from the park (the queue tool's existing segments). A take-back names it (<see cref="TakeBackCommand"/>).
+	/// </summary>
+	internal long? Record { get; init; }
 	/// <summary>A successful preview visited the path/queue validator's link branch; only completed ghosts expose it in the HUD.</summary>
 	public bool LinkPointer { get; init; }
+	/// <summary>
+	/// A preview ended on a cell of the tool's own kind (the validator's code 0xB, which sets the end flag 0x816D4C that the pointer switch turns into the end pointer): the path tool's last cell is an existing path
+	/// cell, the queue tool's last cell is the ride's own queue cell. Only completed ghosts expose it in the HUD.
+	/// </summary>
+	public bool EndPointer { get; init; }
 	/// <summary>True when no cell of the line was refused.</summary>
 	public bool Completed => StoppedBy is CellBuildResult.Ok or CellBuildResult.Existing;
 }
@@ -109,6 +119,11 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	/// overwrite priority 0 or 1); the cell then counts as empty and the commit demolishes the object (<see cref="DemolishObject"/>).
 	/// </summary>
 	public Func<int, int, bool>? ObjectGivesWay { get; set; }
+	/// <summary>
+	/// The overwrite priority of the class-3 thing that owns the object cell at (x, y), or null when there is none (the level: the placed object's <c>Info.OverwritePriority</c>). Without it an object cell's owner counts
+	/// as one the tool may cover (<see cref="ObjectGivesWay"/>) or not.
+	/// </summary>
+	public Func<int, int, int?>? ObjectOwnerPriority { get; set; }
 	/// <summary>Demolishes the object at (x, y) before a path cell is laid there (the level: <see cref="ParkObjects.Remove"/>, which sells it for its scrap value).</summary>
 	public Action<int, int>? DemolishObject { get; set; }
 	public IParkGrid Terrain { get; }
@@ -194,9 +209,17 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	public CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell ) => Validate( x, y, type, lastCell, pending: 0 );
 
 	/// <param name="pending">The preview's line cost before this cell; null for a commit, whose money test is <c>SetCellType</c>'s in <see cref="WritePath"/>.</param>
-	private CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell, long? pending ) => Validate( x, y, type, lastCell, pending, out _ );
+	private CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell, long? pending )
+	{
+		var latches = new CellValidatorLatches();
+		return Validate( x, y, type, lastCell, pending, out _, ref latches );
+	}
 
-	private CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell, long? pending, out bool linkPointer )
+	/// <summary>The overwrite priority the validator reads for the object cell at (x, y): the class-3 owner's, or null; without the level's lookup an owner the tool may cover (<paramref name="givesWay"/>) counts as priority 0, any other as the tool's own.</summary>
+	private int? OwnerPriorityAt( int x, int y, bool givesWay ) => ObjectOwnerPriority is { } owner ? owner( x, y ) : givesWay ? 0 : ParkObjects.PathOverwritePriority;
+
+	/// <param name="latches">The pass's latches and owner priority (<see cref="QueueCellValidator.Refuses(ParkCellMap, int, int, int, int?, ref CellValidatorLatches, bool, bool)"/>): one pass over a line shares them.</param>
+	private CellBuildResult Validate( int x, int y, ParkCellType type, bool lastCell, long? pending, out bool linkPointer, ref CellValidatorLatches latches )
 	{
 		linkPointer = false;
 		// The original's LayLine skips (does not stop at) cells outside its 128 × 128 array (0xd70d8); snapped tool ends are grid cells, so only the headless API can reach this (REVIEW-PATH N1).
@@ -207,7 +230,8 @@ public sealed class ParkPathBuilder : ICellLineWriter
 			return CellBuildResult.NotOwned;
 		// [BIN:TPW-EXE:0x535D66 overwrite priority] a type 4, 9 or 10 cell is tested by its owner's overwrite priority alone: below the tool's 0x818C10 (2 for a path, set by the hover 0x5234D0) it is allowed, otherwise refused
 		var givesWay = ObjectGivesWay?.Invoke( x, y ) == true;
-		var old = givesWay ? (byte)0 : Cells.RawTypeAt( x, y );
+		// the cell's own type: a straight or stub track tile of the second layer is no cell type (0x535670 reads the record apart), so the path may lie over it
+		var old = givesWay ? (byte)0 : Cells.PrimaryTypeAt( x, y );
 		if ( !ParkCellMap.CanChangeCellType( old, (byte)type, lastCell ) )
 			return CellBuildResult.Occupied;
 		// [BIN:STP-PPC:0x10084864 placement validator] path over path returns 0 (allowed); SetCellType 0x10082AC4 then only bumps the placement counter
@@ -223,6 +247,9 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		var terrain = Terrain.CheckTerrain( x, y );
 		if ( terrain is not (OriginalPlacementResult.Allowed or OriginalPlacementResult.Path) )
 			return terrain == OriginalPlacementResult.OutsideTerrain ? CellBuildResult.OutsideTerrain : CellBuildResult.Terrain;
+		// [BIN:TPW-EXE:0x535670 fence post] the validator refuses a cell whose structure record is a hoarding post (or an extension of one, which it follows to the parent) for the path tool as for the queue tool, on owned land as well (QueueCellValidator)
+		if ( Cells.RawTypeAt( x, y ) != (byte)ParkCellType.Queue && QueueCellValidator.Refuses( Cells, 1, x, y, OwnerPriorityAt( x, y, givesWay ), ref latches ) )
+			return CellBuildResult.Occupied;
 		// [BIN:STP-PPC:0x10084550 placement validator] money test while game+36 == 0: the 32-bit pending line cost (this cell included) is refused when greater than the balance, a zero sum passes; the commit only runs SetCellType's test (WritePath)
 		if ( pending is { } before && Economy is { } park && !park.CanPreviewLine( before + CellCost ) )
 			return CellBuildResult.NotEnoughMoney;
@@ -268,11 +295,13 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		(int X, int Y)? stoppedAt = null;
 		var last = line[^1];
 		var endedOnExisting = Cells.TypeAt( last.X, last.Y ) is ParkCellType.Path or ParkCellType.Queue;
+		// every pass over the line starts with clean latches and the owner priority 0 (the hover 0x5234D0, the commit's set-up 0x527C30)
+		var latches = new CellValidatorLatches();
 		for ( var index = 0; index < line.Count; index++ )
 		{
 			var (x, y) = line[index];
 			// The end cell is written with the last-cell flag (data 0x84b2c) raised.
-			var check = Validate( x, y, ParkCellType.Path, lastCell: index == line.Count - 1, pending: write ? null : charged, out var cellLink );
+			var check = Validate( x, y, ParkCellType.Path, lastCell: index == line.Count - 1, pending: write ? null : charged, out var cellLink, ref latches );
 			if ( check == CellBuildResult.Existing )
 			{
 				existing.Add( (x, y) );
@@ -327,7 +356,9 @@ public sealed class ParkPathBuilder : ICellLineWriter
 			Line = line,
 			Existing = existing,
 			StoppedAt = stoppedAt,
-			LinkPointer = linkPointer
+			LinkPointer = linkPointer,
+			// [BIN:TPW-EXE:0x535AFB code 0xB] the path tool's validator answers 0xB (and sets 0x816D4C) for a path cell of the line's own type when it is the last cell (0x820AB8) or the line is one cell (0x818688): the ghost's last existing path cell
+			EndPointer = !write && stoppedAt == null && existing.Count > 0 && existing[^1] == last
 		};
 	}
 

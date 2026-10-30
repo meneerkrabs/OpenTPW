@@ -29,6 +29,8 @@ internal sealed partial class GameFlow : IDisposable
 
 	public GameFlow()
 	{
+		// [BIN:TPW-EXE:0x0054DDE3 rand seed] the start-up seeds the C runtime's rand() with GetTickCount, once
+		CrtProcessRandom.Seed( unchecked((uint)Environment.TickCount) );
 		UiApproximations.LogOnce();
 		using ( LoadProfile.Measure( "strings" ) )
 			Strings = UiStringTable.Load( GameLanguage.Current );
@@ -190,6 +192,8 @@ internal sealed partial class GameFlow : IDisposable
 		LobbyCameraMode.VerticalOffset = lobbyDefinition.VerticalOffset;
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
 		LobbyCameraMode.IslandFieldOfView = lobbyDefinition.FieldOfView;
+		// [BIN:TPW-EXE:0x56bd3e lobby far plane] the lobby view's projection is rebuilt with the span selection's farthest corner distance as its far plane, as the park's is (0x56bb00 -> 0x578ca0)
+		Camera.LobbyFarPlane = lobbyFarPlane = ( view, aspectWord ) => LobbyFarArgument( view, aspectWord );
 		FrontEndMenu? createdMenu = null;
 		createdMenu = new FrontEndMenu( Strings, lobbyDefinition.Islands, new FrontEndActions
 		{
@@ -511,21 +515,19 @@ internal sealed partial class GameFlow : IDisposable
 	};
 
 	/// <summary>
-	/// Guests whose cell is within four cells of the camera's ground target — the crowd sentence's parameter
+	/// Guests whose cell is within four cells of the cursor's cell — the crowd sentence's parameter
 	/// (<c>cat_kids</c> 0x5B, capped at 100). The original's park turn counts them the same way each turn.
 	/// </summary>
 	// [BIN:STP-PPC:0x101C2490 park turn] guests within four cells of the camera are counted (0x100C313C, radius argument 4) for the crowd sentence
+	// [BIN:TPW-EXE:0x54f875 crowd cell] the PC's count takes the hover cell 0x7B05CC (Level.HoverCell: the cell the cursor ray last hit in the park overview, kept in the eye views) and not the camera's target: 0x54f875 reads that word for the call 0x54f899
 	private static int GuestsNearCamera( Level level )
 	{
-		// [APPROX:UI-094] in the ride view the park camera's target stays where it was and the count keeps using it (the camera cell of the crowd call 0x54f899 is not traced to its source; the ride moves only the eye matrix 0x790990, never the target 0x7908f0)
-		if ( level.Guests == null || (Camera.Mode as ParkCameraMode ?? level.ParkCameraWhileRiding) is not { } camera )
-			return 0;
-		if ( !level.TryGetGridCell( camera.Target.X, camera.Target.Y, out var x, out var y ) )
+		if ( level.Guests == null || level.HoverCell is not { } cell )
 			return 0;
 		var count = 0;
 		foreach ( var guest in level.Guests.Guests )
 		{
-			if ( Math.Max( Math.Abs( guest.Cell.X - x ), Math.Abs( guest.Cell.Y - y ) ) <= CrowdRadiusCells )
+			if ( Math.Max( Math.Abs( guest.Cell.X - cell.X ), Math.Abs( guest.Cell.Y - cell.Y ) ) <= CrowdRadiusCells )
 				count++;
 		}
 		return count;
@@ -737,6 +739,7 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		GameAudio.EnsureStarted();
 		GameAudio.PlayStartupSound();
+		GameAudio.UpdateLobbyListener();
 		GameAudio.Update();
 		UpdateGlobeView();
 		Camera.Update();
@@ -877,6 +880,8 @@ internal sealed partial class GameFlow : IDisposable
 	private enum Backdrop { Lobby, Globe, City }
 
 	private Backdrop backdrop = Backdrop.Lobby;
+	private Func<System.Numerics.Matrix4x4, float, float?>? lobbyFarPlane;
+	private (System.Numerics.Matrix4x4 View, float Aspect, ModelHeightfield Field, float FieldOfView, float Distance, float? Far)? lobbyFarCache;
 	private TerrainViewSpans? lobbySpans;
 	private ModelHeightfield? lobbySpansField;
 
@@ -884,7 +889,7 @@ internal sealed partial class GameFlow : IDisposable
 	/// The far argument of the lobby's view in original units (the lobby's own units are the engine's): the farthest corner distance of the span selection of the lobby camera over the lobby terrain's heightfield (<c>0x56BB00</c>, at least 10, which
 	/// <c>0x576A00</c> runs before the weather and which hands it to <c>0x578CA0</c>, <c>0x56BD3E</c>); null without a lobby heightfield.
 	/// </summary>
-	private float? LobbyFarArgument( float aspectWord, float sine, float cosine )
+	private float? LobbyFarArgument( System.Numerics.Matrix4x4 view, float aspectWord )
 	{
 		if ( Lobby?.Heightfield is not { } field )
 			return null;
@@ -893,8 +898,14 @@ internal sealed partial class GameFlow : IDisposable
 			lobbySpans = new TerrainViewSpans( field, engineUnitsPerOriginal: 1f, centred: false ) { RayFieldOfView = LobbyCameraMode.IslandFieldOfView };
 			lobbySpansField = field;
 		}
-		lobbySpans.ViewDistance = RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Distance;
-		return lobbySpans.Update( Camera.ViewMatrix, aspectWord ) ? lobbySpans.FarthestCorner : null;
+		var distance = RenderFog.ViewDistanceOf( RenderFog.ViewDistanceOption() ).Distance;
+		// the projection and the weather both ask each frame: the last answer stands for the same view, aspect, field, angle and distance
+		if ( lobbyFarCache is { } last && last.View == view && last.Aspect == aspectWord && ReferenceEquals( last.Field, field ) && last.FieldOfView == LobbyCameraMode.IslandFieldOfView && last.Distance == distance )
+			return last.Far;
+		lobbySpans.ViewDistance = distance;
+		var far = lobbySpans.Update( view, aspectWord ) ? lobbySpans.FarthestCorner : (float?)null;
+		lobbyFarCache = (view, aspectWord, field, LobbyCameraMode.IslandFieldOfView, distance, far);
+		return far;
 	}
 
 	/// <summary>The open city lobby's islands (a lobby scene with the city's parks at the island slots).</summary>
@@ -1002,7 +1013,7 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		// The lobby's rain and bolts are drawn by the engine's weather renderer, as the original's are (CRain), at the lobby's own scale.
 		if ( lobbyWeather == null || !Entity.All.Contains( lobbyWeather ) )
-			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f, fieldOfView: LobbyCameraMode.IslandFieldOfView, farArgument: LobbyFarArgument );
+			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f, fieldOfView: LobbyCameraMode.IslandFieldOfView, farArgument: ( aspectWord, sine, cosine ) => LobbyFarArgument( Camera.ViewMatrix, aspectWord ) );
 		lobbyIslands.Clear();
 		foreach ( var (island, slot) in Lobby.Slots )
 		{
@@ -1317,6 +1328,9 @@ internal sealed partial class GameFlow : IDisposable
 
 	public void Dispose()
 	{
+		// the static far-plane hook would keep this flow alive
+		if ( ReferenceEquals( Camera.LobbyFarPlane, lobbyFarPlane ) )
+			Camera.LobbyFarPlane = null;
 		// [EXT:online-coop-lockstep] quitting leaves a shared park's session while the link can still say so (a host's leave ends it for everyone)
 		LeaveCoopSession( "The player quit the game." );
 		FlushRestartSnapshot();

@@ -52,9 +52,10 @@ public readonly record struct SavePayloadBlock( SaveBlock Block, string Tag, int
 /// four bytes with the block's tag and aborts with "The SAD_&lt;module&gt; module did not load the same number of bytes that it
 /// saved" otherwise; a delimiter's bytes inside a block are data. The empty Coasters block ends after its 16 bytes.</item>
 /// <item>The World block ends where its loader's readers stop (<see cref="SaveBlockWidths.TryMeasureWorld"/>: fixed-width variables, control manager and
-/// macro AI, 0x4000 status-byte cells and the self-closing thing list, see <see cref="SaveWorld"/>) when its bytes read that way and the WRLD tag follows. Only a Coasters block
-/// with a coaster (its trains and cars depend on the coaster type's train and car counts) and a World block that does not read that way (a synthetic payload)
-/// are located by their delimiter's bytes. The payload must split into the blocks in exactly one way under these rules: a copy
+/// macro AI, 0x4000 status-byte cells and the self-closing thing list, see <see cref="SaveWorld"/>) when its bytes read that way and the WRLD tag follows. A Coasters block with a coaster
+/// (its trains and cars depend on the coaster type's train and car counts) ends where its reader stops too when the caller knows the park's coaster types
+/// (<see cref="Parse(ReadOnlySpan{byte}, Func{int, SaveCoasterTrainLayout?}?)"/>, which the park import passes) and the World reads as the original's; without them, and a World block that does not read
+/// that way (a synthetic payload), are located by their delimiter's bytes. The payload must split into the blocks in exactly one way under these rules: a copy
 /// of such a delimiter's bytes inside the block or a later one that forms a second valid split is rejected, even though the
 /// count-based original loader would accept the save (SAVE-011). A payload with more than
 /// <see cref="MaximumDelimiterOccurrences"/> copies of one of these delimiters is rejected too.</item>
@@ -132,11 +133,21 @@ public sealed class SavePayloadLayout
 	public static SavePayloadLayout Parse( ReadOnlySpan<byte> payload ) => Parse( payload, SavePayloadProfile.ThemeParkWorld );
 
 	/// <summary>
+	/// <see cref="Parse(ReadOnlySpan{byte})"/> for a caller that knows the park's coaster types: <paramref name="coasterTrains"/> gives the train slots and cars per train of the coaster
+	/// type with an Info.Id, and a Coasters block whose coasters it knows all ends where its reader stops, like every other block, with no delimiter searched.
+	/// </summary>
+	public static SavePayloadLayout Parse( ReadOnlySpan<byte> payload, Func<int, SaveCoasterTrainLayout?>? coasterTrains ) =>
+		Parse( payload, SavePayloadProfile.ThemeParkWorld, coasterTrains );
+
+	/// <summary>
 	/// Splits <paramref name="payload"/> with one game's block readers. Theme Park Inc (<see cref="SavePayloadProfile.ThemeParkInc"/>) differs in the World block
 	/// (<see cref="ThemeParkIncSaveWorld.TryMeasure"/>, which must read exactly: there is no delimiter search for it), the message centre (45 lists), the camera (48 bytes)
 	/// and the UI block (empty, so nothing may follow the AdvisorScoring delimiter); only a Coasters block with a coaster is still located by its delimiter.
 	/// </summary>
-	public static SavePayloadLayout Parse( ReadOnlySpan<byte> payload, SavePayloadProfile profile )
+	public static SavePayloadLayout Parse( ReadOnlySpan<byte> payload, SavePayloadProfile profile ) => Parse( payload, profile, null );
+
+	/// <summary><see cref="Parse(ReadOnlySpan{byte}, SavePayloadProfile)"/> with the coaster types of <see cref="Parse(ReadOnlySpan{byte}, Func{int, SaveCoasterTrainLayout?}?)"/> (Theme Park World only).</summary>
+	public static SavePayloadLayout Parse( ReadOnlySpan<byte> payload, SavePayloadProfile profile, Func<int, SaveCoasterTrainLayout?>? coasterTrains )
 	{
 		if ( payload.Length > MaximumPayloadBytes )
 			throw new InvalidDataException( $"Save payload exceeds the {MaximumPayloadBytes}-byte limit." );
@@ -151,8 +162,9 @@ public sealed class SavePayloadLayout
 		var start = ActionRecordingHeaderBytes + (int)recording;
 		if ( profile == SavePayloadProfile.ThemeParkInc && TracedEnd( payload, SaveBlock.World, start, profile ) < 0 )
 			throw new InvalidDataException( "Save World block does not read as the Theme Park Inc World block followed by its WRLD delimiter." );
-		// [APPROX:SAVE-011] a Coasters block with a coaster, and a World block that does not read as the original's (a synthetic payload), are located by their delimiter's bytes: a payload that splits in more than one way there, or holds the COAS (or such a World's WRLD) delimiter's bytes more than MaximumDelimiterOccurrences times, is rejected, while tp.exe's loader 0x415270 runs each block's reader and then compares the next 4 bytes with its tag (0x415371), never searching — evidence needed: the coaster type's train slot and car counts (SAVE-920) for a layout that knows the park's coaster types
-		var search = new DelimiterSearch( payload, start, profile );
+		// [APPROX:SAVE-011] a Coasters block with a coaster whose type the caller does not give (a payload split without the park's coaster types, or a station that is no single saved attraction of a World the readers measure), and a World block that does not read as the original's (a synthetic payload), are located by their delimiter's bytes: a payload that splits in more than one way there, or holds the COAS (or such a World's WRLD) delimiter's bytes more than MaximumDelimiterOccurrences times, is rejected, while tp.exe's loader 0x415270 runs each block's reader and then compares the next 4 bytes with its tag (0x415371), never searching — evidence needed: a caller-independent source of the coaster types' train slot and car counts (the park import passes them, the object archives hold them) for the tools that split a payload without the park's object catalogue
+		var coasters = profile == SavePayloadProfile.ThemeParkWorld && coasterTrains != null ? CoasterTypes( payload, start, coasterTrains ) : null;
+		var search = new DelimiterSearch( payload, start, profile, coasters );
 		var splits = search.Count( 0, start );
 		if ( splits == 0 )
 		{
@@ -183,6 +195,33 @@ public sealed class SavePayloadLayout
 		return new SavePayloadLayout( payload.Length, published != 0, result, profile );
 	}
 
+	/// <summary>
+	/// The coaster type of each station the World block lists: a coaster's header names its station by mesh instance id, which one saved attraction holds (<see cref="SaveCoasterBlock"/>); that
+	/// attraction's Info.Id is the type <paramref name="trains"/> knows. Null when the World does not read as the original's, where the Coasters block stays located by its delimiter.
+	/// </summary>
+	private static Func<ushort, SaveCoasterTrainLayout?>? CoasterTypes( ReadOnlySpan<byte> payload, int worldStart, Func<int, SaveCoasterTrainLayout?> trains )
+	{
+		if ( !SaveBlockWidths.TryMeasureWorld( payload, worldStart, out var width, out var thingsStart ) )
+			return null;
+		try
+		{
+			var (_, things) = SaveThingChain.Walk( payload, thingsStart, worldStart + width );
+			var byMesh = new Dictionary<uint, List<int>>();
+			foreach ( var thing in things.Where( item => item.Model == SaveThingModel.Attraction ) )
+			{
+				var attraction = SaveAttraction.Read( payload[..thing.End], thing.BodyOffset, thing.Id );
+				if ( !byMesh.TryGetValue( attraction.MeshInstanceId, out var infos ) )
+					byMesh[attraction.MeshInstanceId] = infos = new List<int>();
+				infos.Add( attraction.InfoId );
+			}
+			return mesh => byMesh.TryGetValue( mesh, out var infos ) && infos.Count == 1 ? trains( infos[0] ) : null;
+		}
+		catch ( InvalidDataException )
+		{
+			return null;
+		}
+	}
+
 	/// <summary>Splits a Theme Park Inc payload (<see cref="SavePayloadProfile.ThemeParkInc"/>).</summary>
 	public static SavePayloadLayout ParseThemeParkInc( ReadOnlySpan<byte> payload ) => Parse( payload, SavePayloadProfile.ThemeParkInc );
 
@@ -204,7 +243,7 @@ public sealed class SavePayloadLayout
 	/// </summary>
 	private const string WorldTag = "WRLD";
 
-	private static int TracedEnd( ReadOnlySpan<byte> payload, SaveBlock block, int offset, SavePayloadProfile profile )
+	private static int TracedEnd( ReadOnlySpan<byte> payload, SaveBlock block, int offset, SavePayloadProfile profile, Func<ushort, SaveCoasterTrainLayout?>? coasters = null )
 	{
 		if ( block == SaveBlock.World )
 		{
@@ -215,7 +254,10 @@ public sealed class SavePayloadLayout
 		{
 			if ( payload.Length - offset < EmptyCoastersBytes )
 				throw new InvalidDataException( $"Save Coasters block is {payload.Length - offset} bytes; its count and globals alone take {EmptyCoastersBytes}." );
-			return BinaryPrimitives.ReadUInt32LittleEndian( payload[offset..] ) == 0 ? offset + EmptyCoastersBytes : -1;
+			if ( BinaryPrimitives.ReadUInt32LittleEndian( payload[offset..] ) == 0 )
+				return offset + EmptyCoastersBytes;
+			// [BIN:TPW-EXE:0x415270 block loader] the coasters' reader consumes the block by the types' train and car counts, and the tag must follow: with the types known no delimiter is searched
+			return coasters != null && SaveCoasterBlock.TryMeasure( payload[offset..], coasters, out var coasterWidth ) ? offset + coasterWidth : -1;
 		}
 		return SaveBlockWidths.IsTraced( block ) && SaveBlockWidths.TryMeasure( payload, block, offset, out var width, profile ) ? offset + width : -1;
 	}
@@ -276,12 +318,14 @@ public sealed class SavePayloadLayout
 		private readonly int start;
 		private readonly Dictionary<(int, int), int> counts = new();
 		private readonly SavePayloadProfile profile;
+		private readonly Func<ushort, SaveCoasterTrainLayout?>? coasters;
 
-		public DelimiterSearch( ReadOnlySpan<byte> payload, int start, SavePayloadProfile profile )
+		public DelimiterSearch( ReadOnlySpan<byte> payload, int start, SavePayloadProfile profile, Func<ushort, SaveCoasterTrainLayout?>? coasters = null )
 		{
 			this.payload = payload;
 			this.profile = profile;
 			this.start = start;
+			this.coasters = coasters;
 		}
 
 		private List<int> Occurrences( int index )
@@ -315,7 +359,7 @@ public sealed class SavePayloadLayout
 			int traced;
 			try
 			{
-				traced = TracedEnd( payload, block, offset, profile );
+				traced = TracedEnd( payload, block, offset, profile, coasters );
 			}
 			catch ( InvalidDataException )
 			{

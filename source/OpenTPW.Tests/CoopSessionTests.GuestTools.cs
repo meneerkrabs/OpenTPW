@@ -147,9 +147,8 @@ public partial class CoopSessionTests
 		Assert.AreEqual( 1, tool.SegmentCount );
 		Assert.IsNull( tool.Ghost );
 		Assert.AreEqual( 0, view.Says( OpenTpwText.CannotBuildHere ) );
-		// the guest's segments are the host's to take back
-		Assert.IsFalse( tool.Undo() );
-		Assert.IsTrue( Walkable( guest, 8, 20 ) );
+		// [EXT:online-coop-undo] the segment keeps its record, which the guest's Backspace names to the host (C5, CoopSessionTests.Undo)
+		Assert.IsNotNull( tool.LastCommit!.Record );
 		// a grant taken back after the host took the request leaves its line
 		Grant( host, guest, view, granted: false );
 		Assert.IsTrue( Walkable( host, 8, 20 ) && Walkable( guest, 8, 20 ) );
@@ -391,7 +390,7 @@ public partial class CoopSessionTests
 		foreach ( var park in new[] { host, guest } )
 		{
 			park.Enter();
-			ConfigureQueue( park.Level.Guests!.Grid, park.One, 10, 5 );
+			ConfigureQueue( park.Level.Guests!.Grid, park.One, 10, 5, join: false );
 		}
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );

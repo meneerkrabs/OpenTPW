@@ -204,9 +204,9 @@ public class OriginalCoasterSaveTests
 
 	/// <summary>A 3×3 synthetic park (Belly Bounce 1100 at (1, 1), the gates 1601 at (0, 0)) with the given coaster body.</summary>
 	private static OriginalParkImport Park( byte[]? coasters = null, bool matchingAttractionId = true, bool duplicateMatches = false,
-		Func<int, SaveCoasterTrainLayout?>? coasterTrains = null, uint rideMeshInstance = 110 )
+		Func<int, SaveCoasterTrainLayout?>? coasterTrains = null, uint rideMeshInstance = 110, int size = 3, bool readableWorld = false )
 	{
-		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
+		var map = OriginalParkImportTests.CreateMap( size, size, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
 		things.Insert( 2, (11, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields
 		{
@@ -242,7 +242,9 @@ public class OriginalCoasterSaveTests
 		if ( duplicateMatches )
 			slots.Add( SaveTestPayloads.RideSystemRecord( 1100, 1, 1, 1, 1, SaveObject.PlacedObjectKind, 3 ) );
 		var rideSystem = SaveTestPayloads.RideSystem( slots );
-		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), grid, SaveTestPayloads.Things( things ) ), rideSystem,
+		// a World the loader's own readers measure (0x5179C0: the control manager, the hiring pool, the calendar, the arrivals and the 0x4000 cells) is what the type-aware layout needs; the other synthetic Worlds are located by their delimiter
+		var opaque = readableWorld ? SaveObjectControls.Bytes + SaveStaffPool.Bytes : 37;
+		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), grid, SaveTestPayloads.Things( things ), opaqueBytes: opaque ), rideSystem,
 			coasters == null ? null : new Dictionary<SaveBlock, byte[]> { [SaveBlock.Coasters] = coasters } );
 		return OriginalParkImport.Import( payload, map, coasterTrains );
 	}
@@ -372,6 +374,11 @@ public class OriginalCoasterSaveTests
 		var park = OriginalParkImport.Import( payload, new MapFile( mapStream ) );
 		Assert.IsNotNull( park.CoasterBlock );
 		Assert.AreEqual( 0u, park.CoasterBlock.Count );
+		// the TrackRides block is the build-stamp chunk (type 2, 32 bytes) alone: no kart, water or bumper ride was built, and no track cell stands in the structure layer (TRACK-032)
+		Assert.IsNull( park.TrackRidesProblem );
+		CollectionAssert.AreEqual( new uint[] { 2 }, park.TrackRides!.Chunks.Select( chunk => chunk.Type ).ToArray() );
+		Assert.AreEqual( 32u, park.TrackRides.Chunks.Single().Size );
+		Assert.AreEqual( 0, park.TrackCells.Count );
 	}
 
 	// [DATA:PreBuilt/prebuilt.TPWS:COAS] the sibling Theme Park Inc prebuilt save's coaster body follows the traced Theme Park World contract (power factor 1.0, one section, no collisions); a structural cross-check on real nonempty bytes, not a Theme Park World proof
@@ -549,6 +556,39 @@ public class OriginalCoasterSaveTests
 		var unknown = Park( body, coasterTrains: _ => new SaveCoasterTrainLayout( 2, 2 ), rideMeshInstance: 322 );
 		Assert.IsNull( unknown.CoasterBlock!.Coasters.Single().TrainSlots );
 		Assert.AreEqual( body.Length - 16 - SaveCoaster.HeaderBytes - 4, unknown.CoasterBlock.Coasters.Single().Trains.Length );
+	}
+
+	/// <summary>The bytes of the Coasters delimiter as the file stores them (the tag COAS reversed).</summary>
+	private const uint CoastersDelimiterWord = 0x434F4153;
+
+	private static byte[] CoasterHoldingDelimiterBytes()
+	{
+		var body = new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 );
+		Header( body, controller16: 321, sections: 0 ).U32( 0 );
+		var many = Enumerable.Repeat( CoastersDelimiterWord, 255 ).ToArray();
+		Train( body, cars: 2 );
+		Car( body, 1, 200, 4, many, many );
+		Car( body, 0, 201, 0, many, Array.Empty<uint>() );
+		return body.ToArray();
+	}
+
+	[TestMethod]
+	public void ACoastersBlockEndsWhereItsReaderStopsWhenTheTypesAreKnownWhateverBytesItHolds()
+	{
+		var bytes = CoasterHoldingDelimiterBytes();
+		// the saved riders' ids happen to hold the delimiter's bytes 765 times: a payload searched for its COAS delimiter is refused
+		var searched = Assert.ThrowsException<InvalidDataException>( () => Park( bytes, rideMeshInstance: 321, size: 128, readableWorld: true ) );
+		StringAssert.Contains( searched.Message, "more than" );
+		// with the coaster type known the block takes exactly the bytes its reader reads (0x437B60) and its tag must follow, as for every other block
+		var park = Park( bytes, coasterTrains: _ => new SaveCoasterTrainLayout( 1, 2 ), rideMeshInstance: 321, size: 128, readableWorld: true );
+		var slot = park.CoasterBlock!.Coasters.Single().TrainSlots!.Single();
+		Assert.AreEqual( 255, slot.Cars[0].HeadsA.Length );
+		Assert.IsTrue( slot.Cars[0].HeadsA.All( head => head == CoastersDelimiterWord ) );
+		// a block that is longer than its reader reads has no COAS tag where the reader stops: the original reports its SAD error, and no delimiter further on is taken instead
+		var longer = bytes.Append( (byte)0 ).ToArray();
+		Assert.ThrowsException<InvalidDataException>( () => Park( longer, coasterTrains: _ => new SaveCoasterTrainLayout( 1, 2 ), rideMeshInstance: 321, size: 128, readableWorld: true ) );
+		// a type the caller does not know leaves the block to the delimiter search
+		Assert.ThrowsException<InvalidDataException>( () => Park( bytes, coasterTrains: _ => null, rideMeshInstance: 321, size: 128, readableWorld: true ) );
 	}
 
 	[TestMethod]

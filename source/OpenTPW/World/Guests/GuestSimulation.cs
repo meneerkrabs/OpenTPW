@@ -64,6 +64,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>The guests standing in each cell, for separation's neighbour query; rebuilt at the start of every park turn.</summary>
 	private readonly Dictionary<(int X, int Y), List<Guest>> occupants = new();
 	private long cellSerial;   // the entry number the next guest to enter a cell takes (Guest.CellSerial), so the saved lists come back in their order
+	private StaffCellChain? staffChain;
+
+	/// <summary>The staff's lists of the per-cell thing chains, numbered from the same counter as the guests' (WALK-003); the staff world files its members here.</summary>
+	public StaffCellChain StaffChain => staffChain ??= new StaffCellChain( () => ++cellSerial );
+
+	/// <summary>Raises the entry counter to at least <paramref name="serial"/> (a restore of staff entry numbers), so a later entry is newer than every restored one.</summary>
+	internal void NoteCellSerial( long serial ) => cellSerial = Math.Max( cellSerial, serial );
 	private readonly List<GuestNavigation> neighbours = new();
 
 	/// <param name="decisions">
@@ -376,6 +383,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		attraction.LeaveQueue( guest.Id );
 		ClearQueueState( guest );
 		guest.SideshowWon = null;
+		guest.PendingFee = 0;
+		guest.PendingVisitSettlement = false;
 		guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.SmallHappinessChange & 0xFF) );
 		// [EXT:pools-swim] demolishing a changing room gets its swimmers out of the water: they step out on its path-side exit
 		if ( guest.InSwimSession )
@@ -437,6 +446,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 	}
 
+	/// <summary>
+	/// The kid sets the park loaded (<see cref="KidSetLoad"/>), set by the level once its sprites are in; null where the simulation runs without graphics. Presentation only: a guest made while it is known keeps its
+	/// draw reduced by it, as the original's draw divides by the loaded count.
+	/// </summary>
+	public int? KidSetCount { get; set; }
+
+	private uint ReduceKidDraw( uint raw ) => KidSetCount is > 0 and var count ? raw % (uint)count : raw;
+
 	private Guest? Create()
 	{
 		// [BIN:TPW-EXE:0x004F896A thing id] the base constructor 0x004F8940 takes the thing's id from the pool (0x0050AFE0 → the allocator 0x00516270) before its first draw; a full pool logs a fatal error and gives id 0 (here: no guest)
@@ -468,8 +485,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.ExitLevel = start.ExitLevel;
 		// [BIN:TPW-EXE:0x004FB19E guest reseed] the constructor then reseeds the world generator with the thing's id (zero-extended u16, through 0x0050B350), so everything the guest and the world draw after its creation starts from a state that depends on the id alone
 		random.Reseed( (ushort)guest.Id );
-		// [BIN:TPW-EXE:0x004FB1A7 guest sprite variant] the next call, 0x00541F70 with category 0, draws (R >> 2) mod the category's bank count (0x00541F85) for the guest's sprite bank +0x20: the draw is taken, its value is not used (the sprite choice is OpenTPW's own, GUEST-017)
-		random.NextWord();
+		// [BIN:TPW-EXE:0x004FB1A7 guest sprite variant] the next call, 0x00541F70 with category 0, draws (R >> 2) mod the category's loaded bank count (0x00541F85, div esi) and 0x004FB1B5 stores the remainder as the guest's sprite bank +0x20: the guest keeps it reduced by the kid sets loaded (KidSetCount, the raw draw where unknown), and the renderers reduce it again by the count loaded now (0x004F93AA, KidSetLoad); the reseed makes the raw draw the one its thing id gives (GuestAppearance.RawKidDraw)
+		guest.KidSetDraw = ReduceKidDraw( random.NextWord() >> 2 );
 		CreateBodySprite( guest, VisitorSpriteTemplate.Walk );
 		// A guest placed without the arrival constructor's position draws (the park's own start cell, tests, imports) is spread by a stable hash of its id: OpenTPW's own placement
 		// jitter, not a draw of the world generator (presentation of the start; the original sets +0x18/+0x1A from the entrance draws of SpawnArrival)
@@ -749,7 +766,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// restarts the timer (0x0041A960), clears the active byte and dispatches with 0; the status 6 branch (0x004CF475) is unreachable, 0x0051A690 turning 6 into -1
 	// [BIN:TPW-EXE:0x004CF4B6 pick-up] then, when a leaving guest waits at the stop (0x0051A9D0), status -1 or 0, or 2 with the group exactly 0 (test at
 	// 0x004CF4E1), dispatches with 0; with none waiting, status 4 does
-	// [APPROX:ARRIVAL-001] a cell's thing list holds OpenTPW's guests only (WALK-003); a swept turn runs this update after the thing sweep and the turn's destroys, as the original does (the end of 0x516380, Level.RunThingSweep); original scheduler import supports only saves without cached/current vehicle handles; saved vehicle identity and script continuation remain unsupported
+	// [APPROX:ARRIVAL-001] a swept turn runs this update after the thing sweep and the turn's destroys, as the original does (the end of 0x516380, Level.RunThingSweep); original scheduler import supports only saves without cached/current vehicle handles; saved vehicle identity and script continuation remain unsupported
 	private void UpdateArrivalVehicle()
 	{
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
@@ -916,7 +933,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( Settings.ArrivalWeatherPercentages is { } percentages )
 		{
 			// [BIN:TPI-EXE:0x005BCD60 arrival group] Theme Park Inc's group: 0 in world state 4; else ftol( weather percentage (rain, storm, snow or heatwave by the weather thing's state, else 100.0) x 0.01f x (NewParkBonus + park points) / PointsPerVisitor ), the factor and the divide in floating point (the oracle's X7 agrees on 532 of 532 inputs read at 53 bits); then at least MinPeople and the same cut as tp.exe's (500 online, else 1500)
-			// [APPROX:ARRIVAL-008] OpenTPW runs no Theme Park Inc weather (its weather thing's state word +0x70 is not traced), so the percentage is always 100 and the rain, storm, snow and heatwave modifiers never apply; the routine's other exit (a mode object answering 3, 0x005BCD7A) has no OpenTPW counterpart — evidence needed: the weather thing's states and what sets mode 3
+			// [BIN:TPI-EXE:0x5BCD7A mode exit] a mode object (0xA06558, +0x14) answering 3 gives no group: the object holds a mode 0..3 that the options dialog's radio group sets (0x498940..0x4989C7) and a mode of -1 becomes 3 at start-up (0x6A32D7); what the modes are is not read, so the exit is never taken here
+			// [APPROX:ARRIVAL-008] the weather state is rolled by the economy as 0x642770 does ([EXT:tpi-weather-spell-seed]); the mode exit above, the tail words of the roll table and the spell effects are not modelled
 			var state = ArrivalWeatherState?.Invoke() ?? 0;
 			double percent = state is >= 1 and <= 4 ? percentages[WeatherStateIndex[state - 1]] : 100.0;
 			var points = unchecked( Settings.ArrivalNewParkBonus + (ParkPoints?.Invoke() ?? 0) );
@@ -972,7 +990,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
 			guest.TimeInParkSeconds = elapsed + dt;
 		if ( turnStarted )
+		{
 			UpdateSpeed( guest );
+			// [BIN:TPW-EXE:0x004FA870 turn start point] the person's turn update ends with its walk position copied to +0x190/+0x194, the start of the interpolation (0x004F9F00) until the next turn, whether or not the guest walks
+			(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
+		}
 		if ( turnStarted && bodySpriteHostRunning )
 			guest.BodySprite.ApplyPending();
 		if ( turnStarted )
@@ -1012,6 +1034,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
+		// [BIN:TPI-EXE:0x60aedc umbrella cell close] the per-frame placement 0x60AE00 closes a shown umbrella (state 4 or 1) of a guest on a kart or water track cell (0x60AF32, 0x6142E0: state 2, sprite destroyed); a park turn here stands for the frames, and nothing but a pending change's due word is dropped with the state
+		if ( guest.UmbrellaState is UmbrellaRules.StateOpen or UmbrellaRules.StateClosing && StandsOnTrackCell( guest ) )
+		{
+			guest.UmbrellaState = UmbrellaRules.StateClosed;
+			guest.UmbrellaDueTurn = 0;
+		}
 		// [BIN:TPI-EXE:0x611334 umbrella switch] the switch on the state reads it once at the top of the rule: only a guest who is already open (4) when the rule starts gets the happiness modifier, never one the step below opens (1 to 4 at 0x6111E3, a due 3 at 0x611206)
 		var umbrellaWasOpen = guest.UmbrellaState == UmbrellaRules.StateOpen;
 		// [EXT:umbrellas-extension] the umbrella rule runs first on the guest's own phase, as Theme Park Inc's weather rule opens its needs block; only a guest who owns an umbrella is touched
@@ -1063,26 +1091,34 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		(guest.SmoothedSpeed, guest.Boost, guest.MaxSpeed, guest.MaxForce) = GuestSpeed.Update( guest.SmoothedSpeed, guest.BaseSpeed, guest.ToiletBonus, guest.Boost );
 	}
 
-	/// <summary>Presentation only: the drawn position moves from the position before the last step to the current one over a park turn.</summary>
+	/// <summary>
+	/// Presentation only: the drawn position moves from the position at the start of the guest's turn to its current one over the park turn (<see cref="PersonInterpolation.Point"/>,
+	/// tp.exe <c>0x004F9F00</c> with its flag set, as <c>0x004FA030</c> places the sprite).
+	/// </summary>
 	private void UpdatePresentation( Guest guest )
 	{
-		var t = Math.Clamp( (TickCount - guest.StepTick) / TicksPerTurn, 0f, 1f );
-		guest.DrawX = guest.StepFromX + (guest.X - guest.StepFromX) * t;
-		guest.DrawY = guest.StepFromY + (guest.Y - guest.StepFromY) * t;
-		guest.DrawDistanceWalked = guest.StepFromDistance + (guest.DistanceWalked - guest.StepFromDistance) * t;
+		var t = (TickCount - guest.StepTick) / TicksPerTurn;
+		var (x, y) = PersonInterpolation.Point( Fixed( guest.StepFromX ), Fixed( guest.StepFromY ), guest.Navigation.X, guest.Navigation.Y, t, clamped: true );
+		guest.DrawX = x / (float)Fixed16.One;
+		guest.DrawY = y / (float)Fixed16.One;
+		var along = Math.Clamp( t, 0f, 1f );
+		guest.DrawDistanceWalked = guest.StepFromDistance + (guest.DistanceWalked - guest.StepFromDistance) * along;
 	}
 
+	private static int Fixed( float cells ) => (int)(cells * Fixed16.One);
+
 	/// <summary>
-	/// Presentation only: where the guest was drawn <paramref name="turnsAgo"/> park turns ago along its last step, the fraction clamped to −1..2 as
-	/// tp.exe <c>0x004F9F00</c> does with its flag 0 (the balloon's trailing point).
+	/// Presentation only: where the guest was drawn <paramref name="turnsAgo"/> park turns ago along its turn, the factor without the 0..1 clamp and held to −1..2 as tp.exe <c>0x004F9F00</c> does
+	/// with its flag clear (the balloon's trailing point, <c>0x004FA030</c> passes the time less 0.35).
 	/// </summary>
-	// [BIN:TPW-EXE:0x004F9F00 position at a fraction] previous position (+0x190, +0x194) + (current − previous) × t, t clamped to 0..1 with the flag set and to −1..2 without it, in world units (cells × 10)
+	// [BIN:TPW-EXE:0x004FA030 balloon point] the first call of the sprite placement is the time less 0x0075C910 (0.35) with the flag clear, the second the time itself with the flag set; the balloon (+0x210) hangs at the first call's point
 	public (float X, float Y) DrawPositionBefore( Guest guest, float turnsAgo )
 	{
 		if ( guest.StepTick < 0 )
 			return (guest.X, guest.Y);
-		var t = Math.Clamp( Math.Clamp( (TickCount - guest.StepTick) / TicksPerTurn, 0f, 1f ) - turnsAgo, -1f, 2f );
-		return (guest.StepFromX + (guest.X - guest.StepFromX) * t, guest.StepFromY + (guest.Y - guest.StepFromY) * t);
+		var t = (TickCount - guest.StepTick) / TicksPerTurn - turnsAgo;
+		var (x, y) = PersonInterpolation.Point( Fixed( guest.StepFromX ), Fixed( guest.StepFromY ), guest.Navigation.X, guest.Navigation.Y, t, clamped: false );
+		return (x / (float)Fixed16.One, y / (float)Fixed16.One);
 	}
 
 	private const float TicksPerTurn = ParkCalendar.TicksPerSecond * ParkCalendar.TurnMilliseconds / 1000f;
@@ -1218,10 +1254,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return false;
 		if ( !Grid.IsWalkable( cell.X, cell.Y ) )
 			cell = Grid.FindNearestWalkable( cell.X, cell.Y ) ?? cell;
-		PlaceOnGrid( guest, cell.X, cell.Y );
+		// the set-down is the teleport (0x004FA930 with the bytes 0x80, 0x80): the guest joins its new cell's chain at once and the drawn start point is the new point, so nobody slides in from the old cell
+		Teleport( guest, cell, 0x80, 0x80 );
 		var navigation = guest.Navigation;
-		(navigation.X, navigation.Y) = GuestNavigation.Centre( cell );
-		navigation.SetDestination( navigation.X, navigation.Y, [] );
+		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
 		UpdatePresentation( guest );
 		guest.BodySprite.DeletePlayer();
 		CreateBodySprite( guest, VisitorSpriteTemplate.Walk );
@@ -1266,11 +1302,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	IEnumerable<GuestNavigation> IGuardGuests.WalkersOn( int x, int y )
 	{
-		if ( !occupants.TryGetValue( (x, y), out var list ) )
-			yield break;
-		foreach ( var other in list )
-			if ( other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.ChangingOut or GuestState.Gone) )
-				yield return other.Navigation;
+		var chain = new List<GuestNavigation>();
+		AppendCellChain( x, y, chain );
+		return chain;
 	}
 
 	(int X, int Y)[]? IGuardGuests.Lane( int side ) => side == 0 ? ValidLane( Settings.ArrivalLaneA ) : ValidLane( Settings.ArrivalLaneB );
@@ -1365,39 +1399,57 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests and the staff standing in the 3 × 3 cells around its
 	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
 	/// </summary>
-	// [APPROX:WALK-003] separation's neighbours are the guests of each cell outside rides and shops (not Using, HeldByGuard or Gone), head first like the original's persistent chains (the guest that entered the cell last first), followed by the staff on the cell; the original's query (tp.exe 0x5102f0, Mac 0x10087c, at most five neighbours) walks one chain per cell that holds the guests whatever their state (class 1), the staff (classes 4-8, kept here) and the online avatar (class 18, not kept) interleaved by the time each entered; the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: the entry order of the staff in the chain (they keep no cell list, so they follow the guests) and where the thing position of a guest on a ride, held or leaving lies
+	// [BIN:TPW-EXE:0x005102F0 separation neighbour query] the cells around the stepping thing, rows from the top and each row from the left; in each cell the one thing chain from its head (cell +0x24, next +0x0A): every thing whose kind byte (+2) is 1 (guest), 4 to 8 (staff) or 0x12 (the online avatar) and is not the caller's own, with no test of its state, within the radius by the position words +4/+6, at most five in all (0x51045A..0x51045E)
+	// [BIN:TPW-EXE:0x004FA2A0 thing position] +4/+6 are written by the walk step (the walk position >> 8, 0x4FA2FC → 0x50B6A0) and by the teleport (0x4FA930 → 0x50B6A0) only: a guest on a ride (state 16) or carried (state 17) keeps the position of its last step, still on the chain and still a neighbour of the guests that step past it; the destroy request unlinks a thing at once (0x50B780 → 0x4F8AE0 → 0x50B980 → 0x4D9280)
 	private (int X, int Y) SeparationForStep( GuestNavigation self )
 	{
 		neighbours.Clear();
 		var (cellX, cellY) = self.Cell;
-		var staff = staffOnMap;
 		for ( var y = cellY - 1; y <= cellY + 1; y++ )
 		{
 			for ( var x = cellX - 1; x <= cellX + 1; x++ )
 			{
 				if ( x < 0 || y < 0 || x >= Grid.CountX || y >= Grid.CountY )
 					continue;
-				if ( occupants.TryGetValue( (x, y), out var list ) )
-				{
-					// the cell's things are visited head first, the one that entered last (0x5102F0 follows the chain from cell +0x24 by +10; 0x4D91F0 inserts at the head)
-					for ( var index = list.Count - 1; index >= 0; index-- )
-					{
-						var other = list[index];
-						if ( other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) )
-							neighbours.Add( other.Navigation );
-					}
-				}
-				// the staff on the cell follow its guests (classes 4 to 8 of the thing list 0x5102F0 visits; the staff sweep does the same with the guests, StaffWorldSimulation.StaffSeparation)
-				if ( staff == null )
-					continue;
-				foreach ( var member in staff )
-				{
-					if ( member.Walk is { } walk && !ReferenceEquals( walk, self ) && walk.Cell == (x, y) )
-						neighbours.Add( walk );
-				}
+				AppendCellChain( x, y, neighbours );
 			}
 		}
 		return GuestNavigation.Separation( self, neighbours );
+	}
+
+	/// <summary>
+	/// The things on one cell's chain head first (the guests' and the staff's lists read by entry number): the guests and the staff interleaved by the time each entered the cell.
+	/// A guest that is gone is a kind 2 thing until the turn's deferred destroys unlink it (0x0050B780, 0x00516641): the separation query skips it, the head tests (<see cref="ChainHead"/>) do not.
+	/// </summary>
+	internal void AppendCellChain( int x, int y, List<GuestNavigation> into )
+	{
+		occupants.TryGetValue( (x, y), out var guestList );
+		var staffList = StaffChain.At( (x, y) );
+		var g = guestList?.Count ?? 0;
+		var s = staffList?.Count ?? 0;
+		while ( g > 0 || s > 0 )
+		{
+			if ( s == 0 || g > 0 && guestList![g - 1].CellSerial > staffList![s - 1].Serial )
+			{
+				var other = guestList![--g];
+				if ( other.State != GuestState.Gone )
+					into.Add( other.Navigation );
+			}
+			else
+				into.Add( staffList![--s].Walk );
+		}
+	}
+
+	/// <summary>The thing at the head of a cell's chain: a guest, a staff entry, or null for an empty cell.</summary>
+	private (Guest? Guest, bool Staff) ChainHead( (int X, int Y) cell )
+	{
+		occupants.TryGetValue( cell, out var guestList );
+		var staffList = StaffChain.At( cell );
+		// [BIN:TPW-EXE:0x0050B780 destroy request] a thing that is destroyed turns into kind 2 (+2 = 2, +3 = 1) and is queued (0x00516310); the turn's deferred destroys (0x00516641 → 0x0050B980) unlink it, so until then it still heads its cell's chain and the head tests (the boarding at 0x00500C28) see it, while the separation query (kinds 1, 4 to 8, 0x12) skips it
+		var guest = guestList is { Count: > 0 } ? guestList[^1] : null;
+		if ( staffList != null && (guest == null || staffList[^1].Serial > guest.CellSerial) )
+			return (null, true);
+		return (guest, false);
 	}
 
 	/// <summary>Files the guests that are in no cell list yet, or in another cell's, under their cells; the lists keep the order the guests entered them in.</summary>
@@ -1420,8 +1472,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				yield return (cell.X, cell.Y, list[index].Happiness);
 	}
 
-	/// <summary>The guest that heads the thing list of a cell (the one that entered it last), or null (tests).</summary>
-	internal Guest? HeadOfCell( int x, int y ) => occupants.TryGetValue( (x, y), out var list ) && list.Count > 0 ? list[^1] : null;
+	/// <summary>The guest that heads the thing chain of a cell (the thing that entered it last, WALK-003), or null when the head is a staff member or the cell is empty (tests).</summary>
+	internal Guest? HeadOfCell( int x, int y ) => ChainHead( (x, y) ).Guest;
 
 	/// <summary>Moves a guest to a path cell and files it in that cell's list as a step into it does (tests).</summary>
 	internal void PlaceForTest( Guest guest, int x, int y )
@@ -1688,7 +1740,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var here = guest.Navigation.Cell;
 		if ( status == 4 )
 		{
-			if ( occupants.TryGetValue( here, out var list ) && list.Count > 0 && list[^1] == guest )
+			if ( ChainHead( here ).Guest == guest )
 				guest.State = GuestState.Gone;
 			return;
 		}
@@ -1710,7 +1762,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return false;
 		foreach ( var cell in cells )
 		{
-			if ( occupants.TryGetValue( cell, out var list ) && list.Count > 0 && list[^1] is { State: GuestState.WaitingToGoHome } )
+			if ( ChainHead( cell ).Guest is { State: GuestState.WaitingToGoHome } )
 				return true;
 		}
 		return false;
@@ -2057,20 +2109,20 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
 	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
 	/// </summary>
-	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the balloon-holding other guest that entered the cell last (the cell's thing list is head-inserted on every cell change, 0x50B6A0, 0x4D91F0); and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's gate cell (0x4D86D0, the original's route) and on along OpenTPW's arrival lane (ARRIVAL-001), where the original's states 19 to 21 walk it to the arrival vehicle's stop cells — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
+	// [APPROX:GUEST-007] the queued advice does not keep the prankster's id (record word +0x0) nor the word of its cell (+0x4), which tp.exe's record 0x59B590 does (the prank lines 0x59B25F..0x59B3F4); evidence needed: what reads them when the advice is spoken
 	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
 	{
 		if ( prank == GuestDecision.Prank.Balloon )
 		{
 			// [BIN:TPW-EXE:0x004FF1CD balloon prank] the first other guest (thing type 1) on the prankster's cell list whose +0x210 is set has its balloon burst (0x004FE950); without one there is no prank
-			// the cell's list is walked head first (WALK-003): of the guests holding a balloon the one that entered the cell last is the victim
+			// the cell's chain is walked head first (WALK-003) and no state is tested: a guest on a ride or carried holds no balloon (its entry destroys it, 0x00502156 and 0x005022DA), so of the guests holding one the one that entered the cell last is the victim
 			Guest? victim = null;
 			if ( occupants.TryGetValue( guest.Navigation.Cell, out var cellList ) )
 			{
 				for ( var index = cellList.Count - 1; index >= 0 && victim == null; index-- )
 				{
 					var other = cellList[index];
-					if ( other != guest && other.HasBalloon && other.OnGrid && other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) )
+					if ( other != guest && other.HasBalloon && other.OnGrid && other.State != GuestState.Gone )
 						victim = other;
 				}
 			}
@@ -2220,10 +2272,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [EXT:smarter-guests-paths] a policy that weighs the path's comfort gets the cells the original's walk visited (a copy: the walk and its draws are the same)
 		Span<(int X, int Y)> trail = decisions.UsesPathComfort ? stackalloc (int X, int Y)[GuestWander.TrailCapacity] : default;
 		var trailCount = 0;
-		if ( GuestWander.Pick( Grid, start, () => random.NextWord(), null, out _, trail, out trailCount ) is not { } destination )
+		if ( GuestWander.Pick( Grid, start, () => random.NextWord(), null, out var stranded, trail, out trailCount ) is not { } destination )
 		{
-			// [BIN:TPW-EXE:0x004F9D6E stranded] a guest (not a staff member) whose cell has links but no candidate is "stranded at time": thought Confused and the mark, raised stamp counter
-			if ( (Grid.IsWalkable( start.X, start.Y ) || Grid.IsQueue( start.X, start.Y )) && GuestWander.OriginalCandidates( Grid, start ) == 0 && (Grid.LinksAt( start.X, start.Y ) & 0x55) != 0 )
+			// [BIN:TPW-EXE:0x004F9D6E stranded] a guest (not a staff member) with a step that has no candidate left, at the start or further along the walk, is "stranded at time": thought Confused and the mark, the raised stamp counter
+			if ( stranded )
 			{
 				Think( guest, GuestThought.Confused );
 				guest.StrandedMark = cells.StampCounter + 1;
@@ -2968,8 +3020,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use. A shop or sideshow with a price
 	/// records the guest's view of it in the park's statistics (<see cref="QueueJoinRules.PriceStatistics"/>), whether it pays or refuses.
 	/// </summary>
-	private bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
+	internal bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
 	{
+		if ( attraction.Kind == RideVisitorKind.Ride && Payments is { SettlesAtExit: true } )
+		{
+			// [BIN:TPI-EXE:0x61243A cash test] a Theme Park Inc ride with a fee refuses a guest whose purse is below it (unsigned); the willingness test before it is not ported (ECON-062). Theme Park World's rides are free
+			var fee = unchecked( (uint)PriceTermsOf( attraction ).Price );
+			return fee != 0 && fee > unchecked( (uint)guest.Money );
+		}
 		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
 			return false;
 		var terms = PriceTermsOf( attraction );
@@ -3344,11 +3402,21 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.HasWaypoint = false;
 		var price = 0;
 		guest.SideshowWon = null;
+		guest.PendingFee = 0;
+		guest.PendingVisitSettlement = false;
 		if ( Payments != null )
 		{
 			// [BIN:TPW-EXE:0x00501F3C state 14 entry] a sideshow's play is decided as it starts (+0x1F1 from 0x004E2670) and read when the visit ends (0x004FD970)
-			Payments.TryPayVisit( ride, guest.Money, out price, out var won );
+			var admitted = Payments.TryPayVisit( ride, guest.Money, out price, out var won );
 			guest.SideshowWon = ride.Kind == RideVisitorKind.Sideshow ? won : null;
+			if ( Payments.SettlesAtExit )
+			{
+				// [BIN:TPI-EXE:0x619670 fee recorded] the fee is kept and the purse and the bank stay as they are until the exit (0x6126D0)
+				guest.PendingFee = price;
+				// A refused payment is not a free sale. Keep the successful-admission bit separately because a legitimate free visit still books goods or a prize.
+				guest.PendingVisitSettlement = admitted;
+				price = 0;
+			}
 		}
 		else if ( ride.Price > 0 && guest.Money >= ride.Price )
 			price = ride.Price;
@@ -3521,6 +3589,20 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [BIN:TPW-EXE:0x4fe1cb till] the use routine's price step (0x4fe1a0, before the lost-sideshow test) takes the object's current price when it is not 0 and plays cat_kids 0xD0 at the guest
 		if ( ride.Price != 0 )
 			Voiced?.Invoke( guest, TillVoiceEvent );
+		if ( Payments is { SettlesAtExit: true } && guest.PendingVisitSettlement )
+		{
+			// [BIN:TPI-EXE:0x6126D0 fare taken] the exit's payment step (called at 0x61193B inside 0x6118D0, reached from 0x619A8E before the exit state is entered): the recorded fee leaves the purse and the bank takes it, and the cost booking follows for a won play or a sale (0x6119A1); a use cut short never gets here
+			var fee = guest.PendingFee;
+			guest.PendingFee = 0;
+			guest.PendingVisitSettlement = false;
+			Payments.SettleVisit( ride, fee, ride.Kind == RideVisitorKind.Sideshow ? guest.SideshowWon : null );
+			if ( fee > 0 )
+			{
+				guest.Money -= fee;
+				Observer?.Spent( guest, fee, ride.AttractionId );
+				MoneySpent?.Invoke( guest, fee, ride.AttractionId );
+			}
+		}
 		Payments?.VisitFinished( ride );
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
 		if ( decisions.RememberUse( ContextNow(), ViewOf( guest ), ViewOf( ride, guest ) ).PushUsedHistory )
@@ -3700,7 +3782,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			case GuestAppearance.Costume:
 				if ( guest.InCostume )
 					random.Reseed( (ushort)guest.Id );
-				random.NextWord();   // the sprite bank's variant (the guest's own on return, the costume's on putting one on): taken, not used
+				var variant = random.NextWord() >> 2;   // the sprite bank's variant (the guest's own on return, the costume's on putting one on)
+				// [BIN:TPW-EXE:0x004FE6AA costume return] the draw is written back to the bank +0x20 (0x004FE6B2): on return it is the kid set again, reduced by the loaded count; putting one on stores the costume bank, which the costume renderer reads (one set per theme)
+				if ( guest.InCostume )
+					guest.KidSetDraw = ReduceKidDraw( variant );
 				guest.InCostume = !guest.InCostume;
 				break;
 		}
@@ -3856,6 +3941,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			ExitLevel = guest.ExitLevel,
 			TimeInParkSeconds = guest.TimeInParkSeconds,
 			DisplayTimeInParkTurns = guest.TimeInParkSeconds == null ? null : guest.DisplayTimeInParkTurns,
+			KidSetDraw = guest.KidSetDraw,
 			SecondsSinceRide = guest.SecondsSinceRide,
 			RidesTaken = guest.RidesTaken,
 			ShopsVisited = guest.ShopsVisited,
@@ -4174,6 +4260,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} bubble {(int)guest.BubbleThought} at turn {guest.BubbleTurn} is not a thought bubble." );
 			if ( (uint)guest.Type >= (uint)typeCount )
 				Error( $"Guest {guest.Id} type {guest.Type} is not one of the park's {typeCount} guest types." );
+			if ( guest.KidSetDraw is < 0 or > uint.MaxValue )
+				Error( $"Guest {guest.Id} kid set draw {guest.KidSetDraw} is not an unsigned 32-bit number." );
 			// Schema 1 grew hunger, thirst and toilet to the old model's 150 cap; the meter model (schema 2 on) holds 0..100.
 			var needCeiling = snapshot.SchemaVersion == 1 ? 150 : 100;
 			Bounded( guest.Id, guest.Hunger, nameof( guest.Hunger ), 0, needCeiling );
@@ -4454,6 +4542,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			var guest = new Guest( guestSnapshot.Id, guestSnapshot.Type );
 			ApplyGuestSnapshot( guest, guestSnapshot, snapshot.SchemaVersion );
+			// [BIN:TPW-EXE:0x004F93AA saved sprite bank] a load writes the reduced bank back: a later save must keep it, not recover the earlier bank when more sets load.
+			// A costume guest's kid value is not its current sprite bank; returning the costume redraws and reduces it in ApplyAppearance.
+			if ( !guest.InCostume )
+				guest.KidSetDraw = ReduceKidDraw( guest.KidSetDraw );
 			if ( guest.Lane != null )
 				ConvertLegacyLane( guest );
 			if ( guestSnapshot.BodySprite == null )
@@ -4560,6 +4652,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.ExitLevel = (int)Math.Truncate( snapshot.ExitLevel );
 		guest.TimeInParkSeconds = snapshot.TimeInParkSeconds;
 		guest.DisplayTimeInParkTurns = snapshot.DisplayTimeInParkTurns;
+		guest.KidSetDraw = snapshot.KidSetDraw is { } kidSetDraw ? (uint)kidSetDraw : GuestAppearance.RawKidDraw( guest.Id );
 		guest.SecondsSinceRide = snapshot.SecondsSinceRide;
 		guest.RidesTaken = snapshot.RidesTaken;
 		(guest.ShopsVisited, guest.SideshowsVisited, guest.SideshowsWon) = (snapshot.ShopsVisited, snapshot.SideshowsVisited, snapshot.SideshowsWon);

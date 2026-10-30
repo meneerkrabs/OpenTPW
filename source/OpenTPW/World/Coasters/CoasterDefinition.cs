@@ -131,7 +131,7 @@ public sealed class CoasterPylonControl
 /// unconditionally (absent = 0). No PC <c>.sam</c> sets a motion, distance, angle or rating key, so the PC game
 /// runs on these defaults.
 /// </summary>
-// [APPROX:COAST-014] the PC twins in tp.exe agree with the Mac readings for the rating step and final (ORACLE X11/X12; the step's stale term differs, what C# follows), COAST 2-6 (0x43b1f0..0x43b330; COAST 6's literal 0 floor is built), the mode and speed setters, the guest predicates, the debit 0x4d01f0, the validator 0x434740 (plus a move-mode skip for 0x10000 with 0x20000 and the closure re-validation), the sampler 0x440c10 (its angles 0x43e590 and the loop knot factor 0x432430 round the sine-table index to the nearest, built) and the hop 0x43ce20; what differs is the x87 arithmetic only (COAST-032), which also covers the cost 0x447830: the Mac formula and rate selection (unit term from the own pylon when charged, 0x447929; length and height rates from the own pylon or StdPylon by the 0xC000/below/0x4000 tests and flag 0x80 of the node at +0x68, 0x447932..0x447956) with length and height multiplied by f32 0.1 (0x6fe1f0) in x87, dx squared through a double store and dz through a single store (0x4478dd..0x447913), summed as (length rate * length + unit) + height rate * height; the Mac divides by 10 with fused single steps — evidence needed: the control word of a running tp.exe, or an x87-exact oracle of these routines
+// [APPROX:COAST-014] the PC twins in tp.exe agree with the Mac readings for the rating step and final (ORACLE X11/X12; the step's stale term differs, what C# follows), COAST 2-6 (0x43b1f0..0x43b330; COAST 6's literal 0 floor is built), the mode and speed setters, the guest predicates, the debit 0x4d01f0, the validator 0x434740 (plus a move-mode skip for 0x10000 with 0x20000 and the closure re-validation), the sampler 0x440c10 (its angles 0x43e590 and the loop knot factor 0x432430 round the sine-table index to the nearest, built) and the hop 0x43ce20; what differs is the x87 arithmetic of the rating pass 0x43c450 and the ride motion only (COAST-032), which no oracle run has compared yet; the cost 0x447830 is built (the Mac formula, length and height multiplied by f32 0.1 (0x6fe1f0) in x87, dx squared through a double store and dz through a single store (0x4478dd..0x447913), summed as (length rate * length + unit) + height rate * height) and compared bit-exactly with isolated tp.exe runs
 public sealed class CoasterDefinition
 {
 	/// <summary><c>Bumper.WhichTrackType</c> of a coaster (<c>0xe2fe4</c>: type record +156 == 3).</summary>
@@ -437,7 +437,7 @@ public sealed class CoasterDefinition
 	{
 		ArgumentNullException.ThrowIfNull( entry );
 		var definition = FromEntry( entry );
-		using var assets = new CoasterAssets( entry, definition );
+		using var assets = new CoasterAssets( entry, definition ) { ResolveWrap = false };
 		// [BIN:TPW-EXE:0x42fbde car models] the loader reads the centre car type's model, then the front and the rear type's when they are other types (0x430130 at 0x42fbde, 0x42fbf3, 0x42fc08) before the pair distances and head sums
 		var used = new HashSet<int> { definition.CarTypes.FrontIndex, definition.CarTypes.CentreIndex, definition.CarTypes.RearIndex };
 		definition.ApplyCarModels( index => used.Contains( index ) ? assets.GetCar( index ) : null );

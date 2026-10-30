@@ -454,6 +454,34 @@ public class UmbrellasSimulationTests
 	}
 
 	[TestMethod]
+	public void AGuestOnATrackCellNeitherSchedulesNorCarriesOutAChangeAndHasItsShownUmbrellaClosed()
+	{
+		// [BIN:TPI-EXE:0x613ea0 track-cell stand-down] the scheduling and the carrying out stand down on a kart or water track cell; [BIN:TPI-EXE:0x60aedc] the placement closes a shown umbrella there
+		var rig = new Rig();
+		rig.Weather = UmbrellaRules.WeatherRain;
+		var guest = rig.Simulation.SpawnInPark( 6, 5 );
+		rig.Simulation.UmbrellaOnTrackCell = ( x, y ) => (x, y) == guest.Cell;
+		rig.Simulation.SetUmbrellaStateForTest( guest, UmbrellaRules.StateClosed );
+		Rig.SetAge( guest, gateOpen: true );
+		rig.RunTurns( 12 );
+		Assert.AreEqual( (UmbrellaRules.StateClosed, 0L), (guest.UmbrellaState, guest.UmbrellaDueTurn), "rain would schedule an opening off the track" );
+		rig.Simulation.SetUmbrellaStateForTest( guest, UmbrellaRules.StateOpening );
+		guest.UmbrellaDueTurn = 1;
+		Rig.SetAge( guest, gateOpen: true );
+		rig.RunTurns( 12 );
+		Assert.AreEqual( UmbrellaRules.StateOpening, guest.UmbrellaState, "a due opening is not carried out on a track cell" );
+		rig.Simulation.SetUmbrellaStateForTest( guest, UmbrellaRules.StateOpen );
+		rig.RunTurns( 2 );
+		Assert.AreEqual( (UmbrellaRules.StateClosed, 0L), (guest.UmbrellaState, guest.UmbrellaDueTurn), "the placement closes a shown umbrella on a track cell (0x60AF32)" );
+		rig.Simulation.SetUmbrellaStateForTest( guest, UmbrellaRules.StateOpening );
+		guest.UmbrellaDueTurn = 1;
+		rig.Simulation.UmbrellaOnTrackCell = null;
+		Rig.SetAge( guest, gateOpen: true );
+		rig.RunTurns( 12 );
+		Assert.AreEqual( UmbrellaRules.StateOpen, guest.UmbrellaState, "off the track cell the same due opening is carried out" );
+	}
+
+	[TestMethod]
 	public void AGuestWithoutAnUmbrellaIsNeverTouchedByTheWeatherRule()
 	{
 		var rig = new Rig();

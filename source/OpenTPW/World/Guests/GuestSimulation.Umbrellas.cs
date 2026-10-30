@@ -102,17 +102,26 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>
-	/// The guest is inside an attraction (or its changing room's water): the reaction is not scheduled or carried out then.
+	/// The guest is inside an attraction: the reaction is not scheduled or carried out then. The original's two words are set when the guest starts using an attraction and cleared when it leaves, so the span is the
+	/// state <see cref="GuestState.Using"/> (boarded until the exit); the pool states of a changing room's swim session count too (the pools extension's own states).
 	/// </summary>
-	// [APPROX:UMB-003] Theme Park Inc's "inside" words (+0x38, +0x3C: set while the guest is in the attraction's own handling) are not known state for OpenTPW's guests: the in-attraction states stand in for them, the ride or shop in use and the pool states of a changing room
+	// [BIN:TPI-EXE:0x61a540 inside words] state 0x14 (the entry, 0x61A7FB) sets +0x3C to 1 for every attraction and +0x38 to 1 for a type whose thing flag +0x42 has 0x20, which the thing builder 0x5DB708 sets for a type with a nonzero word at +0x1C4 (the key RideHandlesSprite in the key table order); state 0x13 (the exit, 0x61A6E4..0x61A6EE) clears both; the scheduling 0x613EA0 and the carrying out 0x614010 stand down when either is set
+	// [EXT:pools-swim] a swim session in a changing room's pool hides the guest like a ride: OpenTPW's own pool states (the original has none) count as inside
 	private static bool IsInsideAttraction( Guest guest ) =>
 		guest.State is GuestState.Using or GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut or GuestState.PoolActivity;
+
+	/// <summary>The guest stands on a kart or water track cell (<see cref="UmbrellaRules.OnTrackCell(TrackCellLayer, int, int)"/>): the level wires the track layer; without one nobody does.</summary>
+	private bool StandsOnTrackCell( Guest guest ) => UmbrellaOnTrackCell?.Invoke( guest.CellX, guest.CellY ) == true;
+
+	/// <summary>The level's test of a map cell for <see cref="UmbrellaRules.OnTrackCell(TrackCellLayer, int, int)"/>; null in a park without a map.</summary>
+	public Func<int, int, bool>? UmbrellaOnTrackCell { get; set; }
 
 	/// <summary>
 	/// The guest's age in park turns for the day gate: the turns since its creation, from the time it has spent in the park (the sum of its steps, read as the visitor roster reads it). A guest without a known time (an
 	/// imported original guest) counts as new, which opens the gate.
 	/// </summary>
-	// [BIN:TPW-EXE:0x4FD950 turns in park] the original subtracts two world turns (the stamp +0x1D4 never rewritten); OpenTPW keeps the seconds (APPROX:GUEST-920) and the turn count is their floor over the turn's 248 ms
+	// [BIN:TPI-EXE:0x611050 age] the original subtracts two world turns (the stamp +0x1FC)
+	// [APPROX:UMB-003] OpenTPW keeps the seconds (GUEST-920: the integer turn age is display only) and the turn count is their floor over the turn's 248 ms
 	internal static long AgeTurnsOf( Guest guest ) =>
 		guest.TimeInParkSeconds is { } seconds ? (long)Math.Floor( seconds * 1000.0 / ParkCalendar.TurnMilliseconds ) : 0;
 
@@ -120,8 +129,7 @@ public sealed partial class GuestSimulation
 	/// The weather step of a guest who owns an umbrella, on the guest's own update (every fourth park turn, before its needs): on a qualifying day (<see cref="UmbrellaRules.DayGateOpen"/>) the weather opens or closes the umbrella
 	/// through the states of <see cref="UmbrellaRules.WeatherAction"/>. The mood part of Theme Park Inc's rule (happiness, thirst and hunger in bad weather) is the <c>opentpw.rain-mood</c> extension's, not this one's.
 	/// </summary>
-	// [BIN:TPI-EXE:0x611050 weather rule] called from the guest update 0x619B50 at the top of the needs phase (turn & 3 == id & 3) for every guest; the track-cell test of the scheduling (0x67F890 / 0x685680) is dropped
-	// [APPROX:UMB-002] the scheduling (0x613EA0) and the carrying out (0x614010) stand down for a guest on a kart or water track cell (0x67F890 on the 40-byte record found through the tile record's first word, 0x685680 on the record of the same cell index); OpenTPW's walking guests never stand on one, so a guest is never held back by it
+	// [BIN:TPI-EXE:0x611050 weather rule] called from the guest update 0x619B50 at the top of the needs phase (turn & 3 == id & 3) for every guest; the scheduling and the carrying out stand down on a track cell (UMB-002)
 	private void UpdateUmbrella( Guest guest, long turn )
 	{
 		if ( !UmbrellaRules.DayGateOpen( AgeTurnsOf( guest ) ) )
@@ -150,10 +158,10 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>A change is scheduled (state 1 or 3): not while the guest is inside an attraction; due after the reaction delay.</summary>
-	// [BIN:TPI-EXE:0x613ea0 schedule] +0x38 and +0x3C zero (not inside), then the delay from rand() (UMB-001), the balloon's lengthening, the due word +0x23C = (clock >> 2) + delay and the state written
+	// [BIN:TPI-EXE:0x613ea0 schedule] +0x38 and +0x3C zero (not inside) and not on a track cell, then the delay from rand() ([EXT:tpi-time-seeded-rand]), the balloon's lengthening, the due word +0x23C = (clock >> 2) + delay and the state written
 	private void Schedule( Guest guest, long turn, int state )
 	{
-		if ( IsInsideAttraction( guest ) )
+		if ( IsInsideAttraction( guest ) || StandsOnTrackCell( guest ) )
 			return;
 		var delay = UmbrellaRules.Delay( guest.Id, turn, guest.HasBalloon, guest.BalloonLife );
 		guest.UmbrellaDueTurn = UmbrellaRules.DueTurn( turn, delay );
@@ -166,7 +174,7 @@ public sealed partial class GuestSimulation
 	// [BIN:TPI-EXE:0x614010 carry out] not inside, the due word reached (clock >> 2 against +0x23C); state 1 sets 2 and destroys the sprite; otherwise the balloon is released through 0x613d00's body and the sprite is made, state 4
 	private void CarryOut( Guest guest, long turn )
 	{
-		if ( IsInsideAttraction( guest ) || !UmbrellaRules.IsDue( turn, guest.UmbrellaDueTurn ) )
+		if ( IsInsideAttraction( guest ) || StandsOnTrackCell( guest ) || !UmbrellaRules.IsDue( turn, guest.UmbrellaDueTurn ) )
 			return;
 		if ( guest.UmbrellaState == UmbrellaRules.StateClosing )
 		{

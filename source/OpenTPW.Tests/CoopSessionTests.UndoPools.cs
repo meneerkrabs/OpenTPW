@@ -1,0 +1,354 @@
+using System;
+using System.Linq;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.UI.Original;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// [EXT:online-coop-undo] Pool strokes in a shared park (docs/COOP.md, "Conflicts and undo (C5)"; C5-2): the paint and erase modes' Backspace takes back the player's own newest stroke
+/// through the host's journal, whole or not at all, with the tool's own refunds and charges, for a guest and the host alike; a session's stroke is split as it is laid, so every take-back fits
+/// one command; and a wave machine's settings go through the management queue under the attractions right. Each test ends with equal digests, world hashes and logs.
+/// </summary>
+public partial class CoopSessionTests
+{
+	/// <summary>The guest's stroke from <paramref name="from"/> to <paramref name="to"/>, painted or erased, drawn and back.</summary>
+	private void GuestPoolStroke( Park host, Park guest, View view, (int X, int Y) from, (int X, int Y) to, bool erase = false )
+	{
+		guest.Enter();
+		var tool = guest.Level.PoolTool!;
+		Assert.IsTrue( tool.Begin( erase ) );
+		tool.Press( from.X, from.Y );
+		tool.Hover( to.X, to.Y );
+		tool.Release();
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the stroke came back" );
+	}
+
+	/// <summary>The guest's Backspace in its pool tool, sent to the host as a take-back and back.</summary>
+	private void GuestPoolBackspace( Park host, Park guest, View view )
+	{
+		guest.Enter();
+		var tool = guest.Level.PoolTool!;
+		Assert.IsTrue( tool.Undo(), "the Backspace went" );
+		RoundsUntil( () => !tool.HasGuestBatches, host, guest, view, "the take-back came back" );
+	}
+
+	private static TakeBackCommand[] StrokeTakeBacksOf( Park host, int seat ) => TakeBacksOf( host, seat ).Where( command => command.Stroke ).ToArray();
+
+	private static bool AllWater( Park park, params (int X, int Y)[] cells ) => cells.All( cell => IsWater( park, cell.X, cell.Y ) );
+
+	private static bool AnyWater( Park park, params (int X, int Y)[] cells ) => cells.Any( cell => IsWater( park, cell.X, cell.Y ) );
+
+	[TestMethod]
+	public void AGuestsBackspaceTakesItsOwnStrokesBackNewestFirstWithTheirRefundsAndChargesOnEveryPeer()
+	{
+		var (host, guest, view) = UndoSession();
+		var seat = guest.Level.Commands.Player;
+		var cost = host.Economy.CellCost( CellPurchase.Pool );
+		var paid = host.Economy.Balance;
+		GuestPoolStroke( host, guest, view, (14, 26), (19, 26) );
+		GuestPoolStroke( host, guest, view, (17, 26), (19, 26), erase: true );
+		Assert.AreEqual( paid - 3 * cost, host.Economy.Balance, "six cells painted, three erased and refunded" );
+		GuestPoolBackspace( host, guest, view );
+		Assert.IsTrue( AllWater( host, Row( 14, 19, 26 ) ) && AllWater( guest, Row( 14, 19, 26 ) ), "the erase taken back: its cells painted again" );
+		Assert.AreEqual( paid - 6 * cost, host.Economy.Balance, "and paid for" );
+		GuestPoolBackspace( host, guest, view );
+		Assert.IsFalse( AnyWater( host, Row( 14, 19, 26 ) ) || AnyWater( guest, Row( 14, 19, 26 ) ), "the paint taken back" );
+		Assert.AreEqual( paid, host.Economy.Balance, "every cell refunded" );
+		var taken = StrokeTakeBacksOf( host, seat );
+		Assert.AreEqual( 2, taken.Length );
+		Assert.IsTrue( taken.All( command => command is { Verdict: TakeBackVerdict.Taken, Inverse: UndoPoolStrokeCommand } ) );
+		// no stroke of its own left: its Backspace sends nothing and says nothing
+		GuestPoolBackspace( host, guest, view );
+		Rounds( 5, host, guest );
+		view.Update();
+		Assert.AreEqual( 2, StrokeTakeBacksOf( host, seat ).Length, "nothing more went to the host" );
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopUndoNotOwn ) + view.Says( OpenTpwText.CoopUndoChanged ) + view.Says( OpenTpwText.CoopUndoInTheWay ) );
+		CatchUpAndCompare( host, guest );
+		Assert.AreEqual( host.Economy.Balance, guest.Economy.Balance );
+	}
+
+	[TestMethod]
+	public void TheHostsBackspaceTakesBackItsOwnStrokeThroughTheJournalAndKeepsOneItCannot()
+	{
+		var (host, guest, view) = UndoSession();
+		var hostView = ViewOf( host );
+		host.Enter();
+		var tool = host.Level.PoolTool!;
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		tool.Press( 14, 26 );
+		tool.Hover( 16, 26 );
+		Assert.IsNotNull( tool.Release()?.Name, "a session's stroke is named by its first cell's record" );
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		tool.Press( 20, 26 );
+		tool.Hover( 21, 26 );
+		tool.Release();
+		RoundsUntil( () => IsWater( guest, 21, 26 ), host, guest, view, "the host's strokes reached the guest" );
+		// the guest erases a cell of the host's newest stroke: the host's Backspace is refused, says why and keeps the stroke
+		GuestPoolStroke( host, guest, view, (21, 26), (21, 26), erase: true );
+		host.Enter();
+		HudBackspace( hostView );
+		Assert.AreEqual( 1, hostView.Says( OpenTpwText.CoopUndoChanged ), "said why" );
+		Assert.IsTrue( IsWater( host, 20, 26 ) && !IsWater( host, 21, 26 ), "nothing changed" );
+		Assert.AreEqual( TakeBackVerdict.Changed, StrokeTakeBacksOf( host, ParkCommands.LocalPlayer ).Single().Verdict );
+		// the guest takes its erase back: the host's stroke goes back whole, then the one before it
+		GuestPoolBackspace( host, guest, view );
+		host.Enter();
+		Assert.IsTrue( tool.Undo() );
+		Assert.IsFalse( AnyWater( host, (20, 26), (21, 26) ) );
+		Assert.IsTrue( AllWater( host, Row( 14, 16, 26 ) ) );
+		Assert.IsTrue( tool.Undo() );
+		Assert.IsFalse( AnyWater( host, Row( 14, 16, 26 ) ) );
+		Assert.IsFalse( tool.Undo(), "no stroke left" );
+		Assert.AreEqual( 2, StrokeTakeBacksOf( host, ParkCommands.LocalPlayer ).Count( command => command.Verdict == TakeBackVerdict.Taken ) );
+		CatchUpAndCompare( host, guest );
+		Assert.IsFalse( AnyWater( guest, Row( 14, 21, 26 ) ) );
+	}
+
+	[TestMethod]
+	public void ASessionsStrokeIsSplitAtItsCellBoundAndBackspaceTakesTheLastPartFirst()
+	{
+		var (host, guest, view) = UndoSession();
+		var seat = guest.Level.Commands.Player;
+		guest.Enter();
+		guest.Level.PoolTool!.StrokeCellBound = 3;
+		GuestPoolStroke( host, guest, view, (14, 26), (20, 26) );
+		var batches = HostCommandsOf( host, seat ).OfType<PoolCellsCommand>().ToArray();
+		CollectionAssert.AreEqual( Row( 14, 20, 26 ), batches.SelectMany( batch => batch.Cells ).ToArray(), "every cell went once, in order" );
+		Assert.AreEqual( 3, batches.Count( batch => batch.First ), "three strokes: three cells, three and one" );
+		GuestPoolBackspace( host, guest, view );
+		Assert.IsTrue( AllWater( host, Row( 14, 19, 26 ) ) && !IsWater( host, 20, 26 ), "the last part first" );
+		GuestPoolBackspace( host, guest, view );
+		Assert.IsTrue( AllWater( host, Row( 14, 16, 26 ) ) && !AnyWater( host, Row( 17, 19, 26 ) ) );
+		GuestPoolBackspace( host, guest, view );
+		Assert.IsFalse( AnyWater( host, Row( 14, 20, 26 ) ) );
+		Assert.IsTrue( StrokeTakeBacksOf( host, seat ) is { Length: 3 } taken && taken.All( command => command.Verdict == TakeBackVerdict.Taken ) );
+		// the host's drag the same
+		host.Enter();
+		var tool = host.Level.PoolTool!;
+		tool.StrokeCellBound = 3;
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		tool.Press( 14, 28 );
+		tool.Hover( 20, 28 );
+		tool.Release();
+		Assert.AreEqual( 3, host.Level.Commands.Log.Select( entry => entry.Command ).OfType<PaintPoolCellCommand>().Count( command => command.First ) );
+		Assert.IsTrue( tool.Undo() );
+		Assert.IsTrue( AllWater( host, Row( 14, 19, 28 ) ) && !IsWater( host, 20, 28 ) );
+		Assert.IsTrue( tool.Undo() );
+		Assert.IsTrue( AllWater( host, Row( 14, 16, 28 ) ) && !AnyWater( host, Row( 17, 19, 28 ) ) );
+		Assert.IsTrue( tool.Undo() );
+		Assert.IsFalse( AnyWater( host, Row( 14, 20, 28 ) ) );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AStrokeWhoseFirstBatchTheHostCouldNotTakeIsOpenedByItsNextBatchAndTakenBackAlone()
+	{
+		var (host, guest, view) = UndoSession();
+		var seat = guest.Level.Commands.Player;
+		// the stroke before it, of the same mode
+		GuestPoolStroke( host, guest, view, (14, 28), (16, 28) );
+		guest.Enter();
+		var tool = guest.Level.PoolTool!;
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		// forty requests between two of the host's frames spend its burst: the stroke's first batch after them is too fast, and the host keeps no record of it
+		var requests = guest.Session!.GuestCommands!;
+		var burst = Enumerable.Range( 0, 40 ).Select( _ => requests.Submit( new LayLineCommand( CellToolMode.Path, -1, 30, 30, 30, 30 ) { Player = seat } ) ).ToArray();
+		tool.Press( 4, 26 );
+		tool.SendGuestBatches( Time.Now );
+		// the drag's later cells wait for that batch's answer, and then go as the stroke's first
+		tool.Hover( 8, 26 );
+		tool.Release();
+		RoundsUntil( () => !tool.HasGuestBatches && burst.All( request => !request.IsOpen ), host, guest, view, "the stroke was answered" );
+		Assert.IsFalse( IsWater( host, 4, 26 ), "the first cell had no record" );
+		Assert.IsTrue( AllWater( host, Row( 5, 8, 26 ) ) && AllWater( guest, Row( 5, 8, 26 ) ) );
+		var batches = HostCommandsOf( host, seat ).OfType<PoolCellsCommand>().ToArray();
+		Assert.IsTrue( batches.Single( batch => batch.Cells.Contains( (5, 26) ) ).First, "the batch after the one with no record opened the stroke" );
+		GuestPoolBackspace( host, guest, view );
+		Assert.IsFalse( AnyWater( host, Row( 4, 8, 26 ) ) || AnyWater( guest, Row( 4, 8, 26 ) ) );
+		Assert.IsTrue( AllWater( host, Row( 14, 16, 28 ) ), "the stroke before it untouched" );
+		Assert.AreEqual( TakeBackVerdict.Taken, StrokeTakeBacksOf( host, seat ).Single().Verdict );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void AStrokeOfAnEarlierRunOfTheGuestsToolIsNoneOfItsOwnAndALateOutcomeNamesNone()
+	{
+		var (host, guest, view) = UndoSession();
+		var seat = guest.Level.Commands.Player;
+		GuestPoolStroke( host, guest, view, (14, 26), (16, 26) );
+		guest.Enter();
+		var tool = guest.Level.PoolTool!;
+		// the tool ends and starts again: its Backspace takes nothing of the earlier run back, as the host's emptied stack does
+		tool.Cancel();
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		GuestPoolBackspace( host, guest, view );
+		// a stroke whose batch is still on its way when the tool ends: its outcome names no stroke of the next run
+		tool.Press( 20, 26 );
+		tool.SendGuestBatches( Time.Now );
+		tool.Release();
+		tool.Cancel();
+		Assert.IsTrue( tool.Begin( erase: false ) );
+		RoundsUntil( () => !tool.HasGuestBatches && IsWater( guest, 20, 26 ), host, guest, view, "the stroke's outcome came back" );
+		GuestPoolBackspace( host, guest, view );
+		Rounds( 5, host, guest );
+		Assert.AreEqual( 0, StrokeTakeBacksOf( host, seat ).Length, "nothing went to the host" );
+		Assert.IsTrue( AllWater( host, Row( 14, 16, 26 ) ) && IsWater( host, 20, 26 ), "nothing taken back" );
+		CatchUpAndCompare( host, guest );
+	}
+
+	[TestMethod]
+	public void ASlidesSplashOnAStrokesCellKeepsItsTakeBackUntilTheTowerIsSold()
+	{
+		var (host, guest, _, _) = Shared();
+		var tower = TowerOnBoth( host, guest );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var seat = guest.Level.Commands.Player;
+		var cost = host.Economy.CellCost( CellPurchase.Pool );
+		// the guest erases two cells of the pool and paints them again: the paint is its newest stroke
+		GuestPoolStroke( host, guest, view, (16, 18), (17, 18), erase: true );
+		GuestPoolStroke( host, guest, view, (16, 18), (17, 18) );
+		// the host lays a slide whose splash lands on the stroke's second cell
+		host.Enter();
+		foreach ( var (x, y) in new[] { (15, 19), (16, 19), (17, 19), (17, 18) } )
+			Assert.IsTrue( host.Issue( new LayPoolSlidePieceCommand( 13, 19, x, y ) ).Accepted, $"the slide's piece at ({x}, {y})" );
+		RoundsUntil( () => SlideOf( guest ) is { IsComplete: true }, host, guest, view, "the slide reached the guest" );
+		var balance = host.Economy.Balance;
+		// the splash needs its water: the take-back is refused whole on every park, and says why
+		GuestPoolBackspace( host, guest, view );
+		view.Update();
+		Assert.AreEqual( TakeBackVerdict.InTheWay, StrokeTakeBacksOf( host, seat ).Last().Verdict );
+		Assert.IsTrue( AllWater( host, (16, 18), (17, 18) ) && AllWater( guest, (16, 18), (17, 18) ), "both cells kept on both parks" );
+		Assert.AreEqual( balance, host.Economy.Balance, "nothing refunded" );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopUndoInTheWay ) );
+		// the tower sold, its slide goes: the stroke is taken back, then the erase before it
+		Assert.IsTrue( host.Issue( new RemoveAttractionCommand( tower.Runtime.AttractionId ) ).Accepted );
+		RoundsUntil( () => SlideOf( guest ) == null && SlideOf( host ) == null, host, guest, view, "the sale took the slide on both parks" );
+		balance = host.Economy.Balance;
+		GuestPoolBackspace( host, guest, view );
+		Assert.IsFalse( AnyWater( host, (16, 18), (17, 18) ) || AnyWater( guest, (16, 18), (17, 18) ), "the paint taken back" );
+		Assert.AreEqual( balance + 2 * cost, host.Economy.Balance, "and refunded" );
+		GuestPoolBackspace( host, guest, view );
+		Assert.IsTrue( AllWater( host, (16, 18), (17, 18) ) && AllWater( guest, (16, 18), (17, 18) ), "the erase taken back" );
+		CatchUpAndCompare( host, guest );
+		Assert.AreEqual( host.Economy.Balance, guest.Economy.Balance );
+	}
+
+	[TestMethod]
+	public void SwimmersInAStrokesWaterKeepItsTakeBackOnBothParksUntilTheyAreOut()
+	{
+		// the park's first ride is a changing room whose back opens on (12, 12), water there on both parks before their first frame; its exit is a path cell, where swimmers start
+		var (host, guest, _, _) = Shared( ( park, _ ) =>
+		{
+			park.Enter();
+			park.One.Visitors.IsChangingRoom = true;
+			park.One.Visitors.PoolAccessCandidates = new[] { (12, 12) };
+			park.One.Visitors.ExitCell = (4, 1);
+			park.Level.PoolBuilder!.PaintCells( new[] { (12, 12) } );
+		} );
+		var view = ViewOf( guest );
+		Rounds( 20, host, guest );
+		Grant( host, guest, view );
+		var seat = guest.Level.Commands.Player;
+		var cost = host.Economy.CellCost( CellPurchase.Pool );
+		// the guest's stroke widens the room's water by two cells
+		GuestPoolStroke( host, guest, view, (13, 12), (14, 12) );
+		// three swimmers, as many as the three cells take, start alike on both parks at one tick: two bodies keep apart, so one swims in the stroke's water at least
+		CatchUpAndCompare( host, guest );
+		foreach ( var park in new[] { host, guest } )
+		{
+			park.Enter();
+			Assert.AreEqual( 3, park.Level.Guests!.DebugStartSwimmers( park.One.Visitors, 3 ), "three swimmers" );
+		}
+		bool InStroke( Park park ) => park.Level.Guests!.Guests.Any( swimmer => (swimmer.IsSwimming || swimmer.InPoolActivity) && (swimmer.CellX, swimmer.CellY) is (13, 12) or (14, 12) );
+		bool InWater( Park park ) => park.Level.Guests!.Guests.Any( swimmer => swimmer.IsSwimming || swimmer.InPoolActivity );
+		Assert.IsTrue( InStroke( host ) && InStroke( guest ) );
+		var balance = host.Economy.Balance;
+		GuestPoolBackspace( host, guest, view );
+		view.Update();
+		Assert.AreEqual( TakeBackVerdict.InTheWay, StrokeTakeBacksOf( host, seat ).Last().Verdict, "a swimmer in its water" );
+		Assert.IsTrue( AllWater( host, (13, 12), (14, 12) ) && AllWater( guest, (13, 12), (14, 12) ), "both cells kept on both parks" );
+		Assert.AreEqual( balance, host.Economy.Balance, "nothing refunded" );
+		Assert.AreEqual( 1, view.Says( OpenTpwText.CoopUndoInTheWay ) );
+		CatchUpAndCompare( host, guest );
+		// once the swimmers have finished their swims (40 to 70 seconds) and climbed out, the stroke goes back whole on both parks
+		RoundsUntil( () => !InWater( host ) && !InWater( guest ), host, guest, view, "the swimmers left the water", 12000 );
+		balance = host.Economy.Balance;
+		GuestPoolBackspace( host, guest, view );
+		Assert.AreEqual( TakeBackVerdict.Taken, StrokeTakeBacksOf( host, seat ).Last().Verdict );
+		Assert.IsFalse( AnyWater( host, (13, 12), (14, 12) ) || AnyWater( guest, (13, 12), (14, 12) ) );
+		Assert.IsTrue( IsWater( host, 12, 12 ) && IsWater( guest, 12, 12 ), "the room's water stays" );
+		Assert.AreEqual( balance + 2 * cost, host.Economy.Balance, "each cell refunded" );
+		CatchUpAndCompare( host, guest );
+		Assert.AreEqual( host.Economy.Balance, guest.Economy.Balance );
+	}
+
+	/// <summary>A synthetic two-cell wave machine (water side north) at (14, 31) beside a pool painted over (14..17, 30), alike on every park before its session.</summary>
+	private static void AddWaveMachine( Park park )
+	{
+		park.Enter();
+		var level = park.Level;
+		level.Objects.Things ??= new ThingPool();
+		level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (14, 30), (17, 30) ) );
+		var settings = new ObjectSettings( new[] { new ObjectSettingsFile( "Info.Id 9401\nInfo.Name Synthetic9401\nInfo.IsChoosable 0\nInfo.OverwritePriority 5\nPools.Attraction wavemachine\nPools.WaterSide N\n",
+			"synthetic9401.sam" ) } );
+		var entry = new ObjectCatalogEntry( "jungle", ObjectCategory.Feature, "/synthetic", settings, new ObjectShape( new[] { "**" } ), "/model.MD2", null, "/script.RSE",
+			Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), park.One.Entry.FileSystem, null );
+		Assert.IsNotNull( level.Objects.TryPlace( entry, 14, 31, 0, out _ ), "the wave machine stands at the pool's south edge" );
+	}
+
+	private static OriginalObject WaveMachineOf( Park park ) =>
+		park.Level.Objects.Objects.Single( item => !item.IsDeleted && PoolAttractions.KindOf( item.Entry ) == PoolAttractionKind.WaveMachine );
+
+	/// <summary>The wave machine's window on <paramref name="view"/>, <paramref name="choice"/> chosen and applied.</summary>
+	private static void ApplyWaves( Park park, View view, OriginalObject machine, string choice )
+	{
+		park.Enter();
+		view.Hud.OpenWaveSettings( machine );
+		var screen = view.Hud.Stack.Top!;
+		Assert.AreEqual( "waveSettings", screen.Name );
+		screen.Find( choice )!.Activate();
+		screen.Find( "apply" )!.Activate();
+		Assert.AreNotSame( screen, view.Hud.Stack.Top, "the tick closes the window" );
+	}
+
+	private static bool WaveChoice( UiScreen screen, string id ) => ((UiButton)screen.Find( id )!).Selected!();
+
+	[TestMethod]
+	public void AGuestsWaveSettingsGoThroughTheQueueUnderTheAttractionsRightAndAMachineGoneMeanwhileSaysSo()
+	{
+		InParkView( () =>
+		{
+			var (host, guest, view) = AttractionsSession( ( park, _ ) => AddWaveMachine( park ), CoopRights.None );
+			var seat = guest.Level.Commands.Player;
+			var machine = WaveMachineOf( guest );
+			Assert.AreEqual( PoolWaveSettings.Default, guest.Level.PoolWavesOf( machine ) );
+			// without the right: refused before anything goes, and said once the window has closed
+			ApplyWaves( guest, view, machine, "height3" );
+			view.Update();
+			Assert.AreEqual( 1, view.Says( OpenTpwText.CoopNotPermitted ) );
+			Rounds( 5, host, guest );
+			Assert.AreEqual( 0, HostCommandsOf( host, seat ).OfType<SetPoolWavesCommand>().Count(), "nothing went" );
+			// with the attractions right: the settings go, and the window opens on them until they are back
+			GiveRights( host, guest, view, CoopRights.Attractions );
+			ApplyWaves( guest, view, machine, "height3" );
+			view.Hud.OpenWaveSettings( machine );
+			Assert.IsTrue( WaveChoice( view.Hud.Stack.Top!, "height3" ), "drawn as asked" );
+			view.Hud.Stack.Top!.Find( "cancel" )!.Activate();
+			UntilManaged( host, guest, view );
+			foreach ( var park in new[] { host, guest } )
+				Assert.AreEqual( new PoolWaveSettings( true, 3, 1 ), park.Level.PoolWavesOf( WaveMachineOf( park ) ) );
+			// a machine the host removes while the guest's settings wait: refused, and the guest is told it is no longer there
+			ApplyWaves( guest, view, machine, "height1" );
+			host.Enter();
+			Assert.IsTrue( host.Issue( new RemoveAttractionCommand( WaveMachineOf( host ).Runtime.AttractionId ) ).Accepted );
+			UntilManaged( host, guest, view );
+			view.Update();
+			Assert.AreEqual( 1, view.Says( OpenTpwText.NotAvailable ) );
+			Assert.AreEqual( 2, HostCommandsOf( host, seat ).OfType<SetPoolWavesCommand>().Count(), "both went" );
+			CutAndCompare( host, guest );
+		} );
+	}
+}

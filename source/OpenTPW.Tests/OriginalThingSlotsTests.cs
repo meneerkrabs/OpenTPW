@@ -90,10 +90,10 @@ public class OriginalThingSlotsTests
 		simulation.AttachThings( pool );
 		var guests = save.Guests.Select( guest => guest.Id switch
 		{
-			29 => guest with { State = 15 },
+			29 => guest with { State = 16 },
 			31 => guest with { State = 12 },
 			34 => guest with { PersonType = 200 },
-			40 => guest with { State = 17 },
+			40 => guest with { State = 16 },
 			_ => guest
 		} ).ToList();
 		var report = simulation.ImportOriginal( guests, save.World.Variables.GameTick, _ => 0, _ => 0 );

@@ -34,9 +34,12 @@ public class WalkTests
 		Assert.AreEqual( (26214, 52428), GuestSpeed.Caps( float.PositiveInfinity ) );
 	}
 
-	/// <summary>PPC oracle finding F6: 0xe6b9c is a fused multiply-add, and boost × 99 wraps at 16 bits.</summary>
+	/// <summary>
+	/// tp.exe 0x004FA870 rounds the product and the sum separately (x87 at 24 bits), where the Mac's 0xe6b9c is one fused multiply-add (PPC oracle finding F6): the PC walk takes the former, the PPC
+	/// oracle bridge the latter; the boost product wraps at 16 bits on both.
+	/// </summary>
 	[TestMethod]
-	public void SmoothingIsFusedAndTheBoostProductWraps()
+	public void SmoothingRoundsTheProductAndTheSumSeparatelyAndTheBoostProductWraps()
 	{
 		var differs = 0;
 		for ( var index = 0; index < 2000; index++ )
@@ -44,8 +47,10 @@ public class WalkTests
 			var s = index / 997f;
 			var quotient = (100 + 25 + index % 200) / 100f;
 			var fused = MathF.FusedMultiplyAdd( 3f, s, quotient ) * 0.25f;
-			Assert.AreEqual( fused, GuestSpeed.Smooth( s, 100, 25, index % 200 ), $"s {s}" );
-			differs += fused != (3f * s + quotient) * 0.25f ? 1 : 0;
+			var separate = (quotient + 3f * s) * 0.25f;
+			Assert.AreEqual( separate, GuestSpeed.Smooth( s, 100, 25, index % 200 ), $"s {s}" );
+			Assert.AreEqual( fused, GuestSpeed.SmoothFused( s, 100, 25, index % 200 ), $"s {s}" );
+			differs += fused != separate ? 1 : 0;
 		}
 		Assert.IsTrue( differs > 0, "some inputs tell the fused form from a separately rounded one" );
 		Assert.AreEqual( (ushort)654, GuestSpeed.Decay( 661 ) );

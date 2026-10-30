@@ -13,6 +13,7 @@ ADVISOR-007 docs/reverse/APPROX-TRACE.md
 ADVISOR-008 docs/reverse/APPROX-TRACE.md
 ADVISOR-010 docs/reverse/APPROX-TRACE.md
 ADVISOR-011 docs/reverse/APPROX-TRACE.md
+ADVISOR-012 docs/LIPS.md
 ADVISOR-013 docs/reverse/APPROX-TRACE.md
 ADVISOR-014 docs/reverse/APPROX-TRACE.md
 ADVISOR-016 docs/PROGRESS.md
@@ -29,6 +30,7 @@ ARRIVAL-004 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-e
 ARRIVAL-005 docs/GUESTS.md
 ARRIVAL-007 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 AUDIO-002 docs/AUDIO.md
+AUDIO-003 docs/AUDIO.md
 AUDIO-004 docs/AUDIO.md
 AUDIO-008 docs/AUDIO.md
 AUDIO-009 docs/AUDIO.md
@@ -96,6 +98,7 @@ COMPAT-016 docs/progress/2026-10-16-park-name-and-sign-paint-read-in-tp-exe.md
 COMPAT-017 docs/COMPATIBILITY.md
 COMPAT-019 docs/COMPATIBILITY.md
 COMPAT-030 docs/COMPATIBILITY.md
+COMPAT-032 docs/COMPATIBILITY.md
 DET-001 docs/reverse/DET-plan.md
 DET-002 docs/reverse/DET-plan.md
 DET-003 docs/reverse/DET-plan.md
@@ -130,8 +133,10 @@ ECON-018 docs/reverse/APPROX-TRACE.md
 ECON-019 docs/reverse/APPROX-TRACE.md
 ECON-020 docs/ECONOMY.md
 ECON-021 docs/reverse/APPROX-TRACE.md
+ECON-023 docs/ECONOMY.md
 ECON-024 docs/reverse/APPROX-TRACE.md
 ECON-025 docs/reverse/APPROX-TRACE.md
+ECON-026 docs/ECONOMY.md
 ECON-027 docs/reverse/APPROX-TRACE.md
 ECON-028 docs/reverse/APPROX-TRACE.md
 ECON-029 docs/reverse/APPROX-TRACE.md
@@ -158,6 +163,7 @@ ECON-054 docs/ECONOMY.md
 ECON-055 docs/ECONOMY.md
 ECON-056 docs/progress/2026-10-16-economy-and-saves-sweep.md
 ECON-057 docs/progress/2026-10-18-round8-saves-econ.md
+ECON-061 docs/THEME-PARK-INC.md
 ECON-063 docs/progress/2026-10-26-pause-and-loss.md
 GATE-001 docs/M3-GATE.md
 GATE-002 docs/reverse/PATH-plan.md
@@ -173,9 +179,11 @@ GUEST-004 docs/GUESTS.md
 GUEST-005 docs/GUESTS.md
 GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
+GUEST-010 docs/GUESTS.md
 GUEST-011 docs/CLOSED-RIDE-ADMISSION.md
 GUEST-012 docs/GUESTS.md
 GUEST-014 docs/GUESTS.md
+GUEST-015 docs/GUESTS.md
 GUEST-018 docs/GUESTS.md
 GUEST-019 docs/GUESTS.md
 GUEST-022 docs/progress/2026-10-18-tpc-sprite-banks.md
@@ -185,6 +193,7 @@ HEADS-002 docs/PROGRESS.md
 HEADS-003 docs/PROGRESS.md
 HEADS-005 docs/GUESTS.md
 HEADS-008 docs/GUESTS.md
+MD2-900 docs/reverse/TEXTURE-FRAME-LIFETIME.md
 MD2-902 docs/MD2-MODELS.md
 ONLINE-001 docs/ONLINE.md
 ONLINE-002 docs/reverse/APPROX-TRACE.md
@@ -212,6 +221,7 @@ PATH-003 docs/PROGRESS.md
 PATH-004 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
 PATH-005 docs/PATHS.md
 PATH-006 docs/progress/2026-10-16-original-build-check.md
+PATH-007 docs/PATHS.md
 PATH-008 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
 PATH-009 docs/PROGRESS.md
 PATH-011 docs/PROGRESS.md
@@ -224,6 +234,7 @@ PTCL-902 docs/PARTICLES.md
 PTCL-903 docs/PARTICLES.md
 PTCL-904 docs/PARTICLES.md
 PTCL-907 docs/PARTICLES.md
+PTCL-909 docs/PARTICLES.md
 QUEUE-001 docs/PROGRESS.md
 QUEUE-002 docs/PROGRESS.md
 QUEUE-004 docs/GUESTS.md
@@ -321,16 +332,19 @@ TRACK-019 docs/TRACKS.md
 TRACK-023 docs/PROGRESS.md
 TRACK-024 docs/PROGRESS.md
 TRACK-025 docs/PROGRESS.md
+TRACK-026 docs/TRACKS.md
 TRACK-029 docs/PROGRESS.md
 TRACK-030 docs/TRACKS.md
 TRACK-031 docs/PROGRESS.md
 UI-001 docs/reverse/APPROX-TRACE.md
 UI-002 docs/UI.md
 UI-005 docs/UI.md
+UI-007 docs/UI.md
 UI-009 docs/reverse/APPROX-TRACE.md
 UI-010 docs/reverse/APPROX-TRACE.md
 UI-011 docs/reverse/APPROX-TRACE.md
 UI-012 docs/UI.md
+UI-013 docs/UI.md
 UI-014 docs/reverse/APPROX-TRACE.md
 UI-015 docs/reverse/APPROX-TRACE.md
 UI-016 docs/reverse/APPROX-TRACE.md
@@ -363,6 +377,7 @@ UI-050 docs/UI.md
 UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md
+UI-064 docs/UI.md
 UI-065 docs/PROGRESS.md
 UI-066 docs/COMPATIBILITY.md
 UI-080 docs/UI.md
@@ -391,15 +406,18 @@ UI-907 docs/UI.md
 UI-908 docs/PROGRESS.md
 UI-920 docs/PROGRESS.md
 UI-940 docs/UI.md
+UI-941 docs/AUDIO.md
 UI-942 docs/UI.md
+UMB-001 docs/UMBRELLAS.md
+UMB-002 docs/UMBRELLAS.md
 VM-900 docs/PROGRESS.md
 VM-901 docs/PROGRESS.md
 VM-902 docs/DETERMINISM.md
 WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
+WALK-003 docs/GUESTS.md
 WALK-004 docs/GUESTS.md
 WALK-006 docs/GUESTS.md
 WALK-007 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
-UI-007 docs/UI.md

@@ -25,11 +25,36 @@ public abstract record PoolToolCommand : ParkToolCommand
 }
 
 /// <summary>
+/// [EXT:online-coop-undo] A paint or erase command of a pool stroke, which a shared park's undo journal gathers into its strokes (C5-2): the first command of a stroke says so
+/// (<see cref="First"/>, its own codec generation, <see cref="ParkCommandCodec.StrokeVersion"/>), and the journal names the stroke by its record.
+/// </summary>
+public interface IPoolStrokeCommand
+{
+	/// <summary>Whether the command opens a stroke: the host's first cell of a press, a guest's first batch. Only a shared park's tools set it.</summary>
+	bool First { get; }
+
+	/// <summary>Whether it erases (else it paints).</summary>
+	bool Erases { get; }
+
+	/// <summary>Whether it paints with the river option.</summary>
+	bool PaintsRiver { get; }
+
+	/// <summary>The same command as a stroke's first.</summary>
+	ParkCommand AsFirst();
+}
+
+/// <summary>
 /// [EXT:pools-tool] One cell of a paint stroke (<see cref="PoolTool"/>: the press and each cell a drag crosses): the cell becomes pool water and is charged, or, with <paramref name="River"/>, a pool cell already
 /// there takes the river flag. The value is the write (<see cref="PoolCellWrite"/>), accepted or not.
 /// </summary>
-public sealed record PaintPoolCellCommand( int X, int Y, bool River ) : PoolToolCommand
+public sealed record PaintPoolCellCommand( int X, int Y, bool River ) : PoolToolCommand, IPoolStrokeCommand
 {
+	/// <inheritdoc/>
+	public bool First { get; init; }
+	bool IPoolStrokeCommand.Erases => false;
+	bool IPoolStrokeCommand.PaintsRiver => River;
+	ParkCommand IPoolStrokeCommand.AsFirst() => this with { First = true };
+
 	public override ParkCommandKind Kind => ParkCommandKind.PaintPoolCell;
 	internal override bool IsWellFormed => IsCell( X, Y );
 	internal override void WriteFields( ParkCommandWriter writer )
@@ -50,8 +75,14 @@ public sealed record PaintPoolCellCommand( int X, int Y, bool River ) : PoolTool
 }
 
 /// <summary>[EXT:pools-tool] One cell of an erase stroke: a pool cell becomes an empty cell again and is refunded. The value is the write (<see cref="PoolCellWrite"/>), accepted or not.</summary>
-public sealed record ErasePoolCellCommand( int X, int Y ) : PoolToolCommand
+public sealed record ErasePoolCellCommand( int X, int Y ) : PoolToolCommand, IPoolStrokeCommand
 {
+	/// <inheritdoc/>
+	public bool First { get; init; }
+	bool IPoolStrokeCommand.Erases => true;
+	bool IPoolStrokeCommand.PaintsRiver => false;
+	ParkCommand IPoolStrokeCommand.AsFirst() => this with { First = true };
+
 	public override ParkCommandKind Kind => ParkCommandKind.ErasePoolCell;
 	internal override bool IsWellFormed => IsCell( X, Y );
 	internal override void WriteFields( ParkCommandWriter writer )
@@ -220,8 +251,14 @@ public sealed record RemovePoolBridgeCommand( int X, int Y ) : PoolToolCommand
 /// cell would outrun the session's request bucket. Each cell is written in order exactly as <see cref="PaintPoolCellCommand"/> or <see cref="ErasePoolCellCommand"/> writes it, every cell
 /// tried as the host's tool tries them (no stop at a cell that cannot be paid for). The value is a <see cref="PoolCellWrite"/> per cell; accepted when a cell changed.
 /// </summary>
-public sealed record PoolCellsCommand( bool Erase, bool River, IReadOnlyList<(int X, int Y)> Cells ) : PoolToolCommand
+public sealed record PoolCellsCommand( bool Erase, bool River, IReadOnlyList<(int X, int Y)> Cells ) : PoolToolCommand, IPoolStrokeCommand
 {
+	/// <inheritdoc/>
+	public bool First { get; init; }
+	bool IPoolStrokeCommand.Erases => Erase;
+	bool IPoolStrokeCommand.PaintsRiver => River;
+	ParkCommand IPoolStrokeCommand.AsFirst() => this with { First = true };
+
 	/// <summary>The most cells a batch carries: 200 cells of a map up to 256 cells across take at most 800 bytes, within the session's 1 KiB request.</summary>
 	public const int MaximumCells = 200;
 
@@ -252,9 +289,10 @@ public sealed record PoolCellsCommand( bool Erase, bool River, IReadOnlyList<(in
 	}
 
 	/// <summary>Equal when every field and the cells are equal (a record compares lists by reference).</summary>
-	public bool Equals( PoolCellsCommand? other ) => other is not null && Player == other.Player && Erase == other.Erase && River == other.River && Cells.SequenceEqual( other.Cells );
+	public bool Equals( PoolCellsCommand? other ) => other is not null && Player == other.Player && Erase == other.Erase && River == other.River && First == other.First
+		&& Cells.SequenceEqual( other.Cells );
 
-	public override int GetHashCode() => (Erase ? 1 : 0) ^ (River ? 2 : 0) ^ (Cells.Count << 2);
+	public override int GetHashCode() => (Erase ? 1 : 0) ^ (River ? 2 : 0) ^ (First ? 4 : 0) ^ (Cells.Count << 3);
 }
 
 /// <summary>[EXT:online-coop-commands] What a guest's batch of slide pieces did (<see cref="LayPoolSlidePiecesCommand"/>): a write per cell tried, and whether the slide is finished after it.</summary>
@@ -308,6 +346,11 @@ public sealed record LayPoolSlidePiecesCommand( int TowerX, int TowerY, IReadOnl
 /// </summary>
 public sealed record SetPoolWavesCommand( int Attraction, bool On, int Height, int Interval ) : ParkToolCommand
 {
+	/// <summary>The refusal of a machine that is gone or has no water beside it, which a guest's queue says as no longer there ([EXT:online-coop-commands] C5-2).</summary>
+	internal const string NoMachineReason = "The wave machine is gone or has no water beside it.";
+	/// <summary>The refusal of settings the machine has already (another player set the same meanwhile), which says nothing.</summary>
+	internal const string UnchangedReason = "The wave settings are unchanged.";
+
 	public override ParkCommandKind Kind => ParkCommandKind.SetPoolWaves;
 	internal override bool IsWellFormed => Attraction >= 0 && Height is >= 1 and <= 3 && Interval is >= 0 and <= 2;
 	internal override void WriteFields( ParkCommandWriter writer )
@@ -321,10 +364,10 @@ public sealed record SetPoolWavesCommand( int Attraction, bool On, int Height, i
 	internal override ParkCommandResult Execute( Level level )
 	{
 		if ( level.ResolveCommandObject( Attraction ) is not { } item || level.PoolWavesOf( item ) is not { } current )
-			return ParkCommandResult.Rejected( $"Attraction {Attraction} is no wave machine with water beside it." );
+			return ParkCommandResult.Rejected( NoMachineReason );
 		var settings = new PoolWaveSettings( On, Height, Interval );
 		if ( current == settings )
-			return ParkCommandResult.Rejected( "The wave settings are unchanged." );
+			return ParkCommandResult.Rejected( UnchangedReason );
 		return level.SetPoolWaves( item, settings ) ? ParkCommandResult.Ok( settings ) : ParkCommandResult.Rejected( $"Attraction {Attraction} takes no wave settings." );
 	}
 }

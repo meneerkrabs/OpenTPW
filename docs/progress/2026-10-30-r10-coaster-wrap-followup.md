@@ -1,0 +1,3 @@
+## Coaster texture wrap follows the shared texture object (October 30, 2026)
+
+- **COAST-026 stays open, reworded (wrap per shared texture).** The texture cache `0x575870` hands out one object per directory and frame name, `0x575E10` and `0x575C60` OR the wrap bits into it and nothing clears them, so a clamped slot of one model of the ride wraps when another model of the same ride wraps the same texture. The pylons and cars now take their wrap or clamp from the union over the ride's archive models (`CoasterAssets.WrapNames`), resolved only when a renderer builds the rigs; the definition loader leaves the models unparsed. Open: whether a preview texture object outlives the build menu, and whether the object renderer's models share the cache.

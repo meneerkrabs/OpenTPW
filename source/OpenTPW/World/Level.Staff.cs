@@ -48,7 +48,8 @@ public partial class Level
 				StaffWorld?.ReportPrank( Park.Economy, guest.Id );
 		};
 		AttachStaffWorld();
-		StaffHands = new StaffHands( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked );
+		AttachAdvisorProbes();
+		StaffHands = new StaffHands( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, () => StaffWorld );
 		StaffPlacement = new StaffPlacement( () => Park?.Economy, () => Guests?.Grid.Cells, IsStaffDropBlocked, command => Commands.Issue( command ), StaffHands.IsCarried, StaffHands.Of,
 			() => Commands.Player, GuestStaffExit );
 		PatrolTool = new PatrolAreaTool( () => Park?.Economy, IssuePatrolArea, () => Guests?.Grid.Cells );
@@ -59,7 +60,7 @@ public partial class Level
 		{
 			StaffSpriteSet sprites;
 			using ( LoadProfile.Measure( "staff-sprites" ) )
-				sprites = StaffSpriteSet.Load( LevelName );
+				sprites = StaffSpriteSet.Load( LevelName, StaffSpriteRules.BankLimitOf( IGraphicsSettings.Instance ) );
 			NextStepIsLong = true;
 			yield return true;
 			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement )

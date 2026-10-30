@@ -177,6 +177,22 @@ public sealed class BumpController
 
 	// ---- Setup ------------------------------------------------------------------------------------
 
+	/// <summary>
+	/// The words of an original save's ride chunk the controller holds (loader <c>0x543638</c>: the laps or duration at +4, the performance at +0x1C, the phase at +0x50). The performance goes
+	/// through the setter that derives thrust, damping, turn and bounce (<see cref="ApplyPerformance"/>). The loader restores the saved vehicles with the phase; a controller restored without them keeps a phase it can leave: a kart or bumper ride
+	/// saved racing (2) or over (3) loads in loading (1), a water ride keeps its running phase (its boats retire to it, 0x54AE50).
+	/// </summary>
+	// [BIN:TPW-EXE:0x54AE50 retire vehicle] water rides keep their phase when the last boat retires, karts reset to loading: the phases a controller without vehicles can hold
+	internal int RestoreOriginalWords( int laps, int performance, int phase )
+	{
+		Laps = laps;
+		Performance = Math.Clamp( performance, 0, 100 );
+		ApplyPerformance();
+		var kept = IsWater && phase is >= PhaseClosed and <= PhaseOver || phase is PhaseClosed or PhaseLoading ? phase : PhaseLoading;
+		Phase = kept;
+		return kept;
+	}
+
 	/// <summary>Places the station reference at (<paramref name="stationX"/>, <paramref name="stationY"/>) in section units and orients the flow along <paramref name="heading"/>.</summary>
 	public void SetStation( int stationX, int stationY, byte heading )
 	{
@@ -696,6 +712,8 @@ public sealed class BumpController
 			if ( Template.IsKart )
 				Raise( BumpEffectKind.EngineStart, vehicle, BumpEffects.SlotEngine );
 		}
+		// [BIN:TPW-EXE:0x00549FF5 creation heads] the creation hangs its riders' heads before the family's launch set-up (0x0054A040)
+		HangRiderHeads( vehicle );
 		RiderCount += vehicle.Riders.Count;
 		Relaunch( vehicle );
 		vehicle.Flags |= BumpVehicle.Launched;
@@ -726,6 +744,7 @@ public sealed class BumpController
 		RiderCount += Pending.Count;
 		Pending.Clear();
 		// [BIN:TPW-EXE:0x00549B80 load vehicle] the loading hangs the riders' heads with the beam flag (0x549C60(vehicle, 1)): each rider whose seat has a head dummy gets particle 0x13 at the vehicle's drawn place (its root matrix translation times 1024; OpenTPW uses the simulation position, PTCL-908); the creation (0x549DB0) hangs with 0, no beam; the load is shared by every vehicle family, so boats and karts beam too
+		HangRiderHeads( vehicle );
 		RaiseRiderBeams( vehicle, vehicle.Riders.Count );
 		vehicle.Flags |= BumpVehicle.Steerable | BumpVehicle.Slowed;
 		vehicle.Laps = Laps;
@@ -738,6 +757,22 @@ public sealed class BumpController
 	/// null where no host resolves meshes (a host that never loads the model, such as a bare simulation).
 	/// </summary>
 	public Func<int, bool[]?>? SeatHeadSource { get; set; }
+
+	/// <summary>
+	/// Hangs the heads of a vehicle's riders (0x00549C60): rider k takes head dummy k, and each rider whose seat has one goes through the head-hang routine (<see cref="RideScriptWorld.HeadHung"/>), in the list's order.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00549CAF seat heads] the walk numbers the nodes 1 to n, looks up head dummy n (0x44B220) and calls 0x44B410 with the rider only when one is found; a vehicle whose mesh the host cannot read hangs none here (the seat flags are unknown)
+	private void HangRiderHeads( BumpVehicle vehicle )
+	{
+		if ( module.Scripts is not { HeadHangReseeds: true } scripts )
+			return;
+		var seats = vehicle.SeatHeads ?? SeatHeadSource?.Invoke( vehicle.Variant );
+		if ( seats == null )
+			return;
+		for ( var seat = 0; seat < vehicle.Riders.Count && seat < seats.Length; seat++ )
+			if ( seats[seat] )
+				scripts.HeadHung( vehicle.Riders[seat] );
+	}
 
 	/// <summary>One beam (particle 19) for each of the first <paramref name="count"/> riders of <paramref name="vehicle"/> whose seat has a head dummy.</summary>
 	// [BIN:TPW-EXE:0x00549C60 beam flag] the beam is raised only for a rider whose head dummy handle (0x44B220 on the loaded model) is not -1; OpenTPW's own

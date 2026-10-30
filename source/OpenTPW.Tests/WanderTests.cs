@@ -78,8 +78,12 @@ public class WanderTests
 	{
 		var grid = new GuestPathGrid( 12, 12 );
 		grid.SetPath( 0, 0, true, connections: 0 );
-		Assert.AreEqual( new GuestWander.Destination( (0, 0), 0x80, 0x80 ), GuestWander.Pick( grid, (0, 0), Draws( 3 ) ) );
-		Assert.IsNull( GuestWander.Pick( grid, (5, 5), Draws( 3 ) ), "no path cell" );
+		// a start without links is the off-path search's: its first pattern is the start cell itself (the guest's own centre) once a route reaches it
+		Assert.IsNull( GuestWander.Pick( grid, (0, 0), Draws( 3 ) ) );
+		(int X, int Y)? found = null;
+		Assert.IsTrue( GuestWander.OffPath( grid, (0, 0), Draws( 3 ), cell => { found = cell; return true; } ) );
+		Assert.AreEqual( (0, 0), found );
+		Assert.IsNull( GuestWander.Pick( grid, (5, 5), Draws( 3 ) ), "no links" );
 		// Links that lead to no path cell (here a queue cell) leave no candidate: stranded (x86 oracle X19).
 		grid.SetPath( 0, 0, true, connections: 0b0010 );
 		grid.SetQueue( 1, 0, 1 );
@@ -111,11 +115,30 @@ public class WanderTests
 		Assert.IsFalse( Wander( simulation, guest ) );
 		Assert.AreNotEqual( 0, guest.StrandedMark );
 		// an edit of a cell beside it releases the guest: the next search runs again (and strands it again, its link still leads nowhere)
-		grid.SetPath( 2, 3, true );
+		grid.SetPath( 2, 3, true, connections: 0 );
 		var stamp = guest.StrandedMark;
 		Assert.IsFalse( Wander( simulation, guest ) );
 		Assert.AreNotEqual( draws, simulation.RandomState, "the search drew again" );
 		Assert.IsTrue( guest.StrandedMark > stamp, "and marked the guest with a newer stamp" );
+	}
+
+	[TestMethod]
+	public void ABuildNextToAStrandedGuestFreesItToWalkOn()
+	{
+		// [BIN:TPW-EXE:0x004F9DFC] the mark; [BIN:TPW-EXE:0x004FA770] held until a block around it is stamped (0x004D8C60 by a cell type change, 0x004DE1F0 by a queue change): the guest's next wander runs again and finds the cell that was built
+		var grid = new GuestPathGrid( 40, 40 );
+		grid.SetPath( 3, 3, true, connections: 0b0010 );
+		grid.SetQueue( 4, 3, 1 );
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 3, 3 );
+		Assert.IsFalse( Wander( simulation, guest ) );
+		Assert.AreNotEqual( 0, guest.StrandedMark );
+		// the player builds a path on the cell the link leads to: the stamp frees the guest and its link now leads onto a path
+		grid.SetPath( 4, 3, true, connections: 0b1000 );
+		guest.Thought = GuestThought.None;
+		Assert.IsTrue( Wander( simulation, guest ), "freed: the wander found a way on" );
+		Assert.AreEqual( 0, guest.StrandedMark );
+		Assert.AreNotEqual( GuestThought.Confused, guest.Thought );
 	}
 
 	[TestMethod]
@@ -288,14 +311,13 @@ public class WanderTests
 		var simulation = new GuestSimulation( Row( 10 ), settings, 3 ) { ArrivalsEnabled = false };
 		var guest = simulation.SpawnInPark( 4, 0 );
 		var staffWalk = new GuestNavigation { X = guest.Navigation.X + (1 << 13), Y = guest.Navigation.Y };
-		simulation.StaffOnMapView = () => [new GuestSimulation.StaffOnMap( 1, false, false, staffWalk.Cell, staffWalk )];
+		simulation.StaffChain.Follow( 1, staffWalk );
 		simulation.Tick( GuestSnapshotTests.Tick );
 		var separation = (Func<GuestNavigation, (int X, int Y)>)Delegate.CreateDelegate( typeof( Func<GuestNavigation, (int X, int Y)> ), simulation,
 			typeof( GuestSimulation ).GetMethod( "SeparationForStep", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )! );
 		var (x, y) = separation( guest.Navigation );
 		Assert.IsTrue( x < 0 && y == 0, $"the staff member stands on the +X side, so the push is toward −X ({x}, {y})" );
-		simulation.StaffOnMapView = null;
-		simulation.Tick( GuestSnapshotTests.Tick );
+		simulation.StaffChain.Remove( 1 );
 		Assert.AreEqual( (0, 0), separation( guest.Navigation ) );
 	}
 

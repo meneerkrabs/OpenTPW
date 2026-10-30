@@ -69,7 +69,7 @@ public sealed class GuestPathGrid
 
 	/// <summary>
 	/// Marks a cell walkable (a path cell in <see cref="Cells"/>); <paramref name="connections"/> limits its links
-	/// in <see cref="Directions"/> bit order (null: link to every walkable neighbour). Clearing a path cell makes it
+	/// in <see cref="Directions"/> bit order (null: link to every neighbour that is a path, queue, entrance or exit cell, and from each path neighbour back). Clearing a path cell makes it
 	/// empty; a queue cell is left as it is.
 	/// </summary>
 	public void SetPath( int x, int y, bool isPath, byte? connections = null )
@@ -79,10 +79,38 @@ public sealed class GuestPathGrid
 		if ( isPath )
 		{
 			Cells.SetType( x, y, ParkCellType.Path );
-			Cells.SetLinks( x, y, ToCellLinks( connections ?? 0x0F ) );
+			if ( connections is { } limited )
+				Cells.SetLinks( x, y, ToCellLinks( limited ) );
+			else
+			{
+				// a link leads to a cell a walker can step onto and is kept on both sides where the neighbour is a path cell, as the path builder writes them: a path, queue, entrance or exit cell. The wander walks the links of any
+				// target type (tp.exe 0x4F9490), so a link to bare ground would be a way into it
+				byte own = 0;
+				for ( var direction = 0; direction < 4; direction++ )
+				{
+					var (dx, dy) = Directions[direction];
+					if ( !InBounds( x + dx, y + dy ) )
+						continue;
+					var neighbour = Cells.RawTypeAt( x + dx, y + dy );
+					if ( neighbour is not ((byte)ParkCellType.Path or (byte)ParkCellType.Queue or ParkCellTypes.Entrance or ParkCellTypes.Exit) )
+						continue;
+					own |= LinkValue( direction );
+					if ( neighbour == (byte)ParkCellType.Path )
+						Cells.SetLinks( x + dx, y + dy, (byte)(Cells.LinksAt( x + dx, y + dy ) | LinkValue( (direction + 2) & 3 )) );
+				}
+				Cells.SetLinks( x, y, own );
+			}
 		}
 		else if ( Cells.TypeAt( x, y ) == ParkCellType.Path )
+		{
 			Cells.SetType( x, y, ParkCellType.Empty );
+			for ( var direction = 0; direction < 4; direction++ )
+			{
+				var (dx, dy) = Directions[direction];
+				if ( InBounds( x + dx, y + dy ) && Cells.TypeAt( x + dx, y + dy ) == ParkCellType.Path )
+					Cells.SetLinks( x + dx, y + dy, (byte)(Cells.LinksAt( x + dx, y + dy ) & ~LinkValue( (direction + 2) & 3 )) );
+			}
+		}
 		Invalidate();
 	}
 

@@ -87,7 +87,7 @@ public partial class TrackAddOnLevelTests
 		// the footprint handlers the level wires after its track set-up (Level.ConnectObjectsToGuests), in that order
 		var cells = guests.Grid.Cells;
 		objects.ObjectPlaced += item => cells.WriteFootprint( item.Cells, Level.OwnerWord( item ), item.Placement.Rotation );
-		objects.ObjectRemoved += item => cells.ClearFootprint( item.Cells );
+		objects.ObjectRemoved += item => level.DemolishFootprintCells( item, cells, null );
 		if ( extra != null && extraAt is { } blocker )
 			Assert.IsNotNull( objects.TryPlace( extra, blocker.X, blocker.Y, 0, out _ ), "the object standing where the ride's exit tile goes" );
 		var ride = objects.TryPlace( rideEntry, 10, 9, 0, out _ );
@@ -132,13 +132,13 @@ public partial class TrackAddOnLevelTests
 		Assert.AreSame( ride, level.WindowTarget( addOn ) );
 		Assert.AreSame( ride, level.WindowTarget( ride ) );
 
-		// the sale: the flags come off and the circuit is walked at once ([EXT:addon-sale-walk]), whichever removal handler runs first
+		// the sale is the demolition 0x527EE0 (the third argument 0): pass 2 clears the record under every cell of the add-on's shape with 0x53B280(0, 0, 1), so the tile the jump stood on goes with it
+		// (the ORACLE.md X37 cases), and the circuit is walked at once ([EXT:addon-sale-walk]): it is open now
 		level.Objects.Remove( addOn );
 		foreach ( var (cx, cy) in TrackStation.TileCellsOf( 16, 10 ) )
-			Assert.AreEqual( 0, level.KartTracks!.Tracks.Get( cx, cy ).Flags & TrackCell.FlagAddOn, $"({cx}, {cy}) loses the add-on flag" );
-		Assert.IsTrue( bump.IsTrackValid );
+			Assert.IsTrue( level.KartTracks!.Tracks.Get( cx, cy ).IsEmpty, $"({cx}, {cy}) holds no tile after the sale" );
+		Assert.IsFalse( bump.IsTrackValid, "the sale cut the circuit" );
 		Assert.IsFalse( bump.Sections.Any( candidate => candidate.Kind is 12 or 13 || candidate.AddOn != null ), "no section keeps the sold add-on" );
-		Assert.AreEqual( 9, SectionAt( ride, 16, 10 ).Kind );
 		Assert.IsNull( level.WindowTarget( addOn ), "a removed add-on opens nothing" );
 	}
 

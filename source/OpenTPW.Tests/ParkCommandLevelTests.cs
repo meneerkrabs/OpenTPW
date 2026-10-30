@@ -20,6 +20,15 @@ public class ParkCommandLevelTests
 	private AutomaticCheckpointCpuRendererScope? renderer;
 	private UpgradeCatalogueDefaultsTests? fixture;
 
+	private sealed class InitialPathGrid( IParkGrid inner, (int X, int Y) path ) : IParkGrid
+	{
+		public int Width => inner.Width;
+		public int Height => inner.Height;
+		public System.Numerics.Vector2 Origin => inner.Origin;
+		public OriginalPlacementResult CheckTerrain( int x, int y ) => (x, y) == path ? OriginalPlacementResult.Path : inner.CheckTerrain( x, y );
+		public float GetCellHeight( int x, int y ) => inner.GetCellHeight( x, y );
+	}
+
 	private sealed record Park( Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two );
 
 	[TestInitialize]
@@ -83,6 +92,21 @@ public class ParkCommandLevelTests
 		var count = map.PlacementCountAt( 10, 20 );
 		Assert.IsTrue( Decoded( new LayLineCommand( CellToolMode.Queue, ride.AttractionId, 10, 20, 11, 20 ) ).Accepted );
 		Assert.AreEqual( count, map.PlacementCountAt( 10, 20 ), "legacy kind retains old per-cell behavior inside mixed execution" );
+	}
+
+	/// <summary>The queue tool's line may end on a NoModify path cell (an initial path, a path outside an entrance): the validator answers 8 for a final path before it tests the flag, so the level's terminal rule accepts it.</summary>
+	[TestMethod]
+	public void ANativeQueueSegmentMayEndOnANoModifyPathCell()
+	{
+		var park = NewPark(); var level = park.Level; var map = level.Guests!.Grid.Cells;
+		var ride = park.One.Visitors; ride.OwnerWord = Level.OwnerWord( park.One );
+		map.SetType( 10, 20, ParkCellType.Queue ); map.SetOwner( 10, 20, ride.OwnerWord );
+		map.SetType( 13, 20, ParkCellType.Path ); map.SetFlags( 13, 20, ParkCellFlags.NoModify );
+		// the sandbox grid knows no map-start path: this one calls (13, 20) an initial path cell, as the original levels' terrain does
+		typeof( ParkObjects ).GetField( "<Grid>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level.Objects, new InitialPathGrid( level.Objects.Grid, (13, 20) ) );
+		var result = level.Commands.Issue( ParkCommandCodec.Decode( ParkCommandCodec.Encode( new QueueSegmentCommand( ride.AttractionId, 10, 20, 13, 20 ) ) ) );
+		Assert.IsTrue( result.Accepted, result.Reason );
+		Assert.AreEqual( ParkCellType.Queue, map.TypeAt( 12, 20 ) );
 	}
 
 	private static void Run( Level level, int ticks, List<ulong>? hashes )
@@ -486,7 +510,7 @@ public class ParkCommandLevelTests
 		long Amount() => Pick( -1L, long.MinValue, long.MaxValue, 0L, 100L, 10_000L, 10_001L, 18_000L );
 		bool Flag() => random.Below( 2 ) == 0;
 		string Text() => Pick( "Ann", "", "A\u0007B", "\ud800", new string( 'a', 600 ), "Kevin the", "Cosmic Cow" );
-		ParkCommand Next() => random.Below( 80 ) switch
+		ParkCommand Next() => random.Below( 81 ) switch
 		{
 			0 => new PlaceObjectCommand( Entry(), Coordinate(), Coordinate(), Rotation(), random.Below( 4 ) == 0, Pick( -1, -2, Id() ) ),
 			1 => new RemoveAtCommand( Coordinate(), Coordinate() ),
@@ -579,6 +603,9 @@ public class ParkCommandLevelTests
 			77 => new ReleaseRideCommand( Id() ),
 			// [EXT:online-coop-permissions] a seat's rights (C4a)
 			78 => new SetSeatRightsCommand( Pick( -1, 0, 1, 3, 64 ), (CoopRights)Pick<byte>( 0, 1, 2, 3, 31, 32, 255 ) ),
+			// [EXT:online-coop-undo] a take-back no host decided, or decided with a random inverse of the local player (C5)
+			79 => new TakeBackCommand( Flag(), Pick( -1L, 0L, 41L, long.MaxValue ), Pick( -2, -1, 0, 3 ), Pick( -1, -2, Id() ), Pick( -1, Id() ), (TakeBackVerdict)Pick<byte>( 0, 1, 2, 3, 7, 8, 255 ),
+				random.Below( 2 ) == 0 ? null : new UndoLineCommand( Mode(), Pick( -1, Id() ), Coordinate(), Coordinate(), Cells(), Cells() ) ),
 			_ => new RemoveAttractionCommand( Pick( -1, int.MinValue, 99_999 ) ),
 		};
 		CollectionAssert.IsSubsetOf( Enum.GetValues<ParkCommandKind>(), Enumerable.Range( 0, 1024 ).Select( _ => Next().Kind ).Distinct().ToArray(), "the stream draws every kind" );

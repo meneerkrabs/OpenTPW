@@ -59,7 +59,7 @@ public class DetMathTests
 			("DetMatrix.Multiply", "FA3C778478B438C8"),
 			("DetMatrix.TransformPosition", "B966CD083F830EF7"),
 			("DetMatrix.Lerp", "22BC04FC179F5D91"),
-			("DetMatrix.Slerp", "D65FD1F808A2F9A0"),
+			("DetMatrix.Slerp", "835A114DD5A79937"),
 		};
 		foreach ( var (name, digest) in pinned )
 			Assert.AreEqual( digest, digests[name], name );

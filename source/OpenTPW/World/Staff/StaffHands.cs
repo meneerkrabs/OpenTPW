@@ -10,11 +10,14 @@ public sealed class StaffHands
 	private readonly Func<ParkEconomy?> economy;
 	private readonly Func<ParkCellMap?> cells;
 	private readonly Func<int, int, bool> occupied;
+	private readonly Func<StaffWorldSimulation?>? world;
 	private readonly Dictionary<int, (int Staff, int X, int Y)> carried = new();
 
 	/// <param name="occupied">The cells besides what the cell types refuse that no employee may be put on (<see cref="StaffPlacementRules.IsValidDropCell"/>).</param>
-	public StaffHands( Func<ParkEconomy?> economy, Func<ParkCellMap?> cells, Func<int, int, bool> occupied )
+	/// <param name="world">The level's staff world, whose role searches a new employee's constructor runs (<see cref="PlaceStaffCommand"/>); null: a headless economy, whose members search on their first update.</param>
+	public StaffHands( Func<ParkEconomy?> economy, Func<ParkCellMap?> cells, Func<int, int, bool> occupied, Func<StaffWorldSimulation?>? world = null )
 	{
+		this.world = world;
 		this.economy = economy ?? throw new ArgumentNullException( nameof( economy ) );
 		this.cells = cells ?? throw new ArgumentNullException( nameof( cells ) );
 		this.occupied = occupied ?? throw new ArgumentNullException( nameof( occupied ) );
@@ -24,6 +27,8 @@ public sealed class StaffHands
 	public ParkEconomy? Economy => economy();
 	/// <summary>The park's cell map, or null.</summary>
 	public ParkCellMap? Cells => cells();
+	/// <summary>The level's staff world, or null.</summary>
+	internal StaffWorldSimulation? StaffWorld => world?.Invoke();
 
 	/// <summary>Whether an employee may be put down on (<paramref name="x"/>, <paramref name="y"/>) now.</summary>
 	public bool IsValidCell( int x, int y ) => cells() is { } map && StaffPlacementRules.IsValidDropCell( map, x, y, occupied );

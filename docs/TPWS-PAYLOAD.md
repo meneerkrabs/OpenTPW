@@ -126,8 +126,10 @@ the TrackRides block, `KOLC`'s word is VanillaTime, `RYLF` holds RSSE, `SAOC`'s
   16-byte count and globals. The World block is the loader's own readers
   (`SaveBlockWidths.TryMeasureWorld`: the 64 variable bytes, the control manager 4,806, the macro AI 670 + 28 + 18, 0x4000
   status-byte cells of 1 + 52 / 31 / 10 bytes by status bits 0 / 1 / 2, and the self-closing thing list) and agrees with the Jungle
-  Easymode save to the byte. Only a Coasters block with a coaster (its trains and cars depend on the coaster type's counts) and a World block that does
-  not read that way (a synthetic payload) are located by their delimiter's bytes, and the payload must split in exactly one way there; a copy of those delimiters
+  Easymode save to the byte. A Coasters block with a coaster (its trains and cars depend on the coaster type's counts) ends where its reader stops when the caller
+  knows the coaster types (`SavePayloadLayout.Parse(payload, coasterTrains)`: the park import's station mesh instance finds the type's `uiMaxTrains` and `uiMaxCars`, `SaveCoasterBlock.TryMeasure`, tag at `0x415371`) and the World
+  reads as the original's; without the types, and a World block that does
+  not read that way (a synthetic payload), are located by their delimiter's bytes, and the payload must split in exactly one way there; a copy of those delimiters
   that forms a second valid split throws, as does a payload holding one of them more than 256 times, although the
   count-based original loader accepts those cases (SAVE-011). A missing or out-of-order delimiter, a block that does not
   read as its block and a block not followed by its tag throw as well;
@@ -683,7 +685,7 @@ derived again by the node constructor (the loader runs the loop setup `0x442cd0`
 rotation float for 0x10). The section words are named: `section+112` is the node's mesh instance (re-attached
 through `0x463ab0`), `+216` bank, `+220` incline, `+224` yaw, `+232` the height parameter and `+248`
 the loop rotation (setters `0x444150`, `0x4441d0`, `0x444270`). The header's remaining track flags
-(SAVE-921) are kept raw. The placement cell `+28`/`+32` is dead data (the loader hands it to `0x436ac0`, which never reads it); the train words `+0x38` (the sound state of `0x439780`), `+0x64`, `+0x68` (its handles) are restored raw by the loader and read only by the sound routine; the car byte `+0x44` is the car's seat share, which `0x43ba90` computes and the import's seats per train reproduce. A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
+(SAVE-921) are kept raw. The placement cell `+28`/`+32` is dead data (the loader hands it to `0x436ac0`, which never reads it); the train words `+0x38` (the state of the train loop sound routine `0x439780`) and `+0x68` (its handle) and `+0x64` are restored raw by the loader; the state seeds the slot's sound state (`CoasterTrainSounds`) and no loop plays until the slot's next setup; the flags word's 0x100 (the scream flag) is restored with the train; only `+0x38`, `+0x64` and `+0x68` are saved (`0x43780A..0x437821`) and the saved handles are numbers of the previous session's sound library (AUDIO-018; SAVE-923 is retired); the car byte `+0x44` is the car's seat share, which `0x43ba90` computes and the import's seats per train reproduce. A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
 split). `OriginalParkImport.Import` runs the reader on every save and exposes the result as
 `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell queries and `CoasterSections` joins that require both cell
 and object `Info.Id` to attach attraction ids. Missing or ambiguous scene matches remain visible;
@@ -757,7 +759,7 @@ Checked but not imported (evidence lines in the import report):
 - the track flags (SAVE-921);
 - surplus set-up slots;
 - the riders on the trains. Each car's two guest lists and the train's rider count are dropped (SAVE-920), because the
-  guests riding or seated (states 15 and 16) are not imported (SAVE-002).
+  guests riding or seated (state 16) are not imported (SAVE-002).
 
 Shapes the original's own editing never leaves are refused with the reason. Examples: a cut on an incomplete track, a
 state that does not fit the track, a word with bits beyond the state and the mode, a power factor that does not fit the
@@ -897,7 +899,7 @@ exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for co
 Imported: park turn and date, the world generator state `mRandomSeed` (`World.Restore`, SAVE-001 retired), bank balance, admission fee, annual profit and bought loans, each
 object's price, cost of goods, upgrade level, state of repair, life gauge, walk-away count, operating state, chance of winning, quality of goods, customer
 count and time stamp (also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, energy, name, job, hire time, idle stamp and patrol), the hiring pool, the staff HQ's training budgets and strike levels, research (finished and started projects, each category's effort and current project, the work load and the highest open groups), the analyser's four recent-research rings, the challenges, the park
-open flag, and the advisor's pending advice and history of bound messages. The saved guests are restored by `GuestSimulation.ImportOriginal`: states 0–10, 18, 19 and 21 keep their thing id, type, cash, meters and destination and walk on; guests queueing or boarding (11–14), leaving a ride (15), using an attraction (16), held by a guard (17), or walking to the arrival vehicle (20) are not imported (SAVE-002); a park guest (states 6–10) standing off the paths is imported where it stands and recovers through its own state handlers, as tp.exe's load leaves it (`0x4F9407`, `0x4F9490`).
+open flag, and the advisor's pending advice and history of bound messages. The saved guests are restored by `GuestSimulation.ImportOriginal`: states 0–10, 15, 17, 18, 19 and 21 keep their thing id, type, cash, meters and destination and walk on; guests in a queue (11–14 and the state-8 interlude with the saved state 11) are restored in the order of their attraction's saved queue (`GuestSimulation.PlanOriginalQueues`: the head mFirstInQ +0x3C, the links mQNext +0x228 and mQPrev +0x22A and the called guest mPersonBeingLoaded +0x6C are read as saved, nothing relinks them, and a chain that is not a list of guests of that ride in the queue states, a head 13 or 14 behind the head, or a called guest that is not the head refuses the queue with its reason); a guest held by a guard (17) is imported held and stays only while a guard in state 18 holds it as its perpetrator (the escorting guard is imported with it and walks on to the ticket booth; no corpus save holds one, so it is checked on synthetic saves only); guests using an attraction (16) or walking to the arrival vehicle (20) are not imported (SAVE-002); a park guest (states 6–10) standing off the paths is imported where it stands and recovers through its own state handlers, as tp.exe's load leaves it (`0x4F9407`, `0x4F9490`).
 Still read and not imported, each reported and tracked by a SAVE approximation: those dropped guests (SAVE-002), unknown research object/project identities absent from the reconstructed lab (SAVE-007; reported; none in the corpus; known current projects are kept as saved even when the picker would not offer them), the hiring
 pool's candidates saved on the pointer (SAVE-004), the advisor presentation block, the world state, the arrival variables and bytes, the calendar session start, the advisor
 controller's presentation words (its current record is the last tutorial advice when an automatic advisor attaches) and the weather, park analyser apart from its recent-research rings,
@@ -1042,7 +1044,7 @@ RideSystem, attraction and economy readers over the second fixture set
   extra paths, so those readers are still proven on Easymode alone. A Theme Park World
   save with a built coaster does not exist in any available corpus: the Coasters block's
   nonempty shape rests on the static Mac contract and the Theme Park Inc cross-check.
-- The meaning of the coaster header's track flags (SAVE-920, SAVE-921); the train layout is decoded from the loader and the saver but
+- The meaning of the coaster header's track flags (SAVE-920, SAVE-921) and the train sound handles (AUDIO-018); the train layout is decoded from the loader and the saver but
   no Theme Park World save with a coaster exists to check it on real bytes.
 - The control manager and the macro AI before the calendar (their widths are traced, their bodies are not), the guest, analyser and weather bodies, record
   fields marked raw above, the extension data, the RideSystem control and embedded words and the remaining
@@ -1051,7 +1053,7 @@ RideSystem, attraction and economy readers over the second fixture set
 - Money/time/guest state needs known-state reference saves before import.
 
 
-## TrackRides structural reader (TRACK-032 remains open)
+## TrackRides: structural reader and track import (TRACK-032 narrowed)
 
 `SaveTrackRideBlock.ParseContainer` accepts exactly the full type-1 container, including its 12-byte header.
 `ParseBody` accepts only subchunks, as stored in `OriginalSavePayload.TrackRides`; check `TrackRidesType == 1`
@@ -1085,5 +1087,18 @@ Chunk 3's `0x545890` creates station/grid waypoints; chunk 4's `0x54b2f0` append
 Chunk 6 (`0x5439bb..0x5439e4`) scans from the head to the first flag-4 waypoint, **always advances once**, wraps a null
 successor to the head, and skips flag-2 candidates. The first scan has no wrap/null guard in the original.
 No reference index can be obtained from chunk-5 record order. Geometry-specific waypoint reconstruction, safe handling
-of malformed chains and runtime restore semantics remain future work; the structural reader does not fresh-walk a map
-or retire TRACK-032.
+of malformed chains and the vehicles' runtime restore remain future work; the structural reader does not fresh-walk a map.
+
+### Track import (`Level.ImportOriginalTracks`)
+
+The loader `0x543560` reads chunk 2 (the build stamp: the time `15:25:02` and date `Mar 17 2000` strings, 32 bytes with the header), then per chunk: 3 builds the ride's
+controller through `0x545890` (the handle, the station cell `+0xB4`/`+0xB8`, the orientation `+0xB0`, then the words `+0x10`, `+0x1C` (performance), `+0x14`, `+0x18`, the duration `+4` ("Set Ride Duration to %d") and the
+phase `+0x50`; the handle the constructor gives must equal the saved one), 4 hands each section's type word and corner to the section builder `0x54B2F0` (which rebuilds the buoy and waypoint chain), 5 reads a vehicle (the 0xAC-byte
+record, not a controller record: its `+0x34`/`+0x38` place a vehicle on its tile, `+0x7C` is its aimed waypoint), 6 selects the reference waypoint (the first flag-4 buoy, then the next that is not flag 2: the open routine
+`0x544840`'s choice), 7 and 8 add guests to the ride's leaving and pending lists (`0x54ABD0`, `0x54AA80`) and 9 links riders' heads. The track itself is the structure layer of the World block: the 31-byte track cells (the base
+`0x4D0B30` and the segment word `0x50C200`: `SaveCell.StructureMask`, `StructureTile`, `StructureSegment`), the kart tiles (type 11, station 13), the water tiles (16, station 18) and their type-12 extension cells; type 25 (`0x19`) is a hoarding post.
+
+The import writes the saved track cells (the ride of a tile is the one whose station reaches it through the masks), walks each ride's circuit from them (`WalkTrack`), compares it with chunk 4's section list and applies chunk 3's laps,
+performance and phase. What is not imported (vehicles, riders and the pending and leaving lists; the words `+0x10`/`+0x14`/`+0x18`; a racing or over phase of a kart or bumper ride) is reported. No save of the corpus or Easymode holds
+a ride or a track cell, so the import is tested against the saver's shapes and OpenTPW's own tracks (`TrackAddOnLevelTests.OriginalImport`) and not against a real Theme Park World track.
+

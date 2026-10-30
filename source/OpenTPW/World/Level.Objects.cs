@@ -160,7 +160,8 @@ public partial class Level
 	private bool layingAccessCells;
 
 	/// <summary>Whether the placed objects type their footprint cells in the guest grid (not in a visit, a Theme Park Inc layout or Theme Park Inc itself).</summary>
-	// [APPROX:RIDES-031] a Theme Park Inc world keeps the cells its layout was given and types none of its footprints, so the road signs' '@' cells ("*@*", "*@@*") are plain occupied cells; tp.exe's commit stamps '@' as a type-1 NoModify path cell linked to its path neighbours (0x529173–0x529208) and 'Q' as a queue cell (0x529119), which ParkCellMap.WriteFootprint does for Theme Park World (whose shapes have neither) — evidence needed: Theme Park Inc's own placement (its executable), which is not traced
+	// [BIN:TPI-EXE:0x668552 footprint commit] Theme Park Inc's placement commit is the twin of tp.exe's (the 24-way cell-type table 0x6691FC and jump table 0x6691D8 against 0x529D24 and 0x529D04; '@' is case 1, a type-1 NoModify path cell linked to its path neighbours, 0x668552 against 0x529173) with one more case for the coaster marker type 0x15 (0x6688F0)
+	// [APPROX:RIDES-031] a Theme Park Inc world keeps the cells its layout was given and types none of its footprints (the whole slice runs without them: the walks, queues, coasters, tours and staff paths that read this property stay off), so the road signs' '@' cells ("*@*", "*@@*") are plain occupied cells although ParkCellMap.WriteFootprint is the port of the twin placement
 	private bool TypesFootprints => !IsReadOnlyVisit && incLayoutCells == null && !GameEditions.IsThemeParkInc;
 
 	/// <summary>The owner word the placement stores on an object's cells: the cell word of its anchor (<see cref="ParkCellMap.OwnerAt"/>).</summary>
@@ -227,8 +228,16 @@ public partial class Level
 			{
 				if ( Guests?.Grid.Cells is not { } removed )
 					return;
-				removed.ClearFootprint( item.Cells );
+				// the queue goes first, then the demolition's passes over the footprint (0x527EE0); a queue cell of the shape refunds while its owner cell still holds something
 				ObjectAccessCells.ClearQueue( removed, OwnerWord( item ) );
+				// the refund is the native credit 0x4D0190 of the demolished ride, found before it was removed
+				var ownerWord = OwnerWord( item );
+				var instance = demolishingInstances != null && demolishingInstances.Remove( item, out var kept ) ? kept : null;
+				DemolishFootprintCells( item, removed, owner =>
+				{
+					if ( owner == ownerWord && Park != null && instance is int rideInstance )
+						Park.Economy.RefundQueueCellNative( rideInstance );
+				} );
 			};
 		}
 		// A placement over path cells clears them (ParkObjects.ClearPath): guests standing there step off
@@ -249,6 +258,8 @@ public partial class Level
 		// A ride with queue cells takes them with it: the refunds are settled while the cells are laid, the cells go once its guests are set down
 		// [BIN:TPW-EXE:0x004DD2D6 selection cleared] destroying the selected object clears the selection
 		Objects.ObjectRemoved += item => { if ( ReferenceEquals( selection, item ) ) selection = null; };
+		if ( typesFootprints )
+			Objects.ObjectRemoving += item => ( demolishingInstances ??= new() )[item] = Park != null ? GetEconomyInstance( item ) : null;
 		Objects.ObjectRemoving += SettleDemolishedQueue;
 		Objects.ObjectRemoved += ClearDemolishedQueue;
 		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
@@ -611,7 +622,14 @@ public partial class Level
 	/// [EXT:pools-swim] Why a pool cell cannot be erased: a swimmer is in it, or it lies beside the back of a changing room (the room needs its pool, and a save that holds a changing room
 	/// records the extension). Null when it can go.
 	/// </summary>
-	internal PoolBuildResult? PoolEraseBlock( int x, int y )
+	internal PoolBuildResult? PoolEraseBlock( int x, int y ) => PoolEraseBlock( x, y, null );
+
+	/// <summary>
+	/// <see cref="PoolEraseBlock(int, int)"/> with the rules that read the cells read on <paramref name="map"/> (null: the park's): [EXT:online-coop-undo] a take-back's prediction asks it of its
+	/// copy of the cells, so a cell its walk erased earlier counts for the later ones (the last water cell of an attraction's water side, its current access cell), while the swimmers, the
+	/// slides' riders, the bridges and the objects are the park's, which the inverse does not change (C5-2).
+	/// </summary>
+	internal PoolBuildResult? PoolEraseBlock( int x, int y, ParkCellMap? map )
 	{
 		if ( PoolBridges?.Covers( x, y ) == true ) return PoolBuildResult.Occupied;
 		if ( Guests?.IsSwimmerIn( x, y ) == true )
@@ -626,9 +644,9 @@ public partial class Level
 		if ( PoolExtras.NeedsWater( PoolExtras.Sites( Objects ), x, y ) )
 			return PoolBuildResult.ExtraNeedsWater;
 		// [EXT:pools-attractions] the last water cell of a water attraction's water side stays, and so does its current access cell while somebody is using it
-		if ( PoolSites.IsAccessCell( x, y ) )
+		if ( map == null ? PoolSites.IsAccessCell( x, y ) : PoolSites.IsAccessCell( x, y, map ) )
 			return PoolBuildResult.AttractionAccess;
-		foreach ( var site in PoolSites.All )
+		foreach ( var site in map == null ? PoolSites.All : PoolSites.SitesOn( map ) )
 			if ( site.Access == (x, y) && Guests?.Guests.Any( guest => guest.InPoolActivity && guest.PoolActivityTarget == site.ObjectId ) == true )
 				return PoolBuildResult.Swimmers;
 		return null;
@@ -756,6 +774,9 @@ public partial class Level
 			Log.Warning( $"No swim sprite sets found in '{PoolSwimSprites.Directory}': swimmers are drawn with the normal guest sprites." );
 			return null;
 		}
+		// [EXT:pools-swim] a swimmer wears the swimwear of the kid set it has on land: the swim sets take the same places as the kid sets (KidSetLoad), so the guest's draw picks the same kid in both
+		if ( !GameEditions.IsThemeParkInc )
+			swim = KidSetLoad.Order( swim, atlas => atlas.Name, KidSetLoad.LimitOf( IGraphicsSettings.Instance ) );
 		return new GuestRenderer( guests, park.Heightfield, swim )
 		{
 			// [EXT:pools-slides] a rider inside a closed tube is not drawn (presentation only)
@@ -843,6 +864,7 @@ public partial class Level
 					GameAudio.PlayUiAt( GameAudio.QueueJoinEvent, GameAudio.QueueNeighbourSoundPosition( x, y ) );
 			}, ReevaluateRideOfOwner ),
 			ObjectGivesWay = ( x, y ) => Objects.GivesWay( x, y, ParkObjects.PathOverwritePriority ),
+			ObjectOwnerPriority = OwnerPriorityAt,
 			DemolishObject = DemolishObjectAt
 		};
 		// [BIN:TPW-EXE:0x0053481F queue edit] a path laid over a queue cell edits the queue of the ride that owns the cell (owner word): its queue is recomputed, its back cell stamped and the re-evaluation 0x004DE1F0 run
@@ -864,7 +886,10 @@ public partial class Level
 				// sent the budget reads full, so the coaster's last commands take a freed slot first (C3c-2)
 				SendsRequests = () => Commands.SendsRequests,
 				OpenRequests = () => coasterRequests?.HasUnsent == true ? OpenToolRequestLimit : OpenToolRequests,
-				NoteWaiting = NoteWaitingClick
+				NoteWaiting = NoteWaitingClick,
+				// [EXT:online-coop-undo] in a shared park the slide mode's Backspace takes back the tool's own newest piece, which the host's journal decides (C5)
+				TakesBack = () => Commands.SessionRules,
+				HostRecord = () => UndoJournal?.LastRecord
 			};
 			PoolBuilder.Painted += PreloadSwimSprites;
 		}
@@ -876,7 +901,11 @@ public partial class Level
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
 	// overwrite priority than the path's gives way instead (ParkPathBuilder.ObjectGivesWay).
-	private bool IsPathBlocked( int x, int y ) => PoolBridges?.Reserves( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+	private bool IsPathBlocked( int x, int y ) => IsPathBlockedOn( x, y, Guests?.Grid.Cells );
+
+	/// <summary><see cref="IsPathBlocked(int, int)"/> with the land a slide reserves read on <paramref name="map"/> ([EXT:online-coop-undo] a take-back's prediction's copy, C5-2).</summary>
+	private bool IsPathBlockedOn( int x, int y, ParkCellMap? map ) => PoolBridges?.Reserves( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y )
+		|| (Guests != null && map != null && PoolSlides?.ReservesLand( x, y, map ) == true);
 
 	/// <summary>[EXT:pools-bridges] The same rule for laying a path, except that the cells just outside a bridge's two ends stay open: a bridge needs no path there, so the player lays one later.</summary>
 	private bool IsPathBuildBlocked( int x, int y ) => PoolBridges?.Covers( x, y ) == true || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
@@ -888,6 +917,9 @@ public partial class Level
 			return null;
 		if ( cells.TypeAt( x, y ) != ParkCellType.Path )
 			return ObjectPathCell.None;
+		// a path that lies over a track tile (the type byte holds the path, the second layer the tile) takes no object: the placement validator refuses a cell whose second-layer record is a track (0x535831)
+		if ( !cells.Tracks.Get( x, y ).IsEmpty )
+			return ObjectPathCell.FixedPath;
 		return cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) ? ObjectPathCell.FixedPath : ObjectPathCell.Path;
 	}
 
@@ -929,7 +961,7 @@ public partial class Level
 		DropToolStartWait();
 		StaffPlacement?.Cancel();
 		// [EXT:online-coop-commands] the tool's previews read the path builder; each committed line is a command
-		CellTool.Enter( new ParkCommandLineWriter( Paths, Commands, -1, () => SelectedRideId ), null );
+		CellTool.Enter( new ParkCommandLineWriter( Paths, Commands, -1, () => SelectedRideId, () => UndoJournal?.LastRecord ), null );
 		return true;
 	}
 
@@ -992,7 +1024,7 @@ public partial class Level
 		if ( IsReadOnlyVisit || Guests == null )
 			return false;
 		// [EXT:online-coop-commands] the tool's previews read the ride's queue writer; each committed line is a command
-		CellTool.Enter( new ParkCommandLineWriter( CreateQueueWriter( ride ), Commands, ride.AttractionId ), start.Start, start.Stack, start.Segments );
+		CellTool.Enter( new ParkCommandLineWriter( CreateQueueWriter( ride ), Commands, ride.AttractionId, hostRecord: () => UndoJournal?.LastRecord ), start.Start, start.Stack, start.Segments );
 		return true;
 	}
 
@@ -1427,6 +1459,7 @@ public partial class Level
 	}
 
 	private readonly HashSet<OriginalObject> demolishedQueues = new();
+	private Dictionary<OriginalObject, int?>? demolishingInstances;
 
 	/// <summary>
 	/// The money side of a ride's demolition for its queue, while the cells are still laid: each queue cell refunds <c>Costs.QueueCell</c> × the ride's scrap percentage
@@ -1471,17 +1504,24 @@ public partial class Level
 			QueuePaths.ClearAll( Guests.Grid, ride );
 	}
 
-	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows (Objects.Grid.CheckTerrain: the map start's cell types, with saved occupancy used only before the live map is attached), no object footprint of the queue tool's overwrite priority 3 or more (a lower one is demolished, QueueGivesWay) and owned land; tp.exe's cell validator 0x00535670 for the queue tool refuses a cell whose flag byte +0x0E has bit 0x40 (the park's land, ParkCellMap.Land), compares an object cell's owner priority with 0x818C10 = 3 (0x535D66), allows empty cells, lets a queue replace a nonterminal path cell unless NoModify (+0x0E bit 0x20), while a terminal path connects without replacement before that check and reads no MAP terrain bit (map setup turns inside water, blocked and walkway cells into type 0) — evidence needed: none for the validator; the no-live-map fallback still uses saved occupancy (ECON-050)
+	// [APPROX:QUEUE-012] the terrain rule for a queue cell is OpenTPW's (Objects.Grid.CheckTerrain: the map start's cell types, with saved occupancy used only before the live map is attached) where tp.exe's cell validator 0x00535670 reads the cell's own type alone and the map setup turns inside water, blocked and walkway cells into type 0; the validator's refusals run on top of it (QueueCellValidator, the register) — evidence needed: none for the validator; the no-live-map fallback still uses saved occupancy (ECON-050)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] a cell with flag 0x40 is refused for a queue as for a path or an object
 	private bool IsQueueBlocked( int x, int y ) => IsQueueBlockedCore( x, y, terminalPath: false );
 
 	private bool IsQueueBlockedCore( int x, int y, bool terminalPath ) =>
-		!QueueTerrainAllows( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
-		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ))
+		!QueueCellRulesAllow( Objects.Grid, Guests?.Grid.Cells, x, y, terminalPath, OwnerPriorityAt( x, y ) )
+		|| (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
 		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true)
 		// [EXT:pools-bridges] a bridge's cells and the two outside end cells (bare or with a path) take no queue: a queue there would break the bridge's save and its entrance
 		|| PoolBridges?.Reserves( x, y ) == true;
+
+	/// <summary>The host queue admission's terrain, ownership and cell-validator rules; object and reservation exclusions stay with the caller.</summary>
+	// [BIN:TPW-EXE:0x00535670 queue cell] the validator refuses hoarding posts and their extensions, track corners and junctions and the coaster marker; its final path case returns 8 before testing NoModify
+	internal static bool QueueCellRulesAllow( IParkGrid grid, ParkCellMap? cells, int x, int y, bool terminalPath = false, int? ownerPriority = null ) =>
+		QueueTerrainAllows( grid, cells, x, y, terminalPath )
+		&& (cells == null || !cells.InBounds( x, y ) || (!cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned )
+			&& (cells.RawTypeAt( x, y ) == (byte)ParkCellType.Queue || !QueueCellValidator.Refuses( cells, 3, x, y, ownerPriority, lastCell: terminalPath ))));
 
 	/// <summary>The terrain rule for a queue cell; its path cells (the save's and the map start's) are the live cell map's to judge, as for objects.</summary>
 	internal static bool QueueTerrainAllows( IParkGrid grid, ParkCellMap? cells, int x, int y, bool terminalPath = false ) => grid.CheckTerrain( x, y ) switch
@@ -1491,6 +1531,9 @@ public partial class Level
 			|| (terminalPath && cells.InBounds( x, y ) && cells.RawTypeAt( x, y ) == (byte)ParkCellType.Path)),
 		_ => false
 	};
+
+	/// <summary>The overwrite priority of the placed object that owns an object cell (the class-3 thing the validator finds on its owner word's cell, <c>Info.OverwritePriority</c>), or null when no object stands there.</summary>
+	private int? OwnerPriorityAt( int x, int y ) => Objects.FindAt( x, y )?.Entry.OverwritePriority;
 
 	/// <summary>An object a queue cell may cover and demolish: its overwrite priority is below the queue tool's (tp.exe <c>0x818C10</c> = 3).</summary>
 	private bool QueueGivesWay( int x, int y ) => Objects.GivesWay( x, y, ParkObjects.QueueOverwritePriority );
@@ -1969,7 +2012,13 @@ public partial class Level
 		var bins = LitterBins().Select( bin => bin.Id ).ToHashSet();
 		int Attraction( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bridges.TryGetValue( instance, out var id ) ? id : 0;
 		int Bin( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bins.Contains( instance ) ? instance : 0;
-		foreach ( var line in Guests.ImportOriginal( save.Guests, save.World.Variables.GameTick, Attraction, Bin, save.World.Variables.NumberOfVisitorsToDate ) )
+		foreach ( var line in Guests.ImportOriginal( save.Guests, save.World.Variables.GameTick, Attraction, Bin, save.World.Variables.NumberOfVisitorsToDate, save.Attractions ) )
+		{
+			import.Report( line );
+			Log.Trace( $"Park economy import: {line}" );
+		}
+		// a guard imported escorting a guest the guest import did not restore walks on idle
+		foreach ( var line in OriginalEconomyImport.IdleEscortsWithoutARestoredGuest( Park.Economy, id => Guests.Find( id ) != null ) )
 		{
 			import.Report( line );
 			Log.Trace( $"Park economy import: {line}" );
@@ -2002,6 +2051,21 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// Run after <see cref="ImportOriginalScripts"/> for every park started from an original save, whether or not its RSSE block read: a head imported as handed to the script whose script does not
+	/// hold it is demoted (<see cref="GuestSimulation.ReconcileOriginalAdmissions"/>).
+	/// </summary>
+	private void ReconcileOriginalAdmissions()
+	{
+		if ( resumeState != null || OriginalPark?.Save == null )
+			return;
+		foreach ( var line in Guests?.ReconcileOriginalAdmissions() ?? new List<string>() )
+		{
+			Park?.Import?.Report( line );
+			Log.Trace( $"Park queue import: {line}" );
+		}
+	}
+
+	/// <summary>
 	/// An original save's Particles block gives the level's particle pool its saved emitters and effectors, generator and counters (SAVE-013, tp.exe loader 0x51F7A0). Only a park started from an
 	/// original save does this; a resumed park restores its own pool.
 	/// </summary>
@@ -2027,6 +2091,9 @@ public partial class Level
 			if ( !import.AttractionInstances.TryGetValue( attraction.Id, out var instance ) || !runtimes.TryGetValue( instance, out var runtime ) )
 				continue;
 			var taken = runtime.RestoreOriginalSettingWords( attraction.OperatingSpeed, attraction.OperatingCapacity, attraction.OperatingDuration );
+			// [BIN:TPW-EXE:0x004DB33C access cell] the saved entry cell (mEntryPos, +0x36) is the constructor's turned entrance symbol, which the placement derives again: a save whose word differs (a cell id y x 128 + x + 1) keeps the placement's, reported
+			if ( attraction.EntryPos != 0 && runtime.Visitors is RideVisitorBridge entryBridge && entryBridge.AccessCell is { } access && attraction.EntryPos != access.Y * 128 + access.X + 1 )
+				import.Report( $"Attraction thing {attraction.Id} (QUEUE-003): the saved entry cell {attraction.EntryPos} is not the placement's access cell ({access.X}, {access.Y}); the placement's is kept." );
 			// [BIN:TPW-EXE:0x004DE130 saved cache kept] the saved back cell (+0x3A) and queue size (+0x40) are kept as read
 			if ( runtime.Visitors is RideVisitorBridge savedQueue && savedQueue.ImportSavedBackCache( attraction.BackOfQueueCell, attraction.QueueSizeInCells ) )
 				import.Report( $"Attraction thing {attraction.Id}: the saved cached back-of-queue cell {attraction.BackOfQueueCell} (size {attraction.QueueSizeInCells}) differs from the queue as it stands and is kept (0x004DE130)." );
@@ -2114,6 +2181,8 @@ public partial class Level
 			state.ScriptHosted = item.Runtime.Script != null;
 			state.ScriptBreakStat = item.Runtime.GetVariable( RideVariables.VAR_BREAKSTAT );
 			state.ScriptWorn = item.Runtime.GetVariable( RideVariables.VAR_WORN );
+			// [BIN:TPI-EXE:0x6B0C90 script variable 0] Theme Park Inc's scrap percentage of an object that requires watering reads variable 0 of its script (VAR_CONDITION of the plants' script); 0 without a script
+			state.ScriptCondition = item.Runtime.Script is { } script && script.Variables.Length > 0 ? script.Variables[0] : 0;
 			// the ride's state word is one: the economy record's word is the bridge's too (tp.exe +0x19C), and the entry into state 1 or 4 is published to the economy's mechanics here
 			item.Visitors.StateWord = state.StateWord;
 			Park.Economy.PublishRideState( state );

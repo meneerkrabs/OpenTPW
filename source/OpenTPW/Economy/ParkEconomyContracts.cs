@@ -262,8 +262,18 @@ public sealed class ParkObjectState
 	public bool Imported { get; init; }
 	/// <summary>Current upgrade level (0 = base).</summary>
 	public int Level { get; set; }
-	/// <summary>Level being installed by a mechanic, or 0.</summary>
-	public int PendingLevel { get; set; }
+	/// <summary>The level of the upgrade a ride waits for (0: none). Requesting one stores state 2 in <see cref="StoredState"/> (0x4E0086), clearing it stores 0 (SetState(0)); a record of a type that is not choosable keeps 3.</summary>
+	public int PendingLevel
+	{
+		get => pendingLevel;
+		set
+		{
+			pendingLevel = value;
+			if ( StoredState != RideObjectStates.NotAnAttraction )
+				StoredState = value > Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
+		}
+	}
+	private int pendingLevel;
 	/// <summary>
 	/// The pending upgrade's cost is still to be debited when the mechanic installs it (tp.exe <c>0x004DF8F0</c>). False for an upgrade restored from a
 	/// save written while OpenTPW charged the purchase, which has been paid already.
@@ -285,6 +295,7 @@ public sealed class ParkObjectState
 		var copy = (ParkObjectState)MemberwiseClone();
 		copy.StateWord = new RideStateWord();
 		copy.StateWord.Restore( StateWord.Value );
+		copy.StateWord.Store( StateWord.Stored );
 		return copy;
 	}
 	public int Price { get; set; }
@@ -310,6 +321,12 @@ public sealed class ParkObjectState
 	/// economy's headless breakdown, a repair and the import write it too.
 	/// </summary>
 	public RideStateWord StateWord { get; private set; } = new();
+	/// <summary>
+	/// The stored part of the state word that the ride update does not write: 3 for an object whose type is not choosable (stored at construction, 0x4DB4FB), 2 once an upgrade was requested
+	/// (0x4E0050 at 0x4E0086, over any state, a breakdown included) and 0 otherwise; <see cref="ParkEconomy.ObjectState"/> reads it before the shared word's 1 and 4. Not saved: a load stores it again
+	/// from the type and the pending level (as the original's loader stores the saved word through SetState).
+	/// </summary>
+	internal int StoredState { get => StateWord.Stored; set => StateWord.Store( value ); }
 	/// <summary>The state word entered state 1 or 4 and the economy has not published it yet (<see cref="ParkEconomy.PublishRideState"/>); not saved.</summary>
 	internal bool BrokenStatePending { get; set; }
 	/// <summary>The state word's value, for a restore (a save or an import): stored without the change event.</summary>
@@ -337,6 +354,11 @@ public sealed class ParkObjectState
 	public int ScriptBreakStat { get; set; }
 	/// <summary>The script's VAR_WORN, mirrored each tick by the level (and set at once when the economy writes it); not saved.</summary>
 	public int ScriptWorn { get; set; }
+	/// <summary>
+	/// Script variable 0 of the object's script (<c>VAR_CONDITION</c> in the plants' vegetation.RSE), 0 without a script, mirrored each tick by the level; not saved. Theme Park Inc's scrap percentage of an object that
+	/// requires watering counts it.
+	/// </summary>
+	public int ScriptCondition { get; set; }
 	/// <summary>
 	/// The attraction's track validity (<c>mIsTrackRideValid</c>, +0x2C on the PC): a water ride whose circuit walk failed does not count for the park points
 	/// (the counts-test's built-track condition). Mirrored each tick by the level, not saved; true for every ride without a track.
@@ -384,6 +406,11 @@ public sealed class ParkObjectState
 	public long WinnersThisMonth { get; set; }
 	public long WinnersLastMonth { get; set; }
 	public long TotalProfit { get; set; }
+	/// <summary>
+	/// Theme Park Inc only: what the object's sales and plays booked as costs this month and the month's debit has not taken yet (the statistics block's accumulator <c>+0x938</c>, raised by <c>0x5E60E0</c>); the month
+	/// message debits it together with the running cost and clears it. Always 0 in Theme Park World, whose costs are debited at once. Not saved (a Theme Park Inc run is not saved).
+	/// </summary>
+	public long PendingMonthlyCosts { get; set; }
 	public long ProfitLastMonth => TakingsLastMonth - CostsLastMonth;
 	/// <summary>The costs ring (<c>+0xF8</c>): the cost of goods and prizes of each of the last 30 days; today's running value is <see cref="DailyRing.Today"/>.</summary>
 	public DailyRing CostsRing { get; set; } = new();

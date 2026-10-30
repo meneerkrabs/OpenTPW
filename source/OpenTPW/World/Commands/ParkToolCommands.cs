@@ -39,6 +39,7 @@ public abstract record ParkToolCommand : ParkCommand
 	internal static ParkToolCommand? Read( ParkCommandKind kind, ParkCommandReader reader ) => kind switch
 	{
 		ParkCommandKind.BuyLand => new BuyLandCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
+		ParkCommandKind.TakeBack => TakeBackCommand.Read( reader ),
 		ParkCommandKind.BeginStaffHire => new BeginStaffHireCommand( reader.Int() ),
 		ParkCommandKind.CancelStaffHire => new CancelStaffHireCommand(),
 		ParkCommandKind.PlaceStaff => new PlaceStaffCommand( reader.Int(), reader.Int(), reader.Int() ),
@@ -106,11 +107,13 @@ public sealed record BuyLandCommand( int CornerX, int CornerY, int PostX, int Po
 		if ( BuyLandTool.Snap( CornerX, CornerY, land.PostA, map.Width, map.Height ) != corner || BuyLandTool.Snap( PostX, PostY, land.PostA, map.Width, map.Height ) != post )
 			return ParkCommandResult.Rejected( "The land tool's corners are fence posts." );
 		var check = land.CheckPurchase( map, corner, post, barrier, economy?.CellCost( CellPurchase.Land ) ?? 0, economy?.Balance );
-		if ( !check.Allowed || land.Merge( corner, post ) is not { } merged )
+		if ( !check.Allowed )
 			return new ParkCommandResult( false, $"The land cannot be bought: {check.Refusal}.", check );
-		// the purchase and its debit in the order the tool's click made them (BuyLandTool.Click)
-		map.SetLand( merged );
-		merged.ClaimEnclosedCells( map );
+		// the purchase and its debit in the order the tool's click made them (BuyLandTool.Click): the fence tool lays the rectangle, the walk and the fill own the land, the bank pays
+		// [BIN:TPW-EXE:0x524960 Buy Land click] the second click runs the validator (0x531A50), then the purchase (0x5327E0), then charges the price (0x5195D0, 0x4D01F0)
+		if ( !land.Purchase( map, corner, post ) )
+			return new ParkCommandResult( false, "The land cannot be bought: the fence walk never ends.", check );
+		map.Touch();
 		economy?.ChargeLand( check.Cost, check.Cells );
 		return ParkCommandResult.Ok( check );
 	}
@@ -214,9 +217,11 @@ public sealed record PlaceStaffCommand( int Candidate, int X, int Y ) : StaffToo
 			return ParkCommandResult.Rejected( $"The thing pool is full ({ThingPool.Capacity} things); no staff member can be placed." );
 		economy.Staff.EndPlacement( Player, placed: true );
 		var member = economy.Hire( candidate.Id );
-		// [BIN:TPW-EXE:0x46c8e0 new member] position = cell centre (sub-cell 0x80), happiness and energy 100.0 (the member's own defaults), patrol rectangle = the whole map (+0x20a = 1, +0x20c = 0x4000: PatrolArea's default); each role then decides its first job (state 0 here, the state machines' search runs on the next update)
+		// [BIN:TPW-EXE:0x46c8e0 new member] position = cell centre (sub-cell 0x80), happiness and energy 100.0 (the member's own defaults), patrol rectangle = the whole map (+0x20a = 1, +0x20c = 0x4000: PatrolArea's default); each role's constructor then runs its first search (Constructed below)
 		member.PatrolArea = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
 		StaffPlacement.PutDown( member, X, Y );
+		// [BIN:TPW-EXE:0x46c8e0 new member] the role's constructor runs the first search inside the click (0x4D4340, 0x4D5D40, 0x4D6B60, 0x4D9EB0, 0x502600), so its draws come after the hire's base-speed and variant draws and before the turn's sweep; a headless economy has no world and searches on its first update
+		hands.StaffWorld?.Constructed( economy, member );
 		return ParkCommandResult.Ok( member );
 	}
 }

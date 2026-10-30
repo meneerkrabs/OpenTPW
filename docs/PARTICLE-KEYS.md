@@ -42,8 +42,9 @@ resolver.Resolve(key, ParticleKeyResolver.EventSelector,
 The caller must select the intended pose at the event boundary. `PTCL-900`
 records that the original reads the key-table matrices refreshed at the instance's creation (`0x463851`) and by its
 draws (render callback `0x463030` -> `0x44E380` -> instance update `0x473C70` -> `0x44AB30`, gated by instance-header bit
-`0x1`, table bit `0x1` and the mode and instance flags; two more refreshes at `0x42A6D6` and `0x438A53`), about one render
-frame behind the script and stale while the object is culled, where OpenTPW uses the animator's current matrices. The resolver itself supplies no particle constructor; the prepared
+`0x1`, table bit `0x1` and the mode and instance flags), about one render
+frame behind the script and stale while the object is culled. A placed object passes `OriginalObjectRuntime.KeyPose`, the table rebuilt at creation, by every drawn frame
+(`OriginalObject.PresentDrawn`) and by every frame of the ride view; a runtime without a scene passes the animator's current matrices. The resolver itself supplies no particle constructor; the prepared
 request feeds the particle pool (PARTICLES.md). The preparation hook below
 preserves the independently reviewed EVENT classification.
 

@@ -267,10 +267,31 @@ public class RideStateRulesTests
 		EconomyTestData.AdvanceToTurn( park, 2 * ParkEconomy.WearInterval );
 		Assert.AreEqual( 100, ride.Repair, "state 2 clears the open word, so there is no wear" );
 		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( ride ) );
+		ride.PendingLevel = 0;
 		ride.IsBrokenDown = true;
 		Assert.AreEqual( RideObjectStates.BrokenDown, ParkEconomy.ObjectState( ride ) );
+		ride.PendingLevel = 1;
+		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( ride ), "a requested upgrade is stored over the breakdown (0x4E0086)" );
+		ride.PendingLevel = 0;
 		ride.LifeGauge = 0.4;
 		ride.StateWord.Set( RideObjectStates.Condemned );
 		Assert.AreEqual( RideObjectStates.Condemned, ParkEconomy.ObjectState( ride ), "the ride update enters state 4 for a life gauge byte of 0" );
+	}
+
+	[TestMethod]
+	public void StatesTwoAndThreeAreStoredNotDerived()
+	{
+		// [BIN:TPW-EXE:0x004DB4FB object state] [BIN:TPW-EXE:0x004E0086 upgrade request] the constructor stores 3 for a type that is not choosable and the request stores 2 over any state
+		var fixedItem = new ParkObjectState { Id = 1, InfoId = 1, Kind = ParkObjectKind.FixedItem, StoredState = RideObjectStates.NotAnAttraction };
+		Assert.AreEqual( RideObjectStates.NotAnAttraction, ParkEconomy.ObjectState( fixedItem ) );
+		fixedItem.PendingLevel = 1;
+		Assert.AreEqual( RideObjectStates.NotAnAttraction, ParkEconomy.ObjectState( fixedItem ), "a request never turns a fixed item's 3 into 2" );
+		var ride = new ParkObjectState { Id = 1, InfoId = 1, Kind = ParkObjectKind.Ride };
+		ride.IsBrokenDown = true;
+		Assert.AreEqual( RideObjectStates.BrokenDown, ParkEconomy.ObjectState( ride ) );
+		ride.StoredState = RideObjectStates.Upgrading;
+		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( ride ), "the stored 2 overwrites the breakdown" );
+		ride.StoredState = RideObjectStates.Idle;
+		Assert.AreEqual( RideObjectStates.Idle, ParkEconomy.ObjectState( ride ), "SetState(2) wrote the one word, so SetState(0) leaves state 0: the ride update finds a breakdown again" );
 	}
 }

@@ -136,8 +136,10 @@ public partial class CoopSessionTests
 		Assert.AreEqual( line.Start, tool.Start, "the tool goes on from the line's start" );
 		Assert.AreEqual( tiles, builder.Tiles().Count(), "and its tiles off the track" );
 		Assert.AreEqual( tiles, host.Level.BuilderOf( host.Level.TrackStations.Keys.Single() )!.Tiles().Count() );
-		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is UndoTrackLineCommand ) );
-		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopGuestUndo ), "a track tool's Backspace is the guest's under its claim" );
+		// [EXT:online-coop-undo] a take-back the host decided, its inverse the tool's own undo (C5-3)
+		Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is TakeBackCommand { Verdict: TakeBackVerdict.Taken, Inverse: UndoTrackLineCommand } ) );
+		Assert.AreEqual( 0, HostCommandsOf( host, seat ).Count( command => command is UndoTrackLineCommand ), "no undo by its content" );
+		Assert.AreEqual( 0, view.Says( OpenTpwText.CoopUndoNotOwn ), "a track tool's Backspace is the guest's under its claim" );
 		Assert.AreEqual( (seat, seat), (host.Level.ClaimOf( ride ), guest.Level.ClaimOf( ride )) );
 		CatchUpAndCompare( host, guest );
 	}

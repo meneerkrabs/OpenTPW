@@ -672,7 +672,7 @@ public static class GameAudio
 			{
 				crowd = events.StartSentence( Kids, CrowdEvent, AudioChannel.Effects );
 				if ( crowd != null )
-					Log.Trace( $"Sound: crowd sentence started ({guestsNearCamera} guests within {GameFlow.CrowdRadiusCells} cells of the camera)." );
+					Log.Trace( $"Sound: crowd sentence started ({guestsNearCamera} guests within {GameFlow.CrowdRadiusCells} cells of the cursor)." );
 			}
 			if ( crowd != null )
 			{
@@ -1141,6 +1141,10 @@ public static class GameAudio
 		else
 			AudioListener.Update( place, new Vector3( forward.X, 0, forward.Y ) );
 	}
+
+	/// <summary>The listener of the frames without a park: (0, 0, -50) facing +z with y up, sent every frame like the park's.</summary>
+	// [BIN:TPW-EXE:0x54e70e lobby listener] the main loop's frames without a level call 0x51c1d0 with the place (0, 0, -50), the front (0, 0, 1) and the up (0, 1, 0) (0x54e6f3-0x54e70e); the first of them gives the listener its velocity (the place minus the origin, or minus the park's last place), and nothing sends another while the place stays
+	public static void UpdateLobbyListener() => AudioListener.Update( new Vector3( 0, 0, -50 ), new Vector3( 0, 0, 1 ), new Vector3( 0, 1, 0 ) );
 
 	/// <summary>
 	/// The listener's place for a camera: the eye in the camera modes whose byte <c>0x790ab0</c> has bits 0x16 (OpenTPW's free-walk camera), otherwise the midpoint of

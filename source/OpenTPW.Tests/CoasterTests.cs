@@ -336,7 +336,7 @@ public class CoasterTests
 		var pylon = new CoasterPylonControl { MeshHeightLow = 10f, MeshHeightHigh = 25f };
 		const float t = 0.5605103373527527f;
 		Assert.AreEqual( 18.40765380859375f, CoasterTrack.CostHeight( pylon, t ) );
-		Assert.AreNotEqual( CoasterTrack.CostHeight( pylon, t ), CoasterTrack.PylonHeight( pylon, t ), "the fused form of the Mac rounds once" );
+		Assert.AreEqual( CoasterTrack.CostHeight( pylon, t ), CoasterTrack.PylonHeight( pylon, t ), "the knot pass stands a node at the same four instructions (0x430f6f..0x430f81), not at the Mac's fused form" );
 		var low = new CoasterPylonControl { MeshHeightLow = 5f, MeshHeightHigh = 40f };
 		Assert.AreEqual( 17.382545471191406f, CoasterTrack.CostHeight( low, 0.35378697514533997f ) );
 	}
@@ -1023,8 +1023,36 @@ public class CoasterTests
 			}
 			return WorldStateHash.Compute( new WorldStateSources { Scripts = scripts } );
 		}
-		Assert.AreEqual( "1ABA458D0079E09C", Run( reopen: false ).ToString( "X16" ), "the built coaster's fixed run" );
-		Assert.AreEqual( "045BFFE59994F3E7", Run( reopen: true ).ToString( "X16" ), "the reopened coaster's fixed run" );
+		Assert.AreEqual( "0FE29AA5CBF09FDB", Run( reopen: false ).ToString( "X16" ), "the built coaster's fixed run" );
+		Assert.AreEqual( "E71F6F7026ACA2B3", Run( reopen: true ).ToString( "X16" ), "the reopened coaster's fixed run" );
+	}
+
+	[TestMethod]
+	public void ASeatedGuestsHeadHangsThroughTheWorldGeneratorOnlyWithoutCostumeHeads()
+	{
+		// [BIN:TPW-EXE:0x0043B70D seat head] each guest the station step seats goes through 0x44B410, which reseeds the world generator with it in a theme without costume heads
+		foreach ( var reseeds in new[] { false, true } )
+		{
+			var scripts = new RideScriptWorld( 99 ) { HeadHangReseeds = reseeds };
+			var start = scripts.World.State;
+			var ride = new CoasterRide( CoasterDefinition.FromValues( PcSettings() ), scripts.Coasters );
+			var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+			PlaceStation( builder, Depart );
+			BuildCircuit( builder );
+			CloseAndComplete( builder );
+			ride.Command( 8, 0 );
+			ride.Command( 6, 6 );
+			ride.Command( 5, 0 );
+			ride.Board( 101 );
+			ride.Board( 102 );
+			for ( var tick = 0; tick < 240 * 60 && ride.RidersOnBoard < 2; tick++ )
+				ride.Advance( Tick );
+			Assert.AreEqual( 2, ride.RidersOnBoard, "both guests were seated" );
+			var expected = new WorldRng( 1 );
+			expected.Reseed( 102 );
+			expected.NextWord();
+			Assert.AreEqual( reseeds ? expected.State : start, scripts.World.State, reseeds ? "the last seated guest reseeded the generator and drew once" : "nothing touches the generator" );
+		}
 	}
 
 	[TestMethod]
@@ -1095,7 +1123,8 @@ public class CoasterTests
 	public void BezierChordAndKnotControlsMatchTheWitness()
 	{
 		var q = HermiteCoasterCurve.Bezier( new SVector3( 0, 0, 0 ), new SVector3( 10, 5, 0 ), new SVector3( 20, 5, 10 ), new SVector3( 30, 0, 10 ), 0.35f );
-		Assert.AreEqual( (0x41280000u, 0x405A6666u, 0x403451EBu), (Bits( q.X ), Bits( q.Y ), Bits( q.Z )) );
+		// the PC routine 0x43e1b0 evaluates the point in single steps (no fused operations); its z here is 0x403451EC in the x86 oracle (ORACLE.md X40), where the Mac's fused steps gave ...EB
+		Assert.AreEqual( (0x41280000u, 0x405A6666u, 0x403451ECu), (Bits( q.X ), Bits( q.Y ), Bits( q.Z )) );
 		q = HermiteCoasterCurve.Bezier( new SVector3( 1.5f, -2, 7 ), new SVector3( 4.25f, 3, 7.5f ), new SVector3( 9, 1, -3 ), new SVector3( 12, 0.5f, -6 ), 0.05f );
 		Assert.AreEqual( (0x3FF6A8F6u, 0xBFA69581u, 0x40DFD581u), (Bits( q.X ), Bits( q.Y ), Bits( q.Z )) );
 		Assert.AreEqual( 0x4249F353u, Bits( HermiteCoasterCurve.Chord( new SVector3( 0, 0, 0 ), new SVector3( 30, 10, 40 ) ) ), "height weighted 0.7" );
@@ -1119,8 +1148,9 @@ public class CoasterTests
 		var level = CoasterTrack.ForwardTangent( a, p, b, 1.25f, 1.25f, -0.999f, false, loopNeighbour: true );
 		Assert.AreEqual( (curve.X, 0f, curve.Z), (level.X, level.Y, level.Z), "a non-loop pylon next to a loop pylon is level" );
 		Assert.AreNotEqual( 0f, CoasterTrack.ForwardTangent( a, p, b, 1.25f, 1.25f, null, false, loopNeighbour: true ).Y, "pylon-less nodes keep Y" );
-		Assert.AreEqual( 0x400DB70Du, Bits( CoasterTrack.TurnAngleXZ( a, p, b ) ) );
-		Assert.AreEqual( -2.2142975f, CoasterTrack.TurnAngleXZ( a, p, new SVector3( 75, 30, -35 ) ), 1e-6f );
+		// the turn is what the PC routine stores: its acos runs at 24 bits (0x67b518), the x86 oracle gives 0x400DB70C for this node (ORACLE.md X40)
+		Assert.AreEqual( 0x400DB70Cu, Bits( CoasterTrack.TurnAngleXZ( a, p, b ) ) );
+		Assert.AreEqual( 0xC00DB70Cu, Bits( CoasterTrack.TurnAngleXZ( a, p, new SVector3( 75, 30, -35 ) ) ) );
 		Assert.AreEqual( 0x3D5643C0u, Bits( CoasterTrack.AutoBank( 20, 2.2f, 40, 50 ) ) );
 		Assert.AreEqual( 0xBD5643C0u, Bits( CoasterTrack.AutoBank( 20, -2.2f, 40, 50 ) ) );
 		Assert.AreEqual( 0f, CoasterTrack.AutoBank( 5, 0, 1, 1 ) );

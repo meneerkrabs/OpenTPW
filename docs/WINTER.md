@@ -47,7 +47,7 @@ string-anchored, not a data-flow proof).
 `[DATA:TPI levels/*/Standard.sam:Seasons[].PercentageChanceForSnow]`). Rules around snow: the kid row snow +1 happiness, thirst -1, hunger +1 (parents -2, elderly -3); `Arrival.SnowPercentageModifier` 75;
 `Vegetation.SnowWither` 1.0; a `ClosedDuringSnow` key and `mClosedDueToWeather` per attraction (strings in `Game.exe`). Its water world's "snowfield" ([THEME-PARK-INC.md](THEME-PARK-INC.md)) is **painted terrain texture**, not dynamic snow.
 TPI's shop data is the best precedent for demand: drinks `WeatherModifier.SnowPercentage 50` ("people don't want cold drinks in snow"), ice cream 70, hot dog and costume shop 200, chips and gift shop 150, brolly 150.
-OpenTPW runs no TPI weather (ARRIVAL-008).
+OpenTPW rolls the TPI weather state only for the arrival percentage and runs no spell effects (ARRIVAL-008, `[EXT:tpi-weather-spell-seed]`).
 
 **Drink shops.** TPW's drinks shops (fantasy/space `drinks.sam`, jungle `Coconut.sam`, hallow `Pumpkin.sam`): `ShopType 4`, `SpecialIngredient 3` (Ice), price 30, cost of goods 20, `ThirstEffect 40`, `HungerEffect 0`,
 `VomitEffect 10`, `HappinessEffect 5`, `LitterEffect 50`, capacity 1, upgrade 650-750, `Research.Group 0`, a 2 x 2 shape. Ice gives thirst back: `+ trunc(amount x ThirstEffect / 100)` ([GUESTS.md](GUESTS.md), `0x4fe1e0`); a sale of

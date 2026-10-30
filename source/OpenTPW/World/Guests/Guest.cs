@@ -240,8 +240,23 @@ public sealed class Guest
 	/// <summary>Simulated seconds since creation, including the arrival and departure walk; null means the prior duration is unknown.
 	/// Retained for stay statistics and weather gates; new visitor displays use the independent integer-turn age.</summary>
 	public double? TimeInParkSeconds { get; internal set; }
+	/// <summary>Theme Park Inc: the fee recorded at boarding, which the exit takes (IGuestPayments.SettlesAtExit); not saved, a Theme Park Inc run is not.</summary>
+	internal int PendingFee;
+	/// <summary>A successful Theme Park Inc admission still to settle, including a free visit; transient like PendingFee (no Theme Park Inc continuation saves).</summary>
+	internal bool PendingVisitSettlement;
 	/// <summary>Display-only age in unsigned 32-bit park turns, or null for a legacy seconds-based duration. Never used by gameplay.</summary>
 	public long? DisplayTimeInParkTurns { get; internal set; }
+	/// <summary>
+	/// The guest's sprite bank <c>+0x20</c> as the original stores it: 0x00541F70's (word >> 2) modulo the kid sets loaded when the guest was made (0x004FB1A7, 0x004FB1B5), the raw draw only where that count is
+	/// not known (a headless run, <see cref="GuestSimulation.KidSetCount"/>). The renderers read it modulo the sets loaded now (<see cref="GuestAppearance.KidSet(Guest, int)"/>), the second reduction of a load (0x004F93AA);
+	/// the simulation never reads it, so it is saved but not hashed. A guest of an original save keeps the saved bank number, reduced by the kid sets loaded (0x4F93AA), as every load reduces it.
+	/// </summary>
+	public uint KidSetDraw
+	{
+		get => kidSetDraw ?? GuestAppearance.RawKidDraw( Id );
+		internal set => kidSetDraw = value;
+	}
+	private uint? kidSetDraw;
 	/// <summary>Own-format/display duration bound; no original timing limit is inferred.</summary>
 	public static double MaximumTimeInParkSeconds => TimeSpan.MaxValue.TotalSeconds;
 	public float SecondsSinceRide { get; internal set; }

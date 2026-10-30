@@ -1348,7 +1348,7 @@ internal sealed class M3GateRun
 	/// (<see cref="QueueWalkTurns"/>). Each head is also held to its own remaining walk where that is smaller
 	/// (<see cref="HeadNotReadyLimit"/>).
 	/// </summary>
-	// [APPROX:GATE-006] the walk term N x C + 2 x w2 rests on C = 27 from a bounded enumeration of tp.exe's walk as OpenTPW ports it (WALK-003, WALK-005, WALK-009), not on a proof for the original; it is looser than the retired GATE-005 check (owner decision 2026-10-10) — evidence needed: the neighbour query order and the edge flags of the original traced, then C re-derived
+	// [APPROX:GATE-006] the walk term N x C + 2 x w2 rests on C = 27 from a bounded enumeration of tp.exe's walk as OpenTPW ports it (WALK-005, WALK-009; WALK-002 and WALK-003 are retired), not on a proof for the original; it is looser than the retired GATE-005 check (owner decision 2026-10-10) — evidence needed: the edge flags of the original traced (WALK-005), then C re-derived
 	internal static (long Turns, string Derivation) HeadNotReadyBound( int queueCells )
 	{
 		var cells = Math.Max( 1, queueCells );
@@ -1461,7 +1461,7 @@ internal sealed class M3GateRun
 	/// per cell (25 crossings 358). Under the first enumeration over OpenTPW's former per-cell search C was 9.
 	/// Holds under W2 (the guest is at least 15 updates old).
 	/// </summary>
-	// [APPROX:GATE-006] C = 27 bounds tp.exe's walk as OpenTPW ports it, an enumeration and not a proof: avoid_walls' corner branches are ported (WALK-002 is retired) and the separation's neighbours come in the original's chain order for the guests (WALK-003: head first; the staff's place in the chain is open), but the enumeration's separation is off or at its maximum and puts the neighbours' cells as the only blockers — evidence needed: the staff's entry order and the thing position of riding and held guests (WALK-003), then C re-derived
+	// [APPROX:GATE-006] C = 27 bounds tp.exe's walk as OpenTPW ports it, an enumeration and not a proof: avoid_walls' corner branches are ported (WALK-002 is retired) and the separation's neighbours come in the original's chain order, guests and staff alike (WALK-003 is retired), but the enumeration's separation is off or at its maximum and puts the neighbours' cells as the only blockers — evidence needed: C re-derived with the original's query of at most five neighbours of any kind
 	internal const long QueueCellWalkTurns = 27;
 
 	/// <summary>One queue walk crossing <paramref name="cells"/> cells to a slot: k × C + w₂ updates.</summary>

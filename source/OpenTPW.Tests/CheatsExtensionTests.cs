@@ -382,7 +382,7 @@ public class CheatsExtensionTests
 	/// [EXT:cheats-turn-boundary] The pinned hash of <see cref="RunFixedParkWithCheats"/> (docs/DETERMINISM.md, "Cheats"). A deliberate change of a cheat's effect, of the order of the kinds, of the
 	/// arrival band or of the weather cheat's values changes this value.
 	/// </summary>
-	internal const ulong CheatsFixedRunHash = 0xF150FC6BAF22E002UL;
+	internal const ulong CheatsFixedRunHash = 0x0A8CA22E1A9B0E08UL;
 
 	[TestMethod]
 	public void CheatsFixedRunHashIsTheSameInEveryProcessAndEveryCheatOfTheSequenceApplied()

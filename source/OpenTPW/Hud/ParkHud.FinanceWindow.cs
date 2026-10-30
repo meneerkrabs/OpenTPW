@@ -194,7 +194,7 @@ public sealed partial class ParkHud
 				maximum = minimum + 1;
 			// [BIN:TPW-EXE:0x47fb30 graph scale] the scale runs from min(0, the lowest selected sample of the period) to max(0, the highest) in ten divisions (0x49a7b0, 0x49a8f0); the bank balance alone is the default (0x751fa0 = 1)
 			// [BIN:TPW-EXE:0x47fe90 graph drawer] each series is drawn as one-pixel lines from sample to sample (the line primitive 0x5f97f0, not a thick stroke), and when the period has fewer than 0x90 samples (the 1 and 3 year views: 0x480460 passes 12, 36 or 144) each sample end gets a hollow 3 x 3 pixel mark of four such lines (0x47ffe0..0x480077)
-			// [APPROX:UI-060] the original draws into the control's bitmap at the display mode's pixel size; OpenTPW takes one pixel as 2 canvas units (the 1024 x 768 mode of the video) — evidence needed: the display mode the video ran in, and whether the 12 year view's 144 samples map one to one onto OpenTPW's months
+			// [APPROX:UI-060] the original draws into the control's bitmap at the display mode's pixel size; OpenTPW takes one pixel as 2 canvas units (the 1024 x 768 mode of the video) — evidence needed: the display mode the video ran in; [BIN:TPW-EXE:0x480460 graph samples] the 144 samples of the 12 year view are one to one the monthly ring's 144 entries (the ring objects at world +0x1F100.. hold 0x240 bytes of samples, every caller 0x49aa61.. passes the stride 1), newest first, so each sample is a month as in OpenTPW; what the original does with fewer months than the period (0x4804ae takes the smaller count) is not read, OpenTPW spreads the available months over the plot
 			var marks = owner.financeYears < 12;
 			for ( var s = 0; s < selected.Length; s++ )
 			{

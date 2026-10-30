@@ -52,10 +52,12 @@ public class AdvisorSavedStampsTests
 	}
 
 	/// <summary>A Theme Park World save on a 3 x 3 map whose world names the analyser thing 5 (or none), at park turn <see cref="SavedTurn"/>.</summary>
-	private static OriginalParkImport Save( BalanceSettings settings, long objectStamp, long hireStamp, long calendarStart = Start, bool analyser = true, int rate = SaveCalendar.InitialRate )
+	private static OriginalParkImport Save( BalanceSettings settings, long objectStamp, long hireStamp, long calendarStart = Start, bool analyser = true, int rate = SaveCalendar.InitialRate, int[]? counters = null )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var body = Analyser( Stamp( 0, calendarStart ), Stamp( 0, calendarStart ), Stamp( 0, calendarStart ), Stamp( 0, calendarStart ), objectStamp, hireStamp );
+		for ( var word = 0; counters != null && word < counters.Length; word++ )
+			BinaryPrimitives.WriteInt32LittleEndian( body.AsSpan( SaveAnalyserStamps.BodyOffset - 16 + word * 4, 4 ), counters[word] );
 		var bank = SaveTestPayloads.Bank( loans: index =>
 		{
 			var offer = settings.Loans[index];
@@ -147,6 +149,35 @@ public class AdvisorSavedStampsTests
 			BinaryPrimitives.WriteInt32LittleEndian( resized.AsSpan( capacity, 4 ), SaveAnalyserStamps.ByteRingCapacity - 1 );
 			Assert.ThrowsException<InvalidDataException>( () => Read( resized ), $"byte ring {ring}" );
 		}
+	}
+
+	[TestMethod]
+	public void TheGuardChaseCountersAreTheThreeWordsBeforeTheLifetimeVisitorsAndTheStamps()
+	{
+		var body = Analyser( Start, Start, Start, Start, Start, Start );
+		// mMisbehavingKids, mMisbehavingKidsThatGotAwayWithIt, mMisbehavingKidsEver and then mLifetimeVisitors (another word, not read here)
+		foreach ( var (word, value) in new[] { (0, 7), (1, -3), (2, 1_000_000), (3, 99) } )
+			BinaryPrimitives.WriteInt32LittleEndian( body.AsSpan( SaveAnalyserStamps.BodyOffset - 16 + word * 4, 4 ), value );
+		Assert.AreEqual( new SaveAnalyserCounters( 7, -3, 1_000_000 ), SaveAnalyserCounters.Read( body, Thing( body.Length ) ) );
+		Assert.AreEqual( new SaveAnalyserCounters( 0, 0, 0 ), SaveAnalyserCounters.Read( SaveNewParkThings.ParkAnalyser( 0, 0 ), Thing( SaveNewParkThings.ParkAnalyser( 0, 0 ).Length ) ), "a new park's analyser counts nothing (the constructor 0x4C5BBE)" );
+		Assert.ThrowsException<InvalidDataException>( () => SaveAnalyserCounters.Read( body, Thing( body.Length, SaveThingModel.Weather ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => SaveAnalyserCounters.Read( body.AsSpan( 0, 100 ), Thing( body.Length ) ) );
+	}
+
+	[TestMethod]
+	public void TheImportKeepsTheSavedGuardChaseCountersForTheAdvisorsPrankLines()
+	{
+		var settings = OriginalSaveImportTests.Settings();
+		var save = Save( settings, Start, Start, counters: new[] { 4, 2, 9 } );
+		Assert.AreEqual( new SaveAnalyserCounters( 4, 2, 9 ), save.AnalyserCounters );
+		var (economy, import) = Imported( save, settings );
+		var state = new EconomyParkState( economy );
+		Assert.AreEqual( (4, 2), (state.MisbehavingKids( false ), state.MisbehavingKids( true )) );
+		Assert.AreEqual( 9, economy.MisbehavingKidsEver );
+		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Park analyser: the guards' chase counters imported (this month 4, got away 2, ever 9)", StringComparison.Ordinal ) ) );
+		// a save that names no analyser has none
+		var (plain, _) = Imported( Save( settings, Start, Start, analyser: false ), settings );
+		Assert.AreEqual( (0, 0), (new EconomyParkState( plain ).MisbehavingKids( false ), new EconomyParkState( plain ).MisbehavingKids( true )) );
 	}
 
 	[TestMethod]

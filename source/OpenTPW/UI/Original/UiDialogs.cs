@@ -182,7 +182,8 @@ public static class UiDialogs
 	// [BIN:TPW-EXE:0x48c36c online pause layout] the park pause menu's top and gap are 0 instead of 10 and 5 while the net-session field +0x60 (0x5b6450) is non-zero (0x48c36c-0x48c4af);
 	// that field is set only by the login reply 'Authorization OK' (0x5b6363) and cleared by every other login reply, the login teardown and the other session resets (0x5b6375-0x5b63dd, 0x5b6588, 0x5b595f, 0x5b5e7d, 0x5b7a84, 0x5b7d6a, 0x5b7f0b), so the park menu maps it to
 	// the host's authenticated session captured on opening (HudHost.IsLoggedIn)
-	// [APPROX:UI-013] the line height follows OpenTPW's menu font, which is not the original's bank pick ([EXT:ui-font-tier-by-scale]); the measure 0x4929f0 is read (block box via 0x6ae1c0, no wrap without the wrap flag) and matched by OpenTPW's text layout box
+	// [BIN:TPW-EXE:0x4929f0 menu line measure] the measure takes the font slot of the line (0 for the pause menus: slot 0 and 2 swap while the word at 0x78b538 is 0x40d, 0x41a850), reads the font record of the bank (index 13 x bank + slot, 24-byte records from 0x78b54c, handle at +0x14), lays the text out in a box through 0x6ae1c0 and returns the block box; with the wrap flag clear the box is 0x4000 wide, so nothing wraps, which OpenTPW's text layout box matches
+	// [EXT:ui-font-tier-by-scale] the line height is that of OpenTPW's menu font: which shipped font serves slot 0 per size tier is OpenTPW's choice, as the original picks one of four banks by its fixed screen modes
 	// [BIN:TPW-EXE:0x48b2a0 pause line ramp] the focused line's colour ramps from grey 0x21 in steps of 0x20 to white over eight frames (UiMenuItem, MenuLineRamp)
 	public static UiScreen TextMenu( string name, IReadOnlyList<(string Id, Func<string> Text, Action Clicked, bool Enabled)> items, Action back, string? focus = null, bool compact = false )
 	{

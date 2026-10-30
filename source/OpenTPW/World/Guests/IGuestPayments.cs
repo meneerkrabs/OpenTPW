@@ -22,6 +22,13 @@ public interface IGuestPayments
 		won = null;
 		return TryPayVisit( attraction, guestMoney, out pricePaid );
 	}
+	/// <summary>
+	/// True when the money of a use moves when the guest leaves, not when it boards (Theme Park Inc: the payment step 0x6126D0 and the cost booking 0x612740 run in the exit). <see cref="TryPayVisit(IRideVisitorBridge, long, out int)"/>
+	/// then only checks and prices the visit, and <see cref="SettleVisit"/> books it.
+	/// </summary>
+	bool SettlesAtExit => false;
+	/// <summary>Books a finished use (<see cref="SettlesAtExit"/>): the fee the guest recorded at boarding and, for a sideshow, whether it won.</summary>
+	void SettleVisit( IRideVisitorBridge attraction, int fee, bool? won ) { }
 	/// <summary>A guest has left the attraction (the original's use counter, +412, rises on release).</summary>
 	void VisitFinished( IRideVisitorBridge attraction ) { }
 	/// <summary>A guest finished a use with this happiness change (three times the difference of the guest's happiness bytes after and at joining the queue): the attraction's satisfaction average (tp.exe <c>0x004E1E00</c>).</summary>

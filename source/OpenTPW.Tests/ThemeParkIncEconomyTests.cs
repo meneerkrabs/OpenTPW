@@ -185,6 +185,241 @@ public class ThemeParkIncEconomyTests
 		Assert.AreEqual( 15L, economy.RunningCost( second! ) );
 	}
 
+	private static EconomyObjectInfo Shop( int id, int price, int goods, int shopType = 0, int special = 0 )
+	{
+		var levels = new List<UpgradeLevelInfo> { new( 0, 500, 0, 0, 0, new[] { 50, 30, 20, 10 }, RunningCost: 20 ) };
+		return new( id, $"Shop {id}", ParkObjectKind.Shop, ResearchCategory.Ride, 7, levels, price, goods, null, shopType, special, 0, 0, 0, 0, "/x" );
+	}
+
+	[TestMethod]
+	public void AShopSaleBooksItsCostOfGoodsForTheMonthAndDebitsNothingAtOnce()
+	{
+		// [BIN:TPI-EXE:0x5E60E0 cost booking] a sale raises the object's month accumulator and the daily cost ring; the month message 0x5DEFFF debits the accumulator with the running cost, as one debit
+		var tpi = Economy( Shop( 1, 10, 6 ) );
+		tpi.TryBuild( 1, out var shop );
+		var start = tpi.Balance;
+		Assert.IsTrue( tpi.TryBuy( shop!.Id, 100, out var paid ) );
+		Assert.AreEqual( 10, paid );
+		Assert.AreEqual( start + 10, tpi.Balance, "the takings are credited at once and the goods are not debited" );
+		Assert.AreEqual( 3L, shop.PendingMonthlyCosts, "50 x 0.01 = 0.5 of the cost of goods 6 for a shop type outside 1, 5, 6, 7, 8" );
+		tpi.TryBuy( shop.Id, 100, out _ );
+		Assert.AreEqual( 6L, shop.PendingMonthlyCosts );
+		Assert.AreEqual( 6L, shop.CostsRing.Today, "the daily ring is raised at the sale" );
+		tpi.AdvanceMonths( 1 );
+		Assert.AreEqual( start + 20 - 20 - 6, tpi.Balance, "the month debits the running cost 20 and the booked goods 6" );
+		Assert.AreEqual( 0L, shop.PendingMonthlyCosts, "the accumulator is cleared" );
+		Assert.AreEqual( 26L, shop.CostsLastMonth );
+		Assert.AreEqual( 20 - 26L, shop.TotalProfit, "takings 20 minus the month's costs 26" );
+		var tpw = TpwEconomy( Shop( 1, 10, 6 ) );
+		tpw.TryBuild( 1, out var same );
+		var before = tpw.Balance;
+		tpw.TryBuy( same!.Id, 100, out _ );
+		Assert.AreEqual( before + 10 - 6, tpw.Balance, "Theme Park World debits the cost of goods at the sale" );
+		Assert.AreEqual( 0L, same.PendingMonthlyCosts );
+	}
+
+	[TestMethod]
+	public void ABrokenObjectStillPaysTheCostsItBookedButNoRunningCost()
+	{
+		// [BIN:TPI-EXE:0x5DF029 month accumulator] the accumulator is added whatever the ride state; only the running cost is 0 in state 1 or 4
+		var tpi = Economy( Shop( 1, 10, 6 ) );
+		tpi.TryBuild( 1, out var shop );
+		tpi.TryBuy( shop!.Id, 100, out _ );
+		shop.IsBrokenDown = true;
+		var before = tpi.Balance;
+		tpi.AdvanceMonths( 1 );
+		Assert.AreEqual( before - 3, tpi.Balance, "only the booked goods" );
+	}
+
+	[TestMethod]
+	public void TheShopCostOfGoodsFollowsTheExecutablesRoutine()
+	{
+		// [BIN:TPI-EXE:0x5E6260 shop cost] the share is 1 for the shop types 1, 5, 6, 7 and 8, else the third byte x 0.01 (0.5 built); the quality and ingredient terms are (byte - 50) x 0.005 clamped to +-0.5, the ingredient negated for 1 and 3; 0 becomes 1
+		Assert.AreEqual( 100, ThemeParkIncGoodsCost.Of( 100, 50, 50, 50, 0, 1 ), "type 1: share 1" );
+		Assert.AreEqual( 50, ThemeParkIncGoodsCost.Of( 100, 50, 50, 50, 0, 0 ), "other types: the built third byte 50 gives 0.5" );
+		Assert.AreEqual( 150, ThemeParkIncGoodsCost.Of( 100, 255, 50, 50, 0, 5 ), "quality 255: +0.5 (clamped from 1.025)" );
+		Assert.AreEqual( 75, ThemeParkIncGoodsCost.Of( 100, 0, 50, 50, 0, 5 ), "quality 0: -0.25" );
+		Assert.AreEqual( 50, ThemeParkIncGoodsCost.Of( 100, 0, 0, 50, 0, 5 ), "both terms -0.25" );
+		Assert.AreEqual( 100, ThemeParkIncGoodsCost.Of( 100, 0, 0, 50, 1, 5 ), "the special ingredient 1 negates the ingredient term: -0.25 + 0.25" );
+		Assert.AreEqual( 100, ThemeParkIncGoodsCost.Of( 100, 0, 0, 50, 3, 7 ), "and 3 does" );
+		Assert.AreEqual( 50, ThemeParkIncGoodsCost.Of( 100, 0, 0, 50, 2, 7 ), "and 2 does not" );
+		Assert.AreEqual( 1, ThemeParkIncGoodsCost.Of( 0, 50, 50, 50, 0, 1 ), "a cost of 0 books 1" );
+		Assert.AreEqual( 1, ThemeParkIncGoodsCost.Of( 100, 50, 50, 0, 0, 0 ), "a third byte of 0 gives a share of 0, which also books 1" );
+	}
+
+	private static EconomyObjectInfo PaidRide( int id, int price ) =>
+		Ride( id, 1000, 10 ) with { RidePricePerUse = price, ExpectedPrice = 25 };
+
+	[TestMethod]
+	public void ARideChargesItsFeeAtOnceAndRefusesAGuestWithoutTheCash()
+	{
+		// [BIN:TPI-EXE:0x6126D0 (called at 0x61193B inside 0x6118D0, from 0x619A8E) fare taken] the recorded fee (the thing's price, initially UsageInfo.InitPricePerUse) is credited to the bank at once and enters the object's takings; the price test refuses a purse below it (0x61243A)
+		var tpi = Economy( PaidRide( 1, 20 ) );
+		tpi.TryBuild( 1, out var ride );
+		Assert.AreEqual( 20, ride!.Price, "the thing's price starts as InitPricePerUse" );
+		var start = tpi.Balance;
+		Assert.IsFalse( tpi.TryPayRideFare( ride.Id, 19, out var refused ) );
+		Assert.AreEqual( 0, refused );
+		Assert.AreEqual( start, tpi.Balance );
+		Assert.IsTrue( tpi.TryPayRideFare( ride.Id, 20, out var paid ) );
+		Assert.AreEqual( 20, paid );
+		Assert.AreEqual( start + 20, tpi.Balance );
+		Assert.AreEqual( 20L, ride.TakingsThisMonth );
+		Assert.AreEqual( 20L, ride.TotalProfit );
+		var free = Economy( PaidRide( 2, 0 ) );
+		free.TryBuild( 2, out var cheap );
+		Assert.IsTrue( free.TryPayRideFare( cheap!.Id, 0, out var none ) );
+		Assert.AreEqual( 0, none, "a free ride takes nothing" );
+		var tpw = TpwEconomy( PaidRide( 1, 20 ) );
+		tpw.TryBuild( 1, out var same );
+		Assert.AreEqual( 0, same!.Price, "Theme Park World's rides are free whatever the key" );
+		Assert.IsTrue( tpw.TryPayRideFare( same.Id, 0, out var tpwPaid ) );
+		Assert.AreEqual( 0, tpwPaid );
+	}
+
+	private static (GuestSimulation Simulation, GuestEconomyBridge Bridge, RideVisitorBridge Ride, ParkObjectState State, ParkEconomy Economy) FareRig( bool themeParkInc, int price = 20, RideVisitorKind kind = RideVisitorKind.Ride )
+	{
+		var grid = new GuestPathGrid( 16, 16 );
+		for ( var x = 0; x < 12; x++ )
+			grid.SetPath( x, 5, true );
+		var settings = GuestTests.CreateSettings();
+		settings.ExitLevelSeconds = 10_000;
+		var simulation = new GuestSimulation( grid, settings, 5 ) { ArrivalsEnabled = false };
+		var info = kind switch
+		{
+			RideVisitorKind.Shop => Shop( 1, price, 6 ),
+			RideVisitorKind.Sideshow => Shop( 1, price, 6 ) with { Kind = ParkObjectKind.Sideshow, ChanceOfLosingPercent = 0 },
+			_ => PaidRide( 1, price )
+		};
+		var economy = themeParkInc ? Economy( info ) : TpwEconomy( info );
+		economy.TryBuild( 1, out var state );
+		var ride = new RideVisitorBridge( 1, "Ride", kind, 1, 60, 30, price: price ) { ExitCell = (6, 5) };
+		ride.Sideshow = new SideshowTerms( state!.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
+		simulation.Register( ride );
+		var bridge = new GuestEconomyBridge( () => economy, simulation );
+		bridge.Link( 1, state.Id );
+		simulation.Payments = bridge;
+		return (simulation, bridge, ride, state, economy);
+	}
+
+	[TestMethod]
+	public void ARideFareMovesAtTheExitAndAUseCutShortPaysNothing()
+	{
+		// [BIN:TPI-EXE:0x6126D0 fare taken] the fee is recorded at the call and taken in the exit's payment step (0x61193B, inside 0x6118D0, from 0x619A8E)
+		var (simulation, _, ride, state, economy) = FareRig( themeParkInc: true );
+		var host = (IRideVisitorHost)simulation;
+		var guest = simulation.SpawnInPark( 6, 5 );
+		guest.Money = 100;
+		var balance = economy.Balance;
+		host.OnVisitorBoarded( ride, guest.Id );
+		Assert.AreEqual( (100L, balance), (guest.Money, economy.Balance), "boarding moves no money" );
+		host.OnVisitorReleased( ride, guest.Id );
+		Assert.AreEqual( (80L, balance + 20), (guest.Money, economy.Balance), "the exit takes the fee" );
+		Assert.AreEqual( 20L, state.TakingsThisMonth );
+		// a second visit that never reaches the exit (a breakdown, a demolition) pays nothing
+		var other = simulation.SpawnInPark( 7, 5 );
+		other.Money = 100;
+		host.OnVisitorBoarded( ride, other.Id );
+		Assert.AreEqual( (100L, balance + 20), (other.Money, economy.Balance) );
+		simulation.Unregister( ride );
+		Assert.AreEqual( (100L, balance + 20), (other.Money, economy.Balance), "the demolition with the guest on board takes nothing" );
+		Assert.AreEqual( 20L, state.TakingsThisMonth );
+		// the ride is built again: the guest's next completed visit charges exactly one fee (the dropped record is gone)
+		simulation.Register( ride );
+		host.OnVisitorBoarded( ride, other.Id );
+		host.OnVisitorReleased( ride, other.Id );
+		Assert.AreEqual( (80L, balance + 40), (other.Money, economy.Balance), "exactly one fee" );
+		var tpw = FareRig( themeParkInc: false );
+		var tpwGuest = tpw.Simulation.SpawnInPark( 6, 5 );
+		tpwGuest.Money = 100;
+		((IRideVisitorHost)tpw.Simulation).OnVisitorBoarded( tpw.Ride, tpwGuest.Id );
+		Assert.AreEqual( 100L, tpwGuest.Money, "Theme Park World's rides are free" );
+	}
+
+	[TestMethod]
+	public void ARejectedDeferredAdmissionDoesNotBecomeAFreeShopSaleOrSideshowPlay()
+	{
+		foreach ( var kind in new[] { RideVisitorKind.Shop, RideVisitorKind.Sideshow } )
+		{
+			var (simulation, _, ride, state, economy) = FareRig( true, price: 0, kind: kind );
+			var host = (IRideVisitorHost)simulation;
+			var guest = simulation.SpawnInPark( 6, 5 );
+			guest.Money = 10;
+			Assert.IsFalse( simulation.TooExpensive( guest, ride ), "the stand-point check admits the initial free price" );
+			// Model the live-price change after the stand-point check but before the script consumes VAR_LETMEON.
+			// OnVisitorBoarded historically ignores a failed payment: this regression protects the new deferred booking, not that existing admission policy.
+			state.Price = 20;
+			var balance = economy.Balance;
+			host.OnVisitorBoarded( ride, guest.Id );
+			Assert.IsFalse( guest.PendingVisitSettlement, kind.ToString() );
+			Assert.AreEqual( 10L, guest.Money, "a rejected deferred admission takes no fee" );
+			host.OnVisitorReleased( ride, guest.Id );
+			Assert.AreEqual( balance, economy.Balance, kind.ToString() );
+			Assert.AreEqual( 0L, state.PendingMonthlyCosts, "a refused admission cannot book goods or a prize" );
+			Assert.AreEqual( 0L, state.CustomersThisMonth, "a refused admission is not a zero-price sale/play" );
+			Assert.AreEqual( 0L, state.CostsRing.Today );
+		}
+	}
+
+	[TestMethod]
+	public void SuccessfulDeferredVisitsIncludingFreeOnesSettleOnlyOnce()
+	{
+		foreach ( var kind in new[] { RideVisitorKind.Shop, RideVisitorKind.Sideshow } )
+			foreach ( var price in new[] { 0, 10 } )
+			{
+				var (simulation, _, ride, state, economy) = FareRig( true, price, kind );
+				var host = (IRideVisitorHost)simulation;
+				var guest = simulation.SpawnInPark( 6, 5 );
+				guest.Money = 100;
+				var balance = economy.Balance;
+				host.OnVisitorBoarded( ride, guest.Id );
+				Assert.IsTrue( guest.PendingVisitSettlement, "a free admitted visit still needs settlement" );
+				Assert.AreEqual( 0L, state.CustomersThisMonth, "boarding books nothing" );
+				host.OnVisitorReleased( ride, guest.Id );
+				Assert.IsFalse( guest.PendingVisitSettlement );
+				Assert.AreEqual( balance + price, economy.Balance );
+				Assert.AreEqual( 1L, state.CustomersThisMonth );
+				var costs = state.PendingMonthlyCosts;
+				Assert.AreEqual( kind == RideVisitorKind.Shop ? 3L : 6L, costs );
+				// Even if a host repeats its completion callback, settlement must not charge/book again.
+				host.OnVisitorReleased( ride, guest.Id );
+				Assert.AreEqual( balance + price, economy.Balance );
+				Assert.AreEqual( 1L, state.CustomersThisMonth );
+				Assert.AreEqual( costs, state.PendingMonthlyCosts );
+			}
+	}
+
+	[TestMethod]
+	public void AGuestWithoutTheCashRefusesAThemeParkIncRideOnlyAndOnlyThere()
+	{
+		// [BIN:TPI-EXE:0x61243A cash test] the purse test applies to a ride with a fee in Theme Park Inc and to nothing else
+		var inc = FareRig( themeParkInc: true );
+		var poor = inc.Simulation.SpawnInPark( 6, 5 );
+		poor.Money = 19;
+		Assert.IsTrue( inc.Simulation.TooExpensive( poor, inc.Ride ) );
+		poor.Money = 20;
+		Assert.IsFalse( inc.Simulation.TooExpensive( poor, inc.Ride ) );
+		var facility = new RideVisitorBridge( 2, "Cabin", RideVisitorKind.Facility, 1, 60, 30, price: 5 ) { ExitCell = (6, 5) };
+		inc.Simulation.Register( facility );
+		poor.Money = 0;
+		Assert.IsFalse( inc.Simulation.TooExpensive( poor, facility ), "a facility is not a ride" );
+		var tpw = FareRig( themeParkInc: false );
+		var broke = tpw.Simulation.SpawnInPark( 6, 5 );
+		broke.Money = 0;
+		Assert.IsFalse( tpw.Simulation.TooExpensive( broke, tpw.Ride ), "Theme Park World's ride, whatever price an import carried" );
+	}
+
+	[TestMethod]
+	public void TheCatalogueReadsARidesFeeFromItsPriceKey()
+	{
+		var info = EconomyObjectCatalog.FromSettings( new SamSettings( new[] { SamDocument.Parse( "Info.Id 1101\nInfo.Name Test\nUsageInfo.InitPricePerUse 20\nInfo.ExpectedPrice 25\nUpgrades[0].CostOfUpgrade 1000\n", "ride.sam" ) } ), ParkObjectKind.Ride, "/x" );
+		Assert.AreEqual( 20, info.RidePricePerUse );
+		Assert.IsNull( info.PricePerUse, "the shop and sideshow price words stay unset for a ride" );
+		var shop = EconomyObjectCatalog.FromSettings( new SamSettings( new[] { SamDocument.Parse( "Info.Id 1102\nInfo.Name Shop\nUsageInfo.InitPricePerUse 10\nUpgrades[0].CostOfUpgrade 100\n", "shop.sam" ) } ), ParkObjectKind.Shop, "/x" );
+		Assert.AreEqual( 0, shop.RidePricePerUse );
+		Assert.AreEqual( 10, shop.PricePerUse );
+	}
+
 	[TestMethod]
 	public void AParkWithoutStaffWearsNoToiletAndDropsNoLitter()
 	{
@@ -218,6 +453,16 @@ public class ThemeParkIncEconomyTests
 	}
 
 	[TestMethod]
+	public void TheHeadlessHandymanDispatchOfAParkWithoutStaffReadsNoStaffRole()
+	{
+		// the slice has no staff world, so every park turn ends in the headless dispatch; its settings hold no roles (indexing them threw on the science smoke)
+		var economy = Economy();
+		Assert.AreEqual( 0, economy.Settings.Roles.Count );
+		economy.DispatchHandymen();
+		Assert.AreEqual( 0, economy.Staff.Members.Count );
+	}
+
+	[TestMethod]
 	public void TheScrapValueRefundsByAgeAndRefusesACondemnedObjectOnlyForThemeParkInc()
 	{
 		var tpi = Economy( Ride( 1, 1000, 0 ) );
@@ -244,6 +489,29 @@ public class ThemeParkIncEconomyTests
 		same.LifeGauge = 0;
 		Assert.AreEqual( 100, tpw.ScrapPercent( same ), "Theme Park World has no state-4 branch: its rule is unchanged" );
 		Assert.AreEqual( 1000L, tpw.Sell( same.Id ) );
+	}
+
+	[TestMethod]
+	public void AnObjectThatRequiresWateringTakesItsScrapPercentFromItsScriptCondition()
+	{
+		// [BIN:TPI-EXE:0x5E75F9 scrap percentage] the thing-flag branch comes before the condemned test: 100, 67, 34, 0 for the counts 0 to 3, then 1 + ftol((3 - n) x 33.333332)
+		CollectionAssert.AreEqual( new[] { 100, 67, 34, 0, -32, -65 }, Enumerable.Range( 0, 6 ).Select( ParkEconomy.ThemeParkIncWateringPercent ).ToArray() );
+		var plant = new EconomyObjectInfo( 1, "Plant", ParkObjectKind.Feature, ResearchCategory.Ride, 7, new List<UpgradeLevelInfo> { new( 0, 1000, 0, 0, 0, new[] { 50, 30, 20, 10 } ) }, null, null, null, 0, 0, 0, 0, 0, 0, "/x", RequiresWatering: true );
+		var tpi = Economy( plant );
+		tpi.TryBuild( 1, out var item );
+		Assert.AreEqual( 100, tpi.ScrapPercent( item! ), "no script: the lookup answers 0, so 100 percent" );
+		item!.ScriptCondition = 2;
+		Assert.AreEqual( 34, tpi.ScrapPercent( item ) );
+		Assert.AreEqual( 340L, tpi.ScrapValue( item ) );
+		item.ScriptCondition = 3;
+		Assert.AreEqual( 0, tpi.ScrapPercent( item ), "a dead plant refunds nothing" );
+		item.ScriptCondition = 0;
+		item.StateWord.Set( RideObjectStates.Condemned );
+		Assert.AreEqual( 100, tpi.ScrapPercent( item ), "the flag branch precedes the condemned test" );
+		var tpw = TpwEconomy( plant );
+		tpw.TryBuild( 1, out var same );
+		same!.ScriptCondition = 2;
+		Assert.AreEqual( 100, tpw.ScrapPercent( same ), "Theme Park World has no such branch" );
 	}
 
 	[TestMethod]

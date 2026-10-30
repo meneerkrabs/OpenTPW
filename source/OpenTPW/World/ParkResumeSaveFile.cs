@@ -693,7 +693,11 @@ internal static class ParkResumeSaveFile
 		if ( snapshot.SnowCover is { } snowCover )
 			Require( SnowCover.IsValidSavedCover( snowCover ), $"the snow cover {snowCover} is not a number above 0 and at most 1" );
 		if ( snapshot.MessageTube is { } tube )
+		{
 			Require( tube.Problem() == null, $"the saved message tube is invalid: {tube.Problem()}" );
+			Require( !tube.Rows.Any( row => row.OfferReleaseDelayMs != null ) || snapshot.Economy.Objectives.Current is { Accepted: false },
+				"a pending offer removal has no unanswered challenge" );
+		}
 		if ( snapshot.Gate is { } gate )
 			Require( gate.LastObservedTurn >= 0, $"the park gate's last observed turn {gate.LastObservedTurn} is negative" );
 		if ( snapshot.ParkName is { } parkName )
@@ -1045,7 +1049,8 @@ internal static class ParkResumeSaveFile
 			Require( TrackCellTypes.IsWalkable( cell.Type ) || cell.Type == TrackCellTypes.Extension, $"track cell ({cell.X}, {cell.Y}) has type {cell.Type}, which is no track type" );
 			Require( (cell.Mask & ~0x55) == 0, $"track cell ({cell.X}, {cell.Y}) has connection bits 0x{cell.Mask:X}, outside 0x55" );
 			Require( cell.Type != TrackCellTypes.Extension || (uint)cell.Parent < (uint)(width * height), $"track extension cell ({cell.X}, {cell.Y}) names parent {cell.Parent}, outside the cell map" );
-			Require( mapTypes.TryGetValue( (cell.X, cell.Y), out var mapType ) && mapType == cell.Type, $"track cell ({cell.X}, {cell.Y}) of type {cell.Type} is not that type in the saved cell map" );
+			// the cell map's byte shows the tile's type, or the path or queue cell that lies over the tile (ParkCellMap.PrimaryTypeAt)
+			Require( mapTypes.TryGetValue( (cell.X, cell.Y), out var mapType ) && (mapType == cell.Type || mapType is (byte)ParkCellType.Path or (byte)ParkCellType.Queue), $"track cell ({cell.X}, {cell.Y}) of type {cell.Type} is not that type in the saved cell map" );
 			Require( (cell.Link & ~0x55) == 0 && (cell.Family is 0 or (int)TrackFamily.Kart or (int)TrackFamily.Water) && cell.Piece is >= 0 and < TrackPieceSelector.WaterPieceCount
 				&& cell.Rotation is 0 or 90 or 180 or 270 && cell.Overlap >= 0 && cell.Segment >= 0 && (uint)cell.Owner <= (uint)(width * height),
 				$"track cell ({cell.X}, {cell.Y}) holds a link, piece, rotation, overlap, segment or owner outside the layer's ranges" );

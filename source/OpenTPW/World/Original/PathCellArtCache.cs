@@ -3,7 +3,7 @@ namespace OpenTPW;
 /// <summary>
 /// CPU path tiles used by the procedural compositor. Like the independent GPU copies, these must be decoded again after a completed texture-pack switch.
 /// A generation identifies their pixels even when a replacement has the same dimensions, texture key and cell word.
-/// Unreadable/malformed replacements retain the previous art, like the GPU switch; a decoder's null result explicitly removes it. Permission and fatal failures propagate.
+/// Unreadable/malformed replacements retain the previous art, like the GPU switch; a decoder's null result explicitly removes it. Only an out-of-memory failure propagates.
 /// </summary>
 internal sealed class PathCellArtCache : IDisposable
 {
@@ -33,10 +33,10 @@ internal sealed class PathCellArtCache : IDisposable
 				art = decode( texture );
 				artGeneration = generation;
 			}
-			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+			catch ( Exception exception ) when ( exception is not OutOfMemoryException )
 			{
-				// STB reports malformed images as InvalidOperationException. Contain only the per-tile decoder, not the resync callback;
-				// access/security errors and OutOfMemoryException remain observable. A failed tile is attempted once in this generation.
+				// Any decoder failure (malformed image, IO, access or security) degrades this tile only, as TexturePackSwitch.Pump does; it must not break the level load,
+				// path edits or later PackChanged subscribers. Only OutOfMemoryException stays observable. A failed tile is attempted once in this generation.
 				Log?.Warning( $"Path texture {texture} could not be decoded ({exception.GetType().Name}: {exception.Message}); {(art != null ? "keeping its previous pixels" : "using procedural ground")}." );
 			}
 			tiles[texture] = cached = new Tile( art, generation, artGeneration );

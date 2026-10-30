@@ -106,17 +106,48 @@ public class PathCellArtCacheTests
 		Assert.IsNull( cache.Get( 0, 0x180 ), "failure falls back to the most recent state, not older removed art" );
 	}
 
+	/// <summary>
+	/// A source-order contract (a full <c>Level.Render</c> needs a GPU): the static path batches of the camera modes that suspend procedural texturing are built before the
+	/// frame's entity snapshot, so the first suspended frame after a path edit draws them instead of hiding the procedural cells with nothing to replace them.
+	/// </summary>
 	[TestMethod]
-	public void FatalAndPermissionFailuresAreNotConvertedToMissingOrStaleArt()
+	public void TheCameraPathPartsAreBuiltBeforeTheLevelTakesItsEntitySnapshot()
 	{
-		static void Escapes<T>( T failure ) where T : Exception
+		var root = AppContext.BaseDirectory;
+		while ( root != null && !File.Exists( Path.Combine( root, "source", "OpenTPW", "World", "Level.cs" ) ) )
+			root = Path.GetDirectoryName( root );
+		Assert.IsNotNull( root, "the repository root is above the test binaries" );
+		var level = File.ReadAllText( Path.Combine( root, "source", "OpenTPW", "World", "Level.cs" ) ).ReplaceLineEndings( "\n" );
+		var render = level[level.IndexOf( "public void Render()", StringComparison.Ordinal )..];
+		var prepare = render.IndexOf( "OriginalTerrain?.PrepareRender();", StringComparison.Ordinal );
+		var snapshot = render.IndexOf( "Entity.All.ToArray()", StringComparison.Ordinal );
+		Assert.IsTrue( prepare >= 0 && snapshot > prepare, "PrepareRender runs before the snapshot of Entity.All" );
+
+		var terrain = File.ReadAllText( Path.Combine( root, "source", "OpenTPW", "World", "Original", "OriginalTerrain.cs" ) ).ReplaceLineEndings( "\n" );
+		var onRender = terrain[terrain.IndexOf( "protected override void OnRender()", StringComparison.Ordinal )..];
+		onRender = onRender[..onRender.IndexOf( "\n\t}\n", StringComparison.Ordinal )];
+		Assert.IsFalse( onRender.Contains( "BuildStaticPathParts", StringComparison.Ordinal ) || onRender.Contains( "RebuildHeightfieldPart", StringComparison.Ordinal ), "OnRender no longer builds the static parts, which would miss the snapshot" );
+	}
+
+	[TestMethod]
+	public void OnlyOutOfMemoryEscapesTheDecoderBoundary()
+	{
+		using ( var cache = new PathCellArtCache( _ => throw new OutOfMemoryException( "synthetic, no allocation pressure" ), () => { } ) )
+			Assert.ThrowsException<OutOfMemoryException>( () => cache.Get( 0, 0x180 ) );
+		// access, security and any other decode failure degrade the tile to missing art, or keep its last good pixels, and never escape
+		foreach ( Exception failure in new Exception[] { new UnauthorizedAccessException( "synthetic access denial" ), new SecurityException( "synthetic security denial" ), new NotSupportedException( "synthetic" ) } )
 		{
-			using var cache = new PathCellArtCache( _ => throw failure, () => { } );
-			Assert.AreSame( failure, Assert.ThrowsException<T>( () => cache.Get( 0, 0x180 ) ) );
+			var fail = false;
+			using var cache = new PathCellArtCache( _ => fail ? throw failure : (new byte[16], 2, 2), () => { } );
+			var good = cache.Get( 0, 0x180 );
+			Assert.IsNotNull( good );
+			fail = true;
+			CompleteSwitch();
+			var kept = cache.Get( 0, 0x180 );
+			Assert.IsNotNull( kept, "the last good pixels stay after a failed decode" );
+			using var first = new PathCellArtCache( _ => throw failure, () => { } );
+			Assert.IsNull( first.Get( 1, 0x180 ), "a tile that never decoded is missing" );
 		}
-		Escapes( new OutOfMemoryException( "synthetic, no allocation pressure" ) );
-		Escapes( new UnauthorizedAccessException( "synthetic access denial" ) );
-		Escapes( new SecurityException( "synthetic security denial" ) );
 	}
 
 	[TestMethod]

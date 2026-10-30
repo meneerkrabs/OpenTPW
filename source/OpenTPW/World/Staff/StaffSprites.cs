@@ -41,20 +41,22 @@ public static class StaffSpriteRules
 	/// Steps per second of a sprite that keeps the interval it was created with, 62 ms (the dangling cursor sprite and the hire window's figure). A walking member's interval comes from
 	/// <see cref="SpritePlayer"/>.
 	/// </summary>
-	// [APPROX:GUEST-016] the 'moving' test (a position change within the last 0.6 s, 1.3 s for members the world moves a cell per second), the smoothing of the drawn position and the step length OpenTPW takes from the displacement between two position changes stand in for tp.exe's: the walk step 0x4FA2A0 takes the length of the person's own step of the turn (evidence needed: how the drawn position follows the movement position, the sub-turn position 0x004F9F00 gives the sprite each frame)
+	// [APPROX:GUEST-016] SpritePlayer ticks once per renderer call, one step past due, where tp.exe's scheduler (0x475360) runs on even 31 ms substeps; the walk step's own interval (0x4FA2A0) and the sub-turn point (0x4F9F00) are ported
+	// [BIN:TPW-EXE:0x004FA2A0 walk step interval] the sprite's interval is the step's own length times 0x007006E8, doubled unless the thing is a guest or a guard with a speed bonus, as clamp(trunc(62 / v), 0, 250) (0x004D41D0)
 	public const float FramesPerSecond = 1000f / SpritePlayer.DefaultInterval;
 
 	/// <summary>The slot an entertainer performs when the bank lists no performance (every shipped entertainer bank lists slot 4).</summary>
 	public const int DefaultPerformanceSlot = 4;
 
 	/// <summary>The key a person's sprite bank derives from: the same for the candidate and the member it becomes.</summary>
-	// [APPROX:GUEST-014] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010): OpenTPW keeps the drawn variant on the candidate and its member (KeyOf), but a member of an original save carries none (the staff serializer saves no variant: its bank is (NameIndex + Id) modulo the folder's banks, in file order, and so is an older save's; the loaded banks are GUEST-020)
+	// [BIN:TPW-EXE:0x541f70 sprite variant draw] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010): OpenTPW keeps the drawn variant on the candidate and its member (KeyOf)
+	// [BIN:TPW-EXE:0x4f8b10 saved sprite variant] a member of an original save takes the saved mSpriteID modulo the role's banks (the serializer saves it and reduces it by the category's bank count on load); the name-and-id key below is only for a candidate or member of an OpenTPW park save from before the variant was kept (the loaded banks are GUEST-020)
 	public static int VariantKey( int nameIndex, int id ) => (nameIndex + id) & int.MaxValue;
 
 	/// <summary>The key a candidate's sprite bank derives from: its variant (the drawn or saved one), else the name-and-id key of a pool from before the variant was kept.</summary>
 	public static int KeyOf( StaffCandidate candidate ) => candidate.Variant >= 0 ? candidate.Variant : VariantKey( candidate.NameIndex, candidate.Id );
 
-	/// <summary>The key a member's sprite bank derives from: the variant it was hired with, else the name-and-id key (a member of an original save carries none).</summary>
+	/// <summary>The key a member's sprite bank derives from: the variant it was hired with, else the name-and-id key (a member of an OpenTPW park save from before the variant was kept).</summary>
 	public static int KeyOf( StaffMember member ) => member.Variant >= 0 ? member.Variant : VariantKey( member.NameIndex, member.Id );
 
 	/// <summary>Index of a variant's bank among <paramref name="count"/> banks.</summary>
@@ -70,8 +72,22 @@ public static class StaffSpriteRules
 		_ => null
 	};
 
-	// [APPROX:GUEST-020] every bank of a role's folder is loaded in file order whatever the graphics setting: tp.exe's 0x541310 flags the staff folders handymen, mechanics, guards and researchers and stops them at the limit of 0x41AA40 (1 bank on the lowest graphics setting 0x7858D0 = 0, else 2; the shipped mechanics folder holds two banks, the others one), takes the banks in the archive's enumeration order (0x41D570, 0x41D710) and leaves the entertainers' folders unflagged (evidence needed: whether the graphics setting changes while a park runs)
+	// [BIN:TPW-EXE:0x541310 staff bank load] the banks of a folder are sorted by file name (0x541210: a bubble sort over the name compare 0x424CC0, the case-insensitive _stricmp 0x67DF40, which GuestSpriteAtlas.LoadSets does) and the folders handymen, mechanics, guards and researchers (0x7640C8..0x7640A8) stop at the staff limit 0x41AA40; the entertainers' theme folders are not flagged and load whole; the load chain 0x54E360 -> 0x540900 -> 0x541D90 -> 0x541310 is reached from the program's start only (0x45A960, 0x5503F0), so one run keeps its banks (StaffSpriteSet.Load takes the limit once, when a level builds its staff)
+	// [APPROX:GUEST-020] the staff bank limit follows the preset's GameOptions.NUMKIDS (the original's detail word 0x7858D0, read only by 0x41A9D0 and 0x41AA40) and not the hardware-class path of 0x41AA40 (the flags word 0x79D86C a configuration file sets, class 0x4000: 1 for the memory word 0x20, 2 for 8 or 0x10, 0 for any other), which has no counterpart here; the original's stored variant is drawn modulo the loaded count (0x541F70 divides by the entry +8 that 0x541E7D fills from 0x541310's result), OpenTPW's modulo the static folder count with the reduction at drawing only, so the simulation stays independent of graphics; and a park started after a settings change loads the limit its level start reads, where the original reads it at the program's start
 	// [BIN:TPW-EXE:0x763f88 sprite categories] by thing type: handymen Generic\Handymen SPR_HA; mechanics Generic\Mechanics SPR_FA, SPR_OM; guards Generic\Guards SPR_GU; researchers Generic\Researchers SPR_RE; entertainers per theme: Jungle DI, EX, NA; Fantasy FL, GN, LA; Hallow DR, FK, HU; Space MO, SM, SP
+	/// <summary>
+	/// How many banks of a flagged staff folder (handymen, mechanics, guards, researchers) the game loads for a detail word <paramref name="numKids"/> (the preset's <c>GameOptions.NUMKIDS</c>): 1 for 0, else 2.
+	/// </summary>
+	// [BIN:TPW-EXE:0x41AA40 staff bank limit] the jump table 0x41AA84 holds 1 for the word 0 and 2 for 1, 2, 3 and anything above (low.sam 0, med.sam and high.sam 2); the kid sets' own limit 0x41A9D0 takes 2, 4, 6 and 8 from the same word
+	public static int BankLimit( int numKids ) => numKids == 0 ? 1 : 2;
+
+	/// <summary>The limit <paramref name="settings"/> give, or null for no limit: no settings, or a preset whose original file is missing (the data this limit belongs to is then missing too).</summary>
+	public static int? BankLimitOf( IGraphicsSettings? settings ) =>
+		settings != null && settings.GetPresetValues( settings.Current.Preset ) != null ? BankLimit( settings.Detail.NumKids ) : null;
+
+	/// <summary>Whether tp.exe flags a role's folder for the limit (all but the entertainers' theme folders, 0x541310).</summary>
+	public static bool IsBankLimited( StaffType type ) => type != StaffType.Entertainer;
+
 	/// <summary>The sprite folder and banks of a role; entertainers belong to the level's theme (null for an unknown level).</summary>
 	public static StaffBankSet? Banks( StaffType type, string level )
 	{
@@ -104,7 +120,7 @@ public static class StaffSpriteRules
 	/// <paramref name="moving"/> is whether the member is being moved now; <paramref name="performances"/> (the bank's performance entries,
 	/// <see cref="SpriteAnimationFile.Performances"/>) give an entertainer's performance.
 	/// </summary>
-	// [APPROX:GUEST-015] tp.exe (0x4D46D0) queues script 13 + (r mod (n − 1)) from a second world draw r, or 13 when n is 1, n being the bank's present performance entries (0x541FA0); scripts 13..16 of the table 0x75A418 hold the entry indices 0..3, so a full bank never plays its fourth entry, and 0x475B80 runs the entry's program on its slot (StaffScripts.PerformanceFrame plays program 0 with the entry's intro and hold). Every shipped entertainer bank has exactly one entry, so the draw never matters; for a bank of several entries (none shipped) OpenTPW picks by the member's id instead of the draw
+	// [BIN:TPW-EXE:0x004D46D0 performance start] the clip of a performing member is the script its search queued: 13 + (r mod (n − 1)) from the search's second world draw r (StaffMember.PerformanceDraw), 13 when the bank's n present entries (0x541FA0) is 1; scripts 13..16 of the table 0x75A418 hold the entry indices 0..3, and 0x475B80 runs the entry's program on its slot (StaffScripts.PerformanceFrame plays program 0 with the entry's intro and hold). An entertainer of an original save in state 14 has no saved draw: it plays entry 0 until its next performance (GUEST-015 retired)
 	public static StaffClip? SelectClip( StaffMember member, bool moving, IReadOnlyList<SpritePerformance>? performances = null, int performanceCount = 0 )
 	{
 		// a resting member is inside the Staff Room (0x5054d0 state 3 removes the model); a carried one is the dangling sprite instead
@@ -130,7 +146,7 @@ public static class StaffSpriteRules
 			case StaffType.Guard:
 				return member.Job == StaffJob.Escorting ? CatchAndCarry : moving ? (member.Job == StaffJob.Chasing ? Run : Walk) : Stand;
 			default:
-				return member.Job == StaffJob.Performing && !moving ? Perform( member.Id, performances, performanceCount ) : moving ? Walk : Stand;
+				return member.Job == StaffJob.Performing && !moving ? Perform( member.PerformanceDraw, performances, performanceCount ) : moving ? Walk : Stand;
 		}
 	}
 
@@ -140,13 +156,14 @@ public static class StaffSpriteRules
 
 	/// <summary>
 	/// An entertainer's performance clip: entry 0 when the bank has one (or none: <see cref="DefaultPerformanceSlot"/>), else entry
-	/// <paramref name="seed"/> mod (count − 1) as the original's script choice, its slot looping.
+	/// <paramref name="draw"/> mod (count − 1), the original's script choice (the search's second draw, <see cref="StaffMember.PerformanceDraw"/>), its slot looping.
 	/// </summary>
-	public static StaffClip Perform( int seed, IReadOnlyList<SpritePerformance>? performances, int count )
+	// [BIN:TPW-EXE:0x004D47D8 performance script] n = the bank's count of present entries (0x541FA0): 13 when n is 1, else 13 + (draw mod (n - 1)), queued on the member's sprite (0x4217F0); a full bank of four never plays its fourth entry
+	public static StaffClip Perform( uint draw, IReadOnlyList<SpritePerformance>? performances, int count )
 	{
 		if ( performances == null || count <= 0 || performances.Count == 0 )
 			return new StaffClip( 13, DefaultPerformanceSlot );
-		var entry = count == 1 ? 0 : (int)((uint)seed % (uint)(count - 1));
+		var entry = count == 1 ? 0 : (int)(draw % (uint)(count - 1));
 		var slot = performances[Math.Min( entry, performances.Count - 1 )].Slot;
 		return new StaffClip( 13 + entry, slot is >= 0 and < SpriteAnimationFile.SlotCount ? slot : DefaultPerformanceSlot, performances[Math.Min( entry, performances.Count - 1 )].Intro, performances[Math.Min( entry, performances.Count - 1 )].Hold );
 	}
@@ -165,9 +182,12 @@ public static class StaffSpriteRules
 	/// </summary>
 	// [BIN:TPW-EXE:0x0074F758 hire figure script] register 0x10 (the flags +0xC4) = 0x51000 (0x40000: a screen-space sprite, no camera turn), slot +0xB4 = 1 (0x004768B0), register 0xF (the direction +0xC0) = 5 (0x004766D0), then the frames 0..7 (0x00476940, one per script step) and back to the start (0x00476020)
 	// [BIN:TPW-EXE:0x00542010 sprite draw] the direction is (+0xC0 + 0, a screen sprite taking no camera turn) & 7; above the bank's direction count − 1 it is mirrored and becomes 8 − direction
-	public static (int Slot, int Direction, bool Mirror, int Step) Portrait( float elapsed, int directions )
+	public static (int Slot, int Direction, bool Mirror, int Step) Portrait( float elapsed, int directions ) => PortraitAtStep( (int)MathF.Max( 0, elapsed * FramesPerSecond ), directions );
+
+	/// <summary>The slot, direction, mirroring and frame of the hire figure's <paramref name="steps"/>-th script frame (frame <c>steps</c> mod 8; the first FRAME of the script is step 0).</summary>
+	public static (int Slot, int Direction, bool Mirror, int Step) PortraitAtStep( int steps, int directions )
 	{
-		var step = (int)MathF.Max( 0, elapsed * FramesPerSecond ) % PortraitFrames;
+		var step = Math.Max( 0, steps ) % PortraitFrames;
 		var direction = PortraitDirection;
 		var mirror = direction > directions - 1;
 		return (PortraitSlot, mirror ? 8 - direction : direction, mirror, step);
@@ -208,7 +228,8 @@ public sealed class StaffSpriteSet
 	public static StaffSpriteSet Empty { get; } = new( Array.Empty<GuestSpriteAtlas>(), new (int, int)[RoleCount] );
 
 	/// <summary>Loads the banks of every role for a level; a role whose folder is missing from the game data has none.</summary>
-	public static StaffSpriteSet Load( string level )
+	/// <param name="bankLimit">The banks a flagged folder loads (<see cref="StaffSpriteRules.BankLimit"/>); null loads them all.</param>
+	public static StaffSpriteSet Load( string level, int? bankLimit = null )
 	{
 		var atlases = new List<GuestSpriteAtlas>();
 		var ranges = new (int First, int Count)[RoleCount];
@@ -218,6 +239,8 @@ public sealed class StaffSpriteSet
 				continue;
 			// [BIN:TPW-EXE:0x0046C730 staff tool enter] the hire and carry tools' sprite is script 0x15 (0x0074ED98, slot 6 frames 0-3 looping) of the role's sprite type (0x00475A10: mechanics 6, handymen 5, entertainers 4, guards 7, researchers 8; table 0x00763F88) with the candidate's variant (+0x11): the person's own bank
 			var banks = GuestSpriteAtlas.LoadSets( set.Folder, $"staff-{type.ToString().ToLowerInvariant()}" );
+			if ( bankLimit is { } limit && StaffSpriteRules.IsBankLimited( type ) && banks.Count > limit )
+				banks.RemoveRange( limit, banks.Count - limit );
 			ranges[(int)type] = (atlases.Count, banks.Count);
 			atlases.AddRange( banks );
 		}

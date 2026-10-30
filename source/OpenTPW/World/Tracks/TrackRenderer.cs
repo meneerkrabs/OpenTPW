@@ -149,7 +149,6 @@ public sealed class TrackRenderer : IDisposable
 	private int animationVersion = -1;
 	private readonly List<VehicleVisual> visuals = new();
 	private readonly List<(BumpController Controller, BumpVehicle Vehicle)> wanted = new();
-	private float? kartStationHeight;
 	private readonly Func<float, float, float> probe;
 	private TrackCellLayer? probeLayer;
 	private float probeFallback;
@@ -182,10 +181,11 @@ public sealed class TrackRenderer : IDisposable
 	public TrackFamily Family => kit?.Family ?? TrackFamily.Bumper;
 
 	/// <summary>
-	/// The add-on standing on an add-on tile's cell, for the vehicles' height probes: the sampler surface of its model, the matrix from model units of the grid (the probes' x and y)
-	/// to its model's own ground plane, and its base height in model units; null when no add-on object stands on the cell (the tile's piece is sampled then).
+	/// The object standing on a cell, for the vehicles' height probes: the sampler surface of its model, the matrix from model units of the grid (the probes' x and y) to its model's own
+	/// ground plane, and its base height in model units; null when no object stands on the cell. A cell holding no track, an add-on's tile and a station tile have no piece instance and
+	/// are sampled through it (<see cref="SurfaceHeight"/>).
 	/// </summary>
-	public Func<int, int, (TrackSurface Surface, Matrix4x4 GridToModel, float BaseHeight)?>? AddOnSurfaceAt { get; set; }
+	public Func<int, int, (TrackSurface Surface, Matrix4x4 GridToModel, float BaseHeight)?>? ObjectSurfaceAt { get; set; }
 	/// <summary>Tile instances drawn after the last <see cref="Update"/>.</summary>
 	public int TileCount => tiles.Count;
 	/// <summary>Vehicle instances drawn after the last <see cref="Update"/>.</summary>
@@ -611,7 +611,8 @@ public sealed class TrackRenderer : IDisposable
 	/// water rides' <c>wr_ring</c> boats).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0044B410 head draw] the seat's dummy node is found by class 0x80 and its number (0x0044B220); each rider is drawn as the guest's head sprite at that node (0x00475A10), the ADDHEAD mechanism
-	// [APPROX:TRACK-026] the head sprites hang from the dummies through the ride-head renderer (seat order as traced: [BIN:TPW-EXE:0x00549C60] gives rider i of the car's rider list dummy i); 0x44B410 is the PC twin of ADDHEAD (it marks the head record and has 0x475A10 create the head thing; the sprite draw is the shared thing renderer, sizes under the HEADS entries) and the boarding guest drawn between BUMP 1 and the car's creation is not traced
+	// [BIN:TPW-EXE:0x00549C60 seat order] 0x549C60 walks the joining list the vehicle holds (vehicle +0x30, the newest joiner first because the join 0x54AA80 puts a guest at the front) and numbers its nodes 1 to n (node +0xC), looks up the head dummy n of class 0x80 (0x44B220) and hangs the guest's head there (0x44B410, which marks the head record and has 0x475A10 create the head thing, drawn by the shared thing renderer, sizes under the HEADS entries); a node with no dummy keeps head node -1 and is counted all the same (controller +0x60)
+	// [BIN:TPW-EXE:0x0054AA80 joining node] a guest on the joining list is not drawn: the join writes the node {guest, ride, head node -1} (0x54AB11..0x54AB16) and no head hangs before the vehicle takes the list, at its creation (0x549DB0 calls 0x549C60 with the beam flag 0, 0x549FF5) or its load (0x549B80 with 1); the other callers of 0x44B410 are the coaster boarding (0x43B70D), the vehicle's show (0x54900C), the script's ADDHEAD (0x554D13, 0x557EB9) and the flyers (0x55D654). (TRACK-026 retired.)
 	internal void CollectHeads( List<HeadSource> sources, int? onlyAttraction )
 	{
 		foreach ( var visual in visuals )
@@ -635,10 +636,11 @@ public sealed class TrackRenderer : IDisposable
 	/// <summary>
 	/// The height of the surface a vehicle runs on at a model-unit point, as an absolute height in model units, or null when the sampler finds no surface there (the probe
 	/// keeps the vehicle's last height): the object on the probed cell is sampled as the original's <c>0x00450EA0</c> chooses (<see cref="TrackSurface.FromObject"/>): the
-	/// flat pieces, the stations and the bumper rides as the ground plus their header's +0xA0, the hill pieces by their surface faces; a cell with no track is the terrain (<c>0x004527F0</c> at the probe).
+	/// flat pieces and the bumper rides as the ground plus their header's +0xA0, the hill pieces by their surface faces. A cell whose track tile has no piece instance (a station tile, an
+	/// add-on's tile) or that holds no track gives its owner object, sampled in that object's own mode, and no object leaves the probe where it was.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00546280 vehicle height] four probes at ± the vehicle radius along the facing and across it; each probe's cell object (0x00450AC0: the cell's owner, a track cell through 0x0053BF30) is selected (0x00450EA0) and sampled (0x004511A0); a −100 sample keeps the vehicle's previous height (+0xA0); the mean is the height, the front/back and right/left differences the pitch and roll
-	// [APPROX:TRACK-001] a cell with no track gives the terrain where the original samples its owner object (or keeps the previous height without one); the kart stations whose model samples faces (Halloween, space) use the straight piece's floor
+	// [BIN:TPW-EXE:0x00546280 probe without object] a probe whose cell has no object (0x450AC0 answers 0) is never sampled: its height slot holds the vehicle's own +0xA0 from the probe setup (0x5462F8 onward, stored before the lookup), so it adds the previous height to the mean
 	internal float? SurfaceHeight( TrackCellLayer layer, float x, float y )
 	{
 		var cellX = Math.Clamp( (int)MathF.Floor( x / 10 ), 0, layer.Width - 1 );
@@ -653,25 +655,13 @@ public sealed class TrackRenderer : IDisposable
 		}
 		var cell = layer.Get( cellX, cellY );
 		if ( cell.Type == 0 )
-			return Terrain();
+			return ObjectHeight( cellX, cellY, x, y, Terrain );
 		var (ox, oy) = cell.IsExtension ? layer.CellOf( cell.Parent ) : (cellX, cellY);
 		var tile = layer.Get( ox, oy );
-		// [BIN:TPW-EXE:0x00452A60 add-on surface] a track cell whose tile has no piece instance (an add-on's tile) gives the cell's owner thing (0x00527E80), and an object (thing type 3) is sampled through its own instance +0x20, so the vehicles drive on the add-on's model
-		if ( (tile.Flags & TrackCell.FlagAddOn) != 0 && AddOnSurfaceAt?.Invoke( cellX, cellY ) is { } addOn )
-		{
-			// the add-on's own sampler (0x00450EA0): the landscape at the probe plus its header's +0xA0, or its surface faces above its base
-			if ( addOn.Surface is { Mode: TrackSamplerMode.Terrain, TerrainOffset: { } offset } )
-				return Terrain() + offset;
-			var local = System.Numerics.Vector3.Transform( new System.Numerics.Vector3( x, y, 0 ), addOn.GridToModel );
-			return addOn.Surface.HeightAt( local.X, local.Y ) is { } height ? addOn.BaseHeight + height : null;
-		}
+		// [BIN:TPW-EXE:0x00452A60 no piece instance] a track cell whose tile has no piece instance gives the cell's owner thing (0x00527E80), and an object (thing type 3) is sampled through its own instance +0x20: the add-on's tile, so the vehicles drive on the add-on's model, and the station tiles, which never get a piece (0x5387BC skips 0x53AFA0 for types 0xD and 0x12), so they stand on the ride's own model
+		if ( TrackCellTypes.IsStation( tile.Type ) || (tile.Flags & TrackCell.FlagAddOn) != 0 )
+			return ObjectHeight( cellX, cellY, x, y, Terrain );
 		var baseHeight = TileHeight( ox, oy ) / ObjectPlacement.ModelScale;
-		if ( TrackCellTypes.IsStation( tile.Type ) )
-		{
-			if ( RideSurface() is { Mode: TrackSamplerMode.Terrain, TerrainOffset: { } floor } )
-				return Terrain() + floor;
-			return baseHeight + (kit.Family == TrackFamily.Kart ? KartStationHeight() : TrackSurface.StationWaterHeight);
-		}
 		if ( tile.Piece != 0 && GeometryOf( tile.Piece ) is { } geometry )
 		{
 			// the tile turned counter-clockwise by its rotation: undo it about the tile's centre to read the piece's own faces
@@ -686,6 +676,21 @@ public sealed class TrackRenderer : IDisposable
 			return surface.HeightAt( lx, ly ) is { } height ? baseHeight + height : null;
 		}
 		return Terrain();
+	}
+
+	/// <summary>
+	/// The height an object on a cell gives a probe at (<paramref name="x"/>, <paramref name="y"/>) in its own sampler mode (<c>0x450EA0</c>, <c>0x4511A0</c>): the landscape plus its header's
+	/// +0xA0 in the terrain mode, else its faces above its base; null when no object stands on the cell or its faces do not cover the point.
+	/// </summary>
+	private float? ObjectHeight( int cellX, int cellY, float x, float y, Func<float> terrain )
+	{
+		if ( ObjectSurfaceAt?.Invoke( cellX, cellY ) is not { } owner )
+			return null;
+		// the object's own sampler (0x00450EA0): the landscape at the probe plus its header's +0xA0, or its surface faces above its base
+		if ( owner.Surface is { Mode: TrackSamplerMode.Terrain, TerrainOffset: { } offset } )
+			return terrain() + offset;
+		var local = System.Numerics.Vector3.Transform( new System.Numerics.Vector3( x, y, 0 ), owner.GridToModel );
+		return owner.Surface.HeightAt( local.X, local.Y ) is { } height ? owner.BaseHeight + height : null;
 	}
 
 	/// <summary>The sampler surface of the ride's own model (the station of a kart or water ride, the arena of a bumper ride), or null when it cannot be read.</summary>
@@ -703,13 +708,6 @@ public sealed class TrackRenderer : IDisposable
 			Log?.Warning( $"The track ride's model {entry.ModelPath} could not be sampled: {exception.Message}" );
 		}
 		return rideSurface;
-	}
-
-	/// <summary>The floor height of a kart station tile: the straight piece's floor at its centre.</summary>
-	private float KartStationHeight()
-	{
-		kartStationHeight ??= GeometryOf( TrackPieceSelector.PieceStraight )?.Surface.HeightAt( 10, 10 ) ?? 3f;
-		return kartStationHeight.Value;
 	}
 
 	// ---- Geometry ----------------------------------------------------------------------------------

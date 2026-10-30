@@ -1,0 +1,105 @@
+using System;
+using System.Linq;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// The path and queue cell validator against tp.exe's own routine 0x535670 (docs/reverse/ORACLE.md, X36; QUEUE-012): every row of <see cref="QueueCellValidatorGolden"/> is a combination of cell type,
+/// flags, structure record, links, owner, line state and latches the executable answered in the x86 oracle.
+/// </summary>
+[TestClass]
+public class QueueCellValidatorTests
+{
+	[TestMethod]
+	public void TheValidatorAnswersAndSetsTheLatchesAsTheExecutableDoes()
+	{
+		using var unpacked = new System.IO.StreamReader( new System.IO.Compression.ZLibStream( new System.IO.MemoryStream( Convert.FromBase64String( QueueCellValidatorGolden.Packed ) ), System.IO.Compression.CompressionMode.Decompress ) );
+		var rows = unpacked.ReadToEnd().Split( '\n' );
+		Assert.AreEqual( QueueCellValidatorGolden.RowCount, rows.Length );
+		foreach ( var row in rows )
+		{
+			var parts = row.Split( ' ' );
+			int V( int index ) => int.Parse( parts[index] );
+			var cell = new CellValidatorInput( V( 0 ), (byte)V( 1 ), (ushort)V( 2 ), (byte)V( 3 ), (byte)V( 4 ), (byte)V( 5 ), V( 6 ) != 0, V( 7 ) != 0, V( 8 ) != 0, (byte)V( 11 ), V( 12 ), V( 0 ) );
+			var latches = new CellValidatorLatches { Refuse = V( 9 ) != 0, Pending = V( 10 ) != 0 };
+			var answer = QueueCellValidator.Check( cell, ref latches );
+			var expected = (V( 14 ), V( 15 ) != 0, V( 16 ) != 0, V( 17 ) != 0, V( 18 ) != 0);
+			Assert.AreEqual( expected, (answer, latches.Refuse, latches.Pending, latches.EndsOnPath, latches.MeetsOwn), row );
+		}
+	}
+
+	/// <summary>
+	/// The owner priority 0x818C14 belongs to a pass over a line: a class-3 owner stores its type's priority (0x535788), an owner that is none leaves what the pass held (0 after the hover's reset, 0x523522),
+	/// and the cell is accepted while that is below the tool's priority; the latches start clean with the pass.
+	/// </summary>
+	[TestMethod]
+	public void TheOwnerPriorityIsCarriedFromCellToCellOfOnePassAndAFreshPassStartsAtZero()
+	{
+		CellValidatorInput Object( int? owner ) => new( 3, 4, 0, 0, 0, 0, false, false, false, 0, owner, 3 );
+		var latches = new CellValidatorLatches();
+		Assert.AreEqual( 0, QueueCellValidator.Check( Object( null ), ref latches ), "no class-3 owner: the pass's 0 is below the tool's 3" );
+		Assert.AreEqual( 0, QueueCellValidator.Check( Object( 1 ), ref latches ) );
+		Assert.AreEqual( 1, latches.OwnerPriority );
+		Assert.AreEqual( 0, QueueCellValidator.Check( Object( null ), ref latches ), "an owner that is none keeps the 1" );
+		Assert.AreEqual( 1, QueueCellValidator.Check( Object( 3 ), ref latches ), "a class-3 owner of the tool's priority refuses" );
+		Assert.AreEqual( 3, latches.OwnerPriority );
+		Assert.IsTrue( latches.Refuse );
+		Assert.AreEqual( 1, QueueCellValidator.Check( Object( null ), ref latches ), "and the refusal and the priority mark the rest of the pass" );
+		var fresh = new CellValidatorLatches();
+		Assert.AreEqual( 0, QueueCellValidator.Check( Object( null ), ref fresh ), "the next pass starts clean" );
+	}
+
+	/// <summary>A queue cell on a fence post or on one of the three cells beside it is refused whoever owns the land (the structure record is a post, or an extension of one).</summary>
+	[TestMethod]
+	public void AQueueCellOnAHoardingPostOrItsExtensionIsRefusedOnOwnedLandToo()
+	{
+		var cells = new ParkCellMap( 128, 128 );
+		var land = ParkLand.NewPark( cells, new ParkLandSetup( (51, 17), (43, 17), new (int X, int Y)[] { (0, 0), (4, 0), (4, 10), (-12, 10), (-12, 0), (-8, 0) } ) );
+		Assert.IsNotNull( land );
+		cells.SetLand( land );
+		var posts = 0;
+		for ( var y = 0; y < 128; y++ )
+		{
+			for ( var x = 0; x < 128; x++ )
+			{
+				if ( !land!.CountsAsStructure( x, y, 128, 128 ) )
+					continue;
+				var cell = new CellValidatorInput( 3, 0, (ushort)cells.FlagsAt( x, y ), QueueCellValidator.StructureTypeAt( cells, x, y ), 0, 0, false, false, false, 0, 0, 3 );
+				var latches = new CellValidatorLatches();
+				if ( !cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ) )
+				{
+					Assert.AreEqual( 1, QueueCellValidator.Check( cell, ref latches ), $"({x}, {y})" );
+					posts++;
+				}
+			}
+		}
+		Assert.IsTrue( posts > 20, "the fence has owned post and extension cells" );
+	}
+
+	/// <summary>The path tool's validator is the same routine: a hoarding post's block is refused on owned land, and a cell beside the block is not.</summary>
+	[TestMethod]
+	public void ThePathToolRefusesAHoardingPostsBlockOnOwnedLand()
+	{
+		var grid = new GuestPathGrid( 128, 128 );
+		var cells = grid.Cells;
+		var land = ParkLand.NewPark( cells, new ParkLandSetup( (51, 17), (43, 17), new (int X, int Y)[] { (0, 0), (4, 0), (4, 10), (-12, 10), (-12, 0), (-8, 0) } ) );
+		Assert.IsNotNull( land );
+		cells.SetLand( land );
+		var paths = new ParkPathBuilder( cells, grid, (ParkEconomy?)null, new PoolsTests.FlatGrid( 128, 128 ) );
+		var checkedBlocks = 0;
+		for ( var y = 0; y < 128; y++ )
+		{
+			for ( var x = 0; x < 128; x++ )
+			{
+				if ( land!.CountsAsStructure( x, y, 128, 128 ) && !cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ) )
+				{
+					Assert.AreEqual( CellBuildResult.Occupied, paths.CheckCell( x, y ), $"({x}, {y})" );
+					checkedBlocks++;
+				}
+			}
+		}
+		Assert.IsTrue( checkedBlocks > 20 );
+		Assert.AreEqual( CellBuildResult.Ok, paths.CheckCell( 47, 19 ), "owned land inside the fence stays buildable" );
+	}
+}

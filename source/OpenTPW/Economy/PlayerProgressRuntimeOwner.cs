@@ -1,7 +1,7 @@
 namespace OpenTPW;
 
 /// <summary>One application-owned active runtime subscription. Failed writes retain dirty earned identities.</summary>
-internal sealed class PlayerProgressRuntimeOwner : IDisposable
+internal sealed class PlayerProgressRuntimeOwner : IDisposable, IPlayerTicketWallet
 {
 	private readonly string path;
 	private readonly string theme;
@@ -42,8 +42,29 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 	private void Reconcile()
 	{
 		if ( Eligible && Ledger.Reconcile( theme, runtime.Economy.Objectives.GoldenTickets ) != 0 ) Dirty = true;
-		observed = runtime.Economy;
-		runtime.Economy.Objectives.GlobalTicketAuthority = authority;
+		var economy = runtime.Economy;
+		if ( !ReferenceEquals( observed, economy ) || economy.TicketWallet == null ) ReconcilePurchases( economy );
+		observed = economy;
+		economy.Objectives.GlobalTicketAuthority = authority;
+		economy.TicketWallet = this;
+	}
+
+	private void ReconcilePurchases( ParkEconomy economy )
+	{
+		if ( RecordsEligible && PlayerTicketMigration.Reconcile( economy, Ledger, report ) ) Dirty = true;
+	}
+
+	// the park spends from the player's account while it is part of its player's progress (tp.exe 0x4D4AD0 -> 0x5AF740)
+	bool IPlayerTicketWallet.Active => RecordsEligible && ReferenceEquals( runtime.Economy, observed );
+	int IPlayerTicketWallet.Available => Ledger.AvailableTickets;
+	bool IPlayerTicketWallet.Owns( int infoId ) => Ledger.OwnsPurchasedItem( infoId );
+
+	bool IPlayerTicketWallet.TrySpend( int infoId, int cost )
+	{
+		if ( Ledger.TryPurchase( infoId, cost ) != TicketPurchaseOutcome.Purchased ) return false;
+		Dirty = true;
+		TryFlushRecords();
+		return true;
 	}
 
 	/// <summary>The player-wide holder rule of the four global tickets (tp.exe 0x5AF940); a park outside this player's progress keeps its own set.</summary>
@@ -121,7 +142,8 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 			Reclaim();
 			return;
 		}
-		if ( Eligible && !ReferenceEquals( observed, runtime.Economy ) ) { Reconcile(); TryFlush(); }
+		// the park a load replaced takes the player's account again: the wallet needs the records the park may keep (RecordsEligible), as the constructor does, not the earning of tickets
+		if ( RecordsEligible && !ReferenceEquals( observed, runtime.Economy ) ) { Reconcile(); TryFlushRecords(); }
 	}
 
 	/// <summary>
@@ -141,6 +163,10 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 			if ( !Ledger.HeldBy( theme, kind ) ) objectives.TakeGoldenTicket( kind );
 		}
 		wonInSession.Clear();
+		// Credit the session's earned tickets before charging what it bought with them.
+		Reconcile();
+		// what the park bought with its own tickets in the session enters the player's account now
+		ReconcilePurchases( runtime.Economy );
 		TryFlush();
 	}
 
@@ -173,6 +199,7 @@ internal sealed class PlayerProgressRuntimeOwner : IDisposable
 		disposed = true;
 		runtime.EventRaised -= OnEvent;
 		if ( runtime.Economy.Objectives.GlobalTicketAuthority == authority ) runtime.Economy.Objectives.GlobalTicketAuthority = null;
+		if ( ReferenceEquals( runtime.Economy.TicketWallet, this ) ) runtime.Economy.TicketWallet = null;
 	}
 }
 

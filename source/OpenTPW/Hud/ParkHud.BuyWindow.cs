@@ -191,6 +191,26 @@ public sealed partial class ParkHud
 	public void SetBuyFirstRow( int first ) => buy.SetFirstRow( first );
 	public void SortBuyList( BuySortColumn column ) => buy.SortBy( column );
 
+	/// <summary>
+	/// [EXT:online-coop-undo] Where a click lands on the open buy list's row of the item with <paramref name="infoId"/> (the list scrolled to show it first, as its scroll bar does), the
+	/// live acceptance's click on a row (C5-2); false when the window is shut or lists no such row.
+	/// </summary>
+	internal bool BuyRowPoint( UiCanvas canvas, int infoId, out NVector2 point )
+	{
+		point = default;
+		var index = -1;
+		for ( var row = 0; row < BuyItems.Count && index < 0; row++ )
+			if ( BuyItems[row].InfoId == infoId )
+				index = row;
+		if ( !BuyWindowOpen || buyList == null || index < 0 )
+			return false;
+		if ( index < buy.FirstRow || index >= buy.FirstRow + BuyVisibleRows )
+			SetBuyFirstRow( Math.Min( index, BuyMaxFirstRow ) );
+		var rect = canvas.Map( new UiRect( BuyContent.X, BuyContent.Y + (index - buy.FirstRow) * BuyRowHeight, BuyContent.Width, BuyRowHeight ), buyList.Anchor );
+		point = new NVector2( rect.X + rect.Width / 2, rect.Y + rect.Height / 2 );
+		return true;
+	}
+
 	/// <summary>Starts placing the selected item (the same checks as <see cref="BeginPlacing"/>); the window closes when placement starts.</summary>
 	public void BuySelected()
 	{
@@ -279,7 +299,7 @@ public sealed partial class ParkHud
 		// [DATA:Mac buy table 0x4cd94:510] title text; the category's UITEXT 119-122
 		screen.Add( new UiLabel
 		{
-			Id = "title", Text = () => strings[BuyCategories.First( entry => entry.Category == buy.Category ).Title], Font = fonts => fonts.Title, Color = UiColors.Title,
+			Id = "title", Text = () => strings[BuyCategories.First( entry => entry.Category == buy.Category ).Title], Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title,
 			Align = UiAlign.Center, Fit = true, Bounds = Rect( 805, 74, 1277, 153 ), Anchor = UiAnchor.Center
 		} );
 		// [BIN:TPW-EXE:0x4acdae buy window control 512] a type-1 label at (1297,75)-(1769,154) (table record 0x755114) shows the park's cash balance (0x7cf83c -> 0x5195d0 -> 0x6ad810, the HUD cash accessor) as UITEXT 0x1ca "Cash $ N" (0x4ace20), or 0x1cb with the magnitude when it is negative (0x4acdec); 0x4ac2fa refreshes it. The same label text as the hire window's control 9366.

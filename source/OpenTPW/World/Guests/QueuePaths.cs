@@ -56,7 +56,7 @@ public static class QueuePaths
 		// CanChangeCellType allows a queue over an empty cell (and over a path except on a line's last cell); this per-cell route also refuses path cells, where 0x535670 replaces a path cell unless it is NoModify; the placed rides' lines run through QueueSegmentReducer, which replaces them.
 		// [BIN:TPW-EXE:0x535D66 overwrite priority] the queue tool's 0x818C10 is 3: an object cell whose owner's priority is below it is allowed (features of priority 0 or 1)
 		var covers = givesWay?.Invoke( x, y ) == true;
-		if ( (!covers && (grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.RawTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )))
+		if ( (!covers && ((ParkCellType)grid.Cells.PrimaryTypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.PrimaryTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )))
 			|| grid.IsWalkable( x, y ) || isBlocked?.Invoke( x, y ) == true || pending.Contains( (x, y) ) )
 			return QueueBuildResult.Blocked;
 		// [BIN:TPW-EXE:0x00535670 queue cell validator] the validator tests the cell alone: it asks that the next cell of a line touches the previous one only in the line walk (0x536100), never against the ride's back cell, so a queue cell may stand free (an orphan, owned by the ride through its owner word but in no chain)
@@ -114,7 +114,7 @@ public static class QueuePaths
 			return QueueBuildResult.Ok;
 		}
 		if ( first )
-			LinkFront( grid.Cells, x, y, ride.QueueEntranceDirection );
+			LinkFront( grid.Cells, x, y, ride.QueueEntranceDirection, ride );
 		else
 			PathLinkWriter.LinkQueueStep( grid.Cells, x, y, x - back.X, y - back.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
 		ride.RecomputeQueue( grid );
@@ -142,11 +142,14 @@ public static class QueuePaths
 	/// first cell to a neighbour that is the ride's entrance cell and whose queue link points at it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0053522D first queue cell] for the line's first cell (0x820AA4) each cardinal neighbour that is the ride's entrance cell (ride +0x36) and whose queue link +0x0D points back is linked both ways (0x53525A..0x535366); the ride finds its front cell through the entrance cell's +0x0C bit (0x4DE040, order 1, 16, 64, 4)
-	// OpenTPW's ride cells are not typed map cells (WALK-005): only the front cell's bit toward the entrance is written, and the ride keeps its front in QueueFrontCell rather than reading the entrance cell's bit (QUEUE-003)
-	private static void LinkFront( ParkCellMap cells, int x, int y, int entranceDirection )
+	private static void LinkFront( ParkCellMap cells, int x, int y, int entranceDirection, RideVisitorBridge? ride = null )
 	{
 		if ( entranceDirection is >= 0 and < 4 )
 			cells.SetLinks( x, y, (byte)(cells.LinksAt( x, y ) | GuestPathGrid.LinkValue( entranceDirection )) );
+		// [BIN:TPW-EXE:0x0053525A both ways] the neighbour that is the ride's entrance cell (+0x36, the cell of the footprint) is linked to the first queue cell too, which is how the ride finds its front again (0x4DE040 reads the entrance's bit): a ride whose entrance lost its link (the queue was removed) has a front once a queue is laid again
+		if ( ride?.AccessCell is { } entrance && cells.InBounds( entrance.X, entrance.Y ) && cells.RawTypeAt( entrance.X, entrance.Y ) == ParkCellTypes.Entrance
+			&& GuestPathGrid.DirectionBetween( entrance.X, entrance.Y, x, y ) is >= 0 and < 4 and var toward )
+			cells.SetLinks( entrance.X, entrance.Y, (byte)(cells.LinksAt( entrance.X, entrance.Y ) | GuestPathGrid.LinkValue( toward )) );
 	}
 
 	/// <summary>
@@ -201,7 +204,7 @@ public static class QueuePaths
 		var cells = ride.QueueCells;
 		if ( cells.Any( cell => grid.Cells.LinksAt( cell.X, cell.Y ) != 0 ) )
 			return false;
-		LinkFront( grid.Cells, cells[0].X, cells[0].Y, ride.QueueEntranceDirection );
+		LinkFront( grid.Cells, cells[0].X, cells[0].Y, ride.QueueEntranceDirection, ride );
 		var owned = OwnedBy( ride );
 		for ( var index = 1; index < cells.Count; index++ )
 			PathLinkWriter.LinkQueueStep( grid.Cells, cells[index].X, cells[index].Y, cells[index].X - cells[index - 1].X, cells[index].Y - cells[index - 1].Y,

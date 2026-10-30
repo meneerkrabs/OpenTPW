@@ -443,7 +443,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-swim] The pinned hash of <see cref="RunFixedParkWithPoolsAndAChangingRoom"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsChangingRoomFixedRunHash = 0xF29FC9EE9FA2CBC4UL;
+	internal const ulong PoolsChangingRoomFixedRunHash = 0xA794F0319F569CE2UL;
 
 	[TestMethod]
 	public void FixedRunWithAPoolAndAChangingRoomIsTheSameInEveryProcessAndGuestsSwim()
@@ -479,7 +479,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:umbrellas-extension] The pinned hash of <see cref="RunFixedParkWithABrollyShopInTheRain"/> (docs/DETERMINISM.md, "Umbrellas").</summary>
-	internal const ulong UmbrellasFixedRunHash = 0x5467A6E95F5BC676UL;
+	internal const ulong UmbrellasFixedRunHash = 0x7F084940237B577FUL;
 
 	[TestMethod]
 	public void FixedRunWithABrollyShopInTheRainIsTheSameInEveryProcessAndGuestsCarryUmbrellas()
@@ -527,7 +527,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-extension] The pinned hash of <see cref="RunFixedParkWithWinterShopsInTheSnow"/> (docs/DETERMINISM.md, "Winter").</summary>
-	internal const ulong WinterFixedRunHash = 0x0AECF3233FBD5294UL;
+	internal const ulong WinterFixedRunHash = 0x55C6A3E48DC56D9CUL;
 
 	[TestMethod]
 	public void FixedRunWithWinterShopsInTheSnowIsTheSameInEveryProcessAndGuestsWearTheirPurchases()
@@ -585,10 +585,10 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-weather] The pinned hash of <see cref="RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember"/> with the option off: the original's weather across December (docs/DETERMINISM.md, "Wintry Decembers").</summary>
-	internal const ulong JungleDecemberOffFixedRunHash = 0x1CDA6A275C9F3F5BUL;
+	internal const ulong JungleDecemberOffFixedRunHash = 0xE5E0857EEA5A0DE1UL;
 
 	/// <summary>[EXT:winter-weather] The pinned hash of the same run with the option on: December's rain bands are snow for the umbrellas and the rain mood (docs/DETERMINISM.md, "Wintry Decembers").</summary>
-	internal const ulong JungleDecemberWintryFixedRunHash = 0xED306F312346AEC8UL;
+	internal const ulong JungleDecemberWintryFixedRunHash = 0x8B66871BC4BF3F33UL;
 
 	[TestMethod]
 	public void UmbrellasAndRainMoodUnderTheJungleWeatherAcrossDecemberArePinnedWithWintryDecembersOffAndOn()
@@ -689,7 +689,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-always] The pinned hash of <see cref="RunFixedParkWithShopsAndRainMoodInTheJungleWeatherFromMay"/> with the Always winter option on (docs/DETERMINISM.md, "Always winter").</summary>
-	internal const ulong WinterAlwaysFixedRunHash = 0xA8C95CA65160807CUL;
+	internal const ulong WinterAlwaysFixedRunHash = 0x9E14F4733B0DE59EUL;
 
 	[TestMethod]
 	public void ShopsAndRainMoodUnderTheJungleWeatherFromMayArePinnedWithAlwaysWinterOn()
@@ -759,10 +759,10 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:rain-mood-extension] The pinned hash of <see cref="RunFixedParkInTheRainWithRainMood"/> without a brolly shop (docs/DETERMINISM.md, "Rain mood").</summary>
-	internal const ulong RainMoodFixedRunHash = 0xCB5E98B00C5AAD4CUL;
+	internal const ulong RainMoodFixedRunHash = 0x43818BD4AC22950EUL;
 
 	/// <summary>[EXT:rain-mood-extension] The pinned hash of <see cref="RunFixedParkInTheRainWithRainMood"/> with the brolly shop: the umbrellas and the rain mood rule both on (docs/DETERMINISM.md, "Rain mood").</summary>
-	internal const ulong RainMoodWithUmbrellasFixedRunHash = 0x130B524C99334012UL;
+	internal const ulong RainMoodWithUmbrellasFixedRunHash = 0xA6343896042E628DUL;
 
 	[TestMethod]
 	public void FixedRunInTheRainWithRainMoodIsTheSameInEveryProcessAndMovesTheRun()
@@ -832,10 +832,10 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-cold] The pinned hash of <see cref="RunFixedParkInTheSnowWithCold"/> with only the cold rule on (docs/DETERMINISM.md, "Winter cold").</summary>
-	internal const ulong WinterColdFixedRunHash = 0x5AEE05EB1A2D348DUL;
+	internal const ulong WinterColdFixedRunHash = 0x290320BF12153E75UL;
 
 	/// <summary>[EXT:winter-cold] The pinned hash of <see cref="RunFixedParkInTheSnowWithCold"/> with the cold rule, the rain mood, the brolly shop and the winter shops all on (docs/DETERMINISM.md, "Winter cold").</summary>
-	internal const ulong WinterColdEverythingFixedRunHash = 0x72FD6BD04393AED1UL;
+	internal const ulong WinterColdEverythingFixedRunHash = 0xB5FF8D87B78B5547UL;
 
 	[TestMethod]
 	public void FixedRunInTheSnowWithColdIsTheSameInEveryProcessAndMovesTheRun()
@@ -924,7 +924,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-extras] The pinned hash of <see cref="RunFixedParkWithPoolExtras"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolExtrasFixedRunHash = 0xEDBB35F77BB53B24UL;
+	internal const ulong PoolExtrasFixedRunHash = 0x50092F36C43AC693UL;
 
 	[TestMethod]
 	public void FixedRunWithPoolExtrasIsTheSameInEveryProcessAndGuestsUseThem()
@@ -994,7 +994,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-attractions] The pinned hash of <see cref="RunFixedParkWithWaterAttractions"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsAttractionsFixedRunHash = 0x0AD27109C2E5643DUL;
+	internal const ulong PoolsAttractionsFixedRunHash = 0x824DA576B3644CA7UL;
 
 	[TestMethod]
 	public void FixedRunWithWaterAttractionsIsTheSameInEveryProcessAndSwimmersUseThem()
@@ -1009,10 +1009,10 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-save] The pinned hash of <see cref="RunFixedParkWithPools"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsFixedRunHash = 0x51F09D065798C992UL;
+	internal const ulong PoolsFixedRunHash = 0xA31B7485202FE636UL;
 
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
-	internal const ulong FixedRunHash = 0x1AABD1698E2E75BEUL;
+	internal const ulong FixedRunHash = 0xB4AEC10551DF2738UL;
 
 	/// <summary>
 	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): in this run, whose one drinks shop is cheap enough that no guest is refused and which has no second attraction to choose
@@ -1020,7 +1020,44 @@ public class DeterminismTests
 	/// shop's throughput estimate (phase 3: its average, samples and silence clock) next to the birth ids. The scenario's pin (GuestMeasurementTests) is where the rules act. 1.5.0 (phase 6, clean and quiet paths) moved this pin from main's value for the 1.4.0 rules: the cross park's few path cells crowd (five guests in one cell), so guests complain of the crowd and the wander goal moves to a quieter candidate, which changes happiness and walks, and the complaint times join the hash (docs/DETERMINISM.md). A deliberate change of the
 	/// extension's state, of the rules or of a constant changes this value (and bumps the extension's version).
 	/// </summary>
-	internal const ulong SmarterGuestsFixedRunHash = 0x8ACD297D0155243EUL;
+	internal const ulong SmarterGuestsFixedRunHash = 0xFD4DAA23C3C5C5A8UL;
+
+	/// <summary>
+	/// The pinned hash of the head-hang draw of a theme without costume heads (docs/DETERMINISM.md): a script world with <see cref="RideScriptWorld.HeadHangReseeds"/> on runs a bump ride's vehicle creation and a load, a tour
+	/// boarding and ADDHEAD and WALKON hangs; each hang reseeds the world generator with the rider and draws once (tp.exe 0x44B410 → 0x4FCAC0). No asset is read, so CI pins it on every runtime.
+	/// </summary>
+	internal const ulong HeadHangFixedRunHash = 0xE998936EFFF3BAE5UL;
+
+	[TestMethod]
+	public void HeadHangDrawFixedRunHashIsTheSameInEveryProcess()
+	{
+		ulong Run( bool reseeds )
+		{
+			var scripts = new RideScriptWorld( 7 ) { HeadHangReseeds = reseeds };
+			var loop = new BumpControllerTests.Loop( -5, scripts.Bumpers );
+			loop.Controller.SeatHeadSource = _ => new[] { true, true };
+			loop.Controller.Command( 7, 0 );
+			loop.Controller.Command( 1, 21 );
+			loop.Controller.Command( 1, 22 );
+			loop.Controller.Command( 4, 0 );
+			loop.Controller.Command( 4, 0 );
+			loop.Controller.Command( 1, 23 );
+			loop.Controller.Command( 12, 0 );
+			loop.Run( 600 );
+			var tour = new TourController( TourStation.Default, scripts.NextWorldDraw, scripts.Tours ) { HeadNodes = 3 };
+			tour.Board( 31 );
+			tour.Board( 32 );
+			var space = RideHeadSpace.Of( new[] { 3, 4, 5 }, scripts.NextWorldDraw );
+			space.HeadHung = scripts.HeadHung;
+			space.Add( 41 );
+			space.Hang( 2, 42 );
+			return WorldStateHash.Compute( new WorldStateSources { Scripts = scripts } );
+		}
+		var hash = Run( reseeds: true );
+		Assert.AreEqual( hash, Run( reseeds: true ), "the run repeats" );
+		Assert.AreNotEqual( hash, Run( reseeds: false ), "the head-hang draws are in the hash" );
+		Assert.AreEqual( HeadHangFixedRunHash, hash, $"0x{hash:X16}" );
+	}
 
 	[TestMethod]
 	public void SmarterGuestsFixedRunHashIsTheSameInEveryProcess()
@@ -1038,13 +1075,13 @@ public class DeterminismTests
 	/// guest identity state. CI runs it on Windows, macOS and Linux, so an equal value means the interpreter, the stateless <c>rng</c> and the hook wiring give the same park everywhere. A deliberate change
 	/// of the example, of the language, of a limit or of the hook wiring changes this value.
 	/// </summary>
-	internal const ulong ScriptModsFixedRunHash = 0x92910893AA42DAD7UL;
+	internal const ulong ScriptModsFixedRunHash = 0xB673E778DB9A7BDBUL;
 
 	/// <summary>
 	/// The pinned hash of a run with a test mod that implements all four hooks, keeps counters in its state and draws with <c>rng</c> (the example uses neither <c>scoreAttraction</c>, <c>wanderGoal</c> nor
 	/// <c>rng</c>): the cross-platform pin of everything the example does not reach.
 	/// </summary>
-	internal const ulong ScriptModsAllHooksFixedRunHash = 0x46D7114F4B803468UL;
+	internal const ulong ScriptModsAllHooksFixedRunHash = 0xD606ED998555A7E8UL;
 
 	[TestMethod]
 	public void ScriptModsFixedRunHashIsTheSameInEveryProcess()

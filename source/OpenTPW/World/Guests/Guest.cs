@@ -172,7 +172,7 @@ public sealed class Guest
 	public float Happiness { get; internal set; }
 	/// <summary>The litter meter (guest <c>+0x1b4</c>, 0..100): each use adds the type's <c>LitterEffect</c>; at a byte of 90 the guest bins or drops its litter.</summary>
 	public float Litter { get; internal set; }
-	/// <summary>The litter bin a guest in state 9 walks to (guest <c>+0x1dc</c>, the ride word's other use); 0 otherwise.</summary>
+	/// <summary>The litter bin a guest in state 9 walks to and keeps as its target after the walk (guest <c>+0x1dc</c>, the ride word's other use) until the next major choice, a bin search of another bin, the leaving state or a hold; 0 otherwise.</summary>
 	public int BinId { get; internal set; }
 	/// <summary>The prankery flag (guest <c>+0x1c0</c>, <c>mPrankeryIndex</c>): 0, or 100 (stinkbombs), 101 (litter) or 102 (balloons) for a prankster.</summary>
 	public int PrankFlag { get; internal set; }
@@ -240,8 +240,23 @@ public sealed class Guest
 	/// <summary>Simulated seconds since creation, including the arrival and departure walk; null means the prior duration is unknown.
 	/// Retained for stay statistics and weather gates; new visitor displays use the independent integer-turn age.</summary>
 	public double? TimeInParkSeconds { get; internal set; }
+	/// <summary>Theme Park Inc: the fee recorded at boarding, which the exit takes (IGuestPayments.SettlesAtExit); not saved, a Theme Park Inc run is not.</summary>
+	internal int PendingFee;
+	/// <summary>A successful Theme Park Inc admission still to settle, including a free visit; transient like PendingFee (no Theme Park Inc continuation saves).</summary>
+	internal bool PendingVisitSettlement;
 	/// <summary>Display-only age in unsigned 32-bit park turns, or null for a legacy seconds-based duration. Never used by gameplay.</summary>
 	public long? DisplayTimeInParkTurns { get; internal set; }
+	/// <summary>
+	/// The guest's sprite bank <c>+0x20</c> as the original stores it: 0x00541F70's (word >> 2) modulo the kid sets loaded when the guest was made (0x004FB1A7, 0x004FB1B5), the raw draw only where that count is
+	/// not known (a headless run, <see cref="GuestSimulation.KidSetCount"/>). The renderers read it modulo the sets loaded now (<see cref="GuestAppearance.KidSet(Guest, int)"/>), the second reduction of a load (0x004F93AA);
+	/// the simulation never reads it, so it is saved but not hashed. A guest of an original save keeps the saved bank number, reduced by the kid sets loaded (0x4F93AA), as every load reduces it.
+	/// </summary>
+	public uint KidSetDraw
+	{
+		get => kidSetDraw ?? GuestAppearance.RawKidDraw( Id );
+		internal set => kidSetDraw = value;
+	}
+	private uint? kidSetDraw;
 	/// <summary>Own-format/display duration bound; no original timing limit is inferred.</summary>
 	public static double MaximumTimeInParkSeconds => TimeSpan.MaxValue.TotalSeconds;
 	public float SecondsSinceRide { get; internal set; }
@@ -264,7 +279,23 @@ public sealed class Guest
 	/// <summary>Whether the sideshow the guest is playing was won (guest <c>+0x1F1</c>, set when the play starts); null outside a sideshow or without its result.</summary>
 	public bool? SideshowWon { get; internal set; }
 	/// <summary>Attraction the guest is heading to, queueing for or riding (0 = none).</summary>
-	public int AttractionId { get; internal set; }
+	public int AttractionId
+	{
+		get => attractionId;
+		// +0x1DC holds one id: naming an attraction replaces a bin the guest last used (the bin search 0x00500DC0, written at 0x004FEDEF by its caller, is the only other writer of a bin there)
+		internal set
+		{
+			attractionId = value;
+			if ( value != 0 )
+				BinId = 0;
+		}
+	}
+	private int attractionId;
+	/// <summary>
+	/// The saved major destination (guest <c>+0x1DE</c>; tp.exe's serializer names it <c>mSavedMajorDest</c> and the target <c>+0x1DC</c>, <see cref="AttractionId"/>, <c>mMajorDest</c>; the save keeps both, <c>0x004FD92A</c>): the attraction a guest had chosen when its minor decision (<c>0x004FD570</c>) sent it to another one on the way; the exit walk of the visit
+	/// that follows (state 15, <c>0x00500923</c>) takes it up again as the target. 0 = none; cleared only by that and by the removal of the attraction it names.
+	/// </summary>
+	public int SavedMajorAttractionId { get; internal set; }
 	/// <summary>The byte at +0x2C that state 10 counts while the guest walks to a ride with the park open; every twelfth count the minor decision runs (tp.exe 0x004FFEF2).</summary>
 	public int RideWalkCount { get; internal set; }
 	/// <summary>Park turns an expensive verdict still holds the guest at the booth (+0x200, tp.exe 0x004FF9D0): one is counted per turn, the verdict runs again as the last reaches 0. State 3 counts the same word down.</summary>

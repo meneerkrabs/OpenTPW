@@ -16,7 +16,8 @@ public sealed partial class ParkHud
 	{
 		// the disable frame (1) names b_callmechg and b_callhandyg, which ui.wad lacks: UiButton draws the normal frame greyed instead
 		callStaffButton = hud.Add( new UiButton { Id = "callStaff", Model = "b_callmech", Clicked = ToggleCallStaff, KeepNormalFrameWhenFocused = true,
-			Selected = () => CallTarget( selectedObject, out _, out var item, out _ ) && item.MaintenanceRequested,
+			// [EXT:online-coop-commands] a guest's button draws the call as drawn (C4b-2)
+			Selected = () => CallTarget( selectedObject, out _, out var item, out _ ) && (ProjectedRecord( selectedObject! ) ?? item).MaintenanceRequested,
 			Bounds = new UiRect( 1114, 800, 154, 153 ), Anchor = UiAnchor.Center, Visible = false, Enabled = false } );
 		infoElements.Add( callStaffButton );
 	}
@@ -59,9 +60,18 @@ public sealed partial class ParkHud
 			return;
 		CallTarget( selectedObject, out economy, out item, out toilet );
 		callStaffButton.Model = toilet ? "b_callhandy" : "b_callmech";
-		var refusal = item.MaintenanceRequested ? null : CallRefusal( economy, toilet );
+		// [EXT:online-coop-commands] a guest's button reads the call as drawn, is greyed while an open-state action of its object waits, and stays clickable but subdued where the host's is
+		// disabled by the call's refusal, so its click can say the rights' note (C4b-2)
+		var drawn = ProjectedRecord( selectedObject! ) ?? item;
+		var refusal = drawn.MaintenanceRequested ? null : CallRefusal( economy, toilet );
 		// UIHELPTEXT 535 "Left-click to call a mechanic to the ride", 570 "Left-click to cancel calling the mechanic"
-		callStaffButton.Help = strings.Help( refusal ?? (item.MaintenanceRequested ? 570 : 535) );
+		callStaffButton.Help = strings.Help( refusal ?? (drawn.MaintenanceRequested ? 570 : 535) );
+		if ( GuestManagement != null )
+		{
+			callStaffButton.Enabled = !OpenStateWaits( selectedObject! ) && PriceParkInputAllowed;
+			callStaffButton.Subdued = refusal != null ? () => true : null;
+			return;
+		}
 		callStaffButton.Enabled = refusal == null && PriceParkInputAllowed;
 	}
 
@@ -69,6 +79,12 @@ public sealed partial class ParkHud
 	{
 		if ( !InfoArmOpen || !PriceParkInputAllowed || !CallTarget( selectedObject, out var economy, out var item, out var toilet ) )
 			return;
+		// [EXT:online-coop-commands] a guest's call is an open-state action of its object, from the drawn call, after the rights and then the call's own refusal (C4b-2)
+		if ( GuestManagement is { } queue )
+		{
+			RequestGuestCall( queue, selectedObject!, economy, ProjectedRecord( selectedObject! ) ?? item, toilet );
+			return;
+		}
 		if ( !item.MaintenanceRequested && CallRefusal( economy, toilet ) != null )
 			return;
 		level.Commands.Issue( new RequestMaintenanceCommand( selectedObject!.Runtime.AttractionId, !item.MaintenanceRequested ) );

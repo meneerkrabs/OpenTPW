@@ -130,6 +130,8 @@ public class GuardEscortFailureTests
 		Assert.AreEqual( 0, f.Guard.TargetGuestId );
 		Assert.AreEqual( 0, f.Guard.SpeedBonus );
 		Assert.IsFalse( f.World.IsEscorting( GuestId ) );
+		// [BIN:TPW-EXE:0x004D691B caught kid counted] the catch counted the kid (month and lifetime words), the set-down failure then abandoned the chase (0x004D6A1F: month, lifetime and got-away words)
+		Assert.AreEqual( (2, 1, 2), (f.Park.MisbehavingKids( false ), f.Park.MisbehavingKids( true ), f.Park.MisbehavingKidsEver) );
 		CollectionAssert.AreEqual( new[] { (StaffWorldSimulation.CatchEvent, false), (StaffWorldSimulation.SetDownEvent, true) },
 			f.World.TakeVoices().Select( voice => (voice.Event, voice.Kids) ).ToArray() );
 	}
@@ -150,7 +152,20 @@ public class GuardEscortFailureTests
 		Assert.AreEqual( 1u, f.Park.World.State );
 		Assert.IsTrue( f.Guard.Navigation!.Original && !f.Guard.Navigation.Stuck );
 		Assert.AreEqual( (7, 3), (f.Guard.Navigation.TargetX >> 16, f.Guard.Navigation.TargetY >> 16) );
+		Assert.AreEqual( (1, 0, 1), (f.Park.MisbehavingKids( false ), f.Park.MisbehavingKids( true ), f.Park.MisbehavingKidsEver), "a caught kid adds to the month and lifetime words, not to the got-away word" );
 		CollectionAssert.AreEqual( new[] { (StaffWorldSimulation.CatchEvent, false) },
 			f.World.TakeVoices().Select( voice => (voice.Event, voice.Kids) ).ToArray() );
+	}
+
+	[TestMethod]
+	public void AnAbandonedChaseCountsAsTheKidThatGotAway()
+	{
+		var f = new Fixture( 1 );
+		// [BIN:TPW-EXE:0x004D67AC chase timer] a timer of 0 gives the chase up before the guard moves
+		f.Guard.JobStamp = 0;
+		f.Update();
+		Assert.AreEqual( StaffJob.Idle, f.Guard.Job );
+		Assert.AreEqual( (1, 1, 1), (f.Park.MisbehavingKids( false ), f.Park.MisbehavingKids( true ), f.Park.MisbehavingKidsEver) );
+		Assert.AreEqual( 0, f.Guests.Calls.Count, "the kid was never caught" );
 	}
 }

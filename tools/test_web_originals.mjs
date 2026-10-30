@@ -629,3 +629,15 @@ test('keeping is reported unavailable without Web Locks, and a failing request d
 	const throwing = await claimKeeping({ request() { throw new Error('denied'); } });
 	assert.equal(throwing.acquired, false);
 });
+
+test('a note on the manifest (where the files came from) is written by the flush and survives a reopen', async () => {
+	const root = new FakeDirectory();
+	const first = await openOriginalStore(root, { digest: async () => 'x' });
+	await first.begin('all', [['Data/a.wad', 3]]);
+	first.annotate('source', 'image');
+	await first.flush();
+	assert.equal((await openOriginalStore(root, { digest: async () => 'x' })).manifest.source, 'image');
+	first.annotate('source', null);
+	await first.flush();
+	assert.equal((await openOriginalStore(root, { digest: async () => 'x' })).manifest.source, undefined);
+});

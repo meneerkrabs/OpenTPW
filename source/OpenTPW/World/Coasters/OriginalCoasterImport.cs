@@ -43,7 +43,7 @@ internal static class OriginalCoasterImport
 			throw new InvalidDataException( $"{what} is cut open (wire 0x2) without a complete track (wire 0x1)." );
 		if ( (saved.Flags & ~0x1FFu) != 0 )
 			throw new InvalidDataException( $"{what} carries the unknown wire bits 0x{saved.Flags & ~0x1FFu:X} in its flag word." );
-		// [APPROX:SAVE-921] the track flags (wire 0x4..0x100, controller +0 0x20..0x800) are not modelled by the coaster runtime; the import reports them
+		// [APPROX:SAVE-921] the track flags (wire 0x4..0x100, controller +0 0x20..0x800) are not modelled by the coaster runtime beyond the trains-set-up bit (0x800); a scan of tp.exe's coaster module finds no user of the others outside the saver and the loader, and the import reports them
 		if ( (saved.Flags & 0x1FC) != 0 )
 			evidence.Add( $"{what}: the track flags 0x{(saved.Flags & 0x1FC) >> 2 << 5:X} (wire 0x{saved.Flags & 0x1FC:X}) are not modelled (SAVE-921)." );
 
@@ -172,7 +172,7 @@ internal static class OriginalCoasterImport
 				if ( !float.IsFinite( slot.Position ) || slot.Position < 0 || !float.IsFinite( slot.Speed ) || slot.Speed < 0 )
 					throw new InvalidDataException( $"{what}: train {index} stands at {slot.Position} with the speed {slot.Speed}." );
 				// [BIN:TPW-EXE:0x43CE20 train flags] the train's flags 0x10 (braking), 0x20 (in the station), 0x40 (bumped) and 0x80 (headway) are what the train step and the station step read; bits 0, 1 and 2 mark the slot set up, which every train in service is
-				trains.Add( new CoasterRide.OriginalTrain( slot.Position, slot.Speed, (CoasterTrainFlags)(slot.Flags & 0xF0) ) );
+				trains.Add( new CoasterRide.OriginalTrain( slot.Position, slot.Speed, (CoasterTrainFlags)(slot.Flags & 0xF0), slot.Word38, (slot.Flags & 0x100) != 0 ) );
 			}
 			for ( var index = inService; index < slots.Count; index++ )
 			{
@@ -182,7 +182,7 @@ internal static class OriginalCoasterImport
 		}
 		else if ( inService != 0 )
 			evidence.Add( $"{what}: {inService} trains in service on a track that does not run; the state change to 1 removed them (0x43BF20)." );
-		// [APPROX:SAVE-920] the riders of the saved trains (each car's two guest lists and the train's rider count +0x10) are not restored: the guests riding or seated (states 15 and 16) are not imported (SAVE-002)
+		// [APPROX:SAVE-920] the riders of the saved trains (each car's two guest lists and the train's rider count +0x10) are not restored: the guests riding or seated (state 16) are not imported (SAVE-002)
 		var riders = slots.Take( runnable ? inService : 0 ).Sum( slot => slot.Cars.Sum( car => car.HeadsA.Length + car.HeadsB.Length ) );
 		if ( riders > 0 )
 			evidence.Add( $"{what}: {riders} riders on its trains are not restored (SAVE-920); their guests are not imported." );

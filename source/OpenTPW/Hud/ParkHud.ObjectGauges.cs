@@ -54,13 +54,27 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>The average happiness byte of the guests on the cells within <paramref name="radius"/> of cell (<paramref name="x"/>, <paramref name="y"/>), 0 without guests.</summary>
+	// [BIN:TPW-EXE:0x4cd880 cell id and edges] the argument is the cell id (y << 7) + x + 1 (decremented at 0x4cd88e); the high edges x + radius and y + radius are clamped to 0x7f by an unsigned test (0x4cd8a7 ja, 0x4cd8c1 jbe), the low edges are not clamped (the loops start at x - radius and y - radius, signed)
+	// [BIN:TPW-EXE:0x4cd8fd low edge wrap] each visited cell is looked up by the 16-bit id ((y << 7) + x + 1) & 0xFFFF (0x4cd8f8-0x4cd901) in the cell table at [0x8023a0] (68-byte records, 0x4cd906-0x4cd912): a column x = -1 reads id y * 128, which is cell (127, y - 1) (and the guest whose own id that is, such as one placed at x = -1, is on that list), so a guest at the map's east edge counts for an object in column 0; an id of 0 (x = -1 on row 0) or from 0x4001 up (a row y = -1 gives 0xFF80 and up) lies outside the table and this port counts nothing there
+	// [BIN:TPW-EXE:0x4cd880 low edge unreachable] only the two window refreshes call it (0x4b05f9, 0x4b1b03), with the object's own cell: an object stands on owned land, and the land's west and north fence lines (x = xmin, y = ymin, ParkLand.Price) are never owned, so column 0 and row 0 hold no object and the out-of-table reads cannot happen; the column wrap above is kept for the function itself
 	// [BIN:TPW-EXE:0x4cd880 local happiness] the cells x - radius..min(0x7f, x + radius) by y - radius..min(0x7f, y + radius) are walked through their thing lists; every thing of type 1 (a guest) adds the low byte of its float +0x19c (the happiness, ftol) to a sum and 1 to a count, and the result is sum / count (integer division), 0 when nothing was found
 	internal static int LocalHappiness( IEnumerable<(int X, int Y, float Happiness)> guests, int x, int y, int radius = 1 )
 	{
+		var highX = (uint)(x + radius) > 0x7f ? 0x7f : x + radius;
+		var highY = (uint)(y + radius) > 0x7f ? 0x7f : y + radius;
+		// the cell ids the walk reads: 1..16384 are the map's cells, row-major with 128 columns; a guest is on the list of its own id
+		var ids = new HashSet<int>();
+		for ( var cellX = x - radius; cellX <= highX; cellX++ )
+			for ( var cellY = y - radius; cellY <= highY; cellY++ )
+			{
+				var id = ((cellY << 7) + cellX + 1) & 0xFFFF;
+				if ( id is >= 1 and <= 128 * 128 )
+					ids.Add( id );
+			}
 		int count = 0, sum = 0;
 		foreach ( var (guestX, guestY, happiness) in guests )
 		{
-			if ( guestX < x - radius || guestX > Math.Min( 0x7f, x + radius ) || guestY < y - radius || guestY > Math.Min( 0x7f, y + radius ) )
+			if ( !ids.Contains( ((guestY << 7) + guestX + 1) & 0xFFFF ) )
 				continue;
 			count++;
 			sum += RideBreakdownRules.GaugeByte( happiness );

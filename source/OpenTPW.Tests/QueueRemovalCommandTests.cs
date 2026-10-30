@@ -367,6 +367,7 @@ public class QueueRemovalCommandTests
 		Assert.AreEqual( balance - debit, park.Economy.Balance, "one cell's refund is debited" );
 
 		park.Grid.Cells.SetLinks( 2, 6, 0 );
+		park.Ride.RecomputeQueue( park.Grid );   // the edit's re-evaluation (0x4DE1F0) drops the cached size; the demolition reads it as it stands (0x527FB4)
 		balance = park.Economy.Balance;
 		Settle( park );
 		Assert.AreEqual( balance, park.Economy.Balance, "an entry without a link bit has no front and no count" );

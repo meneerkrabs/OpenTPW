@@ -20,6 +20,15 @@ public class ParkCommandLevelTests
 	private AutomaticCheckpointCpuRendererScope? renderer;
 	private UpgradeCatalogueDefaultsTests? fixture;
 
+	private sealed class InitialPathGrid( IParkGrid inner, (int X, int Y) path ) : IParkGrid
+	{
+		public int Width => inner.Width;
+		public int Height => inner.Height;
+		public System.Numerics.Vector2 Origin => inner.Origin;
+		public OriginalPlacementResult CheckTerrain( int x, int y ) => (x, y) == path ? OriginalPlacementResult.Path : inner.CheckTerrain( x, y );
+		public float GetCellHeight( int x, int y ) => inner.GetCellHeight( x, y );
+	}
+
 	private sealed record Park( Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two );
 
 	[TestInitialize]
@@ -83,6 +92,21 @@ public class ParkCommandLevelTests
 		var count = map.PlacementCountAt( 10, 20 );
 		Assert.IsTrue( Decoded( new LayLineCommand( CellToolMode.Queue, ride.AttractionId, 10, 20, 11, 20 ) ).Accepted );
 		Assert.AreEqual( count, map.PlacementCountAt( 10, 20 ), "legacy kind retains old per-cell behavior inside mixed execution" );
+	}
+
+	/// <summary>The queue tool's line may end on a NoModify path cell (an initial path, a path outside an entrance): the validator answers 8 for a final path before it tests the flag, so the level's terminal rule accepts it.</summary>
+	[TestMethod]
+	public void ANativeQueueSegmentMayEndOnANoModifyPathCell()
+	{
+		var park = NewPark(); var level = park.Level; var map = level.Guests!.Grid.Cells;
+		var ride = park.One.Visitors; ride.OwnerWord = Level.OwnerWord( park.One );
+		map.SetType( 10, 20, ParkCellType.Queue ); map.SetOwner( 10, 20, ride.OwnerWord );
+		map.SetType( 13, 20, ParkCellType.Path ); map.SetFlags( 13, 20, ParkCellFlags.NoModify );
+		// the sandbox grid knows no map-start path: this one calls (13, 20) an initial path cell, as the original levels' terrain does
+		typeof( ParkObjects ).GetField( "<Grid>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( level.Objects, new InitialPathGrid( level.Objects.Grid, (13, 20) ) );
+		var result = level.Commands.Issue( ParkCommandCodec.Decode( ParkCommandCodec.Encode( new QueueSegmentCommand( ride.AttractionId, 10, 20, 13, 20 ) ) ) );
+		Assert.IsTrue( result.Accepted, result.Reason );
+		Assert.AreEqual( ParkCellType.Queue, map.TypeAt( 12, 20 ) );
 	}
 
 	private static void Run( Level level, int ticks, List<ulong>? hashes )
@@ -200,6 +224,135 @@ public class ParkCommandLevelTests
 		Assert.AreEqual( recorded.Level.Objects.Objects.Count, twin.Level.Objects.Objects.Count );
 	}
 
+	/// <summary>The park's record of the first ride, and the next level researched as the settings tests do (a researcher, nothing on the rides' own research).</summary>
+	private static ParkObjectState ResearchedRide( Park park )
+	{
+		Assert.IsTrue( park.Economy.TryGetObject( park.Level.GetEconomyInstance( park.One )!.Value, out var state ) );
+		EconomyTestData.HireBest( park.Economy, StaffType.Researcher );
+		park.Economy.SetResearchEffort( ResearchCategory.Ride, 0 );
+		for ( var day = 0; day < 100 && !park.Economy.Research.IsAvailable( 1100, 1 ); day++ )
+			park.Economy.AdvanceDays( 1 );
+		Assert.IsTrue( park.Economy.Research.IsAvailable( 1100, 1 ) );
+		return state;
+	}
+
+	/// <summary><paramref name="command"/> as a stream carries it: encoded, decoded and issued.</summary>
+	private static ParkCommandResult IssueDecoded( Level level, ParkCommand command ) => level.Commands.Issue( ParkCommandCodec.Decode( ParkCommandCodec.Encode( command ) ) );
+
+	private static void AssertStale( ParkCommandResult result, string name ) => Assert.AreEqual( (false, ParkSettingCommand.StaleReason), (result.Accepted, result.Reason), name );
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's version-4 cancellation names the pending level and the purchase (C4b-2): it is stale when the ride waits for no level, for another level, or for a later
+	/// purchase of the same level (the host cancelled and bought again), and applies when both match; C4b-1's version-3 cancellation checks the level alone, the host's version-1 neither.
+	/// </summary>
+	[TestMethod]
+	public void AnUpgradeCancellationNamingItsPurchaseIsStaleWhenThePurchaseIsAnother()
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var ride = park.One.Runtime.AttractionId;
+		var state = ResearchedRide( park );
+		// the ride waits for no level
+		var before = level.ComputeStateHash();
+		AssertStale( IssueDecoded( level, new CancelUpgradeCommand( ride, 1, 0 ) ), "no level pending" );
+		Assert.AreEqual( before, level.ComputeStateHash() );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted );
+		Assert.AreEqual( (1, 1), (state.PendingLevel, state.UpgradePurchases) );
+		// another level
+		AssertStale( IssueDecoded( level, new CancelUpgradeCommand( ride, 2, 1 ) ), "another pending level" );
+		Assert.AreEqual( 1, state.PendingLevel, "a stale cancel cancels nothing" );
+		// a later purchase of the same level: the host cancelled and bought again
+		Assert.IsTrue( level.Commands.Issue( new CancelUpgradeCommand( ride ) ).Accepted, "the host's version-1 cancel names neither" );
+		Assert.AreEqual( (0, 1), (state.PendingLevel, state.UpgradePurchases) );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted );
+		Assert.AreEqual( (1, 2), (state.PendingLevel, state.UpgradePurchases) );
+		AssertStale( IssueDecoded( level, new CancelUpgradeCommand( ride, 1, 1 ) ), "the first purchase's cancel meets the second" );
+		Assert.AreEqual( 1, state.PendingLevel, "the new purchase stays" );
+		// both match
+		Assert.IsTrue( IssueDecoded( level, new CancelUpgradeCommand( ride, 1, 2 ) ).Accepted, "the level and the purchase match" );
+		Assert.AreEqual( 0, state.PendingLevel );
+		// C4b-1's cancel with the level alone checks the level alone, whatever the purchase count
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted );
+		Assert.AreEqual( 3, state.UpgradePurchases );
+		AssertStale( IssueDecoded( level, new CancelUpgradeCommand( ride, 2 ) ), "the version-3 cancel of another level" );
+		Assert.IsTrue( IssueDecoded( level, new CancelUpgradeCommand( ride, 1 ) ).Accepted, "the version-3 cancel of the level ignores the purchase" );
+		Assert.AreEqual( (0, 3), (state.PendingLevel, state.UpgradePurchases), "a cancel never lowers the count" );
+	}
+
+	/// <summary>[EXT:online-coop-commands] A guest's buy naming the level is stale when the ride waits for a level already, as the host's buy first makes it (C4b-2).</summary>
+	[TestMethod]
+	public void AnUpgradeBuyNamingItsLevelIsStaleWhenTheRideWaitsForOneAlready()
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var ride = park.One.Runtime.AttractionId;
+		var state = ResearchedRide( park );
+		Assert.IsTrue( IssueDecoded( level, new BuyUpgradeCommand( ride, 1 ) ).Accepted, "the guest's buy of the next level of a ride that waits for none" );
+		Assert.AreEqual( (1, 1), (state.PendingLevel, state.UpgradePurchases) );
+		Assert.IsTrue( level.Commands.Issue( new CancelUpgradeCommand( ride ) ).Accepted );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted, "the host's buy comes first" );
+		var before = level.ComputeStateHash();
+		AssertStale( IssueDecoded( level, new BuyUpgradeCommand( ride, 1 ) ), "the guest's buy of the same level, which the ride waits for" );
+		Assert.AreEqual( (1, 2), (state.PendingLevel, state.UpgradePurchases), "a stale buy counts no purchase" );
+		Assert.AreEqual( before, level.ComputeStateHash() );
+		AssertStale( IssueDecoded( level, new BuyUpgradeCommand( ride, 2 ) ), "another level" );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The count of levels bought is no part of the world hash (an older log that bought an upgrade replays to the checkpoints it recorded) and is part of the session
+	/// digest (C4b-2).
+	/// </summary>
+	[TestMethod]
+	public void TheCountOfLevelsBoughtIsOutOfTheWorldHashAndInTheSessionDigest()
+	{
+		var park = NewPark();
+		var level = park.Level;
+		var state = ResearchedRide( park );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( park.One.Runtime.AttractionId ) ).Accepted );
+		Assert.AreEqual( 1, state.UpgradePurchases );
+		var (world, digest) = (level.ComputeStateHash(), CoopDigest.Compute( level ));
+		state.UpgradePurchases = 5;
+		Assert.AreEqual( world, level.ComputeStateHash(), "another count, the same world hash" );
+		Assert.AreNotEqual( digest, CoopDigest.Compute( level ), "the session digest differs" );
+		state.UpgradePurchases = 0;
+		Assert.AreEqual( world, level.ComputeStateHash(), "the count cleared, the same world hash" );
+		Assert.AreNotEqual( digest, CoopDigest.Compute( level ), "the cleared count differs in the digest too" );
+		state.UpgradePurchases = 1;
+		Assert.AreEqual( digest, CoopDigest.Compute( level ), "the same count, the same digest" );
+	}
+
+	[TestMethod]
+	public void AHostLogThatBuysCancelsAndBuysAnUpgradeReplaysToItsFinalCheckpoint()
+	{
+		var recorded = NewPark();
+		var twin = NewPark();
+		var state = ResearchedRide( recorded );
+		var twinState = ResearchedRide( twin );
+		var level = recorded.Level;
+		var ride = recorded.One.Runtime.AttractionId;
+		level.StartCommandRecording();
+		var interval = ParkCommandRecorder.CheckpointInterval;
+		Run( level, 10, null );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted );
+		Run( level, 10, null );
+		Assert.IsTrue( level.Commands.Issue( new CancelUpgradeCommand( ride ) ).Accepted );
+		Run( level, 10, null );
+		Assert.IsTrue( level.Commands.Issue( new BuyUpgradeCommand( ride ) ).Accepted );
+		Run( level, 2 * interval, null );
+		Assert.AreEqual( (1, 2), (state.PendingLevel, state.UpgradePurchases) );
+		var log = ParkCommandLogFile.Deserialize( level.CommandLog()!.Serialize() );
+		Assert.AreEqual( twin.Level.ComputeStateHash(), log.StartHash );
+		Assert.IsTrue( log.Checkpoints.Count >= 2, $"{log.Checkpoints.Count} checkpoints" );
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.BuyUpgrade, ParkCommandKind.CancelUpgrade, ParkCommandKind.BuyUpgrade },
+			log.Entries.Select( entry => entry.Command.Kind ).ToArray() );
+		var hashes = new Dictionary<long, ulong>();
+		ParkCommandReplay.Run( twin.Level.Commands, log.Entries, () => twin.Level.Commands.NextTick,
+			() => twin.Level.AdvanceSimulation( FixedStepClock.TickDuration ), log.Checkpoints[^1].Ticks, ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
+		Assert.IsNull( ParkCommandReplay.FirstMismatch( log, hashes ), "the replay reaches every recorded world hash" );
+		Assert.AreEqual( (1, 2), (twinState.PendingLevel, twinState.UpgradePurchases), "the twin bought, cancelled and bought again" );
+		Assert.AreEqual( CoopDigest.Compute( level ), CoopDigest.Compute( twin.Level ), "and its session digest matches" );
+	}
+
 	[TestMethod]
 	public void ARecordingSurvivesItsFileAndItsCheckpointsProveTheReplay()
 	{
@@ -221,6 +374,33 @@ public class ParkCommandLevelTests
 		ParkCommandReplay.Run( other.Level.Commands, log.Entries.Where( entry => entry.Command is not RemoveAttractionCommand ).ToArray(), () => other.Level.Commands.NextTick,
 			() => other.Level.AdvanceSimulation( FixedStepClock.TickDuration ), log.Checkpoints[^1].Ticks, ticks => wrong[ticks] = other.Level.ComputeStateHash() );
 		Assert.IsNotNull( ParkCommandReplay.FirstMismatch( log, wrong ) );
+	}
+
+	/// <summary>
+	/// A log's final checkpoint is the park when the log is taken: a command after the last tick is recorded at a tick whose after-tick checkpoint it changes ([EXT:online-coop-permissions]
+	/// a session's teardown records its releases there, C4a), so the final checkpoint takes that checkpoint's place, and a replay compares it after the commands logged at its tick.
+	/// </summary>
+	[TestMethod]
+	public void ALogsFinalCheckpointIsTheParkWhenTheLogIsTaken()
+	{
+		var recorded = NewPark();
+		var twin = NewPark();
+		recorded.Level.StartCommandRecording();
+		Run( recorded.Level, ParkCommandRecorder.CheckpointInterval, null );
+		var tick = recorded.Level.Commands.NextTick;
+		Assert.AreEqual( tick, recorded.Level.CommandLog()!.Checkpoints[^1].Ticks, "an after-tick checkpoint at the tick" );
+		var before = recorded.Level.ComputeStateHash();
+		Assert.IsTrue( recorded.Level.Commands.Issue( new RemoveAttractionCommand( recorded.Two.Runtime.AttractionId ) ).Accepted );
+		Assert.AreNotEqual( before, recorded.Level.ComputeStateHash() );
+		var log = ParkCommandLogFile.Deserialize( recorded.Level.CommandLog()!.Serialize() );
+		Assert.AreEqual( 1, log.Checkpoints.Count( point => point.Ticks == tick ), "one checkpoint a tick" );
+		Assert.AreEqual( recorded.Level.ComputeStateHash(), log.Checkpoints[^1].Hash, "the park with the sale" );
+		var hashes = new Dictionary<long, ulong>();
+		ParkCommandReplay.Run( twin.Level.Commands, log.Entries, () => twin.Level.Commands.NextTick, () => twin.Level.AdvanceSimulation( FixedStepClock.TickDuration ), tick,
+			ticks => hashes[ticks] = twin.Level.ComputeStateHash() );
+		Assert.AreEqual( before, hashes[tick], "the tick's own hash, before the sale" );
+		hashes[tick] = twin.Level.ComputeStateHash();
+		Assert.IsNull( ParkCommandReplay.FirstMismatch( log, hashes ), "the replay matches it after the commands of the last tick" );
 	}
 
 	/// <summary>
@@ -330,7 +510,7 @@ public class ParkCommandLevelTests
 		long Amount() => Pick( -1L, long.MinValue, long.MaxValue, 0L, 100L, 10_000L, 10_001L, 18_000L );
 		bool Flag() => random.Below( 2 ) == 0;
 		string Text() => Pick( "Ann", "", "A\u0007B", "\ud800", new string( 'a', 600 ), "Kevin the", "Cosmic Cow" );
-		ParkCommand Next() => random.Below( 79 ) switch
+		ParkCommand Next() => random.Below( 81 ) switch
 		{
 			0 => new PlaceObjectCommand( Entry(), Coordinate(), Coordinate(), Rotation(), random.Below( 4 ) == 0, Pick( -1, -2, Id() ) ),
 			1 => new RemoveAtCommand( Coordinate(), Coordinate() ),
@@ -421,6 +601,11 @@ public class ParkCommandLevelTests
 			// [EXT:online-coop-claims] a ride's claim and its release (C3c-1)
 			76 => new ClaimRideCommand( Id() ),
 			77 => new ReleaseRideCommand( Id() ),
+			// [EXT:online-coop-permissions] a seat's rights (C4a)
+			78 => new SetSeatRightsCommand( Pick( -1, 0, 1, 3, 64 ), (CoopRights)Pick<byte>( 0, 1, 2, 3, 31, 32, 255 ) ),
+			// [EXT:online-coop-undo] a take-back no host decided, or decided with a random inverse of the local player (C5)
+			79 => new TakeBackCommand( Flag(), Pick( -1L, 0L, 41L, long.MaxValue ), Pick( -2, -1, 0, 3 ), Pick( -1, -2, Id() ), Pick( -1, Id() ), (TakeBackVerdict)Pick<byte>( 0, 1, 2, 3, 7, 8, 255 ),
+				random.Below( 2 ) == 0 ? null : new UndoLineCommand( Mode(), Pick( -1, Id() ), Coordinate(), Coordinate(), Cells(), Cells() ) ),
 			_ => new RemoveAttractionCommand( Pick( -1, int.MinValue, 99_999 ) ),
 		};
 		CollectionAssert.IsSubsetOf( Enum.GetValues<ParkCommandKind>(), Enumerable.Range( 0, 1024 ).Select( _ => Next().Kind ).Distinct().ToArray(), "the stream draws every kind" );

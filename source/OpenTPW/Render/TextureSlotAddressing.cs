@@ -49,6 +49,18 @@ public static class TextureSlotAddressing
 	public const uint LightSourceFlag = 0x0200_0000;
 
 	/// <summary>
+	/// OpenTPW's vertex flag for a corner of a terrain cell in unowned land (<see cref="UnownedLandDim"/>): <c>test.shader</c> halves the corner's lighting colour, as tp.exe halves the vertex colour of a cell
+	/// whose word has bit 0x400. Bit 24 is free like bits 25 to 31.
+	/// </summary>
+	public const uint LandDimFlag = 0x0100_0000;
+
+	/// <summary>
+	/// OpenTPW's vertex flag for a corner of the terrain while the LIGHTING option is 0 (<see cref="UnownedLandDim.Unlit"/>): <c>test.shader</c> shades it with the constant white tp.exe's colour table fills in
+	/// that case (<c>0x574530</c> copies the light object's +0x2C, 0xFFFFFFFF), no sun, ambient or point light. Bit 23 is free like bits 25 to 31.
+	/// </summary>
+	public const uint TerrainUnlitFlag = 0x0080_0000;
+
+	/// <summary>
 	/// [EXT:evening] Whether a self-lit material's texture name is a real light source: glow, flame, fire, torch, lamp, light, coal or lava in the name (user decisions of October 27, 2026: the glowing coals and the lava are glowing fire). Over the original files these
 	/// are the glow quads of the chests and gems (<c>glow2</c>, <c>b_glow2</c>, <c>h_glow</c>, <c>h_glow2</c>, <c>sc_glow</c>, <c>GEM_GLOW</c>), the flames (<c>flame</c>, <c>h_flame</c>, <c>fire0</c>), the lights
 	/// (<c>s_lights</c>, <c>h_light</c>), the fire pit's coals and the lava (<c>fp_coals</c>, <c>lava2</c>, <c>lava2a</c>, <c>ig_lava2</c>) and the evening extension's own torch flames (<c>tt_*_flame</c>); every other self-lit material (water, signs, beams, the fire pit's stand, panels) takes the night tint.
@@ -62,6 +74,11 @@ public static class TextureSlotAddressing
 	/// <summary>The vertex flags for a corner of a material: those of its slot (<see cref="VertexFlags(uint)"/>), <see cref="SelfLitFlag"/> when the material is self-lit, and <see cref="LightSourceFlag"/> when it also is a light source.</summary>
 	public static uint VertexFlags( ModelFile.MaterialData material ) =>
 		VertexFlags( material.Flags ) | ((material.Pad & ModelBuilder.SelfLitMaterialFlag) != 0 ? SelfLitFlag | (IsLightSource( material.Name ) ? LightSourceFlag : 0u) : 0u);
+
+	/// <summary>The vertex flags for a corner of a material whose shared texture object may already wrap: <paramref name="wraps"/> adds the wrap flag the slot itself lacks.</summary>
+	// [BIN:TPW-EXE:0x575E10 shared texture bits] the texture cache 0x575870 hands out one object per (texture directory, frame name); the slot setup ORs 0x10000/0x20000 into that shared object (0x575EA1, 0x575EB3) and a rebinding of a texture set ORs 0x30000 when a slot has flag 0x10 or 0x20 (0x575C95..0x575CA5); nothing clears the bits (0x590FA0 clears only 0x4000), so every model that names the same texture wraps once one of them has a wrap slot
+	public static uint VertexFlags( ModelFile.MaterialData material, bool wraps ) =>
+		wraps ? VertexFlags( material ) & ~ClampFlag : VertexFlags( material );
 
 	/// <summary>Whether tp.exe wraps a slot with these flags (else it clamps).</summary>
 	public static bool Wraps( uint slotFlags ) => (slotFlags & WrapFlags) != 0;

@@ -171,4 +171,53 @@ public class LinkPreviewCursorTests
 		Assert.IsFalse( ParkHud.LinkPointerShown( 11, ghost ) );
 		Assert.IsFalse( ParkHud.LinkPointerShown( 1, null ) );
 	}
+
+	[TestMethod]
+	public void PathLineEndingOnAnExistingPathCellShowsTheEndPointerAndAnOpenEndDoesNot()
+	{
+		var (grid, builder) = PathRig();
+		grid.Cells.SetType( 6, 4, ParkCellType.Path );
+		var ghost = builder.Preview( (2, 4), (6, 4) );
+		Assert.IsTrue( ghost.Completed );
+		Assert.IsTrue( ghost.EndPointer, "the last cell holds a path: code 0xB, flag 0x816D4C" );
+		Assert.IsTrue( ParkHud.EndPointerShown( 1, ghost ) );
+		Assert.AreEqual( 18, OriginalPointers.ForTool( 1, end: true ) );
+		Assert.IsFalse( builder.Preview( (2, 4), (5, 4) ).EndPointer );
+		Assert.IsFalse( builder.Preview( (6, 4), (8, 4) ).EndPointer, "an existing first cell is no last cell" );
+		Assert.IsTrue( builder.Preview( (6, 4), (6, 4) ).EndPointer, "a one-cell line over a path is its own last cell" );
+		Assert.IsFalse( ParkHud.EndPointerShown( 4, ghost ) );
+		Assert.IsFalse( ParkHud.EndPointerShown( 1, null ) );
+	}
+
+	[TestMethod]
+	public void QueueLineEndingOnTheRidesOwnQueueCellShowsTheEndPointer()
+	{
+		var grid = new GuestPathGrid( 16, 16 );
+		var writer = QueueWriter( grid );
+		var tool = new CellBuildTool();
+		tool.Enter( writer, (2, 5) );
+		Assert.IsFalse( tool.Hover( (2, 3) )!.EndPointer );
+		Assert.IsFalse( ParkHud.EndPointerShown( 3, tool.Ghost ) );
+	}
+
+	[TestMethod]
+	public void RefusedLinePreviewSelectsTheNoPlacePointerAndTheCashPointerStillWins()
+	{
+		const BindingFlags hidden = BindingFlags.Instance | BindingFlags.NonPublic;
+		var hud = VisitorWorldSelectionTests.Fixture( out _, out _ );
+		var level = (Level)typeof( ParkHud ).GetField( "level", hidden )!.GetValue( hud )!;
+		Input.CursorTypes Select() => (Input.CursorTypes)typeof( ParkHud ).GetMethod( "ChooseCursor", hidden )!.Invoke( hud, null )!;
+		var (grid, builder) = PathRig();
+		grid.Cells.SetFlags( 5, 4, ParkCellFlags.Unowned );
+		level.CellTool.Enter( builder, (2, 4) );
+		var refused = level.CellTool.Hover( (6, 4) )!;
+		Assert.IsFalse( refused.Completed );
+		Assert.IsTrue( ParkHud.GhostRefused( 1, refused ) );
+		Assert.AreEqual( OriginalPointers.TypeOf( OriginalPointers.NoPlace ), Select() );
+		level.CellTool.Hover( (3, 4) );
+		Assert.AreEqual( OriginalPointers.TypeOf( OriginalPointers.ForTool( 1 )!.Value ), Select() );
+		Assert.IsFalse( ParkHud.GhostRefused( 1, null ) );
+		Assert.IsFalse( ParkHud.GhostRefused( 4, refused ) );
+		Assert.IsFalse( ParkHud.GhostRefused( 3, refused with { StoppedByOwnLimit = true } ), "the queue's own length bound is no refusal of the validator" );
+	}
 }

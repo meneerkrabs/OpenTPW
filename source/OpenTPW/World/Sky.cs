@@ -20,7 +20,7 @@ namespace OpenTPW;
 /// <item>The clouds take their colour from <c>sky_rgb.tga</c>, sampled at 16 x 16 points, and their shape from <c>sky.tga</c>.</item>
 /// </list>
 /// A level without <c>sky.tga</c> or <c>sky_cyl.tga</c> draws no sky at all, as the original's draw (0x5863C0) is gated on both textures.
-/// The moon billboards of the hallow and space levels (<c>SkyObjects</c>, 0x5860D0) are not drawn (UI-107).
+/// The moon billboards of the hallow and space levels (<c>SkyObjects</c> of Standard.sam, drawn by 0x5860D0) follow the clouds' camera-centred placement; <see cref="TryMoonQuad"/> holds their geometry.
 /// </remarks>
 // [BIN:TPW-EXE:0x5852B0 sky load] loads <level dir>\sky\sky.tga (clouds), sky_rgb.tga (the colour grid, freed after sampling) and sky_cyl.tga (the cylinder); a missing sky.tga or sky_cyl.tga logs an error and leaves its pointer null
 // [BIN:TPW-EXE:0x584EF0 sky constructor] width = height = 0x960 (2400), centre (0, 300, 0) (0x43960000), 4 layers, far distance 24000 (+0x21E8); layer colour 0xCFFFFFFF with 0x38000000 less per layer (+0x2F0C, +0x2F10)
@@ -48,6 +48,7 @@ public sealed class Sky : IDisposable
 
 	private readonly Material<ObjectUniformBuffer> cloudMaterial;
 	private readonly Material<ObjectUniformBuffer> cylinderMaterial;
+	private readonly List<Moon> moons = new();
 	private readonly uint[] colourGrid = new uint[GridSize * GridSize];
 	private readonly float[] offsetU = new float[MaximumLayers];
 	private readonly float[] offsetV = new float[MaximumLayers];
@@ -101,12 +102,216 @@ public sealed class Sky : IDisposable
 				return null;
 			var colours = FileSystem.FileExists( folder + ColoursFile ) ? ReadColourGrid( folder + ColoursFile ) : FallbackColourGrid();
 			// the wrap flag turns on the wrapped sampler the scrolling needs (the original's 0x400000 state bit)
-			return new Sky( new Texture( folder + CloudsFile, TextureFlags.Wrap ), new Texture( folder + CylinderFile, TextureFlags.Wrap ), colours );
+			var sky = new Sky( new Texture( folder + CloudsFile, TextureFlags.Wrap ), new Texture( folder + CylinderFile, TextureFlags.Wrap ), colours );
+			sky.LoadMoons( levelName );
+			return sky;
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or KeyNotFoundException )
 		{
 			Log.Warning( $"Sky of level {levelName} not drawn: {exception.Message}" );
 			return null;
+		}
+	}
+
+	// ---- the sky objects (the moons) ------------------------------------------------------------------------------------------------------
+
+	/// <summary>One sky object of a level's Standard.sam (<c>SkyObjects[i]</c>): a texture quad at a direction of the sky, in front of the clouds or behind them.</summary>
+	/// <param name="Position">X, Y (up) and Z in the original's axes.</param>
+	/// <param name="Size">The quad's size: half of it is the clip-space offset to each side of the point.</param>
+	/// <param name="Front">FrontFlag: drawn after the cylinder (mask 1) or before the clouds (mask 2).</param>
+	/// <param name="File">The texture under the level's <c>sky</c> folder.</param>
+	internal readonly record struct SkyObject( SVector3 Position, float Size, bool Front, string File );
+
+	/// <summary>The most sky objects the engine keeps (0x5850C0 refuses the seventeenth).</summary>
+	internal const int MaximumObjects = 16;
+
+	/// <summary>
+	/// The sky objects of a level: <c>NumSkyObjects.n</c> and <c>SkyObjects[i].X, Y, Z, Size, FrontFlag, Filename</c> from the level's Standard.sam, each key falling back to the shared one (<c>/levels/Standard.sam</c>:
+	/// no objects). An object without a file name is not added.
+	/// </summary>
+	// [BIN:TPW-EXE:0x418c30 sky object setup] for every object of the settings (count 0x785724, records of six words from 0x785728) the park calls the sky's add 0x5850C0 with the file, X, Y, Z, Size and the mask 1 for a non-zero FrontFlag, 2 for a zero one; the add refuses a seventeenth object (0x5850C7) and an object whose file does not load (0x58517B)
+	// [DATA:levels/<theme>/Standard.sam:SkyObjects] hallow: moon.tga (2, 11, 15) size 5 behind the sky; space: moon.tga (1, 12, 13) size 5.5 and moon2.tga (15, 13, 1) size 3.5 in front of it; jungle and fantasy have none
+	internal static IReadOnlyList<SkyObject> ReadObjects( string levelName, Func<string, bool> exists, Func<string, string, string?> read )
+	{
+		string? Value( string key )
+		{
+			foreach ( var path in new[] { $"/levels/{levelName}/Standard.sam", "/levels/Standard.sam" } )
+			{
+				if ( exists( path ) && read( path, key ) is { } text )
+					return text;
+			}
+			return null;
+		}
+		float Number( string key ) => float.TryParse( Value( key )?.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var number ) ? number : 0f;
+		var objects = new List<SkyObject>();
+		if ( !int.TryParse( Value( "NumSkyObjects.n" )?.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var count ) )
+			return objects;
+		for ( var index = 0; index < count && objects.Count < MaximumObjects; index++ )
+		{
+			var prefix = $"SkyObjects[{index}].";
+			var file = Value( prefix + "Filename" )?.Trim() ?? "";
+			if ( file.Length == 0 )
+				continue;
+			objects.Add( new SkyObject( new SVector3( Number( prefix + "X" ), Number( prefix + "Y" ), Number( prefix + "Z" ) ), Number( prefix + "Size" ),
+				(int)Number( prefix + "FrontFlag" ) != 0, file ) );
+		}
+		return objects;
+	}
+
+	/// <summary>The sine table of the sprite rotation (0x591430): 256 entries of sin(i * pi / 128), built at 0x5913F0.</summary>
+	private static readonly float[] SineTable = Enumerable.Range( 0, 256 ).Select( index => MathF.Sin( index * MathF.PI * 0.0078125f ) ).ToArray();
+
+	/// <summary>
+	/// The camera roll in turns that the quad turns against (<c>[0x87AF60]</c>, 0x578700): the angle of the camera's up vector from the world's, from the world-up components of its right and up vectors
+	/// (the camera matrix's elements +4 and +0x14, 0x87AFE8): the negated arc cosine of the up component over their length, signed by the arc sine of the negated right component.
+	/// </summary>
+	// [BIN:TPW-EXE:0x578700 camera roll] a = the camera matrix's [+4] (the right vector's world-up component), b = its [+0x14] (the up vector's): with n = 1 / sqrt(a^2 + b^2) (a = b = 1 when both vanish) the roll is acos(b n) / 2pi, negative when asin(-a n) is not above zero; 0x87AFF0 is the camera's world matrix (0x5783B0 inverts it into the view 0x87AF68)
+	internal static float CameraRoll( float rightUp, float upUp )
+	{
+		var sum = rightUp * rightUp + upUp * upUp;
+		float a = rightUp, b = upUp, inverse;
+		if ( sum == 0f )
+			(a, b, inverse) = (1f, 1f, 1f);
+		else
+			inverse = (float)(1.0 / Math.Sqrt( sum ));
+		var sine = MathF.Asin( Math.Clamp( -inverse * a, -1f, 1f ) );
+		var cosine = MathF.Acos( Math.Clamp( inverse * b, -1f, 1f ) );
+		return (sine > 0f ? cosine : -cosine) / (2f * MathF.PI);
+	}
+
+	/// <summary>The cosine and sine the sprite rotation takes for a roll in turns: table entries at the truncated 256 x roll (0x591461-0x59149D).</summary>
+	// [BIN:TPW-EXE:0x591430 sprite rotation] sin = table[trunc(roll * 256) & 255], cos = table[(0x40 - trunc(roll * -256)) & 255]; each corner (x, y) about the quad's centre becomes (cos * x + sin * y, cos * y - sin * x)
+	internal static (float Cos, float Sin) RollRotation( float rollTurns )
+	{
+		var sine = SineTable[(int)(rollTurns * 256f) & 0xFF];
+		var cosine = SineTable[(0x40 - (int)(rollTurns * -256f)) & 0xFF];
+		return (cosine, sine);
+	}
+
+	/// <summary>The quad's corner offsets in units of the half size: top left, top right, bottom right, bottom left.</summary>
+	private static readonly (float X, float Y)[] MoonUnit = { (-1f, 1f), (1f, 1f), (1f, -1f), (-1f, -1f) };
+	/// <summary>The texture page corners of a standalone file, 0..1 each way, in the corner order of <see cref="MoonUnit"/>.</summary>
+	private static readonly SVector2[] MoonUv = { new( 0f, 0f ), new( 1f, 0f ), new( 1f, 1f ), new( 0f, 1f ) };
+	/// <summary>The corners of the two triangles of a quad.</summary>
+	private static readonly int[] MoonCorners = { 0, 1, 2, 0, 2, 3 };
+	private readonly Vertex[] moonVertices = new Vertex[6];
+
+	/// <summary>
+	/// The depth along the camera's forward axis that <see cref="TryMoonQuad"/> places a quad at: half the projection's far plane (the park view's far plane is the span selection's
+	/// farthest corner distance of each frame), or the midpoint of the near and far planes when that is not beyond the near plane, so the quad is never clipped by the depth range.
+	/// </summary>
+	internal static float MoonDepth( System.Numerics.Matrix4x4 projection )
+	{
+		// System.Numerics perspective: M33 = far / (near - far), M43 = near * far / (near - far)
+		var near = projection.M43 / projection.M33;
+		var far = projection.M43 / (projection.M33 + 1f);
+		if ( !float.IsFinite( near ) || !float.IsFinite( far ) || !(far > near) || !(near > 0f) )
+			return 50f;
+		var depth = 0.5f * far;
+		return depth > near ? depth : 0.5f * (near + far);
+	}
+
+	/// <summary>
+	/// The four corners (camera-relative engine positions, top left, top right, bottom right, bottom left) of a sky object, or false when it is behind the camera.
+	/// </summary>
+	/// <param name="viewRotation">The view matrix without its translation.</param>
+	/// <param name="projection">The camera's projection.</param>
+	/// <param name="rollTurns">The camera roll, <see cref="CameraRoll"/>.</param>
+	// [BIN:TPW-EXE:0x5860D0 sky object draw] the point (X, Y, Z) goes through the sky's clip matrix (the view without its translation times the projection, 0x5865AA, case 0 of 0x578D20) to (x, y, z, w); the quad takes the offsets (-+h, +-h), h = Size x 0.5 (0x701F50), turns them by the camera roll (0x591430), scales the x offsets by the aspect word 0x8BCBCC (height over width) and adds them to x and y in clip space, keeping z and w: a square on the screen whose half height is h / w, its size falling with the depth; 0x565F90 mode -3 clips it against the frustum and takes it white (0xFFFFFFFF) with the corner coordinates of the texture page
+	// the quad is built here at the depth MoonDepth(projection) along the same direction with the clip offsets scaled with it, which projects to the same picture (it depends only on the direction and on h / w) and keeps the quad inside the projection's depth range
+	internal static bool TryMoonQuad( SVector3 position, float size, System.Numerics.Matrix4x4 viewRotation, System.Numerics.Matrix4x4 projection, float rollTurns, out SVector3[] corners )
+	{
+		corners = Array.Empty<SVector3>();
+		var clipMatrix = viewRotation * projection;
+		if ( !System.Numerics.Matrix4x4.Invert( clipMatrix, out var inverse ) )
+			return false;
+		var clip = System.Numerics.Vector4.Transform( new System.Numerics.Vector4( ToEngine( position ), 1f ), clipMatrix );
+		if ( !(clip.W > 1e-4f) || !float.IsFinite( clip.W ) )
+			return false;
+		var scale = MoonDepth( projection ) / clip.W;
+		clip *= scale;
+		var half = size * 0.5f * scale;
+		var aspect = projection.M11 / projection.M22;
+		var (cosine, sine) = RollRotation( rollTurns );
+		corners = new SVector3[4];
+		for ( var index = 0; index < 4; index++ )
+		{
+			var (x, y) = MoonUnit[index];
+			var turned = (X: cosine * x + sine * y, Y: cosine * y - sine * x);
+			var corner = System.Numerics.Vector4.Transform( new System.Numerics.Vector4( clip.X + turned.X * aspect * half, clip.Y + turned.Y * half, clip.Z, clip.W ), inverse );
+			if ( !(MathF.Abs( corner.W ) > 1e-9f) )
+				return false;
+			corners[index] = new SVector3( corner.X, corner.Y, corner.Z ) / corner.W;
+		}
+		return true;
+	}
+
+	/// <summary>A loaded sky object: its settings, its texture and the buffer its two triangles are written to each frame.</summary>
+	private sealed class Moon( SkyObject definition, Material<ObjectUniformBuffer> material )
+	{
+		public SkyObject Definition { get; } = definition;
+		public Material<ObjectUniformBuffer> Material { get; } = material;
+		public DeviceBuffer? Buffer { get; set; }
+	}
+
+	private void LoadMoons( string levelName )
+	{
+		var folder = $"/levels/{levelName}/";
+		IReadOnlyList<SkyObject> objects;
+		try
+		{
+			objects = ReadObjects( levelName, path => FileSystem.FileExists( path ), ( path, key ) => new SettingsFile( path )[key] );
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or KeyNotFoundException )
+		{
+			Log.Warning( $"Sky objects of level {levelName} unreadable: {exception.Message}" );
+			return;
+		}
+		foreach ( var definition in objects )
+		{
+			var path = folder + "sky/" + definition.File;
+			if ( !FileSystem.FileExists( path ) )
+				continue;
+			try
+			{
+				var material = new Material<ObjectUniformBuffer>( "content/shaders/particle.shader", MaterialFlags.DisableDepth | MaterialFlags.DoubleSided );
+				material.Set( "Color", new Texture( path ) );
+				moons.Add( new Moon( definition, material ) );
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or KeyNotFoundException )
+			{
+				Log.Warning( $"Sky object {definition.File} of level {levelName} not drawn: {exception.Message}" );
+			}
+		}
+	}
+
+	/// <summary>
+	/// The camera roll of the current view: the world-up (engine Z) components of the camera's right and up vectors, which are the third row's first two elements of the view matrix.
+	/// </summary>
+	private static float CurrentRoll( System.Numerics.Matrix4x4 view ) => CameraRoll( view.M31, view.M32 );
+
+	/// <summary>Draws the sky objects of one pass (the behind ones before the clouds, the front ones after the cylinder), each as a textured quad of two triangles in the sky's camera-centred space.</summary>
+	private void DrawMoons( CommandList commandList, bool front, ObjectUniformBuffer uniforms )
+	{
+		if ( moons.Count == 0 || !CompatibilityRuntime.RenderQuality.SkyObjects )
+			return;
+		var roll = CurrentRoll( uniforms.g_mView );
+		foreach ( var moon in moons )
+		{
+			if ( moon.Definition.Front != front || !TryMoonQuad( moon.Definition.Position, moon.Definition.Size, uniforms.g_mView, uniforms.g_mProj, roll, out var corners ) )
+				continue;
+			// the corner coordinates of the texture page of a standalone file: 0..1 each way, the file's first stored row at the top vertices (like the clouds')
+			// [BIN:TPW-EXE:0x565f90 sky object colour] the corners are submitted white (0xFFFFFFFF) and take no evening tint
+			var white = Tint( 255, 255, 255, 255 );
+			var vertices = moonVertices;
+			for ( var slot = 0; slot < vertices.Length; slot++ )
+				vertices[slot] = new Vertex( corners[MoonCorners[slot]], white, Upload( MoonUv[MoonCorners[slot]] ) );
+			var size = (uint)vertices.Length * VertexStride;
+			moon.Buffer ??= Device.ResourceFactory.CreateBuffer( new BufferDescription( size, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
+			commandList.UpdateBuffer( moon.Buffer, 0, ref MemoryMarshal.GetArrayDataReference( vertices ), size );
+			commandList.SetVertexBuffer( 0, moon.Buffer );
+			moon.Material.Set( "ObjectUniformBuffer", uniforms );
+			DrawRange( commandList, moon.Material, 0, vertices.Length );
 		}
 	}
 
@@ -418,8 +623,12 @@ public sealed class Sky : IDisposable
 		};
 		cloudMaterial.Set( "ObjectUniformBuffer", uniforms );
 		cylinderMaterial.Set( "ObjectUniformBuffer", uniforms );
+		// [BIN:TPW-EXE:0x5863C0 sky object passes] the objects of mask 2 are drawn before the cloud layers (0x5865AC) and those of mask 1 after the cylinder (0x586C9E)
+		DrawMoons( commandList, front: false, uniforms with { g_vLightColor = SVector3.Zero } );
+		commandList.SetVertexBuffer( 0, vertexBuffer );
 		DrawRange( commandList, cloudMaterial, 0, cloudCount );
 		DrawRange( commandList, cylinderMaterial, cloudCount, staged.Length - cloudCount );
+		DrawMoons( commandList, front: true, uniforms with { g_vLightColor = SVector3.Zero } );
 	}
 
 	/// <summary>The sky's vertices for the layer count last drawn: built once per layer count, then only the clouds' texture coordinates are rewritten per frame.</summary>
@@ -497,6 +706,14 @@ public sealed class Sky : IDisposable
 		// the same level takes them again instead of loading new ones, so they are kept (two per level), as ReleaseOwned keeps every path texture
 		cloudMaterial.ReleaseOwnedResources();
 		cylinderMaterial.ReleaseOwnedResources();
+		foreach ( var moon in moons )
+		{
+			moon.Material.ReleaseOwnedResources();
+			var moonBuffer = moon.Buffer;
+			moon.Buffer = null;
+			if ( moonBuffer != null && global::Global.Render is { } moonRender )
+				moonRender.ScheduleDelete( moonBuffer.Dispose );
+		}
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null && global::Global.Render is { } render )

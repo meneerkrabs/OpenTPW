@@ -40,6 +40,15 @@ public abstract record ParkSettingCommand : ParkCommand
 	/// <summary>The rejection of a command that names no employee.</summary>
 	private protected static ParkCommandResult NoStaff( int staff ) => ParkCommandResult.Rejected( $"No employee {staff}." );
 
+	/// <summary>
+	/// [EXT:online-coop-commands] The reason a stale-checked command whose expectation no longer holds gives (<see cref="IStaleChecked"/>, C4b): what its window showed is gone, and the
+	/// window says that it is not available.
+	/// </summary>
+	internal const string StaleReason = "What this asked for is no longer there.";
+
+	/// <summary>[EXT:online-coop-commands] The rejection of a stale-checked command whose expectation no longer holds.</summary>
+	private protected static ParkCommandResult Stale() => ParkCommandResult.Rejected( StaleReason );
+
 	/// <summary>Whether <paramref name="value"/> is text a command can carry: valid UTF-16 whose UTF-8 form fits the codec's string bound, so it decodes to the same string.</summary>
 	internal static bool IsText( string? value )
 	{
@@ -91,11 +100,12 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.SetTrainingBudget => new SetTrainingBudgetCommand( (StaffType)reader.Int(), reader.Long() ),
 		ParkCommandKind.SetResearchEffort => new SetResearchEffortCommand( (ResearchCategory)reader.Int(), reader.Int() ),
 		ParkCommandKind.SetResearchWorkload => new SetResearchWorkloadCommand( reader.Int() ),
-		ParkCommandKind.MoveResearch => new MoveResearchCommand( (ResearchCategory)reader.Int(), reader.Int() ),
+		ParkCommandKind.MoveResearch => new MoveResearchCommand( (ResearchCategory)reader.Int(), reader.Int(), reader.HasExpectation ? reader.Int() : null,
+			reader.HasExpectation ? reader.Int() : null ),
 		ParkCommandKind.TakeLoan => new TakeLoanCommand( reader.Int(), reader.Long() ),
 		ParkCommandKind.RepayLoan => new RepayLoanCommand( reader.Int(), reader.Long() ),
-		ParkCommandKind.BuyUpgrade => new BuyUpgradeCommand( reader.Int() ),
-		ParkCommandKind.CancelUpgrade => new CancelUpgradeCommand( reader.Int() ),
+		ParkCommandKind.BuyUpgrade => new BuyUpgradeCommand( reader.Int(), reader.HasExpectation ? reader.Int() : null ),
+		ParkCommandKind.CancelUpgrade => new CancelUpgradeCommand( reader.Int(), reader.HasExpectation ? reader.Int() : null, reader.HasPurchase ? reader.Int() : null ),
 		ParkCommandKind.RequestMaintenance => new RequestMaintenanceCommand( reader.Int(), reader.Bool() ),
 		ParkCommandKind.AnswerChallenge => new AnswerChallengeCommand( reader.Int(), reader.Long(), reader.Bool() ),
 		ParkCommandKind.RenameStaff => new RenameStaffCommand( reader.Int(), reader.String() ),
@@ -111,8 +121,18 @@ public abstract record ParkSettingCommand : ParkCommand
 		ParkCommandKind.ReleaseSeat => new ReleaseSeatCommand( reader.Int() ),
 		ParkCommandKind.ClaimRide => new ClaimRideCommand( reader.Int() ),
 		ParkCommandKind.ReleaseRide => new ReleaseRideCommand( reader.Int() ),
+		ParkCommandKind.SetSeatRights => new SetSeatRightsCommand( reader.Int(), ReadSeatRights( reader ) ),
 		_ => null
 	};
+
+	/// <summary>Checks the whole wire integer before narrowing it to the byte-sized rights mask.</summary>
+	private static CoopRights ReadSeatRights( ParkCommandReader reader )
+	{
+		var rights = reader.Int();
+		if ( (rights & ~(int)CoopRightsOffer.Offered) != 0 )
+			throw new InvalidDataException( $"A seat rights mask of {rights} contains rights this build does not offer." );
+		return (CoopRights)rights;
+	}
 }
 
 /// <summary>Opens or closes the park's door (the entry price window's door and the open and close keys). A bankrupt park stays closed: the economy refuses silently, as the door does.</summary>
@@ -347,22 +367,34 @@ public sealed record SetResearchWorkloadCommand( int Workload ) : ParkSettingCom
 	}
 }
 
-/// <summary>Steps a research category's current project one place back (-1) or on (1), with wraparound; rejected when there is no other project.</summary>
-public sealed record MoveResearchCommand( ResearchCategory Category, int Direction ) : ParkSettingCommand
+/// <summary>
+/// Steps a research category's current project one place back (-1) or on (1), with wraparound; rejected when there is no other project. [EXT:online-coop-commands] A guest's names the
+/// project its window showed (<paramref name="ExpectedInfoId"/> and <paramref name="ExpectedLevel"/>, both or neither; C4b): a record whose category has another current project by
+/// then is refused as stale, so two players' moves never skip a project. The host's names none, as before.
+/// </summary>
+public sealed record MoveResearchCommand( ResearchCategory Category, int Direction, int? ExpectedInfoId = null, int? ExpectedLevel = null ) : ParkSettingCommand, IStaleChecked
 {
 	public override ParkCommandKind Kind => ParkCommandKind.MoveResearch;
-	internal override bool IsWellFormed => Enum.IsDefined( Category ) && Direction is -1 or 1;
+	internal override bool IsWellFormed => Enum.IsDefined( Category ) && Direction is -1 or 1 && (ExpectedInfoId, ExpectedLevel) is (null, null) or ( >= 0, >= 0 );
+	bool IStaleChecked.HasExpectation => ExpectedInfoId != null;
 
 	internal override void WriteFields( ParkCommandWriter writer )
 	{
 		writer.Int( (int)Category );
 		writer.Int( Direction );
+		if ( ExpectedInfoId is { } info && ExpectedLevel is { } project )
+		{
+			writer.Int( info );
+			writer.Int( project );
+		}
 	}
 
 	internal override ParkCommandResult Execute( Level level )
 	{
 		if ( level.Park?.Economy is not { Features.ResearchPanel: true } economy )
 			return ParkCommandResult.Rejected( "The park has no research lab." );
+		if ( ExpectedInfoId is { } info && (economy.Research.Current( Category ) is not { } current || current.InfoId != info || current.Level != ExpectedLevel) )
+			return Stale();
 		return economy.Research.MoveCurrent( Category, Direction ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "There is no other project to research." );
 	}
 }
@@ -387,11 +419,27 @@ public sealed record TakeLoanCommand( int Offer, long Amount ) : ParkSettingComm
 		if ( level.Park?.Economy is not { } economy )
 			return NoEconomy;
 		if ( economy.IsBankrupt )
-			return ParkCommandResult.Rejected( "A bankrupt park cannot borrow." );
+			return new ParkCommandResult( false, "A bankrupt park cannot borrow.", LoanRefusal.Bankrupt );
 		if ( economy.AvailableLoans.FirstOrDefault( offer => offer.Index == Offer ) is not { } available || available.Amount != Amount )
-			return ParkCommandResult.Rejected( $"Loan offer {Offer} is not available." );
+			return new ParkCommandResult( false, $"Loan offer {Offer} is not available.", LoanRefusal.Gone );
 		return ParkCommandResult.Ok( economy.TakeLoan( Offer ) );
 	}
+}
+
+/// <summary>
+/// [EXT:online-coop-money] Why the park refused a loan's take or repay, as its result's value (C4b): a guest's confirmation hears it from the record and says what the host's own checks
+/// would have said, without reading the reason's text.
+/// </summary>
+public enum LoanRefusal : byte
+{
+	/// <summary>The park cannot afford to pay the loan off.</summary>
+	Unaffordable = 1,
+	/// <summary>The loan is not outstanding at the balance its confirmation named (another player repaid it, or its balance changed).</summary>
+	Changed = 2,
+	/// <summary>The offer is gone, or its amount changed.</summary>
+	Gone = 3,
+	/// <summary>A bankrupt park cannot borrow.</summary>
+	Bankrupt = 4
 }
 
 /// <summary>
@@ -414,8 +462,8 @@ public sealed record RepayLoanCommand( int Offer, long Amount ) : ParkSettingCom
 		if ( level.Park?.Economy is not { } economy )
 			return NoEconomy;
 		if ( economy.Loans.FirstOrDefault( loan => loan.OfferIndex == Offer ) is not { } loan || loan.RemainingBalance != Amount )
-			return ParkCommandResult.Rejected( $"Loan {Offer} is not outstanding at that balance." );
-		return economy.TryRepayLoan( Offer ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "The park cannot afford to pay off the loan." );
+			return new ParkCommandResult( false, $"Loan {Offer} is not outstanding at that balance.", LoanRefusal.Changed );
+		return economy.TryRepayLoan( Offer ) ? ParkCommandResult.Ok() : new ParkCommandResult( false, "The park cannot afford to pay off the loan.", LoanRefusal.Unaffordable );
 	}
 }
 
@@ -438,8 +486,12 @@ public sealed record RefreshLoanOffersCommand : ParkSettingCommand
 	}
 }
 
-/// <summary>Asks for the next upgrade level of the ride <paramref name="Attraction"/> (its upgrade list); the result's value is the economy's <see cref="ParkEconomy.PurchaseResult"/>.</summary>
-public sealed record BuyUpgradeCommand( int Attraction ) : ParkSettingCommand
+/// <summary>
+/// Asks for the next upgrade level of the ride <paramref name="Attraction"/> (its upgrade list); the result's value is the economy's <see cref="ParkEconomy.PurchaseResult"/>.
+/// [EXT:online-coop-commands] A guest's names the level its list offered (<paramref name="ExpectedLevel"/>, C4b): a record whose ride's next level is another by then is refused as stale.
+/// The host's names none, as before.
+/// </summary>
+public sealed record BuyUpgradeCommand( int Attraction, int? ExpectedLevel = null ) : ParkSettingCommand, IStaleChecked
 {
 	/// <summary>
 	/// Whether the upgrade list may act on <paramref name="attraction"/> (<c>ParkHud.IsUpgradeListTarget</c>): a placed ride (not the developer prototype) whose economy record is a
@@ -450,29 +502,54 @@ public sealed record BuyUpgradeCommand( int Attraction ) : ParkSettingCommand
 		&& state.InfoId == item.Entry.InfoId && !IsCondemnedRide( level, item );
 
 	public override ParkCommandKind Kind => ParkCommandKind.BuyUpgrade;
-	internal override bool IsWellFormed => Attraction >= 0;
-	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Attraction );
+	internal override bool IsWellFormed => Attraction >= 0 && ExpectedLevel is null or >= 0;
+	bool IStaleChecked.HasExpectation => ExpectedLevel != null;
+
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Attraction );
+		if ( ExpectedLevel is { } expected )
+			writer.Int( expected );
+	}
 
 	internal override ParkCommandResult Execute( Level level )
 	{
 		if ( !IsUpgradeTarget( level, Attraction, out var economy, out var state ) )
 			return NoAttraction( Attraction );
+		// [EXT:online-coop-commands] a guest's list showed the level row of a ride that waited for no level: a level pending by now (the host's buy came first) is stale too (C4b-2)
+		if ( ExpectedLevel is { } expected && (state.Level + 1 != expected || state.PendingLevel > state.Level) )
+			return Stale();
 		var result = economy.TryBuyUpgrade( state.Id );
 		return result == ParkEconomy.PurchaseResult.Ok ? ParkCommandResult.Ok( result ) : new ParkCommandResult( false, $"The upgrade is refused: {result}.", result );
 	}
 }
 
-/// <summary>Cancels the upgrade the ride <paramref name="Attraction"/> waits for (its upgrade list's cancel row).</summary>
-public sealed record CancelUpgradeCommand( int Attraction ) : ParkSettingCommand
+/// <summary>
+/// Cancels the upgrade the ride <paramref name="Attraction"/> waits for (its upgrade list's cancel row). [EXT:online-coop-commands] A guest's names the pending level and the purchase its list
+/// showed (<paramref name="ExpectedPendingLevel"/>, <paramref name="ExpectedPurchase"/>: the ride's <see cref="ParkObjectState.UpgradePurchases"/>, C4b-2): a record whose ride waits for
+/// another level by then, or for none, or for a later purchase of the same level (the host's cancel and re-buy came first), is refused as stale. The host's names neither, as before.
+/// </summary>
+public sealed record CancelUpgradeCommand( int Attraction, int? ExpectedPendingLevel = null, int? ExpectedPurchase = null ) : ParkSettingCommand, IStaleChecked
 {
 	public override ParkCommandKind Kind => ParkCommandKind.CancelUpgrade;
-	internal override bool IsWellFormed => Attraction >= 0;
-	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Attraction );
+	internal override bool IsWellFormed => Attraction >= 0 && (ExpectedPendingLevel, ExpectedPurchase) is (null, null) or ( >= 0, null ) or ( >= 0, >= 0 );
+	bool IStaleChecked.HasExpectation => ExpectedPendingLevel != null;
+
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Attraction );
+		if ( ExpectedPendingLevel is { } expected )
+			writer.Int( expected );
+		if ( ExpectedPurchase is { } purchase )
+			writer.Int( purchase );
+	}
 
 	internal override ParkCommandResult Execute( Level level )
 	{
 		if ( !BuyUpgradeCommand.IsUpgradeTarget( level, Attraction, out var economy, out var state ) )
 			return NoAttraction( Attraction );
+		if ( ExpectedPendingLevel is { } expected && (state.PendingLevel != expected || ExpectedPurchase is { } purchase && state.UpgradePurchases != purchase) )
+			return Stale();
 		return economy.TryCancelUpgrade( state.Id ) ? ParkCommandResult.Ok() : ParkCommandResult.Rejected( "The ride waits for no upgrade." );
 	}
 }
@@ -561,9 +638,15 @@ public sealed record RenameStaffCommand( int Staff, string Name ) : ParkSettingC
 	}
 }
 
-/// <summary>Dismisses the employee <paramref name="Staff"/> (the employee window's dismiss button).</summary>
+/// <summary>
+/// Dismisses the employee <paramref name="Staff"/> (the employee window's dismiss button). [EXT:online-coop-commands] An employee in another player's hand is not dismissed, and one in the
+/// issuing player's own hand leaves that hand with it (C4c).
+/// </summary>
 public sealed record FireStaffCommand( int Staff ) : ParkSettingCommand
 {
+	/// <summary>[EXT:online-coop-commands] The refusal of a dismissal of an employee another player carries (C4c).</summary>
+	public const string BeingMovedReason = "That employee is being moved.";
+
 	public override ParkCommandKind Kind => ParkCommandKind.FireStaff;
 	internal override bool IsWellFormed => Staff >= 0;
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Staff );
@@ -574,7 +657,12 @@ public sealed record FireStaffCommand( int Staff ) : ParkSettingCommand
 			return NoEconomy;
 		if ( economy.Staff.Members.All( member => member.Id != Staff ) )
 			return NoStaff( Staff );
+		if ( level.StaffHands?.HolderOf( Staff ) is { } holder && holder != Player )
+			return ParkCommandResult.Rejected( BeingMovedReason );
 		economy.Fire( Staff );
+		// a hand left holding a dismissed employee would carry its id into a join's capture, which the restore refuses
+		if ( level.StaffHands is { } hands && hands.HolderOf( Staff ) == Player )
+			hands.Empty( Player );
 		return ParkCommandResult.Ok();
 	}
 }
@@ -681,7 +769,10 @@ public sealed record SetSessionClockCommand( long Seconds ) : ParkSettingCommand
 /// <summary>
 /// [EXT:online-coop-permissions] The host grants a guest's seat the right to build, or takes it back (docs/COOP.md, "Building by every player"; the user's decision Q7: the host sets
 /// rights per player). The grants are session state, in every peer's park from the same tick on (the stream carries the command) and in a join snapshot, so every peer's rights refuse or
-/// allow a guest's command alike. Only the host may issue it (<see cref="CoopBuildRights"/>); the host's own seat 0 needs no grant.
+/// allow a guest's command alike. Only the host may issue it (<see cref="CoopBuildRights"/>); the host's own seat 0 needs no grant. The grant is the building right of the seat's rights
+/// (<see cref="CoopRights.Build"/>), set through the one reducer <see cref="SetSeatRightsCommand"/> uses (<see cref="Level.SetSeatRights"/>, C4a), so a C3 log replays as it did.
+/// [EXT:online-coop-claims] Taking a grant back lets go of the seat's claims in the same record, as its departure does (<see cref="ReleaseSeatCommand"/>), so a guest that may build no more
+/// holds no ride against the others (C3c-1b).
 /// </summary>
 public sealed record SetBuildGrantCommand( int Seat, bool Granted ) : ParkSettingCommand
 {
@@ -697,6 +788,30 @@ public sealed record SetBuildGrantCommand( int Seat, bool Granted ) : ParkSettin
 	internal override ParkCommandResult Execute( Level level )
 	{
 		level.SetBuildGrant( Seat, Granted );
+		return ParkCommandResult.Ok();
+	}
+}
+
+/// <summary>
+/// [EXT:online-coop-permissions] The host sets a guest seat's rights (docs/COOP.md, "Money and rights (C4)"; the user's decision Q7): the whole mask, each right a switch of the host's share
+/// screen. The rights are session state, as the build grant is (<see cref="SetBuildGrantCommand"/>, whose building bit it shares through one reducer, <see cref="Level.SetSeatRights"/>);
+/// taking a right back ends what it held in the same record. Only the host may issue it (<see cref="CoopBuildRights"/>), for a guest seat and only rights this build offers
+/// (<see cref="CoopRightsOffer"/>), so a right whose actions do not yet wait for the host's answer cannot be given (C4a).
+/// </summary>
+public sealed record SetSeatRightsCommand( int Seat, CoopRights Rights ) : ParkSettingCommand
+{
+	public override ParkCommandKind Kind => ParkCommandKind.SetSeatRights;
+	internal override bool IsWellFormed => Seat > 0 && Seat < CoopJoinState.MaximumPlayerEntries && CoopRightsOffer.IsOffered( Rights );
+
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Seat );
+		writer.Int( (int)Rights );
+	}
+
+	internal override ParkCommandResult Execute( Level level )
+	{
+		level.SetSeatRights( Seat, Rights );
 		return ParkCommandResult.Ok();
 	}
 }
@@ -758,17 +873,19 @@ public sealed record SetAllObjectsOpenCommand( bool Open ) : ParkSettingCommand
 }
 
 /// <summary>
-/// [EXT:online-coop-commands] The host releases what the guest seat <paramref name="Seat"/> holds in the park, once the member that held it left or another took the seat (docs/COOP.md,
-/// "Building by every player"; C3b-2): the type its Move tool carried, so the seat's next member starts with nothing in hand. A record of the stream, applied by the host's stream at a
-/// frame's start before that frame's requests; only the host may issue it (<see cref="CoopBuildRights"/>). Its value is whether the seat held anything.
+/// [EXT:online-coop-commands] The host releases what the guest seat <paramref name="Seat"/> holds in the park, once the member that held it left or another took the seat, or the session ends
+/// (docs/COOP.md, "Building by every player", "Money and rights (C4)"; C3b-2): the type its Move tool carried, its claims (C3c-1, with a coaster's tool state, C3c-2) and its rights (C4a),
+/// so the seat's next member starts with nothing in hand. A record of the stream, applied by the host's stream at a frame's start before that frame's requests, and by its teardown before the
+/// session log's last checkpoint; only the host may issue it (<see cref="CoopBuildRights"/>). Its value is whether the seat held anything.
 /// </summary>
 public sealed record ReleaseSeatCommand( int Seat ) : ParkSettingCommand
 {
 	public override ParkCommandKind Kind => ParkCommandKind.ReleaseSeat;
 	internal override bool IsWellFormed => Seat > 0 && Seat < CoopJoinState.MaximumPlayerEntries;
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Seat );
-	// [EXT:online-coop-claims] and the claim the seat held (C3c-1)
-	internal override ParkCommandResult Execute( Level level ) => ParkCommandResult.Ok( level.ReleaseSeat( Seat ) | level.ReleaseClaimsOf( Seat ) );
+	// [EXT:online-coop-claims] and the claim the seat held (C3c-1); [EXT:online-coop-permissions] its staff state (C4c) and every right it had (C4a)
+	internal override ParkCommandResult Execute( Level level ) =>
+		ParkCommandResult.Ok( level.ReleaseSeat( Seat ) | level.ReleaseClaimsOf( Seat ) | level.ReleaseStaffOf( Seat ) | level.ReleaseSeatRights( Seat ) );
 }
 
 /// <summary>
@@ -793,4 +910,15 @@ public sealed record ReleaseRideCommand( int Ride ) : ParkSettingCommand
 	internal override bool IsWellFormed => Ride >= 0;
 	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Ride );
 	internal override ParkCommandResult Execute( Level level ) => level.ExecuteReleaseRide( Player, Ride );
+}
+
+/// <summary>
+/// [EXT:online-coop-commands] A command a guest's window sends with what the window showed (a level upgrade's level, a cancellation's pending level, a research move's project; C4b), so
+/// a record that comes after another player changed it is refused as stale (<see cref="ParkSettingCommand.StaleReason"/>) instead of acting on something its player never saw. With
+/// an expectation it is written in the codec's <see cref="ParkCommandCodec.ExpectationVersion"/>; without one, as the host sends it, in version 1 as before.
+/// </summary>
+internal interface IStaleChecked
+{
+	/// <summary>Whether the command carries its expectation.</summary>
+	bool HasExpectation { get; }
 }

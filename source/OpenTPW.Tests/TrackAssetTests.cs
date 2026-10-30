@@ -229,6 +229,28 @@ public class TrackAssetTests
 		Assert.AreEqual( 10.924f, platforms["Uforia"], 1e-4f );
 	}
 
+	/// <summary>
+	/// The Halloween and space karts' station model is sampled by its faces (<c>0x450EA0</c> mode 2) at the two station tiles, which stand on rows 1 and 2 across the heading of the ride's frame
+	/// (tile centres (10, 20) and (30, 20) at rotation 0): the faces carry a floor there and none over the edge of the tile, where the probe keeps the vehicle's height; the jungle and fantasy
+	/// karts' stations are the terrain plus the header's +0xA0 (TRACK-001).
+	/// </summary>
+	[TestMethod]
+	public void TheFaceSampledKartStationsHaveTheirOwnFloorUnderTheStationTiles()
+	{
+		var floors = new Dictionary<string, float> { ["hallow"] = 2.44f, ["space"] = 3.0f };
+		foreach ( var (theme, floor) in floors )
+		{
+			var entry = KartRide( theme );
+			var surface = TrackSurface.FromObject( ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath ) );
+			Assert.AreEqual( TrackSamplerMode.SurfaceRecords, surface.Mode, theme );
+			foreach ( var (x, y) in new[] { (10f, 20f), (30f, 20f) } )
+				Assert.AreEqual( floor, surface.HeightAt( x, y )!.Value, 0.01f, $"{theme} station tile centre ({x}, {y})" );
+			Assert.IsNull( surface.HeightAt( 10f, 5f ), $"{theme}: no face over the near edge of the tiles" );
+		}
+		foreach ( var theme in new[] { "jungle", "fantasy" } )
+			Assert.AreEqual( TrackSamplerMode.Terrain, TrackSurface.FromObject( ObjectAssets.LoadModel( KartRide( theme ).FileSystem, KartRide( theme ).ModelPath ) ).Mode, theme );
+	}
+
 	[TestMethod]
 	public void EveryShippedHeightProfileIsAWellFormedHmp()
 	{
@@ -260,7 +282,16 @@ public class TrackAssetTests
 		Assert.IsNotNull( bump, "Splish Splash has a controller" );
 		Assert.AreSame( bump, runtime.LiveBump, "a running ride's controller is live" );
 		Assert.AreEqual( -5, bump.Type );
-		Assert.IsFalse( bump.IsTrackValid );
+		// [BIN:TPW-EXE:0x004DB0DF attraction constructor] the track word is 1 from the constructor on; only a circuit walk rewrites it (ARRIVAL-003)
+		Assert.IsTrue( bump.IsTrackValid, "the constructor's track word" );
+		bump.Rebuild( TrackCircuit.Invalid( "no track laid" ) );
+		Assert.IsFalse( bump.IsTrackValid, "a track edit's walk without a closed circuit writes 0" );
+		Assert.IsTrue( bump.TrackWordWritten );
+		// the placement's own walk leaves the word alone
+		var fresh = new BumpController( BumperTemplates.Get( -5 ), () => 0 );
+		fresh.Rebuild( TrackCircuit.Invalid( "station only" ), writesWord: false );
+		Assert.IsTrue( fresh.IsTrackValid && !fresh.TrackWordWritten );
+		Assert.AreEqual( 1, fresh.Command( 5, 0 ), "BUMP 5 reads the constructor's 1 after the placement" );
 		Assert.IsNotNull( runtime.Visitors.ExcitementBase, "the controller feeds the ride's excitement" );
 		// no track yet: the script waits at BUMP 5 and nothing opens
 		for ( var tick = 0; tick < 5 * 60; tick++ )
@@ -496,6 +527,8 @@ public class TrackAssetTests
 		Assert.AreEqual( -4, bump.Type );
 		var effects = new List<BumpEffect>();
 		bump.Effect += effects.Add;
+		// the constructor's track word is 1 (0x004DB0DF); a track edit's walk without a closed circuit rewrites it to 0, which BUMP 5 reports
+		bump.Rebuild( TrackCircuit.Invalid( "no track laid" ) );
 		for ( var tick = 0; tick < 3 * 60; tick++ )
 			runtime.Simulate( Tick );
 		Assert.AreEqual( BumpController.PhaseClosed, bump.Phase, "no circuit: the script waits at BUMP 5" );

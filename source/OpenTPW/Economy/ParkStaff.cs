@@ -58,7 +58,7 @@ public sealed class StaffMember
 	public int PhaseId => ThingId != 0 ? ThingId : Id;
 	public required StaffType Type { get; init; }
 	public required int NameIndex { get; init; }
-	/// <summary>The sprite variant the member was hired with (the candidate's, tp.exe member +0x20); -1 for a member of an original save (the save holds none) or of an older park save, whose bank derives from its name and id.</summary>
+	/// <summary>The sprite variant the member was hired with (the candidate's, tp.exe member +0x20); -1 for a member of an older OpenTPW park save from before the variant was kept (an original save's member takes the saved mSpriteID, tp.exe 0x4F8B10), whose bank derives from its name and id.</summary>
 	public int Variant { get; init; } = -1;
 	/// <summary>
 	/// The member's own name, stored inline in an original save (the staff suffix's <c>mName[i]</c>, +0x1A0, which the employee panels show); null
@@ -90,6 +90,21 @@ public sealed class StaffMember
 	public float? CellY { get; set; }
 	/// <summary>Fraction of the host's next one-cell movement interval, persisted across loads.</summary>
 	public double TravelSeconds { get; set; }
+	/// <summary>The entry number the member's thing held on its cell's chain when a save was taken (<see cref="StaffCellChain"/>), which the world gives it when it files the thing again; 0 when none.</summary>
+	internal long CellSerial { get; set; }
+
+	// Presentation of the walk (not saved, not hashed): the point at the start of the member's last turn update (+0x190/+0x194, 16.16) and the tick it was taken, the drawn point between the turns
+	// (tp.exe 0x004F9F00), whether the walk step asked for the walk clip, and the sprite interval that step asked for (0x004FA2A0, 0x004D41D0; -1: none waiting)
+	internal int TurnFromX, TurnFromY;
+	internal long TurnTick = -1;
+	/// <summary>Where the member is drawn, in cells; NaN until the staff world has updated him once.</summary>
+	internal float DrawX = float.NaN;
+	internal float DrawY = float.NaN;
+	/// <summary>True while the member's last walk step was still walking: the walk step queues the walk clip (0x004FA3B3..0x004FA3F8) and the next state entry stands him again.</summary>
+	internal bool IsWalking;
+	internal int PendingInterval = -1;
+	/// <summary>The direction of the member's last step (unit vector in cells), as the sprite's facing reads it.</summary>
+	internal float HeadingX, HeadingY = 1;
 	public bool IsAvailable => BusyTicks == 0 && State is not (StaffState.OnStrike or StaffState.PickedUp or StaffState.Resting);
 
 	// A handyman, entertainer or guard in a world (IStaffWorld): the original's state machine and walk (docs/reverse/WANDER-plan.md §4; tp.exe offsets in brackets).
@@ -122,8 +137,15 @@ public sealed class StaffMember
 
 	/// <summary>Whether the member has a patrol rectangle of its own.</summary>
 	public bool HasPatrolArea => PatrolArea != WholeMap;
-	/// <summary>Base speed [+0xc0]: 60, 80, 100, 120 or 140 by energy.</summary>
-	public int BaseSpeed { get; set; } = 60;
+	private int baseSpeed = 60;
+	/// <summary>Whether a constructor or saved world state supplied the speed; legacy members without either take the grade fallback once when placed.</summary>
+	internal bool HasInitializedBaseSpeed { get; private set; }
+	/// <summary>Base speed [+0xc0], supplied by the constructor or saved world state; creating a navigation state must not replace it.</summary>
+	public int BaseSpeed
+	{
+		get => baseSpeed;
+		set { baseSpeed = value; HasInitializedBaseSpeed = true; }
+	}
 	/// <summary>Speed bonus [+0xc2]: 25 while walking to a job.</summary>
 	public int SpeedBonus { get; set; }
 	/// <summary>The smoothed speed [+200] (<see cref="GuestSpeed.Update"/>).</summary>
@@ -143,6 +165,11 @@ public sealed class StaffMember
 	public int BubbleThought { get; set; }
 	/// <summary>The park turn the member's last bubble appeared.</summary>
 	public long BubbleTurn { get; set; }
+	/// <summary>
+	/// The second world draw the entertainer's search took when it started a performance (tp.exe <c>0x004D47B5</c>): the performance's script is 13 + (draw mod (n - 1)) of the bank's n entries
+	/// (13 when n is 1, <c>0x004D47CC</c>). Saved only while it is not 0.
+	/// </summary>
+	public uint PerformanceDraw { get; set; }
 	/// <summary>The rest area (an object with <c>UsageInfo.ChillsYouOut</c>) a member walks to or rests in [+0x208], 0 when none.</summary>
 	public int RestAreaId { get; set; }
 	/// <summary>
@@ -156,6 +183,11 @@ public sealed class StaffMember
 	/// places the member; null otherwise.
 	/// </summary>
 	public (int X, int Y)? ResumeDestination { get; set; }
+	/// <summary>
+	/// The walk mask (+0x188, saved as the navigation's nav_mode) the member is routed again with: 1 lets the walk leave the paths, as a guard's escort to the ticket booth does (0x004D6977); null: 0.
+	/// Taken with <see cref="ResumeDestination"/> when a world places the member.
+	/// </summary>
+	public int? ResumeMask { get; set; }
 	/// <summary>The turn an original save's claim of this member's ride or toilet was made (<c>+0x60</c>); the world that places him takes the claim again with it. Not saved: a member placed later claims at the current turn.</summary>
 	public long? ResumeClaimTurn { get; set; }
 }
@@ -240,7 +272,16 @@ public sealed partial class ParkStaff
 	// [BIN:TPW-EXE:0x506830 staff name] the inline field accepts up to 32 UTF-16 units, including an explicit blank name.
 	public bool Rename( StaffMember member, string name )
 	{
-		if ( !members.Contains( member ) || name == null || name.Length > StaffMember.MaximumNameLength ) return false;
+		if ( !members.Contains( member ) || !IsValidName( name ) ) return false;
+		member.Name = name;
+		return true;
+	}
+
+	/// <summary>Whether <paramref name="name"/> is a name <see cref="Rename"/> takes: at most 32 UTF-16 units, no control character and no lone surrogate. It writes nothing.</summary>
+	// [BIN:TPW-EXE:0x506830 staff name] the inline field accepts up to 32 UTF-16 units, including an explicit blank name.
+	public static bool IsValidName( string? name )
+	{
+		if ( name == null || name.Length > StaffMember.MaximumNameLength ) return false;
 		for ( var index = 0; index < name.Length; index++ )
 		{
 			if ( char.IsControl( name[index] ) ) return false;
@@ -248,7 +289,6 @@ public sealed partial class ParkStaff
 			if ( !char.IsSurrogatePair( name, index ) ) return false;
 			index++;
 		}
-		member.Name = name;
 		return true;
 	}
 
@@ -258,9 +298,45 @@ public sealed partial class ParkStaff
 	public long NextPoolUpdateTick { get; private set; }
 	/// <summary>
 	/// The candidate whose Place tool is running (the original's "being placed" flag, candidate <c>+0xb</c>, tp.exe 0x507bf0): it stays in the pool,
-	/// is not hired yet and does not expire while the player places it. Not saved: a pending hire is only a flag.
+	/// is not hired yet and does not expire while the player places it. Not saved: a pending hire is only a flag. The local player's (seat 0) of <see cref="PendingHires"/>.
 	/// </summary>
-	public int PendingPlacementId { get; set; }
+	public int PendingPlacementId { get => PendingHireOf( 0 ); set => SetPendingHire( 0, value ); }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Every seat's pending hire, lowest seat first (C4c): the candidate each player's Place tool places, reserved for that seat, so no other seat may begin
+	/// or place it and the pool keeps it. A game of one holds seat 0's alone (<see cref="PendingPlacementId"/>). Not saved; a join snapshot and the session digest carry them.
+	/// </summary>
+	public IReadOnlyDictionary<int, int> PendingHires => pendingHires;
+	private readonly SortedDictionary<int, int> pendingHires = new();
+
+	/// <summary>[EXT:online-coop-commands] The candidate seat <paramref name="seat"/> places, or 0 (C4c).</summary>
+	public int PendingHireOf( int seat ) => pendingHires.TryGetValue( seat, out var candidate ) ? candidate : 0;
+
+	/// <summary>[EXT:online-coop-commands] Sets the candidate seat <paramref name="seat"/> places; 0 or less ends it without a tool exit (C4c).</summary>
+	internal void SetPendingHire( int seat, int candidate )
+	{
+		if ( candidate > 0 )
+			pendingHires[seat] = candidate;
+		else
+			pendingHires.Remove( seat );
+	}
+
+	/// <summary>[EXT:online-coop-commands] The seat whose pending hire is candidate <paramref name="candidate"/>, or null (C4c).</summary>
+	public int? ReservedBy( int candidate )
+	{
+		foreach ( var (seat, placing) in pendingHires )
+			if ( placing == candidate )
+				return seat;
+		return null;
+	}
+
+	/// <summary>[EXT:online-coop-commands] Restores the pending hires a join snapshot carries, seat by seat (C4c): they replace every seat's.</summary>
+	internal void RestorePendingHires( IEnumerable<(int Seat, int Candidate)> rows )
+	{
+		pendingHires.Clear();
+		foreach ( var (seat, candidate) in rows )
+			SetPendingHire( seat, candidate );
+	}
 
 	/// <summary>
 	/// A candidate an original save held with its on-pointer byte set (<c>+0xB</c>) and no carry tool to end it: it does not expire and stays in the pool until the next tool exit clears the flag
@@ -271,14 +347,20 @@ public sealed partial class ParkStaff
 
 	/// <summary>
 	/// A placement tool ended (<c>0x5083b0</c>): the pending candidate is no longer being placed and a candidate the load left flagged loses its flag; when <paramref name="placed"/> the flagged candidate is
-	/// removed from the pool (the placed one is hired by its caller).
+	/// removed from the pool (the placed one is hired by its caller). The local player's (seat 0) tool.
 	/// </summary>
-	public void EndPlacement( bool placed )
+	public void EndPlacement( bool placed ) => EndPlacement( 0, placed );
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Seat <paramref name="seat"/>'s placement tool ended (C4c): its pending candidate is no longer being placed, and the flag of a candidate the load left flagged goes as at any
+	/// tool exit; when <paramref name="placed"/> the flagged candidate leaves the pool unless another seat places it, whose own end then frees it as any.
+	/// </summary>
+	public void EndPlacement( int seat, bool placed )
 	{
-		var placing = PendingPlacementId;
-		PendingPlacementId = 0;
+		var placing = PendingHireOf( seat );
+		pendingHires.Remove( seat );
 		// the candidate being hired goes through the hire path, not this one
-		if ( StaleOnPointerId != 0 && placed && StaleOnPointerId != placing )
+		if ( StaleOnPointerId != 0 && placed && StaleOnPointerId != placing && ReservedBy( StaleOnPointerId ) == null )
 			candidates.RemoveAll( candidate => candidate.Id == StaleOnPointerId );
 		StaleOnPointerId = 0;
 	}
@@ -342,7 +424,8 @@ public sealed partial class ParkStaff
 	// [BIN:STP-PPC:0x100F6E24 staff pool update] draw = rand() % total shortfall picks the role whose share it falls in; each added candidate lowers that role's shortfall and the per-update cap (also limited by the 32 free slots); 0x100F65E8 drops roles whose hired count reached Max*InPark; 0x100F6790 then tops every role up to Min*InPool counting hired and pooled staff
 	public void UpdatePool( WorldRng random, long tick )
 	{
-		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && candidate.Id != PendingPlacementId && candidate.Id != StaleOnPointerId );
+		// [EXT:online-coop-commands] every seat's pending hire stays, as the one being placed does (C4c)
+		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && ReservedBy( candidate.Id ) == null && candidate.Id != StaleOnPointerId );
 		if ( tick < NextPoolUpdateTick )
 			return;
 		NextPoolUpdateTick = TickAfterUnits( tick, settings.TimeBetweenStaffUpdates );
@@ -387,8 +470,8 @@ public sealed partial class ParkStaff
 
 	private StaffCandidate CreateCandidate( StaffRoleSettings role, WorldRng random, long tick )
 	{
-		// [BIN:TPW-EXE:0x0050761C staff candidate draws] the constructor 0x00507600 draws, in order: the sprite variant (0x00541F70: (R >> 2) mod the role category's bank count, candidate +9), one draw it discards (0x0050762D), the grade (0x00507638), the name (0x00507580) and the timeout
-		// [BIN:TPW-EXE:0x00541F70 sprite variant] (draw >> 2) mod the role category's loaded bank count (StaffSprites.Banks), kept as the candidate's variant and handed on to the member it becomes (Hire)
+		// [BIN:TPW-EXE:0x0050761C staff candidate draws] the constructor 0x00507600 draws, in order: the sprite variant (0x00541F70: (R >> 2) mod the role category's loaded bank count, candidate +9; here the static folder count, GUEST-020), one draw it discards (0x0050762D), the grade (0x00507638), the name (0x00507580) and the timeout
+		// [BIN:TPW-EXE:0x00541F70 sprite variant] (draw >> 2) mod the role category's bank count; the original divides by the LOADED count (table entry +8, filled by 0x541E7D from 0x541310 after the limit), here it is the static folder count (StaffSprites.Banks) and the reduction to the loaded banks happens only when drawing (GUEST-020), kept as the candidate's variant and handed on to the member it becomes (Hire)
 		var variantDraw = random.NextWord();
 		random.NextWord();
 		// [BIN:STP-PPC:0x100F5B64 staff candidate] grade = (AvgGradeOf* + random % 3 - 1) & 0xFF, stored as 4 when above 4 (so -1 wraps to 4); ChanceToGetGreat* is never read
@@ -409,7 +492,7 @@ public sealed partial class ParkStaff
 		return new StaffCandidate( NextId++, role.Type, name, grade, TickAfterUnits( tick, timeout ), VariantFrom( role.Type, variantDraw ) );
 	}
 
-	/// <summary>The sprite variant a draw gives a role: (draw &gt;&gt; 2) mod the loaded bank count of the role's category, -1 when the level has no bank for it.</summary>
+	/// <summary>The variant a draw gives: (draw >> 2) modulo the static bank count of the role's folder, not the loaded count (GUEST-020).</summary>
 	private int VariantFrom( StaffType type, uint draw ) => StaffSpriteRules.Banks( type, settings.Theme )?.Banks.Count is > 0 and var count ? (int)((draw >> 2) % (uint)count) : -1;
 
 	/// <summary>Whether a pool candidate or an employee of the role already has the name (tp.exe <c>0x005083F0</c>).</summary>
@@ -419,7 +502,7 @@ public sealed partial class ParkStaff
 	public bool CanHire( StaffType type ) => OfType( type ).Count() < settings[type].MaximumInPark;
 
 	// [BIN:STP-PPC:0x100F61D0 hiring is free] the hire button's handler queues a command (0xf61d0, executor 0x6c034, thing factory 0xb882c) and nothing on that path debits the bank: the 16 direct callers of Spend 0xcbfdc include no hire routine, and BaseCostPerStaff (+700) and CostPerQualityLevel (+704) are never read; the wage is paid at the month's end and dismissing one costs one more (ParkEconomy.Fire, ORACLE.md F28)
-	public StaffMember Hire( int candidateId, long tick )
+	public StaffMember Hire( int candidateId, long tick, WorldRng? random = null )
 	{
 		var candidate = candidates.FirstOrDefault( item => item.Id == candidateId ) ?? throw new InvalidOperationException( $"No staff candidate {candidateId}." );
 		if ( !CanHire( candidate.Type ) )
@@ -428,12 +511,58 @@ public sealed partial class ParkStaff
 		var thingId = things?.Allocate( ThingModelOf( candidate.Type ) ) ?? 0;
 		if ( things != null && thingId == 0 )
 			throw new InvalidOperationException( $"The thing pool is full ({ThingPool.Capacity} things); no staff member can be placed." );
+		// [BIN:TPW-EXE:0x004F89E1 staff base speed draw] the person base constructor 0x004F8940, which every staff constructor (0x00504B10) runs right after taking the thing id, draws R mod 5 from the world generator; the draw is consumed and not kept: the staff constructor's follow-up 0x00504B90 overwrites +0xC0 with 60 below grade 3 and 100 from grade 3 (0x00504C20..0x00504C42), and the entertainer constructor then sets 60 (0x004D43EE); no staff constructor reseeds (0x004F7B7E is the online avatar's)
+		// [BIN:TPW-EXE:0x004D5E02 guard variant] the guard constructor draws its own sprite variant ((R >> 2) mod the guard bank count, 0x00541F70) instead of taking the candidate's
+		// a pool-less (headless) economy has no person things, so it takes no draw
+		var baseSpeed = candidate.Type == StaffType.Entertainer || candidate.Grade < 3 ? GuestSpeed.BaseSpeeds[0] : GuestSpeed.BaseSpeeds[2];
+		var variant = candidate.Variant;
+		if ( things != null && random != null )
+		{
+			random.NextWord();
+			if ( candidate.Type == StaffType.Guard )
+				variant = VariantFrom( StaffType.Guard, random.NextWord() );
+		}
 		MaterializeRoleOrder();
 		candidates.Remove( candidate );
-		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = candidate.Variant };
+		var member = new StaffMember { Id = candidate.Id, ThingId = thingId, Type = candidate.Type, NameIndex = candidate.NameIndex, Grade = candidate.Grade, HiredTick = tick, Variant = variant };
+		if ( things != null && random != null )
+			member.BaseSpeed = baseSpeed;
 		members.Add( member );
 		roleOrder![(int)member.Type].Insert( 0, member.Id );
+		if ( member.Type == StaffType.Researcher )
+			ResearchersChanged();
 		return member;
+	}
+
+	private bool labActive;
+
+	/// <summary>The research lab's active byte (<c>mLabActive</c>, the ResearchLab thing's <c>+0x1468</c>): set while the park employs a researcher, as the researchers' hires and removals leave it.</summary>
+	public bool LabActive => labActive;
+
+	/// <summary>
+	/// Raised when <see cref="LabActive"/> changes through a hire or a removal, with the message the original posts: 5 when the lab becomes active, 6 when it stops. The original delivers the message at once
+	/// to the things subscribed to its type (the advisor subscribes to 5 only, <c>0x00599EDB</c>; nobody subscribes to 6); OpenTPW's advisor has no reaction to it.
+	/// </summary>
+	public event Action<int>? LabMessage;
+
+	/// <summary>
+	/// The researchers' flag update (tp.exe <c>0x005041F0</c>), run by a researcher's constructor after its search (<c>0x00502742</c>) and by its removal (<c>0x00502952</c>): with a researcher in the list
+	/// (the word game +0x1DA742) the byte is set and message 5 posted when it was clear (<c>0x00504090</c>), with none it is cleared and message 6 posted when it was set (<c>0x00504140</c>). It takes no draw.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005041F0 researchers flag] the byte +0x1468 of the ResearchLab thing (the object 0x519550 returns) is tested first, so the message goes out on a change only: 0x40F630 builds a plain message of the type 5 or 6 and 0x40FB10 delivers it through the lazily created bus 0x788D3C
+	private void ResearchersChanged()
+	{
+		var any = members.Any( member => member.Type == StaffType.Researcher );
+		if ( any && !labActive )
+		{
+			labActive = true;
+			LabMessage?.Invoke( 5 );
+		}
+		else if ( !any && labActive )
+		{
+			labActive = false;
+			LabMessage?.Invoke( 6 );
+		}
 	}
 
 	public StaffMember Fire( int staffId )
@@ -445,6 +574,8 @@ public sealed partial class ParkStaff
 		// [BIN:TPW-EXE:0x00505790 staff removal] a dismissed member's thing is destroyed through the destroy request (0x0050B780 → 0x00516310): its slot is freed at the turn's end
 		if ( things != null && member.ThingId != 0 )
 			things.QueueDestroy( member.ThingId );
+		if ( member.Type == StaffType.Researcher )
+			ResearchersChanged();
 		return member;
 	}
 
@@ -487,13 +618,15 @@ public sealed partial class ParkStaff
 
 	internal void Restore( IEnumerable<StaffMember> restoredMembers, IEnumerable<StaffCandidate> restoredCandidates, IReadOnlyList<long> budgets, int nextId, long nextPoolUpdate )
 	{
-		PendingPlacementId = 0;
+		pendingHires.Clear();
 		if ( things != null )
 			foreach ( var old in members )
 				if ( old.ThingId != 0 )
 					things.Release( old.ThingId );
 		members.Clear();
 		members.AddRange( restoredMembers );
+		// a restored park's lab flag is what its researchers make of it (the original's flag byte agrees with the list after every hire and removal)
+		labActive = members.Any( member => member.Type == StaffType.Researcher );
 		// Legacy saves resolve against the current pool only when read; attachment never replaces an explicit order.
 		roleOrder = null;
 		if ( things != null )
@@ -520,14 +653,15 @@ public sealed partial class ParkStaff
 		_ => StaffState.Working
 	};
 
-	/// <summary>Adds an employee taken from an original save (not hired from the pool).</summary>
-	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0 )
+	/// <summary>Adds an employee taken from an original save (not hired from the pool); <paramref name="variant"/> is the sprite variant its person record saves (-1: none).</summary>
+	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null, int thingId = 0, int variant = -1 )
 	{
-		var member = new StaffMember { Id = AllocateId(), ThingId = thingId, Type = type, NameIndex = 0, Name = name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
+		var member = new StaffMember { Id = AllocateId(), Variant = variant, ThingId = thingId, Type = type, NameIndex = 0, Name = name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
 		AdoptThing( member );
 		MaterializeRoleOrder();
 		members.Add( member );
 		roleOrder![(int)member.Type].Insert( 0, member.Id );
+		labActive |= member.Type == StaffType.Researcher;
 		return member;
 	}
 
@@ -538,7 +672,7 @@ public sealed partial class ParkStaff
 	internal void RestoreOriginalPool( IEnumerable<(StaffType Type, int NameIndex, int Grade, long MadeTurn, long Timeout, int SubType)> saved, long lastRefillTurn, IReadOnlyList<bool>? onPointer = null )
 	{
 		candidates.Clear();
-		PendingPlacementId = 0;
+		pendingHires.Clear();
 		StaleOnPointerId = 0;
 		var position = 0;
 		foreach ( var (type, name, grade, made, timeout, subType) in saved.Take( PoolSlots ) )

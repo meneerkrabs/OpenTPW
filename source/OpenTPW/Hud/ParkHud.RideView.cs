@@ -29,7 +29,8 @@ public sealed partial class ParkHud
 
 	// [BIN:TPW-EXE:0x42a6b8 ride mode] mode 4 enters the native seat camera; 0x42af24 selects terrain camcorder mode 2.
 	// [APPROX:UI-094] FreeWalk is the host terrain-inspection substitute for native camcorder mode 2. Only this level's current camera counts;
-	// an armed camcorder, a suspended walk beneath a ride, and retired camera owners do not create extra Boolean edges. Native mask bit 0x10 is unresolved.
+	// an armed camcorder, a suspended walk beneath a ride, and retired camera owners do not create extra Boolean edges.
+	// [BIN:TPW-EXE:0x42ab20 camera mode bits] the mask 0x16 of 0x790ab0 names the walk (2), the ride (4) and 0x10, and no writer sets the low byte's bits 8, 0x10 or 0x20: the setter 0x42ab20 ors in only 2 or 4 (0x42ac4c, 0x42abb5), the camera reset 0x42a9be and the load 0x42d04c clear the word, and 0x42b1c0 rewrites it from itself; the saved word (0x42ce1b, 0x42cf61) is cleared after loading
 	private bool EyeCameraActive => (level.RideView != null && ReferenceEquals( Camera.Mode, level.RideView ))
 		|| (level.FreeWalk != null && ReferenceEquals( Camera.Mode, level.FreeWalk ));
 

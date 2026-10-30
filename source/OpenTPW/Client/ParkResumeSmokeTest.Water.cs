@@ -62,7 +62,7 @@ internal sealed partial class ParkResumeSmokeTest
 		// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the fixture opens it as the player would
 		ride!.Open();
 		var station = level.TrackStations[ride!];
-		Require( level.EnterTrackTool( ride ), "the water track tool starts" );
+		Require( level.EnterTrackTool( ride, justPlaced: true ), "the water track tool starts" );
 		foreach ( var offset in new (int X, int Y)[] { (4, depth), (-2, depth), (-2, 0) } )
 		{
 			var click = level.CellTool.Click( (station.First.X + offset.X, station.First.Y + offset.Y) );
@@ -113,8 +113,27 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( addOn != null && economy.Balance < cash, $"buy and place {entry.DisplayName} on the ride's track" );
 		Require( ride.Runtime.Bump!.IsTrackValid && AddOnSections( ride ) > 0, "the walk after the placement links the add-on's sections" );
 		Require( level.WindowTarget( addOn ) == ride, "a click on the add-on opens its ride's window" );
+		// the sale is the demolition 0x527EE0, whose pass 2 clears the record under every cell of the add-on's shape (docs/reverse/ORACLE.md, X37): the tiles the add-on stood on go with it and the
+		// circuit is open; the fixture lays those tiles again, as the player would, and the circuit closes before the add-on is bought again
+		var builder = level.BuilderOf( ride )!;
+		var tiles = addOn!.Cells.Select( cell => builder.OriginOf( cell.X, cell.Y ) ).Where( found => found != null ).Select( found => found!.Value ).Distinct()
+			.Select( origin => (Origin: origin, Cell: builder.Tracks.Get( origin.X, origin.Y )) ).ToList();
+		Require( tiles.Count > 0, "the add-on stands on the ride's track" );
 		level.Objects.Remove( addOn! );
-		Require( ride.Runtime.Bump.IsTrackValid && ride.Runtime.Bump.Sections.All( section => section.Kind is not (12 or 13) ), "selling the add-on walks the circuit back to plain sections" );
+		Require( tiles.All( tile => builder.Tracks.Get( tile.Origin.X, tile.Origin.Y ).IsEmpty ) && !ride.Runtime.Bump.IsTrackValid, "selling the add-on takes the tiles under it with it and opens the circuit" );
+		foreach ( var tile in tiles )
+			Require( builder.PlaceTile( tile.Origin.X, tile.Origin.Y, tile.Cell.Owner ) == CellBuildResult.Ok, $"the tile at {tile.Origin} is laid again" );
+		foreach ( var tile in tiles )
+		{
+			foreach ( var heading in TrackHeading.All.Where( heading => (tile.Cell.Mask & heading) != 0 ) )
+				Require( builder.Link( tile.Origin, (tile.Origin.X + TrackStation.TileCells * TrackHeading.Dx( heading ), tile.Origin.Y + TrackStation.TileCells * TrackHeading.Dy( heading )) ), $"the laid tile at {tile.Origin} joins its neighbour again" );
+		}
+		// the line tool's link op gives each laid tile its flow link back (0x539670), which the add-on's hover turns the add-on along
+		foreach ( var tile in tiles )
+			builder.ApplyLineLink( tile.Origin, tile.Cell.Link );
+		Require( level.RewalkTrack( ride, TrackWalkCause.Line ) is { IsValid: true } && ride.Runtime.Bump.Sections.All( section => section.Kind is not (12 or 13) ), "the circuit closes again with plain sections" );
+		// the cut circuit closed the ride; the player opens it again
+		ride.Open();
 		addOn = Buy();
 		Require( addOn != null && AddOnSections( ride ) > 0, $"buy {entry.DisplayName} again" );
 		Log.Trace( $"Park-resume fixture: add-on {entry.DisplayName} on {ride.Entry.DisplayName}'s track ({AddOnSections( ride )} add-on sections), sold once and bought again." );

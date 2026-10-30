@@ -155,6 +155,9 @@ button at its original place and `ParkHud.EditTrack` is its click, so select a c
 The build buttons' pylon click is the tool object's release (`0x524960`, mode 0x15: the click sound `0x65`, the placement and the help `0xCD`, at the cell under the pointer at the release); the move, height, rotate and tilt buttons pick a pylon up on the press (`0x524790` in mode 0x16 and the drag class `0x6FEAA0`, `0x446300(1)`) and settle on the release (`0x446300(0)`), as before; a quick right click leaves the tool on its release.
 A drag does not fit the controller on every pointer move (the original rebuilds the track each frame): the renderer draws the nodes as they are and the track is fitted, rated and the trains
 placed once on the release. Backspace waits for a drag; a drag let go while the game is paused ends there. A save taken while the tool is open lets the ride out of state 2 on load, as leaving the tool would. `CoasterToolPanel` is the headless controller, `ParkHud.CoasterPanel.cs` the pointer side.
+One tool is on at a time, as the original has one tool mode: the coaster tool's entry ends every other tool, the track tool's entry ends the coaster tool, and a coaster tool still on next to a tool that started after it ends at the HUD's next frame; the track button on the coaster whose tool is on starts nothing again.
+
+**Shared parks.** In a co-op session the coaster tool works through the coaster's claim, as a kart or water ride's track tool does: one player edits a coaster at a time, a guest's clicks, Backspace, swaps and cuts wait for the host one at a time, and a guest's drags go to the host as their latest values at most every 0.2 s (`[EXT:online-coop-claims]`, `[EXT:online-coop-commands]`; docs/COOP.md, "A guest's coaster tool (C3c-2)"). The claim's end leaves the coaster's tool state as the tool's end does, so no player that leaves leaves a coaster closed. Backspace takes back only the player's own last pylon, placed in that run of the tool and unchanged since (`[EXT:online-coop-undo]`; docs/COOP.md, "The coaster tool (C5-3)").
 
 - **Enable mask** (`0x445910`): the seven edit buttons always; build unless the first pylon of a loop pair waits for its second; loop when the coaster has a
   loop pylon; a finished circuit (complete, not cut open) turns build and loop off, any other track turns demolish off. The tool opens on build (loop while a
@@ -361,7 +364,7 @@ block, 34-byte sections with links, and the train slots and cars once the coaste
 type's train and car counts are known; docs/TPWS-PAYLOAD.md "Coasters block") — proven
 on the tp.exe saver and loader, the Easymode empty boundary and a labelled Theme Park
 Inc cross-check of the sections — but nothing is imported into a runtime coaster and
-nothing is written (SAVE-920 to SAVE-923). `CoasterSections` exposes recognized scene records and attraction
+nothing is written (SAVE-920, SAVE-921 (SAVE-923 is retired)). `CoasterSections` exposes recognized scene records and attraction
 ids joined by cell and `Info.Id`; this does not identify a controller's station.
 Nonempty original TPW controllers are refused at `ParkObjects.ImportOriginal`
 before any runtime object is created. This includes controllers with no saved
@@ -531,8 +534,8 @@ transition (`0x435730`, 1 → 2) starts every slot again, while opening, closing
 changing power do not. A replacement renderer reads the same live slot epoch; a removed and reactivated slot gets a fresh
 one. The existing `WheelTick` arithmetic and its current-speed multiplier are unchanged. This is presentation-only state,
 excluded from the simulation hash and save format: restoring a park initializes fresh clips at the restored controller time,
-without promising wheel-phase continuity across saves. COAST-034 remains open for bend sampling/endpoints, the untraced flume
-clip invocation and unbent rider sockets. CPU phase-query and private-asset UV fixtures cover this slice; they do not establish
+without promising wheel-phase continuity across saves. COAST-034 was narrowed by the presentation follow-up of October 30 (below) to the untraced flume
+clip invocation. CPU phase-query and private-asset UV fixtures cover this slice; they do not establish
 GPU or full original-game visual parity.
 
 The pylon tag round of October 16 built the knot pass over the pylon models' posed track tags (COAST-015 narrowed to the
@@ -540,7 +543,7 @@ knot pass's write-back of the clamped height parameter and the no-model fallback
 without the model; COAST-029 lost its middle-knot height-adjust clause, the knots taking no `fTrackHeightAdjust`). Saves record
 the knot pass (`KnotPass`): a save from before it places the trains of a coaster with pylon models again and its riders leave. The same round traced the
 stack parts (`0x432df0`) and the kept half turn (COAST-033 narrowed), the mesh's slices, shared rings, winding and marker links
-(COAST-026 narrowed to the cross-section runs and blends, lighting and the Add-mode UV animation) and the cursor link (COAST-035
+(COAST-026 narrowed to the cross-section runs and blends and the Add-mode UV animation; the runs, blends and UV keys were built on October 30) and the cursor link (COAST-035
 narrowed: the ribbon is gone; the closing target's marks are not set).
 
 The coaster rest round of October 16 settled COAST-017 and COAST-030 and narrowed COAST-011 and COAST-034. COAST-017: a sample's roll is the
@@ -581,3 +584,21 @@ code reads the value slots of COASTERSMOOTHNESS (`0x7858C0`) or `Info.FirstPerso
 rounds to a single, which C#'s single arithmetic does one operation at a time. The pylon cost (`0x447830`, `0x4346a0`), the suspended swing (`0x43C76C`), its cosine index (`0x43C7D0`) and the loop
 knot factor (`0x432430`) are now built from the instruction sequences (`fpatan` and `fmod` are exact, the subtractions with the double constants round to a single); the knot chord, the knot norms
 and tangents and the self-intersection pass are still to be read on the PC side.
+
+The presentation follow-up of October 30 (round 10, package N) built the track mesh's run table and compared the bend tables. **COAST-026:** the
+section of a normal link is read from the run table `0x4402D0` builds over the sampled track (steps of 0.25 on the sample coordinate, the select
+table `0x43E9C0` with its speed, direction, pitch and bank windows in radians, a run written at every change of the answer), and a type whose sections blend (the Jungle
+flume: sections 3 and 4 blend point blocks 2 and 3 over +1 and -1 sample coordinates) adds the transition runs: a positive length opens the blend after the change,
+a length of zero or below puts it before the change, and two blends that meet share the stretch by their lengths (`CoasterExtrusionRunBuilder`). The slice lists `0x43F030` hold
+every run key strictly inside two neighbouring values, a ring is emitted again when the run moves, and a transition run's rings blend the section's points to its
+blend-to row by (coordinate - previous run's position) / (this run's position - previous run's position) x weight, plus 1 - weight for a positive length
+(`CoasterTrackMesh.BlendWeight`, `0x43FD60`). The run table is compared bit-exactly with isolated tp.exe runs (ORACLE X42, `CoasterRunsGolden`: non-suspended chains of single-knot nodes with zero rolls only); a chain the
+demolish button cut open has no sample list here and keeps the per-segment pitch selection. **COAST-034:** the bend car's tables `0x438AB0` are compared bit-exactly
+with tp.exe (ORACLE X43, `CoasterBendGolden`; the PC acos at single precision was an ulp off); the bend writes only the body mesh's vertices, so a rider's head socket
+stays unbent as ported; the Croc and Maggot boats' vertices all lie inside their tables. The boats' own clips (no start behind the bend flag was found) and the widening of a bend
+type's model bounds (`0x4302AA..0x43041A`) stay open.
+The track mesh's vertices carry the texture's lighting: a texture with `bIsSelfIlluminating` gets the texture flag 4 (`0x42f390`: 2, plus 4 for a nonzero flag word before the scroll rate, plus `0x20` when it scrolls) and the three marker textures flags 7, so their corners take the renderer's self-lit vertex flag (`TextureSlotAddressing.SelfLitFlag`, the constant colour of the draw instead of the scene light, `CoasterRenderer.TrackVertex`); a self-lit texture named like a light source (`IsLightSource`) also takes the evening extension's light-source flag, the markers do not. The shader (native and the web JSON build) already honours both flags.
+The pylons' loft, incline and bank clips carry texture-coordinate keys (record flag `0x10000`: the Jungle pylon's loft adds 14.985 to the V of its top corners over the
+clip); the add mode adds them to the stored coordinates (`0x4745C0` through `0x471860`, `ModelUvAnimation.AddTo`), so a lofted pylon's coordinates run past 1 along its height. Whether they wrap or clamp follows the shared texture's accumulated flags: the texture cache `0x575870` keeps one object per (directory, name),
+the slot setup `0x575E10` and the rebinding `0x575C60` OR the wrap bits into it for good (nothing clears them, `0x590FA0` clears only 0x4000), so a clamping slot wraps as soon as any model of the ride
+(the other pylon, the P* previews) wraps the same texture (`CoasterAssets.WrapNames`, `ASlotThatClampsWrapsWhenAnotherModelOfTheRideWrapsTheSameTexture`). Open: whether a preview's texture object outlives the build menu.

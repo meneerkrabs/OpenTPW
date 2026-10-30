@@ -123,35 +123,51 @@ internal sealed partial class GameFlow
 			coopJoin = null;
 		if ( endingJoin || JoinEndText( session.EndCause, session.ServerReason ) is not { } words )
 			return;
+		// [EXT:online-coop-commands] the guest's management actions that may not have been made add their line (C4b-2)
+		var unfinished = session.ManagementUnfinished;
 		if ( session.Level != null )
 		{
 			if ( ReferenceEquals( session.Level, Level ) && Hud is { } hud )
-				ShowGuestEnd( session.Level, hud, words, reason );
+				ShowGuestEnd( session.Level, hud, words, reason, unfinished );
+			return;
+		}
+		// [EXT:online-coop-snapshot-join] a resync whose install failed before its teardown left the session's old park the game's park, detached from the session: the end shows over it,
+		// as over a park the session ended, instead of leaving the guest in a park that issues its own commands (C4b-2)
+		if ( Level is { IsCoopGuestPark: true } old && Hud is { } oldHud )
+		{
+			ShowGuestEnd( old, oldHud, words, reason, unfinished );
 			return;
 		}
 		if ( Level != null )
 			return;
 		Log.Warning( $"Joining the shared park ended: {reason}" );
 		if ( Menu != null )
-			ShowJoinFailure( Menu.Stack, words );
+			ShowJoinFailure( Menu.Stack, words, unfinished );
 		else
 			Queue( () =>
 			{
 				ShowFrontEnd();
 				if ( Menu != null )
-					ShowJoinFailure( Menu.Stack, words );
+					ShowJoinFailure( Menu.Stack, words, unfinished );
 			} );
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] An end dialog's words, followed by the sentence that some of the last changes may not have been made when <paramref name="unfinished"/> (C4b-2), in the
+	/// dialog's body with them (a line break would make the words its caption).
+	/// </summary>
+	private string JoinEndWords( OpenTpwText words, bool unfinished ) =>
+		unfinished ? $"{Strings.Extra( words )} {Strings.Extra( OpenTpwText.CoopChangesNotMade )}" : Strings.Extra( words );
 
 	/// <summary>The name of the dialog over a guest's park whose session ended.</summary>
 	internal const string GuestEndedScreenName = "coopGuestEnded";
 
 	/// <summary>[EXT:online-coop-session] The guest's park lost its session: the reason over the park, and its OK leaves for the lobby (C2d-3).</summary>
-	private void ShowGuestEnd( Level level, ParkHud hud, OpenTpwText words, string reason )
+	private void ShowGuestEnd( Level level, ParkHud hud, OpenTpwText words, string reason, bool unfinished = false )
 	{
 		Log.Info( $"The shared park ended for this guest: {reason}" );
 		UiScreen? screen = null;
-		screen = UiDialogs.Message( GuestEndedScreenName, () => Strings.Extra( words ), (() => Strings.Extra( OpenTpwText.Back ), () =>
+		screen = UiDialogs.Message( GuestEndedScreenName, () => JoinEndWords( words, unfinished ), (() => Strings.Extra( OpenTpwText.Back ), () =>
 		{
 			if ( screen!.IsRemoved || !ReferenceEquals( hud.Stack.Top, screen ) )
 				return;
@@ -161,10 +177,10 @@ internal sealed partial class GameFlow
 		hud.Stack.Push( screen );
 	}
 
-	private void ShowJoinFailure( UiScreenStack stack, OpenTpwText words )
+	private void ShowJoinFailure( UiScreenStack stack, OpenTpwText words, bool unfinished = false )
 	{
 		UiScreen? screen = null;
-		screen = UiDialogs.Message( "coopJoinEnded", () => Strings.Extra( words ), (() => Strings.Extra( OpenTpwText.Back ), () =>
+		screen = UiDialogs.Message( "coopJoinEnded", () => JoinEndWords( words, unfinished ), (() => Strings.Extra( OpenTpwText.Back ), () =>
 		{
 			if ( !screen!.IsRemoved && ReferenceEquals( stack.Top, screen ) )
 				stack.Pop();
@@ -376,12 +392,8 @@ internal sealed partial class GameFlow
 				var counted = Stopwatch.GetTimestamp();
 				LoadProfile.Pause();
 				// a section that ran in the slice counts, its time even when the clock saw none of it (a browser's clock is coarse)
-				foreach ( var (name, section) in LoadProfile.Snapshot() )
-				{
-					var (before, ran) = sections.TryGetValue( name, out var earlier ) ? (earlier.Milliseconds, earlier.Count) : (0, 0);
-					if ( section.Count > ran )
-						Timings.Sections[name] = Timings.Sections.GetValueOrDefault( name ) + section.Milliseconds - before;
-				}
+				// (a helper call: a loop in a finally block overwrote the try's locals in the Mono interpreter's hot tier, tools/test_no_loop_in_finally.py)
+				CountSectionsOfSlice( sections );
 				Timings.Frames++;
 				Timings.LongestFrameMilliseconds = Math.Max( Timings.LongestFrameMilliseconds, worked );
 				// the build is over: the profile runs on as it did before it
@@ -391,6 +403,17 @@ internal sealed partial class GameFlow
 			}
 			// the check at the cut and the swap get a frame of their own when this one is spent
 			return complete && !OverBudget();
+		}
+
+		/// <summary>The sections that ran in the slice just taken, against the profile as the slice began, are added to the build's timings.</summary>
+		private void CountSectionsOfSlice( IReadOnlyDictionary<string, (double Milliseconds, int Count)> sections )
+		{
+			foreach ( var (name, section) in LoadProfile.Snapshot() )
+			{
+				var (before, ran) = sections.TryGetValue( name, out var earlier ) ? (earlier.Milliseconds, earlier.Count) : (0, 0);
+				if ( section.Count > ran )
+					Timings.Sections[name] = Timings.Sections.GetValueOrDefault( name ) + section.Milliseconds - before;
+			}
 		}
 
 		/// <summary>

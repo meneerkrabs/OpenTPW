@@ -27,10 +27,19 @@ public abstract record ParkToolCommand : ParkCommand
 		}
 	}
 
+	/// <summary>The undo's optional trailing last-line flag: absent for false, a single 1 for true; a present 0 is not the canonical encoding.</summary>
+	private static bool OptionalLast( ParkCommandReader reader )
+	{
+		if ( reader.AtEnd )
+			return false;
+		return reader.Byte() == 1 ? true : throw new InvalidDataException( "The undo's last-line flag is written only when set." );
+	}
+
 	/// <summary>Reads the fields of the tool command of <paramref name="kind"/> (<see cref="ParkCommandCodec.Decode"/>), or null for a kind that is not a tool command.</summary>
 	internal static ParkToolCommand? Read( ParkCommandKind kind, ParkCommandReader reader ) => kind switch
 	{
 		ParkCommandKind.BuyLand => new BuyLandCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
+		ParkCommandKind.TakeBack => TakeBackCommand.Read( reader ),
 		ParkCommandKind.BeginStaffHire => new BeginStaffHireCommand( reader.Int() ),
 		ParkCommandKind.CancelStaffHire => new CancelStaffHireCommand(),
 		ParkCommandKind.PlaceStaff => new PlaceStaffCommand( reader.Int(), reader.Int(), reader.Int() ),
@@ -47,7 +56,7 @@ public abstract record ParkToolCommand : ParkCommand
 		ParkCommandKind.PoolCells => new PoolCellsCommand( reader.Bool(), reader.Bool(), reader.Cells() ),
 		ParkCommandKind.LayPoolSlidePieces => new LayPoolSlidePiecesCommand( reader.Int(), reader.Int(), reader.Cells() ),
 		ParkCommandKind.LayTrackLine => new LayTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
-		ParkCommandKind.UndoTrackLine => new UndoTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
+		ParkCommandKind.UndoTrackLine => new UndoTrackLineCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int(), OptionalLast( reader ) ),
 		ParkCommandKind.CutTrack => new CutTrackCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 		ParkCommandKind.OpenTrackLineTool => new OpenTrackLineToolCommand( reader.Int() ),
 		ParkCommandKind.BeginCoasterTool => new BeginCoasterToolCommand( reader.Int() ),
@@ -98,11 +107,13 @@ public sealed record BuyLandCommand( int CornerX, int CornerY, int PostX, int Po
 		if ( BuyLandTool.Snap( CornerX, CornerY, land.PostA, map.Width, map.Height ) != corner || BuyLandTool.Snap( PostX, PostY, land.PostA, map.Width, map.Height ) != post )
 			return ParkCommandResult.Rejected( "The land tool's corners are fence posts." );
 		var check = land.CheckPurchase( map, corner, post, barrier, economy?.CellCost( CellPurchase.Land ) ?? 0, economy?.Balance );
-		if ( !check.Allowed || land.Merge( corner, post ) is not { } merged )
+		if ( !check.Allowed )
 			return new ParkCommandResult( false, $"The land cannot be bought: {check.Refusal}.", check );
-		// the purchase and its debit in the order the tool's click made them (BuyLandTool.Click)
-		map.SetLand( merged );
-		merged.ClaimEnclosedCells( map );
+		// the purchase and its debit in the order the tool's click made them (BuyLandTool.Click): the fence tool lays the rectangle, the walk and the fill own the land, the bank pays
+		// [BIN:TPW-EXE:0x524960 Buy Land click] the second click runs the validator (0x531A50), then the purchase (0x5327E0), then charges the price (0x5195D0, 0x4D01F0)
+		if ( !land.Purchase( map, corner, post ) )
+			return new ParkCommandResult( false, "The land cannot be bought: the fence walk never ends.", check );
+		map.Touch();
 		economy?.ChargeLand( check.Cost, check.Cells );
 		return ParkCommandResult.Ok( check );
 	}
@@ -143,7 +154,18 @@ public sealed record BeginStaffHireCommand( int Candidate ) : StaffToolCommand
 			return NoStaff;
 		if ( Hireable( economy, Candidate ) is not { } candidate )
 			return ParkCommandResult.Rejected( $"Candidate {Candidate} cannot be hired." );
-		economy.Staff.PendingPlacementId = candidate.Id;
+		// [EXT:online-coop-commands] a candidate another seat places is that seat's until its placement ends (C4c)
+		if ( economy.Staff.ReservedBy( candidate.Id ) is { } seat && seat != Player )
+			return ParkCommandResult.Rejected( $"Candidate {Candidate} is being placed by player {seat}." );
+		// [EXT:online-coop-commands] a guest's hire replaces what its seat holds, as the original's hire replaces the running tool (0x507bf0) and the host's HUD ends it first (C4c): a
+		// pending hire's placement ends, an employee in hand drops back where it was picked up
+		if ( Player != ParkCommands.LocalPlayer )
+		{
+			if ( economy.Staff.PendingHireOf( Player ) > 0 )
+				economy.Staff.EndPlacement( Player, placed: false );
+			hands.ReturnToOrigin( Player );
+		}
+		economy.Staff.SetPendingHire( Player, candidate.Id );
 		return ParkCommandResult.Ok( candidate );
 	}
 }
@@ -158,7 +180,8 @@ public sealed record CancelStaffHireCommand : StaffToolCommand
 	{
 		if ( hands.Economy is not { } economy )
 			return NoStaff;
-		economy.Staff.EndPlacement( placed: false );
+		// [EXT:online-coop-commands] the issuing seat's placement (C4c)
+		economy.Staff.EndPlacement( Player, placed: false );
 		return ParkCommandResult.Ok();
 	}
 }
@@ -182,7 +205,8 @@ public sealed record PlaceStaffCommand( int Candidate, int X, int Y ) : StaffToo
 	{
 		if ( hands.Economy is not { Rules.Staff: true } economy )
 			return NoStaff;
-		if ( economy.Staff.PendingPlacementId != Candidate )
+		// [EXT:online-coop-commands] the issuing seat's pending hire (C4c)
+		if ( economy.Staff.PendingHireOf( Player ) != Candidate )
 			return ParkCommandResult.Rejected( $"Candidate {Candidate} is not being placed." );
 		if ( !hands.IsValidCell( X, Y ) )
 			return ParkCommandResult.Rejected( "Cannot place staff member here." );
@@ -191,11 +215,13 @@ public sealed record PlaceStaffCommand( int Candidate, int X, int Y ) : StaffToo
 		// a full thing pool refuses the hire before the placement ends (the hire would throw after it)
 		if ( economy.Staff.Things is { NextId: 0 } )
 			return ParkCommandResult.Rejected( $"The thing pool is full ({ThingPool.Capacity} things); no staff member can be placed." );
-		economy.Staff.EndPlacement( placed: true );
+		economy.Staff.EndPlacement( Player, placed: true );
 		var member = economy.Hire( candidate.Id );
-		// [BIN:TPW-EXE:0x46c8e0 new member] position = cell centre (sub-cell 0x80), happiness and energy 100.0 (the member's own defaults), patrol rectangle = the whole map (+0x20a = 1, +0x20c = 0x4000: PatrolArea's default); each role then decides its first job (state 0 here, the state machines' search runs on the next update)
+		// [BIN:TPW-EXE:0x46c8e0 new member] position = cell centre (sub-cell 0x80), happiness and energy 100.0 (the member's own defaults), patrol rectangle = the whole map (+0x20a = 1, +0x20c = 0x4000: PatrolArea's default); each role's constructor then runs its first search (Constructed below)
 		member.PatrolArea = (0, 0, ParkLitter.MapSize - 1, ParkLitter.MapSize - 1);
 		StaffPlacement.PutDown( member, X, Y );
+		// [BIN:TPW-EXE:0x46c8e0 new member] the role's constructor runs the first search inside the click (0x4D4340, 0x4D5D40, 0x4D6B60, 0x4D9EB0, 0x502600), so its draws come after the hire's base-speed and variant draws and before the turn's sweep; a headless economy has no world and searches on its first update
+		hands.StaffWorld?.Constructed( economy, member );
 		return ParkCommandResult.Ok( member );
 	}
 }
@@ -216,8 +242,16 @@ public sealed record PickUpStaffCommand( int Staff ) : StaffToolCommand
 			return NoStaff;
 		if ( economy.Staff.Members.FirstOrDefault( item => item.Id == Staff ) is not { } member || !StaffPlacementRules.CanBePickedUp( member, map ) )
 			return ParkCommandResult.Rejected( $"Employee {Staff} cannot be picked up." );
-		if ( hands.Of( Player ) != null )
+		if ( Player == ParkCommands.LocalPlayer && hands.Of( Player ) != null )
 			return ParkCommandResult.Rejected( $"Player {Player} already holds an employee." );
+		// [EXT:online-coop-commands] a guest's pick-up replaces what its seat holds, as the original's pick-up replaces the running tool (0x505c50) and the host's HUD ends it first (C4c):
+		// a pending hire's placement ends, an employee already in hand drops back where it was picked up
+		if ( Player != ParkCommands.LocalPlayer )
+		{
+			if ( economy.Staff.PendingHireOf( Player ) > 0 )
+				economy.Staff.EndPlacement( Player, placed: false );
+			hands.ReturnToOrigin( Player );
+		}
 		var origin = StaffPlacementRules.CellOf( member )!.Value;
 		StaffPlacement.ReleaseAssignments( economy, member );
 		member.State = StaffState.PickedUp;
@@ -249,7 +283,9 @@ public sealed record DropStaffCommand( int Staff, int X, int Y ) : StaffToolComm
 			return NoStaff;
 		if ( hands.Of( Player ) is not { } hand || hand.Staff != Staff )
 			return ParkCommandResult.Rejected( $"Player {Player} does not hold employee {Staff}." );
-		if ( (X, Y) != (hand.X, hand.Y) && !hands.IsValidCell( X, Y ) )
+		if ( (X, Y) == (hand.X, hand.Y) )
+			return hands.ReturnToOrigin( Player ) is { } returned ? ParkCommandResult.Ok( returned ) : ParkCommandResult.Ok();
+		if ( !hands.IsValidCell( X, Y ) )
 			return ParkCommandResult.Rejected( "Cannot place staff member here." );
 		hands.Empty( Player );
 		// an employee dismissed while in hand leaves nothing to put down

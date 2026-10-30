@@ -1,0 +1,8 @@
+## Backspace takes back your own last kart or water track line in a shared park (October 28, 2026)
+
+In a shared park every player's Backspace in the kart and water track tools now takes back that player's own last line of the ride, as single player's Backspace takes it back, under the normal refunds ([COOP.md](../COOP.md), "Conflicts and undo (C5)"; `[EXT:online-coop-undo]`). This is the first half of C5-3, the third of three parts that reach the game together; the coaster's pylons follow.
+
+- **As in single player.** Lines go back newest first with the same tiles, the same repairs at the station's exit and the same refunds as a game of one would give for the same clicks: the host follows each player's line tool from what it sends, so it knows when a line was the first on the tool's stack, which changes how the exit is repaired.
+- **Lines that end the tool stay.** A line that closes the circuit, or stops on existing track, has no take-back, as in the original; with exactly Ctrl the line tool restarts after a closing line and its next line can be taken back again.
+- **Your claim, held since.** A line can only be taken back while you still hold the ride's claim you laid it under; once the claim went (released, expired, taken by another player) or the track was cut, Backspace says why and takes nothing back.
+- **Other players' rides stay theirs.** A line or a take-back that would change the track of a ride another player is editing is refused with the claim's note, also where an older save's track has no owner marks and any ride could join it; a ride nobody is editing can be joined as before.

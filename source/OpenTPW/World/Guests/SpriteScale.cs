@@ -17,7 +17,7 @@ public static class SpriteScale
 	/// The camera-facing sprite's extents are added to the clip-space position, and the original's projection has x and y clip = view × cos(half fov) with w = z × sin(half fov)
 	/// (0x00578BE0: the matrix words +0x00 and +0x14 are cos(a), +0x2C is sin(a)), so one extent unit is 1 / cos(45 degrees) view-space units.
 	/// </summary>
-	// [BIN:TPW-EXE:0x00578BE0 projection] m00 = m11 = cos(fov / 2), m23 = sin(fov / 2): a clip-space extent e is e / cos(fov / 2) = e × √2 world units at 90 degrees (the same relation PTCL-904 states for the particle quads)
+	// [BIN:TPW-EXE:0x00578BE0 projection] m00 = m11 = cos(fov / 2), m23 = sin(fov / 2): a clip-space extent e is e / cos(fov / 2) = e × √2 world units at 90 degrees (the relation the particle quads use, docs/PARTICLES.md)
 	public static readonly float ClipToView = 1f / MathF.Cos( HalfFieldOfView );
 	/// <summary>World units (the original's, ten per map cell) of one pixel of a camera-facing sprite at scale 1.</summary>
 	public static readonly float BillboardPixel = ExtentPerSpriteUnit / PixelsPerSpriteUnit * ClipToView;

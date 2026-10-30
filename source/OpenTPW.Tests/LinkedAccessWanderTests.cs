@@ -7,8 +7,8 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// Synthetic coverage of the linked entrance/exit start slice of GUEST-010: the footprint and saved-link producers, an imported
-/// deciding guest, and the shared staff caller. Candidate types, unlinked recovery and the route's own edge rules stay unchanged.
+/// Synthetic coverage of the wander from linked entrance and exit cells (GUEST-010, retired in round 10): the footprint and saved-link producers, an imported
+/// deciding guest, and the shared staff caller. The candidate rule itself is checked against tp.exe in <see cref="WanderGoldenTests"/>.
 /// </summary>
 [TestClass]
 public class LinkedAccessWanderTests
@@ -155,16 +155,25 @@ public class LinkedAccessWanderTests
 	[DataTestMethod]
 	[DataRow( "4" )]
 	[DataRow( "E" )]
-	public void AccessStartsStillExcludeQueueAndExitTargetsWhenChoosingABranch( string symbol )
+	public void AccessStartsKeepTheirLinksToQueueCellsAndDropTheExitTargetsWhenChoosingABranch( string symbol )
 	{
+		// [BIN:TPW-EXE:0x004F9733 removal 2] the queue test removes the links to queue cells from a type-1 cell only: an entrance or exit start keeps them; [0x004F97E4 removal 4] every cell drops the links to type-10 cells
 		var grid = AccessGrid( symbol, links: 0x55 );
 		grid.SetPath( 4, 3, true );
 		grid.SetQueue( 4, 5, 1 );
 		grid.Cells.SetType( 3, 4, ParkCellTypes.Exit );
-		// +Y is a queue and -X an exit; only +X and -Y are candidates, so there is exactly one index draw.
+		// +Y is a queue (kept), +X and -Y are paths and -X an exit (dropped): three candidates, so one index draw, which picks the first in order, +Y
 		var draws = new ScriptedDraws( 0, 0, 9, 11 );
-		Assert.AreEqual( new GuestWander.Destination( Outside, 9, 11 ), GuestWander.Pick( grid, Start, draws.Next ) );
+		Assert.AreEqual( new GuestWander.Destination( (4, 5), 9, 11 ), GuestWander.Pick( grid, Start, draws.Next ) );
 		draws.AssertExhausted();
+		// the same grid from the path cell beside it: the path cell drops the queue link and the exit
+		var path = new GuestPathGrid( 16, 16 );
+		path.SetPath( 4, 4, true );
+		path.SetPath( 5, 4, true );
+		path.SetQueue( 4, 5, 1 );
+		path.Cells.SetLinks( 4, 4, 0x55 );
+		path.Cells.SetType( 3, 4, ParkCellTypes.Exit );
+		Assert.AreEqual( 2, GuestWander.OriginalCandidates( path, (4, 4) ), "the path cell at +X and the link to bare ground at -Y are left: only queue and exit targets are dropped" );
 	}
 
 	[DataTestMethod]
@@ -191,30 +200,40 @@ public class LinkedAccessWanderTests
 	[DataTestMethod]
 	[DataRow( "4" )]
 	[DataRow( "E" )]
-	public void LinkedAccessWithNoPathCandidateConsumesOnlyTheStepCount( string symbol )
+	public void LinkedAccessStepsOntoAnyTargetTypeButAnExit( string symbol )
 	{
 		foreach ( var type in new byte[] { 0, 2, 3, 4, 9, 10 } )
 		{
 			var grid = AccessGrid( symbol );
 			grid.Cells.SetType( Outside.X, Outside.Y, type );
-			var draws = new ScriptedDraws( 4 );
-			Assert.IsNull( GuestWander.Pick( grid, Start, draws.Next, null, out var blocked ), $"target type {type}" );
-			Assert.IsFalse( blocked, "no candidate is distinct from a patrol-area rejection" );
+			// a step count of one (the first draw is 0 % 5), then the two sub-cell bytes
+			var draws = new ScriptedDraws( 0, 7, 9 );
+			var picked = GuestWander.Pick( grid, Start, draws.Next, null, out var stranded );
+			if ( type == ParkCellTypes.Exit )
+			{
+				Assert.IsNull( picked, "the link to an exit cell is removed" );
+				Assert.IsTrue( stranded, "no candidate is left" );
+				Assert.AreEqual( 1, draws.Count );
+				continue;
+			}
+			Assert.AreEqual( new GuestWander.Destination( Outside, 7, 9 ), picked, $"target type {type}" );
+			Assert.IsFalse( stranded );
 			draws.AssertExhausted();
 		}
 	}
 
 	[TestMethod]
-	public void OtherLinkedNonPathTypesRemainOutsideThisSlice()
+	public void LinkedStartsOfAnyTypeWalkTheirLinks()
 	{
+		// [BIN:TPW-EXE:0x004F95B9 start without links] only the start cell's link count decides: whatever its type, a cell with a link walks it
 		foreach ( var type in new byte[] { 0, 2, 4, 5, 7, 30 } )
 		{
 			var grid = new GuestPathGrid( 16, 16 );
 			grid.Cells.SetType( Start.X, Start.Y, type );
 			grid.Cells.SetLinks( Start.X, Start.Y, 0x04 );
 			grid.SetPath( Outside.X, Outside.Y, true );
-			var draws = new ScriptedDraws( 0 );
-			Assert.IsNull( GuestWander.Pick( grid, Start, draws.Next ), $"linked start type {type} remains unsupported" );
+			var draws = new ScriptedDraws( 0, 7, 9 );
+			Assert.AreEqual( new GuestWander.Destination( Outside, 7, 9 ), GuestWander.Pick( grid, Start, draws.Next ), $"linked start type {type}" );
 			draws.AssertExhausted();
 		}
 	}

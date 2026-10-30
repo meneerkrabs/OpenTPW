@@ -101,17 +101,119 @@ public class ParkCommandCodecTests
 		// [EXT:online-coop-claims] seat 2 claims attraction 17, and the host lets the claim go (C3c-1)
 		(new ClaimRideCommand( 17 ) { Player = 2 }, "02670422"),
 		(new ReleaseRideCommand( 17 ), "02680022"),
+		// [EXT:online-coop-permissions] the host gives seat 3 building through the seat's rights (C4a)
+		(new SetSeatRightsCommand( 3, CoopRights.Build ), "0269000602"),
+		// [EXT:online-coop-undo] seat 2's Backspace on its path step of record 41, its selected ride 7, as it leaves the guest: undecided, no inverse (C5)
+		(new TakeBackCommand( false, 41, -1, -1, 7 ) { Player = 2 }, "026a04005201010e0000"),
+	};
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The take-back as the host decided it (C5): taken with its inverse nested as a whole command of its own bytes, and refused with each verdict, a slide piece's part
+	/// and a claimed ride; version 1 like the request.
+	/// </summary>
+	internal static readonly (ParkCommand Command, string Hex)[] TakeBackSchema =
+	{
+		(new TakeBackCommand( false, 41, -1, -1, 7, TakeBackVerdict.Taken,
+			new UndoLineCommand( CellToolMode.Path, -1, 4, 5, new[] { (4, 5), (5, 5) }, new[] { (6, 5) } ) { Player = 1 } ) { Player = 1 }, "026a02005201010e011e020b020101080a04080a0a0a020c0a"),
+		(new TakeBackCommand( false, 300, 2, -1, -1, TakeBackVerdict.Taken, new UndoPoolSlidePieceCommand( 30, 40 ) { Player = 3 } ) { Player = 3 }, "026a0600d804040101010a024b063c50"),
+		(new TakeBackCommand( false, 41, -1, 17, -1, TakeBackVerdict.Changed ) { Player = 2 }, "026a0400520122010200"),
+		(new TakeBackCommand( true, 0, -1, -1, -1, TakeBackVerdict.TooLarge ) { Player = 1 }, "026a0201000101010700"),
+		// [EXT:online-coop-undo] seat 2's own last pylon of the coaster of attraction 17 taken back, the coaster its claimed ride (C5-3)
+		(new TakeBackCommand( false, 41, -1, 17, -1, TakeBackVerdict.Taken, new RemoveLastCoasterPylonCommand( 17 ) { Player = 2 } ) { Player = 2 }, "026a0400520122010108025d0422"),
+	};
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The three stale-checked kinds with their expectation (C4b): version 3, the expectation after the kind's own fields; without one they keep the schema's
+	/// version-1 bytes.
+	/// </summary>
+	internal static readonly (ParkCommand Command, string Hex)[] ExpectationSchema =
+	{
+		(new BuyUpgradeCommand( 17, 2 ), "062b002204"),
+		(new CancelUpgradeCommand( 17, 2 ), "062c002204"),
+		(new MoveResearchCommand( ResearchCategory.Ride, -1, 1100, 1 ), "0628000001981102"),
+	};
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's upgrade cancellation that names its purchase too (C4b-2): version 4, the pending level and the purchase after the ride. C4b-1's version-3 form
+	/// with the level alone keeps its bytes (<see cref="ExpectationSchema"/>).
+	/// </summary>
+	internal static readonly (ParkCommand Command, string Hex)[] PurchaseSchema =
+	{
+		(new CancelUpgradeCommand( 17, 2, 1 ), "082c00220402"),
+	};
+
+	/// <summary>
+	/// [EXT:online-coop-undo] A pool stroke's first command in a shared park (C5-2): version 5, the kind's own fields; the same commands not first keep the schema's version-1 bytes.
+	/// </summary>
+	internal static readonly (ParkCommand Command, string Hex)[] StrokeSchema =
+	{
+		(new PaintPoolCellCommand( 20, 21, true ) { First = true }, "0a4600282a01"),
+		(new ErasePoolCellCommand( 20, 21 ) { Player = 1, First = true }, "0a4702282a"),
+		(new PoolCellsCommand( false, true, new[] { (20, 21), (21, 21) } ) { Player = 1, First = true }, "0a4e02000104282a2a2a"),
+	};
+
+	/// <summary>
+	/// [EXT:online-coop-undo] A shared park's track line whose click keeps the line tool after a close (C5-3): version 6, the kind's own fields; the same line without the flag keeps the schema's
+	/// version-1 bytes.
+	/// </summary>
+	internal static readonly (ParkCommand Command, string Hex)[] TrackToolSchema =
+	{
+		(new LayTrackLineCommand( 17, 40, 50, 40, 56 ) { Player = 2, KeepsTool = true }, "0c50042250645070"),
 	};
 
 	[TestMethod]
 	public void EveryCommandKindHasPinnedBytesUnderTheCurrentVersion()
 	{
-		Assert.AreEqual( 2, ParkCommandCodec.Version, "a new version adds a new schema table beside this one" );
+		Assert.AreEqual( (6, 2, 3, 4, 5, 6), (ParkCommandCodec.Version, ParkCommandCodec.QueueVersion, ParkCommandCodec.ExpectationVersion, ParkCommandCodec.PurchaseVersion,
+			ParkCommandCodec.StrokeVersion, ParkCommandCodec.TrackToolVersion),
+			"each generation adds its own pinned table beside this one, which holds versions 1 and 2" );
 		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>(), Schema.Select( row => row.Command.Kind ).ToArray(), "one schema row per kind, no kind without one" );
 		var types = typeof( ParkCommand ).Assembly.GetTypes().Where( type => type.IsSubclassOf( typeof( ParkCommand ) ) && !type.IsAbstract ).ToArray();
 		CollectionAssert.AreEquivalent( types, Schema.Select( row => row.Command.GetType() ).ToArray(), "every command type has a schema row" );
 		foreach ( var (command, hex) in Schema )
 			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ), command.Kind.ToString() );
+	}
+
+	[TestMethod]
+	public void ATakeBackCarriesItsDecisionAndItsInverseAsAWholeCommand()
+	{
+		foreach ( var (command, hex) in TakeBackSchema )
+		{
+			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ), command.ToString() );
+			var bytes = Convert.FromHexString( hex );
+			Assert.AreEqual( command, ParkCommandCodec.Decode( bytes ), command.ToString() );
+			CollectionAssert.AreEqual( bytes, ParkCommandCodec.Encode( ParkCommandCodec.Decode( bytes ) ) );
+			for ( var length = 0; length < bytes.Length; length++ )
+				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"{command} cut to {length} bytes" );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), $"{command} with a trailing byte" );
+		}
+		// a guest's request is a few bytes, whatever its step
+		Assert.IsTrue( ParkCommandCodec.Encode( new TakeBackCommand( false, long.MaxValue, 4095, int.MaxValue, int.MaxValue ) { Player = 64 } ).Length <= 32 );
+		// an inverse of another kind than the tools' undo, of another player than the take-back's, and a taken verdict without one or a refusal with one are no take-back
+		var place = ParkCommandCodec.Encode( new PlaceObjectCommand( "x", 1, 1, 90 ) { Player = 1 } );
+		var writer = new ParkCommandWriter();
+		writer.Int( 1 ); writer.Byte( (byte)ParkCommandKind.TakeBack ); writer.Int( 1 );
+		writer.Bool( false ); writer.Long( 41 ); writer.Int( -1 ); writer.Int( -1 ); writer.Int( -1 ); writer.Byte( (byte)TakeBackVerdict.Taken ); writer.Bytes( place );
+		Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( writer.ToArray() ), "a foreign inner kind" );
+		var inverse = new UndoLineCommand( CellToolMode.Path, -1, 4, 5, new[] { (4, 5) }, Array.Empty<(int X, int Y)>() );
+		foreach ( var malformed in new[]
+		{
+			new TakeBackCommand( false, 41, -1, -1, -1, TakeBackVerdict.Taken, inverse with { Player = 2 } ) { Player = 1 },
+			new TakeBackCommand( false, 41, -1, -1, -1, TakeBackVerdict.Taken ) { Player = 1 },
+			new TakeBackCommand( false, 41, -1, -1, -1, TakeBackVerdict.Changed, inverse with { Player = 1 } ) { Player = 1 },
+			new TakeBackCommand( false, -1, -1, -1, -1 ),
+			new TakeBackCommand( false, 1, -2, -1, -1 ),
+			new TakeBackCommand( false, 1, -1, -2, -1 ),
+			new TakeBackCommand( false, 1, -1, -1, -1, (TakeBackVerdict)8 ),
+		} )
+		{
+			Assert.IsFalse( malformed.IsWellFormed, malformed.ToString() );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( ParkCommandCodec.Encode( malformed ) ), malformed.ToString() );
+		}
+		// the reasons name their verdicts for the tools that read a refusal
+		foreach ( var verdict in Enum.GetValues<TakeBackVerdict>().Where( verdict => verdict != TakeBackVerdict.Taken ) )
+			Assert.AreEqual( verdict, TakeBackCommand.VerdictOf( TakeBackCommand.ReasonOf( verdict ) ) );
+		Assert.IsNull( TakeBackCommand.VerdictOf( "Not enough money." ) );
 	}
 
 	[TestMethod]
@@ -140,6 +242,34 @@ public class ParkCommandCodecTests
 	}
 
 	[TestMethod]
+	public void SeatRightsDecodeRefusesUnofferedBitsBeforeNarrowing()
+	{
+		// Write the raw integer: constructing CoopRights first would already lose its high bits. 32 is the first bit past the five rights, all offered since C4c-2.
+		foreach ( var rights in new[] { 32, 63, 255, 256, 257, -1, -255, -256, int.MinValue, int.MinValue + 1, int.MaxValue } )
+		{
+			var writer = new ParkCommandWriter();
+			writer.Int( 1 );
+			writer.Byte( (byte)ParkCommandKind.SetSeatRights );
+			writer.Int( ParkCommands.LocalPlayer );
+			writer.Int( 2 );
+			writer.Int( rights );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( writer.ToArray() ), $"raw rights {rights}" );
+		}
+	}
+
+	[TestMethod]
+	public void OfferedSeatRightsKeepTheirCanonicalBytes()
+	{
+		foreach ( var (rights, hex) in new[] { (CoopRights.None, "0269000400"), (CoopRights.Build, "0269000402"), (CoopRights.Staff, "0269000408"), ((CoopRights)0x1F, "026900043E") } )
+		{
+			var command = new SetSeatRightsCommand( 2, rights );
+			var bytes = Convert.FromHexString( hex );
+			Assert.AreEqual( command, ParkCommandCodec.Decode( bytes ) );
+			CollectionAssert.AreEqual( bytes, ParkCommandCodec.Encode( command ) );
+		}
+	}
+
+	[TestMethod]
 	public void ValuesAtTheEdgesOfTheirRangeRoundTrip()
 	{
 		var edges = new ParkCommand[]
@@ -159,6 +289,137 @@ public class ParkCommandCodecTests
 		Assert.AreEqual( BitConverter.SingleToInt32Bits( -0f ), BitConverter.SingleToInt32Bits( ((PlacePrototypeCommand)ParkCommandCodec.Decode( ParkCommandCodec.Encode( edges[2] ) )).Y ), "floats keep their bit pattern" );
 	}
 
+	[TestMethod]
+	public void TheStaleCheckedKindsCarryTheirExpectationInVersionThreeAlone()
+	{
+		foreach ( var (command, hex) in ExpectationSchema )
+		{
+			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ), command.Kind.ToString() );
+			var bytes = Convert.FromHexString( hex );
+			Assert.AreEqual( command, ParkCommandCodec.Decode( bytes ), command.Kind.ToString() );
+			CollectionAssert.AreEqual( bytes, ParkCommandCodec.Encode( ParkCommandCodec.Decode( bytes ) ) );
+			// a truncated expectation (a research move's project cut after its id included) and a trailing byte are no command
+			for ( var length = 0; length < bytes.Length; length++ )
+				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"{command.Kind} cut to {length} bytes" );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), $"{command.Kind} with a trailing byte" );
+		}
+		// version 3 is these three kinds' alone, and the same kinds without an expectation (the host's) keep version 1, decoding with none
+		foreach ( var (command, hex) in Schema.Where( row => row.Command is not IStaleChecked ) )
+		{
+			var bytes = Convert.FromHexString( hex );
+			bytes[0] = 6;
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes ), $"{command.Kind} as version 3" );
+		}
+		foreach ( var (command, hex) in Schema.Where( row => row.Command is IStaleChecked ) )
+			Assert.AreEqual( command, ParkCommandCodec.Decode( Convert.FromHexString( hex ) ), $"{command.Kind} of version 1 has no expectation" );
+		Assert.AreEqual( 3, Schema.Count( row => row.Command is IStaleChecked ) );
+		// a research move names its whole project or none; an expectation is never negative
+		foreach ( var partial in new ParkCommand[] { new MoveResearchCommand( ResearchCategory.Ride, 1, 1100, null ), new MoveResearchCommand( ResearchCategory.Ride, 1, null, 1 ),
+			new MoveResearchCommand( ResearchCategory.Ride, 1, -1, 1 ), new BuyUpgradeCommand( 17, -1 ), new CancelUpgradeCommand( 17, -1 ) } )
+			Assert.IsFalse( partial.IsWellFormed, partial.ToString() );
+	}
+
+	[TestMethod]
+	public void AGuestsUpgradeCancellationNamesItsPurchaseInVersionFourAlone()
+	{
+		foreach ( var (command, hex) in PurchaseSchema )
+		{
+			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ), command.Kind.ToString() );
+			var bytes = Convert.FromHexString( hex );
+			Assert.AreEqual( command, ParkCommandCodec.Decode( bytes ), command.Kind.ToString() );
+			CollectionAssert.AreEqual( bytes, ParkCommandCodec.Encode( ParkCommandCodec.Decode( bytes ) ) );
+			for ( var length = 0; length < bytes.Length; length++ )
+				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"{command.Kind} cut to {length} bytes" );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), $"{command.Kind} with a trailing byte" );
+		}
+		// version 4 is the cancellation's alone
+		foreach ( var (command, hex) in Schema.Concat( ExpectationSchema ).Where( row => row.Command is not CancelUpgradeCommand ) )
+		{
+			var bytes = Convert.FromHexString( hex );
+			bytes[0] = 8;
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes ), $"{command.Kind} as version 4" );
+		}
+		// C4b-1's version-3 cancellation decodes with the level alone, and the host's version 1 with neither
+		Assert.AreEqual( new CancelUpgradeCommand( 17, 2 ), ParkCommandCodec.Decode( Convert.FromHexString( "062c002204" ) ) );
+		Assert.AreEqual( new CancelUpgradeCommand( 17 ), ParkCommandCodec.Decode( Convert.FromHexString( Schema.Single( row => row.Command is CancelUpgradeCommand ).Hex ) ) );
+		// a purchase names its level too, and neither is negative
+		foreach ( var partial in new ParkCommand[] { new CancelUpgradeCommand( 17, null, 1 ), new CancelUpgradeCommand( 17, 2, -1 ), new CancelUpgradeCommand( 17, -1, 1 ) } )
+			Assert.IsFalse( partial.IsWellFormed, partial.ToString() );
+	}
+
+	[TestMethod]
+	public void APoolStrokesFirstCommandIsVersionFiveAloneAndEveryOtherKeepsItsBytes()
+	{
+		foreach ( var (command, hex) in StrokeSchema )
+		{
+			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ), command.Kind.ToString() );
+			var bytes = Convert.FromHexString( hex );
+			var decoded = ParkCommandCodec.Decode( bytes );
+			Assert.AreEqual( command, decoded, command.Kind.ToString() );
+			Assert.IsTrue( decoded is IPoolStrokeCommand { First: true } );
+			CollectionAssert.AreEqual( bytes, ParkCommandCodec.Encode( decoded ) );
+			// not first, the same command is the schema's version 1, as a single player's
+			var plain = Schema.Single( row => row.Command.Kind == command.Kind );
+			Assert.AreEqual( plain.Hex, ParkCommandCodec.ToHex( ((IPoolStrokeCommand)command) switch
+			{
+				PaintPoolCellCommand paint => paint with { First = false },
+				ErasePoolCellCommand erase => erase with { First = false },
+				_ => (PoolCellsCommand)command with { First = false }
+			} ) );
+			Assert.AreEqual( "0" + "a" + plain.Hex[2..], hex, "only the generation differs" );
+			for ( var length = 0; length < bytes.Length; length++ )
+				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"{command.Kind} cut to {length} bytes" );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), $"{command.Kind} with a trailing byte" );
+		}
+		// version 5 is the three stroke kinds' alone
+		foreach ( var (command, hex) in Schema.Concat( ExpectationSchema ).Concat( PurchaseSchema ).Where( row => row.Command is not IPoolStrokeCommand ) )
+		{
+			var bytes = Convert.FromHexString( hex );
+			bytes[0] = 10;
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes ), $"{command.Kind} as version 5" );
+		}
+	}
+
+	[TestMethod]
+	public void AKeptTrackToolIsALinesOwnGenerationAndSinglePlayersLinesKeepTheirBytes()
+	{
+		foreach ( var (command, hex) in TrackToolSchema )
+		{
+			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ) );
+			var bytes = Convert.FromHexString( hex );
+			var decoded = ParkCommandCodec.Decode( bytes );
+			Assert.AreEqual( command, decoded );
+			Assert.IsTrue( decoded is LayTrackLineCommand { KeepsTool: true } );
+			CollectionAssert.AreEqual( bytes, ParkCommandCodec.Encode( decoded ) );
+			// without the flag, the same line is the schema's version 1, as a single player's
+			var plain = Schema.Single( row => row.Command.Kind == command.Kind );
+			Assert.AreEqual( plain.Hex[..4] + "04" + plain.Hex[6..], ParkCommandCodec.ToHex( (LayTrackLineCommand)command with { KeepsTool = false } ) );
+			Assert.AreEqual( "0" + "c" + plain.Hex[2..4] + "04" + plain.Hex[6..], hex, "only the generation differs" );
+			for ( var length = 0; length < bytes.Length; length++ )
+				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"cut to {length} bytes" );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), "with a trailing byte" );
+		}
+		// version 6 is the track line's alone
+		foreach ( var (command, hex) in Schema.Concat( ExpectationSchema ).Concat( PurchaseSchema ).Concat( StrokeSchema ).Where( row => row.Command is not LayTrackLineCommand ) )
+		{
+			var bytes = Convert.FromHexString( hex );
+			bytes[0] = 12;
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes ), $"{command.Kind} as version 6" );
+		}
+	}
+
+	/// <summary>A log recorded before the undo's last-line flag decodes as it was written, and a flag byte that is present must be 1.</summary>
+	[TestMethod]
+	public void TheUndoTrackLineBytesOfAnOlderLogStillDecodeAndAPresentZeroFlagIsRefused()
+	{
+		var old = ParkCommandCodec.Decode( Convert.FromHexString( "0251002250645070" ) );
+		Assert.AreEqual( new UndoTrackLineCommand( 17, 40, 50, 40, 56 ), old );
+		var last = new UndoTrackLineCommand( 17, 40, 50, 40, 56, true );
+		Assert.AreEqual( "025100225064507001", Convert.ToHexString( ParkCommandCodec.Encode( last ) ).ToLowerInvariant() );
+		Assert.AreEqual( last, ParkCommandCodec.Decode( Convert.FromHexString( "025100225064507001" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( Convert.FromHexString( "025100225064507000" ) ) );
+	}
+
 	/// <summary>Bytes that are not exactly one well-formed command: every truncation of every sample, an extra byte, another version, an unknown kind, a padded varint, bad fields.</summary>
 	[TestMethod]
 	public void MalformedAndOutOfRangeBytesAreRefused()
@@ -170,8 +431,8 @@ public class ParkCommandCodecTests
 				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"{command.Kind} cut to {length} bytes" );
 			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), $"{command.Kind} with a trailing byte" );
 			var otherVersion = bytes.ToArray();
-			otherVersion[0] = 6;
-			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( otherVersion ), $"{command.Kind} as version 3" );
+			otherVersion[0] = 8;
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( otherVersion ), $"{command.Kind} as version 4" );
 		}
 		var bad = new[]
 		{

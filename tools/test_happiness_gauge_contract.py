@@ -63,7 +63,7 @@ class HappinessGaugeContract(unittest.TestCase):
         self.assertIn('UiVerticalGauge.Draw( batch, bounds, value, ArtPath )', self.research)
         self.assertIn('ArtPath = "/ui/textures/effortguage.wct"', self.research)
         self.assertIn('Value = () => workloadKnob.Limit', self.research)
-        self.assertIn('raw-zero startup keeps the existing host-normalized bottom (634)', self.research)
+        self.assertIn('so the first projection of raw 0 leaves the ball at 399', self.research)
 
     def test_resource_failure_keeps_existing_skip_policy(self):
         renderer = read('source/OpenTPW/UI/Original/UiRenderer.cs')

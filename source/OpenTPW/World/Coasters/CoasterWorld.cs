@@ -41,6 +41,8 @@ public sealed class CoasterWorld
 	}
 
 	public CoasterRandom Random { get; }
+	/// <summary>The park's script world, which takes the head-hang draw (<see cref="RideScriptWorld.HeadHung"/>); null for a world of its own.</summary>
+	internal RideScriptWorld? Scripts { get; set; }
 	public IReadOnlyList<CoasterRide> Rides => rides;
 
 	internal void Add( CoasterRide ride )

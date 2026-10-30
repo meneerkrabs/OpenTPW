@@ -66,7 +66,7 @@ public partial class TrackAddOnLevelTests
 	/// (14, 10) … (28, 10) and (28, 14) … (10, 14) between the corners (30, 10), (30, 14), (8, 14) and (8, 10). Without <paramref name="laid"/> the station stands alone;
 	/// <paramref name="extra"/> joins the catalogue.
 	/// </summary>
-	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false, bool laid = true, ObjectCatalogEntry? extra = null )
+	private (Level Level, OriginalObject Ride, ObjectCatalogEntry Jump) World( bool hasQueue = false, bool laid = true, ObjectCatalogEntry? extra = null, (int X, int Y)? extraAt = null )
 	{
 		var (rideEntry, jump) = Entries( hasQueue );
 		var entries = extra == null ? new[] { rideEntry, jump } : new[] { rideEntry, jump, extra };
@@ -87,7 +87,9 @@ public partial class TrackAddOnLevelTests
 		// the footprint handlers the level wires after its track set-up (Level.ConnectObjectsToGuests), in that order
 		var cells = guests.Grid.Cells;
 		objects.ObjectPlaced += item => cells.WriteFootprint( item.Cells, Level.OwnerWord( item ), item.Placement.Rotation );
-		objects.ObjectRemoved += item => cells.ClearFootprint( item.Cells );
+		objects.ObjectRemoved += item => level.DemolishFootprintCells( item, cells, null );
+		if ( extra != null && extraAt is { } blocker )
+			Assert.IsNotNull( objects.TryPlace( extra, blocker.X, blocker.Y, 0, out _ ), "the object standing where the ride's exit tile goes" );
 		var ride = objects.TryPlace( rideEntry, 10, 9, 0, out _ );
 		Assert.IsNotNull( ride?.Runtime.Bump, "the kart ride and its controller" );
 		var station = level.TrackStations[ride!];
@@ -130,13 +132,13 @@ public partial class TrackAddOnLevelTests
 		Assert.AreSame( ride, level.WindowTarget( addOn ) );
 		Assert.AreSame( ride, level.WindowTarget( ride ) );
 
-		// the sale: the flags come off and the circuit is walked at once ([EXT:addon-sale-walk]), whichever removal handler runs first
+		// the sale is the demolition 0x527EE0 (the third argument 0): pass 2 clears the record under every cell of the add-on's shape with 0x53B280(0, 0, 1), so the tile the jump stood on goes with it
+		// (the ORACLE.md X37 cases), and the circuit is walked at once ([EXT:addon-sale-walk]): it is open now
 		level.Objects.Remove( addOn );
 		foreach ( var (cx, cy) in TrackStation.TileCellsOf( 16, 10 ) )
-			Assert.AreEqual( 0, level.KartTracks!.Tracks.Get( cx, cy ).Flags & TrackCell.FlagAddOn, $"({cx}, {cy}) loses the add-on flag" );
-		Assert.IsTrue( bump.IsTrackValid );
+			Assert.IsTrue( level.KartTracks!.Tracks.Get( cx, cy ).IsEmpty, $"({cx}, {cy}) holds no tile after the sale" );
+		Assert.IsFalse( bump.IsTrackValid, "the sale cut the circuit" );
 		Assert.IsFalse( bump.Sections.Any( candidate => candidate.Kind is 12 or 13 || candidate.AddOn != null ), "no section keeps the sold add-on" );
-		Assert.AreEqual( 9, SectionAt( ride, 16, 10 ).Kind );
 		Assert.IsNull( level.WindowTarget( addOn ), "a removed add-on opens nothing" );
 	}
 
@@ -165,6 +167,31 @@ public partial class TrackAddOnLevelTests
 		return state;
 	}
 
+	/// <summary>
+	/// ARRIVAL-003: tp.exe's ride placement walks nothing (0x529E10 lays the station through 0x52A1A0), so the track word +0x2C keeps the constructor's 1 until a track edit writes it
+	/// (0x524D1B, 0x5251B8): BUMP 5 and the park points counts-test read 1 after the placement, and the word is saved as never written.
+	/// </summary>
+	[TestMethod]
+	public void AFreshStationKeepsTheConstructorsTrackWordUntilATrackEditWritesIt()
+	{
+		var (level, ride, _) = World( laid: false );
+		var state = AttachTrackEconomy( level, ride );
+		var bump = ride.Runtime.Bump!;
+		Assert.IsTrue( bump.IsTrackValid && !bump.TrackWordWritten, "the placement's walk did not write the word" );
+		Assert.AreEqual( 1, bump.Command( 5, 0 ), "BUMP 5 reads the constructor's 1" );
+		typeof( Level ).GetMethod( "SyncObjectEconomy", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( level, null );
+		Assert.IsTrue( state.TrackValid, "the park points counts-test reads 1 (0x4DD9AD, 1 and 2 need the track word)" );
+		Assert.IsFalse( BumpControllerSaveDataOf( bump ).TrackWordWritten ?? true, "a fresh ride is saved as never written" );
+		// the first track edit (a line, 0x526F02) writes the walk's verdict: the open circuit is invalid
+		Assert.IsTrue( level.EnterTrackTool( ride, justPlaced: true ) );
+		level.CellTool.Click( (20, 10) );
+		Assert.IsTrue( bump.TrackWordWritten && !bump.IsTrackValid );
+		Assert.AreEqual( 0, bump.Command( 5, 0 ) );
+		Assert.IsNull( BumpControllerSaveDataOf( bump ).TrackWordWritten, "an edited ride saves the field absent" );
+	}
+
+	private static BumpControllerSaveData BumpControllerSaveDataOf( BumpController bump ) => TrackSave.CaptureController( bump, 1 );
+
 	[DataTestMethod]
 	[DataRow( TrackWalkCause.Line, true )]
 	[DataRow( TrackWalkCause.Edit, true )]
@@ -192,11 +219,12 @@ public partial class TrackAddOnLevelTests
 	{
 		var (level, ride, _) = World();
 		var state = AttachTrackEconomy( level, ride );
-		if ( blocker is "broken" or "condemned" ) state.IsBrokenDown = true;
 		if ( blocker == "condemned" ) state.LifeGauge = 0;
+		if ( blocker is "broken" or "condemned" ) state.IsBrokenDown = true;
 		if ( blocker == "upgrading" ) state.PendingLevel = state.Level + 1;
 		if ( blocker == "maintenance" ) state.MaintenanceRequested = true;
-		if ( blocker == "script-broken" ) ride.Runtime.SetVariable( nameof( RideVariables.VAR_BROKEN ), 1 );
+		// the script's VAR_BROKEN made the ride update enter state 1: the guard reads the state word (0xde654)
+		if ( blocker == "script-broken" ) { ride.Runtime.SetVariable( nameof( RideVariables.VAR_BROKEN ), 1 ); state.StateWord.Set( RideObjectStates.BrokenDown ); }
 		if ( blocker == "disconnected-queue" )
 		{
 			ride.Visitors.Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 );
@@ -363,7 +391,7 @@ public partial class TrackAddOnLevelTests
 		AttachTrackEconomy( level, ride );
 		var posted = new List<int>();
 		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { HelpPosted = posted.Add } );
-		Assert.IsTrue( level.EnterTrackTool( ride ) );
+		Assert.IsTrue( level.EnterTrackTool( ride, justPlaced: true ) );
 		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode );
 		Assert.IsNotNull( level.CellTool.Start, "the open end is the start (0x530830, then 0x52F580 keeps it)" );
 		HudToolClick.Click( hud, (20, 10) );
@@ -432,4 +460,15 @@ public partial class TrackAddOnLevelTests
 		public void Undo( SegmentResult segment ) => throw new InvalidOperationException();
 	}
 
+
+	[TestMethod]
+	public void TheExitTileDemolishesTheObjectStandingOnItAndIsLaid()
+	{
+		var scenery = Entry( ObjectCategory.Feature, "Info.Id 1700\nInfo.Name SyntheticBush\nInfo.WhichUIType 0\nInfo.OverwritePriority 0\n", "*" );
+		var (level, ride, _) = World( laid: false, extra: scenery, extraAt: (14, 10) );
+		Assert.IsNull( level.Objects.FindAt( 14, 10 ), "op 0x87 of the exit tile demolished it (0x527EE0)" );
+		Assert.IsTrue( level.KartTracks!.Tracks.Get( 14, 10 ).IsOrigin, "and the tile was laid on its cells" );
+		var station = level.TrackStations[ride];
+		Assert.AreEqual( station.Exit, (14, 10) );
+	}
 }

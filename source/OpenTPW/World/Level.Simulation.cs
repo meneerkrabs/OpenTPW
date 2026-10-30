@@ -55,6 +55,12 @@ public partial class Level
 				AdvanceSimulation( frameSeconds * SimulationTimeScale );
 		}
 		FrameStats.EndSimulation( simulationStart );
+		// the harbour's flush (0x53C3F0) steps unless the game clock is paused (0x402DF0): a window that keeps the clock running keeps it moving
+		if ( Harbour is { } harbour )
+		{
+			harbour.WindDirection = Weather?.WindDirection ?? ParkWeather.InitialWindDirection;
+			harbour.Update( (float)frameSeconds, SimulationTimeScale <= 0, Math.Max( 0, (int)SimulationTimeScale ) );
+		}
 		if ( !updateEntities )
 			return;
 		using ( FrameMarks.Measure( "level.entities" ) )
@@ -202,6 +208,13 @@ public partial class Level
 		Weather.AdvanceTo( Park.Economy.Tick );
 	}
 
+	/// <summary>Lets the admissions the substep deferred go on (see <see cref="SimulateSweptTurn"/>).</summary>
+	private static void ResumeAdmissions( OriginalObject[] items )
+	{
+		foreach ( var item in items )
+			item.Visitors.DefersAdmission = false;
+	}
+
 	/// <summary>
 	/// One tick that starts a park turn, in the order of the original's substep and turn (main loop 0x0054E360 case 10, the world update 0x00516380): the guests' tick counters, the ride scripts and
 	/// the bump module of the substep, then the economy's turn, whose thing sweep (<see cref="LevelThingSweep"/>) updates every thing newest first.
@@ -219,8 +232,8 @@ public partial class Level
 		}
 		finally
 		{
-			foreach ( var item in items )
-				item.Visitors.DefersAdmission = false;
+			// (a helper call: a loop in a finally block overwrote the try's locals in the Mono interpreter's hot tier, tools/test_no_loop_in_finally.py)
+			ResumeAdmissions( items );
 		}
 		if ( substep.TourDue )
 			Guests!.ScheduleBodySprites();

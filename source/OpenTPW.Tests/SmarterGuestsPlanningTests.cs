@@ -514,6 +514,12 @@ public class SmarterGuestsPlanningTests
 			}
 		}
 		Assert.IsNotNull( grower, "a grower with two rides it could choose" );
+		// the baseline is the grower with no history: the run's own history of the rides it used (which depends on how the run went) would make the rides it may choose differ from the ones the checks below clear it to
+		Array.Clear( grower.UsedHistory );
+		Array.Clear( grower.TemporaryHistory );
+		spy.Views.Clear();
+		spy.Rides.Clear();
+		park.Guests.PeekChoice( grower );
 		Assert.IsTrue( spy.Views.Count > 0 && spy.Views.All( view => view.GuestId == grower.Id && view.Plan >= 0 ), "a grower close to full gets a plan" );
 		// the join test's excitement gate, which the host applies to the rides it considers
 		static bool Admitted( ParkScenario park, GuestView guest, AttractionView ride )

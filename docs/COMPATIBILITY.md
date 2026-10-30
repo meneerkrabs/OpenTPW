@@ -216,13 +216,14 @@ Original values ([DATA:Data/low.sam, med.sam, high.sam]):
 | PROCEDURALTEXTURECACHE (0, 1, 2 → 1500, 2000, 2500 cells) | 0 | 1 | 1 | 2 | **applied** at the next level load: the size of the visible-cell cache |
 | ANIMATINGTEXTURES | 0 | 1 | 1 | 1 | **applied** to the object texture-frame tracks (0 = each slot shows its first frame, tp.exe `0x57A420`) |
 | SKYQUALITY (layers) | 1 | 2 | 4 | 4 | **applied** to the sky's scrolling cloud layers (0 draws no sky) |
-| SKYDETAIL / SKYSHADOW | 0/0 | 1/0 | 1/0 | 1/0 | not applied |
+| SKYDETAIL | 0 | 1 | 1 | 1 | **applied**: the sky objects of a level (the moons of the hallow and space themes) draw with 1 and not with 0 |
+| SKYSHADOW | 0 | 0 | 0 | 0 | not applied |
 | MESHSHADOW / SPRITESHADOW | 0/0 | 0/1 | 1/2 | 1/3 | not applied |
 | TRIPLEBUFFER | 0 | 0 | 1 | 1 | swapchain-managed |
 | FOG (0 vertex, 1 depth) | 1 | 1 | 1 | 1 | depth fog always |
 | MIPMAP | 1 | 1 | 1 | 1 | **applied** |
 | RENDER32 / TEXTURE32 | 0/0 | 0/0 | 0/0 | 1/1 | always 32-bit |
-| BUMPMAPPING / LIGHTING / FORCELOWALPHAREF | 0/0/0 | 0/1/0 | 0/1/0 | 0/1/0 | not applied |
+| BUMPMAPPING / LIGHTING / FORCELOWALPHAREF | 0/0/0 | 0/1/0 | 0/1/0 | 0/1/0 | BUMPMAPPING and FORCELOWALPHAREF not applied; LIGHTING **applied** at the next level load, to the terrain: 0 draws it unlit in the constant white of tp.exe `0x57453A` (no sun, ambient or point light) and without the darkening of the land outside the park (docs/PATHS.md); the evening extension still darkens that white at dusk and night |
 | FIRSTPERSONVIEWDISTANCE (0..3) | 0 | 1 | 2 | 3 | **applied**: the ray distance of the visible-cell spans (200, 325, 450, 700 original units) and, in the ride and free walk views only (the original has fog only in its first-person views, none in the park overview, the lobby or the globe), the fog's start and end (50-60, 100-110, 135-150, 230-250), linear in the projection's depth (docs/LND.md "Fog and far plane", UI-107); also sets the extension's wide-zoom far end |
 | COASTERSMOOTHNESS (1..8) / COASTERTRACKDETAIL | 1/0 | 4/1 | 6/1 | 8/1 | exposed for the rides slice |
 | PARTICLEDENSITY / TOTALPARTICLES (simulation) | 500/1000 | 1000/3200 | 1500/2000 | 1500/2000 (2000 with `enhanced-game-options`) | density applied to the particle pool at park start; TOTALPARTICLES unread, as in tp.exe |
@@ -330,8 +331,35 @@ alpha-reference index of devices that fail the 0x567270 probe are not reproduced
 
 In tp.exe the terrain instance plays its `base` clip every rendered frame, in the lobby and in a park: the lobby's `Basem1.MD2` scrolls the two sea meshes one texture repeat per 200 ticks, and the Jungle
 terrain's `basem.MD2` (eleven UV tracks, 100 ticks, +1 U per cycle) scrolls the river and the waterfall (a render callback, `0x54e2b0` → `0x44e510`, runs it in a park). The clock is the game's scaled clock, so
-the water stands still while the park is paused and follows the game speed. OpenTPW plays both on the scene clock ([MD2-MODELS.md](MD2-MODELS.md), "Terrain clips"; issue 829). The harbour sea is static in
-the data and the other two park themes have no terrain clip.
+the water stands still while the park is paused and follows the game speed. OpenTPW plays both on the scene clock ([MD2-MODELS.md](MD2-MODELS.md), "Terrain clips"; issue 829). The terrain's own harbour sea
+(`Line01`, `jri_lak2`, y -11 to -10) is static in the data, and the other two park themes have no terrain clip; the harbour's waves are
+drawn by code (below).
+
+## Harbour waves and flags
+
+Besides the blueprint markers, tp.exe builds two dynamic meshes every park frame (`0x53C3F0`, called from the render callback
+`0x54E2B0`; `HarbourDynamics`), in every theme:
+
+- **The WaterMesh.** A grid of 16 x 19 points 20 units apart (`0x53D380`) rolls a travelling cosine 1.7 high: angle
+  `x k cos 10° - z k sin 10° - phase / 2` with `k = 2π / 3`, sines from the 4096-entry table, normal `(sin, 1, sin)` normalised. Two
+  patches of it (`0x53CAB0`: 10 x 11 cells from the grid's corner and 4 x 6 from column 10, 134 faces) start at the level's
+  `WaterStartPos` (380, -5, -180 in every `Standard.sam`), above the static sea. Each face takes one of the surf textures `gby_sur1` to
+  `gby_sur3` (translucent) from a table of 110 entries that the mesh creation (`0x53BFE0`) fills with `rand() % 3`; each patch reads
+  the table from its start. The table comes from the game thread's C runtime `rand()`, which start-up seeds with `GetTickCount` (`0x54DDE3`),
+  so every run draws a different sea; OpenTPW keeps one such stream (`CrtProcessRandom`), seeded the same way when the game starts. The original's
+  other `rand()` callers draw from that stream before a park starts; OpenTPW's stand-ins for them keep streams of their own, so the
+  number of draws before the table is not matched (it depends on the clock-seeded run anyway).
+- **The FlagsMesh.** Eight cloth flags hang from the terrain's `flag_pole` meshes by the entrance (the table `0x763CF4`: x 411.25,
+  451.25, 511.25, 551.25 at z 38.75 and 50.75, top y 22). A 7 x 5 cloth grid 1.8 apart (`0x53D570`) hangs from the pole and ripples
+  out from it, more toward the free end, which also sags; each flag (`0x53CDA0`) is 6 x 4 of its cells, each a front face (normals
+  reversed) and a back face, turned about the pole by the wind's direction. The flags alternate the two halves of `gte_lgo1` (the
+  Theme Park World logo; slots 18 and 19).
+- **The phases.** Unless the game is paused, both phases gain 0.4 x the clock's time scale per frame (`0x53C776`); OpenTPW steps them
+  once per 1/30 s of real time, as it steps the blueprint ripple (`[EXT:blueprint-phase-step]`).
+- **The wind.** The weather thing starts with direction 90° and strength 0.5 (`0x511FDF`); every applied change (`0x512F00`) sets the
+  strength to `(100 - quality) / 100` and turns the direction by `rand() % 90 - 45` degrees, kept in 0 to 360. OpenTPW draws that turn from
+  a stream of the wind's own beside the weather's (`[EXT:weather-stream]`), so the weather's rolls are unchanged, and saves the
+  direction, the strength and the stream with the weather (a save from before them starts from 90° and 0.5).
 
 ## Tests
 
@@ -353,10 +381,9 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-004 | Sign text | The gate is composed from its decoded board with the park name as two lines and the stored paint (a 60 % black shadow under dark relief stone text, as in the video); board placement and relief strength are compared with a 720p capture only | native-resolution gate capture |
 | COMPAT-007 | Sign text | The park name is the gate's two sign lines: default from the gate's OBJECT_NAMES row (`0x4DB6F9`), renamed in the entry price window's dialog (`0x4990F0`, OK `0x4993E0`), saved in the world save. Its secret name ("Kevin the" / "Cosmic Cow", obfuscated at `0x751A54`/`0x751A3C` through the pointers `0x751A34`/`0x751A38`) turns the cheat mode on (`0x4053C0(1)`, the `CHTS` byte and the twelve Alt keys of the cheat key context `0x78733C`; built, [CHEATS.md](CHEATS.md)). Not built: the OK handler's copies to the online park record (`0x409410`, `0x5B0940`/`0x5B0970`, unless GameType is 1) and the message of type `0x15` that `0x4053C0` posts (`0x40FB10`). The gate lines are the attraction record's `mNameA`/`mNameB` (thing `+0x3C8`/`+0x40A`); the shipped Easymode seed keeps the default lines, while `SavedGateName` imports valid lines from a user-supplied original save through `SaveAttraction.NameLine1/2` | what the listeners of message type `0x15` do (runtime subscriptions of the message centre `0x788D3C`); exact original-save import equivalence against a representative corpus |
 | COMPAT-018 | Sign text | Ride boards are decoded and alpha-blitted; tp.exe compares the BILZ chunk tag at `0x6193D0` (the inflate step), and everything after it is ported instruction for instruction at the main thread's x87 precision (24 bits once the Direct3D device exists, which precedes the codec's registration at `0x564B20` and every board decode): the header scale multiplies each dequantised coefficient (`0x592B80`, inlined in `0x592E60`), the D4 coefficients are the 53 bit static initialisers `0x591600..0x591690` stored as float32, the row inverse `0x592C50` and the column passes `0x5933A0` (colour) and `0x592E60` (alpha) add in the original's operand order, the colour conversion `0x5935A0` forms the chroma terms once per 2x2 block and rounds each sum through the 1.5 x 2^23 magic number and a 512-entry clamp table, and the alpha conversion is the clamp and truncation at `0x593301`; the header floats feed the planes in the order Y, Cb, Cr, alpha (the PC board reader `0x5E7990`, called by the sign reader `0x5EC3A0`, passes the four floats in file order to the codec's `0x592000` - vtable `0x7026B8` slot 3 through the thunk `0x5987B0`, which runs the colour decode `0x592730` or the alpha decode `0x592E60` by a flag argument - once for colour with the first three as the Y, Cb and Cr scales, `0x5935A0` reading plane 1 as luma and planes 2 and 3 as the 1.772 and 1.402 chroma, and once for alpha with the fourth); a constant opaque alpha plane decodes to 254 on even and 255 on odd rows, which is the float32 rounding of the original's D4 taps (their sums differ in the last bit and `0x593301` truncates), not an orientation fault; open: the GPU row orientation, and original-platform board pixels | the GPU row orientation and a ride-sign capture |
-| COMPAT-032 | Sign text | The original's face state follows the texture's alpha type (`0x590C40`: blend with an alpha test at 0xF0/255 or 0x10/255, additive, or opaque; depth writes on; decoder `0x567620`) | the generated sign texture's alpha type; a distant capture |
 | COMPAT-033 | Sign text | A Hangul sign (the Korean CD names `gulim.ttc` in every sign) is laid out as Latin: usp10's itemizer (`0x65112330`) gives U+AC00..U+D7A3 script 12, whose routine row (`0x65108E74`) is the generic shaper `0x6511325C` and placer `0x65113458` (one glyph per UTF-16 unit by the cmap, per-glyph advances summed, no jamo composition or kerning), and tp.exe passes UTF-16 with flag `0x80` only (no `SSA_FALLBACK`, `0x5EACE0`). usp10 takes each advance from GDI as an integer pixel width (`gmCellIncX`, `0x6510EB3E`) and GDI draws Gulim hinted; OpenTPW scales the `hmtx` advance and rasterizes the unhinted outline. | a capture of an original Korean sign |
 | COMPAT-034 | Sign text | A sign whose text holds Hebrew (the gate's park name in the Hebrew language) is laid out in logical order. No font of `fonts.wad` has a Hebrew glyph, so each letter is a `.notdef` box in both games, but tp.exe hands the line to usp10's `ScriptStringAnalyse` (`0x5EACE0`, flag `0x80`), which resolves bidi levels, and `ScriptStringOut` draws visual order, so the boxes of a Hebrew name's words trade places there. Whether usp10's Hebrew engine draws boxes at all for a font without the script is not read; the interface text's own right-to-left pass (`0x6ae4b0`) does not apply to signs (docs/LANGUAGES.md, "Hebrew"). The localisation pack has no `fonts.wad`; whether the Hebrew CD shipped Hebrew sign fonts, as the Korean CD ships Gulim, is unknown. | a capture of an original Hebrew gate sign, or the Hebrew CD's `fonts.wad` |
-| COMPAT-010 | Graphics | tp.exe: option `[0x785898]` 0 → engine flag 0x20000 (MAGFILTER point), 1 → 0x40000 (MIPFILTER none), 2/3 → the device's mip mode; 0x400000 → wrap + linear MINFILTER, else clamp + point (`0x44D8F0`, `0x567620`); OpenTPW's Veldrid sampler modes stand in for these states. For MD2 texture slots the 0x400000 bit comes from slot flags 0x10/0x20 (`0x575E9C`, `0x581847`) and OpenTPW wraps or clamps each slot by it (docs/MD2-MODELS.md, "Texture slots"); a clamped slot keeps the preset's MINFILTER rather than point. By the variables' table position (base `0x785874` + 4 x option index, anchored by the five-valued SKYQUALITY at `[0x785888]` and the four-valued FIRSTPERSONVIEWDISTANCE at `[0x7858B4]`) `[0x785898]` is the tenth option, SPRITESHADOW, and TEXTUREFILTERING is `[0x785878]` (it only clears or sets bits 0x18 of `DAT_008BD550`) | the registration that binds option names to the variables; the path from the engine flags into the state word |
+| COMPAT-010 | Graphics | tp.exe: the state decoder `0x567620` sets `MAGFILTER` point for state bit 0x20000 (mesh record bit 0x8000000, `0x5817D8`, which no shipped mesh has), `MIPFILTER` none for 0x40000 (texture flag 0x100000, `0x581841`) and wrap with a linear `MINFILTER` (else clamp with point) for 0x400000 (slot flags 0x10/0x20, `0x575E9C`); the option `[0x785898]` is SPRITESHADOW, not a filter: its engine flags 0x20000/0x40000 (`0x44DAA0`) only select scene-pass and sprite-flush modes (`0x576D10`, `0x58A7A1`, `0x58AA54`). The preset filter is TEXTUREFILTERING `[0x785878]` (bits 0x18 of `DAT_008BD550`, `0x44D8F0`, `0x566840`). OpenTPW's Veldrid sampler modes stand in for these states ([EXT:texture-filter-samplers]) and wraps or clamps each MD2 slot (docs/MD2-MODELS.md, "Texture slots"); the per-face bits are not applied and a clamped slot keeps the preset's MINFILTER rather than point | the registration that binds option names to the variables (the table position is inferred); which faces carry mesh flag 0x8000000 and texture flag 0x100000 |
 
 Extensions by design (not approximations): `[EXT:COMPAT-GFX-ENHANCED]` Enhanced preset
 values, `[EXT:COMPAT-GFX-ANISOTROPY]` anisotropy degree, `[EXT:COMPAT-GFX-VIEWDISTANCE]`
@@ -391,8 +418,7 @@ COMPAT-008 and COMPAT-013 are OpenTPW design decisions: `[EXT:gate-sign-depth-li
 `[EXT:graphics-preset-cpu]` (the processor clock taken as 450 MHz or faster).
 October 16, 2026 (user approved): COMPAT-009 is retired: `APPROX:COMPAT-009` became `[EXT:sign-text-antialias]` (16 sub-scanline coverage instead of GDI ANTIALIASED_QUALITY).
 Parts of three more IDs became extensions and the IDs were narrowed (COMPAT-001 once too, `[EXT:sign-text-mask-width]`, and COMPAT-003 once too, `[EXT:sign-coverage-precision]`, both retired October 17, 2026): `[EXT:sign-fractional-advance]`
-(COMPAT-002), `[EXT:texture-filter-samplers]` (COMPAT-010, the Veldrid sampler choice) and
-`[EXT:sign-face-alpha-blend]` (COMPAT-032, alpha test and blend without depth sorting).
+(COMPAT-002), `[EXT:texture-filter-samplers]` (COMPAT-010, the Veldrid sampler choice). `[EXT:sign-face-alpha-blend]` is removed and COMPAT-032 retired (October 28, 2026): the composed sign faces take the original's own state, alpha type 0x200 (`0x575C60`, `0x575DAB`).
 
 ## Not done
 

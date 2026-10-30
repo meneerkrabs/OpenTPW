@@ -172,7 +172,9 @@ public static class WorldStateHash
 	/// <item>the statistics history, which only feeds the park information window's graph (so the pins keep);</item>
 	/// <item>the research's buy-list stars (completion, progress, effort and every other research field remain);</item>
 	/// <item>the staff's role order, which feeds only the locator radios (roster order, training, candidates and all staff gameplay state remain);</item>
-	/// <item>the current challenge's raw value, which feeds only the localized progress caption (scoring uses its baseline and the live measures).</item>
+	/// <item>the current challenge's raw value, which feeds only the localized progress caption (scoring uses its baseline and the live measures);</item>
+	/// <item>[EXT:online-coop-commands] each object's count of levels bought, which only a guest's upgrade cancellation reads (C4b-2): the session digest covers it, and an older log that
+	/// bought an upgrade replays to the checkpoints it recorded.</item>
 	/// </list>
 	/// </summary>
 	internal static void CanonicalEconomy( ReadOnlyMemory<byte> save, IBufferWriter<byte> text )
@@ -183,15 +185,16 @@ public static class WorldStateHash
 	}
 
 	/// <summary>Where a value of the park save lies, as far as the parts the digest leaves out need it.</summary>
-	private enum EconomyPart { Elsewhere, Save, Research, Staff, Objectives, Challenge }
+	private enum EconomyPart { Elsewhere, Save, Research, Staff, Objectives, Challenge, Objects, Object }
 
 	/// <summary>Whether the member <paramref name="name"/> of an object at <paramref name="part"/> is left out (<see cref="CanonicalEconomy"/>).</summary>
 	private static bool LeftOut( EconomyPart part, string name ) => part switch
 	{
-		EconomyPart.Save => name is nameof( ParkSaveFile.Data.AnalyserCaches ) or nameof( ParkSaveFile.Data.StatisticsHistory ),
+		EconomyPart.Save => name is nameof( ParkSaveFile.Data.AnalyserCaches ) or nameof( ParkSaveFile.Data.StatisticsHistory ) or nameof( ParkSaveFile.Data.AnalyserChase ),
 		EconomyPart.Research => name == nameof( ParkSaveFile.ResearchData.RecentItems ),
 		EconomyPart.Staff => name == nameof( ParkSaveFile.StaffData.RoleOrder ),
 		EconomyPart.Challenge => name == nameof( ActiveChallenge.RawValue ),
+		EconomyPart.Object => name == nameof( ParkSaveFile.ObjectData.UpgradePurchases ),
 		_ => false
 	};
 
@@ -202,6 +205,7 @@ public static class WorldStateHash
 		(EconomyPart.Save, nameof( ParkSaveFile.Data.Staff )) => EconomyPart.Staff,
 		(EconomyPart.Save, nameof( ParkSaveFile.Data.Objectives )) => EconomyPart.Objectives,
 		(EconomyPart.Objectives, nameof( ParkSaveFile.ObjectivesData.Current )) => EconomyPart.Challenge,
+		(EconomyPart.Save, nameof( ParkSaveFile.Data.Objects )) => EconomyPart.Objects,
 		_ => EconomyPart.Elsewhere
 	};
 
@@ -245,7 +249,7 @@ public static class WorldStateHash
 			case JsonValueKind.Array:
 				writer.WriteStartArray();
 				foreach ( var item in element.EnumerateArray() )
-					WriteCanonical( writer, item, EconomyPart.Elsewhere, members );
+					WriteCanonical( writer, item, part == EconomyPart.Objects ? EconomyPart.Object : EconomyPart.Elsewhere, members );
 				writer.WriteEndArray();
 				break;
 			default:

@@ -22,7 +22,7 @@ public partial class TrackAddOnLevelTests
 	public void TheTrackToolsLinesUndoAndCutAreCommandsThatBuildTheSameTrackOnATwin()
 	{
 		var (level, ride, _) = World( laid: false );
-		Assert.IsTrue( level.EnterTrackTool( ride ) );
+		Assert.IsTrue( level.EnterTrackTool( ride, justPlaced: true ) );
 		Assert.IsInstanceOfType( level.CellTool.Writer, typeof( ParkCommandTrackWriter ), "an open circuit's line tool lays its lines through commands" );
 		Assert.AreEqual( (14, 10), level.CellTool.Start, "the line starts at the station's exit" );
 		level.CellTool.Click( (30, 10) );
@@ -63,7 +63,7 @@ public partial class TrackAddOnLevelTests
 	public void ReopeningTheLineToolAndItsBackspaceKeepATwinInStep()
 	{
 		var (level, ride, _) = World( laid: false );
-		Assert.IsTrue( level.EnterTrackTool( ride ) );
+		Assert.IsTrue( level.EnterTrackTool( ride, justPlaced: true ) );
 		level.CellTool.Click( (20, 10) );
 		level.CellTool.Click( (26, 10) );
 		level.CellTool.Cancel();
@@ -89,7 +89,7 @@ public partial class TrackAddOnLevelTests
 	public void ACutsWalkToTheOpenEndIsTheCommandsSoBackspaceAfterItMatchesOnATwin()
 	{
 		var (level, ride, _) = World( laid: false );
-		Assert.IsTrue( level.EnterTrackTool( ride ) );
+		Assert.IsTrue( level.EnterTrackTool( ride, justPlaced: true ) );
 		// the first two lines meet on a straight joint at (20, 10)
 		foreach ( var cell in new[] { (20, 10), (30, 10), (30, 14), (8, 14), (8, 10) } )
 			level.CellTool.Click( cell );

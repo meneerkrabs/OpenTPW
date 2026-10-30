@@ -134,12 +134,12 @@ public class RideStateRulesTests
 		Assert.AreEqual( 1, writes.Count( item => item.InstanceId == ride.Id && item.InfoId == (int)RideVariables.VAR_BREAKSTAT && item.Amount == 1 ) );
 		EconomyTestData.AdvanceToTurn( park, 2 * ParkEconomy.RideUpdateInterval );
 		Assert.AreEqual( 1, writes.Count( item => item.InfoId == (int)RideVariables.VAR_BREAKSTAT ), "VAR_BREAKSTAT set: no second request" );
-		park.ObserveScriptState( ride, inBrokenState: false );
-		park.ObserveScriptState( ride, inBrokenState: true );
+		park.PublishRideState( ride );
+		EconomyTestData.RideUpdateEntersBrokenState( park, ride );
 		Assert.IsTrue( ride.IsBrokenDown, "the ride update's state 1" );
 		ride.IsBrokenDown = false;
-		park.ObserveScriptState( ride, inBrokenState: true );
-		Assert.IsFalse( ride.IsBrokenDown, "only the rising edge breaks it down" );
+		park.PublishRideState( ride );
+		Assert.IsFalse( ride.IsBrokenDown, "the one state word stays as SetState(0) left it: no second breakdown" );
 
 		// [BIN:TPW-EXE:0x4e0d16 relief worn] a relief object below 25 writes VAR_WORN = 1 on every update
 		park.TryBuild( 1402, out var toilet );
@@ -152,26 +152,54 @@ public class RideStateRulesTests
 	}
 
 	[TestMethod]
-	public void TheObservedStateOneIsSavedSoALoadCountsNoSecondBreakdown()
+	public void TheStateWordIsSavedSoALoadKeepsItsStateAndCountsNoSecondBreakdown()
 	{
 		var park = EconomyTestData.Park();
 		park.TryBuild( 1100, out var ride );
 		ride!.ScriptHosted = true;
-		park.ObserveScriptState( ride, inBrokenState: false );
-		park.ObserveScriptState( ride, inBrokenState: true );
+		EconomyTestData.RideUpdateEntersBrokenState( park, ride );
 		Assert.IsTrue( ride.IsBrokenDown );
-		// the repair finished, the level has not reopened the ride yet (the bridge still holds state 1)
-		ride.IsBrokenDown = false;
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Capture( park ), park.Settings, park.Catalog );
 		var loaded = restored.Objects.Single( item => item.Id == ride.Id );
-		restored.ObserveScriptState( loaded, inBrokenState: true );
-		Assert.IsFalse( loaded.IsBrokenDown, "the saved observation holds no rising edge: no second mechanic" );
+		Assert.AreEqual( RideObjectStates.BrokenDown, loaded.StateWord.Value, "the saved state word" );
+		var events = 0;
+		restored.EventRaised += _ => events++;
+		restored.PublishRideState( loaded );
+		Assert.AreEqual( 0, events, "a load publishes no second breakdown: no second mechanic" );
 
-		// an older save (no observation saved) only records the bridge's state at its first observation
-		var older = EconomyTestData.Park();
-		older.TryBuild( 1100, out var unobserved );
-		older.ObserveScriptState( unobserved!, inBrokenState: true );
-		Assert.IsFalse( unobserved!.IsBrokenDown );
+		// the repair finished, the level has not reopened the ride yet: the word is 0 and stays 0
+		ride.IsBrokenDown = false;
+		var repaired = ParkSaveFile.Restore( ParkSaveFile.Capture( park ), park.Settings, park.Catalog );
+		Assert.IsFalse( repaired.Objects.Single( item => item.Id == ride.Id ).IsBrokenDown );
+
+		// a condemned ride keeps state 4 through a save
+		ride.LifeGauge = 0.5;
+		ride.IsBrokenDown = true;
+		Assert.AreEqual( RideObjectStates.Condemned, ride.StateWord.Value );
+		var condemned = ParkSaveFile.Restore( ParkSaveFile.Capture( park ), park.Settings, park.Catalog );
+		Assert.AreEqual( RideObjectStates.Condemned, condemned.Objects.Single( item => item.Id == ride.Id ).StateWord.Value );
+
+		// an older save holds no state word: the broken-down flag and the life gauge give 1 or 4 as the ride update would
+		var json = System.Text.Json.Nodes.JsonNode.Parse( ParkResumeJson.Serialize( ParkSaveFile.Capture( park ) ) )!;
+		var removed = 0;
+		void Strip( System.Text.Json.Nodes.JsonNode? node )
+		{
+			if ( node is System.Text.Json.Nodes.JsonObject obj )
+			{
+				foreach ( var key in obj.Select( pair => pair.Key ).ToList() )
+				{
+					if ( string.Equals( key, "rideState", StringComparison.OrdinalIgnoreCase ) ) { obj.Remove( key ); removed++; }
+					else Strip( obj[key] );
+				}
+			}
+			else if ( node is System.Text.Json.Nodes.JsonArray array )
+				foreach ( var item in array )
+					Strip( item );
+		}
+		Strip( json );
+		Assert.IsTrue( removed > 0, "the saved state word was in the JSON" );
+		var older = ParkSaveFile.Restore( ParkResumeJson.Deserialize<ParkSaveFile.Data>( System.Text.Encoding.UTF8.GetBytes( json.ToJsonString() ) ), park.Settings, park.Catalog );
+		Assert.AreEqual( RideObjectStates.Condemned, older.Objects.Single( item => item.Id == ride.Id ).StateWord.Value, "the life gauge's byte 0 gives state 4" );
 	}
 
 	[TestMethod]
@@ -239,9 +267,31 @@ public class RideStateRulesTests
 		EconomyTestData.AdvanceToTurn( park, 2 * ParkEconomy.WearInterval );
 		Assert.AreEqual( 100, ride.Repair, "state 2 clears the open word, so there is no wear" );
 		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( ride ) );
+		ride.PendingLevel = 0;
 		ride.IsBrokenDown = true;
 		Assert.AreEqual( RideObjectStates.BrokenDown, ParkEconomy.ObjectState( ride ) );
+		ride.PendingLevel = 1;
+		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( ride ), "a requested upgrade is stored over the breakdown (0x4E0086)" );
+		ride.PendingLevel = 0;
 		ride.LifeGauge = 0.4;
-		Assert.AreEqual( RideObjectStates.Condemned, ParkEconomy.ObjectState( ride ), "a life gauge byte of 0 condemns the ride" );
+		ride.StateWord.Set( RideObjectStates.Condemned );
+		Assert.AreEqual( RideObjectStates.Condemned, ParkEconomy.ObjectState( ride ), "the ride update enters state 4 for a life gauge byte of 0" );
+	}
+
+	[TestMethod]
+	public void StatesTwoAndThreeAreStoredNotDerived()
+	{
+		// [BIN:TPW-EXE:0x004DB4FB object state] [BIN:TPW-EXE:0x004E0086 upgrade request] the constructor stores 3 for a type that is not choosable and the request stores 2 over any state
+		var fixedItem = new ParkObjectState { Id = 1, InfoId = 1, Kind = ParkObjectKind.FixedItem, StoredState = RideObjectStates.NotAnAttraction };
+		Assert.AreEqual( RideObjectStates.NotAnAttraction, ParkEconomy.ObjectState( fixedItem ) );
+		fixedItem.PendingLevel = 1;
+		Assert.AreEqual( RideObjectStates.NotAnAttraction, ParkEconomy.ObjectState( fixedItem ), "a request never turns a fixed item's 3 into 2" );
+		var ride = new ParkObjectState { Id = 1, InfoId = 1, Kind = ParkObjectKind.Ride };
+		ride.IsBrokenDown = true;
+		Assert.AreEqual( RideObjectStates.BrokenDown, ParkEconomy.ObjectState( ride ) );
+		ride.StoredState = RideObjectStates.Upgrading;
+		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( ride ), "the stored 2 overwrites the breakdown" );
+		ride.StoredState = RideObjectStates.Idle;
+		Assert.AreEqual( RideObjectStates.Idle, ParkEconomy.ObjectState( ride ), "SetState(2) wrote the one word, so SetState(0) leaves state 0: the ride update finds a breakdown again" );
 	}
 }

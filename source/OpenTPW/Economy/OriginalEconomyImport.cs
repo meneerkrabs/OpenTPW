@@ -95,6 +95,12 @@ public sealed partial class OriginalEconomyImport
 		else
 			economy.StatisticsHistory.Restore( new ParkStatisticsHistory().Capture() );
 		var stampTurns = ImportAnalyserStamps( economy, save, evidence );
+		// [BIN:TPW-EXE:0x004C5D70 analyser serializer] the guards' chase counters are three raw words, read back as they are: the advisor's guard and prank lines (12, 22, 98, 264) test them
+		if ( save.AnalyserCounters is { } misbehaving )
+		{
+			economy.RestoreMisbehavingKids( misbehaving.MisbehavingKids, misbehaving.GotAway, misbehaving.Ever );
+			evidence.Add( $"Park analyser: the guards' chase counters imported (this month {misbehaving.MisbehavingKids}, got away {misbehaving.GotAway}, ever {misbehaving.Ever})." );
+		}
 		var (objects, fixedItems, things) = ImportObjects( economy, save, evidence );
 		ImportLitter( economy, save, evidence );
 		// after the objects: the carried object of a follow-up is one of their thing ids
@@ -382,9 +388,9 @@ public sealed partial class OriginalEconomyImport
 		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} imported (mNumWalkAways, +0x1A4)." );
 		// [BIN:TPW-EXE:0x4DB7D0 third gauge] the float at attraction +0x4C is written by the constructor (0x4DB10B), the loader (0x4DCE42) and one more store (0x4DB363) and read only by the serializer (0x4DC64F); no other load of a +0x4C field exists in the attraction code (0x4D8000..0x4E4000), the guest code or the interface, so the third gauge needs no import
 		// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is the park's open state of the attraction: an idle attraction saved with it clear is closed again by the level (Level.ImportOriginalRideSettings), the others are opened by their placement; the gate's two sign lines are the park's name (Level.SavedGateName) and every other type's lines are its OBJECT_NAMES row
-		// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite are rebuilt by the placement, and the queue (cells, ends, called guest) from the laid queue cells
+		// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite are rebuilt by the placement, and the queue cells and ends from the placement; head, links and called guest with the guests (SAVE-002)
 		foreach ( var item in save.Attractions )
-			evidence.Add( $"Attraction thing {item.Id} (Info.Id {item.InfoId}): open word {item.CanLoad}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back-of-queue cell {item.BackOfQueueCell}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}; the open word and the gate's name are imported by the level, the queue and the raw links are rebuilt by the placement." );
+			evidence.Add( $"Attraction thing {item.Id} (Info.Id {item.InfoId}): open word {item.CanLoad}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back-of-queue cell {item.BackOfQueueCell}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}; the open word and the gate's name are imported by the level, the queue cells and ends come from the placement; head, links and called guest with the guests (SAVE-002)." );
 		return (objects, fixedItems, things);
 	}
 
@@ -430,6 +436,8 @@ public sealed partial class OriginalEconomyImport
 		var membersByThing = new Dictionary<int, StaffMember>();
 		// a guard chases a guest the guest import restores in the park (states 6–10, GuestSimulation.ImportsOriginalState)
 		var chaseable = save.Guests.Where( guest => guest.State is >= 6 and <= 10 ).Select( guest => guest.Id ).ToHashSet();
+		// a guard escorting a guest (state 18) names a saved guest (+0x212); the guest import decides which of them are restored (IdleEscortsWithoutARestoredGuest)
+		var savedGuests = save.Guests.Select( guest => guest.Id ).ToHashSet();
 		foreach ( var saved in save.Staff )
 		{
 			var type = saved.Model switch
@@ -467,7 +475,10 @@ public sealed partial class OriginalEconomyImport
 			if ( points != staff.GradePercentage )
 				adjusted.Add( $"{saved.Model} thing {saved.Id} grade percentage {staff.GradePercentage} imported as {points} (OpenTPW promotes at {ParkStaff.TrainingPointsPerGrade})" );
 			var name = staff.Name.Length <= StaffMember.MaximumNameLength ? staff.Name : null;
-			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, StaffState.Idle, hired, energy, name, thingId: saved.Id );
+			// [BIN:TPW-EXE:0x004F8B10 person sprite variant] the person serializer saves mSpriteID (+0x20) and mESPSprite (+0x24, the sprite category) and, once both are read, reduces the id modulo the category's loaded bank count (0x00541F60: the variant the placement drew, 0x00541F70); the staff serializer 0x00504DE0 calls it, so a member of an original save keeps his bank. The loaded count is the role's banks here (GUEST-020)
+			var banks = StaffSpriteRules.Banks( type, economy.Settings.Theme )?.Banks.Count ?? 0;
+			var variant = banks > 0 ? (int)(saved.Person.SpriteId % (uint)banks) : -1;
+			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, StaffState.Idle, hired, energy, name, thingId: saved.Id, variant: variant );
 			membersByThing.Add( saved.Id, member );
 			// [DATA:SaveThingBase] exact base position is in 1/256-cell units, including the sub-cell offset.
 			member.CellX = saved.Base.X / 256f;
@@ -475,7 +486,7 @@ public sealed partial class OriginalEconomyImport
 			// [BIN:TPW-EXE:0x005054D0 staff state setter] +0x200 is the turn an idle spell started (0 after any state but a patrol), which the idle states compare with IdleDuration[grade]
 			member.IdleStamp = staff.TimeStartedIdling;
 			ImportPatrolArea( saved, member, adjusted );
-			ImportJob( economy, saved, member, things, save.Attractions, chaseable, jobs, resumedClaims, save.Litter );
+			ImportJob( economy, saved, member, things, save.Attractions, chaseable, savedGuests, jobs, resumedClaims, save.Litter );
 			// [BIN:TPW-EXE:0x004F8B10 person serializer] the loader routes the person again to mAccurateDestX/Y (+0x18/+0x1A, 1/256 cell) once it is read (0x004FA5F0 at 0x004F9407);
 			// the walk speeds are the person's mBaseSpeed (+0xC0), mPurposeSpeed (+0xC2, the bonus a walk to a job or a chase takes) and mPreviousSpeed (+0xC8)
 			var person = saved.Person;
@@ -483,6 +494,9 @@ public sealed partial class OriginalEconomyImport
 				member.ResumeDestination = (person.AccurateDestX, person.AccurateDestY);
 			else
 				adjusted.Add( $"{saved.Model} thing {saved.Id} walk destination ({person.AccurateDestX}, {person.AccurateDestY}) lies outside the map, not walked to" );
+			// [BIN:TPW-EXE:0x004D6977 escort walk mask] the walk mask +0x188 is saved in the navigation state (nav_mode) and the loader's route uses it: a guard escorting by the second try (+0x188 = 1) walks off the paths to the booth
+			if ( person.NavigationState.NavMode == 1 && member.ResumeDestination != null )
+				member.ResumeMask = 1;
 			if ( GuestSpeed.BaseSpeeds.Contains( person.BaseSpeed ) )
 				member.BaseSpeed = person.BaseSpeed;
 			member.SpeedBonus = person.PurposeSpeed <= byte.MaxValue ? person.PurposeSpeed : 0;
@@ -496,19 +510,24 @@ public sealed partial class OriginalEconomyImport
 			evidence.Add( $"Staff value adjusted on import: {adjustment}." );
 		foreach ( var job in jobs )
 			evidence.Add( job );
-		// [BIN:TPW-EXE:0x004E0220 claim lapse] an otherwise unheld claim remains reserved through its saved turn + 100; only a later claimant query releases it.
+		// [BIN:TPW-EXE:0x004E01F0 claim] the claim is two words of the attraction, the claimant's thing id (+0x5E) and the turn it was made (+0x60), saved and loaded as they are (the attraction serializer reads them back with no check against any job)
+		// [BIN:TPW-EXE:0x004E0220 claim lapse] the query lets a claim lapse once the turn is above its stamp + 100 (unsigned) and the claimant thing's 0x00506580 is false: a mechanic whose ride +0x218 is the object, a handyman whose toilet +0x21A is the object, any other thing "Invalid call" and false, a dead one as well; ParkEconomy.Claimant is that query, so each claim not taken again by a resumed job is imported as it was saved
 		foreach ( var held in save.Attractions.Where( item => item.AssignedStaffMember != 0 && !resumedClaims.Contains( item.Id ) ) )
 		{
-			if ( things.TryGetValue( held.Id, out var attraction ) && membersByThing.TryGetValue( held.AssignedStaffMember, out var claimant )
-				&& claimant.Type is StaffType.Mechanic or StaffType.Handyman && held.TimeMarkedForMaintenance <= economy.Turn )
+			if ( !things.TryGetValue( held.Id, out var attraction ) )
 			{
-				attraction.MechanicId = claimant.Id;
-				attraction.ClaimTurn = held.TimeMarkedForMaintenance;
-				evidence.Add( $"Attraction thing {held.Id} claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} imported for lazy expiry." );
+				evidence.Add( $"Attraction thing {held.Id} (Info.Id {held.InfoId}) claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} has no imported attraction to stay on." );
 				continue;
 			}
-			// [APPROX:SAVE-006] unresolved attraction/claimant identities, unsupported claimant roles and future claim stamps have no supported ownership contract.
-			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {held.Id} (Info.Id {held.InfoId}) claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} not imported: unresolved attraction or staff, unsupported claimant role, or future claim turn." );
+			// the claimant is an imported member where the save has one; a thing the import does not hold (a guest, a destroyed thing's slot) is a claimant that is allocated to nothing, which a negative word stands for: it keeps the attraction claimed until the query lapses it
+			var claimant = membersByThing.GetValueOrDefault( held.AssignedStaffMember );
+			// a stamp ahead of the save's own clock cannot come from the game (the turn only grows); the claim is taken as made now
+			var stamp = Math.Min( held.TimeMarkedForMaintenance, economy.Turn );
+			if ( stamp != held.TimeMarkedForMaintenance )
+				evidence.Add( $"Staff value adjusted on import: attraction thing {held.Id} claim stamp {held.TimeMarkedForMaintenance} lies after the save's turn {economy.Turn}, imported as made on that turn." );
+			attraction.MechanicId = claimant?.Id ?? -(int)held.AssignedStaffMember;
+			attraction.ClaimTurn = stamp;
+			evidence.Add( $"Attraction thing {held.Id} claim by thing {held.AssignedStaffMember} on turn {held.TimeMarkedForMaintenance} imported as saved{(claimant == null ? " (the claimant is no imported staff member)" : "")}, lapsing at the first query after turn {stamp + ParkEconomy.ClaimLapseTurns}." );
 		}
 		// [BIN:TPW-EXE:0x00504BDC staff constructor] mJobsDone (+0x204) is set to 0 here and otherwise touched only by the serializer (0x00504EFC, 0x005052ED): nothing reads it, so it needs no import
 		if ( imported != 0 )
@@ -585,13 +604,14 @@ public sealed partial class OriginalEconomyImport
 			case 3 when !choosable:
 				break;
 			case 1 or 4 when choosable:
-				state.IsBrokenDown = true;
-				// OpenTPW tells state 4 from 1 by the life gauge's byte (ParkEconomy.ObjectState), as the ride update 0x004E14E0 sets it
+				// the saved state word is the state word: 1 or 4 as saved (the ride update 0x004E14E0 sets 4 for a life gauge byte of 0, so a save that disagrees with its gauge is reported)
+				state.StateWord.Restore( attraction.State );
 				if ( (attraction.State == 4) != (RideBreakdownRules.GaugeByte( attraction.LifeGauge ) == 0) )
-					adjusted.Add( $"{what} state {attraction.State} with life gauge {attraction.LifeGauge} is imported broken down; OpenTPW reads it as state {ParkEconomy.ObjectState( state )}" );
+					adjusted.Add( $"{what} state {attraction.State} with life gauge {attraction.LifeGauge} disagrees with the state the ride update would enter ({RideStateWord.BrokenStateFor( attraction.LifeGauge )}); the saved state is kept" );
 				break;
 			case 2 when choosable && info!.Upgrades.Count > state.Level + 1:
 				state.PendingLevel = state.Level + 1;
+				state.StoredState = RideObjectStates.Upgrading;
 				state.UpgradeCostDue = true;
 				break;
 			default:
@@ -616,6 +636,23 @@ public sealed partial class OriginalEconomyImport
 	}
 
 	/// <summary>
+	/// After the guests are imported: a guard imported escorting a guest the guest import did not restore at all (dropped) is idle, as the import gives every guard whose guest is missing
+	/// (SAVE-002). A guest restored in any state keeps its escorts: the set-down (0x004FEB50) does not look at the state. Returns the evidence lines.
+	/// </summary>
+	internal static IReadOnlyList<string> IdleEscortsWithoutARestoredGuest( ParkEconomy economy, Func<int, bool> isImported )
+	{
+		var lines = new List<string>();
+		foreach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Guard && member.Job == StaffJob.Escorting && !isImported( member.TargetGuestId ) ) )
+		{
+			lines.Add( $"[APPROX:SAVE-002] guard {member.Id} escorting guest {member.TargetGuestId} imported idle: the guest import did not restore that guest." );
+			member.TargetGuestId = 0;
+			member.Job = StaffJob.Idle;
+			member.State = ParkStaff.DisplayState( (uint)StaffJob.Idle );
+		}
+		return lines;
+	}
+
+	/// <summary>
 	/// The member's own state word (+0x19C) and what it works on: a mechanic's ride (<c>mObjectToRepair</c>) and repair timer (<c>mDurationOfRepair</c>), a
 	/// handyman's toilet (<c>mToiletToClean</c>) and cleaning start, an entertainer's or researcher's work start, a guard's chase timer, and the rest area
 	/// (<c>mRestArea</c>) of a member walking to or resting in one. Thing ids name the reloaded attraction things. A word that is no state of the role, or
@@ -626,7 +663,7 @@ public sealed partial class OriginalEconomyImport
 	// [BIN:TPW-EXE:0x004D4460 entertainer serializer] mTimeStartedEntertaining (+0x214); [BIN:TPW-EXE:0x00502760 researcher serializer] mTimeStartedResearching (+0x214)
 	// [BIN:TPW-EXE:0x004D6000 guard serializer] mPerp (+0x212), mProsecutionTimestamp (+0x214, the chase timer the state setter 0x004D65D0 sets)
 	// [BIN:TPW-EXE:0x00506D10 rest end] mRestArea (+0x208) names the rest area only while the member walks to it (state 2) or rests in it (state 3): the rest's end clears it
-	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, List<string> evidence, ISet<int> resumedClaims, IReadOnlyList<SaveLitter> litter )
+	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, ISet<int> savedGuests, List<string> evidence, ISet<int> resumedClaims, IReadOnlyList<SaveLitter> litter )
 	{
 		var word = saved.Staff.State;
 		var what = $"{saved.Model} thing {saved.Id}";
@@ -689,9 +726,13 @@ public sealed partial class OriginalEconomyImport
 				member.TargetGuestId = saved.RoleTarget;
 				member.JobStamp = saved.RoleTimer;
 				break;
+			case StaffJob.Escorting when savedGuests.Contains( saved.RoleTarget ):
+				// [BIN:TPW-EXE:0x004D6A50 escort arrival] state 18 carries its perpetrator (+0x212, mPerp) to the ticket booth and its arrival sets that thing down (0x004FEB50) without testing its state (0x004D6A72..0x004D6AC6), so every guard naming a saved guest escorts, duplicates included; the walk goes on to the saved destination (0x004F9407) and the arrival sets the guest down (0x004D6A50)
+				member.TargetGuestId = saved.RoleTarget;
+				break;
 			case StaffJob.Chasing or StaffJob.Escorting:
-				// [APPROX:SAVE-002] a guard escorting a guest (state 18) is imported idle, as is one chasing a guest the import does not restore: a held guest (state 17) is not imported
-				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park." );
+				// [APPROX:SAVE-002] [BIN:TPW-EXE:0x004D6350 escort state] a guard chasing a guest the import does not restore (a rider, state 16), or escorting one that the save does not hold (state 17), is imported idle
+				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park, or the save holds no such guest." );
 				job = StaffJob.Idle;
 				break;
 			case StaffJob.Performing or StaffJob.Researching:
@@ -835,8 +876,9 @@ public sealed partial class OriginalEconomyImport
 			if ( group.CurrentProject < 0 || group.CurrentProject >= used )
 				continue;
 			var project = lab.Project( group.CurrentProject );
-			if ( research.TrySelect( category, project.ObjectId, project.UpgradeLevel ) )
-				current.Add( $"{category} {project.ObjectId}" );
+			// [BIN:TPW-EXE:0x00504760 research group serializer] the saved current project is kept as it is, offered by the picker now or not
+			if ( research.SelectAsSaved( category, project.ObjectId, project.UpgradeLevel ) )
+				current.Add( $"{category} {project.ObjectId}{(research.TrySelect( category, project.ObjectId, project.UpgradeLevel ) ? "" : " (not offered by the picker now)")}" );
 			else
 				refused.Add( $"{category} {project.ObjectId} level {project.UpgradeLevel}" );
 		}
@@ -849,7 +891,7 @@ public sealed partial class OriginalEconomyImport
 			evidence.Add( $"Research highest open groups imported as saved: {string.Join( "/", savedGroups )}{(savedGroups.SequenceEqual( recomputedGroups ) ? ", the groups the researched projects give" : $" (the researched projects give {string.Join( "/", recomputedGroups )})")}." );
 		}
 		else
-			evidence.Add( $"[APPROX:SAVE-007] Research highest open groups {string.Join( "/", savedGroups )} are outside 0 to {ParkResearch.MaximumOpenGroup}: the groups the researched projects give ({string.Join( "/", recomputedGroups )}) are kept." );
+			evidence.Add( $"Research highest open groups {string.Join( "/", savedGroups )} are outside 0 to {ParkResearch.MaximumOpenGroup}: the groups the researched projects give ({string.Join( "/", recomputedGroups )}) are kept." );
 		evidence.Add( $"Research imported: {used} projects, {progress.Count} started, {completed.Count - initial} researched by the lab, effort {string.Join( "/", effort )}, work load {lab.WorkLoad}, current {(current.Count == 0 ? "none" : string.Join( ", ", current ))}." );
 		// [BIN:TPW-EXE:0x4D3AA0 object controls] the control manager's table (150 records of 32 bytes, the used ones first) is the first part of the World after its variables; a record's researched byte (+0x10) is written by the lab's init 0x5031A0 (1 for an object without a research cost, so it starts researched), by the research step 0x504630 when a project reaches its cost (1, with the upgrade level in +0x14) and by the research cheat 0x503FF0 (1 for every research item's object, the project left unfinished), so the flags follow from the lab's projects and the objects' costs and are checked against OpenTPW's research here; in a save with the cheat mode on an object marked researched whose project is unfinished is the research cheat's (docs/CHEATS.md)
 		var disagreements = new List<string>();
@@ -874,18 +916,18 @@ public sealed partial class OriginalEconomyImport
 				evidence.Add( $"Research cheat: {research.MakeAvailableByCheat( cheatAvailable )} objects the cheated save marks researched without a finished project are available to build ({string.Join( ", ", cheatAvailable )})." );
 			evidence.Add( $"Research object controls: {controls.Controls.Count} records, {controls.Controls.Count( control => control.Researched )} researched, {checkedControls} research items checked against OpenTPW's research, {(disagreements.Count == 0 ? "none" : string.Join( ", ", disagreements ))} disagree." );
 		}
-		// [APPROX:SAVE-007] a lab project of an object this install's level archives do not define (a modified save) and a saved current project OpenTPW's picker would not offer now (its group closed, its add-on target not researched) are dropped — evidence needed: a save that holds either (the 11 corpus labs hold neither: every project is a level object, in the original's scan order, ECON-017, and every saved current project is offered)
+		// [APPROX:SAVE-007] projects of objects the level archives do not define, and current project identities absent from their category's reconstructed table, are dropped and reported; the 11 corpus labs contain neither case. Known current projects are kept as saved even when the picker would not offer them (SelectAsSaved). Evidence needed: original continuation with missing object/project identities, or an explicit supported-save scope decision for those cases.
 		var dropped = new List<string>();
 		if ( unknown.Count > 0 )
 			dropped.Add( $"projects of objects the level archives do not define ({string.Join( ", ", unknown )})" );
 		if ( refused.Count > 0 )
-			dropped.Add( $"current projects OpenTPW's picker would not offer now ({string.Join( ", ", refused )})" );
+			dropped.Add( $"current projects the lab's table does not hold ({string.Join( ", ", refused )})" );
 		if ( disagreements.Count > 0 )
 			dropped.Add( $"object-control researched flags that disagree with OpenTPW's research ({string.Join( ", ", disagreements )})" );
 		if ( controls == null )
 			dropped.Add( "the object controls' researched flags (the save's control table does not read)" );
 		if ( dropped.Count > 0 )
-			evidence.Add( $"[APPROX:SAVE-007] Research not imported: {string.Join( "; ", dropped )}." );
+			evidence.Add( $"Research not imported: {string.Join( "; ", dropped )}." );
 	}
 
 	private static void ReportNotImported( OriginalParkImport save, List<string> evidence, bool lostImported )

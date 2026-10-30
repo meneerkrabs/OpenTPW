@@ -206,6 +206,14 @@ public interface IRideVisitorBridge
 	/// it takes its guests in (<c>GuestSimulation.StandCellOf</c>).
 	/// </summary>
 	(int X, int Y)? ExitAccessCell => null;
+	/// <summary>
+	/// The object's access cell (the original's thing <c>+0x36</c>): the cell of the shape's first entrance symbol, inside the footprint (a type 9 cell on a typed map), where the guests' route requests of the minor decision and the bin
+	/// walk end and the route lengths of the minor decision start; null for a bridge without a placed object, whose guests use <see cref="EntranceCell"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB33C access cell] the constructor 0x004DB090 stores the type record's first entrance cell (+0x494, the first type 9 cell of the shape scan 0x413410, (0, 0) without one) turned by the object's angle (0x4D9CC0) and added to the thing's own cell index (y × 128 + x + 1) into +0x36; no other instruction writes it (the exit cell +0x38 and +0x34 are written beside it)
+	(int X, int Y)? AccessCell => null;
+	/// <summary>The cell the object's thing stands on (the original's <c>+5</c>, <c>+7</c>), the anchor of its placement: the cell lists the minor decision's window reads hold the object there; null for a bridge without a placed object (<see cref="EntranceCell"/> stands in).</summary>
+	(int X, int Y)? PositionCell => null;
 	/// <summary>The object's rotation in degrees (0/90/180/270), which rotates <see cref="EntryCellStandPos"/>.</summary>
 	int Rotation => 0;
 	int QueueLength { get; }
@@ -229,8 +237,12 @@ public interface IRideVisitorBridge
 	int RidersOnBoard { get; }
 	/// <summary>The ride's operating speed.</summary>
 	int Speed { get; }
-	/// <summary>Queue cells from the front (index 0) to the back.</summary>
+	/// <summary>Queue cells from the front (index 0) to the back; empty for a ride whose entrance has no queue direction (a zero front, tp.exe <c>0x004DE040</c>).</summary>
 	IReadOnlyList<(int X, int Y)> QueueCells { get; }
+	/// <summary>The back-of-queue cell (<c>0x004DE110</c>): the last queue cell, or null when the queue is empty (the original's back cell of 0).</summary>
+	/// <summary>The back cell was read from the entry cell's links (a typed world, <c>0x004DE040</c>), not made up by the host: it counts as the original's back cell whatever the cell holds.</summary>
+	bool HasTypedBack => false;
+	(int X, int Y)? BackCell => QueueCells.Count > 0 ? QueueCells[^1] : null;
 	int QueueSizeInCells { get; }
 	/// <summary>Walkable path cell where guests step onto the back of the queue; null when the queue is not connected.</summary>
 	(int X, int Y)? JoinCell { get; }
@@ -275,6 +287,8 @@ public interface IRideVisitorBridge
 	bool LeaveQueue( int guestId );
 	/// <summary>Recomputes the queue cells from the grid; true when they changed.</summary>
 	bool RecomputeQueue( GuestPathGrid grid );
+	/// <summary><see cref="RecomputeQueue"/> for a recompute that is no re-evaluation (0x004DE1F0): a cached back (+0x3A) stays. Defaults to <see cref="RecomputeQueue"/> for a bridge without such a cache.</summary>
+	bool RecomputeQueueKeepingBack( GuestPathGrid grid ) => RecomputeQueue( grid );
 	/// <summary>Direction from queue cell <paramref name="index"/> toward its predecessor (toward the ride entrance for the front cell).</summary>
 	int DirectionTowardsFront( int index );
 	/// <summary>The called guest reached the stand point; true once its id is in VAR_LETMEON.</summary>

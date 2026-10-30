@@ -138,6 +138,7 @@ public sealed class BalloonRenderer : Entity
 		var now = Time.Now;
 		// [BIN:TPW-EXE:0x00518F90 people list] the balloons are placed in the order tp.exe walks its live thing list (head 0x7CF56C, the newest thing first, class 1, 4 to 8 and 18 call the placement 0x004FA030), so each balloon takes the bob phase the original gives it
 		// The simulation owns script lifecycle and due passes. Rendering only places held players and reads detached ones.
+		// [BIN:TPW-EXE:0x00475360 sprite script pass] the burst's first frame and each fade step come on a due pass of the strict sampled-clock test, deadline = sample + 62, none at the burst itself (BalloonSpriteState.Tick)
 		// [APPROX:GUEST-017] native imported script phase remains SAVE-013; fixed-60Hz/non-pooled host clock limitations remain.
 		var view = Camera.ViewMatrix;
 		var right = new SVector3( view.M11, view.M21, view.M31 );

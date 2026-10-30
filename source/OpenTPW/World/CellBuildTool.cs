@@ -36,8 +36,46 @@ public interface ICellLineWriter
 	bool SnapsToLine => true;
 	/// <summary>Discard issuer-local active-segment state when a tool is closed or entered anew.</summary>
 	void ResetToolSession() { }
-	/// <summary>Whether the tool's Backspace may take a committed segment back ([EXT:online-coop-commands] not a guest's, C3a-2).</summary>
+	/// <summary>
+	/// How many points the tool's vertex stack holds: the path and queue tools' 1024 (<see cref="CellBuildTool.VertexCapacity"/>), the kart and water tools' 1025 (the PC pusher <c>0x52FBF0</c> stops at
+	/// a count above 0x400, so the stack holds 0x401 points, <see cref="TrackEditor.CornerCapacity"/>).
+	/// </summary>
+	int VertexCapacity => CellBuildTool.VertexCapacity;
+	/// <summary>Whether the tool's Backspace may take a committed segment back ([EXT:online-coop-commands] not a guest's path or queue line, C3a-2).</summary>
 	bool CanUndo => true;
+}
+
+/// <summary>
+/// [EXT:online-coop-commands] A line writer whose undo a guest sends to the host first (the track tools under their ride's claim, C3c-1b): the tool pops nothing until the outcome comes back
+/// (<see cref="CellBuildTool.WaitingUndo"/>).
+/// </summary>
+internal interface IGuestUndoWriter
+{
+	/// <summary>Whether this writer's undo goes to the host as a request now (a guest's).</summary>
+	bool UndoesByRequest { get; }
+	/// <summary>Sends the undo of <paramref name="segment"/>: its request, or null when it was refused before it went (the session says why).</summary>
+	CoopGuestCommands.Request? SendUndo( SegmentResult segment );
+	/// <summary>
+	/// The undo's <paramref name="outcome"/> (its record's result in the guest's park): when it took the line back, <paramref name="pop"/> takes the segment off the tool's stacks, as the host's
+	/// undo did, and the tool moves on as the walk once moved it. True when it took the line back.
+	/// </summary>
+	bool CompleteUndo( ParkCommandResult outcome, Action pop );
+}
+
+/// <summary>
+/// [EXT:online-coop-undo] A line writer whose Backspace in a shared park is a take-back the host decides (docs/COOP.md, "Conflicts and undo (C5)"): the path and queue tools' (C5-1) and the kart and
+/// water track tools' (C5-3). A segment keeps the record that laid it; one the tool loaded (no record) was laid by no step of its player's.
+/// </summary>
+internal interface ITakeBackWriter : IGuestUndoWriter
+{
+	/// <summary>Whether the tool's Backspace is a take-back now: in a shared park, the host's and a guest's alike.</summary>
+	bool TakesBack { get; }
+	/// <summary>Whether <paramref name="segment"/> has work a take-back takes back, or names no step of its own (its Backspace then says so); one that laid nothing pops at once, as in single player.</summary>
+	bool HasWork( SegmentResult segment );
+	/// <summary>The host's own take-back of <paramref name="segment"/>: its result, at once.</summary>
+	ParkCommandResult TakeBack( SegmentResult segment );
+	/// <summary>The tool's step after the host's own take-back <paramref name="taken"/> was taken and its segment popped (the track tools' walk that found a valid circuit moves the tool on).</summary>
+	void AfterTakenBack( ParkCommandResult taken ) { }
 }
 
 /// <summary>
@@ -82,6 +120,24 @@ public sealed class CellBuildTool
 	/// <summary>[EXT:online-coop-commands] The guest's line that waits for the host, or null (<see cref="WaitingLine"/>).</summary>
 	internal WaitingLine? Waiting { get; private set; }
 
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's Backspace that waits for the host (C3c-1b, <see cref="IGuestUndoWriter"/>): its request and the segment it takes back. Nothing is popped until its outcome
+	/// (<see cref="CompleteUndo"/>); while it waits the tool takes no click and no other undo, and has no ghost. Whatever ends or enters the tool drops it, and its outcome is then only a message.
+	/// </summary>
+	internal sealed record WaitingUndoLine( CoopGuestCommands.Request Request, SegmentResult Segment );
+
+	/// <summary>[EXT:online-coop-commands] The guest's Backspace that waits for the host, or null (<see cref="WaitingUndoLine"/>).</summary>
+	internal WaitingUndoLine? WaitingUndo { get; private set; }
+
+	/// <summary>[EXT:online-coop-commands] Whether a guest's line or Backspace of this tool waits for the host: the tool takes no click and no undo meanwhile.</summary>
+	internal bool IsWaiting => Waiting != null || WaitingUndo != null;
+
+	/// <summary>
+	/// The tool's generation: each entry and each end starts a new one. A click whose commit, or an outcome whose continuation, ended, replaced or restarted the tool stops there, also when the
+	/// same writer was entered again.
+	/// </summary>
+	private int generation;
+
 	/// <summary>Starts <paramref name="writer"/>'s mode with <paramref name="start"/> as the first vertex, or without a start (null): the next click sets it.</summary>
 	// [BIN:STP-PPC:0x1007B320 SetMode] tool mode 1 = path, 3 = queue; the drag writes the cell type equal to the mode
 	// [BIN:TPW-EXE:0x0052F200 SetMode] a new mode stores the mode (0x81AE2C) and sets the start to −1 (0x52F340)
@@ -103,6 +159,8 @@ public sealed class CellBuildTool
 		vertices.Clear();
 		segments.Clear();
 		Waiting = null;
+		WaitingUndo = null;
+		generation++;
 		Writer?.ResetToolSession();
 		writer.ResetToolSession();
 		Writer = writer;
@@ -110,7 +168,7 @@ public sealed class CellBuildTool
 		Start = start;
 		if ( stack != null )
 		{
-			vertices.AddRange( stack.Take( VertexCapacity ) );
+			vertices.AddRange( stack.Take( writer.VertexCapacity ) );
 			segments.AddRange( segmentsBetween!.Take( Math.Max( 0, vertices.Count - 1 ) ) );
 		}
 		else if ( start is { } first )
@@ -125,8 +183,8 @@ public sealed class CellBuildTool
 	{
 		if ( Writer == null )
 			return Ghost = null;
-		// [EXT:online-coop-commands] a guest's line that waits for the host keeps its ghost: the clicked line, frozen until its outcome
-		if ( Waiting != null )
+		// [EXT:online-coop-commands] a guest's line that waits for the host keeps its ghost: the clicked line, frozen until its outcome; a Backspace that waits has none (C3c-1b)
+		if ( IsWaiting )
 			return Ghost;
 		return Ghost = Writer.Preview( Start ?? cursor, cursor );
 	}
@@ -140,8 +198,8 @@ public sealed class CellBuildTool
 	// [BIN:STP-PPC:0x10070F84 path commit] push and LayLine(mode, start, end) unless the end equals the start with more than one vertex stored (0x7107c..0x71084 bf eq to 0x71174: then nothing is laid); end the tool (start −1, SetMode(0)) when end == start
 	public SegmentResult? Click( (int X, int Y) cell )
 	{
-		// [EXT:online-coop-commands] a guest's line that waits for the host takes no other click (C3a-2)
-		if ( Writer == null || Waiting != null )
+		// [EXT:online-coop-commands] a guest's line or Backspace that waits for the host takes no other click (C3a-2, C3c-1b)
+		if ( Writer == null || IsWaiting )
 			return null;
 		if ( Start is not { } start )
 			return ClickWithoutStart( cell );
@@ -160,17 +218,26 @@ public sealed class CellBuildTool
 			return null;
 		}
 		// The original ignores the push's result (0x7bcf4, whose guard is count > 1024, one past the buffer: REVIEW-PATH N2); a full stack ending the tool is an OpenTPW guard.
+		// [EXT:online-coop-undo] in a shared park that guard ends the tool before the line goes, so the host, which sees no tool's stack, is never left a line that ended its tool as a
+		// step (C5: such a line has no take-back); the kart and water tools too, whose full stack goes on in single player (C5-3: a line laid there would be the journal's newest, which no
+		// segment of the tool names)
+		if ( vertices.Count >= Writer.VertexCapacity && Writer is ITakeBackWriter { TakesBack: true } )
+		{
+			End();
+			return null;
+		}
 		var pushed = false;
-		if ( vertices.Count < VertexCapacity )
+		if ( vertices.Count < Writer.VertexCapacity )
 		{
 			vertices.Add( end );
 			pushed = true;
 		}
 		var writer = Writer;
+		var entered = generation;
 		var result = writer.Commit( start, end );
-		// A commit that finished the work ended, replaced or restarted the tool without a start.
+		// A commit that finished the work ended, replaced or restarted the tool (without a start, or the same writer anew).
 		// Even a same-writer restart owns fresh stacks; do not restore this old commit into them.
-		if ( !ReferenceEquals( Writer, writer ) || Start == null )
+		if ( entered != generation || !ReferenceEquals( Writer, writer ) || Start == null )
 			return result;
 		// [EXT:online-coop-commands] a guest's line went to the host (C3a-2): the tool waits for its outcome with the clicked line as its ghost, nothing pushed, laid or stacked yet
 		if ( result.Waiting is { } waiting )
@@ -196,7 +263,12 @@ public sealed class CellBuildTool
 		if ( Waiting is not { } waiting || Writer == null )
 			return null;
 		Waiting = null;
+		var writer = Writer;
+		var entered = generation;
 		var result = waiting.Commit.Complete( outcome );
+		// [EXT:online-coop-commands] an outcome whose continuation ended, replaced or restarted the tool (a track line that closed its circuit, a cut, C3c-1b) is done there, as a click's commit
+		if ( entered != generation || !ReferenceEquals( Writer, writer ) )
+			return result;
 		Ghost = null;
 		if ( result is { Completed: false, StoppedByOwnLimit: false, CommandRefused: false } )
 		{
@@ -205,7 +277,7 @@ public sealed class CellBuildTool
 			return result;
 		}
 		var pushed = false;
-		if ( vertices.Count < VertexCapacity )
+		if ( vertices.Count < Writer.VertexCapacity )
 		{
 			vertices.Add( waiting.End );
 			pushed = true;
@@ -249,7 +321,9 @@ public sealed class CellBuildTool
 				Start = end;
 			return result;
 		}
-		if ( end == start || !result.Completed || result.EndedOnExisting || !pushed )
+		// [BIN:TPW-EXE:0x005252D9 line tool push] the kart and water line click pushes its end through 0x52FBF0 and goes on whatever the answer: a full stack (0x401 points) takes no point and the tool continues from the new end (0x81EDE4/E8), the line laid and no segment recorded; the other tools end on it (an OpenTPW guard)
+		var fullStackEnds = !pushed && Mode is not (CellToolMode.KartTrack or CellToolMode.WaterTrack);
+		if ( end == start || !result.Completed || result.EndedOnExisting || fullStackEnds )
 			End();
 		else
 			Start = end;
@@ -286,19 +360,104 @@ public sealed class CellBuildTool
 		return null;
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-undo] Why the tool's last Backspace took nothing back in a shared park (C5): the host's refused take-back, or a segment the tool loaded, which no step of its player's
+	/// laid. The HUD says it once (<see cref="TakeUndoRefusal"/>).
+	/// </summary>
+	private ParkCommandResult? undoRefusal;
+
+	/// <summary>[EXT:online-coop-undo] The refusal of the last Backspace, once (C5).</summary>
+	internal ParkCommandResult? TakeUndoRefusal()
+	{
+		var refusal = undoRefusal;
+		undoRefusal = null;
+		return refusal;
+	}
+
 	/// <summary>Backspace: takes back the last committed segment and continues from its start.</summary>
 	public bool Undo()
 	{
-		// [EXT:online-coop-commands] a guest's Backspace takes nothing back: its segments are the host's to undo, and a line that waits for the host is not laid yet (C3a-2)
-		if ( Writer == null || segments.Count == 0 || Waiting != null || !Writer.CanUndo )
+		// [EXT:online-coop-commands] a line or Backspace that waits for the host is not done yet (C3a-2)
+		undoRefusal = null;
+		if ( Writer == null || segments.Count == 0 || IsWaiting || !Writer.CanUndo )
 			return false;
 		var segment = segments[^1];
+		// [BIN:TPW-EXE:0x0052FF73 last line flag] the pop that leaves one point on the stack sets the repair's flag
+		segment.IsFirstLine = vertices.Count == 2;
+		// [EXT:online-coop-undo] in a shared park a path, queue (C5-1) or track (C5-3) segment is taken back through the host's journal: one that laid nothing pops as in single player
+		// (none stays on the stack today: a refused command ends the tool); one the tool loaded (no record) was laid by no step of its player's, and stays
+		if ( Writer is ITakeBackWriter { TakesBack: true } lines )
+		{
+			if ( !lines.HasWork( segment ) )
+			{
+				PopSegment( segment );
+				return true;
+			}
+			if ( segment.Record == null )
+			{
+				undoRefusal = ParkCommandResult.Rejected( TakeBackCommand.NotOwnReason );
+				return false;
+			}
+			if ( !lines.UndoesByRequest )
+			{
+				var taken = lines.TakeBack( segment );
+				if ( !taken.Accepted )
+				{
+					undoRefusal = taken;
+					return false;
+				}
+				PopSegment( segment );
+				lines.AfterTakenBack( taken );
+				return true;
+			}
+		}
+		// [EXT:online-coop-commands] a guest's Backspace in its track tool goes to the host first, under the ride's claim (C3c-1b), [EXT:online-coop-undo] and in its path or queue tool as a
+		// take-back (C5): the segment stays until the outcome takes it back
+		if ( Writer is IGuestUndoWriter { UndoesByRequest: true } sender )
+		{
+			if ( sender.SendUndo( segment ) is not { } request )
+				return false;
+			WaitingUndo = new WaitingUndoLine( request, segment );
+			Ghost = null;
+			return true;
+		}
 		segments.RemoveAt( segments.Count - 1 );
 		vertices.RemoveAt( vertices.Count - 1 );
 		Writer.Undo( segment );
 		Start = vertices.Count > 0 ? vertices[^1] : segment.Start;
 		Ghost = null;
 		return true;
+	}
+
+	/// <summary>[EXT:online-coop-undo] Takes <paramref name="segment"/>, the stack's last, off the tool's stacks as the undo pops it, and goes on from its start (C5).</summary>
+	private void PopSegment( SegmentResult segment )
+	{
+		segments.RemoveAt( segments.Count - 1 );
+		vertices.RemoveAt( vertices.Count - 1 );
+		Start = vertices.Count > 0 ? vertices[^1] : segment.Start;
+		Ghost = null;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The outcome of the guest's Backspace that waits for the host (C3c-1b), once: <paramref name="outcome"/> is its command's result in the guest's park (its record
+	/// applied there), or null when the host took no record of it or its outcome is not known. A Backspace that took the line back pops it as the host's undo does and continues from the
+	/// segment's start, and the tool moves on when the walk found the circuit valid; any other takes nothing back. True when it took the line back.
+	/// </summary>
+	internal bool CompleteUndo( ParkCommandResult? outcome )
+	{
+		if ( WaitingUndo is not { } waiting || Writer is not IGuestUndoWriter writer )
+			return false;
+		WaitingUndo = null;
+		// nothing else ran while it waited: its segment is still the stack's last
+		if ( outcome == null || segments.Count == 0 || !ReferenceEquals( segments[^1], waiting.Segment ) )
+			return false;
+		return writer.CompleteUndo( outcome, () =>
+		{
+			segments.RemoveAt( segments.Count - 1 );
+			vertices.RemoveAt( vertices.Count - 1 );
+			Start = vertices.Count > 0 ? vertices[^1] : waiting.Segment.Start;
+			Ghost = null;
+		} );
 	}
 
 	/// <summary>
@@ -336,6 +495,8 @@ public sealed class CellBuildTool
 		Start = null;
 		Ghost = null;
 		Waiting = null;
+		WaitingUndo = null;
+		generation++;
 		if ( LastCommit?.QueueReceipt != null ) LastCommit = LastCommit with { QueueReceipt = null };
 		vertices.Clear();
 		segments.Clear();

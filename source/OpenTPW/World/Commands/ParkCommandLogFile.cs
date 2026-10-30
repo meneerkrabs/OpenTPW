@@ -160,12 +160,22 @@ public sealed class ParkCommandRecorder : IDisposable
 			checkpoints.Add( new ParkCommandHashCheckpoint( ticks, hash() ) );
 	}
 
-	/// <summary>The log as recorded so far, with a final checkpoint after <paramref name="ticks"/> ticks when given.</summary>
+	/// <summary>
+	/// The log as recorded so far, with a <paramref name="final"/> checkpoint when given: the park when the log is taken, after every command recorded by then, so it takes the place of
+	/// the after-tick checkpoint of its tick, which a command recorded at that tick since may have changed ([EXT:online-coop-permissions] a session's teardown, whose releases follow the
+	/// last tick, C4a). A replay compares it after the commands logged at its tick, which <see cref="ParkCommandReplay"/> applies after the last tick.
+	/// </summary>
 	public ParkCommandLogFile ToLog( (long Ticks, ulong Hash)? final = null )
 	{
 		var all = checkpoints.ToList();
-		if ( final is { } last && (all.Count == 0 || all[^1].Ticks != last.Ticks) )
-			all.Add( new ParkCommandHashCheckpoint( last.Ticks, last.Hash ) );
+		if ( final is { } last )
+		{
+			var checkpoint = new ParkCommandHashCheckpoint( last.Ticks, last.Hash );
+			if ( all.Count > 0 && all[^1].Ticks == last.Ticks )
+				all[^1] = checkpoint;
+			else
+				all.Add( checkpoint );
+		}
 		return new ParkCommandLogFile( theme, seed, startTick, startHash, entries.ToArray(), all, SessionRules );
 	}
 

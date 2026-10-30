@@ -262,14 +262,42 @@ public sealed class ParkObjectState
 	public bool Imported { get; init; }
 	/// <summary>Current upgrade level (0 = base).</summary>
 	public int Level { get; set; }
-	/// <summary>Level being installed by a mechanic, or 0.</summary>
-	public int PendingLevel { get; set; }
+	/// <summary>The level of the upgrade a ride waits for (0: none). Requesting one stores state 2 in <see cref="StoredState"/> (0x4E0086), clearing it stores 0 (SetState(0)); a record of a type that is not choosable keeps 3.</summary>
+	public int PendingLevel
+	{
+		get => pendingLevel;
+		set
+		{
+			pendingLevel = value;
+			if ( StoredState != RideObjectStates.NotAnAttraction )
+				StoredState = value > Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
+		}
+	}
+	private int pendingLevel;
 	/// <summary>
 	/// The pending upgrade's cost is still to be debited when the mechanic installs it (tp.exe <c>0x004DF8F0</c>). False for an upgrade restored from a
 	/// save written while OpenTPW charged the purchase, which has been paid already.
 	/// </summary>
 	public bool UpgradeCostDue { get; set; }
+	/// <summary>
+	/// [EXT:online-coop-commands] How many levels were bought for this object (each accepted <see cref="ParkEconomy.TryBuyUpgrade"/>): the identity of its pending purchase, which a guest's
+	/// cancellation names, so a cancel and a re-buy of the same level before it arrives make it stale instead of cancelling the new purchase (C4b-2, <see cref="CancelUpgradeCommand"/>).
+	/// </summary>
+	public int UpgradePurchases { get; set; }
 	public long TotalSpent { get; set; }
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A copy of this record that a guest's window projects a waiting open-state action onto (C4b-2, the drawn open state): a member-wise copy, read only, never
+	/// one of the economy's records. Its state word is its own, of the same value and without the bridge's or the economy's listeners.
+	/// </summary>
+	internal ParkObjectState Projection()
+	{
+		var copy = (ParkObjectState)MemberwiseClone();
+		copy.StateWord = new RideStateWord();
+		copy.StateWord.Restore( StateWord.Value );
+		copy.StateWord.Store( StateWord.Stored );
+		return copy;
+	}
 	public int Price { get; set; }
 	public int CostOfGoods { get; set; }
 	public int ChanceOfLosingPercent { get; set; }
@@ -288,8 +316,34 @@ public sealed class ParkObjectState
 	/// </summary>
 	// [BIN:STP-PPC:0x100DAB1C object constructor] every built object starts at 100.0 (TOC −0x2B08) in +0x40, +0x44 and +0x48; the earlier 0.0 store (0x100DA90C) is overwritten on every path
 	public double LifeGauge { get; set; } = 100;
-	public bool IsBrokenDown { get; set; }
-	/// <summary>The ride script reports VAR_BROKEN, which the original's ride update turns into ride state 1 or 4; mirrored each tick by the level, not saved.</summary>
+	/// <summary>
+	/// The ride's state word (<c>+0x19C</c>): the one word the visitor bridge, the economy and the opening guard share (<see cref="RideStateWord"/>). The level hands it to the ride's bridge; the
+	/// economy's headless breakdown, a repair and the import write it too.
+	/// </summary>
+	public RideStateWord StateWord { get; private set; } = new();
+	/// <summary>
+	/// The stored part of the state word that the ride update does not write: 3 for an object whose type is not choosable (stored at construction, 0x4DB4FB), 2 once an upgrade was requested
+	/// (0x4E0050 at 0x4E0086, over any state, a breakdown included) and 0 otherwise; <see cref="ParkEconomy.ObjectState"/> reads it before the shared word's 1 and 4. Not saved: a load stores it again
+	/// from the type and the pending level (as the original's loader stores the saved word through SetState).
+	/// </summary>
+	internal int StoredState { get => StateWord.Stored; set => StateWord.Store( value ); }
+	/// <summary>The state word entered state 1 or 4 and the economy has not published it yet (<see cref="ParkEconomy.PublishRideState"/>); not saved.</summary>
+	internal bool BrokenStatePending { get; set; }
+	/// <summary>The state word's value, for a restore (a save or an import): stored without the change event.</summary>
+	public int RideState { get => StateWord.Value; init => StateWord.Restore( value ); }
+	/// <summary>Whether the ride is in state 1 or 4. Setting it enters state 1 (4 when the life gauge's byte is 0) or leaves to state 0, as <c>SetState</c> does.</summary>
+	public bool IsBrokenDown
+	{
+		get => StateWord.IsBroken;
+		set
+		{
+			if ( value && !StateWord.IsBroken )
+				StateWord.Set( RideStateWord.BrokenStateFor( LifeGauge ) );
+			else if ( !value && StateWord.IsBroken )
+				StateWord.Set( RideObjectStates.Idle );
+		}
+	}
+	/// <summary>The ride script reports VAR_BROKEN (variable 7), which the ride update reads in state 0; mirrored each tick by the level, not saved. The mechanic's job waits while it is above 0.</summary>
 	public bool ScriptBroken { get; set; }
 	/// <summary>
 	/// A script runs the object (the level's objects; mirrored each tick, not saved): the breakdown then goes through the script (VAR_BREAKSTAT, the script's
@@ -301,10 +355,10 @@ public sealed class ParkObjectState
 	/// <summary>The script's VAR_WORN, mirrored each tick by the level (and set at once when the economy writes it); not saved.</summary>
 	public int ScriptWorn { get; set; }
 	/// <summary>
-	/// The ride update's state 1 as the level last saw it (the visitor bridge keeps it): its rising edge breaks the object down. Saved; null until the first
-	/// observation (a new object, an older save), which then only records the state.
+	/// Script variable 0 of the object's script (<c>VAR_CONDITION</c> in the plants' vegetation.RSE), 0 without a script, mirrored each tick by the level; not saved. Theme Park Inc's scrap percentage of an object that
+	/// requires watering counts it.
 	/// </summary>
-	internal bool? ScriptStateBroken { get; set; }
+	public int ScriptCondition { get; set; }
 	/// <summary>
 	/// The attraction's track validity (<c>mIsTrackRideValid</c>, +0x2C on the PC): a water ride whose circuit walk failed does not count for the park points
 	/// (the counts-test's built-track condition). Mirrored each tick by the level, not saved; true for every ride without a track.
@@ -352,6 +406,11 @@ public sealed class ParkObjectState
 	public long WinnersThisMonth { get; set; }
 	public long WinnersLastMonth { get; set; }
 	public long TotalProfit { get; set; }
+	/// <summary>
+	/// Theme Park Inc only: what the object's sales and plays booked as costs this month and the month's debit has not taken yet (the statistics block's accumulator <c>+0x938</c>, raised by <c>0x5E60E0</c>); the month
+	/// message debits it together with the running cost and clears it. Always 0 in Theme Park World, whose costs are debited at once. Not saved (a Theme Park Inc run is not saved).
+	/// </summary>
+	public long PendingMonthlyCosts { get; set; }
 	public long ProfitLastMonth => TakingsLastMonth - CostsLastMonth;
 	/// <summary>The costs ring (<c>+0xF8</c>): the cost of goods and prizes of each of the last 30 days; today's running value is <see cref="DailyRing.Today"/>.</summary>
 	public DailyRing CostsRing { get; set; } = new();

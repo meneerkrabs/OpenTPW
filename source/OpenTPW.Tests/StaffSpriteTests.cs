@@ -119,13 +119,22 @@ public class StaffSpriteTests
 		var shipped = new[] { new SpritePerformance( 0, 4, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ) };
 		var clip = StaffSpriteRules.SelectClip( entertainer, false, shipped, 1 )!.Value;
 		Assert.AreEqual( (13, 4), (clip.Script, clip.Slot) );
-		Assert.IsTrue( Enumerable.Range( 0, 8 ).All( id => StaffSpriteRules.Perform( id, shipped, 1 ).Slot == 4 ), "every member plays the one entry" );
+		Assert.IsTrue( Enumerable.Range( 0, 8 ).All( id => StaffSpriteRules.Perform( (uint)id * 2654435761u, shipped, 1 ).Slot == 4 ), "every draw plays the one entry" );
 		// A bank without entries performs slot 4 too.
 		Assert.AreEqual( 4, StaffSpriteRules.SelectClip( entertainer, false )!.Value.Slot );
 		// Several entries (none shipped): script 13 + (r mod (n - 1)), so the last entry is never played.
 		var four = new[] { new SpritePerformance( 0, 4, 0, 0 ), new SpritePerformance( 0, 10, 0, 0 ), new SpritePerformance( 0, 3, 0, 0 ), new SpritePerformance( 0, 11, 0, 0 ) };
-		var slots = Enumerable.Range( 0, 9 ).Select( id => StaffSpriteRules.Perform( id, four, 4 ).Slot ).Distinct().OrderBy( slot => slot ).ToArray();
+		var slots = Enumerable.Range( 0, 9 ).Select( draw => StaffSpriteRules.Perform( (uint)draw, four, 4 ).Slot ).Distinct().OrderBy( slot => slot ).ToArray();
 		CollectionAssert.AreEqual( new[] { 3, 4, 10 }, slots, "entries 0..2 of four" );
+		// the entry is the performance's own draw (tp.exe 0x4D47D8), not the member: two entertainers with the same draw play the same entry and one member's next performance may change it
+		entertainer.PerformanceDraw = 1;
+		var second = Member( StaffType.Entertainer );
+		second.Job = StaffJob.Performing;
+		second.PerformanceDraw = 1;
+		Assert.AreEqual( (14, 10), (StaffSpriteRules.SelectClip( entertainer, false, four, 4 )!.Value.Script, StaffSpriteRules.SelectClip( entertainer, false, four, 4 )!.Value.Slot) );
+		Assert.AreEqual( StaffSpriteRules.SelectClip( entertainer, false, four, 4 ), StaffSpriteRules.SelectClip( second, false, four, 4 ) );
+		entertainer.PerformanceDraw = 5;
+		Assert.AreEqual( (15, 3), (StaffSpriteRules.SelectClip( entertainer, false, four, 4 )!.Value.Script, StaffSpriteRules.SelectClip( entertainer, false, four, 4 )!.Value.Slot), "5 mod 3 = 2" );
 		Assert.AreEqual( StaffSpriteRules.Walk, StaffSpriteRules.SelectClip( entertainer, true, shipped, 1 ) );
 	}
 

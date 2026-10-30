@@ -12,14 +12,15 @@ public static class ObjectAccessCells
 	public static bool IsOutsideCell( IEnumerable<ObjectAccessPoint> points, int x, int y ) => points.Any( point => (point.OutsideX, point.OutsideY) == (x, y) );
 
 	/// <summary>The last entrance and the last exit of a shape's access points: the placement's loop over the footprint keeps the last it meets, and only they are laid (<see cref="Lay"/>).</summary>
+	// [BIN:TPW-EXE:0x00528A70 placement scan order] the footprint loop runs the rows (V) in the outer loop and the columns (U) in the inner one (the cell index steps by 1 within a row and by 0x14 between rows) and keeps the last entrance or exit it meets: the one with the highest V, then the highest U (the first-entrance scan 0x00413410 runs columns outer, FirstEntranceCellOf); no shipped shape names two entrances or two exits
 	internal static (ObjectAccessPoint? Entrance, ObjectAccessPoint? Exit) Find( IEnumerable<ObjectAccessPoint> points )
 	{
 		ObjectAccessPoint? entrance = null, exit = null;
 		foreach ( var point in points )
 		{
-			if ( point.Kind == ObjectCellKind.Entrance )
+			if ( point.Kind == ObjectCellKind.Entrance && (entrance is not { } lastEntrance || (point.V, point.U).CompareTo( (lastEntrance.V, lastEntrance.U) ) >= 0) )
 				entrance = point;
-			else if ( point.Kind == ObjectCellKind.Exit )
+			else if ( point.Kind == ObjectCellKind.Exit && (exit is not { } lastExit || (point.V, point.U).CompareTo( (lastExit.V, lastExit.U) ) >= 0) )
 				exit = point;
 		}
 		return (entrance, exit);
@@ -248,8 +249,9 @@ public static class ObjectAccessCells
 				if ( cells.RawTypeAt( x, y ) != (byte)ParkCellType.Queue || cells.OwnerAt( x, y ) != owner )
 					continue;
 				PathLinkWriter.Unlink( cells, x, y, cardinalOnly: true );
-				cells.SetFlags( x, y, cells.FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
+				// [BIN:TPW-EXE:0x005367A0 queue cell left behind] a removed queue cell is typed 0 with its links, queue link, owner, counter and whole flag word zero
 				cells.SetType( x, y, ParkCellType.Empty );
+				cells.SetFlags( x, y, ParkCellFlags.None );
 			}
 		}
 	}

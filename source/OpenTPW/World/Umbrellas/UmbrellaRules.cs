@@ -144,7 +144,7 @@ public static class UmbrellaRules
 	/// the whole first game day of a visit and then one day in every fourth.
 	/// </summary>
 	// [BIN:TPI-EXE:0x611050 day gate] ((clock - creation stamp +0x1FC) >> 2 << 2) through the clock's time (0x409854), divided by 864 x 10^9 (a day in 100 ns) and taken modulo WeatherModifierFrequency (0xA01B60); a remainder other than 0 returns before anything is touched
-	// [BIN:TPW-EXE:0x4f85a0 park date] the conversion is TPW's: a park turn is 15000 / 4 = 3750 game seconds (ParkCalendar.SecondsPerTurn), 23.04 turns a day
+	// [BIN:TPI-EXE:0x608a90 clock conversion] the clock turns the masked turns into 100 ns as scale x turns / 4 x 10^7 (_allmul, _aulldiv by 4, _allmul by 0x989680), and 0x611050 divides by 0xC92A69C000 (a day in 100 ns); the scale word +0x1C starts at 15000 in the constructor (0x607EB9, 0x607E90) and only a saved or changed calendar rate moves it, so a turn is 15000 / 4 = 3750 game seconds (ParkCalendar.SecondsPerTurn), 23.04 turns a day
 	public static bool DayGateOpen( long ageTurns, int frequency = WeatherModifierFrequency )
 	{
 		if ( frequency <= 0 )
@@ -187,6 +187,35 @@ public static class UmbrellaRules
 	// [BIN:TPI-EXE:0x60b3f0 speed term setter] for a guest (the class byte +2 is 1) with a nonzero term index: the umbrella words 4, 1 and 3 make the index 0 before the word table 0x9CFB20 (0, 25, 50) is read; the callers are the constructor, the relief visit, the needs phase and the walk to the booth
 	public static int SpeedTerm( int state, int term ) => term != 0 && state is StateOpen or StateClosing or StateOpening ? 0 : term;
 
+	// ---- The track-cell stand-down -------------------------------------------------------------------------------------
+
+	/// <summary>
+	/// Whether a guest standing on a cell whose second-layer track record has <paramref name="recordType"/> (and, for an extension record, whose head record has <paramref name="headType"/>) is held back by the
+	/// scheduling and the carrying out of an umbrella change: the record's type is a kart or water origin or one of their extensions (11, 12, 16, 17) and the record the tests end on is a track cell.
+	/// </summary>
+	// [BIN:TPI-EXE:0x613ea0 track-cell stand-down] both tests of the scheduling (0x67F890 through the tile record's first word, then through an extension's owner word to its head, ending in the track predicate 0x6856D0: types 0xB, 0xD, 0x10, 0x12, 0x19; and 0x685680 on the record of the same cell index: types 0xB, 0xC, 0x10, 0x11) must hold; the carrying out 0x614010 repeats them
+	public static bool OnTrackCell( byte recordType, byte headType )
+	{
+		if ( recordType is not (TrackCellTypes.KartOrigin or TrackCellTypes.Extension or TrackCellTypes.WaterOrigin or 0x11) )
+			return false;
+		return ParkCellTypes.IsTrackCell( ParkCellTypes.IsTrackExtension( recordType ) ? headType : recordType );
+	}
+
+	/// <summary>The stand-down of <see cref="OnTrackCell(byte, byte)"/> for the cell (<paramref name="x"/>, <paramref name="y"/>) of a track layer: an extension record goes on to its origin cell through its parent index.</summary>
+	public static bool OnTrackCell( TrackCellLayer tracks, int x, int y )
+	{
+		var cell = tracks.Get( x, y );
+		if ( cell.Type == 0 )
+			return false;
+		byte head = 0;
+		if ( ParkCellTypes.IsTrackExtension( cell.Type ) && cell.Parent >= 0 && cell.Parent < tracks.Width * tracks.Height )
+		{
+			var (hx, hy) = tracks.CellOf( cell.Parent );
+			head = tracks.Get( hx, hy ).Type;
+		}
+		return OnTrackCell( cell.Type, head );
+	}
+
 	// ---- The reaction delay ------------------------------------------------------------------------------------------
 
 	/// <summary>
@@ -194,7 +223,8 @@ public static class UmbrellaRules
 	/// <paramref name="discardPercent"/> / 100 (the delay plus its share of itself). Nothing here draws from any shared random stream.
 	/// </summary>
 	// [BIN:TPI-EXE:0x613ea0 reaction delay] CRT rand() modulo SlowestWeatherChangeResponse (0xA01B64); with a balloon (+0x294 or +0x298) of life > 0: share = life * 100 / 255, x DiscardBalloonPctModifier / 100 when nonzero, delay += delay * share / 100 (unsigned); the due time is the clock >> 2 plus the delay
-	// [APPROX:UMB-001] the CRT's rand() is not reproducible here and OpenTPW takes no draw for presentation or side rules from the shared streams: a SplitMix64 hash of (guest id, park turn) replaces it, with the same bound
+	// [BIN:TPI-EXE:0x6a151b rand seed] the one srand of the executable (0x870D2B, the CRT's per-thread seed word +0x14) is srand(GetTickCount()) in the start-up routine (0x6A1514..0x6A151B); the generator is the CRT's linear congruential rand() (0x870D38: x * 0x343FD + 0x269EC3, bits 16..30), shared with 96 other call sites, so the original's delay is a function of the wall-clock start time and of every earlier rand() call, not of the park
+	// [EXT:tpi-time-seeded-rand] user-approved 2026-10-30: the original's rand() is seeded once from the clock (srand(GetTickCount()) at 0x6A151B, by the CRT's per-thread seed; game code does start threads through 0x777DD0 (thunk 0x406965): the socket and FTP workers 0x77A680, 0x77A6C0 and 0x7893F0, which are not the simulation, so the guest update 0x613EA0 runs on the thread that was seeded at start-up) and its stream is shared by 96 call sites, so no sequence can be matched; a SplitMix64 hash of (guest id, park turn) with the same bound and the same uniform spread replaces it and takes no draw from the shared world or guest streams
 	public static int Delay( int guestId, long parkTurn, bool holdsBalloon, int balloonLife, int slowest = SlowestWeatherChangeResponse, int discardPercent = DiscardBalloonPctModifier )
 	{
 		if ( slowest <= 0 )

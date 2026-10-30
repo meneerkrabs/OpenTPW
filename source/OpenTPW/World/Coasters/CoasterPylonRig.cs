@@ -1,4 +1,5 @@
 using System.Numerics;
+using NVector2 = System.Numerics.Vector2;
 using NVector3 = System.Numerics.Vector3;
 
 namespace OpenTPW;
@@ -54,7 +55,7 @@ public interface ICoasterTagModel
 // [BIN:TPW-EXE:0x430590 pylon stack parts] the first four attribute records with 0x80000 name the stack parts by their value: 1 → pylon +0x1c (flag 0x400), 2 → +0x20 (0x800), 3 → +0x24 (0x1000), 4 → +0x28 (0x2000)
 // [BIN:TPW-EXE:0x432df0 stack part visibility] for every node of a cell's stack the pose pass shows (clears node flag 0x10) or hides (sets 0x80000010, 0x433220) the parts: part 1 is hidden on the top node and shown on a lower one whose upper neighbour has a model (not 0x2000), part 2 shown on the top node and hidden on a lower one, part 3 hidden on the bottom node and shown on a stacked one, part 4 shown on the bottom node and hidden on a stacked one
 // [BIN:TPW-EXE:0x4740d0 rotation blend] 0x7b4980 is written only by its setter 0x4740d0, which start-up (0x457a90) calls once with 0, so bit 2 is clear and the clip sampler slerps the rotation keys (0x474490 → 0x4742a0)
-// [APPROX:COAST-033] the bottom node's model shadow (model +0x2c, placed at the cell's ground height by 0x469940) and its hiding on a stacked node unless pylon flag 0x10 is set are not modelled; a part's flag hides its own mesh here, its children are not hidden with it (no PC pylon hangs a mesh under a part); the clip sampler's slerp takes exact sines where 0x4742a0 reads the runtime table — evidence needed: the renderer's use of node flag 0x10 for a dummy's children, the shadow object at model +0x2c and the source of pylon flag 0x10
+// [APPROX:COAST-033] the bottom node's model shadow (model +0x2c, placed at the cell's ground height by 0x469940) and its hiding on a stacked node unless pylon flag 0x10 is set are not modelled; a part's flag hides its own mesh here, its children are not hidden with it (no PC pylon hangs a mesh under a part); the clip sampler's rotation blend is the ported table-sine one (ModelRotationBlend, [BIN:TPW-EXE:0x4742A0 rotation blend]) — evidence needed: the renderer's use of node flag 0x10 for a dummy's children, the shadow object at model +0x2c and the source of pylon flag 0x10
 public sealed class CoasterPylonRig : ICoasterTagModel
 {
 	/// <summary>The five clip slots in the original's order: loft, rotate, incline, bank, loop tilt (<c>0x74ca70</c>: types 3, 10, 2, 9, 10 index 1).</summary>
@@ -304,6 +305,8 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 	}
 
 	public ModelFile Model => model;
+	/// <summary>The texture names whose shared texture object wraps (<see cref="CoasterAssets.WrapNames"/>); null draws every slot by its own flags.</summary>
+	public ISet<string>? WrapNames { get; init; }
 	/// <summary>The node the track attaches to (<c>TrackDummyCentre</c>, <c>TrackCentreDummy</c> or the first animated dummy), -1 when the model has none.</summary>
 	public int TagNode { get; }
 	public int Duration { get; }
@@ -364,38 +367,52 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 			if ( node >= 0 )
 			{
 				NVector3[]? positions = null;
+				NVector2[]? texCoords = null;
 				for ( var slot = 0; slot < SlotCount; slot++ )
 				{
-					if ( clips[slot] is not { } clip || tracks[slot][node]?.VertexAnimation is not { } animation || animation.GetPoseLimitation( mesh.Positions.Length, clip.Duration ) != null )
+					if ( clips[slot] is not { } clip )
 						continue;
-					positions ??= mesh.Positions.Select( position => position.GetSystemVector3() ).ToArray();
-					// Add mode: every clip's vertex keys are added to the stored mesh (0x471860).
-					if ( animation.HasStaticGroup )
-						animation.ApplyStaticGroup( positions, add: true );
-					animation.ApplyAnimatedGroups( ticks[slot], positions, add: true );
+					if ( tracks[slot][node]?.VertexAnimation is { } animation && animation.GetPoseLimitation( mesh.Positions.Length, clip.Duration ) == null )
+					{
+						positions ??= mesh.Positions.Select( position => position.GetSystemVector3() ).ToArray();
+						// Add mode: every clip's vertex keys are added to the stored mesh (0x471860).
+						if ( animation.HasStaticGroup )
+							animation.ApplyStaticGroup( positions, add: true );
+						animation.ApplyAnimatedGroups( ticks[slot], positions, add: true );
+					}
+					// Add mode: every clip's texture-coordinate keys are added to the stored coordinates as well (0x4745c0 through 0x471860): a lofted pylon's coordinates run past 1 along its height (wrapping or clamping per the shared texture's accumulated flags, 0x575E10)
+					if ( tracks[slot][node]?.UvAnimation is { } uv && uv.CornerCount == mesh.TexCoords.Length )
+					{
+						texCoords ??= mesh.TexCoords.Select( coordinate => new NVector2( coordinate.X, coordinate.Y ) ).ToArray();
+						uv.AddTo( ticks[slot], texCoords );
+					}
 				}
-				if ( positions != null )
-					source = WithPositions( mesh, positions );
+				if ( positions != null || texCoords != null )
+					source = WithAnimated( mesh, positions, texCoords );
 			}
 			var bake = node >= 0 ? matrices[node] : Matrix4x4.Identity;
-			foreach ( var (vertices, indices, textures, _) in ObjectAssets.ConvertMeshParts( source, bake ) )
+			foreach ( var (vertices, indices, textures, _) in ObjectAssets.ConvertMeshParts( source, bake, WrapNames ) )
 				parts.Add( new CoasterModelPart( mesh.Name, textures, vertices, indices ) );
 		}
 		return parts;
 	}
 
-	private static ModelFile.Mesh WithPositions( ModelFile.Mesh mesh, NVector3[] positions )
+	private static ModelFile.Mesh WithAnimated( ModelFile.Mesh mesh, NVector3[]? positions, NVector2[]? texCoords )
 	{
-		var vertices = new ModelFile.Vertex[mesh.Vertices.Length];
-		for ( var index = 0; index < vertices.Length; index++ )
-			vertices[index] = new ModelFile.Vertex { Position = positions[mesh.CornerPositionIndices[index]], TextureIndex = mesh.Vertices[index].TextureIndex };
+		var vertices = mesh.Vertices;
+		if ( positions != null )
+		{
+			vertices = new ModelFile.Vertex[mesh.Vertices.Length];
+			for ( var index = 0; index < vertices.Length; index++ )
+				vertices[index] = new ModelFile.Vertex { Position = positions[mesh.CornerPositionIndices[index]], TextureIndex = mesh.Vertices[index].TextureIndex };
+		}
 		return new ModelFile.Mesh
 		{
 			Name = mesh.Name,
 			NodeIndex = mesh.NodeIndex,
 			Vertices = vertices,
 			Normals = mesh.Normals,
-			TexCoords = mesh.TexCoords,
+			TexCoords = texCoords == null ? mesh.TexCoords : texCoords.Select( coordinate => new Vector2( coordinate.X, coordinate.Y ) ).ToArray(),
 			Materials = mesh.Materials,
 			Indices = mesh.Indices
 		};

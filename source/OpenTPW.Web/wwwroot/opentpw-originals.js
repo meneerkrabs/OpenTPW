@@ -119,6 +119,17 @@ export async function openOriginalStore(root, { digest = sha256, name = DIRECTOR
 			await store.flush();
 		},
 
+		/** Sets (or, with null, removes) a note on the manifest, such as where the files came from; written by the next flush(). */
+		annotate(key, value) {
+			if (!manifest)
+				return;
+			if (value == null)
+				delete manifest[key];
+			else
+				manifest[key] = value;
+			changed();
+		},
+
 		/** Keeps one file's bytes (a path the manifest lists); the manifest is written by flush(). */
 		async write(relative, bytes) {
 			const entry = manifest?.files[relative];

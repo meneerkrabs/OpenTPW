@@ -3,8 +3,7 @@ namespace OpenTPW;
 /// <summary>CPU composition of the two native 128x128 sign destinations.</summary>
 public static class SignSurfaceComposer
 {
-	// [EXT:sign-face-alpha-blend] the transparent faces are drawn with the engine's object material (alpha test below 0.1, alpha blend, no depth sorting), an OpenTPW design choice that needs no per-texture state word
-	// [APPROX:COMPAT-032] tp.exe derives a textured face's state from its texture's alpha type (0x590C40: blend with an alpha test at 0xF0/255 or 0x10/255, additive, or opaque, all with depth writes) — evidence needed: the alpha type of the generated sign texture and a distant capture
+	// [BIN:TPW-EXE:0x575C60 sign face state] the composed faces are alpha blended, not opaque: the sign builder sets bit 0x80 on the model's slot entries (0x467D09, 0x467D69), the binder 0x575C60 then builds the texture from the composed 128 x 128 record with the entry flags 0x1000240 (0x575DAB, alpha type 0x200: state 0x556, blend, alpha test at 0x10/255, depth writes on), drawn after the opaque list far to near; Texture.AsComposedSign gives the runtime texture that type
 	// [BIN:TPW-EXE:0x005ECB40 sign surface] the PC composes in a 256x256 ARGB surface (the destination size 128x128 doubled, 0x5ECB8C..0x5ECBBE), with two 256x256 glyph masks and 512x512 text rasters, and packs only the top 128 rows into the two 128x128 textures (the pack loops at 0x5ECF2C and 0x5ECFCE run the destination height, 128 rows, over the 256-wide rows)
 	// [BIN:TPW-EXE:0x005EAB70 sign text raster] the text is drawn on an 8-bit gray DIB twice the mask's size (0x5EABE8..0x5EAC1C, top-down, a 256-entry gray palette; SetMapMode MM_TEXT 0x5EAC8E, SetBkColor 0 0x5EAF26, SetTextColor 0xFFFFFF 0x5EAF32 and the default TA_LEFT | TA_TOP alignment) and reduced to the mask by one 2x2 box: the four bytes are summed and shifted right by 2 (0x5EAFC3..0x5EAFE5)
 	public const int Width = 256;

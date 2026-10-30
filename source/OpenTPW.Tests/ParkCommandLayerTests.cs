@@ -57,9 +57,9 @@ public class ParkCommandLayerTests
 		new( "Ride upgrades", @"\.(TryBuyUpgrade|TryCancelUpgrade)\s*\(", nameof( BuyUpgradeCommand ) ),
 		new( "Level.RenamePark", Call( "RenamePark" ), nameof( RenameParkCommand ) ),
 		new( "Cheats", Call( "QueueCheat" ), nameof( QueueCheatCommand ) ),
-		// any receiver (a name, a call's or an index's result, null-forgiving or not) but the HUD's own panels (the locator, the camera slide) and a layout builder's track
+		// any receiver (a name, a call's or an index's result, null-forgiving or not) but the HUD's own panels (the locator, the camera and message slides) and a layout builder's track
 		// the co-op link's open and close (OnlineSession's Coop, a CoopLinkProbe's Link) are a socket's, not a ride's
-		new( "Ride open and close", @"([)\]]|\b(?!(Locator|CameraSlide|Track|Coop|Link)\b)\w+)!?\??\.(Open|Close)\(\s*\)", nameof( SetAttractionOpenCommand ) ),
+		new( "Ride open and close", @"([)\]]|\b(?!(Locator|LocatorSlide|CameraSlide|MessageSlide|Track|Coop|Link)\b)\w+)!?\??\.(Open|Close)\(\s*\)", nameof( SetAttractionOpenCommand ) ),
 		new( "ParkEconomy.SetObjectOpen", Call( "SetObjectOpen" ), nameof( SetAttractionOpenCommand ) ),
 		new( "Ride window settings", Call( "ApplyRideWindow" ), nameof( SetRideSettingsCommand ) ),
 		new( "Ride setters", @"\.(SetSpeed|SetCapacity|SetDuration)\s*\(", nameof( SetRideSettingsCommand ) ),
@@ -71,10 +71,10 @@ public class ParkCommandLayerTests
 		new( "Challenge slots", @"\.(AcceptAt|DeclineAt)\s*\(", nameof( AnswerChallengeCommand ) ),
 		new( "Cheat queue (direct)", @"\bCheats!?\??\.Queue\s*\(", nameof( QueueCheatCommand ) ),
 		// a method group handed on (a button's click, a callback) reaches the economy's mutators as surely as a call
-		new( "Settings mutators as method groups", @"(?<!InputButton)\.(OpenPark|ClosePark|SetEntranceFee|SetPrices|SetShopSettings|TakeLoan|TryRepayLoan|SetTrainingBudget|SetResearchEffort|AcceptChallenge|DeclineChallenge|RequestMaintenance|TryBuyUpgrade|TryCancelUpgrade|QueueCheat|RefreshLoanOffers)\b(?!\s*[(=])", nameof( ParkSettingCommand ) ),
+		new( "Settings mutators as method groups", @"(?<!InputButton)(?<!ParkCommandKind)\.(OpenPark|ClosePark|SetEntranceFee|SetPrices|SetShopSettings|TakeLoan|TryRepayLoan|SetTrainingBudget|SetResearchEffort|AcceptChallenge|DeclineChallenge|RequestMaintenance|TryBuyUpgrade|TryCancelUpgrade|QueueCheat|RefreshLoanOffers)\b(?!\s*[(=])", nameof( ParkSettingCommand ) ),
 		new( "Loan list build", Call( "RefreshLoanOffers" ), nameof( RefreshLoanOffersCommand ) ),
 		// the park's tools (C1 part 3)
-		new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand|ClaimEnclosedCells)\s*\(", nameof( BuyLandCommand ) ),
+		new( "Land", @"\.(ChargeLand|TryBuyCells|SetLand|Purchase)\s*\(", nameof( BuyLandCommand ) ),
 		// the staff placement's own helpers are bare calls inside its file, so the bare form counts too
 		new( "ParkEconomy.Hire and the staff placement", @"\.(Hire|EndPlacement)\s*\(|" + Call( "PutDown" ) + "|" + Call( "ReleaseAssignments" ) + @"|\b(PendingPlacementId|PatrolArea|BubbleThought)\s*=[^=]",
 			nameof( PlaceStaffCommand ) ),
@@ -237,6 +237,7 @@ public class ParkCommandLayerTests
 		Assert.IsFalse( Caught( groups, "economy.OpenPark();" ), "a call is the call rows' to catch" );
 		Assert.IsFalse( Caught( groups, "if ( economy.IsParkOpen )" ) );
 		Assert.IsFalse( Caught( groups, "if ( Input.Pressed( InputButton.OpenPark ) )" ), "the park door's key binding" );
+		Assert.IsFalse( Caught( groups, "ParkCommandKind.SetShopSettings or ParkCommandKind.TakeLoan => CoopCommandClass.Finance," ), "a command kind's name in the session's class table" );
 		var place2 = Converted.Single( mutator => mutator.Name == "Level.PlaceObject" );
 		Assert.IsTrue( Caught( place2, "private OriginalObject? Build() => PlaceObject( entry, x, y, 0 );" ), "an expression body's call" );
 		var prototype = Converted.Single( mutator => mutator.Name == "Developer prototype run" );
@@ -245,8 +246,7 @@ public class ParkCommandLayerTests
 		Assert.IsFalse( Caught( prototype, "ImGui.Text( level.PlacedRide.IsOpen ? \"Ride: open\" : \"Ride: closed\" );" ) );
 		// the tools (C1 part 3)
 		var land = Converted.Single( mutator => mutator.Name == "Land" );
-		Assert.IsTrue( Caught( land, "map.SetLand( merged );" ) );
-		Assert.IsTrue( Caught( land, "merged.ClaimEnclosedCells( map );" ) );
+		Assert.IsTrue( Caught( land, "if ( !land.Purchase( map, corner, post ) )" ) );
 		Assert.IsTrue( Caught( land, "economy()?.ChargeLand( check.Cost, check.Cells );" ) );
 		Assert.IsFalse( Caught( land, "var check = land.CheckPurchase( map, corner, post, barrier, cost, balance );" ) );
 		var staff = Converted.Single( mutator => mutator.Name == "ParkEconomy.Hire and the staff placement" );

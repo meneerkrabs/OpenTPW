@@ -66,6 +66,8 @@ public partial class Level
 		// the riders and the queue on it end their session at once, then the track goes (and is refunded)
 		Guests?.AbortPoolActivitiesOf( item.ThingId );
 		PoolSlides?.Remove( item.Placement.X, item.Placement.Y );
+		// [EXT:online-coop-undo] its pieces went with it: no step of its slide can be taken back any more, whatever tower is built on its anchor next (C5)
+		UndoJournal?.TowerRemoved( item.Placement.X, item.Placement.Y );
 		PoolSlides?.Touch();
 	}
 

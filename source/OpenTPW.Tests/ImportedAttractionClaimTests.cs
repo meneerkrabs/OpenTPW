@@ -117,15 +117,52 @@ public class ImportedAttractionClaimTests
 		Assert.AreEqual( 0, other.AssignedInstanceId ); Assert.IsTrue( owner.BusyTicks > 0 );
 	}
 
-	[DataTestMethod]
-	[DataRow( 99, 700, SaveThingModel.Mechanic )]
-	[DataRow( 40, 756, SaveThingModel.Mechanic )]
-	[DataRow( 40, 700, SaveThingModel.Guard )]
-	public void UnsupportedClaimIdentityRoleOrFutureStampStaysDiagnostic( int claimant, int stamp, SaveThingModel role )
+	[TestMethod]
+	public void AClaimByAThingTheImportDoesNotHoldIsKeptAsSavedAndLapsesLazily()
 	{
-		var (park, import) = Import( (ushort)claimant, (uint)stamp, role );
-		Assert.AreEqual( (0, 0L), (Ride( park ).MechanicId, Ride( park ).ClaimTurn) );
-		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-006]" ) ) );
+		// [BIN:TPW-EXE:0x004E0220 claim lapse] the claimant thing 99 is no staff member: the claim stays on the attraction as saved, blocks the finder for the other mechanic through turn 800 and lapses at the first query after it
+		var (park, import) = Import( 99, 700 );
+		var ride = Ride( park ); var other = Member( park, 41 );
+		Assert.AreEqual( (-99, 700L), (ride.MechanicId, ride.ClaimTurn) );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-006]" ) ) );
+		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "claim by thing 99 on turn 700 imported as saved" ) && line.Contains( "no imported staff member" ) ) );
+		park = Roundtrip( park );
+		ride = Ride( park ); other = Member( park, 41 );
+		Assert.AreEqual( (-99, 700L), (ride.MechanicId, ride.ClaimTurn), "the own save keeps the claim" );
+		park.ThingSweep = new EmptySweep();
+		EconomyTestData.AdvanceToTurn( park, 800 );
+		Assert.IsNull( Find( park, other ), "exactly 100 turns remain reserved" );
+		EconomyTestData.AdvanceToTurn( park, 801 );
+		Assert.AreEqual( ride.Id, Find( park, other )?.Id );
+		Assert.AreEqual( (0, 0L), (ride.MechanicId, ride.ClaimTurn) );
+	}
+
+	[TestMethod]
+	public void AClaimByAMemberOfAnotherRoleIsKeptAndLapsesLazily()
+	{
+		// [BIN:TPW-EXE:0x00506580 claimant test] only a mechanic's ride +0x218 or a handyman's toilet +0x21A can hold a claim past its turn + 100: a guard's claim is imported as saved and lapses on the query
+		var (park, import) = Import( 40, 700, SaveThingModel.Guard );
+		var ride = Ride( park ); var guard = Member( park, 40 );
+		Assert.AreEqual( (guard.Id, 700L), (ride.MechanicId, ride.ClaimTurn) );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-006]" ) ) );
+		park.ThingSweep = new EmptySweep();
+		EconomyTestData.AdvanceToTurn( park, 800 );
+		Assert.AreEqual( guard.Id, park.Claimant( ride ) );
+		EconomyTestData.AdvanceToTurn( park, 801 );
+		Assert.AreEqual( 0, park.Claimant( ride ) );
+		Assert.AreEqual( (0, 0L), (ride.MechanicId, ride.ClaimTurn) );
+	}
+
+	[TestMethod]
+	public void AClaimStampAheadOfTheSavesTurnIsTakenAsMadeNow()
+	{
+		// a stamp after the save's own clock cannot come from the game; the own save's validation refuses one, so it is imported as made on the save's turn and reported
+		var (park, import) = Import( 40, 756 );
+		var ride = Ride( park );
+		Assert.AreEqual( (Member( park, 40 ).Id, park.Turn), (ride.MechanicId, ride.ClaimTurn) );
+		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "claim stamp 756 lies after the save's turn" ) ) );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-006]" ) ) );
+		Assert.AreEqual( ride.MechanicId, Roundtrip( park ).Objects.Single( item => item.InfoId == 1100 ).MechanicId );
 	}
 
 	[TestMethod]

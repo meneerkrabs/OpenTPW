@@ -119,6 +119,7 @@ public class PathCellArtCacheTests
 		Assert.IsNotNull( root, "the repository root is above the test binaries" );
 		var level = File.ReadAllText( Path.Combine( root, "source", "OpenTPW", "World", "Level.cs" ) ).ReplaceLineEndings( "\n" );
 		var render = level[level.IndexOf( "public void Render()", StringComparison.Ordinal )..];
+		render = render[..render.IndexOf( "\n\t}\n", StringComparison.Ordinal )];
 		var prepare = render.IndexOf( "OriginalTerrain?.PrepareRender();", StringComparison.Ordinal );
 		var snapshot = render.IndexOf( "Entity.All.ToArray()", StringComparison.Ordinal );
 		Assert.IsTrue( prepare >= 0 && snapshot > prepare, "PrepareRender runs before the snapshot of Entity.All" );

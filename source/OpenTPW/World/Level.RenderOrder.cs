@@ -8,7 +8,8 @@ public partial class Level
 	/// list and its update order are untouched. The caller supplies its usual per-pass snapshot.
 	/// </summary>
 	// [BIN:TPW-EXE:0x576a00 scene pass] the particle pass (0x57C620) precedes weather (0x57FF60); see ParticleRenderer's PTCL-909 annotation.
-	// [APPROX:PTCL-909] this establishes only park particles-before-weather, not the unresolved native HUD/advisor layering.
+	// [BIN:TPW-EXE:0x582170 advisor model] the advisor's model (flag 0x200) is queued by the scene's model list loop (0x584B10, 0x584BE0) after the particle pass and drawn by the frame flush 0x582170 after the weather, so it lies over the particles and the weather in the original too
+	// [BIN:TPW-EXE:0x576DBE HUD order] the HUD windows reach the screen through the scene's sprite flush (0x58A660, after the particle pass and before the weather) and its model flush (0x582170, with the advisor's model), so the particles lie under all of them and the weather under the models (PTCL-909 retired; ParticleRenderer's annotation).
 	internal static Entity[] WeatherAfterParticles( Entity[] snapshot )
 	{
 		var lastParticle = Array.FindLastIndex( snapshot, entity => entity is ParticleRenderer );

@@ -14,7 +14,10 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x48ec04,0x750610,0x48ec40] admission checks the configured count of ten and scans ten reusable records; there is no oldest eviction.
 	// [BIN:TPW-EXE:0x4a1278,0x65f447] attaching a reused slot appends it after surviving rows, represented here by list order.
 	// [EXT:message-tube-art] the red tube body is drawn as rectangles and the white icons as discs, the growth per message (77 units) read off the video, instead of the original's tube art
-	// [APPROX:UI-025] pending tube messages are not saved; original offer removal, timer integration and other action-bearing sources remain incomplete.
+	// [BIN:TPW-EXE:0x48EE50 tube saved] the tube is saved with the park (ParkHud.MessageTubeSave.cs; the original's tube saver writes the occupied slots with their tag, text, lifetime and context words)
+	// [BIN:TPW-EXE:0x48db94 offer removal] the tag window's removal (message 5, sent 500 ms after the removal 0x100002 hides it, 0x4a13e8) runs the action 0x1B first when the tag's second action is 0x1B (0x48db8b-0x48dbb0 -> 0x48e0f0 -> 0x48e269 -> the decline 0x4d2ec0), so an offer that is deleted, expires or is answered leaves a declined (or already answered) challenge
+	// [BIN:TPW-EXE:0x48ede0 offer post] the post wrapper opens a tag at once only when the record's byte +0x24 is 1 (0x48edeb); the tag system's record builder 0x509bf0 clears that byte on every path, so an offer is added like any message (0x48ee09) and never opens by itself
+	// [APPROX:UI-025] the original's own tag save record is not imported or written, and a generic message still leaves the tube when it is opened (the original keeps every tag until it is deleted, answered or expired)
 	public const int MessageTubeCapacity = 10;
 
 	/// <summary>The advisor help the open message panel carries (0x11C, 284).</summary>
@@ -37,7 +40,6 @@ public sealed partial class ParkHud
 	private static readonly UiRect MessageTextRect = MessageTable.Control( 0x10D32 ).Inner!.Value;
 	private static readonly string[] MessageActionIds = { "messageAction0", "messageAction1" };
 
-	private static readonly string[] PanelButtonIds = { "messageDelete", "messageClose" };
 	private List<string>? pendingMessages;
 	private List<GameMessageAction[]>? pendingActions;
 	private List<ChallengeTubeRow?>? pendingChallengeRows;
@@ -45,14 +47,19 @@ public sealed partial class ParkHud
 	internal readonly record struct ChallengeMessageIdentity( int Tag, short ContextShort, int ContextInt );
 	private string? openedMessage;
 	private GameMessageAction[] openedActions = Array.Empty<GameMessageAction>();
-	private float messageSlide;
+	private string? closingMessage;
+	private GameMessageAction[] closingActions = Array.Empty<GameMessageAction>();
+	private ArmSlide? messageSlide;
+
+	/// <summary>The message panel's slide in the HUD arm (the arm drawer 0x4a14f0, shared with the camera panel's).</summary>
+	internal ArmSlide MessageSlide => messageSlide ??= new();
 
 	/// <summary>The occupied tube slots, oldest first (the lowest icon), including hidden terminals awaiting final release.</summary>
 	public IReadOnlyList<string> PendingMessages => pendingMessages ?? (IReadOnlyList<string>)Array.Empty<string>();
 	/// <summary>The message the slide-out panel shows, null when it is closed.</summary>
 	public string? OpenedMessage => openedMessage;
-	/// <summary>How far the panel has slid out of the HUD, 0 (hidden) to 1 (fully out).</summary>
-	public float MessagePanelSlide => messageSlide;
+	/// <summary>How many of the drawer's ten timer ticks the panel has slid out of the HUD, 0 (hidden) to <see cref="ArmSlide.Steps"/> (fully out).</summary>
+	public int MessagePanelStep => MessageSlide.Step;
 
 	/// <summary>The actions of the opened message, in the order of the panel's two action slots.</summary>
 	public IReadOnlyList<GameMessageAction> OpenedActions => openedActions;
@@ -120,6 +127,8 @@ public sealed partial class ParkHud
 	{
 		if ( pendingChallengeRows![index] is { } row && ReferenceEquals( openedChallengeRow, row ) )
 			CloseMessagePanel();
+		if ( pendingChallengeRows[index] is { IsOffer: true } offer )
+			DeclineRemovedOffer( offer.ReleaseAt != null ? offer.PendingOfferIdentity : offer.OfferIdentity );
 		pendingMessages!.RemoveAt( index );
 		pendingActions!.RemoveAt( index );
 		pendingChallengeRows.RemoveAt( index );
@@ -158,7 +167,7 @@ public sealed partial class ParkHud
 	{
 		if ( !IsPendingMessageVisible( index ) )
 			return false;
-		if ( pendingChallengeRows![index] is { IsTerminal: true } row )
+		if ( pendingChallengeRows![index] is { Lifetime: > 0 } row )
 			BeginChallengeTerminalRemoval( row, closePanel: true );
 		else
 			RemovePendingMessageAt( index );
@@ -178,7 +187,12 @@ public sealed partial class ParkHud
 	{
 		// [BIN:TPW-EXE:0x48E4BF message panel close] the panel's close message 0x1001D8 (sent when the arm drawer puts it away, 0x4A25F0 with 0) withdraws help 0x11C through 0x486B40 (0x48E4D3) and clears the selected item
 		if ( openedMessage != null )
+		{
 			host?.HelpWithdrawn?.Invoke( MessagePanelHelp );
+			// the panel keeps its look while the drawer slides it back in (the close message only clears the selected item)
+			closingMessage = openedMessage;
+			closingActions = openedActions;
+		}
 		openedMessage = null;
 		openedChallengeRow = null;
 		openedActions = Array.Empty<GameMessageAction>();
@@ -193,19 +207,38 @@ public sealed partial class ParkHud
 	private void UpdateMessageTube( float delta )
 	{
 		KeepChallengeOfferPosted( level?.Park?.Economy );
-		var target = openedMessage != null && !InfoArmOpen ? 1f : 0f;
-		messageSlide = target > messageSlide ? Math.Min( target, messageSlide + delta * 4f ) : Math.Max( target, messageSlide - delta * 4f );
-		var fullyOut = messageSlide >= 1f;
-		foreach ( var id in PanelButtonIds )
-			if ( hud.Find( id ) is { } element )
-				element.Visible = fullyOut;
+		// [BIN:TPW-EXE:0x48dab3 message panel open] the tube puts the panel into the arm drawer (0x4a2590, so it slides out as the camera panel does: ten 20 ms ticks) and takes it out again with 0x4a25f0
+		if ( openedMessage != null && !InfoArmOpen )
+			MessageSlide.Open();
+		else
+			MessageSlide.Close();
+		MessageSlide.Update( delta );
+		if ( !MessageSlide.Out && MessageSlide.Step == 0 )
+			closingMessage = null;
+		var (shiftX, shiftY) = MessagePanelShift( MessageSlide.Step );
+		var shown = openedMessage ?? closingMessage;
+		var interactive = openedMessage != null && !InfoArmOpen;
+		// [BIN:TPW-EXE:0x4a1725 arm retract] the arm's retract button (child 0x24) is shown by the slide out (0x4a171a-0x4a1734) and hidden again by the start of the slide in (0x4a1859-0x4a186c), whichever panel the arm carries
+		if ( hud.Find( "messageClose" ) is { } retract )
+			retract.Visible = MessageSlide.Out || CameraSlide.Out;
+		if ( hud.Find( "messageDelete" ) is { } erase )
+		{
+			var table = MessageTable.Model( "mb_erase" ).Rect;
+			erase.Bounds = table with { X = table.X + shiftX, Y = table.Y + shiftY };
+			erase.Visible = shown != null && ArmChildShown( erase.Bounds );
+			erase.Enabled = interactive;
+		}
 		for ( var slot = 0; slot < MessageActionIds.Length; slot++ )
 		{
 			if ( hud.Find( MessageActionIds[slot] ) is not UiButton button )
 				continue;
-			button.Visible = fullyOut && slot < openedActions.Length;
+			var table = MessageTable.Control( slot == 0 ? 0x10D2Fu : 0x10D30u ).Rect;
+			button.Bounds = table with { X = table.X + shiftX, Y = table.Y + shiftY };
+			var actions = openedMessage != null ? openedActions : closingActions;
+			button.Visible = shown != null && ArmChildShown( button.Bounds ) && slot < actions.Length;
+			button.Enabled = interactive;
 			if ( button.Visible )
-				button.Model = openedActions[slot].Kind.Model();
+				button.Model = actions[slot].Kind.Model();
 		}
 		// an empty tube is hidden, so its rectangle swallows no park clicks
 		if ( hud.Find( "messageTube" ) is { } tube )
@@ -215,19 +248,30 @@ public sealed partial class ParkHud
 		}
 	}
 
+	/// <summary>The message panel's shift from its table place after <paramref name="step"/> drawer ticks: it ends at left 486, top 1112 (the panel is 615 wide and 341 high).</summary>
+	// [BIN:TPW-EXE:0x4a1631 message panel place] the arm drawer places every panel it carries the same way (ArmDrawer): the message panel (458,1101)-(1073,1442) starts at 331 - 615 - 50 = -334, steps by (439 - 331 + 615 + 100) / 10 = 82 and ends at 486, centred on the arm at top 1069 + 213 - 170 = 1112; a Dutch gameplay video shows the panel's left edge at 486 and its top at 1112
+	internal static (int X, int Y) MessagePanelShift( int step ) => ArmDrawer.Shift( MessagePanelRect, step );
+
 	/// <summary>The panel slides out of the HUD to the right, drawn under the main panel so it appears from behind it.</summary>
 	private void DrawMessagePanel( UiContext context )
 	{
-		if ( openedMessage == null || messageSlide <= 0f )
+		var shown = openedMessage ?? closingMessage;
+		if ( shown == null || MessageSlide.Step <= 0 )
 			return;
 		var canvas = context.Canvas;
-		var offset = -(1f - messageSlide) * MessagePanelRect.Width;
-		UiRect Slide( UiRect rect ) => canvas.Map( new UiRect( rect.X + offset, rect.Y, rect.Width, rect.Height ), UiAnchor.BottomLeft );
-		// the tag models side by side: the left part with the buttons, the middle and the right part with the black text box
+		var (shiftX, shiftY) = MessagePanelShift( MessageSlide.Step );
+		UiRect Slide( UiRect rect ) => canvas.Map( new UiRect( rect.X + shiftX, rect.Y + shiftY, rect.Width, rect.Height ), UiAnchor.BottomLeft );
+		// the arm's own art under the panel (the green bar, its pane and the blue handle at its right end), as for the camera panel
+		var (bar, pane, handle) = ArmPieces( (int)MessagePanelRect.Width, MessageSlide.Step );
+		context.DrawModel( "panel", 0, canvas.Map( bar, UiAnchor.BottomLeft ) );
+		context.DrawModel( ArmPaneModel, 0, canvas.Map( pane, UiAnchor.BottomLeft ) );
+		context.DrawModel( ArmHandleModel, 0, canvas.Map( handle, UiAnchor.BottomLeft ) );
+		// the tag models side by side: the left part with the buttons, the middle and the right part with the black text box; each child shows once its right edge passes the arm's left edge (0x4a1440)
 		foreach ( var part in MessageTable.Root.Children.Where( node => node.Model?.StartsWith( "message", StringComparison.Ordinal ) == true ) )
-			context.DrawModel( part.Model!, 0, Slide( part.Rect ) );
-		if ( messageSlide >= 1f )
-			context.DrawText( context.Fonts.Small, openedMessage, Slide( MessageTextRect ).Inflate( -6 * canvas.TextScale ), UiColors.Text, UiAlign.Left, wrap: true );
+			if ( ArmChildShown( part.Rect with { X = part.Rect.X + shiftX } ) )
+				context.DrawModel( part.Model!, 0, Slide( part.Rect ) );
+		if ( ArmChildShown( MessageTable.Control( 0x10D32 ).Rect with { X = MessageTable.Control( 0x10D32 ).Rect.X + shiftX } ) )
+			context.DrawText( context.Fonts.Small, shown, Slide( MessageTextRect ).Inflate( -6 * canvas.TextScale ), UiColors.Text, UiAlign.Left, wrap: true );
 	}
 
 	/// <summary>The tube's icons: one list row per message; left opens, right deletes.</summary>

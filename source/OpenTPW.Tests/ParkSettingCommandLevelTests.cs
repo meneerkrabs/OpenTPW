@@ -108,8 +108,8 @@ public class ParkSettingCommandLevelTests
 		var level = park.Level;
 		var one = park.One.Runtime.AttractionId;
 		// a breakdown with a life gauge of 0 is a condemned ride (ParkEconomy.ObjectState)
-		park.State.IsBrokenDown = true;
 		park.State.LifeGauge = 0;
+		park.State.IsBrokenDown = true;
 		Assert.AreEqual( RideObjectStates.Condemned, ParkEconomy.ObjectState( park.State ) );
 		var hash = level.ComputeStateHash();
 		Assert.IsFalse( level.Commands.Issue( new SetAttractionOpenCommand( one, !park.One.IsOpen ) ).Accepted, "its window hides the door (0x4ad4e0)" );

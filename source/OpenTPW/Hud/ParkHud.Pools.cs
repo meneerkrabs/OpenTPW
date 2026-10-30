@@ -94,9 +94,10 @@ public sealed partial class ParkHud
 			tool.Cancel();
 			return true;
 		}
-		// Backspace takes back the last stroke
-		if ( input.Backspaces > 0 && !tool.IsDragging )
-			tool.Undo();
+		// Backspace takes back the last stroke; [EXT:online-coop-undo] the host's take-back in a shared park that the journal refused says why (C5, C5-2), a slide's that met a finished slide nothing
+		if ( input.Backspaces > 0 && !tool.IsDragging && !tool.Undo() && tool.TakeUndoRefusal() is { } refused
+			&& (!tool.IsSlide || TakeBackCommand.VerdictOf( refused.Reason ) != TakeBackVerdict.InTheWay) )
+			SayTakeBackNote( refused.Reason );
 		if ( !inPark )
 		{
 			// a drag that leaves the park view ends there
@@ -274,7 +275,7 @@ public sealed partial class ParkHud
 	/// </summary>
 	internal void OpenWaveSettings( OriginalObject item )
 	{
-		if ( !WaveSettingsAllowed || !IsWaveMachine( item ) || level.PoolWavesOf( item ) is not { } current )
+		if ( !WaveSettingsAllowed || !IsWaveMachine( item ) || DrawnWaves( item ) is not { } current )
 			return;
 		var chosen = current;
 		var screen = new ShopPriceScreen( "waveSettings" );
@@ -314,9 +315,10 @@ public sealed partial class ParkHud
 			if ( Stack.Top != screen )
 				return;
 			// the machine may have gone while the window was open (a visit's owner cannot reach it; a demolition clears the selection)
-			// an unchanged choice writes nothing, so a machine still running the default keeps its cell as it was
-			if ( IsWaveMachine( item ) && level.PoolWavesOf( item ) != chosen )
-				level.Commands.Issue( new SetPoolWavesCommand( item.Runtime.AttractionId, chosen.On, chosen.Height, chosen.Interval ) );
+			// an unchanged choice writes nothing, so a machine still running the default keeps its cell as it was; [EXT:online-coop-commands] a guest's goes through the management queue, under
+			// the attractions right (C5-2)
+			if ( IsWaveMachine( item ) && DrawnWaves( item ) is { } drawn && drawn != chosen )
+				IssueManagement( AttractionTarget( item ), ManagementKnob.Waves, new SetPoolWavesCommand( item.Runtime.AttractionId, chosen.On, chosen.Height, chosen.Interval ) );
 			Close();
 		}
 		screen.Add( new UiButton { Id = "apply", Model = "b_okay", Clicked = Apply,
@@ -326,6 +328,13 @@ public sealed partial class ParkHud
 		screen.Back = Close;
 		Stack.Push( screen );
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] A wave machine's settings as its window draws them: a guest's latest settings asked for and not resolved yet, else the machine's (C5-2); null for no machine with
+	/// water beside it.
+	/// </summary>
+	private PoolWaveSettings? DrawnWaves( OriginalObject item ) => level.PoolWavesOf( item ) is not { } current ? null
+		: PendingManagement( AttractionTarget( item ), ManagementKnob.Waves ) is SetPoolWavesCommand asked ? new PoolWaveSettings( asked.On, asked.Height, asked.Interval ) : current;
 
 #if DEBUG
 	/// <summary>[EXT:debug-hud] Smoke-only: selects the first placed wave machine and, unless only <paramref name="select"/>, opens its settings window, for interface captures. False when the park has none.</summary>

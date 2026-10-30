@@ -98,4 +98,16 @@ public class CoasterCostHudTests
 		panel.Release( First, (24, 20) );
 		Assert.IsNull( hud.BuildActionCost );
 	}
+
+	[TestMethod]
+	public void TheClearAreaToolHidesTheCostLineAsItsHoverSetsTheHiddenMarker()
+	{
+		var (hud, level, _) = Fixture();
+		Set( level, "<CoasterPanel>k__BackingField", null );
+		Set( level, "<CoasterToolStation>k__BackingField", null );
+		var clear = new AreaClearTool( ( _, _ ) => ParkCommandResult.Rejected( "synthetic" ) );
+		Set( level, "<AreaClearTool>k__BackingField", clear );
+		clear.Begin();
+		Assert.IsNull( hud.BuildActionCost, "0x523c18 stores -9999, which 0x4a0d68 hides" );
+	}
 }

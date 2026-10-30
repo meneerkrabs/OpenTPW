@@ -30,15 +30,25 @@ public sealed partial class ParkHud
 			return;
 		foreach ( var request in requests.TakeCompleted() )
 		{
+			// [EXT:online-coop-commands] a management window's request is its queue's, which took its outcome (C4b, CompleteGuestManagement)
+			if ( request.Owner != null )
+				continue;
 			// [EXT:online-coop-commands] a batch of a guest's pool stroke: its stroke reports once all of it is back (C3b-3)
 			if ( level.PoolTool?.CompleteGuestRequest( request ) == true )
 				continue;
+			// [EXT:online-coop-commands] a command of the guest's coaster tool: its panel takes the outcome, also once the panel closed (its report then says it, C3c-2)
+			if ( level.CompleteCoasterRequest( request ) )
+				continue;
 			if ( level.CellTool.Waiting is { } line && ReferenceEquals( line.Commit.Request, request ) )
 				CompleteLine( request );
+			else if ( level.CellTool.WaitingUndo is { } undo && ReferenceEquals( undo.Request, request ) )
+				CompleteTrackUndo( request );
 			else if ( level.WaitingPlacement is { } placement && ReferenceEquals( placement.Request, request ) )
 				CompletePlacement( placement );
 			else if ( ReferenceEquals( level.WaitingToolStart, request ) && request.Command is PickUpObjectCommand )
 				CompleteMove( request );
+			else if ( ReferenceEquals( level.WaitingToolStart, request ) && request.Command is ClaimRideCommand or OpenTrackLineToolCommand or BeginCoasterToolCommand )
+				CompleteTrackStart( request );
 			else if ( ReferenceEquals( level.WaitingToolStart, request ) )
 				CompleteQueueEdit( request );
 			else if ( level.IsWaitingFor( request ) )
@@ -88,6 +98,97 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>
+	/// [EXT:online-coop-claims] The guest's track tool entry comes back (C3c-1b): its claim accepted opens the edit tool on a closed circuit or sends the walk to the open end, whose outcome
+	/// opens the line tool, with the tool's help, as the host's button posts it; a coaster's claim sends the tool's entry, whose outcome opens the coaster tool with its help (C3c-2); a claim the
+	/// host let go meanwhile says so; a refusal says its reason (another player's claim, the grant).
+	/// </summary>
+	private void CompleteTrackStart( CoopGuestCommands.Request request )
+	{
+		level.EndWaiting( request );
+		switch ( level.CompleteTrackToolStart( request ) )
+		{
+			case TrackToolStart.Entered:
+				PostMessage( request.Command is BeginCoasterToolCommand ? strings.Help( 0x125 ) : TrackToolHelp );
+				return;
+			case TrackToolStart.Pending:
+				return;
+			case TrackToolStart.ClaimGone:
+				SayGuestNote( OpenTpwText.CoopClaimLost );
+				return;
+		}
+		if ( !request.Accepted )
+			SayOutcome( request, null );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] The guest's Backspace in its track tool comes back (C3c-1b): applied, the line it took back goes off the tool's stacks and the tool moves on as the walk once
+	/// moved it; a refusal of the rights ends the tool and says why (its claim or its grant went), and a refusal of the park takes nothing back, quietly, as the host's; a refusal without a
+	/// record leaves the line, and the player tries again; an outcome not known ends the tool. [EXT:online-coop-undo] A path or queue take-back (C5) refused by the host's journal says why
+	/// and keeps the segment and the tool, and so does one another player's claim refused; the grant gone ends the tool.
+	/// </summary>
+	private void CompleteTrackUndo( CoopGuestCommands.Request request )
+	{
+		var tool = level.CellTool;
+		if ( request is { State: CoopGuestRequestState.Applied, Result: { Error: null } outcome } )
+		{
+			// a press made while the Backspace waited is no click of the tool its outcome moves on (a press held from before it, with the tool left as it was, keeps its release)
+			if ( tool.CompleteUndo( outcome ) )
+			{
+				level.HostToolStarts++;
+				return;
+			}
+			// [EXT:online-coop-undo] a take-back the host's journal refused keeps the segment and says why (C5); the track tool's park refusals stay quiet, as the host's
+			if ( !outcome.RightsRefused )
+			{
+				if ( request.Command is TakeBackCommand )
+					SayTakeBackNote( outcome.Reason );
+				return;
+			}
+			// [EXT:online-coop-undo] another player's claim on the cells its undo would touch keeps the segment and the tool, as a line refused there: its note alone (C5)
+			if ( request.Command is TakeBackCommand && CoopBuildRights.RefusalOf( outcome.Reason ) == CoopRefusal.Claimed )
+			{
+				SayGuestNote( OpenTpwText.CoopClaimed );
+				return;
+			}
+			level.HostToolStarts++;
+			tool.Cancel();
+			SayGuestNote( RightsRefusalText( outcome.Reason ) );
+			return;
+		}
+		tool.CompleteUndo( null );
+		if ( request.State == CoopGuestRequestState.Refused )
+		{
+			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
+			return;
+		}
+		level.HostToolStarts++;
+		tool.Cancel();
+		SayOutcome( request, null );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-undo] What a refused take-back says (C5): another's later change, something in its way, or a step not the player's (or not its last, or forgotten) each its note; a
+	/// claim of another player its note; any other refusal nothing (the park's own, as for the host).
+	/// </summary>
+	private void SayTakeBackNote( string? reason )
+	{
+		switch ( TakeBackCommand.VerdictOf( reason ) )
+		{
+			case TakeBackVerdict.Changed:
+				SayGuestNote( OpenTpwText.CoopUndoChanged );
+				return;
+			case TakeBackVerdict.InTheWay:
+				SayGuestNote( OpenTpwText.CoopUndoInTheWay );
+				return;
+			case TakeBackVerdict.NotOwn or TakeBackVerdict.NotLast or TakeBackVerdict.Forgotten:
+				SayGuestNote( OpenTpwText.CoopUndoNotOwn );
+				return;
+		}
+		if ( reason == Level.ClaimedReason )
+			SayGuestNote( OpenTpwText.CoopClaimed );
+	}
+
+	/// <summary>
 	/// The guest's queue edit comes back (C3b): accepted, the queue tool starts from what its record read, with the help the host's click posts, unless the view has a tool by now or a
 	/// later record changed the queue (then the park shows what happened); otherwise its outcome is said.
 	/// </summary>
@@ -117,6 +218,9 @@ public sealed partial class ParkHud
 		var tool = level.CellTool;
 		if ( request is { State: CoopGuestRequestState.Applied, Result: { Error: null } outcome } )
 		{
+			// [EXT:online-coop-commands] a press made while the line waited is no click of the tool its outcome moves on (C3c-1b: a cut that turns into the line tool, a close that ends,
+			// restarts or hands over the tool), as for a tool the host's answer started; a refusal without a record leaves the tool as it was, and a held press its release
+			level.HostToolStarts++;
 			var result = level.CompleteCellTool( outcome );
 			if ( outcome.RightsRefused )
 				SayGuestNote( RightsRefusalText( outcome.Reason ) );
@@ -130,6 +234,7 @@ public sealed partial class ParkHud
 			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
 			return;
 		}
+		level.HostToolStarts++;
 		tool.Cancel();
 		SayOutcome( request, null );
 	}
@@ -193,6 +298,80 @@ public sealed partial class ParkHud
 		}
 	}
 
+	/// <summary>
+	/// [EXT:online-coop-commands] A guest's coaster tool (C3c-2): what its queue holds goes to the host, before the pool tool's batches (the coaster's last commands take a freed slot first), and
+	/// a waited action refused before it went is said.
+	/// </summary>
+	private void UpdateGuestCoasterTool()
+	{
+		level.SendCoasterRequests( Time.Now );
+		ReportGuestCoasterActions();
+	}
+
+	/// <summary>[EXT:online-coop-commands] Says the guest's coaster tool actions that came back (<see cref="Level.TakeCoasterReports"/>), oldest first (C3c-2).</summary>
+	private void ReportGuestCoasterActions()
+	{
+		foreach ( var report in level.TakeCoasterReports() )
+			ReportGuestCoasterAction( report );
+	}
+
+	/// <summary>
+	/// A guest's coaster tool action came back (C3c-2), said as the host's is said at once: a click's result (<see cref="ReportCoasterResult"/>), the build button's help after a cut that reopened the
+	/// circuit. A press made while the action waited is no click whatever came back (the HUD marked it, <see cref="coasterPressWhileWaiting"/>), and a press held from before the wait keeps its
+	/// release. A refusal by the rights ends the open panel's tool, without a command (the claim or the grant went: the claim's end left the coaster's tool state, or the stray claim's release
+	/// will), as a tool the host's answer ended, and says why; a request the host could not take, or whose outcome is not known, says so and the tool stays, but a drag the queue gave up ends its
+	/// open panel so too. A closed panel's outcome is only said.
+	/// </summary>
+	private void ReportGuestCoasterAction( CoasterGuestReport report )
+	{
+		var outcome = report.Outcome;
+		// a drag the queue gave up: the panel it belongs to ends, if it is the open one, and says why; the claim's release then ends the edit the host may hold
+		if ( report.Action == CoasterGuestAction.DragLost )
+		{
+			if ( level.CoasterPanel is { } panel && panel.Numbered( report.Drag ) )
+			{
+				level.HostToolStarts++;
+				level.CloseCoasterToolLocally();
+				SayGuestNote( outcome.NotTaken ? OpenTpwText.CoopHostCouldNotTake : OpenTpwText.CoopBuildUnknown );
+			}
+			return;
+		}
+		if ( outcome.Result is { RightsRefused: true } refused )
+		{
+			// a closed panel's refusal is only said: the tool on now is another one
+			if ( report.Open )
+			{
+				level.HostToolStarts++;
+				level.CloseCoasterToolLocally();
+			}
+			SayGuestNote( RightsRefusalText( refused.Reason ) );
+			return;
+		}
+		if ( outcome.NotTaken )
+		{
+			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
+			return;
+		}
+		if ( outcome.Unknown || outcome.Result is not { } result )
+		{
+			SayGuestNote( OpenTpwText.CoopBuildUnknown );
+			return;
+		}
+		switch ( report.Action )
+		{
+			case CoasterGuestAction.Click:
+				ReportCoasterResult( result.Value is CoasterClickDone done ? done.Result : CoasterPlaceResult.NotEditable, report.Closing );
+				return;
+			case CoasterGuestAction.Cut when result.Value is CoasterTrack.CutResult.Reopened:
+				PostMessage( strings.Help( 0x125 ) );
+				return;
+			// [EXT:online-coop-undo] a pylon's take-back the host's journal refused keeps the pylon and says why (C5-3)
+			case CoasterGuestAction.Backspace when !result.Accepted:
+				SayTakeBackNote( result.Reason );
+				return;
+		}
+	}
+
 	/// <summary>[EXT:online-coop-commands] A guest's pool strokes (C3b-3): what waits goes to the host, and each stroke that finished reports as the host's release does.</summary>
 	private void UpdateGuestPoolStrokes()
 	{
@@ -205,7 +384,7 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// A guest's finished pool stroke, said as <see cref="ReportPoolStroke"/> says the host's at its release: the lay sound when it wrote, the slide's done message, one refusal with its
-	/// marker; and its notes: a refusal by the rights, a request the host could not take, an outcome not known.
+	/// marker; and its notes: a refusal by the rights, a request the host could not take, an outcome not known, [EXT:online-coop-undo] a slide's take-back the host's journal refused (C5).
 	/// </summary>
 	private void ReportGuestPoolStroke( PoolGuestReport report )
 	{
@@ -213,25 +392,26 @@ public sealed partial class ParkHud
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( report.SlideDone )
 			PostMessage( strings.Extra( OpenTpwText.PoolSlideDone ) );
-		if ( report.RightsRefused is { } refused && !MetFinishedSlide( refused, report.RightsReason ) )
+		if ( report.RightsRefused != null )
+		{
 			SayGuestNote( RightsRefusalText( report.RightsReason ) );
+			// [EXT:online-coop-undo] a slide or stroke take-back the rights refused (the grant taken back on its way) ends the slide, paint or erase mode it was sent from, as it ends the line tools
+			// (C5, C5-2)
+			if ( report.RightsRefused is TakeBackCommand && level.PoolTool is { } poolTool && (poolTool.InSlideSession( report.SlideSession ) || poolTool.InPaintSession( report.PaintSession )) )
+				poolTool.Cancel();
+		}
 		else if ( report.NotTaken )
 			SayGuestNote( OpenTpwText.CoopHostCouldNotTake );
 		else if ( report.Unknown )
 			SayGuestNote( OpenTpwText.CoopBuildUnknown );
+		else if ( report.TakeBackRefusal is { } takeBack )
+			SayTakeBackNote( takeBack );
 		if ( report.Refusal is not { } refusal )
 			return;
 		// the stroke's press was released before its report: the refusal cue plays now, as a guest's line released before its outcome plays it (FinishLineClick)
 		GameAudio.PlayPathRefused( refusal.Cell.X, refusal.Cell.Y );
 		PostMessage( strings.Extra( report.BridgeRefusal is { } bridge ? BridgeRefusalText( bridge ) : PoolRefusalText( refusal.Reason, report.SlideRefusal ) ) );
 	}
-
-	/// <summary>
-	/// [EXT:online-coop-permissions] Whether a refusal of <paramref name="command"/> by the session's rights, for the <paramref name="reason"/> they gave where and when it was refused, met a
-	/// finished slide: a slide undo refused for any reason but a grant the host took back (no claim refuses one), whose slide the pieces before it finished
-	/// (<see cref="CoopBuildRights.Builds"/>). Nothing is said for it, as the host's slide mode ended with the splash and its Backspace says nothing; one refused for want of a grant is said.
-	/// </summary>
-	private static bool MetFinishedSlide( ParkCommand command, string? reason ) => command is UndoPoolSlidePieceCommand && reason != CoopBuildRights.NotGrantedReason;
 
 	/// <summary>
 	/// [EXT:online-coop-permissions] What a refusal by the session's rights says, from the <paramref name="reason"/> they gave where and when it was refused: [EXT:online-coop-claims] another
@@ -243,7 +423,9 @@ public sealed partial class ParkHud
 	private static OpenTpwText RefusalText( CoopRefusal refusal ) => refusal switch
 	{
 		CoopRefusal.Claimed => OpenTpwText.CoopClaimed,
+		CoopRefusal.ClaimLost => OpenTpwText.CoopClaimLost,
 		CoopRefusal.NotGranted => OpenTpwText.CoopNotGranted,
+		CoopRefusal.NotPermitted => OpenTpwText.CoopNotPermitted,
 		_ => OpenTpwText.CoopHostOnly
 	};
 

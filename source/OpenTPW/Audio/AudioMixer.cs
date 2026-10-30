@@ -63,6 +63,13 @@ public sealed class AudioVoice
 	public Vector3? Position { get; internal set; }
 	/// <summary>The distance at which the voice is no longer heard (0: no range, always full gain).</summary>
 	public float Range { get; internal set; }
+	/// <summary>
+	/// True for a voice the sound library places flat although it may carry a place: an event with the any-distance flag (0x200, voice flag 8 of the original) is handed to the mixer at (0, 1, 0) in the listener's own frame,
+	/// so it is centred and never turned down by distance (the place and range stay for the pool and for <see cref="SoundEventSystem"/>'s own tests).
+	/// </summary>
+	// [BIN:TPW-EXE:0x6bc51d flat placement] the sample start 0x6bc410 takes its flat branch for a voice with voice flag 8 (set from the event's 0x200 by 0x6bbe90): the raw dwords (0, 1, 0) become the placeholder's position (0x6bb220), the request gets no distance mapping and no flag 0x20 (0x6bc52d-0x6bc52f, 0x6bc612-0x6bc61e), so 0x6b7fd6 reaches the placement adapter 0x6d2640 with its flag clear and that adapter calls QSWaveMixSetPosition (0x6d2709 skipped, 0x6d270b-0x6d272b) rather than SetSourcePosition
+	// [BIN:QMIXER-DLL:0x18007abd SetPosition polar] the message (code 6, 0x18003e40 -> 0x18001520) reads three integers (azimuth in degrees, range, elevation) and hands the channel the floats (azimuth, range x 3.0 / 32767, elevation), the 3.0 being the room size the engine starts with (0x180086ef) and tp.exe never changes (no QSWaveMixSetRoomSize import), 0x18007b0b stores them and 0x18009dc0 takes its polar branch (the channel's flag +0x128, set by default at 0x18006e73): azimuth 0, elevation 0, distance 9.2e-5, which is inside the default minimum distance 1.0 (0x180310f0 +0x40; tp.exe's own mapping never applies to a flat voice, its minimum is 2.0) so the distance gain is 1 (0x1800a0cf-0x1800a12f) and the azimuth 0 gives SetPan(0): both channels at the voice's own gain
+	public bool PlacedFlat { get; internal set; }
 	/// <summary>True when the sample wraps to its start and the voice lives on until stopped (an event flagged 0x8 loops its sample).</summary>
 	public bool Loops { get; internal set; }
 	public event Action<AudioVoice>? Completed;
@@ -139,17 +146,19 @@ public sealed class AudioVoice
 		var total = gain * Gain;
 		var leftScale = 1f;
 		var rightScale = 1f;
-		if ( Position is { } place && Range > 0 )
+		if ( Position is { } place && Range > 0 && !PlacedFlat )
 		{
 			var (distanceGain, pan) = AudioListener.Placement( place, Range );
 			// Range admission belongs to SoundEventSystem, not this distance/pan stage; a released loop output is not mixed.
 			// [BIN:QMIXER-DLL:0x18005830 volume and pan] tp.exe gives every voice the channel mode 0x1000000 (the software stage: 0x6bc61b ORs 1 into the request flags of every started sample, 0x6d23ab turns that into 0x1000000), whose buffer has no DirectSound 3D object (0x2000000 only): SetVolume(2000 log10(gain) hundredths of a decibel, 0x1800ca40) and, for a mono wave only (0x18005982 tests the wave format table 0x1803c6b4, 1 = mono), SetPan(44.444 x azimuth, mirrored behind the listener, 0x18005730)
-			// [APPROX:AUDIO-018] the pan takes the azimuth in the listener's camera basis; the voices placed flat with the any-distance flag (speech, music, most UI sounds) keep both channels at the voice's gain, as the unpositioned original submit leaves them, though the original hands them (0,1,0) through SetPosition (0x6bc51d, 0x6d2640) and how QMixer places such a source is not read
+			// [BIN:TPW-EXE:0x6d2aec axis mapping] the adapters 0x6d2640 (source), 0x6d2a10 (listener position) and 0x6d2b20 (front and up) hand QMixer (x, z, y) for a driver whose byte +8 has bit 0 clear (it starts as 2, 0x6d6c54-0x6d6c5e, and nothing writes it), QMixer negates the third component of every vector it receives when its engine byte +4 is set (0x18001020; set because tp.exe's QSWaveMixInitEx structure is zeroed, 0x6d1f92, so bit 3 of its flags is clear, 0x18008661-0x1800866c): the two reflections make a rotation (x, y, z) -> (x, z, -y), so right = up x front, the rotated offset and the azimuth atan2(x, z) are those of the unmapped camera axes (AudioListener.Azimuth; the test AudioQmixerPlacementTests replays the whole pipeline)
 			var levelled = AudioListener.DecibelGain( AudioListener.GainHundredthsOfDecibel( distanceGain ) );
 			(leftScale, rightScale) = channels == 1 ? AudioListener.PanGains( pan ) : (1f, 1f);
 			leftScale *= levelled;
 			rightScale *= levelled;
 		}
+		// [BIN:QMIXER-DLL:0x1800a1df Doppler] every voice without the loop flag takes QMixer's Doppler factor (a voice with the loop flag sets the channel's no-Doppler bit through 0x6bc628 -> 0x6c5110 -> 0x6d22d0, tested at 0x1800a1df): its frequency times 1 / (1 + (direction . relative velocity) / 331.36), at most 10, from the listener velocity of tp.exe's last changed listener update (AudioListener.Velocity, 0x6d27b0); the integer rounding of the stream's own frequency is applied (0x180055c8-0x180055dd); the stage runs only once the channel's wave has its stream reader (0x18005599-0x180055bd, 0x1800bd40: +0x90 set, +0x88 present), which the library's worker creates through 0x18024620 for the memory waves tp.exe opens with OpenWaveEx flag 0x11 (0x180033ad), so a started voice is assumed ready; [APPROX:AUDIO-018] the device-unit rounding of the stream frequency (0x1800c760) is not read
+		var stepNow = step * DopplerRatio();
 		for ( var frame = 0; frame < frames; frame++ )
 		{
 			if ( Loops && Frames > 0 && sampleOutput.Position >= Frames )
@@ -165,7 +174,7 @@ public sealed class AudioVoice
 			float left, right;
 			if ( channels == 1 )
 			{
-				// [APPROX:ADVISOR-012] Mono samples are duplicated to both channels; the original submits the advisor's speech unpositioned (0x51BFC0 with 0,0,0) and the library places a voice with voice flag 8 at (0,1,0) (0x6BC51D), the left/right levels come from QMixer's software stage (AUDIO-018: a source at (0,1,0) is centred only if the mixer's listener and the placeholder share a frame, and which channel mode a speech voice gets, 0x6d23ab-0x6d23bb, is not read)
+				// [BIN:QMIXER-DLL:0x18005982 mono pan] a mono wave is panned by SetPan (+0x40) only: a flat voice's azimuth is 0, so SetPan(0) leaves a mono sample at the same level on both channels (no centre attenuation), which is this duplication; a stereo wave gets no SetPan and plays as recorded. The advisor's speech is such a voice: 0x51BFC0 starts an event of cat_speechSFX.map (global and every level), whose events all carry the any-distance flag 0x200 (641 of 641 and 1 of 1 per level in the shipped data), so the library places them flat (PlacedFlat)
 				left = right = samples[index] + (samples[next] - samples[index]) * fraction;
 			}
 			else
@@ -175,11 +184,23 @@ public sealed class AudioVoice
 			}
 			mix[2 * frame] += left * total * leftScale;
 			mix[2 * frame + 1] += right * total * rightScale;
-			sampleOutput.Position += step;
+			sampleOutput.Position += stepNow;
 		}
 		if ( sampleOutput.Position >= Frames && !Loops )
 			IsFinished = true;
 		return frames;
+	}
+
+	/// <summary>The factor the stream's frequency takes from QMixer's Doppler stage: the sample's frequency times the Doppler factor, rounded to an integer, over the sample's frequency.</summary>
+	private double DopplerRatio()
+	{
+		if ( Loops || !AudioListener.DopplerEnabled )
+			return 1;
+		var factor = AudioListener.DopplerFactor( PlacedFlat ? null : Position );
+		if ( factor == 1f )
+			return 1;
+		var frequency = Math.Max( 1, (int)MathF.Round( (float)(SampleRate * (double)factor), MidpointRounding.ToEven ) );
+		return frequency / (double)SampleRate;
 	}
 
 	internal void RaiseCompleted()

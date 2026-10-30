@@ -843,20 +843,43 @@ public static class GuestSpeed
 	public const int ForceBound = (int)(InputCap * MaxForceFactor * 65536.0);
 
 	/// <summary>
-	/// <c>0xe6b28</c>: +200 = (3.0 × +200 + (+192 + +194 + +196) / 100) × 0.25 in single precision. The multiply-add is
-	/// one <c>fmadds</c> (<c>0xe6b9c</c>: exact product and sum, rounded once), so a plain <c>3f * s + q</c> differs in
-	/// the last bit for about one input in five (PPC oracle finding F6, docs/reverse/ORACLE.md).
+	/// tp.exe <c>0x004FA870</c>: +0xC8 = ((+0xC0 + +0xC2 + +0xC4) / 100 + 3.0 × +0xC8) × 0.25, every operation rounded to single precision as the x87 runs at 24 mantissa bits (CW 0x7F): the
+	/// sum is divided as an integer (fild, fidiv), the old speed is multiplied by −3.0 and subtracted (fmul, fsubp) and the result is scaled by 0.25; the multiply and the add are two roundings
+	/// where the Mac's <c>fmadds</c> (<see cref="SmoothFused"/>) is one.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FA870 speed smoothing] the three words +0xC0 (base), +0xC2 (bonus) and +0xC4 (boost) are added as integers and divided by the word at 0x0075C7FC (100) with fidiv; +0xC8 is multiplied by 0x007006F0 (−3.0) and subtracted (fsubp), the difference multiplied by 0x007006F4 (0.25) and stored back and handed to the speed setter 0x00510190; then +0xC4 = (+0xC4 × 99 as a 16-bit product) / 100 (imul cx, cx, 0x63; the magic 0x51EB851F) and the walk position is copied to +0x190/+0x194
+	public static float Smooth( float previous, int baseSpeed, int bonus, int boost )
+	{
+		var quotient = (baseSpeed + bonus + boost) / (float)Divisor;
+		var tripled = 3f * previous;
+		return (quotient + tripled) * 0.25f;
+	}
+
+	/// <summary>
+	/// The Mac's <c>0xe6b28</c>: +200 = (3.0 × +200 + (+192 + +194 + +196) / 100) × 0.25 in single precision, the multiply-add one <c>fmadds</c> (<c>0xe6b9c</c>: exact product and sum, rounded
+	/// once), so a plain <c>3f * s + q</c> differs in the last bit for about one input in five (PPC oracle finding F6, docs/reverse/ORACLE.md). Kept for the PPC oracle bridge; the PC walk is <see cref="Smooth"/>.
 	/// </summary>
 	// [BIN:STP-PPC:0x100E6B28 speed smoothing] float data 0x550c 3.0, 0x5508 0.25, divisor 100 (data 0x41062); 0xe6b9c fmadds
-	public static float Smooth( float previous, int baseSpeed, int bonus, int boost ) =>
+	public static float SmoothFused( float previous, int baseSpeed, int bonus, int boost ) =>
 		MathF.FusedMultiplyAdd( 3f, previous, (baseSpeed + bonus + boost) / (float)Divisor ) * 0.25f;
 
 	/// <summary>
-	/// <c>0xffe38</c>: (+28 max speed, +24 max force) = max(655, trunc(min(s, 2) × 0.2 / 0.4 × 65536)). NaN and −∞ give
-	/// the floor (the conversion saturates below it), +∞ the cap, as the oracle found for the original.
+	/// tp.exe <c>0x00510190</c>, the speed setter: (+0x1C max speed, +0x18 max force) = max(655, _ftol(min(s, 2) × 13107.2 / 26214.4)), the product of the single and the double constant rounded to
+	/// a 24-bit mantissa by the x87 (<see cref="Single24.Product"/>) before the truncation. NaN is not capped and gives the floor, −∞ the floor, +∞ the cap.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00510190 speed setter] fld s, fcomp 0x007009A0 (2.0), test ah, 0x41: a speed above 2.0 (not below, not equal, not unordered) becomes 2.0; +0x18 = _ftol(s × the double at 0x007009A8 = 26214.4), +0x1C = _ftol(s × the double at 0x007009B0 = 13107.2); each below 0x28F (655, signed) is raised to 655
+	public static (int MaxSpeed, int MaxForce) Caps( float speed )
+	{
+		var s = float.IsNaN( speed ) || speed <= InputCap ? speed : InputCap;
+		return (Math.Max( Floor, Single24.Truncate( Single24.Product( s, 13107.2 ) ) ), Math.Max( Floor, Single24.Truncate( Single24.Product( s, 26214.4 ) )));
+	}
+
+	/// <summary>
+	/// The Mac's <c>0xffe38</c>: (+28 max speed, +24 max force) = max(655, trunc(min(s, 2) × 0.2 / 0.4 × 65536)) in double precision. NaN and −∞ give
+	/// the floor (the conversion saturates below it), +∞ the cap, as the oracle found for the original. Kept for the PPC oracle bridge; the PC setter is <see cref="Caps"/>.
 	/// </summary>
 	// [BIN:STP-PPC:0x100FFE38 speed setter] input capped at 2.0 (data 0x5668), factors 0.2 / 0.4 (data 0x5650 / 0x5658), floor 655 on both
-	public static (int MaxSpeed, int MaxForce) Caps( float speed )
+	public static (int MaxSpeed, int MaxForce) CapsMac( float speed )
 	{
 		var s = Math.Min( speed, InputCap );
 		return (Math.Max( Floor, (int)(s * MaxSpeedFactor * 65536.0) ), Math.Max( Floor, (int)(s * MaxForceFactor * 65536.0) ));
@@ -880,14 +903,20 @@ public static class GuestSpeed
 	public static ushort Decay( ushort boost ) => (ushort)((ushort)(boost * 99) / 100);
 
 	/// <summary>
-	/// One speed update <c>0xe6b28</c> as the guest update runs it: smooth s, set the caps with the speed setter
-	/// <c>0xffe38</c>, then decay the boost. The seam the PPC oracle bridge compares (<c>guest_speed_smoothing</c>;
-	/// <see cref="Caps"/> is <c>guest_speed_limits</c>).
+	/// One speed update as the person's turn update runs it (<c>0x004FA870</c>): smooth s, set the caps with the speed setter, then decay the boost.
 	/// </summary>
 	public static (float Speed, ushort Boost, int MaxSpeed, int MaxForce) Update( float speed, int baseSpeed, int bonus, ushort boost )
 	{
 		var smoothed = Smooth( speed, baseSpeed, bonus, boost );
 		var (maxSpeed, maxForce) = Caps( smoothed );
+		return (smoothed, Decay( boost ), maxSpeed, maxForce);
+	}
+
+	/// <summary>One speed update of the Mac's <c>0xe6b28</c> (<see cref="SmoothFused"/>): the seam the PPC oracle bridge compares (<c>guest_speed_smoothing</c>; <see cref="Caps"/> is <c>guest_speed_limits</c>).</summary>
+	public static (float Speed, ushort Boost, int MaxSpeed, int MaxForce) UpdateFused( float speed, int baseSpeed, int bonus, ushort boost )
+	{
+		var smoothed = SmoothFused( speed, baseSpeed, bonus, boost );
+		var (maxSpeed, maxForce) = CapsMac( smoothed );
 		return (smoothed, Decay( boost ), maxSpeed, maxForce);
 	}
 }

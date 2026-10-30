@@ -122,6 +122,12 @@ public partial class Level
 		_ => ParkCommandResult.Rejected( $"The park does not take {command.Kind} commands." )
 	};
 
+	/// <summary>
+	/// [EXT:online-coop-undo] Runs the inverse a take-back carries (<see cref="TakeBackCommand"/>, C5): the tool's own undo of the step, as the take-back's player, inside the take-back's run
+	/// (the rights asked the take-back, and its inverse's claims, before it).
+	/// </summary>
+	internal ParkCommandResult ExecuteTakenBack( ParkCommand inverse ) => ExecuteParkCommand( inverse );
+
 	private ParkCommandResult Outcome( bool done, object? value = null ) =>
 		done ? ParkCommandResult.Ok( value ) : ParkCommandResult.Rejected( string.IsNullOrEmpty( LastActionMessage ) ? "Refused." : LastActionMessage );
 
@@ -183,7 +189,7 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-commands] A shared park's session starts or ends: the guests' carried types go with it, as their grants do (<see cref="ClearBuildGrants"/>), so a park shared again
+	/// [EXT:online-coop-commands] A shared park's session starts or ends: the guests' carried types go with it, as their rights do (<see cref="ClearSeatRights"/>), so a park shared again
 	/// starts with nothing in a guest's hand. The host's own Move tool keeps its carry.
 	/// </summary>
 	internal void ClearGuestCarries()

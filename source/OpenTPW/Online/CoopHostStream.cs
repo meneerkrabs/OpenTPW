@@ -255,6 +255,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// (it takes none between the digests: a full park's world hash is most of a digest's cost).
 	/// </summary>
 	private readonly ParkCommandRecorder recorder;
+	/// <summary>[EXT:online-coop-undo] The host's undo journal, which decides every take-back of the session (C5).</summary>
+	private readonly CoopUndoJournal undo;
+	/// <summary>[EXT:online-coop-undo] The cell map the journal hears the changes of, unhooked at the end.</summary>
+	private readonly ParkCellMap? undoCells;
 	private long nextStream = 1;
 	private ulong nextSeq;
 	private ulong sendNext;
@@ -279,6 +283,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	private readonly List<Guest> assigned = new();
 	private double? collectSince;
 	private double? heldSince;
+	/// <summary>
+	/// [EXT:online-coop-claims] The coaster claims the capture step found members waiting for it hold with a coaster edit on them: each a seat and the coaster's station (C3c-2). The next frame's
+	/// start lets go of them (<see cref="ReleaseCaptureHoldings"/>).
+	/// </summary>
+	private readonly List<(int Seat, int Station)> capturesHolding = new();
 	private JoinCapture? capture;
 	/// <summary>The uploads that failed for now in a row: each waits twice as long as the last, so a spent server limit is not asked for every few seconds.</summary>
 	private int uploadFailures;
@@ -311,12 +320,26 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		commands.Rights = new CoopBuildRights( level );
 		commands.Player = ParkCommands.LocalPlayer;
 		// a grant is its session's: a park shared again starts without the last session's (a guest of the identical start has none either), and so is what a guest's seat carried (C3b-2)
-		level.ClearBuildGrants();
+		level.ClearSeatRights();
 		// [EXT:online-coop-claims] and the rides' claims (C3c-1)
 		level.ClearRideClaims();
 		level.ClearGuestCarries();
+		// [EXT:online-coop-permissions] and what a guest's seat held of the staff (C4c)
+		level.ClearGuestStaff();
 		seatMembers = SeatMembers();
 		recorder = new ParkCommandRecorder( commands, level.LevelName ?? "", level.Seed.Value, level.TickCount, level.ComputeStateHash() ) { SessionRules = true };
+		// [EXT:online-coop-undo] the journal decides every take-back before its rights and its log, and hears every command's cell changes (C5)
+		undo = new CoopUndoJournal( level, session.You );
+		commands.Prepare = command => undo.Decide( command, applyingOrigin?.Member );
+		commands.Starting = undo.Begin;
+		undoCells = level.Guests?.Grid.Cells;
+		if ( undoCells != null )
+		{
+			undoCells.Changed = undo.Changed;
+			// [EXT:online-coop-undo] and every change of a track tile (C5-3)
+			undoCells.Tracks.Changed = undo.TrackChanged;
+		}
+		level.UndoJournal = undo;
 		commands.Applied += OnApplied;
 		level.TickEnded += OnTickEnded;
 		transport.Resumed += OnResumed;
@@ -473,9 +496,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		}
 		var flags = result.Error != null ? CoopRecordFlags.Errored : result.Accepted ? CoopRecordFlags.Accepted : CoopRecordFlags.None;
 		var number = nextStream++;
+		// [EXT:online-coop-undo] the journal takes the record: a step of its member's, a taken take-back's end, every change of a cell it tracks (C5)
+		undo.Applied( number, applyingOrigin?.Member, entry.Command, result );
 		// [EXT:online-coop-claims] a guest's claim, and every accepted command of its holder naming its ride, renews the claim's lease
 		if ( result.Accepted && entry.Command.Player > 0 && RideNamedBy( entry.Command ) is { } claimed && level.ClaimOf( claimed ) == entry.Command.Player )
-			claimLeases[claimed] = seconds();
+			claimLeases[claimed] = guestCommandsSeconds;
 		// [EXT:online-coop-commands] a guest's command carries its origin, so its issuer knows the record that answers its request
 		var origin = applyingOrigin;
 		if ( origin != null )
@@ -812,26 +837,29 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 	/// </summary>
 	private void ApplyGuestCommands( double now )
 	{
-		// [EXT:online-coop-commands] the seats whose member left or changed since the last frame, and any guest seat that still carries something without a member (C3b-2) or
-		// [EXT:online-coop-claims] still holds a claim without one (C3c-1); a link without its session's state (between a lost socket and its resume) shows no seat, so the seats wait for
-		// its next state instead of all counting as left
+		// [EXT:online-coop-claims] the frame's clock, which a guest's command renews its claim's lease with and the expiry reads (C3c-1)
+		guestCommandsSeconds = now;
+		// [EXT:online-coop-commands] the seats whose member left or changed since the last frame, and any guest seat that still holds something without a member: a carry (C3b-2),
+		// [EXT:online-coop-claims] a claim (C3c-1), [EXT:online-coop-permissions] a right (C4a); a link without its session's state (between a lost socket and its resume) shows no seat, so
+		// the seats wait for its next state instead of all counting as left
 		var known = transport.Session != null;
 		var members = known ? SeatMembers() : seatMembers;
-		var changed = seatMembers.Where( pair => !members.TryGetValue( pair.Key, out var member ) || member != pair.Value ).Select( pair => pair.Key )
-			.Concat( level.CarryingGuestSeats().Where( seat => known && !members.ContainsKey( seat ) ) )
-			.Concat( level.ClaimingSeats().Where( seat => known && seat > 0 && !members.ContainsKey( seat ) ) ).ToArray();
+		var departed = seatMembers.Where( pair => !members.TryGetValue( pair.Key, out var member ) || member != pair.Value ).ToArray();
+		var changed = departed.Select( pair => pair.Key )
+			.Concat( level.HoldingGuestSeats().Where( seat => known && !members.ContainsKey( seat ) ) ).ToArray();
 		seatMembers = members;
+		// [EXT:online-coop-undo] a member that left its seat (or whose seat another took) takes back nothing any more: its steps leave the journal as they are (C5)
+		foreach ( var (_, member) in departed )
+			undo.Depart( member );
 		if ( leftSeats.Count > 0 || changed.Length > 0 )
 		{
 			var seats = leftSeats.Concat( changed ).Distinct().OrderBy( seat => seat ).ToArray();
 			leftSeats.Clear();
 			foreach ( var seat in seats )
 			{
-				// a new member of the seat starts with its own link
+				// a new member of the seat starts with its own link; [EXT:online-coop-permissions] one record frees all the seat held (C4a)
 				disconnectedSince.Remove( seat );
-				if ( Failure == null && level.HasBuildGrant( seat ) )
-					level.Commands.Apply( new SetBuildGrantCommand( seat, false ) );
-				if ( Failure == null && (level.CarriesEntry( seat ) || level.ClaimedRideOf( seat ) != null) )
+				if ( Failure == null && level.SeatHoldsAnything( seat ) )
 					level.Commands.Apply( new ReleaseSeatCommand( seat ) );
 			}
 		}
@@ -850,9 +878,32 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 					Command( guest, request, tooLarge, now );
 			}
 		}
-		// [EXT:online-coop-claims] after the guests' commands, so a claim a late frame's queued command took is checked in that same frame (C3c-1)
+		// [EXT:online-coop-claims] after the guests' commands, so a claim a late frame's queued command took is checked in that same frame (C3c-1); the claims a capture waits on go first (C3c-2)
+		ReleaseCaptureHoldings();
 		ExpireClaims( now );
 	}
+
+	/// <summary>
+	/// [EXT:online-coop-claims] The host lets go of the coaster claims the capture step noted (<see cref="capturesHolding"/>), each with a <see cref="ReleaseRideCommand"/> of its own, a record
+	/// every peer applies alike, whose claim's end releases the seat's edit (a moved pylon goes back) and ends the coaster's tool state (C3c-2): a member waiting for a capture has fenced its
+	/// requests, so its drag's end never comes. Each note is read after this frame's guest commands applied and goes only while its seat still holds the coaster's claim and an edit on it; a
+	/// note whose seat ended its drag or let its claim go meanwhile is dropped. Every note goes now: the capture step notes again.
+	/// </summary>
+	private void ReleaseCaptureHoldings()
+	{
+		if ( capturesHolding.Count == 0 )
+			return;
+		var notes = capturesHolding.ToArray();
+		capturesHolding.Clear();
+		foreach ( var (seat, station) in notes )
+		{
+			if ( Failure == null && level.ClaimOf( station ) == seat && level.CoasterEdits.Of( seat ) is { } held && held.Station == station )
+				level.Commands.Apply( new ReleaseRideCommand( station ) );
+		}
+	}
+
+	/// <summary>[EXT:online-coop-claims] The clock of the frame whose guest commands apply (<see cref="ApplyGuestCommands"/>): the time a guest's command renews its claim's lease at.</summary>
+	private double guestCommandsSeconds;
 
 	/// <summary>[EXT:online-coop-claims] How long a guest seat's member may be read disconnected before the host lets go of its claim (C3c-1).</summary>
 	public const double ClaimDisconnectedSeconds = 30;
@@ -901,7 +952,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		}
 	}
 
-	/// <summary>[EXT:online-coop-claims] The ride <paramref name="command"/> names as its holder's edit (its claim, a track command), or null.</summary>
+	/// <summary>
+	/// [EXT:online-coop-claims] The ride <paramref name="command"/> names as its holder's edit (its claim, a track command, and the coaster tool's commands, C3c-2: a drag in progress keeps its claim),
+	/// or null.
+	/// </summary>
 	private static int? RideNamedBy( ParkCommand command ) => command switch
 	{
 		ClaimRideCommand claim => claim.Ride,
@@ -909,6 +963,11 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		LayTrackLineCommand line => line.Ride,
 		UndoTrackLineCommand undo => undo.Ride,
 		CutTrackCommand cut => cut.Ride,
+		BeginCoasterToolCommand begin => begin.Station,
+		EndCoasterToolCommand end => end.Station,
+		CoasterPanelCommand panel => panel.Station,
+		// [EXT:online-coop-undo] a take-back on a claimed ride, the step's ride the host put there (C5-3)
+		TakeBackCommand { ClaimedRide: >= 0 } takeBack => takeBack.ClaimedRide,
 		_ => null
 	};
 
@@ -1109,7 +1168,18 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		}
 		if ( assigned.Count == 0 || now - collectSince < CollectSeconds )
 			return;
-		// a held coaster drag's edited pylon is no part of the save: the capture waits for its release, for a while
+		// [EXT:online-coop-claims] a member waiting for this capture that holds a coaster edit on the coaster whose claim it holds has fenced its requests, so its drag's end never comes: the next
+		// frame's start lets go of that claim, whose end releases the edit (ReleaseCaptureHoldings), and the capture waits for that (C3c-2)
+		capturesHolding.Clear();
+		foreach ( var guest in assigned )
+		{
+			if ( guests.TryGetValue( guest.Id, out var current ) && current == guest && SeatOf( guest ) is { } seat && level.CoasterEdits.Of( seat ) is { } held
+				&& level.ClaimOf( held.Station ) == seat )
+				capturesHolding.Add( (seat, held.Station) );
+		}
+		if ( capturesHolding.Count > 0 )
+			return;
+		// a held coaster drag's edited pylon is no part of the save: the capture waits for its release, for a while (another seat's drag, whose end is not fenced)
 		if ( level.CoasterDragHeld )
 		{
 			heldSince ??= now;
@@ -1171,6 +1241,9 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		foreach ( var guest in members )
 			guest.NeedFrom = frame + 1;
 	}
+
+	/// <summary>[EXT:online-coop-claims] The guest seat of <paramref name="guest"/>'s member as the session holds it now, or null (C3c-2).</summary>
+	private int? SeatOf( Guest guest ) => transport.Session?.Members.FirstOrDefault( member => member.Id == guest.Id ) is { Slot: > 0 } member ? member.Slot : null;
 
 	/// <summary>The members still assigned capture <paramref name="generation"/>, taken off the list of those waiting for one.</summary>
 	private List<Guest> Take( uint generation )
@@ -1456,14 +1529,34 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 		level.TickLimit = null;
 		if ( level.SessionStream == this )
 			level.SessionStream = null;
+		// [EXT:online-coop-permissions] what every guest's seat still holds goes in records of the session's log, under the session's rules, before its last checkpoint (C4a): the seat's
+		// rights, its carry and its claims, whose end leaves a coaster's tool state (C3c-2), so the log replays to the state this park runs on with. They go to no guest (the stream
+		// stopped taking records above): each guest's park runs on alone, and its own teardown clears what its session held. An end inside a tick (no game path makes one; a test's
+		// TickCompleted could) records nothing there, as no command may apply inside a tick: this park then ends the guests' coasters' tool state on its own after the log, as a
+		// guest's teardown does
+		if ( !level.Commands.IsInTick )
+			foreach ( var seat in level.HoldingGuestSeats() )
+				level.Commands.Apply( new ReleaseSeatCommand( seat ) );
+		var unreleased = level.RideClaims.Where( claim => claim.Value > 0 ).Select( claim => claim.Key ).ToArray();
 		var commands = level.Commands;
 		commands.SessionRules = previousSessionRules;
 		commands.InTick = previousInTick;
 		commands.Rights = previousRights;
 		commands.Player = previousPlayer;
-		// [EXT:online-coop-permissions] a grant is its session's: the park runs on alone without one, and without what a guest's seat carried (C3b-2)
-		level.ClearBuildGrants();
-		// [EXT:online-coop-claims] and the rides' claims (C3c-1)
+		// [EXT:online-coop-undo] the journal is its session's (C5)
+		commands.Prepare = null;
+		commands.Starting = null;
+		if ( undoCells != null )
+		{
+			undoCells.Changed = null;
+			undoCells.Tracks.Changed = null;
+		}
+		if ( level.UndoJournal == undo )
+			level.UndoJournal = null;
+		undo.Clear();
+		// [EXT:online-coop-permissions] rights are their session's: the park runs on alone without any (the guests' were released above), and without what a guest's seat carried (C3b-2)
+		level.ClearSeatRights();
+		// [EXT:online-coop-claims] and the rides' claims (C3c-1): the host's own, as the guests' went above
 		level.ClearRideClaims();
 		level.ClearGuestCarries();
 		// the park's scripts read the machine's own clock again
@@ -1471,6 +1564,10 @@ internal sealed class CoopHostStream : ILevelSessionStream, IDisposable
 			scripts.SessionTime = null;
 		recorder.Dispose();
 		SessionLog = RecordedLog();
+		level.EndSessionCoasters( unreleased );
+		// [EXT:online-coop-permissions] staff state a guest's seat still holds (an end inside a tick recorded no release) goes after the log's last checkpoint, never before it, so the log replays
+		// to that checkpoint (C4c): its employees in hand drop back where they were picked up
+		level.ClearGuestStaff();
 	}
 
 	/// <summary>The session's recording so far, with the world hash now as its last checkpoint.</summary>

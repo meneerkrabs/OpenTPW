@@ -51,6 +51,12 @@ public sealed partial class OriginalObjectRuntime
 			Visitors.ExcitementSource = () => Coaster.GuestExcitement;
 			// [BIN:TPW-EXE:0x4398cd coaster crash sound] two trains bumping hard play the global cat_rides crash sound 12 at the bump's whole-unit place
 			Coaster.Crashed += place => GameAudio.PlayRidesAt( GameAudio.CoasterCrashEvent, new Vector3( place.X, place.Y, place.Z ) );
+			// [BIN:TPW-EXE:0x4392A0 train loop sound] the trains' two loops are the EventMap's events 0 and 1 of the level cat_rides, kept as held voices
+			Coaster.TrainSounds = new CoasterTrainSounds( Coaster, EventMapVariable, ( eventId, place ) =>
+				GameAudio.StartHeldRseEvent( 3, (uint)eventId, place, SoundSource ) is { } sound ? new HeldTrainVoice( sound ) : null,
+				// [BIN:TPW-EXE:0x4393E0 train scream submit] 0x551320(1, 100, 100, place) is the band-1 one-shot at index 3 (cat_kids 78); 0x551130(0, riders / 2 + 1, 75, 75, place) the held chain of that band at level 75
+				place => GameAudio.SingleScream( 1, 100, place, 100 ) is { } voice ? new ShortScreamVoice( voice ) : null,
+				( band, place ) => GameAudio.StartScream( band, 75, place, 75 ) is { } chain ? new HeldScreamVoice( chain ) : null );
 		}
 		// A water ride (Bumper.WhichTrackType 2) or a go-kart ride (1) gets a bump-ride controller (docs/TRACKS.md).
 		if ( BumperTemplates.ForRide( entry.Settings.GetInt( "Bumper.WhichTrackType" ), entry.Settings.GetInt( "Bumper.BumperType" ) ) is { } template )
@@ -73,6 +79,8 @@ public sealed partial class OriginalObjectRuntime
 		if ( Model.Kind != ModelFileKind.Geometry )
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
 		Visitors.Heads = RideHeadSpace.Create( Model, world.NextWorldDraw );
+		if ( Visitors.Heads != null )
+			Visitors.Heads.HeadHung = world.HeadHung;
 		// [EXT:object-lights] the light dummies of the model (none in any shipped model), with the object's .sam keys over them
 		Lights = ObjectLightBank.Create( Model, entry.Settings, entry.DisplayName );
 		// Fixed items keep their last vertex pose when a clip ends (ObjectAnimator.UpdateVertices).
@@ -255,6 +263,8 @@ public sealed partial class OriginalObjectRuntime
 			return;
 		Hoarding.StartOpenFade();
 		SetVariable( nameof( RideVariables.VAR_RIDECLOSED ), 0 );
+		// [BIN:TPW-EXE:0x004E0E60 SetState 0] the openers write the open word and VAR_RIDECLOSED together with SetState(0) (0x4DE487, 0x4DF438, 0x4DFCB8, 0x4E003C, 0x4E01B6): the ride leaves state 1 or 4
+		Visitors.StateWord.Set( RideObjectStates.Idle );
 	}
 
 	// [BIN:TPW-EXE:0x004DF300 close model call] every closing that writes the open word +0x68 = 0 and VAR_RIDECLOSED = 1 (0x004DF300, 0x004DF150, 0x004DFE30(1), the repair tail's re-close at 0x004DFD3E, SetState 1, 2 and 4, a built object with a queue at 0x004DB712) calls 0x00454550(1) after it: the hoarding rises with the closed set unless another set stands
@@ -368,6 +378,7 @@ public sealed partial class OriginalObjectRuntime
 		Visitors.ReleaseAll();
 		if ( Coaster != null )
 		{
+			Coaster.TrainSounds?.Stop();
 			Coaster.ClearTrains();
 			Coaster.World.Remove( Coaster );
 		}

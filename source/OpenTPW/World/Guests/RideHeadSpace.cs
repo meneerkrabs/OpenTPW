@@ -25,6 +25,9 @@ public sealed class RideHeadSpace
 	private readonly ScriptRandom? random;
 	private readonly Func<uint>? worldDraw;
 
+	/// <summary>Called with the visitor each time a head is hung on this table (<see cref="RideScriptWorld.HeadHung"/>); null where no world takes the draw.</summary>
+	internal Action<int>? HeadHung { get; set; }
+
 	private RideHeadSpace( int[] nodes, int seed )
 	{
 		this.nodes = nodes;
@@ -133,6 +136,8 @@ public sealed class RideHeadSpace
 			slot = DrawSlot();
 		} while ( visitors[slot] != 0 );
 		visitors[slot] = visitor;
+		// [BIN:TPW-EXE:0x00554D13 ADDHEAD hang] the head record of the slot's id exists (the table is built from them), so the routine 0x44B410 runs with the visitor
+		HeadHung?.Invoke( visitor );
 		return slot;
 	}
 
@@ -146,6 +151,8 @@ public sealed class RideHeadSpace
 		if ( visitor == 0 || id < 1 || id > visitors.Length )
 			return false;
 		visitors[id - 1] = visitor;
+		// [BIN:TPW-EXE:0x00557EB9 WALKON hang] the lookup of the head id succeeded: the routine 0x44B410 runs with the visitor
+		HeadHung?.Invoke( visitor );
 		return true;
 	}
 

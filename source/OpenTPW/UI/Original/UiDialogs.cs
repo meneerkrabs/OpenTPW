@@ -19,7 +19,7 @@ public static class UiDialogs
 			Id = "title",
 			Text = title,
 			Font = fonts => fonts.Title,
-			Color = UiColors.Title,
+			Shadow = true, Color = UiColors.Title,
 			Align = UiAlign.Center,
 			Bounds = new UiRect( rect.X + rect.Width * 0.06f, rect.Y + rect.Height * 0.04f, rect.Width * 0.8f, 110 ),
 			Anchor = UiAnchor.Center
@@ -34,7 +34,12 @@ public static class UiDialogs
 	// [BIN:TPW-EXE:0x7583e8 confirm dialog] window id 0x48 (500,233,1516,830) with b_okay (1376,524,1460,608) and b_exit (1387,613,1470,696), a caption box (606,304,1333,384) and two text fields; the second table 0x7585a8 is the same stream; the name dialog 0x753f50 has the same window and buttons
 	// [DATA:video 28:00, 28:04, 28:40] the dialogs measure (527..1491, 247..854) in a 954x720 game area, with the tick and X at the right and no text buttons
 	// [DATA:video 28:00] the message text sits below the caption and left of the buttons; the table's two text fields belong to the name dialog, so that rectangle is read off the video
-	public static UiScreen Message( string name, Func<string> text, params (Func<string> Label, Action Clicked)[] choices )
+	public static UiScreen Message( string name, Func<string> text, params (Func<string> Label, Action Clicked)[] choices ) => Message( name, text, false, choices );
+
+	/// <summary><see cref="Message"/> for an original UITEXT message: its text is cut off at the text box like every original text control (0x48f3d0).</summary>
+	public static UiScreen MessageOfOriginalText( string name, Func<string> text, params (Func<string> Label, Action Clicked)[] choices ) => Message( name, text, true, choices );
+
+	private static UiScreen Message( string name, Func<string> text, bool originalText, (Func<string> Label, Action Clicked)[] choices )
 	{
 		var screen = new UiScreen( name );
 		var table = OriginalLayoutTables.ConfirmDialog;
@@ -46,7 +51,7 @@ public static class UiDialogs
 			Id = "caption",
 			Text = () => SplitCaption( text() ).Caption,
 			Font = fonts => fonts.Label,
-			Color = UiColors.Title,
+			Shadow = true, Color = UiColors.Title,
 			Align = UiAlign.Center,
 			Fit = true,
 			Bounds = caption,
@@ -60,6 +65,9 @@ public static class UiDialogs
 			Font = fonts => fonts.Label,
 			Align = UiAlign.Center,
 			Wrap = true,
+			// [EXT:strings] a message that is not an original UITEXT one (OpenTPW's own strings, error texts; [EXT:ONLINE-UI] for the online screens' messages) is not cut off at the text box; an original one is, although the box itself is read off the video
+			// ([DATA:video 28:00]), so for a long translation its clip is not the original's
+			Unclipped = originalText ? null : () => true,
 			Bounds = new UiRect( rect.X + 56, caption.Bottom + 20, textRight - rect.X - 56, rect.Bottom - caption.Bottom - 60 ),
 			Anchor = UiAnchor.Center
 		} );
@@ -174,7 +182,8 @@ public static class UiDialogs
 	// [BIN:TPW-EXE:0x48c36c online pause layout] the park pause menu's top and gap are 0 instead of 10 and 5 while the net-session field +0x60 (0x5b6450) is non-zero (0x48c36c-0x48c4af);
 	// that field is set only by the login reply 'Authorization OK' (0x5b6363) and cleared by every other login reply, the login teardown and the other session resets (0x5b6375-0x5b63dd, 0x5b6588, 0x5b595f, 0x5b5e7d, 0x5b7a84, 0x5b7d6a, 0x5b7f0b), so the park menu maps it to
 	// the host's authenticated session captured on opening (HudHost.IsLoggedIn)
-	// [APPROX:UI-013] the line height follows OpenTPW's menu font, which is not the original's bank pick ([EXT:ui-font-tier-by-scale]); the measure 0x4929f0 is read (block box via 0x6ae1c0, no wrap without the wrap flag) and matched by OpenTPW's text layout box
+	// [BIN:TPW-EXE:0x4929f0 menu line measure] the measure takes the font slot of the line (0 for the pause menus: slot 0 and 2 swap while the word at 0x78b538 is 0x40d, 0x41a850), reads the font record of the bank (index 13 x bank + slot, 24-byte records from 0x78b54c, handle at +0x14), lays the text out in a box through 0x6ae1c0 and returns the block box; with the wrap flag clear the box is 0x4000 wide, so nothing wraps, which OpenTPW's text layout box matches
+	// [EXT:ui-font-tier-by-scale] the line height is that of OpenTPW's menu font: which shipped font serves slot 0 per size tier is OpenTPW's choice, as the original picks one of four banks by its fixed screen modes
 	// [BIN:TPW-EXE:0x48b2a0 pause line ramp] the focused line's colour ramps from grey 0x21 in steps of 0x20 to white over eight frames (UiMenuItem, MenuLineRamp)
 	public static UiScreen TextMenu( string name, IReadOnlyList<(string Id, Func<string> Text, Action Clicked, bool Enabled)> items, Action back, string? focus = null, bool compact = false )
 	{

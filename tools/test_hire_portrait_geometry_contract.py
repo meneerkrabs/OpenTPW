@@ -45,18 +45,22 @@ class HirePortraitGeometryContract(unittest.TestCase):
         self.assertIn("[EXT:staff-employee-view]", self.hud)
         self.assertNotIn("EmployeeFrame", self.hud)
 
-    def test_existing_callback_keeps_role_variant_clock_and_source_policy(self):
+    def test_callback_follows_the_native_hire_phases_and_source_policy(self):
         callback = body(self.hud, "private UiSpriteFrame? PortraitFrame()")
         ordered = ["showingEmployedStaff", "SelectedStaff", "SelectedCandidate", "key != portraitKey", "portraitKey = key",
-                   "portraitStart = Time.Now", "level.StaffRenderer?.PortraitFrame( chosen.Type, chosen.Variant, Time.Now - portraitStart )"]
+                   "new SpritePlayer( nowMs )", "player.Tick( nowMs )", "level.StaffRenderer?.PortraitFrameAtStep( chosen.Type, chosen.Variant, player.Steps - 1 )"]
         offsets = [callback.index(token) for token in ordered]
         self.assertEqual(sorted(offsets), offsets)
-        for token in ("PrepareWorld", "Random", "Tick(", "Restart(", "HirePortraitGeometry"):
+        # no frame before the script's first due pass, and a hire view's invalid applicant keeps the figure
+        self.assertIn("player.Steps == 0 ? null", callback)
+        self.assertIn(": portraitOfEmployee ? null : portraitKey", callback)
+        for token in ("PrepareWorld", "Random", "Restart(", "HirePortraitGeometry"):
             self.assertNotIn(token, callback)
-        self.assertNotIn("portraitKey", body(self.hud, "public void CloseStaffWindow()"))
-        renderer = body(read("source/OpenTPW/World/Staff/StaffRenderer.cs"), "internal UI.Original.UiSpriteFrame? PortraitFrame(")
+        # the close ends the figure (0x49B7B4)
+        self.assertIn("EndPortrait()", body(self.hud, "public void CloseStaffWindow()"))
+        renderer = body(read("source/OpenTPW/World/Staff/StaffRenderer.cs"), "internal UI.Original.UiSpriteFrame? PortraitFrameAtStep(")
         for token in ("sprites.AtlasFor( type, variantKey )", "deleted || atlasIndex < 0 || atlasIndex >= textures.Count",
-                      "StaffSpriteRules.Portrait( elapsed, directions )", "frame.ScaleX, frame.ScaleY"):
+                      "StaffSpriteRules.PortraitAtStep( steps, directions )", "frame.ScaleX, frame.ScaleY"):
             self.assertIn(token, renderer)
 
     def test_shared_layout_still_scales_both_offsets_and_dimensions_and_mirrors_uv(self):
@@ -85,7 +89,7 @@ class HirePortraitGeometryContract(unittest.TestCase):
 
     def test_residuals_tests_and_full_ci_stay_explicit(self):
         self.assertIn('("UI-082",', read("source/OpenTPW/UI/Original/UiApproximations.cs"))
-        for token in ("delayed FRAME/start/close/invalid-selection phase", "global rotation/depth", "viewport/raster"):
+        for token in ("no frame before the first due pass", "global rotation/depth", "viewport/raster"):
             self.assertIn(token, self.hud)
         tests = read("source/OpenTPW.Tests/HirePortraitGeometryTests.cs")
         for token in ("figure.Draw(", "figure.Frame()", "rig.Hud.Stack.Top", "ParkSaveFile.Serialize", "rig.Economy.World.State",

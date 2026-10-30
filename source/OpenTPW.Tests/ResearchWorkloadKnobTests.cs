@@ -217,12 +217,12 @@ public class ResearchWorkloadKnobTests
 
 	[DataTestMethod]
 	[DataRow( 70 )] [DataRow( 40 )]
-	public void UnchangedInitialRawZeroKeepsSavedWorkloadAndTheExplicitHostStartupGeometry( int workload )
+	public void UnchangedInitialRawZeroKeepsSavedWorkloadAndTheAuthoredBallTop( int workload )
 	{
 		var w = Build( workload );
 		Assert.AreEqual( 0, w.Knob.Value );
 		Assert.AreEqual( workload, w.Economy.Research.Workload, "an unchanged setter does not synthesize a workload notification" );
-		Assert.AreEqual( 634f, w.Knob.BallTop, "this retained host startup position is still the documented UI-064 residual" );
+		Assert.AreEqual( ParkHud.AuthoredKnobBallTop, w.Knob.BallTop, "SetPos leaves the ball at its authored top while the raw value is unchanged (0x66b201)" );
 	}
 
 	[TestMethod]

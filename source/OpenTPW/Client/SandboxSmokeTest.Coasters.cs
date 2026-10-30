@@ -49,8 +49,13 @@ internal sealed partial class SandboxSmokeTest
 			if ( Camera.Mode is ParkCameraMode parkCamera && !cells.All( Centred ) )
 			{
 				var middle = OriginalParkPlacement.GetCellCenter( level.OriginalPark.Heightfield, (int)cells.Average( cell => cell.Item1 ), (int)cells.Average( cell => cell.Item2 ) );
-				parkCamera.SetPose( new Vector3( middle.X, middle.Y, 0 ), parkCamera.Height, parkCamera.Yaw );
-				Camera.Update();
+				// the circuit is wider than the free part of the view, so a player scrolls until it sits clear of the tool panel: the middle first, then the poses around it
+				for ( var shift = 0; shift < 49 && !cells.All( Centred ); shift++ )
+				{
+					var (shiftX, shiftY) = shift == 0 ? (0, 0) : ((shift % 7 - 3) * 5, (shift / 7 - 3) * 5);
+					parkCamera.SetPose( new Vector3( middle.X + shiftX, middle.Y + shiftY, 0 ), parkCamera.Height, parkCamera.Yaw );
+					Camera.Update();
+				}
 			}
 			if ( cells.All( Centred ) )
 				anchor = candidate;

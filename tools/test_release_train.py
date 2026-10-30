@@ -21,6 +21,35 @@ def decide(tags, at_head=(), since=3, runs=GREEN, active=()):
     return rt.plan(HEAD, list(tags), list(at_head), since, list(runs), list(active))
 
 
+def run_workflow_shell(script, env):
+    # Windows searches System32 before PATH for bare names; use the discovered Bash.
+    bash = shutil.which('bash')
+    if bash is None:
+        raise FileNotFoundError('bash is required for workflow shell tests')
+    return subprocess.run([str(Path(bash).resolve()), '-e', '-c', script],
+                          env=env, capture_output=True, text=True)
+
+
+class WorkflowShellLauncherTests(unittest.TestCase):
+    def test_uses_the_discovered_absolute_path_instead_of_a_bare_bash_name(self):
+        bash = Path('mock shell') / 'bash'
+        script = 'printf shell-test'
+        env = {'RUNNER_TEMP': 'mock-temp'}
+        result = subprocess.CompletedProcess([], 0, stdout='shell-test', stderr='')
+        with patch('shutil.which', return_value=str(bash)) as which, \
+             patch('subprocess.run', return_value=result) as run:
+            self.assertIs(run_workflow_shell(script, env), result)
+        which.assert_called_once_with('bash')
+        run.assert_called_once_with([str(bash.resolve()), '-e', '-c', script],
+                                    env=env, capture_output=True, text=True)
+
+    def test_missing_bash_does_not_fall_back_to_bare_name_lookup(self):
+        with patch('shutil.which', return_value=None), patch('subprocess.run') as run:
+            with self.assertRaises(FileNotFoundError):
+                run_workflow_shell('exit 0', {})
+        run.assert_not_called()
+
+
 class VersionTests(unittest.TestCase):
     def test_next_patch_after_newest_stable(self):
         self.assertEqual(rt.next_version(['v0.8.5', 'v0.8.6']), 'v0.8.7')
@@ -252,8 +281,8 @@ class WorkflowTests(unittest.TestCase):
 }
 sleep() { :; }
 '''
-                result = subprocess.run(['bash', '-e', '-c', mocks + script], env=env, capture_output=True, text=True)
-                self.assertEqual(result.returncode == 0, succeeds, result.stderr)
+                result = run_workflow_shell(mocks + script, env)
+                self.assertEqual(result.returncode == 0, succeeds, result.stdout + result.stderr)
                 if run_id == 'not-a-run':
                     self.assertFalse((root / 'api-calls').exists())
                 elif changes.get('initial_status') == 'in_progress':
@@ -289,8 +318,8 @@ python() {
 }
 gh() { printf '%s\n' "$@" > "$RUNNER_TEMP/dispatched"; }
 '''
-                result = subprocess.run(['bash', '-e', '-c', mocks + script], env=env, capture_output=True, text=True)
-                self.assertEqual(result.returncode, 0, result.stderr)
+                result = run_workflow_shell(mocks + script, env)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn('--head\n' + 'b' * 40, (root / 'python-args').read_text())
                 self.assertEqual((root / 'dispatched').exists(), dispatch)
                 if dispatch:

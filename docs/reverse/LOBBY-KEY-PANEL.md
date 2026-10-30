@@ -87,5 +87,5 @@ OpenTPW makes none of these refreshes.
 EA/EB art, native arrow virtual semantics and any hidden/show side effects;
 selected-record threshold provenance; effect lifetime outside this function;
 lobby sequences 28/29 and timer reachability; particle positioning and pass
-ordering (PTCL-909); original visual captures. No ADVISOR-025 retirement or
+ordering (PTCL-909 retired: the HUD lies over the particles); original visual captures. No ADVISOR-025 retirement or
 full feature completion is claimed by this slice.

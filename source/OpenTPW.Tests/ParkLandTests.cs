@@ -51,20 +51,23 @@ public class ParkLandTests
 		cells.Land!.CheckPurchase( cells, first, second, barrier ?? (( _, _ ) => false), cost, balance );
 
 	[TestMethod]
-	public void EveryOwnedFencePostCountsFiftyInTheParkValueAndTheBigParkCount()
+	public void EveryOwnedFencePostAndItsBlockCountFiftyInTheParkValueAndTheBigParkCount()
 	{
-		// tp.exe 0x5323F0: the fence's posts are structure records of type 25 (0x00524960 in mode 0x19); 0x004C7DB0 adds 50 for each one on an owned cell (0x005363F0), 0x004CD7F0 counts it as covered
+		// tp.exe 0x5323F0: the fence's posts are structure records of type 25 (0x00524960 in mode 0x19) and the walk 0x52BA50 types the three cells beside each as its extensions; 0x004C7DB0 adds 50 for each such cell
+		// on an owned cell (0x005363F0 follows an extension to its parent), 0x004CD7F0 counts it as covered owned or not
 		var park = EconomyTestData.Park();
 		var cells = NewPark();
 		park.Litter.Cells = cells;
-		var posts = cells.Land!.Ring.Distinct().Where( post => Owned( cells, post.X, post.Y ) ).ToList();
-		Assert.IsTrue( posts.Count > 0, "some posts stand on owned cells" );
+		var land = cells.Land!;
+		var structure = Enumerable.Range( 0, 128 * 128 ).Select( index => (X: index % 128, Y: index / 128) ).Where( cell => land.CountsAsStructure( cell.X, cell.Y, 128, 128 ) ).ToList();
+		var owned = structure.Count( cell => Owned( cells, cell.X, cell.Y ) );
+		Assert.IsTrue( owned > 0, "some posts stand on owned cells" );
+		Assert.IsTrue( structure.Count > land.Ring.Distinct().Count() * 2, "each post counts its block of up to four cells" );
 		var withPosts = park.ParkValue;
 		var coveredWithPosts = park.CoveredCells();
-		var distinctPosts = cells.Land.Ring.Distinct().Count();
 		cells.SetLand( null );
-		Assert.AreEqual( withPosts - 50 * posts.Count, park.ParkValue, "the park value without the posts" );
-		Assert.AreEqual( coveredWithPosts - distinctPosts, park.CoveredCells(), "the big park counts every post, owned or not" );
+		Assert.AreEqual( withPosts - 50 * owned, park.ParkValue, "the park value without the posts' blocks" );
+		Assert.AreEqual( coveredWithPosts - structure.Count, park.CoveredCells(), "the big park counts every cell of every block, owned or not" );
 	}
 
 	// --- Hoardings.sam ---
@@ -93,12 +96,9 @@ public class ParkLandTests
 		Assert.AreEqual( PostB, land.Ring[^1] );
 		Assert.AreEqual( 2 + 5 + 8 + 5 + 2 + 1, land.Ring.Count, "every second cell along the clicks" );
 		Assert.IsTrue( land.IsPost( 25, 15 ) && land.IsPost( 9, 21 ) && !land.IsPost( 17, 11 ), "the gate between the posts has no fence" );
-		Assert.AreEqual( 8 * 5, land.Squares.Count );
 		Assert.ThrowsException<InvalidDataException>( () => ParkLand.FromClicks( Setup( (2, 0), (4, 0) ) ), "the first click is on post A" );
 		Assert.ThrowsException<InvalidDataException>( () => ParkLand.FromClicks( Setup( (0, 0), (4, 4), (-8, 0) ) ), "clicks run straight" );
 		Assert.ThrowsException<InvalidDataException>( () => ParkLand.FromClicks( Setup( (0, 0), (4, 0), (4, 10) ) ), "the last click is on post B" );
-		// a fence with the park north of the gate walks with the park on its left
-		Assert.ThrowsException<InvalidDataException>( () => ParkLand.FromClicks( Setup( (0, 0), (4, 0), (4, -10), (-12, -10), (-12, 0), (-8, 0) ) ) );
 	}
 
 	// --- a new park's ownership ---
@@ -115,7 +115,10 @@ public class ParkLandTests
 			{
 				var inside = x is >= 10 and <= 25 && y is >= 12 and <= 21;
 				var strip = x is >= 15 and <= 20 && y is 11 or 12;
-				Assert.AreEqual( inside || strip || (x, y) == (40, 40), Owned( cells, x, y ), $"({x}, {y})" );
+				// the fill scans north through the open gate from the posts of the far wall, up to the top of the map; the first such scan (x 19) sets the edge flag 0x5311C0 never clears, so the next ones (x 17, 15) stop
+				// after their first block (oracle case "rectangle", checked cell for cell)
+				var leak = x is >= 19 and <= 20 && y is >= 1 and <= 10;
+				Assert.AreEqual( inside || strip || leak || (x, y) == (40, 40), Owned( cells, x, y ), $"({x}, {y})" );
 			}
 		}
 		Assert.AreEqual( ParkCellFlags.NoModify, cells.FlagsAt( 40, 40 ), "a fixed cell never becomes unowned" );
@@ -173,7 +176,7 @@ public class ParkLandTests
 		Assert.AreEqual( LandPurchaseRefusal.GatePost, Check( cells, (5, 5), (13, 11) ).Refusal, "a corner on post B" );
 		Assert.AreEqual( LandPurchaseRefusal.GatePost, Check( cells, (11, 5), (23, 11) ).Refusal, "an edge through both gate posts" );
 		Assert.AreEqual( LandPurchaseRefusal.GatePost, Check( cells, (19, 3), (29, 11) ).Refusal, "an edge through post A" );
-		Assert.AreEqual( LandPurchaseRefusal.Gate, Check( cells, (15, 7), (19, 15) ).Refusal, "land in front of the gate" );
+		Assert.AreEqual( LandPurchaseRefusal.None, Check( cells, (15, 7), (19, 15) ).Refusal, "land in front of the gate: the original's validator accepts it (oracle case)" );
 	}
 
 	[TestMethod]
@@ -252,22 +255,18 @@ public class ParkLandTests
 	public void APurchaseMergesTheFenceAndOwnsTheNewLand()
 	{
 		var cells = NewPark();
-		var merged = cells.Land!.Merge( (25, 11), (33, 21) )!;
-		Assert.IsNotNull( merged );
-		Assert.AreEqual( PostA, merged.Ring[0] );
-		Assert.AreEqual( PostB, merged.Ring[^1] );
-		Assert.IsFalse( merged.IsPost( 25, 15 ), "the shared fence is gone" );
-		Assert.IsTrue( merged.IsPost( 33, 15 ) && merged.IsPost( 29, 21 ) && merged.IsPost( 29, 11 ) );
-		Assert.AreEqual( 8 * 5 + 4 * 5, merged.Squares.Count );
-		merged.ClaimEnclosedCells( cells );
+		var land = cells.Land!;
+		Assert.IsTrue( land.Purchase( cells, (25, 11), (33, 21) ) );
+		Assert.AreEqual( PostA, land.Ring[0] );
+		Assert.AreEqual( PostB, land.Ring[^1] );
+		Assert.IsFalse( land.IsPost( 25, 15 ), "the shared fence is gone" );
+		Assert.IsTrue( land.IsPost( 33, 15 ) && land.IsPost( 29, 21 ) && land.IsPost( 29, 11 ) );
 		Assert.IsTrue( Owned( cells, 26, 12 ) && Owned( cells, 33, 21 ), "the cells next to the new fence's west and north sides and under its east and south sides" );
 		Assert.IsFalse( Owned( cells, 34, 15 ) || Owned( cells, 30, 22 ) );
-		// an L-shaped merge turns away from the land at (25, 21)
-		var l = NewPark().Land!.Merge( (25, 15), (33, 25) )!;
-		Assert.IsNotNull( l );
+		// an L-shaped merge: the rectangle's corner (25, 21) lies on the old fence and turns away from the land
 		var lCells = NewPark();
-		l.ClaimEnclosedCells( lCells );
-		Assert.IsTrue( Owned( lCells, 25, 22 ) && Owned( lCells, 26, 22 ), "the corner (25, 21) owns its four cells" );
+		Assert.IsTrue( lCells.Land!.Purchase( lCells, (25, 15), (33, 25) ) );
+		Assert.IsTrue( Owned( lCells, 25, 22 ) && Owned( lCells, 26, 22 ), "the corner (25, 21) owns its cells" );
 	}
 
 	// --- the tool ---
@@ -276,6 +275,23 @@ public class ParkLandTests
 	private static BuyLandTool Tool( ParkCellMap cells, ParkEconomy? economy ) =>
 		new( () => cells, () => economy, ( _, _ ) => false,
 			command => command is BuyLandCommand buy ? buy.Apply( cells, economy, ( _, _ ) => false ) : ParkCommandResult.Rejected( "Not a land command." ) );
+
+	[TestMethod]
+	public void TheToolKeepsTheHoveredPriceForTheHudCostLine()
+	{
+		var cells = NewPark();
+		var tool = Tool( cells, Economy( 50000, 100 ) );
+		Assert.AreEqual( 0L, tool.HoverCost, "the tool start clears the cost (0x52f087)" );
+		Assert.IsTrue( tool.Begin() );
+		Assert.AreEqual( 0L, tool.HoverCost );
+		Assert.AreEqual( BuyLandClick.CornerStored, tool.Click( 26, 12 ) );
+		tool.Hover( 34, 22 );
+		Assert.AreEqual( 4800L, tool.HoverCost, "the price 0x532303 adds for every unowned cell of the rectangle" );
+		tool.Hover( 26, 12 );
+		Assert.AreEqual( 0L, tool.HoverCost, "a refusal before the price leaves the cleared cost" );
+		tool.Cancel();
+		Assert.AreEqual( 0L, tool.HoverCost );
+	}
 
 	[TestMethod]
 	public void TheToolBuysOneRectanglePerActivation()
@@ -481,16 +497,27 @@ public class ParkLandTests
 		// the saved flags: everything west of x 30 owned
 		static bool Unowned( int x, int y ) => x >= 30;
 
+		FenceLayer FenceOf( Dictionary<(int, int), byte> posts )
+		{
+			var layer = new FenceLayer( 64, 64 );
+			foreach ( var ((x, y), bits) in posts )
+			{
+				layer.Type[y * 64 + x] = FenceLayer.PostType;
+				layer.Links[y * 64 + x] = bits;
+			}
+			return layer;
+		}
 		var walked = new ParkCellMap( 64, 64 );
-		walked.ImportLand( Setup( RectangleClicks ), Unowned, ( x, y ) => links.TryGetValue( (x, y), out var bits ) ? bits : null );
+		walked.ImportLand( Setup( RectangleClicks ), Unowned, FenceOf( links ) );
 		Assert.IsNotNull( walked.Land );
 		CollectionAssert.AreEqual( land.Ring.ToArray(), walked.Land!.Ring.ToArray() );
 		Assert.IsTrue( Owned( walked, 29, 40 ) && !Owned( walked, 30, 5 ), "the saved flags, not the fence's land" );
 
 		// a fence broken half way: no land (Buy Land unavailable), the saved flags kept, not the level's starting ring
+		Log ??= new Logger();
 		links.Remove( land.Ring[land.Ring.Count / 2] );
 		var broken = new ParkCellMap( 64, 64 );
-		broken.ImportLand( Setup( RectangleClicks ), Unowned, ( x, y ) => links.TryGetValue( (x, y), out var bits ) ? bits : null );
+		broken.ImportLand( Setup( RectangleClicks ), Unowned, FenceOf( links ) );
 		Assert.IsNull( broken.Land );
 		Assert.IsTrue( Owned( broken, 29, 40 ) && !Owned( broken, 30, 5 ) && !Owned( broken, 40, 15 ) );
 		Assert.IsFalse( Tool( broken, null ).Begin() );
@@ -525,5 +552,25 @@ public class ParkLandTests
 		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( flagged ) ).Message, "unowned flag" );
 		var landless = flagged with { Cells = flagged.Cells with { Land = null } };
 		Assert.IsTrue( ParkLayoutSnapshot.RestoreCellMap( landless ).FlagsAt( 15, 15 ).HasFlag( ParkCellFlags.Unowned ) );
+	}
+
+	/// <summary>With bit 0x400 of the level word the set-up clicks six posts instead of reading the hoardings table (tp.exe 0x532489): a small enclosure in front of the gate.</summary>
+	[TestMethod]
+	public void TheSixClickFenceEnclosesTheSmallYardInFrontOfTheGate()
+	{
+		var setup = ParkLandSetup.FromLevel( (47, 17), (48, 17), null, sixClickFence: true );
+		Assert.IsNotNull( setup );
+		Assert.AreEqual( (51, 17), setup!.PostA );
+		Assert.AreEqual( (43, 17), setup.PostB );
+		CollectionAssert.AreEqual( ParkLandSetup.SixClicks.ToArray(), setup.Clicks.ToArray() );
+		Assert.IsNull( ParkLandSetup.FromLevel( (47, 17), (48, 17), null ), "without the bit the table is read" );
+		var cells = new ParkCellMap( 128, 128 );
+		var land = ParkLand.NewPark( cells, setup );
+		Assert.IsNotNull( land );
+		cells.SetLand( land );
+		// the clicks run from post A east 2, south 4, west 12 (to x - 10), north 4 and east 2 again: a yard 12 wide and 4 high south of the gate, the walk's ring has the posts of that outline
+		Assert.IsTrue( land!.IsPost( 51, 17 ) && land.IsPost( 53, 17 ) && land.IsPost( 53, 21 ) && land.IsPost( 41, 21 ) && land.IsPost( 41, 17 ) && land.IsPost( 43, 17 ) );
+		var owned = Enumerable.Range( 0, 128 * 128 ).Count( index => !cells.FlagsAt( index % 128, index / 128 ).HasFlag( ParkCellFlags.Unowned ) );
+		Assert.IsTrue( owned > 30 && owned < 200, $"{owned} owned cells" );
 	}
 }

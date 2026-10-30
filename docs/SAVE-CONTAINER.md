@@ -109,15 +109,16 @@ delimiters) has a bounded structural reader (`SaveCoasterBlock`; TPWS-PAYLOAD.md
 train slots decode once the coaster type's counts are known, nothing is imported and nothing is written. A park
 started from the shipped save imports its turn,
 bank, objects, staff and advisor controller (`OriginalEconomyImport`; values not
-imported are reported as SAVE-002 to SAVE-010 and SAVE-920 to SAVE-923); the
+imported are reported as SAVE-002 to SAVE-010, SAVE-920 and SAVE-921 (SAVE-923 is retired)); the
 other blocks are split by their widths, and the raw dumps of the original's engine structures are not restored (`[EXT:original-engine-state-dumps]`), except the Particles pool, the RSSE script ids, list order and pass counter, and the camera, which a level that starts from the save applies. A level can start from a player's own save (`--load-original-level <theme> --original-save <file>`) instead of the shipped `Easymode.TPWI`.
 A Theme Park Inc payload splits on the same principle with its own reader rules
 (`SavePayloadProfile.ThemeParkInc`: 45 message lists, a 48-byte camera, an empty UI block and the typed
 `ThemeParkIncSaveWorld`; see [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-park-save-layout)).
 Every block but a Coasters block with a coaster ends where its tp.exe
 reader stops (`SaveBlockWidths`, the World included), like the original loader, which runs each block's own
-reader and then checks the block's tag (`0x415270`); only that one (and a World that does not read as the original's, a synthetic
-payload) is found by its delimiter's bytes, so a payload that splits in more than one way there, or holds its delimiter's bytes more than 256 times, is rejected although the original loader would
+reader and then checks the block's tag (`0x415270`); a Coasters block with a coaster ends where its reader stops too when the park import
+passes the park's coaster types (`SavePayloadLayout.Parse(payload, coasterTrains)`, `SaveCoasterBlock.TryMeasure`: the train slots and the cars per train the type holds). Without the types, and for a World that does not read as the original's (a synthetic
+payload), the block is found by its delimiter's bytes, so a payload that splits in more than one way there, or holds its delimiter's bytes more than 256 times, is rejected although the original loader would
 read it (SAVE-011).
 The four local `scape.omp` files start with `OBJ_`; this is not evidence that they
 are terrain tile grids. Original saves can be written: `SaveContainerWriter` and

@@ -202,7 +202,7 @@ public sealed partial class ParkHud
 			Id = "infoName",
 			Text = () => InfoNow == null ? "" : InfoNow.DisplayName ?? strings.Object( InfoNow.ObjectNameIndex ),
 			Font = fonts => fonts.Heading,
-			Color = UiColors.Title,
+			Shadow = true, Color = UiColors.Title,
 			Align = UiAlign.Center,
 			Fit = true
 		} );
@@ -216,13 +216,16 @@ public sealed partial class ParkHud
 				Id = $"statValue{index}",
 				Text = () => StatOfRow( index ) is { } stat ? stat.Value ?? (stat.IsGauge ? "" : strings.Extra( OpenTpwText.NotSimulated )) : "",
 				Font = fonts => fonts.Small,
-				Color = UiColors.Text
+				Color = UiColors.Text,
+				// [EXT:strings] the "not simulated yet" value (OpenTpwText.NotSimulated) is OpenTPW's text, wider than the original's value box in some languages, so it is not cut off there
+				Unclipped = () => StatOfRow( index ) is { Value: null }
 			} );
 			objGauges[index] = Info( new ObjectGauge( this, index ) { Id = $"statGauge{index}" } );
 		}
 		objDoor = Info( new UiButton { Id = "openRide", Model = "b_door", Clicked = ToggleRideOpen,
 			// b_door state frames: open door normally, closed door in the "down" frames.
-			Selected = () => selectedObject?.IsOpen == false } );
+			// [EXT:online-coop-commands] a guest's door draws its open word as drawn (C4b-2)
+			Selected = () => selectedObject is { } shown && !DrawnIsOpen( shown ) } );
 		objErase = Info( new UiButton { Id = "deleteRide", Model = "b_erase", Clicked = DeleteRide } );
 		objMove = Info( new UiButton { Id = "moveRide", Model = "b_move", Clicked = MoveObject } );
 		objOkay = Info( new UiButton { Id = "retractInfo", Model = "b_okay", Clicked = () => SetInfoArm( false ) } );
@@ -238,13 +241,14 @@ public sealed partial class ParkHud
 	}
 
 	private bool CanEditQueue( OriginalObject item ) => !level.IsReadOnlyVisit && item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && item.Visitors.QueueFrontCell != null
-		// [EXT:online-coop-claims] the queue of a ride another player claims is that player's while its track tool is on it (C3c-1), and a coaster's the host's (C3c-2): the window offers no
-		// tool whose lines would be refused
+		// [EXT:online-coop-claims] the queue of a ride another player claims is that player's while its track or coaster tool is on it (C3c-1, C3c-2): the window offers no tool whose lines
+		// would be refused
 		&& !ClaimedAgainstThisPlayer( item );
 
 	private bool CanEditTrack( OriginalObject item ) => !level.IsReadOnlyVisit && (item.Runtime.Coaster != null || item.Runtime.Bump != null)
-		// [EXT:online-coop-claims] nor the track of a ride another player claims (C3c-1); a guest's track tools are not on yet (C3c-1b, C3c-2)
-		&& !(level.CoopSession != null && (level.Commands.SendsRequests || ClaimedAgainstThisPlayer( item )));
+		// [EXT:online-coop-claims] nor the track of a ride another player claims (C3c-1); a guest's track tool claims its kart or water ride (C3c-1b) and its coaster tool its coaster (C3c-2)
+		// through the host
+		&& !ClaimedAgainstThisPlayer( item );
 
 	/// <summary>
 	/// [EXT:online-coop-claims] Whether <paramref name="item"/> is claimed against this machine's player in a shared park (<see cref="CoopBuildRights.IsClaimedAgainst"/>): its window offers
@@ -299,6 +303,13 @@ public sealed partial class ParkHud
 			return;
 		SetInfoArm( false );
 		LeaveBuildTool();
+		// [BIN:TPW-EXE:0x004AF200 queue tool start] the original's start of the queue tool is the branch of 0x4AF200 for argument 0 (reached from the ride window's dispatcher 0x4AF600): the tool switch 0x5276D0(1), tool 0x14, then the click handler 0x524960(0, 0, 0, 0); that this branch is the b_queue button's (help 9) is inferred from the tool number, not traced through the window's control table, and which cell the first click of the original takes is not traced either, so taking the front cell here is an inference: the button takes the queue edit a click on one of its cells takes (EditQueueAt): the edit takes the link between the queue's back cell and the path it ends on off before the tool lays on from that cell (0x530379), and the cell validator 0x535670 refuses the ride's own queue cell while it holds two links
+		if ( item.Visitors.QueueFrontCell is { } front && level.CanEditQueueAt( front.X, front.Y ) )
+		{
+			if ( level.EditQueueAt( front.X, front.Y ) )
+				PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
+			return;
+		}
 		if ( level.EnterQueueTool( item.Visitors ) )
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
 	}
@@ -314,7 +325,8 @@ public sealed partial class ParkHud
 			return;
 		SetInfoArm( false );
 		LeaveBuildTool();
-		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.EnterTrackTool( item );
+		// [EXT:online-coop-claims] a guest's track or coaster tool starts once its claim (and a coaster's entry) is back, with the help then (C3c-1b, C3c-2)
+		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.BeginTrackTool( item, placed: false ) == TrackToolEntry.Entered;
 		if ( entered )
 			PostMessage( item.Runtime.Coaster != null ? strings.Help( 0x125 ) : TrackToolHelp );
 	}
@@ -404,7 +416,7 @@ public sealed partial class ParkHud
 		}
 		// the table's second help id (12, open) is the door's prompt while it is down, that is closed; its first (13, close) while it is open
 		if ( objDoor != null && layout.Door != null )
-			objDoor.Help = HelpOf( selectedObject?.IsOpen == false && layout.Door.AltHelp >= 0 ? layout.Door.AltHelp : layout.Door.Help );
+			objDoor.Help = HelpOf( selectedObject is { } shown && !DrawnIsOpen( shown ) && layout.Door.AltHelp >= 0 ? layout.Door.AltHelp : layout.Door.Help );
 		// the per-frame visibility reset shows every control of the window: hide the ones this table lacks
 		if ( layout.RideIt == null && objRideIt != null ) objRideIt.Visible = false;
 		if ( layout.Upgrade == null && rideUpgradeButton != null ) rideUpgradeButton.Visible = false;
@@ -459,12 +471,13 @@ public sealed partial class ParkHud
 	/// <summary>What the status banner reads of <paramref name="item"/>; null in a visit or for an object without an economy record.</summary>
 	private RideStatusFacts? StatusFactsOf( OriginalObject item )
 	{
-		if ( Status.EconomySource is not ParkEconomy economy || LiveState( item ) is not { } record )
+		// [EXT:online-coop-commands] a guest's window reads the record as its waiting open-state action will leave it (C4b-2)
+		if ( Status.EconomySource is not ParkEconomy economy || DrawnRecord( item ) is not { } record )
 			return null;
 		var relief = economy.Catalog.TryGet( record.InfoId, out var info ) && info.ProvidesRelief;
 		var state = ParkEconomy.ObjectState( record );
 		var guests = level.Guests;
-		// EXIT NOT CONNECTED is never shown (ECON-049, tagged at ParkGate.MayOpen): the exit test 0x4de5a0 steps from the exit cell by its link byte (+0xd) and walks the edge test 0x4d8750 from the cell in front, and OpenTPW's entrance and exit cells keep no link byte
+		// [BIN:TPW-EXE:0x00485F60 exit status] the exit test 0x4DE5A0 (ParkGate.ExitConnected) runs for a ride (type +0x4AC 0) that is no add-on (upgrade parent 0, +0x288 not 2) once its queue is connected, and a failing exit shows status 0x18, EXIT NOT CONNECTED
 		return new RideStatusFacts(
 			state,
 			TrackIncomplete: item.Runtime.TrackIncomplete,
@@ -474,8 +487,8 @@ public sealed partial class ParkHud
 			// an upgrade always waits for the mechanics; a toilet's call is the handymen's
 			Service: ServiceProgress( economy, record, relief && state != RideObjectStates.Upgrading ? StaffType.Handyman : StaffType.Mechanic ),
 			QueueDetached: item.Entry.HasQueue && guests != null && !ParkGate.QueueConnected( guests.Grid, item.Visitors ),
-			ExitDetached: false,
-			IsOpen: item.IsOpen );
+			ExitDetached: item.Entry.WhichUIType == 0 && !TrackAddOns.IsAddOn( item.Entry ) && guests != null && !ParkGate.ExitConnected( guests.Grid, item.Visitors ),
+			IsOpen: DrawnIsOpen( item ) );
 	}
 
 	/// <summary>How far the service of <paramref name="record"/> (an upgrade or a call) has come with the employees of <paramref name="role"/>.</summary>

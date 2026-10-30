@@ -38,7 +38,13 @@ public sealed class TrackBuilder
 
 	/// <summary>Cost of one tile (<c>Costs.WaterTrackCell</c> or <c>Costs.KartTrackCell</c>), or 0 without an economy.</summary>
 	// [DATA:Standard.sam:Costs.KartTrackCell/WaterTrackCell] one cell cost per tile, charged when the tile is written; the original spends nothing while the free-build byte 0x7DE2D is set (PATH-009)
-	public long TileCost => Economy?.CellCost( Purchase ) ?? 0;
+	public long TileCost => PredictionMoney?.CellCost ?? Economy?.CellCost( Purchase ) ?? 0;
+
+	/// <summary>
+	/// [EXT:online-coop-undo] The money a prediction pays with (C5-3, a line predicted on a copy of the park): set, the builder's money tests and charges read and spend this copy of the bank's
+	/// balance, by the bank's own arithmetic, in place of the park's economy, so the copy's line stops where the park's would.
+	/// </summary>
+	internal CellPredictionMoney? PredictionMoney { get; init; }
 
 	// ---- Reading -----------------------------------------------------------------------------------
 
@@ -132,7 +138,7 @@ public sealed class TrackBuilder
 		if ( existing != 0 )
 			return CellBuildResult.Occupied;
 		// [BIN:STP-PPC:0x10084550 placement validator] the preview refuses a line whose pending cost exceeds the balance (the path tool's test)
-		if ( pending is { } before && Economy is { } park && !park.CanPreviewLine( before + TileCost ) )
+		if ( pending is { } before && (PredictionMoney is { } money ? !money.CanPreviewLine( before + TileCost ) : Economy is { } park && !park.CanPreviewLine( before + TileCost )) )
 			return CellBuildResult.NotEnoughMoney;
 		return CellBuildResult.Ok;
 	}
@@ -160,8 +166,15 @@ public sealed class TrackBuilder
 		}
 		if ( check != CellBuildResult.Ok )
 			return check;
-		var park = free ? null : Economy;
+		// [EXT:online-coop-undo] a prediction pays with its copy of the balance (C5-3)
+		var money = free ? null : PredictionMoney;
+		var park = free || money != null ? null : Economy;
+		if ( money != null && !money.CanSpendCell() )
+			return CellBuildResult.NotEnoughMoney;
 		if ( park != null && !park.CanSpendCell( Purchase ) )
+			return CellBuildResult.NotEnoughMoney;
+		// [BIN:TPW-EXE:0x00538FC0 type op credit test] a free tile (the placement's) is still refused while the player's cash is below zero (the test is cash - cost >= 0 with a cost of 0)
+		if ( free && (PredictionMoney is { } shadow ? shadow.Balance < 0 : Economy is { Balance: < 0 }) )
 			return CellBuildResult.NotEnoughMoney;
 		var overPath = false;
 		foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
@@ -179,6 +192,7 @@ public sealed class TrackBuilder
 				Owner = owner
 			} );
 		}
+		money?.SpendCell();
 		park?.TrySpendCell( Purchase );
 		ConnectDangling( x, y, owner );
 		Refresh( x, y );
@@ -210,12 +224,19 @@ public sealed class TrackBuilder
 	}
 
 	/// <summary>Writes the two station tiles of a ride (type 13 or 18 origins and type 12 extensions), each with its flow axis connected both ways.</summary>
-	public void PlaceStation( TrackStation station )
+	public void PlaceStation( TrackStation station ) => PlaceStation( station, lineOnly: false );
+
+	/// <summary>
+	/// The station tiles with their flow axis (<paramref name="lineOnly"/> false) or with the arms of the station line alone: the first tile the arm toward the second and the second the arm back, the
+	/// line op's arms (<c>0x539220</c>, each cell after the first gets the arm toward the previous cell and the previous cell the arm back). The exit and entry tiles' ops give the others.
+	/// </summary>
+	private void PlaceStation( TrackStation station, bool lineOnly )
 	{
 		var owner = OwnerOf( station );
 		var axis = (byte)(station.Heading | TrackHeading.Opposite( station.Heading ));
 		foreach ( var (x, y) in station.Tiles )
 		{
+			var tileAxis = !lineOnly ? axis : (x, y) == station.First ? station.Heading : TrackHeading.Opposite( station.Heading );
 			var originIndex = Tracks.IndexOf( x, y );
 			foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
 			{
@@ -226,23 +247,86 @@ public sealed class TrackBuilder
 				var origin = (cx, cy) == (x, y);
 				Cells.SetType( cx, cy, origin ? StartType : TrackCellTypes.Extension );
 				// [BIN:TPW-EXE:0x00524F1E station link] the station tiles' flow link is the heading of the station's rotation (0x524EE9..0x524F19: 0 → 4, 90 → 1, 180 → 0x40, 270 → 0x10)
-				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? axis : (byte)0, Link = origin ? station.Heading : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner, BaseType = baseType } );
+				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? tileAxis : (byte)0, Link = origin ? station.Heading : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner, BaseType = baseType } );
 			}
 		}
 	}
 
-	/// <summary>Fresh placement only: attempts the two free adjacent origins without overriding placement refusals. Loading or migrating a station uses <see cref="PlaceStation"/> instead.</summary>
+	/// <summary>
+	/// Fresh placement only: the station line, then the exit tile and the entry tile laid as the original's placement lays them, free of the tile price. Loading or migrating a station uses
+	/// <see cref="PlaceStation(TrackStation)"/> instead. <paramref name="giveWay"/> demolishes what stands on a cell of the two tiles (the priority demolition of op 0x87), called with each of their cells.
+	/// </summary>
 	// [BIN:TPW-EXE:0x005253E9 initial track] placement sets free byte 0x8186D4; secondary writer 0x538FC0 skips the tile price and debit, not validation or existing-tile overlap.
-	public void PlaceInitialStation( TrackStation station )
+	// [BIN:TPW-EXE:0x0052A1A0 station line] the station line first: the type op, 0x80 (the first tile no arm, the second the arm toward the first and the first the arm back), 0x82 and 0x83 over the two tiles, whose end is the exit cell
+	// [BIN:TPW-EXE:0x005254C5 exit ops] on the exit cell, in this order through 0x53AAC0: 0x87, the tool mode's type op (0x52F840), 0x80, 0x82, 0x83, 0x85, 0x86 and 0x81, then the exit becomes the tool's first vertex (0x52FBF0); the arm op 0x80 gives the exit the arm toward the second station tile and that tile the arm back only when the type op laid the tile (0x539220 reads the type op's answer in 0x816D64, which a refused type op leaves cleared), the flow link op 0x82 has the singleton line's zero step and writes nothing
+	// [BIN:TPW-EXE:0x005255F0 entry ops] the same ops on the entry cell (0x52A420) with the heading's step in the local, then by hand and whatever the type op answered: the arm toward the station (0x522700) and the flow link set to the heading (0x5227E0) on the entry cell, and the arm back (0x4D8C00, 0x522700) on the cell two cells on (0x50C3E0), the first station tile; the arm op 0x80 of the entry writes nothing, its previous step being the exit's zero step
+	// [BIN:TPW-EXE:0x00538FC0 type op free] with the free byte set the tile costs nothing, but the op's credit test (0x538FF5..0x539050) still refuses a tile when the player's cash is below zero; a tile of the same type only counts its overlap word up (0x538FFD)
+	public void PlaceInitialStation( TrackStation station, Action<int, int>? giveWay = null )
 	{
-		PlaceStation( station );
+		PlaceStation( station, lineOnly: true );
 		var owner = OwnerOf( station );
+		var heading = station.Heading;
 		foreach ( var at in new[] { station.Exit, station.Entry } )
 		{
+			if ( giveWay != null )
+				GiveWay( at, giveWay );
 			// A refused adjacent tile remains untouched; placement is not an atomic four-origin transaction.
 			var result = PlaceTile( at.X, at.Y, owner, free: true );
-			if ( at == station.Entry && result is (CellBuildResult.Ok or CellBuildResult.Existing) )
-				ApplyLineLink( at, station.Heading );
+			var laid = result is CellBuildResult.Ok or CellBuildResult.Existing;
+			if ( at == station.Exit )
+			{
+				if ( !laid )
+					continue;
+				AddArm( at, TrackHeading.Opposite( heading ) );
+				AddArm( station.Second, heading );
+				Refresh( at.X, at.Y );
+				Refresh( station.Second.X, station.Second.Y );
+				continue;
+			}
+			// the entry's own arm and link are written whatever the type op answered; a cell that holds no tile has no arm byte anyone reads
+			if ( laid )
+				ApplyLineLink( at, heading );
+			if ( laid )
+				AddArm( at, heading );
+			AddArm( station.First, TrackHeading.Opposite( heading ) );
+			Refresh( station.First.X, station.First.Y );
+			if ( laid )
+				Refresh( at.X, at.Y );
+		}
+	}
+
+	/// <summary>
+	/// Op 0x87 on a tile: unless the tile's origin cell already holds a track type (and no add-on), each of its four cells that is not a station cell is handed to <paramref name="giveWay"/> (the demolition of the
+	/// object owning it) and its second-layer record is cleared.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00538CF0 cell op 0x87] in 0x5370E0 (jump table 0x538EEC): when 0x818C14 < 0x818C10 (signed) a tile whose origin cell's type is 0xB, 0xD, 0x10, 0x12 or 0x19 does nothing (0x538D42..0x538D6C); any other tile calls 0x527EE0(x, y, 0) on (x, y), (x+1, y), (x, y+1) and (x+1, y+1) (0x538D76..0x538D9E), each returning at once unless the cell is of type 4, 9 or 10 (0x527D60), then, the cell being the line's only cell (0x820AD0 = 1), clears the four second-layer records (0x4D0B10, 0x5367A0(0, 0)) and restores the tool mode and 0x81EDE4/E8 (0x52F580); the cells of a kart or water station (types 13 and 18, extension 12 and 17 there) are no type 4, 9 or 10 cell, so no station is demolished, while an add-on's cells are type 4
+	// [BIN:TPW-EXE:0x005367A0 second-layer clear] the record of a cell that is no station cell is cleared (its type and arms), here the tile record of the cell without the rest of its tile
+	private void GiveWay( (int X, int Y) at, Action<int, int> giveWay )
+	{
+		foreach ( var (cx, cy) in GiveWayCells( at ) )
+		{
+			giveWay( cx, cy );
+			Cells.ClearTrackRecord( cx, cy );
+		}
+	}
+
+	/// <summary>
+	/// The adjacent cells whose objects and second-layer records a fresh station may demolish before its tile validation. The rights preflight uses the same gates as the writer:
+	/// an existing origin without an add-on skips the whole tile, and another station's origin and extension cells are spared. Enumerate before changing the park for a read-only plan.
+	/// </summary>
+	internal IEnumerable<(int X, int Y)> InitialStationGiveWayCells( TrackStation station ) => new[] { station.Exit, station.Entry }.SelectMany( GiveWayCells );
+
+	private IEnumerable<(int X, int Y)> GiveWayCells( (int X, int Y) at )
+	{
+		var origin = Tracks.Get( at.X, at.Y );
+		if ( origin.IsOrigin && (origin.Flags & TrackCell.FlagAddOn) == 0 )
+			yield break;
+		foreach ( var (cx, cy) in TrackStation.TileCellsOf( at.X, at.Y ) )
+		{
+			var cell = Tracks.Get( cx, cy );
+			if ( TrackCellTypes.IsStation( cell.Type ) || cell.IsExtension && TrackCellTypes.IsStation( Tracks.Get( Tracks.CellOf( cell.Parent ).X, Tracks.CellOf( cell.Parent ).Y ).Type ) )
+				continue;
+			yield return (cx, cy);
 		}
 	}
 
@@ -260,11 +344,7 @@ public sealed class TrackBuilder
 	{
 		foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
 		{
-			if ( Tracks.Get( cx, cy ).Type != 0 )
-			{
-				Tracks.Clear( cx, cy );
-				Cells.SetType( cx, cy, ParkCellType.Empty );
-			}
+			Cells.ClearTrackRecord( cx, cy );
 		}
 	}
 
@@ -397,28 +477,46 @@ public sealed class TrackBuilder
 	// [BIN:STP-PPC:0x1007A354 bridge pass] neither neighbour bridged → H; only ahead → H_U; only behind → H_D; both → H_A
 	// [BIN:TPW-EXE:0x00538A92 bridge flag] a kart or water tile (any type but 25) with at most two arms and no corner (0x538AA4–0x538B05) gets flag word +0xE = 1 when its map cell or the (0, +1), (+1, 0), (+1, +1) map cells hold a path or queue (type 1 or 3), the paths staying in the map layer under the track, and its four low bits cleared when all four are type 0 (0x538B0B–0x538BDB); only type 25 tests map types 2, 7 and 30 (0x53890F–0x538A82), which map setup 0x536490 gives to cells outside the park alone (inside, water becomes type 0 at 0x536548)
 	// [APPROX:TRACK-010] the bridge test reads the paths a tile cleared when it was laid (OpenTPW's track replaces path cells in the cell map, the original keeps them in the map layer under the track and re-tests when a path is laid later); the type-25 rule has no case (OpenTPW writes no type 25) and the ahead/behind neighbours follow the flow link (the line's drawing direction, +0xD), a single-arm end or an armless tile taking the positive axis when the link does not run along it ; the final station-aware closed-loop correction below uses traced PC forward traversal, but this context-free fallback and retained-underlay limitation remain
-	public void Refresh( int x, int y )
+	public void Refresh( int x, int y ) => RefreshAround( Cells, x, y );
+
+	/// <summary>The same pass for the tile at (x, y) of <paramref name="cells"/> and its four neighbours, for the writers that have no builder (a path or queue cell laid over or cleared from a tile).</summary>
+	internal static void RefreshAround( ParkCellMap cells, int x, int y )
 	{
+		var tracks = cells.Tracks;
 		var region = new List<(int X, int Y)> { (x, y) };
 		foreach ( var heading in TrackHeading.All )
 			region.Add( (x + TrackStation.TileCells * TrackHeading.Dx( heading ), y + TrackStation.TileCells * TrackHeading.Dy( heading )) );
 		foreach ( var (rx, ry) in region )
 		{
-			if ( IsTile( rx, ry ) )
-				RefreshOne( Tracks, rx, ry );
+			if ( tracks.Get( rx, ry ).IsOrigin )
+				RefreshOne( tracks, cells, rx, ry );
 		}
+	}
+
+	/// <summary>
+	/// Re-tests the bridge of the tile that (x, y) belongs to after a write of the cell's own type (<see cref="ParkCellMap.SetType(int,int,byte)"/>): the test reads the types of the tile's four cells, so a
+	/// path or queue cell laid over the tile, or cleared from it, changes the answer (the original's ops 0x85 and 0x86 run the pass on the cells they write).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00538A92 bridge flag] the pass reads map types 1 and 3 on the tile's four cells; the path and queue ops (0x85, 0x86) re-run it on the tile under the cell they write
+	internal static void RefreshUnder( ParkCellMap cells, int x, int y )
+	{
+		var tile = cells.Tracks.Get( x, y );
+		if ( tile.IsEmpty )
+			return;
+		var origin = tile.IsOrigin ? (X: x, Y: y) : cells.Tracks.CellOf( tile.Parent );
+		RefreshAround( cells, origin.X, origin.Y );
 	}
 
 	/// <summary>
 	/// Runs the bridge pass over every tile of <paramref name="tracks"/> (a restore): a save keeps each tile's flags and piece, and one written
 	/// before the bridge test dropped terrain water would otherwise keep its water bridges until an edit next to them refreshed them.
 	/// </summary>
-	public static void RefreshAll( TrackCellLayer tracks )
+	public static void RefreshAll( TrackCellLayer tracks, ParkCellMap? cells = null )
 	{
 		ArgumentNullException.ThrowIfNull( tracks );
 		// the pass only rewrites the bridge bits and the piece, which no tile's test reads, so the order does not matter
 		foreach ( var (x, y) in tracks.Cells().Where( item => item.Cell.IsOrigin ).Select( item => (item.X, item.Y) ).ToList() )
-			RefreshOne( tracks, x, y );
+			RefreshOne( tracks, cells, x, y );
 	}
 
 	/// <summary>Final route-directed normalization for proven simple closed circuits only.</summary>
@@ -471,12 +569,23 @@ public sealed class TrackBuilder
 		}
 	}
 
-	private static bool IsBridgeBase( TrackCellLayer tracks, int x, int y )
+	private static bool IsBridgeBase( TrackCellLayer tracks, ParkCellMap? cells, int x, int y )
 	{
 		var tile = tracks.Get( x, y );
 		if ( !tile.IsOrigin || TrackCellTypes.IsStation( tile.Type ) || !IsBridgeShape( tile.Mask ) )
 			return false;
-		return (tile.Flags & FlagOverPath) != 0;
+		if ( (tile.Flags & FlagOverPath) != 0 )
+			return true;
+		// the cell's own type: a path or queue laid over the tile later (the raw byte, which only shows the tile's own type otherwise)
+		if ( cells != null )
+		{
+			foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
+			{
+				if ( cells.RawTypeAt( cx, cy ) is (byte)ParkCellType.Path or (byte)ParkCellType.Queue )
+					return true;
+			}
+		}
+		return false;
 	}
 
 	internal static bool IsStraight( byte mask ) => mask is 0x11 or 0x44;
@@ -485,16 +594,16 @@ public sealed class TrackBuilder
 	// [BIN:TPW-EXE:0x00538AA4 bridge shape] the corner test (0x522810 = 2 with perpendicular arms) skips the tile at 0x538AD8 and an arm count above 2 at 0x538B05; every other kart or water tile goes on to the path test
 	internal static bool IsBridgeShape( byte mask ) => TrackHeading.Count( mask ) <= 2 && !(TrackHeading.Count( mask ) == 2 && (mask & 0x11) != 0 && (mask & 0x44) != 0);
 
-	private static void RefreshOne( TrackCellLayer tracks, int x, int y )
+	private static void RefreshOne( TrackCellLayer tracks, ParkCellMap? cells, int x, int y )
 	{
 		var tile = tracks.Get( x, y );
 		var flags = (byte)(tile.Flags & ~TrackCell.BridgeMask);
-		if ( IsBridgeBase( tracks, x, y ) )
+		if ( IsBridgeBase( tracks, cells, x, y ) )
 		{
 			var ahead = AheadOf( tile );
 			var behind = TrackHeading.Opposite( ahead );
-			var aheadBridged = IsBridgeBase( tracks, x + TrackStation.TileCells * TrackHeading.Dx( ahead ), y + TrackStation.TileCells * TrackHeading.Dy( ahead ) );
-			var behindBridged = IsBridgeBase( tracks, x + TrackStation.TileCells * TrackHeading.Dx( behind ), y + TrackStation.TileCells * TrackHeading.Dy( behind ) );
+			var aheadBridged = IsBridgeBase( tracks, cells, x + TrackStation.TileCells * TrackHeading.Dx( ahead ), y + TrackStation.TileCells * TrackHeading.Dy( ahead ) );
+			var behindBridged = IsBridgeBase( tracks, cells, x + TrackStation.TileCells * TrackHeading.Dx( behind ), y + TrackStation.TileCells * TrackHeading.Dy( behind ) );
 			flags |= aheadBridged ? behindBridged ? TrackCell.FlagBridgeAbove : TrackCell.FlagBridgeUp : behindBridged ? TrackCell.FlagBridgeDown : TrackCell.FlagBridge;
 		}
 		tile.Flags = flags;

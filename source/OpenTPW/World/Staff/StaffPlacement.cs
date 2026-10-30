@@ -79,16 +79,29 @@ public sealed class StaffPlacement
 	private readonly Func<int, int, bool> occupied;
 	private readonly Func<ParkCommand, ParkCommandResult> issue;
 	private readonly Func<int, bool> isCarried;
+	private readonly Func<int, (int Staff, int X, int Y)?>? handOf;
+	private readonly Func<int> player;
+	private readonly Func<bool>? guestExit;
 
 	/// <param name="issue">[EXT:online-coop-commands] Hands the tool's writes to the park's command funnel: the hire, the placement, the pick-up and the drop are commands.</param>
 	/// <param name="isCarried">Whether an employee is in a player's hand (<see cref="StaffHands.IsCarried"/>): <see cref="Reconcile"/> leaves those picked up.</param>
-	public StaffPlacement( Func<ParkEconomy?> economy, Func<ParkCellMap?> cells, Func<int, int, bool> occupied, Func<ParkCommand, ParkCommandResult> issue, Func<int, bool> isCarried )
+	/// <param name="handOf">[EXT:online-coop-commands] The employee a player holds (<see cref="StaffHands.Of"/>), which a Carry tool follows (<see cref="FollowPark"/>); null follows no hand.</param>
+	/// <param name="player">[EXT:online-coop-commands] This machine's player (<see cref="ParkCommands.Player"/>), whose hand and pending hire the tool is; seat 0 when null.</param>
+	/// <param name="guestExit">
+	/// [EXT:online-coop-commands] A guest's exit (C4c-2): true when the guest's staff controller took the exit (<see cref="CoopGuestStaff.LetGo"/>), so <see cref="Cancel"/> sends nothing itself;
+	/// null or false where the tool sends its own drop back or cancel.
+	/// </param>
+	public StaffPlacement( Func<ParkEconomy?> economy, Func<ParkCellMap?> cells, Func<int, int, bool> occupied, Func<ParkCommand, ParkCommandResult> issue, Func<int, bool> isCarried,
+		Func<int, (int Staff, int X, int Y)?>? handOf = null, Func<int>? player = null, Func<bool>? guestExit = null )
 	{
 		this.economy = economy;
 		this.cells = cells;
 		this.occupied = occupied;
 		this.issue = issue ?? throw new ArgumentNullException( nameof( issue ) );
 		this.isCarried = isCarried ?? throw new ArgumentNullException( nameof( isCarried ) );
+		this.handOf = handOf;
+		this.player = player ?? (() => ParkCommands.LocalPlayer);
+		this.guestExit = guestExit;
 	}
 
 	public StaffToolKind Kind { get; private set; }
@@ -136,6 +149,10 @@ public sealed class StaffPlacement
 	{
 		if ( economy() is not { IsBankrupt: false } park || park.Staff.Candidates.FirstOrDefault( item => item.Id == candidateId ) is not { } candidate
 			|| !park.Staff.CanHire( candidate.Type ) )
+			return false;
+		// [EXT:online-coop-commands] a candidate another seat places refuses the hire before the running tool ends, as the hire's record would refuse it (C4c), so a refused hire keeps the
+		// employee in hand or the pending hire this tool had
+		if ( park.Staff.ReservedBy( candidate.Id ) is { } seat && seat != player() )
 			return false;
 		Cancel();
 		// [EXT:online-coop-commands] the pending flag is set by the command
@@ -244,6 +261,13 @@ public sealed class StaffPlacement
 	// [BIN:TPW-EXE:0x46c890 tool exit] cancelled → 0x5083b0(1) only clears the pending flag; [BIN:TPW-EXE:0x46cdc0 carry exit] a member still in hand "drops where he was before he was picked up"
 	public void Cancel()
 	{
+		// [EXT:online-coop-commands] a guest's exit is its staff controller's, whoever ends the tool (C4c-2): the tool ends here without a command, also while no tool is on yet and a hire or a
+		// pick-up waits for the host, and the controller cleans the seat's state up after its open request, so no caller sends a second staff request or cancels a newly accepted hire
+		if ( guestExit?.Invoke() == true )
+		{
+			End();
+			return;
+		}
 		// [EXT:online-coop-commands] the drop back and the placement's end are commands
 		if ( Kind == StaffToolKind.Carry && Carried is { } member && economy() is not null && Origin is { } origin )
 			issue( new DropStaffCommand( member.Id, origin.X, origin.Y ) );
@@ -270,6 +294,54 @@ public sealed class StaffPlacement
 		HoverValid = false;
 		SetCursor( null, null );
 		Ended?.Invoke();
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Arms the Place tool for <paramref name="candidate"/>, the pending hire the player's seat holds in the park, without a command (C4c-2): a guest's tool follows the
+	/// hire its request made. A running tool gives way without its exit.
+	/// </summary>
+	internal void ArmPlace( StaffCandidate candidate )
+	{
+		ArgumentNullException.ThrowIfNull( candidate );
+		Arm( StaffToolKind.Place, candidate, null, null );
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Arms the Carry tool for <paramref name="member"/>, in the player's hand in the park since it was picked up at <paramref name="origin"/>, without a command
+	/// (C4c-2): a guest's tool follows the pick-up its request made. A running tool gives way without its exit.
+	/// </summary>
+	internal void ArmCarry( StaffMember member, (int X, int Y) origin )
+	{
+		ArgumentNullException.ThrowIfNull( member );
+		Arm( StaffToolKind.Carry, null, member, origin );
+	}
+
+	private void Arm( StaffToolKind kind, StaffCandidate? candidate, StaffMember? member, (int X, int Y)? origin )
+	{
+		Kind = kind;
+		Candidate = candidate;
+		Carried = member;
+		Origin = origin;
+		HoverCell = null;
+		HoverValid = false;
+		Cursor = null;
+	}
+
+	/// <summary>
+	/// [EXT:online-coop-commands] Ends the tool without a command and without a guest's exit (C4c-2): a guest's tool whose seat's state ended, or whose state is cleaned up instead.
+	/// </summary>
+	internal void Disarm() => End();
+
+	/// <summary>
+	/// [EXT:online-coop-commands] The tool follows the park (C4c): a Carry tool whose player's hand no longer holds its employee (dismissed from its window, released), or a Place tool whose
+	/// player's pending hire is no longer its candidate, ends without a command. The HUD runs it every frame, outside the simulation tick, so a paused park runs it too.
+	/// </summary>
+	public void FollowPark()
+	{
+		if ( Kind == StaffToolKind.Carry && handOf != null && (handOf( player() ) is not { } hand || hand.Staff != Carried?.Id) )
+			End();
+		else if ( Kind == StaffToolKind.Place && (economy() is not { } park || park.Staff.PendingHireOf( player() ) != Candidate?.Id) )
+			End();
 	}
 
 	/// <summary>

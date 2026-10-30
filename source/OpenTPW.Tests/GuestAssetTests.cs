@@ -32,6 +32,21 @@ public class GuestAssetTests
 	public void Cleanup() => FileSystem = previousFileSystem!;
 
 	[TestMethod]
+	public void TheKidAndHeadFoldersLoadInTheOriginalsOrderUpToTheLimit()
+	{
+		// [BIN:TPW-EXE:0x764030 kid sets loaded first] BI, KI, TA, SU, then by name; the heads are the same eight names, so a guest's draw picks the matching head
+		var kids = GuestSpriteAtlas.LoadKids().Select( kid => kid.Name ).ToArray();
+		var heads = GuestSpriteAtlas.LoadKidHeads().Select( head => head.Name ).ToArray();
+		CollectionAssert.AreEqual( kids, heads, "the two folders ship the same sets" );
+		var all = new[] { "SPR_BI", "SPR_KI", "SPR_TA", "SPR_SU", "SPR_BE", "SPR_CH", "SPR_FR", "SPR_SA" };
+		foreach ( var limit in new[] { 2, 4, 6, 8 } )
+		{
+			CollectionAssert.AreEqual( all.Take( limit ).ToArray(), KidSetLoad.Order( kids, name => name, limit ).ToArray(), $"kids at limit {limit}" );
+			CollectionAssert.AreEqual( all.Take( limit ).ToArray(), KidSetLoad.Order( heads, name => name, limit ).ToArray(), $"heads at limit {limit}" );
+		}
+	}
+
+	[TestMethod]
 	public void KidSpriteSetsDecodeWithTheirAnimationTables()
 	{
 		var kids = GuestSpriteAtlas.LoadKids();

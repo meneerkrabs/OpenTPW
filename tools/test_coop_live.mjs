@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { crc32, deflateSync } from 'node:zlib';
-import { checkEvidence, checkFreshness, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, logTo, parseArguments, redact, STATUS_STALL_SECONDS, throwawayPlayer } from './coop-live.mjs';
+import { checkEvidence, checkFreshness, checkObservedEndurance, ENDURANCE_SAMPLE_SECONDS, FORCED_DESYNC_REASON, logTo, parseArguments, redact, STAFF_NAME, STATUS_STALL_SECONDS,
+	throwawayPlayer } from './coop-live.mjs';
 import { checkPageSides, checkPictures, keyEvent, pagePoint, PageSide, pictureName, pngSize } from './coop-live-page.mjs';
 
 // The live co-op acceptance's driver (tools/coop-live.mjs, docs/COOP.md "The live acceptance") without the games: its options, its throwaway players and their
@@ -120,6 +121,227 @@ test('the recovery run allows a resync, and needs the session back, both links r
 	]);
 });
 
+/** Both games' evidence of a passing management run (C4b-2): the baseline's, with the purchase, the attractions right, the price, the doors and the forced resync. */
+function managementPair() {
+	const pair = passingPair();
+	const { host, guest } = pair;
+	host.guestPurchase = { before: 50000, after: 49880, charged: 120, cells: 6 };
+	guest.ownPurchase = { ...host.guestPurchase };
+	host.attractionsGrant = { seat: 1, record: 15, before: 'Builds', after: 'Building, Attractions', rights: 'Build, Attractions' };
+	const price = { shop: 7, price: 27, record: 17 };
+	const doors = [{ ride: 3, open: false, record: 18 }, { ride: 3, open: true, record: 19 }];
+	guest.management = {
+		price, doors,
+		forced: { frame: 4100, generation: 1, failedJoinsBefore: 0, failedJoinsAfter: 1, entry: 'Unsent', desync: { id: 1, kind: 'Protocol', tick: 4000, reason: FORCED_DESYNC_REASON },
+			price: 38, shop: 7, after: { generation: 2, checks: 3, desyncs: 1, failedJoins: 1 } },
+	};
+	host.management = { price: { ...price }, doors: doors.map(door => ({ ...door })),
+		forced: { desyncs: [{ guest: 2, id: 1, kind: 'Protocol', tick: 4000 }], capturesBefore: 1, capturesAfter: 2, secondPriceRecords: 1 } };
+	guest.streams = 2;
+	// the session's desync ids go on across its streams: the last stream counts the forced one
+	guest.stream.desyncs = 1;
+	guest.stream.failedJoins = 1;
+	guest.phases = ['guest following', 'guest resyncing', 'guest following', 'guest ended'];
+	return pair;
+}
+
+test('a management run whose evidence holds passes every check, its one resync the forced one', () => {
+	const { host, guest } = managementPair();
+	const checks = checkEvidence(host, guest, 'management', 30);
+	assert.equal(checks.length, 17);
+	assert.deepEqual(failing(checks), []);
+});
+
+for (const [what, change, check] of [
+	['a line that charged nothing', ({ host, guest }) => { host.guestPurchase.charged = guest.ownPurchase.charged = 0; },
+		'the guest\'s line was a purchase: each park\'s balance at its record fell by its charge, the same on both'],
+	['a balance that fell by another sum', ({ host }) => { host.guestPurchase.after = 49870; },
+		'the guest\'s line was a purchase: each park\'s balance at its record fell by its charge, the same on both'],
+	['a guest whose balance differs', ({ guest }) => { guest.ownPurchase.before += 5; guest.ownPurchase.after += 5; },
+		'the guest\'s line was a purchase: each park\'s balance at its record fell by its charge, the same on both'],
+	['no attractions right', ({ host }) => { host.attractionsGrant.rights = 'Build'; }, 'the host gave the attractions right through the rights dialog'],
+	['a price at another record', ({ host }) => { host.management.price.record = 16; }, 'the guest\'s typed price applied at its record on both parks'],
+	['a door opened only', ({ guest }) => { guest.management.doors.shift(); }, 'the guest\'s ride door closed and opened again, each at its record on both parks'],
+	['a door at another record on the host', ({ host }) => { host.management.doors[1].record = 20; },
+		'the guest\'s ride door closed and opened again, each at its record on both parks'],
+	['a price sent before the cut', ({ guest }) => { guest.management.forced.entry = 'Open'; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a second desync report', ({ host }) => { host.management.forced.desyncs.push({ guest: 2, id: 2, kind: 'Digest', tick: 4100 }); },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a price applied twice', ({ host }) => { host.management.forced.secondPriceRecords = 2; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['no new capture', ({ host }) => { host.management.forced.capturesAfter = 1; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a second resync', ({ guest }) => { guest.streams = 3; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a desync after the swap', ({ guest }) => { guest.stream.desyncs = 2; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a failed join besides the forced desync\'s own', ({ guest }) => { guest.management.forced.failedJoinsAfter = 2; guest.stream.failedJoins = 2; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a failed join after the swap', ({ guest }) => { guest.stream.failedJoins = 2; },
+		'exactly one resync, the guest\'s forced one: its price waited unsent at the cut and applied once after the swap'],
+	['a lost link', ({ guest }) => { guest.links.resumes = 1; }, 'neither game\'s link was lost'],
+]) {
+	test(`the management run fails ${what}`, () => {
+		const pair = managementPair();
+		change(pair);
+		assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'management', 30)), [check]);
+	});
+}
+
+/**
+ * Both games' evidence of a passing undo run (C5-1): the baseline's, with the guest's two segments and kept line, its four take-backs and the host's one; since C5-2 the guest's pool stroke of
+ * four cells, named by its first batch's record 23, and its take-back.
+ */
+function undoPair() {
+	const pair = passingPair();
+	const { host, guest } = pair;
+	const takeBack = (record, player, step, verdict, accepted, stroke = false) => ({ record, player, step, verdict, accepted, stroke });
+	const mine = [takeBack(16, 1, 15, 'Taken', true), takeBack(17, 1, 14, 'Taken', true), takeBack(20, 1, 18, 'Changed', false), takeBack(22, 1, 18, 'Taken', true)];
+	const strokeBack = takeBack(25, 1, 23, 'Taken', true, true);
+	const applied = [...mine.slice(0, 3), takeBack(21, 0, 19, 'Taken', true), mine[3]].map(({ player, step, verdict }) => ({ player, step, verdict, money: 0, stroke: false }));
+	applied.push({ player: 1, step: 23, verdict: 'Taken', money: 300, stroke: true });
+	guest.undo = {
+		takeBacks: mine,
+		segments: [{ record: 14, cells: [[8, 8], [9, 8], [10, 8]] }, { record: 15, cells: [[10, 8], [11, 8], [12, 8], [13, 8]] }],
+		kept: { record: 18, cells: [[8, 10], [9, 10], [10, 10], [11, 10], [12, 10], [13, 10]] },
+		stroke: { name: 23, cells: [[8, 14], [9, 14], [10, 14], [11, 14]], cost: 75, takeBack: strokeBack },
+		applied,
+	};
+	host.undo = { seat: 1, takeBacks: structuredClone([...mine.slice(0, 3), takeBack(21, 0, 19, 'Taken', true), mine[3], strokeBack]), crossed: [[10, 8], [10, 9], [10, 10], [10, 11], [10, 12]],
+		applied: structuredClone(applied) };
+	return pair;
+}
+
+test('an undo run whose evidence holds passes every check', () => {
+	const { host, guest } = undoPair();
+	const checks = checkEvidence(host, guest, 'undo', 30);
+	assert.equal(checks.length, 19);
+	assert.deepEqual(failing(checks), []);
+});
+
+test('an undo run whose host joined the guest\'s line from beside it, by the park\'s edge, passes every check', () => {
+	const { host, guest } = undoPair();
+	host.undo.crossed = [[11, 10], [12, 10], [13, 10], [14, 10]];
+	assert.deepEqual(failing(checkEvidence(host, guest, 'undo', 30)), []);
+});
+
+const UNDO_ORDER = 'the guest took its two segments back with two Backspaces, the newest first; its kept line\'s take-back was refused as changed while the host\'s line crossed it, and taken after';
+const UNDO_RECORDS = 'each of the guest\'s take-backs applied at its record with the host\'s verdict on both parks';
+const UNDO_HOST = 'the host\'s own Backspace took its line across or into the guest\'s back between the guest\'s refused take-back and its last';
+const UNDO_LOGS = 'both parks applied the same take-backs in the same order';
+const UNDO_MONEY = 'no path take-back changed the money and the stroke\'s refunded each of its cells on either park';
+const UNDO_STROKE = 'the guest\'s pool stroke was taken back whole by its Backspace, named by its first batch, at its record on both parks';
+
+for (const [what, change, check] of [
+	['the older segment taken back first', ({ host, guest }) => { [guest.undo.takeBacks[0].step, guest.undo.takeBacks[1].step] = [14, 15];
+		[host.undo.takeBacks[0].step, host.undo.takeBacks[1].step] = [14, 15]; }, UNDO_ORDER],
+	['the crossed line\'s take-back taken', ({ host, guest }) => { guest.undo.takeBacks[2] = { ...guest.undo.takeBacks[2], verdict: 'Taken', accepted: true };
+		host.undo.takeBacks[2] = { ...host.undo.takeBacks[2], verdict: 'Taken', accepted: true }; }, UNDO_ORDER],
+	['a take-back of another seat\'s', ({ host, guest }) => { guest.undo.takeBacks[3].player = 2; host.undo.takeBacks[4].player = 2; }, [UNDO_ORDER, UNDO_RECORDS]],
+	['a verdict the host decided otherwise', ({ host }) => { host.undo.takeBacks[2].verdict = 'InTheWay'; }, UNDO_RECORDS],
+	['a take-back at another record on the host', ({ host }) => { host.undo.takeBacks[1].record = 30; }, UNDO_RECORDS],
+	['a take-back the host never applied', ({ host }) => { host.undo.takeBacks.splice(1, 1); }, UNDO_RECORDS],
+	['no take-back of the host\'s', ({ host }) => { host.undo.takeBacks.splice(3, 1); }, UNDO_HOST],
+	['the host\'s take-back after the guest\'s last', ({ host }) => { host.undo.takeBacks[3].record = 23; }, UNDO_HOST],
+	['the host\'s line refused', ({ host }) => { host.undo.takeBacks[3].accepted = false; }, UNDO_HOST],
+	['the host\'s line of three cells', ({ host }) => { host.undo.crossed = host.undo.crossed.slice(0, 3); }, UNDO_HOST],
+	['the guest\'s park applied another order', ({ guest }) => { guest.undo.applied = [...guest.undo.applied].reverse(); }, [UNDO_LOGS, UNDO_MONEY]],
+	['the guest\'s park missing one', ({ guest }) => { guest.undo.applied = guest.undo.applied.slice(1); }, [UNDO_LOGS, UNDO_MONEY]],
+	['a path take-back that refunded on both parks', ({ host, guest }) => { host.undo.applied[0].money = 40; guest.undo.applied[0].money = 40; }, UNDO_MONEY],
+	['a refused take-back that charged on one park', ({ guest }) => { guest.undo.applied[2].money = -10; }, [UNDO_LOGS, UNDO_MONEY]],
+	['a take-back whose money is not known', ({ host, guest }) => { delete host.undo.applied[3].money; delete guest.undo.applied[3].money; }, UNDO_MONEY],
+	['the stroke\'s take-back refused', ({ host, guest }) => { for (const item of [guest.undo.stroke.takeBack, host.undo.takeBacks[5]]) Object.assign(item, { verdict: 'InTheWay', accepted: false }); },
+		UNDO_STROKE],
+	['the stroke\'s take-back at another record on the host', ({ host }) => { host.undo.takeBacks[5].record = 26; }, UNDO_STROKE],
+	['the stroke\'s take-back naming another stroke', ({ host, guest }) => { guest.undo.stroke.takeBack.step = 21; host.undo.takeBacks[5].step = 21; }, UNDO_STROKE],
+	['the stroke\'s take-back sent as a path step\'s', ({ host, guest }) => { guest.undo.stroke.takeBack.stroke = false; host.undo.takeBacks[5].stroke = false; }, [UNDO_RECORDS, UNDO_STROKE]],
+	['a stroke refunded on one park only', ({ host }) => { host.undo.applied[5].money = 0; }, [UNDO_LOGS, UNDO_MONEY]],
+	['no stroke', ({ guest }) => { delete guest.undo.stroke; }, [UNDO_STROKE, UNDO_MONEY]],
+]) {
+	test(`an undo run with ${what} fails exactly its check`, () => {
+		const pair = undoPair();
+		change(pair);
+		assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'undo', 30)), Array.isArray(check) ? check : [check]);
+	});
+}
+
+/** Both games' evidence of a passing staff run (C4c-2): the baseline's, with the staff right, the guest's nine staff commands and its three forced resyncs. */
+function staffPair() {
+	const pair = passingPair();
+	const { host, guest } = pair;
+	host.staffGrant = { seat: 1, record: 15, before: 'Builds', after: 'Building, Staff', rights: 'Build, Staff' };
+	const commands = [
+		{ kind: 'BeginStaffHire', staff: 40, record: null },
+		{ kind: 'CancelStaffHire', record: 18 },
+		{ kind: 'BeginStaffHire', staff: 41, record: 19 },
+		{ kind: 'PlaceStaff', staff: 41, cell: [20, 12], record: 20 },
+		{ kind: 'PickUpStaff', staff: 41, record: 21 },
+		{ kind: 'DropStaff', staff: 41, cell: [24, 14], record: null },
+		{ kind: 'RenameStaff', staff: 41, name: STAFF_NAME, record: 24 },
+		{ kind: 'SetTrainingBudget', role: 'Guard', budget: 25, record: 25 },
+		{ kind: 'FireStaff', staff: 41, record: 26 },
+	];
+	const hostRecords = [17, 18, 19, 20, 21, 23, 24, 25, 26];
+	const forced = (id, state, generation, request, armed) => ({ state, generation, request, armed, desync: { id, kind: 'Protocol', reason: FORCED_DESYNC_REASON },
+		after: { generation: generation + 1, checks: 3, desyncs: id, failedJoins: Math.min(id, 2) } });
+	guest.staff = { seat: 1, commands, resyncs: [forced(1, 'hire', 1, 'InSnapshot', false), forced(2, 'hand', 2, null, true), forced(3, 'drop', 3, 'InSnapshot', false)] };
+	host.staff = { seat: 1, commands: commands.map((command, index) => ({ ...command, record: hostRecords[index], accepted: true })), trainingBudget: 25,
+		forced: { desyncs: [1, 2, 3].map(id => ({ guest: 2, id, kind: 'Protocol', tick: 900 + 300 * id })), capturesBefore: 1, capturesAfter: 4 } };
+	// the session's desync ids go on across its streams: the last stream counts the three forced ones, the first two inside the early window after a join
+	guest.streams = 4;
+	guest.stream.desyncs = 3;
+	guest.stream.failedJoins = 2;
+	guest.phases = ['guest following', 'guest resyncing', 'guest following', 'guest resyncing', 'guest following', 'guest resyncing', 'guest following', 'guest ended'];
+	return pair;
+}
+
+test('a staff run whose evidence holds passes every check', () => {
+	const { host, guest } = staffPair();
+	const checks = checkEvidence(host, guest, 'staff', 30);
+	assert.equal(checks.length, 16);
+	assert.deepEqual(failing(checks), []);
+});
+
+const STAFF_ORDER = 'the guest let a hire go, then hired, placed, picked up, dropped elsewhere, renamed, trained and dismissed one employee, in that order';
+const STAFF_RECORDS = 'each of the guest\'s staff commands applied at its record on both parks, accepted, those inside a cut the same but for the record';
+const STAFF_RESYNCS = 'exactly three resyncs, the guest\'s forced ones: a hire let go inside the cut cleaned up, the employee in hand armed again, a drop inside the cut leaving no tool';
+
+for (const [what, change, check] of [
+	['no staff right', ({ host }) => { host.staffGrant.rights = 'Build'; }, 'the host gave the staff right through the rights dialog'],
+	['the right for another seat', ({ host }) => { host.staffGrant.seat = 2; }, 'the host gave the staff right through the rights dialog'],
+	['a step missing', ({ host, guest }) => { guest.staff.commands.splice(4, 1); host.staff.commands.splice(4, 1); }, STAFF_ORDER],
+	['a drop where it was placed', ({ host, guest }) => { guest.staff.commands[5].cell = [20, 12]; host.staff.commands[5].cell = [20, 12]; }, STAFF_ORDER],
+	['the let-go hire\'s applicant placed', ({ host, guest }) => { guest.staff.commands[0].staff = 41; host.staff.commands[0].staff = 41; }, STAFF_ORDER],
+	['another employee dismissed', ({ host, guest }) => { guest.staff.commands[8].staff = 42; host.staff.commands[8].staff = 42; }, STAFF_ORDER],
+	['another name', ({ host, guest }) => { guest.staff.commands[6].name = 'Bob'; host.staff.commands[6].name = 'Bob'; }, STAFF_ORDER],
+	['a placement at another record on the host', ({ host }) => { host.staff.commands[3].record = 30; }, STAFF_RECORDS],
+	['a drop the host refused', ({ host }) => { host.staff.commands[5].accepted = false; }, STAFF_RECORDS],
+	['a dropped cell the host put elsewhere', ({ host }) => { host.staff.commands[5].cell = [25, 14]; }, STAFF_RECORDS],
+	['a command the host never applied', ({ host }) => { host.staff.commands.pop(); }, STAFF_RECORDS],
+	['a record the guest knew for a command inside a cut', ({ guest }) => { guest.staff.commands[0].record = 17; }, STAFF_RECORDS],
+	['no record for a command outside a cut', ({ guest }) => { guest.staff.commands[7].record = null; }, STAFF_RECORDS],
+	['a budget the host applied with another value', ({ host }) => { host.staff.commands[7].budget = 50; }, STAFF_RECORDS],
+	['a fourth resync', ({ guest }) => { guest.streams = 5; }, STAFF_RESYNCS],
+	['two forced resyncs only', ({ guest, host }) => { guest.staff.resyncs.pop(); host.staff.forced.desyncs.pop(); guest.streams = 3; guest.stream.desyncs = 2; }, STAFF_RESYNCS],
+	['the resyncs in another order', ({ guest }) => { guest.staff.resyncs.reverse(); }, STAFF_RESYNCS],
+	['a let-go hire whose tool came back', ({ guest }) => { guest.staff.resyncs[0].armed = true; }, STAFF_RESYNCS],
+	['a let-go hire applied before the cut', ({ guest }) => { guest.staff.resyncs[0].request = 'Applied'; }, STAFF_RESYNCS],
+	['a Carry tool not armed again', ({ guest }) => { guest.staff.resyncs[1].armed = false; }, STAFF_RESYNCS],
+	['a drop whose tool stayed', ({ guest }) => { guest.staff.resyncs[2].armed = true; }, STAFF_RESYNCS],
+	['a resync to no new park', ({ guest }) => { guest.staff.resyncs[1].after.generation = 2; }, STAFF_RESYNCS],
+	['a desync after the swaps', ({ guest }) => { guest.stream.desyncs = 4; }, STAFF_RESYNCS],
+	['a third failed join', ({ guest }) => { guest.stream.failedJoins = 3; }, STAFF_RESYNCS],
+	['another desync on the host', ({ host }) => { host.staff.forced.desyncs.push({ guest: 2, id: 4, kind: 'Digest', tick: 2100 }); }, STAFF_RESYNCS],
+	['a capture missing', ({ host }) => { host.staff.forced.capturesAfter = 3; }, STAFF_RESYNCS],
+]) {
+	test(`the staff run fails ${what}`, () => {
+		const pair = staffPair();
+		change(pair);
+		assert.deepEqual(failing(checkEvidence(pair.host, pair.guest, 'staff', 30)), [check]);
+	});
+}
+
 test('the endurance run needs its whole minutes at the fastest speed, on both sides', () => {
 	const step = ENDURANCE_SAMPLE_SECONDS;
 	const run = (minutes, rate = 240) => {
@@ -215,7 +437,9 @@ test('the driver needs the game, the server and a fresh out directory, and a pag
 	assert.deepEqual([options.scenario, options.host, options.guest, options.timeoutMinutes], ['baseline', 'native', 'native', 30]);
 	assert.equal(parseArguments([...base, '--scenario', 'endurance', '--minutes', '45']).timeoutMinutes, 75);
 	assert.throws(() => parseArguments(base.slice(0, 6)), /--out/);
-	assert.throws(() => parseArguments([...base, '--scenario', 'longer']), /baseline, recovery, endurance/);
+	assert.throws(() => parseArguments([...base, '--scenario', 'longer']), /baseline, recovery, endurance, management, staff/);
+	assert.equal(parseArguments([...base, '--scenario', 'management']).scenario, 'management');
+	assert.equal(parseArguments([...base, '--scenario', 'staff']).scenario, 'staff');
 	assert.throws(() => parseArguments([...base, '--guest', 'page']), /--web/);
 	const page = parseArguments([...base, '--guest', 'page', '--web', 'wwwroot', '--runtime', 'interpreter']);
 	assert.deepEqual([page.host, page.guest, page.web, page.runtime], ['native', 'page', 'wwwroot', 'interpreter']);

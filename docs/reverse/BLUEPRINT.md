@@ -115,7 +115,7 @@ Open points (`BlueprintApproximations`):
   0, 90, 180, 270; `0x52967E`), the other cells blue; a failed whole-placement preflight forces all stamped ghost cells red (the caller correction below), and otherwise the per-cell chooser applies; with the queue option (`0x52FAB0`, default on) the entrance's outside cell gets `m_enter` (3, `0x52989A`)
   and, after the entrance-side bounds check and stamp, the exit's outside cell `m_exit` (4, `0x529B1C`), each turned to the opposite of its rotated symbol direction (`0x4D8C00` after `0x4D8C20`);
   without the queue option the entrance's outside cell gets `m_inout` (7, `0x5299AE`). OpenTPW draws all of these (`BlueprintGhosts.Footprint`) except `m_inout`. The track symbols (`m_direct`,
-  `m_link`, `m_end`, `m_break`, `m_erase`) and the arrow models `garrow.MD2`/`rarrow.MD2` are not drawn yet; the validator's answer for a line cell that already holds the line's type is not read.
+  `m_link`, `m_end`; `m_break` and `m_erase` are drawn over the track edit's pick and cut tiles since October 27, 2026, with the tile raise `0x536CA0`, the walls of `0x5370E0`, the glide of `0x53C3F0`/`0x53DF30` and the red faces' blink) and the arrow models `garrow.MD2`/`rarrow.MD2` are not drawn yet; the validator's answer for a line cell that already holds the line's type is not read.
 
 ## Object preflight refusal correction (October 18, 2026)
 

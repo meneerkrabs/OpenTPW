@@ -170,4 +170,147 @@ public class SkyTests
 		Assert.AreNotEqual( before, after );
 		Assert.AreEqual( 0x40, (int)after.X );
 	}
+
+	// ---- the sky objects (the moons, UI-107) ----
+
+	/// <summary>The view that turns engine axes (Z up) into the original's (Y up): the clip matrix the original's identity camera would have.</summary>
+	private static readonly System.Numerics.Matrix4x4 SwapYZ = new( 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1 );
+
+	private static System.Numerics.Vector2[] NdcOf( SVector3[] corners, System.Numerics.Matrix4x4 clipMatrix ) =>
+		corners.Select( corner => System.Numerics.Vector4.Transform( new System.Numerics.Vector4( corner, 1f ), clipMatrix ) ).Select( clip => new System.Numerics.Vector2( clip.X / clip.W, clip.Y / clip.W ) ).ToArray();
+
+	[TestMethod]
+	public void AMoonQuadIsTheOriginalsClipSpaceSquareTurnedByTheRoll()
+	{
+		// goldens from tp.exe's own 0x5860D0 and 0x591430 run in the oracle on the identity clip matrix with the aspect word 1 (docs/reverse/ORACLE.md): the hallow moon (2, 11, 15), size 5, centre (2, 11), half size 2.5;
+		// the corner offsets from the centre, top left, top right, bottom right, bottom left, for the rolls 0, 0.125, 0.25 and -0.125 turns
+		const float d = 3.5355339f;
+		var golden = new (float Roll, (float X, float Y)[] Offsets)[]
+		{
+			(0f, new[] { (-2.5f, 2.5f), (2.5f, 2.5f), (2.5f, -2.5f), (-2.5f, -2.5f) }),
+			(0.125f, new[] { (0f, d), (d, 0f), (0f, -d), (-d, 0f) }),
+			(0.25f, new[] { (2.5f, 2.5f), (2.5f, -2.5f), (-2.5f, -2.5f), (-2.5f, 2.5f) }),
+			(-0.125f, new[] { (-d, 0f), (0f, d), (d, 0f), (0f, -d) }),
+		};
+		foreach ( var (roll, offsets) in golden )
+		{
+			Assert.IsTrue( Sky.TryMoonQuad( new SVector3( 2f, 11f, 15f ), 5f, SwapYZ, System.Numerics.Matrix4x4.Identity, roll, out var corners ) );
+			var ndc = NdcOf( corners, SwapYZ );
+			for ( var index = 0; index < 4; index++ )
+			{
+				Assert.AreEqual( 2f + offsets[index].X, ndc[index].X, 2e-3f, $"roll {roll} corner {index} x" );
+				Assert.AreEqual( 11f + offsets[index].Y, ndc[index].Y, 2e-3f, $"roll {roll} corner {index} y" );
+			}
+		}
+	}
+
+	[TestMethod]
+	public void AMoonQuadIsASquareOnTheScreenWhoseSizeFallsWithTheDepth()
+	{
+		var projection = OriginalProjection.Create( 16f / 9f );
+		// the camera looks straight at the hallow moon from the origin
+		var direction = Sky.ToEngine( new SVector3( 2f, 11f, 15f ) );
+		var view = System.Numerics.Matrix4x4.CreateLookTo( SVector3.Zero, SVector3.Normalize( direction ), SVector3.UnitZ );
+		Assert.IsTrue( Sky.TryMoonQuad( new SVector3( 2f, 11f, 15f ), 5f, view, projection, 0f, out var corners ) );
+		var ndc = NdcOf( corners, view * projection );
+		var depth = SVector3.Dot( direction, SVector3.Normalize( direction ) );
+		var half = 2.5f / depth;
+		Assert.AreEqual( 0f, (ndc[0].X + ndc[2].X) / 2f, 1e-3f, "a point on the view axis is the screen's centre" );
+		Assert.AreEqual( 0f, (ndc[0].Y + ndc[2].Y) / 2f, 1e-3f );
+		Assert.AreEqual( 2f * half, ndc[0].Y - ndc[3].Y, 2e-3f, "the half height is the half size over the clip depth w" );
+		// the width is the height times height over width: a square in pixels
+		Assert.AreEqual( 2f * half * 9f / 16f, ndc[1].X - ndc[0].X, 2e-3f );
+		// the same direction farther away or behind
+		Assert.IsFalse( Sky.TryMoonQuad( new SVector3( 2f, 11f, 15f ), 5f, System.Numerics.Matrix4x4.CreateLookTo( SVector3.Zero, -SVector3.Normalize( direction ), SVector3.UnitZ ), projection, 0f, out _ ), "behind the camera" );
+	}
+
+	[TestMethod]
+	public void TheMoonKeepsItsPictureAtAnyDepth()
+	{
+		var projection = OriginalProjection.Create( 4f / 3f );
+		var view = System.Numerics.Matrix4x4.CreateLookTo( SVector3.Zero, new SVector3( 0.3f, 1f, 0.2f ), SVector3.UnitZ );
+		var position = new SVector3( 2f, 11f, 15f );
+		Assert.IsTrue( Sky.TryMoonQuad( position, 5f, view, projection, 0f, out var near ) );
+		var scaled = position * 3f;
+		var ndcNear = NdcOf( near, view * projection );
+		// a point three times as far has a third of the clip offset ratio: its quad of the same size is a third as large
+		Assert.IsTrue( Sky.TryMoonQuad( scaled, 5f, view, projection, 0f, out var far ) );
+		var ndcFar = NdcOf( far, view * projection );
+		Assert.AreEqual( (ndcNear[1].X - ndcNear[0].X) / 3f, ndcFar[1].X - ndcFar[0].X, 2e-3f );
+		Assert.AreEqual( (ndcNear[0].X + ndcNear[2].X) / 2f, (ndcFar[0].X + ndcFar[2].X) / 2f, 1e-3f, "the same direction is the same screen position" );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0f, 1f, 0f )]
+	[DataRow( 0.5f, 0.8660254f, -0.083333336f )]
+	[DataRow( -0.5f, 0.8660254f, 0.083333336f )]
+	[DataRow( 0f, 0f, 0f )]
+	public void TheCameraRollIsTheAngleOfItsUpVectorFromTheWorlds( float right, float up, float turns )
+	{
+		Assert.AreEqual( turns, Sky.CameraRoll( right, up ), 1e-5f );
+	}
+
+	[TestMethod]
+	public void TheSpriteRotationReadsTheQuantisedSineTable()
+	{
+		Assert.AreEqual( (1f, 0f), Sky.RollRotation( 0f ) );
+		var (cosine, sine) = Sky.RollRotation( 0.125f );
+		Assert.AreEqual( 0.70710677f, cosine, 1e-6f );
+		Assert.AreEqual( 0.70710677f, sine, 1e-6f );
+		// 256 x roll is truncated: 0.0039 of a turn is one entry, anything below is none
+		Assert.AreEqual( Sky.RollRotation( 0f ), Sky.RollRotation( 0.003f ) );
+		Assert.AreNotEqual( Sky.RollRotation( 0f ), Sky.RollRotation( 0.004f ) );
+		Assert.AreEqual( -0.70710677f, Sky.RollRotation( -0.125f ).Sin, 1e-6f );
+	}
+
+	[TestMethod]
+	public void SkyObjectsComeFromTheLevelsStandardSamWithTheSharedFileAsDefault()
+	{
+		var files = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.Dictionary<string, string>>
+		{
+			["/levels/Standard.sam"] = new() { ["NumSkyObjects.n"] = "0", ["SkyObjects[0].Size"] = "3.0", ["SkyObjects[0].FrontFlag"] = "0" },
+			["/levels/space/Standard.sam"] = new()
+			{
+				["NumSkyObjects.n"] = "3",
+				["SkyObjects[0].X"] = "1.0", ["SkyObjects[0].Y"] = "12.0", ["SkyObjects[0].Z"] = "13.0", ["SkyObjects[0].FrontFlag"] = "1", ["SkyObjects[0].Filename"] = "moon.tga",
+				["SkyObjects[1].X"] = "15.0", ["SkyObjects[1].Y"] = "13.0", ["SkyObjects[1].Z"] = "1.0", ["SkyObjects[1].FrontFlag"] = "1", ["SkyObjects[1].Filename"] = "moon2.tga",
+				["SkyObjects[2].Filename"] = "",
+			},
+		};
+		Func<string, bool> exists = files.ContainsKey;
+		Func<string, string, string?> read = ( path, key ) => files[path].TryGetValue( key, out var value ) ? value : null;
+		var space = Sky.ReadObjects( "space", exists, read );
+		Assert.AreEqual( 2, space.Count, "an object without a file is not added" );
+		Assert.AreEqual( new Sky.SkyObject( new SVector3( 1f, 12f, 13f ), 3f, true, "moon.tga" ), space[0], "the size is the shared file's: a key the level lacks takes it" );
+		Assert.AreEqual( new SVector3( 15f, 13f, 1f ), space[1].Position );
+		Assert.AreEqual( 0f, space[1].Size, "the shared file defines index 0 only" );
+		Assert.AreEqual( 0, Sky.ReadObjects( "jungle", exists, read ).Count, "the shared file holds none" );
+		Assert.AreEqual( 0, Sky.ReadObjects( "jungle", _ => false, read ).Count );
+		// the back objects: a zero FrontFlag
+		files["/levels/hallow/Standard.sam"] = new() { ["NumSkyObjects.n"] = "1", ["SkyObjects[0].Filename"] = "moon.tga", ["SkyObjects[0].X"] = "2.0", ["SkyObjects[0].Y"] = "11.0", ["SkyObjects[0].Z"] = "15.0", ["SkyObjects[0].Size"] = "5.0", ["SkyObjects[0].FrontFlag"] = "0" };
+		Assert.IsFalse( Sky.ReadObjects( "hallow", exists, read )[0].Front );
+		// at most sixteen
+		files["/levels/many/Standard.sam"] = Enumerable.Range( 0, 20 ).SelectMany( index => new[] { ($"SkyObjects[{index}].Filename", "m.tga") } ).Append( ("NumSkyObjects.n", "20") ).ToDictionary( pair => pair.Item1, pair => pair.Item2 );
+		Assert.AreEqual( Sky.MaximumObjects, Sky.ReadObjects( "many", exists, read ).Count );
+	}
+
+	[TestMethod]
+	public void SkyDetailOneIsTheOnlyValueThatDrawsTheSkyObjects()
+	{
+		var detail = new OriginalDetailSettings();
+		Assert.IsFalse( GraphicsPresets.ToRenderQuality( detail with { SkyDetail = 0 }, 16, 1 ).SkyObjects );
+		Assert.IsTrue( GraphicsPresets.ToRenderQuality( detail with { SkyDetail = 1 }, 16, 1 ).SkyObjects );
+		Assert.IsFalse( RenderQuality.Legacy.SkyObjects );
+	}
+
+	[TestMethod]
+	public void TheMoonDepthFollowsTheProjectionsFarPlane()
+	{
+		Assert.AreEqual( 500f, Sky.MoonDepth( System.Numerics.Matrix4x4.CreatePerspectiveFieldOfView( 1f, 1.5f, 0.1f, 1000f ) ), 1f );
+		var near = Sky.MoonDepth( System.Numerics.Matrix4x4.CreatePerspectiveFieldOfView( 1f, 1.5f, 0.1f, 30f ) );
+		Assert.AreEqual( 15f, near, 0.1f, "a far plane under 100 takes half of it, which is inside the range" );
+		var projection = OriginalProjection.Create( 16f / 9f, farPlane: 30f );
+		Assert.IsTrue( Sky.TryMoonQuad( new SVector3( 2f, 11f, 15f ), 5f, System.Numerics.Matrix4x4.CreateLookTo( SVector3.Zero, SVector3.Normalize( Sky.ToEngine( new SVector3( 2f, 11f, 15f ) ) ), SVector3.UnitZ ), projection, 0f, out var corners ) );
+		Assert.IsTrue( corners.All( corner => corner.Length() < 30f ), "inside the far plane" );
+	}
 }

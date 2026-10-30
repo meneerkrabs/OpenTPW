@@ -270,9 +270,10 @@ public partial class CoopStreamTests
 		Assert.IsFalse( host.Level.HasBuildGrant( seat ), "the grant left with its member" );
 		Assert.IsFalse( host.Level.Guests!.Grid.IsWalkable( 8, 20 ), "the newcomer's request was refused" );
 		var records = Records( network );
-		var revoke = records.Single( item => item.Command is SetBuildGrantCommand { Granted: false } );
+		var release = records.Single( item => item.Command is ReleaseSeatCommand { Seat: var released } && released == seat );
+		Assert.IsFalse( records.Any( item => item.Command is SetBuildGrantCommand { Granted: false } ), "the release took the grant back in its one record" );
 		var request = records.Single( item => item.Record.Origin is { Member: var member } && member == newcomer.Id );
-		Assert.IsTrue( revoke.Number < request.Number, "the grant was taken back before the newcomer's request applied" );
+		Assert.IsTrue( release.Number < request.Number, "the seat was released before the newcomer's request applied" );
 		Assert.AreEqual( CoopRecordFlags.None, request.Record.Flags );
 	}
 
@@ -375,8 +376,8 @@ public partial class CoopStreamTests
 			new PoolCellsCommand( true, false, new[] { (8, 8) } ),
 			new LayPoolSlidePiecesCommand( 13, 19, new[] { (15, 19) } ),
 			new PlacePoolBridgeCommand( 10, 15, 1 ),
-			// the undo of a slide piece unless the slide is finished: one with nothing to take back is the park's to refuse, quietly
-			new UndoPoolSlidePieceCommand( 13, 19 ),
+			// [EXT:online-coop-undo] Backspace in a building tool: a take-back the host's journal decides (C5), one with no step of the guest's refused by the journal
+			new TakeBackCommand( false, 1, -1, -1, -1 ),
 			// a ride's claim (C3c-1: the park refuses one of a ride that is no track ride)
 			new ClaimRideCommand( peer.One.Runtime.AttractionId )
 		};
@@ -399,12 +400,15 @@ public partial class CoopStreamTests
 			new SetSessionClockCommand( 5 ),
 			new UndoLineCommand( CellToolMode.Path, -1, 5, 20, new[] { (5, 20) }, Array.Empty<(int, int)>() ),
 			new PlacePrototypeCommand( 1, 2, 3 ),
-			// the pools' single-cell kinds no guest's tool issues, a stroke's undo (C5), a wave machine's settings (C4)
+			// the pools' single-cell kinds no guest's tool issues, a stroke's undo (C5)
 			new PaintPoolCellCommand( 8, 8, false ),
 			new ErasePoolCellCommand( 8, 8 ),
 			new LayPoolSlidePieceCommand( 13, 19, 15, 19 ),
 			new UndoPoolStrokeCommand( false, new[] { (8, 8) }, Array.Empty<(int, int)>() ),
+			// the slide's last piece (C5: a guest's slide Backspace is a take-back of its own piece)
+			new UndoPoolSlidePieceCommand( 13, 19 ),
 			new RemovePoolBridgeCommand( 10, 15 ),
+			// [EXT:online-coop-permissions] a wave machine's settings are the attractions right's, which no build grant gives (C5-2)
 			new SetPoolWavesCommand( peer.Two.Runtime.AttractionId, true, 2, 1 )
 		};
 		foreach ( var command in building.Concat( hostOnly ) )
@@ -495,30 +499,22 @@ public partial class CoopStreamTests
 			new BaseFileSystem( "/" ), null );
 
 	[TestMethod]
-	public void ARideWhoseOwnToolFollowsItsPlacementAndATrackAddOnAreTheHostsToPlaceForNow()
+	public void EveryRideIsAGuestsToPlaceButATrackAddOnGoesOntoItsRide()
 	{
-		// a coaster's track and a kart or water ride's track are tools no guest's request carries yet (C3c-1b, C3c-2); a slide tower's slide is a guest's since C3b-3
+		// C3c-2: a coaster's tool follows a guest's placement through the coaster's claim, as a kart or water ride's track tool does since C3c-1b; a bumper ride lays no track and its queue
+		// tool follows (C3c-1); a slide tower's slide is a guest's since C3b-3
 		int TypeOf( TrackFamily family ) => BumperTemplates.All.First( template => !template.IsBumper && template.Family == family ).Type;
-		var followed = new[]
+		foreach ( var entry in new[]
 		{
 			SyntheticRide( $"Bumper.WhichTrackType {CoasterDefinition.TrackType}\n" ),
 			SyntheticRide( $"Bumper.WhichTrackType 1\nBumper.BumperType {TypeOf( TrackFamily.Kart )}\n" ),
-			SyntheticRide( $"Bumper.WhichTrackType 2\nBumper.BumperType {TypeOf( TrackFamily.Water )}\n" )
-		};
-		foreach ( var entry in followed )
-		{
-			Assert.IsTrue( CoopBuildRights.OwnToolFollows( entry ), entry.Settings.ToString() );
-			Assert.IsFalse( CoopBuildRights.GuestMayPlace( entry ) );
-		}
-		// a bumper ride lays no track: its queue tool follows its placement, which a guest's request carries (C3c-1)
-		var bumper = SyntheticRide( $"Bumper.WhichTrackType 0\nBumper.BumperType {BumperTemplates.All.First( template => template.IsBumper ).Type}\n" );
-		Assert.IsFalse( CoopBuildRights.OwnToolFollows( bumper ) );
-		Assert.IsTrue( CoopBuildRights.GuestMayPlace( bumper ) );
-		Assert.IsFalse( CoopBuildRights.OwnToolFollows( SyntheticRide( "" ) ), "an ordinary ride is placed by its click alone" );
-		Assert.IsTrue( CoopBuildRights.GuestMayPlace( SyntheticRide( $"{PoolSlideTowers.SettingKey} 1\n" ) ), "a slide tower, whose slide mode lays its pieces in batches" );
-		Assert.IsTrue( CoopBuildRights.GuestMayPlace( SyntheticRide( "" ) ) );
-		Assert.IsFalse( CoopBuildRights.OwnToolFollows( SyntheticRide( "Bumper.WhichTrackType 1\nBumper.BumperType 0\n" ) ), "a track type without a controller has no track tool" );
-		// a track add-on goes onto its ride's track by the track tools' rule: a request that names no ride must not place it as an ordinary object
+			SyntheticRide( $"Bumper.WhichTrackType 2\nBumper.BumperType {TypeOf( TrackFamily.Water )}\n" ),
+			SyntheticRide( $"Bumper.WhichTrackType 0\nBumper.BumperType {BumperTemplates.All.First( template => template.IsBumper ).Type}\n" ),
+			SyntheticRide( $"{PoolSlideTowers.SettingKey} 1\n" ),
+			SyntheticRide( "" )
+		} )
+			Assert.IsTrue( CoopBuildRights.GuestMayPlace( entry ), entry.Settings.ToString() );
+		// a track add-on goes onto its ride's track by the add-on rule: a request that names no ride must not place it as an ordinary object
 		var addOn = SyntheticRide( $"AddOn.UpgradesId 1100\nAddOn.UpgradeType {TrackAddOns.TrackUpgradeType}\n" );
 		Assert.IsTrue( TrackAddOns.IsTrackAddOn( addOn ) );
 		Assert.IsFalse( CoopBuildRights.GuestMayPlace( addOn ) );
@@ -536,7 +532,7 @@ public partial class CoopStreamTests
 		Assert.IsTrue( level.Commands.Apply( new SetBuildGrantCommand( 2, true ) ).Accepted );
 		Assert.AreNotEqual( before, CoopDigest.Compute( level ), "a grant is in the session digest" );
 		Assert.AreEqual( world, level.ComputeStateHash(), "and in no world hash" );
-		CollectionAssert.AreEqual( new[] { 2 }, level.CaptureJoinState().BuildGrants!.ToArray() );
+		CollectionAssert.AreEqual( new[] { (2, CoopRights.Build) }, level.CaptureJoinState().SeatRights!.ToArray() );
 		var twin = NewPeer( new CoopTestNetwork( () => clock ).Add( host: true ) );
 		twin.Enter();
 		twin.Level.ApplyJoinState( CoopJoinState.Decode( level.CaptureJoinState().Encode() ) );

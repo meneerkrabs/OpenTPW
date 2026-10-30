@@ -660,7 +660,8 @@ public sealed class ParkObjects
 	/// rotation (unresolved non-square rotations use the catalog shape), and the fixed items in park space.
 	/// Imported objects are opened (the saved open word is not imported, SAVE-006). Each object takes the hoarding state, node states and animation channels of its RideSystem record (<see cref="OriginalObjectRuntime.RestoreSavedScene"/>); what could not be restored is listed in <see cref="SavedSceneGaps"/>.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object is not built: its open word comes from the save in the original (mCanLoad), which this port does not import and opens every imported object instead (SAVE-006)
+	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object is not built: its open word comes from the save in the original (mCanLoad), which this port does not import and opens every imported object instead
+	// [APPROX:SAVE-006] an imported object's saved open word, its sign lines other than the park gate's (0x75B5EC) and its raw links are not taken from the save: the placement and the queue rebuild them (the staff claims, 0x004E01F0, are imported as saved)
 	public int ImportOriginal( OriginalParkImport save ) => ImportOriginalSteps( save ).LastOrDefault().Placed;
 
 	private readonly List<string> savedSceneGaps = new();
@@ -680,7 +681,7 @@ public sealed class ParkObjects
 			var entry = Catalog.Find( record.InfoId );
 			if ( entry == null || entry.IsTool )
 				continue;
-			// [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; the thing records of the six that have an archive carry the fixed-item default position (128, 128) and angle 0 (the five without an archive carry real positions, but nothing to draw), so no transform field is left unread in the save — evidence needed: how the original places a local-coordinate fixed model at its anchor (the no-CD Theme Park Inc exe holds that code; it is not in the REA session)
+			// [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; the thing records of the six that have an archive carry the fixed-item default position (128, 128) and angle 0 (the five without an archive carry real positions, but nothing to draw), so no transform field is left unread in the save — evidence needed: how the original places a local-coordinate fixed model at its anchor (a thing's position bytes are decoded as (cell + fraction / 256) x 10 only by the camera-target setters 0x503490 and 0x5A1100 of the no-CD Theme Park Inc exe, no model placement reads them there)
 			// the object keeps its saved thing id when the save's attraction thing is the one record that matches (the pool holds the saved chain)
 			var thingId = Things != null && save.FindAttraction( record ) is { } thing && Things.IsUsed( thing.Id ) && Things.ModelOf( thing.Id ) == SaveThingModel.Attraction
 				&& objects.All( other => other.ThingId != thing.Id ) ? thing.Id : 0;

@@ -206,6 +206,39 @@ public class ThemeParkIncViewerTests
 	}
 
 	[TestMethod]
+	public void EveryTextureSlotOfTheThreeWorldsDecodesAsFloorArt()
+	{
+		UseTpiData();
+		var decoded = 0;
+		var extensions = new SortedSet<string>( StringComparer.OrdinalIgnoreCase );
+		foreach ( var world in Worlds )
+		{
+			foreach ( var entry in ObjectCatalog.Load( world ).Entries )
+			{
+				var model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
+				foreach ( var slot in model.Textures.Where( slot => slot.FrameNames.Count > 0 ) )
+				{
+					// the floor composite's read of a slot (OriginalObject.PlaceFloorBase): Theme Park Inc slots resolve to .fsh and .tga files, not .wct
+					if ( ObjectAssets.ResolveTexturePath( entry, slot.FrameNames[0] ) is not { } path )
+						continue;
+					extensions.Add( Path.GetExtension( path ) );
+					var art = OriginalObject.DecodeSlotArt( entry, slot.FrameNames[0] );
+					Assert.IsTrue( art is { Width: > 0, Height: > 0 } && art.Value.Rgba.Length == art.Value.Width * art.Value.Height * 4, $"{entry.ArchivePath}: {path}" );
+					decoded++;
+				}
+			}
+		}
+		Assert.IsTrue( decoded > 100, $"{decoded} slots decoded" );
+		CollectionAssert.Contains( extensions.ToList(), ".fsh" );
+		// the science Log Mill's floor base, whose WCT read stopped the science world's load ("WCT dimensions must be positive")
+		var logMill = ObjectCatalog.Load( "science" ).Entries.Single( entry => entry.ArchivePath.EndsWith( "/rides/logmill", StringComparison.OrdinalIgnoreCase ) );
+		StringAssert.EndsWith( ObjectAssets.ResolveTexturePath( logMill, "ns_cnr04.tga" ), ".fsh" );
+		var corner = OriginalObject.DecodeSlotArt( logMill, "ns_cnr04.tga" );
+		Assert.IsNotNull( corner );
+		Assert.IsTrue( corner.Value.Width > 0 && corner.Value.Height > 0 );
+	}
+
+	[TestMethod]
 	public void ScienceViewerImportsTheShippedPrebuiltPark()
 	{
 		UseTpiData();

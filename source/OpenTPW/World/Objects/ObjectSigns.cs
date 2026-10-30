@@ -57,9 +57,9 @@ public sealed class ObjectSignImages
 	internal IEnumerable<Texture> CreatedTextures => new[] { leftTexture, rightTexture }.OfType<Texture>();
 
 	/// <summary>GPU texture of the <c>sign1</c> half (created on first use, shared by every object of the type).</summary>
-	public Texture LeftTexture => leftTexture ??= new Texture( Left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height );
+	public Texture LeftTexture => leftTexture ??= new Texture( Left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ).AsComposedSign();
 	/// <summary>GPU texture of the <c>sign2</c> half.</summary>
-	public Texture RightTexture => rightTexture ??= new Texture( Right, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height );
+	public Texture RightTexture => rightTexture ??= new Texture( Right, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height ).AsComposedSign();
 
 	/// <summary>The texture for a material slot name (<c>sign1</c>/<c>sign2</c>, with or without extension), or null.</summary>
 	public Texture? TextureFor( string textureName ) => ObjectSigns.SlotOf( textureName ) switch { 0 => LeftTexture, 1 => RightTexture, _ => null };

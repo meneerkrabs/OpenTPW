@@ -163,8 +163,8 @@ public sealed class ModelAnimationTrack
 	/// Rotation at a tick; null without keys or before the first key. The final key holds
 	/// (0xa820c pairs key i with min(i + 1, count − 1)). Interpolation is the sign-preserving slerp.
 	/// The original takes a linear blend when global option bit 0x2 is set; the only store to that word
-	/// writes 0 at setup (0xa7eec from 0x54c08), so it uses its table-sine slerp 0xa7fc8, whose sine
-	/// table this does not reproduce.
+	/// writes 0 at setup (0xa7eec from 0x54c08), so it uses its table-sine slerp 0xa7fc8 (PC 0x4742A0), which
+	/// <see cref="ModelRotationBlend"/> reproduces.
 	/// </summary>
 	public Quaternion? SampleRotation( float tick )
 	{
@@ -278,21 +278,12 @@ public sealed class ModelAnimationTrack
 	}
 
 	/// <summary>
-	/// Spherical interpolation without hemisphere flipping: the stored keys keep sign continuity
-	/// (e.g. half-turn keys alternate w = 1 / -1), so flipping would reverse spin direction.
+	/// The sampler's spherical interpolation without hemisphere flipping (the stored keys keep sign continuity, e.g. half-turn keys alternate w = 1 / -1, so flipping would reverse spin direction):
+	/// the original's table-sine blend (<see cref="ModelRotationBlend"/>) with the platform's table and arc cosine.
 	/// </summary>
-	public static Quaternion Slerp( Quaternion from, Quaternion to, float fraction )
-	{
-		var dot = Math.Clamp( Quaternion.Dot( from, to ), -1f, 1f );
-		var angle = MathF.Acos( dot );
-		var sine = MathF.Sin( angle );
-		Quaternion result;
-		if ( sine < 1e-5f )
-			result = Quaternion.Lerp( from, to, fraction );
-		else
-			result = Quaternion.Multiply( from, MathF.Sin( (1 - fraction) * angle ) / sine ) + Quaternion.Multiply( to, MathF.Sin( fraction * angle ) / sine );
-		return Quaternion.Normalize( result );
-	}
+	public static Quaternion Slerp( Quaternion from, Quaternion to, float fraction ) => ModelRotationBlend.Blend( from, to, fraction, ModelRotationBlend.PlatformTable, PlatformAcos );
+
+	private static readonly Func<float, float> PlatformAcos = value => MathF.Acos( value );
 
 	// Key search 0xa3ff0: the last key (scanning forward) whose tick is at most trunc(time), or -1
 	// before the first key. Fraction is 0 at the last key, where every channel here holds.

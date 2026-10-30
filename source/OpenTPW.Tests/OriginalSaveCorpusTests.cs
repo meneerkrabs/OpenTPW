@@ -90,6 +90,10 @@ public class OriginalSaveCorpusTests
 						Assert.IsTrue( park.Cells[x, y].IsPath, $"{name}: initial path ({x}, {y})" );
 
 			var attractions = park.Attractions;
+			// No corpus save holds a kart, water or bumper ride: the TrackRides block is the build-stamp chunk alone and the structure layer holds no track cell, so the track import has no real bytes here (TRACK-032)
+			Assert.IsNull( park.TrackRidesProblem, name );
+			CollectionAssert.AreEqual( new uint[] { 2 }, park.TrackRides!.Chunks.Select( chunk => chunk.Type ).ToArray(), name );
+			Assert.AreEqual( 0, park.TrackCells.Count, name );
 			// The Coasters block reader runs on every save through Import; a listed coaster must parse to a coaster.
 			Assert.IsNotNull( park.CoasterBlock, name );
 			Assert.AreEqual( park.CoasterBlock.Count, (uint)park.CoasterBlock.Coasters.Count, name );

@@ -161,9 +161,13 @@ public class HirePortraitGeometryTests
 				for ( var variant = 0; variant < 2; variant++ )
 				{
 					Time.Now = 10 + (int)role * 2 + variant; rig.Select( role, variant );
-					Assert.AreEqual( rig.Expected( role, variant, 0 ), figure.Frame()!.Value );
-					Time.Now += 0.2f;
-					Assert.AreEqual( rig.Expected( role, variant, 3 ), figure.Frame()!.Value, "the real callback still selects walk slot 1, direction 5 and the role's bank" );
+					Assert.IsNull( figure.Frame(), "a new figure shows nothing before its script's first due pass (0x4758F0, 0x475360)" );
+					Time.Now += 0.07f;
+					Assert.AreEqual( rig.Expected( role, variant, 0 ), figure.Frame()!.Value, "the first due pass shows the script's first FRAME" );
+					Time.Now += 0.07f;
+					Assert.AreEqual( rig.Expected( role, variant, 1 ), figure.Frame()!.Value );
+					Time.Now += 0.07f;
+					Assert.AreEqual( rig.Expected( role, variant, 2 ), figure.Frame()!.Value, "the real callback still selects walk slot 1, direction 5 and the role's bank" );
 					AssertDraw( figure, width, height, a, b, directions == 5 );
 				}
 			Assert.AreEqual( save, ParkSaveFile.Serialize( rig.Economy ), "portrait selection and drawing are observational" );
@@ -191,42 +195,49 @@ public class HirePortraitGeometryTests
 	}
 
 	[TestMethod]
-	public void HostSelectionSortFilterEmployedExtensionAndReopenKeepTheirExistingClockPolicy()
+	public void TheFigureFollowsTheNativeHirePhasesSelectionKeyEmployedExtensionAndClose()
 	{
-		var rig = new Rig(); var hud = rig.Hud; var figure = rig.Figure; var screen = hud.Stack.Top;
+		var rig = new Rig(); var hud = rig.Hud; var figure = rig.Figure;
 		var save = ParkSaveFile.Serialize( rig.Economy ); var random = rig.Economy.World.State;
+		// [BIN:TPW-EXE:0x49ba00 hire figure] a new role or variant byte starts a new figure, which shows nothing before its first due pass; the same pair keeps it
 		rig.Select( StaffType.Handyman, 0 );
-		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 0 ), figure.Frame()!.Value, "existing host frame zero is immediate, not native delayed FRAME parity" );
+		Assert.IsNull( figure.Frame(), "no frame at the selection" );
+		Time.Now = 0.07f;
+		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 0 ), figure.Frame()!.Value );
 		Time.Now = 0.2f; rig.Select( StaffType.Handyman, 0, duplicate: true );
-		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 3 ), figure.Frame()!.Value, "applicant identity is not the phase key" );
+		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 1 ), figure.Frame()!.Value, "applicant identity is not the phase key" );
 		var selected = hud.SelectedCandidateId; hud.SortStaff( true ); hud.SortStaff( true );
 		Assert.AreEqual( selected, hud.SelectedCandidateId );
-		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 3 ), figure.Frame()!.Value );
+		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 1 ), figure.Frame()!.Value );
 		Time.Now = 0.4f; rig.Select( StaffType.Handyman, 1 );
-		Assert.AreEqual( rig.Expected( StaffType.Handyman, 1, 0 ), figure.Frame()!.Value, "variant changes restart the host loop" );
+		Assert.IsNull( figure.Frame(), "a variant change starts a new figure" );
+		Time.Now = 0.5f;
+		Assert.AreEqual( rig.Expected( StaffType.Handyman, 1, 0 ), figure.Frame()!.Value );
 		Time.Now = 0.6f; rig.Select( StaffType.Mechanic, 1 );
-		Assert.AreEqual( rig.Expected( StaffType.Mechanic, 1, 0 ), figure.Frame()!.Value, "role changes restart even with the same variant" );
+		Assert.IsNull( figure.Frame(), "a role change starts a new figure even with the same variant" );
+		Time.Now = 0.7f;
+		Assert.AreEqual( rig.Expected( StaffType.Mechanic, 1, 0 ), figure.Frame()!.Value );
 		Time.Now = 0.8f; rig.Select( StaffType.Handyman, 0 ); figure.Frame();
 		Time.Now = 1f; hud.ShowEmployedStaff( true );
 		hud.SelectStaff( hud.StaffItems.ToList().FindIndex( member => member.Variant == 0 ) );
 		Assert.IsNull( rig.Renderer.EmployeeFrame( hud.SelectedStaff ), "the employed extension does not need a live world publication" );
-		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 3 ), figure.Frame()!.Value, "same role/variant keeps the hire loop across tabs" );
+		Assert.IsNotNull( figure.Frame(), "same role/variant keeps the hire figure across tabs" );
 		AssertDraw( figure, 1920, 1080, 128, 128, true );
-		Time.Now = 1.1f; hud.ShowEmployedStaff( false ); rig.Select( StaffType.Handyman, 0 );
-		Assert.AreEqual( 0.8f, Get<float>( hud, "portraitStart" ) ); figure.Frame();
+		// [BIN:TPW-EXE:0x49b7b4 close] the close ends the figure: the reopened window starts a new one, whatever it selects
+		Time.Now = 1.1f; hud.ShowEmployedStaff( false ); rig.Select( StaffType.Handyman, 0 ); figure.Frame();
 		hud.CloseStaffWindow(); Time.Now = 1.2f; hud.OpenStaffWindow();
-		Assert.AreSame( screen, hud.Stack.Top ); Assert.AreSame( figure, rig.Figure );
-		// Reopen chooses the first sorted applicant; select the same key before observing the callback again.
 		rig.Select( StaffType.Handyman, 0 );
-		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 6 ), figure.Frame()!.Value, "same-key reopen retains existing elapsed time, a qualified native lifecycle difference" );
-		Assert.AreEqual( 0.8f, Get<float>( hud, "portraitStart" ) );
+		Assert.IsNull( figure.Frame(), "a reopened window has a new figure, which shows nothing yet" );
+		Time.Now = 1.3f;
+		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 0 ), figure.Frame()!.Value );
 		Assert.AreEqual( save, ParkSaveFile.Serialize( rig.Economy ) ); Assert.AreEqual( random, rig.Economy.World.State );
 	}
 
 	[TestMethod]
-	public void MissingRendererBankTextureAndInvalidSelectionRetainTheExistingHostFallbackPolicy()
+	public void MissingRendererBankTextureKeepTheHostFallbackAndAnInvalidSelectionKeepsTheFigure()
 	{
 		var rig = new Rig(); var figure = rig.Figure; rig.Select( StaffType.Handyman, 0 ); figure.Frame();
+		Time.Now = 0.07f; Assert.IsNotNull( figure.Frame() );
 		var save = ParkSaveFile.Serialize( rig.Economy ); var random = rig.Economy.World.State;
 		void EmptyDraw()
 		{
@@ -234,13 +245,15 @@ public class HirePortraitGeometryTests
 		}
 		Time.Now = 0.1f; Set( rig.Level, "<StaffRenderer>k__BackingField", null ); EmptyDraw();
 		Set( rig.Level, "<StaffRenderer>k__BackingField", rig.Renderer );
-		Time.Now = 0.2f; Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 3 ), figure.Frame()!.Value );
+		Time.Now = 0.2f; Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 1 ), figure.Frame()!.Value );
 		Set( rig.Renderer, "sprites", StaffSpriteSet.Empty ); EmptyDraw(); Set( rig.Renderer, "sprites", rig.Sprites );
 		var textures = rig.Textures.ToArray(); rig.Textures.Clear(); EmptyDraw(); rig.Textures.AddRange( textures );
-		Time.Now = 0.3f; Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 4 ), figure.Frame()!.Value, "resource absence did not restart the selection key" );
-		Set( rig.Hud, "selectedStaffId", -1 ); EmptyDraw();
-		Time.Now = 0.4f; rig.Select( StaffType.Handyman, 0 );
-		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 0 ), figure.Frame()!.Value, "host invalid selection clears the key, unlike native player retention" );
+		Time.Now = 0.3f; Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 2 ), figure.Frame()!.Value, "resource absence did not restart the selection key" );
+		// [BIN:TPW-EXE:0x49ba00 invalid applicant] an applicant the pool does not return leaves the figure as it is
+		Set( rig.Hud, "selectedStaffId", -1 );
+		Time.Now = 0.4f; Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 3 ), figure.Frame()!.Value, "the figure that stands plays on" );
+		Time.Now = 0.5f; rig.Select( StaffType.Handyman, 0 );
+		Assert.AreEqual( rig.Expected( StaffType.Handyman, 0, 4 ), figure.Frame()!.Value, "the same role and variant keeps it" );
 		Assert.AreEqual( save, ParkSaveFile.Serialize( rig.Economy ) ); Assert.AreEqual( random, rig.Economy.World.State );
 	}
 

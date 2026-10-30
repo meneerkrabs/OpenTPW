@@ -60,6 +60,8 @@ public partial class Level : IDisposable
 	public OriginalTerrain? OriginalTerrain { get; private set; }
 	/// <summary>The build tools' blueprint markers (original levels only).</summary>
 	public BlueprintMarkers? Blueprint { get; private set; }
+	/// <summary>The harbour's waves and flags (<see cref="HarbourDynamics"/>), or null for a park without them (Theme Park Inc, a sandbox, a level without <c>WaterStartPos</c>).</summary>
+	public HarbourDynamics? Harbour { get; private set; }
 	/// <summary>Park management simulation (money, clock, staff, research); original levels only for now.</summary>
 	public ParkEconomyRuntime? Park { get; private set; }
 	private ParkLitterEffects? litterEffects;
@@ -540,6 +542,9 @@ public partial class Level : IDisposable
 			yield return 0.35f;
 			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield, BlueprintHeightOffset );
 			Blueprint.WarmUp();
+			// [BIN:TPW-EXE:0x0053BFE0 dynamic meshes] the park's start creates the BlueprintMesh, the WaterMesh and the FlagsMesh together; Theme Park Inc's own build is not read here
+			if ( GameEditions.Current == GameEdition.ThemeParkWorld && HarbourDynamics.LoadWaterStart( OriginalPark.LevelName ) is { } waterStart )
+				Harbour = new HarbourDynamics( OriginalPark.Heightfield, waterStart, OriginalPark.LevelName );
 			yield return 0.35f;
 			foreach ( var _ in SetupParkNameSteps() )
 				yield return 0.35f;
@@ -606,6 +611,8 @@ public partial class Level : IDisposable
 				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
 				OriginalTerrain.QueueModelSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue ? QueueModels.Choose( cells, x, y ) : null;
 				OriginalTerrain.PathVariantSource = PathVariants.IsSecond;
+				// [BIN:TPW-EXE:0x00450D10 land refresh] the land outside the park is drawn darker
+				OriginalTerrain.LandFlagsSource = ( x, y ) => cells.InBounds( x, y ) ? cells.FlagsAt( x, y ) : ParkCellFlags.None;
 				// [EXT:pools-render] the pool cells are render-only holes of the ground mesh while the extension is on (nothing else reads this)
 				// [BIN:TPW-EXE:0x00535DD0 hole cell types] the ground is not drawn under an object, entrance or exit cell (the cell refresh writes the hole word), so the floor stands on nothing
 				OriginalTerrain.RenderHoleSource = ( x, y ) => ObjectCellHoles.IsHole( cells, x, y ) || PoolRenderHoles.IsHole( cells, x, y, FeatureGates.Pools );
@@ -624,6 +631,12 @@ public partial class Level : IDisposable
 			// [EXT:umbrellas-weather-map] rain without lightning is Theme Park Inc's rain, lightning a storm, snow snow (the flags of the park's weather, not its drops: the umbrella rules ask what the weather is, not how hard it falls)
 			if ( Guests != null )
 				Guests.UmbrellaWeatherState = () => Weather is { } weather ? UmbrellaRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
+			// [BIN:TPI-EXE:0x613ea0 track-cell stand-down] the scheduling and the carrying out of an umbrella change stand down on a kart or water track cell of the map's second layer (UMB-002)
+			if ( Guests != null )
+				Guests.UmbrellaOnTrackCell = ( x, y ) => UmbrellaRules.OnTrackCell( Guests.Grid.Cells.Tracks, x, y );
+			// [BIN:TPI-EXE:0x5BCDDE arrival weather] Theme Park Inc's arrival group reads the weather thing's state word (+0x70), the running spell's kind (ThemeParkIncWeatherSpells); Theme Park World's park weather has no such state
+			if ( Guests != null && GameEditions.IsThemeParkInc )
+				Guests.ArrivalWeatherState = () => Park?.Economy.TpiWeatherState ?? 0;
 			// [EXT:winter-season-terms] the winter shops read the park's calendar month (the economy's clock, which the weather steps on too) and their own weather signal, which reads snow as snow even with lightning (Halloween's snow band is its lightning band)
 			if ( Guests != null )
 				Guests.WinterWeatherState = () => Weather is { } weather ? WinterRules.WeatherStateOf( weather.Rain, weather.Lightning, weather.Snow ) : UmbrellaRules.WeatherNone;
@@ -655,9 +668,11 @@ public partial class Level : IDisposable
 				}
 			}
 			yield return 0.95f;
+			ImportOriginalTracks();
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
 			ImportOriginalScripts();
+			ReconcileOriginalAdmissions();
 			yield return 0.95f;
 			ImportOriginalCoasters();
 			ImportOriginalRetainedRideStates();
@@ -703,6 +718,8 @@ public partial class Level : IDisposable
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
 			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield ) );
 		LandBarrier = ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y );
+		// the demolition keeps the NoModify flag of a MAP initial path cell in front of an entrance (tp.exe's cell byte +0x26 bit 8, 0x527EE0)
+		grid.Cells.InitialPathSource = ( x, y ) => park.Map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath );
 		BuyLandTool = grid.Cells.Land != null && !IsReadOnlyVisit
 			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, LandBarrier, command => Commands.Issue( command ) )
 			: null;
@@ -726,6 +743,14 @@ public partial class Level : IDisposable
 		var headSprites = poolGuestSprites?.Heads ?? GuestSpriteAtlas.LoadKidHeads();
 		if ( poolGuestSprites != null )
 			sprites = poolGuestSprites.Kids;
+		// [BIN:TPW-EXE:0x0041A9D0 kid set limit] the kid and head folders load the sets in the original's order (BI, KI, TA and SU first) up to the preset's limit (2, 4, 6 or 8), and a guest's draw picks among those (KidSetLoad); the pools sets take the same places, as the game's own do
+		if ( !GameEditions.IsThemeParkInc )
+		{
+			var kidLimit = KidSetLoad.LimitOf( IGraphicsSettings.Instance );
+			sprites = KidSetLoad.Order( sprites, atlas => atlas.Name, kidLimit );
+			headSprites = KidSetLoad.Order( headSprites, atlas => atlas.Name, kidLimit );
+			Guests!.KidSetCount = sprites.Count;
+		}
 		yield return true;
 		// [EXT:pools-swim] the swim sets (64 MiB decoded) are decoded on a worker only for a park that has pool water already; any other park starts that when its first pool cell is painted (PreloadSwimSprites)
 		swimSpriteSets = null;
@@ -736,6 +761,8 @@ public partial class Level : IDisposable
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		yield return true;
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );
+		// [BIN:TPW-EXE:0x004FCAC0 head pick] a theme without costume heads (Fantasy, Hallow) reseeds the world generator with the rider and draws once on every head hung on a ride (RideScriptWorld.HeadHung)
+		Objects.ScriptWorld.HeadHangReseeds = !GameEditions.IsThemeParkInc && costumeHeads.Count == 0;
 		NextStepIsLong = true;
 		yield return true;
 		// [EXT:pools-swim] swimmers are drawn by the pools' own renderer with the swim sprites (RefreshPools), whatever they wear
@@ -753,7 +780,7 @@ public partial class Level : IDisposable
 		GuestRenderer.BounceRiders = bounceRiders;
 		if ( CostumeRenderer != null )
 			CostumeRenderer.BounceRiders = bounceRiders;
-		RideHeadRenderer = new RideHeadRenderer( Guests, headSprites, Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume };
+		RideHeadRenderer = new RideHeadRenderer( Guests, headSprites, Objects ) { Draws = costumeHeads.Count == 0 ? null : guest => !guest.InCostume, PickByThingId = costumeHeads.Count == 0 };
 		RideHeadRenderer.AddSource( new TrackHeadSources( () => trackRenderers.Values ) );
 		RideHeadRenderer.AddSource( new TourHeadSources( () => tourRenderer ) );
 		AddCoasterHeads( RideHeadRenderer );
@@ -1305,6 +1332,7 @@ public partial class Level : IDisposable
 		AreaClearTool?.Cancel();
 		PoolTool?.Cancel();
 		AttachStaffWorld();
+		AttachAdvisorProbes();
 		AttachCoasterChallenges();
 		// The gate holds the economy it was built over; the load replaced it.
 		if ( Park != null && Gate != null )

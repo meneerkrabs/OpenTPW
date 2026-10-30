@@ -90,6 +90,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Check fidelity annotation consistency and the progress fragments
+        shell: bash
         run: |
           python tools/fidelity_register.py --check
           python -m unittest discover -s tools -p "test_ci_change_scope.py" -v
@@ -115,6 +116,7 @@ jobs:
           python -m unittest discover -s tools -p "test_tpi_statistics_history_contract.py" -v
           python -m unittest discover -s tools -p "test_tpi_arrival_ring_contract.py" -v
           python -m unittest discover -s tools -p "test_graph_backdrop_contract.py" -v
+          python -m unittest discover -s tools -p "test_no_loop_in_finally.py" -v
           python -I -B tools/ppc-analysis/run_evidence_checks.py
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
@@ -124,7 +126,7 @@ jobs:
       - name: Check patch comparison tool
         run: dotnet run --project tools/patch-analysis/PatchAnalysis.csproj --configuration Release -- --self-test
       - name: Check the browser page helpers, the kept game files, the performance harness and the live co-op driver
-        run: node --test tools/test_web_perf.mjs tools/test_web_determinism.mjs tools/test_web_originals.mjs tools/test_web_startup.mjs tools/test_web_inputs.mjs tools/test_web_pool_sprites.mjs tools/test_web_text.mjs tools/test_coop_live.mjs
+        run: node --test tools/test_web_perf.mjs tools/test_web_determinism.mjs tools/test_web_originals.mjs tools/test_web_cdimage.mjs tools/test_web_startup.mjs tools/test_web_inputs.mjs tools/test_web_pool_sprites.mjs tools/test_web_text.mjs tools/test_coop_live.mjs
   server-image:
     needs: changes
     # Builds the self-hosting image, browser game included, and checks that it serves the page and the API.

@@ -94,6 +94,12 @@ internal sealed record ParkResumeSnapshot
 	/// </summary>
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public double? SnowCover { get; init; }
+	/// <summary>
+	/// The HUD's message tube (the pending tags, at most ten), or null while it holds none: left out of the file then, so a park without messages saves the same bytes as before, and a save from before the
+	/// tube was saved loads with an empty one. tp.exe saves its tag tube with the park (the saver 0x48EE50). Unhashed HUD state, including an optional hidden offer awaiting its ordinary rights-checked decline command. Validated on load.
+	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public MessageTubeSaveData? MessageTube { get; init; }
 	/// <summary>The staff world's actors, or null when the park had no staff world (the actors are the world-side authority).</summary>
 	public StaffWorldSimulation.StaffWorldStateSnapshot? Staff { get; init; }
 	/// <summary>The automatic advisor, or null when the park had none; never captured while a response is being spoken.</summary>

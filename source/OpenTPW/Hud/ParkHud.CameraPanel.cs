@@ -13,7 +13,7 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x751720 no view button] the panel's table holds only the panel and its two buttons; no control of the HUD arm (0x7529dc), the camera panel, the ride, shop, sideshow, visitor or employee windows (0x755150, 0x755908, 0x755e80, 0x7575e0, 0x756f48) changes the zoom or the yaw: the locate jumps (0x4867b0, 0x486860, 0x4868d0, the map click 0x5f1050) call 0x42aab0 with the zoom and yaw arguments null and move only the target, so the original has no view-cycle button and OpenTPW has none either
 	// [APPROX:UI-042] a left click on the camcorder button only arms it (the walk starts on the next click, as with the C key); the postcard window (8:42) is the host composer
 	private static readonly LayoutTable CameraPanelTable = OriginalLayoutTables.CameraPanel;
-	private static readonly string[] CameraPanelIds = { "cameraPanel", "cameraCamcorder", "cameraPostcard" };
+	private static readonly string[] CameraPanelIds = { "cameraPanel", "cameraArmPane", "cameraArmHandle", "cameraCamcorder", "cameraPostcard" };
 
 	/// <summary>The camera panel's advisor help (0x131): posted when the panel opens, withdrawn when it is put away.</summary>
 	// [BIN:TPW-EXE:0x498bb0 camera open] the camera button's press (HUD case 0x27 with the toggle down, 0x4a0840) puts panel 33 into the arm (0x4a2590) and posts help 0x131 through 0x486b00;
@@ -29,8 +29,6 @@ public sealed partial class ParkHud
 
 	private void BuildCameraPanel()
 	{
-		var root = CameraPanelTable.Root.Rect;
-		var panel = new UiRect( root.X - 12, root.Y - 14, root.Width + 24, root.Height + 28 );
 		// [BIN:TPW-EXE:0x4a15c8 arm panel depth] after attaching the panel to the arm (0x65f447) the drawer lowers the panel's depth by 3 (0x65f16b), so it slides out
 		// from under the HUD; OpenTPW adds its elements under the main panel, which also keeps the HUD's buttons on top of a panel that is still sliding
 		var mainPanel = hud.Find( "mainPanel" );
@@ -40,7 +38,11 @@ public sealed partial class ParkHud
 			element.Visible = false;
 			return hud.InsertBefore( mainPanel, element );
 		}
-		Add( new UiModelImage { Id = "cameraPanel", Model = "panel", Frame = () => 1, Bounds = panel } );
+		// the arm's own art (table 0x752940: pan_money 0x21, pane_money 0x22, handle 0x23) lies under the panel; the arm's right edge grows with the slide (ArmDrawer.ArmRight)
+		var (bar, pane, handle) = ArmPieces( (int)CameraPanelTable.Root.Rect.Width, 0 );
+		Add( new UiModelImage { Id = "cameraPanel", Model = "panel", Frame = () => 0, Bounds = bar } );
+		Add( new UiModelImage { Id = "cameraArmPane", Model = ArmPaneModel, Frame = () => 0, Bounds = pane } );
+		Add( new UiModelImage { Id = "cameraArmHandle", Model = ArmHandleModel, Frame = () => 0, Bounds = handle } );
 		var camcorder = CameraPanelTable.Model( "b_1person" );
 		var postcard = CameraPanelTable.Model( "b_postcard" );
 		Add( new UiButton { Id = "cameraCamcorder", Model = camcorder.Model, Help = strings.Help( camcorder.Help ), Clicked = ArmCamcorderFromPanel, Bounds = camcorder.Rect } );
@@ -49,6 +51,22 @@ public sealed partial class ParkHud
 	}
 
 	private UiRect[]? cameraPanelRects;
+
+	private static readonly string ArmPaneModel = OriginalLayoutTables.HudArm.Control( 0x22 ).Model!;
+	private static readonly string ArmHandleModel = OriginalLayoutTables.HudArm.Control( 0x23 ).Model!;
+
+	/// <summary>
+	/// The arm's three pieces after <paramref name="tick"/> ticks of a slide carrying a panel of <paramref name="panelWidth"/>: the bar (0x21) from the arm's left to its right edge, the pane (0x22) starting at that right
+	/// edge and the handle (0x23) 30 units left of it (the resize moves both right-anchored children with the right edge, 0x65c9bd).
+	/// </summary>
+	internal static (UiRect Bar, UiRect Pane, UiRect Handle) ArmPieces( int panelWidth, int tick )
+	{
+		var arm = OriginalLayoutTables.HudArm.Control( 0x21 ).Rect;
+		var pane = OriginalLayoutTables.HudArm.Control( 0x22 ).Rect;
+		var handle = OriginalLayoutTables.HudArm.Control( 0x23 ).Rect;
+		var right = ArmDrawer.ArmRight( panelWidth, tick );
+		return (arm with { Width = right - arm.X }, pane with { X = right }, handle with { X = right + (handle.X - arm.Right) });
+	}
 
 	/// <summary>The camera button: opens the panel, or closes it. The panel takes the slot of the message panel, which closes.</summary>
 	public void ToggleCameraPanel()
@@ -79,32 +97,35 @@ public sealed partial class ParkHud
 		if ( CameraPanelOpen && (IsRiding || level.FreeWalk != null) )
 			CloseCameraPanel();
 		CameraSlide.Update( delta );
-		var offset = CameraPanelOffset( CameraSlide.Step );
-		var rects = cameraPanelRects ?? Array.Empty<UiRect>();
-		for ( var index = 0; index < CameraPanelIds.Length && index < rects.Length; index++ )
+		var (shiftX, shiftY) = CameraPanelShift( CameraSlide.Step );
+		var (bar, pane, handle) = ArmPieces( (int)CameraPanelTable.Root.Rect.Width, CameraSlide.Step );
+		var arm = new[] { bar, pane, handle };
+		for ( var index = 0; index < CameraPanelIds.Length; index++ )
 		{
 			if ( hud.Find( CameraPanelIds[index] ) is not { } element )
 				continue;
-			var rect = rects[index];
-			element.Bounds = rect with { X = rect.X + offset };
+			if ( index < arm.Length )
+			{
+				// the arm is out whenever a slide has begun (its pieces never leave the HUD's rows, but they grow out from under it)
+				element.Bounds = arm[index];
+				element.Visible = CameraSlide.Step > 0 && ArmChildShown( element.Bounds );
+				continue;
+			}
+			var rect = (cameraPanelRects ?? Array.Empty<UiRect>())[index];
+			element.Bounds = rect with { X = rect.X + shiftX, Y = rect.Y + shiftY };
 			element.Visible = CameraSlide.Step > 0 && ArmChildShown( element.Bounds );
 		}
 	}
 
-	/// <summary>The panel's horizontal offset from its table place at slide step <paramref name="step"/>: it starts a panel width and 50 units left of the arm's left edge.</summary>
+	/// <summary>The panel's shift from its table place after <paramref name="step"/> drawer ticks: it starts a panel width and 50 units left of the arm's left edge and moves right by the drawer's integer step per tick, centred vertically on the arm.</summary>
 	// [BIN:TPW-EXE:0x4a165d arm panel start] the drawer places a new panel left of the arm: its left at the arm's left - the panel's width - 50 (0x4a1631); the slide then moves it a
 	// tenth of the travel each step
-	// [APPROX:UI-042] the slide ends at the table rectangle; the original's positions come from the HUD arm window ([0x7cb2b8]) and the arm: the start is the arm's left less the HUD window's width and 50, centred on the arm with its top 50 above the HUD window's top (0x4a1613-0x4a1650, medium confidence), and the end position is not resolved
-	internal static float CameraPanelOffset( int step )
-	{
-		var table = CameraPanelTable.Root.Rect;
-		var start = HudArmLeft - table.Width - 50;
-		var travel = table.X - start;
-		return -travel * (ArmSlide.Steps - step) / ArmSlide.Steps;
-	}
+	// [BIN:TPW-EXE:0x4a1631 panel gap] the 50 is a horizontal gap and the width is the panel's own: left = the arm's left - the panel's width - 50, centred vertically on the arm (0x4a163b-0x4a1647); the arm's tick then moves it right by (the HUD window's right - the arm's left + the panel's width + 100) / 10 each step (0x4a16e5, 0x4a19e7)
+	// [BIN:TPW-EXE:0x4a16f3 panel end] the step is the integer quotient (idiv by the tick count [esi + 0x130] = 10, 0x4a15a7) and the timer adds it ten times (0x4a18ca-0x4a19e2), so the panel ends at its start + 10 * trunc(travel / 10); the runtime rectangles are the table's (the HUD window 0x1D (37,984)-(439,1507) and the arm 0x21 (331,1069)-(1006,1495) of table 0x752940, shortened at 0x4a23e2), so the camera panel (width 319, height 153) stops at left 482, top 1206
+	internal static (int X, int Y) CameraPanelShift( int step ) => ArmDrawer.Shift( CameraPanelTable.Root.Rect, step );
 
 	/// <summary>The left edge of the HUD arm (control 0x21, table 0x7529dc).</summary>
-	private static readonly float HudArmLeft = OriginalLayoutTables.HudArm.Control( 0x21 ).Rect.X;
+	private static readonly float HudArmLeft = ArmDrawer.ArmLeft;
 
 	/// <summary>Whether a panel control is drawn: only once its right edge has passed the arm's left edge, so nothing shows behind the HUD.</summary>
 	// [BIN:TPW-EXE:0x4a1440 arm children] each child of the sliding panel is shown only while its right edge is right of the arm's left edge (0x4a1485)
@@ -149,13 +170,17 @@ public sealed partial class ParkHud
 // hides the panel and plays cat_ui 0xC2 (0x4a1947); the arm control's procedure is set by the HUD builder (0x4a2382)
 internal sealed class ArmSlide
 {
-	public const int Steps = 10;
+	public const int Steps = ArmDrawer.Ticks;
 	public const float StepSeconds = 0.02f;
 	private float clock;
+	private bool finishing;
 
 	/// <summary>0 when the panel is in, <see cref="Steps"/> when it is out.</summary>
 	public int Step { get; private set; }
 	public bool Out { get; private set; }
+
+	/// <summary>Whether the slide has finished: out and still, or in with its ending tick done.</summary>
+	public bool Settled => Step == (Out ? Steps : 0) && !finishing;
 
 	public void Open()
 	{
@@ -163,6 +188,7 @@ internal sealed class ArmSlide
 			return;
 		Out = true;
 		clock = 0;
+		finishing = true;
 		GameAudio.PlayUi( GameAudio.DrawerOpenEvent );
 	}
 
@@ -172,27 +198,36 @@ internal sealed class ArmSlide
 			return;
 		Out = false;
 		clock = 0;
+		finishing = Step > 0;
 		GameAudio.PlayUi( GameAudio.DrawerOpenEvent );
 	}
 
-	/// <summary>Advances the slide by <paramref name="delta"/> seconds; true when a slide in finished in this update.</summary>
+	/// <summary>
+	/// Advances the slide by <paramref name="delta"/> seconds; true when a slide in finished in this update. The ten moves are ticks 1 to 10; the eleventh tick, with the count at zero,
+	/// ends the slide: it stops the timer and, for a slide in, hides the panel and plays cat_ui 0xC2 (0x4a18d8-0x4a1954).
+	/// </summary>
+	// [BIN:TPW-EXE:0x4a18d8 slide end] each timer message with the count above zero decrements it and moves the arm (0x4a19d2-0x4a19f3); the message that finds it zero kills the timer (0x4a18e3), puts the panel away (state 3: 0x4a1911-0x4a1944) and plays 0xC2 (0x4a1947)
 	public bool Update( float delta )
 	{
 		var target = Out ? Steps : 0;
-		if ( Step == target )
+		if ( Step == target && !finishing )
 			return false;
 		clock += Math.Max( 0, delta );
-		while ( clock >= StepSeconds && Step != target )
+		while ( clock >= StepSeconds )
 		{
 			clock -= StepSeconds;
-			Step += Out ? 1 : -1;
+			if ( Step != target )
+			{
+				Step += Out ? 1 : -1;
+				continue;
+			}
+			finishing = false;
+			clock = 0;
+			if ( Out )
+				return false;
+			GameAudio.PlayUi( GameAudio.DrawerCloseEvent );
+			return true;
 		}
-		if ( Step != target )
-			return false;
-		clock = 0;
-		if ( Out )
-			return false;
-		GameAudio.PlayUi( GameAudio.DrawerCloseEvent );
-		return true;
+		return false;
 	}
 }

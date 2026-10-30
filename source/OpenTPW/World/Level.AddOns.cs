@@ -30,6 +30,7 @@ public partial class Level
 	public OriginalObject? BuildAddOnRide => BuildEntry != null ? buildAddOnRide : null;
 	/// <summary>An add-on being removed and the ride it stood on, from <see cref="ParkObjects.ObjectRemoving"/> to <see cref="ParkObjects.ObjectRemoved"/>.</summary>
 	private (OriginalObject AddOn, OriginalObject Ride)? addOnRemoval;
+	/// <summary>The sampler surface of each catalogue entry's model that a probe has met (<see cref="ObjectSurfaceAt"/>; named for the add-ons it first served).</summary>
 	private readonly Dictionary<ObjectCatalogEntry, TrackSurface?> addOnSurfaces = new();
 
 	/// <summary>
@@ -39,7 +40,13 @@ public partial class Level
 	/// </summary>
 	// [BIN:TPW-EXE:0x004AE140 upgrade list] outside game type 2 (Instant Action, DAT_00FB3B7C): every type definition (0x00412E60/E70) whose model loaded (+0x508 = 0), whose +0x284 (AddOn.UpgradesId) is the ride's type and whose object control (0x004D3D10) has the researched byte +0x10 gets a row of its name (0x00412FB0) and the control's price +4, value = the type id; then, when the ride is not in state 2 (0x004E03E0) and its level byte +0x50 is below 2 and level + 1 is at most the control's researched level +0x14, a row of UITEXT 0x1D with level + 2 and the price at type +0x1B8 + 0x40 · (level + 1), value −(level + 1); in state 2 a row of UITEXT 0x1E with level + 2, price 0, value −12999 (0xFFFFCD39); a list without rows shows UITEXT 0x1B in Instant Action, 0x1C at level 2 and 0x1A otherwise, one row of value −7890 per line (0x0067C430 splits the text)
 	// [EXT:upgrade-tier-runtime] the level row is listed only for a tier the ride's catalogue defaults and runtime can install (the next tier's record, Level.CanBuyCatalogueUpgrade), an OpenTPW requirement the original has no counterpart of
-	public RideUpgradeOffer UpgradeOffer( OriginalObject ride )
+	public RideUpgradeOffer UpgradeOffer( OriginalObject ride ) => UpgradeOffer( ride, null );
+
+	/// <summary>
+	/// <see cref="UpgradeOffer(OriginalObject)"/> with <paramref name="record"/> as the ride's economy record (null: the park's): [EXT:online-coop-commands] a guest's list reads the record its
+	/// waiting open-state action is projected onto (C4b-2).
+	/// </summary>
+	internal RideUpgradeOffer UpgradeOffer( OriginalObject ride, ParkObjectState? record )
 	{
 		ArgumentNullException.ThrowIfNull( ride );
 		var rows = new List<RideUpgradeRow>();
@@ -53,14 +60,16 @@ public partial class Level
 				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.AddOn, entry, 0, addOn.PurchaseCost ) );
 		}
 		var level = 0;
-		if ( GetEconomyInstance( ride ) is int instance && economy.TryGetObject( instance, out var state ) && state.Kind == ParkObjectKind.Ride && economy.Catalog.TryGet( state.InfoId, out var info ) )
+		var parkRecord = GetEconomyInstance( ride ) is int instance && economy.TryGetObject( instance, out var found ) ? found : null;
+		if ( (record ?? parkRecord) is { Kind: ParkObjectKind.Ride } state && economy.Catalog.TryGet( state.InfoId, out var info ) )
 		{
 			level = state.Level;
 			if ( ParkEconomy.ObjectState( state ) == RideObjectStates.Upgrading )
 				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.CancelLevel, null, level + 1, 0 ) );
 			// a broken-down ride whose upgrade waits (OpenTPW's state keeps both, the original's one state word either) lists neither row: its level is asked for already
 			else if ( state.PendingLevel <= state.Level && level < 2 && level + 1 < info.Upgrades.Count && info.Upgrades[level + 1].Level == level + 1 && economy.Research.IsAvailable( state.InfoId, level + 1 )
-				&& !ride.IsDeleted && CanBuyCatalogueUpgrade( ride, state ) )
+				// the catalogue's own check binds the park's record; a projected copy keeps its level (C4b-2)
+				&& !ride.IsDeleted && parkRecord != null && CanBuyCatalogueUpgrade( ride, parkRecord ) )
 				rows.Add( new RideUpgradeRow( RideUpgradeRowKind.Level, null, level + 1, info.Upgrades[level + 1].CostOfUpgrade ) );
 		}
 		return rows.Count > 0 ? new RideUpgradeOffer( rows, null ) : new RideUpgradeOffer( rows, level == 2 ? UIStrings.RideFullyUpgraded : UIStrings.NoUpgrades );
@@ -150,7 +159,7 @@ public partial class Level
 	}
 
 	/// <summary>The ride a track add-on stands on: the ride of the track under its first '+' or '#' cell, or null.</summary>
-	private OriginalObject? RideUnder( OriginalObject addOn )
+	internal OriginalObject? RideUnder( OriginalObject addOn )
 	{
 		foreach ( var (x, y, cell) in addOn.Cells )
 			if ( cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash && TrackRideAt( x, y ) is { } ride )
@@ -183,8 +192,9 @@ public partial class Level
 		addOnRemoval = null;
 		if ( removal.Ride.IsDeleted || Guests?.Grid.Cells is not { } cells )
 			return;
-		// the flags come off before the walk reads them, whichever removal handler runs first (the footprint's own handler takes them off again)
-		cells.ClearFootprint( item.Cells.Where( cell => cell.Cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash ) );
+		// the demolition's passes over the add-on's cells come before the walk reads the track, whichever removal handler runs first (the footprint's own handler runs them again on cells that are done):
+		// the flags come off and, unless the add-on is the one a cleared tile takes, the tile under it goes with it (0x527EE0 pass 2, ORACLE.md X37)
+		DemolishFootprintCells( item, cells, null );
 		WalkAfterAddOn( removal.Ride );
 	}
 
@@ -213,16 +223,25 @@ public partial class Level
 		}
 	}
 
-	/// <summary>The add-on on an add-on tile's cell as the vehicles' height probes sample it (<see cref="TrackRenderer.AddOnSurfaceAt"/>).</summary>
-	private (TrackSurface Surface, System.Numerics.Matrix4x4 GridToModel, float BaseHeight)? AddOnSurfaceAt( int x, int y )
+	/// <summary>
+	/// The object standing on a cell as the vehicles' height probes sample it (<see cref="TrackRenderer.ObjectSurfaceAt"/>): the cell's owner object in its own sampler mode, as the original's
+	/// <c>0x452A60</c> hands <c>0x450EA0</c> the owner thing's instance for a cell whose track tile has no piece instance (an add-on's tile, a station tile) or that holds no track; null when no
+	/// object stands there.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00452A60 cell object] the cell's own instance (0x53BF30: +4 of the cell, its origin's for an extension cell), else the owner thing of the cell (0x527E80) when it is a thing of type 3, its instance +0x20; no thing, no object (0x450AC0 answers 0 and the probe keeps its height)
+	private (TrackSurface Surface, System.Numerics.Matrix4x4 GridToModel, float BaseHeight)? ObjectSurfaceAt( int x, int y )
 	{
-		if ( AddOnAt( x, y ) is not { } addOn )
+		if ( Objects.FindAt( x, y ) is not { IsDeleted: false } addOn )
 			return null;
 		if ( !addOnSurfaces.TryGetValue( addOn.Entry, out var surface ) )
 		{
 			try
 			{
-				surface = TrackSurface.FromObject( addOn.Runtime.Model );
+				// [BIN:TPW-EXE:0x00413C10 object loader] a type that is no fixed item (Info.DontApplyOffset 0) is loaded with the ground node search (0x4629D0 flag 1) over the level's terrain grid; the search's node is the instance's +0x2C, which the mode-4 sampler reads
+				var groundNode = -1;
+				if ( !addOn.Entry.IsFixedItem && OriginalPark?.Heightfield is { } field )
+					groundNode = ObjectHoardingGeometry.SelectGroundNode( addOn.Runtime.Model, ObjectMapGrid.ShapeOf( addOn.Entry.Settings ), HoardingTerrain.Of( field ) ).Node;
+				surface = TrackSurface.FromObject( addOn.Runtime.Model, groundNode: groundNode );
 			}
 			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
 			{

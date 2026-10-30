@@ -168,7 +168,7 @@ public sealed partial class ParkHud
 			FeetInCanvas = VisitorInfoRules.PortraitFeet( inner ), CanvasUnitsPerPixel = 3.6f } );
 		screen.Add( new UiModelImage { Id = "statsFrame", Model = stats.Model!, Bounds = stats.Rect, Anchor = UiAnchor.Center } );
 		var title = table.Control( 0x3736 );
-		screen.Add( new UiLabel { Id = "title", Text = () => VisitorInfoTitle, Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
+		screen.Add( new UiLabel { Id = "title", Text = () => VisitorInfoTitle, Font = fonts => fonts.Title, Shadow = true, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
 			Bounds = title.Rect, Anchor = UiAnchor.Center } );
 		// [BIN:TPW-EXE:0x004b6c20 stats labels] the labels take UITEXT 70 (0x372c), 71 (0x3725), 72 (0x3726), 75 (0x3727), 73 (0x3728), 74 (0x3729), 76 (0x372a) and 77 (0x372b); beside them
 		// 0x3724 is a money cell (0x490250), 0x372d a duration cell (0x490e60), 0x372e..0x3731 count cells (0x48fde0), 0x3732 the happiness bar (happygrad.wct, inset 0 and 10) and 0x3733 the status text

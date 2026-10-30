@@ -215,7 +215,7 @@ internal static class SaveTestPayloads
 	/// </summary>
 	public static byte[] Staff( SaveThingModel model, int grade = 2, float happiness = 97, string name = "Nicholas Ricks", uint state = 1, byte percentage = 0,
 		long hired = 125_935_884_000_000_000, ushort roleNext = 0, ushort patrolLow = 1, ushort patrolHigh = 0x4000, ushort restArea = 0, uint idle = 0, uint jobsDone = 0,
-		byte[]? role = null, (ushort X, ushort Y) position = default, (ushort X, ushort Y)? destination = null )
+		byte[]? role = null, (ushort X, ushort Y) position = default, (ushort X, ushort Y)? destination = null, int navMode = 0 )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
@@ -225,6 +225,7 @@ internal static class SaveTestPayloads
 		var (destX, destY) = destination ?? position;
 		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 20 ), destX );
 		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 22 ), destY );
+		BinaryPrimitives.WriteInt32LittleEndian( person.AsSpan( 35 + 48 ), navMode );
 		writer.Write( person );
 		writer.Write( grade );
 		writer.Write( happiness );
@@ -255,6 +256,8 @@ internal static class SaveTestPayloads
 		public (ushort X, ushort Y)? Destination { get; init; }
 		public ushort BaseSpeed { get; init; } = 100;
 		public uint EspSprite { get; init; }
+		/// <summary>mSpriteID (person +0x20), the sprite bank number the person serializer reduces by the loaded count.</summary>
+		public uint SpriteId { get; init; }
 		public uint PreviousSpeed { get; init; } = 0x3F800000;
 		/// <summary>The walk mask nav_mode of the navigation state (navigation +48, walk +0xB4, person +0x188).</summary>
 		public int NavMode { get; init; }
@@ -318,6 +321,8 @@ internal static class SaveTestPayloads
 		BinaryPrimitives.WriteInt32LittleEndian( person.AsSpan( 35 + 48 ), fields.NavMode );
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 ), fields.PreviousSpeed );
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 + 12 ), fields.StrandedTime );
+		// mPurposeSpeed (u16), mSetDestSuccessfully, mSpriteAngle, then mSpriteID
+		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 + 16 + 2 + 8 ), fields.SpriteId );
 		// the thought block (0x50BAD0) closes the person block: head, 32 ring slots, mLastThought, mThoughtScript, mTimeBubbleShown
 		var thought = SaveThingChain.PersonBytes - (4 + 4 * 32 + 12);
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( thought ), fields.ActionHistIndex );

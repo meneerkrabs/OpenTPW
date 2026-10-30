@@ -21,6 +21,8 @@ public sealed class ParticleRenderer : Entity
 	private const int VerticesPerQuad = 6;
 	/// <summary>The width factor of an untextured world particle: the original's clip-space factor DAT_008BCBCC (display height / width, 0x582EB0) is the square of an aspect-correct projection.</summary>
 	private const float UntexturedWidthFactor = 1f;
+	/// <summary>The display height over its width the original's aspect word 0x8BCBCC would hold when the target is empty (4:3).</summary>
+	private const float DefaultDisplayAspect = 0.75f;
 	/// <summary>Cull margin around an emitter's particle bounds, in 1/64 original units (a particle's own size).</summary>
 	private const int CullMargin = 16 * 64;
 
@@ -151,7 +153,7 @@ public sealed class ParticleRenderer : Entity
 			if ( vertexCount + VerticesPerQuad > vertices.Length )
 				break;
 			var first = vertexCount;
-			if ( !(screenSpace ? AddScreenQuad( sprite, batch, screenAspect, ref vertexCount ) : AddQuad( sprite, batch, right, up, ref vertexCount )) )
+			if ( !(screenSpace ? AddScreenQuad( sprite, batch, screenAspect, ref vertexCount ) : AddQuad( sprite, batch, right, up, screenAspect, ref vertexCount )) )
 				continue;
 			DrawnParticles++;
 			AddToRuns( runs, RenderKindOf( sprite ), first, vertexCount - first );
@@ -165,7 +167,8 @@ public sealed class ParticleRenderer : Entity
 		commandList.UpdateBuffer( vertexBuffer, 0, ref vertices[0], (uint)vertexCount * stride );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		var eye = Camera.Position.GetSystemVector3();
-		// [APPROX:PTCL-909] the screen-space quads are drawn inside this world pass, so the HUD and the advisor's image draw over them; the original's pass 0x57C620 sits in the scene view render 0x576a00 after the object lists and the view's callback (+0x78) and before the weather (0x57FF60), and which later view or callback draws the HUD windows and the advisor's model is not read
+		// [BIN:TPW-EXE:0x576A00 scene pass order] the scene render calls the terrain (0x56F670, 0x570D90), the particle pass (0x57C620, 0x576CBD), the model list loop that queues the advisor's model (0x584B10, 0x584BE0), the sprite flush (0x58A660, 0x576D72), the weather (0x57FF60, 0x576DAB) and the frame flush (0x582170, 0x576DBE); the screen-space quads are drawn in the particle pass with the world's, so everything the HUD windows submit and the advisor's model lie over them in the original too (PTCL-909 retired)
+		// [BIN:TPW-EXE:0x48A580 window paint] the frame step 0x4813B0 (0x54E71B, before the scene render) pumps the command queue (0x658E42, 0x48A5BE), posts message 2 to the root window (0x658CCC, 0x48A5D7: the priority queue 0xFAA5F4), sends the tick 0x1E (0x658F6C) and pumps the priority queue to its end (0x658F0B, 0x48A6BC), so the paint runs inside the call: the base handler 0x65C778 paints the children of a visible window (+0x48 bit 0) first, then sends message 3 and calls the window's draw slot (vtable +0); a control's draw queues its text bitmap as a sprite (0x588EF0 builds it, the quads of state 0x7060556, 0x58A26C) and the UI models' nodes the scene's walker (0x576910) lists; nothing is drawn at the paint, the scene pass of the same frame draws them
 		// [BIN:TPW-EXE:0x57C620 draw order] one quad per particle in slot order 0..119, newest particle first, world and screen-space particles in the same loop, so the runs follow that order and the kinds interleave as the particles do
 		// The uniform block is the same for every run of a material in this frame, so it is written once per material, however often the kinds alternate.
 		var uniformsWritten = 0;
@@ -242,14 +245,32 @@ public sealed class ParticleRenderer : Entity
 		return !(outsideLeft || outsideRight || outsideBottom || outsideTop || outsideNear || outsideFar);
 	}
 
-	/// <summary>Half-width and half-height of a quad in engine units: the height is size / 1024 original units for every particle, the width gets a factor (see the call site).</summary>
-	internal static (float HalfWidth, float HalfHeight) HalfExtents( int size, float scale, int frameCount, int frameWidth, int frameHeight )
+	/// <summary>
+	/// Half-width and half-height of a quad in engine units: the height is size / 1024 original units for every particle, the width gets a factor (see <see cref="TexturedWidthFactor"/> and <see cref="UntexturedWidthFactor"/>).
+	/// <paramref name="displayAspect"/> is the display's height over its width (the original's aspect word 0x8BCBCC).
+	/// </summary>
+	internal static (float HalfWidth, float HalfHeight) HalfExtents( int size, float scale, int frameCount, int frameWidth, int frameHeight, float displayAspect = DefaultDisplayAspect )
 	{
 		var halfHeight = size / 1024f * scale;
-		return (halfHeight * (frameCount == 0 || frameHeight <= 0 ? UntexturedWidthFactor : (float)frameWidth / frameHeight), halfHeight);
+		return (halfHeight * (frameCount == 0 || frameHeight <= 0 ? UntexturedWidthFactor : TexturedWidthFactor( frameWidth, frameHeight, displayAspect )), halfHeight);
 	}
 
-	private bool AddQuad( in ParticleSprite sprite, Batch batch, SVector3 right, SVector3 up, ref int vertexCount )
+	/// <summary>
+	/// The width over the height of a textured world quad in world units. The original adds the quad's half extents in clip space, the height as is and the width times the frame record's float +8 (the frame's width over its height) with no
+	/// display factor, and clip x spans the display's width where clip y spans its height, so the quad is the frame's aspect times the display's width over its height on the screen: in OpenTPW's aspect-correct world that is the frame's
+	/// aspect divided by the display aspect word.
+	/// </summary>
+	// [BIN:TPW-EXE:0x588660 frame aspect] the sprite entry's float +8 is the frame's width / height as loaded (the shorts at +0xC and +0xE; 1.0 for a zero height) by the three frame loaders of the sprite set loader 0x587DB0 (0x588510 at 0x5885E7, 0x588660 at 0x5887A1, 0x588820 at 0x58891E and 0x588935), and no later store rescales it: the other stores of a float to +8 in the sprite module belong to other structures (0x585F10 the sky layer, 0x5890E0, 0x589410 and 0x589B50 the billboard vertex writers)
+	// [BIN:TPW-EXE:0x57C71F quad width] half-width = half-height x float +8 for a textured quad (0x57C6B8-0x57C71B) and x [0x8BCBCC] for an untextured one, both added to clip x after the world-to-clip transform 0x578D20 (the full view-projection-screen matrix [0x87B088]): nothing multiplies the textured width by the display's height / width
+	internal static float TexturedWidthFactor( int frameWidth, int frameHeight, float displayAspect ) =>
+		frameHeight <= 0 ? UntexturedWidthFactor : (float)frameWidth / frameHeight / (displayAspect > 0 && float.IsFinite( displayAspect ) ? displayAspect : DefaultDisplayAspect);
+
+	/// <summary>The half-width of a screen-space quad in clip units: the half-height times the frame's width over its height (textured, no display factor) or times the display's height over its width (untextured, the word 0x8BCBCC).</summary>
+	// [BIN:TPW-EXE:0x57C71F screen quad width] flag 0x40000 keeps w = 1 and the position as is, so the half-width is the half-height x float +8 for a textured quad and x [0x8BCBCC] for an untextured one, in clip units that span the width and the height of the display alike
+	internal static float ScreenHalfWidth( float halfHeight, int frameCount, int frameWidth, int frameHeight, float displayAspect ) =>
+		halfHeight * (frameCount == 0 || frameHeight <= 0 ? displayAspect : (float)frameWidth / frameHeight);
+
+	private bool AddQuad( in ParticleSprite sprite, Batch batch, SVector3 right, SVector3 up, float displayAspect, ref int vertexCount )
 	{
 		var frame = sprite.FrameCount == 0 ? atlas.White : atlas.Find( sprite.SpriteCode, sprite.Frame );
 		if ( frame is not { } found )
@@ -257,9 +278,9 @@ public sealed class ParticleRenderer : Entity
 		var centre = originalToEngine( new SVector3( sprite.X, sprite.Y, sprite.Z ) / 64f );
 		// [BIN:TPW-EXE:0x57C6B8 sprite size] half-height = (size << 1) * (1/1024) * 0.5 = size / 1024 original units for every particle; only the width gets a factor
 		// [BIN:TPW-EXE:0x588660 frame aspect] the frame record's float +8 is the frame's width / height (the shorts at +0xC and +0xE), the factor a textured quad's half-width takes; an untextured quad takes DAT_008BCBCC, the display's height / width (0x582EB0)
-		// [EXT:particle-world-scale] OpenTPW places a quad's half-height in world units under its own 55 degree camera (the original's world size is the half-height / cos(fov / 2) under its 90 degree camera, 0x42A990 -> 0x578BE0), and an aspect-correct projection gives an untextured quad its square (DAT_008BCBCC, the display's height / width, 0x582EB0): resolution-independent sizing with no original value to copy
-		// [APPROX:PTCL-904] the original adds the half-extents in clip space after its world-to-clip transform (0x57C6xx: x +- half-width, y +- half-height, w untouched) and a textured quad's width factor is the frame record's float +8 (width / height, 0x588660) with no height / width factor, so it is (width / height) x (display width / height) on the screen unless something rescales +8 after the load (nothing found); OpenTPW uses the frame's pixel aspect
-		var (halfWidth, halfHeight) = HalfExtents( sprite.Size, scale, sprite.FrameCount, found.Width, found.Height );
+		// [EXT:particle-world-scale] OpenTPW places a quad's half-height in world units under the camera's projection (the original's world size is the half-height / cos(fov / 2) under its 90 degree camera, 0x42A990 -> 0x578BE0), and an aspect-correct projection gives an untextured quad its square (DAT_008BCBCC, the display's height / width, 0x582EB0): resolution-independent sizing with no original value to copy
+		// [BIN:TPW-EXE:0x57C71F quad width] the original adds the half-extents in clip space after its world-to-clip transform (x +- half-width, y +- half-height, w untouched): a textured quad's width factor is the frame record's float +8 (width / height, 0x588660) and nothing rescales it, so the quad is (frame width / height) x (display width / height) on the screen; an untextured quad's is the display's height / width, a square
+		var (halfWidth, halfHeight) = HalfExtents( sprite.Size, scale, sprite.FrameCount, found.Width, found.Height, displayAspect );
 		if ( !(halfWidth > 0 && halfHeight > 0) )
 			return false;
 		var angle = sprite.Spin * (MathF.Tau / 65536f);
@@ -280,18 +301,16 @@ public sealed class ParticleRenderer : Entity
 	}
 
 	/// <summary>
-	/// A screen-space particle's quad, its vertices in clip space (drawn without the camera). The width gets the frame's pixel aspect times the
-	/// target's height / width, so a square frame stays square on the screen.
+	/// A screen-space particle's quad, its vertices in clip space (drawn without the camera): the half-width is the half-height times the frame's width over its height (a textured quad) or the target's
+	/// height over its width (an untextured quad, the aspect word 0x8BCBCC), as the original's.
 	/// </summary>
-	// [EXT:particle-world-scale] a screen-space quad's width also takes the target's height / width, which keeps a frame's pixels square at any resolution (resolution independence)
-	// [APPROX:PTCL-904] the original's screen-space half-width is the half-height times the frame's width / height (textured) or times DAT_008BCBCC, height / width (untextured), added in clip space with w = 1 (flag 0x40000), with no target height / width factor on a textured quad
 	private bool AddScreenQuad( in ParticleSprite sprite, Batch batch, float screenAspect, ref int vertexCount )
 	{
 		var frame = sprite.FrameCount == 0 ? atlas.White : atlas.Find( sprite.SpriteCode, sprite.Frame );
 		if ( frame is not { } found )
 			return false;
 		var halfHeight = ParticleScreenSpace.HalfHeight( sprite.Size );
-		var halfWidth = halfHeight * screenAspect * (sprite.FrameCount == 0 || found.Height <= 0 ? UntexturedWidthFactor : (float)found.Width / found.Height);
+		var halfWidth = ScreenHalfWidth( halfHeight, sprite.FrameCount, found.Width, found.Height, screenAspect );
 		if ( !(halfWidth > 0 && halfHeight > 0) )
 			return false;
 		var (a, b, c, d) = ParticleScreenSpace.Corners( ParticleScreenSpace.Position( sprite.X, sprite.Z ), halfWidth, halfHeight, sprite.Spin );

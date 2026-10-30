@@ -125,6 +125,16 @@ public class ShopVisitAssetTests
 		var simulation = new GuestSimulation( GuestPathGrid.FromOriginal( park.Map, park.Save ), GuestSettings.Load( "jungle" ), 7 ) { ArrivalsEnabled = false, Observer = tracker };
 		var grid = simulation.Grid;
 		var cells = grid.Cells;
+		// [BIN:TPW-EXE:0x004F9490 wander over every link] the Easymode save's path cells hold a few links toward empty ground (7 of 188); the wander walks every link, so a guest the shop refuses and sends away can be stranded at such an end
+		// (Confused, held until the cells around it change) and never comes back. This test is about the shop, so the links to bare ground are cut.
+		for ( var y = 0; y < grid.CountY; y++ )
+			for ( var x = 0; x < grid.CountX; x++ )
+				for ( var direction = 0; direction < 4; direction++ )
+				{
+					var (dx, dy) = GuestPathGrid.Directions[direction];
+					if ( cells.RawTypeAt( x, y ) == 1 && (cells.LinksAt( x, y ) & GuestPathGrid.LinkValue( direction )) != 0 && cells.RawTypeAt( x + dx, y + dy ) == 0 )
+						cells.SetLinks( x, y, (byte)(cells.LinksAt( x, y ) & ~GuestPathGrid.LinkValue( direction )) );
+				}
 		var site = Enumerable.Range( 0, grid.CountX * grid.CountY ).Select( index => (X: index % grid.CountX, Y: index / grid.CountX) ).First( anchor =>
 			ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).All( cell => cells.InBounds( cell.X, cell.Y ) && cells.RawTypeAt( cell.X, cell.Y ) == 0 && !grid.IsWalkable( cell.X, cell.Y ) )
 			&& ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, rotation ).All( point => grid.IsWalkable( point.OutsideX, point.OutsideY ) ) );

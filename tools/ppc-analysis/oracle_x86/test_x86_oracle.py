@@ -97,8 +97,8 @@ EXPECTED = {
                                                              'ride': 0, 'wander': False}),
     # X19 (wander destination 0x4f9490, GUEST-010): GuestWander's steps, draws and sub-cell bytes on synthetic cells.
     ('tpw-exe-wander-destination', 'plan'): AGREE,
-    # The rule a step reads is the current cell's own link; with links on either side 164 differ (inputs with one-sided links).
-    ('tpw-exe-wander-destination', 'either-side-links'): (164, ((24, 31), 1062577813)),
+    # The rule a step reads is the current cell's own link; with links on either side 279 differ (inputs with one-sided links).
+    ('tpw-exe-wander-destination', 'either-side-links'): (279, ((23, 35), 537080139)),
     # X20 (littering a cell 0x4d93b0, ECON-020): one item per cell, nothing online, the sprite offset from the cell-id reseed.
     ('tpw-exe-litter-drop', 'plan'): AGREE,
     # X21 (state 9, the walk to a bin 0x4fff20, GUEST-005): the bin's sound on arrival, else litter on the cell; the meter empties.

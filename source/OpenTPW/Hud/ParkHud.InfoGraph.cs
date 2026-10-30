@@ -165,7 +165,7 @@ public sealed partial class ParkHud
 			var top = Math.Max( 2, lastRow - 6 );
 			var width = Math.Max( context.Measure( font, label ).Width, 1f ) / pixel;
 			var right = Math.Max( lastColumn, plot.Left + width );
-			context.DrawText( font, label, new UiRect( rect.X + (right - width - 1) * pixel, rect.Y + top * pixel, (width + 2) * pixel, 12 * pixel ), colour, UiAlign.Right, false, false );
+			context.DrawText( font, label, new UiRect( rect.X + (right - width - 1) * pixel, rect.Y + top * pixel, (width + 2) * pixel, 12 * pixel ), colour, UiAlign.Right, false );
 		}
 	}
 }

@@ -49,7 +49,7 @@ public sealed partial class OriginalObjectRuntime
 	{
 		if ( Tour != null || stopped || scriptWorld.Tours.Controllers.Count >= TourWorld.MaximumControllers )
 			return Tour;
-		Tour = new TourController( CurrentTourStation, scriptWorld.NextWorldDraw, scriptWorld.Tours, small ) { AttractionId = AttractionId };
+		Tour = new TourController( CurrentTourStation, scriptWorld.NextWorldDraw, scriptWorld.Tours, small ) { AttractionId = AttractionId, HeadNodes = TourRenderer.CarHeadNodes( Entry ) };
 		// [EXT:cheats-ride-vehicles] a ride the cheat raised before its script created the controller
 		if ( VehiclesRaised )
 			Tour.RaiseCarSlots();
@@ -64,7 +64,7 @@ public sealed partial class OriginalObjectRuntime
 	{
 		if ( Tour != null )
 			throw new InvalidDataException( $"'{Entry.ArchivePath}': the tour controller exists before the save restored it." );
-		Tour = new TourController( saved, scriptWorld.NextWorldDraw, scriptWorld.Tours );
+		Tour = new TourController( saved, scriptWorld.NextWorldDraw, scriptWorld.Tours ) { HeadNodes = TourRenderer.CarHeadNodes( Entry ) };
 		Tour.Effect += OnTourEffect;
 		ResumeTourEffects();
 	}

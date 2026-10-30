@@ -25,15 +25,24 @@ public partial class CoopSessionTests
 		public Action Update { get; init; } = null!;
 		/// <summary>The HUD's frame with Escape pressed.</summary>
 		public Action Escape { get; init; } = null!;
+		/// <summary>The HUD's frame with the left button pressed (and held), the pointer off the park.</summary>
+		public Action Press { get; init; } = null!;
+		/// <summary>The HUD's frame with the given input.</summary>
+		public Action<UiInput> Input { get; init; } = null!;
+		/// <summary>The HUD's frame after <paramref name="seconds"/> of its own time (its lines age by them), the pointer as in a plain frame.</summary>
+		public Action<float> Pass { get; init; } = null!;
 		/// <summary>How many of the HUD's lines (the last three) say <paramref name="text"/>.</summary>
 		public int Says( OpenTpwText text ) => Hud.Messages.Count( message => message == Strings.Extra( text ) );
 	}
 
-	private View ViewOf( Park park, IBuildCatalog? catalog = null )
+	/// <summary>Where the views' plain frames hold the pointer, in canvas pixels: off the park, unless a test moves it for a drag the HUD follows (C3c-2).</summary>
+	private N.Vector2 hudPointer = new( -1 );
+
+	private View ViewOf( Park park, IBuildCatalog? catalog = null, HudHost? hudHost = null )
 	{
 		park.Enter();
 		var strings = OriginalUiTests.FakeStrings();
-		var hud = new ParkHud( park.Level, strings, new EconomyParkStatus( () => park.Economy ), catalog ?? new NoItems(), new HudHost() );
+		var hud = new ParkHud( park.Level, strings, new EconomyParkStatus( () => park.Economy ), catalog ?? new NoItems(), hudHost ?? new HudHost() );
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 		var context = new UiContext( strings, new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) )
 		{ Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };
@@ -44,12 +53,35 @@ public partial class CoopSessionTests
 			Update = () =>
 			{
 				park.Enter();
-				hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
+				hud.Update( context, UiInput.Idle( hudPointer ), false, false, false );
 			},
 			Escape = () =>
 			{
 				park.Enter();
 				hud.Update( context, UiInput.Key( UiKeys.Back ), false, false, false );
+			},
+			Pass = seconds =>
+			{
+				park.Enter();
+				context.Delta = seconds;
+				try
+				{
+					hud.Update( context, UiInput.Idle( hudPointer ), false, false, false );
+				}
+				finally
+				{
+					context.Delta = 0;
+				}
+			},
+			Press = () =>
+			{
+				park.Enter();
+				hud.Update( context, UiInput.Idle( new N.Vector2( -1 ) ) with { LeftDown = true, LeftPressed = true }, false, false, false );
+			},
+			Input = input =>
+			{
+				park.Enter();
+				hud.Update( context, input, false, false, false );
 			}
 		};
 	}
@@ -115,9 +147,8 @@ public partial class CoopSessionTests
 		Assert.AreEqual( 1, tool.SegmentCount );
 		Assert.IsNull( tool.Ghost );
 		Assert.AreEqual( 0, view.Says( OpenTpwText.CannotBuildHere ) );
-		// the guest's segments are the host's to take back
-		Assert.IsFalse( tool.Undo() );
-		Assert.IsTrue( Walkable( guest, 8, 20 ) );
+		// [EXT:online-coop-undo] the segment keeps its record, which the guest's Backspace names to the host (C5, CoopSessionTests.Undo)
+		Assert.IsNotNull( tool.LastCommit!.Record );
 		// a grant taken back after the host took the request leaves its line
 		Grant( host, guest, view, granted: false );
 		Assert.IsTrue( Walkable( host, 8, 20 ) && Walkable( guest, 8, 20 ) );
@@ -161,7 +192,9 @@ public partial class CoopSessionTests
 		var requests = guest.Session!.GuestCommands!;
 		var burst = Enumerable.Range( 0, 40 ).Select( _ => requests.Submit( new LayLineCommand( CellToolMode.Path, -1, 30, 30, 30, 30 ) { Player = guest.Level.Commands.Player } ) ).ToArray();
 		var line = guest.Level.ClickCellTool( (12, 20) )!.Waiting!.Request;
+		var starts = guest.Level.HostToolStarts;
 		RoundsUntil( () => tool.Waiting == null && burst.All( request => !request.IsOpen ), host, guest, view, "the line came back" );
+		Assert.AreEqual( starts, guest.Level.HostToolStarts, "the tool is as it was: a press held meanwhile keeps its release (C3c-1b)" );
 		Assert.IsTrue( burst.All( request => request.State == CoopGuestRequestState.Applied ), "the burst's requests are records" );
 		Assert.AreEqual( (CoopGuestRequestState.Refused, (CoopGuestRefusal?)CoopGuestRefusal.TooFast), (line.State, line.Refusal) );
 		Assert.IsFalse( Walkable( host, 8, 20 ) || Walkable( guest, 8, 20 ) );
@@ -357,7 +390,7 @@ public partial class CoopSessionTests
 		foreach ( var park in new[] { host, guest } )
 		{
 			park.Enter();
-			ConfigureQueue( park.Level.Guests!.Grid, park.One, 10, 5 );
+			ConfigureQueue( park.Level.Guests!.Grid, park.One, 10, 5, join: false );
 		}
 		var view = ViewOf( guest );
 		Rounds( 20, host, guest );

@@ -199,7 +199,7 @@ extension record, so such a park loads with the extension off.
   and not kept (SAVE-010). The export writes the park's own chunk, `01 01` for a cheated park and `00 00` otherwise (`[EXT:cheats-export]`), whatever the template holds.
 - **Alt+R in an original save** `[BIN:TPW-EXE:0x503FF0]`. The cheat writes the object controls' researched byte `+0x10` for every research item's object and leaves the projects as they
   are. Importing a cheated save (byte 0 nonzero) therefore takes an object marked researched whose project is unfinished as the cheat's (`Research.CheatAvailable`); in a clean save such a
-  flag stays a disagreement (SAVE-007). The research export writes `+0x10` for the objects the cheat made available.
+  flag stays a reported disagreement. The research export writes `+0x10` for the objects the cheat made available.
 - **Port decisions.**
   - `[EXT:cheats-shipped-seed]`: the jungle's shipped `Easymode.TPWI` carries `01 01`. A park started from it (an Instant Action jungle park, the reference path) is **not** marked: in the
     original it would start in cheat mode, but here a player who never cheated keeps an unmarked park whose save and hash are as before.

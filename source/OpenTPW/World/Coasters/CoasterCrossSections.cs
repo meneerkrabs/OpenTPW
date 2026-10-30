@@ -16,8 +16,10 @@ public sealed record CoasterTrackTexture( string FileName, float ScrollRate, boo
 public sealed record CoasterCrossSection( int PointBlock, int EdgeBlock, int TrackEdge, int BlendToPointBlock, float BlendLength );
 
 /// <summary>One cross-section select (<c>asCrossSectionSelects[i]</c>): the section it picks (1-based), the pitch window in degrees it applies to and, for a blend select, its two sections.</summary>
-public sealed record CoasterSectionSelect( int CrossSection, float? PitchMin, float? PitchMax, int BlendFrom, int BlendTo )
+/// <param name="Windows">The eight window singles of the original's table entry, in radians: minimum and maximum of the speed, direction, pitch and bank ranges, -FLT_MAX and FLT_MAX where the sam names none (all zero counts as none). Null for a select built without them.</param>
+public sealed record CoasterSectionSelect( int CrossSection, float? PitchMin, float? PitchMax, int BlendFrom, int BlendTo, IReadOnlyList<float>? Windows = null )
 {
+	/// <summary>Whether the select is a blend select (it names a from and a to section).</summary>
 	public bool IsBlend => BlendFrom != 0 || BlendTo != 0;
 
 	public bool Matches( float pitchDegrees ) => (PitchMin == null || pitchDegrees >= PitchMin) && (PitchMax == null || pitchDegrees <= PitchMax);
@@ -72,7 +74,7 @@ public sealed class CoasterCrossSections
 		var edges = new SortedDictionary<int, SortedDictionary<int, int[]>>();
 		var sections = new SortedDictionary<int, int[]>();
 		var sectionBlend = new Dictionary<int, float>();
-		var selects = new SortedDictionary<int, (int Section, float? Min, float? Max, int From, int To)>();
+		var selects = new SortedDictionary<int, (int Section, float? Min, float? Max, int From, int To, float[]? Ranges)>();
 		var winch = 0;
 		var invalid = 0;
 		var adjust = 0f;
@@ -139,8 +141,14 @@ public sealed class CoasterCrossSections
 				switch ( select.Groups[2].Value.ToLowerInvariant() )
 				{
 					case "uscrosssectionindex": entry.Section = (int)Float( value ); break;
-					case "fpitchrangemin": entry.Min = Float( value ); break;
-					case "fpitchrangemax": entry.Max = Float( value ); break;
+					case "fpitchrangemin": entry.Min = Float( value ); entry.Ranges = Range( entry.Ranges, 4, Float( value ) ); break;
+					case "fpitchrangemax": entry.Max = Float( value ); entry.Ranges = Range( entry.Ranges, 5, Float( value ) ); break;
+					case "fspeedrangemin": entry.Ranges = Range( entry.Ranges, 0, Float( value ) ); break;
+					case "fspeedrangemax": entry.Ranges = Range( entry.Ranges, 1, Float( value ) ); break;
+					case "fdirectionrangemin": entry.Ranges = Range( entry.Ranges, 2, Float( value ) ); break;
+					case "fdirectionrangemax": entry.Ranges = Range( entry.Ranges, 3, Float( value ) ); break;
+					case "fbankrangemin": entry.Ranges = Range( entry.Ranges, 6, Float( value ) ); break;
+					case "fbankrangemax": entry.Ranges = Range( entry.Ranges, 7, Float( value ) ); break;
 					case "usblendfromcrosssectionindex": entry.From = (int)Float( value ); break;
 					case "usblendtocrosssectionindex": entry.To = (int)Float( value ); break;
 				}
@@ -159,9 +167,36 @@ public sealed class CoasterCrossSections
 		result.EdgeBlocks = DenseBlocks( edges, fields => new CoasterSectionEdge( fields[0], fields[1], fields[2] ) );
 		result.Sections = Dense( sections, fields => new CoasterCrossSection( fields[0], fields[1], fields[2], fields[3], 0 ), new CoasterCrossSection( 0, 0, 0, 0, 0 ) )
 			.Select( ( section, index ) => sectionBlend.TryGetValue( index, out var length ) ? section with { BlendLength = length } : section ).ToArray();
-		result.Selects = Dense( selects, entry => new CoasterSectionSelect( entry.Section, entry.Min, entry.Max, entry.From, entry.To ), new CoasterSectionSelect( 0, null, null, 0, 0 ) );
+		result.Selects = Dense( selects, entry => new CoasterSectionSelect( entry.Section, entry.Min, entry.Max, entry.From, entry.To, Windows( entry.Ranges ) ), new CoasterSectionSelect( 0, null, null, 0, 0, Windows( null ) ) );
 		return result;
 	}
+
+	private static float[] Range( float[]? ranges, int slot, float value )
+	{
+		ranges ??= new float[8];
+		ranges[slot] = value;
+		return ranges;
+	}
+
+	/// <summary>The table entry's eight window singles from the sam's degrees: a pair is taken only when its minimum or maximum is not zero, each value times the degree-to-radian single.</summary>
+	// [BIN:TPW-EXE:0x42d130 select windows] every entry starts with -FLT_MAX and FLT_MAX in its four pairs (0x42d1b8..0x42d1d5); a pair of the sam (speed, direction, pitch, bank, eight words from the select's +0x08) replaces them only when its minimum or its maximum is not 0.0 (0x42d20f..0x42d227) and then holds each value times the single 0.017453292 (0x6fde78, 0x42d22d..0x42d245)
+	private static float[] Windows( float[]? ranges )
+	{
+		var windows = new float[8];
+		for ( var pair = 0; pair < 4; pair++ )
+		{
+			windows[2 * pair] = -float.MaxValue;
+			windows[2 * pair + 1] = float.MaxValue;
+			if ( ranges != null && (ranges[2 * pair] != 0 || ranges[2 * pair + 1] != 0) )
+			{
+				windows[2 * pair] = ranges[2 * pair] * DegreesToRadians;
+				windows[2 * pair + 1] = ranges[2 * pair + 1] * DegreesToRadians;
+			}
+		}
+		return windows;
+	}
+
+	private const float DegreesToRadians = 0.017453292f;
 
 	private static float Float( string text ) => float.TryParse( text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value ) && float.IsFinite( value ) ? value : 0;
 
@@ -211,6 +246,45 @@ public sealed class CoasterCrossSections
 				return Math.Clamp( select.CrossSection - 1, 0, Sections.Count - 1 );
 		}
 		return last == null ? 0 : Math.Clamp( last.CrossSection - 1, 0, Sections.Count - 1 );
+	}
+
+	/// <summary>Whether a section blends to a second point row (the type's flag <c>+0x74</c> bit 0): the run builder then looks for transition sections.</summary>
+	// [BIN:TPW-EXE:0x42e19d transition flag] the section loader sets the flag word it hands to 0x42d130 (type +0x74 bit 0) when any section names a blend-to point block (0x42e19d); the block must have as many points as the section's own (0x42e1a7) and the section keeps its pointer at +0x10 and its blend length at +0x14
+	public bool HasTransitions => Sections.Any( section => section.BlendToPointBlock != 0 );
+
+	/// <summary>
+	/// The section the select table gives for a track frame (<c>0x43e9c0</c>): the first of the entries but the last whose four windows hold the angle (the speed window against 0 in the
+	/// mesh builder), the yaw, the pitch and the roll, its section; the last entry's section when none holds or the one found is none. -1 without selects.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43e9c0 select table] the entries of 0x2c bytes (windows at +0x00..+0x1c, section at +0x20, transition from and to at +0x24 and +0x28) are walked up to count − 1, each tested with both ends inclusive (a value below the minimum or above the maximum fails, 0x43e9eb..0x43ea44); the last entry is only the fallback (0x43ea66..0x43ea76), also when the section found is null; the speed window is compared with the fourth argument, which the mesh builder passes as 0.0
+	public int SelectAnswer( float angle, float yaw, float pitch, float roll )
+	{
+		var count = Selects.Count;
+		if ( count == 0 )
+			return -1;
+		var found = -1;
+		for ( var index = 0; index < count - 1; index++ )
+		{
+			var select = Selects[index];
+			if ( select.Windows is not { Count: 8 } windows )
+				continue;
+			if ( !(angle >= windows[0]) || !(angle <= windows[1]) || !(yaw >= windows[2]) || !(yaw <= windows[3]) || !(pitch >= windows[4]) || !(pitch <= windows[5]) || !(roll >= windows[6]) || !(roll <= windows[7]) )
+				continue;
+			found = select.CrossSection - 1;
+			break;
+		}
+		return found >= 0 ? found : Selects[count - 1].CrossSection - 1;
+	}
+
+	/// <summary>The section of the transition entry that goes from section <paramref name="from"/> to <paramref name="to"/> (0-based), -1 when no entry names the pair.</summary>
+	public int SelectTransition( int from, int to )
+	{
+		foreach ( var select in Selects )
+		{
+			if ( select.BlendFrom - 1 == from && select.BlendTo - 1 == to && select.BlendFrom != 0 && select.CrossSection >= 1 )
+				return select.CrossSection - 1;
+		}
+		return -1;
 	}
 
 	/// <summary>The points and edges of a section (empty when its blocks are missing).</summary>

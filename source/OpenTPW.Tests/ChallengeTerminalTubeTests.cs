@@ -376,22 +376,22 @@ public class ChallengeTerminalTubeTests
 	}
 
 	[TestMethod]
-	public void ProgressAndExistingOffersNeverAcquireTerminalTimersOrAutoDecline()
+	public void ProgressRowsNeverAcquireTerminalTimersAndAnOfferKeepsItsOwnNinetySecondTimer()
 	{
 		var clock = new Clock();
 		var park = EconomyTestData.Park(); park.OpenPark(); park.AdvanceDays( 541 );
 		clock.Hud.PostChallengeProgress( 280, "progress" );
 		Assert.IsTrue( clock.Hud.KeepChallengeOfferPosted( park ) );
 		Post( clock, type: 2 );
-		clock.Pump( 100000 );
-		clock.Pump( 100500 );
-		Assert.AreEqual( 2, clock.Hud.PendingMessages.Count );
+		clock.Pump( 30000 );
+		clock.Pump( 30500 );
+		Assert.AreEqual( 2, clock.Hud.PendingMessages.Count, "the terminal row expired, the progress row and the offer (90 s) did not" );
 		Assert.IsNotNull( park.Objectives.Current );
 		Assert.IsFalse( park.Objectives.Current!.Accepted );
 		clock.Hud.OpenPendingMessage( 1 );
 		CollectionAssert.AreEqual( new[] { GameMessageKind.Accept, GameMessageKind.Decline }, clock.Hud.OpenedActions.Select( action => action.Kind ).ToArray() );
 		clock.Hud.CloseMessagePanel();
-		Assert.IsTrue( clock.Hud.KeepChallengeOfferPosted( park ), "the existing repost extension remains intact" );
+		Assert.IsFalse( clock.Hud.KeepChallengeOfferPosted( park ), "the read offer stays in the tube" );
 	}
 
 	[TestMethod]
@@ -423,7 +423,7 @@ public class ChallengeTerminalTubeTests
 		old.Hud.QueueChallengeTerminalTimers();
 		old.Hud.SetChallengeMessageTimersSuspended( true );
 		var loaded = new Clock { Now = 30000 };
-		Assert.AreEqual( 0, loaded.Hud.PendingMessages.Count, "tube state is not persisted (UI-025)" );
+		Assert.AreEqual( 0, loaded.Hud.PendingMessages.Count, "a HUD that is given no saved tube starts empty" );
 		Post( loaded );
 		old.Hud.DispatchChallengeTerminalTimers();
 		old.Pump( 30500 );

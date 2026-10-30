@@ -140,8 +140,8 @@ public class LanguagePackTests
 		Assert.AreEqual( UiAlign.Left, english.Drawn( UiAlign.Left ) );
 		var atlas = HebrewAtlas();
 		var rect = new UiRect( 100, 100, 400, 40 );
-		hebrew.DrawText( atlas, "אבג", rect, RgbaByte.White, UiAlign.Left, shadow: false );
-		english.DrawText( atlas, "אבג", rect, RgbaByte.White, UiAlign.Left, shadow: false );
+		hebrew.DrawText( atlas, "אבג", rect, RgbaByte.White, UiAlign.Left );
+		english.DrawText( atlas, "אבג", rect, RgbaByte.White, UiAlign.Left );
 		Assert.IsTrue( hebrew.Batch.Glyphs.Min( glyph => glyph.X ) > 400, "a left-aligned label is drawn at the right in Hebrew" );
 		Assert.IsTrue( english.Batch.Glyphs.Max( glyph => glyph.X ) < 200 );
 	}

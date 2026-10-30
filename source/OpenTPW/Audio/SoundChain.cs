@@ -21,7 +21,7 @@ public sealed class SoundChain
 	private readonly SoundCategory category;
 	private readonly SoundEvent soundEvent;
 	private readonly AudioChannel channel;
-	private readonly Vector3? position;
+	private Vector3? position;
 	private readonly float range;
 	private readonly List<AudioVoice> children = new();
 	private int soundIndex;
@@ -47,6 +47,16 @@ public sealed class SoundChain
 	public bool IsStopped => stopped;
 	/// <summary>The chain's place (null: flat) and range, for the voice pool (<see cref="SoundEventSystem.Pump"/>).</summary>
 	internal Vector3? Position => position;
+
+	/// <summary>Moves the held chain (0x5512D0): the children it makes from now on, and the ones playing, take the place.</summary>
+	internal void MoveTo( Vector3 place )
+	{
+		if ( stopped )
+			return;
+		position = place;
+		foreach ( var child in children )
+			child.Position = place;
+	}
 	internal SoundEvent Event => soundEvent;
 	internal float Range => range;
 

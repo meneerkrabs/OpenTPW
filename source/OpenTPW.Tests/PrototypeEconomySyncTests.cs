@@ -69,6 +69,8 @@ public class PrototypeEconomySyncTests
 		{
 			Assert.IsFalse( state.IsOpen );
 			Assert.IsTrue( state.ScriptBroken );
+			Assert.AreEqual( RideObjectStates.Idle, ParkEconomy.ObjectState( state ), "the variable alone is not the state word: the ride update has not run" );
+			item.Visitors.StateWord.Set( RideObjectStates.BrokenDown ); // the ride update entered state 1 (0x4e14e0) on the shared word
 			Assert.AreEqual( RideObjectStates.BrokenDown, ParkEconomy.ObjectState( state ) );
 			Assert.AreEqual( 23.5, item.Visitors.WearGauge );
 			Assert.AreEqual( new SideshowTerms( 12, 37, 61 ), item.Visitors.Sideshow );
@@ -110,7 +112,7 @@ public class PrototypeEconomySyncTests
 		Assert.IsFalse( prototypeState.IsBrokenDown, "state 0 until the script reports VAR_BROKEN" );
 		Assert.AreEqual( 0d, prototype.Visitors.WearGauge );
 		prototype.Runtime.SetVariable( nameof( RideVariables.VAR_BROKEN ), 1 );
-		Field( typeof( RideVisitorBridge ), "brokenDown" ).SetValue( prototype.Visitors, true ); // the ride update entered state 1 (0x4e14e0)
+		prototype.Visitors.StateWord.Set( RideObjectStates.BrokenDown ); // the ride update entered state 1 (0x4e14e0) on the word it shares with the economy record
 		Invoke( "SyncObjectEconomy" );
 		Assert.IsTrue( prototypeState.IsBrokenDown, "state 1 breaks the object down and calls a mechanic" );
 		EconomyTestData.HireBest( economy, StaffType.Mechanic );

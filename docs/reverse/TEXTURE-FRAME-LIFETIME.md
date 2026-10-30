@@ -70,21 +70,25 @@ is retained as that documented divergence, not a missing consumer trace.
 Existing invalid-slot/frame and held-history tests cover these host policies;
 this evidence closure adds no runtime behavior or duplicate tests.
 
-## Explicit residual scope
+## The return from the list pass (MD2-900 retired)
 
 0x4726D0 performs a separate aggregate reset once for previous sampled clips.
-Its sole direct caller is 0x44E3A0: on a posing callback, object flag0x800000
-set and0x80000 clear. The non-posing list pass sets0x800000 at0x44E4D9 after
-0x473C70(object,0,8); the callback clears it after restoration. This transition
-is part of RIDES-032, not the host's always-posed route. Channels ID12,
-channel flag0x20, or null previous sampled clip are skipped by the aggregate
-helper (0x472932–0x472974).
+Its sole direct caller is 0x44E3A0: on a posing callback, object flag 0x800000
+set and 0x80000 clear. The non-posing list pass sets 0x800000 at 0x44E4D9
+after 0x473C70(object,0,8); the callback clears it after restoration.
+`ObjectAnimator.ResetToStored` is that reset (the listed and written nodes lose
+node-state bit 0x10 unless bit 31, the texture slots with flag 0x40 return to frame 0
+once for a clip with trailer flag 0x2, the vertex and texture-coordinate caches
+are dropped and the pose is sampled again) and `OriginalObject.PresentDrawn` calls
+it on the first drawn frame after a frame the instance was left out of (RIDES-032).
+Channels ID12 (the hold route's) are skipped as the helper skips them (0x472932).
 
-Geometry header flag4 also gates per-update cleanup at0x473CDB–0x473D0C.
-The ordinary ride loader strips that flag. Neither this additive/header4 mode
-nor view-dependent list-pass routing is newly implemented here. MD2-900 remains
-registered for these residual cases; no universal lifetime equivalence is claimed.
+Geometry header flag 4 also gates per-update cleanup at 0x473CDB-0x473D0C.
+The ordinary ride loader strips that flag (0x461F10) and only the TrackMaster loader
+passes it, so no `ObjectAnimator` clip sees it; the coaster models that keep it
+are played by the coaster rigs (COAST-033, COAST-034).
 
 Synthetic tests cover ordinary/fixed replacement before first key, all-slot
 raw-flag reset and outgoing trailer gates, true held history versus ended-bound
-writers, final hold sample, restore of held history, and delayed-key loop replay.
+writers, final hold sample, restore of held history, delayed-key loop replay and
+the return from the list pass (`RideListPassTests`).

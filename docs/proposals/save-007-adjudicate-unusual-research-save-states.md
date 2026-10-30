@@ -1,41 +1,37 @@
-# Draft proposal: SAVE-007 — Adjudicate unusual research save states
+# Draft proposal: SAVE-007 — Adjudicate unknown research project identities
 
 - Classification: **evidence-only**.
 - Mode: Evidence and compatibility adjudication only.
-- Baseline: provided main `5ccddcab` source snapshot; source inspected locally on 2026-10-18.
-- Status: PLAN ONLY. No runtime implementation, identifier retirement or merge is claimed.
+- Baseline: public main `9ab29cac013d488d6c7422971186b2cddfe59321`; source inspected on 2026-10-27.
+- Status: open, narrowed to unknown object/project identities. The known-but-unoffered current-project case is implemented and is not reopened here.
 
 ## Current residual
-Importer drops unknown projects and current projects no longer offered; known corpus controls/order already agree.
+The original-save importer drops and reports a lab project whose object the level archives do not define, and a current project identity absent from its category's reconstructed table. The 11 pinned corpus labs contain neither case. Their agreement establishes ordinary-corpus coverage, not the compatibility boundary for missing identities.
+
+Known current projects are preserved exactly as saved, even if the picker would not offer them now. `ParkResearch.SelectAsSaved` and `SavedResearchGroupTests.ASavedCurrentProjectThePickerWouldNotOfferIsKeptAsSaved` retain that behavior and its park-save round-trip. The saved highest groups and ordinary corpus controls/order are also preserved.
 
 ## Source audit
-- `source/OpenTPW/Economy/OriginalEconomyImport.cs:749` (APPROX).
-- Current source `source/OpenTPW/Economy/OriginalEconomyImport.cs:750`: `var dropped = new List<string>();`.
+- `source/OpenTPW/Economy/OriginalEconomyImport.cs`: `ImportResearch` collects `unknown` and `refused` identities and reports them through `Research not imported`.
+- `source/OpenTPW/Economy/ParkResearch.cs`: `SelectAsSaved` preserves known unoffered cursors but rejects identities absent from the requested category.
+- `source/OpenTPW.Tests/OriginalSaveImportCorpusTests.cs`: `TheElevenCorpusLabsArePinned` covers the existing 11 ordinary saves, not missing identities.
+- This review used public source only. Repository reverse-engineering annotations are evidence leads, not a newly executed original-game oracle.
 
 ## Missing evidence
-Modified or otherwise valid save with closed-group current project; original continuation behavior and missing-asset semantics.
-- The available original Data corpus contains no executables or additional built-coaster saves.
-- Repository reverse-engineering annotations are leads; they are not a newly executed original-game oracle.
+Original continuation when a saved lab project or current cursor references an object/project identity absent from the available archives or reconstructed category, or an explicit decision that such saves are unsupported. Do not assume every such save is modified without fixture evidence.
 
 ## Bounded proposal
-Evidence-only compatibility matrix and scope decision for modified saves; preserve strict unknown-asset diagnostics.
-- Keep this identifier scoped to the residual above; link shared interfaces rather than duplicating another owner’s implementation.
-- Record unsupported fixtures and unresolved questions explicitly instead of silently treating them as confirmed.
+Evidence-only compatibility matrix and supported-save scope decision for missing identities; preserve precise unknown-project diagnostics. Do not revert known-current-project preservation or change the 11 corpus pins.
 
 ## Acceptance plan
-- Existing regression homes to inspect/extend (not executed in this audit): `source/OpenTPW.Tests/OriginalSaveImportTests.cs`, `source/OpenTPW.Tests/OriginalSaveCorpusTests.cs`.
-1. Closed-group saved current project is classified from original behavior.
-2. unknown InfoId yields precise diagnostic.
-3. all 11 known lab tables stay unchanged.
+1. Classify each missing-identity case from original behavior or an explicit supported-save scope decision.
+2. Confirm an unknown InfoId or category/project identity yields a precise diagnostic, without affecting known but unoffered cursors.
+3. Keep all 11 known lab tables and the existing saved-cursor regressions unchanged.
 4. Retain an evidence manifest with fixture origin/hash, baseline revision, observed trace and expected result; synthetic cases must be labeled synthetic.
-5. Re-run the affected existing test suite and compare deterministic state/RNG traces where relevant; these are future checks, not tests run by this proposal.
+5. Run the affected `OriginalSaveImportTests`, `OriginalSaveImportCorpusTests` and `SavedResearchGroupTests`; these are required integration checks, not tests executed by this source-only proposal.
 
 ## Ownership and dependencies
 - Owner: proposed save/import maintainer; assignment remains open.
-- Dependency: Modified-save scope decision.
-- GuestSimulation runtime changes must coordinate with the ongoing umbrellas follow-up before implementation.
+- Dependency: original continuation evidence or an explicit missing-identity supported-save scope decision.
 
 ## Completion boundary
-- Deliver the evidence ledger, agreed contract and concrete regression cases described above.
-- Keep this proposal draft while required original evidence or scope decisions are unavailable.
-- Any later implementation, approximation retirement and merge require separate verified results; this document performs none.
+Keep this proposal draft while the residual evidence or scope decision is unavailable. Any later implementation or approximation retirement requires separate verified results. This correction restores the narrow unresolved classification; it does not alter import behavior or claim a new original-game oracle result.

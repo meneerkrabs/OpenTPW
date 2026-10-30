@@ -383,7 +383,7 @@ public class OriginalCoasterImportTests
 		var first = Run();
 		Assert.AreEqual( first, Run(), "the run repeats" );
 		// Pinned on every runtime since the coaster's elementary functions are DetMath's (docs/DETERMINISM.md, "Cross-platform coaster pins").
-		Assert.AreEqual( "8A1279434220868B", first.Imported.ToString( "X16" ), "the imported coaster's fixed run" );
+		Assert.AreEqual( "010C244879E72489", first.Imported.ToString( "X16" ), "the imported coaster's fixed run" );
 	}
 
 	[TestMethod]

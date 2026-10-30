@@ -136,4 +136,6 @@ Remaining UI-092 work includes reviewed source/window ownership and lifecycle,
 scheduler enrollment and ordering, pending source requests, persistence and
 migration, resource/cache/flag-aware rendering, source loss/return and rename
 window flows, and accepted behavior/render evidence. Nothing in this core derives
-missing PC/stack history from `SpritePlayer.Steps` or elapsed animation time.
+missing PC/stack history from elapsed animation time.
+
+**Consumed by the world (round 11, package A).** The staff world's sources (`StaffSpriteState`, `StaffSpriteEvents`) now run this core: the state setters, the walk step, the pre-update, the drop and the pick-up queue and apply templates, and the sprite scheduler (`0x475360`) steps the sources on the even 31 ms substeps (`Level.ScheduleSprites`). The saved wrapper and source are an optional validated field of the staff world's resume file. The hire window's figure and the employee window's portrait stay on the host's renderer-call clock (package W). See `docs/STAFF-PLACEMENT.md`.

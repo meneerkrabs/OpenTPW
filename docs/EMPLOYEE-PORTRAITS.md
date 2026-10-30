@@ -116,5 +116,6 @@ hide a wrong hotspot. The additional source guard is `tools/test_employee_portra
 
 The [bounded staff sprite VM](STAFF-SPRITE-VM.md) now has clean semantic programs,
 complete control/register state and exact full/partial clone-copy operations with
-synthetic CPU tests. It is not consumed by this window or the staff renderer yet.
+synthetic CPU tests. The staff renderer's world sprites now run on it (round 11, package A: sources, scheduler, saves); this window's portrait is still on the host's
+renderer-call clock (package W).
 UI-092 remains open; the existing callback and its qualifications above still apply.

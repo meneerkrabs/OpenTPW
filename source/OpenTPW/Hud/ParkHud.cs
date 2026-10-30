@@ -1500,7 +1500,7 @@ public sealed partial class ParkHud
 		// the sprite hangs at the exact ground point under the pointer every frame, also while the pointer is over the HUD (the original reads the mouse's world point, not the hover cell);
 		// a frame without a pointer (a key alone) keeps the last one
 		// [BIN:TPW-EXE:0x45CD44 mouse point] the point is the picker's nearest hit, the terrain's or an object model's (0x45BF90 writes the same point to 0x7A1C90; Level.TryGetGroundHit)
-		// [APPROX:GUEST-021] only where the original's cursor and the person's sprite anchor land on the screen is open (the point and its +5 are read)
+		// [APPROX:GUEST-021] only where the original's cursor and the person's sprite anchor land on the screen is open: the point, its +5 and the terrain's height the sprite pass adds are read and ported (StaffRenderer.DangleAnchor), the pointer's hotspot is (0, 0); the PC video shows the person below the glove (evidence needed: a capture)
 		if ( input.Mouse.X >= 0 && input.Mouse.Y >= 0 )
 		{
 			// Keep the cell mapping unchanged, but retain the same cached pick's height for presentation.

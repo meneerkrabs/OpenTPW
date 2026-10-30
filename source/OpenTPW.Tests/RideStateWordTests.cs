@@ -59,6 +59,19 @@ public class RideStateWordTests
 	}
 
 	[TestMethod]
+	public void ALinkKeepsTheUpgradeRequestOverABreakdownTheBridgeHeld()
+	{
+		// a save written before the upgrade request cleared a breakdown can hold a ride that is both broken and upgrading
+		var ride = new RideVisitorBridge( 1, "Synthetic", RideVisitorKind.Ride, 5, 55, 30 );
+		ride.RestoreOriginalBrokenState( isCondemned: false, lifeGauge: 40 );
+		var shared = new RideStateWord();
+		shared.Store( RideObjectStates.Upgrading );
+		ride.StateWord = shared;
+		Assert.AreEqual( RideObjectStates.Idle, shared.Value, "the breakdown is not copied back under the upgrade request (0x4E0086)" );
+		Assert.AreEqual( RideObjectStates.Upgrading, shared.Current );
+	}
+
+	[TestMethod]
 	public void TheEntryIntoStateOneIsPublishedOnceToTheEconomy()
 	{
 		var park = EconomyTestData.Park();

@@ -242,7 +242,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			ArgumentNullException.ThrowIfNull( value );
 			if ( ReferenceEquals( value, stateWord ) )
 				return;
-			if ( stateWord.IsBroken && !value.IsBroken )
+			// a word that already holds the upgrade request (state 2 overwrote any breakdown: 0x4E0086) keeps it: a save written before the upgrade request cleared a breakdown can hold both
+			if ( stateWord.IsBroken && !value.IsBroken && value.Stored != RideObjectStates.Upgrading )
 				value.Restore( stateWord.Value );
 			stateWord = value;
 		}
@@ -609,7 +610,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		lastAdmissionTurn = snapshot.LastAdmissionTurn;
 		// an older save holds no state for a ride that was broken down (the ride update reads VAR_BROKEN again), and the economy's own save may hold it already: a clear is never written over it
 		// a snapshot still "broken" after a repair reopened the ride is stale: every opener writes SetState(0) with the open word, so an open ride (the open word set and VAR_RIDECLOSED 0) has left the state
-		if ( snapshot.BrokenDown && (!isOpen() || vm == null || Get( RideVariables.VAR_RIDECLOSED ) != 0) )
+		// a ride whose word holds the upgrade request keeps it: the request (SetState(2), 0x4E0086) overwrote the breakdown, which a save written before that fix can still hold next to it
+		if ( snapshot.BrokenDown && stateWord.Stored != RideObjectStates.Upgrading && (!isOpen() || vm == null || Get( RideVariables.VAR_RIDECLOSED ) != 0) )
 			stateWord.Restore( snapshot.Condemned == true ? RideObjectStates.Condemned : RideObjectStates.BrokenDown );
 		calledTurn = snapshot.CalledTurn;
 		queueCells.Clear();

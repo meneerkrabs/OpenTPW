@@ -39,6 +39,26 @@ public class ClosedRideAdmissionTests
 		CollectionAssert.AreEqual( before, ParkResumeJson.Serialize( runtime.CaptureSnapshot() ), "Refusal must not mutate either the bridge or the script." );
 	}
 
+	[TestMethod]
+	public void ASnapshotRestoreKeepsTheUpgradeRequestOverASavedBreakdown()
+	{
+		// a save written before the upgrade request cleared a breakdown can hold a ride that is both broken and upgrading: the load keeps the upgrade
+		using var fixture = new RuntimeFixture();
+		var runtime = fixture.Runtime;
+		var ride = runtime.Visitors;
+		fixture.CallHead( 101 );
+		runtime.Close();
+		ride.StateWord.Store( RideObjectStates.Upgrading );
+		ride.RestoreSnapshot( ride.CaptureSnapshot() with { BrokenDown = true, Condemned = false } );
+		Assert.AreEqual( RideObjectStates.Idle, ride.StateWord.Value, "the breakdown is not copied back under the upgrade request (0x4E0086)" );
+		Assert.AreEqual( RideObjectStates.Upgrading, ride.StateWord.Current );
+		Assert.IsFalse( ride.IsBrokenDown );
+		// without the upgrade request the saved breakdown still restores
+		ride.StateWord.Store( RideObjectStates.Idle );
+		ride.RestoreSnapshot( ride.CaptureSnapshot() with { BrokenDown = true, Condemned = false } );
+		Assert.AreEqual( RideObjectStates.BrokenDown, ride.StateWord.Value );
+	}
+
 	[DataTestMethod]
 	[DataRow( 1, false )]
 	[DataRow( 4, false )]

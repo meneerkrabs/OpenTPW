@@ -26,6 +26,8 @@ public sealed class CoasterTrackMesh
 	// [BIN:TPW-EXE:0x42f390 marker textures] the track model's texture list is the coaster's asTextureData entries followed by the three entries of 0x74cde0 (count 0x74ce10 = 3): m_erase.tga, red.tga and blue.tga, each with texture flags 7 (read as self-illuminated; see COAST-026)
 	public static readonly string[] MarkerTextureNames = { "m_erase", "red", "blue" };
 	/// <summary>The marker variant of a crossing or refused link (texture count − 1 + 2: <c>red.tga</c>).</summary>
+	/// <summary>The demolish range's marker (<c>[0x7925d0]</c> = 1, m_erase).</summary>
+	public const int EraseMarker = 1;
 	public const int RefusedMarker = 2;
 	/// <summary>The marker variant of the link to the build cursor (texture count − 1 + 3: <c>blue.tga</c>).</summary>
 	public const int CursorMarker = 3;

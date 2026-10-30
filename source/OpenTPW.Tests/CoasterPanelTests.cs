@@ -683,6 +683,54 @@ public class CoasterPanelTests
 	}
 
 	[TestMethod]
+	public void ThePendingCutMarksTheRangeUpToTheHoveredPylonAndAMoveMarksTheLinksAroundItsPylon()
+	{
+		var (builder, ride) = Finished();
+		ride.EnterTool();
+		var track = builder.Track;
+		var last = track.Nodes.Count - 1;
+		var panel = CoasterPanelRig.Create( builder );
+		Assert.IsNull( panel.RangeMark );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Demolish ) );
+		panel.HoverCut( First + 3 );
+		Assert.IsNull( panel.RangeMark, "no range is shown before the first end is picked" );
+		Assert.AreEqual( CoasterPanelResult.CutStarted, panel.Release( First + 1, null ) );
+		Assert.IsNull( panel.RangeMark, "the first release itself marks nothing (0x446740)" );
+		panel.HoverCut( null );
+		Assert.IsNull( panel.RangeMark, "no hovered pylon clears the marks (0x443340)" );
+		panel.HoverCut( First + 4 );
+		Assert.AreEqual( new CoasterRangeMark( First + 1, First + 4, CoasterTrackMesh.EraseMarker ), panel.RangeMark, "[low, high) between the first end and the hovered pylon, drawn with m_erase" );
+		panel.HoverCut( First - 1 );
+		Assert.AreEqual( new CoasterRangeMark( First - 1, First + 1, CoasterTrackMesh.EraseMarker ), panel.RangeMark, "hovering before the first end orders the two" );
+		panel.HoverCut( 0 );
+		Assert.AreEqual( new CoasterRangeMark( First + 1, last, CoasterTrackMesh.EraseMarker ), panel.RangeMark, "ordinal 0 stands for the last node" );
+		panel.HoverCut( First + 1 );
+		Assert.AreEqual( new CoasterRangeMark( First, First + 2, CoasterTrackMesh.EraseMarker ), panel.RangeMark, "the first end itself takes its neighbours" );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Height ) );
+		Assert.IsNull( panel.RangeMark, "leaving the demolish button takes the marks off (0x446fa0 case 0x20)" );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Move ) );
+		Assert.IsTrue( panel.Press( First + 1, new NVector2( 50, 50 ), 28, 24 ) );
+		Assert.AreEqual( new CoasterRangeMark( First, First + 2, CoasterTrackMesh.CursorMarker ), panel.RangeMark, "a move marks the links around its pylon blue (0x446d50)" );
+		panel.Release( First + 1, null );
+		Assert.IsNull( panel.RangeMark, "the release clears them (0x445a70)" );
+	}
+
+	[TestMethod]
+	public void ARangeMarkDrawsItsLinksWithItsMarkerBeforeTheCrossingsAndRedWhenTheNodeIsInvalid()
+	{
+		var (builder, _) = Finished();
+		var chain = builder.Track.Nodes;
+		var none = Enumerable.Range( 0, chain.Count ).Select( _ => (IReadOnlyList<int>)Array.Empty<int>() ).ToArray();
+		var crossing = none.ToArray();
+		crossing[First + 1] = new[] { 3 };
+		var mark = new CoasterRangeMark( First + 1, First + 3, CoasterTrackMesh.EraseMarker );
+		Assert.IsNull( CoasterRenderer.LinkMarker( chain, none, true, First, First + 1, mark ) );
+		Assert.AreEqual( CoasterTrackMesh.EraseMarker, CoasterRenderer.LinkMarker( chain, none, true, First + 1, First + 2, mark ) );
+		Assert.AreEqual( CoasterTrackMesh.EraseMarker, CoasterRenderer.LinkMarker( chain, crossing, true, First + 1, First + 2, mark ), "the mark wins over the crossing's red" );
+		Assert.IsNull( CoasterRenderer.LinkMarker( chain, none, true, First + 3, First + 4, mark ), "High is exclusive" );
+	}
+
+	[TestMethod]
 	public void ACutInTheMiddleOpensAGapThatNewPylonsFillAndTheCircuitClosesOnTheChainStartAgain()
 	{
 		var (builder, ride) = Finished();

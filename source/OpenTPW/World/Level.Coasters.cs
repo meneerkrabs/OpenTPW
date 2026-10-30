@@ -174,6 +174,30 @@ public partial class Level
 		return float.IsFinite( screen.X ) && float.IsFinite( screen.Y );
 	}
 
+	/// <summary>
+	/// The pylon under the pointer for the coaster tool: the pylon whose model the cursor ray meets first, unless the terrain or another object's model is met before it. <c>Modelled</c> is false when the ride
+	/// has no pylon models to test (no game data), where the caller picks by the cell.
+	/// </summary>
+	// [BIN:TPW-EXE:0x443ee0 model pick] the picker 0x45bf90 hands the model under the pointer (the first owner the ray's walk meets, a nearer terrain point or object wins) and 0x443ee0 maps that handle through the table 0x7a4610 to the coaster node whose pylon it is: a pointer beside the pylon's model picks nothing
+	internal (bool Modelled, int? Node) PickCoasterPylon( CoasterRide ride, System.Numerics.Vector2 mouse, System.Numerics.Vector2 viewportSize )
+	{
+		if ( coasterRenderer is not { } renderer || !ParkPlacement.TryGetMouseRay( mouse, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out var origin, out var direction )
+			|| !System.Numerics.Matrix4x4.Invert( Camera.ViewMatrix, out var inverse ) )
+			return (false, null);
+		if ( !renderer.TryPickPylon( ride, origin, direction, out var node, out var distance, out var modelled ) )
+			return (modelled, null);
+		var eye = inverse.Translation;
+		var pylonHit = origin + direction * (distance / Math.Max( direction.Length(), 1e-9f ));
+		var pylonDistance = System.Numerics.Vector3.Distance( eye, pylonHit );
+		var terrain = TerrainHit( mouse, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, origin, direction );
+		// a pylon's ground node lies on the terrain, so a hit on it ties with the terrain point: the terrain wins only when it is clearly nearer
+		if ( terrain is { } ground && System.Numerics.Vector3.Distance( eye, ground ) + 0.05f < pylonDistance )
+			return (true, null);
+		if ( TryPickObject( origin, direction, Camera.ViewMatrix, terrain, out var objectHit ) && System.Numerics.Vector3.Distance( eye, objectHit ) < pylonDistance )
+			return (true, null);
+		return (true, node);
+	}
+
 	/// <summary>The catalogue entry (archive) of a coaster's station object, or null when the station left.</summary>
 	private ObjectCatalogEntry? CoasterEntry( CoasterRide ride ) => CoasterStation( ride )?.Entry;
 

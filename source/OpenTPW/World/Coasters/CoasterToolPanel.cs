@@ -148,6 +148,96 @@ public sealed class CoasterToolPanel
 	public int? DraggedNode => drag?.Edit.Index;
 	/// <summary>The first end of a cut the demolish button waits to complete (<c>0x79c6dc</c>), or null.</summary>
 	public int? CutStart => cutStart;
+	/// <summary>
+	/// The links the tool marks now, or null: the demolish range between the first end and the hovered pylon while a cut waits for its second end (<see cref="HoverCut"/>), or the links around the
+	/// pylon of a move drag (blue).
+	/// </summary>
+	public CoasterRangeMark? RangeMark
+	{
+		get
+		{
+			if ( drag is { Kind: CoasterToolButton.Move } moving )
+				return MoveRange( moving.Edit.Index );
+			return Selected == CoasterToolButton.Demolish && cutStart != null && cutVersion == Track.Version ? cutPreview : null;
+		}
+	}
+
+	private CoasterRangeMark? cutPreview;
+	private int? cutHovered;
+	private bool cutHoverKnown;
+
+	/// <summary>The moved pylon's links: the nodes from the one before it up to it, or to the one after it.</summary>
+	// [BIN:TPW-EXE:0x446d50 move marks] the press of the move button marks [prev, next) with the variant 3 (blue) where prev is the node's previous node (itself when none) and next its next node (itself when none); 0x445a70 clears them
+	private CoasterRangeMark MoveRange( int node )
+	{
+		var last = Track.Nodes.Count - 1;
+		return new CoasterRangeMark( node > 0 ? node - 1 : node, node < last ? node + 1 : node, CoasterTrackMesh.CursorMarker );
+	}
+
+	/// <summary>
+	/// The pointer hovers the pylon <paramref name="node"/> (null: none) while the demolish button waits for its second end (<c>0x443340</c>): the range between the first end and the hovered pylon
+	/// is marked for the erase marker, recomputed when the hovered pylon changes.
+	/// </summary>
+	// [BIN:TPW-EXE:0x443340 demolish preview] with the cut pending (0x80) and the hit changed, the hovered pylon (0x443ee0) gives the range: none clears it; the first end itself takes its neighbours (the previous node when it has none of its own: itself; a loop pair widens by its partner); another pylon takes the range between it and the first end, ordinal 0 standing for the last node, a loop pair's first widening to the node before it and its second to the node after; 0x444040 clears the old marks and 0x444090 sets 0x1000000 on [low, high)
+	public void HoverCut( int? node )
+	{
+		if ( Selected != CoasterToolButton.Demolish || cutStart is not int first || cutVersion != Track.Version )
+		{
+			cutPreview = null;
+			cutHoverKnown = false;
+			return;
+		}
+		if ( cutHoverKnown && cutHovered == node )
+			return;
+		cutHoverKnown = true;
+		cutHovered = node;
+		cutPreview = CutRange( first, node );
+	}
+
+	private CoasterRangeMark? CutRange( int first, int? hovered )
+	{
+		var nodes = Track.Nodes;
+		var last = nodes.Count - 1;
+		if ( hovered is not int hover || hover < 0 || hover > last || first < 0 || first > last )
+			return null;
+		bool IsLoop( int index ) => (nodes[index].Flags & CoasterNodeFlags.Loop) != 0;
+		bool IsFirstOfPair( int index ) => IsLoop( index ) && (nodes[index].Flags & CoasterNodeFlags.LoopFirst) != 0;
+		int low, high;
+		if ( hover == first )
+		{
+			if ( nodes[first].IsStation )
+				return null;
+			int? previous = first > 0 ? first - 1 : null, next = first < last ? first + 1 : null;
+			if ( !IsLoop( first ) )
+				(low, high) = (previous ?? first, next ?? first);
+			else if ( !IsFirstOfPair( first ) )
+			{
+				low = previous is int before && before > 0 ? before - 1 : previous ?? first;
+				high = next ?? first;
+			}
+			else
+			{
+				low = previous ?? first;
+				high = next is int after ? (after < last ? after + 1 : after) : first;
+			}
+		}
+		else
+		{
+			var near = first;
+			var far = hover;
+			if ( far == 0 )
+				far = last;
+			else if ( near == 0 )
+				near = last;
+			(low, high) = far < near ? (far, near) : (near, far);
+			if ( IsFirstOfPair( low ) && low > 0 )
+				low--;
+			if ( IsLoop( high ) && !IsFirstOfPair( high ) && high < last )
+				high++;
+		}
+		return new CoasterRangeMark( low, high, CoasterTrackMesh.EraseMarker );
+	}
+
 	/// <summary>The cost change a drag shows in the HUD's cost text (<c>0x52fba0</c>), or null.</summary>
 	public long? DragCost { get; private set; }
 
@@ -320,7 +410,7 @@ public sealed class CoasterToolPanel
 	// ---- Picking ------------------------------------------------------------------------------------------
 
 	/// <summary>The pylon nodes standing on cell (x, y), lowest stack piece first (<c>0x443ee0</c> finds the pylon model under the pointer; the HUD chooses among a stack's pieces).</summary>
-	// [APPROX:COAST-028] the original picks the pylon model under the pointer (0x443ee0 maps the picked model handle through the table 0x7a4610 to the node, skipping cell descriptors with flag 1); OpenTPW picks by cell and, in a stack, by the pointer's nearness to each piece's projected position (the HUD) — evidence needed: the engine's model pick under the pointer
+	// [APPROX:COAST-028] the HUD picks the pylon whose drawn faces the cursor ray meets first (Level.PickCoasterPylon, as 0x443ee0 maps the picked model handle through the table 0x7a4610 to the node); a stack's pieces are not tested as a group (0x447790, 0x4477d0), and a coaster without drawn pylon models (no game data) is picked by its cell and, in a stack, by the pointer's nearness to each piece's projected position — evidence needed: the group test's use for stacked pylons
 	public IReadOnlyList<int> NodesAt( int x, int y ) => Enumerable.Range( 0, Track.Nodes.Count )
 		.Where( index => !Track.Nodes[index].IsPylonless && Track.Nodes[index].X == x && Track.Nodes[index].Y == y )
 		.OrderBy( index => Track.Nodes[index].StackIndex ).ToList();
@@ -663,6 +753,8 @@ public sealed class CoasterToolPanel
 		{
 			cutStart = index;
 			cutVersion = Track.Version;
+			cutPreview = null;
+			cutHoverKnown = false;
 			return CoasterPanelResult.CutStarted;
 		}
 		cutStart = null;

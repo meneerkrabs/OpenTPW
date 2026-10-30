@@ -186,6 +186,9 @@ public sealed class CoasterRide
 	public CoasterTrack Track { get; }
 	/// <summary>Map bounds, no-ground cells and ground heights; set by the builder.</summary>
 	public CoasterSite Site { get; internal set; } = new( 128, 128 );
+
+	/// <summary>The range of links the open tool marks (the demolish preview, a moved pylon's links); presentation only, not part of the track or its saves.</summary>
+	public CoasterRangeMark? RangeMark { get; set; }
 	/// <summary>The curve fit (swappable; the traced Hermite/Bézier fit by default).</summary>
 	public ICoasterCurve Curve { get; set; } = HermiteCoasterCurve.Instance;
 	public IReadOnlyList<CoasterSample> Samples => samples;

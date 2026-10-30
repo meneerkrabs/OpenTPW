@@ -217,6 +217,9 @@ public sealed partial class ParkHud
 	/// </summary>
 	private int? PickCoasterNode( CoasterToolPanel panel, UiContext context, NVector2 mouse )
 	{
+		// the pylon model under the pointer; a coaster without drawn pylon models (no game data) is picked by its cell
+		if ( level.PickCoasterPylon( panel.Builder.Ride, mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ) ) is { Modelled: true } picked )
+			return picked.Node is int model && model < panel.Track.Nodes.Count && !panel.Track.Nodes[model].IsPylonless ? model : null;
 		if ( cursorX < 0 )
 			return null;
 		var nodes = panel.NodesAt( cursorX, cursorY );
@@ -238,6 +241,18 @@ public sealed partial class ParkHud
 		return best ?? nodes[0];
 	}
 
+	private CoasterRide? coasterMarkedRide;
+
+	/// <summary>Shows the tool's range marks on its ride and takes them off the ride that had them before.</summary>
+	private void SetCoasterRangeMark( CoasterRide? ride, CoasterRangeMark? mark )
+	{
+		if ( coasterMarkedRide != null && coasterMarkedRide != ride )
+			coasterMarkedRide.RangeMark = null;
+		coasterMarkedRide = mark == null ? null : ride;
+		if ( ride != null )
+			ride.RangeMark = mark;
+	}
+
 	/// <summary>
 	/// The coaster tool's HUD side: the build buttons place pylons on a click and show the cursor, the other buttons pick a pylon up on a press, follow the pointer while it is held and settle
 	/// on the release; a right click or Escape leaves.
@@ -248,7 +263,10 @@ public sealed partial class ParkHud
 		CoasterGhost = null;
 		level.CoasterPreview = null;
 		if ( !level.IsCoasterToolActive || level.CoasterTool is not { } builder || level.CoasterPanel is not { } panel )
+		{
+			SetCoasterRangeMark( null, null );
 			return false;
+		}
 		if ( paused )
 		{
 			// a drag that is let go while the game is paused ends there (a move goes back, a height settles its money); [EXT:online-coop-commands] a guest's press that waits keeps the release
@@ -384,6 +402,10 @@ public sealed partial class ParkHud
 			consumed = true;
 		if ( input.LeftReleased )
 			coasterPress = coasterPressWhileWaiting = false;
+		// [BIN:TPW-EXE:0x443340 demolish preview] a pending cut shows the range up to the hovered pylon, picked each frame while the second end is awaited
+		if ( panel.CutStart != null )
+			panel.HoverCut( inPark ? PickCoasterNode( panel, context, input.Mouse ) : null );
+		SetCoasterRangeMark( level.CoasterToolStation?.Runtime.Coaster, panel.RangeMark );
 		if ( panel.IsBuilding && panel.Cursor is { } cursor )
 		{
 			CoasterGhost = (cursor.X, cursor.Y, cursor.Result, cursor.Cost);

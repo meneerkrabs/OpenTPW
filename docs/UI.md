@@ -1055,7 +1055,7 @@ is unchanged.
 | `staff-drop-occupancy-refusal` | `APPROX:GUEST-013` (part) | A world that keeps the cells it was given (a visit, a Theme Park Inc layout) has no footprint cell types, so the staff drop refuses every cell under a placed object or the prototype ride by occupancy; a park that types its footprint cells needs no object list (0x528A70). User-approved 2026-10-18. |
 | `online-park-record-copy` | `APPROX:COMPAT-007` (part) | Renaming the park does not copy the two lines into the original's online park record (0x409410, 0x5B0940/0x5B0970, +0x34/+0x76 of the 0x50-byte record, unless GameType is 1): OpenTPW's online extension keeps its park records on the server and publishes the name from the park. User-approved 2026-10-30. |
 | `online-postcard-address-book` | `APPROX:UI-042` and `APPROX:ADVISOR-009` (parts) | The postcard window's address book (table 0x7542b8, 0x4A8140; its help 308) is not ported and its button stays disabled: recipients are typed (player names or addresses) and the postcard is sent through OpenTPW's own server, not the original's outbox. User-approved 2026-10-30. |
-| `online-help-window` | `APPROX:ADVISOR-009` (part) | The postcard window's help 307 (posted by 0x4A8C00 only outside game type 1) has no producer, since OpenTPW's postcard is online only. User-approved 2026-10-30. |
+| `online-postcard-help` | `APPROX:ADVISOR-009` (part) | The postcard window's help 307 (posted by 0x4A8C00 outside game type 1) has no producer: OpenTPW's postcard composer is its own online window and posts no advisor help. User-approved 2026-10-30. |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V

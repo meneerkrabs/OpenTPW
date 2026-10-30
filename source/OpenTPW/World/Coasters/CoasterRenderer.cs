@@ -383,7 +383,18 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 			// [BIN:TPW-EXE:0x43ef02 cut end] the mesh builder stops drawing at a node with 0x10000 (neither its own knot pairs nor its link) and starts again at one with 0x20000 (0x43ef0d)
 			// [BIN:TPW-EXE:0x43eb70 rebuild order] the original samples the chain before the mesh is extruded and the run table reads that sample list (0x4402d0)
 			// [APPROX:COAST-026] a chain the demolish button cut open, and one of fewer than three knots, has no sample list here, so its links take their section per segment by the mean pitch where the original builds the run table over every chain — evidence needed: the sampler across the cut ends (COAST-004)
-			var sampling = chain.Count >= 3 && knots.Length >= 3 && !chain.Any( node => (node.Flags & (CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart)) != 0 ) ? Ride.Curve.Sample( knots, definition.Curviness ) : null;
+			CoasterSampling? sampling = null;
+			if ( chain.Count >= 3 && knots.Length >= 3 && !chain.Any( node => (node.Flags & (CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart)) != 0 ) )
+			{
+				try
+				{
+					sampling = Ride.Curve.Sample( knots, definition.Curviness );
+				}
+				catch ( ArgumentException )
+				{
+					// a chain the sampler refuses (it needs the station's knots and the end knot) is drawn without a run table
+				}
+			}
 			foreach ( var (first, final, isClosed) in CoasterRenderer.ChainSpans( chain, pass, closed ) )
 				BuildChain( knots[first..(final + 1)], first, definition.Curviness, isClosed, Marker, matrix, first == 0 && final == knots.Length - 1 ? sampling : null );
 			BuildPylons( chain, pass, matrix );

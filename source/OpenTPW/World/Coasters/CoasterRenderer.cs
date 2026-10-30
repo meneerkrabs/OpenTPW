@@ -22,7 +22,7 @@ internal sealed class CoasterHeadSources : IHeadSourceProvider
 /// </summary>
 // [BIN:TPW-EXE:0x43eb70 track rebuild] the original rebuilds the track mesh as a dynamic model when the track changes (0x43eb70 from 0x435a30/0x447d30), animates the scrolling textures by shifting the V of the faces of scrolling textures every frame (0x435a30) and poses each car from its sample coordinate (0x43ce20)
 // [BIN:TPW-EXE:0x435adf scroll shift] the per-frame tick shifts V by δ = (now − ctl+0x138)·P·0.001 for every polygon of a texture the loader flagged (definition flag 4, set when any fScrollRate is nonzero; texture flag 0x20), P the power factor at controller +0x2c; the stored fScrollRate (texture +0xc) is not read in that loop
-// [APPROX:COAST-026] self-illuminated textures (asTextureData bIsSelfIlluminating, texture flag 4) and the marker textures (flags 7) are lit by the scene light like the rest: the shader has no unlit path and its browser build cannot be regenerated here; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc, and whether a build preview's shared texture object (wrap bits, 0x575E10) outlives the build menu; the object renderer's models share the same texture cache and are not given the accumulated wrap bits
+// [APPROX:COAST-026] whether texture-set flag 4 (bIsSelfIlluminating, set by 0x42F390) makes the dynamic track model's draw use the constant colour instead of the vertex light is not traced: the only traced unlit path, 0x580C51, tests the model material word +0xC bit 0x1, a different structure, so the self-lit vertex flag on the track is an assumption; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc, and whether a build preview's shared texture object (wrap bits, 0x575E10) outlives the build menu; the object renderer's models share the same texture cache and are not given the accumulated wrap bits
 public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 {
 	/// <summary>
@@ -244,6 +244,28 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 	/// <summary>The engine axis order of an original-unit point (X, Z, Y).</summary>
 	internal static SVector3 Swap( SVector3 world ) => new( world.X, world.Z, world.Y );
 
+	/// <summary>The engine vertex of an extruded track point, including its texture's lighting without changing its addressing or alpha flags.</summary>
+	// [BIN:TPW-EXE:0x42f390 track textures] asTextureData.bIsSelfIlluminating sets texture flag 4 (read); the three appended marker textures have flags 7; that the model draw treats flag 4 as unlit is not traced (COAST-026)
+	internal static Vertex TrackVertex( CoasterMeshVertex source, CoasterCrossSections sections )
+	{
+		var flags = 0u;
+		var markerStart = Math.Max( 1, sections.Textures.Count ); // Match the mesh's synthetic fallback texture when no texture metadata is present.
+		if ( source.Texture >= 0 && source.Texture < sections.Textures.Count )
+		{
+			var texture = sections.Textures[source.Texture];
+			if ( texture.SelfIlluminated )
+			{
+				flags = TextureSlotAddressing.SelfLitFlag;
+				// [EXT:evening] Reuse the existing light-source policy: other self-lit textures take the night tint, just like self-lit model materials.
+				if ( TextureSlotAddressing.IsLightSource( texture.FileName ) )
+					flags |= TextureSlotAddressing.LightSourceFlag;
+			}
+		}
+		else if ( source.Texture >= markerStart && source.Texture - markerStart < CoasterTrackMesh.MarkerTextureNames.Length )
+			flags = TextureSlotAddressing.SelfLitFlag; // m_erase, red and blue are markers, not light sources.
+		return new Vertex( Swap( source.Position ), Swap( source.Normal ), new SVector2( source.U, source.V ) ) { TexIndex = source.Texture, MatFlags = flags };
+	}
+
 	private sealed class CarInstance
 	{
 		public required CoasterCarRig Rig { get; init; }
@@ -424,7 +446,7 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 				var moving = Scrolls( source.Texture );
 				var vertices = moving ? movingVertices : fixedVertices;
 				remap[index] = (uint)vertices.Count;
-				vertices.Add( new Vertex( Swap( source.Position ), Swap( source.Normal ), new SVector2( source.U, source.V ) ) { TexIndex = source.Texture } );
+				vertices.Add( TrackVertex( source, sections ) );
 				if ( moving )
 				{
 					moveBase.Add( source.V );

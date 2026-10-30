@@ -375,6 +375,7 @@ public sealed partial class OriginalTerrain : Entity
 		var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 		material.Set( "Color", slots.ToArray() );
 		procedural = ground;
+		pathArt = new PathCellArtCache( DecodePathArt, SyncProceduralArt );
 		ground.Unlit = terrainUnlit;
 		proceduralPart = AddPart( ground.CreateModel( material ), "procedural heightfield" );
 		ground.LandDim = DimOf;
@@ -396,16 +397,25 @@ public sealed partial class OriginalTerrain : Entity
 	private static bool SuspendsProceduralGround( CameraMode mode ) => mode is RideCameraMode or FreeWalkCameraMode;
 
 
+	/// <summary>
+	/// Builds the lazy static representation before the level takes its entity snapshot. Building it in OnRender would hide the procedural cells in that frame while their newly added replacements miss its draw list.
+	/// </summary>
+	internal void PrepareRender()
+	{
+		if ( procedural == null || proceduralPart == null || heightfieldPart == null || !SuspendsProceduralGround( Camera.Mode ) )
+			return;
+		if ( staticHolesStale )
+			RebuildHeightfieldPart();
+		if ( pathPartsAllStale && heightfieldTextures != null )
+			BuildStaticPathParts( pathCells.Values, pathPartsAll, heightfieldTextures );
+	}
+
 	protected override void OnRender()
 	{
 		if ( procedural == null || proceduralPart == null || heightfieldPart == null )
 			return;
 		var suspended = SuspendsProceduralGround( Camera.Mode );
-		if ( suspended && staticHolesStale )
-			RebuildHeightfieldPart();
-		// the static ground has no path cells (they are cells of their own): a mode that suspends the procedural textures shows every path cell as a static one, the other modes only those the procedural ground does not reach
-		if ( suspended && pathPartsAllStale && heightfieldTextures != null )
-			BuildStaticPathParts( pathCells.Values, pathPartsAll, heightfieldTextures );
+		// The static cells already belong to this frame's snapshot (PrepareRender), including the first suspended frame after a path edit.
 		foreach ( var part in pathPartsAll )
 			part.Hidden = !suspended;
 		foreach ( var part in pathPartsOutside )
@@ -503,27 +513,17 @@ public sealed partial class OriginalTerrain : Entity
 		PathCellCount = cells.Count;
 	}
 
-	/// <summary>The path art of the texture indexes read so far: the tile's texels as the composite reads them (<see cref="ObjectFloorBase.FlipRows"/>), or null when the data lacks the texture.</summary>
-	private readonly Dictionary<int, (byte[] Rgba, int Width, int Height)?> pathArt = new();
+	/// <summary>The decoded path tiles of the completed texture-pack generation; the cache resynchronizes every path cell when a switch finishes.</summary>
+	private PathCellArtCache? pathArt;
 
-	private (byte[] Rgba, int Width, int Height)? PathArtOf( int texture )
+	private (byte[] Rgba, int Width, int Height)? DecodePathArt( int texture )
 	{
-		if ( pathArt.TryGetValue( texture, out var cached ) )
-			return cached;
 		(byte[], int, int)? art = null;
 		if ( ReadTextureNames( "PathTex" ).TryGetValue( texture, out var name ) && FindTexture( Park.TerrainDirectory, Park.LevelName, name, "pathtex", ListFiles ) is { } path )
 		{
-			try
-			{
-				var (data, width, height) = path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) ? Texture.DecodeWct( path ) : Texture.DecodeImage( FileSystem, path );
-				art = (ObjectFloorBase.FlipRows( data, width, height ), width, height);
-			}
-			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
-			{
-				art = null;
-			}
+			var (data, width, height) = path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) ? Texture.DecodeWct( path ) : Texture.DecodeImage( FileSystem, path );
+			art = (ObjectFloorBase.FlipRows( data, width, height ), width, height);
 		}
-		pathArt[texture] = art;
 		return art;
 	}
 
@@ -544,8 +544,7 @@ public sealed partial class OriginalTerrain : Entity
 			if ( !ground.IsProcedural( cell.X, cell.Y ) )
 				continue;
 			wanted.Add( key );
-			var art = PathArtOf( cell.Texture );
-			ground.SetCellArt( cell.X, cell.Y, art is { } tile ? new ProceduralCellArt( cell.Texture, tile.Rgba, tile.Width, tile.Height, WordOf( cell ) ) : null );
+			ground.SetCellArt( cell.X, cell.Y, pathArt!.Get( cell.Texture, WordOf( cell ) ) );
 		}
 		// a cell that was a path and is not now takes its ground word again (the restore of 0x46DF50)
 		foreach ( var previous in artKeys.Where( key => !wanted.Contains( key ) ) )
@@ -1141,6 +1140,8 @@ public sealed partial class OriginalTerrain : Entity
 
 	protected override void OnDelete()
 	{
+		pathArt?.Dispose();
+		pathArt = null;
 		if ( Camera.ParkFarPlane == FarPlane )
 			Camera.ParkFarPlane = null;
 		if ( Camera.EyeViewFarArgument == EyeViewFar )

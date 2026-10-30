@@ -18,7 +18,8 @@ internal sealed record TrackSectionSaveData( int Kind, bool NoBuoy, int X, int Y
 /// save the same park except for it, and it only seeds the next probe that finds no surface and the effects' height.</summary>
 internal sealed record BumpVehicleSaveData( int Slot, int Flags, int Variant, int X, int Y, int VX, int VY, int VX0, int VY0, int Speed, int Heading, int Spin, int Roll,
 	int Radius, int AccelBonus, int TargetX, int TargetY, int JitterX, int JitterY, int TargetBuoy, int Laps, int BuoyCountdown, int Age, int ObjectIndex,
-	int WallHits, int WallWindow, int Sprays, List<int> Riders, int VisualHeading = 0, int YawRate = 0, int YawDelta = 0, int Animation = 0, int EffectRequest = 0, int EffectLatch = 0, float Height = 0, int ChaseTarget = -1, bool Engine = false, bool Smoke = false, int ObjectAttraction = -1 );
+	int WallHits, int WallWindow, int Sprays, List<int> Riders, int VisualHeading = 0, int YawRate = 0, int YawDelta = 0, int Animation = 0, int EffectRequest = 0, int EffectLatch = 0, float Height = 0, int ChaseTarget = -1, bool Engine = false, bool Smoke = false, int ObjectAttraction = -1,
+	[property: JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )] List<int>? SeatNumbers = null );
 
 /// <summary>
 /// One saved controller joined to its station by attraction id: the scalars the script set, the waiting and leaving guests and the boats; a save of the shared module adds
@@ -27,7 +28,9 @@ internal sealed record BumpVehicleSaveData( int Slot, int Flags, int Variant, in
 internal sealed record BumpControllerSaveData( int AttractionId, int Type, int Laps, int Performance, int Phase, int State, long TickCount, double TickRemainder, bool WaterRunning,
 	bool IsTrackValid, List<int> Pending, List<int> Leaving, List<TrackSectionSaveData> Sections, List<BumpVehicleSaveData> Vehicles, List<int>? ObjectSlots = null, int? BuoyCount = null, int StationLayout = 0,
 	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] int? VehicleLimit = null,
-	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] bool? TrackWordWritten = null );
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] bool? TrackWordWritten = null,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] int? ModelBase = null,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )] int? ModelCount = null );
 
 /// <summary>The kart and water tracks of one saved park (the park-resume envelope's optional track part): the cell layer, the controllers and the cosmetic generator.</summary>
 internal sealed record TrackWorldSaveData
@@ -75,12 +78,15 @@ internal static class TrackSave
 		controller.Sections.Select( section => new TrackSectionSaveData( section.Kind, section.NoBuoy, section.X, section.Y, section.Segment, section.AddOnPassing ) ).ToList(),
 		controller.Vehicles.Select( vehicle => new BumpVehicleSaveData( vehicle.Slot, vehicle.Flags, vehicle.Variant, vehicle.X, vehicle.Y, vehicle.VX, vehicle.VY, vehicle.VX0, vehicle.VY0,
 			vehicle.Speed, vehicle.Heading, vehicle.Spin, vehicle.Roll, vehicle.Radius, vehicle.AccelBonus, vehicle.TargetX, vehicle.TargetY, vehicle.JitterX, vehicle.JitterY,
-			vehicle.TargetBuoy, vehicle.Laps, vehicle.BuoyCountdown, vehicle.Age, vehicle.ObjectIndex, vehicle.WallHits, vehicle.WallWindow, vehicle.Sprays, vehicle.Riders.ToList(), vehicle.VisualHeading, vehicle.YawRate, vehicle.YawDelta, vehicle.Animation, vehicle.EffectRequest, vehicle.EffectLatch, vehicle.Height, vehicle.ChaseTarget, vehicle.Engine, vehicle.Smoke, vehicle.ObjectOwner?.AttractionId ?? -1 ) ).ToList(),
+			vehicle.TargetBuoy, vehicle.Laps, vehicle.BuoyCountdown, vehicle.Age, vehicle.ObjectIndex, vehicle.WallHits, vehicle.WallWindow, vehicle.Sprays, vehicle.Riders.ToList(), vehicle.VisualHeading, vehicle.YawRate, vehicle.YawDelta, vehicle.Animation, vehicle.EffectRequest, vehicle.EffectLatch, vehicle.Height, vehicle.ChaseTarget, vehicle.Engine, vehicle.Smoke, vehicle.ObjectOwner?.AttractionId ?? -1,
+			vehicle.SeatNumbers is { } seats && seats.Length == vehicle.Riders.Count ? seats.ToList() : null ) ).ToList(),
 		controller.Objects.Select( item => item.ModuleSlot ).ToList(), controller.Buoys.Count, controller.LegacyStationLayout ? 0 : 1,
 		// [EXT:cheats-ride-vehicles] written only for a raised limit, so every other save keeps its bytes
 		controller.VehicleLimit != controller.Template.MaxVehicles ? controller.VehicleLimit : null,
 		// written only for a ride no track edit has walked, so every other save keeps its bytes
-		controller.TrackWordWritten ? null : false );
+		controller.TrackWordWritten ? null : false,
+		// written only for a ride whose model words are not its template's (an original save's ride chunk gives them), so every other save keeps its bytes
+		controller.HasTemplateModelWords ? null : controller.ModelBase, controller.HasTemplateModelWords ? null : controller.ModelCount );
 
 	/// <summary>The module part of a park-resume restore, once every controller is back: the cosmetic generator, the module clock and the objects' saved pool slots.</summary>
 	public static void RestoreModule( BumpWorld module, TrackWorldSaveData saved, IReadOnlyList<(BumpController Controller, IReadOnlyList<int>? Slots)> controllers )

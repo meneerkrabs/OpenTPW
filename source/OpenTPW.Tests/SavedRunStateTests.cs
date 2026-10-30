@@ -27,6 +27,7 @@ public class SavedRunStateTests
 		Set( 0x54, (uint)vm.StackCapacity );
 		Set( 0x58, (uint)vm.LimboCapacity );
 		Set( 0x8C, (uint)vm.Variables.Length );
+		Set( 0x74, 0xFFFFFFFF ); // NAME: nothing has named the script
 		Set( 0x94, 50 );
 		Set( 0x98, 0xFFFFFFFF );
 		Set( 0xA8, 0xFFFF );
@@ -50,6 +51,24 @@ public class SavedRunStateTests
 	{
 		for ( var tick = 0; tick < ticks; tick++ )
 			vm.Advance( Tick );
+	}
+
+	[TestMethod]
+	public void TheSavedNameIsTheStringAtItsOffsetAndAScriptNothingNamedKeepsItsName()
+	{
+		var world = new RideScriptWorld( 7 );
+		var named = Waiter( world );
+		var unnamed = Waiter( world );
+		world.ImportClock( Clock );
+		// [BIN:TPW-EXE:0x0055429A NAME] +0x74 is the offset of the name in the saved string blob: "Gate" starts at byte 5 of this blob
+		var blob = System.Text.Encoding.Latin1.GetBytes( "Ride\0Gate\0" );
+		Assert.IsNull( named.ImportSavedRunState( Record( named, 0, raw => BitConverter.GetBytes( 5u ).CopyTo( raw, 0x74 ) ) with { Strings = blob }, Clock ) );
+		Assert.AreEqual( "Gate", named.ScriptName );
+		Assert.IsNull( unnamed.ImportSavedRunState( Record( unnamed, 0 ) with { Strings = blob }, Clock ) );
+		Assert.AreEqual( "Unnamed", unnamed.ScriptName, "-1 (0x00558C4C) is the name of a script NAME never ran in" );
+		var refused = Waiter( world );
+		Assert.IsNotNull( refused.ImportSavedRunState( Record( refused, 0, raw => BitConverter.GetBytes( 11u ).CopyTo( raw, 0x74 ) ) with { Strings = blob }, Clock ), "an offset past the blob (or one that has no end) is no name" );
+		Assert.AreEqual( "Unnamed", refused.ScriptName );
 	}
 
 	[TestMethod]

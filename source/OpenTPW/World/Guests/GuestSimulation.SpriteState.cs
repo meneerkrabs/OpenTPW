@@ -156,7 +156,7 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>Old and original saves have no body history. Their explicitly reconstructed player starts at load, never at a bounce entry's start.</summary>
-	// [APPROX:HEADS-007] an older or imported save has no shared visitor sprite history; reconstruct a fresh body in the host's load epoch, with default interval/no emitted frame
+	// [APPROX:HEADS-007] an older save, or an imported save whose guest sprite script is not applied (SAVE-013), has no shared visitor sprite history; reconstruct a fresh body in the host's load epoch, with default interval/no emitted frame
 	private void ReconstructBodySprite( Guest guest, int nowMilliseconds )
 	{
 		guest.BodySprite.ResetForNewPerson();

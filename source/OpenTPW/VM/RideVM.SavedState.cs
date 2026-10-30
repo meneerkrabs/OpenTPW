@@ -23,8 +23,8 @@ public sealed partial class RideVM
 	{
 		apply = null;
 		ArgumentNullException.ThrowIfNull( record );
-		if ( (!ordinaryGraph && record.ChildScriptId != 0) || record.SoundScriptId != 0 )
-			return $"the script has a child ({record.ChildScriptId}) or sound child ({record.SoundScriptId}) script whose run state is not restored";
+		if ( !ordinaryGraph && (record.ChildScriptId != 0 || record.SoundScriptId != 0) )
+			return $"the script has a child ({record.ChildScriptId}) or sound child ({record.SoundScriptId}) script, which only the graph import restores";
 		if ( record.CodeWordCount != Script.CodeWordCount )
 			return $"the saved code is {record.CodeWordCount} words, this install's script {Script.CodeWordCount}";
 		if ( record.Variables.Length != Variables.Length * 4 )
@@ -53,7 +53,8 @@ public sealed partial class RideVM
 		var wakes = false;
 		var wake = 0.0;
 		var resume = index;
-		// a script saved inside a TRIGWAITANIM has the animation it triggered playing on its object, which is not restored: the instruction triggers again
+		// [BIN:TPW-EXE:0x00552CD3 TRIGWAITANIM token] +0xBC is the AnimID + 1 the instruction stored when it triggered; each later run compares the channel's AnimID + 1 with it (0x00552D08..0x00552D11) and clears it when they agree. The object's channels come back with
+		// the RideSystem record (RestoreSavedScene), so the saved token is kept as it is and the instruction goes on waiting exactly as the original's does with those channels; the import clears it when no channel shows the animation (SavedScriptImport.RestoreRecordState)
 		var triggerToken = unchecked( (int)record.AnimationWait2 );
 		if ( index < instructions.Length )
 		{
@@ -67,10 +68,18 @@ public sealed partial class RideVM
 					wake = record.WaitDeadline - clockWord;
 				}
 			}
-			if ( opcode is Opcode.TRIGWAITANIM or Opcode.TRIGWAITANIM_CH )
-				triggerToken = 0;
 		}
 
+		// [BIN:TPW-EXE:0x0055429A NAME] +0x74 is the offset of the name in the string blob (a script nothing has named holds -1, 0x00558C4C): the blob comes back with the record, so the name is the string at the saved offset
+		string? savedName = null;
+		if ( record.Name != uint.MaxValue )
+		{
+			var blob = record.Strings;
+			if ( record.Name >= blob.Length || blob.AsSpan( (int)record.Name ).IndexOf( (byte)0 ) < 0 )
+				return $"the saved NAME offset {record.Name} is no string of the saved blob of {blob.Length} bytes";
+			var span = blob.AsSpan( (int)record.Name );
+			savedName = System.Text.Encoding.Latin1.GetString( span[..span.IndexOf( (byte)0 )] );
+		}
 		var savedLimboInUse = record.LimboInUse;
 		var savedResultRegister = record.ResultRegister;
 		var savedTurbo = record.Turbo;
@@ -84,6 +93,8 @@ public sealed partial class RideVM
 		var savedTimer = record.Timer;
 		apply = () =>
 		{
+			if ( savedName != null )
+				ScriptName = savedName;
 			ProgramCounter = resume;
 			State = wakes ? RideVMState.Waiting : resume >= instructions.Length ? RideVMState.Halted : RideVMState.Running;
 			FaultMessage = null;

@@ -12,6 +12,20 @@ public readonly record struct SaveRsseObject( uint Word0, uint Word1, uint Type,
 	public const int Bytes = 0x1C;
 }
 
+/// <summary>One entry of a script's bounce table (16 bytes, BOUNCE 0x555696): the rider (+0), the node number script +0x70 plus the entry's index (+4), the release deadline (+8) and the start (+0xC), both on the game clock. A free entry holds rider 0 and stale words.</summary>
+// [BIN:TPW-EXE:0x00555742 BOUNCE entry] the first entry whose rider word is 0 takes the rider (0x00555736), the node (0x00555742..0x0055574F), the deadline clock + operand x 1000 (0x00555753..0x0055576C) and the start clock (0x00555770..0x00555778); script +0x6C counts the entries in use (0x0055577C, UNBOUNCE 0x005558C6 counts it down, BOUNCING 0x00555933 returns it)
+public readonly record struct SaveRsseBounceEntry( uint Guest, uint Node, uint Deadline, uint Start )
+{
+	public bool IsFree => Guest == 0;
+}
+
+/// <summary>One entry of a script's walk table (32 bytes, WALKON 0x00556F40): the first and second node of the walk-on (+0, +2), WALKOFF's two nodes (+4, +6), the start (+8) and end (+0xC) on the game clock, the rider (+0x10), the sprite heading (+0x14), the walk action (+0x16), the state (+0x18) and the last operand (+0x1A). State 0 is a free entry.</summary>
+// [BIN:TPW-EXE:0x0055706D WALKON entry] the entry is free while its state word (+0x18) is 0 (0x00557047); WALKON stores the nodes at +0/+2/+4/+6, the rider at +0x10, the action at +0x16, the start (0x005570A5) and end (0x005570AF), the last operand at +0x1A, the heading at +0x14 (0x005570FD) and state 1 (0x005570EB); WALKGET frees an entry in state 4 by zeroing the state and the rider (0x0055713F, 0x00557149)
+public readonly record struct SaveRsseWalkEntry( ushort Node1, ushort Node2, ushort Node3, ushort Node4, uint Began, uint Ends, uint Guest, ushort Heading, ushort Mode, ushort State, ushort Extra )
+{
+	public bool IsFree => State == 0;
+}
+
 /// <summary>
 /// One script record of the RSSE block: the 0xF4-byte script struct (field names from the loader's own log strings and the save/load order, tp.exe
 /// <c>0x559350</c> / <c>0x5597A0</c>), its eight length-prefixed buffers, the script folder and the object list. Struct fields that hold process addresses
@@ -51,6 +65,65 @@ public sealed record SaveRsseRecord
 			return words;
 		}
 	}
+
+	/// <summary>The bounce table's entries (<see cref="BounceSize"/> of them, 16 bytes each).</summary>
+	public IReadOnlyList<SaveRsseBounceEntry> BounceEntries
+	{
+		get
+		{
+			var entries = new SaveRsseBounceEntry[Bounce.Length / BounceEntryBytes];
+			for ( var index = 0; index < entries.Length; index++ )
+			{
+				var at = index * BounceEntryBytes;
+				entries[index] = new SaveRsseBounceEntry( Word( Bounce, at ), Word( Bounce, at + 4 ), Word( Bounce, at + 8 ), Word( Bounce, at + 12 ) );
+			}
+			return entries;
+		}
+	}
+
+	/// <summary>The walk table's entries (<see cref="WalkSize"/> of them, 32 bytes each).</summary>
+	public IReadOnlyList<SaveRsseWalkEntry> WalkEntries
+	{
+		get
+		{
+			var entries = new SaveRsseWalkEntry[Walk.Length / WalkEntryBytes];
+			for ( var index = 0; index < entries.Length; index++ )
+			{
+				var at = index * WalkEntryBytes;
+				entries[index] = new SaveRsseWalkEntry( Half( Walk, at ), Half( Walk, at + 2 ), Half( Walk, at + 4 ), Half( Walk, at + 6 ), Word( Walk, at + 8 ), Word( Walk, at + 12 ),
+					Word( Walk, at + 0x10 ), Half( Walk, at + 0x14 ), Half( Walk, at + 0x16 ), Half( Walk, at + 0x18 ), Half( Walk, at + 0x1A ) );
+			}
+			return entries;
+		}
+	}
+
+	/// <summary>The head table (script +0x30, <see cref="NodeCount"/> words): the rider on each head id's slot, 0 when free (slot n is head id n + 1). The block's eighth buffer, called the node table before it was read as this.</summary>
+	// [BIN:TPW-EXE:0x00554C80 head table] ADDHEAD draws a slot of the table at script +0x30 whose count is +0x4C until it holds 0 and stores the rider there (0x00554CC8..0x00554CD3); DELHEAD zeroes the slots that hold the rider; the loader reads the eighth buffer raw into +0x30 and keeps its byte count >> 2 as +0x4C (0x00559D3D..0x00559D95)
+	public IReadOnlyList<uint> HeadSlots
+	{
+		get
+		{
+			var slots = new uint[Nodes.Length / 4];
+			for ( var index = 0; index < slots.Length; index++ )
+				slots[index] = Word( Nodes, index * 4 );
+			return slots;
+		}
+	}
+
+	/// <summary>The limbo table's entries as (rider, expiry on the game clock), <see cref="LimboSize"/> of them.</summary>
+	public IReadOnlyList<(uint Guest, uint Expiry)> LimboEntries
+	{
+		get
+		{
+			var entries = new (uint, uint)[Limbo.Length / LimboEntryBytes];
+			for ( var index = 0; index < entries.Length; index++ )
+				entries[index] = (Word( Limbo, index * LimboEntryBytes ), Word( Limbo, index * LimboEntryBytes + 4 ));
+			return entries;
+		}
+	}
+
+	private static uint Word( byte[] bytes, int offset ) => BinaryPrimitives.ReadUInt32LittleEndian( bytes.AsSpan( offset ) );
+	private static ushort Half( byte[] bytes, int offset ) => BinaryPrimitives.ReadUInt16LittleEndian( bytes.AsSpan( offset ) );
 
 	private uint U32( int offset ) => BinaryPrimitives.ReadUInt32LittleEndian( Raw.AsSpan( offset ) );
 	private ushort U16( int offset ) => BinaryPrimitives.ReadUInt16LittleEndian( Raw.AsSpan( offset ) );
@@ -98,6 +171,8 @@ public sealed record SaveRsseRecord
 	public uint Timer => U32( 0xC4 );
 	/// <summary>The mesh instance the script animates (+0xC8); an attraction's <see cref="SaveAttraction.MeshInstanceId"/>.</summary>
 	public uint MeshInstance => U32( 0xC8 );
+	/// <summary>The repair effect's emitter handle (+0xCC): REPAIREFFECT keeps it, the script's destruction ends it (0x0055853E, 0x00558553); 0 when none.</summary>
+	public uint RepairEffect => U32( 0xCC );
 	public uint Scream => U32( 0xD0 );
 	public uint SoundEmitter => U32( 0xD4 );
 	public uint Reverb => U32( 0xD8 );

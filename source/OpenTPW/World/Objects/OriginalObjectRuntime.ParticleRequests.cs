@@ -161,6 +161,33 @@ public sealed partial class OriginalObjectRuntime
 		particleObjects.RemoveAll(record => !alive(record.Handle));
 	}
 
+	/// <summary>
+	/// An original save's record of one of this object's scripts (loader tp.exe <c>0x005597A0</c>): its object list gives the kept particle effects (ADDOBJ types 1 and 2) back to the object under their slot, key and
+	/// emitter handle, and +0xCC gives the repair effect back. Returns one line per entry it cannot restore (the kept sounds, types 3 to 10).
+	/// </summary>
+	// [BIN:TPW-EXE:0x005597A0 object list load] each 0x1C-byte node is read raw (the two list links excepted) and pushed on the head of the script's list (+0xB0), so the loaded list runs from the oldest saved node to the newest, the order ADDOBJ's pushes make again here
+	// [BIN:TPW-EXE:0x00551AB2 object pass] the pass walks the list for every node with a key (+0x10) at or above 0: type 1 and 2 move the emitter named by the handle (+0xC) to the key's node (the follow above), types 3 to 10 move a sound (0x0051C270), and KILLOBJ (0x005522C5) ends every node of its slot; the handles are the saved ones, valid because the particle block restores the emitters with their generations
+	internal IReadOnlyList<string> RestoreSavedObjects( SaveRsseRecord record )
+	{
+		ArgumentNullException.ThrowIfNull( record );
+		var gaps = new List<string>();
+		var sounds = 0;
+		foreach ( var saved in record.Objects.Reverse() )
+		{
+			if ( saved.Type is 1 or 2 && saved.RuntimeHandle != 0 )
+				particleObjects.Add( (unchecked( (int)saved.Slot ), unchecked( (int)saved.RuntimeHandle ), (int)saved.Type, unchecked( (int)saved.Key )) );
+			else if ( saved.Type is >= 3 and <= 10 )
+				sounds++;
+			else
+				gaps.Add( $"object list entry of type {saved.Type} with handle {saved.RuntimeHandle:X} is not an effect the object pass moves" );
+		}
+		if ( sounds > 0 )
+			gaps.Add( $"{sounds} kept sounds (ADDOBJ types 3 to 10) are not restored: their voices are the sound block's engine state ([EXT:original-engine-state-dumps])" );
+		if ( record.RepairEffect != 0 && repairParticle == 0 )
+			repairParticle = unchecked( (int)record.RepairEffect );
+		return gaps;
+	}
+
 	/// <summary>The ADDOBJ records of live effects for the runtime snapshot, or null when there are none.</summary>
 	private IReadOnlyList<ParticleObjectRecord>? CaptureParticleObjects()
 	{

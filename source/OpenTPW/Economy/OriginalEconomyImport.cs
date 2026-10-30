@@ -434,10 +434,10 @@ public sealed partial class OriginalEconomyImport
 		var jobs = new List<string>();
 		var resumedClaims = new HashSet<int>();
 		var membersByThing = new Dictionary<int, StaffMember>();
-		// a guard chases a guest the guest import restores in the park (states 6–10, GuestSimulation.ImportsOriginalState)
-		var chaseable = save.Guests.Where( guest => guest.State is >= 6 and <= 10 ).Select( guest => guest.Id ).ToHashSet();
-		// a guard escorting a guest (state 18) names a saved guest (+0x212); the guest import decides which of them are restored (IdleEscortsWithoutARestoredGuest)
+		// [BIN:TPW-EXE:0x004D6790 chase] a guard chasing a guest (state 16, +0x212) walks to the guest's cell whatever state it is in and gives up there when the catch test 0x004FEC10 fails: the chase names a saved guest and the guest import decides which of them are restored (IdleEscortsWithoutARestoredGuest)
+		// a guard escorting a guest (state 18) names a saved guest (+0x212) the same way
 		var savedGuests = save.Guests.Select( guest => guest.Id ).ToHashSet();
+		var chaseable = savedGuests;
 		foreach ( var saved in save.Staff )
 		{
 			var type = saved.Model switch
@@ -637,15 +637,15 @@ public sealed partial class OriginalEconomyImport
 	}
 
 	/// <summary>
-	/// After the guests are imported: a guard imported escorting a guest the guest import did not restore at all (dropped) is idle, as the import gives every guard whose guest is missing
-	/// (SAVE-002). A guest restored in any state keeps its escorts: the set-down (0x004FEB50) does not look at the state. Returns the evidence lines.
+	/// After the guests are imported: a guard imported escorting or chasing a guest the guest import did not restore at all (dropped) is idle, as the import gives every guard whose guest is missing
+	/// (SAVE-002). A guest restored in any state keeps its guards: the set-down (0x004FEB50) and the chase (0x004D6790) do not look at the state. Returns the evidence lines.
 	/// </summary>
 	internal static IReadOnlyList<string> IdleEscortsWithoutARestoredGuest( ParkEconomy economy, Func<int, bool> isImported )
 	{
 		var lines = new List<string>();
-		foreach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Guard && member.Job == StaffJob.Escorting && !isImported( member.TargetGuestId ) ) )
+		foreach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Guard && member.Job is StaffJob.Escorting or StaffJob.Chasing && !isImported( member.TargetGuestId ) ) )
 		{
-			lines.Add( $"[APPROX:SAVE-002] guard {member.Id} escorting guest {member.TargetGuestId} imported idle: the guest import did not restore that guest." );
+			lines.Add( $"[APPROX:SAVE-002] guard {member.Id} {(member.Job == StaffJob.Chasing ? "chasing" : "escorting")} guest {member.TargetGuestId} imported idle: the guest import did not restore that guest." );
 			member.TargetGuestId = 0;
 			member.Job = StaffJob.Idle;
 			member.State = ParkStaff.DisplayState( (uint)StaffJob.Idle );
@@ -732,7 +732,7 @@ public sealed partial class OriginalEconomyImport
 				member.TargetGuestId = saved.RoleTarget;
 				break;
 			case StaffJob.Chasing or StaffJob.Escorting:
-				// [APPROX:SAVE-002] [BIN:TPW-EXE:0x004D6350 escort state] a guard chasing a guest the import does not restore (a rider, state 16), or escorting one that the save does not hold (state 17), is imported idle
+				// [APPROX:SAVE-002] [BIN:TPW-EXE:0x004D6350 escort state] a guard whose perpetrator is no guest of the save is imported idle
 				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park, or the save holds no such guest." );
 				job = StaffJob.Idle;
 				break;
@@ -936,10 +936,10 @@ public sealed partial class OriginalEconomyImport
 		// the guests are restored by the level's guest simulation (GuestSimulation.ImportOriginal), which reports its outcome through Report
 		var byState = string.Join( ", ", save.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} in state {group.Key}" ) );
 		evidence.Add( $"{save.GuestCount} saved guests{(byState.Length == 0 ? "" : $" ({byState})")} are imported by the guest simulation when a level attaches it." );
-		// [EXT:original-engine-state-dumps] the raw dumps of the original's own engine structures that OpenTPW's engines have no counterpart for (the Scripts SCPT records: the sprite scripts of the saved guests and litter, which OpenTPW animates from their state and the cell; the RSSE scripts' object lists, node, bounce and walk tables, whose saved ids, list order, pass counter and run state are imported, RideScriptWorld.ImportSaved and RideVM.ImportSavedRunState; the Sound block's engine state: the sound flags, voice handles, crowd, rain and reverb words and the sound library's voice list (not QMixer data; the saved volumes and on-flags are applied, GameAudio.ApplySavedSound); the message-centre lists and the Track and Flying ride chunks) are not restored: OpenTPW has different engines that restart from the archives; the widths are traced (SaveBlockWidths) to split the save; the Particles block's pool is restored (SAVE-013)
+		// [EXT:original-engine-state-dumps] the raw dumps of the original's own engine structures that OpenTPW's engines have no counterpart for (the Scripts SCPT records: the sprite scripts of the saved guests and litter, which OpenTPW animates from their state and the cell; the RSSE scripts' object node tables, whose saved ids, list order, pass counter, run state, object lists, and walk, bounce and head tables are imported, RideScriptWorld.ImportSaved, RideVM.ImportSavedRunState and SavedScriptGraphImport; the Sound block's engine state: the sound flags, voice handles, crowd, rain and reverb words and the sound library's voice list (not QMixer data; the saved volumes and on-flags are applied, GameAudio.ApplySavedSound); the message-centre lists and the Flying ride chunks; the Track ride chunks are restored, TRACK-032) are not restored: OpenTPW has different engines that restart from the archives; the widths are traced (SaveBlockWidths) to split the save; the Particles block's pool is restored (SAVE-013)
 		// [APPROX:SAVE-010] the advisor presentation block, the second clock word (the advisor clock, applied when the automatic advisor attaches; the first, the game clock the saved scripts' waits count from, is applied with their run state when the level imports its objects, SavedScriptImport), vanilla time, game-system words, the cheat chunk's second byte (+0xB of the cheat object 0xFB3520, which only its constructor and the loader 0x405570 write; the first, the cheat mode, is imported, docs/CHEATS.md), advisor scoring and UI record count (SaveRuntimeBlocks), the weather, park analyser apart from its recent-research rings, five monthly graph rings, live arrivals and recent stays and the arrival ring and the object and hire stamps the automatic advisor takes when it attaches, tag system, mechanic HQ and UI message receiver things, world states other than TPW loss state 4, arrival vehicle handles and bytes (the saved scripts of the arrival vehicles resume on their own, but the arrival scheduler's words that point at them are not imported) and the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; the camera is imported (zoom, yaw and the required point of interest, loader 0x42CEC0) without the loader's yaw correction by the word 0x78D912; of the cell map the path cells, occupancy, MAP attributes, each path cell's texture and turn and the litter (type, claim) are read, and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours) — evidence needed: how the world state and arrival words (the current arrival vehicle's handle and the arrival bytes) steer the original's arrival update beyond what OpenTPW's arrival scheduler rebuilds and the camera's yaw correction word
 		var engineDumps = save.Layout.Blocks.Where( block => block.Block is SaveBlock.Scripts or SaveBlock.MessageCentre or SaveBlock.TrackRides or SaveBlock.FlyingRides or SaveBlock.Rsse or SaveBlock.Sound ).ToList();
-		evidence.Add( $"[EXT:original-engine-state-dumps] Not restored (OpenTPW's engines restart from the archives): {string.Join( ", ", engineDumps.Select( block => $"{block.Block} {block.Length} bytes" ) )}; the Rsse block's script ids, list order, pass counter and run state are imported when the level attaches its objects, the Particles block's pool when the level builds its particle system." );
+		evidence.Add( $"[EXT:original-engine-state-dumps] Not restored (OpenTPW's engines restart from the archives): {string.Join( ", ", engineDumps.Where( block => block.Block != SaveBlock.TrackRides ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; the Rsse block's script ids, list order, pass counter and run state are imported when the level attaches its objects, the Particles block's pool when the level builds its particle system, and the TrackRides chunks of kart and water rides (ride words, sections, vehicles, riders and lists) when it imports its tracks (TRACK-032)." );
 		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem or SaveBlock.Particles or SaveBlock.Camera) && !engineDumps.Contains( block ) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}; park analyser apart from its recent-research rings, five monthly graph rings, live arrivals and recent stays and the arrival ring and the object and hire stamps the automatic advisor takes when it attaches." );
 		if ( save.RuntimeBlocks is { } blocks )
 		{

@@ -73,7 +73,7 @@ public sealed class RideScriptWorld
 	/// head-space draws take theirs from: the park's one stream, shared with the guests, the staff and the economy (<see cref="AttachWorld"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0054F56B script pass] the scripts', rides' and heads' draws are the world generator's, taken in the original's order: the substep's bump module, the script pass (list head first, one slice per eight passes), the tour cars on even substeps, then on every eighth substep the thing sweep
-	// [APPROX:DET-013] a script created with an explicit seed keeps a private generator, and an imported original save's scripts take its ids, list order, pass counter and run state on the saved game clock (ImportClock, SavedScriptImport), and their objects the saved animation channels and node states (OriginalObjectRuntime.RestoreSavedScene), but not the RSSE records' object node, bounce and walk tables
+	// [APPROX:DET-013] a script created with an explicit seed keeps a private generator, and an imported original save's scripts take its ids, list order, pass counter and run state on the saved game clock (ImportClock, SavedScriptImport), and their objects the saved animation channels and node states (OriginalObjectRuntime.RestoreSavedScene), but not the RSSE records' object node tables
 	public WorldRng World => world;
 
 	/// <summary>Makes <paramref name="generator"/> this world's generator (the level's shared one); its state is not touched.</summary>

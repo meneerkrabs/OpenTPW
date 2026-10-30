@@ -148,10 +148,10 @@ Theme Park Inc adds `@`, in exactly six objects, all road signs: `features/smrds
 `lroadsgn` ("`*@@*`") in `arabian` and `water`, `signsm` ("`*@*`") and `signlrg` ("`*@@*`") in
 `science`. Each sign model spans its shape width x 10 units and consists of a base, two pillar meshes and a sign
 board, and the `.sam` marks the object `Info.OverwritePriority 1` ("Overwritable!") and
-`Info.IsChoosable 0`. The likely reading is a pillar cell at each end (`*`) and cells under the board (`@`),
-but the data does not prove it. The Theme Park Inc `Game.exe` is
-SafeDisc-encrypted, so this reading rests on the data only. The viewer classifies `@` as an occupied
-cell (RIDES-031), which is also the safe choice for placement. (The obstacles use further symbols
+`Info.IsChoosable 0`. The reading is a pillar cell at each end (`*`) and cells under the board (`@`); the
+no-CD `Game.exe`'s placement commit (`0x668552`, the twin of tp.exe's `0x529173`) stamps `@` as a type-1 NoModify path cell linked to its path
+neighbours. The slice does not type its footprints at all (RIDES-031), so the viewer classifies `@` as an occupied
+cell, which is also the safe choice for placement. (The obstacles use further symbols
 `X`, `H`, `%`, which no catalog object uses and the viewer does not read.)
 
 **The science hole.** The first spike showed a black region of about 450 cells in `science`. The
@@ -214,7 +214,7 @@ The object catalogue adds the keys only Theme Park Inc's type record has: `Info.
 | object purchase, upgrade purchase | `0x5DBE3C`, `0x5E2A99` | `0x4DB090`, `0x4AF4E9` | the build charges `Upgrades[0].CostOfUpgrade`; the upgrade needs a mechanic, so it stays refused (`NeedsStaff`) |
 | scrap value | `0x5E7890`, percentage `0x5E75F0` | `0x4E2400`, `0x4E2290` | by year of age, 100 % if unused within 30 days, plus a condemned object (state 4) refunds nothing; an object that requires watering (the plants) takes 100, 67, 34 or 0 % from its script's variable 0, `VAR_CONDITION` (`0x5E75F9`, `0x6B0C90`; ECON-061 retired; the slice has no weather and no handymen, `[EXT:tpi-money-only]`, so a plant's condition stays at its first value) |
 | running costs | month message `0x5DEFFF` | none | each object pays its current level's `Upgrades[n].RunningCost` every month, nothing in ride state 1 or 4, together with the costs its sales and plays booked that month (the accumulator `+0x938`: a sale books its cost of goods, `ThemeParkIncGoodsCost`, and pays it at the month end; ECON-060) |
-| arrival group | `0x5BCD60` (words `0x00A02240`..`0x00A02250`) | `0x4CF5B0` | `GuestSimulation.ArrivalGroupSize` with `Arrival.*PercentageModifier`, single-precision 0.01 (oracle X7); OpenTPW runs no Theme Park Inc weather (the original simulates one: thunder countdown and wind, see the weather body below), so the percentage is always 100 (ARRIVAL-008) |
+| arrival group | `0x5BCD60` (words `0x00A02240`..`0x00A02250`) | `0x4CF5B0` | `GuestSimulation.ArrivalGroupSize` with `Arrival.*PercentageModifier`, single-precision 0.01 (oracle X7); OpenTPW runs no Theme Park Inc weather (the original simulates one: thunder countdown and wind, see the weather body below; its state word `+0x70` is the running spell's kind, 1 heatwave, 2 rain, 3 storm, 4 snow, and the spells are rolled by `0x642770` from the C runtime's `rand()`, which the start-up seeds with `GetTickCount()` at `0x6A151B`, so even the original's weather is not reproducible), so the percentage is always 100 (ARRIVAL-008) |
 
 **What runs.** Starting cash and admission fee; the build, path, queue and kart/water track charges (a refused purchase says why); scrap refunds when an object
 is removed; the loans; the bankruptcy after six months in the red (the arrival stops, building is refused); the calendar and each

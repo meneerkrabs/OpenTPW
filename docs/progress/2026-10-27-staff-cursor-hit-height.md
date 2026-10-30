@@ -11,7 +11,7 @@ as `GuestRenderer.CellToEngine`). Cell mapping, hover validity, drop rules,
 pointer admission and the cell-only terrain fallback are unchanged.
 
 Synthetic CPU regressions cover elevated tower hits in hire and carry,
-model-to-terrain refresh, a miss and cancel, a model behind terrain, and
+model-to-terrain refresh, a miss and cancel, and
 stale-height clearing on cell-only updates and tool replacement. GUEST-021 is
 narrowed to the open question of where the original's cursor and sprite anchor
 land on the screen (PC video 81:30).

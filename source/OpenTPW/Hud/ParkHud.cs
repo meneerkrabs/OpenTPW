@@ -309,15 +309,19 @@ public sealed partial class ParkHud
 	/// The cost of the build action under way, shown in yellow under the balance (control 48): the held blueprint's price, the path or queue line's cost so far, or the coaster track
 	/// segment under the cursor; null outside the build tools, where the text is hidden.
 	/// </summary>
-	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -10000, or reset to the unset marker -999 when no tool is active: only the mode objects whose type (vtable +0x24) is 3, 4 or 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; type 3 is the tool-mode object 0x6fe9e0 that every build tool runs in; it is no sum of balance changes
+	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -9999, or reset to the unset marker -999 when no tool is active: only the mode objects whose type (vtable +0x24) is 3, 4 or 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; type 3 is the tool-mode object 0x6fe9e0 that every build tool runs in; it is no sum of balance changes
 	// [DATA:video 2:05, 74:00-76:00] "$ 2500" while the blueprint of a 2500 ride is held, "$ 150" in the path tool, "$ 10000" for the coaster station and "$ 70" to "$ 130" per track segment; absent outside the build tools even when the balance changes
-	// [APPROX:UI-047] coaster panel cost visibility now follows the traced build/move mode versus active height-drag distinction. OpenTPW still derives the active mode from its panel rather than reproducing the original mode-object stack; a missing panel keeps the existing cost fallback. The unidentified type-4 mode remains unqualified.
+	// [APPROX:UI-047] the cost line follows the one cursor mode object of tp.exe ([0x7b05d8], replaced by 0x46c350, no stack): the tool-mode object of type 3 runs every build tool, the Buy Land tool included (its price shows; the Clear Area and patrol tools set the hidden marker -9999), and no class returns type 4; the coaster panel's edit modes (type 8) show it only while an active height drag holds bit 0 of 0x79c658; whether the rotate, tilt and stack drags set that bit and the commit of a drag a button click ends (0x447032) are open (docs/UI.md, UI-047)
 	public long? BuildActionCost
 	{
 		get
 		{
 			if ( !Status.HasEconomy )
 				return null;
+			// [BIN:TPW-EXE:0x4ac855 land tool] the buy window builds the Buy Land tool (0x39) as the type-3 tool-mode object (0x46c580), so the HUD refresh shows the tool's cost 0x81af4c for it as for every build tool: the land's price while a rectangle is hovered (0x532303), else 0 (the tool start 0x52f050 clears it, 0x52f087)
+			// [BIN:TPW-EXE:0x523c08 clear tool] the Clear Area tool (0x3a, 0x4ac907) is a type-3 mode too but its hover sets the cost to -9999 (0x523c18), which the refresh hides (0x4a0d68), as the patrol tool's (0x36, 0x523d68)
+			if ( level.BuyLandTool is { IsActive: true } landTool )
+				return landTool.HoverCost;
 			if ( level.IsCoasterToolActive )
 				return level.CoasterPanel is { ShowsActionCost: false } ? null : level.CoasterPanel?.DragCost ?? CoasterGhost?.Cost ?? 0;
 			if ( level.CellTool.IsActive )

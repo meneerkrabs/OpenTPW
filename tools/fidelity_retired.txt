@@ -417,3 +417,6 @@ ADVISOR-012 docs/LIPS.md
 UI-941 docs/AUDIO.md
 PATH-007 docs/PATHS.md
 SAVE-923 docs/TPWS-PAYLOAD.md
+UI-064 docs/UI.md
+UI-013 docs/UI.md
+ECON-023 docs/ECONOMY.md

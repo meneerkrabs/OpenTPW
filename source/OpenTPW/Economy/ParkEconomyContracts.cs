@@ -295,6 +295,7 @@ public sealed class ParkObjectState
 		var copy = (ParkObjectState)MemberwiseClone();
 		copy.StateWord = new RideStateWord();
 		copy.StateWord.Restore( StateWord.Value );
+		copy.StateWord.Store( StateWord.Stored );
 		return copy;
 	}
 	public int Price { get; set; }
@@ -325,7 +326,7 @@ public sealed class ParkObjectState
 	/// (0x4E0050 at 0x4E0086, over any state, a breakdown included) and 0 otherwise; <see cref="ParkEconomy.ObjectState"/> reads it before the shared word's 1 and 4. Not saved: a load stores it again
 	/// from the type and the pending level (as the original's loader stores the saved word through SetState).
 	/// </summary>
-	internal int StoredState { get; set; }
+	internal int StoredState { get => StateWord.Stored; set => StateWord.Store( value ); }
 	/// <summary>The state word entered state 1 or 4 and the economy has not published it yet (<see cref="ParkEconomy.PublishRideState"/>); not saved.</summary>
 	internal bool BrokenStatePending { get; set; }
 	/// <summary>The state word's value, for a restore (a save or an import): stored without the change event.</summary>

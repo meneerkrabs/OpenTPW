@@ -22,7 +22,7 @@ public static class RideObjectStates
 /// <summary>
 /// The broken-down part of a ride object's state word (<c>CObject +0x19C</c> on the PC): 0 idle, 1 broken down, 4 condemned. One instance belongs to the ride's economy record and is shared with
 /// its visitor bridge, so the ride update that enters state 1 or 4 (<c>0x4E14E0</c> through <c>SetState</c> <c>0x4E0E60</c>), the repair and every opener (<c>SetState(0)</c>) write the one word the economy,
-/// the guests, the object window and the opening guard read. States 2 (an upgrade request, which overwrites a breakdown) and 3 (not an attraction) are stored in the economy record's own word (<see cref="ParkObjectState.StoredState"/>), which <see cref="ParkEconomy.ObjectState"/> reads first.
+/// the guests, the object window and the opening guard read. States 2 (an upgrade request, which overwrites a breakdown) and 3 (not an attraction) are stored in the same object (<see cref="Stored"/>, written through <see cref="ParkObjectState.StoredState"/>), and <see cref="Current"/> reads the whole word as the dispatch <c>0x4E0E00</c> does.
 /// </summary>
 // [BIN:TPW-EXE:0x004E0E60 SetState] states 0 and 3 only store the word; 1, 2 and 4 close the object first; the ride update's state 0 is the only caller of SetState(1) and SetState(4) (0x4E154E, 0x4E1590) and the state is left through SetState(0) (0x4DE487, 0x4DF438, 0x4DFCB8, 0x4E003C, 0x4E01B6)
 public sealed class RideStateWord
@@ -32,6 +32,26 @@ public sealed class RideStateWord
 
 	/// <summary>Whether the ride is in state 1 or 4 (what the choice's counts-test, the admission and the opening guard refuse).</summary>
 	public bool IsBroken => Value is RideObjectStates.BrokenDown or RideObjectStates.Condemned;
+
+	/// <summary>
+	/// The part of the word the ride update does not write: 3 for an object that is not an attraction (stored at construction, <c>0x4DB4FB</c>), 2 once an upgrade was requested (<c>0x4E0086</c>, over any state, a breakdown
+	/// included) and 0 otherwise. It lives in the shared word so that the bridge's update dispatches on the whole word as <c>0x4E0E00</c> does; the economy writes it (<see cref="ParkObjectState.StoredState"/>).
+	/// </summary>
+	public int Stored { get; private set; }
+
+	/// <summary>The word as the ride update's dispatch <c>0x4E0E00</c> reads it: the stored 2 or 3, else the ride update's 0, 1 or 4.</summary>
+	public int Current => Stored != RideObjectStates.Idle ? Stored : Value;
+
+	/// <summary>Stores 0, 2 (an upgrade request, which clears a breakdown) or 3 (not an attraction) without the change event, which only the ride update's 1 and 4 raise.</summary>
+	public void Store( int state )
+	{
+		if ( state is not (RideObjectStates.Idle or RideObjectStates.Upgrading or RideObjectStates.NotAnAttraction) )
+			throw new ArgumentOutOfRangeException( nameof( state ), state, "The stored part holds 0, 2 or 3." );
+		Stored = state;
+		// SetState(2) (0x4E0086) writes the one word, so an upgrade request overwrites a breakdown: the ride update's 1 or 4 is gone (the cancel and the completion end in SetState(0))
+		if ( state == RideObjectStates.Upgrading && IsBroken )
+			Value = RideObjectStates.Idle;
+	}
 
 	/// <summary>Raised when the word changes: the old value, then the new one.</summary>
 	public event Action<int, int>? Changed;

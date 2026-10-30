@@ -73,6 +73,7 @@ internal sealed class QueueSegmentReducer
 		end = ParkPathBuilder.SnapEnd( start, end );
 		var line = ParkPathBuilder.LayLine( start, end );
 		var built = new List<(int X, int Y)>();
+		var endsOnOwnQueue = false;
 		foreach ( var p in line )
 		{
 			if ( !SupportsDomain( p, p, true, end ) ) return Result( CellBuildResult.Occupied, p );
@@ -85,6 +86,8 @@ internal sealed class QueueSegmentReducer
 			{
 				// [BIN:TPW-EXE:0x00535670 own queue cell] a queue cell is accepted by the queue tool only when its owner word is the tool's ride (0x818698) and it does not hold two links (popcount 2): the ride's own two-link cell and any other ride's cell refuse
 				if ( cells.OwnerAt( p.X, p.Y ) != owner || System.Numerics.BitOperations.PopCount( cells.LinksAt( p.X, p.Y ) ) == 2 ) return Result( CellBuildResult.Occupied, p );
+				// [BIN:TPW-EXE:0x535AD8 code 0xB] the ride's own queue cell on the line's last cell answers 0xB and sets the end flag 0x816D4C
+				endsOnOwnQueue = p == end;
 				continue;
 			}
 			built.Add( p );
@@ -92,7 +95,7 @@ internal sealed class QueueSegmentReducer
 		}
 		return Result( CellBuildResult.Ok, null );
 		SegmentResult Result( CellBuildResult failure, (int X, int Y)? at ) => new( end, built, built.Count * price(), failure, cells.PrimaryTypeAt( end.X, end.Y ) is 1 or 3 )
-		{ Start = start, Line = line, StoppedAt = at, LinkPointer = failure == CellBuildResult.Ok && cells.PrimaryTypeAt( end.X, end.Y ) == 1 };
+		{ Start = start, Line = line, StoppedAt = at, LinkPointer = failure == CellBuildResult.Ok && cells.PrimaryTypeAt( end.X, end.Y ) == 1, EndPointer = failure == CellBuildResult.Ok && endsOnOwnQueue };
 	}
 
 	internal SegmentResult Commit( (int X, int Y) start, (int X, int Y) end )

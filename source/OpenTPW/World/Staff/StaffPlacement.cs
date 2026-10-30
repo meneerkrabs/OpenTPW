@@ -432,7 +432,7 @@ public sealed class StaffPlacement
 		member.IdleStamp = 0;
 		member.OffGridLeg.Clear();
 		// [BIN:TPW-EXE:0x00505EA0 drop sprite] the drop makes a fresh stand source and queues the stand (state 0); a placing click's constructor makes the source and runs the role's search instead (constructed)
-		StaffSpriteEvents.PutDown( staff, member, constructed );
+		StaffSpriteEvents.Dropped( staff, member, constructed );
 	}
 
 	/// <summary>

@@ -62,7 +62,7 @@ internal static class StaffSpriteEvents
 	/// <c>0x004D9EB0</c>, <c>0x00502600</c>): a fresh stand source; the drop then sets state 0 (queues the stand), a constructor runs its first search instead.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00505EA0 drop] 0x004D4140(3, +0x24, +0x20) makes the source, then 0x005054D0(0) queues template 3 (0x004FA460); the constructors call 0x004D4140(3, ...) after the person base constructor and run the role's search, which queues its own template
-	public static void PutDown( ParkStaff staff, StaffMember member, bool constructed )
+	public static void Dropped( ParkStaff staff, StaffMember member, bool constructed )
 	{
 		member.Sprite.Delete();
 		Create( staff, member, Stand );

@@ -12,7 +12,15 @@ public interface IStaffSpriteBanks
 /// <param name="Stack">The 20 stack words, complete semantic PC words (<see cref="StaffSpritePc"/>), also the inactive ones.</param>
 /// <param name="Registers">The 19 register words (<see cref="StaffSpriteRegister"/>).</param>
 public sealed record StaffSpriteVmSnapshot( uint CurrentPc, uint RestartPc, uint LastPc, int RunState, int StackPointer, IReadOnlyList<uint> Stack, int IfDepth, int CallDepth, int LoopDepth,
-	int Due, int Interval, IReadOnlyList<uint> Registers, uint OutputValid );
+	int Due, int Interval, IReadOnlyList<uint> Registers, uint OutputValid )
+{
+	/// <summary>Value equality, the two word lists by their words.</summary>
+	public bool Equals( StaffSpriteVmSnapshot? other ) => other != null && (CurrentPc, RestartPc, LastPc, RunState, StackPointer, IfDepth, CallDepth, LoopDepth, Due, Interval, OutputValid)
+		== (other.CurrentPc, other.RestartPc, other.LastPc, other.RunState, other.StackPointer, other.IfDepth, other.CallDepth, other.LoopDepth, other.Due, other.Interval, other.OutputValid)
+		&& Stack.SequenceEqual( other.Stack ) && Registers.SequenceEqual( other.Registers );
+
+	public override int GetHashCode() => HashCode.Combine( CurrentPc, RestartPc, LastPc, RunState, Due, Interval, OutputValid );
+}
 
 /// <summary>A saved staff member's sprite: the wrapper's two pending words and the live source, if any.</summary>
 public sealed record StaffSpriteStateSnapshot( int PendingTemplate, int PendingInterval, StaffSpriteVmSnapshot? Source );

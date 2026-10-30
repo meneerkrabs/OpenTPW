@@ -543,7 +543,7 @@ knot pass's write-back of the clamped height parameter and the no-model fallback
 without the model; COAST-029 lost its middle-knot height-adjust clause, the knots taking no `fTrackHeightAdjust`). Saves record
 the knot pass (`KnotPass`): a save from before it places the trains of a coaster with pylon models again and its riders leave. The same round traced the
 stack parts (`0x432df0`) and the kept half turn (COAST-033 narrowed), the mesh's slices, shared rings, winding and marker links
-(COAST-026 narrowed to the cross-section runs and blends and the Add-mode UV animation; the runs, blends and UV keys were built on October 30) and the cursor link (COAST-035
+(COAST-026 narrowed to the cross-section runs and blends, lighting and the Add-mode UV animation; the runs, blends and UV keys were built on October 30) and the cursor link (COAST-035
 narrowed: the ribbon is gone; the closing target's marks are not set).
 
 The coaster rest round of October 16 settled COAST-017 and COAST-030 and narrowed COAST-011 and COAST-034. COAST-017: a sample's roll is the

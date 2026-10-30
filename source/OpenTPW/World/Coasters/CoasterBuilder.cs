@@ -167,7 +167,7 @@ public sealed class CoasterBuilder
 		Track.Append( Ride.World, Ride, x, y, Height, LoopMode, secondOfPair );
 		if ( LoopMode && --loopPylonsLeft <= 0 )
 			LoopMode = false;
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		return result;
 	}
 
@@ -185,7 +185,7 @@ public sealed class CoasterBuilder
 		if ( !Track.IsCut )
 			return Close() ? CoasterPlaceResult.Ok : CoasterPlaceResult.NotEditable;
 		Track.Close();
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		Ride.Rebuild();
 		return CoasterPlaceResult.Ok;
 	}
@@ -206,7 +206,7 @@ public sealed class CoasterBuilder
 	{
 		if ( !Track.Close() )
 			return false;
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		return true;
 	}
 
@@ -259,7 +259,7 @@ public sealed class CoasterBuilder
 		var charge = CoasterTrack.RoundUp( Track.NodeCost( index, chargeUnit: false ) ) + (next is int m ? CoasterTrack.RoundUp( Track.NodeCost( m, chargeUnit: false ) ) : 0);
 		Refund( refund );
 		Spend( charge, force: true );
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 	}
 
 	/// <summary>
@@ -272,7 +272,7 @@ public sealed class CoasterBuilder
 		if ( !Track.IsClosed || Track.IsComplete || Track.IsCut || Track.CheckClosure() == CoasterPlaceResult.Ok )
 			return false;
 		Track.OpenClosure();
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		return true;
 	}
 
@@ -282,7 +282,7 @@ public sealed class CoasterBuilder
 	{
 		if ( !Track.RemoveLast() )
 			return false;
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		return true;
 	}
 
@@ -317,7 +317,7 @@ public sealed class CoasterBuilder
 			return false;
 		Ride.EnterState( CoasterControllerState.Incomplete );
 		Track.Reopen();
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		return true;
 	}
 
@@ -335,7 +335,7 @@ public sealed class CoasterBuilder
 		if ( result == CoasterTrack.CutResult.Refused )
 			return result;
 		Ride.EnterState( CoasterControllerState.Incomplete );
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		Ride.RaiseTrackChanged();
 		return result;
 	}
@@ -345,7 +345,7 @@ public sealed class CoasterBuilder
 	{
 		if ( !Track.SwapStack( index, up ) )
 			return false;
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		if ( Track.IsRunnable )
 			Ride.Rebuild();
 		else
@@ -426,22 +426,37 @@ public sealed class CoasterBuilder
 		return new NodeEdit( index, Track.Nodes[index], refund, next );
 	}
 
-	/// <summary>Changes the picked node while the drag runs (no money moves yet): the track is revalidated and a finished track fitted again.</summary>
+	/// <summary>
+	/// Revalidates the track after an edit and stores what the rebuild stores in the nodes: the knot pass writes the auto-banks and the kept half turns of the chain as it stands, as the original's
+	/// rebuild does on every frame of the build and of an edit.
+	/// </summary>
+	// [BIN:TPW-EXE:0x430ed0 rebuild stores] the knot pass runs in every rebuild (0x43eb70, each frame the controller's dirty bit 1 is set: 0x435a30) and writes its results into the nodes: the bank (+0xd8, the auto-bank unless node flag 4 holds a hand-set value), the yaw and pitch and the node flag 0x10000000 (the half turn of a suspended coaster's pylon, 0x431f29/0x431f34), whatever the chain is, so an unfinished chain's nodes hold their auto-banks while it is built (the tilt drag counts from them, 0x442010) and a drag step stores them again (0x442f2a)
+	// [APPROX:COAST-033] the build cursor's node takes part in the original's rebuild of an unfinished chain, so the last pylon's stored bank and half turn follow the hovered cell there; OpenTPW stores the chain's own nodes at each edit (a cursor position that left a half turn kept by a straight or loop-pylon pass is not reproduced) — evidence needed: a capture of a suspended coaster built with the cursor passing its straight nodes
+	private void Revalidate()
+	{
+		Track.Revalidate( Site, Ride.World, Ride );
+		if ( Track.Nodes.Count >= CoasterTrack.StationNodeCount )
+			Track.BuildKnotPass( Site, writeBanks: true );
+	}
+
+	/// <summary>Changes the picked node while the drag runs (no money moves yet): the track is revalidated and a finished track is fitted again, as the original's rebuild does on every frame of an edit.</summary>
 	public void ApplyEdit( NodeEdit edit, Func<CoasterNode, CoasterNode> change )
 	{
 		Track.Replace( edit.Index, change( Track.Nodes[edit.Index] ) );
-		AfterEdit( deferRebuild: true );
+		AfterEdit();
 	}
 
 	/// <summary>
-	/// Revalidates after an edit. While a drag runs the controller is not fitted again (that resamples, rates and checks the whole circuit): the renderer draws the nodes as they are, and
-	/// <see cref="FinishEdit"/> fits the track once on the release.
+	/// Revalidates after an edit and refits the controller of a finished track: the curve, the samples, the rating, the crossings and the trains' places, as the original's rebuild does on every frame
+	/// of a drag (the controller's dirty bit 1 set by 0x4346c0 makes 0x435a30 run 0x43eb70 each frame: the knot pass, the sampler 0x440c10, the rating pass 0x43c450 with its train placement
+	/// 0x43c1f0, the collision pass 0x439ab0 and the mesh).
 	/// </summary>
-	// [APPROX:COAST-028] the original rebuilds the track every frame of a drag (0x43eb70); OpenTPW draws the track and its crossing markers live and fits the curve, rates the track and replaces the trains once, on the release
-	private void AfterEdit( bool deferRebuild )
+	// [BIN:TPW-EXE:0x435a30 per-frame rebuild] every frame the controller with bit 1 set (0x4346c0, called by every edit handler: 0x442f2a, 0x443ddc, 0x4425c4 and the others) is rebuilt by 0x43eb70, whose rating pass places the trains again (train 0 keeps its last car's coordinate, the others follow by the release time); the collision pass 0x439ab0 and the lift marks of the rating pass 0x43c450 run on every chain it draws (CoasterRide.ChainCrossings, ChainWinchSections)
+	// [APPROX:COAST-028] only the controller of a finished track is fitted on every step; an unfinished chain is drawn with live lift marks and crossings, but its controller's rating fields keep their last fit until it is completed (the original rates the chain's samples every frame; no window shows the fields before completion) — evidence needed: whether any reader of an unfinished controller's rating fields exists
+	private void AfterEdit()
 	{
-		Track.Revalidate( Site, Ride.World, Ride );
-		if ( Track.IsRunnable && !deferRebuild )
+		Revalidate();
+		if ( Track.IsRunnable )
 			Ride.Rebuild();
 		else
 			Ride.RaiseTrackChanged();
@@ -498,7 +513,7 @@ public sealed class CoasterBuilder
 		// back on the cell it was picked up from, the node takes its old place in the stack again
 		int? restore = (x, y) == (edit.Start.X, edit.Start.Y) ? edit.Start.StackIndex : null;
 		Track.Relocate( edit.Index, x, y, stack, restore );
-		AfterEdit( deferRebuild: true );
+		AfterEdit();
 		return result;
 	}
 

@@ -425,6 +425,33 @@ public class CoasterPanelTests
 		panel.Release( First, (24, 20) );
 	}
 
+	/// <summary>
+	/// COAST-028: the original's rebuild runs the rating pass on every chain it draws and on every frame of an edit (0x43eb70 → 0x43c450), so a chain's lift sections (node flag 0x800, where the speed
+	/// falls to the winch floor) are marked live: a track drawn through its nodes has the marks of the controller's own fit, and an unfinished chain has them although no fit ever ran.
+	/// </summary>
+	[TestMethod]
+	public void TheLiftSectionsOfADrawnChainAreRatedLiveAsTheRebuildDoes()
+	{
+		var (finished, ride) = Finished();
+		var pass = finished.Track.BuildKnotPass( finished.Site, finished.Track.Nodes, writeBanks: false );
+		var sampling = ride.Curve.Sample( pass.Knots, ride.Definition.Curviness );
+		var live = CoasterRide.ChainWinchSections( ride.Definition, ride.SpeedCap, finished.Track.Nodes, sampling );
+		Assert.IsTrue( ride.WinchSections.Count > 0, "the circuit has lift sections" );
+		CollectionAssert.AreEquivalent( ride.WinchSections.ToArray(), live.ToArray(), "a track drawn through its nodes carries the marks of the controller's own fit" );
+
+		var (builder, open) = NewCoaster();
+		builder.Height = 60;
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 28, 24 ) );
+		Assert.AreEqual( 0, open.WinchSections.Count, "no fit ran for an unfinished chain" );
+		var chain = builder.Track.BuildPreviewChain( (30, 26), 60, false )!.Value.Chain;
+		var chainPass = builder.Track.BuildKnotPass( builder.Site, chain, writeBanks: false );
+		var chainSampling = open.Curve.Sample( chainPass.Knots, open.Definition.Curviness );
+		var marks = CoasterRide.ChainWinchSections( open.Definition, open.SpeedCap, chain, chainSampling );
+		Assert.IsTrue( marks.Count > 0, "the rating pass marks the sections that fall to the winch speed on the unfinished chain" );
+		Assert.IsTrue( marks.All( node => node >= 0 && node < chain.Count ) );
+	}
+
 	[TestMethod]
 	public void TheRotateDragTurnsThePylonWithinTheDeviationAndSetsFlag1()
 	{
@@ -450,6 +477,34 @@ public class CoasterPanelTests
 		var cost = builder.BuildCost;
 		panel.Release( First + 1, (28, 24) );
 		Assert.AreEqual( cost, builder.BuildCost, "rotating moves no money" );
+	}
+
+	/// <summary>
+	/// COAST-033: the original's rebuild runs on every frame of a build, and its knot pass stores each node's auto-bank (and half turn) in the node (0x430ed0), so the nodes of an unfinished chain hold
+	/// the banks the curve gives them and a tilt drag counts from them; each edit of the builder stores them again, drag steps included (0x442f2a).
+	/// </summary>
+	[TestMethod]
+	public void AnUnfinishedChainsNodesHoldTheAutoBanksTheKnotPassStoresOnEveryEdit()
+	{
+		var (builder, _) = NewCoaster();
+		builder.Height = 40;
+		foreach ( var (x, y) in new[] { (24, 20), (28, 24), (24, 28), (20, 28) } )
+			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( x, y ) );
+		var track = builder.Track;
+		var computed = track.BuildKnotPass( builder.Site, track.Nodes, writeBanks: false ).Banks;
+		for ( var index = 0; index < track.Nodes.Count - 1; index++ )
+			Assert.AreEqual( computed[index], track.Nodes[index].Bank, 1e-6f, $"node {index} holds the bank the pass computes" );
+		Assert.IsTrue( track.Nodes.Skip( First ).Any( node => node.Bank != 0 ), "a curve banks" );
+		// a drag step stores them again: moving the last pylon changes the bend at the one before it
+		var panel = CoasterPanelRig.Create( builder );
+		panel.Select( CoasterToolButton.Move );
+		var before = track.Nodes[^2].Bank;
+		Assert.IsTrue( panel.Press( track.Nodes.Count - 1, new NVector2( 100, 100 ), 20, 28 ) );
+		panel.Drag( new NVector2( 100, 100 ), 0, (20, 34) );
+		var after = track.BuildKnotPass( builder.Site, track.Nodes, writeBanks: false ).Banks;
+		Assert.AreEqual( after[^2], track.Nodes[^2].Bank, 1e-6f, "the step stored the new bank" );
+		Assert.AreNotEqual( before, track.Nodes[^2].Bank, "which the move changed" );
+		panel.Release( null, null );
 	}
 
 	[TestMethod]
@@ -891,7 +946,7 @@ public class CoasterPanelTests
 	}
 
 	[TestMethod]
-	public void ACutLeavesAFinishedCircuitsRidersAndTheDragDoesNotRefitUntilTheRelease()
+	public void ACutLeavesAFinishedCircuitsRidersAndTheDragRefitsTheControllerOnEveryStep()
 	{
 		var (builder, ride) = Finished();
 		ride.EnterTool();
@@ -903,7 +958,10 @@ public class CoasterPanelTests
 		panel.Drag( new NVector2( 0, 300 ), 0, null );
 		panel.Drag( new NVector2( 0, 250 ), 0, null );
 		Assert.AreNotEqual( version, builder.Track.Nodes[First + 1].T, "the node follows the pointer" );
-		Assert.AreEqual( samples, ride.Samples.Count, "the controller is fitted once, on the release" );
+		// [BIN:TPW-EXE:0x435a30 per-frame rebuild] the original's controller is rebuilt on every frame of a drag (0x4346c0 sets its dirty bit, 0x43eb70 refits it), trains included
+		Assert.AreNotEqual( samples, ride.Samples.Count, "the controller is fitted again on every step of the drag: the raised pylon lengthens the track" );
+		panel.Drag( new NVector2( 0, 400 ), 0, null );
+		Assert.AreEqual( samples, ride.Samples.Count, "and back on the pylon's first place the track is the old one again" );
 		panel.Release( First + 1, null );
 		Assert.IsTrue( ride.IsOperational );
 	}

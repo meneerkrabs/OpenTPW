@@ -434,10 +434,10 @@ public sealed partial class OriginalEconomyImport
 		var jobs = new List<string>();
 		var resumedClaims = new HashSet<int>();
 		var membersByThing = new Dictionary<int, StaffMember>();
-		// a guard chases a guest the guest import restores in the park (states 6–10, GuestSimulation.ImportsOriginalState)
-		var chaseable = save.Guests.Where( guest => guest.State is >= 6 and <= 10 ).Select( guest => guest.Id ).ToHashSet();
-		// a guard escorting a guest (state 18) names a saved guest (+0x212); the guest import decides which of them are restored (IdleEscortsWithoutARestoredGuest)
+		// [BIN:TPW-EXE:0x004D6790 chase] a guard chasing a guest (state 16, +0x212) walks to the guest's cell whatever state it is in and gives up there when the catch test 0x004FEC10 fails: the chase names a saved guest and the guest import decides which of them are restored (IdleEscortsWithoutARestoredGuest)
+		// a guard escorting a guest (state 18) names a saved guest (+0x212) the same way
 		var savedGuests = save.Guests.Select( guest => guest.Id ).ToHashSet();
+		var chaseable = savedGuests;
 		foreach ( var saved in save.Staff )
 		{
 			var type = saved.Model switch
@@ -636,15 +636,15 @@ public sealed partial class OriginalEconomyImport
 	}
 
 	/// <summary>
-	/// After the guests are imported: a guard imported escorting a guest the guest import did not restore at all (dropped) is idle, as the import gives every guard whose guest is missing
-	/// (SAVE-002). A guest restored in any state keeps its escorts: the set-down (0x004FEB50) does not look at the state. Returns the evidence lines.
+	/// After the guests are imported: a guard imported escorting or chasing a guest the guest import did not restore at all (dropped) is idle, as the import gives every guard whose guest is missing
+	/// (SAVE-002). A guest restored in any state keeps its guards: the set-down (0x004FEB50) and the chase (0x004D6790) do not look at the state. Returns the evidence lines.
 	/// </summary>
 	internal static IReadOnlyList<string> IdleEscortsWithoutARestoredGuest( ParkEconomy economy, Func<int, bool> isImported )
 	{
 		var lines = new List<string>();
-		foreach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Guard && member.Job == StaffJob.Escorting && !isImported( member.TargetGuestId ) ) )
+		foreach ( var member in economy.Staff.Members.Where( member => member.Type == StaffType.Guard && member.Job is StaffJob.Escorting or StaffJob.Chasing && !isImported( member.TargetGuestId ) ) )
 		{
-			lines.Add( $"[APPROX:SAVE-002] guard {member.Id} escorting guest {member.TargetGuestId} imported idle: the guest import did not restore that guest." );
+			lines.Add( $"[APPROX:SAVE-002] guard {member.Id} {(member.Job == StaffJob.Chasing ? "chasing" : "escorting")} guest {member.TargetGuestId} imported idle: the guest import did not restore that guest." );
 			member.TargetGuestId = 0;
 			member.Job = StaffJob.Idle;
 			member.State = ParkStaff.DisplayState( (uint)StaffJob.Idle );
@@ -731,7 +731,7 @@ public sealed partial class OriginalEconomyImport
 				member.TargetGuestId = saved.RoleTarget;
 				break;
 			case StaffJob.Chasing or StaffJob.Escorting:
-				// [APPROX:SAVE-002] [BIN:TPW-EXE:0x004D6350 escort state] a guard chasing a guest the import does not restore (a rider, state 16), or escorting one that the save does not hold (state 17), is imported idle
+				// [APPROX:SAVE-002] [BIN:TPW-EXE:0x004D6350 escort state] a guard whose perpetrator is no guest of the save is imported idle
 				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park, or the save holds no such guest." );
 				job = StaffJob.Idle;
 				break;

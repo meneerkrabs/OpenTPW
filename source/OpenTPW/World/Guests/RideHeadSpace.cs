@@ -169,6 +169,20 @@ public sealed class RideHeadSpace
 	/// <summary>Clears host-owned presentation slots when the ride releases its riders or is torn down.</summary>
 	internal void Clear() => Array.Clear( visitors );
 
+	/// <summary>
+	/// An original save's head table (<see cref="SavedRideTables.Heads"/>): the rider on each slot as saved, with no head hung and no draw (the loader reads the buffer raw, 0x005597A0). The
+	/// length must be the model's.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005597A0 head table load] the slots are the saved words; the heads themselves are sprite scripts of the Scripts block (0x00475A10 made them, 0x0044B410 stored their handle in the model's lookup record), so a loaded rider keeps its slot and its head comes from that block (SAVE-013)
+	internal void ImportSaved( IReadOnlyList<int> saved )
+	{
+		ArgumentNullException.ThrowIfNull( saved );
+		if ( saved.Count != visitors.Length )
+			throw new InvalidDataException( $"head space has {visitors.Length} slots, the saved table holds {saved.Count}." );
+		for ( var slot = 0; slot < visitors.Length; slot++ )
+			visitors[slot] = saved[slot];
+	}
+
 	/// <summary>DELHEAD: every slot holding the visitor is freed. Returns whether any was.</summary>
 	public bool Remove( int visitor )
 	{

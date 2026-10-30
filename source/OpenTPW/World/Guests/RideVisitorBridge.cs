@@ -824,18 +824,81 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private bool importedAdmissionPending;
 
 	/// <summary>
+	/// True once an original save's run state of this ride's script was imported (<see cref="SavedScriptImport"/>): the script then holds the guests it took as the saved game left them, so a queue head
+	/// imported as handed to the script boards at the first host step when the script has taken it, and the riders the save names stay aboard (<see cref="ImportSavedRiders"/>). Not saved.
+	/// </summary>
+	internal bool SavedRunStateImported { get; set; }
+
+	private SavedRideTables? stagedTables;
+
+	/// <summary>Keeps the rider tables of the ride's saved script record until the riders are known (<see cref="ImportSavedRiders"/>).</summary>
+	internal void StageSavedTables( SavedRideTables tables ) => stagedTables = tables;
+
+	/// <summary>
+	/// An original save's riders: the guests in state 16 that name this ride (the loader reads the state straight in and the state-16 update does nothing, 0x00501A08 case 0x10), in the order of their
+	/// thing ids, and the walk, bounce and head tables of the ride's script record that <see cref="StageSavedTables"/> kept. A table that names a guest who is neither aboard nor the queue head the script
+	/// has taken (the state-14 test 0x004E0A70 boards it at its first update) is not kept; the report says so. Returns the report lines.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00501A08 state 16 update] the update of a guest in state 16 only looks its ride up (0x004CD300): it is the ride's script that walks, bounces, hangs and lets it off, through the tables the RSSE record holds
+	// [BIN:TPW-EXE:0x005597A0 RSSE loader] the tables are read as saved and nothing rebuilds them from the guests: a rider is in the ride's tables, its heap (the stack buffer's tail), its limbo table, a variable or nowhere the script can name
+	internal IReadOnlyList<string> ImportSavedRiders( IReadOnlyList<int> riders )
+	{
+		ArgumentNullException.ThrowIfNull( riders );
+		if ( onRide.Count != 0 )
+			throw new InvalidOperationException( $"Attraction {AttractionId} already holds riders." );
+		var notes = new List<string>();
+		var tables = stagedTables;
+		stagedTables = null;
+		var aboard = riders.Order().Distinct().ToList();
+		if ( tables != null )
+		{
+			var known = new HashSet<int>( aboard );
+			// the queue head the script took before the save is a rider already (its guest update enters state 16 next, 0x00501B6E)
+			if ( called != 0 && letMeOnWritten )
+				known.Add( called );
+			var stray = tables.Guests.Where( guest => !known.Contains( guest ) ).Distinct().Order().ToList();
+			if ( stray.Count > 0 )
+			{
+				notes.Add( $"the walk, bounce and head tables of attraction {AttractionId} name guests who are not aboard it ({string.Join( ", ", stray )}) and are not kept" );
+				tables = null;
+			}
+		}
+		onRide.AddRange( aboard );
+		BoardedTotal = onRide.Count;
+		if ( tables == null )
+			return notes;
+		walkTable.Clear();
+		foreach ( var entry in tables.Walk )
+			SetWalkSlot( entry.Slot, new WalkRecord( entry.Guest, entry.Node1, entry.Node2, entry.Node3, entry.Node4, entry.Mode, entry.Extra, entry.State, entry.Began, entry.Ends ) { Heading = entry.Heading } );
+		bouncing.Clear();
+		bounceNodes.Clear();
+		bounceNodeBase = tables.BounceNodeBase;
+		bounceBaseHeight = tables.BounceBaseHeight;
+		var last = tables.Bounce.Count == 0 ? -1 : tables.Bounce.Max( slot => slot.Slot );
+		for ( var index = 0; index <= last; index++ )
+		{
+			var slot = tables.Bounce.FirstOrDefault( entry => entry.Slot == index );
+			bouncing.Add( slot == null ? default : (slot.Guest, slot.Deadline, slot.Start) );
+			bounceNodes.Add( slot?.Node ?? bounceNodeBase + index );
+		}
+		Heads?.ImportSaved( tables.Heads );
+		return notes;
+	}
+
+	/// <summary>
 	/// After the scripts are imported: a head restored as handed to the script (state 14) keeps that only while the script holds it in <c>VAR_LETMEON</c>. When the script import was refused
 	/// (or the variable is not the head) the head is called but not admitted: the written flag drops, so the host step does not board it and it presents itself at the stand point again.
 	/// Returns the demoted guest, or 0 when nothing changed.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004E0A70 state 14 test] the state-14 test compares the script's first variable with mFirstInQ; tp.exe sends a head the script does not hold straight to state 16
-	// [APPROX:SAVE-002] the demotion to a called head (state 13) stands in for that state 16, which needs the ride script's walk, bounce and head tables the import does not restore (DET-013)
+	// [APPROX:SAVE-002] the demotion to a called head (state 13) stands in for that state 16 where the ride's script run state could not be imported: a script that holds no trace of the guest cannot let it off
 	internal int ReconcileImportedAdmission()
 	{
 		if ( !importedAdmissionPending )
 			return 0;
 		importedAdmissionPending = false;
-		if ( !letMeOnWritten || called == 0 || Get( RideVariables.VAR_LETMEON ) == called )
+		// a ride whose script run state was imported holds the guest as the save left it: the head the script took boards at the first host step, as the state-14 test sends it into state 16
+		if ( SavedRunStateImported || !letMeOnWritten || called == 0 || Get( RideVariables.VAR_LETMEON ) == called )
 			return 0;
 		letMeOnWritten = false;
 		return called;

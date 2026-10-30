@@ -669,9 +669,10 @@ public partial class Level : IDisposable
 			}
 			yield return 0.95f;
 			ImportOriginalTracks();
-			ImportOriginalGuests();
 			ImportOriginalRideSettings();
+			// the scripts come before the guests: a guest in state 16 is a rider the ride's saved script state holds (its walk, bounce and head tables), so the guest import needs to know which scripts were restored
 			ImportOriginalScripts();
+			ImportOriginalGuests();
 			ReconcileOriginalAdmissions();
 			yield return 0.95f;
 			ImportOriginalCoasters();

@@ -39,7 +39,8 @@ public sealed partial class GuestSimulation
 	/// <summary>
 	/// Whether the import restores a guest in this saved state (guest <c>+0x220</c>, the <c>KIDSTATES</c> index): the arrival and departure states
 	/// 0–5, 18, 19 and 21, the park states 6–10 (on a path or off the paths), a guest leaving a ride (15) and one held by a guard (17, with its escorting guard's state 18 restored by the
-	/// staff import). The queue states 11–14 are restored through their attraction's saved queue (<see cref="IsOriginalQueueMember"/>); a guest using an attraction (16) is not restored.
+	/// staff import). The queue states 11–14 are restored through their attraction's saved queue (<see cref="IsOriginalQueueMember"/>); a guest using an attraction (16) is a rider, restored
+	/// through the ride's saved script state when the attraction's script run state was imported (<see cref="RideVisitorBridge.SavedRunStateImported"/>).
 	/// </summary>
 	public static bool ImportsOriginalState( uint state ) => state is <= 10 or 15 or 17 or 18 or 19 or 21;
 
@@ -71,15 +72,19 @@ public sealed partial class GuestSimulation
 		var savedMajors = 0;
 		long Relative( uint stamp ) => Math.Max( 0, stamp - parkTurn );
 		var (queuePlans, queueNotes) = PlanOriginalQueues( saved, attractions, attraction );
+		var riders = new Dictionary<int, List<int>>();
 		foreach ( var save in saved.OrderBy( item => item.Id ) )
 		{
 			var person = save.Person;
 			var what = $"guest {save.Id}";
 			var queued = IsOriginalQueueMember( save );
+			// [BIN:TPW-EXE:0x00501A08 state 16] the loader reads mState straight in and a guest in state 16 names its ride in mMajorDest (+0x1DC, the object table lookup 0x004CD300): the ride's script holds the rest
+			var riding = save.State == 16 && attraction( save.MajorDest ) is var rideOf and not 0 && FindAttraction( rideOf ) is RideVisitorBridge { SavedRunStateImported: true };
+			var rideId = riding ? attraction( save.MajorDest ) : 0;
 			// a guest of a refused or absent queue is dismissed to DoingNothing at its cell, as the original's state-11 update ends a queue its ride does not hold (0x00500136, "Problem with a
 			// queue"; the interlude returns to 11 at 0x004FC890 and is dismissed the same way): that is the state an import without a queue gave a state-8 guest, and the one every queue guest gets now
 			var orphan = queued && !queuePlans.ContainsKey( save.Id ) && (attractions != null || save.State == 8);
-			if ( queued ? !queuePlans.ContainsKey( save.Id ) && !orphan : !ImportsOriginalState( save.State ) )
+			if ( queued ? !queuePlans.ContainsKey( save.Id ) && !orphan : !ImportsOriginalState( save.State ) && !riding )
 			{
 				dropped.Add( $"{what} (state {save.State})" );
 				ReleaseDroppedThing( save.Id );
@@ -102,8 +107,8 @@ public sealed partial class GuestSimulation
 			// [BIN:TPW-EXE:0x004FB530 off-path guest] the load reads the position and mState straight in and nothing moves a park guest standing off the paths (a path deleted
 			// under it, an object built over it, a wander across grass): it stays where it stands and its own state handlers recover it, the wander's off-path search 0x004F9490 included
 			// [BIN:TPW-EXE:0x004FEB10 held guest] a guest held by a guard (state 17) is off the map and stands nowhere: its saved cell only has to be on the map
-			var inPark = save.State is >= 6 and <= 15 or 17 || save.State == 18 && Grid.IsWalkable( cell.X, cell.Y );
-			if ( inPark && save.State is not (15 or 17 or 18) && !Grid.IsWalkable( cell.X, cell.Y ) )
+			var inPark = save.State is >= 6 and <= 17 || save.State == 18 && Grid.IsWalkable( cell.X, cell.Y );
+			if ( inPark && save.State is not (15 or 16 or 17 or 18) && !Grid.IsWalkable( cell.X, cell.Y ) )
 				recovery.Add( $"guest {save.Id} state {save.State} imported off the paths at ({cell.X}, {cell.Y}) (cell type {Grid.Cells.RawTypeAt( cell.X, cell.Y )}); it recovers through its state handler (0x004F9490 off-path search)" );
 			if ( !inPark && !HasArrivalLane )
 			{
@@ -137,7 +142,8 @@ public sealed partial class GuestSimulation
 			guest.Nausea = Meter( save.Illness, "illness" );
 			guest.Litter = Meter( save.Litter, "litter" );
 			guest.Energy = Meter( save.Meter1B8, "meter +0x1B8" );
-			guest.QueueJoinHappiness = guest.Happiness;
+			// [BIN:TPW-EXE:0x0051861C queue-join happiness] the thing-list loader stores 0 in +0x20C right after the constructor and the guest serializer does not save it, so the happiness at joining a queue (read by the use satisfaction 0x004FDA1B) is 0 until the guest joins again
+			guest.QueueJoinHappiness = 0;
 			guest.Money = Math.Max( 0, save.Cash );
 			if ( guest.Money != save.Cash )
 				adjusted.Add( $"{what} cash {save.Cash} imported as 0" );
@@ -210,7 +216,13 @@ public sealed partial class GuestSimulation
 			byId.Add( guest.Id, guest );
 			if ( inPark )
 			{
-				ImportInPark( guest, save, cell, destination, attraction, bin, adjusted, recovery, queuePlans, parkTurn );
+				ImportInPark( guest, save, cell, destination, attraction, bin, adjusted, recovery, queuePlans, parkTurn, rideId );
+				if ( rideId != 0 )
+				{
+					if ( !riders.TryGetValue( rideId, out var aboard ) )
+						riders.Add( rideId, aboard = new List<int>() );
+					aboard.Add( guest.Id );
+				}
 				if ( (guest.AttractionId != 0 || guest.BinId != 0) && guest.State is not (GuestState.GoingToRide or GuestState.ThrowingAwayLitter) && !guest.IsInQueue )
 					keptTargets++;
 				// [BIN:TPW-EXE:0x4FD950 time in park] mArrivalDate (+0x1D4) is the world's game tick at the stamp and the hours the visitor lists show are (tick − stamp) >> 2 turns (the roster's cell); the saved stamp gives the elapsed park turns, a stamp after the save's own turn is not a date
@@ -235,6 +247,19 @@ public sealed partial class GuestSimulation
 		}
 		evidence.Add( $"Guest destinations imported: {keptTargets} kept targets (mMajorDest, +0x1DC: an attraction or a litter bin, of guests deciding or wandering) and {savedMajors} saved major destinations (mSavedMajorDest, +0x1DE)." );
 		var queues = RestoreOriginalQueues( queuePlans );
+		// the riders and the walk, bounce and head tables of every ride whose script state was imported (the tables were staged by the script import)
+		var rideNotes = new List<string>();
+		var aboardTotal = 0;
+		foreach ( var bridge in this.attractions.OfType<RideVisitorBridge>().Where( bridge => bridge.SavedRunStateImported ).ToList() )
+		{
+			var aboard = riders.TryGetValue( bridge.AttractionId, out var list ) ? list : new List<int>();
+			aboardTotal += aboard.Count;
+			foreach ( var note in bridge.ImportSavedRiders( aboard ) )
+				rideNotes.Add( $"[APPROX:SAVE-002] Saved {note}." );
+		}
+		if ( aboardTotal > 0 )
+			evidence.Add( $"Riders imported: {aboardTotal} guests in state 16, aboard the attractions that name them (mMajorDest, +0x1DC), with the walk, bounce and head tables of their ride scripts." );
+		evidence.AddRange( rideNotes );
 		if ( queuePlans.Count > 0 )
 			evidence.Add( $"Attraction queues imported: {queues} saved queues ({queuePlans.Count} guests in states 11–14) with their saved head, links and called guest (mFirstInQ, mQNext, mQPrev, mPersonBeingLoaded)." );
 		foreach ( var note in queueNotes )
@@ -264,7 +289,7 @@ public sealed partial class GuestSimulation
 			guest.BinId = bin( thingId );
 	}
 
-	private void ImportInPark( Guest guest, SaveGuest save, (int X, int Y) cell, (int X, int Y) destination, Func<int, int> attraction, Func<int, int> bin, List<string> adjusted, List<string> recovery, Dictionary<int, OriginalQueuePlan> queuePlans, long parkTurn )
+	private void ImportInPark( Guest guest, SaveGuest save, (int X, int Y) cell, (int X, int Y) destination, Func<int, int> attraction, Func<int, int> bin, List<string> adjusted, List<string> recovery, Dictionary<int, OriginalQueuePlan> queuePlans, long parkTurn, int rideId = 0 )
 	{
 		guest.OnGrid = true;
 		guest.Lane = null;
@@ -309,6 +334,21 @@ public sealed partial class GuestSimulation
 				break;
 			case 18:
 				guest.State = GuestState.LeavingPark;
+				break;
+			case 16 when rideId != 0:
+				// [BIN:TPW-EXE:0x00502156 state 16 entry] the entry's effects are in the saved words: the balloon's model is gone and +0x210 clear (0x00475550), the thought bubble gone (0x0050C0D0) and the body kept or taken off the map by the ride's flag (0x004D4170, +0x28): the guest stands as the ride took it, and its update does nothing (0x00501A08 case 0x10)
+				guest.State = GuestState.Using;
+				guest.AttractionId = rideId;
+				if ( guest.HasBalloon )
+				{
+					adjusted.Add( $"guest {guest.Id} on a ride saved with a balloon script, imported without the balloon the boarding takes away" );
+					guest.HasBalloon = false;
+				}
+				guest.BubbleThought = GuestThought.None;
+				guest.Activity = GuestActivity.None;
+				// [BIN:TPW-EXE:0x004FDA0D sideshow win byte] a sideshow stores the outcome of its win draw in +0x1F1 at the state-14 entry (0x004E2670) and the end of the use reads it (a lost play, 0x004FDA0D): the saved byte
+				if ( FindAttraction( rideId ) is { Kind: RideVisitorKind.Sideshow } )
+					guest.SideshowWon = save.QueuePos != 0;
 				break;
 			case 17:
 				// [BIN:TPW-EXE:0x004FEB10 held guest] the state setter's entry for 17 (0x005022DA) only runs on a change of state, and a load reads mState straight in: the guest stands as the hold left it, balloon gone (0x004FE950 clears

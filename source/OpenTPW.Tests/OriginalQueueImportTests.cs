@@ -245,7 +245,8 @@ public class OriginalQueueImportTests
 			root = Path.GetDirectoryName( root );
 		Assert.IsNotNull( root, "the repository root" );
 		var level = File.ReadAllText( Path.Combine( root, "source/OpenTPW/World/Level.cs" ) );
-		StringAssert.Matches( level, new System.Text.RegularExpressions.Regex( @"ImportOriginalScripts\(\);\s*ReconcileOriginalAdmissions\(\);" ) );
+		// the scripts come before the guests (a rider is held by its ride's saved script state), and the reconcile follows the guest import whatever the line ends
+		StringAssert.Matches( level, new System.Text.RegularExpressions.Regex( @"ImportOriginalScripts\(\);\s*ImportOriginalGuests\(\);\s*ReconcileOriginalAdmissions\(\);" ) );
 		// A Windows checkout has CRLF line ends: the body ends at the next member's doc comment, whatever the line ends.
 		var objects = File.ReadAllText( Path.Combine( root, "source/OpenTPW/World/Level.Objects.cs" ) );
 		var scripts = objects.Split( "private void ImportOriginalScripts()" )[1].Split( "/// <summary>" )[0];

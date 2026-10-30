@@ -53,10 +53,10 @@ public static class StaffSpriteRules
 	public static int VariantKey( int nameIndex, int id ) => (nameIndex + id) & int.MaxValue;
 
 	/// <summary>The key a candidate's sprite bank derives from: its variant (the drawn or saved one), else the name-and-id key of a pool from before the variant was kept.</summary>
-	public static int KeyOf( StaffCandidate candidate ) => candidate.Variant >= 0 ? candidate.Variant : VariantKey( candidate.NameIndex, candidate.Id );
+	public static int KeyOf( StaffCandidate candidate ) => candidate.SpriteDraw is >= 0 and var draw ? draw : candidate.Variant >= 0 ? candidate.Variant : VariantKey( candidate.NameIndex, candidate.Id );
 
 	/// <summary>The key a member's sprite bank derives from: the variant it was hired with, else the name-and-id key (a member of an OpenTPW park save from before the variant was kept).</summary>
-	public static int KeyOf( StaffMember member ) => member.Variant >= 0 ? member.Variant : VariantKey( member.NameIndex, member.Id );
+	public static int KeyOf( StaffMember member ) => member.SpriteDraw >= 0 ? member.SpriteDraw : member.Variant >= 0 ? member.Variant : VariantKey( member.NameIndex, member.Id );
 
 	/// <summary>Index of a variant's bank among <paramref name="count"/> banks.</summary>
 	public static int BankIndex( int variantKey, int count ) => count <= 0 ? -1 : variantKey % count;
@@ -198,6 +198,9 @@ public sealed class StaffSpriteSet : IStaffSpriteBanks
 
 	/// <summary>The animation file of the bank a person of a role and variant is drawn from, null when the role has none.</summary>
 	public SpriteAnimationFile? AnimationsOf( StaffType type, int variantKey ) => AtlasFor( type, variantKey ) is >= 0 and var index ? Atlases[index].Animations : null;
+
+	/// <summary>How many banks the role's folder loaded (after the staff limit), 0 for none.</summary>
+	public int BankCount( StaffType type ) => ranges[(int)type].Count;
 
 	/// <summary>The atlas index drawing a person of a role and variant, -1 when the role has no bank.</summary>
 	public int AtlasFor( StaffType type, int variantKey )

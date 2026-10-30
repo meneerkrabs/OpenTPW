@@ -22,11 +22,13 @@ public class StaffVariantTests
 		{
 			var banks = StaffSpriteRules.Banks( candidate.Type, park.Settings.Theme )!.Banks.Count;
 			Assert.IsTrue( candidate.Variant >= 0 && candidate.Variant < banks, $"{candidate.Type} variant {candidate.Variant} of {banks} banks" );
-			Assert.AreEqual( candidate.Variant, StaffSpriteRules.KeyOf( candidate ) );
+			// a headless pool keeps the raw draw (no bank is loaded to reduce it by); the bank is the draw modulo the banks there are
+			Assert.IsTrue( candidate.SpriteDraw >= 0 );
+			Assert.AreEqual( candidate.Variant, StaffSpriteRules.KeyOf( candidate ) % banks );
 		}
 		var hired = EconomyTestData.HireBest( park, StaffType.Mechanic );
 		Assert.IsTrue( hired.Variant >= 0 );
-		Assert.AreEqual( hired.Variant, StaffSpriteRules.KeyOf( hired ), "the member draws from the candidate's bank" );
+		Assert.AreEqual( hired.Variant, StaffSpriteRules.KeyOf( hired ) % StaffSpriteRules.Banks( StaffType.Mechanic, park.Settings.Theme )!.Banks.Count, "the member draws from the candidate's bank" );
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( park ) ) ), park.Settings, park.Catalog );
 		Assert.AreEqual( hired.Variant, restored.Staff.Members.Single().Variant, "a park save keeps the member's variant" );
 		CollectionAssert.AreEqual( park.Staff.Candidates.Select( candidate => candidate.Variant ).ToArray(), restored.Staff.Candidates.Select( candidate => candidate.Variant ).ToArray(), "and the pool's" );
@@ -109,5 +111,99 @@ public class StaffVariantTests
 				Assert.AreEqual( (int)(saved.Person.SpriteId % (uint)banks), member.Variant, $"{name}: staff thing {saved.Id}" );
 			}
 		} );
+	}
+
+	private sealed class Loaded( params int[] counts ) : IStaffSpriteBanks
+	{
+		// the counts by role: handyman, mechanic, entertainer, guard, researcher (the StaffType order)
+		public SpriteAnimationFile? AnimationsOf( StaffType type, int variantKey ) => null;
+		public int BankCount( StaffType type ) => counts[(int)type];
+	}
+
+	[TestMethod]
+	public void ADrawIsReducedByTheLoadedCountOfItsCategoryAtCreationAndAgainAtEveryLoad()
+	{
+		// [BIN:TPW-EXE:0x00541F70 / 0x004F93AA] (R >> 2) % the loaded count when a candidate is made, the stored id % the loaded count at every load: a lower count wraps the draw for good
+		var park = EconomyTestData.Park();
+		var raw = park.Staff.Candidates.Select( candidate => candidate.SpriteDraw!.Value ).ToArray();
+		Assert.IsTrue( raw.Any( draw => draw > 8 ), "a headless pool holds the raw draws" );
+		var one = new Loaded( Enumerable.Repeat( 1, 5 ).ToArray() );
+		park.Staff.AttachSpriteBanks( one );
+		Assert.IsTrue( park.Staff.Candidates.All( candidate => candidate.SpriteDraw == 0 ), "one loaded bank per role: draw 0" );
+		var two = new Loaded( Enumerable.Repeat( 2, 5 ).ToArray() );
+		park.Staff.AttachSpriteBanks( two );
+		Assert.IsTrue( park.Staff.Candidates.All( candidate => candidate.SpriteDraw == 0 ), "a park made on a preset that loads fewer banks keeps only those: the second bank is gone for good" );
+		// the same raw draws under two loaded banks: each draw modulo two
+		var other = EconomyTestData.Park();
+		other.Staff.AttachSpriteBanks( two );
+		CollectionAssert.AreEqual( raw.Select( draw => draw % 2 ).ToArray(), other.Staff.Candidates.Select( candidate => candidate.SpriteDraw!.Value ).ToArray() );
+		// a member hired from it keeps the candidate's draw; the guard's own draw is reduced by the loaded count too
+		var mechanic = EconomyTestData.HireBest( other, StaffType.Mechanic );
+		Assert.IsTrue( mechanic.SpriteDraw is 0 or 1 );
+		Assert.AreEqual( mechanic.SpriteDraw, StaffSpriteRules.KeyOf( mechanic ) );
+		// the economy of a load: the same members are given the level's banks again
+		other.Staff.AttachSpriteBanks( one );
+		Assert.AreEqual( 0, mechanic.SpriteDraw );
+		Assert.AreEqual( 0, StaffSpriteRules.KeyOf( mechanic ) );
+		// no loaded bank of a role (an unloaded folder) leaves its draws as they are
+		var unloaded = EconomyTestData.Park();
+		unloaded.Staff.AttachSpriteBanks( new Loaded( 0, 0, 0, 0, 0 ) );
+		CollectionAssert.AreEqual( raw, unloaded.Staff.Candidates.Select( candidate => candidate.SpriteDraw!.Value ).ToArray() );
+	}
+
+	[TestMethod]
+	public void TheStoredDrawIsPresentationAndNeverMovesTheWorldHash()
+	{
+		var plain = EconomyTestData.Park();
+		var reduced = EconomyTestData.Park();
+		reduced.Staff.AttachSpriteBanks( new Loaded( Enumerable.Repeat( 1, 5 ).ToArray() ) );
+		var before = WorldStateHash.Compute( new WorldStateSources { Economy = plain } );
+		Assert.AreNotEqual( ParkSaveFile.Serialize( plain ), ParkSaveFile.Serialize( reduced ), "the saves hold different draws" );
+		Assert.AreEqual( before, WorldStateHash.Compute( new WorldStateSources { Economy = reduced } ), "peers with other presets hash alike" );
+		var hired = EconomyTestData.HireBest( reduced, StaffType.Guard );
+		var twin = EconomyTestData.HireBest( plain, StaffType.Guard );
+		Assert.AreEqual( WorldStateHash.Compute( new WorldStateSources { Economy = plain } ), WorldStateHash.Compute( new WorldStateSources { Economy = reduced } ) );
+		Assert.AreEqual( twin.Variant, hired.Variant, "the hashed variant is the folder's, whatever is loaded" );
+	}
+
+	[TestMethod]
+	public void AnOriginalSavesSpriteIdIsTheStoredDrawTheLevelReducesByTheLoadedCount()
+	{
+		var park = EconomyTestData.Park();
+		var member = park.Staff.AddImported( StaffType.Mechanic, 1, 0, 50f, StaffState.Idle, 0, thingId: 77, variant: 1, spriteDraw: 3 );
+		Assert.AreEqual( 3, StaffSpriteRules.KeyOf( member ), "before the banks are known the id as saved" );
+		park.Staff.AttachSpriteBanks( new Loaded( 1, 2, 3, 1, 1 ) );
+		Assert.AreEqual( 1, member.SpriteDraw, "3 % the two mechanic banks loaded" );
+		Assert.AreEqual( 1, StaffSpriteRules.KeyOf( member ) );
+	}
+
+	[TestMethod]
+	public void TheStoredDrawIsSavedOptionalAndValidatedAndAnOlderSaveHasNone()
+	{
+		var park = EconomyTestData.Park();
+		park.Staff.AttachSpriteBanks( new Loaded( 1, 2, 3, 1, 1 ) );
+		var member = EconomyTestData.HireBest( park, StaffType.Entertainer );
+		var json = ParkSaveFile.Serialize( park );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), park.Settings, park.Catalog );
+		Assert.AreEqual( member.SpriteDraw, restored.Staff.Members.Single().SpriteDraw );
+		CollectionAssert.AreEqual( park.Staff.Candidates.Select( candidate => candidate.SpriteDraw ).ToArray(), restored.Staff.Candidates.Select( candidate => candidate.SpriteDraw ).ToArray() );
+		// a save from before the draw was kept has none: the bank comes from the variant, as it did
+		string Edit( Action<System.Text.Json.Nodes.JsonObject> change )
+		{
+			var node = System.Text.Json.Nodes.JsonNode.Parse( json )!.AsObject();
+			foreach ( var list in new[] { "Members", "Candidates" } )
+				foreach ( var entry in node["Staff"]![list]!.AsArray().OfType<System.Text.Json.Nodes.JsonObject>() )
+					change( entry );
+			return node.ToJsonString();
+		}
+		var older = Edit( entry => entry.Remove( "SpriteDraw" ) );
+		Assert.IsFalse( older.Contains( "SpriteDraw" ) );
+		var loaded = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( older ) ), park.Settings, park.Catalog );
+		Assert.AreEqual( -1, loaded.Staff.Members.Single().SpriteDraw );
+		Assert.AreEqual( loaded.Staff.Members.Single().Variant, StaffSpriteRules.KeyOf( loaded.Staff.Members.Single() ) );
+		Assert.IsTrue( loaded.Staff.Candidates.All( candidate => candidate.SpriteDraw == null ) );
+		// a negative draw is refused, a member's and a candidate's
+		var broken = Edit( entry => entry["SpriteDraw"] = -2 );
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( broken ) ) );
 	}
 }

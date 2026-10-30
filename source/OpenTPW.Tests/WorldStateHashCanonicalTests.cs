@@ -26,7 +26,14 @@ public class WorldStateHashCanonicalTests
 			if ( root[nameof( ParkSaveFile.Data.Research )] is JsonObject research )
 				research.Remove( nameof( ParkSaveFile.ResearchData.RecentItems ) );
 			if ( root[nameof( ParkSaveFile.Data.Staff )] is JsonObject staff )
+			{
 				staff.Remove( nameof( ParkSaveFile.StaffData.RoleOrder ) );
+				// the sprite draw of an employee or a candidate (the bank it is drawn from, reduced by the loaded banks) is presentation
+				foreach ( var list in new[] { nameof( ParkSaveFile.StaffData.Members ), nameof( ParkSaveFile.StaffData.Candidates ) } )
+					if ( staff[list] is JsonArray entries )
+						foreach ( var entry in entries.OfType<JsonObject>() )
+							entry.Remove( nameof( StaffMember.SpriteDraw ) );
+			}
 			if ( root[nameof( ParkSaveFile.Data.Objectives )] is JsonObject objectives && objectives[nameof( ParkSaveFile.ObjectivesData.Current )] is JsonObject challenge )
 				challenge.Remove( nameof( ActiveChallenge.RawValue ) );
 		}
@@ -87,12 +94,15 @@ public class WorldStateHashCanonicalTests
 		// digest leaves out, at its place and elsewhere
 		var json = """
 			{"zé":"café <b>&'+\"\\/ \u0001","a":1.50E+2,"Ångström":[true,false,null,{"k":"🎢"}],
-			 "AnalyserCaches":{"x":1},"StatisticsHistory":[1,2],"AnalyserChase":{"Month":1,"GotAway":0,"Ever":2},"Research":{"RecentItems":[1],"Done":2},"Staff":{"RoleOrder":[3],"Members":[]},
+			 "AnalyserCaches":{"x":1},"StatisticsHistory":[1,2],"AnalyserChase":{"Month":1,"GotAway":0,"Ever":2},"Research":{"RecentItems":[1],"Done":2},"Staff":{"RoleOrder":[3],"Members":[{"Id":1,"SpriteDraw":5}],"Candidates":[{"Id":2,"SpriteDraw":6}],"SpriteDraw":8},"Elsewhere":{"Members":[{"SpriteDraw":7}]},
 			 "Objectives":{"Current":{"RawValue":5,"Baseline":4},"RawValue":6},"Nested":{"RecentItems":7,"RoleOrder":8,"AnalyserCaches":9},"":0,"B":-0.0}
 			""";
 		var bytes = Encoding.UTF8.GetBytes( json );
 		Assert.AreEqual( Reference( JsonNode.Parse( bytes ) ), Written( bytes ) );
 		StringAssert.Contains( Written( bytes ), "\"Nested\":{\"AnalyserCaches\":9,\"RecentItems\":7,\"RoleOrder\":8}", "a left-out name elsewhere is kept" );
+		StringAssert.Contains( Written( bytes ), "\"Elsewhere\":{\"Members\":[{\"SpriteDraw\":7}]}", "a sprite draw outside the staff is kept" );
+		StringAssert.Contains( Written( bytes ), "\"Members\":[{\"Id\":1}]", "the staff's entries leave their sprite draw out" );
+		StringAssert.Contains( Written( bytes ), "\"SpriteDraw\":8", "and the staff's own member of that name stays" );
 	}
 
 	/// <summary>What the old tree-built text did with <paramref name="save"/>, and what the canonical writer does: the same text, or both refusing it.</summary>

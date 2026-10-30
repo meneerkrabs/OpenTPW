@@ -13,9 +13,10 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class StaffSpriteSourceTests
 {
-	private sealed class Banks( SpriteAnimationFile? animations ) : IStaffSpriteBanks
+	private sealed class Banks( SpriteAnimationFile? animations, int count = 1 ) : IStaffSpriteBanks
 	{
 		public SpriteAnimationFile? AnimationsOf( StaffType type, int variantKey ) => animations;
+		public int BankCount( StaffType type ) => count;
 	}
 
 	private static StaffMember Member( StaffType type = StaffType.Handyman ) =>
@@ -252,7 +253,7 @@ public class StaffSpriteSourceTests
 		{
 			var animations = Bank( (4, 8) );
 			// a bank of one entry is the shipped case; more entries are set up through the builder's performance table
-			staff.SpriteBanks = new Banks( entries == 1 ? animations : EntriesBank( entries ) );
+			staff.AttachSpriteBanks( new Banks( entries == 1 ? animations : EntriesBank( entries ) ) );
 			StaffSpriteEvents.Performance( staff, entertainer, draw );
 			return entertainer.Sprite.PendingTemplate;
 		}
@@ -261,7 +262,7 @@ public class StaffSpriteSourceTests
 		Assert.AreEqual( 14, Queued( 4, 4 ) );
 		Assert.AreEqual( 15, Queued( 4, 5 ) );
 		// without a bank (a headless run) the template is the shipped one
-		staff.SpriteBanks = null;
+		staff.AttachSpriteBanks( null );
 		StaffSpriteEvents.Performance( staff, entertainer, 7 );
 		Assert.AreEqual( 13, entertainer.Sprite.PendingTemplate );
 	}

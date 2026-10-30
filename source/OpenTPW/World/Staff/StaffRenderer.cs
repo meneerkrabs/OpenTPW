@@ -16,7 +16,7 @@ public sealed class StaffRenderer : Entity
 	/// <summary>[EXT:pools-bridges] Optional elevated walking height, in engine units.</summary>
 	public Func<float, float, float?>? FeetHeight { get; init; }
 	private const int VerticesPerSprite = 12;
-	/// <summary>Height of the dangling sprite above the mouse's world point, in original units.</summary>
+	/// <summary>The lift the tool adds to the mouse's world point, in original units (the terrain's own height comes on top, <see cref="DangleAnchor"/>).</summary>
 	// [BIN:TPW-EXE:0x0046C480 tool frame] every frame the tool's sprite is placed at the mouse's world point (0x0045D610 returns 0x007A1C90) 5 units up, with heading 4 (0x00475480 stores x, y + 5, z at +0x88..+0x90 and the heading byte at +0xC0)
 	public const float DangleLift = 5f;
 	/// <summary>The heading sector of the tools' dangling person (tp.exe 0x0046C480); the sprite pass adds the camera's yaw sector (0x00542010), so the person turns with the camera.</summary>
@@ -200,7 +200,7 @@ public sealed class StaffRenderer : Entity
 	/// The frame the member's sprite source shows: the sprite pass draws every sprite whose output word is set (a source shows nothing until the scheduler's first pass has yielded a frame, and a member
 	/// without a source, resting or carried, is not drawn), at the slot and frame the source's registers hold.
 	/// </summary>
-	// [BIN:TPW-EXE:0x00542010 sprite pass] the pass draws a record whose output word (+0x114 on the record: set by FRAME, cleared by an unset frame) is valid, from the bank of its kind and variant at the slot register and the frame register (0x00476940 writes it); the sprite's own clock, not the frame's, advanced it
+	// [BIN:TPW-EXE:0x00542010 sprite pass] the pass skips a record whose output word +0x114 is 0 (0x0054201D: FRAME sets it, 0x00476940) or whose frame register +0xB8 is -1 (0x00542029) and draws any other from the bank of its kind +0xAC and variant +0xB0 at the slot register +0xB4 and the frame register: the frame is whatever the scheduler's last pass left, however late the frame is drawn
 	private Selection? Select( StaffMember member, MemberView view, SVector3 cameraRight, SVector3 cameraForward )
 	{
 		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.KeyOf( member ) );
@@ -234,10 +234,18 @@ public sealed class StaffRenderer : Entity
 	internal static (float X, float Y)? DanglePoint( StaffPlacement placement ) =>
 		placement.Cursor ?? (placement.HoverCell is { } cell ? (cell.X + 0.5f, cell.Y + 0.5f) : null);
 
-	/// <summary>The tool sprite's engine-space anchor: the full picked point plus the original-unit lift, or the existing terrain fallback for cell-only callers.</summary>
-	internal static SVector3? DangleAnchor( StaffPlacement placement, ModelHeightfield field ) =>
-		placement.CursorEnginePoint is { } point ? point + SVector3.UnitZ * (DangleLift * OriginalParkPlacement.ModelScale)
-			: DanglePoint( placement ) is var (x, y) ? GuestRenderer.CellToEngine( field, x, y, DangleLift ) : null;
+	/// <summary>
+	/// The tool sprite's engine-space anchor: the full picked point lifted by the tool's 5 original units and by the terrain's height under it, or the same on the terrain for cell-only callers.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00542010 sprite height] a sprite whose flag 0x1000000 is clear (the dangling script sets only 0x1200, 0x0074ED98) is drawn at the terrain's height under its x and z (0x004527F0, the pass adds it at 0x005420F3) plus the stored height word +0x8C, which every other caller makes relative (a guest stores its height minus the terrain's, 0x004F9E60; a litter item 0)
+	// [BIN:TPW-EXE:0x0046C480 tool height] but the tool stores the picker's absolute height (0x7A1C90 + 4: the intersection with the terrain triangle or the model, 0x0045BF90) plus 5, so the person hangs at the terrain's height again above the picked point, which only differs from the point's own on ground above the level's zero
+	internal static SVector3? DangleAnchor( StaffPlacement placement, ModelHeightfield field )
+	{
+		if ( DanglePoint( placement ) is not var (x, y) )
+			return null;
+		var lift = DangleLift + field.GetHeight( x, y );
+		return placement.CursorEnginePoint is { } point ? point + SVector3.UnitZ * (lift * OriginalParkPlacement.ModelScale) : GuestRenderer.CellToEngine( field, x, y, lift );
+	}
 
 	/// <summary>The CPU portion of the actual world pass, including selection and quad preparation; never called by UI readers.</summary>
 	internal int PrepareWorld()

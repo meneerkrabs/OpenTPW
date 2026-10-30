@@ -185,7 +185,7 @@ public static class WorldStateHash
 	}
 
 	/// <summary>Where a value of the park save lies, as far as the parts the digest leaves out need it.</summary>
-	private enum EconomyPart { Elsewhere, Save, Research, Staff, Objectives, Challenge, Objects, Object }
+	private enum EconomyPart { Elsewhere, Save, Research, Staff, StaffList, StaffEntry, Objectives, Challenge, Objects, Object }
 
 	/// <summary>Whether the member <paramref name="name"/> of an object at <paramref name="part"/> is left out (<see cref="CanonicalEconomy"/>).</summary>
 	private static bool LeftOut( EconomyPart part, string name ) => part switch
@@ -193,6 +193,8 @@ public static class WorldStateHash
 		EconomyPart.Save => name is nameof( ParkSaveFile.Data.AnalyserCaches ) or nameof( ParkSaveFile.Data.StatisticsHistory ) or nameof( ParkSaveFile.Data.AnalyserChase ),
 		EconomyPart.Research => name == nameof( ParkSaveFile.ResearchData.RecentItems ),
 		EconomyPart.Staff => name == nameof( ParkSaveFile.StaffData.RoleOrder ),
+		// the sprite draw an employee or a candidate keeps (the bank it is drawn from, reduced by the loaded banks: presentation, and peers with other presets must hash alike)
+		EconomyPart.StaffEntry => name == nameof( StaffMember.SpriteDraw ),
 		EconomyPart.Challenge => name == nameof( ActiveChallenge.RawValue ),
 		EconomyPart.Object => name == nameof( ParkSaveFile.ObjectData.UpgradePurchases ),
 		_ => false
@@ -203,6 +205,7 @@ public static class WorldStateHash
 	{
 		(EconomyPart.Save, nameof( ParkSaveFile.Data.Research )) => EconomyPart.Research,
 		(EconomyPart.Save, nameof( ParkSaveFile.Data.Staff )) => EconomyPart.Staff,
+		(EconomyPart.Staff, nameof( ParkSaveFile.StaffData.Members )) or (EconomyPart.Staff, nameof( ParkSaveFile.StaffData.Candidates )) => EconomyPart.StaffList,
 		(EconomyPart.Save, nameof( ParkSaveFile.Data.Objectives )) => EconomyPart.Objectives,
 		(EconomyPart.Objectives, nameof( ParkSaveFile.ObjectivesData.Current )) => EconomyPart.Challenge,
 		(EconomyPart.Save, nameof( ParkSaveFile.Data.Objects )) => EconomyPart.Objects,
@@ -249,7 +252,7 @@ public static class WorldStateHash
 			case JsonValueKind.Array:
 				writer.WriteStartArray();
 				foreach ( var item in element.EnumerateArray() )
-					WriteCanonical( writer, item, part == EconomyPart.Objects ? EconomyPart.Object : EconomyPart.Elsewhere, members );
+					WriteCanonical( writer, item, part == EconomyPart.Objects ? EconomyPart.Object : part == EconomyPart.StaffList ? EconomyPart.StaffEntry : EconomyPart.Elsewhere, members );
 				writer.WriteEndArray();
 				break;
 			default:

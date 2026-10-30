@@ -445,7 +445,7 @@ public class ObjectRayPickTests
 		Assert.IsTrue( anchor.HasValue );
 		Assert.AreEqual( hit.X, anchor.Value.X, 1e-4f );
 		Assert.AreEqual( hit.Y, anchor.Value.Y, 1e-4f );
-		// Five original units are ONE engine unit, not five; the model hit's height is not re-sampled from terrain.
+		// Five original units are ONE engine unit, not five; the field here is flat at 0, so the terrain's own height adds nothing (StaffCarryCursorTests: on raised ground it does).
 		Assert.AreEqual( hit.Z + 1f, anchor.Value.Z, 1e-4f );
 	}
 

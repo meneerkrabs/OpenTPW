@@ -61,9 +61,9 @@ public partial class Level
 			StaffSpriteSet sprites;
 			using ( LoadProfile.Measure( "staff-sprites" ) )
 				sprites = StaffSpriteSet.Load( LevelName, StaffSpriteRules.BankLimitOf( IGraphicsSettings.Instance ) );
-			// the sources resolve a performance template against these banks (tp.exe 0x00475B80 reads the bank of the sprite's kind and variant)
-			if ( Park != null )
-				Park.Economy.Staff.SpriteBanks = sprites;
+			// the sources resolve a performance template against these banks (tp.exe 0x00475B80 reads the bank of the sprite's kind and variant) and the stored sprite draws take their loaded count (0x004F93AA)
+			staffSpriteBanks = sprites;
+			Park?.Economy.Staff.AttachSpriteBanks( sprites );
 			NextStepIsLong = true;
 			yield return true;
 			StaffRenderer = new StaffRenderer( () => Park.Economy.Staff.Members, OriginalPark.Heightfield, sprites, StaffPlacement )
@@ -169,7 +169,12 @@ public partial class Level
 			return;
 		Park.Economy.MechanicJobWorld = StaffWorld;
 		Park.Economy.StaffWorld = StaffWorld;
+		// a load replaced the economy: its staff take the banks this level loaded, whose count reduces their stored sprite draws again
+		Park.Economy.Staff.AttachSpriteBanks( staffSpriteBanks );
 	}
+
+	/// <summary>The staff sprites this level loaded (null until it did, and in a level without an original park).</summary>
+	private StaffSpriteSet? staffSpriteBanks;
 
 	/// <summary>The staff's rest areas: objects with <c>UsageInfo.ChillsYouOut</c> and an economy instance, their cell and the path cell in front of them.</summary>
 	// [DATA:<object>.sam:UsageInfo.ChillsYouOut] type record +0xFC, the object flag +0x32 bit 1 the rest finder 0x00506910 tests (the Staff Room of each theme)

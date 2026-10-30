@@ -6,6 +6,9 @@ namespace OpenTPW;
 public interface IStaffSpriteBanks
 {
 	SpriteAnimationFile? AnimationsOf( StaffType type, int variantKey );
+
+	/// <summary>How many banks the role's folder has loaded (tp.exe <c>0x00541F60</c>: the table entry <c>0x00763F90</c> of the sprite category), 0 for none.</summary>
+	int BankCount( StaffType type );
 }
 
 /// <summary>A saved staff sprite source: the complete control and clock words of the sprite record, without the opaque draw cache (rebuilt when it is drawn).</summary>

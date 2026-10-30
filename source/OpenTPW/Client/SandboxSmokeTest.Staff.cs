@@ -49,9 +49,11 @@ internal sealed partial class SandboxSmokeTest
 		var at = renderer.DangleAt!.Value;
 		Require( level.TryGetGroundCell( point, viewport, out var wantX, out var wantY ), "the probe point hits the ground" );
 		Require( Math.Abs( at.X - wantX ) < 0.02f && Math.Abs( at.Y - wantY ) < 0.02f, $"the {tool} sprite hangs at the pointer's ground point ({at} vs {(wantX, wantY)}), not at a cell centre" );
+		// the person hangs 5 units above the pick's engine point plus the terrain's height under it (the sprite pass adds the terrain to the height the tool stores, StaffRenderer.DangleAnchor)
+		var lift = StaffRenderer.DangleLift + (level.OriginalPark?.Heightfield.GetHeight( at.X, at.Y ) ?? 0f);
 		Require( level.TryGetGroundHit( point, viewport, out var pickHit ) && renderer.DangleAnchorAt is { } anchor
-			&& System.Numerics.Vector3.Distance( anchor, pickHit.GetSystemVector3() + System.Numerics.Vector3.UnitZ * (StaffRenderer.DangleLift * OriginalParkPlacement.ModelScale) ) < 0.01f,
-			$"the {tool} sprite's anchor is the pick's engine point lifted by 5 x ModelScale ({renderer.DangleAnchorAt} vs {pickHit})" );
+			&& System.Numerics.Vector3.Distance( anchor, pickHit.GetSystemVector3() + System.Numerics.Vector3.UnitZ * (lift * OriginalParkPlacement.ModelScale) ) < 0.01f,
+			$"the {tool} sprite's anchor is the pick's engine point lifted by (5 + the terrain's height) x ModelScale ({renderer.DangleAnchorAt} vs {pickHit}, lift {lift})" );
 		Require( !hud!.StaffWindowOpen && !hud.EmployeeWindowOpen && hud.Stack.Screens.Count == 1, $"no hire or employee window covers the park while the {tool} tool runs" );
 		// [EXT:debug-hud] OPENTPW_STAFF_CAPTURE=1 also saves the world with the interface for each probe (artifacts/native-smoke-staff-<tool>-<probe>.png), for the visual check of the fix
 		if ( Environment.GetEnvironmentVariable( "OPENTPW_STAFF_CAPTURE" ) == "1" )

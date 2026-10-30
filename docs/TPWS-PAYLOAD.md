@@ -897,8 +897,7 @@ A park started from the save (Instant Action, or the reference start) then runs
 `OriginalEconomyImport.Apply` (docs/ECONOMY.md, "Original save import") and the
 automatic advisor takes the saved controller (docs/LIPS.md). `Import` also parses the
 Coasters block (`SaveCoasterBlock`; a block that breaks its traced contract refuses the save) and
-exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for consumers. A park whose block lists a coaster is refused
-(`RequireSupportedCoasterRuntime`, SAVE-920): the headers, sections, trains and cars are decoded and no runtime track, controller or train is rebuilt.
+exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for consumers. A park whose block lists a coaster rebuilds its track, controller, trains, cars and riders (`OriginalCoasterImport`, SAVE-920 retired); a coaster that binds to no single saved attraction refuses the save (`RequireSupportedCoasterRuntime`, where tp.exe would crash).
 Imported: park turn and date, the world generator state `mRandomSeed` (`World.Restore`, SAVE-001 retired), bank balance, admission fee, annual profit and bought loans, each
 object's price, cost of goods, upgrade level, state of repair, life gauge, walk-away count, operating state, chance of winning, quality of goods, customer
 count and time stamp (also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, energy, name, job, hire time, idle stamp and patrol), the hiring pool, the staff HQ's training budgets and strike levels, research (finished and started projects, each category's effort and current project, the work load and the highest open groups), the analyser's four recent-research rings, the challenges, the park
@@ -1046,7 +1045,7 @@ RideSystem, attraction and economy readers over the second fixture set
   extra paths, so those readers are still proven on Easymode alone. A Theme Park World
   save with a built coaster does not exist in any available corpus: the Coasters block's
   nonempty shape rests on the static Mac contract and the Theme Park Inc cross-check.
-- The meaning of the coaster header's track flags (SAVE-920, SAVE-921) and the train sound handles (AUDIO-018); the train layout is decoded from the loader and the saver but
+- The meaning of the coaster header's track flags (SAVE-921) and the train sound handles (AUDIO-018); the train layout is decoded from the loader and the saver but
   no Theme Park World save with a coaster exists to check it on real bytes.
 - The control manager and the macro AI before the calendar (their widths are traced, their bodies are not), the guest, analyser and weather bodies, record
   fields marked raw above, the extension data, the RideSystem control and embedded words and the remaining

@@ -118,7 +118,7 @@ public class SavedScriptGraphImportTests
 	{
 		using var f = new Fixture();
 		// root 12 spawned the ordinary child 3 and the sound child 19; the sound script keeps the thing id 0 and mesh instance 0 it was created with (0x00558D2B..0x00558D68)
-		f.Records = new[] { Record( f.Programs[2], 19, 12, 0, thing: 0, mesh: 0 ), Record( f.Programs[1], 3, 12, 0 ), Record( f.Programs[0], 12, 0, 3, sound: 19 ) };
+		f.Records = new[] { Record( f.Programs[2], 19, 0, 0, thing: 0, mesh: 0 ), Record( f.Programs[1], 3, 12, 0 ), Record( f.Programs[0], 12, 0, 3, sound: 19 ) };
 		var report = f.Apply();
 		Assert.AreEqual( 3, f.World.Scripts.Count, string.Join( "; ", report ) );
 		StringAssert.StartsWith( report[0], "RSSE child-script graph imported: 3 scripts" );
@@ -133,10 +133,10 @@ public class SavedScriptGraphImportTests
 	public void ASoundChildThatTakesTheParentsThingOrAMeshIsRefusedUnchanged()
 	{
 		using var f = new Fixture();
-		f.Records = new[] { Record( f.Programs[2], 19, 12, 0 ), Record( f.Programs[1], 3, 12, 0 ), Record( f.Programs[0], 12, 0, 3, sound: 19 ) };
+		f.Records = new[] { Record( f.Programs[2], 19, 0, 0 ), Record( f.Programs[1], 3, 12, 0 ), Record( f.Programs[0], 12, 0, 3, sound: 19 ) };
 		AssertRefusedUnchanged( f );
 		using var g = new Fixture();
-		g.Records = new[] { Record( g.Programs[2], 19, 12, 0, thing: 0, mesh: 110 ), Record( g.Programs[1], 3, 12, 0 ), Record( g.Programs[0], 12, 0, 3, sound: 19 ) };
+		g.Records = new[] { Record( g.Programs[2], 19, 0, 0, thing: 0, mesh: 110 ), Record( g.Programs[1], 3, 12, 0 ), Record( g.Programs[0], 12, 0, 3, sound: 19 ) };
 		AssertRefusedUnchanged( g );
 	}
 
@@ -158,7 +158,7 @@ public class SavedScriptGraphImportTests
 	public void TheRootsRiderTablesKeptEffectsAndRepairEffectComeWithTheGraph()
 	{
 		using var f = new Fixture();
-		var sound = Record( f.Programs[2], 19, 12, 0, thing: 0, mesh: 0 );
+		var sound = Record( f.Programs[2], 19, 0, 0, thing: 0, mesh: 0 );
 		var root = Record( f.Programs[0], 12, 0, 0, sound: 19 );
 		// walk entry 1: rider 41 on board (state 2) between the nodes 2 and 3, started 4 s before the saved clock
 		BitConverter.GetBytes( (ushort)2 ).CopyTo( root.Walk, 32 );
@@ -190,7 +190,7 @@ public class SavedScriptGraphImportTests
 	public void AChildScriptsOwnRiderTablesAreNotKept()
 	{
 		using var f = new Fixture();
-		var sound = Record( f.Programs[2], 19, 12, 0, thing: 0, mesh: 0 );
+		var sound = Record( f.Programs[2], 19, 0, 0, thing: 0, mesh: 0 );
 		BitConverter.GetBytes( 55u ).CopyTo( sound.Walk, 0x10 );
 		BitConverter.GetBytes( (ushort)1 ).CopyTo( sound.Walk, 0x18 );
 		f.Records = new[] { sound, Record( f.Programs[0], 12, 0, 0, sound: 19 ) };
@@ -602,7 +602,7 @@ public class SavedScriptGraphImportTests
 	[DataTestMethod]
 	[DataRow( false )]
 	[DataRow( true )]
-	public void WaitAnimResumesAndTriggerWaitAnimKeepsItsSavedTokenForTheRestoredChannel( bool trigger )
+	public void WaitAnimResumesAndTriggerWaitAnimDropsItsSavedTokenWhenNoChannelShowsTheAnimation( bool trigger )
 	{
 		using var f = new Fixture();
 		var asm = new Asm();
@@ -619,8 +619,12 @@ public class SavedScriptGraphImportTests
 		Assert.AreEqual( trigger ? RideVMState.Running : RideVMState.Waiting, vm.State );
 		Assert.AreEqual( trigger ? 0 : 1, vm.ProgramCounter );
 		Assert.AreEqual( trigger ? 0d : 500d, vm.WakeTimeMilliseconds );
-		// the token is the saved word (0x00552CD3): the object's channels come back with the RideSystem record, so the instruction compares them with it again instead of triggering a second time
-		if ( trigger ) Assert.AreEqual( 123, vm.CaptureSnapshot().TriggerWaitToken );
+		// [BIN:TPW-EXE:0x00552CD3 TRIGWAITANIM compare] the token is kept only while a restored channel shows its animation; none does here, so the compare would rewind the instruction for good: the token goes and the report says so
+		if ( trigger )
+		{
+			Assert.AreEqual( 0, vm.CaptureSnapshot().TriggerWaitToken );
+			StringAssert.Contains( string.Join( "; ", report ), "TRIGWAITANIM whose animation channel was not restored" );
+		}
 		Assert.AreEqual( 0L, vm.ExecutedInstructions );
 	}
 

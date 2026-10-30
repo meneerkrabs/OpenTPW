@@ -73,15 +73,14 @@ internal sealed class SavedRideTables
 
 		var bounce = new List<BounceSlot>();
 		var bounceEntries = record.BounceEntries;
-		var seen = new HashSet<uint>();
-		for ( var slot = 0; slot < bounceEntries.Count; slot++ )
+			for ( var slot = 0; slot < bounceEntries.Count; slot++ )
 		{
 			var entry = bounceEntries[slot];
 			if ( entry.IsFree )
 				continue;
-			// [BIN:TPW-EXE:0x00555696 BOUNCE] a rider takes one entry (the handler's own test), so a rider in two entries is no table the opcodes leave
-			if ( entry.Guest > int.MaxValue || !seen.Add( entry.Guest ) )
-				return Refuse( $"bounce entry {slot} names the rider {entry.Guest}{(entry.Guest <= int.MaxValue ? " a second time" : "")}", out refusal );
+			// [BIN:TPW-EXE:0x00555674 BOUNCE] the handler takes the first free entry and tests neither a duplicate rider nor that the rider is aboard, so a saved table may hold one guest in two entries
+			if ( entry.Guest > int.MaxValue )
+				return Refuse( $"bounce entry {slot} names the rider {entry.Guest}", out refusal );
 			bounce.Add( new BounceSlot( slot, (int)entry.Guest, unchecked( (int)entry.Node ), Relative( entry.Deadline ), Relative( entry.Start ) ) );
 		}
 		// [BIN:TPW-EXE:0x00555933 BOUNCING] the opcode returns the counter +0x6C that BOUNCE counts up (0x0055577C) and UNBOUNCE down (0x005558C6), not the entries in use

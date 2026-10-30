@@ -54,7 +54,7 @@ public sealed partial class RideVM
 		var wake = 0.0;
 		var resume = index;
 		// [BIN:TPW-EXE:0x00552CD3 TRIGWAITANIM token] +0xBC is the AnimID + 1 the instruction stored when it triggered; each later run compares the channel's AnimID + 1 with it (0x00552D08..0x00552D11) and clears it when they agree. The object's channels come back with
-		// the RideSystem record (RestoreSavedScene), so the saved token is kept as it is and the instruction goes on waiting exactly as the original's does with those channels
+		// the RideSystem record (RestoreSavedScene), so the saved token is kept as it is and the instruction goes on waiting exactly as the original's does with those channels; the import clears it when no channel shows the animation (SavedScriptImport.RestoreRecordState)
 		var triggerToken = unchecked( (int)record.AnimationWait2 );
 		if ( index < instructions.Length )
 		{

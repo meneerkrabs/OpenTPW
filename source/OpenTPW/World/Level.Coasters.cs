@@ -714,8 +714,9 @@ public partial class Level
 			if ( station?.Runtime.Coaster is not { } ride )
 				throw new InvalidDataException( $"The save's coaster of station mesh {saved.StationMeshInstanceId} binds to attraction thing {attraction.Id} (Info.Id {attraction.InfoId}), which this park does not place as a coaster station; the original would crash here (0x437CD5)." );
 			var plan = OriginalCoasterImport.Map( saved, ride );
-			// the guests were imported before the coasters (Level import order): every guest on a car list is one of the ride's saved riders, else the save is refused
-			var riderLines = OriginalCoasterImport.CheckRiders( plan, station.Runtime.Visitors.Riders, $"The saved coaster of attraction thing {attraction.Id}" );
+			// the guests were imported before the coasters (Level import order): a train whose car list names a guest who is no rider of the ride loses its lists (reported)
+			var (checkedPlan, riderLines) = OriginalCoasterImport.CheckRiders( plan, station.Runtime.Visitors.Riders, station.Runtime.Visitors.SavedRunStateImported, $"The saved coaster of attraction thing {attraction.Id}" );
+			plan = checkedPlan;
 			ride.ImportOriginal( plan.Track, plan.State, plan.BreakdownState, plan.SeatsPerTrain, plan.Trains );
 			// the first frame after the load: no substep runs (0x415140), its coaster update rebuilds keeping the saved trains and runs the controller's first motion tick, which takes no time
 			ride.UpdateFirstFrameAfterLoad();

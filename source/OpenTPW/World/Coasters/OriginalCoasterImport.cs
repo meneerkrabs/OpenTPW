@@ -232,31 +232,39 @@ internal static class OriginalCoasterImport
 	}
 
 	/// <summary>
-	/// Every guest on a plan's train lists must be one of the riders the ride's saved script run state accepted (a guest in state 16 that names the ride, <see cref="RideVisitorBridge.ImportSavedRiders"/>): a list entry
-	/// the guest import did not seat aboard names a guest the save does not hold on this ride. Returns the evidence lines (riders of the ride that no list holds).
+	/// Checks a plan's train lists against the riders the guest import seated aboard the ride (<see cref="RideVisitorBridge.ImportSavedRiders"/>). A train whose list names a guest the ride does not
+	/// hold as a rider, or every train when the ride's script run state was not imported, loses its lists and the evidence says so (the guests are in no state the car code reaches); a rider on no list is
+	/// reported. Returns the plan to import and the evidence lines. The structure of the lists (sockets, ids, duplicates, counts) was checked by <see cref="Map"/>, which refuses a malformed save.
 	/// </summary>
 	// [BIN:TPW-EXE:0x501A08 state 16 update] a guest in state 16 does nothing but look its ride up, so a guest of the coaster that no car list holds is not in the train code's reach: the controller lets guests off only from its leaving ring (0x43B220), which the saver does not write
 	// [BIN:TPW-EXE:0x437300 coaster saver] the admission ring (+0xB0) and the leaving ring (+0xD0) are not saved, and no tp.exe routine outside the coaster code, the COAST commands (0x554AB4..0x554BF4) and the station window (0x4E0628) reads the controller tables 0x790BD0 and 0x790FE0, so the original has no sweep after a load that hands such a guest back
-	internal static IReadOnlyList<string> CheckRiders( Plan plan, IReadOnlyCollection<int> aboard, string what )
+	internal static (Plan Plan, IReadOnlyList<string> Lines) CheckRiders( Plan plan, IReadOnlyCollection<int> aboard, bool runStateImported, string what )
 	{
 		ArgumentNullException.ThrowIfNull( plan );
 		ArgumentNullException.ThrowIfNull( aboard );
+		var lines = new List<string>();
 		var listed = new HashSet<int>();
+		var trains = new List<CoasterRide.OriginalTrain>( plan.Trains.Count );
 		for ( var train = 0; train < plan.Trains.Count; train++ )
 		{
-			foreach ( var list in (plan.Trains[train].Lap ?? Array.Empty<IReadOnlyList<int>>()).Concat( plan.Trains[train].Boarding ?? Array.Empty<IReadOnlyList<int>>() ) )
+			var saved = plan.Trains[train];
+			var guests = (saved.Lap ?? Array.Empty<IReadOnlyList<int>>()).Concat( saved.Boarding ?? Array.Empty<IReadOnlyList<int>>() ).SelectMany( list => list ).ToList();
+			if ( guests.Count > 0 && (!runStateImported || guests.Any( guest => !aboard.Contains( guest ) )) )
 			{
-				foreach ( var guest in list )
-				{
-					if ( !aboard.Contains( guest ) )
-						throw new InvalidDataException( $"{what}: train {train} seats guest {guest}, who is not a rider of the ride (a guest in state 16 whose major destination is the ride, with the ride's script run state imported)." );
-					listed.Add( guest );
-				}
+				lines.Add( runStateImported
+					? $"{what}: train {train} seats {guests.Count} guests, some of whom are no rider of the ride (not imported or not in state 16 on it); its car lists are dropped (SAVE-002)."
+					: $"{what}: the ride's script run state was not imported, so train {train}'s {guests.Count} listed guests are not riders; its car lists are dropped (SAVE-002)." );
+				trains.Add( saved with { Lap = null, Boarding = null } );
+				continue;
 			}
+			foreach ( var guest in guests )
+				listed.Add( guest );
+			trains.Add( saved );
 		}
 		var lost = aboard.Count( guest => !listed.Contains( guest ) );
-		return lost == 0 ? Array.Empty<string>()
-			: new[] { $"{what}: {lost} of its {aboard.Count} riders sit on no car list (the admission and leaving rings are not saved); they stay aboard and nobody lets them off, as in the original." };
+		if ( lost > 0 )
+			lines.Add( $"{what}: {lost} of its {aboard.Count} riders sit on no car list (the admission and leaving rings are not saved); they stay aboard and nobody lets them off, as in the original." );
+		return (plan with { Trains = trains }, lines);
 	}
 
 	/// <summary>The saved words the rebuild re-derives, compared with what it derived: the self-intersection count and the collision lists (the auxiliary block is station node S2's).</summary>

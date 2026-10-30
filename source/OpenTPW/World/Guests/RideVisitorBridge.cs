@@ -464,6 +464,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		var riders = new HashSet<int>( snapshot.OnRide );
 		if ( riders.Count != snapshot.OnRide.Length )
 			Error( "the rider list repeats a guest." );
+		// the queue head the script has taken (VAR_LETMEON written) is boarded by the next host step (tp.exe sends it to state 16 at its next update, 0x004E0A70), so a table of a snapshot taken before that step may name it
+		var holds = new HashSet<int>( riders );
+		if ( snapshot.LetMeOnWritten && snapshot.CalledGuest > 0 )
+			holds.Add( snapshot.CalledGuest );
 		foreach ( var guestId in snapshot.Queue )
 			if ( guestId <= 0 )
 				Error( $"the queue holds guest id {guestId}." );
@@ -492,7 +496,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( snapshot.WalkSlots.Select( slot => slot.Guest ).Distinct().Count() != snapshot.WalkSlots.Length )
 				Error( "the walk slots repeat a guest." );
 			foreach ( var slot in snapshot.WalkSlots )
-				if ( !riders.Contains( slot.Guest ) || snapshot.WalkingOff.Contains( slot.Guest ) )
+				if ( !holds.Contains( slot.Guest ) || snapshot.WalkingOff.Contains( slot.Guest ) )
 					Error( $"walk slot guest {slot.Guest} is not aboard or already walking off." );
 		}
 		if ( snapshot.WalkTable != null )
@@ -509,7 +513,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 					Error( $"the walk table entry for guest {entry.Guest} sits in slot {entry.Slot}, outside the table." );
 				if ( !usedSlots.Add( entry.Slot ) )
 					Error( $"the walk table uses slot {entry.Slot} twice." );
-				if ( !riders.Contains( entry.Guest ) )
+				if ( !holds.Contains( entry.Guest ) )
 					Error( $"walk table guest {entry.Guest} is not aboard." );
 				if ( entry.State is < 1 or > 4 )
 					Error( $"the walk table entry for guest {entry.Guest} has state {entry.State}." );
@@ -527,22 +531,20 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		var limboGuests = new HashSet<int>();
 		foreach ( var (guestId, until) in snapshot.Limbo )
 		{
-			if ( !riders.Contains( guestId ) )
+			if ( !holds.Contains( guestId ) )
 				Error( $"limbo guest {guestId} is not aboard." );
 			if ( !limboGuests.Add( guestId ) )
 				Error( $"limbo holds guest {guestId} twice." );
 			if ( !double.IsFinite( until ) )
 				Error( $"limbo guest {guestId} has a deadline that is not finite." );
 		}
-		var bouncingGuests = new HashSet<int>();
 		for ( var index = 0; index < snapshot.Bounce.Length; index++ )
 		{
 			var (guestId, until, start) = snapshot.Bounce[index];
 			if ( guestId < 0 )
 				Error( $"bounce slot {index} holds guest id {guestId}." );
-			if ( guestId != 0 && !bouncingGuests.Add( guestId ) )
-				Error( $"the bounce table repeats guest {guestId}." );
-			if ( guestId != 0 && !riders.Contains( guestId ) )
+			// [BIN:TPW-EXE:0x00555674 BOUNCE] the handler takes the first free entry without testing for the rider, so a saved table may hold one guest twice
+			if ( guestId != 0 && !holds.Contains( guestId ) )
 				Error( $"bouncing guest {guestId} is not aboard." );
 			if ( !double.IsFinite( until ) || !double.IsFinite( start ) )
 				Error( $"bounce slot {index} has a time that is not finite." );
@@ -831,6 +833,20 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	private SavedRideTables? stagedTables;
 
+	/// <summary>The reason this ride's imported riders have no carrier state to ride on (rider tables that did not read or name guests not aboard, vehicles or tour cars not imported), or null. The riders are then put off the ride (<see cref="GuestSimulation.DropImportedRiders"/>). Not saved.</summary>
+	internal string? RidersRefusal { get; set; }
+
+	/// <summary>Clears the riders and rider tables an original save's import put aboard (<see cref="ImportSavedRiders"/>).</summary>
+	internal void ClearImportedRiders()
+	{
+		onRide.Clear();
+		BoardedTotal = 0;
+		walkTable.Clear();
+		bouncing.Clear();
+		bounceNodes.Clear();
+		Heads?.Clear();
+	}
+
 	/// <summary>Keeps the rider tables of the ride's saved script record until the riders are known (<see cref="ImportSavedRiders"/>).</summary>
 	internal void StageSavedTables( SavedRideTables tables ) => stagedTables = tables;
 
@@ -860,6 +876,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( stray.Count > 0 )
 			{
 				notes.Add( $"the walk, bounce and head tables of attraction {AttractionId} name guests who are not aboard it ({string.Join( ", ", stray )}) and are not kept" );
+				RidersRefusal = "its rider tables name guests who are not aboard it";
 				tables = null;
 			}
 		}
@@ -1910,6 +1927,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				// [BIN:TPW-EXE:0x00555753 BOUNCE deadline] the deadline is the clock plus the second operand x 1000 ms (a wrapping 32-bit product), whatever its value: a duration of 0 is a deadline that has already passed. The four shipped scripts pass VAR_DURATION, which ride init sets above 0 (WalkNodeCorpusTests)
 				var seconds = call.Argument( 1 );
 				// [BIN:TPW-EXE:0x00555780 BOUNCE result] the flag word takes 1 when an entry was free and 0 with a full table
+				// [APPROX:DET-013] OpenTPW's host takes a bounce only for a rider that is not bouncing yet: tp.exe's BOUNCE (0x00555674..0x0055577C) takes the first free entry for any guest and tests neither (a script that bounces a guest twice, or a guest who is not aboard, is not modelled)
 				if ( onRide.Contains( guest ) && !bouncing.Any( entry => entry.Guest == guest ) )
 					result = TakeBounceSlot( bouncing, call.VM.Script.BounceSize, guest, now + seconds * 1000.0, now ) ? 1 : 0;
 				if ( result == 1 )

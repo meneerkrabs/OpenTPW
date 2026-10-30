@@ -445,12 +445,16 @@ public class OriginalCoasterImportTests
 		var native = RunningCircuit( definition );
 		var saved = RoundTrip( native, riders: ( train, car ) => train == 0 && car == 1 ? new[] { 501, 502 } : Array.Empty<int>() );
 		var (_, plan) = Import( saved, definition );
-		Assert.AreEqual( 0, OriginalCoasterImport.CheckRiders( plan, new[] { 501, 502 }, "coaster" ).Count );
-		var lost = OriginalCoasterImport.CheckRiders( plan, new[] { 501, 502, 700 }, "coaster" );
-		Assert.AreEqual( 1, lost.Count );
-		StringAssert.Contains( lost[0], "1 of its 3 riders sit on no car list" );
-		var stray = Assert.ThrowsException<InvalidDataException>( () => OriginalCoasterImport.CheckRiders( plan, new[] { 501 }, "coaster" ) );
-		StringAssert.Contains( stray.Message, "guest 502" );
+		Assert.AreEqual( 0, OriginalCoasterImport.CheckRiders( plan, new[] { 501, 502 }, true, "coaster" ).Lines.Count );
+		var (_, lostLines) = OriginalCoasterImport.CheckRiders( plan, new[] { 501, 502, 700 }, true, "coaster" );
+		Assert.AreEqual( 1, lostLines.Count );
+		StringAssert.Contains( lostLines[0], "1 of its 3 riders sit on no car list" );
+		// a listed guest the import did not seat, or a ride whose run state was not imported, drops the train's lists and the park still loads
+		var (strayPlan, strayLines) = OriginalCoasterImport.CheckRiders( plan, new[] { 501 }, true, "coaster" );
+		Assert.IsTrue( strayLines.Any( line => line.Contains( "lists are dropped" ) ) );
+		Assert.IsTrue( strayPlan.Trains.All( train => train.Lap == null && train.Boarding == null ) );
+		var (_, notImported) = OriginalCoasterImport.CheckRiders( plan, Array.Empty<int>(), false, "coaster" );
+		StringAssert.Contains( notImported[0], "run state was not imported" );
 	}
 
 	[TestMethod]

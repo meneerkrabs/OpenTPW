@@ -380,6 +380,29 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>
+	/// Puts off an attraction the riders an original save's import seated aboard it, when the ride has no carrier state they could ride on (<see cref="RideVisitorBridge.RidersRefusal"/>): the guests leave the
+	/// simulation, their thing slots stay held as the dropped saved guests' do, and the ride's rider tables are cleared. Returns the guests put off.
+	/// </summary>
+	internal IReadOnlyList<int> DropImportedRiders( RideVisitorBridge bridge )
+	{
+		ArgumentNullException.ThrowIfNull( bridge );
+		var ids = bridge.Riders.ToList();
+		bridge.ClearImportedRiders();
+		foreach ( var id in ids )
+		{
+			if ( !byId.TryGetValue( id, out var guest ) )
+				continue;
+			RemoveBalloonPlayer( guest );
+			guest.BodySprite.ResetForNewPerson();
+			LeaveCellLists( guest );
+			byId.Remove( id );
+			guests.Remove( guest );
+			ReleaseDroppedThing( id );
+		}
+		return ids;
+	}
+
+	/// <summary>
 	/// A saved guest the import does not restore is not in the park, but the original keeps it: its slot of the pool (held by the saved chain) stays used as a placeholder, so the
 	/// next thing built gets the id the original hands out.
 	/// </summary>

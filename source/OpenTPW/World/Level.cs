@@ -671,7 +671,7 @@ public partial class Level : IDisposable
 			yield return 0.95f;
 			ImportOriginalTracks();
 			ImportOriginalRideSettings();
-			// the scripts come before the guests: a guest in state 16 is a rider the ride's saved script state holds (its walk, bounce and head tables), so the guest import needs to know which scripts were restored
+			// the scripts come before the guests: a guest in state 16 is a rider the ride's saved script state holds (its walk, bounce and head tables), so the guest import needs to know which scripts were restored; side effect of the order: the scripts are imported before the guests, so CloseLoaded no longer clears an imported mPersonBeingLoaded (the saved queue head) while the guests are placed
 			ImportOriginalScripts();
 			ImportOriginalGuests();
 			ReconcileOriginalAdmissions();

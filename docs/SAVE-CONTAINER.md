@@ -109,7 +109,7 @@ delimiters) has a bounded structural reader (`SaveCoasterBlock`; TPWS-PAYLOAD.md
 train slots decode once the coaster type's counts are known, nothing is imported and nothing is written. A park
 started from the shipped save imports its turn,
 bank, objects, staff and advisor controller (`OriginalEconomyImport`; values not
-imported are reported as SAVE-002 to SAVE-010, SAVE-920 and SAVE-921 (SAVE-923 is retired)); the
+imported are reported as SAVE-002 to SAVE-010 and SAVE-921 (SAVE-920 and SAVE-923 are retired)); the
 other blocks are split by their widths, and the raw dumps of the original's engine structures are not restored (`[EXT:original-engine-state-dumps]`), except the Particles pool, the RSSE script ids, list order and pass counter, and the camera, which a level that starts from the save applies. A level can start from a player's own save (`--load-original-level <theme> --original-save <file>`) instead of the shipped `Easymode.TPWI`.
 A Theme Park Inc payload splits on the same principle with its own reader rules
 (`SavePayloadProfile.ThemeParkInc`: 45 message lists, a 48-byte camera, an empty UI block and the typed

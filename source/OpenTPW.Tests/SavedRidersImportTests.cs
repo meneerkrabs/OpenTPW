@@ -224,6 +224,9 @@ public class SavedRidersImportTests
 		Assert.IsFalse( report.Any( line => line.Contains( "called but not admitted" ) ) );
 		var notes = rig.Simulation.ReconcileOriginalAdmissions();
 		Assert.AreEqual( 0, notes.Count, "a ride whose script state was imported demotes nothing" );
+		// a snapshot taken before the first host step names the head in the bounce table: the validator accepts a table that names the called head the script has taken
+		var early = rig.Simulation.ValidateSnapshot( rig.Simulation.CaptureSnapshot() );
+		Assert.IsTrue( early.IsValid, string.Join( "; ", early.Errors ) );
 		rig.Ride.HostStep();
 		Assert.AreEqual( GuestState.Using, Of( rig, 41 ).State, "the first host step boards it, as the state-14 test sends it into state 16" );
 		CollectionAssert.AreEqual( new[] { 41 }, rig.Ride.Riders.ToArray() );
@@ -231,6 +234,22 @@ public class SavedRidersImportTests
 		rig.Ride.CollectBouncing( bouncing );
 		Assert.AreEqual( 41, bouncing.Single().Guest );
 		Assert.IsTrue( rig.Simulation.ValidateSnapshot( rig.Simulation.CaptureSnapshot() ).IsValid, string.Join( "; ", rig.Simulation.ValidateSnapshot( rig.Simulation.CaptureSnapshot() ).Errors ) );
+	}
+
+	[TestMethod]
+	public void RidersWhoseRideTablesNameGuestsNotAboardArePutOffTheRide()
+	{
+		var rig = NewRig();
+		// the walk table names guest 99, who is no rider of the ride: the tables are not kept and the riders would be aboard for good, so they are put off
+		Stage( rig, Record( rig.Script, walk: new[] { Walking( 99, 1, 0, 10 ) } ) );
+		var rider = Decode( new SaveTestPayloads.GuestFields { Position = (At( 3 ), At( 0 )), State = 16, MajorDest = RideThing }, 41 );
+		Import( rig, new[] { rider } );
+		Assert.AreEqual( 1, rig.Ride.Riders.Count );
+		Assert.IsNotNull( rig.Ride.RidersRefusal );
+		var dropped = rig.Simulation.DropImportedRiders( rig.Ride );
+		CollectionAssert.AreEqual( new[] { 41 }, dropped.ToArray() );
+		Assert.AreEqual( 0, rig.Ride.Riders.Count );
+		Assert.IsNull( rig.Simulation.Find( 41 ) );
 	}
 
 	[TestMethod]
@@ -293,8 +312,10 @@ public class SavedRidersImportTests
 
 		Assert.IsNull( Read( Record( vm, walk: new[] { Walking( 41, 5, 0, 10 ) } ), out refusal ) );
 		StringAssert.Contains( refusal, "state 5" );
-		Assert.IsNull( Read( Record( vm, bounce: new[] { Bouncing( 42, 3, 5, 6 ), Bouncing( 42, 4, 5, 6 ) } ), out refusal ) );
-		StringAssert.Contains( refusal, "a second time" );
+		// [BIN:TPW-EXE:0x00555674 BOUNCE] the handler tests neither a duplicate rider nor that the rider is aboard, so a table with one guest in two entries is read as saved
+		var twice = Read( Record( vm, bounce: new[] { Bouncing( 42, 3, 5, 6 ), Bouncing( 42, 4, 5, 6 ) }, bounceCount: 2 ), out refusal );
+		Assert.IsNotNull( twice, refusal );
+		Assert.AreEqual( 2, twice.Bounce.Count );
 		Assert.IsNull( Read( Record( vm, bounce: new[] { Bouncing( 42, 3, 5, 6 ) }, bounceCount: 2 ), out refusal ) );
 		StringAssert.Contains( refusal, "bounce counter is 2" );
 		Assert.IsNull( Read( Record( vm, heads: new uint[] { 0, 43 } ), out refusal, heads: 3 ) );

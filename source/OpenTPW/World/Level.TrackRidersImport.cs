@@ -10,11 +10,42 @@ public partial class Level
 	{
 		if ( resumeState != null || Park?.Import is not { } import || OriginalPark?.Save is not { } save || GameEditions.IsThemeParkInc )
 			return;
-		foreach ( var line in ApplyOriginalTrackRiders( save.TrackRides ) )
+		foreach ( var line in ApplyOriginalTrackRiders( save.TrackRides ).Concat( DropRidersWithoutCarrier( save.Attractions ) ) )
 		{
 			import.Report( line );
 			Log.Trace( $"Park track import: {line}" );
 		}
+	}
+
+	/// <summary>The attractions whose vehicles <see cref="ApplyOriginalTrackRiders"/> restored.</summary>
+	private readonly HashSet<OriginalObject> restoredVehicleRides = new();
+
+	/// <summary>
+	/// A guest in state 16 is a rider only while the ride's carrier state is restored: a ride whose rider tables did not read, a tour ride (its cars are not imported) and a kart, water or flying ride
+	/// whose vehicles were not imported leave their riders with nothing that would ever let them off, so the guests are put off the ride (<see cref="GuestSimulation.DropImportedRiders"/>) and the report says so.
+	/// Coasters keep their riders: their trains restore, and the original keeps a rider of no car list aboard too.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00501A08 state 16 update] the original's rider does nothing in state 16 on its own: the ride's script and its vehicles let it off, so a rider of a carrier that is not restored would stay aboard for good
+	internal IReadOnlyList<string> DropRidersWithoutCarrier( IReadOnlyList<SaveAttraction> attractions )
+	{
+		var lines = new List<string>();
+		if ( Guests == null )
+			return lines;
+		foreach ( var item in Objects.Objects.Where( item => !item.IsDeleted && item.Visitors is { SavedRunStateImported: true } ).OrderBy( item => item.ThingId ).ToList() )
+		{
+			var bridge = item.Visitors!;
+			if ( bridge.Riders.Count == 0 || item.Runtime.Coaster != null )
+				continue;
+			var saved = attractions.FirstOrDefault( attraction => attraction.Id == item.ThingId );
+			var reason = bridge.RidersRefusal
+				?? (item.Runtime.UsesTour ? "its tour cars are not imported"
+				: saved is { TrackRideHandle: not 0 } && !restoredVehicleRides.Contains( item ) ? "its track ride's vehicles were not imported" : null);
+			if ( reason == null )
+				continue;
+			var dropped = Guests.DropImportedRiders( bridge );
+			lines.Add( $"[APPROX:SAVE-002] Saved riders of attraction thing {item.ThingId} put off the ride: {reason}, so {dropped.Count} guests ({string.Join( ", ", dropped )}) have no carrier state to ride on (TRACK-032 for a track ride's vehicles)." );
+		}
+		return lines;
 	}
 
 	/// <summary>
@@ -25,6 +56,7 @@ public partial class Level
 	internal IReadOnlyList<string> ApplyOriginalTrackRiders( SaveTrackRideBlock? block )
 	{
 		var lines = new List<string>();
+		restoredVehicleRides.Clear();
 		var read = OriginalTrackVehicles.Read( block );
 		if ( read.Problem != null )
 		{
@@ -59,6 +91,7 @@ public partial class Level
 				lines.Add( $"[APPROX:TRACK-032] Track ride vehicles not restored for {what}: {refusal}." );
 				continue;
 			}
+			restoredVehicleRides.Add( match.Item );
 			// the engine voices and break-smoke emitters of the vehicles the save brought start again, as after a park resume (presentation: nothing is drawn from the generator)
 			match.Item.Runtime.ResumeBumpEffects();
 			if ( !any )

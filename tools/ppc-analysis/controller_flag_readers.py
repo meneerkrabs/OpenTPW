@@ -1394,14 +1394,14 @@ def immediate_track_tests(analysis: Analysis):
 # Hand-reviewed dispositions (each read in tp.exe; the scan prints every hit that is not listed here as NEW and `--check` fails on it)
 # ------------------------------------------------------------------------------------------------------------------------------------
 REVIEWED_READERS = {
-    0x43F641: 'cmp [edi], 0 of 0x43F4E0 tests `*param_1`, a track node, not the controller: the callers 0x43EF5F and 0x43EFCC (0x43EB70) push the node walked '
-              'from [[0x790FE4]+0x18] (controller +0x54) through its +0x64 links; the controller enters the loop only as the end sentinel in ebp '
-              '(0x43EEA9, when there is no node), a path on which esi is zero and the loop is left at 0x43EEEB',
+    0x43F641: 'the compare in 0x43F4E0 tests the first word of a track node, not the controller: the callers (0x43EF5F, 0x43EFCC, in 0x43EB70) pass the node walked '
+              'from the controller\'s first-node link through its next-node links, and the controller enters the loop only as the end sentinel, a path on which the '
+              'node register is zero and the loop is left at 0x43EEEB',
 }
 REVIEWED_HOLDERS = {
-    0x43392A: 'the global-array copy of 0x4338E0: [ebx - 4] reads the last slot of 0x791D08 + n * 0x104 (n < 5, the node count at 0x791020 bounds the loop), '
+    0x43392A: 'the global-array copy in 0x4338E0 reads the last slot of the array at 0x791D08 (five entries of 0x104 bytes, bounded by the node count at 0x791020), '
               'never the adjacent 0x792218',
-    0x43BA09: '0x43B8B0 reuses its first argument slot as an out parameter (`&param_1` goes to 0x43B7E0), the stored value is the section index it returns, '
+    0x43BA09: '0x43B8B0 reuses its first argument slot as an out parameter that goes to 0x43B7E0; the stored value is the section index it returns, '
               'not the controller the slot held on entry',
 }
 REVIEWED_ESCAPES = {

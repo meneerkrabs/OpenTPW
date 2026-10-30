@@ -23,7 +23,7 @@ public static class SavedScriptImport
 		ArgumentNullException.ThrowIfNull( rsse );
 		ArgumentNullException.ThrowIfNull( candidates );
 		// Existing no-ordinary-child imports retain their established compatibility path. A rejected graph never falls through.
-		if ( rsse.Records.Any( record => record.Raw.Length != SaveRsseRecord.Bytes || record.ChildScriptId != 0 || record.ParentScriptId != 0 ) )
+		if ( rsse.Records.Any( record => record.Raw.Length != SaveRsseRecord.Bytes || record.ChildScriptId != 0 || record.SoundScriptId != 0 || record.ParentScriptId != 0 ) )
 			return SavedScriptGraphImport.Apply( world, rsse, candidates, clockWord );
 		var pool = candidates.Where( candidate => candidate.ThingId != 0 && candidate.Script.Parent == null ).ToList();
 		var matched = new List<(RideVM Vm, int SavedId)>();
@@ -87,6 +87,12 @@ public static class SavedScriptImport
 			StageRiderTables( vm, record, owner.Visitors, clockWord, notes );
 		else if ( record.WalkEntries.Any( entry => !entry.IsFree ) || record.BounceEntries.Any( entry => !entry.IsFree ) || record.HeadSlots.Any( slot => slot != 0 ) )
 			notes.Add( $"[APPROX:DET-013] script {record.ScriptId} is a child script and holds rider tables: they are not kept (the object has one set of them, its root's)." );
+		// [BIN:TPW-EXE:0x00552CD3 TRIGWAITANIM compare] the token is cleared only when a channel of the object shows AnimID + 1 (0x00552D08..0x00552D11, jump 0x005535D6): a script saved inside the wait whose channel was not restored would rewind its instruction for good, so the token goes and the instruction triggers again
+		if ( vm.TriggerWaitToken != 0 && owner.Runtime is { } scene && !Enumerable.Range( 0, 16 ).Any( channel => scene.Animator.GetAnimationId( channel ) + 1 == vm.TriggerWaitToken ) )
+		{
+			vm.TriggerWaitToken = 0;
+			notes.Add( $"[APPROX:DET-013] script {record.ScriptId} was saved inside a TRIGWAITANIM whose animation channel was not restored; the instruction triggers its animation again." );
+		}
 		if ( owner.Runtime != null )
 			foreach ( var gap in owner.Runtime.RestoreSavedObjects( record ) )
 				notes.Add( $"script {record.ScriptId}: {gap}." );
@@ -109,6 +115,7 @@ public static class SavedScriptImport
 		if ( tables == null )
 		{
 			notes.Add( $"[APPROX:DET-013] script {record.ScriptId}: the walk, bounce and head tables are not kept: {refusal}." );
+			bridge.RidersRefusal = "its rider tables do not read";
 			return;
 		}
 		bridge.StageSavedTables( tables );

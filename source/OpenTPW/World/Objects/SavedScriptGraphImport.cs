@@ -54,20 +54,21 @@ internal static class SavedScriptGraphImport
 			Require( stateBytes <= MaximumBytes, "saved graph exceeds the aggregate state bound" );
 		}
 		var incoming = new HashSet<uint>();
+		var soundIds = records.Where( r => r.SoundScriptId != 0 ).Select( r => r.SoundScriptId ).ToHashSet();
 		foreach ( var r in records )
 		{
 			// [BIN:TPW-EXE:0x00555168 SPAWNCHILD] the ordinary child is created with thing id 0 and takes the parent's thing id (+0xAC, 0x0055516E) and mesh instance (+0xC8, 0x0055519A) afterwards
 			if ( r.ChildScriptId != 0 )
 				Require( r.ChildScriptId != r.ScriptId && incoming.Add( r.ChildScriptId ) && byId.TryGetValue( r.ChildScriptId, out var child ) && child.ParentScriptId == r.ScriptId && child.ThingId == r.ThingId && child.MeshInstance == r.MeshInstance,
 					$"script {r.ScriptId} has an unresolved, duplicate or inconsistent child" );
-			// [BIN:TPW-EXE:0x00555255 SPAWNSOUND] the sound child is stored at +0x14 and keeps the thing id 0 and mesh instance 0 it is created with (0x00558D2B..0x00558D68 set +0xC8 only for a nonzero thing id): nothing is copied from the parent
+			// [BIN:TPW-EXE:0x005551AE SPAWNSOUND] the sound child's id is stored only at the parent's +0x14 (0x00555255); its own parent word +0x10 stays the constructor's zero (0x005587F0 zeroes the struct, only SPAWNCHILD 0x0055516B writes +0x10), so it is found by that edge alone. It keeps the thing id 0 and mesh instance 0 it is created with (0x00558D2B..0x00558D68 set +0xC8 only for a nonzero thing id): nothing is copied from the parent
 			if ( r.SoundScriptId != 0 )
-				Require( r.SoundScriptId != r.ScriptId && r.SoundScriptId != r.ChildScriptId && incoming.Add( r.SoundScriptId ) && byId.TryGetValue( r.SoundScriptId, out var sound ) && sound.ParentScriptId == r.ScriptId && sound.ThingId == 0 && sound.MeshInstance == 0,
+				Require( r.SoundScriptId != r.ScriptId && r.SoundScriptId != r.ChildScriptId && incoming.Add( r.SoundScriptId ) && byId.TryGetValue( r.SoundScriptId, out var sound ) && sound.ParentScriptId == 0 && sound.ThingId == 0 && sound.MeshInstance == 0,
 					$"script {r.ScriptId} has an unresolved, duplicate or inconsistent sound child" );
 			if ( r.ParentScriptId != 0 )
 				Require( byId.TryGetValue( r.ParentScriptId, out var parent ) && (parent.ChildScriptId == r.ScriptId || parent.SoundScriptId == r.ScriptId), $"script {r.ScriptId} is orphaned" );
 		}
-		var roots = records.Where( r => r.ParentScriptId == 0 ).ToArray();
+		var roots = records.Where( r => r.ParentScriptId == 0 && !soundIds.Contains( r.ScriptId ) ).ToArray();
 		Require( roots.Length > 0, "graph has no root (cycle)" );
 		var pool = candidates.Take( MaximumNodes + 1 ).ToArray();
 		Require( pool.Length <= MaximumNodes && world.Scripts.Count == roots.Length && world.ClockMilliseconds == 0 && world.PassCounter == 0, "world is not an exact fresh root set" );
@@ -137,7 +138,7 @@ internal static class SavedScriptGraphImport
 		var finish = world.PrepareOriginalGraphCommit( ordered, (int)block.NextScriptId, block.TickCounter, clock!.Value );
 		var links = records.Where( r => r.ChildScriptId != 0 ).Select( r => (Parent: vms[r.ScriptId], Child: vms[r.ChildScriptId], Sound: false) )
 			.Concat( records.Where( r => r.SoundScriptId != 0 ).Select( r => (Parent: vms[r.ScriptId], Child: vms[r.SoundScriptId], Sound: true) ) ).ToArray();
-		var restores = records.Select( r => (Record: r, Owner: recordOwners[r.ScriptId], Vm: vms[r.ScriptId], Root: r.ParentScriptId == 0) ).ToList();
+		var restores = records.Select( r => (Record: r, Owner: recordOwners[r.ScriptId], Vm: vms[r.ScriptId], Root: r.ParentScriptId == 0 && !soundIds.Contains( r.ScriptId )) ).ToList();
 		return (() => { foreach ( var apply in preparations ) apply(); foreach ( var (parent, child, sound) in links ) parent.AdoptChild( child, sound ); finish(); }, ordered.Select( pair => pair.Vm ).ToArray(), restores);
 	}
 

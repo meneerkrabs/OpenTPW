@@ -434,6 +434,7 @@ WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
 WALK-003 docs/GUESTS.md
 WALK-004 docs/GUESTS.md
+WALK-005 docs/STRUCTURAL-WALK-TRACKS.md
 WALK-006 docs/GUESTS.md
 WALK-007 docs/GUESTS.md
 WALK-008 docs/GUESTS.md

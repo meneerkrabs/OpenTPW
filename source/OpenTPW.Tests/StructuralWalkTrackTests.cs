@@ -73,7 +73,7 @@ public class StructuralWalkTrackTests
 	[TestMethod]
 	public void UnsupportedAndInvalidParentsKeepTheExistingFallthrough()
 	{
-		foreach ( var parent in new[] { -1, 0, 256, int.MaxValue } )
+		foreach ( var parent in new[] { -1, 256, int.MaxValue } )
 		{
 			var map = new ParkCellMap( 16, 16 );
 			map.Tracks.Set( 0, 0, new TrackCell { Type = 11, Parent = -1 } );
@@ -81,6 +81,12 @@ public class StructuralWalkTrackTests
 			map.Tracks.Set( 4, 4, new TrackCell { Type = 12, Parent = parent } );
 			Assert.IsFalse( WalkEdges.Blocked( map, 3, 4, 1, 1 ), $"parent {parent}" );
 		}
+		// the parent word is the cell index plus one, so cell (0, 0) is a real parent (0x4D89E4) and only a missing word (-1 here) is no track
+		var first = new ParkCellMap( 16, 16 );
+		first.Tracks.Set( 0, 0, new TrackCell { Type = 11, Parent = -1 } );
+		first.SetType( 4, 4, TrackCellTypes.Extension );
+		first.Tracks.Set( 4, 4, new TrackCell { Type = 12, Parent = 0 } );
+		Assert.IsTrue( WalkEdges.Blocked( first, 3, 4, 1, 1 ), "parent index 0 is cell (0, 0)" );
 		foreach ( var parentType in new byte[] { 0, 12, 17, 99 } )
 		{
 			var map = new ParkCellMap( 16, 16 );
@@ -148,5 +154,41 @@ public class StructuralWalkTrackTests
 				Assert.AreEqual( (4, 4), walker.Cell );
 			}
 		}
+	}
+
+	[TestMethod]
+	public void AFencePostAndTheCellsBesideItBlockAStepOntoThemUnlessTheirFlagNibbleIsSet()
+	{
+		// 0x4D89C3: a fence post is a record of kind 0x19 and the three cells beside it are its extensions (0xC): a step onto any of them is blocked, whatever the walker stands on, unless the
+		// post's flag nibble (+0xE & 0xF, 1 for a post at the water) is set
+		var map = new ParkCellMap( 16, 16 );
+		map.SetLand( new ParkLand( (2, 2), (0, 2), new (int X, int Y)[] { (2, 2), (4, 2), (4, 4), (2, 4), (0, 4), (0, 2) } ) );
+		var layer = map.Land!.LayerFor( 16, 16 );
+		Assert.AreEqual( FenceLayer.PostType, layer.TypeAt( 4, 2 ) );
+		Assert.AreEqual( FenceLayer.ExtensionType, layer.TypeAt( 5, 3 ) );
+		foreach ( var mask in new[] { 0, 1 } )
+		{
+			Assert.IsTrue( WalkEdges.Blocked( map, 6, 3, 3, mask ), $"onto the cell beside the post, mask {mask}" );
+			Assert.IsTrue( WalkEdges.Blocked( map, 3, 2, 1, mask ), $"onto the post, mask {mask}" );
+			Assert.IsFalse( WalkEdges.Blocked( map, 8, 8, 1, mask ), "control: open ground away from the fence" );
+		}
+		Assert.IsFalse( WalkEdges.Commit( map, (6, 3), (5, 3), 1 ) );
+		map.SetType( 5, 3, ParkCellType.Path );
+		Assert.IsFalse( WalkEdges.Blocked( map, 6, 3, 3, 0 ), "a path target from a non-queue cell is decided before the record" );
+		layer.Flags[2 * 16 + 4] = 1;
+		Assert.IsFalse( WalkEdges.Blocked( map, 3, 2, 1, 1 ), "the post's flag nibble opens it" );
+	}
+
+	[TestMethod]
+	public void ATrackTileReadsTheMapCellsOwnTypeNotTheTilesType()
+	{
+		// the map cell under a tile keeps its own type (0x538FC0 writes the record's): a walker leaving an exit (type 10) toward a tile over empty ground still reads that cell as type 0 (the queue-link rule)
+		var map = new ParkCellMap( 16, 16 );
+		map.Tracks.Set( 5, 4, new TrackCell { Type = 11, Parent = -1, Flags = 1 } );
+		map.SetType( 5, 4, 11 );
+		Assert.AreEqual( (byte)0, map.PrimaryTypeAt( 5, 4 ) );
+		map.SetType( 4, 4, ParkCellTypes.Exit );
+		map.SetQueueLink( 4, 4, 0x40 );
+		Assert.IsFalse( WalkEdges.Blocked( map, 4, 4, 1, 0 ), "an exit's queue link toward the open tile (bridge flag set) is followed as toward an empty cell" );
 	}
 }

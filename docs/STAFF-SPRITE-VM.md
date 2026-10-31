@@ -1,10 +1,8 @@
 # Bounded staff sprite VM core
 
-UI-092 remains open. `StaffSpriteVm`, `StaffSpriteVmState`, and `StaffSpriteCloneCopy`
-provide an independently testable, GPU-free implementation seam. Gameplay, the
-staff renderer, employee windows, the sprite scheduler and save formats do not
-consume this core yet. In particular, this change does not replace the current
-employee portrait's world-publication/fallback behavior.
+`StaffSpriteVm`, `StaffSpriteVmState`, and `StaffSpriteCloneCopy` provide an independently
+testable, GPU-free implementation seam. The staff world, the sprite scheduler, the employee
+and hire windows and the original saves' sprite records consume it (see the notes below).
 
 ## State and copy contract
 
@@ -138,4 +136,4 @@ migration, resource/cache/flag-aware rendering, source loss/return and rename
 window flows, and accepted behavior/render evidence. Nothing in this core derives
 missing PC/stack history from elapsed animation time.
 
-**Consumed by the world (round 11, package A).** The staff world's sources (`StaffSpriteState`, `StaffSpriteEvents`) now run this core: the state setters, the walk step, the pre-update, the drop and the pick-up queue and apply templates, and the sprite scheduler (`0x475360`) steps the sources on the even 31 ms substeps (`Level.ScheduleSprites`). The saved wrapper and source are an optional validated field of the staff world's resume file. The hire window's figure and the employee window's portrait stay on the host's renderer-call clock (package W). See `docs/STAFF-PLACEMENT.md`.
+**Consumed by the world (round 11, package A).** The staff world's sources (`StaffSpriteState`, `StaffSpriteEvents`) now run this core: the state setters, the walk step, the pre-update, the drop and the pick-up queue and apply templates, and the sprite scheduler (`0x475360`) steps the sources on the even 31 ms substeps (`Level.ScheduleSprites`). The saved wrapper and source are an optional validated field of the staff world's resume file. The hire window's figure (program `HireFigure`, flags 0x51000) and the employee window's portrait (the full and partial clone `StaffSpriteCloneCopy`, `PortraitSprites`) run on the same scheduler since round 11 (package W: UI-082, UI-092; `docs/EMPLOYEE-PORTRAITS.md`), and an original save's staff records are applied to the sources (`SavedSpriteScripts.Staff`, SAVE-013). See `docs/STAFF-PLACEMENT.md`.

@@ -112,6 +112,7 @@ public class TrackBridgeWalkGoldenTests
 			var anchor = parts[1].Split( ' ' ).Select( int.Parse ).ToArray();
 			var start = parts[2].Split( ' ' ).Select( int.Parse ).ToArray();
 			var end = parts[3].Split( ' ' ).Select( int.Parse ).ToArray();
+			var family = parts[4] == "1" ? TrackFamily.Kart : TrackFamily.Water;
 			var cells = new List<(int X, int Y, int Before, int After)>();
 			var tiles = new List<(int X, int Y, int[] Record)>();
 			for ( var next = at + 1; next < lines.Length && !lines[next].StartsWith( "line ", StringComparison.Ordinal ); next++ )
@@ -124,7 +125,7 @@ public class TrackBridgeWalkGoldenTests
 					tiles.Add( (where[0], where[1], item[1].Split( ' ' ).Select( int.Parse ).ToArray()) );
 			}
 			var map = new ParkCellMap( 128, 128 );
-			var builder = new TrackBuilder( map, TrackFamily.Kart, () => null, new Grid() );
+			var builder = new TrackBuilder( map, family, () => null, new Grid() );
 			var station = TrackStation.FromPlacement( anchor[0], anchor[1], 0 );
 			builder.PlaceStation( station );
 			builder.PlaceInitialStation( station );

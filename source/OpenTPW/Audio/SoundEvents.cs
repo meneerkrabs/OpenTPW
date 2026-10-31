@@ -274,6 +274,7 @@ public sealed class SoundEventSystem
 	private void TrackOneShot( AudioVoice voice, uint priority, ushort flags, double delay, PlacedSoundParameters? parameters, HeldSoundLifetime? lifetime = null, uint groupMask = 0 )
 	{
 		voice.GroupMask = groupMask;
+		voice.UsesLibraryVolume = true;
 		var expiresAt = ExpiryFrame( voice, flags, delay );
 		oneShots.Add( (voice, priority, flags, expiresAt) );
 		if ( parameters != null && (voice.Loops || !SoundVoiceFlags.IsExpiryExempt( flags )) ) sampleOwners.Add( voice, new RetainedSample( this, voice, parameters, lifetime, expiresAt, delay ) );
@@ -1034,6 +1035,7 @@ public sealed class PlacedSound
 		else if ( decoding.IsCompletedSuccessfully && decoding.Result is { } audio )
 		{
 			Voice = position is { } place ? mixer.Play( audio, channel, volume, place, range ) : mixer.Play( audio, channel, volume );
+			Voice.ForEvent( GroupMask );
 			Voice.Serial = Serial;
 			Voice.PlacedFlat = SoundVoiceFlags.IsAnyDistance( Flags );
 			Voice.SetPitch( Pitch );
@@ -1207,6 +1209,7 @@ public sealed class SoundSentence
 			var restartPitch = system.Pitch( again, parameters );
 			_ = system.DelaySeconds( again );
 			voice = Position is { } spot ? system.Mixer.Play( resumed.Audio, channel, restartVolume / 100f, spot, Range ) : system.Mixer.Play( resumed.Audio, channel, restartVolume / 100f );
+			voice.ForEvent( soundEvent.GroupMask );
 			voice.PlacedFlat = SoundVoiceFlags.IsAnyDistance( soundEvent.Flags );
 			Lifetime?.Admit( voice, restartVolume );
 			voice.SetPitch( restartPitch );
@@ -1231,6 +1234,7 @@ public sealed class SoundSentence
 		// [BIN:TPW-EXE:0x6bc4f4 sample start] the delay is drawn after the volume and the pitch at every segment; a sentence's voice is ranked as the sentence itself, so the draw is all of it that is observable here
 		_ = system.DelaySeconds( soundEvent.Sounds[sound] );
 		voice = Position is { } place ? system.Mixer.Play( audio, channel, gain, place, Range ) : system.Mixer.Play( audio, channel, gain );
+		voice.ForEvent( soundEvent.GroupMask );
 		voice.PlacedFlat = SoundVoiceFlags.IsAnyDistance( soundEvent.Flags );
 		Lifetime?.Admit( voice, volume );
 		voice.SetPitch( pitch );

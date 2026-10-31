@@ -50,6 +50,7 @@ internal sealed class HeldSoundLifetime
 		if ( IsContainer ) return; // Children have samples; the container parent never does.
 		output = voice;
 		voice.HasDeviceGain = true;
+		voice.UsesLibraryVolume = true;
 		if ( !PreserveVolume )
 		{
 			OwnVolume = Math.Max( 0, volume );
@@ -145,7 +146,11 @@ internal sealed class HeldSoundLifetime
 
 	private void WriteDevice()
 	{
-		if ( output is { IsFinished: false } ) output.Gain = DeviceVolume / 100f;
+		if ( output is { IsFinished: false } )
+		{
+			output.Gain = DeviceVolume / 100f;
+			output.SetLibraryIndex( DeviceVolume ); // [BIN:TPW-EXE:0x6D2980] the device receives the integer volume through the driver's table; an index above 127 sends nothing
+		}
 	}
 }
 

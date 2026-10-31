@@ -120,6 +120,9 @@ internal static class GamePauseSound
 		frontEndFocus = focused;
 	}
 
+	/// <summary>A park's start or end drops the front end's focus latch: it is only meaningful while the lobby samples it, and returning to the lobby unfocused must not look like a loss.</summary>
+	internal static void ForgetFrontEndFocus() => frontEndFocus = null;
+
 	/// <summary>Puts the pause object back to its start state (the tests; the process start).</summary>
 	internal static void Reset()
 	{

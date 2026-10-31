@@ -64,6 +64,8 @@ public sealed class GlobalStateGuard : TestMethodAttribute
 			Running = outer;
 			// also when the runner throws: MSTest reports that as a failure, and the leak must still not reach the tests after it
 			leaks = PutBack( before );
+			// the pause object's static state (paused word, advisor flag, focus latch) belongs to no file system: a test that pauses the sound must not hand it on
+			GamePauseSound.Reset();
 		}
 		if ( leaks.Length > 0 )
 			Fail( results, leaks );

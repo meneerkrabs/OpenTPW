@@ -242,4 +242,43 @@ public class ApplicationPauseTests
 			Assert.IsTrue( GamePauseSound.ListenerRaised );
 		} );
 	}
+
+	[TestMethod]
+	public void OnePKeyEndsAFocusLossPauseEvenOverAUserPause()
+	{
+		// [BIN:TPW-EXE:0x409350] the pause object has one flag: with it set, P resumes in one press (a focus loss after P is the same flag again)
+		Key( UiKeys.Pause ); Assert.AreEqual( GameSpeed.Paused, hud.Status.Speed );
+		LoseFocus(); Assert.IsTrue( hud.ClockPaused );
+		Key( UiKeys.Pause );
+		Assert.IsFalse( hud.ClockPaused, "one press resumes" );
+		Assert.AreNotEqual( GameSpeed.Paused, hud.Status.Speed );
+	}
+
+	[TestMethod]
+	public void AParkLeavesNoFrontEndFocusLatchBehind()
+	{
+		WithMixer( mixer =>
+		{
+			GamePauseSound.ObserveFrontEndFocus( true, false );
+			GameAudio.LeavePark();
+			GamePauseSound.ObserveFrontEndFocus( false, false );
+			Assert.IsFalse( mixer.Paused, "the lobby's first sample after a park is not a loss" );
+			GamePauseSound.ObserveFrontEndFocus( true, false );
+			GamePauseSound.ObserveFrontEndFocus( false, false );
+			Assert.IsTrue( mixer.Paused, "a real loss after a sampled return still pauses" );
+		} );
+	}
+
+	[TestMethod]
+	public void ResetSavedSoundPutsThePauseObjectBack()
+	{
+		WithMixer( mixer =>
+		{
+			GamePauseSound.Pause( false );
+			Assert.IsTrue( GamePauseSound.ListenerRaised );
+			GameAudio.ResetSavedSound();
+			Assert.IsFalse( GamePauseSound.ListenerRaised );
+			Assert.IsFalse( GamePauseSound.AdvisorSpeechPaused );
+		} );
+	}
 }

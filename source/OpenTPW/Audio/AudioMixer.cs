@@ -56,6 +56,22 @@ public sealed class AudioVoice
 	public float Gain { get; set; }
 	/// <summary>The logical sample already supplied final device gain, including its enabled groups.</summary>
 	internal bool HasDeviceGain { get; set; }
+	/// <summary>The voice belongs to the sound event system: its level is the library volume (<see cref="SoundVolume"/>) quantised in decibels, not a free gain times the channel gains.</summary>
+	internal bool UsesLibraryVolume { get; set; }
+	/// <summary>Marks the voice as one of the event system's, with its category's group mask (<see cref="GroupMask"/>).</summary>
+	internal AudioVoice ForEvent( uint groupMask )
+	{
+		GroupMask = groupMask;
+		UsesLibraryVolume = true;
+		return this;
+	}
+	/// <summary>The volume QMixer holds for the voice (<see cref="SoundVolume.Library"/>); it keeps its last value when the driver is sent nothing.</summary>
+	internal float LibraryVolume { get; private set; } = 1f;
+	/// <summary>The driver's volume call for an index: an index outside 0..127 sends nothing and leaves the volume as it was.</summary>
+	internal void SetLibraryIndex( int index )
+	{
+		if ( SoundVolume.Library( index ) is { } volume ) LibraryVolume = volume;
+	}
 	public bool IsFinished { get; private set; }
 	/// <summary>The output frame (mixer timeline) at which this voice's first frame was mixed, or -1 before that.</summary>
 	public long StartOutputFrame { get; internal set; } = -1;
@@ -151,16 +167,24 @@ public sealed class AudioVoice
 	internal int MixInto( Span<float> mix, int frames, float gain )
 	{
 		if ( IsFinished || output is not { } sampleOutput ) return 0;
-		var total = gain * Gain;
+		// an event-system voice's level is one decibel-quantised value of the library volume times the distance gain (flat voices: distance gain 1), see the volume chain below
+		var total = UsesLibraryVolume ? 1f : gain * Gain;
 		var leftScale = 1f;
 		var rightScale = 1f;
+		if ( UsesLibraryVolume && (Position is not { } || Range <= 0 || PlacedFlat) )
+		{
+			// [BIN:QMIXER-DLL:0x1800586B,0x1800ca40 volume chain] a flat or unpositioned voice has the distance gain 1 (+0xB8) and no cone (+0xB4): SetVolume(dB of the library volume) alone
+			var flat = AudioListener.DecibelGain( AudioListener.GainHundredthsOfDecibel( LibraryVolume ) );
+			leftScale = rightScale = flat;
+		}
 		if ( Position is { } place && Range > 0 && !PlacedFlat )
 		{
 			var (distanceGain, pan) = AudioListener.Placement( place, Range );
 			// Range admission belongs to SoundEventSystem, not this distance/pan stage; a released loop output is not mixed.
 			// [BIN:QMIXER-DLL:0x18005830 volume and pan] tp.exe gives every voice the channel mode 0x1000000 (the software stage: 0x6bc61b ORs 1 into the request flags of every started sample, 0x6d23ab turns that into 0x1000000), whose buffer has no DirectSound 3D object (0x2000000 only): SetVolume(2000 log10(gain) hundredths of a decibel, 0x1800ca40) and, for a mono wave only (0x18005982 tests the wave format table 0x1803c6b4, 1 = mono), SetPan(44.444 x azimuth, mirrored behind the listener, 0x18005730)
 			// [BIN:TPW-EXE:0x6d2aec axis mapping] the adapters 0x6d2640 (source), 0x6d2a10 (listener position) and 0x6d2b20 (front and up) hand QMixer (x, z, y) for a driver whose byte +8 has bit 0 clear (it starts as 2, 0x6d6c54-0x6d6c5e, and nothing writes it), QMixer negates the third component of every vector it receives when its engine byte +4 is set (0x18001020; set because tp.exe's QSWaveMixInitEx structure is zeroed, 0x6d1f92, so bit 3 of its flags is clear, 0x18008661-0x1800866c): the two reflections make a rotation (x, y, z) -> (x, z, -y), so right = up x front, the rotated offset and the azimuth atan2(x, z) are those of the unmapped camera axes (AudioListener.Azimuth; the test AudioQmixerPlacementTests replays the whole pipeline)
-			var levelled = AudioListener.DecibelGain( AudioListener.GainHundredthsOfDecibel( distanceGain ) );
+			// [BIN:QMIXER-DLL:0x1800586B,0x1800ca40 volume chain] the channel's product +0xBC = library volume (+0x4C, SoundVolume.Library) x distance gain (+0xB8) x cone (+0xB4, 1: no cone) is turned into hundredths of a decibel once (0x1800ca40) and that value is DirectSound's volume
+			var levelled = AudioListener.DecibelGain( AudioListener.GainHundredthsOfDecibel( UsesLibraryVolume ? LibraryVolume * distanceGain : distanceGain ) );
 			(leftScale, rightScale) = channels == 1 ? AudioListener.PanGains( pan ) : (1f, 1f);
 			leftScale *= levelled;
 			rightScale *= levelled;
@@ -424,6 +448,10 @@ public sealed class AudioMixer : IDisposable
 			reverbSend.AsSpan( 0, frames * 2 ).Clear();
 		}
 		var send = reverbSend.AsSpan( 0, reverbOn ? frames * 2 : 0 );
+		// [BIN:TPW-EXE:0x6B98D0,0x70A610,0x6C56E2,0x6BB860 group change] a group volume change re-evaluates every voice's index through the record; here the index is a function of the current group floats and is evaluated for each block, which gives the same value at every point
+		Span<float> groupFactors = stackalloc float[4];
+		for ( var group = 0; group < 4; group++ )
+			groupFactors[group] = GetGroupFactor( group );
 		// Index loop: a voice that completes may start its successor, which is mixed from the frame where it ended.
 		for ( var index = 0; index < voices.Count; index++ )
 		{
@@ -441,13 +469,16 @@ public sealed class AudioMixer : IDisposable
 			voice.BufferOffset = 0;
 			if ( voice.StartOutputFrame < 0 )
 				voice.StartOutputFrame = mixedFrames + offset;
+			// [BIN:TPW-EXE:0x6BB860 effective volume] an event-system voice's groups are inside its volume index (the group floats multiply the voice's percent before the driver's table), so it takes neither the master nor a channel gain here
+			if ( voice.UsesLibraryVolume && !voice.HasDeviceGain )
+				voice.SetLibraryIndex( SoundVolume.Index( (int)MathF.Round( voice.Gain * 100, MidpointRounding.ToEven ), voice.GroupMask, groupFactors ) );
 			var gain = masterGain * channelGains[(int)voice.Channel];
 			if ( voice.Channel == AudioChannel.Music && MusicDuckRequest != 0 )
 				gain = 0;
 			// [BIN:STP-PPC:0x100BB18C speech ducking] while speech plays, Music = settings+0x20 × duck / 100 and User2 = settings+0x1C × duck / 100 (TbSysCommand::SetMusicVolume / SetUser2Volume); +0x1C is fed from the SFX slider (profile +0x10, PC serializer 0x423E90), so the ducked second volume is the effects channel; master and speech stay
 			if ( speaking && voice.Channel != AudioChannel.Speech )
 				gain *= DuckingLevel;
-			if ( voice.HasDeviceGain ) gain = 1;
+			if ( voice.HasDeviceGain || voice.UsesLibraryVolume ) gain = 1;
 			// the positioned effects (rides, screams, staff, guests, placed ambients) go to the reverb send instead of straight into the mix; the send is added back below. Flat voices (interface clicks, the weather's own rain) stay dry
 			var used = voice.MixInto( (reverbOn && voice.Channel == AudioChannel.Effects && voice.Position != null ? send : buffer)[(offset * 2)..], frames - offset, gain );
 			if ( voice.IsFinished )

@@ -73,7 +73,7 @@ public class AudioFiniteRangeTests
 			Listener( Vector3.Zero ); system.Pump();
 			Assert.IsTrue( voice.HasOutput ); Assert.AreNotSame( first, Output( voice ) );
 			Assert.AreEqual( serial, voice.Serial );
-			CollectionAssert.AreEqual( new short[] { 1000, 1000 }, mixer.Mix( 1 ) );
+			CollectionAssert.AreEqual( AudioLevels.Scale( 100, 1000, 1000 ), mixer.Mix( 1 ) );
 			first = Output( voice ); system.Pump(); Assert.AreSame( first, Output( voice ) );
 		}
 		Assert.AreEqual( 1, mixer.Voices.Count );

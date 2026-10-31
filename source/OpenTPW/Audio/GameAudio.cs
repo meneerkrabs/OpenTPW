@@ -315,6 +315,7 @@ public static class GameAudio
 		LeavePark();
 		// [BIN:TPW-EXE:0x415254 level start] the level start clears the sound entry's paused word
 		GamePauseSound.LevelStart();
+		GamePauseSound.ForgetFrontEndFocus();
 		SoundCadence.Reset();
 		if ( seed is uint value )
 			events!.Reseed( value );
@@ -407,6 +408,7 @@ public static class GameAudio
 		// [BIN:TPW-EXE:0x5C8650 park exit] state 12 of the park state machine 0x54E360 writes the profile (0x5AFC60 -> 0x5AFF50 -> 0x423E90), which ends in the options applier 0x423DD0
 		// [BIN:TPW-EXE:0x54e67b front end entry] the first frame of the front end resumes the game pause (0x409300): a pause menu's pause, the advisor's paused speech and the raised listener end with the park
 		GamePauseSound.Resume();
+		GamePauseSound.ForgetFrontEndFocus();
 		EndSavedVolumes();
 		events?.HeldSounds.StopAll();
 		// the park's scripts are destroyed with it, and each writes the duck request 0 (tp.exe 0x558513); the reverb returns to the default at the next frame outside a ride
@@ -1247,6 +1249,7 @@ public static class GameAudio
 		SavedVolumes = null;
 		MasterVolume = GameOptions.MaximumVolume;
 		ApplyOnFlags( new GameOptions() );
+		GamePauseSound.Reset();
 	}
 
 	/// <summary>Plays a <c>cat_ui</c> event (control activation clicks, drawer and error feedback).</summary>

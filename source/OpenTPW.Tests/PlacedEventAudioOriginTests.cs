@@ -211,7 +211,7 @@ public class PlacedEventAudioOriginTests
 			var sourceSound = AudioListener.Position;
 			GameAudio.UpdateListener(middle + new System.Numerics.Vector3(6, 0, 0), new System.Numerics.Vector3(0, 1, 0), field);
 			using var reference = new AudioMixer(null);
-			reference.Play(new Mp2Audio(AudioMixer.OutputRate, 1, new short[] { 1000, 1000, 1000, 1000 }, 1, 0), AudioChannel.Effects, gain: 1, position: sourceSound, range: 100);
+			reference.Play(new Mp2Audio(AudioMixer.OutputRate, 1, new short[] { 1000, 1000, 1000, 1000 }, 1, 0), AudioChannel.Effects, gain: 1, position: sourceSound, range: 100).AsEvent();
 			CollectionAssert.AreEqual(reference.Mix(1), mixer.Mix(1), "Moving six engine units must attenuate and pan identically to thirty original sound units.");
 		}
 		finally { Level.Current = previousLevel; }

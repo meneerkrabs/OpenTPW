@@ -86,7 +86,7 @@ internal sealed partial class GameFlow
 				ApplyPendingExtensions();
 				try
 				{
-					candidate = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
+					candidate = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels, ClientToolGlobals = ProcessToolGlobals };
 					beforeEnter( candidate );
 					RequireProgressSaved();
 					candidateScene.Detach();

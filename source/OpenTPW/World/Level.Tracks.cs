@@ -170,7 +170,16 @@ public partial class Level
 			economy.ChargeTrackDemolition( builder.Purchase, instance );
 	}
 
-	private TrackEditor TrackEditorOf( OriginalObject item, TrackStation station, TrackBuilder builder ) => new( builder, station, TrackEditHooksOf( item, builder ) );
+	private TrackEditor TrackEditorOf( OriginalObject item, TrackStation station, TrackBuilder builder ) => new( builder, station, TrackEditHooksOf( item, builder ), SharedToolGlobals );
+
+	/// <summary>
+	/// The globals a track editor reads and writes: the client's own (<see cref="ClientToolGlobals"/>) outside a command; inside one, the globals the command carries (<see cref="ToolTiles"/>), or none
+	/// (the editor then names its ride's own exit and entry tiles) for a command that carries none, so what a command does never depends on the machine that runs it.
+	/// </summary>
+	private TrackToolGlobals? SharedToolGlobals => executingCommand ? executionGlobals : ClientToolGlobals;
+
+	private bool executingCommand;
+	private TrackToolGlobals? executionGlobals;
 
 	/// <summary>
 	/// Removes the station tiles of a ride (pass 2 of the demolition); the tiles its replays cleared are gone already (<see cref="OnTrackStationRemoving"/>) and a tile no replay reached stays, as in the original.
@@ -370,6 +379,8 @@ public partial class Level
 		CellTool.Cancel();
 		// [EXT:online-coop-claims] a guest's tool claims its ride through the host (C3c-1b): the tool starts from the claim's outcome, the latest entry's alone (an earlier one's wait was
 		// dropped above), and the claim moves from a ride an earlier entry claimed; the coaster tool that ended sends its last commands first (C3c-2)
+		// the track button's select (0x4AF233) writes the issuer's globals before the tool starts, a co-op guest's start included (its claim goes to the host)
+		NoteToolSelection( station );
 		if ( CoopSession != null && Commands.SendsRequests )
 		{
 			if ( !CoasterCommandsSentBeforeClaim() )
@@ -383,7 +394,7 @@ public partial class Level
 		// [EXT:online-coop-claims] the tool claims its ride once the tool it replaces is gone (C3c-1); the claim moves from a ride the replaced tool held
 		if ( !ClaimForTrackTool( station ) )
 			return TrackToolEntry.Refused;
-		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ) );
+		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ), SharedToolGlobals );
 		// [BIN:TPW-EXE:0x0052A050 line tool after a placement] the placement starts the line tool itself (mode 3 with its line start), without reading the circuit word that the tool button's click reads (0x5267F2)
 		if ( !justPlaced && station.Runtime.Bump is { IsTrackValid: true } )
 			EnterTrackEditTool( station, editor );
@@ -438,7 +449,7 @@ public partial class Level
 			return TrackToolStart.ClaimGone;
 		if ( !NoToolActive )
 			return TrackToolStart.None;
-		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ) );
+		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ), SharedToolGlobals );
 		if ( request.Command is ClaimRideCommand )
 		{
 			if ( !start.JustPlaced && station.Runtime.Bump is { IsTrackValid: true } )

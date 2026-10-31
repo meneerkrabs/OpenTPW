@@ -313,6 +313,9 @@ public sealed class ParkCommands : IManagementIssuer
 	/// Issues <paramref name="command"/> as the local player (<see cref="Player"/>) and applies it now. A command issued while another runs (a tool callback inside an edit) is part of the outer one: it
 	/// takes the outer command's player, so it does the same on every peer, and runs unlogged.
 	/// </summary>
+	/// <summary>The issuing player's track tool globals at this moment (<see cref="ToolTiles"/>), which <see cref="Issue"/> puts into a demolishing or selling command; null stamps nothing.</summary>
+	internal Func<ToolTiles>? ToolTilesSource { get; set; }
+
 	public ParkCommandResult Issue( ParkCommand command )
 	{
 		ArgumentNullException.ThrowIfNull( command );
@@ -332,6 +335,8 @@ public sealed class ParkCommands : IManagementIssuer
 		issuing = true;
 		try
 		{
+			// a demolishing or selling command carries the issuer's track tool globals, which no record carries otherwise (ToolTiles)
+			command = command is IToolTiled { Tiles: null } tiled && ToolTilesSource is { } tiles ? tiled.WithTiles( tiles() ) : command;
 			// [EXT:online-coop-commands] a guest's command goes to the host as a request, and changes nothing here until its record comes back
 			if ( FollowsStream && Submit is { } submit )
 				return Request( command with { Player = Player }, submit );

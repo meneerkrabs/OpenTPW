@@ -216,27 +216,63 @@ public sealed record PlaceObjectCommand( string Entry, int X, int Y, int Rotatio
 	}
 }
 
+/// <summary>
+/// The issuing player's track tool globals at the click (tp.exe <c>0x7639E0/E4</c> the exit tile, <c>0x7639E8/EC</c> the entry tile): what a demolition's record clear spares. They are client-side tool state
+/// that no record carries, so the demolishing and selling commands carry them; execution applies them and nothing else (<see cref="TrackToolGlobals"/>).
+/// </summary>
+public readonly record struct ToolTiles( int ExitX, int ExitY, int EntryX, int EntryY )
+{
+	/// <summary>The cells a placement or a select can leave: on the map or the reset (-1, -1).</summary>
+	internal bool IsWellFormed => IsTile( ExitX, ExitY ) && IsTile( EntryX, EntryY );
+
+	private static bool IsTile( int x, int y ) => x is > -ParkCommandCodec.MaximumCoordinate and < ParkCommandCodec.MaximumCoordinate && y is > -ParkCommandCodec.MaximumCoordinate and < ParkCommandCodec.MaximumCoordinate;
+
+	internal void Write( ParkCommandWriter writer )
+	{
+		writer.Int( ExitX );
+		writer.Int( ExitY );
+		writer.Int( EntryX );
+		writer.Int( EntryY );
+	}
+
+	internal static ToolTiles Read( ParkCommandReader reader ) => new( reader.Int(), reader.Int(), reader.Int(), reader.Int() );
+}
+
+/// <summary>A command whose execution may demolish a ride's track under the record clear, so it carries the issuer's <see cref="ToolTiles"/> (null in a command an older build wrote).</summary>
+public interface IToolTiled
+{
+	/// <summary>The issuer's globals at the click, or null.</summary>
+	ToolTiles? Tiles { get; }
+
+	/// <summary>The command with <paramref name="tiles"/>.</summary>
+	ParkCommand WithTiles( ToolTiles tiles );
+}
+
 /// <summary>The remove tool's click on (<paramref name="X"/>, <paramref name="Y"/>): the object there, else a queue cell, else a path cell.</summary>
-public sealed record RemoveAtCommand( int X, int Y ) : ParkCommand
+public sealed record RemoveAtCommand( int X, int Y, ToolTiles? Tiles = null ) : ParkCommand, IToolTiled
 {
 	public override ParkCommandKind Kind => ParkCommandKind.RemoveAt;
-	internal override bool IsWellFormed => IsCell( X, Y );
+	internal override bool IsWellFormed => IsCell( X, Y ) && (Tiles?.IsWellFormed ?? true);
+	public ParkCommand WithTiles( ToolTiles tiles ) => this with { Tiles = tiles };
 	internal override void WriteFields( ParkCommandWriter writer )
 	{
 		writer.Int( X );
 		writer.Int( Y );
+		Tiles?.Write( writer );
 	}
 }
 
 /// <summary>Demolishes the object that covers (<paramref name="X"/>, <paramref name="Y"/>), sold for its scrap value.</summary>
-public sealed record RemoveObjectAtCommand( int X, int Y ) : ParkCommand
+public sealed record RemoveObjectAtCommand( int X, int Y, ToolTiles? Tiles = null ) : ParkCommand, IToolTiled
 {
 	public override ParkCommandKind Kind => ParkCommandKind.RemoveObjectAt;
-	internal override bool IsWellFormed => IsCell( X, Y );
+	internal override bool IsWellFormed => IsCell( X, Y ) && (Tiles?.IsWellFormed ?? true);
+	public ParkCommand WithTiles( ToolTiles tiles ) => this with { Tiles = tiles };
 	internal override void WriteFields( ParkCommandWriter writer )
 	{
 		writer.Int( X );
 		writer.Int( Y );
+		Tiles?.Write( writer );
 	}
 }
 
@@ -246,33 +282,45 @@ public sealed record RemoveObjectAtCommand( int X, int Y ) : ParkCommand
 /// [EXT:online-coop-commands] One command for the whole rectangle, so a guest's clear is one request with one outcome (C3b): an object its player may not remove stays, as an object across
 /// the rectangle's edge does (<see cref="IParkCommandRights.AllowsRemoval"/>).
 /// </summary>
-public sealed record ClearAreaCommand( int X0, int Y0, int X1, int Y1 ) : ParkCommand
+public sealed record ClearAreaCommand( int X0, int Y0, int X1, int Y1, ToolTiles? Tiles = null ) : ParkCommand, IToolTiled
 {
 	public override ParkCommandKind Kind => ParkCommandKind.ClearArea;
-	internal override bool IsWellFormed => IsCell( X0, Y0 ) && IsCell( X1, Y1 );
+	internal override bool IsWellFormed => IsCell( X0, Y0 ) && IsCell( X1, Y1 ) && (Tiles?.IsWellFormed ?? true);
+	public ParkCommand WithTiles( ToolTiles tiles ) => this with { Tiles = tiles };
 	internal override void WriteFields( ParkCommandWriter writer )
 	{
 		writer.Int( X0 );
 		writer.Int( Y0 );
 		writer.Int( X1 );
 		writer.Int( Y1 );
+		Tiles?.Write( writer );
 	}
 }
 
 /// <summary>Sells the placed object (or the prototype ride) whose attraction id is <paramref name="Attraction"/>: the sell buttons of the object and attraction windows.</summary>
-public sealed record RemoveAttractionCommand( int Attraction ) : ParkCommand
+public sealed record RemoveAttractionCommand( int Attraction, ToolTiles? Tiles = null ) : ParkCommand, IToolTiled
 {
 	public override ParkCommandKind Kind => ParkCommandKind.RemoveAttraction;
-	internal override bool IsWellFormed => Attraction >= 0;
-	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Attraction );
+	internal override bool IsWellFormed => Attraction >= 0 && (Tiles?.IsWellFormed ?? true);
+	public ParkCommand WithTiles( ToolTiles tiles ) => this with { Tiles = tiles };
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Attraction );
+		Tiles?.Write( writer );
+	}
 }
 
 /// <summary>The Move tool's pick-up of the object whose attraction id is <paramref name="Attraction"/>: it is demolished as the erase button does; the issuer's build tool then arms its type.</summary>
-public sealed record PickUpObjectCommand( int Attraction ) : ParkCommand
+public sealed record PickUpObjectCommand( int Attraction, ToolTiles? Tiles = null ) : ParkCommand, IToolTiled
 {
 	public override ParkCommandKind Kind => ParkCommandKind.PickUpObject;
-	internal override bool IsWellFormed => Attraction >= 0;
-	internal override void WriteFields( ParkCommandWriter writer ) => writer.Int( Attraction );
+	internal override bool IsWellFormed => Attraction >= 0 && (Tiles?.IsWellFormed ?? true);
+	public ParkCommand WithTiles( ToolTiles tiles ) => this with { Tiles = tiles };
+	internal override void WriteFields( ParkCommandWriter writer )
+	{
+		writer.Int( Attraction );
+		Tiles?.Write( writer );
+	}
 }
 
 /// <summary>

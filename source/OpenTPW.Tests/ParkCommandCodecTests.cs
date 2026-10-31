@@ -161,11 +161,42 @@ public class ParkCommandCodecTests
 		(new LayTrackLineCommand( 17, 40, 50, 40, 56 ) { Player = 2, KeepsTool = true }, "0c50042250645070"),
 	};
 
+	/// <summary>A demolishing or selling command that carries the issuer's track tool globals (<see cref="ToolTiles"/>): version 7, the kind's own fields and the four tile words; without them the version-1 bytes stay.</summary>
+	internal static readonly (ParkCommand Command, string Hex)[] ToolTilesSchema =
+	{
+		(new RemoveAttractionCommand( 5, new ToolTiles( 30, 40, -1, -1 ) ) { Player = 2 }, "0e04040a3c500101"),
+		(new PickUpObjectCommand( 5, new ToolTiles( 30, 40, -1, -1 ) ) { Player = 2 }, "0e05040a3c500101"),
+		(new RemoveObjectAtCommand( 3, 4, new ToolTiles( 0, 0, 7, 9 ) ) { Player = 0 }, "0e0300060800000e12"),
+	};
+
+	[TestMethod]
+	public void ADemolishingCommandCarriesTheIssuersToolTilesInVersionSeven()
+	{
+		foreach ( var (command, hex) in ToolTilesSchema )
+		{
+			Assert.AreEqual( hex, ParkCommandCodec.ToHex( command ), command.ToString() );
+			var bytes = Convert.FromHexString( hex );
+			Assert.AreEqual( command, ParkCommandCodec.Decode( bytes ), command.ToString() );
+			for ( var length = 0; length < bytes.Length; length++ )
+				Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.AsSpan( 0, length ) ), $"{command} cut to {length} bytes" );
+			Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( bytes.Append( (byte)0 ).ToArray() ), $"{command} with a trailing byte" );
+		}
+		// without tiles the kind keeps its version-1 bytes, and a version-7 command of another kind has no form
+		Assert.AreEqual( "0204040a", ParkCommandCodec.ToHex( new RemoveAttractionCommand( 5 ) { Player = 2 } ) );
+		Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( Convert.FromHexString( "0e0e00" ) ) );
+		// the select's mapping goes below the map's edge (the exit x - 5 at rotation 180, the entry x - 2 at rotation 0): a near-edge select is no malformed command
+		var nearEdge = new RemoveAttractionCommand( 5, new ToolTiles( -5, 3, -2, 4 ) ) { Player = 1 };
+		Assert.IsTrue( nearEdge.IsWellFormed );
+		Assert.AreEqual( nearEdge, ParkCommandCodec.Decode( ParkCommandCodec.Encode( nearEdge ) ) );
+		Assert.IsFalse( new RemoveAttractionCommand( 5, new ToolTiles( -ParkCommandCodec.MaximumCoordinate, 0, 0, 0 ) ).IsWellFormed );
+		Assert.IsFalse( new RemoveAttractionCommand( 5, new ToolTiles( 0, 0, 0, ParkCommandCodec.MaximumCoordinate ) ).IsWellFormed );
+	}
+
 	[TestMethod]
 	public void EveryCommandKindHasPinnedBytesUnderTheCurrentVersion()
 	{
-		Assert.AreEqual( (6, 2, 3, 4, 5, 6), (ParkCommandCodec.Version, ParkCommandCodec.QueueVersion, ParkCommandCodec.ExpectationVersion, ParkCommandCodec.PurchaseVersion,
-			ParkCommandCodec.StrokeVersion, ParkCommandCodec.TrackToolVersion),
+		Assert.AreEqual( (7, 2, 3, 4, 5, 6, 7), (ParkCommandCodec.Version, ParkCommandCodec.QueueVersion, ParkCommandCodec.ExpectationVersion, ParkCommandCodec.PurchaseVersion,
+			ParkCommandCodec.StrokeVersion, ParkCommandCodec.TrackToolVersion, ParkCommandCodec.ToolTilesVersion),
 			"each generation adds its own pinned table beside this one, which holds versions 1 and 2" );
 		CollectionAssert.AreEquivalent( Enum.GetValues<ParkCommandKind>(), Schema.Select( row => row.Command.Kind ).ToArray(), "one schema row per kind, no kind without one" );
 		var types = typeof( ParkCommand ).Assembly.GetTypes().Where( type => type.IsSubclassOf( typeof( ParkCommand ) ) && !type.IsAbstract ).ToArray();

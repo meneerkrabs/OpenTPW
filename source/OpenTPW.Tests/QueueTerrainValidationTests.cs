@@ -112,4 +112,16 @@ public class QueueTerrainValidationTests
 		terrain.Result = OriginalPlacementResult.Allowed;
 		Assert.IsTrue( Level.QueueTerrainAllows( terrain, null, 2, 3 ), "plain allowed terrain does not require a live map" );
 	}
+
+	[TestMethod]
+	public void ATypedWorldAsksTheValidatorAloneAndReadsNoTerrain()
+	{
+		// [BIN:TPW-EXE:0x00535670 no terrain read] the validator reads the cell's own type, flags and owner: the terrain the host grid reports (water, a walkway, no surface) does not refuse a cell the cell map accepts
+		var terrain = new Terrain { Result = OriginalPlacementResult.Water };
+		var cells = new ParkCellMap( 8, 8 );
+		Assert.IsFalse( Level.QueueCellRulesAllow( terrain, cells, 2, 3 ), "a world that types no footprints keeps OpenTPW's terrain rule" );
+		Assert.IsTrue( Level.QueueCellRulesAllow( terrain, cells, 2, 3, terrainRule: false ), "a typed world's cell is the validator's alone" );
+		cells.SetFlags( 2, 3, ParkCellFlags.Unowned );
+		Assert.IsFalse( Level.QueueCellRulesAllow( terrain, cells, 2, 3, terrainRule: false ), "the validator's own refusal (flag 0x40) still holds" );
+	}
 }

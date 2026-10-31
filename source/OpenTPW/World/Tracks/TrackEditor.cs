@@ -49,28 +49,43 @@ public sealed class TrackEditor
 	private readonly TrackEditHooks hooks;
 
 	/// <summary>
-	/// The tile the original's globals <c>0x7639E0/E4</c> name, which the clear op, its exit tail, the end re-link and the station repair treat as "the exit". The line tool, Backspace and the
-	/// demolition run with the ride's exit tile (<see cref="TrackStation.Exit"/>: the ride select <c>0x5276D0</c> and the placement write it through <c>0x52A3A0</c>); the edit tool's hover
-	/// (<c>0x527960</c> at <c>0x527A17</c>, every frame) writes the ride's raw anchor cell there instead, so during a cut no tile is the exit (<see cref="UseEditToolExit"/>).
+	/// The tile the original's globals <c>0x7639E0/E4</c> name, which the clear op, its exit tail, the end re-link and the station repair treat as "the exit". The globals are the track tool's: a ride's
+	/// select <c>0x5276D0</c> writes the ride's exit tile there (through <c>0x52A3A0</c>) and its entry tile into <c>0x7639E8/EC</c> (<c>0x52A420</c>), the line tool's start does the same, and the edit
+	/// tool's hover (<c>0x527960</c> at <c>0x527A17</c>, every frame) writes the ride's raw anchor cell as the exit instead, so during a cut no tile is the exit (<see cref="UseEditToolExit"/>). They keep
+	/// what the last of those wrote (the level's <see cref="TrackToolGlobals"/>), whichever ride that was.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00527A17 hover exit] the hover copies the ride anchor 0x7639A4/A8 into 0x7639E0/E4 and 0x7639E8/EC without the 0x52A3A0/0x52A420 mapping (only its local copies go through them, 0x527A41, and the entry 0x7639E8 is set right at 0x527A5F); the line tool's tool start (0x5276D0 at 0x52788A, the placement at 0x5255F0 then 0x52A3A0) leaves the exit tile there
-	public (int X, int Y) ToolExit { get; private set; }
+	public (int X, int Y) ToolExit => globals.Exit;
+
+	/// <summary>The tile the original's globals <c>0x7639E8/EC</c> name: the entry tile the clear op spares and the end re-link works at.</summary>
+	public (int X, int Y) ToolEntry => globals.Entry;
+
+	private readonly TrackToolGlobals globals;
 
 	/// <summary>The edit tool's hover is running: <see cref="ToolExit"/> is the ride's anchor cell, which is no track tile (a cut may clear the exit tile, the exit tail never runs, the repair after it finds no track).</summary>
-	public void UseEditToolExit() => ToolExit = station.Anchor;
+	public void UseEditToolExit()
+	{
+		globals.Exit = station.Anchor;
+		globals.Entry = station.Entry;
+	}
 
-	/// <summary>The line tool, Backspace and the demolition: <see cref="ToolExit"/> is the ride's exit tile.</summary>
-	public void UseLineToolExit() => ToolExit = station.Exit;
+	/// <summary>The line tool and Backspace: the tool's start wrote the ride's exit and entry tiles (<see cref="ToolExit"/>, <see cref="ToolEntry"/>).</summary>
+	public void UseLineToolExit()
+	{
+		globals.Exit = station.Exit;
+		globals.Entry = station.Entry;
+	}
 
 	/// <param name="builder">The ride's family builder over the level's track layer.</param>
-	/// <param name="station">The ride's station: its exit tile (<c>0x7639E0/E4</c>) and the entry tile (<c>0x7639E8/EC</c>) are the tiles a clear spares.</param>
+	/// <param name="station">The ride's station.</param>
 	/// <param name="hooks">Refunds and add-on removals; null for a headless cut.</param>
-	public TrackEditor( TrackBuilder builder, TrackStation station, TrackEditHooks? hooks = null )
+	/// <param name="shared">The track tool's globals the level keeps (<see cref="TrackToolGlobals"/>); null gives the editor globals of its own that start at the ride's exit and entry tiles (a headless cut, a prediction).</param>
+	public TrackEditor( TrackBuilder builder, TrackStation station, TrackEditHooks? hooks = null, TrackToolGlobals? shared = null )
 	{
 		this.builder = builder ?? throw new ArgumentNullException( nameof( builder ) );
 		this.station = station;
 		this.hooks = hooks ?? new TrackEditHooks();
-		ToolExit = station.Exit;
+		globals = shared ?? new TrackToolGlobals( station.Exit, station.Entry );
 	}
 
 	private TrackCellLayer Tracks => builder.Tracks;
@@ -378,7 +393,7 @@ public sealed class TrackEditor
 	public IReadOnlyList<(int X, int Y)> Demolish()
 	{
 		var cleared = new List<(int X, int Y)>();
-		UseLineToolExit();
+		// the demolition does not select the ride (0x527EE0 calls neither 0x5276D0 nor a tool start): the globals are whatever the last tool or select left
 		ReplayStack( CollectForward().Corners, cleared );
 		ReplayStack( CollectBackward(), cleared );
 		return cleared;
@@ -561,7 +576,7 @@ public sealed class TrackEditor
 		if ( !cell.IsOrigin )
 			return false;
 		var isExit = at == ToolExit;
-		var isEntry = at == station.Entry;
+		var isEntry = at == ToolEntry;
 		if ( dx == 0 && dy == 0 && !isExit )
 		{
 			cell.Overlap = -1;
@@ -738,7 +753,7 @@ public sealed class TrackEditor
 		if ( !cell.IsOrigin )
 			return;
 		var link = cell.Link;
-		if ( at == station.Entry )
+		if ( at == ToolEntry )
 		{
 			var drop = (byte)(cell.Mask & ~link);
 			if ( drop == 0 )

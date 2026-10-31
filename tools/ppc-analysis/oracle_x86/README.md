@@ -65,3 +65,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## The coaster's run table and bend tables (round 10, package N)
 
 `coaster_x87_oracle.py` runs the run builder `0x4402D0` over a sampled synthetic chain (`sampler(..., extrusion=...)`) and the bend car's tables `0x438AB0` (`bend_tables`); `coaster_runs_golden.py` writes `CoasterRunsGolden.cs` from 60 chains and `coaster_bend_golden.py` writes `CoasterBendGolden.cs` from 120 cars (both accept `--check FILE`). Findings X42 and X43 in `docs/reverse/ORACLE.md` section 7.29.
+
+## The queue tool's corner walk and a ride's queue demolition (round 11, package D)
+
+`queue_oracle.py` runs the corner walk `0x530120` and the ride demolition `0x527EE0` of a ride with a queue (the executable's own Back, click handler, queue line walker and cell remover) on synthetic queue layouts; `queue_golden.py` writes `QueueCornerWalkGolden.cs` from 82 cases and `queue_demolition_golden.py` writes `QueueDemolitionGolden.cs` from 42 (both accept `--check FILE`). Findings X44 and X45 in `docs/reverse/ORACLE.md` section 7.30.

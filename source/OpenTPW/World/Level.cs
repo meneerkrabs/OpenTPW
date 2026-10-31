@@ -683,6 +683,7 @@ public partial class Level : IDisposable
 			ImportOriginalCoasters();
 			ImportOriginalRetainedRideStates();
 			ImportOriginalArrivals();
+			ImportOriginalEnvironment();
 			yield return 0.95f;
 			StartPlacedParticles();
 			ImportOriginalParticles();

@@ -501,10 +501,15 @@ public sealed partial class OriginalEconomyImport
 			if ( GuestSpeed.BaseSpeeds.Contains( person.BaseSpeed ) )
 				member.BaseSpeed = person.BaseSpeed;
 			member.SpeedBonus = person.PurposeSpeed <= byte.MaxValue ? person.PurposeSpeed : 0;
+			// [BIN:TPW-EXE:0x004D4660 entertainer pre-update] the pre-updates of the entertainers and the guards (0x004D4660, 0x004D6360) swap the person's +0xCC word (0x004F9460: the cell id y x 128 + x + 1 the last pre-update saw, mLastRecordedMapID, saved by the person serializer) for the current cell id and, when they differ, take the row off the old cell (0x004D8460) and put it on the new one (0x004D8440): the saved id is the cell the member's row stands on in the saved grid
+			if ( ParkEconomy.EffectRow( type ) != null && person.LastRecordedMapId is >= 1 and <= ParkLitter.MapSize * ParkLitter.MapSize )
+				member.EffectCell = ((person.LastRecordedMapId - 1) % ParkLitter.MapSize, (person.LastRecordedMapId - 1) / ParkLitter.MapSize);
 			var smoothed = BitConverter.Int32BitsToSingle( unchecked( (int)person.PreviousSpeed ) );
 			member.SmoothedSpeed = float.IsFinite( smoothed ) && smoothed >= 0 ? smoothed : 0;
 			imported++;
 		}
+		// the litter was restored before the staff, which cleared the environment grid: the members' rows go back on it
+		economy.ApplyStaffEffects();
 		ImportStaffRoleOrder( economy.Staff, save, membersByThing, evidence );
 		evidence.Add( $"Imported {imported} staff ({string.Join( ", ", save.Staff.Select( item => $"{item.Model} grade {item.Staff.Grade}" ) )})." );
 		foreach ( var adjustment in adjusted )

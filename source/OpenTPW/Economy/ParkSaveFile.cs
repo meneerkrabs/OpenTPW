@@ -93,6 +93,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public MisbehavingKidsData? AnalyserChase { get; init; }
+		/// <summary>
+		/// What the environment grid holds beyond its sources in a park that came from an original save (<see cref="ParkEnvironment.ImportSaved"/>): x, y and the five words of each cell that differs;
+		/// absent for every other park and in older saves (the grid is then its sources').
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<int[]>? EnvironmentResidue { get; init; }
 		public required List<ObjectData> Objects { get; init; }
 		public required List<LoanData> Loans { get; init; }
 		public required List<int> TakenLoanOffers { get; init; }
@@ -714,6 +720,7 @@ public static class ParkSaveFile
 				LitteredBlocks = park.Litter.LitteredBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList(),
 				PathBlocks = park.Litter.PathBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList()
 			},
+			EnvironmentResidue = park.Litter.Environment.ResidueCells().ToList() is { Count: > 0 } residue ? residue : null,
 			AnalyserChase = park.MisbehavingKids( false ) == 0 && park.MisbehavingKids( true ) == 0 && park.MisbehavingKidsEver == 0 ? null
 				: new MisbehavingKidsData { Month = park.MisbehavingKids( false ), GotAway = park.MisbehavingKids( true ), Ever = park.MisbehavingKidsEver },
 			TicketsSpent = park.TicketsSpent,
@@ -1095,6 +1102,9 @@ public static class ParkSaveFile
 				Require( blocks != null && blocks.All( entry => entry != null && entry.Block is >= 0 and < ParkLitter.BlockCount && entry.Count is >= 0 and <= ParkLitter.BlockSize * ParkLitter.BlockSize && entry.Stamp >= 0 )
 					&& blocks.Select( entry => entry.Block ).Distinct().Count() == blocks.Count, "analyser block caches" );
 		}
+		Require( data.EnvironmentResidue is null || data.EnvironmentResidue.Count <= ParkLitter.MapSize * ParkLitter.MapSize && data.EnvironmentResidue.All( cell => cell is { Length: 2 + ParkEnvironment.Components }
+			&& cell[0] is >= 0 and < ParkLitter.MapSize && cell[1] is >= 0 and < ParkLitter.MapSize && cell.Skip( 2 ).All( word => word is >= short.MinValue and <= short.MaxValue ) )
+			&& data.EnvironmentResidue.Select( cell => cell[1] * ParkLitter.MapSize + cell[0] ).Distinct().Count() == data.EnvironmentResidue.Count, "environment residue" );
 		if ( data.Cheats is { } cheats && ParkCheats.Problem( cheats, ParkCalendar.Turn( data.Tick ) ) is { } cheatsProblem )
 			Require( false, cheatsProblem );
 		foreach ( var loan in data.Loans )
@@ -1220,6 +1230,8 @@ public static class ParkSaveFile
 		foreach ( var saved in data.Staff.Members.Where( member => member.WorldState != null ) )
 			saved.WorldState!.Apply( park.Staff.Members.Single( member => member.Id == saved.Id ) );
 		park.ApplyStaffEffects();
+		if ( data.EnvironmentResidue != null )
+			park.Litter.Environment.RestoreResidue( data.EnvironmentResidue );
 		foreach ( var member in park.Staff.Members.Where( member => member.AwaitingJobArrival ) )
 			if ( !park.OwnsMechanicJob( member ) ) throw new InvalidDataException( $"Staff {member.Id} cannot await its restored mechanic job." );
 

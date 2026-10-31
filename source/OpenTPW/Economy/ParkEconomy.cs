@@ -747,6 +747,27 @@ public sealed partial class ParkEconomy : IParkEconomy
 		member.EffectCell = cell;
 	}
 
+	/// <summary>
+	/// An original save holds its environment grid (the region effect records of its cell grid): once the litter, the staff and the objects have spread their rows again, what the saved grid holds beyond
+	/// them is kept as the grid's residue (<see cref="ParkEnvironment.ImportSaved"/>). Returns the number of cells the save holds a record for and the number whose words differ from the rebuilt ones.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4D7EA0 cell manager serializer] the region grid is saved and loaded with the cells (status byte bit 4, ten bytes a cell), and a loaded thing adds no row again: the saved grid is the grid after the load
+	internal (int Records, int Different) ImportSavedEnvironment( SaveWorld world )
+	{
+		ArgumentNullException.ThrowIfNull( world );
+		var records = 0;
+		var different = Litter.Environment.ImportSaved( ( x, y ) =>
+		{
+			if ( x >= world.Cells.CountX || y >= world.Cells.CountY )
+				return null;
+			var words = world.Cells[x, y].RegionWords;
+			if ( words != null )
+				records++;
+			return words;
+		} );
+		return (records, different);
+	}
+
 	/// <summary>A load rebuilt the environment grid from the litter alone: the saved entertainers and guards put their rows back.</summary>
 	internal void ApplyStaffEffects()
 	{
@@ -774,7 +795,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// The level placed (or, after a load, linked again) the object on <paramref name="cell"/>: its <c>RegionFX</c> row goes on that cell, once.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DB3EE object constructor] the relief flag adds row 1, ProvidesSecurity row 4 (0x004DB458) and IsFireworks row 7 (0x004DB48C) at the thing's cell through 0x004D8440
-	// Approximation (GUEST-006, registered at UpdateNeedsTurn): a load puts back the row the object's saved state implies (a dirty toilet its row 6, a spent show none), where the original's constructor always adds the clean, camera or fireworks row
+	// a load of OpenTPW's own save puts back the row the object's saved state implies (a dirty toilet its row 6, a spent show none), which is the row the live grid held; an original save's grid is imported whole (ImportSavedEnvironment), so no constructor row is assumed there
 	public void PlaceObjectEffects( int instanceId, (int X, int Y) cell )
 	{
 		if ( !objects.TryGetValue( instanceId, out var item ) || item.EffectCell != null || ObjectEffectRow( item ) is not { } row )

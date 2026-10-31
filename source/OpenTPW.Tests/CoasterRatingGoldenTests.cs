@@ -192,4 +192,47 @@ public class CoasterRatingGoldenTests
 		Assert.IsTrue( winchRows > 20 && suspendedRows > 20 && troughRows > 20, $"winch {winchRows}, suspended {suspendedRows}, trough {troughRows}" );
 		Assert.IsTrue( trainCounts.Count >= 3, "train counts seen: " + string.Join( ",", trainCounts.Order() ) );
 	}
+
+	[TestMethod]
+	public void EveryRowOfTheOraclesTrainPlacementIsReproducedBitForBit()
+	{
+		var rows = 0;
+		var multi = 0;
+		foreach ( var row in Rows().Where( row => row.StartsWith( "place | ", StringComparison.Ordinal ) ) )
+		{
+			var sides = row.Split( " > " );
+			var parts = sides[0].Split( " | " );
+			var definition = DefinitionOf( Singles( parts[1] ), false, false );
+			var counters = parts[2].Split( ' ' ).Select( int.Parse ).ToArray();
+			var (trains, release, reference) = (counters[0], counters[1], counters[2]);
+			var scalars = Singles( parts[3] );
+			var (spacing, cap, end, lead) = (scalars[0], scalars[1], scalars[2], scalars[3]);
+			var cars = parts[4].Split( " ; " ).Select( Singles ).ToArray();
+			var samples = parts[5].Split( " ; " ).Select( item =>
+			{
+				var fields = item.Split( ' ' );
+				var values = fields.Take( 6 ).Select( field => BitConverter.UInt32BitsToSingle( Convert.ToUInt32( field, 16 ) ) ).ToArray();
+				return new CoasterSample { Position = new SVector3( values[0], values[1], values[2] ), Yaw = values[3], Pitch = values[4], Bank = values[5], Flags = (CoasterSampleFlags)uint.Parse( fields[6] ), Section = int.Parse( fields[7] ) };
+			} ).ToArray();
+			CoasterRating.RatePassAt( definition, samples, spacing, cap, 1, end );
+			var speeds = samples.Select( sample => sample.Speed ).Append( samples[^1].Speed ).ToArray();
+			var lasts = CoasterTrainPlacement.ReleaseSpacing( speeds, samples.Length, spacing, end, CoasterTrainPlacement.ReleaseSeconds( release ), lead, trains );
+			var expected = sides[1].Split( " ; " );
+			var fronts = cars.Select( car => car[0] ).ToArray();
+			var rears = cars.Select( car => car[1] ).ToArray();
+			for ( var train = 0; train < trains; train++ )
+			{
+				var coordinates = CoasterTrainPlacement.CarCoordinates( lasts[train], fronts, rears, spacing );
+				var position = coordinates[reference];
+				var (front, rear) = CoasterTrainPlacement.Extents( position, cars[0][2], fronts[0], cars[^1][2], rears[^1], spacing );
+				var speed = CoasterTrainPlacement.MeanSpeed( coordinates, index => speeds[index <= samples.Length ? index : index % samples.Length] );
+				var actual = string.Join( ' ', new[] { lasts[train], position, speed, front, rear }.Concat( coordinates ).Select( value => Bits( value ).ToString( "x8" ) ) );
+				Assert.AreEqual( expected[train], actual, $"train {train} of row {rows}: {row[..Math.Min( row.Length, 160 )]}" );
+			}
+			rows++;
+			if ( trains > 1 )
+				multi++;
+		}
+		Assert.IsTrue( rows >= 100 && multi > 50, $"{rows} place rows, {multi} with several trains" );
+	}
 }

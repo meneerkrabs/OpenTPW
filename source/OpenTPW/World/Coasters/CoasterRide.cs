@@ -392,7 +392,8 @@ public sealed class CoasterRide
 		Spacing = sampling.Spacing;
 		var tail = nodes.Count - 1;
 		// The tail's coordinate is the end node's knot's, the last knot (ctl +0xa8, 0x441659).
-		var (result, winch) = CoasterRating.RatePass( Definition, samples, Spacing, SpeedCap, tail, sampling.KnotCoordinates.Length == knots.Length && knots.Length > 0 ? sampling.KnotCoordinates[^1] : null );
+		EndCoordinate = sampling.KnotCoordinates.Length == knots.Length && knots.Length > 0 ? sampling.KnotCoordinates[^1] : CoasterRide.PlatformStartSample( samples, tail );
+		var (result, winch) = CoasterRating.RatePass( Definition, samples, Spacing, SpeedCap, tail, EndCoordinate );
 		winchSections = winch;
 		for ( var index = 0; index < nodes.Count; index++ )
 		{
@@ -576,68 +577,23 @@ public sealed class CoasterRide
 	/// <c>uiTrainReleaseRate</c>/1000 seconds and takes i − 1 + f with f = (t − R)/(t − t′) over the sample i where it crossed, wrapped into the list.
 	/// </summary>
 	// [BIN:TPW-EXE:0x43c1f0 release spacing] R = fild(definition +0x2ec as 64-bit) × 0.001 (0x6fe030) stored single; per train after the first: modf of the previous train's +0x30 gives i and f₀, t = (1 − f₀)·spacing / sample[i].+0x1c, t′ = 0; while t < R: i = (i + 1) mod n (ctl+0xa4), t′ = t, t += spacing / sample[i].+0x1c; then f = (t − R)/(t − t′) and train +0x30 = fmod((i − 1)(1 − f) + i·f + n, n) (0x43c343..0x43c39f); train 0 keeps its +0x30
-	internal float[] ReleaseSpacing( int count, float lead )
-	{
-		var n = samples.Length;
-		var total = (float)n;
-		var spacing = Spacing;
-		var release = (float)(Definition.TrainReleaseRate * (double)0.001f);
-		var result = new float[count];
-		// The original takes a stale lead coordinate as it is; one that lies past this track's samples (a shorter track since) is wrapped into it here.
-		var first = lead < 0 ? lead + total : lead;
-		result[0] = first >= total || first < 0 ? (float)(((double)first % total + total) % total) : first;
-		for ( var index = 1; index < count; index++ )
-		{
-			var previous = (double)result[index - 1];
-			var whole = Math.Truncate( previous );
-			var fraction = previous - whole;
-			var sample = (int)whole % n;
-			var time = (1.0 - fraction) * spacing / samples[sample].Speed;
-			var before = 0.0;
-			// A lap of samples that adds no time (every rated speed infinite) would never reach the release time: the walk stops after one such lap.
-			var stalled = 0;
-			while ( time < release && stalled < n )
-			{
-				sample = (sample + 1) % n;
-				before = time;
-				time += spacing / (double)samples[sample].Speed;
-				stalled = time > before ? 0 : stalled + 1;
-			}
-			var f = (time - release) / (time - before);
-			// A sample rated at speed 0 takes forever (t = ∞, f = NaN in the original's x87 sum); the train then stands on that sample, f's limit.
-			if ( !double.IsFinite( f ) || time < release )
-				f = 1.0;
-			var position = (float)((sample - 1) * (1.0 - f) + sample * f);
-			result[index] = (float)(((double)position + total) % total);
-		}
-		return result;
-	}
+	internal float[] ReleaseSpacing( int count, float lead ) =>
+		CoasterTrainPlacement.ReleaseSpacing( samples.Select( sample => sample.Speed ).Append( samples[^1].Speed ).ToArray(), samples.Length, Spacing, EndCoordinate,
+			CoasterTrainPlacement.ReleaseSeconds( Definition.TrainReleaseRate ), lead, count );
 
 	/// <summary>Lays a placed train out from its last car's coordinate (<c>0x43cbda..0x43cd47</c>): car coordinates, position, extents and speed.</summary>
 	private void LayOut( CoasterTrain train, float lastCar )
 	{
 		var cars = train.CarLists.Length;
-		var coordinates = new float[cars];
-		// The sum stays on the x87 stack (0x43cbf1..0x43cc19), each car's coordinate is its single-precision store.
-		double coordinate = lastCar;
-		for ( var car = cars - 1; car >= 0; car-- )
-		{
-			coordinates[car] = (float)coordinate;
-			if ( car > 0 )
-				coordinate = ((double)Definition.CarMetrics( car ).FrontExtent + Definition.CarMetrics( car - 1 ).RearExtent) / Spacing + coordinate;
-		}
+		var fronts = new float[cars];
+		var rears = new float[cars];
+		for ( var car = 0; car < cars; car++ )
+			(fronts[car], rears[car]) = (Definition.CarMetrics( car ).FrontExtent, Definition.CarMetrics( car ).RearExtent);
+		var coordinates = CoasterTrainPlacement.CarCoordinates( lastCar, fronts, rears, Spacing );
 		train.Position = coordinates[Definition.ReferenceCar];
 		UpdateExtents( train );
-		var sum = 0f;
-		foreach ( var at in coordinates )
-		{
-			var whole = MathF.Truncate( at );
-			var fraction = at - whole;
-			var index = (int)whole;
-			// A coordinate past slot n reads beyond the original's list; OpenTPW wraps it.
-			sum = Slot( index + 1 ).Speed * fraction + (1f - fraction) * Slot( index ).Speed + sum;
-		}
-		train.Speed = sum / cars;
+		// A coordinate past slot n reads beyond the original's list; OpenTPW wraps it.
+		train.Speed = CoasterTrainPlacement.MeanSpeed( coordinates, index => Slot( index ).Speed );
 	}
 
 	/// <summary>Car <paramref name="car"/>'s coordinate on the sample list (car <c>+0x40</c>): the train's position plus the car's offset over the spacing, wrapped.</summary>
@@ -935,9 +891,7 @@ public sealed class CoasterRide
 			return;
 		}
 		var last = train.CarLists.Length - 1;
-		double spacing = Spacing;
-		train.Front = (float)(Definition.CarOffsets[0] / spacing + train.Position + Definition.CarMetrics( 0 ).FrontExtent / spacing);
-		train.Rear = (float)(Definition.CarOffsets[last] / spacing + train.Position - Definition.CarMetrics( last ).RearExtent / spacing);
+		(train.Front, train.Rear) = CoasterTrainPlacement.Extents( train.Position, Definition.CarOffsets[0], Definition.CarMetrics( 0 ).FrontExtent, Definition.CarOffsets[last], Definition.CarMetrics( last ).RearExtent, Spacing );
 	}
 
 	/// <summary>
@@ -1086,6 +1040,10 @@ public sealed class CoasterRide
 	/// </summary>
 	// [BIN:TPW-EXE:0x43ce91 motion clock catch-up] 0x43ce20 takes as its frame time the unsigned (now − ctl+0x120) milliseconds (0x43cea7, loaded as a zero-extended qword) × 0.001 (0x6fe030) of the scaled game clock 0x7b496c (0x4709e0(0), refreshed once per frame by 0x473440 from the clock object 0x785970, the clock 0x4031e0 that also drives the substep clock 0x878c74), with no clamp, and writes every train's +0x7c with it once (0x43cedb); the trains then hop from the queue until each has spent all of it (0x43ced8), one tick, no substeps; ctl+0x120 is written only at the tick's end (0x43d8d3) and by the first tick (0x43ce9c); the controller tick 0x435a30 calls 0x43ce20 only in state 2, 4 or 8 (0x435ac9, state & 0xE), so in state 1 (the cut 0x446740, a reopen) the word stands while the clock runs, and the next tick after the track is completed again takes all the time since the last tick; the game pause (0x4092a0: the pause menu, the map, the postcard, message boxes, the pause key through 0x409350) freezes the clock, so a paused stretch adds nothing; OpenTPW's fixed steps are that scaled clock (they stop while paused and multiply with the game speed, as the substep scheduler maps 0x878c74), so the lag is the sum of the fixed steps since the last motion tick
 	public double MotionClockLagSeconds { get; private set; }
+
+	/// <summary>The controller's end coordinate (<c>+0xa8</c>): the sample coordinate of the end node's knot, the length in samples the trains' coordinates wrap at; derived at every rebuild, not saved or hashed.</summary>
+	// [BIN:TPW-EXE:0x441659 end coordinate] ctl +0xa8 is the end node's knot record +8 (the sample coordinate), written by the sampler's walk; the placement, the hop's wrap and the car coordinates wrap by it (0x43c261, 0x43d567, 0x43d5ff)
+	internal float EndCoordinate { get; private set; }
 
 	/// <summary>Test probe: the frame time the last motion tick gave every train (train <c>+0x7c</c> at the tick's start); derived, not saved or hashed.</summary>
 	internal float LastMotionFrameSeconds { get; private set; }

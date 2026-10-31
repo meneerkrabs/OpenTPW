@@ -35,7 +35,7 @@ class RatingOracle:
         self.oracle = oracle or CoasterOracle()
 
     def rate(self, definition: dict, samples: list[dict], spacing: float, cap: float, end_coordinate: float, tail_sample: int, trough=False, suspended=False,
-             max_trains: int = 0, release_rate: int = 0, trains: bool = False, nodes: int = 0):
+             max_trains: int = 0, release_rate: int = 0, trains: bool = False, nodes: int = 0, train_spec: dict | None = None):
         """Runs 0x43C450 on a controller with `samples`; each sample is a dict with position, yaw, pitch, bank, flags. Returns the controller's results, every sample's outputs and the
         nodes' flags (the winch mark 0x800 each sample's section node receives, `node` index per sample); with `trains` the pass also reaches its train count and the placing call."""
         oracle = self.oracle
@@ -78,9 +78,35 @@ class RatingOracle:
         train_table = sb.alloc(0x80 * 16 + 0x80)
         sb.write(controller + 0x128, 'I', train_table)
         captured = {}
+        car_bases = []
+        if train_spec is not None:
+            # trains for the placement after the pass: every train has the same cars; the type records hold the extents (+0x24 front, +0x28 rear)
+            cars = train_spec['cars']
+            types = {}
+            for t_index in range(max(train_spec['count'], max_trains)):
+                base = train_table + 0x80 * t_index
+                car_base = sb.alloc(0x60 * len(cars) + 0x60)
+                car_bases.append(car_base)
+                sb.write(base + 8, 'I', 0)
+                sb.write(base + 0xC, 'I', len(cars))
+                sb.write(base + 0x28, 'I', car_base)
+                sb.write(base + 0x2C, 'I', train_spec['reference'])
+                for c_index, car in enumerate(cars):
+                    key = (car['front'], car['rear'])
+                    if key not in types:
+                        types[key] = sb.alloc(0x80)
+                        sb.write(types[key] + 0x24, 'f', car['front'])
+                        sb.write(types[key] + 0x28, 'f', car['rear'])
+                    cbase = car_base + 0x60 * c_index
+                    sb.write(cbase + 4, 'I', types[key])
+                    sb.write(cbase + 0x38, 'f', car['offset'])
+                    if t_index == 0 and c_index == len(cars) - 1:
+                        sb.write(cbase + 0x40, 'f', train_spec['lead'])
 
         def train_count(box):
             captured['count'] = box.arg(1)
+            if train_spec is not None:
+                box.write(controller + 0xF4, 'I', train_spec['count'])
             return 0, 0
 
         def train_place(box):
@@ -88,7 +114,10 @@ class RatingOracle:
             return 0, 0
 
         sb.stubs[TRAIN_COUNT] = train_count
-        sb.stubs[TRAIN_PLACE] = train_place
+        if train_spec is None:
+            sb.stubs[TRAIN_PLACE] = train_place
+        else:
+            sb.stubs.pop(TRAIN_PLACE, None)
         sb.call(PASS, (controller,))
         outputs = []
         for index in range(count):
@@ -99,6 +128,13 @@ class RatingOracle:
                                                                               ('braking_start', 0x134))}
         result['sections'] = sb.read(controller + 0x108, 'I')
         winch = [sb.read(address + 8, 'I') & 0x800 != 0 for address in node_addresses]
+        self.last_trains = []
+        if train_spec is not None:
+            for t_index in range(train_spec['count']):
+                base = train_table + 0x80 * t_index
+                self.last_trains.append({'coordinate': sb.read(base + 0x30, 'f'), 'position': sb.read(base + 0x74, 'f'), 'speed': sb.read(base + 0x78, 'f'),
+                                         'front': sb.read(base + 0x20, 'f'), 'rear': sb.read(base + 0x24, 'f'),
+                                         'cars': [sb.read(car_bases[t_index] + 0x60 * c + 0x40, 'f') for c in range(len(train_spec['cars']))]})
         return result, outputs, winch, captured
 
     # ------------------------------------------------------------------------------ the step and the final on their own
@@ -152,3 +188,118 @@ class RatingOracle:
         out = {name: sb.read(controller + offset, 'f') for name, offset in (('sickness', 0x100), ('excitement', 0x104), ('length', 0x10C), ('max_height', 0x110), ('max_speed', 0x114))}
         out['sections'] = sb.read(controller + 0x108, 'I')
         return out
+
+    # ------------------------------------------------------------------------------ the ride motion tick
+    TICK = 0x43CE20
+    TIMER = 0x4709E0
+    TICK_STUBS = (0x474050, 0x438800, 0x439780, 0x439840, 0x43D8F0, 0x43C0A0)
+
+    def tick(self, definition: dict, controller_fields: dict, samples: list[dict], trains: list[dict], steps_ms: list[int], spacing: float, total: float, tick_stub_counts=None, watch=None):
+        """Runs the motion tick 0x43CE20 once per entry of `steps_ms` (the timer 0x4709E0 returns the running sum, the first call sets the controller's clock) on a synthetic
+        controller: `samples` carry position, speed, friction flag and `winch` (the flag 0x800 of the sample's section node); each train has flags, position, speed and its cars (type extents,
+        offset, flags). The presentation callees (clip speed, bend, sound, crash, car matrix, curve point) are stubbed and only counted. Returns the trains' state after every tick."""
+        oracle = self.oracle
+        sb = oracle.prepare()
+        count = len(samples)
+        type_record = sb.alloc(0x400)
+        for name, offset in DEF_FIELDS.items():
+            sb.write(type_record + offset, 'f', definition[name])
+        sb.write(type_record + 0x48, 'f', definition['min_speed'])
+        sb.write(type_record + 0x2EC, 'I', definition.get('release_rate', 15000))
+        controller = sb.alloc(0x400)
+        sb.write(type_record, 'I', 0)
+        sb.write(controller + 4, 'I', type_record)
+        sb.write(controller, 'I', 0)
+        for name, (offset, fmt) in {'power': (0x2C, 'f'), 'cap': (0x34, 'f'), 'braking_start': (0x134, 'f'), 'platform': (0xFC, 'f')}.items():
+            sb.write(controller + offset, fmt, controller_fields[name])
+        sb.write(controller + 0xA4, 'I', count)
+        sb.write(controller + 0xA8, 'f', total)
+        sb.write(controller + 0xAC, 'f', spacing)
+        sb.write(controller + 0xF4, 'I', len(trains))
+        array = sb.alloc(0x38 * (count + 2) + 0x40)
+        for index, sample in enumerate(samples + [samples[-1]]):
+            base = array + 0x38 * index
+            sb.write(base, 'I', 8 if sample.get('friction') else 0)
+            for k in range(3):
+                sb.write(base + 4 + 4 * k, 'f', sample['position'][k])
+            sb.write(base + 0x1C, 'f', sample['speed'])
+            node = sb.alloc(0x100)
+            sb.write(node + 8, 'I', 0x800 if sample.get('winch') else 0)
+            knot = sb.alloc(0x40)
+            sb.write(knot + 0x10, 'I', node)
+            sb.write(base + 0x2C, 'I', knot)
+        sb.write(controller + 0x9C, 'I', array)
+        train_base = sb.alloc(0x80 * len(trains) + 0x80)
+        sb.write(controller + 0x128, 'I', train_base)
+        sb.write(controller + 0x12C, 'I', sb.alloc(4 * len(trains) + 16))
+        car_types = {}
+        car_bases = []
+        for t_index, train in enumerate(trains):
+            base = train_base + 0x80 * t_index
+            cars = train['cars']
+            car_base = sb.alloc(0x60 * len(cars) + 0x60)
+            car_bases.append(car_base)
+            sb.write(base, 'I', train['flags'])
+            sb.write(base + 8, 'I', 0)
+            sb.write(base + 0xC, 'I', len(cars))
+            sb.write(base + 0x28, 'I', car_base)
+            sb.write(base + 0x2C, 'I', train['reference'])
+            sb.write(base + 0x74, 'f', train['position'])
+            sb.write(base + 0x78, 'f', train['speed'])
+            for c_index, car in enumerate(cars):
+                key = (car['front'], car['rear'])
+                if key not in car_types:
+                    address = sb.alloc(0x80)
+                    sb.write(address + 0x24, 'f', car['front'])
+                    sb.write(address + 0x28, 'f', car['rear'])
+                    car_types[key] = address
+                cbase = car_base + 0x60 * c_index
+                sb.write(cbase, 'I', car.get('flags', 1))
+                sb.write(cbase + 4, 'I', car_types[key])
+                sb.write(cbase + 0x38, 'f', car['offset'])
+                for k in range(3):
+                    sb.write(cbase + 0x48 + 4 * k, 'f', car.get('start', (0.0, 0.0, 0.0))[k])
+        if watch is not None:
+            import unicorn as unicorn_module
+            from unicorn import x86_const as x86_const_module
+
+            def on_write(uc, access, address, size, value, user):
+                for t_index2, base2 in enumerate(car_bases):
+                    if base2 <= address < base2 + 0x60 * len(trains[t_index2]['cars']):
+                        watch(uc.reg_read(x86_const_module.UC_X86_REG_EIP), t_index2, (address - base2) // 0x60, (address - base2) % 0x60, size, value)
+            sb.uc.hook_add(unicorn_module.UC_HOOK_MEM_WRITE, on_write)
+        clock = [0]
+        sb.stubs[self.TIMER] = lambda box: (clock[0], 0)
+        counts = {address: 0 for address in self.TICK_STUBS}
+
+        def counter(address):
+            def stub(box):
+                counts[address] += 1
+                return 0, 0
+            return stub
+
+        for address in self.TICK_STUBS:
+            sb.stubs[address] = counter(address)
+        # the curve point 0x43C0A0 fills a vector the car's pose reads; stub it to write the car coordinate's sample point (the pose itself is not compared)
+        results = []
+        total_ms = 0
+        for step in steps_ms:
+            total_ms += step
+            clock[0] = total_ms
+            if not results:
+                clock[0] = 0
+            sb.call(self.TICK, (controller,))
+            state = []
+            for t_index, train in enumerate(trains):
+                base = train_base + 0x80 * t_index
+                car_state = []
+                for c_index in range(len(train['cars'])):
+                    cbase = car_bases[t_index] + 0x60 * c_index
+                    car_state.append({'flags': sb.read(cbase, 'I'), 'coordinate': sb.read(cbase + 0x40, 'f'),
+                                      'start': tuple(sb.read(cbase + 0x48 + 4 * k, 'f') for k in range(3)), 'half': tuple(sb.read(cbase + 0x54 + 4 * k, 'f') for k in range(3))})
+                state.append({'flags': sb.read(base, 'I'), 'position': sb.read(base + 0x74, 'f'), 'speed': sb.read(base + 0x78, 'f'), 'budget': sb.read(base + 0x7C, 'f'),
+                              'front': sb.read(base + 0x20, 'f'), 'rear': sb.read(base + 0x24, 'f'), 'cars': car_state})
+            results.append({'trains': state, 'lead': (sb.read(controller + 0x124, 'I') - train_base) // 0x80 if sb.read(controller + 0x124, 'I') else -1})
+        if tick_stub_counts is not None:
+            tick_stub_counts.update(counts)
+        return results

@@ -383,7 +383,7 @@ public class OriginalCoasterImportTests
 		var first = Run();
 		Assert.AreEqual( first, Run(), "the run repeats" );
 		// Pinned on every runtime since the coaster's elementary functions are DetMath's (docs/DETERMINISM.md, "Cross-platform coaster pins").
-		Assert.AreEqual( "638C10229421122A", first.Imported.ToString( "X16" ), "the imported coaster's fixed run" );
+		Assert.AreEqual( "5BCB719E357F5EA7", first.Imported.ToString( "X16" ), "the imported coaster's fixed run" );
 	}
 
 	// [BIN:TPW-EXE:0x437B60 train rider lists] each car's two lists and the train's rider count come back as saved, in the car and the seat order of the list

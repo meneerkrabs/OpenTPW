@@ -69,3 +69,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## The queue tool's corner walk and a ride's queue demolition (round 11, package D)
 
 `queue_oracle.py` runs the corner walk `0x530120` and the ride demolition `0x527EE0` of a ride with a queue (the executable's own Back, click handler, queue line walker and cell remover) on synthetic queue layouts; `queue_golden.py` writes `QueueCornerWalkGolden.cs` from 82 cases and `queue_demolition_golden.py` writes `QueueDemolitionGolden.cs` from 42 (both accept `--check FILE`). Findings X44 and X45 in `docs/reverse/ORACLE.md` section 7.30.
+
+## The head placement routine (round 11, package W)
+
+`head_oracle.py` runs the head placement `0x44B510` over a synthetic head node and camera (the sprite register writers recorded, not run, the PC sine table built as the message pump builds it, control word 0x7F); `head_golden.py` writes `HeadPlacementGolden.cs` from 700 cases, which `HeadPlacementGoldenTests` replays on `OriginalHeadMath` bit for bit (finding X47 in docs/reverse/ORACLE.md).

@@ -245,6 +245,7 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 			}
 			if ( feet is not { } point )
 				continue;
+			// [APPROX:TOUR-011] only terrain mode 1 is ported; the other modes the model's flags can select (0x4511A0) are not read
 			// [BIN:TPW-EXE:0x00558131 body height] a walk whose last word (+0x1A) has bit 0 clear stands on the terrain: the height is the terrain's under the interpolated x and z (0x4511A0, mode 1: 0x4527F0), not the nodes' (a mode the model's flags choose: 0x450EA0 sets mode 1 for an ordinary ride)
 			if ( (walker.Extra & 1) == 0 && terrainHeight != null )
 				point = new SVector3( point.X, point.Y, terrainHeight( point.X, point.Y ) );

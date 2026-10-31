@@ -235,4 +235,71 @@ public class CoasterRatingGoldenTests
 		}
 		Assert.IsTrue( rows >= 100 && multi > 50, $"{rows} place rows, {multi} with several trains" );
 	}
+
+	[TestMethod]
+	public void EveryRowOfTheOraclesMotionTickIsReproducedBitForBit()
+	{
+		var rows = 0;
+		var partial = 0;
+		var bumped = 0;
+		var cleared = 0;
+		foreach ( var row in Rows().Where( row => row.StartsWith( "tick | ", StringComparison.Ordinal ) ) )
+		{
+			var sides = row.Split( " > " );
+			var parts = sides[0].Split( " | " );
+			var settings = CoasterTests.PcSettings();
+			settings["sCoasterType.uiTrainReleaseRate"] = "15000";
+			var definitionValues = Singles( parts[1] );
+			for ( var index = 0; index < DefinitionKeys.Length; index++ )
+				settings["sCoasterType." + DefinitionKeys[index]] = Text( definitionValues[index] );
+			settings["sCoasterType.fMinSpeed"] = Text( definitionValues[DefinitionKeys.Length] );
+			var definition = CoasterDefinition.FromValues( settings );
+			CollectionAssert.AreEqual( new[] { 7f, 0f, -7f, -14f }, definition.CarOffsets.ToArray(), "the oracle rows lay a default four-car train" );
+			Assert.AreEqual( (3.5f, 3.5f), (definition.CarMetrics( 0 ).FrontExtent, definition.CarMetrics( 0 ).RearExtent) );
+			var controller = Singles( parts[2] );
+			var (spacing, end, cap, braking, platform) = (controller[0], controller[1], controller[2], controller[3], controller[4]);
+			var spec = parts[3].Split( " ; " ).Select( item =>
+			{
+				var fields = item.Split( ' ' );
+				var values = fields.Skip( 1 ).Select( field => BitConverter.UInt32BitsToSingle( Convert.ToUInt32( field, 16 ) ) ).ToArray();
+				return (Position: values[0], Speed: values[1], Flags: (CoasterTrainFlags)uint.Parse( fields[0] ));
+			} ).ToArray();
+			var steps = parts[4].Split( ' ' ).Select( int.Parse ).ToArray();
+			var winch = new List<int>();
+			var samples = parts[5].Split( " ; " ).Select( ( item, number ) =>
+			{
+				var fields = item.Split( ' ' );
+				var values = fields.Take( 4 ).Select( field => BitConverter.UInt32BitsToSingle( Convert.ToUInt32( field, 16 ) ) ).ToArray();
+				var flags = fields[4] == "1" ? CoasterSampleFlags.Friction : CoasterSampleFlags.None;
+				if ( fields[5] == "1" )
+					winch.Add( number );
+				return new CoasterSample { Position = new SVector3( values[0], values[1], values[2] ), Speed = values[3], Flags = flags, Section = number };
+			} ).ToArray();
+			var ride = new CoasterRide( definition, new CoasterWorld( 1 ), "Oracle" );
+			ride.LoadMotionScenario( samples, spacing, end, braking, platform, cap, winch, spec );
+			var expectedTicks = sides[1].Split( " / " );
+			Assert.AreEqual( steps.Length, expectedTicks.Length );
+			for ( var tick = 0; tick < steps.Length; tick++ )
+			{
+				ride.MotionTickForOracle( tick == 0 ? 0f : steps[tick] * 0.001f );
+				var expectedTrains = expectedTicks[tick].Split( " ; " );
+				for ( var index = 0; index < ride.Trains.Count; index++ )
+				{
+					var train = ride.Trains[index];
+					var expected = expectedTrains[index].Split( ' ' );
+					var actual = string.Join( ' ', new[] { Bits( train.Position ), Bits( train.Speed ), Bits( train.Front ), Bits( train.Rear ) }.Select( value => value.ToString( "x8" ) ) );
+					Assert.AreEqual( string.Join( ' ', expected.Skip( 1 ) ), actual, $"train {index} after tick {tick} of row {rows}: {row[..Math.Min( row.Length, 140 )]}" );
+					Assert.AreEqual( uint.Parse( expected[0] ), (uint)train.Flags & 0xC0u, $"flags of train {index} after tick {tick} of row {rows}" );
+					if ( (train.Flags & CoasterTrainFlags.Bumped) != 0 )
+						bumped++;
+				}
+				if ( tick > 0 && steps[tick] <= 50 )
+					partial++;
+			}
+			if ( spec.Any( item => (item.Flags & CoasterTrainFlags.Headway) != 0 ) && ride.Trains.Any( train => (train.Flags & CoasterTrainFlags.Headway) == 0 ) )
+				cleared++;
+			rows++;
+		}
+		Assert.IsTrue( rows >= 100 && partial > 400 && bumped > 20, $"{rows} tick rows, {partial} short ticks, {bumped} bumped train states, {cleared} headway clears" );
+	}
 }

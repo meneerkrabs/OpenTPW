@@ -301,8 +301,8 @@ public class CoasterTrainLayoutTests
 		var controls = HermiteCoasterCurve.Controls( knots, ride.Definition.Curviness, closed: true );
 		var expected = HermiteCoasterCurve.Bezier( knots[pair].Position, controls[pair].Forward, controls[pair + 1].Back, knots[pair + 1].Position, 0.5f );
 		Assert.IsTrue( System.Numerics.Vector3.Distance( expected, ride.CarPose( c ).Position ) < 1e-3f, "halfway between two knot coordinates is t = ½ of their pair" );
-		var lap = ride.CarPose( c + ride.Samples.Count );
-		Assert.IsTrue( System.Numerics.Vector3.Distance( expected, lap.Position ) < 1e-3f, "a coordinate a lap on is the same point" );
+		var lap = ride.CarPose( c + ride.EndCoordinate );
+		Assert.IsTrue( System.Numerics.Vector3.Distance( expected, lap.Position ) < 1e-3f, "a coordinate a lap on (the controller's end coordinate) is the same point" );
 		var near = ride.CarPose( ride.Samples.Count - 0.25f );
 		Assert.IsTrue( float.IsFinite( near.Position.X ) && float.IsFinite( near.Yaw ), "the closing pair poses too" );
 	}

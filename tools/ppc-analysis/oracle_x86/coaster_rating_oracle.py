@@ -234,18 +234,23 @@ class RatingOracle:
         sb.write(controller + 0x12C, 'I', sb.alloc(4 * len(trains) + 16))
         car_types = {}
         car_bases = []
+        train_type = sb.alloc(0x40)
+        sb.write(train_type + 4, 'I', 4)   # the train definition's car count: the sound pass divides by it
         for t_index, train in enumerate(trains):
             base = train_base + 0x80 * t_index
             cars = train['cars']
             car_base = sb.alloc(0x60 * len(cars) + 0x60)
             car_bases.append(car_base)
             sb.write(base, 'I', train['flags'])
+            sb.write(base + 4, 'I', train_type)
             sb.write(base + 8, 'I', 0)
             sb.write(base + 0xC, 'I', len(cars))
             sb.write(base + 0x28, 'I', car_base)
             sb.write(base + 0x2C, 'I', train['reference'])
             sb.write(base + 0x74, 'f', train['position'])
             sb.write(base + 0x78, 'f', train['speed'])
+            sb.write(base + 0x20, 'f', train.get('front', 0.0))
+            sb.write(base + 0x24, 'f', train.get('rear', 0.0))
             for c_index, car in enumerate(cars):
                 key = (car['front'], car['rear'])
                 if key not in car_types:

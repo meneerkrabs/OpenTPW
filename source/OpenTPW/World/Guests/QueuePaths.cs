@@ -87,7 +87,7 @@ public static class QueuePaths
 	/// <param name="demolish">Demolishes that object before the cell is laid (tp.exe's cell op 0x87).</param>
 	public static QueueBuildResult TryExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null, Func<int, int, bool>? givesWay = null, Action<int, int>? demolish = null )
 	{
-		ride.RecomputeQueue( grid );
+		ride.RecomputeQueueKeepingBack( grid );
 		if ( grid.IsWalkable( x, y ) && grid.Cells.PoolBridges?.Covers( x, y ) != true && HasQueueCells( grid, ride ) && GuestPathGrid.DirectionBetween( ride.QueueBackCell.X, ride.QueueBackCell.Y, x, y ) >= 0 )
 			return Connect( grid, ride, ride.QueueBackCell, (x, y) ) ? QueueBuildResult.Connected : QueueBuildResult.Blocked;
 		var result = CheckExtend( grid, ride, x, y, isBlocked, givesWay );
@@ -179,7 +179,7 @@ public static class QueuePaths
 	/// </summary>
 	public static bool TryConnect( GuestPathGrid grid, RideVisitorBridge ride )
 	{
-		ride.RecomputeQueue( grid );
+		ride.RecomputeQueueKeepingBack( grid );
 		if ( !HasQueueCells( grid, ride ) )
 			return false;
 		var back = ride.QueueBackCell;
@@ -225,7 +225,40 @@ public static class QueuePaths
 	/// </summary>
 	// [BIN:TPW-EXE:0x00530120 corner walk] the walk starts at the ride's entrance cell (+0x36), whose link byte gives the first step: a neighbour that is not a queue cell (types 3 and 9, 0x536320) or is one of this ride (owner word +0x10 equal to the entrance cell's) is pushed first (0x5301FC, 0x5304C0), then the walk steps off the entrance (type 9 takes no corner test, 0x5302E1) along the cells: a cell with exactly two cardinal links that are not opposite (0x53AE00) turns the walk to the link that is not the one it came by (link byte xor the reverse of the step, 0x530291..0x53029A) and is pushed (0x5302AA), a cell with one link ends the walk (0x5302F2..0x5302FC), and a cell that is not a queue cell ends it too (0x5302D4); the last cell is pushed (0x530494) and becomes the line start (0x81EDE4, 0x81EDE8); at most 0x401 points are stored (0x5301F5, 0x5302A3, 0x530492)
 	// [BIN:TPW-EXE:0x0053036F corner walk ends on a path] a walk that steps onto a path cell (type 1, 0x536310) ends on the cell before it, the queue's back cell (0x530342..0x53036F); the walk then clears the link between the two (QueuePaths.DetachFromPath)
-	public static IReadOnlyList<(int X, int Y)> CornerStack( GuestPathGrid grid, RideVisitorBridge ride ) => WalkCorners( grid, ride, out _ );
+	public static IReadOnlyList<(int X, int Y)> CornerStack( GuestPathGrid grid, RideVisitorBridge ride ) =>
+		TypedWalk( grid, ride, write: false ) is { } walk ? walk.Stack : WalkCorners( grid, ride, out _ );
+
+	/// <summary>
+	/// The corner walk of a ride in a typed world, the executable's own (<see cref="QueueCornerWalk"/>): it starts at the ride's access cell and reads the cells' own links, owners and types. Null for a ride
+	/// that has no queue or no access cell (the gates and test rigs, the Theme Park Inc slice): those walk the host's queue geometry (<see cref="WalkCorners"/>).
+	/// </summary>
+	// [EXT:untyped-harness-world] a ride without an access cell (the gates and test rigs: harness worlds whose entrance is no typed cell with a link byte) walks the bridge's own queue geometry (user-approved 2026-10-30)
+	private static CornerWalkResult? TypedWalk( GuestPathGrid grid, RideVisitorBridge ride, bool write ) =>
+		ride.HasQueue && ride.AccessCell is { } entrance ? QueueCornerWalk.Run( grid.Cells, entrance, ride.Rotation, write ) : null;
+
+	/// <summary>
+	/// The walk the queue edit click makes (<c>0x526103</c>, <c>0x530120</c>): the counter writes and the link clear in one pass, then the re-evaluation <c>0x4DE1F0</c> the click runs whether or not a link was
+	/// cleared (the caller's). Returns true when the walk ended on a path cell and cleared the link, which has recomputed the queue and reported the edit itself.
+	/// </summary>
+	public static bool RunEditWalk( GuestPathGrid grid, RideVisitorBridge ride )
+	{
+		if ( TypedWalk( grid, ride, write: true ) is not { } walk )
+		{
+			WriteWalkCounts( grid, ride );
+			return DetachFromPath( grid, ride );
+		}
+		return AfterTypedWalk( grid, ride, walk );
+	}
+
+	private static bool AfterTypedWalk( GuestPathGrid grid, RideVisitorBridge ride, CornerWalkResult walk )
+	{
+		grid.Invalidate();
+		if ( !walk.EndedOnPath )
+			return false;
+		ride.RecomputeQueue( grid );
+		ride.NotifyQueueEdited( grid );
+		return true;
+	}
 
 	/// <summary>
 	/// The corner walk's counter writes: every queue cell it visits takes the placement counter <c>+0x20</c> 1 when it is a corner (it is also pushed) and 0 otherwise, the back cell included, so
@@ -234,7 +267,13 @@ public static class QueuePaths
 	// [BIN:TPW-EXE:0x005302C2 walk counters] the walk 0x530120 stores the counter through 0x5228A0 after each cell's corner test (0x53AE00): 1 for a corner (0x5302BE..0x5302C2, with the push), 0 for any other cell it visits (0x5302C9..0x5302CD); the entrance cell, the first it visits, takes 0 as well; the queue edit click (0x526103) and the demolition (0x527F9A) run the walk, the clear 0x5367A0 counts down from these values and clears a bend whatever its counter
 	public static void WriteWalkCounts( GuestPathGrid grid, RideVisitorBridge ride )
 	{
-		ride.RecomputeQueue( grid );
+		ride.RecomputeQueueKeepingBack( grid );
+		// a typed ride's walk writes its counters and its link clear in one pass (RunEditWalk)
+		if ( TypedWalk( grid, ride, write: true ) != null )
+		{
+			grid.Invalidate();
+			return;
+		}
 		if ( ride.QueueFrontCell is not { } front || !grid.IsQueue( front.X, front.Y ) )
 			return;
 		var visited = new List<((int X, int Y) Cell, bool Corner)>();
@@ -315,7 +354,9 @@ public static class QueuePaths
 	// [BIN:TPW-EXE:0x00530379 corner walk link clear] at the path cell the walk (0x530300) takes the step back to the cell before it (0x530338..0x530341) and, when that cell is not the entrance (type 9, 0x536340 at 0x530366), clears the step bit on it (0x522730 at 0x530380) and refreshes its tile (0x5365D0); it then clears the reverse bit (0x4D8C00) on the path cell and refreshes it (0x53039C..0x5303A3) and ends with the queue's back cell as its last point; nothing restores the link on a cancel: the mode-3 undo (0x52FE50) and the tool's exit (0x52F200, 0x52F580) only pop points and reset the tool state, and the relinking pass 0x52FC80 runs for the track tool modes 0xB, 0x10 and 0x35 only; the walk's return value (0x81B14C, 0x48D00E) is never read
 	public static bool DetachFromPath( GuestPathGrid grid, RideVisitorBridge ride )
 	{
-		ride.RecomputeQueue( grid );
+		ride.RecomputeQueueKeepingBack( grid );
+		if ( TypedWalk( grid, ride, write: true ) is { } typed )
+			return AfterTypedWalk( grid, ride, typed );
 		if ( ride.QueueFrontCell is not { } front || !grid.IsQueue( front.X, front.Y ) )
 			return false;
 		WalkCorners( grid, ride, out var end );
@@ -386,9 +427,18 @@ public static class QueuePaths
 		if ( !HasQueueCells( grid, ride ) )
 			return Array.Empty<(int X, int Y)>();
 		var removed = ride.QueueCells.Where( cell => grid.IsQueue( cell.X, cell.Y ) ).ToArray();
-		// the walk the demolition makes first (0x530120) fills the stack and writes the counters
-		WriteWalkCounts( grid, ride );
-		var stack = CornerStack( grid, ride );
+		// the walk the demolition makes first (0x530120) fills the stack and writes the counters (a typed ride's, the executable's own, also takes the link of a path the queue ends on)
+		IReadOnlyList<(int X, int Y)> stack;
+		if ( TypedWalk( grid, ride, write: true ) is { } typed )
+		{
+			grid.Invalidate();
+			stack = typed.Stack;
+		}
+		else
+		{
+			WriteWalkCounts( grid, ride );
+			stack = CornerStack( grid, ride );
+		}
 		// Back (0x52FE50) pops every point but the first: the line from the popped point to the new last one is cleared, forced (the NoModify front goes too), then 0x4DE1F0 runs on the ride (0x52FFEC)
 		for ( var point = stack.Count - 1; point >= 1; point-- )
 		{
@@ -414,6 +464,42 @@ public static class QueuePaths
 		return removed;
 	}
 
+	/// <summary>What a ride's demolition did to its queue: the queue cells it removed with a refund, and whether it debited one cell's cost.</summary>
+	/// <param name="Refunds">Queue cells removed while their owner cell is not empty (each credits the queue cell's cost at the ride's scrap percentage).</param>
+	/// <param name="Debited">The Back loop ran (the ride's cached queue size was above 0), so one cell's cost is debited at its end.</param>
+	internal readonly record struct QueueDemolition( int Refunds, bool Debited );
+
+	/// <summary>
+	/// The queue part of a typed ride's demolition (<c>0x527EE0</c>, <c>0x527F87..0x528013</c>): the corner walk (stack, counters and the link clear at a joined path), and, when the ride's cached queue size
+	/// <paramref name="cachedSize"/> (+0x40) is above 0, Back until it returns 0 with the forced-clear flag: each pop clicks the popped point and the new top and clears the line between them through the cell
+	/// remover, unless the new top is a path cell (the second click is skipped). Cells the walk does not reach (a stray cell of the ride, the branch of a junction) stay.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00527F9A ride demolition queue] 0x530120 runs even when the size is 0 (its counters and its link clear stay), the loop 0x527FBE..0x527FDA runs for a size above 0 and 0x527FDC..0x528007 then debits one cell's cost, else 0x52FBD0 zeroes the stack count (0x527FBC)
+	// [BIN:TPW-EXE:0x0052FFB7 Back's second click] a pop clicks the popped point, then the new top (0x52FF3A, 0x52FFB2) unless the mode is 3 and the new top is a path cell (0x52FFA6, 0x52FFAA): the click handler's mode 0x34 clears the line between the two (0x525F63..0x525F76: 0x536100 pass 0x32, forced), both end cells included; the last point of the stack is never popped (0x52FECF)
+	internal static QueueDemolition DemolishQueue( GuestPathGrid grid, RideVisitorBridge ride, int cachedSize, Action? afterPop = null )
+	{
+		if ( TypedWalk( grid, ride, write: true ) is not { } walk )
+			return default;
+		grid.Invalidate();
+		if ( cachedSize <= 0 )
+			return default;
+		var refunds = 0;
+		var stack = walk.Stack;
+		var cells = grid.Cells;
+		for ( var point = stack.Count - 1; point >= 1; point-- )
+		{
+			var top = stack[point - 1];
+			if ( cells.RawTypeAt( top.X, top.Y ) != (byte)ParkCellType.Path )
+			{
+				foreach ( var (x, y) in ParkPathBuilder.LayLine( stack[point], top ) )
+					cells.RemoveQueueCellForced( x, y, owner => refunds++ );
+			}
+			grid.Invalidate();
+			afterPop?.Invoke();
+		}
+		return new QueueDemolition( refunds, true );
+	}
+
 	/// <summary>Lays a run of cells in order; stops at the first refusal or at a path cell the queue is connected to. Returns the number laid.</summary>
 	public static int TryExtend( GuestPathGrid grid, RideVisitorBridge ride, IEnumerable<(int X, int Y)> cells, Func<int, int, bool>? isBlocked = null )
 	{
@@ -433,7 +519,7 @@ public static class QueuePaths
 	/// </summary>
 	/// <param name="removeFixed">Whether a NoModify cell (the queue front the placement laid) may go too; the original's cell clear keeps it unless forced (the level opts in, EXT:removable-access-cells).</param>
 	// [BIN:TPW-EXE:0x005367A0 cell clear] the original removes a queue cell only through its cell clear: the queue tool's undo (Back 0x52FE50, whole segments of the corner stack, CellBuildTool.Undo) and the ride's demolition (QueuePaths.ClearAll) reach it, the bulldozer's rectangle clears only path cells (type 1 test 0x536310 at 0x52C116 before 0x5367A0); this removal from a clicked cell on, with the cells behind it so the queue stays one line from the ride, serves the undo of a segment and the labelled extensions EXT:dev-one-click-remove and EXT:queue-backtrack
-	// [APPROX:QUEUE-015] the queue tool's undo (Back 0x52FE50) takes cells and refunds as 0x5367A0 does and writes no guest: the re-evaluation that follows (0x4DE1F0 at 0x52FFEC, 0x501390 per guest) dismisses by place alone; the corner walk's counters (+0x20: 1 on a corner, 0 elsewhere, 0x5302C2) are written by the queue edit click, whose tool takes the segments back through the native undo (the cells go from the segment's end, so a corner keeps its counter 1 - 1 and stays); a ride whose front holds no queue cell is demolished with one cell's debit (0x527FB4). The tool entries that run no walk here (a ride's placement, the ride window's button, a track's or coaster's completion) take the chain from the segment's first cell on without counters, and the removal from a clicked cell on stays only as the labelled extensions EXT:dev-one-click-remove and EXT:queue-backtrack, which keep the original's guest policy (the clear writes no guest and the re-evaluation dismisses by place)
+	// [APPROX:QUEUE-015] the queue tool's undo (Back 0x52FE50) takes cells and refunds as 0x5367A0 does and writes no guest: the re-evaluation that follows (0x4DE1F0 at 0x52FFEC, 0x501390 per guest) dismisses by place alone. The corner walk 0x530120 is the executable's own (QueueCornerWalk: the stack, the placement counters +0x20 of the cells it visits, the link clear where it ends on a path, the line start; 82 oracle cases, ORACLE.md X44) and runs where the original runs it, at its only three callers: the queue edit click (0x52610A), the Move pick-up (0x48D006) and a ride's demolition (0x527F9A). A typed ride's demolition replays the executable's: the walk, Back for as long as the cached size (+0x40) is above 0 with the forced-clear flag 0x81D7A8 (every cell of a line goes, NoModify and counters ignored, its neighbours keep their links, each queue cell whose owner cell is not empty credits its cost), one cell's debit after it, and the cells the walk does not reach (a stray cell of the ride, the branch of a junction) stay (QueuePaths.DemolishQueue; 42 oracle cases). Residual: the tool entries that run no walk (the original runs none there either: a ride's placement, the ride window's queue button 0x4AF200 (inferred) and a track's or coaster's completion) start the queue tool with the stack their own clicks leave (the placement's tail 0x5259AE..0x525A06), which is not read: OpenTPW starts them with the segment's cells and no counters; the removal from a clicked cell on stays only as the labelled extensions EXT:dev-one-click-remove and EXT:queue-backtrack, which keep the original's guest policy (the clear writes no guest and the re-evaluation dismisses by place); a ride without an access cell (the gates and test rigs, the Theme Park Inc slice) keeps the host's chain clear as [EXT:untyped-harness-world]
 	public static int RemoveFrom( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, bool removeFixed = false )
 	{
 		ride.RecomputeQueue( grid );

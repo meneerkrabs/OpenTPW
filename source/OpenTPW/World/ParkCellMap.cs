@@ -546,8 +546,11 @@ public sealed partial class ParkCellMap
 	// [BIN:TPW-EXE:0x00527EE0 pass 2] for every mask cell inside the map: 0x53A530(0x20), the cell remover 0x5367A0(0, 0) and the structure clear 0x53B280; the oracle ran them on every type (docs/reverse/ORACLE.md, X36)
 	// [BIN:TPW-EXE:0x005367A0 cell remover] types 1 and 10 unlink all eight link bits, 3 and 9 the four cardinal ones (each neighbour loses the opposite bit and is refreshed; with the forced flag 0x81D7A8 clear), then every removed type 1, 3, 4, 9, 10 and 0x15 zeroes the links +0xC, the queue link +0xD, the owner +0x10, the whole flag word +0xE and the type +8 (0x5346D0(0)); types 4 and 0x15 leave the placement counter +0x20, 1, 3, 9 and 10 write it; a type-3 cell credits the queue cell's refund when its owner cell is not empty (0x4D0190), and a path cell removed beside an entrance with an owner runs that ride's re-evaluation 0x4DE1F0 (0x53694B); the other types (0, 2, 5..8, 0xB..0x14, 7, 0x1E ...) write nothing
 	// [BIN:TPW-EXE:0x0053B280 record clear] the record under a mask cell is cleared by the record clear with the forced arguments (0, 0, 1) unless the demolition is the add-on's own (clearRecord, TrackEditor.ClearUnderDemolition; ORACLE.md X37)
-	// [APPROX:ECON-050] the queue is cleared by the owner scan and the ride's chain rather than the corner stack replay 0x530120, a map without a level has no ride whose track editor takes the record clears, and the track tool's exit and entry tiles that the clear spares (0x7639E0/E4, 0x7639E8/EC, the sticky globals, not ported yet) are the ride's own (the register)
-	// [EXT:track-tool-owner-leases] sparing the demolished ride's own tiles, where the original spares whatever tiles the tool's stale globals name (a bug of the original that OpenTPW does not copy; user-approved 2026-10-30)
+	// [BIN:TPW-EXE:0x00527F9A queue clear] a ride's queue is cleared before these passes by the corner walk and Back with the forced-clear flag (QueuePaths.DemolishQueue, ORACLE.md X44), whose cell remover leaves the neighbours' links; the footprint passes here run the unforced remover (flag 0x81D7A8 cleared at 0x528013), which unlinks the cardinal bits of a type-3 or type-9 cell on both sides
+	// [BIN:TPW-EXE:0x0053B2F5 spared tiles] the record clear spares the tiles the track tool's globals name (0x7639E0/E4 the exit, 0x7639E8/EC the entry): the level's TrackToolGlobals hold what the last select, tool start or Buy Land start wrote, whichever ride that was
+	// [EXT:untyped-harness-world] a map without a level has no track editor to take the record clear (a record of no ride is erased alone), as in the gates and test rigs (user-approved 2026-10-30)
+	// [EXT:online-coop-lockstep] a shared park spares the demolished ride's own exit and entry tiles: the globals are the issuer's select state, which no record carries
+	// [EXT:track-tool-owner-leases] the original's tool commits into whatever ride the stale globals name; OpenTPW's owner leases keep a clear to the demolished ride's own tiles (user-approved 2026-10-30)
 	/// <param name="clearRecord">The record clear of pass 2 (<c>0x53B280(0, 0, 1)</c>) on the second layer's record under a mask cell that holds one (the level: <see cref="TrackEditor.ClearUnderDemolition"/> of the ride the tile belongs to); null leaves the records as they are.</param>
 	/// <param name="moved">The demolition the clear of a tile starts for the add-on object standing on it (<c>0x527EE0</c>'s third argument, 1 only from <c>0x53B703</c>): the records keep their tiles and lose the flag 0x10 alone.</param>
 	public void DemolishFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint, Action<ushort>? queueCellRemoved = null, Func<int, int, bool>? clearRecord = null, bool moved = false )
@@ -614,6 +617,22 @@ public sealed partial class ParkCellMap
 			else if ( onTrack && (track.Flags & TrackCell.FlagAddOn) != 0 )
 				Tracks.Set( x, y, track with { Flags = (byte)(track.Flags & ~TrackCell.FlagAddOn) } );
 		}
+	}
+
+	/// <summary>
+	/// The cell remover <c>0x005367A0</c> on a queue cell under the forced-clear flag <c>0x81D7A8</c> (a ride's demolition): NoModify and the placement counter do not keep it, the neighbours keep their
+	/// links toward it (only the cell's own are cleared), and a cell whose owner cell is not empty credits its cost. False for a cell of another type.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005369F8 forced clear] with the flag set the type-3 case skips the neighbour loop (0x536B60..0x536BB9, which the unforced remover reaches at 0x536AB2): it credits (0x536A3D..0x536AA8) and goes to 0x536BC9, which clears all eight link bits of the cell itself (0x522730(0xFF)), its queue link (0x5227E0), its owner (0x539210), its flag word and its type (0x5346D0(0))
+	internal bool RemoveQueueCellForced( int x, int y, Action<ushort>? queueCellRemoved )
+	{
+		if ( PrimaryTypeAt( x, y ) != (byte)ParkCellType.Queue )
+			return false;
+		if ( OwnerAt( x, y ) is var owner and not 0 && RawTypeAt( (owner - 1) & 0x7F, (owner - 1) >> 7 ) != 0 )
+			queueCellRemoved?.Invoke( owner );
+		SetType( x, y, ParkCellType.Empty );
+		SetFlags( x, y, ParkCellFlags.None );
+		return true;
 	}
 
 	/// <summary>The cell remover <c>0x005367A0(0, 0)</c> on one cell (see <see cref="DemolishFootprint"/>); the flag 0x20 is already off.</summary>

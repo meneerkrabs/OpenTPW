@@ -162,6 +162,7 @@ ECON-045 docs/reverse/APPROX-TRACE.md
 ECON-046 docs/reverse/APPROX-TRACE.md
 ECON-047 docs/reverse/RIDE-WEAR.md
 ECON-048 docs/reverse/ORACLE.md
+ECON-050 docs/UI.md
 ECON-052 docs/PROGRESS.md
 ECON-054 docs/ECONOMY.md
 ECON-055 docs/ECONOMY.md

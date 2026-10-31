@@ -12,7 +12,35 @@ public partial class Level
 	internal OriginalObject? Selection
 	{
 		get => selection is { IsDeleted: false } ? selection : null;
-		set => selection = value;
+		set
+		{
+			selection = value;
+			NoteToolSelection( value );
+		}
+	}
+
+	/// <summary>
+	/// A select writes the track tool's globals: the exit and entry tiles of the ride the selection stands for (an add-on stands for its ride), mapped from its anchor and rotation as <c>0x52A3A0</c> and
+	/// <c>0x52A420</c> do, whatever kind of object it is. Nothing resets them, so the bulldozer that comes later works with the last select's.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005278B9 ride select writes the tool globals] the select 0x5276D0 stores the selected thing's anchor (+5, +7) in 0x7639E0/E4 and 0x7639E8/EC and maps them with 0x52A3A0 (exit) and 0x52A420 (entry) by its rotation (+0x10); an add-on selects its owner ride first (0x5277A6..0x5277F3)
+	private void NoteToolSelection( OriginalObject? item )
+	{
+		if ( WindowTarget( item ) is not { } target || CoopSession != null )
+			return;
+		var station = trackStations != null && trackStations.TryGetValue( target, out var laid ) ? laid : TrackStation.FromPlacement( target.Placement.X, target.Placement.Y, target.Placement.Rotation );
+		trackToolGlobals.Exit = station.Exit;
+		trackToolGlobals.Entry = station.Entry;
+	}
+
+	/// <summary>The Buy Land tool's select: the gate post A goes into both pairs of the track tool's globals, so a track tile is no longer named by them (a fence post has none).</summary>
+	// [BIN:TPW-EXE:0x0052773B fence select writes the tool globals] in the modes 0x19 and 0x1A the select 0x5276D0 stores the gate post 0x7639F0/F4 in 0x7639E0/E4 and 0x7639E8/EC (0x52772A..0x527776) before it reads any thing
+	private void NoteFenceSelection( (int X, int Y) post )
+	{
+		if ( CoopSession != null )
+			return;
+		trackToolGlobals.Exit = post;
+		trackToolGlobals.Entry = post;
 	}
 
 	/// <summary>The attraction id of the ride the selection stands for (an add-on stands for its ride, <see cref="WindowTarget"/>), or -1 when nothing, or no attraction, is selected.</summary>

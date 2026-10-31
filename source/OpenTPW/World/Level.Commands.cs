@@ -70,7 +70,8 @@ public partial class Level
 	{
 		if ( ResolveCommandRide( attraction ) is not { } ride || Guests == null )
 			return null;
-		ride.RecomputeQueue( Guests.Grid );
+		// [BIN:TPW-EXE:0x004DE130 cache kept] the sync takes in the host's geometry only: the cached back and size (+0x3A, +0x40) stay until a re-evaluation (0x4DE1F0) drops them
+		ride.RecomputeQueueKeepingBack( Guests.Grid );
 		return ride;
 	}
 
@@ -213,7 +214,7 @@ public partial class Level
 		var writer = CreateQueueWriter( ride );
 		if ( !writer.SupportsNativeStart( (line.StartX, line.StartY) ) || !writer.SupportsNative( (line.StartX, line.StartY), (line.EndX, line.EndY) ) ) return ParkCommandResult.Rejected( "Unsupported native queue domain." );
 		// [EXT:online-coop-lockstep] the checks read the grid alone; the segment goes ahead on the queue as it stands (a rejection leaves the ride as it was)
-		ride.RecomputeQueue( Guests.Grid );
+		ride.RecomputeQueueKeepingBack( Guests.Grid );
 		// Even a partial type failure applied subsequent passes and must remain in the command log.
 		return ParkCommandResult.Ok( writer.CommitNative( (line.StartX, line.StartY), (line.EndX, line.EndY) ) );
 	}
@@ -224,7 +225,7 @@ public partial class Level
 		var writer = CreateQueueWriter( ride );
 		if ( !writer.SupportsNativeUndo( (undo.StartX, undo.StartY), (undo.EndX, undo.EndY) ) ) return ParkCommandResult.Rejected( "Unsupported native queue undo domain." );
 		// [EXT:online-coop-lockstep] as the segment: brought up to date only once the undo goes ahead
-		ride.RecomputeQueue( Guests.Grid );
+		ride.RecomputeQueueKeepingBack( Guests.Grid );
 		writer.UndoNative( new( (undo.StartX, undo.StartY), (undo.EndX, undo.EndY) ) );
 		return ParkCommandResult.Ok();
 	}
@@ -261,14 +262,13 @@ public partial class Level
 	{
 		if ( Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, edit.X, edit.Y ) is not { } ride || ride.QueueFrontCell == null )
 			return ParkCommandResult.Rejected( "No queue to edit here." );
-		ride.RecomputeQueue( Guests.Grid );
+		ride.RecomputeQueueKeepingBack( Guests.Grid );
 		// [EXT:online-coop-commands] the tool's start as the click reads it before the edit, for a guest's tool that enters once its request comes back (C3b)
 		var tool = ReadQueueToolStart( ride, afterEditClick: true )!;
 		// [BIN:TPW-EXE:0x00530379 corner walk link clear] the walk the click runs also takes the link between the queue's back cell and the path it ends on off both cells, and a cancel restores nothing (QueuePaths.DetachFromPath)
 		// the walk's counter writes come first, as the walk stores them while it goes (QueuePaths.WriteWalkCounts)
-		QueuePaths.WriteWalkCounts( Guests.Grid, ride );
-		// [BIN:TPW-EXE:0x00526118 queue edit click] 0x4DE1F0 runs after the walk whether or not it cleared a link (DetachFromPath reports its own edit only when it did)
-		if ( !QueuePaths.DetachFromPath( Guests.Grid, ride ) )
+		// [BIN:TPW-EXE:0x00526118 queue edit click] 0x4DE1F0 runs after the walk whether or not it cleared a link (RunEditWalk reports its own edit only when it did)
+		if ( !QueuePaths.RunEditWalk( Guests.Grid, ride ) )
 		{
 			ride.RecomputeQueue( Guests.Grid );
 			ride.NotifyQueueEdited( Guests.Grid );

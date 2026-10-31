@@ -1104,7 +1104,7 @@ public partial class Level
 		if ( owner != null )
 		{
 			// the cells RemoveFrom takes: the cell and the chain behind it, or a free-standing cell alone
-			owner.RecomputeQueue( grid );
+			owner.RecomputeQueueKeepingBack( grid );
 			var taken = owner.QueueCells.Contains( (x, y) ) ? owner.QueueCells.SkipWhile( cell => cell != (x, y) ).ToHashSet() : new HashSet<(int X, int Y)> { (x, y) };
 			var count = QueuePaths.RemoveFrom( grid, owner, x, y, removeFixed );
 			if ( count > 0 )
@@ -1376,7 +1376,7 @@ public partial class Level
 	{
 		// Bring the queue up to date before charging: a grid edit since the last recompute would otherwise pass the
 		// check here, be charged, and then be refused by TryExtend's own recompute.
-		ride.RecomputeQueue( grid );
+		ride.RecomputeQueueKeepingBack( grid );
 		// The commit's money test is SetCellType's alone (TrySpendCell below); the validator's preview test does not run on a commit (PATH-plan §3.3).
 		var check = CheckQueueCell( grid, null, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked, givesWay );
 		if ( check is not (QueueBuildResult.Ok or QueueBuildResult.Refused) )
@@ -1472,6 +1472,21 @@ public partial class Level
 			return;
 		// [BIN:TPW-EXE:0x00527FB4 cached size] the demolition reads the ride's word +0x40 as it stands, the cached size, and drops no cache: a ride with no cached size (no front) neither undoes nor debits
 		ride.RecomputeQueueKeepingBack( Guests.Grid );
+		// a typed ride's queue goes the executable's way: its corner walk, then the Back loop of the cached size (QueuePaths.DemolishQueue), each removed cell crediting its cost
+		// [EXT:untyped-harness-world] a ride without an access cell (the gates and test rigs, the Theme Park Inc slice) keeps the host's queue chain below (user-approved 2026-10-30)
+		if ( ride.AccessCell != null && ride.QueueEntryResolver != null )
+		{
+			var demolition = QueuePaths.DemolishQueue( Guests.Grid, ride, ride.QueueSizeInCells,
+				() => Guests.ReevaluateQueueNow( ride, ride.QueueCells.Count( cell => Guests.Grid.IsQueue( cell.X, cell.Y ) ) ) );
+			if ( Park?.Economy is { } typedEconomy && GetEconomyInstance( item ) is int typedInstance )
+			{
+				for ( var refund = 0; refund < demolition.Refunds; refund++ )
+					typedEconomy.RefundQueueCell( typedInstance );
+				if ( demolition.Debited )
+					typedEconomy.ChargeQueueDemolition( typedInstance );
+			}
+			return;
+		}
 		if ( ride.QueueSizeInCells == 0 )
 			return;
 		// [BIN:TPW-EXE:0x00527FB4 front that holds no queue cell] the word +0x40 counts the chain from the front cell whatever its type, so a ride with a front but no queue cell still runs Back (it pops the front twice and clears nothing: a path cell as the prior corner suppresses the second click) and then debits one cell; a ride with no front (the entry has no link bit, 0x4DE040) has a count of 0 and neither undoes nor debits

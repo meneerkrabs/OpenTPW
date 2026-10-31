@@ -20,7 +20,7 @@ namespace OpenTPW;
 /// The census counts guests (thing kind 1) standing on a cell of type 0, 1, 3, 9 or 10 (Mac
 /// predicates <c>0x85190</c>–<c>0x85258</c>): empty park ground, path, queue, entrance and exit
 /// cells — not the type-30 approach road outside the gate. OpenTPW applies these predicates to its reduced
-/// imported guest grid, whose missing cell types remain qualified by ECON-050. The world sweep routine at Mac
+/// imported guest grid, whose missing cell types remain qualified by RIDES-031. The world sweep routine at Mac
 /// <c>0x10536c</c> (PC <c>FUN_00516380</c>) increments <c>mGameTick</c> and retries a close every 30
 /// park turns, additionally waiting for live staff (kinds 4–8) to be inside the park.
 /// </para>

@@ -1977,10 +1977,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	/// <summary>Wall-clock allowance of one asynchronous load wait; settable so the budget itself can be tested.</summary>
 	internal static TimeSpan LoadAllowance { get; set; } = TimeSpan.FromSeconds( 180 );
 
-	/// <summary>With the pause menu open, an advisor response that is being spoken is paused (<c>GamePauseSound.AdvisorSpeechPaused</c>, tp.exe 0x598960); no speech is nothing to pause.</summary>
+	/// <summary>With the pause menu open, an advisor response that is being spoken is paused (<c>GamePauseSound.AdvisorSpeechPaused</c>, tp.exe 0x598960); with no handle (a muted run, no mixer voice) the original pauses nothing either.</summary>
 	private void CheckAdvisorSpeechPaused() => steps.Enqueue( ("pause menu pauses advisor speech", () =>
 	{
-		if ( flow.Advisor?.IsSpeechActive == true )
+		if ( flow.Advisor?.IsSpeechActive == true && SpeechAudioPlayer.AdvisorHandle != null )
 			Require( GamePauseSound.AdvisorSpeechPaused, "the pause menu pauses the advisor's speech (0x598960)" );
 		return true;
 	}) );

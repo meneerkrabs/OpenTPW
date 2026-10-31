@@ -15,7 +15,7 @@ internal static class SoundVolume
 
 	/// <summary>The volume QMixer ends up with for an index: its message case 2 (0x18007A1C) multiplies the table entry by 1/32767 (a percent of 100 gives 0.7874); null when the driver sends nothing.</summary>
 	// [BIN:QMIXER-DLL:0x180045C0 case 2 at 0x18007A1C library volume] the volume message stores entry / 32767 (as a float) in the channel parameters (+0x4C), and the channel's volume product +0x4C x +0xB8 (distance gain) x +0xB4 (cone) = +0xBC is recomputed
-	internal static float? Library( int index ) => (uint)index > MaximumIndex ? null : Entry( index ) / 32767f;
+	internal static float? Library( int index ) => (uint)index > MaximumIndex ? null : Entry( index ) * (1f / 32767f);
 
 	/// <summary>
 	/// The effective integer volume of a voice: its percent times the float of every group its mask names (bit 0 master, 1 music, 2 speech, 3 effects), from the start value 1.0.

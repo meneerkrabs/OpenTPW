@@ -66,7 +66,8 @@ public sealed class AudioVoice
 		return this;
 	}
 	/// <summary>The volume QMixer holds for the voice (<see cref="SoundVolume.Library"/>); it keeps its last value when the driver is sent nothing.</summary>
-	internal float LibraryVolume { get; private set; } = 1f;
+	// [BIN:QMIXER-DLL:0x180310F0 default parameter block] a channel that was never sent a volume holds 10000 / 32767 (+0x4C = 0x3E9C4139); an event voice is sent its index before it is first mixed, so this value is heard only when the first index is refused
+	internal float LibraryVolume { get; private set; } = 10000 * (1f / 32767f);
 	/// <summary>The driver's volume call for an index: an index outside 0..127 sends nothing and leaves the volume as it was.</summary>
 	internal void SetLibraryIndex( int index )
 	{
@@ -367,14 +368,21 @@ public sealed class AudioMixer : IDisposable
 	}
 
 	// [BIN:TPW-EXE:0x6B98D0,0x51BD70] group order: master, music, speech, effects; ducking changes those same factors.
-	internal float GetGroupFactor( int index )
+	internal float GetGroupFactor( int index ) => GetGroupFactor( index, SpeechSpeaking() );
+
+	private bool SpeechSpeaking() => voices.Any( voice => voice.Channel == AudioChannel.Speech && voice.HasOutput ) && channelGains[(int)AudioChannel.Speech] > 0;
+
+	// [BIN:TPW-EXE:0x51BDEE-0x51BE45 speech duck,0x70A280 group float] while speech plays the sound service sends trunc(option percent x duck percent / 100) as an integer, and every group float is that percent x 0.01f
+	private float GetGroupFactor( int index, bool speaking )
 	{
 		if ( index == 0 ) return masterGain;
 		var channel = index switch { 1 => AudioChannel.Music, 2 => AudioChannel.Speech, 3 => AudioChannel.Effects, _ => throw new ArgumentOutOfRangeException( nameof( index ) ) };
 		var gain = GetChannelGain( channel );
 		if ( channel == AudioChannel.Music && MusicDuckRequest != 0 ) return 0;
-		var speaking = voices.Any( voice => voice.Channel == AudioChannel.Speech && voice.HasOutput ) && GetChannelGain( AudioChannel.Speech ) > 0;
-		return speaking && channel != AudioChannel.Speech ? gain * DuckingLevel : gain;
+		var percent = (int)MathF.Round( gain * 100 );
+		if ( speaking && channel != AudioChannel.Speech )
+			percent = (int)(percent * (int)MathF.Round( DuckingLevel * 100 ) / 100);
+		return percent * 0.01f;
 	}
 
 	public float GetChannelGain( AudioChannel channel ) => channelGains[(int)channel];
@@ -451,7 +459,7 @@ public sealed class AudioMixer : IDisposable
 		// [BIN:TPW-EXE:0x6B98D0,0x70A610,0x6C56E2,0x6BB860 group change] a group volume change re-evaluates every voice's index through the record; here the index is a function of the current group floats and is evaluated for each block, which gives the same value at every point
 		Span<float> groupFactors = stackalloc float[4];
 		for ( var group = 0; group < 4; group++ )
-			groupFactors[group] = GetGroupFactor( group );
+			groupFactors[group] = GetGroupFactor( group, speaking );
 		// Index loop: a voice that completes may start its successor, which is mixed from the frame where it ended.
 		for ( var index = 0; index < voices.Count; index++ )
 		{

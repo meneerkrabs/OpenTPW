@@ -112,7 +112,8 @@ internal sealed class SpeechAudioPlayer : IDisposable
 		IsStarted = true;
 		if ( mixer != null )
 		{
-			voice = mixer.Play( mixerAudio!, AudioChannel.Speech );
+			// [BIN:TPW-EXE:0x599339,0x51BFC0 advisor clip] the clip is a cat_speech library event (100..100 volume, no pitch, group mask 0x10005: master and speech) started by 0x51BFC0; no draw is needed (equal ranges), so it is an event-system voice at volume 100
+			voice = mixer.Play( mixerAudio!, AudioChannel.Speech ).ForEvent( 0x5 );
 			AdvisorHandle = this;
 		}
 		else if ( output != null )

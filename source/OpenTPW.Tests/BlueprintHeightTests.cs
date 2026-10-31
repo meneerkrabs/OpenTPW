@@ -130,31 +130,55 @@ public class BlueprintHeightTests
 	}
 
 	[TestMethod]
-	public void OnlyKnownPrimaryTypesUseOwnersAndUnknownMapsRemainExplicit()
+	public void MapTypesOfObjectsNoTerrainAndWalkwaysTakeTheQuantizedGround()
 	{
 		var cells = new ParkCellMap( 3, 3 );
-		foreach ( byte type in new byte[] { 4, 9, 10 } )
+		foreach ( byte type in new byte[] { 4, 9, 10, 7, 30 } )
 		{
 			cells.SetType( 1, 1, type );
-			Assert.AreEqual( 20f, BlueprintHeights.Sample( cells, 1, 1, ( x, y ) => 11 ) );
-			Assert.IsNull( BlueprintHeights.Sample( cells, 1, 1, ( x, y ) => null ), "missing, invalid, out-of-range or unmatched owner is deliberately unresolved" );
+			Assert.AreEqual( 20f, BlueprintHeights.Sample( cells, 1, 1, ( x, y ) => 11 ), $"type {type}" );
 		}
-		foreach ( byte type in new byte[] { 0, 1, 3 } )
+		foreach ( byte type in new byte[] { 0, 1, 2, 3, 0x15, 64 } )
 		{
 			cells.SetType( 1, 1, type );
-			Assert.AreEqual( 0f, BlueprintHeights.Sample( cells, 1, 1, ( x, y ) => throw new Exception( "plain cell must not read owner" ) ) );
+			Assert.AreEqual( 0f, BlueprintHeights.Sample( cells, 1, 1, ( x, y ) => throw new Exception( "a plain cell reads no ground" ) ), $"type {type}" );
 		}
-		foreach ( byte type in new byte[] { 7, 30, 25, 64 } )
+	}
+
+	[TestMethod]
+	public void SecondLayerRecordsOfTracksAndPostsRaiseButStationsDoNot()
+	{
+		var cells = new ParkCellMap( 3, 3 );
+		foreach ( byte record in new byte[] { TrackCellTypes.KartOrigin, TrackCellTypes.Extension, TrackCellTypes.WaterOrigin, TrackCellTypes.WaterAlternate } )
 		{
-			cells.SetType( 1, 1, type );
-			Assert.IsNull( BlueprintHeights.Sample( cells, 1, 1, ( x, y ) => 11 ) );
+			cells.Tracks.Set( 1, 1, new TrackCell { Type = record } );
+			Assert.AreEqual( 20f, BlueprintHeights.Sample( cells, 1, 1, ( x, y ) => 11 ), $"record {record}" );
 		}
+		foreach ( byte record in new byte[] { TrackCellTypes.KartStart, TrackCellTypes.WaterStart } )
+		{
+			cells.Tracks.Set( 1, 1, new TrackCell { Type = record } );
+			Assert.AreEqual( 0f, BlueprintHeights.Sample( cells, 1, 1, ( x, y ) => throw new Exception( "a station record reads no ground" ) ), $"record {record}" );
+		}
+	}
+
+	[TestMethod]
+	public void TheMapTypeOverwritesTheSecondLayerRaiseWithTheSameGround()
+	{
+		var cells = new ParkCellMap( 3, 3 );
+		cells.Tracks.Set( 1, 1, new TrackCell { Type = TrackCellTypes.KartOrigin } );
 		cells.SetType( 1, 1, (byte)4 );
-		foreach ( byte secondary in new byte[] { 11, 12, 16, 17, 25, 99 } )
-		{
-			cells.Tracks.Set( 1, 1, new TrackCell { Type = secondary } );
-			Assert.IsNull( BlueprintHeights.Sample( cells, 1, 1, ( x, y ) => throw new Exception( "secondary instance must gate out owner-only sampling" ) ) );
-		}
+		var reads = 0;
+		Assert.AreEqual( 30f, BlueprintHeights.Sample( cells, 1, 1, ( x, y ) => { reads++; return 21.5f; } ) );
+		Assert.AreEqual( 2, reads, "the record and the map type each read the ground; the second write replaces the first" );
+	}
+
+	[TestMethod]
+	public void CellsOutsideTheMapAndUnnumberedGroundHaveNoRaise()
+	{
+		var cells = new ParkCellMap( 3, 3 );
+		cells.SetType( 1, 1, (byte)4 );
 		Assert.IsNull( BlueprintHeights.Sample( cells, -1, 1, ( x, y ) => 11 ) );
+		Assert.IsNull( BlueprintHeights.Sample( cells, 3, 1, ( x, y ) => 11 ) );
+		Assert.IsNull( BlueprintHeights.Sample( cells, 1, 1, ( x, y ) => float.NaN ) );
 	}
 }

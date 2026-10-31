@@ -126,16 +126,12 @@ public static class TrackCircuitWalker
 	/// <summary>The original's opposite heading (0x4D8C00): bit 0x01 or 0x04 shifted up by four, 0x10 or 0x40 down, 0 kept, a multi-bit value shifted as a whole.</summary>
 	private static byte OppositeBits( byte heading ) => heading == 0 ? (byte)0 : heading < 0x10 ? (byte)(heading << 4) : (byte)(heading >> 4);
 
-	/// <summary>
-	/// Walks the circuit and refreshes its tiles, then corrects bridge direction from the route for supported simple closed loops.
-	/// Unsupported circuits retain the context-free refresh behavior.
-	/// </summary>
+	/// <summary>Walks the circuit and chooses the piece of each of its tiles again (the flag words only change in the bridge ops, <see cref="TrackBuilder.RunBridgeOps"/>).</summary>
 	public static TrackCircuit WalkAndRefresh( TrackBuilder builder, TrackStation station )
 	{
 		var circuit = Walk( builder, station );
 		foreach ( var step in circuit.Steps )
 			builder.Refresh( step.X, step.Y );
-		builder.RefreshClosedCircuitBridges( station, circuit );
 		return circuit;
 	}
 }

@@ -73,7 +73,7 @@ public sealed class TrackPieceKit
 	}
 
 	/// <summary>The height profile of a piece, or null when it has none or the file is malformed.</summary>
-	// [APPROX:TRACK-002] the height profiles (.hmp) are the original's per-object height map ([BIN:TPW-EXE:0x00451640] loads it from the mesh loader 0x4629D0 and rebuilds it from the mesh with 0x451880 when it is missing or mis-sized); the vehicles' sampler does not read it (0x4511A0 samples faces or the terrain sampler 0x4527F0, TRACK-001) and neither do OpenTPW's vehicles; the other readers of the map (+0xCC) are the cell-height lookup 0x452AE0 (TOUR-005), the instance bounding box 0x466B70, the ride preview 0x4689F0 and the cell-flag copy of 0x463060 (zero in every shipped map); what they decide in OpenTPW's tour, ghost and bounding-box code is not traced
+	// [BIN:TPW-EXE:0x00451640 height map] the .hmp is the original's per-object height map (loaded by 0x451640 from the mesh loader 0x4629D0, rebuilt from the mesh by 0x451880 when it is missing or mis-sized); the vehicles' sampler does not read it (0x4511A0 samples faces or the landscape sampler 0x4527F0), and neither do OpenTPW's vehicles. Exactly four routines read the map an instance holds (+0xCC): the cell height 0x452AE0 (the per-cell maxima +0x10 only), the instance box 0x466B70 and the ride preview 0x4689F0 (the six floats +0x18..+0x2F) and the mesh creation 0x463060 (its width and height +8 and +0xA as loop bounds); no code reads the profile samples (+0xC) or the per-cell flags (+0x14)
 	public HmpFile? GetHeightProfile( int piece )
 	{
 		if ( StemOf( piece ) is not { } stem )

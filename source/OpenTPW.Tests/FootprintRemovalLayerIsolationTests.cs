@@ -119,10 +119,10 @@ public class FootprintRemovalLayerIsolationTests
 		Assert.AreEqual( (byte)ParkCellType.Path, cells.RawTypeAt( 4, 3 ) );
 		Assert.AreEqual( 0, cells.LinksAt( 4, 3 ) & 0x40 );
 		Assert.AreEqual( 1, cells.CountOf( ParkCellType.Path ) );
-		// the removal writes no record of its own; the only change is the bridge re-test of the tile the path cell lay over (0x538A92: the neighbour's path cell (4, 3) still lies over the tile, so it stays a bridge; the piece is picked again)
+		// the removal writes no record of its own: the cell remover (0x5367A0) calls no bridge op, so the tile keeps its flag word
 		var after = cells.Tracks.Get( 3, 3 );
 		Assert.AreEqual( track.Type, after.Type );
-		Assert.AreEqual( track.Flags, after.Flags, "the add-on flag and the bridge stay" );
+		Assert.AreEqual( track.Flags, after.Flags, "the add-on flag and the bridge stay: no op runs on a removed path" );
 		Assert.AreEqual( track.Owner, after.Owner );
 		Assert.AreEqual( track.Mask, after.Mask );
 	}

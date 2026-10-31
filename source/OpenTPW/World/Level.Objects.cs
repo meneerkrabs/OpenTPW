@@ -214,9 +214,8 @@ public partial class Level
 				// [BIN:TPW-EXE:0x00534767 laid cells' money test] the cell setter refuses a path or queue type when the park's money is on and its balance is below zero, even though the placement's cells are free (0x5346D0 with 0x8186D4 set)
 				if ( layingAccessCells && Guests?.Grid.Cells is { } laid && (Park == null || Park.Economy.Balance >= 0) )
 				{
-					ObjectAccessCells.Lay( laid, item.AccessPoints, OwnerWord( item ), item.Entry.HasQueue, new LinkEffects( RefreshTile ) );
-					// the entrance's outside cell becomes a queue cell, over a plain path the player built: guests walking there step off
-					Guests?.SetDownOffCells( item.AccessPoints.Select( point => (point.OutsideX, point.OutsideY) ).ToHashSet() );
+					ObjectAccessCells.Lay( laid, item.AccessPoints, OwnerWord( item ), item.Entry.QueueOptionOnBuild, new LinkEffects( RefreshTile ) );
+					// [BIN:TPW-EXE:0x00528A70 placement] the placement moves no person: guests standing on a new access cell stay where they are
 				}
 			};
 			// Station geometry was created by SetupCoasters' earlier handler. Bind after footprint and access-cell typing, never over it.
@@ -241,7 +240,7 @@ public partial class Level
 			};
 		}
 		// A placement over path cells clears them (ParkObjects.ClearPath): guests standing there step off
-		Objects.ObjectPlaced += item => Guests?.SetDownOffCells( item.Cells.Select( cell => (cell.X, cell.Y) ).ToHashSet() );
+		// [BIN:TPW-EXE:0x00528A70 placement leaves people alone] the placement commit writes the footprint cells and clears the paths under them (0x5367A0) but holds no code that finds or moves a person (its calls are the cell ops 0x532FC0, 0x5348D0, 0x53A510, the owner and link writers, the creation 0x529E10 and the sound 0x51BFC0); a guest on a cell that becomes an object's (type 4) keeps walking by the edge test, which lets a walker out of a type 4 cell over a path (0x4D8806) or another type 4 cell (0x4D883E) and over any cell the walk's later tests open, and its own route search starts from that cell, so nothing sets it down
 		foreach ( var item in Objects.Objects )
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
@@ -530,7 +529,9 @@ public partial class Level
 			var terrain = HoardingTerrain.Of( heightfield );
 			Objects.FloorBase = () => OriginalTerrain?.ProceduralGround is { } ground ? new FloorBaseContext( words, ground, terrain, HoardingCache.ReleaseFloorArt ) : null;
 		}
-		Objects.IsReserved = ( x, y ) => PoolBridges?.Reserves( x, y ) == true || IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+		// [BIN:TPW-EXE:0x00535BB3 object body over a track record] the validator's mode 4 refuses a cell whose structure record is of a track kind (0x53AD30 on the record, an extension followed to its parent) unless the upgrade selection 0x8187F8 is set (the add-on route, CheckAddOn): a path or queue cell lying over a straight or stub tile of the second layer, and a fence post with the cells beside it, refuse the footprint cell although the cell's own type is free
+		Objects.IsReserved = ( x, y ) => PoolBridges?.Reserves( x, y ) == true || IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type )
+			|| Guests?.Grid.Cells is { } structures && ParkCellTypes.IsTrackCell( QueueCellValidator.StructureTypeAt( structures, x, y ) ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 		Objects.IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
 		Objects.PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null;
 		Objects.TrackEndCellRule = ( x, y ) => Guests?.Grid.Cells is not { } cells || CoasterCellMarkers.AllowsOrdinaryGround( cells, x, y );

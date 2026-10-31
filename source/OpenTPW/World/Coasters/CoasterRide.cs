@@ -504,9 +504,12 @@ public sealed class CoasterRide
 	}
 
 	/// <summary>Controller <c>+308</c> = max((n − 1) − v/spacing, 0) in samples, v the rated speed of <see cref="BrakingSpeedSample"/>.</summary>
-	// [BIN:STP-PPC:0x10040070 braking start] controller +308 = max((n − 1) − v_last / 3.0, 0) samples
-	public static float BrakingStartFor( int sampleCount, float speedBeforeEnd, float spacing ) =>
-		MathF.Max( (sampleCount - 1) - speedBeforeEnd / spacing, 0f );
+	// [BIN:TPW-EXE:0x43c72c braking start] controller +0x134 = (n − 1) − v_last / spacing, replaced by 0 when it is not above 0 (a NaN too), 0x43c72c..0x43c763
+	public static float BrakingStartFor( int sampleCount, float speedBeforeEnd, float spacing )
+	{
+		var start = (sampleCount - 1) - speedBeforeEnd / spacing;
+		return start > 0f ? start : 0f;
+	}
 
 	/// <summary>Station braking (<c>0x40bb8</c>): x = (front − start)/(n − start), 1 outside [0, 1]; v(1 − x⁴) + floor·x⁴.</summary>
 	// [BIN:STP-PPC:0x10040BB8 station braking] x = (front − ctl+308)/(n − ctl+308), x = 1 outside [0, 1]; v = fmadds(v, 1 − x⁴, W·x⁴)

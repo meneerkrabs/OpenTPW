@@ -147,8 +147,9 @@ class Source(unittest.TestCase):
         self.assertRegex(self.register, r'\("COAST-0\d\d", "[^"]*\b(precision|fused)\b')
 
     def test_rating_pass_force_sign_and_order(self):
-        self.assertIn('(behind.X + ahead.X) / spacing * -Gravity', self.rating)
-        self.assertIn('var scale = speed / ForceDivisor;', self.rating)
+        # the PC pass (round 11 H, X44): a = -(((behind + ahead) / spacing) * 1.0), F = a * v * 0.1 as two single products
+        self.assertIn('-((behind.X + ahead.X) / spacing * Gravity)', self.rating)
+        self.assertIn('ax * speed * ForceScale', self.rating)
         self.assertIn('var maxHeight = 0f;', self.rating)
 
     def test_cost_rate_fallback_is_ported(self):

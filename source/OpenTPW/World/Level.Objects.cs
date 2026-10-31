@@ -2033,7 +2033,7 @@ public partial class Level
 		var bins = LitterBins().Select( bin => bin.Id ).ToHashSet();
 		int Attraction( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bridges.TryGetValue( instance, out var id ) ? id : 0;
 		int Bin( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bins.Contains( instance ) ? instance : 0;
-		foreach ( var line in Guests.ImportOriginal( save.Guests, save.World.Variables.GameTick, Attraction, Bin, save.World.Variables.NumberOfVisitorsToDate, save.Attractions ) )
+		foreach ( var line in Guests.ImportOriginal( save.Guests, save.World.Variables.GameTick, Attraction, Bin, save.World.Variables.NumberOfVisitorsToDate, save.Attractions, SavedSpriteScripts.Of( save ) ) )
 		{
 			import.Report( line );
 			Log.Trace( $"Park economy import: {line}" );

@@ -169,4 +169,52 @@ public sealed partial class GuestSimulation
 		guest.BodySprite.CreatePlayer( template, nowMilliseconds );
 		guest.BodySpriteInCostume = guest.InCostume;
 	}
+
+	/// <summary>
+	/// A saved guest's body sprite: the person's sprite handle (+0x0C) names a saved record whose program position, wake time and interval become the player; a person with no handle has no sprite, and a record the bounded
+	/// player cannot represent falls back to the rebuilt body with the reason noted.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00475730 sprite loader] the saved record (program counter, entry, run state, due time against the saved game clock, period, output frame) is what the loader reads back for the person's handle (0x4D4140 binds the handle, 0x4D93B0 the person's pending words)
+	private void ImportBodySprite( Guest guest, SaveGuest save, SavedSpriteScripts? sprites, List<string> notes )
+	{
+		if ( sprites == null )
+		{
+			ReconstructBodySprite( guest, BodySpriteClockMilliseconds );
+			return;
+		}
+		if ( save.Person.SpriteScript == 0 )
+		{
+			guest.BodySprite.ResetForNewPerson();
+			guest.BodySpriteHistoryReconstructed = false;
+			notes.Add( $"ok guest {guest.Id} has no sprite" );
+			return;
+		}
+		if ( sprites.Visitor( save.Person.SpriteScript, save.Person.NextAnim, save.Person.NextServiceInterval, BodySpriteClockMilliseconds, out var gap ) is { } snapshot )
+		{
+			guest.BodySprite.RestoreSnapshot( snapshot );
+			guest.BodySpriteInCostume = guest.InCostume;
+			guest.BodySpriteHistoryReconstructed = false;
+			notes.Add( $"ok guest {guest.Id}" );
+			return;
+		}
+		notes.Add( $"guest {guest.Id}: {gap}" );
+		ReconstructBodySprite( guest, BodySpriteClockMilliseconds );
+	}
+
+	/// <summary>A saved guest's held balloon (+0x210 names its record), rebuilt fresh when the record is no held balloon program.</summary>
+	private void ImportBalloon( Guest guest, SaveGuest save, SavedSpriteScripts? sprites, List<string> notes )
+	{
+		string? gap = null;
+		if ( sprites?.Balloon( save.BalloonScript, guest.Id, BodySpriteClockMilliseconds, nextBalloonIdentity, out gap ) is { } balloon )
+		{
+			RemoveBalloonPlayer( guest );
+			nextBalloonIdentity++;
+			balloonPlayers.Add( balloon );
+			notes.Add( $"ok balloon {guest.Id}" );
+			return;
+		}
+		if ( sprites != null )
+			notes.Add( $"balloon {guest.Id}: {gap}" );
+		CreateBalloon( guest );
+	}
 }

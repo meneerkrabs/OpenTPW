@@ -214,7 +214,7 @@ public partial class Level
 				// [BIN:TPW-EXE:0x00534767 laid cells' money test] the cell setter refuses a path or queue type when the park's money is on and its balance is below zero, even though the placement's cells are free (0x5346D0 with 0x8186D4 set)
 				if ( layingAccessCells && Guests?.Grid.Cells is { } laid && (Park == null || Park.Economy.Balance >= 0) )
 				{
-					ObjectAccessCells.Lay( laid, item.AccessPoints, OwnerWord( item ), item.Entry.HasQueue, new LinkEffects( RefreshTile ) );
+					ObjectAccessCells.Lay( laid, item.AccessPoints, OwnerWord( item ), item.Entry.QueueOptionOnBuild, new LinkEffects( RefreshTile ) );
 					// the entrance's outside cell becomes a queue cell, over a plain path the player built: guests walking there step off
 					Guests?.SetDownOffCells( item.AccessPoints.Select( point => (point.OutsideX, point.OutsideY) ).ToHashSet() );
 				}
@@ -530,7 +530,9 @@ public partial class Level
 			var terrain = HoardingTerrain.Of( heightfield );
 			Objects.FloorBase = () => OriginalTerrain?.ProceduralGround is { } ground ? new FloorBaseContext( words, ground, terrain, HoardingCache.ReleaseFloorArt ) : null;
 		}
-		Objects.IsReserved = ( x, y ) => PoolBridges?.Reserves( x, y ) == true || IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
+		// [BIN:TPW-EXE:0x00535BB3 object body over a track record] the validator's mode 4 refuses a cell whose structure record is of a track kind (0x53AD30 on the record, an extension followed to its parent) unless the upgrade selection 0x8187F8 is set (the add-on route, CheckAddOn): a path or queue cell lying over a straight or stub tile of the second layer, and a fence post with the cells beside it, refuse the footprint cell although the cell's own type is free
+		Objects.IsReserved = ( x, y ) => PoolBridges?.Reserves( x, y ) == true || IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type )
+			|| Guests?.Grid.Cells is { } structures && ParkCellTypes.IsTrackCell( QueueCellValidator.StructureTypeAt( structures, x, y ) ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 		Objects.IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
 		Objects.PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null;
 		Objects.TrackEndCellRule = ( x, y ) => Guests?.Grid.Cells is not { } cells || CoasterCellMarkers.AllowsOrdinaryGround( cells, x, y );

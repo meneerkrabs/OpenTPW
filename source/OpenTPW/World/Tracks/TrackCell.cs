@@ -41,16 +41,6 @@ public static class TrackCellTypes
 	};
 }
 
-/// <summary>The kind test tp.exe runs on a cell's record of the second layer (<c>0x53AD30</c>).</summary>
-public static class TrackRecordKinds
-{
-	/// <summary>The hoarding kind (0x19): a fence post is a record of this kind.</summary>
-	public const byte Hoarding = 25;
-
-	// [BIN:TPW-EXE:0x53AD30 track kinds] 0xB, 0xD, 0x10, 0x12, 0x19: a kart or water tile or station, a hoarding (fence post); the extension kinds 0xC and 0x11 (0x53AD90) answer through their parent
-	public static bool IsTrack( byte kind ) => kind is 11 or 13 or 16 or 18 or Hoarding;
-}
-
 /// <summary>The four cardinal connection bits of a track cell (map cell +0xC) and their headings.</summary>
 public static class TrackHeading
 {

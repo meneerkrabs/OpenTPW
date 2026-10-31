@@ -365,17 +365,17 @@ public sealed class ParkObjects
 	/// not at all. An object there of a lower priority gives way. Refusals are <see cref="OriginalPlacementResult.AccessBlocked"/>.
 	/// </summary>
 	// [BIN:TPW-EXE:0x529744 access cells] the placement refuses an entrance's outside cell off the map (0x4D8300); with 0x52FAB0 true the check pass validates it as type 4 (op 0x204, 0x5297A4; the commit lays a queue cell there, 0x529801), else as a path (op 0x201, 0x5298B9; the commit lays a path); only with 0x52FAB0 true does it test the exit's outside cell, off the map refused (0x5299E2), as a path (op 0x201, 0x529A2F). The commit's op 0x87 on either cell (0x529801, 0x529A61, 0x5298EE) demolishes a lower-priority owner
-	// [BIN:TPW-EXE:0x46D644 queue option] 0x52FAB0 is option 0x81B0CC while 0x8187F8 is clear; entering the build tool (tool 4 or 0x3B, 0x46D5A0) sets 0x81B0CC to the type's Info.HasQueue (+0x40) and 0x8187F8 through 0x52F880 to its Bumper.WhichTrackType (+0x9C) when the type's +0x288 is 1, else 0
+	// [BIN:TPW-EXE:0x46D644 queue option] 0x52FAB0 is option 0x81B0CC while 0x8187F8 is clear; entering the build tool (tool 4 or 0x3B, 0x46D5A0) sets 0x81B0CC to the type's Info.HasQueue (+0x40) and 0x8187F8 through 0x52F880 to its Bumper.WhichTrackType (+0x9C) when its +0x288 is 1, else 0 (ObjectCatalogEntry.QueueOptionOnBuild) when the type's +0x288 is 1, else 0
 	private OriginalPlacementResult CheckAccessCells( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, List<OriginalObject> overwritten )
 	{
 		foreach ( var point in ObjectFootprint.GetAccessPoints( entry.Shape, anchorX, anchorY, rotation ) )
 		{
-			if ( point.Kind == ObjectCellKind.Exit && !entry.HasQueue )
+			if ( point.Kind == ObjectCellKind.Exit && !entry.QueueOptionOnBuild )
 				continue;
 			var (x, y) = (point.OutsideX, point.OutsideY);
 			if ( x < 0 || y < 0 || x >= Grid.Width || y >= Grid.Height )
 				return OriginalPlacementResult.OutsideTerrain;
-			var result = point.Kind == ObjectCellKind.Entrance && entry.HasQueue ? CheckObjectCell( entry, x, y, overwritten ) : CheckPathRule( entry, x, y, overwritten );
+			var result = point.Kind == ObjectCellKind.Entrance && entry.QueueOptionOnBuild ? CheckObjectCell( entry, x, y, overwritten ) : CheckPathRule( entry, x, y, overwritten );
 			if ( result == OriginalPlacementResult.Allowed && IsUnowned?.Invoke( x, y ) == true )
 				result = OriginalPlacementResult.NotOwned;
 			if ( result != OriginalPlacementResult.Allowed )

@@ -52,7 +52,7 @@ public static class StaffPlacementRules
 	}
 
 	/// <summary>Whether the cell's second-layer record is of a track kind (tp.exe <c>0x5363F0</c>): the track tiles and stations under the cell, and the fence posts and the cells beside them.</summary>
-	public static bool IsTrackRecordCell( ParkCellMap cells, int x, int y ) => TrackRecordKinds.IsTrack( QueueCellValidator.StructureTypeAt( cells, x, y ) );
+	public static bool IsTrackRecordCell( ParkCellMap cells, int x, int y ) => ParkCellTypes.IsTrackCell( QueueCellValidator.StructureTypeAt( cells, x, y ) );
 
 	/// <summary>The cell a positioned member stands in, or null without a position.</summary>
 	public static (int X, int Y)? CellOf( StaffMember member ) =>

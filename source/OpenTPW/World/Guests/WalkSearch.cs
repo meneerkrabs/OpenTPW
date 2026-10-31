@@ -37,7 +37,7 @@ public static class WalkEdges
 			var parent = map.Tracks.CellOf( record.Parent );
 			record = map.Tracks.Get( parent.X, parent.Y );
 		}
-		return TrackRecordKinds.IsTrack( record.Type ) && (record.Flags & TrackCell.BridgeMask) == 0;
+		return ParkCellTypes.IsTrackCell( record.Type ) && (record.Flags & TrackCell.BridgeMask) == 0;
 	}
 
 	/// <summary>

@@ -265,7 +265,7 @@ heads its cell's thing list; with the park closed or the entrance gate's script 
 counter 0), and an unpaid one goes back to the booth it stands on. State 5 (`0x4ffb20`) walks to the entrance, back to a booth when the park closes or the gate shuts, and on arrival numbers the visitor
 (`0x51aaf0`: the park's visitor count plus one, kept as `Guest.VisitorNumber`) and decides (state 6). The walks use walk mask 0: a walker leaves a path cell for plain ground only with the leaving mask,
 so the road's cells are walkway cells (type `0x1e`), which a mask-0 walker may enter. A save made before the arrival walk may hold a guest on an arrival lane off the grid: it is restored on the cell map in the state
-its lane position stood for. What still differs around the stop is ARRIVAL-001. A leaving guest walks the cell map as the original does: state 18 ends at the gate's
+its lane position stood for. An original save's vehicle at work comes back by thing id (ARRIVAL-001, retired). A leaving guest walks the cell map as the original does: state 18 ends at the gate's
 crossing cell (`CrossingParkSide`, `0x4d86d0`), state 19 (`0x500ad0`) waits there until the vehicle lets it walk (`0x51a760`: not while the
 bus is at status 3, 1 or 2), picks one of the four cells around the level's bus stop A (`0x4d8650`: the cell, its +X neighbour and the two cells two
 rows up) with a draw and a random point in it with two more, and state 20 walks the route there; state 21 (`0x500bd0`) re-picks at status 1 to 3 off

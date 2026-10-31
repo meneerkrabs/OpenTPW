@@ -1,0 +1,5 @@
+## Save import remainder (October 31, 2026)
+
+Round 11 package C reads what an original save still holds that OpenTPW did not import (REA, `dis.py`; the Mac decomp only pointed to the code).
+
+- **ARRIVAL-001 (retired)**: the world loader `0x5179C0` reads the cached bus, seaplane and Ferry handles (`+0x1DA72C/E/30`) and the vehicle at work (`+0x1DA72A`) as raw 16-bit words (`0x00517A56..0x00517B8A`), and nothing checks them afterwards. A handle is the thing id of the vehicle object (`0x0051A2F0` stores the created vehicle's handle at `+0x1DA72C + 2 x kind` and at `+0x1DA72A`; the status read `0x0051A690` goes through the thing), so an imported park takes its scheduler together with the vehicle at work: the cached handles must equal the thing ids of the park's own bus, seaplane and Ferry fixed items, and the vehicle at work is the cached one it equals (the Fantasy corpus saves hold a seaplane at work). The vehicle stands at the status its saved script holds. The saved arrival rate, target capacity and gates-open words have no reader in `0x004CF3E0`, `0x004CF5B0` or `0x004CF720`. A handle that names the wrong thing refuses the scheduler import with the reason.

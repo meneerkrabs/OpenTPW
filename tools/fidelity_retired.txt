@@ -24,6 +24,7 @@ ADVISOR-022 docs/LIPS.md
 ADVISOR-023 docs/PROGRESS.md
 ADVISOR-026 docs/LIPS.md
 ADVISOR-027 docs/LIPS.md
+ARRIVAL-001 docs/ECONOMY.md
 ARRIVAL-002 docs/GUESTS.md
 ARRIVAL-003 docs/GUESTS.md
 ARRIVAL-004 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md

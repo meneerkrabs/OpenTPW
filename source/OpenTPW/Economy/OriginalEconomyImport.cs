@@ -950,7 +950,7 @@ public sealed partial class OriginalEconomyImport
 		var variables = save.World.Variables;
 		var worldStateResidual = lostImported ? "" : $"world state {variables.WorldState}, ";
 		evidence.Add( $"[APPROX:SAVE-010] World values not imported: {worldStateResidual}calendar session start {save.World.Calendar.SessionStart}." );
-		evidence.Add( "[APPROX:ARRIVAL-001] The saved arrival scheduler is attached by the level only for an exact park clock with no saved vehicle handles and no host vehicles; other vehicle continuations remain unsupported. The level reports the attachment outcome." );
+		evidence.Add( "The saved arrival scheduler and the vehicle at work are attached by the level for an exact park clock when the cached vehicle handles name the park's own vehicle objects by thing id (world +0x1DA72C/E/30, 0x005179C0). The level reports the attachment outcome." );
 		if ( save.Advisor is { } advisor )
 		{
 			var current = advisor.Current;

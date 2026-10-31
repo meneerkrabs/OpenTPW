@@ -31,6 +31,8 @@ public sealed class ArrivalVehicles : IArrivalVehicleHost
 		return true;
 	}
 
+	public int ThingId( int kind ) => Find( kind )?.ThingId ?? 0;
+
 	// [BIN:TPW-EXE:0x0055A390 script variable read] an index outside the script's variable count (+0x8C) logs and reads 0
 	public int GetVariable( int kind, int index ) =>
 		Find( kind )?.Runtime.Script is { } script && index >= 0 && index < script.Variables.Length ? script.Variables[index] : 0;

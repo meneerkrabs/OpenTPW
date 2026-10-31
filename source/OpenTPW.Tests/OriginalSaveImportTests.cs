@@ -204,8 +204,8 @@ public class OriginalSaveImportTests
 		var world = Line( "[APPROX:SAVE-010] World values not imported:" );
 		foreach ( var value in new[] { "world state ", "calendar session start " } )
 			StringAssert.Contains( world, value );
-		var arrivals = Line( "[APPROX:ARRIVAL-001] The saved arrival scheduler is attached by the level only" );
-		foreach ( var value in new[] { "exact park clock", "no saved vehicle handles and no host vehicles", "other vehicle continuations remain unsupported", "level reports the attachment outcome" } )
+		var arrivals = Line( "The saved arrival scheduler and the vehicle at work are attached by the level" );
+		foreach ( var value in new[] { "exact park clock", "name the park's own vehicle objects by thing id", "level reports the attachment outcome" } )
 			StringAssert.Contains( arrivals, value );
 		var advisor = Line( "[APPROX:SAVE-010] Advisor controller values not imported:" );
 		foreach ( var value in new[] { "time signature ", "sound ", "raw words 0x", "current record (", "mRequestedLastTutorial 0x", "mMessagePlaying " } )

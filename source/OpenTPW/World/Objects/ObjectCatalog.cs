@@ -160,6 +160,14 @@ public sealed class ObjectCatalogEntry
 	// [BIN:TPW-EXE:0x745020 sam schema] OverwritePriority follows WhichUIType (+0x4C) and DontDeformBase (+0x50) at +0x54, the field the validator 0x535670 compares (0x535785) and the hover 0x5234D0 loads into 0x818C10
 	public int OverwritePriority => Settings.GetInt( "Info.OverwritePriority" );
 	public bool HasQueue => Settings.GetBool( "Info.HasQueue" );
+
+	/// <summary>The build tool's upgrade selection (0x8187F8) for this type: its <c>Bumper.WhichTrackType</c> (+0x9C) when its <c>AddOn.UpgradeType</c> (+0x288) is 1, else 0.</summary>
+	// [BIN:TPW-EXE:0x0046D605 upgrade selection] the tool's enter reads the type's +0x288: 1 hands the type's +0x9C to the type setter 0x52F880, which stores it in 0x8187F8; any other value hands 0
+	public int UpgradeSelection => Settings.GetInt( "AddOn.UpgradeType" ) == 1 ? Settings.GetInt( "Bumper.WhichTrackType" ) : 0;
+
+	/// <summary>Whether the build tool's queue option (0x81B0CC, <c>Info.HasQueue</c>) is in force for this type: <c>0x52FAB0</c> answers it only while the upgrade selection is clear, so an upgrade of a track ride lays path cells, not a queue.</summary>
+	// [BIN:TPW-EXE:0x0052FAB0 queue option] 0x81B0CC when 0x8187F8 is 0, else 0; the enter 0x46D5A0 stores HasQueue (+0x40) in 0x81B0CC through 0x52FA90 (0x46D644) and the upgrade selection through 0x52F880 (0x46D61D). No shipped upgrade of kind 1 has a queue, so the shipped data never tells the two apart
+	public bool QueueOptionOnBuild => HasQueue && UpgradeSelection == 0;
 	/// <summary><c>Info.DontApplyOffset 1</c>: "a fixed item whose animation should be played relative to world (0,0)" (gates, bus, lights, ferry, seaplane, end).</summary>
 	// [DATA:<object>.sam:Info.DontApplyOffset]
 	public bool IsFixedItem => Settings.GetBool( "Info.DontApplyOffset" );

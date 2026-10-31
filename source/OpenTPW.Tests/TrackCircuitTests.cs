@@ -185,7 +185,8 @@ public class TrackCircuitTests
 		Assert.AreEqual( TrackCellTypes.WaterOrigin, rig.Cells.RawTypeAt( 20, 20 ) );
 		Assert.AreEqual( TrackCellTypes.Extension, rig.Cells.RawTypeAt( 21, 20 ) );
 		Assert.AreEqual( 0, rig.Cells.LinksAt( 22, 20 ) & GuestPathGrid.LinkValue( 3 ), "the neighbouring path cell lost its link toward the cleared cell" );
-		Assert.IsTrue( (rig.Cells.Tracks.Get( 20, 20 ).Flags & TrackBuilder.FlagOverPath) != 0, "the tile remembers the paths it replaced" );
+		// [BIN:TPW-EXE:0x005390C0 paths under the last tile] a tile laid alone is the line's last tile: it took the paths away, so it bridges nothing
+		Assert.AreEqual( 0, rig.Cells.Tracks.Get( 20, 20 ).Flags, "the paths under the last tile are gone and the tile is no bridge" );
 		// a fixed (NoModify) path cell cannot be cleared
 		rig.Cells.SetFlags( 30, 30, ParkCellFlags.NoModify );
 		rig.Cells.SetType( 30, 30, ParkCellType.Path );
@@ -334,15 +335,15 @@ public class TrackCircuitTests
 
 	// ---- Bridges -------------------------------------------------------------------------------------
 
-	/// <summary>TRACK-010: the bridge test takes every tile with at most two arms and no corner, so a single-arm end laid over a path is a bridge end (tp.exe 0x538AA4..0x538B05).</summary>
+	/// <summary>TRACK-010: the bridge test takes every tile with at most two arms and no corner, so a single-arm end a path is laid over is a bridge end (tp.exe 0x538AA4..0x538B05, the path tool's op 0x85 0x534115).</summary>
 	[TestMethod]
 	public void ASingleArmEndOverAPathIsABridge()
 	{
 		var lone = new Rig();
+		Assert.IsTrue( lone.Writer.Commit( (14, 10), (16, 10) ).Completed );
 		var paths = new GuestPathGrid( lone.Cells );
 		foreach ( var cell in TrackStation.TileCellsOf( 16, 10 ) )
 			paths.SetPath( cell.X, cell.Y, true );
-		Assert.IsTrue( lone.Writer.Commit( (14, 10), (16, 10) ).Completed );
 		var end = lone.Cells.Tracks.Get( 16, 10 );
 		Assert.AreEqual( 0x40, end.Mask, "a stub with one arm" );
 		Assert.AreEqual( TrackCell.FlagBridge, end.Flags & TrackCell.BridgeMask );
@@ -361,10 +362,12 @@ public class TrackCircuitTests
 		foreach ( var tile in new[] { (12, 12), (10, 12), (8, 12) } )
 			foreach ( var cell in TrackStation.TileCellsOf( tile.Item1, tile.Item2 ) )
 				paths.SetPath( cell.X, cell.Y, true );
-		Assert.IsTrue( rig.Writer.Commit( (14, 10), (14, 12) ).Completed );
-		Assert.IsTrue( rig.Writer.Commit( (14, 12), (6, 12) ).Completed );
-		Assert.IsTrue( rig.Writer.Commit( (6, 12), (6, 10) ).Completed );
-		Assert.IsTrue( rig.Writer.Commit( (6, 10), (8, 10) ).Completed );
+		// the walks round the ride (op 0x86) give the straights their flag words, so the lines belong to the station's ride
+		var writer = new TrackLineWriter( rig.Builder, owner: rig.Builder.OwnerOf( rig.Station ) );
+		Assert.IsTrue( writer.Commit( (14, 10), (14, 12) ).Completed );
+		Assert.IsTrue( writer.Commit( (14, 12), (6, 12) ).Completed );
+		Assert.IsTrue( writer.Commit( (6, 12), (6, 10) ).Completed );
+		Assert.IsTrue( writer.Commit( (6, 10), (8, 10) ).Completed );
 		var circuit = TrackCircuitWalker.WalkAndRefresh( rig.Builder, rig.Station );
 		Assert.IsTrue( circuit.IsValid, circuit.Failure );
 		var tracks = rig.Cells.Tracks;

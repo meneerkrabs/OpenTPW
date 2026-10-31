@@ -132,7 +132,7 @@ public class TrackCellCoexistenceTests
 	private static bool IsBridge( ParkCellMap cells, int x, int y ) => (cells.Tracks.Get( x, y ).Flags & TrackCell.BridgeMask) != 0;
 
 	[TestMethod]
-	public void APathLaidOverAStraightTileMakesItABridgeAndRemovingItTakesTheBridgeAway()
+	public void APathLaidOverAStraightTileMakesItABridgeAndRemovingItLeavesTheBridge()
 	{
 		// tp.exe 0x538A92 reads map types 1 and 3 on the tile's four cells; the path op 0x85 re-runs it
 		var (cells, _, _, paths) = Rig();
@@ -142,11 +142,12 @@ public class TrackCellCoexistenceTests
 		Assert.IsFalse( IsBridge( cells, 4, 8 ), "a tile the path does not cross stays flat" );
 		Assert.AreEqual( CellBuildResult.Ok, paths.Remove( 7, 8 ) );
 		Assert.AreEqual( CellBuildResult.Ok, paths.Remove( 7, 9 ) );
-		Assert.IsFalse( IsBridge( cells, 6, 8 ), "no path cell is left over the tile" );
+		// [BIN:TPW-EXE:0x005367A0 cell remover] the remover calls no bridge op, so the tile keeps its flag word with no path left over it
+		Assert.IsTrue( IsBridge( cells, 6, 8 ), "no op runs when the path comes off" );
 	}
 
 	[TestMethod]
-	public void AQueueCommittedOverAStraightTileMakesItABridgeAndTheUndoTakesItAway()
+	public void AQueueCommittedOverAStraightTileMakesItABridgeAndTheUndoLeavesIt()
 	{
 		var (cells, _, _, _) = Rig();
 		const ushort owner = 17;
@@ -157,31 +158,20 @@ public class TrackCellCoexistenceTests
 		Assert.AreEqual( CellBuildResult.Ok, result.StoppedBy );
 		Assert.IsTrue( IsBridge( cells, 6, 8 ) );
 		reducer.Undo( result.QueueReceipt! );
-		Assert.IsFalse( IsBridge( cells, 6, 8 ) );
+		Assert.IsTrue( IsBridge( cells, 6, 8 ), "taking the queue cells off runs no bridge op" );
 	}
 
 	[TestMethod]
-	public void ABridgeOverAPathChangesTheRampOfItsNeighbour()
+	public void APathLaidOverATileBridgesThatTileAndLeavesItsNeighbourAloneWithoutARide()
 	{
 		var (cells, _, _, paths) = Rig();
-		// the line crosses the middle tile only: its neighbours along the flow are flat, so it is the plain bridge piece
+		// the line crosses the middle tile only
 		Assert.IsTrue( paths.BuildSegment( (7, 6), (7, 11) ).Completed );
 		Assert.AreEqual( TrackCell.FlagBridge, cells.Tracks.Get( 6, 8 ).Flags & TrackCell.BridgeMask );
-		// a path laid over the end tile too makes the pair ramp and deck
+		// [BIN:TPW-EXE:0x00534115 path tool bridge op] a path over the end tile too bridges that tile; only the walks round the tile's ride (0x5341A2) give the pair its ramp and deck, and these tiles belong to no ride
 		Assert.IsTrue( paths.BuildSegment( (9, 6), (9, 11) ).Completed );
 		Assert.IsTrue( IsBridge( cells, 8, 8 ) );
-		Assert.AreNotEqual( TrackCell.FlagBridge, cells.Tracks.Get( 6, 8 ).Flags & TrackCell.BridgeMask, "the middle tile's neighbour is a bridge now" );
-	}
-
-	[TestMethod]
-	public void APathOverATileMakesABridgeAfterARestoreToo()
-	{
-		var (cells, _, _, paths) = Rig();
-		Assert.IsTrue( paths.BuildSegment( (7, 6), (7, 11) ).Completed );
-		var tile = cells.Tracks.Get( 6, 8 );
-		cells.Tracks.Set( 6, 8, tile with { Flags = (byte)(tile.Flags & ~TrackCell.BridgeMask) } );
-		TrackBuilder.RefreshAll( cells.Tracks, cells );
-		Assert.IsTrue( IsBridge( cells, 6, 8 ) );
+		Assert.AreEqual( TrackCell.FlagBridge, cells.Tracks.Get( 6, 8 ).Flags & TrackCell.BridgeMask );
 	}
 
 	[TestMethod]

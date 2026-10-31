@@ -808,7 +808,6 @@ public sealed partial class ParkCellMap
 		// tp.exe's cell setter 0x5346D0 returns early for the same non-zero type only: clearing always stamps.
 		var changed = types[index] != type || type == 0;
 		var cleared = type == 0;
-		var wasPathOrQueue = types[index] is (byte)ParkCellType.Path or (byte)ParkCellType.Queue;
 		// clearing the cell's own layer leaves the type byte showing the track tile that lies beneath (PrimaryTypeAt)
 		if ( cleared && Tracks.Count != 0 && Tracks.Get( x, y ) is { IsEmpty: false } beneath )
 			type = beneath.Type;
@@ -828,9 +827,9 @@ public sealed partial class ParkCellMap
 		if ( changed )
 			blockStamps[y / StampBlock * BlocksX + x / StampBlock] = ++StampCounter;
 		NoteChange( x, y, index, before );
-		// a path or queue cell laid over a track tile, or cleared from it, changes the tile's bridge test (the original's ops 0x85 and 0x86 re-run it, 0x538A92)
-		if ( (wasPathOrQueue || type is (byte)ParkCellType.Path or (byte)ParkCellType.Queue) && Tracks.Count != 0 && !Tracks.Get( x, y ).IsEmpty )
-			TrackBuilder.RefreshUnder( this, x, y );
+		// a path or queue cell laid over a track tile runs the path tool's bridge ops on it (0x534115: the tile becomes a bridge, 0x5341A2: the walks round its ride); every cell the tools lay runs them, a path laid over a path too; taking one off runs none (the cell remover 0x5367A0 calls no bridge op)
+		if ( type is (byte)ParkCellType.Path or (byte)ParkCellType.Queue && Tracks.Count != 0 && !Tracks.Get( x, y ).IsEmpty )
+			TrackBridges.PathLaidOver( this, x, y );
 	}
 
 	public void SetType( int x, int y, ParkCellType type ) => SetType( x, y, (byte)type );

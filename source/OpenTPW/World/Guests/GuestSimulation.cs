@@ -2196,11 +2196,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>
-	/// Sets down the guests that stand on <paramref name="cells"/> after those stopped being path (an object built over a path, whose placement
-	/// clears it): each walking guest on such a cell is put on the nearest path cell, its walk ended, and goes on in its state as after a broken
-	/// walk (<see cref="EndBrokenWalks"/>). Returns the number of guests moved.
+	/// Sets down the guests that stand on <paramref name="cells"/> after those stopped being walkable (access cells the player removed): each walking guest on such a cell is put
+	/// on the nearest path cell, its walk ended, and goes on in its state as after a broken walk (<see cref="EndBrokenWalks"/>). Returns the number of guests moved.
 	/// </summary>
-	// Approximation (RIDES-018, registered at ParkObjects.Check): guests on a path cell an object's placement clears are set down on the nearest path cell; tp.exe's placement (0x528A70) and ClearCell (0x5367A0) write cells and the block stamp (0x4D8C60, through SetCellType 0x5346D0), which reroutes walking things, and what a guest standing inside the new footprint does next is not traced
+	// [EXT:removable-access-cells] only the cells a placement laid outside an entrance or exit, which the original keeps NoModify and OpenTPW lets the player remove, set their guests down; an object's placement sets down no one (tp.exe's 0x528A70 holds no code that moves a person, a guest in a new footprint walks out by the edge test, RIDES-018 retired)
 	public int SetDownOffCells( IReadOnlySet<(int X, int Y)> cells )
 	{
 		var moved = 0;

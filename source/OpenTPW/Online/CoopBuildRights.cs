@@ -418,10 +418,10 @@ internal sealed class CoopBuildRights( Level level ) : IParkCommandRights
 		if ( !InitialStationLeavesClaimsAlone( player, entry, anchor.X, anchor.Y, rotation ) )
 			return false;
 		var (entrance, exit) = ObjectAccessCells.Find( ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, rotation ) );
-		var queueEntrance = entry.HasQueue && entrance is { } enter ? new[] { (enter.OutsideX, enter.OutsideY) } : Array.Empty<(int, int)>();
+		var queueEntrance = entry.QueueOptionOnBuild && entrance is { } enter ? new[] { (enter.OutsideX, enter.OutsideY) } : Array.Empty<(int, int)>();
 		var written = ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Select( cell => (cell.X, cell.Y) ).Concat( plan.ClearedPaths ).Concat( queueEntrance )
 			.Distinct().ToArray();
-		var paths = new[] { entry.HasQueue ? exit : entrance }.OfType<ObjectAccessPoint>().Select( point => (point.OutsideX, point.OutsideY) ).ToArray();
+		var paths = new[] { entry.QueueOptionOnBuild ? exit : entrance }.OfType<ObjectAccessPoint>().Select( point => (point.OutsideX, point.OutsideY) ).ToArray();
 		return !TouchesClaimedQueue( player, written, joins: true ) && !TouchesClaimedQueue( player, paths, joins: false )
 			&& !ClearsBesideClaimedEntrance( player, written );
 	}

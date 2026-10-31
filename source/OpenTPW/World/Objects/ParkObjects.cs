@@ -227,7 +227,7 @@ public sealed class ParkObjects
 	/// demolished, a path cell under the footprint is cleared, and any other overlap refuses. The outside cells of the entrances and exits
 	/// must pass the rules the original lays its access cells with.
 	/// </summary>
-	// [APPROX:RIDES-018] Build rules = footprint inside grid + the original's map-start cell types (holes refused, OriginalParkPlacement) + save paths/objects + overlap by overwrite priority + plain path cells cleared + owned land + the access cells' rules; no slope test, as in tp.exe's validator 0x535670; Level.PlaceObject enforces economy purchases — evidence needed: the second-layer link tests 0x53AE00 and 0x53AE90 (a corner or junction on the cell's second layer, 0x535BD7), and which types carry +0x288 = 1, whose Bumper.WhichTrackType turns the access-cell option off at the build tool's enter (0x46D605; OpenTPW follows Info.HasQueue alone)
+	// [BIN:TPW-EXE:0x535670 object body validator] footprint cells are validated as type 4 (0x204 through 0x532FC0): the cell's flag 0x40 and the map-start NoModify path (0x5356B5) refuse, an object by overwrite priority (0x535D66), a cell whose structure record is of a track kind refuses unless the upgrade selection is set (0x535BB3, the host's IsReserved and the add-on route), a path cell is cleared, and the corner and junction tests of the record's links (0x535BD7) run only on a record of no track kind, which holds no arms (the clear 0x5367A0 zeroes type and arms); no slope test, as in tp.exe's validator; Level.PlaceObject enforces economy purchases
 	// [BIN:TPW-EXE:0x5357c7 placement validator] after its early returns for a few tool modes the validator 0x535670 refuses a cell with flag 0x40 for whatever it places, paths, queues and objects alike
 	// [BIN:TPW-EXE:0x535D66 overwrite priority] a cell of type 4, 9 or 10 is allowed when 0x818C10, the placed type's +0x54 (Info.OverwritePriority, sam schema 0x745020; set by the hover 0x5234D0), is greater than 0x818C14, the +0x54 of the type of the object owning the cell (0x53570E: the thing at the cell's owner index +0x10, class 3); otherwise the cell is refused and the sticky refusal 0x816D50 set
 	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, out ObjectPlacementPlan plan )
@@ -365,17 +365,17 @@ public sealed class ParkObjects
 	/// not at all. An object there of a lower priority gives way. Refusals are <see cref="OriginalPlacementResult.AccessBlocked"/>.
 	/// </summary>
 	// [BIN:TPW-EXE:0x529744 access cells] the placement refuses an entrance's outside cell off the map (0x4D8300); with 0x52FAB0 true the check pass validates it as type 4 (op 0x204, 0x5297A4; the commit lays a queue cell there, 0x529801), else as a path (op 0x201, 0x5298B9; the commit lays a path); only with 0x52FAB0 true does it test the exit's outside cell, off the map refused (0x5299E2), as a path (op 0x201, 0x529A2F). The commit's op 0x87 on either cell (0x529801, 0x529A61, 0x5298EE) demolishes a lower-priority owner
-	// [BIN:TPW-EXE:0x46D644 queue option] 0x52FAB0 is option 0x81B0CC while 0x8187F8 is clear; entering the build tool (tool 4 or 0x3B, 0x46D5A0) sets 0x81B0CC to the type's Info.HasQueue (+0x40) and 0x8187F8 through 0x52F880 to its Bumper.WhichTrackType (+0x9C) when the type's +0x288 is 1, else 0
+	// [BIN:TPW-EXE:0x46D644 queue option] 0x52FAB0 is option 0x81B0CC while 0x8187F8 is clear; entering the build tool (tool 4 or 0x3B, 0x46D5A0) sets 0x81B0CC to the type's Info.HasQueue (+0x40) and 0x8187F8 through 0x52F880 to its Bumper.WhichTrackType (+0x9C) when its +0x288 is 1, else 0 (ObjectCatalogEntry.QueueOptionOnBuild)
 	private OriginalPlacementResult CheckAccessCells( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, List<OriginalObject> overwritten )
 	{
 		foreach ( var point in ObjectFootprint.GetAccessPoints( entry.Shape, anchorX, anchorY, rotation ) )
 		{
-			if ( point.Kind == ObjectCellKind.Exit && !entry.HasQueue )
+			if ( point.Kind == ObjectCellKind.Exit && !entry.QueueOptionOnBuild )
 				continue;
 			var (x, y) = (point.OutsideX, point.OutsideY);
 			if ( x < 0 || y < 0 || x >= Grid.Width || y >= Grid.Height )
 				return OriginalPlacementResult.OutsideTerrain;
-			var result = point.Kind == ObjectCellKind.Entrance && entry.HasQueue ? CheckObjectCell( entry, x, y, overwritten ) : CheckPathRule( entry, x, y, overwritten );
+			var result = point.Kind == ObjectCellKind.Entrance && entry.QueueOptionOnBuild ? CheckObjectCell( entry, x, y, overwritten ) : CheckPathRule( entry, x, y, overwritten );
 			if ( result == OriginalPlacementResult.Allowed && IsUnowned?.Invoke( x, y ) == true )
 				result = OriginalPlacementResult.NotOwned;
 			if ( result != OriginalPlacementResult.Allowed )

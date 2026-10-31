@@ -1267,9 +1267,9 @@ and it is pinned again:
 
 | Pin | Value | What |
 | --- | --- | --- |
-| `OriginalCoasterImportTests.AnImportedSyntheticCoasterRunsDeterministically` | `0x010C244879E72489` | the imported synthetic coaster's minute (the #702 pin, `0x0B6F305C6589A229` on macOS and `0x43373F0B3F89E03C` on x64, moved with the coaster hash's two new fields, the motion clock lag and the replay bit) |
-| `CoasterTests.BuiltCoasterRunsArePinned` | `0x0FE29AA5CBF09FDB` | a built synthetic circuit open for a minute with a guest on board |
-| `CoasterTests.BuiltCoasterRunsArePinned` | `0xE71F6F7026ACA2B3` | the same circuit reopened for three seconds at 20 s and completed again (the catch-up tick) |
+| `OriginalCoasterImportTests.AnImportedSyntheticCoasterRunsDeterministically` | `0x5BCB719E357F5EA7` | the imported synthetic coaster's minute (the #702 pin, `0x0B6F305C6589A229` on macOS and `0x43373F0B3F89E03C` on x64, moved with the coaster hash's two new fields, the motion clock lag and the replay bit) |
+| `CoasterTests.BuiltCoasterRunsArePinned` | `0x9F260909CADDDC29` | a built synthetic circuit open for a minute with a guest on board |
+| `CoasterTests.BuiltCoasterRunsArePinned` | `0x564523CD91FD6C57` | the same circuit reopened for three seconds at 20 s and completed again (the catch-up tick) |
 
 CI checks them on Windows, Linux and macOS and in both browser legs (Mono AOT and the interpreter). The synthetic coasters have no pylon or station models; a coaster built from game
 data adds the rig and the station frame, which `DetMatrix` covers. The rig's rest decomposition (`Matrix4x4.Decompose`) and its
@@ -1426,3 +1426,9 @@ Saves: none changed (the guest's `KidSetDraw` and the staff `ResumeMask` are opt
 The staff's sprite sources (`StaffSpriteState`, stepped by the sprite scheduler on the even 31 ms substeps at the substep's clock sample), the tool's dangling person and the stored sprite draw (`StaffMember.SpriteDraw`, `StaffCandidate.SpriteDraw`) are presentation only: none of them is hashed (`WorldStateHash` leaves `SpriteDraw` out by name) and none draws from a generator. The hashed `Variant` is unchanged. No pin moved. A pool made before the level loads its banks (every new park's starting pool, GUI or headless) takes the draw modulo the folder's banks, the divisor the variant takes, so the stored draw equals the variant (a byte, as the original's candidate `+9`) and nothing extra is saved: the economy digests of `BuildStepsTests` stay at `D2F1349AA44D6545` (FullSimulation) and `4DCABA51A693C7D7` (InstantAction). The draw is saved only where it differs from the variant. No draw is added or removed.
 
 Saves: the staff world's actors and the staff members and candidates gain optional, validated fields (the sprite wrapper and source, `SpriteDraw`); a save without them gets a fresh stand source at the first update.
+
+## Coaster rating, placement and motion (round 11, package H, October 31, 2026)
+
+The coaster's rating pass (`0x43C450`, step `0x43DC50`, final `0x43DF90`), speed cap (`0x43C3D0`), car offsets (`0x43BC20`), train placement (`0x43C1F0`) and motion tick (`0x43CE20`) follow tp.exe's single-precision instruction order with no fused multiply-adds (the Mac's `fmadds`), and the trains wrap by the controller's end coordinate (`+0xA8`) instead of the sample count; bit-exact against isolated tp.exe runs (`CoasterRatingGolden`, ORACLE X44). A coaster's content moves: `CoasterTests.BuiltCoasterRunsArePinned` `0x0FE29AA5CBF09FDB` to `0x9F260909CADDDC29` (reopened `0xE71F6F7026ACA2B3` to `0x564523CD91FD6C57`) and `OriginalCoasterImportTests.AnImportedSyntheticCoasterRunsDeterministically` `0x010C244879E72489` to `0x5BCB719E357F5EA7`. The `BuildStepsTests` economy digests and the fixed-run pin `0xB4AEC10551DF2738` did not move. The placement validator's turn angle and window (`0x434740`) are single steps too and the link test skips nodes of one cell column (`0x439C5F..0x439C81`); neither moved a pin.
+
+Saves: none changed; the end coordinate is derived at every rebuild and neither saved nor hashed.

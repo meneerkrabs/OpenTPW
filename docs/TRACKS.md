@@ -39,7 +39,7 @@ low confidence); 17 has no known writer; the walk accepts 11, 13, 16, 18 and 25.
 | type | +8 | cell type (above); the map's own type byte stays in sync, so guests and the object rules see an occupied cell |
 | mask | +0xC | connections: 0x01 −Y, 0x04 +X, 0x10 +Y, 0x40 −X |
 | link | +0xD | flow heading bit: the line's drawing direction at lay time (ORed on a tile with more than two arms), rewritten by the walk at corners |
-| flags | +0xE | bits 0–3 the bridge state, 0x10 add-on ("Add-ons"); OpenTPW keeps 0x20 for "replaced path cells" (TRACK-010) |
+| flags | +0xE | bits 0–3 the bridge state, 0x10 add-on ("Add-ons"); the word is assigned whole by the bridge ops ("Bridges"); OpenTPW wrote 0x20 for "replaced path cells" until round 11 and no longer does (a save of that time keeps the bit) |
 | parent | +0x10 | origin cell index in an extension cell |
 | family/piece/rotation | +0x14/+0x18/+0x1C | the chosen piece |
 | overlap | +0x20 | how often the same tile was written again (free of charge) |
@@ -59,16 +59,20 @@ Adjustments, in order: (1) a straight with link 0x40 or 0x10 turns +180°; (2) p
 (0x04,0x05)} adds 16 (B → B2); (4) type 16 crossings: link 0x14 sets 90°, 0x41 adds 16, 0x50 sets 270° and adds 16 (X2, pieces 20–24). Types 4, 5,
 7, 9, 10, 12, 17 and the station tiles draw nothing.
 
-Bridges: a tile with at most two arms and no corner (a straight, a single-arm end or an armless tile) over the paths it cleared (TRACK-010) gets bit 1. The PC original (`[TPW-EXE:0x538A92]`) sets the bridge word on a kart or water
-tile with at most two arms and no corner whose four map cells hold a path or queue, which stay in the map layer under the track; water is no bridge
-(inside the park water cells are map type 0), and only type 25 tests map types 2, 7 and 30, which exist only outside the park;
-the context-free host second pass turns it into H (neither neighbour bridged), H_U (only ahead), H_D (only behind) or H_A (both), with ahead
-and behind following the flow link. Its historic PPC reference is `STP-PPC:0x1007A354`; that routine's identity with the newly traced PC forward pass is not verified here. A park-resume load runs that bridge pass over every tile (`TrackSave.RestoreCells`), so a save written while
-straights over terrain water still became bridges loads with plain pieces there.
+Bridges (TRACK-010, `TrackBridges`): the track type op never writes the map cell's type: a path or queue under a tile stays in the map layer beneath it (`ParkCellMap.PrimaryTypeAt`), and only the type op of a line's last
+step (`0x820AD0`, `[TPW-EXE:0x5390C0]`) removes the paths of the four cells when each is empty ground or a path (`0x53915A..0x539188`). The bridge state of a tile is then made by three ops, run by the line walker one full pass after
+the other over the line's tiles (`TrackBuilder.RunBridgeOps`), by the path and queue tools on the cell they lay (`ParkCellMap.SetType`, `0x534115` and `0x5341A2`) and by the placement's exit and entry ops:
 
-A final station-aware pass in `TrackCircuitWalker.WalkAndRefresh`, after every existing refresh, corrects ordinary bridged straights on a narrowly supported closed circuit: a unique reciprocal two-arm loop, the two native-layout station tiles first, one nonzero station owner, matching ordinary/station family types, and no add-ons or unknown flags. It uses the actual step Entry/Exit direction, not the line's retained Link. The PC forward bridge walk (`0x52C6F0`, successful same-owner reciprocal station termination `0x52CB02..31`) supports the neighbor table 1/2/8/4 for neither/ahead/behind/both. Neighbors are read by their current low bridge nibble after normalization. This does not establish formal identity with the PPC routine above.
+* op 0x85 (`[TPW-EXE:0x538A92]`, `TrackBridges.ApplyBase`): a tile with at most two arms and no corner takes the whole flag word 1 when its origin cell or the cells (0, +1), (+1, 0), (+1, +1) hold a path or queue, and loses its
+  low nibble when all four are empty; the path tool's op 0x85 (`0x534115`, `PathLaid`) assigns 1 to a tile whose nibble is clear. Taking a path off a tile runs no op (the cell remover `0x5367A0` calls none), so the bridge stays until a line op finds the cells empty.
+* op 0x86 (`[TPW-EXE:0x538BF0]`, `TrackBridges.Walk`): the forward walk `0x52C6F0` from the station's exit along the ride's heading and, when it does not come back to a station tile of the ride, the reverse walk `0x52CCB0` from the
+  entry. Each straight with a nibble gets the whole word 1 (no neighbour bridged), 2 (ahead only), 8 (behind only) or 4 (both) from the walk's own heading, with the reverse walk's rules at ends and junctions; the walk turns at corners by the
+  tile's arms, ends at a tile with no arm along its heading and answers true when the tile ahead is a station tile of the ride with an arm back. The tile of a ride is found from its owner word; a line runs the pair once for each of its tiles.
+  The walk keeps its position as plain integers and finds the record by `y × 128 + x + 1`, so a walk that leaves a row enters the next one.
+* op 0x81 (`0x53AFA0`): the piece is chosen again from the arms, flow link and flag word (`TrackPieceSelector`: H neither, H_U ahead, H_D behind, H_A both; the historic PPC reference is `STP-PPC:0x1007A354`).
 
-The strict guard is checked over the whole loop before new writes. All other cases retain the old behavior, including open, single-arm, armless, junction, nonreciprocal, mixed-owner, alternate-type and legacy circuits. The pass preserves Link and recomputes piece selection using that unchanged Link. `FlagOverPath` remains explicitly host-only memory: copying the native whole-word setter would erase the only retained bridge-base source. TRACK-010 and the retained-underlay proposal remain open: primary underlay retention, later path/queue mutation, last-path downgrade, and underlay serialization are not implemented here. Ordinary Level edits and restore rewalks reach this hook; standalone Refresh/RefreshAll or bare RestoreCells still have no station route context and may use the old approximation until rewalked. No save schema or economy/refund behavior changes.
+`TrackBridgeWalkGoldenTests` replays 700 random layouts of tp.exe's own walks run in the x86 oracle (`bridge_walk_golden.py`, `ORACLE.md` X46). A restore (`TrackSave.RestoreCells`) only chooses the pieces again: the flag words are the save's. Remaining of TRACK-010: a walk that runs
+past the structure array (an arm into empty ground reads on until the id wraps) ends false where the executable reads whatever lies after the array; the type-25 rule has no case (OpenTPW writes no type 25).
 
 Piece tables (12 bytes: handle, name, arm byte; PC kart `0x7633E8`, water `0x7634D8`): kart 20 entries, water 25: 0 none; 1 Q; 2 S; 3 B; 4 X; 5–8 X with arm masks 0x15/0x54/0x51/0x45; 9–11 H;
 12–14 H_U; 15–17 H_D; 18 H_A; 19 B2; 20–24 X2 (water only). `TrackPieceKit` loads `wr_trck<stem>.md2` / `.hmp` (water) or `gk_trck…` (kart) from the

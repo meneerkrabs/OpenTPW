@@ -439,9 +439,9 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
-	public void ALaterLinesWalkChangingAnEarlierLinesTileOutsideItsOwnClearLeavesTheEarlierLineTakenBackAfterIt()
+	public void ALaterLineCrossingAnEarlierLinesBridgeLeavesItsRampAndTheLineIsTakenBackAfterIt()
 	{
-		// the first line runs over two tiles of path: a bridge, whose ends are ramps by their bridged neighbours along the flow
+		// the first line runs over two tiles of path (they stay under it): a bridge, whose ends are ramps by their bridged neighbours along the flow
 		var bridge = new[] { (6, 0), (8, 0) };
 		void Paths( Park park, OriginalObject placed )
 		{
@@ -463,16 +463,17 @@ public partial class CoopSessionTests
 		TrackCell[]? laid = null;
 		foreach ( var (x, y) in lines )
 		{
-			// the last line crosses the bridge's second tile, which then has four arms and is no bridge: the ramp before it, the first line's tile and none of the last line's, is a plain bridge
+			// the last line crosses the bridge's second tile, which then has four arms
 			if ( (x, y) == lines[^1] )
 				laid = ramps.Select( tile => tracks.Get( tile.X, tile.Y ) ).ToArray();
 			GuestTrackLine( host, guest, view, KartAt( guest, kart, x, y ) );
 			TwinClick( twin, KartAt( twin, twinKart, x, y ) );
 		}
 		Assert.AreEqual( TrackCellsOf( twin ), TrackCellsOf( host ), "the lines laid as single player's" );
-		Assert.IsTrue( laid!.All( tile => (tile.Flags & TrackBuilder.FlagOverPath) != 0 && (tile.Flags & TrackCell.BridgeMask) == TrackCell.FlagBridgeUp ), "the bridge's first tile was a ramp" );
+		Assert.IsTrue( laid!.All( tile => (tile.Flags & TrackCell.BridgeMask) == TrackCell.FlagBridgeUp ), "the bridge's first tile was a ramp" );
+		// [BIN:TPW-EXE:0x00538A92 bridge flag] the crossing tile has four arms now: the base op skips it (0x538B05) and the walks leave its flag word as it was, so the ramp before it stays
 		for ( var index = 0; index < ramps.Length; index++ )
-			Assert.IsFalse( laid[index].SameAs( tracks.Get( ramps[index].X, ramps[index].Y ) ), "the last line's walk changed a tile of the first line's beyond its own" );
+			Assert.IsTrue( laid[index].SameAs( tracks.Get( ramps[index].X, ramps[index].Y ) ), "the last line's walk leaves the first line's ramp as it was" );
 		Assert.AreEqual( (lines.Length, 0), host.Level.UndoJournal!.TrackEntriesOf( member ) );
 		var (taken, refund) = GuestTrackBackspace( host, guest, view );
 		Assert.IsTrue( taken, "the last line's own take-back" );

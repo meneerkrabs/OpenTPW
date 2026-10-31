@@ -307,9 +307,9 @@ public class TrackSaveTests
 	}
 
 	[TestMethod]
-	public void ALoadRunsTheBridgePassSoOldWaterBridgesTurnPlain()
+	public void ALoadKeepsTheStoredFlagWordsAndPiecesAsTheBridgeOpsAloneChangeThem()
 	{
-		// a save from before TRACK-010 dropped terrain water kept bridge flags and pieces on straights over water; the restore re-runs the bridge pass
+		// a save from before TRACK-010's bridge ops holds bridge flags and pieces on straights that have no path beneath them (the host remembered the paths it had cleared): the original's flag word only changes in the bridge ops, so a load leaves them as saved
 		var cells = new ParkCellMap( 40, 40 );
 		var builder = new TrackBuilder( cells, TrackFamily.Water, () => null, new FlatGrid() );
 		var station = TrackStation.FromPlacement( 10, 9, 0 );
@@ -321,20 +321,19 @@ public class TrackSaveTests
 		var old = saved with
 		{
 			Cells = saved.Cells.Select( item => straights.Contains( item )
-				? item with { Flags = (byte)(item.Flags | TrackCell.FlagBridge), Piece = TrackPieceSelector.Select( item.Type, item.Mask, item.Link, (byte)(item.Flags | TrackCell.FlagBridge) ).Piece }
+				? item with { Flags = (byte)(item.Flags | TrackCell.FlagBridge | 0x20), Piece = TrackPieceSelector.Select( item.Type, item.Mask, item.Link, (byte)(item.Flags | TrackCell.FlagBridge) ).Piece }
 				: item ).ToList()
 		};
-		Assert.AreEqual( straights.Count, old.Cells.Count( item => (item.Flags & TrackCell.FlagBridge) != 0 ), "the old save holds bridge flags" );
-		Assert.IsTrue( old.Cells.Except( saved.Cells ).All( item => straights.All( plain => plain.Piece != item.Piece ) ), "and bridge pieces" );
-
 		var restored = new ParkCellMap( 40, 40 );
 		foreach ( var item in cells.Tracks.Cells() )
 			restored.SetType( item.X, item.Y, item.Cell.Type );
 		TrackSave.RestoreCells( restored, old );
-		var (hashA, hashB) = (new StateHasher(), new StateHasher());
-		cells.Tracks.AddCanonicalState( hashA );
-		restored.Tracks.AddCanonicalState( hashB );
-		Assert.AreEqual( hashA.Value, hashB.Value, "the loaded tiles carry the plain pieces again, without an edit next to them" );
+		foreach ( var item in old.Cells )
+		{
+			var tile = restored.Tracks.Get( item.X, item.Y );
+			Assert.AreEqual( item.Flags, tile.Flags, $"flags at {item.X},{item.Y}" );
+			Assert.AreEqual( item.Piece, tile.Piece, $"piece at {item.X},{item.Y}" );
+		}
 	}
 
 	[TestMethod]

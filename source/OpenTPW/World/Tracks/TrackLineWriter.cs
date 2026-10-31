@@ -2,8 +2,8 @@ namespace OpenTPW;
 
 /// <summary>
 /// The kart and water track mode of <see cref="CellBuildTool"/> (tool mode 11 or 16, the cell type the drag writes): the line snaps to
-/// the axis of the larger offset in steps of two cells, every tile of the line is charged <c>Costs.*TrackCell</c> once, the path cells under a tile
-/// are cleared, and consecutive tiles are connected. The level re-walks the circuit through <paramref name="changed"/> after each commit.
+/// the axis of the larger offset in steps of two cells, every tile of the line is charged <c>Costs.*TrackCell</c> once, the path cells under the line's last tile
+/// are cleared (a path under any other tile stays and the tile bridges it), and consecutive tiles are connected. The level re-walks the circuit through <paramref name="changed"/> after each commit.
 /// </summary>
 public sealed class TrackLineWriter : ICellLineWriter
 {
@@ -106,7 +106,8 @@ public sealed class TrackLineWriter : ICellLineWriter
 		{
 			var (x, y) = line[index];
 			var cost = builder.TileCost;
-			var result = write ? builder.PlaceTile( x, y, owner ) : builder.CheckTile( x, y, charged, owner );
+			// the type op's last step (0x820AD0): only the line's end tile removes the paths under it
+			var result = write ? builder.PlaceTileInLine( x, y, owner, last: index == line.Count - 1 ) : builder.CheckTile( x, y, charged, owner );
 			if ( result == CellBuildResult.Existing )
 			{
 				existing.Add( (x, y) );
@@ -133,6 +134,8 @@ public sealed class TrackLineWriter : ICellLineWriter
 			for ( var index = 0; index < processed; index++ )
 				builder.ApplyLineLink( line[index], direction );
 		}
+		if ( write && processed > 0 )
+			builder.RunBridgeOps( line.Take( processed ).ToArray() );
 		return new SegmentResult( end, built, charged, stoppedBy, endedOnExisting )
 		{
 			Start = start,

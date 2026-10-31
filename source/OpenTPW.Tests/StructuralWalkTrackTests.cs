@@ -18,9 +18,10 @@ public class StructuralWalkTrackTests
 	private static (ParkCellMap Map, TrackBuilder Builder) Tile( TrackFamily family, bool overPath )
 	{
 		var map = new ParkCellMap( 16, 16 );
-		if ( overPath ) map.SetType( 4, 4, ParkCellType.Path );
 		var builder = new TrackBuilder( map, family, () => null, new FlatGrid() );
 		Assert.AreEqual( CellBuildResult.Ok, builder.PlaceTile( 4, 4 ) );
+		// a path laid over the tile bridges it (the path tool's op 0x85, 0x534115)
+		if ( overPath ) map.SetType( 5, 5, ParkCellType.Path );
 		Assert.AreEqual( overPath, (map.Tracks.Get( 4, 4 ).Flags & TrackCell.BridgeMask) != 0 );
 		return (map, builder);
 	}
@@ -134,9 +135,8 @@ public class StructuralWalkTrackTests
 			if ( close )
 			{
 				var tile = map.Tracks.Get( 4, 4 );
-				tile.Flags &= unchecked((byte)~TrackBuilder.FlagOverPath);
+				tile.Flags = 0;
 				map.Tracks.Set( 4, 4, tile );
-				builder.Refresh( 4, 4 );
 				Assert.AreEqual( 0, map.Tracks.Get( 4, 4 ).Flags & TrackCell.BridgeMask );
 				Assert.IsTrue( map.Tracks.Version > trackVersion );
 			}

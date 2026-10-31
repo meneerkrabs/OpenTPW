@@ -44,7 +44,8 @@ public partial class Level
 			return;
 		}
 		// an object built without its runtime (a layout rig) is no placed thing the select could map
-		if ( item is not { Runtime: not null } || WindowTarget( item ) is not { } target )
+		// the developer prototype (PlacedRide) is no placed thing of the park's catalogue: it has no entry the select could map
+		if ( item is not { Runtime: not null } || item is PrototypeRide || WindowTarget( item ) is not { } target )
 			return;
 		var station = trackStations != null && trackStations.TryGetValue( target, out var laid ) ? laid : TrackStation.FromPlacement( target.Placement.X, target.Placement.Y, target.Placement.Rotation );
 		ClientToolGlobals.Exit = station.Exit;

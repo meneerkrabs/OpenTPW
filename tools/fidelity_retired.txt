@@ -94,6 +94,7 @@ COAST-035 docs/progress/2026-10-30-r11-coaster-tool.md
 COMPAT-001 docs/COMPATIBILITY.md
 COMPAT-005 docs/reverse/APPROX-TRACE.md
 COMPAT-006 docs/COMPATIBILITY.md
+COMPAT-007 docs/progress/2026-10-16-park-name-and-sign-paint-read-in-tp-exe.md
 COMPAT-008 docs/reverse/APPROX-TRACE.md
 COMPAT-009 docs/COMPATIBILITY.md
 COMPAT-011 docs/reverse/APPROX-TRACE.md

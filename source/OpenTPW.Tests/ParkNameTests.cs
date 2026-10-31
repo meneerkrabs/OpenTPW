@@ -34,7 +34,7 @@ public class ParkNameTests
 	{
 		Assert.AreEqual( new ParkNameLines( "Wonder", "Land" ), ParkNameLines.FromSavedGate( "Wonder", "Land" ) );
 		Assert.AreEqual( new ParkNameLines( "", "Land" ), ParkNameLines.FromSavedGate( "", "Land" ) );
-		Assert.IsNull( ParkNameLines.FromSavedGate( "", "" ), "an unnamed gate keeps the default lines" );
+		Assert.AreEqual( new ParkNameLines( "", "" ), ParkNameLines.FromSavedGate( "", "" ), "a blank name is a name: the rename dialog's OK tests no emptiness (0x4993E0)" );
 		Assert.IsNull( ParkNameLines.FromSavedGate( null, "Land" ) );
 		Assert.IsNull( ParkNameLines.FromSavedGate( new string( 'x', ParkNameLines.MaximumLength + 1 ), "Land" ), "a line longer than the gate holds is refused" );
 		Assert.IsNull( ParkNameLines.FromSavedGate( "Wonder\u0007", "Land" ), "a control character is refused" );

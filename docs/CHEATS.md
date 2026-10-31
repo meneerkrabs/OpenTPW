@@ -205,7 +205,7 @@ extension record, so such a park loads with the extension off.
     original it would start in cheat mode, but here a player who never cheated keeps an unmarked park whose save and hash are as before.
   - `[EXT:cheats-park-mode]`: the original's three first-use guards that clear the mode once per process run (above) are not reproduced; the mode belongs to the park.
   - `[EXT:cheats-turn-boundary]`: every cheat applies at the next park turn (K1), so after the secret name the keys work from the next turn on.
-  - The message of type `0x15` is not posted (its listeners are unknown, COMPAT-007).
+  - The message of type `0x15` is not posted: its subscriber list in the message centre `0x788D3C` is empty (no `0x40F9E0` subscribe site uses the type), so posting it changes nothing (COMPAT-007, retired).
 
 ## The cheats window (K3)
 

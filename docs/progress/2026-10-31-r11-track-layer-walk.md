@@ -1,0 +1,5 @@
+## Track layer, walk records and heights (October 31, 2026)
+
+Round 11 package E reads the track layer's open items in tp.exe (REA, `dis.py`; the Mac decomp only pointed to the code). Items are added below as they land.
+
+- **GUEST-013 (retired)**: the staff drop (`0x46CC40`) and the place click (`0x46C8E0`) refuse a cell whose second-layer record is of a track kind: `0x5363F0` follows an extension record (kind 12 or 17, `0x53AD90`) to its parent word and answers the kind test `0x53AD30` (kinds 0xB, 0xD, 0x10, 0x12 and 0x19) on it, and `0x536450` is the same walk for the hoarding kind (a subset). OpenTPW reads the record through the structure type the queue validator already uses (`QueueCellValidator.StructureTypeAt`: the track layer, and the fence post with the three cells beside it), so a path or queue cell over a straight or stub tile, and the cells next to a fence post, no longer take a staff drop. The occupancy refusal of worlds that keep the cells they were given stays `[EXT:staff-drop-occupancy-refusal]`.

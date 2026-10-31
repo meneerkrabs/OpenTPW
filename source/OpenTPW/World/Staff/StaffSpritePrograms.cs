@@ -51,13 +51,13 @@ internal sealed class StaffSpriteProgramSet
 
 internal static class StaffSpritePrograms
 {
-	private const int Scratch = 0, Frame = 13, FrameCount = 14, Flags = 16, Intro = 17, Hold = 18;
+	private const int Scratch = 0, Frame = 13, FrameCount = 14, Heading = 15, Flags = 16, Intro = 17, Hold = 18;
 	internal static readonly StaffSpriteProgramSet Builtin = Build();
 	internal static bool IsEntry( StaffSpriteProgram program ) => program is
 		StaffSpriteProgram.Walk or StaffSpriteProgram.Run or StaffSpriteProgram.Stand or StaffSpriteProgram.Patrol or
 		StaffSpriteProgram.Research or StaffSpriteProgram.Sweep or StaffSpriteProgram.Repair or StaffSpriteProgram.Strike or
 		StaffSpriteProgram.State6 or StaffSpriteProgram.Dangling or StaffSpriteProgram.Catch or StaffSpriteProgram.Hold or
-		StaffSpriteProgram.Template24 or StaffSpriteProgram.Template25 or StaffSpriteProgram.Performance0 or
+		StaffSpriteProgram.Template24 or StaffSpriteProgram.Template25 or StaffSpriteProgram.HireFigure or StaffSpriteProgram.Performance0 or
 		StaffSpriteProgram.Performance1 or StaffSpriteProgram.Performance2 or StaffSpriteProgram.Performance3;
 
 	// [BIN:TPW-EXE:0x0075A418 bounded staff graphs] SET flags, SLOT, FRAME yields, and semantic JMP; catch hands off to hold
@@ -88,6 +88,12 @@ internal static class StaffSpritePrograms
 		// [BIN:TPW-EXE:0x004D6A50 guard release] escort completion/stuck queues template 24 before releasing the guest
 		Ordinary( StaffSpriteProgram.Template24, 9, Enumerable.Range( 0, 8 ), StaffSpriteProgram.Stand );
 		programs.Add( StaffSpriteProgram.Template25, new[] { new StaffSpriteInstruction( StaffSpriteOp.Frame, 0 ), Jump( StaffSpriteProgram.Template25 ) } );
+
+		// [BIN:TPW-EXE:0x0074F758 hire figure script] SET register 0x10 (flags) = 0x51000 (0x4766D0), SLOT 1 (0x4768B0), SET register 0xF (heading) = 5, FRAME 0 to 7 (0x476940, one per step) and JMP back to the script's own start (0x476020, 0x74F758), so the flags and heading are set again every round
+		var hire = new List<StaffSpriteInstruction> { new( StaffSpriteOp.Set, Flags, 0x51000 ), new( StaffSpriteOp.Slot, 1 ), new( StaffSpriteOp.Set, Heading, 5 ) };
+		hire.AddRange( Enumerable.Range( 0, 8 ).Select( frame => new StaffSpriteInstruction( StaffSpriteOp.Frame, frame ) ) );
+		hire.Add( Jump( StaffSpriteProgram.HireFigure ) );
+		programs.Add( StaffSpriteProgram.HireFigure, hire.ToArray() );
 
 		// [BIN:TPW-EXE:0x0074F7C8 performance graphs] program 0 has an inclusive intro, main range and hold+1 zero-frame yields
 		programs.Add( StaffSpriteProgram.Performance0, new StaffSpriteInstruction[]

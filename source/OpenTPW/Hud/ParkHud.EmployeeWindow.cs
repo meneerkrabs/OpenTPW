@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x004b6080 employee window] the opener stores the member, builds table 0x756f48 through 0x48cea0 (handler 0x4b5cb0, frames 0x511 and 0x512) and
 // posts help 0xc0; 0x48cea0 first closes the window that is open (0x485b40), so the All Staff list (0x496088, its row message 0x400) gives way to it
 // [BIN:TPW-EXE:0x00486920 thing info] a click on a staff thing (types 4-8) opens this window too; OpenTPW opens it from the staff list (no staff click in the park)
-// [APPROX:UI-092] the employee portrait reads the member's world source output at yaw zero (the source is the original's, StaffSpriteState), with the existing hire loop when no source shows a frame; this is not the original independent clone (0x486530 / 0x486610). The clone's timing/state/flag history, its source-loss lifecycle, native depth/occlusion and viewport/raster parity remain open; employee-only nominal geometry is 2.4 with authored feet (526,476).
+// [APPROX:UI-092] the portrait is the original's independent clone (full copy 0x486530 at the window's refresh, partial copy 0x486610 on every update, stepped by the sprite scheduler); the staff's sprite placement 0x475480 is not ported, so the clone's heading is the member's current sector, and the window depth word, native depth/occlusion and viewport/raster parity remain open; employee-only nominal geometry is 2.4 with authored feet (526,476).
 public sealed partial class ParkHud
 {
 	private static LayoutTable EmployeeTable => OriginalLayoutTables.EmployeeWindow;
@@ -48,6 +48,7 @@ public sealed partial class ParkHud
 		employeeArrows = StaffMembers.Count >= 2;
 		RefreshEmployeeStats();
 		employeeScreen ??= CreateEmployeeScreen();
+		CloneEmployeePortrait( member );
 		Stack.Push( employeeScreen );
 		employeeScreen.Focus( employeeScreen.Find( "exit" ) );
 		PostPatrolAreaHelp( member );
@@ -93,6 +94,7 @@ public sealed partial class ParkHud
 			return false;
 		employeeId = next.Id;
 		RefreshEmployeeStats();
+		CloneEmployeePortrait( next );
 		PostPatrolAreaHelp( next );
 		return true;
 	}
@@ -231,28 +233,28 @@ public sealed partial class ParkHud
 		return true;
 	}
 
-	private (StaffType Type, int Variant)? employeePortraitKey;
-	private float employeePortraitStart;
+	/// <summary>The portrait's frame: the clone of the employee's sprite (<see cref="PortraitSprites"/>), whatever became of the employee since it was made.</summary>
+	private UiSpriteFrame? EmployeePortraitFrame() => level.StaffRenderer?.SpriteFrame( level.Portraits.StaffClone );
 
-	/// <summary>The employee's published world frame at yaw zero, otherwise the existing role/variant hire-loop fallback.</summary>
-	private UiSpriteFrame? EmployeePortraitFrame()
+	/// <summary>The portrait's full copy of the selected employee's sprite, made as the window is built and by every refresh (the cycle arrows).</summary>
+	// [BIN:TPW-EXE:0x004b5330 employee portrait] the refresh's vtable +0x18 takes the portrait control's rectangle (0x65d4f6) and calls 0x486530 with the selected staff, the control's depth word (+0xE0) + 1 and scale 8.0: the window's one clone is replaced, and a member without a sprite (+0x0C is 0, a resting member) leaves none
+	private void CloneEmployeePortrait( StaffMember member )
 	{
-		(StaffType Type, int Variant)? key = Employee is { } member ? (member.Type, StaffSpriteRules.KeyOf( member )) : null;
-		if ( key != employeePortraitKey )
-		{
-			employeePortraitKey = key;
-			employeePortraitStart = Time.Now;
-		}
-		// Keep the old fallback clock/key updated even while a live output is available.
-		if ( Employee is { } selected && level.StaffRenderer?.EmployeeFrame( selected ) is { } live )
-			return live;
-		return key is { } chosen ? level.StaffRenderer?.PortraitFrame( chosen.Type, chosen.Variant, Time.Now - employeePortraitStart ) : null;
+		var table = EmployeeTable.Control( 0x511 );
+		var inner = table.Inner ?? table.Rect;
+		var placement = PortraitSprites.Placement( (int)inner.X, (int)inner.Y, (int)inner.Right, (int)inner.Bottom, PortraitSprites.EmployeeScale, Stack.Screens.Count + 1 );
+		level.Portraits.CloneStaff( member, placement, PortraitSprites.EmployeeScale );
 	}
 
 	private UiScreen CreateEmployeeScreen()
 	{
 		var screen = new EmployeeScreen( this );
-		screen.Removed = CloseEmployeeRenameDialog;
+		// [BIN:TPW-EXE:0x6FFE70 employee window vtable +0x20] the close hook is 0x4b6b80, which jumps to 0x486630: the clone goes with the window
+		screen.Removed = () =>
+		{
+			CloseEmployeeRenameDialog();
+			level.Portraits.Close();
+		};
 		var table = EmployeeTable;
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
 		var portrait = table.Control( 0x511 );
@@ -261,7 +263,7 @@ public sealed partial class ParkHud
 		var stats = table.Control( 0x512 );
 		screen.Add( new UiModelImage { Id = "portraitFrame", Model = portrait.Model!, Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "statsFrame", Model = stats.Model!, Bounds = stats.Rect, Anchor = UiAnchor.Center } );
-		// [BIN:TPW-EXE:0x4b5330 employee figure] 0x486530 clones the employee's live sprite at scale 8.0, with draw depth control +0xE0 + 1; the host observes its current world output, with the existing hire-loop fallback (UI-092).
+		// [BIN:TPW-EXE:0x4b5330 employee figure] 0x486530 clones the employee's live sprite at scale 8.0, with draw depth control +0xE0 + 1 (UI-092)
 		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = EmployeePortraitFrame, Bounds = inner, Anchor = UiAnchor.Center,
 			FeetInCanvas = EmployeePortraitGeometry.Feet( inner ), CanvasUnitsPerPixel = EmployeePortraitGeometry.CanvasUnitsPerPixel } );
 		var title = table.Control( 0x520 );
@@ -329,6 +331,8 @@ public sealed partial class ParkHud
 				owner.CloseEmployeeWindow();
 				return true;
 			}
+			// [BIN:TPW-EXE:0x004b5d4d window update] message 0x1E, the HUD's pass of every frame (0x54FA03 -> 0x4813b0 -> 0x658f6c), enables the pick-up button and then refreshes the portrait's clone (0x486610)
+			owner.level.Portraits.Refresh();
 			owner.employeeStatsAge += Math.Max( 0, context.Delta );
 			// [BIN:TPW-EXE:0x004b5d97 stats refresh] message 0x10 of timer 0x80080 refreshes the stats frame (0x4b58b0)
 			if ( owner.employeeStatsAge >= EmployeeStatsRefreshSeconds )

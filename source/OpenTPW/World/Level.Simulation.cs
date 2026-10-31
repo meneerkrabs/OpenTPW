@@ -126,6 +126,7 @@ public partial class Level
 		if ( substep.Running )
 		{
 			Guests?.SetBodySpriteClock( spriteClock );
+			SpriteClockMilliseconds = spriteClock;
 			// the staff's sprite sources and the staff tool's sprite keep the same sample (the native scheduler reads one clock sample per pass)
 			if ( Park != null )
 				Park.Economy.Staff.SpriteClockMilliseconds = spriteClock;
@@ -209,7 +210,15 @@ public partial class Level
 		Guests?.ScheduleBodySprites();
 		StaffWorld?.ScheduleSprites( clock );
 		StaffPlacement?.ScheduleSprite( clock );
+		Portraits.Tick( clock );
 	}
+
+	/// <summary>The windows' sprites: the employee and visitor portrait clones and the hire figure (stepped by <see cref="ScheduleSprites"/>, never saved).</summary>
+	internal PortraitSprites Portraits => portraits ??= new();
+	private PortraitSprites? portraits;
+
+	/// <summary>The sprite clock sample of the latest running tick (<see cref="GuestSimulation.BodySpriteSampleAtTick"/>), the clock a window's new sprite is made at; 0 before the first tick.</summary>
+	internal int SpriteClockMilliseconds { get; set; }
 
 	private void PrepareRideBodyPoses()
 	{

@@ -46,6 +46,17 @@ public sealed class StaffSpriteState
 		_ => 8
 	};
 
+	/// <summary>The role a sprite category belongs to (the inverse of <see cref="CategoryOf"/>), null for another category.</summary>
+	public static StaffType? TypeOfCategory( int category ) => category switch
+	{
+		4 => StaffType.Entertainer,
+		5 => StaffType.Handyman,
+		6 => StaffType.Mechanic,
+		7 => StaffType.Guard,
+		8 => StaffType.Researcher,
+		_ => null
+	};
+
 	/// <summary>The first template number of the performance entries (13 to 16 are the bank's entries 0 to 3, the table <c>0x0075A418</c> slots 13 to 16 hold the entry indices 0 to 3).</summary>
 	public const int FirstPerformanceTemplate = 13;
 

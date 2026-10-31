@@ -100,21 +100,22 @@ public class EmployeePortraitGeometryTests
 				StaffSpriteSet.Empty, StaffPlacementRig.Create( () => null, () => null, (_, _) => false ) );
 			Set( Renderer, "sprites", Sprites ); Set( Renderer, "material", Empty<Material<ObjectUniformBuffer>>() );
 			Textures.Add( TextureSentinel() ); Set( Level, "<StaffRenderer>k__BackingField", Renderer );
+			// the member's source exists before the window opens (a source made long enough ago to be due at once, in the sweep the member's job queued), so the window's full copy binds it
+			Member.Sprite.Create( Member.Type, StaffSpriteRules.KeyOf( Member ), StaffSpriteEvents.Stand, -1000, Sprites );
+			Member.Sprite.QueueTemplate( StaffSpriteEvents.TemplateOf( Member.Type, Member.Job ) );
+			Member.Sprite.ApplyPending( Member.Type, StaffSpriteRules.KeyOf( Member ), Sprites );
 			Assert.IsTrue( Hud.OpenEmployeeWindow( Member ) );
 		}
+		/// <summary>One frame at the time (seconds): the source's pass, the sprite scheduler's pass over the window's clone, the window's update message, then the world's pass.</summary>
 		public int Prepare( float now )
 		{
 			OpenTPW.Level.Current = Level; Time.Delta = 0.07f; Time.Now = now;
-			if ( Member.Sprite.Source == null && StaffSpriteRules.HasBodySprite( Member ) )
-			{
-				// a source made long enough ago to be due at once, in the sweep the member's job queued
-				Member.Sprite.Create( Member.Type, StaffSpriteRules.KeyOf( Member ), StaffSpriteEvents.Stand, -1000, Sprites );
-				Member.Sprite.QueueTemplate( StaffSpriteEvents.TemplateOf( Member.Type, Member.Job ) );
-				Member.Sprite.ApplyPending( Member.Type, StaffSpriteRules.KeyOf( Member ), Sprites );
-			}
 			Member.Sprite.ApplyPending( Member.Type, StaffSpriteRules.KeyOf( Member ), Sprites );
 			if ( Member.Sprite.Tick( (int)(now * 1000f) ).Status == StaffSpriteTickStatus.Yielded )
 				yields++;
+			Level.SpriteClockMilliseconds = (int)(now * 1000f);
+			Level.Portraits.Tick( Level.SpriteClockMilliseconds );
+			Level.Portraits.Refresh();
 			return Renderer.PrepareWorld();
 		}
 		public UiSpriteFrame Expected( int slot, int step, int direction, bool mirror )
@@ -172,16 +173,15 @@ public class EmployeePortraitGeometryTests
 	[DataRow( 1000, 1000 )]
 	[DataRow( 801, 601 )]
 	[DataRow( 64, 48 )]
-	public void ActualCallbackDrawsLiveNonWalkPhaseAndExistingFallbackAtEmployeeGeometry( int width, int height )
+	public void ActualCallbackDrawsTheClonesLiveNonWalkPhaseAtEmployeeGeometry( int width, int height )
 	{
 		foreach ( var directions in new[] { 5, 8 } )
 			foreach ( var heading in new[] { -1, 1 } )
 				foreach ( var (a, b) in new[] { (128, 128), (256, 64) } )
 				{
 					var rig = new Rig( directions, a, b ); var figure = Figure( rig.Hud );
-					Time.Now = 10; Assert.IsNull( rig.Renderer.EmployeeFrame( rig.Member ) );
-					Assert.AreEqual( rig.Expected( 1, 0, directions == 5 ? 3 : 5, directions == 5 ), figure.Frame()!.Value );
-					AssertDraw( figure, width, height, a, b, 526, 476, 2.4f );
+					Time.Now = 10;
+					Assert.IsNull( figure.Frame(), "the clone copied a source that had shown nothing yet, and there is no hire-loop fallback (0x486530)" );
 					foreach ( var now in new[] { 10f, 10.07f, 10.14f, 10.21f } )
 					{
 						if ( now > 10 ) rig.Member.Step( heading * 0.1f, walks: false );
@@ -194,13 +194,16 @@ public class EmployeePortraitGeometryTests
 					var mirror = heading < 0 && directions == 5; var direction = heading < 0 && directions == 8 ? 6 : 2;
 					Assert.AreEqual( rig.Expected( slot, step, direction, mirror ), figure.Frame()!.Value );
 					AssertDraw( figure, width, height, a, b, 526, 476, 2.4f );
-					Assert.AreEqual( 10f, Get<float>( rig.Hud, "employeePortraitStart" ) );
-					rig.Member.State = StaffState.Resting; rig.Prepare( 10.4f );
-					Assert.IsNull( rig.Renderer.EmployeeFrame( rig.Member ) );
-					Assert.AreEqual( rig.Expected( 1, 6, directions == 5 ? 3 : 5, directions == 5 ), figure.Frame()!.Value,
-						"source loss keeps the established fallback phase instead of freezing or restarting" );
+					// the source is gone (a resting member's source is deleted): the partial copy no longer reaches it and the clone goes on by its own clock (0x486610)
+					rig.Member.Sprite.Delete();
+					var kept = rig.Steps;
+					for ( var pass = 1; pass <= 3; pass++ )
+					{
+						rig.Prepare( 10.21f + pass * 0.07f );
+						var (lostSlot, lostStep) = StaffSpriteRules.ResolveSteps( StaffSpriteRules.Sweep, kept - 1 + pass, rig.Atlas.Animations.Animations );
+						Assert.AreEqual( rig.Expected( lostSlot, lostStep, direction, mirror ), figure.Frame()!.Value, "the clone plays on after its source is gone" );
+					}
 					AssertDraw( figure, width, height, a, b, 526, 476, 2.4f );
-					Assert.AreEqual( 10f, Get<float>( rig.Hud, "employeePortraitStart" ) );
 				}
 	}
 
@@ -219,7 +222,6 @@ public class EmployeePortraitGeometryTests
 		var save = ParkSaveFile.Serialize( observed.Economy ); var random = observed.Economy.World.State;
 		var controlSave = ParkSaveFile.Serialize( control.Economy ); var controlRandom = control.Economy.World.State;
 		var frame = figure.Frame(); Assert.IsNotNull( frame );
-		Assert.AreEqual( observed.Renderer.EmployeeFrame( observed.Member ), frame );
 		for ( var index = 0; index < 100; index++ )
 		{
 			Assert.AreEqual( frame, figure.Frame() ); AssertDraw( figure, 801, 601, 128, 128, 526, 476, 2.4f );
@@ -271,19 +273,19 @@ public class EmployeePortraitGeometryTests
 	}
 
 	[TestMethod]
-	public void MissingRendererBankAndTextureKeepExistingNullDrawAndFallbackClock()
+	public void MissingRendererBankAndTextureLeaveTheFigureEmpty()
 	{
-		var rig = new Rig(); var figure = Figure( rig.Hud ); Time.Now = 5; Assert.IsNotNull( figure.Frame() );
+		var rig = new Rig(); var figure = Figure( rig.Hud ); rig.Prepare( 5 ); Assert.IsNotNull( figure.Frame() );
 		void EmptyDraw()
 		{
 			Assert.IsNull( figure.Frame() ); var context = Context( 1280, 720 ); figure.Draw( context, false, false );
-			Assert.AreEqual( 0, context.Batch.Draws.Count ); Assert.AreEqual( 5f, Get<float>( rig.Hud, "employeePortraitStart" ) );
+			Assert.AreEqual( 0, context.Batch.Draws.Count );
 		}
-		Time.Now = 5.2f; Set( rig.Level, "<StaffRenderer>k__BackingField", null ); EmptyDraw();
+		Set( rig.Level, "<StaffRenderer>k__BackingField", null ); EmptyDraw();
 		Set( rig.Level, "<StaffRenderer>k__BackingField", rig.Renderer );
 		Set( rig.Renderer, "sprites", StaffSpriteSet.Empty ); EmptyDraw(); Set( rig.Renderer, "sprites", rig.Sprites );
 		var texture = rig.Textures.Single(); rig.Textures.Clear(); EmptyDraw(); rig.Textures.Add( texture );
-		Time.Now = 5.4f; Assert.AreEqual( rig.Expected( 1, 6, 3, true ), figure.Frame()!.Value );
+		Assert.AreEqual( rig.Expected( 4, 0, 0, false ), figure.Frame()!.Value );
 		AssertDraw( figure, 1280, 720, 128, 128, 526, 476, 2.4f );
 	}
 

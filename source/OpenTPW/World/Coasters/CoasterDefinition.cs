@@ -151,6 +151,24 @@ public sealed class CoasterDefinition
 	// ---- Definition fields (defaults of 0x2d274) --------------------------------------------------------
 
 	public uint Flags { get; private set; }
+	/// <summary>The track's collision profile (<c>asTrackCollisionPoints</c>, definition <c>+0x9c</c> and count <c>+0xa0</c>): the defaults unless the .sam names the array.</summary>
+	public IReadOnlyList<(float X, float Y)> CollisionPoints { get; private set; } = CoasterCollision.DefaultPoints;
+
+	// [BIN:TPW-EXE:0x73ed30 collision point keys] the loader's field table names the array asTrackCollisionPoints (type 3, an array of structs) with the float fields fCollisionX and fCollisionY (type 7); the array's keys are written like the other arrays', asTrackCollisionPoints[i].fCollisionX (no PC coaster.sam names them)
+	private static IReadOnlyList<(float X, float Y)>? CollisionPointsFrom( IReadOnlyDictionary<string, string> values )
+	{
+		var points = new List<(float X, float Y)>();
+		for ( var index = 0; ; index++ )
+		{
+			var hasX = TryFloat( values, $"asTrackCollisionPoints[{index}].fCollisionX", out var x );
+			var hasY = TryFloat( values, $"asTrackCollisionPoints[{index}].fCollisionY", out var y );
+			if ( !hasX && !hasY )
+				break;
+			points.Add( (x, y) );
+		}
+		return points.Count == 0 ? null : points;
+	}
+
 	public float Curviness { get; private set; } = 1.25f;
 	public float StraightDivisor { get; private set; } = 1.25f;
 	public float AccelerationPerHeight { get; private set; } = 1.5f;
@@ -489,6 +507,7 @@ public sealed class CoasterDefinition
 		int Int( string key, int current ) => TryInt( values, key, out var value ) && value != 0 ? value : current;
 		bool Flag( string key ) => TryInt( values, key, out var value ) && value != 0;
 		const string Coaster = "sCoasterType.";
+		definition.CollisionPoints = CollisionPointsFrom( values ) ?? CoasterCollision.DefaultPoints;
 		definition.Curviness = Float( Coaster + "fCurviness", definition.Curviness );
 		definition.StraightDivisor = Float( Coaster + "fStraightDivisor", definition.StraightDivisor );
 		definition.AccelerationPerHeight = Float( Coaster + "fAccelerationPerHeight", definition.AccelerationPerHeight );

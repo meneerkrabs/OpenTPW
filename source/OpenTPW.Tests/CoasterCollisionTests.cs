@@ -304,4 +304,15 @@ public class CoasterCollisionTests
 		Assert.AreEqual( 0, Run( 1, 2, 3, 1 ).Count, "A and D in one cell column: skipped" );
 		Assert.AreEqual( 2, Run( 1, 2, 1, 4 ).Count, "A and C sharing a column is not a skip (0x439c5f..0x439c81 compare B with C and A with D)" );
 	}
+
+	[TestMethod]
+	public void ASamCanNameTheCollisionProfile()
+	{
+		var settings = CoasterTests.PcSettings();
+		CollectionAssert.AreEqual( CoasterCollision.DefaultPoints.ToArray(), CoasterDefinition.FromValues( settings ).CollisionPoints.ToArray(), "no key: the defaults of 0x74caa0" );
+		settings["asTrackCollisionPoints[0].fCollisionX"] = "2";
+		settings["asTrackCollisionPoints[0].fCollisionY"] = "-1.5";
+		settings["asTrackCollisionPoints[1].fCollisionX"] = "3";
+		CollectionAssert.AreEqual( new[] { (2f, -1.5f), (3f, 0f) }, CoasterDefinition.FromValues( settings ).CollisionPoints.ToArray(), "the array replaces the defaults; a missing field is 0" );
+	}
 }

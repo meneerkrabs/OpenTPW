@@ -404,7 +404,7 @@ public sealed class CoasterRide
 		// Controller +264: the sections with both node flags 0x40 and 0x80 (CoasterRating.FinalFor; ORACLE F8).
 		var counted = CoasterRating.FinalFor( 0, 0, 0, 0, nodes.Select( node => (uint)node.Flags ), 0, 0, 0, 0 ).Sections;
 		Rating = result with { CountedSections = counted };
-		var collisions = CoasterCollision.Run( NodesForCollision( nodes, pass, sampling.KnotCoordinates, Definition ), samples );
+		var collisions = CoasterCollision.Run( NodesForCollision( nodes, pass, sampling.KnotCoordinates, Definition ), samples, Definition.CollisionPoints );
 		IntersectionCount = collisions.Count;
 		CollisionLists = collisions.Lists;
 		// [BIN:TPW-EXE:0x43c72f braking start] ctl+0x134 = (n − 1) − v_last/spacing with n the sample count; the end node stands on the first station node, so the brake zone is the stretch just before the sample list's end, which is the start of the platform
@@ -451,7 +451,7 @@ public sealed class CoasterRide
 			return Array.Empty<IReadOnlyList<int>>();
 		sampling ??= curve.Sample( pass.Knots, definition.Curviness );
 		// one sweep, as the original runs per frame: the live marker must stay cheap on a tangled chain (the repeats cost up to 16x)
-		return CoasterCollision.Run( NodesForCollision( chain, pass, sampling.KnotCoordinates, definition ), sampling.Samples, maxPasses: 1 ).Lists;
+		return CoasterCollision.Run( NodesForCollision( chain, pass, sampling.KnotCoordinates, definition ), sampling.Samples, definition.CollisionPoints, maxPasses: 1 ).Lists;
 	}
 
 	/// <summary>The nodes as the self-intersection pass sees them: the sample index of each node and the radius of its pylon control.</summary>

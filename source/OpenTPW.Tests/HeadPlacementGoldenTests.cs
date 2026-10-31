@@ -46,7 +46,7 @@ public class HeadPlacementGoldenTests
 			if ( (test.Flags & HeadPresentation.MirroredFlag) != 0 )
 				foreach ( var word in new[] { 0, 1, 2, 8, 9, 10 } )
 					node[word] = -node[word];
-			var ok = OriginalHeadMath.TryFrame( node, Floats( test.Camera ), out _, out var row, out var column, out var roll );
+			var ok = OriginalHeadMath.TryFrame( node, Floats( test.Camera ), out var row, out var column, out var roll );
 			if ( !ok )
 			{
 				// the offset is not a finite direction: the routine leaves frame 0 and takes the roll from stack words it never wrote (undefined in the original)

@@ -43,29 +43,29 @@ internal static class OriginalHeadMath
 	/// per column of the identity (<c>0x0046FD40</c>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00470040 matrix inverse] copies the source (arg 2), decomposes it, solves for the four unit columns (column j of the result is the solution for the unit vector j, 0x004700A3), and copies the result to arg 1
-	public static float[] Invert( ReadOnlySpan<float> source )
+	public static void Invert( ReadOnlySpan<float> source, Span<float> result )
 	{
-		var a = source.ToArray();
-		var indx = new int[4];
+		Span<float> a = stackalloc float[16];
+		source.CopyTo( a );
+		Span<int> indx = stackalloc int[4];
 		LuDecompose( a, indx );
-		var result = new float[16];
+		Span<float> b = stackalloc float[4];
 		for ( var column = 0; column < 4; column++ )
 		{
-			var b = new float[4];
+			b.Clear();
 			b[column] = 1f;
 			LuSolve( a, indx, b );
 			for ( var row = 0; row < 4; row++ )
 				result[row * 4 + column] = b[row];
 		}
-		return result;
 	}
 
 	// [BIN:TPW-EXE:0x0046FE20 LU decomposition] the Crout method of the Numerical Recipes (ludcmp): vv[i] = 1 / max |a[i][j]|; each column j first finishes the upper part a[i][j] -= sum a[i][k] a[k][j], then the lower part,
 	// picks the row of the largest vv[i] |sum| (a tie takes the later row), swaps it into place, and divides the column below the pivot by it; a pivot of exactly 0 (or a NaN, which the compare reads as equal) is replaced
 	// by 0x1E3CE508; every compare of the x87 code is an ordered one, so a NaN never wins
-	private static void LuDecompose( float[] a, int[] indx )
+	private static void LuDecompose( Span<float> a, Span<int> indx )
 	{
-		var vv = new float[4];
+		Span<float> vv = stackalloc float[4];
 		for ( var i = 0; i < 4; i++ )
 		{
 			double big = 0;
@@ -121,7 +121,7 @@ internal static class OriginalHeadMath
 	}
 
 	// [BIN:TPW-EXE:0x0046FD40 back substitution] lubksb: the forward pass swaps b[indx[i]] into place and subtracts a[i][j] b[j] from the first nonzero entry on; the backward pass subtracts a[i][j] b[j] for j > i and divides by a[i][i]
-	private static void LuSolve( float[] a, int[] indx, float[] b )
+	private static void LuSolve( ReadOnlySpan<float> a, ReadOnlySpan<int> indx, Span<float> b )
 	{
 		var first = -1;
 		for ( var i = 0; i < 4; i++ )
@@ -152,9 +152,10 @@ internal static class OriginalHeadMath
 	/// the fourth column of <paramref name="second"/> left as it was.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004702D0 matrix product] out[i][j] = (second[2][j] first[i][2] + second[1][j] first[i][1]) + second[0][j] first[i][0] for j below 3, plus second[3][j] on row 3; the fourth column (words 3, 7, 11, 15) is not written
-	public static void Multiply( ReadOnlySpan<float> first, float[] second )
+	public static void Multiply( ReadOnlySpan<float> first, Span<float> second )
 	{
-		var old = (float[])second.Clone();
+		Span<float> old = stackalloc float[16];
+		second.CopyTo( old );
 		for ( var i = 0; i < 4; i++ )
 		{
 			for ( var j = 0; j < 3; j++ )
@@ -175,10 +176,10 @@ internal static class OriginalHeadMath
 	// [BIN:TPW-EXE:0x0044B5E6 head frame] the node matrix with its first and third rows negated for the mirrored flag 0x400 is inverted and multiplied from the camera (0x44B637, 0x44B65C); the translation row is normalised
 	// (the sum of squares in the order x, y, z, a square root and three divisions; a NaN or infinity ends the search at frame 0, 0x44B6D4); each of the 7 rows by 8 columns of the walk takes the vector (0, 1, 0), steps 8 times by 45 degrees and
 	// then once by 30 degrees through the sine table; the angle offsets are subtracted from the negative word 0x6FE2A4, so they add a quarter turn (0x44B734..0x44B814); a direction replaces the best one when its dot product is greater (0x44B70E), rows 0 and 6 take column 0 (0x44B81C)
-	public static bool TryFrame( float[] nodeWorld, float[] camera, out float[] cameraInNode, out int row, out int column, out float roll )
+	public static bool TryFrame( ReadOnlySpan<float> nodeWorld, ReadOnlySpan<float> camera, out int row, out int column, out float roll )
 	{
-		var inverse = Invert( nodeWorld );
-		cameraInNode = inverse;
+		Span<float> cameraInNode = stackalloc float[16];
+		Invert( nodeWorld, cameraInNode );
 		Multiply( camera, cameraInNode );
 		row = 0;
 		column = 0;
@@ -190,6 +191,7 @@ internal static class OriginalHeadMath
 		var nx = (float)Div( x, length );
 		var ny = (float)Div( y, length );
 		var nz = (float)Div( z, length );
+		// [EXT:original-undefined-reads] the search ends here at frame 0 with the best direction (stack words [ebp-0x1C..-0x14]) never written, and the original goes on to build the roll from them: undefined; the host stops with roll 0
 		if ( !float.IsFinite( nx ) )
 			return false;
 		// the rotation constants: the table's values at -45, +45, 30 and 120 degrees (0x6FE2BC, 0x6FE2C0, 0x6FE2C4, 0x6FE2C8)
@@ -235,12 +237,14 @@ internal static class OriginalHeadMath
 		var rx = bz * uy - by * uz;
 		var ry = bx * uz - bz * ux;
 		var rz = by * ux - bx * uy;
-		var basis = new float[16];
+		Span<float> basis = stackalloc float[16];
+		basis.Clear();
 		basis[0] = rx; basis[1] = ry; basis[2] = rz;
 		basis[4] = ux; basis[5] = uy; basis[6] = uz;
 		basis[8] = bx; basis[9] = by; basis[10] = bz;
 		basis[15] = 1f;
-		var inverseBasis = Invert( basis );
+		Span<float> inverseBasis = stackalloc float[16];
+		Invert( basis, inverseBasis );
 		Multiply( cameraInNode, inverseBasis );
 		// 0x0046F200: fpatan(-m[1][0], m[1][1]), scaled to turns by 1 / 2 pi (0x6FE2CC)
 		roll = DetMathF.Atan2( -inverseBasis[4], inverseBasis[5] ) * 0.15915494f;

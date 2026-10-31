@@ -35,7 +35,13 @@ public static class HeadPresentation
 		-view.M13, -view.M33, -view.M23, 0,
 		position.X, position.Z, position.Y, 1 );
 
-	private static float[] RowMajor( Matrix4x4 m ) => new[] { m.M11, m.M12, m.M13, m.M14, m.M21, m.M22, m.M23, m.M24, m.M31, m.M32, m.M33, m.M34, m.M41, m.M42, m.M43, m.M44 };
+	private static void RowMajor( Matrix4x4 m, Span<float> into )
+	{
+		into[0] = m.M11; into[1] = m.M12; into[2] = m.M13; into[3] = m.M14;
+		into[4] = m.M21; into[5] = m.M22; into[6] = m.M23; into[7] = m.M24;
+		into[8] = m.M31; into[9] = m.M32; into[10] = m.M33; into[11] = m.M34;
+		into[12] = m.M41; into[13] = m.M42; into[14] = m.M43; into[15] = m.M44;
+	}
 
 	/// <param name="nodeWorld">World matrix of the head node (row vectors, translation in the fourth row).</param>
 	/// <param name="nodeFlags">The node's type flags (<see cref="ModelNode.Type"/>).</param>
@@ -54,7 +60,11 @@ public static class HeadPresentation
 		var row = 0;
 		var column = 0;
 		var roll = 0f;
-		if ( OriginalHeadMath.TryFrame( RowMajor( nodeWorld ), RowMajor( cameraWorld ), out _, out var frameRow, out var frameColumn, out var frameRoll ) )
+		Span<float> node = stackalloc float[16];
+		Span<float> camera = stackalloc float[16];
+		RowMajor( nodeWorld, node );
+		RowMajor( cameraWorld, camera );
+		if ( OriginalHeadMath.TryFrame( node, camera, out var frameRow, out var frameColumn, out var frameRoll ) )
 			(row, column, roll) = (frameRow, frameColumn, frameRoll);
 		if ( !float.IsFinite( roll ) )
 			roll = 0;

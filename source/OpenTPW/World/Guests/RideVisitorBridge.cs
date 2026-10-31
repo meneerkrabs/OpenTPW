@@ -1883,6 +1883,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 					return true;
 				var headAction = call.Argument( 5 ) == 4;
 				var onDuration = 0;
+				// [EXT:original-undefined-reads] a node the model lacks (0x556B90 returns 0 and writes nothing, 0x556D2C) leaves the stack words of the distance and heading reads undefined at 0x556F40; OpenTPW takes no walk-on time and no heading for such a pair
 				if ( WalkNodeClassDistance?.Invoke( 0x800, call.Argument( 1 ), headAction ? 0x80 : 0x800, call.Argument( 2 ) ) is { } onDistance )
 					onDuration = WalkOffDuration( onDistance );
 				var entry = new WalkRecord( guest, call.Argument( 1 ), call.Argument( 2 ), call.Argument( 3 ), call.Argument( 4 ), call.Argument( 5 ), call.Argument( 6 ), 1, now, now + onDuration );

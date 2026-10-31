@@ -158,7 +158,6 @@ public class TourAssetTests
 			if ( substep.Due )
 				world.RunPass( SimulationSubstep.Milliseconds );
 			runtime.Simulate( Tick, substep );
-			runtime.Visitors.WalkUpdate(); // the frame's walk update (0x00557D80)
 			if ( runtime.Tour is not { } tour )
 				continue;
 			// the controller is created by the script's TOUR 1 during a pass, and the step of that same substep may already follow
@@ -188,7 +187,6 @@ public class TourAssetTests
 			Assert.IsNull( runtime.Tour, "no controller before the script ran TOUR 1" );
 			for ( var tick = 0; tick < 10 * 60; tick++ )
 				runtime.Simulate( Tick );
-				runtime.Visitors.WalkUpdate(); // the frame's walk update (0x00557D80)
 			var tour = runtime.Tour;
 			Assert.IsNotNull( tour, $"{theme}: TOUR 1 created the controller" );
 			Assert.AreSame( tour, runtime.LiveTour );
@@ -243,7 +241,6 @@ public class TourAssetTests
 		{
 			guests.Tick( Tick );
 			runtime.Simulate( Tick );
-			runtime.Visitors.WalkUpdate(); // the frame's walk update (0x00557D80)
 			peak = Math.Max( peak, runtime.Tour?.Riders ?? 0 );
 		}
 		var tour = runtime.Tour!;
@@ -261,7 +258,6 @@ public class TourAssetTests
 		{
 			guests.Tick( Tick );
 			runtime.Simulate( Tick );
-			runtime.Visitors.WalkUpdate(); // the frame's walk update (0x00557D80)
 		}
 		if ( tour.Riders == 0 )
 		{

@@ -232,7 +232,7 @@ public class VisitorSpriteIntegrationTests
 	}
 
 	[TestMethod]
-	public void TheSpritePassRunsBeforeTheGuestsApplyTheirPendingRequestsPooledOrNot()
+	public void TheSpritePassFollowsTheRideScriptsAndRunsBeforeTheSweptGuestsApplyTheirPendingRequests()
 	{
 		foreach ( var pooled in new[] { true, false } )
 		{
@@ -248,8 +248,9 @@ public class VisitorSpriteIntegrationTests
 			guest.BodySprite.RestoreSnapshot( guest.BodySprite.CaptureSnapshot() with { Player = before with { NextDue = 0 } } );
 			scene.Level.AdvanceSimulation( FixedStepClock.TickDuration );
 			Assert.AreEqual( VisitorSpriteTemplate.Stand, guest.BodySprite.Player.ActiveTemplate );
-			// [BIN:TPW-EXE:0x0054F5FB] the sprite pass is inside the substep, before the world update, in the non-pooled host's per-tick order too: the run program still emits
-			Assert.AreEqual( 2, guest.BodySprite.Player.Output!.Value.Slot, $"pooled {pooled}" );
+			// [BIN:TPW-EXE:0x0054F5FB] the sprite pass is inside the substep after the RSSE tick and before the world update: the swept (pooled) turn applies the pending request after it, so the run program still emits;
+			// the non-pooled host's per-tick guest update comes before the pass (it stands for the world update), so the stand program emits
+			Assert.AreEqual( pooled ? 2 : 0, guest.BodySprite.Player.Output!.Value.Slot, $"pooled {pooled}" );
 		}
 	}
 

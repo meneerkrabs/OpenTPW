@@ -233,6 +233,18 @@ public partial class Level
 	{
 		if ( Objects.FindAt( x, y ) is not { IsDeleted: false } addOn )
 			return null;
+		if ( SurfaceOf( addOn ) is not { } surface )
+			return null;
+		var placement = addOn.Placement;
+		var modelToGrid = ObjectPlacement.CellRotation( placement.Rotation ) * System.Numerics.Matrix4x4.CreateTranslation( placement.X * 10, placement.Y * 10, 0 );
+		return System.Numerics.Matrix4x4.Invert( modelToGrid, out var gridToModel )
+			? (surface, gridToModel, placement.BaseHeight / ObjectPlacement.ModelScale)
+			: null;
+	}
+
+	/// <summary>The sampler surface of a placed object (<c>0x450EA0</c>'s choice, cached per type), null when its model cannot be read.</summary>
+	private TrackSurface? SurfaceOf( OriginalObject addOn )
+	{
 		if ( !addOnSurfaces.TryGetValue( addOn.Entry, out var surface ) )
 		{
 			try
@@ -250,13 +262,31 @@ public partial class Level
 			}
 			addOnSurfaces[addOn.Entry] = surface;
 		}
-		if ( surface == null )
+		return surface;
+	}
+
+	/// <summary>
+	/// The height a walking body of a ride stands at (<c>0x00558131</c> with the WALKON height bit clear): the ride model's own sampler (<c>0x450EA0</c>: the landscape plus the header's +0xA0 in the terrain mode, the surface
+	/// faces or the instance mesh above the ride's base height otherwise; <c>0x4511A0</c>), as an engine height at an engine ground point, null where no face covers it (the body keeps the nodes' height).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004511A0 walker height] every mode adds the model's +0xA0 (0x4511FA, 0x451272); the mode follows the model (TrackSurface.FromObject)
+	internal Func<float, float, float?>? WalkerGroundOf( OriginalObject ride )
+	{
+		if ( SurfaceOf( ride ) is not { } surface )
 			return null;
-		var placement = addOn.Placement;
+		var placement = ride.Placement;
 		var modelToGrid = ObjectPlacement.CellRotation( placement.Rotation ) * System.Numerics.Matrix4x4.CreateTranslation( placement.X * 10, placement.Y * 10, 0 );
-		return System.Numerics.Matrix4x4.Invert( modelToGrid, out var gridToModel )
-			? (surface, gridToModel, placement.BaseHeight / ObjectPlacement.ModelScale)
-			: null;
+		if ( !System.Numerics.Matrix4x4.Invert( modelToGrid, out var gridToModel ) )
+			return null;
+		var origin = Objects.Grid.Origin;
+		return ( x, y ) =>
+		{
+			var terrain = Objects.TerrainHeightAtEngine( x, y );
+			if ( surface.Mode == TrackSamplerMode.Terrain )
+				return terrain + surface.TerrainOffset!.Value * ObjectPlacement.ModelScale;
+			var local = System.Numerics.Vector3.Transform( new System.Numerics.Vector3( (x - origin.X) / OriginalParkPlacement.ModelScale, (y - origin.Y) / OriginalParkPlacement.ModelScale, 0 ), gridToModel );
+			return surface.HeightAt( local.X, local.Y ) is { } height ? placement.BaseHeight + height * ObjectPlacement.ModelScale : null;
+		};
 	}
 
 	/// <summary>A placed track add-on as its sections see it (section +0xC, +0x10): its type and its animation channel 0.</summary>

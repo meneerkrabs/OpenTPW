@@ -1,7 +1,7 @@
 # Bounded staff sprite VM core
 
 `StaffSpriteVm`, `StaffSpriteVmState`, and `StaffSpriteCloneCopy` provide an independently
-testable, GPU-free implementation seam. The staff world, the sprite scheduler, the employee
+testable, GPU-free implementation seam. UI-092 remains open (rotation/depth, viewport transforms and raster comparison of the portrait clone). The staff world, the sprite scheduler, the employee
 and hire windows and the original saves' sprite records consume it (see the notes below).
 
 ## State and copy contract

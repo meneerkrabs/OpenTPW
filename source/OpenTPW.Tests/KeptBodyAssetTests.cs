@@ -97,7 +97,6 @@ public class KeptBodyAssetTests
 			// the host's body-sprite phase (Level.Simulation): the players run on the fixed host clock, so a requested body has its output
 			simulation.SetBodySpriteClock( GuestSimulation.BodySpriteSampleAtTick( tick + 1 ) );
 			simulation.ScheduleBodySprites();
-			bridge.WalkUpdate(); // the frame's walk update (0x00557D80)
 			// the host's pose phase, as FlatRideBounceRiders.Prepare runs it after the substeps
 			poses.Clear();
 			FlatRideBounceRiders.CollectWalkers( poses, runtime, node => ObjectPlacement.SwapAxes( runtime.Animator.NodeTransforms[node] ), scratch,

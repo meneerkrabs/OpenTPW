@@ -199,7 +199,7 @@ internal sealed class SavedSpriteScripts
 			return null;
 		}
 		var stackPointer = unchecked( (int)record.Word( 0x1C ) );
-		var stack = new uint[StaffSpriteVmState.StackCapacity];
+		var stack = new uint[SaveScriptRecord.StackWords];
 		for ( var index = 0; index < stack.Length; index++ )
 		{
 			var word = record.Word( 0x20 + index * 4 );

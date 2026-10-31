@@ -37,7 +37,6 @@ public class BumperCarAssetTests
 			{
 				simulation.Tick( Tick );
 				runtime.Simulate( Tick );
-				runtime.Visitors.WalkUpdate(); // the frame's walk update (0x00557D80)
 				maxCars = System.Math.Max( maxCars, runtime.Bump.VehicleCount );
 				var running = runtime.GetVariable( RideVariables.VAR_RUNNING ) != 0;
 				if ( wasRunning && !running )
@@ -72,7 +71,6 @@ public class BumperCarAssetTests
 			{
 				simulation.Tick( Tick );
 				runtime.Simulate( Tick );
-				runtime.Visitors.WalkUpdate(); // the frame's walk update (0x00557D80)
 				if ( bump.Phase == BumpController.PhaseRunning )
 					sawRunning = true;
 				else if ( sawRunning && bump.Phase == BumpController.PhaseLoading )

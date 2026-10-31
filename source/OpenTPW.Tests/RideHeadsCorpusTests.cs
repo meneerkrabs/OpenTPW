@@ -161,7 +161,6 @@ public class RideHeadsCorpusTests
 			for ( var tick = 0; tick < 240 * 60; tick++ )
 			{
 				runtime.Simulate( 1f / FixedStepClock.TicksPerSecond );
-				runtime.Visitors.WalkUpdate(); // the frame's walk update (0x00557D80)
 				var hung = visitors.HungHeads().ToArray();
 				Assert.AreEqual( hung.Length, hung.Select( head => head.Visitor ).Distinct().Count(), $"{name}: one head per rider" );
 				maximumHung = Math.Max( maximumHung, hung.Length );
@@ -193,7 +192,6 @@ public class RideHeadsCorpusTests
 			for ( var tick = 0; tick < 240 * 60 && saveTick < 0; tick++ )
 			{
 				runtime.Simulate( 1f / FixedStepClock.TicksPerSecond );
-				runtime.Visitors.WalkUpdate(); // the frame's walk update (0x00557D80)
 				if ( runtime.Visitors.HungHeads().Count() >= Math.Min( 3, runtime.Visitors.Heads!.Count ) )
 					saveTick = tick;
 			}
@@ -215,9 +213,7 @@ public class RideHeadsCorpusTests
 			for ( var tick = 0; tick < 120 * 60; tick++ )
 			{
 				runtime.Simulate( 1f / FixedStepClock.TicksPerSecond );
-				runtime.Visitors.WalkUpdate(); // the frame's walk update (0x00557D80)
 				candidate.Simulate( 1f / FixedStepClock.TicksPerSecond );
-				candidate.Visitors.WalkUpdate(); // the frame's walk update (0x00557D80)
 				CollectionAssert.AreEquivalent( runtime.Visitors.HungHeads().ToArray(), candidate.Visitors.HungHeads().ToArray(), $"{name}: heads at tick {tick} after loading" );
 			}
 
@@ -230,7 +226,6 @@ public class RideHeadsCorpusTests
 			for ( var tick = 0; tick < 120 * 60; tick++ )
 			{
 				legacy.Simulate( 1f / FixedStepClock.TicksPerSecond );
-				legacy.Visitors.WalkUpdate(); // the frame's walk update (0x00557D80)
 			}
 			Assert.AreNotEqual( RideVMState.Faulted, legacy.Script!.State, $"{name}: {legacy.Script.FaultMessage}" );
 			Assert.AreEqual( 0, legacy.Visitors.HungHeads().Count(), $"{name}: the heads of a save without walk slots are down again after the ride unloads" );

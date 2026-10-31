@@ -151,9 +151,6 @@ public partial class Level
 		}
 		else
 		{
-			// [BIN:TPW-EXE:0x0054F5FB sprite pass before the world update] the sprite scheduler runs inside the substep, before the park turn's world update (0x54F668 -> 0x516380): the guests' bodies and balloons, the staff's sources and the portrait clones have stepped when the world update's guests read them. The non-pooled host's per-tick guest update stands for that update (the original runs none between turns), so the pass comes first here too; the object pass stays after the guests (its own order is the non-pooled host's, SimulateSweptTurn has the original's)
-			if ( substep.TourDue )
-				ScheduleSprites( spriteClock );
 			if ( !lost )
 			{
 				using var guestsMark = FrameMarks.Measure( "sim.guests" );
@@ -161,6 +158,9 @@ public partial class Level
 			}
 			using ( FrameMarks.Measure( "sim.objects" ) )
 				Objects.Simulate( deltaTime, substep, PlacedRide );
+			// [BIN:TPW-EXE:0x0054F5FB sprite pass after the RSSE tick] the sprite scheduler runs inside the substep after the ride scripts' tick (0x54F56B) and before the park turn's world update (0x54F668 -> 0x516380): the guests' bodies and balloons, the staff's sources and the portrait clones step there. The pass follows the object pass in both branches (SimulateSweptTurn has the original's whole order)
+			if ( substep.TourDue )
+				ScheduleSprites( spriteClock );
 			using ( FrameMarks.Measure( "sim.economy" ) )
 				Park?.FixedTick();
 			if ( !lost )
@@ -231,7 +231,7 @@ public partial class Level
 		if ( PlacedRide is { IsDeleted: false } prototype )
 			prototype.Visitors.WalkUpdate();
 		if ( Guests != null )
-			(rideBodyPoses ??= new FlatRideBounceRiders( Objects )).Prepare( Guests );
+			(rideBodyPoses ??= new FlatRideBounceRiders( Objects ) { GroundOf = WalkerGroundOf }).Prepare( Guests );
 	}
 
 	/// <summary>The weather's step: the thing sweep's weather update (0x00512880), and on every other tick the first call that starts it.</summary>

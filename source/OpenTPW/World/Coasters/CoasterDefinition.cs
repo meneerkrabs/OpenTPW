@@ -133,7 +133,7 @@ public sealed class CoasterPylonControl
 /// unconditionally (absent = 0). No PC <c>.sam</c> sets a motion, distance, angle or rating key, so the PC game
 /// runs on these defaults.
 /// </summary>
-// [APPROX:COAST-014] the PC twins in tp.exe agree with the Mac readings for the rating step and final (ORACLE X11/X12; the step's stale term differs, what C# follows), COAST 2-6 (0x43b1f0..0x43b330; COAST 6's literal 0 floor is built), the mode and speed setters, the guest predicates, the debit 0x4d01f0, the validator 0x434740 (plus a move-mode skip for 0x10000 with 0x20000 and the closure re-validation), the sampler 0x440c10 (its angles 0x43e590 and the loop knot factor 0x432430 round the sine-table index to the nearest, built) and the hop 0x43ce20; what differs is the x87 arithmetic of the rating pass 0x43c450 and the ride motion only (COAST-032), which no oracle run has compared yet; the cost 0x447830 is built (the Mac formula, length and height multiplied by f32 0.1 (0x6fe1f0) in x87, dx squared through a double store and dz through a single store (0x4478dd..0x447913), summed as (length rate * length + unit) + height rate * height) and compared bit-exactly with isolated tp.exe runs
+// [BIN:TPW-EXE:0x43c450 rating and motion] the PC twins in tp.exe agree with the Mac readings for COAST 2-6 (0x43b1f0..0x43b330; COAST 6's literal 0 floor is built), the mode and speed setters, the guest predicates, the debit 0x4d01f0, the sampler 0x440c10 (its angles 0x43e590 and the loop knot factor 0x432430 round the sine-table index to the nearest, built) and the hop; the rating pass 0x43c450 (the step takes u where the Mac took Fz and nothing is fused), the final, the train placement, the ride motion 0x43ce20, the speed cap 0x43c3d0, the car offsets 0x43bc20 and the placement validator's turn angle and window (0x434740: single steps, the acos 0x67b4e0) are ported in tp.exe's own single steps and compared with isolated runs (CoasterRatingGolden, ORACLE X46); the cost 0x447830 is built (the Mac formula, length and height multiplied by f32 0.1 (0x6fe1f0) in x87, dx squared through a double store and dz through a single store (0x4478dd..0x447913), summed as (length rate * length + unit) + height rate * height) and compared bit-exactly with isolated tp.exe runs (COAST-014 retired)
 public sealed class CoasterDefinition
 {
 	/// <summary><c>Bumper.WhichTrackType</c> of a coaster (<c>0xe2fe4</c>: type record +156 == 3).</summary>
@@ -151,6 +151,24 @@ public sealed class CoasterDefinition
 	// ---- Definition fields (defaults of 0x2d274) --------------------------------------------------------
 
 	public uint Flags { get; private set; }
+	/// <summary>The track's collision profile (<c>asTrackCollisionPoints</c>, definition <c>+0x9c</c> and count <c>+0xa0</c>): the defaults unless the .sam names the array.</summary>
+	public IReadOnlyList<(float X, float Y)> CollisionPoints { get; private set; } = CoasterCollision.DefaultPoints;
+
+	// [BIN:TPW-EXE:0x73ed30 collision point keys] the loader's field table names the array asTrackCollisionPoints (type 3, an array of structs) with the float fields fCollisionX and fCollisionY (type 7); the array's keys are written like the other arrays', asTrackCollisionPoints[i].fCollisionX (no PC coaster.sam names them)
+	private static IReadOnlyList<(float X, float Y)>? CollisionPointsFrom( IReadOnlyDictionary<string, string> values )
+	{
+		var points = new List<(float X, float Y)>();
+		for ( var index = 0; ; index++ )
+		{
+			var hasX = TryFloat( values, $"asTrackCollisionPoints[{index}].fCollisionX", out var x );
+			var hasY = TryFloat( values, $"asTrackCollisionPoints[{index}].fCollisionY", out var y );
+			if ( !hasX && !hasY )
+				break;
+			points.Add( (x, y) );
+		}
+		return points.Count == 0 ? null : points;
+	}
+
 	public float Curviness { get; private set; } = 1.25f;
 	public float StraightDivisor { get; private set; } = 1.25f;
 	public float AccelerationPerHeight { get; private set; } = 1.5f;
@@ -280,27 +298,27 @@ public sealed class CoasterDefinition
 	public IReadOnlyList<float> CarOffsets => carOffsets;
 
 	// [BIN:TPW-EXE:0x43bc20 car offsets] the reference car's +0x38 = 0; from it toward car 0 the sum grows by +0x1c (car index 0), +0x24 (the last index) or +0x20 of the train definition (definition +0x30c/+0x314/+0x310); behind it the sum falls by the same choice; +0x3c = +0x38 / spacing
-	private void RebuildCarLayout()
+	private void RebuildCarLayout() => carOffsets = CarOffsetsFor( CarPairDistances, CarCount );
+
+	/// <summary>The cars' offsets around the reference car from the three pair distances, every running sum a single (the sum stays on the x87 stack at 24 bits).</summary>
+	internal static float[] CarOffsetsFor( (float Front, float Centre, float Rear) pairs, int count )
 	{
-		var count = CarCount;
-		var (front, centre, rear) = CarPairDistances;
-		float Pair( int car ) => car == 0 ? front : car == count - 1 ? rear : centre;
+		float Pair( int car ) => car == 0 ? pairs.Front : car == count - 1 ? pairs.Rear : pairs.Centre;
 		var offsets = new float[count];
-		var reference = ReferenceCar;
-		// The running sum stays on the x87 stack (0x43bc39..0x43bca5, 0x43bcb0..0x43bd09); each car's offset is its single-precision store.
-		var sum = 0.0;
+		var reference = (count - 1) >> 1;
+		var sum = 0f;
 		for ( var car = reference - 1; car >= 0; car-- )
 		{
-			sum = Pair( car ) + sum;
-			offsets[car] = (float)sum;
+			sum = sum + Pair( car );
+			offsets[car] = sum;
 		}
-		sum = 0.0;
+		sum = 0f;
 		for ( var car = reference + 1; car < count; car++ )
 		{
-			sum -= Pair( car );
-			offsets[car] = (float)sum;
+			sum = sum - Pair( car );
+			offsets[car] = sum;
 		}
-		carOffsets = offsets;
+		return offsets;
 	}
 
 	/// <summary>The generic metrics for every car type (no model read).</summary>
@@ -489,6 +507,7 @@ public sealed class CoasterDefinition
 		int Int( string key, int current ) => TryInt( values, key, out var value ) && value != 0 ? value : current;
 		bool Flag( string key ) => TryInt( values, key, out var value ) && value != 0;
 		const string Coaster = "sCoasterType.";
+		definition.CollisionPoints = CollisionPointsFrom( values ) ?? CoasterCollision.DefaultPoints;
 		definition.Curviness = Float( Coaster + "fCurviness", definition.Curviness );
 		definition.StraightDivisor = Float( Coaster + "fStraightDivisor", definition.StraightDivisor );
 		definition.AccelerationPerHeight = Float( Coaster + "fAccelerationPerHeight", definition.AccelerationPerHeight );

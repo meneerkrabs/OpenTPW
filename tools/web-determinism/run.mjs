@@ -19,7 +19,7 @@ export const PIN_CLASSES = [
 	'DetMathTests', 'DeterminismTests', 'WorldRngTests', 'GuestMeasurementTests', 'WinterWeatherTests', 'WinterAlwaysTests',
 	'PoolSlideActivityTests', 'PathBuilderTests', 'CheatsRideVehicleTests', 'CheatsExtensionTests', 'ParkWeatherTests',
 	'CoasterTests', 'CoasterCollisionTests', 'CoasterRollTests', 'CoasterDispatchTests', 'CoasterTrainLayoutTests', 'CoasterStationTests',
-	'CoasterTagKnotTests', 'CoasterSaveTests', 'OriginalCoasterImportTests', 'TourControllerTests', 'BumpModuleTests', 'BumpControllerTests', 'BumperControllerTests',
+	'CoasterTagKnotTests', 'CoasterRatingGoldenTests', 'CoasterX87GoldenTests', 'CoasterSaveTests', 'OriginalCoasterImportTests', 'TourControllerTests', 'BumpModuleTests', 'BumpControllerTests', 'BumperControllerTests',
 	'TrackSurfaceTests', 'TrackCircuitTests', 'PoolsTests', 'PoolsAttractionsTests', 'PoolsSwimSessionTests',
 	'PoolSwimmingTests', 'PoolSlidesTests', 'StaffWorldTests', 'StaffSteeringTests', 'LoansSummaryTests', 'BankWordsTests', 'ParkEconomyTests', 'MonoInterpreterTryFinallyProbeTests',
 ];

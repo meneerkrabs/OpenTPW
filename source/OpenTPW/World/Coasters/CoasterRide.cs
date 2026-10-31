@@ -77,8 +77,8 @@ public sealed class CoasterTrain
 	internal double WheelAnimationStartSeconds { get; set; }
 	/// <summary>
 	/// The reference car's position in samples from the station node (train <c>+0x74</c>): the middle car, <see cref="CoasterDefinition.ReferenceCar"/>;
-	/// every other car stands its offset (<see cref="CoasterDefinition.CarOffsets"/>) over the spacing ahead of it or behind it. In [0, sample count)
-	/// after a hop; the placement can leave it up to a train's length beyond the count until the first hop wraps it.
+	/// every other car stands its offset (<see cref="CoasterDefinition.CarOffsets"/>) over the spacing ahead of it or behind it. In [0, end coordinate)
+	/// after a hop; the placement can leave it up to a train's length beyond the end until the first hop wraps it.
 	/// </summary>
 	public float Position { get; internal set; }
 	/// <summary>World units per second.</summary>
@@ -282,12 +282,12 @@ public sealed class CoasterRide
 	// [BIN:TPW-EXE:0x4e0560 coaster guest rating] COAST-013 retired: the rating getter 0x43e0b0 returns controller +0x100 (sickness) and +0x104 (excitement), the final 0x43df90 writes both, and its only caller 0x4e0560 (the coaster branch of the per-ride guest rating) fetches the sickness and discards it, returning trunc(50 − (−0.5)·E) (constants 0x7005a4/0x7005b4) = Mac 6.1; guest code reaches a controller only through 0x55a4e0, the predicates 0x441910/0x441940/0x441970 and 0x4418f0 (ride-info stats getter 0x43e0e0), so no guest reads the sickness
 	public int GuestExcitement => Initialised ? CoasterRating.GuestExcitement( Rating?.Excitement ?? 0 ) : 0;
 
-	/// <summary>The speed cap of a speed setting (<c>0x3fb68</c>): MaxAtMin·(1 − s/100) + MaxAtMax·(s/100).</summary>
-	// [BIN:STP-PPC:0x1003FB68 speed cap] controller +52 = fmadds(fMaxSpeedAtMinSetting, 1 − s/100, fMaxSpeedAtMaxSetting × s/100) for the integer setting s (controller +48)
+	/// <summary>The speed cap of a speed setting (<c>0x43c3d0</c>): MaxAtMin·(1 − t) + MaxAtMax·t with t = s × 0.01.</summary>
+	// [BIN:TPW-EXE:0x43c3d0 speed cap] t = the integer setting times the single 0.01 (0x6fe034), controller +0x34 = ((1 − t) × type +0x4c) + (type +0x50 × t), every step a single; no fused multiply-add (the Mac fmadds fused them)
 	public static float SpeedCapFor( CoasterDefinition definition, int setting )
 	{
-		var s = setting / 100f;
-		return MathF.FusedMultiplyAdd( definition.MaxSpeedAtMinSetting, 1f - s, definition.MaxSpeedAtMaxSetting * s );
+		var t = setting * 0.01f;
+		return (1f - t) * definition.MaxSpeedAtMinSetting + definition.MaxSpeedAtMaxSetting * t;
 	}
 
 	/// <summary>
@@ -296,7 +296,7 @@ public sealed class CoasterRide
 	/// (the second rail's roll about the tangent plus the tag roll lerp; the sample pose when the curve has not been fitted).
 	/// </summary>
 	// [BIN:TPW-EXE:0x43c121 car curve point] the car stands on the slice frame 0x43e6b0 of the pair (A, B) with A the knot of sample[ftol(c)] (sample +0x2c) and B its next knot (+0x18), advanced while B's coordinate (+8) is below c, at t = (c − A +8)/(B +8 − A +8): the cubic Bézier point and its tangent's yaw and pitch, not the lerp of two samples
-	// [EXT:coaster-closing-pair-car] the closing pair's next knot is the second knot, whose coordinate is taken as one lap on (its own plus the sample count) so the car's parameter runs on; the original's walk compares the second knot's own coordinate
+	// [EXT:coaster-closing-pair-car] the closing pair's next knot is the second knot, whose coordinate is taken as one lap on (its own plus the end coordinate) so the car's parameter runs on; the original's walk compares the second knot's own coordinate
 	public CoasterCarPose CarPose( float coordinate )
 	{
 		var count = curveKnots.Count;
@@ -392,7 +392,8 @@ public sealed class CoasterRide
 		Spacing = sampling.Spacing;
 		var tail = nodes.Count - 1;
 		// The tail's coordinate is the end node's knot's, the last knot (ctl +0xa8, 0x441659).
-		var (result, winch) = CoasterRating.RatePass( Definition, samples, Spacing, SpeedCap, tail, sampling.KnotCoordinates.Length == knots.Length && knots.Length > 0 ? sampling.KnotCoordinates[^1] : null );
+		EndCoordinate = sampling.KnotCoordinates.Length == knots.Length && knots.Length > 0 ? sampling.KnotCoordinates[^1] : CoasterRide.PlatformStartSample( samples, tail );
+		var (result, winch) = CoasterRating.RatePass( Definition, samples, Spacing, SpeedCap, tail, EndCoordinate );
 		winchSections = winch;
 		for ( var index = 0; index < nodes.Count; index++ )
 		{
@@ -403,7 +404,7 @@ public sealed class CoasterRide
 		// Controller +264: the sections with both node flags 0x40 and 0x80 (CoasterRating.FinalFor; ORACLE F8).
 		var counted = CoasterRating.FinalFor( 0, 0, 0, 0, nodes.Select( node => (uint)node.Flags ), 0, 0, 0, 0 ).Sections;
 		Rating = result with { CountedSections = counted };
-		var collisions = CoasterCollision.Run( NodesForCollision( nodes, pass, sampling.KnotCoordinates, Definition ), samples );
+		var collisions = CoasterCollision.Run( NodesForCollision( nodes, pass, sampling.KnotCoordinates, Definition ), samples, Definition.CollisionPoints );
 		IntersectionCount = collisions.Count;
 		CollisionLists = collisions.Lists;
 		// [BIN:TPW-EXE:0x43c72f braking start] ctl+0x134 = (n − 1) − v_last/spacing with n the sample count; the end node stands on the first station node, so the brake zone is the stretch just before the sample list's end, which is the start of the platform
@@ -450,7 +451,7 @@ public sealed class CoasterRide
 			return Array.Empty<IReadOnlyList<int>>();
 		sampling ??= curve.Sample( pass.Knots, definition.Curviness );
 		// one sweep, as the original runs per frame: the live marker must stay cheap on a tangled chain (the repeats cost up to 16x)
-		return CoasterCollision.Run( NodesForCollision( chain, pass, sampling.KnotCoordinates, definition ), sampling.Samples, maxPasses: 1 ).Lists;
+		return CoasterCollision.Run( NodesForCollision( chain, pass, sampling.KnotCoordinates, definition ), sampling.Samples, definition.CollisionPoints, maxPasses: 1 ).Lists;
 	}
 
 	/// <summary>The nodes as the self-intersection pass sees them: the sample index of each node and the radius of its pylon control.</summary>
@@ -464,7 +465,7 @@ public sealed class CoasterRide
 			var knot = pass.CentreKnot[index];
 			var at = knot == 0 || knot >= coordinates.Count ? 0 : (int)coordinates[knot];
 			var node = nodes[index];
-			result.Add( new CoasterCollision.Node( at, node.IsPylonless ? null : definition.Pylon( node.LoopPylon ).CollisionPossibleRadius, node.IsPylonless, (node.Flags & CoasterNodeFlags.CutEnd) != 0 ) );
+			result.Add( new CoasterCollision.Node( at, node.IsPylonless ? null : definition.Pylon( node.LoopPylon ).CollisionPossibleRadius, node.IsPylonless, (node.Flags & CoasterNodeFlags.CutEnd) != 0, node.IsPylonless ? -1 : (node.X << 16) | node.Y ) );
 		}
 		return result;
 	}
@@ -504,12 +505,15 @@ public sealed class CoasterRide
 	}
 
 	/// <summary>Controller <c>+308</c> = max((n − 1) − v/spacing, 0) in samples, v the rated speed of <see cref="BrakingSpeedSample"/>.</summary>
-	// [BIN:STP-PPC:0x10040070 braking start] controller +308 = max((n − 1) − v_last / 3.0, 0) samples
-	public static float BrakingStartFor( int sampleCount, float speedBeforeEnd, float spacing ) =>
-		MathF.Max( (sampleCount - 1) - speedBeforeEnd / spacing, 0f );
+	// [BIN:TPW-EXE:0x43c72c braking start] controller +0x134 = (n − 1) − v_last / spacing, replaced by 0 when it is not above 0 (a NaN too), 0x43c72c..0x43c763
+	public static float BrakingStartFor( int sampleCount, float speedBeforeEnd, float spacing )
+	{
+		var start = (sampleCount - 1) - speedBeforeEnd / spacing;
+		return start > 0f ? start : 0f;
+	}
 
-	/// <summary>Station braking (<c>0x40bb8</c>): x = (front − start)/(n − start), 1 outside [0, 1]; v(1 − x⁴) + floor·x⁴.</summary>
-	// [BIN:STP-PPC:0x10040BB8 station braking] x = (front − ctl+308)/(n − ctl+308), x = 1 outside [0, 1]; v = fmadds(v, 1 − x⁴, W·x⁴)
+	/// <summary>Station braking: x = (front − start)/(end − start), 1 outside [0, 1]; v(1 − x⁴) + floor·x⁴, unfused.</summary>
+	// [BIN:TPW-EXE:0x43d2a5 station braking] x = (car 0's coordinate − ctl+0x134)/(ctl+0xa8 − ctl+0x134), x = 1 below 0, above 1 or NaN (0x43d2c3..0x43d2e5); x⁴ = (x·x)·(x·x); v = floor × x⁴ + (1 − x⁴) × v (0x43d2f7..0x43d309), every step a single
 	public static float BrakeBlend( float speed, float floor, float front, float start, float total ) => BrakeBlend( speed, floor, front, start, total, out _ );
 
 	/// <summary><see cref="BrakeBlend(float, float, float, float, float)"/> that also gives x⁴, which the motion tick keeps for the train loop sound.</summary>
@@ -520,7 +524,7 @@ public sealed class CoasterRide
 		if ( x < 0 || x > 1 || float.IsNaN( x ) )
 			x = 1;
 		x4 = x * x * (x * x);
-		return MathF.FusedMultiplyAdd( speed, 1f - x4, floor * x4 );
+		return floor * x4 + (1f - x4) * speed;
 	}
 
 	/// <summary>
@@ -529,7 +533,7 @@ public sealed class CoasterRide
 	/// </summary>
 	private float LeadCoordinate() => trains.Count > 0 && samples.Length > 0 ? CarCoordinate( trains[0], trains[0].CarLists.Length - 1 ) : LeadCarCoordinate;
 
-	// [APPROX:COAST-032] the rating pass 0x43c450 with its step and final (0x43dc50, 0x43df90, 0x43dbf0), the suspended swing 0x43c76c and the ride motion are built in single steps from the instruction sequences but no isolated tp.exe run has compared them bit-exactly
+	// [APPROX:COAST-032] the rating pass, the train placement and the motion tick are compared bit for bit with isolated tp.exe runs (CoasterRatingGolden, ORACLE X46); not compared: the cars' curve point and pose (0x43c0a0 with 0x43e6b0, rendering only) and a car or release walk that reaches slot n past the sample list (the original reads the sampler's pre-rating copy of the last sample, 0x441783)
 	/// <summary>
 	/// The trains after a rating pass (<c>0x43c450</c>): the train count changes (<c>0x43ba20</c>: a train past the new count gives up its riders and
 	/// its slot), new trains are set up, then every train is placed again: train 0 keeps its last car where it was and each next train's last car stands
@@ -568,77 +572,32 @@ public sealed class CoasterRide
 	}
 
 	/// <summary>
-	/// The last car's coordinate of each train (<c>0x43c1f0</c>): train 0's from <paramref name="lead"/> (plus the sample count when negative), every next
+	/// The last car's coordinate of each train (<c>0x43c1f0</c>): train 0's from <paramref name="lead"/> (plus the end coordinate when negative), every next
 	/// one from the previous by the release time: from the previous last car's sample the walk adds spacing / sample speed per sample until it reaches
 	/// <c>uiTrainReleaseRate</c>/1000 seconds and takes i − 1 + f with f = (t − R)/(t − t′) over the sample i where it crossed, wrapped into the list.
 	/// </summary>
 	// [BIN:TPW-EXE:0x43c1f0 release spacing] R = fild(definition +0x2ec as 64-bit) × 0.001 (0x6fe030) stored single; per train after the first: modf of the previous train's +0x30 gives i and f₀, t = (1 − f₀)·spacing / sample[i].+0x1c, t′ = 0; while t < R: i = (i + 1) mod n (ctl+0xa4), t′ = t, t += spacing / sample[i].+0x1c; then f = (t − R)/(t − t′) and train +0x30 = fmod((i − 1)(1 − f) + i·f + n, n) (0x43c343..0x43c39f); train 0 keeps its +0x30
-	internal float[] ReleaseSpacing( int count, float lead )
-	{
-		var n = samples.Length;
-		var total = (float)n;
-		var spacing = Spacing;
-		var release = (float)(Definition.TrainReleaseRate * (double)0.001f);
-		var result = new float[count];
-		// The original takes a stale lead coordinate as it is; one that lies past this track's samples (a shorter track since) is wrapped into it here.
-		var first = lead < 0 ? lead + total : lead;
-		result[0] = first >= total || first < 0 ? (float)(((double)first % total + total) % total) : first;
-		for ( var index = 1; index < count; index++ )
-		{
-			var previous = (double)result[index - 1];
-			var whole = Math.Truncate( previous );
-			var fraction = previous - whole;
-			var sample = (int)whole % n;
-			var time = (1.0 - fraction) * spacing / samples[sample].Speed;
-			var before = 0.0;
-			// A lap of samples that adds no time (every rated speed infinite) would never reach the release time: the walk stops after one such lap.
-			var stalled = 0;
-			while ( time < release && stalled < n )
-			{
-				sample = (sample + 1) % n;
-				before = time;
-				time += spacing / (double)samples[sample].Speed;
-				stalled = time > before ? 0 : stalled + 1;
-			}
-			var f = (time - release) / (time - before);
-			// A sample rated at speed 0 takes forever (t = ∞, f = NaN in the original's x87 sum); the train then stands on that sample, f's limit.
-			if ( !double.IsFinite( f ) || time < release )
-				f = 1.0;
-			var position = (float)((sample - 1) * (1.0 - f) + sample * f);
-			result[index] = (float)(((double)position + total) % total);
-		}
-		return result;
-	}
+	internal float[] ReleaseSpacing( int count, float lead ) =>
+		CoasterTrainPlacement.ReleaseSpacing( samples.Select( sample => sample.Speed ).Append( samples[^1].Speed ).ToArray(), samples.Length, Spacing, End,
+			CoasterTrainPlacement.ReleaseSeconds( Definition.TrainReleaseRate ), lead, count );
 
 	/// <summary>Lays a placed train out from its last car's coordinate (<c>0x43cbda..0x43cd47</c>): car coordinates, position, extents and speed.</summary>
 	private void LayOut( CoasterTrain train, float lastCar )
 	{
 		var cars = train.CarLists.Length;
-		var coordinates = new float[cars];
-		// The sum stays on the x87 stack (0x43cbf1..0x43cc19), each car's coordinate is its single-precision store.
-		double coordinate = lastCar;
-		for ( var car = cars - 1; car >= 0; car-- )
-		{
-			coordinates[car] = (float)coordinate;
-			if ( car > 0 )
-				coordinate = ((double)Definition.CarMetrics( car ).FrontExtent + Definition.CarMetrics( car - 1 ).RearExtent) / Spacing + coordinate;
-		}
+		var fronts = new float[cars];
+		var rears = new float[cars];
+		for ( var car = 0; car < cars; car++ )
+			(fronts[car], rears[car]) = (Definition.CarMetrics( car ).FrontExtent, Definition.CarMetrics( car ).RearExtent);
+		var coordinates = CoasterTrainPlacement.CarCoordinates( lastCar, fronts, rears, Spacing );
 		train.Position = coordinates[Definition.ReferenceCar];
 		UpdateExtents( train );
-		var sum = 0f;
-		foreach ( var at in coordinates )
-		{
-			var whole = MathF.Truncate( at );
-			var fraction = at - whole;
-			var index = (int)whole;
-			// A coordinate past slot n reads beyond the original's list; OpenTPW wraps it.
-			sum = Slot( index + 1 ).Speed * fraction + (1f - fraction) * Slot( index ).Speed + sum;
-		}
-		train.Speed = sum / cars;
+		// A coordinate past slot n reads beyond the original's list; OpenTPW wraps it.
+		train.Speed = CoasterTrainPlacement.MeanSpeed( coordinates, index => Slot( index ).Speed );
 	}
 
 	/// <summary>Car <paramref name="car"/>'s coordinate on the sample list (car <c>+0x40</c>): the train's position plus the car's offset over the spacing, wrapped.</summary>
-	// [BIN:TPW-EXE:0x43d5e0 car coordinates] at the end of the tick car +0x40 = car +0x38 / spacing + train +0x74, fmod by the sample count when not negative, else plus the count
+	// [BIN:TPW-EXE:0x43d5e0 car coordinates] at the end of the tick car +0x40 = car +0x38 / spacing + train +0x74, fmod by the end coordinate (ctl +0xa8) when not negative, else plus it
 	public float CarCoordinate( CoasterTrain train, int car )
 	{
 		ArgumentNullException.ThrowIfNull( train );
@@ -704,8 +663,8 @@ public sealed class CoasterRide
 	// [BIN:TPW-EXE:0x441783 slot n copy] the sampler copies the last sample into slot n, which the car point of the last sample reads as its next sample (index + 1 at 0x43cf6c for the current point, 0x43d10d for the half-sample point)
 	private CoasterSample Slot( int index ) => index < samples.Length ? samples[index] : index == samples.Length ? samples[^1] : samples[index % samples.Length];
 
-	/// <summary>The sample at a position in samples, its position interpolated linearly to the next sample (fused, <c>0x409b0</c>); past the last sample the next one is its slot-n copy.</summary>
-	// [BIN:STP-PPC:0x100409B0 car point] a car point between two samples is fmadds(cur, 1 − f, next·f) per component (0x100409B0..0x100409E4)
+	/// <summary>The sample at a position in samples, its position interpolated linearly to the next sample (unfused); past the last sample the next one is its slot-n copy.</summary>
+	// [BIN:TPW-EXE:0x43cf63 car point] a point between two samples is (next × f) + (cur × (1 − f)) per component, every product and the sum a single (0x43cf76..0x43cfaf)
 	public CoasterSample SampleAt( float position )
 	{
 		if ( samples.Length == 0 )
@@ -717,12 +676,32 @@ public sealed class CoasterRide
 		var index = Math.Min( (int)wrapped, count - 1 );
 		var fraction = wrapped - index;
 		var a = samples[index];
-		var b = Slot( index + 1 );
 		var result = a;
-		var rest = 1f - fraction;
-		result.Position = new System.Numerics.Vector3( MathF.FusedMultiplyAdd( a.Position.X, rest, b.Position.X * fraction ),
-			MathF.FusedMultiplyAdd( a.Position.Y, rest, b.Position.Y * fraction ), MathF.FusedMultiplyAdd( a.Position.Z, rest, b.Position.Z * fraction ) );
+		result.Position = Lerp( a.Position, Slot( index + 1 ).Position, fraction );
 		return result;
+	}
+
+	/// <summary>A point between two samples: (next × f) + (cur × (1 − f)) per component.</summary>
+	internal static System.Numerics.Vector3 Lerp( System.Numerics.Vector3 current, System.Numerics.Vector3 next, float fraction )
+	{
+		var rest = 1f - fraction;
+		return new System.Numerics.Vector3( next.X * fraction + current.X * rest, next.Y * fraction + current.Y * rest, next.Z * fraction + current.Z * rest );
+	}
+
+	/// <summary>The point of a car coordinate already wrapped into the track: the sample <c>trunc(c)</c> and the next one at the fraction (<c>0x43cf56</c>).</summary>
+	private System.Numerics.Vector3 PointAtCoordinate( float coordinate )
+	{
+		var whole = MathF.Truncate( coordinate );
+		var index = (int)whole;
+		return Lerp( Slot( index ).Position, Slot( index + 1 ).Position, coordinate - whole );
+	}
+
+	/// <summary>A car coordinate wrapped by the controller's end coordinate: plus it when negative, else <c>fmod</c> by it (<c>0x43cf0a..0x43cf30</c>).</summary>
+	// [BIN:TPW-EXE:0x43cf0a car wrap] below 0 the end coordinate (ctl +0xa8) is added, otherwise the value is reduced by fmod (0x67b24a) with it
+	private float WrapCoordinate( float coordinate )
+	{
+		var end = End;
+		return coordinate < 0 ? end + coordinate : coordinate % end;
 	}
 
 	// ---- COAST commands ------------------------------------------------------------------------------
@@ -912,15 +891,8 @@ public sealed class CoasterRide
 		train.FirstBoardingCar = train.LastBoardingCar = 0;
 	}
 
-	/// <summary>A position's coordinate on the sample list, in [0, count): the sample list starts at the platform's first node.</summary>
-	private float StationCoordinate( float position )
-	{
-		var count = samples.Length;
-		if ( count == 0 )
-			return 0;
-		var coordinate = position % count;
-		return coordinate < 0 ? coordinate + count : coordinate;
-	}
+	/// <summary>A position's coordinate on the track, in [0, end coordinate): the sample list starts at the platform's first node.</summary>
+	private float StationCoordinate( float position ) => samples.Length == 0 ? 0 : WrapCoordinate( position );
 
 	/// <summary>The train's front and rear in the station frame (train <c>+0x20</c>, <c>+0x24</c>).</summary>
 	// [BIN:TPW-EXE:0x43d50b train extents] train +0x20 = (car 0's offset / spacing + position) + its front extent / spacing; +0x24 = (the last car's offset / spacing + position) − its rear extent / spacing (car 0 is train +8, which 0x43ba90 sets to 0; 0x43bdb0 and the placement 0x43cc45 compute the same); neither is wrapped, and the hop computes them before it wraps the position (0x43d54f..0x43d572)
@@ -932,9 +904,7 @@ public sealed class CoasterRide
 			return;
 		}
 		var last = train.CarLists.Length - 1;
-		double spacing = Spacing;
-		train.Front = (float)(Definition.CarOffsets[0] / spacing + train.Position + Definition.CarMetrics( 0 ).FrontExtent / spacing);
-		train.Rear = (float)(Definition.CarOffsets[last] / spacing + train.Position - Definition.CarMetrics( last ).RearExtent / spacing);
+		(train.Front, train.Rear) = CoasterTrainPlacement.Extents( train.Position, Definition.CarOffsets[0], Definition.CarMetrics( 0 ).FrontExtent, Definition.CarOffsets[last], Definition.CarMetrics( last ).RearExtent, Spacing );
 	}
 
 	/// <summary>
@@ -1084,6 +1054,41 @@ public sealed class CoasterRide
 	// [BIN:TPW-EXE:0x43ce91 motion clock catch-up] 0x43ce20 takes as its frame time the unsigned (now − ctl+0x120) milliseconds (0x43cea7, loaded as a zero-extended qword) × 0.001 (0x6fe030) of the scaled game clock 0x7b496c (0x4709e0(0), refreshed once per frame by 0x473440 from the clock object 0x785970, the clock 0x4031e0 that also drives the substep clock 0x878c74), with no clamp, and writes every train's +0x7c with it once (0x43cedb); the trains then hop from the queue until each has spent all of it (0x43ced8), one tick, no substeps; ctl+0x120 is written only at the tick's end (0x43d8d3) and by the first tick (0x43ce9c); the controller tick 0x435a30 calls 0x43ce20 only in state 2, 4 or 8 (0x435ac9, state & 0xE), so in state 1 (the cut 0x446740, a reopen) the word stands while the clock runs, and the next tick after the track is completed again takes all the time since the last tick; the game pause (0x4092a0: the pause menu, the map, the postcard, message boxes, the pause key through 0x409350) freezes the clock, so a paused stretch adds nothing; OpenTPW's fixed steps are that scaled clock (they stop while paused and multiply with the game speed, as the substep scheduler maps 0x878c74), so the lag is the sum of the fixed steps since the last motion tick
 	public double MotionClockLagSeconds { get; private set; }
 
+	/// <summary>The controller's end coordinate (<c>+0xa8</c>): the sample coordinate of the end node's knot, the length in samples the trains' coordinates wrap at; derived at every rebuild, not saved or hashed.</summary>
+	// [BIN:TPW-EXE:0x441659 end coordinate] ctl +0xa8 is the end node's knot record +8 (the sample coordinate), written by the sampler's walk; the placement, the hop's wrap and the car coordinates wrap by it (0x43c261, 0x43d567, 0x43d5ff)
+	internal float EndCoordinate { get; private set; }
+
+	/// <summary>The wrap length of the track coordinates: the end coordinate (ctl +0xa8), the sample count only before one is set; the one place of that fallback.</summary>
+	private float End => EndCoordinate > 0 ? EndCoordinate : samples.Length;
+
+	/// <summary>Oracle seam (<c>CoasterRatingGoldenTests</c>): sets the track the motion tick runs on and the trains on it, without a built circuit.</summary>
+	internal void LoadMotionScenario( CoasterSample[] list, float spacing, float endCoordinate, float brakingStart, float windowEnd, float cap, IEnumerable<int> winch,
+		IReadOnlyList<(float Position, float Speed, CoasterTrainFlags Flags)> spec )
+	{
+		samples = list;
+		Spacing = spacing;
+		EndCoordinate = endCoordinate;
+		BrakingStart = brakingStart;
+		StationWindow = (0f, windowEnd);
+		SpeedCap = cap;
+		winchSections = new HashSet<int>( winch );
+		trains.Clear();
+		foreach ( var (position, speed, flags) in spec )
+		{
+			var train = new CoasterTrain( trains.Count, Definition.CarCount, 0 ) { Position = position, Speed = speed, Flags = flags };
+			trains.Add( train );
+			UpdateExtents( train );
+		}
+	}
+
+	/// <summary>Oracle seam: one motion tick of the given length and the headway test that follows it.</summary>
+	internal void MotionTickForOracle( float budget )
+	{
+		MoveTrains( budget );
+		foreach ( var train in trains )
+			ClearHeadway( train );
+	}
+
 	/// <summary>Test probe: the frame time the last motion tick gave every train (train <c>+0x7c</c> at the tick's start); derived, not saved or hashed.</summary>
 	internal float LastMotionFrameSeconds { get; private set; }
 
@@ -1154,14 +1159,15 @@ public sealed class CoasterRide
 	internal void EnterTool() => EnterState( Track.IsRunnable ? CoasterControllerState.Built : CoasterControllerState.Incomplete );
 
 	/// <summary>
-	/// One car's candidate speed for a hop (<c>0x40650</c>): max(mod·(PerHeight·(y(s) − y(s + ½))) + v, floor), the uphill
+	/// One car's candidate speed for a hop (<c>0x43d1a6</c>): max(((y − y(s + ½)) × PerHeight) × mod + v, floor), the uphill
 	/// modifier when the point half a sample ahead is higher.
 	/// </summary>
-	// [BIN:STP-PPC:0x10040A20 coaster hop speed] per car: v_c = max(fmadds(mod, PerHeight × (y(s) − y(s + ½)), v), floor) with fUphillAccelModifier when y(s + ½) > y(s), else fDownhillAccelModifier; the floor is fWinchSpeed·P on winch (0x800) sections, else fMinSpeed·P
+	// [BIN:TPW-EXE:0x43d1a6 coaster hop speed] per car: (start y − half y) × fAccelerationPerHeight (+0x24), × fUphillAccelModifier (+0x28; +0x2c when the half point is not higher), + the train speed, each a single and none fused; a value not above the floor becomes the floor; the floor is fWinchSpeed·P on winch (0x800) sections, else fMinSpeed·P
 	public static float CarSpeed( CoasterDefinition definition, float speed, float y, float yHalf, float floor )
 	{
 		var modifier = yHalf > y ? definition.UphillAccelModifier : definition.DownhillAccelModifier;
-		return MathF.Max( MathF.FusedMultiplyAdd( modifier, definition.AccelerationPerHeight * (y - yHalf), speed ), floor );
+		var value = (y - yHalf) * definition.AccelerationPerHeight * modifier + speed;
+		return value > floor ? value : floor;
 	}
 
 	/// <summary>
@@ -1171,9 +1177,9 @@ public sealed class CoasterRide
 	/// partial; after each hop the speed decays below 2.0 and stops below 0.01, the extents update, a train that caught up with
 	/// the train ahead exchanges speed with it and the position wraps.
 	/// </summary>
-	// [BIN:STP-PPC:0x10040650 coaster tick] hops of half a sample: per car the winch test reads the section of the sample at trunc(s + ½) (0x1004098C, 0x10040A0C), the average car speed, braking when a car is past ctl+308 (strictly) or friction on the flag-8 sample of the reference car's +64 position, which is written only after the frame's hops (0x10041094), so it is fixed per frame; max(·, W) when any car is on a winch section else max(·, M), min(·, ctl+52); τ = d/((v + v')/2) from the reference car's distance to its half-sample point (0x1004316C); a full hop if τ < budget, else α = budget/τ, v_end = (1 − α)v + αv', s += ½·((v + v_end)/2·budget/d), v = min(cap, v_end) with no floor: 0x10040D98 stores max(v_end, M), but 0x10040D9C..0x10040DC8 reload the unfloored v_end and overwrite that store; after every hop v ×= 0.95 below 2.0 and v = 0 below 0.01; s wraps by fmod
 	// [BIN:TPW-EXE:0x43d054 hop floors] the winch floor [ebp-0xc] = W·P·0.5 (0x6fe064) when train flags 0x80 and 0x20 are both set (0x43d041..0x43d05d), else W·P; braking needs a car past ctl+0x134 and flag 0x40 clear (0x43d161, 0x43d294)
 	// [BIN:TPW-EXE:0x43ced8 hop queue] every train starts the frame with the frame's time at +0x7c in the queue at ctl+0x12c (train order); the train at the head hops; after a full hop it goes back in before the first train whose remaining time is not above its own (0x43d48b..0x43d4b9, or at the end), after a partial hop it leaves the queue; the frame ends when the queue is empty
+	// [BIN:TPW-EXE:0x43cef2 start points] before the first hop every car of every train gets its point at the coordinate (car +0x38 / spacing + train +0x74, wrapped by the end coordinate) in car +0x48 (0x43cf0a..0x43cfaf); a full hop copies each car's half-sample point (+0x54) into +0x48 (0x43d45a..0x43d481)
 	private void MoveTrains( float budget )
 	{
 		var count = trains.Count;
@@ -1181,27 +1187,41 @@ public sealed class CoasterRide
 		{
 			hopBudgets = new float[count];
 			hopFriction = new bool[count];
+			hopStart = new System.Numerics.Vector3[count][];
+			hopHalf = new System.Numerics.Vector3[count][];
 		}
 		hopQueue.Clear();
 		// the tick's local starts as a pointer read as a float (0x43cea4), which rounds to 0
 		BrakeFactor = 0;
 		for ( var index = 0; index < count; index++ )
 		{
+			var train = trains[index];
+			var cars = train.CarLists.Length;
+			if ( hopStart[index]?.Length != cars )
+			{
+				hopStart[index] = new System.Numerics.Vector3[cars];
+				hopHalf[index] = new System.Numerics.Vector3[cars];
+			}
+			for ( var car = 0; car < cars; car++ )
+				hopStart[index][car] = PointAtCoordinate( WrapCoordinate( Definition.CarOffsets[car] / Spacing + train.Position ) );
 			hopBudgets[index] = budget;
 			// [BIN:TPW-EXE:0x43d30d friction sample] the friction flag (8) is read on sample ftol(reference car +0x40), which is written only at the end of the tick, so it is the frame's starting sample
-			hopFriction[index] = (samples[(int)CarCoordinate( trains[index], Definition.ReferenceCar ) % samples.Length].Flags & CoasterSampleFlags.Friction) != 0;
+			hopFriction[index] = (samples[(int)CarCoordinate( train, Definition.ReferenceCar ) % samples.Length].Flags & CoasterSampleFlags.Friction) != 0;
 			hopQueue.Add( index );
 		}
 		while ( hopQueue.Count > 0 )
 		{
 			var index = hopQueue[0];
-			var full = HopTrain( trains[index], ref hopBudgets[index], hopFriction[index] );
+			var full = HopTrain( trains[index], ref hopBudgets[index], hopFriction[index], hopStart[index], hopHalf[index] );
 			HopObserved?.Invoke( index, hopBudgets[index], full );
 			hopQueue.RemoveAt( 0 );
 			if ( full )
 				Requeue( hopQueue, hopBudgets, index );
 		}
 	}
+
+	private System.Numerics.Vector3[][] hopStart = Array.Empty<System.Numerics.Vector3[]>();
+	private System.Numerics.Vector3[][] hopHalf = Array.Empty<System.Numerics.Vector3[]>();
 
 	/// <summary>
 	/// Puts a train that made a full hop back in the hop queue (<c>0x43d48b..0x43d4b9</c>): before the first train whose remaining budget is not above
@@ -1218,10 +1238,10 @@ public sealed class CoasterRide
 	}
 
 	/// <summary>One hop of a train (see <see cref="MoveTrains"/>); true for a full hop, false for the partial last hop of its frame.</summary>
-	// [BIN:TPW-EXE:0x43d085 car coordinates in the hop] each active car's coordinate is car +0x38 / spacing + train +0x74, plus the sample count when negative but not wrapped above (the braking test compares it so with ctl+0x134); the hop distance is the reference car's (train +0x2c) from its point to its half-sample point (0x470940 on car +0x48 and +0x54); the braking blend's x takes car train +8's (0) coordinate; a partial hop starts from min(position, sample count)
-	private bool HopTrain( CoasterTrain train, ref float budget, bool friction )
+	// [BIN:TPW-EXE:0x43d085 car coordinates in the hop] each car's coordinate is car +0x38 / spacing + train +0x74, plus the end coordinate when negative (not wrapped above: the braking test compares it so with ctl+0x134); its half-sample point is at that coordinate + ½ (wrapped by the end coordinate); the hop distance is the reference car's (train +0x2c) from its start point (car +0x48) to its half point (+0x54) (0x470940); the braking blend's x takes car train +8's (0) coordinate; a partial hop starts from min(position, end coordinate)
+	private bool HopTrain( CoasterTrain train, ref float budget, bool friction, System.Numerics.Vector3[] start, System.Numerics.Vector3[] half )
 	{
-		var count = samples.Length;
+		var end = End;
 		var cars = train.CarLists.Length;
 		var minimumFloor = Definition.MinSpeed * PowerFactor;
 		var position = train.Position;
@@ -1236,17 +1256,19 @@ public sealed class CoasterRide
 		{
 			var at = Definition.CarOffsets[car] / Spacing + position;
 			if ( at < 0 )
-				at += count;
-			var winch = winchSections.Contains( SampleAt( at + Hop ).Section );
+				at = end + at;
+			var halfAt = WrapCoordinate( at + Hop );
+			half[car] = PointAtCoordinate( halfAt );
+			var winch = winchSections.Contains( Slot( (int)halfAt ).Section );
 			anyWinch |= winch;
 			train.OnWinch[car] = winch;
-			sum += CarSpeed( Definition, speed, SampleAt( at ).Position.Y, SampleAt( at + Hop ).Position.Y, winch ? winchFloor : minimumFloor );
+			sum = CarSpeed( Definition, speed, start[car].Y, half[car].Y, winch ? winchFloor : minimumFloor ) + sum;
 			pastBraking |= BrakingStart < at;
 		}
 		var next = sum / cars;
 		if ( pastBraking && (train.Flags & CoasterTrainFlags.Bumped) == 0 )
 		{
-			next = BrakeBlend( next, winchFloor, Definition.CarOffsets[0] / Spacing + position, BrakingStart, count, out var factor );
+			next = BrakeBlend( next, winchFloor, Definition.CarOffsets[0] / Spacing + position, BrakingStart, end, out var factor );
 			train.BrakingNow = true;
 			BrakeFactor = factor;
 		}
@@ -1254,40 +1276,45 @@ public sealed class CoasterRide
 		{
 			train.BrakingNow = false;
 			if ( friction )
-				next *= Definition.FrictionMultiplier;
+				next = Definition.FrictionMultiplier * next;
 		}
-		next = MathF.Max( next, anyWinch ? winchFloor : minimumFloor );
-		next = MathF.Min( next, SpeedCap );
-		var distance = System.Numerics.Vector3.Distance( SampleAt( position ).Position, SampleAt( position + Hop ).Position );
-		var hopTime = speed + next > 0 ? distance / ((next + speed) * 0.5f) : float.PositiveInfinity;
-		var full = hopTime < budget;
+		if ( !(next > (anyWinch ? winchFloor : minimumFloor)) )
+			next = anyWinch ? winchFloor : minimumFloor;
+		// [BIN:TPW-EXE:0x43d378 speed cap] a speed not below the cap becomes the cap; a NaN stays NaN
+		if ( next >= SpeedCap )
+			next = SpeedCap;
+		var reference = Definition.ReferenceCar;
+		var distance = CoasterX87.Length( start[reference].X - half[reference].X, start[reference].Y - half[reference].Y, start[reference].Z - half[reference].Z );
+		var hopTime = distance / ((next + speed) * 0.5f);
+		// [BIN:TPW-EXE:0x43d39a hop test] a NaN hop time is not at least the budget, so it counts as a full hop
+		var full = !(hopTime >= budget);
 		if ( full )
 		{
 			budget -= hopTime;
 			speed = next;
-			position += Hop;
+			position -= -Hop;
+			Array.Copy( half, start, cars );
 		}
 		else
 		{
-			var fraction = float.IsFinite( hopTime ) && hopTime > 0 ? budget / hopTime : 0f;
-			var end = MathF.FusedMultiplyAdd( 1f - fraction, speed, fraction * next );
-			var travelled = distance > 0 ? (speed + end) * 0.5f * budget / distance : 0f;
-			position = MathF.FusedMultiplyAdd( Hop, travelled, MathF.Min( position, count ) );
-			speed = SpeedCap < end ? SpeedCap : end;
+			var fraction = budget / hopTime;
+			var endSpeed = next * fraction + (1f - fraction) * speed;
+			var travelled = (endSpeed + speed) * budget * 0.5f / distance;
+			position = (position > end ? end : position) - travelled * -Hop;
+			speed = SpeedCap < endSpeed ? SpeedCap : endSpeed;
 		}
-		if ( speed < DecayBelow )
-			speed *= Decay;
-		if ( speed < StopBelow )
+		speed = (speed < DecayBelow ? Decay : 1f) * speed;
+		// [BIN:TPW-EXE:0x43d4bc stop] a speed that is not at least the stop limit (NaN included) becomes 0
+		if ( !(speed >= StopBelow) )
 			speed = 0;
 		train.Position = position;
 		train.Speed = speed;
 		UpdateExtents( train );
 		Collide( train );
-		if ( train.Position >= count )
-			train.Position %= count;
-		// [BIN:TPW-EXE:0x43d575 bumped flag] flag 0x40 clears while the train is past the window and before the braking start (0x43d578..0x43d599)
-		var coordinate = StationCoordinate( train.Position );
-		if ( coordinate > StationWindow.End && coordinate < StationCoordinate( BrakingStart ) )
+		if ( !(train.Position < end) )
+			train.Position %= end;
+		// [BIN:TPW-EXE:0x43d575 bumped flag] flag 0x40 clears while the train is past the window (ctl +0xfc) and before the braking start (0x43d578..0x43d599)
+		if ( train.Position > StationWindow.End && train.Position < BrakingStart )
 			train.Flags &= ~CoasterTrainFlags.Bumped;
 		return full;
 	}
@@ -1297,25 +1324,25 @@ public sealed class CoasterRide
 	/// train's front and it is slower, both take a third of their own speed plus two thirds of the other's, and the train ahead is
 	/// flagged bumped.
 	/// </summary>
-	// [BIN:TPW-EXE:0x43cd60 train collision] T.speed = (T + 2·O)/3, O.speed = (O + 2·T)/3 and O.flags |= 0x40 when O +0x24 (+ the sample count when O +0x74 < T +0x74) < T +0x20 and O +0x78 < T +0x78; when |T' − O'| > 1 it calls the crash effect 0x439840 (sound and particles only)
+	// [BIN:TPW-EXE:0x43cd60 train collision] T.speed = (T − 2·O)/…: T' = (T − (O × −2)) × (1/3) and O' = (O − (T × −2)) × (1/3) (0x6fe05c, 0x6fe060) and O.flags |= 0x40 when O +0x24 (+ the end coordinate when O +0x74 < T +0x74) < T +0x20 and O +0x78 < T +0x78; when |T' − O'| > 1 it calls the crash effect 0x439840 (sound and particles only)
 	private void Collide( CoasterTrain train )
 	{
 		if ( trains.Count < 2 )
 			return;
 		var other = trains[(train.Index + 1) % trains.Count];
 		var rear = other.Rear;
-		if ( other.Front < train.Front )
-			rear += samples.Length;
+		if ( other.Position < train.Position )
+			rear += End;
 		if ( !(rear < train.Front) || !(other.Speed < train.Speed) )
 			return;
 		const float Third = 0.33333334f;
 		var own = train.Speed;
 		var ahead = other.Speed;
-		train.Speed = (own - -2f * ahead) * Third;
-		other.Speed = (ahead - -2f * own) * Third;
+		train.Speed = (own - ahead * -2f) * Third;
+		other.Speed = (ahead - own * -2f) * Third;
 		other.Flags |= CoasterTrainFlags.Bumped;
 		// [BIN:TPW-EXE:0x43ce00 crash threshold] the crash effect 0x439840 runs when the new speeds differ by more than 1.0 (0x6fe020; a NaN difference skips it)
-		if ( MathF.Abs( other.Speed - train.Speed ) > 1f && Crashed is { } crashed && CrashPlace( train ) is { } place )
+		if ( MathF.Abs( train.Speed - other.Speed ) > 1f && Crashed is { } crashed && CrashPlace( train ) is { } place )
 			crashed( place );
 	}
 
@@ -1323,16 +1350,16 @@ public sealed class CoasterRide
 	public event Action<System.Numerics.Vector3>? Crashed;
 
 	/// <summary>
-	/// The place the crash effect plays at: the bumping train's front on the track samples, <c>fmod(front, samples)</c> split into a sample and a fraction
+	/// The place the crash effect plays at: the bumping train's front on the track samples, <c>fmod(front, end coordinate)</c> split into a sample and a fraction
 	/// (<c>0x43c000</c> interpolates the two samples' positions), each coordinate truncated toward zero (<c>__ftol</c>, <c>0x439842</c>-<c>0x4398c2</c>).
 	/// </summary>
-	// [BIN:TPW-EXE:0x439840 crash place] fmod (0x67b24a) of train +0x20 by the sample count (ctl +0xa8), modf (0x67b280) into sample and fraction, 0x43c000(ctl, sample, fraction, out) = lerp of the +4/+8/+0xC positions of that sample and the next (stride 0x38), then three truncations; the next sample past the last is read beyond the array by the original, the first sample here (a closed circuit)
+	// [BIN:TPW-EXE:0x439840 crash place] fmod (0x67b24a) of train +0x20 by the end coordinate (ctl +0xa8, 0x439850..0x43985a), modf (0x67b280) into sample and fraction, 0x43c000(ctl, sample, fraction, out) = lerp of the +4/+8/+0xC positions of that sample and the next (stride 0x38), then three truncations; the next sample past the last is read beyond the array by the original, the first sample here (a closed circuit)
 	private System.Numerics.Vector3? CrashPlace( CoasterTrain train )
 	{
 		var count = samples.Length;
 		if ( count == 0 || !float.IsFinite( train.Front ) )
 			return null;
-		var wrapped = train.Front % count;
+		var wrapped = train.Front % End;
 		var index = (int)wrapped;
 		if ( index < 0 || index >= count )
 			return null;

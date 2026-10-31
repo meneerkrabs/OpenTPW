@@ -283,4 +283,36 @@ public class CoasterCollisionTests
 		Assert.IsTrue( ride.CountsForParkPoints );
 	}
 
+
+	/// <summary>
+	/// The descriptor-equality skips of the link test (tp.exe 0x439c5f..0x439c81, ORACLE X46): the oracle's four-node scenario of two crossing links (A to B along +x, C to D along +z, one
+	/// unit radius profile) is a hit with four distinct cell descriptors and a miss when B shares C's descriptor or A shares D's.
+	/// </summary>
+	[TestMethod]
+	public void NodesOfOneCellColumnAreNotTestedAgainstEachOther()
+	{
+		CoasterSample Sample( float x, float z, float yaw ) => new() { Position = new System.Numerics.Vector3( x, 10, z ), Yaw = yaw };
+		var samples = new[] { Sample( 0, 0, MathF.PI / 2 ), Sample( 10, 0, MathF.PI / 2 ), Sample( 20, 0, MathF.PI / 2 ), Sample( 30, 0, MathF.PI / 2 ), Sample( 10, -10, 0 ), Sample( 10, 0, 0 ), Sample( 10, 10, 0 ) };
+		var points = new[] { (-1f, -1f), (1f, -1f), (1f, 1f), (-1f, 1f) };
+		CoasterCollision.Result Run( params int[] columns ) => CoasterCollision.Run(
+			new[] { 0, 2, 4, 6 }.Select( ( index, number ) => new CoasterCollision.Node( index, 2f, false, false, columns[number] ) ).ToList(), samples, points );
+		var distinct = Run( 1, 2, 3, 4 );
+		Assert.AreEqual( 2, distinct.Count, "the oracle's run finds the crossing (two list entries)" );
+		CollectionAssert.AreEqual( new[] { 2 }, distinct.Lists[0].ToArray() );
+		CollectionAssert.AreEqual( new[] { 0 }, distinct.Lists[2].ToArray() );
+		Assert.AreEqual( 0, Run( 1, 2, 2, 4 ).Count, "B and C in one cell column: skipped" );
+		Assert.AreEqual( 0, Run( 1, 2, 3, 1 ).Count, "A and D in one cell column: skipped" );
+		Assert.AreEqual( 2, Run( 1, 2, 1, 4 ).Count, "A and C sharing a column is not a skip (0x439c5f..0x439c81 compare B with C and A with D)" );
+	}
+
+	[TestMethod]
+	public void ASamCanNameTheCollisionProfile()
+	{
+		var settings = CoasterTests.PcSettings();
+		CollectionAssert.AreEqual( CoasterCollision.DefaultPoints.ToArray(), CoasterDefinition.FromValues( settings ).CollisionPoints.ToArray(), "no key: the defaults of 0x74caa0" );
+		settings["asTrackCollisionPoints[0].fCollisionX"] = "2";
+		settings["asTrackCollisionPoints[0].fCollisionY"] = "-1.5";
+		settings["asTrackCollisionPoints[1].fCollisionX"] = "3";
+		CollectionAssert.AreEqual( new[] { (2f, -1.5f), (3f, 0f) }, CoasterDefinition.FromValues( settings ).CollisionPoints.ToArray(), "the array replaces the defaults; a missing field is 0" );
+	}
 }

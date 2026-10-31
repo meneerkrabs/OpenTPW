@@ -72,6 +72,7 @@ COAST-010 docs/reverse/COAST-plan.md
 COAST-011 docs/reverse/COAST-plan.md
 COAST-012 docs/reverse/COAST-plan.md
 COAST-013 docs/reverse/COAST-plan.md
+COAST-014 docs/reverse/COAST-plan.md
 COAST-015 docs/COASTERS.md
 COAST-016 docs/COASTERS.md
 COAST-017 docs/reverse/COAST-plan.md
@@ -87,6 +88,7 @@ COAST-027 docs/COASTERS.md
 COAST-029 docs/progress/2026-10-18-round8-coasters.md
 COAST-030 docs/COASTERS.md
 COAST-031 docs/COASTERS.md
+COAST-033 docs/progress/2026-10-30-r11-coaster-tool.md
 COAST-035 docs/progress/2026-10-30-r11-coaster-tool.md
 COMPAT-001 docs/COMPATIBILITY.md
 COMPAT-005 docs/reverse/APPROX-TRACE.md
@@ -437,4 +439,3 @@ WALK-006 docs/GUESTS.md
 WALK-007 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
-COAST-033 docs/progress/2026-10-30-r11-coaster-tool.md

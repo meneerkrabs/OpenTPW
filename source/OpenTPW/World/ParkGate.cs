@@ -267,15 +267,25 @@ public sealed class ParkGate
 	/// tool, <see cref="QueuePaths.Connect"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE4A0 queue link test] thing flag +0x32 bit 8 (Info.HasQueue, type record +0x40, set at 0x4DB425): the back cell (0x4DE130, the cached +0x3A) must exist and its +0x0C (0x522770) differ from its +0x0D (0x522850); without the flag the entrance cell's link toward the cell in front (by the rotation +0x10: 0 → 16, 90 → 4, 180 → 1, 270 → 64) and that type-1 cell's link back are both needed
-	// [APPROX:ECON-049] a queue ride with no front is unconnected, and typed, owned TPW no-queue entrances use reciprocal entrance/path links; unmatched geometry, prototypes and TPI, and queue rides whose front holds no queue cell, retain the permissive fallback. These checks never close an already-open ride
+	// [BIN:TPW-EXE:0x004DE4A0 back cell of any type] the test reads the back cell as 0x4DE130 left it: the front cell itself when no queue cell lies behind it (+0x40 = 1), whatever its type, so a front that is a path cell is tested on its own link byte against its +0x0D, and an empty one (both bytes 0) is unconnected; the owner word, the entrance cell's type and the link toward a rotation are not read
+	// [APPROX:ECON-049] a Theme Park Inc layout (until RIDES-031 types its footprints), a prototype and geometry no placement laid retain the permissive fallback: a queue ride whose front holds no queue cell, an entrance OpenTPW cannot reconstruct and an object without Info.HasQueue are taken as connected. These checks never close an already-open ride
 	// [EXT:untyped-harness-world] untyped geometry (the gates and test rigs, whose ride entrances are not typed map cells with a link byte) retains the permissive answer too (user-approved 2026-10-30)
+	// [EXT:original-undefined-reads] a typed ride whose entrance looks off the map (the id arithmetic of 0x4DE040 leaves the cell array) or whose rotation is none of 0, 90, 180 and 270 (0x4DE4A0 then tests an unset byte) is taken as connected; no placement reaches either (user-approved class, 2026-10-30)
 	internal static bool QueueConnected( GuestPathGrid grid, RideVisitorBridge ride )
 	{
 		if ( !ride.HasQueue )
 			return NoQueueEntranceConnected( grid, ride );
 		// [BIN:TPW-EXE:0x004DE4A0 zero front] a queue ride whose entry has no cardinal link bit has no front (0x4DE040 writes 0), so its back of queue is 0 (0x4DE130) and the test fails at once: unconnected
-		if ( ride.ReadNativeFront( grid, out var native, out _ ) && native == null )
+		var typed = ride.QueueEntryResolver != null;
+		var readable = ride.ReadNativeFront( grid, out var native, out _ );
+		if ( readable && native == null )
 			return false;
+		if ( typed )
+		{
+			if ( !readable || ride.BackCell is not { } cached )
+				return true;
+			return grid.Cells.LinksAt( cached.X, cached.Y ) != grid.Cells.QueueLinkAt( cached.X, cached.Y );
+		}
 		if ( ride.QueueFrontCell is not { } front || !grid.IsQueue( front.X, front.Y ) )
 			return true;
 		var back = ride.QueueBackCell;
@@ -287,13 +297,15 @@ public sealed class ParkGate
 	/// next to it along that link, and the edge test of that cell in the three directions that do not lead back to the exit: the exit is connected when one of them is open.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE5A0 exit test] link = +0x0D of the exit cell (+0x38), reversed by 0x4D8C00 when +0x38 equals the entry cell +0x36; the neighbour cell id from 0x4D97E0; for the bits 1, 4, 0x10, 0x40 (directions 0 to 3) other than the reversed link, 0x4D8750(x, y, direction, 0) == 0 (open) returns 1 at once ("exit connected", the status 0x18 EXIT NOT CONNECTED is shown when none is open)
-	// a ride without a placed exit cell of its own (a prototype, a test rig), an exit cell whose link byte is not cardinal and a neighbour off the map keep the permissive answer (the register row of ECON-049, tagged at QueueConnected): the original's cell holds a link byte there and OpenTPW's untyped geometry does not
+	// [BIN:TPW-EXE:0x004DE5A0 exit cell is the entrance cell] the reversal compares the exit cell +0x38 with the access cell +0x36 itself
+	// [EXT:untyped-harness-world] a ride without a placed exit cell of its own (a prototype, a test rig, the Theme Park Inc slice: ECON-049) keeps the permissive answer, its cells holding no link byte (user-approved 2026-10-30)
+	// [EXT:original-undefined-reads] an exit cell whose link byte is not cardinal (0x4D97E0 logs and returns null) and a neighbour off the map (0x4D96F0 returns null) make the original read a null cell word; OpenTPW answers connected there, which no placement reaches (user-approved class, 2026-10-30)
 	internal static bool ExitConnected( GuestPathGrid grid, RideVisitorBridge ride )
 	{
 		if ( ride.ExitAccessCell is not { } exit || !grid.InBounds( exit.X, exit.Y ) )
 			return true;
 		var link = grid.Cells.QueueLinkAt( exit.X, exit.Y );
-		if ( exit == GuestSimulation.StandCellOf( ride ) )
+		if ( exit == (ride.AccessCell ?? GuestSimulation.StandCellOf( ride )) )
 			link = PathLinkWriter.Opposite( link );
 		var toward = GuestPathGrid.LinkDirection( link );
 		if ( toward < 0 )
@@ -315,23 +327,23 @@ public sealed class ParkGate
 
 	private static bool NoQueueEntranceConnected( GuestPathGrid grid, RideVisitorBridge ride )
 	{
-		// Restrict the test to the placed geometry we can identify; EntranceCell itself may be a
-		// nearest-path fallback, so derive the actual stand cell from the outside cell and direction.
-		if ( GameEditions.IsThemeParkInc || ride.OwnerWord == 0 || ride.QueueFrontCell is not { } outside
-			|| ride.QueueEntranceDirection is < 0 or > 3 || !grid.InBounds( outside.X, outside.Y ) )
+		if ( GameEditions.IsThemeParkInc )
+			return true;
+		// [BIN:TPW-EXE:0x004DE4FC no-queue entrance] the entrance cell is the access cell +0x36, the link toward the path comes from the rotation, the cell in front is the neighbour along the reverse link (0x4D97E0), a type-1 cell (0x536310), and the test needs that cell's link toward the entrance and the entrance's link toward it (0x522770 at 0x4DE572, 0x4DE581): no owner word, no type 9 on the entrance and no queue front is read
+		if ( ride.AccessCell is not { } entrance )
 			return true;
 		var toward = ride.Rotation switch { 0 => 16, 90 => 4, 180 => 1, 270 => 64, _ => 0 };
-		if ( toward == 0 || GuestPathGrid.LinkValue( ride.QueueEntranceDirection ) != toward )
+		if ( toward == 0 )
 			return true;
-		var delta = GuestPathGrid.Directions[ride.QueueEntranceDirection];
-		var stand = (X: outside.X + delta.DX, Y: outside.Y + delta.DY);
+		var back = PathLinkWriter.Opposite( (byte)toward );
+		var (dx, dy) = GuestPathGrid.Directions[GuestPathGrid.LinkDirection( back )];
+		var front = (X: entrance.X + dx, Y: entrance.Y + dy);
 		var cells = grid.Cells;
-		if ( !cells.InBounds( stand.X, stand.Y ) || cells.RawTypeAt( stand.X, stand.Y ) != ParkCellTypes.Entrance
-			|| cells.OwnerAt( stand.X, stand.Y ) != ride.OwnerWord )
+		if ( !cells.InBounds( entrance.X, entrance.Y ) || !cells.InBounds( front.X, front.Y ) )
 			return true;
-		return cells.RawTypeAt( outside.X, outside.Y ) == (byte)ParkCellType.Path
-			&& (cells.LinksAt( outside.X, outside.Y ) & toward) != 0
-			&& (cells.LinksAt( stand.X, stand.Y ) & PathLinkWriter.Opposite( (byte)toward )) != 0;
+		return cells.RawTypeAt( front.X, front.Y ) == (byte)ParkCellType.Path
+			&& (cells.LinksAt( front.X, front.Y ) & toward) != 0
+			&& (cells.LinksAt( entrance.X, entrance.Y ) & back) != 0;
 	}
 
 	/// <summary>

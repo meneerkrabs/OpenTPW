@@ -249,7 +249,12 @@ public class TypedQueueFrontTests
 		Assert.IsTrue( typed.ReadNativeFront( typedGrid, out var front, out var direction ) );
 		Assert.AreEqual( ((int, int)?)(5, 4), front );
 		Assert.AreEqual( 0, direction );
-		Assert.IsTrue( ParkGate.QueueConnected( typedGrid, typed ), "a front that holds no queue cell keeps the permissive answer" );
+		// [BIN:TPW-EXE:0x004DE4A0 back cell of any type] a front that holds no queue cell is the back (0x4DE130, +0x40 = 1) and is tested on its own link byte against its +0x0D: an empty cell (both 0) is unconnected, a path cell with a link is connected
+		Assert.IsFalse( ParkGate.QueueConnected( typedGrid, typed ), "a front that holds no queue cell is tested as the back: an empty one is unconnected" );
+		typedGrid.Cells.SetType( 5, 4, ParkCellType.Path );
+		typedGrid.Cells.SetLinks( 5, 4, 4 );
+		typed.RecomputeQueue( typedGrid );
+		Assert.IsTrue( ParkGate.QueueConnected( typedGrid, typed ), "a path front with a link byte is connected" );
 	}
 
 	[TestMethod]

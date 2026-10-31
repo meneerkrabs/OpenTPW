@@ -289,9 +289,10 @@ public sealed class CoasterTrack
 		var la = MathF.Sqrt( ax * ax + ay * ay );
 		var lb = MathF.Sqrt( bx * bx + by * by );
 		var dot = ax / la * (bx / lb) + ay / la * (by / lb);
-		if ( dot < -1f )
+		// [BIN:TPW-EXE:0x434ad3 dot clamp] a NaN dot becomes -1 (angle π), a dot above 1 becomes 1 (0x434ad3..0x434b01)
+		if ( !(dot >= -1f) )
 			dot = -1f;
-		if ( !(dot <= 1f) )
+		if ( dot > 1f )
 			dot = 1f;
 		return CoasterX87.Acos( dot );
 	}
@@ -312,7 +313,7 @@ public sealed class CoasterTrack
 	{
 		var span = maximum - minimum;
 		var t = (distance - minimum) / span;
-		if ( !(t < 1f) )
+		if ( t >= 1f )
 			t = 1f;
 		if ( !(t > 0f) )
 			t = 0f;
@@ -338,6 +339,12 @@ public sealed class CoasterTrack
 			return CoasterPlaceResult.Ok;
 		var angle = MathF.Abs( TurnAngle( next, previous, behind ) );
 		var (low, high) = AngleWindow( pylon, MathF.Sqrt( squared ), entrance );
+		return TurnVerdict( angle, low, high );
+	}
+
+	/// <summary>The verdict of the turn test: the angle below the window's low limit is too sharp, above its high limit too wide (a NaN passes both compares).</summary>
+	internal static CoasterPlaceResult TurnVerdict( float angle, float low, float high )
+	{
 		if ( angle < low )
 			return CoasterPlaceResult.TurnTooSharp;
 		if ( angle > high )

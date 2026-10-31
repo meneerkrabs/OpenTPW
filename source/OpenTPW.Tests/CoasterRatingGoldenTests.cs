@@ -115,7 +115,7 @@ public class CoasterRatingGoldenTests
 				negativeZero++;
 		}
 		Assert.IsTrue( count >= 100, $"{count} final rows" );
-		Assert.IsTrue( negativeZero >= 0 );
+		Assert.IsTrue( negativeZero > 0, "the rows must reach a negative zero" );
 	}
 
 	[TestMethod]
@@ -355,7 +355,7 @@ public class CoasterRatingGoldenTests
 			var normalLimits = new CoasterTrack.TurnLimits( values[6], values[7], values[8], values[9] );
 			var angle = CoasterTrack.TurnAngle( (cells[2], cells[3]), (cells[0], cells[1]), (cells[4], cells[5]) );
 			var (low, high) = CoasterTrack.AngleWindowFor( MathF.Sqrt( cells[6] ), values[0], values[1], entrance ? entranceLimits : normalLimits );
-			var passed = !(angle < low) && !(angle > high);
+			var passed = CoasterTrack.TurnVerdict( angle, low, high ) == CoasterPlaceResult.Ok;
 			var expected = sides[1].Split( ' ' );
 			Assert.AreEqual( expected[0], Bits( angle ).ToString( "x8" ), $"angle of row {rows}: {row}" );
 			Assert.AreEqual( expected[1] == "1", passed, $"verdict of row {rows}: {row}" );
@@ -364,5 +364,22 @@ public class CoasterRatingGoldenTests
 				passes++;
 		}
 		Assert.IsTrue( rows >= 1000 && passes > 200 && passes < rows - 200, $"{rows} turn rows, {passes} passing" );
+	}
+
+	[TestMethod]
+	public void TheValidatorsNanBranchesFollowTheCompares()
+	{
+		// 0x434b46..0x434b6e: min == max gives 0/0 = NaN, which survives "not below 1" and becomes 0
+		Assert.AreEqual( (1f, 3f), CoasterTrack.AngleWindowFor( 3, 3, 3, new CoasterTrack.TurnLimits( 1, 2, 3, 4 ) ) );
+		// 0x434ad3..0x434b01: a NaN dot becomes -1, so the angle is π
+		Assert.AreEqual( MathF.PI, CoasterTrack.TurnAngle( (1, 1), (1, 1), (2, 2) ), 1e-6f );
+	}
+
+	[TestMethod]
+	public void TheTrainCountKeepsTheLowDwordOfTheTruncation()
+	{
+		Assert.AreEqual( 1, CoasterRating.TrainCount( float.NaN, 1000, 6 ) );
+		Assert.AreEqual( 6, CoasterRating.TrainCount( 4294967296f + 2048f, 1000, 6 ), "2^32 + 2048 truncates to the 64-bit value whose low dword is 2048" );
+		Assert.AreEqual( 1, CoasterRating.TrainCount( 1e30f, 1000, 6 ), "out of the 64-bit range gives 0" );
 	}
 }

@@ -182,12 +182,14 @@ public sealed class CoasterRating
 	/// <summary>
 	/// The train count after a rating pass: min(uiMaxTrains, max(1, trunc(lap / (uiTrainReleaseRate × 0.001)))).
 	/// </summary>
-	// [BIN:TPW-EXE:0x43ca87 train count] the release rate (type +0x2ec, an unsigned) loaded as an integer, times the single 0.001 (0x6fe030), divided into the lap time (0x43ca87..0x43ca90), truncated by _ftol (0x67a830: NaN and out of range give 0x80000000), at least 1 (signed) and, as an unsigned compare, at most uiMaxTrains (type +0x2e8) (0x43ca98..0x43caae)
+	// [BIN:TPW-EXE:0x43ca87 train count] the release rate (type +0x2ec, an unsigned) loaded as an integer, times the single 0.001 (0x6fe030), divided into the lap time (0x43ca87..0x43ca90), truncated by _ftol (0x67a830: fistp qword, low dword: NaN and out of range give 0, [2^31, 2^63) the low 32 bits), at least 1 (signed) and, as an unsigned compare, at most uiMaxTrains (type +0x2e8) (0x43ca98..0x43caae)
 	public static int TrainCount( float lapSeconds, int releaseRateMilliseconds, int maxTrains )
 	{
 		var headway = (float)((double)(uint)releaseRateMilliseconds * 0.001f);
 		var computed = lapSeconds / headway;
-		var trains = float.IsNaN( computed ) || computed <= -2147483648f ? int.MinValue : computed >= 2147483648f ? int.MinValue : (int)computed;
+		// _ftol (0x67a830) is fistp qword and keeps the low dword: NaN and |c| >= 2^63 give 0, [2^31, 2^63) the low 32 bits
+		var wide = float.IsNaN( computed ) || computed >= 9.223372E18f || computed < -9.223372E18f ? long.MinValue : (long)computed;
+		var trains = unchecked( (int)wide );
 		if ( trains < 1 )
 			trains = 1;
 		return (uint)trains >= (uint)maxTrains ? maxTrains : trains;

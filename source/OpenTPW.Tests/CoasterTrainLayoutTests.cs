@@ -303,7 +303,7 @@ public class CoasterTrainLayoutTests
 		Assert.IsTrue( System.Numerics.Vector3.Distance( expected, ride.CarPose( c ).Position ) < 1e-3f, "halfway between two knot coordinates is t = ½ of their pair" );
 		var lap = ride.CarPose( c + ride.EndCoordinate );
 		Assert.IsTrue( System.Numerics.Vector3.Distance( expected, lap.Position ) < 1e-3f, "a coordinate a lap on (the controller's end coordinate) is the same point" );
-		var near = ride.CarPose( ride.Samples.Count - 0.25f );
+		var near = ride.CarPose( ride.EndCoordinate - 0.25f );
 		Assert.IsTrue( float.IsFinite( near.Position.X ) && float.IsFinite( near.Yaw ), "the closing pair poses too" );
 	}
 

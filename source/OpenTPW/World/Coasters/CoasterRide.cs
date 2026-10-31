@@ -465,7 +465,7 @@ public sealed class CoasterRide
 			var knot = pass.CentreKnot[index];
 			var at = knot == 0 || knot >= coordinates.Count ? 0 : (int)coordinates[knot];
 			var node = nodes[index];
-			result.Add( new CoasterCollision.Node( at, node.IsPylonless ? null : definition.Pylon( node.LoopPylon ).CollisionPossibleRadius, node.IsPylonless, (node.Flags & CoasterNodeFlags.CutEnd) != 0 ) );
+			result.Add( new CoasterCollision.Node( at, node.IsPylonless ? null : definition.Pylon( node.LoopPylon ).CollisionPossibleRadius, node.IsPylonless, (node.Flags & CoasterNodeFlags.CutEnd) != 0, node.IsPylonless ? -1 : (node.X << 16) | node.Y ) );
 		}
 		return result;
 	}

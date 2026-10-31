@@ -23,7 +23,7 @@ public static class CoasterCollision
 	public const float AngleSumThreshold = 6.2821855f;
 
 	/// <summary>One node's role in the pass: its sample index, the radius its pylon control gives (null without a control) and whether it ends a cut chain (node flag 0x10000).</summary>
-	public readonly record struct Node( int SampleIndex, float? Radius, bool IsPylonless, bool CutEnd = false );
+	public readonly record struct Node( int SampleIndex, float? Radius, bool IsPylonless, bool CutEnd = false, int Column = -1 );
 
 	/// <summary>The outcome of a pass: the controller count and each node's list of crossing partners.</summary>
 	public sealed record Result( int Count, IReadOnlyList<IReadOnlyList<int>> Lists, IReadOnlyList<bool> Overflow );
@@ -45,7 +45,7 @@ public static class CoasterCollision
 	/// before it. The last node starts no link.
 	/// </summary>
 	// [BIN:TPW-EXE:0x439ab0 intersection pass] a node marked 0x200000 (and not 0x10000) first drops its entries (0x43ad50), clears 0x600000, then tests its link against the links starting two nodes after it, and then those starting two nodes before it, with 0x439c40; the pass runs with the rounding mode set to truncate (0x439ac4), so every sine-table index below truncates
-	// [APPROX:COAST-004] the descriptor-equality skips (0x439c5f..0x439c81) have no case in OpenTPW's tracks (the node carries no descriptor cell here); the x87 arithmetic is built and oracle-compared; the lists (+0xb4, eight slots up to +0xd4) are read only by the drop 0x43ad50 and the save writer 0x437300 as far as traced (the other +0xb4 loads 0x43b159, 0x43b3e5 and 0x43b63f belong to a ring buffer of another object with its capacity at +0xb0 and cursors at +0xc4/+0xc8, 0x44ace9 is a stack slot; the objects of the loads at 0x430867, 0x43420a, 0x443087 and 0x44309c are not decoded); the count (+0xb0) feeds the section builder 0x43f4e0 (material variant 2 for a crossing link)
+	// [APPROX:COAST-004] the x87 arithmetic is built and oracle-compared; the lists (+0xb4, eight slots up to +0xd4) are read only by the drop 0x43ad50 and the save writer 0x437300 as far as traced (the other +0xb4 loads 0x43b159, 0x43b3e5 and 0x43b63f belong to a ring buffer of another object with its capacity at +0xb0 and cursors at +0xc4/+0xc8, 0x44ace9 is a stack slot; the objects of the loads at 0x430867, 0x43420a, 0x443087 and 0x44309c are not decoded); the count (+0xb0) feeds the section builder 0x43f4e0 (material variant 2 for a crossing link)
 	public static Result Run( IReadOnlyList<Node> nodes, IReadOnlyList<CoasterSample> samples, IReadOnlyList<(float X, float Y)>? points = null, int maxPasses = MaxPasses )
 	{
 		ArgumentNullException.ThrowIfNull( nodes );
@@ -124,6 +124,9 @@ public static class CoasterCollision
 		{
 			var b = a + 1;
 			var d = c + 1;
+			// [BIN:TPW-EXE:0x439c5f descriptor skips] a link whose end node (B) shares its cell descriptor (node +0x100) with the other link's first node (C), or whose first node (A) shares it with the other link's end node (D), is not tested (0x439c5f..0x439c81); the descriptor is the cell's pylon column, whose node list holds every stacked pylon (0x433d71..0x433d88: +0x34 array, +0x30 height), so nodes of one cell share it and a pylon-less node has its own
+			if ( (nodes[b].Column >= 0 && nodes[b].Column == nodes[c].Column) || (nodes[a].Column >= 0 && nodes[a].Column == nodes[d].Column) )
+				return false;
 			// [BIN:TPW-EXE:0x439c40 cut end] the link that starts on a node with 0x10000 (the end of a cut chain) is never tested (0x439c40 tests param_5's flag 0x10000)
 			if ( nodes[c].CutEnd )
 				return false;

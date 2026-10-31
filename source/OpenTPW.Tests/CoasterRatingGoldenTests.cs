@@ -302,4 +302,39 @@ public class CoasterRatingGoldenTests
 		}
 		Assert.IsTrue( rows >= 100 && partial > 400 && bumped > 20, $"{rows} tick rows, {partial} short ticks, {bumped} bumped train states, {cleared} headway clears" );
 	}
+
+	[TestMethod]
+	public void EveryRowOfTheOraclesSpeedCapIsReproducedBitForBit()
+	{
+		var rows = 0;
+		foreach ( var row in Rows().Where( row => row.StartsWith( "cap | ", StringComparison.Ordinal ) ) )
+		{
+			var sides = row.Split( " > " );
+			var fields = sides[0].Split( " | " )[1].Split( ' ' );
+			var settings = CoasterTests.PcSettings();
+			settings["sCoasterType.fMaxSpeedAtMinSetting"] = Text( BitConverter.UInt32BitsToSingle( Convert.ToUInt32( fields[0], 16 ) ) );
+			settings["sCoasterType.fMaxSpeedAtMaxSetting"] = Text( BitConverter.UInt32BitsToSingle( Convert.ToUInt32( fields[1], 16 ) ) );
+			var definition = CoasterDefinition.FromValues( settings );
+			var setting = int.Parse( fields[2] );
+			Assert.AreEqual( sides[1].Split( ' ' )[0], Bits( CoasterRide.SpeedCapFor( definition, setting ) ).ToString( "x8" ), $"cap of setting {setting}: {row}" );
+			rows++;
+		}
+		Assert.IsTrue( rows >= 100, $"{rows} cap rows" );
+	}
+
+	[TestMethod]
+	public void EveryRowOfTheOraclesCarOffsetsIsReproducedBitForBit()
+	{
+		var rows = 0;
+		foreach ( var row in Rows().Where( row => row.StartsWith( "offsets | ", StringComparison.Ordinal ) ) )
+		{
+			var sides = row.Split( " > " );
+			var fields = sides[0].Split( " | " )[1].Split( ' ' );
+			var pairs = fields.Take( 3 ).Select( field => BitConverter.UInt32BitsToSingle( Convert.ToUInt32( field, 16 ) ) ).ToArray();
+			var offsets = CoasterDefinition.CarOffsetsFor( (pairs[0], pairs[1], pairs[2]), int.Parse( fields[3] ) );
+			Assert.AreEqual( sides[1], string.Join( ' ', offsets.Select( value => Bits( value ).ToString( "x8" ) ) ), row );
+			rows++;
+		}
+		Assert.IsTrue( rows >= 70, $"{rows} offset rows" );
+	}
 }

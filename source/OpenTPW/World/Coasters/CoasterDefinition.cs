@@ -280,27 +280,27 @@ public sealed class CoasterDefinition
 	public IReadOnlyList<float> CarOffsets => carOffsets;
 
 	// [BIN:TPW-EXE:0x43bc20 car offsets] the reference car's +0x38 = 0; from it toward car 0 the sum grows by +0x1c (car index 0), +0x24 (the last index) or +0x20 of the train definition (definition +0x30c/+0x314/+0x310); behind it the sum falls by the same choice; +0x3c = +0x38 / spacing
-	private void RebuildCarLayout()
+	private void RebuildCarLayout() => carOffsets = CarOffsetsFor( CarPairDistances, CarCount );
+
+	/// <summary>The cars' offsets around the reference car from the three pair distances, every running sum a single (the sum stays on the x87 stack at 24 bits).</summary>
+	internal static float[] CarOffsetsFor( (float Front, float Centre, float Rear) pairs, int count )
 	{
-		var count = CarCount;
-		var (front, centre, rear) = CarPairDistances;
-		float Pair( int car ) => car == 0 ? front : car == count - 1 ? rear : centre;
+		float Pair( int car ) => car == 0 ? pairs.Front : car == count - 1 ? pairs.Rear : pairs.Centre;
 		var offsets = new float[count];
-		var reference = ReferenceCar;
-		// The running sum stays on the x87 stack (0x43bc39..0x43bca5, 0x43bcb0..0x43bd09); each car's offset is its single-precision store.
-		var sum = 0.0;
+		var reference = (count - 1) >> 1;
+		var sum = 0f;
 		for ( var car = reference - 1; car >= 0; car-- )
 		{
-			sum = Pair( car ) + sum;
-			offsets[car] = (float)sum;
+			sum = sum + Pair( car );
+			offsets[car] = sum;
 		}
-		sum = 0.0;
+		sum = 0f;
 		for ( var car = reference + 1; car < count; car++ )
 		{
-			sum -= Pair( car );
-			offsets[car] = (float)sum;
+			sum = sum - Pair( car );
+			offsets[car] = sum;
 		}
-		carOffsets = offsets;
+		return offsets;
 	}
 
 	/// <summary>The generic metrics for every car type (no model read).</summary>

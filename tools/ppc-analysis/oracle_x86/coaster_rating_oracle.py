@@ -308,3 +308,37 @@ class RatingOracle:
         if tick_stub_counts is not None:
             tick_stub_counts.update(counts)
         return results
+
+    # ------------------------------------------------------------------------------ the speed cap of a speed setting
+    def speed_cap(self, at_minimum: float, at_maximum: float, setting: int):
+        """0x43C3D0(controller, setting, 1): controller +0x34 = the cap lerped by the setting over 100 (callees that only mark the controller dirty are stubbed)."""
+        sb = self.oracle.prepare()
+        type_record = sb.alloc(0x400)
+        sb.write(type_record + 0x4C, 'f', at_minimum)
+        sb.write(type_record + 0x50, 'f', at_maximum)
+        controller = sb.alloc(0x400)
+        sb.write(controller + 4, 'I', type_record)
+        for address in (0x4346C0, 0x43AFA0, 0x447E10):
+            sb.stubs[address] = lambda box: (0, 0)
+        sb.call(0x43C3D0, (controller, setting, 1))
+        return sb.read(controller + 0x34, 'f'), sb.read(controller + 0x30, 'I')
+
+    # ------------------------------------------------------------------------------ the car offsets of a train
+    def car_offsets(self, pairs, cars: int, reference: int, spacing: float):
+        """0x43BC20(controller, train): every car's +0x38 offset along the track around the reference car; `pairs` are the type's front (+0x1c), centre (+0x20) and rear (+0x24) pair distances."""
+        sb = self.oracle.prepare()
+        type_record = sb.alloc(0x400)
+        for offset, value in zip((0x1C, 0x20, 0x24), pairs):
+            sb.write(type_record + offset, 'f', value)
+        controller = sb.alloc(0x400)
+        sb.write(controller + 0xAC, 'f', spacing)
+        car_base = sb.alloc(0x60 * cars + 0x60)
+        for index in range(cars):
+            sb.write(car_base + 0x60 * index + 8, 'I', index)
+        train = sb.alloc(0x100)
+        sb.write(train + 4, 'I', type_record)   # the pair distances are the train definition's
+        sb.write(train + 0xC, 'I', cars)
+        sb.write(train + 0x28, 'I', car_base)
+        sb.write(train + 0x2C, 'I', reference)
+        sb.call(0x43BC20, (controller, train))
+        return [sb.read(car_base + 0x60 * index + 0x38, 'f') for index in range(cars)]

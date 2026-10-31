@@ -282,12 +282,12 @@ public sealed class CoasterRide
 	// [BIN:TPW-EXE:0x4e0560 coaster guest rating] COAST-013 retired: the rating getter 0x43e0b0 returns controller +0x100 (sickness) and +0x104 (excitement), the final 0x43df90 writes both, and its only caller 0x4e0560 (the coaster branch of the per-ride guest rating) fetches the sickness and discards it, returning trunc(50 − (−0.5)·E) (constants 0x7005a4/0x7005b4) = Mac 6.1; guest code reaches a controller only through 0x55a4e0, the predicates 0x441910/0x441940/0x441970 and 0x4418f0 (ride-info stats getter 0x43e0e0), so no guest reads the sickness
 	public int GuestExcitement => Initialised ? CoasterRating.GuestExcitement( Rating?.Excitement ?? 0 ) : 0;
 
-	/// <summary>The speed cap of a speed setting (<c>0x3fb68</c>): MaxAtMin·(1 − s/100) + MaxAtMax·(s/100).</summary>
-	// [BIN:STP-PPC:0x1003FB68 speed cap] controller +52 = fmadds(fMaxSpeedAtMinSetting, 1 − s/100, fMaxSpeedAtMaxSetting × s/100) for the integer setting s (controller +48)
+	/// <summary>The speed cap of a speed setting (<c>0x43c3d0</c>): MaxAtMin·(1 − t) + MaxAtMax·t with t = s × 0.01.</summary>
+	// [BIN:TPW-EXE:0x43c3d0 speed cap] t = the integer setting times the single 0.01 (0x6fe034), controller +0x34 = ((1 − t) × type +0x4c) + (type +0x50 × t), every step a single; no fused multiply-add (the Mac fmadds fused them)
 	public static float SpeedCapFor( CoasterDefinition definition, int setting )
 	{
-		var s = setting / 100f;
-		return MathF.FusedMultiplyAdd( definition.MaxSpeedAtMinSetting, 1f - s, definition.MaxSpeedAtMaxSetting * s );
+		var t = setting * 0.01f;
+		return (1f - t) * definition.MaxSpeedAtMinSetting + definition.MaxSpeedAtMaxSetting * t;
 	}
 
 	/// <summary>

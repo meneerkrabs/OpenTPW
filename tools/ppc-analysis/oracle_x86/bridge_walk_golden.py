@@ -203,18 +203,19 @@ def record_of(oracle, x, y):
 
 
 def line_cases(rng, oracle, count):
-    """Track tool lines (the click handler's op list through 0x53AAC0) along +X from the exit's neighbour tile over cells of random types 0 and 1 (paths): the type op's clearing of the paths on the line's last step, the base op and the walks. A cell holding a queue (3) is no case: the validator that refuses it is a separate pass (0x535670)."""
+    """Track tool lines (the click handler's op list through 0x53AAC0) from the ride's exit tile along +X, so they join the ride: one to four new tiles over cells of random types 0 and 1 (paths): the type op's clearing of the paths on the line's last step, the base op and the arms and links. The synthetic ride has no thing listed on its cell, so the line's op 0x86 finds no ride and walks nothing (the walk cases cover the walks). A cell holding a queue (3) is no case: the validator that refuses it is a separate pass (0x535670)."""
     out = []
     for index in range(count):
         rotation = 0
         track_type = rng.choice((1, 2))
         anchor = placed(oracle, rotation, track_type)
-        # the tool mode the type op follows (0x81AE2C: 11 kart, 16 water) is a global the placement set, not part of the cached map
+        # globals the placement set and the cached map does not hold: the tool mode the type op follows (0x81AE2C: 11 kart, 16 water) and the ride word it writes to each record (0x818698: the anchor's cell word)
         oracle.sandbox.write(0x81AE2C, 'I', 11 if track_type == 1 else 16)
+        oracle.sandbox.write(0x818698, 'I', cell_word(*anchor))
         tiles = rng.randint(1, 4)
-        start = (64, 60)
-        end = (64 + 2 * (tiles - 1), 60)
-        cells = [(64 + 2 * t + dx, 60 + dy) for t in range(tiles) for dx in (0, 1) for dy in (0, 1)]
+        start = oracle.exit
+        end = (start[0] + 2 * tiles, start[1])
+        cells = [(start[0] + 2 * t + dx, start[1] + dy) for t in range(1, tiles + 1) for dx in (0, 1) for dy in (0, 1)]
         oracle.pull()
         for (x, y) in cells:
             i = y * MAP + x
@@ -231,7 +232,7 @@ def line_cases(rng, oracle, count):
         out.append(f'line {index}: {tiles} tiles|{anchor[0]} {anchor[1]}|{start[0]} {start[1]}|{end[0]} {end[1]}|{track_type}')
         for c in cells:
             out.append(f'cell {c[0]} {c[1]}|{before[c]}|{cell_type(oracle, *c)}')
-        for point in [(62, 60)] + [(64 + 2 * t, 60) for t in range(tiles)]:
+        for point in [start] + [(start[0] + 2 * t, start[1]) for t in range(1, tiles + 1)]:
             k = record_of(oracle, *point)
             out.append(f'tile {point[0]} {point[1]}|{k[0]} {k[1]} {k[2]} {k[3]} {k[4]}')
     return out

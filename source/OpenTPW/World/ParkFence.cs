@@ -143,7 +143,7 @@ public sealed class FenceEngine
 	private readonly int width, height;
 	private readonly Dictionary<int, ushort> pendingFlags = new();
 	private readonly Dictionary<int, TrackCell> pendingTracks = new();
-	/// <summary>The fence's mark (flag 0x20) on the records that hold a track tile: the tile's own flag 0x20 is the host's over-path memory (<see cref="TrackBuilder.FlagOverPath"/>), so the mark is kept here for the run and never written to the tile.</summary>
+	/// <summary>The fence's mark (flag 0x20) on the records that hold a track tile: a tile's own flag 0x20 can be a stray bit from saves made before round 11 (<see cref="TrackBuilder.FlagOverPath"/>), so the mark is kept here for the run and never written to the tile.</summary>
 	private readonly HashSet<int> trackMarks = new();
 	private readonly List<int> pendingStamps = new();
 
@@ -278,7 +278,7 @@ public sealed class FenceEngine
 		var track = TrackOf( index );
 		if ( track.Type != 0 )
 		{
-			// the mark (0x20) stays with the run, the tile's own 0x20 (over path) is kept
+			// the mark (0x20) stays with the run, a tile's own 0x20 (a stray bit from saves made before round 11) is kept
 			if ( (value & TrackBuilder.FlagOverPath) != 0 )
 				trackMarks.Add( index );
 			else

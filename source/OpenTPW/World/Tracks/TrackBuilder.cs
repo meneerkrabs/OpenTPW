@@ -122,6 +122,7 @@ public sealed class TrackBuilder
 			}
 			else if ( type != 0 )
 			{
+				// [BIN:TPW-EXE:0x00535D33 queue under a tile] the refusal of a queue cell under a track tile is the validator's (0x535670, its track-type branches 0x535D33..0x535D5D), not the type op's, which lays the tile over it
 				return type == (byte)ParkCellType.Queue ? CellBuildResult.QueueCell : CellBuildResult.Occupied;
 			}
 			if ( isOccupied?.Invoke( cx, cy ) == true )

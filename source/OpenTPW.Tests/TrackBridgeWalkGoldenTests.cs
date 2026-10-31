@@ -129,10 +129,13 @@ public class TrackBridgeWalkGoldenTests
 			var station = TrackStation.FromPlacement( anchor[0], anchor[1], 0 );
 			builder.PlaceStation( station );
 			builder.PlaceInitialStation( station );
-			var owner = builder.OwnerOf( station );
+			var exit = map.Tracks.Get( station.Exit.X, station.Exit.Y );
+			exit.Owner = 0;
+			map.Tracks.Set( station.Exit.X, station.Exit.Y, exit );
+			// the oracle's synthetic ride has no thing listed on its cell, so the op 0x86 of these lines finds no ride and walks nothing: the lines are replayed without a ride too
 			foreach ( var (x, y, before, _) in cells.Where( c => c.Before != 0 ) )
 				map.SetType( x, y, (byte)before );
-			var result = new TrackLineWriter( builder, null, owner ).Commit( (start[0], start[1]), (end[0], end[1]) );
+			var result = new TrackLineWriter( builder, null, 0 ).Commit( (start[0], start[1]), (end[0], end[1]) );
 			if ( !result.Completed )
 				failures.Add( $"{parts[0]}: the line stopped ({result.StoppedBy})" );
 			foreach ( var (x, y, _, after) in cells )
@@ -141,8 +144,8 @@ public class TrackBridgeWalkGoldenTests
 			foreach ( var (x, y, record) in tiles )
 			{
 				var tile = map.Tracks.Get( x, y );
-				if ( tile.Type != record[0] || tile.Flags != record[3] )
-					failures.Add( $"{parts[0]}: tile {x},{y} is kind {tile.Type} flags {tile.Flags}, expected {record[0]} and {record[3]}" );
+				if ( tile.Type != record[0] || tile.Mask != record[1] || tile.Link != record[2] || tile.Flags != record[3] )
+					failures.Add( $"{parts[0]}: tile {x},{y} is kind {tile.Type} arms {tile.Mask:X2} link {tile.Link:X2} flags {tile.Flags}, expected {record[0]} {record[1]:X2} {record[2]:X2} {record[3]}" );
 			}
 		}
 		Assert.IsTrue( count >= 100, $"the golden holds {count} lines" );

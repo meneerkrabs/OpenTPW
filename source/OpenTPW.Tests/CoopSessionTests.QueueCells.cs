@@ -78,6 +78,13 @@ public partial class CoopSessionTests
 		typeof( Level ).GetMethod( "NoteToolPlacement", Private )!.Invoke( level, new object[] { park.One.Entry } );
 		var tiles = TilesOf( Other(park) );
 		Assert.AreEqual( ((tiles.ExitX, tiles.ExitY), (tiles.EntryX, tiles.EntryY)), (level.ClientToolGlobals.Exit, level.ClientToolGlobals.Entry) );
+		// the placement command selects the new object first (0x52A02E), so the commit's select maps the placed object, not the previous selection
+		level.Selection = park.One;
+		level.ClientToolGlobals.Exit = (7, 7);
+		var placed = park.Issue( level.BuildCommand( park.One.Entry, 24, 12, 90 ) ).As<OriginalObject>()!;
+		Assert.AreSame( placed, level.Selection );
+		var placedTiles = TilesOf( placed );
+		Assert.AreEqual( ((placedTiles.ExitX, placedTiles.ExitY), (placedTiles.EntryX, placedTiles.EntryY)), (level.ClientToolGlobals.Exit, level.ClientToolGlobals.Entry) );
 	}
 
 	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Level, object> hookedLevels = new();
@@ -101,6 +108,8 @@ public partial class CoopSessionTests
 				queues.SetValue( park.Level, Activator.CreateInstance( queues.FieldType ) );
 			park.Level.Objects.ObjectRemoving += (Action<OriginalObject>)Delegate.CreateDelegate( typeof( Action<OriginalObject> ), park.Level, typeof( Level ).GetMethod( "SettleDemolishedQueue", Private )! );
 			park.Level.Objects.ObjectRemoved += (Action<OriginalObject>)Delegate.CreateDelegate( typeof( Action<OriginalObject> ), park.Level, typeof( Level ).GetMethod( "ClearDemolishedQueue", Private )! );
+			var rideLevel = park.Level;
+			park.Level.Objects.ObjectRemoved += item => rideLevel.Guests?.Unregister( item.Visitors );
 		}
 		ConfigureQueue( park.Level.Guests!.Grid, item, x, 5 );
 		var ride = item.Visitors;
@@ -160,10 +169,10 @@ public partial class CoopSessionTests
 		Assert.IsTrue( sale.Accepted, sale.Reason );
 		Assert.AreEqual( (byte)(byte)ParkCellType.Queue, cells.RawTypeAt( 14, 4 ), "the walk did not reach it: it stays" );
 		Assert.AreEqual( owner, cells.OwnerAt( 14, 4 ), "with the sold ride's owner word" );
-		// it is state: a park save keeps it and the hash sees it
-		var data = ParkLayoutSnapshot.CaptureSnapshot( cells, level.Objects );
-		var restored = ParkLayoutSnapshot.RestoreCellMap( data );
-		Assert.AreEqual( (cells.RawTypeAt( 14, 4 ), cells.OwnerAt( 14, 4 )), (restored.RawTypeAt( 14, 4 ), restored.OwnerAt( 14, 4 )) );
+		// it is state: a full park save (the file's bytes) keeps it
+		var saved = ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( level.CaptureResumeSnapshot( null, "strays", level.AutosaveAssets() ) ) );
+		var restored = ParkLayoutSnapshot.RestoreCellMap( saved.Layout );
+		Assert.AreEqual( ((byte)ParkCellType.Queue, owner), (restored.RawTypeAt( 14, 4 ), restored.OwnerAt( 14, 4 )), "the stray cell is in the saved park" );
 		var withStray = level.ComputeStateHash();
 		cells.SetType( 14, 4, (byte)0 );
 		cells.SetOwner( 14, 4, 0 );
@@ -191,28 +200,60 @@ public partial class CoopSessionTests
 	}
 
 	[TestMethod]
-	public void AGuestOnTheClearedBranchOfADemolishedQueueIsDismissedAndTheStrandedBranchKeepsItsCells()
+	public void AGuestOnTheClearedQueueIsDismissedAndTheBranchOfARealJunctionKeepsItsCells()
 	{
 		var park = NewPark();
 		park.Enter();
 		var level = park.Level;
+		var grid = level.Guests!.Grid;
 		Typed( park, park.One, 10 );
-		var cells = level.Guests!.Grid.Cells;
+		var cells = grid.Cells;
 		var owner = Level.OwnerWord( park.One );
-		// a branch the walk does not follow: a second line of the ride's cells joined to the queue's middle cell
-		foreach ( var y in new[] { 4 } )
+		var east = Enumerable.Range( 0, 8 ).First( direction => GuestPathGrid.Directions[direction] == (1, 0) );
+		var west = Enumerable.Range( 0, 8 ).First( direction => GuestPathGrid.Directions[direction] == (-1, 0) );
+		// a real three-link junction: the queue cell (10, 4) also links east, to a branch of the ride's own cells the walk does not follow
+		cells.SetLinks( 10, 4, (byte)(cells.LinksAt( 10, 4 ) | GuestPathGrid.LinkValue( east )) );
+		foreach ( var x in new[] { 11, 12 } )
 		{
-			foreach ( var x in new[] { 11, 12 } )
-			{
-				cells.SetType( x, y, (byte)ParkCellType.Queue );
-				cells.SetOwner( x, y, owner );
-			}
+			cells.SetType( x, 4, (byte)ParkCellType.Queue );
+			cells.SetOwner( x, 4, owner );
+			cells.SetLinks( x, 4, (byte)(GuestPathGrid.LinkValue( west ) | (x == 11 ? GuestPathGrid.LinkValue( east ) : 0)) );
+			cells.SetQueueLink( x, 4, GuestPathGrid.LinkValue( west ) );
 		}
+		cells.SetLinks( 12, 4, GuestPathGrid.LinkValue( west ) );
+		Assert.AreEqual( 3, System.Numerics.BitOperations.PopCount( (uint)cells.LinksAt( 10, 4 ) ), "a three-link cell" );
+		grid.Invalidate();
+		// guests stand on the queue's cells, in its line
+		var queued = Enumerable.Range( 0, 4 ).Select( _ => level.Guests.SpawnInPark( 10, 1 ) ).ToArray();
+		var places = new[] { (10, 6), (10, 5), (10, 3), (10, 2) };
+		for ( var index = 0; index < queued.Length; index++ )
+		{
+			var guest = queued[index];
+			park.One.Visitors.AppendToQueue( guest.Id );
+			guest.AttractionId = park.One.Runtime.AttractionId;
+			guest.State = GuestState.Queueing;
+			guest.QueuePosition = index;
+			guest.QueueJoinTurn = level.Guests.ParkTurn;
+			guest.Happiness = 90;
+			guest.OnGrid = true;
+			(guest.CellX, guest.CellY) = places[index];
+			guest.Navigation.OffGrid = false;
+			(guest.Navigation.X, guest.Navigation.Y) = GuestNavigation.BytePoint( places[index], 128, 128 );
+			guest.Navigation.SetDestination( guest.Navigation.X, guest.Navigation.Y, Array.Empty<(int X, int Y)>() );
+			guest.HasWaypoint = false;
+		}
+		Assert.IsTrue( queued.All( guest => guest.State == GuestState.Queueing ) );
 		var sale = park.Issue( new RemoveAttractionCommand( park.One.Runtime.AttractionId ) );
 		Assert.IsTrue( sale.Accepted, sale.Reason );
-		// the line the corner walk followed is gone, whatever stood in it
-		Assert.IsFalse( Enumerable.Range( 2, 5 ).Any( y => level.Guests!.Grid.IsQueue( 10, y ) ), "the queue's own line is cleared" );
-		Assert.IsTrue( level.Guests!.Grid.IsQueue( 11, 4 ) && level.Guests.Grid.IsQueue( 12, 4 ), "the branch is stranded" );
+		for ( var frame = 0; frame < 120; frame++ )
+		{
+			foreach ( var guest in queued )
+				guest.Hunger = guest.Thirst = guest.Toilet = 0;
+			park.Frame( 1 / 30.0 );
+		}
+		Assert.IsFalse( queued.Any( guest => guest.State == GuestState.Queueing ), "the guests of the cleared queue are dismissed: " + string.Join( ", ", queued.Select( guest => guest.State ) ) );
+		Assert.IsFalse( Enumerable.Range( 2, 5 ).Any( y => grid.IsQueue( 10, y ) && y != 4 ), "the queue's own line is cleared" );
+		Assert.IsTrue( grid.IsQueue( 11, 4 ) && grid.IsQueue( 12, 4 ), "the branch beyond the junction is stranded with its cells" );
 	}
 
 	[TestMethod]

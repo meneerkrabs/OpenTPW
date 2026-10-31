@@ -379,6 +379,8 @@ public partial class Level
 		CellTool.Cancel();
 		// [EXT:online-coop-claims] a guest's tool claims its ride through the host (C3c-1b): the tool starts from the claim's outcome, the latest entry's alone (an earlier one's wait was
 		// dropped above), and the claim moves from a ride an earlier entry claimed; the coaster tool that ended sends its last commands first (C3c-2)
+		// the track button's select (0x4AF233) writes the issuer's globals before the tool starts, a co-op guest's start included (its claim goes to the host)
+		NoteToolSelection( station );
 		if ( CoopSession != null && Commands.SendsRequests )
 		{
 			if ( !CoasterCommandsSentBeforeClaim() )
@@ -392,8 +394,6 @@ public partial class Level
 		// [EXT:online-coop-claims] the tool claims its ride once the tool it replaces is gone (C3c-1); the claim moves from a ride the replaced tool held
 		if ( !ClaimForTrackTool( station ) )
 			return TrackToolEntry.Refused;
-		// the track button's select (0x4AF233) writes the globals before the tool starts
-		NoteToolSelection( station );
 		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ), SharedToolGlobals );
 		// [BIN:TPW-EXE:0x0052A050 line tool after a placement] the placement starts the line tool itself (mode 3 with its line start), without reading the circuit word that the tool button's click reads (0x5267F2)
 		if ( !justPlaced && station.Runtime.Bump is { IsTrackValid: true } )

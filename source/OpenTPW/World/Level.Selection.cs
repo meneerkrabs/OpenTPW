@@ -44,7 +44,7 @@ public partial class Level
 			return;
 		}
 		// an object built without its runtime (a layout rig) is no placed thing the select could map
-		// the developer prototype (PlacedRide) is no placed thing of the park's catalogue: it has no entry the select could map
+		// [EXT:developer-prototype] the developer prototype (PlacedRide) is no placed thing of the catalogue: it has no entry the select could map
 		if ( item is not { Runtime: not null } || item is PrototypeRide || WindowTarget( item ) is not { } target )
 			return;
 		var station = trackStations != null && trackStations.TryGetValue( target, out var laid ) ? laid : TrackStation.FromPlacement( target.Placement.X, target.Placement.Y, target.Placement.Rotation );
@@ -61,7 +61,7 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// A placement commit's writes of the track tool globals (the placing player's): <c>0x528A70</c> resets the exit pair to (-1, -1) (<c>0x528ACE</c>), then selects the selection it finds (<c>0x528F36</c>,
+	/// A placement commit's writes of the track tool globals (the placing player's): <c>0x528A70</c> resets the exit pair to (-1, -1) (<c>0x528ACE</c>), then selects the selection it finds, which is the new object (the creation <c>0x529E10</c> at <c>0x528E19</c> selected it already, <c>0x4815B0</c> at <c>0x52A02E</c>) (<c>0x528F36</c>,
 	/// <c>0x5296EA</c>) unless the build tool of a track add-on is armed (<c>0x8187F8</c>, the type's <c>+0x9C</c> when <c>+0x288</c> is 1: <c>0x46D605..0x46D61D</c>); a kart or water ride's station line then stores its exit
 	/// (<c>0x52A31C</c>), which the track tool's start writes here (<see cref="TrackEditor.UseLineToolExit"/>).
 	/// </summary>

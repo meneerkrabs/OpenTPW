@@ -184,7 +184,12 @@ public class ParkCommandCodecTests
 		// without tiles the kind keeps its version-1 bytes, and a version-7 command of another kind has no form
 		Assert.AreEqual( "0204040a", ParkCommandCodec.ToHex( new RemoveAttractionCommand( 5 ) { Player = 2 } ) );
 		Assert.ThrowsException<InvalidDataException>( () => ParkCommandCodec.Decode( Convert.FromHexString( "0e0e00" ) ) );
-		Assert.IsFalse( new RemoveAttractionCommand( 5, new ToolTiles( -2, 0, 0, 0 ) ).IsWellFormed );
+		// the select's mapping goes below the map's edge (the exit x - 5 at rotation 180, the entry x - 2 at rotation 0): a near-edge select is no malformed command
+		var nearEdge = new RemoveAttractionCommand( 5, new ToolTiles( -5, 3, -2, 4 ) ) { Player = 1 };
+		Assert.IsTrue( nearEdge.IsWellFormed );
+		Assert.AreEqual( nearEdge, ParkCommandCodec.Decode( ParkCommandCodec.Encode( nearEdge ) ) );
+		Assert.IsFalse( new RemoveAttractionCommand( 5, new ToolTiles( -ParkCommandCodec.MaximumCoordinate, 0, 0, 0 ) ).IsWellFormed );
+		Assert.IsFalse( new RemoveAttractionCommand( 5, new ToolTiles( 0, 0, 0, ParkCommandCodec.MaximumCoordinate ) ).IsWellFormed );
 	}
 
 	[TestMethod]

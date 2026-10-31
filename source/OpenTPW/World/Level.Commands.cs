@@ -168,9 +168,9 @@ public partial class Level
 			// [BIN:TPW-EXE:0x0052A02E placement selects] the placing player's own selection (0x7C2654) is the new object
 			if ( placed != null && place.Player == Commands.Player )
 			{
-				// the placing player's tool globals: the commit's reset and select, before the new object is selected
-				NoteToolPlacement( entry );
+				// the creation selects the new object (0x52A02E) before the commit's reset and select (0x528ACE, 0x528F36), which then map it
 				Selection = placed;
+				NoteToolPlacement( entry );
 			}
 			return Outcome( placed != null, placed );
 		}

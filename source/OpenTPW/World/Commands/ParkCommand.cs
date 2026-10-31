@@ -225,7 +225,7 @@ public readonly record struct ToolTiles( int ExitX, int ExitY, int EntryX, int E
 	/// <summary>The cells a placement or a select can leave: on the map or the reset (-1, -1).</summary>
 	internal bool IsWellFormed => IsTile( ExitX, ExitY ) && IsTile( EntryX, EntryY );
 
-	private static bool IsTile( int x, int y ) => x is >= -1 and < ParkCommandCodec.MaximumCoordinate && y is >= -1 and < ParkCommandCodec.MaximumCoordinate;
+	private static bool IsTile( int x, int y ) => x is > -ParkCommandCodec.MaximumCoordinate and < ParkCommandCodec.MaximumCoordinate && y is > -ParkCommandCodec.MaximumCoordinate and < ParkCommandCodec.MaximumCoordinate;
 
 	internal void Write( ParkCommandWriter writer )
 	{

@@ -280,9 +280,12 @@ Observed but **not interpreted** (kept raw in `SaveCell.Record`):
 - +17 holds 55 or 8 on cells that are no path.
 - +2 splits the map into 0x40 cells and a 0x00 region around the park (plus 0xC0
   on the entrance, 0x20 on a few cells); possibly purchasable land — unverified.
-- Extension byte 6 forms two 11×11 decaying patterns (peaks 23 and 20) centred
-  exactly on the two Security Camera objects at (40, 29) and (55, 29); other
-  extensions sit on the toilets and around (47, 25). Possibly coverage data.
+- The 10-byte extension is the cell's region effect record (status bit 4 of tp.exe's cell serializer
+  `0x4D7EA0`; the record serializer `0x502490`): five signed 16-bit words, happiness, illness, hunger,
+  security and attraction, the grid the guests' needs read (`ParkEnvironment`). Byte 6 (security) forms two
+  11×11 decaying patterns (peaks 23 and 20) centred exactly on the two Security Camera objects at (40, 29) and
+  (55, 29); the others sit on the toilets, the guard at (39, 28) and the entertainer at (47, 25). `SaveCell.RegionWords`
+  reads them; an original save's grid is imported on top of the rebuilt sources (GUEST-006).
 - Byte +77 alternates 12/25 along lines resembling fences; +56 is a running index
   on 143 cells.
 

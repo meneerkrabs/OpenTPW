@@ -69,3 +69,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## The queue tool's corner walk and a ride's queue demolition (round 11, package D)
 
 `queue_oracle.py` runs the corner walk `0x530120` and the ride demolition `0x527EE0` of a ride with a queue (the executable's own Back, click handler, queue line walker and cell remover) on synthetic queue layouts; `queue_golden.py` writes `QueueCornerWalkGolden.cs` from 82 cases and `queue_demolition_golden.py` writes `QueueDemolitionGolden.cs` from 42 (both accept `--check FILE`). Findings X44 and X45 in `docs/reverse/ORACLE.md` section 7.30.
+
+## The bridge walks (round 11, package E)
+
+`bridge_walk_oracle.py` lays synthetic second-layer records beside a placed kart or water ride and runs the op 0x86 pair (forward walk `0x52C6F0`, reverse walk `0x52CCB0`); `bridge_walk_golden.py` writes `TrackBridgeWalkGolden.cs` from 700 random layouts (`--check FILE`, about 25 minutes, layouts whose walk reads past the structure array are left out). Finding X46 in `docs/reverse/ORACLE.md` section 7.31.

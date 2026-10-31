@@ -279,34 +279,45 @@ public sealed class CoasterTrack
 
 	/// <summary>
 	/// The turn angle at <paramref name="previous"/> between the directions to <paramref name="next"/> and to
-	/// <paramref name="before"/> (<c>0x36a50</c>): π means straight on. Single precision.
+	/// <paramref name="before"/>: π means straight on. Every step a single, in tp.exe's order.
 	/// </summary>
-	// [BIN:STP-PPC:0x10036A50 turn angle] θ = acos(clamp(dot(û_new, û_before), −1, 1)) with both directions normalised in single precision
+	// [BIN:TPW-EXE:0x434a2d turn angle] the cell differences as floats, the lengths la = sqrt(ax² + ay²) and lb the same for b, the dot product (ax / la) × (bx / lb) + (ay / la) × (by / lb) with every quotient, product and the sum a single (no fused step), clamped to [−1, 1] (0x434ad3..0x434b01), then the acos 0x67b4e0 (CoasterX87.Acos); compared with 1,488 isolated tp.exe runs (ORACLE X44)
 	public static float TurnAngle( (int X, int Y) next, (int X, int Y) previous, (int X, int Y) before )
 	{
 		float ax = next.X - previous.X, ay = next.Y - previous.Y;
 		float bx = before.X - previous.X, by = before.Y - previous.Y;
 		var la = MathF.Sqrt( ax * ax + ay * ay );
 		var lb = MathF.Sqrt( bx * bx + by * by );
-		var dot = MathF.FusedMultiplyAdd( ax / la, bx / lb, ay / la * (by / lb) );
-		// [EXT:deterministic-math] the runtime's acos in IEEE double by DetMath, the same bits on every runtime, not in x87 extended precision (docs/DETERMINISM.md, "Browser and native")
-		return DetMathF.Acos( Math.Clamp( dot, -1f, 1f ) );
+		var dot = ax / la * (bx / lb) + ay / la * (by / lb);
+		if ( dot < -1f )
+			dot = -1f;
+		if ( !(dot <= 1f) )
+			dot = 1f;
+		return CoasterX87.Acos( dot );
 	}
+
+	/// <summary>The four limits of a turn window (the minimum and maximum angle at the minimum and at the maximum placement distance).</summary>
+	internal readonly record struct TurnLimits( float MinAtMinDistance, float MinAtMaxDistance, float MaxAtMinDistance, float MaxAtMaxDistance );
 
 	/// <summary>
 	/// The turn window at distance <paramref name="distance"/> (cells): t = clamp((d − min)/(max − min), 0, 1),
 	/// lo = A(1 − t) + Bt and hi = C(1 − t) + Dt from the entrance (after the station node) or the normal limits.
 	/// </summary>
-	// [BIN:STP-PPC:0x10036F28 turn window] limits interpolated by the distance fraction t (clamped by data 0x3d058/0x3d05c) as fmadds(A, 1 − t, B·t) (0x10036FB4/B8, 0x10036FE4/E8); entrance limits (+116..+128) when the previous node is the station node, else +132..+144
-	public static (float Low, float High) AngleWindow( CoasterPylonControl pylon, float distance, bool entrance )
+	// [BIN:TPW-EXE:0x434b1a turn window] t = (sqrt(d²) − pylon +0xa4) / (+0xa8 − +0xa4) in singles, replaced by 1 when not below 1 and by 0 when not above 0 (0x434b46..0x434b6e); lo = (A × (1 − t)) + (B × t) and hi = (C × (1 − t)) + (D × t) from +0x74/+0x7c/+0x78/+0x80 (entrance, descriptor flag 2) or +0x84/+0x8c/+0x88/+0x90, each product and sum a single (0x434bb6..0x434bce)
+	public static (float Low, float High) AngleWindow( CoasterPylonControl pylon, float distance, bool entrance ) => AngleWindowFor( distance, pylon.MinPlaceDistance, pylon.MaxPlaceDistance,
+		entrance ? new TurnLimits( pylon.EntranceMinAngleAtMinDistance, pylon.EntranceMinAngleAtMaxDistance, pylon.EntranceMaxAngleAtMinDistance, pylon.EntranceMaxAngleAtMaxDistance )
+			: new TurnLimits( pylon.MinAngleAtMinDistance, pylon.MinAngleAtMaxDistance, pylon.MaxAngleAtMinDistance, pylon.MaxAngleAtMaxDistance ) );
+
+	internal static (float Low, float High) AngleWindowFor( float distance, float minimum, float maximum, TurnLimits limits )
 	{
-		var span = (float)(pylon.MaxPlaceDistance - pylon.MinPlaceDistance);
-		var t = span == 0 ? 0 : Math.Clamp( (distance - pylon.MinPlaceDistance) / span, 0f, 1f );
-		var (a, b, c, d) = entrance
-			? (pylon.EntranceMinAngleAtMinDistance, pylon.EntranceMinAngleAtMaxDistance, pylon.EntranceMaxAngleAtMinDistance, pylon.EntranceMaxAngleAtMaxDistance)
-			: (pylon.MinAngleAtMinDistance, pylon.MinAngleAtMaxDistance, pylon.MaxAngleAtMinDistance, pylon.MaxAngleAtMaxDistance);
-		var rest = 1 - t;
-		return (MathF.FusedMultiplyAdd( a, rest, b * t ), MathF.FusedMultiplyAdd( c, rest, d * t ));
+		var span = maximum - minimum;
+		var t = (distance - minimum) / span;
+		if ( !(t < 1f) )
+			t = 1f;
+		if ( !(t > 0f) )
+			t = 0f;
+		var rest = 1f - t;
+		return (limits.MinAtMinDistance * rest + limits.MinAtMaxDistance * t, limits.MaxAtMinDistance * rest + limits.MaxAtMaxDistance * t);
 	}
 
 	/// <summary>The distance and turn tests (4–6) of one link from <paramref name="previous"/> to <paramref name="next"/>.</summary>

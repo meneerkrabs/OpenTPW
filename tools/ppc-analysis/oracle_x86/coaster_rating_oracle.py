@@ -342,3 +342,46 @@ class RatingOracle:
         sb.write(train + 0x2C, 'I', reference)
         sb.call(0x43BC20, (controller, train))
         return [sb.read(car_base + 0x60 * index + 0x38, 'f') for index in range(cars)]
+
+    # ------------------------------------------------------------------------------ the placement validator's turn test
+    TURN_START = 0x4349C7
+    TURN_STOP = 0x434C04
+    CONTROL_LIMITS = {'entrance_min_at_min': 0x74, 'entrance_min_at_max': 0x7C, 'entrance_max_at_min': 0x78, 'entrance_max_at_max': 0x80,
+                      'min_at_min': 0x84, 'min_at_max': 0x8C, 'max_at_min': 0x88, 'max_at_max': 0x90}
+
+    def turn_test(self, previous, following, before, squared: int, entrance: bool, minimum: float, maximum: float, limits: dict):
+        """The turn test of the placement validator 0x434740 (the fragment 0x4349C7..0x434C04: the turn angle of the directions to the next and to the node before, its distance window and the
+        verdict) on the frame the routine builds: the cells of the previous, next and before node in the stack slots the routine reads, the squared distance in edi, the pylon control in esi
+        (+0xa4 and +0xa8 the distance window, the eight angle limits) and the node's descriptor flag 2 for the entrance limits. Returns the angle the acos left on the stack (read at
+        0x434B0A) and whether the turn passes."""
+        import unicorn as unicorn_module
+        from unicorn import x86_const
+        from x86_harness import STACK_BASE, STACK_SIZE
+        sb = self.oracle.prepare()
+        control = sb.alloc(0x100)
+        sb.write(control + 0xA4, 'f', minimum)
+        sb.write(control + 0xA8, 'f', maximum)
+        for name, offset in self.CONTROL_LIMITS.items():
+            sb.write(control + offset, 'f', limits[name])
+        descriptor = sb.alloc(0x40)
+        sb.write(descriptor + 4, 'B', 2 if entrance else 0)
+        node = sb.alloc(0x200)
+        sb.write(node + 0x100, 'I', descriptor)
+        esp = STACK_BASE + STACK_SIZE - 0x100 - 4
+        for offset, value in ((0x50, previous[0]), (0x54, previous[1]), (0x44, following[0]), (0x18, before[0]), (0x5C, before[1]), (0x10, 1)):
+            sb.write(esp + offset, 'I', value & 0xFFFFFFFF)
+        captured = []
+
+        def on_code(uc, address, size, user):
+            if address == 0x434B0A:
+                top = (sb.x87_state()['fpsw'] >> 11) & 7
+                mantissa, exponent = uc.reg_read(x86_const.UC_X86_REG_FP0 + top)
+                sign = -1.0 if exponent & 0x8000 else 1.0
+                captured.append(f32(sign * math.ldexp(mantissa, (exponent & 0x7FFF) - 16383 - 63)) if mantissa else 0.0)
+
+        handle = sb.uc.hook_add(unicorn_module.UC_HOOK_CODE, on_code, begin=0x434B0A, end=0x434B0B)
+        try:
+            sb.call(self.TURN_START, (), regs={'esi': control, 'edi': squared, 'ebp': node, 'ebx': following[1]}, stop=self.TURN_STOP)
+        finally:
+            sb.uc.hook_del(handle)
+        return (captured[0] if captured else None), sb.read(esp + 0x10, 'I') != 0

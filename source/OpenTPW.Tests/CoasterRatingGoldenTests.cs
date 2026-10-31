@@ -337,4 +337,32 @@ public class CoasterRatingGoldenTests
 		}
 		Assert.IsTrue( rows >= 70, $"{rows} offset rows" );
 	}
+
+	[TestMethod]
+	public void EveryRowOfTheOraclesTurnTestIsReproducedBitForBit()
+	{
+		var rows = 0;
+		var passes = 0;
+		foreach ( var row in Rows().Where( row => row.StartsWith( "turn | ", StringComparison.Ordinal ) ) )
+		{
+			var sides = row.Split( " > " );
+			var parts = sides[0].Split( " | " );
+			var cells = parts[1].Split( ' ' ).Select( int.Parse ).ToArray();
+			var values = Singles( parts[2] );
+			var entrance = cells[7] != 0;
+			// the oracle's order of limits: entrance min at min, entrance min at max, entrance max at min, entrance max at max, then the same four for the normal window
+			var entranceLimits = new CoasterTrack.TurnLimits( values[2], values[3], values[4], values[5] );
+			var normalLimits = new CoasterTrack.TurnLimits( values[6], values[7], values[8], values[9] );
+			var angle = CoasterTrack.TurnAngle( (cells[2], cells[3]), (cells[0], cells[1]), (cells[4], cells[5]) );
+			var (low, high) = CoasterTrack.AngleWindowFor( MathF.Sqrt( cells[6] ), values[0], values[1], entrance ? entranceLimits : normalLimits );
+			var passed = !(angle < low) && !(angle > high);
+			var expected = sides[1].Split( ' ' );
+			Assert.AreEqual( expected[0], Bits( angle ).ToString( "x8" ), $"angle of row {rows}: {row}" );
+			Assert.AreEqual( expected[1] == "1", passed, $"verdict of row {rows}: {row}" );
+			rows++;
+			if ( passed )
+				passes++;
+		}
+		Assert.IsTrue( rows >= 1000 && passes > 200 && passes < rows - 200, $"{rows} turn rows, {passes} passing" );
+	}
 }

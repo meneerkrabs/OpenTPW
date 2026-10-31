@@ -86,6 +86,24 @@ internal sealed class SpeechAudioPlayer : IDisposable
 		return stereo;
 	}
 
+	/// <summary>The speech now held as the advisor's sound handle (the original's 0xF79680): the one <see cref="GamePauseSound"/> pauses and resumes; null while none plays through the game mixer.</summary>
+	// [BIN:TPW-EXE:0x599050 advisor sound handle] the response player stores the handle of its speech in 0xF79680 and the response flag 0xF7966C; the stop 0x5994E0 releases both (0x51C2C0, 0x59958C-0x59959E)
+	internal static SpeechAudioPlayer? AdvisorHandle { get; private set; }
+
+	/// <summary>Pauses the speech's channel (the pause-handle message): the voice stands still where it is.</summary>
+	internal void Pause()
+	{
+		if ( voice != null )
+			voice.Paused = true;
+	}
+
+	/// <summary>Resumes the speech's channel where it stopped.</summary>
+	internal void Resume()
+	{
+		if ( voice != null )
+			voice.Paused = false;
+	}
+
 	/// <summary>Starts playback (the device stays paused until the first rendered frame).</summary>
 	public void Start()
 	{
@@ -93,7 +111,11 @@ internal sealed class SpeechAudioPlayer : IDisposable
 			return;
 		IsStarted = true;
 		if ( mixer != null )
-			voice = mixer.Play( mixerAudio!, AudioChannel.Speech );
+		{
+			// [BIN:TPW-EXE:0x599339,0x51BFC0 advisor clip] the clip is a cat_speech library event (100..100 volume, no pitch, group mask 0x10005: master and speech) started by 0x51BFC0; no draw is needed (equal ranges), so it is an event-system voice at volume 100
+			voice = mixer.Play( mixerAudio!, AudioChannel.Speech ).ForEvent( 0x5 );
+			AdvisorHandle = this;
+		}
 		else if ( output != null )
 			output.Play();
 		else
@@ -102,6 +124,11 @@ internal sealed class SpeechAudioPlayer : IDisposable
 
 	public void Dispose()
 	{
+		if ( ReferenceEquals( AdvisorHandle, this ) )
+		{
+			AdvisorHandle = null;
+			GamePauseSound.AdvisorSpeechStopped();
+		}
 		voice?.Stop();
 		output?.Dispose();
 		clock.Stop();

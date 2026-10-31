@@ -1502,9 +1502,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Do( "pause blocks window keys", () =>
 			Require( flow.Hud!.Paused && flow.Hud.Stack.Top?.Name == "pause"
 				&& !flow.Hud.VisitorWindowOpen && !flow.Hud.BuyWindowOpen, "injected window keys leave the pause menu in control" ) );
-		// The save below is a manual one, which saves while a response is spoken (the speech is left out of the file); the
-		// smoke still waits for the end of any advisor speech so its frame budget does not depend on the speech length.
-		WaitForAdvisorSpeech();
+		// The pause menu pauses the game, and the game pause pauses the advisor's speech (tp.exe 0x598960): a response still being spoken must stand still under the menu.
+		// The manual save below leaves a spoken response out of the file either way.
+		CheckAdvisorSpeechPaused();
 		Do( "pause menu", () =>
 		{
 			Require( flow.Hud!.Paused, "Escape opens the pause menu" );
@@ -1953,7 +1953,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed starting in {startLanguage ?? GameLanguage.Current.Name} and ending in {GameLanguage.Current.Name} (the park language choice applies after the park) at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames ({speechFrames} of them waiting for advisor speech, {loadFrames} for asynchronous loading), lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
+		Log.Trace( $"Native front-end smoke test passed starting in {startLanguage ?? GameLanguage.Current.Name} and ending in {GameLanguage.Current.Name} (the park language choice applies after the park) at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames ({loadFrames} of them waiting for asynchronous loading), lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
 		GameFlow.Quit();
 	}
 
@@ -1971,44 +1971,18 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	}
 
 	private int stepState;
-	// Frames spent waiting for real-time advisor speech; they do not count against MaximumFrames.
-	private int speechFrames;
 	// Frames spent waiting for asynchronous loading (park, texture packs); they do not count against MaximumFrames either.
 	private int loadFrames;
 	private System.Diagnostics.Stopwatch? loadWait;
 	/// <summary>Wall-clock allowance of one asynchronous load wait; settable so the budget itself can be tested.</summary>
 	internal static TimeSpan LoadAllowance { get; set; } = TimeSpan.FromSeconds( 180 );
-	private System.Diagnostics.Stopwatch? speechWait;
-	private TimeSpan speechAllowance;
-	// Room beyond the clip's remaining length for the audio queue to drain and the frame that notices it.
-	private static readonly TimeSpan SpeechSlack = TimeSpan.FromSeconds( 5 );
 
-	/// <summary>
-	/// Waits until no advisor response is being spoken. The speech plays in real time on the audio clock, so the
-	/// frames it takes depend on the display's refresh rate (with the frame cap off, a 120 Hz screen draws twice the
-	/// frames of a 60 Hz one during the 28.6 s English Jungle welcome line). Those frames are left out of the frame
-	/// budget, which bounds the test's own progress; the wait is bounded in time by the remaining clip instead.
-	/// </summary>
-	private void WaitForAdvisorSpeech() => steps.Enqueue( ("advisor speech ends", () =>
+	/// <summary>With the pause menu open, an advisor response that is being spoken is paused (<c>GamePauseSound.AdvisorSpeechPaused</c>, tp.exe 0x598960); with no handle (a muted run, no mixer voice) the original pauses nothing either.</summary>
+	private void CheckAdvisorSpeechPaused() => steps.Enqueue( ("pause menu pauses advisor speech", () =>
 	{
-		if ( flow.Advisor?.IsSpeechActive != true )
-		{
-			if ( speechWait != null )
-				Log.Trace( $"Front-end smoke: advisor speech ended after {speechWait.Elapsed.TotalSeconds:F2} s of waiting ({speechFrames} frames outside the frame budget)." );
-			speechWait = null;
-			return true;
-		}
-		if ( speechWait == null )
-		{
-			var presentation = flow.Advisor.Presentation;
-			var remaining = presentation == null ? TimeSpan.Zero : presentation.Duration - presentation.Position;
-			speechAllowance = (remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero) + SpeechSlack;
-			speechWait = System.Diagnostics.Stopwatch.StartNew();
-			Log.Trace( $"Front-end smoke: waiting {remaining.TotalSeconds:F2} s for the advisor speech ({presentation?.ClockSource ?? "no presentation"})." );
-		}
-		Require( speechWait.Elapsed < speechAllowance, $"the advisor speech ends within its remaining length plus {SpeechSlack.TotalSeconds:F0} s ({speechAllowance.TotalSeconds:F2} s)" );
-		speechFrames++;
-		return false;
+		if ( flow.Advisor?.IsSpeechActive == true && SpeechAudioPlayer.AdvisorHandle != null )
+			Require( GamePauseSound.AdvisorSpeechPaused, "the pause menu pauses the advisor's speech (0x598960)" );
+		return true;
 	}) );
 
 	/// <summary>
@@ -2051,7 +2025,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			pending();
 		}
 		++frame;
-		Require( frame - speechFrames - loadFrames < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
+		Require( frame - loadFrames < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
 		while ( steps.Count > 0 && steps.Peek().Step() )
 		{
 			steps.Dequeue();

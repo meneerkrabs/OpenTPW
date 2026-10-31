@@ -59,7 +59,7 @@ public class AudioSentenceResumeTests
 		var segment = first[0] < 10000 * 0.9 + 1 ? 1 : 2;
 		// samples 1 and 2 are 10000 + 100 i and 20000 + 100 i at a gain of 0.5 .. 0.9
 		var gain = first[0] / (segment * 10000.0);
-		Assert.IsTrue( gain is >= 0.499 and <= 0.901, $"gain {gain}" );
+		Assert.IsTrue( gain >= AudioLevels.Of( 50 ) - 0.001 && gain <= AudioLevels.Of( 90 ) + 0.001, $"gain {gain}" );
 		Assert.AreEqual( (short)(segment * 10000 * gain + 100 * gain), first[2], 2 );
 		var seed = system.Seed;
 		AudioListener.Update( new Vector3( 1000, 0, 0 ), new Vector3( 0, 0, 1 ) );
@@ -71,7 +71,7 @@ public class AudioSentenceResumeTests
 		Assert.AreNotEqual( seed, system.Seed, "the sample setup draws the volume again" );
 		var replayed = mixer.Mix( 2 );
 		var again = replayed[0] / (segment * 10000.0);
-		Assert.IsTrue( again is >= 0.499 and <= 0.901, $"replay gain {again}: the same segment from its first frame" );
+		Assert.IsTrue( again >= AudioLevels.Of( 50 ) - 0.001 && again <= AudioLevels.Of( 90 ) + 0.001, $"replay gain {again}: the same segment from its first frame" );
 		Assert.AreEqual( replayed[0], replayed[1] );
 		// the replayed segment ends after 40 frames; the successor, chosen before the stop, follows it
 		var rest = mixer.Mix( 60 );

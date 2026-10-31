@@ -68,7 +68,7 @@ public class RepairHideAudioTests
 		placed.Runtime.Simulate( FixedStepClock.TickDuration ); Assert.AreEqual( 0, placed.Script!.UnimplementedEffects.Count ); Assert.AreEqual( RideVM.VMFlags.Sign, placed.Script.Flags );
 		Assert.AreEqual( 2, mixer.Voices.Count ); foreach ( var voice in mixer.Voices ) { Assert.AreEqual( AudioListener.Position, voice.Position ); Assert.AreEqual( 100f, voice.Range ); Assert.IsTrue( voice.Loops ); }
 		var source = AudioListener.Position; GameAudio.UpdateListener( placed.Position.GetSystemVector3() + new System.Numerics.Vector3( 6, 0, 0 ), new System.Numerics.Vector3( 0, 1, 0 ), field );
-		using var reference = new AudioMixer( null ); reference.Play( Pcm( 1000 ), AudioChannel.Effects, 1, position: source, range: 100 ); reference.Play( Pcm( 2000 ), AudioChannel.Effects, 1, position: source, range: 100 );
+		using var reference = new AudioMixer( null ); reference.Play( Pcm( 1000 ), AudioChannel.Effects, 1, position: source, range: 100 ).AsEvent(); reference.Play( Pcm( 2000 ), AudioChannel.Effects, 1, position: source, range: 100 ).AsEvent();
 		CollectionAssert.AreEqual( reference.Mix( 1 ), mixer.Mix( 1 ), "Both IDs and the existing pan/distance law must match sound-space submission." );
 	}
 	private static void Bind( OriginalObjectRuntime owner, Func<Vector3?> origin ) => typeof( OriginalObjectRuntime ).GetMethod( "SetEventOrigin", BindingFlags.NonPublic | BindingFlags.Instance )!.Invoke( owner, new object[] { origin } );
@@ -117,7 +117,7 @@ public class RepairHideAudioTests
 		// [BIN:TPW-EXE:0x55635F] the value 0 submits the cat_kids one-shot of its band at the object's position (0x556A80), as the pair does for the other values
 		var owner = new OriginalObjectRuntime( entry ); var calls = 0; var place = new Vector3( 4, 5, 6 ); Bind( owner, () => { calls++; return place; } );
 		Repair( owner, 0 ); var voice = mixer.Voices.Single(); Assert.AreEqual( place, voice.Position ); Assert.IsFalse( voice.Loops ); Assert.AreEqual( 1, calls ); Assert.IsNotNull( owner.CaptureSnapshot() );
-		using var reference = new AudioMixer( null ); reference.Play( Pcm( 3000 ), AudioChannel.Effects, 1, position: place, range: 100 ); CollectionAssert.AreEqual( reference.Mix( 1 ), mixer.Mix( 1 ) );
+		using var reference = new AudioMixer( null ); reference.Play( Pcm( 3000 ), AudioChannel.Effects, 1, position: place, range: 100 ).AsEvent(); CollectionAssert.AreEqual( reference.Mix( 1 ), mixer.Mix( 1 ) );
 		owner.Stop(); Assert.IsFalse( voice.IsFinished ); mixer.Mix( 4 ); Assert.IsTrue( voice.IsFinished );
 	}
 	[DataTestMethod]
@@ -137,7 +137,7 @@ public class RepairHideAudioTests
 		Repair( owner, 0, band );
 		if ( expectedBank == 0 ) { Assert.AreEqual( 0, mixer.Voices.Count ); return; }
 		Assert.AreEqual( 1, mixer.Voices.Count );
-		using var reference = new AudioMixer( null ); reference.Play( Pcm( (short)(expectedBank * 1000) ), AudioChannel.Effects, 1, position: place, range: 100 );
+		using var reference = new AudioMixer( null ); reference.Play( Pcm( (short)(expectedBank * 1000) ), AudioChannel.Effects, 1, position: place, range: 100 ).AsEvent();
 		CollectionAssert.AreEqual( reference.Mix( 1 ), mixer.Mix( 1 ) );
 	}
 	[TestMethod]
@@ -225,7 +225,7 @@ public class RepairHideAudioTests
 		var decoded = (Dictionary<(SoundCategory, int, uint), Mp2Audio?>)typeof( SoundEventSystem ).GetField( "decoded", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( system )!;
 		decoded[(decoy, 1, 1)] = Pcm( 9000 ); decoded[(decoy, 2, 1)] = Pcm( 9000 );
 		var owner = new OriginalObjectRuntime( entry ); Bind( owner, () => Vector3.Zero ); Repair( owner );
-		using var reference = new AudioMixer( null ); reference.Play( Pcm( 1000 ), AudioChannel.Effects, 1, Vector3.Zero, 100 ); reference.Play( Pcm( 2000 ), AudioChannel.Effects, 1, Vector3.Zero, 100 );
+		using var reference = new AudioMixer( null ); reference.Play( Pcm( 1000 ), AudioChannel.Effects, 1, Vector3.Zero, 100 ).AsEvent(); reference.Play( Pcm( 2000 ), AudioChannel.Effects, 1, Vector3.Zero, 100 ).AsEvent();
 		CollectionAssert.AreEqual( reference.Mix( 1 ), mixer.Mix( 1 ) ); owner.Stop();
 	}
 	[TestMethod]

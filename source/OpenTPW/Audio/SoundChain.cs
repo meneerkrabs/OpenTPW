@@ -113,6 +113,7 @@ public sealed class SoundChain
 			var volume = system.Volume( soundEvent.Sounds[soundIndex], table ) / 100f;
 			var child = system.Mixer.Play( audio, channel, volume, position, range );
 			// [BIN:TPW-EXE:0x6bc410 sample start] volume, then pitch, then (below) the wait: the order of the original's draws
+			child.ForEvent( soundEvent.GroupMask );
 			child.SetPitch( system.Pitch( soundEvent.Sounds[soundIndex], table ) );
 			children.Add( child );
 			lastSample = sample;

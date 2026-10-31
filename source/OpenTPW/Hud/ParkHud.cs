@@ -218,7 +218,7 @@ public sealed partial class ParkHud
 	/// the same timer, 0x402DD0). Other windows (research, finance, the object windows) leave it running.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004092A0 game pause] 0x4092A0 sets the flag and freezes the timer object 0x785970 (0x402D90), 0x409300 clears it and thaws the timer (0x402DB0), 0x409350 (the P key) toggles both (0x402DD0)
-	// [APPROX:UI-096] the game pause's sound side is not ported: 0x4092A0 also pauses the advisor's speech handle (0x598960) and sets the sound entry's paused word (0x51C1C0 -> 0x803AD2, read by 0x51C1D0), and the deactivation pauses the whole mixer (0x51BCF0); OpenTPW's sounds go on under every owner
+	// [BIN:TPW-EXE:0x4092a0 pause sound side] 0x4092A0 also pauses the advisor's speech handle (0x598960 -> 0x51C060, with the advisor option on) and sets the sound entry's paused word (0x51C1C0 -> 0x803AD2), which lifts the listener 10000 units in 0x51C1D0; the application's deactivation pauses the whole mixer instead (0x51BCF0, 0x51BD30); GamePauseSound is that, and ObservePauseSound hands it the frame's change of owners
 	public bool ClockPaused => applicationPaused || Status.Speed == GameSpeed.Paused || SimulationTimeScaleOfScreens == 0;
 
 	private float SimulationTimeScaleOfScreens => TimeScaleFor( 1f, Stack.Screens.Select( screen => screen.Name ), OnlineSession );
@@ -942,7 +942,13 @@ public sealed partial class ParkHud
 	/// One frame: HUD input first (so clicks on the HUD never reach the park), then park selection,
 	/// purchase bookkeeping and messages. Returns true when the pointer is over the UI.
 	/// </summary>
-	public bool Update( UiContext context, UiInput input ) => Update( context, input, null, null, null );
+	public bool Update( UiContext context, UiInput input )
+	{
+		var captured = Update( context, input, null, null, null );
+		// the frame's change of pause owners reaches the sound side once the frame has settled which screens are open (docs/AUDIO.md, "Pause sound")
+		ObservePauseSound();
+		return captured;
+	}
 
 	// Explicit captures run the identical frame body in asset-free tests. Null samples native IO at its original point.
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )

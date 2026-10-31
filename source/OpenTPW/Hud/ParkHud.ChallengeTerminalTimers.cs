@@ -84,7 +84,7 @@ public sealed partial class ParkHud
 	/// Direct load/save and postcard are excluded; load/save under Escape inherit the still-open pause screen.
 	/// </summary>
 	// [BIN:TPW-EXE:0x48c894 escape suspension] options 0x4a3a7b, map 0x5f0b8a and owned offline message boxes 0x47f27b also suspend.
-	// ECON-058/UI-096: the offline simulation focus-loss latch does not own these timers; focus return is not game resume.
+	// ECON-058 and the pause owners (docs/UI.md, "Pause owners"): the offline simulation focus-loss latch does not own these timers; focus return is not game resume.
 	// Other dialogs, online ownership gates and nested host screens are not claimed to reproduce the original's single global flag.
 	internal static bool ChallengeMessageSuspensionFor( bool userPaused, IEnumerable<string> screens ) => userPaused
 		|| screens.Any( name => name is PauseMenuScreen or MapScreenName or "options" or "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff" or WinningMessageScreen );

@@ -35,6 +35,8 @@ public class CrowdAudioTests
 		BinaryPrimitives.WriteUInt32LittleEndian( catalog.AsSpan( 72, 4 ), GameAudio.CrowdEvent );
 		// the shipped crowd event's code (+0x12) is 7: the code its parameter call carries, and the value the branch picker reads
 		BinaryPrimitives.WriteUInt16LittleEndian( catalog.AsSpan( 90, 2 ), GameAudio.CrowdParameterCode );
+		// the shipped cat_kids group mask is master + effects (0x10009): the effects volume is one of the groups of the crowd's volume index
+		BinaryPrimitives.WriteUInt16LittleEndian( catalog.AsSpan( 36, 2 ), 9 );
 		File.WriteAllBytes( Path.Combine( directory, "synthetic", "sound", "cat_kidsSFX.map" ), catalog );
 		File.WriteAllBytes( Path.Combine( directory, "synthetic", "sound", "cat_kidsBANK.map" ), new byte[28] );
 		FileSystem = new BaseFileSystem( directory );
@@ -473,15 +475,15 @@ public class CrowdAudioTests
 		var rawPcm = (short)(sounds[0].Samples[GameAudio.Crowd!.CurrentSample].SampleNumber * 100);
 		var options = new GameOptions { SoundEffectsVolume = 100, SoundEffectsOn = true };
 		GameAudio.ApplyOptions( mixer, options );
-		Assert.AreEqual( (short)(rawPcm * 0.5f), mixer.Mix( 1 )[0] );
+		Assert.AreEqual( (short)(rawPcm * AudioLevels.Of( 50 )), mixer.Mix( 1 )[0] );
 		options.SoundEffectsVolume = 50;
 		GameAudio.ApplyOptions( mixer, options );
-		Assert.AreEqual( (short)(rawPcm * 0.25f), mixer.Mix( 1 )[0] );
+		Assert.AreEqual( (short)(rawPcm * AudioLevels.Of( 25 )), mixer.Mix( 1 )[0], "the effects group halves the index (50 x 0.5)" );
 		options.SoundEffectsOn = false;
 		GameAudio.ApplyOptions( mixer, options );
 		Assert.IsTrue( mixer.Mix( 1 ).All( value => value == 0 ), "effects mute silences the crowd's actual output" );
 		options.SoundEffectsOn = true;
 		GameAudio.ApplyOptions( mixer, options );
-		Assert.AreEqual( (short)(rawPcm * 0.25f), mixer.Mix( 1 )[0], "unmuting restores the stored effects volume" );
+		Assert.AreEqual( (short)(rawPcm * AudioLevels.Of( 25 )), mixer.Mix( 1 )[0], "unmuting restores the stored effects volume" );
 	}
 }

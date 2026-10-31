@@ -56,11 +56,30 @@ public sealed class AudioVoice
 	public float Gain { get; set; }
 	/// <summary>The logical sample already supplied final device gain, including its enabled groups.</summary>
 	internal bool HasDeviceGain { get; set; }
+	/// <summary>The voice belongs to the sound event system: its level is the library volume (<see cref="SoundVolume"/>) quantised in decibels, not a free gain times the channel gains.</summary>
+	internal bool UsesLibraryVolume { get; set; }
+	/// <summary>Marks the voice as one of the event system's, with its category's group mask (<see cref="GroupMask"/>).</summary>
+	internal AudioVoice ForEvent( uint groupMask )
+	{
+		GroupMask = groupMask;
+		UsesLibraryVolume = true;
+		return this;
+	}
+	/// <summary>The volume QMixer holds for the voice (<see cref="SoundVolume.Library"/>); it keeps its last value when the driver is sent nothing.</summary>
+	// [BIN:QMIXER-DLL:0x180310F0 default parameter block] a channel that was never sent a volume holds 10000 / 32767 (+0x4C = 0x3E9C4139); an event voice is sent its index before it is first mixed, so this value is heard only when the first index is refused
+	internal float LibraryVolume { get; private set; } = 10000 * (1f / 32767f);
+	/// <summary>The driver's volume call for an index: an index outside 0..127 sends nothing and leaves the volume as it was.</summary>
+	internal void SetLibraryIndex( int index )
+	{
+		if ( SoundVolume.Library( index ) is { } volume ) LibraryVolume = volume;
+	}
 	public bool IsFinished { get; private set; }
 	/// <summary>The output frame (mixer timeline) at which this voice's first frame was mixed, or -1 before that.</summary>
 	public long StartOutputFrame { get; internal set; } = -1;
 	/// <summary>The voice's place in the original's sound units, or null for a flat (unpositioned) voice.</summary>
 	public Vector3? Position { get; internal set; }
+	/// <summary>The group mask of the voice's event (bit 0 master, 1 music, 2 speech, 3 effects; 0 for a voice outside the event system), which the sound system's group enable tests.</summary>
+	internal uint GroupMask { get; set; }
 	/// <summary>The distance at which the voice is no longer heard (0: no range, always full gain).</summary>
 	public float Range { get; internal set; }
 	/// <summary>
@@ -70,6 +89,12 @@ public sealed class AudioVoice
 	// [BIN:TPW-EXE:0x6bc51d flat placement] the sample start 0x6bc410 takes its flat branch for a voice with voice flag 8 (set from the event's 0x200 by 0x6bbe90): the raw dwords (0, 1, 0) become the placeholder's position (0x6bb220), the request gets no distance mapping and no flag 0x20 (0x6bc52d-0x6bc52f, 0x6bc612-0x6bc61e), so 0x6b7fd6 reaches the placement adapter 0x6d2640 with its flag clear and that adapter calls QSWaveMixSetPosition (0x6d2709 skipped, 0x6d270b-0x6d272b) rather than SetSourcePosition
 	// [BIN:QMIXER-DLL:0x18007abd SetPosition polar] the message (code 6, 0x18003e40 -> 0x18001520) reads three integers (azimuth in degrees, range, elevation) and hands the channel the floats (azimuth, range x 3.0 / 32767, elevation), the 3.0 being the room size the engine starts with (0x180086ef) and tp.exe never changes (no QSWaveMixSetRoomSize import), 0x18007b0b stores them and 0x18009dc0 takes its polar branch (the channel's flag +0x128, set by default at 0x18006e73): azimuth 0, elevation 0, distance 9.2e-5, which is inside the default minimum distance 1.0 (0x180310f0 +0x40; tp.exe's own mapping never applies to a flat voice, its minimum is 2.0) so the distance gain is 1 (0x1800a0cf-0x1800a12f) and the azimuth 0 gives SetPan(0): both channels at the voice's own gain
 	public bool PlacedFlat { get; internal set; }
+	/// <summary>
+	/// True while the voice's channel is paused (the library's pause-handle message, <see cref="GamePauseSound"/>): the mixer leaves it out of the mix and its place in the sample stands still,
+	/// so a resume carries on where it stopped. <see cref="AudioMixer.Resume"/> clears it on every voice.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6b8a10 pause handle] the record 0x70a5b8 (execute 0x6b8df0) reaches QSWaveMixPauseChannel (0x6d2500, flag 0) for the one channel of the handle; the resume record 0x70a5c0 (0x6b8e60) restarts it (0x6d2540), so the sample goes on from its place
+	public bool Paused { get; internal set; }
 	/// <summary>True when the sample wraps to its start and the voice lives on until stopped (an event flagged 0x8 loops its sample).</summary>
 	public bool Loops { get; internal set; }
 	public event Action<AudioVoice>? Completed;
@@ -143,21 +168,29 @@ public sealed class AudioVoice
 	internal int MixInto( Span<float> mix, int frames, float gain )
 	{
 		if ( IsFinished || output is not { } sampleOutput ) return 0;
-		var total = gain * Gain;
+		// an event-system voice's level is one decibel-quantised value of the library volume times the distance gain (flat voices: distance gain 1), see the volume chain below
+		var total = UsesLibraryVolume ? 1f : gain * Gain;
 		var leftScale = 1f;
 		var rightScale = 1f;
+		if ( UsesLibraryVolume && (Position is not { } || Range <= 0 || PlacedFlat) )
+		{
+			// [BIN:QMIXER-DLL:0x1800586B,0x1800ca40 volume chain] a flat or unpositioned voice has the distance gain 1 (+0xB8) and no cone (+0xB4): SetVolume(dB of the library volume) alone
+			var flat = AudioListener.DecibelGain( AudioListener.GainHundredthsOfDecibel( LibraryVolume ) );
+			leftScale = rightScale = flat;
+		}
 		if ( Position is { } place && Range > 0 && !PlacedFlat )
 		{
 			var (distanceGain, pan) = AudioListener.Placement( place, Range );
 			// Range admission belongs to SoundEventSystem, not this distance/pan stage; a released loop output is not mixed.
 			// [BIN:QMIXER-DLL:0x18005830 volume and pan] tp.exe gives every voice the channel mode 0x1000000 (the software stage: 0x6bc61b ORs 1 into the request flags of every started sample, 0x6d23ab turns that into 0x1000000), whose buffer has no DirectSound 3D object (0x2000000 only): SetVolume(2000 log10(gain) hundredths of a decibel, 0x1800ca40) and, for a mono wave only (0x18005982 tests the wave format table 0x1803c6b4, 1 = mono), SetPan(44.444 x azimuth, mirrored behind the listener, 0x18005730)
 			// [BIN:TPW-EXE:0x6d2aec axis mapping] the adapters 0x6d2640 (source), 0x6d2a10 (listener position) and 0x6d2b20 (front and up) hand QMixer (x, z, y) for a driver whose byte +8 has bit 0 clear (it starts as 2, 0x6d6c54-0x6d6c5e, and nothing writes it), QMixer negates the third component of every vector it receives when its engine byte +4 is set (0x18001020; set because tp.exe's QSWaveMixInitEx structure is zeroed, 0x6d1f92, so bit 3 of its flags is clear, 0x18008661-0x1800866c): the two reflections make a rotation (x, y, z) -> (x, z, -y), so right = up x front, the rotated offset and the azimuth atan2(x, z) are those of the unmapped camera axes (AudioListener.Azimuth; the test AudioQmixerPlacementTests replays the whole pipeline)
-			var levelled = AudioListener.DecibelGain( AudioListener.GainHundredthsOfDecibel( distanceGain ) );
+			// [BIN:QMIXER-DLL:0x1800586B,0x1800ca40 volume chain] the channel's product +0xBC = library volume (+0x4C, SoundVolume.Library) x distance gain (+0xB8) x cone (+0xB4, 1: no cone) is turned into hundredths of a decibel once (0x1800ca40) and that value is DirectSound's volume
+			var levelled = AudioListener.DecibelGain( AudioListener.GainHundredthsOfDecibel( UsesLibraryVolume ? LibraryVolume * distanceGain : distanceGain ) );
 			(leftScale, rightScale) = channels == 1 ? AudioListener.PanGains( pan ) : (1f, 1f);
 			leftScale *= levelled;
 			rightScale *= levelled;
 		}
-		// [BIN:QMIXER-DLL:0x1800a1df Doppler] every voice without the loop flag takes QMixer's Doppler factor (a voice with the loop flag sets the channel's no-Doppler bit through 0x6bc628 -> 0x6c5110 -> 0x6d22d0, tested at 0x1800a1df): its frequency times 1 / (1 + (direction . relative velocity) / 331.36), at most 10, from the listener velocity of tp.exe's last changed listener update (AudioListener.Velocity, 0x6d27b0); the integer rounding of the stream's own frequency is applied (0x180055c8-0x180055dd); the stage runs only once the channel's wave has its stream reader (0x18005599-0x180055bd, 0x1800bd40: +0x90 set, +0x88 present), which the library's worker creates through 0x18024620 for the memory waves tp.exe opens with OpenWaveEx flag 0x11 (0x180033ad), so a started voice is assumed ready; [APPROX:AUDIO-018] the device-unit rounding of the stream frequency (0x1800c760) is not read
+		// [BIN:QMIXER-DLL:0x1800a1df Doppler] every voice without the loop flag takes QMixer's Doppler factor (a voice with the loop flag sets the channel's no-Doppler bit through 0x6bc628 -> 0x6c5110 -> 0x6d22d0, tested at 0x1800a1df): its frequency times 1 / (1 + (direction . relative velocity) / 331.36), at most 10, from the listener velocity of tp.exe's last changed listener update (AudioListener.Velocity, 0x6d27b0); the integer rounding of the stream's own frequency is applied (0x180055c8-0x180055dd); the stage runs while the voice's first stream reader has its decoder (0x18005599-0x180055bd: +0x90 set, which the library's worker fills through 0x18024620 / 0x18024740) and has not ended (0x1800bd40, the test the pump 0x18007640 uses to end the voice), so a started voice is assumed ready (the waves tp.exe opens with OpenWaveEx flag 0x11, 0x180033ad, are callback waves); [APPROX:AUDIO-018] the device-unit rounding of the stream frequency (0x1800c760) is not read
 		var stepNow = step * DopplerRatio();
 		for ( var frame = 0; frame < frames; frame++ )
 		{
@@ -275,6 +308,49 @@ public sealed class AudioMixer : IDisposable
 
 	public IReadOnlyList<AudioVoice> Voices => voices;
 
+	private bool paused;
+	private readonly bool[] channelEnabled = { true, true, true };
+
+	/// <summary>Whether the sound system's group enable of <paramref name="channel"/> is on (the on-flag of the sound options, not the volume).</summary>
+	public bool IsChannelEnabled( AudioChannel channel ) => channelEnabled[(int)channel];
+
+	/// <summary>
+	/// The sound system's group enable (<c>0x6B9900</c>): the sound service sends the three on-flags of music, speech and effects, and the sound library stops the voices of a group whose flag is clear
+	/// at their next tick and restarts them when it is set again (<see cref="SoundEventSystem"/>). A volume of 0 is a different thing: the voices go on, silent.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6b9900 group enable] SetGroupEnabled(group, flag) stores a byte at +0x44 + group of the sound system object (groups 0 master, 1 music, 2 speech, 3 effects: the records 0x700B74, 0x700B78 and 0x700B70, execute 0x6B5A50, 0x6B5990 and 0x6B59F0), all four are 1 from the start (0x6B8F32) and the master's is never written
+	public void SetChannelEnabled( AudioChannel channel, bool enabled ) => channelEnabled[(int)channel] = enabled;
+
+	/// <summary>Whether every group of <paramref name="groupMask"/> is on: the test of the tick's group gate (0x6BC760 reads the voice's mask byte +0x47 against the bytes +0x44..+0x47).</summary>
+	// [BIN:TPW-EXE:0x6bc760 group gate] bit 1 of the voice's mask tests the master byte +0x44, bit 2 the music byte +0x45, bit 4 the speech byte +0x46 and bit 8 the effects byte +0x47: one clear byte of a set bit switches the voice off
+	internal bool GroupsEnabled( uint groupMask ) =>
+		((groupMask & 2) == 0 || channelEnabled[(int)AudioChannel.Music])
+		&& ((groupMask & 4) == 0 || channelEnabled[(int)AudioChannel.Speech])
+		&& ((groupMask & 8) == 0 || channelEnabled[(int)AudioChannel.Effects]);
+
+	/// <summary>True while the whole mixer is paused (every channel of the session): nothing is mixed, so no voice moves and the output carries silence.</summary>
+	public bool Paused => paused;
+
+	/// <summary>
+	/// Pauses every channel of the sound system, as the application's deactivation does ([EXT:offline-focus-pause] for the host plumbing; <see cref="GamePauseSound"/>).
+	/// The output queue keeps what was mixed ahead (at most <see cref="TargetQueuedFrames"/>), which the device still plays before the silence.
+	/// </summary>
+	// [BIN:TPW-EXE:0x51bcf0 mixer pause] the message record 0x700b64 (execute 0x6b5640) sends the driver the pause record 0x70a268 (execute 0x6b8e40), which calls the driver's slot +0x38 (0x6d25a0): QSWaveMixPauseChannel(session, 0, flag 1)
+	// [BIN:QMIXER-DLL:0x18003490 pause all] with the flag's bit 0 set the function walks every channel of the session (0x18009080 by index) and pauses each (0x18007380)
+	public void Pause() => paused = true;
+
+	/// <summary>
+	/// Restarts every channel: the mixing goes on, and a voice paused on its own (<see cref="AudioVoice.Paused"/>) goes on with it, since the restart reaches every channel of the session.
+	/// </summary>
+	// [BIN:TPW-EXE:0x51bd30 mixer resume] the record 0x700b68 (execute 0x6b5670) sends the resume record 0x70a270 (0x6b8eb0, driver slot +0x3c = 0x6d25c0): QSWaveMixRestartChannel(session, 0, flag 1)
+	// [BIN:QMIXER-DLL:0x18003710 restart all] the same walk over every channel with 0x180073a0, whether or not it was paused
+	public void Resume()
+	{
+		paused = false;
+		foreach ( var voice in voices )
+			voice.Paused = false;
+	}
+
 	/// <summary>
 	/// The reverb of the held <c>SndReverb.map</c> preset (OpenTPW's own stand-in, the audio-reverb extension): the positioned voices of the effects channel are sent through it and its return is added to the mix; flat voices, speech and music stay dry.
 	/// </summary>
@@ -292,14 +368,21 @@ public sealed class AudioMixer : IDisposable
 	}
 
 	// [BIN:TPW-EXE:0x6B98D0,0x51BD70] group order: master, music, speech, effects; ducking changes those same factors.
-	internal float GetGroupFactor( int index )
+	internal float GetGroupFactor( int index ) => GetGroupFactor( index, SpeechSpeaking() );
+
+	private bool SpeechSpeaking() => voices.Any( voice => voice.Channel == AudioChannel.Speech && voice.HasOutput ) && channelGains[(int)AudioChannel.Speech] > 0;
+
+	// [BIN:TPW-EXE:0x51BDEE-0x51BE45 speech duck,0x70A280 group float] while speech plays the sound service sends trunc(option percent x duck percent / 100) as an integer, and every group float is that percent x 0.01f
+	private float GetGroupFactor( int index, bool speaking )
 	{
 		if ( index == 0 ) return masterGain;
 		var channel = index switch { 1 => AudioChannel.Music, 2 => AudioChannel.Speech, 3 => AudioChannel.Effects, _ => throw new ArgumentOutOfRangeException( nameof( index ) ) };
 		var gain = GetChannelGain( channel );
 		if ( channel == AudioChannel.Music && MusicDuckRequest != 0 ) return 0;
-		var speaking = voices.Any( voice => voice.Channel == AudioChannel.Speech && voice.HasOutput ) && GetChannelGain( AudioChannel.Speech ) > 0;
-		return speaking && channel != AudioChannel.Speech ? gain * DuckingLevel : gain;
+		var percent = (int)MathF.Round( gain * 100 );
+		if ( speaking && channel != AudioChannel.Speech )
+			percent = (int)(percent * (int)MathF.Round( DuckingLevel * 100 ) / 100);
+		return percent * 0.01f;
 	}
 
 	public float GetChannelGain( AudioChannel channel ) => channelGains[(int)channel];
@@ -364,7 +447,8 @@ public sealed class AudioMixer : IDisposable
 		var speaking = voices.Any( voice => voice.Channel == AudioChannel.Speech && voice.HasOutput ) && channelGains[(int)AudioChannel.Speech] > 0;
 		GroupsChanged?.Invoke();
 		mixing = true;
-		var reverbOn = Reverb.Active;
+		// a paused mixer leaves the reverb's tail where it is (its buffers are paused with everything else)
+		var reverbOn = Reverb.Active && !paused;
 		if ( reverbOn )
 		{
 			if ( reverbSend.Length < frames * 2 )
@@ -372,23 +456,37 @@ public sealed class AudioMixer : IDisposable
 			reverbSend.AsSpan( 0, frames * 2 ).Clear();
 		}
 		var send = reverbSend.AsSpan( 0, reverbOn ? frames * 2 : 0 );
+		// [BIN:TPW-EXE:0x6B98D0,0x70A610,0x6C56E2,0x6BB860 group change] a group volume change re-evaluates every voice's index through the record; here the index is a function of the current group floats and is evaluated for each block, which gives the same value at every point
+		Span<float> groupFactors = stackalloc float[4];
+		for ( var group = 0; group < 4; group++ )
+			groupFactors[group] = GetGroupFactor( group, speaking );
 		// Index loop: a voice that completes may start its successor, which is mixed from the frame where it ended.
 		for ( var index = 0; index < voices.Count; index++ )
 		{
 			var voice = voices[index];
 			if ( !voice.HasOutput )
 				continue;
+			// [BIN:TPW-EXE:0x51bcf0 mixer pause] [BIN:TPW-EXE:0x6b8a10 pause handle] a paused voice, or any voice while the mixer is paused, is not mixed: its sample stands still and the time the listener has heard of it (PlayedSeconds) does not grow, so the start frame moves by the paused frames
+			if ( paused || voice.Paused )
+			{
+				if ( voice.StartOutputFrame >= 0 )
+					voice.StartOutputFrame += frames;
+				continue;
+			}
 			var offset = Math.Min( voice.BufferOffset, frames );
 			voice.BufferOffset = 0;
 			if ( voice.StartOutputFrame < 0 )
 				voice.StartOutputFrame = mixedFrames + offset;
+			// [BIN:TPW-EXE:0x6BB860 effective volume] an event-system voice's groups are inside its volume index (the group floats multiply the voice's percent before the driver's table), so it takes neither the master nor a channel gain here
+			if ( voice.UsesLibraryVolume && !voice.HasDeviceGain )
+				voice.SetLibraryIndex( SoundVolume.Index( (int)MathF.Round( voice.Gain * 100, MidpointRounding.ToEven ), voice.GroupMask, groupFactors ) );
 			var gain = masterGain * channelGains[(int)voice.Channel];
 			if ( voice.Channel == AudioChannel.Music && MusicDuckRequest != 0 )
 				gain = 0;
 			// [BIN:STP-PPC:0x100BB18C speech ducking] while speech plays, Music = settings+0x20 × duck / 100 and User2 = settings+0x1C × duck / 100 (TbSysCommand::SetMusicVolume / SetUser2Volume); +0x1C is fed from the SFX slider (profile +0x10, PC serializer 0x423E90), so the ducked second volume is the effects channel; master and speech stay
 			if ( speaking && voice.Channel != AudioChannel.Speech )
 				gain *= DuckingLevel;
-			if ( voice.HasDeviceGain ) gain = 1;
+			if ( voice.HasDeviceGain || voice.UsesLibraryVolume ) gain = 1;
 			// the positioned effects (rides, screams, staff, guests, placed ambients) go to the reverb send instead of straight into the mix; the send is added back below. Flat voices (interface clicks, the weather's own rain) stay dry
 			var used = voice.MixInto( (reverbOn && voice.Channel == AudioChannel.Effects && voice.Position != null ? send : buffer)[(offset * 2)..], frames - offset, gain );
 			if ( voice.IsFinished )

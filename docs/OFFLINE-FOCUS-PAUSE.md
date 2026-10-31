@@ -12,7 +12,10 @@ but the chosen running speed remains stored.
 
 Explicit actions resume it:
 - The pause key restores the stored running speed. If the user had already
-  selected Paused, the key keeps its existing Paused-to-Normal toggle.
+  selected Paused and the window then lost focus, one press resumes the game
+  (the pause object has one flag, `0x409350` with `+0x1C` set resumes whoever
+  set it): it clears the focus pause and takes the Paused-to-Normal toggle in the
+  same press.
 - A speed button applies its requested speed and clears the focus pause.
 - Resume Game or Back in the Escape menu clears the focus pause. Closing that
   menu programmatically, such as after saving, does not implicitly resume it.
@@ -32,11 +35,15 @@ sessions are not excluded.
 ## Scope limits
 
 The pause itself matches `0x46B74C`. What `[EXT:offline-focus-pause]` still
-covers is host plumbing: focus sampled per frame, offscreen runs and an initial
-lack of focus not counting as deactivation, and the stopped state shown through
-the speed buttons with the chosen speed stored. The mixer's suspension on
-deactivation (`0x51BCF0`) and the advisor's speech pause are the sound side of
-UI-096 and are not ported. The focus latch does not become explicit user
+covers is host plumbing: focus sampled per frame (the park's and, for the mixer's
+pause in the front end, the lobby's: `GamePauseSound.ObserveFrontEndFocus`),
+offscreen runs and an initial lack of focus not counting as deactivation, and the
+stopped state shown through the speed buttons with the chosen speed stored. The
+browser never sees a focus loss (`OpenTPW.Web.Veldrid/Input.cs`, `Focused => true`),
+so neither the park's pause nor the mixer's suspension on deactivation happens
+there; the pause menu's and the P key's sound pause do. The mixer's suspension on
+deactivation (`0x51BCF0`) is ported with the rest of the pause's sound side
+(`GamePauseSound`, docs/AUDIO.md "Pause sound"; UI-096 retired). The focus latch does not become explicit user
 challenge-message timer suspension, and it does not change the separate
 `Hud.Paused` predicate. The advisor receives the existing simulation-paused input.
 

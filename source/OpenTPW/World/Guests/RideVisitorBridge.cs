@@ -755,8 +755,14 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			if ( (links & GuestPathGrid.LinkValue( candidate )) == 0 ) continue;
 			var (dx, dy) = GuestPathGrid.Directions[candidate];
 			var neighbour = (X: entry.X + dx, Y: entry.Y + dy);
-			// Out-of-map neighbours remain outside the supported host reconstruction, not a native type test.
-			if ( !grid.InBounds( neighbour.X, neighbour.Y ) ) return false;
+			// [BIN:TPW-EXE:0x004DE07D cell word step] the selector adds dy x 128 + dx to the 16-bit cell word unbounded, so a step off the map's side reads the end cell of the next or previous row (a defined read inside the array)
+			if ( !grid.InBounds( neighbour.X, neighbour.Y ) )
+			{
+				// [EXT:original-undefined-reads] a word outside the array (above the first row or below the last) and a map that is not 128 cells wide are outside what is ported: the original reads past its cell array there
+				if ( grid.CountX != 128 || (unchecked( (ushort)((entry.Y + dy) * 128 + entry.X + dx + 1) ) - 1) is not (>= 0 and var index) || index >= grid.CountX * grid.CountY )
+					return false;
+				neighbour = (index & 0x7F, index >> 7);
+			}
 			front = neighbour;
 			direction = candidate;
 			return true;

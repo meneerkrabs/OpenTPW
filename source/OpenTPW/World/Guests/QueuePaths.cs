@@ -465,9 +465,13 @@ public static class QueuePaths
 	}
 
 	/// <summary>What a ride's demolition did to its queue: the queue cells it removed with a refund, and whether it debited one cell's cost.</summary>
-	/// <param name="Refunds">Queue cells removed while their owner cell is not empty (each credits the queue cell's cost at the ride's scrap percentage).</param>
+	/// <param name="RefundOwners">The owner word of each queue cell removed while its owner cell is not empty, in the order they went: the credit is the queue cell's cost at the scrap percentage of that owner's ride (<c>0x536A42</c> → <c>0x4D99E0</c> → <c>0x4E2290</c>), which is not always the demolished ride (the walk can cross another ride's queue cells).</param>
 	/// <param name="Debited">The Back loop ran (the ride's cached queue size was above 0), so one cell's cost is debited at its end.</param>
-	internal readonly record struct QueueDemolition( int Refunds, bool Debited );
+	internal readonly record struct QueueDemolition( IReadOnlyList<ushort> RefundOwners, bool Debited )
+	{
+		/// <summary>How many queue cells refunded.</summary>
+		public int Refunds => RefundOwners?.Count ?? 0;
+	}
 
 	/// <summary>
 	/// The queue part of a typed ride's demolition (<c>0x527EE0</c>, <c>0x527F87..0x528013</c>): the corner walk (stack, counters and the link clear at a joined path), and, when the ride's cached queue size
@@ -479,11 +483,11 @@ public static class QueuePaths
 	internal static QueueDemolition DemolishQueue( GuestPathGrid grid, RideVisitorBridge ride, int cachedSize, Action? afterPop = null )
 	{
 		if ( TypedWalk( grid, ride, write: true ) is not { } walk )
-			return default;
+			return new QueueDemolition( Array.Empty<ushort>(), false );
 		grid.Invalidate();
 		if ( cachedSize <= 0 )
-			return default;
-		var refunds = 0;
+			return new QueueDemolition( Array.Empty<ushort>(), false );
+		var refunds = new List<ushort>();
 		var stack = walk.Stack;
 		var cells = grid.Cells;
 		for ( var point = stack.Count - 1; point >= 1; point-- )
@@ -492,7 +496,7 @@ public static class QueuePaths
 			if ( cells.RawTypeAt( top.X, top.Y ) != (byte)ParkCellType.Path )
 			{
 				foreach ( var (x, y) in ParkPathBuilder.LayLine( stack[point], top ) )
-					cells.RemoveQueueCellForced( x, y, owner => refunds++ );
+					cells.RemoveQueueCellForced( x, y, refunds.Add );
 			}
 			// [BIN:TPW-EXE:0x0052FFEC Back's re-evaluation] every pop of the loop ends with 0x4DE1F0 on the demolished ride (the argument of Back): its back and size are found again, the back cell is stamped and the guests the shrunken room no longer holds leave
 			grid.Invalidate();
@@ -522,7 +526,7 @@ public static class QueuePaths
 	/// </summary>
 	/// <param name="removeFixed">Whether a NoModify cell (the queue front the placement laid) may go too; the original's cell clear keeps it unless forced (the level opts in, EXT:removable-access-cells).</param>
 	// [BIN:TPW-EXE:0x005367A0 cell clear] the original removes a queue cell only through its cell clear: the queue tool's undo (Back 0x52FE50, whole segments of the corner stack, CellBuildTool.Undo) and the ride's demolition (QueuePaths.ClearAll) reach it, the bulldozer's rectangle clears only path cells (type 1 test 0x536310 at 0x52C116 before 0x5367A0); this removal from a clicked cell on, with the cells behind it so the queue stays one line from the ride, serves the undo of a segment and the labelled extensions EXT:dev-one-click-remove and EXT:queue-backtrack
-	// [APPROX:QUEUE-015] the queue tool's undo (Back 0x52FE50) takes cells and refunds as 0x5367A0 does and writes no guest: the re-evaluation that follows (0x4DE1F0 at 0x52FFEC, 0x501390 per guest) dismisses by place alone. The corner walk 0x530120 is the executable's own (QueueCornerWalk: the stack, the placement counters +0x20 of the cells it visits, the link clear where it ends on a path, the line start; 82 oracle cases, ORACLE.md X44) and runs where the original runs it, at its only three callers: the queue edit click (0x52610A), the Move pick-up (0x48D006) and a ride's demolition (0x527F9A). A typed ride's demolition replays the executable's: the walk, Back for as long as the cached size (+0x40) is above 0 with the forced-clear flag 0x81D7A8 (every cell of a line goes, NoModify and counters ignored, its neighbours keep their links, each queue cell whose owner cell is not empty credits its cost), one cell's debit after it, and the cells the walk does not reach (a stray cell of the ride, the branch of a junction) stay (QueuePaths.DemolishQueue; 42 oracle cases). Residual: the tool entries that run no walk (the original runs none there either: a ride's placement, the ride window's queue button 0x4AF200 (inferred) and a track's or coaster's completion) start the queue tool with the stack their own clicks leave (the placement's tail 0x5259AE..0x525A06), which is not read: OpenTPW starts them with the segment's cells and no counters; the removal from a clicked cell on stays only as the labelled extensions EXT:dev-one-click-remove and EXT:queue-backtrack, which keep the original's guest policy (the clear writes no guest and the re-evaluation dismisses by place); a ride without an access cell (the gates and test rigs, the Theme Park Inc slice) keeps the host's chain clear as [EXT:untyped-harness-world]
+	// [APPROX:QUEUE-015] the queue tool's undo (Back 0x52FE50) takes cells and refunds as 0x5367A0 does and writes no guest: the re-evaluation that follows (0x4DE1F0 at 0x52FFEC, 0x501390 per guest) dismisses by place alone. The corner walk 0x530120 is the executable's own (QueueCornerWalk: the stack, the placement counters +0x20 of the cells it visits, the link clear where it ends on a path, the line start; 82 oracle cases, ORACLE.md X44) and runs where the original runs it, at its three callers: the queue edit click (0x52610A), the Move pick-up (0x48D006) and a ride's demolition (0x527F9A). The Move pick-up also reaches the demolition 0x527EE0 through its click (0x48D03D, mode 0x33 to 0x525E7F), which runs a second walk and the stack copy 0x52FC30: neither is ported, and the cells a Move strands stay as stray cells of the ride's owner word (the next demolition of that ride, or a new ride with the same owner word, meets them). A typed ride's demolition replays the executable's: the walk, Back for as long as the cached size (+0x40) is above 0 with the forced-clear flag 0x81D7A8 (every cell of a line goes, NoModify and counters ignored, its neighbours keep their links, each queue cell whose owner cell is not empty credits its cost), one cell's debit after it, and the cells the walk does not reach (a stray cell of the ride, the branch of a junction) stay (QueuePaths.DemolishQueue; 42 oracle cases). Residual: the tool entries that run no walk (the original runs none there either: a ride's placement, the ride window's queue button 0x4AF200 (inferred) and a track's or coaster's completion) start the queue tool with the stack their own clicks leave (the placement's tail 0x5259AE..0x525A06), which is not read: OpenTPW starts them with the segment's cells and no counters; the removal from a clicked cell on stays only as the labelled extensions EXT:dev-one-click-remove and EXT:queue-backtrack, which keep the original's guest policy (the clear writes no guest and the re-evaluation dismisses by place); a ride without an access cell (the gates and test rigs, the Theme Park Inc slice) keeps the host's chain clear as [EXT:untyped-harness-world]
 	public static int RemoveFrom( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, bool removeFixed = false )
 	{
 		ride.RecomputeQueue( grid );

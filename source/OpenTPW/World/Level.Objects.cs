@@ -1480,8 +1480,12 @@ public partial class Level
 				() => Guests.ReevaluateQueueNow( ride, ride.QueueCells.Count( cell => Guests.Grid.IsQueue( cell.X, cell.Y ) ) ) );
 			if ( Park?.Economy is { } typedEconomy && GetEconomyInstance( item ) is int typedInstance )
 			{
-				for ( var refund = 0; refund < demolition.Refunds; refund++ )
-					typedEconomy.RefundQueueCell( typedInstance );
+				// each cell credits at the scrap percentage of the ride its owner word names (0x536A42), not always the demolished one
+				foreach ( var owner in demolition.RefundOwners )
+				{
+					var payer = Objects.Objects.FirstOrDefault( other => !other.IsDeleted && other.Entry.HasQueue && OwnerWord( other ) == owner );
+					typedEconomy.RefundQueueCell( payer != null && GetEconomyInstance( payer ) is int payerInstance ? payerInstance : typedInstance );
+				}
 				if ( demolition.Debited )
 					typedEconomy.ChargeQueueDemolition( typedInstance );
 			}

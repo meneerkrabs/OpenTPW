@@ -172,17 +172,14 @@ public partial class Level
 
 	private TrackEditor TrackEditorOf( OriginalObject item, TrackStation station, TrackBuilder builder ) => new( builder, station, TrackEditHooksOf( item, builder ), SharedToolGlobals );
 
-	/// <summary>The track tool's globals one level keeps (<see cref="TrackToolGlobals"/>): the last select's or tool start's exit and entry tiles, whichever ride that was.</summary>
-	private TrackToolGlobals trackToolGlobals => trackToolGlobalsField ??= new();
-
-	private TrackToolGlobals? trackToolGlobalsField;
-
 	/// <summary>
-	/// The globals the track editors share, or null in a shared park, where each editor keeps globals of its own that name its ride's exit and entry tiles: a select is the issuing player's own state
-	/// (<see cref="Selection"/>), not a record every peer applies, so the tiles a demolition spares could not be the same on every peer.
+	/// The globals a track editor reads and writes: the client's own (<see cref="ClientToolGlobals"/>) outside a command; inside one, the globals the command carries (<see cref="ToolTiles"/>), or none
+	/// (the editor then names its ride's own exit and entry tiles) for a command that carries none, so what a command does never depends on the machine that runs it.
 	/// </summary>
-	// [EXT:online-coop-lockstep] a co-op session's demolition spares the demolished ride's own exit and entry tiles, as every peer can follow; the sticky globals of a solo park (TrackToolGlobals) are the issuer's select state, which a record does not carry
-	private TrackToolGlobals? SharedToolGlobals => CoopSession == null ? trackToolGlobals : null;
+	private TrackToolGlobals? SharedToolGlobals => executingCommand ? executionGlobals : ClientToolGlobals;
+
+	private bool executingCommand;
+	private TrackToolGlobals? executionGlobals;
 
 	/// <summary>
 	/// Removes the station tiles of a ride (pass 2 of the demolition); the tiles its replays cleared are gone already (<see cref="OnTrackStationRemoving"/>) and a tile no replay reached stays, as in the original.
@@ -395,6 +392,8 @@ public partial class Level
 		// [EXT:online-coop-claims] the tool claims its ride once the tool it replaces is gone (C3c-1); the claim moves from a ride the replaced tool held
 		if ( !ClaimForTrackTool( station ) )
 			return TrackToolEntry.Refused;
+		// the track button's select (0x4AF233) writes the globals before the tool starts
+		NoteToolSelection( station );
 		var editor = new TrackEditor( builder, layout, TrackEditHooksOf( station, builder ), SharedToolGlobals );
 		// [BIN:TPW-EXE:0x0052A050 line tool after a placement] the placement starts the line tool itself (mode 3 with its line start), without reading the circuit word that the tool button's click reads (0x5267F2)
 		if ( !justPlaced && station.Runtime.Bump is { IsTrackValid: true } )

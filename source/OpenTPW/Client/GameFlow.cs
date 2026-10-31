@@ -12,6 +12,9 @@ namespace OpenTPW;
 /// </summary>
 internal sealed partial class GameFlow : IDisposable
 {
+	/// <summary>The track tool globals of this process run (tp.exe's <c>0x7639E0..0x7639EC</c> persist across park loads): every level this flow builds shares them. Not saved.</summary>
+	internal static readonly TrackToolGlobals ProcessToolGlobals = new();
+
 	private readonly UiRenderer backgroundRenderer;
 	private readonly UiRenderer overlayRenderer;
 	private readonly UiInputSource inputSource = new();
@@ -372,7 +375,7 @@ internal sealed partial class GameFlow : IDisposable
 		ApplyPendingExtensions();
 		Level level;
 		using ( LoadProfile.Measure( "level" ) )
-			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start, playerSave: playerSave ) { ShowDeveloperPanels = developerPanels };
+			level = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start, playerSave: playerSave ) { ShowDeveloperPanels = developerPanels, ClientToolGlobals = ProcessToolGlobals };
 		return EnterLevel( level, levelName, original, visit );
 	}
 

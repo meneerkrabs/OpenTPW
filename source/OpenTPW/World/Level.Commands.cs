@@ -18,7 +18,7 @@ public partial class Level
 	private bool? commandPlacementMoving;
 
 	/// <summary>The park's edit funnel; every edit of a HUD window or tool goes through it.</summary>
-	public ParkCommands Commands => commands ??= new ParkCommands( () => simulationClock?.TickCount ?? 0, ExecuteCommand, () => IsReadOnlyVisit );
+	public ParkCommands Commands => commands ??= new ParkCommands( () => simulationClock?.TickCount ?? 0, ExecuteCommand, () => IsReadOnlyVisit ) { ToolTilesSource = () => ClientTiles };
 
 	/// <summary>Unit-test seam: replaces the command funnel so a fixture records what a click issues, without running the park's rules.</summary>
 	internal void UseCommandsForTests( ParkCommands replacement ) => commands = replacement;
@@ -90,7 +90,24 @@ public partial class Level
 	private ParkCommandResult ExecuteCommand( ParkCommand command )
 	{
 		CommandFault?.Invoke( command );
-		return ExecuteParkCommand( command );
+		var outer = !executingCommand;
+		if ( outer )
+		{
+			executingCommand = true;
+			executionGlobals = command is IToolTiled { Tiles: { } tiles } ? new TrackToolGlobals( (tiles.ExitX, tiles.ExitY), (tiles.EntryX, tiles.EntryY) ) : null;
+		}
+		try
+		{
+			return ExecuteParkCommand( command );
+		}
+		finally
+		{
+			if ( outer )
+			{
+				executingCommand = false;
+				executionGlobals = null;
+			}
+		}
 	}
 
 	private ParkCommandResult ExecuteParkCommand( ParkCommand command ) => command switch
@@ -150,7 +167,11 @@ public partial class Level
 				: PlaceObject( entry, place.X, place.Y, place.Rotation );
 			// [BIN:TPW-EXE:0x0052A02E placement selects] the placing player's own selection (0x7C2654) is the new object
 			if ( placed != null && place.Player == Commands.Player )
+			{
+				// the placing player's tool globals: the commit's reset and select, before the new object is selected
+				NoteToolPlacement( entry );
 				Selection = placed;
+			}
 			return Outcome( placed != null, placed );
 		}
 		finally

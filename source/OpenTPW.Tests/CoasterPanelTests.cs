@@ -403,7 +403,7 @@ public class CoasterPanelTests
 	/// give the same value for the same share of the screen at 640 and at 2560 pixels across.
 	/// </summary>
 	[TestMethod]
-	public void TheDragCountsWholeDevicePixelsOfTheRenderResolution()
+	public void TheDragCountsWholePixelsOfThe640x480ReferenceMode()
 	{
 		var context = RideUpgradeIngressTests.Context();
 		foreach ( var width in new[] { 640, 1024, 2560 } )
@@ -411,6 +411,9 @@ public class CoasterPanelTests
 			context.Canvas = new UiCanvas( width, width * 3 / 4 );
 			Assert.AreEqual( new NVector2( 320, 240 ), ParkHud.OriginalPixels( context, new NVector2( width * 0.5f + 0.9f, width * 0.375f + 0.2f ) ), $"{width} pixels across: the canvas is scaled to 640 x 480 and the fraction is dropped" );
 		}
+		// a 16:9 screen fits its 4:3 area: one factor for both axes, so the units stay square
+		context.Canvas = new UiCanvas( 1920, 1080 );
+		Assert.AreEqual( new NVector2( 144, 108 ), ParkHud.OriginalPixels( context, new NVector2( 324.9f, 243.5f ) ), "1920 x 1080: 4:3 fit is 1440 wide, 0.4444 per pixel on both axes" );
 		var (builder, _) = NewCoaster();
 		builder.Height = 20;
 		builder.Place( 24, 20 );

@@ -216,9 +216,12 @@ public sealed partial class ParkHud
 
 	/// <summary>The pointer in whole pixels of the original's default 640 x 480 display mode, which the drag rates count in.</summary>
 	// [BIN:TPW-EXE:0x42a760 mouse pixels] the mouse handler stores the pointer as integers of the selected display mode (0x790ac8 = hiword x * W / 0x800, 0x790acc = loword y * H / 0x600, W and H the words 0xfaa5c4 and 0xfaa5c0 that 0x46b600 takes from the screen mode: 160 x 120 up to 2048 x 1536, 640 x 480 by default) converted to floats (0x42a855..0x42a863); the coaster drags copy them (0x441b00, 0x441d68, 0x4420bd)
-	// [EXT:coaster-drag-reference-mode] OpenTPW has no display mode, so the drags count the pixels of the original's default 640 x 480 mode on every screen: the canvas is scaled to 640 x 480 and the fraction dropped
-	internal static NVector2 OriginalPixels( UiContext context, NVector2 mouse ) =>
-		new( MathF.Truncate( mouse.X * 640f / Math.Max( 1f, context.Canvas.Width ) ), MathF.Truncate( mouse.Y * 480f / Math.Max( 1f, context.Canvas.Height ) ) );
+	// [EXT:coaster-drag-reference-mode] OpenTPW has no display mode, so the drags count the pixels of the original's default 640 x 480 mode on every screen: the pointer is scaled uniformly by the canvas's 4:3 fit (the original's 2048 x 1536 units are square, and the tilt drag mixes both axes through the yaw, 0x4433a7) and the fraction dropped
+	internal static NVector2 OriginalPixels( UiContext context, NVector2 mouse )
+	{
+		var factor = 640f / (UiCanvas.VirtualWidth * context.Canvas.Scale);
+		return new( MathF.Truncate( mouse.X * factor ), MathF.Truncate( mouse.Y * factor ) );
+	}
 
 	/// <summary>
 	/// The pylon under the pointer: the pylon on the hovered cell, in a stack the piece whose projected position is nearest the pointer (the original picks the pylon model under the pointer).

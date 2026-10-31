@@ -245,6 +245,8 @@ public static class GameAudio
 		fadeSettings = ReadFadeSettings();
 		events.HeldSounds.Configure( fadeSettings, GameOptions.Current.SoundQuality );
 		mixer.MusicDuckRequest = MusicDuckRequest;
+		// [BIN:TPW-EXE:0x51b73b sound start] the three on-flags of the sound service start at 1 and the profile's applier sets them (0x423DD0): the options as they stand
+		ApplyOnFlags( GameOptions.Current );
 		ResetReverb();
 		if ( ReverbMap == null )
 		{
@@ -1166,6 +1168,10 @@ public static class GameAudio
 
 	internal static void ApplyOptions( AudioMixer mixer, GameOptions options )
 	{
+		// [BIN:TPW-EXE:0x51bd70 sound service tick] the on-flags go to the library's group enable with the volumes (records 0x700B70, 0x700B74, 0x700B78); the volumes above are what a slider or a toggle sets at once, the flags what the applier and a save's block set
+		mixer.SetChannelEnabled( AudioChannel.Effects, soundOn[(int)AudioChannel.Effects] );
+		mixer.SetChannelEnabled( AudioChannel.Music, soundOn[(int)AudioChannel.Music] );
+		mixer.SetChannelEnabled( AudioChannel.Speech, soundOn[(int)AudioChannel.Speech] );
 		var saved = SavedVolumes;
 		mixer.SetChannelGain( AudioChannel.Effects, saved?.Gain( AudioChannel.Effects, options ) ?? options.SoundEffectsGain );
 		mixer.SetChannelGain( AudioChannel.Music, saved?.Gain( AudioChannel.Music, options ) ?? options.MusicGain );
@@ -1198,6 +1204,13 @@ public static class GameAudio
 	public static string ApplySavedSound( SaveSoundData? sound, GameOptions options )
 	{
 		SavedVolumes = SavedSoundVolumes.FromSave( sound, options );
+		// [BIN:TPW-EXE:0x51c400 sound loader] the saved on-flags (+0x38, +0x3C, +0x40) become the service's shadows, sent to the group enable by the next tick
+		if ( SavedVolumes is { } held )
+		{
+			soundOn[(int)AudioChannel.Effects] = held.Settings.EffectsOn != 0;
+			soundOn[(int)AudioChannel.Music] = held.Settings.MusicOn != 0;
+			soundOn[(int)AudioChannel.Speech] = held.Settings.SpeechOn != 0;
+		}
 		if ( SavedVolumes == null )
 			return $"Sound block: no 84-byte settings (length {sound?.Settings.Length.ToString() ?? "unreadable"}); the options' volumes play.";
 		MasterVolume = SavedVolumes.MasterVolume;
@@ -1207,13 +1220,33 @@ public static class GameAudio
 
 	/// <summary>Ends a loaded save's channel volumes: the options drive every channel again (the master volume stays, as in the original).</summary>
 	// [BIN:TPW-EXE:0x4237F0 options OK] OK on the options screen calls the applier 0x423DD0, which pushes every channel's profile volume and on-flag
-	public static void EndSavedVolumes() => SavedVolumes = null;
+	public static void EndSavedVolumes()
+	{
+		SavedVolumes = null;
+		ApplyOnFlags( GameOptions.Current );
+	}
+
+	/// <summary>
+	/// The sound service's on-flags (effects 0x803AD8, music 0x803ADC, speech 0x803AE0): whether each group of the library is switched on. They are set at the start, by the profile's applier (the options
+	/// screen's OK, the profile read and write, leaving a park) and by a loaded save's Sound block; a slider or a toggle on the options screen sets only the volume (0 while its toggle is off).
+	/// </summary>
+	// [BIN:TPW-EXE:0x423dd0 options applier] pairs each on setter with its volume setter (effects +0x38 / +0x1C, music +0x3C / +0x20, speech +0x40 / +0x24); the toggles' own rows call only the volume setter (0x4A3480 -> 0x4A2E90)
+	private static readonly bool[] soundOn = { true, true, true };
+
+	/// <summary>Sets the on-flags from the options (the applier).</summary>
+	internal static void ApplyOnFlags( GameOptions options )
+	{
+		soundOn[(int)AudioChannel.Effects] = options.SoundEffectsOn;
+		soundOn[(int)AudioChannel.Music] = options.MusicOn;
+		soundOn[(int)AudioChannel.Speech] = options.SpeechOn;
+	}
 
 	/// <summary>Forgets a loaded save's sound values, the master volume included (tests and a process restart).</summary>
 	internal static void ResetSavedSound()
 	{
 		SavedVolumes = null;
 		MasterVolume = GameOptions.MaximumVolume;
+		ApplyOnFlags( new GameOptions() );
 	}
 
 	/// <summary>Plays a <c>cat_ui</c> event (control activation clicks, drawer and error feedback).</summary>

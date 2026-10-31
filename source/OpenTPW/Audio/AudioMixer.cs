@@ -61,6 +61,8 @@ public sealed class AudioVoice
 	public long StartOutputFrame { get; internal set; } = -1;
 	/// <summary>The voice's place in the original's sound units, or null for a flat (unpositioned) voice.</summary>
 	public Vector3? Position { get; internal set; }
+	/// <summary>The group mask of the voice's event (bit 0 master, 1 music, 2 speech, 3 effects; 0 for a voice outside the event system), which the sound system's group enable tests.</summary>
+	internal uint GroupMask { get; set; }
 	/// <summary>The distance at which the voice is no longer heard (0: no range, always full gain).</summary>
 	public float Range { get; internal set; }
 	/// <summary>
@@ -163,7 +165,7 @@ public sealed class AudioVoice
 			leftScale *= levelled;
 			rightScale *= levelled;
 		}
-		// [BIN:QMIXER-DLL:0x1800a1df Doppler] every voice without the loop flag takes QMixer's Doppler factor (a voice with the loop flag sets the channel's no-Doppler bit through 0x6bc628 -> 0x6c5110 -> 0x6d22d0, tested at 0x1800a1df): its frequency times 1 / (1 + (direction . relative velocity) / 331.36), at most 10, from the listener velocity of tp.exe's last changed listener update (AudioListener.Velocity, 0x6d27b0); the integer rounding of the stream's own frequency is applied (0x180055c8-0x180055dd); the stage runs only once the channel's wave has its stream reader (0x18005599-0x180055bd, 0x1800bd40: +0x90 set, +0x88 present), which the library's worker creates through 0x18024620 for the memory waves tp.exe opens with OpenWaveEx flag 0x11 (0x180033ad), so a started voice is assumed ready; [APPROX:AUDIO-018] the device-unit rounding of the stream frequency (0x1800c760) is not read
+		// [BIN:QMIXER-DLL:0x1800a1df Doppler] every voice without the loop flag takes QMixer's Doppler factor (a voice with the loop flag sets the channel's no-Doppler bit through 0x6bc628 -> 0x6c5110 -> 0x6d22d0, tested at 0x1800a1df): its frequency times 1 / (1 + (direction . relative velocity) / 331.36), at most 10, from the listener velocity of tp.exe's last changed listener update (AudioListener.Velocity, 0x6d27b0); the integer rounding of the stream's own frequency is applied (0x180055c8-0x180055dd); the stage runs while the voice's first stream reader has its decoder (0x18005599-0x180055bd: +0x90 set, which the library's worker fills through 0x18024620 / 0x18024740) and has not ended (0x1800bd40, the test the pump 0x18007640 uses to end the voice), so a started voice is assumed ready (the waves tp.exe opens with OpenWaveEx flag 0x11, 0x180033ad, are callback waves); [APPROX:AUDIO-018] the device-unit rounding of the stream frequency (0x1800c760) is not read
 		var stepNow = step * DopplerRatio();
 		for ( var frame = 0; frame < frames; frame++ )
 		{
@@ -282,6 +284,24 @@ public sealed class AudioMixer : IDisposable
 	public IReadOnlyList<AudioVoice> Voices => voices;
 
 	private bool paused;
+	private readonly bool[] channelEnabled = { true, true, true };
+
+	/// <summary>Whether the sound system's group enable of <paramref name="channel"/> is on (the on-flag of the sound options, not the volume).</summary>
+	public bool IsChannelEnabled( AudioChannel channel ) => channelEnabled[(int)channel];
+
+	/// <summary>
+	/// The sound system's group enable (<c>0x6B9900</c>): the sound service sends the three on-flags of music, speech and effects, and the sound library stops the voices of a group whose flag is clear
+	/// at their next tick and restarts them when it is set again (<see cref="SoundEventSystem"/>). A volume of 0 is a different thing: the voices go on, silent.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6b9900 group enable] SetGroupEnabled(group, flag) stores a byte at +0x44 + group of the sound system object (groups 0 master, 1 music, 2 speech, 3 effects: the records 0x700B74, 0x700B78 and 0x700B70, execute 0x6B5A50, 0x6B5990 and 0x6B59F0), all four are 1 from the start (0x6B8F32) and the master's is never written
+	public void SetChannelEnabled( AudioChannel channel, bool enabled ) => channelEnabled[(int)channel] = enabled;
+
+	/// <summary>Whether every group of <paramref name="groupMask"/> is on: the test of the tick's group gate (0x6BC760 reads the voice's mask byte +0x47 against the bytes +0x44..+0x47).</summary>
+	// [BIN:TPW-EXE:0x6bc760 group gate] bit 1 of the voice's mask tests the master byte +0x44, bit 2 the music byte +0x45, bit 4 the speech byte +0x46 and bit 8 the effects byte +0x47: one clear byte of a set bit switches the voice off
+	internal bool GroupsEnabled( uint groupMask ) =>
+		((groupMask & 2) == 0 || channelEnabled[(int)AudioChannel.Music])
+		&& ((groupMask & 4) == 0 || channelEnabled[(int)AudioChannel.Speech])
+		&& ((groupMask & 8) == 0 || channelEnabled[(int)AudioChannel.Effects]);
 
 	/// <summary>True while the whole mixer is paused (every channel of the session): nothing is mixed, so no voice moves and the output carries silence.</summary>
 	public bool Paused => paused;

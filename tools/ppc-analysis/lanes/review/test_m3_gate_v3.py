@@ -188,7 +188,8 @@ class StaticRound3(unittest.TestCase):
             self.assertLess(check.find('QueuePaths.CheckExtend('), check.find('CanPreviewCells( CellPurchase.Queue'))
             self.assertGreaterEqual(check.find('QueuePaths.CheckExtend('), 0)
             self.assertIn('check == QueueBuildResult.Refused || (economy != null && economy.TrySpendCell( CellPurchase.Queue )', helper)
-            steps = ['ride.RecomputeQueue( grid );', 'CheckQueueCell( grid, null, ride, x, y, ', 'TrySpendCell( CellPurchase.Queue )', 'QueuePaths.TryExtend(']
+            # the sync before the check takes in the host's geometry only: the cached back and size stay until a re-evaluation (QUEUE-003)
+            steps = ['ride.RecomputeQueueKeepingBack( grid );', 'CheckQueueCell( grid, null, ride, x, y, ', 'TrySpendCell( CellPurchase.Queue )', 'QueuePaths.TryExtend(']
         positions = [helper.find(step) for step in steps]
         self.assertTrue(all(p >= 0 for p in positions), dict(zip(steps, positions)))
         self.assertEqual(sorted(positions), positions)

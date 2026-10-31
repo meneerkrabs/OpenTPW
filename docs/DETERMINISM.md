@@ -88,6 +88,8 @@ Round 10 (October 28, 2026): the fixed run's pin `0x5946C7CB09C6EEE7` does not m
 
 Round 10, package B (cells under track, October 28, 2026): no pin moves (the fixed run's `0xB4AEC10551DF2738` and the economy digest of `BuildStepsTests` stay as they are; the with-data suite passes unchanged). The map's type byte and the track layer hold a path or queue cell over a straight or stub tile and the demolition clears the second layer's records, but every state the pinned runs reach is the one they reached before: no run lays a path over a tile or sells an add-on. The cell digest gains no field (the track layer joins it only while a track exists, as before); the new states hash through the type byte and the records already hashed. No draw is added or removed.
 
+Round 11, package D (queue corner walk and cell rules, October 31, 2026): no pin moves (the fixed run's `0xB4AEC10551DF2738` and the economy digest of `BuildStepsTests` stay as they are; the with-data suite passes unchanged). The new states are reached only by a demolition of a ride with a queue (the walk's counters and link clear, the cells it leaves standing), an add-on sold after another ride was selected (the track tool's globals) and a typed world's opening guard; no pinned run does any of them. The track tool's globals are in no save, hash or digest, and a shared park does not use them (`[EXT:online-coop-lockstep]`), so peers cannot differ on them. No draw is added or removed.
+
 ### The substep scheduler (DET-013)
 
 The original's main loop (tp.exe `0x54F4BF`) runs a 31 ms substep, and every eighth substep is a park turn. Each substep, in

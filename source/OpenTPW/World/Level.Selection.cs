@@ -26,7 +26,8 @@ public partial class Level
 	// [BIN:TPW-EXE:0x005278B9 ride select writes the tool globals] the select 0x5276D0 stores the selected thing's anchor (+5, +7) in 0x7639E0/E4 and 0x7639E8/EC and maps them with 0x52A3A0 (exit) and 0x52A420 (entry) by its rotation (+0x10); an add-on selects its owner ride first (0x5277A6..0x5277F3)
 	private void NoteToolSelection( OriginalObject? item )
 	{
-		if ( WindowTarget( item ) is not { } target || CoopSession != null )
+		// an object built without its runtime (a layout rig) is no placed thing the select could map
+		if ( item is not { Runtime: not null } || CoopSession != null || WindowTarget( item ) is not { } target )
 			return;
 		var station = trackStations != null && trackStations.TryGetValue( target, out var laid ) ? laid : TrackStation.FromPlacement( target.Placement.X, target.Placement.Y, target.Placement.Rotation );
 		trackToolGlobals.Exit = station.Exit;

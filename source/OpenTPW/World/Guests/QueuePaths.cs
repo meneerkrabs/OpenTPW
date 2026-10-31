@@ -494,7 +494,10 @@ public static class QueuePaths
 				foreach ( var (x, y) in ParkPathBuilder.LayLine( stack[point], top ) )
 					cells.RemoveQueueCellForced( x, y, owner => refunds++ );
 			}
+			// [BIN:TPW-EXE:0x0052FFEC Back's re-evaluation] every pop of the loop ends with 0x4DE1F0 on the demolished ride (the argument of Back): its back and size are found again, the back cell is stamped and the guests the shrunken room no longer holds leave
 			grid.Invalidate();
+			ride.RecomputeQueue( grid );
+			ride.NotifyQueueEdited( grid );
 			afterPop?.Invoke();
 		}
 		return new QueueDemolition( refunds, true );

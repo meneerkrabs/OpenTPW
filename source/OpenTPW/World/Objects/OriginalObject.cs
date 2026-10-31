@@ -113,6 +113,8 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	internal static int TextureFrameToShow( int frame, bool animating ) => animating ? frame : 0;
 	private int textureFrameVersion = -1;
 	private bool deleted;
+	/// <summary>The lines the object type's sign shows when a loaded park drew it from a saved name (<see cref="ParkObjects.SignLinesOf"/>); null for the type's own name.</summary>
+	private readonly (string Line1, string Line2)? signLines;
 	private int hiddenVersion = -1;
 	private int poseVersion = -1;
 
@@ -128,8 +130,9 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	/// which moves the world's frontier past it without allocating — dead ids are skipped in constant time, never
 	/// replayed. Everything else (validation, render init, self-cleanup on failure) is the constructor's own.
 	/// </summary>
-	internal OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world, int? seed, bool open, int? attractionId, bool seedScript = true )
+	internal OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world, int? seed, bool open, int? attractionId, bool seedScript = true, (string Line1, string Line2)? signLines = null )
 	{
+		this.signLines = signLines;
 		try
 		{
 			if ( !ObjectFootprint.IsValidRotation( placement.Rotation ) || !float.IsFinite( placement.BaseHeight ) )
@@ -442,7 +445,7 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			SignSlotPlan plan;
 			using ( LoadProfile.Measure( "object-sign" ) )
 				plan = hasSignSlot
-					? SignSlotPlan.For( Entry.IsFixedItem, Entry.InfoId, Entry.ArchivePath, level?.GateInfoId, level?.GateSign?.Images, () => ObjectSigns.Get( Entry ) )
+					? SignSlotPlan.For( Entry.IsFixedItem, Entry.InfoId, Entry.ArchivePath, level?.GateInfoId, level?.GateSign?.Images, () => ObjectSigns.Get( Entry, signLines ) )
 					: SignSlotPlan.None;
 			var sign = plan.Images;
 			var fallbackBaseSign = plan.UsesFallback ? SignSlotPlan.FallbackBoard : null;

@@ -427,7 +427,7 @@ public sealed class ParkObjects
 			return null;
 		// the new object is built (models, script) before anything is demolished or cleared, so a failed build leaves the park as it was;
 		// like Add, its script draws from the world generator (DET-013)
-		var item = new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false );
+		var item = new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) );
 		foreach ( var victim in plan.Overwritten )
 			Remove( victim );
 		foreach ( var (x, y) in plan.ClearedPaths )
@@ -448,7 +448,7 @@ public sealed class ParkObjects
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
 	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true ) =>
 		// the placement ordinal stays the object's creation seed (identity and save bookkeeping); its script draws from the world generator like the original's (DET-013)
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false ) );
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ) );
 
 	/// <summary>
 	/// Places a saved object back (<see cref="ParkLayoutSnapshot"/> restore): the placement rules of <see cref="Add"/>
@@ -459,7 +459,7 @@ public sealed class ParkObjects
 	/// <see cref="RestoreSeedAllocator"/> so objects placed after the load continue the saved seed sequence.
 	/// </summary>
 	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId, bool legacyBaseHeight = false, int thingId = 0 ) =>
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation, legacyBaseHeight ), ScriptWorld, seed, open, attractionId, seedScript: false ), thingId );
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation, legacyBaseHeight ), ScriptWorld, seed, open, attractionId, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
 
 	// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
 	// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
@@ -658,12 +658,66 @@ public sealed class ParkObjects
 	/// <summary>
 	/// Replaces the Easymode markers with the real objects: every SYSG placed record at its saved anchor and
 	/// rotation (unresolved non-square rotations use the catalog shape), and the fixed items in park space.
-	/// Imported objects are opened (the saved open word is not imported, SAVE-006). Each object takes the hoarding state, node states and animation channels of its RideSystem record (<see cref="OriginalObjectRuntime.RestoreSavedScene"/>); what could not be restored is listed in <see cref="SavedSceneGaps"/>.
+	/// Imported objects are opened (an idle attraction saved with its open word clear is closed again by the level, SAVE-006). Each object takes the hoarding state, node states and animation channels of its RideSystem record (<see cref="OriginalObjectRuntime.RestoreSavedScene"/>); what could not be restored is listed in <see cref="SavedSceneGaps"/>.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object is not built: its open word comes from the save in the original (mCanLoad), which this port does not import and opens every imported object instead
-	// [APPROX:SAVE-006] an imported object's saved open word and its sign lines other than the park gate's (0x75B5EC) are not taken from the save (the staff claims, 0x004E01F0, are imported as saved)
+	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object is not built: its open word comes from the save in the original (mCanLoad); the level closes the idle attractions saved with it clear (Level.ImportOriginalRideSettings) and the placement opens the others
+	// [APPROX:SAVE-006] an imported attraction's saved name is its type's sign (SavedSignLines) and its open word comes from the level (Level.ImportOriginalRideSettings); OpenTPW has no Rename Item dialog for attractions (0x0048D370), so no name of its own making exists; the staff claims, 0x004E01F0, are imported as saved
 	// [EXT:original-engine-state-dumps] its raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent, balloon sprite) are not taken from the save either: the placement and the queue rebuild them in OpenTPW's own engines (user-approved 2026-10-16)
 	public int ImportOriginal( OriginalParkImport save ) => ImportOriginalSteps( save ).LastOrDefault().Placed;
+
+	/// <summary>The lines an object type's sign shows when they are not the type's own name, by Info.Id: what a loaded park drew (<see cref="TakeSavedSignLines"/>) or its save restored.</summary>
+	private readonly Dictionary<int, (string Line1, string Line2)> signLines = new();
+
+	/// <summary>The lines the sign of <paramref name="entry"/>'s type shows after a load (null: the type's own name, <see cref="ObjectSigns.Lines"/>).</summary>
+	internal (string Line1, string Line2)? SignLinesOf( ObjectCatalogEntry entry ) => signLines.TryGetValue( entry.InfoId, out var lines ) ? lines : null;
+
+	/// <summary>The lines set by name, by Info.Id, in Info.Id order (saves).</summary>
+	internal IEnumerable<(int InfoId, string Line1, string Line2)> SignLineOverrides => signLines.OrderBy( pair => pair.Key ).Select( pair => (pair.Key, pair.Value.Line1, pair.Value.Line2) );
+
+	/// <summary>Puts a layout's sign lines back (<see cref="ParkLayoutSnapshot"/>); the lines are validated with the snapshot.</summary>
+	internal void RestoreSignLines( IEnumerable<(int InfoId, string Line1, string Line2)> lines )
+	{
+		signLines.Clear();
+		foreach ( var (infoId, line1, line2) in lines )
+			signLines[infoId] = (line1, line2);
+	}
+
+	/// <summary>
+	/// An original save's sign names (SAVE-006): after a load the original redraws the sign of every object type that has one from the saved name lines of each of its objects in turn along the object
+	/// chain, newest first, so the type keeps the lines of its oldest object. Line 1 is read through 0x4E2860, which drops the last dash of a trailing "--". A type whose lines are its own name is left as
+	/// it is. <paramref name="records"/> are in chain order, oldest first.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00468500 sign rebuild] after the load (0x415140 -> 0x41519D) it walks the object chain from the head (+0x1DA746, next +0xC); each object whose type has the sign flag 0x8000000 (set by the generator 0x4682B0 on the type record 0x7A4610[+0x20]) reads its two name lines (0x4E2860, 0x4E2920) and draws the type's sign again with them; the object's own lines are what the constructor copied from its OBJECT_NAMES row (0x4DB6F9) and what the object window's rename (0x48D370, handler 0x48D640: 0x4E2950, 0x4E2A50, then 0x4682B0) stored
+	private void TakeSavedSignLines( OriginalParkImport save, IReadOnlyList<SaveObject> records )
+	{
+		foreach ( var (infoId, lines) in SavedSignLines( Catalog, save, records ) )
+			signLines[infoId] = lines;
+	}
+
+	/// <summary>The lines <see cref="TakeSavedSignLines"/> takes, by Info.Id.</summary>
+	internal static Dictionary<int, (string Line1, string Line2)> SavedSignLines( ObjectCatalog catalog, OriginalParkImport save, IReadOnlyList<SaveObject> records )
+	{
+		var taken = new Dictionary<int, (string Line1, string Line2)>();
+		var seen = new HashSet<int>();
+		foreach ( var record in records )
+		{
+			if ( catalog.Find( record.InfoId ) is not { IsTool: false } entry || !seen.Add( entry.InfoId ) || save.FindAttraction( record ) is not { } attraction )
+				continue;
+			var lines = (Line1: BonusNames.StripTrailingDash( attraction.NameLine1 ), Line2: attraction.NameLine2);
+			if ( !ParkNameLines.IsValidLine( lines.Line1 ) || !ParkNameLines.IsValidLine( lines.Line2 ) )
+				continue;
+			try
+			{
+				if ( lines != ObjectSigns.Lines( entry ) )
+					taken[entry.InfoId] = lines;
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or UnauthorizedAccessException )
+			{
+				// a type whose own name cannot be read keeps its sign as it is
+			}
+		}
+		return taken;
+	}
 
 	private readonly List<string> savedSceneGaps = new();
 
@@ -674,7 +728,8 @@ public sealed class ParkObjects
 	internal IEnumerable<(int Placed, float Share)> ImportOriginalSteps( OriginalParkImport save )
 	{
 		save.RequireSupportedCoasterRuntime();
-		var records = save.PlacedObjects.Select( item => item.Record ).Concat( save.UnresolvedObjects ).Concat( save.FixedItems ).ToList();
+		var records = save.ObjectsInChainOrder.ToList();
+		TakeSavedSignLines( save, records );
 		var count = 0;
 		for ( var index = 0; index < records.Count; index++ )
 		{
@@ -686,7 +741,7 @@ public sealed class ParkObjects
 			// the object keeps its saved thing id when the save's attraction thing is the one record that matches (the pool holds the saved chain)
 			var thingId = Things != null && save.FindAttraction( record ) is { } thing && Things.IsUsed( thing.Id ) && Things.ModelOf( thing.Id ) == SaveThingModel.Attraction
 				&& objects.All( other => other.ThingId != thing.Id ) ? thing.Id : 0;
-			var imported = Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false ), thingId );
+			var imported = Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
 			// [BIN:TPW-EXE:0x004647A0 hoarding load] the RideSystem record's flag word +0x1C bits 0..6 and its +0x22 dword are the thing's hoarding flags and level (docs/OBJECTS.md, "Hoarding")
 			if ( save.RideSystem?.Records.FirstOrDefault( scene => scene.Offset == record.Offset ) is { } scene )
 			{

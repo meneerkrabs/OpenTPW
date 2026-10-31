@@ -25,6 +25,8 @@ internal static class SaveTestPayloads
 		public uint MeshInstance { get; init; } = 110;
 		public string Line1 { get; init; } = "Belly";
 		public string Line2 { get; init; } = "Bounce";
+		/// <summary><c>mNext</c> (+0xC): the next attraction thing of the object chain, 0 at its end.</summary>
+		public ushort Next { get; init; }
 		public uint State { get; init; }
 		public ushort AssignedStaff { get; init; }
 		public uint CanLoad { get; init; } = 1;
@@ -78,7 +80,8 @@ internal static class SaveTestPayloads
 		}
 		writer.Write( new byte[8] );
 		writer.Write( fields.State );
-		writer.Write( new byte[6] );
+		writer.Write( new byte[4] );
+		writer.Write( fields.Next );
 		writer.Write( fields.AssignedStaff );
 		writer.Write( (ushort)0 );
 		writer.Write( fields.CanLoad );

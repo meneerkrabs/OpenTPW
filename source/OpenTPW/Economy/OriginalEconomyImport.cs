@@ -339,8 +339,9 @@ public sealed partial class OriginalEconomyImport
 		var unmatched = 0;
 		var notImported = new List<string>();
 		var adjusted = new List<string>();
-		// The order matches ParkObjects.ImportOriginal (placed, unverified footprints, fixed items), which Level.ConnectObjectsToEconomy pairs by Info.Id
-		foreach ( var record in save.PlacedObjects.Select( item => item.Record ).Concat( save.UnresolvedObjects ).Concat( save.FixedItems ) )
+		// The order matches ParkObjects.ImportOriginal (the order the original created the things in, oldest first: the saved object chain read backwards, ECON-022; the record order of placed,
+		// unverified footprints and fixed items when the chain does not name every record), which Level.ConnectObjectsToEconomy pairs by Info.Id
+		foreach ( var record in save.ObjectsInChainOrder )
 		{
 			var matched = save.FindAttraction( record );
 			// [BIN:STP-PPC:0x100DAD90 object purchase] thing +20 is the clock's stamp at the purchase; the saved attraction time stamp is taken as it, and the saved customer count as the use word +412 (raised with the history record at +420 when a guest leaves, 0x100EAA00 → 0x100E1B44), so an imported used or old object never gets the unused first-30-days scrap refund
@@ -387,10 +388,10 @@ public sealed partial class OriginalEconomyImport
 		// [BIN:TPW-EXE:0x004DC12B walk-away load] the loader reads mNumWalkAways (+0x1A4) back with the other fields, so it is imported (ImportObjects); 0x004E1670 raises it (from 0x005006B0) and nothing else reads the field
 		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} imported (mNumWalkAways, +0x1A4)." );
 		// [BIN:TPW-EXE:0x4DB7D0 third gauge] the float at attraction +0x4C is written by the constructor (0x4DB10B), the loader (0x4DCE42) and one more store (0x4DB363) and read only by the serializer (0x4DC64F); no other load of a +0x4C field exists in the attraction code (0x4D8000..0x4E4000), the guest code or the interface, so the third gauge needs no import
-		// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is the park's open state of the attraction: an idle attraction saved with it clear is closed again by the level (Level.ImportOriginalRideSettings), the others are opened by their placement; the gate's two sign lines are the park's name (Level.SavedGateName) and every other type's lines are its OBJECT_NAMES row
+		// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is the park's open state of the attraction: an idle attraction saved with it clear is closed again by the level (Level.ImportOriginalRideSettings), the others are opened by their placement; the gate's two sign lines are the park's name (Level.SavedGateName) and every other type's sign is drawn from the lines of its oldest object (ParkObjects.SavedSignLines, 0x468500)
 		// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite are rebuilt by the placement, and the queue cells and ends from the placement; head, links and called guest with the guests (SAVE-002)
 		foreach ( var item in save.Attractions )
-			evidence.Add( $"Attraction thing {item.Id} (Info.Id {item.InfoId}): open word {item.CanLoad}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back-of-queue cell {item.BackOfQueueCell}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}; the open word and the gate's name are imported by the level, the queue cells and ends come from the placement; head, links and called guest with the guests (SAVE-002)." );
+			evidence.Add( $"Attraction thing {item.Id} (Info.Id {item.InfoId}): open word {item.CanLoad}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back-of-queue cell {item.BackOfQueueCell}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}; the open word, the gate's name and the lines of a renamed type's sign are imported by the level, the queue cells and ends come from the placement; head, links and called guest with the guests (SAVE-002)." );
 		return (objects, fixedItems, things);
 	}
 

@@ -151,7 +151,7 @@ public partial class Level : IDisposable
 	/// The park name a player's own original save holds: the two sign lines of its park gate's attraction thing (<c>mParkGates</c>, name lines +0x3C8 and +0x40A), which the load's sign rebuild redraws (0x468500).
 	/// Null for any other start (the shipped Easymode seed keeps the gate's default lines in the player's language) and for lines OpenTPW's sign cannot hold.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the placed object's two sign lines (NameA/NameB) are part of its record; a park's name is its gate's pair (SAVE-006)
+	// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the placed object's two sign lines (NameA/NameB) are part of its record; a park's name is its gate's pair; every other type's lines draw its sign (SAVE-006)
 	private ParkNameLines? SavedGateName()
 	{
 		if ( playerSavePayload == null || OriginalPark?.Save is not { } save )

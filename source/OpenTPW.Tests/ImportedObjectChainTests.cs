@@ -41,6 +41,63 @@ public class ImportedObjectChainTests
 		StringAssert.Contains( save.ChainOrderProblem, reason );
 	}
 
+	private static byte[] MechanicHq( ushort cursor )
+	{
+		var body = SaveNewParkThings.MechanicHq( 0, 0 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( body.AsSpan( body.Length - 2 ), cursor );
+		return body;
+	}
+
+	[DataTestMethod]
+	[DataRow( 12, true )]
+	[DataRow( 11, true )]
+	[DataRow( 0, false )]
+	[DataRow( 30, false )]
+	public void TheMechanicsCursorIsTheObjectItsWordNamesAndAWordNamingNoObjectIsZero( int cursor, bool named )
+	{
+		var settings = OriginalSaveImportTests.Settings();
+		var save = OriginalSaveImportTests.Park( settings, mechanicHq: MechanicHq( (ushort)cursor ) );
+		Assert.AreEqual( (ushort)cursor, save.MechanicHq!.NextObject );
+		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		var import = OriginalEconomyImport.Apply( economy, save );
+		if ( named )
+			Assert.AreEqual( import.AttractionInstances[cursor], economy.MechanicCursor, "the cursor is the economy object of the thing its word names" );
+		else
+			Assert.AreEqual( 0, economy.MechanicCursor );
+		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Mechanic HQ thing 2 imported", StringComparison.Ordinal ) ) );
+	}
+
+	[TestMethod]
+	public void EasymodesChainPutsTheGatesAndLightsFirstAndTheBusLastAndItsMechanicCursorNamesAnObject()
+	{
+		var dataPath = OriginalParkImportTests.OriginalDataPath();
+		if ( !File.Exists( Path.Combine( dataPath, "levels", "jungle", "Easymode.TPWI" ) ) )
+			Assert.Inconclusive( "The original Jungle Easymode.TPWI fixture is missing." );
+		var previous = FileSystem;
+		FileSystem = new BaseFileSystem( dataPath );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		try
+		{
+			var map = new MapFile( new MemoryStream( OriginalParkImportTests.ReadArchiveMember( "levels/jungle/terrain.wad", "base.map" ) ) );
+			var save = OriginalParkImport.Import( OriginalParkImportTests.ReadEasymodePayload(), map );
+			Assert.IsNull( save.ChainOrderProblem );
+			// the chain from the head: the bus (thing 15, made last), the rides by descending slot, the lights (12) and the gates (11): oldest first is the reverse
+			var order = save.ObjectsInChainOrder.Select( record => record.InfoId ).ToArray();
+			Assert.AreEqual( (1601, 1603, 1600), (order[0], order[1], order[^1]) );
+			Assert.AreEqual( save.PlacedObjects.Count + save.FixedItems.Count, order.Length );
+			var economy = new ParkEconomy( BalanceSettings.Load( "jungle", easy: true ), EconomyObjectCatalog.Load( "jungle", easy: true ), ParkGameMode.FullSimulation, 1 );
+			var import = OriginalEconomyImport.Apply( economy, save, shippedSeed: true );
+			Assert.AreEqual( 1601, economy.Objects.OrderBy( item => item.Id ).First().InfoId, "the gates are the oldest object" );
+			Assert.IsNotNull( save.MechanicHq );
+			Assert.AreNotEqual( 0, save.MechanicHq!.NextObject, "the seed's mechanic search had started at an object" );
+			Assert.AreEqual( import.AttractionInstances[save.MechanicHq.NextObject], economy.MechanicCursor );
+		}
+		finally
+		{
+			FileSystem = previous;
+		}
+	}
+
 	[TestMethod]
 	public void ASavedNameThatIsNotTheTypesOwnIsTheLinesOfItsSign()
 	{

@@ -184,6 +184,8 @@ public sealed class OriginalParkImport
 	public SaveAnalyserStamps? AnalyserStamps { get; private init; }
 	/// <summary>The referenced TPW analyser's three misbehaving-kids words (the guards' chases this month, the abandoned ones, all of them); null without an analyser, or for Theme Park Inc.</summary>
 	public SaveAnalyserCounters? AnalyserCounters { get; private init; }
+	/// <summary>The mechanic HQ thing (<c>mMechanicHq</c>), whose word is the mechanics' cursor into the object list; null when the world names none.</summary>
+	public SaveMechanicHq? MechanicHq { get; private init; }
 	/// <summary>
 	/// The advisor clock the save carries: the second word of the clock block that follows the MESS delimiter (writer 0x402E00 after the
 	/// snapshot 0x402E60, which stores the scaled clock at +0x4C and the advisor clock at +0x74; reader 0x402E30 behind the marker check 0x41555A).
@@ -500,6 +502,7 @@ public sealed class OriginalParkImport
 			ArrivalGroups = arrivalGroups,
 			AnalyserStamps = analyserStamps,
 			AnalyserCounters = analyserCounters,
+			MechanicHq = world.Variables.MechanicHq == 0 || world.Find( world.Variables.MechanicHq ) is not { Model: SaveThingModel.MechanicHq } hqThing ? null : SaveMechanicHq.Read( span, hqThing ),
 		};
 	}
 

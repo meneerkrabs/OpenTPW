@@ -102,6 +102,7 @@ public sealed partial class OriginalEconomyImport
 			evidence.Add( $"Park analyser: the guards' chase counters imported (this month {misbehaving.MisbehavingKids}, got away {misbehaving.GotAway}, ever {misbehaving.Ever})." );
 		}
 		var (objects, fixedItems, things) = ImportObjects( economy, save, evidence );
+		ImportMechanicCursor( economy, save, things, evidence );
 		ImportLitter( economy, save, evidence );
 		// after the objects: the carried object of a follow-up is one of their thing ids
 		ImportChallenges( economy, save.Economy.ChallengeSystem, world.Calendar.FunnyTimeStart, things, evidence );
@@ -328,6 +329,21 @@ public sealed partial class OriginalEconomyImport
 	{
 		var (quotient, remainder) = Int128.DivRem( value, divisor );
 		return remainder < 0 ? quotient - 1 : quotient;
+	}
+
+	/// <summary>The mechanic HQ's cursor into the object list (<see cref="ParkEconomy.MechanicCursor"/>): the object its word names, when the import holds it.</summary>
+	// [BIN:TPW-EXE:0x004DAA90 ride finder] the HQ's mNextObject (+0xC, serialized by 0x004DA960, which writes and reads only the thing base and this word) is the thing id of the object the last search started at: when it is nonzero and found in the object list the search moves on to that object's next (0 past the end), else it takes the list's head; a word that names no object in the list is the same as 0
+	private static void ImportMechanicCursor( ParkEconomy economy, OriginalParkImport save, Dictionary<int, ParkObjectState> things, List<string> evidence )
+	{
+		if ( save.MechanicHq is not { } hq )
+			return;
+		if ( hq.NextObject != 0 && things.TryGetValue( hq.NextObject, out var cursor ) )
+		{
+			economy.MechanicCursor = cursor.Id;
+			evidence.Add( $"Mechanic HQ thing {hq.Id} imported: the mechanics' cursor stands on attraction thing {hq.NextObject} (Info.Id {cursor.InfoId}, economy object {cursor.Id}), the next search moves on from it." );
+		}
+		else
+			evidence.Add( $"Mechanic HQ thing {hq.Id} imported: the mechanics' cursor {(hq.NextObject == 0 ? "is 0" : $"names thing {hq.NextObject}, which is no imported attraction, as 0 does")}: the next search starts at the head of the object list." );
 	}
 
 	/// <summary>Registers the save's objects; returns the counts and the economy object of each matched attraction thing id.</summary>

@@ -282,6 +282,24 @@ public class ObjectBuildRuleTests
 		Assert.IsTrue( park.Grid.IsWalkable( stepping.CellX, stepping.CellY ) );
 	}
 
+	[TestMethod]
+	public void AGuestOnACellAnObjectCoversStaysThereAndWalksOutByTheEdgeTest()
+	{
+		// tp.exe's placement 0x528A70 holds no code that moves a person: the guest keeps its cell, and the edge test (0x4D8750) lets it step from the object's cell onto the path beside it (RIDES-018)
+		var park = new Park();
+		park.Path( (2, 5), (8, 5) );
+		var guests = new GuestSimulation( park.Grid, GuestTests.CreateSettings(), 7 ) { ArrivalsEnabled = false };
+		var standing = guests.SpawnInPark( 5, 5 );
+		Assert.IsNotNull( park.Objects.TryPlace( Bush(), 5, 5, 0, out _ ) );
+		Assert.AreEqual( ParkCellTypes.Object, park.Grid.Cells.RawTypeAt( 5, 5 ) );
+		Assert.AreEqual( (5, 5), standing.Cell, "nothing moves the guest at the placement" );
+		Assert.IsFalse( WalkEdges.Blocked( park.Grid.Cells, 5, 5, 1, 0 ), "from the object's cell onto the path to its right" );
+		Assert.IsFalse( WalkEdges.Blocked( park.Grid.Cells, 5, 5, 3, 0 ), "and onto the path to its left" );
+		for ( var tick = 0; tick < 4000 && (standing.Cell == (5, 5) || !park.Grid.IsWalkable( standing.Cell.X, standing.Cell.Y )); tick++ )
+			guests.Tick( GuestSnapshotTests.Tick );
+		Assert.IsTrue( park.Grid.IsWalkable( standing.Cell.X, standing.Cell.Y ), $"the guest walked out onto a path cell, not {standing.Cell}" );
+	}
+
 	// ---- Overwrite priority ------------------------------------------------------------------------
 
 	[TestMethod]

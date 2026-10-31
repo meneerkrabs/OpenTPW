@@ -39,14 +39,20 @@ public static class StaffPlacementRules
 	/// A cell a staff member may be put on: inside the map, owned, of a drop type and under no ride, shop or feature footprint
 	/// (<paramref name="occupied"/>: any placed object or the prototype ride).
 	/// </summary>
-	// [APPROX:GUEST-013] tp.exe's drop 0x46cc40 (and the place click 0x46c8e0, inlined) also refuses a cell whose track record ([0x8023a0] + 0x10ffd8 + 40 × the cell's id word, kind at +8) is of kind 11, 13, 16, 18 or 25, directly or through the parent (+0x10) of a kind 12 or 17 record (0x5363f0, 0x536450, 0x53ad30, 0x53ad60, 0x53ad90; the circuit walk 0x52a970 uses the same kind tests); OpenTPW has no track-record test (its track tiles carry map types the type test refuses) — evidence needed: the track records (TRACK-002)
+	// [BIN:TPW-EXE:0x46CC40 drop cell tests] the drop tests the cell flag 0x40 (0x535DB0), the hoarding test 0x536450 and the track record test 0x5363F0, then the type (0, 1, 3 or 9: 0x536390, 0x536310, 0x536320); the place click 0x46C8E0 inlines the same calls (0x5363F0 first, 0x46C928..0x46C96D); any refusal ends the click with a message (0x74D91C, 0x5DA3C0) and the tool stays
+	// [BIN:TPW-EXE:0x5363F0 track record test] the cell's record of the second layer (0x4D0AF0): a record of kind 12 or 17 (0x53AD90) answers through its parent word (+0x10, no track when it is 0), any other through its own kind, by 0x53AD30: kinds 0xB, 0xD, 0x10, 0x12 and 0x19 (a kart or water tile or station, a fence post or hoarding); the hoarding test 0x536450 (kind 0x19 by 0x53AD60) is a subset, so a refused hoarding is a refused track record; a path or queue cell that lies over a straight or stub tile is refused by its record although its own type is a drop type, and so are the three cells beside a fence post
 	// [EXT:staff-drop-occupancy-refusal] a park that types its footprint cells (ParkCellMap.WriteFootprint, 0x528A70: 4 and 10 refuse, the entrance's 9 takes a drop) needs no object list, while a world that keeps the cells it was given (a visit, a Theme Park Inc layout) has no such types and refuses every cell under a placed object or the prototype ride by occupancy instead (user-approved 2026-10-18)
 	public static bool IsValidDropCell( ParkCellMap cells, int x, int y, Func<int, int, bool>? occupied )
 	{
 		if ( !cells.InBounds( x, y ) || (cells.FlagsAt( x, y ) & ParkCellFlags.Unowned) != 0 )
 			return false;
+		if ( IsTrackRecordCell( cells, x, y ) )
+			return false;
 		return IsDropCellType( cells.RawTypeAt( x, y ) ) && (occupied == null || !occupied( x, y ));
 	}
+
+	/// <summary>Whether the cell's second-layer record is of a track kind (tp.exe <c>0x5363F0</c>): the track tiles and stations under the cell, and the fence posts and the cells beside them.</summary>
+	public static bool IsTrackRecordCell( ParkCellMap cells, int x, int y ) => ParkCellTypes.IsTrackCell( QueueCellValidator.StructureTypeAt( cells, x, y ) );
 
 	/// <summary>The cell a positioned member stands in, or null without a position.</summary>
 	public static (int X, int Y)? CellOf( StaffMember member ) =>

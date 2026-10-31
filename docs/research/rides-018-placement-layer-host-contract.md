@@ -2,7 +2,7 @@
 
 Source baseline: meneerkrabs/OpenTPW main dcdf4d0c53723e7b7df9c7c7a5ae3834c4f7130b, inspected October 22, 2026. Existing proposal: #578, head 81b86b72c3efb9b5609f5e5d809f5107dceb109e.
 
-This is public-source research plus synthetic regression coverage, not original-runtime evidence. RIDES-018 remains approximate. No production predicate, guest relocation rule, or fidelity annotation is changed.
+This is public-source research plus synthetic regression coverage, not original-runtime evidence. RIDES-018 was retired in round 11 package E (see docs/OBJECTS.md); this note records the state before. No production predicate, guest relocation rule, or fidelity annotation is changed.
 
 ## Current contract and exact gap
 

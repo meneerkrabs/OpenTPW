@@ -58,6 +58,25 @@ public sealed class FenceLayer
 		}
 	}
 
+	/// <summary>
+	/// The flag word of the record the walk's target test reads on the cell, or null when the cell's record is of no track kind (tp.exe <c>0x5363F0</c> then <c>0x53AD20</c>): a post reads its own flags, one of the three cells
+	/// beside a post those of its parent post, and an extension without a parent word, or whose parent is no post, is no track.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D89C3 target record] the edge test asks 0x5363F0 whether the target's record is of a track kind (a hoarding post 0x19 is one; an extension 0xC or 0x11, 0x536440, answers through its parent word, none when it is 0), then reads the flag word +0xE of the record 0x4D89E4..0x4D8A0F takes (the parent's for an extension, else the target's own) and blocks the step when its low nibble is 0 (0x53AD20)
+	public ushort? TrackRecordFlags( int x, int y )
+	{
+		switch ( TypeAt( x, y ) )
+		{
+			case PostType:
+				return FlagsAt( x, y );
+			case ExtensionType:
+				var parent = OwnerAt( x, y ) - 1;
+				return parent >= 0 && parent < Width * Height && Type[parent] == PostType ? Flags[parent] : null;
+			default:
+				return null;
+		}
+	}
+
 	/// <summary>The structure type the layer holds for the cell (0, <see cref="PostType"/> or <see cref="ExtensionType"/>).</summary>
 	public byte TypeAt( int x, int y ) => (uint)x < (uint)Width && (uint)y < (uint)Height ? Type[y * Width + x] : (byte)0;
 
@@ -124,7 +143,7 @@ public sealed class FenceEngine
 	private readonly int width, height;
 	private readonly Dictionary<int, ushort> pendingFlags = new();
 	private readonly Dictionary<int, TrackCell> pendingTracks = new();
-	/// <summary>The fence's mark (flag 0x20) on the records that hold a track tile: the tile's own flag 0x20 is the host's over-path memory (<see cref="TrackBuilder.FlagOverPath"/>), so the mark is kept here for the run and never written to the tile.</summary>
+	/// <summary>The fence's mark (flag 0x20) on the records that hold a track tile: a tile's own flag 0x20 can be a stray bit from saves made before round 11 (<see cref="TrackBuilder.FlagOverPath"/>), so the mark is kept here for the run and never written to the tile.</summary>
 	private readonly HashSet<int> trackMarks = new();
 	private readonly List<int> pendingStamps = new();
 
@@ -259,7 +278,7 @@ public sealed class FenceEngine
 		var track = TrackOf( index );
 		if ( track.Type != 0 )
 		{
-			// the mark (0x20) stays with the run, the tile's own 0x20 (over path) is kept
+			// the mark (0x20) stays with the run, a tile's own 0x20 (a stray bit from saves made before round 11) is kept
 			if ( (value & TrackBuilder.FlagOverPath) != 0 )
 				trackMarks.Add( index );
 			else

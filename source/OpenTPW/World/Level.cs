@@ -92,7 +92,8 @@ public partial class Level : IDisposable
 	{
 		if ( resumeState != null || visitLayout != null || OriginalPark?.Save?.RuntimeBlocks is not { } blocks || OriginalPark.Heightfield is not { } field || Camera.Mode is not ParkCameraMode mode )
 			return;
-		if ( ParkCameraMode.PoseOfSave( blocks.Camera ) is not var (x, z, height, yaw) )
+		// the loader snaps the yaw while the rotation option is " 90 degs" (0x42D03F)
+		if ( ParkCameraMode.PoseOfSave( blocks.Camera, GameOptions.Current.Rotation == RotationMode.Ninety ) is not var (x, z, height, yaw) )
 			return;
 		var target = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( x, 0, z ) );
 		mode.SetPose( new Vector3( target.X, target.Y, 0 ), height, yaw );

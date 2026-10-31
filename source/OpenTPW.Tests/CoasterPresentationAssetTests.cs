@@ -332,6 +332,42 @@ public class CoasterPresentationAssetTests
 		CollectionAssert.DoesNotContain( Drawn( temple, new CoasterStackPlace( Bottom: true, Top: false, CarriesModel: false ) ), "mc_bridge", "under the cursor's model-less node it stays as the last pass left it" );
 	}
 
+	/// <summary>
+	/// The pylon's ground node (model +0x2c, <c>0x46a5a0</c>): a bottom node conforms its four ground vertices to the terrain's corners (<c>0x469940</c>) and a node stacked above hides it unless
+	/// the pylon has flag 0x10 (<c>0x432df0</c>); no PC coaster sets that flag, and the part's flag hides only its own mesh.
+	/// </summary>
+	[TestMethod]
+	public void ThePylonsGroundNodeFollowsTheTerrainAndHidesOnAStackedNode()
+	{
+		foreach ( var entry in PcCoasters() )
+		{
+			var definition = CoasterDefinition.FromEntry( entry );
+			foreach ( var control in new[] { definition.StandardPylon, definition.LoopPylon } )
+			{
+				if ( string.IsNullOrEmpty( control.MeshName ) )
+					continue;
+				var name = control.MeshName;
+				var rig = new CoasterPylonRig( Find( entry, name )!, Find( entry, name + "L" )?.Clip, (Find( entry, name + "R" ) ?? Find( entry, name + "R1" ))?.Clip, control,
+					Find( entry, name + "I" )?.Clip, Find( entry, name + "B" )?.Clip, Find( entry, name + "R2" )?.Clip );
+				Assert.IsTrue( rig.GroundNode >= 0, $"{entry.InfoId} {name} has a ground node" );
+				Assert.AreEqual( 0, (int)(control.Flags & CoasterPylonFlags.KeepBaseOnStack), $"{entry.InfoId} {name} does not keep its base on a stack" );
+				var groundMesh = rig.Model.Meshes[rig.Model.Nodes[rig.GroundNode].MeshIndex].Name;
+				var pose = new CoasterPylonPose( 0.5f );
+				var bottom = rig.Pose( pose, new CoasterStackPlace( Bottom: true, Top: true ) );
+				Assert.IsTrue( bottom.Any( part => part.MeshName == groundMesh ), $"{entry.InfoId} {name} shows the ground node on the ground" );
+				Assert.IsFalse( rig.Pose( pose, new CoasterStackPlace( Bottom: false, Top: true ) ).Any( part => part.MeshName == groundMesh ), $"{entry.InfoId} {name} hides it on a stacked node" );
+				var flat = rig.Pose( pose, new CoasterStackPlace( Bottom: true, Top: true ), ( _, _ ) => 0f );
+				var sloped = rig.Pose( pose, new CoasterStackPlace( Bottom: true, Top: true ), ( column, row ) => column == 1 && row == 1 ? 5f : 0f );
+				float Peak( IReadOnlyList<CoasterModelPart> parts, int axis ) => parts.Where( part => part.MeshName == groundMesh ).SelectMany( part => part.Vertices )
+					.Max( vertex => axis == 0 ? vertex.Position.X : axis == 1 ? vertex.Position.Y : vertex.Position.Z );
+				var raised = Enumerable.Range( 0, 3 ).Count( axis => MathF.Abs( Peak( sloped, axis ) - Peak( flat, axis ) - 5f ) < 0.01f );
+				Assert.AreEqual( 1, raised, $"{entry.InfoId} {name}: the corner at (1, 1) takes its terrain height on exactly one axis" );
+				var other = Enumerable.Range( 0, 3 ).Count( axis => MathF.Abs( Peak( sloped, axis ) - Peak( flat, axis ) ) > 0.01f );
+				Assert.AreEqual( 1, other, $"{entry.InfoId} {name}: nothing else moves" );
+			}
+		}
+	}
+
 	/// <summary>Every car type loads, has extents along its length and a seat socket per head.</summary>
 	[TestMethod]
 	public void EveryCarTypeLoadsWithExtentsAndSeats()

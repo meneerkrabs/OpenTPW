@@ -298,21 +298,21 @@ public partial class CoopSessionTests
 		var node = CoasterTrack.StationNodeCount;
 		var start = builder.Track.Nodes[node].T;
 		var (low, high) = builder.Track.LoftRange( builder.Site, node );
-		// the press goes to the host (the pointer at (500, 400) of the original's screen, which is twice the views' canvas): the drag starts from its outcome, and the pointer's moves
+		// the press goes to the host (the pointer at (320, 250) of the original's 640 x 480 pixels, the HUD's (1000, 800) on its 2048 x 1536 canvas): the drag starts from its outcome, and the pointer's moves
 		// meanwhile are kept
-		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), CoasterCell.X + 4, CoasterCell.Y ) );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 320, 250 ), CoasterCell.X + 4, CoasterCell.Y ) );
 		Assert.IsTrue( panel.PressWaits && panel.IsWaiting && !panel.IsDragging );
 		hudPointer = new N.Vector2( 1000, 780 );
 		RoundsUntil( () => panel.IsDragging, host, guest, view, "the press came back and the drag started" );
 		// sixty frames of pointer moves the HUD follows: each frame a new height, a step at most every 0.2 s
 		for ( var frame = 1; frame <= 60; frame++ )
 		{
-			hudPointer = new N.Vector2( 1000, 780 - 2 * frame );
+			hudPointer = new N.Vector2( 1000, 800 - 4 * frame );
 			Rounds( 1, host, guest );
 			guest.Session!.Step();
 			view.Update();
 		}
-		var last = Math.Clamp( start + 70 * CoasterToolPanel.HeightRate, low, high );
+		var last = Math.Clamp( start + 75 * CoasterToolPanel.HeightRate, low, high );
 		guest.Enter();
 		Assert.AreEqual( CoasterPanelResult.Edited, panel.Release( node, (CoasterCell.X + 4, CoasterCell.Y) ) );
 		Assert.IsFalse( panel.IsDragging, "the drag ended at once here" );
@@ -343,7 +343,7 @@ public partial class CoopSessionTests
 		Assert.IsTrue( panel.Select( CoasterToolButton.Height ) );
 		var node = CoasterTrack.StationNodeCount;
 		hudPointer = new N.Vector2( 1000, 800 );
-		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), CoasterCell.X + 4, CoasterCell.Y ) );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 320, 250 ), CoasterCell.X + 4, CoasterCell.Y ) );
 		RoundsUntil( () => panel.IsDragging && guest.Level.CoasterRequests.IsEmpty, host, guest, view, "the press came back" );
 		// two seconds refill the host's bucket of the guest's requests
 		Rounds( 120, host, guest );
@@ -367,7 +367,7 @@ public partial class CoopSessionTests
 		// a drag whose end alone goes in such a frame: the end goes again
 		guest.Enter();
 		hudPointer = new N.Vector2( 1000, 800 );
-		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), CoasterCell.X + 4, CoasterCell.Y ) );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 320, 250 ), CoasterCell.X + 4, CoasterCell.Y ) );
 		RoundsUntil( () => panel.IsDragging && guest.Level.CoasterRequests.IsEmpty, host, guest, view, "the second press came back" );
 		Rounds( 120, host, guest );
 		retried = guest.Level.CoasterRequests.Retried;
@@ -397,7 +397,7 @@ public partial class CoopSessionTests
 		var start = builder.Track.Nodes[node].T;
 		var (low, high) = builder.Track.LoftRange( builder.Site, node );
 		hudPointer = new N.Vector2( 1000, 800 );
-		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), CoasterCell.X + 4, CoasterCell.Y ) );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 320, 250 ), CoasterCell.X + 4, CoasterCell.Y ) );
 		RoundsUntil( () => panel.IsDragging && guest.Level.CoasterRequests.IsEmpty, host, guest, view, "the press came back" );
 		Rounds( 120, host, guest );
 		// a step goes in a frame whose burst the host cannot take; the next value waits for its 0.2 s when the tool ends
@@ -414,7 +414,7 @@ public partial class CoopSessionTests
 		RoundsUntil( () => guest.Level.CoasterRequests.IsEmpty && burst.All( request => !request.IsOpen ), host, guest, view, "the drag's last commands came back" );
 		Assert.IsTrue( burst.All( request => request.State == CoopGuestRequestState.Applied ), "the burst spent the host's bucket: the step after it was too fast" );
 		Assert.AreEqual( retried, guest.Level.CoasterRequests.Retried, "the later value replaced it: it did not go again" );
-		var latest = Math.Clamp( start + 20 * CoasterToolPanel.HeightRate, low, high );
+		var latest = Math.Clamp( start + 13 * CoasterToolPanel.HeightRate, low, high );
 		Assert.AreEqual( latest, builder.Track.Nodes[node].T, 1e-5f, "the drag ended at its latest value, as the host's ends at its own" );
 		Assert.AreEqual( builder.Track.Nodes[node].T, hostBuilder.Track.Nodes[node].T );
 		Assert.IsNull( host.Level.CoasterEdits.Of( seat ), "and its end applied" );
@@ -462,7 +462,7 @@ public partial class CoopSessionTests
 		Assert.IsTrue( panel.Select( CoasterToolButton.Move ) );
 		var node = CoasterTrack.StationNodeCount + 1;
 		var cell = (builder.Track.Nodes[node].X, builder.Track.Nodes[node].Y);
-		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), cell.X, cell.Y ) );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 320, 250 ), cell.X, cell.Y ) );
 		RoundsUntil( () => panel.IsDragging, host, guest, view, "the press came back" );
 		guest.Enter();
 		panel.Drag( new N.Vector2( 520, 400 ), 0, (cell.X + 1, cell.Y) );
@@ -488,7 +488,7 @@ public partial class CoopSessionTests
 		Assert.IsTrue( panel.Select( CoasterToolButton.Move ) );
 		var node = CoasterTrack.StationNodeCount + 1;
 		var cell = (builder.Track.Nodes[node].X, builder.Track.Nodes[node].Y);
-		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), cell.X, cell.Y ) );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 320, 250 ), cell.X, cell.Y ) );
 		RoundsUntil( () => panel.IsDragging, host, guest, view, "the press came back" );
 		guest.Enter();
 		panel.Drag( new N.Vector2( 520, 400 ), 0, (cell.X + 1, cell.Y) );
@@ -517,7 +517,7 @@ public partial class CoopSessionTests
 		var panel = guest.Level.CoasterPanel!;
 		Assert.IsTrue( panel.Select( CoasterToolButton.Height ) );
 		var node = CoasterTrack.StationNodeCount;
-		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), CoasterCell.X + 4, CoasterCell.Y ) );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 320, 250 ), CoasterCell.X + 4, CoasterCell.Y ) );
 		RoundsUntil( () => panel.IsDragging && host.Level.CoasterEdits.Of( seat ) != null, host, guest, view, "the drag runs on the host" );
 		// the guest holds its drag and sends nothing for the lease's length: the host lets its claim go, and the claim's end releases the drag and ends the coaster's tool state
 		HostWaits( host, CoopHostStream.ClaimLeaseSeconds + 1 );
@@ -545,7 +545,7 @@ public partial class CoopSessionTests
 		Assert.IsTrue( panel.Select( CoasterToolButton.Rotate ) );
 		var node = CoasterTrack.StationNodeCount;
 		hudPointer = new N.Vector2( 1000, 800 );
-		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), CoasterCell.X + 4, CoasterCell.Y ) );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 320, 250 ), CoasterCell.X + 4, CoasterCell.Y ) );
 		RoundsUntil( () => panel.IsDragging, host, guest, view, "the press came back" );
 		// past the lease's length, the drag's steps renew it: a pointer the HUD follows, moved every ten seconds, keeps the claim
 		var moved = 0;
@@ -800,7 +800,7 @@ public partial class CoopSessionTests
 		var builder = guest.Level.GetCoasterBuilder( coaster )!;
 		var node = CoasterTrack.StationNodeCount + 1;
 		var cell = (builder.Track.Nodes[node].X, builder.Track.Nodes[node].Y);
-		Assert.IsTrue( panel.Press( node, new N.Vector2( 500, 400 ), cell.X, cell.Y ) );
+		Assert.IsTrue( panel.Press( node, new N.Vector2( 320, 250 ), cell.X, cell.Y ) );
 		RoundsUntil( () => panel.IsDragging, host, guest, view, "the press came back" );
 		guest.Enter();
 		panel.Drag( new N.Vector2( 520, 400 ), 0, (cell.X + 1, cell.Y) );

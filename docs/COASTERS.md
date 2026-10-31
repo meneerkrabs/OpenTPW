@@ -146,8 +146,11 @@ The coaster tool shows the original's slide-out panel (COAST-028, tp.exe `0x4982
 build (`cb_track`, control `0x1f`) and loop (`cb_loop`, `0x20`) buttons, a middle box with move (`cb_move`, `0x1b`), height (`cb_loft`, `0x1a`),
 stack up (`cb_swapup`, `0x1e`), rotate (`cb_rotate`, `0x1c`), tilt (`cb_incline`, `0x19`) and stack down (`cb_swapdown`, `0x1d`), and the demolish
 button (`cb_dellast`, `0x21`) at the right. The rectangles, models and tooltip help ids come from the table; the click help is `0x486b00` with `0x125`
-(build), `0x126`/`0x127` (loop), `0x121` (move) and `0x124` (demolish). The panel's window position is measured from the video (`APPROX`), and it appears
-at once instead of sliding out. Its background takes the clicks of the area it covers.
+(build), `0x126`/`0x127` (loop), `0x121` (move) and `0x124` (demolish). The tool's entry puts the panel into the HUD arm (`0x4988c0`: `0x4a2590`, message 10 of the arm drawer `0x4a14f0`), so it slides out as the camera and
+message panels do: the 675 x 274 root (859, 916) starts at the arm's left less its width less 50, centred on the arm, and moves right by 88 units per 20 ms tick
+to left 486, top 1145 (the video's measured offset (−372, +232) was these (−373, +229) within a pixel or three); the tool's exit and the arm's retract button
+slide it in, and another panel that takes the arm ends the tool (message `0x1001d8`, `0x4a17dc`). The loop button's model and help follow the flume flag
+(`cb_trough`, help `0x134`; else help `0x132`, `0x4987f0`). Its background takes the clicks of the area it covers.
 
 **Way in.** The ride window's track button (`b_track`, control `0x3e2a`, help 10; shown when the object's type record has a track type, `0x4ad53a`) calls `0x4af200`, which sends a coaster
 (type 3) to `0x4988c0`: it enters the tool (`0x4474d0`, state 2 for a finished circuit) and selects the first button (`0x4455c0`). The table-driven ride window (`ParkHud.ObjectWindow.cs`) has that
@@ -164,7 +167,7 @@ One tool is on at a time, as the original has one tool mode: the coaster tool's 
   pair is pending) for an unfinished track and on height for a finished one (`0x4455c0`).
 - **Build and loop**: a click places a pylon (loop mode places a pair, `0x442cd0`); the cursor cell is a blue or red blueprint face, the cost shows beside
   it, and the **placement area** is the box of the maximum place distance + 1 cells around the last node (`0x434f10`) whose cells pass the validator and
-  pass the original's cell test (`0x5243a6`, `Level.IsCoasterAreaCell`: cell flag `0x40` clear, no track tile or fence post, none of the cell types 3, 4, 7, 9, 10 and `0x1e`, no path with flag `0x20`), drawn yellow and black (`BlueprintMarker.Area`, `APPROX`: the texture). Hovering the chain start marks it
+  pass the original's cell test (`0x5243a6`, `Level.IsCoasterAreaCell`: cell flag `0x40` clear, no track tile or fence post, none of the cell types 3, 4, 7, 9, 10 and `0x1e`, no path with flag `0x20`), drawn with the level's own translucent orange texture (`BlueprintMarker.Area`: face type `0x11f` takes slot 2 of the dynamic textures, `0x535670`, which is `orange.wct` of the level's `dynamic.wad`). Hovering the chain start marks it
   as the closing target; a click closes the circuit.
 - **Height** (`0x441a00`): a press on a pylon picks it up; the loft parameter follows the pointer at 0.005 per pixel upward within `[max(0, (fMinHeight − h0)/(h1 − h0)),
   t + (fMaxHeight − the stack top's height)/(h1 − h0)]`; a clamped value moves the drag's origin so the pointer has to come back; the release credits
@@ -183,11 +186,13 @@ One tool is on at a time, as the original has one tool mode: the coaster tool's 
   A loop pair is never split and the same node twice cuts that node out. The cut ends carry `0x10000`/`0x20000` and the knots break there.
 - **Keyboard**: Backspace deletes the last pylon (`0x444f30`; the original reaches it only through its undo list, `[EXT:coaster-tool-controls]`); the mouse wheel and Tab are gone (the original has
   no wheel height, the loop button replaces Tab, and a new pylon takes the last pylon's height).
-- **Cursor link** (COAST-035, `0x435d50`, `0x43f4e0`): the cursor node is the original's model-less spare node, drawn without a pylon; the
+- **Cursor link** (COAST-035, retired; `0x435d50`, `0x43f4e0`): the cursor node is the original's model-less spare node, drawn without a pylon; the
   link into it is drawn in a copy of the invalid cross section (the first section: no PC `coaster.sam` sets `uiInvalidCrossSection`)
   with every edge in `blue.tga`, or `red.tga` when the validator refuses the cell (the marker textures the loader appends after the
   coaster's own, `0x42f390`). A hovered chain start (the closing target) takes the node flag `0x800000`, or `0x804000` when the closing link is refused (`0x4360c4`), and the marker
   textures draw that node's own tag pairs (`0x43f4e0` with both nodes the same); the rebuild `0x43eb70` draws no link into the start. `0x4360c0` also sets `0x200000` on the ends and their neighbours: it is the mark that makes the self-intersection pass `0x439ab0` re-test a node (`0x439b6b`), redundant here because the pass runs over every node. The rebuild `0x43eb70` samples and tests every track it draws, so while a coaster is built (and while a pylon is dragged) a link that crosses the track, the cursor's link included, is drawn with the crossing marker.
+
+Every loop routine of the original (the mode starter `0x442cd0`, the resumption `0x442d10`, the pending test `0x444c00`, the mode setters `0x444c50`/`0x444c80`, the selection `0x4445b0`) first tests the definition's flag 2, which the definition builder `0x42fad0` sets when pylon control 1 (the loop pylon) has a mesh (`0x42fd57`; `CoasterDefinition.HasLoopPylon`): on a coaster without a loop pylon the loop button is still shown and enabled (the panel only looks at the ride's level, `0x4980D6`, `0x4987f0`) and its selection just picks the build mode. The auxiliary dispatcher `0x447a10` is the layout replay's action `0x38` (the replayer `0x785a08` rebuilds a downloaded online park from its recorded actions, `0x4045b0` at `0x40463e`); OpenTPW runs no layout replay. COAST-035 is retired (October 30, 2026).
 
 The loop tool resumes a pending pair from the open chain endpoint after closing/reopening the panel or using an edit button: the second pylon keeps counter 1, its cursor omits `LoopFirst`, and placing it ends loop mode. The endpoint is the incomplete chain's tail or a completed cut circuit's predecessor, not an arbitrary picked pylon. Build stays disabled while that endpoint carries `0x80`, independently of the active tool. Availability and upgrade gates remain in force. See [loop-pair resumption](COASTER-LOOP-RESUMPTION.md) for the static evidence, synthetic coverage and remaining COAST-035 dispatch/loader qualifications.
 
@@ -518,8 +523,8 @@ formula with x87 steps scaled by 0.1), COAST-032 (tp.exe sets single precision o
 the start-up or 64-bit precision) and COAST-035 (the section builder recolours a link into a node with 0x800000/0x2000, or 0x4000); the cursor now keeps its last cell
 beyond the 300-unit reach of `0x435D50`, as the original does.
 
-The presentation is traced but still approximated in places: COAST-026 (track mesh details), COAST-033 (pylons),
-COAST-034 (cars) and COAST-035 (the build cursor's ribbon). A rider's head hangs from its car's socket of its index in the
+The presentation is traced but still approximated in places: COAST-026 (track mesh details) and
+COAST-034 (cars); COAST-033 (pylons) is retired (October 31, 2026), its last difference, the build cursor's writes into the last pylon's stored bank and half turn, being `[EXT:coaster-cursor-no-node-writes]`. A rider's head hangs from its car's socket of its index in the
 car's seated list (`0x43b600` → `0x44b410`: socket j is the node of the car model's (j + 1)-th attribute record with flag `0x80`,
 `CoasterCarRig.Seats`). The ride view (`RideCameraMode`) rides the car `0x436880` selects: the train with the smallest reference
 position (controller `+0x124`, `0x43d7dd`) and its car 0, or car 1 behind a front car of another type than the seats' (train `+0x34`, `0x436f15`), on that

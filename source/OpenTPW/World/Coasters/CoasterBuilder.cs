@@ -71,19 +71,26 @@ public sealed class CoasterBuilder
 		loopPylonsLeft = state.LoopMode ? Math.Clamp( state.LoopPylonsLeft, 0, LoopPair ) : 0;
 	}
 
-	/// <summary>The loop button exists: the coaster has a loop pylon and its ride is upgraded to level 1 or more (a station without an economy counts as unlocked).</summary>
-	// [BIN:TPW-EXE:0x004980D1 loop button] the panel enables the loop button only when the ride's level byte (thing +0x50) is at least 1 (0x4980D6); see CoasterToolPanel.EnabledMask
-	public bool LoopUnlocked => Ride.Definition.HasLoopPylon && (UpgradeLevel is not int level || level >= 1);
+	/// <summary>The loop button is shown: the ride is upgraded to level 1 or more (a station without an economy counts as unlocked); whether the coaster has a loop pylon is <see cref="LoopUnlocked"/>.</summary>
+	// [BIN:TPW-EXE:0x004980D1 loop button] the panel enables the loop button only when the ride's level byte (thing +0x50) is at least 1 (0x4980D6) and hides it at level 0 (0x49880F, 0x4987f0); nothing there looks at the coaster's loop pylon, so the button also shows on a coaster without one (see LoopUnlocked); see CoasterToolPanel.EnabledMask
+	public bool LoopButtonShown => UpgradeLevel is not int level || level >= 1;
+
+	/// <summary>The loop edit mode can start: the coaster has a loop pylon control and the loop button is shown.</summary>
+	// [BIN:TPW-EXE:0x42fd57 definition flag 2] the definition builder 0x42fad0 sets definition +0 bit 2 when pylon control 1 (the loop pylon, definition +0x1c8) has a mesh name (0x42fcef..0x42fd59; bit 1 for control 0, 0x42fcd9..0x42fce4); no other writer of the definition's flags sets it (0x42f499, 0x42f9ed, 0x42fa4a, 0x42fa5e, 0x42fa70, 0x42fa86 write 4, 0x100, 0xa0, 0x20, 0x10 and 8), and the pylon loader 0x42eb70 fails the whole definition for a control without mesh name, uiPylonTypeUniqueID or fCollisionPossibleRadius, so the bit means that asPylonControls[1] exists (CoasterDefinition.HasLoopPylon)
+	// [BIN:TPW-EXE:0x442cd0 loop gate] the loop button's mode starter 0x442cd0, the endpoint resumption 0x442d10, the pending test 0x444c00, the mode setters 0x444c50 and 0x444c80, the loop selection 0x4445b0(2) and the replayed action 0x447a10 all test that bit of the controller's definition ([0x790fec] +4) first and do nothing without it, so on a coaster without a loop pylon the loop button only selects the build mode (0x4445b0 ends with [0x79c644] = 2 and 0x434f10)
+	public bool LoopUnlocked => Ride.Definition.HasLoopPylon && LoopButtonShown;
 
 	/// <summary>The editable chain endpoint still needs the second pylon of a loop pair, even after the loop tool has been left.</summary>
-	// [BIN:TPW-EXE:0x444c00 pending loop endpoint] an incomplete track tests its tail (+0x58), a complete cut track its cut predecessor (+0x60), and a complete uncut track returns false; only node flag 0x80 is tested, independently of mode bit 0x40
-	public bool LoopPairPending => (!Track.IsComplete || Track.IsCut) && Track.LastIndex >= 0
+	// [BIN:TPW-EXE:0x444c00 pending loop endpoint] with the definition's loop bit (LoopUnlocked's gate): an incomplete track tests its tail (+0x58), a complete cut track its cut predecessor (+0x60), and a complete uncut track returns false; only node flag 0x80 is tested, independently of mode bit 0x40
+	public bool LoopPairPending => Ride.Definition.HasLoopPylon && (!Track.IsComplete || Track.IsCut) && Track.LastIndex >= 0
 		&& (Track.Nodes[Track.LastIndex].Flags & CoasterNodeFlags.LoopFirst) != 0;
 
 	/// <summary>Resumes the endpoint's pending second loop pylon, or starts a new pair unless loop mode is already active.</summary>
-	// [BIN:TPW-EXE:0x442d10 resume loop pair] a pending endpoint sets counter 0x79c664 to 1 and mode bit 0x40; the loop selection then calls 0x442cd0, which starts at 2 only when that mode bit is clear
+	// [BIN:TPW-EXE:0x442d10 resume loop pair] a pending endpoint sets counter 0x79c664 to 1 and mode bit 0x40; the loop selection then calls 0x442cd0, which starts at 2 only when that mode bit is clear; without the definition's loop bit (0x442d10, 0x442cd0, 0x4445b0 test it) neither does anything
 	internal void StartOrResumeLoopPair()
 	{
+		if ( !Ride.Definition.HasLoopPylon )
+			return;
 		if ( LoopPairPending )
 		{
 			loopMode = true;
@@ -160,7 +167,7 @@ public sealed class CoasterBuilder
 		Track.Append( Ride.World, Ride, x, y, Height, LoopMode, secondOfPair );
 		if ( LoopMode && --loopPylonsLeft <= 0 )
 			LoopMode = false;
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		return result;
 	}
 
@@ -178,7 +185,7 @@ public sealed class CoasterBuilder
 		if ( !Track.IsCut )
 			return Close() ? CoasterPlaceResult.Ok : CoasterPlaceResult.NotEditable;
 		Track.Close();
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		Ride.Rebuild();
 		return CoasterPlaceResult.Ok;
 	}
@@ -199,7 +206,7 @@ public sealed class CoasterBuilder
 	{
 		if ( !Track.Close() )
 			return false;
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		return true;
 	}
 
@@ -252,7 +259,7 @@ public sealed class CoasterBuilder
 		var charge = CoasterTrack.RoundUp( Track.NodeCost( index, chargeUnit: false ) ) + (next is int m ? CoasterTrack.RoundUp( Track.NodeCost( m, chargeUnit: false ) ) : 0);
 		Refund( refund );
 		Spend( charge, force: true );
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 	}
 
 	/// <summary>
@@ -265,7 +272,7 @@ public sealed class CoasterBuilder
 		if ( !Track.IsClosed || Track.IsComplete || Track.IsCut || Track.CheckClosure() == CoasterPlaceResult.Ok )
 			return false;
 		Track.OpenClosure();
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		return true;
 	}
 
@@ -275,7 +282,7 @@ public sealed class CoasterBuilder
 	{
 		if ( !Track.RemoveLast() )
 			return false;
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		return true;
 	}
 
@@ -310,7 +317,7 @@ public sealed class CoasterBuilder
 			return false;
 		Ride.EnterState( CoasterControllerState.Incomplete );
 		Track.Reopen();
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		return true;
 	}
 
@@ -328,7 +335,7 @@ public sealed class CoasterBuilder
 		if ( result == CoasterTrack.CutResult.Refused )
 			return result;
 		Ride.EnterState( CoasterControllerState.Incomplete );
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		Ride.RaiseTrackChanged();
 		return result;
 	}
@@ -338,7 +345,7 @@ public sealed class CoasterBuilder
 	{
 		if ( !Track.SwapStack( index, up ) )
 			return false;
-		Track.Revalidate( Site, Ride.World, Ride );
+		Revalidate();
 		if ( Track.IsRunnable )
 			Ride.Rebuild();
 		else
@@ -419,22 +426,37 @@ public sealed class CoasterBuilder
 		return new NodeEdit( index, Track.Nodes[index], refund, next );
 	}
 
-	/// <summary>Changes the picked node while the drag runs (no money moves yet): the track is revalidated and a finished track fitted again.</summary>
+	/// <summary>
+	/// Revalidates the track after an edit and stores what the rebuild stores in the nodes: the knot pass writes the auto-banks and the kept half turns of the chain as it stands, as the original's
+	/// rebuild does on every frame of the build and of an edit.
+	/// </summary>
+	// [BIN:TPW-EXE:0x430ed0 rebuild stores] the knot pass runs in every rebuild (0x43eb70, each frame the controller's dirty bit 1 is set: 0x435a30) and writes its results into the nodes: the bank (+0xd8, the auto-bank unless node flag 4 holds a hand-set value), the yaw and pitch and the node flag 0x10000000 (the half turn of a suspended coaster's pylon, 0x431f29/0x431f34), whatever the chain is, so an unfinished chain's nodes hold their auto-banks while it is built (the tilt drag counts from them, 0x442010) and a drag step stores them again (0x442f2a)
+	// [EXT:coaster-cursor-no-node-writes] the build cursor never writes node state: the original's rebuild of an unfinished chain includes the cursor's spare node, so hovering moves the last pylon's stored bank and half turn, but the hover is local to each player and OpenTPW keeps it out of the shared track; the chain's own nodes are stored at each edit (user decision, 2026-10-31)
+	private void Revalidate()
+	{
+		Track.Revalidate( Site, Ride.World, Ride );
+		if ( Track.Nodes.Count >= CoasterTrack.StationNodeCount )
+			Track.BuildKnotPass( Site, writeBanks: true );
+	}
+
+	/// <summary>Changes the picked node while the drag runs (no money moves yet): the track is revalidated and a finished track is fitted again, as the original's rebuild does on every frame of an edit.</summary>
 	public void ApplyEdit( NodeEdit edit, Func<CoasterNode, CoasterNode> change )
 	{
 		Track.Replace( edit.Index, change( Track.Nodes[edit.Index] ) );
-		AfterEdit( deferRebuild: true );
+		AfterEdit();
 	}
 
 	/// <summary>
-	/// Revalidates after an edit. While a drag runs the controller is not fitted again (that resamples, rates and checks the whole circuit): the renderer draws the nodes as they are, and
-	/// <see cref="FinishEdit"/> fits the track once on the release.
+	/// Revalidates after an edit and refits the controller of a finished track: the curve, the samples, the rating, the crossings and the trains' places, as the original's rebuild does on every frame
+	/// of a drag (the controller's dirty bit 1 set by 0x4346c0 makes 0x435a30 run 0x43eb70 each frame: the knot pass, the sampler 0x440c10, the rating pass 0x43c450 with its train placement
+	/// 0x43c1f0, the collision pass 0x439ab0 and the mesh).
 	/// </summary>
-	// [APPROX:COAST-028] the original rebuilds the track every frame of a drag (0x43eb70); OpenTPW draws the track and its crossing markers live and fits the curve, rates the track and replaces the trains once, on the release
-	private void AfterEdit( bool deferRebuild )
+	// [BIN:TPW-EXE:0x435a30 per-frame rebuild] every frame the controller with bit 1 set (0x4346c0, called by every edit handler: 0x442f2a, 0x443ddc, 0x4425c4 and the others) is rebuilt by 0x43eb70, whose rating pass places the trains again (train 0 keeps its last car's coordinate, the others follow by the release time); the collision pass 0x439ab0 and the lift marks of the rating pass 0x43c450 run on every chain it draws (CoasterRide.ChainCrossings, ChainWinchSections)
+	// [APPROX:COAST-028] only the controller of a finished track is fitted on every step; an unfinished chain is drawn with live lift marks and crossings, but its controller's rating fields keep their last fit until it is completed (the original rates the chain's samples every frame; no window shows the fields before completion) — evidence needed: whether any reader of an unfinished controller's rating fields exists
+	private void AfterEdit()
 	{
-		Track.Revalidate( Site, Ride.World, Ride );
-		if ( Track.IsRunnable && !deferRebuild )
+		Revalidate();
+		if ( Track.IsRunnable )
 			Ride.Rebuild();
 		else
 			Ride.RaiseTrackChanged();
@@ -491,7 +513,7 @@ public sealed class CoasterBuilder
 		// back on the cell it was picked up from, the node takes its old place in the stack again
 		int? restore = (x, y) == (edit.Start.X, edit.Start.Y) ? edit.Start.StackIndex : null;
 		Track.Relocate( edit.Index, x, y, stack, restore );
-		AfterEdit( deferRebuild: true );
+		AfterEdit();
 		return result;
 	}
 

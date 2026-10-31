@@ -311,7 +311,7 @@ public sealed partial class ParkHud
 	/// </summary>
 	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -9999, or reset to the unset marker -999 when no tool is active: only the mode objects whose type (vtable +0x24) is 3, 4 or 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; type 3 is the tool-mode object 0x6fe9e0 that every build tool runs in; it is no sum of balance changes
 	// [DATA:video 2:05, 74:00-76:00] "$ 2500" while the blueprint of a 2500 ride is held, "$ 150" in the path tool, "$ 10000" for the coaster station and "$ 70" to "$ 130" per track segment; absent outside the build tools even when the balance changes
-	// [APPROX:UI-047] the cost line follows the one cursor mode object of tp.exe ([0x7b05d8], replaced by 0x46c350, no stack): the tool-mode object of type 3 runs every build tool, the Buy Land tool included (its price shows; the Clear Area and patrol tools set the hidden marker -9999), and no class returns type 4; the coaster panel's edit modes (type 8) show it only while an active height drag holds bit 0 of 0x79c658; whether the rotate, tilt and stack drags set that bit and the commit of a drag a button click ends (0x447032) are open (docs/UI.md, UI-047)
+	// [BIN:TPW-EXE:0x447990 coaster edit cost] the cost line follows the one cursor mode object of tp.exe ([0x7b05d8], replaced by 0x46c350, no stack): the tool-mode object of type 3 runs every build tool, the Buy Land tool included (its price shows; the Clear Area and patrol tools set the hidden marker -9999), and no class returns type 4; the coaster panel's edit modes (type 8) show it only while bit 0 of 0x79c658 is set, and the only writer that sets that bit is the height press (0x441a5d; the rotate press sets bit 1 at 0x441edd, the tilt press bit 2 and 0x2000 at 0x44205b, the stack handlers their own bits), so it is exactly an active height drag; a button selected during a drag runs the sub-mode's second action through the switch of 0x446fa0's deselect path (0x44700e, 0x447032 for the height drag, 0x442220 for the build and loop buttons), which clears the bit and settles the money as the release does (CoasterToolPanel.Select)
 	public long? BuildActionCost
 	{
 		get
@@ -454,7 +454,6 @@ public sealed partial class ParkHud
 		hud.DrawOverlay = context => { DrawFeedback( context ); DrawSessionStatus( context ); DrawRideStatic( context ); };
 		hud.DrawBackground = context =>
 		{
-			DrawCoasterPanelBackground( context );
 			DrawMessagePanel( context );
 		};
 		BuildCoasterPanel();
@@ -1037,7 +1036,7 @@ public sealed partial class ParkHud
 		if ( hud.Find( "rideView" ) is UiButton rideButton )
 			rideButton.Enabled = IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate ));
 
-		UpdateCoasterPanelElements();
+		UpdateCoasterPanelElements( context.Delta );
 		UpdateShopPriceButton( mouseCaptured, keyboardCaptured, textCaptured );
 		UpdateWaveSettingsButton();
 		UpdateRideUpgradeButton( input );

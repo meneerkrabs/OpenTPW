@@ -101,6 +101,17 @@ public class CoasterAssetTests
 		var definitions = coasters.ToDictionary( pair => pair.Key, pair => CoasterDefinition.FromEntry( pair.Value ) );
 		CollectionAssert.AreEquivalent( new[] { 1185, 2185, 4180 }, definitions.Where( pair => pair.Value.IsTrough ).Select( pair => pair.Key ).ToArray(), "the three flumes" );
 		Assert.AreEqual( 9, definitions.Values.Count( definition => definition.HasLoopPylon ) );
+		// [BIN:TPW-EXE:0x42eb70 pylon control gate] the definition builder loads a pylon control only with a mesh name, a uiPylonTypeUniqueID and a fCollisionPossibleRadius (a control without fails the whole definition) and sets the
+		// definition's flag 2 when control 1 is there (0x42fd57): the loop gate of 0x442cd0, 0x442d10, 0x444c00 and 0x4445b0 is CoasterDefinition.HasLoopPylon on every PC coaster
+		foreach ( var (id, entry) in coasters )
+		{
+			var values = entry.CoasterSettings.Values;
+			bool Loaded( int index ) => values.TryGetValue( $"asPylonControls[{index}].pcMeshFilename", out var mesh ) && !string.IsNullOrWhiteSpace( mesh )
+				&& values.TryGetValue( $"asPylonControls[{index}].uiPylonTypeUniqueID", out var type ) && type != "0"
+				&& values.TryGetValue( $"asPylonControls[{index}].fCollisionPossibleRadius", out var radius ) && radius != "0" && radius != "0.0";
+			Assert.IsTrue( Loaded( 0 ), $"{id}: the standard pylon control loads" );
+			Assert.AreEqual( definitions[id].HasLoopPylon, Loaded( 1 ), $"{id}: the definition's flag 2 is the loop pylon control" );
+		}
 		foreach ( var (id, definition) in definitions )
 		{
 			Assert.AreEqual( (40f, 10f, 10f), (definition.StandardPylon.CostPerUnit, definition.StandardPylon.CostPer2DLength, definition.StandardPylon.CostPerHeight), $"{id} StdPylon rates" );

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
+using OpenTPW.UI.Original;
 using NVector2 = System.Numerics.Vector2;
 using SVector3 = System.Numerics.Vector3;
 
@@ -223,8 +225,13 @@ public class CoasterPanelTests
 		Assert.IsFalse( builder.FirstOfPair );
 	}
 
+	/// <summary>
+	/// COAST-035: the loop mode needs the definition's flag 2 (a loop pylon control, tp.exe 0x42fd57; 0x442cd0, 0x442d10, 0x444c00 and 0x4445b0 test it), but the panel's loop button
+	/// does not (0x4980D6, 0x4987f0 look at the ride's level only): on a coaster without a loop pylon the button is shown and enabled, its selection starts no loop mode, a stray node flag 0x80
+	/// is no pending pair, and the build button stays on.
+	/// </summary>
 	[TestMethod]
-	public void APendingEndpointDoesNotBypassTheAvailableLoopPylonGate()
+	public void ACoasterWithoutALoopPylonKeepsTheLoopButtonButStartsNoLoopMode()
 	{
 		var settings = CoasterTests.PcSettings();
 		foreach ( var key in settings.Keys.Where( key => key.StartsWith( "asPylonControls[1].", StringComparison.Ordinal ) ).ToArray() )
@@ -232,17 +239,22 @@ public class CoasterPanelTests
 		var (builder, _) = NewCoaster( settings );
 		var panel = CoasterPanelRig.Create( builder );
 		Assert.AreEqual( CoasterToolButton.Build, panel.Selected );
-		Assert.IsFalse( panel.Select( CoasterToolButton.Loop ) );
+		Assert.IsTrue( panel.LoopButtonShown );
+		Assert.IsFalse( panel.LoopUnlocked );
+		Assert.AreEqual( CoasterToolButton.Loop, panel.EnabledMask & CoasterToolButton.Loop );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Loop ) );
+		Assert.AreEqual( CoasterToolButton.Loop, panel.Selected );
+		Assert.IsFalse( builder.LoopMode, "0x442cd0 and 0x4445b0 do nothing without the definition's flag 2" );
+		Assert.AreEqual( 0, builder.LoopPylonsLeft );
 		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		Assert.IsFalse( builder.Track.Nodes[builder.Track.LastIndex].LoopPylon, "the pylon is a standard one" );
 		builder.Track.Nodes[builder.Track.LastIndex].Flags |= CoasterNodeFlags.LoopFirst;
 		panel.Refresh();
-		Assert.IsTrue( panel.PairPending );
-		Assert.IsFalse( panel.LoopUnlocked );
-		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
-		Assert.IsFalse( panel.Select( CoasterToolButton.Build ) );
-		Assert.IsFalse( panel.Select( CoasterToolButton.Loop ) );
+		Assert.IsFalse( panel.PairPending, "0x444c00 returns false without the flag" );
+		Assert.AreEqual( CoasterToolButton.Build, panel.EnabledMask & CoasterToolButton.Build );
+		Assert.AreEqual( CoasterToolButton.Loop, panel.Selected );
 		panel.Open();
-		Assert.AreEqual( CoasterToolButton.Height, panel.Selected );
+		Assert.AreEqual( CoasterToolButton.Build, panel.Selected );
 		Assert.IsFalse( builder.LoopMode );
 	}
 
@@ -347,6 +359,102 @@ public class CoasterPanelTests
 		Assert.AreEqual( balance + oldCost - newCost, economy.Balance, "0x441a00: credit trunc(old cost), debit ceil(new cost)" );
 	}
 
+	/// <summary>
+	/// UI-047: bit 0 of 0x79c658 is set only by the height press (0x441a5d), so the HUD's cost line shows during a height drag and not during a rotate or tilt drag (0x447990); a button selected while a
+	/// drag runs ends it through the sub-mode's second action (the switch of 0x446fa0's deselect path at 0x44700e, 0x447032 for the height drag), which settles the money as the release does.
+	/// </summary>
+	[TestMethod]
+	public void OnlyTheHeightDragShowsTheCostAndAButtonClickEndsADragAsItsRelease()
+	{
+		var economy = EconomyTestData.Park( initialCash: 50000 );
+		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ), () => economy );
+		CoasterTests.PlaceStation( builder, (20, 20) );
+		builder.Height = 20;
+		builder.Place( 24, 20 );
+		builder.Place( 28, 24 );
+		var panel = CoasterPanelRig.Create( builder );
+		panel.Select( CoasterToolButton.Rotate );
+		Assert.IsFalse( panel.ShowsActionCost, "the edit modes show the cost line only while bit 0 is set" );
+		Assert.IsTrue( panel.Press( First, new NVector2( 100, 100 ), 24, 20 ) );
+		Assert.IsFalse( panel.ShowsActionCost, "the rotate press sets bit 1 (0x441edd), not bit 0" );
+		panel.Release( First, (24, 20) );
+		panel.Select( CoasterToolButton.Tilt );
+		Assert.IsTrue( panel.Press( First, new NVector2( 100, 100 ), 24, 20 ) );
+		Assert.IsFalse( panel.ShowsActionCost, "the tilt press sets bit 2 and 0x2000 (0x44205b), not bit 0" );
+		panel.Release( First, (24, 20) );
+		panel.Select( CoasterToolButton.Height );
+		Assert.IsFalse( panel.ShowsActionCost, "no height drag yet" );
+		var balance = economy.Balance;
+		var oldCost = CoasterTrack.Truncate( builder.Track.NodeCost( First, false ) );
+		Assert.IsTrue( panel.Press( First, new NVector2( 100, 100 ), 24, 20 ) );
+		Assert.IsTrue( panel.ShowsActionCost, "the height press sets bit 0 (0x441a5d)" );
+		panel.Drag( new NVector2( 100, 40 ), 0, null );
+		var newCost = CoasterTrack.RoundUp( builder.Track.NodeCost( First, false ) );
+		Assert.AreEqual( balance, economy.Balance, "nothing moves while the drag runs" );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Rotate ) );
+		Assert.IsFalse( panel.IsDragging, "the selection ended the drag" );
+		Assert.IsFalse( panel.ShowsActionCost, "the second action cleared bit 0 (0x441ae1)" );
+		Assert.AreEqual( balance + oldCost - newCost, economy.Balance, "0x441a00 credits trunc(old cost) and debits ceil(new cost) as the release does" );
+	}
+
+	/// <summary>
+	/// [EXT:coaster-drag-reference-mode]: the drag counts whole pixels of the original's default 640 x 480 display mode (tp.exe 0x42a760 stores x * W / 0x800 and y * H / 0x600 as integers), so the rates 0.005, 0.02 and 0.01 per pixel
+	/// give the same value for the same share of the screen at 640 and at 2560 pixels across.
+	/// </summary>
+	[TestMethod]
+	public void TheDragCountsWholePixelsOfThe640x480ReferenceMode()
+	{
+		var context = RideUpgradeIngressTests.Context();
+		foreach ( var width in new[] { 640, 1024, 2560 } )
+		{
+			context.Canvas = new UiCanvas( width, width * 3 / 4 );
+			Assert.AreEqual( new NVector2( 320, 240 ), ParkHud.OriginalPixels( context, new NVector2( width * 0.5f + 0.9f, width * 0.375f + 0.2f ) ), $"{width} pixels across: the canvas is scaled to 640 x 480 and the fraction is dropped" );
+		}
+		// a 16:9 screen fits its 4:3 area: one factor for both axes, so the units stay square
+		context.Canvas = new UiCanvas( 1920, 1080 );
+		Assert.AreEqual( new NVector2( 144, 108 ), ParkHud.OriginalPixels( context, new NVector2( 324.9f, 243.5f ) ), "1920 x 1080: 4:3 fit is 1440 wide, 0.4444 per pixel on both axes" );
+		var (builder, _) = NewCoaster();
+		builder.Height = 20;
+		builder.Place( 24, 20 );
+		builder.Place( 28, 24 );
+		var panel = CoasterPanelRig.Create( builder );
+		panel.Select( CoasterToolButton.Height );
+		var start = builder.Track.Nodes[First].T;
+		Assert.IsTrue( panel.Press( First, new NVector2( 320, 240 ), 24, 20 ) );
+		context.Canvas = new UiCanvas( 2560, 1920 );
+		panel.Drag( ParkHud.OriginalPixels( context, new NVector2( 1280, 880.5f ) ), 0, null );
+		Assert.AreEqual( start + 20 * CoasterToolPanel.HeightRate, builder.Track.Nodes[First].T, 1e-5f, "80 canvas pixels up are 20 pixels of the 640 x 480 mode at 2560 pixels across as at any other width" );
+		panel.Release( First, (24, 20) );
+	}
+
+	/// <summary>
+	/// COAST-028: the original's rebuild runs the rating pass on every chain it draws and on every frame of an edit (0x43eb70 → 0x43c450), so a chain's lift sections (node flag 0x800, where the speed
+	/// falls to the winch floor) are marked live: a track drawn through its nodes has the marks of the controller's own fit, and an unfinished chain has them although no fit ever ran.
+	/// </summary>
+	[TestMethod]
+	public void TheLiftSectionsOfADrawnChainAreRatedLiveAsTheRebuildDoes()
+	{
+		var (finished, ride) = Finished();
+		var pass = finished.Track.BuildKnotPass( finished.Site, finished.Track.Nodes, writeBanks: false );
+		var sampling = ride.Curve.Sample( pass.Knots, ride.Definition.Curviness );
+		var live = CoasterRide.ChainWinchSections( ride.Definition, ride.SpeedCap, finished.Track.Nodes, sampling );
+		Assert.IsTrue( ride.WinchSections.Count > 0, "the circuit has lift sections" );
+		CollectionAssert.AreEquivalent( ride.WinchSections.ToArray(), live.ToArray(), "a track drawn through its nodes carries the marks of the controller's own fit" );
+
+		var (builder, open) = NewCoaster();
+		builder.Height = 60;
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 24, 20 ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 28, 24 ) );
+		Assert.AreEqual( 0, open.WinchSections.Count, "no fit ran for an unfinished chain" );
+		var chain = builder.Track.BuildPreviewChain( (30, 26), 60, false )!.Value.Chain;
+		var chainPass = builder.Track.BuildKnotPass( builder.Site, chain, writeBanks: false );
+		var chainSampling = open.Curve.Sample( chainPass.Knots, open.Definition.Curviness );
+		var marks = CoasterRide.ChainWinchSections( open.Definition, open.SpeedCap, chain, chainSampling );
+		Assert.IsTrue( marks.Count > 0, "the rating pass marks the sections that fall to the winch speed on the unfinished chain" );
+		Assert.IsTrue( marks.All( node => node >= 0 && node < chain.Count ) );
+	}
+
 	[TestMethod]
 	public void TheRotateDragTurnsThePylonWithinTheDeviationAndSetsFlag1()
 	{
@@ -372,6 +480,34 @@ public class CoasterPanelTests
 		var cost = builder.BuildCost;
 		panel.Release( First + 1, (28, 24) );
 		Assert.AreEqual( cost, builder.BuildCost, "rotating moves no money" );
+	}
+
+	/// <summary>
+	/// COAST-033: the original's rebuild runs on every frame of a build, and its knot pass stores each node's auto-bank (and half turn) in the node (0x430ed0), so the nodes of an unfinished chain hold
+	/// the banks the curve gives them and a tilt drag counts from them; each edit of the builder stores them again, drag steps included (0x442f2a).
+	/// </summary>
+	[TestMethod]
+	public void AnUnfinishedChainsNodesHoldTheAutoBanksTheKnotPassStoresOnEveryEdit()
+	{
+		var (builder, _) = NewCoaster();
+		builder.Height = 40;
+		foreach ( var (x, y) in new[] { (24, 20), (28, 24), (24, 28), (20, 28) } )
+			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( x, y ) );
+		var track = builder.Track;
+		var computed = track.BuildKnotPass( builder.Site, track.Nodes, writeBanks: false ).Banks;
+		for ( var index = 0; index < track.Nodes.Count - 1; index++ )
+			Assert.AreEqual( computed[index], track.Nodes[index].Bank, 1e-6f, $"node {index} holds the bank the pass computes" );
+		Assert.IsTrue( track.Nodes.Skip( First ).Any( node => node.Bank != 0 ), "a curve banks" );
+		// a drag step stores them again: moving the last pylon changes the bend at the one before it
+		var panel = CoasterPanelRig.Create( builder );
+		panel.Select( CoasterToolButton.Move );
+		var before = track.Nodes[^2].Bank;
+		Assert.IsTrue( panel.Press( track.Nodes.Count - 1, new NVector2( 100, 100 ), 20, 28 ) );
+		panel.Drag( new NVector2( 100, 100 ), 0, (20, 34) );
+		var after = track.BuildKnotPass( builder.Site, track.Nodes, writeBanks: false ).Banks;
+		Assert.AreEqual( after[^2], track.Nodes[^2].Bank, 1e-6f, "the step stored the new bank" );
+		Assert.AreNotEqual( before, track.Nodes[^2].Bank, "which the move changed" );
+		panel.Release( null, null );
 	}
 
 	[TestMethod]
@@ -547,6 +683,70 @@ public class CoasterPanelTests
 		for ( var guest = ride.Command( 3, 0 ); guest != 0; guest = ride.Command( 3, 0 ) )
 			released.Add( guest );
 		CollectionAssert.AreEquivalent( boarded.ToArray(), released.ToArray(), "boarded == released" );
+	}
+
+	[TestMethod]
+	public void ThePendingCutMarksTheRangeUpToTheHoveredPylonAndAMoveMarksTheLinksAroundItsPylon()
+	{
+		var (builder, ride) = Finished();
+		ride.EnterTool();
+		var track = builder.Track;
+		var last = track.Nodes.Count - 1;
+		var panel = CoasterPanelRig.Create( builder );
+		Assert.IsNull( panel.RangeMark );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Demolish ) );
+		panel.HoverCut( First + 3 );
+		Assert.IsNull( panel.RangeMark, "no range is shown before the first end is picked" );
+		Assert.AreEqual( CoasterPanelResult.CutStarted, panel.Release( First + 1, null ) );
+		Assert.IsNull( panel.RangeMark, "the first release itself marks nothing (0x446740)" );
+		panel.HoverCut( null );
+		Assert.IsNull( panel.RangeMark, "no hovered pylon clears the marks (0x443340)" );
+		panel.HoverCut( First + 4 );
+		Assert.AreEqual( new CoasterRangeMark( First + 1, First + 4, CoasterTrackMesh.EraseMarker ), panel.RangeMark, "[low, high) between the first end and the hovered pylon, drawn with m_erase" );
+		panel.HoverCut( First - 1 );
+		Assert.AreEqual( new CoasterRangeMark( First - 1, First + 1, CoasterTrackMesh.EraseMarker ), panel.RangeMark, "hovering before the first end orders the two" );
+		panel.HoverCut( 0 );
+		Assert.AreEqual( new CoasterRangeMark( First + 1, last, CoasterTrackMesh.EraseMarker ), panel.RangeMark, "ordinal 0 stands for the last node" );
+		panel.HoverCut( First + 1 );
+		Assert.AreEqual( new CoasterRangeMark( First, First + 2, CoasterTrackMesh.EraseMarker ), panel.RangeMark, "the first end itself takes its neighbours" );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Height ) );
+		Assert.IsNull( panel.RangeMark, "leaving the demolish button takes the marks off (0x446fa0 case 0x20)" );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Move ) );
+		Assert.IsTrue( panel.Press( First + 1, new NVector2( 50, 50 ), 28, 24 ) );
+		Assert.AreEqual( new CoasterRangeMark( First, First + 2, CoasterTrackMesh.CursorMarker ), panel.RangeMark, "a move marks the links around its pylon blue (0x446d50)" );
+		panel.Release( First + 1, null );
+		Assert.IsNull( panel.RangeMark, "the release clears them (0x445a70)" );
+	}
+
+	[TestMethod]
+	public void MovingTheLastPylonOfACompleteTrackMarksOnlyTheLinksAroundIt()
+	{
+		var (builder, ride) = Finished();
+		ride.EnterTool();
+		var track = builder.Track;
+		var end = track.Nodes.Count - 1;
+		Assert.IsTrue( track.Nodes[end].IsStationEnd );
+		var panel = CoasterPanelRig.Create( builder );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Move ) );
+		var node = end - 1;
+		Assert.IsTrue( panel.Press( node, new NVector2( 50, 50 ), track.Nodes[node].X, track.Nodes[node].Y ) );
+		Assert.AreEqual( new CoasterRangeMark( node - 1, end, CoasterTrackMesh.CursorMarker ), panel.RangeMark, "the end node is the last link (0x434060 gives it the next ordinal): [prev, node] only" );
+		panel.Release( node, null );
+	}
+
+	[TestMethod]
+	public void ARangeMarkDrawsItsLinksWithItsMarkerBeforeTheCrossingsAndRedWhenTheNodeIsInvalid()
+	{
+		var (builder, _) = Finished();
+		var chain = builder.Track.Nodes;
+		var none = Enumerable.Range( 0, chain.Count ).Select( _ => (IReadOnlyList<int>)Array.Empty<int>() ).ToArray();
+		var crossing = none.ToArray();
+		crossing[First + 1] = new[] { 3 };
+		var mark = new CoasterRangeMark( First + 1, First + 3, CoasterTrackMesh.EraseMarker );
+		Assert.IsNull( CoasterRenderer.LinkMarker( chain, none, true, First, First + 1, mark ) );
+		Assert.AreEqual( CoasterTrackMesh.EraseMarker, CoasterRenderer.LinkMarker( chain, none, true, First + 1, First + 2, mark ) );
+		Assert.AreEqual( CoasterTrackMesh.EraseMarker, CoasterRenderer.LinkMarker( chain, crossing, true, First + 1, First + 2, mark ), "the mark wins over the crossing's red" );
+		Assert.IsNull( CoasterRenderer.LinkMarker( chain, none, true, First + 3, First + 4, mark ), "High is exclusive" );
 	}
 
 	[TestMethod]
@@ -813,7 +1013,7 @@ public class CoasterPanelTests
 	}
 
 	[TestMethod]
-	public void ACutLeavesAFinishedCircuitsRidersAndTheDragDoesNotRefitUntilTheRelease()
+	public void ACutLeavesAFinishedCircuitsRidersAndTheDragRefitsTheControllerOnEveryStep()
 	{
 		var (builder, ride) = Finished();
 		ride.EnterTool();
@@ -825,7 +1025,10 @@ public class CoasterPanelTests
 		panel.Drag( new NVector2( 0, 300 ), 0, null );
 		panel.Drag( new NVector2( 0, 250 ), 0, null );
 		Assert.AreNotEqual( version, builder.Track.Nodes[First + 1].T, "the node follows the pointer" );
-		Assert.AreEqual( samples, ride.Samples.Count, "the controller is fitted once, on the release" );
+		// [BIN:TPW-EXE:0x435a30 per-frame rebuild] the original's controller is rebuilt on every frame of a drag (0x4346c0 sets its dirty bit, 0x43eb70 refits it), trains included
+		Assert.AreNotEqual( samples, ride.Samples.Count, "the controller is fitted again on every step of the drag: the raised pylon lengthens the track" );
+		panel.Drag( new NVector2( 0, 400 ), 0, null );
+		Assert.AreEqual( samples, ride.Samples.Count, "and back on the pylon's first place the track is the old one again" );
 		panel.Release( First + 1, null );
 		Assert.IsTrue( ride.IsOperational );
 	}
@@ -1066,9 +1269,11 @@ public class CoasterPanelTests
 		Assert.IsTrue( builder.Ride.Definition.HasLoopPylon );
 		Assert.AreEqual( 0, builder.UpgradeLevel );
 		Assert.IsFalse( panel.LoopUnlocked );
+		Assert.IsFalse( panel.LoopButtonShown );
 		Assert.AreEqual( CoasterToolButton.None, panel.EnabledMask & CoasterToolButton.Loop, "level 0 hides the loop button" );
 		state!.Level = 1;
 		Assert.IsTrue( panel.LoopUnlocked );
+		Assert.IsTrue( panel.LoopButtonShown );
 		Assert.AreEqual( CoasterToolButton.Loop, panel.EnabledMask & CoasterToolButton.Loop );
 		var (sandbox, _) = NewCoaster();
 		Assert.IsNull( sandbox.UpgradeLevel );

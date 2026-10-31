@@ -28,8 +28,11 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 	/// <summary>
 	/// The marker texture of the pair of knots starting at <paramref name="node"/> and ending in <paramref name="next"/> (the same node for a pair between two tags of one pylon), or null.
 	/// </summary>
-	internal static int? LinkMarker( IReadOnlyList<CoasterNode> chain, IReadOnlyList<IReadOnlyList<int>> crossings, bool cursorValid, int node, int next )
+	internal static int? LinkMarker( IReadOnlyList<CoasterNode> chain, IReadOnlyList<IReadOnlyList<int>> crossings, bool cursorValid, int node, int next, CoasterRangeMark? range = null )
 	{
+		// [BIN:TPW-EXE:0x43f50d range marker] a node with 0x1000000 (CoasterRangeMark) takes the marker variant [0x7925d0] for its links whatever the crossings say, red when it also carries 0x4000
+		if ( range is { } mark && node >= mark.Low && node < mark.High && node < chain.Count )
+			return (chain[node].Flags & CoasterNodeFlags.Invalid) != 0 ? CoasterTrackMesh.RefusedMarker : mark.Variant;
 		// [BIN:TPW-EXE:0x43f4e0 marker links] crossings (+0xb0) give the red marker; a link into the build cursor's spare node (0x2000) the blue one, or red when the validator refused its cell (0x4000)
 		if ( node < crossings.Count && crossings[node].Count > 0 )
 			return CoasterTrackMesh.RefusedMarker;
@@ -124,6 +127,28 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 				return view.CameraCarSeat( train );
 		}
 		return null;
+	}
+
+	/// <summary>
+	/// The pylon of <paramref name="ride"/> whose model the ray meets first (engine space): its node and the hit's distance from the ray's origin in engine units; false when it meets none.
+	/// <paramref name="modelled"/> is false when the ride has no pylon models drawn (no game data), where no pointer can pick one.
+	/// </summary>
+	internal bool TryPickPylon( CoasterRide ride, SVector3 origin, SVector3 direction, out int node, out float distance, out bool modelled )
+	{
+		node = -1;
+		distance = float.MaxValue;
+		modelled = false;
+		foreach ( var view in views )
+		{
+			if ( !ReferenceEquals( view.Ride, ride ) )
+				continue;
+			modelled = view.HasPylonModels;
+			if ( !modelled || !view.TryPickPylon( origin, direction, out node, out var local ) )
+				return false;
+			distance = local * direction.Length();
+			return true;
+		}
+		return false;
 	}
 
 	/// <summary>Triangles the coaster models submit (track, pylons and cars; the view may cull some of them).</summary>
@@ -302,7 +327,7 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 		private readonly List<ModelEntity> entities = new();
 		private readonly List<Model> models = new();
 		private readonly List<CarInstance> cars = new();
-		private (int Version, bool Operational, bool Edited, int Samples, CoasterPreview? Preview) built = (-1, false, false, -1, null);
+		private (int Version, bool Operational, bool Edited, int Samples, CoasterPreview? Preview, CoasterRangeMark? Range) built = (-1, false, false, -1, null, null);
 		private bool dirty = true;
 		private int carTrains = -1;
 		private bool carsOperational;
@@ -364,7 +389,7 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 		private void EnsureTrack()
 		{
 			var preview = Ride.IsOperational ? null : owner.previewOf( Ride );
-			var key = (Ride.Track.Version, Ride.IsOperational, Ride.BeingEdited, Ride.Samples.Count, preview);
+			var key = (Ride.Track.Version, Ride.IsOperational, Ride.BeingEdited, Ride.Samples.Count, preview, Ride.RangeMark);
 			if ( dirty || key != built )
 			{
 				Rebuild( preview );
@@ -402,24 +427,26 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 			// [APPROX:COAST-026] a chain the demolish button cut open, and one of fewer than three knots, has no sample list here, so its links take their section per segment by the mean pitch where the original builds the run table over every chain — evidence needed: the sampler across the cut ends (COAST-004)
 			var matrix = owner.ToEngine();
 			var sampling = chain.Count >= 3 && knots.Length >= 3 && !chain.Any( node => (node.Flags & (CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart)) != 0 ) ? Ride.Curve.Sample( knots, definition.Curviness ) : null;
-			// [BIN:TPW-EXE:0x43eb70 rebuild per frame] the original's rebuild runs the pass 0x439ab0 on every frame of an edit, so the crossing markers follow a drag live; the controller's own lists are refitted on the release
-			var crossings = Ride.IsOperational && !Ride.BeingEdited ? Ride.CollisionLists : CoasterRide.ChainCrossings( Ride.Curve, chain, pass, definition, sampling );
+			// [BIN:TPW-EXE:0x43eb70 rebuild per frame] the original's rebuild runs the pass 0x439ab0 on every frame of an edit, so the crossing markers follow a drag live; a finished track's controller is refitted on every step of a drag (CoasterBuilder.AfterEdit), the lists of an unfinished chain are those of this drawing
+			var crossings = Ride.IsOperational ? Ride.CollisionLists : CoasterRide.ChainCrossings( Ride.Curve, chain, pass, definition, sampling );
 			var cursorValid = preview?.Valid ?? true;
-			int? Marker( int node, int next ) => LinkMarker( chain, crossings, cursorValid, node, next );
+			int? Marker( int node, int next ) => LinkMarker( chain, crossings, cursorValid, node, next, Ride.RangeMark );
+			// [BIN:TPW-EXE:0x43eb70 rebuild per frame] the rebuild's rating pass 0x43c450 runs on every frame of an edit and on every chain it draws, marking the sections that fall to the winch speed (node flag 0x800, 0x43c4f0..), so the lift sections of an unfinished chain and of a track being dragged follow the build live; the controller's own marks (Ride.WinchSections) are those of its last fit
+			var winch = Ride.IsOperational ? Ride.WinchSections : CoasterRide.ChainWinchSections( definition, Ride.SpeedCap, chain, sampling );
 			foreach ( var (first, final, isClosed) in CoasterRenderer.ChainSpans( chain, pass, closed ) )
-				BuildChain( knots[first..(final + 1)], first, definition.Curviness, isClosed, Marker, matrix, first == 0 && final == knots.Length - 1 ? sampling : null );
+				BuildChain( knots[first..(final + 1)], first, definition.Curviness, isClosed, Marker, matrix, first == 0 && final == knots.Length - 1 ? sampling : null, winch );
 			BuildPylons( chain, pass, matrix );
 		}
 
 		/// <summary>Draws one chain of knots: the track through them, the links <paramref name="marker"/> names in a marker texture.</summary>
-		private void BuildChain( CoasterKnot[] knots, int firstKnot, float curviness, bool closed, Func<int, int, int?> marker, Matrix4x4 matrix, CoasterSampling? sampling )
+		private void BuildChain( CoasterKnot[] knots, int firstKnot, float curviness, bool closed, Func<int, int, int?> marker, Matrix4x4 matrix, CoasterSampling? sampling, IReadOnlyCollection<int> winch )
 		{
 			// [BIN:TPW-EXE:0x43e6b0 suspended roll] a suspended coaster's slices take the swing's sample rolls at the knots' coordinates (the controller's samples; none before the track is finished)
 			var suspended = Ride.Definition.IsSuspended ? new CoasterSuspendedRolls( Ride.Samples, Ride.KnotCoordinates, firstKnot ) : null;
 			var frames = sampling == null ? null : new CoasterSliceFrames( knots, curviness, closed, suspended );
 			var runs = sampling == null ? null : HermiteCoasterCurve.ExtrusionRuns( assets.Sections, knots, curviness, sampling, suspended, frames );
 			var keys = runs is { Count: > 0 } && sampling != null ? new CoasterSliceKeys( runs, sampling.KnotCoordinates, firstKnot ) : null;
-			BuildTrack( HermiteCoasterCurve.Slices( knots, curviness, closed, suspended: suspended, keys: keys, frames: frames ), Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), marker, matrix, keys == null ? null : runs );
+			BuildTrack( HermiteCoasterCurve.Slices( knots, curviness, closed, suspended: suspended, keys: keys, frames: frames ), winch, marker, matrix, keys == null ? null : runs );
 		}
 
 		private void BuildTrack( CoasterSlice[] slices, IReadOnlyCollection<int> winch, Func<int, int, int?> marker, Matrix4x4 matrix, IReadOnlyList<CoasterExtrusionRun>? runs )
@@ -477,6 +504,7 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 		private void BuildPylons( IReadOnlyList<CoasterNode> chain, CoasterKnotPass pass, Matrix4x4 matrix )
 		{
 			var accumulators = new Dictionary<(CoasterPylonRig Rig, int Part), (List<Vertex> Vertices, List<uint> Indices, string[] Textures)>();
+			var picks = new List<PylonPick>();
 			var definition = Ride.Definition;
 			for ( var index = 0; index < chain.Count; index++ )
 			{
@@ -489,8 +517,10 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 				var pose = pass.Poses[index] ?? new CoasterPylonPose( node.T, (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : pass.AutomaticYaw[index],
 					(node.Flags & CoasterNodeFlags.ManualIncline) != 0 ? node.Incline : pass.AutomaticPitch[index], pass.Banks[index], node.LoopRotate, pass.TurnedBack[index] );
 				var above = chain.FirstOrDefault( other => !other.IsPylonless && (other.Flags & CoasterNodeFlags.Cursor) == 0 && other.X == node.X && other.Y == node.Y && other.StackIndex == node.StackIndex + 1 );
-				var parts = assets.PosePylon( node.LoopPylon, rig, pose, new CoasterStackPlace( node.StackIndex == 0, above == null, above != null ) );
+				var parts = assets.PosePylon( node.LoopPylon, rig, pose, new CoasterStackPlace( node.StackIndex == 0, above == null, above != null ), ( column, row ) => Ride.Site.GroundHeight( node.X + column, node.Y + row ) - baseHeight );
 				var shift = new SVector3( node.X * CoasterTrack.CellUnits, node.Y * CoasterTrack.CellUnits, baseHeight );
+				if ( parts.Count > 0 )
+					picks.Add( PylonPick.Of( index, parts, shift ) );
 				for ( var part = 0; part < parts.Count; part++ )
 				{
 					if ( !accumulators.TryGetValue( (rig, part), out var accumulator ) )
@@ -506,6 +536,8 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 						accumulator.Indices.Add( first + vertexIndex );
 				}
 			}
+			pylonPicks = picks.ToArray();
+			pylonPickInverse = Matrix4x4.Invert( matrix, out var inverse ) ? inverse : Matrix4x4.Identity;
 			foreach ( var (_, accumulator) in accumulators )
 			{
 				pylonTriangles += accumulator.Indices.Count / 3;
@@ -522,8 +554,110 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 			entities.Add( new ModelEntity { Model = model, Name = "coaster", SnowSurface = SnowCover.GroundSurface, TransformOverride = matrix, Position = new SVector3( matrix.M41, matrix.M42, matrix.M43 ) } );
 		}
 
+		/// <summary>One drawn pylon's faces for the pointer pick: its node, its posed parts' vertices in track units (the model matrix still to apply) and their triangles.</summary>
+		private sealed record PylonPick( int Node, SVector3[] Vertices, uint[] Indices, SVector3 Min, SVector3 Max )
+		{
+			public static PylonPick Of( int node, IReadOnlyList<CoasterModelPart> parts, SVector3 shift )
+			{
+				var vertices = new List<SVector3>();
+				var indices = new List<uint>();
+				foreach ( var part in parts )
+				{
+					var first = (uint)vertices.Count;
+					foreach ( var vertex in part.Vertices )
+						vertices.Add( vertex.Position.GetSystemVector3() + shift );
+					foreach ( var index in part.Indices )
+						indices.Add( first + index );
+				}
+				var min = new SVector3( float.MaxValue );
+				var max = new SVector3( float.MinValue );
+				foreach ( var vertex in vertices )
+				{
+					min = SVector3.Min( min, vertex );
+					max = SVector3.Max( max, vertex );
+				}
+				return new PylonPick( node, vertices.ToArray(), indices.ToArray(), min, max );
+			}
+		}
+
+		private PylonPick[] pylonPicks = Array.Empty<PylonPick>();
+		private Matrix4x4 pylonPickInverse = Matrix4x4.Identity;
+
+		/// <summary>Whether the last rebuild drew pylon models (a coaster without game data has none, so no pointer can pick one).</summary>
+		public bool HasPylonModels => pylonPicks.Length > 0;
+
+		/// <summary>
+		/// The pylon whose drawn faces the ray meets first (engine space): its node and the distance along <paramref name="direction"/>. A face is hit from either side.
+		/// </summary>
+		public bool TryPickPylon( SVector3 origin, SVector3 direction, out int node, out float distance )
+		{
+			node = -1;
+			distance = float.MaxValue;
+			var local = SVector3.Transform( origin, pylonPickInverse );
+			var line = SVector3.TransformNormal( direction, pylonPickInverse );
+			foreach ( var pick in pylonPicks )
+			{
+				if ( !HitsBox( local, line, pick.Min, pick.Max ) )
+					continue;
+				for ( var corner = 0; corner + 2 < pick.Indices.Length; corner += 3 )
+				{
+					if ( TriangleDistance( local, line, pick.Vertices[pick.Indices[corner]], pick.Vertices[pick.Indices[corner + 1]], pick.Vertices[pick.Indices[corner + 2]] ) is { } hit && hit < distance )
+						(node, distance) = (pick.Node, hit);
+				}
+			}
+			return node >= 0;
+		}
+
+		private static bool HitsBox( SVector3 origin, SVector3 direction, SVector3 min, SVector3 max )
+		{
+			var near = 0f;
+			var far = float.MaxValue;
+			for ( var axis = 0; axis < 3; axis++ )
+			{
+				var start = axis == 0 ? origin.X : axis == 1 ? origin.Y : origin.Z;
+				var step = axis == 0 ? direction.X : axis == 1 ? direction.Y : direction.Z;
+				var low = axis == 0 ? min.X : axis == 1 ? min.Y : min.Z;
+				var high = axis == 0 ? max.X : axis == 1 ? max.Y : max.Z;
+				if ( MathF.Abs( step ) < 1e-9f )
+				{
+					if ( start < low || start > high )
+						return false;
+					continue;
+				}
+				var a = (low - start) / step;
+				var b = (high - start) / step;
+				near = MathF.Max( near, MathF.Min( a, b ) );
+				far = MathF.Min( far, MathF.Max( a, b ) );
+				if ( near > far )
+					return false;
+			}
+			return true;
+		}
+
+		private static float? TriangleDistance( SVector3 origin, SVector3 direction, SVector3 a, SVector3 b, SVector3 c )
+		{
+			var edge1 = b - a;
+			var edge2 = c - a;
+			var p = SVector3.Cross( direction, edge2 );
+			var determinant = SVector3.Dot( edge1, p );
+			if ( MathF.Abs( determinant ) < 1e-12f )
+				return null;
+			var inverse = 1f / determinant;
+			var offset = origin - a;
+			var u = SVector3.Dot( offset, p ) * inverse;
+			if ( u < 0 || u > 1 )
+				return null;
+			var q = SVector3.Cross( offset, edge1 );
+			var v = SVector3.Dot( direction, q ) * inverse;
+			if ( v < 0 || u + v > 1 )
+				return null;
+			var t = SVector3.Dot( edge2, q ) * inverse;
+			return t > 0 ? t : null;
+		}
+
 		private void ClearStatic()
 		{
+			pylonPicks = Array.Empty<PylonPick>();
 			foreach ( var entity in entities )
 				entity.Delete();
 			entities.Clear();

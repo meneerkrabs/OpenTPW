@@ -57,9 +57,9 @@ public class ParkCommandLayerTests
 		new( "Ride upgrades", @"\.(TryBuyUpgrade|TryCancelUpgrade)\s*\(", nameof( BuyUpgradeCommand ) ),
 		new( "Level.RenamePark", Call( "RenamePark" ), nameof( RenameParkCommand ) ),
 		new( "Cheats", Call( "QueueCheat" ), nameof( QueueCheatCommand ) ),
-		// any receiver (a name, a call's or an index's result, null-forgiving or not) but the HUD's own panels (the locator, the camera and message slides) and a layout builder's track
+		// any receiver (a name, a call's or an index's result, null-forgiving or not) but the HUD's own panels (the locator, the camera, message and coaster slides) and a layout builder's track
 		// the co-op link's open and close (OnlineSession's Coop, a CoopLinkProbe's Link) are a socket's, not a ride's
-		new( "Ride open and close", @"([)\]]|\b(?!(Locator|LocatorSlide|CameraSlide|MessageSlide|Track|Coop|Link)\b)\w+)!?\??\.(Open|Close)\(\s*\)", nameof( SetAttractionOpenCommand ) ),
+		new( "Ride open and close", @"([)\]]|\b(?!(Locator|LocatorSlide|CameraSlide|MessageSlide|CoasterSlide|Track|Coop|Link)\b)\w+)!?\??\.(Open|Close)\(\s*\)", nameof( SetAttractionOpenCommand ) ),
 		new( "ParkEconomy.SetObjectOpen", Call( "SetObjectOpen" ), nameof( SetAttractionOpenCommand ) ),
 		new( "Ride window settings", Call( "ApplyRideWindow" ), nameof( SetRideSettingsCommand ) ),
 		new( "Ride setters", @"\.(SetSpeed|SetCapacity|SetDuration)\s*\(", nameof( SetRideSettingsCommand ) ),

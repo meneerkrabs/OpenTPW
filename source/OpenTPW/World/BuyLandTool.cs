@@ -55,11 +55,15 @@ public sealed class BuyLandTool
 	/// <summary>The last purchase or refusal, for the HUD's message.</summary>
 	public LandPurchaseCheck? LastResult { get; private set; }
 
+	/// <summary>Told of the gate post A when the tool starts: the original's select <c>0x5276D0</c> stores it in the track tool's globals in this mode (<see cref="Level"/>).</summary>
+	internal Action<(int X, int Y)>? PostSelected { get; set; }
+
 	/// <summary>Starts the tool (the buy window's Buy Land row); false when the park has no land model.</summary>
 	public bool Begin()
 	{
-		if ( cells()?.Land == null )
+		if ( cells()?.Land is not { } started )
 			return false;
+		PostSelected?.Invoke( started.PostA );
 		IsActive = true;
 		Corner = null;
 		HoverPost = null;

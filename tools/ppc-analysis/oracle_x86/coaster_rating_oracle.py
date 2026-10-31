@@ -1,4 +1,4 @@
-"""tp.exe's coaster rating pass run in the x86 oracle sandbox at the thread's x87 control word (docs/reverse/ORACLE.md, finding X44; COAST-032, COAST-014).
+"""tp.exe's coaster rating pass run in the x86 oracle sandbox at the thread's x87 control word (docs/reverse/ORACLE.md, finding X46; COAST-032, COAST-014).
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified tp.exe (OPENTPW_TPW_EXE, SHA-256 pinned) are needed, nothing here is shipped. The rating pass 0x43C450 runs
 on synthetic records the oracle lays out in the sandbox heap (a controller, a type record and a list of 56-byte samples), with the control word 0x7F the shipped D3DIM device leaves

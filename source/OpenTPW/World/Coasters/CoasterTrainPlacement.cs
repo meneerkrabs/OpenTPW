@@ -2,7 +2,7 @@ namespace OpenTPW;
 
 /// <summary>
 /// The train placement after a rating pass (tp.exe <c>0x43c1f0</c> and <c>0x43cbda..0x43cd47</c>) in the executable's operation order at the thread's 24-bit precision: every
-/// product, sum and quotient here is one single-precision operation. Pure arithmetic on arrays so the oracle golden can replay it (<c>CoasterPlacementGolden</c>, ORACLE X44).
+/// product, sum and quotient here is one single-precision operation. Pure arithmetic on arrays so the oracle golden can replay it (<c>CoasterPlacementGolden</c>, ORACLE X46).
 /// </summary>
 internal static class CoasterTrainPlacement
 {

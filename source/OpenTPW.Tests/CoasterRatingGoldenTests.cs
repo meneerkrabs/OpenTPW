@@ -11,7 +11,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The coaster's rating pass against tp.exe's own 0x43C450 (with its step 0x43DC50, final 0x43DF90 and the swing 0x43C76C) run in the x86 oracle at the thread's 24-bit control word
-/// (docs/reverse/ORACLE.md, X44; COAST-032, COAST-014): every row of <see cref="CoasterRatingGolden"/> is a synthetic type record and track, and the C# port must reproduce the oracle's bits.
+/// (docs/reverse/ORACLE.md, X46; COAST-032, COAST-014): every row of <see cref="CoasterRatingGolden"/> is a synthetic type record and track, and the C# port must reproduce the oracle's bits.
 /// </summary>
 [TestClass]
 public class CoasterRatingGoldenTests

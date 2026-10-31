@@ -725,7 +725,7 @@ public partial class Level : IDisposable
 		// the demolition keeps the NoModify flag of a MAP initial path cell in front of an entrance (tp.exe's cell byte +0x26 bit 8, 0x527EE0)
 		grid.Cells.InitialPathSource = ( x, y ) => park.Map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath );
 		BuyLandTool = grid.Cells.Land != null && !IsReadOnlyVisit
-			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, LandBarrier, command => Commands.Issue( command ) )
+			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, LandBarrier, command => Commands.Issue( command ) ) { PostSelected = NoteFenceSelection }
 			: null;
 		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null };
 		BindGuestThoughtPresentation( Guests );

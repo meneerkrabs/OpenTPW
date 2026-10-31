@@ -43,7 +43,7 @@ public class ParkCommandLayerTests
 		new( "Level.BacktrackAt", Call( "BacktrackAt" ), nameof( BacktrackCommand ) ),
 		new( "Level.Backtrack", Call( "Backtrack" ), nameof( BacktrackCommand ) ),
 		new( "ParkPathBuilder writes", @"\bPaths\??\.(BuildSegment|TryLayLine|Remove|RemoveFixed|RemoveOnce|Undo|Commit)\s*\(", nameof( LayLineCommand ) ),
-		new( "QueuePaths writes", @"\bQueuePaths\.(TryExtend|RemoveFrom|DetachFromPath|Connect)\s*\(", nameof( EditQueueCommand ) ),
+		new( "QueuePaths writes", @"\bQueuePaths\.(TryExtend|RemoveFrom|DetachFromPath|RunEditWalk|Connect)\s*\(", nameof( EditQueueCommand ) ),
 		// the park's settings (C1 part 2)
 		new( "ParkEconomy.OpenPark / ClosePark", @"\.(OpenPark|ClosePark)\s*\(", nameof( SetParkOpenCommand ) ),
 		new( "ParkEconomy.SetEntranceFee", Call( "SetEntranceFee" ), nameof( SetEntranceFeeCommand ) ),

@@ -281,7 +281,7 @@ public sealed class CoasterTrack
 	/// The turn angle at <paramref name="previous"/> between the directions to <paramref name="next"/> and to
 	/// <paramref name="before"/>: π means straight on. Every step a single, in tp.exe's order.
 	/// </summary>
-	// [BIN:TPW-EXE:0x434a2d turn angle] the cell differences as floats, the lengths la = sqrt(ax² + ay²) and lb the same for b, the dot product (ax / la) × (bx / lb) + (ay / la) × (by / lb) with every quotient, product and the sum a single (no fused step), clamped to [−1, 1] (0x434ad3..0x434b01), then the acos 0x67b4e0 (CoasterX87.Acos); compared with 1,488 isolated tp.exe runs (ORACLE X44)
+	// [BIN:TPW-EXE:0x434a2d turn angle] the cell differences as floats, the lengths la = sqrt(ax² + ay²) and lb the same for b, the dot product (ax / la) × (bx / lb) + (ay / la) × (by / lb) with every quotient, product and the sum a single (no fused step), clamped to [−1, 1] (0x434ad3..0x434b01), then the acos 0x67b4e0 (CoasterX87.Acos); compared with 1,488 isolated tp.exe runs (ORACLE X46)
 	public static float TurnAngle( (int X, int Y) next, (int X, int Y) previous, (int X, int Y) before )
 	{
 		float ax = next.X - previous.X, ay = next.Y - previous.Y;

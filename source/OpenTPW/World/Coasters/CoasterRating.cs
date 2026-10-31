@@ -82,7 +82,7 @@ public sealed class CoasterRating
 	/// One sample, in tp.exe's operation order at the thread's 24-bit precision: dS = |F|·GForceSickness + u·UpsideDownSickness, dE = max(((Speed·v) + (|F|·GForceExcitement + |bank|·BankExcitement))
 	/// − (XGForceUncomfortable·|Fx| + W), 0), S = dS + ½S, E = dE + ½E; the peaks follow. Returns the sample flags with bits 1, 2, 4 replaced by the screams (from index 3 on).
 	/// </summary>
-	// [BIN:TPW-EXE:0x43dc50 rating step] |F| = (|Fy| + |Fz|) + |Fx| (every term the difference to the previous force, which is 0), U = |bank| − π/2 when above 0 (0.0 otherwise, NaN included), u = (U ≠ 0 ? 1 : 0) + U; the inverted discomfort W = u × InvertedUncomfortable (×3 when Fy < 0) when u ≠ 0 and Fy < 0.1, otherwise u itself (0x43ddfb..0x43de1f: the PC adds u where the Mac added the stale Fz); every product and sum a single, no fused multiply-add (ORACLE X11, X44)
+	// [BIN:TPW-EXE:0x43dc50 rating step] |F| = (|Fy| + |Fz|) + |Fx| (every term the difference to the previous force, which is 0), U = |bank| − π/2 when above 0 (0.0 otherwise, NaN included), u = (U ≠ 0 ? 1 : 0) + U; the inverted discomfort W = u × InvertedUncomfortable (×3 when Fy < 0) when u ≠ 0 and Fy < 0.1, otherwise u itself (0x43ddfb..0x43de1f: the PC adds u where the Mac added the stale Fz); every product and sum a single, no fused multiply-add (ORACLE X11, X46)
 	public CoasterSampleFlags Step( int index, float speed, float bank, SVector3 force, CoasterSampleFlags flags = CoasterSampleFlags.None )
 	{
 		var d = Factors;

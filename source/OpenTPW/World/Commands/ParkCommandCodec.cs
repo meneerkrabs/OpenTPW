@@ -17,7 +17,7 @@ public static class ParkCommandCodec
 	/// cancellation that names its purchase too (C4b-2), and [EXT:online-coop-undo] <see cref="StrokeVersion"/> for a pool stroke's first command in a shared park (C5-2) and
 	/// <see cref="TrackToolVersion"/> for a track line that keeps its tool in a shared park (C5-3), so every command an older build wrote keeps its bytes.
 	/// </summary>
-	public const int Version = 6;
+	public const int Version = 7;
 	/// <summary>The native queue kinds' generation (<see cref="QueueSegmentCommand"/>, <see cref="UndoQueueSegmentCommand"/>).</summary>
 	public const int QueueVersion = 2;
 	/// <summary>
@@ -41,11 +41,17 @@ public static class ParkCommandCodec
 	/// the kind's own; the generation alone says it, so a line without the flag, single player's always, keeps its version-1 bytes.
 	/// </summary>
 	public const int TrackToolVersion = 6;
+	/// <summary>
+	/// The generation of a demolishing or selling command that carries the issuer's track tool globals (<see cref="IToolTiled"/>, <see cref="ToolTiles"/>): its fields are the kind's own and the four tile
+	/// words follow. A command without them (an older build's) keeps its version-1 bytes.
+	/// </summary>
+	public const int ToolTilesVersion = 7;
+	private static bool IsToolTiledKind( ParkCommandKind kind ) => kind is ParkCommandKind.RemoveAt or ParkCommandKind.RemoveObjectAt or ParkCommandKind.ClearArea or ParkCommandKind.RemoveAttraction or ParkCommandKind.PickUpObject;
 	internal static bool IsNativeQueue( ParkCommand command ) => command is QueueSegmentCommand or UndoQueueSegmentCommand;
 	/// <summary>The generation <paramref name="command"/> is written in.</summary>
 	internal static int VersionOf( ParkCommand command ) => IsNativeQueue( command ) ? QueueVersion : command is CancelUpgradeCommand { ExpectedPurchase: not null } ? PurchaseVersion
 		: command is IStaleChecked { HasExpectation: true } ? ExpectationVersion : command is IPoolStrokeCommand { First: true } ? StrokeVersion
-		: command is LayTrackLineCommand { KeepsTool: true } ? TrackToolVersion : 1;
+		: command is LayTrackLineCommand { KeepsTool: true } ? TrackToolVersion : command is IToolTiled { Tiles: not null } ? ToolTilesVersion : 1;
 	private static bool IsStrokeKind( ParkCommandKind kind ) => kind is ParkCommandKind.PaintPoolCell or ParkCommandKind.ErasePoolCell or ParkCommandKind.PoolCells;
 	private static bool IsStaleCheckedKind( ParkCommandKind kind ) => kind is ParkCommandKind.BuyUpgrade or ParkCommandKind.CancelUpgrade or ParkCommandKind.MoveResearch;
 	/// <summary>The bound of a cell coordinate a command may carry (the largest park map is far smaller).</summary>
@@ -102,7 +108,7 @@ public static class ParkCommandCodec
 			throw new InvalidDataException( $"A command of {bytes.Length} bytes is longer than {MaximumBytes}." );
 		var reader = new ParkCommandReader( bytes.ToArray() );
 		var version = reader.Int();
-		if ( version is not (1 or QueueVersion or ExpectationVersion or PurchaseVersion or StrokeVersion or TrackToolVersion) )
+		if ( version is not (1 or QueueVersion or ExpectationVersion or PurchaseVersion or StrokeVersion or TrackToolVersion or ToolTilesVersion) )
 			throw new InvalidDataException( $"Park command version {version} is none of 1 to {Version}." );
 		var kind = (ParkCommandKind)reader.Byte();
 		if ( version == 1 && kind is ParkCommandKind.QueueSegment or ParkCommandKind.UndoQueueSegment )
@@ -121,6 +127,9 @@ public static class ParkCommandCodec
 		// [EXT:online-coop-undo] version 6 is a track line that keeps its tool in a shared park (C5-3)
 		if ( version == TrackToolVersion && kind != ParkCommandKind.LayTrackLine )
 			throw new InvalidDataException( $"A {kind} command has no version {TrackToolVersion} form." );
+		// version 7 is a demolishing or selling command with the issuer's track tool globals
+		if ( version == ToolTilesVersion && !IsToolTiledKind( kind ) )
+			throw new InvalidDataException( $"A {kind} command has no version {ToolTilesVersion} form." );
 		reader.Version = version;
 		var player = reader.Int();
 		if ( player < 0 )
@@ -128,11 +137,11 @@ public static class ParkCommandCodec
 		ParkCommand command = kind switch
 		{
 			ParkCommandKind.PlaceObject => new PlaceObjectCommand( reader.String(), reader.Int(), reader.Int(), reader.Int(), reader.Bool(), reader.Int() ),
-			ParkCommandKind.RemoveAt => new RemoveAtCommand( reader.Int(), reader.Int() ),
-			ParkCommandKind.RemoveObjectAt => new RemoveObjectAtCommand( reader.Int(), reader.Int() ),
-			ParkCommandKind.ClearArea => new ClearAreaCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
-			ParkCommandKind.RemoveAttraction => new RemoveAttractionCommand( reader.Int() ),
-			ParkCommandKind.PickUpObject => new PickUpObjectCommand( reader.Int() ),
+			ParkCommandKind.RemoveAt => new RemoveAtCommand( reader.Int(), reader.Int(), reader.Tiles() ),
+			ParkCommandKind.RemoveObjectAt => new RemoveObjectAtCommand( reader.Int(), reader.Int(), reader.Tiles() ),
+			ParkCommandKind.ClearArea => new ClearAreaCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Tiles() ),
+			ParkCommandKind.RemoveAttraction => new RemoveAttractionCommand( reader.Int(), reader.Tiles() ),
+			ParkCommandKind.PickUpObject => new PickUpObjectCommand( reader.Int(), reader.Tiles() ),
 			ParkCommandKind.EndMove => new EndMoveCommand(),
 			ParkCommandKind.QueueSegment => new QueueSegmentCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
 			ParkCommandKind.UndoQueueSegment => new UndoQueueSegmentCommand( reader.Int(), reader.Int(), reader.Int(), reader.Int(), reader.Int() ),
@@ -249,6 +258,9 @@ public sealed class ParkCommandReader
 
 	/// <summary>[EXT:online-coop-commands] Whether the command being read is a cancellation that names the purchase too (C4b-2).</summary>
 	internal bool HasPurchase => Version == ParkCommandCodec.PurchaseVersion;
+
+	/// <summary>The issuer's track tool globals a demolishing or selling command of <see cref="ParkCommandCodec.ToolTilesVersion"/> carries, else null.</summary>
+	internal ToolTiles? Tiles() => Version == ParkCommandCodec.ToolTilesVersion ? ToolTiles.Read( this ) : null;
 
 	public bool AtEnd => position == bytes.Length;
 	public int Remaining => bytes.Length - position;

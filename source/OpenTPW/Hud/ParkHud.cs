@@ -753,6 +753,8 @@ public sealed partial class ParkHud
 	/// </summary>
 	private void SellAttraction( int attraction )
 	{
+		// the sell button's select (0x48CD95) writes the track tool's globals, which the command then carries
+		level.NoteToolSelection( level.ResolveCommandObject( attraction ) );
 		if ( level.Commands.Issue( new RemoveAttractionCommand( attraction ) ).Request is { } request )
 			level.WaitSale( attraction, request );
 	}
@@ -1393,7 +1395,11 @@ public sealed partial class ParkHud
 			// [BIN:TPW-EXE:0x487b0b object copy] Ctrl at the click arms a copy of the object instead of opening its window (CopyObject); the chat mode has no object window
 			// a click on a track add-on opens its ride's window (Level.WindowTarget); the chat mode has no object window
 			if ( !ChatMode && !(clicked != null && (Input.ModifierMaskDown & 0xC) != 0 && CopyObject( clicked )) )
+			{
+				// the park view's click selects the object it hit (0x4879D0), which writes the track tool's globals
+				level.NoteToolSelection( clicked );
 				SelectObject( level.WindowTarget( clicked ) );
+			}
 		}
 		// [EXT:online-avatar-click] in a visit with other players a click on the ground walks the player's figure there (manual p. 68: "Left click to walk to destination"): in the
 		// chat mode wherever it lands but on a rideable ride, which it rides (ChatModeRide), as the original's chat mode panel does (0x4BD4A0, help 401), and in the HUD where it

@@ -369,6 +369,8 @@ public partial class Level
 			NoteWaitingClick();
 			return false;
 		}
+		// the pick-up's select (0x48CFCF) writes the track tool's globals before the demolition
+		NoteToolSelection( item );
 		// a Move tool still carrying ends first, so the end does not take the new pick-up's type
 		if ( IsMoving )
 			BuildEntry = null;

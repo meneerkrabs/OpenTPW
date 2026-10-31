@@ -583,7 +583,7 @@ public class CoasterTests
 
 	/// <summary>
 	/// Five steps through decay, g-force, banking, an inversion with negative vertical force and both screams; expected bits from tp.exe's own step 0x43dc50 and final 0x43df90 run in the
-	/// x86 oracle at the thread's 24-bit control word (ORACLE.md X44; the Mac routine of F7 differs in its fallback term and fuses its decay).
+	/// x86 oracle at the thread's 24-bit control word (ORACLE.md X46; the Mac routine of F7 differs in its fallback term and fuses its decay).
 	/// </summary>
 	[TestMethod]
 	public void RatingStepAndFinalMatchTheWitnessInSinglePrecision()

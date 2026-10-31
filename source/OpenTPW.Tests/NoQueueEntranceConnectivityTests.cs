@@ -53,35 +53,62 @@ public class NoQueueEntranceConnectivityTests
 		Assert.IsFalse( w.Gate.MayOpen( w.Runtime ) );
 	}
 
+	// [BIN:TPW-EXE:0x004DE4FC no-queue entrance] a typed world's answer is the cells': the owner word, the entrance cell's type, the queue front and its direction are not read
 	[DataTestMethod]
 	[DataRow( "no-owner" )]
 	[DataRow( "wrong-owner" )]
-	[DataRow( "untyped" )]
 	[DataRow( "no-front" )]
 	[DataRow( "direction-negative" )]
 	[DataRow( "direction-large" )]
-	[DataRow( "rotation" )]
 	[DataRow( "orientation" )]
 	[DataRow( "outside-bounds" )]
 	[DataRow( "stand-bounds" )]
-	[DataRow( "tpi" )]
-	public void UnsupportedGeometryKeepsTheExistingPermissivePolicy( string kind )
+	public void ATypedWorldReadsOnlyTheCellsTheOriginalReads( string kind )
 	{
 		using var w = new Fixture();
 		var ride = w.Runtime.Visitors;
 		var cells = w.Guests.Grid.Cells;
-		cells.SetLinks( w.Outside.X, w.Outside.Y, 0 );
-		Assert.IsFalse( w.Gate.MayOpen( w.Runtime ) );
+		Assert.IsTrue( w.Gate.MayOpen( w.Runtime ) );
 		if ( kind == "no-owner" ) ride.OwnerWord = 0;
 		if ( kind == "wrong-owner" ) cells.SetOwner( w.Stand.X, w.Stand.Y, (ushort)(ride.OwnerWord + 1) );
-		if ( kind == "untyped" ) cells.SetType( w.Stand.X, w.Stand.Y, ParkCellType.Empty );
 		if ( kind == "no-front" ) ride.QueueFrontCell = null;
 		if ( kind == "direction-negative" ) ride.QueueEntranceDirection = -1;
 		if ( kind == "direction-large" ) ride.QueueEntranceDirection = 4;
-		if ( kind == "rotation" ) ride.Rotation = 45;
 		if ( kind == "orientation" ) ride.QueueEntranceDirection = 0;
 		if ( kind == "outside-bounds" ) ride.QueueFrontCell = (-1, -1);
 		if ( kind == "stand-bounds" ) ride.QueueFrontCell = (0, w.Guests.Grid.CountY - 1);
+		Assert.IsTrue( w.Gate.MayOpen( w.Runtime ), "the answer still holds: the links decide, nothing the bridge adapted" );
+		cells.SetLinks( w.Outside.X, w.Outside.Y, 0 );
+		Assert.IsFalse( w.Gate.MayOpen( w.Runtime ), "and a missing link is unconnected whatever the bridge adapted" );
+	}
+
+	[TestMethod]
+	public void AnEntranceCellOfAnotherTypeIsTestedOnItsLinksAlone()
+	{
+		// [BIN:TPW-EXE:0x004DE57F entrance links] only the entrance cell's link byte is read, not its type
+		using var w = new Fixture();
+		var links = w.Guests.Grid.Cells.LinksAt( w.Stand.X, w.Stand.Y );
+		w.Guests.Grid.Cells.SetType( w.Stand.X, w.Stand.Y, ParkCellType.Empty );
+		w.Guests.Grid.Cells.SetLinks( w.Stand.X, w.Stand.Y, links );
+		Assert.IsTrue( w.Gate.MayOpen( w.Runtime ) );
+		w.Guests.Grid.Cells.SetLinks( w.Stand.X, w.Stand.Y, 0 );
+		Assert.IsFalse( w.Gate.MayOpen( w.Runtime ) );
+	}
+
+	[DataTestMethod]
+	[DataRow( "untyped" )]
+	[DataRow( "rotation" )]
+	[DataRow( "tpi" )]
+	public void UntypedUndefinedAndThemeParkIncGeometryKeepThePermissivePolicy( string kind )
+	{
+		using var w = new Fixture( untyped: kind == "untyped" );
+		var ride = w.Runtime.Visitors;
+		var cells = w.Guests.Grid.Cells;
+		cells.SetLinks( w.Outside.X, w.Outside.Y, 0 );
+		Assert.AreEqual( kind == "untyped", w.Runtime.Visitors.AccessCell == null );
+		if ( kind != "untyped" )
+			Assert.IsFalse( w.Gate.MayOpen( w.Runtime ) );
+		if ( kind == "rotation" ) ride.Rotation = 45;
 		if ( kind == "tpi" ) GameEditions.Select( GameEdition.ThemeParkInc );
 		Assert.IsTrue( w.Gate.MayOpen( w.Runtime ) );
 	}
@@ -130,7 +157,7 @@ public class NoQueueEntranceConnectivityTests
 		public ParkGate Gate { get; }
 		public (int X, int Y) Outside { get; }
 		public (int X, int Y) Stand { get; }
-		public Fixture( int rotation = 0, bool hasQueue = false )
+		public Fixture( int rotation = 0, bool hasQueue = false, bool untyped = false )
 		{
 			Directory.CreateDirectory( root );
 			var bytes = Md2ModelFileTests.CreateGeometry();
@@ -151,7 +178,7 @@ public class NoQueueEntranceConnectivityTests
 			cells.WriteFootprint( ObjectFootprint.GetCells( shape, 6, 6, rotation ), owner, rotation );
 			ObjectAccessCells.Lay( cells, access, owner, hasQueue );
 			Guests = new GuestSimulation( new GuestPathGrid( cells ), GuestTests.CreateSettings(), 1 ) { ArrivalsEnabled = false };
-			Assert.IsTrue( Level.RegisterWithGuests( Runtime, access, Guests, rotation, owner ) );
+			Assert.IsTrue( Level.RegisterWithGuests( Runtime, access, Guests, rotation, owner, ownExitCell: !untyped ) );
 			Gate = new ParkGate( Economy, () => null, () => new[] { Runtime }, Guests );
 		}
 		public void Dispose() { Runtime.Stop(); Directory.Delete( root, true ); }

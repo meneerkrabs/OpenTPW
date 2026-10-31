@@ -285,7 +285,7 @@ public class CoasterCollisionTests
 
 
 	/// <summary>
-	/// The descriptor-equality skips of the link test (tp.exe 0x439c5f..0x439c81, ORACLE X44): the oracle's four-node scenario of two crossing links (A to B along +x, C to D along +z, one
+	/// The descriptor-equality skips of the link test (tp.exe 0x439c5f..0x439c81, ORACLE X46): the oracle's four-node scenario of two crossing links (A to B along +x, C to D along +z, one
 	/// unit radius profile) is a hit with four distinct cell descriptors and a miss when B shares C's descriptor or A shares D's.
 	/// </summary>
 	[TestMethod]

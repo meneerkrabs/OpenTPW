@@ -241,7 +241,7 @@ public partial class Level
 			};
 		}
 		// A placement over path cells clears them (ParkObjects.ClearPath): guests standing there step off
-		Objects.ObjectPlaced += item => Guests?.SetDownOffCells( item.Cells.Select( cell => (cell.X, cell.Y) ).ToHashSet() );
+		// [BIN:TPW-EXE:0x00528A70 placement leaves people alone] the placement commit writes the footprint cells and clears the paths under them (0x5367A0) but holds no code that finds or moves a person (its calls are the cell ops 0x532FC0, 0x5348D0, 0x53A510, the owner and link writers, the creation 0x529E10 and the sound 0x51BFC0); a guest on a cell that becomes an object's (type 4) keeps walking by the edge test, which lets a walker out of a type 4 cell over a path (0x4D8806) or another type 4 cell (0x4D883E) and over any cell the walk's later tests open, and its own route search starts from that cell, so nothing sets it down
 		foreach ( var item in Objects.Objects )
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;

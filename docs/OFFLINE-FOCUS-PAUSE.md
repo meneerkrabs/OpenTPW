@@ -35,8 +35,8 @@ The pause itself matches `0x46B74C`. What `[EXT:offline-focus-pause]` still
 covers is host plumbing: focus sampled per frame, offscreen runs and an initial
 lack of focus not counting as deactivation, and the stopped state shown through
 the speed buttons with the chosen speed stored. The mixer's suspension on
-deactivation (`0x51BCF0`) and the advisor's speech pause are the sound side of
-UI-096 and are not ported. The focus latch does not become explicit user
+deactivation (`0x51BCF0`) is ported with the rest of the pause's sound side
+(`GamePauseSound`, docs/AUDIO.md "Pause sound"; UI-096 retired). The focus latch does not become explicit user
 challenge-message timer suspension, and it does not change the separate
 `Hud.Paused` predicate. The advisor receives the existing simulation-paused input.
 

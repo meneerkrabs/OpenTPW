@@ -311,6 +311,8 @@ public static class GameAudio
 			return;
 		LeaveLobby();
 		LeavePark();
+		// [BIN:TPW-EXE:0x415254 level start] the level start clears the sound entry's paused word
+		GamePauseSound.LevelStart();
 		SoundCadence.Reset();
 		if ( seed is uint value )
 			events!.Reseed( value );
@@ -401,6 +403,8 @@ public static class GameAudio
 	public static void LeavePark()
 	{
 		// [BIN:TPW-EXE:0x5C8650 park exit] state 12 of the park state machine 0x54E360 writes the profile (0x5AFC60 -> 0x5AFF50 -> 0x423E90), which ends in the options applier 0x423DD0
+		// [BIN:TPW-EXE:0x54e67b front end entry] the first frame of the front end resumes the game pause (0x409300): a pause menu's pause, the advisor's paused speech and the raised listener end with the park
+		GamePauseSound.Resume();
 		EndSavedVolumes();
 		events?.HeldSounds.StopAll();
 		// the park's scripts are destroyed with it, and each writes the duck request 0 (tp.exe 0x558513); the reverb returns to the default at the next frame outside a ride
@@ -1129,12 +1133,13 @@ public static class GameAudio
 	/// engine's coordinates (X/Y ground, Z up) and moved into the original's sound units (five sound units per
 	/// engine unit at model scale 0.2), undoing the heightfield's centering for imported parks.
 	/// </summary>
+	// [BIN:TPW-EXE:0x51c1d0 paused listener] while the game pause's word is set (GamePauseSound) the place's height is 10000 (0x51C1E9-0x51C1F9), which the park loop's call 0x54f958 / 0x54f9e4 and the front end's 0x54e70e both go through
 	// [BIN:TPW-EXE:0x54f8f6 listener] the park loop sets the listener through 0x51c1d0: when the camera-mode byte 0x790ab0 has bits 0x16 the listener is the camera position (0x7909c0..c8); otherwise it is pos - (pos - target) * 0.5 (0x700f88) with the target at 0x790ab8..c0; the orientation vectors are 0x7909a0.. and 0x7909b0..
 	public static void UpdateListener( System.Numerics.Vector3 ear, System.Numerics.Vector3 forward, ModelHeightfield? heightfield = null, System.Numerics.Vector3? up = null )
 	{
 		const float soundUnitsPerEngineUnit = 1f / OriginalParkPlacement.ModelScale;
 		var origin = heightfield == null ? System.Numerics.Vector2.Zero : OriginalParkPlacement.GetOrigin( heightfield );
-		var place = new Vector3( (ear.X + origin.X) * soundUnitsPerEngineUnit, ear.Z * soundUnitsPerEngineUnit, (ear.Y + origin.Y) * soundUnitsPerEngineUnit );
+		var place = GamePauseSound.ListenerPlace( new Vector3( (ear.X + origin.X) * soundUnitsPerEngineUnit, ear.Z * soundUnitsPerEngineUnit, (ear.Y + origin.Y) * soundUnitsPerEngineUnit ), events != null );
 		// the engine's (X, Y ground, Z up) becomes the sound space (x, y up, z ground), as for positions; with the camera's up vector the listener keeps its pitch (AudioListener.Update)
 		if ( up is { } upward )
 			AudioListener.Update( place, new Vector3( forward.X, forward.Z, forward.Y ), new Vector3( upward.X, upward.Z, upward.Y ) );
@@ -1144,7 +1149,7 @@ public static class GameAudio
 
 	/// <summary>The listener of the frames without a park: (0, 0, -50) facing +z with y up, sent every frame like the park's.</summary>
 	// [BIN:TPW-EXE:0x54e70e lobby listener] the main loop's frames without a level call 0x51c1d0 with the place (0, 0, -50), the front (0, 0, 1) and the up (0, 1, 0) (0x54e6f3-0x54e70e); the first of them gives the listener its velocity (the place minus the origin, or minus the park's last place), and nothing sends another while the place stays
-	public static void UpdateLobbyListener() => AudioListener.Update( new Vector3( 0, 0, -50 ), new Vector3( 0, 0, 1 ), new Vector3( 0, 1, 0 ) );
+	public static void UpdateLobbyListener() => AudioListener.Update( GamePauseSound.ListenerPlace( new Vector3( 0, 0, -50 ), events != null ), new Vector3( 0, 0, 1 ), new Vector3( 0, 1, 0 ) );
 
 	/// <summary>
 	/// The listener's place for a camera: the eye in the camera modes whose byte <c>0x790ab0</c> has bits 0x16 (OpenTPW's free-walk camera), otherwise the midpoint of

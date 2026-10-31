@@ -70,6 +70,12 @@ public sealed class AudioVoice
 	// [BIN:TPW-EXE:0x6bc51d flat placement] the sample start 0x6bc410 takes its flat branch for a voice with voice flag 8 (set from the event's 0x200 by 0x6bbe90): the raw dwords (0, 1, 0) become the placeholder's position (0x6bb220), the request gets no distance mapping and no flag 0x20 (0x6bc52d-0x6bc52f, 0x6bc612-0x6bc61e), so 0x6b7fd6 reaches the placement adapter 0x6d2640 with its flag clear and that adapter calls QSWaveMixSetPosition (0x6d2709 skipped, 0x6d270b-0x6d272b) rather than SetSourcePosition
 	// [BIN:QMIXER-DLL:0x18007abd SetPosition polar] the message (code 6, 0x18003e40 -> 0x18001520) reads three integers (azimuth in degrees, range, elevation) and hands the channel the floats (azimuth, range x 3.0 / 32767, elevation), the 3.0 being the room size the engine starts with (0x180086ef) and tp.exe never changes (no QSWaveMixSetRoomSize import), 0x18007b0b stores them and 0x18009dc0 takes its polar branch (the channel's flag +0x128, set by default at 0x18006e73): azimuth 0, elevation 0, distance 9.2e-5, which is inside the default minimum distance 1.0 (0x180310f0 +0x40; tp.exe's own mapping never applies to a flat voice, its minimum is 2.0) so the distance gain is 1 (0x1800a0cf-0x1800a12f) and the azimuth 0 gives SetPan(0): both channels at the voice's own gain
 	public bool PlacedFlat { get; internal set; }
+	/// <summary>
+	/// True while the voice's channel is paused (the library's pause-handle message, <see cref="GamePauseSound"/>): the mixer leaves it out of the mix and its place in the sample stands still,
+	/// so a resume carries on where it stopped. <see cref="AudioMixer.Resume"/> clears it on every voice.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6b8a10 pause handle] the record 0x70a5b8 (execute 0x6b8df0) reaches QSWaveMixPauseChannel (0x6d2500, flag 0) for the one channel of the handle; the resume record 0x70a5c0 (0x6b8e60) restarts it (0x6d2540), so the sample goes on from its place
+	public bool Paused { get; internal set; }
 	/// <summary>True when the sample wraps to its start and the voice lives on until stopped (an event flagged 0x8 loops its sample).</summary>
 	public bool Loops { get; internal set; }
 	public event Action<AudioVoice>? Completed;
@@ -275,6 +281,31 @@ public sealed class AudioMixer : IDisposable
 
 	public IReadOnlyList<AudioVoice> Voices => voices;
 
+	private bool paused;
+
+	/// <summary>True while the whole mixer is paused (every channel of the session): nothing is mixed, so no voice moves and the output carries silence.</summary>
+	public bool Paused => paused;
+
+	/// <summary>
+	/// Pauses every channel of the sound system, as the application's deactivation does ([EXT:offline-focus-pause] for the host plumbing; <see cref="GamePauseSound"/>).
+	/// The output queue keeps what was mixed ahead (at most <see cref="TargetQueuedFrames"/>), which the device still plays before the silence.
+	/// </summary>
+	// [BIN:TPW-EXE:0x51bcf0 mixer pause] the message record 0x700b64 (execute 0x6b5640) sends the driver the pause record 0x70a268 (execute 0x6b8e40), which calls the driver's slot +0x38 (0x6d25a0): QSWaveMixPauseChannel(session, 0, flag 1)
+	// [BIN:QMIXER-DLL:0x18003490 pause all] with the flag's bit 0 set the function walks every channel of the session (0x18009080 by index) and pauses each (0x18007380)
+	public void Pause() => paused = true;
+
+	/// <summary>
+	/// Restarts every channel: the mixing goes on, and a voice paused on its own (<see cref="AudioVoice.Paused"/>) goes on with it, since the restart reaches every channel of the session.
+	/// </summary>
+	// [BIN:TPW-EXE:0x51bd30 mixer resume] the record 0x700b68 (execute 0x6b5670) sends the resume record 0x70a270 (0x6b8eb0, driver slot +0x3c = 0x6d25c0): QSWaveMixRestartChannel(session, 0, flag 1)
+	// [BIN:QMIXER-DLL:0x18003710 restart all] the same walk over every channel with 0x180073a0, whether or not it was paused
+	public void Resume()
+	{
+		paused = false;
+		foreach ( var voice in voices )
+			voice.Paused = false;
+	}
+
 	/// <summary>
 	/// The reverb of the held <c>SndReverb.map</c> preset (OpenTPW's own stand-in, the audio-reverb extension): the positioned voices of the effects channel are sent through it and its return is added to the mix; flat voices, speech and music stay dry.
 	/// </summary>
@@ -364,7 +395,8 @@ public sealed class AudioMixer : IDisposable
 		var speaking = voices.Any( voice => voice.Channel == AudioChannel.Speech && voice.HasOutput ) && channelGains[(int)AudioChannel.Speech] > 0;
 		GroupsChanged?.Invoke();
 		mixing = true;
-		var reverbOn = Reverb.Active;
+		// a paused mixer leaves the reverb's tail where it is (its buffers are paused with everything else)
+		var reverbOn = Reverb.Active && !paused;
 		if ( reverbOn )
 		{
 			if ( reverbSend.Length < frames * 2 )
@@ -378,6 +410,13 @@ public sealed class AudioMixer : IDisposable
 			var voice = voices[index];
 			if ( !voice.HasOutput )
 				continue;
+			// [BIN:TPW-EXE:0x51bcf0 mixer pause] [BIN:TPW-EXE:0x6b8a10 pause handle] a paused voice, or any voice while the mixer is paused, is not mixed: its sample stands still and the time the listener has heard of it (PlayedSeconds) does not grow, so the start frame moves by the paused frames
+			if ( paused || voice.Paused )
+			{
+				if ( voice.StartOutputFrame >= 0 )
+					voice.StartOutputFrame += frames;
+				continue;
+			}
 			var offset = Math.Min( voice.BufferOffset, frames );
 			voice.BufferOffset = 0;
 			if ( voice.StartOutputFrame < 0 )

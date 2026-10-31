@@ -86,4 +86,65 @@ public class TrackBridgeWalkGoldenTests
 		Assert.IsTrue( count >= 500, $"the golden holds {count} cases" );
 		Assert.AreEqual( 0, failures.Count, string.Join( Environment.NewLine, failures.Take( 12 ) ) );
 	}
+
+	private sealed class Grid : IParkGrid
+	{
+		public int Width => 128;
+		public int Height => 128;
+		public System.Numerics.Vector2 Origin => default;
+		public float GetCellHeight( int x, int y ) => 0;
+		public OriginalPlacementResult CheckTerrain( int x, int y ) => OriginalPlacementResult.Allowed;
+	}
+
+	/// <summary>The oracle's track tool lines (the click handler's op list through 0x53AAC0) over paths: the cell types and the records after, replayed on <see cref="TrackLineWriter"/>.</summary>
+	[TestMethod]
+	public void LinesClearThePathsUnderTheirLastTileAndBridgeTheRestAsTheExecutableDoes()
+	{
+		var lines = TrackBridgeWalkGolden.Lines;
+		var count = 0;
+		var failures = new List<string>();
+		for ( var at = 0; at < lines.Length; at++ )
+		{
+			if ( !lines[at].StartsWith( "line ", StringComparison.Ordinal ) )
+				continue;
+			count++;
+			var parts = lines[at].Split( '|' );
+			var anchor = parts[1].Split( ' ' ).Select( int.Parse ).ToArray();
+			var start = parts[2].Split( ' ' ).Select( int.Parse ).ToArray();
+			var end = parts[3].Split( ' ' ).Select( int.Parse ).ToArray();
+			var cells = new List<(int X, int Y, int Before, int After)>();
+			var tiles = new List<(int X, int Y, int[] Record)>();
+			for ( var next = at + 1; next < lines.Length && !lines[next].StartsWith( "line ", StringComparison.Ordinal ); next++ )
+			{
+				var item = lines[next].Split( '|' );
+				var where = item[0].Split( ' ' ).Skip( 1 ).Select( int.Parse ).ToArray();
+				if ( lines[next].StartsWith( "cell ", StringComparison.Ordinal ) )
+					cells.Add( (where[0], where[1], int.Parse( item[1] ), int.Parse( item[2] )) );
+				else if ( lines[next].StartsWith( "tile ", StringComparison.Ordinal ) )
+					tiles.Add( (where[0], where[1], item[1].Split( ' ' ).Select( int.Parse ).ToArray()) );
+			}
+			var map = new ParkCellMap( 128, 128 );
+			var builder = new TrackBuilder( map, TrackFamily.Kart, () => null, new Grid() );
+			var station = TrackStation.FromPlacement( anchor[0], anchor[1], 0 );
+			builder.PlaceStation( station );
+			builder.PlaceInitialStation( station );
+			var owner = builder.OwnerOf( station );
+			foreach ( var (x, y, before, _) in cells.Where( c => c.Before != 0 ) )
+				map.SetType( x, y, (byte)before );
+			var result = new TrackLineWriter( builder, null, owner ).Commit( (start[0], start[1]), (end[0], end[1]) );
+			if ( !result.Completed )
+				failures.Add( $"{parts[0]}: the line stopped ({result.StoppedBy})" );
+			foreach ( var (x, y, _, after) in cells )
+				if ( map.PrimaryTypeAt( x, y ) != after )
+					failures.Add( $"{parts[0]}: cell {x},{y} is {map.PrimaryTypeAt( x, y )}, expected {after}" );
+			foreach ( var (x, y, record) in tiles )
+			{
+				var tile = map.Tracks.Get( x, y );
+				if ( tile.Type != record[0] || tile.Flags != record[3] )
+					failures.Add( $"{parts[0]}: tile {x},{y} is kind {tile.Type} flags {tile.Flags}, expected {record[0]} and {record[3]}" );
+			}
+		}
+		Assert.IsTrue( count >= 100, $"the golden holds {count} lines" );
+		Assert.AreEqual( 0, failures.Count, string.Join( Environment.NewLine, failures.Take( 12 ) ) );
+	}
 }

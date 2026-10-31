@@ -11,6 +11,7 @@ public static class TrackBridges
 	private readonly record struct Record( byte Kind, byte Arms, ushort Flags, int Word );
 
 	/// <summary>The walk's step bound, in map sizes: a walk that circles on a track that never reaches its station ends (the executable never does, it hangs).</summary>
+	// [APPROX:TRACK-010] the bound stops a walk where tp.exe would hang
 	private const int StepFactor = 2;
 
 	// [BIN:TPW-EXE:0x0053AD20 bridge nibble] the flag word's low four bits: the bridge state of a tile (1 bridge, 2 bridged ahead, 4 bridged both ways, 8 bridged behind)

@@ -152,7 +152,7 @@ public sealed class TrackBuilder
 	/// result (<see cref="CellBuildResult.Ok"/> when written). The cells' own types stay as they are: a path under the tile stays, except that the last tile of a line removes the paths under it when its four
 	/// cells hold nothing but paths and empty ground (<see cref="PlaceTileInLine"/>).
 	/// </summary>
-	// [BIN:TPW-EXE:0x10088CB8 track tile write] a tile over four path or empty cells clears the paths and writes the origin and three type-12 extension cells (the origin recorded in +0x10)
+	// [BIN:STP-PPC:0x10088CB8 track tile write] a tile over four path or empty cells clears the paths and writes the origin and three type-12 extension cells (the origin recorded in +0x10) (the Mac's; the PC clears only on a line's last step, 0x5390C0)
 	public CellBuildResult PlaceTile( int x, int y, int owner = 0 )
 	{
 		var result = PlaceTileInLine( x, y, owner, last: true );
@@ -216,8 +216,8 @@ public sealed class TrackBuilder
 	}
 
 	/// <summary>
-	/// OpenTPW's own memory of a bridge before round 11 (the paths under a tile were removed when it was laid): no longer written, and not read; a save made before keeps the bit, and its tile's bridge
-	/// state is cleared by the next bridge op, which finds no path under it.
+	/// A stray bit from saves made before round 11, when OpenTPW remembered here the paths it had cleared under a tile: no longer written, and the bridge ops ignore it (the fence keeps its own use of the bit,
+	/// <see cref="ParkFence"/>). The next bridge op on such a tile assigns its whole flag word.
 	/// </summary>
 	public const byte FlagOverPath = 0x20;
 

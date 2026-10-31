@@ -23,7 +23,7 @@ public static class WalkEdges
 	/// Whether the target cell's structure record of a track kind stops the step (<c>0x4D89C3..0x4D8A16</c>): a record of a track kind (<c>0x5363F0</c>: a kart or water tile or station, a fence post, an extension through its
 	/// parent) blocks unless the flag nibble of the record it reads (the parent's for an extension) is set. A record of no kind, an extension with no parent word and a cell without a record go on.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004D89C3 target record] 0x5363F0 on the target (kinds 0xB, 0xD, 0x10, 0x12 and 0x19; 0xC and 0x11 through the parent word +0x10, none when it is 0), then the flag nibble of the record 0x4D89E4..0x4D8A0F takes (0x53AD20: +0xE & 0xF); kind 0x11 has no writer in tp.exe (every caller of the type op 0x538FC0 passes 0xC, a tool's type or 0), so no record holds it
+	// [BIN:TPW-EXE:0x004D89C3 target record] 0x5363F0 on the target (kinds 0xB, 0xD, 0x10, 0x12 and 0x19; 0xC and 0x11 through the parent word +0x10, none when it is 0), then the flag nibble of the record 0x4D89E4..0x4D8A0F takes (0x53AD20: +0xE & 0xF); kind 0x11 has no writer in tp.exe (every caller of the type op 0x538FC0 passes 0xC, a tool's type, 7 or 0 (the type reset 0x53AF00 passes 7 at 0x53AF35, else 0)), so no record holds it
 	// [BIN:TPW-EXE:0x004D89E4 parent word] the word is the parent's cell index plus one, so OpenTPW's parent index 0 is a real parent and only the missing parent (word 0, no track by 0x5363F0) goes on
 	private static bool TargetRecordBlocks( ParkCellMap map, int x, int y )
 	{
@@ -45,7 +45,7 @@ public static class WalkEdges
 	/// <paramref name="y"/>) to its neighbour in <paramref name="direction"/>. Coordinates are bytes, as in the original.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00522770 underground link byte] the link byte read is +0x22 only while the land tools' flag 0x81B4CC is set and the record's class byte +2 is 2; the flag is raised and cleared inside straight-line land routines (the park fence set-up 0x5323F0 at 0x532408..0x532622, the purchase 0x5327E0 at 0x532814..0x5328CB, the type reset 0x53AF00 at 0x53AF51..0x53AF60) that run no walk, so every walk reads +0xC
-	// [BIN:TPW-EXE:0x0042C093 mask-2 callers] mask 2 reaches the edge test from the camera's walks 0x42C093 and 0x42C290 only (UI-094, UI-095): no simulated walker uses it, and its rule for a type-9 target (the owner cell's first class-3 thing, 0x4D88BC..0x4D8B28) is the one below
+	// [BIN:TPW-EXE:0x0042C093 mask-2 callers] mask 2 reaches the edge test from the camera's walks 0x42C093 and 0x42C290 only (the park camera 0x42B1C0 behind test cl,0x16 at 0x42BDC6: GUEST-006's unmapped camera bits): no simulated walker uses it, and its rule for a type-9 target (the owner cell's first class-3 thing, 0x4D88BC..0x4D8B28) is the one below
 	public static bool Blocked( ParkCellMap map, int x, int y, int direction, int mask )
 	{
 		x &= 0xFF;

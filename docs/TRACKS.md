@@ -71,8 +71,8 @@ the other over the line's tiles (`TrackBuilder.RunBridgeOps`), by the path and q
   The walk keeps its position as plain integers and finds the record by `y × 128 + x + 1`, so a walk that leaves a row enters the next one.
 * op 0x81 (`0x53AFA0`): the piece is chosen again from the arms, flow link and flag word (`TrackPieceSelector`: H neither, H_U ahead, H_D behind, H_A both; the historic PPC reference is `STP-PPC:0x1007A354`).
 
-`TrackBridgeWalkGoldenTests` replays 700 random layouts of tp.exe's own walks run in the x86 oracle (`bridge_walk_golden.py`, `ORACLE.md` X47). A restore (`TrackSave.RestoreCells`) only chooses the pieces again: the flag words are the save's. Remaining of TRACK-010: a walk that runs
-past the structure array (an arm into empty ground reads on until the id wraps) ends false where the executable reads whatever lies after the array; the type-25 rule has no case (OpenTPW writes no type 25).
+`TrackBridgeWalkGoldenTests` replays 700 random layouts and 120 track tool lines of tp.exe's own walks run in the x86 oracle (`bridge_walk_golden.py`, `ORACLE.md` X47). A restore (`TrackSave.RestoreCells`) only chooses the pieces again: the flag words are the save's. Remaining of TRACK-010: a walk that runs
+past the structure array (an arm into empty ground reads on until the id wraps) ends false where the executable reads whatever lies after the array, and a walk that never ends in the executable (it circles without reaching its station) is ended after two map sizes of steps. The hoarding rule of the base op (`0x538A97`, map types 2, 7 and 30) is `ParkFence.MarkWater`'s, and the walks read the fence's records.
 
 Piece tables (12 bytes: handle, name, arm byte; PC kart `0x7633E8`, water `0x7634D8`): kart 20 entries, water 25: 0 none; 1 Q; 2 S; 3 B; 4 X; 5–8 X with arm masks 0x15/0x54/0x51/0x45; 9–11 H;
 12–14 H_U; 15–17 H_D; 18 H_A; 19 B2; 20–24 X2 (water only). `TrackPieceKit` loads `wr_trck<stem>.md2` / `.hmp` (water) or `gk_trck…` (kart) from the

@@ -215,8 +215,7 @@ public partial class Level
 				if ( layingAccessCells && Guests?.Grid.Cells is { } laid && (Park == null || Park.Economy.Balance >= 0) )
 				{
 					ObjectAccessCells.Lay( laid, item.AccessPoints, OwnerWord( item ), item.Entry.QueueOptionOnBuild, new LinkEffects( RefreshTile ) );
-					// the entrance's outside cell becomes a queue cell, over a plain path the player built: guests walking there step off
-					Guests?.SetDownOffCells( item.AccessPoints.Select( point => (point.OutsideX, point.OutsideY) ).ToHashSet() );
+					// [BIN:TPW-EXE:0x00528A70 placement] the placement moves no person: guests standing on a new access cell stay where they are
 				}
 			};
 			// Station geometry was created by SetupCoasters' earlier handler. Bind after footprint and access-cell typing, never over it.

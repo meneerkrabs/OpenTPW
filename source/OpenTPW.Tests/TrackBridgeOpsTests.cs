@@ -101,4 +101,20 @@ public class TrackBridgeOpsTests
 		TrackBridges.ApplyBase( builder.Cells, 12, 12 );
 		Assert.AreEqual( TrackCell.FlagBridge, builder.Tracks.Get( 12, 12 ).Flags );
 	}
+
+	[TestMethod]
+	public void APathLaidAgainOverAPathRunsThePathToolsOpOnEveryCell()
+	{
+		var (cells, builder) = Rig();
+		builder.PlaceTile( 12, 12 );
+		cells.SetType( 13, 13, ParkCellType.Path );
+		Assert.AreEqual( TrackCell.FlagBridge, builder.Tracks.Get( 12, 12 ).Flags );
+		// the tile's bridge bits go (the tile became straight after the base op, say) with the path still under it
+		var tile = builder.Tracks.Get( 12, 12 );
+		tile.Flags = 0;
+		builder.Tracks.Set( 12, 12, tile );
+		// [BIN:TPW-EXE:0x00534115 path tool bridge op] the op runs on every cell the tool lays, one that already holds a path included
+		cells.SetType( 13, 13, ParkCellType.Path );
+		Assert.AreEqual( TrackCell.FlagBridge, builder.Tracks.Get( 12, 12 ).Flags );
+	}
 }

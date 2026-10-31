@@ -10,8 +10,8 @@ using OpenTPW.Mods;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// Pool bridges without end paths against a real <see cref="Level"/> (docs/POOLS.md, "Pool bridges"): the cells outside a bridge's ends take paths but no queue or object, a path laid or removed there goes through the
-/// level's own wiring, and the park-resume capture of a bridge with bare ends restores.
+/// A track record under a cell refuses an object's footprint over it, though the cell's own type is a path, against a real <see cref="Level"/> (RIDES-018, the placement validator 0x535670 mode 4,
+/// 0x535BB3..0x535BD0): the guests' and the object rules' reads of the second layer go through the level's own wiring.
 /// </summary>
 [TestClass]
 [DoNotParallelize]

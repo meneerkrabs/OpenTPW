@@ -15,9 +15,9 @@ track-only flag change is checked even without a map-version change.
 WALK-005 is retired (round 11 package E). The edge test reads the target's structure record as `0x4D89C3` does: `0x5363F0` (kinds 11, 13, 16, 18 and 25, an extension through
 its parent word, none when it is missing), then the flag nibble of the record `0x4D89E4..0x4D8A0F` takes. The parent word is the cell index plus one, so cell (0, 0) is a real
 parent. The fence is part of the second layer: a post (kind 25) and the three cells beside it block a step onto them unless the post's flag nibble is set, whatever the walker
-stands on. Kind 17 has no writer in tp.exe (every caller of the type op `0x538FC0` passes 12, a tool's type or 0). The cell types the tests read are the map cell's own
+stands on. Kind 17 has no writer in tp.exe (every caller of the type op `0x538FC0` passes 12, a tool's type, 7 or 0 (the type reset 0x53AF00 passes 7 at 0x53AF35, else 0)). The cell types the tests read are the map cell's own
 (`ParkCellMap.PrimaryTypeAt`), which a track tile never changes. The underground link byte `+0x22` is read only while the land tools' flag `0x81B4CC` is set, inside straight-line
-land routines that run no walk. Mask 2 is the camera's alone (`0x42C093`, `0x42C290`, UI-094/UI-095), with its rule for a type-9 target ported. The paths under a tile stay in the map layer and the bridge ops produce the flag words
+land routines that run no walk. Mask 2 is the camera's alone (`0x42C093`, `0x42C290`, the park camera `0x42B1C0` behind `test cl,0x16` at `0x42BDC6`: GUEST-006's unmapped camera bits), with its rule for a type-9 target ported. The paths under a tile stay in the map layer and the bridge ops produce the flag words
 the walk reads (TRACK-010, `TrackBridges`). This is not a complete original-game walk oracle.
 
 `StructuralWalkTrackTests` uses synthetic maps, actual TrackBuilder producers,

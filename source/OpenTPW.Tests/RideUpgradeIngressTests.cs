@@ -324,9 +324,32 @@ public class RideUpgradeIngressTests
 		Assert.IsFalse( owner.IsOpen, "the tool closes the ride object" );
 		hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
 		Assert.IsFalse( button.Visible, "the ride window closes with the tool" );
-		Assert.IsTrue( hud.Screen.Find( "coasterBuild" )!.Visible && hud.Screen.Find( "coasterPanelShield" )!.Visible, "the panel shows" );
+		for ( var frame = 0; frame < 3; frame++ )
+		{
+			context.Delta = 0.5f;
+			hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
+		}
+		Assert.IsTrue( hud.Screen.Find( "coasterBuild" )!.Visible && hud.Screen.Find( "coasterPanelShield" )!.Visible, "the panel shows once the arm's drawer has carried it out" );
+		Assert.AreEqual( ArmSlide.Steps, hud.CoasterSlide.Step );
+		// [BIN:TPW-EXE:0x4a16f3 panel end] the 675 x 274 panel (table 0x751530, root 859,916) ends at left 486 and top 1145 as the drawer places every arm panel: its build button (877, 944) lies at (504, 1173)
+		var build = hud.Screen.Find( "coasterBuild" )!.Bounds;
+		Assert.AreEqual( (877f - 373f, 944f + 229f), (build.X, build.Y), "the drawer's end place, the measured offset of the video within a pixel or three" );
+		Assert.AreEqual( (-373, 229), ArmDrawer.Shift( new UiRect( 859, 916, 675, 274 ), ArmSlide.Steps ) );
+		// the arm's retract button belongs to the panel too, and another panel taking the arm ends the tool (0x4a17dc: message 0x1001d8 to the panel the arm carries)
+		Assert.IsTrue( hud.Screen.Find( "messageClose" )!.Visible, "the retract button shows while the coaster panel is out" );
+		hud.ToggleCameraPanel();
+		context.Delta = 0.02f;
+		hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
+		Assert.IsFalse( level.IsCoasterToolActive, "the camera panel took the arm and the coaster tool ended" );
+		hud.CloseCameraPanel();
 		level.ExitCoasterTool();
+		for ( var frame = 0; frame < 3; frame++ )
+		{
+			context.Delta = 0.5f;
+			hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );
+		}
 		Assert.IsFalse( hud.Screen.Find( "coasterBuild" )!.Visible is true && level.IsCoasterToolActive );
+		Assert.IsFalse( hud.Screen.Find( "coasterBuild" )!.Visible, "the slide in hides the panel" );
 		// a ride without a track has no button
 		hud.SelectObject( null );
 		hud.Update( context, UiInput.Idle( new N.Vector2( 1500, 1000 ) ), false, false, false );

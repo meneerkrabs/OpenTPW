@@ -1,8 +1,7 @@
 # Coaster loop-pair resumption
 
-This implements a bounded part of COAST-035: returning to the loop tool after the
-first pylon has been placed resumes the second pylon. COAST-035 remains open for
-the auxiliary dispatcher and loader qualifications below.
+This implements COAST-035 (retired in round 11): returning to the loop tool after the
+first pylon has been placed resumes the second pylon.
 
 ## Corrected premise
 
@@ -42,10 +41,13 @@ executable was run for this change.
 
 `CoasterBuilder.LoopPairPending` owns the endpoint condition;
 `StartOrResumeLoopPair` applies the transition. Opening, selecting Loop and
-refreshing a disabled panel selection share the same behavior. The host's
-existing available-loop-pylon and upgrade-level gates remain unchanged. If a
-pending pair's Loop button is unavailable, the panel falls back to Height and
-keeps both build buttons disabled.
+refreshing a disabled panel selection share the same behavior. The loop
+button follows the ride's upgrade level only (shown and enabled from level 1,
+`0x4980D6`, `0x4987f0`); the loop mode and the pending pair also need the
+definition's loop bit (a loop pylon control, `0x42fd57`). A pending pair whose
+Loop button is unavailable (level 0) makes the panel fall back to Height with
+both build buttons disabled; on a coaster without a loop pylon no pair is ever
+pending and the Loop button only selects the build mode.
 
 ## Regression coverage and limits
 
@@ -57,8 +59,10 @@ endpoints, completed uncut tracks, availability/upgrade gates, disabled-selectio
 refresh and resumption from existing saved node flags.
 
 No save schema, placement/hover geometry, picking, cost arithmetic or spending
-path changes. The auxiliary dispatcher `0x447a10` still lacks a verified host
-caller. The original controller/definition flag-2 loader gate also remains
-unrepresented by the host's strongly typed controller and definition. These are
-still COAST-035 qualifications; this patch does not claim whole-ID closure,
-original-runtime parity or visual verification.
+path changes. The two qualifications this page used to keep open were read in round 11
+(October 30, 2026): the auxiliary dispatcher `0x447a10` is the layout replay's action `0x38`
+(its only caller is the replayer `0x4045b0`; OpenTPW runs no layout replay), and the
+controller/definition flag-2 gate is the definition's loop bit, set by the definition builder
+`0x42fad0` when pylon control 1 has a mesh (`0x42fd57`) and tested first by `0x442cd0`, `0x442d10`,
+`0x444c00`, `0x444c50`, `0x444c80` and `0x4445b0`; `CoasterDefinition.HasLoopPylon` is that bit and
+`CoasterBuilder.LoopUnlocked` / `LoopPairPending` / `StartOrResumeLoopPair` apply it. COAST-035 is retired.

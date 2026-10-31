@@ -250,6 +250,7 @@ public class CoasterPresentationTests
 	{
 		var builder = OpenTrack( 3 );
 		var track = builder.Track;
+		var banks = track.Nodes.Select( node => node.Bank ).ToArray();
 		var preview = track.BuildPreviewChain( (-4 + 20, 8 + 20), 40, false );
 		Assert.IsNotNull( preview );
 		Assert.IsFalse( preview!.Value.Closed );
@@ -263,7 +264,7 @@ public class CoasterPresentationTests
 		var first = CoasterTrack.StationNodeCount;
 		var chordMid = (knots[first].Position + knots[first + 1].Position) / 2;
 		Assert.IsTrue( (slices[first * HermiteCoasterCurve.SliceSegments + 5].Position - chordMid).Length() > 0.1f );
-		Assert.IsTrue( track.Nodes.All( node => node.Bank == 0 ), "a preview leaves the nodes' banks untouched" );
+		Assert.IsTrue( track.Nodes.Select( node => node.Bank ).SequenceEqual( banks ), "a preview leaves the nodes' banks untouched" );
 		var mesh = CoasterTrackMesh.Build( CoasterCrossSections.FromValues( SectionSettings() ), slices, closed: false );
 		Assert.AreEqual( slices.Length - 1, mesh.Segments );
 	}
@@ -487,9 +488,12 @@ public class CoasterPresentationTests
 		var positions = chain.Select( node => track.NodePosition( builder.Site, node ) ).ToArray();
 		var straight = chain.ToList().FindIndex( node => node.X == 28 && node.Y == 24 );
 		var curve = chain.ToList().FindIndex( node => node.X == 24 && node.Y == 20 );
+		var held = chain.Select( node => node.Flags & CoasterNodeFlags.TurnedBack ).ToArray();
 		var preview = track.PylonsTurnedBack( chain, positions );
-		Assert.IsFalse( preview[straight], "a straight node without the flag stays without it" );
-		Assert.IsTrue( chain.All( node => (node.Flags & CoasterNodeFlags.TurnedBack) == 0 ), "a pass that does not write leaves the nodes alone" );
+		Assert.AreEqual( (held[straight] & CoasterNodeFlags.TurnedBack) != 0, preview[straight], "a straight node keeps the half turn it holds" );
+		Assert.IsTrue( chain.Select( node => node.Flags & CoasterNodeFlags.TurnedBack ).SequenceEqual( held ), "a pass that does not write leaves the nodes alone" );
+		// the builder's edits store the verdicts (CoasterBuilder.Revalidate, as the original's rebuild does each frame): the curve node placed before the straight one holds its curve verdict already
+		Assert.AreEqual( CoasterTrack.PylonTurnedBack( positions[curve - 1], positions[curve], positions[curve + 1], track.Definition.StandardPylon.StraightDotThreshold, false, suspended: true, loopNode: false ), (held[curve] & CoasterNodeFlags.TurnedBack) != 0, "the edit stored the curve node's verdict" );
 		chain[straight].Flags |= CoasterNodeFlags.TurnedBack;
 		chain[curve].Flags |= CoasterNodeFlags.TurnedBack;
 		var verdict = CoasterTrack.PylonTurnedBack( positions[curve - 1], positions[curve], positions[curve + 1], -0.8f, false, suspended: true, loopNode: false );

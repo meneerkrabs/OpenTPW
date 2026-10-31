@@ -88,6 +88,8 @@ Round 10 (October 28, 2026): the fixed run's pin `0x5946C7CB09C6EEE7` does not m
 
 Round 10, package B (cells under track, October 28, 2026): no pin moves (the fixed run's `0xB4AEC10551DF2738` and the economy digest of `BuildStepsTests` stay as they are; the with-data suite passes unchanged). The map's type byte and the track layer hold a path or queue cell over a straight or stub tile and the demolition clears the second layer's records, but every state the pinned runs reach is the one they reached before: no run lays a path over a tile or sells an add-on. The cell digest gains no field (the track layer joins it only while a track exists, as before); the new states hash through the type byte and the records already hashed. No draw is added or removed.
 
+Round 11, package G (coaster tool, October 30, 2026): no pin moves (the fixed run's `0xB4AEC10551DF2738` and the economy digest of `BuildStepsTests` stay as they are; the with-data digest, save and resume tests pass unchanged). The builder now stores the knot pass's banks and half turns in the nodes after every edit and refits a finished track's controller on every step of a drag, so a saved track's node fields can differ from an earlier build's where an edit left them unrefreshed, but the saved layout keeps its format and old saves load as before; the demolish range, the move marks and the pylon pick are presentation only and reach no save, digest or command. No draw is added or removed.
+
 ### The substep scheduler (DET-013)
 
 The original's main loop (tp.exe `0x54F4BF`) runs a 31 ms substep, and every eighth substep is a park turn. Each substep, in

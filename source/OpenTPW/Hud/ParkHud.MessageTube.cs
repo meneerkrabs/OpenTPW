@@ -220,7 +220,7 @@ public sealed partial class ParkHud
 		var interactive = openedMessage != null && !InfoArmOpen;
 		// [BIN:TPW-EXE:0x4a1725 arm retract] the arm's retract button (child 0x24) is shown by the slide out (0x4a171a-0x4a1734) and hidden again by the start of the slide in (0x4a1859-0x4a186c), whichever panel the arm carries
 		if ( hud.Find( "messageClose" ) is { } retract )
-			retract.Visible = MessageSlide.Out || CameraSlide.Out;
+			retract.Visible = MessageSlide.Out || CameraSlide.Out || CoasterSlide.Out;
 		if ( hud.Find( "messageDelete" ) is { } erase )
 		{
 			var table = MessageTable.Model( "mb_erase" ).Rect;

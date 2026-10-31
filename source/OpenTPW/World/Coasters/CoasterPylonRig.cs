@@ -55,7 +55,7 @@ public interface ICoasterTagModel
 // [BIN:TPW-EXE:0x430590 pylon stack parts] the first four attribute records with 0x80000 name the stack parts by their value: 1 → pylon +0x1c (flag 0x400), 2 → +0x20 (0x800), 3 → +0x24 (0x1000), 4 → +0x28 (0x2000)
 // [BIN:TPW-EXE:0x432df0 stack part visibility] for every node of a cell's stack the pose pass shows (clears node flag 0x10) or hides (sets 0x80000010, 0x433220) the parts: part 1 is hidden on the top node and shown on a lower one whose upper neighbour has a model (not 0x2000), part 2 shown on the top node and hidden on a lower one, part 3 hidden on the bottom node and shown on a stacked one, part 4 shown on the bottom node and hidden on a stacked one
 // [BIN:TPW-EXE:0x4740d0 rotation blend] 0x7b4980 is written only by its setter 0x4740d0, which start-up (0x457a90) calls once with 0, so bit 2 is clear and the clip sampler slerps the rotation keys (0x474490 → 0x4742a0)
-// [APPROX:COAST-033] the bottom node's model shadow (model +0x2c, placed at the cell's ground height by 0x469940) and its hiding on a stacked node unless pylon flag 0x10 is set are not modelled; a part's flag hides its own mesh here, its children are not hidden with it (no PC pylon hangs a mesh under a part); the clip sampler's rotation blend is the ported table-sine one (ModelRotationBlend, [BIN:TPW-EXE:0x4742A0 rotation blend]) — evidence needed: the renderer's use of node flag 0x10 for a dummy's children, the shadow object at model +0x2c and the source of pylon flag 0x10
+// [BIN:TPW-EXE:0x469940 pylon ground node] the bottom node's ground node (model +0x2c) is conformed to the terrain's corners and hidden on stacked nodes unless pylon flag 0x10 is set; the part flag hides only its own mesh (0x57a5e3, 0x4723f9), and the clip sampler's rotation blend is the ported table-sine one (ModelRotationBlend, [BIN:TPW-EXE:0x4742A0 rotation blend])
 public sealed class CoasterPylonRig : ICoasterTagModel
 {
 	/// <summary>The five clip slots in the original's order: loft, rotate, incline, bank, loop tilt (<c>0x74ca70</c>: types 3, 10, 2, 9, 10 index 1).</summary>
@@ -107,6 +107,9 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 		StackNode = DummyByAttribute( model, StackDummyAttribute ) ?? -1;
 		ReadTagTables( model );
 		ReadStackParts( model );
+		// [BIN:TPW-EXE:0x46a5a0 pylon ground node] the pylon model is loaded with flag 1 of 0x1013405 (0x42fcbf → 0x4629d0), so the type loader counts its ground vertices over a one-cell footprint (a pylon control names no shape) and keeps the node with the most as model +0x2c
+		ground = ObjectHoardingGeometry.ScanGround( model, ObjectMapGrid.Parse( new[] { "X" }, _ => (1, (byte)0) ), new HoardingTerrain( 0, 0, CoasterTrack.CellUnits, CoasterTrack.CellUnits, 2, 2 ) );
+		keepBase = control != null && (control.Flags & CoasterPylonFlags.KeepBaseOnStack) != 0;
 		Duration = loft?.Duration ?? 0;
 		if ( control != null )
 			(loftMap, rotateMap, inclineMap, bankMap, loopRotateMap) = (control.LoftMap, control.RotateMap, control.InclineMap, control.BankMap, control.LoopRotateMap);
@@ -196,11 +199,21 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 		}
 	}
 
+	private readonly ObjectHoardingGeometry.GroundScan ground;
+	private readonly bool keepBase;
+	private ObjectSkirt? groundSkirt;
+
+	/// <summary>The model's ground node (model <c>+0x2c</c>), -1 when it counted no ground vertex.</summary>
+	public int GroundNode => ground.Node;
+
 	/// <summary>Whether a node of the model is hidden in a stack place (<c>0x432df0</c>).</summary>
+	// [BIN:TPW-EXE:0x432df0 ground node visibility] a bottom node clears 0x10 on the ground node (model +0x2c); a node stacked above sets 0x80000010 on it unless the pylon has flag 0x10; the flag only hides that node's own mesh (submit 0x57a5e3 tests 0x8210), children are not touched
 	public bool IsHidden( int node, CoasterStackPlace place )
 	{
 		if ( node < 0 )
 			return false;
+		if ( node == ground.Node && !place.Bottom && !keepBase )
+			return true;
 		// Under a node without a model (the build cursor's) the original leaves part 1 as the last pass set it; it was the top then, so it stays hidden.
 		if ( node == stackParts[0] && (place.Top || !place.CarriesModel) )
 			return true;
@@ -349,20 +362,27 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 	/// The pylon's mesh parts for a node's clip values; positions relative to the cell corner (engine axis order). The stack parts its place in the cell's stack
 	/// hides are left out (<see cref="IsHidden"/>). A height parameter outside [0, 1] stands the pylon at the end of its loft (the original clamps the parameter, 0x430ca0).
 	/// </summary>
-	public IReadOnlyList<CoasterModelPart> Pose( CoasterPylonPose pose, CoasterStackPlace? place = null )
+	/// <param name="pose">The node's clip values.</param>
+	/// <param name="place">The pylon's place in its cell's stack.</param>
+	/// <param name="cornerHeight">The terrain height of a cell corner relative to the pylon's base (column and row offsets from the pylon's cell, original units), which a bottom node's ground vertices are conformed to; null leaves the model's own ground node.</param>
+	public IReadOnlyList<CoasterModelPart> Pose( CoasterPylonPose pose, CoasterStackPlace? place = null, Func<int, int, float>? cornerHeight = null )
 	{
 		var stack = place ?? CoasterStackPlace.Alone;
+		var conformed = cornerHeight != null && stack.Bottom ? ConformGround( cornerHeight ) : null;
 		var ticks = Ticks( pose );
 		var matrices = new Matrix4x4[model.Nodes.Count];
 		Worlds( ticks, matrices );
 		var parts = new List<CoasterModelPart>();
-		foreach ( var mesh in model.Meshes )
+		for ( var meshIndex = 0; meshIndex < model.Meshes.Count; meshIndex++ )
 		{
+			var mesh = model.Meshes[meshIndex];
 			if ( ObjectAssets.GetUnrenderableReason( mesh ) is { } reason && reason != "more than 16 texture slots" )
 				continue;
 			var node = mesh.NodeIndex >= 0 && mesh.NodeIndex < matrices.Length ? mesh.NodeIndex : model.RootNodeIndex;
 			if ( IsHidden( mesh.NodeIndex, stack ) )
 				continue;
+			if ( conformed != null && conformed.TryGetValue( meshIndex, out var moved ) )
+				mesh = WithAnimated( mesh, moved, null );
 			var source = mesh;
 			if ( node >= 0 )
 			{
@@ -395,6 +415,20 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 				parts.Add( new CoasterModelPart( mesh.Name, textures, vertices, indices ) );
 		}
 		return parts;
+	}
+
+	/// <summary>
+	/// The ground node's listed vertices moved onto the terrain's corners (<c>0x469940</c>, run by the rebuild with the pylon's ground height): each listed vertex of a one-cell pylon sits on a cell
+	/// corner and takes that corner's height relative to the pylon's base. Node-local positions by mesh index; null when the model has no ground node.
+	/// </summary>
+	// [BIN:TPW-EXE:0x469940 pylon ground conform] 0x432df0 calls 0x469940(model, terrain [0x7a0854], the descriptor's ground height, 0) for a bottom node: every ground vertex counted by 0x469a80 goes to the nearest terrain corner, its height the corner's
+	private IReadOnlyDictionary<int, NVector3[]>? ConformGround( Func<int, int, float> cornerHeight )
+	{
+		if ( ground.Node < 0 || model.RootNodeIndex < 0 )
+			return null;
+		groundSkirt ??= ObjectSkirt.Build( ObjectMapGrid.Parse( new[] { "X" }, _ => (1, (byte)0) ), model, new HoardingTerrain( 0, 0, CoasterTrack.CellUnits, CoasterTrack.CellUnits, 2, 2 ) );
+		var result = ObjectGroundConform.Apply( model, groundSkirt, new HoardingTerrain( 0, 0, CoasterTrack.CellUnits, CoasterTrack.CellUnits, 2, 2 ), cornerHeight, Matrix4x4.Identity );
+		return result.Positions.Count == 0 ? null : result.Positions;
 	}
 
 	private static ModelFile.Mesh WithAnimated( ModelFile.Mesh mesh, NVector3[]? positions, NVector2[]? texCoords )

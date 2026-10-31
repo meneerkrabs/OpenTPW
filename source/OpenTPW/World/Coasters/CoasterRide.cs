@@ -186,6 +186,9 @@ public sealed class CoasterRide
 	public CoasterTrack Track { get; }
 	/// <summary>Map bounds, no-ground cells and ground heights; set by the builder.</summary>
 	public CoasterSite Site { get; internal set; } = new( 128, 128 );
+
+	/// <summary>The range of links the open tool marks (the demolish preview, a moved pylon's links); presentation only, not part of the track or its saves.</summary>
+	public CoasterRangeMark? RangeMark { get; set; }
 	/// <summary>The curve fit (swappable; the traced Hermite/Bézier fit by default).</summary>
 	public ICoasterCurve Curve { get; set; } = HermiteCoasterCurve.Instance;
 	public IReadOnlyList<CoasterSample> Samples => samples;
@@ -414,6 +417,24 @@ public sealed class CoasterRide
 		var middle = (windowStart + windowEnd) * 0.5f;
 		StationWindow = ((1f - k) * windowStart + k * middle, (1f - k) * windowEnd + k * middle);
 		return result.Trains;
+	}
+
+	/// <summary>
+	/// The nodes of <paramref name="chain"/> whose sections the rating pass runs at the winch speed (flag 0x800), plus the nodes that keep the mark (0x1000, the station's first two), over the sample
+	/// list of a chain the editor draws; none before the chain has a sample list.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43c4f0 winch mark] the rebuild 0x43eb70 runs the rating pass 0x43c450 on every chain it draws and on every frame of an edit: a sample whose speed falls back to the floor (fWinchSpeed) marks its node 0x800 (0x43c4f0..0x43c505); the pass has no finished-track gate (it reads the controller's sample list, +0xa4)
+	internal static IReadOnlyCollection<int> ChainWinchSections( CoasterDefinition definition, float speedCap, IReadOnlyList<CoasterNode> chain, CoasterSampling? sampling )
+	{
+		if ( sampling == null || sampling.Samples.Length < 3 )
+			return Array.Empty<int>();
+		var (_, winch) = CoasterRating.RatePass( definition, sampling.Samples, sampling.Spacing, speedCap, chain.Count - 1, sampling.KnotCoordinates.Length > 0 ? sampling.KnotCoordinates[^1] : null );
+		for ( var index = 0; index < chain.Count; index++ )
+		{
+			if ( (chain[index].Flags & CoasterNodeFlags.WinchKept) != 0 )
+				winch.Add( index );
+		}
+		return winch;
 	}
 
 	/// <summary>
@@ -1460,6 +1481,9 @@ public sealed class CoasterRide
 		SpeedSetByReplay = false;
 		if ( !Track.IsRunnable )
 		{
+			// the next frame's rebuild of the loaded controller (0x435A30 → 0x43EB70) runs the knot pass on an unfinished chain too, which stores the auto-banks and half turns in its nodes
+			if ( Track.Nodes.Count >= CoasterTrack.StationNodeCount )
+				Track.BuildKnotPass( Site, writeBanks: true );
 			RaiseTrackChanged();
 			return;
 		}

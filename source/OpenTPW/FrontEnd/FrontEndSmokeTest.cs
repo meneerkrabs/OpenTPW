@@ -1991,7 +1991,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	/// </summary>
 	private void WaitForAdvisorSpeech() => steps.Enqueue( ("advisor speech ends", () =>
 	{
-		if ( flow.Advisor?.IsSpeechActive != true )
+		// the pause menu is open here: the game pause pauses the advisor's speech (0x598960, GamePauseSound), so it does not end until the menu closes
+		if ( flow.Advisor?.IsSpeechActive != true || GamePauseSound.AdvisorSpeechPaused )
 		{
 			if ( speechWait != null )
 				Log.Trace( $"Front-end smoke: advisor speech ended after {speechWait.Elapsed.TotalSeconds:F2} s of waiting ({speechFrames} frames outside the frame budget)." );

@@ -743,6 +743,7 @@ internal sealed partial class GameFlow : IDisposable
 		GameAudio.EnsureStarted();
 		GameAudio.PlayStartupSound();
 		GameAudio.UpdateLobbyListener();
+		GamePauseSound.ObserveFrontEndFocus( Window.Current?.Focused == true, Window.Current?.IsOffscreen != false );
 		GameAudio.Update();
 		UpdateGlobeView();
 		Camera.Update();

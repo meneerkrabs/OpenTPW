@@ -245,6 +245,8 @@ public static class GameAudio
 		fadeSettings = ReadFadeSettings();
 		events.HeldSounds.Configure( fadeSettings, GameOptions.Current.SoundQuality );
 		mixer.MusicDuckRequest = MusicDuckRequest;
+		// [BIN:TPW-EXE:0x51b73b sound start] the three on-flags of the sound service start at 1 and the profile's applier sets them (0x423DD0): the options as they stand
+		ApplyOnFlags( GameOptions.Current );
 		ResetReverb();
 		if ( ReverbMap == null )
 		{
@@ -311,6 +313,8 @@ public static class GameAudio
 			return;
 		LeaveLobby();
 		LeavePark();
+		// [BIN:TPW-EXE:0x415254 level start] the level start clears the sound entry's paused word
+		GamePauseSound.LevelStart();
 		SoundCadence.Reset();
 		if ( seed is uint value )
 			events!.Reseed( value );
@@ -401,6 +405,8 @@ public static class GameAudio
 	public static void LeavePark()
 	{
 		// [BIN:TPW-EXE:0x5C8650 park exit] state 12 of the park state machine 0x54E360 writes the profile (0x5AFC60 -> 0x5AFF50 -> 0x423E90), which ends in the options applier 0x423DD0
+		// [BIN:TPW-EXE:0x54e67b front end entry] the first frame of the front end resumes the game pause (0x409300): a pause menu's pause, the advisor's paused speech and the raised listener end with the park
+		GamePauseSound.Resume();
 		EndSavedVolumes();
 		events?.HeldSounds.StopAll();
 		// the park's scripts are destroyed with it, and each writes the duck request 0 (tp.exe 0x558513); the reverb returns to the default at the next frame outside a ride
@@ -1129,12 +1135,13 @@ public static class GameAudio
 	/// engine's coordinates (X/Y ground, Z up) and moved into the original's sound units (five sound units per
 	/// engine unit at model scale 0.2), undoing the heightfield's centering for imported parks.
 	/// </summary>
+	// [BIN:TPW-EXE:0x51c1d0 paused listener] while the game pause's word is set (GamePauseSound) the place's height is 10000 (0x51C1E9-0x51C1F9), which the park loop's call 0x54f958 / 0x54f9e4 and the front end's 0x54e70e both go through
 	// [BIN:TPW-EXE:0x54f8f6 listener] the park loop sets the listener through 0x51c1d0: when the camera-mode byte 0x790ab0 has bits 0x16 the listener is the camera position (0x7909c0..c8); otherwise it is pos - (pos - target) * 0.5 (0x700f88) with the target at 0x790ab8..c0; the orientation vectors are 0x7909a0.. and 0x7909b0..
 	public static void UpdateListener( System.Numerics.Vector3 ear, System.Numerics.Vector3 forward, ModelHeightfield? heightfield = null, System.Numerics.Vector3? up = null )
 	{
 		const float soundUnitsPerEngineUnit = 1f / OriginalParkPlacement.ModelScale;
 		var origin = heightfield == null ? System.Numerics.Vector2.Zero : OriginalParkPlacement.GetOrigin( heightfield );
-		var place = new Vector3( (ear.X + origin.X) * soundUnitsPerEngineUnit, ear.Z * soundUnitsPerEngineUnit, (ear.Y + origin.Y) * soundUnitsPerEngineUnit );
+		var place = GamePauseSound.ListenerPlace( new Vector3( (ear.X + origin.X) * soundUnitsPerEngineUnit, ear.Z * soundUnitsPerEngineUnit, (ear.Y + origin.Y) * soundUnitsPerEngineUnit ), events != null );
 		// the engine's (X, Y ground, Z up) becomes the sound space (x, y up, z ground), as for positions; with the camera's up vector the listener keeps its pitch (AudioListener.Update)
 		if ( up is { } upward )
 			AudioListener.Update( place, new Vector3( forward.X, forward.Z, forward.Y ), new Vector3( upward.X, upward.Z, upward.Y ) );
@@ -1144,7 +1151,7 @@ public static class GameAudio
 
 	/// <summary>The listener of the frames without a park: (0, 0, -50) facing +z with y up, sent every frame like the park's.</summary>
 	// [BIN:TPW-EXE:0x54e70e lobby listener] the main loop's frames without a level call 0x51c1d0 with the place (0, 0, -50), the front (0, 0, 1) and the up (0, 1, 0) (0x54e6f3-0x54e70e); the first of them gives the listener its velocity (the place minus the origin, or minus the park's last place), and nothing sends another while the place stays
-	public static void UpdateLobbyListener() => AudioListener.Update( new Vector3( 0, 0, -50 ), new Vector3( 0, 0, 1 ), new Vector3( 0, 1, 0 ) );
+	public static void UpdateLobbyListener() => AudioListener.Update( GamePauseSound.ListenerPlace( new Vector3( 0, 0, -50 ), events != null ), new Vector3( 0, 0, 1 ), new Vector3( 0, 1, 0 ) );
 
 	/// <summary>
 	/// The listener's place for a camera: the eye in the camera modes whose byte <c>0x790ab0</c> has bits 0x16 (OpenTPW's free-walk camera), otherwise the midpoint of
@@ -1161,6 +1168,10 @@ public static class GameAudio
 
 	internal static void ApplyOptions( AudioMixer mixer, GameOptions options )
 	{
+		// [BIN:TPW-EXE:0x51bd70 sound service tick] the on-flags go to the library's group enable with the volumes (records 0x700B70, 0x700B74, 0x700B78); the volumes above are what a slider or a toggle sets at once, the flags what the applier and a save's block set
+		mixer.SetChannelEnabled( AudioChannel.Effects, soundOn[(int)AudioChannel.Effects] );
+		mixer.SetChannelEnabled( AudioChannel.Music, soundOn[(int)AudioChannel.Music] );
+		mixer.SetChannelEnabled( AudioChannel.Speech, soundOn[(int)AudioChannel.Speech] );
 		var saved = SavedVolumes;
 		mixer.SetChannelGain( AudioChannel.Effects, saved?.Gain( AudioChannel.Effects, options ) ?? options.SoundEffectsGain );
 		mixer.SetChannelGain( AudioChannel.Music, saved?.Gain( AudioChannel.Music, options ) ?? options.MusicGain );
@@ -1193,6 +1204,13 @@ public static class GameAudio
 	public static string ApplySavedSound( SaveSoundData? sound, GameOptions options )
 	{
 		SavedVolumes = SavedSoundVolumes.FromSave( sound, options );
+		// [BIN:TPW-EXE:0x51c400 sound loader] the saved on-flags (+0x38, +0x3C, +0x40) become the service's shadows, sent to the group enable by the next tick
+		if ( SavedVolumes is { } held )
+		{
+			soundOn[(int)AudioChannel.Effects] = held.Settings.EffectsOn != 0;
+			soundOn[(int)AudioChannel.Music] = held.Settings.MusicOn != 0;
+			soundOn[(int)AudioChannel.Speech] = held.Settings.SpeechOn != 0;
+		}
 		if ( SavedVolumes == null )
 			return $"Sound block: no 84-byte settings (length {sound?.Settings.Length.ToString() ?? "unreadable"}); the options' volumes play.";
 		MasterVolume = SavedVolumes.MasterVolume;
@@ -1202,13 +1220,33 @@ public static class GameAudio
 
 	/// <summary>Ends a loaded save's channel volumes: the options drive every channel again (the master volume stays, as in the original).</summary>
 	// [BIN:TPW-EXE:0x4237F0 options OK] OK on the options screen calls the applier 0x423DD0, which pushes every channel's profile volume and on-flag
-	public static void EndSavedVolumes() => SavedVolumes = null;
+	public static void EndSavedVolumes()
+	{
+		SavedVolumes = null;
+		ApplyOnFlags( GameOptions.Current );
+	}
+
+	/// <summary>
+	/// The sound service's on-flags (effects 0x803AD8, music 0x803ADC, speech 0x803AE0): whether each group of the library is switched on. They are set at the start, by the profile's applier (the options
+	/// screen's OK, the profile read and write, leaving a park) and by a loaded save's Sound block; a slider or a toggle on the options screen sets only the volume (0 while its toggle is off).
+	/// </summary>
+	// [BIN:TPW-EXE:0x423dd0 options applier] pairs each on setter with its volume setter (effects +0x38 / +0x1C, music +0x3C / +0x20, speech +0x40 / +0x24); the toggles' own rows call only the volume setter (0x4A3480 -> 0x4A2E90)
+	private static readonly bool[] soundOn = { true, true, true };
+
+	/// <summary>Sets the on-flags from the options (the applier).</summary>
+	internal static void ApplyOnFlags( GameOptions options )
+	{
+		soundOn[(int)AudioChannel.Effects] = options.SoundEffectsOn;
+		soundOn[(int)AudioChannel.Music] = options.MusicOn;
+		soundOn[(int)AudioChannel.Speech] = options.SpeechOn;
+	}
 
 	/// <summary>Forgets a loaded save's sound values, the master volume included (tests and a process restart).</summary>
 	internal static void ResetSavedSound()
 	{
 		SavedVolumes = null;
 		MasterVolume = GameOptions.MaximumVolume;
+		ApplyOnFlags( new GameOptions() );
 	}
 
 	/// <summary>Plays a <c>cat_ui</c> event (control activation clicks, drawer and error feedback).</summary>

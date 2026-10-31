@@ -582,9 +582,8 @@ public class CoasterTests
 	// ---- Rating 0x415b4 / 0x41900, speed, trains, ride excitement -------------------------------------------
 
 	/// <summary>
-	/// Five steps through decay, g-force, banking, an inversion with negative vertical force and both screams; expected
-	/// bits from the PPC differential oracle's verified formula (ORACLE.md F7: outside the inverted arm the discomfort
-	/// adds Fz; separate single multiplies and adds), which agrees with the original 0x415b4 on 509/509 inputs.
+	/// Five steps through decay, g-force, banking, an inversion with negative vertical force and both screams; expected bits from tp.exe's own step 0x43dc50 and final 0x43df90 run in the
+	/// x86 oracle at the thread's 24-bit control word (ORACLE.md X46; the Mac routine of F7 differs in its fallback term and fuses its decay).
 	/// </summary>
 	[TestMethod]
 	public void RatingStepAndFinalMatchTheWitnessInSinglePrecision()
@@ -593,10 +592,10 @@ public class CoasterTests
 		var steps = new (int Index, float Speed, float Bank, SVector3 Force, uint Sickness, uint Excitement, CoasterSampleFlags Flags)[]
 		{
 			(1, 10, 0, new SVector3( 0, 0, 0 ), 0x00000000, 0x3FC00000, CoasterSampleFlags.None),
-			(2, 20, 0.5f, new SVector3( 0.5f, 1, -0.25f ), 0x3F600000, 0x40D80000, CoasterSampleFlags.None),
-			(3, 40, 2, new SVector3( 0.25f, -0.5f, 0 ), 0x40A3341C, 0x4114CBE4, CoasterSampleFlags.NormalScream | CoasterSampleFlags.TerrorScream),
-			(4, 60, 0, new SVector3( 0, 2, 0 ), 0x4063341C, 0x414A65F2, CoasterSampleFlags.NormalScream | CoasterSampleFlags.TerrorScream),
-			(5, 5, 0, new SVector3( 0, 0, 0 ), 0x3FE3341C, 0x40DA65F2, CoasterSampleFlags.None)
+			(2, 20, 0.5f, new SVector3( 0.5f, 1, -0.25f ), 0x3F600000, 0x40D00000, CoasterSampleFlags.None),
+			(3, 40, 2, new SVector3( 0.25f, -0.5f, 0 ), 0x40A3341C, 0x4112CBE4, CoasterSampleFlags.NormalScream | CoasterSampleFlags.TerrorScream),
+			(4, 60, 0, new SVector3( 0, 2, 0 ), 0x4063341C, 0x414965F2, CoasterSampleFlags.NormalScream | CoasterSampleFlags.TerrorScream),
+			(5, 5, 0, new SVector3( 0, 0, 0 ), 0x3FE3341C, 0x40D965F2, CoasterSampleFlags.None)
 		};
 		foreach ( var step in steps )
 		{
@@ -606,28 +605,32 @@ public class CoasterTests
 			Assert.AreEqual( step.Flags, flags, $"screams at step {step.Index}" );
 		}
 		Assert.AreEqual( 0x40A3341Cu, BitConverter.SingleToUInt32Bits( rating.PeakSickness ) );
-		Assert.AreEqual( 0x414A65F2u, BitConverter.SingleToUInt32Bits( rating.PeakExcitement ) );
+		Assert.AreEqual( 0x414965F2u, BitConverter.SingleToUInt32Bits( rating.PeakExcitement ) );
 		var (sickness, excitement) = rating.Final();
 		Assert.AreEqual( 0x40DC0123u, BitConverter.SingleToUInt32Bits( sickness ), $"{sickness}" );
-		Assert.AreEqual( 0x41C75699u, BitConverter.SingleToUInt32Bits( excitement ), $"{excitement}" );
-		Assert.AreEqual( 62, CoasterRating.GuestExcitement( excitement ), "trunc(0.5 × 24.92 + 50)" );
+		Assert.AreEqual( 0x41C65CFFu, BitConverter.SingleToUInt32Bits( excitement ), $"{excitement}" );
+		Assert.AreEqual( 62, CoasterRating.GuestExcitement( excitement ), "trunc(0.5 × 24.79 + 50)" );
 		var final = CoasterRating.FinalFor( rating.Sickness, rating.Excitement, rating.PeakSickness, rating.PeakExcitement, new uint[] { 0, 0x40, 0x80, 0xC0, 0x1C0 }, 10, 3, 1, 2 );
-		Assert.AreEqual( (0x40DC0123u, 0x41C75699u, 2, 30f), (BitConverter.SingleToUInt32Bits( final.Sickness ), BitConverter.SingleToUInt32Bits( final.Excitement ), final.Sections, final.Length ),
-			"sections with both 0x40 and 0x80 (ORACLE.md F8)" );
+		Assert.AreEqual( (0x40DC0123u, 0x41C65CFFu, 2, 30f), (BitConverter.SingleToUInt32Bits( final.Sickness ), BitConverter.SingleToUInt32Bits( final.Excitement ), final.Sections, final.Length ),
+			"sections with both 0x40 and 0x80 (0x43e04e..0x43e07f)" );
 	}
 
 	[TestMethod]
 	public void TheRatingStepIsAnOracleSeam()
 	{
-		// The discomfort's fallback term is Fz (signed): with u = 0, dU = |Fx| + Fz.
+		// The discomfort's fallback term is u, the single (1 + U) of an inverted bank, and 0 otherwise (the Mac added the stale Fz): with u = 0, dU = |Fx|.
 		var factors = CoasterRatingFactors.From( CoasterDefinition.Default ) with { Speed = 0, GForceExcitement = 0, BankExcitement = 0, GForceSickness = 0 };
 		var rating = new CoasterRating( factors, 0, 0 );
 		rating.Restore( 0, 4, 0, 4, 4, normalScream: true, terrorScream: false );
 		var flags = rating.Step( 7, 0, 0, new SVector3( 0, 0, -3 ), (CoasterSampleFlags)0xFF );
-		Assert.AreEqual( 2f + 3f, rating.Excitement, "½·4 + max(0 − (0 + −3), 0)" );
-		Assert.AreEqual( (CoasterSampleFlags)0xF8 | CoasterSampleFlags.NormalScream, flags, "bits 1, 2, 4 replaced: a rise of 1 > 0.5 starts a normal scream; 1 ≤ 1.0 starts no terror scream" );
-		Assert.IsTrue( rating.NormalScream && !rating.TerrorScream );
+		Assert.AreEqual( 2f, rating.Excitement, "½·4 + max(0 − (0 + 0), 0): Fz does not enter" );
+		Assert.AreEqual( (CoasterSampleFlags)0xF8, flags, "bits 1, 2, 4 replaced: the excitement fell, so no scream and the normal state ends" );
+		Assert.IsTrue( !rating.NormalScream && !rating.TerrorScream );
 		Assert.AreEqual( 0f, rating.Sickness );
+		// an inverted bank with a rising track (Fy >= 0.1) leaves u itself as the term: bank 2 gives u = 1 + (2 − π/2)
+		var inverted = new CoasterRating( CoasterRatingFactors.From( CoasterDefinition.Default ) with { Speed = 0, GForceExcitement = 0, GForceSickness = 0, UpsideDownSickness = 0, XGForceUncomfortable = 0, BankExcitement = 10 }, 0, 0 );
+		inverted.Step( 7, 0, 2, new SVector3( 0, 1, 0 ) );
+		Assert.AreEqual( 0x419490FEu, BitConverter.SingleToUInt32Bits( inverted.Excitement ), "20 − u" );
 	}
 
 	[TestMethod]
@@ -652,7 +655,8 @@ public class CoasterTests
 	{
 		Assert.AreEqual( 1, CoasterRating.TrainCount( 20, 15000, 6 ) );
 		Assert.AreEqual( 2, CoasterRating.TrainCount( 31, 15000, 6 ) );
-		Assert.AreEqual( 2, CoasterRating.TrainCount( 30, 15000, 6 ), "exactly two headways" );
+		Assert.AreEqual( 1, CoasterRating.TrainCount( 30, 15000, 6 ), "the headway 15000 × 0.001f rounds up to 15.000001 seconds in the 24-bit multiply, so exactly 30 s is just under two" );
+		Assert.AreEqual( 2, CoasterRating.TrainCount( 30.01f, 15000, 6 ) );
 		Assert.AreEqual( 1, CoasterRating.TrainCount( 29.999f, 15000, 6 ) );
 		Assert.AreEqual( 6, CoasterRating.TrainCount( 100, 15000, 6 ), "uiMaxTrains caps" );
 		Assert.AreEqual( 1, CoasterRating.TrainCount( 0.5f, 15000, 6 ), "at least one train" );
@@ -1023,8 +1027,8 @@ public class CoasterTests
 			}
 			return WorldStateHash.Compute( new WorldStateSources { Scripts = scripts } );
 		}
-		Assert.AreEqual( "0FE29AA5CBF09FDB", Run( reopen: false ).ToString( "X16" ), "the built coaster's fixed run" );
-		Assert.AreEqual( "E71F6F7026ACA2B3", Run( reopen: true ).ToString( "X16" ), "the reopened coaster's fixed run" );
+		Assert.AreEqual( "9F260909CADDDC29", Run( reopen: false ).ToString( "X16" ), "the built coaster's fixed run" );
+		Assert.AreEqual( "564523CD91FD6C57", Run( reopen: true ).ToString( "X16" ), "the reopened coaster's fixed run" );
 	}
 
 	[TestMethod]

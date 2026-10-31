@@ -1,4 +1,4 @@
-"""tp.exe's bridge walks 0x52C6F0 (forward) and 0x52CCB0 (reverse) and the track line's path clearing run in the x86 oracle sandbox (docs/reverse/ORACLE.md, finding X46; TRACK-010).
+"""tp.exe's bridge walks 0x52C6F0 (forward) and 0x52CCB0 (reverse) and the track line's path clearing run in the x86 oracle sandbox (docs/reverse/ORACLE.md, finding X47; TRACK-010).
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified tp.exe (OPENTPW_TPW_EXE, SHA-256 pinned) are needed, nothing here is shipped. The station oracle's sandbox (a synthetic 128 x 128 map, the
 cells at G + 0x294 + id * 0x44 and the second-layer structure records at G + (id + 0x6cde) * 0x28, id = y * 128 + x + 1) places a kart or water ride; this module then

@@ -7,7 +7,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// TRACK-010: <see cref="TrackBridges"/> against tp.exe's own bridge walks 0x52C6F0 and 0x52CCB0 run in the x86 oracle (tools/ppc-analysis/oracle_x86/bridge_walk_golden.py, docs/reverse/ORACLE.md X46)
+/// TRACK-010: <see cref="TrackBridges"/> against tp.exe's own bridge walks 0x52C6F0 and 0x52CCB0 run in the x86 oracle (tools/ppc-analysis/oracle_x86/bridge_walk_golden.py, docs/reverse/ORACLE.md X47)
 /// on synthetic second-layer records: every record's flag word after the op 0x86 pair must be the executable's.
 /// </summary>
 [TestClass]

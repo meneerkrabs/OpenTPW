@@ -164,7 +164,7 @@ public class HeldSoundFadeTests
 		mixer.SetChannelGain( AudioChannel.Effects, 0.5f );
 		var held = Place( mask: 9 ); held.Fade(); NextPoll();
 		Assert.AreEqual( 30, held.Lifetime.OwnVolume ); Assert.AreEqual( 30, held.Lifetime.DeviceVolume );
-		Assert.AreEqual( (short)300, mixer.Mix( 1 )[0], "Final device gain must bypass channel gain" );
+		Assert.AreEqual( AudioLevels.Scale( 30, 1000 )[0], mixer.Mix( 1 )[0], "Final device gain (index 30 through the driver table) must bypass channel gain" );
 		NextPoll(); Assert.AreEqual( 9, held.Lifetime.OwnVolume );
 		held.Stop();
 		var changed = Place( mask: 9 ); changed.Fade(); NextPoll();

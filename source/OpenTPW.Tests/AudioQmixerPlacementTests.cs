@@ -114,7 +114,7 @@ public class AudioQmixerPlacementTests
 		system.Pump();
 		var pcm = mixer.Mix( 1 );
 		if ( flat )
-			CollectionAssert.AreEqual( new short[] { 1000, 1000 }, pcm, "audible at any distance, centred, at the voice's gain" );
+			CollectionAssert.AreEqual( AudioLevels.Scale( 100, 1000, 1000 ), pcm, "audible at any distance, centred, at the voice's library volume" );
 		else
 			CollectionAssert.AreEqual( new short[] { 0, 0 }, pcm, "a placed voice 100 units away with a range of 10 is not heard" );
 	}

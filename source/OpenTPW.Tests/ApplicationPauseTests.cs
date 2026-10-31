@@ -170,4 +170,115 @@ public class ApplicationPauseTests
 		LoseFocus(); Assert.IsFalse( (bool)typeof( ParkHud ).GetField( "challengeUserPaused", Private )!.GetValue( hud )! );
 		Assert.IsFalse( (bool)typeof( ParkHud ).GetField( "challengeTimersSuspended", Private )!.GetValue( hud )! );
 	}
+
+	// UI-096: the sound side of the pause follows the owners of the original's game pause (ParkHud.ObservePauseSound, GamePauseSound)
+	private void WithMixer( Action<AudioMixer> test )
+	{
+		var old = AudioMixer.Current;
+		using var mixer = new AudioMixer( null );
+		AudioMixer.Current = mixer;
+		GamePauseSound.Reset();
+		try { test( mixer ); }
+		finally { AudioMixer.Current = old; GamePauseSound.Reset(); }
+	}
+
+	[TestMethod]
+	public void ThePKeyIsAGamePauseForTheSoundAndTheSpeedButtonsAreNot()
+	{
+		WithMixer( mixer =>
+		{
+			hud.ObservePauseSound();
+			Assert.IsFalse( GamePauseSound.ListenerRaised );
+			hud.SetUserGameSpeed( GameSpeed.Paused ); hud.ObservePauseSound();
+			Assert.IsFalse( GamePauseSound.ListenerRaised, "the speed button's pause never calls 0x4092A0 or 0x409350" );
+			hud.SetUserGameSpeed( GameSpeed.Normal ); hud.ObservePauseSound();
+			Key( UiKeys.Pause ); hud.ObservePauseSound();
+			Assert.IsTrue( GamePauseSound.ListenerRaised, "P is the pause object's toggle (0x409350 from 0x40BF77)" );
+			Assert.IsFalse( mixer.Paused );
+			Key( UiKeys.Pause ); hud.ObservePauseSound();
+			Assert.IsFalse( GamePauseSound.ListenerRaised, "P again resumes" );
+		} );
+	}
+
+	[TestMethod]
+	public void ThePauseMenuPausesTheSoundOnceAndItsCloseResumesIt()
+	{
+		WithMixer( mixer =>
+		{
+			Key( UiKeys.Back ); hud.ObservePauseSound();
+			Assert.AreEqual( ParkHud.PauseMenuScreen, hud.Stack.Top!.Name );
+			Assert.IsTrue( GamePauseSound.ListenerRaised );
+			hud.ObservePauseSound();
+			Assert.IsTrue( GamePauseSound.ListenerRaised );
+			Key( UiKeys.Back ); hud.ObservePauseSound();
+			Assert.IsFalse( GamePauseSound.ListenerRaised );
+		} );
+	}
+
+	[TestMethod]
+	public void TheDeactivationPausesTheMixerAndTheReturnToTheGameResumesIt()
+	{
+		WithMixer( mixer =>
+		{
+			LoseFocus(); hud.ObservePauseSound();
+			Assert.IsTrue( mixer.Paused, "0x46B74C: the pause 0x4092A0(1, 1) pauses the whole mixer" );
+			Assert.IsFalse( GamePauseSound.ListenerRaised );
+			Observe( true ); hud.ObservePauseSound();
+			Assert.IsTrue( mixer.Paused, "the focus return is not a game resume" );
+			Key( UiKeys.Pause ); hud.ObservePauseSound();
+			Assert.IsFalse( mixer.Paused, "the resume answers the last pause: the mixer" );
+			Assert.IsFalse( GamePauseSound.ListenerRaised );
+		} );
+	}
+
+	[TestMethod]
+	public void TheDeactivationFindsTheGateShutWhileAMenuHoldsTheGame()
+	{
+		WithMixer( mixer =>
+		{
+			Key( UiKeys.Back ); hud.ObservePauseSound();
+			LoseFocus(); hud.ObservePauseSound();
+			Assert.IsFalse( mixer.Paused, "the pause menu cleared the gate 0x3C: 0x4092A0 returns at once" );
+			Assert.IsTrue( GamePauseSound.ListenerRaised );
+		} );
+	}
+
+	[TestMethod]
+	public void OnePKeyEndsAFocusLossPauseEvenOverAUserPause()
+	{
+		// [BIN:TPW-EXE:0x409350] the pause object has one flag: with it set, P resumes in one press (a focus loss after P is the same flag again)
+		Key( UiKeys.Pause ); Assert.AreEqual( GameSpeed.Paused, hud.Status.Speed );
+		LoseFocus(); Assert.IsTrue( hud.ClockPaused );
+		Key( UiKeys.Pause );
+		Assert.IsFalse( hud.ClockPaused, "one press resumes" );
+		Assert.AreNotEqual( GameSpeed.Paused, hud.Status.Speed );
+	}
+
+	[TestMethod]
+	public void AParkLeavesNoFrontEndFocusLatchBehind()
+	{
+		WithMixer( mixer =>
+		{
+			GamePauseSound.ObserveFrontEndFocus( true, false );
+			GameAudio.LeavePark();
+			GamePauseSound.ObserveFrontEndFocus( false, false );
+			Assert.IsFalse( mixer.Paused, "the lobby's first sample after a park is not a loss" );
+			GamePauseSound.ObserveFrontEndFocus( true, false );
+			GamePauseSound.ObserveFrontEndFocus( false, false );
+			Assert.IsTrue( mixer.Paused, "a real loss after a sampled return still pauses" );
+		} );
+	}
+
+	[TestMethod]
+	public void ResetSavedSoundPutsThePauseObjectBack()
+	{
+		WithMixer( mixer =>
+		{
+			GamePauseSound.Pause( false );
+			Assert.IsTrue( GamePauseSound.ListenerRaised );
+			GameAudio.ResetSavedSound();
+			Assert.IsFalse( GamePauseSound.ListenerRaised );
+			Assert.IsFalse( GamePauseSound.AdvisorSpeechPaused );
+		} );
+	}
 }

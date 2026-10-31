@@ -68,7 +68,7 @@ public class AudioLoopRangeTests
 		var firstOutput = Output( voice );
 		var completions = 0;
 		voice.Completed += _ => completions++;
-		CollectionAssert.AreEqual( new short[] { 1000, 1000, 1010, 1010, 1020, 1020 }, mixer.Mix( 3 ) );
+		CollectionAssert.AreEqual( AudioLevels.Scale( 100, 1000, 1000, 1010, 1010, 1020, 1020 ), mixer.Mix( 3 ) );
 		Listener( Far ); system.Pump();
 		Assert.IsFalse( voice.HasOutput ); Assert.IsNull( Output( voice ) ); Assert.IsFalse( voice.IsFinished );
 		var seed = system.Seed;
@@ -79,7 +79,7 @@ public class AudioLoopRangeTests
 		Listener( Vector3.Zero ); system.Pump();
 		Assert.IsTrue( voice.HasOutput ); Assert.AreNotSame( firstOutput, Output( voice ) );
 		Assert.AreEqual( ownerSerial, voice.Serial ); Assert.AreEqual( -1L, voice.StartOutputFrame );
-		CollectionAssert.AreEqual( new short[] { 1000, 1000 }, mixer.Mix( 1 ), "fresh source, not the old or silently advanced cursor" );
+		CollectionAssert.AreEqual( AudioLevels.Scale( 100, 1000, 1000 ), mixer.Mix( 1 ), "fresh source, not the old or silently advanced cursor" );
 		Assert.AreEqual( 8L, voice.StartOutputFrame );
 		var resumed = Output( voice );
 		system.Pump(); voice.RaiseCompleted(); system.Pump();
@@ -140,7 +140,7 @@ public class AudioLoopRangeTests
 		else
 		{
 			Assert.IsTrue( placed.Voice!.HasOutput ); Assert.AreEqual( 1, mixer.Voices.Count );
-			CollectionAssert.AreEqual( new short[] { 1000, 1000 }, mixer.Mix( 1 ) );
+			CollectionAssert.AreEqual( AudioLevels.Scale( 100, 1000, 1000 ), mixer.Mix( 1 ) );
 		}
 	}
 
@@ -301,7 +301,7 @@ public class AudioLoopRangeTests
 		Assert.AreSame( output, Output( child ) ); Assert.IsTrue( child.HasOutput );
 		Assert.AreEqual( 1, mixer.Voices.Count, "no new child while the root is range-gated" );
 		Listener( Vector3.Zero );
-		CollectionAssert.AreEqual( new short[] { 1080, 1080 }, mixer.Mix( 1 ), "already-started child continues its own source cursor" );
+		CollectionAssert.AreEqual( AudioLevels.Scale( 100, 1080, 1080 ), mixer.Mix( 1 ), "already-started child continues its own source cursor" );
 		chain.Stop(); Assert.IsTrue( child.IsFinished );
 	}
 }

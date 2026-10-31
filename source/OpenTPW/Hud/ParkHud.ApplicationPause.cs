@@ -47,9 +47,13 @@ public sealed partial class ParkHud
 
 	private void ToggleUserPause()
 	{
-		if ( applicationPaused && Status.Speed != GameSpeed.Paused )
-			ClearApplicationPause(); // Resume the stored speed; do not convert focus pause into explicit user pause.
-		else
+		// [BIN:TPW-EXE:0x409350 P toggle] the pause object has one flag (+0x1C): with it set, whoever set it (P, the pause menu or the focus loss), the key resumes, so one press ends
+		// a focus-loss pause even over a user pause (the resume undoes what the last pause did, 0x409300)
+		var focusPaused = applicationPaused;
+		if ( focusPaused )
+			ClearApplicationPause();
+		if ( focusPaused && Status.Speed != GameSpeed.Paused )
+			return; // Resume the stored speed; do not convert focus pause into explicit user pause.
 		{
 			// [BIN:TPW-EXE:0x409350 P toggle] the key row (0x40bf77) and the P window's own procedure (0x4a2706) call 0x409350, which first toggles the window [0x7cb2cc]
 			// (jump thunk 0x481460 -> 0x48a720 -> 0x4a27f0) and then pauses or resumes. Besides P, only the focus-loss pause creates it (ObserveApplicationFocus, 0x4092a0(1));

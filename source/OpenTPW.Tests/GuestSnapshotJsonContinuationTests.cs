@@ -479,6 +479,9 @@ public class GuestSnapshotJsonContinuationTests
 		Assert.AreEqual( 14, Command( restoredScript, 9, 14 ) );
 		Assert.AreEqual( 14, Command( script, 8, 14 ), "WALKOFF leaves the argument register unchanged" );
 		Assert.AreEqual( 14, Command( restoredScript, 8, 14 ) );
+		// the walk update of the frame moves the finished walk off to state 4, the one WALKGET hands out (0x00557D80)
+		bridge.WalkUpdate();
+		restored.WalkUpdate();
 		Assert.AreEqual( 14, Command( script, 7, 0 ), "WALKGET returned the walked-off guest" );
 		Assert.AreEqual( 14, Command( restoredScript, 7, 0 ) );
 

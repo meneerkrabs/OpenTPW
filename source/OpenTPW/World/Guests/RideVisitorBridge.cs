@@ -1389,7 +1389,6 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return;
 		}
 		ReleaseLegacyLeftovers();
-		UpdateWalkers();
 
 		// State 14 (0xe05c8): the guest stays in the list until the script has consumed VAR_LETMEON. Boarding comes first: a script may take a guest and hand it to VAR_LETMEOFF within one slice.
 		if ( called != 0 && letMeOnWritten && Get( RideVariables.VAR_LETMEON ) != called )
@@ -1729,10 +1728,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public Action<int>? WalkOnEffect { get; set; }
 
 	/// <summary>
-	/// The walk update of the main loop pass (tp.exe 0x00557AB0 → 0x00557D80), run by the host step: a walk-on whose end has passed moves to state 2 (a head action 4 hangs the rider's head on head id u2, 0x0044B410; action 2 starts effect 0x13 at u2)
+	/// The walk update of the main loop pass (tp.exe 0x00557AB0 -> 0x00557D80), run by the level's pose phase at the end of every tick (the original runs it once per rendered frame, after the frame's substeps, 0x0054FA08): a walk-on whose end has passed moves to state 2 (a head action 4 hangs the rider's head on head id u2, 0x0044B410; action 2 starts effect 0x13 at u2)
 	/// and a walk-off whose end has passed moves to state 4, the state WALKGET hands out.
 	/// </summary>
-	private void UpdateWalkers()
+	// [BIN:TPW-EXE:0x00557E56 walk-on end] state 1 becomes 2 when the share (now x 1000 - began x 1000) / (end - began) reaches 1000 (unsigned, 0x557E56), that is when the clock reaches the end, and the entry's start becomes the clock (0x557E70..0x557E79)
+	// [BIN:TPW-EXE:0x00558010 walk-off end] state 3 becomes 4 on the same test (0x558010..0x558018); the script's WALKGET sees state 4 only, so a walk-off that ends inside a substep is handed out at the next substep's pass
+	// [EXT:fixed-60hz-clock] the original reads the live clock (0x00402D70) at the frame's walk update; the host reads the script clock of the tick, which only the substeps advance
+	internal void WalkUpdate()
 	{
 		if ( vm == null )
 			return;
@@ -1782,12 +1784,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>The riders in WALKOFF's states (3 and 4) in table order.</summary>
 	private IEnumerable<int> WalkingOffGuests() => walkTable.Where( entry => entry is { State: >= 3 } ).Select( entry => entry!.Guest );
 
-	/// <summary>WALKGET: the first entry in state 4 gives its rider and frees the entry. The frame update moves state 3 to 4 once the end has passed; the bridge applies that move here, at the script's own time.</summary>
-	private int TakeWalker( double now )
+	/// <summary>WALKGET: the first entry in state 4 gives its rider and frees the entry; the walk update (<see cref="WalkUpdate"/>) moves state 3 to 4 once the end has passed, so an entry whose end passed in this very pass is not handed out yet.</summary>
+	// [BIN:TPW-EXE:0x00557110 WALKGET] scans the table for state 4 only and returns that entry's rider (0 for none), freeing the entry
+	private int TakeWalker()
 	{
 		for ( var slot = 0; slot < walkTable.Count; slot++ )
 		{
-			if ( walkTable[slot] is not { State: >= 3 } entry || entry.Ends > now )
+			if ( walkTable[slot] is not { State: 4 } entry )
 				continue;
 			walkTable[slot] = null;
 			return entry.Guest;
@@ -1871,8 +1874,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				var guest = call.Argument( 0 );
 				MarkBoarded( guest );
 				// [BIN:TPW-EXE:0x00555963 WALKON operands] seven values, each a signed word or a variable's value: the rider, the walk-on's first node (u1), its second node (u2), the nodes WALKOFF walks between (u3, u4), the walk action and a last word the handler stores and nothing reads here (0x00556F40: u1 and u2 at +0x00 and +0x02, u3 and u4 at +0x04 and +0x06, the rider at +0x10, the action at +0x16, the last word at +0x1A)
-				// [BIN:TPW-EXE:0x00556F40 WALKON slot] the entry takes the first free table entry (state 0) of the header walk size; with none free the handler logs and stores nothing, so the rider is never handed out by WALKGET. Its state becomes 1 with the start now and the end now + ftol(the distance between u1 (class 0x800) and u2 (class 0x80 for the head action 4, else 0x800)) x 100 ms (100 ms for 0); state 2 follows at the frame update 0x00557D80 once the end has passed, WALKOFF's state 3 overrides either
-				// [APPROX:TOUR-011] the walk update that moves state 1 to 2 runs once per rendered frame in the original (0x00557AB0, run by the main loop pass 0x0054E360 at 0x0054FA08) and draws the walking body of every entry (0x005580A0); the bridge makes the state changes in its host step (UpdateWalkers) and the bodies are drawn from the table by FlatRideBounceRiders.CollectWalkers, whose steps, terrain height and missing-node cases are the rest of this approximation
+				// [BIN:TPW-EXE:0x00556F40 WALKON slot] the entry takes the first free table entry (state 0) of the header walk size; with none free the handler logs and stores nothing, so the rider is never handed out by WALKGET. Its state becomes 1 with the start now and the end now + ftol(the distance between u1 (class 0x800) and u2 (class 0x80 for the head action 4, else 0x800)) x 100 ms (100 ms for 0); state 2 follows at the frame update 0x00557D80 (WalkUpdate, the level's pose phase) once the end has passed, WALKOFF's state 3 overrides either
 				if ( guest <= 0 )
 					return true;
 				var capacity = Math.Max( 0, call.VM.Script.WalkSize );
@@ -1916,7 +1918,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			case Opcode.WALKGET:
 			{
 				// [BIN:TPW-EXE:0x00557110 WALKGET] the first entry of the table in state 4 (the frame update moves state 3 to 4 once the end has passed) gives its rider to the operand and frees the entry; none: 0
-				result = TakeWalker( now );
+				result = TakeWalker();
 				return true;
 			}
 			case Opcode.BOUNCESETNODE:
@@ -1934,9 +1936,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				// [BIN:TPW-EXE:0x00555753 BOUNCE deadline] the deadline is the clock plus the second operand x 1000 ms (a wrapping 32-bit product), whatever its value: a duration of 0 is a deadline that has already passed. The four shipped scripts pass VAR_DURATION, which ride init sets above 0 (WalkNodeCorpusTests)
 				var seconds = call.Argument( 1 );
 				// [BIN:TPW-EXE:0x00555780 BOUNCE result] the flag word takes 1 when an entry was free and 0 with a full table
-				// [APPROX:TOUR-011] OpenTPW's host takes a bounce only for a rider that is not bouncing yet: tp.exe's BOUNCE (0x00555674..0x0055577C) takes the first free entry for any guest and tests neither (a script that bounces a guest twice, or a guest who is not aboard, is not modelled)
-				if ( onRide.Contains( guest ) && !bouncing.Any( entry => entry.Guest == guest ) )
-					result = TakeBounceSlot( bouncing, call.VM.Script.BounceSize, guest, now + seconds * 1000.0, now ) ? 1 : 0;
+				// [BIN:TPW-EXE:0x00555736 BOUNCE entry] the first free entry (guest word 0) of the header's bounce size takes the guest for any operand: it tests neither whether the guest is aboard nor whether it already bounces (0x00555674..0x0055577C), so a script that bounces a guest twice fills two entries (the pose phase draws one body: the later entry's pose replaces the earlier's)
+				result = TakeBounceSlot( bouncing, call.VM.Script.BounceSize, guest, now + seconds * 1000.0, now ) ? 1 : 0;
 				if ( result == 1 )
 					StoreBounceNode( guest );
 				return true;

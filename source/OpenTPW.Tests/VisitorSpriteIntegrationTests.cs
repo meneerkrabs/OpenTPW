@@ -232,7 +232,7 @@ public class VisitorSpriteIntegrationTests
 	}
 
 	[TestMethod]
-	public void PooledTurnSchedulesBeforeApplyingPendingButFallbackKeepsExistingGuestFirstOrder()
+	public void TheSpritePassRunsBeforeTheGuestsApplyTheirPendingRequestsPooledOrNot()
 	{
 		foreach ( var pooled in new[] { true, false } )
 		{
@@ -248,7 +248,8 @@ public class VisitorSpriteIntegrationTests
 			guest.BodySprite.RestoreSnapshot( guest.BodySprite.CaptureSnapshot() with { Player = before with { NextDue = 0 } } );
 			scene.Level.AdvanceSimulation( FixedStepClock.TickDuration );
 			Assert.AreEqual( VisitorSpriteTemplate.Stand, guest.BodySprite.Player.ActiveTemplate );
-			Assert.AreEqual( pooled ? 2 : 0, guest.BodySprite.Player.Output!.Value.Slot );
+			// [BIN:TPW-EXE:0x0054F5FB] the sprite pass is inside the substep, before the world update, in the non-pooled host's per-tick order too: the run program still emits
+			Assert.AreEqual( 2, guest.BodySprite.Player.Output!.Value.Slot, $"pooled {pooled}" );
 		}
 	}
 

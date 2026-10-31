@@ -226,6 +226,7 @@ public partial class GuestTests
 		{
 			Bridge.HostStep();
 			Script.Advance( Tick );
+			Bridge.WalkUpdate(); // the frame's walk update (0x00557D80), after the substep
 		}
 	}
 
@@ -328,7 +329,14 @@ public partial class GuestTests
 			.I( Opcode.UNLIMBO, temp )
 			.I( Opcode.BRANCH_Z, "idle" )
 			.I( Opcode.WALKOFF, temp )
+			// WALKGET hands out state 4 only, which the frame's walk update sets after the pass that began the walk off: the script asks again until it gets the rider (as the shipped scripts do)
+			.Label( "walkget" )
 			.I( Opcode.WALKGET, off )
+			.I( Opcode.BRANCH_Z, "walkget_wait" )
+			.I( Opcode.BRANCH, "idle" )
+			.Label( "walkget_wait" )
+			.I( Opcode.ENDSLICE )
+			.I( Opcode.BRANCH, "walkget" )
 			.Label( "idle" )
 			.I( Opcode.ENDSLICE )
 			.I( Opcode.BRANCH, "loop" );
@@ -344,6 +352,7 @@ public partial class GuestTests
 		{
 			bridge.HostStep();
 			vm.Advance( Tick );
+			bridge.WalkUpdate();
 			foreach ( var item in host.Events.Where( x => x.StartsWith( "release" ) ) )
 				releaseTimes.TryAdd( int.Parse( item[8..] ), vm.TimeMilliseconds );
 			if ( tick == 30 )

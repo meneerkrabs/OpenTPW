@@ -135,7 +135,7 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 			// WALK follows BOUNCE and consumes the same visitor-owned last emitted frame.
 			CollectWalkers( prepared, ride.Runtime, ride.GetNodeTransform, walkers,
 				( guest, template ) => guests.RequestRideBody( guest, ride.Runtime.Visitors.AttractionId, (VisitorSpriteTemplate)template ),
-				guest => guests.HideRideBody( guest, ride.Runtime.Visitors.AttractionId ) );
+				guest => guests.HideRideBody( guest, ride.Runtime.Visitors.AttractionId ), objects.TerrainHeightAtEngine );
 		}
 		HoldKeptBodies( prepared, placed, guests );
 	}
@@ -169,8 +169,8 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 	/// </summary>
 	// [BIN:TPW-EXE:0x00557D80 walk update drawing] each entry draws its body through 0x005580A0 between the nodes of its state, by the share of the state's time spent, in template 1 (walking) while it walks on or off or waits at the fourth node; on board the head actions draw none and the actions 3, 5 and 6 draw templates 3, 8 and 5 at the second node
 	// [BIN:TPW-EXE:0x005580A0 body position] each node's position is read (0x00556B90: the class mask and number's first dummy, its matrix words +0x30..+0x38), and with bit 0 of the entry's last word (+0x1A, set by every shipped script) the height is taken from the nodes, else from the terrain (0x004511A0)
-	// [APPROX:TOUR-011] a body whose WALKON leaves bit 0 of its last word clear stands on the terrain in the original (0x004511A0, whose result is not modelled here: the bodies are drawn from the nodes' own heights), while the host pose phase consumes the shared body history on its existing approximate clock
-	internal static void CollectWalkers( Dictionary<int, BounceRiderPose> poses, OriginalObjectRuntime runtime, Func<int, System.Numerics.Matrix4x4> nodeWorld, List<RideVisitorBridge.WalkerView> scratch, Func<int, int, VisitorSpriteFrame?>? requestBody = null, Action<int>? hideBody = null )
+	// [EXT:original-undefined-reads] a walk node the model lacks (0x556B90 returns 0 and writes nothing, 0x556D2C) leaves the caller's stack words undefined in the original, which draws the body at whatever they held; OpenTPW draws no body for such an entry
+	internal static void CollectWalkers( Dictionary<int, BounceRiderPose> poses, OriginalObjectRuntime runtime, Func<int, System.Numerics.Matrix4x4> nodeWorld, List<RideVisitorBridge.WalkerView> scratch, Func<int, int, VisitorSpriteFrame?>? requestBody = null, Action<int>? hideBody = null, Func<float, float, float>? terrainHeight = null )
 	{
 		if ( runtime.Script is not { } script )
 			return;
@@ -181,8 +181,9 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 		var now = script.TimeMilliseconds;
 		var scale = ObjectPlacement.ModelScale;
 		SVector3? Position( int mask, int number ) => runtime.FindDummyNode( mask, number ) is { } node ? nodeWorld( node ).Translation : null;
-		// [BIN:TPW-EXE:0x00556B90 node orientation] the node's third matrix row (+0x20..+0x28, the engine's second row after the axes swap), whose x and z give a body on board its heading
-		int? Orientation( int number ) => runtime.FindDummyNode( WalkerBodies.WalkClass, number ) is { } node ? WalkerBodies.HeadingOf( nodeWorld( node ).M21, nodeWorld( node ).M22 ) : null;
+		// [BIN:TPW-EXE:0x00556B90 node orientation] the node's third matrix row (+0x20..+0x28, the engine's second row after the axes swap), negated while the node's state has bit 0x10 (0x556C61, the toggled bit that hides its mesh), normalised and scaled by 1024 (0x556C98..0x556D10), whose x and z give a body on board its heading
+		int? Orientation( int number ) => runtime.FindDummyNode( WalkerBodies.WalkClass, number ) is { } node
+			? WalkerBodies.OrientationHeading( nodeWorld( node ), runtime.Animator.GetNodeStateBit( node ) ) : null;
 		foreach ( var walker in scratch )
 		{
 			var head = walker.Mode == 4;
@@ -244,9 +245,13 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 			}
 			if ( feet is not { } point )
 				continue;
+			// [BIN:TPW-EXE:0x00558131 body height] a walk whose last word (+0x1A) has bit 0 clear stands on the terrain: the height is the terrain's under the interpolated x and z (0x4511A0, mode 1: 0x4527F0), not the nodes' (a mode the model's flags choose: 0x450EA0 sets mode 1 for an ordinary ride)
+			if ( (walker.Extra & 1) == 0 && terrainHeight != null )
+				point = new SVector3( point.X, point.Y, terrainHeight( point.X, point.Y ) );
 			var output = requestBody?.Invoke( walker.Guest, template );
 			runtime.Visitors.SetWalkHeading( walker.Guest, heading );
-			var pose = new BounceRiderPose( walker.Guest, runtime.Visitors.AttractionId, point, WalkerBodies.SectorOf( heading ), false, WalkerBodies.StepOf( now, walker.Began ), WalkerBodies.SlotOf( template ) );
+			// without a body source (a bare simulation) no frame is known: the first frame of the template's slot
+			var pose = new BounceRiderPose( walker.Guest, runtime.Visitors.AttractionId, point, WalkerBodies.SectorOf( heading ), false, 0, WalkerBodies.SlotOf( template ) );
 			poses[walker.Guest] = requestBody == null ? pose : output is { } frame
 				? pose with { Slot = frame.Slot, Step = frame.Frame, Visible = true, UsesSpriteState = true }
 				: pose with { Visible = false, UsesSpriteState = true };

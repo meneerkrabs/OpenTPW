@@ -149,6 +149,16 @@ public sealed class ParkObjects
 	}
 
 	public ObjectCatalog Catalog { get; }
+	/// <summary>
+	/// The engine height of the terrain under an engine ground point (a walking body whose WALKON last word has bit 0 clear takes it, <see cref="FlatRideBounceRiders"/>): the landscape sampler on the point in model units, the original's
+	/// terrain mode of <c>0x004511A0</c> (<c>0x004527F0</c>).
+	/// </summary>
+	public float TerrainHeightAtEngine( float engineX, float engineY )
+	{
+		var origin = Grid.Origin;
+		return Grid.GetTerrainHeight( (engineX - origin.X) / OriginalParkPlacement.ModelScale, (engineY - origin.Y) / OriginalParkPlacement.ModelScale );
+	}
+
 	public IParkGrid Grid { get; }
 	/// <summary>
 	/// The park's thing pool (<see cref="ThingPool"/>): each placed object takes a slot as its thing id, and a removed object's slot is freed at the turn's end. Null: objects have no thing id

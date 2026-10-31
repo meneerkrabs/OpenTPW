@@ -151,6 +151,9 @@ public partial class Level
 		}
 		else
 		{
+			// [BIN:TPW-EXE:0x0054F5FB sprite pass before the world update] the sprite scheduler runs inside the substep, before the park turn's world update (0x54F668 -> 0x516380): the guests' bodies and balloons, the staff's sources and the portrait clones have stepped when the world update's guests read them. The non-pooled host's per-tick guest update stands for that update (the original runs none between turns), so the pass comes first here too; the object pass stays after the guests (its own order is the non-pooled host's, SimulateSweptTurn has the original's)
+			if ( substep.TourDue )
+				ScheduleSprites( spriteClock );
 			if ( !lost )
 			{
 				using var guestsMark = FrameMarks.Measure( "sim.guests" );
@@ -158,9 +161,6 @@ public partial class Level
 			}
 			using ( FrameMarks.Measure( "sim.objects" ) )
 				Objects.Simulate( deltaTime, substep, PlacedRide );
-			// The non-pooled host keeps its existing guest-before-object order; only pooled turn sweeps provide native scheduler-before-guest ordering.
-			if ( substep.TourDue )
-				ScheduleSprites( spriteClock );
 			using ( FrameMarks.Measure( "sim.economy" ) )
 				Park?.FixedTick();
 			if ( !lost )
@@ -222,7 +222,15 @@ public partial class Level
 
 	private void PrepareRideBodyPoses()
 	{
-		if ( Guests != null && (Park == null || Park.Economy.Speed != GameSpeed.Paused) )
+		if ( Park != null && Park.Economy.Speed == GameSpeed.Paused )
+			return;
+		// [BIN:TPW-EXE:0x0054FA08 walk update] the frame's walk update 0x557AB0 -> 0x557D80 moves every script's walk table entries on (1 to 2 and 3 to 4 once the end has passed) after the substeps, before the bodies are drawn; the scripts see the new states at their next substep
+		foreach ( var item in Objects.Objects )
+			if ( !item.IsDeleted )
+				item.Visitors.WalkUpdate();
+		if ( PlacedRide is { IsDeleted: false } prototype )
+			prototype.Visitors.WalkUpdate();
+		if ( Guests != null )
 			(rideBodyPoses ??= new FlatRideBounceRiders( Objects )).Prepare( Guests );
 	}
 

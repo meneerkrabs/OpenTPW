@@ -399,8 +399,8 @@ public class CoasterPanelTests
 	}
 
 	/// <summary>
-	/// COAST-028: the drag counts whole device pixels of the render resolution (tp.exe 0x42a760 stores x * W / 0x800 and y * H / 0x600 as integers), so the rates 0.005, 0.02 and 0.01 per pixel do not depend
-	/// on a fixed 1024-wide screen: the same pixel distance gives the same value at 800 and at 2560 pixels across.
+	/// [EXT:coaster-drag-reference-mode]: the drag counts whole pixels of the original's default 640 x 480 display mode (tp.exe 0x42a760 stores x * W / 0x800 and y * H / 0x600 as integers), so the rates 0.005, 0.02 and 0.01 per pixel
+	/// give the same value for the same share of the screen at 640 and at 2560 pixels across.
 	/// </summary>
 	[TestMethod]
 	public void TheDragCountsWholeDevicePixelsOfTheRenderResolution()
@@ -409,7 +409,7 @@ public class CoasterPanelTests
 		foreach ( var width in new[] { 640, 1024, 2560 } )
 		{
 			context.Canvas = new UiCanvas( width, width * 3 / 4 );
-			Assert.AreEqual( new NVector2( 123, 45 ), ParkHud.OriginalPixels( context, new NVector2( 123.9f, 45.2f ) ), $"{width} pixels across: no rescaling, the fraction is dropped" );
+			Assert.AreEqual( new NVector2( 320, 240 ), ParkHud.OriginalPixels( context, new NVector2( width * 0.5f + 0.9f, width * 0.375f + 0.2f ) ), $"{width} pixels across: the canvas is scaled to 640 x 480 and the fraction is dropped" );
 		}
 		var (builder, _) = NewCoaster();
 		builder.Height = 20;
@@ -418,10 +418,10 @@ public class CoasterPanelTests
 		var panel = CoasterPanelRig.Create( builder );
 		panel.Select( CoasterToolButton.Height );
 		var start = builder.Track.Nodes[First].T;
-		Assert.IsTrue( panel.Press( First, new NVector2( 500, 400 ), 24, 20 ) );
+		Assert.IsTrue( panel.Press( First, new NVector2( 320, 240 ), 24, 20 ) );
 		context.Canvas = new UiCanvas( 2560, 1920 );
-		panel.Drag( ParkHud.OriginalPixels( context, new NVector2( 500, 380.7f ) ), 0, null );
-		Assert.AreEqual( start + 20 * CoasterToolPanel.HeightRate, builder.Track.Nodes[First].T, 1e-5f, "20 pixels up add 20 x 0.005 at 2560 pixels across as at any other width" );
+		panel.Drag( ParkHud.OriginalPixels( context, new NVector2( 1280, 880.5f ) ), 0, null );
+		Assert.AreEqual( start + 20 * CoasterToolPanel.HeightRate, builder.Track.Nodes[First].T, 1e-5f, "80 canvas pixels up are 20 pixels of the 640 x 480 mode at 2560 pixels across as at any other width" );
 		panel.Release( First, (24, 20) );
 	}
 
@@ -713,6 +713,22 @@ public class CoasterPanelTests
 		Assert.AreEqual( new CoasterRangeMark( First, First + 2, CoasterTrackMesh.CursorMarker ), panel.RangeMark, "a move marks the links around its pylon blue (0x446d50)" );
 		panel.Release( First + 1, null );
 		Assert.IsNull( panel.RangeMark, "the release clears them (0x445a70)" );
+	}
+
+	[TestMethod]
+	public void MovingTheLastPylonOfACompleteTrackMarksOnlyTheLinksAroundIt()
+	{
+		var (builder, ride) = Finished();
+		ride.EnterTool();
+		var track = builder.Track;
+		var end = track.Nodes.Count - 1;
+		Assert.IsTrue( track.Nodes[end].IsStationEnd );
+		var panel = CoasterPanelRig.Create( builder );
+		Assert.IsTrue( panel.Select( CoasterToolButton.Move ) );
+		var node = end - 1;
+		Assert.IsTrue( panel.Press( node, new NVector2( 50, 50 ), track.Nodes[node].X, track.Nodes[node].Y ) );
+		Assert.AreEqual( new CoasterRangeMark( node - 1, end, CoasterTrackMesh.CursorMarker ), panel.RangeMark, "the end node is the last link (0x434060 gives it the next ordinal): [prev, node] only" );
+		panel.Release( node, null );
 	}
 
 	[TestMethod]

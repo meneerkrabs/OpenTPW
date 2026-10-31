@@ -32,7 +32,7 @@ public readonly record struct CoasterCursor( int X, int Y, CoasterPlaceResult Re
 
 /// <summary>
 /// The coaster tool's panel (COAST-028), headless: which of the nine buttons is selected and enabled, and what a press, a drag and a release do in each sub-mode. The HUD feeds it the pointer; tests drive it
-/// directly. Every sub-mode follows the original's handler (see the comments at each method); the mouse-to-value rates are the original's, per device pixel of the render resolution (0x42a760: the pointer is a whole pixel of the resolution the game renders at).
+/// directly. Every sub-mode follows the original's handler (see the comments at each method); the mouse-to-value rates are the original's, per pixel of the original's default 640 x 480 display mode (0x42a760; [EXT:coaster-drag-reference-mode]).
 /// </summary>
 public sealed class CoasterToolPanel
 {
@@ -167,7 +167,7 @@ public sealed class CoasterToolPanel
 	private bool cutHoverKnown;
 
 	/// <summary>The moved pylon's links: the nodes from the one before it up to it, or to the one after it.</summary>
-	// [BIN:TPW-EXE:0x446d50 move marks] the press of the move button marks [prev, next) with the variant 3 (blue) where prev is the node's previous node (itself when none) and next its next node (itself when none); 0x445a70 clears them
+	// [BIN:TPW-EXE:0x446d50 move marks] the press of the move button takes prev = node +0x68 (itself when none) and next = +0x64, orders the two by ordinal (+0) and walks +0x64 from the lower one to the higher, OR-ing 0x1000000 (0x446e4c-0x446e72) with variant [0x7925d0] = 3 (blue), no ordinal-0 remap; the list is linear (only the cursor's spare node is outside it) and every node but the cursor's gets ordinal count++ at creation (0x434060, 0x434116-0x434132), the station end node included, so the end node is the last link with +0x64 null and moving the last pylon marks [prev, node], never the circuit; 0x445a70 clears them
 	private CoasterRangeMark MoveRange( int node )
 	{
 		var last = Track.Nodes.Count - 1;

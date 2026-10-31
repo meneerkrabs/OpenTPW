@@ -428,11 +428,11 @@ public sealed class CoasterRenderer : Entity, IFirstFramePreparation
 			var matrix = owner.ToEngine();
 			var sampling = chain.Count >= 3 && knots.Length >= 3 && !chain.Any( node => (node.Flags & (CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart)) != 0 ) ? Ride.Curve.Sample( knots, definition.Curviness ) : null;
 			// [BIN:TPW-EXE:0x43eb70 rebuild per frame] the original's rebuild runs the pass 0x439ab0 on every frame of an edit, so the crossing markers follow a drag live; a finished track's controller is refitted on every step of a drag (CoasterBuilder.AfterEdit), the lists of an unfinished chain are those of this drawing
-			var crossings = Ride.IsOperational && !Ride.BeingEdited ? Ride.CollisionLists : CoasterRide.ChainCrossings( Ride.Curve, chain, pass, definition, sampling );
+			var crossings = Ride.IsOperational ? Ride.CollisionLists : CoasterRide.ChainCrossings( Ride.Curve, chain, pass, definition, sampling );
 			var cursorValid = preview?.Valid ?? true;
 			int? Marker( int node, int next ) => LinkMarker( chain, crossings, cursorValid, node, next, Ride.RangeMark );
 			// [BIN:TPW-EXE:0x43eb70 rebuild per frame] the rebuild's rating pass 0x43c450 runs on every frame of an edit and on every chain it draws, marking the sections that fall to the winch speed (node flag 0x800, 0x43c4f0..), so the lift sections of an unfinished chain and of a track being dragged follow the build live; the controller's own marks (Ride.WinchSections) are those of its last fit
-			var winch = Ride.IsOperational && !Ride.BeingEdited ? Ride.WinchSections : CoasterRide.ChainWinchSections( definition, Ride.SpeedCap, chain, sampling );
+			var winch = Ride.IsOperational ? Ride.WinchSections : CoasterRide.ChainWinchSections( definition, Ride.SpeedCap, chain, sampling );
 			foreach ( var (first, final, isClosed) in CoasterRenderer.ChainSpans( chain, pass, closed ) )
 				BuildChain( knots[first..(final + 1)], first, definition.Curviness, isClosed, Marker, matrix, first == 0 && final == knots.Length - 1 ? sampling : null, winch );
 			BuildPylons( chain, pass, matrix );

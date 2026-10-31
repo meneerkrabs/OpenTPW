@@ -431,7 +431,7 @@ public sealed class CoasterBuilder
 	/// rebuild does on every frame of the build and of an edit.
 	/// </summary>
 	// [BIN:TPW-EXE:0x430ed0 rebuild stores] the knot pass runs in every rebuild (0x43eb70, each frame the controller's dirty bit 1 is set: 0x435a30) and writes its results into the nodes: the bank (+0xd8, the auto-bank unless node flag 4 holds a hand-set value), the yaw and pitch and the node flag 0x10000000 (the half turn of a suspended coaster's pylon, 0x431f29/0x431f34), whatever the chain is, so an unfinished chain's nodes hold their auto-banks while it is built (the tilt drag counts from them, 0x442010) and a drag step stores them again (0x442f2a)
-	// [APPROX:COAST-033] the build cursor's node takes part in the original's rebuild of an unfinished chain, so the last pylon's stored bank and half turn follow the hovered cell there; OpenTPW stores the chain's own nodes at each edit (a cursor position that left a half turn kept by a straight or loop-pylon pass is not reproduced) — evidence needed: a capture of a suspended coaster built with the cursor passing its straight nodes
+	// [EXT:coaster-cursor-no-node-writes] the build cursor never writes node state: the original's rebuild of an unfinished chain includes the cursor's spare node, so hovering moves the last pylon's stored bank and half turn, but the hover is local to each player and OpenTPW keeps it out of the shared track; the chain's own nodes are stored at each edit (user decision, 2026-10-31)
 	private void Revalidate()
 	{
 		Track.Revalidate( Site, Ride.World, Ride );

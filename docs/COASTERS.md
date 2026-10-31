@@ -523,8 +523,8 @@ formula with x87 steps scaled by 0.1), COAST-032 (tp.exe sets single precision o
 the start-up or 64-bit precision) and COAST-035 (the section builder recolours a link into a node with 0x800000/0x2000, or 0x4000); the cursor now keeps its last cell
 beyond the 300-unit reach of `0x435D50`, as the original does.
 
-The presentation is traced but still approximated in places: COAST-026 (track mesh details), COAST-033 (pylons),
-COAST-034 (cars) and COAST-035 (the build cursor's ribbon). A rider's head hangs from its car's socket of its index in the
+The presentation is traced but still approximated in places: COAST-026 (track mesh details) and
+COAST-034 (cars); COAST-033 (pylons) is retired (October 31, 2026), its last difference, the build cursor's writes into the last pylon's stored bank and half turn, being `[EXT:coaster-cursor-no-node-writes]`. A rider's head hangs from its car's socket of its index in the
 car's seated list (`0x43b600` → `0x44b410`: socket j is the node of the car model's (j + 1)-th attribute record with flag `0x80`,
 `CoasterCarRig.Seats`). The ride view (`RideCameraMode`) rides the car `0x436880` selects: the train with the smallest reference
 position (controller `+0x124`, `0x43d7dd`) and its car 0, or car 1 behind a front car of another type than the seats' (train `+0x34`, `0x436f15`), on that

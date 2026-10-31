@@ -1105,7 +1105,7 @@ public sealed class CoasterTrack
 	/// neighbours present, a curve, not a loop pylon), else the flag the node holds from its last curve pass. <paramref name="write"/> stores the verdicts on the nodes.
 	/// </summary>
 	// [BIN:TPW-EXE:0x431660 kept half turn] the flag lives in the node (+8): the straight, loop-pylon and end branches of the tangent routine do not touch it, so such a node keeps the half turn of its last curve pass
-	// [BIN:TPW-EXE:0x431f29 stored half turn] every edit of the builder stores the chain's verdicts in the nodes (CoasterBuilder.Revalidate), as the original's rebuild does each frame; the cursor node's part in the original's rebuild of an unfinished chain is COAST-033's remaining difference (CoasterBuilder.Revalidate)
+	// [BIN:TPW-EXE:0x431f29 stored half turn] every edit of the builder stores the chain's verdicts in the nodes (CoasterBuilder.Revalidate), as the original's rebuild does each frame; the cursor node's part in the original's rebuild of an unfinished chain is left out ([EXT:coaster-cursor-no-node-writes], CoasterBuilder.Revalidate)
 	internal bool[] PylonsTurnedBack( IReadOnlyList<CoasterNode> chain, IReadOnlyList<SVector3> positions, bool write = false )
 	{
 		var verdicts = new CoasterTurnVerdict[chain.Count];

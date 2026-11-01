@@ -434,6 +434,10 @@ public sealed partial class OriginalEconomyImport
 		var jobs = new List<string>();
 		var resumedClaims = new HashSet<int>();
 		var membersByThing = new Dictionary<int, StaffMember>();
+		var sprites = SavedSpriteScripts.Of( save );
+		var spriteClock = GuestSimulation.BodySpriteSampleAtTick( ParkCalendar.TickOfTurn( save.World.Variables.GameTick ) );
+		var spritesApplied = 0;
+		var spriteGaps = new List<string>();
 		// [BIN:TPW-EXE:0x004D6790 chase] a guard chasing a guest (state 16, +0x212) walks to the guest's cell whatever state it is in and gives up there when the catch test 0x004FEC10 fails: the chase names a saved guest and the guest import decides which of them are restored (IdleEscortsWithoutARestoredGuest)
 		// a guard escorting a guest (state 18) names a saved guest (+0x212) the same way
 		var savedGuests = save.Guests.Select( guest => guest.Id ).ToHashSet();
@@ -481,6 +485,17 @@ public sealed partial class OriginalEconomyImport
 			// the id as saved is kept as the member's stored sprite draw (StaffMember.SpriteDraw): the level reduces it by the loaded count of the category (0x004F93AA), where the variant above uses the folder's
 			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, StaffState.Idle, hired, energy, name, thingId: saved.Id, variant: variant, spriteDraw: saved.Person.SpriteId <= int.MaxValue ? (int)saved.Person.SpriteId : -1 );
 			membersByThing.Add( saved.Id, member );
+			// [BIN:TPW-EXE:0x00475730 sprite loader] the person's sprite handle (+0x0C) names the saved record: its program position, stack, registers, due time and interval are the member's sprite source (SAVE-013)
+			if ( sprites != null && saved.Person.SpriteScript != 0 )
+			{
+				if ( sprites.Staff( saved.Person.SpriteScript, saved.Person.NextAnim, saved.Person.NextServiceInterval, spriteClock, out var spriteGap ) is { } spriteState )
+				{
+					member.Sprite.RestoreSnapshot( spriteState );
+					spritesApplied++;
+				}
+				else
+					spriteGaps.Add( $"{saved.Model} thing {saved.Id}: {spriteGap}" );
+			}
 			// [DATA:SaveThingBase] exact base position is in 1/256-cell units, including the sub-cell offset.
 			member.CellX = saved.Base.X / 256f;
 			member.CellY = saved.Base.Y / 256f;
@@ -506,6 +521,8 @@ public sealed partial class OriginalEconomyImport
 			imported++;
 		}
 		ImportStaffRoleOrder( economy.Staff, save, membersByThing, evidence );
+		if ( sprites != null )
+			evidence.Add( $"Staff sprite scripts imported (SAVE-013): {spritesApplied} saved sources applied, {spriteGaps.Count} left to the fresh source of their first update{(spriteGaps.Count > 0 ? $" ({string.Join( "; ", spriteGaps.Take( 6 ) )})" : "")}." );
 		evidence.Add( $"Imported {imported} staff ({string.Join( ", ", save.Staff.Select( item => $"{item.Model} grade {item.Staff.Grade}" ) )})." );
 		foreach ( var adjustment in adjusted )
 			evidence.Add( $"Staff value adjusted on import: {adjustment}." );

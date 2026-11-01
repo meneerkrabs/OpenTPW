@@ -126,6 +126,7 @@ public partial class Level
 		if ( substep.Running )
 		{
 			Guests?.SetBodySpriteClock( spriteClock );
+			SpriteClockMilliseconds = spriteClock;
 			// the staff's sprite sources and the staff tool's sprite keep the same sample (the native scheduler reads one clock sample per pass)
 			if ( Park != null )
 				Park.Economy.Staff.SpriteClockMilliseconds = spriteClock;
@@ -157,7 +158,7 @@ public partial class Level
 			}
 			using ( FrameMarks.Measure( "sim.objects" ) )
 				Objects.Simulate( deltaTime, substep, PlacedRide );
-			// The non-pooled host keeps its existing guest-before-object order; only pooled turn sweeps provide native scheduler-before-guest ordering.
+			// [BIN:TPW-EXE:0x0054F5FB sprite pass after the RSSE tick] the sprite scheduler runs inside the substep after the ride scripts' tick (0x54F56B) and before the park turn's world update (0x54F668 -> 0x516380): the guests' bodies and balloons, the staff's sources and the portrait clones step there. The pass follows the object pass in both branches (SimulateSweptTurn has the original's whole order)
 			if ( substep.TourDue )
 				ScheduleSprites( spriteClock );
 			using ( FrameMarks.Measure( "sim.economy" ) )
@@ -209,12 +210,28 @@ public partial class Level
 		Guests?.ScheduleBodySprites();
 		StaffWorld?.ScheduleSprites( clock );
 		StaffPlacement?.ScheduleSprite( clock );
+		Portraits.Tick( clock );
 	}
+
+	/// <summary>The windows' sprites: the employee and visitor portrait clones and the hire figure (stepped by <see cref="ScheduleSprites"/>, never saved).</summary>
+	internal PortraitSprites Portraits => portraits ??= new();
+	private PortraitSprites? portraits;
+
+	/// <summary>The sprite clock sample of the latest running tick (<see cref="GuestSimulation.BodySpriteSampleAtTick"/>), the clock a window's new sprite is made at; 0 before the first tick.</summary>
+	internal int SpriteClockMilliseconds { get; set; }
 
 	private void PrepareRideBodyPoses()
 	{
-		if ( Guests != null && (Park == null || Park.Economy.Speed != GameSpeed.Paused) )
-			(rideBodyPoses ??= new FlatRideBounceRiders( Objects )).Prepare( Guests );
+		if ( Park != null && Park.Economy.Speed == GameSpeed.Paused )
+			return;
+		// [BIN:TPW-EXE:0x0054FA08 walk update] the frame's walk update 0x557AB0 -> 0x557D80 moves every script's walk table entries on (1 to 2 and 3 to 4 once the end has passed) after the substeps, before the bodies are drawn; the scripts see the new states at their next substep
+		foreach ( var item in Objects.Objects )
+			if ( !item.IsDeleted )
+				item.Visitors.WalkUpdate();
+		if ( PlacedRide is { IsDeleted: false } prototype )
+			prototype.Visitors.WalkUpdate();
+		if ( Guests != null )
+			(rideBodyPoses ??= new FlatRideBounceRiders( Objects ) { GroundOf = WalkerGroundOf }).Prepare( Guests );
 	}
 
 	/// <summary>The weather's step: the thing sweep's weather update (0x00512880), and on every other tick the first call that starts it.</summary>

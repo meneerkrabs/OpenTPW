@@ -6,6 +6,8 @@ public enum StaffSpriteProgram
 	Walk = 1, Run = 2, Stand = 3, Patrol = 9, Research = 10,
 	Sweep = 17, Repair = 18, Strike = 19, State6 = 20, Dangling = 21, Catch = 22, Hold = 23,
 	Template24 = 24, Template25 = 25,
+	/// <summary>The hire window's figure script (tp.exe <c>0x0074F758</c>, created by <c>0x0049BA00</c>): not a template of the table <c>0x0075A418</c>.</summary>
+	HireFigure = 30,
 	Performance0 = 256, Performance1 = 257, Performance2 = 258, Performance3 = 259,
 	Performance0Loop = 272, Performance1Loop = 273, Performance2Loop = 274, Performance3Loop = 275
 }

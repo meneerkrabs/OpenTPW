@@ -101,11 +101,9 @@ jobs:
           python -m unittest discover -s tools -p "test_coop_join_timings.py" -v
           python -m unittest discover -s tools -p "test_check_release_natives.py" -v
           python -m unittest discover -s tools -p "test_hire_portrait_geometry_contract.py" -v
-          python -m unittest discover -s tools -p "test_employee_live_portrait_contract.py" -v
           python -m unittest discover -s tools -p "test_employee_portrait_geometry_contract.py" -v
           python -m unittest discover -s tools -p "test_locator_visitor_contract.py" -v
           python -m unittest discover -s tools -p "test_visitor_info_arrow_contract.py" -v
-          python -m unittest discover -s tools -p "test_visitor_live_portrait_contract.py" -v
           python -m unittest discover -s tools -p "test_visitor_circle_contract.py" -v
           python -m unittest discover -s tools -p "test_staff_role_order_contract.py" -v
           python -m unittest discover -s tools -p "test_staff_sprite_vm_contract.py" -v

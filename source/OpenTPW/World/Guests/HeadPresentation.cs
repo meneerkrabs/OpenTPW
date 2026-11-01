@@ -19,7 +19,7 @@ public readonly record struct HeadPlacement( bool Visible, System.Numerics.Vecto
 /// </summary>
 // [BIN:STP-PPC:0x1019B6F8 head draw] hide when the node has flag 0x8000 (frame -1); with flag 0x400 matrix rows 0 and 2 are negated; the position is exactly the node's world translation (no offset); the camera is expressed in the node's frame (general inverse, times the camera matrix), normalised, and binned to the nearest of 7 elevation rows (30 degree steps from the local +Y pole) by 8 azimuths (45 degree steps); frame = 8 * row + column with the column forced to 0 at rows 0 and 6; roll = atan2(-m10, m11) of the remaining rotation / 2 pi; scale property 0.685 (default 1.0); no animation
 // [BIN:TPW-EXE:0x0044B9FC head sprite registers] the PC routine sets the sprite's frame register 0xD to 8 x row + column, register 9 to the roll in turns (0x46F200 = atan2(-m10, m11), times 0x006FE2CC = 1 / 2 pi) and register 8, the scale, to 0x0074CED0 = 0.685; the script's flags 0x3000080 rotate the quad (0x00589388) and draw it as a camera-facing sprite at the node's position
-// [APPROX:HEADS-004] The reference-basis and camera composition are traced; MathF trigonometry/general inversion are not bit-exact substitutes for the native sine table/x87 helpers, and rendered reference comparison remains outstanding.
+// [BIN:TPW-EXE:0x0044B510 head placement] the frame, roll and scale registers come from OriginalHeadMath, which reproduces the routine's x87 arithmetic bit for bit (HeadPlacementGolden)
 public static class HeadPresentation
 {
 	public const uint HiddenFlag = 0x8000;
@@ -27,39 +27,6 @@ public static class HeadPresentation
 	public const int Rows = 7;
 	public const int Columns = 8;
 	public const float HeadScale = 0.685f;
-	private const float RowStep = MathF.PI / 6;
-	private const float ColumnStep = MathF.PI / 4;
-
-	/// <summary>The unit direction of head art frame (row, column) in the node's frame (Y up): row r is r * 30 degrees from +Y towards +Z, column c turns it by c * 45 degrees about Y from +Z towards -X.</summary>
-	// [BIN:TPW-EXE:0x0044B510 head frame table] the draw routine (called per head node) starts at (0, 1, 0) and steps row by row with a 30 degree rotation of (y, z) (cos 30, sin 30 from the sine table at 2 * pi / 3 and pi / 6) and column by column with a 45 degree rotation of (x, z) (x' = 0.7071 * (x - z), z' = 0.7071 * (x + z), 8 steps), so direction (r, c) = (-sin(30 r) sin(45 c), cos(30 r), sin(30 r) cos(45 c)): column 0 faces local +Z and the azimuth atan2(z, x) grows by 45 degrees per column from 90 degrees
-	public static System.Numerics.Vector3 FrameDirection( int row, int column )
-	{
-		var elevation = row * RowStep;
-		var azimuth = column * ColumnStep;
-		return new System.Numerics.Vector3( -MathF.Sin( elevation ) * MathF.Sin( azimuth ), MathF.Cos( elevation ), MathF.Sin( elevation ) * MathF.Cos( azimuth ) );
-	}
-
-	/// <summary>The frame whose direction has the largest dot product with the camera direction in the node's frame (the first one on a tie; the first and last rows always use column 0).</summary>
-	// [BIN:TPW-EXE:0x0044B7B2 nearest frame] rows 0..6 by columns 0..7 are tried in that order and a frame replaces the best one only when its dot product is greater (the best starts at 0); rows 0 and 6 then take column 0 (0x44B81C)
-	public static (int Row, int Column) NearestDirection( System.Numerics.Vector3 local )
-	{
-		var best = 0f;
-		int bestRow = 0, bestColumn = 0;
-		for ( var row = 0; row < Rows; row++ )
-		{
-			for ( var column = 0; column < Columns; column++ )
-			{
-				var dot = System.Numerics.Vector3.Dot( local, FrameDirection( row, column ) );
-				if ( dot > best )
-				{
-					best = dot;
-					bestRow = row;
-					bestColumn = column;
-				}
-			}
-		}
-		return (bestRow, bestRow is 0 or Rows - 1 ? 0 : bestColumn);
-	}
 
 	/// <summary>Converts the renderer's RH view basis and engine Z-up position to the native MD2 right/up/front camera basis.</summary>
 	public static Matrix4x4 CameraFromEngineView( Matrix4x4 view, System.Numerics.Vector3 position ) => new(
@@ -67,6 +34,14 @@ public static class HeadPresentation
 		view.M12, view.M32, view.M22, 0,
 		-view.M13, -view.M33, -view.M23, 0,
 		position.X, position.Z, position.Y, 1 );
+
+	private static void RowMajor( Matrix4x4 m, Span<float> into )
+	{
+		into[0] = m.M11; into[1] = m.M12; into[2] = m.M13; into[3] = m.M14;
+		into[4] = m.M21; into[5] = m.M22; into[6] = m.M23; into[7] = m.M24;
+		into[8] = m.M31; into[9] = m.M32; into[10] = m.M33; into[11] = m.M34;
+		into[12] = m.M41; into[13] = m.M42; into[14] = m.M43; into[15] = m.M44;
+	}
 
 	/// <param name="nodeWorld">World matrix of the head node (row vectors, translation in the fourth row).</param>
 	/// <param name="nodeFlags">The node's type flags (<see cref="ModelNode.Type"/>).</param>
@@ -81,38 +56,16 @@ public static class HeadPresentation
 			nodeWorld.M11 = -nodeWorld.M11; nodeWorld.M12 = -nodeWorld.M12; nodeWorld.M13 = -nodeWorld.M13;
 			nodeWorld.M31 = -nodeWorld.M31; nodeWorld.M32 = -nodeWorld.M32; nodeWorld.M33 = -nodeWorld.M33;
 		}
+		// [EXT:original-undefined-reads] a camera offset that is not a finite direction ends the search at frame 0 (0x44B6D4) and the original takes the roll from stack words it never wrote; the host rolls by 0
 		var row = 0;
 		var column = 0;
 		var roll = 0f;
-		if ( Matrix4x4.Invert( nodeWorld, out var inverse ) )
-		{
-			// 0x44B637 / 0x44B65C: camera world * inverse node, not node * view.
-			var cameraInNode = cameraWorld * inverse;
-			var local = cameraInNode.Translation;
-			var length = local.Length();
-			if ( float.IsFinite( length ) && length > 0 )
-			{
-				local /= length;
-				(row, column) = NearestDirection( local );
-				// 0x44B82F..0x44B987: chosen frame's right = up cross direction.
-				var theta = row * RowStep;
-				var phi = column * ColumnStep;
-				var direction = FrameDirection( row, column );
-				var up = new System.Numerics.Vector3( MathF.Sin( phi ) * MathF.Cos( theta ), MathF.Sin( theta ), -MathF.Cos( phi ) * MathF.Cos( theta ) );
-				var right = System.Numerics.Vector3.Cross( up, direction );
-				var basis = new Matrix4x4(
-					right.X, right.Y, right.Z, 0,
-					up.X, up.Y, up.Z, 0,
-					direction.X, direction.Y, direction.Z, 0,
-					0, 0, 0, 1 );
-				if ( Matrix4x4.Invert( basis, out var inverseBasis ) )
-				{
-					// 0x44B99D / 0x44B9C2 / 0x46F200: remove the art basis before extracting roll.
-					var remaining = cameraInNode * inverseBasis;
-					roll = MathF.Atan2( -remaining.M21, remaining.M22 ) / (2 * MathF.PI);
-				}
-			}
-		}
+		Span<float> node = stackalloc float[16];
+		Span<float> camera = stackalloc float[16];
+		RowMajor( nodeWorld, node );
+		RowMajor( cameraWorld, camera );
+		if ( OriginalHeadMath.TryFrame( node, camera, out var frameRow, out var frameColumn, out var frameRoll ) )
+			(row, column, roll) = (frameRow, frameColumn, frameRoll);
 		if ( !float.IsFinite( roll ) )
 			roll = 0;
 		return new HeadPlacement( true, anchor, row, column, roll, HeadScale );

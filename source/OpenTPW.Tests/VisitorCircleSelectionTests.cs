@@ -30,15 +30,6 @@ public class VisitorCircleSelectionTests
 	private static void Set(object o, string name, object? value) => Field(o, name).SetValue(o, value);
 	private static T Get<T>(object o, string name) => (T)Field(o, name).GetValue(o)!;
 
-	private static DictionaryEntry[] PublicationSnapshot(GuestRenderer renderer)
-	{
-		var entries = new List<DictionaryEntry>();
-		// IEnumerable returns KeyValuePair for a generic Dictionary; IDictionaryEnumerator.Entry returns DictionaryEntry.
-		var enumerator = Get<IDictionary>(renderer, "publishedBodies").GetEnumerator();
-		while (enumerator.MoveNext()) entries.Add(enumerator.Entry);
-		return entries.ToArray();
-	}
-
 	[TestInitialize]
 	public void Setup()
 	{
@@ -298,16 +289,14 @@ public class VisitorCircleSelectionTests
 		rig.Renderer.Figures = () => { figures++; return new[] { new SpriteFigure(5, 5, 1, 0, 0, false, 0) }; };
 		var snapshot = JsonSerializer.Serialize(rig.Simulation.CaptureSnapshot()); var hash = rig.Simulation.ComputeStateHash(); var random = rig.Simulation.RandomState;
 		var body = guest.BodySprite.CaptureSnapshot(); var clock = (Time.Now, Time.Delta, rig.Simulation.TimeSeconds);
-		var counters = (rig.Renderer.DrawnGuests, rig.Renderer.DrawnFigures, rig.Level.RenderPass, Get<long>(rig.Renderer, "rendererPass"), Get<long>(rig.Renderer, "assetGeneration"));
-		var publications = PublicationSnapshot(rig.Renderer);
-		Assert.AreEqual(1, publications.Length, "observe an actual prepared publication, not only an empty cache");
+		var counters = (rig.Renderer.DrawnGuests, rig.Renderer.DrawnFigures, rig.Level.RenderPass);
 		var poseCount = Get<Dictionary<int, BounceRiderPose>>(rig.Renderer, "bounceRiders").Count;
 		for (var i = 0; i < 100; i++) { Assert.AreSame(guest, rig.Pick(CircleOnly)); Assert.IsNull(rig.Pick(RectangleOnly)); }
 		Assert.AreEqual(200, draws); Assert.AreEqual(0, figures, "picking cannot collect presentation-only figures");
 		Assert.AreEqual(body, guest.BodySprite.CaptureSnapshot()); Assert.AreEqual(snapshot, JsonSerializer.Serialize(rig.Simulation.CaptureSnapshot()));
 		Assert.AreEqual(hash, rig.Simulation.ComputeStateHash()); Assert.AreEqual(random, rig.Simulation.RandomState); Assert.AreEqual(clock, (Time.Now, Time.Delta, rig.Simulation.TimeSeconds));
-		Assert.AreEqual(counters, (rig.Renderer.DrawnGuests, rig.Renderer.DrawnFigures, rig.Level.RenderPass, Get<long>(rig.Renderer, "rendererPass"), Get<long>(rig.Renderer, "assetGeneration")));
-		CollectionAssert.AreEqual(publications, PublicationSnapshot(rig.Renderer)); Assert.AreSame(selectedVisitor, hud.InfoVisitor); Assert.AreEqual(poseCount, Get<Dictionary<int, BounceRiderPose>>(rig.Renderer, "bounceRiders").Count);
+		Assert.AreEqual(counters, (rig.Renderer.DrawnGuests, rig.Renderer.DrawnFigures, rig.Level.RenderPass));
+		Assert.AreSame(selectedVisitor, hud.InfoVisitor); Assert.AreEqual(poseCount, Get<Dictionary<int, BounceRiderPose>>(rig.Renderer, "bounceRiders").Count);
 	}
 
 	[TestMethod]

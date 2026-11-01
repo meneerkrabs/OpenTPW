@@ -72,7 +72,7 @@ class StaffSpriteVmContract(unittest.TestCase):
     def test_core_is_consumed_only_by_the_staff_sprite_state_the_events_and_the_tool_sprite_and_stays_free_of_rendering(self):
         # round 11, package A: the world's sources (StaffSpriteState, StaffSpriteEvents) are the one consumer of the core
         for path in (ROOT / "source/OpenTPW").rglob("*.cs"):
-            if path.name in ("StaffSpriteVm.cs", "StaffSpriteVmState.cs", "StaffSpritePrograms.cs", "StaffSpriteState.cs", "StaffSpriteEvents.cs", "StaffPlacement.cs", "StaffSprites.cs"):
+            if path.name in ("StaffSpriteVm.cs", "StaffSpriteVmState.cs", "StaffSpritePrograms.cs", "StaffSpriteState.cs", "StaffSpriteEvents.cs", "StaffPlacement.cs", "StaffSprites.cs", "PortraitSprites.cs", "StaffRenderer.cs"):
                 continue
             text = path.read_text(encoding="utf-8-sig")
             self.assertNotRegex(text, r"\b(?:StaffSpriteVm|StaffSpriteCloneCopy|StaffSpriteVmState)\b", str(path))

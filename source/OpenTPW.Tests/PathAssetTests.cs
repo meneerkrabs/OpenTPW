@@ -141,6 +141,7 @@ public class PathAssetTests
 			simulation.Tick( Tick );
 			shop.HostStep();
 			script.Advance( Tick );
+			shop.WalkUpdate();
 			foreach ( var guest in simulation.Guests )
 				visited.Add( guest.Cell );
 		}

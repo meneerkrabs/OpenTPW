@@ -77,7 +77,7 @@ parts: a save without them restores with zero stale words. No schema version mov
 
 TOUR 1 (`0x005542FE`) reads the pad node live (`0x0044B220`, class 0x800 number 99, then `0x004386D0`) and the instance angle `+0x10` (`0x00554385`). `+0x10` is the build angle the constructor stores in degrees (`0x004DB0CD`, handed over by the placement `0x00529E10`) and, for a saved ride, the save's `mAngle`, which the attraction reader (`0x004DB7D0`) loads straight into `+0x10`: the placement rotation is the angle either way. All four tour scripts run TOUR 1 before any clip is triggered (`WAITANIM 0 0` on an idle channel, then `TOUR 1`), so the live node is the model's rest pose; `TourAssetTests.TheLaunchPadIsReadBeforeAnyClipPlays` pins that. TOUR-003 retired.
 
-## The walk table and the walk-off time (TOUR-007 retired, TOUR-011 narrowed)
+## The walk table and the walk-off time (TOUR-007 and TOUR-011 retired)
 
 The script's walk table (header walk size entries of 0x20 bytes) is the original's, in `RideVisitorBridge`. WALKON (`0x00556F40`) takes the first free entry and stores its seven operands (the visitor,
 nodes u1 and u2 for the walk on, nodes u3 and u4 for the walk off, the walk action and a last word), state 1, the start now and the end now + `ftol(distance(u1, u2)) x 100` ms (100 ms for 0; u1
@@ -88,8 +88,7 @@ action 2 creates effect `0x13` at u2. WALKOFF (`0x005571A0`) finds the entry by 
 state 4 at the end, and WALKGET (`0x00557110`) hands out the first entry of the table in state 4 and frees it. The ride runtime measures the model's dummies for every object that walks riders
 (`OriginalObjectRuntime.WalkNodeDistance`; every literal node pair of the 47 shipped WALKON instructions exists in its model, `WalkNodeCorpusTests`), so a ride's riders now leave after the measured walk (a few hundred milliseconds to two seconds) and not at once; the Star and Tweety
 Tours' slots lie 10 model units apart, so both still ride 1000 ms (`TourAssetTests.TheTourWalkOffsSpanTheModelsSlotNodes`, `WalkOffTimingTests`, `WalkTableTests`). The slot order, a WALKOFF restart in any state, the table size and the unknown rider are tested in `WalkTableTests`. The bridge saves the table entry by entry
-(`WalkTable`, optional; a save from before restores its on-board riders and walkers into the table). Left under TOUR-011 (the register text): the template frame steppers, the terrain height of a body without the height bit, the host-step state changes where the original runs the update once per rendered frame, and a node missing from the model, which takes
-no walk-on time, the ride's default walk-off time and draws no body (the original logs and keeps its stack words). The bodies themselves are the next section.
+(`WalkTable`, optional; a save from before restores its on-board riders and walkers into the table). Round 11 (package W) moved the table to the original's cadence: BOUNCE takes the first free entry for any guest (`0x555736`), the walk update runs once per rendered frame after the park's substeps with the share clamp of `0x557E56` and `0x558010` and WALKGET hands out state 4 only (an entry that ends inside a substep is handed out at the next pass), the bodies step through the sprite player (the frame steppers `0x00476940` and `0x00476020` are the VM's own) and the orientation takes the node flag 0x10 (negated). Round 11 left nothing under TOUR-011 (retired): the height of a body without the height bit is the ride model's sampler (`0x004511A0` after the mode `0x450EA0` picks from the model, `+0xA0` added in every mode; `Level.WalkerGroundOf`; a point no face covers is the face sampler's -100 plus `+0xA0`, `0x4512A7`), a node missing from the model leaves the original's stack words undefined ([EXT:original-undefined-reads]) and the walk update runs after every fixed tick ([EXT:fixed-60hz-clock]). The bodies themselves are the next section.
 
 ## The walking body (TOUR-011)
 
@@ -106,7 +105,7 @@ The walk update draws every entry it passes (`0x00557D80`, each through the body
   env = sin(pi x (clock - start) / duration) from the sine table, the offset is x = sin(f / 300) B env 3 a, z = sin(B clock C / 300 + pi / 2) A env 3 a and the height 12 + 3 sin(0.004 f) times env b (f = A clock C), and the heading adds `clock / ftol(B x 300)` (`0x005581D4`..`0x005583F5`).
 - The slot of a template is read from the template tables at `0x0075A418` (templates 1, 2, 3, 5 and 8 select the slots 1, 2, 0, 12 and 4 of the guest sprite sets; the table's other templates are not drawn by the walk update).
 
-Open under TOUR-011: the frame step of each template (the stepper handlers are not decoded, every body steps each 100 ms), the terrain-height form, the per-frame cadence of the state changes and the missing-node case. `WalkerBodyTests` pins the rules and a placed
+`WalkerBodyTests` pins the rules and a placed
 Mayan Spinner's table entries in every state; the native Jungle capture with a Mayan Spinner shows the body walking on and cheering on board.
 
 ## Pose sines (TOUR-008 narrowed)

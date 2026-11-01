@@ -50,7 +50,7 @@ internal readonly record struct CellValidatorInput( int Mode, byte Type, ushort 
 	/// <summary>
 	/// The placement is being paid for (0x8186D4): the chargeable-cell test skips the cost add while it is set. The path and queue line hover runs with it clear, so the line tools never set it.
 	/// </summary>
-	// [BIN:TPW-EXE:0x005358DF placement paid] the cost block reads the byte 0x8186D4 and skips the 0x52FBA0 add when it is nonzero; the byte is set to 1 only inside the object placement and Move hovers (0x5235D4, 0x523967) and cleared by their common exit 0x5239FC, and inside the placement click (0x524B4A, 0x5253E9) until 0x525A06 / 0x5249C2 clear it, so a path or queue line hover (0x524564) reads 0
+	// [BIN:TPW-EXE:0x005358DF placement paid] the cost block reads the byte 0x8186D4 and skips the 0x52FBA0 add when it is nonzero. All seven writers (0x5235D4, 0x523967, 0x5239FC, 0x5249C2, 0x524B4A, 0x5253E9, 0x525A06) are in the hover 0x5234D0 and the click handler 0x524960. A path walk from each setter (0x5235D4 and 0x523967 in the hover, 0x524B4A and 0x5253E9 in the click handler), following every direct jump and the hover's switch at 0x5237D0, reaches only that function's single return (0x524739 in the hover, 0x525A1B in the click handler) and only after a clear (0x5239FC, 0x525A06); the hover is also called at 0x5249B6 with the clear at 0x5249C2. So the byte is 0 whenever code outside those two routines runs, and a path or queue line hover reads 0 (exceptions that unwind past a return are not modelled)
 	public bool PlacementPaid { get; init; }
 }
 

@@ -27,7 +27,7 @@ internal sealed record TileLineGhostResult( List<TileFace> Faces, List<((int X, 
 internal static class TileLineGhost
 {
 	/// <summary>The overwrite priority the kart, water and fence tools hover with.</summary>
-	// [BIN:TPW-EXE:0x005244BE tile tool priority] the hover blocks of the kart (0xB), water (0x10) and fence (0x19) tools (0x523A08..0x523A38, taken at 0x5244B8) store ESI in 0x818C10, and ESI is the 3 loaded at 0x523546 that no test on the way changes (the path tool writes 2 at 0x524571, the queue tool ESI = 3 at 0x524588)
+	// [BIN:TPW-EXE:0x005244BE tile tool priority] the hover blocks of the kart (0xB), water (0x10) and fence (0x19) tools (0x523A08..0x523A38, entering 0x5244B8 from 0x523A14, 0x523A26 and 0x523A38) store ESI in 0x818C10. ESI is 3 there on every path: a forward dataflow over the hover function 0x5234D0 (all 1455 instructions, the switch at 0x5237D0 included) reaches 0x5244B8 only with the value set by `mov esi, 3` at 0x523546; none of the 39 instructions on the paths from 0x523546 to 0x5244B8 writes ESI, and the only call among them is 0x52F860 (`cmp [0x81AE2C], arg`, which touches no ESI). The path tool writes 2 at 0x524571 and the queue tool ESI = 3 at 0x524588 by the same argument
 	public const int ToolPriority = 3;
 
 	private static readonly (int Dx, int Dy)[] TileCells = [(0, 0), (0, 1), (1, 0), (1, 1)];

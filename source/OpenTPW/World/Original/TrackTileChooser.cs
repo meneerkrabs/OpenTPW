@@ -166,7 +166,7 @@ internal static class TrackTileChooser
 		// [BIN:TPW-EXE:0x00539F4F cost] a tile whose record is a post, no terrain, unowned, none or of the tool's own type adds the tool's price unless it is the tool's own type
 		if ( (type is 0x19 or 7 || (record.Flags & 0x40) != 0 || mode == 0 || type == 0 || mode == type) && type != mode && !tool.PlacementPaid )
 			latches.Cost = unchecked( latches.Cost + tool.Price );
-		// [BIN:TPW-EXE:0x00539F95 money] outside the edit tools (0x539F72 exempts the modes 0xE and 0x13) a cost above the park's money refuses the tile and sets the cash word 0x816D5C (0x539FB6)
+		// [BIN:TPW-EXE:0x00539F95 money] (`cmp eax, ebx` after `call 0x52FBC0`, a boundary of the linear decode from the function start 0x539760) outside the edit tools (0x539F72 exempts the modes 0xE and 0x13) a cost above the park's money refuses the tile and sets the cash word 0x816D5C (0x539FB6)
 		if ( latches.Bank is { } bank && mode is not (0xE or 0x13) && latches.Cost != 0 && latches.Cost > bank )
 		{
 			if ( !second )

@@ -4,7 +4,7 @@ public partial class Level
 {
 	/// <summary>
 	/// The path or queue tool's preview line as the original's ghost marks it (<see cref="BlueprintLineGhost"/>): each cell of the hover's line takes the validator's answer, with the money of the park, the ride under
-	/// the queue tool and the heights of the typed map. Null for the other tools and for a world that types no cells, whose ghosts are the host's own line (a harness world; a Theme Park Inc world takes the same branch, which is BLUEPRINT-001's open residual, not an extension; a read-only online visit has no build tool, so no ghost).
+	/// the queue tool and the heights of the typed map. Null for the other tools and for a world that types no cells, whose ghosts are the host's own line (a harness world; a Theme Park Inc world takes the same branch, which is BLUEPRINT-001's open residual, not an extension).
 	/// </summary>
 	// [EXT:untyped-harness-world] an OpenTPW harness world does not type its cells and has nothing for the validator to read: its ghost is the host's preview line (cells before its first refusal blue, the rest red); a Theme Park Inc world takes the same branch without being an extension (BLUEPRINT-001)
 	internal LineGhostResult? PathLineGhost( SegmentResult ghost )
@@ -32,7 +32,7 @@ public partial class Level
 		if ( ParkCommandLineWriter.Unwrap( CellTool.Writer ) is not TrackLineWriter writer )
 			return null;
 		var economy = Park?.Economy;
-		var key = new TileGhostKey( ghost, ghost.Start, ghost.SnappedEnd, CellTool.Start, writer, cells, cells.Version, cells.Tracks.Version, economy == null ? null : unchecked( (int)economy.Balance ) );
+		var key = new TileGhostKey( ghost, ghost.Start, ghost.SnappedEnd, CellTool.Start, writer, cells, cells.Version, GroundStamp( cells, field ), economy == null ? null : unchecked( (int)economy.Balance ) );
 		if ( tileLineMemo is { } known && known.Key == key )
 			return known.Result;
 		var mode = writer.Mode == CellToolMode.WaterTrack ? 0x10 : 0xB;
@@ -45,7 +45,15 @@ public partial class Level
 		return result;
 	}
 
-	private readonly record struct TileGhostKey( object Ghost, (int X, int Y) Start, (int X, int Y) End, (int X, int Y)? ToolStart, object Writer, ParkCellMap Cells, int CellsVersion, int TracksVersion, int? Balance );
+	private readonly record struct TileGhostKey( object Ghost, (int X, int Y) Start, (int X, int Y) End, (int X, int Y)? ToolStart, object Writer, ParkCellMap Cells, int CellsVersion, GroundStampKey Ground, int? Balance );
+
+	/// <summary>Everything besides the cells that the tile ghost's reads depend on: the terrain (a heightfield is never written, so its identity stands for it), the placed objects (their owners' priorities and height maps) and the track layers (the pieces' own ground).</summary>
+	internal readonly record struct GroundStampKey( ModelHeightfield Field, int ObjectsVersion, int TracksVersion, int PieceTracksVersion );
+
+	internal static GroundStampKey GroundStampOf( ParkCellMap cells, ModelHeightfield field, ParkObjects objects, TrackCellLayer? pieceTracks ) =>
+		new( field, objects.Version, cells.Tracks.Version, pieceTracks?.Version ?? -1 );
+
+	private GroundStampKey GroundStamp( ParkCellMap cells, ModelHeightfield field ) => GroundStampOf( cells, field, Objects, waterTracks?.Tracks );
 
 	private (TileGhostKey Key, TileLineGhostResult Result)? tileLineMemo;
 	private ParkTileGhostMap? tileMap;
@@ -79,7 +87,7 @@ public partial class Level
 	{
 		if ( !TypesFootprints || Guests?.Grid.Cells is not { Land: { } land } cells || OriginalPark?.Heightfield is not { } field || tool.HoverPost is not { } post )
 			return null;
-		var key = (tool.Corner, post, tool.HoverRefused, cells, cells.Version, cells.Tracks.Version);
+		var key = (tool.Corner, post, tool.HoverRefused, cells, cells.Version, GroundStamp( cells, field ));
 		if ( buyLandMemo is { } known && known.Key == key )
 			return known.Tiles;
 		var map = TileMap( cells, field );
@@ -96,5 +104,5 @@ public partial class Level
 		return tiles;
 	}
 
-	private (((int X, int Y)? Corner, (int X, int Y) Post, bool Refused, ParkCellMap Cells, int CellsVersion, int TracksVersion) Key, List<((int X, int Y) Origin, int Answer)> Tiles)? buyLandMemo;
+	private (((int X, int Y)? Corner, (int X, int Y) Post, bool Refused, ParkCellMap Cells, int CellsVersion, GroundStampKey Ground) Key, List<((int X, int Y) Origin, int Answer)> Tiles)? buyLandMemo;
 }

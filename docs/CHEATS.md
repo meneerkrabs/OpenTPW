@@ -276,7 +276,7 @@ records `opentpw.cheats`. The ride keeps the raised limit until it is removed; i
 
 ## Phases
 
-- **K0** (this document): the trace, the capacity data, COMPAT-007 and SAVE-010 narrowed.
+- **K0** (this document): the trace, the capacity data, was COMPAT-007, retired, and SAVE-010 narrowed.
 - **K1** (built): the extension (off, not yet selectable), the park's cheat record in the save, the used-only and sticky recording, the turn-boundary queue, the cheated mark shown.
 - **K2** (built): the original cheat mode: the secret name in `Level.RenamePark`, the cheat key context, Alt+R, Alt+1, the ten tickets, the import of `CHTS` and the original-format export's own `CHTS`
   (moved from K1: the export round trip of the corpus saves needs the import).

@@ -263,16 +263,21 @@ internal sealed partial class SandboxSmokeTest
 		Require( animating.Length >= 3, $"at least three different original objects besides the Totem each move in at least {MinimumMovedFrames} frames (animating: {Names( animating )})" );
 		if ( level.OriginalPark != null )
 		{
-			// The two-frame sample depends on where the ride stands in its cycle, so it is only logged; the requirement is the whole run's motion count.
-			// An imported arrival scheduler waits out its saved timer before the first bus (ARRIVAL-001 retired), so fewer guests reach the ride early.
+			// The two-frame sample depends on where the ride stands in its cycle, so it is only logged; the requirement is a share of the run.
+			// An imported arrival scheduler waits out its saved timer before the first bus (0x4CF3E0: 0x41A990, the elapsed four-turn units of the game clock at world +0x1DA70C, against 0x785314),
+			// so the first group is due at ArrivalDueTurn; the run is far shorter and no bus comes, which is why the requirement does not count arrivals.
 			Log.Trace( $"Belly Bounce moved between the two sample frames: {sampled.Contains( BellyBounceInfoId )} (moving then: {Names( sampled )})." );
-			Require( counts.Any( item => item.InfoId == BellyBounceInfoId && item.MovedFrames >= MinimumMovedFrames ), $"the imported Belly Bounce animates in at least {MinimumMovedFrames} frames of the run (animating: {Names( animating )})" );
+			if ( level.Guests is { } arrivals )
+				Log.Trace( $"Arrival timer: started at turn {arrivals.ArrivalTimerStartTurn}, park turn now {arrivals.ArrivalClock?.Invoke()}, first group due at turn {arrivals.ArrivalDueTurn}, first group started at {(arrivals.FirstArrivalGroupTurn?.ToString() ?? "none")}." );
+			// observed with the saved timer 661 and no bus in the run: Belly Bounce moved in 1,658 to 1,896 of 4,152 to 4,670 frames (36 to 43 %); main, whose fresh scheduler sends the bus at once, 2,414 to 3,044
+			var bellyBounceFrames = counts.Where( item => item.InfoId == BellyBounceInfoId ).Select( item => item.MovedFrames ).DefaultIfEmpty( 0 ).Max();
+			Require( bellyBounceFrames >= Math.Max( MinimumMovedFrames, frame / 4 ), $"the imported Belly Bounce animates in at least a quarter of the {frame} frames of the run (moved in {bellyBounceFrames}; animating: {Names( animating )})" );
 		}
 		if ( level.Guests != null )
 		{
 			// Guests use the imported Easymode attractions through their own scripts, entering at the shape's entrance cell.
 			var used = level.Objects.Objects.Where( item => item.Visitors.BoardedTotal > 0 ).ToArray();
-			Log.Trace( $"Guests used original objects: {string.Join( ", ", used.Select( item => $"{item.Entry.DisplayName} ({item.Visitors.BoardedTotal} boarded, {item.Visitors.ReleasedTotal} released)" ) )}; {level.Guests.Attractions.Count} attractions registered." );
+			Log.Trace( $"Guests used original objects: {string.Join( ", ", used.Select( item => $"{item.Entry.DisplayName} ({item.Visitors.BoardedTotal} boarded, {item.Visitors.ReleasedTotal} released)" ) )}; {level.Guests.Attractions.Count} attractions registered; {level.Guests.Guests.Count} guests in the park, first arrival group {(level.Guests.FirstArrivalGroupTurn?.ToString() ?? "not started")}: the boarders are the save's own guests unless a group has started." );
 			if ( level.OriginalPark?.Save != null )
 			{
 				var imported = level.OriginalPark.Save.PlacedObjects.Select( item => item.Record.InfoId ).ToHashSet();

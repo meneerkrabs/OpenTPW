@@ -47,6 +47,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool ownsThings = true;
 	// The arrival timer's start turn (0 until the first group: the original's timer starts unset) and the group being dropped off.
 	private long arrivalTimerStart;
+
+	/// <summary>The park turn the arrival timer started at (an imported original save's timer word, 0 in a new park).</summary>
+	internal long ArrivalTimerStartTurn => arrivalTimerStart;
+
+	/// <summary>The first park turn at which the arrival condition (tp.exe 0x4CF3E0: 0x41A990 against 0x785314) is true: the timer's four-turn units past the start exceed the time between arrivals.</summary>
+	internal long ArrivalDueTurn => ((arrivalTimerStart >> 2) + Settings.ArrivalTimeBetween + 1) << 2;
+
+	/// <summary>The park turn of the first arrival group this simulation started; null while none has.</summary>
+	internal long? FirstArrivalGroupTurn { get; private set; }
 	private bool deliveringArrivals;
 	private float spawnTimer;   // kept for the save format; arrivals step once per park turn (was ARRIVAL-001, retired)
 	private int pendingArrivals;
@@ -735,6 +744,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !deliveringArrivals && !held && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
 			pendingArrivals = ArrivalGroupSize();
+			FirstArrivalGroupTurn ??= turn;
 			ArrivalGroupStarted?.Invoke( pendingArrivals );
 			deliveringArrivals = true;
 			return;   // this turn's call only sends the bus
@@ -777,6 +787,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !deliveringArrivals && !held && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
 			pendingArrivals = ArrivalGroupSize();
+			FirstArrivalGroupTurn ??= turn;
 			ArrivalGroupStarted?.Invoke( pendingArrivals );
 			deliveringArrivals = true;
 		}

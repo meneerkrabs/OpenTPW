@@ -704,12 +704,15 @@ public sealed class ParkObjects
 			signLines[infoId] = lines;
 	}
 
+	/// <summary>Whether an import places a record of this catalog entry: the one condition the import loop skips by and <see cref="RecordOrderSeeds"/> counts by.</summary>
+	private static bool IsImportedObject( [System.Diagnostics.CodeAnalysis.NotNullWhen( true )] ObjectCatalogEntry? entry ) => entry is { IsTool: false };
+
 	/// <summary>The creation seed of each object an import places, numbered from <paramref name="first"/> in the save's record order (not the chain order).</summary>
 	internal static Dictionary<SaveObject, int> RecordOrderSeeds( ObjectCatalog catalog, OriginalParkImport save, int first )
 	{
 		var seeds = new Dictionary<SaveObject, int>();
 		foreach ( var record in save.ObjectsInRecordOrder )
-			if ( catalog.Find( record.InfoId ) is { IsTool: false } )
+			if ( IsImportedObject( catalog.Find( record.InfoId ) ) )
 				seeds[record] = first + seeds.Count;
 		return seeds;
 	}
@@ -758,7 +761,7 @@ public sealed class ParkObjects
 		{
 			var record = records[index];
 			var entry = Catalog.Find( record.InfoId );
-			if ( entry == null || entry.IsTool )
+			if ( !IsImportedObject( entry ) )
 				continue;
 			// [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; the thing records of the six that have an archive carry the fixed-item default position (128, 128) and angle 0 (the five without an archive carry real positions, but nothing to draw), so no transform field is left unread in the save — evidence needed: how the original places a local-coordinate fixed model at its anchor (a thing's position bytes are decoded as (cell + fraction / 256) x 10 only by the camera-target setters 0x503490 and 0x5A1100 of the no-CD Theme Park Inc exe, no model placement reads them there)
 			// the object keeps its saved thing id when the save's attraction thing is the one record that matches (the pool holds the saved chain)

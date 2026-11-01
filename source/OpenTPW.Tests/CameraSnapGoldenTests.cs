@@ -8,7 +8,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The loader's yaw snap against tp.exe's own tail of 0x42CEC0 (0x42D03F) run in the x86 oracle (docs/reverse/ORACLE.md, X48; SAVE-010): every row of <see cref="CameraSnapGolden"/> is a yaw, and
+/// The loader's yaw snap against tp.exe's own tail of 0x42CEC0 (0x42D03F) run in the x86 oracle (docs/reverse/ORACLE.md, X49; SAVE-010): every row of <see cref="CameraSnapGolden"/> is a yaw, and
 /// <see cref="ParkCameraMode.SnapToQuarterTurn"/> must give the same target bit for bit; the smoothed yaw (0x7909E0) keeps the saved value in every row.
 /// </summary>
 [TestClass]

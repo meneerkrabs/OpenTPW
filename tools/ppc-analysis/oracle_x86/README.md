@@ -76,7 +76,7 @@ the rest reports skips; nothing fails. CI has neither.
 
 ## The camera loader's yaw snap (round 11, package C)
 
-`camera_snap_golden.py` runs the tail of the camera loader `0x42CEC0` (`0x42D03F`, with the CRT fmod `0x67B24A`) on 585 yaws and writes `CameraSnapGolden.cs`; `CameraSnapGoldenTests` pins `ParkCameraMode.SnapToQuarterTurn` to it bit for bit (finding X48 in ORACLE.md).
+`camera_snap_golden.py` runs the tail of the camera loader `0x42CEC0` (`0x42D03F`, with the CRT fmod `0x67B24A`) on 585 yaws and writes `CameraSnapGolden.cs`; `CameraSnapGoldenTests` pins `ParkCameraMode.SnapToQuarterTurn` to it bit for bit (finding X49 in ORACLE.md).
 
 ## The head placement routine (round 11, package W)
 

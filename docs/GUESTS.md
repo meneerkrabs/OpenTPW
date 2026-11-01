@@ -503,7 +503,7 @@ Vomit and stinkbombs spread their `RegionFX` row around their cell while they li
 happiness, illness and hunger divided by its distance + 1, and a guest's needs phase adds those of its own cell (vomit: −1 happiness, +1 illness,
 −1 hunger on its cell; a stinkbomb −3, +3, −1 on its cell and less up to 3 cells away). Entertainers and guards carry their rows with them: an
 entertainer's `RegionFX[0]` adds 2 happiness on his cell and 1 beside it, a guard's `RegionFX[3]` the security above. The other sources (toilets,
-cameras, fireworks) are not modelled yet (GUEST-006).
+cameras, fireworks) follow in the next section.
 
 ### Thoughts
 
@@ -1219,8 +1219,9 @@ The All Attractions shop/sideshow business rows display the counters already mai
 - `APPROX:QUEUE-020`, closed as `[EXT:bounce-single-clock-read]` (a stepped clock has no two live reads).
 - `APPROX:QUEUE-022`, closed as `[EXT:synthetic-ride-zero-guard]` (only synthetic objects lack operating values).
 - `APPROX:ARRIVAL-002`, closed as `[EXT:online-visit-settings]` (the online visit is a read-only extension).
-- GUEST-006 keeps its original-behaviour remainder; `[EXT:online-bubbles-on]` covers the bubbles in a visit.
+- GUEST-006 is retired (November 1, 2026): the camera gate of the thought setter is bits 2 (the walk camera) and 4 (the ride camera) of the camera word `0x790AB0` (no store through the word's absolute address sets bit `0x10`), a show's row 7 comes off the one time its script writes `VAR_STATUS` 1; `[EXT:online-bubbles-on]` covers the bubbles in a visit.
 - GUEST-017 keeps the native import/host-clock/placement remainder (see [timing contract](reverse/BALLOON-TIMING.md)); a theme without costume heads (Fantasy, Hallow) draws every rider's head by its thing id (`0x4FCAC0`, no division by zero), which the renderer follows; the original also reseeds the world generator with the rider and draws once on each such head hang (`0x44B410`), which `RideScriptWorld.HeadHung` takes at the five hang sites (DET-013 lists the hosts that cannot place it). The costume return writes the redrawn, reduced kid set back (`0x4FE6AA`).
 - Round 7 (sprites in the game): the sprite pixel size, the kid sets, the balloon colour, bob and fade, the staff scripts and their sprite clock, the entertainers' program, the staff variant, litter and the upgrade balloon are read and drawn (GUEST-014 to 017 narrowed, HEADS-004 narrowed). The balloon give-back after a ride reseeds the world generator and takes two draws (0x502053).
 - PATH-007 (retired) keeps the land rules, with `[EXT:land-purchase-fault-refusal]` for the purchases that crash the original; `[EXT:no-land-maps]` covers maps without a fence setup, Theme Park Inc and visits.
+- `APPROX:GUEST-007`, retired (November 1, 2026): the prank advice record keeps the prankster's id and the cell word y x 128 + x + 1 (`0x59B25F..0x59B3F4`, `AutomaticAdvisor.OnPrank`); the record's words are read by the speech and the caption formatter `0x509E10`, and the three prank rows' captions (tag kind 0) read neither (docs/LIPS.md, "Captions").
 - GUEST-014 is retired (October 27, 2026: an original save's staff sprite variant is imported); GUEST-020 holds the flagged-folder bank limits. PATH-013 is retired: PATH-017 holds the P window's layer. TRACK-032 is new: the saved-ride controller.

@@ -41,6 +41,7 @@ public sealed partial class ParkHud
 		if ( StaffMembers.All( item => item.Id != member.Id ) )
 			return false;
 		CloseStaffWindow();
+		CloseAllStaffWindow();
 		if ( EmployeeWindowOpen )
 			CloseEmployeeWindow();
 		employeeId = member.Id;
@@ -210,15 +211,13 @@ public sealed partial class ParkHud
 			(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
 	}
 
-	/// <summary>The all-staff button: the staff window's list of employees (the stand-in for the All Staff window) on the employee's role.</summary>
-	// [BIN:TPW-EXE:0x004b5dd9 all staff] control 0x50b (b_allstaff, help 94) opens the All Staff window (0x496620) on the member's role (0x506490)
+	/// <summary>The all-staff button: the All Staff window on the employee's role, with the employee selected.</summary>
+	// [BIN:TPW-EXE:0x004b5dd9 all staff] control 0x50b (b_allstaff, help 94) opens the All Staff window (0x496620) on the member's role (0x506490) with the member as the thing to select ([0x7c2658])
 	public void ShowAllStaffOfEmployee()
 	{
-		var role = Employee?.Type ?? StaffType.Handyman;
+		var member = Employee;
 		CloseEmployeeWindow();
-		OpenStaffWindow();
-		ShowEmployedStaff( true );
-		FilterStaff( role );
+		OpenAllStaffWindow( member == null ? -1 : AllStaffRoster.TabOf( member.Type ), member );
 	}
 
 	/// <summary>The locate button: the staff locator panel opens on the employee (its role chosen, the camera following) and the window closes.</summary>
@@ -412,6 +411,19 @@ public static class EmployeeWindowRules
 	// 0x483740 wraps from the head, 0x483770 from the tail. Thing ids are reusable slots, never chronology.
 	public static StaffMember? Cycle( IReadOnlyList<StaffMember> members, int currentId, bool forward, ThingPool? things = null )
 	{
+		var ordered = ChainOrder( members, things ).ToList();
+		if ( ordered.Count == 0 ) return null;
+		var current = ordered.FindIndex( member => member.Id == currentId );
+		if ( current < 0 ) return forward ? ordered[0] : ordered[^1];
+		return ordered[(current + (forward ? 1 : ordered.Count - 1)) % ordered.Count];
+	}
+
+	/// <summary>
+	/// The live members in the thing chain's walk order, newest first: the pool's used chain when the members hold slots of it, the members the pool does not name after them in reverse roster order.
+	/// Queued and placeholder slots never qualify.
+	/// </summary>
+	public static IReadOnlyList<StaffMember> ChainOrder( IReadOnlyList<StaffMember> members, ThingPool? things = null )
+	{
 		var ordered = new List<StaffMember>();
 		var included = new HashSet<StaffMember>();
 		if ( things != null )
@@ -431,9 +443,6 @@ public static class EmployeeWindowRules
 			if ( (things == null || !things.IsQueued( member.ThingId ) && !things.IsHeld( member.ThingId )) && included.Add( member ) )
 				ordered.Add( member );
 		}
-		if ( ordered.Count == 0 ) return null;
-		var current = ordered.FindIndex( member => member.Id == currentId );
-		if ( current < 0 ) return forward ? ordered[0] : ordered[^1];
-		return ordered[(current + (forward ? 1 : ordered.Count - 1)) % ordered.Count];
+		return ordered;
 	}
 }

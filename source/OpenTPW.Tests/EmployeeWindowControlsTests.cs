@@ -391,7 +391,7 @@ public class EmployeeWindowControlsTests
 			screen.Update( Context(), UiInput.Type( "Changed employee" ) ); screen.Find( "apply" )!.Activate();
 			Assert.AreEqual( "Changed employee", ((UiLabel)hud.Stack.Top!.Find( "title" )!).Text() );
 			hud.ShowAllStaffOfEmployee();
-			Assert.AreEqual( "Changed employee", typeof( ParkHud ).GetMethod( "ListName", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( hud, new object[] { 0 } ) );
+			Assert.AreEqual( "Changed employee", hud.AllStaffRowOf( member.Id )!.Value.Name, "the All Staff row takes the name as it stands when the window is built" );
 			hud.OpenEmployeeWindow( member ); hud.OpenStaffLocator(); LocatorFrame( hud );
 			Assert.AreEqual( "Changed employee", ((UiLabel)hud.Screen.Find( "locatorName" )!).Text() );
 			var guest = new Guest( 900, 0 ) { State = GuestState.WalkingAround };

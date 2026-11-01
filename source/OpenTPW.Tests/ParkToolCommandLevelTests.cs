@@ -133,9 +133,9 @@ public class ParkToolCommandLevelTests
 	}
 
 	/// <summary>The no-data park with two coaster stations.</summary>
-	private ParkSettingCommandLevelTests.Park Coaster()
+	private ParkSettingCommandLevelTests.Park Coaster( string extra = "" )
 	{
-		var park = NewPark( "Bumper.WhichTrackType 3\n" );
+		var park = NewPark( "Bumper.WhichTrackType 3\n" + extra );
 		// an uninitialised level has no field initialisers run: the coaster builders the tool keeps
 		typeof( Level ).GetField( "coasterBuilders", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<OriginalObject, CoasterBuilder>() );
 		Assert.IsNotNull( park.One.Runtime.Coaster );
@@ -202,10 +202,10 @@ public class ParkToolCommandLevelTests
 	}
 
 	/// <summary>The no-data park with two coaster stations whose type has the PC coasters' pylons, the first one's station ends set as the coaster tests set theirs.</summary>
-	private ParkSettingCommandLevelTests.Park BuildableCoaster()
+	private ParkSettingCommandLevelTests.Park BuildableCoaster( string extra = "" )
 	{
 		var pylons = string.Join( "\n", CoasterTests.PcSettings().Select( pair => $"{pair.Key} {pair.Value}" ) );
-		var park = NewPark( "Bumper.WhichTrackType 3\n" + pylons + "\n" );
+		var park = NewPark( "Bumper.WhichTrackType 3\n" + extra + pylons + "\n" );
 		typeof( Level ).GetField( "coasterBuilders", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<OriginalObject, CoasterBuilder>() );
 		CoasterTests.PlaceStation( park.Level.GetCoasterBuilder( park.One )!, (20, 20) );
 		return park;
@@ -260,27 +260,47 @@ public class ParkToolCommandLevelTests
 	}
 
 	/// <summary>
-	/// The coaster tool a placed station opens follows the HUD's own placement once its command has returned (<see cref="ParkCommands.AfterIssue"/>): the tool's entry is a command of its own, logged
-	/// after the placement, so a twin replaying the log marks the coaster being edited as the issuer's park does. The twin's HUD opens no tool for the replayed placement.
+	/// The original's coaster placement takes the placement tail into the queue tool (tp.exe 0x52529e, 0x52f580(3, 0); the pending queue start is consumed at 0x5252ea) and never enters the track
+	/// tool (mode 0x15) in its dispatcher 0x524960: the placement is logged alone and the coaster is not being edited. The track tool is entered through 0x4988c0, here by the ride window's track
+	/// button (0x4af275): the entry is a command of its own, logged after the placement, so a twin replaying the log marks the coaster being edited as the issuer's park does. The twin's HUD
+	/// opens no tool for the replayed placement.
 	/// </summary>
 	[TestMethod]
 	public void APlacedCoasterStationsToolEntryIsACommandOfItsOwn()
 	{
 		ParkHud Hud( ParkSettingCommandLevelTests.Park park ) =>
 			new( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
-		var park = Coaster();
+		// the fixture's one-cell footprint has no entrance: the placed coaster takes a queue front as a ride with an entrance does, so its queue tool follows the placement
+		static void GiveQueue( ParkSettingCommandLevelTests.Park park ) => park.Level.Objects.ObjectPlaced += placed =>
+		{
+			placed.Visitors.HasCells = true;
+			placed.Visitors.QueueFrontCell = (placed.Placement.X, placed.Placement.Y + 2);
+		};
+		var park = Coaster( "Info.HasQueue 1\n" );
+		GiveQueue( park );
 		var level = park.Level;
 		var hud = Hud( park );
 		var entry = park.One.Entry;
 		hud.BeginPlacing( new BuildItem( "coaster", entry.InfoId, BuildCategory.Rides, 0, 0, null, System.Array.Empty<string>(), Entry: entry ) );
 		var placed = level.Commands.Issue( level.BuildCommand( entry, 10, 10, 0 ) ).As<OriginalObject>();
 		Assert.IsNotNull( placed, level.LastActionMessage );
-		Assert.IsTrue( placed.Runtime.Coaster!.BeingEdited, "the HUD entered the coaster tool on the placed station" );
+		Assert.IsFalse( placed.Runtime.Coaster!.BeingEdited, "the placement does not enter the coaster tool" );
+		Assert.IsNull( level.CoasterToolStation );
+		Assert.IsFalse( level.IsCoasterToolActive );
+		Assert.IsTrue( level.CellTool.IsActive && level.CellTool.Mode == CellToolMode.Queue, "the placement went on into the queue tool (0x52f580(3, 0))" );
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.PlaceObject }, level.Commands.Log.Select( entry => entry.Command.Kind ).ToArray(), "the placement is logged alone" );
+
+		// the ride window's track button (0x4af200 → 0x4988c0): the queue tool ends and the track tool starts, its entry a command of its own
+		hud.SelectObject( placed );
+		typeof( ParkHud ).GetMethod( "EditTrack", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( hud, null );
+		Assert.IsTrue( placed.Runtime.Coaster.BeingEdited, "the track button entered the coaster tool on the placed station" );
 		Assert.AreSame( placed, level.CoasterToolStation );
+		Assert.IsFalse( level.CellTool.IsActive, "one tool at a time" );
 		CollectionAssert.AreEqual( new[] { ParkCommandKind.PlaceObject, ParkCommandKind.BeginCoasterTool }, level.Commands.Log.Select( entry => entry.Command.Kind ).ToArray(),
 			"the tool's entry is logged on its own, after the placement" );
 
-		var twin = Coaster();
+		var twin = Coaster( "Info.HasQueue 1\n" );
+		GiveQueue( twin );
 		var twinHud = Hud( twin );
 		twinHud.BeginPlacing( new BuildItem( "coaster", entry.InfoId, BuildCategory.Rides, 0, 0, null, System.Array.Empty<string>(), Entry: twin.One.Entry ) );
 		foreach ( var logged in level.Commands.Log )
@@ -289,6 +309,118 @@ public class ParkToolCommandLevelTests
 		Assert.IsTrue( twinPlaced.Runtime.Coaster!.BeingEdited, "the twin marks the coaster as the issuer's park does" );
 		Assert.IsNull( twin.Level.CoasterToolStation, "the twin's HUD, though it places the same item, opens no tool for a replayed placement" );
 		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash() );
+	}
+
+	/// <summary>
+	/// A log of the old order (a placement followed by the tool's entry, which the earlier HUD logged at the placement) still replays: the entry is an explicit command, whatever tool the
+	/// placement opened.
+	/// </summary>
+	[TestMethod]
+	public void AnOldLogThatEntersTheCoasterToolRightAfterThePlacementStillReplays()
+	{
+		var park = Coaster();
+		var level = park.Level;
+		var entry = park.One.Entry;
+		var placed = level.Commands.Issue( level.BuildCommand( entry, 10, 10, 0 ) ).As<OriginalObject>();
+		Assert.IsNotNull( placed, level.LastActionMessage );
+		Assert.IsTrue( level.Commands.Issue( new BeginCoasterToolCommand( placed.Runtime.AttractionId ) ).Accepted );
+		var twin = Coaster();
+		foreach ( var logged in level.Commands.Log )
+			Assert.IsTrue( twin.Level.Commands.Apply( logged.Command ).Accepted, logged.Command.ToString() );
+		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash() );
+	}
+
+	/// <summary>Completes the coaster of <paramref name="park"/> in its tool, through the track button's entry; the tool's panel and builder after the completion.</summary>
+	private static void CompleteCoasterInTool( ParkSettingCommandLevelTests.Park park )
+	{
+		var level = park.Level;
+		Assert.AreEqual( TrackToolEntry.Entered, level.BeginCoasterToolEntry( park.One ), "the track button's entry (0x4af275 → 0x4988c0)" );
+		var builder = level.CoasterTool!;
+		builder.Height = 40;
+		foreach ( var (dx, dy) in CoasterTests.Circuit )
+			Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( 20 + dx, 20 + dy ), $"pylon at offset ({dx}, {dy})" );
+		var back = builder.Track.ReturnCell!.Value;
+		Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( back.X, back.Y ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( back.X, back.Y ) );
+		Assert.IsTrue( builder.Track.IsComplete );
+		Assert.IsFalse( level.IsCoasterToolActive, "the completion ended the coaster tool" );
+	}
+
+	/// <summary>
+	/// A coaster's completion with no queue start pending ends the tool, also on a ride with a queue: the placement took the start (tp.exe 0x5252ea), so pass 0x81's zero result takes 0x526568
+	/// and, with 0x8186c0 zero (0x52656e), the tool ends (0x5266bc) instead of handing over to the queue tool (0x526581, 0x526680).
+	/// </summary>
+	[TestMethod]
+	public void ACoastersCompletionWithNoQueueStartPendingEndsTheToolEvenWithAQueue()
+	{
+		var park = BuildableCoaster( "Info.HasQueue 1\n" );
+		var level = park.Level;
+		park.One.Visitors.HasCells = true;
+		park.One.Visitors.QueueFrontCell = (20, 24);
+		CompleteCoasterInTool( park );
+		Assert.IsFalse( level.CellTool.IsActive, "no queue tool follows: no queue start is pending" );
+		Assert.AreEqual( TrackToolEntry.Entered, level.BeginCoasterToolEntry( park.One ), "the track button starts the tool on the finished coaster again" );
+		Assert.AreSame( park.One, level.CoasterToolStation );
+	}
+
+	/// <summary>
+	/// A queue start another placement left pending survives the coaster's tool (0x8186c0 is cleared by the build, Move, pick-up and path or queue clicks, not by a tool's exit) and the coaster's
+	/// completion hands over to that ride's queue tool (0x52656e, 0x526581, taken at 0x526680): a kart ride placed with a queue and its track tool left, then a coaster entered by the track button.
+	/// </summary>
+	[TestMethod]
+	public void ACoastersCompletionHandsOverToAQueueStartAnotherPlacementLeftPending()
+	{
+		var park = BuildableCoaster( "Info.HasQueue 1\n" );
+		var level = park.Level;
+		park.One.Visitors.HasCells = true;
+		park.One.Visitors.QueueFrontCell = (20, 24);
+		// the second ride stands for the kart ride: its placement left its queue start pending (Level.EnterPlacedTrackTool stores it), its track tool then ended
+		park.Two.Visitors.HasCells = true;
+		park.Two.Visitors.QueueFrontCell = (40, 44);
+		var pending = typeof( Level ).GetField( "placedQueueStart", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
+		pending.SetValue( level, park.Two );
+		level.CellTool.Cancel();
+		CompleteCoasterInTool( park );
+		Assert.IsTrue( level.CellTool.IsActive && level.CellTool.Mode == CellToolMode.Queue, "the completion handed over to the queue tool (0x526581)" );
+		Assert.IsNull( pending.GetValue( level ), "the handover took the start (0x526680)" );
+		level.CellTool.Cancel();
+		Assert.AreEqual( TrackToolEntry.Entered, level.BeginCoasterToolEntry( park.One ) );
+		level.ExitCoasterTool();
+		Assert.IsFalse( level.CellTool.IsActive, "the start is gone: a second visit of the tool ends without the queue tool" );
+	}
+
+	/// <summary>
+	/// A press on a marker cell enters the tool, and the same click's release is delivered to the new tool (tp.exe 0x46c610 → 0x524960): on an incomplete track that is a build click, which fails the link test on a
+	/// cell that already holds a pylon of the coaster (the pylon is placed, flagged invalid), and closing the circuit on the chain start.
+	/// </summary>
+	[TestMethod]
+	public void TheReleaseOfAPressThatEnteredTheCoasterToolIsABuildClickOnAnIncompleteTrack()
+	{
+		var park = BuildableCoaster();
+		var level = park.Level;
+		Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+		var builder = level.CoasterTool!;
+		builder.Height = 40;
+		var first = (X: 20 + CoasterTests.Circuit[0].X, Y: 20 + CoasterTests.Circuit[0].Y);
+		Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( first.X, first.Y ) );
+		level.ExitCoasterTool();
+		Assert.IsFalse( builder.Track.IsComplete );
+		// the press (the park click's case 6) enters the tool on the incomplete track; its release is the tool's click on the pylon's own cell
+		Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+		var (nodes, paid) = (builder.Track.Nodes.Count, builder.Ride.PaidCost);
+		// the placement validator's link test (4) answers SameCell for the cell of the last pylon; the tool still places the pylon, flagged invalid (the red link marker), and charges it
+		Assert.AreEqual( CoasterPlaceResult.SameCell, level.CoasterClick( first.X, first.Y ), "the release on the cell of the last pylon fails the link test" );
+		Assert.AreEqual( nodes + 1, builder.Track.Nodes.Count, "the release is a build click: it placed a pylon" );
+		Assert.IsTrue( builder.Track.HasInvalidNodes && builder.Ride.PaidCost > paid, "flagged invalid and charged" );
+		Assert.IsTrue( level.Commands.Apply( new RemoveLastCoasterPylonCommand( park.One.Runtime.AttractionId ) ).Accepted, "Backspace takes it back" );
+		// and on the chain start (the station's end, once the circuit is laid) the release closes the circuit
+		foreach ( var (dx, dy) in CoasterTests.Circuit.Skip( 1 ) )
+			Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( 20 + dx, 20 + dy ) );
+		level.ExitCoasterTool();
+		Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+		var back = builder.Track.ReturnCell!.Value;
+		Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( back.X, back.Y ), "a press on the chain start enters the tool and its release closes the circuit" );
+		Assert.IsTrue( builder.Track.IsClosed );
 	}
 
 	/// <summary>

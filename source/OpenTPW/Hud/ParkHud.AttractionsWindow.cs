@@ -206,6 +206,7 @@ public sealed partial class ParkHud
 	{
 		if ( AttractionsWindowOpen )
 			return;
+		RememberInfoWindow( InfoWindowKind.Attractions );
 		if ( category is { } chosen )
 			attractionCategory = chosen;
 		attractionFirstRow = 0;
@@ -396,7 +397,7 @@ public sealed partial class ParkHud
 			Clicked = () => { CloseAttractionsWindow(); OpenParkInfoWindow(); } } );
 		var allStaff = table.Model( "b_allstaff" );
 		screen.Add( new UiButton { Id = "allStaff", Model = allStaff.Model, Help = strings.Help( allStaff.Help ), Bounds = allStaff.Rect, Anchor = UiAnchor.Center,
-			Clicked = () => { CloseAttractionsWindow(); OpenStaffWindow(); ShowEmployedStaff( true ); } } );
+			Clicked = () => { CloseAttractionsWindow(); OpenAllStaffWindow(); } } );
 		var visitors = table.Model( "b_kids" );
 		screen.Add( new UiButton { Id = "allVisitors", Model = visitors.Model, Help = strings.Help( visitors.Help ), Bounds = visitors.Rect, Anchor = UiAnchor.Center,
 			Clicked = () => { CloseAttractionsWindow(); OpenVisitorWindow(); } } );

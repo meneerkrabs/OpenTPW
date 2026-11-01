@@ -48,7 +48,8 @@ public class AdvisorArrivalResumeTests
 		advisor.AttachLevel( source.Level ); // the real subscription, not a direct call to the advisor's event handler
 		guests.ArrivalsEnabled = true;
 		guests.ArrivalClock = () => 100;
-		guests.Tick( 1f / FixedStepClock.TicksPerSecond );
+		// the arrival update runs at the end of a park turn only (tp.exe 0x00516695)
+		guests.TickTurn( 1f / FixedStepClock.TicksPerSecond );
 		Assert.AreEqual( GuestSimulation.ArrivalParkLimit + 1, guests.Guests.Count, "the over-limit group creates no extra guest" );
 		CollectionAssert.AreEqual( new[] { -1 }, advisor.ArrivalWaves.ToArray(), "the arrival event records limit minus guests without clamping" );
 		var liveHash = source.Level.ComputeStateHash();

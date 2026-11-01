@@ -407,6 +407,25 @@ internal sealed class AdvisorController
 	/// <summary>The background scan and its cursor (the controller's only state besides the queue).</summary>
 	public AdvisorScan Scan { get; }
 
+	/// <summary>The state and game type of the last scan call, which the speech check scores a scanned message against (the original's callbacks read the live park); null before the first call.</summary>
+	internal (AdvisorScanContext Context, int GameType)? LastScan { get; private set; }
+
+	/// <summary>
+	/// The score of a pending advice message as the speech asks it again (<c>0x59B6BE</c>): a message the background scan scores is scored by its callback on the state of the last scan
+	/// call, a mode the descriptor excludes scoring -1; a message that game code posts keeps its record's score, the callback of its row being the flat getter the record was built with.
+	/// Null when the message is not checked (no scan has run, a message the scan does not score).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0059B6BE speech score] the speech (0x59B620) scores the record's message again through 0x59C0A0 (the descriptor's mode selector, then its callback on the live state) and says nothing when the score is below MinScoreForConsideration (0x59B6C3: signed, so a score equal to it passes); the callback also leaves the scan object's words +4 and +8, which the speech copies into the record's id and cell words when they are not 0 (0x59B6CF..0x59B6E4)
+	internal AdvisorSpeechCheck? SpeechCheck( AdvisorPendingAdvice advice )
+	{
+		ArgumentNullException.ThrowIfNull( advice );
+		if ( LastScan is not { } scan || (uint)advice.MessageId >= (uint)AdvisorDescriptorTable.Rows.Count )
+			return null;
+		var row = AdvisorDescriptorTable.Rows[advice.MessageId];
+		// [EXT:restored-advice] a row whose own callback is the constant-zero stub is posted by the extension with a score of its own: the original's stub would drop it here, the extension's line is said
+		return row.Scan && row.Callback != RestoredAdviceScan.ConstantZeroCallback ? new AdvisorSpeechCheck( Scan.ScoreOf( row, scan.Context, scan.GameType ) ) : null;
+	}
+
 	public AdvisorBalance Balance { get; }
 	public AdvisorScoreQueue Queue { get; }
 
@@ -429,7 +448,9 @@ internal sealed class AdvisorController
 	/// the queue's admission rules (tutorial option, once-only, slaps, duplicates, repeat interval) and to the descriptor's game-mode
 	/// selector. Returns null for a message the controller has no descriptor for, or one the game mode excludes.
 	/// </summary>
-	public AdvisorQueueAdmission? Advise( int messageId, uint liveGameTick, int gameType, bool tutorialEnabled, int variant = -1 )
+	/// <param name="thingId">The record's word +0x0 (0x59B590's second argument): the thing the advice is about, 0 for none.</param>
+	/// <param name="secondary">The record's dword +0x4 (its third argument): a cell word or an object type id, 0 for none.</param>
+	public AdvisorQueueAdmission? Advise( int messageId, uint liveGameTick, int gameType, bool tutorialEnabled, int variant = -1, ushort thingId = 0, uint secondary = 0 )
 	{
 		var definition = AdvisorTables.AllMessages.FirstOrDefault( message => message.MessageId == messageId );
 		if ( definition.ScoreKey != null && !Queue.HasDescriptor( messageId ) )
@@ -439,7 +460,7 @@ internal sealed class AdvisorController
 		}
 		if ( definition.ScoreKey == null || !AdvisorTables.GameModeAccepts( definition.GameMode, gameType ) )
 			return null;
-		return Queue.Enqueue( new AdvisorPendingAdvice( messageId, Balance.ScoreOf( messageId ), variant ), liveGameTick, tutorialEnabled );
+		return Queue.Enqueue( new AdvisorPendingAdvice( messageId, Balance.ScoreOf( messageId ), variant, false, thingId, secondary ), liveGameTick, tutorialEnabled );
 	}
 
 	/// <summary>
@@ -450,6 +471,7 @@ internal sealed class AdvisorController
 	public AdvisorScanOutcome ScanOnce( IAdvisorMoneyState? money, uint liveGameTick, int gameType, bool tutorialEnabled, IAdvisorParkState? park = null, IRestoredAdviceState? restored = null )
 	{
 		var context = new AdvisorScanContext( Balance, money, park ) { Restored = restored };
+		LastScan = (context, gameType);
 		var result = Scan.Step( context, gameType, ( messageId, score ) =>
 			Queue.HasDescriptor( messageId ) && RestoredAdvice.RepeatAllows( Queue, messageId, liveGameTick ) && Queue.Eligibility( new AdvisorPendingAdvice( messageId, score ), liveGameTick, tutorialEnabled ) == AdvisorEligibility.Eligible );
 		// the original has no test for "no message" here: with a minimum below -1 the -1 of the empty result would be queued; the empty result is not posted (the shipped minimum is 25)
@@ -527,6 +549,15 @@ internal sealed class AdvisorController
 		Scan.RestoreCursor( snapshot.ScanCursor );
 	}
 
+	// the record's second dword holds a cell word or an object type id (a word: 0x509F09 reads its low word, the cell word is masked to 16 bits at 0x59B26E), and the score-overridden byte is 0 or 1 (SaveAdvisorRecord)
+	private static void RequireWords( SaveAdvisorRecord record, string what )
+	{
+		if ( record.Secondary > ushort.MaxValue )
+			throw new InvalidDataException( $"The saved advisor {what} has the cell or type word {record.Secondary}, which is not a word." );
+		if ( record.ScoreOverridden > 1 )
+			throw new InvalidDataException( $"The saved advisor {what} has the score-overridden byte {record.ScoreOverridden}." );
+	}
+
 	/// <summary>
 	/// Takes the pending records and per-message history of an original park save's advisor controller (model 11).
 	/// Free (invalid) records stay free; records and non-initial history of messages without a descriptor are
@@ -545,12 +576,13 @@ internal sealed class AdvisorController
 			var record = saved.Pending[index];
 			if ( !record.Valid )
 				continue;
+			RequireWords( record, $"pending record {index}" );
 			if ( record.MessageId > int.MaxValue || !Queue.HasDescriptor( (int)record.MessageId ) )
 			{
 				dropped.Add( record.MessageId );
 				continue;
 			}
-			pending[index] = new AdvisorPendingAdvice( (int)record.MessageId, record.Score, record.ResponseNo, record.OverrideOnlyOnce != 0 );
+			pending[index] = new AdvisorPendingAdvice( (int)record.MessageId, record.Score, record.ResponseNo, record.OverrideOnlyOnce != 0, record.ThingId, record.Secondary, record.ScoreOverridden != 0 );
 			fields.Add( $"message {record.MessageId} thing {record.ThingId} secondary {record.Secondary} score overridden {record.ScoreOverridden}" );
 			imported++;
 		}
@@ -570,18 +602,27 @@ internal sealed class AdvisorController
 		Queue.Restore( pending, history );
 		// [BIN:TPW-EXE:0x0059BA30 record serializer] the controller's save and load pass the record at +0x16D0 through it (0x59A1C6, 0x59A49D), so the save's current record is the last tutorial advice
 		var current = saved.Current;
+		if ( current.Valid )
+			RequireWords( current, "the last tutorial record" );
 		var lastTutorial = current.Valid && current.MessageId <= int.MaxValue && Queue.HasDescriptor( (int)current.MessageId ) && Queue.IsTutorial( (int)current.MessageId )
-			? new AdvisorPendingAdvice( (int)current.MessageId, current.Score, current.ResponseNo, current.OverrideOnlyOnce != 0 ) : null;
+			? new AdvisorPendingAdvice( (int)current.MessageId, current.Score, current.ResponseNo, current.OverrideOnlyOnce != 0, current.ThingId, current.Secondary, current.ScoreOverridden != 0 ) : null;
 		Queue.RestoreLastTutorial( lastTutorial );
 		// [BIN:TPW-EXE:0x0076E300 descriptor table] the original's 351 descriptors (message = record index; filled by 0x5A0A50) are all bound (AdvisorDescriptorTable), so every message an original save can name keeps its pending advice and history; only an ID past the table, or a message of a group the settings file lacks, has no descriptor
-		return $"Advisor controller imported: {imported} pending advice, history of {history.Count} messages; dropped {dropped.Count} pending advice of messages without a descriptor ({string.Join( ", ", dropped )}) and {droppedHistory} history entries without one; last tutorial advice {(lastTutorial != null ? $"message {lastTutorial.MessageId} kept" : current.Valid ? $"message {current.MessageId} dropped (no descriptor or not a tutorial)" : "none")}; the imported records' thing, secondary and score-overridden fields are not kept ({string.Join( "; ", fields )}); the controller's other values are reported under SAVE-010.";
+		return $"Advisor controller imported: {imported} pending advice, history of {history.Count} messages; dropped {dropped.Count} pending advice of messages without a descriptor ({string.Join( ", ", dropped )}) and {droppedHistory} history entries without one; last tutorial advice {(lastTutorial != null ? $"message {lastTutorial.MessageId} kept" : current.Valid ? $"message {current.MessageId} dropped (no descriptor or not a tutorial)" : "none")}; the imported records keep their thing, secondary and score-overridden fields ({string.Join( "; ", fields )}); the controller's other values are reported under SAVE-010.";
 	}
 
 	/// <summary>
 	/// One controller update: when not busy, selects the best pending advice, consumes it, plays its
 	/// response through <paramref name="play"/> and records the outcome. Returns the attempted selection.
 	/// </summary>
-	public AdvisorResponseSelection? Update( Func<uint> advisorClock, Func<uint> liveGameTick, Func<int, uint?> play )
+	public AdvisorResponseSelection? Update( Func<uint> advisorClock, Func<uint> liveGameTick, Func<int, uint?> play ) =>
+		UpdateSpeaking( advisorClock, liveGameTick, selection => play( selection.ResponseId ), null );
+
+	/// <summary>
+	/// <see cref="Update"/> with the record handed to <paramref name="play"/> and the speech's score check (<paramref name="check"/>, null checks nothing):
+	/// the record's words reach the caption, and a scanned message whose score has fallen below the minimum since it was queued is dropped unspoken.
+	/// </summary>
+	public AdvisorResponseSelection? UpdateSpeaking( Func<uint> advisorClock, Func<uint> liveGameTick, Func<AdvisorResponseSelection, uint?> play, Func<AdvisorPendingAdvice, AdvisorSpeechCheck?>? check )
 	{
 		ArgumentNullException.ThrowIfNull( advisorClock );
 		ArgumentNullException.ThrowIfNull( liveGameTick );
@@ -590,14 +631,29 @@ internal sealed class AdvisorController
 			return null;
 		Queue.BeginPlaybackAttempt( selection );
 		uint? span = null;
+		var said = true;
 		try
 		{
-			span = play( selection.ResponseId );
+			var spoken = selection;
+			// [BIN:TPW-EXE:0x0059B6BE speech score] a record whose score was not given (byte +0x16 clear; the F1 replay of a tutorial sets it and takes the other speech, 0x59B870) is scored again: below the minimum nothing is said, the record is gone (0x59B649 cleared its valid byte) and no history, busy time or reservation follows (0x59A884 leaves at once)
+			if ( !selection.Advice.ScoreOverridden && check?.Invoke( selection.Advice ) is { } fresh )
+			{
+				if ( fresh.Score < Queue.MinimumScore )
+					said = false;
+				else if ( fresh.ThingId != 0 || fresh.Secondary != 0 )
+					spoken = selection with { Advice = selection.Advice with
+					{
+						ThingId = fresh.ThingId != 0 ? fresh.ThingId : selection.Advice.ThingId,
+						Secondary = fresh.Secondary != 0 ? fresh.Secondary : selection.Advice.Secondary,
+					} };
+			}
+			if ( said )
+				span = play( spoken );
 		}
 		finally
 		{
 			// [BIN:STP-PPC:0x1000BBF0 controller playback wrapper] the wrapper (sole caller 0x100089FC) fails only for an invalid record or the missing-descriptor response 614, which the bound rows cannot produce; the player's result (0x10006B7C, stored at 0x1000BB64) is kept only as the span, so an unplayed response still records the history and reserves span + 1000 with span 0
-			Queue.CompletePlaybackAttempt( selection, playbackSucceeded: true, advisorClock(), liveGameTick(), span ?? 0 );
+			Queue.CompletePlaybackAttempt( selection, playbackSucceeded: said, advisorClock(), liveGameTick(), span ?? 0 );
 		}
 		return selection;
 	}

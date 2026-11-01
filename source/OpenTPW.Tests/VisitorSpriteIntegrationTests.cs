@@ -398,7 +398,7 @@ public class VisitorSpriteIntegrationTests
 		var old = simulation.SpawnInPark( 4, 5 );
 		old.BodySprite.QueueInterval( 137 );
 		old.State = GuestState.Gone;
-		simulation.Tick( 1f / 60 );
+		simulation.TickTurn( 1f / 60 );
 		Assert.IsNull( old.BodySprite.Player );
 		Assert.AreEqual( 0, old.BodySprite.PendingInterval );
 		var fresh = simulation.SpawnInPark( 4, 5 );

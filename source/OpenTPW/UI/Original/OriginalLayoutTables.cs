@@ -567,6 +567,48 @@ public static class OriginalLayoutTables
 		} ),
 	} );
 
+	/// <summary>[BIN:TPW-EXE:0x750e10] layout table AllStaffWindow.</summary>
+	public static readonly LayoutTable AllStaffWindow = new( "AllStaffWindow", 0x750E10, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x320u, 186, 30, 2018, 1007, -1, -1, "window4", null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0xFFFFFFFEu, 1889, 818, 1972, 901, 1, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 7, 0x291u, 0x321u, 272, 181, 1817, 801, 124, -1, "list_allstaff", null, new[] { 294, 418, 1734, 777 }, new LayoutNode[]
+			{
+				new( 8, 0x11u, 0x322u, 1157, 188, 1737, 297, -1, -1, null, null, null, new LayoutNode[]
+				{
+					new( 2, 0x11u, 0x323u, 1160, 191, 1262, 294, 114, -1, "b_shandy", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x11u, 0x324u, 1635, 191, 1738, 294, 118, -1, "b_sresrcher", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x11u, 0x325u, 1398, 191, 1500, 294, 116, -1, "b_senter", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x11u, 0x326u, 1279, 191, 1381, 294, 115, -1, "b_smech", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x11u, 0x327u, 1516, 191, 1619, 294, 117, -1, "b_sguard", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+				new( 2, 0x1u, 0x11u, 722, 306, 1007, 412, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x13u, 1226, 306, 1476, 411, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x14u, 1483, 306, 1733, 411, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 3, 0x10u, 0x1u, 1747, 376, 1806, 719, -1, -1, null, "!slider", new[] { 1747, 376, 1806, 719 }, new LayoutNode[]
+				{
+					new( 2, 0x21u, 0x2u, 1747, 722, 1807, 782, -1, -1, "b_down", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x1u, 0x3u, 1739, 484, 1806, 551, -1, -1, "b_scroller", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x21u, 0x1u, 1747, 315, 1807, 375, -1, -1, "b_up", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+				new( 2, 0x1u, 0x12u, 1013, 306, 1221, 412, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x1u, 0x10u, 294, 306, 716, 412, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0x328u, 803, 81, 1276, 161, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x329u, 615, 815, 1589, 950, -1, -1, "!frame", null, null, new LayoutNode[]
+			{
+				new( 1, 0x1u, 0x32Au, 654, 832, 1177, 877, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x32Bu, 654, 883, 1177, 928, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 9, 0x1u, 0x32Cu, 1191, 883, 1567, 928, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 9, 0x1u, 0x32Du, 1191, 832, 1567, 877, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 2, 0x1u, 0x32Eu, 1866, 575, 1968, 677, 127, -1, "b_pkinfo", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x32Fu, 1866, 360, 1968, 462, 125, -1, "b_kids", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x330u, 1866, 467, 1968, 570, 126, -1, "b_allthings", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
+
 	/// <summary>[BIN:TPW-EXE:0x750ab8] layout table RideShopList.</summary>
 	public static readonly LayoutTable RideShopList = new( "RideShopList", 0x750AB8, new LayoutNode[]
 	{

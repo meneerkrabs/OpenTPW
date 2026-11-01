@@ -412,7 +412,7 @@ public sealed partial class ParkHud
 
 		// [DATA:Mac main HUD table 0x4ab38:38-43] original button rectangles: staggered along the panel's curve, plus the camera button
 		PanelButton( "buy", "b_buy", Rect( 170, 1122, 288, 1240 ), 469, level.IsReadOnlyVisit ? null : OpenBuyWindow );
-		PanelButton( "info", "b_info", Rect( 287, 1133, 405, 1252 ), 470, OpenParkInfoWindow );
+		PanelButton( "info", "b_info", Rect( 287, 1133, 405, 1252 ), 470, OpenLastInfoWindow );
 		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, OpenFinanceWindow );
 		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, OpenResearchWindow );
 		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, OpenMapWindow );
@@ -608,7 +608,7 @@ public sealed partial class ParkHud
 	}
 
 	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] a placement without an entrance keeps the build tool armed when the click held exactly Ctrl (modifier mask 0xc), else the tool returns to mode 0 (0x52f580); a ride with an entrance (0x52fab0, the type's +0x40) continues into the queue tool (0x52f580(3, 0): 0x52529e, the Move tool's 0x5258e1; a kart or water ride once its circuit closes while the placement's queue start is pending, 0x526f95 and 0x527004), whose last click ends the tool whatever the modifier (0x5275f2). Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits
-	// [APPROX:UI-031] the coaster tool ends the build tool at the placement whatever the modifier, where the original's coaster placement goes on into the queue tool (0x52519f → 0x525259) and its track tool (mode 0x15) is not entered in 0x524960; an entrance-bearing placement keeps the angle through the queue tool whatever the modifier, where the original keeps it only for exactly Ctrl (0x5259f4, else 0x52f1b0(0, 0) at 0x5259fe), which shows only in a tool armed while the queue tool runs, whose buy click arms it before its ride check (0x46C350 at 0x4AC65E, then 0x4AC683 chooses only the help line) and calls no angle setter, so it starts at the angle the placement kept (the hover 0x5234D0 its activation runs sets the angle only for a track add-on, 0x5237F7), at 0 in the original after any modifier but exactly Ctrl; and a queue whose start cell is a path (the cell type +0x29c = 1, 0x5259cf) ends the tool at once in the original — evidence needed: where the original's coaster placement enters its track tool, which of OpenTPW's placements have a path cell as the queue's start
+	// [APPROX:UI-031] an entrance-bearing placement keeps the angle through the queue tool whatever the modifier, where the original keeps it only for exactly Ctrl (0x5259f4, else 0x52f1b0(0, 0) at 0x5259fe), which shows only in a tool armed while the queue tool runs, whose buy click arms it before its ride check (0x46C350 at 0x4AC65E, then 0x4AC683 chooses only the help line) and calls no angle setter, so it starts at the angle the placement kept (the hover 0x5234D0 its activation runs sets the angle only for a track add-on, 0x5237F7), at 0 in the original after any modifier but exactly Ctrl; and a queue whose start cell is a path (the cell type +0x29c = 1, 0x5259cf) ends the tool at once in the original — evidence needed: which of OpenTPW's placements have a path cell as the queue's start
 	private void OnObjectPlaced( OriginalObject item )
 	{
 		// [EXT:online-coop-commands] a placement inside a command: the HUD follows its own player's placement once the command has returned, so the tool the placed ride opens issues commands of its own;
@@ -650,15 +650,8 @@ public sealed partial class ParkHud
 			level.ResetBuildRotation();
 			return;
 		}
-		// a placed coaster enters its tool; [EXT:online-coop-claims] a guest's tool starts once its claim and its entry are back, with the tool's help then (C3c-2), and no queue tool follows the
-		// placement meanwhile, nor after a refusal (another player's claim, the guest's coaster commands still to send)
-		if ( item.Runtime.Coaster != null && level.BeginCoasterToolEntry( item ) is var coaster and not TrackToolEntry.None )
-		{
-			level.ResetBuildRotation();
-			if ( coaster == TrackToolEntry.Entered )
-				PostMessage( strings.Help( 0x125 ) );
-			return;
-		}
+		// [BIN:TPW-EXE:0x52529e coaster placement] a placed coaster takes the placement tail into the queue tool like every other ride with an entrance (0x52faf0 = 3 skips only the kart and water
+		// station line, 0x52521e); its track tool (mode 0x15) is entered later, through 0x4988c0: the ride window's track button, a click on the coaster, or the panel's build button
 		// [EXT:pools-slides] a placed slide tower enters the slide mode of the pool tool: the player lays the track from the tower down into the pool
 		if ( PoolSlideTowers.IsSlideTower( item.Entry ) && level.EnterSlideTool( item ) )
 		{
@@ -1397,16 +1390,28 @@ public sealed partial class ParkHud
 		if ( inPark && idle && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && input.LeftPressed && !toolClick )
 		{
 			var clicked = level.Objects.FindAt( cursorX, cursorY );
-			// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected opens its settings window; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
-			if ( !ChatMode && clicked != null && clicked == selectedObject && IsWaveMachine( clicked ) )
-				OpenWaveSettings( clicked );
-			// [BIN:TPW-EXE:0x487b0b object copy] Ctrl at the click arms a copy of the object instead of opening its window (CopyObject); the chat mode has no object window
-			// a click on a track add-on opens its ride's window (Level.WindowTarget); the chat mode has no object window
-			if ( !ChatMode && !(clicked != null && (Input.ModifierMaskDown & 0xC) != 0 && CopyObject( clicked )) )
+			// [BIN:TPW-EXE:0x487eeb coaster click] a press on a marker cell of a coaster (cursor mode 6) selects that thing (0x48c940) and enters its track tool through 0x4988c0, opening no window
+			if ( !ChatMode && level.CoasterAtMarkerCell( cursorX, cursorY ) is { } marked )
 			{
-				// the park view's click selects the object it hit (0x4879D0), which writes the track tool's globals
-				level.NoteToolSelection( clicked );
-				SelectObject( level.WindowTarget( clicked ) );
+				level.NoteToolSelection( marked );
+				// [BIN:TPW-EXE:0x4988c0 arm retract] the entry retracts the info arm (0x4a25f0, 0x4a2590 at 0x498909..0x498920) as the ride window's track button does (EditTrack); a refusal (another player's claim, said by
+				// the level) or a guest's pending claim (its outcome opens the panel, CompleteTrackStart) needs nothing more here, as for that button, whose route ignores both too
+				SetInfoArm( false );
+				level.EnterCoasterTool( marked );
+			}
+			else
+			{
+				// [EXT:pools-waves] a deliberate second click on the wave machine that is already selected opens its settings window; selecting it (here or from the attractions list) changes nothing (ParkHud.Pools.cs)
+				if ( !ChatMode && clicked != null && clicked == selectedObject && IsWaveMachine( clicked ) )
+					OpenWaveSettings( clicked );
+				// [BIN:TPW-EXE:0x487b0b object copy] Ctrl at the click arms a copy of the object instead of opening its window (CopyObject); the chat mode has no object window
+				// a click on a track add-on opens its ride's window (Level.WindowTarget); the chat mode has no object window
+				if ( !ChatMode && !(clicked != null && (Input.ModifierMaskDown & 0xC) != 0 && CopyObject( clicked )) )
+				{
+					// the park view's click selects the object it hit (0x4879D0), which writes the track tool's globals
+					level.NoteToolSelection( clicked );
+					SelectObject( level.WindowTarget( clicked ) );
+				}
 			}
 		}
 		// [EXT:online-avatar-click] in a visit with other players a click on the ground walks the player's figure there (manual p. 68: "Left click to walk to destination"): in the

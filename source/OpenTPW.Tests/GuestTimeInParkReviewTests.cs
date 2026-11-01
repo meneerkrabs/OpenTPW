@@ -123,6 +123,9 @@ public class GuestTimeInParkReviewTests
 	{
 		var rig = new GuestSnapshotTests.Rig();
 		rig.Simulation.ArrivalsEnabled = false;
+		// the guests' update runs on the tick that starts a park turn (DET-014): the guest is made just before it
+		while ( !rig.Simulation.NextTickStartsTurn )
+			rig.Simulation.Tick( GuestSnapshotTests.Tick );
 		var guest = rig.Simulation.SpawnInPark( 5, 0 );
 		// a level without an arrival lane has no gate to walk to: its leaving guests vanish (a level with a gate whose route fails keeps its guest in state 6, WALK-004)
 		rig.Simulation.Settings.ArrivalLaneA = null;

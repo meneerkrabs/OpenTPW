@@ -82,6 +82,12 @@ public sealed partial class StaffWorldSimulation : IMechanicJobWorld, IStaffWorl
 				reachable && (x, y) != target, reachable );
 		} ).ToArray();
 
+	/// <summary>
+	/// Presentation-only gate, null for a simulation without a camera: false while the camera is a walk or a ride view, when the members' thoughts do no bubble work (the guests' gate, <see cref="GuestSimulation.ThoughtBubblesAllowed"/>).
+	/// Never saved or hashed.
+	/// </summary>
+	internal Func<bool>? ThoughtBubblesAllowed { get; set; }
+
 	/// <summary>Called only by the fixed simulation clock, using its already speed-scaled delta.</summary>
 	public void Tick( float seconds )
 	{

@@ -258,7 +258,7 @@ internal static class AdvisorSequences
 			{
 				// [BIN:TPW-EXE:0x00599880 advisor update] when the advisor clock reaches the timer (0x599991) the update starts the particle effect 0x521E60 (87, 90000, 0, 7000), plays sound 0xC6 (0x51BFC0) and calls 0x4B9340 (Advisor.Update)
 				// [BIN:TPW-EXE:0x004B9340 lobby key panel refresh] it returns at once unless the lobby's key panel window exists (0x7CC4B4, created by 0x4B8CA0 from the lobby 0x5E19B8 and cleared by its window procedure 0x4B8B70): in the park it does nothing; the park HUD's key counter is refreshed by the HUD's own message 0x1E handler (0x4A0FB0, ParkStatus.GoldenKeys)
-				// [APPROX:ADVISOR-025] The lobby samples the saved Full Simulation key counter when created, but has no advisor-timer refresh or EA/EB affordability panel. Native 0x4B9340 shows EC for positive keys outside Instant Action, formats "%d x" into EE, and owns effect 0x61 while the selected record threshold is met (not on a count drop); see docs/reverse/LOBBY-KEY-PANEL.md. Lobby sequences 28/29 reachability and particle-pass ordering remain unproven.
+				// [APPROX:ADVISOR-025] The lobby's key panel and the lobby advisor are ported (FrontEndMenu.KeyPanel.cs, FrontEnd/LobbyAdvisor.cs); response 393, which reaches this timer in the lobby (0x4A6B4F, when the first player's dialog closes after 0x5AFC30 added the first key), is not: OpenTPW publishes the starter key only when the lobby is retired for the park, and the other lobby lines belong to dialogs OpenTPW does not have.
 				timer = sum + entry.TimerMilliseconds;
 				continue;
 			}

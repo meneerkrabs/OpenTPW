@@ -20,4 +20,10 @@ public interface IGuardGuests
 	IEnumerable<GuestNavigation> WalkersOn( int x, int y ) => [];
 	/// <summary>Arrival lane A (0) or B (1), bus stop first and park entrance last; null when the level has none.</summary>
 	(int X, int Y)[]? Lane( int side );
+
+	/// <summary>
+	/// The ticket booth cell of a side straight from the level's gate data (<c>FixedItemInfo.TicketBoothA/B</c>, tp.exe <c>0x004D8610</c>), whatever the state of the park's cells: the catch routes to it in every park.
+	/// Null only for a level whose settings name no booth for that side. By default the fourth cell of <see cref="Lane"/>.
+	/// </summary>
+	(int X, int Y)? TicketBooth( int side ) => Lane( side ) is { Length: >= 4 } lane ? lane[3] : null;
 }

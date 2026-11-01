@@ -70,6 +70,26 @@ public partial class TrackAddOnLevelTests
 		foreach ( var cell in beyond ) Assert.AreEqual( (byte)0, cells.RawTypeAt( cell.X, cell.Y ), "runtime removal releases the lease after footprint writes" );
 	}
 
+	/// <summary>
+	/// A park click on a marker cell of a coaster (tp.exe cursor mode 6: the hover handler 0x486d90 maps map type 0x15, the click case 0x487e56 calls 0x4988c0 on the owner thing at 0x487eeb)
+	/// enters its track tool: the station's marker cells name the coaster, any other cell names none.
+	/// </summary>
+	[TestMethod]
+	public void AMarkerCellOfACoasterNamesItForTheParkClick()
+	{
+		var (level, entry) = CoasterMarkerLevel();
+		var station = level.Objects.TryPlace( entry, 20, 16, 0, out _ )!;
+		Assert.IsNotNull( station.Runtime.Coaster );
+		var cells = level.Guests!.Grid.Cells;
+		var marked = Enumerable.Range( 0, cells.Width * cells.Height ).Select( index => (X: index % cells.Width, Y: index / cells.Width) )
+			.Where( cell => cells.RawTypeAt( cell.X, cell.Y ) == CoasterCellMarkers.MarkerType ).ToArray();
+		Assert.IsTrue( marked.Length >= 1 );
+		foreach ( var cell in marked )
+			Assert.AreSame( station, level.CoasterAtMarkerCell( cell.X, cell.Y ), "the marker cell opens the coaster's tool" );
+		Assert.IsNull( level.CoasterAtMarkerCell( 40, 28 ), "an ordinary cell names no coaster" );
+		Assert.IsNull( level.CoasterAtMarkerCell( station.Placement.X, station.Placement.Y ), "a station's own object cell is no marker cell: its click opens the ride window" );
+	}
+
 	[TestMethod]
 	public void AStationHeadsMarkerBitGoesThroughTheLayoutSaveBesideThePoolFlags()
 	{

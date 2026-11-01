@@ -2128,12 +2128,19 @@ tool sends every write as a request:
   as `EndCoasterToolCommand` leaves it: every pylon edit on it is released (a moved pylon goes back), the
   coaster is no longer being edited, and a built ride opens. So a guest that leaves, idles, resyncs or
   may build no more never leaves a coaster closed and marked.
-- **The entry.** The ride window's track button and a placed coaster's follow-on end the tool that was on
+- **The entry.** The ride window's track button and a press on a marker cell of the coaster (the original's
+  entries through `0x4988c0`; a placement enters the queue tool, not the coaster tool) end the tool that was on
   and send `ClaimRideCommand`; the claim's outcome sends `BeginCoasterToolCommand` as a second request with
-  the same wait (the frame check keeps the claim meanwhile), and that outcome opens the panel with the tool's
-  help, while the park view has no tool and the claims still give the coaster to the guest's seat. A claim
-  the host let go meanwhile starts nothing and says so. A placement's follow-on opens no queue tool
-  meanwhile, nor after a refusal.
+  the same wait (the frame check keeps the claim meanwhile), and that outcome opens the panel, while the park
+  view has no tool and the claims still give the coaster to the guest's seat. `0x4988c0` posts no advisor help
+  (its complete-track branch only sets the status text `0x4a2aa0(0xc)`, not shown, UI-031), and the port opens
+  the same panel for a complete and an incomplete track (the original asks `0x441910`, which also needs the
+  controller `0x436860` to exist). The panel's own build button calls `0x497d20` directly (`0x498337`) and posts
+  help `0x125`. A press on a marker cell enters the tool on the press, and its release is delivered to the new
+  tool (`0x46c610` to `0x524960`): on an incomplete track that release is a build click, so a press can build
+  on its release (on the last pylon's cell it places a pylon the link test flags). A claim the host let go
+  meanwhile starts nothing and says so. The completing click ends the tool, and the queue tool follows only
+  while a queue start another placement left pending (a kart or water ride's) is still pending.
 - **The queue.** The panel's commands go through one queue of the level's (`CoasterRequestQueue`), in order,
   so a closed panel's last commands still go: a drag's press, its steps and its end, a click, Backspace, a
   swap, a cut and the tool's end. It sends from its head while fewer than four of the guest's tool requests
@@ -3123,3 +3130,7 @@ guarded list.
   with a second error sound, and a refused queue line still plays the queue-join sound. Opening the loans window refreshes its offers by command, which a guest is refused,
   and the winning screen's Resume is the host's alone, so a guest's winning screen stays until the
   host dismisses it.
+
+## The guests' update in the park turn only (round 11, package S, November 1, 2026)
+
+The guests' thing update now runs only in the park turn's sweep (docs/DETERMINISM.md, "The guests' update is the turn's sweep"), as the original does (`0x516380`, `0x54F668`). Every simulation that changes a guest's state in a different tick changes the world hash from the first turn on, so, as with each earlier round that moved a guest rule, a host and a guest must run the same build: a guest of another build reports a mismatch at the host's first checkpoint, and a command log recorded before this change replays its commands but reports a mismatch at its first checkpoint after a guest update (`ParkCommandLogFile.FirstMismatch`). No wire or save field changed and no version marker was added: the lobby's manifest compares assets, not rules, and none of the earlier rounds that moved pins bumped a marker either. The command codec, the join capture and the saves are unchanged.

@@ -1,66 +1,39 @@
-# Employee portraits: bounded live world output and nominal geometry
+# Employee portraits: the independent clone and nominal geometry
 
-The employee window now prefers the selected member's latest successful world sprite output.
-It reads that member's emitted slot, step and raw heading, resolving the sprite bank with a
-literal zero camera-yaw contribution. A work, strike, research or performance frame therefore
-uses the live member's phase rather than always playing the hire-window walking loop.
+The employee window's portrait is the original's independent clone of the selected member's
+sprite source (round 11, package W). The clone, the visitor window's and the hire window's
+figure are sprites of the registry (`0x007B49F0`) that the sprite scheduler (`0x475360`, the
+even 31 ms substeps, `Level.ScheduleSprites`) steps with every other sprite. They live in
+`PortraitSprites`, are presentation only and are neither hashed nor saved.
 
-This is a bounded host correction under **UI-092**, not independent native-clone parity.
-The hire window itself and its `StaffRenderer.PortraitFrame` path are unchanged.
+## The clone's lifecycle
 
-## Publication and reads
+- **Full copy** (`0x486530` -> `0x475CF0`, from the window's refresh `0x4B5330`, vtable +0x18, run
+  as the window is built and by the cycle arrows): an earlier clone is deleted first, the member
+  becomes the window's person (`[0x7C24D8]`), and a member without a source (handle word +0x0C
+  is 0: a member resting in the Staff Room) binds nothing. Otherwise the whole 0x118-byte
+  record is copied and the clone's x, y, z, scale 8.0 and flags `(f & ~0x200) | 0x50000`
+  (`StaffSpriteCloneCopy.Create`) replace the copied ones. The clone keeps the source's due
+  time and interval from that moment.
+- **Partial copy** (`0x486610` -> `0x475E10`, window message `0x1E`, which the HUD pass
+  `0x4813B0` sends every frame after the substeps and before the world is drawn): while the
+  person is bound and has a source, the program counter, kind, variant, slot, intro and hold,
+  alpha, secondary scale, heading, output word, frame and frame count are copied; the restart
+  counter, the stack, the depths, the due time and the interval are not
+  (`StaffSpriteCloneCopy.Refresh`). A member who gets a new source is followed through the
+  current handle; a member whose source is gone leaves the clone standing, and the scheduler
+  keeps stepping it by its own due time and interval, so it plays on after its source is gone.
+  A full copy made while there was no source cannot bind one later: the window needs another
+  refresh.
+- **Delete** (vtable +0x20, `0x4B6B80` -> `0x486630`, the window's close): the clone goes and the
+  bound person is cleared.
 
-`StaffRenderer.OnRender` calls `PrepareWorld`, the same CPU path that tracks movement, ticks
-players, selects clips and prepares world quads. Its existing order remains view creation,
-placement exclusion, tracking, player tick, clip selection and quad preparation. Only a
-successfully prepared member quad publishes a value snapshot. `Describe` remains a mutating
-world diagnostic and never publishes an employee portrait.
-
-The snapshot has the exact member reference and ThingId, owning level, level-render pass,
-renderer-render pass, asset generation, atlas index, raw slot/step and heading. It contains no
-texture handle. The read-only `EmployeeFrame` requires:
-
-- The same current level and staff renderer, still registered in the entity list
-- Visible, material-ready, nondeleted rendering and the same placement/body exclusions
-- The exact member still in the current roster with its matching ThingId
-- A publication from the current world/renderer pass and asset generation
-- The current matching atlas and a live native texture
-
-The accessor only resolves bank direction/mirroring and constructs the UI frame from current
-textures. It never ticks, selects or restarts a clip, consumes pending movement, creates a view,
-or draws random numbers. Repeated reads are observational. Rendering still precedes HUD draw,
-so the normal draw uses the same world pass, including when a modal covers the employee window.
-There is no requirement for the lower employee screen to receive an update first.
-
-The renderer pass advances before hidden/no-material/deleted early returns. The level pass
-advances before entity traversal, so a renderer entirely omitted from that traversal cannot
-revive an older output when re-registered. Level or renderer replacement and removal of a
-member reference also reject earlier snapshots. The world path's existing CellX-only placement
-gate is preserved; tracking still requires both coordinates, without inventing a portrait-only
-position rule.
-
-Every atlas replacement invalidates publications before replacing its texture slot. Until a
-new successful world publication, no live employee frame is available from that generation.
-Deletion marks the renderer unavailable and clears its texture list before queued disposal.
-No member view or window retains an old GPU frame.
-
-## Unavailable output and remaining qualifications
-
-Before a first publication, while carried, resting, unpositioned, hidden or missing resources,
-or after source loss, the employee callback uses its **pre-existing qualified hire-loop
-fallback**. Its role/variant key and start time are still updated on every callback, even when
-live output wins. Returning to fallback therefore retains the previous clock/key behavior;
-it does not reset or freeze a live frame. A later valid publication can become visible again.
-Selection, close/reopen and rename do not create a second player or restart the world's player.
-
-This fallback is not the original source-loss lifecycle. The original portrait is an independently
-registered sprite clone, with independent due time, interpreter state and control stack; its
-periodic source refresh does not copy all those fields. A clone can remain scheduler-eligible
-without its source, and script writes can overwrite its screen-space flags. Neither continuous
-visible animation nor a frozen portrait after source loss follows from that fact alone.
-Missing-source creation epochs, source return, full-refresh clone replacement, complete VM/flag
-history, native depth/occlusion and rendered-pixel equivalence remain open under UI-092.
-The existing render-driven staff animation timing qualifications also remain in force.
+Because the partial copy runs after the substeps of the frame and before the draw, a bound
+clone shows its source's frame of that moment; its own steps only show once the source is gone.
+`StaffRenderer.SpriteFrame` draws it from the bank of its kind and variant words, at its slot
+and frame, with the direction of its heading word and no camera turn (flag `0x40000` is part of
+`0x51000`). The staff's sprite placement (`0x475480`) is not ported, so the clone's heading
+word is the member's current heading sector at each copy.
 
 ## Employee-only nominal geometry
 
@@ -82,40 +55,25 @@ Y offset. The visitor keeps `(598,450)` at 3.6, including its three-unit upward 
 Generic figures retain 3.2 and rectangle-relative feet. UI-082 owns hire geometry only;
 UI-092 owns employee geometry and its remaining qualifications.
 
-This correction applies equally to a live frame and the existing unavailable-source fallback.
-It changes no accessor, animation clock, publication, lifetime or source-loss behavior. Static
-layout/helper tracing supports nominal geometry, not exact x87/viewport/raster output, independent
-clone VM timing, script flag history, native rotation/depth or GPU rendered-pixel parity.
+Static layout/helper tracing supports nominal geometry, not exact x87/viewport/raster output,
+the window depth word or GPU rendered-pixel parity.
 
 ## Verification
 
-`EmployeeLivePortraitTests` exercises synthetic sprite banks through the actual CPU world
-preparation and actual employee figure callback. It covers clip/phase, observational repeated
-reads against a no-read control, camera rotation and limited-direction mirroring, same-role
-selection and reused IDs, source eligibility, skipped render passes, level/renderer replacement,
-asset generation/deletion, rename/modal/reopen and unchanged fallback timing. Managed resource
-sentinels exercise lifetime checks without creating a graphics device; they do not establish GPU
-submission, disposal or visual equivalence.
-
-`python3 tools/test_employee_live_portrait_contract.py` guards production call order and the
-read-only boundary. These source checks do not replace the C# tests. Run the focused C# class
-and full CPU suite on the exact proposed head before merging. Real-data GPU/visual comparison
-remains a separate verification requirement; this change includes no original assets.
-
-`EmployeePortraitGeometryTests` adds actual employee callback/Draw checks with synthetic 5- and
-8-direction banks, mirrored and unmirrored headings, unequal A/B densities, non-square art and
-negative origins. Its independent arithmetic oracle checks all six positions/UVs, texture identity
-and exactly one quad across authored, small, wide, square, odd-sized and minimum-scale viewports.
-A nonzero non-walk live phase and the established source-loss fallback phase share the corrected
-geometry. Repeated actual reads/draws are compared with a no-read world control, including save,
-RNG, player, pending movement and next world vertices. Actual hire, employee and visitor widgets,
-plus a generic default figure, have separate Draw controls so equal hire/employee scales cannot
-hide a wrong hotspot. The additional source guard is `tools/test_employee_portrait_geometry_contract.py`.
+`PortraitSpritesTests` covers the placement arithmetic, the full copy (record, scale, flags, due
+time), the partial copy (what it copies and what it keeps), source loss and return, a missing
+source, replacement and close, the visitor body clone, the hire figure's script and phases and the
+windows' calls (refresh, update, close). `EmployeePortraitGeometryTests` adds actual employee
+callback/Draw checks with synthetic 5- and 8-direction banks, mirrored and unmirrored headings,
+unequal A/B densities, non-square art and negative origins; its independent arithmetic oracle
+checks all six positions/UVs, texture identity and exactly one quad across authored, small, wide,
+square, odd-sized and minimum-scale viewports. Actual hire, employee and visitor widgets, plus a
+generic default figure, have separate Draw controls so equal hire/employee scales cannot hide a
+wrong hotspot. The source guard is `tools/test_employee_portrait_geometry_contract.py`.
+Real-data GPU/visual comparison remains a separate verification requirement.
 
 ## Independent VM core seam
 
-The [bounded staff sprite VM](STAFF-SPRITE-VM.md) now has clean semantic programs,
-complete control/register state and exact full/partial clone-copy operations with
-synthetic CPU tests. The staff renderer's world sprites now run on it (round 11, package A: sources, scheduler, saves); this window's portrait is still on the host's
-renderer-call clock (package W).
-UI-092 remains open; the existing callback and its qualifications above still apply.
+The [bounded staff sprite VM](STAFF-SPRITE-VM.md) has clean semantic programs, complete
+control/register state and exact full/partial clone-copy operations; the world's sources, the
+employee clone and the hire figure (`StaffSpriteProgram.HireFigure`, the script `0x74F758`) run on it.

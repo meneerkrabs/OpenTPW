@@ -17,7 +17,7 @@ public class WalkTableTests
 	private const float Tick = 1f / FixedStepClock.TicksPerSecond;
 
 	/// <summary>Runs one straight-line program (every instruction once, then idles) and returns the bridge and the script.</summary>
-	private static (RideVisitorBridge Bridge, RideVM Vm) Run( Action<Asm> program, int ticks = 120, Func<int, int, int, float?>? distance = null, Func<int, int, int, int, float?>? onDistance = null )
+	private static (RideVisitorBridge Bridge, RideVM Vm) Run( Action<Asm> program, int ticks = 120, Func<int, int, int, float?>? distance = null, Func<int, int, int, int, float?>? onDistance = null, bool frameUpdate = false )
 	{
 		var asm = new Asm();
 		program( asm );
@@ -26,7 +26,12 @@ public class WalkTableTests
 		var vm = new RideVM( new RideScriptFile( new MemoryStream( asm.Build( GuestTests.ShopVariables ) ) ), new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1 } );
 		bridge.Attach( vm, () => true );
 		for ( var tick = 0; tick < ticks; tick++ )
+		{
 			vm.Advance( Tick );
+			// the frame's walk update (0x00557D80) runs after the substeps, so a WALKGET sees a walk that ended only at a later pass
+			if ( frameUpdate )
+				bridge.WalkUpdate();
+		}
 		return (bridge, vm);
 	}
 
@@ -38,7 +43,8 @@ public class WalkTableTests
 		var (bridge, vm) = Run( asm => asm
 			.I( Opcode.WALKON, 1, 0, 0, 0, 0, 0, 0 ).I( Opcode.WALKON, 2, 0, 0, 0, 0, 0, 0 ).I( Opcode.WALKON, 3, 0, 0, 0, 0, 0, 0 )
 			.I( Opcode.WALKOFF, 3 ).I( Opcode.WALKOFF, 1 ).I( Opcode.WALKOFF, 2 )
-			.I( Opcode.WALKGET, V( 0 ) ).I( Opcode.WALKGET, V( 1 ) ).I( Opcode.WALKGET, V( 2 ) ).I( Opcode.WALKGET, V( 3 ) ) );
+			.I( Opcode.WALKGET, V( 4 ) ).I( Opcode.WAIT, 100 ).I( Opcode.WALKGET, V( 0 ) ).I( Opcode.WALKGET, V( 1 ) ).I( Opcode.WALKGET, V( 2 ) ).I( Opcode.WALKGET, V( 3 ) ), frameUpdate: true );
+		Assert.AreEqual( 0, vm.Variables[4], "a walk that ended in this very pass is not state 4 yet: only the frame's walk update moves it on (0x00557D80)" );
 		CollectionAssert.AreEqual( new[] { 1, 2, 3, 0 }, new[] { vm.Variables[0], vm.Variables[1], vm.Variables[2], vm.Variables[3] }, "slot 0, 1 and 2 in turn, then nothing" );
 		Assert.AreEqual( 0, bridge.CaptureSnapshot().WalkTable?.Length ?? 0, "WALKGET freed the entries" );
 	}
@@ -51,8 +57,8 @@ public class WalkTableTests
 		{
 			foreach ( var guest in Enumerable.Range( 1, 6 ) )
 				asm.I( Opcode.WALKON, guest, 0, 0, 0, 0, 0, 0 );
-			asm.I( Opcode.WALKOFF, 6 ).I( Opcode.WALKGET, V( 0 ) ).I( Opcode.WALKOFF, 4 ).I( Opcode.WALKGET, V( 1 ) );
-		} );
+			asm.I( Opcode.WALKOFF, 6 ).I( Opcode.WALKGET, V( 0 ) ).I( Opcode.WALKOFF, 4 ).I( Opcode.WAIT, 100 ).I( Opcode.WALKGET, V( 1 ) );
+		}, frameUpdate: true );
 		Assert.AreEqual( 0, vm.Variables[0], "no entry for the sixth walker" );
 		Assert.AreEqual( 4, vm.Variables[1] );
 		CollectionAssert.AreEqual( new[] { 0, 1, 2, 4 }, bridge.CaptureSnapshot().WalkTable!.Select( entry => entry.Slot ).ToArray(), "riders 1, 2, 3 and 5 keep their entries; rider 4 left through its entry" );
@@ -64,7 +70,7 @@ public class WalkTableTests
 	{
 		var (bridge, _) = Run( asm => asm
 			.I( Opcode.WALKON, 1, 0, 0, 0, 0, 0, 0 ).I( Opcode.WALKON, 2, 0, 0, 0, 0, 0, 0 ).I( Opcode.WALKON, 3, 0, 0, 0, 0, 0, 0 )
-			.I( Opcode.WALKOFF, 2 ).I( Opcode.WALKGET, V( 0 ) ).I( Opcode.WALKON, 4, 0, 0, 0, 0, 0, 0 ) );
+			.I( Opcode.WALKOFF, 2 ).I( Opcode.WAIT, 100 ).I( Opcode.WALKGET, V( 0 ) ).I( Opcode.WALKON, 4, 0, 0, 0, 0, 0, 0 ), frameUpdate: true );
 		CollectionAssert.AreEqual( new[] { (0, 1), (1, 4), (2, 3) }, bridge.CaptureSnapshot().WalkTable!.Select( entry => (entry.Slot, entry.Guest) ).ToArray() );
 	}
 
@@ -84,7 +90,7 @@ public class WalkTableTests
 		var (bridge, vm) = Run( asm => asm
 				.I( Opcode.WALKON, 1, 5, 6, 3, 4, 1, 0 ).I( Opcode.WALKOFF, 1 ).I( Opcode.WALKGET, V( 0 ) ).I( Opcode.WAIT, 400 ).I( Opcode.WALKOFF, 1 )
 				.I( Opcode.WAIT, 800 ).I( Opcode.WALKGET, V( 1 ) ).I( Opcode.WAIT, 400 ).I( Opcode.WALKGET, V( 2 ) ),
-			ticks: 5 * 60, distance: ( _, _, _ ) => 10f );
+			ticks: 5 * 60, distance: ( _, _, _ ) => 10f, frameUpdate: true );
 		Assert.AreEqual( 0, vm.Variables[0], "the walk takes 1000 ms" );
 		Assert.AreEqual( 0, vm.Variables[1], "the restarted walk is not over 800 ms after it started" );
 		Assert.AreEqual( 1, vm.Variables[2], "and is 1200 ms after it started" );
@@ -150,6 +156,7 @@ public class WalkTableTests
 		{
 			bridge.HostStep();
 			vm.Advance( Tick );
+			bridge.WalkUpdate();
 			if ( bridge.HungHeads().Any() && heads.Count == 0 )
 				heads.Add( vm.TimeMilliseconds );
 		}

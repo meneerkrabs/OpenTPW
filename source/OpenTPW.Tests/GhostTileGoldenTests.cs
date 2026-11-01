@@ -9,7 +9,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The track tile chooser against tp.exe's own routine 0x539760 (docs/reverse/ORACLE.md, X49; BLUEPRINT-003, UI-100): every case of <see cref="GhostTileGolden"/> is a random tile with its cells, records, line state, sticky
+/// The track tile chooser against tp.exe's own routine 0x539760 (docs/reverse/ORACLE.md, X50; BLUEPRINT-003, UI-100): every case of <see cref="GhostTileGolden"/> is a random tile with its cells, records, line state, sticky
 /// words, cost and money; the answer, the words, the cost and the owner priority the executable left are replayed on <see cref="TrackTileChooser"/>.
 /// </summary>
 [TestClass]

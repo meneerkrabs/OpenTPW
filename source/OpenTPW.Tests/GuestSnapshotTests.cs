@@ -88,6 +88,7 @@ public class GuestSnapshotTests
 			{
 				bridge.HostStep();
 				script.Advance( Tick );
+				bridge.WalkUpdate();
 			}
 		}
 	}

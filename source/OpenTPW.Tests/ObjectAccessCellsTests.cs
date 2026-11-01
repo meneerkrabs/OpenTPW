@@ -772,6 +772,7 @@ public class ObjectAccessCellsTests
 			resumed.Simulation.Tick( tick );
 			bridge.HostStep();
 			script.Advance( tick );
+			bridge.WalkUpdate();
 			walkedIn |= guest.State == GuestState.Boarding && guest.HasWaypoint && guest.Navigation.Original;
 		}
 		Assert.IsTrue( walkedIn, "the called guest walked the search into the repaired entrance cell" );

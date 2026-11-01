@@ -55,6 +55,7 @@ public class WalkOffTimingTests
 		{
 			bridge.HostStep();
 			vm.Advance( Tick );
+			bridge.WalkUpdate();
 		}
 		var boarded = host.Events.First( item => item.Event == "board 1" ).Time;
 		var released = host.Events.First( item => item.Event == "release 1" ).Time;
@@ -134,6 +135,7 @@ public class WalkOffTimingTests
 		{
 			bridge.HostStep();
 			vm.Advance( Tick );
+			bridge.WalkUpdate();
 		}
 		var snapshot = bridge.CaptureSnapshot();
 		CollectionAssert.AreEqual( new[] { (1, 3, 4, 2) }, snapshot.WalkSlots, "the aboard walker's slot is saved" );

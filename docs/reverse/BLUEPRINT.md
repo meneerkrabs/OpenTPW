@@ -256,7 +256,7 @@ or disassembly are published with this implementation; no BLUEPRINT-003 marker-s
 
 ## Typed ghosts of the line tools and Buy Land (November 1, 2026)
 
-Round 11, package F. The PC ghost routines were replayed in the x86 oracle (docs/reverse/ORACLE.md, X48 to X50) and ported for a typed TPW world:
+Round 11, package F. The PC ghost routines were replayed in the x86 oracle (docs/reverse/ORACLE.md, X49 to X51) and ported for a typed TPW world:
 
 - **BLUEPRINT-001.** The raise is the quantized ground of `0x452AE0` for a map type 4, 7, 9, 10 or 30 and a second-layer record type 0xB, 0xC, 0x10, 0x11 or 0x19 (`BlueprintHeights`); the tile ghost's raise `0x536CA0` is the last writer of the origin record and the map cells +0, +Y, +X, +X+Y (`TileLineGhost.TileRaise`). Types 7 and 30 and the fence posts are raised; a world that types no cells, and Theme Park Inc, keep the terrain.
 - **BLUEPRINT-003.** A path or queue line cell takes the validator's answer (`m_link` for 8, `m_end` for 0xB, including the answer for a cell that already holds the line's type, 0x535670 after 0x5358B5); the kart and water line tools and the Buy Land fence draw one 2 x 2 face per tile by the tile chooser (blue, red, `m_end`), the Buy Land ghost over the four edges of its rectangle (`TileLineGhost.FencePasses`, red throughout while the land validator refuses, the hovered post's tile alone before the first click). A footprint's track end gets `m_direct` beside it, and the kinds '@', '+' and '#' no front arrow (0x528A70 jump table: kind 1 stamps (0x104, 0, 0), kinds 3 and 4 the default front row, kinds 11 and 16 (0x10B, 0x110), kind 23 its own cell blue and `m_direct` on the neighbour). `garrow.MD2` and `rarrow.MD2` are named by the theme tables but no code of tp.exe draws them.

@@ -1813,8 +1813,15 @@ public sealed partial class ParkHud
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
-			// the path and queue tools mark each cell by the validator's answer (m_link, m_end: BlueprintLineGhost); the other line tools and an untyped world mark the host's own line
-			cells.AddRange( level.PathLineGhost( ghost )?.Cells ?? BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt, ghost.Symbols ) );
+			// the path and queue tools mark each cell by the validator's answer (m_link, m_end: BlueprintLineGhost), the kart and water line tools each 2 x 2 tile by the tile chooser's (TileLineGhost); the other line tools and an untyped world mark the host's own line
+			if ( level.TileLineGhostFor( ghost ) is { } tileLine )
+			{
+				// [BIN:TPW-EXE:0x005372AD tile answers] the chooser's answer 1 is the red tile, 0xB the m_end tile, any other the blue one
+				foreach ( var ((x, y), answer) in tileLine.Tiles )
+					cells.Add( (x, y, answer == 1 ? BlueprintMarker.RefusedTile : answer == 0xB ? BlueprintMarker.EndTile : BlueprintMarker.AllowedTile) );
+			}
+			else
+				cells.AddRange( level.PathLineGhost( ghost )?.Cells ?? BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt, ghost.Symbols ) );
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{

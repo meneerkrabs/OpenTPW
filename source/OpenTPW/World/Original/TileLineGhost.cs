@@ -141,3 +141,41 @@ internal static class TileLineGhost
 
 /// <summary>The tool state the tile ghost takes from the hover: the ride under the tool, its priority and price, the hovered start and the fence tool's gate posts.</summary>
 internal readonly record struct LineGhostTileTool( ushort ToolOwner, int ToolPriority, int Price, bool HoverIsStart, (int X, int Y) GateA, (int X, int Y) GateB );
+
+/// <summary>The tile ghost's view of a typed park: the cells, the second layer's records (a kart or water track piece, a fence post) and the ground the cell lookup 0x452AE0 gives.</summary>
+internal sealed class ParkTileGhostMap( ParkCellMap cells, Func<int, int, int?> ownerPriority, Func<int, int, float> ground ) : ITileGhostMap
+{
+	public bool InBounds( int x, int y ) => cells.InBounds( x, y );
+
+	public TileCellFacts CellAt( int x, int y ) => new( cells.PrimaryTypeAt( x, y ), (ushort)cells.FlagsAt( x, y ), cells.OwnerAt( x, y ), ownerPriority( x, y ) );
+
+	// [BIN:TPW-EXE:0x00539760 tile record] the chooser reads the record of the tile's origin cell (+8 type, +0xC links, +0xD direction, +0xE flags, +0x10 owner); a map cell of type 2, 7 or 30 stands in the record layer as type 7 (the world's no-terrain marker)
+	public TileRecordFacts RecordAt( int x, int y )
+	{
+		if ( !cells.InBounds( x, y ) )
+			return default;
+		var track = cells.Tracks.Get( x, y );
+		if ( !track.IsEmpty )
+			return new TileRecordFacts( track.IsExtension ? (byte)0xC : track.Type, track.Mask, track.Link, track.Flags, unchecked( (ushort)track.Owner ) );
+		var land = cells.Land?.LayerFor( cells.Width, cells.Height ).TypeAt( x, y ) ?? 0;
+		if ( land != 0 )
+			return new TileRecordFacts( land, 0, 0, 0, 0 );
+		return cells.PrimaryTypeAt( x, y ) is 2 or 7 or 30 ? new TileRecordFacts( 7, 0, 0, 0, 0 ) : default;
+	}
+
+	public TileNeighbourFacts NeighbourAt( int x, int y )
+	{
+		var own = RecordAt( x, y );
+		if ( own.Type == 0 )
+			return default;
+		if ( own.Type is 0xC or 0x11 && cells.Tracks.Get( x, y ) is { IsExtension: true, Parent: >= 0 } extension )
+		{
+			var (px, py) = cells.Tracks.CellOf( extension.Parent );
+			var parent = RecordAt( px, py );
+			return new TileNeighbourFacts( true, parent.Type, parent.Owner );
+		}
+		return new TileNeighbourFacts( true, own.Type, own.Owner );
+	}
+
+	public float Ground( int x, int y ) => ground( x, y );
+}

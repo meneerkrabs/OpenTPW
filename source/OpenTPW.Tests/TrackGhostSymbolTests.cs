@@ -154,4 +154,18 @@ public class TrackGhostSymbolTests
 		flush.Tick( (0, 0), 2 );
 		Assert.IsFalse( flush.RedShown, "8 is" );
 	}
+
+	[TestMethod]
+	public void TheLineToolsTilesTakeTheTileRaiseAndTheEndTileTheRotatingTexture()
+	{
+		var raises = new Dictionary<(int X, int Y), float?> { [(2, 2)] = 20f, [(2, 0)] = 0f, [(4, 2)] = null, [(2, 4)] = 20f, [(0, 2)] = 20f };
+		var (vertices, _) = BlueprintMarkers.BuildGeometry( Field(), new[] { (2, 2, BlueprintMarker.EndTile) }, null, 0, null, 0, true, default, raises );
+		Assert.AreEqual( 11, vertices[0].TexIndex, "m_end over the tile" );
+		var flat = BlueprintMarkers.BuildGeometry( Field(), new[] { (2, 2, BlueprintMarker.EndTile) }, null, 0 ).Vertices;
+		Assert.AreEqual( 20f * OriginalParkPlacement.ModelScale, vertices[0].Position.Z - flat[0].Position.Z, 1e-3f, "the face stands at the tile raise" );
+		// only the side towards -Y has a lower neighbour that exists: two wall faces of 10 units; the +X side is off the map
+		Assert.AreEqual( 8 + 2 * 8, vertices.Length );
+		var (blue, _) = BlueprintMarkers.BuildGeometry( Field(), new[] { (2, 2, BlueprintMarker.AllowedTile) }, null, 0, null, 0, true, default, raises );
+		Assert.AreEqual( 0, blue[0].TexIndex, "a blue tile takes the plain square" );
+	}
 }

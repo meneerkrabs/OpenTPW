@@ -20,6 +20,10 @@ public enum BlueprintMarker
 	Erase = 13,
 	/// <summary>A tile the track edit tool's chooser refuses (the answer 1): the red face (texture 1) over the tile's 2 x 2 cells with red walls, which blinks like every red face.</summary>
 	RefusedTile = 17,
+	/// <summary>A tile the kart or water line tool's ghost may lay: the blue face (texture 0) over the tile's 2 x 2 cells with blue walls (<see cref="TileLineGhost"/>).</summary>
+	AllowedTile = 18,
+	/// <summary>A tile where the line tool's line meets a tile of its own kind: <c>m_end</c> (texture 11) over the tile's 2 x 2 cells, which turns with the camera.</summary>
+	EndTile = 19,
 	/// <summary>The cell beside a station's track end: <c>m_direct</c>, an arrow turned to the direction byte (texture 5).</summary>
 	Direct = 5,
 	/// <summary>The front row of an object's footprint: <c>m_front</c>, turned to the build direction (texture 6).</summary>
@@ -63,11 +67,14 @@ public sealed class BlueprintMarkers : ModelEntity
 	private (int X, int Y, BlueprintMarker Marker)[] shown = [];
 	private readonly Func<int, int, float?>? heightOffset;
 	private Dictionary<(int X, int Y), float?> shownHeights = [];
+	private readonly Func<int, int, float?>? tileRaise;
+	private Dictionary<(int X, int Y), float?> shownTileRaises = [];
 
-	public BlueprintMarkers( ModelHeightfield field, Func<int, int, float?>? heightOffset = null, string? levelName = null )
+	public BlueprintMarkers( ModelHeightfield field, Func<int, int, float?>? heightOffset = null, string? levelName = null, Func<int, int, float?>? tileRaise = null )
 	{
 		this.field = field;
 		this.heightOffset = heightOffset;
+		this.tileRaise = tileRaise;
 		Name = "blueprint markers";
 		Hidden = true;
 		material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
@@ -168,10 +175,12 @@ public sealed class BlueprintMarkers : ModelEntity
 			.GroupBy( cell => (cell.X, cell.Y) ).Select( group => group.Last() ).ToArray();
 		var directionList = directions == null ? [] : unique.Where( cell => directions.ContainsKey( (cell.X, cell.Y) ) ).Select( cell => directions[(cell.X, cell.Y)] ).ToArray();
 		var heights = CaptureHeights( field, unique, heightOffset );
-		if ( unique.SequenceEqual( shown ) && directionList.AsSpan().SequenceEqual( shownDirectionList ) && heights.SequenceEqual( shownHeights ) )
+		var tileRaises = CaptureTileRaises( field, unique, tileRaise );
+		if ( unique.SequenceEqual( shown ) && directionList.AsSpan().SequenceEqual( shownDirectionList ) && heights.SequenceEqual( shownHeights ) && tileRaises.SequenceEqual( shownTileRaises ) )
 			return;
 		shown = unique;
 		shownHeights = heights;
+		shownTileRaises = tileRaises;
 		shownDirectionList = directionList;
 		shownDirections = directions == null ? [] : directions.Where( pair => unique.Any( cell => (cell.X, cell.Y) == pair.Key ) ).ToDictionary();
 		Rebuild();
@@ -221,7 +230,7 @@ public sealed class BlueprintMarkers : ModelEntity
 	}
 
 	private (Vertex[] Vertices, uint[] Indices) Geometry() =>
-		BuildGeometry( field, shown, shownDirections, phase, shownHeights, SymbolAngle, flush.RedShown, GlideActive ? GlideOffset : default );
+		BuildGeometry( field, shown, shownDirections, phase, shownHeights, SymbolAngle, flush.RedShown, GlideActive ? GlideOffset : default, shownTileRaises );
 
 	/// <summary>The cell the hover last named (the original's <c>0x8186B8/0x8186B4</c>), which the glide point chases.</summary>
 	public (int X, int Y) GlideCursor { get; set; }
@@ -298,14 +307,15 @@ public sealed class BlueprintMarkers : ModelEntity
 		field.GetCornerHeight( cornerX, cornerY ) + Lift + Ripple( phase, cornerX * FaceSize, cornerY * FaceSize );
 
 	/// <summary>The slot (the texture index) a marker's faces take: the symbols' own, red for a refused tile.</summary>
-	internal static int SlotOf( BlueprintMarker marker ) => marker == BlueprintMarker.RefusedTile ? (int)BlueprintMarker.Refused : (int)marker;
+	internal static int SlotOf( BlueprintMarker marker ) => marker switch { BlueprintMarker.RefusedTile => (int)BlueprintMarker.Refused, BlueprintMarker.AllowedTile => (int)BlueprintMarker.Allowed, BlueprintMarker.EndTile => (int)BlueprintMarker.End, _ => (int)marker };
 
 	/// <summary>Whether a marker is a face over a whole tile (2 x 2 cells) rather than over one cell.</summary>
-	internal static bool IsTileMarker( BlueprintMarker marker ) => marker is BlueprintMarker.Break or BlueprintMarker.Erase or BlueprintMarker.RefusedTile;
+	internal static bool IsTileMarker( BlueprintMarker marker ) => marker is BlueprintMarker.Break or BlueprintMarker.Erase or BlueprintMarker.RefusedTile or BlueprintMarker.AllowedTile or BlueprintMarker.EndTile;
 
 	internal static (Vertex[] Vertices, uint[] Indices) BuildGeometry( ModelHeightfield field, IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells,
 		IReadOnlyDictionary<(int X, int Y), byte>? directions = null, float phase = 0,
-		IReadOnlyDictionary<(int X, int Y), float?>? heights = null, float symbolAngle = 0, bool showRed = true, Vector2 glide = default )
+		IReadOnlyDictionary<(int X, int Y), float?>? heights = null, float symbolAngle = 0, bool showRed = true, Vector2 glide = default,
+		IReadOnlyDictionary<(int X, int Y), float?>? tileRaises = null )
 	{
 		var vertices = new List<Vertex>();
 		var indices = new List<uint>();
@@ -334,8 +344,8 @@ public sealed class BlueprintMarkers : ModelEntity
 			var front = y * FaceSize;
 			if ( IsTileMarker( marker ) )
 			{
-				AddTileSymbol( Face, field, SlotOf( marker ), x, y, TileRaise( heights, x, y ), phase, symbolAngle );
-				AddTileWalls( Face, field, marker, x, y, heights, phase );
+				AddTileSymbol( Face, field, SlotOf( marker ), x, y, TileRaise( heights, tileRaises, x, y ), phase, symbolAngle );
+				AddTileWalls( Face, field, marker, x, y, heights, tileRaises, phase );
 				continue;
 			}
 			byte direction = 0;
@@ -364,6 +374,9 @@ public sealed class BlueprintMarkers : ModelEntity
 	/// The height a tile's face stands at: the greatest of the raises of its four cells (a cell without a raise counts 0).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00536CA0 tile raise] the neighbour raise of the track ghost: the cell's own raise (a track, object or type-7 cell: 10 x ((height + 9) / 10), 0x452AE0 → 0x67A830) and those of the cells at 0x7CDBA8, 0x7CDBC8 and 0x7CDBB8 (the other three of the 2 x 2 tile) are compared in the x87 and the greatest is returned, starting from the argument (0)
+	internal static float TileRaise( IReadOnlyDictionary<(int X, int Y), float?>? heights, IReadOnlyDictionary<(int X, int Y), float?>? tileRaises, int x, int y ) =>
+		tileRaises != null && tileRaises.TryGetValue( (x, y), out var exact ) ? exact ?? 0f : TileRaise( heights, x, y );
+
 	internal static float TileRaise( IReadOnlyDictionary<(int X, int Y), float?>? heights, int x, int y )
 	{
 		var best = 0f;
@@ -379,13 +392,16 @@ public sealed class BlueprintMarkers : ModelEntity
 	/// </summary>
 	// [BIN:TPW-EXE:0x005370E0 ghost walls] after the tile's face (0x53C8D0 at the tile's raise + 1.5, size flag 1) each side's neighbour (the cells 0x7CDBA0, 0x7CDBC8, 0x7CDBA8 and 0x7CDBD0 two cells on, side codes 1, 4, 0x10 and 0x40) is read through 0x536CA0 and, when its raise differs, a wall face is queued for every 10 units from the neighbour's raise to this tile's (0x537A35..0x53810F); the wall's texture is 0 (blue), or 1 for the refused tile
 	private static void AddTileWalls( Action<int, byte, Vector2[]?, System.Numerics.Vector3, System.Numerics.Vector3, System.Numerics.Vector3, System.Numerics.Vector3> face, ModelHeightfield field, BlueprintMarker marker, int x, int y,
-		IReadOnlyDictionary<(int X, int Y), float?>? heights, float phase )
+		IReadOnlyDictionary<(int X, int Y), float?>? heights, IReadOnlyDictionary<(int X, int Y), float?>? tileRaises, float phase )
 	{
-		var current = TileRaise( heights, x, y );
+		var current = TileRaise( heights, tileRaises, x, y );
 		var wallSlot = marker == BlueprintMarker.RefusedTile ? (int)BlueprintMarker.Refused : (int)BlueprintMarker.Allowed;
 		foreach ( var (dx, dy, ax, ay, bx, by) in TileEdges )
 		{
-			var neighbour = TileRaise( heights, x + dx, y + dy );
+			// [BIN:TPW-EXE:0x005373CE missing neighbour] a side whose tile lies off the map gets no wall
+			if ( tileRaises != null && tileRaises.TryGetValue( (x + dx, y + dy), out var known ) && known == null )
+				continue;
+			var neighbour = TileRaise( heights, tileRaises, x + dx, y + dy );
 			for ( var step = (long)neighbour; step < current; step += (int)FaceSize )
 			{
 				var a = new System.Numerics.Vector3( (x + ax) * FaceSize, step + VertexHeight( field, x + ax, y + ay, phase ), (y + ay) * FaceSize );
@@ -442,6 +458,26 @@ public sealed class BlueprintMarkers : ModelEntity
 			for ( var step = (long)neighbour; step < (long)current; step += (int)FaceSize )
 				yield return (side, step, ax, ay, bx, by);
 		}
+	}
+
+	/// <summary>The raises of the tile markers' tiles and of the four tiles beside them as <see cref="TileLineGhost.TileRaise"/> gives them; empty without a tile raise (a world that types no cells).</summary>
+	internal static Dictionary<(int X, int Y), float?> CaptureTileRaises( ModelHeightfield field, IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells, Func<int, int, float?>? sample )
+	{
+		var result = new Dictionary<(int X, int Y), float?>();
+		if ( sample == null )
+			return result;
+		foreach ( var (x, y, marker) in cells )
+		{
+			if ( !IsTileMarker( marker ) )
+				continue;
+			foreach ( var (dx, dy) in new[] { (0, 0), (0, -2), (2, 0), (0, 2), (-2, 0) } )
+			{
+				var (tx, ty) = (x + dx, y + dy);
+				if ( !result.ContainsKey( (tx, ty) ) )
+					result[(tx, ty)] = tx >= 0 && ty >= 0 && tx < field.CellCountX && ty < field.CellCountZ ? sample( tx, ty ) : null;
+			}
+		}
+		return result;
 	}
 
 	// Snapshot the map (not just preview neighbours), so occupancy changes rebuild topology even while paused.

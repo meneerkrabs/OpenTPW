@@ -541,7 +541,7 @@ public partial class Level : IDisposable
 				}
 			}
 			yield return 0.35f;
-			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield, BlueprintHeightOffset, OriginalPark.LevelName );
+			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield, BlueprintHeightOffset, OriginalPark.LevelName, BlueprintTileRaise );
 			Blueprint.WarmUp();
 			// [BIN:TPW-EXE:0x0053BFE0 dynamic meshes] the park's start creates the BlueprintMesh, the WaterMesh and the FlagsMesh together; Theme Park Inc's own build is not read here
 			if ( GameEditions.Current == GameEdition.ThemeParkWorld && HarbourDynamics.LoadWaterStart( OriginalPark.LevelName ) is { } waterStart )

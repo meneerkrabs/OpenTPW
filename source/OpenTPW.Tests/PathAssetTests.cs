@@ -61,8 +61,9 @@ public class PathAssetTests
 		var simulation = new GuestSimulation( GuestPathGrid.FromOriginal( park.Map, park.Save ), settings, 1 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 23, simulation.Admissions );
-		Assert.AreEqual( 0x08FB6348EBBF4D68UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 22, simulation.Admissions );
+		// round 11 package S: the guests update only in the park turn, newest first, and the arrival update closes the turn: 23 admissions and 0x08FB6348EBBF4D68 before
+		Assert.AreEqual( 0xD94697972908500CUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

@@ -26,6 +26,7 @@ public partial class Level
 		StaffWorld = new StaffWorldSimulation( Guests.Grid, () => Park.Economy.Staff.Members, StaffJobAccess,
 			lane is { Length: > 0 } ? lane[^1] : null );
 		StaffWorld.Toilets = ToiletSites;
+		BindStaffThoughtPresentation( StaffWorld );
 		// the guards' pranksters and the entertainers' audience; a prank reaches the staff HQ's guard choice at once (StaffWorldSimulation.ReportPrank)
 		StaffWorld.Guests = Guests;
 		// the rest areas, the gates a striker walks out through, and the staff room's count of resting staff

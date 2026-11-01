@@ -305,6 +305,48 @@ public class PoolSlideActivityTests
 		Assert.IsFalse( launched, "no launch while a swimmer sits in the landing zone" );
 	}
 
+	/// <summary>
+	/// [EXT:pools-slides] The tower's launch reads a rider the sweep has already updated in this turn with its counter as it was at the start of the turn (<see cref="PoolSlideActivity"/>'s IsStartClear, as RankInLine does for the
+	/// line): a guest at the head of the line launches or waits the same whether the sweep reaches the rider first or last. Both orders of the two guests are run from the same state, for a rider just short of the gap
+	/// and for one just past it.
+	/// </summary>
+	[TestMethod]
+	public void TheLaunchDoesNotDependOnTheOrderTheSweepReachesTheGuestsIn()
+	{
+		using var scope = PoolsOn();
+		var rig = new SlideRig();
+		var simulation = rig.Rig.Simulation;
+		rig.Rig.Send();
+		rig.Rig.Send();
+		rig.Rig.Until( () => rig.OnSlide.Any( guest => guest.PoolActivityPhase == PoolSlidePhases.Ride ) && rig.OnSlide.Any( guest => guest.PoolActivityPhase == PoolSlidePhases.Wait ), 3000 );
+		var rider = rig.OnSlide.First( guest => guest.PoolActivityPhase == PoolSlidePhases.Ride );
+		var waiter = rig.OnSlide.First( guest => guest.PoolActivityPhase == PoolSlidePhases.Wait );
+		var waited = waiter.PoolActivityTurns;
+		// the rider's last counter that is still short of the gap, and the one after it, which is past it
+		var short_ = Enumerable.Range( 1, 200 ).First( turns => rig.Slide.PositionAtTurn( turns ) < PoolSlideSettings.Gap && rig.Slide.PositionAtTurn( turns + 1 ) >= PoolSlideSettings.Gap );
+		const float tick = 1f / FixedStepClock.TicksPerSecond;
+		bool Launches( int riderTurns, bool riderFirst )
+		{
+			while ( !simulation.NextTickStartsTurn )
+				simulation.Tick( tick );
+			(rider.PoolActivityPhase, rider.PoolActivityTurns) = (PoolSlidePhases.Ride, riderTurns);
+			(waiter.PoolActivityPhase, waiter.PoolActivityTurns) = (PoolSlidePhases.Wait, waited);
+			simulation.BeginSweepTick( tick );
+			foreach ( var guest in riderFirst ? new[] { rider, waiter } : new[] { waiter, rider } )
+				simulation.SweepGuest( guest.Id );
+			simulation.FinishSweep();
+			simulation.UpdateTurnEndArrivals();
+			return waiter.PoolActivityPhase == PoolSlidePhases.Ride;
+		}
+		foreach ( var riderTurns in new[] { short_, short_ + 1 } )
+		{
+			var waiterFirst = Launches( riderTurns, riderFirst: false );
+			var riderFirst = Launches( riderTurns, riderFirst: true );
+			Assert.AreEqual( waiterFirst, riderFirst, $"the rider at counter {riderTurns}: the launch is the same in either order" );
+			Assert.AreEqual( rig.Slide.PositionAtTurn( riderTurns ) >= PoolSlideSettings.Gap, waiterFirst, $"and it follows the rider's place at the start of the turn (counter {riderTurns})" );
+		}
+	}
+
 	[TestMethod]
 	public void AGuestRidingAnUnfinishedSlideLeavesTheSessionWithoutACrash()
 	{
@@ -466,7 +508,7 @@ public class PoolSlideActivityTests
 	}
 
 	/// <summary>[EXT:pools-slides] The pinned hash of <see cref="RunFixedSlides"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsSlidesFixedRunHash = 0x641364DF12DED0F7UL;
+	internal const ulong PoolsSlidesFixedRunHash = 0x8A2B0B14564A3D55UL;
 
 	[TestMethod]
 	public void FixedRunWithASlideIsTheSameInEveryProcessAndGuestsRideIt()

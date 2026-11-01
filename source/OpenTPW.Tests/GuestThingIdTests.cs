@@ -29,12 +29,41 @@ public class GuestThingIdTests
 		var guests = Enumerable.Range( 0, 4 ).Select( _ => simulation.SpawnInPark( 10, 0 ) ).ToArray();
 		guests[0].State = GuestState.Gone;
 		guests[2].State = GuestState.Gone;
+		Assert.IsFalse( simulation.NextTickStartsTurn );
 		simulation.Tick( 1f / 60 );
 		CollectionAssert.AreEqual( new[] { 2, 4 }, simulation.Guests.Select( guest => guest.Id ).ToArray() );
+		Assert.AreEqual( 2, simulation.Things.QueuedCount, "a tick between two turns frees nothing: the two slots wait for the turn (0x00516641)" );
+		simulation.TickTurn( 1f / 60 );
 		Assert.AreEqual( 0, simulation.Things.QueuedCount, "a simulation of its own ends the turn's destroys itself" );
 		// the removal pass asks newest first (guest 3, then guest 1); the queue frees the last request first, so slot 1 is freed first and slot 3 last
 		CollectionAssert.AreEqual( new[] { 3, 1, 5 }, simulation.Things.FreeInOrder().Take( 3 ).ToArray() );
 		CollectionAssert.AreEqual( new[] { 3, 1, 5 }, new[] { simulation.SpawnInPark( 10, 0 ).Id, simulation.SpawnInPark( 10, 0 ).Id, simulation.SpawnInPark( 10, 0 ).Id } );
+	}
+
+	/// <summary>A simulation with its own pool (no AttachThings) frees its queued destroys on the tick that ends a park turn and on no other.</summary>
+	[TestMethod]
+	public void AStandaloneSimulationFreesItsDestroysAtTheTurnTickOnly()
+	{
+		var simulation = Simulation();
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => simulation.SpawnInPark( 10, 0 ) ).ToList();
+		var freed = 0;
+		for ( var tick = 0; tick < 200; tick++ )
+		{
+			if ( tick % 20 == 5 && guests.FirstOrDefault( guest => guest.State != GuestState.Gone ) is { } leaving )
+				leaving.State = GuestState.Gone;
+			var turn = simulation.NextTickStartsTurn;
+			var gone = simulation.Things.QueuedCount;
+			simulation.Tick( 1f / 60 );
+			if ( turn )
+			{
+				Assert.AreEqual( 0, simulation.Things.QueuedCount, $"tick {tick}: the turn tick ends with an empty queue" );
+				freed += gone;
+			}
+			else
+				Assert.IsTrue( simulation.Things.QueuedCount >= gone, $"tick {tick}: a tick between two turns frees nothing" );
+		}
+		Assert.IsTrue( guests.Count( guest => guest.State == GuestState.Gone ) >= 5, "guests left" );
+		Assert.IsTrue( freed + simulation.Things.QueuedCount > 0 );
 	}
 
 	[TestMethod]
@@ -75,7 +104,7 @@ public class GuestThingIdTests
 		var guests = Enumerable.Range( 0, 4 ).Select( _ => live.SpawnInPark( 10, 0 ) ).ToArray();
 		guests[0].State = GuestState.Gone;
 		guests[2].State = GuestState.Gone;
-		live.Tick( 1f / 60 );
+		live.TickTurn( 1f / 60 );
 		var snapshot = live.CaptureSnapshot();
 		Assert.IsNotNull( snapshot.Things );
 		CollectionAssert.AreEqual( new[] { 3 }, snapshot.Things!.FreeFirst.ToArray(), "the head of the free list that is out of order; the ascending run after it (1, 5, 6, ...) is rebuilt" );

@@ -7,9 +7,16 @@ public partial class Level
 
 	private CameraMode? parkCameraBeforeRide;
 
-	/// <summary>Ride view suppresses new guest bubble work, while thoughts, voice and ordinary expiry continue. A retired simulation cannot follow a replacement's camera state.</summary>
+	/// <summary>
+	/// The ride view and the walk camera suppress new guest bubble work, while thoughts, voice and ordinary expiry continue. A retired simulation cannot follow a replacement's camera state.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0050BE8D camera gate] 0x50BE80 stores the thought, then returns before any bubble work when a bit of 0x16 of the camera word 0x790AB0 is set: the 0x04 bit is the ride camera (0x42AB20 with mode 4, called at 0x42A6BA; the test 0x42A410 beside the followed ride 0x790A44) and the 0x02 bit the walk camera (mode 2, called at 0x42AF26 from 0x42AE70); no store through the word's absolute address sets the 0x10 bit (all 85 references were read: the stores are an and/or of another bit, a clear, the camera saver and loader 0x42CE1B/0x42CF61, and the zero the loader writes at 0x42D04C)
 	internal void BindGuestThoughtPresentation( GuestSimulation simulation ) =>
-		simulation.ThoughtBubblesAllowed = () => ReferenceEquals( Guests, simulation ) && RideView == null;
+		simulation.ThoughtBubblesAllowed = () => ReferenceEquals( Guests, simulation ) && RideView == null && FreeWalk == null;
+
+	/// <summary>The staff's thoughts follow the same camera gate as the guests' (<see cref="BindGuestThoughtPresentation"/>).</summary>
+	internal void BindStaffThoughtPresentation( StaffWorldSimulation world ) =>
+		world.ThoughtBubblesAllowed = () => ReferenceEquals( StaffWorld, world ) && RideView == null && FreeWalk == null;
 
 	/// <summary>The park camera the ride was boarded from while the ride view is open, else null: its target stays where it was (the crowd sound counts around it).</summary>
 	internal ParkCameraMode? ParkCameraWhileRiding => RideView != null ? parkCameraBeforeRide as ParkCameraMode : null;

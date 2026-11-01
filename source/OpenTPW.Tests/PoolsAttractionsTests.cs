@@ -689,9 +689,10 @@ public class PoolsAttractionsTests
 	// ---- The river ---------------------------------------------------------------------------------------------------
 
 	/// <summary>Sends guests until one floats (the offer cadence is one in 90 turns, so a single swimmer may finish its swim first) and returns it.</summary>
-	private static Guest SendAndWaitForAFloater( Rig rig, int turns = 3000 )
+	private static Guest SendAndWaitForAFloater( Rig rig, int turns = 3000, int swimmers = 12 )
 	{
-		for ( var i = 0; i < 12; i++ )
+		// (a test that follows one floater's lap uses fewer swimmers: with the guests updated in the park turn only, twelve swimmers of one changing room are offered the ring in the same turns, and the others crowd the one followed)
+		for ( var i = 0; i < swimmers; i++ )
 			rig.Send();
 		rig.Until( () => rig.Simulation.Guests.Any( guest => guest.State == GuestState.PoolActivity ), turns );
 		return rig.Simulation.Guests.First( guest => guest.State == GuestState.PoolActivity );
@@ -837,7 +838,7 @@ public class PoolsAttractionsTests
 		var rig = RiverRig();
 		var rivers = PoolRiverMap.Of( rig.Cells );
 		Assert.AreEqual( 1, rivers.Rings.Count );
-		var guest = SendAndWaitForAFloater( rig );
+		var guest = SendAndWaitForAFloater( rig, swimmers: 4 );
 		Assert.AreEqual( RiverActivity.ActivityId, guest.PoolActivityId );
 		Assert.AreEqual( 0, guest.PoolActivityTarget );
 		var planned = guest.PoolActivityTurns;
@@ -934,8 +935,9 @@ public class PoolsAttractionsTests
 	// ---- The wave pool's ring floaters ------------------------------------------------------------------------------
 
 	/// <summary>[EXT:pools-waves] A rig whose changing room takes twelve, with a wave machine (when <paramref name="waves"/> is given), the water effects and the ring floaters registered, and twelve swimmers sent.</summary>
-	private static (Rig Rig, Guest First) RingRig( PoolWaveSettings? waves )
+	private static (Rig Rig, Guest First) RingRig( PoolWaveSettings? waves, int swimmers = 12 )
 	{
+		// (the bobbing test sends fewer swimmers: in the park turn's sweep all of them reach the ring in the same turns, and the crowd at the rings spots hides the one floater the test measures)
 		var rig = new Rig( capacity: 12 );
 		var all = new List<PoolAttractionSite>();
 		if ( waves is { } settings )
@@ -947,7 +949,7 @@ public class PoolsAttractionsTests
 		rig.Simulation.RegisterPoolActivity( new PoolWaterEffects( EffectSites ) );
 		rig.Simulation.RegisterPoolActivity( new WaveRingActivity( EffectSites ) );
 		var first = rig.Send( happiness: 10 );
-		for ( var i = 0; i < 11; i++ )
+		for ( var i = 1; i < swimmers; i++ )
 			rig.Send( happiness: 10 );
 		return (rig, first);
 	}
@@ -1016,7 +1018,7 @@ public class PoolsAttractionsTests
 	public void ARingFloaterBobsWithTheWavesNearItsSpotWithinTheRunAndIsPaid()
 	{
 		var settings = new PoolWaveSettings( true, 3, 0 );
-		var (rig, _) = RingRig( settings );
+		var (rig, _) = RingRig( settings, swimmers: 6 );
 		rig.Until( () => RingFloater( rig ) != null, 4000 );
 		var floater = RingFloater( rig );
 		Assert.IsNotNull( floater, "a swimmer took a ring" );

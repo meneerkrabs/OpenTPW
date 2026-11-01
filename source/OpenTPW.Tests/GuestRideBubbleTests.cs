@@ -142,6 +142,39 @@ public class GuestRideBubbleTests
 		finally { Camera.Mode = previous; }
 	}
 
+	/// <summary>
+	/// [BIN:TPW-EXE:0x0050BE8D] 0x50BE80 skips the bubble work while a bit of 0x16 of the camera word 0x790AB0 is set: the ride camera (4) and the walk camera (2), for every person's thought object, the staff's as well.
+	/// </summary>
+	[TestMethod]
+	public void TheWalkCameraGatesTheGuestsAndTheStaffsBubblesAsTheRideViewDoes()
+	{
+		var simulation = Simulation();
+		var level = Bind( simulation );
+		var park = EconomyTestData.Park();
+		var world = new StaffWorldSimulation( new GuestPathGrid( 12, 12 ), () => park.Staff.Members, _ => null, null );
+		Set( level, "<StaffWorld>k__BackingField", world );
+		level.BindStaffThoughtPresentation( world );
+		var member = EconomyTestData.HireBest( park, StaffType.Handyman );
+		var guest = simulation.SpawnInPark( 6, 5 );
+		void StaffThink( int thought ) => typeof( StaffWorldSimulation ).GetMethod( "Think", BindingFlags.Instance | BindingFlags.NonPublic, new[] { typeof( StaffMember ), typeof( int ), typeof( long ) } )!
+			.Invoke( world, new object[] { member, thought, 5L } );
+
+		Assert.IsTrue( simulation.ThoughtBubblesAllowed!() && world.ThoughtBubblesAllowed!() );
+		level.UseFreeWalkForTests( (FreeWalkCameraMode)RuntimeHelpers.GetUninitializedObject( typeof( FreeWalkCameraMode ) ) );
+		Assert.IsFalse( simulation.ThoughtBubblesAllowed!(), "the walk camera is bit 2 of the camera word" );
+		Assert.IsFalse( world.ThoughtBubblesAllowed!() );
+		Think( simulation, guest, GuestThought.Pleased );
+		Assert.AreEqual( (GuestThought.Pleased, GuestThought.None), (guest.Thought, guest.BubbleThought), "the thought is stored, no bubble starts" );
+		StaffThink( StaffThoughts.Tired );
+		Assert.AreEqual( (StaffThoughts.Tired, 0), (member.Thought, member.BubbleThought), "a staff member's thought follows the same gate" );
+		level.UseFreeWalkForTests( null );
+		Assert.IsTrue( simulation.ThoughtBubblesAllowed!() && world.ThoughtBubblesAllowed!() );
+		StaffThink( StaffThoughts.Tired );
+		Assert.AreEqual( StaffThoughts.Tired, member.BubbleThought );
+		Think( simulation, guest, GuestThought.Pleased );
+		Assert.AreEqual( GuestThought.Pleased, guest.BubbleThought );
+	}
+
 	[TestMethod]
 	public void RestoreKeepsTheUnsavedBindingAndOnlineVisitsAloneStillShowBubbles()
 	{

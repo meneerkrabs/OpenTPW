@@ -226,18 +226,17 @@ public class PoolsActivityHostTests
 	public void AbortingATargetByThingIdOnlyHitsTheActivitiesOfThatTarget()
 	{
 		var rig = new Rig( capacity: 3 );
-		var one = new Fake { Id = "test.one", Target = 11, Duration = 400 };
-		var two = new Fake { Id = "test.two", Target = 12, Duration = 400 };
-		var none = new Fake { Id = "test.none", Target = 0, Duration = 400 };
+		// no offers: the swimmers are put into their activities below, not by the cadence (which a swimmer's own stream decides, so any change of the update's timing changes which activity a swimmer is offered); the cadence's offers are covered by ASwimmerIsOfferedStartsKeepsGoingAndComesBackInTheWater
+		var one = new Fake { Id = "test.one", Target = 11, Duration = 400, Available = false };
+		var two = new Fake { Id = "test.two", Target = 12, Duration = 400, Available = false };
+		var none = new Fake { Id = "test.none", Target = 0, Duration = 400, Available = false };
 		foreach ( var activity in new[] { one, two, none } )
 			rig.Simulation.RegisterPoolActivity( activity );
 		var guests = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
-		rig.Until( () => guests.All( guest => guest.State == GuestState.Swimming || guest.State == GuestState.PoolActivity ), 1500 );
-		// put each swimmer into its own activity, whatever the cadence did
-		foreach ( var guest in guests.Where( guest => guest.State == GuestState.PoolActivity ) )
-			rig.Simulation.AbortPoolActivitiesOf( guest.PoolActivityTarget == 0 ? 999 : guest.PoolActivityTarget );
 		rig.Until( () => guests.All( guest => guest.State == GuestState.Swimming ), 1500 );
 		var ids = new[] { "test.one", "test.two", "test.none" };
+		foreach ( var activity in new[] { one, two, none } )
+			activity.Available = true;
 		for ( var index = 0; index < 3; index++ )
 			Assert.IsTrue( rig.Simulation.DebugStartActivity( guests[index], ids[index] ), ids[index] );
 		Assert.AreEqual( 0, new[] { one, two, none }.Sum( activity => activity.Aborts ) );

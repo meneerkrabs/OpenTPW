@@ -1460,7 +1460,7 @@ public class DeterminismTests
 	internal static readonly string[] PresentationMathFiles =
 	{
 		"World/Lobby/", "World/Particles/", "World/Evening/",
-		"World/Advisor.cs", "World/AdvisorRig.cs", "World/Camera.cs", "World/FreeWalkCameraMode.cs", "World/GlobeCameraMode.cs", "World/LobbyCameraMode.cs",
+		"World/Advisor.cs", "World/AdvisorRig.cs", "World/Camera.cs", "World/CamcorderWalk.cs", "World/FreeWalkCameraMode.cs", "World/GlobeCameraMode.cs", "World/LobbyCameraMode.cs",
 		"World/ParkCameraMode.cs", "World/RideCameraMode.cs", "World/Sky.cs", "World/Sun.cs", "World/OriginalProjection.cs",
 		"World/Coasters/CoasterCarBend.cs", "World/Coasters/CoasterCarRig.cs", "World/Coasters/CoasterToolPanel.cs", "World/Coasters/CoasterTrackMesh.cs",
 		"World/Coasters/CoasterRenderer.cs", "World/Coasters/CoasterPreview.cs",

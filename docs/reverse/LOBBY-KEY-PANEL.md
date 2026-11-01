@@ -1,91 +1,70 @@
-# Lobby key counter: bounded static contract
+# Lobby key panel: static contract
 
 ## Scope
 
-ADVISOR-025 remains open. This slice displays the saved application-owned Full
-Simulation key counter in the actual `FrontEndMenu`, using Lobby EC's ED icon
-and EE text slots. It does not restore the EA/EB affordability display, native
-player profiles, lobby advisor dispatch, navigation state changes or effect 0x61.
-No original executable was run and no original media is included.
-
-## Static evidence
+The island lobby's key panel as tp.exe keeps it (layout table Lobby `0x757F60`, controls `0x1E0EA` to `0x1E0EE`),
+ported in `FrontEnd/FrontEndMenu.KeyPanel.cs` (round 11, package V). The part that needs the lobby advisor is not
+ported: see [LOBBY-ADVISOR.md](LOBBY-ADVISOR.md) and ADVISOR-025. No original executable was run and no original media is
+included; this is a static reading of tp.exe, not a reference-run or pixel-parity claim.
 
 Build examined: TPW `sp20_nocd/tp.exe`, SHA-256
 `5472f97b5eb28f58b5a49f3a15f6f66adffa6b2625a623f503202c9696d1b805`.
-Bounded disassembly: `0x4b9340..0x4b9838`, supporting callee
-`0x65d9dd..0x65da83` (visibility bit), and `0x5b11a0..0x5b11b8`.
-This is a static branch trace, not a reference-run or pixel-parity claim.
 
-- `0x4b935d..0x4b9365`: absent lobby window returns without creating UI.
-- The first phase finds a selected record via `0x5b09c0`. A missing record
-  skips to the counter phase at `0x4b9681`.
-- `0x4b943f..0x4b9537`: GameType global `0xfb3b7c == 2` hides EA and EC;
-  the other branch shows them. Both branches also call the F0/F1 virtual
-  at offset +0x14 with 0/1 respectively. Do not infer that EF is in a
-  contiguous visibility group: this function does not address EF.
-- `0x4b9573..0x4b9589`: the selected record's `0x5b11a0` result is compared
-  with ledger keys from `0x5af680`. The callee returns a valid record's
-  nested +0x14 field, or -1 for an invalid record. This slice does not
-  assign missing-record semantics or create an affordability API.
-- At or above that threshold, EA frame 0 and EB frame `threshold - 1`
-  are selected, and `0x4b960e..0x4b9624` creates effect 0x61 only if its
-  global handle is absent. Below it, EA frame 1 and EB frame
-  `threshold + 4` are selected and `0x4b9662..0x4b967b` removes an
-  existing effect. The previous annotation's **count-drop effect claim
-  was incorrect**: this branch compares current keys to a record field,
-  not to the previous key count.
-- Counter phase `0x4b96be..0x4b9714`: GameType 2 suppresses EC; otherwise
-  ledger keys <= 0 hide EC (`0x4b97f8`). Positive keys show EC and also
-  show EA and call the F0/F1 virtual with 1 (`0x4b971a..0x4b9786`).
-- `0x4b97c6..0x4b97f3`: format the ledger key count with the UTF-16
-  literal `%d x` at `0x758194`, assign EE's text virtual +0x24.
-- `0x4b9816..0x4b9824` stores the current key count after refresh; no
-  previous-count comparison occurs in this function.
+## The panel's controls
 
-GameType 2 is Instant Action, as already documented in `docs/UI.md` from
-`0x550ca0`. No additional interpretation of the arrow virtual is needed
-for the counter-only slice.
+- EA `0x1E0EA` (`s_key`, (554,170)-(990,437)): the key frame, two frames in ui.wad: 0 gold (`gold_grad`), 1 grey (`grey_grad`).
+- EB `0x1E0EB` (`s_X1`, child of EA, (1045,191)-(1405,416)): the cost digit, ten frames: 0 to 4 gold digits 1 to 5, 5 to 9 grey digits 1 to 5.
+- EC `0x1E0EC` ((1688,68)-(1963,186)) with ED `0x1E0ED` (`gkey`, four frames, set to frame 3 at creation, `0x4B8D65`) and EE
+  `0x1E0EE` (text); EF `0x1E0EF` is the island's text line (`0x4B90F0`, `0x5B12E0`), which OpenTPW's island name label already covers.
+- Layout styles (`0x65BD2F` stores the node's second word at control `+0x48`): bit 1 is visible, bit 2 is "disabled" (the virtual `+0x14` of a
+  control is `0x65DA8D`, SetEnabled). EA, EB, EC and EF have style 3, ED, EE and the buttons style 1.
 
-## Host ownership and adaptation
+## What the original does
 
-`GameFlow.ShowFrontEnd` first calls `TearDown`, which requires progress to
-be saved and detaches the park owner. Only then does the menu initializer
-read `PlayerTicketFile.ReadIfPresent`. It never attaches a second mutable
-owner, manufactures a starter key, writes a profile or reads native gms.dat.
+- **Creation** (`0x4B8CA0`, from `0x5E19B8` inside the island view's enter `0x5E18D0`, only while the lobby window `[0xF82884] + 4` exists
+  and `[0x7CC4B4]` is zero): the panel is created as a child of the lobby window (`0x65FD0E` with the window procedure `0x4B8B70`), EA is set to
+  frame 1 and EB to frame 5 (`0x4B8D8B`, `0x4B8DA2`), EC hidden, ED to frame 3, EE gets font slot 2, the stored count `0x7CC4B8` and the effect
+  handle `0x7CC4BC` are zeroed, and the full refresh runs (`0x4B8DD5`).
+- **Full refresh** (`0x4B9340`): returns at once without the panel window (`0x4B935D`). The selected island is `[[0xF85614] + 4] + 0xC`; its name
+  (`+0x30`) finds the record in the player ledger object (`[0xF7C58C]`, built by `0x5AEF50`) through `0x5B09C0`, valid when the theme's
+  `data\levels\%s\global.sam` loads (`0x5B11C0`, format string `0x7733B4`). The record's cost (`0x5B11A0`) is the loaded file's `+0x14`, which is
+  `Keys.CostToEnter` (Jungle 1, Halloween 1, Fantasy 3, Space 5). The keys are `0x5AF680`: the four global ticket flags, the six local flags of
+  every loaded park and the two secret flags, divided by 3, plus the extra keys (`+0x20`).
+  - With a record and game type (`0xFB3B7C`) not 2 (Instant Action): EA, EB and EC are shown (and the arrow buttons `0x1E0F0`/`0x1E0F1` enabled). Keys at or
+    above the cost: EA frame 0, EB frame cost - 1, and effect `0x61` created at `0x4B960E` when `[0x7CC4BC]` is zero. Below the cost: EA frame 1, EB frame
+    cost + 4, the effect ended (`0x51FEB0`, `0x4B9662`). Game type 2 hides EA, EC and disables the arrows (`0x4B9840(0)`).
+  - Counter phase (`0x4B96BE`): game type 2 hides EC; otherwise no keys hide EC (`0x4B97F8`), and keys above 0 show EC and EA and write `"%d x"`
+    (`0x758194`) into EE. The count is formatted only on that branch.
+  - The count is stored in `0x7CC4B8` (`0x4B9816`, from `0x409410`, the same ledger object).
+- **Selection step** (`0x4B90F0`, from `0x5E18BD`, `0x5E1B31`, `0x5E1F35`, `0x5E1F95`): for the new selected island's record it repeats only the
+  affordability part, comparing the *stored* count `0x7CC4B8` (not the ledger) with the cost: EA frame 0, EB frame cost - 1 and effect `0x61` (once), or EA frame 1,
+  EB frame cost + 4 and the effect ended (`0x4B929B`, `0x4B92EB`); game type 2 hides EA; then it writes the island's text into EF.
+- **Window procedure** (`0x4B8B70`): message `0x11` (a visibility change that `0x65D90B` sends down the window tree) with a nonzero parameter refreshes the
+  panel (`0x4B8C64`); with 0, and message `0x14` (destroy), it clears `[0x7CC4B4]` and ends the effect (`0x4B8EE0(0, 0)`, `0x4B8F9B`). Messages `0x100` from the
+  buttons call the island view's virtuals (`0x1E0E8`: `+0x40`, `0x1E0E9`: `+0x20` and `+0x1C`, `0x1E0F0`: `+0x3C`, `0x1E0F1`: `+0x38`). `0x4B8EE0`'s
+  show branch (`0x4B8F6E`) has no caller.
+- **Callers of the full refresh**: the creation, the window procedure's message `0x11`, and the advisor update's timer (`0x5999CC`).
+- Effect `0x61` is created by `0x521E60(0x61, 0xC350, 0, z)` with z from EA's centre row times 75000 / `0x600`, the arithmetic of the enter-park effect
+  `0x62` (`0x4B8FD0`, `LobbyEnterEffect`): 14794.
 
-The host chooses mode per park and has no persistent native player-mode
-selector. The counter therefore represents only its saved Full Simulation
-ledger, regardless of which park mode was last played. Missing, invalid,
-unreadable or other-mode progress yields no display. Read errors use the
-existing progress exception classification and are logged; entry retains
-its existing validation and failure dialog. TPI/unsupported economy routes
-supply no count.
+## What OpenTPW does
 
-This is a creation-time snapshot. Returning from a park rebuilds the menu
-and reads the newly saved count. No unused refresh/notification API is
-introduced. Existing menu navigation/name controls retain their current
-host behavior; this is not a claim of native visibility parity for them.
-Text font, fitting and right alignment use the existing HUD counter style;
-the native text style and rendered visual match are not newly established.
+- The panel is built with the lobby menu and refreshed once then (`RefreshKeyPanel`, the creation's refresh), with the saved Full Simulation key count
+  (`PlayerKeySnapshot`, the same snapshot as before); every island change repeats the affordability part with the stored count
+  (`KeyPanelSelectionChanged`); removing the lobby screens ends the effect (`UiScreen.Removed`, the message `0x14` path). The cost is
+  `Keys.CostToEnter` of the island's `global.sam` (`GameFlow.ReadLobbyThemeEntryCost`), the same field the entry check uses
+  (`ParkObjectives`, `0x5E1CC0`). An island without a readable cost has no record: the affordability part is skipped and the counter phase still runs
+  (`0x4B9681`). The layout's frames, anchors and ED frame 3 follow the table.
+- No usable Full Simulation progress (missing, invalid or another mode's file) shows no panel and no effect: the original always has a ledger object, OpenTPW
+  has none before the first progress file (`[EXT:no-player-profiles]`).
+- The effect is created in a screen-space particle host of its own (`LobbyKeyPanelEffect.CreateHost`), deleted with the other entities when the lobby is torn down.
+- The Instant Action branch (game type 2: EA, EC hidden, arrows disabled) is not reachable: OpenTPW asks the mode on every park entry.
 
-## Synthetic acceptance
+## What is not ported
 
-`LobbyKeyCounterTests` exercises 0, 1 and many keys, exact counter/icon
-rectangles, count text, missing and corrupt files without writes, mode
-filtering and renewed snapshots after changed/deleted progress. It also
-checks that the host's navigation/name controls remain present. These
-are host widget/data tests, not execution of native branches, end-to-end
-rendering, or a full `ShowFrontEnd` scene transition.
-
-## Remaining gates
-
-The other live refresh path: the lobby window procedure also calls the
-refresh on message 0x11 with a nonzero parameter (`0x4b8c60..0x4b8c64`);
-REA lists `0x4b8b70`, `0x4b8ca0` and `0x599880` as the refresh's callers.
-OpenTPW makes none of these refreshes.
-
-EA/EB art, native arrow virtual semantics and any hidden/show side effects;
-selected-record threshold provenance; effect lifetime outside this function;
-lobby sequences 28/29 and timer reachability; particle positioning and pass
-ordering (PTCL-909 retired: the HUD lies over the particles); original visual captures. No ADVISOR-025 retirement or
-full feature completion is claimed by this slice.
+- The timer refresh: only the lobby advisor starts it, with response 393 (fixed sequence 28, `0x4A6B4F`), see [LOBBY-ADVISOR.md](LOBBY-ADVISOR.md).
+  OpenTPW's lobby has no advisor and its ledger does not change while the lobby is up, so a refresh would read the count it already shows.
+- The window hide and re-create of the dialogs that hide the lobby window (the player-select dialog `0x4A6580` hides `[0xF82884] + 4` at `0x4A659E` and
+  `0x4A6A50` shows it again at `0x4A6A81`); OpenTPW's dialogs draw over the lobby screen, the panel and effect stay up.
+- EF's custom park name (`0x5B12E0` with the record's name flag `+0xB8`) and the player profiles.
+- Original visual captures: the frame and digit art are the ui.wad frames above, their placement the layout table's.

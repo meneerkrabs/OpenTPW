@@ -33,7 +33,9 @@ public class LobbyKeyCounterTests
 		Save( keys ); var before = File.ReadAllBytes( Profile ); var menu = Menu();
 		var count = Count( menu ); var icon = (UiModelImage)menu.Main.Find( "lobbyGoldenKey" )!;
 		Assert.AreEqual( visible, count.Visible ); Assert.AreEqual( visible, icon.Visible );
-		Assert.AreEqual( keys + " x", count.Text() ); Assert.AreEqual( "gkey", icon.Model );
+		// [BIN:TPW-EXE:0x4B96BE counter phase] 0x4B97C6 formats the count only on the branch that shows EC: no keys leave EE unwritten
+		if ( visible ) Assert.AreEqual( keys + " x", count.Text() );
+		Assert.AreEqual( "gkey", icon.Model ); Assert.AreEqual( 3, icon.Frame(), "0x4B8D65 sets ED to frame 3" );
 		Assert.AreEqual( OriginalLayoutTables.Lobby.Control( 0x1E0EE ).Rect, count.Bounds );
 		Assert.AreEqual( OriginalLayoutTables.Lobby.Control( 0x1E0ED ).Rect, icon.Bounds );
 		Assert.AreEqual( UiAnchor.TopRight, count.Anchor ); Assert.AreEqual( UiAnchor.TopRight, icon.Anchor );

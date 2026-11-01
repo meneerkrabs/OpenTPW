@@ -90,6 +90,26 @@ public class ObjectRegionEffectTests
 		Assert.AreEqual( (short)20, restored.Litter.Environment.At( 20, 20 ).Security, "the camera's row is back" );
 	}
 
+	/// <summary>
+	/// [BIN:TPW-EXE:0x004DD0A0] the destructor takes row 7 off a show only while its script variable 0 is below 2: a park whose show already ran (variable 2) has no row to take off, so selling the show
+	/// leaves the cells as the saved grid holds them.
+	/// </summary>
+	[TestMethod]
+	public void AShowThatRanBeforeTheSaveTakesNoRowOffWhenItIsSold()
+	{
+		var park = Park();
+		var show = park.RegisterExisting( 2415 );
+		park.PlaceObjectEffects( show.Id, (40, 40) );
+		// the saved grid of an original park made after 0x004E0B90 took the row off
+		park.Litter.Environment.Apply( RegionEffect.Fireworks, 40, 40, add: false );
+		Assert.AreEqual( default, park.Litter.Environment.At( 40, 40 ) );
+		park.MarkFireworksRemoved( show.Id );
+		park.Sell( show.Id );
+		Assert.AreEqual( default, park.Litter.Environment.At( 40, 40 ), "no second subtraction" );
+		Assert.AreEqual( default, park.Litter.Environment.At( 42, 41 ), "nor around it" );
+		Assert.IsFalse( park.FireworksFired( show.Id ), "a spent show never fires again" );
+	}
+
 	[TestMethod]
 	public void AHeadlessHandymanCleaningADirtyToiletPutsTheCleanRowBack()
 	{

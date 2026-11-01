@@ -2208,8 +2208,14 @@ public partial class Level
 		if ( Park!.Economy.TryGetObject( instance, out var state ) )
 		{
 			// [BIN:TPW-EXE:0x004E0B90 fireworks] a show whose script variable 0 reached 1 loses its RegionFX row, and the variable becomes 2
-			if ( item.Runtime.GetVariableByName( FireworksStatusVariable ) == 1 && Park.Economy.FireworksFired( instance ) )
-				item.Runtime.SetVariable( FireworksStatusVariable, 2 );
+			if ( Park.Economy.IsFireworks( instance ) )
+			{
+				var showStatus = item.Runtime.GetVariableByName( FireworksStatusVariable );
+				if ( showStatus == 1 && Park.Economy.FireworksFired( instance ) )
+					item.Runtime.SetVariable( FireworksStatusVariable, 2 );
+				else if ( showStatus >= 2 )
+					Park.Economy.MarkFireworksRemoved( instance );
+			}
 			state.IsOpen = item.IsOpen;
 			// VAR_BROKEN (script variable 7) is what the original's ride update reads to set ride state 1 or 4 (0xe1864), which the park points counts-test rejects.
 			state.ScriptBroken = item.Runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0;

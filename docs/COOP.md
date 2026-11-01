@@ -3130,3 +3130,7 @@ guarded list.
   with a second error sound, and a refused queue line still plays the queue-join sound. Opening the loans window refreshes its offers by command, which a guest is refused,
   and the winning screen's Resume is the host's alone, so a guest's winning screen stays until the
   host dismisses it.
+
+## The guests' update in the park turn only (round 11, package S, November 1, 2026)
+
+The guests' thing update now runs only in the park turn's sweep (docs/DETERMINISM.md, "The guests' update is the turn's sweep"), as the original does (`0x516380`, `0x54F668`). Every simulation that changes a guest's state in a different tick changes the world hash from the first turn on, so, as with each earlier round that moved a guest rule, a host and a guest must run the same build: a guest of another build reports a mismatch at the host's first checkpoint, and a command log recorded before this change replays its commands but reports a mismatch at its first checkpoint after a guest update (`ParkCommandLogFile.FirstMismatch`). No wire or save field changed and no version marker was added: the lobby's manifest compares assets, not rules, and none of the earlier rounds that moved pins bumped a marker either. The command codec, the join capture and the saves are unchanged.

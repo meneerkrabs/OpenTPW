@@ -104,6 +104,14 @@ public class QueueTests
 			Script.Advance( Tick );
 		}
 
+		/// <summary>Runs the ticks up to the one that starts a park turn, and that tick: the guests' thing update runs only there (tp.exe 0x00516380, DET-014).</summary>
+		public void StepTurn()
+		{
+			while ( !Simulation.NextTickStartsTurn )
+				Step();
+			Step();
+		}
+
 		/// <summary>Runs until the park turn has advanced by <paramref name="turns"/>.</summary>
 		public void RunTurns( int turns, Action? afterTick = null )
 		{
@@ -575,7 +583,8 @@ public class QueueTests
 		var walker = rig.Send();
 		walker.Happiness = 90;
 		Assert.AreEqual( GuestState.GoingToRide, walker.State );
-		rig.RunTurns( 1 );
+		// a guest sent without a walk is routed in its first turn (the guests' update runs only in a park turn, DET-014) and found walking in the second
+		rig.RunTurns( 2 );
 		Assert.AreEqual( 0, walker.AttractionId, "the reservation is dropped" );
 		Assert.IsTrue( walker.State is GuestState.DoingNothing || GoingHome( walker ), $"{walker.State}" );
 		Assert.IsTrue( walker.Happiness <= 100 - big + 0.01f, $"the big drop at 0x004FEA70(2) (the needs phase may have added up to the cap first): {walker.Happiness}" );
@@ -964,7 +973,8 @@ public class QueueTests
 		Assert.IsTrue( guests.Take( 8 ).All( guest => guest.IsInQueue ) );
 		Assert.IsTrue( guests.Skip( 8 ).All( guest => !guest.IsInQueue ) );
 		// one guest in three (id % 3 == 0) leaves angry, the others think nothing new (tp.exe 0x00501496)
-		Assert.IsTrue( guests.Skip( 8 ).All( guest => guest.Thought == (guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None) ),
+		// (a guest that decides again in the same turn and wanders from the cell that lost its links is stranded there: its own Confused thought, 0x004F9D6E, not the dismissal's)
+		Assert.IsTrue( guests.Skip( 8 ).All( guest => guest.Id % 3 == 0 ? guest.Thought == GuestThought.Angry : guest.Thought == GuestThought.None || guest.Thought == GuestThought.Confused && guest.StrandedMark != 0 ),
 			string.Join( ", ", guests.Skip( 8 ).Select( guest => $"{guest.Id}: {guest.Thought}" ) ) );
 		Assert.AreEqual( 8, rig.Ride.QueueLength );
 		Assert.IsNull( rig.Ride.JoinCell, "the shortened queue no longer touches the path" );
@@ -1541,7 +1551,7 @@ public class QueueTests
 		orphan.QueuePosition = 0;
 		orphan.QueueJoinTurn = rig.Simulation.ParkTurn;
 		orphan.QueueCalled = true;
-		rig.Step();
+		rig.StepTurn();
 		Assert.AreEqual( (GuestState.DoingNothing, -1, -1L, false), (orphan.State, orphan.QueuePosition, orphan.QueueJoinTurn, orphan.QueueCalled) );
 	}
 

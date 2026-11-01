@@ -602,23 +602,35 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public void Tick( float deltaSeconds )
 	{
 		BeginTick( deltaSeconds );
-		UpdateArrivals( deltaSeconds );
 		if ( turnStarted )
 		{
+			// [BIN:TPW-EXE:0x00516380 guest update only in the turn] a guest's thing update runs only in the park turn's thing sweep (0x5163FB -> 0x50B360, once per eight substeps, 0x54F668), newest thing first through the pool's list; the turn then frees its destroy requests (0x516641) and ends with the arrival update (0x516695 -> 0x4D7B20 -> 0x4CF3E0), so a guest the arrival makes is not updated in the turn that made it
 			SyncOccupants();
+			sweptGuests.Clear();
+			sweepDelta = deltaSeconds;
+			foreach ( var slot in things.Capture() )
+				SweepGuest( slot.Id );
+			FinishSweep();
+			if ( ownsThings )
+				things.DestroyQueued();
+			UpdateArrivals( deltaSeconds );
+			return;
 		}
-		// [APPROX:DET-014] without a host thing sweep (a simulation of its own, the ticks between park turns) the guests' updates and their draws run in this list order, not the original's newest-first thing sweep (DET-013); the remaining mismatch is which guest steps run between park turns, not missing won-sideshow tail or balloon-recreation draws (ApplyVisit and FinishUse already take those)
+		// the substeps between two turns run nothing of the thing update: the ticks count their seconds and move the drawn point
+		sweptGuests.Clear();
 		for ( var index = 0; index < guests.Count; index++ )
-			UpdateGuest( guests[index], deltaSeconds );
+		{
+			sweptGuests.Add( guests[index].Id );
+			UpdateBetweenTurns( guests[index], deltaSeconds );
+		}
 		for ( var index = guests.Count - 1; index >= 0; index-- )
 		{
 			if ( guests[index].State != GuestState.Gone )
 				continue;
 			RemoveGone( guests[index] );
 		}
+		// the destroy requests wait for the next turn (0x516641), also in a simulation that owns its pool
 		Observer?.Ticked( this, deltaSeconds );
-		if ( ownsThings )
-			things.DestroyQueued();
 	}
 
 	/// <summary>The start of every tick: the checks, the tick counters, the turn flag and the queue sync.</summary>
@@ -668,6 +680,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public bool NextTickStartsTurn => ParkCalendar.Turn( TickCount + 1 + turnPhase ) != ParkCalendar.Turn( TickCount + turnPhase );
 
 	private readonly HashSet<int> sweptGuests = new();
+
+	/// <summary>
+	/// Whether the guest has been updated in the tick being run (its turn's sweep, or the per-tick steps between two turns), so a state that reads another guest can use that guest's counters as they were at the start of the tick.
+	/// The simulation's own record: a placement or a teleport also stamps <see cref="Guest.StepTick"/>.
+	/// </summary>
+	internal bool UpdatedThisTick( Guest guest ) => sweptGuests.Contains( guest.Id );
 	private float sweepDelta;
 
 	/// <summary>
@@ -995,6 +1013,33 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	private static bool CountsParkTime( Guest guest ) => guest.State != GuestState.Gone;
 
+	/// <summary>
+	/// One guest on a tick between two park turns: the original runs no thing update there, so only the seconds counters, the drawn point and the two seconds timers of OpenTPW's own states run.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00516380 thing update] the guest's update (0x5019F0 through the thing's type switch 0x50B360) is called only from the turn's sweep (0x5163FB); nothing else steps a guest, so its state handlers, walk steps and draws run on the turn's tick alone
+	// the states with no original behind them keep their per tick step: the vehicle-less park's wait for a bus (the original refuses a park without arrival vehicles, 0x51A601) and the pools extension's swim sessions and activities ([EXT:pools-swim]: the swimmers, the river, the waves and the slides move every tick, and a change room's exit wait counts seconds)
+	private void UpdateBetweenTurns( Guest guest, float dt )
+	{
+		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
+			guest.TimeInParkSeconds = elapsed + dt;
+		if ( InPark( guest ) )
+			UpdateNeeds( guest, dt );
+		if ( StepsEveryTick( guest ) )
+			UpdateState( guest, dt );
+		if ( !guest.HasWaypoint && guest.State is not GuestState.Boarding )
+			guest.IsMoving = false;
+		UpdatePresentation( guest );
+	}
+
+	/// <summary>The guest's state has a step of OpenTPW's own that runs on every tick (see <see cref="UpdateBetweenTurns"/>).</summary>
+	private bool StepsEveryTick( Guest guest ) => guest.State switch
+	{
+		GuestState.WaitingToGoHome => ArrivalVehicles == null,
+		GuestState.ExitingRide => guest.StateTimer > 0,
+		GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut or GuestState.PoolActivity => true,
+		_ => false
+	};
+
 	private void UpdateGuest( Guest guest, float dt )
 	{
 		// [APPROX:GUEST-920] seconds still accumulate per step for stay statistics, weather gates and legacy displays; new visitor displays retain integer-turn age independently (DisplayAge). No gameplay consumer is migrated here.
@@ -1041,7 +1086,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// enters the temporary history.
 	/// </summary>
 	// [EXT:online-bubbles-on] bubbles are on in a visit too, where 0x50BE80 skips them in an online game (GameType word 0xFB3B7C = 1; none of its 22 callers passes the override): a visit is OpenTPW's read-only extension and shows the park as its owner sees it
-	// [APPROX:GUEST-006] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, its voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0, 0x4FCA6F) is played as a presentation event (Voiced); bubbles are always on where 0x50BE80 skips them while bits 0x16 of 0x790AB0 are set; a show's row 7 comes off once (FireworksSpent) where 0x4E0B90 removes it whenever VAR_STATUS is 1, a variable native code also writes (0x4E0900, 0x4E0AC0); the original saves its environment table with the cells (0x4D7EA0) and an original save's grid is imported (ParkEnvironment.ImportSaved) — evidence needed: what bits 0x16 of 0x790AB0 mean
+	// [BIN:TPW-EXE:0x004FC8A0 thoughts and environment] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, its voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0, 0x4FCA6F) is played as a presentation event (Voiced); the camera gate of 0x50BE80 (bits 0x16 of 0x790AB0: the ride and the walk camera) is the Level's (ThoughtBubblesAllowed); a show's row 7 comes off once, the one time its script writes VAR_STATUS 1 (0x4E0B90, Level.SyncEconomyObject); the original saves its environment table with the cells (0x4D7EA0) and an original save's grid is imported (ParkEnvironment.ImportSaved)
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
@@ -1318,6 +1363,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return chain;
 	}
 
+	(int X, int Y)? IGuardGuests.TicketBooth( int side ) => (side == 0 ? Settings.ArrivalLaneA : Settings.ArrivalLaneB) is { Length: >= 4 } lane ? lane[3] : null;
+
 	(int X, int Y)[]? IGuardGuests.Lane( int side ) => side == 0 ? ValidLane( Settings.ArrivalLaneA ) : ValidLane( Settings.ArrivalLaneB );
 
 	// [BIN:TPW-EXE:0x004FD970 guest meter +0x1B8] the energy meter is the original's unnamed float +0x1B8: nothing changes it while walking, resting, queueing or riding (the needs phase 0x00501650 does not touch it), so OpenTPW keeps only its use step (OnVisitorReleased)
@@ -1430,7 +1477,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>
 	/// The things on one cell's chain head first (the guests' and the staff's lists read by entry number): the guests and the staff interleaved by the time each entered the cell.
-	/// A guest that is gone is a kind 2 thing until the turn's deferred destroys unlink it (0x0050B780, 0x00516641): the separation query skips it, the head tests (<see cref="ChainHead"/>) do not.
+	/// A guest whose state is Gone is skipped by the separation query. Its destroy request (0x0050B780) takes it out of the cell's list at once (the jump table 0x0050B918 → 0x004FB330 → 0x004F8AE0 → 0x0050B980 → 0x004D9280 at 0x0050B9B8, <c>RemoveGone</c>); only the id's free waits for the turn's deferred destroys (0x00516641).
 	/// </summary>
 	internal void AppendCellChain( int x, int y, List<GuestNavigation> into )
 	{
@@ -1456,7 +1503,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		occupants.TryGetValue( cell, out var guestList );
 		var staffList = StaffChain.At( cell );
-		// [BIN:TPW-EXE:0x0050B780 destroy request] a thing that is destroyed turns into kind 2 (+2 = 2, +3 = 1) and is queued (0x00516310); the turn's deferred destroys (0x00516641 → 0x0050B980) unlink it, so until then it still heads its cell's chain and the head tests (the boarding at 0x00500C28) see it, while the separation query (kinds 1, 4 to 8, 0x12) skips it
+		// [BIN:TPW-EXE:0x0050B780 destroy request] the request unlinks the thing from its cell's list at once (the jump table 0x0050B918 → 0x004FB330 → 0x004F8AE0 → 0x0050B980 → 0x004D9280 at 0x0050B9B8), then turns it into kind 2 (+2 = 2, +3 = 1) and queues it (0x00516310); only the id's free waits for the turn's deferred destroys (0x00516641), so a guest that has asked is no longer on the chain the head tests (the boarding at 0x00500C28) read
 		var guest = guestList is { Count: > 0 } ? guestList[^1] : null;
 		if ( staffList != null && (guest == null || staffList[^1].Serial > guest.CellSerial) )
 			return (null, true);
@@ -2343,7 +2390,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// for the new thought's priority (<see cref="GuestThoughts.TakesBubble"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0050BE80 thought] +0 = the thought; with bubbles on, the old bubble goes (0x00475550) and, when the turn has reached +0x8C + 20 × priority, a new one starts and +0x8C is stamped
-	// Approximation (GUEST-006, registered at UpdateNeedsTurn): the Level maps ride view to the bubble gate; other camera bits of 0x16 remain unresolved. Online visits retain the existing online-bubbles-on extension.
+	// [BIN:TPW-EXE:0x0050BE8D camera gate] the Level binds the gate: the ride camera and the walk camera (0x04 ride camera, 0x02 walk camera, of the camera word) skip the bubble work, no store sets bit 0x10 (Level.BindGuestThoughtPresentation). Online visits retain the existing online-bubbles-on extension.
 	private void Think( Guest guest, GuestThought thought )
 	{
 		Observer?.Thought( guest, thought );

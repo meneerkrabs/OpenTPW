@@ -292,25 +292,46 @@ public class ArrivalVehicleTests
 			waiting.Add( guest );
 		}
 		var (first, second, third) = (waiting[0], waiting[1], waiting[2]);
-		park.Turns( 1 );   // the cells' guest lists are rebuilt at the start of the turn, after the arrival update has read the old ones
-		park.NextVehicleIs( ArrivalVehicleKind.Ferry );
+		// the cells' guest lists are rebuilt at the start of the turn and the arrival update at its end reads them (0x00516380 then 0x004D7B20); the sweep's guests have drawn by then, so the generator
+		// is set when the sweep is over (the observer's tick call comes before the destroys and the arrival update)
+		var once = true;
+		park.Simulation.Observer = new AtTheSweepsEnd( () =>
+		{
+			if ( once && park.Simulation.ParkTurn == 1 )
+			{
+				park.NextVehicleIs( ArrivalVehicleKind.Ferry );
+				once = false;
+			}
+		} );
 		park.Turns( 1 );
+		park.Simulation.Observer = null;
 		CollectionAssert.AreEqual( new[] { ArrivalVehicleKind.Ferry }, park.Vehicles.Created, "a waiting guest and no vehicle at work: size 0, a world draw mod 3" );
 		park.Turns( 30 );
 		Assert.AreEqual( 3, park.Simulation.Guests.Count( guest => guest.State == GuestState.WaitingToGoHome ), "they wait for the vehicle, not a timer" );
 
 		park.Vehicles.SetStatus( ArrivalVehicleKind.Ferry, 4 );
 		park.Turns( 1 );
-		// 0x00500BD0: the guest that heads its cell's list boards, so one per stop cell and turn
-		var cellsInUse = stops.Distinct().Count();
-		Assert.AreEqual( 3 - cellsInUse, park.Simulation.Guests.Count, "status 4: one guest per stop cell boards" );
-		if ( park.Simulation.Guests.Count > 0 )
-			Assert.AreEqual( 0, park.Vehicles.Trigger( ArrivalVehicleKind.Ferry ), "a guest still waits: the vehicle is held" );
-		for ( var turn = 0; turn < 3 && park.Simulation.Guests.Count > 0; turn++ )
-			park.Turns( 1 );
-		Assert.AreEqual( 0, park.Simulation.Guests.Count );
-		park.Turns( 1 );
-		Assert.AreEqual( 1, park.Vehicles.Trigger( ArrivalVehicleKind.Ferry ), "status 4 with nobody waiting sends the vehicle on" );
+		// 0x00500BD0: the guest that heads its cell's list boards; the sweep takes the newest guest of a cell first (it heads the list), which leaves at once (the request 0x0050B780 runs the guest's cleanup 0x004FB330 -> 0x004F8AE0 -> 0x0050B980, which takes the thing out of its cell's list with 0x004D9280 right away; only the free waits for the turn's destroys, 0x00516641), so the older guest of the
+		// same cell heads the list when its own update comes and boards in the same turn
+		Assert.AreEqual( 0, park.Simulation.Guests.Count, "status 4: every guest boards in the one turn's sweep, the newest of each cell first" );
+		Assert.AreEqual( 1, park.Vehicles.Trigger( ArrivalVehicleKind.Ferry ), "status 4 with nobody waiting sends the vehicle on: the arrival update at the turn's end finds the stop empty" );
+	}
+
+	/// <summary>An observer that runs an action when a turn's thing sweep is over.</summary>
+	private sealed class AtTheSweepsEnd( Action action ) : IGuestObserver
+	{
+		public void Admitted( Guest guest, int fee ) { }
+		public void Spent( Guest guest, int amount, int attractionId ) { }
+		public void QueueRejected( Guest guest, IRideVisitorBridge attraction, QueueEndReason reason ) { }
+		public void QueueJoined( Guest guest, IRideVisitorBridge attraction ) { }
+		public void QueueBoarded( Guest guest, IRideVisitorBridge attraction, long waitTurns ) { }
+		public void QueueEnded( Guest guest, int attractionId, QueueEndReason reason, long waitTurns ) { }
+		public void Decided( Guest guest, bool chose ) { }
+		public void Leaving( Guest guest, DepartureCause cause ) { }
+		public void Departed( Guest guest ) { }
+		public void Recalled( Guest guest ) { }
+		public void Restored( GuestSimulation simulation ) { }
+		public void Ticked( GuestSimulation simulation, float deltaSeconds ) => action();
 	}
 
 	[TestMethod]

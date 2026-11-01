@@ -119,6 +119,7 @@ DET-009 docs/reverse/DET-plan.md
 DET-010 docs/reverse/DET-plan.md
 DET-011 docs/reverse/DET-plan.md
 DET-012 docs/reverse/DET-plan.md
+DET-014 docs/DETERMINISM.md
 DET-015 docs/DETERMINISM.md
 DET-016 docs/DETERMINISM.md
 ECON-001 docs/ECONOMY.md
@@ -189,6 +190,7 @@ GUEST-002 docs/DISCONNECTED-QUEUE-SCORING.md
 GUEST-003 docs/progress/2026-10-17-thing-pool-and-thing-ids.md
 GUEST-004 docs/GUESTS.md
 GUEST-005 docs/GUESTS.md
+GUEST-006 docs/GUESTS.md
 GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
 GUEST-010 docs/GUESTS.md

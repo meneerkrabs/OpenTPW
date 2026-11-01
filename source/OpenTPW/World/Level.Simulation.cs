@@ -135,7 +135,8 @@ public partial class Level
 		}
 		// A park whose guests take their ids from the level's thing pool runs its turns as the original does (0x00516380): the tick that starts a turn runs the substep's ride scripts, then the sweep over the
 		// pool newest first, the gate retry, the turn's destroys and the arrival update. Without a park or its guests in the pool, in a lost park or where the economy and the guests count turns apart (a paused
-		// economy) the turn is not swept: the things update in the order of the ticks between turns, and the destroys are freed at the end of each tick.
+		// economy) the Level does not sweep the turn: the guests sweep their own list on their turn's tick (GuestSimulation.Tick: newest first, and nothing between two turns), the other things update in the
+		// order of the ticks, and the destroys wait for a turn of the guests or of the economy (0x00516641).
 		var pooled = Park != null && Guests is { SharesThings: true };
 		// the guests' tick count starts at 0 where the economy of an original save starts at its turn: both cut the ticks into the same turns
 		if ( pooled && Park!.Economy.Speed != GameSpeed.Paused )
@@ -309,7 +310,7 @@ public partial class Level
 			var weatherDone = false;
 			var challengesDone = false;
 			world?.BeginStaffTurn( economy, turn );
-			// [BIN:TPW-EXE:0x00516380 thing sweep] the walk starts at the used list's head (0x7CF56C), the thing built last, and takes each slot's older link after the update (0x516413..0x516431); the things built during the walk
+			// [BIN:TPW-EXE:0x00516380 thing sweep] the walk starts at the used list's head (the pointer 0x7CF56C, read at 0x5163A4; its slot id is at +4); the slot table is 0x7CFB90, indexed at 0x5163E7 (id × 5, stride 20; 0x5163C0 reads entry 0 only for the assert) and the older link is read at 0x516416, the thing built last, and takes each slot's older link after the update (0x516413..0x516431); the things built during the walk
 			// are newer than the position it has reached and are not visited, so a snapshot of the list is the same walk; a thing that asked to be destroyed (byte +3) is skipped (0x5163F2..0x5163F7)
 			foreach ( var slot in Things.Capture() )
 			{

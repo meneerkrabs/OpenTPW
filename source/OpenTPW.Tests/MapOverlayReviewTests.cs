@@ -71,7 +71,7 @@ public class MapOverlayReviewTests
 		first.Navigation.Y = 32 * Fixed16.One; Matches( rig, 0, 1, 1 );
 		first.Navigation.Y = second.Navigation.Y; Matches( rig, 0, 2, 1 );
 		first.State = GuestState.Gone;
-		rig.Guests.Tick( 0 ); // Exercise actual list removal, not only a hidden state.
+		rig.Guests.TickTurn( 0 ); // Exercise actual list removal, not only a hidden state (the turn that frees the slot: destroys wait for it).
 		Assert.AreEqual( 1, rig.Guests.Guests.Count );
 		second.Thought = GuestThought.Dissatisfied;
 		Matches( rig, 0, 1, 1 );

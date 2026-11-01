@@ -99,7 +99,7 @@ public partial class GuestTests
 		guest.SavedMajorAttractionId = far.Bridge.AttractionId;
 		guest.State = GuestState.ExitingRide;
 		guest.HasWaypoint = false;
-		simulation.Tick( Tick );
+		simulation.TickTurn( Tick );
 		// [BIN:TPW-EXE:0x00500900 state 15] arrived: +0x1DC = +0x1DE, +0x1DE = 0, a route request to the back cell, "Left minor destination, found old major", state 10
 		Assert.AreEqual( GuestState.GoingToRide, guest.State );
 		Assert.AreEqual( far.Bridge.AttractionId, guest.AttractionId );
@@ -114,7 +114,7 @@ public partial class GuestTests
 		guest.AttractionId = near.Bridge.AttractionId;
 		guest.State = GuestState.ExitingRide;
 		guest.HasWaypoint = false;
-		simulation.Tick( Tick );
+		simulation.TickTurn( Tick );
 		Assert.AreEqual( GuestState.DoingNothing, guest.State, "\"successfully left ride\", state 6" );
 		Assert.AreEqual( near.Bridge.AttractionId, guest.AttractionId, "+0x1DC lives until the next major choice (0x004FCB21)" );
 	}
@@ -132,7 +132,7 @@ public partial class GuestTests
 		guest.SavedMajorAttractionId = far.Bridge.AttractionId;
 		guest.State = GuestState.ExitingRide;
 		guest.HasWaypoint = false;
-		simulation.Tick( Tick );
+		simulation.TickTurn( Tick );
 		Assert.AreEqual( GuestState.DoingNothing, guest.State );
 		Assert.AreEqual( far.Bridge.AttractionId, guest.AttractionId );
 		Assert.AreEqual( 0, guest.SavedMajorAttractionId );
@@ -263,7 +263,7 @@ public partial class GuestTests
 		guest.HasWaypoint = false;
 		Entrance( grid, (15, 4), 0 );
 		shop.Bridge.RecomputeQueue( grid );
-		simulation.Tick( Tick );
+		simulation.TickTurn( Tick );
 		// [BIN:TPW-EXE:0x004FFE16 back of the queue has moved] the back cell is 0: event 0x16, state 6, no +0x1DC write
 		Assert.AreEqual( GuestState.DoingNothing, guest.State );
 		Assert.AreEqual( shop.Bridge.AttractionId, guest.AttractionId );

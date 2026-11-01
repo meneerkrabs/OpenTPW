@@ -330,4 +330,39 @@ public class LinkedAccessWanderTests
 			world.UpdateStaffMember( park, member, turn );
 		Assert.AreEqual( Outside, member.Navigation.Cell, "the real staff walk crossed onto the path" );
 	}
+
+	/// <summary>
+	/// [BIN:TPW-EXE:0x004F9D77] the same dead end (an access cell whose only link leads to an exit cell, which the removals drop) strands a guest (thought Confused, the stranded mark, 0x004F9D6E) and does not strand a staff member:
+	/// a staff thing takes the patrol area search (0x00506F30) instead, whose failure is the "no destination" thought, and no mark is written (the stamp write at 0x004F9E09 is for the other kinds).
+	/// </summary>
+	[TestMethod]
+	public void ADeadEndStrandsAGuestAndSendsAStaffMemberToHisPatrolAreaSearch()
+	{
+		GuestPathGrid DeadEnd()
+		{
+			var grid = AccessGrid( "4" );
+			grid.Cells.SetType( Outside.X, Outside.Y, ParkCellTypes.Exit );
+			return grid;
+		}
+		var guestGrid = DeadEnd();
+		var (simulation, guest) = ImportDecidingGuest( guestGrid );
+		Assert.IsFalse( Wander( simulation, guest ), "no candidate is left" );
+		Assert.AreEqual( GuestThought.Confused, guest.Thought );
+		Assert.AreEqual( guestGrid.Cells.StampCounter + 1, guest.StrandedMark, "the guest is marked stranded" );
+
+		var staffGrid = DeadEnd();
+		var park = EconomyTestData.Park();
+		var member = EconomyTestData.HireBest( park, StaffType.Handyman );
+		var world = new StaffWorldSimulation( staffGrid, () => park.Staff.Members, _ => null, Outside );
+		park.StaffWorld = world;
+		(member.CellX, member.CellY) = (4.5f, 4.5f);
+		member.PatrolArea = (4, 4, 4, 4);
+		world.UpdateStaffMember( park, member, 0 );
+		var stamp = staffGrid.Cells.StampCounter;
+		var before = park.World.State;
+		Assert.IsFalse( Patrol( world, park, member ), "his rectangle holds no cell a route reaches" );
+		Assert.AreNotEqual( before, park.World.State, "the patrol area search ran (its draws)" );
+		Assert.AreEqual( StaffThoughts.NoDestination, member.Thought, "his thought is the search's failure, not the guest's Confused" );
+		Assert.AreEqual( stamp, staffGrid.Cells.StampCounter, "nothing is stamped" );
+	}
 }

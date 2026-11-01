@@ -266,8 +266,7 @@ internal sealed class FlatRideBounceRiders : IBounceRiderSource
 			}
 			if ( feet is not { } point )
 				continue;
-			// [APPROX:TOUR-011] a point no face of the model covers keeps the nodes' height, where the original's sampler answers -100 (the walk update runs after every fixed tick and not once per rendered frame, [EXT:fixed-60hz-clock])
-			// [BIN:TPW-EXE:0x00558131 body height] a walk whose last word (+0x1A) has bit 0 clear stands at the ride model's sampled height under the interpolated x and z, not the nodes' (0x4511A0 after the mode 0x450EA0 chooses from the model: the landscape 0x4527F0 or the surface faces, plus +0xA0 in every mode; Level.WalkerGroundOf); no covering face leaves the nodes' height
+			// [BIN:TPW-EXE:0x00558131 body height] a walk whose last word (+0x1A) has bit 0 clear stands at the ride model's sampled height under the interpolated x and z, not the nodes' (0x4511A0 after the mode 0x450EA0 chooses from the model: the landscape 0x4527F0 or the surface faces, plus +0xA0 in every mode; Level.WalkerGroundOf); a point no face covers is the sampler's -100 plus +0xA0
 			if ( (walker.Extra & 1) == 0 && terrainHeight != null )
 				point = terrainHeight( point.X, point.Y ) is { } ground ? new SVector3( point.X, point.Y, ground ) : point;
 			var output = requestBody?.Invoke( walker.Guest, template );

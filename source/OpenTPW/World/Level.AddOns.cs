@@ -31,7 +31,8 @@ public partial class Level
 	/// <summary>An add-on being removed and the ride it stood on, from <see cref="ParkObjects.ObjectRemoving"/> to <see cref="ParkObjects.ObjectRemoved"/>.</summary>
 	private (OriginalObject AddOn, OriginalObject Ride)? addOnRemoval;
 	/// <summary>The sampler surface of each catalogue entry's model that a probe has met (<see cref="ObjectSurfaceAt"/>; named for the add-ons it first served).</summary>
-	private readonly Dictionary<ObjectCatalogEntry, TrackSurface?> addOnSurfaces = new();
+	// (created at first use: a level built without its constructor, as the asset-free fixtures do, has no initialisers run)
+	private Dictionary<ObjectCatalogEntry, TrackSurface?>? addOnSurfaces;
 
 	/// <summary>
 	/// The rows of <paramref name="ride"/>'s upgrade list: one per add-on of the ride that the park may buy (its <c>AddOn.UpgradesId</c> names the ride's type and it is
@@ -245,7 +246,8 @@ public partial class Level
 	/// <summary>The sampler surface of a placed object (<c>0x450EA0</c>'s choice, cached per type), null when its model cannot be read.</summary>
 	private TrackSurface? SurfaceOf( OriginalObject addOn )
 	{
-		if ( !addOnSurfaces.TryGetValue( addOn.Entry, out var surface ) )
+		var cache = addOnSurfaces ??= new();
+		if ( !cache.TryGetValue( addOn.Entry, out var surface ) )
 		{
 			try
 			{
@@ -255,12 +257,12 @@ public partial class Level
 					groundNode = ObjectHoardingGeometry.SelectGroundNode( addOn.Runtime.Model, ObjectMapGrid.ShapeOf( addOn.Entry.Settings ), HoardingTerrain.Of( field ) ).Node;
 				surface = TrackSurface.FromObject( addOn.Runtime.Model, groundNode: groundNode );
 			}
-			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
+			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException or InvalidOperationException or NullReferenceException )
 			{
 				Log.Warning( $"The surface of {addOn.Entry.DisplayName} could not be read: {exception.Message}" );
 				surface = null;
 			}
-			addOnSurfaces[addOn.Entry] = surface;
+			cache[addOn.Entry] = surface;
 		}
 		return surface;
 	}
@@ -279,14 +281,24 @@ public partial class Level
 		if ( !System.Numerics.Matrix4x4.Invert( modelToGrid, out var gridToModel ) )
 			return null;
 		var origin = Objects.Grid.Origin;
-		return ( x, y ) =>
-		{
-			var terrain = Objects.TerrainHeightAtEngine( x, y );
-			if ( surface.Mode == TrackSamplerMode.Terrain )
-				return terrain + surface.TerrainOffset!.Value * ObjectPlacement.ModelScale;
-			var local = System.Numerics.Vector3.Transform( new System.Numerics.Vector3( (x - origin.X) / OriginalParkPlacement.ModelScale, (y - origin.Y) / OriginalParkPlacement.ModelScale, 0 ), gridToModel );
-			return surface.HeightAt( local.X, local.Y ) is { } height ? placement.BaseHeight + height * ObjectPlacement.ModelScale : null;
-		};
+		return ( x, y ) => WalkerGroundHeight( surface, gridToModel, placement.BaseHeight, Objects.TerrainHeightAtEngine( x, y ),
+			(x - origin.X) / OriginalParkPlacement.ModelScale, (y - origin.Y) / OriginalParkPlacement.ModelScale );
+	}
+
+	/// <summary>
+	/// The engine height a ride model's sampler gives a walking body at the grid point (<paramref name="gridX"/>, <paramref name="gridY"/>) in model units, over <paramref name="terrain"/> (the landscape's engine height there)
+	/// and the ride's <paramref name="baseHeight"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004511A0 walker height] mode 1: the landscape plus +0xA0; mode 2 and 4: the faces above the instance's base height; every mode adds +0xA0 (0x4511FA, 0x451272)
+	// [BIN:TPW-EXE:0x004512A7 uncovered point] the face sampler 0x451290 starts at -100.0 (0xC2C80000) and returns it when no face covers the point (an absolute height, not above the base), 0x4511A0 adds +0xA0 and 0x558131 uses the sum unchecked
+	internal static float WalkerGroundHeight( TrackSurface surface, System.Numerics.Matrix4x4 gridToModel, float baseHeight, float terrain, float gridX, float gridY )
+	{
+		if ( surface.Mode == TrackSamplerMode.Terrain )
+			return terrain + surface.TerrainOffset!.Value * ObjectPlacement.ModelScale;
+		var local = System.Numerics.Vector3.Transform( new System.Numerics.Vector3( gridX, gridY, 0 ), gridToModel );
+		return surface.HeightAt( local.X, local.Y ) is { } height
+			? baseHeight + height * ObjectPlacement.ModelScale
+			: (-100f + surface.HeaderOffset) * ObjectPlacement.ModelScale;
 	}
 
 	/// <summary>A placed track add-on as its sections see it (section +0xC, +0x10): its type and its animation channel 0.</summary>

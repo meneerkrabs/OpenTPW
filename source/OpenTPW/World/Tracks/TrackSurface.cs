@@ -56,6 +56,9 @@ public sealed class TrackSurface
 	/// <summary>The sampler mode the original takes for this surface (tests and the docs).</summary>
 	public TrackSamplerMode Mode => terrainOffset != null ? TrackSamplerMode.Terrain : groups == null ? TrackSamplerMode.Faces : baseWhenUncovered ? TrackSamplerMode.InstanceMesh : TrackSamplerMode.SurfaceRecords;
 
+	/// <summary>The model header's +0xA0 that every sampler mode adds (<c>0x4511FA</c>, <c>0x451272</c>).</summary>
+	public float HeaderOffset => terrainOffset ?? faceOffset;
+
 	/// <summary>The height above the ground of a terrain-sampled object, or null.</summary>
 	public float? TerrainOffset => terrainOffset;
 

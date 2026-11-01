@@ -10,7 +10,10 @@ public sealed partial class ParkHud
 		InfoArmOpen && ReferenceEquals( item, settingsOwner ) ? pending : null;
 
 	/// <summary>The ride window's excitement gauge (0x3e16) or the sideshow window's (0xa099), 0..1, null for an object without the row or without data.</summary>
-	private float? ExcitementGauge( OriginalObject item, ObjectWindowSettings? window )
+	private float? ExcitementGauge( OriginalObject item, ObjectWindowSettings? window ) => ExcitementPercent( item, window ) is { } percent ? UiGauge.OfPercent( percent ) : null;
+
+	/// <summary>The excitement byte of a ride or sideshow (<c>0x4e0560</c>) with the window's own values, or the object's applied ones without a window; null for another kind of object or without data.</summary>
+	internal int? ExcitementPercent( OriginalObject item, ObjectWindowSettings? window )
 	{
 		if ( item.Entry.WhichUIType == (int)BuildCategory.Sideshows )
 		{
@@ -18,19 +21,19 @@ public sealed partial class ParkHud
 				return null;
 			// [BIN:TPW-EXE:0x4b1a3c sideshow window refresh] the excitement gauge 0xa099 is 0x4e0560(window prize +0x28, window price +0x2c, window chance +0x24); the win byte is 100 less the chance of losing
 			var values = window != null ? (window.Prize, window.Price, window.WinChance) : LiveState( item ) is { } live ? (live.CostOfGoods, live.Price, (100 - live.ChanceOfLosingPercent) & 0xFF) : default;
-			return UiGauge.OfPercent( RideWindowGauges.SideshowExcitement( values.Item1, values.Item2, values.Item3 ) );
+			return RideWindowGauges.SideshowExcitement( values.Item1, values.Item2, values.Item3 );
 		}
 		if ( item.Entry.WhichUIType != (int)BuildCategory.Rides )
 			return null;
 		// [BIN:TPW-EXE:0x4e0560 coaster branch] a type with track type 3 (+0x9c) has the guests' rating of its controller (0x43e0b0, 50 + ½ excitement), 0 without a controller
 		if ( item.Entry.Settings.GetInt( "Bumper.WhichTrackType" ) == 3 )
-			return UiGauge.OfPercent( (item.Runtime.Coaster?.GuestExcitement ?? 0) & 0xFF );
+			return (item.Runtime.Coaster?.GuestExcitement ?? 0) & 0xFF;
 		var parameters = item.Runtime.Visitors.Parameters;
 		var excitementLevel = item.Entry.Settings.GetInt( "UsageInfo.ExcitementLevel" );
 		var baseLevel = item.Runtime.Visitors.ExcitementBase?.Invoke( excitementLevel ) ?? excitementLevel;
 		var speed = window?.Ride.Speed ?? parameters.Speed;
 		var duration = window?.Ride.Duration ?? parameters.Duration;
-		return UiGauge.OfPercent( RideWindowGauges.RideExcitement( baseLevel, speed, parameters.InitSpeed, duration, parameters.InitDuration ?? parameters.Duration ) );
+		return RideWindowGauges.RideExcitement( baseLevel, speed, parameters.InitSpeed, duration, parameters.InitDuration ?? parameters.Duration );
 	}
 
 	/// <summary>The ride window's reliability gauge (0x3e18), 0..1.</summary>

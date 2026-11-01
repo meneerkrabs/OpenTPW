@@ -56,8 +56,10 @@ class ReplayTests(unittest.TestCase):
         image = Image(b'')
         # tag 6 is at position 6 and its id matches: the record there, not the first one with the id
         self.assertEqual(123, tables.tag_entry(image, 6))
-        self.assertEqual([(274, 6, 123)], tables.captions(image))
-        self.assertIn('{ response = 274, tag = 128, text = 127 },', tables.render_captions([(274, 128, 127)]))
+        self.assertEqual([(274, 6, 123, 0)], tables.captions(image))
+        self.assertIn('{ response = 274, tag = 128, text = 127 },', tables.render_captions([(274, 128, 127, 0)]))
+        # the kind (the formatter case of the tag's record) is written only when it is not 0
+        self.assertIn('{ response = 194, tag = 68, text = 71, kind = 2 },', tables.render_captions([(194, 68, 71, 2)]))
 
     def test_costumes_and_help_rows_render(self):
         self.assertIn('{ response = 5, hat = -1, hat2 = 14 }', tables.render_costumes([(5, -1, 14)]))

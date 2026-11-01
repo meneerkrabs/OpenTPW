@@ -147,7 +147,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private static Dictionary<string, int> PathlessTextures()
 	{
 		var kept = ObjectSigns.SessionTextures().Concat( OriginalObject.SessionTextures() ).Append( Texture.Missing ).Append( Texture.SignBoard ).ToHashSet();
-		return Asset.All.OfType<Texture>().Where( texture => string.IsNullOrEmpty( texture.Path ) && !kept.Contains( texture ) )
+		// the lobby's own screen-space particle host (the key panel's effect 0x61, LobbyKeyPanelEffect.CreateHost) owns an atlas while the lobby is up, as the lobby with keys does after a park; the entity's deletion releases it
+		return Asset.All.OfType<Texture>().Where( texture => string.IsNullOrEmpty( texture.Path ) && !kept.Contains( texture ) && texture.Origin?.Contains( "CreateScreenRenderer", StringComparison.Ordinal ) != true )
 			.GroupBy( texture => $"{texture.Width}x{texture.Height}" ).ToDictionary( group => group.Key, group => group.Count() );
 	}
 
@@ -161,6 +162,13 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	}
 
 	private Dictionary<string, int> lobbyPathlessTexturesBeforePark = new();
+	/// <summary>The textures the screen-space particle renderers own (each made by CreateScreenRenderer: the enter-park effect's, the key panel's host while the lobby holds it), not counting the live key panel host's.</summary>
+	private int ScreenRendererTexturesBesidesTheKeyHost()
+	{
+		var hosts = Asset.All.OfType<Texture>().Count( texture => texture.Origin?.Contains( "CreateScreenRenderer", StringComparison.Ordinal ) == true );
+		return hosts - (flow.Menu?.KeyHostLive == true ? 1 : 0);
+	}
+	private int screenRendererTexturesAtFirstReturn = -1;
 	private Asset[] secondParkHeadAssets = Array.Empty<Asset>();
 	private Asset[] firstParkGuestAssets = Array.Empty<Asset>();
 	private Asset[] secondParkGuestAssets = Array.Empty<Asset>();
@@ -404,6 +412,25 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			Require( flow.EnterParkEffectDraws > 0, "the enter-park effect is still drawing a few frames in" );
 			CaptureFrame( "lobby-enter-effect.png" );
+		} );
+		// [BIN:TPW-EXE:0x5D5F80 queue step] the lobby advisor says what its queue holds; the smoke queues the idle line directly (the real one comes after 90 s of silence) and the model shows while it plays
+		Do( "lobby advisor line", () => flow.LobbyAdvisorHost?.Queue.Push( LobbyAdvisorQueue.IdleLineEven, flush: true ) );
+		var advisorFrames = 0;
+		steps.Enqueue( ("lobby advisor shows", () =>
+		{
+			if ( flow.LobbyAdvisorHost == null )
+				return true;
+			Require( ++advisorFrames < 600, "the lobby advisor's line shows the advisor over the lobby" );
+			return flow.LobbyAdvisorHost.Image != null;
+		}) );
+		Wait( "lobby advisor develops", 90 );
+		Do( "lobby advisor shown", () =>
+		{
+			if ( flow.LobbyAdvisorHost != null )
+			{
+				Require( flow.LobbyAdvisorHost.Image != null, "the advisor is still shown a second and a half into its line" );
+				CaptureFrame( "lobby-advisor.png" );
+			}
 		} );
 		Do( "click next island", () => Click( flow.Menu!.Main, "nextIsland" ) );
 		Wait( "island changes", 3 );
@@ -1673,6 +1700,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			// the textures not loaded by path are those of the lobby again, as before the park.
 			var changes = PathlessTextureChanges( lobbyPathlessTexturesBeforePark );
 			Require( changes.Length == 0, $"leaving a park releases every texture it made from bytes (textures not loaded by path, by size: {changes})" );
+			screenRendererTexturesAtFirstReturn = ScreenRendererTexturesBesidesTheKeyHost();
 			if ( parkLanguage != null )
 				Require( string.Equals( GameLanguage.Current.Name, parkLanguage, StringComparison.OrdinalIgnoreCase ) && flow.Strings.Language == parkLanguage,
 					"a language chosen in the park applies once the park is left" );
@@ -1698,6 +1726,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			var changes = PathlessTextureChanges( lobbyPathlessTexturesBeforePark );
 			Require( changes.Length == 0, $"a second park leaves no texture made from bytes behind either (by size, against the lobby before the first park: {changes})" );
+			// the key panel's particle host is deleted when the lobby ends: after a second exit and re-entry only the live host's atlas is more than at the first return
+			Require( ScreenRendererTexturesBesidesTheKeyHost() == screenRendererTexturesAtFirstReturn, $"lobby exit and re-entry leaves no screen-space particle atlas behind ({screenRendererTexturesAtFirstReturn} at the first return, {ScreenRendererTexturesBesidesTheKeyHost()} now)" );
 			Texture.TrackOrigins = false;
 			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) );
 			builtInOneGo = (flow.Level!.ComputeStateHash(), Entity.All.Count, flow.Level.Objects.Objects.Count, GateSignDigest( flow.Level ));

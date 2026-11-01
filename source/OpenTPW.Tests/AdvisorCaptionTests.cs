@@ -42,7 +42,7 @@ public class AdvisorCaptionTests
 			"GeneralAdvisor.MinTimeAnyMessage 1\nGeneralAdvisor.MinTimeSameMessage 1\nGeneralAdvisor.MinScoreForConsideration 1\nMessageGroups[0].MinTimeSameMessage 0\nMessageGroups[0].SayOnlyOnce 0\nMessageGroups[0].DiscardAfterSlaps 0\n"
 			+ "MessageGroups[1].MinTimeSameMessage 0\nMessageGroups[1].SayOnlyOnce 0\nMessageGroups[1].DiscardAfterSlaps 0\nWelcome.Score 1\nBankrupted.Score 1\nParkNowOpen.Score 1\nParkNowClosed.Score 1\nPrebuiltPark.Score 1\n" ), "test.sam" ) ), () => 0L );
 		var posted = new System.Collections.Generic.List<int>();
-		advisor.CaptionSink = posted.Add;
+		advisor.CaptionSink = ( entry, _ ) => posted.Add( entry );
 		advisor.PostCaption( 274 );
 		advisor.PostCaption( 0 );
 		advisor.PostCaption( 266 );
@@ -53,12 +53,31 @@ public class AdvisorCaptionTests
 	}
 
 	[TestMethod]
-	public void TheMessageTubeShowsTheTextOfPlainEntriesOnly()
+	public void TheTextsWithParameterSlotsTakeTheirArgumentsFromTheRecord()
+	{
+		var file = LanguageTests.OriginalLanguagePublic( "English" ).LoadStrings( "TAG_SYSTEM.str" );
+		string? Name( int id ) => id == 1100 ? "Belly Bounce" : null;
+		// [BIN:TPW-EXE:0x00509F09 object name case] the response 194's tag 68 shows entry 71 with the ride's name in slot 0
+		var breakdown = new AdvisorPendingAdvice( 66, 105, ThingId: 12, Secondary: 1100 );
+		var caption = AdvisorCaptionTable.For( 194 )!.Value;
+		Assert.AreEqual( 71, caption.TextEntry );
+		StringAssert.Contains( Hud.ParkHud.AdvisorCaptionText( file, caption.TextEntry, AdvisorCaptionArguments.For( caption.Kind, breakdown, Name, null ) ), "Belly Bounce" );
+		StringAssert.Contains( Hud.ParkHud.AdvisorCaptionText( file, caption.TextEntry, AdvisorCaptionArguments.For( caption.Kind, breakdown, Name, null ) ), "ride is about to break down!" );
+		// [BIN:TPW-EXE:0x0050A134 recent visitors ticket] the response 439's text names the visitors (slot 1) and the months (slot 2) of the ticket
+		var tickets = new GoldenTicketSettings( 1, 1, 1, 1, 1, RecentVisitors: 9000, RecentVisitorMonths: 5, 0, 0, 0, 0, 0 );
+		var win = AdvisorCaptionTable.For( 439 )!.Value;
+		var text = Hud.ParkHud.AdvisorCaptionText( file, win.TextEntry, AdvisorCaptionArguments.For( win.Kind, new AdvisorPendingAdvice( 215, 1 ), Name, tickets ) )!;
+		StringAssert.Contains( text, " 9000 " );
+		StringAssert.Contains( text, "last 5 months" );
+	}
+
+	[TestMethod]
+	public void TheMessageTubeShowsTheTextOfPlainEntriesAndFillsTheParameterSlots()
 	{
 		var file = LanguageTests.OriginalLanguagePublic( "English" ).LoadStrings( "TAG_SYSTEM.str" );
 		StringAssert.StartsWith( Hud.ParkHud.AdvisorCaptionText( file, 127 ), "You have been in the red for six months, so the banks have closed your park" );
 		StringAssert.StartsWith( Hud.ParkHud.AdvisorCaptionText( file, 123 ), "You have run out of money!" );
-		Assert.IsNull( Hud.ParkHud.AdvisorCaptionText( file, 71 ), "an entry with parameter slots needs the advice record's words" );
+		StringAssert.Contains( Hud.ParkHud.AdvisorCaptionText( file, 71, new System.Collections.Generic.Dictionary<int, string> { [0] = "Totem" } ), "Totem" );
 		Assert.IsNull( Hud.ParkHud.AdvisorCaptionText( file, -1 ) );
 		Assert.IsNull( Hud.ParkHud.AdvisorCaptionText( file, file.Entries.Length ) );
 	}

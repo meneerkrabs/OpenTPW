@@ -6,7 +6,7 @@ A kart or water ride the player has just placed goes on into its queue tool once
   - the build tool's and the Move tool's click, before they place (`0x524B53`, `0x5253F3`). A click on a refused ghost never gets there: the placement preview `0x528A70` runs the object's cells through `0x532FC0(0x104)`, whose validator refusal sets the latch `0x816D48` (`0x533933`), and the click handler tests the latch before the mode dispatch (`0x524A63`), which sends modes 4 and 0x3B to `0x52765B`;
   - the Move tool's pick-up, a click in mode 0x33 (`0x525E5A`);
   - a path or queue commit, after its LayLine (`0x527483`);
-  - the queue tool that follows any other ride's placement (`0x5252EA`), and the coaster tool's own handover to it (`0x526680`).
+  - the queue tool that follows any other ride's placement (`0x5252EA`), and the coaster tool's own handover to it (`0x526680`). (Since the original coaster flow, a coaster's own placement enters the queue tool too and consumes the start, so the coaster tool hands over only to a start another placement left pending.)
 
   The cross-reference list of `0x8186C0` has no other writer.
 - **The port.** `Level.EnterPlacedTrackTool` opens the track tool of a placed kart or water ride and leaves the ride's queue start pending. `ParkHud.FinishPlacement` calls it. `Level.ContinueTrackTool` hands a line's close to the pending ride's queue tool and takes the start. With none pending, the close goes to the exactly-Ctrl rule. The clicks above drop the start:

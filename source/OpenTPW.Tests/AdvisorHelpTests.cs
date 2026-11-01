@@ -340,7 +340,7 @@ public class AdvisorHelpTests
 		Assert.AreEqual( AdvisorEligibility.AlreadyPlayed, controller.Advise( 188, 100, 0, true )!.Value.Eligibility, "a plain repeat is once-only" );
 		var replay = controller.ReplayLastTutorial( 100, true );
 		Assert.AreEqual( new AdvisorQueueAdmission( AdvisorEligibility.Eligible, true, 0 ), replay );
-		Assert.AreEqual( new AdvisorPendingAdvice( 188, 1500, -1, true ), controller.Queue.GetSlot( 0 ) );
+		Assert.AreEqual( new AdvisorPendingAdvice( 188, 1500, -1, true, ScoreOverridden: true ), controller.Queue.GetSlot( 0 ) );
 		Assert.AreEqual( controller.Queue.GetSlot( 0 ), controller.Queue.LastTutorial, "the kept record carries the replay's score and override" );
 		controller.Update( () => 1000 + 4000 + 1000, () => 100, response => { played.Add( response ); return 4000; } );
 		CollectionAssert.AreEqual( new[] { 407, 407 }, played );

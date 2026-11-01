@@ -30,7 +30,8 @@ public class AdvisorTests
 			directory = directory.Parent;
 		Assert.IsNotNull( directory, "The repository checkout must be available for this test." );
 		var source = File.ReadAllText( Path.Combine( directory.FullName, "content", "shaders", "advisor.shader" ) );
-		StringAssert.Contains( source, "vs_out.vLight = clamp(vec3(0.15) + max(dot(N, L), 0.0) * g_oUbo.g_vLightColor, 0.0, 1.0);" );
+		StringAssert.Contains( source, "vec3 ambient = g_oUbo.g_flAmbientSet > 0.5 ? g_oUbo.g_vAmbient : vec3(0.15);" );
+		StringAssert.Contains( source, "vs_out.vLight = clamp(ambient + max(dot(N, L), 0.0) * g_oUbo.g_vLightColor, 0.0, 1.0);" );
 		Assert.IsFalse( source.Contains( "fog", StringComparison.OrdinalIgnoreCase ), "the fog of the advisor pass is not read, so none is drawn" );
 		var advisor = File.ReadAllText( Path.Combine( directory.FullName, "source", "OpenTPW", "World", "Advisor.cs" ) );
 		StringAssert.Contains( advisor, "g_vLightColor = System.Numerics.Vector3.One," );
@@ -105,7 +106,9 @@ public class AdvisorTests
 		// 17 (the queue is served once per park turn, 0x59A550) in the pause and loss round (October 26);
 		// 26 (the node bits: every clip end clears all of them, 0x472310 with the advisor's model flag 8, so no state persists between clips or responses) in the lip round.
 		// 12 (the speech's left and right levels: every cat_speechSFX.map event is any-distance, so the library places the voice flat and QMixer centres it, 0x6BC51D, 0x18007ABD) in the QMixer voices round (October 28).
-		var retired = new[] { 1, 2, 3, 4, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27 };
+		// 9 (every message tp.exe posts has its producer, the queued records keep their words and the formatter reads them, the All Staff window posts help 285) in round 11 package V (November 1, 2026).
+		// 5 (the advisor is lit by the lobby screen's ambient words and no fog reaches it, 0x5E1924, 0x5DD078, 0x581790) in round 11 package V (November 1, 2026).
+		var retired = new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27 };
 		CollectionAssert.AreEqual( Enumerable.Range( 1, 28 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 

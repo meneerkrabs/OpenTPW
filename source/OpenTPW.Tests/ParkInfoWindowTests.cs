@@ -227,6 +227,6 @@ public class ParkInfoWindowTests
 		hud.OpenParkInfoWindow();
 		((UiButton)hud.Stack.Top!.Find( "allStaff" )!).Clicked!();
 		Assert.IsFalse( hud.ParkInfoWindowOpen );
-		Assert.IsTrue( hud.StaffWindowOpen );
+		Assert.IsTrue( hud.AllStaffWindowOpen && !hud.StaffWindowOpen, "b_allstaff opens the All Staff window (0x496620 with -1)" );
 	}
 }

@@ -521,7 +521,7 @@ internal static class AdvisorRideEvents
 
 	/// <summary>
 	/// The advice of a ride that broke down: 258 for a condemned one (its life gauge byte is 0: the condemn case of <c>0x4E0E60</c> sends the message of type 8), else, as the handler <c>0x4DADC0</c> reads the mechanics,
-	/// 68 without a mechanic and 69 when every mechanic is busy elsewhere or resting; null when a mechanic is on the way to this ride or free (the dispatch posts advice 70 itself).
+	/// 68 without a mechanic and 69 when every mechanic is busy elsewhere or resting, 70 when a mechanic is already on the way to this ride and the ride was not called for; null when the ride was called for or a mechanic is free (the dispatch sends him).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DADC0 breakdown handler] the list of mechanics (world +0x1DA73E) empty posts 0x44; else each mechanic: a target (+0x218) equal to the ride stops the walk (0x4DAEE1: 0x46 unless the ride's +0x64 is set), a free one (no target and a display state 0x5064F0 other than 3 or 4) stops it with no post, a busy one is passed; a walk that passes them all posts 0x45
 	public static int? ForBreakdown( ParkEconomy economy, ParkObjectState ride )
@@ -533,8 +533,9 @@ internal static class AdvisorRideEvents
 			return NoMechanicsMessage;
 		foreach ( var mechanic in mechanics )
 		{
+			// [BIN:TPW-EXE:0x004DAEE1 mechanic already on the ride] a mechanic whose target (+0x218) is this ride ends the walk: the ride's mRequestedService (+0x64, 0x4E03D0) set posts nothing, else the advice 0x46 (0x4DAF7E)
 			if ( mechanic.AssignedInstanceId == ride.Id )
-				return null;
+				return ride.MaintenanceRequested ? null : AdvisorTables.MechanicOnTheWayMessage;
 			if ( mechanic.AssignedInstanceId == 0 && mechanic.State is not (StaffState.Resting or StaffState.OnStrike) )
 				return null;
 		}

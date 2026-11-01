@@ -1155,7 +1155,7 @@ public class AdvisorRestoredAdviceTests
 		advisor.AttachLevel( Live( economy ) );
 		advisor.Controller.Queue.Restore( new AdvisorPendingAdvice?[AdvisorScoreQueue.Capacity], new Dictionary<int, AdvisorMessageHistory>() );
 		var list = new List<int>();
-		advisor.CaptionSink = list.Add;
+		advisor.CaptionSink = ( entry, _ ) => list.Add( entry );
 		captions = list;
 		return advisor;
 	}

@@ -65,7 +65,8 @@ class RideStaticContract(unittest.TestCase):
         proposal = read("docs/proposals/ui-094-verify-ride-view-residual-timing.md")
         for qualification in ("two post-draw", "0x10", "320 x 240", "no `dotnet`", "not retired"):
             self.assertIn(qualification, proposal)
-        self.assertIn("that algorithm/sequence is deferred, not untraced", self.ride)
+        self.assertIn("[BIN:TPW-EXE:0x53E760 ride static]", self.ride)
+        self.assertNotIn("[EXT:ride-static]", self.ride)
 
 
 if __name__ == "__main__":

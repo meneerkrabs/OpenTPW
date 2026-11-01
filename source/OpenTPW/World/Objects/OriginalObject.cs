@@ -86,6 +86,8 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	private readonly List<(ModelEntity Entity, int NodeIndex)> parts = new();
 	/// <summary>The skirt and edge conform of this object's floor, or null (a fixed item, a park without terrain).</summary>
 	private ObjectFloor? floor;
+	/// <summary>The cursor pick's normal refresh of this instance (<see cref="ObjectPickModel.NormalRefresh"/>).</summary>
+	private readonly ObjectPickModel.NormalRefresh pickNormals = new();
 	/// <summary>Per render part: its material and the MD2 texture slot each entry of the material's texture array shows (the floor composites replace those entries).</summary>
 	private readonly List<(Material Material, int[] Slots)> slotBindings = new();
 	/// <summary>The textures of this object's floor composites (<see cref="PlaceFloorBase"/>), released with the object.</summary>
@@ -279,7 +281,8 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 		var animator = Runtime.Animator;
 		// the floor's vertices are this instance's conformed copy (the original's pick reads the instance's own vertices, 0x450F20); a vertex track's samples win over it, as in what is drawn (DrawnMesh)
 		Func<int, IReadOnlyList<System.Numerics.Vector3>?> positions = floor == null ? animator.GetVertexPositionsInSimulation : mesh => animator.GetVertexPositionsInSimulation( mesh ) ?? floor.ConformedPositions( mesh );
-		return ObjectPickModel.TryHitLine( Runtime.Model, NodeTransforms, animator.IsNodeHiddenInSimulation, positions, Placement.ModelToEngine, origin, direction, out hit );
+		// [BIN:TPW-EXE:0x473c30 normal refresh] an instance whose ground conform ran (every non-fixed object over a terrain, 0x469940) has its root node's face normals refreshed at the first model test (ObjectPickModel)
+		return ObjectPickModel.TryHitLine( Runtime.Model, NodeTransforms, animator.IsNodeHiddenInSimulation, positions, Placement.ModelToEngine, origin, direction, out hit, floor != null ? pickNormals : null );
 	}
 
 	/// <summary>

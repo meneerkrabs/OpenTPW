@@ -22,7 +22,7 @@ public class FreeWalkCameraReviewTests
 	private static void Set( object item, string name, object value ) => item.GetType().GetField( name, BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( item, value );
 
 	[TestMethod]
-	public void NonplanarTerrainSamplesRawCornersAndRefusesWalkingIntoAHole()
+	public void NonplanarTerrainSamplesTheCornersTheWayTheOriginalsHeightLookupDoes()
 	{
 		var field = Surface();
 		Assert.IsTrue( FreeWalkCameraMode.TryGround( field, -1.5f, -.5f, out var ground ) );
@@ -30,14 +30,8 @@ public class FreeWalkCameraReviewTests
 		Assert.AreEqual( -.5f, ground.Y, .0001f );
 		Assert.AreEqual( 4f, ground.Z, .0001f, "The cell's ground triangle (ModelHeightfield.GetHeight, 0x452560) gives 20 model units, engine Z 4." );
 		var camera = new FreeWalkCameraMode( field, ground, Vector3.Forward );
-		Assert.AreEqual( 5.6f, camera.Position.Z, .0001f );
-		Assert.IsFalse( FreeWalkCameraMode.TryGround( Surface( true ), -1.5f, -.5f, out _ ) );
-		var hole = Surface( true );
-		Assert.IsTrue( FreeWalkCameraMode.TryGround( hole, .1f, -.5f, out ground ) );
-		camera = new FreeWalkCameraMode( hole, ground, -Vector3.Forward );
-		var before = camera.Position;
-		camera.Update( Frame() with { Forward = 1 } );
-		Assert.AreEqual( before, camera.Position, "Crossing from the adjacent surface into the hole is refused." );
+		Assert.AreEqual( 5f, camera.Position.Z, .0001f, "the eye is 5 units above that ground (0x42C71D), 25 units, engine Z 5" );
+		Assert.IsFalse( FreeWalkCameraMode.TryGround( Surface( true ), -1.5f, -.5f, out _ ), "the host's entry point refuses a hole" );
 	}
 
 	[DataTestMethod]
@@ -45,23 +39,15 @@ public class FreeWalkCameraReviewTests
 	[DataRow( "text" )]
 	[DataRow( "modal" )]
 	[DataRow( "focus" )]
-	public void CapturedLookResetsDragBeforeAStillHeldButtonCanLookAgain( string gate )
+	public void CapturedPointerAndKeysLeaveTheWalkerWhereItStands( string gate )
 	{
 		var field = Surface();
 		FreeWalkCameraMode.TryGround( field, 0, 0, out var ground );
 		var camera = new FreeWalkCameraMode( field, ground, Vector3.Forward );
-		camera.Update( Frame() );
-		var moving = Frame() with { MouseDelta = new Vector2( -100, 100 ) };
-		var blocked = moving with { CaptureMouse = gate == "mouse", TextEntry = gate == "text", Modal = gate == "modal", HasFocus = gate != "focus" };
-		var pose = camera.Rotation;
-		camera.Update( blocked );
-		Assert.AreEqual( pose, camera.Rotation );
-		camera.Update( moving );
-		Assert.AreEqual( pose, camera.Rotation, "Clearing capture cannot reuse a stale drag on this frame." );
-		camera.Update( moving );
-		Assert.AreNotEqual( pose, camera.Rotation );
-		Assert.IsTrue( camera.Rotation.Forward.Y < 0 );
-		Assert.IsTrue( camera.Rotation.Forward.Z > 0 );
+		var pose = (camera.Position, camera.Rotation);
+		var held = Frame() with { Zoom = 1, MousePosition = new Vector2( 900, 900 ) };
+		camera.Update( held with { CaptureMouse = gate == "mouse", CaptureKeyboard = gate == "mouse", TextEntry = gate == "text", Modal = gate == "modal", HasFocus = gate != "focus", RightButton = false } );
+		Assert.AreEqual( pose, (camera.Position, camera.Rotation), "no key or pointer input reaches the walk" );
 	}
 
 	[TestMethod]
@@ -147,6 +133,84 @@ public class FreeWalkCameraReviewTests
 			hud.Update( Context(), click, false, false, false );
 		}
 		Assert.AreEqual( guest.Id, hud.InfoVisitor?.Id, "A fresh park press recovers the existing visitor route." );
+	}
+
+	[DataTestMethod]
+	[DataRow( "owned", false, true, true )]
+	[DataRow( "unowned", true, false, false )]
+	[DataRow( "entranceArea walkway", true, true, true )]
+	[DataRow( "water", false, true, false )]
+	[DataRow( "path", false, true, true )]
+	public void TheCamcorderToolsClickFollowsTheOriginalsCellRules( string cell, bool unowned, bool used, bool walks )
+	{
+		using var state = new Globals();
+		Fixture( out var level, out _ );
+		var cells = level.Guests!.Grid.Cells;
+		var mouse = new N.Vector2( 500, 400 );
+		var viewport = new N.Vector2( 1000, 1000 );
+		Assert.IsTrue( level.TryGetGroundHit( mouse, viewport, out var hit ) );
+		Assert.IsTrue( OriginalParkPlacement.TryGetCell( level.OriginalPark!.Heightfield, hit.X, hit.Y, out var x, out var y ) );
+		// [BIN:TPW-EXE:0x46D0D0 camcorder click] owned (flag 0x40 clear) or flag 0x80 on a type 30 cell; then 0x42AE70 walks on empty ground (0), a path (1), a queue or entrance (3, 9) or a walkway (30) only
+		cells.SetFlags( x, y, (unowned ? ParkCellFlags.Unowned : ParkCellFlags.None) | (cell.StartsWith( "entranceArea" ) ? ParkCellFlags.EntranceArea : ParkCellFlags.None) );
+		cells.SetType( x, y, cell switch { "water" => ParkCellTypes.Water, "path" => (byte)1, _ when cell.EndsWith( "walkway" ) => ParkCellTypes.FixedWalkway, _ => (byte)0 } );
+		Assert.AreEqual( used ? Level.CamcorderClick.Used : Level.CamcorderClick.Refused, level.UseCamcorderTool( mouse, viewport ) );
+		Assert.AreEqual( walks, level.FreeWalk != null );
+	}
+
+	[TestMethod]
+	public void AFenceAtTheCellRefusesTheCamcorderToolsClick()
+	{
+		using var state = new Globals();
+		Fixture( out var level, out _ );
+		var cells = level.Guests!.Grid.Cells;
+		var mouse = new N.Vector2( 500, 400 );
+		var viewport = new N.Vector2( 1000, 1000 );
+		Assert.IsTrue( level.TryGetGroundHit( mouse, viewport, out var hit ) );
+		Assert.IsTrue( OriginalParkPlacement.TryGetCell( level.OriginalPark!.Heightfield, hit.X, hit.Y, out var x, out var y ) );
+		// [BIN:TPW-EXE:0x53AD60 fence post] the cell's structure record of type 0x19 stops the click (0x46D0D0 answers the refusal pointer 8 and keeps the tool)
+		cells.Tracks.Set( x, y, new TrackCell { Type = ParkCellTypes.Hoarding } );
+		Assert.AreEqual( Level.CamcorderClick.Refused, level.UseCamcorderTool( mouse, viewport ) );
+		Assert.IsNull( level.FreeWalk );
+	}
+
+	[TestMethod]
+	public void TheWalkHidesTheInterfaceLikeTheRide()
+	{
+		using var state = new Globals();
+		Fixture( out var level, out _ );
+		Assert.IsFalse( level.HidesInterface );
+		Assert.IsTrue( level.EnterFreeWalk( Vector3.Zero ) );
+		Assert.IsTrue( level.HidesInterface, "0x42AB20 hides the HUD window and shows the camcorder window for the walk too" );
+		level.ExitFreeWalk();
+		Assert.IsFalse( level.HidesInterface );
+	}
+
+	[DataTestMethod]
+	[DataRow( true )]
+	[DataRow( false )]
+	public void ARightClickLeavesTheWalkOnlyWithRmbCancelAndOnItsRelease( bool pressOnly )
+	{
+		using var state = new Globals();
+		var hud = Fixture( out var level, out _ );
+		var options = GameOptions.Current;
+		var before = options.RmbCancel;
+		try
+		{
+			options.RmbCancel = true;
+			Assert.IsTrue( level.EnterFreeWalk( Vector3.Zero ) );
+			var press = new UiInput( new N.Vector2( 500 ), false, false, false, true, UiKeys.None );
+			hud.Update( Context(), press, false, false, false );
+			Assert.IsNotNull( level.FreeWalk, "the press only walks (the right button held, 0x42B925); 0x488A00 acts on the click message of the release" );
+			if ( pressOnly )
+				return;
+			hud.Update( Context(), press with { RightPressed = false, RightReleased = true, RightClicked = true }, false, false, false );
+			Assert.IsNull( level.FreeWalk, "the quick click leaves" );
+			Assert.IsTrue( level.EnterFreeWalk( Vector3.Zero ) );
+			options.RmbCancel = false;
+			hud.Update( Context(), press with { RightPressed = false, RightReleased = true, RightClicked = true }, false, false, false );
+			Assert.IsNotNull( level.FreeWalk, "with the option off (0x78D911) the click message is ignored" );
+		}
+		finally { options.RmbCancel = before; }
 	}
 
 	private static ulong Hash( GuestSimulation simulation ) { var hash = new StateHasher(); simulation.AddCanonicalState( hash ); return hash.Value; }

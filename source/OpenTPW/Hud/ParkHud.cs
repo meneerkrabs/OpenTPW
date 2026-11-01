@@ -1105,7 +1105,7 @@ public sealed partial class ParkHud
 		var shortcutsAllowed = parkShortcuts && !ChatMode;
 
 		var camcorderOwnsInput = UpdateCamcorder( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
-			!shortcutsAllowed || overUi || consumed || mouseCaptured.Value || input.Text.Length > 0 || ridingAtStart ) || walkingAtStart;
+			!shortcutsAllowed || overUi || consumed || mouseCaptured.Value || input.Text.Length > 0 || ridingAtStart, !shortcutsAllowed || input.Text.Length > 0 || ridingAtStart ) || walkingAtStart;
 
 		// Ride It (E) rides the selected ride; Escape, the C key, the eject button and a right click (RMB cancel on, after two seconds) leave the ride view, and E again does too.
 		// [EXT:ride-view-key] E rides the selected ride as the object window's b_ride it! button does
@@ -1116,7 +1116,7 @@ public sealed partial class ParkHud
 			level.EnterRideView( rideObject );
 		// only a ride view that was already open at the start of the frame can be left by a key: the E that boarded it must not also leave it; a ride boarded
 		// from the chat mode, which stays under the ride view's screen, is left by the same keys and the right click (0x488A00)
-		if ( ridingAtStart )
+		if ( ridingAtStart || level.FreeWalk != null )
 			UpdateRideExits( input, parkShortcuts, mouseCaptured.Value );
 
 		// The park door's keyboard shortcuts, named by the door button's help rows (UIHELPTEXT 193/194: Ctrl-O/Ctrl-C).

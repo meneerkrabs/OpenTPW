@@ -106,9 +106,9 @@ public class RideStaticHudTests
 		Assert.IsTrue( w.Level.EnterRideView( w.Ride ) ); Update( w, 150 );
 		Assert.IsTrue( w.Hud.RideScreenOpen ); Assert.AreEqual( .25f, w.Hud.RideStaticLeft, "walk -> ride stays true" );
 		Update( w, 200, UiInput.Key( UiKeys.Back ) );
-		Assert.AreSame( walk, Camera.Mode ); Assert.IsFalse( w.Hud.RideScreenOpen ); Assert.AreEqual( .2f, w.Hud.RideStaticLeft, "ride -> walk stays true" );
+		Assert.AreSame( walk, Camera.Mode ); Assert.IsTrue( w.Hud.RideScreenOpen, "the walk keeps the camcorder screen (0x4A2AC0)" ); Assert.AreEqual( .2f, w.Hud.RideStaticLeft, "ride -> walk stays true" );
 		Update( w, 250, UiInput.Key( UiKeys.Back ) );
-		Assert.IsNull( w.Level.FreeWalk ); Assert.AreEqual( .3f, w.Hud.RideStaticLeft, "walk -> park is an edge" );
+		Assert.IsNull( w.Level.FreeWalk ); Assert.IsFalse( w.Hud.RideScreenOpen ); Assert.AreEqual( .3f, w.Hud.RideStaticLeft, "walk -> park is an edge" );
 	}
 
 	[TestMethod]

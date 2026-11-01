@@ -1811,7 +1811,8 @@ public sealed partial class ParkHud
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
-			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt, ghost.Symbols ) );
+			// the path and queue tools mark each cell by the validator's answer (m_link, m_end: BlueprintLineGhost); the other line tools and an untyped world mark the host's own line
+			cells.AddRange( level.PathLineGhost( ghost )?.Cells ?? BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt, ghost.Symbols ) );
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{

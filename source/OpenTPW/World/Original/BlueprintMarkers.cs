@@ -20,8 +20,14 @@ public enum BlueprintMarker
 	Erase = 13,
 	/// <summary>A tile the track edit tool's chooser refuses (the answer 1): the red face (texture 1) over the tile's 2 x 2 cells with red walls, which blinks like every red face.</summary>
 	RefusedTile = 17,
+	/// <summary>The cell beside a station's track end: <c>m_direct</c>, an arrow turned to the direction byte (texture 5).</summary>
+	Direct = 5,
 	/// <summary>The front row of an object's footprint: <c>m_front</c>, turned to the build direction (texture 6).</summary>
 	Front = 6,
+	/// <summary>A line cell where the tool's line ends on an existing path (or queue): <c>m_link</c> (texture 8), which turns with the camera.</summary>
+	Link = 8,
+	/// <summary>A line cell where the tool's line meets a cell of its own kind: <c>m_end</c> (texture 11), which turns with the camera.</summary>
+	End = 11,
 	/// <summary>The entrance's outside cell when no queue is laid: <c>m_inout</c> (texture 7).</summary>
 	InOut = 7,
 }
@@ -48,7 +54,7 @@ public sealed class BlueprintMarkers : ModelEntity
 	private const int TextureSlots = 16;
 	private static readonly string[] TextureNames = ["blue", "red"];
 	// [BIN:STP-PPC:0x1022C374 dynamic texture table] slots 3, 4, 6 and 7 are m_enter, m_exit, m_front and m_inout (docs/reverse/BLUEPRINT.md)
-	private static readonly (int Slot, string Name)[] ArrowTextures = [(3, "m_enter"), (4, "m_exit"), (6, "m_front"), (7, "m_inout"), (9, "m_break"), (13, "m_erase")];
+	private static readonly (int Slot, string Name)[] ArrowTextures = [(3, "m_enter"), (4, "m_exit"), (5, "m_direct"), (6, "m_front"), (7, "m_inout"), (8, "m_link"), (9, "m_break"), (11, "m_end"), (13, "m_erase")];
 
 	private readonly ModelHeightfield field;
 	private readonly Material material;
@@ -335,23 +341,20 @@ public sealed class BlueprintMarkers : ModelEntity
 			byte direction = 0;
 			if ( directions != null )
 				directions.TryGetValue( (x, y), out direction );
-			Face( SlotOf( marker ), direction, null,
+			// [BIN:TPW-EXE:0x0053DFE6 symbol table pick] a face of a texture from 8 to 14 (m_link, m_break, m_end, m_erase) takes the rotating set whatever its size
+			Face( SlotOf( marker ), direction, SlotOf( marker ) is >= 8 and <= 14 ? RotatingUv( symbolAngle ) : null,
 				new( left, raised + VertexHeight( field, x, y, phase ), front ), new( left + FaceSize, raised + VertexHeight( field, x + 1, y, phase ), front ),
 				new( left, raised + VertexHeight( field, x, y + 1, phase ), front + FaceSize ), new( left + FaceSize, raised + VertexHeight( field, x + 1, y + 1, phase ), front + FaceSize ) );
 
 			if ( offset is not { } current ) continue;
 			var wallMarker = marker == BlueprintMarker.Refused ? BlueprintMarker.Refused : marker == BlueprintMarker.Area ? BlueprintMarker.Area : BlueprintMarker.Allowed;
 			// PC SetCell 0x53336B–0x53391B: lower neighbour to current, step 10; no cell means no wall.
-			foreach ( var (dx, dy, ax, ay, bx, by) in Edges )
+			foreach ( var (_, step, ax, ay, bx, by) in WallSteps( x, y, current, ( nx, ny ) => heights?.GetValueOrDefault( (nx, ny) ) ) )
 			{
-				if ( heights?.GetValueOrDefault( (x + dx, y + dy) ) is not { } neighbour ) continue;
-				for ( var step = (long)neighbour; step < current; step += (int)FaceSize )
-				{
-					var a = new System.Numerics.Vector3( (x + ax) * FaceSize, step + VertexHeight( field, x + ax, y + ay, phase ), (y + ay) * FaceSize );
-					var b = new System.Numerics.Vector3( (x + bx) * FaceSize, step + VertexHeight( field, x + bx, y + by, phase ), (y + by) * FaceSize );
-					var up = new System.Numerics.Vector3( 0, FaceSize, 0 );
-					Face( SlotOf( wallMarker ), 0, null, a, b, a + up, b + up );
-				}
+				var a = new System.Numerics.Vector3( (x + ax) * FaceSize, step + VertexHeight( field, x + ax, y + ay, phase ), (y + ay) * FaceSize );
+				var b = new System.Numerics.Vector3( (x + bx) * FaceSize, step + VertexHeight( field, x + bx, y + by, phase ), (y + by) * FaceSize );
+				var up = new System.Numerics.Vector3( 0, FaceSize, 0 );
+				Face( SlotOf( wallMarker ), 0, null, a, b, a + up, b + up );
 			}
 		}
 		return (vertices.ToArray(), indices.ToArray());
@@ -404,10 +407,7 @@ public sealed class BlueprintMarkers : ModelEntity
 	// [BIN:TPW-EXE:0x0053DB0A symbol face] the flush hands each face record (x, y, z, type, direction byte, texture, size flag) to 0x53DF30, which takes the table entries from 5 for a texture from 8 to 14 and builds a floor face (type 0) 20 units square when the size flag is set
 	private static void AddTileSymbol( Action<int, byte, Vector2[]?, System.Numerics.Vector3, System.Numerics.Vector3, System.Numerics.Vector3, System.Numerics.Vector3> face, ModelHeightfield field, int slot, int x, int y, float raised, float phase, float angle )
 	{
-		var sin = SineTable[TableIndex( angle )];
-		var cos = SineTable[TableIndex( angle + 1.5707964f )];
-		Vector2 Uv( float u, float v ) => new( 0.5f + (cos * u - sin * v), 0.5f + (sin * u + cos * v) );
-		var uv = new[] { Uv( -0.4f, -0.4f ), Uv( 0.4f, -0.4f ), Uv( -0.4f, 0.4f ), Uv( 0.4f, 0.4f ) };
+		var uv = RotatingUv( angle );
 		var size = 2 * FaceSize;
 		var (left, front) = (x * FaceSize, y * FaceSize);
 		// [BIN:TPW-EXE:0x0053DFE6 symbol table pick] only a texture from 8 to 14 takes the rotating set (entry 5 on); a texture below 8 over a tile (the refused tile's red) takes the unit square
@@ -416,8 +416,33 @@ public sealed class BlueprintMarkers : ModelEntity
 			new( left, raised + VertexHeight( field, x, y + 2, phase ), front + size ), new( left + size, raised + VertexHeight( field, x + 2, y + 2, phase ), front + size ) );
 	}
 
-	private static readonly (int Dx, int Dy, int Ax, int Ay, int Bx, int By)[] Edges =
-		[(0, -1, 0, 0, 1, 0), (1, 0, 1, 0, 1, 1), (0, 1, 1, 1, 0, 1), (-1, 0, 0, 1, 0, 0)];
+	/// <summary>The rotating texture set of the track symbols: the ±0.4 square about the centre turned by the camera's yaw.</summary>
+	private static Vector2[] RotatingUv( float angle )
+	{
+		var sin = SineTable[TableIndex( angle )];
+		var cos = SineTable[TableIndex( angle + 1.5707964f )];
+		Vector2 Uv( float u, float v ) => new( 0.5f + (cos * u - sin * v), 0.5f + (sin * u + cos * v) );
+		return [Uv( -0.4f, -0.4f ), Uv( 0.4f, -0.4f ), Uv( -0.4f, 0.4f ), Uv( 0.4f, 0.4f )];
+	}
+
+	private static readonly (int Dx, int Dy, int Ax, int Ay, int Bx, int By, int Side)[] Edges =
+		[(0, -1, 0, 0, 1, 0, 1), (1, 0, 1, 0, 1, 1, 4), (0, 1, 1, 1, 0, 1, 0x10), (-1, 0, 0, 1, 0, 0, 0x40)];
+
+	/// <summary>
+	/// The wall faces a cell's marker gets: on each of the four sides in the order of the face codes 1, 4, 0x10 and 0x40, one face for every 10 units from the neighbour's raise up to the cell's, where the neighbour's
+	/// raise is known and lower. <paramref name="raiseOf"/> answers a neighbour's raise (null where the map has no cell there).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0053323C wall loops] the four neighbour loops (0x7CDBA0, 0x7CDBC8, 0x7CDBA8, 0x7CDBD0: codes 1, 4, 0x10, 0x40) skip a missing neighbour and a neighbour that is not lower (both raises truncated), and queue a wall face from the neighbour's raise in steps of 10 (0x53C8D0, y = step + 1.5)
+	internal static IEnumerable<(int Side, long Step, int Ax, int Ay, int Bx, int By)> WallSteps( int x, int y, float current, Func<int, int, float?> raiseOf )
+	{
+		foreach ( var (dx, dy, ax, ay, bx, by, side) in Edges )
+		{
+			if ( raiseOf( x + dx, y + dy ) is not { } neighbour )
+				continue;
+			for ( var step = (long)neighbour; step < (long)current; step += (int)FaceSize )
+				yield return (side, step, ax, ay, bx, by);
+		}
+	}
 
 	// Snapshot the map (not just preview neighbours), so occupancy changes rebuild topology even while paused.
 	internal static Dictionary<(int X, int Y), float?> CaptureHeights( ModelHeightfield field,
@@ -428,7 +453,7 @@ public sealed class BlueprintMarkers : ModelEntity
 		foreach ( var (x, y, marker) in cells )
 		{
 			Capture( x, y );
-			foreach ( var (dx, dy, _, _, _, _) in Edges ) Capture( x + dx, y + dy );
+			foreach ( var (dx, dy, _, _, _, _, _) in Edges ) Capture( x + dx, y + dy );
 			if ( !IsTileMarker( marker ) )
 				continue;
 			// a tile's raise reads its four cells and each wall the four cells of the tile two cells away (0x536CA0)

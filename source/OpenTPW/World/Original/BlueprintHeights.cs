@@ -41,20 +41,22 @@ internal static class BlueprintHeights
 	/// instance's height map, else the owner object's, else the terrain at the cell corner.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00533102 ghost raise] the raise starts as 0, takes 10 x ((int)H + 9) / 10 for a second-layer type of 0xB, 0xC, 0x10, 0x11 or 0x19 and again for a map type of 4, 7, 9, 10 or 0x1E, both with H = 0x452AE0(x, y, 0); every other cell stays at 0 (a plain cell: the face builder 0x53DDD0 adds the terrain at each vertex)
-	internal static float? Sample( ParkCellMap cells, int x, int y, Func<int, int, float> ground )
+	internal static float? Sample( ParkCellMap cells, int x, int y, Func<int, int, float> ground ) =>
+		cells.InBounds( x, y ) ? RaiseOf( RecordType( cells, x, y ), cells.PrimaryTypeAt( x, y ), () => ground( x, y ) ) : null;
+
+	/// <summary>The raise of a cell with this second-layer record type and this map type, reading the ground only for a cell that is raised.</summary>
+	internal static float? RaiseOf( byte recordType, byte mapType, Func<float> ground )
 	{
-		if ( !cells.InBounds( x, y ) )
-			return null;
 		var raise = 0f;
-		if ( RaisesSecondLayer( RecordType( cells, x, y ) ) )
+		if ( RaisesSecondLayer( recordType ) )
 		{
-			if ( Quantize( ground( x, y ) ) is not { } second )
+			if ( Quantize( ground() ) is not { } second )
 				return null;
 			raise = second;
 		}
-		if ( RaisesMapType( cells.PrimaryTypeAt( x, y ) ) )
+		if ( RaisesMapType( mapType ) )
 		{
-			if ( Quantize( ground( x, y ) ) is not { } map )
+			if ( Quantize( ground() ) is not { } map )
 				return null;
 			raise = map;
 		}

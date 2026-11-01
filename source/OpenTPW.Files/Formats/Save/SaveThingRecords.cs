@@ -283,6 +283,20 @@ public sealed record SaveStaff( int Id, SaveThingModel Model, SaveThingBase Base
 }
 
 /// <summary>
+/// Model 10 (serializer <c>0x004DA960</c>, 10 bytes): the thing base and <c>mNextObject</c> (+0xC), the mechanics' cursor into the object list (the thing id of the object a search last started at, 0
+/// for none; the ride finder <c>0x004DAA90</c> moves it on).
+/// </summary>
+public sealed record SaveMechanicHq( int Id, SaveThingBase Base, ushort NextObject )
+{
+	public static SaveMechanicHq Read( ReadOnlySpan<byte> payload, SaveThing thing )
+	{
+		var reader = SaveStaffHq.Body( payload, thing, SaveThingModel.MechanicHq );
+		var thingBase = reader.Base();
+		return new SaveMechanicHq( thing.Id, thingBase, reader.U16() );
+	}
+}
+
+/// <summary>
 /// Model 9 (0xf7c34): force strike 4, picked up 2, five 12-byte strike levels (raw), five 4-byte training budgets and
 /// a trained byte. The budgets' role order is not traced.
 /// </summary>

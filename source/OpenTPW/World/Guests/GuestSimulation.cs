@@ -47,8 +47,17 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool ownsThings = true;
 	// The arrival timer's start turn (0 until the first group: the original's timer starts unset) and the group being dropped off.
 	private long arrivalTimerStart;
+
+	/// <summary>The park turn the arrival timer started at (an imported original save's timer word, 0 in a new park).</summary>
+	internal long ArrivalTimerStartTurn => arrivalTimerStart;
+
+	/// <summary>The first park turn at which the arrival condition (tp.exe 0x4CF3E0: 0x41A990 against 0x785314) is true: the timer's four-turn units past the start exceed the time between arrivals.</summary>
+	internal long ArrivalDueTurn => ((arrivalTimerStart >> 2) + Settings.ArrivalTimeBetween + 1) << 2;
+
+	/// <summary>The park turn of the first arrival group this simulation started; null while none has.</summary>
+	internal long? FirstArrivalGroupTurn { get; private set; }
 	private bool deliveringArrivals;
-	private float spawnTimer;   // kept for the save format; arrivals step once per park turn (ARRIVAL-001)
+	private float spawnTimer;   // kept for the save format; arrivals step once per park turn (was ARRIVAL-001, retired)
 	private int pendingArrivals;
 	// The arrival vehicle at work (world +0x1DA72A): the kind of ArrivalVehicleKind, -1 for none.
 	private int arrivalVehicle = -1;
@@ -735,6 +744,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !deliveringArrivals && !held && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
 			pendingArrivals = ArrivalGroupSize();
+			FirstArrivalGroupTurn ??= turn;
 			ArrivalGroupStarted?.Invoke( pendingArrivals );
 			deliveringArrivals = true;
 			return;   // this turn's call only sends the bus
@@ -766,7 +776,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// restarts the timer (0x0041A960), clears the active byte and dispatches with 0; the status 6 branch (0x004CF475) is unreachable, 0x0051A690 turning 6 into -1
 	// [BIN:TPW-EXE:0x004CF4B6 pick-up] then, when a leaving guest waits at the stop (0x0051A9D0), status -1 or 0, or 2 with the group exactly 0 (test at
 	// 0x004CF4E1), dispatches with 0; with none waiting, status 4 does
-	// [APPROX:ARRIVAL-001] a swept turn runs this update after the thing sweep and the turn's destroys, as the original does (the end of 0x516380, Level.RunThingSweep); original scheduler import supports only saves without cached/current vehicle handles; saved vehicle identity and script continuation remain unsupported
+	// [BIN:TPW-EXE:0x00516380 sweep order] a swept turn runs this update after the thing sweep and the turn's destroys, as the original does (the end of 0x516380, Level.RunThingSweep); an original save's vehicle at work and cached vehicle handles come back by thing id (ImportOriginalArrivals, [BIN:TPW-EXE:0x005179C0 world loader])
 	private void UpdateArrivalVehicle()
 	{
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
@@ -777,6 +787,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !deliveringArrivals && !held && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
 		{
 			pendingArrivals = ArrivalGroupSize();
+			FirstArrivalGroupTurn ??= turn;
 			ArrivalGroupStarted?.Invoke( pendingArrivals );
 			deliveringArrivals = true;
 		}
@@ -1030,7 +1041,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// enters the temporary history.
 	/// </summary>
 	// [EXT:online-bubbles-on] bubbles are on in a visit too, where 0x50BE80 skips them in an online game (GameType word 0xFB3B7C = 1; none of its 22 callers passes the override): a visit is OpenTPW's read-only extension and shows the park as its owner sees it
-	// [APPROX:GUEST-006] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, its voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0, 0x4FCA6F) is played as a presentation event (Voiced); bubbles are always on where 0x50BE80 skips them while bits 0x16 of 0x790AB0 are set; a show's row 7 comes off once (FireworksSpent) where 0x4E0B90 removes it whenever VAR_STATUS is 1, a variable native code also writes (0x4E0900, 0x4E0AC0); a load puts back the row an object's saved state implies — evidence needed: whether the original saves or rebuilds the environment table, and what bits 0x16 of 0x790AB0 mean
+	// [APPROX:GUEST-006] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, its voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0, 0x4FCA6F) is played as a presentation event (Voiced); bubbles are always on where 0x50BE80 skips them while bits 0x16 of 0x790AB0 are set; a show's row 7 comes off once (FireworksSpent) where 0x4E0B90 removes it whenever VAR_STATUS is 1, a variable native code also writes (0x4E0900, 0x4E0AC0); the original saves its environment table with the cells (0x4D7EA0) and an original save's grid is imported (ParkEnvironment.ImportSaved) — evidence needed: what bits 0x16 of 0x790AB0 mean
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;

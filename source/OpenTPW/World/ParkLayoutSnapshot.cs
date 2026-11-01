@@ -44,6 +44,17 @@ public static class ParkLayoutSnapshot
 		public required int NextAttractionId { get; init; }
 		/// <summary>The saved park's <see cref="WorldSeed.ObjectScriptKey"/>; seeds and allocator are meaningless under another key.</summary>
 		public required int ObjectScriptKey { get; init; }
+		/// <summary>The sign lines of the object types whose sign shows a name other than the type's own (an original save's saved names, SAVE-006); absent otherwise and in older saves.</summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+		public List<SignLinesData>? SignLines { get; init; }
+	}
+
+	/// <summary>The two sign lines one object type's sign shows (<see cref="ParkObjects.SignLinesOf"/>).</summary>
+	public sealed record SignLinesData
+	{
+		public required int InfoId { get; init; }
+		public required string Line1 { get; init; }
+		public required string Line2 { get; init; }
 	}
 
 	/// <summary>The cell map: its dimensions, its change counter, and every non-empty cell in row order.</summary>
@@ -216,7 +227,8 @@ public static class ParkLayoutSnapshot
 			Objects = objectRecords,
 			NextSeed = objects.NextPlacementSeed,
 			NextAttractionId = objects.NextAttractionId,
-			ObjectScriptKey = objects.ObjectScriptKey
+			ObjectScriptKey = objects.ObjectScriptKey,
+			SignLines = objects.SignLineOverrides.Select( lines => new SignLinesData { InfoId = lines.InfoId, Line1 = lines.Line1, Line2 = lines.Line2 } ).ToList() is { Count: > 0 } named ? named : null
 		};
 	}
 
@@ -266,6 +278,16 @@ public static class ParkLayoutSnapshot
 		Require( snapshot.NextSeed < int.MaxValue, "the placement-seed allocator is exhausted" );
 		Require( snapshot.NextAttractionId >= 1, "the attraction-id allocator is before the first allocation" );
 		Require( snapshot.NextAttractionId < int.MaxValue, "the attraction-id allocator is exhausted" );
+		if ( snapshot.SignLines != null )
+		{
+			var named = new HashSet<int>();
+			foreach ( var lines in snapshot.SignLines )
+			{
+				Require( lines != null && named.Add( lines.InfoId ), "a sign name is missing or given twice" );
+				Require( catalog.Find( lines!.InfoId ) is { IsTool: false }, $"sign name for unknown Info.Id {lines.InfoId}" );
+				Require( ParkNameLines.IsValidLine( lines.Line1 ) && ParkNameLines.IsValidLine( lines.Line2 ), $"sign name of Info.Id {lines.InfoId} is not two valid lines" );
+			}
+		}
 		var seeds = new HashSet<int>();
 		var footprints = new HashSet<(int, int)>();
 		var fixedItems = new HashSet<int>();
@@ -528,6 +550,7 @@ public static class ParkLayoutSnapshot
 				$"Layout objects restore into a candidate whose script world holds no scripts; this one already holds {target.ScriptWorld.Scripts.Count}." );
 		if ( snapshot.ObjectScriptKey != target.ObjectScriptKey )
 			throw new InvalidDataException( $"Layout snapshot was saved with object-script key {snapshot.ObjectScriptKey}, but this park's is {target.ObjectScriptKey} (another world seed)." );
+		target.RestoreSignLines( snapshot.SignLines?.Select( lines => (lines.InfoId, lines.Line1, lines.Line2) ) ?? Enumerable.Empty<(int, string, string)>() );
 		for ( var index = 0; index < snapshot.Objects.Count; index++ )
 		{
 			var record = snapshot.Objects[index];

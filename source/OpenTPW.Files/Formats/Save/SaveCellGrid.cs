@@ -160,8 +160,27 @@ public readonly struct SaveCell
 	/// <summary>Byte 12 is nonzero on every cell of every placed object's footprint (and its queue cells).</summary>
 	public bool IsOccupied => Record.Span[OccupancyOffset] != 0;
 
-	/// <summary>Type byte bit 0x04: a 10-byte extension follows the record. Its content is not interpreted.</summary>
+	/// <summary>Type byte bit 0x04: a 10-byte extension follows the record: the cell's region effect record (<see cref="RegionWords"/>).</summary>
 	public bool HasExtension => Record.Length == baseRecordBytes + ExtensionBytes;
+
+	/// <summary>
+	/// The cell's region effect record, the five signed 16-bit words (happiness, illness, hunger, security, attraction) of the extension; null for a record without one, whose region record is the
+	/// default (all zero).
+	/// </summary>
+	// [BIN:TPW-EXE:0x4D7EA0 cell manager serializer] each cell writes a status byte (bit 1 the map cell, bit 2 the track cell, bit 4 the region effect record, set when the ten bytes differ from the default 0x502470) and the records its bits name; the region record 0x502490 is five two-byte values read in memory order, stepping through the grid at +0x1B1104 ten bytes per cell, and a cell without the bit keeps the default
+	public short[]? RegionWords
+	{
+		get
+		{
+			if ( !HasExtension )
+				return null;
+			var tail = Record.Span[^ExtensionBytes..];
+			var words = new short[5];
+			for ( var index = 0; index < words.Length; index++ )
+				words[index] = BinaryPrimitives.ReadInt16LittleEndian( tail.Slice( index * 2, 2 ) );
+			return words;
+		}
+	}
 }
 
 /// <summary>

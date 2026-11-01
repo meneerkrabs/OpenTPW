@@ -15,6 +15,8 @@ public interface IArrivalVehicleHost
 	int GetVariable( int kind, int index );
 	/// <summary>Writes a script variable of the vehicle; a variable the script does not have is ignored.</summary>
 	void SetVariable( int kind, int index, int value );
+	/// <summary>The thing id of the vehicle of this kind, the handle the world caches (world +0x1DA72C + 2 × kind); 0 when the park holds none or the host has no thing ids.</summary>
+	int ThingId( int kind ) => 0;
 }
 
 /// <summary>The vehicle kinds and their definition names (tp.exe wide literals 0x00762420 "bus", 0x00762428 "seaplane", 0x0076243C "Ferry").</summary>

@@ -102,6 +102,7 @@ public sealed partial class OriginalEconomyImport
 			evidence.Add( $"Park analyser: the guards' chase counters imported (this month {misbehaving.MisbehavingKids}, got away {misbehaving.GotAway}, ever {misbehaving.Ever})." );
 		}
 		var (objects, fixedItems, things) = ImportObjects( economy, save, evidence );
+		ImportMechanicCursor( economy, save, things, evidence );
 		ImportLitter( economy, save, evidence );
 		// after the objects: the carried object of a follow-up is one of their thing ids
 		ImportChallenges( economy, save.Economy.ChallengeSystem, world.Calendar.FunnyTimeStart, things, evidence );
@@ -330,6 +331,21 @@ public sealed partial class OriginalEconomyImport
 		return remainder < 0 ? quotient - 1 : quotient;
 	}
 
+	/// <summary>The mechanic HQ's cursor into the object list (<see cref="ParkEconomy.MechanicCursor"/>): the object its word names, when the import holds it.</summary>
+	// [BIN:TPW-EXE:0x004DAA90 ride finder] the HQ's mNextObject (+0xC, serialized by 0x004DA960, which writes and reads only the thing base and this word) is the thing id of the object the last search started at: when it is nonzero and found in the object list the search moves on to that object's next (0 past the end), else it takes the list's head; a word that names no object in the list is the same as 0
+	private static void ImportMechanicCursor( ParkEconomy economy, OriginalParkImport save, Dictionary<int, ParkObjectState> things, List<string> evidence )
+	{
+		if ( save.MechanicHq is not { } hq )
+			return;
+		if ( hq.NextObject != 0 && things.TryGetValue( hq.NextObject, out var cursor ) )
+		{
+			economy.MechanicCursor = cursor.Id;
+			evidence.Add( $"Mechanic HQ thing {hq.Id} imported: the mechanics' cursor stands on attraction thing {hq.NextObject} (Info.Id {cursor.InfoId}, economy object {cursor.Id}), the next search moves on from it." );
+		}
+		else
+			evidence.Add( $"Mechanic HQ thing {hq.Id} imported: the mechanics' cursor {(hq.NextObject == 0 ? "is 0" : $"names thing {hq.NextObject}, which is no imported attraction, as 0 does")}: the next search starts at the head of the object list." );
+	}
+
 	/// <summary>Registers the save's objects; returns the counts and the economy object of each matched attraction thing id.</summary>
 	private static (int Objects, int FixedItems, Dictionary<int, ParkObjectState> Things) ImportObjects( ParkEconomy economy, OriginalParkImport save, List<string> evidence )
 	{
@@ -339,8 +355,9 @@ public sealed partial class OriginalEconomyImport
 		var unmatched = 0;
 		var notImported = new List<string>();
 		var adjusted = new List<string>();
-		// The order matches ParkObjects.ImportOriginal (placed, unverified footprints, fixed items), which Level.ConnectObjectsToEconomy pairs by Info.Id
-		foreach ( var record in save.PlacedObjects.Select( item => item.Record ).Concat( save.UnresolvedObjects ).Concat( save.FixedItems ) )
+		// The order matches ParkObjects.ImportOriginal (the order the original created the things in, oldest first: the saved object chain read backwards, ECON-022; the record order of placed,
+		// unverified footprints and fixed items when the chain does not name every record), which Level.ConnectObjectsToEconomy pairs by Info.Id
+		foreach ( var record in save.ObjectsInChainOrder )
 		{
 			var matched = save.FindAttraction( record );
 			// [BIN:STP-PPC:0x100DAD90 object purchase] thing +20 is the clock's stamp at the purchase; the saved attraction time stamp is taken as it, and the saved customer count as the use word +412 (raised with the history record at +420 when a guest leaves, 0x100EAA00 → 0x100E1B44), so an imported used or old object never gets the unused first-30-days scrap refund
@@ -387,10 +404,10 @@ public sealed partial class OriginalEconomyImport
 		// [BIN:TPW-EXE:0x004DC12B walk-away load] the loader reads mNumWalkAways (+0x1A4) back with the other fields, so it is imported (ImportObjects); 0x004E1670 raises it (from 0x005006B0) and nothing else reads the field
 		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} imported (mNumWalkAways, +0x1A4)." );
 		// [BIN:TPW-EXE:0x4DB7D0 third gauge] the float at attraction +0x4C is written by the constructor (0x4DB10B), the loader (0x4DCE42) and one more store (0x4DB363) and read only by the serializer (0x4DC64F); no other load of a +0x4C field exists in the attraction code (0x4D8000..0x4E4000), the guest code or the interface, so the third gauge needs no import
-		// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is the park's open state of the attraction: an idle attraction saved with it clear is closed again by the level (Level.ImportOriginalRideSettings), the others are opened by their placement; the gate's two sign lines are the park's name (Level.SavedGateName) and every other type's lines are its OBJECT_NAMES row
+		// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is the park's open state of the attraction: an idle attraction saved with it clear is closed again by the level (Level.ImportOriginalRideSettings), the others are opened by their placement; the gate's two sign lines are the park's name (Level.SavedGateName) and every other type's sign is drawn from the lines of its oldest object (ParkObjects.SavedSignLines, 0x468500)
 		// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite are rebuilt by the placement, and the queue cells and ends from the placement; head, links and called guest with the guests (SAVE-002)
 		foreach ( var item in save.Attractions )
-			evidence.Add( $"Attraction thing {item.Id} (Info.Id {item.InfoId}): open word {item.CanLoad}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back-of-queue cell {item.BackOfQueueCell}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}; the open word and the gate's name are imported by the level, the queue cells and ends come from the placement; head, links and called guest with the guests (SAVE-002)." );
+			evidence.Add( $"Attraction thing {item.Id} (Info.Id {item.InfoId}): open word {item.CanLoad}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back-of-queue cell {item.BackOfQueueCell}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}; the open word, the gate's name and the lines of a renamed type's sign are imported by the level, the queue cells and ends come from the placement; head, links and called guest with the guests (SAVE-002)." );
 		return (objects, fixedItems, things);
 	}
 
@@ -516,10 +533,15 @@ public sealed partial class OriginalEconomyImport
 			if ( GuestSpeed.BaseSpeeds.Contains( person.BaseSpeed ) )
 				member.BaseSpeed = person.BaseSpeed;
 			member.SpeedBonus = person.PurposeSpeed <= byte.MaxValue ? person.PurposeSpeed : 0;
+			// [BIN:TPW-EXE:0x004D4660 entertainer pre-update] the pre-updates of the entertainers and the guards (0x004D4660, 0x004D6360) swap the person's +0xCC word (0x004F9460: the cell id y x 128 + x + 1 the last pre-update saw, mLastRecordedMapID, saved by the person serializer) for the current cell id and, when they differ, take the row off the old cell (0x004D8460) and put it on the new one (0x004D8440): the saved id is the cell the member's row stands on in the saved grid
+			if ( ParkEconomy.EffectRow( type ) != null && person.LastRecordedMapId is >= 1 and <= ParkLitter.MapSize * ParkLitter.MapSize )
+				member.EffectCell = ((person.LastRecordedMapId - 1) % ParkLitter.MapSize, (person.LastRecordedMapId - 1) / ParkLitter.MapSize);
 			var smoothed = BitConverter.Int32BitsToSingle( unchecked( (int)person.PreviousSpeed ) );
 			member.SmoothedSpeed = float.IsFinite( smoothed ) && smoothed >= 0 ? smoothed : 0;
 			imported++;
 		}
+		// the litter was restored before the staff, which cleared the environment grid: the members' rows go back on it
+		economy.ApplyStaffEffects();
 		ImportStaffRoleOrder( economy.Staff, save, membersByThing, evidence );
 		if ( sprites != null )
 			evidence.Add( $"Staff sprite scripts imported (SAVE-013): {spritesApplied} saved sources applied, {spriteGaps.Count} left to the fresh source of their first update{(spriteGaps.Count > 0 ? $" ({string.Join( "; ", spriteGaps.Take( 6 ) )})" : "")}." );
@@ -954,10 +976,10 @@ public sealed partial class OriginalEconomyImport
 		var byState = string.Join( ", ", save.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} in state {group.Key}" ) );
 		evidence.Add( $"{save.GuestCount} saved guests{(byState.Length == 0 ? "" : $" ({byState})")} are imported by the guest simulation when a level attaches it." );
 		// [EXT:original-engine-state-dumps] the raw dumps of the original's own engine structures that OpenTPW's engines have no counterpart for (the Scripts SCPT records: the sprite scripts of the saved guests and litter, which OpenTPW animates from their state and the cell; the RSSE scripts' object node tables, whose saved ids, list order, pass counter, run state, object lists, and walk, bounce and head tables are imported, RideScriptWorld.ImportSaved, RideVM.ImportSavedRunState and SavedScriptGraphImport; the Sound block's engine state: the sound flags, voice handles, crowd, rain and reverb words and the sound library's voice list (not QMixer data; the saved volumes and on-flags are applied, GameAudio.ApplySavedSound); the message-centre lists and the Flying ride chunks; the Track ride chunks are restored, TRACK-032) are not restored: OpenTPW has different engines that restart from the archives; the widths are traced (SaveBlockWidths) to split the save; the Particles block's pool is restored (SAVE-013)
-		// [APPROX:SAVE-010] the advisor presentation block, the second clock word (the advisor clock, applied when the automatic advisor attaches; the first, the game clock the saved scripts' waits count from, is applied with their run state when the level imports its objects, SavedScriptImport), vanilla time, game-system words, the cheat chunk's second byte (+0xB of the cheat object 0xFB3520, which only its constructor and the loader 0x405570 write; the first, the cheat mode, is imported, docs/CHEATS.md), advisor scoring and UI record count (SaveRuntimeBlocks), the weather, park analyser apart from its recent-research rings, five monthly graph rings, live arrivals and recent stays and the arrival ring and the object and hire stamps the automatic advisor takes when it attaches, tag system, mechanic HQ and UI message receiver things, world states other than TPW loss state 4, arrival vehicle handles and bytes (the saved scripts of the arrival vehicles resume on their own, but the arrival scheduler's words that point at them are not imported) and the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; the camera is imported (zoom, yaw and the required point of interest, loader 0x42CEC0) without the loader's yaw correction by the word 0x78D912; of the cell map the path cells, occupancy, MAP attributes, each path cell's texture and turn and the litter (type, claim) are read, and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours) — evidence needed: how the world state and arrival words (the current arrival vehicle's handle and the arrival bytes) steer the original's arrival update beyond what OpenTPW's arrival scheduler rebuilds and the camera's yaw correction word
+		// [APPROX:SAVE-010] the advisor presentation block, the second clock word (the advisor clock, applied when the automatic advisor attaches; the first, the game clock the saved scripts' waits count from, is applied with their run state when the level imports its objects, SavedScriptImport), vanilla time, the game-system words (the main loop's frame clock), the cheat chunk's second byte (+0xB of the cheat object 0xFB3520, which only its constructor and the loader 0x405570 write; the first, the cheat mode, is imported, docs/CHEATS.md), advisor scoring and UI record count (SaveRuntimeBlocks), the weather thing's words (0x00512010), the rest of the park analyser (grid words, block cells and trackers; the research rings, five monthly rings, live arrivals, recent stays, arrival ring, stamps and chase counters are imported), world states other than 0 and the lost park's 4, the calendar session start (no reader but its serializer), the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying (its current record is imported as the last tutorial advice when an automatic advisor attaches), and its pending advice and history when no automatic advisor is attached; the camera's yaw is turned to the quarter turn in the 90 degree mode (0x42D03F) but not eased from the saved yaw 0x7909E0; the tag system and the UI message receiver hold only their thing base, the mechanic HQ's cursor, the arrival vehicles and the environment grid are imported — evidence needed: how the weather words resume the original's weather, what the clock and game-system words feed, the advisor controller's own words and the camera's smoothed yaw
 		var engineDumps = save.Layout.Blocks.Where( block => block.Block is SaveBlock.Scripts or SaveBlock.MessageCentre or SaveBlock.TrackRides or SaveBlock.FlyingRides or SaveBlock.Rsse or SaveBlock.Sound ).ToList();
 		evidence.Add( $"[EXT:original-engine-state-dumps] Not restored (OpenTPW's engines restart from the archives): {string.Join( ", ", engineDumps.Where( block => block.Block != SaveBlock.TrackRides ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; the Rsse block's script ids, list order, pass counter and run state are imported when the level attaches its objects, the Particles block's pool when the level builds its particle system, and the TrackRides chunks of kart and water rides (ride words, sections, vehicles, riders and lists) when it imports its tracks (TRACK-032)." );
-		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem or SaveBlock.Particles or SaveBlock.Camera) && !engineDumps.Contains( block ) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}; park analyser apart from its recent-research rings, five monthly graph rings, live arrivals and recent stays and the arrival ring and the object and hire stamps the automatic advisor takes when it attaches." );
+		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem or SaveBlock.Particles or SaveBlock.Camera) && !engineDumps.Contains( block ) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather )}; the rest of the park analyser (its grid words, block cells and trackers: its recent-research rings, five monthly graph rings, live arrivals, recent stays, arrival ring, chase counters and the object and hire stamps the automatic advisor takes when it attaches are imported); the tag system ({Things( save.World, SaveThingModel.TagSystem )}) and the UI message receiver ({Things( save.World, SaveThingModel.UIMsgReceiver )}) hold their thing base alone (0x00509BC0)." );
 		if ( save.RuntimeBlocks is { } blocks )
 		{
 			var camera = blocks.Camera;
@@ -967,7 +989,7 @@ public sealed partial class OriginalEconomyImport
 		var variables = save.World.Variables;
 		var worldStateResidual = lostImported ? "" : $"world state {variables.WorldState}, ";
 		evidence.Add( $"[APPROX:SAVE-010] World values not imported: {worldStateResidual}calendar session start {save.World.Calendar.SessionStart}." );
-		evidence.Add( "[APPROX:ARRIVAL-001] The saved arrival scheduler is attached by the level only for an exact park clock with no saved vehicle handles and no host vehicles; other vehicle continuations remain unsupported. The level reports the attachment outcome." );
+		evidence.Add( "The saved arrival scheduler and the vehicle at work are attached by the level for an exact park clock when the cached vehicle handles name the park's own vehicle objects by thing id (world +0x1DA72C/E/30, 0x005179C0). The level reports the attachment outcome." );
 		if ( save.Advisor is { } advisor )
 		{
 			var current = advisor.Current;

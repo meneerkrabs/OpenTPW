@@ -74,6 +74,14 @@ the rest reports skips; nothing fails. CI has neither.
 
 `bridge_walk_oracle.py` lays synthetic second-layer records beside a placed kart or water ride and runs the op 0x86 pair (forward walk `0x52C6F0`, reverse walk `0x52CCB0`); `bridge_walk_golden.py` writes `TrackBridgeWalkGolden.cs` from 700 random layouts (`--check FILE`, about 25 minutes, layouts whose walk reads past the structure array are left out). Finding X47 in `docs/reverse/ORACLE.md` section 7.32.
 
+## The camera loader's yaw snap (round 11, package C)
+
+`camera_snap_golden.py` runs the tail of the camera loader `0x42CEC0` (`0x42D03F`, with the CRT fmod `0x67B24A`) on 585 yaws and writes `CameraSnapGolden.cs`; `CameraSnapGoldenTests` pins `ParkCameraMode.SnapToQuarterTurn` to it bit for bit (finding X49 in ORACLE.md).
+
 ## The head placement routine (round 11, package W)
 
 `head_oracle.py` runs the head placement `0x44B510` over a synthetic head node and camera (the sprite register writers recorded, not run, the PC sine table built as the message pump builds it, control word 0x7F); `head_golden.py` writes `HeadPlacementGolden.cs` from 700 cases, which `HeadPlacementGoldenTests` replays on `OriginalHeadMath` bit for bit (finding X48 in docs/reverse/ORACLE.md).
+
+## The build tools' ghost lines and tiles (round 11, package F)
+
+`ghost_oracle.py` runs tp.exe's own line walker `0x536100` with the ghost cell routine `0x532FC0` (the path and queue tools' preview), the track tile chooser `0x539760` and the tile line walker `0x53AAC0` with the ghost tile routine `0x5370E0` (the kart and water line tools' and the fence tool's preview) on synthetic maps, with its own stubs for the face queue `0x53C8D0`, the height lookups and the money. `ghost_line_golden.py`, `ghost_tile_golden.py` and `ghost_tile_line_golden.py` write `GhostLineGolden.cs`, `GhostTileGolden.cs` and `GhostTileLineGolden.cs` (zlib + base64; 300 random lines, 600 random tile cases and 240 random tile lines; `--check <file>` compares) which `GhostLineGoldenTests`, `GhostTileGoldenTests` and `GhostTileLineGoldenTests` replay on `BlueprintLineGhost`, `TrackTileChooser` and `TileLineGhost`.

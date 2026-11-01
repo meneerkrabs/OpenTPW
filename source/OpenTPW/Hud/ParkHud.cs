@@ -589,6 +589,8 @@ public sealed partial class ParkHud
 
 	private void ArmBuildTool( BuildItem item, ObjectCatalogEntry entry )
 	{
+		// [BIN:TPW-EXE:0x0052F1B0 angle setter] the angle word 0x81D7A4 changes only through its setter 0x52F1B0 (callers: the rotate key 0x40C133, the replayed angle 0x404DFF, the object copy 0x487BF4, the Move pick-up 0x48D12F, the add-on hover 0x5237F7, the placement tail 0x5259FE and 0x525E6C) and where the tool mode becomes 0 (0x52F3B6); the buy click (0x4AC590..0x4AC683) builds the tool object (0x46C5A0), arms it (0x46C350 at 0x4AC65E) and calls none of them directly; the activation 0x46D5A0 runs the hover 0x5234D0 and SetMode(4, 1) 0x52F200, which reach the setter only for a track add-on (0x5237F7) and reset the angle only for mode 0 (0x52F3B6), so a tool armed during the queue tool of a placement starts at the angle that placement kept
+		queueAfterPlacement = false;
 		level.CellTool.Cancel();
 		level.StaffPlacement?.Cancel();
 		level.PatrolTool?.Cancel();
@@ -606,7 +608,7 @@ public sealed partial class ParkHud
 	}
 
 	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] a placement without an entrance keeps the build tool armed when the click held exactly Ctrl (modifier mask 0xc), else the tool returns to mode 0 (0x52f580); a ride with an entrance (0x52fab0, the type's +0x40) continues into the queue tool (0x52f580(3, 0): 0x52529e, the Move tool's 0x5258e1; a kart or water ride once its circuit closes while the placement's queue start is pending, 0x526f95 and 0x527004), whose last click ends the tool whatever the modifier (0x5275f2). Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits
-	// [APPROX:UI-031] the coaster tool ends the build tool at the placement whatever the modifier, where the original's coaster placement goes on into the queue tool (0x52519f → 0x525259) and its track tool (mode 0x15) is not entered in 0x524960; an entrance-bearing placement keeps the angle through the queue tool whatever the modifier, where the original keeps it only for exactly Ctrl (0x5259f4, else 0x52f1b0(0, 0) at 0x5259fe), which shows only in a tool armed while the queue tool runs (OpenTPW starts it at 0); and a queue whose start cell is a path (the cell type +0x29c = 1, 0x5259cf) ends the tool at once in the original — evidence needed: where the original's coaster placement enters its track tool, which of OpenTPW's placements have a path cell as the queue's start, and whether a tool armed from the queue tool keeps the angle
+	// [APPROX:UI-031] the coaster tool ends the build tool at the placement whatever the modifier, where the original's coaster placement goes on into the queue tool (0x52519f → 0x525259) and its track tool (mode 0x15) is not entered in 0x524960; an entrance-bearing placement keeps the angle through the queue tool whatever the modifier, where the original keeps it only for exactly Ctrl (0x5259f4, else 0x52f1b0(0, 0) at 0x5259fe), which shows only in a tool armed while the queue tool runs, whose buy click arms it before its ride check (0x46C350 at 0x4AC65E, then 0x4AC683 chooses only the help line) and calls no angle setter, so it starts at the angle the placement kept (the hover 0x5234D0 its activation runs sets the angle only for a track add-on, 0x5237F7), at 0 in the original after any modifier but exactly Ctrl; and a queue whose start cell is a path (the cell type +0x29c = 1, 0x5259cf) ends the tool at once in the original — evidence needed: where the original's coaster placement enters its track tool, which of OpenTPW's placements have a path cell as the queue's start
 	private void OnObjectPlaced( OriginalObject item )
 	{
 		// [EXT:online-coop-commands] a placement inside a command: the HUD follows its own player's placement once the command has returned, so the tool the placed ride opens issues commands of its own;
@@ -1779,10 +1781,19 @@ public sealed partial class ParkHud
 			cells.Add( (staffCell.X, staffCell.Y, BlueprintMarker.Refused) );
 		else if ( level.BuyLandTool is { IsActive: true } landTool )
 		{
-			// [APPROX:BLUEPRINT-003] the Buy Land ghost is the blueprint's cells along the rectangle's four edges (or the hovered post before the first click), blue while the validator allows the rectangle and red when it refuses it; the original draws a ghost fence model along the edges (0x53aac0 with the tool mode | 0x100) coloured by the refusal 0x816d50
-			var marker = landTool.HoverRefused ? BlueprintMarker.Refused : BlueprintMarker.Allowed;
-			foreach ( var (x, y) in landTool.PreviewEdge() )
-				cells.Add( (x, y, marker) );
+			if ( level.BuyLandGhost( landTool ) is { } fence )
+			{
+				// [BIN:TPW-EXE:0x0053AAC0 fence ghost] the fence tool's tiles are the tile chooser's: red for the answer 1 (every tile while the rectangle is refused), blue otherwise
+				foreach ( var ((x, y), answer) in fence )
+					cells.Add( (x, y, answer == 1 ? BlueprintMarker.RefusedTile : BlueprintMarker.AllowedTile) );
+			}
+			else
+			{
+				// [EXT:untyped-harness-world] an OpenTPW harness world does not type its cells and has no records for the tile chooser (a Theme Park Inc world takes the same branch without being an extension): its Buy Land ghost is the host's cells along the rectangle's four edges (or the hovered post before the first click), red while the validator refuses
+				var marker = landTool.HoverRefused ? BlueprintMarker.Refused : BlueprintMarker.Allowed;
+				foreach ( var (x, y) in landTool.PreviewEdge() )
+					cells.Add( (x, y, marker) );
+			}
 		}
 		else if ( level.AreaClearTool is { IsActive: true } clearTool )
 		{
@@ -1811,7 +1822,15 @@ public sealed partial class ParkHud
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
-			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt, ghost.Symbols ) );
+			// the path and queue tools mark each cell by the validator's answer (m_link, m_end: BlueprintLineGhost), the kart and water line tools each 2 x 2 tile by the tile chooser's (TileLineGhost); the other line tools and an untyped world mark the host's own line
+			if ( level.TileLineGhostFor( ghost ) is { } tileLine )
+			{
+				// [BIN:TPW-EXE:0x005372AD tile answers] the chooser's answer 1 is the red tile, 0xB the m_end tile, any other the blue one
+				foreach ( var ((x, y), answer) in tileLine.Tiles )
+					cells.Add( (x, y, answer == 1 ? BlueprintMarker.RefusedTile : answer == 0xB ? BlueprintMarker.EndTile : BlueprintMarker.AllowedTile) );
+			}
+			else
+				cells.AddRange( level.PathLineGhost( ghost )?.Cells ?? BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt, ghost.Symbols ) );
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{

@@ -216,7 +216,7 @@ scripts from the same archive, and one `RideScriptWorld` per park
 traffic lights). Initial variables from the .sam layers: `VAR_CAPACITY` =
 `Upgrades[0].InitCapacity`, `VAR_DURATION` = `Upgrades[0].InitDuration` (written only when above 0: its low byte clamped to
 `UsageInfo.MinDuration..MaxDuration`, 0x4db565..0x4db64f; `Info.DurationUnit` is never used, Totem.RSE uses it as cycle count),
-`VAR_RIDECLOSED` 1 for a built ride whose type has `Info.HasQueue` (the constructor `0x4DB090` opens the object and then closes it, `0x4DB712`–`0x4DB779`: RIDES-015 retired; the player opens it) and 0 otherwise; imported objects open (the saved open word `mCanLoad` is SAVE-006) — the sandbox Totem starts closed. Variables are written by name since
+`VAR_RIDECLOSED` 1 for a built ride whose type has `Info.HasQueue` (the constructor `0x4DB090` opens the object and then closes it, `0x4DB712`–`0x4DB779`: RIDES-015 retired; the player opens it) and 0 otherwise; imported objects open, and an idle attraction saved with its open word `mCanLoad` clear is closed again by the level — the sandbox Totem starts closed. Variables are written by name since
 scripts declare different subsets.
 
 Corpus run (`EveryObjectScriptRunsInItsParkWithOriginalAnimations`): all 262

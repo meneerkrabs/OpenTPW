@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The park name as the gate's two sign lines (COMPAT-007): the gate's OBJECT_NAMES row as default (tp.exe 0x4DB6F9), the
+/// The park name as the gate's two sign lines (was COMPAT-007, retired): the gate's OBJECT_NAMES row as default (tp.exe 0x4DB6F9), the
 /// one-line form of the ticket price window (0x4E2780), the rename dialog's fields (0x4990F0) and the optional save part.
 /// </summary>
 [TestClass]
@@ -26,7 +26,7 @@ public class ParkNameTests
 	}
 
 	/// <summary>
-	/// The save field of the gate lines (COMPAT-007): the gate's attraction record carries them as <c>mNameA</c>/<c>mNameB</c> (the thing's +0x3C8 and +0x40A, written by
+	/// The save field of the gate lines (was COMPAT-007, retired): the gate's attraction record carries them as <c>mNameA</c>/<c>mNameB</c> (the thing's +0x3C8 and +0x40A, written by
 	/// the setters 0x4E2950 and 0x4E2A50); the shipped jungle Easymode save holds LOST / Kingdom, the gate's default row.
 	/// </summary>
 	[TestMethod]
@@ -34,7 +34,7 @@ public class ParkNameTests
 	{
 		Assert.AreEqual( new ParkNameLines( "Wonder", "Land" ), ParkNameLines.FromSavedGate( "Wonder", "Land" ) );
 		Assert.AreEqual( new ParkNameLines( "", "Land" ), ParkNameLines.FromSavedGate( "", "Land" ) );
-		Assert.IsNull( ParkNameLines.FromSavedGate( "", "" ), "an unnamed gate keeps the default lines" );
+		Assert.AreEqual( new ParkNameLines( "", "" ), ParkNameLines.FromSavedGate( "", "" ), "a blank name is a name: the rename dialog's OK tests no emptiness (0x4993E0)" );
 		Assert.IsNull( ParkNameLines.FromSavedGate( null, "Land" ) );
 		Assert.IsNull( ParkNameLines.FromSavedGate( new string( 'x', ParkNameLines.MaximumLength + 1 ), "Land" ), "a line longer than the gate holds is refused" );
 		Assert.IsNull( ParkNameLines.FromSavedGate( "Wonder\u0007", "Land" ), "a control character is refused" );

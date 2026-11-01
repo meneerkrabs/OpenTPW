@@ -1918,7 +1918,7 @@ public partial class Level
 	public (List<(int X, int Y, BlueprintMarker Marker)> Cells, Dictionary<(int X, int Y), byte> Directions) ObjectBlueprint(
 		ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, OriginalPlacementResult placementResult, bool allowed ) =>
 		BlueprintGhosts.Footprint( entry.Shape, anchorX, anchorY, rotation, allowed, Objects.Grid,
-			entry.HasQueue && !entry.IsTool && BuildAddOnRide == null && !TrackAddOns.IsAddOn( entry ), placementResult );
+			entry.HasQueue && !entry.IsTool && BuildAddOnRide == null && !TrackAddOns.IsAddOn( entry ), placementResult, TypesFootprints );
 
 	/// <summary><see cref="CheckObject(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing and clears no path (<see cref="ParkObjects.CheckFree"/>).</summary>
 	public OriginalPlacementResult CheckFreeObject( ObjectCatalogEntry entry, int x, int y, int rotation )
@@ -2055,6 +2055,20 @@ public partial class Level
 		var line = Guests.ImportOriginalArrivals( save.World );
 		Park?.Import?.Report( line );
 		Log.Trace( $"Park arrival import: {line}" );
+	}
+
+	/// <summary>
+	/// The environment grid of an original save (<see cref="ParkEconomy.ImportSavedEnvironment"/>), taken after the litter, the staff and the objects have put their rows back: GUEST-006's
+	/// question whether the original saves or rebuilds the grid is answered by its cell serializer (0x4D7EA0), which saves it.
+	/// </summary>
+	private void ImportOriginalEnvironment()
+	{
+		if ( resumeState != null || GameEditions.IsThemeParkInc || visitLayout != null || Park == null || OriginalPark?.Save is not { } save )
+			return;
+		var (records, different) = Park.Economy.ImportSavedEnvironment( save.World );
+		var line = $"Environment grid imported: {records} cells hold a saved region effect record; {different} cells differ from the sources OpenTPW spread again, which the saved words take over as a residue.";
+		Park.Import?.Report( line );
+		Log.Trace( $"Park environment import: {line}" );
 	}
 
 	/// <summary>

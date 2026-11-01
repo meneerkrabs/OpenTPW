@@ -92,7 +92,8 @@ public partial class Level : IDisposable
 	{
 		if ( resumeState != null || visitLayout != null || OriginalPark?.Save?.RuntimeBlocks is not { } blocks || OriginalPark.Heightfield is not { } field || Camera.Mode is not ParkCameraMode mode )
 			return;
-		if ( ParkCameraMode.PoseOfSave( blocks.Camera ) is not var (x, z, height, yaw) )
+		// the loader snaps the yaw while the rotation option is " 90 degs" (0x42D03F)
+		if ( ParkCameraMode.PoseOfSave( blocks.Camera, GameOptions.Current.Rotation == RotationMode.Ninety ) is not var (x, z, height, yaw) )
 			return;
 		var target = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( x, 0, z ) );
 		mode.SetPose( new Vector3( target.X, target.Y, 0 ), height, yaw );
@@ -150,7 +151,7 @@ public partial class Level : IDisposable
 	/// The park name a player's own original save holds: the two sign lines of its park gate's attraction thing (<c>mParkGates</c>, name lines +0x3C8 and +0x40A), which the load's sign rebuild redraws (0x468500).
 	/// Null for any other start (the shipped Easymode seed keeps the gate's default lines in the player's language) and for lines OpenTPW's sign cannot hold.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the placed object's two sign lines (NameA/NameB) are part of its record; a park's name is its gate's pair (SAVE-006)
+	// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the placed object's two sign lines (NameA/NameB) are part of its record; a park's name is its gate's pair; every other type's lines draw its sign (SAVE-006)
 	private ParkNameLines? SavedGateName()
 	{
 		if ( playerSavePayload == null || OriginalPark?.Save is not { } save )
@@ -165,7 +166,8 @@ public partial class Level : IDisposable
 	/// Renames the park (the ticket price window's rename dialog): stores the two lines and redraws the gate sign. False for
 	/// a read-only visit, a level without a park name, or lines a save could not hold (<see cref="ParkNameLines.IsValid"/>).
 	/// </summary>
-	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0), but the handler's other effects are not built: the secret name's 0x4053C0(1) (built below: the cheat mode, docs/CHEATS.md) also posts a message of type 0x15 (0x40FB10), which is not; gate lines of a user-supplied original save are imported by SavedGateName from SaveAttraction.NameLine1/2 when valid (the shipped Easymode seed keeps the default lines); exact original-save import equivalence still needs corpus evidence — evidence needed: what the listeners of message type 0x15 do (runtime subscriptions of the message centre 0x788D3C)
+	// [BIN:TPW-EXE:0x004993E0 rename handler] OK stores the two fields on the park gate (mParkGates +0x1DA732: the setters 0x4E2950/0x4E2A50 into +0x3C8/+0x40A) and redraws the sign (0x4682B0); the secret name's 0x4053C0(1) posts a message of type 0x15 (0x40FB10), whose subscriber list is empty: the message centre 0x788D3C keeps one list per type (29 of them; subscribe 0x40F9E0 through the accessor 0x415E00), and the 43 subscribe sites of tp.exe use the types 1, 2, 5, 7, 8, 0xA to 0xF, 0x11 to 0x14, 0x17 to 0x1C, never 0x15, so the post reaches nobody and nothing is built for it
+	// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the gate's two lines are part of its saved record (mNameA[i]/mNameB[i], 0x75B5EC); an original save's gate lines are the park name (SavedGateName), blank lines included (the dialog's OK has no emptiness test)
 	// [EXT:online-park-record-copy] the setters 0x4E2950/0x4E2A50 also copy the lines to the original's online park record (0x409410, 0x5B0940/0x5B0970: wide characters into +0x34 and +0x76 of the 0x50-byte record DAT_00F7C58C with its dirty byte +0xB8, unless the GameType word is 1); OpenTPW's online extension keeps its own park records on the server and publishes the name from the park, so the copy is not made (user-approved 2026-10-30)
 	public bool RenamePark( string line1, string line2 )
 	{
@@ -541,7 +543,7 @@ public partial class Level : IDisposable
 				}
 			}
 			yield return 0.35f;
-			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield, BlueprintHeightOffset, OriginalPark.LevelName );
+			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield, BlueprintHeightOffset, OriginalPark.LevelName, BlueprintTileRaise );
 			Blueprint.WarmUp();
 			// [BIN:TPW-EXE:0x0053BFE0 dynamic meshes] the park's start creates the BlueprintMesh, the WaterMesh and the FlagsMesh together; Theme Park Inc's own build is not read here
 			if ( GameEditions.Current == GameEdition.ThemeParkWorld && HarbourDynamics.LoadWaterStart( OriginalPark.LevelName ) is { } waterStart )
@@ -681,6 +683,7 @@ public partial class Level : IDisposable
 			ImportOriginalCoasters();
 			ImportOriginalRetainedRideStates();
 			ImportOriginalArrivals();
+			ImportOriginalEnvironment();
 			yield return 0.95f;
 			StartPlacedParticles();
 			ImportOriginalParticles();

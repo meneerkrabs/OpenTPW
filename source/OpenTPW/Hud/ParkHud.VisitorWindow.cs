@@ -129,6 +129,7 @@ public sealed partial class ParkHud
 	{
 		if ( VisitorWindowOpen )
 			return;
+		RememberInfoWindow( InfoWindowKind.Visitors );
 		visitorFirstRow = 0;
 		selectedVisitorId = 0;
 		visitorValues.Clear();
@@ -272,7 +273,7 @@ public sealed partial class ParkHud
 			Clicked = () => { CloseVisitorWindow(); OpenParkInfoWindow(); } } );
 		var allStaff = table.Model( "b_allstaff" );
 		screen.Add( new UiButton { Id = "allStaff", Model = allStaff.Model, Help = strings.Help( allStaff.Help ), Bounds = allStaff.Rect, Anchor = UiAnchor.Center,
-			Clicked = () => { CloseVisitorWindow(); OpenStaffWindow(); ShowEmployedStaff( true ); } } );
+			Clicked = () => { CloseVisitorWindow(); OpenAllStaffWindow(); } } );
 		var allThings = table.Model( "b_allthings" );
 		screen.Add( new UiButton { Id = "allAttractions", Model = allThings.Model, Help = strings.Help( allThings.Help ), Bounds = allThings.Rect, Anchor = UiAnchor.Center,
 			Clicked = () => { CloseVisitorWindow(); OpenAttractionsWindow(); } } );

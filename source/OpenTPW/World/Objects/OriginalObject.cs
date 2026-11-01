@@ -240,6 +240,31 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	/// from <see cref="RideVisitorBridge.AttractionId"/>, the script world's own counter.
 	/// </summary>
 	public int ThingId { get; internal set; }
+
+	/// <summary>
+	/// The cell of the object's own thing (its bytes +5 and +7): the placement anchor plus the type's map offset (<c>Info.MapOffsetX</c> and <c>Info.MapOffsetY</c>) turned by the object's angle. The
+	/// object windows' local happiness gauge counts the guests around it (<c>0x4CD880</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x529f8c thing cell] the placement hands the constructor 0x4db090 the cell word [0x818c3c] (the anchor 0x528b44 made: (y << 7) + x + 1) plus the type's offset (+0x4b0, +0x4b4, copied from +0x30 and +0x34 = Info.MapOffsetX and Info.MapOffsetY by 0x4134d3) turned by the angle (0x4d9cc0), and the constructor files the thing under it (0x4db3cc reads its bytes +5 and +7 back); every shipped object has the offset 0, so its cell is the anchor
+	public (int X, int Y) ThingCell => ThingCellOf( Entry.Settings.GetInt( "Info.MapOffsetX" ), Entry.Settings.GetInt( "Info.MapOffsetY" ), Placement.X, Placement.Y, Placement.Rotation );
+
+	/// <summary>The cell of a thing placed at the anchor (<paramref name="anchorX"/>, <paramref name="anchorY"/>) at <paramref name="rotation"/> for a type with the map offset (<paramref name="offsetX"/>, <paramref name="offsetY"/>).</summary>
+	public static (int X, int Y) ThingCellOf( int offsetX, int offsetY, int anchorX, int anchorY, int rotation )
+	{
+		var (x, y) = RotateOffset( offsetX, offsetY, rotation );
+		return (anchorX + x, anchorY + y);
+	}
+
+	/// <summary>The offset turned by an angle (<c>0x4D9CC0</c>): 0 keeps it, 90 gives (y, -x), 180 (-x, -y) and 270 (-y, x); the angle is taken modulo 360 and any other value keeps it as well.</summary>
+	// [BIN:TPW-EXE:0x4d9cc0 offset rotation] the angle is divided by 0x168 (idiv, so a negative angle keeps its sign: -90 is as 270, -180 as 180, -270 as 90); 0 and every angle that is no multiple of 90 give (x, y), 90 and -270 give (y, -x) (0x4d9d56), 180 and -180 (-x, -y) (0x4d9d3f), 270 and -90 (-y, x) (0x4d9d2a)
+	public static (int X, int Y) RotateOffset( int x, int y, int rotation ) => (rotation % 360) switch
+	{
+		90 or -270 => (y, -x),
+		180 or -180 => (-x, -y),
+		270 or -90 => (-y, x),
+		_ => (x, y)
+	};
+
 	/// <summary>Visitor side of the script (guests slice).</summary>
 	public RideVisitorBridge Visitors => Runtime.Visitors;
 	public bool IsOpen => Runtime.IsOpen;

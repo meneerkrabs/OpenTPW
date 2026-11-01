@@ -92,7 +92,8 @@ public sealed partial class ParkHud
 			return null;
 		// [BIN:TPW-EXE:0x4cd880] count actual cell-list members, without the separate IsOnParkCell predicate or a state filter.
 		// [EXT:guest-cell-lists] retain the simulation's membership and synchronization policy, including its swim exclusion.
-		// The existing placement anchor matches the inspected shipped objects (zero MapOffsetX/Y); custom nonzero offsets are not resolved here.
-		return UiGauge.OfPercent( LocalHappiness( guests.CellListHappiness(), item.Placement.X, item.Placement.Y ) );
+		// [BIN:TPW-EXE:0x4b05f9 local happiness cell] the refresh passes the object's own cell (the thing's bytes +5 and +7: the anchor plus the type's rotated map offset, OriginalObject.ThingCell)
+		var (x, y) = item.ThingCell;
+		return UiGauge.OfPercent( LocalHappiness( guests.CellListHappiness(), x, y ) );
 	}
 }

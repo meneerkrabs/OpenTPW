@@ -26,6 +26,24 @@ public sealed partial class ParkHud
 	private int mapValue = 1;
 	private ParkMapCanvas? mapCanvas;
 
+	/// <summary>Opens the map with the layer word, staff role and value mode of <paramref name="settings"/> ("layers=63,staff=1,value=2") for the interface captures of <c>--debug-hud</c>.</summary>
+	internal void DebugMap( string settings )
+	{
+		foreach ( var part in settings.Split( ',', StringSplitOptions.RemoveEmptyEntries ) )
+		{
+			var pair = part.Split( '=', 2 );
+			if ( pair.Length != 2 || !int.TryParse( pair[1], System.Globalization.CultureInfo.InvariantCulture, out var number ) )
+				continue;
+			switch ( pair[0] )
+			{
+				case "layers": mapLayers = (uint)number; break;
+				case "staff": mapStaff = number; break;
+				case "value": mapValue = number; break;
+			}
+		}
+		OpenMapWindow();
+	}
+
 	/// <summary>The layer word bit of a category button: rides 1, shops 2, sideshows 4, features 8.</summary>
 	private static uint LayerOf( BuildCategory category ) => category switch
 	{
@@ -218,6 +236,8 @@ public sealed partial class ParkHud
 		MetricLayer( "satisfaction", "b_ssatis", 291, Rect( 1526, 1409, 1629, 1512 ), ToggleMapSatisfaction, () => MapSatisfaction );
 		Layer( "happiness", "b_shap", 287, Rect( 1646, 1409, 1748, 1512 ), ToggleMapHappiness, () => MapHappiness );
 		MetricLayer( "excitement", "b_sexcit", 289, Rect( 1766, 1409, 1868, 1512 ), ToggleMapExcitement, () => MapExcitement );
+		// [BIN:TPW-EXE:0x5f1cde map text] the text control 0x991 of the middle panel shows the name of the item or object under the pointer
+		screen.Add( new UiLabel { Id = "mapHover", Text = () => mapHoverText, Font = fonts => fonts.Label, Fit = true, Bounds = Rect( 700, 1400, 1340, 1520 ), Anchor = UiAnchor.Center } );
 		// [DATA:Mac map table 0x5265e:-1] b_okay closes the map (help 1).
 		Button( "close", "b_okay", 1, Rect( 1941, 1339, 2024, 1422 ), CloseMapWindow );
 		screen.Back = CloseMapWindow;
@@ -243,17 +263,88 @@ public sealed partial class ParkHud
 
 	}
 
+	private static readonly string[] GuestLayerIds = { "visitors", "happiness" };
+	private static readonly string[] StaffLayerIds = { "handymen", "mechanics", "entertainers", "guards" };
+
 	private sealed class MapScreen( ParkHud owner ) : UiScreen( "map" )
 	{
 		public override bool Update( UiContext context, UiInput input )
 		{
 			owner.StepMapEdgeScroll( input.Mouse, context.Canvas.Width, context.Canvas.Height, context.Delta, GameOptions.Current.Scroll );
-			foreach ( var id in new[] { "visitors", "happiness" } )
+			foreach ( var id in GuestLayerIds )
 				if ( Find( id ) is UiButton button ) button.Enabled = owner.level.Guests != null;
-			foreach ( var id in new[] { "handymen", "mechanics", "entertainers", "guards" } )
+			foreach ( var id in StaffLayerIds )
 				if ( Find( id ) is UiButton button ) button.Enabled = owner.level.StaffWorld != null;
+			if ( Find( "mapView" ) is ParkMapView view )
+				owner.UpdateMapHover( view.Geometry, input.Mouse );
 			return base.Update( context, input );
 		}
+	}
+
+	private MapDot? mapHoverDot;
+	private ParkMapThing? mapHoverThing;
+	private string mapHoverText = "";
+
+	/// <summary>
+	/// The pointer over the map (message 0x10001, <c>0x5F198E</c>): the nearest shown item within 5 pixels of it (the first of equal distances) becomes the item under the pointer, and the object of
+	/// the cell below the pointer is kept; when the item changes and either is a staff member the surface is drawn again (his area shows in the brighter blue), and the text panel names the item's
+	/// thing, or else the cell's object.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5f1a21 map hover] the loop over the items takes those shown (+0x2c) with |dx| and |dy| below 5.0 (0x703040) pixels of the pointer and keeps the one whose distance is below the best so far (1e8 at first); the item under the pointer is cleared first; a change that involves a thing of type 4 to 8 draws the surface again (0x5f1af8); the cell is ftol((pointer - screen centre) / (480 / width x zoom) + the view centre) and its class record's thing id word is kept (+0x20064); the text is the staff member's name (0x506860), the visitor's text (UITEXT 0x1c8 with the number, 0x1c9 without) or the name of the thing of the cell (0x4e2780)
+	internal void UpdateMapHover( (UiRect Image, NVector2 Uv0, float Scale)? geometry, NVector2 mouse )
+	{
+		if ( mapCanvas is not { } canvas || geometry is not { } view )
+			return;
+		MapDot? best = null;
+		ParkMapThing? cellThing = null;
+		var surface = canvas.Surface;
+		var inside = view.Image.Contains( mouse );
+		if ( inside )
+		{
+			// the pointer in surface pixels; 5 pixels of the original's screen are 5 / zoom surface pixels, as the surface is shown one pixel to one at zoom 1
+			var x = ((mouse.X - view.Image.X) / view.Scale + view.Uv0.X) * MapSurface.ImagePixels;
+			var y = ((mouse.Y - view.Image.Y) / view.Scale + view.Uv0.Y) * MapSurface.ImagePixels;
+			var limit = 5f / mapView.Zoom;
+			var distance = float.MaxValue;
+			foreach ( var dot in canvas.Dots )
+			{
+				if ( !ParkMapDots.Visible( dot, mapLayers, mapStaff, mapValue ) )
+					continue;
+				var (px, py) = surface.Position( dot.X, dot.Y );
+				var (dx, dy) = (MathF.Abs( x - px ), MathF.Abs( y - py ));
+				if ( dx < limit && dy < limit && MathF.Sqrt( dx * dx + dy * dy ) is var d && d < distance )
+				{
+					distance = d;
+					best = dot;
+				}
+			}
+			var cx = (int)((x - surface.OriginX) / (surface.Original ? 480f / surface.Width : surface.CellWidth));
+			var cy = (int)((y - surface.OriginY) / (surface.Original ? 425f / surface.Height : surface.CellHeight));
+			if ( x >= surface.OriginX && y >= surface.OriginY && (uint)cx < (uint)surface.Width && (uint)cy < (uint)surface.Height )
+				cellThing = canvas.Owners[cy * surface.Width + cx];
+		}
+		var previous = canvas.Hovered;
+		var changed = !ReferenceEquals( previous, best );
+		canvas.Hovered = best;
+		if ( changed && (IsStaffDot( previous ) || IsStaffDot( best )) )
+			RenderMap();
+		if ( changed || !ReferenceEquals( mapHoverThing, cellThing ) || !ReferenceEquals( mapHoverDot, best ) )
+		{
+			mapHoverDot = best;
+			mapHoverThing = cellThing;
+			mapHoverText = MapHoverText( best, cellThing );
+		}
+	}
+
+	private static bool IsStaffDot( MapDot? dot ) => dot?.Staff != null;
+
+	private string MapHoverText( MapDot? dot, ParkMapThing? cellThing )
+	{
+		if ( dot?.Staff is { } member )
+			return StaffName( member );
+		if ( dot?.Guest is { } guest )
+			return guest.VisitorNumber > 0 ? strings[UIStrings.VisitorCount] + guest.VisitorNumber.ToString( System.Globalization.CultureInfo.InvariantCulture ) : strings[UIStrings.NewVisitor];
+		return cellThing?.Item is { } item ? EntryName( item.Entry ) : "";
 	}
 
 	/// <summary>The map object's classes and drawing for the level as it is now; the window takes it again every time it opens.</summary>
@@ -263,7 +354,53 @@ public sealed partial class ParkHud
 		var canvas = new ParkMapCanvas( new MapSurface( width, height, level.OriginalPark != null ) );
 		mapThings = new LevelMapCells( level, level.Paths?.Cells, width, height, MapThingOf );
 		canvas.WriteClasses( mapThings );
+		canvas.SpritesAvailable = FileSystem is { } files && ParkMapDots.Images.All( files.FileExists );
+		BuildMapDots( canvas );
 		return canvas;
+	}
+
+	/// <summary>
+	/// The items of the map window's list, written once when it opens (<c>0x5F3940</c>): two for each guest (a ring for the visitors layer and a dot for the happiness mode), one for each staff member
+	/// with a second one under an entertainer or a guard (the glow of their effect), one for each littered cell and one for each security camera.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5f3940 map items] per thing: type 1 gives (rsprite, kind 1, mode 1, value 0x20) and (vsprite, kind 0, mode 3, value 1); type 4 (mechanic), 5 (handyman), 6 (entertainer) and 7 (guard) give (ssprite, kind 2, mode 2, value 2, 1, 4, 3), the entertainer (esprite, kind 4, mode 2, value 4, scale RegionFX[0] radius × 0.5) and the guard (gsprite, kind 5, mode 2, value 3, scale RegionFX[3] radius × 0.5) a second one; then per cell with litter (+0x2c) (lsprite, kind 3, mode 2, value 1, scale 1 × 0.5, or the radius of RegionFX[2] for vomit 7 and RegionFX[5] for a stinkbomb 8 × 0.5) at the cell's centre; then per object with thing flag 0x10 (gsprite, kind 5, mode 2, value 3, scale RegionFX[4] radius × 0.5) at its cell's centre; a thing's position is its cell byte + its sub-cell byte / 256
+	private void BuildMapDots( ParkMapCanvas canvas )
+	{
+		var dots = canvas.Dots;
+		var effects = level.Guests?.Litter?.Environment.Effects;
+		float Radius( int row ) => effects is { Length: > RegionEffect.Count - 1 } table ? table[row].Radius * 0.5f : 0f;
+		static float Cell( int fixedValue ) => ((fixedValue >> 16) & 0xFF) + ((fixedValue >> 8) & 0xFF) / 256f;
+		if ( level.Guests is { } guests )
+		{
+			foreach ( var guest in guests.Guests )
+			{
+				var (x, y) = (Cell( guest.Navigation.X ), Cell( guest.Navigation.Y ));
+				dots.Add( new MapDot { X = x, Y = y, Image = 1, Kind = 1, Mode = 1, Value = (int)ParkMapClasses.VisitorsLayer, Guest = guest } );
+				dots.Add( new MapDot { X = x, Y = y, Image = 0, Kind = 0, Mode = 3, Value = 1, Guest = guest } );
+			}
+		}
+		foreach ( var member in level.Park?.Economy.Staff.Members ?? Array.Empty<StaffMember>() )
+		{
+			if ( member.CellX is not { } px || member.CellY is not { } py || StaffMode( member.Type ) is not (> 0 and var role) )
+				continue;
+			var (x, y) = (MathF.Floor( px * 256f ) / 256f, MathF.Floor( py * 256f ) / 256f);
+			dots.Add( new MapDot { X = x, Y = y, Image = 2, Kind = 2, Mode = 2, Value = role, Staff = member } );
+			if ( member.Type == StaffType.Entertainer )
+				dots.Add( new MapDot { X = x, Y = y, Image = 4, Kind = 4, Mode = 2, Value = role, Scale = Radius( RegionEffect.Entertainer ), Staff = member } );
+			else if ( member.Type == StaffType.Guard )
+				dots.Add( new MapDot { X = x, Y = y, Image = 5, Kind = 5, Mode = 2, Value = role, Scale = Radius( RegionEffect.Guard ), Staff = member } );
+		}
+		if ( level.Guests?.Litter is { } litter )
+		{
+			for ( var y = 0; y < litter.Height; y++ )
+				for ( var x = 0; x < litter.Width; x++ )
+					if ( litter.TypeAt( x, y ) is var type and not LitterType.None )
+						dots.Add( new MapDot { X = x + 0.5f, Y = y + 0.5f, Image = 3, Kind = 3, Mode = 2, Value = 1,
+							Scale = type == LitterType.Stinkbomb ? Radius( RegionEffect.Stinkbomb ) : type == LitterType.Vomit ? Radius( RegionEffect.Vomit ) : 0.5f } );
+		}
+		foreach ( var item in level.Objects.Objects )
+			if ( !item.IsDeleted && item.Entry.Settings.GetBool( "UsageInfo.ProvidesSecurity" ) )
+				dots.Add( new MapDot { X = item.Placement.X + 0.5f, Y = item.Placement.Y + 0.5f, Image = 5, Kind = 5, Mode = 2, Value = 3, Scale = Radius( RegionEffect.Camera ) } );
 	}
 
 	private LevelMapCells? mapThings;
@@ -291,6 +428,26 @@ public sealed partial class ParkHud
 			foreach ( var thing in mapThings.Things.Values )
 				RefreshMapThing( thing );
 		canvas.RenderCells( mapLayers, mapStaff, mapValue );
+		if ( (mapLayers & ParkMapClasses.TracksLayer) != 0 )
+			RenderMapTracks( canvas );
+		canvas.RenderItems( mapLayers, mapStaff, mapValue );
+	}
+
+	/// <summary>The track layer: the curve of every coaster, in the colour of its repair.</summary>
+	private void RenderMapTracks( ParkMapCanvas canvas )
+	{
+		foreach ( var ride in level.Coasters )
+		{
+			var color = ParkMapPalette.UnavailableObject;
+			if ( mapThings != null )
+				foreach ( var (item, thing) in mapThings.Things )
+					if ( ReferenceEquals( item.Runtime.Coaster, ride ) )
+					{
+						color = thing.Repair;
+						break;
+					}
+			canvas.RenderTrack( Enumerable.Range( 0, ride.CurvePairCount ).Select( ride.CurvePair ), color );
+		}
 	}
 
 	/// <summary>Reads the values of one object the renderer uses: its open word, its repair, its excitement and its satisfaction.</summary>
@@ -337,6 +494,22 @@ public sealed partial class ParkHud
 		private readonly ParkHud owner;
 		public ParkMapView( ParkHud owner ) => this.owner = owner;
 
+		/// <summary>Where the last draw put the image (its rectangle, the surface's top-left in the image's units and the scale of one image unit), for the pointer.</summary>
+		public (UiRect Image, NVector2 Uv0, float Scale)? Geometry { get; private set; }
+
+		/// <summary>Adds a textured quad cut to the image's rectangle, its texture coordinates cut with it.</summary>
+		private static void AddClipped( UiBatch batch, UiTexture texture, UiRect rect, UiRect image, RgbaByte color )
+		{
+			var left = Math.Max( image.X, rect.X );
+			var top = Math.Max( image.Y, rect.Y );
+			var right = Math.Min( image.Right, rect.Right );
+			var bottom = Math.Min( image.Bottom, rect.Bottom );
+			if ( right <= left || bottom <= top )
+				return;
+			batch.AddQuad( texture, new UiRect( left, top, right - left, bottom - top ),
+				new NVector2( (left - rect.X) / rect.Width, (top - rect.Y) / rect.Height ), new NVector2( (right - rect.X) / rect.Width, (bottom - rect.Y) / rect.Height ), color );
+		}
+
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			var content = ScreenRect( context.Canvas );
@@ -358,6 +531,7 @@ public sealed partial class ParkHud
 				context.Batch.AddRectangle( image, new RgbaByte( 15, 81, 26, 255 ) );
 
 			var scale = owner.mapView.Zoom * side;
+			Geometry = (image, uv0, scale);
 			void Mark( float x, float y, float width, float height, RgbaByte color )
 			{
 				var rect = new UiRect( image.X + (x / MapSurface.ImagePixels - uv0.X) * scale, image.Y + (y / MapSurface.ImagePixels - uv0.Y) * scale,
@@ -388,6 +562,20 @@ public sealed partial class ParkHud
 				var prim = prims[index];
 				Mark( prim.X, prim.Y, prim.Width, prim.Height, prim.Color );
 			}
+			// [BIN:TPW-EXE:0x5f4180 map dots] the sprites lie over the surface at the item's cell (15 + x * 480 / width, 42 + y * 425 / height in surface pixels), centred, the kinds above 2 behind the others
+			if ( canvas.SpritesAvailable )
+				for ( var pass = 0; pass < 2; pass++ )
+					for ( var index = 0; index < canvas.Dots.Count; index++ )
+					{
+						var dot = canvas.Dots[index];
+						if ( ParkMapDots.IsBehind( dot ) != (pass == 0) || !ParkMapDots.Visible( dot, owner.mapLayers, owner.mapStaff, owner.mapValue ) )
+							continue;
+						var size = ParkMapDots.SurfaceSize( dot );
+						var (px, py) = surface.Position( dot.X, dot.Y );
+						var rect = new UiRect( image.X + ((px - size / 2) / MapSurface.ImagePixels - uv0.X) * scale, image.Y + ((py - size / 2) / MapSurface.ImagePixels - uv0.Y) * scale,
+							size / MapSurface.ImagePixels * scale, size / MapSurface.ImagePixels * scale );
+						AddClipped( context.Batch, UiTexture.Image( ParkMapDots.Images[dot.Image] ), rect, image, dot.Color );
+					}
 		}
 	}
 }
@@ -440,6 +628,36 @@ internal static class ParkMapPalette
 	// [BIN:TPW-EXE:0x5f0700 map style records] the outline styles are 0xf86a28 (0, 0, 0, 255) for a closed object and 0xf86a4c (0, 255, 0, 255) for an open one
 	public static readonly RgbaByte OutlineClosed = new( 0, 0, 0, 255 );
 	public static readonly RgbaByte OutlineOpen = new( 0, 255, 0, 255 );
+	// [BIN:TPW-EXE:0x5f0700 dot and area records] the dots are 0xf86a04 (white), 0xf86cb0 (0, 0, 0), 0xf86cd4 (255, 0, 0) and 0xf86cf8 (200, 250, 200); the happiness ramp runs over 0xf86c44 (32, 168, 248), 0xf86c68 (248, 132, 0) and 0xf86c8c (248, 252, 0); a staff member's area is 0xf86b90 (25, 25, 150, alpha 200), or 0xf86bb4 (25, 25, 250, alpha 200) while it is the item under the pointer
+	public static readonly RgbaByte DotWhite = new( 255, 255, 255, 255 );
+	public static readonly RgbaByte DotBlack = new( 0, 0, 0, 255 );
+	public static readonly RgbaByte DotRed = new( 255, 0, 0, 255 );
+	public static readonly RgbaByte DotPaleGreen = new( 200, 250, 200, 255 );
+	public static readonly RgbaByte Zone = new( 25, 25, 150, 200 );
+	public static readonly RgbaByte ZoneHovered = new( 25, 25, 250, 200 );
+
+	/// <summary>The three-record ramp of <c>0x5F09A0</c>: the value clamps to 0..100, below 50 it runs from the first record to the second, from 50 on to the third, in 16.16 steps with arithmetic channel shifts.</summary>
+	public static RgbaByte Ramp( int value, RgbaByte first, RgbaByte second, RgbaByte third )
+	{
+		value = Math.Clamp( value, 0, 100 );
+		var upper = value >= 50;
+		var fraction = ((upper ? value - 50 : value) << 16) / 50;
+		var (from, to) = upper ? (second, third) : (first, second);
+		static byte Channel( byte from, byte to, int fraction ) => (byte)(from + (((to - from) * fraction) >> 16));
+		return new RgbaByte( Channel( from.R, to.R, fraction ), Channel( from.G, to.G, fraction ), Channel( from.B, to.B, fraction ), 255 );
+	}
+
+	/// <summary>The happiness dots' ramp over 0xf86c44, 0xf86c68 and 0xf86c8c.</summary>
+	public static RgbaByte DotRamp( int value ) => Ramp( value, new RgbaByte( 32, 168, 248, 255 ), new RgbaByte( 248, 132, 0, 255 ), new RgbaByte( 248, 252, 0, 255 ) );
+
+	/// <summary>The low byte of a float's truncation (<c>__ftol</c>, then <c>and 0xff</c>); null for a value the host cannot truncate to 32 bits.</summary>
+	public static int? RampByte( float value )
+	{
+		if ( !float.IsFinite( value ) || (double)value < int.MinValue || (double)value > int.MaxValue )
+			return null;
+		return (int)value & 255;
+	}
+
 	/// <summary>Existing host fill when no supported current repair state is available.</summary>
 	public static readonly RgbaByte UnavailableObject = new( 207, 67, 198, 235 );
 

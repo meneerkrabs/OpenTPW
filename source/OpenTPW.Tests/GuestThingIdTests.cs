@@ -29,7 +29,7 @@ public class GuestThingIdTests
 		var guests = Enumerable.Range( 0, 4 ).Select( _ => simulation.SpawnInPark( 10, 0 ) ).ToArray();
 		guests[0].State = GuestState.Gone;
 		guests[2].State = GuestState.Gone;
-		simulation.Tick( 1f / 60 );
+		simulation.TickTurn( 1f / 60 );
 		CollectionAssert.AreEqual( new[] { 2, 4 }, simulation.Guests.Select( guest => guest.Id ).ToArray() );
 		Assert.AreEqual( 0, simulation.Things.QueuedCount, "a simulation of its own ends the turn's destroys itself" );
 		// the removal pass asks newest first (guest 3, then guest 1); the queue frees the last request first, so slot 1 is freed first and slot 3 last
@@ -75,7 +75,7 @@ public class GuestThingIdTests
 		var guests = Enumerable.Range( 0, 4 ).Select( _ => live.SpawnInPark( 10, 0 ) ).ToArray();
 		guests[0].State = GuestState.Gone;
 		guests[2].State = GuestState.Gone;
-		live.Tick( 1f / 60 );
+		live.TickTurn( 1f / 60 );
 		var snapshot = live.CaptureSnapshot();
 		Assert.IsNotNull( snapshot.Things );
 		CollectionAssert.AreEqual( new[] { 3 }, snapshot.Things!.FreeFirst.ToArray(), "the head of the free list that is out of order; the ascending run after it (1, 5, 6, ...) is rebuilt" );

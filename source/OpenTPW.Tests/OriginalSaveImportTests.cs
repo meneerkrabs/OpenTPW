@@ -52,7 +52,7 @@ public class OriginalSaveImportTests
 	/// <paramref name="unverifiedFootprint"/> records Belly Bounce as 2×1 turned 90°, a footprint without a verified rule.
 	/// </summary>
 	internal static OriginalParkImport Park( BalanceSettings settings, byte[]? bank = null, uint parkClosed = 0, IEnumerable<(uint, uint, byte[])>? extraThings = null,
-		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null, Func<int, int, byte[]?>? cellOverride = null, uint gameTick = 755, byte[]? calendar = null, int placedInfoId = 1100, uint worldState = 0 )
+		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null, Func<int, int, byte[]?>? cellOverride = null, uint gameTick = 755, byte[]? calendar = null, int placedInfoId = 1100, uint worldState = 0, byte[]? mechanicHq = null )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
@@ -61,6 +61,8 @@ public class OriginalSaveImportTests
 		if ( bellyBounce != null )
 			things[1] = (12, (uint)SaveThingModel.Attraction, bellyBounce);
 		things[2] = (10, (uint)SaveThingModel.ChallengeSystem, challenges ?? Challenges( settings ));
+		if ( mechanicHq != null )
+			things[things.FindIndex( thing => thing.Item2 == (uint)SaveThingModel.MechanicHq )] = (2, (uint)SaveThingModel.MechanicHq, mechanicHq);
 		things[4] = (8, (uint)SaveThingModel.Bank, bank ?? Bank( settings ));
 		if ( staffHq != null )
 			things[^1] = (1, (uint)SaveThingModel.StaffHq, staffHq);
@@ -72,7 +74,7 @@ public class OriginalSaveImportTests
 			SaveTestPayloads.RideSystemRecord( 1601, 0, 0, 1, 1, SaveObject.FixedItemKind, 1 ),
 			SaveTestPayloads.RideSystemRecord( placedInfoId, 1, 1, unverifiedFootprint ? 2 : 1, 1, SaveObject.PlacedObjectKind, 2, rotation: unverifiedFootprint ? 90 : 0 ),
 		} );
-		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables( gameTick: gameTick, parkClosed: parkClosed, worldState: worldState ), grid, SaveTestPayloads.Things( things ), opaque: staffPool, calendar: calendar ), rideSystem );
+		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables( gameTick: gameTick, parkClosed: parkClosed, worldState: worldState, mechanicHq: (ushort)(mechanicHq != null ? 2 : 0) ), grid, SaveTestPayloads.Things( things ), opaque: staffPool, calendar: calendar ), rideSystem );
 		return OriginalParkImport.Import( payload, map );
 	}
 
@@ -198,14 +200,15 @@ public class OriginalSaveImportTests
 	{
 		string Line( string start ) => import.Evidence.Single( line => line.StartsWith( start, StringComparison.Ordinal ) );
 		var blocks = Line( "[APPROX:SAVE-010] Not imported:" );
-		foreach ( var model in new[] { "Weather", "TagSystem", "MechanicHq", "UIMsgReceiver" } )
+		foreach ( var model in new[] { "Weather", "TagSystem", "UIMsgReceiver" } )
 			StringAssert.Contains( blocks, $"{model} things (" );
-		StringAssert.Contains( blocks, "park analyser apart from its recent-research rings" );
+		StringAssert.DoesNotMatch( blocks, new System.Text.RegularExpressions.Regex( "MechanicHq things" ) );
+		StringAssert.Contains( blocks, "the rest of the park analyser" );
 		var world = Line( "[APPROX:SAVE-010] World values not imported:" );
 		foreach ( var value in new[] { "world state ", "calendar session start " } )
 			StringAssert.Contains( world, value );
-		var arrivals = Line( "[APPROX:ARRIVAL-001] The saved arrival scheduler is attached by the level only" );
-		foreach ( var value in new[] { "exact park clock", "no saved vehicle handles and no host vehicles", "other vehicle continuations remain unsupported", "level reports the attachment outcome" } )
+		var arrivals = Line( "The saved arrival scheduler and the vehicle at work are attached by the level" );
+		foreach ( var value in new[] { "exact park clock", "name the park's own vehicle objects by thing id", "level reports the attachment outcome" } )
 			StringAssert.Contains( arrivals, value );
 		var advisor = Line( "[APPROX:SAVE-010] Advisor controller values not imported:" );
 		foreach ( var value in new[] { "time signature ", "sound ", "raw words 0x", "current record (", "mRequestedLastTutorial 0x", "mMessagePlaying " } )

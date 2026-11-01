@@ -347,12 +347,33 @@ public class ParkCameraMode : CameraMode
 	/// interest (0x7908F0, original units: x and z on the ground), the point the camera looks at. Null when a value is not a finite number or the point is off the map.
 	/// </summary>
 	// [BIN:TPW-EXE:0x42CEC0 camera loader] gf_CameraZoom, gf_YRotation, gui_CameraFlags (cleared again after the read), gs_RequiredPOIPosition (three floats), gs_SavedPOIPosition and the saved yaw are read into the camera's own words; the camera then steers to the required point
-	public static (float X, float Z, float Height, float Yaw)? PoseOfSave( SaveCamera camera )
+	public static (float X, float Z, float Height, float Yaw)? PoseOfSave( SaveCamera camera, bool ninetyDegrees = false )
 	{
 		var (x, z) = (camera.RequiredPoi.X, camera.RequiredPoi.Z);
 		if ( !float.IsFinite( camera.Zoom ) || !float.IsFinite( camera.YRotation ) || !float.IsFinite( x ) || !float.IsFinite( z ) || x < 0 || z < 0 || x > 1280 || z > 1280 )
 			return null;
-		return (x, z, Math.Clamp( camera.Zoom, MinimumHeight, MaximumHeight ), YawOf( camera.YRotation ));
+		return (x, z, Math.Clamp( camera.Zoom, MinimumHeight, MaximumHeight ), YawOf( ninetyDegrees ? SnapToQuarterTurn( camera.YRotation ) : camera.YRotation ));
+	}
+
+	/// <summary>
+	/// The camera's target yaw (radians) after the loader's correction while the rotation option is "90 degs": the nearest multiple of a quarter turn, as tp.exe computes it in single precision.
+	/// </summary>
+	// [BIN:TPW-EXE:0x42D03F camera loader snap] with the rotation byte 0x78D912 set (the options page's Rotation toggle, case 0x1D4C6 of 0x4A3480: set for " 90 degs") the loaded yaw gf_YRotation (0x790A38) is replaced: r = fmod(yaw, 0x3FF921FB60000000 = pi/2 as the single 0x3FC90FDB) through 0x67B24A (fprem, exact), then a negative r below -pi/4 (0xBF490FDB) gives yaw - (r - 0xBFC90FDB), another negative r yaw - r, a positive r above pi/4 (0x3F490FDB) yaw + (pi/2 - r) and the rest yaw - r; each operation rounds to the single precision the thread runs at once the Direct3D device exists (24 bits, 0x563914), and the result is stored as a float. The camera update runs the same snap every frame (0x42B21A); the smoothed yaw 0x7909E0 keeps the saved value and eases toward the target, which OpenTPW's camera does not model (it starts on the target)
+	public static float SnapToQuarterTurn( float yaw )
+	{
+		var halfTurn = 1.5707963705062866;   // the double at 0x6FDD88, the single 0x3FC90FDB widened
+		var quarter = BitConverter.Int32BitsToSingle( 0x3F490FDB );
+		// the CRT's fmod wrapper (0x6843E0) answers +0 for a yaw of -0 (the oracle row 80000000), so the target keeps its sign
+		var remainder = yaw == 0 ? 0.0 : (double)yaw % halfTurn;
+		if ( remainder < 0 )
+		{
+			if ( remainder < -(double)quarter )
+				return (float)((double)yaw - (float)(remainder - (double)BitConverter.Int32BitsToSingle( unchecked( (int)0xBFC90FDB ) )));
+			return (float)((double)yaw - remainder);
+		}
+		if ( remainder <= quarter )
+			return (float)((double)yaw - remainder);
+		return (float)((double)(float)(BitConverter.Int32BitsToSingle( 0x3FC90FDB ) - remainder) + yaw);
 	}
 
 	private float GroundAtTarget()

@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The arrival walk of tp.exe's guests (WALK-008, ARRIVAL-001): a guest is made at the vehicle's stop cell (<c>0x004CF720</c>, <c>0x004FB201</c>), walks the cell map to the bus-side crossing
+/// The arrival walk of tp.exe's guests (WALK-008, was ARRIVAL-001, retired): a guest is made at the vehicle's stop cell (<c>0x004CF720</c>, <c>0x004FB201</c>), walks the cell map to the bus-side crossing
 /// cell (state 0), waits there for the vehicle (state 1, <c>0x004FF520</c>), walks to a ticket booth (state 2, <c>0x004FF730</c>), is weighed (state 4), waits as the head of its cell
 /// for the gate (state 3, <c>0x004FF7F0</c>) and walks on to the entrance (state 5, <c>0x004FFB20</c>), where it is numbered.
 /// </summary>

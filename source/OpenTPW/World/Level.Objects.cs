@@ -2058,6 +2058,20 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// The environment grid of an original save (<see cref="ParkEconomy.ImportSavedEnvironment"/>), taken after the litter, the staff and the objects have put their rows back: GUEST-006's
+	/// question whether the original saves or rebuilds the grid is answered by its cell serializer (0x4D7EA0), which saves it.
+	/// </summary>
+	private void ImportOriginalEnvironment()
+	{
+		if ( resumeState != null || GameEditions.IsThemeParkInc || visitLayout != null || Park == null || OriginalPark?.Save is not { } save )
+			return;
+		var (records, different) = Park.Economy.ImportSavedEnvironment( save.World );
+		var line = $"Environment grid imported: {records} cells hold a saved region effect record; {different} cells differ from the sources OpenTPW spread again, which the saved words take over as a residue.";
+		Park.Import?.Report( line );
+		Log.Trace( $"Park environment import: {line}" );
+	}
+
+	/// <summary>
 	/// An original save's RSSE block gives the imported objects' scripts their saved ids, list order and pass counter (<see cref="ParkObjects.ImportOriginalScripts"/>, DET-013): the
 	/// one slice per eight passes then falls on the passes the saved park ran it on. Only a park started from an original save does this; a resumed park restores its own scripts.
 	/// </summary>

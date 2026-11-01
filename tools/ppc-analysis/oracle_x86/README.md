@@ -74,6 +74,10 @@ the rest reports skips; nothing fails. CI has neither.
 
 `bridge_walk_oracle.py` lays synthetic second-layer records beside a placed kart or water ride and runs the op 0x86 pair (forward walk `0x52C6F0`, reverse walk `0x52CCB0`); `bridge_walk_golden.py` writes `TrackBridgeWalkGolden.cs` from 700 random layouts (`--check FILE`, about 25 minutes, layouts whose walk reads past the structure array are left out). Finding X47 in `docs/reverse/ORACLE.md` section 7.32.
 
+## The camera loader's yaw snap (round 11, package C)
+
+`camera_snap_golden.py` runs the tail of the camera loader `0x42CEC0` (`0x42D03F`, with the CRT fmod `0x67B24A`) on 585 yaws and writes `CameraSnapGolden.cs`; `CameraSnapGoldenTests` pins `ParkCameraMode.SnapToQuarterTurn` to it bit for bit (finding X49 in ORACLE.md).
+
 ## The head placement routine (round 11, package W)
 
 `head_oracle.py` runs the head placement `0x44B510` over a synthetic head node and camera (the sprite register writers recorded, not run, the PC sine table built as the message pump builds it, control word 0x7F); `head_golden.py` writes `HeadPlacementGolden.cs` from 700 cases, which `HeadPlacementGoldenTests` replays on `OriginalHeadMath` bit for bit (finding X48 in docs/reverse/ORACLE.md).

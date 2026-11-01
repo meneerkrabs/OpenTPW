@@ -24,6 +24,9 @@ public class ArrivalVehicleTests
 
 		public bool Exists( int kind ) => Placed[kind];
 
+		/// <summary>The thing ids the saved handles name in the tests (the bus 20, the seaplane 21, the Ferry 22).</summary>
+		public int ThingId( int kind ) => Placed[kind] ? 20 + kind : 0;
+
 		public bool Create( int kind )
 		{
 			if ( !Defined[kind] )
@@ -347,12 +350,13 @@ public class ArrivalVehicleTests
 		Assert.IsTrue( restored.Vehicles.Created.Contains( ArrivalVehicleKind.Bus ), "the group places its vehicle again" );
 	}
 
-	private static SaveWorld SavedArrivals( uint turn = 109, uint timer = 103, int group = 7, byte active = 0, int handle = -1 )
+	private static SaveWorld SavedArrivals( uint turn = 109, uint timer = 103, int group = 7, byte active = 0, int handle = -1, int[]? handles = null )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 2, ( _, _ ) => 0 );
 		var variables = SaveTestPayloads.ParkVariables( gameTick: turn );
-		foreach ( var offset in new[] { 4, 6, 8, 12 } )
-			System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( variables.AsSpan( offset ), (ushort)(offset == handle ? 15 : 0) );
+		// the cached bus, seaplane and Ferry handles and the vehicle at work (world +0x1DA72C/E/30 and +0x1DA72A)
+		foreach ( var (offset, slot) in new[] { (4, 0), (6, 1), (8, 2), (12, 3) } )
+			System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian( variables.AsSpan( offset ), (ushort)(offset == handle ? 15 : handles?[slot] ?? 0) );
 		var calendar = SaveTestPayloads.CalendarAndArrivals();
 		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( calendar.AsSpan( 28 ), 91 );
 		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( calendar.AsSpan( 32 ), timer );
@@ -459,6 +463,58 @@ public class ArrivalVehicleTests
 		CollectionAssert.AreEqual( variables, park.Vehicles.Variables.SelectMany( values => values ).ToArray() );
 		Assert.AreEqual( 0, groups.Count );
 		Assert.AreEqual( 0, park.Vehicles.Created.Count );
+	}
+
+	private static Park ParkWithVehicles()
+	{
+		var park = new Park { Turn = 109 };
+		park.Vehicles.Placed[0] = park.Vehicles.Placed[1] = park.Vehicles.Placed[2] = true;
+		return park;
+	}
+
+	[DataTestMethod]
+	[DataRow( 20, ArrivalVehicleKind.Bus, 2 )]
+	[DataRow( 21, ArrivalVehicleKind.Seaplane, 4 )]
+	[DataRow( 22, ArrivalVehicleKind.Ferry, 3 )]
+	public void ASavedVehicleAtWorkIsTheCachedOneItsHandleNamesAtItsSavedStatus( int current, int kind, int status )
+	{
+		var park = ParkWithVehicles();
+		park.Vehicles.SetStatus( kind, status );
+		var random = park.Simulation.RandomState;
+		var report = park.Simulation.ImportOriginalArrivals( SavedArrivals( group: 3, active: 1, handles: new[] { 20, 21, 22, current } ) );
+		StringAssert.Contains( report, $"the {ArrivalVehicleKind.Names[kind]} (thing {current}) at work" );
+		Assert.AreEqual( kind, park.Simulation.ArrivalVehicle );
+		Assert.AreEqual( random, park.Simulation.RandomState );
+		Assert.AreEqual( 0, park.Vehicles.Created.Count );
+		var snapshot = park.Simulation.CaptureSnapshot();
+		Assert.AreEqual( kind, snapshot.ArrivalVehicle );
+		Assert.AreEqual( 3, snapshot.PendingArrivals );
+		// the next update reads the vehicle's own status as the original does: at 2 a guest steps off, at 4 the group waits
+		park.Turns( 1 );
+		Assert.AreEqual( status == 2 ? 1 : 0, park.Arrived );
+		Assert.AreEqual( kind, park.Simulation.ArrivalVehicle );
+	}
+
+	[TestMethod]
+	public void CachedHandlesWithNoVehicleAtWorkImportTheSchedulerAndKeepTheParksVehicles()
+	{
+		var park = ParkWithVehicles();
+		StringAssert.Contains( park.Simulation.ImportOriginalArrivals( SavedArrivals( group: 7, handles: new[] { 20, 21, 22, 0 } ) ), "no vehicle at work" );
+		Assert.AreEqual( -1, park.Simulation.ArrivalVehicle );
+		Assert.AreEqual( 0, park.Vehicles.Created.Count );
+	}
+
+	[DataTestMethod]
+	[DataRow( "wrong-bus", 21, 21, 22, 0 )]
+	[DataRow( "missing-ferry-handle", 20, 21, 0, 0 )]
+	[DataRow( "stray-current", 20, 21, 22, 15 )]
+	[DataRow( "current-without-cache", 20, 21, 22, 99 )]
+	public void SavedVehicleHandlesThatDoNotNameTheParksVehiclesLeaveTheSchedulerUnchanged( string name, int bus, int plane, int ferry, int current )
+	{
+		var park = ParkWithVehicles();
+		var before = ParkResumeJson.Serialize( park.Simulation.CaptureSnapshot() );
+		StringAssert.Contains( park.Simulation.ImportOriginalArrivals( SavedArrivals( group: 9, active: 1, handles: new[] { bus, plane, ferry, current } ) ), "scheduler unchanged", name );
+		CollectionAssert.AreEqual( before, ParkResumeJson.Serialize( park.Simulation.CaptureSnapshot() ), name );
 	}
 
 	/// <summary>

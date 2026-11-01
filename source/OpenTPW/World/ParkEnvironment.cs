@@ -43,12 +43,83 @@ public sealed class ParkEnvironment
 	/// <summary>The <c>RegionFX</c> table; all zero until the balance settings set it.</summary>
 	public RegionEffect[] Effects { get; set; } = new RegionEffect[RegionEffect.Count];
 
+	/// <summary>What an original save's grid holds beyond the sources OpenTPW spread again (<see cref="ImportSaved"/>); null for a park that was not loaded from an original save or whose grid is its sources'.</summary>
+	private short[]? residue;
+
 	public (short Happiness, short Illness, short Hunger, short Security, short Attraction) At( int x, int y )
 	{
 		if ( (uint)x >= ParkLitter.MapSize || (uint)y >= ParkLitter.MapSize )
 			return default;
 		var index = (y * ParkLitter.MapSize + x) * Components;
+		if ( residue is { } extra )
+			return (unchecked( (short)(words[index] + extra[index]) ), unchecked( (short)(words[index + 1] + extra[index + 1]) ), unchecked( (short)(words[index + 2] + extra[index + 2]) ),
+				unchecked( (short)(words[index + 3] + extra[index + 3]) ), unchecked( (short)(words[index + 4] + extra[index + 4]) ));
 		return (words[index], words[index + 1], words[index + 2], words[index + 3], words[index + 4]);
+	}
+
+	/// <summary>
+	/// Takes the grid an original save holds: <paramref name="saved"/> gives each cell's five words (null for a cell the save keeps no record for, the default zeros). The sources have been spread again
+	/// by then (litter, entertainers, guards, toilets, cameras and fireworks are put back where the save has them), so what the saved grid holds beyond them is kept apart as a residue that reads
+	/// with the words and is never touched by a source's later add or remove; returns the number of cells with a residue.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4D7EA0 cell manager serializer] the original saves and loads its region grid as it is: the loader constructs no object (0x4DB090 is not run for a loaded thing, so no row is added again) and keeps the ten-byte records of the cells whose status byte has bit 4, so the grid after a load is the grid the save held, whichever sources made it
+	public int ImportSaved( Func<int, int, short[]?> saved )
+	{
+		ArgumentNullException.ThrowIfNull( saved );
+		var extra = new short[words.Length];
+		var cells = 0;
+		for ( var y = 0; y < ParkLitter.MapSize; y++ )
+			for ( var x = 0; x < ParkLitter.MapSize; x++ )
+			{
+				var record = saved( x, y );
+				var index = (y * ParkLitter.MapSize + x) * Components;
+				var any = false;
+				for ( var component = 0; component < Components; component++ )
+				{
+					var delta = unchecked( (short)((record != null && component < record.Length ? record[component] : 0) - words[index + component]) );
+					extra[index + component] = delta;
+					any |= delta != 0;
+				}
+				if ( any )
+					cells++;
+			}
+		residue = cells == 0 ? null : extra;
+		return cells;
+	}
+
+	/// <summary>The cells that hold a residue, row by row: x, y and the five words (saves).</summary>
+	public IEnumerable<int[]> ResidueCells()
+	{
+		if ( residue is not { } extra )
+			yield break;
+		for ( var cell = 0; cell < ParkLitter.MapSize * ParkLitter.MapSize; cell++ )
+		{
+			var index = cell * Components;
+			if ( extra.AsSpan( index, Components ).ContainsAnyExcept( (short)0 ) )
+				yield return [cell % ParkLitter.MapSize, cell / ParkLitter.MapSize, extra[index], extra[index + 1], extra[index + 2], extra[index + 3], extra[index + 4]];
+		}
+	}
+
+	/// <summary>Puts a residue back (<see cref="ResidueCells"/>); every entry must be a cell of the map with five words.</summary>
+	public void RestoreResidue( IEnumerable<int[]> cells )
+	{
+		ArgumentNullException.ThrowIfNull( cells );
+		var extra = new short[words.Length];
+		var any = false;
+		foreach ( var cell in cells )
+		{
+			if ( cell is not { Length: 2 + Components } || (uint)cell[0] >= ParkLitter.MapSize || (uint)cell[1] >= ParkLitter.MapSize )
+				throw new InvalidDataException( "An environment residue entry is not a map cell with five words." );
+			var index = (cell[1] * ParkLitter.MapSize + cell[0]) * Components;
+			for ( var component = 0; component < Components; component++ )
+			{
+				if ( cell[2 + component] is < short.MinValue or > short.MaxValue )
+					throw new InvalidDataException( "An environment residue word does not fit 16 bits." );
+				extra[index + component] = (short)cell[2 + component];
+				any |= extra[index + component] != 0;
+			}
+		}
+		residue = any ? extra : null;
 	}
 
 	/// <summary>
@@ -78,5 +149,9 @@ public sealed class ParkEnvironment
 	}
 
 	/// <summary>Clears every word (a load rebuilds the grid from its sources).</summary>
-	public void Clear() => Array.Clear( words );
+	public void Clear()
+	{
+		Array.Clear( words );
+		residue = null;
+	}
 }

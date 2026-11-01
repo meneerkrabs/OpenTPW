@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The leaving guests' last walk (ARRIVAL-001): at the gate's crossing cell (state 19, tp.exe <c>0x00500AD0</c>) a guest waits until the arrival vehicle lets it
+/// The leaving guests' last walk (was ARRIVAL-001, retired): at the gate's crossing cell (state 19, tp.exe <c>0x00500AD0</c>) a guest waits until the arrival vehicle lets it
 /// walk, picks one of the four cells around the stop with world draws and walks there over the cell map (state 20), then waits (state 21, <c>0x00500BD0</c>) and boards when the
 /// vehicle reports status 4 and it heads its cell's thing list.
 /// </summary>

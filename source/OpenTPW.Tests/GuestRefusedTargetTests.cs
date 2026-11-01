@@ -217,7 +217,7 @@ public class GuestRefusedTargetTests
 	public void FullRoomRetainsTargetWithoutThoughtHistoryStampOrHappinessChanges()
 	{
 		var rig = FullQueue();
-		// State 10 can reach the back between park turns: isolate the refusal from periodic needs and history decay.
+		// The guest's update runs on the tick that starts a park turn only (DET-014): start from a tick that does not start one, so the refusal's turn is the next
 		while ( rig.Simulation.NextTickStartsTurn )
 			rig.Step();
 		var observer = new Recorder();
@@ -227,7 +227,7 @@ public class GuestRefusedTargetTests
 		guest.QueueStandingSinceTurn = 17;
 		guest.TemporaryHistory[0] = 27;
 		guest.UsedHistory[0] = 28;
-		rig.Step();
+		rig.StepTurn();
 		Assert.AreEqual( GuestState.DoingNothing, guest.State );
 		Assert.AreEqual( RideId, guest.AttractionId );
 		Assert.AreEqual( GuestThought.Hungry, guest.Thought );
@@ -251,7 +251,7 @@ public class GuestRefusedTargetTests
 			var rig = NewRig( excitement: excitement );
 			var guest = rig.Send();
 			guest.QueueStandingSinceTurn = 17;
-			rig.Step();
+			rig.StepTurn();
 			Assert.AreEqual( GuestState.DoingNothing, guest.State );
 			Assert.AreEqual( 0, guest.AttractionId );
 			Assert.AreEqual( thought, guest.Thought );

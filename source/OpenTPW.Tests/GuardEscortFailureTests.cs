@@ -157,6 +157,26 @@ public class GuardEscortFailureTests
 			f.World.TakeVoices().Select( voice => (voice.Event, voice.Kids) ).ToArray() );
 	}
 
+	/// <summary>
+	/// [BIN:TPW-EXE:0x004D6954] the catch routes to the booth cell of the turn's side and nowhere else: a booth that is no path cell fails the first request (the guard's mask 0), and the second request
+	/// (+0x188 = 1, which may leave the paths) walks the guard onto it. The entrance end of the lane is not a stand-in for the booth.
+	/// </summary>
+	[TestMethod]
+	public void ABoothThatIsNoPathCellIsReachedWithTheSecondRequestAndNotReplacedByTheEntrance()
+	{
+		var f = new Fixture( 1 );
+		// the booth (8, 3) is open land beside the path's end (7, 3); the entrance (9, 3) is a path cell beyond it that no path reaches
+		f.Grid.SetPath( 9, 3, true );
+		f.Guests.RouteLane = [(0, 3), (1, 3), (2, 3), (8, 3), (9, 3)];
+		f.Update();
+		CollectionAssert.AreEqual( new[] { "hold" }, f.Guests.Calls );
+		CollectionAssert.AreEqual( new[] { 0, 1 }, f.Guests.RouteMasks, "the booth was asked for with each mask in turn" );
+		Assert.AreEqual( StaffJob.Escorting, f.Guard.Job );
+		Assert.AreEqual( (8, 3), (f.Guard.Navigation!.TargetX >> 16, f.Guard.Navigation.TargetY >> 16), "the walk is to the booth cell" );
+		Assert.AreEqual( 1, f.Guard.Navigation.Mask );
+		Assert.AreEqual( 0, f.Guests.Releases.Count );
+	}
+
 	[TestMethod]
 	public void AnAbandonedChaseCountsAsTheKidThatGotAway()
 	{

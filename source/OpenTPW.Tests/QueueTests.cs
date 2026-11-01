@@ -104,6 +104,14 @@ public class QueueTests
 			Script.Advance( Tick );
 		}
 
+		/// <summary>Runs the ticks up to the one that starts a park turn, and that tick: the guests' thing update runs only there (tp.exe 0x00516380, DET-014).</summary>
+		public void StepTurn()
+		{
+			while ( !Simulation.NextTickStartsTurn )
+				Step();
+			Step();
+		}
+
 		/// <summary>Runs until the park turn has advanced by <paramref name="turns"/>.</summary>
 		public void RunTurns( int turns, Action? afterTick = null )
 		{
@@ -575,7 +583,8 @@ public class QueueTests
 		var walker = rig.Send();
 		walker.Happiness = 90;
 		Assert.AreEqual( GuestState.GoingToRide, walker.State );
-		rig.RunTurns( 1 );
+		// a guest sent without a walk is routed in its first turn (the guests' update runs only in a park turn, DET-014) and found walking in the second
+		rig.RunTurns( 2 );
 		Assert.AreEqual( 0, walker.AttractionId, "the reservation is dropped" );
 		Assert.IsTrue( walker.State is GuestState.DoingNothing || GoingHome( walker ), $"{walker.State}" );
 		Assert.IsTrue( walker.Happiness <= 100 - big + 0.01f, $"the big drop at 0x004FEA70(2) (the needs phase may have added up to the cap first): {walker.Happiness}" );
@@ -1541,7 +1550,7 @@ public class QueueTests
 		orphan.QueuePosition = 0;
 		orphan.QueueJoinTurn = rig.Simulation.ParkTurn;
 		orphan.QueueCalled = true;
-		rig.Step();
+		rig.StepTurn();
 		Assert.AreEqual( (GuestState.DoingNothing, -1, -1L, false), (orphan.State, orphan.QueuePosition, orphan.QueueJoinTurn, orphan.QueueCalled) );
 	}
 

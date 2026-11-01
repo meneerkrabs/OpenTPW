@@ -471,9 +471,12 @@ public sealed partial class StaffWorldSimulation
 	}
 
 	/// <summary>The member thinks <paramref name="thought"/> (tp.exe <c>0x0050BE80</c> on its thought object): stored, with a bubble when the last one is old enough.</summary>
-	private static void Think( StaffMember member, int thought, long turn )
+	// [BIN:TPW-EXE:0x0050BE8D camera gate] the thought object's setter is the guests' (0x0050BE80): it stores the thought, then returns before any bubble work while the camera word 0x790AB0 has a bit of 0x16 set (the walk camera 2, the ride camera 4)
+	private void Think( StaffMember member, int thought, long turn )
 	{
 		member.Thought = thought;
+		if ( ThoughtBubblesAllowed?.Invoke() == false )
+			return;
 		member.BubbleThought = 0;
 		if ( !GuestThoughts.TakesBubble( thought, turn, member.BubbleTurn ) )
 			return;
@@ -488,7 +491,7 @@ public sealed partial class StaffWorldSimulation
 	/// reaches the cell.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FA530 staff SetDest] the cell id becomes the target bytes (x, y) with 0x80 in each low byte, +0x18/+0x1A keep it, then 0x00510100 (the walk set-up 0x0050F8E0 with the walk mask +0x188); 0x004FA5F0 does the same for a byte point
-	// Approximation (ECON-022, registered at UpdateStaff): the stranded stamp the wander sets (+0x198, 0x004FA670) and SetDest's quick failure while the cells around stay unchanged (0x004FA770) are not kept, as for the guests
+	// [BIN:TPW-EXE:0x004F9D77 staff are never stranded] the wander's dead end (0x004F9D64) tests the thing's kind byte: the staff (4 to 8) go to the patrol area search 0x00506F30 and return, and only the other kinds (the guests) reach the stamp write at 0x004F9E09 (+0x198 = the cell map's stamp counter); the other writers of +0x198 clear it (0x004F9528, 0x004F9990, 0x004F9B3F, 0x004FA695 through 0x004FA670, whose two callers 0x004F99B0 and 0x004F9B66 both pass 0), so a staff member's word stays 0 and the quick failure of 0x004FA770 (taken only while the word is above 0: 0x004F94FB, 0x004F999C, 0x004F9B49, 0x004FA58F, 0x004FA615) never holds a staff route
 	private bool Route( StaffMember member, (int X, int Y) cell, int byteX, int byteY )
 	{
 		var navigation = member.Navigation!;

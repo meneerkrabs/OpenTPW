@@ -246,6 +246,9 @@ public class GuestDisplayAgeTests
 		var park = Park();
 		var payments = new StayPayments();
 		park.Payments = payments;
+		// the guests' update runs on the tick that starts a park turn (DET-014): the guest is made just before it
+		while ( !park.NextTickStartsTurn )
+			park.Tick( GuestSnapshotTests.Tick );
 		var guest = park.SpawnInPark( 5, 5 );
 		guest.TimeInParkSeconds = 100 * ParkCalendar.TurnMilliseconds / 1000.0;
 		guest.DisplayTimeInParkTurns = 4000;

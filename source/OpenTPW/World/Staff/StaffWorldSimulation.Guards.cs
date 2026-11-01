@@ -211,13 +211,13 @@ public sealed partial class StaffWorldSimulation
 	/// (<c>FixedItemInfo.TicketBoothA/BPos</c>, <c>EntranceA/BPos</c>).
 	/// </summary>
 	// [DATA:levels/Standard.sam:FixedItemInfo.TicketBoothAPosX..EntranceBPosY] the gate cells at 0x0078559C.. (ticket booths) and 0x007855BC.. (entrances), cell id y × 128 + x + 1
-	// Approximation (ECON-022, registered at UpdateStaff): the ticket booth lies outside the paths OpenTPW's staff walk, so a guard carries the guest to the park entrance when the booth is no path cell
+	// [BIN:TPW-EXE:0x004D6954 booth route] the catch asks 0x004D8610 for the booth cell of the side the world turn's bit 0 names ([game +0x1DA70C] & 1, the same side for both tries) and requests a route to that one cell (0x004FA530, SetDest 0x00510100 on the cell map with the walk mask), first with the guard's mask, then with +0x188 = 1 (0x004D6977, 0x004D699C); the guard never routes to the entrance in its place, the entrance (0x004D8690) is only the way back after the escort (0x004D6AF0)
 	private bool RouteToGate( StaffMember member, GateCell gate, long turn )
 	{
 		var lane = Guests?.Lane( (int)(turn & 1) ) ?? Guests?.Lane( (int)(~turn & 1) );
 		if ( lane is not { Length: >= 5 } )
 			return false;
-		var cell = gate == GateCell.TicketBooth && grid.IsWalkable( lane[3].X, lane[3].Y ) ? lane[3] : lane[^1];
+		var cell = gate == GateCell.TicketBooth ? lane[3] : lane[^1];
 		return Route( member, cell, GuestWander.CentreByte, GuestWander.CentreByte );
 	}
 }

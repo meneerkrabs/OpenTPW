@@ -607,9 +607,17 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			SyncOccupants();
 		}
-		// [APPROX:DET-014] without a host thing sweep (a simulation of its own, the ticks between park turns) the guests' updates and their draws run in this list order, not the original's newest-first thing sweep (DET-013); the remaining mismatch is which guest steps run between park turns, not missing won-sideshow tail or balloon-recreation draws (ApplyVisit and FinishUse already take those)
-		for ( var index = 0; index < guests.Count; index++ )
-			UpdateGuest( guests[index], deltaSeconds );
+		// [BIN:TPW-EXE:0x00516380 guest update only in the turn] a guest's thing update runs only in the park turn's thing sweep (0x5163FB -> 0x50B360, once per eight substeps, 0x54F668); the substeps between two turns run nothing of it, so only the turn's tick updates the guests, and the ticks between count their seconds and move the drawn point
+		if ( turnStarted )
+		{
+			for ( var index = 0; index < guests.Count; index++ )
+				UpdateGuest( guests[index], deltaSeconds );
+		}
+		else
+		{
+			for ( var index = 0; index < guests.Count; index++ )
+				UpdateBetweenTurns( guests[index], deltaSeconds );
+		}
 		for ( var index = guests.Count - 1; index >= 0; index-- )
 		{
 			if ( guests[index].State != GuestState.Gone )
@@ -994,6 +1002,33 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <c>+0x1D4</c> (the world turn at the constructor) is never rewritten.
 	/// </summary>
 	private static bool CountsParkTime( Guest guest ) => guest.State != GuestState.Gone;
+
+	/// <summary>
+	/// One guest on a tick between two park turns: the original runs no thing update there, so only the seconds counters, the drawn point and the two seconds timers of OpenTPW's own states run.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00516380 thing update] the guest's update (0x5019F0 through the thing's type switch 0x50B360) is called only from the turn's sweep (0x5163FB); nothing else steps a guest, so its state handlers, walk steps and draws run on the turn's tick alone
+	// the states with no original behind them keep their per tick step: the vehicle-less park's wait for a bus (the original refuses a park without arrival vehicles, 0x51A601) and the pools extension's swim sessions and activities ([EXT:pools-swim]: the swimmers, the river, the waves and the slides move every tick, and a change room's exit wait counts seconds)
+	private void UpdateBetweenTurns( Guest guest, float dt )
+	{
+		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
+			guest.TimeInParkSeconds = elapsed + dt;
+		if ( InPark( guest ) )
+			UpdateNeeds( guest, dt );
+		if ( StepsEveryTick( guest ) )
+			UpdateState( guest, dt );
+		if ( !guest.HasWaypoint && guest.State is not GuestState.Boarding )
+			guest.IsMoving = false;
+		UpdatePresentation( guest );
+	}
+
+	/// <summary>The guest's state has a step of OpenTPW's own that runs on every tick (see <see cref="UpdateBetweenTurns"/>).</summary>
+	private bool StepsEveryTick( Guest guest ) => guest.State switch
+	{
+		GuestState.WaitingToGoHome => ArrivalVehicles == null,
+		GuestState.ExitingRide => guest.StateTimer > 0,
+		GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut or GuestState.PoolActivity => true,
+		_ => false
+	};
 
 	private void UpdateGuest( Guest guest, float dt )
 	{

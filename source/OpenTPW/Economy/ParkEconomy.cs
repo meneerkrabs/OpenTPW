@@ -828,6 +828,18 @@ public sealed partial class ParkEconomy : IParkEconomy
 		return true;
 	}
 
+	/// <summary>
+	/// A fireworks object whose script variable 0 already is 2 (a park saved after its show ran, and its row 7 came off): the show is spent, so the destructor takes no row off again
+	/// and a sale leaves the cells as they are (tp.exe <c>0x004DD0A0</c> subtracts row 7 only while the variable is below 2). No cell changes: the saved grid, or the live one, no longer holds the row.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DD0A0 object destructor] row 7 for fireworks only while script variable 0 is below 2; the every-tick test of 0x004E0B90 (variable 0 equal to 1 removes the row and writes 2) therefore fires once for a show whose script writes the variable once
+	// [DATA:levels/hallow/features/firework/Firework.RSE, levels/space/features/slaser/slaser.RSE] both shows run COPY VAR_STATUS 1 once after the show, then ENDSLICE for good; Info.IsChoosable is 0, so no guest uses a show and the admission writer 0x004E0900 (which writes variable 0 for the admitted guest) never meets one: the variable runs 0, 1, 2 once
+	internal void MarkFireworksRemoved( int instanceId )
+	{
+		if ( objects.TryGetValue( instanceId, out var item ) && !item.FireworksSpent && Catalog.TryGet( item.InfoId, out var info ) && info.IsFireworks )
+			item.FireworksSpent = true;
+	}
+
 	/// <summary>A toilet's row swaps when it turns dirty or is cleaned (tp.exe <c>0x004E2440</c>, <c>0x004DFD80</c>).</summary>
 	private void SwapToiletEffect( ParkObjectState item, int from, int to )
 	{

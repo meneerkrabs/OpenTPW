@@ -8,32 +8,50 @@ namespace OpenTPW;
 public sealed partial class GuestSimulation
 {
 	/// <summary>
-	/// Attaches a saved TPW scheduler only when no vehicle has yet been cached or selected. Validation precedes every scheduler write;
-	/// importing does not dispatch, draw randomness or emit a group-history event. Cached/current vehicles require a separate identity-and-script restore.
+	/// Attaches a saved TPW scheduler and the vehicle at work. The world's cached handles (world <c>+0x1DA72C/E/30</c>: the bus, the seaplane, the Ferry) must name the park's own vehicle
+	/// objects by thing id (<see cref="IArrivalVehicleHost.ThingId"/>), and the handle at work (<c>+0x1DA72A</c>) one of them; a vehicle at work is then at its saved script state (the
+	/// scripts are imported before this runs). Validation precedes every scheduler write; importing does not dispatch, draw randomness or emit a group-history event.
 	/// </summary>
+	// [BIN:TPW-EXE:0x005179C0 world loader] the words +0x1DA72C, +0x1DA72E, +0x1DA730 (the cached bus, seaplane and Ferry handles), +0x1DA72A (the vehicle at work) are read raw as 16-bit values (0x00517A56..0x00517B8A); nothing checks them afterwards
+	// [BIN:TPW-EXE:0x0051A2F0 vehicle dispatch] a handle is the vehicle thing's id: the kind created at 0x0051A59B stores its handle at +0x1DA72C + 2 × kind and at +0x1DA72A, and the status read 0x0051A690 goes through the thing; the kind of the vehicle at work is the cached handle it equals (0x0051AAD0 compares it with the bus's)
 	internal string ImportOriginalArrivals( SaveWorld world )
 	{
 		ArgumentNullException.ThrowIfNull( world );
 		var variables = world.Variables;
 		var saved = world.ArrivalState;
 		string? reason = null;
+		var cached = new[] { (int)variables.ArrivalVehicleSize1, variables.ArrivalVehicleSize2, variables.ArrivalVehicleSize3 };
+		var current = -1;
 		if ( OnlineVisit || ArrivalClock == null || ArrivalClock() != variables.GameTick )
 			reason = "the attached arrival clock is not the saved park turn";
 		else if ( saved.TimerStart > variables.GameTick )
 			reason = "the saved timer is ahead of the park turn";
-		else if ( variables.CurrentArrivalVehicle != 0 || variables.ArrivalVehicleSize1 != 0 || variables.ArrivalVehicleSize2 != 0 || variables.ArrivalVehicleSize3 != 0 )
-			reason = "cached or current vehicle identities and script continuation are not yet supported";
 		else if ( ArrivalVehicles == null )
 			reason = "no vehicle host is attached";
-		else if ( Enumerable.Range( 0, ArrivalVehicleKind.Names.Count ).Any( ArrivalVehicles.Exists ) )
-			reason = "the host already has a vehicle absent from the saved handles";
+		else
+		{
+			for ( var kind = 0; kind < cached.Length && reason == null; kind++ )
+			{
+				var thing = ArrivalVehicles.Exists( kind ) ? ArrivalVehicles.ThingId( kind ) : 0;
+				if ( cached[kind] != thing )
+					reason = cached[kind] == 0 ? $"the park holds a {ArrivalVehicleKind.Names[kind]} the saved handle does not name"
+						: $"the saved {ArrivalVehicleKind.Names[kind]} handle {cached[kind]} is not the park's {ArrivalVehicleKind.Names[kind]} (thing {thing})";
+			}
+			if ( reason == null && variables.CurrentArrivalVehicle != 0 )
+			{
+				current = Array.IndexOf( cached, (int)variables.CurrentArrivalVehicle );
+				if ( current < 0 )
+					reason = $"the vehicle at work, handle {variables.CurrentArrivalVehicle}, is none of the cached vehicles";
+			}
+		}
 		if ( reason != null )
-			return $"[APPROX:ARRIVAL-001] Saved arrival scheduler unchanged: {reason}.";
+			return $"Saved arrival scheduler unchanged: {reason}.";
 		arrivalTimerStart = saved.TimerStart;
 		pendingArrivals = saved.PeopleOnBus;
 		deliveringArrivals = saved.Offloading;
-		arrivalVehicle = -1;
-		return $"Saved arrival scheduler imported with no cached/current vehicles: timer {saved.TimerStart}, signed group {saved.PeopleOnBus}, active {saved.Offloading}. [APPROX:ARRIVAL-001] Rate {saved.ArrivalRate}, target capacity {saved.TargetVehicleCapacity} and gates-open {saved.GatesOpen} are decoded but not applied.";
+		arrivalVehicle = current;
+		var atWork = current < 0 ? "no vehicle at work" : $"the {ArrivalVehicleKind.Names[current]} (thing {variables.CurrentArrivalVehicle}) at work";
+		return $"Saved arrival scheduler imported with {atWork}: timer {saved.TimerStart}, signed group {saved.PeopleOnBus}, active {saved.Offloading}; the cached vehicle handles {string.Join( "/", cached )} name the park's vehicles. Words not applied: rate {saved.ArrivalRate}, target capacity {saved.TargetVehicleCapacity} and gates-open {saved.GatesOpen} (no reader in the update 0x004CF3E0, the group size 0x004CF5B0 or the guest maker 0x004CF720; the object holds the timer at +4, mTargetVehicleCapacity +8, mPeopleOnBus +0xC, mOffloading +0x10, mGatesOpen +0x11).";
 	}
 
 	/// <summary>

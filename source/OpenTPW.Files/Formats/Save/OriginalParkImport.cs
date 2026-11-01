@@ -184,6 +184,8 @@ public sealed class OriginalParkImport
 	public SaveAnalyserStamps? AnalyserStamps { get; private init; }
 	/// <summary>The referenced TPW analyser's three misbehaving-kids words (the guards' chases this month, the abandoned ones, all of them); null without an analyser, or for Theme Park Inc.</summary>
 	public SaveAnalyserCounters? AnalyserCounters { get; private init; }
+	/// <summary>The mechanic HQ thing (<c>mMechanicHq</c>), whose word is the mechanics' cursor into the object list; null when the world names none.</summary>
+	public SaveMechanicHq? MechanicHq { get; private init; }
 	/// <summary>
 	/// The advisor clock the save carries: the second word of the clock block that follows the MESS delimiter (writer 0x402E00 after the
 	/// snapshot 0x402E60, which stores the scaled clock at +0x4C and the advisor clock at +0x74; reader 0x402E30 behind the marker check 0x41555A).
@@ -284,6 +286,80 @@ public sealed class OriginalParkImport
 			found = attraction;
 		}
 		return found;
+	}
+
+	private IReadOnlyList<SaveObject>? chainOrder;
+	private string? chainOrderProblem;
+
+	/// <summary>
+	/// The object records (placed, unverified footprints, fixed items) in the order the original created their things, oldest first: the order of the saved object chain read backwards (the world's
+	/// first-object word +0x1DA746, each attraction's <c>mNext</c> +0xC). A save whose chain does not name every record's attraction once (a record with no single matching attraction, a thing
+	/// that is not an attraction, a loop, a chain that stops short) keeps the record order (placed, unverified, fixed) and says why in <see cref="ChainOrderProblem"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00519D80 object list insert] the constructor 0x004DB090 pushes each new object at the head of the list (game +0x1DA746, next +0xC); the saver 0x00516C80 and the loader 0x005179C0 keep the head word and each next word as they are (the attraction serializer 0x004DB7D0), so the list from the head is the objects newest first, whatever slots their things took
+	public IReadOnlyList<SaveObject> ObjectsInChainOrder => chainOrder ??= ComputeChainOrder();
+
+	/// <summary>Why <see cref="ObjectsInChainOrder"/> is the record order; null when the saved chain gave the order.</summary>
+	public string? ChainOrderProblem
+	{
+		get
+		{
+			_ = ObjectsInChainOrder;
+			return chainOrderProblem;
+		}
+	}
+
+	/// <summary>Every recognized object record in the order the save lists them: placed, unresolved, then fixed.</summary>
+	public IReadOnlyList<SaveObject> ObjectsInRecordOrder => recordOrder ??= PlacedObjects.Select( item => item.Record ).Concat( UnresolvedObjects ).Concat( FixedItems ).ToList();
+
+	private IReadOnlyList<SaveObject>? recordOrder;
+
+	private IReadOnlyList<SaveObject> ComputeChainOrder()
+	{
+		var records = ObjectsInRecordOrder.ToList();
+		if ( world == null )
+		{
+			chainOrderProblem = "the Theme Park Inc viewer does not decode the world's object chain";
+			return records;
+		}
+		var byThing = Attractions.GroupBy( attraction => attraction.Id ).ToDictionary( group => group.Key, group => group.ToList() );
+		// the chain from the head, newest first
+		var chain = new List<int>();
+		var seen = new HashSet<int>();
+		for ( int thing = World.Variables.FirstObject; thing != 0; )
+		{
+			if ( !byThing.TryGetValue( thing, out var found ) || found.Count != 1 || !seen.Add( thing ) )
+			{
+				chainOrderProblem = $"the object chain reaches thing {thing}, which is {(found == null || found.Count == 0 ? "no attraction" : found.Count > 1 ? "named by more than one attraction" : "met twice")}";
+				return records;
+			}
+			chain.Add( thing );
+			thing = found[0].Next;
+		}
+		var positions = new Dictionary<int, int>();
+		for ( var index = 0; index < chain.Count; index++ )
+			positions[chain[index]] = index;
+		var ages = new Dictionary<SaveObject, int>();
+		foreach ( var record in records )
+		{
+			var position = FindAttraction( record ) is { } attraction && positions.TryGetValue( attraction.Id, out var at ) ? at : -1;
+			if ( position < 0 )
+			{
+				chainOrderProblem = $"the record of Info.Id {record.InfoId} at ({record.X}, {record.Y}) has no single attraction on the chain";
+				return records;
+			}
+			if ( !ages.TryAdd( record, chain.Count - 1 - position ) )
+			{
+				chainOrderProblem = $"two records of Info.Id {record.InfoId} at ({record.X}, {record.Y}) are alike";
+				return records;
+			}
+		}
+		if ( ages.Values.Distinct().Count() != records.Count )
+		{
+			chainOrderProblem = "two records name the same attraction";
+			return records;
+		}
+		return records.OrderBy( record => ages[record] ).ToList();
 	}
 
 	/// <summary>
@@ -434,6 +510,7 @@ public sealed class OriginalParkImport
 			ArrivalGroups = arrivalGroups,
 			AnalyserStamps = analyserStamps,
 			AnalyserCounters = analyserCounters,
+			MechanicHq = world.Variables.MechanicHq == 0 || world.Find( world.Variables.MechanicHq ) is not { Model: SaveThingModel.MechanicHq } hqThing ? null : SaveMechanicHq.Read( span, hqThing ),
 		};
 	}
 

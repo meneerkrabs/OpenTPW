@@ -122,10 +122,12 @@ public static class ObjectSigns
 	/// A composition started by <see cref="ComposeAhead"/> is used when it is finished, waited for when it is running, and run here
 	/// when it has not started, so the result and the log are the same whichever thread composed the pixels (issue #754).
 	/// </summary>
-	public static ObjectSignImages? Get( ObjectCatalogEntry entry )
+	/// <param name="entry">The object type.</param>
+	/// <param name="lines">The lines the type's sign was last drawn with after a park was loaded (<see cref="ParkObjects.SignLinesOf"/>); null draws the type's own name (<see cref="Lines"/>).</param>
+	public static ObjectSignImages? Get( ObjectCatalogEntry entry, (string Line1, string Line2)? lines = null )
 	{
 		// Two empty lines still compose: the original draws the board and the paint and effect layers of empty masks (0x467A80 only skips a null name).
-		var (line1, line2) = Lines( entry );
+		var (line1, line2) = lines ?? Lines( entry );
 		var key = Key( entry, line1, line2 );
 		while ( true )
 		{

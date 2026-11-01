@@ -25,6 +25,8 @@ internal static class SaveTestPayloads
 		public uint MeshInstance { get; init; } = 110;
 		public string Line1 { get; init; } = "Belly";
 		public string Line2 { get; init; } = "Bounce";
+		/// <summary><c>mNext</c> (+0xC): the next attraction thing of the object chain, 0 at its end.</summary>
+		public ushort Next { get; init; }
 		public uint State { get; init; }
 		public ushort AssignedStaff { get; init; }
 		public uint CanLoad { get; init; } = 1;
@@ -78,7 +80,8 @@ internal static class SaveTestPayloads
 		}
 		writer.Write( new byte[8] );
 		writer.Write( fields.State );
-		writer.Write( new byte[6] );
+		writer.Write( new byte[4] );
+		writer.Write( fields.Next );
 		writer.Write( fields.AssignedStaff );
 		writer.Write( (ushort)0 );
 		writer.Write( fields.CanLoad );
@@ -377,14 +380,14 @@ internal static class SaveTestPayloads
 
 	/// <summary>The 64 bytes of World variables, version <paramref name="version"/>; IDs default to none.</summary>
 	public static byte[] Variables( uint version = 2, ushort bank = 0, uint gameTick = 755, uint parkClosed = 0, ushort researchLab = 0, ushort staffHq = 0,
-		ushort firstResearcher = 0, ushort firstObject = 0, uint randomSeed = 0x3F416BBA, uint worldState = 0 )
+		ushort firstResearcher = 0, ushort firstObject = 0, uint randomSeed = 0x3F416BBA, uint worldState = 0, ushort mechanicHq = 0 )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
 		writer.Write( version );
 		writer.Write( new ushort[] { 15, 0, 0, bank, 0 }.SelectMany( BitConverter.GetBytes ).ToArray() );
 		writer.Write( gameTick );
-		writer.Write( (ushort)0 );
+		writer.Write( mechanicHq );
 		writer.Write( (ushort)0 );
 		writer.Write( parkClosed );
 		writer.Write( 0u );
@@ -603,6 +606,6 @@ internal static class SaveTestPayloads
 		(1, (uint)SaveThingModel.StaffHq, Fixed( SaveThingModel.StaffHq )),
 	};
 
-	public static byte[] ParkVariables( uint gameTick = 755, uint parkClosed = 0, uint worldState = 0 ) =>
-		Variables( bank: 8, gameTick: gameTick, parkClosed: parkClosed, researchLab: 6, staffHq: 1, firstResearcher: 30, firstObject: 12, worldState: worldState );
+	public static byte[] ParkVariables( uint gameTick = 755, uint parkClosed = 0, uint worldState = 0, ushort mechanicHq = 0 ) =>
+		Variables( bank: 8, gameTick: gameTick, parkClosed: parkClosed, researchLab: 6, staffHq: 1, firstResearcher: 30, firstObject: 12, worldState: worldState, mechanicHq: mechanicHq );
 }

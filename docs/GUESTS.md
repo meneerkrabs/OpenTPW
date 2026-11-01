@@ -265,7 +265,7 @@ heads its cell's thing list; with the park closed or the entrance gate's script 
 counter 0), and an unpaid one goes back to the booth it stands on. State 5 (`0x4ffb20`) walks to the entrance, back to a booth when the park closes or the gate shuts, and on arrival numbers the visitor
 (`0x51aaf0`: the park's visitor count plus one, kept as `Guest.VisitorNumber`) and decides (state 6). The walks use walk mask 0: a walker leaves a path cell for plain ground only with the leaving mask,
 so the road's cells are walkway cells (type `0x1e`), which a mask-0 walker may enter. A save made before the arrival walk may hold a guest on an arrival lane off the grid: it is restored on the cell map in the state
-its lane position stood for. What still differs around the stop is ARRIVAL-001. A leaving guest walks the cell map as the original does: state 18 ends at the gate's
+its lane position stood for. An original save's vehicle at work comes back by thing id (ARRIVAL-001, retired). A leaving guest walks the cell map as the original does: state 18 ends at the gate's
 crossing cell (`CrossingParkSide`, `0x4d86d0`), state 19 (`0x500ad0`) waits there until the vehicle lets it walk (`0x51a760`: not while the
 bus is at status 3, 1 or 2), picks one of the four cells around the level's bus stop A (`0x4d8650`: the cell, its +X neighbour and the two cells two
 rows up) with a draw and a random point in it with two more, and state 20 walks the route there; state 21 (`0x500bd0`) re-picks at status 1 to 3 off
@@ -344,7 +344,7 @@ home (21) → removed.
 
 | Item | OpenTPW choice |
 | --- | --- |
-| Arrival step-off | One guest steps off per park turn while the arrival vehicle reports status 2 at its stop (tp.exe `0x4cf3e0`, [Arrivals](#arrivals)) and walks the cell map to the booth and into the park; a leaving guest walks to the vehicle's stop cells and boards at status 4 (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
+| Arrival step-off | One guest steps off per park turn while the arrival vehicle reports status 2 at its stop (tp.exe `0x4cf3e0`, [Arrivals](#arrivals)) and walks the cell map to the booth and into the park; a leaving guest walks to the vehicle's stop cells and boards at status 4 (was ARRIVAL-001, retired); OpenTPW also caps the simulation at 1,000 guests |
 | Needs | traced ([below](#needs-and-starting-values)); the energy meter is tp.exe's unnamed float +0x1B8: 0 at creation, a completed use takes the type's `FatigueEffect` off it (`0x4fd970`, clamped to 0..100; 5 in the shipped data, so it stays 0), and only the save reads it; thoughts as in tp.exe ([Thoughts](#thoughts)) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
 | Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step and pranks are modelled ([litter](#litter), [pranks](#pranks)), and so are the turns toward a show object and a performing entertainer, which end the call (`0x4fec90` steps 5 and 6, `0x501020`, `0x500f00`); a guest on a cell without links searches the cells around it for a path cell (`0x4f9490`) and a guest with no way on is stranded until a cell near it is edited (`+0x198`, `0x4fa770`); the rest of GUEST-010 is a linked start cell that is no path cell |

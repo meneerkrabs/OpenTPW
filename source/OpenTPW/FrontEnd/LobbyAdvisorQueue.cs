@@ -20,7 +20,7 @@ internal sealed class LobbyAdvisorQueue
 	private uint idleDelay;
 	private uint lastSpeech;
 	private int idleLine;
-	// [EXT:original-undefined-reads] the word +0x28 ("the advisor spoke since the last step") is allocated with the object and no constructor or setup writes it (0x5E3EBA-0x5E3EF4, 0x5D5F70): OpenTPW starts it cleared
+	// [BIN:TPW-EXE:0x5D5F70 queue setup] the word +0x28 ("the advisor spoke since the last step") is cleared with the idle word, delay and last time (0x5D5F78-0x5D5F7B: eax = 0 stored at +0x18, +0x1C, +0x20 and +0x28); the queue is made with the lobby (the setup 0x5D5970, called at 0x54E671 on every entry of the front-end state, makes the island holder [0xF85614] at 0x5D5B24, and 0x5E3DC0 allocates the queue into it, 0x5E3ECF..0x5E3EE1), so every lobby entry starts it cleared
 	private bool spoke;
 
 	/// <summary>How many ids wait.</summary>

@@ -10,8 +10,8 @@ internal sealed partial class GameFlow
 	/// <summary>The lobby's advisor, null outside the front-end state (smoke instrumentation and tests).</summary>
 	internal LobbyAdvisor? LobbyAdvisorHost => lobbyAdvisor;
 
-	// [BIN:TPW-EXE:0x5F5FA0 queue timer] the timer the lobby queue's idle delay is measured on counts milliseconds from the program's start; the advisor's own clock is the same here (the lobby never pauses it)
-	private static long LobbyAdvisorMilliseconds() => (long)(Time.Now * 1000.0);
+	// [BIN:TPW-EXE:0x5F5FA0 queue timer] the timer the lobby queue's idle delay is measured on (the object 0xFA71E0, its start stored by 0x5F5E80 from the C runtime's initializer table, 0x72DF14) counts milliseconds from the program's start and is never paused or reset: ProgramClock; the advisor's own clock is the same here (the lobby never pauses it). OpenTPW's Time.Now adds the frame deltas as floats and is not that clock
+	private static long LobbyAdvisorMilliseconds() => ProgramClock.Milliseconds;
 
 	/// <summary>Sets the front end's advisor up (state 1 of the front-end state, 0x54E5EC); none with the automatic advisor off (--no-advisor, the manual advisor tools).</summary>
 	private void StartLobbyAdvisor()

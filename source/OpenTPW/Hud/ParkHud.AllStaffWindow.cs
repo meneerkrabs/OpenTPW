@@ -30,8 +30,9 @@ public sealed partial class ParkHud
 	private static UiRect AllStaffContent => AllStaffListNode.Inner!.Value;
 	private static LayoutNode AllStaffSlider => AllStaffListNode.Children.Single( node => node.Type == 3 );
 	/// <summary>The five column headers, left to right (controls 0x10-0x14).</summary>
-	private static UiRect[] AllStaffColumnRects => AllStaffListNode.Children.Where( node => node.Type == 2 && node.Id is >= 0x10 and < 0x20 )
+	private static UiRect[] AllStaffColumnRects => allStaffColumnRects ??= AllStaffListNode.Children.Where( node => node.Type == 2 && node.Id is >= 0x10 and < 0x20 )
 		.OrderBy( node => node.Id ).Select( node => node.Rect ).ToArray();
+	private static UiRect[]? allStaffColumnRects;
 
 	/// <summary>Seconds between two refreshes of the rows' values (timer 0x80083, 2000 ms).</summary>
 	public const float AllStaffValueRefreshSeconds = 2f;
@@ -49,6 +50,12 @@ public sealed partial class ParkHud
 	private int selectedAllStaffId;
 	private int allStaffFirstRow;
 	private float allStaffValueAge;
+	/// <summary>The wage cells' text, formatted once with the row (the wage stays as the row was added), not per frame.</summary>
+	private Dictionary<int, string>? allStaffWageTextStore;
+	private Dictionary<int, string> allStaffWageText => allStaffWageTextStore ??= new();
+	// what the roster looked like when the rows were last synchronised: the members of the tab's role and a sum of their ids (checked every frame without allocating)
+	private int allStaffRosterCount = -1;
+	private long allStaffRosterSum;
 	private float allStaffRowHeight = 30f;
 	private int allStaffRoleGauge, allStaffAllGauge;
 
@@ -81,6 +88,20 @@ public sealed partial class ParkHud
 
 	private int AllStaffMaxFirstRow => ParkAttractionRoster.MaxFirstRow( allStaffOrder.Count, AllStaffVisibleRows );
 	private int AllStaffRowIndex( int id ) => allStaffOrder.IndexOf( id );
+
+	/// <summary>The wage cell's text, formatted the first time the row is drawn and kept (the wage stays as the row was added).</summary>
+	private string WageText( int id, long wage )
+	{
+		if ( !allStaffWageText.TryGetValue( id, out var text ) )
+			allStaffWageText[id] = text = FormatMoney( wage );
+		return text;
+	}
+
+	private void StoreAllStaffRow( StaffMember member )
+	{
+		allStaffValues[member.Id] = AllStaffValuesFor( member );
+		allStaffWageText.Remove( member.Id );
+	}
 
 	/// <summary>The cells of a member's row: the name, the status text, the wage and the two bars (the row adder 0x496320).</summary>
 	// [BIN:TPW-EXE:0x00496320 row adder] the cells: the staff name (0x506860), the status 0x5064f0 as the STAFFSTATES string (0 instead of 1 without a patrol area of its own, 0x506eb0), the wage 0x506870, the skill 0x506550 × 1024 / 100 and the low byte of the truncated happiness (+0x1f8) × 1024 / 100
@@ -129,10 +150,11 @@ public sealed partial class ParkHud
 	{
 		allStaffOrder.Clear();
 		allStaffValues.Clear();
+		allStaffWageText.Clear();
 		var type = AllStaffRoster.Tabs[allStaffTab].Type;
 		foreach ( var member in AllStaffRoster.Visit( StaffMembers, type, StaffThings ) )
 		{
-			allStaffValues[member.Id] = AllStaffValuesFor( member );
+			StoreAllStaffRow( member );
 			AllStaffRoster.SortedInsert( allStaffOrder, member.Id, id => allStaffValues[id], allStaffSortColumn, allStaffSortDescending );
 		}
 		allStaffFirstRow = 0;
@@ -156,19 +178,35 @@ public sealed partial class ParkHud
 	private void RefreshAllStaffRows( bool values )
 	{
 		var type = AllStaffRoster.Tabs[allStaffTab].Type;
-		var current = StaffMembers.Where( member => member.Type == type ).ToDictionary( member => member.Id );
+		// every frame only the roster's signature is looked at; the rows are rebuilt when it changed and the values when the 2 s timer is due
+		var count = 0;
+		long sum = 0;
+		var members = StaffMembers;
+		for ( var index = 0; index < members.Count; index++ )
+			if ( members[index].Type == type )
+			{
+				count++;
+				sum += members[index].Id * 2654435761L + 1;
+			}
+		var changed = count != allStaffRosterCount || sum != allStaffRosterSum || allStaffOrder.Count != count;
+		if ( !changed && !values )
+			return;
+		allStaffRosterCount = count;
+		allStaffRosterSum = sum;
+		var current = members.Where( member => member.Type == type ).ToDictionary( member => member.Id );
 		if ( allStaffOrder.Count != current.Count || allStaffOrder.Any( id => !current.ContainsKey( id ) ) )
 		{
 			foreach ( var gone in allStaffOrder.Where( id => !current.ContainsKey( id ) ).ToArray() )
 			{
 				allStaffOrder.Remove( gone );
 				allStaffValues.Remove( gone );
+				allStaffWageText.Remove( gone );
 			}
 			foreach ( var member in AllStaffRoster.Visit( StaffMembers, type, StaffThings ) )
 			{
 				if ( allStaffValues.ContainsKey( member.Id ) )
 					continue;
-				allStaffValues[member.Id] = AllStaffValuesFor( member );
+				StoreAllStaffRow( member );
 				AllStaffRoster.SortedInsert( allStaffOrder, member.Id, id => allStaffValues[id], allStaffSortColumn, allStaffSortDescending );
 			}
 		}
@@ -356,6 +394,12 @@ public sealed partial class ParkHud
 			var index = owner.allStaffFirstRow + visible;
 			return visible < 0 || visible >= owner.AllStaffVisibleRows || index >= owner.allStaffOrder.Count ? -1 : index;
 		}
+		private UiRect Cell( UiCanvas canvas, UiRect[] columns, int column, float y, float rowHeight )
+		{
+			var origin = canvas.Map( new NVector2( columns[column].X, y ), Anchor );
+			return new UiRect( origin.X, origin.Y, columns[column].Width * canvas.Scale, rowHeight * canvas.Scale );
+		}
+
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			var canvas = context.Canvas;
@@ -379,18 +423,13 @@ public sealed partial class ParkHud
 				if ( selected )
 					context.Batch.AddRectangle( row, new Veldrid.RgbaByte( 60, 90, 200, focused ? (byte)170 : (byte)120 ) );
 				var color = selected ? UiColors.Highlight : UiColors.Text;
-				UiRect Cell( int column )
-				{
-					var origin = canvas.Map( new NVector2( columns[column].X, y ), Anchor );
-					return new UiRect( origin.X, origin.Y, columns[column].Width * canvas.Scale, rowHeight * canvas.Scale );
-				}
-				context.DrawFittedText( context.Fonts.Small, values.Name, Cell( 0 ), color, AllStaffRoster.Columns[0].Align );
-				context.DrawFittedText( context.Fonts.Small, values.Status, Cell( 1 ), color, AllStaffRoster.Columns[1].Align );
-				context.DrawFittedText( context.Fonts.Small, owner.FormatMoney( values.Wage ), Cell( 2 ), color, AllStaffRoster.Columns[2].Align );
+				context.DrawFittedText( context.Fonts.Small, values.Name, Cell( canvas, columns, 0, y, rowHeight ), color, AllStaffRoster.Columns[0].Align );
+				context.DrawFittedText( context.Fonts.Small, values.Status, Cell( canvas, columns, 1, y, rowHeight ), color, AllStaffRoster.Columns[1].Align );
+				context.DrawFittedText( context.Fonts.Small, owner.WageText( id, values.Wage ), Cell( canvas, columns, 2, y, rowHeight ), color, AllStaffRoster.Columns[2].Align );
 				// [BIN:TPW-EXE:0x00496d20 bar cells] the skill cell is a type-9 control over ridestatbar.wct (0x750e00), the happiness cell one over happygrad.wct (0x7508c0), both on the 0..1024 scale
-				var skill = Cell( 3 );
+				var skill = Cell( canvas, columns, 3, y, rowHeight );
 				UiGauge.Draw( context.Batch, skill.Inflate( -skill.Height * 0.2f ), values.SkillGauge / (float)EmployeeWindowRules.GaugeFull );
-				var happiness = Cell( 4 );
+				var happiness = Cell( canvas, columns, 4, y, rowHeight );
 				UiGauge.Draw( context.Batch, happiness.Inflate( -happiness.Height * 0.2f ), values.HappinessGauge / (float)EmployeeWindowRules.GaugeFull, UiGauge.HappinessArtPath );
 			}
 		}

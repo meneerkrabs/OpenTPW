@@ -21,7 +21,7 @@ public sealed partial class FrontEndMenu
 	// the key count the last refresh stored (0x7CC4B8) and the handle of effect 0x61 (0x7CC4BC)
 	private int storedKeys;
 	private object? keyEffect;
-	private IAdvisorParticlePool? keyEffects;
+	private LobbyParticleHost? keyHost;
 	private readonly Dictionary<string, int?> entryCosts = new( StringComparer.Ordinal );
 
 	private void AddKeyPanel( UiScreen screen )
@@ -112,20 +112,26 @@ public sealed partial class FrontEndMenu
 	{
 		if ( keyEffect != null )
 			return;
-		keyEffects ??= actions.KeyPanelEffects();
-		keyEffect = keyEffects?.Create( LobbyKeyPanelEffect.EffectId, LobbyKeyPanelEffect.Position() );
+		keyHost ??= actions.KeyPanelEffects();
+		keyEffect = keyHost?.Pool.Create( LobbyKeyPanelEffect.EffectId, LobbyKeyPanelEffect.Position() );
 	}
 
 	private void EndKeyEffect()
 	{
-		if ( keyEffect != null && keyEffects != null )
-			keyEffects.Kill( keyEffect );
+		if ( keyEffect != null && keyHost != null )
+			keyHost.Pool.Kill( keyEffect );
 		keyEffect = null;
 	}
+
+	/// <summary>Whether the key panel's effect host (a screen-space renderer with its own atlas) is alive (smoke instrumentation).</summary>
+	internal bool KeyHostLive => keyHost != null;
 
 	private void CloseKeyPanel()
 	{
 		keyPanelOpen = false;
 		EndKeyEffect();
+		// the host's renderer entity owns an atlas that only its deletion frees: the menu is rebuilt on every lobby entry
+		keyHost?.Delete();
+		keyHost = null;
 	}
 }

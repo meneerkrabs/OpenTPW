@@ -23,6 +23,7 @@ public class LobbyKeyPanelTests
 	{
 		public readonly List<(int Effect, (int X, int Y, int Z) Position)> Created = new();
 		public readonly List<object> Killed = new();
+		public int Deleted;
 		public object? Create( int effectId, (int X, int Y, int Z) native ) { Created.Add( (effectId, native) ); return Created.Count; }
 		public void Move( object handle, (int X, int Y, int Z) native ) { }
 		public void Kill( object handle ) => Killed.Add( handle );
@@ -36,7 +37,7 @@ public class LobbyKeyPanelTests
 
 	private static FrontEndMenu Menu( int? keys, RecordingPool? pool, Func<string, int?>? cost = null ) => new( OriginalUiTests.FakeStrings(),
 		Costs.Keys.Select( ( level, index ) => Island( index, level ) ).ToArray(),
-		new FrontEndActions { PlayerKeySnapshot = keys, ThemeEntryCost = cost ?? ( level => Costs.TryGetValue( level, out var value ) ? value : null ), KeyPanelEffects = () => pool } );
+		new FrontEndActions { PlayerKeySnapshot = keys, ThemeEntryCost = cost ?? ( level => Costs.TryGetValue( level, out var value ) ? value : null ), KeyPanelEffects = () => pool == null ? null : new LobbyParticleHost( pool, () => pool.Deleted++ ) } );
 
 	private static UiModelImage Frame( FrontEndMenu menu ) => (UiModelImage)menu.Main.Find( "lobbyKeyPanel" )!;
 	private static UiModelImage Digit( FrontEndMenu menu ) => (UiModelImage)menu.Main.Find( "lobbyKeyCost" )!;
@@ -161,11 +162,24 @@ public class LobbyKeyPanelTests
 	{
 		RecordingPool? pool = null; var asked = 0;
 		var menu = new FrontEndMenu( OriginalUiTests.FakeStrings(), new[] { Island( 0, "jungle" ) },
-			new FrontEndActions { PlayerKeySnapshot = 1, ThemeEntryCost = _ => 1, KeyPanelEffects = () => { asked++; return pool; } } );
+			new FrontEndActions { PlayerKeySnapshot = 1, ThemeEntryCost = _ => 1, KeyPanelEffects = () => { asked++; return pool == null ? null : new LobbyParticleHost( pool, () => pool.Deleted++ ); } } );
 		Assert.AreEqual( 1, asked ); Assert.AreEqual( 0, Frame( menu ).Frame(), "the art does not depend on the effect" );
 		pool = new RecordingPool();
 		menu.RefreshKeyPanel( 1 );
 		Assert.AreEqual( 2, asked ); Assert.AreEqual( 1, pool.Created.Count );
+	}
+
+	[TestMethod]
+	public void RemovingTheLobbyEndsTheEffectAndDeletesItsHost()
+	{
+		var pool = new RecordingPool();
+		var menu = Menu( 1, pool );
+		Assert.AreEqual( 1, pool.Created.Count );
+		menu.Main.Removed?.Invoke();
+		Assert.AreEqual( 1, pool.Killed.Count, "the effect ends (0x4B8B70)" );
+		Assert.AreEqual( 1, pool.Deleted, "the host's renderer entity, which owns the atlas, is deleted" );
+		menu.Main.Removed?.Invoke();
+		Assert.AreEqual( 1, pool.Deleted, "once" );
 	}
 
 	[TestMethod]

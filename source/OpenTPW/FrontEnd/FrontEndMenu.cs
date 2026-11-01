@@ -26,7 +26,7 @@ public sealed class FrontEndActions
 	/// <summary>The keys a theme costs to enter (global.sam <c>Keys.CostToEnter</c>), null when it has no readable cost; the key panel compares the player's keys with it.</summary>
 	internal Func<string, int?> ThemeEntryCost { get; init; } = GameFlow.ReadLobbyThemeEntryCost;
 	/// <summary>The screen-space particle pool of the key panel's effect 0x61 (asked for when the effect first starts); null when there is none.</summary>
-	internal Func<IAdvisorParticlePool?> KeyPanelEffects { get; init; } = LobbyKeyPanelEffect.CreateHost;
+	internal Func<LobbyParticleHost?> KeyPanelEffects { get; init; } = LobbyKeyPanelEffect.CreateHost;
 	public Action<LobbyIslandInfo, GameMode> StartPark { get; init; } = ( _, _ ) => { };
 	public Action<ParkLoadEntry> Load { get; init; } = _ => { };
 	/// <summary>Lightweight own-save availability for the selected theme; assets are checked only on actual resume.</summary>

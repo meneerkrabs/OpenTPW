@@ -18,6 +18,9 @@ internal static class LobbyKeyPanelEffect
 	/// A screen-space particle host for the effect (its own pool, deleted with the other entities when the lobby is torn down: a park load ends the pool's screen-space emitters, 0x5200B0);
 	/// null when there is no renderer or the particle files are missing (the effect is presentation only).
 	/// </summary>
-	internal static IAdvisorParticlePool? CreateHost() =>
-		ParticleRendererModule.CreateScreenRenderer() is { } renderer ? new ParticleSystemPool( renderer.Particles ) : null;
+	internal static LobbyParticleHost? CreateHost() =>
+		ParticleRendererModule.CreateScreenRenderer() is { } renderer ? new LobbyParticleHost( new ParticleSystemPool( renderer.Particles ), renderer.Delete ) : null;
 }
+
+/// <summary>A screen-space particle pool and what releases it: the renderer entity owns an atlas that only its deletion frees.</summary>
+internal sealed record LobbyParticleHost( IAdvisorParticlePool Pool, Action Delete );

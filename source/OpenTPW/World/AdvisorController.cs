@@ -549,6 +549,15 @@ internal sealed class AdvisorController
 		Scan.RestoreCursor( snapshot.ScanCursor );
 	}
 
+	// the record's second dword holds a cell word or an object type id (a word: 0x509F09 reads its low word, the cell word is masked to 16 bits at 0x59B26E), and the score-overridden byte is 0 or 1 (SaveAdvisorRecord)
+	private static void RequireWords( SaveAdvisorRecord record, string what )
+	{
+		if ( record.Secondary > ushort.MaxValue )
+			throw new InvalidDataException( $"The saved advisor {what} has the cell or type word {record.Secondary}, which is not a word." );
+		if ( record.ScoreOverridden > 1 )
+			throw new InvalidDataException( $"The saved advisor {what} has the score-overridden byte {record.ScoreOverridden}." );
+	}
+
 	/// <summary>
 	/// Takes the pending records and per-message history of an original park save's advisor controller (model 11).
 	/// Free (invalid) records stay free; records and non-initial history of messages without a descriptor are
@@ -567,6 +576,7 @@ internal sealed class AdvisorController
 			var record = saved.Pending[index];
 			if ( !record.Valid )
 				continue;
+			RequireWords( record, $"pending record {index}" );
 			if ( record.MessageId > int.MaxValue || !Queue.HasDescriptor( (int)record.MessageId ) )
 			{
 				dropped.Add( record.MessageId );
@@ -592,6 +602,8 @@ internal sealed class AdvisorController
 		Queue.Restore( pending, history );
 		// [BIN:TPW-EXE:0x0059BA30 record serializer] the controller's save and load pass the record at +0x16D0 through it (0x59A1C6, 0x59A49D), so the save's current record is the last tutorial advice
 		var current = saved.Current;
+		if ( current.Valid )
+			RequireWords( current, "the last tutorial record" );
 		var lastTutorial = current.Valid && current.MessageId <= int.MaxValue && Queue.HasDescriptor( (int)current.MessageId ) && Queue.IsTutorial( (int)current.MessageId )
 			? new AdvisorPendingAdvice( (int)current.MessageId, current.Score, current.ResponseNo, current.OverrideOnlyOnce != 0, current.ThingId, current.Secondary, current.ScoreOverridden != 0 ) : null;
 		Queue.RestoreLastTutorial( lastTutorial );

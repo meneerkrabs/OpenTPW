@@ -106,15 +106,29 @@ internal sealed class LobbyAdvisor : IDisposable
 	}
 
 	/// <summary>World pass: renders the shown advisor into its own image (see <see cref="Draw"/>).</summary>
-	public void Render() => Image = !ended && advisor is { IsDrawn: true } shown ? shown.RenderImage( Screen.PixelSize ) : null;
+	public void Render()
+	{
+		Image = !ended && advisor is { IsDrawn: true } shown ? shown.RenderImage( Screen.PixelSize ) : null;
+		// one wrapper per image, not one per drawn frame
+		if ( Image == null )
+			imageTexture = null;
+		else if ( !ReferenceEquals( imageTextureOf, Image ) )
+		{
+			imageTexture = UiTexture.Of( Image );
+			imageTextureOf = Image;
+		}
+	}
+
+	private UiTexture? imageTexture;
+	private Veldrid.Texture? imageTextureOf;
 
 	/// <summary>Draws the advisor image at its box, bottom right, over the lobby screens.</summary>
 	public void Draw( UiContext context )
 	{
-		if ( Image == null )
+		if ( Image == null || imageTexture == null )
 			return;
 		var (x, y, width, height) = Advisor.BoxRectangle( new Point2( context.Canvas.Width, context.Canvas.Height ) );
-		context.Batch.AddQuad( UiTexture.Of( Image ), new UiRect( x, y, width, height ), System.Numerics.Vector2.Zero, System.Numerics.Vector2.One, Veldrid.RgbaByte.White );
+		context.Batch.AddQuad( imageTexture, new UiRect( x, y, width, height ), System.Numerics.Vector2.Zero, System.Numerics.Vector2.One, Veldrid.RgbaByte.White );
 	}
 
 	/// <summary>The front end is left: the queue's teardown cuts a response that plays off (with the slap that sounds while its speech does), then the advisor goes.</summary>

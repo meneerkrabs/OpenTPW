@@ -162,6 +162,13 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	}
 
 	private Dictionary<string, int> lobbyPathlessTexturesBeforePark = new();
+	/// <summary>The textures the screen-space particle renderers own (each made by CreateScreenRenderer: the enter-park effect's, the key panel's host while the lobby holds it), not counting the live key panel host's.</summary>
+	private int ScreenRendererTexturesBesidesTheKeyHost()
+	{
+		var hosts = Asset.All.OfType<Texture>().Count( texture => texture.Origin?.Contains( "CreateScreenRenderer", StringComparison.Ordinal ) == true );
+		return hosts - (flow.Menu?.KeyHostLive == true ? 1 : 0);
+	}
+	private int screenRendererTexturesAtFirstReturn = -1;
 	private Asset[] secondParkHeadAssets = Array.Empty<Asset>();
 	private Asset[] firstParkGuestAssets = Array.Empty<Asset>();
 	private Asset[] secondParkGuestAssets = Array.Empty<Asset>();
@@ -1693,6 +1700,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			// the textures not loaded by path are those of the lobby again, as before the park.
 			var changes = PathlessTextureChanges( lobbyPathlessTexturesBeforePark );
 			Require( changes.Length == 0, $"leaving a park releases every texture it made from bytes (textures not loaded by path, by size: {changes})" );
+			screenRendererTexturesAtFirstReturn = ScreenRendererTexturesBesidesTheKeyHost();
 			if ( parkLanguage != null )
 				Require( string.Equals( GameLanguage.Current.Name, parkLanguage, StringComparison.OrdinalIgnoreCase ) && flow.Strings.Language == parkLanguage,
 					"a language chosen in the park applies once the park is left" );
@@ -1718,6 +1726,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			var changes = PathlessTextureChanges( lobbyPathlessTexturesBeforePark );
 			Require( changes.Length == 0, $"a second park leaves no texture made from bytes behind either (by size, against the lobby before the first park: {changes})" );
+			// the key panel's particle host is deleted when the lobby ends: after a second exit and re-entry only the live host's atlas is more than at the first return
+			Require( ScreenRendererTexturesBesidesTheKeyHost() == screenRendererTexturesAtFirstReturn, $"lobby exit and re-entry leaves no screen-space particle atlas behind ({screenRendererTexturesAtFirstReturn} at the first return, {ScreenRendererTexturesBesidesTheKeyHost()} now)" );
 			Texture.TrackOrigins = false;
 			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) );
 			builtInOneGo = (flow.Level!.ComputeStateHash(), Entity.All.Count, flow.Level.Objects.Objects.Count, GateSignDigest( flow.Level ));

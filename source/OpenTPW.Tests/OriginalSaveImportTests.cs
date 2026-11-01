@@ -494,6 +494,26 @@ public class OriginalSaveImportTests
 		PrebuiltPark.Score	700
 		""";
 
+	private static AdvisorController ImportOne( uint secondary )
+	{
+		var pending = new[] { new SaveTestPayloads.AdvisorRecordFields( 7, secondary, 90, 1000, 1, -1, 0, 0 ) };
+		var things = SaveTestPayloads.ParkThings();
+		things[9] = (3, (uint)SaveThingModel.AdvisorController, SaveTestPayloads.AdvisorController( pending, new Dictionary<int, (uint, int, byte, uint)>() ));
+		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
+		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), SaveTestPayloads.Grid( map ), SaveTestPayloads.Things( things ) ) );
+		var saved = SaveAdvisorController.Read( payload, SaveWorld.Parse( payload, SavePayloadLayout.Parse( payload ), 3, 3 ).Single( SaveThingModel.AdvisorController ) );
+		var controller = new AdvisorController( AdvisorBalance.Parse( Encoding.ASCII.GetBytes( AdvisorSettings ), "test.sam" ) );
+		controller.ImportOriginal( saved );
+		return controller;
+	}
+
+	[TestMethod]
+	public void AnImportedRecordKeepsItsWordsAndRefusesASecondWordThatIsNotOne()
+	{
+		Assert.AreEqual( new AdvisorPendingAdvice( 90, 1000, -1, false, 7, 1100 ), ImportOne( 1100 ).Queue.GetSlot( 0 ) );
+		Assert.ThrowsException<InvalidDataException>( () => ImportOne( 70000 ) );
+	}
+
 	[TestMethod]
 	public void ImportsTheAdvisorControllerForEveryMessageOfTheDescriptorTable()
 	{

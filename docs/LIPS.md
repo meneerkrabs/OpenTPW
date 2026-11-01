@@ -746,6 +746,8 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 
 Retired November 1, 2026: ADVISOR-005 (the lobby ambient, the advisor in every front-end frame and the fog; `docs/reverse/LOBBY-ADVISOR.md`).
 
+Retired November 1, 2026 (round 11 package V): ADVISOR-009 (every message tp.exe posts has its producer; the queued records keep their id and cell words and the caption formatter reads them, see "Captions"; the researchers' flag is advisor event 5 or 6, which `0x59AE20` ignores; help 285 is the All Staff window) and ADVISOR-005 (the lobby advisor, its ambient and fog: docs/reverse/LOBBY-ADVISOR.md).
+
 Retired October 14, 2026 (traced in tp.exe, citations at the sites): ADVISOR-008 (audio start), ADVISOR-013 (talking
 flag), ADVISOR-014 (synthesis window), ADVISOR-019 (balance fields +0x18/+0x1C are not read), ADVISOR-016 (the ten fixed
 rows of table `0x76DC18`; the timer effect's lobby refresh is ADVISOR-025) and ADVISOR-018 (the sampler hides the model at the end of the

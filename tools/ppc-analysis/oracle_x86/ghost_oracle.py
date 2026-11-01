@@ -134,3 +134,48 @@ class GhostOracle(FenceOracle):
         sb.executed = 0
         sb.call(0x536100, args=(mode | 0x100, start[0], start[1], pointers, pointers + 4))
         return {'faces': list(self.faces), 'latches': [sb.read(LATCHES[name], 'I') for name in ('l50', 'l58', 'l60', 'l4c', 'l5c', 'l48')], 'cost': sb.read(0x81AF4C, 'i')}
+
+
+    # ------------------------------------------------------------------ the tile chooser
+
+    def tile(self, case) -> dict:
+        """The track tile chooser 0x539760 on the tile whose origin cell is case['origin']: cells (x, y) -> fields, records (x, y) -> (type, links, parent word, direction byte, flags, owner)."""
+        sb = self.sandbox
+        self.start([], [])
+        self.type_records = {}
+        for k in range(MAP * MAP):
+            struct.pack_into('<H', self.cells, k * 0x44 + 0xE, 0)
+        for (x, y), fields in case['cells'].items():
+            base = (y * MAP + x) * 0x44
+            struct.pack_into('<I', self.cells, base + 8, fields['type'])
+            struct.pack_into('<H', self.cells, base + 0xE, fields['flags'])
+            struct.pack_into('<H', self.cells, base + 0x10, fields['owner'])
+        for (x, y), (kind, links, parent, direction, flags, owner) in case['records'].items():
+            base = (y * MAP + x) * 0x28
+            struct.pack_into('<I', self.records, base + 8, kind)
+            self.records[base + 0xC] = links
+            self.records[base + 0xD] = direction
+            struct.pack_into('<H', self.records, base + 0xE, flags)
+            struct.pack_into('<H', self.records, base + 0x10, parent if parent else owner)
+        for anchor, priority in case['anchors'].items():
+            struct.pack_into('<H', self.cells, (ANCHORS[anchor] - 1) * 0x44 + 0x24, anchor)
+        self.flush()
+        for anchor, priority in case['anchors'].items():
+            thing = sb.alloc(0x40)
+            sb.write(thing + 2, 'B', 3)
+            sb.write(thing + 0xE, 'H', priority)
+            sb.write(0x7CFB90 + anchor * 20, 'I', thing)
+        sb.write(0x7CFB90, 'I', sb.alloc(0x40))
+        for address, value in case['globals'].items():
+            sb.write(address, 'I', value & 0xFFFFFFFF)
+        sb.write(self.bank + 0xC, 'i', case['bank'] or 0)
+        sb.write(0x785A2C, 'I', 1 if case['bank'] is None else 0)
+        sb.write(0x818C14, 'I', 0)
+        for address in (0x81B4CC, 0x8187F8):
+            sb.write(address, 'I', 0)
+        ox, oy = case['origin']
+        record = self.game + 0x1102D8 + (oy * MAP + ox) * 0x28
+        sb.executed = 0
+        answer = sb.call(0x539760, args=(case['mode'], case['second'], case['direction']), this=record).eax & 0xFFFFFFFF
+        names = ('l50', 'l58', 'l54', 'l5c', 'l4c', 'l60', 'l48')
+        return {'answer': answer, 'latches': [sb.read(LATCHES[n], 'I') for n in names], 'cost': sb.read(0x81AF4C, 'i'), 'prio': sb.read(0x818C14, 'I')}

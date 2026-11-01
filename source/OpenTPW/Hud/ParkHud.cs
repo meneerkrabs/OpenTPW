@@ -589,6 +589,8 @@ public sealed partial class ParkHud
 
 	private void ArmBuildTool( BuildItem item, ObjectCatalogEntry entry )
 	{
+		// [BIN:TPW-EXE:0x0052F1B0 angle setter] the angle word 0x81D7A4 changes only through its setter 0x52F1B0 (callers: the rotate key 0x40C133, the replayed angle 0x404DFF, the object copy 0x487BF4, the Move pick-up 0x48D12F, the add-on hover 0x5237F7, the placement tail 0x5259FE and 0x525E6C) and where the tool mode becomes 0 (0x52F3B6); the buy click (0x4AC683) builds the tool object (0x46C5A0) and calls none of them, so a tool armed during the queue tool of a placement starts at the angle that placement kept
+		queueAfterPlacement = false;
 		level.CellTool.Cancel();
 		level.StaffPlacement?.Cancel();
 		level.PatrolTool?.Cancel();

@@ -1790,8 +1790,8 @@ public partial class Level
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// RIDES-021 (tagged at ObjectRayPick): the clicked cell is the cell of the cursor ray's nearest hit, the terrain's or the first object model's (ObjectRayPick); the walk's height window, the track tiles'
-	// second-layer piece instances and the instances' sub-instances are approximated or left out (see the register)
+	// RIDES-021 (tagged at ObjectRayPick): the clicked cell is the cell of the cursor ray's nearest hit, the terrain's or the first object model's (ObjectRayPick); the track tiles'
+	// second-layer piece instances and the hover highlight are left out (see the register)
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )

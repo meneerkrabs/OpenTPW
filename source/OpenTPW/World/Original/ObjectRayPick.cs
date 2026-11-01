@@ -44,10 +44,14 @@ public interface IObjectPickShape
 /// plus the instance's height (ObjectHeightMaps.Height); without a map no instance is named and the cell is not tested (0x452ae0's out-pointer is cleared);
 /// the instance is tested when the ray's lowest height over the pass (the pass point's height less the share of the pass's drop to the cell's near edge
 /// along the larger axis, 0x45cee6-0x45cf8f) is at most that height and its highest at least the model's bounds minimum (0x45cf8f-0x45cfbd)
-/// [APPROX:RIDES-021] a cell whose second-layer piece instance answers (a kart or water ride's track tile) is not tested, as the original tests the piece's
-/// model there, which the port does not hold; an instance with the group flag 0x80000 tests its group's members instead (0x447790, 0x4477d0), which the port
-/// does not model; nor are the model walk's node state bits 0x20 and 0x8000 and the normal refresh 0x473c30 (ObjectPickModel); the hit instance 0x45bf90 hands to 0x469340 (0x45ccd5),
-/// which the hover handler passes to 0x469180 (its normals copied, node flag 0x1000000 and model flag 0x400000 set: a hover highlight, not read further), is not used
+/// [BIN:TPW-EXE:0x447790 group flag] an instance with the group flag 0x80000 would test its group's members instead (0x447790, 0x4477d0), but no writer sets that flag on an instance: a sweep of the
+/// whole .text for the constant 0x80000 finds only coaster node words, sprite and particle words and render words, and the creators of a placed ride's instance build its flags from 0x211f or 0x231f
+/// and the argument bits 0x1, 0x2 and 0x80 (0x463060) and the loader from the type's own bits (0x4629d0); the instance word +0xd4 that the group lookup would follow is the creation argument
+/// (0x463101, 0x4685d7)
+/// [APPROX:RIDES-021] a cell whose second-layer piece instance answers (a kart or water ride's track tile, 0x53bf30) is not tested, as the original tests the piece's model there, which the port does
+/// not hold; the hit instance 0x45bf90 hands to 0x469340 (0x45ccd5), which the hover handler and the click dispatcher pass to 0x469180 (0x486f6b, 0x4874fe, 0x487712, 0x48778d, 0x4878ce, 0x48798b,
+/// 0x4bd9ef: the nodes' face normals copied to a private buffer, node flag 0x1000000 and model flag 0x400000 set, then the node colour words filled with a pulsing colour by 0x469410 and 0x469840 from
+/// the frame loop 0x54e301), a hover highlight, is not used
 /// </remarks>
 public static class ObjectRayPick
 {

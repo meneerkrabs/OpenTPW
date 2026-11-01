@@ -27,16 +27,29 @@ public partial class Level
 		return Objects.FindAt( x, y ) is { } item ? tourHeightMaps.Height( item, x, y ) : null;
 	}
 
-	/// <summary>TPW blueprint offsets for verified ordinary object owners only; no track-priority or TPI parity claim.</summary>
+	/// <summary>
+	/// The raise of a cell's marker in a typed park (BLUEPRINT-001): 10 x ((int)H + 9) / 10 of the cell's ground for a cell that holds an object, a track piece, a post or no terrain (<see cref="BlueprintHeights"/>), 0 for every other cell.
+	/// A world whose cells carry no original types has none: an OpenTPW harness world ([EXT:untyped-harness-world]) and a Theme Park Inc layout (BLUEPRINT-001's open residual); a read-only online visit builds nothing, so it shows no marker.
+	/// </summary>
+	// [EXT:untyped-harness-world] an OpenTPW harness world has no cell type or record to raise a marker by, so its markers stay on the terrain (a Theme Park Inc world is the same code path but not an extension)
 	private float? BlueprintHeightOffset( int x, int y )
 	{
-		if ( !TypesFootprints || Guests?.Grid.Cells is not { } cells ) return null;
-		return BlueprintHeights.Sample( cells, x, y, ( cx, cy ) =>
-		{
-			if ( Objects.FindAt( cx, cy ) is not { IsDeleted: false } item || cells.OwnerAt( cx, cy ) != OwnerWord( item ) ) return null;
-			// Null also covers missing/malformed/out-of-range maps. Keep that entire residual explicit rather than invent a surface.
-			return ObjectGround( item, cx, cy );
-		} );
+		if ( !TypesFootprints || Guests?.Grid.Cells is not { } cells || OriginalPark?.Heightfield is not { } field ) return null;
+		return BlueprintHeights.Sample( cells, x, y, ( cx, cy ) => BlueprintGround( cells, field, cx, cy ) );
+	}
+
+	/// <summary>
+	/// The cell lookup <c>0x452AE0(x, y, 0)</c> as the ghost calls it: the second-layer piece instance's height map first, else the map of the object whose footprint owns the cell (a type 4, 9 or 10 cell and the
+	/// class-3 thing its owner word names, 0x527E80), and the terrain at the cell corner when neither answers or the instance has no map.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00452AE0 cell ground] with no out-pointer the lookup asks 0x53BF30 for the record's instance, else the owner thing's instance (+0x20), reads its map (+0xCC) and falls back to the terrain sampler 0x4527F0 at (10 x, 10 y) at 0x452C7F; the fence posts' instances have no mesh in OpenTPW (TOUR-005), so their cells read the terrain
+	private float BlueprintGround( ParkCellMap cells, ModelHeightfield field, int x, int y )
+	{
+		if ( TrackPieceGround( x, y ) is { } piece )
+			return piece;
+		if ( ParkCellTypes.IsObjectCell( cells.RawTypeAt( x, y ) ) && Objects.FindAt( x, y ) is { IsDeleted: false } item && cells.OwnerAt( x, y ) == OwnerWord( item ) && ObjectGround( item, x, y ) is { } ground )
+			return ground;
+		return field.GetCornerHeight( x, y );
 	}
 
 	/// <summary>The ground of the second-layer piece instance on a cell (a kart or water track tile), which the cell lookup 0x00452AE0 asks before the cell's owner; null without one.</summary>

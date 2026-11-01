@@ -275,6 +275,28 @@ public class ObjectAccessCellsTests
 	}
 
 	[TestMethod]
+	public void TheTileGhostsMemoKeySeesAnObjectPlacedOrRemovedUnderAnUnchangedHover()
+	{
+		var entry = Entry( 1236, 0, true, "*2*" );
+		var rig = new Rig( entry );
+		var field = new ModelHeightfield( 32, 32, 10, 10, 0, 0, Array.Empty<uint>(), new float[33 * 33], new uint[32 * 32] );
+		var before = Level.GroundStampOf( rig.Cells, field, rig.Objects, null );
+		Assert.AreEqual( before, Level.GroundStampOf( rig.Cells, field, rig.Objects, null ), "nothing changed: the same key, so the memoized ghost is reused" );
+		var item = rig.Place( entry, 8, 8 );
+		Assert.IsNotNull( item );
+		var placed = Level.GroundStampOf( rig.Cells, field, rig.Objects, null );
+		Assert.AreNotEqual( before, placed, "an object placed under the hover (its owner's priority, its height map) is a new key" );
+		rig.Objects.Remove( item! );
+		Assert.AreNotEqual( placed, Level.GroundStampOf( rig.Cells, field, rig.Objects, null ), "and so is its removal" );
+		var other = new ModelHeightfield( 32, 32, 10, 10, 0, 0, Array.Empty<uint>(), new float[33 * 33], new uint[32 * 32] );
+		Assert.AreNotEqual( before, Level.GroundStampOf( rig.Cells, other, rig.Objects, null ), "a different terrain object (a heightfield is never written in place) is a different key" );
+		var layer = new TrackCellLayer( 32, 32 );
+		var tracked = Level.GroundStampOf( rig.Cells, field, rig.Objects, layer );
+		layer.Set( 4, 4, new TrackCell { Type = TrackCellTypes.KartOrigin, Parent = -1 } );
+		Assert.AreNotEqual( tracked, Level.GroundStampOf( rig.Cells, field, rig.Objects, layer ), "a piece laid in the pieces' own layer changes its ground" );
+	}
+
+	[TestMethod]
 	public void RideExitWithoutAnExitDoesNotInventTheAnchorAsDestination()
 	{
 		var entry = Entry( 1235, 0, true, "*2*" );

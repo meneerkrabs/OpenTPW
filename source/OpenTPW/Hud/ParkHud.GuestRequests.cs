@@ -99,7 +99,7 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// [EXT:online-coop-claims] The guest's track tool entry comes back (C3c-1b): its claim accepted opens the edit tool on a closed circuit or sends the walk to the open end, whose outcome
-	/// opens the line tool, with the tool's help, as the host's button posts it; a coaster's claim sends the tool's entry, whose outcome opens the coaster tool with its help (C3c-2); a claim the
+	/// opens the line tool, with the tool's help, as the host's button posts it; a coaster's claim sends the tool's entry, whose outcome opens the coaster tool, which posts no help (C3c-2); a claim the
 	/// host let go meanwhile says so; a refusal says its reason (another player's claim, the grant).
 	/// </summary>
 	private void CompleteTrackStart( CoopGuestCommands.Request request )

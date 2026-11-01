@@ -545,7 +545,7 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-claims] A guest's completing click came back (C3c-2): the tool finishes as the host's does (it ends) only while <paramref name="panel"/> is still the open
+	/// [EXT:online-coop-claims] A guest's completing click came back (C3c-2): the tool finishes as the host's does (it ends, or the queue tool follows a pending queue start) only while <paramref name="panel"/> is still the open
 	/// one, its station stands and the park's claims, every record applied so far, give the coaster to this seat; otherwise the panel closes without a command, and a lost claim says so.
 	/// </summary>
 	private void FinishGuestCoasterTool( OriginalObject station, CoasterToolPanel panel )
@@ -693,14 +693,19 @@ public partial class Level
 		return Objects.FindAt( (owner - 1) & 0x7F, (owner - 1) >> 7 ) is { IsDeleted: false, Runtime.Coaster: not null } station ? station : null;
 	}
 
-	/// <summary>The tool's end after a completed track, on the issuer's machine: the panel closes and the tool ends (the ride's door opened in the command).</summary>
-	// [BIN:TPW-EXE:0x526514 coaster completion] the coaster tool's click (mode 0x15) takes the pass 0x81's zero result to 0x526568, which hands over to the queue tool only while the placement's queue start 0x8186c0 is pending (0x52656e, taken at 0x526680); a coaster's placement consumed it (0x5252ea), so the tool ends (0x5266bc) and no queue tool follows
+	/// <summary>The tool's end after a completed track, on the issuer's machine: the panel closes, and the queue tool follows only while a placement's queue start is pending (<see cref="placedQueueStart"/>).</summary>
+	// [BIN:TPW-EXE:0x526568 coaster completion] the coaster tool's click (mode 0x15) takes the pass 0x81's zero result to 0x526568, which loads the pending queue start 0x8186c0 (0x52656e): none ends the tool (0x5266bc), one enters the queue tool at its cell (0x526581) and takes the start (0x526680). A coaster's own placement consumed it (0x5252ea), so only a start another placement left pending (a kart or water ride's, which its line tool takes at 0x527056 when its circuit closes) is handed over; the global is cleared by the build, Move, pick-up and path or queue clicks (0x524b53, 0x5253f3, 0x525e5a, 0x527483) and not by a tool's exit
 	private void FinishCoasterTool( OriginalObject station )
 	{
 		CoasterPanel?.Close();
 		CoasterPanel = null;
 		CoasterToolStation = null;
 		CoasterPreview = null;
+		if ( placedQueueStart is { IsDeleted: false } start )
+		{
+			placedQueueStart = null;
+			EnterQueueTool( start.Visitors );
+		}
 	}
 
 	/// <summary>

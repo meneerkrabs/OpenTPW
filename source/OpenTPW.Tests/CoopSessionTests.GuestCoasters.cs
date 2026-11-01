@@ -230,7 +230,11 @@ public partial class CoopSessionTests
 			Assert.IsNull( guest.Level.CoasterPanel );
 			var tool = guest.Level.CellTool;
 			// [BIN:TPW-EXE:0x526568 coaster completion] the placement consumed the queue start (0x5252ea), so the completion ends the tool (0x5266bc) and no queue tool follows
+			// no queue start is pending, so no queue tool follows; the press of the completion frame itself, taken by the park view once the tool is gone, may enter the path tool (a press on an
+			// empty cell), never the queue tool
 			Assert.IsFalse( tool.IsActive && tool.Mode == CellToolMode.Queue, "the completion ended the tool: no queue tool follows" );
+			if ( !pressOnCompletionFrame )
+				Assert.IsFalse( tool.IsActive, "no tool is on" );
 			Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "the completion fences both an earlier press and one first seen in this frame" );
 			panel.Completed!.Invoke();
 			Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "a stale panel's completion cannot invalidate the current gestures" );
@@ -244,6 +248,12 @@ public partial class CoopSessionTests
 				Assert.AreEqual( before, QueueState( station.Visitors ), "the completion and the stale release preserved the queue" );
 				CollectionAssert.AreEqual( links, park.Level.QueueLinks( station.Visitors ).ToArray() );
 			}
+			// a new press and release after the completion belongs to no queue tool either: nothing of a queue goes to the host
+			Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = true } );
+			Hud( UiInput.Idle( point ) with { LeftReleased = true } );
+			Assert.IsFalse( tool.IsActive && tool.Mode == CellToolMode.Queue, "no queue tool was entered" );
+			Assert.IsFalse( requests.Open.Any( request => request.Command is QueueSegmentCommand ) );
+			Assert.AreEqual( 0, HostCommandsOf( host, seat ).Count( command => command is QueueSegmentCommand ) );
 		}
 		finally
 		{

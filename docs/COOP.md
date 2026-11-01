@@ -2131,10 +2131,16 @@ tool sends every write as a request:
 - **The entry.** The ride window's track button and a press on a marker cell of the coaster (the original's
   entries through `0x4988c0`; a placement enters the queue tool, not the coaster tool) end the tool that was on
   and send `ClaimRideCommand`; the claim's outcome sends `BeginCoasterToolCommand` as a second request with
-  the same wait (the frame check keeps the claim meanwhile), and that outcome opens the panel (the entry posts
-  no help), while the park view has no tool and the claims still give the coaster to the guest's seat. A claim
-  the host let go meanwhile starts nothing and says so. The completing click ends the tool; no queue tool
-  follows.
+  the same wait (the frame check keeps the claim meanwhile), and that outcome opens the panel, while the park
+  view has no tool and the claims still give the coaster to the guest's seat. `0x4988c0` posts no advisor help
+  (its complete-track branch only sets the status text `0x4a2aa0(0xc)`, not shown, UI-031), and the port opens
+  the same panel for a complete and an incomplete track (the original asks `0x441910`, which also needs the
+  controller `0x436860` to exist). The panel's own build button calls `0x497d20` directly (`0x498337`) and posts
+  help `0x125`. A press on a marker cell enters the tool on the press, and its release is delivered to the new
+  tool (`0x46c610` to `0x524960`): on an incomplete track that release is a build click, so a press can build
+  on its release (on the last pylon's cell it places a pylon the link test flags). A claim the host let go
+  meanwhile starts nothing and says so. The completing click ends the tool, and the queue tool follows only
+  while a queue start another placement left pending (a kart or water ride's) is still pending.
 - **The queue.** The panel's commands go through one queue of the level's (`CoasterRequestQueue`), in order,
   so a closed panel's last commands still go: a drag's press, its steps and its end, a click, Backspace, a
   swap, a cut and the tool's end. It sends from its head while fewer than four of the guest's tool requests

@@ -1394,8 +1394,10 @@ public sealed partial class ParkHud
 			if ( !ChatMode && level.CoasterAtMarkerCell( cursorX, cursorY ) is { } marked )
 			{
 				level.NoteToolSelection( marked );
+				// [BIN:TPW-EXE:0x4988c0 arm retract] the entry retracts the info arm (0x4a25f0, 0x4a2590 at 0x498909..0x498920) as the ride window's track button does (EditTrack); a refusal (another player's claim, said by
+				// the level) or a guest's pending claim (its outcome opens the panel, CompleteTrackStart) needs nothing more here, as for that button, whose route ignores both too
 				SetInfoArm( false );
-				level.BeginCoasterToolEntry( marked );
+				level.EnterCoasterTool( marked );
 			}
 			else
 			{

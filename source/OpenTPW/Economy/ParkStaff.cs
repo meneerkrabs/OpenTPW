@@ -581,7 +581,7 @@ public sealed partial class ParkStaff
 
 	/// <summary>
 	/// Raised when <see cref="LabActive"/> changes through a hire or a removal, with the message the original posts: 5 when the lab becomes active, 6 when it stops. The original delivers the message at once
-	/// to the things subscribed to its type (the advisor subscribes to 5 only, <c>0x00599EDB</c>; nobody subscribes to 6); OpenTPW's advisor has no reaction to it.
+	/// to the things subscribed to its type (the message is of type 0x13 with the value 5 or 6, built by <c>0x40F630</c>: the advisor's handler <c>0x59AE20</c> ignores both, its jump table <c>0x59AF98</c> acts on 0, 2, 3, 4 and 10 only, and the tag system's handler <c>0x509D56</c> on 7 to 9); OpenTPW's advisor has no reaction to it, as the original's has none.
 	/// </summary>
 	public event Action<int>? LabMessage;
 

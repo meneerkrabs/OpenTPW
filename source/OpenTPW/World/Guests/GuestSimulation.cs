@@ -2109,7 +2109,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
 	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
 	/// </summary>
-	// [APPROX:GUEST-007] the queued advice does not keep the prankster's id (record word +0x0) nor the word of its cell (+0x4), which tp.exe's record 0x59B590 does (the prank lines 0x59B25F..0x59B3F4); evidence needed: what reads them when the advice is spoken
+	// [BIN:TPW-EXE:0x0059B25F prank advice] the advisor's queued prank line keeps the prankster's id and the word of its cell (AutomaticAdvisor.OnPrank); the three prank rows' captions (tag kind 0) read neither
 	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
 	{
 		if ( prank == GuestDecision.Prank.Balloon )

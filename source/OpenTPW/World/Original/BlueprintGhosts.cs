@@ -11,7 +11,7 @@ public static class BlueprintGhosts
 	/// refused cell and every later cell are red, because the validator keeps refusing once its flag is set.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00536100 LayLine ghost] the line preview calls the ghost SetCell 0x532FC0 for every cell of the line and it answers 1 for allowed (0x53391D) and refused (0x534009) cells alike, so the loop never stops early; the validator 0x535670 refuses every later cell once the flag 0x816D50 is set (0x5358A0; reset at 0x527C52 and 0x5247AA), and a refused ghost cell takes the red texture (the second AddFace argument pair 1 at 0x533FEC against the chooser's result at 0x5338F3)
-	// [APPROX:BLUEPRINT-003] the validator's answer for a cell that already holds the line's type is not read (0x535670 after 0x5358B5): such cells before the refusal stay blue
+	// [EXT:untyped-harness-world] the host's own line (cells before its first refusal blue, the rest red) is what a world that types no cells draws; a typed world's path and queue lines take the validator's answers (BlueprintLineGhost, 0x535670 after 0x5358B5) and the kart and water lines the tile chooser's (TileLineGhost)
 	public static List<(int X, int Y, BlueprintMarker Marker)> LineCells( IReadOnlyList<(int X, int Y)> line, (int X, int Y)? stoppedAt,
 		IReadOnlyList<((int X, int Y) Origin, BlueprintMarker Symbol)>? symbols = null )
 	{

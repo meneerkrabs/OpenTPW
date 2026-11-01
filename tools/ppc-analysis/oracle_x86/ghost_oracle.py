@@ -1,4 +1,4 @@
-"""tp.exe's ghost faces run in the x86 oracle sandbox (docs/reverse/ORACLE.md, finding X49; BLUEPRINT-001, BLUEPRINT-003).
+"""tp.exe's ghost faces run in the x86 oracle sandbox (docs/reverse/ORACLE.md, finding X50; BLUEPRINT-001, BLUEPRINT-003).
 
 Dev-only tooling like the rest of oracle_x86: Unicorn and the identified tp.exe (OPENTPW_TPW_EXE, SHA-256 pinned) are needed, nothing here is shipped. The sandbox runs the hover's line preview, the line
 walker 0x536100 with the ghost SetCell 0x532FC0 and the cell validator 0x535670 behind it, on a synthetic 128 x 128 map. Only the drawing is replaced: the face queue 0x53C8D0 records the faces it is

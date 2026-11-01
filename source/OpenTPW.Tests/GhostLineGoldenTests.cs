@@ -9,7 +9,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The path and queue tools' preview line against tp.exe's own line walker 0x536100 with the ghost SetCell 0x532FC0 (docs/reverse/ORACLE.md, X49; BLUEPRINT-001, BLUEPRINT-003): every case of <see cref="GhostLineGolden"/> is a
+/// The path and queue tools' preview line against tp.exe's own line walker 0x536100 with the ghost SetCell 0x532FC0 (docs/reverse/ORACLE.md, X50; BLUEPRINT-001, BLUEPRINT-003): every case of <see cref="GhostLineGolden"/> is a
 /// line over a random synthetic map; the faces the executable queued (floor and walls, texture and height step), the validator's sticky words and the cost after it are replayed on <see cref="BlueprintLineGhost"/>.
 /// </summary>
 [TestClass]

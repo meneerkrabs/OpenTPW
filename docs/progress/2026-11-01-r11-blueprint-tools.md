@@ -1,6 +1,6 @@
 ## Blueprint and build tools (November 1, 2026)
 
-Round 11 package F reads the build tools' ghosts in tp.exe (REA, `dis.py`, the x86 oracle; the Mac decomp only pointed to the code) and replays the walkers `0x536100` and `0x53AAC0` against the ports (ORACLE.md X49 to X51).
+Round 11 package F reads the build tools' ghosts in tp.exe (REA, `dis.py`, the x86 oracle; the Mac decomp only pointed to the code) and replays the walkers `0x536100` and `0x53AAC0` against the ports (ORACLE.md X50 to X52).
 
 - **BLUEPRINT-001 (narrowed)**: the raise of a marker is ported for a typed TPW world: the ghost cell routine `0x532FC0` takes 10 x ((int)H + 9) / 10 of the cell lookup `0x452AE0` for a map type 4, 7, 9, 10 or 30 and a record type 0xB, 0xC, 0x10, 0x11 or 0x19, and the tile ghost's `0x536CA0` takes the last writer of the tile's four cells; the walls follow from the neighbours. Left: untyped harness worlds, Theme Park Inc and the ground of a fence post's own cell.
 - **BLUEPRINT-003 (narrowed)**: a path or queue line cell takes the validator's answer (`m_link`, `m_end`, also for a cell that already holds the line's type, `0x535670` after `0x5358B5`), the kart and water lines and the Buy Land fence draw the tile chooser's `0x539760` tiles (blue, red, `m_end`; the fence over four edge passes), a footprint's track end gets `m_direct` and the kinds '@', '+' and '#' no front arrow. `garrow.MD2` and `rarrow.MD2` are never drawn by tp.exe. Left: the refused access markers' wider cases, the area clear's edge cells and `m_inout`.

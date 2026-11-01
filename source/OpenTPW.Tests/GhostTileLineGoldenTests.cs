@@ -9,7 +9,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The tile line preview against tp.exe's own tile walker 0x53AAC0 with the ghost tile routine 0x5370E0 (docs/reverse/ORACLE.md, X51; BLUEPRINT-003): every case of <see cref="GhostTileLineGolden"/> is a line of tiles over a
+/// The tile line preview against tp.exe's own tile walker 0x53AAC0 with the ghost tile routine 0x5370E0 (docs/reverse/ORACLE.md, X52; BLUEPRINT-003): every case of <see cref="GhostTileLineGolden"/> is a line of tiles over a
 /// random synthetic map; the faces the executable queued (floor and walls: texture, height step, direction byte and flags) and the chooser's words and cost are replayed on <see cref="TileLineGhost"/>.
 /// </summary>
 [TestClass]

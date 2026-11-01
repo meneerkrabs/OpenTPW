@@ -193,8 +193,9 @@ internal sealed partial class SandboxSmokeTest
 		level.ExitCoasterTool();
 		Require( smokeStation.IsOpen && !ride.BeingEdited, "leaving the tool opens the ride again and it is no longer the coaster being edited" );
 		// A press on a marker cell of the coaster is a click of cursor mode 6: it selects the coaster and enters its track tool through 0x4988c0 (0x487e56 → 0x487eeb), opening no window and posting no help.
-		var markerCell = routeTrack.ReturnCell!.Value;
-		Require( level.CoasterAtMarkerCell( markerCell.X, markerCell.Y ) == smokeStation, "the station's return end is a marker cell of the coaster (map type 0x15, its owner)" );
+		var firstPylon = routeTrack.Nodes[CoasterTrack.StationNodeCount];
+		var markerCell = (X: firstPylon.X, Y: firstPylon.Y);
+		Require( level.CoasterAtMarkerCell( markerCell.X, markerCell.Y ) == smokeStation, "a pylon's cell is a marker cell of the coaster (map type 0x15, its owner)" );
 		Require( TryClickPoint( markerCell, out var markerPoint ), "the marker cell can be clicked" );
 		SmokeClick( markerPoint );
 		Require( level.IsCoasterToolActive && level.CoasterToolStation == smokeStation && ride.BeingEdited, "a press on a marker cell enters the coaster's track tool (0x487eeb → 0x4988c0)" );

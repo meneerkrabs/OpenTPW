@@ -202,10 +202,10 @@ public class ParkToolCommandLevelTests
 	}
 
 	/// <summary>The no-data park with two coaster stations whose type has the PC coasters' pylons, the first one's station ends set as the coaster tests set theirs.</summary>
-	private ParkSettingCommandLevelTests.Park BuildableCoaster()
+	private ParkSettingCommandLevelTests.Park BuildableCoaster( string extra = "" )
 	{
 		var pylons = string.Join( "\n", CoasterTests.PcSettings().Select( pair => $"{pair.Key} {pair.Value}" ) );
-		var park = NewPark( "Bumper.WhichTrackType 3\n" + pylons + "\n" );
+		var park = NewPark( "Bumper.WhichTrackType 3\n" + extra + pylons + "\n" );
 		typeof( Level ).GetField( "coasterBuilders", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<OriginalObject, CoasterBuilder>() );
 		CoasterTests.PlaceStation( park.Level.GetCoasterBuilder( park.One )!, (20, 20) );
 		return park;
@@ -328,6 +328,32 @@ public class ParkToolCommandLevelTests
 		foreach ( var logged in level.Commands.Log )
 			Assert.IsTrue( twin.Level.Commands.Apply( logged.Command ).Accepted, logged.Command.ToString() );
 		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash() );
+	}
+
+	/// <summary>
+	/// A coaster's completion ends the tool, also on a ride with a queue: the placement took the queue start (tp.exe 0x5252ea), so pass 0x81's zero result takes 0x526568 and, with none pending, the
+	/// tool ends (0x5266bc) instead of handing over to the queue tool (0x526525, 0x52656e, 0x526680). A park click on a marker cell of the coaster is what enters its tool again (0x487e56 → 0x4988c0).
+	/// </summary>
+	[TestMethod]
+	public void ACoastersCompletionEndsTheToolEvenWithAQueue()
+	{
+		var park = BuildableCoaster( "Info.HasQueue 1\n" );
+		var level = park.Level;
+		park.One.Visitors.HasCells = true;
+		park.One.Visitors.QueueFrontCell = (20, 24);
+		Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+		var builder = level.CoasterTool!;
+		builder.Height = 40;
+		foreach ( var (dx, dy) in CoasterTests.Circuit )
+			Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( 20 + dx, 20 + dy ), $"pylon at offset ({dx}, {dy})" );
+		var back = builder.Track.ReturnCell!.Value;
+		Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( back.X, back.Y ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, level.CoasterClick( back.X, back.Y ) );
+		Assert.IsTrue( builder.Track.IsComplete );
+		Assert.IsFalse( level.IsCoasterToolActive, "the completion ended the tool" );
+		Assert.IsFalse( level.CellTool.IsActive, "no queue tool follows: no queue start is pending" );
+		Assert.AreEqual( TrackToolEntry.Entered, level.BeginCoasterToolEntry( park.One ), "the track button's entry (0x4af275 → 0x4988c0) starts the tool on the finished coaster again" );
+		Assert.AreSame( park.One, level.CoasterToolStation );
 	}
 
 	/// <summary>

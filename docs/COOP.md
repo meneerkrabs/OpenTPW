@@ -2128,12 +2128,13 @@ tool sends every write as a request:
   as `EndCoasterToolCommand` leaves it: every pylon edit on it is released (a moved pylon goes back), the
   coaster is no longer being edited, and a built ride opens. So a guest that leaves, idles, resyncs or
   may build no more never leaves a coaster closed and marked.
-- **The entry.** The ride window's track button and a placed coaster's follow-on end the tool that was on
+- **The entry.** The ride window's track button and a press on a marker cell of the coaster (the original's
+  entries through `0x4988c0`; a placement enters the queue tool, not the coaster tool) end the tool that was on
   and send `ClaimRideCommand`; the claim's outcome sends `BeginCoasterToolCommand` as a second request with
-  the same wait (the frame check keeps the claim meanwhile), and that outcome opens the panel with the tool's
-  help, while the park view has no tool and the claims still give the coaster to the guest's seat. A claim
-  the host let go meanwhile starts nothing and says so. A placement's follow-on opens no queue tool
-  meanwhile, nor after a refusal.
+  the same wait (the frame check keeps the claim meanwhile), and that outcome opens the panel (the entry posts
+  no help), while the park view has no tool and the claims still give the coaster to the guest's seat. A claim
+  the host let go meanwhile starts nothing and says so. The completing click ends the tool; no queue tool
+  follows.
 - **The queue.** The panel's commands go through one queue of the level's (`CoasterRequestQueue`), in order,
   so a closed panel's last commands still go: a drag's press, its steps and its end, a click, Backspace, a
   swap, a cut and the tool's end. It sends from its head while fewer than four of the guest's tool requests

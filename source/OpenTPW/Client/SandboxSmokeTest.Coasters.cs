@@ -192,6 +192,14 @@ internal sealed partial class SandboxSmokeTest
 		Require( ride.BeingEdited && !ride.AcceptsGuests, "the coaster being edited refuses guests while its track still runs (0x441970 against 0x790fec)" );
 		level.ExitCoasterTool();
 		Require( smokeStation.IsOpen && !ride.BeingEdited, "leaving the tool opens the ride again and it is no longer the coaster being edited" );
+		// A press on a marker cell of the coaster is a click of cursor mode 6: it selects the coaster and enters its track tool through 0x4988c0 (0x487e56 → 0x487eeb), opening no window and posting no help.
+		var markerCell = routeTrack.ReturnCell!.Value;
+		Require( level.CoasterAtMarkerCell( markerCell.X, markerCell.Y ) == smokeStation, "the station's return end is a marker cell of the coaster (map type 0x15, its owner)" );
+		Require( TryClickPoint( markerCell, out var markerPoint ), "the marker cell can be clicked" );
+		SmokeClick( markerPoint );
+		Require( level.IsCoasterToolActive && level.CoasterToolStation == smokeStation && ride.BeingEdited, "a press on a marker cell enters the coaster's track tool (0x487eeb → 0x4988c0)" );
+		level.ExitCoasterTool();
+		Require( smokeStation.IsOpen && !ride.BeingEdited, "the tool's exit opens the ride again" );
 		var economy = level.Park?.Economy;
 		var balance = economy?.Balance ?? 0;
 		// The track is taken out through the panel: the tool on a finished coaster opens on the height button with the demolish button enabled; two clicks of the demolish button on the station's

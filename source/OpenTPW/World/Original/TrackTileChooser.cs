@@ -94,6 +94,10 @@ internal static class TrackTileChooser
 		return 1;
 	}
 
+	private static bool IsObjectCell( TileCellFacts cell ) => cell.Type is 4 or 7 or 0x1E or 10 or 9 or 0x15;
+
+	private static bool Touches( TileCellFacts cell ) => cell.Type is 3 or 9 || (cell.Flags & 0x20) != 0;
+
 	/// <summary>The answer for one tile; <paramref name="latches"/> carry the pass's state in and out.</summary>
 	public static int Choose( in TileTool tool, in TileCellFacts a, in TileCellFacts b, in TileCellFacts c, in TileCellFacts d, in TileRecordFacts record,
 		in TileNeighbourFacts right, in TileNeighbourFacts diagonal, in TileNeighbourFacts down, ref TileLatches latches )
@@ -102,16 +106,14 @@ internal static class TrackTileChooser
 		var second = tool.Second;
 		if ( mode == 0x39 )
 			return latches.Refuse ? 1 : 0;
-		var occupied = false;
-		foreach ( var cell in new[] { a, b, c, d } )
-			if ( cell.Type is 4 or 7 or 0x1E or 10 or 9 or 0x15 )
-				occupied = true;
+		var occupied = IsObjectCell( a ) || IsObjectCell( b ) || IsObjectCell( c ) || IsObjectCell( d );
 		// [BIN:TPW-EXE:0x0053991B unowned] any cell of land the park does not own refuses the tile at once, with no latch
 		if ( ((a.Flags | b.Flags | c.Flags | d.Flags) & 0x40) != 0 )
 			return 1;
 		// [BIN:TPW-EXE:0x00539961 overwritable object] the four priority tests run on the cells A, B, C and C again (the executable's copy repeats the third); an object cell whose owner's priority is below the tool's lets the whole tile through
-		foreach ( var cell in new[] { a, b, c, c } )
+		for ( var index = 0; index < 4; index++ )
 		{
+			var cell = index == 0 ? a : index == 1 ? b : c;
 			if ( cell.Type is not (4 or 9 or 10) )
 				continue;
 			if ( cell.OwnerPriority is { } found )
@@ -122,8 +124,9 @@ internal static class TrackTileChooser
 		// [BIN:TPW-EXE:0x00539C27 track modes] the three other records of the tile: a track tile or post of another ride makes the tile occupied and refuses everything after it
 		if ( mode is 0xB or 0x10 )
 		{
-			foreach ( var neighbour in new[] { right, diagonal, down } )
+			for ( var index = 0; index < 3; index++ )
 			{
+				var neighbour = index == 0 ? right : index == 1 ? diagonal : down;
 				if ( neighbour.Present && neighbour.Type is 0xB or 0xD or 0x10 or 0x12 or 0x19 && neighbour.Owner != tool.ToolOwner )
 				{
 					occupied = true;
@@ -163,7 +166,7 @@ internal static class TrackTileChooser
 		// [BIN:TPW-EXE:0x00539F4F cost] a tile whose record is a post, no terrain, unowned, none or of the tool's own type adds the tool's price unless it is the tool's own type
 		if ( (type is 0x19 or 7 || (record.Flags & 0x40) != 0 || mode == 0 || type == 0 || mode == type) && type != mode && !tool.PlacementPaid )
 			latches.Cost = unchecked( latches.Cost + tool.Price );
-		// [BIN:TPW-EXE:0x00539F72 money] outside the edit tools a cost above the park's money refuses the tile
+		// [BIN:TPW-EXE:0x00539F95 money] outside the edit tools (0x539F72 exempts the modes 0xE and 0x13) a cost above the park's money refuses the tile and sets the cash word 0x816D5C (0x539FB6)
 		if ( latches.Bank is { } bank && mode is not (0xE or 0x13) && latches.Cost != 0 && latches.Cost > bank )
 		{
 			if ( !second )
@@ -177,10 +180,7 @@ internal static class TrackTileChooser
 		// [BIN:TPW-EXE:0x00539FC5 last tile] the last tile of a line of a track tool that touches a queue or entrance cell or a NoModify cell is refused
 		if ( tool.Last && type is not (0xB or 0x10) && mode is 0xB or 0x10 )
 		{
-			var touching = false;
-			foreach ( var cell in new[] { a, b, c, d } )
-				touching |= cell.Type is 3 or 9 || (cell.Flags & 0x20) != 0;
-			if ( touching )
+			if ( Touches( a ) || Touches( b ) || Touches( c ) || Touches( d ) )
 				return RefusePending( second, ref latches );
 		}
 		// [BIN:TPW-EXE:0x0053A070 free tile] a tile with no record and no object, outside the edit tools, is free

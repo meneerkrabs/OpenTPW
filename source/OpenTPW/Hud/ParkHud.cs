@@ -1789,7 +1789,7 @@ public sealed partial class ParkHud
 			}
 			else
 			{
-				// [EXT:untyped-harness-world] a world that does not type its cells has no records for the tile chooser: its Buy Land ghost is the host's cells along the rectangle's four edges (or the hovered post before the first click), red while the validator refuses
+				// [EXT:untyped-harness-world] an OpenTPW harness world does not type its cells and has no records for the tile chooser (a Theme Park Inc world takes the same branch without being an extension): its Buy Land ghost is the host's cells along the rectangle's four edges (or the hovered post before the first click), red while the validator refuses
 				var marker = landTool.HoverRefused ? BlueprintMarker.Refused : BlueprintMarker.Allowed;
 				foreach ( var (x, y) in landTool.PreviewEdge() )
 					cells.Add( (x, y, marker) );

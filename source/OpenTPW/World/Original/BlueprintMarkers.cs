@@ -170,20 +170,79 @@ public sealed class BlueprintMarkers : ModelEntity
 	/// </summary>
 	public void Show( IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells, IReadOnlyDictionary<(int X, int Y), byte>? directions )
 	{
-		var unique = cells
-			.Where( cell => cell.X >= 0 && cell.Y >= 0 && cell.X < field.CellCountX && cell.Y < field.CellCountZ )
-			.GroupBy( cell => (cell.X, cell.Y) ).Select( group => group.Last() ).ToArray();
-		var directionList = directions == null ? [] : unique.Where( cell => directions.ContainsKey( (cell.X, cell.Y) ) ).Select( cell => directions[(cell.X, cell.Y)] ).ToArray();
-		var heights = CaptureHeights( field, unique, heightOffset );
-		var tileRaises = CaptureTileRaises( field, unique, tileRaise );
-		if ( unique.SequenceEqual( shown ) && directionList.AsSpan().SequenceEqual( shownDirectionList ) && heights.SequenceEqual( shownHeights ) && tileRaises.SequenceEqual( shownTileRaises ) )
+		// the scratch buffers and tables are reused by every call: a frame that changes nothing allocates nothing here
+		uniqueCells.Clear();
+		uniqueIndex.Clear();
+		for ( var index = 0; index < cells.Count; index++ )
+		{
+			var cell = cells[index];
+			if ( cell.X < 0 || cell.Y < 0 || cell.X >= field.CellCountX || cell.Y >= field.CellCountZ )
+				continue;
+			// a later duplicate of a cell wins and keeps the first one's place
+			if ( uniqueIndex.TryGetValue( (cell.X, cell.Y), out var place ) )
+				uniqueCells[place] = cell;
+			else
+			{
+				uniqueIndex[(cell.X, cell.Y)] = uniqueCells.Count;
+				uniqueCells.Add( cell );
+			}
+		}
+		directionScratch.Clear();
+		if ( directions != null )
+			for ( var index = 0; index < uniqueCells.Count; index++ )
+				if ( directions.TryGetValue( (uniqueCells[index].X, uniqueCells[index].Y), out var direction ) )
+					directionScratch.Add( direction );
+		CaptureHeights( field, uniqueCells, heightOffset, heightScratch, tileRaise != null );
+		CaptureTileRaises( field, uniqueCells, tileRaise, tileRaiseScratch );
+		if ( SameCells( uniqueCells, shown ) && SameDirections( directionScratch, shownDirectionList ) && SameEntries( heightScratch, shownHeights ) && SameEntries( tileRaiseScratch, shownTileRaises ) )
 			return;
-		shown = unique;
-		shownHeights = heights;
-		shownTileRaises = tileRaises;
-		shownDirectionList = directionList;
-		shownDirections = directions == null ? [] : directions.Where( pair => unique.Any( cell => (cell.X, cell.Y) == pair.Key ) ).ToDictionary();
+		shown = uniqueCells.ToArray();
+		(shownHeights, heightScratch) = (heightScratch, shownHeights);
+		(shownTileRaises, tileRaiseScratch) = (tileRaiseScratch, shownTileRaises);
+		shownDirectionList = directionScratch.ToArray();
+		var kept = new Dictionary<(int X, int Y), byte>();
+		if ( directions != null )
+			foreach ( var cell in shown )
+				if ( directions.TryGetValue( (cell.X, cell.Y), out var direction ) )
+					kept[(cell.X, cell.Y)] = direction;
+		shownDirections = kept;
 		Rebuild();
+	}
+
+	private readonly List<(int X, int Y, BlueprintMarker Marker)> uniqueCells = [];
+	private readonly Dictionary<(int X, int Y), int> uniqueIndex = [];
+	private readonly List<byte> directionScratch = [];
+	private Dictionary<(int X, int Y), float?> heightScratch = [];
+	private Dictionary<(int X, int Y), float?> tileRaiseScratch = [];
+
+	private static bool SameCells( List<(int X, int Y, BlueprintMarker Marker)> now, (int X, int Y, BlueprintMarker Marker)[] before )
+	{
+		if ( now.Count != before.Length )
+			return false;
+		for ( var index = 0; index < before.Length; index++ )
+			if ( now[index] != before[index] )
+				return false;
+		return true;
+	}
+
+	private static bool SameDirections( List<byte> now, byte[] before )
+	{
+		if ( now.Count != before.Length )
+			return false;
+		for ( var index = 0; index < before.Length; index++ )
+			if ( now[index] != before[index] )
+				return false;
+		return true;
+	}
+
+	private static bool SameEntries( Dictionary<(int X, int Y), float?> now, Dictionary<(int X, int Y), float?> before )
+	{
+		if ( now.Count != before.Count )
+			return false;
+		foreach ( var (key, value) in now )
+			if ( !before.TryGetValue( key, out var other ) || other != value )
+				return false;
+		return true;
 	}
 
 	public void Clear() => Show( [] );
@@ -380,7 +439,7 @@ public sealed class BlueprintMarkers : ModelEntity
 	internal static float TileRaise( IReadOnlyDictionary<(int X, int Y), float?>? heights, int x, int y )
 	{
 		var best = 0f;
-		foreach ( var (dx, dy) in new[] { (0, 0), (1, 0), (0, 1), (1, 1) } )
+		foreach ( var (dx, dy) in TileCorners )
 			if ( heights?.GetValueOrDefault( (x + dx, y + dy) ) is { } raise && raise > best )
 				best = raise;
 		return best;
@@ -461,16 +520,19 @@ public sealed class BlueprintMarkers : ModelEntity
 	}
 
 	/// <summary>The raises of the tile markers' tiles and of the four tiles beside them as <see cref="TileLineGhost.TileRaise"/> gives them; empty without a tile raise (a world that types no cells).</summary>
-	internal static Dictionary<(int X, int Y), float?> CaptureTileRaises( ModelHeightfield field, IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells, Func<int, int, float?>? sample )
+	internal static Dictionary<(int X, int Y), float?> CaptureTileRaises( ModelHeightfield field, IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells, Func<int, int, float?>? sample ) =>
+		CaptureTileRaises( field, cells, sample, new Dictionary<(int X, int Y), float?>() );
+
+	internal static Dictionary<(int X, int Y), float?> CaptureTileRaises( ModelHeightfield field, IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells, Func<int, int, float?>? sample, Dictionary<(int X, int Y), float?> result )
 	{
-		var result = new Dictionary<(int X, int Y), float?>();
+		result.Clear();
 		if ( sample == null )
 			return result;
 		foreach ( var (x, y, marker) in cells )
 		{
 			if ( !IsTileMarker( marker ) )
 				continue;
-			foreach ( var (dx, dy) in new[] { (0, 0), (0, -2), (2, 0), (0, 2), (-2, 0) } )
+			foreach ( var (dx, dy) in TileSides )
 			{
 				var (tx, ty) = (x + dx, y + dy);
 				if ( !result.ContainsKey( (tx, ty) ) )
@@ -482,28 +544,44 @@ public sealed class BlueprintMarkers : ModelEntity
 
 	// Snapshot the map (not just preview neighbours), so occupancy changes rebuild topology even while paused.
 	internal static Dictionary<(int X, int Y), float?> CaptureHeights( ModelHeightfield field,
-		IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells, Func<int, int, float?>? sample )
+		IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells, Func<int, int, float?>? sample ) =>
+		CaptureHeights( field, cells, sample, new Dictionary<(int X, int Y), float?>(), false );
+
+	/// <summary>
+	/// <see cref="CaptureHeights(ModelHeightfield, IReadOnlyList{ValueTuple{int, int, BlueprintMarker}}, Func{int, int, float?}?)"/> into <paramref name="result"/>. With <paramref name="exactTileRaises"/> the tile markers' raises
+	/// come from <see cref="CaptureTileRaises(ModelHeightfield, IReadOnlyList{ValueTuple{int, int, BlueprintMarker}}, Func{int, int, float?}?)"/> and the cells of a tile and its neighbours are not sampled twice.
+	/// </summary>
+	internal static Dictionary<(int X, int Y), float?> CaptureHeights( ModelHeightfield field,
+		IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells, Func<int, int, float?>? sample, Dictionary<(int X, int Y), float?> result, bool exactTileRaises )
 	{
-		var result = new Dictionary<(int X, int Y), float?>();
+		result.Clear();
 		if ( sample == null ) return result;
-		foreach ( var (x, y, marker) in cells )
+		for ( var index = 0; index < cells.Count; index++ )
 		{
-			Capture( x, y );
-			foreach ( var (dx, dy, _, _, _, _, _) in Edges ) Capture( x + dx, y + dy );
-			if ( !IsTileMarker( marker ) )
+			var (x, y, marker) = cells[index];
+			Capture( field, sample, result, x, y );
+			foreach ( var (dx, dy, _, _, _, _, _) in Edges ) Capture( field, sample, result, x + dx, y + dy );
+			if ( !IsTileMarker( marker ) || exactTileRaises )
 				continue;
 			// a tile's raise reads its four cells and each wall the four cells of the tile two cells away (0x536CA0)
-			foreach ( var (tx, ty) in new[] { (0, 0), (0, -2), (2, 0), (0, 2), (-2, 0) } )
-				foreach ( var (cx, cy) in new[] { (0, 0), (1, 0), (0, 1), (1, 1) } )
-					Capture( x + tx + cx, y + ty + cy );
+			foreach ( var (tx, ty) in TileSides )
+				foreach ( var (cx, cy) in TileCorners )
+					Capture( field, sample, result, x + tx + cx, y + ty + cy );
 		}
 		return result;
-		void Capture( int x, int y )
-		{
-			if ( !result.ContainsKey( (x, y) ) )
-				result[(x, y)] = x >= 0 && y >= 0 && x < field.CellCountX && y < field.CellCountZ ? sample( x, y ) : null;
-		}
 	}
+
+	private static void Capture( ModelHeightfield field, Func<int, int, float?> sample, Dictionary<(int X, int Y), float?> result, int x, int y )
+	{
+		if ( !result.ContainsKey( (x, y) ) )
+			result[(x, y)] = x >= 0 && y >= 0 && x < field.CellCountX && y < field.CellCountZ ? sample( x, y ) : null;
+	}
+
+	private static readonly (int Dx, int Dy)[] TileSides = [(0, 0), (0, -2), (2, 0), (0, 2), (-2, 0)];
+	private static readonly (int Dx, int Dy)[] TileCorners = [(0, 0), (1, 0), (0, 1), (1, 1)];
+	private static readonly Vector2[] UnitSquare = [new( 0, 0 ), new( 1, 0 ), new( 0, 1 ), new( 1, 1 )];
+	private static readonly uint[] FrontOffsets = [0, 2, 3, 3, 1, 0];
+	private static readonly uint[] BackOffsets = [0, 1, 3, 3, 2, 0];
 
 	/// <summary>
 	/// The corner order of a face's texture coordinates by direction byte: vertex i takes the unit-square entry <c>order[i]</c>
@@ -512,11 +590,13 @@ public sealed class BlueprintMarkers : ModelEntity
 	// [BIN:TPW-EXE:0x0053DFF7 face corner order] the face builder 0x53DF30 picks the four table entries by the direction byte: default (0,1,2,3), 0x40 (1,3,0,2), 0x10 (3,2,1,0), 4 (2,0,3,1)
 	public static int[] CornerOrder( byte direction ) => direction switch
 	{
-		0x40 => [1, 3, 0, 2],
-		0x10 => [3, 2, 1, 0],
-		4 => [2, 0, 3, 1],
-		_ => [0, 1, 2, 3],
+		0x40 => OrderWest,
+		0x10 => OrderSouth,
+		4 => OrderEast,
+		_ => OrderDefault,
 	};
+
+	private static readonly int[] OrderWest = [1, 3, 0, 2], OrderSouth = [3, 2, 1, 0], OrderEast = [2, 0, 3, 1], OrderDefault = [0, 1, 2, 3];
 
 	/// <summary>One textured quad from four original-space corners (u: first→second, v: first→third), both sides facing out.</summary>
 	// [BIN:TPW-EXE:0x0053C3F0 blueprint UV table] the runtime table 0x871EE8 (12-byte entries, u at +0, v at +4) holds the unit square (0,0), (1,0), (0,1), (1,1) in entries 0-3 and (0.5, 0.5) in entry 4; entries 5-8 are the rotating +-0.4 square of the track symbols
@@ -524,18 +604,19 @@ public sealed class BlueprintMarkers : ModelEntity
 	private static void AddFace( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int slot, byte direction,
 		System.Numerics.Vector3 a, System.Numerics.Vector3 b, System.Numerics.Vector3 c, System.Numerics.Vector3 d )
 	{
-		var square = new[] { new Vector2( 0, 0 ), new Vector2( 1, 0 ), new Vector2( 0, 1 ), new Vector2( 1, 1 ) };
-		AddFace( vertices, indices, field, slot, CornerOrder( direction ).Select( entry => square[entry] ).ToArray(), a, b, c, d );
+		var order = CornerOrder( direction );
+		AddFace( vertices, indices, field, slot, [UnitSquare[order[0]], UnitSquare[order[1]], UnitSquare[order[2]], UnitSquare[order[3]]], a, b, c, d );
 	}
 
 	private static void AddFace( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int slot, Vector2[] uv,
 		System.Numerics.Vector3 a, System.Numerics.Vector3 b, System.Numerics.Vector3 c, System.Numerics.Vector3 d )
 	{
-		var positions = new[] { a, b, c, d }.Select( corner => OriginalParkPlacement.ToEngine( field, corner ) ).ToArray();
+		System.Numerics.Vector3[] positions = [OriginalParkPlacement.ToEngine( field, a ), OriginalParkPlacement.ToEngine( field, b ), OriginalParkPlacement.ToEngine( field, c ), OriginalParkPlacement.ToEngine( field, d )];
 		var cross = System.Numerics.Vector3.Cross( positions[1] - positions[0], positions[2] - positions[0] );
 		var normal = cross.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( cross ) : System.Numerics.Vector3.UnitY;
-		foreach ( var (offsets, sign) in new[] { (new uint[] { 0, 2, 3, 3, 1, 0 }, 1f), (new uint[] { 0, 1, 3, 3, 2, 0 }, -1f) } )
+		for ( var side = 0; side < 2; side++ )
 		{
+			var (offsets, sign) = side == 0 ? (FrontOffsets, 1f) : (BackOffsets, -1f);
 			var start = (uint)vertices.Count;
 			for ( var index = 0; index < 4; index++ )
 				vertices.Add( new Vertex { Position = positions[index], Normal = normal * sign, TexCoords = uv[index], TexIndex = slot } );

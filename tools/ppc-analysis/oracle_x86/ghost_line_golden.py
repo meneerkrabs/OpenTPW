@@ -106,7 +106,7 @@ def run(oracle: GhostOracle, case: dict) -> dict:
 def render() -> str:
     oracle = GhostOracle()
     oracle.start([], [])
-    rng = random.Random('ghost-line-x48')
+    rng = random.Random('ghost-line-x48')  # the seed text is a label only (the finding was renumbered later); changing it changes every case
     lines = []
     for _ in range(CASES):
         case = make_case(rng)

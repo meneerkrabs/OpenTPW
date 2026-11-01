@@ -39,6 +39,8 @@ internal sealed record LineGhostResult( List<(int X, int Y, BlueprintMarker Mark
 /// </summary>
 internal static class BlueprintLineGhost
 {
+	private static readonly (int Dx, int Dy)[] Neighbours = [(0, -1), (1, 0), (0, 1), (-1, 0)];
+
 	/// <summary>The cells of <paramref name="line"/> marked in the original's order.</summary>
 	// [BIN:TPW-EXE:0x00536100 LayLine] the line's first cell is the only one with the line-start word 0x820AA4 set (cleared after its SetCell) and its last cell the only one with the last-cell word 0x820AB8 (set before it), so a one-cell line is both
 	// [BIN:TPW-EXE:0x005331B5 ghost texture] the ghost asks the validator (0x535670(mode, 0)): 1 refuses (the red face 0x533927, after a second call with the argument 1 and the refusal word 0x527940), 0 takes the tool's own texture (0, blue) and any other answer is the texture (8 m_link, 0xB m_end)
@@ -48,6 +50,7 @@ internal static class BlueprintLineGhost
 		var latches = new CellValidatorLatches { Bank = tool.Bank };
 		var cells = new List<(int X, int Y, BlueprintMarker Marker)>( line.Count );
 		var refused = false;
+		// [BIN:TPW-EXE:0x00524571 tool priority] the hover writes the overwrite priority 0x818C10: 2 for the path tool (0x524571) and 3 for the queue tool (0x524588, where ESI is the 3 loaded at 0x523546); the click writes the same (0x527200, 0x527218)
 		var toolPriority = tool.Mode == 3 ? 3 : 2;
 		// 0x820AA4 stays set until a cell was in the map and went through SetCell
 		var inside = true;
@@ -84,7 +87,7 @@ internal static class BlueprintLineGhost
 	{
 		if ( map.RaiseAt( x, y ) is not { } current )
 			return false;
-		foreach ( var (dx, dy) in new[] { (0, -1), (1, 0), (0, 1), (-1, 0) } )
+		foreach ( var (dx, dy) in Neighbours )
 			if ( map.InBounds( x + dx, y + dy ) && map.RaiseAt( x + dx, y + dy ) is { } neighbour && (long)neighbour < (long)current )
 				return true;
 		return false;

@@ -46,6 +46,12 @@ internal readonly record struct CellValidatorInput( int Mode, byte Type, ushort 
 	/// </summary>
 	// [BIN:TPW-EXE:0x0053589C second argument] with the argument 0 and the refusal latch 0x816D50 set the validator returns 1 at 0x5358A9; any other argument goes on to the cell's own tests
 	public bool Full { get; init; }
+
+	/// <summary>
+	/// The placement is being paid for (0x8186D4): the chargeable-cell test skips the cost add while it is set. The path and queue line hover runs with it clear, so the line tools never set it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005358DF placement paid] the cost block reads the byte 0x8186D4 and skips the 0x52FBA0 add when it is nonzero; the byte is set to 1 only inside the object placement and Move hovers (0x5235D4, 0x523967) and cleared by their common exit 0x5239FC, and inside the placement click (0x524B4A, 0x5253E9) until 0x525A06 / 0x5249C2 clear it, so a path or queue line hover (0x524564) reads 0
+	public bool PlacementPaid { get; init; }
 }
 
 /// <summary>
@@ -87,8 +93,9 @@ internal static class QueueCellValidator
 			return Refused;
 		}
 		// [BIN:TPW-EXE:0x005358CC cost] a chargeable cell (0x535600) whose type is not the tool's and that is no path under the queue tool adds the tool's price to the pass's cost (0x52FBA0); a cost above the park's money refuses the cell and every later one and sets the cash flag (0x535905..0x535945)
-		if (cell.Price != 0 && Chargeable( mode, type, cell.LastCell ) && type != mode && !(mode == 3 && type == 1))
+		if (cell.Price != 0 && !cell.PlacementPaid && Chargeable( mode, type, cell.LastCell ) && type != mode && !(mode == 3 && type == 1))
 			latches.Cost = unchecked( latches.Cost + cell.Price );
+		// [BIN:TPW-EXE:0x0053592B money refusal] the refusal also calls 0x527940(1), which stores the refusal word 0x816D48; its only reader 0x527950 is the pointer switch's no-place test (UI-100), and 0x533933 stores the same word after every refusal of the ghost cell routine, so the word is the ghost's Refused flag and needs no input of its own
 		if (latches.Bank is { } bank && latches.Cost != 0 && latches.Cost > bank)
 		{
 			latches.Refuse = true;

@@ -4,9 +4,9 @@ public partial class Level
 {
 	/// <summary>
 	/// The path or queue tool's preview line as the original's ghost marks it (<see cref="BlueprintLineGhost"/>): each cell of the hover's line takes the validator's answer, with the money of the park, the ride under
-	/// the queue tool and the heights of the typed map. Null for the other tools and for a world that types no cells (a read-only visit, a Theme Park Inc layout, a harness world), whose ghosts are the host's own line.
+	/// the queue tool and the heights of the typed map. Null for the other tools and for a world that types no cells, whose ghosts are the host's own line (a harness world; a Theme Park Inc world takes the same branch, which is BLUEPRINT-001's open residual, not an extension; a read-only online visit has no build tool, so no ghost).
 	/// </summary>
-	// [EXT:untyped-harness-world] a world that does not type its cells has nothing for the validator to read: its ghost is the host's preview line (cells before its first refusal blue, the rest red)
+	// [EXT:untyped-harness-world] an OpenTPW harness world does not type its cells and has nothing for the validator to read: its ghost is the host's preview line (cells before its first refusal blue, the rest red); a Theme Park Inc world takes the same branch without being an extension (BLUEPRINT-001)
 	internal LineGhostResult? PathLineGhost( SegmentResult ghost )
 	{
 		if ( !TypesFootprints || Guests?.Grid.Cells is not { } cells || ghost.Line.Count == 0 )
@@ -23,21 +23,43 @@ public partial class Level
 	}
 
 	/// <summary>The kart and water line tool's preview as the original's tile ghost marks it (<see cref="TileLineGhost"/>); null for the other tools and for a world that types no cells.</summary>
-	// [EXT:untyped-harness-world] a world that does not type its cells has no records for the tile chooser to read: its ghost is the host's own line
+	/// <remarks>Computed once for a hover: the markers and the pointer share the result until the line, the tool, the cells, the tracks or the money change.</remarks>
+	// [EXT:untyped-harness-world] a world that does not type its cells has no records for the tile chooser to read: its ghost is the host's own line (a Theme Park Inc world takes the same branch, BLUEPRINT-001's open residual)
 	internal TileLineGhostResult? TileLineGhostFor( SegmentResult ghost )
 	{
 		if ( !TypesFootprints || Guests?.Grid.Cells is not { } cells || OriginalPark?.Heightfield is not { } field || ghost.Symbols.Count > 0 )
 			return null;
 		if ( ParkCommandLineWriter.Unwrap( CellTool.Writer ) is not TrackLineWriter writer )
 			return null;
-		var mode = writer.Mode == CellToolMode.WaterTrack ? 0x10 : 0xB;
 		var economy = Park?.Economy;
+		var key = new TileGhostKey( ghost, ghost.Start, ghost.SnappedEnd, CellTool.Start, writer, cells, cells.Version, cells.Tracks.Version, economy == null ? null : unchecked( (int)economy.Balance ) );
+		if ( tileLineMemo is { } known && known.Key == key )
+			return known.Result;
+		var mode = writer.Mode == CellToolMode.WaterTrack ? 0x10 : 0xB;
 		var price = economy == null ? 0 : (int)economy.CellCost( mode == 0xB ? CellPurchase.KartTrack : CellPurchase.WaterTrack );
-		var map = new ParkTileGhostMap( cells, OwnerPriorityAt, ( x, y ) => BlueprintGround( cells, field, x, y ) );
 		// [BIN:TPW-EXE:0x00524724 hover flag] the hover sets 0x818688 when the line has a start and the snapped end is that cell
-		var tool = new LineGhostTileTool( unchecked( (ushort)writer.Owner ), 3, price, CellTool.Start == ghost.SnappedEnd, (0, 0), (0, 0) );
-		var latches = new TileLatches { Bank = economy == null ? null : unchecked( (int)economy.Balance ) };
-		return TileLineGhost.Run( map, mode, ghost.Start, ghost.SnappedEnd, tool, latches );
+		var tool = new LineGhostTileTool( unchecked( (ushort)writer.Owner ), TileLineGhost.ToolPriority, price, CellTool.Start == ghost.SnappedEnd, (0, 0), (0, 0) );
+		var latches = new TileLatches { Bank = key.Balance };
+		var result = TileLineGhost.Run( TileMap( cells, field ), mode, ghost.Start, ghost.SnappedEnd, tool, latches );
+		tileLineMemo = (key, result);
+		return result;
+	}
+
+	private readonly record struct TileGhostKey( object Ghost, (int X, int Y) Start, (int X, int Y) End, (int X, int Y)? ToolStart, object Writer, ParkCellMap Cells, int CellsVersion, int TracksVersion, int? Balance );
+
+	private (TileGhostKey Key, TileLineGhostResult Result)? tileLineMemo;
+	private ParkTileGhostMap? tileMap;
+	private ParkCellMap? tileMapCells;
+
+	/// <summary>The tile ghost's view of the typed map, built once for a park's cells.</summary>
+	private ParkTileGhostMap TileMap( ParkCellMap cells, ModelHeightfield field )
+	{
+		if ( tileMap == null || !ReferenceEquals( tileMapCells, cells ) )
+		{
+			tileMapCells = cells;
+			tileMap = new ParkTileGhostMap( cells, OwnerPriorityAt, ( x, y ) => BlueprintGround( cells, field, x, y ) );
+		}
+		return tileMap;
 	}
 
 	/// <summary>The raise of a tile's marker, <see cref="TileLineGhost.TileRaise"/> over the typed map; null in a world that types no cells.</summary>
@@ -45,7 +67,7 @@ public partial class Level
 	{
 		if ( !TypesFootprints || Guests?.Grid.Cells is not { } cells || OriginalPark?.Heightfield is not { } field )
 			return null;
-		return TileLineGhost.TileRaise( new ParkTileGhostMap( cells, OwnerPriorityAt, ( cx, cy ) => BlueprintGround( cells, field, cx, cy ) ), x, y );
+		return TileLineGhost.TileRaise( TileMap( cells, field ), x, y );
 	}
 
 	/// <summary>
@@ -57,18 +79,22 @@ public partial class Level
 	{
 		if ( !TypesFootprints || Guests?.Grid.Cells is not { Land: { } land } cells || OriginalPark?.Heightfield is not { } field || tool.HoverPost is not { } post )
 			return null;
-		var map = new ParkTileGhostMap( cells, OwnerPriorityAt, ( x, y ) => BlueprintGround( cells, field, x, y ) );
-		var gate = new LineGhostTileTool( 0, 3, 0, false, land.PostA, land.PostB );
+		var key = (tool.Corner, post, tool.HoverRefused, cells, cells.Version, cells.Tracks.Version);
+		if ( buyLandMemo is { } known && known.Key == key )
+			return known.Tiles;
+		var map = TileMap( cells, field );
+		var gate = new LineGhostTileTool( 0, TileLineGhost.ToolPriority, 0, false, land.PostA, land.PostB );
 		var latches = new TileLatches { Refuse = tool.HoverRefused };
 		var tiles = new List<((int X, int Y) Origin, int Answer)>();
-		void Pass( (int X, int Y) from, (int X, int Y) to )
+		foreach ( var (from, to) in TileLineGhost.FencePasses( tool.Corner, post ) )
 		{
 			var result = TileLineGhost.Run( map, 0x19, from, to, gate, latches );
 			latches = result.Latches;
 			tiles.AddRange( result.Tiles );
 		}
-		foreach ( var (from, to) in TileLineGhost.FencePasses( tool.Corner, post ) )
-			Pass( from, to );
+		buyLandMemo = (key, tiles);
 		return tiles;
 	}
+
+	private (((int X, int Y)? Corner, (int X, int Y) Post, bool Refused, ParkCellMap Cells, int CellsVersion, int TracksVersion) Key, List<((int X, int Y) Origin, int Answer)> Tiles)? buyLandMemo;
 }

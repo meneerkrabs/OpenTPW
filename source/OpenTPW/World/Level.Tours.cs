@@ -29,9 +29,9 @@ public partial class Level
 
 	/// <summary>
 	/// The raise of a cell's marker in a typed park (BLUEPRINT-001): 10 x ((int)H + 9) / 10 of the cell's ground for a cell that holds an object, a track piece, a post or no terrain (<see cref="BlueprintHeights"/>), 0 for every other cell.
-	/// A world whose cells carry no original types (a read-only visit, a Theme Park Inc layout, a harness world) has none.
+	/// A world whose cells carry no original types has none: an OpenTPW harness world ([EXT:untyped-harness-world]) and a Theme Park Inc layout (BLUEPRINT-001's open residual); a read-only online visit builds nothing, so it shows no marker.
 	/// </summary>
-	// [EXT:untyped-harness-world] a world that does not type its cells has no cell type or record to raise a marker by; its markers stay on the terrain
+	// [EXT:untyped-harness-world] an OpenTPW harness world has no cell type or record to raise a marker by, so its markers stay on the terrain (a Theme Park Inc world is the same code path but not an extension)
 	private float? BlueprintHeightOffset( int x, int y )
 	{
 		if ( !TypesFootprints || Guests?.Grid.Cells is not { } cells || OriginalPark?.Heightfield is not { } field ) return null;

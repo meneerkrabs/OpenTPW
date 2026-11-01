@@ -70,7 +70,7 @@ def make(rng):
 def render() -> str:
     oracle = GhostOracle()
     oracle.start([], [])
-    rng = random.Random('ghost-tile-x49')
+    rng = random.Random('ghost-tile-x49')  # the seed text is a label only (the finding was renumbered later); changing it changes every case
     lines = []
     for _ in range(CASES):
         case = make(rng)

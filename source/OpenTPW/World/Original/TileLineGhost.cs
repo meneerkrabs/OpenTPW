@@ -26,6 +26,13 @@ internal sealed record TileLineGhostResult( List<TileFace> Faces, List<((int X, 
 /// </summary>
 internal static class TileLineGhost
 {
+	/// <summary>The overwrite priority the kart, water and fence tools hover with.</summary>
+	// [BIN:TPW-EXE:0x005244BE tile tool priority] the hover blocks of the kart (0xB), water (0x10) and fence (0x19) tools (0x523A08..0x523A38, taken at 0x5244B8) store ESI in 0x818C10, and ESI is the 3 loaded at 0x523546 that no test on the way changes (the path tool writes 2 at 0x524571, the queue tool ESI = 3 at 0x524588)
+	public const int ToolPriority = 3;
+
+	private static readonly (int Dx, int Dy)[] TileCells = [(0, 0), (0, 1), (1, 0), (1, 1)];
+	private static readonly (int Dx, int Dy, int Side)[] WallSides = [(0, -2, 1), (2, 0, 4), (0, 2, 0x10), (-2, 0, 0x40)];
+
 	/// <summary>Quantizes a ground height to the marker raise: 10 x ((int)H + 9) / 10 with both divisions truncating.</summary>
 	private static float? Quantize( float height ) => BlueprintHeights.Quantize( height );
 
@@ -44,7 +51,7 @@ internal static class TileLineGhost
 				return null;
 			value = record;
 		}
-		foreach ( var (dx, dy) in new[] { (0, 0), (0, 1), (1, 0), (1, 1) } )
+		foreach ( var (dx, dy) in TileCells )
 		{
 			var (cx, cy) = (x + dx, y + dy);
 			if ( !map.InBounds( cx, cy ) || !Raises( map.CellAt( cx, cy ).Type ) )
@@ -60,7 +67,7 @@ internal static class TileLineGhost
 	// [BIN:TPW-EXE:0x005373CE tile walls] each side reads the record two cells on (0x50C320 with 0x7CDBA0, 0x7CDBC8, 0x7CDBA8, 0x7CDBD0), computes its raise as the tile's own and compares the integers: a lower neighbour gets a wall face (0x53C8D0, y = step + 1.5) every 10 units
 	public static IEnumerable<(int Side, long Step)> WallSteps( ITileGhostMap map, int x, int y, float current )
 	{
-		foreach ( var (dx, dy, side) in new[] { (0, -2, 1), (2, 0, 4), (0, 2, 0x10), (-2, 0, 0x40) } )
+		foreach ( var (dx, dy, side) in WallSides )
 		{
 			if ( !map.InBounds( x + dx, y + dy ) || TileRaise( map, x + dx, y + dy ) is not { } neighbour )
 				continue;

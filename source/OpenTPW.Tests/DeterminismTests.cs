@@ -1018,8 +1018,9 @@ public class DeterminismTests
 	internal const ulong GuestsTickRunHash = 0xC50A9583B4D05226UL;
 
 	/// <summary>
-	/// The turn branch of <see cref="GuestSimulation.Tick"/> (the sweep newest first, the destroys, the arrival update) is the production path of a standalone simulation; the other pins drive the sweep by hand as Level does.
-	/// This run goes through Tick on every tick, so a change of that branch moves a pin.
+	/// The turn branch of <see cref="GuestSimulation.Tick"/> (the sweep newest first, the arrival update) as the pooled Level's turn runs it when the economy does not sweep: the synthetic park attaches a shared pool,
+	/// so the destroys are the pool owner's and the owned-pool path (<c>things.DestroyQueued()</c> in Tick) is not in this run; the other pins drive the sweep by hand as Level does. This run goes through Tick on
+	/// every tick, so a change of that branch moves a pin. The standalone path (no AttachThings) is asserted by <c>GuestThingIdTests.AStandaloneSimulationFreesItsDestroysAtTheTurnTickOnly</c>.
 	/// </summary>
 	[TestMethod]
 	public void TheTurnBranchOfGuestsTickIsPinned()

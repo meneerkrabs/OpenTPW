@@ -617,8 +617,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		}
 		// the substeps between two turns run nothing of the thing update: the ticks count their seconds and move the drawn point
+		sweptGuests.Clear();
 		for ( var index = 0; index < guests.Count; index++ )
+		{
+			sweptGuests.Add( guests[index].Id );
 			UpdateBetweenTurns( guests[index], deltaSeconds );
+		}
 		for ( var index = guests.Count - 1; index >= 0; index-- )
 		{
 			if ( guests[index].State != GuestState.Gone )
@@ -676,6 +680,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public bool NextTickStartsTurn => ParkCalendar.Turn( TickCount + 1 + turnPhase ) != ParkCalendar.Turn( TickCount + turnPhase );
 
 	private readonly HashSet<int> sweptGuests = new();
+
+	/// <summary>
+	/// Whether the guest has been updated in the tick being run (its turn's sweep, or the per-tick steps between two turns), so a state that reads another guest can use that guest's counters as they were at the start of the tick.
+	/// The simulation's own record: a placement or a teleport also stamps <see cref="Guest.StepTick"/>.
+	/// </summary>
+	internal bool UpdatedThisTick( Guest guest ) => sweptGuests.Contains( guest.Id );
 	private float sweepDelta;
 
 	/// <summary>
@@ -1353,6 +1363,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return chain;
 	}
 
+	(int X, int Y)? IGuardGuests.TicketBooth( int side ) => (side == 0 ? Settings.ArrivalLaneA : Settings.ArrivalLaneB) is { Length: >= 4 } lane ? lane[3] : null;
+
 	(int X, int Y)[]? IGuardGuests.Lane( int side ) => side == 0 ? ValidLane( Settings.ArrivalLaneA ) : ValidLane( Settings.ArrivalLaneB );
 
 	// [BIN:TPW-EXE:0x004FD970 guest meter +0x1B8] the energy meter is the original's unnamed float +0x1B8: nothing changes it while walking, resting, queueing or riding (the needs phase 0x00501650 does not touch it), so OpenTPW keeps only its use step (OnVisitorReleased)
@@ -1465,7 +1477,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>
 	/// The things on one cell's chain head first (the guests' and the staff's lists read by entry number): the guests and the staff interleaved by the time each entered the cell.
-	/// A guest that is gone is a kind 2 thing until the turn's deferred destroys unlink it (0x0050B780, 0x00516641): the separation query skips it, the head tests (<see cref="ChainHead"/>) do not.
+	/// A guest whose state is Gone is skipped by the separation query. Its destroy request (0x0050B780) takes it out of the cell's list at once (the jump table 0x0050B918 → 0x004FB330 → 0x004F8AE0 → 0x0050B980 → 0x004D9280 at 0x0050B9B8, <c>RemoveGone</c>); only the id's free waits for the turn's deferred destroys (0x00516641).
 	/// </summary>
 	internal void AppendCellChain( int x, int y, List<GuestNavigation> into )
 	{
@@ -1491,7 +1503,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		occupants.TryGetValue( cell, out var guestList );
 		var staffList = StaffChain.At( cell );
-		// [BIN:TPW-EXE:0x0050B780 destroy request] a thing that is destroyed turns into kind 2 (+2 = 2, +3 = 1) and is queued (0x00516310); the turn's deferred destroys (0x00516641 → 0x0050B980) unlink it, so until then it still heads its cell's chain and the head tests (the boarding at 0x00500C28) see it, while the separation query (kinds 1, 4 to 8, 0x12) skips it
+		// [BIN:TPW-EXE:0x0050B780 destroy request] the request unlinks the thing from its cell's list at once (the jump table 0x0050B918 → 0x004FB330 → 0x004F8AE0 → 0x0050B980 → 0x004D9280 at 0x0050B9B8), then turns it into kind 2 (+2 = 2, +3 = 1) and queues it (0x00516310); only the id's free waits for the turn's deferred destroys (0x00516641), so a guest that has asked is no longer on the chain the head tests (the boarding at 0x00500C28) read
 		var guest = guestList is { Count: > 0 } ? guestList[^1] : null;
 		if ( staffList != null && (guest == null || staffList[^1].Serial > guest.CellSerial) )
 			return (null, true);

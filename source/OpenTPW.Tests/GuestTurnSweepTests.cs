@@ -95,7 +95,7 @@ public class GuestTurnSweepTests
 	}
 
 	/// <summary>
-	/// [BIN:TPW-EXE:0x00516380] the sweep walks the pool's used list from its head, the thing built last (0x5163A4, each slot's older link after the update, 0x516413..0x516431): of two guests that both read an exit counter of zero in the same turn, the one made later is updated first (it goes home).
+	/// [BIN:TPW-EXE:0x00516380] the sweep walks the pool's used list from its head, the thing built last (0x5163A4, each slot's older link after the update, 0x516413..0x516431): of three guests that all read an exit counter of zero in the same turn, the one made last is updated first (it goes home).
 	/// </summary>
 	[TestMethod]
 	public void TheTurnUpdatesTheNewestGuestFirst()
@@ -103,9 +103,10 @@ public class GuestTurnSweepTests
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
 		var order = new LeavingOrder();
 		simulation.Observer = order;
-		var older = simulation.SpawnInPark( 5, 5 );
-		var newer = simulation.SpawnInPark( 5, 5 );
-		foreach ( var guest in new[] { older, newer } )
+		var oldest = simulation.SpawnInPark( 5, 5 );
+		var middle = simulation.SpawnInPark( 5, 5 );
+		var newest = simulation.SpawnInPark( 5, 5 );
+		foreach ( var guest in new[] { oldest, middle, newest } )
 		{
 			guest.State = GuestState.DoingNothing;
 			guest.ExitLevel = 0;
@@ -113,6 +114,6 @@ public class GuestTurnSweepTests
 		}
 		for ( var tick = 0; tick < 60 && order.Ids.Count < 1; tick++ )
 			simulation.Tick( Dt );
-		Assert.AreEqual( newer.Id, order.Ids.FirstOrDefault(), $"the newest guest is updated first ({older.State}, {newer.State}, {older.ExitLevel}, {newer.ExitLevel})" );
+		Assert.AreEqual( newest.Id, order.Ids.FirstOrDefault(), $"the newest of three guests is updated first ({oldest.State}, {middle.State}, {newest.State})" );
 	}
 }

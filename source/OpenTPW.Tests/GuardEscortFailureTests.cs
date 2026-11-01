@@ -18,6 +18,8 @@ public class GuardEscortFailureTests
 		public StaffMember Guard = null!;
 		public ParkEconomy Park = null!;
 		public (int X, int Y)[]? RouteLane;
+		/// <summary>The level's booth cell when the lane is unusable (the entrance end not walkable); null: the lane's fourth cell.</summary>
+		public (int X, int Y)? Booth;
 		public readonly List<string> Calls = new();
 		public readonly List<int> RouteMasks = new();
 		public readonly List<uint> RouteSeeds = new();
@@ -41,6 +43,15 @@ public class GuardEscortFailureTests
 			return true;
 		}
 		public bool AnyGuestWithin( (int X, int Y) cell, int radius ) => false;
+		(int X, int Y)? IGuardGuests.TicketBooth( int side )
+		{
+			if ( Booth is not { } booth )
+				return Lane( side ) is { Length: >= 4 } lane ? lane[3] : null;
+			Assert.IsTrue( Held, "gate routing starts only after the catch" );
+			RouteMasks.Add( Guard.Navigation!.Mask );
+			RouteSeeds.Add( Park.World.State );
+			return booth;
+		}
 		public (int X, int Y)[]? Lane( int side )
 		{
 			Assert.IsTrue( Held, "gate routing starts only after the catch" );
@@ -98,7 +109,8 @@ public class GuardEscortFailureTests
 		f.Guests.RouteLane = failure switch
 		{
 			0 => null,
-			1 => [(0, 3), (1, 3), (2, 3), (3, 3)],
+			// a lane that names no booth (the fourth cell): the level's gate data has nothing to route to
+			1 => [(0, 3), (1, 3), (2, 3)],
 			_ => Fixture.LaneTo( (8, 8) )
 		};
 		if ( failure == 2 )
@@ -161,6 +173,36 @@ public class GuardEscortFailureTests
 	/// [BIN:TPW-EXE:0x004D6954] the catch routes to the booth cell of the turn's side and nowhere else: a booth that is no path cell fails the first request (the guard's mask 0), and the second request
 	/// (+0x188 = 1, which may leave the paths) walks the guard onto it. The entrance end of the lane is not a stand-in for the booth.
 	/// </summary>
+	/// <summary>
+	/// [BIN:TPW-EXE:0x004D6954] tp.exe reads the booth cell from its fixed table (0x004D8610) and always routes to it: a lane that the park rejects (its entrance end is no walkable cell) does not stop the catch's route to the booth.
+	/// </summary>
+	[TestMethod]
+	public void TheBoothIsRoutedToEvenWhenTheLaneIsRejected()
+	{
+		var f = new Fixture( 1 );
+		f.Guests.RouteLane = null;
+		f.Guests.Booth = (8, 3);
+		f.Update();
+		CollectionAssert.AreEqual( new[] { 0, 1 }, f.Guests.RouteMasks, "the booth was asked for with each mask in turn" );
+		Assert.AreEqual( StaffJob.Escorting, f.Guard.Job );
+		Assert.AreEqual( (8, 3), (f.Guard.Navigation!.TargetX >> 16, f.Guard.Navigation.TargetY >> 16) );
+	}
+
+	[TestMethod]
+	public void TheSimulationNamesTheBoothOfALaneItRejects()
+	{
+		var settings = GuestTests.CreateSettings();
+		var booth = settings.ArrivalLaneA![3];
+		var grid = GuestTests.CreateCross();
+		var simulation = new GuestSimulation( grid, settings, 1 ) { ArrivalsEnabled = false };
+		var guards = (IGuardGuests)simulation;
+		Assert.AreEqual( booth, guards.TicketBooth( 0 ) );
+		// the entrance end of the lane no longer walkable: the lane is rejected, the booth is still the level's
+		grid.SetPath( settings.ArrivalLaneA[^1].X, settings.ArrivalLaneA[^1].Y, false );
+		Assert.IsNull( guards.Lane( 0 ) );
+		Assert.AreEqual( booth, guards.TicketBooth( 0 ) );
+	}
+
 	[TestMethod]
 	public void ABoothThatIsNoPathCellIsReachedWithTheSecondRequestAndNotReplacedByTheEntrance()
 	{

@@ -297,8 +297,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 
 	/// <summary>
 	/// The place of the guest in the line in the tower (no counterpart in tp.exe, part of [EXT:pools-slides]): how many guests on the stairs or the platform are ahead of it. Waiters go before climbers, the longest waiting (or the furthest up the stairs)
-	/// first, ties by guest id; no list is built. The guests are updated one after the other within a turn, so a guest that has already been updated this turn (its <c>StepTick</c> is this tick, every update
-	/// moves the guest) is read with its counters as they were before the turn: the line is the same whatever the order the guests are updated in.
+	/// first, ties by guest id; no list is built. The guests are updated one after the other within a turn, so a guest that has already been updated this turn (the simulation's own set of the guests updated in this tick, <see cref="GuestSimulation.UpdatedThisTick"/>) is read with its counters as they were before the turn: the line is the same whatever the order the guests are updated in.
 	/// </summary>
 	private static int RankInLine( GuestSimulation simulation, Guest guest )
 	{
@@ -308,7 +307,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 		{
 			var other = guests[index];
 			// a guest launched earlier in this turn's sweep (the head of the line: only rank 0 launches) stood first in the line at the start of the turn, whichever guest the sweep reaches first
-			if ( other != guest && IsOn( other, guest.PoolActivityTarget, PoolSlidePhases.Ride, PoolSlidePhases.Ride ) && other.PoolActivityTurns == 0 && other.StepTick == simulation.TickCount )
+			if ( other != guest && IsOn( other, guest.PoolActivityTarget, PoolSlidePhases.Ride, PoolSlidePhases.Ride ) && other.PoolActivityTurns == 0 && simulation.UpdatedThisTick( other ) )
 			{
 				rank++;
 				continue;
@@ -316,7 +315,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 			if ( other == guest || !IsOn( other, guest.PoolActivityTarget, PoolSlidePhases.Climb, PoolSlidePhases.Wait ) )
 				continue;
 			var (phase, turns) = (other.PoolActivityPhase, other.PoolActivityTurns);
-			if ( other.StepTick == simulation.TickCount )
+			if ( simulation.UpdatedThisTick( other ) )
 				(phase, turns) = phase == PoolSlidePhases.Wait && turns == 0 ? (PoolSlidePhases.Climb, PoolSlideSettings.ClimbTurns - 1) : (phase, turns - 1);
 			if ( phase != guest.PoolActivityPhase ? phase > guest.PoolActivityPhase : turns != guest.PoolActivityTurns ? turns > guest.PoolActivityTurns : other.Id < guest.Id )
 				rank++;
@@ -355,7 +354,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 				continue;
 			var (dx, dy) = (other.Navigation.X - landingX, other.Navigation.Y - landingY);
 			// a rider of this slide not yet updated this turn is read where its step of this turn takes it (its next point on the track, or the landing point), so the test does not depend on the update order
-			if ( other.InPoolActivity && other.PoolActivityId == ActivityId && other.PoolActivityTarget == rider.PoolActivityTarget && other.PoolActivityPhase == PoolSlidePhases.Ride && other.StepTick != simulation.TickCount )
+			if ( other.InPoolActivity && other.PoolActivityId == ActivityId && other.PoolActivityTarget == rider.PoolActivityTarget && other.PoolActivityPhase == PoolSlidePhases.Ride && !simulation.UpdatedThisTick( other ) )
 			{
 				var position = slide.PositionAtTurn( other.PoolActivityTurns + 1 );
 				if ( position >= slide.Length )
@@ -378,7 +377,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 			if ( !IsOn( guests[index], thingId, PoolSlidePhases.Ride, PoolSlidePhases.Ride ) )
 				continue;
 			// a rider already updated this turn has moved one turn on: it is read with its counter as it was at the start of the turn, so the launch does not depend on the order of the sweep
-			var turns = guests[index].StepTick == simulation.TickCount ? Math.Max( 0, guests[index].PoolActivityTurns - 1 ) : guests[index].PoolActivityTurns;
+			var turns = simulation.UpdatedThisTick( guests[index] ) ? Math.Max( 0, guests[index].PoolActivityTurns - 1 ) : guests[index].PoolActivityTurns;
 			if ( slide.PositionAtTurn( turns ) < PoolSlideSettings.Gap )
 				return false;
 		}

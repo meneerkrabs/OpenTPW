@@ -57,12 +57,13 @@ class GhostOracle(FenceOracle):
         stubs[0x452AE0] = self._ground
         stubs[0x412E90] = self._type_record
         stubs[0x527940] = self._refusal_word
+        stubs.pop(0x536CA0, None)                                       # the tile raise runs as the executable has it
         self.type_records: dict[int, int] = {}
 
     def _face(self, sb):
         a = [sb.arg(i) for i in range(11)]
         # arguments: x, y, z (floats), face code, texture, direction byte, ..., size flag
-        self.faces.append((round(as_float(a[0]) / 10), round(as_float(a[2]) / 10), a[3] & 0xFF, a[4], round(as_float(a[1]) - 1.5), a[5] & 0xFF, a[9]))
+        self.faces.append((round(as_float(a[0]) / 10), round(as_float(a[2]) / 10), a[3] & 0xFF, a[4], round(as_float(a[1]) - 1.5), a[5] & 0xFF, a[9], a[7] & 0xFF))
         return 0, 0
 
     def _ground(self, sb):
@@ -179,3 +180,59 @@ class GhostOracle(FenceOracle):
         answer = sb.call(0x539760, args=(case['mode'], case['second'], case['direction']), this=record).eax & 0xFFFFFFFF
         names = ('l50', 'l58', 'l54', 'l5c', 'l4c', 'l60', 'l48')
         return {'answer': answer, 'latches': [sb.read(LATCHES[n], 'I') for n in names], 'cost': sb.read(0x81AF4C, 'i'), 'prio': sb.read(0x818C14, 'I')}
+
+
+    def tile_line(self, case) -> dict:
+        """The tile line walker 0x53AAC0 with the ghost tile routine 0x5370E0 from the hover's set-up: case has mode, start (x, y), end (x, y), cells, records, anchors, ground, price, bank and tool state."""
+        sb = self.sandbox
+        self.start([], [])
+        self.faces = []
+        self.type_records = {}
+        self.ground = case['ground']
+        for k in range(MAP * MAP):
+            struct.pack_into('<H', self.cells, k * 0x44 + 0xE, 0)
+        for (x, y), fields in case['cells'].items():
+            base = (y * MAP + x) * 0x44
+            struct.pack_into('<I', self.cells, base + 8, fields['type'])
+            struct.pack_into('<H', self.cells, base + 0xE, fields['flags'])
+            struct.pack_into('<H', self.cells, base + 0x10, fields['owner'])
+        for (x, y), (kind, links, parent, direction, flags, owner) in case['records'].items():
+            base = (y * MAP + x) * 0x28
+            struct.pack_into('<I', self.records, base + 8, kind)
+            self.records[base + 0xC] = links
+            self.records[base + 0xD] = direction
+            struct.pack_into('<H', self.records, base + 0xE, flags)
+            struct.pack_into('<H', self.records, base + 0x10, parent if parent else owner)
+        for anchor, priority in case['anchors'].items():
+            struct.pack_into('<H', self.cells, (ANCHORS[anchor] - 1) * 0x44 + 0x24, anchor)
+        self.flush()
+        for anchor, priority in case['anchors'].items():
+            thing = sb.alloc(0x40)
+            sb.write(thing + 2, 'B', 3)
+            sb.write(thing + 0xE, 'H', priority)
+            sb.write(0x7CFB90 + anchor * 20, 'I', thing)
+        sb.write(0x7CFB90, 'I', sb.alloc(0x40))
+        mode = case['mode']
+        sb.write(0x81AE2C, 'I', mode)
+        sb.write(0x818698, 'I', TOOL_OWNER)
+        sb.write(0x818C10, 'I', 3)
+        sb.write(0x818C14, 'I', 0)
+        for address in LATCHES.values():
+            sb.write(address, 'I', 0)
+        sb.write(0x816D50, 'I', case.get('preset_refuse', 0))
+        sb.write(0x818688, 'I', 1 if case['hover_is_start'] else 0)
+        sb.write(0x81AEBC, 'I', case['price'][0])
+        sb.write(0x81B43C, 'I', case['price'][1])
+        sb.write(0x785A2C, 'I', 1 if case['bank'] is None else 0)
+        sb.write(self.bank + 0xC, 'i', case['bank'] or 0)
+        for address in (0x81AF4C, 0x8186D4, 0x81B604, 0x8187F8, 0x81B4CC, 0x8186D0):
+            sb.write(address, 'I', 0)
+        if mode == 0x19:
+            for address, value in zip((0x7639F0, 0x7639F4, 0x7639F8, 0x7639FC), case['gates']):
+                sb.write(address, 'I', value)
+        pointers = sb.alloc(8)
+        sb.write(pointers, 'i', case['end'][0])
+        sb.write(pointers + 4, 'i', case['end'][1])
+        sb.executed = 0
+        sb.call(0x53AAC0, args=(mode | 0x100, case['start'][0], case['start'][1], pointers, pointers + 4))
+        return {'faces': list(self.faces), 'end': (sb.read(pointers, 'i'), sb.read(pointers + 4, 'i')), 'latches': [sb.read(LATCHES[n], 'I') for n in ('l50', 'l58', 'l54', 'l5c', 'l4c', 'l60', 'l48')], 'cost': sb.read(0x81AF4C, 'i')}

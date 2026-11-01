@@ -135,7 +135,8 @@ public partial class Level
 		}
 		// A park whose guests take their ids from the level's thing pool runs its turns as the original does (0x00516380): the tick that starts a turn runs the substep's ride scripts, then the sweep over the
 		// pool newest first, the gate retry, the turn's destroys and the arrival update. Without a park or its guests in the pool, in a lost park or where the economy and the guests count turns apart (a paused
-		// economy) the turn is not swept: the things update in the order of the ticks between turns, and the destroys are freed at the end of each tick.
+		// economy) the Level does not sweep the turn: the guests sweep their own list on their turn's tick (GuestSimulation.Tick: newest first, and nothing between two turns), the other things update in the
+		// order of the ticks, and the destroys are freed at the end of each tick.
 		var pooled = Park != null && Guests is { SharesThings: true };
 		// the guests' tick count starts at 0 where the economy of an original save starts at its turn: both cut the ticks into the same turns
 		if ( pooled && Park!.Economy.Speed != GameSpeed.Paused )

@@ -50,7 +50,8 @@ public sealed partial class ParkHud
 	/// <summary>Synchronizes only the viewfinder/eject screen at both ends of input handling; timer observation is separate.</summary>
 	private void SyncRideScreen()
 	{
-		var riding = IsRiding;
+		// [BIN:TPW-EXE:0x4A2AC0 camcorder screen] the walk and the ride both hide the HUD window and show the camcorder window with the viewfinder and the eject button (0x42AB20 -> 0x481470 -> 0x4A2AC0)
+		var riding = IsRiding || level.FreeWalk != null;
 		if ( riding && rideScreen == null )
 		{
 			rideScreen = BuildRideScreen();
@@ -74,20 +75,34 @@ public sealed partial class ParkHud
 			Id = "eject",
 			Model = "b_eject",
 			Help = strings.Help( 468 ),
-			Clicked = StopRide,
+			Clicked = LeaveEyeView,
 			Bounds = EjectBounds,
 			Anchor = UiAnchor.BottomRight
 		} );
-		screen.Back = StopRide;
+		screen.Back = LeaveEyeView;
 		screen.DrawOverlay = DrawRideStatic;
 		return screen;
 	}
 
-	/// <summary>Leaves the ride view when its exit key or a right click asks for it (Escape and the eject button are the ride screen's own).</summary>
+	/// <summary>Leaves the ride, or the camcorder walk when there is no ride: the eject button and Escape of the camcorder screen.</summary>
+	private void LeaveEyeView()
+	{
+		if ( IsRiding )
+			StopRide();
+		else
+			CancelCamcorder();
+	}
+
+	/// <summary>Leaves the ride view when its exit key or a right click asks for it (Escape and the eject button are the ride screen's own); the walk leaves by the right click only (its C key is the camcorder's).</summary>
+	// [BIN:TPW-EXE:0x488AB7 right click leaves] the camcorder window's procedure 0x488A00 acts on the click message 0x10006 (the right button's release within 200 ms and 8 px, 0x65F995) with RMBCancel on, for the walk (0x42AE70) and the ride (0x42A190) alike
 	private void UpdateRideExits( UiInput input, bool shortcutsAllowed, bool mouseCaptured )
 	{
 		if ( !IsRiding )
+		{
+			if ( level.FreeWalk != null && shortcutsAllowed && !mouseCaptured && input.RightClicked && GameOptions.Current.RmbCancel )
+				CancelCamcorder();
 			return;
+		}
 		// Alt+C is no C press either ([BIN:TPW-EXE:0x40C900] exact modifier match): it is the cheats window's key
 		var control = Input.IsFrameKeyDown( Key.ControlLeft ) || Input.IsFrameKeyDown( Key.ControlRight ) || (Input.ModifierMaskDown & 0x30) != 0;
 		// The C key is the camcorder's shortcut (key table action 0x10, tp.exe 0x488a00); E also leaves, as it enters ([EXT:ride-view-key]).
@@ -96,7 +111,7 @@ public sealed partial class ParkHud
 			StopRide();
 			return;
 		}
-		if ( shortcutsAllowed && !mouseCaptured && input.RightPressed && GameOptions.Current.RmbCancel )
+		if ( shortcutsAllowed && !mouseCaptured && input.RightClicked && GameOptions.Current.RmbCancel )
 			StopRide();
 	}
 
@@ -108,27 +123,41 @@ public sealed partial class ParkHud
 		DrawStatic( context, rideStatic.NoiseFrame );
 	}
 
-	/// <summary>Full-screen TV static: a grid of grey cells, each from a hash of its place and the frame number, with a few brighter scan bands.</summary>
-	// [EXT:ride-static] retained host hash noise, about 7 px cells at 720p, keyed at 30 Hz with grey levels and scan bands. The traced native generator
-	// (0x53e760) instead fills 320 x 240 pixels with black/white/grey150 from CRT random draws on every invocation; that algorithm/sequence is deferred, not untraced.
+	/// <summary>The noise's pixels, one byte each (<see cref="RideStaticNoise"/>); the camcorder's static is one at a time on the one UI thread.</summary>
+	private static readonly byte[] StaticPixels = new byte[RideStaticNoise.Width * RideStaticNoise.Height];
+
+	/// <summary>
+	/// Full-screen TV static: a 320 x 240 source of black, white and grey 150 pixels stretched over the screen, drawn as the black ground with a run of rectangles for each stretch of white or grey.
+	/// <paramref name="frame"/> keys the noise (a new one each 1/30 s here).
+	/// </summary>
+	// [BIN:TPW-EXE:0x53E760 ride static] a 320 x 240 source is regenerated with every invocation (the frame loop calls it, 0x54FB3F, instead of drawing the scene while the budget lasts) and stretched over the screen (0x5F92E0): for each pixel, column by
+	// column, one CRT draw with its low two bits 0 (a quarter) makes the pixel white or grey 150 by the low bit of a second draw, else it is black
+	// [BIN:TPW-EXE:0x67B5C0 CRT rand] the draws are OpenTPW's own copy of the CRT's generator (214013 x state + 2531011, bits 16 to 30) seeded by the frame key: the original's is seeded from the clock at start, so any seed is a draw of the same process, and no stream of the world or the guests is touched
 	internal static void DrawStatic( UiContext context, int frame )
 	{
 		var canvas = context.Canvas;
-		var cell = Math.Max( 2f, canvas.Height / 100f );
-		var columns = (int)MathF.Ceiling( canvas.Width / cell );
-		var rows = (int)MathF.Ceiling( canvas.Height / cell );
-		var state = unchecked((uint)(frame * 2654435761u + 0x9E3779B9u));
-		for ( var row = 0; row < rows; row++ )
+		var pixels = StaticPixels;
+		RideStaticNoise.Fill( pixels, unchecked((uint)frame * 2654435761u + 0x9E3779B9u) );
+		var cellWidth = canvas.Width / RideStaticNoise.Width;
+		var cellHeight = canvas.Height / RideStaticNoise.Height;
+		var black = new RgbaByte( 0, 0, 0, 255 );
+		context.Batch.AddRectangle( new UiRect( 0, 0, canvas.Width, canvas.Height ), black );
+		for ( var row = 0; row < RideStaticNoise.Height; row++ )
 		{
-			state = unchecked(state * 1664525u + 1013904223u);
-			var band = (state >> 24) < 18 ? 40 : 0;
-			for ( var column = 0; column < columns; column++ )
+			var column = 0;
+			while ( column < RideStaticNoise.Width )
 			{
-				state ^= state << 13;
-				state ^= state >> 17;
-				state ^= state << 5;
-				var grey = (byte)Math.Min( 255, 30 + (state >> 24) * 200 / 255 + band );
-				context.Batch.AddRectangle( new UiRect( column * cell, row * cell, cell + 0.5f, cell + 0.5f ), new RgbaByte( grey, grey, grey, 255 ) );
+				var kind = pixels[row * RideStaticNoise.Width + column];
+				if ( kind == RideStaticNoise.Black )
+				{
+					column++;
+					continue;
+				}
+				var start = column;
+				while ( column < RideStaticNoise.Width && pixels[row * RideStaticNoise.Width + column] == kind )
+					column++;
+				var grey = kind == RideStaticNoise.White ? (byte)255 : (byte)RideStaticNoise.GreyLevel;
+				context.Batch.AddRectangle( new UiRect( start * cellWidth, row * cellHeight, (column - start) * cellWidth + 0.5f, cellHeight + 0.5f ), new RgbaByte( grey, grey, grey, 255 ) );
 			}
 		}
 	}

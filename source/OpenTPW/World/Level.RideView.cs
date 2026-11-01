@@ -14,8 +14,9 @@ public partial class Level
 	/// <summary>The park camera the ride was boarded from while the ride view is open, else null: its target stays where it was (the crowd sound counts around it).</summary>
 	internal ParkCameraMode? ParkCameraWhileRiding => RideView != null ? parkCameraBeforeRide as ParkCameraMode : null;
 
-	/// <summary>True while the ride view is open: the original's camcorder hides every interface layer but the viewfinder, the eject button and the advisor ([DATA:video 77:09-77:24]).</summary>
-	public bool HidesInterface => RideView != null || LossOverlayActive;
+	/// <summary>True while the ride view or the camcorder walk is open: the original's camcorder hides every interface layer but the viewfinder, the eject button and the advisor ([DATA:video 77:09-77:24]).</summary>
+	// [BIN:TPW-EXE:0x42AB20 hide the interface] entering the walk (mode 2) or the ride (mode 4) from the park view hides the HUD window and shows the camcorder window (0x481470 -> 0x4A2AC0: message 6 to 0x7CB2AC and 0x7CB2B0)
+	public bool HidesInterface => RideView != null || FreeWalk != null || LossOverlayActive;
 
 	/// <summary>
 	/// True while the lost park's hidden-HUD overlay is up: the HUD is hidden and only the loss banner shows, and the park camera is the player's (ECON-030, <c>ParkHud.LossWindow</c>).
@@ -76,12 +77,11 @@ public partial class Level
 	internal static bool IsGateObject( OriginalObject item ) => !item.IsDeleted && item.Entry.SettingsName.Equals( "Gates", StringComparison.OrdinalIgnoreCase );
 
 	/// <summary>
-	/// Leaves the ride view and restores the park camera it was entered from. The original leaves to the
-	/// first-person walk when the ride was entered from it, else to the orbit (ride-view exits: Escape, the
-	/// eject button, and a right click with RMB cancel on).
+	/// Leaves the ride view and restores the camera it was entered from: the park camera as it was, or the camcorder walk, whose walker is put at the exit of the ride it went on through the entrance.
 	/// </summary>
-	// [BIN:TPW-EXE:0x42a190,0x42a340,0x42a1d0] the cell under the saved target must be an entrance (type 9); its owner cell's thing list supplies the ride, whose mExitPos (+0x38) supplies the destination. The exit's direction byte (+0x0D), not its neighbours (+0x0C), selects yaw.
-	// [APPROX:UI-095] the host restores its prior camera instance, not the original's full pose/smoothing. Exit lookup uses the live object's last shape exit, as placement does; divergent saved mExitPos and overlapping native thing lists are not reconstructed. No anchor fallback is made.
+	// [BIN:TPW-EXE:0x42a190 leaving the ride] 0x42A560 toggles the ride camera off through 0x42AB20 (mode 4), which answers 1 only when the ride was entered from the walk (flag 0x400, set at 0x42ABxx when the walk bit was on): then the walk
+	// resumes (flags 2) and 0x42A1D0 puts the walker at the exit of the ride whose entrance holds its cell (0x42A340, the exit cell named by the thing's +0x38, 0x42A22E) looking where the exit cell's link byte says (0x522850 & 0x55: 1 pi,
+	// 4 pi/2, 0x10 0, 0x40 3 pi/2); a ride entered from the park view leaves the park camera where it was
 	public void ExitRideView()
 	{
 		if ( RideView == null )
@@ -89,8 +89,8 @@ public partial class Level
 		if ( ReferenceEquals( Camera.Mode, RideView ) )
 		{
 			Camera.Mode = parkCameraBeforeRide ?? new ParkCameraMode();
-			if ( Camera.Mode is ParkCameraMode parkCamera )
-				RecentreParkCamera( parkCamera );
+			if ( Camera.Mode is FreeWalkCameraMode walker )
+				PlaceWalkerAtRideExit( walker );
 		}
 		RideView = null;
 		parkCameraBeforeRide = null;
@@ -113,16 +113,22 @@ public partial class Level
 	// [BIN:TPW-EXE:0x42a1d0 ride exit yaw] the byte is the exit cell's +0xd (0x522850 read on the cell record named by mExitPos, index (+0x38 - 1) × 0x44, not a direction of the thing): masked with 0x55 it selects the park yaw 0x790a38 by a switch with no default: 1 → π, 4 → π/2, 0x10 → 0, 0x40 → 3π/2
 	internal static int RideExitDirection( int linkByte ) => (linkByte & 0x55) switch { 1 => 0, 4 => 1, 0x10 => 2, 0x40 => 3, _ => -1 };
 
-	/// <summary>Resolves the live entrance owner to its last shape exit and that exit's direction byte, never to the footprint anchor or a neighbour-link byte.</summary>
+	/// <summary>The ride whose entrance holds a cell: the cell is an entrance (type 9) whose owner's thing list names a ride (<see cref="IsRideExitThing"/>), else null.</summary>
 	// [BIN:TPW-EXE:0x42a340] type 9 -> owner +0x10 -> owner cell's thing list +0x24 -> type 3 with CannotRide 0.
-	// [BIN:TPW-EXE:0x529164] shape type 10 selects 0x529239; 0x5292A7 rotates its direction and 0x5292B2 writes +0x0D through 0x5227E0. The placement retains the last exit, not the entrance or anchor.
-	internal static (int X, int Y, byte Direction)? ResolveRideExit( ParkObjects objects, ParkCellMap cells, int x, int y )
+	internal static OriginalObject? EntranceRide( ParkObjects objects, ParkCellMap cells, int x, int y )
 	{
 		if ( !cells.InBounds( x, y ) || cells.RawTypeAt( x, y ) != ParkCellTypes.Entrance || cells.OwnerAt( x, y ) == 0 )
 			return null;
 		var owner = cells.OwnerAt( x, y );
-		var thing = objects.Objects.FirstOrDefault( item => OwnerWord( item ) == owner && IsRideExitThing( item ) );
-		if ( thing == null )
+		return objects.Objects.FirstOrDefault( item => OwnerWord( item ) == owner && IsRideExitThing( item ) );
+	}
+
+	/// <summary>Resolves the live entrance owner to its last shape exit and that exit's direction byte, never to the footprint anchor or a neighbour-link byte.</summary>
+	// [BIN:TPW-EXE:0x529164] shape type 10 selects 0x529239; 0x5292A7 rotates its direction and 0x5292B2 writes +0x0D through 0x5227E0. The placement retains the last exit, not the entrance or anchor.
+	// [APPROX:UI-095] the exit is the live object's last shape exit, as the placement writes the thing's +0x38; a saved +0x38 that differs from it is not imported
+	internal static (int X, int Y, byte Direction)? ResolveRideExit( ParkObjects objects, ParkCellMap cells, int x, int y )
+	{
+		if ( EntranceRide( objects, cells, x, y ) is not { } thing )
 			return null;
 		ObjectAccessPoint? exit = null;
 		foreach ( var point in thing.AccessPoints )
@@ -133,19 +139,18 @@ public partial class Level
 		return (end.X, end.Y, cells.QueueLinkAt( end.X, end.Y ));
 	}
 
-	/// <summary>Recentres at the entrance owner's exit. A missing or ambiguous cardinal direction keeps yaw unchanged.</summary>
-	internal void RecentreParkCamera( ParkCameraMode camera )
+	/// <summary>The yaw the exit's link byte gives the walker in radians (<see cref="RideExitDirection"/>'s rule): null leaves the yaw alone.</summary>
+	internal static float? RideExitYaw( int linkByte ) => (linkByte & 0x55) switch { 1 => MathF.PI, 4 => 1.5707964f, 0x10 => 0f, 0x40 => 4.712389f, _ => null };
+
+	/// <summary>Puts the walker at the centre of the exit cell of the ride whose entrance holds its cell, looking along the exit's direction (<c>0x42A1D0</c>).</summary>
+	internal void PlaceWalkerAtRideExit( FreeWalkCameraMode walker )
 	{
-		if ( OriginalPark?.Heightfield is not { } field || !OriginalParkPlacement.TryGetCell( field, camera.Target.X, camera.Target.Y, out var x, out var y )
-			|| Guests?.Grid.Cells is not { } cells || ResolveRideExit( Objects, cells, x, y ) is not { } exit )
+		if ( Guests?.Grid.Cells is not { } cells )
 			return;
-		var center = OriginalParkPlacement.GetCellCenter( field, exit.X, exit.Y );
-		camera.Focus( new Vector3( center.X, center.Y, center.Z ) );
-		if ( RideExitDirection( exit.Direction ) is var direction and >= 0 )
-		{
-			var (dx, dy) = GuestPathGrid.Directions[direction];
-			var ahead = OriginalParkPlacement.GetCellCenter( field, exit.X + dx, exit.Y + dy );
-			camera.LookAlong( new System.Numerics.Vector2( ahead.X - center.X, ahead.Y - center.Y ) );
-		}
+		var (x, y) = walker.Cell;
+		if ( ResolveRideExit( Objects, cells, Math.Clamp( x, 0, cells.Width - 1 ), Math.Clamp( y, 0, cells.Height - 1 ) ) is not { } exit )
+			return;
+		// [BIN:TPW-EXE:0x42A256 exit cell centre] x = 5 + 10 x the cell's column and z = 5 + 10 x its row (0x6FDD5C -10, 0x6FDD60 5)
+		walker.PlaceAt( 5f + 10f * exit.X, 5f + 10f * exit.Y, RideExitYaw( exit.Direction ) );
 	}
 }

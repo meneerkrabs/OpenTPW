@@ -64,6 +64,15 @@ internal sealed class CamcorderWalk
 	/// <summary>The ride the last step's walk entered (the entrance cell it ended in), or null.</summary>
 	public object? EnteredRide { get; private set; }
 
+	/// <summary>The frame time the camera update works with: the milliseconds elapsed since the last frame plus one, whole, and 100 when that is above 200 (a stalled frame).</summary>
+	// [BIN:TPW-EXE:0x42B2A0 frame time] dt = the millisecond tick now (0x402D80) + 1 less the last frame's tick ([0x7909E4]); above 200 it becomes 100.0 (0x42B2D4), and 0 or less 1.0 (0x42B2ED)
+	public static float FrameMilliseconds( float elapsedMilliseconds )
+	{
+		var whole = float.IsFinite( elapsedMilliseconds ) ? MathF.Floor( Math.Max( elapsedMilliseconds, 0f ) ) : 0f;
+		var dt = whole + 1f;
+		return dt > 200f ? 100f : dt;
+	}
+
 	/// <summary>The Home pose (0x42A990 and the Home key: the park's entrance, 475 and 175, yaw 0).</summary>
 	public void Home()
 	{

@@ -128,7 +128,7 @@ public sealed class WeatherRenderer : Entity
 	/// is 0.3 in these views and 0.1 in the overview and the lobby.
 	/// </summary>
 	// [BIN:TPW-EXE:0x57fff8 rain parallax factor] CRain +0x3340 is 0.3 (0x3E99999A) while the camera-mode byte 0x790AB0 has any of 0x16, else the 0.1 the init left (0x57D1FC); the bits are the park view's modes: 0x42AB20 toggles 0x2 (the terrain camcorder, input event 2) and 0x4 (the ride follow, event 4) and clears them leaving a mode (0x42AB5E-0x42AB78: and dl, 0x41), and no instruction anywhere sets 0x10 (the byte's other stores or-in 0x100, 0x200, 0x800, 0x1000, 0x80 and 0x8, clear bits or store 0; the only wider writes read the byte back from a save stream, 0x42CE1B, 0x42CF61, or restore a copy, 0x42B561), so the factor is 0.3 exactly in the camcorder and in a ride
-	// [BIN:TPW-EXE:0x54FAD7 eye views] the same test (0x790AB0 & 0x16) switches the park's fog on (0x54FAE9, bit 0x2000 of 0x8BCBC8) and the listener to the eye (0x54F915); OpenTPW's pair is the free walk (the camcorder's stand-in, [EXT:camcorder-first-person]) and the ride camera
+	// [BIN:TPW-EXE:0x54FAD7 eye views] the same test (0x790AB0 & 0x16) switches the park's fog on (0x54FAE9, bit 0x2000 of 0x8BCBC8) and the listener to the eye (0x54F915); OpenTPW's pair is the camcorder walk and the ride camera
 	internal static bool IsEyeView( CameraMode? mode ) => mode is FreeWalkCameraMode or RideCameraMode;
 
 	/// <summary>A bolt point (original units) in the clip space of the original's matrix: the scene's clip scaled so that w is sin(fov / 2) x the view depth in original units, y running down.</summary>

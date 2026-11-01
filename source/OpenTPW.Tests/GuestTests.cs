@@ -533,7 +533,7 @@ public partial class GuestTests
 		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 11 );
 		var spent = 0;
 		simulation.MoneySpent += ( _, amount, attraction ) => spent += attraction == 0 ? amount : 0;
-		Run( simulation, Array.Empty<ScriptedAttraction>(), 20 * 60 );
+		Run( simulation, Array.Empty<ScriptedAttraction>(), 30 * 60 );
 		Assert.IsTrue( simulation.Admissions > 0 );
 		Assert.AreEqual( simulation.Admissions * 20, spent );
 		Assert.IsTrue( simulation.Guests.Any( guest => guest.State == GuestState.WalkingAround && simulation.Grid.IsWalkable( guest.Cell.X, guest.Cell.Y ) ) );

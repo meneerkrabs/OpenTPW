@@ -9,7 +9,7 @@ covers the DET-I1 slice of the contract in
 60 Hz `FixedStepClock` (`EXT:fixed-60hz-clock`; ECON-001 keeps the substeps) and, since the world generator was ported,
 draws every random decision from the original's one generator (below). A park turn now runs in the original's order
 (the thing sweep, below) and inside the original's 31 ms substeps (the script pass, the bump module and the tour cars,
-below); what remains of DET-I2 (DET-013 and DET-014; DET-015 is retired) is listed under "What is still unlike the original".
+below); what remains of DET-I2 (DET-013; DET-014 and DET-015 are retired) is listed under "What is still unlike the original".
 
 ### External host civil time
 
@@ -78,8 +78,7 @@ checks the folders and files. The explicit
 seeds remain for what the original seeds explicitly or OpenTPW seeds for itself: the coaster LCG, the weather, the sound
 chooser and a script made with a seed.
 
-What is still unlike the original, and recorded in DET-013 and DET-014 (DET-015 is retired, see the table below): the guest and staff sites with no counterpart here
-(the arrival lane picks of later states, the gate wait, the won sideshow's tail, the staff constructors' role searches, which run a turn late), the
+What is still unlike the original, and recorded in DET-013 (DET-014 and DET-015 are retired, see the table below): the
 scripts of an imported original save (a saved animation control held on its first frame or on the unscaled clock, a script with a saved child or sound child, and the saved child records its parent recreates, below), scripts created with an explicit seed (tests and
 older saves), and the weather, which keeps its own stream (`[EXT:weather-stream]`). The advisor takes no draw: its pick is
 sequential for every message (below).
@@ -1140,18 +1139,17 @@ mirrors the level (ten singletons, gates and lights first). Saves: guest snapsho
 | ID | Rule |
 | --- | --- |
 | DET-013 | scripts, bump and tour rides and rider heads draw from the one world generator with the original's projections, a park turn takes its draws in the original's thing-sweep order and the substep scheduler (script pass newest first, one slice per eight passes, tour cars on even substeps, bump module every substep) is ported; but a script created with an explicit seed (tests, older saves) keeps a private generator, an imported original save's scripts take its ids, list order, pass counter and run state on the saved game clock (the program counter, shared stack and heap, variables, limbo table, result register, TURBO/DIPMUSIC/reverb/speed words, WALKST_FLOAT state and the WAIT, WAITANIM, WAIT4ANIM and SETTIMER deadlines, `RideVM.ImportSavedRunState`), and their objects take the saved animation channels and node bits of the RideSystem records (`OriginalObjectRuntime.RestoreSavedScene`, loader 0x4647A0), and its bounce, walk and head tables with the riders they name, object lists, NAME and children (`SavedRideTables`, `SavedScriptGraphImport`, loader 0x5597A0), but not a control held on its first frame (flag 0x2) or on the unscaled clock (flag 0x40) or the RSSE records' object node tables, and the host's visitor step, the coasters, the animators and the effects system 0x520130 stay per 60 Hz tick |
-| DET-014 | guests draw from the world generator in the original's creation order and at the implemented arrival-walk, sideshow-win tail and balloon-recreation sites, and reseed with their thing id (a slot of the park's thing pool, WALK-010); however, outside a pooled park-turn sweep, `Level` calls `GuestSimulation.Tick` when the park is not lost, which updates guests in list order between turns as well as in standalone simulations, rather than limiting guest updates and their draws to the original's park turn |
 
-The full text of the two is in the register (`DeterminismApproximations.cs`). They were narrowed, not retired: the park turn's order and the substep scheduler are ported; what is left is above. DET-015 is retired (October 30, 2026): the role searches run at the placing click and the researcher flag is ported, and the only difference left, the headless economy's first-update search (no staff world in tests and tools), is `[EXT:headless-economy]`.
+The full text is in the register (`DeterminismApproximations.cs`). DET-013 was narrowed, not retired: the park turn's order and the substep scheduler are ported; what is left is above. DET-014 is retired (November 1, 2026): a guest is updated in the park turn's thing sweep only (see "The guests' update is the turn's sweep" below). DET-015 is retired (October 30, 2026): the role searches run at the placing click and the researcher flag is ported, and the only difference left, the headless economy's first-update search (no staff world in tests and tools), is `[EXT:headless-economy]`.
 
 DET-014's missing-draw claims were reconciled against source on October 27, 2026 (`60c941de233ac45a0d8c7d680aef2269f655b8b6`), not against a new original-game capture:
 
 - `GuestSimulation.ApplyVisit` already takes one discarded world draw at the won sideshow's tail (`0x4FE8D9`). A lost play skips that use routine in `FinishUse`.
 - `GuestSimulation.FinishUse` already reseeds with the zero-extended 16-bit guest id and takes two draws when giving back a live balloon after a non-balloon-shop visit, unless the guest is still in a swim session (`0x502053`..`0x502079`). These are not draws to add again.
 - The arrival walk already takes its later lane/stand-point picks and gate-wait draws; the older table's claim that those sites were absent was stale too (see the arrival-walk account above and `GuestSimulation.ArrivalWalk.cs`).
-- The scheduler boundary remains unresolved: `GuestSimulation.Tick` calls `UpdateGuest` in list order, `SweepGuest` calls it for one thing, and `Level.SimulateTick` still uses `Tick` outside a pooled turn sweep when the park is not lost. Correcting the descriptions establishes neither native inter-turn equivalence nor a turn-only RNG transcript.
+- The scheduler boundary was still open on that day (`GuestSimulation.Tick` called `UpdateGuest` in list order on every tick); it is closed below.
 
-This reconciliation changes the annotation and register descriptions only. DET-014 remains active; no guest logic, random calls, scheduler, save format or deterministic pin is changed, and no new runtime test or original-fidelity result is claimed.
+That reconciliation changed the annotation and register descriptions only; the port that retired DET-014 is below.
 
 DET-016 is retired (October 14, 2026): the economy-only park save is the legacy `ParkSaveFile` (`[EXT:legacy-economy-save]`), used by the
 determinism tests; the player's save (`GameFlow.SaveCurrentPark` → `ParkResumeSaveFile`) stores the economy and its streams, the layout,
@@ -1443,3 +1441,15 @@ Saves: none changed; the end coordinate is derived at every rebuild and neither 
 The portrait clones (`PortraitSprites`), the hire figure and the imported sprite records (`SavedSpriteScripts`: the guests' body players, the held balloons, the staff sources) are presentation state: none of them is hashed or saved by a window. The walk table moved to the original's cadence: BOUNCE takes the first free entry for any guest (`0x555736`, the bounce gate of an aboard, not-yet-bouncing rider is gone), the walk update (`0x557AB0`, `0x557D80`) runs with the clamp of `0x557E56` and `0x558010` after every fixed tick (the original runs it once per rendered frame after the substeps; `[EXT:fixed-60hz-clock]`), and WALKGET hands out an entry in state 4 only. No pinned hash moved (the with-data suite, the save-digest pins and `BuildStepsTests` pass unchanged), (no pinned scenario runs a ride whose walk entry ends between two substep passes); a park that does hands such a rider out at the script's next slice, about 8 substeps later by the `(ScriptId ^ pass) & 7` cadence of `0x5516B0`, so its hash can differ from an earlier build from that walk on (an old save loads and keeps its table entries, and a walk that ended before the save moves on at the first walk update).
 
 Saves: none changed; a plain park's save bytes are the same. The import applies the Scripts block's records to presentation state only.
+
+## The guests' update is the turn's sweep (round 11, package S, November 1, 2026)
+
+DET-014 is retired. A guest's thing update (`0x5019F0` through the thing switch `0x50B360`) is called from one place only, the park turn's thing sweep (`0x516380`, once per eight 31 ms substeps, `0x54F668`), newest thing first; the turn then frees the destroy requests (`0x516641`) and ends with the arrival update (`0x516695` → `0x4D7B20` → `0x4CF3E0`). `GuestSimulation.Tick` now does the same for every simulation, the Level's sweeping turns and the non-sweeping ones, a standalone simulation and the gate harnesses alike: on the tick that starts a turn the sync, the sweep over the pool's list newest first (`SweepGuest`, then the guests outside the pool in list order), the destroys of an own pool and the arrival update; on every other tick only the seconds counters (`TimeInParkSeconds`, `SecondsSinceRide`), the drawn point and the steps of OpenTPW's own states run (the pool states, a change room's exit wait and the vehicle-less bus wait, none of which the original has). A state handler, a walk step or a draw of a guest no longer runs between two turns, and a guest the arrival update makes is first updated in the next turn. Nothing else of the simulation changed its order: the Level's sweeping turns already ran this way.
+
+Pins that moved (old to new, the tests that hold them): the cross grid's guest run `0xC9C26F6E02212726` to `0x80062E4FE1518012` (61 admissions to 59; `PathBuilderTests.OwnershipFlipKeepsGuestPathingIdentical`), the Easymode Jungle's guest run `0x08FB6348EBBF4D68` to `0xD94697972908500C` (23 admissions to 22; `PathAssetTests.OwnershipFlipKeepsTheJungleGuestRunIdentical`) and the pool slides' fixed run `0x641364DF12DED0F7` to `0x8A2B0B14564A3D55` (`PoolSlideActivityTests.PoolsSlidesFixedRunHash`). The fixed run `0xB4AEC10551DF2738`, the synthetic park scenarios, the `BuildStepsTests` economy digests (`D2F1349AA44D6545`, `4DCABA51A693C7D7`, the original-level `F47B8CB2D4CB42B1`) and the other asset-free pins did not move: their guests are swept in the pool's order already, or none runs between two turns.
+
+The slide tower's line was order dependent once the sweep reached the guests in another order (`PoolSlideActivity.RankInLine`): a guest launched earlier in the same sweep left the line, and the guests the sweep reached later ranked one place higher, so two waiting guests could share a spot. The launched guest now counts as ahead of the rest, whichever guest the sweep reaches first.
+
+Tests that sent a guest and ticked once now tick to the turn (`GuestTurnTicks.TickTurn`, `QueueTests.Rig.StepTurn`); a few phase and chance dependent expectations moved with the order (`ParkGateTests`, `ArrivalVehicleTests`, the pools' extras, the Burger shop's five minutes); each is noted where it changed.
+
+Saves: none changed (no new field); a resumed park continues under the new order, so its later ticks differ from a run of the old code.

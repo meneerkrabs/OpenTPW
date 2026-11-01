@@ -307,6 +307,12 @@ public sealed class PoolSlideActivity : IPoolActivity
 		for ( var index = 0; index < guests.Count; index++ )
 		{
 			var other = guests[index];
+			// a guest launched earlier in this turn's sweep (the head of the line: only rank 0 launches) stood first in the line at the start of the turn, whichever guest the sweep reaches first
+			if ( other != guest && IsOn( other, guest.PoolActivityTarget, PoolSlidePhases.Ride, PoolSlidePhases.Ride ) && other.PoolActivityTurns == 0 && other.StepTick == simulation.TickCount )
+			{
+				rank++;
+				continue;
+			}
 			if ( other == guest || !IsOn( other, guest.PoolActivityTarget, PoolSlidePhases.Climb, PoolSlidePhases.Wait ) )
 				continue;
 			var (phase, turns) = (other.PoolActivityPhase, other.PoolActivityTurns);

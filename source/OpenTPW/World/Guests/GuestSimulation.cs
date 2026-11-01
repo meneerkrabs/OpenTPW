@@ -602,22 +602,23 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public void Tick( float deltaSeconds )
 	{
 		BeginTick( deltaSeconds );
-		UpdateArrivals( deltaSeconds );
 		if ( turnStarted )
 		{
+			// [BIN:TPW-EXE:0x00516380 guest update only in the turn] a guest's thing update runs only in the park turn's thing sweep (0x5163FB -> 0x50B360, once per eight substeps, 0x54F668), newest thing first through the pool's list; the turn then frees its destroy requests (0x516641) and ends with the arrival update (0x516695 -> 0x4D7B20 -> 0x4CF3E0), so a guest the arrival makes is not updated in the turn that made it
 			SyncOccupants();
+			sweptGuests.Clear();
+			sweepDelta = deltaSeconds;
+			foreach ( var slot in things.Capture() )
+				SweepGuest( slot.Id );
+			FinishSweep();
+			if ( ownsThings )
+				things.DestroyQueued();
+			UpdateArrivals( deltaSeconds );
+			return;
 		}
-		// [BIN:TPW-EXE:0x00516380 guest update only in the turn] a guest's thing update runs only in the park turn's thing sweep (0x5163FB -> 0x50B360, once per eight substeps, 0x54F668); the substeps between two turns run nothing of it, so only the turn's tick updates the guests, and the ticks between count their seconds and move the drawn point
-		if ( turnStarted )
-		{
-			for ( var index = 0; index < guests.Count; index++ )
-				UpdateGuest( guests[index], deltaSeconds );
-		}
-		else
-		{
-			for ( var index = 0; index < guests.Count; index++ )
-				UpdateBetweenTurns( guests[index], deltaSeconds );
-		}
+		// the substeps between two turns run nothing of the thing update: the ticks count their seconds and move the drawn point
+		for ( var index = 0; index < guests.Count; index++ )
+			UpdateBetweenTurns( guests[index], deltaSeconds );
 		for ( var index = guests.Count - 1; index >= 0; index-- )
 		{
 			if ( guests[index].State != GuestState.Gone )
@@ -1076,7 +1077,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// enters the temporary history.
 	/// </summary>
 	// [EXT:online-bubbles-on] bubbles are on in a visit too, where 0x50BE80 skips them in an online game (GameType word 0xFB3B7C = 1; none of its 22 callers passes the override): a visit is OpenTPW's read-only extension and shows the park as its owner sees it
-	// [APPROX:GUEST-006] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, its voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0, 0x4FCA6F) is played as a presentation event (Voiced); bubbles are always on where 0x50BE80 skips them while bits 0x16 of 0x790AB0 are set; a show's row 7 comes off once (FireworksSpent) where 0x4E0B90 removes it whenever VAR_STATUS is 1, a variable native code also writes (0x4E0900, 0x4E0AC0); the original saves its environment table with the cells (0x4D7EA0) and an original save's grid is imported (ParkEnvironment.ImportSaved) — evidence needed: what bits 0x16 of 0x790AB0 mean
+	// [BIN:TPW-EXE:0x004FC8A0 thoughts and environment] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, its voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0, 0x4FCA6F) is played as a presentation event (Voiced); the camera gate of 0x50BE80 (bits 0x16 of 0x790AB0: the ride and the walk camera) is the Level's (ThoughtBubblesAllowed); a show's row 7 comes off once, the one time its script writes VAR_STATUS 1 (0x4E0B90, Level.SyncEconomyObject); the original saves its environment table with the cells (0x4D7EA0) and an original save's grid is imported (ParkEnvironment.ImportSaved)
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
@@ -2378,7 +2379,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// for the new thought's priority (<see cref="GuestThoughts.TakesBubble"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0050BE80 thought] +0 = the thought; with bubbles on, the old bubble goes (0x00475550) and, when the turn has reached +0x8C + 20 × priority, a new one starts and +0x8C is stamped
-	// Approximation (GUEST-006, registered at UpdateNeedsTurn): the Level maps ride view to the bubble gate; other camera bits of 0x16 remain unresolved. Online visits retain the existing online-bubbles-on extension.
+	// [BIN:TPW-EXE:0x0050BE8D camera gate] the Level binds the gate: the ride camera and the walk camera (bits 4 and 2 of the camera word) skip the bubble work, no store sets bit 0x10 (Level.BindGuestThoughtPresentation). Online visits retain the existing online-bubbles-on extension.
 	private void Think( Guest guest, GuestThought thought )
 	{
 		Observer?.Thought( guest, thought );

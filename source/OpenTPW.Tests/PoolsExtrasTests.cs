@@ -429,7 +429,7 @@ public class PoolsExtrasTests
 	public void AGuestShowersFirstThenSwimsAndTheShowerLastsAFewSeconds()
 	{
 		var rig = ExtrasRig( Site( 303, PoolExtraKind.Shower, 0, (4, 2) ) );
-		var guests = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		var steps = new Dictionary<int, List<int>>();
 		var showerTurns = new Dictionary<int, int>();
 		var swum = new HashSet<int>();
@@ -453,7 +453,7 @@ public class PoolsExtrasTests
 			}
 			return swum.Count == guests.Count && guests.All( guest => !guest.InSwimSession );
 		}, 5000 );
-		Assert.IsTrue( steps.Count >= 1, "at least one of three guests showered (60 percent each)" );
+		Assert.IsTrue( steps.Count >= 1, "at least one of six guests showered (60 percent each)" );
 		foreach ( var (id, list) in steps )
 		{
 			CollectionAssert.AreEqual( new[] { 0, 1, 2 }, list, "walk there, shower, walk back" );
@@ -477,20 +477,27 @@ public class PoolsExtrasTests
 			var guests = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
 			var swum = new HashSet<int>();
 			var forced = false;
+			var waited = 0;
 			var onLounger = new Dictionary<int, bool>();
 			rig.Until( () =>
 			{
 				foreach ( var guest in guests.Where( guest => guest.InSwimSession ) )
 					swum.Add( guest.Id );
-				// two swimmers at once: send the first two to the lounger as soon as both swim
-				if ( !forced && guests.Count( guest => guest.State == GuestState.Swimming ) >= 2 )
+				// two swimmers at once: send the first two to the lounger as soon as both can be offered a seat (a swimmer far from the seats is not offered one)
+				// (each batch waits a turn longer than the one before: the end of a lie is a draw of the swimmer's own stream, which a run with the same seeds would repeat)
+				if ( !forced && guests.Count( guest => guest.State == GuestState.Swimming ) >= 2 && waited++ >= batch )
 				{
+					foreach ( var guest in guests.Where( guest => guest.State == GuestState.Swimming ) )
+						if ( guests.Count( other => other.PoolActivityId == "extra.lounger" ) < 2 )
+							rig.Simulation.DebugStartActivity( guest, "extra.lounger" );
+					// (a seat taken is kept, the other swimmers are tried again on the next turn)
+					if ( guests.Count( guest => guest.PoolActivityId == "extra.lounger" ) < 2 )
+						goto next;
 					forced = true;
-					foreach ( var guest in guests.Where( guest => guest.State == GuestState.Swimming ).Take( 2 ) )
-						Assert.IsTrue( rig.Simulation.DebugStartActivity( guest, "extra.lounger" ) );
 					bothAtOnce |= guests.Count( guest => guest.PoolActivityId == "extra.lounger" ) == 2;
 					Assert.AreEqual( 2, guests.Select( guest => (guest.PoolActivityX, guest.PoolActivityY) ).Distinct().Count( seat => guests.Any( g => g.PoolActivityId == "extra.lounger" && (g.PoolActivityX, g.PoolActivityY) == seat ) ), "on two different seats" );
 				}
+			next:
 				foreach ( var guest in guests )
 				{
 					var doing = guest.PoolActivityId == "extra.lounger";

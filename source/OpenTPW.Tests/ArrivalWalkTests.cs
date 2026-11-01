@@ -191,8 +191,16 @@ public class ArrivalWalkTests
 		Assert.AreEqual( (GuestState.WaitingAtBooth, GuestState.EnteringPark), (older.State, newer.State), "the newest guest heads the cell (the head of 0x004D91F0's list); the other waits" );
 		Assert.IsTrue( new[] { (9, 17), (10, 17) }.Contains( ((int)(newer.Navigation.TargetX >> 16), (int)(newer.Navigation.TargetY >> 16)) ), "to the entrance cell of the side a draw picks (0x004D8690)" );
 		Until( simulation, () => older.State == GuestState.EnteringPark, 40, "once the head has left the cell the next one is the head" );
-		Until( simulation, () => older.State == GuestState.DoingNothing && newer.State == GuestState.DoingNothing, 400, "both arrive at the entrance" );
-		Assert.IsTrue( new[] { older, newer }.All( guest => guest.Navigation.Cell is (9, 17) or (10, 17) ) );
+		// each one is looked at on the turn it arrives (the first to arrive has started its wander when the other comes)
+		var arrivedAt = new Dictionary<Guest, (int X, int Y)>();
+		Until( simulation, () =>
+		{
+			foreach ( var guest in new[] { older, newer } )
+				if ( guest.State == GuestState.DoingNothing && !arrivedAt.ContainsKey( guest ) )
+					arrivedAt[guest] = guest.Navigation.Cell;
+			return arrivedAt.Count == 2;
+		}, 400, "both arrive at the entrance" );
+		Assert.IsTrue( arrivedAt.Values.All( cell => cell is (9, 17) or (10, 17) ) );
 	}
 
 	[TestMethod]
@@ -243,11 +251,12 @@ public class ArrivalWalkTests
 		first.VisitorNumber = second.VisitorNumber = 0;
 		Turns( simulation, 1 );
 		Assert.AreEqual( (GuestState.DoingNothing, GuestState.DoingNothing), (first.State, second.State), "0x004FFB20: the walk is done, state 6" );
-		Assert.AreEqual( (count + 1, count + 2, count + 2), (first.VisitorNumber, second.VisitorNumber, simulation.VisitorCount), "0x0051AAF0 counts up, the guest takes the number (+0x1D8)" );
+		// the turn's thing sweep updates the newer guest first (0x00516380), so it takes the first number
+		Assert.AreEqual( (count + 2, count + 1, count + 2), (first.VisitorNumber, second.VisitorNumber, simulation.VisitorCount), "0x0051AAF0 counts up, the guest takes the number (+0x1D8)" );
 		var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( simulation.CaptureSnapshot() ) );
 		var resumed = Rig().Simulation;
 		resumed.RestoreSnapshot( snapshot );
-		Assert.AreEqual( (count + 2, count + 1, count + 2), (resumed.VisitorCount, resumed.Find( first.Id )!.VisitorNumber, resumed.Find( second.Id )!.VisitorNumber), "the count and the numbers are saved" );
+		Assert.AreEqual( (count + 2, count + 2, count + 1), (resumed.VisitorCount, resumed.Find( first.Id )!.VisitorNumber, resumed.Find( second.Id )!.VisitorNumber), "the count and the numbers are saved" );
 	}
 
 	[TestMethod]

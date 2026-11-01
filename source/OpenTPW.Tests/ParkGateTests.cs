@@ -208,6 +208,7 @@ public class ParkGateTests
 
 		const float tick = 1f / FixedStepClock.TicksPerSecond;
 		long? emptyTick = null, emptyTurn = null, retryTick = null, shutTick = null, shutTurn = null;
+		var storedCellCountedWhileOutside = false;
 		var previousTurn = economy.Turn;
 		for ( var step = 1L; step <= 60 * 120 && shutTick == null; step++ )
 		{
@@ -215,6 +216,9 @@ public class ParkGateTests
 			economy.Advance( 1 );
 			door.Tick();
 			var turn = economy.Turn;
+			// They are outside, not gone: no vehicle has come for them yet, and their stored cells still name the park's path
+			storedCellCountedWhileOutside |= guests.Any( guest => guest.State != GuestState.Gone && !ParkGate.CountsCellType( grid.Cells.RawTypeAt( guest.Navigation.Cell.X, guest.Navigation.Cell.Y ) )
+				&& ParkGate.CountsCellType( grid.Cells.RawTypeAt( guest.Cell.X, guest.Cell.Y ) ) );
 			if ( emptyTick == null && door.GuestCensus == 0 )
 				(emptyTick, emptyTurn) = (step, turn);
 			if ( emptyTick != null && retryTick == null && turn / ParkGate.RetryPeriodTurns > previousTurn / ParkGate.RetryPeriodTurns )
@@ -228,11 +232,9 @@ public class ParkGateTests
 		Assert.AreEqual( retryTick, shutTick, $"the gate shuts at the first 30-turn retry after the census emptied at turn {emptyTurn}, not later" );
 		Assert.AreEqual( 0, shutTurn!.Value % ParkGate.RetryPeriodTurns );
 		Assert.IsTrue( shutTurn.Value - emptyTurn!.Value <= ParkGate.RetryPeriodTurns, $"emptied at turn {emptyTurn}, shut at turn {shutTurn}" );
-		// They are outside, not gone: no vehicle has come for them, and their stored cells still name the park's path.
-		Assert.IsTrue( guests.All( guest => guest.State != GuestState.Gone ) );
-		Assert.IsTrue( guests.All( guest => !ParkGate.CountsCellType( grid.Cells.RawTypeAt( guest.Navigation.Cell.X, guest.Navigation.Cell.Y ) ) ) );
-		Assert.IsTrue( guests.Any( guest => ParkGate.CountsCellType( grid.Cells.RawTypeAt( guest.Cell.X, guest.Cell.Y ) ) ),
-			"the stored cell a step moves only onto path and queue cells would still count them" );
+		// the census reads the walk position's cell, not the stored cell a step moves only onto path and queue cells: a guest the census no longer counts still has the park's path as its stored cell
+		// (a level without arrival vehicles lets a guest that has waited at its stop go, so the guests are looked at while they walk out, not when the retry has come)
+		Assert.IsTrue( storedCellCountedWhileOutside );
 	}
 
 	[TestMethod]

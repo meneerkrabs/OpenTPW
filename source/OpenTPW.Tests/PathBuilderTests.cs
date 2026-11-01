@@ -339,9 +339,10 @@ public class PathBuilderTests
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 61, simulation.Admissions, $"{simulation.Admissions}" );
+		Assert.AreEqual( 59, simulation.Admissions, $"{simulation.Admissions}" );
 		// the guests walk whole walks to the ride (0x4FFBC0 -> 0x510100) and out of the park, which moves the run's hash (admissions stay 60) from 0x4AFCF82F0A7796C1
-		Assert.AreEqual( 0xC9C26F6E02212726UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		// round 11 package S: the guests update only in the park turn, newest first, and the arrival update closes the turn, so the run's admissions went 61 to 59 and its hash from 0xC9C26F6E02212726
+		Assert.AreEqual( 0x80062E4FE1518012UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

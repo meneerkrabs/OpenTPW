@@ -78,6 +78,13 @@ internal sealed class Advisor : IDisposable
 		}
 	}
 	private IAdvisorParticlePool particlePool = ParticleRendererModule.AdvisorPool;
+	/// <summary>
+	/// The ambient the advisor is lit with in place of the park's default 0.15 grey: the ambient words of the lobby screen it is shown over (null in a park).
+	/// </summary>
+	// [BIN:TPW-EXE:0x5D9230 ambient setter] the ambient words 0x879DD8-0x879DE4 are (1.0, R, G, B) with each channel byte / 255 (0x702A4C); the advisor is lit per vertex from them (0x573FD0 default)
+	internal System.Numerics.Vector3? Ambient { get; set; }
+	/// <summary>A response is active (the original's 0xF7966C): set when it starts, cleared at the end of its span or by a kill.</summary>
+	internal bool ResponseActive => responseActive;
 	private AdvisorEffectGroups effects = new( ParticleRendererModule.AdvisorPool );
 	// The response is active (0xF7966C): set when it starts, cleared at the end of its span or by a kill, which empties effect group 0.
 	private bool responseActive;
@@ -764,6 +771,9 @@ internal sealed class Advisor : IDisposable
 				g_vLightColor = System.Numerics.Vector3.One,
 				g_vCameraPos = System.Numerics.Vector3.Zero,
 				g_flTime = Time.Now,
+				// the advisor shader reads the lobby ambient from the block's last vec3 slot (the one other shaders take for fog), switched on by the word after it
+				g_vFogColor = Ambient ?? System.Numerics.Vector3.Zero,
+				_padding6 = Ambient.HasValue ? 1f : 0f,
 			} );
 			part.Model.Draw();
 		}

@@ -30,7 +30,8 @@ public class AdvisorTests
 			directory = directory.Parent;
 		Assert.IsNotNull( directory, "The repository checkout must be available for this test." );
 		var source = File.ReadAllText( Path.Combine( directory.FullName, "content", "shaders", "advisor.shader" ) );
-		StringAssert.Contains( source, "vs_out.vLight = clamp(vec3(0.15) + max(dot(N, L), 0.0) * g_oUbo.g_vLightColor, 0.0, 1.0);" );
+		StringAssert.Contains( source, "vec3 ambient = g_oUbo.g_flAmbientSet > 0.5 ? g_oUbo.g_vAmbient : vec3(0.15);" );
+		StringAssert.Contains( source, "vs_out.vLight = clamp(ambient + max(dot(N, L), 0.0) * g_oUbo.g_vLightColor, 0.0, 1.0);" );
 		Assert.IsFalse( source.Contains( "fog", StringComparison.OrdinalIgnoreCase ), "the fog of the advisor pass is not read, so none is drawn" );
 		var advisor = File.ReadAllText( Path.Combine( directory.FullName, "source", "OpenTPW", "World", "Advisor.cs" ) );
 		StringAssert.Contains( advisor, "g_vLightColor = System.Numerics.Vector3.One," );

@@ -230,6 +230,7 @@ internal sealed partial class GameFlow : IDisposable
 		if ( selectLevel != null )
 			Menu.SelectLevel( selectLevel );
 		Camera.SetCameraMode<LobbyCameraMode>();
+		StartLobbyAdvisor();
 		Log.Trace( $"Front end: lobby with {Lobby.IslandCount} islands ({Lobby.PartCount} draw batches)." );
 	}
 
@@ -561,6 +562,7 @@ internal sealed partial class GameFlow : IDisposable
 		IncFrontEnd?.Stack.Clear();
 		IncFrontEnd = null;
 		Advisor?.DetachLevel();
+		EndLobbyAdvisor();
 		GameAudio.LeavePark();
 		GameAudio.LeaveLobby();
 		if ( Level != null )
@@ -748,6 +750,7 @@ internal sealed partial class GameFlow : IDisposable
 		UpdateGlobeView();
 		Camera.Update();
 		UpdateLobbyEffects();
+		UpdateLobbyAdvisor();
 		using ( FrameMarks.Measure( "lobby.codecWarmup" ) )
 			PumpLobbyCodecWarmup();
 		if ( !LobbyEntering )
@@ -1179,6 +1182,7 @@ internal sealed partial class GameFlow : IDisposable
 			// [BIN:TPW-EXE:0x57ed75 flash state] 0x9A1: alpha blend on (bit 0x100), z write off (bit 0x800), source blend INVDESTCOLOR and destination ZERO (low byte 0xA1), so the quad inverts the picture for the frame
 			var entities = Entity.All.ToArray();
 			RenderLobbyLayers( entities, lobbyWeather, lobbyEffects.Flash && IncFrontEnd == null, drawLobbyFlash ??= DrawLobbyFlash );
+			RenderLobbyAdvisor();
 		}
 		Context.Canvas = CurrentCanvas();
 		UiTitleBitmap.BeginFrame();
@@ -1201,6 +1205,7 @@ internal sealed partial class GameFlow : IDisposable
 			IncFrontEnd.Draw( Context );
 		else if ( !LobbyEntering )
 			Menu?.Stack.Draw( Context );
+		DrawLobbyAdvisor();
 		// [BIN:TPW-EXE:0x5d8d22 lobby fade] the enter's fade is a black overlay whose alpha is the eased fade value >> 8
 		if ( Camera.Mode is LobbyCameraMode { FadeAlpha: > 0 } fading )
 			Context.Batch.AddRectangle( new UiRect( 0, 0, Context.Canvas.Width, Context.Canvas.Height ), new RgbaByte( 0, 0, 0, fading.FadeAlpha ) );
@@ -1352,6 +1357,7 @@ internal sealed partial class GameFlow : IDisposable
 			onlineSession.Coop.Invited -= OnCoopInvited;
 		coopShare = null;
 		Advisor?.Dispose();
+		EndLobbyAdvisor();
 		GameAudio.Shutdown();
 		Hud?.Stack.Clear();
 		Menu?.Stack.Clear();

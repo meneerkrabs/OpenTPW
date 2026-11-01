@@ -147,7 +147,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private static Dictionary<string, int> PathlessTextures()
 	{
 		var kept = ObjectSigns.SessionTextures().Concat( OriginalObject.SessionTextures() ).Append( Texture.Missing ).Append( Texture.SignBoard ).ToHashSet();
-		return Asset.All.OfType<Texture>().Where( texture => string.IsNullOrEmpty( texture.Path ) && !kept.Contains( texture ) )
+		// the lobby's own screen-space particle host (the key panel's effect 0x61, LobbyKeyPanelEffect.CreateHost) owns an atlas while the lobby is up, as the lobby with keys does after a park; the entity's deletion releases it
+		return Asset.All.OfType<Texture>().Where( texture => string.IsNullOrEmpty( texture.Path ) && !kept.Contains( texture ) && texture.Origin?.Contains( "CreateScreenRenderer", StringComparison.Ordinal ) != true )
 			.GroupBy( texture => $"{texture.Width}x{texture.Height}" ).ToDictionary( group => group.Key, group => group.Count() );
 	}
 
@@ -404,6 +405,25 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			Require( flow.EnterParkEffectDraws > 0, "the enter-park effect is still drawing a few frames in" );
 			CaptureFrame( "lobby-enter-effect.png" );
+		} );
+		// [BIN:TPW-EXE:0x5D5F80 queue step] the lobby advisor says what its queue holds; the smoke queues the idle line directly (the real one comes after 90 s of silence) and the model shows while it plays
+		Do( "lobby advisor line", () => flow.LobbyAdvisorHost?.Queue.Push( LobbyAdvisorQueue.IdleLineEven, flush: true ) );
+		var advisorFrames = 0;
+		steps.Enqueue( ("lobby advisor shows", () =>
+		{
+			if ( flow.LobbyAdvisorHost == null )
+				return true;
+			Require( ++advisorFrames < 600, "the lobby advisor's line shows the advisor over the lobby" );
+			return flow.LobbyAdvisorHost.Image != null;
+		}) );
+		Wait( "lobby advisor develops", 90 );
+		Do( "lobby advisor shown", () =>
+		{
+			if ( flow.LobbyAdvisorHost != null )
+			{
+				Require( flow.LobbyAdvisorHost.Image != null, "the advisor is still shown a second and a half into its line" );
+				CaptureFrame( "lobby-advisor.png" );
+			}
 		} );
 		Do( "click next island", () => Click( flow.Menu!.Main, "nextIsland" ) );
 		Wait( "island changes", 3 );

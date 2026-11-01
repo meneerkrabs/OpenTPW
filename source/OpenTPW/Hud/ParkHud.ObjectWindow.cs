@@ -327,8 +327,9 @@ public sealed partial class ParkHud
 		LeaveBuildTool();
 		// [EXT:online-coop-claims] a guest's track or coaster tool starts once its claim (and a coaster's entry) is back, with the help then (C3c-1b, C3c-2)
 		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.BeginTrackTool( item, placed: false ) == TrackToolEntry.Entered;
-		if ( entered )
-			PostMessage( item.Runtime.Coaster != null ? strings.Help( 0x125 ) : TrackToolHelp );
+		// [BIN:TPW-EXE:0x4988c0 track tool entry] a coaster's entry posts no advisor help: 0x4af275 → 0x4988c0 → 0x497d20 (an incomplete track, sub-mode 3 by 0x52fad0) or 0x4474d0 (a complete one) never calls 0x486b00
+		if ( entered && item.Runtime.Coaster == null )
+			PostMessage( TrackToolHelp );
 	}
 
 	/// <summary>Moves the selection to the next (<paramref name="direction"/> 1) or previous placed object of the selected one's category, wrapping around.</summary>

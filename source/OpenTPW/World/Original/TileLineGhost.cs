@@ -121,6 +121,7 @@ internal static class TileLineGhost
 	}
 
 	/// <summary>Runs the preview over the tiles of the line from <paramref name="start"/> to <paramref name="end"/>.</summary>
+	// [BIN:TPW-EXE:0x00537103 ghost entry gate] the gate (0x537103..0x537164) takes the origin from the cell word minus one and reads the answer argument and direction only for the modes 4, 0xB and 0x10 with the argument 5; the walker's ghost calls (0x53AB85, 0x53ABE3, 0x53AC97, 0x53ACF6) pass the step register EBX, which is -2 or 2 (0x53AB3A..0x53AB49), so the default arguments (texture 0, size flag 1) always apply, and the commit-side calls 0x52BBAD and 0x52BC0D pass 0x81, which has no 0x100 bit and takes the non-ghost branch 0x53811F
 	// [BIN:TPW-EXE:0x005372AD tile ghost] the chooser answers (mode, 0, direction byte): 1 refuses (a second call with 1, the refusal word 0x527940, then the red floor and red walls), 0 takes the default texture 0 and any other answer is the texture (0xB m_end); the floor is queued at the tile's raise + 1.5 (size flag 1), the walls after it
 	public static TileLineGhostResult Run( ITileGhostMap map, int mode, (int X, int Y) start, (int X, int Y) end, in LineGhostTileTool tool, TileLatches latches )
 	{

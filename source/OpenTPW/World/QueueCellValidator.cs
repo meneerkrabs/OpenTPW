@@ -95,7 +95,7 @@ internal static class QueueCellValidator
 		// [BIN:TPW-EXE:0x005358CC cost] a chargeable cell (0x535600) whose type is not the tool's and that is no path under the queue tool adds the tool's price to the pass's cost (0x52FBA0); a cost above the park's money refuses the cell and every later one and sets the cash flag (0x535905..0x535945)
 		if (cell.Price != 0 && !cell.PlacementPaid && Chargeable( mode, type, cell.LastCell ) && type != mode && !(mode == 3 && type == 1))
 			latches.Cost = unchecked( latches.Cost + cell.Price );
-		// [BIN:TPW-EXE:0x0053592B money refusal] the refusal also calls 0x527940(1), which stores the refusal word 0x816D48; its only reader 0x527950 is the pointer switch's no-place test (UI-100), and 0x533933 stores the same word after every refusal of the ghost cell routine, so the word is the ghost's Refused flag and needs no input of its own
+		// [BIN:TPW-EXE:0x0053592B money refusal] the refusal also calls 0x527940(1), which stores the refusal word 0x816D48. The word is read by the pointer switch's no-place test 0x527950 (UI-100) and by the click handler 0x524960 (0x5247F0, 0x52482C and 0x5249E0 on the press side, 0x524A63 on the release, which ParkHud's refused-ghost latch ports), written to 0 by the hover entry 0x5234EC, the release 0x524AD9 and the tool start 0x527C48, and set to 1 by 0x527940 at 0x533933 after every refusal of the ghost cell routine 0x532FC0 (the second validator call at 0x533927, taken at 0x5331BF whenever the answer, or the force-red flag 0x81B604, is 1). Every reader but 0x527950 belongs to the click path, so the word is the ghost's Refused flag and needs no input of its own
 		if (latches.Bank is { } bank && latches.Cost != 0 && latches.Cost > bank)
 		{
 			latches.Refuse = true;

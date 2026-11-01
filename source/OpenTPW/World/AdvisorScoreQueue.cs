@@ -15,9 +15,16 @@ internal readonly record struct AdvisorMessageHistory(
 	public static AdvisorMessageHistory Empty => new( 0, -1, false, 0 );
 }
 
-/// <summary>One pending advice record (<c>mMessage</c>, <c>mScore</c>, <c>mResponseNo</c>, <c>mOverrideOnlyOnce</c>).</summary>
+/// <summary>
+/// One pending advice record (<c>mMessage</c>, <c>mScore</c>, <c>mResponseNo</c>, <c>mOverrideOnlyOnce</c>) with the two words the record builder keeps beside them.
+/// </summary>
+/// <param name="ThingId">The record's word +0x0 (the builder's second argument): the id of the thing the advice is about, 0 for none.</param>
+/// <param name="Secondary">The record's dword +0x4 (the third argument): the cell word of the prank lines or the object type id of the ride and research lines, 0 for none.</param>
+/// <param name="ScoreOverridden">The record's byte +0x16: set when the record was offered again with a score of its own (the F1 replay of the last tutorial), which is said without being scored again.</param>
+// [BIN:TPW-EXE:0x0059B590 advice record] the builder stores its second argument as the word +0x0, its third as the dword +0x4, the variant at +0x8, the message at +0xC, the score at +0x10 with its valid byte +0x14 and flags +0x15/+0x16; the queue copies all six dwords (0x59A940)
+// [BIN:TPW-EXE:0x0059B620 advice speech] the record's two words are read when it is said: they ride the category-24 message to the tag system (0x509BF0), whose caption formatter 0x509E10 reads them (docs/LIPS.md, "Captions")
 internal sealed record AdvisorPendingAdvice(
-	int MessageId, int Score, int ResponseVariantOverride = -1, bool OverrideOnlyOnce = false );
+	int MessageId, int Score, int ResponseVariantOverride = -1, bool OverrideOnlyOnce = false, ushort ThingId = 0, uint Secondary = 0, bool ScoreOverridden = false );
 
 internal enum AdvisorEligibility
 {
@@ -32,11 +39,23 @@ internal readonly record struct AdvisorQueueAdmission( AdvisorEligibility Eligib
 
 internal readonly record struct AdvisorResponseSelection( int Slot, AdvisorPendingAdvice Advice, int Variant, int ResponseId );
 
+/// <summary>
+/// What the speech's score check (<c>0x59C0A0</c> as <c>0x59B620</c> calls it) answers: the message's score now and the id and cell words its callback left in the scan object
+/// (the record's words are replaced by the nonzero ones).
+/// </summary>
+internal readonly record struct AdvisorSpeechCheck( int Score, ushort ThingId = 0, uint Secondary = 0 );
+
 /// <summary>What withdrawing a message did: pending records dropped, and whether its speech was cut off.</summary>
 internal readonly record struct AdvisorWithdrawal( int PendingRemoved, bool SpeechCancelled );
 
-/// <summary>One pending advice record's own-format state for a park save (a free slot is null).</summary>
-internal sealed record AdvisorPendingAdviceSnapshot( int MessageId, int Score, int ResponseVariantOverride, bool OverrideOnlyOnce );
+/// <summary>
+/// One pending advice record's own-format state for a park save (a free slot is null). <paramref name="ThingId"/> and <paramref name="Secondary"/> are the record's two words
+/// (<see cref="AdvisorPendingAdvice"/>), written only when they are not 0 so that a save without them reads as before.
+/// </summary>
+internal sealed record AdvisorPendingAdviceSnapshot( int MessageId, int Score, int ResponseVariantOverride, bool OverrideOnlyOnce,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )] int ThingId = 0,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )] uint Secondary = 0,
+	[property: System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )] bool ScoreOverridden = false );
 
 /// <summary>One message's history record for a park save (<see cref="AdvisorMessageHistory"/>).</summary>
 internal sealed record AdvisorHistorySnapshot( uint SavedGameTick, int PreviousVariant, bool HasBeenPlayed, uint SlapCount );
@@ -136,11 +155,11 @@ internal sealed class AdvisorScoreQueue
 			throw new InvalidOperationException( "Cannot capture the advisor queue while a playback attempt is outstanding." );
 		return new AdvisorQueueSnapshot(
 			slots.Select( item => item is { } advice
-				? new AdvisorPendingAdviceSnapshot( advice.MessageId, advice.Score, advice.ResponseVariantOverride, advice.OverrideOnlyOnce )
+				? new AdvisorPendingAdviceSnapshot( advice.MessageId, advice.Score, advice.ResponseVariantOverride, advice.OverrideOnlyOnce, advice.ThingId, advice.Secondary, advice.ScoreOverridden )
 				: null ).ToArray(),
 			history.ToDictionary( pair => pair.Key, pair => new AdvisorHistorySnapshot( pair.Value.SavedGameTick, pair.Value.PreviousVariant, pair.Value.HasBeenPlayed, pair.Value.SlapCount ) ),
 			LastActionStarted, LastActionDuration, CurrentMessageId,
-			LastTutorial is { } tutorial ? new AdvisorPendingAdviceSnapshot( tutorial.MessageId, tutorial.Score, tutorial.ResponseVariantOverride, tutorial.OverrideOnlyOnce ) : null );
+			LastTutorial is { } tutorial ? new AdvisorPendingAdviceSnapshot( tutorial.MessageId, tutorial.Score, tutorial.ResponseVariantOverride, tutorial.OverrideOnlyOnce, tutorial.ThingId, tutorial.Secondary, tutorial.ScoreOverridden ) : null );
 	}
 
 	/// <summary>
@@ -166,12 +185,14 @@ internal sealed class AdvisorScoreQueue
 			Require( descriptors.TryGetValue( tutorial.MessageId, out var tutorialDescriptor ), $"the last tutorial message {tutorial.MessageId} has no bound descriptor" );
 			Require( tutorialDescriptor.MessageGroup == 1, $"the last tutorial message {tutorial.MessageId} is not of the tutorial group" );
 			Require( tutorial.ResponseVariantOverride >= -1, $"the last tutorial message {tutorial.MessageId}'s variant override is below none" );
+			Require( tutorial.ThingId is >= 0 and <= ushort.MaxValue, $"the last tutorial message {tutorial.MessageId}'s thing id is not a word" );
 		}
 		foreach ( var item in snapshot.Slots )
 			if ( item != null )
 			{
 				Require( descriptors.ContainsKey( item.MessageId ), $"message {item.MessageId} has no bound descriptor" );
 				Require( item.ResponseVariantOverride >= -1, $"message {item.MessageId}'s variant override is below none" );
+				Require( item.ThingId is >= 0 and <= ushort.MaxValue, $"message {item.MessageId}'s thing id is not a word" );
 			}
 		foreach ( var (id, entry) in snapshot.History )
 		{
@@ -189,7 +210,7 @@ internal sealed class AdvisorScoreQueue
 	{
 		ValidateSnapshot( snapshot );
 		Restore( snapshot.Slots!.Select( item => item is { } advice
-				? new AdvisorPendingAdvice( advice.MessageId, advice.Score, advice.ResponseVariantOverride, advice.OverrideOnlyOnce )
+				? new AdvisorPendingAdvice( advice.MessageId, advice.Score, advice.ResponseVariantOverride, advice.OverrideOnlyOnce, (ushort)advice.ThingId, advice.Secondary, advice.ScoreOverridden )
 				: null ).ToArray(),
 			snapshot.History!.ToDictionary( pair => pair.Key, pair => new AdvisorMessageHistory( pair.Value.SavedGameTick, pair.Value.PreviousVariant, pair.Value.HasBeenPlayed, pair.Value.SlapCount ) ) );
 		LastActionStarted = snapshot.LastActionStarted;
@@ -197,7 +218,7 @@ internal sealed class AdvisorScoreQueue
 		// The reservation resumes with the message it belongs to (absent in saves from before help withdrawal: none).
 		CurrentMessageId = snapshot.CurrentMessageId;
 		LastTutorial = snapshot.LastTutorial is { } tutorial
-			? new AdvisorPendingAdvice( tutorial.MessageId, tutorial.Score, tutorial.ResponseVariantOverride, tutorial.OverrideOnlyOnce ) : null;
+			? new AdvisorPendingAdvice( tutorial.MessageId, tutorial.Score, tutorial.ResponseVariantOverride, tutorial.OverrideOnlyOnce, (ushort)tutorial.ThingId, tutorial.Secondary, tutorial.ScoreOverridden ) : null;
 	}
 
 	/// <summary>Replaces the last tutorial record with a loaded controller's (an original save's record at +0x16D0); it must be a bound tutorial message.</summary>
@@ -413,7 +434,7 @@ internal sealed class AdvisorScoreQueue
 	{
 		if ( LastTutorial is not { } tutorial )
 			return null;
-		LastTutorial = tutorial with { Score = contextHelpScore, OverrideOnlyOnce = true };
+		LastTutorial = tutorial with { Score = contextHelpScore, OverrideOnlyOnce = true, ScoreOverridden = true };
 		return Enqueue( LastTutorial, liveGameTick, tutorialEnabled );
 	}
 }

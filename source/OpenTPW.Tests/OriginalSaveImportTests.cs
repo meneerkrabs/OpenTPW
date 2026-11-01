@@ -547,7 +547,7 @@ public class OriginalSaveImportTests
 
 		var controller = Fresh();
 		var report = controller.ImportOriginal( Saved( new SaveTestPayloads.AdvisorRecordFields( 0, 0, 188, 1000, 1, 0, 1, 1 ) ) );
-		Assert.AreEqual( new AdvisorPendingAdvice( 188, 1000, 0, true ), controller.Queue.LastTutorial, "the record at +0x16D0 keeps its score, response number and override" );
+		Assert.AreEqual( new AdvisorPendingAdvice( 188, 1000, 0, true, ScoreOverridden: true ), controller.Queue.LastTutorial, "the record at +0x16D0 keeps its score, response number and override" );
 		StringAssert.Contains( report, "last tutorial advice message 188 kept" );
 
 		controller = Fresh();

@@ -8,7 +8,8 @@ namespace OpenTPW;
 /// 32-byte record in the Windows executable's table at 0x768FB8) and the <c>TAG_SYSTEM.str</c> entry that tag shows (field +0xC of the tag's record
 /// in the table at 0x75ECA8).
 /// </summary>
-internal readonly record struct AdvisorCaption( int Tag, int TextEntry );
+/// <param name="Kind">The case of the caption formatter (<c>0x509E10</c>) that fills the text's parameter slots: field +0x1C of the tag's record (<see cref="AdvisorCaptionArguments"/>); 0 is the case without arguments.</param>
+internal readonly record struct AdvisorCaption( int Tag, int TextEntry, int Kind = 0 );
 
 /// <summary>
 /// The shipped caption table (<c>content/data/advisor-captions.toml</c>), copied for interoperability from the Windows executable by
@@ -17,7 +18,7 @@ internal readonly record struct AdvisorCaption( int Tag, int TextEntry );
 internal static class AdvisorCaptionTable
 {
 	public const string RelativePath = "content/data/advisor-captions.toml";
-	private static readonly Regex Row = new( @"^\s*\{ response = (\d+), tag = (\d+), text = (\d+) \},?\s*$", RegexOptions.CultureInvariant );
+	private static readonly Regex Row = new( @"^\s*\{ response = (\d+), tag = (\d+), text = (\d+)(?:, kind = (\d+))? \},?\s*$", RegexOptions.CultureInvariant );
 	private static IReadOnlyDictionary<int, AdvisorCaption>? loaded;
 
 	/// <summary>The table shipped with OpenTPW (loaded on first use; empty when the file is missing or damaged).</summary>
@@ -67,7 +68,7 @@ internal static class AdvisorCaptionTable
 			if ( !inArray || !match.Success )
 				throw new InvalidDataException( $"Advisor captions line {lineNumber} is not a caption row." );
 			int Value( int group ) => int.Parse( match.Groups[group].Value, NumberStyles.None, CultureInfo.InvariantCulture );
-			if ( !table.TryAdd( Value( 1 ), new AdvisorCaption( Value( 2 ), Value( 3 ) ) ) )
+			if ( !table.TryAdd( Value( 1 ), new AdvisorCaption( Value( 2 ), Value( 3 ), match.Groups[4].Success ? Value( 4 ) : 0 ) ) )
 				throw new InvalidDataException( $"Advisor caption of response {Value( 1 )} appears twice." );
 		}
 		if ( !closed )

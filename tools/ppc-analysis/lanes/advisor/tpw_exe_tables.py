@@ -159,28 +159,36 @@ def costumes(image: Image) -> list[tuple[int, int, int]]:
     return [(row[0], row[5], row[6]) for row in response_rows(image) if row[5] != 0 or row[6] != 0]
 
 
-def tag_entry(image: Image, tag: int) -> int | None:
-    """The TAG_SYSTEM.str entry of a tag: field +0xC of its record, found as 0x50AF40 does (the record at the tag's own
-    position when its id matches, else the first record with the id); None when no record has the id."""
+def tag_record(image: Image, tag: int) -> tuple[int, ...] | None:
+    """The record of a tag as 0x50AF40 finds it (the record at the tag's own position when its id matches, else the first
+    record with the id); None when no record has the id."""
     count = (TAG_TABLE_END - TAG_TABLE) // TAG_RECORD
     records = [struct.unpack('<8i', image.read(TAG_TABLE + index * TAG_RECORD, TAG_RECORD)) for index in range(count)]
     if 0 <= tag < count and records[tag][0] == tag:
-        return records[tag][3]
+        return records[tag]
     for record in records:
         if record[0] == tag:
-            return record[3]
+            return record
     return None
 
 
-def captions(image: Image) -> list[tuple[int, int, int]]:
+def tag_entry(image: Image, tag: int) -> int | None:
+    """The TAG_SYSTEM.str entry of a tag: field +0xC of its record; None when no record has the id."""
+    record = tag_record(image, tag)
+    return None if record is None else record[3]
+
+
+def captions(image: Image) -> list[tuple[int, int, int, int]]:
+    """(response, tag, TAG_SYSTEM.str entry, kind): the kind is field +0x1C of the tag's record, the case of the caption
+    formatter 0x509E10 that fills the text's parameter slots."""
     rows = []
     for row in response_rows(image):
         if row[7] == NO_CAPTION:
             continue
-        entry = tag_entry(image, row[7])
-        if entry is None:
+        record = tag_record(image, row[7])
+        if record is None:
             raise ValueError(f'response {row[0]} has the tag {row[7]}, which no record of the tag table has')
-        rows.append((row[0], row[7], entry))
+        rows.append((row[0], row[7], record[3], record[7]))
     return rows
 
 
@@ -217,7 +225,7 @@ def render_costumes(rows: list[tuple[int, int, int]]) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def render_captions(rows: list[tuple[int, int, int]]) -> str:
+def render_captions(rows: list[tuple[int, int, int, int]]) -> str:
     lines = [
         '# Advisor captions of Sim Theme Park World (Windows v2.0), for interoperability: the TAG_SYSTEM.str tag of the text',
         '# each advisor response posts to the message tube. Copied field by field from the response table at 0x768FB8 of tp.exe',
@@ -226,12 +234,14 @@ def render_captions(rows: list[tuple[int, int, int]]) -> str:
         '#',
         '# response: response ID (the first field of its 32-byte record); tag: field +0x1C, the tag of the text; text: the entry of',
         '# TAG_SYSTEM.str (0-based) the tag shows, field +0xC of the tag\'s record in the table at 0x75ECA8 (0x50AF40 finds it by the',
-        '# id in field +0). Responses that are not listed have the tag 0x17F, which has no text.',
+        '# id in field +0); kind: field +0x1C of that record, the case of the caption formatter 0x509E10 that fills the text\'s',
+        '# parameter slots (written only when it is not 0, the case without arguments). Responses that are not listed have the',
+        '# tag 0x17F, which has no text.',
         '',
         'captions = [',
     ]
-    for response, tag, text in rows:
-        lines.append(f'  {{ response = {response}, tag = {tag}, text = {text} }},')
+    for response, tag, text, kind in rows:
+        lines.append(f'  {{ response = {response}, tag = {tag}, text = {text}{f", kind = {kind}" if kind else ""} }},')
     lines.append(']')
     return '\n'.join(lines) + '\n'
 

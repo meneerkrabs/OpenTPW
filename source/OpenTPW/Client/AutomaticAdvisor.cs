@@ -203,12 +203,16 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			objectStampTurn = ParkCalendar.Turn( item.Tick );
 		if ( item.Kind == ParkEventKind.StaffHired )
 			hireStampTurn = ParkCalendar.Turn( item.Tick );
-		// [BIN:TPW-EXE:0x004DF8BE ride breakdown imminent] the wear step queues the advice 0x42 as a ride's condition crosses below 10 percent (not in game type 1, which never wears)
+		// [BIN:TPW-EXE:0x004DF8BE ride breakdown imminent] the wear step queues the advice 0x42 as a ride's condition crosses below 10 percent (not in game type 1, which never wears); the record's words are the ride's own word (+0x0, read through 0x50B350) and its type id (+0xE), which the caption names the ride by
 		if ( item.Kind == ParkEventKind.RideBreakdownImminent )
-			PostEventAdvice( AdvisorRideEvents.BreakdownImminentMessage, "a ride about to break down" );
+			PostEventAdvice( AdvisorRideEvents.BreakdownImminentMessage, "a ride about to break down", thingId: (ushort)item.InstanceId, secondary: (ushort)item.InfoId );
 		// [BIN:TPW-EXE:0x004E0FA0 broken state entered] the handler 0x4DADC0 runs on the message of type 7 that case 1 of 0x4E0E60 builds (0x40F380) when the ride update has read the script's VAR_BROKEN, not at the earlier breakdown request (0x4E0B90); a condemned ride sends type 8 (0x40F3D0): the advice of the mechanics' state (68, 69), or 258
 		if ( item.Kind == ParkEventKind.RideEnteredBrokenState && CurrentEconomy is { } economy && economy.TryGetObject( item.InstanceId, out var broken ) && AdvisorRideEvents.ForBreakdown( economy, broken ) is { } breakdownAdvice )
-			PostEventAdvice( breakdownAdvice, $"ride {item.InstanceId} breaking down" );
+		{
+			// [BIN:TPW-EXE:0x004DAE64 breakdown words] the handler builds 68 and 69 with the ride's thing id (the message's +8) and the type id at the thing's +0xE (0x4DAE5C, 0x4DAFEA), the caption's ride; a condemned ride's 258 (0x59B404) keeps the thing id and leaves the dword 0
+			var condemned = breakdownAdvice == AdvisorTables.RideCondemnedMessage;
+			PostEventAdvice( breakdownAdvice, $"ride {item.InstanceId} breaking down", thingId: (ushort)item.InstanceId, secondary: condemned ? 0u : (ushort)item.InfoId );
+		}
 		// [BIN:TPW-EXE:0x00509031 staff messages] the staff manager's month routine sends the staff info message (type 0x17, kind and role) that 0x59AFC0 turns into the advice 33-57; the kind and role are those of the strike message, whose text the advisor's caption then posts
 		if ( item.Kind == ParkEventKind.StaffStrikeMessage )
 			PostEventAdvice( AdvisorTables.StaffMessage( new StrikeMessage( (StaffType)item.InfoId, (StrikeMessageKind)item.Amount ) ), "a staff strike message" );
@@ -216,7 +220,8 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		if ( item.Kind == ParkEventKind.ItemResearched && item.InstanceId == 1 && park != null )
 		{
 			var category = item.Amount > 0 ? ResearchCategory.Upgrade : park.Economy.Catalog.TryGet( item.InfoId, out var info ) ? info.ResearchCategory : ResearchCategory.Feature;
-			PostEventAdvice( ResearchDoneMessage( category ), $"research of {item.Detail} ({category})" );
+			// [BIN:TPW-EXE:0x0059B0C6 research done words] the record's second dword is the project's id word (+0x8 of the type-0x11 message, 0x504630 sends the project's first word), whose type name the caption shows; the first word stays 0
+			PostEventAdvice( ResearchDoneMessage( category ), $"research of {item.Detail} ({category})", secondary: (ushort)item.InfoId );
 		}
 		if ( item.Kind == ParkEventKind.ResearchGroupOpened && NewResearchGroupMessage( (ResearchCategory)item.Amount ) is { } groupAdvice )
 			PostEventAdvice( groupAdvice, $"a new {(ResearchCategory)item.Amount} research group" );
@@ -256,21 +261,22 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	};
 
 	/// <summary>Advice posted by game code (the original builds the record through 0x59B590 with the descriptor's score and queues it through 0x59A940).</summary>
-	internal void PostEventAdvice( int message, string source, int variant = -1 )
+	internal void PostEventAdvice( int message, string source, int variant = -1, ushort thingId = 0, uint secondary = 0 )
 	{
 		if ( level == null && detachedEconomy == null )
 			return;
-		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled, variant );
+		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled, variant, thingId, secondary );
 		Log.Trace( $"Advisor advice for {source}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
 	}
 
 	/// <summary>A mechanic set off for a broken-down ride: advice 70 reaches the advisor's queue at once.</summary>
-	// [BIN:TPW-EXE:0x004DA6C5 mechanic on the way] the mechanic update builds the advice record (0x0059B590) and queues it (0x0059A940) as the mechanic claims the ride; the record's arguments (his id, the ride's Info.Id) are not kept, as for every advice OpenTPW queues (GUEST-007)
+	// [BIN:TPW-EXE:0x004DA6C5 mechanic on the way] the mechanic update builds the advice record (0x0059B590) and queues it (0x0059A940) as the mechanic claims the ride; the record's words are the ride the mechanic's target word (+0x218) names and the ride's type id (+0xE), which the caption names the ride by
 	internal void OnMechanicOnTheWay( int rideId, int mechanicId )
 	{
 		if ( level == null )
 			return;
-		var admission = Controller.Advise( AdvisorTables.MechanicOnTheWayMessage, GameTick, GameType, TutorialEnabled );
+		var infoId = CurrentEconomy is { } economy && economy.TryGetObject( rideId, out var ride ) ? ride.InfoId : 0;
+		var admission = Controller.Advise( AdvisorTables.MechanicOnTheWayMessage, GameTick, GameType, TutorialEnabled, thingId: (ushort)rideId, secondary: (ushort)infoId );
 		if ( admission is { Stored: true } )
 			Log.Trace( $"Advisor mechanic message for ride {rideId} (mechanic {mechanicId}): advice {AdvisorTables.MechanicOnTheWayMessage} {admission.Value.Eligibility} in slot {admission.Value.Slot}." );
 	}
@@ -293,14 +299,21 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	/// A prankster pranked: the prank message reaches the advisor at once (the bus delivers it as it is sent), which queues one of the three prank
 	/// lines by the prankster's id (<see cref="AdvisorTables.PrankAdvice"/>).
 	/// </summary>
-	// Approximation (GUEST-007, registered at GuestSimulation.Prank): the prank line is chosen by the prankster's thing id modulo 3 (the guest's id), and the advice record's prankster id and cell words (+0x0, +0x4, 0x0059B590) are not kept, as for every advice OpenTPW queues — evidence needed: what reads those two words of a queued record
+	// [BIN:TPW-EXE:0x0059B25F prank advice] the handler of the prank message (type 0xE) reads the prankster's thing through the thing table (0x7CFB90) and builds the record (0x7D, 0x7E or 0x7F by the message's kind word) with the thing's id and the cell word of its +5 and +7 bytes, y x 128 + x + 1 (0x59B25F..0x59B3F4); the three prank rows' captions (tag kind 0) read neither word
 	internal void OnPrank( Guest guest, GuestDecision.Prank prank )
 	{
 		if ( level == null )
 			return;
-		var message = AdvisorTables.PrankAdvice( guest.Id );
-		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled );
-		Log.Trace( $"Advisor prank message from guest {guest.Id} ({prank}): advice {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
+		PostPrankAdvice( guest.Id, guest.CellX, guest.CellY, prank );
+	}
+
+	/// <summary>The prank advice of a guest in a cell (<see cref="OnPrank"/> without the level test).</summary>
+	internal AdvisorQueueAdmission? PostPrankAdvice( int guestId, int cellX, int cellY, GuestDecision.Prank prank )
+	{
+		var message = AdvisorTables.PrankAdvice( guestId );
+		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled, thingId: (ushort)guestId, secondary: ParkCellMap.CellWord( cellX, cellY ) );
+		Log.Trace( $"Advisor prank message from guest {guestId} ({prank}): advice {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
+		return admission;
 	}
 
 	/// <summary>The open/close button or its shortcut was pressed: game event 3 (open) or 4 (close), whatever the park's state.</summary>
@@ -461,14 +474,14 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 		QueueServices++;
 		if ( !GameOptions.Current.Advisor )
 		{
-			Controller.Update( () => AdvisorClock, () => GameTick, responseId =>
+			Controller.UpdateSpeaking( () => AdvisorClock, () => GameTick, selection =>
 			{
-				PostCaption( responseId );
+				PostCaption( selection.ResponseId, selection.Advice );
 				return 0u;
-			} );
+			}, Controller.SpeechCheck );
 			return;
 		}
-		Controller.Update( () => AdvisorClock, () => GameTick, Play );
+		Controller.UpdateSpeaking( () => AdvisorClock, () => GameTick, Play, Controller.SpeechCheck );
 	}
 
 	/// <summary>The scan of one update for a park: its turn, game type and the tutorial option, halted while paused or while the park is lost.</summary>
@@ -511,23 +524,32 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	}
 
 	/// <summary>
-	/// Where the caption of a chosen response goes: the entry of <c>TAG_SYSTEM.str</c> the response's tag shows (the park HUD posts it to the message tube); null posts none.
+	/// Where the caption of a chosen response goes: the entry of <c>TAG_SYSTEM.str</c> the response's tag shows with the values of its parameter slots (the park HUD posts it to the message tube); null posts none.
 	/// </summary>
-	internal Action<int>? CaptionSink { get; set; }
+	internal Action<int, IReadOnlyDictionary<int, string>>? CaptionSink { get; set; }
 
 	/// <summary>
 	/// A response is chosen to be said: its caption goes to the message tube, whether or not the advisor is heard (the speech switched off, the clip missing).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0059B620 advisor caption] the player of the next response (0x0059A550) asks the speech (0x00599050, 0 when the advisor is off), then posts a category-24 message with the response's tag (field +0x1C of its row, 0x005997B0; 0x17F without a caption) to the tag system (0x00509BF0), which shows the tag's text in the message tube
-	internal void PostCaption( int responseId )
+	// [BIN:TPW-EXE:0x0059B7B0 caption message] the message carries the record's id word and cell word (0x59B7C2..0x59B7D4: the words at +0x0 and +0x4), which the tag system's formatter (0x509E10) reads as the arguments of the text
+	internal void PostCaption( int responseId, AdvisorPendingAdvice? advice = null )
 	{
-		if ( AdvisorCaptionTable.For( responseId ) is { } caption )
-			CaptionSink?.Invoke( caption.TextEntry );
+		if ( AdvisorCaptionTable.For( responseId ) is not { } caption || CaptionSink == null )
+			return;
+		// the formatter writes no text for a caption its arguments cannot name (a type id of 0: unreachable, every producer passes one); the tag system would repost its previous text, which OpenTPW does not keep
+		if ( AdvisorCaptionArguments.For( caption.Kind, advice ?? new AdvisorPendingAdvice( 0, 0 ), TypeNameOf, CurrentEconomy?.Settings.GoldenTickets ) is { } values )
+			CaptionSink( caption.TextEntry, values );
 	}
 
-	private uint? Play( int responseId )
+	/// <summary>The info-record name of the object type with an Info.Id (<c>+0x410</c> of the record 0x412F50 finds), null without a park or for an id the park's objects do not declare.</summary>
+	// [BIN:TPW-EXE:0x00412F50 type record by id] the table 0x7890A0 holds the types of the park's own object archives; the name is the OBJECT_NAMES entries of the type's Info.Id joined by a space (ObjectCatalogEntry.SignName), empty for an id outside the table
+	private string? TypeNameOf( int infoId ) => level?.Objects?.Catalog.Find( infoId ) is { } entry ? entry.SignName ?? entry.DisplayName : null;
+
+	private uint? Play( AdvisorResponseSelection selection )
 	{
-		PostCaption( responseId );
+		var responseId = selection.ResponseId;
+		PostCaption( responseId, selection.Advice );
 		if ( presentationFailed || level == null )
 			return null;
 		try

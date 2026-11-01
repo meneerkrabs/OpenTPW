@@ -138,7 +138,7 @@ The tick that starts a park turn (every 248 ms of scaled time, `ParkCalendar.Tur
 
 1. the substep's work first: the bump module, the script pass and the tour cars (`0x546C80`, `0x5516B0`, `0x55ABF0`; the section above, `Objects.Simulate`);
 2. the turn counter advances;
-3. the thing sweep: the pool's used list from its head, the thing built last (`0x7CF56C`, `ThingPool.Capture`), each
+3. the thing sweep: the pool's used list from its head, the thing built last (the head pointer `0x7CF56C`, read at `0x5163A4`, indexing the slot table at `0x7CFB90`; `ThingPool.Capture`), each
    thing dispatched by its type (`0x50B360`): a guest (`0x501650`, `0x5019F0`), an attraction (the economy's wear and
    breakdown update `0x4E0B90`, then the ride update and its admission `0x4E0E00`), a mechanic, handyman, entertainer,
    guard or researcher (a researcher does its research first, on every 20th turn, `0x502960`), the weather (`0x512880`)
@@ -1453,3 +1453,9 @@ The slide tower's line was order dependent once the sweep reached the guests in 
 Tests that sent a guest and ticked once now tick to the turn (`GuestTurnTicks.TickTurn`, `QueueTests.Rig.StepTurn`); a few phase and chance dependent expectations moved with the order (`ParkGateTests`, `ArrivalVehicleTests`, the pools' extras, the Burger shop's five minutes); each is noted where it changed.
 
 Saves: none changed (no new field); a resumed park continues under the new order, so its later ticks differ from a run of the old code.
+
+The online route of the same turn: the main loop runs the park turn for GameType 1 (a visited park) through `0x5166B0`, reached at `0x54F760` under the same eighth-substep gate (`0x54F668`), so a visited park's guests are updated in its turn too and the tick-by-tick update has no counterpart there either; `GuestSimulation.Tick` is that turn for both game types.
+
+The production path is pinned: the other pinned runs drive the sweep by hand as `Level` does (`SyntheticPark.Run`), so `DeterminismTests.TheTurnBranchOfGuestsTickIsPinned` runs the same park through `GuestSimulation.Tick` on every tick (`GuestsTickRunHash` `0xC50A9583B4D05226`). The slide tower's launch test (`IsStartClear`) reads a rider already swept in the turn with its counter of the start of the turn, as `RankInLine` does for the line; `PoolSlideActivityTests` swaps the sweep order of two guests and expects the same launch. The sweep's order itself (newest first) is asserted with an update-order observer (`GuestTurnSweepTests`).
+
+Recorded runs: a command log with checkpoint hashes recorded before this change reports a mismatch at its first checkpoint after a guest has been updated (`ParkCommandLogFile.FirstMismatch`), as every earlier round that moved a guest rule did: the commands replay, the states differ from the recording, and no version marker exists to refuse the log (the rounds before this one added none; a log is replayed under the build that records it). A resumed or loaded park continues under the new order. See "Co-op" in docs/COOP.md for peers of two builds.

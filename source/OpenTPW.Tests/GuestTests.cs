@@ -533,6 +533,7 @@ public partial class GuestTests
 		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 11 );
 		var spent = 0;
 		simulation.MoneySpent += ( _, amount, attraction ) => spent += attraction == 0 ? amount : 0;
+		// 30 s, not 20 s: a guest's first thing update is in the park turn after it arrives (about 15 ticks apart), so the first admissions come a turn later than when every tick updated the guests
 		Run( simulation, Array.Empty<ScriptedAttraction>(), 30 * 60 );
 		Assert.IsTrue( simulation.Admissions > 0 );
 		Assert.AreEqual( simulation.Admissions * 20, spent );

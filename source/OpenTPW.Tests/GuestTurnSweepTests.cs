@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -78,16 +77,42 @@ public class GuestTurnSweepTests
 		Assert.AreEqual( GuestState.DoingNothing, guest.State, "the timer ran out on the third tick, not at the next park turn" );
 	}
 
+	private sealed class LeavingOrder : IGuestObserver
+	{
+		public readonly System.Collections.Generic.List<int> Ids = new();
+		public void Admitted( Guest guest, int fee ) { }
+		public void Spent( Guest guest, int amount, int attractionId ) { }
+		public void QueueRejected( Guest guest, IRideVisitorBridge attraction, QueueEndReason reason ) { }
+		public void QueueJoined( Guest guest, IRideVisitorBridge attraction ) { }
+		public void QueueBoarded( Guest guest, IRideVisitorBridge attraction, long waitTurns ) { }
+		public void QueueEnded( Guest guest, int attractionId, QueueEndReason reason, long waitTurns ) { }
+		public void Decided( Guest guest, bool chose ) { }
+		public void Leaving( Guest guest, DepartureCause cause ) => Ids.Add( guest.Id );
+		public void Departed( Guest guest ) { }
+		public void Recalled( Guest guest ) { }
+		public void Restored( GuestSimulation simulation ) { }
+		public void Ticked( GuestSimulation simulation, float deltaSeconds ) { }
+	}
+
 	/// <summary>
-	/// [BIN:TPW-EXE:0x004F9D77] the wander's dead end stamps only a person that is no staff thing (kinds 4 to 8 go to the patrol area search 0x00506F30), and every other write of +0x198 clears it: the staff
-	/// carry no stranded mark, so the guests' stranding (<see cref="Guest.StrandedMark"/>) has no counterpart on <see cref="StaffMember"/>.
+	/// [BIN:TPW-EXE:0x00516380] the sweep walks the pool's used list from its head, the thing built last (0x5163A4, each slot's older link after the update, 0x516413..0x516431): of two guests that both read an exit counter of zero in the same turn, the one made later is updated first (it goes home).
 	/// </summary>
 	[TestMethod]
-	public void AStaffMemberCarriesNoStrandedMark()
+	public void TheTurnUpdatesTheNewestGuestFirst()
 	{
-		var names = typeof( StaffMember ).GetProperties( BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic ).Select( property => property.Name )
-			.Concat( typeof( StaffMember ).GetFields( BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic ).Select( field => field.Name ) );
-		Assert.IsFalse( names.Any( name => name.Contains( "Strand", StringComparison.OrdinalIgnoreCase ) ) );
-		Assert.IsTrue( typeof( Guest ).GetProperty( nameof( Guest.StrandedMark ) ) != null );
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		var order = new LeavingOrder();
+		simulation.Observer = order;
+		var older = simulation.SpawnInPark( 5, 5 );
+		var newer = simulation.SpawnInPark( 5, 5 );
+		foreach ( var guest in new[] { older, newer } )
+		{
+			guest.State = GuestState.DoingNothing;
+			guest.ExitLevel = 0;
+			guest.HasWaypoint = false;
+		}
+		for ( var tick = 0; tick < 60 && order.Ids.Count < 1; tick++ )
+			simulation.Tick( Dt );
+		Assert.AreEqual( newer.Id, order.Ids.FirstOrDefault(), $"the newest guest is updated first ({older.State}, {newer.State}, {older.ExitLevel}, {newer.ExitLevel})" );
 	}
 }

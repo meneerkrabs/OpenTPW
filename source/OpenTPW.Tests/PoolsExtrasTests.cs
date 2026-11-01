@@ -487,9 +487,10 @@ public class PoolsExtrasTests
 				// (each batch waits a turn longer than the one before: the end of a lie is a draw of the swimmer's own stream, which a run with the same seeds would repeat)
 				if ( !forced && guests.Count( guest => guest.State == GuestState.Swimming ) >= 2 && waited++ >= batch )
 				{
+					// DebugStartActivity refuses a swimmer that is not near a free seat yet (the offer's own distance rule): that swimmer is tried again on a later turn, and the test asserts below that two seats were taken
 					foreach ( var guest in guests.Where( guest => guest.State == GuestState.Swimming ) )
-						if ( guests.Count( other => other.PoolActivityId == "extra.lounger" ) < 2 )
-							rig.Simulation.DebugStartActivity( guest, "extra.lounger" );
+						if ( guests.Count( other => other.PoolActivityId == "extra.lounger" ) < 2 && rig.Simulation.DebugStartActivity( guest, "extra.lounger" ) )
+							Assert.AreEqual( "extra.lounger", guest.PoolActivityId, "a started activity is the guest's own" );
 					// (a seat taken is kept, the other swimmers are tried again on the next turn)
 					if ( guests.Count( guest => guest.PoolActivityId == "extra.lounger" ) < 2 )
 						goto next;

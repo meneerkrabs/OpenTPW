@@ -117,7 +117,7 @@ public sealed class ThingPool
 	/// <summary>The model of a used slot; throws for a free or out-of-range one.</summary>
 	public SaveThingModel ModelOf( int id ) => IsUsed( id ) ? model[id] : throw new ArgumentOutOfRangeException( nameof( id ), $"Thing {id} is not in use." );
 
-	/// <summary>The used things newest first, as the original walks its thing list (head 0x7CF56C, each slot's older link +8).</summary>
+	/// <summary>The used things newest first, as the original walks its thing list (head pointer 0x7CF56C read at 0x5163A4, slots indexed from the table at 0x7CFB90, each slot's older link +8).</summary>
 	public IEnumerable<ThingSlot> UsedNewestFirst()
 	{
 		for ( var id = usedHead; id != 0; id = older[id] )

@@ -296,7 +296,7 @@ public sealed class PoolSlideActivity : IPoolActivity
 	public static bool HasClimbers( GuestSimulation simulation, int thingId ) => Any( simulation, thingId, PoolSlidePhases.Climb, PoolSlidePhases.Wait );
 
 	/// <summary>
-	/// The place of the guest in the line in the tower: how many guests on the stairs or the platform are ahead of it. Waiters go before climbers, the longest waiting (or the furthest up the stairs)
+	/// The place of the guest in the line in the tower (no counterpart in tp.exe, part of [EXT:pools-slides]): how many guests on the stairs or the platform are ahead of it. Waiters go before climbers, the longest waiting (or the furthest up the stairs)
 	/// first, ties by guest id; no list is built. The guests are updated one after the other within a turn, so a guest that has already been updated this turn (its <c>StepTick</c> is this tick, every update
 	/// moves the guest) is read with its counters as they were before the turn: the line is the same whatever the order the guests are updated in.
 	/// </summary>
@@ -374,8 +374,14 @@ public sealed class PoolSlideActivity : IPoolActivity
 	{
 		var guests = simulation.Guests;
 		for ( var index = 0; index < guests.Count; index++ )
-			if ( IsOn( guests[index], thingId, PoolSlidePhases.Ride, PoolSlidePhases.Ride ) && slide.PositionAtTurn( guests[index].PoolActivityTurns ) < PoolSlideSettings.Gap )
+		{
+			if ( !IsOn( guests[index], thingId, PoolSlidePhases.Ride, PoolSlidePhases.Ride ) )
+				continue;
+			// a rider already updated this turn has moved one turn on: it is read with its counter as it was at the start of the turn, so the launch does not depend on the order of the sweep
+			var turns = guests[index].StepTick == simulation.TickCount ? Math.Max( 0, guests[index].PoolActivityTurns - 1 ) : guests[index].PoolActivityTurns;
+			if ( slide.PositionAtTurn( turns ) < PoolSlideSettings.Gap )
 				return false;
+		}
 		return true;
 	}
 }

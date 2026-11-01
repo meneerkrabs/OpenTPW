@@ -310,7 +310,7 @@ public partial class Level
 			var weatherDone = false;
 			var challengesDone = false;
 			world?.BeginStaffTurn( economy, turn );
-			// [BIN:TPW-EXE:0x00516380 thing sweep] the walk starts at the used list's head (0x7CF56C), the thing built last, and takes each slot's older link after the update (0x516413..0x516431); the things built during the walk
+			// [BIN:TPW-EXE:0x00516380 thing sweep] the walk starts at the used list's head (the pointer 0x7CF56C, read at 0x5163A4; its slot id is at +4; the slot table 0x7CFB90 that 0x5163C0 reads is the slot array), the thing built last, and takes each slot's older link after the update (0x516413..0x516431); the things built during the walk
 			// are newer than the position it has reached and are not visited, so a snapshot of the list is the same walk; a thing that asked to be destroyed (byte +3) is skipped (0x5163F2..0x5163F7)
 			foreach ( var slot in Things.Capture() )
 			{

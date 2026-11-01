@@ -214,7 +214,7 @@ public sealed partial class StaffWorldSimulation
 	// [BIN:TPW-EXE:0x004D6954 booth route] the catch asks 0x004D8610 for the booth cell of the side the world turn's bit 0 names ([game +0x1DA70C] & 1, the same side for both tries) and requests a route to that one cell (0x004FA530, SetDest 0x00510100 on the cell map with the walk mask), first with the guard's mask, then with +0x188 = 1 (0x004D6977, 0x004D699C); the guard never routes to the entrance in its place, the entrance (0x004D8690) is only the way back after the escort (0x004D6AF0)
 	private bool RouteToGate( StaffMember member, GateCell gate, long turn )
 	{
-		var lane = Guests?.Lane( (int)(turn & 1) ) ?? Guests?.Lane( (int)(~turn & 1) );
+		var lane = Guests?.Lane( (int)(turn & 1) );
 		if ( lane is not { Length: >= 5 } )
 			return false;
 		var cell = gate == GateCell.TicketBooth ? lane[3] : lane[^1];

@@ -226,7 +226,7 @@ public class PoolsActivityHostTests
 	public void AbortingATargetByThingIdOnlyHitsTheActivitiesOfThatTarget()
 	{
 		var rig = new Rig( capacity: 3 );
-		// no offers: the swimmers are put into their activities below, not by the cadence (which a swimmer's own stream decides, and with the guests' update in the park turn only moves with every change of timing)
+		// no offers: the swimmers are put into their activities below, not by the cadence (which a swimmer's own stream decides, so any change of the update's timing changes which activity a swimmer is offered); the cadence's offers are covered by ASwimmerIsOfferedStartsKeepsGoingAndComesBackInTheWater
 		var one = new Fake { Id = "test.one", Target = 11, Duration = 400, Available = false };
 		var two = new Fake { Id = "test.two", Target = 12, Duration = 400, Available = false };
 		var none = new Fake { Id = "test.none", Target = 0, Duration = 400, Available = false };

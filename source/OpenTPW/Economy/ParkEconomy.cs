@@ -817,6 +817,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 		item.EffectCell = null;
 	}
 
+	/// <summary>Whether the object is a fireworks show (the only objects whose script variable 0 is read for row 7).</summary>
+	public bool IsFireworks( int instanceId ) => objects.TryGetValue( instanceId, out var item ) && Catalog.TryGet( item.InfoId, out var info ) && info.IsFireworks;
+
 	/// <summary>A fireworks object's show has run (its script's variable 0 is 1): its row 7 comes off for good (tp.exe <c>0x004E0B90</c>). True when it changed.</summary>
 	// [BIN:TPW-EXE:0x004E0B90 fireworks] each object tick: with thing +0x32 bit 0x80 and script variable 0 (0x0055A070, 0x0055A390) equal to 1, row 7 comes off the thing's cell and the variable is set to 2 (0x0055A0B0)
 	public bool FireworksFired( int instanceId )

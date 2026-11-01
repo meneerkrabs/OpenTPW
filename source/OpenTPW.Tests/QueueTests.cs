@@ -974,7 +974,7 @@ public class QueueTests
 		Assert.IsTrue( guests.Skip( 8 ).All( guest => !guest.IsInQueue ) );
 		// one guest in three (id % 3 == 0) leaves angry, the others think nothing new (tp.exe 0x00501496)
 		// (a guest that decides again in the same turn and wanders from the cell that lost its links is stranded there: its own Confused thought, 0x004F9D6E, not the dismissal's)
-		Assert.IsTrue( guests.Skip( 8 ).All( guest => guest.Id % 3 == 0 ? guest.Thought == GuestThought.Angry : guest.Thought is GuestThought.None or GuestThought.Confused ),
+		Assert.IsTrue( guests.Skip( 8 ).All( guest => guest.Id % 3 == 0 ? guest.Thought == GuestThought.Angry : guest.Thought == GuestThought.None || guest.Thought == GuestThought.Confused && guest.StrandedMark != 0 ),
 			string.Join( ", ", guests.Skip( 8 ).Select( guest => $"{guest.Id}: {guest.Thought}" ) ) );
 		Assert.AreEqual( 8, rig.Ride.QueueLength );
 		Assert.IsNull( rig.Ride.JoinCell, "the shortened queue no longer touches the path" );

@@ -691,6 +691,7 @@ public class PoolsAttractionsTests
 	/// <summary>Sends guests until one floats (the offer cadence is one in 90 turns, so a single swimmer may finish its swim first) and returns it.</summary>
 	private static Guest SendAndWaitForAFloater( Rig rig, int turns = 3000, int swimmers = 12 )
 	{
+		// (a test that follows one floater's lap uses fewer swimmers: with the guests updated in the park turn only, twelve swimmers of one changing room are offered the ring in the same turns, and the others crowd the one followed)
 		for ( var i = 0; i < swimmers; i++ )
 			rig.Send();
 		rig.Until( () => rig.Simulation.Guests.Any( guest => guest.State == GuestState.PoolActivity ), turns );
@@ -936,6 +937,7 @@ public class PoolsAttractionsTests
 	/// <summary>[EXT:pools-waves] A rig whose changing room takes twelve, with a wave machine (when <paramref name="waves"/> is given), the water effects and the ring floaters registered, and twelve swimmers sent.</summary>
 	private static (Rig Rig, Guest First) RingRig( PoolWaveSettings? waves, int swimmers = 12 )
 	{
+		// (the bobbing test sends fewer swimmers: in the park turn's sweep all of them reach the ring in the same turns, and the crowd at the rings spots hides the one floater the test measures)
 		var rig = new Rig( capacity: 12 );
 		var all = new List<PoolAttractionSite>();
 		if ( waves is { } settings )

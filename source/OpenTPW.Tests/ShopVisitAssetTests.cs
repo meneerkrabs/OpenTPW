@@ -155,7 +155,7 @@ public class ShopVisitAssetTests
 			guest.State = GuestState.GoingToRide;
 			guest.Money = 1000;
 		}
-		// (five minutes: a customer the shop sends away on a busy turn wanders off and comes back later, and the guests' update in the park turn only moves which turn that is)
+		// (five minutes, not two: the guests are updated once per park turn, so a customer the shop sends away on a busy turn wanders off and comes back about fifteen times later than before; the test asserts the same outcome over the longer window)
 		for ( var tick = 0; tick < 300 * 60; tick++ )
 		{
 			simulation.Tick( Tick );

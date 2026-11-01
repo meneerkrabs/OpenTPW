@@ -625,9 +625,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				continue;
 			RemoveGone( guests[index] );
 		}
+		// the destroy requests wait for the next turn (0x516641), also in a simulation that owns its pool
 		Observer?.Ticked( this, deltaSeconds );
-		if ( ownsThings )
-			things.DestroyQueued();
 	}
 
 	/// <summary>The start of every tick: the checks, the tick counters, the turn flag and the queue sync.</summary>
@@ -2379,7 +2378,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// for the new thought's priority (<see cref="GuestThoughts.TakesBubble"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0050BE80 thought] +0 = the thought; with bubbles on, the old bubble goes (0x00475550) and, when the turn has reached +0x8C + 20 × priority, a new one starts and +0x8C is stamped
-	// [BIN:TPW-EXE:0x0050BE8D camera gate] the Level binds the gate: the ride camera and the walk camera (bits 4 and 2 of the camera word) skip the bubble work, no store sets bit 0x10 (Level.BindGuestThoughtPresentation). Online visits retain the existing online-bubbles-on extension.
+	// [BIN:TPW-EXE:0x0050BE8D camera gate] the Level binds the gate: the ride camera and the walk camera (0x04 ride camera, 0x02 walk camera, of the camera word) skip the bubble work, no store sets bit 0x10 (Level.BindGuestThoughtPresentation). Online visits retain the existing online-bubbles-on extension.
 	private void Think( Guest guest, GuestThought thought )
 	{
 		Observer?.Thought( guest, thought );

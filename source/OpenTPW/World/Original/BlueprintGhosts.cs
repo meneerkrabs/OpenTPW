@@ -65,14 +65,34 @@ public static class BlueprintGhosts
 	// [BIN:TPW-EXE:0x0052390E object hover preflight] the hover calls placement 0x528A70 with commit=0/check=1, sets force-red 0x81B604 when it returns 0 (0x52391A), then calls it with commit=0/check=0 (0x5239EE); SetCell reads that flag before its per-cell validator (0x53319A), so a refused ordinary footprint is all red, including a NoModify refusal that does not set the validator's sticky flag
 	// [APPROX:BLUEPRINT-003] this context-free fallback omits refused outside access markers; the grid-aware overload below supplies the proven ordinary paired-access case only. Other access selection/bounds cases and special footprint symbols '@', 'Q', '+', '#' and track ends keep simplified markers (docs/reverse/BLUEPRINT.md).
 	public static (List<(int X, int Y, BlueprintMarker Marker)> Cells, Dictionary<(int X, int Y), byte> Directions) Footprint(
-		ObjectShape shape, int anchorX, int anchorY, int rotation, bool allowed )
+		ObjectShape shape, int anchorX, int anchorY, int rotation, bool allowed, bool original = false )
 	{
 		var cells = new List<(int X, int Y, BlueprintMarker Marker)>();
 		var directions = new Dictionary<(int X, int Y), byte>();
 		var build = BuildDirection( rotation );
 		foreach ( var (x, y, cell) in ObjectFootprint.GetCells( shape, anchorX, anchorY, rotation ) )
 		{
-			var front = allowed && cell.V == 0 && cell.Kind is ObjectCellKind.Occupied or ObjectCellKind.Entrance or ObjectCellKind.Exit;
+			var type = cell.CellType;
+			// [BIN:TPW-EXE:0x00529526 track end] a type-23 cell stamps its own cell (blue, direction byte 0x10 turned by the build direction) only when its shape direction byte is not 0, and the cell beside it in the turned direction gets m_direct (texture 5, the same byte) (0x5295D9); a cell that is none (direction 0) or off the map gets no face
+			if ( original && type == ObjectShapeSymbols.TypeTrackEnd )
+			{
+				if ( cell.Direction != 0 )
+				{
+					cells.Add( (x, y, allowed ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
+					directions[(x, y)] = Rotate( build, 0x10 );
+					var beside = Rotate( build, cell.Direction );
+					var (dx, dy) = beside switch { 1 => (0, -1), 4 => (1, 0), 0x10 => (0, 1), 0x40 => (-1, 0), _ => (0, 0) };
+					if ( (dx, dy) != (0, 0) )
+					{
+						cells.Add( (x + dx, y + dy, allowed ? BlueprintMarker.Direct : BlueprintMarker.Refused) );
+						directions[(x + dx, y + dy)] = Rotate( build, 0x10 );
+					}
+				}
+				continue;
+			}
+			// [BIN:TPW-EXE:0x00529173 own-branch kinds] '@' (1), '+' (11) and '#' (16) stamp SetCell(0x104, 0, 0), 0x10B and 0x110: blue or red, and no m_front on the first row, which only the default branch (4, 3) and the entrance and exit give
+			var plain = original && type is ObjectShapeSymbols.TypeAt or ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash;
+			var front = allowed && !plain && cell.V == 0 && cell.Kind is ObjectCellKind.Occupied or ObjectCellKind.Entrance or ObjectCellKind.Exit;
 			cells.Add( (x, y, !allowed ? BlueprintMarker.Refused : front ? BlueprintMarker.Front : BlueprintMarker.Allowed) );
 			if ( front )
 				directions[(x, y)] = build;
@@ -104,9 +124,9 @@ public static class BlueprintGhosts
 	// [APPROX:BLUEPRINT-003] only ordinary type-4/9/10 footprints with one entrance and one exit use this refused-access branch; special symbols, missing/multiple access points, partially off-grid footprints, no-queue mode and unproven refusal reasons retain the existing fallback rather than guess their stamping rules
 	public static (List<(int X, int Y, BlueprintMarker Marker)> Cells, Dictionary<(int X, int Y), byte> Directions) Footprint(
 		ObjectShape shape, int anchorX, int anchorY, int rotation, bool allowed, IParkGrid grid, bool hasQueue,
-		OriginalPlacementResult placementResult )
+		OriginalPlacementResult placementResult, bool original = false )
 	{
-		var preview = Footprint( shape, anchorX, anchorY, rotation, allowed );
+		var preview = Footprint( shape, anchorX, anchorY, rotation, allowed, original );
 		if ( allowed || !hasQueue || placementResult is not (OriginalPlacementResult.Path or OriginalPlacementResult.Occupied
 			or OriginalPlacementResult.NotOwned or OriginalPlacementResult.AccessBlocked or OriginalPlacementResult.OutsideTerrain) )
 			return preview;

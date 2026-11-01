@@ -277,4 +277,33 @@ public class BlueprintGhostTests
 		Assert.AreEqual( new Vector2( 1, 0 ), vertices[0].TexCoords, "vertex 0 takes entry 1 for 0x40" );
 		Assert.AreEqual( new Vector2( 1, 1 ), vertices[1].TexCoords, "vertex 1 takes entry 3" );
 	}
+
+	[TestMethod]
+	public void ATrackEndMarksItsCellAndGivesTheCellBesideItMDirect()
+	{
+		// a station with a track end '>' (direction east) on the right and a '+' add-on cell beside the shape
+		var shape = new ObjectShape( new[] { "**>", "*+." } );
+		var (cells, directions) = BlueprintGhosts.Footprint( shape, 10, 10, 0, allowed: true, original: true );
+		var end = cells.Single( cell => cell.X == 12 && cell.Y == 11 );
+		Assert.AreEqual( BlueprintMarker.Allowed, end.Marker, "the track end's own cell is blue, never m_front" );
+		Assert.AreEqual( BlueprintMarker.Direct, cells.Single( cell => cell.X == 13 && cell.Y == 11 ).Marker, "m_direct on the cell beyond the end" );
+		Assert.AreEqual( BlueprintGhosts.Rotate( 1, 0x10 ), directions[(13, 11)] );
+		Assert.AreEqual( BlueprintMarker.Allowed, cells.Single( cell => cell.X == 11 && cell.Y == 10 ).Marker, "'+' is blue and takes no front arrow" );
+		Assert.AreEqual( BlueprintMarker.Front, cells.Single( cell => cell.X == 10 && cell.Y == 10 ).Marker );
+	}
+
+	[TestMethod]
+	public void ARefusedTrackEndGivesTheCellBesideItARedFace()
+	{
+		var (cells, _) = BlueprintGhosts.Footprint( new ObjectShape( new[] { "*>" } ), 10, 10, 0, allowed: false, original: true );
+		Assert.IsTrue( cells.All( cell => cell.Marker == BlueprintMarker.Refused ) );
+		Assert.IsTrue( cells.Any( cell => cell.X == 12 && cell.Y == 10 ) );
+	}
+
+	[TestMethod]
+	public void ATrackEndWithoutADirectionHasNoFace()
+	{
+		var (cells, _) = BlueprintGhosts.Footprint( new ObjectShape( new[] { "*D" } ), 10, 10, 0, allowed: true, original: true );
+		Assert.AreEqual( 1, cells.Count );
+	}
 }

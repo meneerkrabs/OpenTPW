@@ -1918,7 +1918,7 @@ public partial class Level
 	public (List<(int X, int Y, BlueprintMarker Marker)> Cells, Dictionary<(int X, int Y), byte> Directions) ObjectBlueprint(
 		ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, OriginalPlacementResult placementResult, bool allowed ) =>
 		BlueprintGhosts.Footprint( entry.Shape, anchorX, anchorY, rotation, allowed, Objects.Grid,
-			entry.HasQueue && !entry.IsTool && BuildAddOnRide == null && !TrackAddOns.IsAddOn( entry ), placementResult );
+			entry.HasQueue && !entry.IsTool && BuildAddOnRide == null && !TrackAddOns.IsAddOn( entry ), placementResult, TypesFootprints );
 
 	/// <summary><see cref="CheckObject(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing and clears no path (<see cref="ParkObjects.CheckFree"/>).</summary>
 	public OriginalPlacementResult CheckFreeObject( ObjectCatalogEntry entry, int x, int y, int rotation )

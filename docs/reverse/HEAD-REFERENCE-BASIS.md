@@ -1,9 +1,13 @@
 # Rider-head reference basis
 
-A bounded HEADS-004 correction, based on static inspection of the PC TPW reference
-(SHA-256 `5472f97b5eb28f58b5a49f3a15f6f66adffa6b2625a623f503202c9696d1b805`).
-No original executable was run or redistributed. This does not retire HEADS-004
-or establish native rendered parity.
+The reference basis of the head roll, from static inspection of the PC TPW reference
+(SHA-256 `5472f97b5eb28f58b5a49f3a15f6f66adffa6b2625a623f503202c9696d1b805`), and since round 11
+the routine's arithmetic itself: `OriginalHeadMath` reproduces `0x44B510` operation by operation (single
+operations in the order the x87 code runs them, the engine's LU matrix inverse `0x470040`, the product
+`0x4702D0`, the frame walk through the sine table, `fpatan`) and `HeadPlacementGoldenTests` replays 511
+cases recorded from the routine run in the Unicorn oracle (`tools/ppc-analysis/oracle_x86/head_golden.py`,
+node and camera matrices synthetic, no original data) bit for bit: the frame and the roll. HEADS-004 is retired
+on that evidence; the sections below are the earlier static reading the port started from.
 
 ## Camera-to-node matrix
 
@@ -58,7 +62,7 @@ exercise the actual engine-view conversion, position-equal/orientation-different
 cameras, poles, hidden nodes and finite defensive fallback. The older world-bank
 expectations were expectations of the removed approximation, not native captures.
 
-The native loop uses iterated sine-table rotations and x87 intermediates; the
-host retains MathF trigonometry, System.Numerics inversion and finite/singular
-fallback. Bit-exact boundary behavior, original image comparison and other
-HEADS-004 residuals remain unqualified. No native visual acceptance is claimed.
+The native loop uses iterated sine-table rotations and x87 intermediates; the port now
+runs them the same way (see the top of this file). Only the finite fallback is the host's: a camera
+offset that is not a finite direction leaves frame 0 and a roll of 0 where the original rolls by stack words it never wrote
+([EXT:original-undefined-reads]). No rendered-image acceptance is claimed beyond the registers.

@@ -27,12 +27,8 @@ public sealed class StaffRenderer : Entity
 		/// <summary>Where the member was last drawn, in cells.</summary>
 		public float X, Y;
 		public bool Initialised;
-		public PublishedFrame? Published;
 	}
 
-	// Value-only output of this renderer's successful world preparation. Never retain a GPU handle in a member view.
-	private readonly record struct PublishedFrame( Level Owner, long WorldPass, long RendererPass, long Assets,
-		StaffMember Member, int ThingId, int Atlas, int Slot, int Step, float HeadingX, float HeadingY );
 	private readonly record struct Selection( int Atlas, int Frame, bool Mirror, int Slot, int Step );
 
 	private readonly Func<IReadOnlyList<StaffMember>> members;
@@ -47,8 +43,6 @@ public sealed class StaffRenderer : Entity
 	private Vertex[] vertices = Array.Empty<Vertex>();
 	private int frames;
 	private bool deleted;
-	private long rendererPass;
-	private long assetGeneration;
 
 	public bool Visible { get; set; } = true;
 	/// <summary>Members drawn in the last frame (the dangling sprite excluded).</summary>
@@ -120,8 +114,6 @@ public sealed class StaffRenderer : Entity
 	private Texture ReplaceAtlas( int index, Texture replacement )
 	{
 		var old = textures[index];
-		// Invalidate before replacing even one slot; a partial reload must not reuse old publications.
-		assetGeneration++;
 		textures[index] = replacement;
 		return old;
 	}
@@ -132,32 +124,6 @@ public sealed class StaffRenderer : Entity
 	private bool HasAtlas( int index ) => index >= 0 && index < textures.Count && index < sprites.Atlases.Count
 		&& textures[index].NativeTexture is { IsDisposed: false };
 
-	/// <summary>
-	/// The selected employee's latest world output at literal camera yaw zero. Pure observation: no player, movement,
-	/// clip or simulation updates. Unavailable output leaves the employee window on its existing qualified hire-loop fallback (UI-092).
-	/// </summary>
-	internal UI.Original.UiSpriteFrame? EmployeeFrame( StaffMember member )
-	{
-		if ( !CanRender || Level == null || !ReferenceEquals( Level, Level.Current ) || !ReferenceEquals( Level.StaffRenderer, this )
-			|| !Entity.All.Contains( this ) || !CanPlaceMember( member ) || !StaffSpriteRules.HasBodySprite( member )
-			|| !views.TryGetValue( member, out var view ) || view.Published is not { } output
-			|| !ReferenceEquals( output.Owner, Level ) || !ReferenceEquals( output.Member, member ) || output.ThingId != member.ThingId
-			|| output.WorldPass != Level.RenderPass || output.RendererPass != rendererPass || output.Assets != assetGeneration
-			|| output.Atlas != sprites.AtlasFor( member.Type, StaffSpriteRules.KeyOf( member ) ) || !HasAtlas( output.Atlas ) )
-			return null;
-		var list = members();
-		var found = false;
-		for ( var index = 0; index < list.Count && !found; index++ )
-			found = ReferenceEquals( list[index], member );
-		if ( !found )
-			return null;
-		var atlas = sprites.Atlases[output.Atlas];
-		var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( output.HeadingX, output.HeadingY, 0f, atlas.DirectionsOf( output.Slot ) );
-		var frame = atlas.Frames[atlas.GetFrame( output.Slot, direction, output.Step % atlas.FramesPerDirection( output.Slot ) )];
-		return new UI.Original.UiSpriteFrame( textures[output.Atlas].NativeTexture, atlas.Width, atlas.Height, frame.X, frame.Y, frame.Width, frame.Height,
-			frame.OriginX, frame.OriginY, mirror, frame.ScaleX, frame.ScaleY );
-	}
-
 	/// <summary>Where the member was last drawn, in cells (the thought bubbles hang above it); false before its first frame.</summary>
 	internal bool TryGetDrawCell( StaffMember member, out float x, out float y )
 	{
@@ -166,23 +132,24 @@ public sealed class StaffRenderer : Entity
 	}
 
 	/// <summary>
-	/// The hire window's figure of a role and variant <paramref name="elapsed"/> seconds after it appeared (<see cref="StaffSpriteRules.Portrait"/>);
-	/// null when the role has no bank loaded.
+	/// The frame a window's sprite shows (the hire figure, the employee portrait's clone): the bank of its kind and variant words, the slot and frame of its output and the direction of its heading word, which a
+	/// screen-space sprite (flag 0x40000, <c>0x51000</c> in both windows) takes without the camera's turn. Null while the sprite shows nothing or the role has no bank loaded.
 	/// </summary>
-	internal UI.Original.UiSpriteFrame? PortraitFrame( StaffType type, int variantKey, float elapsed ) =>
-		PortraitFrameAtStep( type, variantKey, (int)MathF.Max( 0, elapsed * StaffSpriteRules.FramesPerSecond ) );
-
-	/// <summary>The hire window's figure at its <paramref name="steps"/>-th script frame (<see cref="StaffSpriteRules.PortraitAtStep"/>); null when the role has no bank loaded.</summary>
-	internal UI.Original.UiSpriteFrame? PortraitFrameAtStep( StaffType type, int variantKey, int steps )
+	// [BIN:TPW-EXE:0x00542010 sprite pass] a record is drawn from the bank of its kind +0xAC and variant +0xB0 at the slot register +0xB4 and the frame register +0xB8, the direction (+0xC0 + the camera sector, which flag 0x40000 makes 0) & 7, mirrored above the bank's direction count - 1
+	internal UI.Original.UiSpriteFrame? SpriteFrame( StaffSpriteVmState? sprite )
 	{
-		var atlasIndex = sprites.AtlasFor( type, variantKey );
-		if ( deleted || atlasIndex < 0 || atlasIndex >= textures.Count )
+		if ( sprite is not { HasOutput: true } || deleted || sprite[StaffSpriteRegister.Slot] > int.MaxValue || sprite[StaffSpriteRegister.Frame] > int.MaxValue
+			|| StaffSpriteState.TypeOfCategory( (int)sprite[StaffSpriteRegister.Kind] ) is not { } type || sprite[StaffSpriteRegister.Variant] > int.MaxValue )
+			return null;
+		var atlasIndex = sprites.AtlasFor( type, (int)sprite[StaffSpriteRegister.Variant] );
+		if ( atlasIndex < 0 || atlasIndex >= textures.Count )
 			return null;
 		var atlas = sprites.Atlases[atlasIndex];
-		var animations = atlas.Animations.Animations;
-		var directions = StaffSpriteRules.PortraitSlot < animations.Count ? animations[StaffSpriteRules.PortraitSlot].Directions : 1;
-		var (slot, direction, mirror, step) = StaffSpriteRules.PortraitAtStep( steps, directions );
-		var frame = atlas.Frames[atlas.GetFrame( slot, direction, step % atlas.FramesPerDirection( slot ) )];
+		var slot = (int)sprite[StaffSpriteRegister.Slot];
+		if ( slot >= atlas.Animations.Animations.Count || atlas.FramesPerDirection( slot ) <= 0 )
+			return null;
+		var (direction, mirror) = GuestSpriteAtlas.SelectOriginalDirection( unchecked( (int)sprite[StaffSpriteRegister.Heading] ), 0f, atlas.DirectionsOf( slot ) );
+		var frame = atlas.Frames[atlas.GetFrame( slot, direction, (int)sprite[StaffSpriteRegister.Frame] % atlas.FramesPerDirection( slot ) )];
 		return new UI.Original.UiSpriteFrame( textures[atlasIndex].NativeTexture, atlas.Width, atlas.Height, frame.X, frame.Y, frame.Width, frame.Height,
 			frame.OriginX, frame.OriginY, mirror, frame.ScaleX, frame.ScaleY );
 	}
@@ -250,7 +217,6 @@ public sealed class StaffRenderer : Entity
 	/// <summary>The CPU portion of the actual world pass, including selection and quad preparation; never called by UI readers.</summary>
 	internal int PrepareWorld()
 	{
-		rendererPass++;
 		DrawnStaff = 0;
 		DrewDangling = false;
 		DangleAt = null;
@@ -285,8 +251,6 @@ public sealed class StaffRenderer : Entity
 			if ( FeetHeight?.Invoke( memberView.X, memberView.Y ) is { } height ) position.Z = height;
 			var (feet, share) = GuestRenderer.PullTowardsEye( position, eye, forward );
 			AddSprite( ref count, chosen.Atlas, chosen.Frame, chosen.Mirror, feet, right * share, up * share, forward );
-			memberView.Published = new PublishedFrame( Level, Level?.RenderPass ?? 0, rendererPass, assetGeneration,
-				member, member.ThingId, chosen.Atlas, chosen.Slot, chosen.Step, member.HeadingX, member.HeadingY );
 			DrawnStaff++;
 		}
 		if ( ++frames % 256 == 0 && views.Count > list.Count )

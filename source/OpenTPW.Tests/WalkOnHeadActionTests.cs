@@ -40,6 +40,7 @@ public class WalkOnHeadActionTests
 		{
 			bridge.HostStep();
 			vm.Advance( Tick );
+			bridge.WalkUpdate();
 		}
 		return bridge;
 	}

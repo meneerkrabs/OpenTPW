@@ -101,6 +101,17 @@ public class BounceRiderTests
 	}
 
 	[TestMethod]
+	public void BounceTakesTheFirstFreeEntryForAnyGuestAboardOrNotAndTwice()
+	{
+		// [BIN:TPW-EXE:0x00555736 BOUNCE entry] tp.exe tests neither whether the guest is aboard nor whether it bounces already: guest 44 (aboard or not, the host only marks it boarded) fills entries 0 and 1, guest 45 entry 2
+		var (bridge, _) = Run( asm => asm.I( Opcode.COPY, V( 0 ), 44 ).I( Opcode.COPY, V( 1 ), 45 )
+			.I( Opcode.BOUNCESETNODE, 3 ).I( Opcode.BOUNCE, V( 0 ), 5 ).I( Opcode.BOUNCE, V( 0 ), 7 ).I( Opcode.BOUNCE, V( 1 ), 5 ), ticks: 8 );
+		var riders = new List<(int Guest, int Node, double Start)>();
+		bridge.CollectBouncing( riders );
+		CollectionAssert.AreEqual( new[] { (44, 3), (44, 4), (45, 5) }, riders.Select( rider => (rider.Guest, rider.Node) ).ToArray() );
+	}
+
+	[TestMethod]
 	public void WhenEveryNodeIsTheBasePlusItsIndexTheSnapshotKeepsItsSavedForm()
 	{
 		var (bridge, _) = Run( asm => asm.I( Opcode.COPY, V( 0 ), 44 ).I( Opcode.BOUNCESETNODE, 3 ).I( Opcode.BOUNCE, V( 0 ), 5 ), ticks: 6 );

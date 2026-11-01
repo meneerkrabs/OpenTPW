@@ -99,9 +99,19 @@ internal static class WalkerBodies
 		return SignedLow3( unchecked( (short)(clock / Math.Max( 1u, divisor )) ) + heading );
 	}
 
-	/// <summary>The animation step of a walking body: the run step's stand-in, one frame every 100 ms from the entry's last change.</summary>
-	// [APPROX:TOUR-011] the templates' frame steppers (the handlers 0x00476940 and 0x00476020 of the template tables) are not decoded, so a walking, cheering or gesturing body steps every 100 ms of its state, as the bounce riders do (HEADS-007)
-	public static int StepOf( double now, double began ) => Math.Max( 0, unchecked( (int)now - (int)began ) / 100 );
+	/// <summary>
+	/// The heading a body on board takes from its second node's orientation: the node's third row (original x, y, z = the engine matrix's M21, M23, M22), negated when the node's state has bit 0x10,
+	/// normalised and scaled by 1024 in single steps, then <see cref="HeadingOf"/> of its x and z.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00556B90 orientation row] negation of the three words when [node] & 0x10 (0x556C61..0x556C7D), the length sqrt(x*x + y*y + z*z) (the sums in the order x*y.. of 0x556CA0..0x556CCA), each word divided by it (0x556CD6..0x556CE2) and multiplied by 1024.0 (0x700FDC, 0x556D00..0x556D10), stored as singles; 0x557F4A takes the arc tangent of its z over its x (0x557F4E: fpatan)
+	public static int OrientationHeading( System.Numerics.Matrix4x4 nodeEngine, bool negated )
+	{
+		float x = nodeEngine.M21, y = nodeEngine.M23, z = nodeEngine.M22;
+		if ( negated )
+			(x, y, z) = (-x, -y, -z);
+		var length = MathF.Sqrt( x * x + y * y + z * z );
+		return HeadingOf( x / length * 1024f, z / length * 1024f );
+	}
 
 	/// <summary>Whether a walk action hides the body on board: the head actions 1, 2 and 4 draw no body.</summary>
 	// [BIN:TPW-EXE:0x00558448 hidden body] the actions 4, 1 and 2 call the hide routine 0x004F9ED0 instead of a body

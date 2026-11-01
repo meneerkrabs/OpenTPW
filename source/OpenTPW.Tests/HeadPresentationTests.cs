@@ -47,35 +47,25 @@ public class HeadPresentationTests
 		}
 	}
 
-	[TestMethod]
-	public void FrameDirectionsFollowTheOriginalRotationSteps()
-	{
-		AssertDirection( HeadPresentation.FrameDirection( 0, 0 ), 0, 1, 0 );
-		AssertDirection( HeadPresentation.FrameDirection( 3, 0 ), 0, 0, 1 );
-		AssertDirection( HeadPresentation.FrameDirection( 3, 2 ), -1, 0, 0 );
-		AssertDirection( HeadPresentation.FrameDirection( 3, 4 ), 0, 0, -1 );
-		AssertDirection( HeadPresentation.FrameDirection( 6, 0 ), 0, -1, 0 );
-		AssertDirection( HeadPresentation.FrameDirection( 1, 0 ), 0, MathF.Cos( MathF.PI / 6 ), 0.5f );
-	}
-
-	private static void AssertDirection( System.Numerics.Vector3 actual, float x, float y, float z )
-	{
-		Assert.AreEqual( x, actual.X, 1e-5f );
-		Assert.AreEqual( y, actual.Y, 1e-5f );
-		Assert.AreEqual( z, actual.Z, 1e-5f );
-	}
+	private static (int Row, int Column) FrameToward( System.Numerics.Vector3 direction ) =>
+		HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, CameraAt( Anchor + System.Numerics.Vector3.Normalize( direction ) * 20 ) ) is var placement ? (placement.Row, placement.Column) : default;
 
 	[TestMethod]
 	public void NearestFrameIsTheLargestDotProductAndTheFirstOnATie()
 	{
 		// straight along +X at the horizon: column 6 (azimuth 90 + 6 * 45 = 360 degrees)
-		Assert.AreEqual( (3, 6), HeadPresentation.NearestDirection( new System.Numerics.Vector3( 1, 0, 0 ) ) );
+		Assert.AreEqual( (3, 6), FrameToward( new System.Numerics.Vector3( 1, 0, 0 ) ) );
+		// the frame directions of the walk: row 3 column 0 faces +Z, column 2 faces -X, column 4 faces -Z, rows 0 and 6 the poles with column 0
+		Assert.AreEqual( (3, 0), FrameToward( new System.Numerics.Vector3( 0, 0, 1 ) ) );
+		Assert.AreEqual( (3, 2), FrameToward( new System.Numerics.Vector3( -1, 0, 0 ) ) );
+		Assert.AreEqual( (3, 4), FrameToward( new System.Numerics.Vector3( 0, 0, -1 ) ) );
 		// the pole directions use column 0, whatever column won
-		Assert.AreEqual( (0, 0), HeadPresentation.NearestDirection( new System.Numerics.Vector3( 0, 1, 0 ) ) );
-		Assert.AreEqual( (6, 0), HeadPresentation.NearestDirection( new System.Numerics.Vector3( 0, -1, 0 ) ) );
-		// exactly between two columns the earlier one wins (a strict greater-than in the original)
-		var between = System.Numerics.Vector3.Normalize( HeadPresentation.FrameDirection( 3, 0 ) + HeadPresentation.FrameDirection( 3, 1 ) );
-		Assert.AreEqual( 0, HeadPresentation.NearestDirection( between ).Column );
+		Assert.AreEqual( (0, 0), FrameToward( new System.Numerics.Vector3( 0, 1, 0 ) ) );
+		Assert.AreEqual( (6, 0), FrameToward( new System.Numerics.Vector3( 0, -1, 0 ) ) );
+		// the walk's directions carry the rounding of the sine table's steps, so a camera exactly between two columns lands on the side the arithmetic puts it (checked against the oracle in HeadPlacementGoldenTests)
+		var between = FrameToward( new System.Numerics.Vector3( MathF.Sin( MathF.PI / 8 ), 0, MathF.Cos( MathF.PI / 8 ) ) );
+		Assert.AreEqual( 3, between.Row );
+		Assert.IsTrue( between.Column is 0 or 7, $"column {between.Column}" );
 	}
 
 	[TestMethod]

@@ -224,7 +224,9 @@ public class RideHeadsCorpusTests
 			legacyWorld.RestoreSnapshot( worldSnapshot, new Dictionary<int, RideVM> { [runtime.Script!.ScriptId] = legacy.Script! } );
 			legacy.Visitors.RestoreSnapshot( visitorSnapshot with { WalkSlots = null } );
 			for ( var tick = 0; tick < 120 * 60; tick++ )
+			{
 				legacy.Simulate( 1f / FixedStepClock.TicksPerSecond );
+			}
 			Assert.AreNotEqual( RideVMState.Faulted, legacy.Script!.State, $"{name}: {legacy.Script.FaultMessage}" );
 			Assert.AreEqual( 0, legacy.Visitors.HungHeads().Count(), $"{name}: the heads of a save without walk slots are down again after the ride unloads" );
 			runtime.Stop();

@@ -342,6 +342,7 @@ public class GuestAssetTests
 			simulation.Tick( Tick );
 			bridge.HostStep();
 			vm.Advance( Tick );
+			bridge.WalkUpdate();
 			totem.Animator.Advance( Tick );
 			maximumRiders = Math.Max( maximumRiders, vm[RideVariables.VAR_ONRIDE] );
 			if ( vm[RideVariables.VAR_RUNNING] == 1 && !running )

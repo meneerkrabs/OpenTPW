@@ -330,7 +330,11 @@ public sealed partial class OriginalObjectRuntime
 		}
 		Visitors.HostStep();
 		if ( substep == null )
+		{
 			Script?.Advance( deltaSeconds );
+			// a standalone object has no frame loop: its walk update (0x00557AB0, 0x00557D80) runs after the script slice of every tick; under the park the level runs it in its pose phase
+			Visitors.WalkUpdate();
+		}
 		if ( Script is { State: RideVMState.Faulted } )
 		{
 			Stop();

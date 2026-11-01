@@ -12,7 +12,7 @@ namespace OpenTPW.Hud;
 // (handler 0x4b7720, frames 0x3722 and 0x3723; it first closes the window that is open, 0x485b40), plays the sound 0x81 and posts help 0x12e; the window's refresh 0x4b72a0 (vtable +0x14)
 // runs when it is built (0x4b7660) and on timer 0x80080 (4000 ms, armed on message 0x15), and closes the window when the selected thing [0x7c2658] is gone
 // [BIN:TPW-EXE:0x004879d0 visitor click] the park click in cursor mode 7 and the All Visitors list's row message 0x400 (0x49351e) both open it for the picked or the row's visitor
-// [APPROX:UI-910] the portrait frame observes current ordinary kid/costume world output at yaw zero; unavailable, riding and specialized sources stay empty. Independent native clone VM timing, source-loss epochs, screen-space rotation/depth and exact viewport/raster fidelity remain open. Arrows share the live type-1 used-chain projection (0x4824d0 / 0x482da0, mask 0x40), with an explicit host-only fallback for pool-free fixtures.
+// [APPROX:UI-910] the portrait is the original's independent clone of the visitor's body sprite (full copy 0x486530 at the refresh, partial copy 0x486610 on every update, stepped by the sprite scheduler); the guest body player's frames stand for the sprite VM's (HEADS-007), the window depth word and exact viewport/raster fidelity remain open. Arrows share the live type-1 used-chain projection (0x4824d0 / 0x482da0, mask 0x40), with an explicit host-only fallback for pool-free fixtures.
 public sealed partial class ParkHud
 {
 	private static LayoutTable VisitorInfoTable => OriginalLayoutTables.VisitorInfoWindow;
@@ -24,8 +24,6 @@ public sealed partial class ParkHud
 	private float visitorInfoAge;
 	private VisitorInfoValues visitorInfoShown;
 	private int visitorInfoTitleNumber;
-	private long visitorPortraitSession;
-	private Guest? visitorPortraitGuest;
 
 	public bool VisitorInfoWindowOpen => visitorInfoScreen != null && Stack.Screens.Contains( visitorInfoScreen );
 	/// <summary>The visitor the window shows (tp.exe's selected thing 0x7c2658), null when it is closed or the visitor left.</summary>
@@ -56,7 +54,6 @@ public sealed partial class ParkHud
 
 	public void CloseVisitorInfoWindow()
 	{
-		ClearVisitorPortrait();
 		if ( visitorInfoScreen == null || !VisitorInfoWindowOpen )
 			return;
 		while ( Stack.Top != visitorInfoScreen && Stack.Screens.Count > 1 )
@@ -132,25 +129,32 @@ public sealed partial class ParkHud
 			SelectVisitor( index );
 	}
 
-	private void ClearVisitorPortrait()
-	{
-		visitorPortraitSession++;
-		visitorPortraitGuest = null;
-		if ( visitorInfoScreen?.Find( "portraitFigure" ) is UiSpriteFigure figure )
-			figure.Frame = () => null;
-	}
+	/// <summary>The window's close hook (vtable +0x20, 0x4b6b80, jumps to 0x486630): the clone goes with the window.</summary>
+	private void ClearVisitorPortrait() => level.Portraits.Close();
 
+	/// <summary>
+	/// The portrait's full copy of the selected visitor's body (0x4b6b90: 0x486530 with the portrait control's rectangle, the control's depth word + 2 and scale 12.0), made as the window opens and by every refresh;
+	/// a visitor without a body sprite leaves no clone, and a clone made then is never bound later.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004B6B90 visitor portrait] the refresh's vtable +0x18 (0x6FFF58) copies the selected thing's sprite (+0x0C): the window's one clone is replaced, and a thing with no sprite binds none
 	private void BindVisitorPortrait( Guest? guest )
 	{
-		var session = ++visitorPortraitSession;
-		visitorPortraitGuest = guest;
-		var simulation = level.Guests;
-		if ( visitorInfoScreen?.Find( "portraitFigure" ) is not UiSpriteFigure figure )
+		if ( guest == null )
+		{
+			level.Portraits.Close();
 			return;
-		// A retained callback from a previous selection/open can never follow an ID replacement or a later session.
-		figure.Frame = () => guest != null && session == visitorPortraitSession && ReferenceEquals( guest, visitorPortraitGuest )
-			&& ReferenceEquals( level, Level.Current ) && ReferenceEquals( simulation, level.Guests ) && ReferenceEquals( guest, InfoVisitor )
-			? level.GuestRenderer?.VisitorFrame( guest ) ?? level.CostumeRenderer?.VisitorFrame( guest ) : null;
+		}
+		level.Portraits.CloneGuest( guest );
+	}
+
+	/// <summary>The portrait's frame: the clone's output in the bank of its kid set, whatever became of the visitor since it was copied.</summary>
+	private UiSpriteFrame? VisitorPortraitFrame()
+	{
+		var portraits = level.Portraits;
+		if ( portraits.GuestClone is not { Output: { } output } )
+			return null;
+		var renderer = portraits.GuestCloneInCostume && level.CostumeRenderer != null ? level.CostumeRenderer : level.GuestRenderer;
+		return renderer?.PortraitFrame( portraits.GuestCloneDraw, output, portraits.GuestCloneHeading );
 	}
 
 	private UiScreen CreateVisitorInfoScreen()
@@ -164,7 +168,7 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x004B6B90 portrait] source body +0x0c, UI depth +0xe0 + 2, primary scale 12 (not a figure id or animation speed).
 		// [BIN:TPW-EXE:0x00486530 position] uses the control's inner rectangle; integer shifts precede host canvas scaling.
 		var inner = portrait.Inner!.Value;
-		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Bounds = inner, Anchor = UiAnchor.Center,
+		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = VisitorPortraitFrame, Bounds = inner, Anchor = UiAnchor.Center,
 			FeetInCanvas = VisitorInfoRules.PortraitFeet( inner ), CanvasUnitsPerPixel = 3.6f } );
 		screen.Add( new UiModelImage { Id = "statsFrame", Model = stats.Model!, Bounds = stats.Rect, Anchor = UiAnchor.Center } );
 		var title = table.Control( 0x3736 );
@@ -232,6 +236,8 @@ public sealed partial class ParkHud
 				owner.CloseVisitorInfoWindow();
 				return true;
 			}
+			// [BIN:TPW-EXE:0x004b7780 window update] message 0x1E, the HUD's pass of every frame, refreshes the portrait's clone (0x486610) before the default handling
+			owner.level.Portraits.Refresh();
 			owner.visitorInfoAge += Math.Max( 0, context.Delta );
 			// [BIN:TPW-EXE:0x004b7720 refresh] message 0x10 of timer 0x80080 refreshes the frames (0x4b72a0)
 			if ( owner.visitorInfoAge >= VisitorInfoRefreshSeconds )

@@ -156,7 +156,7 @@ public class SavedRidersImportTests
 	}
 
 	[TestMethod]
-	public void AWalkOnThatEndedBeforeTheSaveMovesOnAtTheFirstHostStep()
+	public void AWalkOnThatEndedBeforeTheSaveMovesOnAtTheFirstWalkUpdate()
 	{
 		var rig = NewRig();
 		// walk action 4 hangs the head on head id u2 once the walk-on is over (0x00557E75); this entry's end (clock - 500) is past
@@ -166,6 +166,7 @@ public class SavedRidersImportTests
 		var hung = new List<int>();
 		rig.Ride.Heads!.HeadHung = hung.Add;
 		rig.Ride.HostStep();
+		rig.Ride.WalkUpdate();
 		var walkers = new List<RideVisitorBridge.WalkerView>();
 		rig.Ride.CollectWalkers( walkers );
 		Assert.AreEqual( 2, walkers.Single().State, "the walk update moves the entry on board" );

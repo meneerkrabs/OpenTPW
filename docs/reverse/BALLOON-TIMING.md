@@ -51,8 +51,10 @@ and legacy gameplay hash projections, with no hash version or pin change.
 
 ## Explicit residuals
 
-GUEST-017 is not retired. Native original Scripts records are parsed but their clock
-origin/program phase and orphan burst-slot ownership are not imported (SAVE-013).
+GUEST-017 is not retired. Round 11 (package W) applies a held balloon's script record
+(`SavedSpriteScripts.Balloon`: the idle program 1650 at its FRAME or JMP, the wake tick rebased on the host clock,
+visible flag) and runs the passes on the even substeps before the world update; the burst-slot records no guest
+names (a balloon bursting at the save) are not imported, and the corpus holds no balloon record.
 Old own saves without Balloons explicitly reconstruct held players at the saved
 host clock, with the history-reconstructed marker; no detached history is invented.
 Native render-epoch counter writers and full placement fidelity are not closed by

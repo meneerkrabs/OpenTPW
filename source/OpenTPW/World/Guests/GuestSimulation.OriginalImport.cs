@@ -71,7 +71,7 @@ public sealed partial class GuestSimulation
 	// mLastPosX/Y, the litter byte (+0x1B4), mMajorDest (+0x1DC), the ride, shop, sideshow and win counts, mPaidAdmission, mParkOpeningWaitingTime (+0x200), mPersonType (+0x1F0), mPrankeryIndex (+0x1C0),
 	// mPreviousRides[i] / mPreviousTemporaryRides[i] interleaved (+0x1E0 / +0x1E8), mQNext, mQPrev, mQueueMoveDelay (+0x1F4), mQueuePos (+0x1F1), mRemainingBalloonLife (+0x214), mSavedMajorDest,
 	// mSavedState (+0x224), mState (+0x220), the thirst byte (+0x1A4), mTimeOfLastSpotAnim (+0x208), mTimeStartedIdling (+0x1FC), and the bytes of +0x1B8, toilet (+0x1AC) and illness (+0x1B0)
-	internal IReadOnlyList<string> ImportOriginal( IReadOnlyList<SaveGuest> saved, long parkTurn, Func<int, int> attraction, Func<int, int> bin, uint visitorsToDate = 0, IReadOnlyList<SaveAttraction>? attractions = null )
+	internal IReadOnlyList<string> ImportOriginal( IReadOnlyList<SaveGuest> saved, long parkTurn, Func<int, int> attraction, Func<int, int> bin, uint visitorsToDate = 0, IReadOnlyList<SaveAttraction>? attractions = null, SavedSpriteScripts? sprites = null )
 	{
 		ArgumentNullException.ThrowIfNull( saved );
 		if ( guests.Count != 0 )
@@ -81,6 +81,7 @@ public sealed partial class GuestSimulation
 		displayTurnPhaseTicks = (int)((ParkCalendar.TickOfTurn( parkTurn ) % DisplayTurnPhasePeriodTicks - TickCount % DisplayTurnPhasePeriodTicks + DisplayTurnPhasePeriodTicks) % DisplayTurnPhasePeriodTicks);
 		// [BIN:TPW-EXE:0x00516C80 world variables] mNumberOfVisitorsToDate (+0x1DA714) is the park's visitor count, which 0x0051AAF0 counts up for each guest that walks into the park
 		VisitorCount = (int)Math.Min( visitorsToDate, int.MaxValue );
+		var spriteNotes = new List<string>();
 		var adjusted = new List<string>();
 		var dropped = new List<string>();
 		var states = new List<string>();
@@ -258,11 +259,13 @@ public sealed partial class GuestSimulation
 			(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
 			UpdatePresentation( guest );
 			Occupy( guest );
-			ReconstructBodySprite( guest, BodySpriteClockMilliseconds );
-			if ( guest.HasBalloon ) CreateBalloon( guest );
+			ImportBodySprite( guest, save, sprites, spriteNotes );
+			if ( guest.HasBalloon ) ImportBalloon( guest, save, sprites, spriteNotes );
 			balloonHistoryReconstructed = true;
 			states.Add( $"{guest.Id}:{save.State}→{(int)guest.State}" );
 		}
+		if ( sprites != null )
+			evidence.Add( $"Guest sprite scripts imported (SAVE-013): {spriteNotes.Count( note => note.StartsWith( "ok", StringComparison.Ordinal ) )} saved body and balloon sprites applied, {spriteNotes.Count( note => !note.StartsWith( "ok", StringComparison.Ordinal ) )} rebuilt: {string.Join( "; ", spriteNotes.Where( note => !note.StartsWith( "ok", StringComparison.Ordinal ) ).Take( 6 ) )}" );
 		evidence.Add( $"Guest destinations imported: {keptTargets} kept targets (mMajorDest, +0x1DC: an attraction or a litter bin, of guests deciding or wandering) and {savedMajors} saved major destinations (mSavedMajorDest, +0x1DE)." );
 		var queues = RestoreOriginalQueues( queuePlans );
 		// the riders and the walk, bounce and head tables of every ride whose script state was imported (the tables were staged by the script import)

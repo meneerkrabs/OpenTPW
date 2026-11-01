@@ -699,6 +699,7 @@ public class ContentKitTests
 			simulation.Tick( tick );
 			ride.HostStep();
 			script.Advance( tick );
+			ride.WalkUpdate();
 			Assert.AreNotEqual( RideVMState.Faulted, script.State, script.FaultMessage );
 			sawHead |= ride.Heads!.HasVisitors;
 			headCameDown |= sawHead && !ride.Heads.HasVisitors;

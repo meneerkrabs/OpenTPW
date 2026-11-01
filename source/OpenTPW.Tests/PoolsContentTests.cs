@@ -700,6 +700,7 @@ public class PoolsContentTests
 			simulation.Tick( tick );
 			ride.HostStep();
 			script.Advance( tick );
+			ride.WalkUpdate();
 			Assert.AreNotEqual( RideVMState.Faulted, script.State, script.FaultMessage );
 			guest.Hunger = guest.Thirst = guest.Toilet = 0;
 			if ( seen.Count == 0 || seen[^1] != guest.State )

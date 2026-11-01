@@ -86,6 +86,25 @@ public sealed class VisitorSpritePlayer
 			Interval = interval;
 	}
 
+	/// <summary>A complete copy of the player: the program position, restart program, interval, due time and frame (a window's portrait clone, <c>0x00475CF0</c> copies the whole record).</summary>
+	// [BIN:TPW-EXE:0x00475CF0 full sprite copy] the 0x118-byte record is copied whole, then the handle, position, primary scale and flags are replaced; the guest player's own words are all in the copy
+	internal VisitorSpritePlayer Copy() => new( ActiveTemplate, 0 )
+	{
+		CurrentProgram = CurrentProgram, NextFrame = NextFrame, Interval = Interval, NextDue = NextDue, Output = Output
+	};
+
+	/// <summary>
+	/// The partial refresh of a clone from its source (<c>0x00475E10</c>): the program position, the frame and whether one shows are taken from the source; the clone's restart program, interval and due time are
+	/// its own and stay, so it keeps its own clock.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00475E10 partial sprite copy] copies the program table, the program counter (+0x08), kind, variant, slot, intro and hold, alpha, secondary scale, heading, the output word, the frame and the frame count; not the restart counter (+0x0C), the stack, the depths, the due time (+0x7C), the interval (+0x80) or the run state
+	internal void RefreshFrom( VisitorSpritePlayer source )
+	{
+		CurrentProgram = source.CurrentProgram;
+		NextFrame = source.NextFrame;
+		Output = source.Output;
+	}
+
 	public VisitorSpritePlayerSnapshot CaptureSnapshot() => new( ActiveTemplate, NextFrame, Interval, NextDue, Output, CurrentProgram );
 
 	/// <summary>Restores presentation history without rebasing its timestamps. The caller must restore the same host clock epoch.</summary>

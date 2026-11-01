@@ -33,6 +33,24 @@ public class WalkerBodyTests
 	}
 
 	[TestMethod]
+	public void ABodyOnBoardTakesItsHeadingFromTheNodesThirdRowNegatedWhileTheNodeStateBit0x10IsSet()
+	{
+		// [BIN:TPW-EXE:0x00556C61 node orientation] the third row (the engine's M21, M23, M22) is negated when the node's state has bit 0x10, normalised and scaled by 1024; the heading is the arc tangent of its z over its x
+		var along = System.Numerics.Matrix4x4.Identity;
+		along.M21 = 3; along.M22 = 0; along.M23 = 4;
+		Assert.AreEqual( WalkerBodies.HeadingOf( 1024f, 0 ), WalkerBodies.OrientationHeading( along, false ) );
+		Assert.AreEqual( WalkerBodies.HeadingOf( -1024f, 0.0001f ), WalkerBodies.OrientationHeading( along, true ), "negation turns the heading half a turn (2 to 6)" );
+		Assert.AreEqual( 2, WalkerBodies.OrientationHeading( along, false ) ); Assert.AreEqual( 6, WalkerBodies.OrientationHeading( along, true ) );
+		var across = System.Numerics.Matrix4x4.Identity;
+		across.M21 = 0; across.M22 = 2; across.M23 = 0;
+		Assert.AreEqual( 0, WalkerBodies.OrientationHeading( across, false ) ); Assert.AreEqual( 4, WalkerBodies.OrientationHeading( across, true ) );
+		// the vector is normalised in single steps: x / length * 1024 (the length of a 3, 4, 12 row is 13)
+		var row = System.Numerics.Matrix4x4.Identity;
+		row.M21 = 3; row.M22 = 4; row.M23 = 12;
+		Assert.AreEqual( WalkerBodies.HeadingOf( 3f / 13f * 1024f, 4f / 13f * 1024f ), WalkerBodies.OrientationHeading( row, false ) );
+	}
+
+	[TestMethod]
 	public void TheShareIsTheElapsedThousandthsClampedToAThousand()
 	{
 		Assert.AreEqual( 0u, WalkerBodies.Share( 100, 100, 600 ) );
@@ -140,6 +158,18 @@ public class WalkerBodyTests
 			poses.Clear();
 			FlatRideBounceRiders.CollectWalkers( poses, runtime, node => NodeWorld( runtime, node ), scratch );
 			Assert.AreEqual( 0, poses.Count );
+			// [BIN:TPW-EXE:0x00558131 body height] a walk whose last word has bit 0 clear stands on the terrain (0x4511A0): the height comes from the terrain callback at the interpolated x and z, whatever the nodes' heights; with the bit set the nodes' heights stand
+			table.Clear();
+			table.Add( new RideVisitorBridge.WalkRecord( 23, u1, u2, u3, u4, action, 0, 4, now, now ) );
+			poses.Clear();
+			FlatRideBounceRiders.CollectWalkers( poses, runtime, node => NodeWorld( runtime, node ), scratch, terrainHeight: ( x, y ) => 123.5f + x * 0 + y * 0 );
+			Assert.AreEqual( 123.5f, poses[23].Feet.Z );
+			Assert.AreEqual( NodeAt( u4 ).X, poses[23].Feet.X, 1e-3f ); Assert.AreEqual( NodeAt( u4 ).Y, poses[23].Feet.Y, 1e-3f );
+			table.Clear();
+			table.Add( new RideVisitorBridge.WalkRecord( 24, u1, u2, u3, u4, action, 1, 4, now, now ) );
+			poses.Clear();
+			FlatRideBounceRiders.CollectWalkers( poses, runtime, node => NodeWorld( runtime, node ), scratch, terrainHeight: ( x, y ) => 123.5f );
+			Assert.AreEqual( NodeAt( u4 ).Z, poses[24].Feet.Z, 1e-3f );
 			runtime.Stop();
 		}
 		finally

@@ -13,6 +13,12 @@ internal struct CellValidatorLatches
 	public bool MeetsOwn;
 	/// <summary>0x818C14: the overwrite priority of the last class-3 owner an object cell met (0 at the start of a pass); a cell whose owner is no class-3 thing leaves it as it was.</summary>
 	public int OwnerPriority;
+	/// <summary>0x81AF4C: the cost the pass has added up (each chargeable cell adds its price, 0x52FBA0).</summary>
+	public int Cost;
+	/// <summary>The park's money the added cost is tested against (0x6AD810 behind 0x5195D0), or null while the free-building word 0x785A2C is set or no money is kept: the test then never refuses.</summary>
+	public int? Bank;
+	/// <summary>0x816D5C: the cash pointer's flag, set by the cell that takes the cost over the money.</summary>
+	public bool Cash;
 }
 
 /// <summary>What the validator reads of one cell (the cell record, its structure record and the line state).</summary>
@@ -29,7 +35,24 @@ internal struct CellValidatorLatches
 /// <param name="OwnerPriority">The overwrite priority of the class-3 thing that owns the cell (the type record's +0x54, which the validator stores in 0x818C14), for the types 4, 9 and 10; null when no class-3 thing owns it, which leaves 0x818C14 as the pass had it (<see cref="CellValidatorLatches.OwnerPriority"/>).</param>
 /// <param name="ToolPriority">The tool's overwrite priority (0x818C10): 2 for the path tool, 3 for the queue tool.</param>
 internal readonly record struct CellValidatorInput( int Mode, byte Type, ushort Flags, byte StructureType, byte StructureLinks, byte Links, bool OwnedByTool, bool LastCell, bool InsideLine,
-	byte NeighbourType, int? OwnerPriority, int ToolPriority );
+	byte NeighbourType, int? OwnerPriority, int ToolPriority )
+{
+	/// <summary>The price a chargeable cell adds to the pass's cost: the path cost 0x81B6DC for the path tool (0x52FB20), the queue cost 0x81EA14 for the queue tool (0x52FB40); 0 for the others and where no money is kept.</summary>
+	public int Price { get; init; }
+
+	/// <summary>
+	/// The second argument of the validator: 0 (a cell that finds the refusal latch set is refused at once) or not (the ghost's second call of a refused cell, which runs the whole decision for its latch writes
+	/// and whose answer it ignores).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0053589C second argument] with the argument 0 and the refusal latch 0x816D50 set the validator returns 1 at 0x5358A9; any other argument goes on to the cell's own tests
+	public bool Full { get; init; }
+
+	/// <summary>
+	/// The placement is being paid for (0x8186D4): the chargeable-cell test skips the cost add while it is set. The path and queue line hover runs with it clear, so the line tools never set it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005358DF placement paid] the cost block reads the byte 0x8186D4 and skips the 0x52FBA0 add when it is nonzero. All seven writers (0x5235D4, 0x523967, 0x5239FC, 0x5249C2, 0x524B4A, 0x5253E9, 0x525A06) are in the hover 0x5234D0 and the click handler 0x524960. A path walk from each setter (0x5235D4 and 0x523967 in the hover, 0x524B4A and 0x5253E9 in the click handler), following every direct jump and the hover's switch at 0x5237D0, reaches only that function's single return (0x524739 in the hover, 0x525A1B in the click handler) and only after a clear (0x5239FC, 0x525A06); the hover is also called at 0x5249B6 with the clear at 0x5249C2. So the byte is 0 whenever code outside those two routines runs, and a path or queue line hover reads 0 (exceptions that unwind past a return are not modelled)
+	public bool PlacementPaid { get; init; }
+}
 
 /// <summary>
 /// The decision order of tp.exe's cell validator <c>0x00535670</c> for the path and queue tools without the park's money (the money test only adds a refusal when the pending cost exceeds the bank). The answers:
@@ -61,12 +84,22 @@ internal static class QueueCellValidator
 		}
 		if (latches.Pending)
 			latches.Refuse = true;
-		if (latches.Refuse)
+		if (latches.Refuse && !cell.Full)
 			return Refused;
 		// a fence post, or an extension of one
 		if (cell.StructureType == 0x19)
 		{
 			latches.Refuse = true;
+			return Refused;
+		}
+		// [BIN:TPW-EXE:0x005358CC cost] a chargeable cell (0x535600) whose type is not the tool's and that is no path under the queue tool adds the tool's price to the pass's cost (0x52FBA0); a cost above the park's money refuses the cell and every later one and sets the cash flag (0x535905..0x535945)
+		if (cell.Price != 0 && !cell.PlacementPaid && Chargeable( mode, type, cell.LastCell ) && type != mode && !(mode == 3 && type == 1))
+			latches.Cost = unchecked( latches.Cost + cell.Price );
+		// [BIN:TPW-EXE:0x0053592B money refusal] the refusal also calls 0x527940(1), which stores the refusal word 0x816D48. The word is read by the pointer switch's no-place test 0x527950 (UI-100) and by the click handler 0x524960 (0x5247F0, 0x52482C and 0x5249E0 on the press side, 0x524A63 on the release, which ParkHud's refused-ghost latch ports), written to 0 by the hover entry 0x5234EC, the release 0x524AD9 and the tool start 0x527C48, and set to 1 by 0x527940 at 0x533933 after every refusal of the ghost cell routine 0x532FC0 (the second validator call at 0x533927, taken at 0x5331BF whenever the answer, or the force-red flag 0x81B604, is 1). Every reader but 0x527950 belongs to the click path, so the word is the ghost's Refused flag and needs no input of its own
+		if (latches.Bank is { } bank && latches.Cost != 0 && latches.Cost > bank)
+		{
+			latches.Refuse = true;
+			latches.Cash = true;
 			return Refused;
 		}
 		if (mode == 3 && type == 3)
@@ -139,6 +172,25 @@ internal static class QueueCellValidator
 			return Refused;
 		}
 		return Refused;
+	}
+
+	/// <summary>The cell predicate <c>0x535600</c> behind the cost: whether a cell of this type costs the tool's price when the tool lays over it.</summary>
+	// [BIN:TPW-EXE:0x00535600 chargeable cell] 1 for tool 0, an equal type, an empty cell, a queue cell under the path tool, a path cell under the placement and (not on the line's last cell) a path cell under the queue tool; 0 for an object cell under the placement and for every other pair
+	internal static bool Chargeable( int mode, byte type, bool last )
+	{
+		if (mode == 0)
+			return true;
+		if (mode == 4 && type == 4)
+			return false;
+		if (mode == 0x15 && type == 0x15)
+			return true;
+		if (mode == 1 && type == 3)
+			return true;
+		if (mode == type || type == 0)
+			return true;
+		if (mode == 4 && type == 1)
+			return true;
+		return mode == 3 && type == 1 && !last;
 	}
 
 	/// <summary>Whether a track tile's links make a corner (two cardinal links at a right angle, 0x53AE00) or a junction (three or more, 0x53AE90).</summary>

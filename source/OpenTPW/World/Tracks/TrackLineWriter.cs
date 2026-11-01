@@ -23,6 +23,8 @@ public sealed class TrackLineWriter : ICellLineWriter
 	}
 
 	public TrackBuilder Builder => builder;
+	/// <summary>The ride the line's tiles are laid for (<see cref="TrackBuilder.OwnerOf"/>), 0 for none.</summary>
+	internal int Owner => owner;
 	public CellToolMode Mode => builder.Family == TrackFamily.Water ? CellToolMode.WaterTrack : CellToolMode.KartTrack;
 
 	/// <summary>The kart and water tools' stack holds the corner collector's 0x401 points (the pusher <c>0x52FBF0</c>).</summary>

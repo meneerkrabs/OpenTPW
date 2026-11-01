@@ -173,6 +173,15 @@ public class LinkPreviewCursorTests
 	}
 
 	[TestMethod]
+	public void TheKartAndWaterLinesTakeTheEndPointerFromTheTileChoosersEndWord()
+	{
+		Assert.IsTrue( ParkHud.EndPointerShown( (int)CellToolMode.KartTrack, null, true ) );
+		Assert.IsTrue( ParkHud.EndPointerShown( (int)CellToolMode.WaterTrack, null, true ) );
+		Assert.IsFalse( ParkHud.EndPointerShown( (int)CellToolMode.KartTrack, null, false ) );
+		Assert.IsFalse( ParkHud.EndPointerShown( 4, null, true ), "only the line tools read the chooser's word" );
+	}
+
+	[TestMethod]
 	public void PathLineEndingOnAnExistingPathCellShowsTheEndPointerAndAnOpenEndDoesNot()
 	{
 		var (grid, builder) = PathRig();

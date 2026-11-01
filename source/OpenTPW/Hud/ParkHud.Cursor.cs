@@ -66,8 +66,10 @@ public sealed partial class ParkHud
 		// the tool mode of the original: 4 places a blueprint, the cell tool's own mode is the cell type it writes (path 1, queue 3, kart track 11, water track 16)
 		var mode = level.BuildEntry != null ? (level.IsMoving ? MoveToolMode : 4) : level.CellTool.IsActive ? (int)level.CellTool.Mode : level.IsCoasterToolActive ? 11 : 0;
 		var ghost = level.CellTool.IsActive ? level.CellTool.Ghost : null;
-		var pointer = OriginalPointers.ForTool( mode, link: LinkPointerShown( mode, level.CellTool.Ghost ), end: EndPointerShown( mode, ghost ), noPlace: level.BuildEntry != null && placementRefused || GhostRefused( mode, ghost ),
-			cash: CashPointerShown( mode ) );
+		// the kart and water line tools' chooser words: 0x816D4C (the line meets a tile of its own kind) and 0x816D5C (the cost is above the bank)
+		var tileLatches = mode is (int)CellToolMode.KartTrack or (int)CellToolMode.WaterTrack && ghost != null ? level.TileLineGhostFor( ghost )?.Latches : null;
+		var pointer = OriginalPointers.ForTool( mode, link: LinkPointerShown( mode, level.CellTool.Ghost ), end: EndPointerShown( mode, ghost, tileLatches is { MeetsOwn: true } ), noPlace: level.BuildEntry != null && placementRefused || GhostRefused( mode, ghost ),
+			cash: CashPointerShown( mode ) || tileLatches is { Cash: true } );
 		return OriginalPointers.TypeOf( pointer ?? 2 );
 	}
 
@@ -77,8 +79,9 @@ public sealed partial class ParkHud
 
 	/// <summary>The end indication of a completed current path or queue preview: the validator's code 0xB, a last cell of the tool's own kind.</summary>
 	// [BIN:TPW-EXE:0x52F96D tool pointer] mode 1 and 3 (and 11, 16) take the link pointer (5) first and then the end pointer (0x12) from the flags 0x816D60 and 0x816D4C, which the validator 0x535670 sets at 0x535C72/0x535D02 (code 8) and 0x535AE5/0x535B3D (code 0xB), as the path and queue ghosts report them
-	internal static bool EndPointerShown( int mode, SegmentResult? ghost ) =>
-		mode is (int)CellToolMode.Path or (int)CellToolMode.Queue && ghost is { Completed: true, EndPointer: true };
+	// [BIN:TPW-EXE:0x0053A1C6 tile end flag] the track chooser 0x539760 sets the same flag 0x816D4C when the line's tile meets a tile of the tool's own kind (its own-tile test: a record of the tool's type and owner, or a station's end), which gives the kart and water lines the end pointer; <paramref name="tileEnd"/> is that flag from the tile ghost
+	internal static bool EndPointerShown( int mode, SegmentResult? ghost, bool tileEnd = false ) =>
+		mode is (int)CellToolMode.Path or (int)CellToolMode.Queue && ghost is { Completed: true, EndPointer: true } || mode is (int)CellToolMode.KartTrack or (int)CellToolMode.WaterTrack && tileEnd;
 
 	/// <summary>Whether the line preview has a refused cell, which the pointer switch turns into the no-place pointer (0x527950 reads the latch 0x816D48 that 0x533933 sets when the validator refuses a cell).</summary>
 	// [BIN:TPW-EXE:0x537A1B track ghost latch] the kart and water line modes set the same latch when their ghost routine 0x5370E0 refuses a tile (0x537A1B -> 0x527940(1)), as the path and queue validator does at 0x533933 inside 0x532FC0

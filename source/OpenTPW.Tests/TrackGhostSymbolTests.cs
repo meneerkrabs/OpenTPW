@@ -154,4 +154,42 @@ public class TrackGhostSymbolTests
 		flush.Tick( (0, 0), 2 );
 		Assert.IsFalse( flush.RedShown, "8 is" );
 	}
+
+	[TestMethod]
+	public void TheLineToolsTilesTakeTheTileRaiseAndTheEndTileTheRotatingTexture()
+	{
+		var raises = new Dictionary<(int X, int Y), float?> { [(2, 2)] = 20f, [(2, 0)] = 0f, [(4, 2)] = null, [(2, 4)] = 20f, [(0, 2)] = 20f };
+		var (vertices, _) = BlueprintMarkers.BuildGeometry( Field(), new[] { (2, 2, BlueprintMarker.EndTile) }, null, 0, null, 0, true, default, raises );
+		Assert.AreEqual( 11, vertices[0].TexIndex, "m_end over the tile" );
+		var flat = BlueprintMarkers.BuildGeometry( Field(), new[] { (2, 2, BlueprintMarker.EndTile) }, null, 0 ).Vertices;
+		Assert.AreEqual( 20f * OriginalParkPlacement.ModelScale, vertices[0].Position.Z - flat[0].Position.Z, 1e-3f, "the face stands at the tile raise" );
+		// only the side towards -Y has a lower neighbour that exists: two wall faces of 10 units; the +X side is off the map
+		Assert.AreEqual( 8 + 2 * 8, vertices.Length );
+		var (blue, _) = BlueprintMarkers.BuildGeometry( Field(), new[] { (2, 2, BlueprintMarker.AllowedTile) }, null, 0, null, 0, true, default, raises );
+		Assert.AreEqual( 0, blue[0].TexIndex, "a blue tile takes the plain square" );
+	}
+
+	[TestMethod]
+	public void TheBuyLandGhostWalksTheHoveredPostAloneThenTheFourEdges()
+	{
+		CollectionAssert.AreEqual( new[] { ((6, 8), (6, 8)) }, TileLineGhost.FencePasses( null, (6, 8) ) );
+		CollectionAssert.AreEqual( new[] { ((12, 4), (16, 4)), ((18, 4), (18, 10)), ((12, 10), (16, 10)), ((10, 10), (10, 4)) }, TileLineGhost.FencePasses( (18, 10), (10, 4) ), "the top and bottom edges leave out the corner tiles of the side edges" );
+		CollectionAssert.AreEqual( new[] { ((4, 4), (4, 4)), ((4, 4), (4, 10)), ((4, 10), (4, 10)), ((4, 10), (4, 4)) }, TileLineGhost.FencePasses( (4, 4), (4, 10) ), "a rectangle one post wide keeps its edges whole" );
+	}
+
+	[TestMethod]
+	public void AnExtensionCellAnswersAsItsParentThroughTheMapsOwnCellIndex()
+	{
+		var cells = new ParkCellMap( 16, 16 );
+		// the tile's origin at (6, 4) and its extension at (7, 5), whose parent word is the origin's index in the map
+		cells.Tracks.Set( 6, 4, new TrackCell { Type = TrackCellTypes.WaterOrigin, Parent = -1, Owner = 7, Mask = 0x11 } );
+		cells.Tracks.Set( 7, 5, new TrackCell { Type = TrackCellTypes.Extension, Parent = cells.Tracks.IndexOf( 6, 4 ), Owner = 7 } );
+		var map = new ParkTileGhostMap( cells, ( x, y ) => null, ( x, y ) => 0f );
+		var extension = map.NeighbourAt( 7, 5 );
+		Assert.IsTrue( extension.Present );
+		Assert.AreEqual( TrackCellTypes.WaterOrigin, extension.Type, "the extension's type is its parent's" );
+		Assert.AreEqual( 7, extension.Owner, "and so is its owner" );
+		Assert.AreEqual( TrackCellTypes.WaterOrigin, map.NeighbourAt( 6, 4 ).Type, "an origin answers for itself" );
+		Assert.IsFalse( map.NeighbourAt( 9, 9 ).Present, "a cell without a record is not present" );
+	}
 }

@@ -142,6 +142,25 @@ public class ParkToolCommandLevelTests
 		return park;
 	}
 
+	/// <summary>
+	/// The buy click arms the build tool before its ride check (0x46C350 at 0x4AC65E, then the check at 0x4AC683): with no ride in the park the check only posts the first-ride help (0xC9) and returns, leaving the tool armed.
+	/// </summary>
+	[TestMethod]
+	public void ARideItemStaysArmedWhenNoRideStandsInTheParkAndOnlyTheHelpDiffers()
+	{
+		var park = Coaster();
+		var level = park.Level;
+		level.Objects.Remove( park.One );
+		level.Objects.Remove( park.Two );
+		Assert.IsFalse( level.Objects.Objects.Any( placed => !placed.IsDeleted && placed.Entry.WhichUIType == 0 ), "no ride stands in the park" );
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+		var entry = park.One.Entry;
+		hud.BeginPlacing( new BuildItem( "coaster", entry.InfoId, BuildCategory.Rides, 0, 0, null, System.Array.Empty<string>(), Entry: entry ) );
+		Assert.AreSame( entry, level.BuildEntry, "the tool is armed whatever the check posts" );
+		Assert.AreEqual( AdvisorToolHelp.FirstRide, AdvisorToolHelp.BuildStart( 0, anyRidePlaced: false ), "the help of the first ride (0xC9)" );
+		Assert.AreEqual( AdvisorToolHelp.Placement, AdvisorToolHelp.BuildStart( 0, anyRidePlaced: true ), "the placement help (0xCE) once a ride stands" );
+	}
+
 	/// <summary>The coaster tool's entry and exit (the ride closed and opened, the controller's tool state, the being-edited mark that keeps guests off) are commands a twin follows.</summary>
 	[TestMethod]
 	public void TheCoasterToolsEntryAndExitAreCommandsThatMarkTheCoasterBeingEdited()

@@ -119,8 +119,9 @@ public sealed partial class ParkHud
 
 	/// <summary>Switches between the original applicant list and a view of existing employees.</summary>
 	// [EXT:staff-employee-view] The original hire window only lists applicants; its employee list is the separate All Staff window
-	// (table 0x750e10, screen 0x11d, S key), which OpenTPW does not port. This view of existing employees inside the hire window,
-	// reached by the labelled "staffViewExt" button, is an OpenTPW extension; like the All Staff list (0x400 → 0x4b6080 at 0x496088) a click
+	// (table 0x750e10, help 285, ParkHud.AllStaffWindow.cs): the separate All Staff window exists now and is what every original entry opens
+	// (the info windows' buttons, the employee window's all-staff button, the HUD info button). This view of existing employees inside the hire window,
+	// reached by the labelled "staffViewExt" button, stays as an OpenTPW extension until the user decides about it; like the All Staff list (0x400 → 0x4b6080 at 0x496088) a click
 	// on an employee opens the per-employee window (ParkHud.EmployeeWindow.cs), which holds the dismiss, pick-up and patrol buttons.
 	public void ShowEmployedStaff( bool employed )
 	{
@@ -402,7 +403,7 @@ public sealed partial class ParkHud
 				Bounds = entry.ValueRect, Anchor = UiAnchor.Center } );
 		}
 		// [DATA:Mac staff table 0x4a1e0:9360-9364] Five buttons with help 154-158 select applicants by role.
-		// The hire table 0x751fa8 and the All Staff table 0x750e10 are not generated. These role buttons are the radio group (type 8, style 0x11), and the employed view reuses them, so they play cat_ui 0xBD (hook 0x485780, choice 0x4857cb).
+		// The hire table 0x751fa8 is not generated (the All Staff table 0x750e10 is, ParkHud.AllStaffWindow.cs). These role buttons are the radio group (type 8, style 0x11), and the employed view reuses them, so they play cat_ui 0xBD (hook 0x485780, choice 0x4857cb).
 		foreach ( var role in StaffRoles )
 		{
 			var item = role;

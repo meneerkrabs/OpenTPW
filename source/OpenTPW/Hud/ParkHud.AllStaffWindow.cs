@@ -17,7 +17,7 @@ namespace OpenTPW.Hud;
 // (0x4a09a8), the employee window (0x4b5de6: the member's tab and the member selected), the rest feature window (0x4b5173: its own tab; OpenTPW has no such window) and the S key (0x481734: left to the host camera, see ParkHud.ScreenShortcuts.cs)
 // [BIN:TPW-EXE:0x00495da0 window procedure] the window has no delete button and no delete flow: its buttons are the tick, park information (0x32e), visitors (0x32f), attractions (0x330) and the role tabs; a row click opens
 // the employee window (0x400 → 0x4b6080), a right click centres the camera on the member (0x402 → 0x50b350, 0x4867b0) and closes the window; messages 5 and -2 close it
-// [EXT:list-selection-by-id] the selected row follows its member while rows are added or removed, where the original keeps the selected position (+0x14c): the original list has no add or remove path (a dismissal goes through the employee
+// [EXT:list-selection-by-id] the selected row follows its member while rows are added or removed, where the original keeps the selected position (+0x14c): the original list has no add or remove path (the thing-removed hook 0x4818c0 acts on guests only, thing kind +2 = 1, and a dismissal goes through the employee
 // window, which closes this one first), so a member who leaves while the window is open (a co-op host's dismissal) takes his row with him and the selection moves to the first row
 public sealed partial class ParkHud
 {
@@ -41,9 +41,11 @@ public sealed partial class ParkHud
 	private int allStaffSortColumn { get => Sorts.AllStaffColumn; set => Sorts.AllStaffColumn = value; }
 	private bool allStaffSortDescending { get => Sorts.AllStaffDescending; set => Sorts.AllStaffDescending = value; }
 	/// <summary>The member ids in the list's order.</summary>
-	private readonly List<int> allStaffOrder = new();
+	private List<int>? allStaffOrderStore;
+	private List<int> allStaffOrder => allStaffOrderStore ??= new();
 	/// <summary>The cells of each listed member, as its row holds them between refreshes.</summary>
-	private readonly Dictionary<int, AllStaffRowValues> allStaffValues = new();
+	private Dictionary<int, AllStaffRowValues>? allStaffValueStore;
+	private Dictionary<int, AllStaffRowValues> allStaffValues => allStaffValueStore ??= new();
 	private int selectedAllStaffId;
 	private int allStaffFirstRow;
 	private float allStaffValueAge;

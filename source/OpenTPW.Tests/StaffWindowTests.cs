@@ -225,7 +225,7 @@ public class StaffWindowTests
 	}
 
 	[TestMethod]
-	public void ThePatrolToggleClearsAnAreaAndTheAllStaffButtonListsTheRole()
+	public void ThePatrolToggleClearsAnAreaAndTheAllStaffButtonOpensTheRolesTab()
 	{
 		var hud = EmployeeHud( out var economy, StaffType.Handyman, StaffType.Guard );
 		var guard = economy.Staff.Members.Single( member => member.Type == StaffType.Guard );
@@ -238,8 +238,9 @@ public class StaffWindowTests
 		Assert.IsFalse( hud.PressEmployeePatrol(), "setting one needs the patrol tool" );
 		hud.Stack.Top!.Find( "allStaff" )!.Activate();
 		Assert.IsFalse( hud.EmployeeWindowOpen );
-		Assert.IsTrue( hud.StaffWindowOpen && hud.ShowingEmployedStaff, "b_allstaff opens the staff list (0x496620)" );
-		Assert.AreEqual( StaffType.Guard, hud.StaffFilter, "on the employee's role (0x506490)" );
+		Assert.IsTrue( hud.AllStaffWindowOpen && !hud.StaffWindowOpen, "b_allstaff opens the All Staff window (0x496620), not the hire window" );
+		Assert.AreEqual( 3, hud.AllStaffTab, "on the employee's role, the guards' tab (0x506490)" );
+		Assert.AreEqual( guard.Id, hud.SelectedAllStaffId, "with the employee selected (the thing argument of 0x496620)" );
 	}
 
 	[TestMethod]
@@ -383,8 +384,8 @@ public class VisitorsWindowTests
 		hud.OpenVisitorWindow();
 		hud.Stack.Top!.Find( "allStaff" )!.Activate();
 		Assert.IsFalse( hud.VisitorWindowOpen );
-		Assert.IsTrue( hud.StaffWindowOpen && hud.ShowingEmployedStaff, "b_allstaff opens the staff list (0x496620)" );
-		hud.CloseStaffWindow();
+		Assert.IsTrue( hud.AllStaffWindowOpen && !hud.StaffWindowOpen, "b_allstaff opens the All Staff window (0x496620)" );
+		hud.CloseAllStaffWindow();
 		hud.OpenVisitorWindow();
 		hud.Stack.Top!.Find( "exit" )!.Activate();
 		Assert.IsFalse( hud.VisitorWindowOpen, "the tick (-2) closes it" );

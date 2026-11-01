@@ -22,9 +22,9 @@ Message 204 is the kart and water line tool's help: the click that gives the too
 
 | Status | Messages | Meaning |
 | --- | ---: | --- |
-| wired | 245 | OpenTPW produces the message today |
+| wired | 246 | OpenTPW produces the message today |
 | ready | 0 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
-| blocked | 3 | an input is missing or approximated (the help windows 285, 307 and 308) |
+| blocked | 2 | an input is missing or approximated (the help windows 307 and 308) |
 | none | 103 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 82 have no producer in `tp.exe` at all |
 
 | Kind | Messages | Producer |
@@ -46,13 +46,13 @@ Message 204 is the kart and water line tool's help: the click that gives the too
 | Research | 19 | 0 | 0 | 0 | 19 |
 | Weather | 0 | 0 | 0 | 0 | 0 |
 | Challenges and golden tickets | 30 | 0 | 0 | 0 | 30 |
-| Tutorial and help | 46 | 0 | 3 | 35 | 84 |
+| Tutorial and help | 47 | 0 | 2 | 35 | 84 |
 | Other | 9 | 0 | 0 | 68 | 77 |
-| Total | 245 | 0 | 3 | 103 | 351 |
+| Total | 246 | 0 | 2 | 103 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **245** have their producer here: 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
-68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311, 315 and 344), 43 help messages of windows and tools OpenTPW has, and 134 scored by the ported scan (the money
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **246** have their producer here: 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
+68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311, 315 and 344), 44 help messages of windows and tools OpenTPW has, and 134 scored by the ported scan (the money
 batch: 100-105 and 107; the 31 park callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262; the 38 staff callbacks: 11, 13, 14, 18, 20, 23, 26, 28-32,
 108-112, 114-123, 144, 146-150, 169-172 and 263; the 31 callbacks of the queues, prices and research batches: 15-17, 61, 63, 64, 72, 76, 80, 91, 92 and 238-257; and the 18 callbacks
 of the park-opening, congratulation, tutorial and golden ticket group: 1, 2, 124, 140, 156, 157, 185, 274-276, 278-282, 314, 316 and 317, see "Challenges and golden tickets"; and the last 9: 12, 19, 21, 22, 27, 98, 113, 141 and 264, see "The last nine callbacks").
@@ -547,8 +547,8 @@ which the response table does not have, so the table generator (and `AdvisorHelp
 `advisor-descriptors.toml` and in the inventory (kind unused). The "81 versus 82" counts in the comments and docs are the same table
 counted with and without 291.
 
-- wired (43): 184, 188-189, 191-193, 195, 197-201, 203-209, 212-214, 284, 286-287, 289, 292-295, 297-305, 309, 337, 345-346
-- posted in the original, no window here (3): 285, 307-308 (285 All Staff window, 308 address book, 307 postcard)
+- wired (44): 184, 188-189, 191-193, 195, 197-201, 203-209, 212-214, 284-287, 289, 292-295, 297-305, 309, 337, 345-346
+- posted in the original, no window here (2): 307-308 (308 address book, 307 postcard); 285 (the All Staff window `0x496620`, which posts it at `0x496BA3` and withdraws it at `0x495F3B`) is wired since round 11 (`ParkHud.AllStaffWindow.cs`)
 - posted by no window or tool in `tp.exe` (36 descriptors; 344 is the exception, see below): 186-187, 190, 194, 196, 202, 210-211, 266, 283, 288, 290-291, 296, 306, 322, 324-336, 338-344
 
 Of these, **344** is posted after all: the challenge system's first offer (`0x4D2C50`, the nonzero argument of `0x4D2A70`) posts it in place of 270, as an event (`AutomaticAdvisor.Challenges`), so its inventory row is an `event` row, `wired` (no call of `0x486B00` or `0x59B590` names it); the other 35 are the inventory's `unused` help rows, posted by nothing.
@@ -718,4 +718,4 @@ frame (message id word -1, which no descriptor holds, score the poster's return 
 6. **Staff** (11, 13, 14, 18, 20, 23, 26, 28-32, 108-112, 114-123, 144, 146-150, 169-172, 263): done (see "Staff callbacks"); **research** (15-17, 61, 63, 64, 72, 76, 80): done (see "Queues, prices and research callbacks").
 7. **Prices** (91, 92, then 238-257): done (see "Queues, prices and research callbacks"); the booth fills ring 0.
 8. **Challenges and golden tickets** (270, 272, 273, 215-227, 311, 315, 274-281, 314, 316, 317) and the park-opening, congratulation and tutorial callbacks (1, 2, 124, 140, 156, 157, 185, 282): done (see "Challenges and golden tickets"); 277 and 318 (the profit hints) stay with the restored advice.
-9. **The last nine** (round 10): coverage (19, 21, 27), pranks (12, 22, 98, 264), queue links (113), ride excitement (141): done ("The last nine callbacks"). Blocked: the three help windows (285, 307, 308).
+9. **The last nine** (round 10): coverage (19, 21, 27), pranks (12, 22, 98, 264), queue links (113), ride excitement (141): done ("The last nine callbacks"). Blocked: the three help windows (285, 307, 308; 285 was ported with the All Staff window in round 11).

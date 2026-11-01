@@ -572,7 +572,7 @@ public class AdvisorToolHelpTests
 	{
 		var help = AdvisorHelpTable.Parse( ShippedData( AdvisorHelpTable.RelativePath ) ).ToDictionary( row => row.MessageId );
 		var posted = AdvisorUiHelp.AllWindowMessages.Concat( AdvisorUiHelp.ModeHelpMessages ).Concat( AdvisorToolHelp.All ).Distinct().ToArray();
-		Assert.AreEqual( 43, posted.Length, "forty-three of the 81 help messages have a producer here" );
+		Assert.AreEqual( 44, posted.Length, "forty-four of the 81 help messages have a producer here (285, the All Staff window, among them)" );
 		foreach ( var message in posted )
 		{
 			Assert.IsTrue( help.TryGetValue( message, out var row ), $"message {message} is a help descriptor" );

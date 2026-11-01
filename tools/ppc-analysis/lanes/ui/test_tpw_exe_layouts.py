@@ -27,6 +27,13 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(0xAAEE5929, layouts.root_name_hash('b_ride it!'))
         self.assertEqual(0x14A7E48B, layouts.root_name_hash('b_okay'))
 
+    def test_the_all_staff_window_table_is_generated(self):
+        # tp.exe 0x496620 applies the table at 0x750e10 (window procedure 0x495da0): the window4 frame, the list_allstaff list with its five column headers and role tabs
+        entry = next(table for table in layouts.TABLES if table[0] == 'AllStaffWindow')
+        self.assertEqual((0x750E10, 0x320, (186, 30, 2018, 1007), 0x751182, 27), entry[1:])
+        for model in ('list_allstaff', 'b_shandy', 'b_smech', 'b_senter', 'b_sguard', 'b_sresrcher', 'b_pkinfo', 'b_kids', 'b_allthings'):
+            self.assertIn(model, layouts.REQUIRED['AllStaffWindow'])
+
     def test_parses_children_properties_and_trailing_properties(self):
         stream = (window(1, 1, 0x3E14, (248, 30, 1800, 1007)) + words(1, 0xAAAA, 0xBBBB)
                   + window(2, 1, 0x3E37, (956, 800, 1109, 953)) + words(17, 16, 0, 18, 0xFFFF, 0xFFFF, 1, 0x5929, 0xAAEE, 5)

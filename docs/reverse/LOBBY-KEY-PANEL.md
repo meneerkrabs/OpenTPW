@@ -3,8 +3,8 @@
 ## Scope
 
 The island lobby's key panel as tp.exe keeps it (layout table Lobby `0x757F60`, controls `0x1E0EA` to `0x1E0EE`),
-ported in `FrontEnd/FrontEndMenu.KeyPanel.cs` (round 11, package V). The part that needs the lobby advisor is not
-ported: see [LOBBY-ADVISOR.md](LOBBY-ADVISOR.md) and ADVISOR-025. No original executable was run and no original media is
+ported in `FrontEnd/FrontEndMenu.KeyPanel.cs` (round 11, package V). The advisor that refreshes it from its timer is
+[LOBBY-ADVISOR.md](LOBBY-ADVISOR.md); the line that starts that timer is not said there (ADVISOR-025). No original executable was run and no original media is
 included; this is a static reading of tp.exe, not a reference-run or pixel-parity claim.
 
 Build examined: TPW `sp20_nocd/tp.exe`, SHA-256
@@ -62,8 +62,8 @@ Build examined: TPW `sp20_nocd/tp.exe`, SHA-256
 
 ## What is not ported
 
-- The timer refresh: only the lobby advisor starts it, with response 393 (fixed sequence 28, `0x4A6B4F`), see [LOBBY-ADVISOR.md](LOBBY-ADVISOR.md).
-  OpenTPW's lobby has no advisor and its ledger does not change while the lobby is up, so a refresh would read the count it already shows.
+- The timer refresh: only response 393 (fixed sequence 28, `0x4A6B4F`) reaches it in the lobby, and OpenTPW does not say that line, see [LOBBY-ADVISOR.md](LOBBY-ADVISOR.md).
+  Its ledger does not change while the lobby is up, so a refresh would read the count it already shows.
 - The window hide and re-create of the dialogs that hide the lobby window (the player-select dialog `0x4A6580` hides `[0xF82884] + 4` at `0x4A659E` and
   `0x4A6A50` shows it again at `0x4A6A81`); OpenTPW's dialogs draw over the lobby screen, the panel and effect stay up.
 - EF's custom park name (`0x5B12E0` with the record's name flag `+0xB8`) and the player profiles.

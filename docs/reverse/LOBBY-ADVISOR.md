@@ -1,9 +1,23 @@
-# The advisor in the original lobby (not ported)
+# The advisor in the original lobby
 
-tp.exe runs the advisor in the front-end (lobby) game state; OpenTPW's lobby has none. This is the static reading of what the original does
-(`ADVISOR-005`, `ADVISOR-025`), with the evidence for each claim. No original executable was run. Build: TPW `sp20_nocd/tp.exe`, SHA-256
-`5472f97b5eb28f58b5a49f3a15f6f66adffa6b2625a623f503202c9696d1b805`. The key panel the advisor's key advice refreshes is ported
-([LOBBY-KEY-PANEL.md](LOBBY-KEY-PANEL.md)).
+tp.exe runs the advisor in the front-end (lobby) game state, and so does OpenTPW now (round 11, package V). This is the static reading of what the original does
+(`ADVISOR-005` retired, `ADVISOR-025` narrowed), with the evidence for each claim and what is ported. No original executable was run. Build: TPW `sp20_nocd/tp.exe`, SHA-256
+`5472f97b5eb28f58b5a49f3a15f6f66adffa6b2625a623f503202c9696d1b805`. The key panel the advisor's key advice refreshes is [LOBBY-KEY-PANEL.md](LOBBY-KEY-PANEL.md).
+
+## What OpenTPW does
+
+- `FrontEnd/LobbyAdvisor.cs` is the front-end host: made with the lobby (`GameFlow.StartLobbyAdvisor`, after the camera mode in `ShowFrontEnd`), updated with each lobby frame
+  (`UpdateLobbyAdvisor`, after the lobby effects), rendered into its image in the world pass (`RenderLobbyAdvisor`), drawn bottom right at `Advisor.BoxRectangle` after the menu
+  (`DrawLobbyAdvisor`) and torn down with `TearDown`/`Dispose` (`EndLobbyAdvisor`). The advisor is the global one (no level), on a clock of milliseconds from the program's start, and is made when
+  the first line is said, so a lobby entry pays no model load. It is off with the automatic advisor off (`--no-advisor`) and says nothing with the advisor option off.
+- `FrontEnd/LobbyAdvisorQueue.cs` is the queue task (`0x5D5F70`, `0x5D5F80`, `0x5D6110`, `0x5D61A0`, `0x5D6060`): first-in first-out ids, the idle line (`SetIdle`, delay 90000 ms), the spoke mark, the cut-off at teardown.
+  The idle line is set every frame as the islands component does (`0x5E1830`): 395 for an odd draw and 394 for an even one. The draw is a local presentation stand-in for the CRT `rand()` (`0x67B5C0`): it uses neither the world's nor the guests' streams.
+  The player is always current (`[EXT:no-player-profiles]`: the original tests `[[0xF81EBC] + 0x60] != -1`, 0x48BCD0).
+- The word `[Q + 0x28]` ("the advisor spoke since the last step") is allocated and never written before the first step, so the original's first step may find any value there: OpenTPW starts it cleared
+  (`[EXT:original-undefined-reads]`), so the first idle line comes as soon as the timer passes 90 s, and with the timer counting from the program's start a lobby entered later than that says it at once.
+- The ambient the advisor is lit with is the lobby screen's (`Advisor.Ambient`, `advisor.shader`): 0.267 grey on the island screens (and the enter sequence), 0.125 grey on the globe and city views.
+- A teardown with a response active cuts it off as `0x5994E0` does: the advisor is killed and, while its speech sound still plays, the slap sounds (`0x27F` plus a local draw modulo 3).
+- Not ported: the lines whose triggers are dialogs OpenTPW does not have, and 393 (see "What is not ported").
 
 ## The advisor lives in the whole front-end state
 
@@ -45,17 +59,18 @@ Fixed sequence 28 (response 393) is the only fixed sequence the lobby can say: i
 Key particle (87 at (90000, 0, 7000)), plays `cat_ui` `0xC6` and calls `0x4B9340` (`0x5999CC`): the key panel's full refresh, which shows the key that `0x5AFC30` just
 added. Sequence 29's responses (374 to 378, 444 to 467) are the golden ticket lines of the park.
 
-## Size of a port
+## Fog
 
-A lobby advisor in OpenTPW needs, on the existing `Advisor` (global rig, `SayResponse`, clock, effect groups) and the key panel:
+The mesh draw builds its state word from the global flag `0x2000` (`0x581790`: `0x58179F` adds the fog bit, which `0x5817A5` sets), so the advisor, which goes through the deferred mesh draw (`0x581DB0`), takes the fog bit on the island screens and not on
+the globe. The fog starts at 50 (`0x5D96A0`) and the advisor's vertices reach the transform stage at depth about 0.2 (`0x429BA0` translation z 0.2 and root depth scale 0.001, `0x57A750`), whichever of z and w the table fog reads
+(`docs/LND.md` leaves that open: w is 1 for such vertices): the factor is 1 and nothing is fogged. OpenTPW draws no fog on the advisor.
 
-1. A front-end host: an `Advisor` with its own clock, updated and rendered with the lobby frame and drawn over the lobby screens at `Advisor.BoxRectangle` (`AutomaticAdvisor`
-   is bound to a level; the lobby host has none, no message tube and no captions): about 150 lines and a hook in the game flow's frame function.
-2. The lobby queue (`0x5D5F80`, `0x5D6110`, `0x5D61A0`, `0x5D6060`) with the 90 s idle line and a presentation-only coin for 394/395: about 150 lines.
-3. The triggers: the idle line needs "a player is current", which OpenTPW's single player always is (`[EXT:no-player-profiles]`); the other lines belong to dialogs OpenTPW
-   does not have (player select, new player, the postcard windows are its own online windows, `[EXT:online-postcard-help]`). The key advice (393) has a natural counterpart in
-   OpenTPW's "New Full Simulation" consent with its starter key, which is a design decision (a first-key line where the original says it, at the creation of the first player).
-4. The lobby ambient and fog for the advisor (0.267 grey on the island screens, 0.125 grey on the globe; the fog question above) in `advisor.shader`.
-5. The timer's Key effect and sound in the lobby (the screen-space host exists) and the key panel's refresh (`RefreshKeyPanel`).
+## What is not ported
 
-About 600 to 900 lines with tests, and a visible new feature (a talking advisor in the lobby), so it needs a decision before it is built.
+- **393** (`0x189`, fixed sequence 28): `0x4A6A50`, the close of the player-select dialog, says it after `0x5AFC30` raised the new player's extra keys by one (`0x4A6B27` to `0x4A6B4F`). OpenTPW grants the first key in `PlayerProgressAdmission`
+  (`StarterKeys`), published by `BeforeRetirement` when the lobby is retired for the park: no lobby that goes on ever has the first key, so no point is equivalent to `0x5AFC30` followed by a lobby that speaks. Nothing is invented there,
+  and with it the timer's refresh of the key panel (`0x5999CC`) has no producer in the lobby.
+- **390, 391, 398, 570**: the opening of the player-select dialog (`0x4A6580`) and of the name dialog (`0x4A6E40`): OpenTPW has no player profiles (`[EXT:no-player-profiles]`).
+- **592 to 597**: the postcard windows' openings (`[EXT:online-postcard-help]`: OpenTPW's postcard composer is its own online window).
+- **598**: the online globe's callback `0x5DD7C0`, registered with the profile manager (`0x5DD201`) and run when its list changes (the online extension).
+- **600**: `0x48BEAD`, the lobby menu's command 10 (`0x48BDED`, handler `0x48BD40`), and the postcard windows' procedures `0x4B86A0` and `0x4C53F0`; which menu line is command 10 is not identified.

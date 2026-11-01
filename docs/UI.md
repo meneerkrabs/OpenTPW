@@ -211,7 +211,8 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   in the original top-right `gkey`/count slots when positive, and above them the key frame with the selected island's cost digit (`s_key`, `s_X1`): gold while the keys meet the
   island's `global.sam` `Keys.CostToEnter` (and the screen-space effect `0x61` runs), grey below it. The count is sampled after the previous park is saved and detached; missing or invalid progress
   hides the panel without creating a profile. The panel is refreshed when the lobby is built and on each island change (with the stored count, as `0x4B90F0` does); the original's other
-  refresh, the timer of the lobby advisor's key advice, belongs to the lobby advisor OpenTPW does not have (ADVISOR-025).
+  refresh, the timer of the lobby advisor's key advice (response 393), is not reached: the line belongs to a new player's first key, which OpenTPW publishes only when the lobby is retired for the park (ADVISOR-025).
+- The lobby has the original's advisor (`FrontEnd/LobbyAdvisor.cs`, `docs/reverse/LOBBY-ADVISOR.md`): the global advisor shows bottom right over every lobby screen while a line plays, lit by the screen's ambient, and says the idle line (response 394 or 395) after 90 s of silence. It is off with the advisor option, and with `--no-advisor`.
 - Load Park (202): own saved parks, original Easymode parks (read-only) and the
   OpenTPW sandbox save. The shared lobby/pause chooser is tp.exe's load dialog (table `0x7523f0`, built by
   `0x49efb0`): `window2`, the title (202), the `f_load` list whose rows have the buy list's slot-7 pitch, so twelve show

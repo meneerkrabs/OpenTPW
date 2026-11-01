@@ -46,7 +46,7 @@ public sealed partial class FrontEndMenu
 	}
 
 	/// <summary>
-	/// The panel's full refresh with the player's current key count (0x4B9340): at its creation, and where the original's advisor timer refreshes it (the lobby advisor, not ported: ADVISOR-025).
+	/// The panel's full refresh with the player's current key count (0x4B9340): at its creation, and where the original's advisor timer refreshes it (response 393's timer, a line OpenTPW does not say: ADVISOR-025).
 	/// A null count (no usable Full Simulation progress) shows no panel and no effect.
 	/// </summary>
 	internal void RefreshKeyPanel( int? keys )

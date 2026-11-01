@@ -39,6 +39,8 @@ public class MapRepairDrawTests
 		// Two separate instances of the same InfoId: a catalogue default cannot supply the right repair.
 		Set( first.Entry, "<Shape>k__BackingField", new ObjectShape( new[] { "**", "**" } ) );
 		Place( first, 2, 2 ); Place( second, 8, 8 );
+		// without a cell map the level's objects stand on their footprints (LevelMapCells), which follow the placements these tests move
+		Set( level, "<Paths>k__BackingField", null );
 		if ( !hud.MapCategoryShown( category ) ) hud.ToggleMapCategory( category );
 		if ( original )
 		{
@@ -52,8 +54,10 @@ public class MapRepairDrawTests
 		State( w, first ).Repair = 0; State( w, second ).Repair = 100;
 		return w;
 	}
+	/// <summary>Draws the map as it stands when the window opens: the canvas is written again, as the original writes its classes and draws its surface at every opening.</summary>
 	private static UiVertex[] Draw( World w )
 	{
+		Set( w.Hud, "mapCanvas", null );
 		w.Context.Batch.Clear(); w.View.Draw( w.Context, false, false );
 		return w.Context.Batch.Draws.SelectMany( draw => draw.Vertices ).ToArray();
 	}
@@ -75,7 +79,7 @@ public class MapRepairDrawTests
 		Assert.AreNotEqual( w.Level.GetEconomyInstance( w.First ), w.Level.GetEconomyInstance( w.Second ) );
 		var drawn = Draw( w );
 		Assert.AreEqual( 24, OfColor( drawn, Red ).Length ); Assert.AreEqual( 6, OfColor( drawn, Green ).Length );
-		var expected = w.First.Cells.Select( cell => original ? new UiRect( 95 + cell.X * 15, 66 + cell.Y * 13, 15, 13 )
+		var expected = w.First.Cells.OrderBy( cell => cell.Y ).ThenBy( cell => cell.X ).Select( cell => original ? new UiRect( 95 + cell.X * 15, 66 + cell.Y * 13, 15, 13 )
 			: new UiRect( 80 + cell.X * 16, 24 + cell.Y * 16, 16, 16 ) ).ToArray();
 		CollectionAssert.AreEqual( expected, Rectangles( drawn, Red ), "the pre-existing map grid and image offsets are unchanged" );
 		w.Hud.ToggleMapCategory( category ); drawn = Draw( w );
@@ -169,34 +173,5 @@ public class MapRepairDrawTests
 		CollectionAssert.AreEqual( bindings, Bindings( w ).ToArray() ); CollectionAssert.AreEqual( objects, w.Level.Objects.Objects.ToArray() );
 		CollectionAssert.AreEqual( cells, w.First.Cells.ToArray() ); CollectionAssert.AreEqual( variables, w.First.Script.Variables.ToArray() );
 		Assert.AreEqual( placement, w.First.Placement ); Assert.AreEqual( 0d, State( w, w.First ).Repair ); Assert.AreEqual( 100d, State( w, w.Second ).Repair );
-	}
-
-	[TestMethod]
-	public void HostTrackExcitementStaffVisitorHappinessAndThoughtOverlaysKeepTheirDrawOrder()
-	{
-		var w = Create(); var guests = w.Level.Guests!;
-		guests.Grid.SetPath( 2, 2, true ); guests.Grid.Cells.SetType( 3, 2, ParkCellType.Queue );
-		guests.Grid.Cells.SetFlags( 4, 2, ParkCellFlags.Unowned );
-		guests.Register( w.First.Visitors );
-		var guest = guests.SpawnInPark( 2, 2 ); guest.State = GuestState.WalkingAround; guest.Happiness = 80; guest.Thought = GuestThought.Pleased;
-		var coaster = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), w.Level.Objects.ScriptWorld.Coasters );
-		new CoasterBuilder( coaster, new CoasterSite( 32, 32 ) ).SetStation( (3, 2), (2, 2) );
-		EconomyTestData.HireBest( w.Economy, StaffType.Mechanic );
-		Set( w.Level, "<StaffWorld>k__BackingField", new StaffWorldSimulation( guests.Grid, () => w.Economy.Staff.Members, _ => null, (2, 2) ) );
-		w.Hud.ToggleMapTracks(); w.Hud.ToggleMapExcitement(); w.Hud.ToggleMapStaff( StaffType.Mechanic ); w.Hud.ToggleMapVisitors(); w.Hud.ToggleMapHappiness(); w.Hud.ToggleMapSatisfaction();
-		var drawn = Draw( w );
-		var ordered = new[] { ParkMapPalette.Path, Red, new RgbaByte( 65, 220, 235, 240 ), ParkMapMetrics.ExcitementColor( 20 ),
-			new RgbaByte( 255, 255, 255, 245 ), ParkMapGuestLayers.HappinessColor( 80 ), new RgbaByte( 35, 235, 35, 240 ) };
-		var previous = -1;
-		foreach ( var color in ordered )
-		{
-			var first = Array.FindIndex( drawn, vertex => vertex.Color == color );
-			Assert.IsTrue( first > previous, $"present and ordered host layer {color}" );
-			previous = Array.FindLastIndex( drawn, vertex => vertex.Color == color );
-		}
-		Assert.AreEqual( 6, OfColor( drawn, ParkMapPalette.Queue ).Length ); Assert.AreEqual( 6, OfColor( drawn, ParkMapPalette.Unowned ).Length );
-		w.Hud.ToggleMapHappiness(); drawn = Draw( w ); Assert.AreEqual( 6, OfColor( drawn, new RgbaByte( 75, 180, 255, 240 ) ).Length );
-		w.Hud.ToggleMapCategory( BuildCategory.Rides ); drawn = Draw( w );
-		Assert.AreEqual( 0, OfColor( drawn, Red ).Length ); Assert.IsTrue( OfColor( drawn, ParkMapMetrics.ExcitementColor( 20 ) ).Length > 0, "the existing independent excitement layer still ignores category selection" );
 	}
 }

@@ -1172,6 +1172,8 @@ internal static class Game
 						}
 						case "locate": if ( !Enum.TryParse<StaffType>( argument, true, out var locateRole ) || !hud.DebugLocateStaff( locateRole ) ) Log.Warning( $"--debug-hud: no staff member to locate for '{argument}'." ); break;
 						case "models": hud.DebugShowModels( argument.Split( '+' ) ); break;
+						// [EXT:debug-hud] "map[:layers=<n>,staff=<n>,value=<n>]" opens the park map with that layer word, staff role and value mode, for captures
+						case "map": hud.DebugMap( argument ); break;
 						default: Log.Warning( $"--debug-hud: unknown action {name}." ); break;
 					}
 				}

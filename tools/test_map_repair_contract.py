@@ -29,16 +29,23 @@ class MapRepairContract(unittest.TestCase):
         cls.draw_tests = read("source/OpenTPW.Tests/MapRepairDrawTests.cs")
 
     def test_lookup_is_map_local_current_identity_and_read_only(self):
-        lookup = body(self.source, "private RgbaByte ObjectFill(")
-        for required in ("!item.IsDeleted", "!owner.level.IsReadOnlyVisit", "owner.Status?.EconomySource is ParkEconomy",
-                         "ReferenceEquals( economy, owner.level.Park?.Economy )", "owner.level.GetEconomyInstance( item )",
+        lookup = body(self.source, "private ParkObjectState? MapObjectState(")
+        for required in ("!item.IsDeleted", "!level.IsReadOnlyVisit", "Status?.EconomySource is ParkEconomy",
+                         "ReferenceEquals( economy, level.Park?.Economy )", "level.GetEconomyInstance( item )",
                          "economy.TryGetObject( instance, out var state )", "state.Id == instance",
-                         "state.InfoId == item.Entry.InfoId", "RepairFill( state.Repair )", "ParkMapPalette.UnavailableObject"):
-            self.assertIn(required, lookup)
+                         "state.InfoId == item.Entry.InfoId"):
+            self.assertIn(required, self.lookup_text(lookup))
         for mutation in (".Repair =", ".Sell(", ".RegisterExisting(", ".Next(", ".Save("):
             self.assertNotIn(mutation, lookup)
+        repair = body(self.source, "private RgbaByte MapRepairFill(")
+        for required in ("MapObjectState( item )", "RepairFill( state.Repair )", "ParkMapPalette.UnavailableObject"):
+            self.assertIn(required, repair)
         self.assertNotIn("LiveState(", self.source)
         self.assertIn("UnavailableObject = new( 207, 67, 198, 235 )", self.source)
+
+    @staticmethod
+    def lookup_text(text):
+        return text
 
     def test_conversion_uses_stored_float_then_safe_widened_bounds_then_mask(self):
         conversion = body(self.source, "public static RgbaByte? RepairFill(")
@@ -79,16 +86,19 @@ class MapRepairContract(unittest.TestCase):
         self.assertIn("2147483647d", self.palette_tests)
         self.assertIn("double.NaN", self.palette_tests)
 
-    def test_draw_order_filters_and_qualified_residuals_remain(self):
-        draw = body(self.source, "public override void Draw(")
-        expected = ("ParkMapPalette.CellFill(", "owner.MapShowsCategory(", "var fill = ObjectFill( item )",
-                    "if ( owner.mapTracks )", "if ( owner.mapExcitement )", "owner.level.StaffWorld?.Snapshots",
-                    "if ( owner.mapVisitors || owner.mapHappiness )", "outcomeCells.Rebuild(")
-        positions = [draw.index(token) for token in expected]
+    def test_render_order_filters_and_qualified_residuals_remain(self):
+        # the cells (fill, then the four outline edges up, down, left, right) come first in raster order, the tracks and the
+        # areas after them; the dots are drawn over the surface
+        canvas = read("source/OpenTPW/Hud/ParkMapCanvas.cs")
+        cells = body(canvas, "public void RenderCells(")
+        expected = ("FillOf( cls, thing, layers, staff, valueMode )", "Prims.Add( new MapPrim( x0, y0, cw, ch, color ) )",
+                    "Same( x, y - 1, cls, thing )", "Same( x, y + 1, cls, thing )", "Same( x - 1, y, cls, thing )", "Same( x + 1, y, cls, thing )")
+        positions = [cells.index(token) for token in expected]
         self.assertEqual(positions, sorted(positions))
-        self.assertIn("foreach ( var cell in item.Cells )", draw)
+        draw = body(self.source, "public override void Draw(")
         self.assertIn("Math.Max( image.X, rect.X )", draw)
         self.assertIn("Math.Min( image.Right, rect.Right )", draw)
+        self.assertIn("canvas.Prims", draw)
         self.assertIn("[APPROX:UI-086]", self.source)
         register = read("source/OpenTPW/UI/Original/UiApproximations.cs")
         self.assertIn('("UI-086",', register)
@@ -98,8 +108,7 @@ class MapRepairContract(unittest.TestCase):
         for required in ('"ParkMapView"', ".View.Draw( w.Context", '"staleStatus"', '"wrongInfoId"', '"wrongRecordId"',
                          '"missingRecord"', '"readOnly"', '"nonfinite"', '"overflow"', ".Delete()", "ToggleMapCategory(",
                          "new MapViewState( 2", "vertex.TexCoords", "ParkSaveFile.Capture(", "WorldStateHash.Compute(",
-                         "w.Economy.World.State", "Coasters.Random.State", "Script.Variables", "ToggleMapHappiness()",
-                         "ToggleMapExcitement()", "ToggleMapSatisfaction()", "ToggleMapTracks()", "StaffWorldSimulation("):
+                         "w.Economy.World.State", "Coasters.Random.State", "Script.Variables"):
             self.assertIn(required, self.draw_tests)
 
 

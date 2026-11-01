@@ -309,9 +309,14 @@ public sealed class OriginalParkImport
 		}
 	}
 
+	/// <summary>Every recognized object record in the order the save lists them: placed, unresolved, then fixed.</summary>
+	public IReadOnlyList<SaveObject> ObjectsInRecordOrder => recordOrder ??= PlacedObjects.Select( item => item.Record ).Concat( UnresolvedObjects ).Concat( FixedItems ).ToList();
+
+	private IReadOnlyList<SaveObject>? recordOrder;
+
 	private IReadOnlyList<SaveObject> ComputeChainOrder()
 	{
-		var records = PlacedObjects.Select( item => item.Record ).Concat( UnresolvedObjects ).Concat( FixedItems ).ToList();
+		var records = ObjectsInRecordOrder.ToList();
 		if ( world == null )
 		{
 			chainOrderProblem = "the Theme Park Inc viewer does not decode the world's object chain";
@@ -331,10 +336,13 @@ public sealed class OriginalParkImport
 			chain.Add( thing );
 			thing = found[0].Next;
 		}
+		var positions = new Dictionary<int, int>();
+		for ( var index = 0; index < chain.Count; index++ )
+			positions[chain[index]] = index;
 		var ages = new Dictionary<SaveObject, int>();
 		foreach ( var record in records )
 		{
-			var position = FindAttraction( record ) is { } attraction ? chain.IndexOf( attraction.Id ) : -1;
+			var position = FindAttraction( record ) is { } attraction && positions.TryGetValue( attraction.Id, out var at ) ? at : -1;
 			if ( position < 0 )
 			{
 				chainOrderProblem = $"the record of Info.Id {record.InfoId} at ({record.X}, {record.Y}) has no single attraction on the chain";

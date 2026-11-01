@@ -694,6 +694,16 @@ public sealed class ParkObjects
 			signLines[infoId] = lines;
 	}
 
+	/// <summary>The creation seed of each object an import places, numbered from <paramref name="first"/> in the save's record order (not the chain order).</summary>
+	internal static Dictionary<SaveObject, int> RecordOrderSeeds( ObjectCatalog catalog, OriginalParkImport save, int first )
+	{
+		var seeds = new Dictionary<SaveObject, int>();
+		foreach ( var record in save.ObjectsInRecordOrder )
+			if ( catalog.Find( record.InfoId ) is { IsTool: false } )
+				seeds[record] = first + seeds.Count;
+		return seeds;
+	}
+
 	/// <summary>The lines <see cref="TakeSavedSignLines"/> takes, by Info.Id.</summary>
 	internal static Dictionary<int, (string Line1, string Line2)> SavedSignLines( ObjectCatalog catalog, OriginalParkImport save, IReadOnlyList<SaveObject> records )
 	{
@@ -701,7 +711,7 @@ public sealed class ParkObjects
 		var seen = new HashSet<int>();
 		foreach ( var record in records )
 		{
-			if ( catalog.Find( record.InfoId ) is not { IsTool: false } entry || !seen.Add( entry.InfoId ) || save.FindAttraction( record ) is not { } attraction )
+			if ( catalog.Find( record.InfoId ) is not { IsTool: false } entry || save.FindAttraction( record ) is not { } attraction || !seen.Add( entry.InfoId ) )
 				continue;
 			var lines = (Line1: BonusNames.StripTrailingDash( attraction.NameLine1 ), Line2: attraction.NameLine2);
 			if ( !ParkNameLines.IsValidLine( lines.Line1 ) || !ParkNameLines.IsValidLine( lines.Line2 ) )
@@ -730,6 +740,9 @@ public sealed class ParkObjects
 		save.RequireSupportedCoasterRuntime();
 		var records = save.ObjectsInChainOrder.ToList();
 		TakeSavedSignLines( save, records );
+		// CreationSeed has no counterpart in the original, so it keeps following the save's record order whatever order the chain places the objects in
+		var seeds = RecordOrderSeeds( Catalog, save, nextSeed );
+		nextSeed += seeds.Count;
 		var count = 0;
 		for ( var index = 0; index < records.Count; index++ )
 		{
@@ -741,7 +754,7 @@ public sealed class ParkObjects
 			// the object keeps its saved thing id when the save's attraction thing is the one record that matches (the pool holds the saved chain)
 			var thingId = Things != null && save.FindAttraction( record ) is { } thing && Things.IsUsed( thing.Id ) && Things.ModelOf( thing.Id ) == SaveThingModel.Attraction
 				&& objects.All( other => other.ThingId != thing.Id ) ? thing.Id : 0;
-			var imported = Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, nextSeed++ ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
+			var imported = Register( new OriginalObject( entry, ComputePlacement( entry, record.X, record.Y, record.Rotation ), ScriptWorld, seeds[record] ^ scriptKey, true, attractionId: null, seedScript: false, signLines: SignLinesOf( entry ) ), thingId );
 			// [BIN:TPW-EXE:0x004647A0 hoarding load] the RideSystem record's flag word +0x1C bits 0..6 and its +0x22 dword are the thing's hoarding flags and level (docs/OBJECTS.md, "Hoarding")
 			if ( save.RideSystem?.Records.FirstOrDefault( scene => scene.Offset == record.Offset ) is { } scene )
 			{

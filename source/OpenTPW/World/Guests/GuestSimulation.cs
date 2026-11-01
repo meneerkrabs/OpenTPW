@@ -48,7 +48,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// The arrival timer's start turn (0 until the first group: the original's timer starts unset) and the group being dropped off.
 	private long arrivalTimerStart;
 	private bool deliveringArrivals;
-	private float spawnTimer;   // kept for the save format; arrivals step once per park turn (ARRIVAL-001)
+	private float spawnTimer;   // kept for the save format; arrivals step once per park turn (was ARRIVAL-001, retired)
 	private int pendingArrivals;
 	// The arrival vehicle at work (world +0x1DA72A): the kind of ArrivalVehicleKind, -1 for none.
 	private int arrivalVehicle = -1;

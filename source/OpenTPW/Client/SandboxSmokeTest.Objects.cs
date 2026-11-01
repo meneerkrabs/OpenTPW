@@ -262,7 +262,12 @@ internal sealed partial class SandboxSmokeTest
 		Require( level.Objects.Objects.All( item => item.Script?.State != RideVMState.Faulted ), "original object scripts run without faults" );
 		Require( animating.Length >= 3, $"at least three different original objects besides the Totem each move in at least {MinimumMovedFrames} frames (animating: {Names( animating )})" );
 		if ( level.OriginalPark != null )
-			Require( sampled.Contains( BellyBounceInfoId ), $"the imported Belly Bounce animates between the sample frames (moving: {Names( sampled )})" );
+		{
+			// The two-frame sample depends on where the ride stands in its cycle, so it is only logged; the requirement is the whole run's motion count.
+			// An imported arrival scheduler waits out its saved timer before the first bus (ARRIVAL-001 retired), so fewer guests reach the ride early.
+			Log.Trace( $"Belly Bounce moved between the two sample frames: {sampled.Contains( BellyBounceInfoId )} (moving then: {Names( sampled )})." );
+			Require( counts.Any( item => item.InfoId == BellyBounceInfoId && item.MovedFrames >= MinimumMovedFrames ), $"the imported Belly Bounce animates in at least {MinimumMovedFrames} frames of the run (animating: {Names( animating )})" );
+		}
 		if ( level.Guests != null )
 		{
 			// Guests use the imported Easymode attractions through their own scripts, entering at the shape's entrance cell.

@@ -7,7 +7,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// ARRIVAL-001 on the real saves: the cached bus, seaplane and Ferry handles (world <c>+0x1DA72C/E/30</c>) are the thing ids of the vehicle fixed items the saves hold, and the vehicle at work
+/// The saved arrival handles (was ARRIVAL-001, retired) on the real saves: the cached bus, seaplane and Ferry handles (world <c>+0x1DA72C/E/30</c>) are the thing ids of the vehicle fixed items the saves hold, and the vehicle at work
 /// (<c>+0x1DA72A</c>, the Fantasy saves' seaplane) is one of them: the data the import's validation (<see cref="GuestSimulation.ImportOriginalArrivals"/>) relies on. The level's objects need the GPU
 /// for their textures, so the import itself is tested on a synthetic host (ArrivalVehicleTests). Needs <c>OPENTPW_GAME_PATH</c> and <c>OPENTPW_TPWS_SAVES</c>.
 /// </summary>

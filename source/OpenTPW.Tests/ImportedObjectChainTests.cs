@@ -91,6 +91,12 @@ public class ImportedObjectChainTests
 			Assert.IsNotNull( save.MechanicHq );
 			Assert.AreNotEqual( 0, save.MechanicHq!.NextObject, "the seed's mechanic search had started at an object" );
 			Assert.AreEqual( import.AttractionInstances[save.MechanicHq.NextObject], economy.MechanicCursor );
+			// CreationSeed has no original counterpart: the seeds keep following the save's record order, whatever the chain order places first
+			var seeds = ParkObjects.RecordOrderSeeds( ObjectCatalog.Load( "jungle" ), save, 1 );
+			var inRecordOrder = save.ObjectsInRecordOrder.Where( seeds.ContainsKey ).Select( record => seeds[record] ).ToArray();
+			CollectionAssert.AreEqual( Enumerable.Range( 1, inRecordOrder.Length ).ToArray(), inRecordOrder );
+			Assert.AreEqual( 14, seeds.Count );
+			Assert.AreEqual( 12, seeds[save.ObjectsInChainOrder[0]], "the chain's first object keeps its record-order seed" );
 		}
 		finally
 		{

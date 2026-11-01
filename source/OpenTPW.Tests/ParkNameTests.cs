@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The park name as the gate's two sign lines (COMPAT-007): the gate's OBJECT_NAMES row as default (tp.exe 0x4DB6F9), the
+/// The park name as the gate's two sign lines (was COMPAT-007, retired): the gate's OBJECT_NAMES row as default (tp.exe 0x4DB6F9), the
 /// one-line form of the ticket price window (0x4E2780), the rename dialog's fields (0x4990F0) and the optional save part.
 /// </summary>
 [TestClass]
@@ -26,7 +26,7 @@ public class ParkNameTests
 	}
 
 	/// <summary>
-	/// The save field of the gate lines (COMPAT-007): the gate's attraction record carries them as <c>mNameA</c>/<c>mNameB</c> (the thing's +0x3C8 and +0x40A, written by
+	/// The save field of the gate lines (was COMPAT-007, retired): the gate's attraction record carries them as <c>mNameA</c>/<c>mNameB</c> (the thing's +0x3C8 and +0x40A, written by
 	/// the setters 0x4E2950 and 0x4E2A50); the shipped jungle Easymode save holds LOST / Kingdom, the gate's default row.
 	/// </summary>
 	[TestMethod]

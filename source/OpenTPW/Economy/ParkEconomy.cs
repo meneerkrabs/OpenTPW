@@ -665,9 +665,12 @@ public sealed partial class ParkEconomy : IParkEconomy
 	internal ParkObjectState? FindRideForMechanic( StaffMember mechanic, (int X, int Y) cell, Func<int, (int X, int Y)?> cellOf )
 	{
 		var list = objects.Keys.OrderByDescending( id => id ).ToList();
-		int Next( int id ) => list.IndexOf( id ) is var index and >= 0 && index + 1 < list.Count ? list[index + 1] : 0;
+		var positions = new Dictionary<int, int>( list.Count );
+		for ( var index = 0; index < list.Count; index++ )
+			positions[list[index]] = index;
+		int Next( int id ) => positions.TryGetValue( id, out var index ) && index + 1 < list.Count ? list[index + 1] : 0;
 		var cursor = MechanicCursor;
-		cursor = cursor != 0 && list.Contains( cursor ) ? Next( cursor ) : list.Count > 0 ? list[0] : 0;
+		cursor = cursor != 0 && positions.ContainsKey( cursor ) ? Next( cursor ) : list.Count > 0 ? list[0] : 0;
 		MechanicCursor = cursor;
 		if ( cursor == 0 )
 			return null;

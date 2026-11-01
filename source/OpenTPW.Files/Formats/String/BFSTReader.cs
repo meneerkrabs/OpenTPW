@@ -172,6 +172,23 @@ public sealed class StringTemplate
 	public IReadOnlyList<StringTemplatePart> Parts { get; }
 	public int ParameterCount => Parts.Count( part => part.IsParameter );
 
+	/// <summary>
+	/// The record with each parameter slot filled by the value of its own type (the slot's field is the index of the argument it takes; a type without a value fills nothing).
+	/// </summary>
+	public string FillByType( IReadOnlyDictionary<int, string> values )
+	{
+		ArgumentNullException.ThrowIfNull( values );
+		var builder = new StringBuilder();
+		foreach ( var part in Parts )
+		{
+			if ( !part.IsParameter )
+				builder.Append( part.Text );
+			else if ( values.TryGetValue( part.ParameterType, out var value ) )
+				builder.Append( value );
+		}
+		return builder.ToString();
+	}
+
 	/// <summary>The record with its parameter slots filled in order by <paramref name="values"/> (a missing value fills nothing).</summary>
 	public string Fill( params string[] values )
 	{

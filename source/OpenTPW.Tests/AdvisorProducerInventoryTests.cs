@@ -290,7 +290,7 @@ public class AdvisorProducerInventoryTests
 		CollectionAssert.DoesNotContain( AdvisorUiHelp.ModeHelpMessages.ToArray(), id, "neither SetMode list withdraws 0xCC (0x52F245..0x52F326, 0x52F5BF..0x52F6A0)" );
 		CollectionAssert.DoesNotContain( RestoredAdvice.ModeHelp.ToArray(), id );
 		Assert.AreEqual( HelpCallback, Descriptors().Single( item => item.MessageId == id ).Callback );
-		Assert.AreEqual( 43, messages.Count( item => item.Kind == "help" && item.Status == "wired" ), "the 42 help rows wired before, and 204" );
+		Assert.AreEqual( 44, messages.Count( item => item.Kind == "help" && item.Status == "wired" ), "the 42 help rows wired before, 204 and the All Staff window's 285" );
 	}
 
 	[TestMethod]

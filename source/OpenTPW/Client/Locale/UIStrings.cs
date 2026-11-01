@@ -94,6 +94,7 @@ public enum UIStrings
 	NameItemAttr = 98,
 	NumberOwnedAttr = 99,
 	AllStaff = 100,
+	NameStaff = 101,
 	CurrentStatusStaff = 102,
 	MonthlyWageStaff = 103,
 	SkillStaff = 104,

@@ -761,7 +761,10 @@ public class AdvisorScanParkTests
 		mechanic.AssignedInstanceId = ride.Id + 1000;
 		Assert.AreEqual( 69, AdvisorRideEvents.ForBreakdown( park, ride ), "busy with another ride" );
 		mechanic.AssignedInstanceId = ride.Id;
-		Assert.IsNull( AdvisorRideEvents.ForBreakdown( park, ride ), "on the way to this ride: advice 70 is the dispatch's" );
+		Assert.AreEqual( 70, AdvisorRideEvents.ForBreakdown( park, ride ), "on the way to this ride, which nobody called for: the handler says advice 70 too (0x4DAF7E)" );
+		ride.MaintenanceRequested = true;
+		Assert.IsNull( AdvisorRideEvents.ForBreakdown( park, ride ), "a ride the player called a mechanic to posts nothing" );
+		ride.MaintenanceRequested = false;
 		var second = EconomyTestData.HireBest( park, StaffType.Mechanic );
 		mechanic.AssignedInstanceId = ride.Id + 1000;
 		Assert.IsNull( AdvisorRideEvents.ForBreakdown( park, ride ), "the second mechanic is free" );

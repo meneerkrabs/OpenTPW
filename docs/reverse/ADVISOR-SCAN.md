@@ -22,9 +22,9 @@ Message 204 is the kart and water line tool's help: the click that gives the too
 
 | Status | Messages | Meaning |
 | --- | ---: | --- |
-| wired | 245 | OpenTPW produces the message today |
+| wired | 246 | OpenTPW produces the message today |
 | ready | 0 | every input exists in OpenTPW (the inventory names the class or field); only the producer is missing |
-| blocked | 3 | an input is missing or approximated (the help windows 285, 307 and 308) |
+| blocked | 2 | an input is missing or approximated (the help windows 307 and 308) |
 | none | 103 | nothing to produce: 21 are scored by the scan but their callback is the constant-zero stub, 82 have no producer in `tp.exe` at all |
 
 | Kind | Messages | Producer |
@@ -46,13 +46,13 @@ Message 204 is the kart and water line tool's help: the click that gives the too
 | Research | 19 | 0 | 0 | 0 | 19 |
 | Weather | 0 | 0 | 0 | 0 | 0 |
 | Challenges and golden tickets | 30 | 0 | 0 | 0 | 30 |
-| Tutorial and help | 46 | 0 | 3 | 35 | 84 |
+| Tutorial and help | 47 | 0 | 2 | 35 | 84 |
 | Other | 9 | 0 | 0 | 68 | 77 |
-| Total | 245 | 0 | 3 | 103 | 351 |
+| Total | 246 | 0 | 2 | 103 | 351 |
 
 Weather has no message: no score callback reads weather or season state, no poster is a weather event, and no `TAG_SYSTEM.str` caption
-of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **245** have their producer here: 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
-68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311, 315 and 344), 43 help messages of windows and tools OpenTPW has, and 134 scored by the ported scan (the money
+of the advisor mentions rain, storm or snow. The "about 91" messages with a producer: **246** have their producer here: 68 posted by game code (every `event` row: 0, 323, 106, 128, 129, 33-57, 66,
+68-70, 93-97, 125-127, 133-136, 167, 215-217, 220-222, 225-227, 234-237, 258, 270-273, 311, 315 and 344), 44 help messages of windows and tools OpenTPW has, and 134 scored by the ported scan (the money
 batch: 100-105 and 107; the 31 park callbacks of the rides, cleanliness and guest mood batches: 3-10, 60, 62, 71, 73-75, 77-79, 81, 82, 85-89, 145, 158, 159 and 259-262; the 38 staff callbacks: 11, 13, 14, 18, 20, 23, 26, 28-32,
 108-112, 114-123, 144, 146-150, 169-172 and 263; the 31 callbacks of the queues, prices and research batches: 15-17, 61, 63, 64, 72, 76, 80, 91, 92 and 238-257; and the 18 callbacks
 of the park-opening, congratulation, tutorial and golden ticket group: 1, 2, 124, 140, 156, 157, 185, 274-276, 278-282, 314, 316 and 317, see "Challenges and golden tickets"; and the last 9: 12, 19, 21, 22, 27, 98, 113, 141 and 264, see "The last nine callbacks").
@@ -547,8 +547,8 @@ which the response table does not have, so the table generator (and `AdvisorHelp
 `advisor-descriptors.toml` and in the inventory (kind unused). The "81 versus 82" counts in the comments and docs are the same table
 counted with and without 291.
 
-- wired (43): 184, 188-189, 191-193, 195, 197-201, 203-209, 212-214, 284, 286-287, 289, 292-295, 297-305, 309, 337, 345-346
-- posted in the original, no window here (3): 285, 307-308 (285 All Staff window, 308 address book, 307 postcard)
+- wired (44): 184, 188-189, 191-193, 195, 197-201, 203-209, 212-214, 284-287, 289, 292-295, 297-305, 309, 337, 345-346
+- posted in the original, no window here (2): 307-308 (308 address book, 307 postcard); 285 (the All Staff window `0x496620`, which posts it at `0x496BA3` and withdraws it at `0x495F3B`) is wired since round 11 (`ParkHud.AllStaffWindow.cs`)
 - posted by no window or tool in `tp.exe` (36 descriptors; 344 is the exception, see below): 186-187, 190, 194, 196, 202, 210-211, 266, 283, 288, 290-291, 296, 306, 322, 324-336, 338-344
 
 Of these, **344** is posted after all: the challenge system's first offer (`0x4D2C50`, the nonzero argument of `0x4D2A70`) posts it in place of 270, as an event (`AutomaticAdvisor.Challenges`), so its inventory row is an `event` row, `wired` (no call of `0x486B00` or `0x59B590` names it); the other 35 are the inventory's `unused` help rows, posted by nothing.
@@ -690,11 +690,9 @@ class 0 the land (not 2, 7, 30), class 1 the built cells (1, 3, 9, 10, 4, 21 and
 byte of `0x4E0860(thing, 0)` over the attractions whose type has `Info.WhichUIType` 0 (a signed division, 0 without one); the byte is `RideVisitorBridge.LiveExcitement` (ECON/QUEUE join rules), through `ParkEconomy.RideLiveExcitement`.
 The cache is saved (the serializer `0x4C5D70` keeps value, valid byte and stamp, `0x4C6243`, `0x4C6261`, `0x4C6E62`) in OpenTPW's unhashed `AnalyserCaches`; an original save's copy is not imported, as its net-worth cache is not.
 
-**What stays unread.** The word +4 of the scan object (the subject of 113 and 141: a thing id) reaches only the advice record's builder (`0x59B6BE` copies it into the queued record, +4/+8), whose readers are the open
-question of GUEST-007; it is not kept. The researchers' lab flag (`0x5041F0`, `ParkStaff.LabActive`; the ResearchLab thing's `mLabActive` byte +0x1468, which no code but the edge test and the save reads) posts message 5 (a
-researcher is in the list and the byte was clear) or 6 (none and it was set) through `0x40FB10`; only the advisor subscribes to 5 (`0x599EDB`, with 8, 14, 17, 19, 23 and 25), nobody to 6. The advisor's handler `0x59B060`
-takes the type 5 as an advice message: it reads a prebuilt record at message +8 with its valid byte at +0x1C and passes it to `0x59A940`; the researchers' message is a plain 12-byte object, so the record is the poster's stack
-frame (message id word -1, which no descriptor holds, score the poster's return address). Whether `0x59ABC0` lets that record into the queue is not traced, so the handler is not ported.
+**What the callbacks leave over.** The word +4 and dword +8 of the scan object are written by the callbacks of messages 86-89, 113, 140 and 238-256 (the stores `0x59E4B2`, `0x59E570`, `0x59E632`, `0x59E6E0`, `0x59EF83`, `0x59F4DD`, `0x59FBB1` to `0x5A0146`); the speech (`0x59B620`, through `0x59C0A0`) copies the nonzero ones into the queued record's id and cell words (`0x59B6CF..0x59B6E4`) and the record carries them in the category-24 message to the tag system. The only readers there are the caption formatter's cases (`0x509E10`, jump table `0x50AE40`, byte table `0x50AEA0`): the advisor's 610 response rows use the tag kinds 0 (317 rows, no arguments), 2 (the object type named by the low word of the dword, `0x509F09`: the ride lines 66, 68, 69, 70 and the research lines 93-97) and 5 to 8 (the golden ticket wins, which read the park's thresholds `0x785790`, `0x785794`, `0x7857A0` and `0x7857A4`/`0x7857A8`, not the record), and the rows of the scan callbacks above are of kind 0 or have no caption, so those words are read by nothing. OpenTPW does not store the callbacks' words; it keeps the words the game code puts in a record (`AdvisorPendingAdvice.ThingId`/`Secondary`) and runs the speech's score check for the scanned messages (`AdvisorController.UpdateSpeaking`).
+
+**The researchers' lab flag.** `0x5041F0` (`ParkStaff.LabActive`; the ResearchLab thing's `mLabActive` byte +0x1468, which no code but the edge test and the save reads) posts a message of type 0x13 (the 12-byte object `0x40F630` builds, vtable `0x6FD810`, slot 0 `0x40F650` answers 0x13) with the value 5 (a researcher is in the list and the byte was clear, `0x504090`) or 6 (none and it was set, `0x504140`) through `0x40FB10`. The advisor subscribes to type 0x13 (`0x599EF9`); its handler `0x59B060` sends it to `0x59AE20`, whose jump table `0x59AF98` (byte table `0x59AFB0`) acts on the values 0, 2, 3, 4 and 10 (the advice 0 and 323, 106, 128, 129 and the history reset) and leaves 1 and 5 to 9 alone, so the lab flag reaches no advice. The type-5 case of `0x59B060` (`0x59B092`) is the one that reads a prebuilt record at message +8 with its valid byte at +0x1C: the messages of type 5 are the golden ticket code's (class `0x6FD7B0`, built at `0x4D5037` to `0x4D5C47`), which carry a record from `0x59B590`; OpenTPW posts those advices to the controller directly.
 
 ## Confidence and open points
 
@@ -718,4 +716,4 @@ frame (message id word -1, which no descriptor holds, score the poster's return 
 6. **Staff** (11, 13, 14, 18, 20, 23, 26, 28-32, 108-112, 114-123, 144, 146-150, 169-172, 263): done (see "Staff callbacks"); **research** (15-17, 61, 63, 64, 72, 76, 80): done (see "Queues, prices and research callbacks").
 7. **Prices** (91, 92, then 238-257): done (see "Queues, prices and research callbacks"); the booth fills ring 0.
 8. **Challenges and golden tickets** (270, 272, 273, 215-227, 311, 315, 274-281, 314, 316, 317) and the park-opening, congratulation and tutorial callbacks (1, 2, 124, 140, 156, 157, 185, 282): done (see "Challenges and golden tickets"); 277 and 318 (the profit hints) stay with the restored advice.
-9. **The last nine** (round 10): coverage (19, 21, 27), pranks (12, 22, 98, 264), queue links (113), ride excitement (141): done ("The last nine callbacks"). Blocked: the three help windows (285, 307, 308).
+9. **The last nine** (round 10): coverage (19, 21, 27), pranks (12, 22, 98, 264), queue links (113), ride excitement (141): done ("The last nine callbacks"). Blocked: the three help windows (285, 307, 308; 285 was ported with the All Staff window in round 11).

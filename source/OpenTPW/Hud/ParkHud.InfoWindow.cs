@@ -113,6 +113,7 @@ public sealed partial class ParkHud
 	{
 		if ( Stack.Screens.Any( screen => screen.Name == "parkInfo" ) )
 			return;
+		RememberInfoWindow( InfoWindowKind.ParkInfo );
 		var table = ParkInfoTable;
 		var screen = new ParkInfoScreen( this );
 		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
@@ -236,7 +237,7 @@ public sealed partial class ParkHud
 		var kids = table.Control( 0x4A68C6 );
 		screen.Add( new UiButton { Id = "allVisitors", Model = kids.Model, Help = strings.Help( kids.Help ), Clicked = () => { CloseParkInfoWindow(); OpenVisitorWindow(); }, Bounds = kids.Rect, Anchor = UiAnchor.Center } );
 		var staff = table.Control( 0x4A68C7 );
-		screen.Add( new UiButton { Id = "allStaff", Model = staff.Model, Help = strings.Help( staff.Help ), Clicked = () => { CloseParkInfoWindow(); OpenStaffWindow(); ShowEmployedStaff( true ); }, Bounds = staff.Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "allStaff", Model = staff.Model, Help = strings.Help( staff.Help ), Clicked = () => { CloseParkInfoWindow(); OpenAllStaffWindow(); }, Bounds = staff.Rect, Anchor = UiAnchor.Center } );
 		var things = table.Control( 0x4A68C8 );
 		screen.Add( new UiButton { Id = "allThings", Model = things.Model, Help = strings.Help( things.Help ), Clicked = () => { CloseParkInfoWindow(); OpenAttractionsWindow(); }, Bounds = things.Rect, Anchor = UiAnchor.Center } );
 	}

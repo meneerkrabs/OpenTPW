@@ -14,6 +14,12 @@ vertex {
         vec3 g_vCameraPos;
         float g_flTime;
         float g_flViewDistanceScale;
+        float _pad3;
+        float _pad4;
+        float _pad5;
+        // the ambient of the lobby screen the advisor is shown over (Advisor.Ambient), in the block's last vec3 slot (ObjectUniformBuffer, offset 256); g_flAmbientSet is 0 for the park's default
+        vec3 g_vAmbient;
+        float g_flAmbientSet;
     } g_oUbo;
 
     // A struct, not an interface block: Veldrid.SPIRV's HLSL passes a block as its own main() parameter, so the vertex output
@@ -42,10 +48,12 @@ vertex {
 
         // [BIN:TPW-EXE:0x005741B0 vertex lighting] the original lights each vertex: ambient plus the sum over the directional lights of
         // colour x max(0, -L.N), clamped per channel. The advisor has one directional light of colour 1.0 (0x00429BA0) and sees the default
-        // ambient 0.15 grey (0x00573FD0, which nothing in an ordinary park changes); the lit colour then modulates the texture.
+        // ambient 0.15 grey (0x00573FD0, which nothing in an ordinary park changes) or, in the lobby, the ambient words of the active lobby screen
+        // (0x879DD8-0x879DE4: 0x5E1924 0.267 grey on the island screens, 0x5DD078 0.125 grey on the globe); the lit colour then modulates the texture.
         vec3 N = normalize(normal);
         vec3 L = normalize(g_oUbo.g_vLightPos - vs_out.vWorldPosition);
-        vs_out.vLight = clamp(vec3(0.15) + max(dot(N, L), 0.0) * g_oUbo.g_vLightColor, 0.0, 1.0);
+        vec3 ambient = g_oUbo.g_flAmbientSet > 0.5 ? g_oUbo.g_vAmbient : vec3(0.15);
+        vs_out.vLight = clamp(ambient + max(dot(N, L), 0.0) * g_oUbo.g_vLightColor, 0.0, 1.0);
 
         outTexIndex = texIndex;
         outMatFlags = matFlags;
@@ -75,6 +83,12 @@ fragment {
         vec3 g_vCameraPos;
         float g_flTime;
         float g_flViewDistanceScale;
+        float _pad3;
+        float _pad4;
+        float _pad5;
+        // the ambient of the lobby screen the advisor is shown over (Advisor.Ambient), in the block's last vec3 slot (ObjectUniformBuffer, offset 256); g_flAmbientSet is 0 for the park's default
+        vec3 g_vAmbient;
+        float g_flAmbientSet;
     } g_oUbo;
 
     layout( set = 1, binding = 0 ) uniform texture2D Color0;

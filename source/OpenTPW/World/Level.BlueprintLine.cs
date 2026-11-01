@@ -47,4 +47,28 @@ public partial class Level
 			return null;
 		return TileLineGhost.TileRaise( new ParkTileGhostMap( cells, OwnerPriorityAt, ( cx, cy ) => BlueprintGround( cells, field, cx, cy ) ), x, y );
 	}
+
+	/// <summary>
+	/// The Buy Land tool's fence ghost as the original draws it (<c>0x53AAC0</c> with the tool mode 0x19): the tile chooser's tiles along the four edges of the rectangle from the stored corner to the hovered post (the hovered
+	/// post's tile alone before the first click), all red while the land validator refuses the rectangle. Null in a world that types no cells.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00523A50 fence passes] the hover runs the walker four times (the top edge from the left post two cells in to the right post two cells in, the right edge, the bottom edge, the left edge back up), the refused rectangle having set the validator's sticky word 0x816D50 first (0x531A50)
+	internal List<((int X, int Y) Origin, int Answer)>? BuyLandGhost( BuyLandTool tool )
+	{
+		if ( !TypesFootprints || Guests?.Grid.Cells is not { Land: { } land } cells || OriginalPark?.Heightfield is not { } field || tool.HoverPost is not { } post )
+			return null;
+		var map = new ParkTileGhostMap( cells, OwnerPriorityAt, ( x, y ) => BlueprintGround( cells, field, x, y ) );
+		var gate = new LineGhostTileTool( 0, 3, 0, false, land.PostA, land.PostB );
+		var latches = new TileLatches { Refuse = tool.HoverRefused };
+		var tiles = new List<((int X, int Y) Origin, int Answer)>();
+		void Pass( (int X, int Y) from, (int X, int Y) to )
+		{
+			var result = TileLineGhost.Run( map, 0x19, from, to, gate, latches );
+			latches = result.Latches;
+			tiles.AddRange( result.Tiles );
+		}
+		foreach ( var (from, to) in TileLineGhost.FencePasses( tool.Corner, post ) )
+			Pass( from, to );
+		return tiles;
+	}
 }

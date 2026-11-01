@@ -1781,10 +1781,19 @@ public sealed partial class ParkHud
 			cells.Add( (staffCell.X, staffCell.Y, BlueprintMarker.Refused) );
 		else if ( level.BuyLandTool is { IsActive: true } landTool )
 		{
-			// [APPROX:BLUEPRINT-003] the Buy Land ghost is the blueprint's cells along the rectangle's four edges (or the hovered post before the first click), blue while the validator allows the rectangle and red when it refuses it; the original draws a ghost fence model along the edges (0x53aac0 with the tool mode | 0x100) coloured by the refusal 0x816d50
-			var marker = landTool.HoverRefused ? BlueprintMarker.Refused : BlueprintMarker.Allowed;
-			foreach ( var (x, y) in landTool.PreviewEdge() )
-				cells.Add( (x, y, marker) );
+			if ( level.BuyLandGhost( landTool ) is { } fence )
+			{
+				// [BIN:TPW-EXE:0x0053AAC0 fence ghost] the fence tool's tiles are the tile chooser's: red for the answer 1 (every tile while the rectangle is refused), blue otherwise
+				foreach ( var ((x, y), answer) in fence )
+					cells.Add( (x, y, answer == 1 ? BlueprintMarker.RefusedTile : BlueprintMarker.AllowedTile) );
+			}
+			else
+			{
+				// [EXT:untyped-harness-world] a world that does not type its cells has no records for the tile chooser: its Buy Land ghost is the host's cells along the rectangle's four edges (or the hovered post before the first click), red while the validator refuses
+				var marker = landTool.HoverRefused ? BlueprintMarker.Refused : BlueprintMarker.Allowed;
+				foreach ( var (x, y) in landTool.PreviewEdge() )
+					cells.Add( (x, y, marker) );
+			}
 		}
 		else if ( level.AreaClearTool is { IsActive: true } clearTool )
 		{

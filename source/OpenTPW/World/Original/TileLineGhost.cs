@@ -101,6 +101,18 @@ internal static class TileLineGhost
 		}
 	}
 
+	/// <summary>The walker's passes of the Buy Land fence ghost: the hovered post alone before the first click, else the four edges of the rectangle between the corner and the hovered post.</summary>
+	// [BIN:TPW-EXE:0x00523A50 fence passes] top edge (minX, +2 when minX != maxX, minY) to (maxX, -2, minY); right edge (maxX, minY) to (maxX, maxY); bottom edge as the top at maxY; left edge (minX, maxY) back up to (minX, minY)
+	public static List<((int X, int Y) From, (int X, int Y) To)> FencePasses( (int X, int Y)? corner, (int X, int Y) post )
+	{
+		if ( corner is not { } start )
+			return [(post, post)];
+		var (minX, maxX) = (Math.Min( start.X, post.X ), Math.Max( start.X, post.X ));
+		var (minY, maxY) = (Math.Min( start.Y, post.Y ), Math.Max( start.Y, post.Y ));
+		var inner = minX != maxX ? 2 : 0;
+		return [((minX + inner, minY), (maxX - inner, minY)), ((maxX, minY), (maxX, maxY)), ((minX + inner, maxY), (maxX - inner, maxY)), ((minX, maxY), (minX, minY))];
+	}
+
 	/// <summary>Runs the preview over the tiles of the line from <paramref name="start"/> to <paramref name="end"/>.</summary>
 	// [BIN:TPW-EXE:0x005372AD tile ghost] the chooser answers (mode, 0, direction byte): 1 refuses (a second call with 1, the refusal word 0x527940, then the red floor and red walls), 0 takes the default texture 0 and any other answer is the texture (0xB m_end); the floor is queued at the tile's raise + 1.5 (size flag 1), the walls after it
 	public static TileLineGhostResult Run( ITileGhostMap map, int mode, (int X, int Y) start, (int X, int Y) end, in LineGhostTileTool tool, TileLatches latches )

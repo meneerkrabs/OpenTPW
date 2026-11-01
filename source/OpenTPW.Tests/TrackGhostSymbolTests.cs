@@ -168,4 +168,12 @@ public class TrackGhostSymbolTests
 		var (blue, _) = BlueprintMarkers.BuildGeometry( Field(), new[] { (2, 2, BlueprintMarker.AllowedTile) }, null, 0, null, 0, true, default, raises );
 		Assert.AreEqual( 0, blue[0].TexIndex, "a blue tile takes the plain square" );
 	}
+
+	[TestMethod]
+	public void TheBuyLandGhostWalksTheHoveredPostAloneThenTheFourEdges()
+	{
+		CollectionAssert.AreEqual( new[] { ((6, 8), (6, 8)) }, TileLineGhost.FencePasses( null, (6, 8) ) );
+		CollectionAssert.AreEqual( new[] { ((12, 4), (16, 4)), ((18, 4), (18, 10)), ((12, 10), (16, 10)), ((10, 10), (10, 4)) }, TileLineGhost.FencePasses( (18, 10), (10, 4) ), "the top and bottom edges leave out the corner tiles of the side edges" );
+		CollectionAssert.AreEqual( new[] { ((4, 4), (4, 4)), ((4, 4), (4, 10)), ((4, 10), (4, 10)), ((4, 10), (4, 4)) }, TileLineGhost.FencePasses( (4, 4), (4, 10) ), "a rectangle one post wide keeps its edges whole" );
+	}
 }

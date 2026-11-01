@@ -545,7 +545,7 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// [EXT:online-coop-claims] A guest's completing click came back (C3c-2): the tool finishes as the host's does (the queue tool follows) only while <paramref name="panel"/> is still the open
+	/// [EXT:online-coop-claims] A guest's completing click came back (C3c-2): the tool finishes as the host's does (it ends) only while <paramref name="panel"/> is still the open
 	/// one, its station stands and the park's claims, every record applied so far, give the coaster to this seat; otherwise the panel closes without a command, and a lost claim says so.
 	/// </summary>
 	private void FinishGuestCoasterTool( OriginalObject station, CoasterToolPanel panel )
@@ -677,20 +677,30 @@ public partial class Level
 		return done.Result;
 	}
 
-	/// <summary>The tool's end after a completed track, on the issuer's machine: the panel closes and the queue tool follows a ride with a queue (the ride's door opened in the command).</summary>
+	/// <summary>
+	/// The coaster a park click on (<paramref name="x"/>, <paramref name="y"/>) enters the track tool of, or null: the cell is a marker cell (type 0x15, <see cref="CoasterCellMarkers.MarkerType"/>)
+	/// with an owner whose ride is a placed coaster.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4875ae hover class 6] the hover handler 0x486d90 maps a hovered cell of map type 0x15 to cursor mode 6 (switch 0x4875ae, mode set at 0x48772b, help 0xb) once no visitor or staff member is hovered; the click dispatcher's case 6 (0x487e56, switch 0x487a74) takes the cell's owner thing (the cell record +0x2a4 → 0x4d99e0, the thing table 0x7cfb90 with 20-byte records) and calls 0x4988c0 on it at 0x487eeb, with no owner it does nothing (0x48813d); no window opens
+	internal OriginalObject? CoasterAtMarkerCell( int x, int y )
+	{
+		if ( IsReadOnlyVisit || Guests == null )
+			return null;
+		var cells = Guests.Grid.Cells;
+		var owner = cells.OwnerAt( x, y );
+		if ( cells.RawTypeAt( x, y ) != CoasterCellMarkers.MarkerType || owner == 0 )
+			return null;
+		return Objects.FindAt( (owner - 1) & 0x7F, (owner - 1) >> 7 ) is { IsDeleted: false, Runtime.Coaster: not null } station ? station : null;
+	}
+
+	/// <summary>The tool's end after a completed track, on the issuer's machine: the panel closes and the tool ends (the ride's door opened in the command).</summary>
+	// [BIN:TPW-EXE:0x526514 coaster completion] the coaster tool's click (mode 0x15) takes the pass 0x81's zero result to 0x526568, which hands over to the queue tool only while the placement's queue start 0x8186c0 is pending (0x52656e, taken at 0x526680); a coaster's placement consumed it (0x5252ea), so the tool ends (0x5266bc) and no queue tool follows
 	private void FinishCoasterTool( OriginalObject station )
 	{
 		CoasterPanel?.Close();
 		CoasterPanel = null;
 		CoasterToolStation = null;
 		CoasterPreview = null;
-		if ( station.Entry.HasQueue && station.Runtime.IsAttraction && station.Visitors.HasCells )
-		{
-			// [BIN:TPW-EXE:0x00526680 queue start] where the coaster tool's click (mode 0x15) hands over to the queue tool it takes the pending queue start (0x52656E tests it, 0x526680 zeroes it),
-			// and with none pending it ends the tool (0x5266BC); OpenTPW's coaster completion enters the queue tool either way (UI-031)
-			placedQueueStart = null;
-			EnterQueueTool( station.Visitors );
-		}
 	}
 
 	/// <summary>

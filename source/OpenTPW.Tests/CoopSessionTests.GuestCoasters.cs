@@ -134,7 +134,7 @@ public partial class CoopSessionTests
 		Assert.AreEqual( (seat, seat), (host.Level.ClaimOf( ride ), guest.Level.ClaimOf( ride )), "the claim is the guest's on both parks" );
 		Assert.IsTrue( hostCoaster.Runtime.Coaster!.BeingEdited && coaster.Runtime.Coaster!.BeingEdited, "the entry closed the coaster on both parks" );
 		CollectionAssert.AreEqual( new[] { ParkCommandKind.ClaimRide, ParkCommandKind.BeginCoasterTool }, HostCommandsOf( host, seat ).Select( command => command.Kind ).ToArray() );
-		Assert.AreEqual( 1, view.Hud.Messages.Count( message => message == view.Strings.Help( 0x125 ) ), "the tool's help, as the host's button posts it" );
+		Assert.AreEqual( 0, view.Hud.Messages.Count( message => message == view.Strings.Help( 0x125 ) ), "the track button's entry posts no help (0x4988c0 never calls 0x486b00; the build button's press does)" );
 		// the host's own entry is refused on the guest's coaster, in the claim's words, and so are its forged commands
 		host.Enter();
 		Assert.AreEqual( TrackToolEntry.Refused, host.Level.BeginCoasterToolEntry( hostCoaster ) );
@@ -174,7 +174,7 @@ public partial class CoopSessionTests
 	[DataTestMethod]
 	[DataRow( false )]
 	[DataRow( true )]
-	public void APressBeforeTheCoastersCompletionHandoverIsNoClickOfItsQueueTool( bool pressOnCompletionFrame )
+	public void APressBeforeTheCoastersCompletionIsNoClickOfAQueueTool( bool pressOnCompletionFrame )
 	{
 		var (host, guest, view, coaster, ride, seat) = SharedCoaster( withQueue: true );
 		GuestCoasterTool( host, guest, view, coaster );
@@ -229,11 +229,11 @@ public partial class CoopSessionTests
 			Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = pressOnCompletionFrame } );
 			Assert.IsNull( guest.Level.CoasterPanel );
 			var tool = guest.Level.CellTool;
-			Assert.AreEqual( CellToolMode.Queue, tool.Mode, "the completion handed over to the queue tool" );
-			Assert.AreEqual( (10, 2), tool.Start );
-			Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "the handover fences both an earlier press and one first seen in this frame" );
+			// [BIN:TPW-EXE:0x526568 coaster completion] the placement consumed the queue start (0x5252ea), so the completion ends the tool (0x5266bc) and no queue tool follows
+			Assert.IsFalse( tool.IsActive && tool.Mode == CellToolMode.Queue, "the completion ended the tool: no queue tool follows" );
+			Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "the completion fences both an earlier press and one first seen in this frame" );
 			panel.Completed!.Invoke();
-			Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "a stale panel's completion cannot invalidate the current tool's gestures" );
+			Assert.AreEqual( starts + 1, guest.Level.HostToolStarts, "a stale panel's completion cannot invalidate the current gestures" );
 			Hud( UiInput.Idle( point ) with { LeftReleased = true } );
 			Assert.IsNull( tool.Waiting, "the stale release sent no queue segment" );
 			Assert.IsFalse( requests.Open.Any( request => request.Command is QueueSegmentCommand ) );
@@ -241,18 +241,9 @@ public partial class CoopSessionTests
 			Assert.AreEqual( 0, HostCommandsOf( host, seat ).Count( command => command is QueueSegmentCommand ) );
 			foreach ( var (park, station) in new[] { (host, HostCoaster( host, coaster )), (guest, coaster) } )
 			{
-				Assert.AreEqual( before, QueueState( station.Visitors ), "the handover and stale release preserved the queue" );
+				Assert.AreEqual( before, QueueState( station.Visitors ), "the completion and the stale release preserved the queue" );
 				CollectionAssert.AreEqual( links, park.Level.QueueLinks( station.Visitors ).ToArray() );
 			}
-			// A new gesture is the queue tool's: the same pointer route must send and apply a real segment, not merely ignore every release.
-			Hud( UiInput.Idle( point ) with { LeftDown = true, LeftPressed = true } );
-			Hud( UiInput.Idle( point ) with { LeftReleased = true } );
-			Assert.IsNotNull( tool.Waiting, "the fresh release sent a queue segment" );
-			RoundsUntil( () => !tool.IsWaiting, host, guest, view, "the fresh queue segment came back" );
-			Assert.AreEqual( 1, HostCommandsOf( host, seat ).Count( command => command is QueueSegmentCommand ) );
-			Assert.AreEqual( (8, 2), tool.Start );
-			Assert.IsTrue( coaster.Visitors.QueueCells.Contains( (8, 2) ) );
-			Assert.AreEqual( QueueState( HostCoaster( host, coaster ).Visitors ), QueueState( coaster.Visitors ) );
 		}
 		finally
 		{

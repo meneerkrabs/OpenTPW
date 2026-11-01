@@ -108,7 +108,9 @@ public sealed partial class ParkHud
 		switch ( level.CompleteTrackToolStart( request ) )
 		{
 			case TrackToolStart.Entered:
-				PostMessage( request.Command is BeginCoasterToolCommand ? strings.Help( 0x125 ) : TrackToolHelp );
+				// [BIN:TPW-EXE:0x4988c0 track tool entry] the coaster tool's entry posts no advisor help (neither 0x497d20 nor 0x4474d0 calls 0x486b00; the build button's 0x498333 does, and the panel posts it)
+				if ( request.Command is not BeginCoasterToolCommand )
+					PostMessage( TrackToolHelp );
 				return;
 			case TrackToolStart.Pending:
 				return;

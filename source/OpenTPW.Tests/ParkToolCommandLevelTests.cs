@@ -133,9 +133,9 @@ public class ParkToolCommandLevelTests
 	}
 
 	/// <summary>The no-data park with two coaster stations.</summary>
-	private ParkSettingCommandLevelTests.Park Coaster()
+	private ParkSettingCommandLevelTests.Park Coaster( string extra = "" )
 	{
-		var park = NewPark( "Bumper.WhichTrackType 3\n" );
+		var park = NewPark( "Bumper.WhichTrackType 3\n" + extra );
 		// an uninitialised level has no field initialisers run: the coaster builders the tool keeps
 		typeof( Level ).GetField( "coasterBuilders", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( park.Level, new Dictionary<OriginalObject, CoasterBuilder>() );
 		Assert.IsNotNull( park.One.Runtime.Coaster );
@@ -260,27 +260,47 @@ public class ParkToolCommandLevelTests
 	}
 
 	/// <summary>
-	/// The coaster tool a placed station opens follows the HUD's own placement once its command has returned (<see cref="ParkCommands.AfterIssue"/>): the tool's entry is a command of its own, logged
-	/// after the placement, so a twin replaying the log marks the coaster being edited as the issuer's park does. The twin's HUD opens no tool for the replayed placement.
+	/// The original's coaster placement takes the placement tail into the queue tool (tp.exe 0x52529e, 0x52f580(3, 0); the pending queue start is consumed at 0x5252ea) and never enters the track
+	/// tool (mode 0x15) in its dispatcher 0x524960: the placement is logged alone and the coaster is not being edited. The track tool is entered through 0x4988c0, here by the ride window's track
+	/// button (0x4af275): the entry is a command of its own, logged after the placement, so a twin replaying the log marks the coaster being edited as the issuer's park does. The twin's HUD
+	/// opens no tool for the replayed placement.
 	/// </summary>
 	[TestMethod]
 	public void APlacedCoasterStationsToolEntryIsACommandOfItsOwn()
 	{
 		ParkHud Hud( ParkSettingCommandLevelTests.Park park ) =>
 			new( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
-		var park = Coaster();
+		// the fixture's one-cell footprint has no entrance: the placed coaster takes a queue front as a ride with an entrance does, so its queue tool follows the placement
+		static void GiveQueue( ParkSettingCommandLevelTests.Park park ) => park.Level.Objects.ObjectPlaced += placed =>
+		{
+			placed.Visitors.HasCells = true;
+			placed.Visitors.QueueFrontCell = (placed.Placement.X, placed.Placement.Y + 2);
+		};
+		var park = Coaster( "Info.HasQueue 1\n" );
+		GiveQueue( park );
 		var level = park.Level;
 		var hud = Hud( park );
 		var entry = park.One.Entry;
 		hud.BeginPlacing( new BuildItem( "coaster", entry.InfoId, BuildCategory.Rides, 0, 0, null, System.Array.Empty<string>(), Entry: entry ) );
 		var placed = level.Commands.Issue( level.BuildCommand( entry, 10, 10, 0 ) ).As<OriginalObject>();
 		Assert.IsNotNull( placed, level.LastActionMessage );
-		Assert.IsTrue( placed.Runtime.Coaster!.BeingEdited, "the HUD entered the coaster tool on the placed station" );
+		Assert.IsFalse( placed.Runtime.Coaster!.BeingEdited, "the placement does not enter the coaster tool" );
+		Assert.IsNull( level.CoasterToolStation );
+		Assert.IsFalse( level.IsCoasterToolActive );
+		Assert.IsTrue( level.CellTool.IsActive && level.CellTool.Mode == CellToolMode.Queue, "the placement went on into the queue tool (0x52f580(3, 0))" );
+		CollectionAssert.AreEqual( new[] { ParkCommandKind.PlaceObject }, level.Commands.Log.Select( entry => entry.Command.Kind ).ToArray(), "the placement is logged alone" );
+
+		// the ride window's track button (0x4af200 → 0x4988c0): the queue tool ends and the track tool starts, its entry a command of its own
+		hud.SelectObject( placed );
+		typeof( ParkHud ).GetMethod( "EditTrack", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( hud, null );
+		Assert.IsTrue( placed.Runtime.Coaster.BeingEdited, "the track button entered the coaster tool on the placed station" );
 		Assert.AreSame( placed, level.CoasterToolStation );
+		Assert.IsFalse( level.CellTool.IsActive, "one tool at a time" );
 		CollectionAssert.AreEqual( new[] { ParkCommandKind.PlaceObject, ParkCommandKind.BeginCoasterTool }, level.Commands.Log.Select( entry => entry.Command.Kind ).ToArray(),
 			"the tool's entry is logged on its own, after the placement" );
 
-		var twin = Coaster();
+		var twin = Coaster( "Info.HasQueue 1\n" );
+		GiveQueue( twin );
 		var twinHud = Hud( twin );
 		twinHud.BeginPlacing( new BuildItem( "coaster", entry.InfoId, BuildCategory.Rides, 0, 0, null, System.Array.Empty<string>(), Entry: twin.One.Entry ) );
 		foreach ( var logged in level.Commands.Log )
@@ -288,6 +308,25 @@ public class ParkToolCommandLevelTests
 		var twinPlaced = twin.Level.Objects.Objects.Single( item => !item.IsDeleted && item.Placement.X == placed.Placement.X && item.Placement.Y == placed.Placement.Y );
 		Assert.IsTrue( twinPlaced.Runtime.Coaster!.BeingEdited, "the twin marks the coaster as the issuer's park does" );
 		Assert.IsNull( twin.Level.CoasterToolStation, "the twin's HUD, though it places the same item, opens no tool for a replayed placement" );
+		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash() );
+	}
+
+	/// <summary>
+	/// A log of the old order (a placement followed by the tool's entry, which the earlier HUD logged at the placement) still replays: the entry is an explicit command, whatever tool the
+	/// placement opened.
+	/// </summary>
+	[TestMethod]
+	public void AnOldLogThatEntersTheCoasterToolRightAfterThePlacementStillReplays()
+	{
+		var park = Coaster();
+		var level = park.Level;
+		var entry = park.One.Entry;
+		var placed = level.Commands.Issue( level.BuildCommand( entry, 10, 10, 0 ) ).As<OriginalObject>();
+		Assert.IsNotNull( placed, level.LastActionMessage );
+		Assert.IsTrue( level.Commands.Issue( new BeginCoasterToolCommand( placed.Runtime.AttractionId ) ).Accepted );
+		var twin = Coaster();
+		foreach ( var logged in level.Commands.Log )
+			Assert.IsTrue( twin.Level.Commands.Apply( logged.Command ).Accepted, logged.Command.ToString() );
 		Assert.AreEqual( level.ComputeStateHash(), twin.Level.ComputeStateHash() );
 	}
 

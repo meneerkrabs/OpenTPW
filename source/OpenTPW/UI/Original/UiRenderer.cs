@@ -32,6 +32,10 @@ internal sealed class UiRenderer : IDisposable
 	private readonly Dictionary<Veldrid.Texture, ResourceSet> renderedSets = new();
 	// GPU copies of the composed title bitmaps; one goes when the bitmap cache drops it.
 	private readonly Dictionary<UiTitleBitmap, (Veldrid.Texture Texture, ResourceSet Set)> titleTextures = new();
+	// pixel surfaces their owner writes (the map): the GPU copy, its resource set, the version it holds and the frame it was last asked for in
+	private readonly Dictionary<UiPixelSurface, (Veldrid.Texture Texture, ResourceSet Set, int Version, long Frame)> surfaceTextures = new();
+	private long frameNumber;
+	private const int SurfaceIdleFrames = 600;
 	private readonly List<DeviceBuffer>[] buffers = Enumerable.Range( 0, Renderer.FramesInFlight ).Select( _ => new List<DeviceBuffer>() ).ToArray();
 	private int frameBuffers;
 	private GpuVertex[] vertices = Array.Empty<GpuVertex>();
@@ -103,6 +107,7 @@ internal sealed class UiRenderer : IDisposable
 		frameBuffers = 0;
 		preparedImages.Clear();
 		RetireTitleTextures();
+		RetireSurfaceTextures();
 	}
 
 	/// <summary>
@@ -307,6 +312,21 @@ internal sealed class UiRenderer : IDisposable
 			renderedSets[rendered] = renderedSet;
 			return renderedSet;
 		}
+		if ( texture.Surface is { } surface )
+		{
+			if ( surfaceTextures.TryGetValue( surface, out var surfaceEntry ) )
+			{
+				if ( surfaceEntry.Version != surface.Version )
+					Device.UpdateTexture( surfaceEntry.Texture, surface.Rgba, 0, 0, 0, (uint)surface.Width, (uint)surface.Height, 1, 0, 0 );
+			}
+			else
+			{
+				var (created, createdSet) = Create( surface.Rgba, surface.Width, surface.Height, Device.LinearSampler );
+				surfaceEntry = (created, createdSet, surface.Version, frameNumber);
+			}
+			surfaceTextures[surface] = (surfaceEntry.Texture, surfaceEntry.Set, surface.Version, frameNumber);
+			return surfaceEntry.Set;
+		}
 		if ( texture.Title is { } title )
 		{
 			if ( titleTextures.TryGetValue( title, out var titleEntry ) )
@@ -360,6 +380,26 @@ internal sealed class UiRenderer : IDisposable
 			entry = Create( [255, 255, 255, 255], 1, 1, Device.PointSampler );
 		textures[key] = entry;
 		return entry.Set;
+	}
+
+	// A surface the map no longer draws gives its GPU copy back after SurfaceIdleFrames frames
+	private void RetireSurfaceTextures()
+	{
+		frameNumber++;
+		if ( surfaceTextures.Count == 0 )
+			return;
+		var dropped = surfaceTextures.Where( pair => frameNumber - pair.Value.Frame > SurfaceIdleFrames ).ToList();
+		foreach ( var pair in dropped )
+			surfaceTextures.Remove( pair.Key );
+		if ( dropped.Count > 0 )
+			Render.ScheduleDelete( () =>
+			{
+				foreach ( var (_, entry) in dropped )
+				{
+					entry.Set.Dispose();
+					entry.Texture.Dispose();
+				}
+			} );
 	}
 
 	// A frame with only cached titles (or no titles) must still release GPU copies the CPU cache has dropped. Disposal stays at the renderer's safe boundary.
@@ -447,6 +487,12 @@ internal sealed class UiRenderer : IDisposable
 			texture.Dispose();
 		}
 		titleTextures.Clear();
+		foreach ( var entry in surfaceTextures.Values )
+		{
+			entry.Set.Dispose();
+			entry.Texture.Dispose();
+		}
+		surfaceTextures.Clear();
 		foreach ( var slot in buffers.Concat( depthBuffers ) )
 		{
 			foreach ( var buffer in slot )

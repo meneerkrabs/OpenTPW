@@ -54,17 +54,15 @@ public class MapRepairDrawTests
 		State( w, first ).Repair = 0; State( w, second ).Repair = 100;
 		return w;
 	}
-	/// <summary>Draws the map as it stands when the window opens: the canvas is written again, as the original writes its classes and draws its surface at every opening.</summary>
-	private static UiVertex[] Draw( World w )
+	/// <summary>Draws the map as it stands when the window opens: the canvas is written again, as the original writes its classes and draws its surface at every opening. Returns the rectangles the render drew into the surface.</summary>
+	private static MapPrim[] Draw( World w )
 	{
 		Set( w.Hud, "mapCanvas", null );
 		w.Context.Batch.Clear(); w.View.Draw( w.Context, false, false );
-		return w.Context.Batch.Draws.SelectMany( draw => draw.Vertices ).ToArray();
+		return ((ParkMapCanvas)typeof( ParkHud ).GetField( "mapCanvas", Private )!.GetValue( w.Hud )!).Prims.ToArray();
 	}
-	private static UiVertex[] OfColor( UiVertex[] vertices, RgbaByte color ) => vertices.Where( vertex => vertex.Color == color ).ToArray();
-	private static UiRect[] Rectangles( UiVertex[] vertices, RgbaByte color ) => OfColor( vertices, color ).Chunk( 6 )
-		.Select( quad => new UiRect( quad.Min( v => v.Position.X ), quad.Min( v => v.Position.Y ),
-			quad.Max( v => v.Position.X ) - quad.Min( v => v.Position.X ), quad.Max( v => v.Position.Y ) - quad.Min( v => v.Position.Y ) ) ).ToArray();
+	private static MapPrim[] OfColor( MapPrim[] prims, RgbaByte color ) => prims.Where( prim => prim.Color == color && !prim.Line ).ToArray();
+	private static UiRect[] Rectangles( MapPrim[] prims, RgbaByte color ) => OfColor( prims, color ).Select( prim => new UiRect( prim.X, prim.Y, prim.Width, prim.Height ) ).ToArray();
 
 	[DataTestMethod]
 	[DataRow( BuildCategory.Rides, false )]
@@ -78,15 +76,15 @@ public class MapRepairDrawTests
 		Assert.AreEqual( w.First.Entry.InfoId, w.Second.Entry.InfoId );
 		Assert.AreNotEqual( w.Level.GetEconomyInstance( w.First ), w.Level.GetEconomyInstance( w.Second ) );
 		var drawn = Draw( w );
-		Assert.AreEqual( 24, OfColor( drawn, Red ).Length ); Assert.AreEqual( 6, OfColor( drawn, Green ).Length );
-		var expected = w.First.Cells.OrderBy( cell => cell.Y ).ThenBy( cell => cell.X ).Select( cell => original ? new UiRect( 95 + cell.X * 15, 66 + cell.Y * 13, 15, 13 )
-			: new UiRect( 80 + cell.X * 16, 24 + cell.Y * 16, 16, 16 ) ).ToArray();
-		CollectionAssert.AreEqual( expected, Rectangles( drawn, Red ), "the pre-existing map grid and image offsets are unchanged" );
+		Assert.AreEqual( 4, OfColor( drawn, Red ).Length ); Assert.AreEqual( 1, OfColor( drawn, Green ).Length );
+		var expected = w.First.Cells.OrderBy( cell => cell.Y ).ThenBy( cell => cell.X ).Select( cell => original ? new UiRect( 15 + cell.X * 15, 42 + cell.Y * 13, 15, 13 )
+			: new UiRect( cell.X * 16, cell.Y * 16, 16, 16 ) ).ToArray();
+		CollectionAssert.AreEqual( expected, Rectangles( drawn, Red ), "the cells lie on the original's grid of the surface (15 + column x 15, 42 + row x 13), the sandbox's fills the image" );
 		w.Hud.ToggleMapCategory( category ); drawn = Draw( w );
 		Assert.AreEqual( 0, OfColor( drawn, Red ).Length ); Assert.AreEqual( 0, OfColor( drawn, Green ).Length );
 		Assert.AreEqual( 0, OfColor( drawn, Fallback ).Length );
 		w.Hud.ToggleMapCategory( category ); State( w, w.First ).Repair = 50;
-		Assert.AreEqual( 24, OfColor( Draw( w ), new RgbaByte( 248, 200, 0, 255 ) ).Length, "live repair changes refresh without caching" );
+		Assert.AreEqual( 4, OfColor( Draw( w ), new RgbaByte( 248, 200, 0, 255 ) ).Length, "live repair changes refresh without caching" );
 	}
 
 	[DataTestMethod]
@@ -104,7 +102,7 @@ public class MapRepairDrawTests
 	public void UnavailableOrMismatchedCurrentStateRetainsExactOldFallback( string reason )
 	{
 		var w = Create(); var state = State( w, w.First );
-		Assert.AreEqual( 24, OfColor( Draw( w ), Red ).Length );
+		Assert.AreEqual( 4, OfColor( Draw( w ), Red ).Length );
 		switch ( reason )
 		{
 			case "unbound": Bindings( w ).Remove( w.First ); break;
@@ -123,8 +121,8 @@ public class MapRepairDrawTests
 		}
 		var drawn = Draw( w );
 		Assert.AreEqual( 0, OfColor( drawn, Red ).Length );
-		Assert.AreEqual( reason is "readOnly" or "staleStatus" or "noPark" or "noEconomy" or "nullStatus" ? 30 : 24, OfColor( drawn, Fallback ).Length );
-		Assert.IsTrue( OfColor( drawn, Fallback ).All( vertex => vertex.Color.A == 235 ) );
+		Assert.AreEqual( reason is "readOnly" or "staleStatus" or "noPark" or "noEconomy" or "nullStatus" ? 5 : 4, OfColor( drawn, Fallback ).Length );
+		Assert.IsTrue( OfColor( drawn, Fallback ).All( prim => prim.Color.A == 235 ) );
 	}
 
 	[TestMethod]
@@ -133,28 +131,37 @@ public class MapRepairDrawTests
 		var w = Create(); var firstState = State( w, w.First );
 		var replacement = w.Economy.RegisterExisting( w.First.Entry.InfoId ); replacement.Repair = 50;
 		Bindings( w )[w.First] = replacement.Id;
-		Assert.AreEqual( 24, OfColor( Draw( w ), new RgbaByte( 248, 200, 0, 255 ) ).Length );
+		Assert.AreEqual( 4, OfColor( Draw( w ), new RgbaByte( 248, 200, 0, 255 ) ).Length );
 		Assert.AreEqual( 0d, firstState.Repair, "the displaced record is untouched" );
 		w.First.Delete(); var drawn = Draw( w );
 		Assert.AreEqual( 0, OfColor( drawn, new RgbaByte( 248, 200, 0, 255 ) ).Length );
-		Assert.AreEqual( 0, OfColor( drawn, Fallback ).Length ); Assert.AreEqual( 6, OfColor( drawn, Green ).Length );
+		Assert.AreEqual( 0, OfColor( drawn, Fallback ).Length ); Assert.AreEqual( 1, OfColor( drawn, Green ).Length );
 		((List<OriginalObject>)w.Level.Objects.Objects).Remove( w.Second );
 		Assert.AreEqual( 0, OfColor( Draw( w ), Green ).Length );
 	}
 
+	private static ParkMapCanvas CanvasOf( World w ) => (ParkMapCanvas)typeof( ParkHud ).GetField( "mapCanvas", Private )!.GetValue( w.Hud )!;
+
 	[TestMethod]
-	public void PartialViewportClippingAndAllTriangleGeometryMatchFallbackRendering()
+	public void TheSurfaceIsBakedOnceAndShownAsOneQuadWhateverTheView()
 	{
 		var w = Create(); Place( w.First, 7, 7 ); Place( w.Second, 1, 1 );
 		Set( w.Hud, "mapView", new MapViewState( 2, new NVector2( 15.25f ) ) );
-		State( w, w.First ).Repair = double.NaN; var fallback = Draw( w );
-		State( w, w.First ).Repair = 0; var actual = Draw( w );
-		CollectionAssert.AreEqual( fallback.Select( vertex => (vertex.Position, vertex.TexCoords) ).ToArray(), actual.Select( vertex => (vertex.Position, vertex.TexCoords) ).ToArray() );
-		CollectionAssert.AreEqual( Rectangles( fallback, Fallback ), Rectangles( actual, Red ) );
-		var rects = Rectangles( actual, Red ); Assert.AreEqual( 4, rects.Length );
-		Assert.IsTrue( rects.Any( rect => rect.Width == 8 && rect.Height == 8 ), "the upper-left cell is partially clipped on both axes" );
-		Assert.IsTrue( rects.All( rect => rect.X >= 80 && rect.Y >= 24 && rect.Right <= 592 && rect.Bottom <= 536 ) );
-		Assert.AreEqual( 0, OfColor( actual, Green ).Length, "a fully offscreen object stays clipped" );
+		State( w, w.First ).Repair = 0;
+		Draw( w );
+		var surface = CanvasOf( w ).Pixels;
+		var quads = w.Context.Batch.Draws.Where( draw => ReferenceEquals( draw.Texture.Surface, surface ) ).ToArray();
+		Assert.AreEqual( 1, quads.Length );
+		Assert.AreEqual( 6, quads[0].Vertices.Count, "one quad: the cells, outlines and areas are in the surface, not drawn one by one" );
+		Assert.AreEqual( 1, w.Context.Batch.Draws.Count( draw => draw.Texture.Surface != null ) );
+		// the sandbox's 32 x 32 cells are 16 pixels: the cell (7, 7) is red in the baked pixels, a cell no object stands on keeps the sandbox base
+		var at = ((7 * 16 + 8) * 512 + 7 * 16 + 8) * 4;
+		CollectionAssert.AreEqual( new byte[] { 248, 0, 0, 255 }, surface.Rgba[at..(at + 4)] );
+		var empty = (20 * 16 * 512 + 20 * 16) * 4;
+		Assert.AreNotEqual( (byte)248, surface.Rgba[empty] );
+		var version = surface.Version;
+		w.Context.Batch.Clear(); w.View.Draw( w.Context, false, false );
+		Assert.AreEqual( version, surface.Version, "a drawn frame does not bake again" );
 	}
 
 	[TestMethod]

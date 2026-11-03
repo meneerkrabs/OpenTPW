@@ -1,9 +1,11 @@
+using OpenTPW.UI.Original;
 using Veldrid;
 
 namespace OpenTPW.Hud;
 
 /// <summary>One rectangle of the map's drawing surface, in the pixels of the 512 pixel map image.</summary>
-internal readonly record struct MapPrim( float X, float Y, float Width, float Height, RgbaByte Color );
+/// <summary>One rectangle of the surface; a <paramref name="Line"/> pixel is one the track layer's line routine wrote, its colour's alpha being the coverage byte it blended with.</summary>
+internal readonly record struct MapPrim( float X, float Y, float Width, float Height, RgbaByte Color, bool Line = false );
 
 /// <summary>
 /// Where the map's cells lie on its drawing surface. A theme map's surface is the level's <c>2dmap.tga</c>: the original draws cell (column, row) at x = 15 + column × trunc(480 / width) and
@@ -57,6 +59,13 @@ internal sealed class ParkMapCanvas
 	public MapDot? Hovered { get; set; }
 	/// <summary>Whether the dot images (<see cref="ParkMapDots.Images"/>) are in the game data; without them no dot is drawn.</summary>
 	public bool SpritesAvailable { get; set; }
+	/// <summary>The surface as the window shows it: <see cref="Base"/> with <see cref="Prims"/> composed over it (<see cref="Bake"/>).</summary>
+	public UiPixelSurface Pixels { get; } = new( (int)MapSurface.ImagePixels, (int)MapSurface.ImagePixels );
+	/// <summary>The pixels under the render: the theme's map image or the sandbox's grid; null leaves the surface clear.</summary>
+	public byte[]? Base { get; set; }
+
+	/// <summary>Composes the last render into <see cref="Pixels"/>.</summary>
+	public void Bake() => ParkMapBaker.Bake( Pixels, Base, Prims );
 
 	/// <summary>Writes the cell classes (<see cref="ParkMapClasses.Write"/>) of <paramref name="cells"/>.</summary>
 	public void WriteClasses( IParkMapCells cells ) => ParkMapClasses.Write( cells, Classes, Owners );
@@ -149,13 +158,12 @@ internal sealed class ParkMapCanvas
 		}
 	}
 
-	/// <summary>One anti-aliased line of the surface, clipped to the 512 pixel image: every pixel the routine writes with a coverage above 0 as a rectangle whose alpha is the coverage.</summary>
+	/// <summary>One anti-aliased line of the surface, clipped to the 512 pixel image: every pixel the routine writes, the coverage 0 ones too (their blend lowers the upper channels by 1), as a pixel whose alpha is the coverage.</summary>
 	private void AddLine( int x0, int y0, int x1, int y1, RgbaByte color )
 	{
 		ParkMapLine.Coverage( x0, y0, x1, y1, 0, 0, (int)MapSurface.ImagePixels, (int)MapSurface.ImagePixels, ( x, y, coverage ) =>
 		{
-			if ( coverage > 0 )
-				Prims.Add( new MapPrim( x, y, 1, 1, new RgbaByte( color.R, color.G, color.B, (byte)(color.A * coverage / 255) ) ) );
+			Prims.Add( new MapPrim( x, y, 1, 1, new RgbaByte( color.R, color.G, color.B, (byte)coverage ), true ) );
 		} );
 	}
 

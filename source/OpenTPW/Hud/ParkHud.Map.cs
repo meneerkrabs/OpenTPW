@@ -356,7 +356,31 @@ public sealed partial class ParkHud
 		canvas.WriteClasses( mapThings );
 		canvas.SpritesAvailable = FileSystem is { } files && ParkMapDots.Images.All( files.FileExists );
 		BuildMapDots( canvas );
+		canvas.Base = MapBase( canvas.Surface );
 		return canvas;
+	}
+
+	/// <summary>The pixels under the map's render: the theme's map image (a missing one is reported and leaves the surface clear), or the sandbox's grid.</summary>
+	private byte[]? MapBase( MapSurface surface )
+	{
+		const int size = (int)MapSurface.ImagePixels;
+		if ( level.OriginalPark is not { } park )
+		{
+			// [EXT:sandbox-map] the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base (OpenTPW content)
+			var grid = level.Objects.Grid;
+			return ParkMapBaker.SandboxBase( size, surface, grid.GetCellHeight );
+		}
+		var path = $"/levels/{park.LevelName}/2dmap.tga";
+		try
+		{
+			var (width, height, rgba) = UiImages.Load( path );
+			return ParkMapBaker.Resample( rgba, width, height, size, size );
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException or NullReferenceException )
+		{
+			Log.Warning( $"The map image {path} could not be loaded: {exception.Message}" );
+			return null;
+		}
 	}
 
 	/// <summary>
@@ -409,8 +433,6 @@ public sealed partial class ParkHud
 	}
 
 	private LevelMapCells? mapThings;
-	/// <summary>The theme's map image path, built once per opening so a drawn frame allocates no string.</summary>
-	private string? mapImagePath;
 
 	private ParkMapThing MapThingOf( OriginalObject item, int number )
 	{
@@ -438,6 +460,7 @@ public sealed partial class ParkHud
 		if ( (mapLayers & ParkMapClasses.TracksLayer) != 0 )
 			RenderMapTracks( canvas );
 		canvas.RenderItems( mapLayers, mapStaff, mapValue );
+		canvas.Bake();
 	}
 
 	/// <summary>The track layer: the curve of every coaster, in the colour of its repair.</summary>
@@ -522,54 +545,19 @@ public sealed partial class ParkHud
 			var content = ScreenRect( context.Canvas );
 			var side = Math.Min( content.Height - context.Canvas.Scale * 48f, content.Width - context.Canvas.Scale * 160f );
 			var image = new UiRect( content.X + (content.Width - side) / 2, content.Y + (content.Height - side) / 2, side, side );
-			var park = owner.level.OriginalPark;
 			if ( owner.mapCanvas == null )
 			{
-				owner.mapImagePath = null;
 				owner.mapCanvas = owner.BuildMapCanvas();
 				owner.RenderMap();
 			}
 			var canvas = owner.mapCanvas;
 			var surface = canvas.Surface;
-			var (uv0, uv1) = owner.mapView.Source( surface.Width, surface.Height, park != null );
-			var imagePath = park == null ? null : owner.mapImagePath ??= $"/levels/{park.LevelName}/2dmap.tga";
-			if ( imagePath != null )
-				context.Batch.AddQuad( UiTexture.Image( imagePath ), image, uv0, uv1, RgbaByte.White );
-			else
-				context.Batch.AddRectangle( image, new RgbaByte( 15, 81, 26, 255 ) );
-
+			var (uv0, uv1) = owner.mapView.Source( surface.Width, surface.Height, surface.Original );
 			var scale = owner.mapView.Zoom * side;
 			Geometry = (image, uv0, scale);
-			void Mark( float x, float y, float width, float height, RgbaByte color )
-			{
-				var rect = new UiRect( image.X + (x / MapSurface.ImagePixels - uv0.X) * scale, image.Y + (y / MapSurface.ImagePixels - uv0.Y) * scale,
-					width / MapSurface.ImagePixels * scale, height / MapSurface.ImagePixels * scale );
-				var left = Math.Max( image.X, rect.X );
-				var top = Math.Max( image.Y, rect.Y );
-				var right = Math.Min( image.Right, rect.Right );
-				var bottom = Math.Min( image.Bottom, rect.Bottom );
-				if ( right > left && bottom > top )
-					context.Batch.AddRectangle( new UiRect( left, top, right - left, bottom - top ), color );
-			}
-			if ( imagePath == null )
-			{
-				// [EXT:sandbox-map] the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base (OpenTPW content)
-				var grid = owner.level.Objects.Grid;
-				for ( var y = 0; y < surface.Height; y++ )
-					for ( var x = 0; x < surface.Width; x++ )
-					{
-						var shade = (byte)Math.Clamp( 75 + grid.GetCellHeight( x, y ) * 3 + (x + y) % 2 * 5, 35, 150 );
-						Mark( surface.X( x ), surface.Y( y ), surface.CellWidth, surface.CellHeight, new RgbaByte( 20, shade, 30, 255 ) );
-					}
-			}
-			// [BIN:TPW-EXE:0x5f2380 map surface] the cells, outlines, tracks and areas the last render drew into the surface, in the order it drew them
+			// [BIN:TPW-EXE:0x5f2380 map surface] the cells, outlines, tracks and areas of the last render are composed into the surface once (ParkMapBaker, on every render event) and the surface is shown as one image
 			// [APPROX:UI-086] see the register: the map's dot sizes and its pointer and text behaviour are not all read
-			var prims = canvas.Prims;
-			for ( var index = 0; index < prims.Count; index++ )
-			{
-				var prim = prims[index];
-				Mark( prim.X, prim.Y, prim.Width, prim.Height, prim.Color );
-			}
+			context.Batch.AddQuad( canvas.Pixels.Texture, image, uv0, uv1, RgbaByte.White );
 			// [BIN:TPW-EXE:0x5f4180 map dots] the sprites lie over the surface at the item's cell (15 + x * 480 / width, 42 + y * 425 / height in surface pixels), centred, the kinds above 2 behind the others
 			if ( canvas.SpritesAvailable )
 				for ( var pass = 0; pass < 2; pass++ )

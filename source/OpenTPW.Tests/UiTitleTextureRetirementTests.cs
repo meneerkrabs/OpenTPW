@@ -28,6 +28,7 @@ public class UiTitleTextureRetirementTests
 		// scheduling, not native resource disposal, so the captured deletion callbacks are deliberately never run.
 		var renderer = (UiRenderer)RuntimeHelpers.GetUninitializedObject( typeof( UiRenderer ) );
 		InitializeDictionary( renderer, "preparedImages" );
+		InitializeDictionary( renderer, "surfaceTextures" );
 		var textures = InitializeDictionary( renderer, "titleTextures" );
 		textures.Add( oldest, ((Veldrid.Texture)null!, (ResourceSet)null!) );
 		textures.Add( active, ((Veldrid.Texture)null!, (ResourceSet)null!) );

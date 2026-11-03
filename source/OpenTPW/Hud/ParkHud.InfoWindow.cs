@@ -136,7 +136,7 @@ public sealed partial class ParkHud
 		var thoughts = table.Control( 0x4A68D1 );
 		screen.Add( new UiModelImage { Id = "thoughtsFrame", Model = thoughts.Model!, Help = strings.Help( thoughts.Help ), Bounds = thoughts.Rect, Anchor = UiAnchor.Center } );
 		var thoughtsTitle = table.Control( 0x4A68CE );
-		screen.Add( new UiLabel { Id = "thoughtsTitle", Text = () => strings[UIStrings.Top3Thoughts], Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
+		screen.Add( new UiLabel { Id = "thoughtsTitle", Text = () => strings[UIStrings.Top3Thoughts], Font = fonts => fonts.Label, Color = UiColors.Ink, Align = UiAlign.Center, Fit = true,
 			Bounds = thoughtsTitle.Rect, Anchor = UiAnchor.Center } );
 		foreach ( var (slot, control) in new[] { (2, 0x4A68D2u), (1, 0x4A68D3u), (0, 0x4A68D4u) } )
 		{
@@ -226,7 +226,7 @@ public sealed partial class ParkHud
 		screen.Add( new UiModelImage { Id = "happinessFrame", Model = bars.Model!, Help = strings.Help( bars.Help ), Bounds = bars.Rect, Anchor = UiAnchor.Center } );
 		var barRect = table.Control( 0x4A68CF ).Rect;
 		screen.Add( new ParkInfoHappinessBars( this ) { Id = "happinessBars", Bounds = barRect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "happinessCaption", Text = () => strings[UIStrings.HappinessLevels], Font = fonts => fonts.Label, Color = new RgbaByte( 0, 0, 0, 255 ), Align = UiAlign.Center, Fit = true,
+		screen.Add( new UiLabel { Id = "happinessCaption", Text = () => strings[UIStrings.HappinessLevels], Font = fonts => fonts.Label, Color = UiColors.Ink, Align = UiAlign.Center, Fit = true,
 			Shadow = false, Bounds = barRect, Anchor = UiAnchor.Center } );
 	}
 

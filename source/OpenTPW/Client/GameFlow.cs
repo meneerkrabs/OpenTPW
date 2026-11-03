@@ -389,7 +389,9 @@ internal sealed partial class GameFlow : IDisposable
 		if ( level.Guests == null )
 			return;
 		level.Guests.Voiced += ( guest, eventId ) => GameAudio.PlayGuestVoice( eventId, new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
-		level.Guests.Teleported += level.StartGuestBeam;
+		level.Guests.Beamed += level.StartGuestBeam;
+		if ( level.Park?.Economy is { } economy )
+			economy.StaffDismissed += level.StartBeamAt;
 		level.Guests.Pranked += ( guest, prank ) =>
 		{
 			if ( prank == GuestDecision.Prank.Stinkbomb )

@@ -103,6 +103,21 @@ public class ArrivalWalkTests
 		Assert.AreEqual( GuestNavigation.Centre( (20, 3) ), (onFerry.Navigation.X, onFerry.Navigation.Y), "the seaplane's and the Ferry's guests stand two rows up (0x004CF720: id − 0x100)" );
 	}
 
+	/// <summary>PTCL-908: 0x4FAEC0 beams (0x4FB26A, particle 19) a guest whose cell fails the park cell test 0x4FA990; a guest made on a park cell takes the other branch (0x4FB1D9) and beams nobody.</summary>
+	[TestMethod]
+	public void AGuestMadeOffTheParkCellsBeamsOnceAtCreationAndOneMadeOnThemDoesNot()
+	{
+		var (simulation, _, _, _) = Rig();
+		var beamed = new List<Guest>();
+		simulation.Beamed += beamed.Add;
+		var guest = simulation.SpawnArrival()!;
+		Assert.AreEqual( 1, beamed.Count, "the arrival's guest beams at its creation" );
+		Assert.AreSame( guest, beamed[0] );
+		var inPark = simulation.SpawnInPark( 9, 17 );
+		Assert.IsTrue( simulation.IsOnParkCell( inPark ) );
+		Assert.AreEqual( 1, beamed.Count, "a guest made on a park cell beams nobody" );
+	}
+
 	[TestMethod]
 	public void TheStepOffWalkEndsInStateOneWhichWaitsForTheBusToLeave()
 	{

@@ -21,6 +21,12 @@ public partial class ModelEntity : Entity
 	/// <summary>Fog distance multiplier for scenes that are not the park (e.g. the online globe, which has no fog).</summary>
 	public float? ViewDistanceScale { get; set; }
 
+	/// <summary>
+	/// The queue dead end's colour pulse (<see cref="QueueModelPulse"/>): the green and blue level, 0..1, that test.shader multiplies the vertices flagged <see cref="TextureSlotAddressing.PulseFlag"/> by. It travels in the block's
+	/// time slot, which the shader reads nowhere else (its texture-coordinate scrolling is commented out); null leaves the slot as it was.
+	/// </summary>
+	internal float? PulseTint { get; set; }
+
 	/// <summary>Skips the draw while the model's bounds lie wholly outside the view (off for the sky box around the camera).</summary>
 	public bool Cullable { get; set; } = true;
 
@@ -113,7 +119,7 @@ public partial class ModelEntity : Entity
 			g_vLightColor = FollowsTimeOfDay ? Level?.SunLight?.Color ?? Vector3.One : Vector3.One,
 			// [EXT:evening] test.shader never reads the camera position: at dusk and night it carries the tint of a self-lit material that is no light source (the shader reads it only while the tinted ambient is set)
 			g_vCameraPos = FollowsTimeOfDay && Level?.Look is { IsDay: false } look ? look.UnlitTint : Camera.Position,
-			g_flTime = Time.Now,
+			g_flTime = PulseTint ?? Time.Now,
 
 			// [EXT:evening] g_flAmbientLevel: 0 (unchanged) unless the evening extension has darkened the park
 			_padding0 = FollowsTimeOfDay ? Level?.Look.AmbientUniform ?? 0f : 0f,

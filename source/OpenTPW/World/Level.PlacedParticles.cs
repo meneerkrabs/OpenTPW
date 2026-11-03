@@ -38,9 +38,12 @@ public partial class Level
 		((int)(cellX * field.CellSizeX * 1024f), (int)(field.GetHeight( cellX, cellY ) * 1024f), (int)(cellY * field.CellSizeZ * 1024f));
 
 	/// <summary>Starts particle 19 where the guest stands (presentation only: nothing is saved or hashed).</summary>
-	internal void StartGuestBeam( Guest guest )
+	internal void StartGuestBeam( Guest guest ) => StartBeamAt( guest.X, guest.Y );
+
+	/// <summary>Starts particle 19 at a place in cell units (the beam routine 0x4FA470 of any thing: a guest, a dismissed employee).</summary>
+	internal void StartBeamAt( float cellX, float cellY )
 	{
 		if ( OriginalPark?.Heightfield is { } field )
-			ParticleRendererModule.AdvisorPool.Create( BeamUpEffectId, GuestBeamPlace( field, guest.X, guest.Y ) );
+			ParticleRendererModule.AdvisorPool.Create( BeamUpEffectId, GuestBeamPlace( field, cellX, cellY ) );
 	}
 }

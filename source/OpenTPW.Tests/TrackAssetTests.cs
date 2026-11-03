@@ -554,6 +554,7 @@ public class TrackAssetTests
 		for ( var tick = 0; tick < 240 * 60 && handed.Count < 3; tick++ )
 		{
 			runtime.Simulate( Tick );
+			bump.RaiseFirstDrawBeams();
 			started |= bump.Phase == BumpController.PhaseRunning;
 			if ( phases[^1] != bump.Phase )
 				phases.Add( bump.Phase );

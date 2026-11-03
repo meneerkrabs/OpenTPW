@@ -229,6 +229,10 @@ public partial class Level
 		foreach ( var item in Objects.Objects )
 			if ( !item.IsDeleted )
 				item.Visitors.WalkUpdate();
+		// [BIN:TPW-EXE:0x0054FA33 vehicle draw] after the walk update the frame step draws every controller's vehicles (0x519060 -> 0x546280), which raises the first-draw beam of the vehicles created since the last frame
+		foreach ( var item in Objects.Objects )
+			if ( !item.IsDeleted )
+				item.Runtime.LiveBump?.RaiseFirstDrawBeams();
 		if ( PlacedRide is { IsDeleted: false } prototype )
 			prototype.Visitors.WalkUpdate();
 		if ( Guests != null )

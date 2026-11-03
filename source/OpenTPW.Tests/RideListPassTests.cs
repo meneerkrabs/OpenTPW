@@ -166,4 +166,26 @@ public class RideListPassTests
 			System.Text.Json.JsonSerializer.Serialize( plain.CaptureSnapshot() ),
 			System.Text.Json.JsonSerializer.Serialize( drawn.CaptureSnapshot() ) );
 	}
+
+	/// <summary>RIDES-032: the steps after a reset, with the drawn state still apart from the simulation's, allocate nothing either.</summary>
+	[TestMethod]
+	public void StepsWithALiveResetAllocateNothing()
+	{
+		var animator = new ObjectAnimator( Geometry() );
+		animator.Play( 0, Clip( Md2VertexAnimationTests.CreateAnimationWithNodeList( 1, 30, 0 ) ), "hider", loop: true );
+		animator.Advance( 0.01 );
+		animator.ResetToStored();
+		for ( var warm = 0; warm < 5; warm++ )
+			animator.Advance( 0 );
+		var before = System.GC.GetAllocatedBytesForCurrentThread();
+		for ( var index = 0; index < 100; index++ )
+			animator.Advance( 0 );
+		Assert.AreEqual( 0, System.GC.GetAllocatedBytesForCurrentThread() - before );
+		for ( var warm = 0; warm < 5; warm++ )
+			animator.Advance( 0.001 );
+		before = System.GC.GetAllocatedBytesForCurrentThread();
+		for ( var index = 0; index < 100; index++ )
+			animator.Advance( 0.001 );
+		Assert.AreEqual( 0, System.GC.GetAllocatedBytesForCurrentThread() - before, "steps that sample allocate nothing" );
+	}
 }

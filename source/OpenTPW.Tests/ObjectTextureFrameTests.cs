@@ -157,7 +157,8 @@ public class ObjectTextureFrameTests
 				animator.Advance( 0 );
 			return GC.GetAllocatedBytesForCurrentThread() - before;
 		}
-		Assert.AreEqual( Allocated( gated ), Allocated( first ), "the texture-frame pass allocates nothing per update" );
+		Assert.AreEqual( 0, Allocated( gated ), "an update allocates nothing (the write scope of the drawn reset included)" );
+		Assert.AreEqual( 0, Allocated( first ), "the texture-frame pass allocates nothing per update" );
 	}
 
 	[TestMethod]

@@ -207,6 +207,11 @@ public sealed class ObjectAnimator
 		// Node-state bit 0x10 starts as stored (clear in every corpus mesh record).
 		nodeStateBit = model.Nodes.Select( node => (node.Type & ModelAnimationTrack.ToggledNodeStateBit) != 0 ).ToArray();
 		nodePinned = new bool[model.Nodes.Count];
+		markNodes = new bool[model.Nodes.Count];
+		markSlots = new bool[model.Textures.Count];
+		markVertex = new bool[model.Meshes.Count];
+		markUv = new bool[model.Meshes.Count];
+		vertexBefore = new int[model.Meshes.Count];
 	}
 
 	public IReadOnlyList<Matrix4x4> RestTransforms => rest;
@@ -873,8 +878,13 @@ public sealed class ObjectAnimator
 	// [BIN:TPW-EXE:0x4726D0 aggregate reset] for every channel that is not flagged 0x20 the bound clip's listed nodes (0x4727D5..0x47281D) and every node its tracks write (0x47283B..0x472887) lose node-state bit 0x10 unless bit 31 is set; the stored node, vertex (0x1000) and texture-coordinate (0x10000) data of what the tracks write is copied back (0x472A0F..0x472B11); once, a clip with trailer flag 0x2 resets every slot that has texture flag 0x40 to frame 0 with the dirty bit (0x472B37..0x472B75, option 0x7B4980 bit 0x8 clear); a channel with flag 0x4 gets its flag 0x10 so the next sample runs (0x472B7D), and the second channel loop (every channel with AnimID other than 12, from 0x472932) ends with the rebind 0x472D70 (call at 0x472B94), which sets node-state bit 0x10 again on every node of the clip's list unless bit 31 (0x472E6B..0x472E78 by id, 0x472ED9 by index); the per-track node flags 0x40000, 0x200000, 0x400000 and 0x100000 (reset mask 0xF40000 / 0x800000 at 0x472712..0x472728, applied 0x472876, set again by 0x472D70) end unchanged and are not modelled
 	internal void ResetToStored()
 	{
-		var before = Versions();
-		stash ??= PresentationStash.Of( nodeStateBit, frameBySlot, slotAnimated, vertexSources, uvSources );
+		SnapshotVersions();
+		if ( stash == null )
+		{
+			stashStore ??= new PresentationStash( nodeStateBit.Length, frameBySlot.Length, vertexSources.Length );
+			stashStore.CopyFrom( nodeStateBit, frameBySlot, slotAnimated, vertexSources, uvSources );
+			stash = stashStore;
+		}
 		var textureFramesReset = false;
 		foreach ( var channel in ChannelList )
 		{
@@ -907,31 +917,54 @@ public sealed class ObjectAnimator
 				ApplyNodeList( channel.Clip.Animation );
 		settled = false;
 		Update();
-		CountBump( before );
+		CountBump();
 	}
 
-	/// <summary>The simulation state the presentation reset replaced, kept until the simulation touches the animator again (<see cref="EndPresentation"/>).</summary>
-	private sealed record PresentationStash( bool[] NodeStateBit, int[] Frames, bool[] Animated, (long Serial, float Tick)[] Vertex, (long Serial, float Tick)[] Uv )
+	/// <summary>A copy of the five arrays a presentation reset and a simulation writer swap between the drawn state and the simulation's (<see cref="stash"/>, <see cref="drawnStore"/>); allocated once per animator, copied into in place.</summary>
+	private sealed class PresentationStash( int nodes, int slots, int meshes )
 	{
-		public static PresentationStash Of( bool[] bits, int[] frames, bool[] animated, (long Serial, float Tick)[] vertex, (long Serial, float Tick)[] uv )
-			=> new( (bool[])bits.Clone(), (int[])frames.Clone(), (bool[])animated.Clone(), vertex.ToArray(), uv.ToArray() );
+		public readonly bool[] NodeStateBit = new bool[nodes];
+		public readonly int[] Frames = new int[slots];
+		public readonly bool[] Animated = new bool[slots];
+		public readonly (long Serial, float Tick)[] Vertex = new (long, float)[meshes];
+		public readonly (long Serial, float Tick)[] Uv = new (long, float)[meshes];
+
+		public void CopyFrom( bool[] bits, int[] frames, bool[] animated, (long Serial, float Tick)[] vertex, (long Serial, float Tick)[] uv )
+		{
+			Array.Copy( bits, NodeStateBit, bits.Length );
+			Array.Copy( frames, Frames, frames.Length );
+			Array.Copy( animated, Animated, animated.Length );
+			Array.Copy( vertex, Vertex, vertex.Length );
+			Array.Copy( uv, Uv, uv.Length );
+		}
 	}
 
+	/// <summary>The simulation's own state while a presentation reset has changed the drawn arrays (null otherwise).</summary>
 	private PresentationStash? stash;
+	private PresentationStash? stashStore, drawnStore;
 
 	/// <summary>How far the render-cache counters moved because of presentation resets and their undoing; a save stores the counters without them.</summary>
 	private int hiddenBump, textureBump;
 	private int[]? vertexBumpStore;
 	private int[] vertexBump => vertexBumpStore ??= new int[vertexVersions.Length];
 
-	private (int Hidden, int Texture, int[] Vertex) Versions() => (hiddenVersion, textureFrameVersion, (int[])vertexVersions.Clone());
+	private int hiddenBefore, textureBefore;
+	private readonly int[] vertexBefore;
 
-	private void CountBump( (int Hidden, int Texture, int[] Vertex) before )
+	/// <summary>Notes the render-cache counters before a presentation swap (<see cref="CountBump"/> adds what moved); nothing is allocated.</summary>
+	private void SnapshotVersions()
 	{
-		hiddenBump += hiddenVersion - before.Hidden;
-		textureBump += textureFrameVersion - before.Texture;
+		hiddenBefore = hiddenVersion;
+		textureBefore = textureFrameVersion;
+		Array.Copy( vertexVersions, vertexBefore, vertexVersions.Length );
+	}
+
+	private void CountBump()
+	{
+		hiddenBump += hiddenVersion - hiddenBefore;
+		textureBump += textureFrameVersion - textureBefore;
 		for ( var mesh = 0; mesh < vertexVersions.Length; mesh++ )
-			vertexBump[mesh] += vertexVersions[mesh] - before.Vertex[mesh];
+			vertexBump[mesh] += vertexVersions[mesh] - vertexBefore[mesh];
 	}
 
 	/// <summary>
@@ -942,7 +975,7 @@ public sealed class ObjectAnimator
 		if ( stash is not { } kept )
 			return;
 		stash = null;
-		var before = Versions();
+		SnapshotVersions();
 		var hiddenChanged = false;
 		for ( var node = 0; node < nodeStateBit.Length; node++ )
 			if ( nodeStateBit[node] != kept.NodeStateBit[node] )
@@ -967,55 +1000,56 @@ public sealed class ObjectAnimator
 				uvSources[mesh] = kept.Uv[mesh];
 				vertexVersions[mesh]++;
 			}
-		CountBump( before );
+		CountBump();
 	}
 
-	/// <summary>What a simulation writer touched while it ran (<see cref="BeginWrite"/>): the nodes whose state bit it set or cleared, the texture slots it wrote and the meshes whose pose or texture coordinates it sampled.</summary>
-	private sealed record WriteMarks( bool[] Nodes, bool[] Slots, bool[] Meshes );
-
-	private WriteMarks? writes;
-
-	/// <summary>The drawn state a writer found: what the presentation reset left in the simulation's place (<see cref="stash"/> holds the simulation's own).</summary>
-	private sealed record DrawnState( bool[] NodeStateBit, int[] Frames, bool[] Animated, (long Serial, float Tick)[] Vertex, (long Serial, float Tick)[] Uv );
+	// what a simulation writer touched while it ran (BeginWrite): the nodes whose state bit it set or cleared, the texture slots it wrote and, each by itself, the meshes whose pose and whose texture coordinates it sampled; kept on the animator and cleared in place
+	private readonly bool[] markNodes, markSlots, markVertex, markUv;
+	private bool writing;
 
 	/// <summary>
 	/// Starts a simulation writer: the simulation's state comes back (the writer computes from it, as before) and every write it makes is noted; <see cref="WriteScope.Dispose"/> then puts the drawn
 	/// state back on everything the writer did not write. The drawn reset stays until a writer writes the element, as tp.exe keeps it (the posed instance's state words are the only copy).
 	/// </summary>
-	// [BIN:TPW-EXE:0x44E380 drawn reset kept] the reset 0x4726D0 (0x44E3A0) changes the instance's own state words and nothing puts them back: the node-state bits are written again by the next sample of a toggle track (0x4735D0 through 0x473C70) or a bind (0x472D70), a texture slot's frame by the writer 0x470C90 when a key applies, the stored vertex and texture-coordinate copies by the next bind; an element no writer touches keeps what the reset left, tick after tick
+	// [BIN:TPW-EXE:0x44E380 drawn reset kept] the reset 0x4726D0 (0x44E3A0) changes the instance's own state words and nothing puts them back: the node-state bits are written again by the next sample of a toggle track (0x4735D0 through 0x473C70) or a bind (0x472D70), a texture slot's frame by the writer 0x470C90 when a key applies, and each stored copy (vertex 0x1000, texture coordinate 0x10000) by the next bind of its own track; an element no writer touches keeps what the reset left, tick after tick
 	private WriteScope BeginWrite()
 	{
-		if ( writes != null )
+		if ( writing )
 			return default;
-		if ( stash is not { } kept )
-		{
-			writes = new WriteMarks( new bool[nodeStateBit.Length], new bool[frameBySlot.Length], new bool[vertexSources.Length] );
-			return new WriteScope( this, null );
-		}
-		var drawn = new DrawnState( (bool[])nodeStateBit.Clone(), (int[])frameBySlot.Clone(), (bool[])slotAnimated.Clone(), vertexSources.ToArray(), uvSources.ToArray() );
+		writing = true;
+		Array.Clear( markNodes );
+		Array.Clear( markSlots );
+		Array.Clear( markVertex );
+		Array.Clear( markUv );
+		if ( stash == null )
+			return new WriteScope( this, false );
+		// the drawn state is copied aside, the simulation's comes back for the writer
+		drawnStore ??= new PresentationStash( nodeStateBit.Length, frameBySlot.Length, vertexSources.Length );
+		drawnStore.CopyFrom( nodeStateBit, frameBySlot, slotAnimated, vertexSources, uvSources );
 		EndPresentation();
-		writes = new WriteMarks( new bool[nodeStateBit.Length], new bool[frameBySlot.Length], new bool[vertexSources.Length] );
-		return new WriteScope( this, drawn );
+		return new WriteScope( this, true );
 	}
 
-	private readonly struct WriteScope( ObjectAnimator animator, DrawnState? drawn ) : IDisposable
+	private readonly struct WriteScope( ObjectAnimator animator, bool drawn ) : IDisposable
 	{
 		public void Dispose() => animator?.EndWrite( drawn );
 	}
 
-	private void EndWrite( DrawnState? drawn )
+	private void EndWrite( bool hasDrawn )
 	{
-		var marks = writes;
-		writes = null;
-		if ( drawn == null || marks == null )
+		writing = false;
+		if ( !hasDrawn )
 			return;
-		var before = Versions();
-		var held = new PresentationStash( (bool[])nodeStateBit.Clone(), (int[])frameBySlot.Clone(), (bool[])slotAnimated.Clone(), vertexSources.ToArray(), uvSources.ToArray() );
+		var drawn = drawnStore!;
+		SnapshotVersions();
+		// what the simulation is now (after the writer) is what the stash holds; the drawn state goes back on the elements the writer left alone
+		stashStore ??= new PresentationStash( nodeStateBit.Length, frameBySlot.Length, vertexSources.Length );
+		stashStore.CopyFrom( nodeStateBit, frameBySlot, slotAnimated, vertexSources, uvSources );
 		var diverges = false;
 		var hiddenChanged = false;
 		for ( var node = 0; node < nodeStateBit.Length; node++ )
 		{
-			if ( marks.Nodes[node] || nodeStateBit[node] == drawn.NodeStateBit[node] )
+			if ( markNodes[node] || nodeStateBit[node] == drawn.NodeStateBit[node] )
 				continue;
 			nodeStateBit[node] = drawn.NodeStateBit[node];
 			hiddenChanged = diverges = true;
@@ -1024,7 +1058,7 @@ public sealed class ObjectAnimator
 			hiddenVersion++;
 		for ( var slot = 0; slot < frameBySlot.Length; slot++ )
 		{
-			if ( marks.Slots[slot] )
+			if ( markSlots[slot] )
 				continue;
 			if ( frameBySlot[slot] != drawn.Frames[slot] )
 			{
@@ -1039,17 +1073,28 @@ public sealed class ObjectAnimator
 				diverges = true;
 			}
 		}
+		// each stored copy stays until its own writer touches it: the vertex positions and the texture coordinates are separate
 		for ( var mesh = 0; mesh < vertexSources.Length; mesh++ )
 		{
-			if ( marks.Meshes[mesh] || vertexSources[mesh] == drawn.Vertex[mesh] && uvSources[mesh] == drawn.Uv[mesh] )
-				continue;
-			vertexSources[mesh] = drawn.Vertex[mesh];
-			uvSources[mesh] = drawn.Uv[mesh];
-			vertexVersions[mesh]++;
-			diverges = true;
+			var changed = false;
+			if ( !markVertex[mesh] && vertexSources[mesh] != drawn.Vertex[mesh] )
+			{
+				vertexSources[mesh] = drawn.Vertex[mesh];
+				changed = true;
+			}
+			if ( !markUv[mesh] && uvSources[mesh] != drawn.Uv[mesh] )
+			{
+				uvSources[mesh] = drawn.Uv[mesh];
+				changed = true;
+			}
+			if ( changed )
+			{
+				vertexVersions[mesh]++;
+				diverges = true;
+			}
 		}
-		CountBump( before );
-		stash = diverges ? held : null;
+		CountBump();
+		stash = diverges ? stashStore : null;
 	}
 
 	private void ClearNodeStateBit( int node )
@@ -1061,8 +1106,8 @@ public sealed class ObjectAnimator
 
 	private void SetNodeStateBit( int node, bool value )
 	{
-		if ( writes is { } marks )
-			marks.Nodes[node] = true;
+		if ( writing )
+			markNodes[node] = true;
 		if ( nodeStateBit[node] == value )
 			return;
 		nodeStateBit[node] = value;
@@ -1205,8 +1250,8 @@ public sealed class ObjectAnimator
 			if ( (model.Textures[slot].Flags & 0x40) == 0 )
 				continue;
 			slotAnimated[slot] = false;
-			if ( writes is { } marks )
-				marks.Slots[slot] = true;
+			if ( writing )
+				markSlots[slot] = true;
 			if ( frameBySlot[slot] == 0 )
 				continue;
 			frameBySlot[slot] = 0;
@@ -1235,8 +1280,8 @@ public sealed class ObjectAnimator
 					{
 						sampledFrameBySlot[slot] = 0;
 						slotAnimated[slot] = false;
-						if ( writes is { } resetMarks )
-							resetMarks.Slots[slot] = true;
+						if ( writing )
+							markSlots[slot] = true;
 					}
 			}
 			if ( channel.Held && !channel.HeldTextureSamplePending )
@@ -1245,8 +1290,8 @@ public sealed class ObjectAnimator
 			foreach ( var track in channel.FrameTracks )
 			{
 				slotAnimated[track.Slot] = true;
-				if ( writes is { } sampleMarks )
-					sampleMarks.Slots[track.Slot] = true;
+				if ( writing )
+					markSlots[track.Slot] = true;
 				// Invalid or missing art remains a defensive host extension ([EXT:original-undefined-reads]).
 				if ( track.FrameAt( channel.Player.Tick ) is { } frame && frame < model.Textures[track.Slot].FrameNames.Count
 					&& (availableFramesBySlot[track.Slot] == null || availableFramesBySlot[track.Slot]![frame]) )
@@ -1289,8 +1334,8 @@ public sealed class ObjectAnimator
 					vertexChannel.Vertices[node]!.ApplyPose( vertexChannel.Player.Tick, positions );
 			}
 			vertexSources[mesh] = vertexSource;
-			if ( writes is { } vertexMarks )
-				vertexMarks.Meshes[mesh] = true;
+			if ( writing )
+				markVertex[mesh] = true;
 			changed = true;
 		}
 		var uvSource = uvChannel == null ? (0L, 0f) : (uvChannel.Serial, uvChannel.Player.Tick);
@@ -1303,8 +1348,8 @@ public sealed class ObjectAnimator
 				uvChannel.Uvs[node]!.Apply( uvChannel.Player.Tick, coordinates );
 			}
 			uvSources[mesh] = uvSource;
-			if ( writes is { } uvMarks )
-				uvMarks.Meshes[mesh] = true;
+			if ( writing )
+				markUv[mesh] = true;
 			changed = true;
 		}
 		if ( changed )

@@ -99,9 +99,17 @@ public sealed partial class GuestSimulation
 		PlaceAtCentre( guest, stop );
 		var crossing = BusSideCrossingCell( side )!.Value;
 		EnterGuestState( guest, RouteToPoint( guest, crossing, sideways, ArrivalRowByte ) ? GuestState.CrossingRoad : GuestState.DoingNothing );
-		// [BIN:TPW-EXE:0x004FB26A creation beam] the same branch ends with 0x4FA470(0x13), particle 19 at the guest's place (the arrival update's call 0x4CF7A4 passes the vehicle's stop cell); a guest made on a park cell (0x4FA990, SpawnInPark) takes the other branch and beams nobody. The world's population loop 0x516700 (25 guests at once, 0x516791) belongs to the online chat message handler 0x4E6790 and has no counterpart here
-		Beamed?.Invoke( guest );
+		// [BIN:TPW-EXE:0x004FB26A creation beam] the branch taken when 0x4FA990 finds none of the cell types 0, 1, 3, 9 and 10 (0x536310..0x536390; OnParkCellType) ends with 0x4FA470(0x13), particle 19 at the guest's place (the arrival update's call 0x4CF7A4 passes the vehicle's stop cell); a guest made on a park cell (0x4FA990, SpawnInPark) takes the other branch and beams nobody. The world's population loop 0x516700 (25 guests at once, 0x516791) belongs to the online chat message handler 0x4E6790 and has no counterpart here
+		if ( !OnParkCellType( guest ) )
+			Beamed?.Invoke( guest );
 		return guest;
+	}
+
+	/// <summary>The cell type test of <c>0x4FA990</c> alone: the guest's cell is of type 0, 1, 3, 9 or 10 (without OpenTPW's pool bridges, which <see cref="IsOnParkCell"/> adds).</summary>
+	private bool OnParkCellType( Guest guest )
+	{
+		var (x, y) = guest.Navigation.Cell;
+		return Grid.InBounds( x, y ) && Grid.Cells.RawTypeAt( x, y ) is 0 or 1 or 3 or 9 or 10;
 	}
 
 	/// <summary>The y byte of the point a created guest walks to in the crossing cell (0xC8).</summary>

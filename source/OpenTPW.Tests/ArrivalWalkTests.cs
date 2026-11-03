@@ -119,6 +119,18 @@ public class ArrivalWalkTests
 	}
 
 	[TestMethod]
+	public void AnArrivalGuestOnAStopCellOfAParkCellTypeBeamsNobody()
+	{
+		var (simulation, _, _, _) = Rig();
+		var beamed = 0;
+		simulation.Beamed += _ => beamed++;
+		simulation.Grid.Cells.SetType( 20, 5, ParkCellType.Path );
+		var guest = simulation.SpawnArrival()!;
+		Assert.IsTrue( simulation.IsOnParkCell( guest ), "the stop cell is a path cell here (type 1: 0x536310)" );
+		Assert.AreEqual( 0, beamed, "0x4FA990 is true: the other branch (0x4FB1D9) runs and no beam is taken" );
+	}
+
+	[TestMethod]
 	public void TheStepOffWalkEndsInStateOneWhichWaitsForTheBusToLeave()
 	{
 		var (simulation, _, vehicles, _) = Rig( withVehicles: true );

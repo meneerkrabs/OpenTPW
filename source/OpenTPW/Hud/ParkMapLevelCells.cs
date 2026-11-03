@@ -2,13 +2,13 @@ namespace OpenTPW.Hud;
 
 /// <summary>
 /// The level's cells, objects and tracks as the map's class writer reads them (<see cref="IParkMapCells"/>): the cell map's primary types and flags, the fence layer's posts, the track layer's kart and
-/// water tiles with their rides, and the placed objects by the cell word of their anchor cell.
+/// water tiles with their rides, and the placed objects by their owner word (the cell word of the thing's own cell).
 /// </summary>
 internal sealed class LevelMapCells : IParkMapCells
 {
 	private readonly ParkCellMap? cells;
 	private readonly Level level;
-	private readonly Dictionary<ushort, List<ParkMapThing>> byAnchor = new();
+	private readonly Dictionary<ushort, List<ParkMapThing>> byOwnerWord = new();
 	private readonly Dictionary<OriginalObject, ParkMapThing> things = new();
 	private readonly HashSet<(int X, int Y)>? footprint;
 
@@ -28,9 +28,9 @@ internal sealed class LevelMapCells : IParkMapCells
 				continue;
 			var thing = thingOf( item, ++number );
 			things[item] = thing;
-			var anchor = Level.OwnerWord( item );
-			if ( !byAnchor.TryGetValue( anchor, out var list ) )
-				byAnchor[anchor] = list = new();
+			var owner = Level.OwnerWord( item );
+			if ( !byOwnerWord.TryGetValue( owner, out var list ) )
+				byOwnerWord[owner] = list = new();
 			list.Add( thing );
 			if ( footprint != null )
 				foreach ( var cell in item.Cells )
@@ -84,12 +84,12 @@ internal sealed class LevelMapCells : IParkMapCells
 	public IEnumerable<ParkMapThing> ThingsOfOwnerWord( int x, int y )
 	{
 		var owner = cells != null ? cells.OwnerAt( x, y ) : FootprintOwner( x, y );
-		if ( owner != 0 && byAnchor.TryGetValue( owner, out var list ) )
+		if ( owner != 0 && byOwnerWord.TryGetValue( owner, out var list ) )
 			return list;
 		return Array.Empty<ParkMapThing>();
 	}
 
-	/// <summary>The anchor word of the object whose footprint holds a cell, for a level without a cell map.</summary>
+	/// <summary>The owner word of the object whose footprint holds a cell, for a level without a cell map.</summary>
 	private ushort FootprintOwner( int x, int y )
 	{
 		foreach ( var item in level.Objects.Objects )

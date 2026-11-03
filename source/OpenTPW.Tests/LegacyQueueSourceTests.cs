@@ -46,7 +46,7 @@ public class LegacyQueueSourceTests
 		return cells;
 	}
 
-	private static byte[] Payload( MapFile map )
+	private static byte[] Payload( MapFile map, ushort? parent = null )
 	{
 		byte[] Cell( int x, int y )
 		{
@@ -54,7 +54,7 @@ public class LegacyQueueSourceTests
 			if ( (x, y) == (3, 4) )
 			{
 				BinaryPrimitives.WriteUInt32LittleEndian( cell.AsSpan( SaveCell.MapTypeOffset ), (uint)ParkCellType.Queue );
-				BinaryPrimitives.WriteUInt16LittleEndian( cell.AsSpan( SaveCell.ParentIdOffset ), Owner );
+				BinaryPrimitives.WriteUInt16LittleEndian( cell.AsSpan( SaveCell.ParentIdOffset ), parent ?? Owner );
 				cell[SaveCell.PathConnectionsOffset] = GuestPathGrid.LinkValue( 0 );
 				cell[SaveCell.DirectionOffset] = GuestPathGrid.LinkValue( 0 );
 			}
@@ -157,5 +157,21 @@ public class LegacyQueueSourceTests
 	public void MandatoryImportStillReportsMalformedPayload()
 	{
 		Assert.ThrowsException<InvalidDataException>( () => OriginalPark.ImportOriginalSave( "jungle", new byte[] { 1, 2, 3 }, Map() ) );
+	}
+
+	[TestMethod]
+	public void TheRecordIsMatchedOnTheAnchorWordWhileTheCellsAreMatchedOnTheThingCellsWord()
+	{
+		// an object with a map offset: the shipped save's record holds the anchor (3, 3), its cells name the thing's own cell (3, 4) as their owner
+		var thing = (ushort)(Owner + 128);
+		var map = Map();
+		var source = OriginalParkImport.Import( Payload( map, thing ), map );
+		var cells = new ParkCellMap( 6, 6 );
+		cells.SetType( 3, 3, ParkCellTypes.Entrance );
+		cells.SetOwner( 3, 3, thing );
+		cells.SetLinks( 3, 3, GuestPathGrid.LinkValue( 2 ) );
+		Assert.AreEqual( 0, Level.RestoreLegacySavedQueue( cells, Points, 1411, 90, true, thing, () => source ), "without the anchor the owner word is compared with the record, which holds the anchor" );
+		Assert.AreEqual( 1, Level.RestoreLegacySavedQueue( cells, Points, 1411, 90, true, thing, () => source, anchorWord: Owner ) );
+		Assert.AreEqual( thing, cells.OwnerAt( 3, 4 ) );
 	}
 }

@@ -47,7 +47,8 @@ public sealed class OriginalParkImport
 		RideSystem = rideSystem;
 		var objectsByCell = placedObjects.Select( item => item.Record ).Concat( unresolvedObjects ).Concat( fixedItems )
 			.ToLookup( record => (record.X, record.Y) );
-		var attractionsByCell = attractions.ToLookup( attraction => (attraction.CellX, attraction.CellY) );
+		// the records hold the placement anchor, so the things are keyed by their mTopLeft (the anchor word), not by their own cell (anchor plus the type's map offset); a thing without one keeps its own cell
+		var attractionsByCell = attractions.ToLookup( attraction => attraction.TopLeft != 0 ? ((attraction.TopLeft - 1) & 0x7F, (attraction.TopLeft - 1) >> 7) : (attraction.CellX, attraction.CellY) );
 		var sections = coasters.Coasters.SelectMany( coaster => coaster.Sections ).ToArray();
 		// Stacked sections may repeat a cell. Share its matches instead of copying the scene for every section.
 		var matchesByCell = sections.Select( section => (section.CellX, section.CellY) ).Distinct().ToDictionary( cell => cell, cell =>
@@ -271,6 +272,7 @@ public sealed class OriginalParkImport
 	}
 
 	/// <summary>The anchor word <c>(y &lt;&lt; 7) + x + 1</c> of a RideSystem record's cell, which a placed thing keeps as its <c>mTopLeft</c> (+0x34).</summary>
+	// [BIN:TPI-EXE:0x5db4e2 mTopLeft] Theme Park Inc's attraction constructor sets mTopLeft to the anchor word the same way, so its scene-record join (the TPI attraction match in this file) is on mTopLeft too
 	// [BIN:TPW-EXE:0x4db2da mTopLeft is the anchor] the placement hands the constructor 0x4DB090 the anchor plus the rotated map offset (0x529F74..0x529FD5), which the base 0x50AFE0 stores as the thing's bytes +5 and +7, while +0x34 mTopLeft is the anchor itself (0x4DB2DA..0x4DB30A); only jungle/5x5rck and jungle/mammtunn have an offset, (0, 1)
 	public static ushort AnchorWord( SaveObject record ) => (ushort)((record.Y << 7) + record.X + 1);
 

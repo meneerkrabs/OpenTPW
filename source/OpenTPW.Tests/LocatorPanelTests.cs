@@ -109,6 +109,50 @@ public class LocatorPanelTests
 		Assert.AreEqual( ArmSlide.Steps, hud.LocatorSlide.Step );
 	}
 
+	[TestMethod]
+	public void AKeyPressedWhileAPanelIsOutRetractsItAndReopensItWithTheModeWordZeroed()
+	{
+		// tp.exe 0x4b3f60 sets the mode word (0x7cc2f0) and then calls 0x4a2590, whose message 0xb makes the arm send the carried panel 0x1001d8: the panel procedure zeroes the word (0x4b3800)
+		var (hud, context, _) = Hud();
+		hud.OpenStaffLocator(); Slide( hud, context );
+		Assert.AreEqual( LocatorMode.Staff, hud.Locator.Mode );
+		hud.OpenStaffLocator(); Frame( hud, context, 0.1f );
+		Assert.AreEqual( LocatorMode.None, hud.Locator.Mode, "the carried panel's close message zeroed the mode word after the key set it" );
+		Assert.AreEqual( ArmSlide.Steps - 5, hud.LocatorSlide.Step, "the same panel slides in first" );
+		Slide( hud, context ); Slide( hud, context );
+		Assert.AreEqual( ArmSlide.Steps, hud.LocatorSlide.Step, "and then slides out again" );
+		Assert.IsTrue( hud.Screen.Find( "locatorStaffPanel" )!.Visible );
+		((UiButton)hud.Screen.Find( "locatorRole1" )!).Clicked!();
+		Assert.AreEqual( (0, 0), (hud.Locator.Role, hud.Locator.ActorId), "a dead panel ignores the radio message 0x101 (0x4b3837)" );
+		Assert.IsTrue( ((UiButton)hud.Screen.Find( "locatorRole1" )!).Selected!(), "but the radio group still shows the pressed radio (0x4b3bd1)" );
+		hud.CloseLocator(); Slide( hud, context ); Slide( hud, context );
+		hud.OpenStaffLocator(); Slide( hud, context );
+		Assert.AreEqual( LocatorMode.Staff, hud.Locator.Mode, "a panel opened into an empty arm keeps the mode word" );
+	}
+
+	[TestMethod]
+	public void TheVisitorKeySetsTheModeWordAfterTheArmClosedTheCarriedPanel()
+	{
+		// tp.exe 0x4b4280 calls 0x4a2590 first and only then sets the role and the mode word (0x4b42c5), so its panel stays live; the carried panel's close message hid the strip and cleared the follow flag
+		var (hud, context, _) = Hud();
+		hud.OpenStaffLocator(); Slide( hud, context );
+		hud.OpenVisitorLocator(); Frame( hud, context, 0.1f );
+		Assert.AreEqual( (LocatorMode.Visitor, LocatorModel.VisitorRole, 0, false, false), (hud.Locator.Mode, hud.Locator.Role, hud.Locator.ActorId, hud.Locator.StripShown, hud.Locator.Following) );
+	}
+
+	[TestMethod]
+	public void AnArmThatStillHoldsAPanelInSlotTwoRefusesALocatorAndLeavesTheModeWord()
+	{
+		// tp.exe 0x4a25b1: 0x4a2590 returns without a message while slot 2 holds a panel, so no close message zeroes the word the key set
+		var (hud, context, _) = Hud();
+		hud.OpenStaffLocator(); Slide( hud, context );
+		hud.OpenVisitorLocator(); Frame( hud, context, 0.1f );
+		hud.OpenStaffLocator();
+		Assert.AreEqual( LocatorMode.Staff, hud.Locator.Mode, "refused: the word the staff key set stays" );
+		Slide( hud, context ); Slide( hud, context );
+		Assert.IsTrue( hud.Screen.Find( "locatorVisitorPanel" )!.Visible && !hud.Screen.Find( "locatorStaffPanel" )!.Visible, "the queued visitors panel is the one that comes out" );
+	}
+
 	// two roles: handymen 30, 20, 10 (newest first) and guards 7
 	private static int Next( int role, int current )
 	{

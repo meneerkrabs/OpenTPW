@@ -110,7 +110,7 @@ public sealed partial class ParkHud
 			return;
 		var panel = level.IsCoasterToolActive ? level.CoasterPanel : null;
 		// another panel that opened while the coaster panel is out takes the arm and ends the tool (0x4a17dc)
-		if ( panel != null && CoasterSlide.Out && !coasterPanelRetracted && (OpenedMessage != null || CameraPanelOpen || Locator.Mode != LocatorMode.None) )
+		if ( panel != null && CoasterSlide.Out && !coasterPanelRetracted && (OpenedMessage != null || CameraPanelOpen || LocatorPanelOpen) )
 		{
 			YieldCoasterPanelToArm();
 			panel = null;

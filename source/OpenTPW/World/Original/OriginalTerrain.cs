@@ -130,8 +130,8 @@ public sealed partial class OriginalTerrain : Entity
 	/// <summary>The queue batches of the dead ends (<see cref="QueueModelPulse"/>), a subset of <see cref="queueParts"/>.</summary>
 	private readonly List<ModelEntity> queuePulseParts = new();
 	private readonly QueueModelPulse queuePulse = new();
-	/// <summary>The queue cells whose model has a clip, each with its own animator (<see cref="QueueModelAnimation"/>).</summary>
-	private readonly List<QueueModelAnimation> queueAnimations = new();
+	/// <summary>The groups of queue cells whose model has a clip, each with its player and its batches (<see cref="QueueAnimationGroup"/>).</summary>
+	private readonly List<QueueAnimationGroup> queueAnimations = new();
 	/// <summary>Whether the batch being filled holds the dead ends (<see cref="BuildQueueModels"/>).</summary>
 	private bool batchPulses;
 
@@ -637,7 +637,7 @@ public sealed partial class OriginalTerrain : Entity
 	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), each vertex on the ground under it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00469A80 queue model drape] the queue models are baked draped onto the landscape as tp.exe does (QueueModelDrape, 0x469A80, static batches), the cell a hole of the ground (0x46DF50) with the skirt of the object loader (opaque slot, normalised coordinates) and, with the procedural terrain textures on, the composite floor of the base art over the cell's ground (0x463060, 0x57ACE0; QueueModelFloor)
-	// [BIN:TPW-EXE:0x00473C8A queue torches] the fire0 torches of queend and quebin1/2 are animated in the original: the loader reads every <model>m.md2 member (0x4623A2, 0x4623D1; +0xA8 counts the clips), the creation flags 0x33A leave the instance flag 0x8004 clear, so the idle restart of 0x473C70 starts group 5 (the letter M) whenever the channel is idle; each cell with a clip is an instance of its own (QueueModelAnimation, QueueClipPlayer), the others are baked
+	// [BIN:TPW-EXE:0x00473C8A queue torches] the fire0 torches of queend and quebin1/2 are animated in the original: the loader reads every <model>m.md2 member (0x4623A2, 0x4623D1; +0xA8 counts the clips), the creation flags 0x33A leave the instance flag 0x8004 clear, so the idle restart of 0x473C70 starts group 5 (the letter M) and restarts it with the carry of its overshoot (0x47300E, 0x472C12); cells made in one frame share a player and a batch (QueueAnimationGroup), the cells a path edit remakes with their neighbours start again as a group of their own (0x5365D0 -> 0x522A90, 0x5229E0), the other meshes are baked
 	// [BIN:TPW-EXE:0x00469840 quedead pulse] the load flag 0x100000 of the two quedead entries registers their instances for the colour pulse (QueueModelPulse, drawn with TextureSlotAddressing.PulseFlag; the batches of the dead ends are separate)
 	private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues )
 	{
@@ -735,7 +735,8 @@ public sealed partial class OriginalTerrain : Entity
 		var batchIndices = new List<uint>();
 		batchPulses = false;
 		var clips = new Dictionary<int, QueueClip?>();
-		var livePlayers = new HashSet<(int Model, int X, int Y, int Yaw)>();
+		queueBirths.Assign( valid.Select( queue => (queue.Tile.Model, queue.X, queue.Y, queue.Tile.Yaw) ) );
+		var liveGroups = new HashSet<(int Model, int Birth)>();
 		foreach ( var group in valid.Where( queue => floors.ContainsKey( queue.Tile.Model ) ).GroupBy( queue => queue.Tile.Model ).OrderBy( group => group.Key ) )
 		{
 			var floor = floors[group.Key];
@@ -747,93 +748,109 @@ public sealed partial class OriginalTerrain : Entity
 			batchPulses = pulses;
 			if ( !clips.TryGetValue( group.Key, out var clip ) )
 				clips[group.Key] = clip = LoadQueueClip( group.Key, floor.Model, textures, directory );
-			foreach ( var (x, y, tile) in group )
+			// the cells of a model with a clip are baked by the frame they were made in: one player and one dynamic batch per group (QueueAnimationGroup); the meshes no track or frame slot touches stay in the shared batches
+			var groups = clip == null
+				? new[] { (Birth: 0, Cells: group.AsEnumerable()) }
+				: group.GroupBy( cell => queueBirths.Of( (cell.Tile.Model, cell.X, cell.Y, cell.Tile.Yaw) ) ).OrderBy( birth => birth.Key ).Select( birth => (Birth: birth.Key, Cells: birth.AsEnumerable()) ).ToArray();
+			foreach ( var (birth, cells) in groups )
 			{
-				// a cell whose model has a clip is an instance of its own with its own animator (QueueModelAnimation); the others are baked into the shared batches
-				var animated = clip != null;
-				if ( animated )
-					FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
-				var uvMeshes = animated ? new List<QueueUvMesh>() : null;
-				// the instance height and the chain of every node on this cell; each vertex is draped by its own chain (QueueModelDrape)
-				var baseHeight = QueueModelDrape.BaseHeight( field, x, y );
-				var placement = QueueModelDrape.Placement( field, model, x, y, tile.Yaw, baseHeight );
-				var chains = QueueModelDrape.Chains( model, placement );
-				var rootChain = ModelDrape.Chain( placement, System.Numerics.Matrix4x4.Identity );
-				var hasTile = tileOfCell.TryGetValue( (x, y), out var tileIndex );
-				for ( var meshIndex = 0; meshIndex < model.Meshes.Count; meshIndex++ )
+				QueueGroupBuild? build = null;
+				var groupNames = new List<string>();
+				var groupVertices = new List<Vertex>();
+				var groupIndices = new List<uint>();
+				if ( clip != null )
 				{
-					var mesh = floor.Floor.Apply( meshIndex, model.Meshes[meshIndex] );
-					if ( ObjectAssets.GetUnrenderableReason( mesh ) != null || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
-						continue;
-					// the composite stands in for the skirt entry's slot: the materials that name it read the cell's tile of an atlas page
-					var composite = hasTile && mesh.Materials.Any( material => material.TextureIndex == floor.Entry.Slot ) ? queueAtlas!.PageOf( tileIndex ) : -1;
-					var names = mesh.Materials.Select( material => hasTile && material.TextureIndex == floor.Entry.Slot ? $"{CompositePrefix}{composite}" : material.Name ).ToArray();
-					if ( !animated && batchTextures.Union( names, StringComparer.OrdinalIgnoreCase ).Count() > MaximumTextureSlots )
-						FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
-					var slotOfMaterial = names.Select( name =>
-					{
-						var slot = batchTextures.FindIndex( existing => string.Equals( existing, name, StringComparison.OrdinalIgnoreCase ) );
-						if ( slot < 0 )
-						{
-							batchTextures.Add( name );
-							slot = batchTextures.Count - 1;
-						}
-						return slot;
-					} ).ToArray();
-					var first = (uint)batchVertices.Count;
-					var nodeChain = mesh.NodeIndex >= 0 && mesh.NodeIndex < chains.Length ? chains[mesh.NodeIndex] : rootChain;
-					for ( var index = 0; index < mesh.Vertices.Length; index++ )
-					{
-						var source = mesh.Vertices[index];
-						// Model space (Y up) → the grid's frame through the node's chain with the vertex's height on the landscape under it → engine.
-						var placed = QueueModelDrape.Vertex( field, nodeChain, source.Position.GetSystemVector3(), baseHeight );
-						var normal = ObjectAssets.ConvertAxes( System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), nodeChain ) );
-						var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
-						var texCoords = mesh.TexCoords[index];
-						if ( hasTile && mesh.Materials[materialIndex].TextureIndex == floor.Entry.Slot )
-							texCoords = queueAtlas!.PageCoordinates( tileIndex, texCoords );
-						batchVertices.Add( new Vertex
-						{
-							Position = OriginalParkPlacement.ToEngine( field, placed ),
-							Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( normal ) : System.Numerics.Vector3.UnitZ,
-							TexCoords = texCoords,
-							TexIndex = slotOfMaterial[materialIndex],
-							MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex] ) | (pulses ? TextureSlotAddressing.PulseFlag : 0u)
-						} );
-					}
-					foreach ( var index in mesh.Indices )
-						batchIndices.Add( first + index );
-					// a mesh a track of the clip writes the coordinates of: its vertices, and which of them show the cell's composite
-					if ( uvMeshes != null && clip!.Animation.Tracks.Any( track => track.NodeIndex == mesh.NodeIndex && track.UvAnimation != null ) )
-					{
-						var onComposite = new bool[mesh.Vertices.Length];
-						for ( var index = 0; index < onComposite.Length; index++ )
-						{
-							var materialIndex = (int)Math.Min( mesh.Vertices[index].TextureIndex, (uint)mesh.Materials.Length - 1 );
-							onComposite[index] = hasTile && mesh.Materials[materialIndex].TextureIndex == floor.Entry.Slot;
-						}
-						uvMeshes.Add( new QueueUvMesh( meshIndex, (int)first, mesh.Vertices.Length, onComposite ) );
-					}
+					if ( !queuePlayers.TryGetValue( (group.Key, birth), out var player ) )
+						queuePlayers[(group.Key, birth)] = player = new QueueClipPlayer( floor.Model, clip.Animation );
+					liveGroups.Add( (group.Key, birth) );
+					var animationGroup = new QueueAnimationGroup( player );
+					queueAnimations.Add( animationGroup );
+					build = new QueueGroupBuild( clip, floor.Model, animationGroup, new List<QueueUvRange>() );
 				}
-				if ( animated )
+				foreach ( var (x, y, tile) in cells )
 				{
-					// the channel belongs to the cell: a rebuild keeps the player of a cell that still has this model and yaw, so its phase goes on
-					var playerKey = (group.Key, x, y, tile.Yaw);
-					if ( !queuePlayers.TryGetValue( playerKey, out var player ) )
-						queuePlayers[playerKey] = player = new QueueClipPlayer( floor.Model, clip!.Animation );
-					livePlayers.Add( playerKey );
-					FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices, new QueueInstance( clip!, floor.Model, player, uvMeshes!, hasTile ? tileIndex : -1 ) );
+					// the instance height and the chain of every node on this cell; each vertex is draped by its own chain (QueueModelDrape)
+					var baseHeight = QueueModelDrape.BaseHeight( field, x, y );
+					var placement = QueueModelDrape.Placement( field, model, x, y, tile.Yaw, baseHeight );
+					var chains = QueueModelDrape.Chains( model, placement );
+					var rootChain = ModelDrape.Chain( placement, System.Numerics.Matrix4x4.Identity );
+					var hasTile = tileOfCell.TryGetValue( (x, y), out var tileIndex );
+					for ( var meshIndex = 0; meshIndex < model.Meshes.Count; meshIndex++ )
+					{
+						var mesh = floor.Floor.Apply( meshIndex, model.Meshes[meshIndex] );
+						if ( ObjectAssets.GetUnrenderableReason( mesh ) != null || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
+							continue;
+						var writesCoordinates = build != null && clip!.UvNodes.Contains( mesh.NodeIndex );
+						var animatedMesh = build != null && (writesCoordinates || mesh.Materials.Any( material => clip!.Frames.ContainsKey( (int)material.TextureIndex ) ));
+						var targetNames = animatedMesh ? groupNames : batchTextures;
+						var targetVertices = animatedMesh ? groupVertices : batchVertices;
+						var targetIndices = animatedMesh ? groupIndices : batchIndices;
+						var targetBuild = animatedMesh ? build : null;
+						// the composite stands in for the skirt entry's slot: the materials that name it read the cell's tile of an atlas page
+						var composite = hasTile && mesh.Materials.Any( material => material.TextureIndex == floor.Entry.Slot ) ? queueAtlas!.PageOf( tileIndex ) : -1;
+						var names = mesh.Materials.Select( material => hasTile && material.TextureIndex == floor.Entry.Slot ? $"{CompositePrefix}{composite}" : material.Name ).ToArray();
+						if ( targetNames.Union( names, StringComparer.OrdinalIgnoreCase ).Count() > MaximumTextureSlots )
+							FlushQueueBatch( textures, directory, targetNames, targetVertices, targetIndices, targetBuild );
+						var slotOfMaterial = names.Select( name =>
+						{
+							var slot = targetNames.FindIndex( existing => string.Equals( existing, name, StringComparison.OrdinalIgnoreCase ) );
+							if ( slot < 0 )
+							{
+								targetNames.Add( name );
+								slot = targetNames.Count - 1;
+							}
+							return slot;
+						} ).ToArray();
+						var first = (uint)targetVertices.Count;
+						var nodeChain = mesh.NodeIndex >= 0 && mesh.NodeIndex < chains.Length ? chains[mesh.NodeIndex] : rootChain;
+						for ( var index = 0; index < mesh.Vertices.Length; index++ )
+						{
+							var source = mesh.Vertices[index];
+							// Model space (Y up) → the grid's frame through the node's chain with the vertex's height on the landscape under it → engine.
+							var placed = QueueModelDrape.Vertex( field, nodeChain, source.Position.GetSystemVector3(), baseHeight );
+							var normal = ObjectAssets.ConvertAxes( System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), nodeChain ) );
+							var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
+							var texCoords = mesh.TexCoords[index];
+							if ( hasTile && mesh.Materials[materialIndex].TextureIndex == floor.Entry.Slot )
+								texCoords = queueAtlas!.PageCoordinates( tileIndex, texCoords );
+							targetVertices.Add( new Vertex
+							{
+								Position = OriginalParkPlacement.ToEngine( field, placed ),
+								Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( normal ) : System.Numerics.Vector3.UnitZ,
+								TexCoords = texCoords,
+								TexIndex = slotOfMaterial[materialIndex],
+								MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex] ) | (pulses ? TextureSlotAddressing.PulseFlag : 0u)
+							} );
+						}
+						foreach ( var index in mesh.Indices )
+							targetIndices.Add( first + index );
+						// a mesh a track of the clip writes the coordinates of: its vertices in this batch, and which of them show the cell's composite
+						if ( writesCoordinates )
+						{
+							var onComposite = new bool[mesh.Vertices.Length];
+							for ( var index = 0; index < onComposite.Length; index++ )
+							{
+								var materialIndex = (int)Math.Min( mesh.Vertices[index].TextureIndex, (uint)mesh.Materials.Length - 1 );
+								onComposite[index] = hasTile && mesh.Materials[materialIndex].TextureIndex == floor.Entry.Slot;
+							}
+							build!.Ranges.Add( new QueueUvRange( meshIndex, (int)first, mesh.Vertices.Length, onComposite, queueAtlas, hasTile ? tileIndex : -1 ) );
+						}
+					}
+					QueueModelCount++;
 				}
-				QueueModelCount++;
+				if ( build != null )
+					FlushQueueBatch( textures, directory, groupNames, groupVertices, groupIndices, build );
 			}
 		}
 		FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
-		foreach ( var key in queuePlayers.Keys.Where( key => !livePlayers.Contains( key ) ).ToList() )
+		foreach ( var key in queuePlayers.Keys.Where( key => !liveGroups.Contains( key ) ).ToList() )
 			queuePlayers.Remove( key );
 	}
 
-	/// <summary>The channel of every animated queue cell by (model, cell, yaw), kept across rebuilds of the queue models.</summary>
-	private readonly Dictionary<(int Model, int X, int Y, int Yaw), QueueClipPlayer> queuePlayers = new();
+	/// <summary>The player of every group of animated queue cells by (model, start), kept across rebuilds of the queue models while the group has cells.</summary>
+	private readonly Dictionary<(int Model, int Birth), QueueClipPlayer> queuePlayers = new();
+
+	private readonly QueueBirths queueBirths = new();
 
 	/// <summary>The name a batch slot takes for a page of the queue composites (the atlas, not a file).</summary>
 	private const string CompositePrefix = "\u0001queue-composite-";
@@ -888,10 +905,10 @@ public sealed partial class OriginalTerrain : Entity
 	private Texture QueueSlotTexture( Dictionary<string, Texture> textures, string name, string directory ) =>
 		name.StartsWith( CompositePrefix, StringComparison.Ordinal ) && queueAtlas != null && int.TryParse( name.AsSpan( CompositePrefix.Length ), out var page ) ? queueAtlas.Pages[page] : LoadTexture( textures, name, "textures", directory );
 
-	/// <summary>The cell of an animated queue instance a batch is flushed for (<see cref="FlushQueueBatch"/>).</summary>
-	private sealed record QueueInstance( QueueClip Clip, ModelFile Model, QueueClipPlayer Player, List<QueueUvMesh> UvMeshes, int Tile );
+	/// <summary>The group a batch of animated meshes belongs to (<see cref="FlushQueueBatch"/>): the clip, the model, the group that draws it and the texture-coordinate ranges of the batch being filled (cleared at every flush).</summary>
+	private sealed record QueueGroupBuild( QueueClip Clip, ModelFile Model, QueueAnimationGroup Group, List<QueueUvRange> Ranges );
 
-	private void FlushQueueBatch( Dictionary<string, Texture> textures, string directory, List<string> names, List<Vertex> vertices, List<uint> indices, QueueInstance? instance = null )
+	private void FlushQueueBatch( Dictionary<string, Texture> textures, string directory, List<string> names, List<Vertex> vertices, List<uint> indices, QueueGroupBuild? build = null )
 	{
 		if ( vertices.Count > 0 )
 		{
@@ -901,20 +918,20 @@ public sealed partial class OriginalTerrain : Entity
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
 			var array = vertices.ToArray();
-			QueueModelAnimation? animation = null;
 			(int Slot, Texture?[] Frames, int[] BatchSlots)[]? bindings = null;
-			if ( instance != null )
+			if ( build != null )
 			{
 				// the batch slots that show a model slot a frame track drives (the slot's first frame name is what the batch's material names); a model made after the alternatives are added classifies the slot by its most translucent frame
-				bindings = instance.Clip.Frames.Select( pair => (Slot: pair.Key, Frames: pair.Value,
-					BatchSlots: Enumerable.Range( 0, names.Count ).Where( index => instance.Model.Textures[pair.Key].FrameNames.Count > 0
-						&& string.Equals( names[index], instance.Model.Textures[pair.Key].FrameNames[0], StringComparison.OrdinalIgnoreCase ) ).ToArray() ) )
+				bindings = build.Clip.Frames.Select( pair => (Slot: pair.Key, Frames: pair.Value,
+					BatchSlots: Enumerable.Range( 0, names.Count ).Where( index => build.Model.Textures[pair.Key].FrameNames.Count > 0
+						&& string.Equals( names[index], build.Model.Textures[pair.Key].FrameNames[0], StringComparison.OrdinalIgnoreCase ) ).ToArray() ) )
 					.Where( binding => binding.BatchSlots.Length > 0 ).ToArray();
 				foreach ( var (_, frames, batchSlots) in bindings )
 					foreach ( var batchSlot in batchSlots )
 						material.AddSlotAlternatives( batchSlot, frames );
 			}
-			var drawn = new Model( array, indices.ToArray(), material, dynamicVertices: instance != null && instance.UvMeshes.Count > 0 );
+			var ranges = build?.Ranges.ToArray() ?? Array.Empty<QueueUvRange>();
+			var drawn = new Model( array, indices.ToArray(), material, dynamicVertices: ranges.Length > 0 );
 			var part = AddPathPart( drawn, $"queue models {queueParts.Count}" );
 			queueParts.Add( part );
 			if ( batchPulses )
@@ -922,12 +939,10 @@ public sealed partial class OriginalTerrain : Entity
 				part.PulseTint = queuePulse.Tint;
 				queuePulseParts.Add( part );
 			}
-			if ( instance != null )
-			{
-				animation = new QueueModelAnimation( instance.Player, instance.Clip, drawn, array, material, instance.UvMeshes, bindings!, queueAtlas, instance.Tile );
-				queueAnimations.Add( animation );
-			}
+			if ( build != null )
+				build.Group.Parts.Add( new QueueAnimatedPart( drawn, array, material, ranges, bindings!, build.Model.Meshes.Count ) );
 		}
+		build?.Ranges.Clear();
 		names.Clear();
 		vertices.Clear();
 		indices.Clear();
@@ -936,19 +951,7 @@ public sealed partial class OriginalTerrain : Entity
 	/// <summary>The animation clip of a queue model (<see cref="QueueClip"/>), or null when the archive has none for it or it is not one this port plays.</summary>
 	private QueueClip? LoadQueueClip( int key, ModelFile model, Dictionary<string, Texture> textures, string directory )
 	{
-		// the archive's member for the group M (a model without one has no clip: tp.exe's probe 0x44A220 finds nothing and +0xA8 stays 0)
-		var member = $"{QueueModels.Names[key]}m.md2";
-		if ( !ListFiles( directory ).Any( file => string.Equals( Path.GetFileName( file ), member, StringComparison.OrdinalIgnoreCase ) ) )
-			return null;
-		ModelAnimation? animation;
-		try
-		{
-			animation = ObjectAssets.LoadModel( $"{directory}/{member}" ).Clip;
-		}
-		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
-		{
-			return null;
-		}
+		var animation = QueueClip.FindAnimation( QueueModels.Names[key], directory, ListFiles, path => ObjectAssets.LoadModel( path ).Clip );
 		if ( animation == null )
 			return null;
 		if ( !QueueClip.Supported( animation ) )

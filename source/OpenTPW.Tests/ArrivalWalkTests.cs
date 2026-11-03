@@ -125,8 +125,15 @@ public class ArrivalWalkTests
 		var beamed = 0;
 		simulation.Beamed += _ => beamed++;
 		simulation.Grid.Cells.SetType( 20, 5, ParkCellType.Path );
+		var (reference, _, _, _) = Rig();
+		reference.Grid.Cells.SetType( 20, 5, ParkCellType.Path );
+		reference.SpawnInPark( 20, 5 );
 		var guest = simulation.SpawnArrival()!;
 		Assert.IsTrue( simulation.IsOnParkCell( guest ), "the stop cell is a path cell here (type 1: 0x536310)" );
+		Assert.AreEqual( reference.World.State, simulation.World.State, "no world draw beyond the constructor's own (SpawnInPark's): the R draws of 0x4FB201 and 0x4FB21C are not made (0x4FB1D9)" );
+		Assert.AreEqual( GuestState.DoingNothing, guest.State, "state 6 through 0x501DB0(6)" );
+		Assert.AreEqual( (20, 5), guest.Navigation.Cell, "no crossing route" );
+		Assert.IsFalse( guest.HasWaypoint, "0x4FA5F0 is not called" );
 		Assert.AreEqual( 0, beamed, "0x4FA990 is true: the other branch (0x4FB1D9) runs and no beam is taken" );
 	}
 

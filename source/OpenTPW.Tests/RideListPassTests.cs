@@ -172,20 +172,43 @@ public class RideListPassTests
 	public void StepsWithALiveResetAllocateNothing()
 	{
 		var animator = new ObjectAnimator( Geometry() );
-		animator.Play( 0, Clip( Md2VertexAnimationTests.CreateAnimationWithNodeList( 1, 30, 0 ) ), "hider", loop: true );
+		animator.Play( 0, Clip( Md2VertexAnimationTests.CreateAnimationWithNodeList( 1, 30, 0 ) ), "hider", loop: false );
+		animator.Advance( 0.01 );
+		animator.Stop( 0 );
+		// a writer whose first toggle is at tick 2: until then nothing writes the node and the reset stays
+		var writer = Md2VertexAnimationTests.CreateAnimationWithNodeList( 0, 30 );
+		var toggles = writer.AsSpan().IndexOf( new byte[] { 0x00, 0x00, 0x03, 0x00, 0xF9, 0xFF } );
+		writer[toggles] = 0xFE;
+		writer[toggles + 1] = 0xFF;
+		animator.Play( 1, Clip( writer ), "writer", loop: true );
 		animator.Advance( 0.01 );
 		animator.ResetToStored();
+		// a reset is a pair with the step that follows it: the pair is what the render path does every frame
 		for ( var warm = 0; warm < 5; warm++ )
+		{
+			animator.ResetToStored();
 			animator.Advance( 0 );
+		}
+		Assert.AreNotEqual( animator.IsNodeHiddenInSimulation( 0 ), animator.IsNodeHidden( 0 ), "the drawn state is still apart from the simulation's before measuring" );
 		var before = System.GC.GetAllocatedBytesForCurrentThread();
 		for ( var index = 0; index < 100; index++ )
+		{
+			animator.ResetToStored();
 			animator.Advance( 0 );
+		}
 		Assert.AreEqual( 0, System.GC.GetAllocatedBytesForCurrentThread() - before );
+		Assert.AreNotEqual( animator.IsNodeHiddenInSimulation( 0 ), animator.IsNodeHidden( 0 ), "and still apart after the zero steps" );
 		for ( var warm = 0; warm < 5; warm++ )
-			animator.Advance( 0.001 );
+		{
+			animator.ResetToStored();
+			animator.Advance( 0.0001 );
+		}
 		before = System.GC.GetAllocatedBytesForCurrentThread();
 		for ( var index = 0; index < 100; index++ )
-			animator.Advance( 0.001 );
-		Assert.AreEqual( 0, System.GC.GetAllocatedBytesForCurrentThread() - before, "steps that sample allocate nothing" );
+		{
+			animator.ResetToStored();
+			animator.Advance( 0.0001 );
+		}
+		Assert.AreEqual( 0, System.GC.GetAllocatedBytesForCurrentThread() - before, "reset and step pairs that sample allocate nothing" );
 	}
 }

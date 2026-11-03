@@ -39,10 +39,48 @@ public class QueueClipPlayerTests
 		var order = frames.Select( frame => frame.Frame ).Aggregate( new List<int>(), ( list, frame ) => { if ( list.Count == 0 || list[^1] != frame ) list.Add( frame ); return list; } );
 		CollectionAssert.AreEqual( new[] { 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2 }.Take( order.Count ).ToArray(), order, "the frames over and over" );
 		Assert.IsTrue( order.Count >= 15, $"about six cycles in 3 s ({order.Count} frames shown)" );
-		// one cycle is 15 ticks at 30 per second, 0.5 s, plus the restart that waits for the frame that finds the channel idle
+		// one cycle is 15 ticks at 30 per second, 0.5 s, and the restart keeps the overshoot (0x47300E, 0x472C12), so the gaps are exact to a step
 		var restarts = frames.Zip( frames.Skip( 1 ), ( a, b ) => (a, b) ).Where( pair => pair.a.Frame == 2 && pair.b.Frame == 0 ).Select( pair => pair.b.Time ).ToArray();
 		Assert.IsTrue( restarts.Length >= 4 );
-		Assert.IsTrue( restarts.Zip( restarts.Skip( 1 ), ( a, b ) => b - a ).All( gap => gap is > 0.49 and < 0.54 ), string.Join( ", ", restarts ) );
+		Assert.IsTrue( restarts.Zip( restarts.Skip( 1 ), ( a, b ) => b - a ).All( gap => Math.Abs( gap - 0.5 ) <= 0.011 ), string.Join( ", ", restarts ) );
+	}
+
+	[TestMethod]
+	public void AnEditRestartsTheTouchedCellsAndTheirNeighboursOnly()
+	{
+		var births = new QueueBirths();
+		var cells = new[] { (0, 5, 5, 0), (0, 6, 5, 0), (0, 9, 9, 0), (0, 5, 7, 0) };
+		births.Assign( cells );
+		Assert.AreEqual( 1, cells.Select( births.Of ).Distinct().Single(), "the first build makes them all in one frame" );
+		births.Assign( cells );
+		Assert.AreEqual( 1, cells.Select( births.Of ).Distinct().Single(), "a rebuild without a change keeps every start" );
+		// a new cell at (5, 6): it and its neighbours (5, 5) and (5, 7) start again, (6, 5) (diagonal) and (9, 9) keep their phase
+		var edited = cells.Append( (0, 5, 6, 0) ).ToArray();
+		births.Assign( edited );
+		Assert.AreEqual( 2, births.Of( (0, 5, 6, 0) ) );
+		Assert.AreEqual( 2, births.Of( (0, 5, 5, 0) ) );
+		Assert.AreEqual( 2, births.Of( (0, 5, 7, 0) ) );
+		Assert.AreEqual( 1, births.Of( (0, 6, 5, 0) ) );
+		Assert.AreEqual( 1, births.Of( (0, 9, 9, 0) ) );
+		// a cell that goes restarts its neighbours; a turned cell is a new key
+		births.Assign( edited.Where( key => key.Item2 != 9 ).ToArray() );
+		Assert.AreEqual( 2, births.Of( (0, 5, 6, 0) ), "no neighbour of (9, 9)" );
+		births.Assign( edited.Select( key => key.Item2 == 6 ? (0, 6, 5, 1) : key ).Where( key => key.Item2 != 9 ).ToArray() );
+		Assert.AreEqual( 4, births.Of( (0, 6, 5, 1) ) );
+		Assert.AreEqual( 4, births.Of( (0, 5, 5, 0) ), "the neighbour of a turned cell" );
+		Assert.AreEqual( 2, births.Of( (0, 5, 7, 0) ), "not a neighbour of it" );
+	}
+
+	[TestMethod]
+	public void AMissingMMemberIsNoClipAndDoesNotAbortTheBuild()
+	{
+		var loads = 0;
+		Assert.IsNull( QueueClip.FindAnimation( "queend", "levels/jungle/queue", _ => new[] { "levels/jungle/queue/queend.md2", "levels/jungle/queue/quebin1m.md2" }, _ => { loads++; return null; } ) );
+		Assert.AreEqual( 0, loads, "no member, no load" );
+		Assert.IsNull( QueueClip.FindAnimation( "queend", "d", _ => Array.Empty<string>(), _ => throw new InvalidOperationException() ) );
+		Assert.IsNull( QueueClip.FindAnimation( "queend", "d", _ => new[] { "d/QUEENDM.MD2" }, _ => throw new InvalidDataException() ), "a member that does not read is no clip" );
+		var (_, clip) = Torch();
+		Assert.AreSame( clip, QueueClip.FindAnimation( "queend", "d", _ => new[] { "d/QUEENDM.MD2" }, _ => clip ), "the member is found by any case" );
 	}
 
 	[TestMethod]
@@ -75,12 +113,12 @@ public class QueueClipPlayerTests
 	{
 		var (model, clip) = Torch();
 		var player = new QueueClipPlayer( model, clip );
-		// the clip restarts once per cycle (a new channel state, 0.5 s here); the frames in between allocate nothing
+		// several cycles (0.5 s each, with the restarts in them) allocate nothing once the first has run
 		Run( player, 0, 0.56 );
 		var before = GC.GetAllocatedBytesForCurrentThread();
-		for ( var step = 0; step < 30; step++ )
+		for ( var step = 0; step < 250; step++ )
 			player.Step( 0.01 );
-		Assert.AreEqual( 0, GC.GetAllocatedBytesForCurrentThread() - before, "the frames of a cycle allocate nothing" );
+		Assert.AreEqual( 0, GC.GetAllocatedBytesForCurrentThread() - before, "the frames and restarts of at least two cycles allocate nothing" );
 	}
 
 	/// <summary>Every shipped queue clip is one this renderer plays (frame tracks or texture coordinates only), and the torch models animate frames 0 to 4.</summary>

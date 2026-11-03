@@ -862,8 +862,11 @@ public sealed class ObjectAnimator
 	/// </summary>
 	private void ApplyNodeList( ModelAnimation clip )
 	{
-		foreach ( var node in clip.NodeList )
+		// indexed, not foreach: the read-only lists would box an enumerator on every restart and reset
+		var list = clip.NodeList;
+		for ( var listed = 0; listed < list.Count; listed++ )
 		{
+			var node = list[listed];
 			if ( node >= nodeStateBit.Length || (model.Nodes[node].Type & 0x80000000u) != 0 || nodePinned[node] )
 				continue;
 			SetNodeStateBit( node, true );
@@ -892,10 +895,13 @@ public sealed class ObjectAnimator
 			if ( channel.Held )
 				continue;
 			var clip = channel.Clip.Animation;
-			foreach ( var node in clip.NodeList )
-				ClearNodeStateBit( node );
-			foreach ( var track in clip.Tracks )
+			var listedNodes = clip.NodeList;
+			for ( var listed = 0; listed < listedNodes.Count; listed++ )
+				ClearNodeStateBit( listedNodes[listed] );
+			var tracks = clip.Tracks;
+			for ( var trackIndex = 0; trackIndex < tracks.Count; trackIndex++ )
 			{
+				var track = tracks[trackIndex];
 				ClearNodeStateBit( track.NodeIndex );
 				var mesh = meshByNode[track.NodeIndex];
 				if ( mesh < 0 )

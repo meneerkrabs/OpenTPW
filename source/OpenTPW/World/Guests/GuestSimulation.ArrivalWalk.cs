@@ -91,6 +91,9 @@ public sealed partial class GuestSimulation
 			var start = FindSpawnCell();
 			return start == null ? null : SpawnInPark( start.Value.X, start.Value.Y );
 		}
+		// [BIN:TPW-EXE:0x004FB1D9 park cell branch] a stop cell the test 0x4FA990 accepts (cell type 0, 1, 3, 9 or 10) jumps to 0x4FB1D9: the visitor number 0x51AAF0 into +0x1D8 and state 6 through 0x501DB0(6), before the two draws (0x516330 at 0x4FB201 and 0x4FB21C), with no crossing route (0x4FA5F0) and no beam
+		if ( OnParkCellTypeAt( stop.X, stop.Y ) && Grid.IsWalkable( stop.X, stop.Y ) )
+			return SpawnInPark( stop.X, stop.Y );
 		var guest = Create();
 		if ( guest == null )
 			return null;
@@ -99,18 +102,14 @@ public sealed partial class GuestSimulation
 		PlaceAtCentre( guest, stop );
 		var crossing = BusSideCrossingCell( side )!.Value;
 		EnterGuestState( guest, RouteToPoint( guest, crossing, sideways, ArrivalRowByte ) ? GuestState.CrossingRoad : GuestState.DoingNothing );
-		// [BIN:TPW-EXE:0x004FB26A creation beam] the branch taken when 0x4FA990 finds none of the cell types 0, 1, 3, 9 and 10 (0x536310..0x536390; OnParkCellType) ends with 0x4FA470(0x13), particle 19 at the guest's place (the arrival update's call 0x4CF7A4 passes the vehicle's stop cell); a guest made on a park cell (0x4FA990, SpawnInPark) takes the other branch and beams nobody. The world's population loop 0x516700 (25 guests at once, 0x516791) belongs to the online chat message handler 0x4E6790 and has no counterpart here
-		if ( !OnParkCellType( guest ) )
+		// [BIN:TPW-EXE:0x004FB26A creation beam] the branch taken when 0x4FA990 finds none of the cell types 0, 1, 3, 9 and 10 (0x536310..0x536390; OnParkCellType) ends with 0x4FA470(0x13), particle 19 at the guest's place (the arrival update's call 0x4CF7A4 passes the vehicle's stop cell); a guest made on a park cell (0x4FA990, SpawnInPark above) takes the other branch and beams nobody. The world's population loop 0x516700 (25 guests at once, 0x516791) belongs to the online chat message handler 0x4E6790 and has no counterpart here
+		if ( !OnParkCellTypeAt( stop.X, stop.Y ) )
 			Beamed?.Invoke( guest );
 		return guest;
 	}
 
-	/// <summary>The cell type test of <c>0x4FA990</c> alone: the guest's cell is of type 0, 1, 3, 9 or 10 (without OpenTPW's pool bridges, which <see cref="IsOnParkCell"/> adds).</summary>
-	private bool OnParkCellType( Guest guest )
-	{
-		var (x, y) = guest.Navigation.Cell;
-		return Grid.InBounds( x, y ) && Grid.Cells.RawTypeAt( x, y ) is 0 or 1 or 3 or 9 or 10;
-	}
+	/// <summary>The cell type test of <c>0x4FA990</c> alone: the cell is of type 0, 1, 3, 9 or 10 (without OpenTPW's pool bridges, which <see cref="IsOnParkCell"/> adds).</summary>
+	private bool OnParkCellTypeAt( int x, int y ) => Grid.InBounds( x, y ) && Grid.Cells.RawTypeAt( x, y ) is 0 or 1 or 3 or 9 or 10;
 
 	/// <summary>The y byte of the point a created guest walks to in the crossing cell (0xC8).</summary>
 	private const int ArrivalRowByte = 0xC8;

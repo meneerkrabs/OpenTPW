@@ -1,3 +1,8 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+
 namespace OpenTPW;
 
 /// <summary>
@@ -6,13 +11,36 @@ namespace OpenTPW;
 /// </summary>
 internal sealed class QueueClip
 {
-	/// <summary>The animation group the idle restart of an instance starts (<see cref="QueueModelAnimation.IdleGroup"/>), the letter M.</summary>
-	public const int Group = QueueModelAnimation.IdleGroup;
+	/// <summary>The animation group the idle restart of an instance starts (<see cref="QueueAnimationGroup.IdleGroup"/>), the letter M.</summary>
+	public const int Group = QueueAnimationGroup.IdleGroup;
 
 	public required ModelAnimation Animation { get; init; }
 
 	/// <summary>Per model texture slot a texture-frame track addresses: every frame's texture, null where no searched directory has the art.</summary>
 	public required Dictionary<int, Texture?[]> Frames { get; init; }
+
+	/// <summary>
+	/// The clip of the model <paramref name="name"/> in an archive directory: its <c>m</c> member, or null when the archive has none or the member does not load (a model without one has no clip: the probe 0x44A220 finds nothing and +0xA8 stays 0, so the
+	/// level builds without it).
+	/// </summary>
+	internal static ModelAnimation? FindAnimation( string name, string directory, Func<string, IEnumerable<string>> listFiles, Func<string, ModelAnimation?> load )
+	{
+		var member = $"{name}m.md2";
+		if ( !listFiles( directory ).Any( file => string.Equals( System.IO.Path.GetFileName( file ), member, StringComparison.OrdinalIgnoreCase ) ) )
+			return null;
+		try
+		{
+			return load( $"{directory}/{member}" );
+		}
+		catch ( Exception exception ) when ( exception is System.IO.IOException or InvalidDataException or UnauthorizedAccessException )
+		{
+			return null;
+		}
+	}
+
+	/// <summary>The nodes whose meshes a track of the clip writes the texture coordinates of.</summary>
+	public HashSet<int> UvNodes => uvNodes ??= Animation.Tracks.Where( track => track.UvAnimation != null ).Select( track => track.NodeIndex ).ToHashSet();
+	private HashSet<int>? uvNodes;
 
 	/// <summary>
 	/// Whether this port plays the clip: its tracks only write texture coordinates and texture frames (every clip of the shipped queue archives: the torches' frame tracks, Space's scrolling coordinates). A clip with
@@ -23,15 +51,17 @@ internal sealed class QueueClip
 		&& track.PathParameters == null && track.NodeFlagToggles.Count == 0 );
 }
 
-/// <summary>The vertices of one mesh of an animated queue instance, in the instance's vertex array.</summary>
-internal sealed record QueueUvMesh( int MeshIndex, int First, int Count, bool[] Composite );
+/// <summary>The vertices of one mesh of one cell in a part's vertex array, with the atlas tile of the cell's composite (-1: none).</summary>
+internal sealed record QueueUvRange( int MeshIndex, int First, int Count, bool[] Composite, ProceduralTerrainAtlas? Atlas, int Tile );
 
 /// <summary>
-/// The channel of one queue instance and its idle restart: no graphics, so the cycle can be tested on its own (<see cref="QueueModelAnimation"/> draws what it samples).
+/// The channel of one group of queue instances and its restart: no graphics, so the cycle can be tested on its own (<see cref="QueueAnimationGroup"/> draws what it samples).
 /// </summary>
+// [BIN:TPW-EXE:0x0047300E carry] the first start from the none animation 12 is fresh (0x472FBB); a clip that runs past its duration is restarted by the idle restart with the carry the overshoot leaves (0x47300E: frame minus duration, 0x472F60), which 0x472BC0 caps (0x472C12..0x472C25) and turns into the new start time, stamp minus ftol(carry * 33.33 / speed) (0x472C27..0x472C41), so the clip loops with its phase kept; the clock is the scaled clock 0x7B496C (channel flag 0x40 clear, 0x473440)
 internal sealed class QueueClipPlayer
 {
 	private readonly ModelAnimation clip;
+	private bool started;
 
 	public QueueClipPlayer( ModelFile model, ModelAnimation clip )
 	{
@@ -41,76 +71,56 @@ internal sealed class QueueClipPlayer
 
 	public ObjectAnimator Animator { get; }
 
-	/// <summary>One frame: the clock moves on by <paramref name="scaledSeconds"/>, then an idle channel (never started, or the clip past its duration) restarts the clip at the frame's clock.</summary>
+	/// <summary>One frame: the clock moves on by <paramref name="scaledSeconds"/>; a channel that has not started (the none animation 12) starts the clip fresh, and a started one restarts when it ends with the carry of its overshoot (<see cref="ObjectAnimator.Advance"/>).</summary>
 	public void Step( double scaledSeconds )
 	{
 		Animator.Advance( scaledSeconds );
-		var state = Animator.GetAnimation( 0 );
-		if ( state is -1 or ObjectAnimator.NoAnimation )
-			Animator.Play( 0, clip, "m", loop: false, animationId: QueueClip.Group );
+		if ( started || Animator.GetAnimation( 0 ) != ObjectAnimator.NoAnimation )
+			return;
+		started = true;
+		Animator.Play( 0, clip, "m", loop: true, animationId: QueueClip.Group );
 	}
 }
 
 /// <summary>
-/// One queue cell whose model has an animation clip, drawn as a part of its own: tp.exe gives every queue instance one channel and its idle restart (<c>0x473C70</c> from the list pass and the render callback of
-/// every frame) starts the clip of group 5 whenever the channel is idle, at that frame's clock, so the clip plays over and over from the first frame after the instance's creation (the torches' fire0 to fire04 frames,
-/// Space's scrolling coordinates). Each instance has its own animator, so cells made at different times are in different phases.
+/// One batch of an animated group (<see cref="QueueAnimationGroup"/>): the meshes of its cells that a track writes or whose slot a frame track drives, in one dynamic model with its own material. It rebinds the frames of
+/// the slots the player shows and writes the sampled texture coordinates into the vertices of every cell, then hands the array to the GPU once.
 /// </summary>
-// [BIN:TPW-EXE:0x00473C8A idle restart] 0x473C70 asks 0x473490 whether every channel is idle (the none animation 12, or its frame past the clip's duration, +0x1C) and then starts group 5 variant 0 on channel 0 with 0x4732A0(instance, 5, 0, flags, 1.0, 0) at the frame's clock (0x473C9A..0x473CAB, up to three tries); the instance flag 0x8004 (set by the creation flags 0x1 and 0x80, which 0x33A of the queue models has neither of) skips it; group 5 is the letter M (the table 0x6FE6BC), the clip file <model>m.md2 (the loader's twelve-letter pass, 0x4623A2, 0x4623D1)
-// [BIN:TPW-EXE:0x004731D6 channel reset] the creator 0x463060 calls 0x473E30 (0x4631D6), which gives the instance's one channel the none animation 12 and, with its clips, sets +0xA8; an instance without any clip (+0xA8 = 0) never restarts
-internal sealed class QueueModelAnimation
+internal sealed class QueueAnimatedPart
 {
-	/// <summary>The animation group of the idle restart (<c>0x473CA8</c> pushes 5): the letter M of the table <c>0x6FE6BC</c>.</summary>
-	public const int IdleGroup = 5;
-
-	private readonly QueueClipPlayer player;
-	private readonly ObjectAnimator animator;
 	private readonly Model drawn;
 	private readonly Vertex[] vertices;
-	private readonly IReadOnlyList<QueueUvMesh> uvMeshes;
-	private readonly ProceduralTerrainAtlas? atlas;
-	private readonly int tile;
-	private readonly (int Slot, Texture?[] Frames, int[] BatchSlots)[] bindings;
 	private readonly Material material;
+	private readonly QueueUvRange[] ranges;
+	private readonly (int Slot, Texture?[] Frames, int[] BatchSlots)[] bindings;
 	private readonly int[] shown;
-	private readonly int[] uvVersions;
+	private readonly int[] meshVersions;
 	private int textureVersion = -1;
 	private bool animating = true;
 
-	/// <summary>The instance's drawing parts over a player that outlives them: a rebuild of the queue models (a path edit) keeps the channel and its phase, as the original's instances stay while the others change.</summary>
-	public QueueModelAnimation( QueueClipPlayer player, QueueClip clip, Model drawn, Vertex[] vertices, Material material, IReadOnlyList<QueueUvMesh> uvMeshes,
-		(int Slot, Texture?[] Frames, int[] BatchSlots)[] bindings, ProceduralTerrainAtlas? atlas, int tile )
+	public QueueAnimatedPart( Model drawn, Vertex[] vertices, Material material, QueueUvRange[] ranges, (int Slot, Texture?[] Frames, int[] BatchSlots)[] bindings, int meshCount )
 	{
 		this.drawn = drawn;
 		this.vertices = vertices;
 		this.material = material;
-		this.uvMeshes = uvMeshes;
+		this.ranges = ranges;
 		this.bindings = bindings;
-		this.atlas = atlas;
-		this.tile = tile;
-		this.player = player;
-		animator = player.Animator;
-		foreach ( var (slot, frames, _) in bindings )
-			animator.SetTextureFrameAvailability( slot, frames.Select( frame => frame != null ).ToArray() );
 		shown = new int[bindings.Length];
-		uvVersions = new int[uvMeshes.Count];
-		Array.Fill( uvVersions, -1 );
+		meshVersions = new int[meshCount];
+		Array.Fill( meshVersions, -1 );
 	}
 
-	/// <summary>The animator the instance plays its clip on (tests).</summary>
-	internal ObjectAnimator Animator => animator;
-
-	/// <summary>One frame: the clock moves on by the scene clock's gap, an idle channel restarts the clip at the frame's clock, and the textures and coordinates it shows are brought up to date.</summary>
-	public void Step( double scaledSeconds )
+	/// <summary>Brings the drawn frames and texture coordinates up to date with the animator.</summary>
+	public void Update( ObjectAnimator animator )
 	{
-		player.Step( scaledSeconds );
-		UpdateTextures();
-		UpdateCoordinates();
+		UpdateTextures( animator );
+		UpdateCoordinates( animator );
 	}
 
-	/// <summary>Brings the drawn frames of the texture-frame slots up to date (the same rebinding of a material's array element an object's frame tracks use).</summary>
-	private void UpdateTextures()
+	private void UpdateTextures( ObjectAnimator animator )
 	{
+		if ( bindings.Length == 0 )
+			return;
 		var enabled = OriginalObject.TextureAnimationEnabled;
 		var version = animator.TextureFrameVersion;
 		if ( version == textureVersion && enabled == animating )
@@ -131,28 +141,95 @@ internal sealed class QueueModelAnimation
 		}
 	}
 
-	/// <summary>Writes the sampled texture coordinates of the animated meshes into the instance's vertices and hands them to the GPU copy.</summary>
-	private void UpdateCoordinates()
+	private void UpdateCoordinates( ObjectAnimator animator )
 	{
 		var changed = false;
-		for ( var index = 0; index < uvMeshes.Count; index++ )
+		for ( var mesh = 0; mesh < meshVersions.Length; mesh++ )
 		{
-			var uv = uvMeshes[index];
-			var version = animator.GetVertexVersion( uv.MeshIndex );
-			if ( version == uvVersions[index] )
+			var version = animator.GetVertexVersion( mesh );
+			if ( version == meshVersions[mesh] )
 				continue;
-			uvVersions[index] = version;
-			var coordinates = animator.GetTexCoords( uv.MeshIndex );
-			if ( coordinates == null || coordinates.Count < uv.Count )
+			meshVersions[mesh] = version;
+			var coordinates = animator.GetTexCoords( mesh );
+			if ( coordinates == null )
 				continue;
-			for ( var corner = 0; corner < uv.Count; corner++ )
+			foreach ( var range in ranges )
 			{
-				var value = new Vector2( coordinates[corner].X, coordinates[corner].Y );
-				vertices[uv.First + corner].TexCoords = uv.Composite[corner] && atlas != null ? atlas.PageCoordinates( tile, value ) : value;
+				if ( range.MeshIndex != mesh || coordinates.Count < range.Count )
+					continue;
+				for ( var corner = 0; corner < range.Count; corner++ )
+				{
+					var value = new Vector2( coordinates[corner].X, coordinates[corner].Y );
+					vertices[range.First + corner].TexCoords = range.Composite[corner] && range.Atlas != null ? range.Atlas.PageCoordinates( range.Tile, value ) : value;
+				}
+				changed = true;
 			}
-			changed = true;
 		}
 		if ( changed )
 			drawn.UpdateVertices( vertices );
+	}
+}
+
+/// <summary>
+/// The queue cells of one model that were made in the same frame: tp.exe gives every instance a channel of its own, and cells made together start together and loop for good in the same phase (the carry keeps it),
+/// so one player and one dynamic batch per (model, start) draw them all. Cells a path edit made again start again, as a new group (<see cref="OriginalTerrain"/>).
+/// </summary>
+// [BIN:TPW-EXE:0x00473C8A idle restart] 0x473C70 asks 0x473490 whether every channel is idle (the none animation 12, or its frame past the clip's duration, +0x1C) and then starts group 5 variant 0 on channel 0 with 0x4732A0(instance, 5, 0, flags, 1.0, 0) (0x473C9A..0x473CAB, up to three tries); the instance flag 0x8004 (set by the creation flags 0x1 and 0x80, which 0x33A of the queue models has neither of) skips it; group 5 is the letter M (the table 0x6FE6BC), the clip file <model>m.md2 (the loader's twelve-letter pass, 0x4623A2, 0x4623D1)
+// [BIN:TPW-EXE:0x004731D6 channel reset] the creator 0x463060 calls 0x473E30 (0x4631D6), which gives the instance's one channel the none animation 12 and, with its clips, sets +0xA8; an instance without any clip (+0xA8 = 0) never restarts
+internal sealed class QueueAnimationGroup( QueueClipPlayer player )
+{
+	/// <summary>The animation group of the idle restart (<c>0x473CA8</c> pushes 5): the letter M of the table <c>0x6FE6BC</c>.</summary>
+	public const int IdleGroup = 5;
+
+	public QueueClipPlayer Player { get; } = player;
+	public List<QueueAnimatedPart> Parts { get; } = new();
+
+	/// <summary>One frame: the player moves on, every part shows what it sampled.</summary>
+	public void Step( double scaledSeconds )
+	{
+		Player.Step( scaledSeconds );
+		foreach ( var part in Parts )
+			part.Update( Player.Animator );
+	}
+}
+
+/// <summary>
+/// The start of every queue cell by (model, cell, yaw): the generation of the frame it was made in. The first build (a level, a loaded park) makes them all in one frame; after a path edit the cells that are new, whose
+/// model or yaw changed, whose cell went, and the four neighbours of those start again as a group of their own, as the tile refresh of tp.exe removes (0x522A90) and places again (0x5229E0) every class-2 cell it touches;
+/// the others keep their phase.
+/// </summary>
+// [BIN:TPW-EXE:0x005365D0 tile refresh] a class-2 result removes the cell's previous model (0x522A90) and places the new one (0x5229E0) with a new channel, which starts at frame 0; the callers (the tools' commits, 0x53132E, 0x53133E, 0x53134E, 0x531362 and others) run it for the edited cell and the cells their links change, the neighbours
+internal sealed class QueueBirths
+{
+	private readonly Dictionary<(int Model, int X, int Y, int Yaw), int> birth = new();
+	private int generation;
+
+	/// <summary>The start of a cell of the last <see cref="Assign"/>.</summary>
+	public int Of( (int Model, int X, int Y, int Yaw) key ) => birth[key];
+
+	public void Assign( IEnumerable<(int Model, int X, int Y, int Yaw)> cells )
+	{
+		var now = cells.ToHashSet();
+		var touched = new HashSet<(int X, int Y)>();
+		foreach ( var key in now )
+			if ( !birth.ContainsKey( key ) )
+				touched.Add( (key.X, key.Y) );
+		foreach ( var key in birth.Keys )
+			if ( !now.Contains( key ) )
+				touched.Add( (key.X, key.Y) );
+		if ( touched.Count == 0 )
+			return;
+		var initial = birth.Count == 0;
+		var born = ++generation;
+		var next = new Dictionary<(int Model, int X, int Y, int Yaw), int>();
+		foreach ( var key in now )
+		{
+			var restart = initial || touched.Contains( (key.X, key.Y) )
+				|| touched.Contains( (key.X + 1, key.Y) ) || touched.Contains( (key.X - 1, key.Y) ) || touched.Contains( (key.X, key.Y + 1) ) || touched.Contains( (key.X, key.Y - 1) );
+			next[key] = restart ? born : birth[key];
+		}
+		birth.Clear();
+		foreach ( var (key, start) in next )
+			birth[key] = start;
 	}
 }

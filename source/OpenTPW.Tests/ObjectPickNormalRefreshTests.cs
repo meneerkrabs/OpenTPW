@@ -49,7 +49,7 @@ public class ObjectPickNormalRefreshTests
 	}
 
 	[TestMethod]
-	public void TheRefreshRunsOnceAtTheFirstModelTestAndKeepsTheRootNodesNormals()
+	public void TheRefreshRunsOnceAtTheFirstModelTestOverEveryNode()
 	{
 		var model = ObjectRayPickTests.TowerModel();
 		var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
@@ -61,11 +61,13 @@ public class ObjectPickNormalRefreshTests
 		Assert.IsFalse( refresh.Done );
 		Assert.IsTrue( ObjectPickModel.TryHitLine( model, rest, _ => false, NoVertices, placement, eye, direction, out var withRefresh, refresh ) );
 		Assert.IsTrue( refresh.Done );
-		Assert.IsNotNull( refresh.RootFaceNormals, "the slab is the root node and has a mesh" );
-		var first = refresh.RootFaceNormals;
+		Assert.IsNotNull( refresh.FaceNormalsByMesh, "every instance refreshes, fixed ones too" );
+		var meshed = model.Nodes.Select( node => node.MeshIndex ).Where( mesh => mesh >= 0 && mesh < refresh.FaceNormalsByMesh!.Length ).Distinct().ToArray();
+		Assert.IsTrue( meshed.Length > 0 && meshed.All( mesh => refresh.FaceNormalsByMesh![mesh] != null ), "every node with a mesh is refreshed (0x4638f7..0x46391e flags all nodes)" );
+		var first = refresh.FaceNormalsByMesh;
 		Assert.IsTrue( ObjectPickModel.TryHitLine( model, rest, _ => false, NoVertices, placement, eye, direction, out var again, refresh ) );
-		Assert.AreSame( first, refresh.RootFaceNormals, "the second test does not refresh again (0x473c30 clears model flag 0x40000)" );
-		Assert.IsTrue( ObjectPickModel.TryHitLine( model, rest, _ => false, NoVertices, placement, eye, direction, out var without ), "an instance without a conform keeps its stored normals" );
+		Assert.AreSame( first, refresh.FaceNormalsByMesh, "the second test does not refresh again (0x473c30 clears model flag 0x40000)" );
+		Assert.IsTrue( ObjectPickModel.TryHitLine( model, rest, _ => false, NoVertices, placement, eye, direction, out var without ), "a test without the refresh state uses the stored normals" );
 		Assert.AreEqual( without.Z, withRefresh.Z, 1e-3f, "the shipped-style quad's stored and refreshed planes agree" );
 		Assert.AreEqual( withRefresh, again );
 	}

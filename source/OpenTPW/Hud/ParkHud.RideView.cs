@@ -28,15 +28,31 @@ public sealed partial class ParkHud
 	internal Func<double>? RideStaticClock { get; set; }
 
 	// [BIN:TPW-EXE:0x42a6b8 ride mode] mode 4 enters the native seat camera; 0x42af24 selects terrain camcorder mode 2.
-	// [APPROX:UI-094] FreeWalk is the host terrain-inspection substitute for native camcorder mode 2. Only this level's current camera counts;
-	// an armed camcorder, a suspended walk beneath a ride, and retired camera owners do not create extra Boolean edges.
+	// [APPROX:UI-094] host rule: only this level's current camera (the ride view or the camcorder walk) counts toward the static's Boolean edges;
+	// an armed camcorder, a suspended walk beneath a ride, and retired camera owners do not create extra edges.
 	// [BIN:TPW-EXE:0x42ab20 camera mode bits] the mask 0x16 of 0x790ab0 names the walk (2), the ride (4) and 0x10, and no writer sets the low byte's bits 8, 0x10 or 0x20: the setter 0x42ab20 ors in only 2 or 4 (0x42ac4c, 0x42abb5), the camera reset 0x42a9be and the load 0x42d04c clear the word, and 0x42b1c0 rewrites it from itself; the saved word (0x42ce1b, 0x42cf61) is cleared after loading
 	private bool EyeCameraActive => (level.RideView != null && ReferenceEquals( Camera.Mode, level.RideView ))
 		|| (level.FreeWalk != null && ReferenceEquals( Camera.Mode, level.FreeWalk ));
 
-	private void PrepareRideStatic( UiContext context ) => rideStatic.Prepare( EyeCameraActive,
-		RideStaticClock?.Invoke() ?? System.Diagnostics.Stopwatch.GetTimestamp() * (1000.0 / System.Diagnostics.Stopwatch.Frequency),
-		(int)(context.Time * 30f) );
+	private void PrepareRideStatic( UiContext context )
+	{
+		var now = RideStaticClock?.Invoke() ?? System.Diagnostics.Stopwatch.GetTimestamp() * (1000.0 / System.Diagnostics.Stopwatch.Frequency);
+		rideStatic.Prepare( EyeCameraActive, now, ++rideStaticFrames );
+		if ( !rideStatic.ShowStatic )
+			return;
+		// [BIN:TPW-EXE:0x54dde3 static noise seed] the original seeds the CRT's generator once (srand of the tick count) and the static draws the shared stream on every frame it lasts: one persistent state per HUD,
+		// seeded once from the host clock, and one fill per prepared frame (UI-094's host adaptation text: the original's stream is shared with the rest of the main thread's rand calls, which OpenTPW's simulation does not use)
+		if ( !staticSeeded )
+		{
+			staticState = unchecked((uint)(long)now);
+			staticSeeded = true;
+		}
+		RideStaticNoise.Fill( StaticPixels, ref staticState );
+	}
+
+	private int rideStaticFrames;
+	private uint staticState;
+	private bool staticSeeded;
 
 	/// <summary>True while the ride view's screen (viewfinder and eject button) is open.</summary>
 	public bool RideScreenOpen => rideScreen != null;
@@ -120,24 +136,25 @@ public sealed partial class ParkHud
 	{
 		if ( !rideStatic.ShowStatic )
 			return;
-		DrawStatic( context, rideStatic.NoiseFrame );
+		DrawStatic( context, StaticPixels );
 	}
 
-	/// <summary>The noise's pixels, one byte each (<see cref="RideStaticNoise"/>); the camcorder's static is one at a time on the one UI thread.</summary>
-	private static readonly byte[] StaticPixels = new byte[RideStaticNoise.Width * RideStaticNoise.Height];
+	/// <summary>The prepared frame's noise pixels, one byte each (<see cref="RideStaticNoise"/>), filled once per prepared frame.</summary>
+	private readonly byte[] StaticPixels = new byte[RideStaticNoise.Width * RideStaticNoise.Height];
+
+	/// <summary>The noise the last prepared frame drew from (tests).</summary>
+	internal byte[] RideStaticPixels => StaticPixels;
 
 	/// <summary>
 	/// Full-screen TV static: a 320 x 240 source of black, white and grey 150 pixels stretched over the screen, drawn as the black ground with a run of rectangles for each stretch of white or grey.
-	/// <paramref name="frame"/> keys the noise (a new one each 1/30 s here).
+	/// <paramref name="pixels"/> is the frame's noise, filled when the frame was prepared.
 	/// </summary>
 	// [BIN:TPW-EXE:0x53E760 ride static] a 320 x 240 source is regenerated with every invocation (the frame loop calls it, 0x54FB3F, instead of drawing the scene while the budget lasts) and stretched over the screen (0x5F92E0): for each pixel, column by
 	// column, one CRT draw with its low two bits 0 (a quarter) makes the pixel white or grey 150 by the low bit of a second draw, else it is black
-	// [BIN:TPW-EXE:0x67B5C0 CRT rand] the draws are OpenTPW's own copy of the CRT's generator (214013 x state + 2531011, bits 16 to 30) seeded by the frame key: the original's is seeded from the clock at start, so any seed is a draw of the same process, and no stream of the world or the guests is touched
-	internal static void DrawStatic( UiContext context, int frame )
+	// [BIN:TPW-EXE:0x67B5C0 CRT rand] the draws are OpenTPW's own copy of the CRT's generator (214013 x state + 2531011, bits 16 to 30), one persistent state per HUD that no stream of the world or the guests shares
+	internal static void DrawStatic( UiContext context, byte[] pixels )
 	{
 		var canvas = context.Canvas;
-		var pixels = StaticPixels;
-		RideStaticNoise.Fill( pixels, unchecked((uint)frame * 2654435761u + 0x9E3779B9u) );
 		var cellWidth = canvas.Width / RideStaticNoise.Width;
 		var cellHeight = canvas.Height / RideStaticNoise.Height;
 		var black = new RgbaByte( 0, 0, 0, 255 );

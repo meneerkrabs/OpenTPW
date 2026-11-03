@@ -15,18 +15,19 @@ namespace OpenTPW;
 // 0x45d0d6-0x45d116) and face by face (the 8-byte records at +0x70: the normal index & 0x7fff and three corners mapped through the corner table +0x94 to
 // positions, 0x45d11e-0x45d16c), then, unless the state has 0x20, its children from the first (+0xc) along the siblings (+8) until one hits
 // (0x45d4cf-0x45d504), a hidden node's children too; the first hit returns at once (0x45d511), so the hit is the first face in this order, not the nearest
-// [BIN:TPW-EXE:0x45d0b4 node bits at pick time] bit 0x20 (the walk then leaves the children out, 0x45d4cf) and 0x8000 are never set when the picker runs: no shipped object model
-// carries a node word with 0x10, 0x20 or 0x8000 (ObjectPickNodeBitsCorpusTests counts every node of the 274 object models: only 0x1, 0x8, 0x200 and 0x400 occur), the one runtime writer
-// of 0x20 is not a node word (the writers of an immediate 0x20 into a node-sized word of the .text are the key-table flag 0x44aaa5, the texture slot 0x462fbc, the saved channel flags 0x464b06,
-// the thing flags 0x4db41c), the animation sets 0x10 only (ObjectAnimator) and the eye views set 0x8000 (0x42ab20, 0x42ad94) and clear it again on leaving, which the picker never overlaps
-// (it runs only while the camera word 0x790ab0 has none of the eye bits 0x16, 0x54e2c0)
-// [BIN:TPW-EXE:0x473c30 normal refresh] a placed object's creation runs the ground conform 0x469940 for every non-fixed object (creation flag 8, 0x463060), which sets node flag 0x10000 on the root node and
-// model flag 0x40000 whether or not the type lists ground vertices; every object model has flag 0x20000 (the object loader 0x413c10 passes 0x50c00, 0x450c00, 0xb24a9 or 0x4b24a9, whose bit 0x10000
-// the mesh loader 0x4629d0 turns into load flag 0x800, which 0x46220e turns into model flag 0x20000), so the first visit of the cell by 0x45cdc0 runs 0x473c30 (0x45cecf-0x45ced9): the faces of each node
-// with flag 0x10000 (the root node alone) get a new normal, the unit normal of (corner[word 3] - corner[word 2]) x (corner[word 1] - corner[word 2]) (0x473a40: the base is the face's second corner word;
-// the cross product's sign is the reverse of e1 x e2, which the plane equation does not see), written to the normal index of the face (word 0 & 0x7fff) in the face order, so faces sharing an index
-// keep the last one's, and (0, -1, 0) when the x part is not a number; the node flag and the model flag are cleared (0x473c30's tail), so it runs once. OpenTPW does it at the first model test of
-// the instance, from the positions the test then uses (the instance's conformed copy)
+// [BIN:TPW-EXE:0x45d0b4 node bits at pick time] bit 0x20 (the walk then leaves the children out, 0x45d4cf) and 0x8000 are not ported: no shipped object model carries a node word with 0x10, 0x20 or 0x8000
+// (ObjectPickNodeBitsCorpusTests counts every node of the 274 object models: only 0x1, 0x8, 0x200 and 0x400 occur) and the animation sets 0x10 only (ObjectAnimator), but the eye views set 0x8000 (0x42ad82)
+// and the camera word is saved with its eye bits (0x42ce1b), and the node-state saver 0x464140 writes 0x20 and 0x8000 into a node's saved word (0x4643b5, 0x4643bf) which the loader 0x4647a0 restores
+// (it masks the node word with 0x5f827fcf, then restores 0x10, 0x20, 0x8000, 0x10000, 0x40000 and 0x80000 from the saved word, loader address 0x464b06 area), so a save written in an eye view could carry
+// them; OpenTPW's import keeps only the toggled 0x10 and the pinned 0x80000000 (RestoreSavedNodeStates)
+// [BIN:TPW-EXE:0x473c30 normal refresh] the creation tail of every instance, fixed ones included (0x463060 at 0x4638f7..0x463937), sets node flag 0x10000 on every node of the model (a loop over the
+// node count word +0x44, stride 0xa0), sets model flag 0x40000 and calls 0x473c30, which runs 0x473a40 on each node with 0x10000 (clearing that flag, 0x473c12..0x473c1b) and then clears the model flag:
+// the faces of each node get a new normal, the unit normal of (corner[word 3] - corner[word 2]) x (corner[word 1] - corner[word 2]) (0x473a40: the base is the face's second corner word; the cross
+// product's sign is the reverse of e1 x e2, which the plane equation does not see), written to the normal index of the face (word 0 & 0x7fff) in the face order, so faces sharing an index keep the
+// last one's, and (0, -1, 0) when the x part is not a number. For a non-fixed object the conform 0x469940 ran before the tail, so its vertices are the conformed ones. OpenTPW computes this at the
+// instance's first model test from the creation-time positions (the conformed copy or the stored vertices), the same normals. The picker's own call (0x45cecf..0x45ced9: model flags 0x40000 and 0x20000
+// both set) only fires after a re-conform sets 0x40000 and the root's 0x10000 again (0x469a56..0x469a66, from the coaster pylon pose 0x432df0 and 0x442f40's callers), which is not ported: the pylon
+// stacks are not instances the cursor pick tests here
 // The material face ranges of every shipped object model lie within its faces (ObjectRayPickTests checks all 1630 meshes); OpenTPW's own built models leave
 // every start word at 0 but ship no height map, so the walk never names them (0x452ae0)
 public static class ObjectPickModel
@@ -98,12 +99,14 @@ public static class ObjectPickModel
 	}
 
 	/// <summary>
-	/// The normal refresh of one instance (<c>0x473c30</c>): not yet run until the instance's first model test, then the root node's face normals as the refresh left them.
+	/// The normal refresh of one instance (<c>0x473c30</c>): the creation tail of every instance runs it over every node, so the instance's face normals are the refreshed ones from the start.
+	/// The instance computes them at its first model test from the creation-time positions (the stored ones, or the conformed copy of a non-fixed object), which is the same result.
 	/// </summary>
 	public sealed class NormalRefresh
 	{
 		public bool Done { get; set; }
-		public NVector3[]? RootFaceNormals { get; set; }
+		/// <summary>Per mesh index: the faces' normals after the refresh (a later node on the same mesh wins), null for a mesh no node uses.</summary>
+		public NVector3[]?[]? FaceNormalsByMesh { get; set; }
 	}
 
 	/// <summary>
@@ -174,7 +177,7 @@ public static class ObjectPickModel
 
 	/// <summary>The first face of the model at the pose that the line meets inside it, in the original's node and face order, and the point.</summary>
 	public static bool TryHitLine( ModelFile model, IReadOnlyList<Matrix4x4> nodes, Func<int, bool> hidden, Func<int, IReadOnlyList<NVector3>?> vertexPositions,
-		Matrix4x4 placement, NVector3 origin, NVector3 direction, out NVector3 hit, NormalRefresh? refresh = null )
+		Matrix4x4 placement, NVector3 origin, NVector3 direction, out NVector3 hit, NormalRefresh? refresh = null, Func<int, IReadOnlyList<NVector3>?>? creationPositions = null )
 	{
 		hit = default;
 		var root = model.RootNodeIndex;
@@ -183,38 +186,44 @@ public static class ObjectPickModel
 		var built = MeshesOf( model );
 		if ( refresh is { Done: false } )
 		{
-			// 0x473c30 at the instance's first model test: the root node's faces take the normals of the positions they then have
+			// 0x473c30 over every node (the creation tail 0x4638f7..0x463937 gives every node flag 0x10000): each node's faces take the normals of the creation-time positions
 			refresh.Done = true;
-			var rootMesh = model.Nodes[root].MeshIndex;
-			if ( rootMesh >= 0 && rootMesh < built.Length && built[rootMesh] != null )
-				refresh.RootFaceNormals = RefreshedFaceNormals( model, rootMesh, vertexPositions( rootMesh ) );
+			var byMesh = new NVector3[built.Length][];
+			for ( var node = 0; node < model.Nodes.Count; node++ )
+			{
+				var meshIndex = model.Nodes[node].MeshIndex;
+				if ( meshIndex >= 0 && meshIndex < built.Length && built[meshIndex] != null )
+					byMesh[meshIndex] = RefreshedFaceNormals( model, meshIndex, creationPositions?.Invoke( meshIndex ) );
+			}
+			refresh.FaceNormalsByMesh = byMesh;
 		}
-		return TryHitSubtree( model, built, root, nodes, hidden, vertexPositions, placement, origin, direction, 0, out hit, root, refresh?.RootFaceNormals );
+		return TryHitSubtree( model, built, root, nodes, hidden, vertexPositions, placement, origin, direction, 0, out hit, refresh?.FaceNormalsByMesh );
 	}
 
 	/// <summary>A node's own faces, then its children from the first along the siblings, depth first (a malformed tree is cut at the node count's depth).</summary>
 	private static bool TryHitSubtree( ModelFile model, Mesh?[] built, int node, IReadOnlyList<Matrix4x4> nodes, Func<int, bool> hidden, Func<int, IReadOnlyList<NVector3>?> vertexPositions,
-		Matrix4x4 placement, NVector3 origin, NVector3 direction, int depth, out NVector3 hit, int root, NVector3[]? rootNormals )
+		Matrix4x4 placement, NVector3 origin, NVector3 direction, int depth, out NVector3 hit, NVector3[]?[]? refreshedByMesh )
 	{
 		hit = default;
 		if ( node < 0 || node >= model.Nodes.Count || depth > model.Nodes.Count )
 			return false;
-		if ( node < nodes.Count && TryHitNode( model, built, node, nodes[node], hidden, vertexPositions, placement, origin, direction, out hit, node == root ? rootNormals : null ) )
+		if ( node < nodes.Count && TryHitNode( model, built, node, nodes[node], hidden, vertexPositions, placement, origin, direction, out hit, refreshedByMesh ) )
 			return true;
 		var siblings = 0;
 		for ( var child = model.Nodes[node].FirstChildIndex; child >= 0 && child < model.Nodes.Count && siblings++ <= model.Nodes.Count; child = model.Nodes[child].NextSiblingIndex )
-			if ( TryHitSubtree( model, built, child, nodes, hidden, vertexPositions, placement, origin, direction, depth + 1, out hit, root, rootNormals ) )
+			if ( TryHitSubtree( model, built, child, nodes, hidden, vertexPositions, placement, origin, direction, depth + 1, out hit, refreshedByMesh ) )
 				return true;
 		return false;
 	}
 
 	private static bool TryHitNode( ModelFile model, Mesh?[] built, int node, Matrix4x4 transform, Func<int, bool> hidden, Func<int, IReadOnlyList<NVector3>?> vertexPositions,
-		Matrix4x4 placement, NVector3 origin, NVector3 direction, out NVector3 hit, NVector3[]? refreshedNormals )
+		Matrix4x4 placement, NVector3 origin, NVector3 direction, out NVector3 hit, NVector3[]?[]? refreshedByMesh )
 	{
 		hit = default;
 		var index = model.Nodes[node].MeshIndex;
 		if ( index < 0 || index >= built.Length || built[index] is not { } mesh || hidden( node ) )
 			return false;
+		var refreshedNormals = refreshedByMesh != null && index < refreshedByMesh.Length ? refreshedByMesh[index] : null;
 		var matrix = NodeToEngine( transform, placement );
 		var animated = vertexPositions( index );
 		// each position turned into the engine once for the node's faces

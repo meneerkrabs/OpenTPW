@@ -59,6 +59,8 @@ def make_case(rng, index: int) -> dict:
     seed = rng.randrange(1, 1 << 20)
     keys = {name: rng.random() < 0.3 for name in ('left', 'right', 'forward', 'back')}
     keys['button'] = rng.random() < 0.3
+    # the Home key (camera flags bit 0x100) in about one case in eight
+    home = rng.random() < 0.125
     wide = index % 5 == 0
     x = f32(rng.uniform(-30, 1310) if index % 7 == 0 else rng.uniform(5, 1275))
     z = f32(rng.uniform(-30, 1310) if index % 11 == 0 else rng.uniform(5, 1275))
@@ -75,7 +77,7 @@ def make_case(rng, index: int) -> dict:
         dt = 1.0
     return {
         'seed': seed, 'keys': keys, 'pointer': (f32(rng.uniform(-1, 1)), f32(rng.uniform(-1, 1))), 'pos': (x, z), 'yaw': f32(rng.uniform(-7, 7)), 'vel': vel,
-        'zoom': f32(rng.uniform(70, 130)), 'last_tick': last_tick, 'tick': tick, 'dt': dt, 'index': index,
+        'zoom': f32(rng.uniform(70, 130)), 'last_tick': last_tick, 'tick': tick, 'dt': dt, 'index': index, 'home': home,
     }
 
 
@@ -91,9 +93,9 @@ def run(oracle: WalkOracle, case: dict) -> str:
     result = oracle.run({
         'height': height, 'cell': cell, 'pressed': pressed, 'button': keys['button'], 'pointer': pointer, 'centre': centre, 'half': half, 'pos': case['pos'], 'yaw': case['yaw'],
         'zoom': case['zoom'], 'vel': case['vel'], 'last_tick': case['last_tick'], 'tick': case['tick'],
-        'blocked': blocked_by(case['seed']), 'ride': ride_by(case['seed']),
+        'blocked': blocked_by(case['seed']), 'ride': ride_by(case['seed']), 'home': case['home'],
     })
-    mask = (keys['left'] << 0) | (keys['right'] << 1) | (keys['forward'] << 2) | (keys['back'] << 3) | (keys['button'] << 4)
+    mask = (keys['left'] << 0) | (keys['right'] << 1) | (keys['forward'] << 2) | (keys['back'] << 3) | (keys['button'] << 4) | (case['home'] << 5)
     calls = ';'.join(f'{e[1]},{e[2]},{e[3]},{e[5]}' for e in result['log'] if e[0] == 'edge')
     ride = next(((e[1], e[2]) for e in result['log'] if e[0] == 'ride_at'), None)
     forward = result['matrix'][8:11]
@@ -101,7 +103,7 @@ def run(oracle: WalkOracle, case: dict) -> str:
               f'{bits(case["vel"][0]):08x}', f'{bits(case["vel"][2]):08x}', f'{bits(case["zoom"]):08x}', f'{bits(case["dt"]):08x}', '>',
               f'{bits(result["pos"][0]):08x}', f'{bits(result["pos"][1]):08x}', f'{bits(result["yaw"]):08x}', f'{bits(result["vel"][0]):08x}', f'{bits(result["vel"][2]):08x}',
               f'{bits(result["pitch"]):08x}', f'{bits(result["turn"]):08x}', f'{bits(result["eye"][1]):08x}', ' '.join(f'{bits(v):08x}' for v in forward),
-              f'{ride[0]},{ride[1]}' if ride else '-', calls or '-']
+              f'{ride[0]},{ride[1]}' if ride else '-', calls or '-', f'{bits(result["zoom"]):08x}']
     return ' '.join(fields)
 
 

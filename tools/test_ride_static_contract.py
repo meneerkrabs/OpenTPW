@@ -39,7 +39,7 @@ class RideStaticContract(unittest.TestCase):
     def test_clock_and_current_owner_are_presentation_only(self):
         self.assertIn("ReferenceEquals( Camera.Mode, level.RideView )", self.ride)
         self.assertIn("ReferenceEquals( Camera.Mode, level.FreeWalk )", self.ride)
-        prepare = self.ride.split("private void PrepareRideStatic(", 1)[1].split(";", 1)[0]
+        prepare = self.ride.split("private void PrepareRideStatic(", 1)[1].split("private int rideStaticFrames", 1)[0]
         self.assertIn("Stopwatch.GetTimestamp()", prepare)
         for forbidden in ("context.Delta", "SimulationTimeScale", "Time.Delta", "CamcorderArmed"):
             self.assertNotIn(forbidden, prepare)
@@ -53,7 +53,7 @@ class RideStaticContract(unittest.TestCase):
         self.assertLess(prepare.index("ShowStatic = RemainingMilliseconds > 0"), prepare.index("RemainingMilliseconds -= now - previousStamp"))
         draw = body(self.ride, "private void DrawRideStatic(")
         self.assertIn("!rideStatic.ShowStatic", draw)
-        self.assertIn("DrawStatic( context, rideStatic.NoiseFrame )", draw)
+        self.assertIn("DrawStatic( context, StaticPixels )", draw)
         for forbidden in ("context.Time", "Prepare(", "SkipFrame(", "RideStaticClock", "=", "Random"):
             self.assertNotIn(forbidden, draw)
         self.assertIn("public void SkipFrame() => ShowStatic = false;", self.timer)

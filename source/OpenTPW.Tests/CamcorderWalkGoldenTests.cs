@@ -50,6 +50,7 @@ public class CamcorderWalkGoldenTests
 		var crossed = 0;
 		var rides = 0;
 		var refused = 0;
+		var homes = 0;
 		foreach ( var row in rows )
 		{
 			var sides = row.Split( " > " );
@@ -80,7 +81,7 @@ public class CamcorderWalkGoldenTests
 			var walk = new CamcorderWalk { X = F( given[4] ), Z = F( given[5] ), Yaw = F( given[6] ), VelocityX = F( given[7] ), VelocityZ = F( given[8] ) };
 			var input = new CamcorderWalkInput
 			{
-				TurnLeft = (mask & 1) != 0, TurnRight = (mask & 2) != 0, Forward = (mask & 4) != 0, Backward = (mask & 8) != 0, Button = (mask & 16) != 0,
+				TurnLeft = (mask & 1) != 0, TurnRight = (mask & 2) != 0, Forward = (mask & 4) != 0, Backward = (mask & 8) != 0, Button = (mask & 16) != 0, Home = (mask & 32) != 0,
 				PointerX = pointerX, PointerY = pointerY
 			};
 			var ride = walk.Step( F( given[10] ), input, F( given[9] ), world );
@@ -97,6 +98,11 @@ public class CamcorderWalkGoldenTests
 				if ( MathF.Abs( oracle - ours ) > 2e-6f )
 					mismatches.Add( $"{row}: forward {index} is {ours}" );
 			}
+			// the Home key (camera flags bit 0x100, 0x42B518) also puts the zoom at 110: FreeWalkCameraMode sets it with the walker's pose
+			var expectedZoom = (mask & 32) != 0 ? H( ParkCameraMode.HomeHeight ) : given[9];
+			if ( expected[13] != expectedZoom )
+				mismatches.Add( $"{row}: zoom is {expected[13]}, the rule gives {expectedZoom}" );
+			homes += (mask & 32) != 0 ? 1 : 0;
 			var expectedRide = expected[11];
 			var actualRide = ride == null ? "-" : $"{entered!.Value.X},{entered.Value.Y}";
 			if ( expectedRide != actualRide )
@@ -112,6 +118,7 @@ public class CamcorderWalkGoldenTests
 		Assert.AreEqual( 0, mismatches.Count, mismatches.Count + " mismatches\n" + string.Join( "\n", mismatches.Take( 8 ) ) );
 		Assert.IsTrue( crossed > 100, $"{crossed} rows cross a cell edge" );
 		Assert.IsTrue( refused > 20, $"{refused} rows meet a refused edge" );
+		Assert.IsTrue( homes > 100, $"{homes} rows press Home" );
 		Assert.IsTrue( rides > 5, $"{rides} rows end in a ride's entrance" );
 	}
 }

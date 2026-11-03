@@ -15,6 +15,12 @@ internal static class RideStaticNoise
 	public static void Fill( byte[] pixels, uint seed )
 	{
 		var state = seed;
+		Fill( pixels, ref state );
+	}
+
+	/// <summary>The same fill from the generator state the caller keeps, which it leaves where the last draw ended: the next fill continues the stream, as the CRT's one shared stream does.</summary>
+	public static void Fill( byte[] pixels, ref uint state )
+	{
 		for ( var x = 0; x < Width; x++ )
 		{
 			for ( var y = 0; y < Height; y++ )

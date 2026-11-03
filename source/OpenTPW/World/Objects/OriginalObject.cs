@@ -281,8 +281,10 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 		var animator = Runtime.Animator;
 		// the floor's vertices are this instance's conformed copy (the original's pick reads the instance's own vertices, 0x450F20); a vertex track's samples win over it, as in what is drawn (DrawnMesh)
 		Func<int, IReadOnlyList<System.Numerics.Vector3>?> positions = floor == null ? animator.GetVertexPositionsInSimulation : mesh => animator.GetVertexPositionsInSimulation( mesh ) ?? floor.ConformedPositions( mesh );
-		// [BIN:TPW-EXE:0x473c30 normal refresh] an instance whose ground conform ran (every non-fixed object over a terrain, 0x469940) has its root node's face normals refreshed at the first model test (ObjectPickModel)
-		return ObjectPickModel.TryHitLine( Runtime.Model, NodeTransforms, animator.IsNodeHiddenInSimulation, positions, Placement.ModelToEngine, origin, direction, out hit, floor != null ? pickNormals : null );
+		// [BIN:TPW-EXE:0x473c30 normal refresh] every instance's creation tail refreshed the face normals of every node (fixed objects too), from the vertices the instance then had: the conformed copy of a non-fixed
+		// object over a terrain, else the stored ones; the first model test computes them (ObjectPickModel)
+		Func<int, IReadOnlyList<System.Numerics.Vector3>?>? creation = pickNormals.Done || floor == null ? null : floor.ConformedPositions;
+		return ObjectPickModel.TryHitLine( Runtime.Model, NodeTransforms, animator.IsNodeHiddenInSimulation, positions, Placement.ModelToEngine, origin, direction, out hit, pickNormals, creation );
 	}
 
 	/// <summary>

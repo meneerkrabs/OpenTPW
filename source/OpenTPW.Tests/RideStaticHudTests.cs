@@ -142,7 +142,7 @@ public class RideStaticHudTests
 		var snapshot = JsonSerializer.Serialize( w.Guests.CaptureSnapshot() ); var random = w.Guests.RandomState;
 		var hash = WorldStateHash.Compute( new WorldStateSources { Guests = w.Guests } );
 		var first = Draw( w ); Assert.IsTrue( first.Length > 0 ); CollectionAssert.AreEqual( first, Draw( w ) );
-		var staticOnly = Draw( w, true ); var expected = Context(); ParkHud.DrawStatic( expected, 30 );
+		var staticOnly = Draw( w, true ); var expected = Context(); ParkHud.DrawStatic( expected, w.Hud.RideStaticPixels );
 		CollectionAssert.AreEqual( expected.Batch.Draws.SelectMany( draw => draw.Vertices ).ToArray(), staticOnly );
 		w.Context.Time = 20; w.Clock.Now = 9000;
 		CollectionAssert.AreEqual( staticOnly, Draw( w, true ), "even another draw time cannot select a different prepared noise image" );
@@ -150,6 +150,18 @@ public class RideStaticHudTests
 		Assert.AreEqual( snapshot, JsonSerializer.Serialize( w.Guests.CaptureSnapshot() ) ); Assert.AreEqual( random, w.Guests.RandomState );
 		Assert.AreEqual( hash, WorldStateHash.Compute( new WorldStateSources { Guests = w.Guests } ) );
 		Update( w, 9000 ); Assert.IsFalse( w.Hud.RideStaticActive ); Assert.AreEqual( 0, Draw( w, true ).Length );
+	}
+
+	[TestMethod]
+	public void EachPreparedFrameContinuesTheOneGeneratorStream()
+	{
+		var w = Create(); Assert.IsTrue( w.Level.EnterRideView( w.Ride ) ); Update( w, 100 );
+		Update( w, 150 ); Assert.IsTrue( w.Hud.RideStaticActive );
+		var first = (byte[])w.Hud.RideStaticPixels.Clone();
+		Update( w, 200 ); Assert.IsTrue( w.Hud.RideStaticActive );
+		var second = (byte[])w.Hud.RideStaticPixels.Clone();
+		CollectionAssert.AreNotEqual( first, second, "the stream moves on with every prepared frame (0x54dde3 seeds once, every static frame draws on)" );
+		Assert.IsTrue( first.Any( p => p != RideStaticNoise.Black ) && second.Any( p => p != RideStaticNoise.Black ) );
 	}
 
 	[TestMethod]

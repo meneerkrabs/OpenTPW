@@ -127,6 +127,21 @@ public sealed partial class OriginalTerrain : Entity
 
 	/// <summary>The queue models of the queue cells: parts of their own, drawn whatever the camera mode is.</summary>
 	private readonly List<ModelEntity> queueParts = new();
+	/// <summary>The queue batches of the dead ends (<see cref="QueueModelPulse"/>), a subset of <see cref="queueParts"/>.</summary>
+	private readonly List<ModelEntity> queuePulseParts = new();
+	private readonly QueueModelPulse queuePulse = new();
+	/// <summary>Whether the batch being filled holds the dead ends (<see cref="BuildQueueModels"/>).</summary>
+	private bool batchPulses;
+
+	/// <summary>
+	/// One frame of the dead ends' colour pulse (<see cref="QueueModelPulse"/>, tp.exe 0x469840 from the main loop): the colour of this frame goes to every dead-end batch, the phase moves on by the scene clock's gap.
+	/// </summary>
+	internal void AdvanceQueuePulse( uint frameMilliseconds )
+	{
+		queuePulse.Step( frameMilliseconds );
+		foreach ( var part in queuePulseParts )
+			part.PulseTint = queuePulse.Tint;
+	}
 	/// <summary>The static path cells the procedural ground does not reach (outside its rectangle or its weight grid), or every path cell while the procedural textures are off.</summary>
 	private readonly List<ModelEntity> pathPartsOutside = new();
 	/// <summary>With the procedural textures on, every path cell as a static cell, for the camera modes that suspend them; built when such a mode first shows them and again after a change.</summary>
@@ -153,6 +168,7 @@ public sealed partial class OriginalTerrain : Entity
 			procedural?.MarkMeshStale();
 		}
 		DeleteParts( queueParts );
+		queuePulseParts.Clear();
 		DeleteParts( pathPartsOutside );
 		DeleteParts( pathPartsAll );
 		pathPartsAllStale = true;
@@ -708,10 +724,16 @@ public sealed partial class OriginalTerrain : Entity
 		var batchTextures = new List<string>();
 		var batchVertices = new List<Vertex>();
 		var batchIndices = new List<uint>();
+		batchPulses = false;
 		foreach ( var group in valid.Where( queue => floors.ContainsKey( queue.Tile.Model ) ).GroupBy( queue => queue.Tile.Model ).OrderBy( group => group.Key ) )
 		{
 			var floor = floors[group.Key];
 			var model = floor.Model;
+			// the dead ends pulse (QueueModelPulse): their corners take the pulse flag and they are batched apart from the models the light shades
+			var pulses = QueueModelPulse.Pulses( group.Key );
+			if ( pulses != batchPulses )
+				FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
+			batchPulses = pulses;
 			foreach ( var (x, y, tile) in group )
 			{
 				// the instance height and the chain of every node on this cell; each vertex is draped by its own chain (QueueModelDrape)
@@ -758,7 +780,7 @@ public sealed partial class OriginalTerrain : Entity
 							Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( normal ) : System.Numerics.Vector3.UnitZ,
 							TexCoords = texCoords,
 							TexIndex = slotOfMaterial[materialIndex],
-							MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex] )
+							MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex] ) | (pulses ? TextureSlotAddressing.PulseFlag : 0u)
 						} );
 					}
 					foreach ( var index in mesh.Indices )
@@ -832,7 +854,13 @@ public sealed partial class OriginalTerrain : Entity
 				slots[index] = index < names.Count ? QueueSlotTexture( textures, names[index], directory ) : slots[0];
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( "Color", slots );
-			queueParts.Add( AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"queue models {queueParts.Count}" ) );
+			var part = AddPathPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"queue models {queueParts.Count}" );
+			queueParts.Add( part );
+			if ( batchPulses )
+			{
+				part.PulseTint = queuePulse.Tint;
+				queuePulseParts.Add( part );
+			}
 		}
 		names.Clear();
 		vertices.Clear();

@@ -150,7 +150,7 @@ Theme Park Inc adds `@`, in exactly six objects, all road signs: `features/smrds
 board, and the `.sam` marks the object `Info.OverwritePriority 1` ("Overwritable!") and
 `Info.IsChoosable 0`. The reading is a pillar cell at each end (`*`) and cells under the board (`@`); the
 no-CD `Game.exe`'s placement commit (`0x668552`, the twin of tp.exe's `0x529173`) stamps `@` as a type-1 NoModify path cell linked to its path
-neighbours. The slice does not type its footprints at all (RIDES-031), so the viewer classifies `@` as an occupied
+neighbours. Objects placed in a Theme Park Inc world type their footprints through the same stamp (RIDES-031); a layout restored from a checkpoint stays untyped, and the viewer classifies `@` as an occupied
 cell, which is also the safe choice for placement. (The obstacles use further symbols
 `X`, `H`, `%`, which no catalog object uses and the viewer does not read.)
 

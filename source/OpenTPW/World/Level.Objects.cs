@@ -159,10 +159,10 @@ public partial class Level
 	/// <summary>Set while <see cref="PlaceObject"/> places an object: the access cells are laid for it.</summary>
 	private bool layingAccessCells;
 
-	/// <summary>Whether the placed objects type their footprint cells in the guest grid (not in a visit, a Theme Park Inc layout or Theme Park Inc itself).</summary>
+	/// <summary>Whether the placed objects type their footprint cells in the guest grid (not in a visit or a layout restored from a Theme Park Inc checkpoint).</summary>
 	// [BIN:TPI-EXE:0x668552 footprint commit] Theme Park Inc's placement commit is the twin of tp.exe's (the 24-way cell-type table 0x6691FC and jump table 0x6691D8 against 0x529D24 and 0x529D04; '@' is case 1, a type-1 NoModify path cell linked to its path neighbours, 0x668552 against 0x529173) with one more case for the coaster marker type 0x15 (0x6688F0)
-	// [APPROX:RIDES-031] a Theme Park Inc world keeps the cells its layout was given and types none of its footprints (the whole slice runs without them: the walks, queues, coasters, tours and staff paths that read this property stay off), so the road signs' '@' cells ("*@*", "*@@*") are plain occupied cells although ParkCellMap.WriteFootprint is the port of the twin placement
-	private bool TypesFootprints => !IsReadOnlyVisit && incLayoutCells == null && !GameEditions.IsThemeParkInc;
+	// [APPROX:RIDES-031] a layout restored from a Theme Park Inc checkpoint keeps the cells it was given and types none of its footprints, so the road signs' '@' cells ("*@*", "*@@*") of such a world are plain occupied cells; Theme Park Inc worlds placed in a session type them through ParkCellMap.WriteFootprint
+	private bool TypesFootprints => !IsReadOnlyVisit && incLayoutCells == null;
 
 	/// <summary>The owner word the placement stores on an object's cells: the cell word of its anchor (<see cref="ParkCellMap.OwnerAt"/>).</summary>
 	internal static ushort OwnerWord( OriginalObject item ) => ParkCellMap.CellWord( item.Placement.X, item.Placement.Y );
@@ -1525,7 +1525,7 @@ public partial class Level
 	}
 
 	// [BIN:TPW-EXE:0x00535670 no terrain read] the cell validator reads the cell's own type, flags, owner and record and no MAP terrain bit: what the terrain does to a cell (water, blocked and walkway land, no land at all) is already in the type and flags the world init wrote (0x536490), so a typed world (TypesFootprints) asks the validator alone
-	// [APPROX:QUEUE-012] a Theme Park Inc layout and a read-only visit keep the cells they were given and type none of their footprints (RIDES-031), so they still ask OpenTPW's terrain rule (Objects.Grid.CheckTerrain: the map start's cell types, with saved occupancy used only before the live map is attached) on top of the validator's refusals; the per-cell route for rides without an owner word and the bridge re-test of a path or queue laid over a track tile are listed with the validator's own text in the register
+	// [APPROX:QUEUE-012] a layout restored from a Theme Park Inc checkpoint and a read-only visit keep the cells they were given and type none of their footprints (RIDES-031), so they still ask OpenTPW's terrain rule (Objects.Grid.CheckTerrain: the map start's cell types, with saved occupancy used only before the live map is attached) on top of the validator's refusals; the per-cell route for rides without an owner word and the bridge re-test of a path or queue laid over a track tile are listed with the validator's own text in the register
 	// [EXT:untyped-harness-world] a harness world that types no footprints (the gates and test rigs) asks the same terrain rule (user-approved 2026-10-30)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] a cell with flag 0x40 is refused for a queue as for a path or an object
 	private bool IsQueueBlocked( int x, int y ) => IsQueueBlockedCore( x, y, terminalPath: false );

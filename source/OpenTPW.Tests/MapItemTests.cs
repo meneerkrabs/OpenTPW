@@ -79,11 +79,13 @@ public class MapItemTests
 		canvas.Dots.Add( new MapDot { Kind = 4, Mode = 2, Value = 1, Staff = inside } );
 		canvas.RenderItems( 0, 1, 0 );
 		// 96 x 85 cells are 5 x 5 pixels from (15, 42)
-		CollectionAssert.AreEqual( new[] { new MapPrim( 65, 142, 15, 15, ParkMapPalette.Zone ) }, canvas.Prims.ToArray() );
+		// the area's frame, each pixel once: the top row L..R-2, the right column T..B-2, the bottom row L+1..R-1, the left column T+1..B-1 (a 15 x 15 rectangle from (65, 142))
+		CollectionAssert.AreEqual( new[] { new MapPrim( 65, 142, 14, 1, ParkMapPalette.Zone ), new MapPrim( 79, 142, 1, 14, ParkMapPalette.Zone ),
+			new MapPrim( 66, 156, 14, 1, ParkMapPalette.Zone ), new MapPrim( 65, 143, 1, 14, ParkMapPalette.Zone ) }, canvas.Prims.ToArray() );
 		canvas.Hovered = canvas.Dots[0];
 		canvas.Prims.Clear();
 		canvas.RenderItems( 0, 1, 0 );
-		Assert.AreEqual( ParkMapPalette.ZoneHovered, canvas.Prims.Single().Color, "the item under the pointer shows its area in the brighter blue" );
+		Assert.IsTrue( canvas.Prims.All( prim => prim.Color == ParkMapPalette.ZoneHovered ) && canvas.Prims.Count == 4, "the item under the pointer shows its area in the brighter blue" );
 		canvas.Prims.Clear();
 		canvas.RenderItems( 0, 2, 0 );
 		Assert.AreEqual( 0, canvas.Prims.Count, "another staff role shows no area" );
@@ -175,5 +177,34 @@ public class MapItemTests
 		var version = surface.Version;
 		ParkMapBaker.Bake( surface, baseRgba, prims );
 		Assert.AreEqual( version + 1, surface.Version );
+	}
+
+	[TestMethod]
+	public void AnAreaFrameTouchesEveryPixelOfItsBorderOnceAndNothingInside()
+	{
+		var surface = new UiPixelSurface( 16, 16 );
+		var canvas = new ParkMapCanvas( new MapSurface( 96, 85, true ) );
+		canvas.AddFrame( 3, 4, 9, 11, new RgbaByte( 0, 0, 0, 255 ) );
+		var touched = new int[16 * 16];
+		foreach ( var prim in canvas.Prims )
+			for ( var y = (int)prim.Y; y < (int)(prim.Y + prim.Height); y++ )
+				for ( var x = (int)prim.X; x < (int)(prim.X + prim.Width); x++ )
+					touched[y * 16 + x]++;
+		for ( var y = 0; y < 16; y++ )
+			for ( var x = 0; x < 16; x++ )
+				Assert.AreEqual( x is >= 3 and < 9 && y is >= 4 and < 11 && (x == 3 || x == 8 || y == 4 || y == 10) ? 1 : 0, touched[y * 16 + x], $"({x}, {y})" );
+		Assert.IsNotNull( surface );
+	}
+
+	[TestMethod]
+	public void FillsAreBlendedAndEvenAnOpaqueOneLosesOneWhereItIsAboveTheBase()
+	{
+		var surface = new UiPixelSurface( 2, 1 );
+		var baseRgba = new byte[] { 0, 100, 200, 255, 250, 250, 250, 77 };
+		ParkMapBaker.Bake( surface, baseRgba, new[] { new MapPrim( 0, 0, 2, 1, new RgbaByte( 248, 0, 0, 255 ) ) } );
+		Assert.AreEqual( new RgbaByte( 247, 0, 0, 255 ), new RgbaByte( surface.Rgba[0], surface.Rgba[1], surface.Rgba[2], surface.Rgba[3] ), "s above d comes out as s - 1: d + ((s - d) * 255 >> 8)" );
+		Assert.AreEqual( new RgbaByte( 248, 0, 0, 77 ), new RgbaByte( surface.Rgba[4], surface.Rgba[5], surface.Rgba[6], surface.Rgba[7] ), "s below d reaches s, and the destination's alpha is kept" );
+		ParkMapBaker.Bake( surface, baseRgba, new[] { new MapPrim( 0, 0, 1, 1, new RgbaByte( 200, 200, 200, 200 ) ) } );
+		Assert.AreEqual( (byte)(0 + ((200 * 200) >> 8)), surface.Rgba[0] );
 	}
 }

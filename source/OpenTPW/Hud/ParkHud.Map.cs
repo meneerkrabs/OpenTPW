@@ -371,12 +371,17 @@ public sealed partial class ParkHud
 			return ParkMapBaker.SandboxBase( size, surface, grid.GetCellHeight );
 		}
 		var path = $"/levels/{park.LevelName}/2dmap.tga";
+		if ( FileSystem is not { } files || !files.FileExists( path ) )
+		{
+			Log.Warning( $"The map image {path} is missing." );
+			return null;
+		}
 		try
 		{
 			var (width, height, rgba) = UiImages.Load( path );
 			return ParkMapBaker.Resample( rgba, width, height, size, size );
 		}
-		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException or NullReferenceException )
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException )
 		{
 			Log.Warning( $"The map image {path} could not be loaded: {exception.Message}" );
 			return null;

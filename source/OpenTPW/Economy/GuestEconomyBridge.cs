@@ -119,6 +119,12 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 
 	public void PriceTested( int category, int value ) => Economy().PriceStatistics.Record( category, value );
 
+	public void PriceVerdict( IRideVisitorBridge attraction, bool cheap, bool expensive, bool declined )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().RecordPriceVerdict( instance, cheap, expensive, declined );
+	}
+
 	public void ArrivalCreated() => Economy().StatisticsHistory.RecordArrival();
 
 	public void StayEnded( int days ) => Economy().StatisticsHistory.RecordStay( days );

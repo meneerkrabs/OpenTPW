@@ -209,26 +209,26 @@ public class GuestDisplayAgeTests
 	}
 
 	[TestMethod]
-	public void ActiveUmbrellaDayGateStillReadsSecondsRatherThanExactDisplayAge()
+	public void ActiveUmbrellaDayGateReadsTheExactIntegerAgeRatherThanTheSeconds()
 	{
+		// [BIN:TPI-EXE:0x611050 age] the gate subtracts two world turns, which Guest.DisplayTimeInParkTurns keeps (UMB-003): the same seconds with an age of 96 turns (the start of the fifth game day) open the gate, with 40 they do not
 		var first = Park(); var second = Park();
 		first.UmbrellaWeatherState = second.UmbrellaWeatherState = () => UmbrellaRules.WeatherRain;
 		var a = first.SpawnInPark( 5, 5 ); var b = second.SpawnInPark( 5, 5 );
 		a.TimeInParkSeconds = b.TimeInParkSeconds = 96.5 * ParkCalendar.TurnMilliseconds / 1000.0;
-		a.DisplayTimeInParkTurns = 0; b.DisplayTimeInParkTurns = uint.MaxValue;
+		a.DisplayTimeInParkTurns = 96; b.DisplayTimeInParkTurns = 40;
 		first.SetUmbrellaStateForTest( a, UmbrellaRules.StateClosed );
 		second.SetUmbrellaStateForTest( b, UmbrellaRules.StateClosed );
+		Assert.AreEqual( 96L, GuestSimulation.AgeTurnsOf( a ) );
+		Assert.AreEqual( 40L, GuestSimulation.AgeTurnsOf( b ) );
 		var opened = false;
-		for ( var tick = 0; tick < 1000; tick++ )
+		for ( var tick = 0; tick < 1000 && !opened; tick++ )
 		{
 			Steps( first, 1 ); Steps( second, 1 );
-			Assert.AreEqual( (a.UmbrellaState, a.UmbrellaDueTurn), (b.UmbrellaState, b.UmbrellaDueTurn) );
-			Assert.AreEqual( GuestSimulation.AgeTurnsOf( a ), GuestSimulation.AgeTurnsOf( b ) );
-			Assert.AreEqual( first.ComputeStateHash(), second.ComputeStateHash() );
-			Assert.AreEqual( first.CaptureSnapshot().WorldGenerator, second.CaptureSnapshot().WorldGenerator );
 			opened |= a.UmbrellaState == UmbrellaRules.StateOpen;
+			Assert.AreNotEqual( UmbrellaRules.StateOpen, b.UmbrellaState, "a guest in the second game day is outside the gate" );
 		}
-		Assert.IsTrue( opened, "the active weather fixture must reach an open umbrella" );
+		Assert.IsTrue( opened, "the guest inside the gate reaches an open umbrella" );
 	}
 
 	private sealed class StayPayments : IGuestPayments

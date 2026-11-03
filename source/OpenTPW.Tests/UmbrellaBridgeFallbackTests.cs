@@ -30,9 +30,10 @@ public class UmbrellaBridgeFallbackTests
 			Assert.AreEqual( ordinary.Hotspot.Y, elevated.Hotspot.Y );
 			var handDepth = SVector3.Dot( terrainFeet - eye, forward ) * mount.Share;
 			var pullShare = UmbrellaRenderer.PullShare( handDepth );
-			Assert.AreEqual( 2 * mount.Share * (1 - pullShare), elevated.Hotspot.Z - ordinary.Hotspot.Z, .00001f );
+			// the lift of Game.exe's placement adds the same amount to both, so the height difference is the hand's own
+			Assert.AreEqual( 2 * mount.Share, elevated.Hotspot.Z - ordinary.Hotspot.Z, .00001f );
 			Assert.AreEqual( ordinary.Scale, elevated.Scale );
-			Assert.AreEqual( mount.Share * (1 - pullShare) * UmbrellaRenderer.SizeScale, ordinary.Scale );
+			Assert.AreEqual( mount.Share * UmbrellaRenderer.SizeScale, ordinary.Scale, "the sprite is moved, not rescaled" );
 			var anchors = UmbrellaAnchors.Parse( """{"schema":1,"pixelsPerUnit":128,"sets":{"SPR_X":{"stand":{"slot":0,"frames":[[[4,-8]],[[3,-7]],[[1,-6]],[[-3,-7]],[[-4,-8]]]}}}}""", 128 );
 			var anchoredRenderer = new UmbrellaRenderer( null!, field, Array.Empty<GuestSpriteAtlas>(), Array.Empty<GuestRenderer>(), anchors );
 			var anchoredMount = mount with { SetName = "SPR_X" };

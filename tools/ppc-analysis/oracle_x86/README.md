@@ -89,3 +89,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## The camcorder walk's frame step (round 11, package Q)
 
 `camcorder_walk_oracle.py` runs the whole camera update `0x42B1C0` in the walk mode (camera flags 2) over a synthetic terrain object with its real helpers and the clock, key state, walk test, ride entrance lookup and ride-it routine answering from the case; `camcorder_walk_golden.py` writes `CamcorderWalkGolden.cs` from 1500 random frames (`--check FILE`, about 40 seconds); `CamcorderWalkGoldenTests` pins `CamcorderWalk.Step` to it bit for bit (finding X58 in ORACLE.md).
+
+## Theme Park Inc's guest price test (round 11, package T)
+
+`tpi_price_oracle.py` runs the routine `0x6120C0` of the Theme Park Inc no-CD `Game.exe` (`OPENTPW_TPI_EXE`) with a synthetic guest, attraction thing, type record and rating byte on random inputs and compares verdict, statistics and the three ring counters with the reading `ThemeParkIncPriceTest` ports (490 cases, no mismatch; finding X62). `--golden` writes `source/OpenTPW.Tests/ThemeParkIncPriceGolden.cs`.

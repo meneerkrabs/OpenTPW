@@ -25,7 +25,7 @@ public enum ThemeParkIncAttractionRing
 	DailyCustomers = 2,
 	/// <summary>Guests who gave up the queue (the attraction's walk-away counter <c>mNumWalkAways</c> is incremented with it).</summary>
 	DailyWalkAways = 3,
-	/// <summary>Visits whose outcome the guest applied to its mood without having lost a sideshow.</summary>
+	/// <summary>Visits finished by a guest whose visit flag (<c>+0x21B</c>) was set: the end-of-visit step records the visit's happiness change as a perception statistic and raises this ring.</summary>
 	DailyRatedVisits = 4,
 	/// <summary>Visits whose score was above the top mood threshold (the guest thinks thought 5).</summary>
 	DailyVeryHappyGuests = 5,
@@ -35,11 +35,11 @@ public enum ThemeParkIncAttractionRing
 	DailyUnhappyGuests = 7,
 	/// <summary>Visits whose score fell below the lowest mood threshold (thought 6).</summary>
 	DailyVeryUnhappyGuests = 8,
-	/// <summary>Guests who turned the attraction down: the guest's own refusal, a refused price at a category-2 attraction, or the failed chance of a special effect.</summary>
+	/// <summary>Guests who left the attraction unsatisfied by one of four conditions: an excitement match only just inside OKExcitementMatch with a ride more exciting than expected, a refused price at a sideshow type, or a quality byte below ComplainAboutThisQuality (two sites).</summary>
 	DailyDeclinedGuests = 9,
-	/// <summary>Guests for whom the check of the attraction's hunger or thirst effect failed: the effect (info +0x204 HungerEffect or +0x200 ThirstEffect) plus a random 0 to 7 plus the ingredient byte (+0x98) was below 30, which costs the guest score; a pass raises the guest's satisfied meters by 35.</summary>
+	/// <summary>Guests for whom the check of the attraction's hunger or thirst effect failed: the effect (info +0x204 HungerEffect or +0x200 ThirstEffect) plus a random 0 to 7 plus the ingredient byte (+0x98) was below the literal 30, which costs the guest score (PeepInfo.SmallHappinessChange); a pass raises the guest's satisfied meters by 35.</summary>
 	DailyNeedChecksFailed = 10,
-	/// <summary>Guests who found the price cheap (below <c>PcOfGoodPriceIsCheap</c> percent of the fair value) and could pay it.</summary>
+	/// <summary>Guests who found the price cheap (<c>PeepInfo.PcOfGoodPriceIsCheap</c> percent of their willingness to pay above it) and could pay it.</summary>
 	DailyCheapPriceGuests = 11,
 	/// <summary>Guests who refused the price (above the fair value or more than their money).</summary>
 	DailyExpensivePriceGuests = 12,
@@ -72,14 +72,14 @@ public sealed partial record ThemeParkIncAttraction
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyCosts, ThemeParkIncHistoryPeriod.Day, 30, 0x088, "0x5e60e0 adds a cost to +0x88 and +0x938 (cost of goods 0x5e6220 for a shop, 0x5e63e0 for a ride; the guest step 0x612740)" ),
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyCustomers, ThemeParkIncHistoryPeriod.Day, 30, 0x110, "0x5e5da0 increments +0x110 and +0x1278 (called by the guest's end of visit 0x6118d0)" ),
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyWalkAways, ThemeParkIncHistoryPeriod.Day, 30, 0x198, "0x5e5d70 increments mNumWalkAways (+0xa4) and +0x198" ),
-		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyRatedVisits, ThemeParkIncHistoryPeriod.Day, 30, 0x220, "0x5e61d0 increments +0x220, called at the end of 0x6118d0 after the happiness change" ),
-		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyVeryHappyGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x2a8, "0x61358e in the guest's outcome step 0x612740: score above the top threshold 0xa01b1c" ),
-		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyHappyGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x330, "0x61368a: score at or below 0xa01b1c, not below 0xa01b28 and above 0xa01b20" ),
-		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyUnhappyGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x3b8, "0x6136bb: score not below 0xa01b28 and below 0xa01b24" ),
-		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyVeryUnhappyGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x440, "0x613651: score below 0xa01b28" ),
-		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyDeclinedGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x4c8, "0x611eeb (the guest's choice), 0x612488 (price refused, info category 2), 0x612fb9 and 0x613164 (failed chance of a special effect)" ),
-		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyNeedChecksFailed, ThemeParkIncHistoryPeriod.Day, 30, 0x550, "0x612b5b and 0x612c3d in 0x612740: HungerEffect (info +0x204) or ThirstEffect (+0x200) + random(0..7) + the ingredient byte (+0x98) below 30" ),
-		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyCheapPriceGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x5d8, "0x61245d in the guest's price test 0x6120c0: price below the 0xa01b18 percent of the fair value, the guest can pay" ),
+		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyRatedVisits, ThemeParkIncHistoryPeriod.Day, 30, 0x220, "0x5e61d0 increments +0x220 (the call at 0x611acb), at the end of the end-of-visit step 0x6118d0 for a guest whose visit flag +0x21b is set, after the visit's happiness change was recorded as a perception statistic (3 x the change + 50 in category 20 for a sideshow, 11..14 by the ingredient and 16..18 by the appearance effect for a shop)" ),
+		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyVeryHappyGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x2a8, "0x61358e in the guest's outcome step 0x612740: score above PeepInfo.HappyDiffForVGood (0xa01b1c)" ),
+		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyHappyGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x330, "0x61368a: score at or below HappyDiffForVGood and above HappyDiffForGood (0xa01b20), not below HappyDiffForVPoor (0xa01b28)" ),
+		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyUnhappyGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x3b8, "0x6136bb: score not below HappyDiffForVPoor (0xa01b28) and below HappyDiffForPoor (0xa01b24)" ),
+		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyVeryUnhappyGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x440, "0x613651: score below HappyDiffForVPoor (0xa01b28)" ),
+		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyDeclinedGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x4c8, "0x611eeb (a ride whose excitement match was inside PeepInfo.OKExcitementMatch but outside GoodExcitementMatch, with the guest's expected byte below the rating), 0x612488 (a price refused at an Info.WhichUIType 2 type), 0x612fb9 and 0x613164 (the thing's quality byte 0x405B28 below PeepInfo.ComplainAboutThisQuality + a random 0 to 9)" ),
+		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyNeedChecksFailed, ThemeParkIncHistoryPeriod.Day, 30, 0x550, "0x612b5b and 0x612c3d in 0x612740: HungerEffect (info +0x204) or ThirstEffect (+0x200) + random(0..7) + the ingredient byte (+0x98) below the literal 30 (0x1E, no key)" ),
+		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyCheapPriceGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x5d8, "0x61245d in the guest's price test 0x6120c0 (ThemeParkIncPriceTest): PeepInfo.PcOfGoodPriceIsCheap (0xa01b18) percent of the willingness to pay above the price, the guest can pay" ),
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyExpensivePriceGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x660, "0x612473 in 0x6120c0: price above the fair value or above the guest's money (+0x1c0); the test then returns 1" ),
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.MonthlyTakings, ThemeParkIncHistoryPeriod.Month, 144, 0x6e8, "0x5e5de0 (with the daily ring)" ),
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.MonthlyCosts, ThemeParkIncHistoryPeriod.Month, 144, 0x938, "0x5e60e0 (with the daily ring)" ),

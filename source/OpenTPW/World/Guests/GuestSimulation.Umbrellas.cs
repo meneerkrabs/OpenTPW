@@ -117,13 +117,15 @@ public sealed partial class GuestSimulation
 	public Func<int, int, bool>? UmbrellaOnTrackCell { get; set; }
 
 	/// <summary>
-	/// The guest's age in park turns for the day gate: the turns since its creation, from the time it has spent in the park (the sum of its steps, read as the visitor roster reads it). A guest without a known time (an
-	/// imported original guest) counts as new, which opens the gate.
+	/// The guest's age in park turns for the day gate: the integer count of world turns since its creation stamp, which <see cref="Guest.DisplayTimeInParkTurns"/> keeps (GUEST-920: one unsigned increment at each turn boundary
+	/// telescopes to the current world turn minus the stamp). A guest without a known time (an imported original guest) counts as new, which opens the gate.
 	/// </summary>
-	// [BIN:TPI-EXE:0x611050 age] the original subtracts two world turns (the stamp +0x1FC)
-	// [APPROX:UMB-003] OpenTPW keeps the seconds (GUEST-920: the integer turn age is display only) and the turn count is their floor over the turn's 248 ms
+	// [BIN:TPI-EXE:0x611050 age] eax = world turn (the world object +0x1EAB40) - the guest's stamp +0x1FC, both 32-bit and unsigned, cut to a multiple of four (shr 2, shl 2, 0x611073..0x611076) and handed to the clock's conversion 0x409854 (scale 15000 from the constructor 0x607EB9 over four turns, in 100 ns); the stamp is written once, by the constructor (the arrival date, mArrivalDate), and no code rewrites it
+	// an own-format save written before the integer age was kept holds only the seconds: its age is their floor over the turn's 248 ms, the one place the seconds still stand in
 	internal static long AgeTurnsOf( Guest guest ) =>
-		guest.TimeInParkSeconds is { } seconds ? (long)Math.Floor( seconds * 1000.0 / ParkCalendar.TurnMilliseconds ) : 0;
+		guest.TimeInParkSeconds is not { } seconds ? 0
+		: guest.DisplayTimeInParkTurns is { } turns ? turns
+		: (long)Math.Floor( seconds * 1000.0 / ParkCalendar.TurnMilliseconds );
 
 	/// <summary>
 	/// The weather step of a guest who owns an umbrella, on the guest's own update (every fourth park turn, before its needs): on a qualifying day (<see cref="UmbrellaRules.DayGateOpen"/>) the weather opens or closes the umbrella

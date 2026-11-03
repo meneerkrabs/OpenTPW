@@ -324,7 +324,7 @@ public class CheatsRideVehicleTests
 	}
 
 	/// <summary>A synthetic ride (the fixture of UpgradeCatalogueDefaultsTests): a one-triangle model and a script that sets nothing, with the given .sam lines.</summary>
-	private static ObjectCatalogEntry SyntheticRide( string root, int infoId, string name, string extra )
+	internal static ObjectCatalogEntry SyntheticRide( string root, int infoId, string name, string extra )
 	{
 		var sam = $"Info.Id {infoId}\nInfo.Name {name}\nInfo.WhichUIType 0\nInfo.IsChoosable 1\nInfo.HasQueue 1\nUsageInfo.MinCapacity 1\nUsageInfo.MaxCapacity 8\nUsageInfo.MinDuration 1\nUsageInfo.MaxDuration 200\nUpgrades[0].InitCapacity 4\n{extra}";
 		return new ObjectCatalogEntry( "jungle", ObjectCategory.Ride, "/" + name, new ObjectSettings( new[] { new ObjectSettingsFile( sam, name + ".sam" ) } ), new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE",

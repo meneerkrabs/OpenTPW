@@ -421,6 +421,13 @@ public sealed class ParkObjectState
 	/// <summary>The winners ring (<c>+0x2B8</c>): the plays a sideshow's guests won on each of the last 30 days.</summary>
 	public DailyRing WinnersRing { get; set; } = new();
 	/// <summary>
+	/// Theme Park Inc only: the price test's three daily rings of the attraction's history object, raised by <c>0x6120C0</c> and rolled by the day message <c>0x5DF19F</c>: the guests who found the price cheap
+	/// (<c>+0x5D8</c>), who refused it (<c>+0x660</c>) and the sideshow guests who declined (<c>+0x4C8</c>). Nothing in OpenTPW reads them yet (SAVE-940: their readers are not traced); not saved, a Theme Park Inc run is not.
+	/// </summary>
+	public DailyRing CheapPriceRing { get; } = new();
+	public DailyRing ExpensivePriceRing { get; } = new();
+	public DailyRing DeclinedRing { get; } = new();
+	/// <summary>
 	/// The visits' averaged happiness change ring (<c>+0x340</c>, the satisfaction gauge's source, 0x004E1E30). Imported and saved as it is; OpenTPW's guests
 	/// keep no per-visit happiness change, so nothing writes it (ECON-057).
 	/// </summary>

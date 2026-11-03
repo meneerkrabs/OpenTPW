@@ -107,6 +107,39 @@ public class ThemeParkIncLayoutCheckpointTests
 	}
 
 	[TestMethod]
+	public void AVersionTwoCheckpointWithUntypedFootprintsIsTypedAndLinkedWhenItConnects()
+	{
+		// [BIN:TPI-EXE:0x668552 footprint commit] a checkpoint saved before the footprints were typed holds none of them; the connect stamps them again and lays the entrance's links (RIDES-031, Level.StampRestoredFootprint)
+		var settings = new ObjectSettings(new[] { new ObjectSettingsFile("Info.Id 1101\nInfo.Name Queued\nInfo.IsChoosable 1\n", "queued.sam") });
+		var queued = new ObjectCatalogEntry("science", ObjectCategory.Ride, "/synthetic", settings, new ObjectShape(new[] { "*2" }),
+			"/synthetic/model.MD2", null, "/synthetic/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), FileSystem, null);
+		var queuedCatalog = (ObjectCatalog)Activator.CreateInstance(typeof(ObjectCatalog), BindingFlags.NonPublic | BindingFlags.Instance, null,
+			new object[] { "science", new[] { queued } }, null)!;
+		var objects = new ParkObjects(queuedCatalog, new SandboxParkGrid(), seed);
+		objects.Add(queued, 6, 6, 0);
+		var cells = new ParkCellMap(16, 16);
+		var front = objects.Objects.Single().AccessPoints.First(point => point.Kind == ObjectCellKind.Entrance);
+		cells.SetType(front.OutsideX, front.OutsideY, ParkCellType.Path);
+		var checkpoint = new ThemeParkIncLayoutCheckpoint
+		{
+			Format = ThemeParkIncLayoutCheckpoint.FormatName, Version = ThemeParkIncLayoutCheckpoint.CurrentVersion, RestartPolicy = ThemeParkIncLayoutCheckpoint.FreshSession,
+			Theme = "science", Seed = seed.Value, SavedUtc = DateTimeOffset.UnixEpoch,
+			Layout = ParkLayoutSnapshot.CaptureSnapshot(cells, objects), AssetHashes = assets
+		};
+		var loaded = ThemeParkIncLayoutCheckpoint.Deserialize(ThemeParkIncLayoutCheckpoint.Serialize(checkpoint));
+		var target = new ParkObjects(queuedCatalog, new SandboxParkGrid(), seed);
+		var restored = loaded.RestoreInto(target, assets, 16, 16);
+		var item = target.Objects.Single();
+		Assert.IsTrue(item.Cells.All(cell => restored.RawTypeAt(cell.X, cell.Y) == 0), "the checkpoint holds no footprint types");
+		Level.StampRestoredFootprint(restored, item, new LinkEffects(null, null, null));
+		var owner = Level.OwnerWord(item);
+		Assert.IsTrue(item.Cells.All(cell => restored.OwnerAt(cell.X, cell.Y) == owner), "every footprint cell carries the owner word again");
+		var entrance = item.AccessPoints.First(point => point.Kind == ObjectCellKind.Entrance);
+		Assert.AreEqual(ParkCellTypes.Entrance, restored.RawTypeAt(entrance.X, entrance.Y), "the entrance cell is typed");
+		Assert.AreNotEqual(0, restored.LinksAt(entrance.X, entrance.Y), "and linked toward the path in front of it");
+	}
+
+	[TestMethod]
 	public void FileRoundTripReconstructsActualObjectsCellsAndStartsFreshRuntime()
 	{
 		var checkpoint = Checkpoint();

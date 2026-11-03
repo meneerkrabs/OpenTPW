@@ -43,7 +43,8 @@ class GuestDisplayAgeContract(unittest.TestCase):
         self.assertIn("StayDays( (long)Math.Floor( elapsed * 1000 / ParkCalendar.TurnMilliseconds ) )", simulation)
         self.assertNotIn("DisplayTimeInParkTurns", simulation[simulation.index("internal void AddCanonicalState"):])
         umbrella = read("source/OpenTPW/World/Guests/GuestSimulation.Umbrellas.cs")
-        self.assertNotIn("DisplayTimeInParkTurns", umbrella)
+        # UMB-003: the umbrella day gate reads the original's integer turn age (0x611050), which the display clock keeps
+        self.assertIn("guest.DisplayTimeInParkTurns is { } turns ? turns", umbrella)
 
     def test_both_existing_hud_consumers_use_the_same_projection(self):
         roster = read("source/OpenTPW/Hud/OverviewRosters.cs")

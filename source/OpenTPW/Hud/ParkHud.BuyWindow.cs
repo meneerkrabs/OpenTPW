@@ -455,7 +455,7 @@ public sealed partial class ParkHud
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			// The header is the !cbut plate with its text; the original's sort state has no known marker.
-			context.DrawListHeader( context.Fonts.Label, text(), ScreenRect( context.Canvas ) );
+			context.DrawListHeader( context.Fonts.Label, text(), ScreenRect( context.Canvas ), focused, pressed );
 		}
 	}
 

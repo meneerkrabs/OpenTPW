@@ -297,8 +297,13 @@ public static class UiColors
 	// [BIN:TPW-EXE:0x4a53a2 black window text] literal (0,0,0,255) pushes before 0x65c5d5: the park information window's ten controls (0x4a52a0: the Top 3 Thoughts title 0x4a68ce, the happiness caption 0x4a68c3, the toggles and period buttons), the finance window's eleven labels (0x49ac60), the ticket price window's two (0x498d80), the options labels (0x4a441e) and the banners and captions of 0x496f90, 0x4ad720, 0x4afaa0, 0x4b0ed0, 0x4b75a0, 0x4bb800 and 0x4a6e40
 	public static readonly RgbaByte Ink = new( 0, 0, 0, 255 );
 	/// <summary>The text of a list's column header button.</summary>
-	// [BIN:TPW-EXE:0x486724 list header colour] the header builder 0x486660 (59 calls in the list windows: All Visitors 0x493530, the four attraction lists 0x494250..0x495110, All Staff 0x496620, hire 0x49bdd0, loans 0x49fb30, buy 0x4acc70, 0x4b46a0, the online lists) gives its text control the colour (r, g, b) = (0xFF, 0xEF, 0) from the callers' pushed arguments (0x4936xx and the like) and sets the press and hover colours to the same value (0x668f5a, 0x668f7b), so the text does not change colour with the pointer
+	// [BIN:TPW-EXE:0x486724 list header colour] the header builder 0x486660 (59 calls in the list windows: All Visitors 0x493530, the four attraction lists 0x494250..0x495110, All Staff 0x496620, hire 0x49bdd0, loans 0x49fb30, buy 0x4acc70, 0x4b46a0, the online lists) gives its text control the colour (r, g, b) = (0xFF, 0xEF, 0) from the callers' pushed arguments (0x4936xx and the like) and sets the press and hover colours to the same value (0x668f5a, 0x668f7b), so the text keeps its colour and only shifts with the pointer (DrawListHeader)
 	public static readonly RgbaByte ListHeader = new( 255, 239, 0, 255 );
+	/// <summary>The text of a model button in its normal, checked and pressed states.</summary>
+	// [BIN:TPW-EXE:0x668952 button text colours] the button constructor sets +0x14C to white and +0x154 to black; 0x668AD3 draws the text with +0x14C (normal, checked, pressed) or +0x154 (hover, checked with the pointer)
+	public static readonly RgbaByte ButtonText = new( 255, 255, 255, 255 );
+	/// <summary>The text of a model button while the pointer is over it.</summary>
+	public static readonly RgbaByte ButtonHoverText = new( 0, 0, 0, 255 );
 	/// <summary>The pause menu's text lines: cyan, white while focused (video 27:42).</summary>
 	// [BIN:TPW-EXE:0x48b2b9 pause line colour] the line procedure 0x48b2a0 gives a line the colour (0, 175, 190, 255) on message 0x11 and again when it loses the focus (0x48b220)
 	public static readonly RgbaByte MenuItem = new( 0, 175, 190, 255 );

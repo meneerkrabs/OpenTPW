@@ -16,15 +16,13 @@ public sealed partial class ParkHud
 	private float parkInfoAge;
 	// [BIN:TPW-EXE:0x004A4AB0 hidden icons stay hidden] a slot with no icon calls 0x65D9DD(0), which clears bit 0 of the control's +0x48; a slot with one only sets the frame (vtable +0x1C, 0x661525, which forwards message 0x80 to the
 	// control's two model objects and writes no flag), and neither 0x4A4AB0 nor the window procedure calls 0x65D9DD(1), so a hidden icon stays hidden while the window is open
-	// [APPROX:UI-914] the port follows that reading (an icon hidden by an empty slot stays hidden until the window is reopened); the model objects' handler of message 0x80 was not read, so a show there is not ruled out
+	// [BIN:TPW-EXE:0x476F10 model object handlers] the model objects' classes (0x476A90, 0x477250, 0x477580) test neither message 0x80 nor 8 in their handlers (0x476F10, 0x477310, 0x477640), so nothing shows a hidden icon again
 	private bool[]? parkInfoIcons;
 	private bool[] parkInfoIconHidden => parkInfoIcons ??= new bool[3];
 	private UiScreen? parkInfoScreen;
-	// [BIN:TPW-EXE:0x753C48 series mask] the graph's series mask and the period (0x7CB39C) are globals the window procedure keeps across openings; they start at the people-in-park series and 1 year
-	// [APPROX:UI-914] the choice is kept across openings within a park (it lives on the park's HUD), where tp.exe's two globals persist for the whole process and so carry over to the next park
-	private ParkInfoSeries? parkInfoSeriesChoice;
-	private ParkInfoSeries parkInfoSeries { get => parkInfoSeriesChoice ?? ParkInfoGraph.InitialSeries; set => parkInfoSeriesChoice = value; }
-	private int parkInfoPeriod;
+	// [BIN:TPW-EXE:0x753C48 series mask] the graph's series mask (initialised to 8) and the period (0x7CB39C) are globals written only by the window procedure (0x4A4764..0x4A5EC9) and kept across openings for the whole process, so they carry over to the next park: they live on the host's ParkInfoChoice, which the game flow shares between its parks
+	private ParkInfoSeries parkInfoSeries { get => InfoChoice.Series; set => InfoChoice.Series = value; }
+	private int parkInfoPeriod { get => InfoChoice.Period; set => InfoChoice.Period = value; }
 	private int parkInfoPeople, parkInfoSad, parkInfoHappy;
 	private long parkInfoVisitors;
 

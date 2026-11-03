@@ -135,9 +135,9 @@ class NativeStatisticsHistoryContract(unittest.TestCase):
         self.assertIn('python -m unittest discover -s tools -p "test_native_statistics_history_contract.py" -v', workflow)
         self.assertIn("dotnet build source/OpenTPW.sln --configuration Release --nologo", workflow)
         self.assertIn("dotnet test source/OpenTPW.Tests/OpenTPW.Tests.csproj --configuration Release --no-build --nologo", workflow)
-        self.assertIn('("UI-914",', read("source/OpenTPW/UI/Original/UiApproximations.cs"))
+        self.assertIn("UI-914", read("tools/fidelity_retired.txt"))
         proposal = read("docs/proposals/ui-914-scope-information-history-residuals.md")
-        for qualifier in ("UI-914 remains open", "Theme Park Inc", "wrapped", "no .NET SDK", "template preservation"):
+        for qualifier in ("UI-914 remains open at this proposal", "Theme Park Inc", "wrapped", "no .NET SDK", "template preservation"):
             self.assertIn(qualifier, proposal)
 
 

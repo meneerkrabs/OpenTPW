@@ -147,7 +147,7 @@ class GraphBackdropContract(unittest.TestCase):
             self.assertIn(expression, body)
         # one drawer for both graphs: float-summed columns, integer rows cut to the plot, boxes below 144 samples, the last value
         for expression in ("x = (float)(step + Math.Clamp( x, plot.Left, plot.Right ))", "plot.Bottom - (int)((Int128)(plot.Bottom - plot.Top)",
-                           "samples < 0x90", "points[^1].ToString"):
+                           "samples < 0x90", "LabelCache", "TextOf("):
             self.assertIn(expression, self.helper)
         self.assertIn("GraphBackdropRenderer.Column( index, samples, plot )", self.info)
 

@@ -558,7 +558,7 @@ public sealed partial class ParkHud
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			if ( Current )
-				context.DrawListHeader( context.Fonts.Label, owner.strings[header], ScreenRect( context.Canvas ) );
+				context.DrawListHeader( context.Fonts.Label, owner.strings[header], ScreenRect( context.Canvas ), focused, pressed );
 		}
 	}
 

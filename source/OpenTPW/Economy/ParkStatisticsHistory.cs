@@ -56,6 +56,16 @@ public sealed class HistoryRing
 		return true;
 	}
 
+	/// <summary>
+	/// The word of the slot after the head, which the maximum scanners read when no sample is above 0: the oldest entry of a wrapped ring, a slot never written in an unwrapped one,
+	/// and with the head at the last slot the head word itself (an integer; a single's bits, read as a float, are 0).
+	/// </summary>
+	internal double SlotAfterHead( bool floating )
+	{
+		var slot = Head + 1;
+		return slot < data.Length ? data[slot] : floating ? 0 : Head;
+	}
+
 	/// <summary>The entries oldest first.</summary>
 	public IEnumerable<double> Oldest()
 	{
@@ -104,7 +114,7 @@ public sealed class HistoryRing
 /// The park analyser's monthly statistics that the park information window graphs: the guests dropped off by the bus, the mean happiness, the mean stay,
 /// the guests in the park and the park rating. Nothing here is read by the simulation.
 /// </summary>
-// [APPROX:UI-914] TPW and independently traced TPI statistics are imported; TPI adapts partial inputs across a fresh host clock, not native saved-clock continuation. Real populated/wrapped-save corpus coverage and other park-information presentation residuals remain open.
+// [EXT:tpi-history-fresh-start] TPW and independently traced TPI statistics are imported; Theme Park Inc's own executable keeps its saved clock, which the money-only TPI economy does not continue (the first host close crosses the month boundary on its fresh clock). Validation item for the TPI restore work: real populated or wrapped TPI saves.
 public sealed class ParkStatisticsHistory
 {
 	/// <summary>The entries of a monthly ring (0x90).</summary>
@@ -211,19 +221,27 @@ public sealed class ParkStatisticsHistory
 	/// <summary>
 	/// The highest sample of the newest <c>period + 1</c> that the scale takes from a ring (<paramref name="floating"/>: a single ring, whose maximum is truncated), 0 when none is above 0.
 	/// </summary>
-	// [BIN:TPW-EXE:0x4801D0 series maximum] the scan reads samples 0 up to and including the period's sample count (one more than the graph draws), stops at the first it cannot read, and keeps the largest strictly above 0; the single ring's maximum (0x4802A0) is truncated to an integer
+	// [BIN:TPW-EXE:0x4801D0 series maximum] the scan reads samples 0 up to and including the period's sample count stops at the first it cannot read, and keeps the largest strictly above 0, and when none is above 0 it still reads the slot after the head (0x480263..0x48028B, 0x48033b..0x480369) and keeps it if it is above the maximum; the single ring's maximum (0x4802A0) is truncated to an integer
 	public static int SeriesMaximum( HistoryRing ring, int period, bool floating )
 	{
 		var samples = PeriodSamples( period );
 		var best = 0d;
+		var positive = false;
 		for ( var back = 0; back <= samples; back++ )
 		{
 			if ( !ring.TryGet( back, out var value ) )
 				break;
 			if ( value > best )
 				best = value;
+			positive |= value > 0;
 		}
-		return floating ? (int)best : (int)Math.Min( best, int.MaxValue );
+		var result = floating ? (int)best : (int)Math.Min( best, int.MaxValue );
+		if ( !positive )
+		{
+			var slot = ring.SlotAfterHead( floating );
+			result = Math.Max( result, floating ? (int)slot : (int)Math.Clamp( slot, int.MinValue, int.MaxValue ) );
+		}
+		return result;
 	}
 
 	/// <summary>

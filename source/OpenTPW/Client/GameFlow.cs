@@ -472,6 +472,7 @@ internal sealed partial class GameFlow : IDisposable
 
 	/// <summary>The window list sorts of this session, shared by every park's HUD (UI-084).</summary>
 	private readonly ListSortMemory listSorts = new();
+	private readonly ParkInfoChoice parkInfoChoice = new();
 
 	/// <summary>
 	/// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park, looked up on every access so loading a
@@ -502,6 +503,7 @@ internal sealed partial class GameFlow : IDisposable
 		PublishPark = WhenOnline( stack => CreateOnlineScreens( stack ).ShowPublish() ),
 		PublishRefusal = () => ParkSharing.PublishRefusal( level ),
 		ListSorts = listSorts,
+		ParkInfoChoice = parkInfoChoice,
 		OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
 		ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),
 		WindowOpened = window => Advisor?.OnWindowOpened( window ),

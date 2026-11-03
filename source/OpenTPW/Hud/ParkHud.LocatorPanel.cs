@@ -360,7 +360,16 @@ public sealed partial class ParkHud
 		: (Status.EconomySource as ParkEconomy)?.Staff.NextInRole( LocatorModel.StaffTypeOf( role ), current ) ?? 0;
 
 	/// <summary>Whether the located visitor is still a live guest (the guest roster holds it and it has not left).</summary>
-	private bool LocatedVisitorLives() => level.Guests?.Guests.Any( guest => guest.Id == Locator.ActorId && guest.State != GuestState.Gone ) == true;
+	private bool LocatedVisitorLives()
+	{
+		var guests = level.Guests?.Guests;
+		if ( guests == null )
+			return false;
+		for ( var index = 0; index < guests.Count; index++ )
+			if ( guests[index].Id == Locator.ActorId && guests[index].State != GuestState.Gone )
+				return true;
+		return false;
+	}
 
 	private bool TryLocatorActorPosition( out Vector3 position )
 	{

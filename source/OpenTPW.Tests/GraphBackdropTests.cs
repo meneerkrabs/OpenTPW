@@ -183,4 +183,26 @@ public class GraphBackdropTests
 		}
 	}
 
+
+	[TestMethod]
+	public void TheMaximumScannerReadsTheSlotAfterTheHeadWhenNothingIsAboveZero()
+	{
+		// 0x4801D0 / 0x4802A0: no sample above 0 leaves the index at -1, and the slot head + 1 is read all the same
+		var wrapped = new HistoryRing( 144 );
+		for ( var entry = 0; entry < 150; entry++ )
+			wrapped.Add( entry == 6 ? 77 : 0 );
+		Assert.AreEqual( 5, wrapped.Head );
+		Assert.AreEqual( 77, ParkStatisticsHistory.SeriesMaximum( wrapped, 0, floating: false ), "the oldest entry of a wrapped ring" );
+		Assert.AreEqual( 77, ParkStatisticsHistory.SeriesMaximum( wrapped, 0, floating: true ) );
+		var full = new HistoryRing( 144 );
+		for ( var entry = 0; entry < 144; entry++ )
+			full.Add( 0 );
+		Assert.AreEqual( 143, ParkStatisticsHistory.SeriesMaximum( full, 0, floating: false ), "with the head at the last slot the head word itself" );
+		Assert.AreEqual( 0, ParkStatisticsHistory.SeriesMaximum( full, 0, floating: true ), "a single's bits read as a float are 0" );
+		var fresh = new HistoryRing( 144 );
+		Assert.AreEqual( 0, ParkStatisticsHistory.SeriesMaximum( fresh, 0, floating: false ) );
+		var positive = new HistoryRing( 144 );
+		positive.Add( 4 );
+		Assert.AreEqual( 4, ParkStatisticsHistory.SeriesMaximum( positive, 0, floating: false ), "a positive sample ends the quirk" );
+	}
 }

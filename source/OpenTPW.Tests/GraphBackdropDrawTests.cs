@@ -235,7 +235,7 @@ public class GraphBackdropDrawTests
 			var context = Context();
 			Draw( context, graph );
 			var expected = Backdrop( context, true, years, scenario.Axis );
-			FinanceLines( expected, context, years, scenario.Values, scenario.Minimum, scenario.Maximum, FinanceColours[0] );
+			FinanceLines( expected, context, years, scenario.Values[..^1], scenario.Minimum, scenario.Maximum, FinanceColours[0] );
 			expected.AssertMatches( context.Batch );
 			Assert.IsTrue( context.Batch.Draws.SelectMany( draw => draw.Vertices ).All( vertex => float.IsFinite( vertex.Position.X ) && float.IsFinite( vertex.Position.Y ) ) );
 			Assert.AreEqual( saved, ParkSaveFile.Serialize( park ) );
@@ -274,7 +274,7 @@ public class GraphBackdropDrawTests
 			CollectionAssert.AreEqual( new[] { series }, hud.FinanceVisibleSeries.ToArray() );
 			Draw( context, graph );
 			var expected = Backdrop( context, true, 1 );
-			FinanceLines( expected, context, 1, values[(int)series], 0, values[(int)series].Max(), FinanceColours[(int)series] );
+			FinanceLines( expected, context, 1, values[(int)series][..^1], 0, values[(int)series][..^1].Max(), FinanceColours[(int)series] );
 			expected.AssertMatches( context.Batch );
 		}
 	}
@@ -294,8 +294,8 @@ public class GraphBackdropDrawTests
 		Selected( FinanceSeries.BankBalance, FinanceSeries.ParkValue );
 		Draw( context, graph );
 		var expected = Backdrop( context, true, 1 );
-		FinanceLines( expected, context, 1, new long[] { 10, 20, 30 }, 0, 101, FinanceColours[0] );
-		FinanceLines( expected, context, 1, new long[] { 100, 101, 0 }, 0, 101, FinanceColours[1] );
+		FinanceLines( expected, context, 1, new long[] { 10, 20 }, 0, 101, FinanceColours[0] );
+		FinanceLines( expected, context, 1, new long[] { 100, 101 }, 0, 101, FinanceColours[1] );
 		expected.AssertMatches( context.Batch );
 		Press( FinanceSeries.StaffCosts );
 		Selected( FinanceSeries.StaffCosts );
@@ -304,7 +304,7 @@ public class GraphBackdropDrawTests
 		Selected( FinanceSeries.MoneyIn, FinanceSeries.GateTakings, FinanceSeries.StaffCosts );
 		Draw( context, graph );
 		expected = Backdrop( context, true, 1 );
-		foreach ( var index in new[] { 2, 3, 7 } ) FinanceLines( expected, context, 1, new long[] { 0, 0, 0 }, 0, 0, FinanceColours[index] );
+		foreach ( var index in new[] { 2, 3, 7 } ) FinanceLines( expected, context, 1, new long[] { 0, 0 }, 0, 0, FinanceColours[index] );
 		expected.AssertMatches( context.Batch );
 		Press( FinanceSeries.GateTakings );
 		Selected( FinanceSeries.MoneyIn, FinanceSeries.StaffCosts );
@@ -322,7 +322,7 @@ public class GraphBackdropDrawTests
 	[DataRow( 1 )]
 	[DataRow( 3 )]
 	[DataRow( 12 )]
-	public void FinanceMonthsKeepTheLivePointAndSelectedWindowWithoutClosingAMonth( int years )
+	public void FinanceGraphReadsOnlyTheClosedMonthsOfTheSelectedWindowWithoutClosingAMonth( int years )
 	{
 		var values = Enumerable.Range( 1, 145 ).Select( value => (long)value ).ToArray();
 		var park = FinancePark( values );
@@ -335,17 +335,36 @@ public class GraphBackdropDrawTests
 		Assert.AreEqual( 144L, hud.FinanceMonths()[^1].MonthIndex );
 		Draw( context, graph );
 		var expected = Backdrop( context, true, years );
-		FinanceLines( expected, context, years, values, 0, 145, FinanceColours[0] );
+		FinanceLines( expected, context, years, values[..^1], 0, 144, FinanceColours[0] );
 		expected.AssertMatches( context.Batch );
 		Assert.AreEqual( 144, park.Ledger.History.Count );
 		Assert.AreEqual( 144L, park.Ledger.CurrentMonthIndex );
 	}
 
 	[DataTestMethod]
+	[DataRow( 150, 50, 226 )]
+	[DataRow( 144, 143, 240 )]
+	public void WithNoPositiveSampleTheScaleStillReadsTheSlotAfterTheRingsHead( int monthIndex, long slot, int axis )
+	{
+		// 0x4801D0 keeps its index at -1 when no sample is above 0 and then reads ring[head + 1]: the oldest month of a wrapped ring (150 closes: head 5) and, with the head at slot 143 (144 closes), the head word itself
+		var park = RecentResearchTests.Park();
+		var totals = new Dictionary<LedgerCategory, long>();
+		var months = Enumerable.Range( monthIndex - 144, 144 ).Select( index => new LedgerMonth( index, totals, 0, index == monthIndex - 144 ? 50 : -5, 1, 1 ) ).ToArray();
+		park.Ledger.Restore( -5, -5, monthIndex, totals, months );
+		var hud = Hud( park );
+		var graph = Open( hud, true );
+		var context = Context();
+		Draw( context, graph );
+		var expected = Backdrop( context, true, 1, axis );
+		FinanceLines( expected, context, 1, months.Select( month => month.ClosingBalance ).ToArray(), -5, slot, FinanceColours[0] );
+		expected.AssertMatches( context.Batch );
+	}
+
+	[DataTestMethod]
 	[DataRow( 1 )]
 	[DataRow( 3 )]
 	[DataRow( 12 )]
-	public void OneLiveFinancePointDrawsFromTheZeroBeforeItAndDeselectedSeriesDrawOnlyTheBackdrop( int years )
+	public void ANewParkDrawsOneZeroPointLabelledZeroAndDeselectedSeriesDrawOnlyTheBackdrop( int years )
 	{
 		var park = FinancePark( 42 );
 		var hud = Hud( park );
@@ -357,7 +376,7 @@ public class GraphBackdropDrawTests
 			Draw( context, graph );
 			var expected = Backdrop( context, true, years );
 			if ( selection != 1 )
-				FinanceLines( expected, context, years, new long[] { 42 }, 0, 42, FinanceColours[0] );
+				FinanceLines( expected, context, years, Array.Empty<long>(), 0, 0, FinanceColours[0] );
 			expected.AssertMatches( context.Batch );
 			hud.Stack.Top!.Find( "seriesBankBalance" )!.Activate();
 		}
@@ -559,7 +578,10 @@ public class GraphBackdropDrawTests
 		Draw( context, graph );
 		Assert.IsTrue( context.Batch.Draws.SelectMany( draw => draw.Vertices ).Any( vertex => vertex.Color.Equals( FinanceColours[0] ) ) );
 		// Public setters reject these values; inject corrupt stored state to exercise the consumers' defensive path.
-		Set( hud, finance ? "financeYears" : "parkInfoPeriod", finance ? 2 : 99 );
+		if ( finance )
+			Set( hud, "financeYears", 2 );
+		else
+			((ParkInfoChoice)typeof( ParkHud ).GetProperty( "InfoChoice", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hud )!).Period = 99;
 		Draw( context, graph );
 		var expected = new ExpectedFrame( context.Fonts.Small, 1 );
 		expected.Rectangle( Frame( finance, context.Canvas ), Black );
@@ -612,9 +634,11 @@ public class GraphBackdropDrawTests
 		{
 			var width = text.Length * 3 * textScale;
 			var height = 8 * textScale;
-			var x = rightAligned ? (int)MathF.Round( box.Right - width ) : (int)MathF.Round( box.X );
+			// the renderer's TextBox (UiContext.TextBox): the rounded left and top and the floored size
+			var left0 = (int)MathF.Round( box.X );
+			var x = rightAligned ? left0 + (int)MathF.Floor( box.Width ) - width : left0;
 			var top = (int)MathF.Round( box.Y );
-			var y = top + ((int)MathF.Round( box.Bottom ) - top - height) / 2;
+			var y = top + ((int)MathF.Floor( box.Height ) - height) / 2;
 			var firstGlyph = glyphs.Count;
 			for ( var index = 0; index < text.Length; index++ )
 			{

@@ -181,7 +181,7 @@ public sealed partial class ParkHud
 	private UiScreen CreateManagementScreen( string id, UIStrings title )
 	{
 		var screen = new UiScreen( id );
-		var adjustmentButtons = new List<(UiButton Button, Func<bool> Available)>();
+		var adjustmentButtons = new List<(UiElement Button, Func<bool> Available)>();
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = Rect( 186, 30, 2018, 1007 ), Anchor = UiAnchor.Center } );
 		void Label( string key, Func<string> text, UiRect bounds ) => screen.Add( new UiLabel { Id = key, Text = text,
 			Font = fonts => fonts.Label, Color = UiColors.Text, Fit = true, Bounds = bounds, Anchor = UiAnchor.Center } );
@@ -205,8 +205,9 @@ public sealed partial class ParkHud
 			// [BIN:TPW-EXE:0x00498D80 ticket price window] the park's name (0x4E2780 via 0x486280) is shown on the window's control 0x4F3AF, whose click (message 0x10006, handler 0x499060) opens the rename dialog 0x4990F0
 			// [EXT:park-rename-layout] the name button's place in OpenTPW's entry price window and the rename dialog's layout are OpenTPW's; the original window and dialog resources (0x751798, 0x751928) are not decoded
 			// [EXT:online-coop-commands] a guest's name not back from the host yet is drawn as asked (C4b)
-			var parkNameButton = screen.Add( new UiButton { Id = "parkName", Text = () => DrawnParkName, Font = fonts => fonts.Label,
-				Clicked = OpenParkRenameDialog, Bounds = Rect( 370, 180, 1663, 270 ), Anchor = UiAnchor.Center } );
+			// [BIN:TPW-EXE:0x485d20 park name control] 0x4F3AF is a title text control (0x485D20 with the title colour) with no plate, so it is clickable title text, not a button
+			var parkNameButton = screen.Add( new UiLabel { Id = "parkName", Text = () => DrawnParkName, Font = fonts => fonts.Title, Color = UiColors.Title, Shadow = true,
+				Align = UiAlign.Center, Fit = true, Clicked = OpenParkRenameDialog, Bounds = Rect( 370, 180, 1663, 270 ), Anchor = UiAnchor.Center } );
 			adjustmentButtons.Add( (parkNameButton, () => level.ParkName != null) );
 			Label( "priceLabel", () => strings[UIStrings.TicketPrice], Rect( 370, 300, 1000, 380 ) );
 			// [EXT:online-coop-commands] a guest's fee is drawn as asked until it comes back, and each step counts from it (C4b)

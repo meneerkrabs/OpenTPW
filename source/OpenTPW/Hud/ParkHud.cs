@@ -31,6 +31,8 @@ public sealed class HudHost
 	public Action<UiScreenStack>? OpenPostcard { get; init; }
 	/// <summary>The list sorts the windows keep for the session; the game flow shares one instance between its parks.</summary>
 	public ListSortMemory ListSorts { get; init; } = new();
+	/// <summary>The park information window's series mask and period, which tp.exe keeps in process globals; the game flow shares one instance between its parks.</summary>
+	public ParkInfoChoice ParkInfoChoice { get; init; } = new();
 	/// <summary>Called after a HUD key changed a player option (Ctrl+H flips Popup help) so the host can persist the options.</summary>
 	public Action? OptionsChanged { get; init; }
 	/// <summary>The open/close button or its shortcut was pressed (true: open, false: close), also when the park's state does not change; the advisor raises game event 3 or 4 on it.</summary>
@@ -91,6 +93,9 @@ public sealed partial class ParkHud
 	private BuildItem? pendingItem;
 	private UiLabel? moneyLabel;
 	private ListSortMemory? fallbackSorts;
+	private ParkInfoChoice? fallbackInfoChoice;
+	/// <summary>The remembered park information choice; a HUD built without a host keeps its own.</summary>
+	private ParkInfoChoice InfoChoice => host?.ParkInfoChoice ?? (fallbackInfoChoice ??= new());
 	/// <summary>The session's remembered list sorts (UI-084); a HUD built without a host keeps its own.</summary>
 	private ListSortMemory Sorts => host?.ListSorts ?? (fallbackSorts ??= new());
 	/// <summary>The client's selection: the level's own (<see cref="Level.Selection"/>), which placements and the removal of the object also write.</summary>

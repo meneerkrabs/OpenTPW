@@ -161,37 +161,38 @@ public sealed partial class ParkHud
 	/// <summary>The finance series in selection-bit order (0..7 of the selection word 0x751FA0).</summary>
 	private static readonly FinanceSeries[] FinanceSeriesOrder = Enum.GetValues<FinanceSeries>();
 
-	/// <summary>The months the finance rings hold: the closed months and the live one, at most the ring's 144 entries.</summary>
-	// [BIN:TPW-EXE:0x480460 sample count] a graph reads the ring's size once it has wrapped, else its head + 1, as the samples it can show; the rings of 0x240 bytes hold 144 entries
-	internal static int FinanceSamplesHeld( ParkEconomy economy ) => Math.Min( economy.Ledger.History.Count + 1, ParkLedger.MaximumHistoryMonths );
+	/// <summary>The months the finance rings hold: the closed months, at most the ring's 144 entries.</summary>
+	// [BIN:TPW-EXE:0x480460 sample count] a graph reads the ring's size once it has wrapped, else its head + 1, as the samples it can show; the rings of 0x240 bytes hold 144 entries, and a month's sample goes in when the month closes (0x4C7720 pushes each ring through 0x4CE290, the bank at 0x4C7771), so the running month is on no ring
+	internal static int FinanceSamplesHeld( ParkEconomy economy ) => Math.Min( economy.Ledger.History.Count, ParkLedger.MaximumHistoryMonths );
 
-	/// <summary>The sample <paramref name="age"/> months back (0: the live month) of a series; false past the months held.</summary>
+	/// <summary>The sample <paramref name="age"/> closed months back (0: the newest) of a series; false past the months held.</summary>
 	internal static bool TryFinanceSample( ParkEconomy economy, int age, FinanceSeries series, out long value )
 	{
 		value = 0;
 		if ( age < 0 || age >= FinanceSamplesHeld( economy ) )
 			return false;
-		var ledger = economy.Ledger;
-		if ( age > 0 )
-		{
-			value = FinanceValue( ledger.History[ledger.History.Count - age], series );
-			return true;
-		}
-		var current = ledger.CurrentTotals;
-		long Total( LedgerCategory category ) => current.TryGetValue( category, out var amount ) ? amount : 0;
-		value = series switch
-		{
-			FinanceSeries.BankBalance => ledger.Balance,
-			FinanceSeries.ParkValue => economy.ParkValue,
-			FinanceSeries.MoneyIn => Total( LedgerCategory.GateTakings ) + Total( LedgerCategory.ShopTakings ) + Total( LedgerCategory.SideshowTakings ) + Total( LedgerCategory.OtherIncome ) + Total( LedgerCategory.LoanReceived ),
-			FinanceSeries.GateTakings => Total( LedgerCategory.GateTakings ),
-			FinanceSeries.ShopTakings => Total( LedgerCategory.ShopTakings ),
-			FinanceSeries.SideshowTakings => Total( LedgerCategory.SideshowTakings ),
-			FinanceSeries.MoneyOut => Total( LedgerCategory.StaffCosts ) + Total( LedgerCategory.OtherCosts ) + Total( LedgerCategory.LoanPayments ),
-			FinanceSeries.StaffCosts => Total( LedgerCategory.StaffCosts ),
-			_ => 0
-		};
+		var history = economy.Ledger.History;
+		value = FinanceValue( history[history.Count - 1 - age], series );
 		return true;
+	}
+
+	/// <summary>
+	/// The word the maximum scanner reads when no sample was above 0: the ring slot after the head. A wrapped ring's is its oldest month, and with the head at slot 143 it is
+	/// the head word itself; an unwrapped ring's is a slot never written (0).
+	/// </summary>
+	// [BIN:TPW-EXE:0x480263 max scanner quirk] 0x4801D0 leaves its index at -1 when nothing is above 0 and then still reads slot head + 1 (0x480273, 0x480287) and keeps it if it is above the maximum; the minimum scanner guards this case (0x480413)
+	internal static long FinanceScaleSlotAfterHead( ParkEconomy economy, FinanceSeries series )
+	{
+		var ledger = economy.Ledger;
+		var history = ledger.History;
+		if ( history.Count < ParkLedger.MaximumHistoryMonths )
+			return 0;
+		// 144 closed months: the ring has gone round once its closes exceed 144 (the live month's index counts the closes of a park that started at month 0)
+		var closes = Math.Max( ledger.CurrentMonthIndex, ParkLedger.MaximumHistoryMonths );
+		var head = (int)((closes - 1) % ParkLedger.MaximumHistoryMonths);
+		if ( head + 1 >= ParkLedger.MaximumHistoryMonths )
+			return head;
+		return closes > ParkLedger.MaximumHistoryMonths ? FinanceValue( history[0], series ) : 0;
 	}
 
 	private sealed class FinanceGraph : UiElement
@@ -199,6 +200,7 @@ public sealed partial class ParkHud
 		private readonly ParkHud owner;
 		/// <summary>The points of the series being drawn (the longest period, 144 samples, plus the extra oldest point).</summary>
 		private readonly long[] points = new long[ParkLedger.MaximumHistoryMonths + 1];
+		private readonly LabelCache[] labels = new LabelCache[8];
 		public FinanceGraph( ParkHud owner ) => this.owner = owner;
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
@@ -206,7 +208,7 @@ public sealed partial class ParkHud
 			var rect = ScreenRect( context.Canvas );
 			var economy = owner.FinanceEconomy;
 			var samples = owner.financeYears * ParkCalendar.MonthsPerYear;
-			// [BIN:TPW-EXE:0x49A7B0 graph scale] the scale runs from min(0, the lowest) to max(0, the highest) of the selected series' samples 0 .. the period's sample count (one more than the graph draws; 0x4801D0 and 0x480380 stop at the first sample the ring cannot read), in ten divisions
+			// [BIN:TPW-EXE:0x49A7B0 graph scale] the scale runs from min(0, the lowest) to max(0, the highest) of the selected series' samples 0 .. the period's sample count (0x4801D0 and 0x480380 stop at the first sample the ring cannot read), in ten divisions
 			long minimum = 0, maximum = 0;
 			var any = false;
 			if ( economy != null )
@@ -215,11 +217,15 @@ public sealed partial class ParkHud
 					if ( !owner.financeVisible.Contains( series ) )
 						continue;
 					any = true;
+					var positive = false;
 					for ( var age = 0; age <= samples && TryFinanceSample( economy, age, series, out var value ); age++ )
 					{
+						positive |= value > 0;
 						maximum = Math.Max( maximum, value );
 						minimum = Math.Min( minimum, value );
 					}
+					if ( !positive )
+						maximum = Math.Max( maximum, FinanceScaleSlotAfterHead( economy, series ) );
 				}
 			var pixel = GraphBackdropRenderer.Pixel( context.Canvas );
 			var backdrop = new GraphBackdrop( (int)(rect.Width / pixel), (int)(rect.Height / pixel), samples, minimum, maximum );
@@ -242,7 +248,7 @@ public sealed partial class ParkHud
 						last = value;
 					points[n - age] = last;
 				}
-				GraphBackdropRenderer.DrawSeries( context, points.AsSpan( 0, n + 1 ), samples, minimum, maximum, plot, FinanceColors[(int)series], rect, pixel, font );
+				GraphBackdropRenderer.DrawSeries( context, points.AsSpan( 0, n + 1 ), samples, minimum, maximum, plot, FinanceColors[(int)series], rect, pixel, font, ref labels[(int)series] );
 			}
 		}
 	}

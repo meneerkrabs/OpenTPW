@@ -119,12 +119,18 @@ public sealed class UiContext
 			Batch.AddText( font, layout, ix, iy, color, scale, text, clip ? rect : null );
 	}
 
+	/// <summary>One pixel of the display mode in framebuffer pixels: two canvas units, at least one pixel (the graphs' adapter, <c>[EXT:graph-pixel-adapter]</c>).</summary>
+	public float ModePixel => Math.Max( 1f, Canvas.Scale * 2f );
+
 	/// <summary>A list's column header: the <c>!cbut</c> button model (its b_header plate) with the text over it in the header colour.</summary>
 	// [BIN:TPW-EXE:0x486660 list header] the builder gives the header control the model named 0x74FDF0 "!cbut" (0x659BC9 finds it by its root-name hash, 0x65D070 sets it; ui.wad's !cbut.MD2 has six frames of the 64 x 64 b_header texture, a nine-patch plate) and its text, centred (0x65C428, 0x65C4B9) in UiColors.ListHeader; the model object class 0x476A90 draws the state frame the button's state selects, and all six frames show the same plate
-	public void DrawListHeader( FontAtlas font, string text, UiRect rect )
+	public void DrawListHeader( FontAtlas font, string text, UiRect rect, bool hover = false, bool pressed = false )
 	{
 		DrawModel( ListHeaderModel, 0, rect );
-		DrawFittedText( font, text, rect, UiColors.ListHeader, UiAlign.Center );
+		// [BIN:TPW-EXE:0x668ad3 header text offset] the text moves by (1, 1) pixels of the mode while the pointer is over the header and by (2, 1) while it is pressed; the colour is the header colour in every state (0x668f5a, 0x668f7b)
+		var (shiftX, shiftY) = pressed ? (2, 1) : hover ? (1, 1) : (0, 0);
+		var step = ModePixel;
+		DrawFittedText( font, text, new UiRect( rect.X + shiftX * step, rect.Y + shiftY * step, rect.Width, rect.Height ), UiColors.ListHeader, UiAlign.Center );
 	}
 
 	/// <summary>The widget model the list headers wear.</summary>
@@ -699,10 +705,21 @@ public sealed class UiButton : UiElement
 		if ( Model != null && context.DrawModel( Model, frame, rect, tint ) )
 		{
 			if ( Text != null )
-				context.DrawFittedText( Font( context.Fonts ), Text(), rect, subdued ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align, clip: !Unclipped );
+			{
+				// [BIN:TPW-EXE:0x668ad3 button text states] the state getter 0x668820 gives 1 disabled, 0 normal, 2 checked, 3 checked with the pointer, 4 pressed and 5 hover; the applier draws normal and checked with
+				// the colour +0x14C at (0, 0), pressed with +0x14C at (2, 1), hover and checked with the pointer with +0x154 at (1, 1) (so a checked button only differs from a normal one while the pointer is over it) and leaves a disabled button as it was. Only the header builder 0x486660 sets
+				// them (0x668f5a, 0x668f7b); every other button keeps the constructor's +0x14C white, +0x154 black and the offsets +0x158 / +0x159 = 1, 1 (0x668952..0x6689AC)
+				var disabled = !Enabled || subdued;
+				var (colour, shiftX, shiftY) = disabled ? (UiColors.Disabled, 0, 0)
+					: pressed ? (UiColors.ButtonText, 2, 1)
+					: focused ? (UiColors.ButtonHoverText, 1, 1)
+					: (UiColors.ButtonText, 0, 0);
+				var step = context.ModePixel;
+				context.DrawFittedText( Font( context.Fonts ), Text(), new UiRect( rect.X + shiftX * step, rect.Y + shiftY * step, rect.Width, rect.Height ), colour, Align, clip: !Unclipped );
+			}
 			return;
 		}
-		// [APPROX:UI-008] OpenTPW's own screens' text buttons: purple_button as a mirrored end cap, upper half normal, lower half focused/pressed; no PC screen draws a model-less text button (the original's list headers are the !cbut model, UiContext.DrawListHeader) — evidence needed: a user decision on the art of OpenTPW-only buttons
+		// [BIN:TPW-EXE:0x486660 no model-less text button] no PC screen draws a model-less text button (the original's list headers are the !cbut model, UiContext.DrawListHeader), so the purple_button plate below only serves OpenTPW's own screens, each under its approved label: [EXT:ONLINE-UI] and [EXT:own-window-sizes] (online screens), [EXT:mods-ui] (mods page), [EXT:SETUP] and [EXT:tpi-viewer] (game files page), [EXT:opentpw-page] (options page), [EXT:tpi-ui] (Theme Park Inc HUD), [EXT:overview-select-button] (go-to-attraction button) and [EXT:staff-employee-view] (staff employee view button)
 		var art = context.ResolveTexture( "purple_button" );
 		var inner = PurpleLabelRect( rect, art != null );
 		if ( art != null )

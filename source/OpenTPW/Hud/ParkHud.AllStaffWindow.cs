@@ -449,7 +449,7 @@ public sealed partial class ParkHud
 			owner.SortAllStaff( column );
 		}
 		public override void Draw( UiContext context, bool focused, bool pressed ) =>
-			context.DrawListHeader( context.Fonts.Label, owner.strings[AllStaffRoster.Columns[column].Header], ScreenRect( context.Canvas ) );
+			context.DrawListHeader( context.Fonts.Label, owner.strings[AllStaffRoster.Columns[column].Header], ScreenRect( context.Canvas ), focused, pressed );
 	}
 
 	/// <summary>The vertical scroll bar: the table's slider track and knob.</summary>

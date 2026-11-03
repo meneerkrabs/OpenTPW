@@ -144,7 +144,7 @@ internal static class GraphBackdropRenderer
 	/// bitmap pixels, a hollow box round every segment end when the period has fewer than 144 samples, and the last value written at the line's end.
 	/// </summary>
 	internal static void DrawSeries( UiContext context, ReadOnlySpan<long> points, int samples, long minimum, long maximum,
-		(int Left, int Top, int Right, int Bottom) plot, RgbaByte colour, UiRect rect, float pixel, FontAtlas font )
+		(int Left, int Top, int Right, int Bottom) plot, RgbaByte colour, UiRect rect, float pixel, FontAtlas font, ref LabelCache label )
 	{
 		NVector2 At( int column, int row ) => new( rect.X + column * pixel, rect.Y + row * pixel );
 		void Line( NVector2 from, NVector2 to )
@@ -190,10 +190,27 @@ internal static class GraphBackdropRenderer
 			lastRow = toRow;
 		}
 		// [BIN:TPW-EXE:0x47FE90 last value] the series' last value is written ("%d", 0x74F9D8) right-aligned against the end of the line, from 6 pixels above its row (2 at the least); a series with no segment writes it at the plot's left, 6 less than the sample count down
-		var label = points[^1].ToString( System.Globalization.CultureInfo.InvariantCulture );
+		var labelText = label.TextOf( points[^1] );
 		var top = Math.Max( 2, lastRow - 6 );
-		var width = Math.Max( context.Measure( font, label ).Width, 1f ) / pixel;
+		var width = Math.Max( context.Measure( font, labelText ).Width, 1f ) / pixel;
 		var right = Math.Max( lastColumn, plot.Left + width );
-		context.DrawText( font, label, new UiRect( rect.X + (right - width - 1) * pixel, rect.Y + top * pixel, (width + 2) * pixel, 12 * pixel ), colour, UiAlign.Right, false );
+		context.DrawText( font, labelText, new UiRect( rect.X + (right - width - 1) * pixel, rect.Y + top * pixel, (width + 2) * pixel, 12 * pixel ), colour, UiAlign.Right, false );
+	}
+}
+
+/// <summary>The last value a series label showed and its text, so a frame that shows the same value formats nothing.</summary>
+internal struct LabelCache
+{
+	private long value;
+	private string? text;
+
+	internal string TextOf( long current )
+	{
+		if ( text == null || value != current )
+		{
+			value = current;
+			text = current.ToString( System.Globalization.CultureInfo.InvariantCulture );
+		}
+		return text;
 	}
 }

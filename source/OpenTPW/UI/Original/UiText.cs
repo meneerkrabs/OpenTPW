@@ -290,6 +290,9 @@ public static class UiColors
 	// [BIN:TPW-EXE:0x492d20 title colour] the shared title colour setter gives a title control (font slot 5 or the like) the colour (234, 239, 102, 255) = 0xea, 0xef, 0x66 (0x492d35); its fifteen callers are the window and lobby builders (0x485d20, 0x48d2e0, 0x48d370, 0x499060, 0x4990f0, 0x4a6580, 0x4a6e40, 0x4a8140, 0x4ae560, 0x4b6110, 0x4b8520 the lobby island name, 0x4ba200, 0x4ba980, 0x4bb070, 0x4c0ae0)
 	public static readonly RgbaByte Title = new( 234, 239, 102, 255 );
 	public static readonly RgbaByte Value = new( 150, 255, 120, 255 );
+	/// <summary>The text of a list's column header button.</summary>
+	// [BIN:TPW-EXE:0x486724 list header colour] the header builder 0x486660 (59 calls in the list windows: All Visitors 0x493530, the four attraction lists 0x494250..0x495110, All Staff 0x496620, hire 0x49bdd0, loans 0x49fb30, buy 0x4acc70, 0x4b46a0, the online lists) gives its text control the colour (r, g, b) = (0xFF, 0xEF, 0) from the callers' pushed arguments (0x4936xx and the like) and sets the press and hover colours to the same value (0x668f5a, 0x668f7b), so the text does not change colour with the pointer
+	public static readonly RgbaByte ListHeader = new( 255, 239, 0, 255 );
 	/// <summary>The pause menu's text lines: cyan, white while focused (video 27:42).</summary>
 	// [BIN:TPW-EXE:0x48b2b9 pause line colour] the line procedure 0x48b2a0 gives a line the colour (0, 175, 190, 255) on message 0x11 and again when it loses the focus (0x48b220)
 	public static readonly RgbaByte MenuItem = new( 0, 175, 190, 255 );

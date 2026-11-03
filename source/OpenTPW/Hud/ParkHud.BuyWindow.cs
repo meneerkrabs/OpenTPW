@@ -454,8 +454,8 @@ public sealed partial class ParkHud
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
-			// The header shows only its text; the original's sort state has no known marker.
-			context.DrawFittedText( context.Fonts.Label, text(), ScreenRect( context.Canvas ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
+			// The header is the !cbut plate with its text; the original's sort state has no known marker.
+			context.DrawListHeader( context.Fonts.Label, text(), ScreenRect( context.Canvas ) );
 		}
 	}
 

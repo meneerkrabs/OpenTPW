@@ -119,6 +119,17 @@ public sealed class UiContext
 			Batch.AddText( font, layout, ix, iy, color, scale, text, clip ? rect : null );
 	}
 
+	/// <summary>A list's column header: the <c>!cbut</c> button model (its b_header plate) with the text over it in the header colour.</summary>
+	// [BIN:TPW-EXE:0x486660 list header] the builder gives the header control the model named 0x74FDF0 "!cbut" (0x659BC9 finds it by its root-name hash, 0x65D070 sets it; ui.wad's !cbut.MD2 has six frames of the 64 x 64 b_header texture, a nine-patch plate) and its text, centred (0x65C428, 0x65C4B9) in UiColors.ListHeader; the model object class 0x476A90 draws the state frame the button's state selects, and all six frames show the same plate
+	public void DrawListHeader( FontAtlas font, string text, UiRect rect )
+	{
+		DrawModel( ListHeaderModel, 0, rect );
+		DrawFittedText( font, text, rect, UiColors.ListHeader, UiAlign.Center );
+	}
+
+	/// <summary>The widget model the list headers wear.</summary>
+	public const string ListHeaderModel = "!cbut";
+
 	/// <summary>
 	/// Draws single-line text that fits <paramref name="rect"/>: the given font, else a smaller size of its family,
 	/// else a smaller whole text scale (glyphs stay pixel-exact), else wrapped in the smallest size (UiTextFit).
@@ -691,7 +702,7 @@ public sealed class UiButton : UiElement
 				context.DrawFittedText( Font( context.Fonts ), Text(), rect, subdued ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align, clip: !Unclipped );
 			return;
 		}
-		// [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed; no UI model of the PC's ui.wad names it — evidence needed: which PC screens draw a model-less text button and with which art, or a capture of the original front-end buttons
+		// [APPROX:UI-008] OpenTPW's own screens' text buttons: purple_button as a mirrored end cap, upper half normal, lower half focused/pressed; no PC screen draws a model-less text button (the original's list headers are the !cbut model, UiContext.DrawListHeader) — evidence needed: a user decision on the art of OpenTPW-only buttons
 		var art = context.ResolveTexture( "purple_button" );
 		var inner = PurpleLabelRect( rect, art != null );
 		if ( art != null )

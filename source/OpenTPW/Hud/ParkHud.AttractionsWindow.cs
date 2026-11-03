@@ -558,7 +558,7 @@ public sealed partial class ParkHud
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			if ( Current )
-				context.DrawFittedText( context.Fonts.Label, owner.strings[header], ScreenRect( context.Canvas ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
+				context.DrawListHeader( context.Fonts.Label, owner.strings[header], ScreenRect( context.Canvas ) );
 		}
 	}
 

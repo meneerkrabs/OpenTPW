@@ -583,8 +583,7 @@ public sealed partial class ParkHud
 			owner.SortStaff( byWage );
 		}
 		public override void Draw( UiContext context, bool focused, bool pressed ) =>
-			context.DrawFittedText( context.Fonts.Label, owner.strings[byWage ? UIStrings.MonthlyWageStaff : UIStrings.NameAttr],
-				ScreenRect( context.Canvas ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
+			context.DrawListHeader( context.Fonts.Label, owner.strings[byWage ? UIStrings.MonthlyWageStaff : UIStrings.NameAttr], ScreenRect( context.Canvas ) );
 	}
 
 	private sealed class StaffScrollBar : UiElement, IUiDragTarget

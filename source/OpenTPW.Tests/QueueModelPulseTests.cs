@@ -52,4 +52,17 @@ public class QueueModelPulseTests
 			pulse.Step( 0 );
 		Assert.AreEqual( phase, pulse.Phase );
 	}
+
+	[TestMethod]
+	public void TheLoaderFlagsNeverLoadAQueueModelsAnimationFiles()
+	{
+		Assert.AreEqual( 0x112423u, QueueModels.LoadFlags( 0 ) );
+		Assert.AreEqual( 0x112423u, QueueModels.LoadFlags( 1 ) );
+		for ( var model = 2; model < QueueModels.Names.Count; model++ )
+			Assert.AreEqual( 0x12423u, QueueModels.LoadFlags( model ), QueueModels.Names[model] );
+		Assert.AreEqual( 0x850u, QueueModels.InnerLoaderFlags( 0x12423 ), "0x20 -> 0x10, 0x2 -> 0x40, 0x10000 -> 0x800" );
+		Assert.AreEqual( 0x2850u, QueueModels.InnerLoaderFlags( 0x112423 ), "and 0x100000 -> 0x2000 for the dead end" );
+		for ( var model = 0; model < QueueModels.Names.Count; model++ )
+			Assert.IsFalse( QueueModels.LoadsAnimation( model ), $"{QueueModels.Names[model]}: the torches' clips (queendm, quebin1m, quebin2m) are never loaded, the fire stays on frame 0" );
+	}
 }

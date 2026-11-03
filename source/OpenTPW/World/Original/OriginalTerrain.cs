@@ -497,7 +497,7 @@ public sealed partial class OriginalTerrain : Entity
 
 	/// <summary>
 	/// Reads the cell map into the path cells and the queue cells. A path cell takes the theme's PathTex shape and turn for its neighbours (<see cref="PathTiles"/>); a queue cell takes no tile (the ground under a queue model
-	/// keeps its terrain texture: the refresh gives it no path tile, 0x5365D0; the original makes the cell a hole of the ground and fills it with a composite floor, PATH-015).
+	/// keeps its terrain texture: the refresh gives it no path tile, 0x5365D0; the original makes the cell a hole of the ground and fills it with a composite floor, the queue models' own pass).
 	/// </summary>
 	private void ScanCells()
 	{
@@ -629,7 +629,9 @@ public sealed partial class OriginalTerrain : Entity
 	/// The queue models of the queue cells (<see cref="QueueModels"/>), baked into static batches: each instance stands on its cell turned by
 	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), each vertex on the ground under it.
 	/// </summary>
-	// [APPROX:PATH-015] the queue models are baked draped onto the landscape as tp.exe does (QueueModelDrape, 0x469A80, static batches), the cell a hole of the ground (0x46DF50) with the skirt of the object loader (opaque slot, normalised coordinates) and, with the procedural terrain textures on, the composite floor of the base art over the cell's ground (0x463060, 0x57ACE0; QueueModelFloor), and drawn without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the model loader's flag 0x100000 (0x4629D0) and the texture-frame animation of the torches
+	// [BIN:TPW-EXE:0x00469A80 queue model drape] the queue models are baked draped onto the landscape as tp.exe does (QueueModelDrape, 0x469A80, static batches), the cell a hole of the ground (0x46DF50) with the skirt of the object loader (opaque slot, normalised coordinates) and, with the procedural terrain textures on, the composite floor of the base art over the cell's ground (0x463060, 0x57ACE0; QueueModelFloor)
+	// [BIN:TPW-EXE:0x00462269 queue torches] the fire0 torches of queend and quebin1/2 are not animated in the original either: the loader's flags (QueueModels.LoadFlags) never reach the animation file loop, so their clips (queendm, quebin1m, quebin2m) are not loaded and the slot stays on frame 0 (QueueModels.LoadsAnimation)
+	// [BIN:TPW-EXE:0x00469840 quedead pulse] the load flag 0x100000 of the two quedead entries registers their instances for the colour pulse (QueueModelPulse, drawn with TextureSlotAddressing.PulseFlag; the batches of the dead ends are separate)
 	private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues )
 	{
 		QueueModelCount = 0;

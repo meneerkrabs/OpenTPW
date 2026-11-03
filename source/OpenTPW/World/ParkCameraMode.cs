@@ -405,6 +405,15 @@ public class ParkCameraMode : CameraMode
 		if ( !EntityConstructionScope.IsStaging ) UpdateAudioListener();
 	}
 
+	/// <summary>Takes the zoom value the camcorder walk ended with (the Home key sets it to 110): the one global the walk shares with the park camera (0x7909EC).</summary>
+	internal void AdoptZoom( float zoom )
+	{
+		if ( !float.IsFinite( zoom ) || zoom == Height )
+			return;
+		Height = Math.Clamp( zoom, MinimumZoom, MaximumZoom );
+		UpdateTransform();
+	}
+
 	internal void UpdateAudioListener()
 	{
 		GameAudio.UpdateListener( GameAudio.ListenerPlace( Position.GetSystemVector3(), Target.GetSystemVector3(), eyeMode: false ),

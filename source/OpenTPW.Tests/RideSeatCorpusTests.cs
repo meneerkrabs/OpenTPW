@@ -106,6 +106,30 @@ public class RideSeatCorpusTests
 		Assert.IsTrue( found >= 2, $"{found} car models with a seat" );
 	}
 
+	/// <summary>
+	/// Every shipped coaster's car model carries the seat record 0x42A560 looks up (UI-094): the ride camera of a coaster never lacks one, so the fallback frame of a coaster without a seat is no original ride's.
+	/// </summary>
+	// [BIN:TPW-EXE:0x42A560 seat lookup] without a seat in the camera car's model (0x44B220(model, 0x1000, 1), then seat 1 again) the call returns before the camera changes; the coaster car models of the four themes (census of the shipped WADs) all have one
+	[TestMethod]
+	public void EveryShippedCoasterCarModelCarriesACameraSeat()
+	{
+		var dataPath = OriginalParkImportTests.OriginalDataPath();
+		var cars = new[]
+		{
+			("jungle", "coaster1.wad", "CrocCar.MD2"), ("jungle", "coaster3.wad", "ape.MD2"), ("jungle", "minecart.wad", "cart.MD2"),
+			("hallow", "c_hade.wad", "MAGGOT.MD2"), ("hallow", "c_scat.wad", "BAT.MD2"), ("hallow", "coasta.wad", "cart.MD2"),
+			("fantasy", "candy_c.wad", "car.MD2"), ("fantasy", "cat_co.wad", "caterbd.MD2"),
+			("space", "megacost.wad", "cart.MD2"), ("space", "moonshot.wad", "car.MD2"), ("space", "shocker.wad", "CAR.MD2")
+		};
+		foreach ( var (theme, wad, name) in cars )
+		{
+			using var archive = new WadArchive( Path.Combine( dataPath, "levels", theme, "rides", wad ) );
+			var member = archive.Root.Children.OfType<ArchiveFile>().Single( x => string.Equals( x.Name, name, StringComparison.OrdinalIgnoreCase ) );
+			var model = new ModelFile( new MemoryStream( member.GetData() ) );
+			Assert.IsTrue( RideSeat.FindNode( model ) >= 0, $"{theme}/{wad}/{name} has a camera seat" );
+		}
+	}
+
 	private static string Row( System.Numerics.Matrix4x4 m, int row ) => row switch
 	{
 		0 => $"({m.M11:0.00},{m.M12:0.00},{m.M13:0.00})",

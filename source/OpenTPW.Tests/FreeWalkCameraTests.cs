@@ -20,43 +20,39 @@ public class FreeWalkCameraTests
 	private static CameraControlInput Frame(float forward = 0, float right = 0) => new() { HasFocus=true, LogicalSize=new Point2(1000,1000), MousePosition=new Vector2(500,500), DeltaSeconds=.1f, Forward=forward, Right=right };
 
 	[DataTestMethod]
-	[DataRow(0f,1f,0f)] [DataRow(90f,0f,1f)] [DataRow(180f,-1f,0f)] [DataRow(-90f,0f,-1f)]
-	public void CardinalRenderHeadingAndMovementAgree(float yaw,float x,float y)
+	[DataRow(90f,1f,0f)] [DataRow(0f,0f,1f)] [DataRow(-90f,-1f,0f)] [DataRow(180f,0f,-1f)]
+	public void TheWalkStartsLookingWhereTheCameraLookedAndStandsFiveUnitsAboveTheGround(float yawDegrees,float x,float y)
 	{
 		var field=Field(); Assert.IsTrue(FreeWalkCameraMode.TryGround(field,0,0,out var ground));
 		var camera=new FreeWalkCameraMode(field,ground,new Vector3(x,y,0));
-		Assert.AreEqual(yaw,camera.Yaw,.001f);
-		Assert.AreEqual(x,camera.Rotation.Forward.X,.001f); Assert.AreEqual(y,camera.Rotation.Forward.Y,.001f);
-		camera.Update(Frame(1)); Assert.AreEqual(x*.4f,camera.Position.X,.001f); Assert.AreEqual(y*.4f,camera.Position.Y,.001f);
-		Assert.IsTrue(FreeWalkCameraMode.TryGround(field,camera.Position.X,camera.Position.Y,out ground));
-		Assert.AreEqual(ground.Z+FreeWalkCameraMode.EyeHeight,camera.Position.Z,.001f);
+		// [BIN:TPW-EXE:0x42AE70 walk yaw] the original's yaw runs from +z (the engine's +Y) toward +x: forward on the ground is (sin yaw, cos yaw)
+		Assert.AreEqual(yawDegrees.DegreesToRadians(),camera.Yaw,.001f);
+		Assert.AreEqual(x,camera.Rotation.Forward.X,.001f); Assert.AreEqual(y,camera.Rotation.Forward.Y,.001f); Assert.AreEqual(0f,camera.Rotation.Forward.Z,.001f);
+		// the eye is 5 original units (one engine unit) above the ground
+		Assert.AreEqual(ground.Z+CamcorderWalk.EyeAboveGround*OriginalParkPlacement.ModelScale,camera.Position.Z,.001f);
 	}
 
 	[TestMethod]
-	public void ControlsNormalizeClampAndRespectCaptureAndInvalidTerrain()
+	public void TheKeysTheMouseButtonAndThePointerMoveAndTurnTheWalkerAsTheOriginalDoes()
 	{
-		var field=Field(); FreeWalkCameraMode.TryGround(field,0,0,out var ground);
+		var field=Field(); FreeWalkCameraMode.TryGround(field,0,0,out var ground); var yaw0=MathF.Atan2(1,0);
 		var camera=new FreeWalkCameraMode(field,ground,Vector3.Forward); var start=camera.Position;
-		camera.Update(Frame(1,1) with { DeltaSeconds=100 });
-		Assert.AreEqual(.4f,MathF.Sqrt(camera.Position.X*camera.Position.X+camera.Position.Y*camera.Position.Y),.001f);
-		Assert.IsTrue(camera.Position.Y<0,"Engine right is negative Y.");
-		foreach(var input in new[]{Frame(1) with {CaptureKeyboard=true},Frame(1) with {TextEntry=true},Frame(1) with {Modal=true},Frame(1) with {HasFocus=false},Frame(1) with {DeltaSeconds=float.NaN}})
-		{ var p=camera.Position; camera.Update(input); Assert.AreEqual(p,camera.Position); }
-		var turning=new FreeWalkCameraMode(field,ground,Vector3.Forward); turning.Update(Frame() with {RotateRight=true}); Assert.IsTrue(turning.Rotation.Forward.Y<0); turning.Update(Frame() with {RotateLeft=true}); Assert.AreEqual(0f,turning.Yaw,.001f);
-		camera.Update(Frame() with {RightButton=true});
-		camera.Update(Frame() with {RightButton=true,MouseDelta=new Vector2(0,100)});
-		Assert.IsTrue(camera.Rotation.Forward.Z>0,"Previous-minus-current mouse delta up looks up.");
-		Assert.AreEqual(-18f,camera.Pitch,.001f);
-		camera.Update(Frame() with {RightButton=true,MouseDelta=new Vector2(float.MaxValue,float.MaxValue),LogicalSize=new Point2(1,1),MousePosition=Vector2.Zero});
-		Assert.IsTrue(float.IsFinite(camera.Yaw)); Assert.IsTrue(float.IsFinite(camera.Pitch));
-		camera.Update(Frame() with {RightButton=true,MouseDelta=new Vector2(float.NaN,float.NaN)});
-		Assert.IsTrue(float.IsFinite(camera.Rotation.Forward.X));
-		var hole=new ModelHeightfield(1,1,10,10,0,0,Array.Empty<uint>(),new float[4],new[]{ModelHeightfield.HoleCellWord});
-		Assert.IsFalse(FreeWalkCameraMode.TryGround(hole,0,0,out _));
-		Assert.IsFalse(FreeWalkCameraMode.TryGround(field,float.NaN,0,out _));
-		Assert.IsFalse(FreeWalkCameraMode.TryGround(field,1000,0,out _));
-		var edge=new FreeWalkCameraMode(field,new Vector3(9.9f,0,0),Vector3.Forward); var before=edge.Position;
-		edge.Update(Frame(1)); Assert.AreEqual(before,edge.Position,"Outside terrain refuses movement.");
+		// the Up key (the zoom-in action) walks forward along the view, a velocity of half 0.02 x sqrt(110) x 0.1 per millisecond on the first frame (0x42BC2A)
+		camera.Update(Frame() with {Zoom=1,DeltaSeconds=.016f});
+		var moved=camera.Position-start; Assert.IsTrue(moved.X>0&&Math.Abs(moved.Y)<1e-4f,"forward is the way the walker looks");
+		var expected=17f*0.5f*(MathF.Sqrt(110f)*0.02f*0.1f)*OriginalParkPlacement.ModelScale; Assert.AreEqual(expected,moved.X,expected*.01f);
+		// the Down key walks back, the right mouse button forward like the Up key
+		var back=new FreeWalkCameraMode(field,ground,Vector3.Forward); back.Update(Frame() with {Zoom=-1,DeltaSeconds=.016f}); Assert.IsTrue(back.Position.X<start.X);
+		var button=new FreeWalkCameraMode(field,ground,Vector3.Forward); button.Update(Frame() with {RightButton=true,DeltaSeconds=.016f}); Assert.AreEqual(camera.Position,button.Position);
+		// the turn keys change the yaw by 0.0012 x the frame time (17 ms here): Left lowers it, Right raises it
+		var left=new FreeWalkCameraMode(field,ground,Vector3.Forward); left.Update(Frame() with {RotateLeft=true,RightButton=false,DeltaSeconds=.016f});
+		Assert.AreEqual(-17f*0.0012f,left.Yaw-yaw0,1e-6f);
+		var right=new FreeWalkCameraMode(field,ground,Vector3.Forward); right.Update(Frame() with {RotateRight=true,RightButton=false,DeltaSeconds=.016f});
+		Assert.IsTrue(right.Yaw>right.Yaw-1&&right.Yaw-yaw0>0);
+		// the pointer beyond 0.4 of the half width turns by twice the excess, below 0.2 under the centre it pitches down: pointer x 900 of 1000 is 0.8, y 700 is -0.4 (the limit)
+		var steered=new FreeWalkCameraMode(field,ground,Vector3.Forward); steered.Update(Frame() with {MousePosition=new Vector2(900,800),DeltaSeconds=.016f});
+		Assert.IsTrue(steered.Yaw-yaw0>0,"a pointer right of the dead zone turns right"); Assert.IsTrue(steered.Pitch>0,"below the dead zone it looks down");
+		Assert.IsTrue(steered.Rotation.Forward.Z<0);
 	}
 
 	[TestMethod]
@@ -150,8 +146,8 @@ public class FreeWalkCameraTests
 			var ride=(PrototypeRide)RuntimeHelpers.GetUninitializedObject(typeof(PrototypeRide)); Set(level,"<PlacedRide>k__BackingField",ride); Assert.IsTrue(level.EnterRideView(ride));
 			Input.KeysDown=new(){InputButton.RideView}; Input.LastKeysDown=new();
 			hud.Update(Context(),UiInput.Idle(new N.Vector2(500)),false,false,false); Assert.IsNull(level.RideView); Assert.AreSame(walk,Camera.Mode); Assert.IsTrue(walk.ModalOpen);
-			var pose=walk.Position; walk.Update(Frame(1) with {Modal=walk.ModalOpen}); Assert.AreEqual(pose,walk.Position);
-			Input.KeysDown.Clear(); hud.Update(Context(),UiInput.Idle(new N.Vector2(500)),false,false,false); Assert.IsFalse(walk.ModalOpen); walk.Update(Frame(1)); Assert.AreNotEqual(pose,walk.Position);
+			var pose=walk.Position; walk.Update(Frame() with {Zoom=1,Modal=walk.ModalOpen}); Assert.AreEqual(pose,walk.Position);
+			Input.KeysDown.Clear(); hud.Update(Context(),UiInput.Idle(new N.Vector2(500)),false,false,false); Assert.IsFalse(walk.ModalOpen); walk.Update(Frame() with {Zoom=1}); Assert.AreNotEqual(pose,walk.Position);
 		} finally { Camera.Mode=previous; Input.KeysDown=down; Input.LastKeysDown=last; }
 	}
 

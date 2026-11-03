@@ -44,10 +44,13 @@ public interface IObjectPickShape
 /// plus the instance's height (ObjectHeightMaps.Height); without a map no instance is named and the cell is not tested (0x452ae0's out-pointer is cleared);
 /// the instance is tested when the ray's lowest height over the pass (the pass point's height less the share of the pass's drop to the cell's near edge
 /// along the larger axis, 0x45cee6-0x45cf8f) is at most that height and its highest at least the model's bounds minimum (0x45cf8f-0x45cfbd)
-/// [APPROX:RIDES-021] a cell whose second-layer piece instance answers (a kart or water ride's track tile) is not tested, as the original tests the piece's
-/// model there, which the port does not hold; an instance with the group flag 0x80000 tests its group's members instead (0x447790, 0x4477d0), which the port
-/// does not model; nor are the model walk's node state bits 0x20 and 0x8000 and the normal refresh 0x473c30 (ObjectPickModel); the hit instance 0x45bf90 hands to 0x469340 (0x45ccd5),
-/// which the hover handler passes to 0x469180 (its normals copied, node flag 0x1000000 and model flag 0x400000 set: a hover highlight, not read further), is not used
+/// [BIN:TPW-EXE:0x447790 group flag] an instance with the group flag 0x80000 tests its group's members instead (0x447790 reads the group's count from +0x30, less one when the group's +4 has 0x20; 0x4477d0 returns the nth member's instance index, +0x70, skipping members whose +8 has 0x2000 when the group's +4 has 0x20); the coaster code sets the flag
+/// (0x434060 at 0x43428b: +4 |= 0x80000 and +0xd4 the creating record, on instances of table 0x7a4610, called from 0x435020, 0x435570, 0x436ac0 and 0x437b60), the creators of a placed ride's instance
+/// do not (0x463060 builds its flags from 0x211f or 0x231f and the argument bits 0x1, 0x2 and 0x80). Not ported: this walk tests the owner instance's own model only
+/// [APPROX:RIDES-021] a cell whose second-layer piece instance answers (a kart or water ride's track tile, 0x53bf30) is not tested, as the original tests the piece's model there, which the port does
+/// not hold; the hit instance 0x45bf90 hands to 0x469340 (0x45ccd5), which the hover handler and the click dispatcher pass to 0x469180 (0x486f6b, 0x4874fe, 0x487712, 0x48778d, 0x4878ce, 0x48798b,
+/// 0x4bd9ef: the nodes' face normals copied to a private buffer, node flag 0x1000000 and model flag 0x400000 set, then the node colour words filled with a pulsing colour by 0x469410 and 0x469840 from
+/// the frame loop 0x54e301), a hover highlight, is not used
 /// </remarks>
 public static class ObjectRayPick
 {

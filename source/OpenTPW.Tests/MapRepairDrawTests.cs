@@ -156,7 +156,9 @@ public class MapRepairDrawTests
 		Assert.AreEqual( 1, w.Context.Batch.Draws.Count( draw => draw.Texture.Surface != null ) );
 		// the sandbox's 32 x 32 cells are 16 pixels: the cell (7, 7) is red in the baked pixels, a cell no object stands on keeps the sandbox base
 		var at = ((7 * 16 + 8) * 512 + 7 * 16 + 8) * 4;
-		CollectionAssert.AreEqual( new byte[] { 248, 0, 0, 255 }, surface.Rgba[at..(at + 4)] );
+		var under = CanvasOf( w ).Base!;
+		byte Blended( int d, int channel ) => (byte)(d + (((channel - d) * 255) >> 8));
+		CollectionAssert.AreEqual( new[] { Blended( under[at], 248 ), Blended( under[at + 1], 0 ), Blended( under[at + 2], 0 ), under[at + 3] }, surface.Rgba[at..(at + 4)], "the fill is blended over the base, not copied" );
 		var empty = (20 * 16 * 512 + 20 * 16) * 4;
 		Assert.AreNotEqual( (byte)248, surface.Rgba[empty] );
 		var version = surface.Version;

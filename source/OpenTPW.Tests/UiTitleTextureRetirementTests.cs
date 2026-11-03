@@ -70,6 +70,25 @@ public class UiTitleTextureRetirementTests
 		}
 	}
 
+	[TestMethod]
+	public void ASteadyFrameStartWithLiveTitleAndSurfaceTexturesAllocatesNothing()
+	{
+		var atlas = new FontAtlas( FontAtlasTests.CreateFont( 10, new FontAtlasTests.SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ) ) );
+		UiTitleBitmap.BeginFrame();
+		var title = UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "aaa" ), 0x80, 1 )!;
+		var renderer = (UiRenderer)RuntimeHelpers.GetUninitializedObject( typeof( UiRenderer ) );
+		InitializeDictionary( renderer, "preparedImages" );
+		InitializeDictionary( renderer, "titleTextures" ).Add( title, ((Veldrid.Texture)null!, (ResourceSet)null!) );
+		InitializeDictionary( renderer, "surfaceTextures" ).Add( new UiPixelSurface( 2, 2 ), ((Veldrid.Texture)null!, (ResourceSet)null!, 0, 0L) );
+		for ( var index = 0; index < 100; index++ )
+			renderer.BeginFrame();
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for ( var index = 0; index < 400; index++ )
+			renderer.BeginFrame();
+		var perFrame = (GC.GetAllocatedBytesForCurrentThread() - before) / 400;
+		Assert.IsTrue( perFrame < 16, $"a steady renderer frame start allocated {perFrame} bytes" );
+	}
+
 	private static IDictionary InitializeDictionary( object target, string name )
 	{
 		var field = target.GetType().GetField( name, BindingFlags.Instance | BindingFlags.NonPublic )!;

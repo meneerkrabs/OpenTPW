@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 internal static class ParkMapBaker
 {
 	/// <summary>The masks of the 32 bit surface: A8R8G8B8, the fourth keeps the destination's alpha (<c>[surface+0xC]</c>, <c>0x5EFDB7</c>).</summary>
-	// [BIN:TPW-EXE:0x5efd21 surface masks] the line routine reads the three channel masks and the fourth mask from the surface description; the 32 bit variant is the one for a 32 bit display mode, which is the only surface OpenTPW makes (the 8, 16 and 24 bit variants 0x5edad0, 0x5ee580 and 0x5ef040 exist for the other display modes)
+	// [BIN:TPW-EXE:0x5efd21 surface masks] the line routine reads the three channel masks and the fourth mask from the surface description; the map surface takes its D3D format from the table 0x8BD558[[0x8BD554]] (0x5F1F81..0x5F1FCC): A4R4G4B4 or A8R8G8B8 by the option bit 0x400000 of [0x7A1A8C] (0x44E1EB..0x44E202; the software renderer forces 8888, 0x58DACA). OpenTPW's textures are always 32 bit (GraphicalOptions.TEXTURE32 is not applied, docs/COMPATIBILITY.md), so the 32 bit variant is the only one used; the 4444 surface of the original's default presets (TEXTURE32 0) and the other variants (0x5edad0, 0x5ee580, 0x5ef040) are not ported
 	private const uint Red = 0x00FF0000, Green = 0x0000FF00, Blue = 0x000000FF, Alpha = 0xFF000000;
 
 	/// <summary>Copies <paramref name="baseRgba"/> (or clears the surface when null), then draws every rectangle.</summary>
@@ -46,23 +46,15 @@ internal static class ParkMapBaker
 			var y0 = Math.Max( 0, (int)MathF.Floor( prim.Y ) );
 			var x1 = Math.Min( width, (int)MathF.Floor( prim.X + prim.Width ) );
 			var y1 = Math.Min( height, (int)MathF.Floor( prim.Y + prim.Height ) );
+			// [BIN:TPW-EXE:0x5f23cd blended fills] the fills (slot +0x20, 0x615cd0) and the outlines (slots +8 and +0xc, 0x615380 and 0x615520) are drawn with the blend flag (flags 8, 0x5f23cd; test 0x18): per channel out = d + (((s & m) - (d & m)) * a >> 8) with the alpha a of the colour record's byte +3, the destination's alpha kept; so even a = 255 gives s - 1 where s > d
 			var a = prim.Color.A;
 			for ( var y = y0; y < y1; y++ )
 				for ( var x = x0; x < x1; x++ )
 				{
 					var at = (y * width + x) * 4;
-					if ( a == 255 )
-					{
-						rgba[at] = prim.Color.R;
-						rgba[at + 1] = prim.Color.G;
-						rgba[at + 2] = prim.Color.B;
-					}
-					else
-					{
-						rgba[at] = (byte)((prim.Color.R * a + rgba[at] * (255 - a) + 127) / 255);
-						rgba[at + 1] = (byte)((prim.Color.G * a + rgba[at + 1] * (255 - a) + 127) / 255);
-						rgba[at + 2] = (byte)((prim.Color.B * a + rgba[at + 2] * (255 - a) + 127) / 255);
-					}
+					rgba[at] = (byte)(rgba[at] + (((prim.Color.R - rgba[at]) * a) >> 8));
+					rgba[at + 1] = (byte)(rgba[at + 1] + (((prim.Color.G - rgba[at + 1]) * a) >> 8));
+					rgba[at + 2] = (byte)(rgba[at + 2] + (((prim.Color.B - rgba[at + 2]) * a) >> 8));
 				}
 		}
 		surface.Touch();

@@ -382,24 +382,42 @@ internal sealed class UiRenderer : IDisposable
 		return entry.Set;
 	}
 
+	// the closure lives in its own method: a lambda capturing a local of the retire passes would allocate its display class at their entry, every frame
+	private static void ScheduleRelease( List<(Veldrid.Texture Texture, ResourceSet Set)> entries ) =>
+		Render.ScheduleDelete( () =>
+		{
+			foreach ( var (texture, set) in entries )
+			{
+				set.Dispose();
+				texture.Dispose();
+			}
+		} );
+
+	// scratch for the retire passes, which run every frame: no list or closure is made unless something is dropped
+	private List<UiTitleBitmap>? droppedTitles;
+	private List<UiPixelSurface>? droppedSurfaces;
+
 	// A surface the map no longer draws gives its GPU copy back after SurfaceIdleFrames frames
 	private void RetireSurfaceTextures()
 	{
 		frameNumber++;
 		if ( surfaceTextures.Count == 0 )
 			return;
-		var dropped = surfaceTextures.Where( pair => frameNumber - pair.Value.Frame > SurfaceIdleFrames ).ToList();
-		foreach ( var pair in dropped )
-			surfaceTextures.Remove( pair.Key );
-		if ( dropped.Count > 0 )
-			Render.ScheduleDelete( () =>
-			{
-				foreach ( var (_, entry) in dropped )
-				{
-					entry.Set.Dispose();
-					entry.Texture.Dispose();
-				}
-			} );
+		droppedSurfaces ??= new();
+		droppedSurfaces.Clear();
+		foreach ( var pair in surfaceTextures )
+			if ( frameNumber - pair.Value.Frame > SurfaceIdleFrames )
+				droppedSurfaces.Add( pair.Key );
+		if ( droppedSurfaces.Count == 0 )
+			return;
+		var entries = new List<(Veldrid.Texture Texture, ResourceSet Set)>( droppedSurfaces.Count );
+		foreach ( var surface in droppedSurfaces )
+		{
+			var entry = surfaceTextures[surface];
+			entries.Add( (entry.Texture, entry.Set) );
+			surfaceTextures.Remove( surface );
+		}
+		ScheduleRelease( entries );
 	}
 
 	// A frame with only cached titles (or no titles) must still release GPU copies the CPU cache has dropped. Disposal stays at the renderer's safe boundary.
@@ -407,18 +425,20 @@ internal sealed class UiRenderer : IDisposable
 	{
 		if ( titleTextures.Count == 0 )
 			return;
-		var dropped = titleTextures.Where( pair => pair.Key.Evicted ).ToList();
-		foreach ( var pair in dropped )
-			titleTextures.Remove( pair.Key );
-		if ( dropped.Count > 0 )
-			Render.ScheduleDelete( () =>
-			{
-				foreach ( var (_, (oldTexture, oldSet)) in dropped )
-				{
-					oldSet.Dispose();
-					oldTexture.Dispose();
-				}
-			} );
+		droppedTitles ??= new();
+		droppedTitles.Clear();
+		foreach ( var pair in titleTextures )
+			if ( pair.Key.Evicted )
+				droppedTitles.Add( pair.Key );
+		if ( droppedTitles.Count == 0 )
+			return;
+		var entries = new List<(Veldrid.Texture Texture, ResourceSet Set)>( droppedTitles.Count );
+		foreach ( var title in droppedTitles )
+		{
+			entries.Add( titleTextures[title] );
+			titleTextures.Remove( title );
+		}
+		ScheduleRelease( entries );
 	}
 
 	private (Veldrid.Texture, ResourceSet) Create( byte[] rgba, int width, int height, Sampler sampler )

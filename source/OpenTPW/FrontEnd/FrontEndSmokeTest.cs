@@ -773,9 +773,15 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var hud = flow.Hud!;
 			Require( hud.MapWindowOpen && hud.Stack.Top?.Name == "map", "map button opens the original map window" );
 			CaptureFrame( "map.png" );
-			// the map surface is the shipped jungle image with the render composed over it (ParkMapBaker): most of its pixels are opaque
+			// the map surface is the shipped jungle image with the render composed over it (ParkMapBaker): the pixels outside the cell grid, the border of the image, are the decoded image's own
 			var surface = Context.Batch.Draws.Select( draw => draw.Texture.Surface ).FirstOrDefault( found => found != null );
-			Require( surface != null && Enumerable.Range( 0, surface.Width * surface.Height ).Count( pixel => surface.Rgba[pixel * 4 + 3] == 255 ) > surface.Width * surface.Height / 2, "the map uses the shipped jungle image" );
+			var (imageWidth, imageHeight, image) = UiImages.Load( "/levels/jungle/2dmap.tga" );
+			Require( surface != null && surface.Width == imageWidth && surface.Height == imageHeight, "the map surface has the size of the shipped jungle image" );
+			foreach ( var (x, y) in new[] { (2, 2), (imageWidth - 3, 2), (2, imageHeight - 3), (imageWidth - 3, imageHeight - 3) } )
+			{
+				var at = (y * imageWidth + x) * 4;
+				Require( surface!.Rgba[at] == image[at] && surface.Rgba[at + 1] == image[at + 1] && surface.Rgba[at + 2] == image[at + 2] && surface.Rgba[at + 3] == image[at + 3], $"the map surface keeps the shipped jungle image at ({x}, {y})" );
+			}
 			Click( hud.Stack.Top!, "close" );
 		} );
 		Wait( "map window closes", 3 );

@@ -3,8 +3,10 @@ using Veldrid;
 
 namespace OpenTPW.Hud;
 
-/// <summary>One rectangle of the map's drawing surface, in the pixels of the 512 pixel map image.</summary>
-/// <summary>One rectangle of the surface; a <paramref name="Line"/> pixel is one the track layer's line routine wrote, its colour's alpha being the coverage byte it blended with.</summary>
+/// <summary>
+/// One rectangle of the map's drawing surface, in the pixels of the 512 pixel map image, blended with its colour's alpha; a <paramref name="Line"/> pixel is one the track layer's line routine wrote,
+/// its colour's alpha being the coverage byte it blended with.
+/// </summary>
 internal readonly record struct MapPrim( float X, float Y, float Width, float Height, RgbaByte Color, bool Line = false );
 
 /// <summary>
@@ -113,7 +115,7 @@ internal sealed class ParkMapCanvas
 	}
 
 	/// <summary>
-	/// The items' part of a render: every item is coloured again and a staff member's area (kind 2 items whose filter holds) is drawn over the surface. The area is the rectangle of the member's two
+	/// The items' part of a render: every item is coloured again and a staff member's area (kind 2 items whose filter holds) is drawn over the surface. The area is the frame of the rectangle of the member's two
 	/// corner cells; one that starts in column or row 0, or ends in column or row 127 (the whole-map default), is not drawn.
 	/// </summary>
 	// [BIN:TPW-EXE:0x5f2dbc item loop] each item is passed to 0x5f44d0, then a kind 2 item whose filter holds (mode 1 the layer word & value, 2 the staff role == value, 3 the value mode == value) draws the rectangle of the cell words +0x20a and +0x20c of its thing: x from 15 + column * cell width to 15 + (column + 1) * cell width of the far corner, the same for y from 42, in 0xf86bb4 for the item under the pointer, else 0xf86b90; the word's column and row are tested (0x5f2e5e..0x5f2e94): the first corner's must be above 0, the second's below 0x7f
@@ -128,9 +130,28 @@ internal sealed class ParkMapCanvas
 			var (x0, y0, x1, y1) = member.PatrolArea;
 			if ( x0 <= 0 || y0 <= 0 || x1 >= 0x7F || y1 >= 0x7F )
 				continue;
-			Prims.Add( new MapPrim( surface.X( x0 ), surface.Y( y0 ), (x1 + 1 - x0) * surface.CellWidth, (y1 + 1 - y0) * surface.CellHeight,
-				ReferenceEquals( Hovered, dot ) ? ParkMapPalette.ZoneHovered : ParkMapPalette.Zone ) );
+			var left = (int)surface.X( x0 );
+			var top = (int)surface.Y( y0 );
+			AddFrame( left, top, left + (int)((x1 + 1 - x0) * surface.CellWidth), top + (int)((y1 + 1 - y0) * surface.CellHeight), ReferenceEquals( Hovered, dot ) ? ParkMapPalette.ZoneHovered : ParkMapPalette.Zone );
 		}
+	}
+
+	/// <summary>
+	/// A closed one pixel frame of the rectangle [<paramref name="left"/>, <paramref name="right"/>) x [<paramref name="top"/>, <paramref name="bottom"/>), each pixel drawn once as the frame routine does: the top row
+	/// from the left to the second last column, the right column from the top to the second last row, the bottom row from the second column to the last, the left column from the second row to the last.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6025c0 frame] the area is drawn with the drawer flags 0xC (0x5f2da4), which route through slot +0x1c (0x5f2f06) to 0x6025c0: x L..R-2 at row T, column R-1 for rows T..B-2, x L+1..R-1 at row B-1 and column L for rows T+1..B-1, each pixel blended at the colour's alpha (200)
+	internal void AddFrame( int left, int top, int right, int bottom, RgbaByte color )
+	{
+		if ( right - left < 2 || bottom - top < 2 )
+		{
+			Prims.Add( new MapPrim( left, top, Math.Max( 0, right - left ), Math.Max( 0, bottom - top ), color ) );
+			return;
+		}
+		Prims.Add( new MapPrim( left, top, right - 1 - left, 1, color ) );
+		Prims.Add( new MapPrim( right - 1, top, 1, bottom - 1 - top, color ) );
+		Prims.Add( new MapPrim( left + 1, bottom - 1, right - 1 - left, 1, color ) );
+		Prims.Add( new MapPrim( left, top + 1, 1, bottom - 1 - top, color ) );
 	}
 
 	/// <summary>

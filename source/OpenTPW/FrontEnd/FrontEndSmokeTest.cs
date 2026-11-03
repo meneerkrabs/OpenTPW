@@ -773,7 +773,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var hud = flow.Hud!;
 			Require( hud.MapWindowOpen && hud.Stack.Top?.Name == "map", "map button opens the original map window" );
 			CaptureFrame( "map.png" );
-			Require( Context.Batch.Draws.Any( draw => draw.Texture.ImagePath == "/levels/jungle/2dmap.tga" ), "the map uses the shipped jungle image" );
+			// the map surface is the shipped jungle image with the render composed over it (ParkMapBaker): most of its pixels are opaque
+			var surface = Context.Batch.Draws.Select( draw => draw.Texture.Surface ).FirstOrDefault( found => found != null );
+			Require( surface != null && Enumerable.Range( 0, surface.Width * surface.Height ).Count( pixel => surface.Rgba[pixel * 4 + 3] == 255 ) > surface.Width * surface.Height / 2, "the map uses the shipped jungle image" );
 			Click( hud.Stack.Top!, "close" );
 		} );
 		Wait( "map window closes", 3 );

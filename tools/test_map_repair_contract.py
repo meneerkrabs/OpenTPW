@@ -94,9 +94,12 @@ class MapRepairContract(unittest.TestCase):
         positions = [cells.index(token) for token in expected]
         self.assertEqual(positions, sorted(positions))
         draw = body(self.source, "public override void Draw(")
-        self.assertIn("Math.Max( image.X, rect.X )", draw)
-        self.assertIn("Math.Min( image.Right, rect.Right )", draw)
-        self.assertIn("canvas.Prims", draw)
+        self.assertIn("canvas.Pixels.Texture", draw)
+        self.assertNotIn("canvas.Prims", draw, "the draw submits the baked surface, not the rectangles")
+        render = body(self.source, "internal void RenderMap(")
+        self.assertLess(render.index("canvas.RenderItems("), render.index("canvas.Bake()"))
+        baker = read("source/OpenTPW/Hud/ParkMapBaker.cs")
+        self.assertIn("ParkMapLine.Blend(", baker)
         self.assertIn("[APPROX:UI-086]", self.source)
         register = read("source/OpenTPW/UI/Original/UiApproximations.cs")
         self.assertIn('("UI-086",', register)
@@ -105,7 +108,7 @@ class MapRepairContract(unittest.TestCase):
     def test_actual_draw_regressions_cover_identity_geometry_and_immutability(self):
         for required in ('"ParkMapView"', ".View.Draw( w.Context", '"staleStatus"', '"wrongInfoId"', '"wrongRecordId"',
                          '"missingRecord"', '"readOnly"', '"nonfinite"', '"overflow"', ".Delete()", "ToggleMapCategory(",
-                         "new MapViewState( 2", "vertex.TexCoords", "ParkSaveFile.Capture(", "WorldStateHash.Compute(",
+                         "new MapViewState( 2", "CanvasOf( w ).Pixels", "ParkSaveFile.Capture(", "WorldStateHash.Compute(",
                          "w.Economy.World.State", "Coasters.Random.State", "Script.Variables", "ToggleMapHappiness()",
                          "ToggleMapExcitement()", "ToggleMapSatisfaction()", "ToggleMapTracks()", "ToggleMapStaff(",
                          "ToggleMapVisitors()", "UpdateMapHover(", "StaffWorldSimulation("):

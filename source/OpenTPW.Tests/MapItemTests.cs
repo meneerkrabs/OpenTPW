@@ -146,4 +146,34 @@ public class MapItemTests
 		hud.UpdateMapHover( geometry, new NVector2( 65, 92 ) );
 		Assert.AreSame( canvas.Dots[0], canvas.Hovered, "an equal distance does not replace the first item" );
 	}
+
+	[TestMethod]
+	public void TheTrackPixelsGoThroughTheOriginalsBlendCoverageZeroIncluded()
+	{
+		var surface = new UiPixelSurface( 4, 1 );
+		var baseRgba = new byte[] { 200, 150, 100, 255, 200, 150, 100, 255, 10, 20, 30, 200, 0, 0, 0, 0 };
+		var line = new RgbaByte( 248, 0, 0, 255 );
+		var prims = new[]
+		{
+			new MapPrim( 0, 0, 1, 1, new RgbaByte( line.R, line.G, line.B, 128 ), true ),
+			new MapPrim( 1, 0, 1, 1, new RgbaByte( line.R, line.G, line.B, 0 ), true ),
+			new MapPrim( 2, 0, 1, 1, new RgbaByte( line.R, line.G, line.B, 255 ), true ),
+			new MapPrim( 7, 0, 1, 1, new RgbaByte( 1, 2, 3, 255 ), true )
+		};
+		ParkMapBaker.Bake( surface, baseRgba, prims );
+		RgbaByte Expected( RgbaByte from, int coverage )
+		{
+			var result = ParkMapLine.Blend( ((uint)line.R << 16) | ((uint)line.G << 8) | line.B, ((uint)from.A << 24) | ((uint)from.R << 16) | ((uint)from.G << 8) | from.B, coverage, 0xFF0000, 0xFF00, 0xFF, 0xFF000000 );
+			return new RgbaByte( (byte)(result >> 16), (byte)(result >> 8), (byte)result, (byte)(result >> 24) );
+		}
+		RgbaByte At( int x ) => new( surface.Rgba[x * 4], surface.Rgba[x * 4 + 1], surface.Rgba[x * 4 + 2], surface.Rgba[x * 4 + 3] );
+		Assert.AreEqual( Expected( new RgbaByte( 200, 150, 100, 255 ), 128 ), At( 0 ) );
+		Assert.AreEqual( Expected( new RgbaByte( 200, 150, 100, 255 ), 0 ), At( 1 ) );
+		Assert.AreEqual( new RgbaByte( 199, 149, 100, 255 ), At( 1 ), "coverage 0 is not the identity: the two upper channels lose 1" );
+		Assert.AreEqual( new RgbaByte( 247, 0, 0, 200 ), At( 2 ), "even coverage 255 loses 1 in the upper channels (the unshifted blend), and the destination's alpha stays" );
+		Assert.AreEqual( new RgbaByte( 0, 0, 0, 0 ), At( 3 ), "a pixel outside the surface is dropped" );
+		var version = surface.Version;
+		ParkMapBaker.Bake( surface, baseRgba, prims );
+		Assert.AreEqual( version + 1, surface.Version );
+	}
 }

@@ -161,17 +161,57 @@ public class MapRepairDrawTests
 	public void DrawingDoesNotMutateEconomySaveRandomnessBindingsOrObjects()
 	{
 		var w = Create( original: true );
+		var guests = w.Level.Guests!;
+		guests.Grid.SetPath( 2, 2, true ); guests.Grid.Cells.SetType( 3, 2, ParkCellType.Queue ); guests.Grid.Cells.SetFlags( 4, 2, ParkCellFlags.Unowned );
+		guests.Register( w.First.Visitors );
+		var guest = guests.SpawnInPark( 2, 2 ); guest.State = GuestState.WalkingAround; guest.Happiness = 80; guest.Thought = GuestThought.Pleased;
+		var coaster = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), w.Level.Objects.ScriptWorld.Coasters );
+		new CoasterBuilder( coaster, new CoasterSite( 32, 32 ) ).SetStation( (3, 2), (2, 2) );
+		EconomyTestData.HireBest( w.Economy, StaffType.Mechanic );
+		Set( w.Level, "<StaffWorld>k__BackingField", new StaffWorldSimulation( guests.Grid, () => w.Economy.Staff.Members, _ => null, (2, 2) ) );
 		var save = JsonSerializer.Serialize( ParkSaveFile.Capture( w.Economy ) );
 		var hash = WorldStateHash.Compute( new WorldStateSources { Economy = w.Economy } );
 		var random = (w.Economy.World.State, w.Level.Guests!.RandomState, w.Level.Objects.ScriptWorld.Coasters.Random.State);
 		var bindings = Bindings( w ).ToArray(); var objects = w.Level.Objects.Objects.ToArray();
 		var cells = w.First.Cells.ToArray(); var placement = w.First.Placement; var variables = w.First.Script!.Variables.ToArray();
-		for ( var frame = 0; frame < 20; frame++ ) Draw( w );
+		// every layer, value mode and staff role, with a hover over the map, before the state is compared
+		w.Hud.ToggleMapTracks(); w.Hud.ToggleMapVisitors(); w.Hud.ToggleMapHappiness(); w.Hud.ToggleMapExcitement(); w.Hud.ToggleMapSatisfaction();
+		foreach ( var category in Enum.GetValues<BuildCategory>() ) w.Hud.ToggleMapCategory( category );
+		foreach ( var type in Enum.GetValues<StaffType>() ) w.Hud.ToggleMapStaff( type );
+		var geometry = (new UiRect( 0, 0, 512, 512 ), NVector2.Zero, 512f);
+		for ( var frame = 0; frame < 20; frame++ )
+		{
+			Draw( w );
+			w.Hud.UpdateMapHover( geometry, new NVector2( 15 + frame * 20, 42 + frame * 15 ) );
+		}
 		Assert.AreEqual( save, JsonSerializer.Serialize( ParkSaveFile.Capture( w.Economy ) ) );
 		Assert.AreEqual( hash, WorldStateHash.Compute( new WorldStateSources { Economy = w.Economy } ) );
 		Assert.AreEqual( random, (w.Economy.World.State, w.Level.Guests.RandomState, w.Level.Objects.ScriptWorld.Coasters.Random.State) );
 		CollectionAssert.AreEqual( bindings, Bindings( w ).ToArray() ); CollectionAssert.AreEqual( objects, w.Level.Objects.Objects.ToArray() );
 		CollectionAssert.AreEqual( cells, w.First.Cells.ToArray() ); CollectionAssert.AreEqual( variables, w.First.Script.Variables.ToArray() );
 		Assert.AreEqual( placement, w.First.Placement ); Assert.AreEqual( 0d, State( w, w.First ).Repair ); Assert.AreEqual( 100d, State( w, w.Second ).Repair );
+	}
+
+	private static long Allocation( Action action, int repetitions )
+	{
+		for ( var index = 0; index < 10; index++ ) action();
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for ( var index = 0; index < repetitions; index++ ) action();
+		return (GC.GetAllocatedBytesForCurrentThread() - before) / repetitions;
+	}
+
+	[TestMethod]
+	public void ADrawnMapFrameAndAHoverUpdateAllocateNothingSteady()
+	{
+		var w = Create( original: true );
+		w.Hud.ToggleMapVisitors(); w.Hud.ToggleMapTracks();
+		w.Level.Guests!.Grid.SetPath( 2, 2, true ); w.Level.Guests.Register( w.First.Visitors );
+		var guest = w.Level.Guests.SpawnInPark( 2, 2 ); guest.State = GuestState.WalkingAround; guest.Happiness = 80;
+		Draw( w );
+		var geometry = (new UiRect( 0, 0, 512, 512 ), NVector2.Zero, 512f);
+		var frame = Allocation( () => { w.Context.Batch.Clear(); w.View.Draw( w.Context, false, false ); }, 200 );
+		var hover = Allocation( () => w.Hud.UpdateMapHover( geometry, new NVector2( 95, 66 ) ), 200 );
+		Assert.IsTrue( frame < 512, $"a steady map frame allocated {frame} bytes" );
+		Assert.IsTrue( hover < 64, $"a steady hover update allocated {hover} bytes" );
 	}
 }

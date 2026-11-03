@@ -64,7 +64,7 @@ internal static class ParkMapDots
 	};
 
 	/// <summary>
-	/// The side of an item's sprite in surface pixels. The original draws the sprite square, its height the image width × the item scale × 0.0078125 of the display height; at the default
+	/// The side of an item's sprite in surface pixels. The original draws the sprite square, its height the image width × the item scale × 0.00078125 of the display height; at the default
 	/// display mode (480 high) that is 0.375 × the image width × the scale surface pixels, whatever the zoom.
 	/// </summary>
 	// [BIN:TPW-EXE:0x5f4282 dot size] the record's +0x2c is the image width word × (item scale × zoom × 0.5) × 0.0625; the quad is that × 0.05 × the display height / 2 high and, with the aspect word, as wide (0x589d9c..0x5890e0, the record's flag 0x40000 selects this path)

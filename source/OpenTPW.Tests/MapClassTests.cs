@@ -169,6 +169,18 @@ public class MapClassTests
 	}
 
 	[TestMethod]
+	public void OnlyTheExcitementIsCutToItsLowByteTheSatisfactionKeepsItsSign()
+	{
+		var shop = Thing( 1, 1 );
+		shop.Excitement = 256 + 100;
+		shop.Satisfaction = -10;
+		Assert.AreEqual( ParkMapPalette.RepairRamp( 100 ), ParkMapCanvas.FillOf( 2, shop, layers: 0, staff: 0, valueMode: 2 ), "356 & 255 = 100" );
+		Assert.AreEqual( ParkMapPalette.RepairRamp( 0 ), ParkMapCanvas.FillOf( 2, shop, layers: 0, staff: 0, valueMode: 3 ), "-10 clamps to 0: red, not 246 clamped to 100" );
+		shop.Satisfaction = 356;
+		Assert.AreEqual( ParkMapPalette.RepairRamp( 100 ), ParkMapCanvas.FillOf( 2, shop, layers: 0, staff: 0, valueMode: 3 ), "356 is not cut to 100 either: it clamps" );
+	}
+
+	[TestMethod]
 	public void ValueModesColourClassesOneTwoThreeAndEightWhateverTheLayersSayAndTheFeaturesStayOnTheirLayer()
 	{
 		var shop = Thing( 1, 1 );

@@ -169,8 +169,9 @@ internal sealed class ParkMapCanvas
 		// [BIN:TPW-EXE:0x5f24eb value mode fill] mode 2 fills the classes 1, 2, 3 and 8 with the ramp of the excitement 0x4e0860(0) & 0xff, mode 3 with the ramp of the satisfaction 0x4e1e30, through 0x5f09a0 and the records 0xf86bd8, 0xf86bfc, 0xf86c20; the layer test is skipped
 		if ( ParkMapClasses.TakesValueMode( cls ) && valueMode is 2 or 3 )
 		{
-			var value = valueMode == 2 ? thing?.Excitement : thing?.Satisfaction;
-			return value is { } byteValue ? ParkMapPalette.RepairRamp( byteValue & 255 ) : ParkMapPalette.UnavailableObject;
+			// [BIN:TPW-EXE:0x5f24f0 value mode mask] only the excitement is cut to its low byte; the satisfaction of 0x4e1e30 goes to the ramp as it is and the ramp's clamp turns a negative one red
+			var value = valueMode == 2 ? thing?.Excitement & 255 : thing?.Satisfaction;
+			return value is { } rampValue ? ParkMapPalette.RepairRamp( rampValue ) : ParkMapPalette.UnavailableObject;
 		}
 		if ( !ParkMapClasses.Shown( cls, layers, staff ) )
 			return null;

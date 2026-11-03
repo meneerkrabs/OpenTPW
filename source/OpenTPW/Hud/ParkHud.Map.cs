@@ -398,12 +398,19 @@ public sealed partial class ParkHud
 						dots.Add( new MapDot { X = x + 0.5f, Y = y + 0.5f, Image = 3, Kind = 3, Mode = 2, Value = 1,
 							Scale = type == LitterType.Stinkbomb ? Radius( RegionEffect.Stinkbomb ) : type == LitterType.Vomit ? Radius( RegionEffect.Vomit ) : 0.5f } );
 		}
-		foreach ( var item in level.Objects.Objects )
-			if ( !item.IsDeleted && item.Entry.Settings.GetBool( "UsageInfo.ProvidesSecurity" ) )
-				dots.Add( new MapDot { X = item.Placement.X + 0.5f, Y = item.Placement.Y + 0.5f, Image = 5, Kind = 5, Mode = 2, Value = 3, Scale = Radius( RegionEffect.Camera ) } );
+		// [BIN:TPW-EXE:0x5f4105 camera items] the object chain is walked newest first (from 0x1DA746) and a security object's item stands at its thing cell + 0.5 (0x4E2650); the order decides hover ties
+		var objects = level.Objects.Objects;
+		for ( var index = objects.Count - 1; index >= 0; index-- )
+			if ( objects[index] is { IsDeleted: false } item && item.Entry.Settings.GetBool( "UsageInfo.ProvidesSecurity" ) )
+			{
+				var (cellX, cellY) = item.ThingCell;
+				dots.Add( new MapDot { X = cellX + 0.5f, Y = cellY + 0.5f, Image = 5, Kind = 5, Mode = 2, Value = 3, Scale = Radius( RegionEffect.Camera ) } );
+			}
 	}
 
 	private LevelMapCells? mapThings;
+	/// <summary>The theme's map image path, built once per opening so a drawn frame allocates no string.</summary>
+	private string? mapImagePath;
 
 	private ParkMapThing MapThingOf( OriginalObject item, int number )
 	{
@@ -518,13 +525,14 @@ public sealed partial class ParkHud
 			var park = owner.level.OriginalPark;
 			if ( owner.mapCanvas == null )
 			{
+				owner.mapImagePath = null;
 				owner.mapCanvas = owner.BuildMapCanvas();
 				owner.RenderMap();
 			}
 			var canvas = owner.mapCanvas;
 			var surface = canvas.Surface;
 			var (uv0, uv1) = owner.mapView.Source( surface.Width, surface.Height, park != null );
-			var imagePath = park == null ? null : $"/levels/{park.LevelName}/2dmap.tga";
+			var imagePath = park == null ? null : owner.mapImagePath ??= $"/levels/{park.LevelName}/2dmap.tga";
 			if ( imagePath != null )
 				context.Batch.AddQuad( UiTexture.Image( imagePath ), image, uv0, uv1, RgbaByte.White );
 			else

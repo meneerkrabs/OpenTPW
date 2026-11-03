@@ -34,18 +34,16 @@ class MapRepairContract(unittest.TestCase):
                          "ReferenceEquals( economy, level.Park?.Economy )", "level.GetEconomyInstance( item )",
                          "economy.TryGetObject( instance, out var state )", "state.Id == instance",
                          "state.InfoId == item.Entry.InfoId"):
-            self.assertIn(required, self.lookup_text(lookup))
-        for mutation in (".Repair =", ".Sell(", ".RegisterExisting(", ".Next(", ".Save("):
-            self.assertNotIn(mutation, lookup)
+            self.assertIn(required, lookup)
+        # the lookup, the repair fill and the per-render refresh only read the economy: none of them writes a repair, sells, registers, draws a random number or saves
+        for name in ("private ParkObjectState? MapObjectState(", "private RgbaByte MapRepairFill(", "private void RefreshMapThing("):
+            for mutation in ("state.Repair =", "State.Repair =", ".Sell(", ".RegisterExisting(", ".Next(", ".Save(", ".Delete(", "Random"):
+                self.assertNotIn(mutation, body(self.source, name), f"{name} {mutation}")
         repair = body(self.source, "private RgbaByte MapRepairFill(")
         for required in ("MapObjectState( item )", "RepairFill( state.Repair )", "ParkMapPalette.UnavailableObject"):
             self.assertIn(required, repair)
         self.assertNotIn("LiveState(", self.source)
         self.assertIn("UnavailableObject = new( 207, 67, 198, 235 )", self.source)
-
-    @staticmethod
-    def lookup_text(text):
-        return text
 
     def test_conversion_uses_stored_float_then_safe_widened_bounds_then_mask(self):
         conversion = body(self.source, "public static RgbaByte? RepairFill(")
@@ -108,7 +106,9 @@ class MapRepairContract(unittest.TestCase):
         for required in ('"ParkMapView"', ".View.Draw( w.Context", '"staleStatus"', '"wrongInfoId"', '"wrongRecordId"',
                          '"missingRecord"', '"readOnly"', '"nonfinite"', '"overflow"', ".Delete()", "ToggleMapCategory(",
                          "new MapViewState( 2", "vertex.TexCoords", "ParkSaveFile.Capture(", "WorldStateHash.Compute(",
-                         "w.Economy.World.State", "Coasters.Random.State", "Script.Variables"):
+                         "w.Economy.World.State", "Coasters.Random.State", "Script.Variables", "ToggleMapHappiness()",
+                         "ToggleMapExcitement()", "ToggleMapSatisfaction()", "ToggleMapTracks()", "ToggleMapStaff(",
+                         "ToggleMapVisitors()", "UpdateMapHover(", "StaffWorldSimulation("):
             self.assertIn(required, self.draw_tests)
 
 

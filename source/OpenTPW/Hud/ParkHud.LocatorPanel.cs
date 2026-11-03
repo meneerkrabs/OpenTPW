@@ -359,6 +359,9 @@ public sealed partial class ParkHud
 		? LocatorOrder.NextVisitor( level.Guests?.Guests ?? Array.Empty<Guest>(), level.Guests?.Things, current )
 		: (Status.EconomySource as ParkEconomy)?.Staff.NextInRole( LocatorModel.StaffTypeOf( role ), current ) ?? 0;
 
+	/// <summary>Whether the located visitor is still a live guest (the guest roster holds it and it has not left).</summary>
+	private bool LocatedVisitorLives() => level.Guests?.Guests.Any( guest => guest.Id == Locator.ActorId && guest.State != GuestState.Gone ) == true;
+
 	private bool TryLocatorActorPosition( out Vector3 position )
 	{
 		position = default;
@@ -391,6 +394,10 @@ public sealed partial class ParkHud
 	private void UpdateLocatorPanels()
 	{
 		if ( LocatorPanelOpen && (InfoArmOpen || OpenedMessage != null || CameraPanelOpen || IsRiding) )
+			CloseLocator();
+		// [BIN:TPW-EXE:0x481901 visitor deleted] the thing event listener (0x50ca50, message 0x1b) tells the visitors list (0x493c10) and the locator (0x4b3620) about a deleted guest: when the located actor
+		// (0x7cc308) is that guest the locator asks the arm to put its panel away (0x4a25f0), which sends the carried panel its close message; only guests have this path, a located staff member that leaves does not close it
+		if ( Locator.ActorId != 0 && Locator.Role == LocatorModel.VisitorRole && !LocatedVisitorLives() )
 			CloseLocator();
 		// Staff identity survives temporarily unavailable coordinates. Keep the existing visitor position-loss policy.
 		if ( Locator.ActorId != 0 && (Locator.Role == LocatorModel.VisitorRole

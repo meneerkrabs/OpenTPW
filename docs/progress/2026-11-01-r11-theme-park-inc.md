@@ -12,18 +12,18 @@
 
 - **Theme Park Inc attraction history rings (SAVE-940 narrowed).** The info word `+0x21C` is `UsageInfo.AppearanceEffect` and the guest thresholds `0xA01B1C..0xA01B44` are `PeepInfo` keys (the key tables at `0x9A4520` and `0x996774`: `HappyDiffForVGood/Good/Poor/VPoor`, `Perfect/Good/OKExcitementMatch`, `PerfectRide/GoodRide/OKRide`, `ComplainAboutThisQuality`), so every ring's condition is named by real keys now; the declined ring counts four unlike conditions and the need-check ring a literal 30, so the ring names stay descriptions. Ring values still need a played save. The end-of-visit step also records the visit's happiness change as a perception statistic (categories 11 to 14, 16 to 18 and 20), which OpenTPW's Theme Park Inc run does not record.
 
-## RIDES-031: typed footprints in a Theme Park Inc world
+### RIDES-031: typed footprints in a Theme Park Inc world
 
 - `Level.TypesFootprints` no longer excludes Theme Park Inc; objects placed in a session stamp typed cells through `ParkCellMap.WriteFootprint`, the port of the twin commit (`[BIN:TPI-EXE:0x668552]`, tables `0x6691D8`/`0x6691FC`).
 - Still untyped (narrowed RIDES-031): a layout restored from a Theme Park Inc checkpoint, the coaster marker case `0x6688F0` (no TPI coaster in the slice), the commit's preview flag modes and effects, and TPI's own validator twin of `0x535670`.
 
-## RIDES-040, RIDES-045, QUEUE-010
+### RIDES-040, RIDES-045, QUEUE-010
 
 - RIDES-040: re-checked, nothing new; the only decoder of a thing's position bytes remains the camera-target setters `0x503490`/`0x5A1100`, so the text stays as narrowed in round 10.
 - RIDES-045: the no-CD `Game.exe` has no variable names, only the numbered slots (`VAR_%.2ld`); the writers have to be found by slot index through each script's name table. Narrowed in the text, not ported.
 - QUEUE-010: the untyped relocation now applies only to a layout restored from a Theme Park Inc checkpoint (and the harness EXT), since placed Theme Park Inc objects carry cells (RIDES-031).
 
-## Review round 1
+### Review round 1
 
 - Merged origin/main (X62 is now section 7.37 of docs/reverse/ORACLE.md).
 - The integer turn age and the display clock phase are hashed state while umbrellas, the rain mood or the winter cold read them (`ReadsDisplayAge`); pins moved only for those parks (docs/DETERMINISM.md).

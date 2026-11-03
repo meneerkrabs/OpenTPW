@@ -19,7 +19,7 @@ public sealed record ThemeParkIncWeatherSettings( IReadOnlyList<int> Seasons, IR
 				rows.Add( standard.GetInt( $"Seasons[{season}].PercentageChanceFor{kind}", 0, optional: true ) );
 		int Quality( string key ) => standard.GetInt( $"WeatherEffects.QualityFor{key}", 0, optional: true );
 		// [BIN:TPI-EXE:0x64280F, 0x64289F, 0x642857 row reads] the roll reads the table by row, eax = row * 16 (four words of 4 bytes per row); the schema record Seasons has count 4
-		// [APPROX:ARRIVAL-008] the three words after the four rows are the count and two online-only keys that the offline data does not set; the value 4 for the count is assumed here, the keys read 0 when a file does not set them
+		// [BIN:TPI-EXE:0x419FB4 loader array count] the settings loader raises the count word of an array section to the highest row index read plus one (the compare at 0x419FB7, the store at 0x419FBB), so the Seasons count word is 4 for the files' rows 0 to 3 (it sits right after the rows: the roll's row 4 reads it and the years word at 0xA024EC follows two keys later); the keys it does not read (Weather.DaysOfWarning and DaysBetweenChanges, in Online_Standard.sam only) keep the zero of the settings block
 		return new ThemeParkIncWeatherSettings( rows, new[] { 4, standard.GetInt( "Weather.DaysOfWarning", 0, optional: true ), standard.GetInt( "Weather.DaysBetweenChanges", 0, optional: true ) },
 			standard.GetInt( "Weather.YearsBeforeFirstFreakWeather", 0, optional: true ),
 			(Quality( "NormalLow" ), Quality( "NormalHigh" )), (Quality( "HeatWaveLow" ), Quality( "HeatWaveHigh" )), (Quality( "SnowLow" ), Quality( "SnowHigh" )),
@@ -75,7 +75,7 @@ public sealed class ThemeParkIncWeatherSpells
 	/// <summary>The roll (<c>0x642770</c>).</summary>
 	// [BIN:TPI-EXE:0x6427A8 spell roll] the month m (1 to 12) stored plus 1 is the spell's start; q = m mod 12 + 1, the row is q / 3 and the position q mod 3 (0 is 3); a third month (position 3) of a year from YearsBeforeFirstFreakWeather on draws r mod 100 against the row's chances in turn (heatwave, rain, storm, snow, each taken off r when missed), a spell of 3 months; any other roll, or a miss, is normal weather for the months left in the quarter; the quality is a draw below (high - low) plus low, from the kind's range (heatwave 0xA0250C/10, rain 0xA02520/1C, storm = lightning 0xA02528/24, snow 0xA02518/14, normal 0xA02504/08)
 	// [BIN:TPI-EXE:0x6427F1 row 4] November (q = 12) reads the row 4: the words after the table (the count, DaysOfWarning, DaysBetweenChanges) and the years setting as its chances
-	// [APPROX:ARRIVAL-008] the three words after the Seasons table are the count and two online-only keys that the offline data does not set: their offline values are not read (an absent key in the loader), so row 4 takes the count 4 and 0, 0
+	// [BIN:TPI-EXE:0x419FB4 loader array count] row 4 reads the count word (4, written by the loader), the two online-only keys (0 offline) and the years setting
 	private WeatherSpell Roll( int month, int years, Func<int, int> draw )
 	{
 		var q = month % 12 + 1;

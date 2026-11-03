@@ -614,6 +614,20 @@ public class ThemeParkIncEconomyTests
 		Assert.AreEqual( 3, simulation.ArrivalGroupSize(), "raised to MinPeople" );
 		halted = true;
 		Assert.AreEqual( 0, simulation.ArrivalGroupSize(), "none while the park is lost" );
+		halted = false;
+		simulation.IntroWorld = true;
+		Assert.AreEqual( 0, simulation.ArrivalGroupSize(), "none in the Intro World, the theme object's mode 3 (0x5BCD7F), whatever the minimum" );
+	}
+
+	[TestMethod]
+	public void TheSettingsReadTheThemeParkIncPriceThresholdAndGuestTypes()
+	{
+		var values = new Dictionary<string, string[]>();
+		GuestSettings.ParseSam( "PeepInfo.PcOfGoodPriceIsCheap\t70\nPeepTypes[0].PreferredExcitement.StartingCash.BoredomThreshold.Generation\t90\t300\t40\t0\nPeepTypes[1].PreferredExcitement.StartingCash.BoredomThreshold.Generation\t80\t500\t30\t0\n", values );
+		var settings = GuestSettings.FromValues( values );
+		Assert.AreEqual( 70, settings.PcOfGoodPriceIsCheap );
+		CollectionAssert.AreEqual( new[] { 90, 80 }, settings.TpiPreferredExcitement );
+		Assert.AreEqual( 1, settings.Types.Count, "the guest types of Theme Park World's key stay what guest creation draws from" );
 	}
 
 	[TestMethod]

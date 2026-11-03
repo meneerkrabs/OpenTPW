@@ -229,6 +229,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:TPI-EXE:0x005BCDDE weather state] the weather thing's word +0x70 minus 1, when it is at most 3, indexes a jump table (0x005BCF08) whose first entry 0x005BCE06 loads the heatwave word 0x00A02250 (the others, in order, rain 0x00A02244, storm 0x00A02248, snow 0x00A0224C; ORACLE.md X7); any other value takes 100.0f
 	public Func<int>? ArrivalWeatherState { get; set; }
+
+	/// <summary>Theme Park Inc only: the world is the Intro World (the theme object <c>0xA06558</c> holds 3), which has no arrivals (<see cref="ArrivalGroupSize"/>). No OpenTPW level sets it: the front end draws no Intro World.</summary>
+	public bool IntroWorld { get; set; }
 	/// <summary>Index into <see cref="GuestSettings.ArrivalWeatherPercentages"/> (rain, storm, snow, heatwave) of weather states 1 to 4 (heatwave, rain, storm, snow).</summary>
 	private static readonly int[] WeatherStateIndex = { 3, 0, 1, 2 };
 	/// <summary>The original's limit on guests in the park when a group's size is set.</summary>
@@ -951,6 +954,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( ArrivalsHalted?.Invoke() == true )
 			return 0;
+		// [BIN:TPI-EXE:0x5BCD7F mode exit] Theme Park Inc's group routine answers 0 when the theme object 0xA06558 holds 3, the Intro World (the startup dialog's theme radio group: Arabian 0, Science 1, Water 2, Intro World 3, set by 0x498940..0x4989CA; the level directory wIntro); OpenTPW's front end does not run that world
+		if ( IntroWorld )
+			return 0;
 		return CutToParkLimit( UncutArrivalGroupSize() );
 	}
 
@@ -962,8 +968,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( Settings.ArrivalWeatherPercentages is { } percentages )
 		{
 			// [BIN:TPI-EXE:0x005BCD60 arrival group] Theme Park Inc's group: 0 in world state 4; else ftol( weather percentage (rain, storm, snow or heatwave by the weather thing's state, else 100.0) x 0.01f x (NewParkBonus + park points) / PointsPerVisitor ), the factor and the divide in floating point (the oracle's X7 agrees on 532 of 532 inputs read at 53 bits); then at least MinPeople and the same cut as tp.exe's (500 online, else 1500)
-			// [BIN:TPI-EXE:0x5BCD7A mode exit] a mode object (0xA06558, +0x14) answering 3 gives no group: the object holds a mode 0..3 that the options dialog's radio group sets (0x498940..0x4989C7) and a mode of -1 becomes 3 at start-up (0x6A32D7); what the modes are is not read, so the exit is never taken here
-			// [APPROX:ARRIVAL-008] the weather state is rolled by the economy as 0x642770 does ([EXT:tpi-weather-spell-seed]); the mode exit above, the tail words of the roll table and the spell effects are not modelled
+			// [BIN:TPI-EXE:0x5BCD7A mode exit] the theme object (0xA06558, +0x14) answering 3, the Intro World, gives no group (IntroWorld, above); -1 becomes 3 at start-up (0x6A32D7), the default when no theme was chosen
+			// [APPROX:ARRIVAL-008] the weather state is rolled by the economy as 0x642770 does ([EXT:tpi-weather-spell-seed]); the weather thing's own per-turn effects (the sky quality +0x74, drops, lightning and thunder) are not modelled
 			var state = ArrivalWeatherState?.Invoke() ?? 0;
 			double percent = state is >= 1 and <= 4 ? percentages[WeatherStateIndex[state - 1]] : 100.0;
 			var points = unchecked( Settings.ArrivalNewParkBonus + (ParkPoints?.Invoke() ?? 0) );

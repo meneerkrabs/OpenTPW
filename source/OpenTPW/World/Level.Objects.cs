@@ -307,7 +307,7 @@ public partial class Level
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
 		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ), ownExitCell: TypesFootprints, queueEntryResolver: TypesFootprints && item.Entry.HasQueue
-			? () => ResolveQueueEntrance( Objects, Guests.Grid.Cells, OwnerWord( item ) ) : null, positionCell: (item.Placement.X, item.Placement.Y) ) )
+			? () => ResolveQueueEntrance( Objects, Guests.Grid.Cells, OwnerWord( item ) ) : null, positionCell: item.ThingCell ) )
 		{
 			item.Runtime.Visitors.QueueEdited += () => ReevaluateQueuedRide( item.Runtime );
 			// [EXT:pools-changing-room] a changing room's pool-side cells follow from its footprint (geometry only: the water is read when a guest swims)
@@ -459,7 +459,7 @@ public partial class Level
 		runtime.Visitors.EntranceCell = cells.Entrance;
 		runtime.Visitors.ExitCell = cells.Exit;
 		runtime.Visitors.ExitAccessCell = ownExitCell ? ExitAccessCellOf( accessPoints ) : null;
-		// [BIN:TPW-EXE:0x004DB33C access cell] +0x36 is the shape's first entrance cell itself (inside the footprint), +5/+7 the cell the thing stands on (the anchor); a world that keeps the cells it was given has neither
+		// [BIN:TPW-EXE:0x004DB33C access cell] +0x36 is the shape's first entrance cell itself (inside the footprint), +5/+7 the cell the thing stands on (the anchor plus the type's rotated map offset, OriginalObject.ThingCell: only jungle/5x5rck and jungle/mammtunn, (0, 1), differ from the anchor); a world that keeps the cells it was given has neither
 		runtime.Visitors.AccessCell = ownExitCell ? FirstEntranceCellOf( accessPoints ) : null;
 		runtime.Visitors.PositionCell = ownExitCell ? positionCell : null;
 		runtime.Visitors.QueueFrontCell = cells.QueueFront;

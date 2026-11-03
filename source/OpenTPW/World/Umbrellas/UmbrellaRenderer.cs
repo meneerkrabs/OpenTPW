@@ -126,14 +126,14 @@ public sealed class UmbrellaRenderer : Entity
 
 	/// <summary>
 	/// Game.exe's placement of the umbrella (<c>0x60B236</c>): the hand's two ground coordinates (the engine's X and Y, the original's X and Z) move the modifier's share of the way to the camera's, and the height (the engine's Z) is
-	/// lifted by (the camera's height in original units - 40) times <see cref="YAdjustCamera"/>. <paramref name="share"/> is <see cref="PullShare"/> ([EXT:umbrellas-pull-cap]): at <see cref="CameraPull"/> the three modifiers apply
-	/// as the original gives them, below it each is scaled by share / <see cref="CameraPull"/>; no share leaves the point.
+	/// lifted by (the camera's height in original units - 40) times <see cref="YAdjustCamera"/>, never scaled. <paramref name="share"/> is <see cref="PullShare"/> ([EXT:umbrellas-pull-cap], the ground pull only): at <see cref="CameraPull"/> the two ground modifiers apply
+	/// as the original gives them, below it each is scaled by share / <see cref="CameraPull"/>; the lift is the original's whatever the share.
 	/// </summary>
 	internal static SVector3 PullAndLift( SVector3 hand, SVector3 eye, float share )
 	{
 		var scale = share / CameraPull;
 		return new SVector3( hand.X - (hand.X - eye.X) * XAdjustCamera * scale, hand.Y - (hand.Y - eye.Y) * ZAdjustCamera * scale,
-			hand.Z + (eye.Z - LiftBaseHeight * ObjectPlacement.ModelScale) * YAdjustCamera * scale );
+			hand.Z + (eye.Z - LiftBaseHeight * ObjectPlacement.ModelScale) * YAdjustCamera );
 	}
 
 	/// <summary>

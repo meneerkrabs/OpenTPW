@@ -74,7 +74,7 @@ def reading(x: dict) -> tuple:
                 stats.append((x['appearance'] + 5, v))
     if price > w or (x['money'] & M) < price:
         return 1, 0, 1, int(x['kind'] == 2), tuple(stats)
-    cheap = int(((x['cheap'] * w) & M) // 100 > price) if False else int((x['cheap'] * w) // 100 > price)
+    cheap = int(((x['cheap'] * w) & M) // 100 > price)  # 32-bit imul at 0x61244D
     return 0, cheap, 0, 0, tuple(stats)
 
 

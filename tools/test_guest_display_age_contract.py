@@ -33,7 +33,7 @@ class GuestDisplayAgeContract(unittest.TestCase):
         self.assertEqual(104, turn(14955 + 59) - 905)
         self.assertEqual(103, int(((100 * 248 + .5) / 1000 + 59 * dt) * 1000 / 248))
 
-    def test_clock_and_display_do_not_replace_seconds_or_gameplay_consumers(self):
+    def test_clock_and_display_age_are_hashed_only_while_a_weather_extension_reads_them(self):
         clock = read("source/OpenTPW/World/Guests/GuestSimulation.DisplayAge.cs")
         self.assertIn("unchecked((uint)turns + 1u)", clock)
         self.assertIn("ParkCalendar.Turn( previous + 1 ) == ParkCalendar.Turn( previous )", clock)
@@ -41,7 +41,11 @@ class GuestDisplayAgeContract(unittest.TestCase):
         simulation = read("source/OpenTPW/World/Guests/GuestSimulation.cs")
         self.assertIn("guest.TimeInParkSeconds = elapsed + dt;", simulation)
         self.assertIn("StayDays( (long)Math.Floor( elapsed * 1000 / ParkCalendar.TurnMilliseconds ) )", simulation)
-        self.assertNotIn("DisplayTimeInParkTurns", simulation[simulation.index("internal void AddCanonicalState"):])
+        state = simulation[simulation.index("internal void AddCanonicalState"):]
+        self.assertIn("var hashesDisplayAge = ReadsDisplayAge;", state)
+        self.assertIn("hash.Add( 0x44415047L + displayTurnPhaseTicks )", state)
+        self.assertIn("hash.Add( 0x44495341L + displayTurns )", state)
+        self.assertIn("umbrellaHolders > 0 || RainMood != null || WinterCold != null", read("source/OpenTPW/World/Guests/GuestSimulation.DisplayAge.cs"))
         umbrella = read("source/OpenTPW/World/Guests/GuestSimulation.Umbrellas.cs")
         # UMB-003: the umbrella day gate reads the original's integer turn age (0x611050), which the display clock keeps
         self.assertIn("guest.DisplayTimeInParkTurns is { } turns ? turns", umbrella)

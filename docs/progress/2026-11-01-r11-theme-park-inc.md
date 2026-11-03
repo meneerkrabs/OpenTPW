@@ -22,3 +22,12 @@
 - RIDES-040: re-checked, nothing new; the only decoder of a thing's position bytes remains the camera-target setters `0x503490`/`0x5A1100`, so the text stays as narrowed in round 10.
 - RIDES-045: the no-CD `Game.exe` has no variable names, only the numbered slots (`VAR_%.2ld`); the writers have to be found by slot index through each script's name table. Narrowed in the text, not ported.
 - QUEUE-010: the untyped relocation now applies only to a layout restored from a Theme Park Inc checkpoint (and the harness EXT), since placed Theme Park Inc objects carry cells (RIDES-031).
+
+## Review round 1
+
+- Merged origin/main (X62 is now section 7.37 of docs/reverse/ORACLE.md).
+- The integer turn age and the display clock phase are hashed state while umbrellas, the rain mood or the winter cold read them (`ReadsDisplayAge`); pins moved only for those parks (docs/DETERMINISM.md).
+- The umbrella lift is no longer scaled by `[EXT:umbrellas-pull-cap]`; the cap limits the ground pull only.
+- RIDES-031: a restored Theme Park Inc layout is stamped again at connect, `TypesFootprints` no longer depends on the layout; an Arabian integration test covers the road sign and a queue ride.
+- ARRIVAL-008: the attractions' weather closing (0x5DED90) is ported; guest reactions point to `[EXT:tpi-twp-guest-rules]`; the sky quality is listed.
+- ECON-062: the cheap ring's product wraps as the 32-bit imul does; the end-of-visit perception categories (0x6118D0) are listed as not ported.

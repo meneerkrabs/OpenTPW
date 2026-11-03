@@ -1048,7 +1048,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	private void UpdateGuest( Guest guest, float dt )
 	{
-		// [APPROX:GUEST-920] seconds still accumulate per step for stay statistics, weather gates and legacy displays; new visitor displays retain integer-turn age independently (DisplayAge). No gameplay consumer is migrated here.
+		// [APPROX:GUEST-920] seconds still accumulate per step for stay statistics and legacy displays; the integer-turn age (DisplayAge) feeds the visitor displays and, since UMB-003, the weather extensions' day gate. No other gameplay consumer is migrated here.
 		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
 			guest.TimeInParkSeconds = elapsed + dt;
 		if ( turnStarted )
@@ -3109,7 +3109,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var kind = attraction.Kind switch { RideVisitorKind.Sideshow => TpiPriceKind.Sideshow, RideVisitorKind.Shop => TpiPriceKind.Shop, _ => TpiPriceKind.Ride };
 		var preferred = Settings.TpiPreferredExcitement.Count > 0 ? Settings.TpiPreferredExcitement[Math.Min( guest.Type, Settings.TpiPreferredExcitement.Count - 1 )]
 			: Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )].PreferredExcitement;
-		// [BIN:TPI-EXE:0x5E41D0 rating byte] the attraction's rating is the live excitement of the join gate (0x5E3DF0 is the twin of tp.exe's 0xDFF70), 0 when the type's ExcitementLevel word is 0
+		// [BIN:TPI-EXE:0x5E41D0 rating byte] the attraction's rating is the live excitement of the join gate (0x5E3DF0 is the twin of the Mac STP-PPC rating 0x100DFF70), 0 when the type's ExcitementLevel word is 0
 		var terms = new TpiPriceTerms( attraction.HasSideshowTerms ? live.PricePerUse : attraction.Price, kind, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.ExpectedPrice,
 			attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, attraction.RipOffOk, attraction.LiveExcitement & 0xFF, preferred,
 			attraction.SpecialIngredient, attraction.AppearanceEffect );
@@ -3329,7 +3329,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>The guest leaves the queue without riding: state 6 where it stood.</summary>
 	// [BIN:TPW-EXE:0x005004AA queue exit position] every state-11 exit (0x005004AA: unlink 0x004DDD20, dismissal 0x005012F0, SetState(6)) and the queue-edit exit write no position: the guest stays where it stood, in state 6, until the decision handler 0x004FEC90 starts its next walk from there (a route search from a queue cell, or a wander along the cell's links minus its own queue link)
-	// [APPROX:QUEUE-010] a guest leaving a queue (0x5004AA, the queue edit's dismissal 0x501390, a removed ride's message 0x4FB360) stays where it stands in state 6 on every placed ride, whatever its cell is now (a path, a queue cell, the owned stand cell, or a cell the queue's undo or a demolition emptied), and decides from there by the ported wander (0x4F9490); a bridge without placed cells (no owner word or no exit cell: a Theme Park Inc layout restored from a checkpoint, whose footprints RIDES-031 leaves untyped) retains the front/nearest-path relocation, whose cells carry no links to walk off by; the exit of a guest whose attraction is already gone (a safety net: the original has no such poll, only the removal message 0x4FB360) now stays where it stands too
+	// [APPROX:QUEUE-010] a guest leaving a queue (0x5004AA, the queue edit's dismissal 0x501390, a removed ride's message 0x4FB360) stays where it stands in state 6 on every placed ride, whatever its cell is now (a path, a queue cell, the owned stand cell, or a cell the queue's undo or a demolition emptied), and decides from there by the ported wander (0x4F9490); a bridge without placed cells (no owner word or no exit cell: a read-only visit's imported cells) retains the front/nearest-path relocation, whose cells carry no links to walk off by; the exit of a guest whose attraction is already gone (a safety net: the original has no such poll, only the removal message 0x4FB360) now stays where it stands too
 	// [EXT:untyped-harness-world] the gates and the test rigs have no placed cells (no owner word or exit cell, no links to walk off by) and keep the front/nearest-path relocation: harness worlds that exist only in OpenTPW (user-approved 2026-10-30)
 	private void LeaveQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
 	{
@@ -4850,7 +4850,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>Thing-table part of <see cref="WorldStateHash"/>: gameplay fields, in id order.
-	/// TimeInParkSeconds and balloon/body sprite presentation are excluded, like interpolated draw positions.</summary>
+	/// TimeInParkSeconds and balloon/body sprite presentation are excluded, like interpolated draw positions; the integer turn age and its display phase join only while an extension reads them (ReadsDisplayAge).</summary>
 	internal void AddCanonicalState( StateHasher hash )
 	{
 		hash.Add( TickCount );
@@ -4870,9 +4870,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		hash.Add( laneToggle );
 		hash.Add( ArrivalsEnabled );
 		hash.Add( guests.Count );
+		// The day gate of the weather extensions reads the guest's integer turn age (GUEST-920, UMB-003), so the display clock's phase and each age are state while one of them is on; other parks hash as before
+		var hashesDisplayAge = ReadsDisplayAge;
+		if ( hashesDisplayAge )
+			hash.Add( 0x44415047L + displayTurnPhaseTicks );
 		foreach ( var guest in guests )
 		{
 			hash.Add( guest.Id );
+			if ( hashesDisplayAge && guest.DisplayTimeInParkTurns is { } displayTurns )
+				hash.Add( 0x44495341L + displayTurns );
 			hash.Add( guest.Type );
 			hash.Add( (int)guest.State );
 			hash.Add( guest.X );
@@ -5022,7 +5028,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Grid.Cells.PoolBridges?.AddCanonicalState( hash );
 	}
 
-	/// <summary>FNV-1a over guest gameplay state, the RNG and counters; display-only TimeInParkSeconds and balloon/body sprite presentation are excluded.</summary>
+	/// <summary>FNV-1a over guest gameplay state, the RNG and counters; TimeInParkSeconds and balloon/body sprite presentation are excluded; the integer turn age and its display phase join while a weather extension reads them.</summary>
 	public ulong ComputeStateHash()
 	{
 		var hash = 14695981039346656037UL;

@@ -20,7 +20,7 @@ namespace OpenTPW;
 /// The census counts guests (thing kind 1) standing on a cell of type 0, 1, 3, 9 or 10 (Mac
 /// predicates <c>0x85190</c>–<c>0x85258</c>): empty park ground, path, queue, entrance and exit
 /// cells — not the type-30 approach road outside the gate. OpenTPW applies these predicates to its reduced
-/// imported guest grid, whose missing cell types remain qualified by RIDES-031. The world sweep routine at Mac
+/// imported guest grid, whose cell types are the placement's own. The world sweep routine at Mac
 /// <c>0x10536c</c> (PC <c>FUN_00516380</c>) increments <c>mGameTick</c> and retries a close every 30
 /// park turns, additionally waiting for live staff (kinds 4–8) to be inside the park.
 /// </para>
@@ -268,7 +268,7 @@ public sealed class ParkGate
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE4A0 queue link test] thing flag +0x32 bit 8 (Info.HasQueue, type record +0x40, set at 0x4DB425): the back cell (0x4DE130, the cached +0x3A) must exist and its +0x0C (0x522770) differ from its +0x0D (0x522850); without the flag the entrance cell's link toward the cell in front (by the rotation +0x10: 0 → 16, 90 → 4, 180 → 1, 270 → 64) and that type-1 cell's link back are both needed
 	// [BIN:TPW-EXE:0x004DE4A0 back cell of any type] the test reads the back cell as 0x4DE130 left it: the front cell itself when no queue cell lies behind it (+0x40 = 1), whatever its type, so a front that is a path cell is tested on its own link byte against its +0x0D, and an empty one (both bytes 0) is unconnected; the owner word, the entrance cell's type and the link toward a rotation are not read
-	// [APPROX:ECON-049] a Theme Park Inc layout restored from a checkpoint (RIDES-031: its footprints stay untyped), a prototype and geometry no placement laid retain the permissive fallback: a queue ride whose front holds no queue cell, an entrance OpenTPW cannot reconstruct and an object without Info.HasQueue are taken as connected; in a typed world a sideways step off the map's edge wraps the 16-bit cell word as the original does, and only words outside the array, odd rotations and the null reads at 0x4D97E0/0x4D96F0 are answered under [EXT:original-undefined-reads]. These checks never close an already-open ride
+	// [APPROX:ECON-049] a prototype and geometry no placement laid retain the permissive fallback: a queue ride whose front holds no queue cell, an entrance OpenTPW cannot reconstruct and an object without Info.HasQueue are taken as connected; in a typed world a sideways step off the map's edge wraps the 16-bit cell word as the original does, and only words outside the array, odd rotations and the null reads at 0x4D97E0/0x4D96F0 are answered under [EXT:original-undefined-reads]. These checks never close an already-open ride
 	// [EXT:untyped-harness-world] untyped geometry (the gates and test rigs, whose ride entrances are not typed map cells with a link byte) retains the permissive answer too (user-approved 2026-10-30)
 	// [EXT:original-undefined-reads] a typed ride whose entrance looks off the map (the id arithmetic of 0x4DE040 leaves the cell array) or whose rotation is none of 0, 90, 180 and 270 (0x4DE4A0 then tests an unset byte) is taken as connected; no placement reaches either (user-approved class, 2026-10-30)
 	internal static bool QueueConnected( GuestPathGrid grid, RideVisitorBridge ride )

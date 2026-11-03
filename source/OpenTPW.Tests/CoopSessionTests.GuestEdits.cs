@@ -534,16 +534,15 @@ public partial class CoopSessionTests
 		var park = NewPark();
 		Assert.IsTrue( park.Issue( park.Level.BuildCommand( park.One.Entry, 20, 12, 90 ) ).Accepted );
 		var item = park.Level.Objects.FindAt( 20, 12 )!;
-		// the object's cells untyped, as a restored Theme Park Inc layout's are
+		// the object's cells untyped, as a read-only visit's are
 		var map = park.Level.Guests!.Grid.Cells;
 		foreach ( var (x, y, _) in item.Cells )
 			map.SetType( x, y, ParkCellType.Empty );
 		Assert.AreSame( item, park.Level.Objects.FindAt( 20, 12 ) );
 		Assert.AreEqual( (0, 0), park.Issue( new ClearAreaCommand( 17, 10, 26, 16 ) ).As<(int Objects, int Paths)>(), "in a Theme Park World park the cell map's types decide" );
 		Assert.IsFalse( item.IsDeleted );
-		// a layout restored from a Theme Park Inc checkpoint keeps its cells untyped (RIDES-031 residual)
-		var layoutCells = typeof( Level ).GetField( "incLayoutCells", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
-		layoutCells.SetValue( park.Level, new ParkCellMap( 4, 4 ) );
+		// a world whose cells are untyped (a read-only visit's are)
+		park.Level.TypesFootprintsOverride = false;
 		Assert.AreEqual( (1, 0), park.Issue( new ClearAreaCommand( 17, 10, 26, 16 ) ).As<(int Objects, int Paths)>(), "where objects do not type their cells, the object on the cell" );
 		Assert.IsTrue( item.IsDeleted );
 	}

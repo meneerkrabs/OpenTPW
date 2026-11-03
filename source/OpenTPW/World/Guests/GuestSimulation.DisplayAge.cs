@@ -2,14 +2,17 @@ namespace OpenTPW;
 
 public sealed partial class GuestSimulation
 {
-	// 60 Hz / 248 ms reduces to 25 turns per 372 fixed ticks. Only the presentation phase is retained across a restore;
+	// 60 Hz / 248 ms reduces to 25 turns per 372 fixed ticks. The display phase is retained across a restore (and is hashed state while a weather extension reads the age);
 	// the host still owns AlignTurns and the unsaved gameplay turnPhase. Arbitrary clock resets do not invent historical age.
 	internal const int DisplayTurnPhasePeriodTicks = 372;
 	private int displayTurnPhaseTicks;
 
+	/// <summary>Whether an extension that reads the integer turn age (the umbrella day gate, the rain mood, the winter cold) is at work; only then are the display phase and the ages part of the hashed state.</summary>
+	private bool ReadsDisplayAge => umbrellaHolders > 0 || RainMood != null || WinterCold != null;
+
 	/// <summary>Advance existing display ages before a turn's callbacks can create a new visitor at age zero.</summary>
 	// [BIN:TPW-EXE:0x004fafdb creation stamp; 0x004fd950 age] one unsigned increment at each existing host turn boundary
-	// telescopes to current world turn minus the creation/import stamp. Seconds, weather gates and stay accounting are untouched.
+	// telescopes to current world turn minus the creation/import stamp. The seconds and stay accounting are untouched; the umbrella day gate reads this age (UMB-003).
 	private void AdvanceDisplayAges()
 	{
 		var previous = (TickCount - 1) % DisplayTurnPhasePeriodTicks + displayTurnPhaseTicks;

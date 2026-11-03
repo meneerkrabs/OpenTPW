@@ -68,8 +68,10 @@ public static class ThemeParkIncPriceTest
 		var willingness = Willingness( terms, happiness, thirst, hunger, illness );
 		var statistics = Statistics( terms, willingness );
 		if ( price > willingness || unchecked( (uint)money ) < price )
+			// the exe tests Info.WhichUIType == 2 for the declined ring (0x612473..0x612488); every shipped sideshow, and only those, has it, so the kind stands for it
 			return new TpiPriceVerdict( true, false, true, terms.Kind == TpiPriceKind.Sideshow, statistics );
-		var cheap = unchecked( (uint)((uint)cheapPercent * (ulong)willingness / 100UL) ) > price;
+		// the product is a 32-bit imul (0x61244D), so it wraps before the division by 100
+		var cheap = unchecked( (uint)((uint)cheapPercent * willingness) ) / 100 > price;
 		return new TpiPriceVerdict( false, cheap, false, false, statistics );
 	}
 

@@ -16,3 +16,9 @@
 
 - `Level.TypesFootprints` no longer excludes Theme Park Inc; objects placed in a session stamp typed cells through `ParkCellMap.WriteFootprint`, the port of the twin commit (`[BIN:TPI-EXE:0x668552]`, tables `0x6691D8`/`0x6691FC`).
 - Still untyped (narrowed RIDES-031): a layout restored from a Theme Park Inc checkpoint, the coaster marker case `0x6688F0` (no TPI coaster in the slice), the commit's preview flag modes and effects, and TPI's own validator twin of `0x535670`.
+
+## RIDES-040, RIDES-045, QUEUE-010
+
+- RIDES-040: re-checked, nothing new; the only decoder of a thing's position bytes remains the camera-target setters `0x503490`/`0x5A1100`, so the text stays as narrowed in round 10.
+- RIDES-045: the no-CD `Game.exe` has no variable names, only the numbered slots (`VAR_%.2ld`); the writers have to be found by slot index through each script's name table. Narrowed in the text, not ported.
+- QUEUE-010: the untyped relocation now applies only to a layout restored from a Theme Park Inc checkpoint (and the harness EXT), since placed Theme Park Inc objects carry cells (RIDES-031).

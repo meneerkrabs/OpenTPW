@@ -250,24 +250,26 @@ public class ObjectAccessCellsTests
 		void Set( object target, string property, object value ) => target.GetType().GetField( "<" + property + ">k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( target, value );
 		Set( park, "Heightfield", field ); Set( level, "OriginalPark", park ); Set( level, "Objects", rig.Objects );
 		Set( guests, "Grid", new GuestPathGrid( rig.Cells ) ); Set( level, "Guests", guests );
+		// a walk that went on the ride through its entrance cell resumes at the exit cell's centre, looking along the exit's link byte (0x42A1D0); a ride entered from the park view moves no camera
 		var start = OriginalParkPlacement.GetCellCenter( field, entrance.X, entrance.Y );
-		var destination = OriginalParkPlacement.GetCellCenter( field, exit.X, exit.Y );
-		var camera = new ParkCameraMode();
-		camera.SetPose( new Vector3( start.X, start.Y, start.Z ), 90, -135 );
-		level.RecentreParkCamera( camera );
-		Assert.AreEqual( new Vector3( destination.X, destination.Y, destination.Z ), camera.Target );
-		var (dx, dy) = GuestPathGrid.Directions[Level.RideExitDirection( expectedDirection )];
-		var ahead = OriginalParkPlacement.GetCellCenter( field, exit.X + dx, exit.Y + dy );
-		var expected = new ParkCameraMode(); expected.SetPose( camera.Target, 90, -135 ); expected.LookAlong( new System.Numerics.Vector2( ahead.X - destination.X, ahead.Y - destination.Y ) );
-		Assert.AreEqual( expected.Yaw, camera.Yaw );
+		FreeWalkCameraMode Walker( float yaw )
+		{
+			var walker = new FreeWalkCameraMode( field, new Vector3( start.X, start.Y, 0 ), new Vector3( MathF.Sin( yaw ), MathF.Cos( yaw ), 0 ) );
+			Assert.AreEqual( (entrance.X, entrance.Y), walker.Cell, "the walker stands in the entrance cell" );
+			return walker;
+		}
+		var walker = Walker( 0.7f );
+		level.PlaceWalkerAtRideExit( walker );
+		Assert.AreEqual( (5f + 10f * exit.X, 5f + 10f * exit.Y), (walker.Walk.X, walker.Walk.Z), "the exit cell's centre in original units" );
+		Assert.AreEqual( Level.RideExitYaw( expectedDirection )!.Value, walker.Walk.Yaw );
 		foreach ( byte direction in new byte[] { 0, 5, 0x55 } )
 		{
 			rig.Cells.SetQueueLink( exit.X, exit.Y, direction );
-			camera.SetPose( new Vector3( start.X, start.Y, start.Z ), 90, -135 );
-			var yaw = camera.Yaw;
-			level.RecentreParkCamera( camera );
-			Assert.AreEqual( new Vector3( destination.X, destination.Y, destination.Z ), camera.Target );
-			Assert.AreEqual( yaw, camera.Yaw, "zero or ambiguous cardinal direction preserves yaw" );
+			walker = Walker( 0.7f );
+			var yaw = walker.Walk.Yaw;
+			level.PlaceWalkerAtRideExit( walker );
+			Assert.AreEqual( (5f + 10f * exit.X, 5f + 10f * exit.Y), (walker.Walk.X, walker.Walk.Z) );
+			Assert.AreEqual( yaw, walker.Walk.Yaw, "zero or ambiguous cardinal direction preserves yaw" );
 		}
 		rig.Objects.Remove( item );
 		Assert.IsNull( Level.ResolveRideExit( rig.Objects, rig.Cells, entrance.X, entrance.Y ) );

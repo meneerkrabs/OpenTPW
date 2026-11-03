@@ -37,7 +37,7 @@ public sealed partial class ParkHud
 	private void PrepareRideStatic( UiContext context )
 	{
 		var now = RideStaticClock?.Invoke() ?? System.Diagnostics.Stopwatch.GetTimestamp() * (1000.0 / System.Diagnostics.Stopwatch.Frequency);
-		rideStatic.Prepare( EyeCameraActive, now, ++rideStaticFrames );
+		rideStatic.Prepare( EyeCameraActive, now );
 		if ( !rideStatic.ShowStatic )
 			return;
 		// [BIN:TPW-EXE:0x54dde3 static noise seed] the original seeds the CRT's generator once (srand of the tick count) and the static draws the shared stream on every frame it lasts: one persistent state per HUD,
@@ -50,7 +50,6 @@ public sealed partial class ParkHud
 		RideStaticNoise.Fill( StaticPixels, ref staticState );
 	}
 
-	private int rideStaticFrames;
 	private uint staticState;
 	private bool staticSeeded;
 

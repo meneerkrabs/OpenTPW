@@ -50,6 +50,17 @@ public class FreeWalkCameraReviewTests
 	}
 
 	[TestMethod]
+	public void TheHomeKeySetsTheZoomTo110()
+	{
+		var field = Surface();
+		FreeWalkCameraMode.TryGround( field, 0, 0, out var ground );
+		var camera = new FreeWalkCameraMode( field, ground, Vector3.Forward, zoom: 70f );
+		Assert.AreEqual( 70f, camera.Zoom );
+		camera.Update( Frame() with { Home = true, RightButton = false } );
+		Assert.AreEqual( 110f, camera.Zoom, "0x42B518 puts the zoom at 110" );
+	}
+
+	[TestMethod]
 	public void ALostFocusLetsTheWalkerCoastOnItsVelocity()
 	{
 		var field = Surface();

@@ -18,7 +18,7 @@ namespace OpenTPW;
 // [BIN:TPW-EXE:0x45d0b4 node bits at pick time] bit 0x20 (the walk then leaves the children out, 0x45d4cf) and 0x8000 are not ported: no shipped object model carries a node word with 0x10, 0x20 or 0x8000
 // (ObjectPickNodeBitsCorpusTests counts every node of the 274 object models: only 0x1, 0x8, 0x200 and 0x400 occur) and the animation sets 0x10 only (ObjectAnimator), but the eye views set 0x8000 (0x42ad82)
 // and the camera word is saved with its eye bits (0x42ce1b), and the node-state saver 0x464140 writes 0x20 and 0x8000 into a node's saved word (0x4643b5, 0x4643bf) which the loader 0x4647a0 restores
-// (it masks the node word with 0x5f827fcf, then restores 0x10, 0x20, 0x8000, 0x10000, 0x40000 and 0x80000 from the saved word, loader address 0x464b06 area), so a save written in an eye view could carry
+// (it masks the node word with 0x5f827fcf, then restores 0x10, 0x20, 0x8000, 0x10000, 0x40000, 0x80000, 0x100000, 0x200000, 0x400000 and 0x80000000 from the saved word, loader address 0x464b06 area), so a save written in an eye view could carry
 // them; OpenTPW's import keeps only the toggled 0x10 and the pinned 0x80000000 (RestoreSavedNodeStates)
 // [BIN:TPW-EXE:0x473c30 normal refresh] the creation tail of every instance, fixed ones included (0x463060 at 0x4638f7..0x463937), sets node flag 0x10000 on every node of the model (a loop over the
 // node count word +0x44, stride 0xa0), sets model flag 0x40000 and calls 0x473c30, which runs 0x473a40 on each node with 0x10000 (clearing that flag, 0x473c12..0x473c1b) and then clears the model flag:

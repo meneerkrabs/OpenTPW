@@ -118,8 +118,8 @@ public sealed class FreeWalkCameraMode : CameraMode
 			&& input.MousePosition.X < input.LogicalSize.X && input.MousePosition.Y < input.LogicalSize.Y;
 		if ( input.Modal )
 			return;
-		// [BIN:TPW-EXE:0x42B1C0 walk without input] the update runs every frame the walk is the camera: a lost window focus or a pointer outside the window leaves it no keys and no pointer offset, and the walker
-		// coasts on its velocity (the velocity ramp and the cell moves are the frame's own) instead of freezing
+		// [BIN:TPW-EXE:0x42B1C0 walk without input] the update runs every frame the walk is the camera, so the walker coasts on its velocity (the velocity ramp and the cell moves are the frame's own) instead of freezing
+		// host rule (UI-042's host text): a lost window focus or a pointer outside the window drops the keys and the pointer offset (the original reads the key state and the last pointer position, which a host window cannot supply then)
 		var keyboard = input.HasFocus && inside && !input.CaptureKeyboard && !input.TextEntry;
 		var mouse = input.HasFocus && inside && !input.CaptureMouse && !input.TextEntry;
 		var pointer = mouse ? RideCameraMode.PointerOffset( input.MousePosition.X, input.MousePosition.Y, input.LogicalSize.X, input.LogicalSize.Y ) : System.Numerics.Vector2.Zero;

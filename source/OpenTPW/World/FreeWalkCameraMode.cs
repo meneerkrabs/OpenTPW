@@ -116,10 +116,12 @@ public sealed class FreeWalkCameraMode : CameraMode
 	{
 		var inside = input.LogicalSize.X > 0 && input.LogicalSize.Y > 0 && input.MousePosition.X >= 0 && input.MousePosition.Y >= 0
 			&& input.MousePosition.X < input.LogicalSize.X && input.MousePosition.Y < input.LogicalSize.Y;
-		if ( !input.HasFocus || input.Modal || !inside )
+		if ( input.Modal )
 			return;
-		var keyboard = !input.CaptureKeyboard && !input.TextEntry;
-		var mouse = !input.CaptureMouse && !input.TextEntry;
+		// [BIN:TPW-EXE:0x42B1C0 walk without input] the update runs every frame the walk is the camera: a lost window focus or a pointer outside the window leaves it no keys and no pointer offset, and the walker
+		// coasts on its velocity (the velocity ramp and the cell moves are the frame's own) instead of freezing
+		var keyboard = input.HasFocus && inside && !input.CaptureKeyboard && !input.TextEntry;
+		var mouse = input.HasFocus && inside && !input.CaptureMouse && !input.TextEntry;
 		var pointer = mouse ? RideCameraMode.PointerOffset( input.MousePosition.X, input.MousePosition.Y, input.LogicalSize.X, input.LogicalSize.Y ) : System.Numerics.Vector2.Zero;
 		var keys = new CamcorderWalkInput
 		{

@@ -59,7 +59,7 @@ def make_case(rng, index: int) -> dict:
     seed = rng.randrange(1, 1 << 20)
     keys = {name: rng.random() < 0.3 for name in ('left', 'right', 'forward', 'back')}
     keys['button'] = rng.random() < 0.3
-    # the Home key (camera flags bit 0x100) in about one case in eight
+    # the Home key (key word bit 0x100, 0x42B518) in about one case in eight
     home = rng.random() < 0.125
     wide = index % 5 == 0
     x = f32(rng.uniform(-30, 1310) if index % 7 == 0 else rng.uniform(5, 1275))

@@ -36,7 +36,7 @@ MATRIX, LAST_TICK, INIT_FLAG = 0x790990, 0x7909E4, 0x7908E8
 TERRAIN_OBJECT, MAP_WIDTH, MAP_DEPTH, KEY_TABLE = 0x7A0854, 0x7A0314, 0x7A0374, 0x787C14
 TICK, KEY_STATE, EDGE, RIDE_AT, RIDE_IT, SET_CAMERA, LOOKUP, MATRIX_POINTER = 0x402D80, 0x40CA20, 0x4D8750, 0x42A340, 0x4E15B0, 0x578BC0, 0x412E90, 0x470040
 WALK = 2
-# the Home key and numpad 5 set bit 0x100 of the camera flags (handler 0x42A500, entries 0x748338 and 0x7482D4); 0x42B518 then puts the zoom at 110, the yaw at 0 and the position at (475, 175)
+# the Home key and numpad 5 set bit 0x100 of the key word 0x790AAC (handler 0x42A500, entries 0x748338 and 0x7482D4); the update tests it at 0x42B518 (bh) and puts the zoom at 110, the yaw at 0 and the position at (475, 175)
 # the action numbers of the key table 0x748158 the update reads: Left (6) and numpad 9 (0x12), Right (7) and numpad 7 (0x13), Up (0) and numpad 1 (0x15), Down (1) and numpad 3 (0x16)
 ACTIONS = {'left': (6, 0x12), 'right': (7, 0x13), 'forward': (0, 0x15), 'back': (1, 0x16)}
 
@@ -111,8 +111,8 @@ class WalkOracle:
         sb.write(TERRAIN_OBJECT, 'I', holder)
         sb.write(MAP_WIDTH, 'I', width); sb.write(MAP_DEPTH, 'I', height)
         self.zero_matrix = sb.alloc(64, 16)
-        sb.write(FLAGS, 'I', WALK | (0x100 if case.get('home') else 0))
-        sb.write(KEYS, 'I', 0x80 | (4 if case.get('button') else 0))
+        sb.write(FLAGS, 'I', WALK)
+        sb.write(KEYS, 'I', 0x80 | (4 if case.get('button') else 0) | (0x100 if case.get('home') else 0))
         for address, value in zip(POINTER, case['pointer']):
             sb.write(address, 'f', value)
         for address, value in zip(CENTRE, case['centre']):

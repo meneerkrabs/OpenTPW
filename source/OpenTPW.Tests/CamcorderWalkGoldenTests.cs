@@ -84,7 +84,8 @@ public class CamcorderWalkGoldenTests
 				TurnLeft = (mask & 1) != 0, TurnRight = (mask & 2) != 0, Forward = (mask & 4) != 0, Backward = (mask & 8) != 0, Button = (mask & 16) != 0, Home = (mask & 32) != 0,
 				PointerX = pointerX, PointerY = pointerY
 			};
-			var ride = walk.Step( F( given[10] ), input, F( given[9] ), world );
+			// the Home key sets the zoom to 110 before the walk reads it (0x42B518; FreeWalkCameraMode does the same)
+			var ride = walk.Step( F( given[10] ), input, input.Home ? ParkCameraMode.HomeHeight : F( given[9] ), world );
 			var expected = sides[1].Split( ' ' );
 			var actual = new[] { H( walk.X ), H( walk.Z ), H( walk.Yaw ), H( walk.VelocityX ), H( walk.VelocityZ ), H( walk.Pitch ), H( walk.TurnRate ), H( walk.EyeY ) };
 			for ( var index = 0; index < actual.Length; index++ )

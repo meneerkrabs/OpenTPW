@@ -38,7 +38,6 @@ public class FreeWalkCameraReviewTests
 	[DataRow( "mouse" )]
 	[DataRow( "text" )]
 	[DataRow( "modal" )]
-	[DataRow( "focus" )]
 	public void CapturedPointerAndKeysLeaveTheWalkerWhereItStands( string gate )
 	{
 		var field = Surface();
@@ -46,8 +45,22 @@ public class FreeWalkCameraReviewTests
 		var camera = new FreeWalkCameraMode( field, ground, Vector3.Forward );
 		var pose = (camera.Position, camera.Rotation);
 		var held = Frame() with { Zoom = 1, MousePosition = new Vector2( 900, 900 ) };
-		camera.Update( held with { CaptureMouse = gate == "mouse", CaptureKeyboard = gate == "mouse", TextEntry = gate == "text", Modal = gate == "modal", HasFocus = gate != "focus", RightButton = false } );
+		camera.Update( held with { CaptureMouse = gate == "mouse", CaptureKeyboard = gate == "mouse", TextEntry = gate == "text", Modal = gate == "modal", RightButton = false } );
 		Assert.AreEqual( pose, (camera.Position, camera.Rotation), "no key or pointer input reaches the walk" );
+	}
+
+	[TestMethod]
+	public void ALostFocusLetsTheWalkerCoastOnItsVelocity()
+	{
+		var field = Surface();
+		FreeWalkCameraMode.TryGround( field, 0, 0, out var ground );
+		var camera = new FreeWalkCameraMode( field, ground, Vector3.Forward );
+		var held = Frame() with { Zoom = 1, MousePosition = new Vector2( 500, 500 ), RightButton = false };
+		for ( var frame = 0; frame < 5; frame++ )
+			camera.Update( held );
+		var moving = camera.Position;
+		camera.Update( held with { HasFocus = false, Zoom = 0 } );
+		Assert.AreNotEqual( moving, camera.Position, "the update runs on every frame (0x42B1C0): without keys the velocity still carries the walker" );
 	}
 
 	[TestMethod]

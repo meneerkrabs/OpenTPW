@@ -140,7 +140,8 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>The prepared frame's noise pixels, one byte each (<see cref="RideStaticNoise"/>), filled once per prepared frame.</summary>
-	private readonly byte[] StaticPixels = new byte[RideStaticNoise.Width * RideStaticNoise.Height];
+	private byte[]? staticPixels;
+	private byte[] StaticPixels => staticPixels ??= new byte[RideStaticNoise.Width * RideStaticNoise.Height];
 
 	/// <summary>The noise the last prepared frame drew from (tests).</summary>
 	internal byte[] RideStaticPixels => StaticPixels;

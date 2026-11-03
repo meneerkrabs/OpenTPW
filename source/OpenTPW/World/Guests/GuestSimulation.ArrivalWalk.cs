@@ -92,19 +92,26 @@ public sealed partial class GuestSimulation
 			return start == null ? null : SpawnInPark( start.Value.X, start.Value.Y );
 		}
 		// [BIN:TPW-EXE:0x004FB1D9 park cell branch] a stop cell the test 0x4FA990 accepts (cell type 0, 1, 3, 9 or 10) jumps to 0x4FB1D9: the visitor number 0x51AAF0 into +0x1D8 and state 6 through 0x501DB0(6), before the two draws (0x516330 at 0x4FB201 and 0x4FB21C), with no crossing route (0x4FA5F0) and no beam
-		if ( OnParkCellTypeAt( stop.X, stop.Y ) && Grid.IsWalkable( stop.X, stop.Y ) )
-			return SpawnInPark( stop.X, stop.Y );
+		// the type test of 0x4FA990; the synthetic parks of the tests keep their stop cell empty (type 0, no cell of the map), where every real stop cell is a walkway type, so a type 0 cell takes the branch only where a cell stands (Grid.IsWalkable)
+		var onParkCell = OnParkCellTypeAt( stop.X, stop.Y ) && (Grid.Cells.RawTypeAt( stop.X, stop.Y ) != 0 || Grid.IsWalkable( stop.X, stop.Y ));
 		var guest = Create();
 		if ( guest == null )
 			return null;
+		if ( onParkCell )
+		{
+			// the constructor placed the guest at the cell's centre (0x4F8940 -> 0x5100E0 with 0x8000), whatever the cell's walkability
+			PlaceAtCentre( guest, stop );
+			guest.VisitorNumber = ++VisitorCount;
+			EnterGuestState( guest, GuestState.DoingNothing );
+			return guest;
+		}
 		var side = (int)(random.NextWord() & 1);
 		var sideways = (int)(random.NextWord() & 0xFF);
 		PlaceAtCentre( guest, stop );
 		var crossing = BusSideCrossingCell( side )!.Value;
 		EnterGuestState( guest, RouteToPoint( guest, crossing, sideways, ArrivalRowByte ) ? GuestState.CrossingRoad : GuestState.DoingNothing );
-		// [BIN:TPW-EXE:0x004FB26A creation beam] the branch taken when 0x4FA990 finds none of the cell types 0, 1, 3, 9 and 10 (0x536310..0x536390; OnParkCellType) ends with 0x4FA470(0x13), particle 19 at the guest's place (the arrival update's call 0x4CF7A4 passes the vehicle's stop cell); a guest made on a park cell (0x4FA990, SpawnInPark above) takes the other branch and beams nobody. The world's population loop 0x516700 (25 guests at once, 0x516791) belongs to the online chat message handler 0x4E6790 and has no counterpart here
-		if ( !OnParkCellTypeAt( stop.X, stop.Y ) )
-			Beamed?.Invoke( guest );
+		// [BIN:TPW-EXE:0x004FB26A creation beam] the branch taken when 0x4FA990 finds none of the cell types 0, 1, 3, 9 and 10 (0x536310..0x536390; OnParkCellType) ends with 0x4FA470(0x13), particle 19 at the guest's place (the arrival update's call 0x4CF7A4 passes the vehicle's stop cell); a guest made on a park cell (0x4FA990, the branch above) takes the other branch and beams nobody. The world's population loop 0x516700 (25 guests at once, 0x516791) belongs to the online chat message handler 0x4E6790 and has no counterpart here
+		Beamed?.Invoke( guest );
 		return guest;
 	}
 

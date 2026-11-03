@@ -133,6 +133,8 @@ public class ArrivalWalkTests
 		Assert.AreEqual( reference.World.State, simulation.World.State, "no world draw beyond the constructor's own (SpawnInPark's): the R draws of 0x4FB201 and 0x4FB21C are not made (0x4FB1D9)" );
 		Assert.AreEqual( GuestState.DoingNothing, guest.State, "state 6 through 0x501DB0(6)" );
 		Assert.AreEqual( (20, 5), guest.Navigation.Cell, "no crossing route" );
+		Assert.AreEqual( GuestNavigation.Centre( (20, 5) ), (guest.Navigation.X, guest.Navigation.Y), "the constructor places at the cell's centre (0x4F8940 -> 0x5100E0, 0x8000)" );
+		Assert.AreEqual( 1, guest.VisitorNumber, "the visitor number 0x51AAF0 into +0x1D8" );
 		Assert.IsFalse( guest.HasWaypoint, "0x4FA5F0 is not called" );
 		Assert.AreEqual( 0, beamed, "0x4FA990 is true: the other branch (0x4FB1D9) runs and no beam is taken" );
 	}

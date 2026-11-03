@@ -143,6 +143,8 @@ internal sealed class QueueAnimatedPart
 
 	private void UpdateCoordinates( ObjectAnimator animator )
 	{
+		if ( ranges.Length == 0 )
+			return;
 		var changed = false;
 		for ( var mesh = 0; mesh < meshVersions.Length; mesh++ )
 		{
@@ -194,11 +196,12 @@ internal sealed class QueueAnimationGroup( QueueClipPlayer player )
 }
 
 /// <summary>
-/// The start of every queue cell by (model, cell, yaw): the generation of the frame it was made in. The first build (a level, a loaded park) makes them all in one frame; after a path edit the cells that are new, whose
-/// model or yaw changed, whose cell went, and the four neighbours of those start again as a group of their own, as the tile refresh of tp.exe removes (0x522A90) and places again (0x5229E0) every class-2 cell it touches;
-/// the others keep their phase.
+/// The start of every queue cell by (model, cell, yaw): the generation of the frame it was made in. The first build (a level, a loaded park) makes them all in one frame. After a path edit, a cell that appears or goes
+/// dirties the 2 x 2 blocks that contain it, so the 3 x 3 cells around it (diagonals included) are removed and placed again by the tile refresh (0x5365D0 -> 0x522A90, 0x5229E0) and start again as a group of their own; a cell
+/// that stays but whose model or yaw changed (a link bit moved) restarts alone; the others keep their phase.
 /// </summary>
-// [BIN:TPW-EXE:0x005365D0 tile refresh] a class-2 result removes the cell's previous model (0x522A90) and places the new one (0x5229E0) with a new channel, which starts at frame 0; the callers (the tools' commits, 0x53132E, 0x53133E, 0x53134E, 0x531362 and others) run it for the edited cell and the cells their links change, the neighbours
+// [BIN:TPW-EXE:0x005311C0 dirty block refresh] the walk 0x5311C0 (called by the tool commit at 0x532557 and 0x5328B4 after 0x524960 ran on every brush cell) takes a tile T and its neighbours (0,1), (1,1) and (1,0) (the constants 0x7CDBA8, 0x7CDBB8, 0x7CDBC8 from the initialisers 0x4D9B90, 0x4D9B50, 0x4D9B00); when any of the four has the dirty flag 0x40 (set around 0x536553) it clears the flag on all four and calls 0x5365D0 on all four (0x53132E, 0x53133E, 0x53134E, 0x531362), so a dirty cell refreshes the 2 x 2 blocks around it, the diagonal included, and no more
+// [BIN:TPW-EXE:0x00534A13 link refresh] the immediate link refresh (0x534A13, 0x534A40, 0x534C51) places again only the orthogonal neighbour whose link bit it sets, and only when it is of the same class ([edi+8] == ebp, or type 0xA): a cell that stays and changes model or yaw
 internal sealed class QueueBirths
 {
 	private readonly Dictionary<(int Model, int X, int Y, int Yaw), int> birth = new();
@@ -210,26 +213,34 @@ internal sealed class QueueBirths
 	public void Assign( IEnumerable<(int Model, int X, int Y, int Yaw)> cells )
 	{
 		var now = cells.ToHashSet();
-		var touched = new HashSet<(int X, int Y)>();
-		foreach ( var key in now )
-			if ( !birth.ContainsKey( key ) )
-				touched.Add( (key.X, key.Y) );
-		foreach ( var key in birth.Keys )
-			if ( !now.Contains( key ) )
-				touched.Add( (key.X, key.Y) );
-		if ( touched.Count == 0 )
+		var before = birth.Keys.Select( key => (key.X, key.Y) ).ToHashSet();
+		var after = now.Select( key => (key.X, key.Y) ).ToHashSet();
+		// the cells that appear or go are the dirty ones; the cells that stayed in place and changed are remade alone
+		var dirty = new HashSet<(int X, int Y)>( after.Except( before ) );
+		dirty.UnionWith( before.Except( after ) );
+		var changed = now.Any( key => !birth.ContainsKey( key ) && before.Contains( (key.X, key.Y) ) )
+			|| birth.Keys.Any( key => !now.Contains( key ) && after.Contains( (key.X, key.Y) ) );
+		if ( dirty.Count == 0 && !changed )
 			return;
 		var initial = birth.Count == 0;
 		var born = ++generation;
 		var next = new Dictionary<(int Model, int X, int Y, int Yaw), int>();
 		foreach ( var key in now )
 		{
-			var restart = initial || touched.Contains( (key.X, key.Y) )
-				|| touched.Contains( (key.X + 1, key.Y) ) || touched.Contains( (key.X - 1, key.Y) ) || touched.Contains( (key.X, key.Y + 1) ) || touched.Contains( (key.X, key.Y - 1) );
+			var restart = initial || !birth.ContainsKey( key ) || NearDirty( dirty, key.X, key.Y );
 			next[key] = restart ? born : birth[key];
 		}
 		birth.Clear();
 		foreach ( var (key, start) in next )
 			birth[key] = start;
+	}
+
+	private static bool NearDirty( HashSet<(int X, int Y)> dirty, int x, int y )
+	{
+		for ( var dy = -1; dy <= 1; dy++ )
+			for ( var dx = -1; dx <= 1; dx++ )
+				if ( dirty.Contains( (x + dx, y + dy) ) )
+					return true;
+		return false;
 	}
 }

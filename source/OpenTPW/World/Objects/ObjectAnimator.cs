@@ -277,7 +277,7 @@ public sealed class ObjectAnimator
 	// [BIN:TPW-EXE:0x0052B06D add-on end hide] the walk hides an end with node state |= 0x80000010 (0x0052B06D, 0x0052B120, 0x0052B16B) and shows one with &= ~0x10 (0x0052AFCC, 0x0052B0A8)
 	public void SetNodeHidden( int node, bool hidden )
 	{
-		EndPresentation();
+		using var presentation = BeginWrite();
 		if ( (uint)node >= (uint)nodeStateBit.Length )
 			throw new ArgumentOutOfRangeException( nameof( node ) );
 		if ( hidden )
@@ -388,7 +388,7 @@ public sealed class ObjectAnimator
 	/// </summary>
 	public int Trigger( int channel, ModelAnimation? clip, string clipName, int animationId, int variant, bool loop, float speed = 1f, bool defer = false )
 	{
-		EndPresentation();
+		using var presentation = BeginWrite();
 		if ( channel < 0 )
 			throw new ArgumentOutOfRangeException( nameof( channel ) );
 		if ( !float.IsFinite( speed ) || speed <= 0 )
@@ -504,7 +504,7 @@ public sealed class ObjectAnimator
 	/// <summary>FLUSHANIM / FLUSHANIM_CH (0xa6c90): clears only the channel's deferred clip; true when one was queued.</summary>
 	public bool Flush( int channel )
 	{
-		EndPresentation();
+		using var presentation = BeginWrite();
 		if ( !channels.TryGetValue( channel, out var state ) || state.Deferred == null )
 			return false;
 		state.Deferred = null;
@@ -514,7 +514,7 @@ public sealed class ObjectAnimator
 	/// <summary>Removes a channel and its clip (an OpenTPW reset; no script opcode does this).</summary>
 	public void Stop( int channel )
 	{
-		EndPresentation();
+		using var presentation = BeginWrite();
 		if ( channels.Remove( channel, out var removed ) )
 		{
 			ResetTextureFramesOnUnbind( removed );
@@ -526,7 +526,7 @@ public sealed class ObjectAnimator
 	/// <summary>Removes every channel (object deletion).</summary>
 	public void StopAll()
 	{
-		EndPresentation();
+		using var presentation = BeginWrite();
 		foreach ( var channel in ChannelList )
 			ResetTextureFramesOnUnbind( channel );
 		channels.Clear();
@@ -537,7 +537,7 @@ public sealed class ObjectAnimator
 	/// <summary>One object update: advances the clock, replays, ends or follows on clips past their end, resamples.</summary>
 	public void Advance( double seconds )
 	{
-		EndPresentation();
+		using var presentation = BeginWrite();
 		if ( !double.IsFinite( seconds ) || seconds < 0 )
 			throw new ArgumentOutOfRangeException( nameof( seconds ) );
 		clockMilliseconds += seconds * 1000.0;
@@ -970,6 +970,88 @@ public sealed class ObjectAnimator
 		CountBump( before );
 	}
 
+	/// <summary>What a simulation writer touched while it ran (<see cref="BeginWrite"/>): the nodes whose state bit it set or cleared, the texture slots it wrote and the meshes whose pose or texture coordinates it sampled.</summary>
+	private sealed record WriteMarks( bool[] Nodes, bool[] Slots, bool[] Meshes );
+
+	private WriteMarks? writes;
+
+	/// <summary>The drawn state a writer found: what the presentation reset left in the simulation's place (<see cref="stash"/> holds the simulation's own).</summary>
+	private sealed record DrawnState( bool[] NodeStateBit, int[] Frames, bool[] Animated, (long Serial, float Tick)[] Vertex, (long Serial, float Tick)[] Uv );
+
+	/// <summary>
+	/// Starts a simulation writer: the simulation's state comes back (the writer computes from it, as before) and every write it makes is noted; <see cref="WriteScope.Dispose"/> then puts the drawn
+	/// state back on everything the writer did not write. The drawn reset stays until a writer writes the element, as tp.exe keeps it (the posed instance's state words are the only copy).
+	/// </summary>
+	// [BIN:TPW-EXE:0x44E380 drawn reset kept] the reset 0x4726D0 (0x44E3A0) changes the instance's own state words and nothing puts them back: the node-state bits are written again by the next sample of a toggle track (0x4735D0 through 0x473C70) or a bind (0x472D70), a texture slot's frame by the writer 0x470C90 when a key applies, the stored vertex and texture-coordinate copies by the next bind; an element no writer touches keeps what the reset left, tick after tick
+	private WriteScope BeginWrite()
+	{
+		if ( writes != null )
+			return default;
+		if ( stash is not { } kept )
+		{
+			writes = new WriteMarks( new bool[nodeStateBit.Length], new bool[frameBySlot.Length], new bool[vertexSources.Length] );
+			return new WriteScope( this, null );
+		}
+		var drawn = new DrawnState( (bool[])nodeStateBit.Clone(), (int[])frameBySlot.Clone(), (bool[])slotAnimated.Clone(), vertexSources.ToArray(), uvSources.ToArray() );
+		EndPresentation();
+		writes = new WriteMarks( new bool[nodeStateBit.Length], new bool[frameBySlot.Length], new bool[vertexSources.Length] );
+		return new WriteScope( this, drawn );
+	}
+
+	private readonly struct WriteScope( ObjectAnimator animator, DrawnState? drawn ) : IDisposable
+	{
+		public void Dispose() => animator?.EndWrite( drawn );
+	}
+
+	private void EndWrite( DrawnState? drawn )
+	{
+		var marks = writes;
+		writes = null;
+		if ( drawn == null || marks == null )
+			return;
+		var before = Versions();
+		var held = new PresentationStash( (bool[])nodeStateBit.Clone(), (int[])frameBySlot.Clone(), (bool[])slotAnimated.Clone(), vertexSources.ToArray(), uvSources.ToArray() );
+		var diverges = false;
+		var hiddenChanged = false;
+		for ( var node = 0; node < nodeStateBit.Length; node++ )
+		{
+			if ( marks.Nodes[node] || nodeStateBit[node] == drawn.NodeStateBit[node] )
+				continue;
+			nodeStateBit[node] = drawn.NodeStateBit[node];
+			hiddenChanged = diverges = true;
+		}
+		if ( hiddenChanged )
+			hiddenVersion++;
+		for ( var slot = 0; slot < frameBySlot.Length; slot++ )
+		{
+			if ( marks.Slots[slot] )
+				continue;
+			if ( frameBySlot[slot] != drawn.Frames[slot] )
+			{
+				frameBySlot[slot] = drawn.Frames[slot];
+				textureFrameVersion++;
+				updateEffects++;
+				diverges = true;
+			}
+			if ( slotAnimated[slot] != drawn.Animated[slot] )
+			{
+				slotAnimated[slot] = drawn.Animated[slot];
+				diverges = true;
+			}
+		}
+		for ( var mesh = 0; mesh < vertexSources.Length; mesh++ )
+		{
+			if ( marks.Meshes[mesh] || vertexSources[mesh] == drawn.Vertex[mesh] && uvSources[mesh] == drawn.Uv[mesh] )
+				continue;
+			vertexSources[mesh] = drawn.Vertex[mesh];
+			uvSources[mesh] = drawn.Uv[mesh];
+			vertexVersions[mesh]++;
+			diverges = true;
+		}
+		CountBump( before );
+		stash = diverges ? held : null;
+	}
+
 	private void ClearNodeStateBit( int node )
 	{
 		if ( node >= nodeStateBit.Length || (model.Nodes[node].Type & 0x80000000u) != 0 || nodePinned[node] )
@@ -979,6 +1061,8 @@ public sealed class ObjectAnimator
 
 	private void SetNodeStateBit( int node, bool value )
 	{
+		if ( writes is { } marks )
+			marks.Nodes[node] = true;
 		if ( nodeStateBit[node] == value )
 			return;
 		nodeStateBit[node] = value;
@@ -1121,6 +1205,8 @@ public sealed class ObjectAnimator
 			if ( (model.Textures[slot].Flags & 0x40) == 0 )
 				continue;
 			slotAnimated[slot] = false;
+			if ( writes is { } marks )
+				marks.Slots[slot] = true;
 			if ( frameBySlot[slot] == 0 )
 				continue;
 			frameBySlot[slot] = 0;
@@ -1149,6 +1235,8 @@ public sealed class ObjectAnimator
 					{
 						sampledFrameBySlot[slot] = 0;
 						slotAnimated[slot] = false;
+						if ( writes is { } resetMarks )
+							resetMarks.Slots[slot] = true;
 					}
 			}
 			if ( channel.Held && !channel.HeldTextureSamplePending )
@@ -1157,6 +1245,8 @@ public sealed class ObjectAnimator
 			foreach ( var track in channel.FrameTracks )
 			{
 				slotAnimated[track.Slot] = true;
+				if ( writes is { } sampleMarks )
+					sampleMarks.Slots[track.Slot] = true;
 				// Invalid or missing art remains a defensive host extension ([EXT:original-undefined-reads]).
 				if ( track.FrameAt( channel.Player.Tick ) is { } frame && frame < model.Textures[track.Slot].FrameNames.Count
 					&& (availableFramesBySlot[track.Slot] == null || availableFramesBySlot[track.Slot]![frame]) )
@@ -1199,6 +1289,8 @@ public sealed class ObjectAnimator
 					vertexChannel.Vertices[node]!.ApplyPose( vertexChannel.Player.Tick, positions );
 			}
 			vertexSources[mesh] = vertexSource;
+			if ( writes is { } vertexMarks )
+				vertexMarks.Meshes[mesh] = true;
 			changed = true;
 		}
 		var uvSource = uvChannel == null ? (0L, 0f) : (uvChannel.Serial, uvChannel.Player.Tick);
@@ -1211,6 +1303,8 @@ public sealed class ObjectAnimator
 				uvChannel.Uvs[node]!.Apply( uvChannel.Player.Tick, coordinates );
 			}
 			uvSources[mesh] = uvSource;
+			if ( writes is { } uvMarks )
+				uvMarks.Meshes[mesh] = true;
 			changed = true;
 		}
 		if ( changed )

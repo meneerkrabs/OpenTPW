@@ -47,7 +47,7 @@ public partial class Level
 			UpdateSnow( frameSeconds );
 		SceneClock.Advance( frameSeconds * SimulationTimeScale );
 		// [BIN:TPW-EXE:0x0054E301 colour pulse] the main loop's pass over the listed instances (the queue dead ends) runs once per frame, on the scene clock's gap
-		OriginalTerrain?.AdvanceQueuePulse( SceneClock.FrameMilliseconds );
+		OriginalTerrain?.AdvanceQueueModels( SceneClock.FrameMilliseconds );
 		var simulationStart = FrameStats.Begin();
 		using ( FrameMarks.Measure( "level.simulation" ) )
 		{

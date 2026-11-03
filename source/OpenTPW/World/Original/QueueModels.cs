@@ -20,25 +20,6 @@ public static class QueueModels
 	// [BIN:TPW-EXE:0x00522951 load flags] mov al, [esi + 5]; edi = 0x12423, or 0x112423 when the byte is not 0 (0x522954..0x52295D); the rows' flag words are 0x100 for rows 0 and 1 and 0 for the other six (0x763390, 0x76339C, 0x7633A8..0x7633E4)
 	public static uint LoadFlags( int model ) => QueueModelPulse.Pulses( model ) ? 0x112423u : 0x12423u;
 
-	/// <summary>The loader's own flag word for a raw flag word (the mapping of <c>0x4629D0</c>, 0x4629F5..0x462A9A) that <c>0x461F10</c> reads as its second argument.</summary>
-	// [BIN:TPW-EXE:0x004629D0 loader flag mapping] raw 0x10 -> 2, 0x20 -> 0x10, 0x40 -> 0x20, 0x2 -> 0x40, 0x100 -> 1, 0x200 -> 0x100, 0x4 -> 0x80, 0x4000 -> 0x400, 0x10000 -> 0x800, 0x40000 -> 0x1000, 0x100000 -> 0x2000, 0x200000 -> 0x4000, 0x400000 -> 0x8000, 0x1000000 -> 0x20000
-	public static uint InnerLoaderFlags( uint raw )
-	{
-		(uint From, uint To)[] map = [(0x10, 2), (0x20, 0x10), (0x40, 0x20), (0x2, 0x40), (0x100, 1), (0x200, 0x100), (0x4, 0x80), (0x4000, 0x400), (0x10000, 0x800), (0x40000, 0x1000), (0x100000, 0x2000), (0x200000, 0x4000), (0x400000, 0x8000), (0x1000000, 0x20000)];
-		var inner = 0u;
-		foreach ( var (from, to) in map )
-			if ( (raw & from) != 0 )
-				inner |= to;
-		return inner;
-	}
-
-	/// <summary>
-	/// Whether the loader reads a queue model's animation files and creates its channels' clips: only when the inner flags have bit 1 or 8 (the clip loop of <c>0x461F10</c>, test <c>(flags &amp; 9)</c>) or 2 or 8 (<c>0x473E30</c>, test <c>(flags &amp; 10)</c>).
-	/// The queue models' inner flags have none, so the <c>queendm</c>, <c>quebin1m</c> and <c>quebin2m</c> clips of the archive (the fire0..fire04 torch frames) are never loaded and the torches stand on frame 0.
-	/// </summary>
-	// [BIN:TPW-EXE:0x00462269 clip loop gate] the loop over the twelve animation letters (%s%s%c.md2 and %s%s%c%d.md2, 0x4623B4 and 0x4623E0) runs only for flags & 9 (and eax, 9 at 0x462269, tested at 0x46233A, skipped by the jump to 0x46238E); 0x473E30 for flags & 10 (and ebp, 0xA at 0x46274A, call 0x462760) in the tail of 0x461F10; the creator's own 0x473E30 call (0x4631D6) only resets the instance's one channel to the none animation 12 (0x473E4B) and sets 0x10 when no animation has clips
-	public static bool LoadsAnimation( int model ) => (InnerLoaderFlags( LoadFlags( model ) ) & 0xB) != 0;
-
 	/// <summary>The queue table 0x7630B0: {model index (class 2), rotation, link mask}.</summary>
 	private static readonly (int Model, int Rotation, byte Mask)[] Table =
 	{

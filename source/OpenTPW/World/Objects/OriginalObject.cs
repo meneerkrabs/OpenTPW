@@ -106,7 +106,7 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 
 	/// <summary>Whether the detail option ANIMATINGTEXTURES lets the texture-frame tracks show: Low turns it off, Medium, High and the extended preset keep it on.</summary>
 	// [BIN:TPW-EXE:0x0044D9CD render flag 0x40] the option record 4 (ANIMATINGTEXTURES, value 0 or 1; the records are 0x3C bytes from TEXTUREQUALITY at 0x744300, their values the words from 0x785874) clears (0) or sets (1) bit 0x40 of the render flags 0x8BD550
-	private static bool TextureAnimationEnabled => IGraphicsSettings.Instance is not { } settings || settings.GetPresetValues( settings.Current.Preset ) is not { } detail || detail.AnimatingTextures != 0;
+	internal static bool TextureAnimationEnabled => IGraphicsSettings.Instance is not { } settings || settings.GetPresetValues( settings.Current.Preset ) is not { } detail || detail.AnimatingTextures != 0;
 
 	/// <summary>The frame a texture slot shows: its track's frame while texture animation is on, else frame 0.</summary>
 	// [BIN:TPW-EXE:0x0057A420 slot texture bind] each model texture slot binds frames[flags 0x40 of 0x8BD550 ? slot word +2 : 0] (0x00575F90), the slot's current frame that the clip update writes (0x00470C90)

@@ -57,14 +57,17 @@ public sealed class HistoryRing
 	}
 
 	/// <summary>
-	/// The word of the slot after the head, which the maximum scanners read when no sample is above 0: the oldest entry of a wrapped ring, a slot never written in an unwrapped one,
-	/// and with the head at the last slot the head word itself (an integer; a single's bits, read as a float, are 0).
+	/// The word of the slot after the head, which the maximum scanners read when no sample is above 0: the oldest entry of a wrapped ring, a slot not yet written in an unwrapped one
+	/// (a new park's is uninitialised heap, [EXT:original-undefined-reads]: 0 here; an original save's is its raw saved word) and with the head at the last slot the head word itself (an integer; a single's bits, read as a float, are 0).
 	/// </summary>
 	internal double SlotAfterHead( bool floating )
 	{
 		var slot = Head + 1;
 		return slot < data.Length ? data[slot] : floating ? 0 : Head;
 	}
+
+	/// <summary>The word stored in a slot, read or not.</summary>
+	internal double Raw( int slot ) => data[slot];
 
 	/// <summary>The entries oldest first.</summary>
 	public IEnumerable<double> Oldest()
@@ -201,7 +204,7 @@ public sealed class ParkStatisticsHistory
 		Restore( new ParkStatisticsData
 		{
 			ArrivalsThisMonth = statistics.ArrivalsThisMonth,
-			Arrivals = RingData.OfOriginal( statistics.Arrivals ), Happiness = RingData.OfOriginal( statistics.Happiness ),
+			Arrivals = RingData.OfOriginal( statistics.Arrivals ), Happiness = RingData.OfOriginal( statistics.Happiness, floating: true ),
 			Stay = RingData.OfOriginal( statistics.Stay ), People = RingData.OfOriginal( statistics.People ),
 			Rating = RingData.OfOriginal( statistics.Rating ), RecentStays = RingData.OfOriginal( statistics.RecentStays )
 		} );
@@ -288,10 +291,29 @@ public sealed class RingData
 		return new RingData { Slots = slots, Head = ring.Head, Wrapped = ring.Wrapped };
 	}
 
-	internal static RingData OfOriginal( NativeStatisticsRing ring ) => new() { Slots = ring.Values.ToList(), Head = ring.Head, Wrapped = ring.Wrapped };
+	/// <summary>
+	/// An original save's ring. The slots tp.exe never reads (past the head of an unwrapped ring) keep the raw saved word, as a single's value when <paramref name="floating"/>
+	/// (a non-finite one stays 0, which the maximum scanner treats alike), because the maximum scanner reads the slot after the head when no sample is above 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4C5D70 ring loader] reads all 0x90 slots raw (loop at 0x4C6307), so the unread slots keep the saved words
+	internal static RingData OfOriginal( NativeStatisticsRing ring, bool floating = false )
+	{
+		var slots = ring.Values.ToList();
+		if ( !ring.Wrapped )
+			for ( var slot = ring.Head + 1; slot < slots.Count && slot < ring.RawValues.Count; slot++ )
+			{
+				var word = ring.RawValues[slot];
+				var value = floating ? (double)BitConverter.Int32BitsToSingle( word ) : word;
+				slots[slot] = double.IsFinite( value ) ? value : 0;
+			}
+		return new() { Slots = slots, Head = ring.Head, Wrapped = ring.Wrapped };
+	}
 
 	private static double SlotValue( HistoryRing ring, int slot )
 	{
+		// a slot past the head of an unwrapped ring is not read by tp.exe but keeps its word (an original save's raw word, else 0)
+		if ( !ring.Wrapped && slot > ring.Head )
+			return ring.Raw( slot );
 		// a slot is read through its age: head - slot, wrapped round
 		var back = (ring.Head - slot + ring.Size) % ring.Size;
 		return ring.TryGet( back, out var value ) ? value : 0;

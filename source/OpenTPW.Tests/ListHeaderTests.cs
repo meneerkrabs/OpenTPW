@@ -38,17 +38,22 @@ public class ListHeaderTests
 	public void AHeaderMovesItsTextByOnePixelOnHoverAndTwoByOneWhenPressed()
 	{
 		// 0x668ad3 draws the text at (0, 0), hover (1, 1) and pressed (2, 1) pixels of the display mode
-		static float First( UiContext context, bool hover, bool pressed )
+		static (float X, float Y) First( UiContext context, bool hover, bool pressed )
 		{
 			context.Batch.Clear();
 			context.DrawListHeader( context.Fonts.Label, "N", new UiRect( 100, 100, 200, 40 ), hover, pressed );
-			return context.Batch.Draws.SelectMany( draw => draw.Vertices ).Min( vertex => vertex.Position.X );
+			var vertices = context.Batch.Draws.SelectMany( draw => draw.Vertices ).ToArray();
+			return (vertices.Min( vertex => vertex.Position.X ), vertices.Min( vertex => vertex.Position.Y ));
 		}
 		var context = Context();
 		var step = context.ModePixel;
 		var normal = First( context, false, false );
-		Assert.AreEqual( normal + step, First( context, true, false ), 0.01f );
-		Assert.AreEqual( normal + 2 * step, First( context, true, true ), 0.01f );
+		var hover = First( context, true, false );
+		var pressed = First( context, true, true );
+		Assert.AreEqual( normal.X + step, hover.X, 0.01f );
+		Assert.AreEqual( normal.Y + step, hover.Y, 0.01f );
+		Assert.AreEqual( normal.X + 2 * step, pressed.X, 0.01f );
+		Assert.AreEqual( normal.Y + step, pressed.Y, 0.01f );
 	}
 
 	[TestMethod]

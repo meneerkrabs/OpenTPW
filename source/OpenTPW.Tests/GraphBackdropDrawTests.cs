@@ -360,6 +360,22 @@ public class GraphBackdropDrawTests
 		expected.AssertMatches( context.Batch );
 	}
 
+	[TestMethod]
+	public void TheRingHeadCountsClosesSinceTheLedgerStartedNotTheCalendarMonth()
+	{
+		// an imported park restores its ledger at the save's month with an empty history: after exactly 144 closes the head is slot 143 (the head word), wherever the calendar stands
+		var park = RecentResearchTests.Park();
+		var totals = new Dictionary<LedgerCategory, long>();
+		park.Ledger.Restore( -5, -5, 500, totals, Array.Empty<LedgerMonth>() );
+		for ( var close = 0; close < 143; close++ )
+			park.Ledger.CloseMonth( 501 + close, 1, 1 );
+		Assert.AreEqual( 0, ParkHud.FinanceScaleSlotAfterHead( park, FinanceSeries.BankBalance ), "143 closes: the ring is not full, its next slot never written" );
+		park.Ledger.CloseMonth( 644, 1, 1 );
+		Assert.AreEqual( 143, ParkHud.FinanceScaleSlotAfterHead( park, FinanceSeries.BankBalance ), "144 closes: the head word itself" );
+		park.Ledger.CloseMonth( 645, 1, 1 );
+		Assert.AreEqual( -5, ParkHud.FinanceScaleSlotAfterHead( park, FinanceSeries.BankBalance ), "145 closes: the oldest month" );
+	}
+
 	[DataTestMethod]
 	[DataRow( 1 )]
 	[DataRow( 3 )]

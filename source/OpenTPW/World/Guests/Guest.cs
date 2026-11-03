@@ -238,7 +238,7 @@ public sealed class Guest
 	/// </summary>
 	public int ExitLevel { get; internal set; }
 	/// <summary>Simulated seconds since creation, including the arrival and departure walk; null means the prior duration is unknown.
-	/// Retained for stay statistics and weather gates; new visitor displays use the independent integer-turn age.</summary>
+	/// Retained for weather gates and as the fallback of a guest without the integer stamp ([APPROX:GUEST-920]); the stay statistics and the visitor displays use the integer-turn age (DisplayTimeInParkTurns).</summary>
 	public double? TimeInParkSeconds { get; internal set; }
 	/// <summary>Theme Park Inc: the fee recorded at boarding, which the exit takes (IGuestPayments.SettlesAtExit); not saved, a Theme Park Inc run is not.</summary>
 	internal int PendingFee;

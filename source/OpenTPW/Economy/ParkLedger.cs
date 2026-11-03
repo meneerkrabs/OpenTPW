@@ -48,6 +48,9 @@ public sealed class ParkLedger
 	public long Balance { get; private set; }
 	public long CurrentOpeningBalance { get; private set; }
 	public long CurrentMonthIndex { get; private set; }
+	private long startMonthIndex;
+	/// <summary>The months closed since the ledger started (a park started at month 0 closes <see cref="CurrentMonthIndex"/>; a restored one counts from its restore, so a ring that went round after an import is not placed by the calendar).</summary>
+	internal long ClosesSinceStart => CurrentMonthIndex - startMonthIndex;
 	public IReadOnlyList<LedgerMonth> History => history;
 	public IReadOnlyDictionary<LedgerCategory, long> CurrentTotals => current;
 
@@ -117,6 +120,12 @@ public sealed class ParkLedger
 		Balance = balance;
 		CurrentOpeningBalance = openingBalance;
 		CurrentMonthIndex = monthIndex;
+		// a restored history of fewer than 144 months began that many closes back; a full one has lost its start, which is taken as month 0 (a park saved after more than 144 closes since an import is placed as a native park)
+		startMonthIndex = 0;
+		var restored = months as ICollection<LedgerMonth> ?? months.ToList();
+		months = restored;
+		if ( restored.Count < MaximumHistoryMonths )
+			startMonthIndex = monthIndex - restored.Count;
 		current.Clear();
 		foreach ( var (category, value) in totals )
 			current[category] = value;

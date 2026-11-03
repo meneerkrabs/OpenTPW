@@ -89,7 +89,7 @@ public sealed partial class ParkHud
 		visible.Add( series );
 	}
 
-	/// <summary>Closed months plus the live current month, restricted to the selected period.</summary>
+	/// <summary>Closed months plus the live current month, restricted to the selected period (the entry price window's month figures; the graph itself reads the closed months only, <see cref="TryFinanceSample"/>).</summary>
 	public IReadOnlyList<LedgerMonth> FinanceMonths()
 	{
 		var economy = FinanceEconomy;
@@ -178,7 +178,8 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// The word the maximum scanner reads when no sample was above 0: the ring slot after the head. A wrapped ring's is its oldest month, and with the head at slot 143 it is
-	/// the head word itself; an unwrapped ring's is a slot never written (0).
+	/// the head word itself; an unwrapped ring's is a slot not yet written: a new park's is uninitialised heap (the ring is malloc'd, 0x67ACC0 at 0x5188C4, and its constructor 0x51AE30 does not clear it), read as 0 here
+	/// ([EXT:original-undefined-reads]), and a loaded save's the raw saved word (loader 0x4C5D70, loop at 0x4C6307), which OpenTPW's own finance history, built from the ledger, does not carry.
 	/// </summary>
 	// [BIN:TPW-EXE:0x480263 max scanner quirk] 0x4801D0 leaves its index at -1 when nothing is above 0 and then still reads slot head + 1 (0x480273, 0x480287) and keeps it if it is above the maximum; the minimum scanner guards this case (0x480413)
 	internal static long FinanceScaleSlotAfterHead( ParkEconomy economy, FinanceSeries series )
@@ -187,8 +188,8 @@ public sealed partial class ParkHud
 		var history = ledger.History;
 		if ( history.Count < ParkLedger.MaximumHistoryMonths )
 			return 0;
-		// 144 closed months: the ring has gone round once its closes exceed 144 (the live month's index counts the closes of a park that started at month 0)
-		var closes = Math.Max( ledger.CurrentMonthIndex, ParkLedger.MaximumHistoryMonths );
+		// 144 closed months: the ring has gone round once its closes exceed 144 (counted since the ledger started, so an imported park's empty history does not shift the head)
+		var closes = Math.Max( ledger.ClosesSinceStart, ParkLedger.MaximumHistoryMonths );
 		var head = (int)((closes - 1) % ParkLedger.MaximumHistoryMonths);
 		if ( head + 1 >= ParkLedger.MaximumHistoryMonths )
 			return head;
@@ -234,7 +235,7 @@ public sealed partial class ParkHud
 				return;
 			var plot = backdrop.Plot;
 			var font = context.Fonts.Small;
-			// [BIN:TPW-EXE:0x480460 series points] n = min(period samples, months held); the buffer holds n + 1 values, the sample n back down to the live month, an unreadable sample (the one past the months held) keeping the previous value (0 at the start): a graph of few months fills from the left over x steps of width / samples and shows a 0 before its first month
+			// [BIN:TPW-EXE:0x480460 series points] n = min(period samples, closed months held); the buffer holds n + 1 values, the sample n months back down to the newest closed month, an unreadable sample (the one past the months held) keeping the previous value (0 at the start): a graph of few months fills from the left over x steps of width / samples and starts at 0 before its first month; the running month is not on the ring, so a new park draws one 0 point
 			// [EXT:graph-pixel-adapter] the original draws into the control's bitmap at the display mode's pixel size, which follows the host's resolution; OpenTPW takes one pixel as 2 canvas units (the 1024 x 768 mode of the video; user-approved 2026-10-30)
 			var n = Math.Min( samples, FinanceSamplesHeld( economy ) );
 			foreach ( var series in FinanceSeriesOrder )

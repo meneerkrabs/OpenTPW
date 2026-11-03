@@ -624,6 +624,8 @@ public sealed class UiButton : UiElement
 
 	public string? Model { get; set; }
 	public Func<string>? Text { get; set; }
+	/// <summary>The text colour and offset the button's text last took (0x668AD3 leaves a disabled button as it was; a button never drawn enabled is white at (0, 0)).</summary>
+	private (RgbaByte Colour, int X, int Y) textState = (UiColors.ButtonText, 0, 0);
 	/// <summary>The label is not cut off at the button's box: OpenTPW's own label buttons of the online screens ([EXT:ONLINE-UI]) draw their text on a purple bar whose label box can be narrower than the text.</summary>
 	public bool Unclipped { get; set; }
 	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Menu;
@@ -707,19 +709,25 @@ public sealed class UiButton : UiElement
 			if ( Text != null )
 			{
 				// [BIN:TPW-EXE:0x668ad3 button text states] the state getter 0x668820 gives 1 disabled, 0 normal, 2 checked, 3 checked with the pointer, 4 pressed and 5 hover; the applier draws normal and checked with
-				// the colour +0x14C at (0, 0), pressed with +0x14C at (2, 1), hover and checked with the pointer with +0x154 at (1, 1) (so a checked button only differs from a normal one while the pointer is over it) and leaves a disabled button as it was. Only the header builder 0x486660 sets
+				// the colour +0x14C at (0, 0), pressed with +0x14C at (2, 1), hover and checked with the pointer (pressed or not) with +0x154 at (1, 1) and, for a disabled button, jumps to 0x668BB1 with flags 0: it keeps the last applied colour and offset (no grey). Only the header builder 0x486660 sets
 				// them (0x668f5a, 0x668f7b); every other button keeps the constructor's +0x14C white, +0x154 black and the offsets +0x158 / +0x159 = 1, 1 (0x668952..0x6689AC)
 				var disabled = !Enabled || subdued;
-				var (colour, shiftX, shiftY) = disabled ? (UiColors.Disabled, 0, 0)
-					: pressed ? (UiColors.ButtonText, 2, 1)
-					: focused ? (UiColors.ButtonHoverText, 1, 1)
-					: (UiColors.ButtonText, 0, 0);
+				if ( !disabled )
+				{
+					// 0x668820 tests the checked flag (+0x139) before the pressed one, so a checked button that is pressed is state 3 (hover colour at (1, 1))
+					var checkedState = Selected?.Invoke() == true;
+					textState = checkedState && (focused || pressed) ? (UiColors.ButtonHoverText, 1, 1)
+						: pressed ? (UiColors.ButtonText, 2, 1)
+						: focused ? (UiColors.ButtonHoverText, 1, 1)
+						: (UiColors.ButtonText, 0, 0);
+				}
+				var (colour, shiftX, shiftY) = textState;
 				var step = context.ModePixel;
 				context.DrawFittedText( Font( context.Fonts ), Text(), new UiRect( rect.X + shiftX * step, rect.Y + shiftY * step, rect.Width, rect.Height ), colour, Align, clip: !Unclipped );
 			}
 			return;
 		}
-		// [BIN:TPW-EXE:0x486660 no model-less text button] no PC screen draws a model-less text button (the original's list headers are the !cbut model, UiContext.DrawListHeader), so the purple_button plate below only serves OpenTPW's own screens, each under its approved label: [EXT:ONLINE-UI] and [EXT:own-window-sizes] (online screens), [EXT:mods-ui] (mods page), [EXT:SETUP] and [EXT:tpi-viewer] (game files page), [EXT:opentpw-page] (options page), [EXT:tpi-ui] (Theme Park Inc HUD), [EXT:overview-select-button] (go-to-attraction button) and [EXT:staff-employee-view] (staff employee view button)
+		// [BIN:TPW-EXE:0x486660 no model-less text button] no PC screen draws a model-less text button (the original's list headers are the !cbut model, UiContext.DrawListHeader), so the purple_button plate below only serves OpenTPW's own screens, each under its approved label: [EXT:ONLINE-UI] and [EXT:own-window-sizes] (online screens), [EXT:mods-ui] (mods page), [EXT:SETUP] and [EXT:tpi-viewer] (game files page), [EXT:opentpw-page] (options page), [EXT:tpi-text-hud] (Theme Park Inc HUD), [EXT:load-chooser] (the load screen's load button), [EXT:speed-buttons] (the HUD speed buttons), [EXT:pools-waves] (the wave pool settings button), [EXT:theme-continue] and [EXT:save-extension-switch] (the choice dialog's buttons, UiDialogs), [EXT:overview-select-button] (go-to-attraction button) and [EXT:staff-employee-view] (staff employee view button)
 		var art = context.ResolveTexture( "purple_button" );
 		var inner = PurpleLabelRect( rect, art != null );
 		if ( art != null )

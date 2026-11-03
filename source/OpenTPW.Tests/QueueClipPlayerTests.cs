@@ -54,15 +54,15 @@ public class QueueClipPlayerTests
 		Assert.AreEqual( 1, cells.Select( births.Of ).Distinct().Single(), "the first build makes them all in one frame" );
 		births.Assign( cells );
 		Assert.AreEqual( 1, cells.Select( births.Of ).Distinct().Single(), "a rebuild without a change keeps every start" );
-		// a new cell at (5, 6) is dirty: the 3 x 3 cells around it restart (the 2 x 2 blocks of 0x5311C0), the diagonal (6, 5) too, but not (9, 9) and no second ring
+		// a new cell at (5, 6) sets the link bits of its orthogonal neighbours (5, 5) and (5, 7): they restart with it; the diagonal (6, 5) and (9, 9) keep their phase
 		var edited = cells.Append( (0, 5, 6, 0) ).ToArray();
 		births.Assign( edited );
 		Assert.AreEqual( 2, births.Of( (0, 5, 6, 0) ) );
 		Assert.AreEqual( 2, births.Of( (0, 5, 5, 0) ) );
 		Assert.AreEqual( 2, births.Of( (0, 5, 7, 0) ) );
-		Assert.AreEqual( 2, births.Of( (0, 6, 5, 0) ), "the diagonal neighbour" );
+		Assert.AreEqual( 1, births.Of( (0, 6, 5, 0) ), "the diagonal is no link neighbour" );
 		Assert.AreEqual( 1, births.Of( (0, 9, 9, 0) ) );
-		// a cell that goes dirties its 3 x 3 too; nobody is near (9, 9)
+		// a cell that goes has its neighbours placed again too; nobody is next to (9, 9)
 		births.Assign( edited.Where( key => key.Item2 != 9 ).ToArray() );
 		Assert.AreEqual( 2, births.Of( (0, 5, 6, 0) ), "no neighbour of (9, 9)" );
 		// a cell that stays and only turns (a link bit moved) restarts alone
@@ -70,9 +70,6 @@ public class QueueClipPlayerTests
 		Assert.AreEqual( 4, births.Of( (0, 6, 5, 1) ) );
 		Assert.AreEqual( 2, births.Of( (0, 5, 5, 0) ), "its neighbours keep their phase" );
 		Assert.AreEqual( 2, births.Of( (0, 5, 7, 0) ) );
-		// two cells apart is outside the block: a cell at (5, 9) leaves (5, 7) alone
-		births.Assign( edited.Select( key => key.Item2 == 6 ? (0, 6, 5, 1) : key ).Where( key => key.Item2 != 9 ).Append( (0, 5, 9, 0) ).ToArray() );
-		Assert.AreEqual( 2, births.Of( (0, 5, 7, 0) ), "no second ring" );
 	}
 
 	[TestMethod]

@@ -248,6 +248,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [EXT:online-visit-settings] a visit reads the group's Arrival.* keys from Standard.sam, where the original loads online_Standard.sam for GameType 1 (0x0051573C), and a read-only visit has no economy, so its groups count 0 park points: the online visit is OpenTPW's read-only extension, not the original's two-player park (docs/ONLINE.md)
 	public bool OnlineVisit { get; set; }
 
+	/// <summary>Whether the world types its cells as the original's map does (a park of a Level that types its footprints); null or false is an OpenTPW harness world ([EXT:untyped-harness-world]).</summary>
+	public Func<bool>? TypesCells { get; set; }
+
 	private ParkLitter? litter;
 	/// <summary>Where guests drop their litter: set here, else the park's (<see cref="IGuestPayments.Litter"/>); null keeps none.</summary>
 	public ParkLitter? Litter { get => litter ?? Payments?.Litter; set => litter = value; }

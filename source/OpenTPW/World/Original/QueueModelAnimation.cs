@@ -197,11 +197,11 @@ internal sealed class QueueAnimationGroup( QueueClipPlayer player )
 
 /// <summary>
 /// The start of every queue cell by (model, cell, yaw): the generation of the frame it was made in. The first build (a level, a loaded park) makes them all in one frame. After a path edit, a cell that appears or goes
-/// dirties the 2 x 2 blocks that contain it, so the 3 x 3 cells around it (diagonals included) are removed and placed again by the tile refresh (0x5365D0 -> 0x522A90, 0x5229E0) and start again as a group of their own; a cell
-/// that stays but whose model or yaw changed (a link bit moved) restarts alone; the others keep their phase.
+/// has its four orthogonal neighbours placed again by the link refresh (each takes a new channel at frame 0) and starts again with them as a group of their own; a cell that stays but whose model or yaw changed (a link bit
+/// moved) restarts alone; the others keep their phase.
 /// </summary>
-// [BIN:TPW-EXE:0x005311C0 dirty block refresh] the walk 0x5311C0 (called by the tool commit at 0x532557 and 0x5328B4 after 0x524960 ran on every brush cell) takes a tile T and its neighbours (0,1), (1,1) and (1,0) (the constants 0x7CDBA8, 0x7CDBB8, 0x7CDBC8 from the initialisers 0x4D9B90, 0x4D9B50, 0x4D9B00); when any of the four has the dirty flag 0x40 (set around 0x536553) it clears the flag on all four and calls 0x5365D0 on all four (0x53132E, 0x53133E, 0x53134E, 0x531362), so a dirty cell refreshes the 2 x 2 blocks around it, the diagonal included, and no more
-// [BIN:TPW-EXE:0x00534A13 link refresh] the immediate link refresh (0x534A13, 0x534A40, 0x534C51) places again only the orthogonal neighbour whose link bit it sets, and only when it is of the same class ([edi+8] == ebp, or type 0xA): a cell that stays and changes model or yaw
+// [BIN:TPW-EXE:0x00534A13 link refresh] the immediate link refresh of the path tool (0x534A13, 0x534A40, 0x534C51 and the calls around them: 0x5365D0 on the neighbour) re-places only the orthogonal neighbour whose link bit it sets or clears, and only when it has the same class ([edi+8] == ebp, or type 0xA), through 0x522A90 and 0x5229E0 (a new channel at frame 0): a cell that stays and changes model or yaw restarts alone
+// [BIN:TPW-EXE:0x005311C0 fence walk] the 2 x 2 dirty-block walk 0x5311C0 (calls 0x5365D0 at 0x53132E..0x531362; called at 0x532557 and 0x5328B4 by the tool commit that draws lines of the type 0x19 cells, the park fence posts: 0x53ad60 tests type 0x19, ParkCellTypes.Hoarding) belongs to the fence line commit: it steps along the line by two cells and then scans the whole map for type 0x19 cells; it re-places fence cells, not queue cells, so no queue cell is restarted by it; the other writers of the dirty flag 0x40 (0x53a530 call sites such as 0x52C89F..0x52D0D5 and 0x532E9D..0x532F2C) are not traced here
 internal sealed class QueueBirths
 {
 	private readonly Dictionary<(int Model, int X, int Y, int Yaw), int> birth = new();
@@ -215,19 +215,18 @@ internal sealed class QueueBirths
 		var now = cells.ToHashSet();
 		var before = birth.Keys.Select( key => (key.X, key.Y) ).ToHashSet();
 		var after = now.Select( key => (key.X, key.Y) ).ToHashSet();
-		// the cells that appear or go are the dirty ones; the cells that stayed in place and changed are remade alone
+		// the cells that appear or go set or clear the link bits of their orthogonal neighbours; a cell that stays and changed is a new key and restarts alone
 		var dirty = new HashSet<(int X, int Y)>( after.Except( before ) );
 		dirty.UnionWith( before.Except( after ) );
-		var changed = now.Any( key => !birth.ContainsKey( key ) && before.Contains( (key.X, key.Y) ) )
-			|| birth.Keys.Any( key => !now.Contains( key ) && after.Contains( (key.X, key.Y) ) );
-		if ( dirty.Count == 0 && !changed )
+		var changed = now.Any( key => !birth.ContainsKey( key ) ) || birth.Keys.Any( key => !now.Contains( key ) );
+		if ( !changed )
 			return;
 		var initial = birth.Count == 0;
 		var born = ++generation;
 		var next = new Dictionary<(int Model, int X, int Y, int Yaw), int>();
 		foreach ( var key in now )
 		{
-			var restart = initial || !birth.ContainsKey( key ) || NearDirty( dirty, key.X, key.Y );
+			var restart = initial || !birth.ContainsKey( key ) || NextToDirty( dirty, key.X, key.Y );
 			next[key] = restart ? born : birth[key];
 		}
 		birth.Clear();
@@ -235,12 +234,6 @@ internal sealed class QueueBirths
 			birth[key] = start;
 	}
 
-	private static bool NearDirty( HashSet<(int X, int Y)> dirty, int x, int y )
-	{
-		for ( var dy = -1; dy <= 1; dy++ )
-			for ( var dx = -1; dx <= 1; dx++ )
-				if ( dirty.Contains( (x + dx, y + dy) ) )
-					return true;
-		return false;
-	}
+	private static bool NextToDirty( HashSet<(int X, int Y)> dirty, int x, int y ) =>
+		dirty.Contains( (x + 1, y) ) || dirty.Contains( (x - 1, y) ) || dirty.Contains( (x, y + 1) ) || dirty.Contains( (x, y - 1) );
 }

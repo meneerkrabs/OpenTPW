@@ -70,7 +70,7 @@ public class GraphBackdropTests
 		var unsnapped = new GraphBackdrop( 449, 269, 12 );
 		Assert.AreEqual( 429, unsnapped.Plot.Right );
 		Assert.AreEqual( 428f, unsnapped.VerticalLines().Last().Span.X );
-		Assert.AreEqual( 429, ParkInfoGraph.Column( 12, 12, unsnapped.Plot ), "series columns retain their separate existing formula" );
+		Assert.AreEqual( 428, ParkInfoGraph.Column( 12, 12, unsnapped.Plot ), "series columns sum the float step as the grid does (0x47FE90, 0x47FCD0)" );
 	}
 
 	[TestMethod]

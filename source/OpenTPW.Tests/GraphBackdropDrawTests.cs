@@ -146,34 +146,73 @@ public class GraphBackdropDrawTests
 		return park;
 	}
 
-	private static void FinanceLines( ExpectedFrame expected, UiContext context, int years, long[] values, long minimum, long maximum, RgbaByte colour )
+	/// <summary>
+	/// The primitives of one series as tp.exe's drawer 0x47FE90 makes them, written independently of the renderer: whole-pixel columns summed as floats,
+	/// rows as integers cut to the plot, a box round every segment end below 144 samples and the last value at the line's end. <paramref name="points"/>
+	/// run oldest first and include the extra oldest point.
+	/// </summary>
+	private static void SeriesLines( ExpectedFrame expected, UiContext context, bool finance, int years, long[] points, long minimum, long maximum, RgbaByte colour )
 	{
-		var frame = Frame( true, context.Canvas );
+		var frame = Frame( finance, context.Canvas );
 		var pixel = Math.Max( 1f, Math.Min( context.Canvas.Width / 1024f, context.Canvas.Height / 768f ) );
-		var plot = new UiRect( frame.X + 4 * pixel, frame.Y + 4 * pixel, 424 * pixel, 244 * pixel );
-		var upper = minimum == maximum ? minimum + 1 : maximum;
-		float Y( long value ) => plot.Bottom - plot.Height * (float)((value - (double)minimum) / (upper - (double)minimum));
-		for ( var index = 1; index < values.Length; index++ )
+		var samples = years * 12;
+		var (left, top, right, bottom) = finance ? (4, 4, 428, 248) : (4, 4, 425, 243);
+		var step = (float)((double)(right - left) / samples);
+		var columns = new int[points.Length];
+		var x = (float)left;
+		for ( var index = 0; index < points.Length; index++ )
 		{
-			// Finance intentionally retains fractional host coordinates and marks before the connecting line.
-			var x = plot.X + plot.Width * (index / (float)(values.Length - 1));
-			var y = Y( values[index] );
+			columns[index] = (int)Math.Min( Math.Max( x, left ), right );
+			x = (float)(step + Math.Min( Math.Max( x, left ), right ));
+		}
+		int Row( long value )
+		{
+			var range = (System.Numerics.BigInteger)maximum - minimum;
+			if ( range.IsZero ) return bottom;
+			var y = bottom - (int)(((System.Numerics.BigInteger)(bottom - top) * ((System.Numerics.BigInteger)value - minimum)) / range);
+			return Math.Clamp( y, top, bottom );
+		}
+		NVector2 At( int column, int row ) => new( frame.X + column * pixel, frame.Y + row * pixel );
+		var lastColumn = left;
+		var lastRow = samples;
+		for ( var index = 1; index < points.Length; index++ )
+		{
+			lastColumn = columns[index]; lastRow = Row( points[index] );
+			expected.Line( At( columns[index - 1], Row( points[index - 1] ) ), At( lastColumn, lastRow ), pixel, colour );
 			if ( years < 12 )
 			{
-				expected.Rectangle( new UiRect( x - 1.5f * pixel, y - 1.5f * pixel, 3 * pixel, pixel ), colour );
-				expected.Rectangle( new UiRect( x - 1.5f * pixel, y - 1.5f * pixel + 3 * pixel - pixel, 3 * pixel, pixel ), colour );
-				expected.Rectangle( new UiRect( x - 1.5f * pixel, y - 1.5f * pixel + pixel, pixel, pixel ), colour );
-				expected.Rectangle( new UiRect( x - 1.5f * pixel + 3 * pixel - pixel, y - 1.5f * pixel + pixel, pixel, pixel ), colour );
+				expected.Line( At( lastColumn - 1, lastRow - 1 ), At( lastColumn + 1, lastRow - 1 ), pixel, colour );
+				expected.Line( At( lastColumn + 1, lastRow - 1 ), At( lastColumn + 1, lastRow + 1 ), pixel, colour );
+				expected.Line( At( lastColumn + 1, lastRow + 1 ), At( lastColumn - 1, lastRow + 1 ), pixel, colour );
+				expected.Line( At( lastColumn - 1, lastRow + 1 ), At( lastColumn - 1, lastRow - 1 ), pixel, colour );
 			}
-			expected.Line( new NVector2( plot.X + plot.Width * (index - 1) / (values.Length - 1), Y( values[index - 1] ) ), new NVector2( x, y ), pixel, colour );
 		}
+		var text = points[^1].ToString( CultureInfo.InvariantCulture );
+		var width = 3f * text.Length * context.Canvas.TextScale / pixel;
+		var labelRight = Math.Max( lastColumn, left + width );
+		expected.Label( text, new UiRect( frame.X + (labelRight - width - 1) * pixel, frame.Y + Math.Max( 2, lastRow - 6 ) * pixel,
+			(width + 2) * pixel, 12 * pixel ), colour, rightAligned: true );
 	}
+
+	/// <summary>The points of a finance series from its months (oldest first): the newest min(period, 144) + 1, the extra oldest point 0 when no older month exists.</summary>
+	private static long[] FinancePoints( long[] months, int years )
+	{
+		var held = Math.Min( months.Length, 144 );
+		var n = Math.Min( years * 12, held );
+		var points = new long[n + 1];
+		for ( var age = n; age >= 0; age-- )
+			points[n - age] = age < held ? months[months.Length - 1 - age] : 0;
+		return points;
+	}
+
+	private static void FinanceLines( ExpectedFrame expected, UiContext context, int years, long[] months, long minimum, long maximum, RgbaByte colour ) =>
+		SeriesLines( expected, context, true, years, FinancePoints( months, years ), minimum, maximum, colour );
 
 	[DataTestMethod]
 	[DataRow( 1 )]
 	[DataRow( 3 )]
 	[DataRow( 12 )]
-	public void FinanceDrawPreservesFractionalSeriesAndMarkerOrderAcrossEveryScaleSignAndLongExtrema( int years )
+	public void FinanceDrawFollowsTheOriginalsPixelColumnsRowsMarksAndLastValueAcrossEveryScaleSignAndLongExtrema( int years )
 	{
 		var scenarios = new (long[] Values, long Minimum, long Maximum, int Axis)[]
 		{
@@ -296,7 +335,7 @@ public class GraphBackdropDrawTests
 		Assert.AreEqual( 144L, hud.FinanceMonths()[^1].MonthIndex );
 		Draw( context, graph );
 		var expected = Backdrop( context, true, years );
-		FinanceLines( expected, context, years, shown, 0, 145, FinanceColours[0] );
+		FinanceLines( expected, context, years, values, 0, 145, FinanceColours[0] );
 		expected.AssertMatches( context.Batch );
 		Assert.AreEqual( 144, park.Ledger.History.Count );
 		Assert.AreEqual( 144L, park.Ledger.CurrentMonthIndex );
@@ -306,7 +345,7 @@ public class GraphBackdropDrawTests
 	[DataRow( 1 )]
 	[DataRow( 3 )]
 	[DataRow( 12 )]
-	public void OneLiveFinancePointAndDeselectedSeriesDrawOnlyTheBackdrop( int years )
+	public void OneLiveFinancePointDrawsFromTheZeroBeforeItAndDeselectedSeriesDrawOnlyTheBackdrop( int years )
 	{
 		var park = FinancePark( 42 );
 		var hud = Hud( park );
@@ -316,41 +355,18 @@ public class GraphBackdropDrawTests
 		for ( var selection = 0; selection < 3; selection++ )
 		{
 			Draw( context, graph );
-			Backdrop( context, true, years ).AssertMatches( context.Batch );
+			var expected = Backdrop( context, true, years );
+			if ( selection != 1 )
+				FinanceLines( expected, context, years, new long[] { 42 }, 0, 42, FinanceColours[0] );
+			expected.AssertMatches( context.Batch );
 			hud.Stack.Top!.Find( "seriesBankBalance" )!.Activate();
 		}
 		Assert.AreEqual( 0, park.Ledger.History.Count );
 		Assert.AreEqual( 1, hud.FinanceMonths().Count );
 	}
 
-	private static void InformationLines( ExpectedFrame expected, UiContext context, int years, int[] points, int maximum, RgbaByte colour )
-	{
-		var frame = Frame( false, context.Canvas );
-		var pixel = Math.Max( 1f, Math.Min( context.Canvas.Width / 1024f, context.Canvas.Height / 768f ) );
-		var samples = years * 12;
-		int Column( int index ) => (int)(4 + 421f / samples * index);
-		int Row( int value ) => maximum == 0 ? 243 : Math.Clamp( 243 - (int)((long)value * 239 / maximum), 4, 243 );
-		NVector2 At( int column, int row ) => new( frame.X + column * pixel, frame.Y + row * pixel );
-		var lastColumn = 4;
-		var lastRow = samples;
-		for ( var index = 1; index < points.Length; index++ )
-		{
-			lastColumn = Column( index ); lastRow = Row( points[index] );
-			expected.Line( At( Column( index - 1 ), Row( points[index - 1] ) ), At( lastColumn, lastRow ), pixel, colour );
-			if ( years < 12 )
-			{
-				expected.Line( At( lastColumn - 1, lastRow - 1 ), At( lastColumn + 1, lastRow - 1 ), pixel, colour );
-				expected.Line( At( lastColumn + 1, lastRow - 1 ), At( lastColumn + 1, lastRow + 1 ), pixel, colour );
-				expected.Line( At( lastColumn + 1, lastRow + 1 ), At( lastColumn - 1, lastRow + 1 ), pixel, colour );
-				expected.Line( At( lastColumn - 1, lastRow + 1 ), At( lastColumn - 1, lastRow - 1 ), pixel, colour );
-			}
-		}
-		var text = points[^1].ToString( CultureInfo.InvariantCulture );
-		var width = 3f * text.Length * context.Canvas.TextScale / pixel;
-		var right = Math.Max( lastColumn, 4 + width );
-		expected.Label( text, new UiRect( frame.X + (right - width - 1) * pixel, frame.Y + Math.Max( 2, lastRow - 6 ) * pixel,
-			(width + 2) * pixel, 12 * pixel ), colour, rightAligned: true );
-	}
+	private static void InformationLines( ExpectedFrame expected, UiContext context, int years, int[] points, int maximum, RgbaByte colour ) =>
+		SeriesLines( expected, context, false, years, points.Select( value => (long)value ).ToArray(), 0, maximum, colour );
 
 	[DataTestMethod]
 	[DataRow( 1 )]
@@ -596,7 +612,7 @@ public class GraphBackdropDrawTests
 		{
 			var width = text.Length * 3 * textScale;
 			var height = 8 * textScale;
-			var x = rightAligned ? (int)MathF.Round( box.Right ) - width : (int)MathF.Round( box.X );
+			var x = rightAligned ? (int)MathF.Round( box.Right - width ) : (int)MathF.Round( box.X );
 			var top = (int)MathF.Round( box.Y );
 			var y = top + ((int)MathF.Round( box.Bottom ) - top - height) / 2;
 			var firstGlyph = glyphs.Count;

@@ -230,17 +230,27 @@ public sealed class ParkStatisticsHistory
 	/// The points a series draws, oldest first: the newest <c>min(period samples, entries held)</c> plus one, where the extra oldest point is 0 when the ring has no older entry.
 	/// </summary>
 	// [BIN:TPW-EXE:0x480460 series points] n = min(period samples, entries held); the buffer holds n + 1 values, sample n back down to sample 0, an unreadable sample keeping the previous value (0 at the start); a single ring (0x480570) truncates each to an integer
-	public static int[] SeriesPoints( HistoryRing ring, int period, bool floating )
+	public static int SeriesPoints( HistoryRing ring, int period, bool floating, Span<long> points )
 	{
 		var n = Math.Min( PeriodSamples( period ), ring.Count );
-		var points = new int[n + 1];
-		var last = 0;
+		long last = 0;
 		for ( var back = n; back >= 0; back-- )
 		{
 			if ( ring.TryGet( back, out var value ) )
 				last = floating ? (int)value : (int)Math.Clamp( value, int.MinValue, int.MaxValue );
 			points[n - back] = last;
 		}
+		return n + 1;
+	}
+
+	/// <summary>The points a series draws as a new array, oldest first (see the span overload).</summary>
+	public static int[] SeriesPoints( HistoryRing ring, int period, bool floating )
+	{
+		var buffer = new long[PeriodSamples( 2 ) + 1];
+		var count = SeriesPoints( ring, period, floating, buffer );
+		var points = new int[count];
+		for ( var index = 0; index < count; index++ )
+			points[index] = (int)buffer[index];
 		return points;
 	}
 }

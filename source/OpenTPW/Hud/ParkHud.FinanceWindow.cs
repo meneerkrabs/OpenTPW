@@ -158,70 +158,91 @@ public sealed partial class ParkHud
 		return screen;
 	}
 
-	/// <summary>A hollow 3 x 3 pixel mark of four one-pixel edges round (<paramref name="x"/>, <paramref name="y"/>).</summary>
-	internal static void HollowMark( UiBatch batch, float x, float y, float pixel, RgbaByte color )
+	/// <summary>The finance series in selection-bit order (0..7 of the selection word 0x751FA0).</summary>
+	private static readonly FinanceSeries[] FinanceSeriesOrder = Enum.GetValues<FinanceSeries>();
+
+	/// <summary>The months the finance rings hold: the closed months and the live one, at most the ring's 144 entries.</summary>
+	// [BIN:TPW-EXE:0x480460 sample count] a graph reads the ring's size once it has wrapped, else its head + 1, as the samples it can show; the rings of 0x240 bytes hold 144 entries
+	internal static int FinanceSamplesHeld( ParkEconomy economy ) => Math.Min( economy.Ledger.History.Count + 1, ParkLedger.MaximumHistoryMonths );
+
+	/// <summary>The sample <paramref name="age"/> months back (0: the live month) of a series; false past the months held.</summary>
+	internal static bool TryFinanceSample( ParkEconomy economy, int age, FinanceSeries series, out long value )
 	{
-		var size = 3 * pixel;
-		var (left, top) = (x - size / 2, y - size / 2);
-		batch.AddRectangle( new UiRect( left, top, size, pixel ), color );
-		batch.AddRectangle( new UiRect( left, top + size - pixel, size, pixel ), color );
-		batch.AddRectangle( new UiRect( left, top + pixel, pixel, size - 2 * pixel ), color );
-		batch.AddRectangle( new UiRect( left + size - pixel, top + pixel, pixel, size - 2 * pixel ), color );
+		value = 0;
+		if ( age < 0 || age >= FinanceSamplesHeld( economy ) )
+			return false;
+		var ledger = economy.Ledger;
+		if ( age > 0 )
+		{
+			value = FinanceValue( ledger.History[ledger.History.Count - age], series );
+			return true;
+		}
+		var current = ledger.CurrentTotals;
+		long Total( LedgerCategory category ) => current.TryGetValue( category, out var amount ) ? amount : 0;
+		value = series switch
+		{
+			FinanceSeries.BankBalance => ledger.Balance,
+			FinanceSeries.ParkValue => economy.ParkValue,
+			FinanceSeries.MoneyIn => Total( LedgerCategory.GateTakings ) + Total( LedgerCategory.ShopTakings ) + Total( LedgerCategory.SideshowTakings ) + Total( LedgerCategory.OtherIncome ) + Total( LedgerCategory.LoanReceived ),
+			FinanceSeries.GateTakings => Total( LedgerCategory.GateTakings ),
+			FinanceSeries.ShopTakings => Total( LedgerCategory.ShopTakings ),
+			FinanceSeries.SideshowTakings => Total( LedgerCategory.SideshowTakings ),
+			FinanceSeries.MoneyOut => Total( LedgerCategory.StaffCosts ) + Total( LedgerCategory.OtherCosts ) + Total( LedgerCategory.LoanPayments ),
+			FinanceSeries.StaffCosts => Total( LedgerCategory.StaffCosts ),
+			_ => 0
+		};
+		return true;
 	}
 
 	private sealed class FinanceGraph : UiElement
 	{
 		private readonly ParkHud owner;
+		/// <summary>The points of the series being drawn (the longest period, 144 samples, plus the extra oldest point).</summary>
+		private readonly long[] points = new long[ParkLedger.MaximumHistoryMonths + 1];
 		public FinanceGraph( ParkHud owner ) => this.owner = owner;
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			var rect = ScreenRect( context.Canvas );
-			var months = owner.FinanceMonths();
-			var selected = owner.financeVisible.OrderBy( series => series ).ToArray();
-			var hasSeries = months.Count > 0 && selected.Length > 0;
-			var values = hasSeries ? selected.Select( series => months.Select( month => FinanceValue( month, series ) ).ToArray() ).ToArray() : Array.Empty<long[]>();
-			var minimum = hasSeries ? Math.Min( 0L, values.Min( series => series.Min() ) ) : 0L;
-			var maximum = hasSeries ? Math.Max( 0L, values.Max( series => series.Max() ) ) : 0L;
-			var pixel = GraphBackdropRenderer.Pixel( context.Canvas );
-			var backdrop = new GraphBackdrop( (int)(rect.Width / pixel), (int)(rect.Height / pixel), owner.financeYears * ParkCalendar.MonthsPerYear, minimum, maximum );
-			var canDrawSeries = GraphBackdropRenderer.Draw( context, rect, pixel, backdrop );
-			if ( !hasSeries || !canDrawSeries )
-				return;
-			var plot = GraphBackdropRenderer.ToScreen( backdrop.PlotFill, rect, pixel );
-			// [BIN:TPW-EXE:0x47fe90 graph drawer] a flat range (max == min) puts every point on the baseline without dividing; the scale always includes 0, so that is an all-zero series and the one-unit span below only keeps the arithmetic finite
-			if ( minimum == maximum )
-				maximum = minimum + 1;
-			// [BIN:TPW-EXE:0x47fb30 graph scale] the scale runs from min(0, the lowest selected sample of the period) to max(0, the highest) in ten divisions (0x49a7b0, 0x49a8f0); the bank balance alone is the default (0x751fa0 = 1)
-			// [BIN:TPW-EXE:0x47fe90 graph drawer] each series is drawn as one-pixel lines from sample to sample (the line primitive 0x5f97f0, not a thick stroke), and when the period has fewer than 0x90 samples (the 1 and 3 year views: 0x480460 passes 12, 36 or 144) each sample end gets a hollow 3 x 3 pixel mark of four such lines (0x47ffe0..0x480077)
-			// [EXT:graph-pixel-adapter] the original draws into the control's bitmap at the display mode's pixel size, which follows the host's resolution; OpenTPW takes one pixel as 2 canvas units (the 1024 x 768 mode of the video; user-approved 2026-10-30)
-			// [BIN:TPW-EXE:0x480460 graph samples] the 144 samples of the 12 year view are one to one the monthly ring's 144 entries (the ring objects at world +0x1F100.. hold 0x240 bytes of samples, every caller 0x49aa61.. passes the stride 1), newest first, so each sample is a month as in OpenTPW
-			// [APPROX:UI-060] what the original does with fewer months than the period (0x4804ae takes the smaller count) is not read, OpenTPW spreads the available months over the plot
-			var marks = owner.financeYears < 12;
-			for ( var s = 0; s < selected.Length; s++ )
-			{
-				var color = FinanceColors[(int)selected[s]];
-				for ( var index = 0; index < months.Count; index++ )
+			var economy = owner.FinanceEconomy;
+			var samples = owner.financeYears * ParkCalendar.MonthsPerYear;
+			// [BIN:TPW-EXE:0x49A7B0 graph scale] the scale runs from min(0, the lowest) to max(0, the highest) of the selected series' samples 0 .. the period's sample count (one more than the graph draws; 0x4801D0 and 0x480380 stop at the first sample the ring cannot read), in ten divisions
+			long minimum = 0, maximum = 0;
+			var any = false;
+			if ( economy != null )
+				foreach ( var series in FinanceSeriesOrder )
 				{
-					var x = plot.X + plot.Width * (months.Count == 1 ? 0.5f : index / (float)(months.Count - 1));
-					var y = plot.Bottom - plot.Height * (float)((values[s][index] - (double)minimum) / (maximum - (double)minimum));
-					if ( index == 0 )
+					if ( !owner.financeVisible.Contains( series ) )
 						continue;
-					var previousX = plot.X + plot.Width * (index - 1) / (months.Count - 1);
-					var previousY = plot.Bottom - plot.Height * (float)((values[s][index - 1] - (double)minimum) / (maximum - (double)minimum));
-					if ( marks )
-						HollowMark( context.Batch, x, y, pixel, color );
-					var delta = new NVector2( x - previousX, y - previousY );
-					if ( delta.LengthSquared() < 0.01f )
-						continue;
-					var normal = NVector2.Normalize( new NVector2( -delta.Y, delta.X ) ) * pixel / 2;
-					var a = new UiVertex( new NVector2( previousX, previousY ) + normal, NVector2.Zero, color );
-					var b = new UiVertex( new NVector2( previousX, previousY ) - normal, NVector2.Zero, color );
-					var c = new UiVertex( new NVector2( x, y ) + normal, NVector2.Zero, color );
-					var d = new UiVertex( new NVector2( x, y ) - normal, NVector2.Zero, color );
-					context.Batch.AddTriangle( UiTexture.Solid, a, b, c );
-					context.Batch.AddTriangle( UiTexture.Solid, c, b, d );
+					any = true;
+					for ( var age = 0; age <= samples && TryFinanceSample( economy, age, series, out var value ); age++ )
+					{
+						maximum = Math.Max( maximum, value );
+						minimum = Math.Min( minimum, value );
+					}
 				}
+			var pixel = GraphBackdropRenderer.Pixel( context.Canvas );
+			var backdrop = new GraphBackdrop( (int)(rect.Width / pixel), (int)(rect.Height / pixel), samples, minimum, maximum );
+			var canDrawSeries = GraphBackdropRenderer.Draw( context, rect, pixel, backdrop );
+			if ( economy == null || !any || !canDrawSeries )
+				return;
+			var plot = backdrop.Plot;
+			var font = context.Fonts.Small;
+			// [BIN:TPW-EXE:0x480460 series points] n = min(period samples, months held); the buffer holds n + 1 values, the sample n back down to the live month, an unreadable sample (the one past the months held) keeping the previous value (0 at the start): a graph of few months fills from the left over x steps of width / samples and shows a 0 before its first month
+			// [EXT:graph-pixel-adapter] the original draws into the control's bitmap at the display mode's pixel size, which follows the host's resolution; OpenTPW takes one pixel as 2 canvas units (the 1024 x 768 mode of the video; user-approved 2026-10-30)
+			var n = Math.Min( samples, FinanceSamplesHeld( economy ) );
+			foreach ( var series in FinanceSeriesOrder )
+			{
+				if ( !owner.financeVisible.Contains( series ) )
+					continue;
+				long last = 0;
+				for ( var age = n; age >= 0; age-- )
+				{
+					if ( TryFinanceSample( economy, age, series, out var value ) )
+						last = value;
+					points[n - age] = last;
+				}
+				GraphBackdropRenderer.DrawSeries( context, points.AsSpan( 0, n + 1 ), samples, minimum, maximum, plot, FinanceColors[(int)series], rect, pixel, font );
 			}
 		}
 	}

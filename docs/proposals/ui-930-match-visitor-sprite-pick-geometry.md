@@ -134,11 +134,24 @@ Residuals include current host animation/frame source, bounded-history coverage,
 native pick-result epochs, allocation/bucket/material tie ordering, cross-kind
 competition, native culling/near-far behavior and x87 rounding, high-DPI adaptation,
 the doubled host quad displacement, terrain/object occlusion and real rendered-view
-validation. Native timing reads the prior render pointer at `0x532C17`, publishes
-the old resolved owner at `0x540B6E..0x540B79`, then retains the new owner at
-`0x540B7E`. A one-frame-lag shortcut is not justified by those two retained stages.
-Native equal W keeps the first visited sprite; the host does not retain the native
-allocation/bucket/material traversal identity.
+validation. Native timing (round 11 reading): the park callback `0x54E2B0` runs once per frame
+after the camera update `0x42B1C0` and before the scene render `0x44E540`. It zeroes
+the pointer object's word `0x7B05A8` (`0x46C100`), then its tail `0x475430` ->
+`0x540B30` reads the winner the previous frame's sprite pass left in `0x8BD4FC` (the
+pass `0x58A770` clears it first, `0x58A78C`; `0x532C17` is the read), resolves its
+owner (`0x532BD0`: the nine cells of table `0x81ED40`, things of type 1, 4-8 or 0x12
+whose sprite is the winner, `0x475EF0`), stores it in `0x877350` and publishes the owner
+stored one frame earlier (`0x540B6E..0x540B79`, `0x423B50` writes `[0x7B05A8]`);
+`0x46C110` at the end of the callback copies it to `0x7B05AC`, the word the hover
+handler `0x486D90` reads (`0x48700E`). The word a frame leaves therefore names the
+winner of the pass two frames before it. The count is of drawn frames, and OpenTPW's
+frames differ from the original's, so no lag is added here; the synchronous query stays.
+Native equal W keeps the first visited sprite (the strict test at `0x5890E0`). The pass
+visits its buckets in the order their first (texture, flags) key appears while the sprite
+array is walked from its last entry to its first (`0x58A770`), each bucket's chain sorted by
+a depth key (descending, equal keys in array order, the array being the emission order of the
+sprite scheduler `0x475430`'s list walk); the host keeps lowest-ID ties, which pool slot
+reuse can make differ.
 
 ## Validation and acceptance
 

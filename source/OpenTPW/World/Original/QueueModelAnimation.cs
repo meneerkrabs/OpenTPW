@@ -77,7 +77,8 @@ internal sealed class QueueModelAnimation
 	private int textureVersion = -1;
 	private bool animating = true;
 
-	public QueueModelAnimation( ModelFile model, QueueClip clip, Model drawn, Vertex[] vertices, Material material, IReadOnlyList<QueueUvMesh> uvMeshes,
+	/// <summary>The instance's drawing parts over a player that outlives them: a rebuild of the queue models (a path edit) keeps the channel and its phase, as the original's instances stay while the others change.</summary>
+	public QueueModelAnimation( QueueClipPlayer player, QueueClip clip, Model drawn, Vertex[] vertices, Material material, IReadOnlyList<QueueUvMesh> uvMeshes,
 		(int Slot, Texture?[] Frames, int[] BatchSlots)[] bindings, ProceduralTerrainAtlas? atlas, int tile )
 	{
 		this.drawn = drawn;
@@ -87,7 +88,7 @@ internal sealed class QueueModelAnimation
 		this.bindings = bindings;
 		this.atlas = atlas;
 		this.tile = tile;
-		player = new QueueClipPlayer( model, clip.Animation );
+		this.player = player;
 		animator = player.Animator;
 		foreach ( var (slot, frames, _) in bindings )
 			animator.SetTextureFrameAvailability( slot, frames.Select( frame => frame != null ).ToArray() );

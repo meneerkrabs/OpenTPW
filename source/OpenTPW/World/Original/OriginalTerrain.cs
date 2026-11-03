@@ -735,6 +735,7 @@ public sealed partial class OriginalTerrain : Entity
 		var batchIndices = new List<uint>();
 		batchPulses = false;
 		var clips = new Dictionary<int, QueueClip?>();
+		var livePlayers = new HashSet<(int Model, int X, int Y, int Yaw)>();
 		foreach ( var group in valid.Where( queue => floors.ContainsKey( queue.Tile.Model ) ).GroupBy( queue => queue.Tile.Model ).OrderBy( group => group.Key ) )
 		{
 			var floor = floors[group.Key];
@@ -815,12 +816,24 @@ public sealed partial class OriginalTerrain : Entity
 					}
 				}
 				if ( animated )
-					FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices, new QueueInstance( clip!, floor.Model, uvMeshes!, hasTile ? tileIndex : -1 ) );
+				{
+					// the channel belongs to the cell: a rebuild keeps the player of a cell that still has this model and yaw, so its phase goes on
+					var playerKey = (group.Key, x, y, tile.Yaw);
+					if ( !queuePlayers.TryGetValue( playerKey, out var player ) )
+						queuePlayers[playerKey] = player = new QueueClipPlayer( floor.Model, clip!.Animation );
+					livePlayers.Add( playerKey );
+					FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices, new QueueInstance( clip!, floor.Model, player, uvMeshes!, hasTile ? tileIndex : -1 ) );
+				}
 				QueueModelCount++;
 			}
 		}
 		FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
+		foreach ( var key in queuePlayers.Keys.Where( key => !livePlayers.Contains( key ) ).ToList() )
+			queuePlayers.Remove( key );
 	}
+
+	/// <summary>The channel of every animated queue cell by (model, cell, yaw), kept across rebuilds of the queue models.</summary>
+	private readonly Dictionary<(int Model, int X, int Y, int Yaw), QueueClipPlayer> queuePlayers = new();
 
 	/// <summary>The name a batch slot takes for a page of the queue composites (the atlas, not a file).</summary>
 	private const string CompositePrefix = "\u0001queue-composite-";
@@ -876,7 +889,7 @@ public sealed partial class OriginalTerrain : Entity
 		name.StartsWith( CompositePrefix, StringComparison.Ordinal ) && queueAtlas != null && int.TryParse( name.AsSpan( CompositePrefix.Length ), out var page ) ? queueAtlas.Pages[page] : LoadTexture( textures, name, "textures", directory );
 
 	/// <summary>The cell of an animated queue instance a batch is flushed for (<see cref="FlushQueueBatch"/>).</summary>
-	private sealed record QueueInstance( QueueClip Clip, ModelFile Model, List<QueueUvMesh> UvMeshes, int Tile );
+	private sealed record QueueInstance( QueueClip Clip, ModelFile Model, QueueClipPlayer Player, List<QueueUvMesh> UvMeshes, int Tile );
 
 	private void FlushQueueBatch( Dictionary<string, Texture> textures, string directory, List<string> names, List<Vertex> vertices, List<uint> indices, QueueInstance? instance = null )
 	{
@@ -911,7 +924,7 @@ public sealed partial class OriginalTerrain : Entity
 			}
 			if ( instance != null )
 			{
-				animation = new QueueModelAnimation( instance.Model, instance.Clip, drawn, array, material, instance.UvMeshes, bindings!, queueAtlas, instance.Tile );
+				animation = new QueueModelAnimation( instance.Player, instance.Clip, drawn, array, material, instance.UvMeshes, bindings!, queueAtlas, instance.Tile );
 				queueAnimations.Add( animation );
 			}
 		}

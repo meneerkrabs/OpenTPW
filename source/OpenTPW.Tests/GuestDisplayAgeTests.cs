@@ -241,7 +241,7 @@ public class GuestDisplayAgeTests
 	}
 
 	[TestMethod]
-	public void LeavingStillReportsSecondsBasedStayEvenWithDifferentExactDisplayAge()
+	public void LeavingReportsTheStayInTurnsSinceTheStampAndNotTheSecondsClock()
 	{
 		var park = Park();
 		var payments = new StayPayments();
@@ -257,8 +257,9 @@ public class GuestDisplayAgeTests
 		guest.HasWaypoint = false;
 		Steps( park, 1 );
 		Assert.AreEqual( GuestState.WaitingToGoHome, guest.State );
-		Assert.AreEqual( ParkStatisticsHistory.StayDays( 100 ), payments.Days );
-		Assert.AreNotEqual( ParkStatisticsHistory.StayDays( 4000 ), payments.Days );
+		// [BIN:TPW-EXE:0x4fd950] the stay is the integer turns since the stamp, not the float seconds clock
+		Assert.AreEqual( ParkStatisticsHistory.StayDays( 4000 ), payments.Days );
+		Assert.AreNotEqual( ParkStatisticsHistory.StayDays( 100 ), payments.Days );
 	}
 
 	[TestMethod]

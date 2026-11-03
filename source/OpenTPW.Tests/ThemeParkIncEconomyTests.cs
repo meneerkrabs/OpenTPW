@@ -149,6 +149,24 @@ public class ThemeParkIncEconomyTests
 	}
 
 	[TestMethod]
+	public void TheBanksMonthComesBeforeTheObjectsDebits()
+	{
+		// [BIN:TPI-EXE:0x5C0B10 bank month before the objects] the month message goes to the listeners in thing-id order: the bank (9 in the prebuilt park) before every attraction (14 and up), so the bank's red-month message of
+		// a month precedes the objects' running-cost announcement of the same month
+		var economy = Economy( Ride( 1, 0, 20000 ) );
+		economy.RegisterExisting( 1 );
+		var events = new List<ParkEventKind>();
+		economy.EventRaised += item => events.Add( item.Kind );
+		economy.AdvanceMonths( 12 );
+		Assert.IsTrue( economy.IsBankrupt );
+		var bank = events.LastIndexOf( ParkEventKind.BankruptcyMessage );
+		Assert.IsTrue( bank >= 0 );
+		var costs = events.IndexOf( ParkEventKind.RunningCostsPaid, bank );
+		Assert.IsTrue( costs > bank, "the bank's message comes first in a month end that has both" );
+		Assert.IsFalse( events.Skip( bank ).TakeWhile( kind => kind != ParkEventKind.MonthEnded ).Count( kind => kind == ParkEventKind.RunningCostsPaid ) == 0, "the same month still debits the objects" );
+	}
+
+	[TestMethod]
 	public void TheEntryFeeJudgementUsesTheSettingsDivisor()
 	{
 		var tpi = Settings().EntryFee;

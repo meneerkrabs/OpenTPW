@@ -1403,7 +1403,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 			Post( LedgerCategory.StaffCosts, wages );
 			Raise( ParkEventKind.WagesPaid, wages, 0, 0, $"{Staff.Members.Count} staff" );
 		}
-		PayRunningCosts();
+		// [BIN:TPI-EXE:0x5C0B10 bank month before the objects] Theme Park Inc's objects debit after the bank's whole month handler (below): the month message goes to the listeners in thing-id order and the bank's id (9 in the prebuilt park) lies below every attraction's (14 and up)
+		if ( !Rules.ThemeParkInc )
+			PayRunningCosts();
 		var training = Rules.Staff ? Staff.Train() : 0;
 		if ( training > 0 )
 		{
@@ -1443,16 +1445,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			else
 				loans[position] = account;
 		}
-		foreach ( var item in objects.Values )
-		{
-			// [EXT:ring-month-sums] the calendar-month sums roll here as before the rings, kept for saves written without them (see ParkSaveFile.RingAt); the original has only the rings
-			// [BIN:TPW-EXE:0x004DB090 attraction history rings] an attraction's six daily 30-day rings follow tp.exe (costs +0xF8, takings +0x70, customers +0x1A8, walk-aways +0x230, winners +0x2B8 and the visits' averaged happiness change +0x340: the constructor 0x004DB090 starts each at head -1, size 30; the day message 0x004DD320 rolls them; the windows and lists sum them over their counts, 0x004E1C70, 0x00495C20, 0x004B01D0, 0x004B16C0, 0x004955E0, 0x00493CD0), the happiness-change ring is written as the use routine 0x004FD970 does (3 x the guest's happiness byte change since joining the queue, averaged in by 0x004E1E00; a won sideshow's tail is GUEST-005); the walk-aways are kept as the list of their last 30 days beside the ring type, which sums alike, and the customers row of the shop and sideshow windows shows "{customers} of {customers + walk-aways}" (UITEXT record 0x1CC, 0x4B0423, 0x4B18E6; ParkHud.CustomersText)
-			item.CustomersLastMonth = item.CustomersThisMonth;
-			item.TakingsLastMonth = item.TakingsThisMonth;
-			item.CostsLastMonth = item.CostsThisMonth;
-			item.WinnersLastMonth = item.WinnersThisMonth;
-			item.CustomersThisMonth = item.TakingsThisMonth = item.CostsThisMonth = item.WinnersThisMonth = 0;
-		}
+		if ( !Rules.ThemeParkInc )
+			RollObjectMonths();
 		var admissionsBefore = monthlyAdmissions.Sum();
 		monthlyAdmissions.Add( Counters[ParkCounters.Admissions] - admissionsBefore - DroppedAdmissions );
 		if ( monthlyAdmissions.Count > ParkLedger.MaximumHistoryMonths )
@@ -1467,6 +1461,12 @@ public sealed partial class ParkEconomy : IParkEconomy
 		{
 			Raise( ParkEventKind.BankruptcyMessage, MonthsInRed );
 			HandleBankruptcyMessage();
+		}
+		if ( Rules.ThemeParkInc )
+		{
+			// the objects' month messages come after the bank's (thing ids: bank 9, attractions 14 and up in the prebuilt park): each object debits its running cost and its month's booked costs, then rolls its month
+			PayRunningCosts();
+			RollObjectMonths();
 		}
 		// [BIN:TPW-EXE:0x004C7720 month sample] the analyser's month handler stores the net worth read with age 0 (0x004C79A7)
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler reads the cached census with age 0 first (0x004C78C1); the month message goes to the things in id order (the listener tree walked by 0x0040FB10, dispatching through 0x0050B550) and the world constructor 0x005156A0 creates the staff manager (type 9) before the analyser (type 13), so the gate above has already read its count
@@ -1484,6 +1484,21 @@ public sealed partial class ParkEconomy : IParkEconomy
 		}
 	}
 
+	/// <summary>The month's roll of every object's calendar-month sums (the object's month message).</summary>
+	private void RollObjectMonths()
+	{
+		foreach ( var item in objects.Values )
+		{
+			// [EXT:ring-month-sums] the calendar-month sums roll here as before the rings, kept for saves written without them (see ParkSaveFile.RingAt); the original has only the rings
+			// [BIN:TPW-EXE:0x004DB090 attraction history rings] an attraction's six daily 30-day rings follow tp.exe (costs +0xF8, takings +0x70, customers +0x1A8, walk-aways +0x230, winners +0x2B8 and the visits' averaged happiness change +0x340: the constructor 0x004DB090 starts each at head -1, size 30; the day message 0x004DD320 rolls them; the windows and lists sum them over their counts, 0x004E1C70, 0x00495C20, 0x004B01D0, 0x004B16C0, 0x004955E0, 0x00493CD0), the happiness-change ring is written as the use routine 0x004FD970 does (3 x the guest's happiness byte change since joining the queue, averaged in by 0x004E1E00; a won sideshow's tail is GUEST-005); the walk-aways are kept as the list of their last 30 days beside the ring type, which sums alike, and the customers row of the shop and sideshow windows shows "{customers} of {customers + walk-aways}" (UITEXT record 0x1CC, 0x4B0423, 0x4B18E6; ParkHud.CustomersText)
+			item.CustomersLastMonth = item.CustomersThisMonth;
+			item.TakingsLastMonth = item.TakingsThisMonth;
+			item.CostsLastMonth = item.CostsThisMonth;
+			item.WinnersLastMonth = item.WinnersThisMonth;
+			item.CustomersThisMonth = item.TakingsThisMonth = item.CostsThisMonth = item.WinnersThisMonth = 0;
+		}
+	}
+
 	/// <summary>
 	/// Theme Park Inc's monthly costs: every object is debited its current level's <c>Upgrades[n].RunningCost</c> (nothing in ride state 1 or 4) plus the costs its sales and plays booked during the month, as one debit
 	/// that also enters its cost statistics (the month's cost, the 30-day cost ring and the total profit). Theme Park World has no such cost and debits its goods and prizes at the sale.
@@ -1491,7 +1506,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 	// [BIN:TPI-EXE:0x005DEFFF monthly object cost] the object's month message takes 0 in state 1 or 4, else the type record's running cost (thing +0x84, the current level's Upgrades[n].RunningCost), adds the amount its statistics block accumulated (+0x938, 0x5DF029..0x5DF042, whatever the state), writes the running cost into +0xDD8 and the sum into the cost ring +0xB88, takes profit +0x1028 = takings +0x6E8 - the sum, clears the accumulators and the monthly rings it rolls, and debits the bank (0x5C07B0, the twin of tp.exe 0x4D01F0) with the sum, adding it to the game's costs word (+0x20F28)
 	// [BIN:TPI-EXE:0x5E60E0 cost booking] raises the daily cost ring (+0x88) and the month accumulator (+0x938) and posts the negated cost as message 0xC (a shop) or 0xD (a sideshow) to the analyser object (0x408EE5, 0x4082C9, 0x4020BD): the statistics' own feed; no debit
 	// [BIN:TPI-EXE:0x5C07B0 bank debit] balance -= amount at once; every site that debits is a purchase, an upgrade, a wage or this month message: the guest's use outcome never does
-	// [APPROX:ECON-060] Theme Park Inc's statistics are monthly rings (+0xB88 costs, +0x1028 profit, rolled by the same message) where OpenTPW's are the daily 30-day rings of Theme Park World (ECON-057), so the month's cost enters today's slot of the daily ring (the sales' own costs already did at the sale), and the order of this debit against the bank's own month handler (the batch credit, the loan instalments) is not read, so OpenTPW debits the running costs after the wages' place and before the loan instalments
+	// [APPROX:ECON-060] Theme Park Inc's statistics are monthly rings (+0xB88 costs, +0x1028 profit, rolled by the same message) where OpenTPW's are the daily 30-day rings of Theme Park World (ECON-057), so the month's cost enters today's slot of the daily ring (the sales' own costs already did at the sale); the objects debit after the bank's month handler as the thing-id order of the month message gives (bank 9, attractions 14 and up), but the park analyser's handler (id 5, before the bank) is not read, so the month's ledger close and net-worth sample stay after both (register text)
 	private void PayRunningCosts()
 	{
 		if ( !Rules.ThemeParkInc )

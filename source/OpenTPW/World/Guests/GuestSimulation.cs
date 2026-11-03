@@ -4877,8 +4877,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		foreach ( var guest in guests )
 		{
 			hash.Add( guest.Id );
-			if ( hashesDisplayAge && guest.DisplayTimeInParkTurns is { } displayTurns )
-				hash.Add( 0x44495341L + displayTurns );
+			if ( hashesDisplayAge )
+			{
+				// the age the day gate reads (AgeTurnsOf): the integer turn age, else the floor of the seconds of a guest that has only those
+				if ( guest.DisplayTimeInParkTurns is { } displayTurns )
+					hash.Add( 0x44495341L + displayTurns );
+				else if ( guest.TimeInParkSeconds is { } seconds )
+					hash.Add( 0x44534543L + (long)Math.Floor( seconds * 1000.0 / ParkCalendar.TurnMilliseconds ) );
+			}
 			hash.Add( guest.Type );
 			hash.Add( (int)guest.State );
 			hash.Add( guest.X );

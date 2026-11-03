@@ -276,10 +276,10 @@ public sealed partial class OriginalObjectRuntime
 	private static readonly string[] WeatherClosingKeys = { "WeatherModifier.ClosedDuringHeatWave", "WeatherModifier.ClosedDuringRain", "WeatherModifier.ClosedDuringStorm", "WeatherModifier.ClosedDuringSnow" };
 
 	/// <summary>
-	/// Theme Park Inc's weather step of the attraction's own update (message 1, once per turn): while the flag is clear a spell whose <c>ClosedDuring*</c> word is 1 closes it and sets the flag; while it is set the first update without such a
+	/// Theme Park Inc's weather step of the attraction's update (message 1, sent to every attraction once per weather spell start): while the flag is clear a spell whose <c>ClosedDuring*</c> word is 1 closes it and sets the flag; while it is set the first update without such a
 	/// spell opens it again and clears the flag. The step does not look at whether the owner had closed the attraction (the original reopens it too).
 	/// </summary>
-	// [BIN:TPI-EXE:0x5DED90 attraction update] message 1: flag +0x41 clear: the weather thing's state (+0x70, 0x4019B5) 1..4 picks the type word, a word of 1 logs "Closing...", clears the open word +0x7C and the loading slot +0x80, sends the script its close message 6 and sets +0x41 (0x5DEE1F..0x5DEEB9); flag set (0x5DEEBF): a spell whose word is 1 leaves it, else the open routine 0x5E1DC0 runs (its checks only log) and the flag clears
+	// [BIN:TPI-EXE:0x5DED90 attraction update] message 1 (built at 0x641FF3 after the spell start 0x642A80): flag +0x41 clear: the weather thing's state (+0x70, 0x4019B5) 1..4 picks the type word, a word of 1 logs "Closing...", clears the open word +0x7C and the loading slot +0x80, sends the script its close message 6 and sets +0x41 (0x5DEE1F..0x5DEEB9); flag set (0x5DEEBF): a spell whose word is 1 leaves it, else the open routine 0x5E1DC0 runs (its checks only log) and the flag clears
 	internal void ApplyWeatherClosing( int weatherState )
 	{
 		var closes = ClosedDuring( weatherState ) == 1;

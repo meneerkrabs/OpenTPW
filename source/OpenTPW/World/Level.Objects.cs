@@ -167,6 +167,16 @@ public partial class Level
 	/// <summary>Test hook: forces the answer of <see cref="TypesFootprints"/> (a world whose cells are untyped, as a read-only visit's are); null leaves the rule.</summary>
 	internal bool? TypesFootprintsOverride { get; set; }
 
+	/// <summary>
+	/// A Theme Park Inc layout restored from a checkpoint (RIDES-031): the object's footprint is stamped again, and a checkpoint saved before the footprints were typed gets the access links the writers of a placement lay,
+	/// as a resumed park's do.
+	/// </summary>
+	internal static void StampRestoredFootprint( ParkCellMap cells, OriginalObject item, LinkEffects effects )
+	{
+		cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation );
+		ObjectAccessCells.RepairMissingLinks( cells, item.AccessPoints, item.Entry.HasQueue, effects );
+	}
+
 	/// <summary>The owner word the placement stores on an object's cells: the cell word of its anchor (<see cref="ParkCellMap.OwnerAt"/>).</summary>
 	internal static ushort OwnerWord( OriginalObject item ) => ParkCellMap.CellWord( item.Placement.X, item.Placement.Y );
 
@@ -180,8 +190,8 @@ public partial class Level
 		// [BIN:TPW-EXE:0x0053694B path clear beside an entrance] every route that clears a path cell (the queue laid over a path, an '@' footprint cell, a coaster marker, the guest grid's queue setter) runs the ride's re-evaluation as the bulldozer's clear does
 		Guests.Grid.Cells.EntranceReevaluation = ReevaluateRideOfOwner;
 		Guests.Grid.Cells.EntranceRideOpens = EntranceRideOpens;
-		// The placed objects type their footprint cells (4, 9, 10: ParkCellMap.WriteFootprint, tp.exe 0x00528A70); a visit, a Theme Park Inc layout and
-		// Theme Park Inc itself (whose placement is not traced) keep the cells they were given
+		// The placed objects type their footprint cells (4, 9, 10: ParkCellMap.WriteFootprint, tp.exe 0x00528A70); a Theme Park Inc world too (its twin commit,
+		// RIDES-031; a restored checkpoint layout is stamped again below); only a read-only visit keeps the cells it was given
 		var typesFootprints = TypesFootprints;
 		if ( typesFootprints )
 		{
@@ -193,13 +203,15 @@ public partial class Level
 				// and exit without links, which the repair would lay)
 				if ( joinRestore != null )
 					continue;
+				if ( incLayout != null )
+				{
+					StampRestoredFootprint( cells, item, new LinkEffects( RefreshTile ) );
+					continue;
+				}
 				cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation );
 				// an imported park's entrance and exit cells carry the link byte its save holds, as the original's load reads it (a resumed park's cells come from its own snapshot)
 				if ( resumeState == null && visitLayout == null && incLayout == null && OriginalPark?.Save is { } save )
 					cells.TakeSavedAccessLinks( item.Cells, OwnerWord( item ), save.Cells );
-				// a Theme Park Inc layout restored from a checkpoint (RIDES-031): the footprints are stamped above, and a checkpoint saved before they were typed gets the links the writers of a placement lay, as a resumed park's do
-				else if ( incLayout != null )
-					ObjectAccessCells.RepairMissingLinks( cells, item.AccessPoints, item.Entry.HasQueue, new LinkEffects( RefreshTile ) );
 				// a park resumed from an OpenTPW save made before that import gets the byte its entrance and exit cells lack, from the writers the placement uses
 				else if ( resumeState != null )
 				{
@@ -408,7 +420,7 @@ public partial class Level
 
 	/// <summary>An object's access cell (thing <c>+0x36</c>) for the guests' bin walk: the cell of its first entrance symbol, inside the footprint; a world that keeps the cells it was given falls back to its entrance's outside cell on a path, else its first path neighbour.</summary>
 	// [BIN:TPW-EXE:0x004DB33C access cell] the constructor 0x004DB090 stores the shape's first entrance cell itself into +0x36 (0x004DB33C, the first type 9 cell of the shape scan 0x00413410 at type +0x494, turned by the angle 0x004D9CC0, (0, 0) without one: the thing's own cell), with no walkability test, and the bin search 0x00500DC0 requests the route to it (0x004FA530); the route finder reaches a cell inside a footprint through the edge test 0x004D8750, which opens a step from a path or queue cell into a type 3 or 9 cell whose link byte points back at it (a bin's entrance cell links to its outside cell)
-	// A world that keeps the cells it was given (a read-only visit, a Theme Park Inc layout or Theme Park Inc itself: no entrance symbol is typed on its map) has no such cell to walk into, so the guests walk to the cell in front of the entrance there (QUEUE-010)
+	// A world that keeps the cells it was given (a read-only visit: no entrance symbol is typed on its map) has no such cell to walk into, so the guests walk to the cell in front of the entrance there (QUEUE-010)
 	private (int X, int Y)? AccessCell( OriginalObject item, GuestPathGrid grid )
 	{
 		var cell = (item.Placement.X, item.Placement.Y);
@@ -2199,10 +2211,20 @@ public partial class Level
 	public const string FireworksStatusVariable = "VAR_STATUS";
 
 	/// <summary>Mirrors ordinary objects and the live prototype between their scripts, visitor bridges and linked economy records.</summary>
+	private int weatherClosingsSeen;
+
 	private void SyncObjectEconomy()
 	{
 		if ( Park == null )
 			return;
+		// [BIN:TPI-EXE:0x641FF3 weather message] the attractions' weather message (type 1, constructor 0x435510) is built only in the weather thing's month handler right after the spell start 0x642A80, so every live attraction runs its closing once per spell start, not per turn (ARRIVAL-008); a ride built mid-spell is not asked until the next one, and the placement prototype never is
+		if ( GameEditions.IsThemeParkInc && Park.Economy.TpiSpellStarts != weatherClosingsSeen )
+		{
+			weatherClosingsSeen = Park.Economy.TpiSpellStarts;
+			foreach ( var (item, _) in economyInstances )
+				if ( item.Runtime.IsAttraction )
+					item.Runtime.ApplyWeatherClosing( Park.Economy.TpiWeatherState );
+		}
 		foreach ( var (item, instance) in economyInstances )
 			SyncEconomyObject( item, instance );
 		if ( PlacedRide is { IsDeleted: false } prototype && prototypeInstance is int prototypeId )
@@ -2211,9 +2233,6 @@ public partial class Level
 
 	private void SyncEconomyObject( OriginalObject item, int instance )
 	{
-		// [BIN:TPI-EXE:0x5DED90 attraction update] the attraction's weather closing runs on its own update, once per turn (ARRIVAL-008); Theme Park World's park has no weather state of this kind
-		if ( GameEditions.IsThemeParkInc && item.Runtime.IsAttraction && Park!.Economy.NextTickStartsTurn )
-			item.Runtime.ApplyWeatherClosing( Park.Economy.TpiWeatherState );
 		if ( Park!.Economy.TryGetObject( instance, out var state ) )
 		{
 			// [BIN:TPW-EXE:0x004E0B90 fireworks] a show whose script variable 0 reached 1 loses its RegionFX row, and the variable becomes 2

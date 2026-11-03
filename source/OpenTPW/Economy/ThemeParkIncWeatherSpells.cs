@@ -49,6 +49,9 @@ public sealed class ThemeParkIncWeatherSpells
 	public WeatherSpell Next => next;
 	public bool NextPending => nextPending;
 
+	/// <summary>How many spells have started (0x642A80 runs at each); the attractions' weather message follows each start, so the level runs their closing when it changes.</summary>
+	public int SpellStarts { get; private set; }
+
 	/// <summary>
 	/// The month message: starts the rolled spell when its month is reached, and rolls the next one when the running spell's last month is. <paramref name="month"/> is the date's month, 1 to 12; <paramref name="years"/>
 	/// the years since the calendar's start; <paramref name="draw"/> answers a number below its bound.
@@ -61,6 +64,7 @@ public sealed class ThemeParkIncWeatherSpells
 		{
 			active = next;
 			nextPending = false;
+			SpellStarts++;
 		}
 		if ( nextPending )
 			return;

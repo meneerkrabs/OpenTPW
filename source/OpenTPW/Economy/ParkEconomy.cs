@@ -111,6 +111,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>The weather thing's state word for the arrival group: 1 heatwave, 2 rain, 3 storm, 4 snow, 0 none.</summary>
 	public int TpiWeatherState => TpiWeather?.State ?? 0;
 
+	/// <summary>The spells the Theme Park Inc weather has started (ThemeParkIncWeatherSpells.SpellStarts).</summary>
+	public int TpiSpellStarts => TpiWeather?.SpellStarts ?? 0;
+
 	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>
 	public void AttachWorld( WorldRng world ) => World = world ?? throw new ArgumentNullException( nameof( world ) );
 	public ParkLedger Ledger { get; }

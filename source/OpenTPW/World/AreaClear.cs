@@ -14,7 +14,7 @@ public static class AreaClear
 	/// <param name="removeObject">Demolishes the object standing on a cell (the demolition 0x527EE0); false when it cannot, or may not.</param>
 	/// <param name="removePath">The forced path clear of a cell (<see cref="ParkPathBuilder.Remove"/>).</param>
 	/// <param name="objectAt">
-	/// The object standing on a cell, only for a park whose objects do not type their cells (a Theme Park Inc layout, whose placement is not traced): the scans then follow the object
+	/// The object standing on a cell, only for a park whose objects do not type their cells (a read-only visit): the scans then follow the object
 	/// instead of the cells' owner words. Null: the cell map's types and owner words decide, as in tp.exe.
 	/// </param>
 	// [BIN:TPW-EXE:0x0052BDD0 area clear] the rectangle is normalised; rows from the top, cells from the left: a ride cell (type 4, 9 or 10) starts four scans along the cells of the same owner (+0x10) and of a ride type, to the right, the left, down and up, each refused when a scanned cell has flag 0x10 (0x535DB0(0x10)) or the run passes the rectangle's edge (0x52BEC6..0x52C06A), and when all four pass the object is demolished (0x527EE0(x, y, 0)); then every type-1 cell of the rectangle (0x536310) is cleared with 0x5367A0(0, 0) (0x52C0D8..0x52C11F), queue cells and ride cells staying

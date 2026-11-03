@@ -626,6 +626,8 @@ public sealed partial class OriginalObjectRuntime
 			LitterEffect = settings.GetInt( "UsageInfo.LitterEffect" ),
 			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods] type +320, the price test's base (tp.exe 0x004FDE50; the key table order InitCostOfGoods, ThirstEffect, HungerEffect, VomitEffect, HappinessEffect)
 			InitCostOfGoods = settings.Has( "UsageInfo.InitCostOfGoods" ) ? settings.GetInt( "UsageInfo.InitCostOfGoods" ) : 0,
+			// [BIN:TPI-EXE:0x6120FC willingness base] Theme Park Inc's price test starts from the type's Info.ExpectedPrice (+0x88) for a ride or a shop; the key is absent in Theme Park World
+			ExpectedPrice = settings.Has( "Info.ExpectedPrice" ) ? settings.GetInt( "Info.ExpectedPrice" ) : 0,
 			// [DATA:<object>.sam:UsageInfo.RipOffOK] type +0x16C (key 42 of the UsageInfo table at tp.exe 0x007456E8), copied into the per-type record's word +0xC that the price test reads (0x004D3E00); 100 in the shipped Shops.sam, 250 in SideShow.sam
 			RipOffOk = settings.Has( "UsageInfo.RipOffOK" ) ? settings.GetInt( "UsageInfo.RipOffOK" ) : 0,
 			// [DATA:<object>.sam:UsageInfo.FatigueEffect] type +0xE8 (key 9 of the UsageInfo table at tp.exe 0x007456E8), "reduce fatigue value by this amount"; 5 in the shipped Rides.sam, Shops.sam and SideShow.sam

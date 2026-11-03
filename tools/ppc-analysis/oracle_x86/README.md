@@ -85,3 +85,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## The build tools' ghost lines and tiles (round 11, package F)
 
 `ghost_oracle.py` runs tp.exe's own line walker `0x536100` with the ghost cell routine `0x532FC0` (the path and queue tools' preview), the track tile chooser `0x539760` and the tile line walker `0x53AAC0` with the ghost tile routine `0x5370E0` (the kart and water line tools' and the fence tool's preview) on synthetic maps, with its own stubs for the face queue `0x53C8D0`, the height lookups and the money. `ghost_line_golden.py`, `ghost_tile_golden.py` and `ghost_tile_line_golden.py` write `GhostLineGolden.cs`, `GhostTileGolden.cs` and `GhostTileLineGolden.cs` (zlib + base64; 300 random lines, 600 random tile cases and 240 random tile lines; `--check <file>` compares) which `GhostLineGoldenTests`, `GhostTileGoldenTests` and `GhostTileLineGoldenTests` replay on `BlueprintLineGhost`, `TrackTileChooser` and `TileLineGhost`.
+
+## Theme Park Inc's guest price test (round 11, package T)
+
+`tpi_price_oracle.py` runs the routine `0x6120C0` of the Theme Park Inc no-CD `Game.exe` (`OPENTPW_TPI_EXE`) with a synthetic guest, attraction thing, type record and rating byte on random inputs and compares verdict, statistics and the three ring counters with the reading `ThemeParkIncPriceTest` ports (490 cases, no mismatch; finding X62). `--golden` writes `source/OpenTPW.Tests/ThemeParkIncPriceGolden.cs`.

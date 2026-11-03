@@ -132,6 +132,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int VomitEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.InitCostOfGoods</c> (<c>+320</c>).</summary>
 	public int InitCostOfGoods { get; set; }
+	/// <summary>Theme Park Inc only: <c>Info.ExpectedPrice</c> (type <c>+0x88</c>).</summary>
+	public int ExpectedPrice { get; set; }
 	/// <summary>Type <c>UsageInfo.RipOffOK</c> (tp.exe type <c>+0x16C</c>).</summary>
 	public int RipOffOk { get; set; }
 	/// <summary>Type <c>UsageInfo.FatigueEffect</c> (tp.exe type <c>+0xE8</c>).</summary>

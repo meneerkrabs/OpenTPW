@@ -57,6 +57,15 @@ public sealed class GuestSettings
 	public int DecisionNewRideMultiplier { get; set; } = 5;
 	/// <summary><c>PeepInfo.DecisionVariable3</c>: the score multiplier of an indoor ride while it rains (<c>+88</c>).</summary>
 	public int DecisionIndoorRainMultiplier { get; set; } = 5;
+	/// <summary>
+	/// Theme Park Inc only: <c>PeepInfo.PcOfGoodPriceIsCheap</c> (word <c>0xA01B18</c>): a price below this percent of the guest's willingness to pay counts as a cheap one in the attraction's cheap-price ring (price test <c>0x6120C0</c>).
+	/// </summary>
+	public int PcOfGoodPriceIsCheap { get; set; } = 70;
+	/// <summary>
+	/// Theme Park Inc only: the 24 guest types' <c>PeepTypes[n].PreferredExcitement.StartingCash.BoredomThreshold.Generation</c> first values, the expected byte (guest <c>+0x2A8</c>, table <c>0xA01C24</c> stride 20: set by the guest
+	/// constructor <c>0x60C6F2</c> from the type byte <c>+0x21A</c>); empty in Theme Park World's files, whose key has three values and is read into <see cref="Types"/>.
+	/// </summary>
+	public List<int> TpiPreferredExcitement { get; set; } = new();
 	public int PerfectRide { get; set; } = 25;
 	public int GoodRide { get; set; } = 15;
 	public int OkRide { get; set; } = 5;
@@ -160,6 +169,13 @@ public sealed class GuestSettings
 		settings.DecisionNewRideDays = Get( "PeepInfo.DecisionVariable1", settings.DecisionNewRideDays );
 		settings.DecisionNewRideMultiplier = Get( "PeepInfo.DecisionVariable2", settings.DecisionNewRideMultiplier );
 		settings.DecisionIndoorRainMultiplier = Get( "PeepInfo.DecisionVariable3", settings.DecisionIndoorRainMultiplier );
+		settings.PcOfGoodPriceIsCheap = Get( "PeepInfo.PcOfGoodPriceIsCheap", settings.PcOfGoodPriceIsCheap );
+		for ( var index = 0; index < 32; index++ )
+		{
+			if ( !values.TryGetValue( $"PeepTypes[{index}].PreferredExcitement.StartingCash.BoredomThreshold.Generation", out var tpiType ) || tpiType.Length < 4 )
+				break;
+			settings.TpiPreferredExcitement.Add( int.Parse( tpiType[0], CultureInfo.InvariantCulture ) );
+		}
 		settings.PerfectRide = Get( "PeepInfo.PerfectRide", settings.PerfectRide );
 		settings.GoodRide = Get( "PeepInfo.GoodRide", settings.GoodRide );
 		settings.OkRide = Get( "PeepInfo.OKRide", settings.OkRide );

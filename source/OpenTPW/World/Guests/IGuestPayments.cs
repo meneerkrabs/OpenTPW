@@ -39,6 +39,8 @@ public interface IGuestPayments
 	void WalkedAway( IRideVisitorBridge attraction ) { }
 	/// <summary>The price test recorded a perception value in a park statistic category (tp.exe <c>0x004C74B0</c>).</summary>
 	void PriceTested( int category, int value ) { }
+	/// <summary>Theme Park Inc's price test (Game.exe <c>0x6120C0</c>) raised the attraction's cheap-price, expensive-price and (sideshows) declined rings.</summary>
+	void PriceVerdict( IRideVisitorBridge attraction, bool cheap, bool expensive, bool declined ) { }
 	/// <summary>The park's litter by cell, where guests drop theirs (null: litter is not kept).</summary>
 	ParkLitter? Litter => null;
 	/// <summary>The vehicle's group dropped one more guest off: the analyser's running arrivals rise by one (tp.exe <c>0x004CF3E0</c>, <c>+0x20CC0</c>).</summary>

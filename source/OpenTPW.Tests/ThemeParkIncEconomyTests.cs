@@ -293,7 +293,7 @@ public class ThemeParkIncEconomyTests
 		};
 		var economy = themeParkInc ? Economy( info ) : TpwEconomy( info );
 		economy.TryBuild( 1, out var state );
-		var ride = new RideVisitorBridge( 1, "Ride", kind, 1, 60, 30, price: price ) { ExitCell = (6, 5) };
+		var ride = new RideVisitorBridge( 1, "Ride", kind, 1, 60, 30, price: price ) { ExitCell = (6, 5), ExpectedPrice = 25 };
 		ride.Sideshow = new SideshowTerms( state!.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
 		simulation.Register( ride );
 		var bridge = new GuestEconomyBridge( () => economy, simulation );
@@ -407,6 +407,26 @@ public class ThemeParkIncEconomyTests
 		var broke = tpw.Simulation.SpawnInPark( 6, 5 );
 		broke.Money = 0;
 		Assert.IsFalse( tpw.Simulation.TooExpensive( broke, tpw.Ride ), "Theme Park World's ride, whatever price an import carried" );
+	}
+
+	[TestMethod]
+	public void AGuestRefusesARidePricedAboveItsWillingnessToPayEvenWithTheCash()
+	{
+		// [BIN:TPI-EXE:0x6120C0 willingness] a ride's willingness starts at Info.ExpectedPrice (25) scaled by the guest's happiness byte (0 here: x 100 / 100); the rig's ride rates 60 against the expected byte 70 of Theme Park Inc's PeepTypes table (distance 10), which raises it by 50 x 90 / 100 = 45 percent: 25 x 145 / 100 = 36
+		var (simulation, _, ride, state, economy) = FareRig( themeParkInc: true );
+		var guest = simulation.SpawnInPark( 6, 5 );
+		guest.Money = 10_000;
+		guest.Happiness = 0f;
+		simulation.Settings.TpiPreferredExcitement.Add( 70 );
+		ride.Sideshow = ride.Sideshow with { PricePerUse = 36 };
+		Assert.IsFalse( simulation.TooExpensive( guest, ride ), "a price at the willingness is paid" );
+		ride.Sideshow = ride.Sideshow with { PricePerUse = 37 };
+		Assert.IsTrue( simulation.TooExpensive( guest, ride ), "a price above it is refused whatever the purse holds" );
+		Assert.AreEqual( 1, state.ExpensivePriceRing.Today, "the refusal raises the expensive-price ring (+0x660)" );
+		Assert.AreEqual( 0, state.DeclinedRing.Today, "the declined ring (+0x4C8) is a sideshow type's" );
+		ride.Sideshow = ride.Sideshow with { PricePerUse = 10 };
+		Assert.IsFalse( simulation.TooExpensive( guest, ride ) );
+		Assert.AreEqual( 1, state.CheapPriceRing.Today, "70 percent of 36 is above a price of 10: the cheap-price ring (+0x5D8) rises" );
 	}
 
 	[TestMethod]

@@ -3079,12 +3079,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	internal bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
 	{
-		if ( attraction.Kind == RideVisitorKind.Ride && Payments is { SettlesAtExit: true } )
-		{
-			// [BIN:TPI-EXE:0x61243A cash test] a Theme Park Inc ride with a fee refuses a guest whose purse is below it (unsigned); the willingness test before it is not ported (ECON-062). Theme Park World's rides are free
-			var fee = unchecked( (uint)PriceTermsOf( attraction ).Price );
-			return fee != 0 && fee > unchecked( (uint)guest.Money );
-		}
+		if ( Payments is { SettlesAtExit: true } && attraction.Kind is RideVisitorKind.Ride or RideVisitorKind.Shop or RideVisitorKind.Sideshow )
+			return TooExpensiveInTheme( guest, attraction );
 		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
 			return false;
 		var terms = PriceTermsOf( attraction );
@@ -3095,6 +3091,28 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Payments.PriceTested( category, value );
 		}
 		return QueueJoinRules.TooExpensive( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
+	}
+
+	/// <summary>
+	/// Theme Park Inc's price test (<see cref="ThemeParkIncPriceTest"/>): every ride, shop and sideshow with a price is tested, on its expected price (a sideshow on its goods and win byte), the guest's needs and the attraction's rating byte
+	/// against the guest's expected excitement, and the verdict raises the attraction's price rings (ECON-062).
+	/// </summary>
+	private bool TooExpensiveInTheme( Guest guest, IRideVisitorBridge attraction )
+	{
+		var live = attraction.Sideshow;
+		var kind = attraction.Kind switch { RideVisitorKind.Sideshow => TpiPriceKind.Sideshow, RideVisitorKind.Shop => TpiPriceKind.Shop, _ => TpiPriceKind.Ride };
+		var preferred = Settings.TpiPreferredExcitement.Count > 0 ? Settings.TpiPreferredExcitement[Math.Min( guest.Type, Settings.TpiPreferredExcitement.Count - 1 )]
+			: Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )].PreferredExcitement;
+		// [BIN:TPI-EXE:0x5E41D0 rating byte] the attraction's rating is the live excitement of the join gate (0x5E3DF0 is the twin of tp.exe's 0xDFF70), 0 when the type's ExcitementLevel word is 0
+		var terms = new TpiPriceTerms( attraction.HasSideshowTerms ? live.PricePerUse : attraction.Price, kind, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.ExpectedPrice,
+			attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, attraction.RipOffOk, attraction.LiveExcitement & 0xFF, preferred,
+			attraction.SpecialIngredient, attraction.AppearanceEffect );
+		var verdict = ThemeParkIncPriceTest.Decide( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money, Settings.PcOfGoodPriceIsCheap );
+		foreach ( var (category, value) in verdict.Statistics )
+			Payments!.PriceTested( category, value );
+		if ( verdict.CheapPrice || verdict.ExpensivePrice || verdict.Declined )
+			Payments!.PriceVerdict( attraction, verdict.CheapPrice, verdict.ExpensivePrice, verdict.Declined );
+		return verdict.TooExpensive;
 	}
 
 	/// <summary>

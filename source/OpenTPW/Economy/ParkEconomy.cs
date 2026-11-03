@@ -2837,6 +2837,20 @@ public sealed partial class ParkEconomy : IParkEconomy
 		item.WalkAwaysToday++;
 	}
 
+	/// <summary>Theme Park Inc's price test (<c>0x6120C0</c>) raised the attraction's cheap-price, expensive-price and declined rings (<see cref="ParkObjectState.CheapPriceRing"/>).</summary>
+	// [BIN:TPI-EXE:0x6120C0 price rings] +0x5D8 (cheap), +0x660 (expensive) and +0x4C8 (declined) of the thing's history object (+0x130) each take one
+	public void RecordPriceVerdict( int instanceId, bool cheap, bool expensive, bool declined )
+	{
+		if ( !objects.TryGetValue( instanceId, out var item ) )
+			return;
+		if ( cheap )
+			item.CheapPriceRing.Today++;
+		if ( expensive )
+			item.ExpensivePriceRing.Today++;
+		if ( declined )
+			item.DeclinedRing.Today++;
+	}
+
 	/// <summary>The day's end for the objects (tp.exe <c>0x004DD320</c> on the day message): today's walk-aways move into the history, which keeps the last 30 days.</summary>
 	// [BIN:TPW-EXE:0x004DD320 object day message] on message 0xB (the calendar update 0x004F8260 sends it when the day changes, 0x0040F4C0; 0xC at a new month) each of the object's six rings takes its day count: +0x2AC = head + 1, wrapping to 0 with the full flag set at the size; the ring entry = +0x230, then +0x230 = 0
 	private void EndObjectDay()
@@ -2852,6 +2866,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 			item.CustomersRing.Roll();
 			item.WinnersRing.Roll();
 			item.SatisfactionRing.Roll();
+			item.CheapPriceRing.Roll();
+			item.ExpensivePriceRing.Roll();
+			item.DeclinedRing.Roll();
 		}
 	}
 

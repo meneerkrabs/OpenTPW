@@ -270,16 +270,23 @@ public sealed class OriginalParkImport
 		return false;
 	}
 
+	/// <summary>The anchor word <c>(y &lt;&lt; 7) + x + 1</c> of a RideSystem record's cell, which a placed thing keeps as its <c>mTopLeft</c> (+0x34).</summary>
+	// [BIN:TPW-EXE:0x4db2da mTopLeft is the anchor] the placement hands the constructor 0x4DB090 the anchor plus the rotated map offset (0x529F74..0x529FD5), which the base 0x50AFE0 stores as the thing's bytes +5 and +7, while +0x34 mTopLeft is the anchor itself (0x4DB2DA..0x4DB30A); only jungle/5x5rck and jungle/mammtunn have an offset, (0, 1)
+	public static ushort AnchorWord( SaveObject record ) => (ushort)((record.Y << 7) + record.X + 1);
+
 	/// <summary>
-	/// The attraction thing of a RideSystem record: same Info.Id, and for placed objects the same cell
-	/// (fixed items store 128, 128 and are matched by Info.Id alone). Null when none or more than one matches.
+	/// The attraction thing of a RideSystem record: same Info.Id, and for placed objects the same anchor, as the thing's <c>mTopLeft</c> (the thing's own cell, <see cref="SaveAttraction.CellX"/>, is
+	/// the anchor plus the type's rotated map offset). Fixed items store 128, 128 and are matched by Info.Id alone. Null when none or more than one matches.
 	/// </summary>
-	public SaveAttraction? FindAttraction( SaveObject record )
+	public SaveAttraction? FindAttraction( SaveObject record ) => FindAttraction( Attractions, record );
+
+	/// <summary>See <see cref="FindAttraction(SaveObject)"/>: the match over any list of attraction things.</summary>
+	public static SaveAttraction? FindAttraction( IEnumerable<SaveAttraction> attractions, SaveObject record )
 	{
 		SaveAttraction? found = null;
-		foreach ( var attraction in Attractions )
+		foreach ( var attraction in attractions )
 		{
-			if ( attraction.InfoId != record.InfoId || (!record.IsFixedItem && (attraction.CellX != record.X || attraction.CellY != record.Y)) )
+			if ( attraction.InfoId != record.InfoId || (!record.IsFixedItem && attraction.TopLeft != AnchorWord( record )) )
 				continue;
 			if ( found != null )
 				return null;
@@ -557,7 +564,7 @@ public sealed class OriginalParkImport
 			// the record's u32 after its leading byte is the scene mesh instance, the thing's MeshInstanceID
 			var mesh = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( span[(record.Offset + 1)..] );
 			var matches = tpiWorld.Attractions.Where( attraction => attraction.MeshInstanceId == mesh && attraction.InfoId == record.InfoId
-				&& (record.IsFixedItem || attraction.CellX == record.X && attraction.CellY == record.Y) ).Take( 2 ).ToList();
+				&& (record.IsFixedItem || attraction.TopLeft == AnchorWord( record )) ).Take( 2 ).ToList();
 			if ( matches.Count != 1 )
 				throw new InvalidDataException( $"Theme Park Inc scene record {record.Index} (mesh {mesh}, Info.Id {record.InfoId}) matches {matches.Count} attraction things; expected one." );
 			if ( !named.Add( matches[0].Id ) )

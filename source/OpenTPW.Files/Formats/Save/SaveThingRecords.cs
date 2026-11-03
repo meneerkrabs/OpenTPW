@@ -39,8 +39,8 @@ public readonly record struct SaveTimestamp( int Year, int Month, int Day, uint 
 /// <summary>
 /// One model-3 thing (ride, shop, sideshow, feature, gate, traffic lights or bus): tp.exe's attraction serializer <c>0x004DB7D0</c>
 /// (docs/TPWS-PAYLOAD.md, "Attraction records"). <see cref="Offset"/> is the body offset, <see cref="Length"/> the body length.
-/// <see cref="PositionX"/>/<see cref="PositionY"/> are the base thing's X/Y in 1/256 cell units; for buildable objects the cell equals the
-/// RideSystem record cell, fixed items store 128, 128. The loader puts the three floats at thing +0x4C (<see cref="Gauge48"/>, the Mac's +0x48),
+/// <see cref="PositionX"/>/<see cref="PositionY"/> are the base thing's X/Y in 1/256 cell units; for buildable objects the cell is the
+/// RideSystem record's anchor plus the type's rotated map offset (<c>Info.MapOffsetX</c> and <c>Info.MapOffsetY</c>, (0, 1) for jungle/5x5rck and jungle/mammtunn, 0 for every other shipped object; <see cref="TopLeft"/> is the anchor itself), fixed items store 128, 128. The loader puts the three floats at thing +0x4C (<see cref="Gauge48"/>, the Mac's +0x48),
 /// +0x48 (<see cref="LifeGauge"/>) and +0x44 (<see cref="StateOfRepair"/>); the original saves each as a whole number 0–255.
 /// <see cref="TotalCosts"/>/<see cref="TotalTakings"/> are read as signed 32-bit values (+0x184/+0x180; the panel's total profit 0x004E1C60 is their
 /// difference). <see cref="State"/> is <c>mState</c> (+0x19C) and the other properties name the remaining fields (<see cref="Timestamp"/> is the park time at +0x18,

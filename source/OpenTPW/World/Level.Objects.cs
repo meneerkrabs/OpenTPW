@@ -164,8 +164,9 @@ public partial class Level
 	// [APPROX:RIDES-031] a Theme Park Inc world keeps the cells its layout was given and types none of its footprints (the whole slice runs without them: the walks, queues, coasters, tours and staff paths that read this property stay off), so the road signs' '@' cells ("*@*", "*@@*") are plain occupied cells although ParkCellMap.WriteFootprint is the port of the twin placement
 	private bool TypesFootprints => !IsReadOnlyVisit && incLayoutCells == null && !GameEditions.IsThemeParkInc;
 
-	/// <summary>The owner word the placement stores on an object's cells: the cell word of its anchor (<see cref="ParkCellMap.OwnerAt"/>).</summary>
-	internal static ushort OwnerWord( OriginalObject item ) => ParkCellMap.CellWord( item.Placement.X, item.Placement.Y );
+	/// <summary>The owner word the placement stores on an object's cells: the cell word of its thing's own cell (<see cref="ParkCellMap.OwnerAt"/>), the anchor plus the type's rotated map offset.</summary>
+	// [BIN:TPW-EXE:0x528f13 owner word] the owner words get the thing cell, not the anchor (0x528F13..0x528F26 -> 0x539210 at 0x529138); the two shipped objects with an offset, jungle/5x5rck and jungle/mammtunn ((0, 1)), differ
+	internal static ushort OwnerWord( OriginalObject item ) { var (x, y) = item.ThingCell; return ParkCellMap.CellWord( x, y ); }
 
 	/// <summary>Every placed object that guests may choose becomes a live attraction; new and removed objects follow.</summary>
 	private void ConnectObjectsToGuests()

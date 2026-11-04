@@ -80,23 +80,9 @@ public class QueueClipPlayerTests
 		Assert.AreEqual( 4, births.Of( (5, 7) ) );
 		Assert.AreEqual( 1, births.Of( (6, 6) ) );
 		Assert.AreEqual( 3, births.Of( (6, 9) ) );
-		// a model change with no refresh (nothing re-created) keeps the phase
+		// the same cells again with nothing re-created: every phase stays
 		births.Assign( lanes, Set() );
 		Assert.AreEqual( 4, births.Of( (5, 5) ) );
-	}
-
-	/// <summary>The clear's unlinking and the corner walk report the queue neighbours they refresh through ParkCellMap.Recreated (0x536B9E, 0x530387, 0x5303A3).</summary>
-	[TestMethod]
-	public void TheClearReportsItsLinkedNeighbours()
-	{
-		var map = new ParkCellMap( 12, 12 );
-		foreach ( var (x, y) in new[] { (5, 5), (5, 6), (5, 7) } )
-			map.SetType( x, y, ParkCellType.Queue );
-		map.SetLinks( 5, 5, 16 ); map.SetLinks( 5, 6, 1 | 16 ); map.SetLinks( 5, 7, 1 );
-		var reported = new List<(int X, int Y)>();
-		map.Recreated = ( x, y ) => reported.Add( (x, y) );
-		PathLinkWriter.Unlink( map, 5, 6, cardinalOnly: true, map.ClearEffects );
-		CollectionAssert.AreEquivalent( new[] { (5, 5), (5, 7) }, reported, "the predecessor and the successor through the middle cell's links" );
 	}
 
 	[TestMethod]

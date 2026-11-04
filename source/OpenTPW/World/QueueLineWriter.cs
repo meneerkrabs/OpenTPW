@@ -44,7 +44,14 @@ public sealed class QueueLineWriter : ICellLineWriter
 	internal bool SupportsNativeUndo( (int X, int Y) start, (int X, int Y) end ) => start != ParkPathBuilder.SnapEnd( start, end ) && native?.SupportsUndo( start, end ) == true;
 	internal void UndoNative( QueueSegmentReceipt receipt ) => native!.Undo( receipt );
 	internal SegmentResult CommitLegacy( (int X, int Y) start, (int X, int Y) end )
-	{ nativeActive = false; return Run( start, ParkPathBuilder.SnapEnd( start, end ), write: true ); }
+	{
+		nativeActive = false;
+		var result = Run( start, ParkPathBuilder.SnapEnd( start, end ), write: true );
+		// [BIN:TPW-EXE:0x005340A7 line refresh] the commit's refresh pass runs 0x5365D0 on every cell of the line from the anchor to the end (as QueueSegmentReducer.Commit does), not only on the cells it built: a queue cell among them starts its animation again
+		foreach ( var (x, y) in result.Line )
+			grid.Cells.Recreated?.Invoke( x, y );
+		return result;
+	}
 
 	public RideVisitorBridge Ride { get; }
 	public CellToolMode Mode => CellToolMode.Queue;

@@ -783,12 +783,15 @@ public sealed class FenceEngine
 					break;
 			}
 			SetCellFlags( index, owned ? CellFlags( index ) & ~0x40 : CellFlags( index ) | 0x40 );
+			// [BIN:TPW-EXE:0x005385F0 post block refresh] each of the four cells of the block is re-created after its flag is written: the post's own cell (0x5385F0), (1,0) (0x53865D), (0,1) (0x5386CA) and (1,1) (0x538708, 0x53874B); a null neighbour is skipped (guarded at 0x5381CD)
+			pendingRecreated.Add( index );
 			foreach ( var (flag, offset) in new[] { (east, East), (south, South), (southEast, 8) } )
 			{
 				var other = CellNeighbour( index, offset );
 				if ( other < 0 )
 					continue;
 				SetCellFlags( other, flag ? CellFlags( other ) & ~0x40 : CellFlags( index ) | 0x40 );
+				pendingRecreated.Add( other );
 			}
 		}
 		else if ( IsCorner( index ) || (PopCardinal( LinksOf( index ) ) >= 3 && LinksOf( index ) != 0) )
@@ -855,7 +858,8 @@ public sealed class FenceEngine
 		}
 	}
 
-	/// <summary>The four cells (0,0), (0,1), (1,1), (1,0) of the post block at a record: when any has the unowned flag all of them lose it and are refreshed (0x5311C0, 0x53132E..0x531362).</summary>
+	/// <summary>The four cells (0,0), (0,1), (1,1), (1,0) of the post block at a record: when any has the unowned flag all of them lose it and are re-created (0x5311C0).</summary>
+	// [BIN:TPW-EXE:0x0053132E dirty scan block] a scan block whose four cells carry none of the unowned flag 0x40 is left alone; one that does has the flag cleared on all four (0x53A530) and 0x5365D0 run on all four, in each of the four scan directions (0x53132E..0x531362, 0x53146A..0x53149E, 0x5315A6..0x5315DA, 0x5316E3..0x531717)
 	private void ClearBlock( int index )
 	{
 		var block = new[] { index, CellNeighbour( index, South ), CellNeighbour( index, 8 ), CellNeighbour( index, East ) };
@@ -960,22 +964,21 @@ public sealed class FenceEngine
 				else
 					ClearPost( record );
 				SetCounterOf( record, 0 );
-				ClearBlock( record, force: true );
+				ClearUnmarkedBlock( record );
 			}
 		}
 	}
 
-	// [BIN:TPW-EXE:0x0053132E tile refresh of a dirty block] a scan block whose four cells carry none of the unowned flag 0x40 is left alone; one that does has the flag cleared on all four and 0x5365D0 run on all four (0x53132E..0x531362); the last pass over the unmarked posts does the same unconditionally (0x531926..0x531965), so the queue cells among them start again
-	private void ClearBlock( int index, bool force )
+	/// <summary>The last pass over an unmarked post: all four cells of its block lose the flag and are re-created, whether or not any carried it (0x531926..0x531965).</summary>
+	// [BIN:TPW-EXE:0x00531926 unmarked post block] the last pass runs 0x53A530 and 0x5365D0 on the four cells of every post the walk did not mark, unconditionally
+	private void ClearUnmarkedBlock( int index )
 	{
 		var block = new[] { index, CellNeighbour( index, South ), CellNeighbour( index, 8 ), CellNeighbour( index, East ) };
 		if ( Array.Exists( block, cell => cell < 0 ) )
 			throw new FenceFaultException( "The fence fill reaches the cell beyond the map's edge." );
-		var dirty = force || Array.Exists( block, cell => (CellFlags( cell ) & 0x40) != 0 );
 		foreach ( var cell in block )
 			SetCellFlags( cell, CellFlags( cell ) & ~0x40 );
-		if ( dirty )
-			pendingRecreated.AddRange( block );
+		pendingRecreated.AddRange( block );
 	}
 
 	/// <summary>0x53BB20: a structure record on a coaster marker cell and the three cells next to it go back to nothing.</summary>

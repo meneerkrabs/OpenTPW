@@ -7,6 +7,6 @@ Review finding on round 11 package I (#937), tp.exe read with REA: the placement
 - **Corpus**: none of the eleven original saves of `OPENTPW_TPWS_SAVES` ("All Researched Saves") holds a placed object (only fixed items), so no corpus save contains these two objects; the new tests are synthetic.
 - **Guest registration**: the position cell handed to `RegisterWithGuests` (the cell the thing stands on, +5/+7 at `0x4DB33C`, which the near-the-route window of the guest decision compares) is the thing cell too.
 - **Docs**: `TPWS-PAYLOAD.md` and `SaveThingRecords.cs` no longer say the thing cell equals the record cell.
-- **Coaster sections**: the attraction things of the coaster-section join are keyed by their decoded `mTopLeft` too (the records hold the anchor), so that residual is gone.
+- **Coaster sections**: the attraction things of the coaster-section join are keyed by their decoded `mTopLeft` too (the records hold the anchor), so that residual is gone (a synthetic coaster section on the anchor cell now joins an offset thing).
 - **Legacy queue repair**: `RestoreLegacySavedQueue` matches the shipped save's record on the anchor word and the cells on the thing cell's owner word.
 - **Pins**: for an object without a map offset (every shipped object but the two) the thing cell is the anchor, so the match key, the owner word, the position cell and the legacy-queue anchor are identities; no pin scenario and none of the eleven corpus saves contains an offset object, so no pin moved.

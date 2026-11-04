@@ -455,3 +455,5 @@ GUEST-007 docs/GUESTS.md
 ADVISOR-005 docs/LIPS.md
 UI-008 docs/UI.md
 UI-914 docs/UI.md
+UMB-003 docs/UMBRELLAS.md
+UMB-004 docs/UMBRELLAS.md

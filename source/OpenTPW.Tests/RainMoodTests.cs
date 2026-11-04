@@ -50,7 +50,7 @@ public class RainMoodTests
 	private static Guest Aged( Rig rig, double days )
 	{
 		var guest = rig.Simulation.SpawnInPark( 6, 5 );
-		guest.TimeInParkSeconds = days * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn * TurnSeconds;
+		GuestAges.Set( guest, days * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn * TurnSeconds );
 		guest.Happiness = 70;
 		guest.Thirst = 40;
 		guest.Hunger = 40;
@@ -137,10 +137,10 @@ public class RainMoodTests
 		rig.Weather = UmbrellaRules.WeatherRain;
 		rig.RunTurns( 8 );
 		Assert.AreEqual( 1L, guest.RainMoodDay );
-		guest.TimeInParkSeconds = 1.5 * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn * TurnSeconds;
+		GuestAges.Set( guest, 1.5 * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn * TurnSeconds );
 		rig.RunTurns( 8 );
 		Assert.AreEqual( 1L, guest.RainMoodDay, "day 1 does not qualify" );
-		guest.TimeInParkSeconds = 4.2 * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn * TurnSeconds;
+		GuestAges.Set( guest, 4.2 * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn * TurnSeconds );
 		rig.RunTurns( 8 );
 		Assert.AreEqual( 5L, guest.RainMoodDay, "day 4 qualifies again" );
 	}
@@ -364,7 +364,7 @@ public class RainMoodTests
 		for ( var index = 0; index < 8; index++ )
 		{
 			var guest = park.Simulation.SpawnInPark( 4, 5 );
-			guest.TimeInParkSeconds = (index * 12.0) * TurnSeconds;
+			GuestAges.Set( guest, (index * 12.0) * TurnSeconds );
 			if ( index % 3 == 0 )
 				(guest.UmbrellaState, guest.UmbrellaType) = (UmbrellaRules.StateOpen, index % 3);
 		}

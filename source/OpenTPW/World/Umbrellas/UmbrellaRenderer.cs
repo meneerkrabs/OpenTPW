@@ -7,8 +7,8 @@ namespace OpenTPW;
 /// <summary>
 /// Draws the guests' open umbrellas (docs/UMBRELLAS.md, "Drawing"): one camera-facing quad of the extension's own umbrella sprite (<c>content/umbrellas/esprites/Umbrellas/SPR_UM</c>: three colours, five directions mirrored to
 /// eight) for each guest whose umbrella is open or open until a close that is due (states 4 and 1, <see cref="Shows"/>), beside <see cref="BalloonRenderer"/>. The sprite's hotspot, the handle's tip, goes to the guest's
-/// hand: the point of the hand anchor table for the sprite set, slot, direction and step the guest is drawn with (<see cref="UmbrellaAnchors"/>), then the whole sprite is pulled towards the camera by
-/// <see cref="PullShare"/> (<c>min(0.1, 1.5 * ModelScale / depth)</c>), so it is drawn in front of the guest it covers. Presentation only: nothing here touches the simulation, no random stream is read, and a guest the
+/// hand: the point of the hand anchor table for the sprite set, slot, direction and step the guest is drawn with (<see cref="UmbrellaAnchors"/>), then Game.exe's own placement is applied to that point
+/// (<see cref="PullAndLift"/>): a share of the way to the camera on the ground and a lift by the camera's height over 40, the share capped at <see cref="PullShare"/> (<c>min(0.1, 1.5 * ModelScale / depth)</c>), so it is drawn in front of the guest it covers. Presentation only: nothing here touches the simulation, no random stream is read, and a guest the
 /// guest renderers do not draw (a swimmer, a rider, one in an attraction) has no umbrella shown.
 /// </summary>
 // [BIN:TPI-EXE:0x60ae35 umbrella drawn] the per-frame guest placement 0x60AE00 takes the umbrella state (+0x238): 4 or 1 sets the flag that places the sprite and raises the thought bubble, every other state draws nothing (a closed umbrella, state 2, has no sprite)
@@ -16,21 +16,22 @@ public sealed class UmbrellaRenderer : Entity
 {
 	private const int VerticesPerSprite = 12;
 	/// <summary>
-	/// The share of its distance to the camera the umbrella is pulled towards it, over what the guest's own depth pull gives (3.5 to 3.9 original units, under 5 % of the distances of the park view). TPI's default placement
-	/// moves the hotspot that share (<c>XAdjustCamera</c>, <c>ZAdjustCamera</c>, 10 %) of the way to the camera along the ground and lifts it by <c>YAdjustCamera</c> times the camera's height over 40, so the umbrella covers the
-	/// guest.
+	/// The upper limit of the share of its distance to the camera that the umbrella is pulled: Game.exe's default placement moves the hotspot that share (<c>XAdjustCamera</c>, <c>ZAdjustCamera</c>, 10 %) of the way to the
+	/// camera along the ground and lifts it by <c>YAdjustCamera</c> times the camera's height over 40, so the umbrella covers the guest (<see cref="PullAndLift"/>).
 	/// </summary>
-	// [BIN:TPI-EXE:0x60b236 umbrella pull] a horizontal coordinate v' = v - (v - the camera's) x GenericUmbrellaModifiers[1] (0xA01E0C), the other with [3] (0xA01E14), and the height y' = y + (the camera's height 0xA14584 - 40.0 at 0x93E5B0) x [2] (0xA01E10); the settings' shipped values (X/ZAdjustCamera 0.1) are the U0 trace's (docs/UMBRELLAS.md)
-	// [APPROX:UMB-004] [EXT:umbrellas-draw] the pull runs along the sight line to the camera instead (the screen position of the hand stays, the quad is scaled down by the same share, as the guests' own pull is done), so TPI's lift, whose value is not
-	// known here, is not needed to keep the umbrella over the hand
+	// [BIN:TPI-EXE:0x60B236 umbrella pull] the third-person branch of the guest's draw 0x60AE00 (the flag word 0xA1465C without the bits 0x16): the hand's horizontal coordinates become v' = v - (v - the camera's, 0xA14648 and 0xA14650) x GenericUmbrellaModifiers [1] (0xA01E0C) and [3] (0xA01E14), the height y' = y + (the camera's height 0xA14584 - 40.0, 0x93E5B0) x [2] (0xA01E10, YAdjustCamera), then the sprite is placed at (x', y' + the type's offset, z') (call 0x40A6C8); the shipped values of the three modifiers are 0.1 (levels/Standard.sam)
 	public const float CameraPull = 0.1f;
+	/// <summary><c>GenericUmbrellaModifiers[1]</c> (<c>XAdjustCamera</c>, 0xA01E0C), <c>[2]</c> (<c>YAdjustCamera</c>, 0xA01E10) and <c>[3]</c> (<c>ZAdjustCamera</c>, 0xA01E14), all 0.1 in Theme Park Inc's levels/Standard.sam.</summary>
+	public const float XAdjustCamera = 0.1f, YAdjustCamera = 0.1f, ZAdjustCamera = 0.1f;
+	/// <summary>The fixed height the lift measures the camera's against (the constant at 0x93E5B0), in original units.</summary>
+	public const float LiftBaseHeight = 40f;
 	/// <summary>
 	/// The most the umbrella is pulled towards the camera, in original units: 1.5, enough to beat the depth of its own guest's quad (which is itself pulled 3.5 to 3.9 units towards the camera) and of the ground, and no more. The
 	/// pull only has to win a depth test against what is drawn at the guest's own depth. With the share TPI uses (10 % of the distance: 8 units at the zoom value 80, 13 at 130, 30 at the wide range's 300) the umbrella of a guest
 	/// who stands behind a booth, a shelter or a ride came out nearer to the camera than that scenery's roof and was drawn over it while the guest was hidden (capture of the Jungle bus shelter, October 18, 2026), and the umbrella
 	/// of a guest drew over neighbours up to a cell nearer to the camera.
 	/// </summary>
-	// [EXT:umbrellas-pull-cap] the sight-line pull stays (TPI's share of 10 % is the upper limit), but OpenTPW's depth buffer needs only a margin: TPI's own pull (0x60b236) moves the sprite 10 % of the way to the camera in the ground plane and lifts it, in TPI's own sprite ordering, which is not reproduced here
+	// [EXT:umbrellas-pull-cap] Game.exe's 10 % (0x60B236) is the upper limit, but OpenTPW's depth buffer needs only a margin: the share of PullAndLift is capped so the pull moves the umbrella 1.5 units (user-approved 2026-10-18; D8 of round 11 keeps it on Game.exe's own formula)
 	public const float MaxPullUnits = 1.5f;
 	/// <summary>
 	/// The size of the umbrella's quad relative to its sprite's own extents. The set was drawn so that the canopy is 0.8 of a kid's standing height across, but the camera looks down at 45 degrees and shortens a standing kid
@@ -119,14 +120,25 @@ public sealed class UmbrellaRenderer : Entity
 	/// <summary>The share of its distance to the eye an umbrella at <paramref name="depth"/> (engine units along the view direction) is pulled: <see cref="CameraPull"/>, but never more than <see cref="MaxPullUnits"/>.</summary>
 	public static float PullShare( float depth ) => depth > 0f ? MathF.Min( CameraPull, MaxPullUnits * ObjectPlacement.ModelScale / depth ) : 0f;
 
-	/// <summary>A point pulled the given share of its way to the eye along the sight line; a point on the eye's far side is not.</summary>
+	/// <summary>A point pulled the given share of its way to the eye along the sight line; a point on the eye's far side is not (the winter extension's warm items are placed so).</summary>
 	internal static SVector3 PullToEye( SVector3 point, SVector3 eye, SVector3 forward, float share ) =>
 		SVector3.Dot( point - eye, forward ) > 0f ? point + (eye - point) * share : point;
 
 	/// <summary>
+	/// Game.exe's placement of the umbrella (<c>0x60B236</c>): the hand's two ground coordinates (the engine's X and Y, the original's X and Z) move the modifier's share of the way to the camera's, and the height (the engine's Z) is
+	/// lifted by (the camera's height in original units - 40) times <see cref="YAdjustCamera"/>, never scaled. <paramref name="share"/> is <see cref="PullShare"/> ([EXT:umbrellas-pull-cap], the ground pull only): at <see cref="CameraPull"/> the two ground modifiers apply
+	/// as the original gives them, below it each is scaled by share / <see cref="CameraPull"/>; the lift is the original's whatever the share.
+	/// </summary>
+	internal static SVector3 PullAndLift( SVector3 hand, SVector3 eye, float share )
+	{
+		var scale = share / CameraPull;
+		return new SVector3( hand.X - (hand.X - eye.X) * XAdjustCamera * scale, hand.Y - (hand.Y - eye.Y) * ZAdjustCamera * scale,
+			hand.Z + (eye.Z - LiftBaseHeight * ObjectPlacement.ModelScale) * YAdjustCamera );
+	}
+
+	/// <summary>
 	/// The umbrella's hotspot (the handle's tip), the scale of its quad and its colour slot for a guest drawn as <paramref name="mount"/>, in the engine. The hand's point from the anchor table (pixels of the guest's frame:
-	/// converted with the frame's own scale, x negated when the frame is mirrored) is added to the guest's pulled hotspot at that pull's share, then the whole is pulled further by <see cref="PullShare"/>
-	/// (<c>min(0.1, 1.5 * ModelScale / depth)</c>);
+	/// converted with the frame's own scale, x negated when the frame is mirrored) is added to the guest's pulled hotspot at that pull's share, then the point is placed as Game.exe places it (<see cref="PullAndLift"/>, the pull capped by <see cref="PullShare"/>);
 	/// a set without a table is held straight above the guest's position at <see cref="UmbrellaAnchors.FallbackLift"/>.
 	/// </summary>
 	// a kept body standing in place (state 16) is drawn where it was last placed, which a blocked exit may leave away from the guest's own position
@@ -150,8 +162,8 @@ public sealed class UmbrellaRenderer : Entity
 			hand = mount.Share < 1f && SVector3.Dot( above - eye, forward ) > 0f ? eye + (above - eye) * mount.Share : above;
 		}
 		var share = PullShare( SVector3.Dot( hand - eye, forward ) );
-		var pulled = PullToEye( hand, eye, forward, share );
-		return (pulled, mount.Share * (1f - share) * SizeScale);
+		// [BIN:TPI-EXE:0x60B26A umbrella size] the original moves the sprite and does not rescale it
+		return (PullAndLift( hand, eye, share ), mount.Share * SizeScale);
 	}
 
 	protected override void OnRender()

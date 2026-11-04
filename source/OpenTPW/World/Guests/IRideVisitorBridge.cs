@@ -139,6 +139,8 @@ public interface IRideVisitorBridge
 	int VomitEffect => 0;
 	/// <summary>Type <c>UsageInfo.InitCostOfGoods</c> (<c>+320</c>): the base of the price test's willingness to pay.</summary>
 	int InitCostOfGoods => 0;
+	/// <summary>Theme Park Inc only: <c>Info.ExpectedPrice</c> (type <c>+0x88</c>), the base of the guest's willingness to pay for a ride or a shop (Game.exe <c>0x6120FC</c>); 0 elsewhere.</summary>
+	int ExpectedPrice => 0;
 	/// <summary>Type <c>UsageInfo.RipOffOK</c> (<c>+0x16C</c>): the price test's per-type word, a premium in percent on the willingness to pay.</summary>
 	int RipOffOk => 0;
 	/// <summary>Type <c>UsageInfo.FatigueEffect</c> (<c>+0xE8</c>): what a completed use takes off the guest's meter <c>+0x1B8</c>.</summary>

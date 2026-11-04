@@ -66,7 +66,7 @@ public class UmbrellasSimulationTests
 		}
 
 		/// <summary>Sets the guest's age so that its weather rule runs (the start of the fifth game day) or not (the second).</summary>
-		public static void SetAge( Guest guest, bool gateOpen ) => guest.TimeInParkSeconds = (gateOpen ? 96.5 : 40.5) * TurnSeconds;
+		public static void SetAge( Guest guest, bool gateOpen ) => GuestAges.Set( guest, (gateOpen ? 96.5 : 40.5) * TurnSeconds );
 	}
 
 	/// <summary>A park with the brolly shop and an ordinary shop registered on a cross park, as the score tests need a join cell.</summary>
@@ -592,7 +592,7 @@ public class UmbrellasSimulationTests
 			guests[index].UmbrellaState = states[index];
 			guests[index].UmbrellaType = states[index] == 0 ? 0 : index % 3;
 			guests[index].UmbrellaDueTurn = states[index] is 1 or 3 ? 60 + 8 * index : 0;
-			guests[index].TimeInParkSeconds = (96 + index) * TurnSeconds;
+			GuestAges.Set( guests[index], (96 + index) * TurnSeconds );
 		}
 		for ( var tick = 0; tick < 300; tick++ )
 			park.Simulation.Tick( GuestSnapshotTests.Tick );

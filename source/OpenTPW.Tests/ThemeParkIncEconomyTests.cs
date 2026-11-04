@@ -149,6 +149,24 @@ public class ThemeParkIncEconomyTests
 	}
 
 	[TestMethod]
+	public void TheBanksMonthComesBeforeTheObjectsDebits()
+	{
+		// [BIN:TPI-EXE:0x5C0B10 bank month before the objects] the month message goes to the listeners in thing-id order: the bank (9 in the prebuilt park) before every attraction (14 and up), so the bank's red-month message of
+		// a month precedes the objects' running-cost announcement of the same month
+		var economy = Economy( Ride( 1, 0, 20000 ) );
+		economy.RegisterExisting( 1 );
+		var events = new List<ParkEventKind>();
+		economy.EventRaised += item => events.Add( item.Kind );
+		economy.AdvanceMonths( 12 );
+		Assert.IsTrue( economy.IsBankrupt );
+		var bank = events.LastIndexOf( ParkEventKind.BankruptcyMessage );
+		Assert.IsTrue( bank >= 0 );
+		var costs = events.IndexOf( ParkEventKind.RunningCostsPaid, bank );
+		Assert.IsTrue( costs > bank, "the bank's message comes first in a month end that has both" );
+		Assert.IsFalse( events.Skip( bank ).TakeWhile( kind => kind != ParkEventKind.MonthEnded ).Count( kind => kind == ParkEventKind.RunningCostsPaid ) == 0, "the same month still debits the objects" );
+	}
+
+	[TestMethod]
 	public void TheEntryFeeJudgementUsesTheSettingsDivisor()
 	{
 		var tpi = Settings().EntryFee;
@@ -293,7 +311,7 @@ public class ThemeParkIncEconomyTests
 		};
 		var economy = themeParkInc ? Economy( info ) : TpwEconomy( info );
 		economy.TryBuild( 1, out var state );
-		var ride = new RideVisitorBridge( 1, "Ride", kind, 1, 60, 30, price: price ) { ExitCell = (6, 5) };
+		var ride = new RideVisitorBridge( 1, "Ride", kind, 1, 60, 30, price: price ) { ExitCell = (6, 5), ExpectedPrice = 25 };
 		ride.Sideshow = new SideshowTerms( state!.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
 		simulation.Register( ride );
 		var bridge = new GuestEconomyBridge( () => economy, simulation );
@@ -407,6 +425,26 @@ public class ThemeParkIncEconomyTests
 		var broke = tpw.Simulation.SpawnInPark( 6, 5 );
 		broke.Money = 0;
 		Assert.IsFalse( tpw.Simulation.TooExpensive( broke, tpw.Ride ), "Theme Park World's ride, whatever price an import carried" );
+	}
+
+	[TestMethod]
+	public void AGuestRefusesARidePricedAboveItsWillingnessToPayEvenWithTheCash()
+	{
+		// [BIN:TPI-EXE:0x6120C0 willingness] a ride's willingness starts at Info.ExpectedPrice (25) scaled by the guest's happiness byte (0 here: x 100 / 100); the rig's ride rates 60 against the expected byte 70 of Theme Park Inc's PeepTypes table (distance 10), which raises it by 50 x 90 / 100 = 45 percent: 25 x 145 / 100 = 36
+		var (simulation, _, ride, state, economy) = FareRig( themeParkInc: true );
+		var guest = simulation.SpawnInPark( 6, 5 );
+		guest.Money = 10_000;
+		guest.Happiness = 0f;
+		simulation.Settings.TpiPreferredExcitement.Add( 70 );
+		ride.Sideshow = ride.Sideshow with { PricePerUse = 36 };
+		Assert.IsFalse( simulation.TooExpensive( guest, ride ), "a price at the willingness is paid" );
+		ride.Sideshow = ride.Sideshow with { PricePerUse = 37 };
+		Assert.IsTrue( simulation.TooExpensive( guest, ride ), "a price above it is refused whatever the purse holds" );
+		Assert.AreEqual( 1, state.ExpensivePriceRing.Today, "the refusal raises the expensive-price ring (+0x660)" );
+		Assert.AreEqual( 0, state.DeclinedRing.Today, "the declined ring (+0x4C8) is a sideshow type's" );
+		ride.Sideshow = ride.Sideshow with { PricePerUse = 10 };
+		Assert.IsFalse( simulation.TooExpensive( guest, ride ) );
+		Assert.AreEqual( 1, state.CheapPriceRing.Today, "70 percent of 36 is above a price of 10: the cheap-price ring (+0x5D8) rises" );
 	}
 
 	[TestMethod]
@@ -576,6 +614,20 @@ public class ThemeParkIncEconomyTests
 		Assert.AreEqual( 3, simulation.ArrivalGroupSize(), "raised to MinPeople" );
 		halted = true;
 		Assert.AreEqual( 0, simulation.ArrivalGroupSize(), "none while the park is lost" );
+		halted = false;
+		simulation.IntroWorld = true;
+		Assert.AreEqual( 0, simulation.ArrivalGroupSize(), "none in the Intro World, the theme object's mode 3 (0x5BCD7F), whatever the minimum" );
+	}
+
+	[TestMethod]
+	public void TheSettingsReadTheThemeParkIncPriceThresholdAndGuestTypes()
+	{
+		var values = new Dictionary<string, string[]>();
+		GuestSettings.ParseSam( "PeepInfo.PcOfGoodPriceIsCheap\t70\nPeepTypes[0].PreferredExcitement.StartingCash.BoredomThreshold.Generation\t90\t300\t40\t0\nPeepTypes[1].PreferredExcitement.StartingCash.BoredomThreshold.Generation\t80\t500\t30\t0\n", values );
+		var settings = GuestSettings.FromValues( values );
+		Assert.AreEqual( 70, settings.PcOfGoodPriceIsCheap );
+		CollectionAssert.AreEqual( new[] { 90, 80 }, settings.TpiPreferredExcitement );
+		Assert.AreEqual( 1, settings.Types.Count, "the guest types of Theme Park World's key stay what guest creation draws from" );
 	}
 
 	[TestMethod]

@@ -144,7 +144,10 @@ public sealed class UiModel
 	/// </summary>
 	public UiModelFrame GetFrame( int index ) => Frames[index >= 0 && index < Frames.Count ? index : 0];
 
-	/// <summary>Whether a triangle of canvas points (y down) is strictly clockwise as tp.exe's face test 0x581320 decides it (w = 1: (y1 - y0) x2 - y1 x0 < (y2 - y0) x1 - y2 x0, every product and difference rounded to a single; ORACLE.md X70).</summary>
+	/// <summary>
+	/// Whether a triangle of canvas points (y down) is strictly clockwise as tp.exe's face test 0x581320 decides it (w = 1: (y1 - y0) x2 - y1 x0 < (y2 - y0) x1 - y2 x0, every product and difference rounded to a single; ORACLE.md X70).
+	/// It is evaluated on model-space (canvas) positions where the original evaluates screen positions with the rhw (0x579690 at 0x5796C7 and 0x57974E); the two agree except for near-collinear slivers within rounding, because the control transform is a translation, a positive scale and a rotation with a constant rhw (m22 = 0). A NaN coordinate gives 1 (kept) in the original, 0 here.
+	/// </summary>
 	public static bool IsClockwise( NVector2 a, NVector2 b, NVector2 c )
 	{
 		float left = (b.Y - a.Y) * c.X;
@@ -187,11 +190,11 @@ public sealed class UiModel
 			maxX = Math.Max( maxX, point.X );
 			maxY = Math.Max( maxY, point.Y );
 		}
-		// [APPROX:UI-004] items are not grouped by texture cache page, the stashed items of a frame are not permuted among themselves and the sprite batches keep call order (docs/UI.md) — evidence needed: the texture cache's page assignment of the UI textures (0x58F190), the scene UI list's insertion order and which sprite flush the control text goes through
+		// [APPROX:UI-004] items are not grouped by texture cache page (width class), the stashed items of a frame are not permuted among themselves and the sprite batches keep call order (docs/UI.md) — evidence needed: the order instances reach the part list (the add into [scene+0x2c]), the packing within a width class (0x58EAE0, 0x58ECA0) and which sprite flush the control text goes through
 		// [BIN:TPW-EXE:0x476CBF control matrix] every vertex of a UI control model ends at depth 0: the control matrix 0x476C50 stores m22 = 0 (and no z translation), so the clip z of a vertex is 0 whatever the model's z; the part
 		// carries flag 0x2000000 (the constructor 0x476AD3 sets model flag 0x200, the instance draw 0x57A750 adds 0x2000000 to 0x8BB624, 0x57A6BF copies it) and 0x579690 maps such a vertex to z' = [0x8BCC20] (0.1) x z = 0. The model's own
 		// z (the node translations of the layered HUD models) therefore decides nothing: there is no depth order and no back-to-front sort, only the order the batcher draws the material runs in.
-		// [BIN:TPW-EXE:0x581DB0 material runs] the batcher walks a part's materials as runs (material +8..+0xA the vertices, +4/+6 the first triangle and count in the mesh's triangle table [mesh+0x70], 0x580D86..0x580D9D) and every run is one item; the items are grouped by the texture's cache page (the node key is the slot's +0x1C with slot flag 0x1000, set by the page placement 0x590350 for every drawn texture), the nodes come out in creation order from the last part and last material, and a part flagged 0x2000000 goes to the node's deferred chain, a stack: within one page the parts' list order and the materials' index order, the triangles of a run in file order. The page a UI texture lands in is the texture cache's dynamic placement (0x58F190), so OpenTPW keeps the list order
+		// [BIN:TPW-EXE:0x581DB0 material runs] the batcher walks a part's materials as runs (material +8..+0xA the vertices, +4/+6 the first triangle and count in the mesh's triangle table [mesh+0x70], 0x580D86..0x580D9D) and every run is one item; the items are grouped by the texture's cache page (the node key is the slot's +0x1C, the page surface, with slot flag 0x1000 set by the page placement 0x590350; pages split by width class, 0x590CF0, 0x58F190), the nodes come out in creation order from the last part and last material, and a part flagged 0x2000000 goes to the node's deferred chain, a stack: within one page the parts' list order and the materials' index order, the triangles of a run in file order. Between pages the texture met last in list order draws first; the sign of that order depends on the order instances reach the part list (not found), so OpenTPW keeps the call order
 		var parts = new List<UiModelPart>();
 		var runs = new List<int>[mesh.Materials.Length];
 		for ( var face = 0; face + 2 < mesh.Indices.Length; face += 3 )

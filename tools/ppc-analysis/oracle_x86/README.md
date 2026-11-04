@@ -97,3 +97,5 @@ the rest reports skips; nothing fails. CI has neither.
 ## The UI draw sorts (round 11, package K)
 
 `ui_sort_oracle.py` runs the record sort `0x5829E0` and the triangle sort `0x565490` on synthetic keys; `ui_sort_golden.py` writes `UiDepthSortGolden.cs` (64 tie orders and 60 key sets; `--check FILE`). Finding X70 in `docs/reverse/ORACLE.md` section 7.39.
+
+`ui_batch_oracle.py` runs the UI part batcher `0x581DB0` with stubbed primitive builder and prints the order it emits material runs in for chosen texture page keys (finding X70).

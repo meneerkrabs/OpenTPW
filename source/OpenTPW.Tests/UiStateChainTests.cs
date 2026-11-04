@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.IO;
 using System.Linq;
@@ -47,6 +48,15 @@ public class UiStateChainTests
 				foreach ( var part in model.Frames.SelectMany( frame => frame.Parts ) )
 					for ( var at = 0; at < part.Indices.Count; at += 3 )
 						Assert.IsTrue( UiModel.IsClockwise( part.Vertices[part.Indices[at]].Position, part.Vertices[part.Indices[at + 1]].Position, part.Vertices[part.Indices[at + 2]].Position ) || part.DrawIndices.Count < part.Indices.Count, file );
+				// DrawIndices is exactly the clockwise subset of Indices, in order
+				foreach ( var part in model.Frames.SelectMany( frame => frame.Parts ) )
+				{
+					var expected = new List<int>();
+					for ( var at = 0; at + 2 < part.Indices.Count; at += 3 )
+						if ( UiModel.IsClockwise( part.Vertices[part.Indices[at]].Position, part.Vertices[part.Indices[at + 1]].Position, part.Vertices[part.Indices[at + 2]].Position ) )
+							expected.AddRange( new[] { part.Indices[at], part.Indices[at + 1], part.Indices[at + 2] } );
+					CollectionAssert.AreEqual( expected, part.DrawIndices.ToArray(), file );
+				}
 			}
 			Assert.AreEqual( 278, models );
 		}

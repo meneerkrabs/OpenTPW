@@ -93,3 +93,7 @@ the rest reports skips; nothing fails. CI has neither.
 ## Theme Park Inc's guest price test (round 11, package T)
 
 `tpi_price_oracle.py` runs the routine `0x6120C0` of the Theme Park Inc no-CD `Game.exe` (`OPENTPW_TPI_EXE`) with a synthetic guest, attraction thing, type record and rating byte on random inputs and compares verdict, statistics and the three ring counters with the reading `ThemeParkIncPriceTest` ports (490 cases, no mismatch; finding X62). `--golden` writes `source/OpenTPW.Tests/ThemeParkIncPriceGolden.cs`.
+
+## The UI draw sorts (round 11, package K)
+
+`ui_sort_oracle.py` runs the record sort `0x5829E0` and the triangle sort `0x565490` on synthetic keys; `ui_sort_golden.py` writes `UiDepthSortGolden.cs` (64 tie orders and 60 key sets; `--check FILE`). Finding X70 in `docs/reverse/ORACLE.md` section 7.39.

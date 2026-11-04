@@ -57,6 +57,12 @@ public static class UiImages
 	// [BIN:TPW-EXE:0x581db0 UI part state] a UI node's parts go through the scene batcher (the walker 0x576910 marks them with 0x8bb624 = 0x1000000, 0x581cd0 appends them, 0x581db0 -> 0x581790 -> 0x590c40), so every UI texture draws with the state word of its own alpha type and a cut-out gets the 0xF0/255 test; state bit 0x800000 (material word bit 0x2, never set) only re-keys the part's depth sort (0x58109e)
 	public const uint TransparentFlag = 0x2;
 
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> translucent = new();
+
+	/// <summary>Whether the original <c>.wct</c> at <paramref name="path"/> has an alpha plane with a non-zero alpha byte (state 0x556: stashed, not drawn at once); false for anything else, host art included. Cached per path.</summary>
+	public static bool IsTranslucent( string path ) => translucent.GetOrAdd( path, static path =>
+		FileSystem != null && !path.StartsWith( HostPrefix, StringComparison.Ordinal ) && path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) && Texture.OriginalAlphaType( path ) == TextureAlphaType.Translucent );
+
 	/// <summary>The alpha test of a cut-out texture (state 0x2756, reference 0xF0/255): texels below it are not drawn, the others keep their alpha; discarded texels take a neighbour's colour so linear filtering does not bleed them in.</summary>
 	public static void CutOut( byte[] rgba, int width, int height )
 	{

@@ -815,7 +815,7 @@ public class OrderedParkPointerPipelineTests
 	[DataRow( true )]
 	public void WheelStaysOnItsLegacyOncePerFramePath( bool underPauseBackdrop )
 	{
-		// Documented residual of PATH-017: the aggregate wheel is not an ordered event. Routing neither replays it
+		// The aggregate wheel is not an ordered event (the alternate buffered-input mode is not read, PATH-017). Routing neither replays it
 		// from the resting delivery nor swallows it, so it still adjusts what lies under the pointer, once per frame.
 		var adjusted = 0;
 		var button = hud.Screen.Add( new UiButton { Bounds = new UiRect( 980, 530, 100, 100 ), Anchor = UiAnchor.Center,
@@ -823,9 +823,11 @@ public class OrderedParkPointerPipelineTests
 		var point = button.ScreenRect( context.Canvas ).Center;
 		if ( underPauseBackdrop ) TapPause();
 		Frame( new[] { Event( OrderedInputEventKind.Motion, point ) }, mouse: point, wheel: 1 );
-		Assert.AreEqual( 1, adjusted );
+		// [BIN:TPW-EXE:0x47ee67] the P window holds the focus and is the hit window of every point: the screens below it get no wheel
+		var expected = underPauseBackdrop ? 0 : 1;
+		Assert.AreEqual( expected, adjusted );
 		Frame( Array.Empty<OrderedInputEvent>(), mouse: point );
-		Assert.AreEqual( 1, adjusted, "A frame without a wheel tick has nothing to replay." );
+		Assert.AreEqual( expected, adjusted, "A frame without a wheel tick has nothing to replay." );
 		Assert.AreEqual( 0, commands.Count );
 	}
 

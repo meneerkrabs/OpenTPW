@@ -438,6 +438,26 @@ public class MessageTubeTagTests
 	}
 
 	[TestMethod]
+	public void TheLocateActionsReadTheirOperandsFromTheWordAndTheDwordOfThePost()
+	{
+		var clock = new Clock();
+		var seen = new List<(int X, int Y)>();
+		clock.Hud.CellJumpForTests = ( x, y ) => seen.Add( (x, y) );
+		clock.Hud.ThingCellForTests = id => id == 77 ? (12, 34) : null;
+		// tag 60 (action 3): the thing id is the context word, the dword is something else
+		clock.Hud.PostTagMessage( 60, "thing", 77, 5 );
+		// tag 45 (action 4): the cell is the dword's low word, z * 128 + x + 1
+		clock.Hud.PostTagMessage( 45, "cell", 9, 3 * 128 + 7 + 1 );
+		clock.Hud.OpenPendingMessage( 0 );
+		clock.Hud.OpenedActions[0].Clicked();
+		Assert.AreEqual( 1, clock.Hud.PendingMessages.Count( message => message == "thing" ), "locate leaves the tag" );
+		Assert.IsNotNull( clock.Hud.OpenedMessage, "and the panel" );
+		clock.Hud.OpenPendingMessage( 1 );
+		clock.Hud.OpenedActions[0].Clicked();
+		CollectionAssert.AreEqual( new[] { (12, 34), (7, 3) }, seen );
+	}
+
+	[TestMethod]
 	public void AnOriginalSavesTubeRecordsReadAndBecomeRows()
 	{
 		static byte[] Record( int tag, string text, int lifetime, short icon, int first, int second, short word, int dword )

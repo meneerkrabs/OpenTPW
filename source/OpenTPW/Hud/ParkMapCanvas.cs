@@ -143,6 +143,11 @@ internal sealed class ParkMapCanvas
 	// [BIN:TPW-EXE:0x6025c0 frame] the area is drawn with the drawer flags 0xC (0x5f2da4), which route through slot +0x1c (0x5f2f06) to 0x6025c0: x L..R-2 at row T, column R-1 for rows T..B-2, x L+1..R-1 at row B-1 and column L for rows T+1..B-1, each pixel blended at the colour's alpha (200)
 	internal void AddFrame( int left, int top, int right, int bottom, RgbaByte color )
 	{
+		// the original's line routines make a negative length positive, so a frame whose corners are reversed is drawn between them
+		if ( right < left )
+			(left, right) = (right, left);
+		if ( bottom < top )
+			(top, bottom) = (bottom, top);
 		if ( right - left < 2 || bottom - top < 2 )
 		{
 			Prims.Add( new MapPrim( left, top, Math.Max( 0, right - left ), Math.Max( 0, bottom - top ), color ) );

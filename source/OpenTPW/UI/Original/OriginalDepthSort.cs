@@ -16,7 +16,7 @@ public static class OriginalDepthSort
 	/// The element indices in the order the sort leaves <paramref name="count"/> elements of equal keys: position p of the result holds the element that started at that index.
 	/// Cached per count, so a draw reads it without allocating.
 	/// </summary>
-	public static int[] TieOrder( int count ) => count <= 1 ? Identity( count ) : tieOrders.GetOrAdd( count, static count =>
+	public static int[] TieOrder( int count ) => tieOrders.GetOrAdd( Math.Max( 0, count ), static count =>
 	{
 		var order = Identity( count );
 		Sort( new float[count], order );

@@ -16,7 +16,7 @@ sys.path.insert(0, str(HERE))
 
 from x86_harness import Image, Sandbox, executable_path  # noqa: E402
 
-RECORD_SORT, TRIANGLE_SORT = 0x5829E0, 0x565490
+RECORD_SORT, TRIANGLE_SORT, FACE_TEST = 0x5829E0, 0x565490, 0x581320
 
 
 class UiSortOracle:
@@ -24,7 +24,7 @@ class UiSortOracle:
         path = exe or executable_path('tpw')
         if path is None:
             raise SystemExit('needs OPENTPW_TPW_EXE (tools/ppc-analysis/oracle_x86/README.md)')
-        self.sandbox = Sandbox(Image.load(path), [(RECORD_SORT, 0x582AC4), (TRIANGLE_SORT, 0x565558)], budget=5_000_000)
+        self.sandbox = Sandbox(Image.load(path), [(RECORD_SORT, 0x582AC4), (TRIANGLE_SORT, 0x565558), (FACE_TEST, 0x581403)], budget=5_000_000)
 
     def record_order(self, keys):
         """0x5829E0(this, indices, 0, n - 1): `this`+0x44 points at 0x38 byte records whose key is the float at +0x30."""
@@ -55,6 +55,20 @@ class UiSortOracle:
             sb.write(triangles + 6 * index + 4, 'H', index)
         sb.call(TRIANGLE_SORT, args=(key_array, triangles, 0, count - 1))
         return [sb.read(triangles + 6 * index, 'I') for index in range(count)]
+
+    def clockwise(self, points):
+        """0x581320(a, b, c) (cdecl): each argument points at a transformed vertex (x at +0, y at +4, the reciprocal w at +0xC); 1 for a strictly clockwise triangle on the screen. `points` is three (x, y) pairs, w = 1."""
+        sb = self.sandbox
+        sb.reset()
+        sb.set_fpcw(0x7F)   # the game's main thread runs the x87 at 24 bits once the Direct3D device exists (X36..X43)
+        pointers = []
+        for x, y in points:
+            vertex = sb.alloc(16)
+            sb.write(vertex, 'f', x)
+            sb.write(vertex + 4, 'f', y)
+            sb.write(vertex + 0xC, 'f', 1.0)
+            pointers.append(vertex)
+        return sb.call(FACE_TEST, args=tuple(pointers)).eax & 1
 
 
 def main() -> None:

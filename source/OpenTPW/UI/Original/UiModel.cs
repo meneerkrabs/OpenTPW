@@ -10,7 +10,11 @@ public readonly record struct UiModelVertex( NVector2 Position, float Depth, NVe
 
 /// <summary>Triangles of one texture inside a <see cref="UiModelFrame"/>.</summary>
 /// <param name="Transparent">The texture slot sets flag 0x2 (<see cref="UiImages.TransparentFlag"/>).</param>
-public sealed record UiModelPart( string TextureName, IReadOnlyList<UiModelVertex> Vertices, IReadOnlyList<int> Indices, bool Transparent = false );
+public sealed record UiModelPart( string TextureName, IReadOnlyList<UiModelVertex> Vertices, IReadOnlyList<int> Indices, bool Transparent = false, IReadOnlyList<int>? DrawnIndices = null )
+{
+	/// <summary>The triangles tp.exe draws: those <see cref="UiModel.IsClockwise"/> keeps (0x581320); <see cref="Indices"/> stays every triangle the file stores, for shape picking.</summary>
+	public IReadOnlyList<int> DrawIndices => DrawnIndices ?? Indices;
+}
 
 /// <summary>
 /// One drawable frame of an original <c>ui.wad</c> model. Frame 0 is the root mesh; further frames are
@@ -135,10 +139,20 @@ public sealed class UiModel
 	}
 
 	/// <summary>
-	/// Frame for a button state. [APPROX:UI-003] a state the chain lacks draws the first frame here, where tp.exe's control draws nothing (<see cref="TryGetState"/>): which chain index each button state selects is the button class's
-	/// (0x668820 state getter), not read for every model, so a 4-node model asked for the pressed state keeps its root frame — evidence needed: the button class's state to frame mapping
+	/// Frame for a button state: the index-th drawable frame, the first one for an index past them. [APPROX:UI-003] tp.exe's control draws nothing for a state the chain lacks (<see cref="TryGetState"/>); the applier 0x668AD3 sends
+	/// 0x4C000 to the control's slot 3 (0x476F10 -> 0x476E80), which reads the state index only with bit 0x1 (-> +0xC) and the base only with bit 0x80000 (-> +0xA), and the button sets neither — evidence needed: which caller passes 0x1 or 0x80000 to 0x476F10 for model buttons
 	/// </summary>
-	public UiModelFrame GetFrame( int index ) => TryGetState( index, out var frame ) ? frame : Frames[0];
+	public UiModelFrame GetFrame( int index ) => Frames[index >= 0 && index < Frames.Count ? index : 0];
+
+	/// <summary>Whether a triangle of canvas points (y down) is strictly clockwise as tp.exe's face test 0x581320 decides it (w = 1: (y1 - y0) x2 - y1 x0 < (y2 - y0) x1 - y2 x0, every product and difference rounded to a single; ORACLE.md X70).</summary>
+	public static bool IsClockwise( NVector2 a, NVector2 b, NVector2 c )
+	{
+		float left = (b.Y - a.Y) * c.X;
+		float leftTail = b.Y * a.X;
+		float right = (c.Y - a.Y) * b.X;
+		float rightTail = c.Y * a.X;
+		return left - leftTail < right - rightTail;
+	}
 
 	/// <summary>The root, then each node's first child (the lowest index among its children, as the file lists them) down the chain: the nodes a control's state counts through (0x476e80).</summary>
 	private static IEnumerable<ModelNode> ChainNodes( ModelFile model )
@@ -173,11 +187,11 @@ public sealed class UiModel
 			maxX = Math.Max( maxX, point.X );
 			maxY = Math.Max( maxY, point.Y );
 		}
-		// [APPROX:UI-004] the stashed items of a frame are not permuted among themselves and the sprite batches keep call order (docs/UI.md) — evidence needed: the scene UI list's insertion order and which sprite flush the control text goes through
+		// [APPROX:UI-004] items are not grouped by texture cache page, the stashed items of a frame are not permuted among themselves and the sprite batches keep call order (docs/UI.md) — evidence needed: the texture cache's page assignment of the UI textures (0x58F190), the scene UI list's insertion order and which sprite flush the control text goes through
 		// [BIN:TPW-EXE:0x476CBF control matrix] every vertex of a UI control model ends at depth 0: the control matrix 0x476C50 stores m22 = 0 (and no z translation), so the clip z of a vertex is 0 whatever the model's z; the part
 		// carries flag 0x2000000 (the constructor 0x476AD3 sets model flag 0x200, the instance draw 0x57A750 adds 0x2000000 to 0x8BB624, 0x57A6BF copies it) and 0x579690 maps such a vertex to z' = [0x8BCC20] (0.1) x z = 0. The model's own
 		// z (the node translations of the layered HUD models) therefore decides nothing: there is no depth order and no back-to-front sort, only the order the batcher draws the material runs in.
-		// [BIN:TPW-EXE:0x581DB0 material runs] the batcher walks a part's materials as runs of vertices (material +8..+0xA) and every run is one item; the items of one scene frame share one texture node (the node key is the texture slot's +0x1C, used only with slot flag 0x1000; no store of that flag into a slot's flags was found in .text, so every key is 0), and a part flagged 0x2000000 goes to the node's deferred chain, which is a stack filled from the last part and last material first: the items come out in the list order of the parts and the material index order of a mesh, the triangles of a run in file order
+		// [BIN:TPW-EXE:0x581DB0 material runs] the batcher walks a part's materials as runs (material +8..+0xA the vertices, +4/+6 the first triangle and count in the mesh's triangle table [mesh+0x70], 0x580D86..0x580D9D) and every run is one item; the items are grouped by the texture's cache page (the node key is the slot's +0x1C with slot flag 0x1000, set by the page placement 0x590350 for every drawn texture), the nodes come out in creation order from the last part and last material, and a part flagged 0x2000000 goes to the node's deferred chain, a stack: within one page the parts' list order and the materials' index order, the triangles of a run in file order. The page a UI texture lands in is the texture cache's dynamic placement (0x58F190), so OpenTPW keeps the list order
 		var parts = new List<UiModelPart>();
 		var runs = new List<int>[mesh.Materials.Length];
 		for ( var face = 0; face + 2 < mesh.Indices.Length; face += 3 )
@@ -196,13 +210,16 @@ public sealed class UiModel
 				continue;
 			var material = mesh.Materials[index];
 			var indices = new int[faces.Count * 3];
+			var drawn = new List<int>( indices.Length );
 			for ( var at = 0; at < faces.Count; at++ )
 			{
-				indices[at * 3] = (int)mesh.Indices[faces[at]];
-				indices[at * 3 + 1] = (int)mesh.Indices[faces[at] + 1];
-				indices[at * 3 + 2] = (int)mesh.Indices[faces[at] + 2];
+				for ( var corner = 0; corner < 3; corner++ )
+					indices[at * 3 + corner] = (int)mesh.Indices[faces[at] + corner];
+				// [BIN:TPW-EXE:0x581320 face test] the primitive builder (0x580530: 0x580FFB, 0x580EAB) keeps a triangle only when it is strictly clockwise on the screen; the others, degenerate ones included, never reach a draw
+				if ( IsClockwise( vertices[indices[at * 3]].Position, vertices[indices[at * 3 + 1]].Position, vertices[indices[at * 3 + 2]].Position ) )
+					drawn.AddRange( new ArraySegment<int>( indices, at * 3, 3 ) );
 			}
-			parts.Add( new UiModelPart( material.TextureIndex < 0 ? "" : material.Name, vertices, indices, (material.Flags & UiImages.TransparentFlag) != 0 ) );
+			parts.Add( new UiModelPart( material.TextureIndex < 0 ? "" : material.Name, vertices, indices, (material.Flags & UiImages.TransparentFlag) != 0, drawn.Count == indices.Length ? null : drawn.ToArray() ) );
 		}
 		// [BIN:TPW-EXE:0x476fd3..0x47708f selected-mesh fitting] transform only the two stored
 		// endpoints, then order X/Y. This is not the header box, a corner AABB or an eight-corner box.

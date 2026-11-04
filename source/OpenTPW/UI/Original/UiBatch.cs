@@ -150,13 +150,14 @@ public sealed class UiBatch
 				var vertex = part.Vertices[index];
 				return new UiVertex( screenCenter + (vertex.Position - authoredCenter) * scale, vertex.TexCoords, color );
 			}
-			var triangles = part.Indices.Count / 3;
-			// [BIN:TPW-EXE:0x565746 stashed record] an item whose texture has an alpha byte (state 0x556, not in the immediate states 0x1000 and 0x2000) is stashed and its triangles sorted by depth sum (0x565490); all sums of a UI model are 0, so the sort leaves the permutation of ties (OriginalDepthSort). Opaque and cut-out items are drawn at once in file order
+			var drawn = part.DrawIndices;
+			var triangles = drawn.Count / 3;
+			// [BIN:TPW-EXE:0x565746 stashed record] an item whose texture has an alpha byte (state 0x556, not in the immediate states 0x1000 and 0x2000) is stashed and its surviving triangles (0x581320 keeps the clockwise ones: DrawIndices) sorted by depth sum (0x565490); all sums of a UI model are 0, so the sort leaves the permutation of ties (OriginalDepthSort). Opaque and cut-out items are drawn at once in file order
 			var order = TriangleOrder( path, triangles );
 			for ( var triangle = 0; triangle < triangles; triangle++ )
 			{
 				var index = (order == null ? triangle : order[triangle]) * 3;
-				AddTriangle( texture, Convert( part.Indices[index] ), Convert( part.Indices[index + 1] ), Convert( part.Indices[index + 2] ) );
+				AddTriangle( texture, Convert( drawn[index] ), Convert( drawn[index + 1] ), Convert( drawn[index + 2] ) );
 			}
 		}
 	}

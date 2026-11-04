@@ -38,12 +38,47 @@ public class UiStateChainTests
 				Assert.IsFalse( model.TryGetState( -1, out _ ), file );
 				Assert.IsTrue( model.TryGetState( 0, out var first ) || model.States[0] == null );
 				Assert.AreSame( model.Frames[0], model.GetFrame( model.States.Count ), "the widgets' fallback is the first frame (UI-003 narrowed)" );
+				// GetFrame(k) is still the k-th drawable frame, which is the k-th chain node while every node has a mesh
+				for ( var k = 0; k < model.Frames.Count; k++ )
+				{
+					Assert.AreSame( model.Frames[k], model.GetFrame( k ), file );
+					Assert.AreSame( model.States[k], model.GetFrame( k ), $"{file}: node {k} has no mesh" );
+				}
+				foreach ( var part in model.Frames.SelectMany( frame => frame.Parts ) )
+					for ( var at = 0; at < part.Indices.Count; at += 3 )
+						Assert.IsTrue( UiModel.IsClockwise( part.Vertices[part.Indices[at]].Position, part.Vertices[part.Indices[at + 1]].Position, part.Vertices[part.Indices[at + 2]].Position ) || part.DrawIndices.Count < part.Indices.Count, file );
 			}
 			Assert.AreEqual( 278, models );
 		}
 		finally
 		{
 			FileSystem = saved;
+		}
+	}
+
+	[TestMethod]
+	public void TheLanguageFolderMeshesKeepTheirFrameIndices()
+	{
+		var data = StringTableTests.OriginalDataDirectory();
+		var roots = new[] { data, Path.GetDirectoryName( data.TrimEnd( Path.DirectorySeparatorChar ) ) ?? data };
+		var files = roots.Where( Directory.Exists ).SelectMany( root => Directory.EnumerateFiles( root, "*.md2", SearchOption.AllDirectories ) )
+			.Where( path => path.Contains( "Language", StringComparison.OrdinalIgnoreCase ) || path.Contains( "Meshes", StringComparison.OrdinalIgnoreCase ) ).Distinct().ToArray();
+		if ( files.Length == 0 )
+			Assert.Inconclusive( "No language meshes are installed." );
+		foreach ( var file in files )
+		{
+			UiModel model;
+			try { model = UiModel.LoadHostPath( file ); }
+			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException )
+			{
+				continue;
+			}
+			for ( var k = 0; k < model.Frames.Count; k++ )
+			{
+				Assert.AreSame( model.Frames[k], model.GetFrame( k ), file );
+				Assert.AreSame( model.States[k], model.GetFrame( k ), $"{file}: node {k} has no mesh" );
+			}
+			Assert.IsFalse( model.TryGetState( model.States.Count, out _ ), file );
 		}
 	}
 }

@@ -32,6 +32,16 @@ public class UiDepthSortTests
 	}
 
 	[TestMethod]
+	public void TheFaceTestMatchesTheOriginalOnRandomIntegerAndNearCollinearTriangles()
+	{
+		foreach ( var (points, expected) in UiDepthSortGolden.FaceTests )
+		{
+			var p = points.Select( bits => BitConverter.UInt32BitsToSingle( bits ) ).ToArray();
+			Assert.AreEqual( expected, UiModel.IsClockwise( new NVector2( p[0], p[1] ), new NVector2( p[2], p[3] ), new NVector2( p[4], p[5] ) ) );
+		}
+	}
+
+	[TestMethod]
 	public void ATranslucentTextureDrawsItsTrianglesInTheTieOrderAndAnOpaqueOneInFileOrder()
 	{
 		var directory = Path.Combine( Path.GetTempPath(), "opentpw-ui-sort-" + Guid.NewGuid().ToString( "N" ) );
@@ -42,18 +52,21 @@ public class UiDepthSortTests
 			File.WriteAllBytes( Path.Combine( directory, "glass.wct" ), new byte[] { 0x13, 0x01, 0x20, 0x00, 0, 0, 0, 0 } );
 			File.WriteAllBytes( Path.Combine( directory, "solid.wct" ), new byte[] { 0x13, 0x00, 0x18, 0x00, 0, 0, 0, 0 } );
 			FileSystem = new BaseFileSystem( directory );
-			var vertices = Enumerable.Range( 0, 12 ).Select( index => new UiModelVertex( new NVector2( index, index % 3 ), 0, NVector2.Zero ) ).ToArray();
+			UiImages.ResetListings();
+			var vertices = Enumerable.Range( 0, 12 ).Select( index => new UiModelVertex( new NVector2( (index / 3) * 10 + (index % 3 == 1 ? 4 : 0), index % 3 == 2 ? 4 : 0 ), 0, NVector2.Zero ) ).ToArray();
 			var indices = Enumerable.Range( 0, 12 ).ToArray();
 			var frame = new UiModelFrame( "x", new[] { new UiModelPart( "glass", vertices, indices ), new UiModelPart( "solid", vertices, indices ) }, 0, 0, 12, 3 );
 			var batch = new UiBatch();
 			batch.AddModelFrame( frame, NVector2.Zero, NVector2.Zero, 1, name => "/" + name + ".wct" );
 			var drawn = batch.Draws.SelectMany( draw => draw.Vertices ).Select( vertex => (int)vertex.Position.X ).ToArray();
 			var order = OriginalDepthSort.TieOrder( 4 );
-			CollectionAssert.AreEqual( order.SelectMany( triangle => new[] { triangle * 3, triangle * 3 + 1, triangle * 3 + 2 } ).Concat( indices ).ToArray(), drawn );
+			int[] X( int triangle ) => new[] { triangle * 10, triangle * 10 + 4, triangle * 10 };
+			CollectionAssert.AreEqual( order.SelectMany( X ).Concat( Enumerable.Range( 0, 4 ).SelectMany( X ) ).ToArray(), drawn );
 		}
 		finally
 		{
 			FileSystem = saved;
+			UiImages.ResetListings();
 			Directory.Delete( directory, true );
 		}
 	}

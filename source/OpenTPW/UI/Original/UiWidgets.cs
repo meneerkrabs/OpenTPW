@@ -328,12 +328,13 @@ public sealed class UiContext
 				}
 				return new UiVertex( at, vertex.TexCoords, color );
 			}
-			var triangles = part.Indices.Count / 3;
+			var drawn = part.DrawIndices;
+			var triangles = drawn.Count / 3;
 			var order = UiBatch.TriangleOrder( path, triangles );
 			for ( var triangle = 0; triangle < triangles; triangle++ )
 			{
 				var index = (order == null ? triangle : order[triangle]) * 3;
-				Batch.AddTriangle( texture, Convert( part.Indices[index] ), Convert( part.Indices[index + 1] ), Convert( part.Indices[index + 2] ) );
+				Batch.AddTriangle( texture, Convert( drawn[index] ), Convert( drawn[index + 1] ), Convert( drawn[index + 2] ) );
 			}
 		}
 	}

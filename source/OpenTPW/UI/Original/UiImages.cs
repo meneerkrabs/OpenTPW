@@ -60,8 +60,12 @@ public static class UiImages
 	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> translucent = new();
 
 	/// <summary>Whether the original <c>.wct</c> at <paramref name="path"/> has an alpha plane with a non-zero alpha byte (state 0x556: stashed, not drawn at once); false for anything else, host art included. Cached per path.</summary>
-	public static bool IsTranslucent( string path ) => translucent.GetOrAdd( path, static path =>
-		FileSystem != null && !path.StartsWith( HostPrefix, StringComparison.Ordinal ) && path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) && Texture.OriginalAlphaType( path ) == TextureAlphaType.Translucent );
+	public static bool IsTranslucent( string path )
+	{
+		if ( FileSystem == null || path.StartsWith( HostPrefix, StringComparison.Ordinal ) || !path.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) )
+			return false;
+		return translucent.GetOrAdd( path, static path => Texture.OriginalAlphaType( path ) == TextureAlphaType.Translucent );
+	}
 
 	/// <summary>The alpha test of a cut-out texture (state 0x2756, reference 0xF0/255): texels below it are not drawn, the others keep their alpha; discarded texels take a neighbour's colour so linear filtering does not bleed them in.</summary>
 	public static void CutOut( byte[] rgba, int width, int height )
@@ -137,7 +141,11 @@ public static class UiImages
 	}
 
 	/// <summary>Forgets the cached directory listings (tests that switch the data folder).</summary>
-	internal static void ResetListings() => listings.Clear();
+	internal static void ResetListings()
+	{
+		listings.Clear();
+		translucent.Clear();
+	}
 
 	/// <summary>
 	/// Resolves a model material name (e.g. <c>b_okay</c>) to a file in <paramref name="directory"/>

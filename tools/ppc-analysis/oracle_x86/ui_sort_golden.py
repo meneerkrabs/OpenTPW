@@ -35,6 +35,19 @@ def render() -> str:
         assert order == oracle.triangle_order(keys)
         bits = [struct.unpack('<I', struct.pack('<f', key))[0] for key in keys]
         lines.append('\t\t(new uint[] { ' + ', '.join(f'0x{b:08X}u' for b in bits) + ' }, new[] { ' + ', '.join(map(str, order)) + ' }),')
+    lines += ['\t};', '', '\t/// <summary>Three screen points (x0, y0, x1, y1, x2, y2 as float bit patterns) and whether 0x581320 keeps the triangle (w = 1).</summary>',
+              '\tpublic static readonly (uint[] Points, bool Clockwise)[] FaceTests =', '\t{']
+    for case in range(120):
+        if case % 3 == 0:
+            pts = [(rng.uniform(-100, 2200), rng.uniform(-100, 1700)) for _ in range(3)]
+        elif case % 3 == 1:
+            pts = [(float(rng.randint(0, 12)), float(rng.randint(0, 12))) for _ in range(3)]
+        else:
+            base = rng.uniform(0, 2000)
+            pts = [(base + k * 0.1, base * 0.5 + k * 0.05) for k in range(3)]
+        flat = [value for point in pts for value in point]
+        bits = [struct.unpack('<I', struct.pack('<f', value))[0] for value in flat]
+        lines.append('\t\t(new uint[] { ' + ', '.join(f'0x{b:08X}u' for b in bits) + ' }, ' + ('true' if oracle.clockwise(pts) else 'false') + '),')
     lines += ['\t};', '}', '']
     return '\n'.join(lines)
 

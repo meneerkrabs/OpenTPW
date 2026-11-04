@@ -36,7 +36,7 @@ public class ResearchWorkloadKnobTests
 		var data = Md2ModelFileTests.CreateGeometry();
 		Array.Clear( data, 0x1a4, 12 );
 		Encoding.ASCII.GetBytes( name + "\0" ).CopyTo( data, 0x1a4 );
-		return new UiModel( new ModelFile( new MemoryStream( data ) ), name );
+		return new UiModel( ClockwiseFaces.Of( new ModelFile( new MemoryStream( data ) ) ), name );
 	} ) ) { Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };
 
 	private static World Build( int workload = 85, bool fullRange = true )

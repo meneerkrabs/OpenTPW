@@ -116,6 +116,9 @@ public sealed class ParticleRenderer : Entity
 		return material;
 	}
 
+	/// <summary>The draw kinds this renderer has made a material for (smoke tests).</summary>
+	internal int MaterialCount => materials.Count( material => material != null );
+
 	private Material<ObjectUniformBuffer> MaterialOf( int kind ) => materials[kind] ??= Prepare( atlasTexture!, FlagsForKind( kind ) );
 
 	protected override void OnUpdate()

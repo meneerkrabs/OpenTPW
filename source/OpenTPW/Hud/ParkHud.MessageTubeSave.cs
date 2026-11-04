@@ -61,8 +61,9 @@ public sealed partial class ParkHud
 		foreach ( var row in saved.Rows )
 		{
 			pendingMessages.Add( row.Text );
-			pendingActions.Add( row.Kind == MessageTubeRowSave.Offer ? ChallengeActions( () => level?.Park?.Economy ) : Array.Empty<GameMessageAction>() );
 			var tag = row.Kind == MessageTubeRowSave.Message ? MessageTag.NoTag : row.Tag;
+			pendingActions.Add( row.Kind == MessageTubeRowSave.Offer ? ChallengeActions( () => level?.Park?.Economy )
+				: MessageTagTable.For( tag ) is { } tagged ? TagActions( tagged ) : Array.Empty<GameMessageAction>() );
 			var identity = new ChallengeMessageIdentity( tag, row.ContextShort, row.ContextInt );
 			var record = MessageTagTable.For( tag );
 			var restored = row.Kind switch

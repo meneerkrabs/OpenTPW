@@ -359,6 +359,25 @@ public class MessageTubeTagTests
 	}
 
 	[TestMethod]
+	public void ATagsActionsBecomeThePanelsButtonsWithTheOriginalsArtAndHelp()
+	{
+		var clock = new Clock();
+		clock.Hud.PostTagMessage( 64, "buy" );      // action 9: the rides tab of the buy window
+		clock.Hud.PostTagMessage( 10, "hire" );     // action 13: the hire window of handymen
+		clock.Hud.PostTagMessage( 129, "nothing" ); // action 25 has no button
+		clock.Hud.PostTagMessage( 60, "locate" );   // action 3 is not ported: no button
+		clock.Hud.OpenPendingMessage( 0 );
+		Assert.AreEqual( (GameMessageKind.Buy, 0x209), (clock.Hud.OpenedActions[0].Kind, clock.Hud.OpenedActions[0].HelpId) );
+		clock.Hud.OpenPendingMessage( 1 );
+		Assert.AreEqual( (GameMessageKind.Buy, 0x20D), (clock.Hud.OpenedActions[0].Kind, clock.Hud.OpenedActions[0].HelpId) );
+		clock.Hud.OpenPendingMessage( 2 );
+		Assert.AreEqual( 0, clock.Hud.OpenedActions.Count );
+		clock.Hud.OpenPendingMessage( 3 );
+		Assert.AreEqual( 0, clock.Hud.OpenedActions.Count );
+		CollectionAssert.AreEqual( new[] { "mb_buy", "b_loan", "b_pkinfo", "b_staffcost", "b_entry" }, new[] { GameMessageKind.Buy, GameMessageKind.Loans, GameMessageKind.ParkInfo, GameMessageKind.StaffCost, GameMessageKind.Entry }.Select( kind => kind.Model() ).ToArray() );
+	}
+
+	[TestMethod]
 	public void AnOriginalSavesTubeRecordsReadAndBecomeRows()
 	{
 		static byte[] Record( int tag, string text, int lifetime, short icon, int first, int second, short word, int dword )

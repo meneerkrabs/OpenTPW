@@ -92,6 +92,8 @@ public sealed partial class ParkHud
 	internal bool PostTagMessage( int tag, string text, short contextShort = 0, int contextInt = 0, int lifetime = -1, params GameMessageAction[] actions )
 	{
 		var record = MessageTagTable.For( tag );
+		if ( actions.Length == 0 && record is { } known )
+			actions = TagActions( known );
 		return AddTubeMessage( tag, record?.Replaces ?? MessageTag.NoTag, text, contextShort, contextInt, lifetime >= 0 ? lifetime : record?.Lifetime ?? 0, record?.IsOffer == true, record?.Icon ?? 0, actions ) != null;
 	}
 
@@ -309,13 +311,17 @@ public sealed partial class ParkHud
 		{
 			if ( hud.Find( MessageActionIds[slot] ) is not UiButton button )
 				continue;
-			var table = MessageTable.Control( slot == 0 ? 0x10D2Fu : 0x10D30u ).Rect;
+			// [BIN:TPW-EXE:0x48E366 action slots] the panel's control 0x10D30 takes the first action and 0x10D2F the second (0x48e388-0x48e3bd)
+			var table = MessageTable.Control( slot == 0 ? 0x10D30u : 0x10D2Fu ).Rect;
 			button.Bounds = table with { X = table.X + shiftX, Y = table.Y + shiftY };
 			var actions = openedMessage != null ? openedActions : closingActions;
 			button.Visible = shown != null && ArmChildShown( button.Bounds ) && slot < actions.Length;
 			button.Enabled = interactive;
 			if ( button.Visible )
+			{
 				button.Model = actions[slot].Kind.Model();
+				button.Help = actions[slot].HelpId != 0 ? strings.Help( actions[slot].HelpId ) : null;
+			}
 		}
 		// an empty tube is hidden, so its rectangle swallows no park clicks
 		if ( hud.Find( "messageTube" ) is { } tube )
@@ -409,10 +415,10 @@ public sealed partial class ParkHud
 
 /// <summary>What a message's action button does; each kind has its own art among the ui.wad mb_ models.</summary>
 // [DATA:ui.wad mb_locate, mb_callmech, mb_resrch, mb_buy, mb_accept, mb_decline] the six models the panel's action buttons can take (the table gives those buttons no fixed model)
-public enum GameMessageKind { Locate, CallMechanic, Research, Buy, Accept, Decline }
+public enum GameMessageKind { Locate, CallMechanic, Research, Buy, Accept, Decline, Loans, ParkInfo, StaffCost, Entry }
 
 /// <summary>One action of a tube message: the kind picks the button's art, <paramref name="Clicked"/> runs when it is pressed.</summary>
-public readonly record struct GameMessageAction( GameMessageKind Kind, Action Clicked );
+public readonly record struct GameMessageAction( GameMessageKind Kind, Action Clicked, int HelpId = 0 );
 
 public static class GameMessageKinds
 {
@@ -425,6 +431,10 @@ public static class GameMessageKinds
 		GameMessageKind.Buy => "mb_buy",
 		GameMessageKind.Accept => "mb_accept",
 		GameMessageKind.Decline => "mb_decline",
+		GameMessageKind.Loans => "b_loan",
+		GameMessageKind.ParkInfo => "b_pkinfo",
+		GameMessageKind.StaffCost => "b_staffcost",
+		GameMessageKind.Entry => "b_entry",
 		_ => throw new ArgumentOutOfRangeException( nameof( kind ) )
 	};
 }

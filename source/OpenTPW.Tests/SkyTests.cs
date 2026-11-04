@@ -57,6 +57,10 @@ public class SkyTests
 	{
 		CollectionAssert.AreEqual( new[] { 0.99f, 0.84f, 0.67f, 0.51f }, Enumerable.Range( 0, 4 ).Select( ring => MathF.Round( Sky.CylinderTexCoord( 3, ring ).Y, 2 ) ).ToArray() );
 		CollectionAssert.AreEqual( new[] { 0.49f, 0.34f, 0.17f, 0.01f }, Enumerable.Range( 0, 4 ).Select( ring => MathF.Round( Sky.CylinderTexCoord( 12, ring ).Y, 2 ) ).ToArray() );
+		// [BIN:TPW-EXE:0x586B03 globe rows] oracle X78: the globe's flag gives these rows
+		CollectionAssert.AreEqual( new[] { 0.99f, 0.69f, 0.51f, 0.99f }, Enumerable.Range( 0, 4 ).Select( ring => MathF.Round( Sky.CylinderTexCoord( 3, ring, globe: true ).Y, 2 ) ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 0.49f, 0.19f, 0.01f, 0.49f }, Enumerable.Range( 0, 4 ).Select( ring => MathF.Round( Sky.CylinderTexCoord( 12, ring, globe: true ).Y, 2 ) ).ToArray() );
+		Assert.AreEqual( new System.Numerics.Vector3( -3, 4, -5 ), Sky.Mirrored( new System.Numerics.Vector3( 3, 4, 5 ) ) );
 		Assert.AreEqual( (0f, 1f, 0f, 1f), (Sky.CylinderTexCoord( 0, 0 ).X, Sky.CylinderTexCoord( 8, 0 ).X, Sky.CylinderTexCoord( 9, 0 ).X, Sky.CylinderTexCoord( 17, 0 ).X) );
 	}
 

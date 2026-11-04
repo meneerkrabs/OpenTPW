@@ -166,4 +166,34 @@ public class ParticleOpaqueStateTests
 		WorldPass.SubmitParticle( particles!, 0, 0.5f );
 		Assert.AreEqual( 0, WorldPass.Pending.Count, "no pass is open: nothing is kept" );
 	}
+
+	[TestMethod]
+	public void TheUniformsCarryTheAlphaTestAndTheFogOfWorldKindsOnly()
+	{
+		RenderFog.Reset();
+		try
+		{
+			var eye = System.Numerics.Vector3.Zero;
+			// the overview has no fog: no range, whatever the kind
+			Assert.AreEqual( 0f, ParticleRenderer.UniformsFor( 1, eye )._padding2 );
+			RenderFog.SetParkRange( 2 );
+			var packed = RenderFog.PackedRange( CompatibilityRuntime.RenderQuality.ViewDistanceScale );
+			Assert.IsTrue( packed > 0f );
+			// [BIN:TPW-EXE:0x565F90] the fog bit joins every batch the scene submits while bit 0x2000 is set: the world's blends all get it, a screen-space quad (w = 1) is left out
+			foreach ( var kind in new[] { 0, 1, 2, 3, 4, 5, 6, 7 } )
+				Assert.AreEqual( packed, ParticleRenderer.UniformsFor( kind, eye )._padding2, $"kind {kind}" );
+			foreach ( var kind in new[] { 8, 9, 10, 11, 12 } )
+				Assert.AreEqual( 0f, ParticleRenderer.UniformsFor( kind, eye )._padding2, $"screen kind {kind}" );
+			// the alpha test: none for the opaque state, 0x10 of 255 for the blended ones
+			Assert.AreEqual( 0f, ParticleRenderer.UniformsFor( 0, eye ).AlphaReference );
+			Assert.AreEqual( 0f, ParticleRenderer.UniformsFor( 8, eye ).AlphaReference );
+			foreach ( var kind in new[] { 1, 2, 3, 5, 9, 10, 11 } )
+				Assert.AreEqual( 0x10 / 255f, ParticleRenderer.UniformsFor( kind, eye ).AlphaReference, 1e-6f, $"kind {kind}" );
+			Assert.AreEqual( System.Numerics.Matrix4x4.Identity, ParticleRenderer.UniformsFor( 9, eye ).g_mView, "a screen-space quad is drawn without the camera" );
+		}
+		finally
+		{
+			RenderFog.Reset();
+		}
+	}
 }

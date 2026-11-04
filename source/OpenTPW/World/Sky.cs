@@ -58,6 +58,8 @@ public sealed class Sky : IDisposable
 	private readonly float[] offsetV = new float[MaximumLayers];
 	/// <summary>The sky's vertices for the layer count last drawn (the layers' cloud triangles, then the cylinder's): positions and tints are fixed, so a frame only rewrites the clouds' texture coordinates.</summary>
 	private readonly Staging staging;
+	/// <summary>The globe's variant of the sky (<see cref="BuildVertices"/> with its flag): the layers mirrored below the horizon and the cylinder's other rows; made when the globe first draws it.</summary>
+	private Staging? globeStaging;
 	private static readonly uint VertexStride = Vertex.SizeInBytes;
 	private readonly (int V0, int V1, int V2)[] cloudTriangles;
 	private readonly (int V0, int V1, int V2)[] cylinderTriangles;
@@ -371,13 +373,17 @@ public sealed class Sky : IDisposable
 	/// in <c>sky_cyl.tga</c>, the first half circle the lower and the second the upper.
 	/// </summary>
 	// [BIN:TPW-EXE:0x5863C0 cylinder coordinates] the first run takes v 0.99, 0.84, 0.67, 0.51 and the second 0.49, 0.34, 0.17, 0.01 per ring (0x3F7D70A4, 0.34 + 0.5, 0.17 + 0.5, 0.01 + 0.5 and 0x3EFAE148, 0.34, 0.17, 0.01); the flag 0x2000000 swaps in 0.49, 0.01, 0.19 for the last three rings
-	// [APPROX:UI-107] the globe's variant of the sky (render flag 0x2000000, set by the globe 0x5DD072) is not drawn: the cylinder's other V rows (0x586B03 to 0x586C3C) and the layer grid mirrored below the horizon (0x586810 to 0x586A8A, its index list at [sky+0x21FC] built at 0x585B99); the globe shows the lobby's sky
-	internal static SVector2 CylinderTexCoord( int column, int ring )
+	// [BIN:TPW-EXE:0x586B03 globe rows] render flag 0x2000000 (the globe's, set 0x5DD072) replaces the V rows of the last three rings by 0.99, 0.69, 0.51, 0.99 (first run) and 0.49, 0.19, 0.01, 0.49 (second): the constants 0.01 and 0.49 swap places (0x701F88, 0x701F94) and 0.17 and 0.34 become 0.01 and 0.19 (0x586B0B to 0x586B2B); oracle X78 (docs/reverse/ORACLE.md 7.40)
+	internal static SVector2 CylinderTexCoord( int column, int ring, bool globe = false )
 	{
 		var u = (column < 9 ? column : column - 9) * 0.125f;
-		var v = column < 9
-			? ring switch { 0 => 0.99f, 1 => 0.34f + 0.5f, 2 => 0.17f + 0.5f, _ => 0.01f + 0.5f }
-			: ring switch { 0 => 0.49f, 1 => 0.34f, 2 => 0.17f, _ => 0.01f };
+		var v = globe
+			? (column < 9
+				? ring switch { 0 => 0.99f, 1 => 0.19f + 0.5f, 2 => 0.01f + 0.5f, _ => 0.49f + 0.5f }
+				: ring switch { 0 => 0.49f, 1 => 0.19f, 2 => 0.01f, _ => 0.49f })
+			: column < 9
+				? ring switch { 0 => 0.99f, 1 => 0.34f + 0.5f, 2 => 0.17f + 0.5f, _ => 0.01f + 0.5f }
+				: ring switch { 0 => 0.49f, 1 => 0.34f, 2 => 0.17f, _ => 0.01f };
 		return new SVector2( u, v );
 	}
 
@@ -528,24 +534,28 @@ public sealed class Sky : IDisposable
 	/// <paramref name="clouds"/> is the number of cloud vertices.
 	/// </summary>
 	internal static Vertex[] BuildVertices( int layers, SVector3[] cloudPositions, uint[] colourGrid, (int V0, int V1, int V2)[] cloudTriangles, SVector3[] cylinderPositions,
-		(int V0, int V1, int V2)[] cylinderTriangles, float[] offsetU, float[] offsetV, out int clouds )
+		(int V0, int V1, int V2)[] cylinderTriangles, float[] offsetU, float[] offsetV, out int clouds, bool globe = false )
 	{
 		var vertices = new List<Vertex>();
-		void AddCloud( int layer, int index )
+		void AddCloud( int layer, int index, bool mirrored )
 		{
 			var xi = index / GridSize;
 			var zi = index % GridSize;
-			vertices.Add( new Vertex( cloudPositions[index], CloudTint( colourGrid, layer, xi, zi ), Upload( LayerTexCoord( layer, xi, zi, offsetU[layer], offsetV[layer] ) ) ) );
+			vertices.Add( new Vertex( mirrored ? Mirrored( cloudPositions[index] ) : cloudPositions[index], CloudTint( colourGrid, layer, xi, zi ), Upload( LayerTexCoord( layer, xi, zi, offsetU[layer], offsetV[layer] ) ) ) );
 		}
 		void AddCylinder( int index, SVector3 tint ) =>
-			vertices.Add( new Vertex( cylinderPositions[index], tint, Upload( CylinderTexCoord( index / CylinderRings, index % CylinderRings ) ) ) );
-		for ( var layer = 0; layer < layers; layer++ )
+			vertices.Add( new Vertex( cylinderPositions[index], tint, Upload( CylinderTexCoord( index / CylinderRings, index % CylinderRings, globe ) ) ) );
+		// [BIN:TPW-EXE:0x586810 mirrored layers] with the globe's flag the draw makes the layers' records a second time after the first pass: the grid's positions with x and the height negated (0x586820 to 0x586855), the same triangles (the index list at +0x21FC), colours and texture coordinates
+		for ( var copy = 0; copy < (globe ? 2 : 1); copy++ )
 		{
-			foreach ( var (v0, v1, v2) in cloudTriangles )
+			for ( var layer = 0; layer < layers; layer++ )
 			{
-				AddCloud( layer, v0 );
-				AddCloud( layer, v1 );
-				AddCloud( layer, v2 );
+				foreach ( var (v0, v1, v2) in cloudTriangles )
+				{
+					AddCloud( layer, v0, copy == 1 );
+					AddCloud( layer, v1, copy == 1 );
+					AddCloud( layer, v2, copy == 1 );
+				}
 			}
 		}
 		clouds = vertices.Count;
@@ -559,16 +569,24 @@ public sealed class Sky : IDisposable
 		return vertices.ToArray();
 	}
 
-	/// <summary>Rewrites the clouds' texture coordinates of vertices built by <see cref="BuildVertices"/>: one coordinate per grid vertex and layer, then every triangle corner takes its vertex's.</summary>
-	internal static void ScrollTexCoords( Vertex[] staged, int layers, int[] cloudCorners, float[] offsetU, float[] offsetV, SVector2[] scratch )
+	/// <summary>
+	/// A position of the cloud grid in the engine's axes (X and Y on the ground, Z up) mirrored below the horizon: the original's x and height negated, z kept.
+	/// </summary>
+	internal static SVector3 Mirrored( SVector3 position ) => new( -position.X, position.Y, -position.Z );
+
+	/// <summary>Rewrites the clouds' texture coordinates of vertices built by <see cref="BuildVertices"/>: one coordinate per grid vertex and layer, then every triangle corner takes its vertex's; <paramref name="copies"/> is 2 for the globe's mirrored layers.</summary>
+	internal static void ScrollTexCoords( Vertex[] staged, int layers, int[] cloudCorners, float[] offsetU, float[] offsetV, SVector2[] scratch, int copies = 1 )
 	{
 		for ( var layer = 0; layer < layers; layer++ )
 		{
 			for ( var index = 0; index < scratch.Length; index++ )
 				scratch[index] = Upload( LayerTexCoord( layer, index / GridSize, index % GridSize, offsetU[layer], offsetV[layer] ) );
-			var first = layer * cloudCorners.Length;
-			for ( var corner = 0; corner < cloudCorners.Length; corner++ )
-				staged[first + corner].TexCoords = scratch[cloudCorners[corner]];
+			for ( var copy = 0; copy < copies; copy++ )
+			{
+				var first = (copy * layers + layer) * cloudCorners.Length;
+				for ( var corner = 0; corner < cloudCorners.Length; corner++ )
+					staged[first + corner].TexCoords = scratch[cloudCorners[corner]];
+			}
 		}
 	}
 
@@ -603,10 +621,11 @@ public sealed class Sky : IDisposable
 			return;
 		Array.Fill( colourGrid, argb );
 		staging.Invalidate();
+		globeStaging?.Invalidate();
 	}
 
 	/// <summary>Draws the sky behind everything else of the world pass: no depth test or write, centred on the camera.</summary>
-	public void Draw( float frameSeconds, SVector3? tint = null )
+	public void Draw( float frameSeconds, SVector3? tint = null, bool globe = false )
 	{
 		if ( disposed || global::Global.Render == null )
 			return;
@@ -616,7 +635,7 @@ public sealed class Sky : IDisposable
 			return;
 		Advance( frameSeconds );
 
-		var staged = staging.Update( layers, offsetU, offsetV, out var cloudCount );
+		var staged = (globe ? globeStaging ??= new Staging( cloudPositions, colourGrid, cloudTriangles, cylinderPositions, cylinderTriangles, globe: true ) : staging).Update( layers, offsetU, offsetV, out var cloudCount );
 
 		var size = (uint)staged.Length * VertexStride;
 		if ( vertexBuffer == null || vertexBuffer.SizeInBytes < size )
@@ -657,7 +676,7 @@ public sealed class Sky : IDisposable
 	}
 
 	/// <summary>The sky's vertices for the layer count last drawn: built once per layer count, then only the clouds' texture coordinates are rewritten per frame.</summary>
-	internal sealed class Staging( SVector3[] cloudPositions, uint[] colourGrid, (int V0, int V1, int V2)[] cloudTriangles, SVector3[] cylinderPositions, (int V0, int V1, int V2)[] cylinderTriangles )
+	internal sealed class Staging( SVector3[] cloudPositions, uint[] colourGrid, (int V0, int V1, int V2)[] cloudTriangles, SVector3[] cylinderPositions, (int V0, int V1, int V2)[] cylinderTriangles, bool globe = false )
 	{
 		private readonly int[] cloudCorners = CornersOf( cloudTriangles );
 		private readonly SVector2[] scratch = new SVector2[GridSize * GridSize];
@@ -672,10 +691,10 @@ public sealed class Sky : IDisposable
 		{
 			if ( stagedLayers != layers )
 			{
-				staged = BuildVertices( layers, cloudPositions, colourGrid, cloudTriangles, cylinderPositions, cylinderTriangles, offsetU, offsetV, out stagedClouds );
+				staged = BuildVertices( layers, cloudPositions, colourGrid, cloudTriangles, cylinderPositions, cylinderTriangles, offsetU, offsetV, out stagedClouds, globe );
 				stagedLayers = layers;
 			}
-			ScrollTexCoords( staged, layers, cloudCorners, offsetU, offsetV, scratch );
+			ScrollTexCoords( staged, layers, cloudCorners, offsetU, offsetV, scratch, globe ? 2 : 1 );
 			clouds = stagedClouds;
 			return staged;
 		}

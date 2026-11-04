@@ -1224,7 +1224,8 @@ internal sealed partial class GameFlow : IDisposable
 			if ( cloudLayer != null )
 			{
 				cloudLayer.SetGridColour( 0xFF000000u | (uint)sky.R << 16 | (uint)sky.G << 8 | sky.B );
-				cloudLayer.Draw( Time.Delta );
+				// [BIN:TPW-EXE:0x5DD072 globe sky] the globe screen sets render flag 0x2000000 for the sky's draw: the mirrored layers and the cylinder's other rows (Sky.BuildVertices)
+				cloudLayer.Draw( Time.Delta, globe: backdrop == Backdrop.Globe );
 			}
 			// [BIN:TPW-EXE:0x57ee30 lightning flash] the lightning draw tests the flash flag (+4) first and draws one full-screen quad (0x57ed50: corners -1..1, vertex colour 0xFFFFFFFF, state 0x9A1) before it steps the bolts (from 0x57ee4d); the raindrops follow (after 0x57ffec). The final order comes from the deferred back-to-front sort, see RenderLobbyLayers
 			// [BIN:TPW-EXE:0x57ed75 flash state] 0x9A1: alpha blend on (bit 0x100), z write off (bit 0x800), source blend INVDESTCOLOR and destination ZERO (low byte 0xA1), so the quad inverts the picture for the frame

@@ -374,10 +374,15 @@ public sealed class ParticleRenderer : Entity
 
 	// [EXT:evening] the world's alpha-blended and opaque particles (smoke, dust, steam) take the sprite tint at dusk and night like the guests do; the additive ones (fire, sparks, fireworks)
 	// and the screen-space ones give off or belong to the screen's own light and are left as they are
-	private static void WriteUniforms( Material<ObjectUniformBuffer> material, int kind, SVector3 eye )
+	private static void WriteUniforms( Material<ObjectUniformBuffer> material, int kind, SVector3 eye ) =>
+		material.Set( "ObjectUniformBuffer", UniformsFor( kind, eye ) );
+
+	/// <summary>The uniform block of a draw kind: the camera (none for a screen-space kind), the alpha test of its state word, the first-person views' fog and the evening tint.</summary>
+	internal static ObjectUniformBuffer UniformsFor( int kind, SVector3 eye )
 	{
 		var screenSpace = IsScreenKind( kind );
-		var state = BlendOfKind( kind ) switch
+		var blend = BlendOfKind( kind );
+		var state = blend switch
 		{
 			ParticleState.Blend.Opaque => ParticleState.Opaque,
 			ParticleState.Blend.SourceAlphaOne => ParticleState.SourceAlphaOne,
@@ -397,9 +402,9 @@ public sealed class ParticleRenderer : Entity
 		// the table fog the first-person views turn on reaches every world quad (0x565F90 adds the fog bit to every batch while [0x8BCBC8] has 0x2000); a screen-space quad has w = 1 and is left out
 		if ( !screenSpace )
 			uniforms = uniforms.WithFog();
-		if ( !screenSpace && BlendOfKind( kind ) is ParticleState.Blend.Opaque or ParticleState.Blend.Alpha )
+		if ( !screenSpace && blend is ParticleState.Blend.Opaque or ParticleState.Blend.Alpha )
 			uniforms.WithSpriteTint( Level.Current?.Look ?? EveningLook.Day );
-		material.Set( "ObjectUniformBuffer", uniforms );
+		return uniforms;
 	}
 
 	private static void Draw( CommandList commandList, Material<ObjectUniformBuffer> material, (int First, int Count) range )

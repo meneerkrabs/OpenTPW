@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 namespace OpenTPW;
 
 /// <summary>
@@ -25,9 +27,9 @@ public readonly record struct SaveCamera( float Zoom, float YRotation, uint Flag
 /// <summary>
 /// The small runtime blocks of a decoded payload that have a traced width and no OpenTPW counterpart: the two clock words (<c>0x402E30</c>) and the vanilla-time word
 /// (<c>0x403260</c>), the nine game-system words (<c>0x5506E0</c>; three of them are re-based on <c>0x8786BC</c> after the read), the cheat bytes (<c>0x405570</c>), the advisor
-/// scoring word (<c>0x59C860</c>), the camera and the UI record count (<c>0x48EF70</c>: count, then 0x21C-byte window records). They are read for the import's report and kept raw.
+/// scoring word (<c>0x59C860</c>), the camera and the UI block (<c>0x48EF70</c>: the message tube's count, then its 0x21C-byte tag records, <see cref="Tube"/>). They are read for the import's report and kept raw; the tube's tags are applied by the park HUD.
 /// </summary>
-public sealed record SaveRuntimeBlocks( uint[] ClockWords, uint VanillaTime, uint[] GameSystemWords, byte[] Cheats, uint AdvisorScoring, SaveCamera Camera, uint UiRecords )
+public sealed record SaveRuntimeBlocks( uint[] ClockWords, uint VanillaTime, uint[] GameSystemWords, byte[] Cheats, uint AdvisorScoring, SaveCamera Camera, uint UiRecords, IReadOnlyList<SaveTubeRecord>? Tube = null )
 {
 	/// <summary>Reads the blocks of <paramref name="layout"/> from <paramref name="payload"/> (their widths were checked by the split).</summary>
 	public static SaveRuntimeBlocks Read( ReadOnlySpan<byte> payload, SavePayloadLayout layout )
@@ -44,9 +46,18 @@ public sealed record SaveRuntimeBlocks( uint[] ClockWords, uint VanillaTime, uin
 			return words;
 		}
 		var ui = layout[SaveBlock.UI];
+		// a UI block whose length is not its count's records (a synthetic payload) holds no readable tube
+		static IReadOnlyList<SaveTubeRecord> TubeOf( ReadOnlySpan<byte> payload, SavePayloadBlock ui )
+		{
+			if ( ui.Length < 4 )
+				return Array.Empty<SaveTubeRecord>();
+			var count = BinaryPrimitives.ReadUInt32LittleEndian( payload.Slice( ui.Offset, 4 ) );
+			return count <= int.MaxValue / SaveTubeRecord.Bytes && (long)count * SaveTubeRecord.Bytes == ui.Length - 4
+				? SaveTubeRecord.Read( payload.Slice( ui.Offset + 4, ui.Length - 4 ), (int)count ) : Array.Empty<SaveTubeRecord>();
+		}
 		return new SaveRuntimeBlocks( Words( payload, layout[SaveBlock.Clock], 2 ), Words( payload, layout[SaveBlock.VanillaTime], 1 )[0],
 			Words( payload, layout[SaveBlock.GameSystem], SaveBlockWidths.GameSystemBytes / 4 ), payload.Slice( layout[SaveBlock.Cheat].Offset, SaveBlockWidths.CheatBytes ).ToArray(),
 			Words( payload, layout[SaveBlock.AdvisorScoring], 1 )[0], SaveCamera.Read( payload, layout[SaveBlock.Camera] ),
-			ui.Length >= 4 ? Words( payload, ui, 1 )[0] : 0 );
+			ui.Length >= 4 ? Words( payload, ui, 1 )[0] : 0, TubeOf( payload, ui ) );
 	}
 }

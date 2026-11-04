@@ -381,13 +381,13 @@ public sealed partial class ParkHud
 		// [DATA:video 15:20] the message tube (red, left of the HUD) with its icons, and the buttons of the green slide-out panel: the bomb deletes the opened message, the red cross closes the panel
 		hud.Add( new MessageTubeList( this ) { Id = "messageTube", Help = strings.Extra( OpenTpwText.MessageTubeHelp ), Bounds = TubeBase, Anchor = UiAnchor.BottomLeft } );
 		// [BIN:TPW-EXE:0x7501a0 message panel] mb_erase at (486,1325)-(589,1428) deletes the opened message; the two action buttons above it (486,1218) and (486,1110) take the art of their action's kind (mb_locate, mb_callmech, mb_resrch, mb_buy, mb_accept, mb_decline: ParkHud.MessageTube.cs)
-		// UI-025: only the challenge offers carry actions (mb_accept, mb_decline: ParkHud.ChallengeMessages.cs); the action buttons stay hidden for every other message, and the original's other action kinds (0x48e610: mb_locate, mb_buy, b_loan, mb_resrch, b_pkinfo, b_staffcost, mb_callmech, b_entry) have no OpenTPW message that posts them
+		// UI-025: the buttons come from the tag's actions (ParkHud.TagActions.cs; the offers' accept and decline from ParkHud.ChallengeMessages.cs); the call-mechanic action 23 is in no tag record
 		hud.Add( new UiButton { Id = "messageDelete", Model = "mb_erase", Clicked = DeleteOpenedMessage, Bounds = OriginalLayoutTables.MessagePanel.Model( "mb_erase" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		for ( var slot = 0; slot < MessageActionIds.Length; slot++ )
 		{
 			var index = slot;
 			hud.Add( new UiButton { Id = MessageActionIds[slot], Model = GameMessageKind.Locate.Model(), Clicked = () => { if ( index < openedActions.Length ) openedActions[index].Clicked(); },
-				Bounds = OriginalLayoutTables.MessagePanel.Control( slot == 0 ? 0x10D2Fu : 0x10D30u ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
+				Bounds = OriginalLayoutTables.MessagePanel.Control( slot == 0 ? 0x10D30u : 0x10D2Fu ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		}
 		// [BIN:TPW-EXE:0x7529dc HUD arm table] the red X under the HUD that closes the panel is the arm table's b_retract (id 0x24) at (349,1386)-(429,1466), help 481
 		hud.Add( new UiButton { Id = "messageClose", Model = "b_retract", Help = strings.Help( OriginalLayoutTables.HudArm.Model( "b_retract" ).Help ), Clicked = CloseArmPanel, Bounds = OriginalLayoutTables.HudArm.Model( "b_retract" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
@@ -1064,7 +1064,9 @@ public sealed partial class ParkHud
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
 		// Enter over the park goes to a visit's chat entry before the screen sees the key, which would otherwise press the button the pointer last rested on
 		var chatEntry = ChatEntryWanted( context, input );
-		var consumed = Stack.Update( context, chatEntry ? input with { Pressed = input.Pressed & ~UiKeys.Accept } : input );
+		// [BIN:TPW-EXE:0x47ee67 P window focus] the P window holds the focus and is the hit window of every point: no key, text or wheel reaches the screens below it (only the P key, which its procedure takes)
+		var stackInput = PauseBackdropHoldsFocus ? input with { Pressed = input.Pressed & UiKeys.Pause, Text = "", Wheel = 0, Backspaces = 0 } : input;
+		var consumed = Stack.Update( context, chatEntry ? stackInput with { Pressed = stackInput.Pressed & ~UiKeys.Accept } : stackInput );
 		if ( chatEntry )
 		{
 			FocusChatEntry();
@@ -1583,7 +1585,7 @@ public sealed partial class ParkHud
 		// admission is separate: 0x65db25 chooses the topmost eligible window, and 0x658b1a/0x658b7f save down/up recipients.
 		// [APPROX:PATH-017] ParkHud.PointerInput implements bounded ordinary-WM batch admission then P/pointer drain, including captured movement and original release owners. The P window's backdrop (0x65dd7b, flags 1, appended last under the root;
 		// 0x65db25 lets the last eligible sibling win, 0x65f6d1 forwards nothing) is created by the P key and by the offline focus-loss pause (0x4a27f0, 0x4a2790) and covers only the windows that existed then: it takes every click and the camera takes no input under it.
-		// Alternate buffered input, the aggregate wheel and the keys other than P of the screens below it, and the original backdrop/panel rendering remain outside this contract; a generic speed flag is not an input owner.
+		// The P window is drawn (lolight and the paused banner, DrawPauseLayer) and holds keys and wheel from the screens below it; the alternate buffered-input mode and the click dispatcher's stored pick (0x4879d0 acts on the previous world frame's pick 0x7b05cc, rewritten by 0x54e2b0) remain outside this contract; a generic speed flag is not an input owner.
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
 			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true }

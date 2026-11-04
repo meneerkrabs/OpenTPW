@@ -73,26 +73,41 @@ public class MessageTubeSaveTests
 	}
 
 	[TestMethod]
-	public void ARowSavedAsReadKeepsItsTimersStoppedAndEveryRowPlaysTheNewMessageCue()
+	public void AReadRowIsSavedWithItsFullLifetimeAndItsTimersStartAgainAndEveryRowPlaysTheNewMessageCue()
 	{
 		var old = new Clock { Now = 0 };
 		Assert.IsTrue( ChallengeMessageRecords.TryGet( 1, ChallengePresentationKind.Success, out var record ) );
 		Assert.IsTrue( old.Hud.PostChallengeTerminal( record, "terminal" ) );
 		Assert.IsTrue( old.Hud.OpenPendingMessage( 0 ) );
+		// [BIN:TPW-EXE:0x48EE50 tube saved] the record has no read flag and the loader's add routine starts the timers again: a read row is saved like an unread one
 		var saved = RoundTrip( old.Hud.CaptureMessageTube()! );
-		Assert.IsTrue( saved.Rows[0].Read );
+		Assert.IsFalse( saved.Rows[0].Read );
+		Assert.AreEqual( 30000, saved.Rows[0].Lifetime );
 		var cues = new System.Collections.Generic.List<uint>();
 		GameAudio.UiSoundObserver = cues.Add; GameAudio.UiGlobalSoundObserver = cues.Add;
 		try
 		{
 			var loaded = new Clock { Now = 10 };
 			loaded.Hud.RestoreMessageTube( saved );
-			Assert.IsFalse( loaded.Hud.ChallengeTerminalState( 0 )!.Value.Active );
-			loaded.Pump( 1_000_000 );
-			Assert.IsTrue( loaded.Hud.IsPendingMessageVisible( 0 ), "a read row never expires" );
+			Assert.IsTrue( loaded.Hud.ChallengeTerminalState( 0 )!.Value.Active );
+			loaded.Pump( 10 + 29_999 );
+			Assert.IsTrue( loaded.Hud.IsPendingMessageVisible( 0 ) );
+			loaded.Pump( 10 + 30_000 );
+			Assert.IsFalse( loaded.Hud.IsPendingMessageVisible( 0 ), "the row expires again" );
 		}
 		finally { GameAudio.UiSoundObserver = null; GameAudio.UiGlobalSoundObserver = null; }
 		CollectionAssert.Contains( cues, ParkHud.MessagePostedEvent );
+	}
+
+	[TestMethod]
+	public void ARowAnOlderOpenTpwSavedAsReadKeepsItsTimersStopped()
+	{
+		var saved = new MessageTubeSaveData { Rows = new[] { new MessageTubeRowSave( MessageTubeRowSave.Terminal, "terminal", 281, 0, 0, 30000, true ) } };
+		var loaded = new Clock { Now = 10 };
+		loaded.Hud.RestoreMessageTube( RoundTrip( saved ) );
+		Assert.IsFalse( loaded.Hud.ChallengeTerminalState( 0 )!.Value.Active );
+		loaded.Pump( 1_000_000 );
+		Assert.IsTrue( loaded.Hud.IsPendingMessageVisible( 0 ), "a read row never expires" );
 	}
 
 	[TestMethod]
@@ -132,7 +147,8 @@ public class MessageTubeSaveTests
 		Assert.IsNotNull( ( row with { Tag = 5 } ).Problem(), "plain row with an identity" );
 		Assert.IsNotNull( ( row with { Kind = MessageTubeRowSave.Terminal, Tag = 5, Lifetime = 0 } ).Problem(), "terminal without a lifetime" );
 		Assert.IsNotNull( ( row with { Kind = MessageTubeRowSave.Terminal, Tag = 5, Lifetime = 600_001 } ).Problem(), "a lifetime past the bound" );
-		Assert.IsNotNull( ( row with { Kind = MessageTubeRowSave.Progress, Tag = 0 } ).Problem(), "progress without a tag" );
+		Assert.IsNotNull( ( row with { Kind = MessageTubeRowSave.Progress, Tag = 0x17F } ).Problem(), "progress with the tag of no text" );
+		Assert.IsNull( ( row with { Kind = MessageTubeRowSave.Progress, Tag = 0 } ).Problem(), "tag 0 is a real tag" );
 		Assert.IsNotNull( ( row with { Read = true } ).Problem(), "timer state on a plain row" );
 		Assert.ThrowsException<System.IO.InvalidDataException>( () => new Clock().Hud.RestoreMessageTube( new MessageTubeSaveData { Rows = new[] { row with { Kind = 9 } } } ) );
 	}

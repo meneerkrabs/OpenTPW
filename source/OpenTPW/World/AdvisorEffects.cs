@@ -9,6 +9,10 @@ internal interface IAdvisorParticlePool
 	void Move( object handle, (int X, int Y, int Z) native );
 	/// <summary>Ends an emitter, its particles running out (tp.exe <c>0x51FEB0</c>: life −2); a dead handle is ignored.</summary>
 	void Kill( object handle );
+	/// <summary>Whether the handle still names a live emitter (tp.exe <c>0x5222E0</c>); a pool that cannot tell says yes.</summary>
+	bool IsAlive( object handle ) => true;
+	/// <summary>Hides or shows a live emitter (tp.exe <c>0x51FF10</c>); a dead handle is ignored.</summary>
+	void SetHidden( object handle, bool hidden ) { }
 }
 
 /// <summary>

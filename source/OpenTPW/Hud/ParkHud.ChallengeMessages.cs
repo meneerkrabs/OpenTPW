@@ -125,13 +125,8 @@ public sealed partial class ParkHud
 	private bool PostChallengeOffer( string text, int tag, int lifetime, Func<ParkEconomy?>? economy = null )
 	{
 		var source = economy ?? ( () => level?.Park?.Economy );
-		if ( !PostGameMessage( text, ChallengeActions( source ) ) )
-			return false;
-		pendingChallengeRows![^1] = new ChallengeTubeRow( new( tag, 0, 0 ), lifetime, ChallengeUiMilliseconds, isOffer: true )
-		{
-			OfferIdentity = source()?.Objectives.Current is { Accepted: false } offer ? offer : null
-		};
-		return true;
+		// [BIN:TPW-EXE:0x50AF40 offer tags] the offer tags 274, 275, 277 and 279 replace the progress tags 306, 307, 309 and 312 through the add routine's replacement scan
+		return AddTubeMessage( tag, MessageTagTable.For( tag )?.Replaces ?? MessageTag.NoTag, text, 0, 0, lifetime, true, ChallengeActions( source ), source()?.Objectives.Current is { Accepted: false } offer ? offer : null ) != null;
 	}
 
 	private ActiveChallenge? CurrentUnansweredOffer => level?.Park?.Economy?.Objectives.Current is { Accepted: false } offer ? offer : null;
@@ -170,7 +165,7 @@ public sealed partial class ParkHud
 			return false;
 		// the action's result 2 removes the selected tag (0x48e531-0x48e544): the offer's row is hidden and released after 500 ms
 		if ( openedChallengeRow is { IsOffer: true } row )
-			BeginChallengeTerminalRemoval( row, closePanel: true );
+			BeginTubeRemoval( row, hide: false, closePanelNow: true, disarm: false );
 		else
 			CloseMessagePanel();
 		return true;

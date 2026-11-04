@@ -120,6 +120,8 @@ public interface IUiRowList
 	bool RowClicked( int index, bool left ) => false;
 	/// <summary>As <see cref="RowClicked(int, bool)"/>, with the click's point in framebuffer pixels, for lists whose cells act on their own (the outbox's Send and Delete marks).</summary>
 	bool RowClickedAt( UiCanvas canvas, System.Numerics.Vector2 point, int index, bool left ) => RowClicked( index, left );
+	/// <summary>A right press on the list's own area that is on no row (the message tube's body); true when the list handled it.</summary>
+	bool RightPressedOnBody() => false;
 }
 
 /// <summary>An element that follows the mouse while it is held (slider ball, scroll bar).</summary>

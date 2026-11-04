@@ -965,6 +965,12 @@ public static class OriginalLayoutTables
 		new( 1, 0x1u, 0x321u, 102, 536, 1946, 940, -1, -1, "s_congrats", null, null, System.Array.Empty<LayoutNode>() ),
 	} );
 
+	/// <summary>[BIN:TPW-EXE:0x752e00] layout table PauseWindow.</summary>
+	public static readonly LayoutTable PauseWindow = new( "PauseWindow", 0x752E00, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x13E6u, 174, 500, 1874, 900, -1, -1, "s_paused", null, null, System.Array.Empty<LayoutNode>() ),
+	} );
+
 	/// <summary>[BIN:TPW-EXE:0x74fb20] layout table LossScreen.</summary>
 	public static readonly LayoutTable LossScreen = new( "LossScreen", 0x74FB20, new LayoutNode[]
 	{

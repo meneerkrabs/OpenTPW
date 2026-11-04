@@ -2,55 +2,34 @@ namespace OpenTPW.Hud;
 
 public sealed partial class ParkHud
 {
-	// A replacement identity can name multiple terminal rows. Selection and queued events own the instance instead.
-	private sealed class ChallengeTubeRow( ChallengeMessageIdentity identity, int lifetime = 0, long origin = 0, bool isOffer = false )
-	{
-		/// <summary>A challenge offer (tag record with the accept and decline actions 0x1A and 0x1B): reading it leaves its timers running, and removing it declines.</summary>
-		public bool IsOffer { get; } = isOffer;
-		public ActiveChallenge? OfferIdentity { get; init; }
-		public ActiveChallenge? PendingOfferIdentity { get; set; }
-		public ChallengeMessageIdentity Identity { get; } = identity;
-		public int Lifetime { get; } = lifetime;
-		public bool IsTerminal => Lifetime > 0 && !IsOffer;
-		public long Origin { get; set; } = origin;
-		public bool Active { get; set; } = lifetime > 0;
-		public bool PreExpiryEnabled { get; set; } = lifetime > 0;
-		public bool PreExpiryReached { get; set; }
-		public bool PreExpiryQueued { get; set; }
-		public bool ExpiryQueued { get; set; }
-		public long? ReleaseAt { get; set; }
-		public bool Visible => ReleaseAt == null;
-
-		public void Read()
-		{
-			// [BIN:TPW-EXE:0x48d9e9 offer keeps its timers] the selection routine 0x48D9C0 kills both timers of a selected tag (0x48d9ee-0x48da06) unless the tag's sixth parameter, its second action, is 0x1B (the decline of an offer)
-			if ( IsOffer )
-				return;
-			Active = false;
-			PreExpiryEnabled = false;
-		}
-	}
-
 	private enum ChallengeTimerEvent { PreExpiry, Expiry }
-	private Queue<(ChallengeTubeRow Row, ChallengeTimerEvent Kind)>? challengeTimerEvents;
+	private Queue<(TubeRow Row, ChallengeTimerEvent Kind)>? challengeTimerEvents;
 	private bool challengeTimersSuspended;
 	private bool challengeUserPaused;
 
 	/// <summary>Injected monotonic, unscaled milliseconds. Set before posting rows; null uses the host monotonic clock.</summary>
 	internal Func<long>? ChallengeMessageClock { get; set; }
 	private long ChallengeUiMilliseconds => ChallengeMessageClock?.Invoke() ?? Environment.TickCount64;
+
+	/// <summary>The UI clock as the original's timers read it: a 32-bit millisecond counter whose differences wrap (0x65968E).</summary>
+	private int ChallengeUiTicks => unchecked( (int)ChallengeUiMilliseconds );
 	internal const int ChallengeTerminalReleaseDelay = MessageTubeSaveData.MaximumOfferReleaseDelay;
 
 	/// <summary>An offer's tag lifetime: 90 s (the tag records of the offers, 0x4d3220), its warning timer 5 s earlier.</summary>
 	internal const int ChallengeOfferLifetime = 90000;
 
+	/// <summary>The row can be clicked: its tag window is shown and its hit-test attribute is still set (an answered or removed row is not).</summary>
 	internal bool IsPendingMessageVisible( int index ) => index >= 0 && index < (pendingMessages?.Count ?? 0)
-		&& pendingChallengeRows![index]?.Visible != false;
+		&& pendingChallengeRows![index].Visible;
 
-	/// <summary>Diagnostic state only; the pre-expiry flag records the timer, not a rendered particle.</summary>
+	/// <summary>The row's icon is drawn: it is not hidden (an answered row stays drawn until its removal).</summary>
+	internal bool IsPendingMessageDrawn( int index ) => index >= 0 && index < (pendingMessages?.Count ?? 0)
+		&& pendingChallengeRows![index].Drawn;
+
+	/// <summary>Diagnostic state only: whether the expiry is armed, the warning timer enabled and fired, and the removal clock; the warning's particle is the row's own.</summary>
 	internal (bool Active, bool PreExpiryEnabled, bool PreExpiryReached, long? ReleaseAt)? ChallengeTerminalState( int index ) =>
 		index >= 0 && index < (pendingChallengeRows?.Count ?? 0) && pendingChallengeRows![index] is { IsTerminal: true } row
-			? (row.Active, row.PreExpiryEnabled, row.PreExpiryReached, row.ReleaseAt) : null;
+			? (row.ExpiryArmed, row.Warning?.Enabled == true, row.WarningFired, row.ReleaseAt) : null;
 
 	/// <summary>Inserts a new terminal instance even when its tag/context already exists. Replacement runs before this method.</summary>
 	internal bool PostChallengeTerminal( ChallengeMessageRecord record, string text )
@@ -58,10 +37,7 @@ public sealed partial class ParkHud
 		if ( record.Lifetime != 30000 || record.FirstAction != 0 || record.SecondAction != 0
 			|| record.Tag == record.ReplacementTag || string.IsNullOrWhiteSpace( text ) || PendingMessages.Count >= MessageTubeCapacity )
 			return false;
-		if ( !PostGameMessage( text ) )
-			return false;
-		pendingChallengeRows![^1] = new ChallengeTubeRow( new( record.Tag, 0, 0 ), record.Lifetime, ChallengeUiMilliseconds );
-		return true;
+		return AddTubeMessage( record.Tag, record.ReplacementTag, text, 0, 0, record.Lifetime, false, Array.Empty<GameMessageAction>() ) != null;
 	}
 
 	/// <summary>One suspend flag: only a suspended-to-resumed transition restarts active timer origins.</summary>
@@ -73,10 +49,12 @@ public sealed partial class ParkHud
 		challengeTimersSuspended = suspended;
 		if ( suspended || pendingChallengeRows == null )
 			return;
-		var now = ChallengeUiMilliseconds;
+		var now = ChallengeUiTicks;
 		foreach ( var row in pendingChallengeRows )
-			if ( row is { Active: true } )
-				row.Origin = now;
+		{
+			row.Expiry?.Reset( now );
+			row.Warning?.Reset( now );
+		}
 	}
 
 	/// <summary>
@@ -84,13 +62,14 @@ public sealed partial class ParkHud
 	/// Direct load/save and postcard are excluded; load/save under Escape inherit the still-open pause screen.
 	/// </summary>
 	// [BIN:TPW-EXE:0x48c894 escape suspension] options 0x4a3a7b, map 0x5f0b8a and owned offline message boxes 0x47f27b also suspend.
-	// ECON-058 and the pause owners (docs/UI.md, "Pause owners"): the offline simulation focus-loss latch does not own these timers; focus return is not game resume.
+	// [BIN:TPW-EXE:0x48A6E0 pause suspends timers] the P key 0x409350 -> 0x481460 -> 0x48A720 toggles the window (0x4A27F0) and then suspends or resumes the UI timers (0x662411, 0x662420) by whether [0x7CB2CC] exists; only the focus loss takes 0x4092A0(1) -> 0x481440 -> 0x48A6E0 (suspend, then build the window), whose resume 0x409300 -> 0x481450 -> 0x48A700 resumes them and destroys it. The focus-loss latch therefore owns the timers until an explicit resume.
+	// The other pauses (0x4092A0(0, 0): the Escape menu, the box, options, map) suspend directly (0x662411 at 0x48C894, 0x47F27B, 0x4A3A7B, 0x5F0B8A); loans windows and the postcard pause the game clock only.
 	// Other dialogs, online ownership gates and nested host screens are not claimed to reproduce the original's single global flag.
-	internal static bool ChallengeMessageSuspensionFor( bool userPaused, IEnumerable<string> screens ) => userPaused
+	internal static bool ChallengeMessageSuspensionFor( bool userPaused, IEnumerable<string> screens, bool focusPaused = false ) => userPaused || focusPaused
 		|| screens.Any( name => name is PauseMenuScreen or MapScreenName or "options" or "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff" or WinningMessageScreen );
 
 	private void SyncChallengeMessageSuspension() =>
-		SetChallengeMessageTimersSuspended( ChallengeMessageSuspensionFor( challengeUserPaused, Stack?.Screens.Select( screen => screen.Name ) ?? Array.Empty<string>() ) );
+		SetChallengeMessageTimersSuspended( ChallengeMessageSuspensionFor( challengeUserPaused, Stack?.Screens.Select( screen => screen.Name ) ?? Array.Empty<string>(), applicationPaused ) );
 
 	private void FinishChallengeMessageFrame()
 	{
@@ -128,64 +107,61 @@ public sealed partial class ParkHud
 	/// </summary>
 	private bool SpeedIsTheHosts => level?.Park != null && level.Commands.FollowsStream;
 
-	/// <summary>Produces bounded terminal timer events before HUD input; dispatch can observe a read/delete in between.</summary>
-	// [BIN:TPW-EXE:0x661fe5 UI timer delivery] timers queue messages; reading stops future timers but queued expiry still needs the active guard.
-	// ECON-058: this managed queue coalesces each one-shot terminal event. It does not emulate repeated interval delivery,
-	// the whole native UI queue, disabled-timer phase advancement, or signed/unsigned 32-bit clock wrap behavior.
+	/// <summary>Produces bounded timer events before HUD input; dispatch can observe a read/delete in between.</summary>
+	// [BIN:TPW-EXE:0x661fe5 UI timer delivery] the pump (0x6622D2) ticks every timer in creation order; a timer whose interval has passed posts its message to the window's queue (0x658ccc), which the frame's pump delivers after the whole tick
+	// [BIN:TPW-EXE:0x66203A tick guards] the message is posted only for an enabled timer of a window that exists while the UI is active ([0x77c488]: set by the window's activation 0x659333, cleared by the deactivation, which is a game pause here: UI timers are suspended then); the elapsed time is a signed 32-bit difference and the origin keeps the remainder
+	// A tick reports at most one message per timer: the window's guards (the expiry's byte +0x134, the warning's property 9) make every later message of the same tick a no-op.
 	internal void QueueChallengeTerminalTimers()
 	{
 		if ( challengeTimersSuspended || pendingChallengeRows == null )
 			return;
-		var now = ChallengeUiMilliseconds;
+		var now = ChallengeUiTicks;
 		foreach ( var row in pendingChallengeRows )
 		{
-			if ( row is not { Active: true, Visible: true } )
-				continue;
-			var elapsed = now - row.Origin;
-			if ( row.PreExpiryEnabled && !row.PreExpiryQueued && elapsed >= row.Lifetime - 5000 )
-			{
-				(challengeTimerEvents ??= new()).Enqueue( (row, ChallengeTimerEvent.PreExpiry) );
-				row.PreExpiryQueued = true;
-			}
-			if ( !row.ExpiryQueued && elapsed >= row.Lifetime )
-			{
+			if ( row.Expiry is { } expiry && expiry.Tick( now ) > 0 )
 				(challengeTimerEvents ??= new()).Enqueue( (row, ChallengeTimerEvent.Expiry) );
-				row.ExpiryQueued = true;
-			}
+			if ( row.Warning is { } warning && warning.Tick( now ) > 0 )
+				(challengeTimerEvents ??= new()).Enqueue( (row, ChallengeTimerEvent.PreExpiry) );
 		}
 	}
 
-	/// <summary>Queued events target row instances; reading a terminal before dispatch permanently suppresses its expiry.</summary>
+	/// <summary>Queued events target row instances; a message that finds its row gone is dropped.</summary>
 	internal void DispatchChallengeTerminalTimers()
 	{
 		while ( challengeTimerEvents != null && challengeTimerEvents.TryDequeue( out var entry ) )
 		{
 			var row = entry.Row;
-			if ( !row.Active || !row.Visible || pendingChallengeRows?.Contains( row ) != true )
+			if ( pendingChallengeRows?.Contains( row ) != true )
 				continue;
 			if ( entry.Kind == ChallengeTimerEvent.PreExpiry )
+				WarnTubeRow( row );
+			else if ( row.ExpiryArmed )
 			{
-				row.PreExpiryEnabled = false;
-				row.PreExpiryReached = true;
-				// PTCL-908: 91 is a retained UI particle, not sound. No UI emitter ownership/rendering interface exists here.
-				// Effect 90 on first visibility and effect 91 at this boundary remain omitted; never borrow world emitter slots.
+				// [BIN:TPW-EXE:0x48dd53 tag expiry] timer 0x80080 acts only while the byte +0x134 is set: it hides the tag, clears the byte and posts the removal 0x100002 (0x48dd5d-0x48dd7b); the removal puts the panel away when the tag is the selected one at its end (0x48dd19-0x48dd28)
+				row.ExpiryArmed = false;
+				BeginTubeRemoval( row, hide: true, closePanelNow: false, disarm: false );
 			}
-			else
-				// [BIN:TPW-EXE:0x48dd53 tag expiry] timer 0x80080 hides the tag and posts the removal 0x100002 (0x48dd5d-0x48dd7b); the removal puts the panel away when the tag is the selected one (0x48dd19-0x48dd28)
-				BeginChallengeTerminalRemoval( row, closePanel: true );
 		}
 	}
 
-	private void BeginChallengeTerminalRemoval( ChallengeTubeRow row, bool closePanel )
+	/// <summary>
+	/// Starts a row's removal: its hit-test attribute is cleared (and the row hidden when <paramref name="hide"/>) and the destruction follows 500 ms later; a row whose attribute is already cleared is left alone.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4a13e8 tube removal] 0x100002 acts only on a window whose attribute bit 1 is set (0x4a13ee-0x4a13f5), clears it (0x65d9dd with 0) and posts message 5 with 500 ms delay (0x4a1408-0x4a1419); with the flag 1 it sends message 5 at once (0x4a1421-0x4a142d)
+	// [BIN:TPW-EXE:0x48e08a right click] a right click and the bomb hide the window first (0x48e081-0x48e087) and clear the armed byte (a right click only); the action result 2 and the expiry's hide differ as the callers say
+	private void BeginTubeRemoval( TubeRow row, bool hide, bool closePanelNow, bool disarm )
 	{
-		if ( !row.Visible )
+		if ( row.ReleaseAt != null )
 			return;
 		// Bind before hiding: cleanup of an answered/stale offer must never decline a newer follow-up.
 		if ( row.IsOffer )
 			row.PendingOfferIdentity = SameUnansweredOffer( row.OfferIdentity, CurrentUnansweredOffer ) ? row.OfferIdentity : null;
-		row.Read();
+		if ( disarm )
+			row.ExpiryArmed = false;
+		if ( hide )
+			HideTubeRow( row );
 		row.ReleaseAt = ChallengeUiMilliseconds + ChallengeTerminalReleaseDelay;
-		if ( closePanel && ReferenceEquals( openedChallengeRow, row ) )
+		if ( closePanelNow && ReferenceEquals( openedChallengeRow, row ) )
 			CloseMessagePanel();
 	}
 
@@ -196,7 +172,10 @@ public sealed partial class ParkHud
 	{
 		var now = ChallengeUiMilliseconds;
 		for ( var index = (pendingChallengeRows?.Count ?? 0) - 1; index >= 0; index-- )
-			if ( pendingChallengeRows![index]?.ReleaseAt is long due && now >= due )
+		{
+			var row = pendingChallengeRows![index];
+			if ( row.ReleaseAt is long due && now >= due || row.ClearAt is long clear && now >= clear )
 				RemovePendingMessageAt( index );
+		}
 	}
 }

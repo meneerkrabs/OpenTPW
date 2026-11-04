@@ -56,7 +56,7 @@ public class UiMaterialRunTests
 	};
 
 	[TestMethod]
-	public void SameFilenameKeepsAlternatingSlotFlagsAndStableDepthTies()
+	public void SameFilenameKeepsAlternatingSlotFlagsAndMaterialOrder()
 	{
 		foreach ( var firstKeyed in new[] { false, true } )
 		{
@@ -65,7 +65,7 @@ public class UiMaterialRunTests
 			var frame = new UiModel( source, "w_big" ).GetFrame( 0 );
 			CollectionAssert.AreEqual( new[] { firstKeyed, !firstKeyed, firstKeyed }, frame.Parts.Select( part => part.Transparent ).ToArray() );
 			CollectionAssert.AreEqual( Enumerable.Range( 0, 9 ).ToArray(), frame.Parts.SelectMany( part => part.Indices ).ToArray() );
-			Assert.IsTrue( frame.Parts.All( part => part.TextureName == "Shared" ) );
+			Assert.IsTrue( frame.Parts.All( part => string.Equals( part.TextureName, "Shared", StringComparison.OrdinalIgnoreCase ) ) );
 			Assert.AreEqual( 24f, frame.Width );
 			Assert.AreEqual( 4f, frame.Height );
 			Assert.AreEqual( new UiRect( 0, 0, 24, 4 ), frame.FitBounds!.Value );
@@ -73,15 +73,15 @@ public class UiMaterialRunTests
 	}
 
 	[TestMethod]
-	public void SplittingKeepsTextureGroupAveragesAndTriangleDepthOrder()
+	public void MaterialRunsKeepMaterialOrderAndFileOrderWhateverTheDepth()
 	{
+		// every UI control vertex is at depth 0 in tp.exe (0x476CBF), so the model's z orders nothing: one part per material, in material order, triangles in file order
 		var source = Source( ("shared", false, 4), ("other", false, 2), ("shared", true, 0), ("shared", false, 2) );
 		var frame = new UiModel( source, "w_big" ).GetFrame( 0 );
-		// Both groups average 2: shared retains its first-seen position, even though its last face is deeper.
-		CollectionAssert.AreEqual( new[] { 6, 7, 8, 9, 10, 11, 0, 1, 2, 3, 4, 5 }, frame.Parts.SelectMany( part => part.Indices ).ToArray() );
-		CollectionAssert.AreEqual( new[] { "shared", "shared", "other" }, frame.Parts.Select( part => part.TextureName ).ToArray() );
-		CollectionAssert.AreEqual( new[] { true, false, false }, frame.Parts.Select( part => part.Transparent ).ToArray() );
-		CollectionAssert.AreEqual( new[] { 3, 6, 3 }, frame.Parts.Select( part => part.Indices.Count ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }, frame.Parts.SelectMany( part => part.Indices ).ToArray() );
+		CollectionAssert.AreEqual( new[] { "shared", "other", "shared", "shared" }, frame.Parts.Select( part => part.TextureName ).ToArray() );
+		CollectionAssert.AreEqual( new[] { false, false, true, false }, frame.Parts.Select( part => part.Transparent ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 3, 3, 3, 3 }, frame.Parts.Select( part => part.Indices.Count ).ToArray() );
 	}
 
 	[TestMethod]
@@ -110,14 +110,14 @@ public class UiMaterialRunTests
 	}
 
 	[TestMethod]
-	public void HomogeneousGroupsStaySingleAndEmptyTextureAlwaysDrawsSolid()
+	public void HomogeneousRunsStayMaterialsAndEmptyTextureAlwaysDrawsSolid()
 	{
 		foreach ( var keyed in new[] { false, true } )
 		{
 			var frame = new UiModel( Source( ("shared", keyed, 1), ("shared", keyed, 0) ), "w_big" ).GetFrame( 0 );
-			Assert.AreEqual( 1, frame.Parts.Count );
-			Assert.AreEqual( keyed, frame.Parts[0].Transparent );
-			CollectionAssert.AreEqual( new[] { 3, 4, 5, 0, 1, 2 }, frame.Parts[0].Indices.ToArray() );
+			Assert.AreEqual( 2, frame.Parts.Count );
+			Assert.IsTrue( frame.Parts.All( part => part.Transparent == keyed ) );
+			CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4, 5 }, frame.Parts.SelectMany( part => part.Indices ).ToArray() );
 		}
 		var source = Source( (null, false, 0), (null, false, 0) );
 		// The reader emits zero flags for untextured materials. A public in-memory edit still cannot select a texture.

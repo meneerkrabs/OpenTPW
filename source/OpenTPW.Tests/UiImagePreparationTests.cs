@@ -70,6 +70,9 @@ public class UiImagePreparationTests
 			rootName.CopyTo( bytes, 0x1A4 );
 			var model = new ModelFile( new MemoryStream( bytes ) );
 			model.Meshes.Single().Materials[0].Flags = UiImages.TransparentFlag;
+			// the face test 0x581320 draws clockwise triangles only: the synthetic triangle is stored counter-clockwise
+			var corners = model.Meshes.Single().Indices;
+			(corners[1], corners[2]) = (corners[2], corners[1]);
 			return new UiModel( model, name );
 		} ) ) { ResolveTexture = _ => "/ui/textures/shared.wct" };
 		var paths = ParkHud.BuyWindowImagePaths( context ).ToArray();

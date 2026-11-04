@@ -150,10 +150,20 @@ public sealed class UiBatch
 				var vertex = part.Vertices[index];
 				return new UiVertex( screenCenter + (vertex.Position - authoredCenter) * scale, vertex.TexCoords, color );
 			}
-			for ( var index = 0; index + 2 < part.Indices.Count; index += 3 )
-				AddTriangle( texture, Convert( part.Indices[index] ), Convert( part.Indices[index + 1] ), Convert( part.Indices[index + 2] ) );
+			var drawn = part.DrawIndices;
+			var triangles = drawn.Count / 3;
+			// [BIN:TPW-EXE:0x565746 stashed record] an item whose texture has an alpha byte (state 0x556, not in the immediate states 0x1000 and 0x2000) is stashed and its surviving triangles (0x581320 keeps the clockwise ones: DrawIndices) sorted by depth sum (0x565490); all sums of a UI model are 0, so the sort leaves the permutation of ties (OriginalDepthSort). Opaque and cut-out items are drawn at once in file order
+			var order = TriangleOrder( path, triangles );
+			for ( var triangle = 0; triangle < triangles; triangle++ )
+			{
+				var index = (order == null ? triangle : order[triangle]) * 3;
+				AddTriangle( texture, Convert( drawn[index] ), Convert( drawn[index + 1] ), Convert( drawn[index + 2] ) );
+			}
 		}
 	}
+
+	/// <summary>The order a UI model item's triangles are drawn in: null for file order (an opaque or cut-out texture, drawn at once), else the tie permutation tp.exe's triangle sort leaves a stashed translucent item (all depth sums are 0).</summary>
+	internal static int[]? TriangleOrder( string? path, int triangles ) => path != null && UiImages.IsTranslucent( path ) ? OriginalDepthSort.TieOrder( triangles ) : null;
 
 	/// <summary>The title control's copy offset in text pixels: the copy sits this far to the left and below the string (rectangle (L-2, T+2, R-2, B+2), 0x491dd0-0x491dfb).</summary>
 	public const int TitleShadowOffset = 2;

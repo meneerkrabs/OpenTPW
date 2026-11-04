@@ -1,0 +1,9 @@
+## Sky, fog and particle passes (November 4, 2026)
+
+Round 11 package L reads the render-flag word, the sky draw, the particle submit path and the lobby screens in tp.exe (REA, the x86 oracle; the Mac decomp only pointed to the code).
+
+- **UI-107 (narrowed)**: the viewport clear follows `0x5737AA`: the fog colour only with the fog bit 0x2000 of `[0x8BCBC8]` or the lobby's 0x4000000, else black (`RenderFog.ClearColour`); the sky's states, alpha tests and the sky objects' page values are as `0x5863C0` and `0x5860D0` make them. The globe's sky variant (flag 0x2000000) is ported from an oracle run of the draw (finding X78, `sky_oracle.py`): the layer grid again with x and the height negated, and the cylinder's other V rows. Left: the one-frame lag of the far plane, whether the weather takes the fog bit, the Theme Park Inc clear word.
+- **UI-018 (narrowed)**: while the globe is up only the globe screens update (the islands screen is deactivated), so the island weather, flyers and clips stop and the lobby scene is rebuilt when the globe closes; Escape during the enter sequence ends it as the original's handler does; tp.exe has no key-award animation (the key panel is a static counter). Left: rain behind the globe, the islands screen's second Escape branch, the globe screen D.
+- **PTCL-905 (narrowed)**: particle batches carry the original's state words (`0x57C6FA` to `0x57C71B`, render flags `0x57C7C8`): textured frames are always `0x556` (`0x5882E0`), untextured ones `0x1256` or `0x556` by the alpha byte, additive templates `0x200522`/`0x200552`; the non-opaque ones are kept (`0x565590`) and drawn far to near with the translucent world faces by `0x582AD0`. The particle shader takes the alpha reference and the fog block like the world's. Left: the weather is not in the deferred list, the 0x20000 point filter, the key tie order.
+
+No pinned hash moved (presentation only). Old saves and command logs load and replay as before.

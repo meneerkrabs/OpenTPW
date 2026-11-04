@@ -62,13 +62,14 @@ public sealed partial class ParkHud
 	/// Direct load/save and postcard are excluded; load/save under Escape inherit the still-open pause screen.
 	/// </summary>
 	// [BIN:TPW-EXE:0x48c894 escape suspension] options 0x4a3a7b, map 0x5f0b8a and owned offline message boxes 0x47f27b also suspend.
-	// ECON-058 and the pause owners (docs/UI.md, "Pause owners"): the offline simulation focus-loss latch does not own these timers; focus return is not game resume.
+	// [BIN:TPW-EXE:0x48A6E0 pause suspends timers] the pause 0x4092A0(1) (the P key and the focus loss, 0x46B74C) runs 0x481440 -> 0x48A6E0, which suspends the UI timers (0x662411) and builds the P window; the resume 0x409300 -> 0x481450 -> 0x48A700 resumes them (0x662420) and destroys it. The focus-loss latch therefore owns the timers until an explicit resume.
+	// The other pauses (0x4092A0(0, 0): the Escape menu, the box, options, map) suspend directly (0x662411 at 0x48C894, 0x47F27B, 0x4A3A7B, 0x5F0B8A); loans windows and the postcard pause the game clock only.
 	// Other dialogs, online ownership gates and nested host screens are not claimed to reproduce the original's single global flag.
-	internal static bool ChallengeMessageSuspensionFor( bool userPaused, IEnumerable<string> screens ) => userPaused
+	internal static bool ChallengeMessageSuspensionFor( bool userPaused, IEnumerable<string> screens, bool focusPaused = false ) => userPaused || focusPaused
 		|| screens.Any( name => name is PauseMenuScreen or MapScreenName or "options" or "confirmDelete" or "confirmDeleteAttraction" or "confirmDismissStaff" or WinningMessageScreen );
 
 	private void SyncChallengeMessageSuspension() =>
-		SetChallengeMessageTimersSuspended( ChallengeMessageSuspensionFor( challengeUserPaused, Stack?.Screens.Select( screen => screen.Name ) ?? Array.Empty<string>() ) );
+		SetChallengeMessageTimersSuspended( ChallengeMessageSuspensionFor( challengeUserPaused, Stack?.Screens.Select( screen => screen.Name ) ?? Array.Empty<string>(), applicationPaused ) );
 
 	private void FinishChallengeMessageFrame()
 	{

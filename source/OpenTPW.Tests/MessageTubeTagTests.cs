@@ -351,6 +351,14 @@ public class MessageTubeTagTests
 	}
 
 	[TestMethod]
+	public void TheFocusLossPauseSuspendsTheTubeTimersLikeTheOtherPauseOwners()
+	{
+		// [BIN:TPW-EXE:0x48A6E0] the pause 0x4092A0(1) of the deactivation suspends the UI timers before it builds the P window
+		Assert.IsTrue( ParkHud.ChallengeMessageSuspensionFor( false, Array.Empty<string>(), focusPaused: true ) );
+		Assert.IsFalse( ParkHud.ChallengeMessageSuspensionFor( false, Array.Empty<string>() ) );
+	}
+
+	[TestMethod]
 	public void AnOriginalSavesTubeRecordsReadAndBecomeRows()
 	{
 		static byte[] Record( int tag, string text, int lifetime, short icon, int first, int second, short word, int dword )

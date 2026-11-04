@@ -1064,7 +1064,9 @@ public sealed partial class ParkHud
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
 		// Enter over the park goes to a visit's chat entry before the screen sees the key, which would otherwise press the button the pointer last rested on
 		var chatEntry = ChatEntryWanted( context, input );
-		var consumed = Stack.Update( context, chatEntry ? input with { Pressed = input.Pressed & ~UiKeys.Accept } : input );
+		// [BIN:TPW-EXE:0x47ee67 P window focus] the P window holds the focus and is the hit window of every point: no key, text or wheel reaches the screens below it (only the P key, which its procedure takes)
+		var stackInput = PauseBackdropHoldsFocus ? input with { Pressed = input.Pressed & UiKeys.Pause, Text = "", Wheel = 0, Backspaces = 0 } : input;
+		var consumed = Stack.Update( context, chatEntry ? stackInput with { Pressed = stackInput.Pressed & ~UiKeys.Accept } : stackInput );
 		if ( chatEntry )
 		{
 			FocusChatEntry();
@@ -1583,7 +1585,7 @@ public sealed partial class ParkHud
 		// admission is separate: 0x65db25 chooses the topmost eligible window, and 0x658b1a/0x658b7f save down/up recipients.
 		// [APPROX:PATH-017] ParkHud.PointerInput implements bounded ordinary-WM batch admission then P/pointer drain, including captured movement and original release owners. The P window's backdrop (0x65dd7b, flags 1, appended last under the root;
 		// 0x65db25 lets the last eligible sibling win, 0x65f6d1 forwards nothing) is created by the P key and by the offline focus-loss pause (0x4a27f0, 0x4a2790) and covers only the windows that existed then: it takes every click and the camera takes no input under it.
-		// Alternate buffered input, the aggregate wheel and the keys other than P of the screens below it, and the original backdrop/panel rendering remain outside this contract; a generic speed flag is not an input owner.
+		// The P window is drawn (lolight and the paused banner, DrawPauseLayer) and holds keys and wheel from the screens below it; the alternate buffered-input mode and the stored hover cell of a drag released over the HUD (0x4879d0, 0x7b05cc) remain outside this contract; a generic speed flag is not an input owner.
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
 			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true }

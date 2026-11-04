@@ -11,6 +11,9 @@ advisor's tables live:
 * ``advisor-captions.toml``: field +0x1C of the same response rows, the tag of the text the advisor posts to the message
   tube when it says the response (0x59B620 posts it through 0x5997B0), and the TAG_SYSTEM.str entry of that tag (field +0xC
   of its record in the tag table 0x75ECA8, found as 0x50AF40 does); 0x17F, the tag of no text, is not listed.
+* ``message-tags.toml``: the whole tag table of the message tube (the records of 32 bytes from 0x75ECA8 up to its zero padding): per tag the
+  replacement tag (+4), the icon class (+8), the TAG_SYSTEM.str entry (+0xC), the two action ids (+0x10, +0x14), the
+  lifetime in milliseconds (+0x18; 0 keeps the tag until it is deleted) and the formatter case (+0x1C).
 * ``advisor-descriptors.toml``: all 351 descriptors of the same table (message, first response, response count,
   group, pending duplicates, game-mode selector and the score callback address), which the save import binds so
   that an original save's pending advice and history of every message are kept.
@@ -192,6 +195,17 @@ def captions(image: Image) -> list[tuple[int, int, int, int]]:
     return rows
 
 
+def message_tags(image: Image) -> list[tuple[int, ...]]:
+    """Every record of the tag table in table order: (tag, replaced tag, icon, text entry, action 1, action 2, lifetime, kind)."""
+    count = (TAG_TABLE_END - TAG_TABLE) // TAG_RECORD
+    records = [struct.unpack('<8i', image.read(TAG_TABLE + index * TAG_RECORD, TAG_RECORD)) for index in range(count)]
+    # the table ends in zero records (the loop of 0x50AF40 runs to 0x761C68, but no id 0 is ever looked up past position 0)
+    records = [record for index, record in enumerate(records) if index == 0 or any(record)]
+    if len({record[0] for record in records}) != len(records):
+        raise ValueError('the tag table holds a tag id twice')
+    return records
+
+
 def help_messages(image: Image) -> list[dict[str, int]]:
     responses = {row[0] for row in response_rows(image)}
     table = descriptors(image)
@@ -242,6 +256,26 @@ def render_captions(rows: list[tuple[int, int, int, int]]) -> str:
     ]
     for response, tag, text, kind in rows:
         lines.append(f'  {{ response = {response}, tag = {tag}, text = {text}{f", kind = {kind}" if kind else ""} }},')
+    lines.append(']')
+    return '\n'.join(lines) + '\n'
+
+
+def render_message_tags(rows: list[tuple[int, ...]]) -> str:
+    lines = [
+        '# Message tags of Sim Theme Park World (Windows v2.0), for interoperability: the tag table the message tube posts from.',
+        '# Copied field by field from the 32-byte records at 0x75ECA8 of tp.exe',
+        f'# (SHA-256 {TPW_SHA}) by',
+        '# tools/ppc-analysis/lanes/advisor/tpw_exe_tables.py; see docs/UI.md ("Message tube").',
+        '#',
+        '# tag: the id (+0; the record 0x50AF40 finds is the one at the id\'s own position, else the first with the id); replaces: the tag whose',
+        '# rows this one replaces (+4; 383 = none); icon: the icon class (+8); text: the entry of TAG_SYSTEM.str (+0xC); a1, a2: the',
+        '# action ids of the two panel buttons (+0x10, +0x14; 0 = none); life: the lifetime in milliseconds (+0x18; 0 keeps the row until it is',
+        '# deleted); kind: the case of the caption formatter 0x509E10 (+0x1C).',
+        '',
+        'tags = [',
+    ]
+    for tag, replaces, icon, text, first, second, life, kind in rows:
+        lines.append(f'  {{ tag = {tag}, replaces = {replaces}, icon = {icon}, text = {text}, a1 = {first}, a2 = {second}, life = {life}, kind = {kind} }},')
     lines.append(']')
     return '\n'.join(lines) + '\n'
 
@@ -308,6 +342,7 @@ def main() -> None:
     outputs = {
         'advisor-costumes.toml': render_costumes(costumes(image)),
         'advisor-captions.toml': render_captions(captions(image)),
+        'message-tags.toml': render_message_tags(message_tags(image)),
         'advisor-help-messages.toml': render_help(help_messages(image)),
         'advisor-descriptors.toml': render_descriptors(descriptors(image)),
     }

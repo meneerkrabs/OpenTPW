@@ -688,6 +688,7 @@ public partial class Level : IDisposable
 			yield return 0.95f;
 			StartPlacedParticles();
 			ImportOriginalParticles();
+			ImportOriginalMessageTube();
 			yield return 0.95f;
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
 				ReleaseUnimportedThings();

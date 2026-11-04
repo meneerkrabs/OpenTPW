@@ -58,6 +58,8 @@ public class ChallengeProgressTubeTests
 	{
 		using var probe = new AudioTriggerProbe();
 		var hud = Hud();
+		var now = 0L;
+		hud.ChallengeMessageClock = () => now;
 		hud.PostGameMessage( "ordinary" );
 		Assert.IsTrue( hud.PostChallengeProgress( 280, "first" ) );
 		Assert.IsTrue( hud.PostChallengeProgress( 280, "second" ) );
@@ -80,11 +82,18 @@ public class ChallengeProgressTubeTests
 		hud.OpenPendingMessage( 1 );
 		hud.DeleteOpenedMessage();
 		Assert.IsNull( hud.OpenedMessage );
+		// [BIN:TPW-EXE:0x4a13e8] the bomb hides the row and the tube releases it 500 ms later
+		Assert.IsFalse( hud.IsPendingMessageVisible( 1 ) );
+		CollectionAssert.AreEqual( new[] { "ordinary", "closed refresh" }, hud.PendingMessages.ToArray() );
+		now += ParkHud.ChallengeTerminalReleaseDelay;
+		hud.ReleaseChallengeTerminalRows();
 		CollectionAssert.AreEqual( new[] { "ordinary" }, hud.PendingMessages.ToArray() );
 		hud.PostChallengeProgress( 280, "reinserted" );
 		hud.PostChallengeProgress( 280, "same row" );
 		Assert.AreEqual( 3, probe.Events( "cat_ui" ).Count( id => id == ParkHud.MessagePostedEvent ) );
 		Assert.IsTrue( hud.DeletePendingMessage( 1 ) );
+		now += ParkHud.ChallengeTerminalReleaseDelay;
+		hud.ReleaseChallengeTerminalRows();
 		Assert.AreEqual( 1, hud.PendingMessages.Count );
 	}
 
@@ -108,8 +117,10 @@ public class ChallengeProgressTubeTests
 		Assert.AreEqual( "updated", hud.OpenedMessage );
 		Assert.AreEqual( "updated", hud.PendingMessages[0] );
 		Assert.AreEqual( 10, probe.Events( "cat_ui" ).Count( id => id == ParkHud.MessagePostedEvent ) );
+		// a plain row stays in the tube when it is read (0x48d9c0 never removes a tag); the failed progress admission tagged nothing
 		Assert.IsTrue( hud.OpenPendingMessage( 9 ) );
-		Assert.AreEqual( 9, hud.PendingMessages.Count, "failed progress admission must not tag the last ordinary row" );
+		Assert.AreEqual( 10, hud.PendingMessages.Count, "a read row stays in the tube" );
+		Assert.AreEqual( "ordinary-9", hud.OpenedMessage );
 	}
 
 	[TestMethod]

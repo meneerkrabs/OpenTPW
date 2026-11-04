@@ -100,6 +100,14 @@ internal static class ParticleRendererModule
 			if ( handle is EmitterRef emitter )
 				emitter.System.Kill( emitter.Handle );
 		}
+
+		public bool IsAlive( object handle ) => handle is EmitterRef emitter && emitter.System.IsAlive( emitter.Handle );
+
+		public void SetHidden( object handle, bool hidden )
+		{
+			if ( handle is EmitterRef emitter )
+				emitter.System.SetHidden( emitter.Handle, hidden );
+		}
 	}
 
 	internal static void MoveEmitter( EmitterRef emitter, SVector3 engine ) =>

@@ -524,9 +524,10 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 	}
 
 	/// <summary>
-	/// Where the caption of a chosen response goes: the entry of <c>TAG_SYSTEM.str</c> the response's tag shows with the values of its parameter slots (the park HUD posts it to the message tube); null posts none.
+	/// Where the caption of a chosen response goes: the tag, the entry of <c>TAG_SYSTEM.str</c> the tag shows with the values of its parameter slots, and the advice record's two words that identify the row (the park HUD
+	/// posts it to the message tube as a message of that tag); null posts none.
 	/// </summary>
-	internal Action<int, IReadOnlyDictionary<int, string>>? CaptionSink { get; set; }
+	internal Action<int, int, IReadOnlyDictionary<int, string>, ushort, uint>? CaptionSink { get; set; }
 
 	/// <summary>
 	/// A response is chosen to be said: its caption goes to the message tube, whether or not the advisor is heard (the speech switched off, the clip missing).
@@ -539,7 +540,7 @@ internal sealed partial class AutomaticAdvisor : IDisposable
 			return;
 		// the formatter writes no text for a caption its arguments cannot name (a type id of 0: unreachable, every producer passes one); the tag system would repost its previous text, which OpenTPW does not keep
 		if ( AdvisorCaptionArguments.For( caption.Kind, advice ?? new AdvisorPendingAdvice( 0, 0 ), TypeNameOf, CurrentEconomy?.Settings.GoldenTickets ) is { } values )
-			CaptionSink( caption.TextEntry, values );
+			CaptionSink( caption.Tag, caption.TextEntry, values, advice?.ThingId ?? 0, advice?.Secondary ?? 0 );
 	}
 
 	/// <summary>The info-record name of the object type with an Info.Id (<c>+0x410</c> of the record 0x412F50 finds), null without a park or for an id the park's objects do not declare.</summary>

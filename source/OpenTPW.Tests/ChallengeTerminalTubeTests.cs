@@ -131,8 +131,8 @@ public class ChallengeTerminalTubeTests
 		clock.Hud.DispatchChallengeTerminalTimers();
 		clock.Pump( 100000 );
 		Assert.AreEqual( "synthetic success 137", clock.Hud.OpenedMessage );
-		Assert.IsTrue( clock.Hud.IsPendingMessageVisible( 0 ) );
-		Assert.IsFalse( State( clock ).PreExpiryReached, "the bounded managed queue suppresses both events once read" );
+		Assert.IsTrue( clock.Hud.IsPendingMessageVisible( 0 ), "the expiry message finds the armed byte cleared (0x48dd53)" );
+		Assert.IsTrue( State( clock ).PreExpiryReached, "the warning message already queued still runs: 0x48dd80 tests no flag" );
 	}
 
 	[TestMethod]
@@ -270,6 +270,8 @@ public class ChallengeTerminalTubeTests
 		var clock = new Clock();
 		Post( clock );
 		clock.Hud.OpenPendingMessage( 0 );
+		Assert.IsFalse( clock.Hud.DeletePendingMessage( 0 ), "the selected tag is protected from a right click until the panel has slid out (0x48e079)" );
+		clock.Hud.MessagePanelSlidOut();
 		clock.Now = 100;
 		Assert.IsTrue( clock.Hud.DeletePendingMessage( 0 ) );
 		Assert.IsNull( clock.Hud.OpenedMessage );

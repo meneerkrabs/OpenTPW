@@ -43,8 +43,8 @@ browser never sees a focus loss (`OpenTPW.Web.Veldrid/Input.cs`, `Focused => tru
 so neither the park's pause nor the mixer's suspension on deactivation happens
 there; the pause menu's and the P key's sound pause do. The mixer's suspension on
 deactivation (`0x51BCF0`) is ported with the rest of the pause's sound side
-(`GamePauseSound`, docs/AUDIO.md "Pause sound"; UI-096 retired). The focus latch does not become explicit user
-challenge-message timer suspension, and it does not change the separate
+(`GamePauseSound`, docs/AUDIO.md "Pause sound"; UI-096 retired). The focus latch suspends the message tube's UI timers until the resume, as the original's pause does
+(`0x4092A0(1)` -> `0x481440` -> `0x48A6E0` -> `0x662411`; round 11 N), and it does not change the separate
 `Hud.Paused` predicate. The advisor receives the existing simulation-paused input.
 
 Focus is sampled at the frame boundary; focus changes that begin and end between

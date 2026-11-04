@@ -2148,6 +2148,19 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// An original save's message tube (the UI block's tag records, tp.exe loader 0x48EF70) is the tube the park HUD restores when it comes up. Only a park started from an original save does this;
+	/// a resumed park restores its own tube (<see cref="ResumedMessageTube"/>).
+	/// </summary>
+	private void ImportOriginalMessageTube()
+	{
+		if ( resumeState != null || OriginalPark?.Save is not { RuntimeBlocks.Tube: { Count: > 0 } tube } )
+			return;
+		var problems = new List<string>();
+		ResumedMessageTube = OriginalTubeImport.Rows( tube, problems );
+		Park?.Import?.Report( $"Message tube imported: {ResumedMessageTube?.Rows.Count ?? 0} of {tube.Count} saved tags come back as tube rows, each with its full lifetime again{(problems.Count == 0 ? "" : $" ({string.Join( "; ", problems )} dropped)")}." );
+	}
+
+	/// <summary>
 	/// An original save's operating words (speed, capacity and duration, SAVE-006) become the linked ride runtimes' words where they differ from the tier's values. Only a park started
 	/// from the shipped save does this; a resumed park restores its own words (<see cref="OriginalObjectRuntimeSnapshot"/>).
 	/// </summary>

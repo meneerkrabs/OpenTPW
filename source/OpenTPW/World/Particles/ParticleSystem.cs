@@ -320,6 +320,16 @@ public sealed partial class ParticleSystem
 
 	public bool IsAlive( int handle ) => Resolve( handle ) != null;
 
+	/// <summary>Hides or shows a live emitter: a hidden emitter keeps its particles but draws none; false for a dead handle.</summary>
+	// [BIN:TPW-EXE:0x51FF10 set hidden] the handle is checked (non-zero, slot below 0x78, generation), then the slot's +0x20 word (0x80CF26 for slot 0) = the second argument; the message tag's UI emitter is hidden and shown with its tag window (0x48DE49, 0x48DFF9, 0x48E02E)
+	public bool SetHidden( int handle, bool hidden )
+	{
+		if ( Resolve( handle ) is not { } emitter )
+			return false;
+		emitter.Hidden = hidden;
+		return true;
+	}
+
 	/// <summary>The template id of every live emitter, in slot order (diagnostics and tests).</summary>
 	public IEnumerable<int> LiveEffects()
 	{

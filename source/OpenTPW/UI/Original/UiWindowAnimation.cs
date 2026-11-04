@@ -56,6 +56,18 @@ public sealed class UiWindowAnimation
 	/// <summary>The lost park's banner interval in milliseconds (0x23).</summary>
 	public const int LossBannerInterval = 35;
 
+	/// <summary>
+	/// The P window's banner table (0x752ED0, interval 35 ms): the banner grows by two at the left and right and six at the top, twice, and shrinks back twice, and the jump restarts it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x752ED0 pause banner animation] the P window's procedure starts it on message 0x15 with 0x65E72D(0x752ED0, 0x23) (0x4A274C) after centring the pivot on half its right and bottom words (0x4A2740); entries (-2,-6,2,2) twice, (2,6,-2,-2) twice, (-9997,0)
+	public static readonly IReadOnlyList<Step> PauseBanner = Array.AsReadOnly( new[]
+	{
+		Step.Edges( -2, -6, 2, 2 ), Step.Edges( -2, -6, 2, 2 ), Step.Edges( 2, 6, -2, -2 ), Step.Edges( 2, 6, -2, -2 ), Step.JumpTo( 0 )
+	} );
+
+	/// <summary>The P window banner's interval in milliseconds (0x23).</summary>
+	public const int PauseBannerInterval = 35;
+
 	private readonly IReadOnlyList<Step> table;
 	private readonly int interval;
 	private long stamp;

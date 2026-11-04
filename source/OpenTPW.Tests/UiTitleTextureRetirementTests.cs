@@ -80,6 +80,7 @@ public class UiTitleTextureRetirementTests
 		InitializeDictionary( renderer, "preparedImages" );
 		InitializeDictionary( renderer, "titleTextures" ).Add( title, ((Veldrid.Texture)null!, (ResourceSet)null!) );
 		InitializeDictionary( renderer, "surfaceTextures" ).Add( new UiPixelSurface( 2, 2 ), ((Veldrid.Texture)null!, (ResourceSet)null!, 0, 0L) );
+		// the 100 warm-up and 400 measured frame starts (500 in all) must stay under the renderer's SurfaceIdleFrames (600): the surface entry is not retired during the measurement
 		for ( var index = 0; index < 100; index++ )
 			renderer.BeginFrame();
 		var before = GC.GetAllocatedBytesForCurrentThread();

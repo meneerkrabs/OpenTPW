@@ -38,6 +38,12 @@ from x86_harness import Image, Sandbox, executable_path, have_unicorn, seeded  #
 
 ENTRY = 0x5EFB10
 CONVERT = 0x5FD050
+
+
+def _drop_hooks(sb, handles):
+    """Removes the memory hooks of one call (kept out of a finally block: a failed removal must not mask the call's own error)."""
+    for handle in handles:
+        sb.uc.hook_del(handle)
 CODE = [(0x401000, 0x6FD000)]
 WIDTH = HEIGHT = 128
 PITCH = 512
@@ -132,9 +138,10 @@ class MapLineOracle:
             handles.append(sb.uc.hook_add(unicorn.UC_HOOK_MEM_READ, on_read, None, buf, end - 1))
         try:
             result = sb.call(ENTRY, (scratch, surface, clip_ptr, colour_ptr, a_ptr, b_ptr))
-        finally:
-            for handle in handles:
-                sb.uc.hook_del(handle)
+        except BaseException:
+            _drop_hooks(sb, handles)
+            raise
+        _drop_hooks(sb, handles)
         after = bytes(sb.uc.mem_read(buf, PITCH * HEIGHT))
         if len(events) % 4:
             raise RuntimeError('a destination write that is not a whole pixel')

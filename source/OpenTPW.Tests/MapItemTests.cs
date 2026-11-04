@@ -182,7 +182,6 @@ public class MapItemTests
 	[TestMethod]
 	public void AnAreaFrameTouchesEveryPixelOfItsBorderOnceAndNothingInside()
 	{
-		var surface = new UiPixelSurface( 16, 16 );
 		var canvas = new ParkMapCanvas( new MapSurface( 96, 85, true ) );
 		canvas.AddFrame( 3, 4, 9, 11, new RgbaByte( 0, 0, 0, 255 ) );
 		var touched = new int[16 * 16];
@@ -193,7 +192,17 @@ public class MapItemTests
 		for ( var y = 0; y < 16; y++ )
 			for ( var x = 0; x < 16; x++ )
 				Assert.AreEqual( x is >= 3 and < 9 && y is >= 4 and < 11 && (x == 3 || x == 8 || y == 4 || y == 10) ? 1 : 0, touched[y * 16 + x], $"({x}, {y})" );
-		Assert.IsNotNull( surface );
+	}
+
+	[TestMethod]
+	public void AFrameWithReversedCornersIsTheFrameBetweenThem()
+	{
+		var color = new RgbaByte( 1, 2, 3, 200 );
+		var forward = new ParkMapCanvas( new MapSurface( 96, 85, true ) );
+		var reversed = new ParkMapCanvas( new MapSurface( 96, 85, true ) );
+		forward.AddFrame( 3, 4, 9, 11, color );
+		reversed.AddFrame( 9, 11, 3, 4, color );
+		CollectionAssert.AreEqual( forward.Prims.ToArray(), reversed.Prims.ToArray() );
 	}
 
 	[TestMethod]

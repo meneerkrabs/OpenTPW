@@ -62,7 +62,7 @@ public class ShopPriceIngressTests
 		var one=economy.RegisterExisting(info);var two=economy.RegisterExisting(info);
 		Set(level,"economyInstances",new Dictionary<OriginalObject,int>{{first,one.Id},{second,two.Id}});
 		var current=economy;bridge=new GuestEconomyBridge(()=>current,guests);bridge.Link(first.Runtime.AttractionId,one.Id);bridge.Link(second.Runtime.AttractionId,two.Id);
-		var hud=new ParkHud(level,OriginalUiTests.FakeStrings(),new EconomyParkStatus(()=>current),new EmptyCatalog(),new HudHost());hud.SelectObject(first);return hud;
+		var hud=new ParkHud(level,OriginalUiTests.FakeStrings(),new EconomyParkStatus(()=>current),new EmptyCatalog(),new HudHost { ParkInfoChoice = new() });hud.SelectObject(first);return hud;
 	}
 	private static UiContext Context()
 	{

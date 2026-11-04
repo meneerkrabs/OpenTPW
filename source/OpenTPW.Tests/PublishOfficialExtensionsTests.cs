@@ -440,7 +440,7 @@ public class PublishOfficialExtensionsTests
 			OpenTpwExtensions.Activate( WithCommunityMod() );
 			var refusal = ParkSharing.PublishRefusal( level );
 			Assert.IsNotNull( refusal );
-			var hud = BareHud( level, new HudHost { PublishPark = _ => { }, PublishRefusal = () => ParkSharing.PublishRefusal( level ) } );
+			var hud = BareHud( level, new HudHost { ParkInfoChoice = new(), PublishPark = _ => { }, PublishRefusal = () => ParkSharing.PublishRefusal( level ) } );
 			hud.OpenPauseMenu();
 			var line = (UiMenuItem)hud.Stack.Top!.Find( nameof( UIStrings.PublishPark ) )!;
 			Assert.IsFalse( line.Enabled );
@@ -449,7 +449,7 @@ public class PublishOfficialExtensionsTests
 			hud.ClosePauseMenu();
 			// an official extension alone: the line is enabled
 			OpenTpwExtensions.Activate( With( (OfficialExtensions.RainMood, true) ) );
-			var open = BareHud( level, new HudHost { PublishPark = _ => { }, PublishRefusal = () => ParkSharing.PublishRefusal( level ) } );
+			var open = BareHud( level, new HudHost { ParkInfoChoice = new(), PublishPark = _ => { }, PublishRefusal = () => ParkSharing.PublishRefusal( level ) } );
 			open.OpenPauseMenu();
 			Assert.IsTrue( ((UiMenuItem)open.Stack.Top!.Find( nameof( UIStrings.PublishPark ) )!).Enabled );
 		}

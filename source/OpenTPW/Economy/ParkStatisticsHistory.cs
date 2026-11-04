@@ -224,7 +224,14 @@ public sealed class ParkStatisticsHistory
 	/// <summary>
 	/// The highest sample of the newest <c>period + 1</c> that the scale takes from a ring (<paramref name="floating"/>: a single ring, whose maximum is truncated), 0 when none is above 0.
 	/// </summary>
+	// OpenTPW's import rejects a non-finite active sample, which the native loader does not (+Inf would pass the scanner's above-0 test and end as 0 through the conversion above): the strict host validation, the one difference in the float scanner
 	// [BIN:TPW-EXE:0x4801D0 series maximum] the scan reads samples 0 up to and including the period's sample count stops at the first it cannot read, and keeps the largest strictly above 0, and when none is above 0 it still reads the slot after the head (0x480263..0x48028B, 0x48033b..0x480369) and keeps it if it is above the maximum; the single ring's maximum (0x4802A0) is truncated to an integer
+	/// <summary>
+	/// tp.exe's float-to-integer conversion of a single ring's value (<c>0x67A830</c>: truncating <c>fistp</c> to 64 bits, the low dword kept): a value beyond 2^31 wraps to its low 32 bits, and +Inf, -Inf, NaN and anything from 2^63 up give 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x67A830 float to integer] fldcw with the truncate bits, fistp qword, then eax = the low dword
+	internal static int FloatToInt( double value ) => !double.IsFinite( value ) || Math.Abs( value ) >= 9.2233720368547758E18 ? 0 : unchecked((int)(long)Math.Truncate( value ));
+
 	public static int SeriesMaximum( HistoryRing ring, int period, bool floating )
 	{
 		var samples = PeriodSamples( period );
@@ -238,11 +245,11 @@ public sealed class ParkStatisticsHistory
 				best = value;
 			positive |= value > 0;
 		}
-		var result = floating ? (int)best : (int)Math.Min( best, int.MaxValue );
+		var result = floating ? FloatToInt( best ) : (int)Math.Min( best, int.MaxValue );
 		if ( !positive )
 		{
 			var slot = ring.SlotAfterHead( floating );
-			result = Math.Max( result, floating ? (int)slot : (int)Math.Clamp( slot, int.MinValue, int.MaxValue ) );
+			result = Math.Max( result, floating ? FloatToInt( slot ) : (int)Math.Clamp( slot, int.MinValue, int.MaxValue ) );
 		}
 		return result;
 	}
@@ -258,7 +265,7 @@ public sealed class ParkStatisticsHistory
 		for ( var back = n; back >= 0; back-- )
 		{
 			if ( ring.TryGet( back, out var value ) )
-				last = floating ? (int)value : (int)Math.Clamp( value, int.MinValue, int.MaxValue );
+				last = floating ? FloatToInt( value ) : (int)Math.Clamp( value, int.MinValue, int.MaxValue );
 			points[n - back] = last;
 		}
 		return n + 1;
@@ -293,7 +300,7 @@ public sealed class RingData
 
 	/// <summary>
 	/// An original save's ring. The slots tp.exe never reads (past the head of an unwrapped ring) keep the raw saved word, as a single's value when <paramref name="floating"/>
-	/// (a non-finite one stays 0, which the maximum scanner treats alike), because the maximum scanner reads the slot after the head when no sample is above 0.
+	/// (a non-finite one becomes 0: tp.exe converts a single through 0x67A830, a 64-bit fistp whose low dword is 0 for +Inf, -Inf and NaN, so the scanner gets 0 from it too), because the maximum scanner reads the slot after the head when no sample is above 0.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4C5D70 ring loader] reads all 0x90 slots raw (loop at 0x4C6307), so the unread slots keep the saved words
 	internal static RingData OfOriginal( NativeStatisticsRing ring, bool floating = false )

@@ -32,7 +32,7 @@ public sealed class HudHost
 	/// <summary>The list sorts the windows keep for the session; the game flow shares one instance between its parks.</summary>
 	public ListSortMemory ListSorts { get; init; } = new();
 	/// <summary>The park information window's series mask and period, which tp.exe keeps in process globals; the game flow shares one instance between its parks.</summary>
-	public ParkInfoChoice ParkInfoChoice { get; init; } = new();
+	public required ParkInfoChoice ParkInfoChoice { get; init; }
 	/// <summary>Called after a HUD key changed a player option (Ctrl+H flips Popup help) so the host can persist the options.</summary>
 	public Action? OptionsChanged { get; init; }
 	/// <summary>The open/close button or its shortcut was pressed (true: open, false: close), also when the park's state does not change; the advisor raises game event 3 or 4 on it.</summary>

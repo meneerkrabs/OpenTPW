@@ -80,7 +80,7 @@ correspondence and stretching of available months, font and palette handling, an
 raster/composited-output fidelity. A rendered host check must still inspect clipping/overlap and
 opaque green-on-black output in both windows; that check alone would not prove native parity.
 
-UI-914 retains ownership of park-information history and its other presentation residuals.
+UI-914 retained ownership of park-information history and its other presentation residuals at this proposal's time; it was retired in round 11 J (docs/UI.md).
 Existing UI #433 and languages #423 remain baseline work. The implementation kept the same
 UI-060 ID rather than creating another owner or another approximation ID; the residual ID is not
 retired by the backdrop change.

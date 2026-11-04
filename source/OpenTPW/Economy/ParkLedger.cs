@@ -49,7 +49,7 @@ public sealed class ParkLedger
 	public long CurrentOpeningBalance { get; private set; }
 	public long CurrentMonthIndex { get; private set; }
 	private long startMonthIndex;
-	/// <summary>The months closed since the ledger started (a park started at month 0 closes <see cref="CurrentMonthIndex"/>; a restored one counts from its restore, so a ring that went round after an import is not placed by the calendar).</summary>
+	/// <summary>The months closed since the ledger started (a park started at month 0 closes <see cref="CurrentMonthIndex"/>; a restored one counts from its restore, or from the start its save carries, so a ring that went round after an import is not placed by the calendar).</summary>
 	internal long ClosesSinceStart => CurrentMonthIndex - startMonthIndex;
 	public IReadOnlyList<LedgerMonth> History => history;
 	public IReadOnlyDictionary<LedgerCategory, long> CurrentTotals => current;
@@ -115,17 +115,23 @@ public sealed class ParkLedger
 		return new LedgerMonth( yearIndex * ParkCalendar.MonthsPerYear, totals, months[0].OpeningBalance, months[^1].ClosingBalance, months[^1].ParkRating, months[^1].ParkValue );
 	}
 
-	internal void Restore( long balance, long openingBalance, long monthIndex, IReadOnlyDictionary<LedgerCategory, long> totals, IEnumerable<LedgerMonth> months )
+	/// <summary>
+	/// The month a ledger counts its closes from when none is given: a history of fewer than 144 months began that many closes back (nothing was dropped yet), and a full one has lost its start, taken as month 0.
+	/// A save writes the start only when it differs from this (a park saved more than 144 closes after an import).
+	/// </summary>
+	internal static long DerivedStartMonthIndex( long monthIndex, int heldMonths ) => heldMonths < MaximumHistoryMonths ? monthIndex - heldMonths : 0;
+
+	/// <summary>The month the ledger counts its closes from (<see cref="ClosesSinceStart"/>).</summary>
+	internal long StartMonthIndex => startMonthIndex;
+
+	internal void Restore( long balance, long openingBalance, long monthIndex, IReadOnlyDictionary<LedgerCategory, long> totals, IEnumerable<LedgerMonth> months, long? startMonth = null )
 	{
 		Balance = balance;
 		CurrentOpeningBalance = openingBalance;
 		CurrentMonthIndex = monthIndex;
-		// a restored history of fewer than 144 months began that many closes back; a full one has lost its start, which is taken as month 0 (a park saved after more than 144 closes since an import is placed as a native park)
-		startMonthIndex = 0;
-		var restored = months as ICollection<LedgerMonth> ?? months.ToList();
+		var restored = months as IReadOnlyCollection<LedgerMonth> ?? months.ToList();
 		months = restored;
-		if ( restored.Count < MaximumHistoryMonths )
-			startMonthIndex = monthIndex - restored.Count;
+		startMonthIndex = startMonth ?? DerivedStartMonthIndex( monthIndex, restored.Count );
 		current.Clear();
 		foreach ( var (category, value) in totals )
 			current[category] = value;

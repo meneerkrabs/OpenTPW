@@ -221,4 +221,17 @@ public class GraphBackdropTests
 		Assert.AreEqual( 0, ring.SlotAfterHead( false ), "the head moved on: the slot after it is the next raw word" );
 		Assert.AreEqual( 0, RingData.Of( ring ).Slots[1], "the written slot holds the new sample" );
 	}
+
+	[TestMethod]
+	public void TheSingleRingsFloatToIntegerIsTheLowDwordOfATruncating64BitConversion()
+	{
+		// 0x67A830: fistp qword with truncation, eax = the low dword
+		Assert.AreEqual( 5, ParkStatisticsHistory.FloatToInt( 5.9 ) );
+		Assert.AreEqual( -5, ParkStatisticsHistory.FloatToInt( -5.9 ) );
+		Assert.AreEqual( unchecked((int)3_000_000_000L), ParkStatisticsHistory.FloatToInt( 3e9 ), "beyond 2^31 it wraps to the low 32 bits" );
+		Assert.AreEqual( 0, ParkStatisticsHistory.FloatToInt( double.PositiveInfinity ) );
+		Assert.AreEqual( 0, ParkStatisticsHistory.FloatToInt( double.NegativeInfinity ) );
+		Assert.AreEqual( 0, ParkStatisticsHistory.FloatToInt( double.NaN ) );
+		Assert.AreEqual( 0, ParkStatisticsHistory.FloatToInt( 1e19 ), "from 2^63 up the 64-bit indefinite has a zero low dword" );
+	}
 }

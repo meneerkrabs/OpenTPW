@@ -206,8 +206,9 @@ public sealed partial class ParkHud
 			// [EXT:park-rename-layout] the name button's place in OpenTPW's entry price window and the rename dialog's layout are OpenTPW's; the original window and dialog resources (0x751798, 0x751928) are not decoded
 			// [EXT:online-coop-commands] a guest's name not back from the host yet is drawn as asked (C4b)
 			// [BIN:TPW-EXE:0x485d20 park name control] 0x4F3AF is a title text control (0x485D20 with the title colour) with no plate, so it is clickable title text, not a button
+			// [BIN:TPW-EXE:0x499060 park name hover] the handler turns the text white when the pointer enters (message 0x10001, 0x4990B6) and back to the title colour when it leaves (0x10002, 0x49909B through 0x492D20)
 			// [BIN:TPW-EXE:0x6691eb no click sound] the window hook 0x485780 plays cat_ui 0x1F on message 0x100, which only the button class sends up (0x6691EB, on a release inside); the text control's handler 0x499060 gets the click as message 0x10006 and 0x4990F0 opens the dialog without sending 0x100 or playing an event, so the name click is silent
-			var parkNameButton = screen.Add( new UiLabel { Id = "parkName", Text = () => DrawnParkName, Font = fonts => fonts.Title, Color = UiColors.Title, Shadow = true,
+			var parkNameButton = screen.Add( new UiLabel { Id = "parkName", Text = () => DrawnParkName, Font = fonts => fonts.Title, Color = UiColors.Title, HoverColor = UiColors.Text, Shadow = true,
 				Align = UiAlign.Center, Fit = true, Clicked = OpenParkRenameDialog, Bounds = Rect( 370, 180, 1663, 270 ), Anchor = UiAnchor.Center } );
 			adjustmentButtons.Add( (parkNameButton, () => level.ParkName != null) );
 			Label( "priceLabel", () => strings[UIStrings.TicketPrice], Rect( 370, 300, 1000, 380 ) );

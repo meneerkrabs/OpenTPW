@@ -35,7 +35,7 @@ public class AdvisorToolHelpTests
 		var recorded = new List<string>();
 		events = recorded;
 		typeof( ParkHud ).GetField( "host", Private )!.SetValue( hud, new HudHost
-		{
+		{ ParkInfoChoice = new(),
 			HelpPosted = message => recorded.Add( $"post {message}" ),
 			HelpWithdrawn = message => recorded.Add( $"withdraw {message}" ),
 			ModeChanged = () => recorded.Add( "mode" ),
@@ -397,7 +397,7 @@ public class AdvisorToolHelpTests
 		var recorded = new List<string>();
 		events = recorded;
 		SetField( hud, "host", new HudHost
-		{
+		{ ParkInfoChoice = new(),
 			HelpPosted = message => recorded.Add( $"post {message}" ),
 			HelpWithdrawn = message => recorded.Add( $"withdraw {message}" ),
 			ModeChanged = () => recorded.Add( "mode" )

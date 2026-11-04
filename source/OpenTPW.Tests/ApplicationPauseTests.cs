@@ -40,7 +40,7 @@ public class ApplicationPauseTests
 	}
 	[TestCleanup]
 	public void Cleanup() => restore();
-	private ParkHud CreateHud() => new( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus { Speed = GameSpeed.Fast }, new EmptyCatalog(), new HudHost() );
+	private ParkHud CreateHud() => new( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus { Speed = GameSpeed.Fast }, new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } );
 	private void Observe( bool focused, bool offscreen = false ) => hud.ObserveApplicationFocus( focused, offscreen );
 	private void LoseFocus() { Observe( true ); Observe( false ); }
 	private void Key( UiKeys key ) => hud.Update( context, UiInput.Key( key ), false, false, false );

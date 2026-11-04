@@ -98,7 +98,7 @@ public partial class CoopJoinSessionTests
 		var hud = (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
 		SetField( hud, "level", level );
 		SetField( hud, "strings", OriginalUiTests.FakeStrings() );
-		SetField( hud, "host", new HudHost() );
+		SetField( hud, "host", new HudHost { ParkInfoChoice = new() } );
 		SetField( hud, "<Stack>k__BackingField", new UiScreenStack() );
 		var screen = new UiScreen( "hud" ) { Modal = false };
 		SetField( hud, "hud", screen );

@@ -128,7 +128,7 @@ public class ParkFinaleTests
 		return new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ), new UiModels( name => throw new FileNotFoundException( name ) ) )
 		{ Canvas = new UiCanvas( 2048, 1536 ), Time = time, ResolveTexture = _ => null };
 	}
-	private static ParkHud Hud( Level level ) => new( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => level.Park!.Economy ), new EmptyCatalog(), new HudHost() );
+	private static ParkHud Hud( Level level ) => new( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => level.Park!.Economy ), new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } );
 
 	[TestMethod]
 	public void MissingDefinitionConsumesNoObjectsOrSeeds()

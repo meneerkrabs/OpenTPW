@@ -63,14 +63,15 @@ public class UiButtonTextStateTests
 	}
 
 	[TestMethod]
-	public void ACheckedButtonOnlyDiffersWhileThePointerIsOverItAndCheckedPressedIsTheHoverState()
+	public void ACheckedButtonOnlyDiffersWhileThePointerIsOverItAndNeverTakesThePressedState()
 	{
 		var context = Context();
 		var button = Button( true, () => true );
 		Expect( context, button, false, false, UiColors.ButtonText, 0, 0, "checked" );
 		Expect( context, button, true, false, UiColors.ButtonHoverText, 1, 1, "checked with the pointer" );
-		// 0x668820 tests the checked flag before the pressed one: state 3, not 4
-		Expect( context, button, true, true, UiColors.ButtonHoverText, 1, 1, "checked and pressed" );
+		// 0x668820's checked branch tests only the hover bit: pressed with the pointer over is state 3, and the pressed state 4 is never reached
+		Expect( context, button, true, true, UiColors.ButtonHoverText, 1, 1, "checked and pressed with the pointer" );
+		Expect( context, button, false, true, UiColors.ButtonText, 0, 0, "checked and pressed without the pointer is state 2" );
 	}
 
 	[TestMethod]
@@ -84,5 +85,23 @@ public class UiButtonTextStateTests
 		Expect( context, hovered, true, false, UiColors.ButtonHoverText, 1, 1, "hover" );
 		hovered.Enabled = false;
 		Expect( context, hovered, false, false, UiColors.ButtonHoverText, 1, 1, "disabled after hover keeps the hover state" );
+	}
+
+	[TestMethod]
+	public void AClickableLabelTakesItsHoverColourOnlyWhileThePointerIsOverIt()
+	{
+		// 0x499060: the park name control turns white on message 0x10001 and back to the title colour on 0x10002
+		var context = Context();
+		var label = new UiLabel { Text = () => "N", Color = UiColors.Title, HoverColor = UiColors.Text, Clicked = () => { }, Bounds = new UiRect( 400, 400, 400, 200 ) };
+		RgbaByte Colour( bool hover )
+		{
+			context.Batch.Clear();
+			label.Draw( context, hover, false );
+			return context.Batch.Draws.SelectMany( draw => draw.Vertices ).First().Color;
+		}
+		Assert.AreEqual( UiColors.Title, Colour( false ) );
+		Assert.AreEqual( UiColors.Text, Colour( true ) );
+		label.Clicked = null;
+		Assert.AreEqual( UiColors.Title, Colour( true ), "a label that cannot be clicked does not react" );
 	}
 }

@@ -45,7 +45,7 @@ public class PostcardShortcutReviewTests
 			Input.Keyboard = new Input.KeyboardInfo( new List<Key> { Key.ControlLeft, Key.P } );
 			var hud = VisitorWorldSelectionTests.Fixture( out _, out _ );
 			var calls = 0;
-			Set( hud, "host", new HudHost { OpenPostcard = stack => { calls++; stack.Push( new UiScreen( "sendPostcard" ) ); } } );
+			Set( hud, "host", new HudHost { ParkInfoChoice = new(), OpenPostcard = stack => { calls++; stack.Push( new UiScreen( "sendPostcard" ) ); } } );
 			if ( gate == "overlay" ) hud.Stack.Push( new UiScreen( "modal" ) );
 			Input.UpdateButtons();
 			hud.Update( Context(), UiInput.Idle( new( -1, -1 ) ), gate == "mouse", gate == "keyboard", gate == "text" );
@@ -87,7 +87,7 @@ public class PostcardShortcutReviewTests
 			var hud = VisitorWorldSelectionTests.Fixture( out var simulation, out var renderer );
 			var guest = new Guest( 8, 0 ) { State = GuestState.WalkingAround, DrawX = 5, DrawY = 5 };
 			Set( simulation, "guests", new List<Guest> { guest } );
-			Set( hud, "host", new HudHost { OpenPostcard = stack => stack.Push( new UiScreen( "sendPostcard" ) ) } );
+			Set( hud, "host", new HudHost { ParkInfoChoice = new(), OpenPostcard = stack => stack.Push( new UiScreen( "sendPostcard" ) ) } );
 			var mouse = new N.Vector2( 500, 400 );
 			Assert.AreSame( guest, renderer.PickVisitor( mouse, new N.Vector2( 1000 ), Camera.ViewMatrix, Camera.ProjMatrix ) );
 			using ( Input.InjectKeyDown( Key.ControlLeft, Key.P ) ) Input.UpdateButtons();

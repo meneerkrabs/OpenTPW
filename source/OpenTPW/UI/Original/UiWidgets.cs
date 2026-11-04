@@ -416,6 +416,8 @@ public sealed class UiLabel : UiElement
 	public RgbaByte Color { get; set; } = UiColors.Text;
 	/// <summary>When set, the text colour is read from here every frame instead of <see cref="Color"/>.</summary>
 	public Func<RgbaByte>? ColorSource { get; set; }
+	/// <summary>The colour while the pointer is over a clickable label (null: unchanged).</summary>
+	public RgbaByte? HoverColor { get; set; }
 	public UiAlign Align { get; set; } = UiAlign.Left;
 	public bool Wrap { get; set; }
 	/// <summary>
@@ -438,7 +440,7 @@ public sealed class UiLabel : UiElement
 		var rect = ScreenRect( context.Canvas );
 		var font = Font( context.Fonts );
 		var text = Text();
-		var color = ColorSource?.Invoke() ?? Color;
+		var color = focused && Clicked != null && HoverColor is { } hover ? hover : ColorSource?.Invoke() ?? Color;
 		if ( Group != null )
 		{
 			var (groupFont, scale) = context.ChooseUniform( Group, this );
@@ -709,14 +711,14 @@ public sealed class UiButton : UiElement
 			if ( Text != null )
 			{
 				// [BIN:TPW-EXE:0x668ad3 button text states] the state getter 0x668820 gives 1 disabled, 0 normal, 2 checked, 3 checked with the pointer, 4 pressed and 5 hover; the applier draws normal and checked with
-				// the colour +0x14C at (0, 0), pressed with +0x14C at (2, 1), hover and checked with the pointer (pressed or not) with +0x154 at (1, 1) and, for a disabled button, jumps to 0x668BB1 with flags 0: it keeps the last applied colour and offset (no grey). Only the header builder 0x486660 sets
+				// the colour +0x14C at (0, 0), pressed with +0x14C at (2, 1), hover and checked with the pointer with +0x154 at (1, 1) and, for a disabled button, jumps to 0x668BB1 with flags 0: it keeps the last applied colour and offset (no grey). Only the header builder 0x486660 sets
 				// them (0x668f5a, 0x668f7b); every other button keeps the constructor's +0x14C white, +0x154 black and the offsets +0x158 / +0x159 = 1, 1 (0x668952..0x6689AC)
 				var disabled = !Enabled || subdued;
 				if ( !disabled )
 				{
-					// 0x668820 tests the checked flag (+0x139) before the pressed one, so a checked button that is pressed is state 3 (hover colour at (1, 1))
+					// 0x668820's checked branch (+0x139) tests only the hover bit (+0x138 & 1), never pressed: a checked button is state 3 with the pointer (hover colour at (1, 1)), else state 2 (normal), even while pressed
 					var checkedState = Selected?.Invoke() == true;
-					textState = checkedState && (focused || pressed) ? (UiColors.ButtonHoverText, 1, 1)
+					textState = checkedState ? (focused ? (UiColors.ButtonHoverText, 1, 1) : (UiColors.ButtonText, 0, 0))
 						: pressed ? (UiColors.ButtonText, 2, 1)
 						: focused ? (UiColors.ButtonHoverText, 1, 1)
 						: (UiColors.ButtonText, 0, 0);
@@ -727,7 +729,7 @@ public sealed class UiButton : UiElement
 			}
 			return;
 		}
-		// [BIN:TPW-EXE:0x486660 no model-less text button] no PC screen draws a model-less text button (the original's list headers are the !cbut model, UiContext.DrawListHeader), so the purple_button plate below only serves OpenTPW's own screens, each under its approved label: [EXT:ONLINE-UI] and [EXT:own-window-sizes] (online screens), [EXT:mods-ui] (mods page), [EXT:SETUP] and [EXT:tpi-viewer] (game files page), [EXT:opentpw-page] (options page), [EXT:tpi-text-hud] (Theme Park Inc HUD), [EXT:load-chooser] (the load screen's load button), [EXT:speed-buttons] (the HUD speed buttons), [EXT:pools-waves] (the wave pool settings button), [EXT:theme-continue] and [EXT:save-extension-switch] (the choice dialog's buttons, UiDialogs), [EXT:overview-select-button] (go-to-attraction button) and [EXT:staff-employee-view] (staff employee view button)
+		// [BIN:TPW-EXE:0x486660 no model-less text button] no PC screen draws a model-less text button (the original's list headers are the !cbut model, UiContext.DrawListHeader), so the purple_button plate below only serves OpenTPW's own screens, each under its approved label: [EXT:ONLINE-UI] and [EXT:own-window-sizes] (the online screens' log in/out, online menu, visit, unpublish, listed, players, share and login-form buttons), [EXT:mods-ui] (mods page), [EXT:SETUP] and [EXT:tpi-viewer] (game files page), [EXT:opentpw-page] (options page), [EXT:tpi-text-hud] (Theme Park Inc HUD), [EXT:load-chooser] (the load screen's load button), [EXT:speed-buttons] (the HUD speed buttons), [EXT:pools-waves] (the wave pool settings button), [EXT:theme-continue] and [EXT:save-extension-switch] (the choice dialog's buttons, UiDialogs), [EXT:overview-select-button] (go-to-attraction button) and [EXT:staff-employee-view] (staff employee view button)
 		var art = context.ResolveTexture( "purple_button" );
 		var inner = PurpleLabelRect( rect, art != null );
 		if ( art != null )

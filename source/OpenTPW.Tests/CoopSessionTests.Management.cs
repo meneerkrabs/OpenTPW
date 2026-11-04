@@ -220,7 +220,7 @@ public partial class CoopSessionTests
 	{
 		var (host, guest, _, _) = Shared();
 		var doors = new List<bool>();
-		var view = ViewOf( guest, hudHost: new HudHost { ParkDoorPressed = doors.Add } );
+		var view = ViewOf( guest, hudHost: new HudHost { ParkInfoChoice = new(), ParkDoorPressed = doors.Add } );
 		Rounds( 20, host, guest );
 		GiveRights( host, guest, view, CoopRights.Finance );
 		var open = guest.Economy.IsParkOpen;

@@ -89,7 +89,7 @@ public sealed partial class ParkHud
 		visible.Add( series );
 	}
 
-	/// <summary>Closed months plus the live current month, restricted to the selected period (the entry price window's month figures; the graph itself reads the closed months only, <see cref="TryFinanceSample"/>).</summary>
+	/// <summary>Closed months plus the live current month, restricted to the selected period (the training budget window's mini balance, TrainingBalanceText; the graph itself reads the closed months only, <see cref="TryFinanceSample"/>).</summary>
 	public IReadOnlyList<LedgerMonth> FinanceMonths()
 	{
 		var economy = FinanceEconomy;
@@ -179,7 +179,7 @@ public sealed partial class ParkHud
 	/// <summary>
 	/// The word the maximum scanner reads when no sample was above 0: the ring slot after the head. A wrapped ring's is its oldest month, and with the head at slot 143 it is
 	/// the head word itself; an unwrapped ring's is a slot not yet written: a new park's is uninitialised heap (the ring is malloc'd, 0x67ACC0 at 0x5188C4, and its constructor 0x51AE30 does not clear it), read as 0 here
-	/// ([EXT:original-undefined-reads]), and a loaded save's the raw saved word (loader 0x4C5D70, loop at 0x4C6307), which OpenTPW's own finance history, built from the ledger, does not carry.
+	/// ([EXT:original-undefined-reads]), and a loaded save's the raw saved word (loader 0x4C5D70, loop at 0x4C6307), which OpenTPW's own finance history, built from the ledger, does not carry (an original save's finance rings are not imported, SAVE-010).
 	/// </summary>
 	// [BIN:TPW-EXE:0x480263 max scanner quirk] 0x4801D0 leaves its index at -1 when nothing is above 0 and then still reads slot head + 1 (0x480273, 0x480287) and keeps it if it is above the maximum; the minimum scanner guards this case (0x480413)
 	internal static long FinanceScaleSlotAfterHead( ParkEconomy economy, FinanceSeries series )

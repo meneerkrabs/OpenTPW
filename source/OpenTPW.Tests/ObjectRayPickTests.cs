@@ -395,7 +395,7 @@ public class ObjectRayPickTests
 		var shape = new Box( corner + new NVector3( 0.2f, 0.2f, 0 ), corner + new NVector3( 1.8f, 1.8f, 20 ) );
 		var placed = tower;
 		level.PickShapeOf = item => item == placed ? shape : null;
-		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), status ?? new NoEconomyStatus(), catalog ? new TowerCatalog( entry ) : new EmptyCatalog(), new HudHost() );
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), status ?? new NoEconomyStatus(), catalog ? new TowerCatalog( entry ) : new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } );
 		// the camera: south of the tower and above it, looking at the tower's top
 		var cell = new NVector3( ParkPlacement.MinimumCoordinate + 16.5f * ObjectPlacement.CellSize, ParkPlacement.MinimumCoordinate + 16.5f * ObjectPlacement.CellSize, 0 );
 		Camera.Mode = new ParkCameraMode();

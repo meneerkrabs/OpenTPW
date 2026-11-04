@@ -204,7 +204,7 @@ public class OriginalCoasterSaveTests
 
 	/// <summary>A 3×3 synthetic park (Belly Bounce 1100 at (1, 1), the gates 1601 at (0, 0)) with the given coaster body.</summary>
 	private static OriginalParkImport Park( byte[]? coasters = null, bool matchingAttractionId = true, bool duplicateMatches = false,
-		Func<int, SaveCoasterTrainLayout?>? coasterTrains = null, uint rideMeshInstance = 110, int size = 3, bool readableWorld = false )
+		Func<int, SaveCoasterTrainLayout?>? coasterTrains = null, uint rideMeshInstance = 110, int size = 3, bool readableWorld = false, bool offsetRide = false )
 	{
 		var map = OriginalParkImportTests.CreateMap( size, size, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
@@ -226,6 +226,15 @@ public class OriginalCoasterSaveTests
 			things[ride] = (12, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields
 			{
 				PositionX = 384, PositionY = 384, InfoId = (ushort)(matchingAttractionId ? 1100 : 1101), MeshInstance = rideMeshInstance, Price = 30, Level = 0, Repair = 80, LifeGauge = 90, IngredientAmount = 80, Quality = 100, Chance = 30
+			} ));
+		}
+		if ( offsetRide )
+		{
+			// the ride's own thing stands one row below its record's anchor (a type with Info.MapOffsetY 1): its position is the thing cell, its mTopLeft the anchor (1, 1)
+			var ride = things.FindIndex( thing => thing.Item1 == 12 );
+			things[ride] = (12, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields
+			{
+				PositionX = 384, PositionY = 640, TopLeft = (1 << 7) + 1 + 1, InfoId = 1100, Price = 30, Level = 0, Repair = 80, LifeGauge = 90, IngredientAmount = 80, Quality = 100, Chance = 30
 			} ));
 		}
 		if ( duplicateMatches )
@@ -273,6 +282,18 @@ public class OriginalCoasterSaveTests
 		Assert.AreEqual( 12, park.CoasterSections[0].Attractions.Single().Id );
 		Assert.AreEqual( 0, park.CoasterSections[1].Objects.Count );
 		Assert.AreEqual( 0, park.CoasterSections[1].Attractions.Count );
+	}
+
+	[TestMethod]
+	public void ASectionOnTheAnchorCellJoinsTheThingThatStandsOneRowOffIt()
+	{
+		var body = Header( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), sections: 1 ).U32( 0 );
+		Section( body, cellX: 1, cellY: 1 );
+		var park = Park( body.ToArray(), offsetRide: true );
+		var section = park.CoasterSections.Single();
+		Assert.AreEqual( 1100, section.Objects.Single().InfoId );
+		Assert.AreEqual( 12, section.Attractions.Single().Id, "the thing is keyed by its mTopLeft, the anchor the record and the section hold" );
+		Assert.AreEqual( 2, section.Attractions.Single().CellY, "the thing's own cell is one row below the anchor" );
 	}
 
 	[TestMethod]

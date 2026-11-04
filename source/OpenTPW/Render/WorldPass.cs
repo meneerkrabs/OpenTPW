@@ -10,8 +10,11 @@ namespace OpenTPW;
 // [BIN:TPW-EXE:0x582AD0 deferred records] 0x582AD0, the second half of 0x582170, collects the records 0x565590 kept, sorts them with 0x5829E0 on +0x30 (the depth sum) over +0x20 (the vertex count), largest first, and draws them in that order
 internal static class WorldPass
 {
-	/// <summary>One kept record: the entity and the model to draw, the model matrix of the entity at the time, the record's depth and the order it was handed in.</summary>
-	internal readonly record struct Record( ModelEntity Entity, Model Model, Matrix4x4 Matrix, float Depth, int Sequence );
+	/// <summary>
+	/// One kept record: the entity and the model to draw, the model matrix of the entity at the time, the record's depth and the order it was handed in; a particle quad (<see cref="SubmitParticle"/>) names its renderer and
+	/// the quad of its last frame instead.
+	/// </summary>
+	internal readonly record struct Record( ModelEntity? Entity, Model? Model, Matrix4x4 Matrix, float Depth, int Sequence, ParticleRenderer? Particles = null, int Quad = 0 );
 
 	private static readonly List<Record> records = new();
 	private static readonly Comparison<Record> byDepth = ( left, right ) => Compare( left.Depth, left.Sequence, right.Depth, right.Sequence );
@@ -49,6 +52,17 @@ internal static class WorldPass
 		return true;
 	}
 
+	/// <summary>
+	/// Keeps one particle quad of <paramref name="particles"/> for the pass, with the mean depth of its corners as its key: the original keeps every particle batch whose state has neither bit 0x1000 nor 0x2000 (0x556, 0x200552,
+	/// 0x200522) in the same list as the translucent model faces (0x565590) and draws them by the same sort (0x582AD0).
+	/// </summary>
+	// [BIN:TPW-EXE:0x57C620 particle batches] each particle is submitted to 0x565F90 as a batch of its own (one record of two triangles), whose state decides between the immediate draw and this list
+	internal static void SubmitParticle( ParticleRenderer particles, int quad, float depth )
+	{
+		if ( Active )
+			records.Add( new Record( null, null, Matrix4x4.Identity, depth, records.Count, particles, quad ) );
+	}
+
 	/// <summary>Keeps a record with a given depth (tests).</summary>
 	internal static void Submit( ModelEntity entity, Model model, in Matrix4x4 matrix, float depth )
 	{
@@ -77,12 +91,37 @@ internal static class WorldPass
 			prepared.Clear();
 			foreach ( var record in records )
 			{
-				record.Model.OrderTriangles( record.Matrix, record.Matrix * viewProjection, passes );
-				if ( prepared.Add( record.Model ) )
-					record.Model.FlushUploads( Render.CommandList );
+				if ( record.Model is not { } model )
+					continue;
+				model.OrderTriangles( record.Matrix, record.Matrix * viewProjection, passes );
+				if ( prepared.Add( model ) )
+					model.FlushUploads( Render.CommandList );
 			}
+			// consecutive particle quads of one renderer and kind that are neighbours in its vertex buffer are drawn at once
+			ParticleRenderer? run = null;
+			int runKind = 0, runFirst = 0, runCount = 0;
 			foreach ( var record in records )
-				record.Entity.DrawModel( record.Model, record.Matrix );
+			{
+				if ( record.Particles is { } particles )
+				{
+					var kind = particles.QuadKind( record.Quad );
+					if ( run == particles && kind == runKind && record.Quad == runFirst + runCount )
+					{
+						runCount++;
+						continue;
+					}
+					run?.DrawQuads( runKind, runFirst, runCount );
+					run = particles;
+					runKind = kind;
+					runFirst = record.Quad;
+					runCount = 1;
+					continue;
+				}
+				run?.DrawQuads( runKind, runFirst, runCount );
+				run = null;
+				record.Entity!.DrawModel( record.Model!, record.Matrix );
+			}
+			run?.DrawQuads( runKind, runFirst, runCount );
 		}
 		finally
 		{

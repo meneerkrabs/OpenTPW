@@ -399,6 +399,26 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Lobby!.GateClips.Any( clip => clip == 2 ), "a cancelled enter closes the opened gate with M2" );
 		} );
 		Wait( "lobby fade clears", 60 );
+		// [BIN:TPW-EXE:0x5e41c0 Escape] Escape in the enter sequence ends it before the park starts: the opened gate closes with M2 and the menu is back
+		Do( "lobby enter again", () =>
+		{
+			flow.BeginLobbyEnter( flow.Menu!.Selected.Level );
+			Require( flow.LobbyEntering, "the enter sequence starts again" );
+		} );
+		var escapeFrames = 0;
+		steps.Enqueue( ("lobby enter turns again", () =>
+		{
+			Require( ++escapeFrames < 2000, "the second enter's turn finishes" );
+			return ((LobbyCameraMode)Camera.Mode).Phase == LobbyCameraMode.EnterPhase.Zoom;
+		}) );
+		Do( "lobby enter escape", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+		Wait( "lobby enter escape applies", 2 );
+		Do( "lobby enter escaped", () =>
+		{
+			Require( !flow.LobbyEntering, "Escape in the enter sequence resumes the lobby" );
+			Require( flow.Lobby!.GateClips.Any( clip => clip == 2 ), "and closes the opened gate with M2" );
+		} );
+		Wait( "lobby fade clears again", 60 );
 		// [BIN:TPW-EXE:0x4b8fd0 enter park] the enter-park routine starts the screen-space particle effect 0x62 over the key panel; the smoke starts it directly (the park start would tear the lobby down)
 		Do( "enter-park effect", () => flow.StartEnterParkEffect() );
 		var effectFrames = 0;
@@ -463,6 +483,22 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				} );
 			} );
 			Wait( "globe pins render", 3 );
+			// [BIN:TPW-EXE:0x5dd5e4 back from the globe] closing the globe activates the islands screen again, which builds the islands and their flyers afresh: the lobby scene is a new one
+			LobbyScene? lobbyBeforeGlobe = null;
+			Do( "close the globe", () =>
+			{
+				lobbyBeforeGlobe = flow.Lobby;
+				flow.Menu!.Stack.Pop();
+			} );
+			Wait( "globe closes", 3 );
+			Do( "lobby after the globe", () =>
+			{
+				Require( flow.Lobby is { Visible: true } && flow.Globe is { Visible: false }, "closing the globe shows the lobby again" );
+				Require( !ReferenceEquals( lobbyBeforeGlobe, flow.Lobby ), "and the islands screen's activation builds the lobby scene afresh" );
+				Click( flow.Menu!.Main, "worldView" );
+			} );
+			Wait( "online world opens again", 3 );
+			Do( "online world again", () => Require( flow.Menu!.Stack.Top?.Name == "onlineWorld" && flow.Globe is { Visible: true }, "Go Online shows the globe again" ) );
 			Do( "globe pins", () =>
 			{
 				var london = Camera.Position.GetSystemVector3();

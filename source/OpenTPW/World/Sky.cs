@@ -44,6 +44,10 @@ public sealed class Sky : IDisposable
 	/// <summary>The cloud layers the engine can draw.</summary>
 	internal const int MaximumLayers = 4;
 
+	/// <summary>The alpha test of every sky draw: a pixel whose modulated alpha is below 0x10 of 255 is dropped.</summary>
+	// [BIN:TPW-EXE:0x586448 sky state] the cloud layers' state is 0x1556 | 0x400800 (0x401D56 with render flag bit 8 clear, 0x401A56 with it set: the single opaque layer of the hidden debug key 0x40C830), the cylinder's the constant 0x1D56 (0x586AAC) and a sky object's its texture's 0x556 | 0x400000 (flags 0x30200, 0x585137) | 0x1800 (0x5861E5): all with ALPHATESTENABLE (0x400) at the reference 0x10 (no 0x200), blending, depth writes off (0x800) and drawn at once (0x1000)
+	internal const float AlphaReference = 0x10 / 255f;
+
 	private const float VelocityScale = 25f;
 
 	private readonly Material<ObjectUniformBuffer> cloudMaterial;
@@ -367,6 +371,7 @@ public sealed class Sky : IDisposable
 	/// in <c>sky_cyl.tga</c>, the first half circle the lower and the second the upper.
 	/// </summary>
 	// [BIN:TPW-EXE:0x5863C0 cylinder coordinates] the first run takes v 0.99, 0.84, 0.67, 0.51 and the second 0.49, 0.34, 0.17, 0.01 per ring (0x3F7D70A4, 0.34 + 0.5, 0.17 + 0.5, 0.01 + 0.5 and 0x3EFAE148, 0.34, 0.17, 0.01); the flag 0x2000000 swaps in 0.49, 0.01, 0.19 for the last three rings
+	// [APPROX:UI-107] the globe's variant of the sky (render flag 0x2000000, set by the globe 0x5DD072) is not drawn: the cylinder's other V rows (0x586B03 to 0x586C3C) and the layer grid mirrored below the horizon (0x586810 to 0x586A8A, its index list at [sky+0x21FC] built at 0x585B99); the globe shows the lobby's sky
 	internal static SVector2 CylinderTexCoord( int column, int ring )
 	{
 		var u = (column < 9 ? column : column - 9) * 0.125f;
@@ -636,7 +641,8 @@ public sealed class Sky : IDisposable
 			g_vCameraPos = SVector3.Zero,
 			// [EXT:evening] the sky's tint at dusk and night rides in the light colour particle.shader never used (zero: no tint)
 			g_vLightColor = tint ?? SVector3.Zero,
-			g_flTime = Time.Now
+			g_flTime = Time.Now,
+			AlphaReference = AlphaReference
 		};
 		cloudMaterial.Set( "ObjectUniformBuffer", uniforms );
 		cylinderMaterial.Set( "ObjectUniformBuffer", uniforms );

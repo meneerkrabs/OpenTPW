@@ -12,7 +12,9 @@ export function mismatchesOf(observations) {
 	for (const name of ['red0', 'redF0', 'nearZeroThenFar', 'nearF0ThenFar', 'nearThenFar', 'farThenNear']) check(same(name, 'redFF'), `${name}: expected opaque red`);
 	check(rgb(byName.redEF).every(([r, g, b], i) => r > 0 && r < rgb(byName.redFF)[i][0] - 2 && g <= 2 && b <= 2), 'alphaEF must remain fractional');
 	for (const name of ['noWriteZeroThenFar', 'noWriteNearThenFar', 'interleaved', 'screenThenScreen']) check(same(name, 'blueFF'), `${name}: expected blue`);
-	for (const name of ['additive0', 'oneOne0', 'screen0']) check(black(name), `${name}: existing transparent control changed`);
-	check(same('screenFF', 'redFF'), 'Screen control is not visible');
+	// an alpha-0 particle fails the blended states' alpha test (0x10): additive ones are invisible
+	for (const name of ['additive0', 'oneOne0']) check(black(name), `${name}: existing transparent control changed`);
+	// 0x57C6FA: an untextured particle of alpha 0 or >= 0xF0 is the opaque state 0x1256, screen-space ones too
+	for (const name of ['screen0', 'screenFF']) check(same(name, 'redFF'), `${name}: expected opaque red`);
 	return mismatches;
 }

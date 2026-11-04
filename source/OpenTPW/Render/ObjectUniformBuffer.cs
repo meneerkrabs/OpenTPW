@@ -63,6 +63,16 @@ struct ObjectUniformBuffer
 	}
 
 	/// <summary>
+	/// The alpha test of a draw's state word in <c>particle.shader</c> (<c>g_flAlphaReference</c>, the padding after the sun position the particle shader never read as a position): a pixel whose modulated alpha is below it is
+	/// dropped; 0 means no test, which is what the zeroed padding always meant. The reference is the state word's 0x10 or 0xF0 of 255 (<see cref="OriginalStateWord.AlphaReference"/>).
+	/// </summary>
+	public float AlphaReference
+	{
+		readonly get => _padding0;
+		set => _padding0 = value;
+	}
+
+	/// <summary>
 	/// [EXT:evening] The tint the evening extension gives a pre-rendered sprite at dusk and night, through the light colour the sprite shader never used (all zero: no tint). At full day the buffer
 	/// is returned as it was.
 	/// </summary>

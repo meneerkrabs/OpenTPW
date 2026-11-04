@@ -134,6 +134,21 @@ internal sealed partial class GameFlow : IDisposable
 			Lobby.PlayGate( enterIsland, open: false );
 	}
 
+	/// <summary>
+	/// The player's Escape in the enter sequence: the queued park is dropped (the original starts it only when the zoom is below radius 8) and the sequence is cancelled as when the park did not start
+	/// (<see cref="CancelLobbyEnter"/>).
+	/// </summary>
+	internal void AbandonLobbyEnter()
+	{
+		if ( !LobbyEntering )
+			return;
+		pending = null;
+		pendingLevel = null;
+		prepareBuyWindowArt = false;
+		buyWindowPreparation = null;
+		CancelLobbyEnter();
+	}
+
 	/// <summary>Queues a transition into <paramref name="level"/>; it waits until <see cref="LevelDataReady"/> says the level's files are there.</summary>
 	public void QueueLevel( string level, Action transition, bool prepareBuyWindow = false )
 	{
@@ -757,6 +772,13 @@ internal sealed partial class GameFlow : IDisposable
 		UpdateLobbyAdvisor();
 		using ( FrameMarks.Measure( "lobby.codecWarmup" ) )
 			PumpLobbyCodecWarmup();
+		// [BIN:TPW-EXE:0x5e41c0 Escape] the screen manager sends Escape (message 0x1000B, key 0x1B) to every active screen's vtable +0x18, the islands screens' 0x5e1890 and 0x5e2360 (the base 0x5e1350): in the enter sequence (sub-state 1 or 2 of 0x5e0470) they put the sub-state back to 0, close an opened gate with the clip M2 (0x5d83f0, sub-state 2) and show the menu again (0x4b8ea0, 0x4b90f0), so Escape ends the sequence before the park starts
+		if ( LobbyEntering && input.Has( UiKeys.Back ) )
+		{
+			AbandonLobbyEnter();
+			// the handler answers 1: the key is taken and does not open the lobby menu
+			input = input with { Pressed = input.Pressed & ~UiKeys.Back };
+		}
 		if ( !LobbyEntering )
 			Menu?.Stack.Update( Context, input );
 		foreach ( var entity in Entity.All.ToArray() )
@@ -926,6 +948,27 @@ internal sealed partial class GameFlow : IDisposable
 	private string? cityKey;
 
 	/// <summary>
+	/// Makes the lobby scene anew, as the islands screen's activation does after the globe: the island models and their clips, the flying meshes and the sign boards start from the beginning.
+	/// A scene that cannot be built leaves the old one running.
+	/// </summary>
+	private void RebuildLobbyScene()
+	{
+		if ( Lobby == null || lobbyDefinition == null )
+			return;
+		try
+		{
+			var rebuilt = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw, flyerPercent: LobbyObjectsPercent );
+			var old = Lobby;
+			Lobby = rebuilt;
+			old.Delete();
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+		{
+			Log.Warning( $"The lobby scene could not be rebuilt after the globe: {exception.Message}" );
+		}
+	}
+
+	/// <summary>
 	/// The 3D background follows the topmost online screen in the lobby: the online globe for the Online World, the
 	/// city's park islands for a city lobby (docs/ONLINE.md), else the own lobby with its camera.
 	/// </summary>
@@ -964,6 +1007,9 @@ internal sealed partial class GameFlow : IDisposable
 		{
 			if ( wanted == Backdrop.Lobby && Lobby != null && Menu != null )
 			{
+				// [BIN:TPW-EXE:0x5dd5e4 back from the globe] the globe's deactivate is followed by the islands screen's activate (0x5e23f0, 0x5e18d0), which builds the islands, their clips and the flyer spawners afresh (0x5e3210)
+				if ( backdrop == Backdrop.Globe )
+					RebuildLobbyScene();
 				LobbyCameraMode.Target = Lobby.Target( Menu.Selected );
 				cityScene?.Delete();
 				cityScene = null;
@@ -1000,12 +1046,8 @@ internal sealed partial class GameFlow : IDisposable
 		lobbyEffects.EasedSky = CompatibilityRuntime.RenderQuality.SkyLayers > 1;
 		if ( backdrop == Backdrop.Globe )
 		{
-			// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby update has no globe branch (the main state stays 2, 0x54e6c7): its flying-mesh system and island clips keep running while the globe is up, so the scene steps as in the lobby
-			// [APPROX:UI-018] the islands component (0x5e0470) probably runs too, with its lightning, thunder and nearest-island sky target, before the globe component sets the sky target and no rain each frame; whether it does (the registration order of the globe component against it) and whether the lobby scene is drawn behind the globe are not traced, so only the flyers and clips step and the effects keep the globe's own easing
-			for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
-				Lobby.StepFrame( ReferenceFrameClock.FrameSeconds );
-			Lobby.Animate( Time.Delta );
-			Lobby.StepSigns( Menu?.Selected, paused: false );
+			// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby's frame walks the components of its list and calls each one's update (vtable +8): the scene (camera, sky easing, fade; 0x5d8cb0), the flyer spawner list, the screen manager (0x5e40e0), which updates only the active screens
+			// [BIN:TPW-EXE:0x5e23c0 globe entry] the globe screen is activated through 0x5e23c0, which first deactivates the islands screen (vtable +0x20: 0x5e2550, 0x5e1bd0 for the other): that frees the island, flyer and clip objects (0x5e25e2 to 0x5e25f3, 0x5d8a10), and only the active screens update (0x5e40e0), so while the globe is up the islands component (0x5e0470: lightning, thunder, rain, the nearest-island sky target) does not run, no flyer or island clip steps (there are none) and no sign is composed; the scene keeps easing the sky (0x5d96c0), which the globe's own sky target (0x5dcfe0) steers
 			lobbyEffects.StepGlobe( Time.Delta );
 			return;
 		}
@@ -1149,11 +1191,12 @@ internal sealed partial class GameFlow : IDisposable
 			RenderFog.Disable();
 		if ( Level != null )
 		{
-			// The park's backdrop: the level's fog colour (what the original's viewport clear and the sky's haze blend with), then the sky over it.
-			// [BIN:TPW-EXE:0x4080e0 fog colour] the level load copies ThemeEngine.FogColour into the fog colour [0x8bd47c]; [BIN:TPW-EXE:0x5737aa clear] the viewport clear uses it when render flags & 0x4002000, else black
-			// [APPROX:UI-107] the clear is always the fog colour, since the park's render flags (0x4002000 bits of [0x8bcbc8]) are not traced; the sky is Level.DrawSky (World/Sky.cs)
+			// The park's backdrop: the viewport clear, then the sky over it (Level.DrawSky, World/Sky.cs).
+			// [BIN:TPW-EXE:0x4080e0 fog colour] the level load copies ThemeEngine.FogColour into the fog colour [0x8bd47c]; [BIN:TPW-EXE:0x5737aa clear] the viewport clear uses it only when the render flags [0x8bcbc8] have bit 0x2000 (the fog, which the first-person views toggle in, 0x54fad7) or 0x4000000 (the lobby's), else black: the park overview clears black (RenderFog.ClearColour)
+			// the Theme Park Inc executable has its own clear colour word for the no-fog case ([0xBE20BC], copied at 0x428915 from a settings block not traced here), so its parks keep the fog colour
 			backgroundBatch.Clear();
-			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.WorldBackdropColour );
+			var clearColour = GameEditions.IsThemeParkInc ? Level.WorldBackdropColour : RenderFog.ClearColour( RenderFog.Enabled, lobbyFlag: false, Level.WorldBackdropColour );
+			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), clearColour );
 			using ( FrameMarks.Measure( "draw.backdrop" ) )
 				backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
 			using ( FrameMarks.Measure( "draw.sky" ) )
@@ -1168,7 +1211,8 @@ internal sealed partial class GameFlow : IDisposable
 			// The lobby's backdrop. The original clears the screen to the lobby's fog colour (LobbyEffects.ClearColour) and tints only its
 			// cloud layer with the island's eased colour (LobbyEffects.Sky); until that layer is drawn, the backdrop shows the cloud colour flat.
 			// [BIN:TPW-EXE:0x5d8b50 lobby sky] the lobby loads the engine sky (0x8c1828) from "Data\Levels\fantasy" (0x5852b0: sky.tga, sky_cyl.tga) and its draw (0x5863c0) colours the clouds from the 16 x 16 grid at +0xf60 that 0x5d96c0 fills with one colour each frame (the eased island colour, else the fog colour); the world pass is cleared to the fog colour
-			// [APPROX:UI-018] the lobby has no fog (the original clears bit 0x2000 of [0x8BCBC8] on entering it, 0x5D8BF9), and the scene's sky flags (0x5863c0 is gated on bit 0x10 of the scene flags, 0x576a00) are taken as set, as the video's clouds show
+			// [BIN:TPW-EXE:0x5d8bf9 lobby fog] the lobby has no fog (it clears bit 0x2000 of [0x8BCBC8] on entering, 0x5D8BF9, and sets 0x4000000, whose clear is the fog colour, RenderFog.ClearColour)
+			// [BIN:TPW-EXE:0x576c6d sky gate] the scene pass draws the sky when the view's flags have bit 0x10 (0x576C6D to 0x576C78, before the terrain 0x56F670 and the particle pass 0x57C620); the one view the scene registers (0x576310, from 0x56E76C) has the flags 0x1F31, so the sky is drawn in every frame of the lobby, the globe and the parks
 			backgroundBatch.Clear();
 			var sky = lobbyEffects.Sky;
 			// [EXT:tpi-front-end-phase1] the Theme Park Inc Personnel File stands on a flat dark backdrop; the original's 3D intro world (wIntro) is not drawn

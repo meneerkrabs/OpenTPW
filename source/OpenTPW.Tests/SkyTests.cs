@@ -11,6 +11,21 @@ namespace OpenTPW.Tests;
 public class SkyTests
 {
 	[TestMethod]
+	public void EverySkyDrawTestsItsAlphaAtTheStateWordsReferenceOf0x10()
+	{
+		// [BIN:TPW-EXE:0x586448 sky state] 0x401D56 (clouds), 0x1D56 (cylinder) and 0x401D56 (objects): ALPHATESTENABLE 0x400, no 0x200, so the reference is 0x10 of 255
+		Assert.AreEqual( 0x10 / 255f, Sky.AlphaReference );
+		foreach ( var state in new[] { 0x401D56u, 0x1D56u } )
+		{
+			Assert.AreEqual( Sky.AlphaReference, ParticleState.AlphaReferenceOf( state ), 1e-6f );
+			Assert.IsFalse( ParticleState.WritesDepth( state ), "the sky writes no depth (0x800)" );
+			Assert.IsTrue( ParticleState.DrawsImmediately( state ), "and is drawn when it is submitted (0x1000)" );
+			Assert.AreEqual( ParticleState.Blend.Alpha, ParticleState.BlendOf( state ) );
+		}
+		Assert.AreEqual( ParticleState.Blend.Opaque, ParticleState.BlendOf( 0x401A56u ), "the single opaque layer of the debug key (render flag bit 8) has no blend" );
+	}
+
+	[TestMethod]
 	public void CloudGridHangsFromTheCentreHeightAndSagsAtAFifthPerUnit()
 	{
 		var centre = Sky.CloudPosition( 7, 7 );

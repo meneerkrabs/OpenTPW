@@ -116,7 +116,7 @@ The renderer's mask `[[0x879AB0]+0xC]` is 0x3000 (0x5667D0, 0x56682D); 0x567270 
 texture, and draws every face whose state has bit 0x1000 or 0x2000 at once; every other face reaches 0x565590, which keeps it, sorts its triangles by the sum of their three vertex depths, largest first
 (0x565490; the software mode's integer twin is 0x5653D0), and returns without drawing. 0x582AD0, the second half of 0x582170, then draws those records after all of the above, sorted
 by 0x5829E0 on the record's average vertex depth (+0x30 over the vertex count at +0x20), largest first. The Direct3D renderer is mode 1 of `DAT_008BD524` (0x44DD50); the reverse sort 0x5828F0 runs only when
-`[0x8BCBC8] & 0xC` is 0xC and bit 0x20000000 is set, and no writer of bits 0x4 and 0x8 was found among the option and device-setup functions that were read (0x44D8F0, 0x44DD50, 0x44DE20, 0x566840, 0x5673D0).
+`[0x8BCBC8] & 0xC` is 0xC and bit 0x20000000 is set, and the only writer of bits 0x4 and 0x8 is the bound command 0x40C830 (key table entry 0x748324: key 0x74, modifier word 0xC; it takes none, both, or 0x4 alone in turn): a hidden debug key, so the reverse sort does not run in a normal game.
 
 OpenTPW ports the pass in `Model`, so every consumer of `test.shader` gets it (terrain meshes, the heightfield, paths, placed objects including the harbour's glass roofs, coaster and track pieces, the tour, pool parts and the lobby scene).
 The model classifies its texture slots from the `.wct` header (`TextureFile.AlphaType`, read where the loader 0x564C00 reads it: an alpha plane exists only at 32 bits per pixel, so the one 13/01/18 member, bumper.wad
@@ -126,7 +126,7 @@ other entities, and the lobby scene after its layers) and drawn farthest first b
 sorted world list (`Level.SplitLate`). `test.shader` tests translucent faces at 0x10/255 (vertex bit 0x20000000, `WorldTranslucency.AlphaTestLowFlag`), cut-out faces at 0xF0/255 (bit 0x10000000, `CutoutFlag`, state
 0x2756) and every other face at the engine's 0.1. Cut-out textures (236 files, alpha byte 0 with an alpha plane) now decode their plane. Not covered: textures that are not `.wct` (Theme Park Inc art) and bonus-content
 textures (all opaque here).
-The deferred particle and weather batches (state 0x556 and 0x200552, which the original sorts into the same list as the world) are PTCL-905's business: they draw after the whole sorted world list.
+The deferred particle batches (state 0x556, 0x200552 and 0x200522, which the original sorts into the same list as the world) join the same list through `WorldPass.SubmitParticle` (PTCL-905, docs/PARTICLES.md "Drawing"); the weather's batches (0x200D52, 0x556) still draw after the whole sorted world list.
 The late group also holds the swimmers' renderer (`GuestRenderer.DrawsAfterWater`), behind the pool water in the snapshot order, because the water writes no depth and its blend would tint the sprites ([POOLS.md](POOLS.md#rendering)).
 
 *Cost of the pass.* Every record of a frame is ordered and uploaded before the pass draws its first one (`WorldPass.Flush`: an upload between two draws ends the render pass on Metal), and a model drawn at several places (a track

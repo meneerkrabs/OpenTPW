@@ -39,6 +39,14 @@ internal static class RenderFog
 	/// <summary>The front end's fog colour (the lobby clear colour), which a scene without a level fades into.</summary>
 	public static RgbaByte LobbyColour { get; } = new( LobbyEffects.ClearColour.R, LobbyEffects.ClearColour.G, LobbyEffects.ClearColour.B, 255 );
 
+	/// <summary>
+	/// The colour the viewport clear of a frame uses: the fog colour [0x8BD47C] when the render flags [0x8BCBC8] have bit 0x2000 (the park's first-person views, the front-end screens that fog) or 0x4000000 (the lobby), else black.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5737AA viewport clear] the scene's clear (0x573740, the viewport's Clear2 at vtable +0x50) pushes the colour (flags & 0x4002000 ? [0x8BD47C] : 0): neg, sbb and and make a mask of the test, so the park's overview, which has no fog, clears black
+	// [BIN:TPW-EXE:0x5D8BEA lobby flag] the lobby's init (0x5D8B50) sets bit 0x4000000 of [0x8BCBC8] (and clears 0x10000 and 0x2000) and its exit restores the saved word (0x5D8D0D, 0x5D8D19): bit 0x4000000 is the lobby's, so its clear stays the fog colour 0xFF44DDFF
+	// [BIN:TPW-EXE:0x5DD072 globe flag] the globe sets bit 0x2000000 (and clears it on leaving, 0x5DD2E2): that bit is not in the clear's mask, but the lobby's 0x4000000 is still set under it
+	public static RgbaByte ClearColour( bool fogFlag, bool lobbyFlag, RgbaByte fogColour ) => fogFlag || lobbyFlag ? fogColour : new RgbaByte( 0, 0, 0, 255 );
+
 	/// <summary>The colour the world pass draws its fog in; the game flow sets it to the level's fog colour (or the lobby's) before each world pass.</summary>
 	public static SVector3 WorldColour { get; set; } = ColourOf( LobbyColour );
 

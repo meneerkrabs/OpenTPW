@@ -65,6 +65,7 @@ public sealed class UiModel
 	public IReadOnlyList<UiModelFrame> Frames { get; }
 	/// <summary>The control states: the nodes down the first-child chain from the root in order, a node without a drawable mesh as null (<see cref="TryGetState"/>).</summary>
 	public IReadOnlyList<UiModelFrame?> States { get; }
+	private readonly IReadOnlyList<UiModelFrame> builtFrames;
 	/// <summary>Root translation in canvas pixels (x right, y down): the authored on-screen centre.</summary>
 	public NVector2 AuthoredCenter { get; }
 	/// <summary>True when the root sits at the origin, i.e. the code positions the model.</summary>
@@ -99,7 +100,7 @@ public sealed class UiModel
 		}
 		if ( frames.Count == 0 )
 			throw new InvalidDataException( $"UI model {name} has no drawable mesh." );
-		Frames = frames;
+		Frames = builtFrames = frames;
 		States = states;
 	}
 
@@ -127,7 +128,9 @@ public sealed class UiModel
 	/// <summary>The frame of control state <paramref name="index"/> as tp.exe selects it (0x476e80): false when the chain has no such node or the node has no mesh, and the control then draws nothing.</summary>
 	public bool TryGetState( int index, out UiModelFrame frame )
 	{
-		frame = index >= 0 && index < States.Count ? States[index]! : null!;
+		// a model whose frame list was replaced after construction (tests build synthetic models that way) has no chain of its own: its frames are its states
+		var states = ReferenceEquals( Frames, builtFrames ) ? States : Frames;
+		frame = index >= 0 && index < states.Count ? states[index]! : null!;
 		return frame != null;
 	}
 

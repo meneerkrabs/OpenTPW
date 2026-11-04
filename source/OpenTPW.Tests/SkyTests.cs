@@ -1,6 +1,8 @@
 using Veldrid;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using SVector3 = System.Numerics.Vector3;
 
@@ -169,6 +171,54 @@ public class SkyTests
 				CollectionAssert.AreEqual( System.Runtime.InteropServices.MemoryMarshal.AsBytes( expected.AsSpan() ).ToArray(),
 					System.Runtime.InteropServices.MemoryMarshal.AsBytes( staged.AsSpan() ).ToArray(), $"{layers} layers, frame {frame}" );
 			}
+		}
+	}
+
+	[TestMethod]
+	public void TheLobbySceneIsRebuiltOnAnyWayBackFromTheGlobe()
+	{
+		var pending = false;
+		Assert.IsFalse( GameFlow.StepLobbyRebuild( toGlobe: false, toLobby: true, ref pending ), "a city lobby back to the lobby alone keeps the scene" );
+		Assert.IsFalse( GameFlow.StepLobbyRebuild( toGlobe: true, toLobby: false, ref pending ) );
+		Assert.IsTrue( pending );
+		Assert.IsFalse( GameFlow.StepLobbyRebuild( toGlobe: false, toLobby: false, ref pending ), "globe to city lobby: the islands screen is still down" );
+		Assert.IsTrue( GameFlow.StepLobbyRebuild( toGlobe: false, toLobby: true, ref pending ), "city lobby to lobby rebuilds" );
+		Assert.IsFalse( pending );
+		Assert.IsFalse( GameFlow.StepLobbyRebuild( toGlobe: false, toLobby: true, ref pending ), "once" );
+		// the teardown forgets a pending rebuild: the next lobby is built fresh
+		var source = File.ReadAllText( Path.Combine( EveningTestsRoot(), "source", "OpenTPW", "Client", "GameFlow.cs" ) ).Replace( "\r\n", "\n" );
+		StringAssert.Contains( source, "backdrop = Backdrop.Lobby;\n		lobbyScenePending = false;" );
+	}
+
+	private static string EveningTestsRoot()
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "source", "OpenTPW", "Client", "GameFlow.cs" ) ) )
+			directory = directory.Parent;
+		return directory?.FullName ?? throw new InvalidOperationException( "source root not found" );
+	}
+
+	[TestMethod]
+	public void TheParkProjectionUsesTheFarPlaneOfTheFrameBefore()
+	{
+		var previous = Camera.ParkFarPlane;
+		try
+		{
+			var fars = new Queue<float?>( new float?[] { 50f, null, 70f } );
+			Camera.ParkFarPlane = ( _, _ ) => fars.Dequeue();
+			var view = System.Numerics.Matrix4x4.Identity;
+			Assert.AreEqual( OriginalProjection.DefaultFarPlane, Camera.ParkFarFor( view, 0.75f ), "no span selection has run yet; this frame's selection sets 50" );
+			Assert.AreEqual( 50f, Camera.ParkFarFor( view, 0.75f ), "the far the frame before set; this frame has no spans" );
+			Assert.AreEqual( 50f, Camera.ParkFarFor( view, 0.75f ), "a frame without spans keeps the far plane; this frame's selection sets 70" );
+			fars.Enqueue( null );
+			Assert.AreEqual( 70f, Camera.ParkFarFor( view, 0.75f ) );
+			fars = new Queue<float?>( new float?[] { 90f } );
+			Camera.ParkFarPlane = ( _, _ ) => fars.Dequeue();
+			Assert.AreEqual( OriginalProjection.DefaultFarPlane, Camera.ParkFarFor( view, 0.75f ), "a new level starts over" );
+		}
+		finally
+		{
+			Camera.ParkFarPlane = previous;
 		}
 	}
 

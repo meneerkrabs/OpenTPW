@@ -119,6 +119,9 @@ public class ParticleOpaqueStateTests
 		Assert.AreEqual( MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend, ParticleRenderer.FlagsForKind( 2 ) );
 		Assert.AreEqual( MaterialFlags.DoubleSided | MaterialFlags.OneOneBlend | MaterialFlags.DisableDepthWrite, ParticleRenderer.FlagsForKind( 7 ) );
 		Assert.AreEqual( MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend | MaterialFlags.DisableDepth, ParticleRenderer.FlagsForKind( 10 ) );
+		Assert.AreEqual( MaterialFlags.OpaqueBlend | MaterialFlags.DoubleSided, ParticleRenderer.FlagsForKind( 8 ), "an opaque screen quad keeps the depth test and write at z = 0, as 0x1256 does" );
+		Assert.AreEqual( MaterialFlags.OpaqueBlend | MaterialFlags.DoubleSided | MaterialFlags.DisableDepthWrite, ParticleRenderer.FlagsForKind( 12 ) );
+		Assert.AreEqual( MaterialFlags.DoubleSided | MaterialFlags.DisableDepth, ParticleRenderer.FlagsForKind( 9 ), "a blended screen quad is drawn last without a depth test" );
 		Assert.AreEqual( 0, (int)(MaterialFlags.OpaqueBlend & (MaterialFlags.DisableDepth | MaterialFlags.AdditiveBlend | MaterialFlags.OneOneBlend | MaterialFlags.DoubleSided)) );
 	}
 
@@ -156,7 +159,7 @@ public class ParticleOpaqueStateTests
 			WorldPass.SubmitParticle( particles!, 2, 0f );
 			WorldPass.SubmitParticle( particles!, 3, 0.9f );
 			WorldPass.SortPending();
-			CollectionAssert.AreEqual( new[] { 1, 3, 0, 2 }, WorldPass.Pending.Select( record => record.Quad ).ToArray(), "far to near, equal depths in submission order, a screen-space quad (key 0) last" );
+			CollectionAssert.AreEqual( new[] { 1, 3, 0, 2 }, WorldPass.Pending.Select( record => record.Quad ).ToArray(), "far to near, equal depths in submission order, the key 0 last" );
 			Assert.IsTrue( WorldPass.Pending.All( record => ReferenceEquals( record.Particles, particles ) && record.Model == null ) );
 		}
 		finally
@@ -165,6 +168,29 @@ public class ParticleOpaqueStateTests
 		}
 		WorldPass.SubmitParticle( particles!, 0, 0.5f );
 		Assert.AreEqual( 0, WorldPass.Pending.Count, "no pass is open: nothing is kept" );
+	}
+
+	[TestMethod]
+	public void TheSortedCopyKeepsTheHandoverOrderAndMergesNeighboursOfOneKind()
+	{
+		var vertices = Enumerable.Range( 0, 5 * 6 ).Select( index => new Vertex( new Vector3( index, 0, 0 ), new Vector3(), new Vector2() ) ).ToArray();
+		var kinds = new[] { 1, 0, 1, 1, 0 };
+		var sortedVertices = new Vertex[vertices.Length];
+		var sortedKinds = new int[5];
+		var count = 0;
+		// the pass hands the quads over far to near: 3, 2, 4, 0, 1
+		var slots = new[] { 3, 2, 4, 0, 1 }.Select( quad => ParticleRenderer.CopySorted( vertices, kinds, quad, sortedVertices, sortedKinds, ref count ) ).ToArray();
+		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4 }, slots );
+		Assert.AreEqual( 5, count );
+		CollectionAssert.AreEqual( new[] { 1, 1, 0, 1, 0 }, sortedKinds );
+		Assert.AreEqual( 18f, sortedVertices[0].Position.X, "slot 0 holds quad 3" );
+		Assert.AreEqual( 12f, sortedVertices[6].Position.X, "slot 1 holds quad 2" );
+		Assert.AreEqual( 24f, sortedVertices[12].Position.X, "slot 2 holds quad 4" );
+		var runs = new List<(int Kind, int First, int Count)>();
+		ParticleRenderer.MergeSorted( sortedKinds, 0, 5, runs );
+		CollectionAssert.AreEqual( new[] { (1, 0, 12), (0, 12, 6), (1, 18, 6), (0, 24, 6) }, runs );
+		ParticleRenderer.MergeSorted( sortedKinds, 1, 2, runs );
+		CollectionAssert.AreEqual( new[] { (1, 6, 6), (0, 12, 6) }, runs, "a chunk of the slots merges on its own" );
 	}
 
 	[TestMethod]

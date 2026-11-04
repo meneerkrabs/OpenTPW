@@ -603,6 +603,7 @@ internal sealed partial class GameFlow : IDisposable
 		cityScene = null;
 		cityKey = null;
 		backdrop = Backdrop.Lobby;
+		lobbyScenePending = false;
 		Menu = null;
 		// Leaving a park (to the lobby or straight into another park) applies a language chosen inside it.
 		if ( applyPendingLanguage ) ApplyPendingLanguage();
@@ -915,6 +916,20 @@ internal sealed partial class GameFlow : IDisposable
 	private Backdrop backdrop = Backdrop.Lobby;
 	// the islands screen was deactivated by the globe and has not been built again (any way back to the lobby rebuilds it, also through a city lobby)
 	private bool lobbyScenePending;
+
+	/// <summary>
+	/// The globe's activation deactivates the islands screen, which stays down through a city lobby until the islands screen is active again: entering the globe marks the lobby scene pending, and the way back to the lobby
+	/// (from the globe or through a city lobby) rebuilds it once. True when the scene is to be rebuilt now.
+	/// </summary>
+	internal static bool StepLobbyRebuild( bool toGlobe, bool toLobby, ref bool pending )
+	{
+		if ( toGlobe )
+			pending = true;
+		if ( !toLobby || !pending )
+			return false;
+		pending = false;
+		return true;
+	}
 	private Func<System.Numerics.Matrix4x4, float, float?>? lobbyFarPlane;
 	private (System.Numerics.Matrix4x4 View, float Aspect, ModelHeightfield Field, float FieldOfView, float Distance, float? Far)? lobbyFarCache;
 	private TerrainViewSpans? lobbySpans;
@@ -1004,19 +1019,15 @@ internal sealed partial class GameFlow : IDisposable
 			// Every globe activation faces the start view again, also back from a city lobby (GlobeCameraMode.Reset).
 			GlobeCameraMode.Reset();
 			Camera.SetCameraMode<GlobeCameraMode>();
-			// the globe's activation deactivated the islands screen, which stays down through a city lobby until the islands screen is active again
-			lobbyScenePending = true;
+			StepLobbyRebuild( toGlobe: true, toLobby: false, ref lobbyScenePending );
 		}
 		else
 		{
 			if ( wanted == Backdrop.Lobby && Lobby != null && Menu != null )
 			{
 				// [BIN:TPW-EXE:0x5dd5e4 back from the globe] the globe's deactivate is followed by the islands screen's activate (0x5e23f0, 0x5e18d0), which builds the islands, their clips and the flyer spawners afresh (0x5e3210)
-				if ( lobbyScenePending )
-				{
-					lobbyScenePending = false;
+				if ( StepLobbyRebuild( toGlobe: false, toLobby: true, ref lobbyScenePending ) )
 					RebuildLobbyScene();
-				}
 				LobbyCameraMode.Target = Lobby.Target( Menu.Selected );
 				cityScene?.Delete();
 				cityScene = null;

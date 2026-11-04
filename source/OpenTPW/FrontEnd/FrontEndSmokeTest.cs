@@ -45,13 +45,17 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private Action? afterNextUpdate;
 	private (List<Entity> Entities, int Count, int Materials) lobbyBeforeAbandon;
 	private readonly HashSet<Asset> lobbyAssetsBeforeAbandon = new();
-	private int lobbyParticleKindsBefore;
 
-	/// <summary>The draw kinds the lobby's particle renderers have made a material for: a renderer makes one when a frame first needs its kind, so the lobby's own count grows while it runs (a material and its shader each).</summary>
-	private int LobbyParticleKinds() => lobbyBeforeAbandon.Entities.OfType<ParticleRenderer>().Sum( renderer => renderer.MaterialCount );
-
-	/// <summary>The materials and shaders the lobby is allowed to hold now: the baseline plus the particle kinds its renderers drew since.</summary>
-	private int LobbyMaterialsAllowed() => lobbyBeforeAbandon.Materials + 2 * (LobbyParticleKinds() - lobbyParticleKindsBefore);
+	/// <summary>
+	/// Whether the materials and shaders alive are the lobby's baseline and nothing else but what a lobby particle renderer made since: a renderer makes a material (and its shader) when a frame first needs a draw kind, so the lobby's own set
+	/// grows while it runs. Every other new one is the dropped park's and counts as a leak.
+	/// </summary>
+	private bool LobbyAssetsHeld()
+	{
+		var renderers = lobbyBeforeAbandon.Entities.OfType<ParticleRenderer>().ToList();
+		var now = Asset.All.Where( asset => asset is Material or Shader ).ToList();
+		return lobbyAssetsBeforeAbandon.All( now.Contains ) && now.All( asset => lobbyAssetsBeforeAbandon.Contains( asset ) || renderers.Any( renderer => renderer.Owns( asset ) ) );
+	}
 
 	/// <summary>The materials and shaders made since the lobby baseline was taken, for the failure message of a count that differs.</summary>
 	private string NewMaterialsNote() =>
@@ -1810,7 +1814,6 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			lobbyBeforeAbandon = (Entity.All, Entity.All.Count, Asset.All.Count( asset => asset is Material or Shader ));
 			lobbyAssetsBeforeAbandon.Clear();
 			lobbyAssetsBeforeAbandon.UnionWith( Asset.All.Where( asset => asset is Material or Shader ) );
-			lobbyParticleKindsBefore = LobbyParticleKinds();
 			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ), overFrames: true );
 		} );
 		Wait( "the replaced park is being built", 3 );
@@ -1821,7 +1824,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( !flow.BuildingPark && flow.Level == null && ReferenceEquals( Entity.All, lobbyBeforeAbandon.Entities )
 				&& Entity.All.Count == lobbyBeforeAbandon.Count,
 				"dropping the build leaves the lobby's own entities current and untouched" );
-			Require( Asset.All.Count( asset => asset is Material or Shader ) == LobbyMaterialsAllowed(),
+			Require( LobbyAssetsHeld(),
 				"the dropped park's materials and shaders are released" + NewMaterialsNote() );
 		} );
 		Wait( "the queued transition runs", 3 );
@@ -1830,7 +1833,6 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			lobbyBeforeAbandon = (Entity.All, Entity.All.Count, Asset.All.Count( asset => asset is Material or Shader ));
 			lobbyAssetsBeforeAbandon.Clear();
 			lobbyAssetsBeforeAbandon.UnionWith( Asset.All.Where( asset => asset is Material or Shader ) );
-			lobbyParticleKindsBefore = LobbyParticleKinds();
 			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ), overFrames: true );
 		} );
 		steps.Enqueue( ("the dropped park's HUD is made", () =>
@@ -1850,7 +1852,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( !flow.BuildingPark && flow.Level == null && flow.Hud == null && ReferenceEquals( Entity.All, lobbyBeforeAbandon.Entities )
 				&& Entity.All.Count == lobbyBeforeAbandon.Count, "dropping the build with its HUD made leaves the lobby current and untouched" );
 			Require( droppedHud!.Stack.Screens.Count == 0, "the dropped park's prepared HUD is cleared, as a tear-down clears a retired one" );
-			Require( Asset.All.Count( asset => asset is Material or Shader ) == LobbyMaterialsAllowed(),
+			Require( LobbyAssetsHeld(),
 				"the dropped park's materials and shaders, its sky's included, are released" + NewMaterialsNote() );
 		} );
 		Wait( "the transition after the dropped HUD runs", 3 );

@@ -1805,7 +1805,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				&& Entity.All.Count == lobbyBeforeAbandon.Count,
 				"dropping the build leaves the lobby's own entities current and untouched" );
 			Require( Asset.All.Count( asset => asset is Material or Shader ) == lobbyBeforeAbandon.Materials,
-				"the dropped park's materials and shaders are released" );
+				$"the dropped park's materials and shaders are released ({Asset.All.Count( asset => asset is Material or Shader )} alive, {lobbyBeforeAbandon.Materials} before: {string.Join( ", ", Asset.All.Where( asset => asset is Material or Shader ).GroupBy( asset => asset.GetType().Name + ":" + ((asset as Material)?.Shader?.Path ?? (asset as Shader)?.Path) ).Select( group => group.Key + "x" + group.Count() ) )})" );
 		} );
 		Wait( "the queued transition runs", 3 );
 		Do( "start a park over frames that is dropped after its HUD is made", () =>
@@ -1831,7 +1831,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				&& Entity.All.Count == lobbyBeforeAbandon.Count, "dropping the build with its HUD made leaves the lobby current and untouched" );
 			Require( droppedHud!.Stack.Screens.Count == 0, "the dropped park's prepared HUD is cleared, as a tear-down clears a retired one" );
 			Require( Asset.All.Count( asset => asset is Material or Shader ) == lobbyBeforeAbandon.Materials,
-				"the dropped park's materials and shaders, its sky's included, are released" );
+				$"the dropped park's materials and shaders, its sky's included, are released ({Asset.All.Count( asset => asset is Material or Shader )} alive, {lobbyBeforeAbandon.Materials} before: {string.Join( ", ", Asset.All.Where( asset => asset is Material or Shader ).GroupBy( asset => asset.GetType().Name + ":" + ((asset as Material)?.Shader?.Path ?? (asset as Shader)?.Path) ).Select( group => group.Key + "x" + group.Count() ) )})" );
 		} );
 		Wait( "the transition after the dropped HUD runs", 3 );
 		Do( "load the original park over frames", () =>

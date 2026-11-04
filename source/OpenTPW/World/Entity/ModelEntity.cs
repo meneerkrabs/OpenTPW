@@ -21,13 +21,19 @@ public partial class ModelEntity : Entity
 	/// <summary>Fog distance multiplier for scenes that are not the park (e.g. the online globe, which has no fog).</summary>
 	public float? ViewDistanceScale { get; set; }
 
+	/// <summary>
+	/// The queue dead end's colour pulse (<see cref="QueueModelPulse"/>): the green and blue level, 0..1, that test.shader multiplies the vertices flagged <see cref="TextureSlotAddressing.PulseFlag"/> by. It travels in the block's
+	/// time slot, which the shader reads nowhere else (its texture-coordinate scrolling is commented out); null leaves the slot as it was.
+	/// </summary>
+	internal float? PulseTint { get; set; }
+
 	/// <summary>Skips the draw while the model's bounds lie wholly outside the view (off for the sky box around the camera).</summary>
 	public bool Cullable { get; set; } = true;
 
 	/// <summary>
-	/// Called when the draw finds the model inside the view, before the first draw of the frame, as the original's mesh prepare calls the render callback of the mesh object
-	/// (<see cref="OriginalObject.PresentDrawn"/>).
-	/// Timing: <see cref="Hidden"/> and the culling test are read before the callback runs, so what the reset changes in the hidden state of parts applies from the next part and the next frame on, while the
+	/// Called at the start of every part's render, before the part's own hidden and view tests, as the original's mesh prepare calls the render callback of the whole mesh object
+	/// (<see cref="OriginalObject.PresentIfInView"/>: the object tests its own view, all its parts together).
+	/// Timing: <see cref="Hidden"/> and the culling test are read after the callback ran, so what the reset changes in the hidden state of parts applies from the first part on, and the
 	/// vertex and texture data it restores are read after it (<c>DrawModel</c>). No shadow or reflection pass draws a ride object's <see cref="ModelEntity"/> (the bumper vehicles' shadows are models of their own),
 	/// so the callback runs once per frame from the single world pass.
 	/// </summary>
@@ -73,7 +79,11 @@ public partial class ModelEntity : Entity
 
 	protected override void OnRender()
 	{
-		if ( Model == null || Hidden )
+		if ( Model == null )
+			return;
+		// the render callback belongs to the whole mesh object: the mesh prepare calls it before any of the object's meshes is tested or drawn (0x57A7E6..0x57A7FC), so it runs for a hidden or out-of-view part too, and the object decides itself whether it is in view
+		Prepared?.Invoke();
+		if ( Hidden )
 			return;
 
 		var model = DrawMatrix;
@@ -84,7 +94,6 @@ public partial class ModelEntity : Entity
 			return;
 		}
 		DrawnParts++;
-		Prepared?.Invoke();
 
 		if ( Model.HasGeometry )
 			DrawModel( Model, model );
@@ -113,7 +122,7 @@ public partial class ModelEntity : Entity
 			g_vLightColor = FollowsTimeOfDay ? Level?.SunLight?.Color ?? Vector3.One : Vector3.One,
 			// [EXT:evening] test.shader never reads the camera position: at dusk and night it carries the tint of a self-lit material that is no light source (the shader reads it only while the tinted ambient is set)
 			g_vCameraPos = FollowsTimeOfDay && Level?.Look is { IsDay: false } look ? look.UnlitTint : Camera.Position,
-			g_flTime = Time.Now,
+			g_flTime = PulseTint ?? Time.Now,
 
 			// [EXT:evening] g_flAmbientLevel: 0 (unchanged) unless the evening extension has darkened the park
 			_padding0 = FollowsTimeOfDay ? Level?.Look.AmbientUniform ?? 0f : 0f,

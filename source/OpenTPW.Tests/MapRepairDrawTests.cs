@@ -39,6 +39,8 @@ public class MapRepairDrawTests
 		// Two separate instances of the same InfoId: a catalogue default cannot supply the right repair.
 		Set( first.Entry, "<Shape>k__BackingField", new ObjectShape( new[] { "**", "**" } ) );
 		Place( first, 2, 2 ); Place( second, 8, 8 );
+		// without a cell map the level's objects stand on their footprints (LevelMapCells), which follow the placements these tests move
+		Set( level, "<Paths>k__BackingField", null );
 		if ( !hud.MapCategoryShown( category ) ) hud.ToggleMapCategory( category );
 		if ( original )
 		{
@@ -52,15 +54,15 @@ public class MapRepairDrawTests
 		State( w, first ).Repair = 0; State( w, second ).Repair = 100;
 		return w;
 	}
-	private static UiVertex[] Draw( World w )
+	/// <summary>Draws the map as it stands when the window opens: the canvas is written again, as the original writes its classes and draws its surface at every opening. Returns the rectangles the render drew into the surface.</summary>
+	private static MapPrim[] Draw( World w )
 	{
+		Set( w.Hud, "mapCanvas", null );
 		w.Context.Batch.Clear(); w.View.Draw( w.Context, false, false );
-		return w.Context.Batch.Draws.SelectMany( draw => draw.Vertices ).ToArray();
+		return ((ParkMapCanvas)typeof( ParkHud ).GetField( "mapCanvas", Private )!.GetValue( w.Hud )!).Prims.ToArray();
 	}
-	private static UiVertex[] OfColor( UiVertex[] vertices, RgbaByte color ) => vertices.Where( vertex => vertex.Color == color ).ToArray();
-	private static UiRect[] Rectangles( UiVertex[] vertices, RgbaByte color ) => OfColor( vertices, color ).Chunk( 6 )
-		.Select( quad => new UiRect( quad.Min( v => v.Position.X ), quad.Min( v => v.Position.Y ),
-			quad.Max( v => v.Position.X ) - quad.Min( v => v.Position.X ), quad.Max( v => v.Position.Y ) - quad.Min( v => v.Position.Y ) ) ).ToArray();
+	private static MapPrim[] OfColor( MapPrim[] prims, RgbaByte color ) => prims.Where( prim => prim.Color == color && !prim.Line ).ToArray();
+	private static UiRect[] Rectangles( MapPrim[] prims, RgbaByte color ) => OfColor( prims, color ).Select( prim => new UiRect( prim.X, prim.Y, prim.Width, prim.Height ) ).ToArray();
 
 	[DataTestMethod]
 	[DataRow( BuildCategory.Rides, false )]
@@ -74,15 +76,15 @@ public class MapRepairDrawTests
 		Assert.AreEqual( w.First.Entry.InfoId, w.Second.Entry.InfoId );
 		Assert.AreNotEqual( w.Level.GetEconomyInstance( w.First ), w.Level.GetEconomyInstance( w.Second ) );
 		var drawn = Draw( w );
-		Assert.AreEqual( 24, OfColor( drawn, Red ).Length ); Assert.AreEqual( 6, OfColor( drawn, Green ).Length );
-		var expected = w.First.Cells.Select( cell => original ? new UiRect( 95 + cell.X * 15, 66 + cell.Y * 13, 15, 13 )
-			: new UiRect( 80 + cell.X * 16, 24 + cell.Y * 16, 16, 16 ) ).ToArray();
-		CollectionAssert.AreEqual( expected, Rectangles( drawn, Red ), "the pre-existing map grid and image offsets are unchanged" );
+		Assert.AreEqual( 4, OfColor( drawn, Red ).Length ); Assert.AreEqual( 1, OfColor( drawn, Green ).Length );
+		var expected = w.First.Cells.OrderBy( cell => cell.Y ).ThenBy( cell => cell.X ).Select( cell => original ? new UiRect( 15 + cell.X * 15, 42 + cell.Y * 13, 15, 13 )
+			: new UiRect( cell.X * 16, cell.Y * 16, 16, 16 ) ).ToArray();
+		CollectionAssert.AreEqual( expected, Rectangles( drawn, Red ), "the cells lie on the original's grid of the surface (15 + column x 15, 42 + row x 13), the sandbox's fills the image" );
 		w.Hud.ToggleMapCategory( category ); drawn = Draw( w );
 		Assert.AreEqual( 0, OfColor( drawn, Red ).Length ); Assert.AreEqual( 0, OfColor( drawn, Green ).Length );
 		Assert.AreEqual( 0, OfColor( drawn, Fallback ).Length );
 		w.Hud.ToggleMapCategory( category ); State( w, w.First ).Repair = 50;
-		Assert.AreEqual( 24, OfColor( Draw( w ), new RgbaByte( 248, 200, 0, 255 ) ).Length, "live repair changes refresh without caching" );
+		Assert.AreEqual( 4, OfColor( Draw( w ), new RgbaByte( 248, 200, 0, 255 ) ).Length, "live repair changes refresh without caching" );
 	}
 
 	[DataTestMethod]
@@ -100,7 +102,7 @@ public class MapRepairDrawTests
 	public void UnavailableOrMismatchedCurrentStateRetainsExactOldFallback( string reason )
 	{
 		var w = Create(); var state = State( w, w.First );
-		Assert.AreEqual( 24, OfColor( Draw( w ), Red ).Length );
+		Assert.AreEqual( 4, OfColor( Draw( w ), Red ).Length );
 		switch ( reason )
 		{
 			case "unbound": Bindings( w ).Remove( w.First ); break;
@@ -119,8 +121,8 @@ public class MapRepairDrawTests
 		}
 		var drawn = Draw( w );
 		Assert.AreEqual( 0, OfColor( drawn, Red ).Length );
-		Assert.AreEqual( reason is "readOnly" or "staleStatus" or "noPark" or "noEconomy" or "nullStatus" ? 30 : 24, OfColor( drawn, Fallback ).Length );
-		Assert.IsTrue( OfColor( drawn, Fallback ).All( vertex => vertex.Color.A == 235 ) );
+		Assert.AreEqual( reason is "readOnly" or "staleStatus" or "noPark" or "noEconomy" or "nullStatus" ? 5 : 4, OfColor( drawn, Fallback ).Length );
+		Assert.IsTrue( OfColor( drawn, Fallback ).All( prim => prim.Color.A == 235 ) );
 	}
 
 	[TestMethod]
@@ -129,40 +131,68 @@ public class MapRepairDrawTests
 		var w = Create(); var firstState = State( w, w.First );
 		var replacement = w.Economy.RegisterExisting( w.First.Entry.InfoId ); replacement.Repair = 50;
 		Bindings( w )[w.First] = replacement.Id;
-		Assert.AreEqual( 24, OfColor( Draw( w ), new RgbaByte( 248, 200, 0, 255 ) ).Length );
+		Assert.AreEqual( 4, OfColor( Draw( w ), new RgbaByte( 248, 200, 0, 255 ) ).Length );
 		Assert.AreEqual( 0d, firstState.Repair, "the displaced record is untouched" );
 		w.First.Delete(); var drawn = Draw( w );
 		Assert.AreEqual( 0, OfColor( drawn, new RgbaByte( 248, 200, 0, 255 ) ).Length );
-		Assert.AreEqual( 0, OfColor( drawn, Fallback ).Length ); Assert.AreEqual( 6, OfColor( drawn, Green ).Length );
+		Assert.AreEqual( 0, OfColor( drawn, Fallback ).Length ); Assert.AreEqual( 1, OfColor( drawn, Green ).Length );
 		((List<OriginalObject>)w.Level.Objects.Objects).Remove( w.Second );
 		Assert.AreEqual( 0, OfColor( Draw( w ), Green ).Length );
 	}
 
+	private static ParkMapCanvas CanvasOf( World w ) => (ParkMapCanvas)typeof( ParkHud ).GetField( "mapCanvas", Private )!.GetValue( w.Hud )!;
+
 	[TestMethod]
-	public void PartialViewportClippingAndAllTriangleGeometryMatchFallbackRendering()
+	public void TheSurfaceIsBakedOnceAndShownAsOneQuadWhateverTheView()
 	{
 		var w = Create(); Place( w.First, 7, 7 ); Place( w.Second, 1, 1 );
 		Set( w.Hud, "mapView", new MapViewState( 2, new NVector2( 15.25f ) ) );
-		State( w, w.First ).Repair = double.NaN; var fallback = Draw( w );
-		State( w, w.First ).Repair = 0; var actual = Draw( w );
-		CollectionAssert.AreEqual( fallback.Select( vertex => (vertex.Position, vertex.TexCoords) ).ToArray(), actual.Select( vertex => (vertex.Position, vertex.TexCoords) ).ToArray() );
-		CollectionAssert.AreEqual( Rectangles( fallback, Fallback ), Rectangles( actual, Red ) );
-		var rects = Rectangles( actual, Red ); Assert.AreEqual( 4, rects.Length );
-		Assert.IsTrue( rects.Any( rect => rect.Width == 8 && rect.Height == 8 ), "the upper-left cell is partially clipped on both axes" );
-		Assert.IsTrue( rects.All( rect => rect.X >= 80 && rect.Y >= 24 && rect.Right <= 592 && rect.Bottom <= 536 ) );
-		Assert.AreEqual( 0, OfColor( actual, Green ).Length, "a fully offscreen object stays clipped" );
+		State( w, w.First ).Repair = 0;
+		Draw( w );
+		var surface = CanvasOf( w ).Pixels;
+		var quads = w.Context.Batch.Draws.Where( draw => ReferenceEquals( draw.Texture.Surface, surface ) ).ToArray();
+		Assert.AreEqual( 1, quads.Length );
+		Assert.AreEqual( 6, quads[0].Vertices.Count, "one quad: the cells, outlines and areas are in the surface, not drawn one by one" );
+		Assert.AreEqual( 1, w.Context.Batch.Draws.Count( draw => draw.Texture.Surface != null ) );
+		// the sandbox's 32 x 32 cells are 16 pixels: the cell (7, 7) is red in the baked pixels, a cell no object stands on keeps the sandbox base
+		var at = ((7 * 16 + 8) * 512 + 7 * 16 + 8) * 4;
+		var under = CanvasOf( w ).Base!;
+		byte Blended( int d, int channel ) => (byte)(d + (((channel - d) * 255) >> 8));
+		CollectionAssert.AreEqual( new[] { Blended( under[at], 248 ), Blended( under[at + 1], 0 ), Blended( under[at + 2], 0 ), under[at + 3] }, surface.Rgba[at..(at + 4)], "the fill is blended over the base, not copied" );
+		var empty = (20 * 16 * 512 + 20 * 16) * 4;
+		Assert.AreNotEqual( (byte)248, surface.Rgba[empty] );
+		var version = surface.Version;
+		w.Context.Batch.Clear(); w.View.Draw( w.Context, false, false );
+		Assert.AreEqual( version, surface.Version, "a drawn frame does not bake again" );
 	}
 
 	[TestMethod]
 	public void DrawingDoesNotMutateEconomySaveRandomnessBindingsOrObjects()
 	{
 		var w = Create( original: true );
+		var guests = w.Level.Guests!;
+		guests.Grid.SetPath( 2, 2, true ); guests.Grid.Cells.SetType( 3, 2, ParkCellType.Queue ); guests.Grid.Cells.SetFlags( 4, 2, ParkCellFlags.Unowned );
+		guests.Register( w.First.Visitors );
+		var guest = guests.SpawnInPark( 2, 2 ); guest.State = GuestState.WalkingAround; guest.Happiness = 80; guest.Thought = GuestThought.Pleased;
+		var coaster = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), w.Level.Objects.ScriptWorld.Coasters );
+		new CoasterBuilder( coaster, new CoasterSite( 32, 32 ) ).SetStation( (3, 2), (2, 2) );
+		EconomyTestData.HireBest( w.Economy, StaffType.Mechanic );
+		Set( w.Level, "<StaffWorld>k__BackingField", new StaffWorldSimulation( guests.Grid, () => w.Economy.Staff.Members, _ => null, (2, 2) ) );
 		var save = JsonSerializer.Serialize( ParkSaveFile.Capture( w.Economy ) );
 		var hash = WorldStateHash.Compute( new WorldStateSources { Economy = w.Economy } );
 		var random = (w.Economy.World.State, w.Level.Guests!.RandomState, w.Level.Objects.ScriptWorld.Coasters.Random.State);
 		var bindings = Bindings( w ).ToArray(); var objects = w.Level.Objects.Objects.ToArray();
 		var cells = w.First.Cells.ToArray(); var placement = w.First.Placement; var variables = w.First.Script!.Variables.ToArray();
-		for ( var frame = 0; frame < 20; frame++ ) Draw( w );
+		// every layer, value mode and staff role, with a hover over the map, before the state is compared
+		w.Hud.ToggleMapTracks(); w.Hud.ToggleMapVisitors(); w.Hud.ToggleMapHappiness(); w.Hud.ToggleMapExcitement(); w.Hud.ToggleMapSatisfaction();
+		foreach ( var category in Enum.GetValues<BuildCategory>() ) w.Hud.ToggleMapCategory( category );
+		foreach ( var type in Enum.GetValues<StaffType>() ) w.Hud.ToggleMapStaff( type );
+		var geometry = (new UiRect( 0, 0, 512, 512 ), NVector2.Zero, 512f);
+		for ( var frame = 0; frame < 20; frame++ )
+		{
+			Draw( w );
+			w.Hud.UpdateMapHover( geometry, new NVector2( 15 + frame * 20, 42 + frame * 15 ) );
+		}
 		Assert.AreEqual( save, JsonSerializer.Serialize( ParkSaveFile.Capture( w.Economy ) ) );
 		Assert.AreEqual( hash, WorldStateHash.Compute( new WorldStateSources { Economy = w.Economy } ) );
 		Assert.AreEqual( random, (w.Economy.World.State, w.Level.Guests.RandomState, w.Level.Objects.ScriptWorld.Coasters.Random.State) );
@@ -171,32 +201,26 @@ public class MapRepairDrawTests
 		Assert.AreEqual( placement, w.First.Placement ); Assert.AreEqual( 0d, State( w, w.First ).Repair ); Assert.AreEqual( 100d, State( w, w.Second ).Repair );
 	}
 
-	[TestMethod]
-	public void HostTrackExcitementStaffVisitorHappinessAndThoughtOverlaysKeepTheirDrawOrder()
+	private static long Allocation( Action action, int repetitions )
 	{
-		var w = Create(); var guests = w.Level.Guests!;
-		guests.Grid.SetPath( 2, 2, true ); guests.Grid.Cells.SetType( 3, 2, ParkCellType.Queue );
-		guests.Grid.Cells.SetFlags( 4, 2, ParkCellFlags.Unowned );
-		guests.Register( w.First.Visitors );
-		var guest = guests.SpawnInPark( 2, 2 ); guest.State = GuestState.WalkingAround; guest.Happiness = 80; guest.Thought = GuestThought.Pleased;
-		var coaster = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), w.Level.Objects.ScriptWorld.Coasters );
-		new CoasterBuilder( coaster, new CoasterSite( 32, 32 ) ).SetStation( (3, 2), (2, 2) );
-		EconomyTestData.HireBest( w.Economy, StaffType.Mechanic );
-		Set( w.Level, "<StaffWorld>k__BackingField", new StaffWorldSimulation( guests.Grid, () => w.Economy.Staff.Members, _ => null, (2, 2) ) );
-		w.Hud.ToggleMapTracks(); w.Hud.ToggleMapExcitement(); w.Hud.ToggleMapStaff( StaffType.Mechanic ); w.Hud.ToggleMapVisitors(); w.Hud.ToggleMapHappiness(); w.Hud.ToggleMapSatisfaction();
-		var drawn = Draw( w );
-		var ordered = new[] { ParkMapPalette.Path, Red, new RgbaByte( 65, 220, 235, 240 ), ParkMapMetrics.ExcitementColor( 20 ),
-			new RgbaByte( 255, 255, 255, 245 ), ParkMapGuestLayers.HappinessColor( 80 ), new RgbaByte( 35, 235, 35, 240 ) };
-		var previous = -1;
-		foreach ( var color in ordered )
-		{
-			var first = Array.FindIndex( drawn, vertex => vertex.Color == color );
-			Assert.IsTrue( first > previous, $"present and ordered host layer {color}" );
-			previous = Array.FindLastIndex( drawn, vertex => vertex.Color == color );
-		}
-		Assert.AreEqual( 6, OfColor( drawn, ParkMapPalette.Queue ).Length ); Assert.AreEqual( 6, OfColor( drawn, ParkMapPalette.Unowned ).Length );
-		w.Hud.ToggleMapHappiness(); drawn = Draw( w ); Assert.AreEqual( 6, OfColor( drawn, new RgbaByte( 75, 180, 255, 240 ) ).Length );
-		w.Hud.ToggleMapCategory( BuildCategory.Rides ); drawn = Draw( w );
-		Assert.AreEqual( 0, OfColor( drawn, Red ).Length ); Assert.IsTrue( OfColor( drawn, ParkMapMetrics.ExcitementColor( 20 ) ).Length > 0, "the existing independent excitement layer still ignores category selection" );
+		for ( var index = 0; index < 10; index++ ) action();
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for ( var index = 0; index < repetitions; index++ ) action();
+		return (GC.GetAllocatedBytesForCurrentThread() - before) / repetitions;
+	}
+
+	[TestMethod]
+	public void ADrawnMapFrameAndAHoverUpdateAllocateNothingSteady()
+	{
+		var w = Create( original: true );
+		w.Hud.ToggleMapVisitors(); w.Hud.ToggleMapTracks();
+		w.Level.Guests!.Grid.SetPath( 2, 2, true ); w.Level.Guests.Register( w.First.Visitors );
+		var guest = w.Level.Guests.SpawnInPark( 2, 2 ); guest.State = GuestState.WalkingAround; guest.Happiness = 80;
+		Draw( w );
+		var geometry = (new UiRect( 0, 0, 512, 512 ), NVector2.Zero, 512f);
+		var frame = Allocation( () => { w.Context.Batch.Clear(); w.View.Draw( w.Context, false, false ); }, 200 );
+		var hover = Allocation( () => w.Hud.UpdateMapHover( geometry, new NVector2( 95, 66 ) ), 200 );
+		Assert.IsTrue( frame < 512, $"a steady map frame allocated {frame} bytes" );
+		Assert.IsTrue( hover < 64, $"a steady hover update allocated {hover} bytes" );
 	}
 }

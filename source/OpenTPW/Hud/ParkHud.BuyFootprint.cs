@@ -40,6 +40,9 @@ public sealed partial class ParkHud
 	private sealed class BuyFootprint : UiElement
 	{
 		private readonly ParkHud owner;
+		// the cells of the shape drawn last, so a frame builds no list
+		private ObjectShape? cachedShape;
+		private IReadOnlyList<(int Column, int Row, RgbaByte Color)> cachedCells = Array.Empty<(int, int, RgbaByte)>();
 		public BuyFootprint( ParkHud owner ) => this.owner = owner;
 
 		public override void Draw( UiContext context, bool focused, bool pressed )
@@ -51,7 +54,12 @@ public sealed partial class ParkHud
 			var height = (int)rect.Height;
 			var cellWidth = width / BuyFootprintCellsPerSide;
 			var cellHeight = height / BuyFootprintCellsPerSide;
-			foreach ( var (column, row, color) in BuyFootprintCells( shape ) )
+			if ( !ReferenceEquals( cachedShape, shape ) )
+			{
+				cachedShape = shape;
+				cachedCells = BuyFootprintCells( shape );
+			}
+			foreach ( var (column, row, color) in cachedCells )
 			{
 				var left = rect.X + cellWidth * column;
 				var top = rect.Y + height - cellHeight - row * cellHeight - 1;

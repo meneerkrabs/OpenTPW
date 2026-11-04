@@ -103,6 +103,65 @@ public class ArrivalWalkTests
 		Assert.AreEqual( GuestNavigation.Centre( (20, 3) ), (onFerry.Navigation.X, onFerry.Navigation.Y), "the seaplane's and the Ferry's guests stand two rows up (0x004CF720: id − 0x100)" );
 	}
 
+	/// <summary>PTCL-908: 0x4FAEC0 beams (0x4FB26A, particle 19) a guest whose cell fails the park cell test 0x4FA990; a guest made on a park cell takes the other branch (0x4FB1D9) and beams nobody.</summary>
+	[TestMethod]
+	public void AGuestMadeOffTheParkCellsBeamsOnceAtCreationAndOneMadeOnThemDoesNot()
+	{
+		var (simulation, _, _, _) = Rig();
+		var beamed = new List<Guest>();
+		simulation.Beamed += beamed.Add;
+		var guest = simulation.SpawnArrival()!;
+		Assert.AreEqual( 1, beamed.Count, "the arrival's guest beams at its creation" );
+		Assert.AreSame( guest, beamed[0] );
+		var inPark = simulation.SpawnInPark( 9, 17 );
+		Assert.IsTrue( simulation.IsOnParkCell( inPark ) );
+		Assert.AreEqual( 1, beamed.Count, "a guest made on a park cell beams nobody" );
+	}
+
+	[TestMethod]
+	public void AnArrivalGuestOnAStopCellOfAParkCellTypeBeamsNobody()
+	{
+		var (simulation, _, _, _) = Rig();
+		var beamed = 0;
+		simulation.Beamed += _ => beamed++;
+		simulation.Grid.Cells.SetType( 20, 5, ParkCellType.Path );
+		var (reference, _, _, _) = Rig();
+		reference.Grid.Cells.SetType( 20, 5, ParkCellType.Path );
+		reference.SpawnInPark( 20, 5 );
+		var guest = simulation.SpawnArrival()!;
+		Assert.IsTrue( simulation.IsOnParkCell( guest ), "the stop cell is a path cell here (type 1: 0x536310)" );
+		Assert.AreEqual( reference.World.State, simulation.World.State, "no world draw beyond the constructor's own (SpawnInPark's): the R draws of 0x4FB201 and 0x4FB21C are not made (0x4FB1D9)" );
+		Assert.AreEqual( GuestState.DoingNothing, guest.State, "state 6 through 0x501DB0(6)" );
+		Assert.AreEqual( (20, 5), guest.Navigation.Cell, "no crossing route" );
+		Assert.AreEqual( GuestNavigation.Centre( (20, 5) ), (guest.Navigation.X, guest.Navigation.Y), "the constructor places at the cell's centre (0x4F8940 -> 0x5100E0, 0x8000)" );
+		Assert.AreEqual( 1, guest.VisitorNumber, "the visitor number 0x51AAF0 into +0x1D8" );
+		Assert.IsFalse( guest.HasWaypoint, "0x4FA5F0 is not called" );
+		Assert.AreEqual( 0, beamed, "0x4FA990 is true: the other branch (0x4FB1D9) runs and no beam is taken" );
+	}
+
+	/// <summary>A world that types its cells takes the 0x4FB1D9 branch for every park cell type, walkable or not, at the cell's centre; only an untyped harness world keeps the crossing route for an empty stop cell ([EXT:untyped-harness-world]).</summary>
+	[TestMethod]
+	public void ATypedWorldTakesTheParkBranchForEveryParkCellTypeWalkableOrNot()
+	{
+		foreach ( var type in new byte[] { 0, 3, 9, 10 } )
+		{
+			var (simulation, _, _, _) = Rig();
+			simulation.UntypedHarnessWorld = false;
+			simulation.Grid.Cells.SetType( 20, 5, type );
+			var beamed = 0;
+			simulation.Beamed += _ => beamed++;
+			var guest = simulation.SpawnArrival()!;
+			Assert.AreEqual( GuestState.DoingNothing, guest.State, $"type {type}: state 6 (0x501DB0(6))" );
+			Assert.IsFalse( guest.HasWaypoint, $"type {type}: no crossing route" );
+			Assert.AreEqual( GuestNavigation.Centre( (20, 5) ), (guest.Navigation.X, guest.Navigation.Y), $"type {type}: the cell's centre" );
+			Assert.AreEqual( 0, beamed, $"type {type}: no beam" );
+		}
+		var (harness, _, _, _) = Rig();
+		harness.Grid.Cells.SetType( 20, 5, (byte)0 );
+		var crossing = harness.SpawnArrival()!;
+		Assert.AreEqual( GuestState.CrossingRoad, crossing.State, "an untyped harness world's empty stop cell keeps the crossing route" );
+	}
+
 	[TestMethod]
 	public void TheStepOffWalkEndsInStateOneWhichWaitsForTheBusToLeave()
 	{

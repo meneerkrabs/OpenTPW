@@ -17,7 +17,7 @@ public class GuestTeleportBeamTests
 		var rig = new QueueTests.Rig( takesGuests: true, capacity: 1, kind: RideVisitorKind.Ride );
 		rig.Ride.RequiresTeleport = true;
 		var beamed = new List<int>();
-		rig.Simulation.Teleported += guest => beamed.Add( guest.Id );
+		rig.Simulation.Beamed += guest => beamed.Add( guest.Id );
 		var guest = rig.Send();
 		var host = (IRideVisitorHost)rig.Simulation;
 		host.OnVisitorBoarded( rig.Ride, guest.Id );
@@ -32,7 +32,7 @@ public class GuestTeleportBeamTests
 	{
 		var rig = new QueueTests.Rig( takesGuests: true, capacity: 1, kind: RideVisitorKind.Ride );
 		var beamed = 0;
-		rig.Simulation.Teleported += _ => beamed++;
+		rig.Simulation.Beamed += _ => beamed++;
 		var guest = rig.Send();
 		var host = (IRideVisitorHost)rig.Simulation;
 		host.OnVisitorBoarded( rig.Ride, guest.Id );

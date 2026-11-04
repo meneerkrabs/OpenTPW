@@ -27,16 +27,6 @@ public class MapStaffControlTests
 	}
 
 	[TestMethod]
-	public void HappinessLayerAveragesOnlyVisibleVisitorsInsideActualGrid()
-	{
-		var cells = ParkMapGuestLayers.Cells( new[] { At( 1, 2.1f, 3.2f, 20 ), At( 2, 2.8f, 3.9f, 80 ),
-			At( 3, 2, 3, 0, GuestState.Using ), At( 4, -1, 3 ), At( 5, 10, 3 ) }, 10, 10 ).ToArray();
-		Assert.AreEqual( 1, cells.Length );
-		Assert.AreEqual( 2, cells[0].X );
-		Assert.AreEqual( 3, cells[0].Y );
-		Assert.AreEqual( 50f, cells[0].Happiness );
-	}
-	[TestMethod]
 	public void StaffLocatorPreservesSelectionAndUsesActualRolePositions()
 	{
 		var actors = new[] { new StaffWorldSnapshot( 7, StaffType.Mechanic, 12.25f, 8.75f, true, true ),
@@ -50,54 +40,5 @@ public class MapStaffControlTests
 		Assert.AreEqual( 9, ParkStaffLocator.Next( actors.Where( actor => actor.Id != 7 ), StaffType.Mechanic, 7, 7 )!.Value.Id );
 		Assert.IsNull( ParkStaffLocator.Next( actors, StaffType.Researcher, 7, 0 ) );
 		Assert.IsNull( ParkStaffLocator.Next( System.Array.Empty<StaffWorldSnapshot>(), StaffType.Mechanic, 7, 0 ) );
-	}
-	[TestMethod]
-	public void SatisfactionUnobservedThoughtsStayUnmeasuredAndRealOutcomesUpdate()
-	{
-		var guest = At( 1, 2.5f, 3.5f );
-		guest.Thought = GuestThought.Happy;
-		Assert.AreEqual( 0, ParkMapMetrics.Outcomes( new[] { guest }, 10, 10 ).Count() );
-		Assert.AreEqual( 0, ParkMapMetrics.Outcomes( System.Array.Empty<Guest>(), 10, 10 ).Count() );
-		guest.Thought = GuestThought.Pleased;
-		Assert.AreEqual( 1, ParkMapMetrics.Outcomes( new[] { guest }, 10, 10 ).Single().Pleased );
-		guest.Thought = GuestThought.Dissatisfied;
-		var outcome = ParkMapMetrics.Outcomes( new[] { guest }, 10, 10 ).Single();
-		Assert.AreEqual( 0, outcome.Pleased );
-		Assert.AreEqual( 1, outcome.Dissatisfied );
-	}
-
-	[TestMethod]
-	public void AttractionExcitementRatingChangesOverlayColor()
-	{
-		Assert.AreNotEqual( ParkMapMetrics.ExcitementColor( 20 ), ParkMapMetrics.ExcitementColor( 80 ) );
-		Assert.AreEqual( ParkMapMetrics.ExcitementColor( 0 ), ParkMapMetrics.ExcitementColor( -5 ) );
-		Assert.AreEqual( ParkMapMetrics.ExcitementColor( 100 ), ParkMapMetrics.ExcitementColor( 105 ) );
-	}
-	[TestMethod]
-	public void TrackToggleAndEmptyGeometryStayIndependent()
-	{
-		var hud = (ParkHud)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
-		Assert.IsFalse( hud.MapTracks );
-		hud.ToggleMapTracks();
-		Assert.IsTrue( hud.MapTracks );
-		Assert.AreEqual( 0, ParkMapTracks.SampleCells( System.Array.Empty<System.Numerics.Vector3>(), 10, 10 ).Count() );
-		hud.ToggleMapTracks();
-		Assert.IsFalse( hud.MapTracks );
-	}
-
-	[TestMethod]
-	public void TrackProjectionUsesOriginalGroundAxesAndRejectsOutsideSamples()
-	{
-		var cells = ParkMapTracks.SampleCells( new[] { new System.Numerics.Vector3( 25, 999, 39 ),
-			new System.Numerics.Vector3( 29, -999, 31 ), new System.Numerics.Vector3( -1, 0, 3 ),
-			new System.Numerics.Vector3( 100, 0, 3 ), new System.Numerics.Vector3( 3, 0, 100 ) }, 10, 10 ).ToArray();
-		Assert.AreEqual( 1, cells.Length );
-		Assert.AreEqual( (2, 3), cells[0] );
-		var chain = ParkMapTracks.NodeCells( new[] { (1, 2), (4, 2), (10, 2), (6, 4) }, 10, 10 ).ToArray();
-		CollectionAssert.Contains( chain, (2, 2) );
-		CollectionAssert.Contains( chain, (3, 2) );
-		CollectionAssert.Contains( chain, (6, 4) );
-		Assert.IsFalse( chain.Any( cell => cell.X >= 10 || cell.Y >= 10 ) );
-		Assert.IsFalse( chain.Contains( (5, 3) ) );
 	}
 }

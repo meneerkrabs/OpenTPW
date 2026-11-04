@@ -47,7 +47,8 @@ public sealed class OriginalParkImport
 		RideSystem = rideSystem;
 		var objectsByCell = placedObjects.Select( item => item.Record ).Concat( unresolvedObjects ).Concat( fixedItems )
 			.ToLookup( record => (record.X, record.Y) );
-		var attractionsByCell = attractions.ToLookup( attraction => (attraction.CellX, attraction.CellY) );
+		// the records hold the placement anchor, so the things are keyed by their mTopLeft (the anchor word), as FindAttraction matches them, not by their own cell (anchor plus the type's map offset)
+		var attractionsByCell = attractions.ToLookup( attraction => ((attraction.TopLeft - 1) & 0x7F, (attraction.TopLeft - 1) >> 7) );
 		var sections = coasters.Coasters.SelectMany( coaster => coaster.Sections ).ToArray();
 		// Stacked sections may repeat a cell. Share its matches instead of copying the scene for every section.
 		var matchesByCell = sections.Select( section => (section.CellX, section.CellY) ).Distinct().ToDictionary( cell => cell, cell =>
@@ -270,16 +271,24 @@ public sealed class OriginalParkImport
 		return false;
 	}
 
+	/// <summary>The anchor word <c>(y &lt;&lt; 7) + x + 1</c> of a RideSystem record's cell (the same word as <c>ParkCellMap.CellWord</c> in the game project, which this file cannot reference), which a placed thing keeps as its <c>mTopLeft</c> (+0x34).</summary>
+	// [BIN:TPI-EXE:0x5db4e2 mTopLeft] Theme Park Inc's attraction constructor sets mTopLeft to the anchor word the same way, so its scene-record join (the TPI attraction match in this file) is on mTopLeft too
+	// [BIN:TPW-EXE:0x4db2da mTopLeft is the anchor] the placement hands the constructor 0x4DB090 the anchor plus the rotated map offset (0x529F74..0x529FD5), which the base 0x50AFE0 stores as the thing's bytes +5 and +7, while +0x34 mTopLeft is the anchor itself (0x4DB2DA..0x4DB30A); only jungle/5x5rck and jungle/mammtunn have an offset, (0, 1)
+	public static ushort AnchorWord( SaveObject record ) => (ushort)((record.Y << 7) + record.X + 1);
+
 	/// <summary>
-	/// The attraction thing of a RideSystem record: same Info.Id, and for placed objects the same cell
-	/// (fixed items store 128, 128 and are matched by Info.Id alone). Null when none or more than one matches.
+	/// The attraction thing of a RideSystem record: same Info.Id, and for placed objects the same anchor, as the thing's <c>mTopLeft</c> (the thing's own cell, <see cref="SaveAttraction.CellX"/>, is
+	/// the anchor plus the type's rotated map offset). Fixed items store 128, 128 and are matched by Info.Id alone. Null when none or more than one matches.
 	/// </summary>
-	public SaveAttraction? FindAttraction( SaveObject record )
+	public SaveAttraction? FindAttraction( SaveObject record ) => FindAttraction( Attractions, record );
+
+	/// <summary>See <see cref="FindAttraction(SaveObject)"/>: the match over any list of attraction things.</summary>
+	public static SaveAttraction? FindAttraction( IEnumerable<SaveAttraction> attractions, SaveObject record )
 	{
 		SaveAttraction? found = null;
-		foreach ( var attraction in Attractions )
+		foreach ( var attraction in attractions )
 		{
-			if ( attraction.InfoId != record.InfoId || (!record.IsFixedItem && (attraction.CellX != record.X || attraction.CellY != record.Y)) )
+			if ( attraction.InfoId != record.InfoId || (!record.IsFixedItem && attraction.TopLeft != AnchorWord( record )) )
 				continue;
 			if ( found != null )
 				return null;
@@ -557,7 +566,7 @@ public sealed class OriginalParkImport
 			// the record's u32 after its leading byte is the scene mesh instance, the thing's MeshInstanceID
 			var mesh = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( span[(record.Offset + 1)..] );
 			var matches = tpiWorld.Attractions.Where( attraction => attraction.MeshInstanceId == mesh && attraction.InfoId == record.InfoId
-				&& (record.IsFixedItem || attraction.CellX == record.X && attraction.CellY == record.Y) ).Take( 2 ).ToList();
+				&& (record.IsFixedItem || attraction.TopLeft == AnchorWord( record )) ).Take( 2 ).ToList();
 			if ( matches.Count != 1 )
 				throw new InvalidDataException( $"Theme Park Inc scene record {record.Index} (mesh {mesh}, Info.Id {record.InfoId}) matches {matches.Count} attraction things; expected one." );
 			if ( !named.Add( matches[0].Id ) )

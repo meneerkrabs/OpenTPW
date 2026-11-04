@@ -32,6 +32,10 @@ internal sealed class UiRenderer : IDisposable
 	private readonly Dictionary<Veldrid.Texture, ResourceSet> renderedSets = new();
 	// GPU copies of the composed title bitmaps; one goes when the bitmap cache drops it.
 	private readonly Dictionary<UiTitleBitmap, (Veldrid.Texture Texture, ResourceSet Set)> titleTextures = new();
+	// pixel surfaces their owner writes (the map): the GPU copy, its resource set, the version it holds and the frame it was last asked for in
+	private readonly Dictionary<UiPixelSurface, (Veldrid.Texture Texture, ResourceSet Set, int Version, long Frame)> surfaceTextures = new();
+	private long frameNumber;
+	private const int SurfaceIdleFrames = 600;
 	private readonly List<DeviceBuffer>[] buffers = Enumerable.Range( 0, Renderer.FramesInFlight ).Select( _ => new List<DeviceBuffer>() ).ToArray();
 	private int frameBuffers;
 	private GpuVertex[] vertices = Array.Empty<GpuVertex>();
@@ -103,6 +107,7 @@ internal sealed class UiRenderer : IDisposable
 		frameBuffers = 0;
 		preparedImages.Clear();
 		RetireTitleTextures();
+		RetireSurfaceTextures();
 	}
 
 	/// <summary>
@@ -307,6 +312,21 @@ internal sealed class UiRenderer : IDisposable
 			renderedSets[rendered] = renderedSet;
 			return renderedSet;
 		}
+		if ( texture.Surface is { } surface )
+		{
+			if ( surfaceTextures.TryGetValue( surface, out var surfaceEntry ) )
+			{
+				if ( surfaceEntry.Version != surface.Version )
+					Device.UpdateTexture( surfaceEntry.Texture, surface.Rgba, 0, 0, 0, (uint)surface.Width, (uint)surface.Height, 1, 0, 0 );
+			}
+			else
+			{
+				var (created, createdSet) = Create( surface.Rgba, surface.Width, surface.Height, Device.LinearSampler );
+				surfaceEntry = (created, createdSet, surface.Version, frameNumber);
+			}
+			surfaceTextures[surface] = (surfaceEntry.Texture, surfaceEntry.Set, surface.Version, frameNumber);
+			return surfaceEntry.Set;
+		}
 		if ( texture.Title is { } title )
 		{
 			if ( titleTextures.TryGetValue( title, out var titleEntry ) )
@@ -362,23 +382,63 @@ internal sealed class UiRenderer : IDisposable
 		return entry.Set;
 	}
 
+	// the closure lives in its own method: a lambda capturing a local of the retire passes would allocate its display class at their entry, every frame
+	private static void ScheduleRelease( List<(Veldrid.Texture Texture, ResourceSet Set)> entries ) =>
+		Render.ScheduleDelete( () =>
+		{
+			foreach ( var (texture, set) in entries )
+			{
+				set.Dispose();
+				texture.Dispose();
+			}
+		} );
+
+	// scratch for the retire passes, which run every frame: no list or closure is made unless something is dropped
+	private List<UiTitleBitmap>? droppedTitles;
+	private List<UiPixelSurface>? droppedSurfaces;
+
+	// A surface the map no longer draws gives its GPU copy back after SurfaceIdleFrames frames
+	private void RetireSurfaceTextures()
+	{
+		frameNumber++;
+		if ( surfaceTextures.Count == 0 )
+			return;
+		droppedSurfaces ??= new();
+		droppedSurfaces.Clear();
+		foreach ( var pair in surfaceTextures )
+			if ( frameNumber - pair.Value.Frame > SurfaceIdleFrames )
+				droppedSurfaces.Add( pair.Key );
+		if ( droppedSurfaces.Count == 0 )
+			return;
+		var entries = new List<(Veldrid.Texture Texture, ResourceSet Set)>( droppedSurfaces.Count );
+		foreach ( var surface in droppedSurfaces )
+		{
+			var entry = surfaceTextures[surface];
+			entries.Add( (entry.Texture, entry.Set) );
+			surfaceTextures.Remove( surface );
+		}
+		ScheduleRelease( entries );
+	}
+
 	// A frame with only cached titles (or no titles) must still release GPU copies the CPU cache has dropped. Disposal stays at the renderer's safe boundary.
 	private void RetireTitleTextures()
 	{
 		if ( titleTextures.Count == 0 )
 			return;
-		var dropped = titleTextures.Where( pair => pair.Key.Evicted ).ToList();
-		foreach ( var pair in dropped )
-			titleTextures.Remove( pair.Key );
-		if ( dropped.Count > 0 )
-			Render.ScheduleDelete( () =>
-			{
-				foreach ( var (_, (oldTexture, oldSet)) in dropped )
-				{
-					oldSet.Dispose();
-					oldTexture.Dispose();
-				}
-			} );
+		droppedTitles ??= new();
+		droppedTitles.Clear();
+		foreach ( var pair in titleTextures )
+			if ( pair.Key.Evicted )
+				droppedTitles.Add( pair.Key );
+		if ( droppedTitles.Count == 0 )
+			return;
+		var entries = new List<(Veldrid.Texture Texture, ResourceSet Set)>( droppedTitles.Count );
+		foreach ( var title in droppedTitles )
+		{
+			entries.Add( titleTextures[title] );
+			titleTextures.Remove( title );
+		}
+		ScheduleRelease( entries );
 	}
 
 	private (Veldrid.Texture, ResourceSet) Create( byte[] rgba, int width, int height, Sampler sampler )
@@ -447,6 +507,12 @@ internal sealed class UiRenderer : IDisposable
 			texture.Dispose();
 		}
 		titleTextures.Clear();
+		foreach ( var entry in surfaceTextures.Values )
+		{
+			entry.Set.Dispose();
+			entry.Texture.Dispose();
+		}
+		surfaceTextures.Clear();
 		foreach ( var slot in buffers.Concat( depthBuffers ) )
 		{
 			foreach ( var buffer in slot )

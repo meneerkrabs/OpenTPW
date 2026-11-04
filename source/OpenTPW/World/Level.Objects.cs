@@ -177,8 +177,9 @@ public partial class Level
 		ObjectAccessCells.RepairMissingLinks( cells, item.AccessPoints, item.Entry.HasQueue, effects );
 	}
 
-	/// <summary>The owner word the placement stores on an object's cells: the cell word of its anchor (<see cref="ParkCellMap.OwnerAt"/>).</summary>
-	internal static ushort OwnerWord( OriginalObject item ) => ParkCellMap.CellWord( item.Placement.X, item.Placement.Y );
+	/// <summary>The owner word the placement stores on an object's cells: the cell word of its thing's own cell (<see cref="ParkCellMap.OwnerAt"/>), the anchor plus the type's rotated map offset.</summary>
+	// [BIN:TPW-EXE:0x528f13 owner word] the owner words get the thing cell, not the anchor (0x528F13..0x528F26 -> 0x539210 at 0x529138); the two shipped objects with an offset, jungle/5x5rck and jungle/mammtunn ((0, 1)), differ
+	internal static ushort OwnerWord( OriginalObject item ) { var (x, y) = item.ThingCell; return ParkCellMap.CellWord( x, y ); }
 
 	/// <summary>Every placed object that guests may choose becomes a live attraction; new and removed objects follow.</summary>
 	private void ConnectObjectsToGuests()
@@ -299,18 +300,21 @@ public partial class Level
 		if ( OriginalPark is not { } park )
 			return;
 		legacyQueueSave ??= new Lazy<OriginalParkImport?>( () => OriginalPark.ReadShippedSave( park.LevelName, park.Map ) );
-		var laid = RestoreLegacySavedQueue( cells, item.AccessPoints, item.Entry.InfoId, item.Placement.Rotation, item.Entry.HasQueue, OwnerWord( item ), () => legacyQueueSave.Value, new LinkEffects( RefreshTile ) );
+		var laid = RestoreLegacySavedQueue( cells, item.AccessPoints, item.Entry.InfoId, item.Placement.Rotation, item.Entry.HasQueue, OwnerWord( item ), () => legacyQueueSave.Value, new LinkEffects( RefreshTile ), anchorWord: ParkCellMap.CellWord( item.Placement.X, item.Placement.Y ) );
 		if ( laid > 0 )
 			Log.Trace( $"[EXT:legacy-save-queue-cells] {item.Entry.DisplayName}: {laid} queue cell(s) of the shipped save restored into a park saved before the import took them." );
 	}
 
-	/// <summary>The repair of <see cref="RestoreLegacySavedQueue(ParkCellMap, OriginalObject)"/> for one object; <paramref name="shippedSave"/> is read only when the entrance links into empty ground.</summary>
-	internal static int RestoreLegacySavedQueue( ParkCellMap cells, IEnumerable<ObjectAccessPoint> accessPoints, int infoId, int rotation, bool hasQueue, ushort owner, Func<OriginalParkImport?> shippedSave, LinkEffects? effects = null )
+	/// <summary>
+	/// The repair of <see cref="RestoreLegacySavedQueue(ParkCellMap, OriginalObject)"/> for one object; <paramref name="shippedSave"/> is read only when the entrance links into empty ground. The shipped save's record
+	/// is matched on the object's <paramref name="anchorWord"/> (the record holds the anchor; null: the owner word, which is the same for a type without a map offset), the cells on <paramref name="owner"/>, the thing cell's word.
+	/// </summary>
+	internal static int RestoreLegacySavedQueue( ParkCellMap cells, IEnumerable<ObjectAccessPoint> accessPoints, int infoId, int rotation, bool hasQueue, ushort owner, Func<OriginalParkImport?> shippedSave, LinkEffects? effects = null, ushort? anchorWord = null )
 	{
 		var points = accessPoints.ToArray();
 		if ( !hasQueue || ObjectAccessCells.EmptyQueueFront( cells, points, owner ) is not { } front )
 			return 0;
-		if ( shippedSave() is not { } save || !save.PlacedObjects.Any( placed => placed.Record.InfoId == infoId && ParkCellMap.CellWord( placed.Record.X, placed.Record.Y ) == owner
+		if ( shippedSave() is not { } save || !save.PlacedObjects.Any( placed => placed.Record.InfoId == infoId && ParkCellMap.CellWord( placed.Record.X, placed.Record.Y ) == (anchorWord ?? owner)
 			&& placed.Record.Rotation == rotation ) )
 			return 0;
 		return ObjectAccessCells.RestoreLegacySavedQueue( cells, front, owner, save.Cells, effects );
@@ -324,7 +328,7 @@ public partial class Level
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
 		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ), ownExitCell: TypesFootprints, queueEntryResolver: TypesFootprints && item.Entry.HasQueue
-			? () => ResolveQueueEntrance( Objects, Guests.Grid.Cells, OwnerWord( item ) ) : null, positionCell: (item.Placement.X, item.Placement.Y) ) )
+			? () => ResolveQueueEntrance( Objects, Guests.Grid.Cells, OwnerWord( item ) ) : null, positionCell: item.ThingCell ) )
 		{
 			item.Runtime.Visitors.QueueEdited += () => ReevaluateQueuedRide( item.Runtime );
 			// [EXT:pools-changing-room] a changing room's pool-side cells follow from its footprint (geometry only: the water is read when a guest swims)
@@ -476,7 +480,7 @@ public partial class Level
 		runtime.Visitors.EntranceCell = cells.Entrance;
 		runtime.Visitors.ExitCell = cells.Exit;
 		runtime.Visitors.ExitAccessCell = ownExitCell ? ExitAccessCellOf( accessPoints ) : null;
-		// [BIN:TPW-EXE:0x004DB33C access cell] +0x36 is the shape's first entrance cell itself (inside the footprint), +5/+7 the cell the thing stands on (the anchor); a world that keeps the cells it was given has neither
+		// [BIN:TPW-EXE:0x004DB33C access cell] +0x36 is the shape's first entrance cell itself (inside the footprint), +5/+7 the cell the thing stands on (the anchor plus the type's rotated map offset, OriginalObject.ThingCell: only jungle/5x5rck and jungle/mammtunn, (0, 1), differ from the anchor); a world that keeps the cells it was given has neither
 		runtime.Visitors.AccessCell = ownExitCell ? FirstEntranceCellOf( accessPoints ) : null;
 		runtime.Visitors.PositionCell = ownExitCell ? positionCell : null;
 		runtime.Visitors.QueueFrontCell = cells.QueueFront;
@@ -844,6 +848,18 @@ public partial class Level
 	{
 		if ( Guests?.Grid.Cells is { } cells && cells.TypeAt( x, y ) is ParkCellType.Path or ParkCellType.Queue )
 			PathVariants.Refresh( x, y );
+		NoteTileRecreated( x, y );
+	}
+
+	/// <summary>
+	/// A queue cell (the only class-2 cell, table 0x7630B0) whose tile 0x5365D0 re-creates starts its animation again: the executable removes the instance (0x522A90) and places it with a new channel (0x5229E0), so the clip
+	/// begins at frame 0. The routes that refresh are the line commit's refresh pass over the whole line including its anchor, the link writer and the clear's unlinking for the queue neighbours they change, the corner walk and the fence fill.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005365D0 tile refresh] the sites: the line commit (0x5340A7 on every cell of the line from the anchor to the end), the path link writer (0x534A8C, 0x534C9E, 0x534EB1, 0x5350BF: a queue neighbour with a link bit toward the new cell), the clear 0x5367A0 (the path case re-creates each linked neighbour at 0x53687E over all eight bits, not gated by 0x81D7A8, which is what the type pass reaches when a queue is laid over a path, 0x5346D0; the queue and entrance case at 0x536B9E, from SetCell case 0x32 and Back 0x52FE50), the corner walk 0x530120 (0x530387, 0x5303A3), the fence fill 0x5311C0 (the scan blocks that carry 0x40 in each of its four directions, 0x53132E, 0x53146A, 0x5315A6, 0x5316E3, and every unmarked post, 0x531926..0x531965) and the cell-op step 0x5370E0 with op 0x81 on a fence post (0x5385F0, 0x53865D, 0x5386CA, 0x538708, 0x53874B; the line passes and the rewrite walk 0x52BA50 reach it)
+	internal void NoteTileRecreated( int x, int y )
+	{
+		if ( OriginalTerrain != null && Guests?.Grid.Cells is { } cells && cells.TypeAt( x, y ) == ParkCellType.Queue )
+			OriginalTerrain.NoteQueueRecreated( x, y );
 	}
 
 	/// <summary>The area clear tool (the bulldozer: Clear Land and the Clear key); null without paths or on a read-only visit.</summary>

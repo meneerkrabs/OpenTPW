@@ -81,6 +81,29 @@ public class QueueCornerWalkTests
 	}
 
 	[TestMethod]
+	public void AWalkThatEndsOnAPathReportsTheTwoCellsItUnlinksAndNoOther()
+	{
+		var checkedCases = 0;
+		foreach ( var golden in Cases() )
+		{
+			var map = new ParkCellMap( 128, 128 );
+			foreach ( var (x, y, before, _) in golden.Cells )
+				Lay( map, x, y, before );
+			var reported = new List<(int X, int Y)>();
+			var result = QueueCornerWalk.Run( map, golden.Entrance, golden.Rotation, write: true, ( x, y ) => reported.Add( (x, y) ) );
+			if ( !result.EndedOnPath )
+			{
+				Assert.AreEqual( 0, reported.Count, $"{golden.Name}: a walk that ends on no path refreshes nothing" );
+				continue;
+			}
+			checkedCases++;
+			Assert.IsTrue( reported.Count is 1 or 2, $"{golden.Name}: {reported.Count} cells reported" );
+			Assert.IsTrue( reported.All( cell => golden.Cells.Any( c => (c.X, c.Y) == cell ) ), $"{golden.Name}: every reported cell is one of the walk's" );
+		}
+		Assert.IsTrue( checkedCases > 0, "the corpus has walks that end on a path" );
+	}
+
+	[TestMethod]
 	public void AWalkThatDoesNotWriteLeavesTheCellsAlone()
 	{
 		foreach ( var golden in Cases().Where( golden => golden.Cells.Any( cell => !cell.Before.SequenceEqual( cell.After ) ) ).Take( 20 ) )

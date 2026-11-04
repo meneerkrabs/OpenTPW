@@ -192,6 +192,13 @@ public sealed class CoasterRide
 	/// <summary>The curve fit (swappable; the traced Hermite/Bézier fit by default).</summary>
 	public ICoasterCurve Curve { get; set; } = HermiteCoasterCurve.Instance;
 	public IReadOnlyList<CoasterSample> Samples => samples;
+
+	/// <summary>The number of consecutive knot pairs of the last curve fit (one less than the knots; the closing pair is not among them): what the park map's track layer walks.</summary>
+	internal int CurvePairCount => Math.Max( 0, Math.Min( curveKnots.Count, curveControls.Length ) - 1 );
+
+	/// <summary>The four Bézier points of a knot pair (<c>0x43e1b0</c>: the first knot, its forward control, the second knot's back control and the second knot), as the map's track layer evaluates them.</summary>
+	internal (System.Numerics.Vector3 P0, System.Numerics.Vector3 P1, System.Numerics.Vector3 P2, System.Numerics.Vector3 P3) CurvePair( int index ) =>
+		(curveKnots[index].Position, curveControls[index].Forward, curveControls[index + 1].Back, curveKnots[index + 1].Position);
 	/// <summary>Controller <c>+172</c>: the sample spacing in world units.</summary>
 	public float Spacing { get; private set; }
 	/// <summary>Controller <c>+268</c>: samples × spacing.</summary>

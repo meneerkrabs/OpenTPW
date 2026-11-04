@@ -310,7 +310,10 @@ public class ArrivalVehicleTests
 		Assert.AreEqual( 3, park.Simulation.Guests.Count( guest => guest.State == GuestState.WaitingToGoHome ), "they wait for the vehicle, not a timer" );
 
 		park.Vehicles.SetStatus( ArrivalVehicleKind.Ferry, 4 );
+		var beams = 0;
+		park.Simulation.Beamed += _ => beams++;
 		park.Turns( 1 );
+		Assert.AreEqual( 3, beams, "each boarding guest beams (0x00500C35: 0x4FA470(0x13) before the destroy request)" );
 		// 0x00500BD0: the guest that heads its cell's list boards; the sweep takes the newest guest of a cell first (it heads the list), which leaves at once (the request 0x0050B780 runs the guest's cleanup 0x004FB330 -> 0x004F8AE0 -> 0x0050B980, which takes the thing out of its cell's list with 0x004D9280 right away; only the free waits for the turn's destroys, 0x00516641), so the older guest of the
 		// same cell heads the list when its own update comes and boards in the same turn
 		Assert.AreEqual( 0, park.Simulation.Guests.Count, "status 4: every guest boards in the one turn's sweep, the newest of each cell first" );

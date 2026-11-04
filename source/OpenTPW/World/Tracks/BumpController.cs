@@ -716,10 +716,26 @@ public sealed partial class BumpController
 		HangRiderHeads( vehicle );
 		RiderCount += vehicle.Riders.Count;
 		Relaunch( vehicle );
+		// [BIN:TPW-EXE:0x0054A009 first-draw flag] the creation's common exit sets flag 0x4000000 on every vehicle it makes, whatever the family (its only caller 0x5547C0 is the generic creator); the beam is not raised here but by the draw (RaiseFirstDrawBeams)
 		vehicle.Flags |= BumpVehicle.Launched;
-		if ( Template.IsKart )
-			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleBeamUpCar );
+		vehicle.FirstDrawPending = true;
 		return true;
+	}
+
+	/// <summary>
+	/// The first draw of the vehicles created since the last frame: the per-vehicle draw clears the flag and raises particle 15 at the drawn place, once (the frame step's thing loop, tp.exe <c>0x00519060</c> from <c>0x0054FA33</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00546A89 first-draw beam] 0x546280 (its only caller is 0x5190D1, for every type-3 thing with a controller, once per rendered frame whether the vehicle is in view or not) tests flag 0x4000000 of each live vehicle of the controller: when set it clears the flag (0x546A95) and calls 0x521E60 with the vehicle's matrix translation times 1024 and particle 15 (0x546AC5); no family or type is tested between 0x5467C8 and 0x546A89 (only flag bits 0x1000000, 0x800, 0x400, 0x1000 and the helpers 0x46F180/0x46F6F0), so karts, bumper cars and boats alike beam on the frame that first draws them, a creation made in the substeps of the frame included; the retire beam 0x54AE50 clears 0x400000 and raises 15 on its own and leaves this flag alone
+	// the pending state is not part of the hash or of a park save: a vehicle that exists in a saved park has been drawn (OpenTPW's saves carry the flag set, as before)
+	public void RaiseFirstDrawBeams()
+	{
+		foreach ( var vehicle in vehicles )
+		{
+			if ( !vehicle.FirstDrawPending || (vehicle.Flags & BumpVehicle.Live) == 0 )
+				continue;
+			vehicle.FirstDrawPending = false;
+			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleBeamUpCar );
+		}
 	}
 
 	private void InsertSorted( BumpVehicle vehicle )

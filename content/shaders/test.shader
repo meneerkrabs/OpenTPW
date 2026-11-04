@@ -129,6 +129,8 @@ fragment {
     const uint FLAG_LAND_DIM = 0x01000000u;
     // TextureSlotAddressing.TerrainUnlitFlag: a corner of the terrain while the LIGHTING option is 0: tp.exe 0x574530 then copies one constant colour (white, 0xFFFFFFFF) into every terrain colour and skips the lights [BIN:TPW-EXE:0x0057453A terrain colour table]
     const uint FLAG_TERRAIN_UNLIT = 0x00800000u;
+    // TextureSlotAddressing.PulseFlag: a corner of a queue dead end, shaded by the pulse colour (red 1, green and blue g_flTime = ModelEntity.PulseTint)
+    const uint FLAG_PULSE = 0x00400000u;
 
     // CLAMP on the wrapping sampler: the coordinates stay half a texel of the coarsest mip the footprint can select
     // inside the edges (that mip's real size, floor(size / 2^level) but at least 1, so odd sizes do not bleed either),
@@ -255,9 +257,13 @@ fragment {
         if ( g_oUbo.g_flLightCount > 0.5 )
             vShading += pointLights( vs_out.vPosition );
         // a self-lit material takes no light: its corners carry the draw's constant colour, white (tp.exe 0x580C51: the vertex fill skips the lighting colour of 0x574660 for material bit 0x1)
-        bool selfLit = ( outMatFlags & FLAG_SELF_LIT ) != 0u;
+        // a queue dead end takes its pulse colour instead of any light (QueueModelPulse: tp.exe 0x469840 fills the parts' vertex colours, and the lighting pass skips them, 0x57AA30); it counts as unlit content for the evening tint
+        bool pulse = ( outMatFlags & FLAG_PULSE ) != 0u;
+        bool selfLit = ( outMatFlags & FLAG_SELF_LIT ) != 0u || pulse;
         if ( selfLit )
             vShading = vec3( 1.0 );
+        if ( pulse )
+            vShading = vec3( 1.0, g_oUbo.g_flTime, g_oUbo.g_flTime );
         // the terrain at LIGHTING 0: the constant white replaces the whole lighting colour, the sun, the ambient and the point lights (the lights are summed by 0x5741B0, which the constant branch does not call)
         bool terrainUnlit = ( outMatFlags & FLAG_TERRAIN_UNLIT ) != 0u;
         if ( terrainUnlit )

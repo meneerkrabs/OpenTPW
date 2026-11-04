@@ -25,6 +25,8 @@ internal static class SaveTestPayloads
 		public uint MeshInstance { get; init; } = 110;
 		public string Line1 { get; init; } = "Belly";
 		public string Line2 { get; init; } = "Bounce";
+		/// <summary><c>mTopLeft</c> (+0x34), the anchor word <c>(y &lt;&lt; 7) + x + 1</c>; null takes it from the position, as a thing without a map offset has it.</summary>
+		public ushort? TopLeft { get; init; }
 		/// <summary><c>mNext</c> (+0xC): the next attraction thing of the object chain, 0 at its end.</summary>
 		public ushort Next { get; init; }
 		public uint State { get; init; }
@@ -80,7 +82,8 @@ internal static class SaveTestPayloads
 		}
 		writer.Write( new byte[8] );
 		writer.Write( fields.State );
-		writer.Write( new byte[4] );
+		writer.Write( fields.TopLeft ?? (ushort)(((fields.PositionY >> 8) << 7) + (fields.PositionX >> 8) + 1) );
+		writer.Write( (ushort)0 );
 		writer.Write( fields.Next );
 		writer.Write( fields.AssignedStaff );
 		writer.Write( (ushort)0 );

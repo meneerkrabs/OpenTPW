@@ -251,6 +251,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [EXT:online-visit-settings] a visit reads the group's Arrival.* keys from Standard.sam, where the original loads online_Standard.sam for GameType 1 (0x0051573C), and a read-only visit has no economy, so its groups count 0 park points: the online visit is OpenTPW's read-only extension, not the original's two-player park (docs/ONLINE.md)
 	public bool OnlineVisit { get; set; }
 
+	/// <summary>Whether this is an OpenTPW harness world that does not type its cells (the gates, test rigs and tools that build a simulation on a bare grid, [EXT:untyped-harness-world]); a park a Level builds is not one, and every cell type test reads the original's types.</summary>
+	public bool UntypedHarnessWorld { get; set; } = true;
+
 	private ParkLitter? litter;
 	/// <summary>Where guests drop their litter: set here, else the park's (<see cref="IGuestPayments.Litter"/>); null keeps none.</summary>
 	public ParkLitter? Litter { get => litter ?? Payments?.Litter; set => litter = value; }
@@ -1806,7 +1809,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( status == 4 )
 		{
 			if ( ChainHead( here ).Guest == guest )
+			{
+				// [BIN:TPW-EXE:0x00500C35 departure beam] the head guest of the cell calls 0x4FA470(0x13) (particle 19 at its place) and then the destroy request 0x50B780
+				Beamed?.Invoke( guest );
 				guest.State = GuestState.Gone;
+			}
 			return;
 		}
 		if ( status is not (1 or 2 or 3) || StopCells() is not { } cells )
@@ -2212,8 +2219,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	public event Action<Guest, uint>? Voiced;
 
-	/// <summary>Raised when a guest beams in or out of a ride that requires teleporting (boarding and leaving); presentation only, the particle starts at the guest's place.</summary>
-	public event Action<Guest>? Teleported;
+	/// <summary>Raised when a guest beams: in or out of a ride that requires teleporting (boarding and leaving) and where a guest is made off the park's cells (an arrival vehicle's, <see cref="SpawnArrival"/>); presentation only, the particle starts at the guest's place.</summary>
+	public event Action<Guest>? Beamed;
 
 	/// <summary>The <c>cat_kids</c> event of a guest dismissed from a queue: the sound <c>0x0050133D</c> plays for one thing id in eight (0x80).</summary>
 	public const uint DismissalVoiceEvent = 0x80;
@@ -3472,7 +3479,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			NoteBoarding( ride );
 		// [BIN:TPW-EXE:0x501db0 state 16 entry] a ride whose type record +0x100 (UsageInfo.RequiresTeleport) is set starts particle 0x13 at the guest's place (0x4fa470) before its model is taken down
 		if ( ride.RequiresTeleport )
-			Teleported?.Invoke( guest );
+			Beamed?.Invoke( guest );
 		ClearQueueState( guest );
 		guest.State = GuestState.Using;
 		BoardBodySprite( guest, ride );
@@ -3659,7 +3666,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		// [BIN:TPW-EXE:0x501db0 state 15 entry] the same beam when the guest is back on the ground (after 0x4fa030 placed its model)
 		if ( ride.RequiresTeleport )
-			Teleported?.Invoke( guest );
+			Beamed?.Invoke( guest );
 		guest.LastAttractionId = ride.AttractionId;
 		guest.SecondsSinceRide = 0;
 		// [BIN:TPW-EXE:0x4FD9B1 visit count] the use routine 0x4FD970 sorts a finished visit by the type's Info.WhichUIType (+0x4AC): 0 raises the rides ridden (+0x1C4), 1 the shops visited (+0x1C8), 2 the sideshows played (+0x1CC), won or lost; any other kind (toilets, bins) counts none

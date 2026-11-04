@@ -8,9 +8,11 @@ ADVISOR-001 docs/reverse/APPROX-TRACE.md
 ADVISOR-002 docs/reverse/APPROX-TRACE.md
 ADVISOR-003 docs/reverse/APPROX-TRACE.md
 ADVISOR-004 docs/reverse/APPROX-TRACE.md
+ADVISOR-005 docs/LIPS.md
 ADVISOR-006 docs/reverse/APPROX-TRACE.md
 ADVISOR-007 docs/reverse/APPROX-TRACE.md
 ADVISOR-008 docs/reverse/APPROX-TRACE.md
+ADVISOR-009 docs/LIPS.md
 ADVISOR-010 docs/reverse/APPROX-TRACE.md
 ADVISOR-011 docs/reverse/APPROX-TRACE.md
 ADVISOR-012 docs/LIPS.md
@@ -191,6 +193,7 @@ GUEST-003 docs/progress/2026-10-17-thing-pool-and-thing-ids.md
 GUEST-004 docs/GUESTS.md
 GUEST-005 docs/GUESTS.md
 GUEST-006 docs/GUESTS.md
+GUEST-007 docs/GUESTS.md
 GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
 GUEST-010 docs/GUESTS.md
@@ -246,6 +249,7 @@ PATH-011 docs/PROGRESS.md
 PATH-012 docs/reverse/REVIEW-PATH.md
 PATH-013 docs/GUESTS.md
 PATH-014 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
+PATH-015 docs/PATHS.md
 PATH-016 docs/PATHS.md
 PTCL-901 docs/PROGRESS.md
 PTCL-902 docs/PARTICLES.md
@@ -378,6 +382,7 @@ UI-020 docs/reverse/APPROX-TRACE.md
 UI-021 docs/reverse/APPROX-TRACE.md
 UI-022 docs/reverse/APPROX-TRACE.md
 UI-023 docs/reverse/APPROX-TRACE.md
+UI-024 docs/UI.md
 UI-027 docs/UI.md
 UI-028 docs/UI.md
 UI-029 docs/reverse/APPROX-TRACE.md

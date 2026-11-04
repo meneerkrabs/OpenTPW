@@ -10,7 +10,7 @@ namespace OpenTPW.UI.Original;
 /// owner (the park advisor; linear filtered, not disposed by the UI), or a <see cref="UiDepthImage"/> the
 /// renderer draws first (the model previews).
 /// </summary>
-public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas, int FontScale = 1, Veldrid.Texture? Rendered = null, UiDepthImage? DepthImage = null, UiTitleBitmap? Title = null )
+public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas, int FontScale = 1, Veldrid.Texture? Rendered = null, UiDepthImage? DepthImage = null, UiTitleBitmap? Title = null, UiPixelSurface? Surface = null )
 {
 	/// <summary>A composed title bitmap (<see cref="UiTitleBitmap"/>) drawn at text scale <paramref name="scale"/>.</summary>
 	public static UiTexture Of( UiTitleBitmap title, int scale ) => new( null, null, Math.Max( 1, scale ), Title: title );

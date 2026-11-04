@@ -157,7 +157,8 @@ public class ObjectTextureFrameTests
 				animator.Advance( 0 );
 			return GC.GetAllocatedBytesForCurrentThread() - before;
 		}
-		Assert.AreEqual( Allocated( gated ), Allocated( first ), "the texture-frame pass allocates nothing per update" );
+		Assert.AreEqual( 0, Allocated( gated ), "an update allocates nothing (the write scope of the drawn reset included)" );
+		Assert.AreEqual( 0, Allocated( first ), "the texture-frame pass allocates nothing per update" );
 	}
 
 	[TestMethod]
@@ -431,7 +432,7 @@ public class ObjectTextureFrameTests
 	/// The synthetic geometry of Md2ModelFileTests (one textured quad, mesh node with one dummy child), with
 	/// the single texture slot holding <paramref name="frames"/> frame names.
 	/// </summary>
-	private static byte[] Geometry( int frames, int slots = 1, uint slotFlags = 0x71 )
+	internal static byte[] Geometry( int frames, int slots = 1, uint slotFlags = 0x71 )
 	{
 		int FlagTable = 0xB8, NameTable = FlagTable + slots * 8, SlotTable = NameTable + slots * frames * 20;
 		int Positions = SlotTable + slots * 16, Normals = Positions + 48, Uvs = Normals + 72, Materials = Uvs + 32, Faces = Materials + 16, Order = Faces + 16;
@@ -512,7 +513,7 @@ public class ObjectTextureFrameTests
 	/// </summary>
 	private static ModelAnimation Clip( int slot, params (int Tick, int Frame)[] keys ) => Clip( slot, true, 0, keys );
 
-	private static ModelAnimation Clip( int slot, int duration, params (int Tick, int Frame)[] keys ) => Clip( slot, true, duration, keys );
+	internal static ModelAnimation Clip( int slot, int duration, params (int Tick, int Frame)[] keys ) => Clip( slot, true, duration, keys );
 
 	private static ModelAnimation Clip( int slot, bool enableFlag, params (int Tick, int Frame)[] keys ) => Clip( slot, enableFlag, 0, keys );
 

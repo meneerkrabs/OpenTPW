@@ -23,7 +23,7 @@ namespace OpenTPW.Hud;
 // [EXT:preview-icon-cpu-projection] the preview's corners are projected on the CPU with the original's matrix, view and viewport, and its kept triangles are
 // drawn with a depth buffer into an image covering them, which the interface draws in its own pass, rather than as an instance in the engine's scene draw;
 // the object windows' previews keep OpenTPW's orthographic 30 degree view centred in their frame
-// [APPROX:UI-026] the original lights the preview's vertices in its 3D object pipeline (0x57aa10); OpenTPW draws them unlit
+// [APPROX:UI-026] the original lights the preview's vertices in its 3D object pipeline (0x57aa10 -> 0x574660 -> 0x5741b0: ambient plus the scene's lights); which lights the scene holds with the buy window open is not traced, so OpenTPW draws them unlit
 public sealed class PreviewIcon
 {
 	private readonly ModelFile model;

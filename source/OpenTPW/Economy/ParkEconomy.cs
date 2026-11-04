@@ -2567,7 +2567,13 @@ public sealed partial class ParkEconomy : IParkEconomy
 		if ( wage > 0 )
 			Post( LedgerCategory.StaffCosts, wage );
 		Raise( ParkEventKind.StaffFired, wage, member.Id, (int)member.Type );
+		// [BIN:TPW-EXE:0x005059A8 dismissal beam] 0x505790 pays the wage (0x4D01F0, added to the wages row +0x1F7F0), then calls 0x4FA470(0x13) on the member's thing, particle 19 at its place, and the destroy request 0x50B780; a member the world has not placed has no place to beam at
+		if ( member.CellX is { } cellX && member.CellY is { } cellY )
+			StaffDismissed?.Invoke( cellX, cellY );
 	}
+
+	/// <summary>Raised with the cell-unit place of a dismissed employee, for the beam of the dismissal; presentation only (nothing is saved or hashed).</summary>
+	public event Action<float, float>? StaffDismissed;
 
 	public void SetTrainingBudget( StaffType type, long monthlyBudget )
 	{

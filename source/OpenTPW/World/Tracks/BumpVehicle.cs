@@ -43,8 +43,10 @@ public sealed class BumpVehicle
 	public const int Shadow = 0x2000;
 	/// <summary>Kart grid slot mode: the vehicle aims at its grid buoy and parks there.</summary>
 	public const int GridMode = 0x40;
-	/// <summary>The vehicle finished launching.</summary>
+	/// <summary>The creation's mark (0x54A009 sets 0x4000000 on every vehicle it makes; the original's draw clears it again at the first draw, 0x546A95). OpenTPW keeps the bit in the flags word (the hash and the saves carry it as they always did) and tracks the pending first draw in <see cref="FirstDrawPending"/>.</summary>
 	public const int Launched = 0x4000000;
+	/// <summary>The vehicle has not been drawn since its creation: its first-draw beam is still due (<see cref="BumpController.RaiseFirstDrawBeams"/>). Not saved and not hashed.</summary>
+	public bool FirstDrawPending { get; internal set; }
 	/// <summary>The vehicle is hidden (0x00548E80): neither it, its shadow nor its riders' heads are drawn, and it takes no part in the vehicle collisions. Only the Space Racers Teleport hides one.</summary>
 	public const int Hidden = 0x200;
 	/// <summary>The hidden vehicle came into the teleport from its negative side (it shows again past the far side of the second tile).</summary>

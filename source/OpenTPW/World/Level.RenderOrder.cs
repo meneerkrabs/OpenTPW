@@ -36,7 +36,7 @@ public partial class Level
 	/// <summary>
 	/// Splits a draw sequence into the entities drawn before the translucent pass (<see cref="WorldPass"/>) and the ones drawn after it: the weather renderer, the pools' water and the spray of their jets and the swimmers. Each group keeps the
 	/// order of the snapshot (the caller's lists are cleared and refilled, so a frame allocates nothing here). The particle renderer is in the first group: its opaque quads are drawn there and its blended quads join the pass's list, far to near with
-	/// the translucent world geometry (<see cref="Model.Companions"/>, <see cref="WorldPass.SubmitParticle"/>), as the original's deferred list holds both.
+	/// the translucent world geometry (<see cref="Model.Companions"/>, <see cref="WorldPass.SubmitParticle"/>), as the original's deferred list holds both. Its screen-space quads are not in that list: they are drawn last (<see cref="ParticleRenderer.RenderScreen"/>), over the late group too.
 	/// </summary>
 	// [BIN:TPW-EXE:0x582170 frame flush] the scene pass 0x576A00 ends with 0x582170: the batcher 0x581DB0 draws every model face whose state has bit 0x1000 or 0x2000 (opaque 0x1256, alpha-test-0xF0 0x2756) at once and
 	// defers the rest (0x556: alpha test 0x10), then 0x582AD0 draws the deferred records far to near by mean vertex depth (0x5829E0); see WorldTranslucency.

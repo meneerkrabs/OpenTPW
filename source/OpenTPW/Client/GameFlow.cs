@@ -913,6 +913,8 @@ internal sealed partial class GameFlow : IDisposable
 	private enum Backdrop { Lobby, Globe, City }
 
 	private Backdrop backdrop = Backdrop.Lobby;
+	// the islands screen was deactivated by the globe and has not been built again (any way back to the lobby rebuilds it, also through a city lobby)
+	private bool lobbyScenePending;
 	private Func<System.Numerics.Matrix4x4, float, float?>? lobbyFarPlane;
 	private (System.Numerics.Matrix4x4 View, float Aspect, ModelHeightfield Field, float FieldOfView, float Distance, float? Far)? lobbyFarCache;
 	private TerrainViewSpans? lobbySpans;
@@ -1002,14 +1004,19 @@ internal sealed partial class GameFlow : IDisposable
 			// Every globe activation faces the start view again, also back from a city lobby (GlobeCameraMode.Reset).
 			GlobeCameraMode.Reset();
 			Camera.SetCameraMode<GlobeCameraMode>();
+			// the globe's activation deactivated the islands screen, which stays down through a city lobby until the islands screen is active again
+			lobbyScenePending = true;
 		}
 		else
 		{
 			if ( wanted == Backdrop.Lobby && Lobby != null && Menu != null )
 			{
 				// [BIN:TPW-EXE:0x5dd5e4 back from the globe] the globe's deactivate is followed by the islands screen's activate (0x5e23f0, 0x5e18d0), which builds the islands, their clips and the flyer spawners afresh (0x5e3210)
-				if ( backdrop == Backdrop.Globe )
+				if ( lobbyScenePending )
+				{
+					lobbyScenePending = false;
 					RebuildLobbyScene();
+				}
 				LobbyCameraMode.Target = Lobby.Target( Menu.Selected );
 				cityScene?.Delete();
 				cityScene = null;
@@ -1119,6 +1126,9 @@ internal sealed partial class GameFlow : IDisposable
 			drawFlash();
 		if ( weatherListed )
 			weather!.Render();
+		foreach ( var entity in snapshot )
+			if ( entity is ParticleRenderer particles )
+				particles.RenderScreen();
 	}
 
 	/// <summary>The lobby's reference frames (60 Hz) for the frame-driven effects and flyers.</summary>
@@ -1193,9 +1203,9 @@ internal sealed partial class GameFlow : IDisposable
 		{
 			// The park's backdrop: the viewport clear, then the sky over it (Level.DrawSky, World/Sky.cs).
 			// [BIN:TPW-EXE:0x4080e0 fog colour] the level load copies ThemeEngine.FogColour into the fog colour [0x8bd47c]; [BIN:TPW-EXE:0x5737aa clear] the viewport clear uses it only when the render flags [0x8bcbc8] have bit 0x2000 (the fog, which the first-person views toggle in, 0x54fad7) or 0x4000000 (the lobby's), else black: the park overview clears black (RenderFog.ClearColour)
-			// the Theme Park Inc executable has its own clear colour word for the no-fog case ([0xBE20BC], copied at 0x428915 from a settings block not traced here), so its parks keep the fog colour
+			// [BIN:TPI-EXE:0x6D697A clear] the Theme Park Inc executable's clear takes the fog word with the fog flags and its own word [0xBE20BC] (ThemeEngine.BackColour, 0x428915) without them
 			backgroundBatch.Clear();
-			var clearColour = GameEditions.IsThemeParkInc ? Level.WorldBackdropColour : RenderFog.ClearColour( RenderFog.Enabled, lobbyFlag: false, Level.WorldBackdropColour );
+			var clearColour = RenderFog.ClearColour( RenderFog.Enabled, lobbyFlag: false, Level.WorldBackdropColour, GameEditions.IsThemeParkInc ? Level.ClearBackColour : null );
 			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), clearColour );
 			using ( FrameMarks.Measure( "draw.backdrop" ) )
 				backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );

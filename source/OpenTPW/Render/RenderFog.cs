@@ -45,8 +45,10 @@ internal static class RenderFog
 	// [BIN:TPW-EXE:0x5737AA viewport clear] the scene's clear (0x573740, the viewport's Clear2 at vtable +0x50) pushes the colour (flags & 0x4002000 ? [0x8BD47C] : 0): neg, sbb and and make a mask of the test, so the park's overview, which has no fog, clears black
 	// [BIN:TPW-EXE:0x5D8BEA lobby flag] the lobby's init (0x5D8B50) sets bit 0x4000000 of [0x8BCBC8] (and clears 0x10000 and 0x2000) and its exit restores the saved word (0x5D8D0D, 0x5D8D19): bit 0x4000000 is the lobby's, so its clear stays the fog colour 0xFF44DDFF
 	// [BIN:TPW-EXE:0x5DD072 globe flag] the globe sets bit 0x2000000 (and clears it on leaving, 0x5DD2E2): that bit is not in the clear's mask, but the lobby's 0x4000000 is still set under it
-	// [APPROX:UI-107] left open: the Theme Park Inc executable's own non-fog clear word [0xBE20BC] (0x428915), the park view's far plane lagging one frame in the original (0x576A2C), and whether the weather's batches take the fog bit
-	public static RgbaByte ClearColour( bool fogFlag, bool lobbyFlag, RgbaByte fogColour ) => fogFlag || lobbyFlag ? fogColour : new RgbaByte( 0, 0, 0, 255 );
+	// [APPROX:UI-107] left open: the hidden debug key 0x40C830 (render flag bits 0x4 and 0x8) is not offered, and the Theme Park Inc executable's own toggling of the fog flag (the counterpart of 0x54FAD7) was not traced
+	// [BIN:TPI-EXE:0x6D697A clear] the Theme Park Inc clear picks the fog word [0xBE20C0] when the flags have bit 0x4002000 and the word [0xBE20BC] (ThemeEngine.BackColour, Sky.BackColour) otherwise, where tp.exe's is the constant 0
+	public static RgbaByte ClearColour( bool fogFlag, bool lobbyFlag, RgbaByte fogColour, RgbaByte? backColour = null ) =>
+		fogFlag || lobbyFlag ? fogColour : backColour ?? new RgbaByte( 0, 0, 0, 255 );
 
 	/// <summary>The colour the world pass draws its fog in; the game flow sets it to the level's fog colour (or the lobby's) before each world pass.</summary>
 	public static SVector3 WorldColour { get; set; } = ColourOf( LobbyColour );

@@ -738,6 +738,34 @@ public sealed class Sky : IDisposable
 		return FogColour( ((long)LobbyEffects.ClearColour.R << 16) | ((long)LobbyEffects.ClearColour.G << 8) | LobbyEffects.ClearColour.B );
 	}
 
+	/// <summary>The colour the Theme Park Inc viewport clear uses without fog (<c>ThemeEngine.BackColour</c> of its Standard.sam, a Direct3D colour 0xRRGGBB), black without the setting.</summary>
+	// [BIN:TPI-EXE:0x4288F0 theme engine words] Game.exe copies the ThemeEngine settings block's first two words into the clear words: [0xA027CC] into [0xBE20BC] (0x4288F7, 0x428915) and [0xA027D0] into [0xBE20C0] (0x4288F0, 0x4288FB); the viewport clears (0x6D697A to 0x6D698E, 0x6D72EB to 0x6D72FF) push [0xBE20C0] when the render flags have bit 0x4002000 and [0xBE20BC] otherwise
+	// [BIN:TPI-EXE:0x99C664 ThemeEngine names] the property table lists the ThemeEngine block as BackColour, FogColour, AmbientLightLevel, DirectionalLightLevel, ProceduralTexturingXOffset and ProceduralTexturingYOffset (records of 0x3C bytes at 0x99C6A0 to 0x99C7CC) in the order of the block's words 0xA027CC to 0xA027E0 (tp.exe's table has the same block without BackColour: FogColour first, in the word 0x7856D4 that 0x4080E0 copies to the fog colour [0x8BD47C]), so the word [0xA027CC] is BackColour and [0xA027D0] is FogColour; the binding is read from the table order, the generic loader that fills the words was not traced
+	// [DATA:Standard.sam:ThemeEngine.BackColour] 0 in Theme Park Inc's levels
+	internal static RgbaByte BackColour( string levelName ) =>
+		BackColour( levelName, path => FileSystem.FileExists( path ), path => new SettingsFile( path )["ThemeEngine.BackColour"] );
+
+	/// <summary>The non-fog clear colour from settings files read through <paramref name="exists"/> and <paramref name="read"/>, the level's own file first; black when none sets it.</summary>
+	internal static RgbaByte BackColour( string levelName, Func<string, bool> exists, Func<string, string?> read )
+	{
+		try
+		{
+			foreach ( var path in new[] { $"/levels/{levelName}/Standard.sam", "/levels/Standard.sam" } )
+			{
+				if ( !exists( path ) )
+					continue;
+				var text = read( path );
+				if ( !string.IsNullOrWhiteSpace( text ) && long.TryParse( text.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value ) )
+					return FogColour( value );
+			}
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or KeyNotFoundException )
+		{
+			Log.Warning( $"Back colour of level {levelName} unreadable: {exception.Message}" );
+		}
+		return new RgbaByte( 0, 0, 0, 255 );
+	}
+
 	/// <summary>An opaque colour from a Direct3D colour value (the alpha byte is ignored).</summary>
 	internal static RgbaByte FogColour( long value ) => new( (byte)(value >> 16), (byte)(value >> 8), (byte)value, 255 );
 

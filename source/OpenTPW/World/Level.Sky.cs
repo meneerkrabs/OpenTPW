@@ -13,6 +13,11 @@ public partial class Level
 	/// </summary>
 	internal RgbaByte BackdropColour => backdropColour ??= Sky.FogColour( LevelName );
 
+	private RgbaByte? clearBackColour;
+
+	/// <summary>The Theme Park Inc viewport clear without fog (<c>ThemeEngine.BackColour</c>, read once; <see cref="Sky.BackColour(string)"/>).</summary>
+	internal RgbaByte ClearBackColour => clearBackColour ??= Sky.BackColour( LevelName );
+
 	/// <summary>
 	/// [EXT:evening] The backdrop and fog colour the world pass really uses: <see cref="BackdropColour"/> at full day (and with the extension off), darkened and tinted by the look of the moment at dusk and night.
 	/// </summary>

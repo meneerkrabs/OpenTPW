@@ -94,4 +94,4 @@ the rest reports skips; nothing fails. CI has neither.
 
 `tpi_price_oracle.py` runs the routine `0x6120C0` of the Theme Park Inc no-CD `Game.exe` (`OPENTPW_TPI_EXE`) with a synthetic guest, attraction thing, type record and rating byte on random inputs and compares verdict, statistics and the three ring counters with the reading `ThemeParkIncPriceTest` ports (490 cases, no mismatch; finding X62). `--golden` writes `source/OpenTPW.Tests/ThemeParkIncPriceGolden.cs`.
 
-`sky_oracle.py` runs the sky draw `0x5863C0` (constructor `0x584EF0`) with a stubbed device and prints the records it makes for the normal render flags and the globe's `0x2000000` (finding X78, docs/reverse/ORACLE.md 7.40).
+`sky_oracle.py` runs the sky draw `0x5863C0` (constructor `0x584EF0`) with a stubbed device and prints the records it makes for the normal render flags and the globe's `0x2000000` (finding X78, docs/reverse/ORACLE.md 7.40). `sky_golden.py` turns its records into the golden numbers `source/OpenTPW.Tests/SkyGolden.cs`.

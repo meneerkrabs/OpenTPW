@@ -17,7 +17,7 @@ namespace OpenTPW;
 // [BIN:TPW-EXE:0x565590 immediate or kept] a batch whose state has bit 0x1000 or 0x2000 (the opaque 0x1256 particles) is drawn when it is submitted; every other one (0x556, 0x200552, 0x200522) is kept with the mean depth of its vertices and drawn by 0x582AD0 far to near together with the translucent world faces (WorldPass)
 // [BIN:TPW-EXE:0x565F90 fog bit] every batch gets the state bit 0x100000 (D3DRS_FOGENABLE) while [0x8BCBC8] has 0x2000 (0x565FA6 to 0x565FB7), the particles too: the first-person views fog them with the engine's table fog
 // [EXT:particle-blend-runs] OpenTPW draws the opaque quads in the original's order (0x565F90: slots ascending, newest particle first) as runs of one state through its shared material pipeline, and the deferred quads one run of consecutive same-state quads at a time in the sorted order of WorldPass, not one submission with its own state word per particle
-// [APPROX:PTCL-905] the triangle sort inside a batch (0x565590 -> 0x565490) is not reproduced: a batch is one particle's two coplanar triangles, so it has no visible effect; the key of a deferred quad is the mean z over w of its four corners where the original's is the mean of its transformed vertices' depths, and ties keep the order the records were handed over where the original's quicksort (0x5829E0) does not
+// [APPROX:PTCL-905] the triangle sort inside a batch (0x565590 -> 0x565490) is not reproduced: a batch is one particle's two coplanar triangles, so it has no visible effect; a deferred quad's key is the mean z over w of its four corners, the same assumption as WorldTranslucency.Depth for the world's records, and ties keep the order the records were handed over where the original's quicksort (0x5829E0) does not; the point MAGFILTER of flags 0x20000 is COMPAT-010 ([EXT:texture-filter-samplers])
 public sealed class ParticleRenderer : Entity
 {
 	private const int VerticesPerQuad = 6;
@@ -56,6 +56,14 @@ public sealed class ParticleRenderer : Entity
 	private float lastDepth;
 	// consecutive quads of one kind that are drawn at once, as (kind, first vertex, vertex count)
 	private readonly List<(int Kind, int First, int Count)> runs = new();
+	// the screen-space quads of the frame, drawn last (RenderScreen), when a pass is open
+	private readonly List<(int Kind, int First, int Count)> screenRuns = new();
+	// the deferred quads copied in the pass's sorted order (one vertex buffer upload per pass, merged draws), their kinds and the pass they belong to
+	private readonly Vertex[] sortedVertices;
+	private readonly int[] sortedKinds;
+	private DeviceBuffer? sortedBuffer;
+	private int sortedCount;
+	private long sortedPass = -1;
 	private Texture? atlasTexture;
 	private readonly Material<ObjectUniformBuffer>?[] materials = new Material<ObjectUniformBuffer>?[KindCount];
 	private DeviceBuffer? vertexBuffer;
@@ -82,6 +90,8 @@ public sealed class ParticleRenderer : Entity
 		vertices = new Vertex[system.Capacity * VerticesPerQuad];
 		quadKinds = new int[system.Capacity];
 		quadDepths = new float[system.Capacity];
+		sortedVertices = new Vertex[system.Capacity * VerticesPerQuad];
+		sortedKinds = new int[system.Capacity];
 		Name = "Particles";
 		try
 		{
@@ -128,6 +138,7 @@ public sealed class ParticleRenderer : Entity
 		screenQuads = 0;
 		kindsPresent = 0;
 		runs.Clear();
+		screenRuns.Clear();
 		if ( deleted || system.Snapshot( sprites ) == 0 )
 			return;
 		system.CollectBounds( bounds );
@@ -182,18 +193,35 @@ public sealed class ParticleRenderer : Entity
 				WriteUniforms( MaterialOf( kind ), kind, eye );
 
 		// the opaque quads are drawn here, as the original draws a state with bit 0x1000 when it is submitted; the others join the pass's deferred list when one is open
-		// [BIN:TPW-EXE:0x582AD0 deferred records] a kept batch's key is the mean depth of its vertices; a screen-space quad's z is its template's word (0 in every shipped template), the nearest key, so it is drawn after the world's records
+		// [BIN:TPW-EXE:0x582AD0 deferred records] a kept batch's key is the mean depth of its vertices; a screen-space quad's z is its template's word (0 in every shipped template), the nearest key, so the original draws it after the world's records; OpenTPW draws all of them after the late group (RenderScreen), with no depth test, so they stay on top
+		// [BIN:TPW-EXE:0x57C620 screen quads] the screen-space quads are not part of the world's list: they are drawn after the late group (RenderScreen), over everything the scene drew, as before the pass held the particles; without an open pass they are drawn here
 		var pass = WorldPass.Active;
 		for ( var quad = 0; quad < quadCount; quad++ )
 		{
 			var kind = quadKinds[quad];
-			if ( pass && !IsImmediateKind( kind ) )
+			if ( IsScreenKind( kind ) )
+				AddToRuns( screenRuns, kind, quad * VerticesPerQuad, VerticesPerQuad );
+			else if ( pass && !IsImmediateKind( kind ) )
 				WorldPass.SubmitParticle( this, quad, quadDepths[quad] );
 			else
 				AddToRuns( runs, kind, quad * VerticesPerQuad, VerticesPerQuad );
 		}
 		foreach ( var (kind, first, count) in runs )
 			Draw( commandList, MaterialOf( kind ), (first, count) );
+		if ( !pass )
+			RenderScreen();
+	}
+
+	/// <summary>Draws the screen-space quads of this frame (no depth): after the scene's late group, so they lie over everything the scene drew.</summary>
+	internal void RenderScreen()
+	{
+		if ( deleted || vertexBuffer == null || screenRuns.Count == 0 )
+			return;
+		var commandList = global::Global.Render.CommandList;
+		commandList.SetVertexBuffer( 0, vertexBuffer );
+		foreach ( var (kind, first, count) in screenRuns )
+			Draw( commandList, MaterialOf( kind ), (first, count) );
+		screenRuns.Clear();
 	}
 
 	/// <summary>
@@ -229,17 +257,50 @@ public sealed class ParticleRenderer : Entity
 	// leave opaque alpha there too. This is not evidence that the native rewrites its alpha byte.
 	internal static uint ColourForKind( uint colour, int kind ) => BlendOfKind( kind ) == ParticleState.Blend.Opaque ? colour | 0xFF000000u : colour;
 
-	/// <summary>The kind of a quad of the last frame (the pass reads it to merge neighbours).</summary>
+	/// <summary>The kind of a quad of the last frame.</summary>
 	internal int QuadKind( int quad ) => quadKinds[quad];
 
-	/// <summary>Draws <paramref name="count"/> consecutive quads from <paramref name="firstQuad"/> of one kind: a run of the deferred list (<see cref="WorldPass"/>).</summary>
-	internal void DrawQuads( int kind, int firstQuad, int count )
+	/// <summary>
+	/// Copies a deferred quad of the last frame into the sorted buffer of the pass <paramref name="pass"/> and returns its slot there (slots follow the order the pass hands the quads over, which is its sorted order);
+	/// the first quad of a pass starts the buffer anew. <see cref="UploadSorted"/> sends the copies to the GPU once, before the pass's first draw.
+	/// </summary>
+	internal int AppendSorted( long pass, int quad )
 	{
-		if ( deleted || vertexBuffer == null || MaterialOf( kind ) is not { } material )
+		if ( sortedPass != pass )
+		{
+			sortedPass = pass;
+			sortedCount = 0;
+		}
+		Array.Copy( vertices, quad * VerticesPerQuad, sortedVertices, sortedCount * VerticesPerQuad, VerticesPerQuad );
+		sortedKinds[sortedCount] = quadKinds[quad];
+		return sortedCount++;
+	}
+
+	/// <summary>Uploads the sorted copies of the pass <paramref name="pass"/> (nothing when it made none).</summary>
+	internal void UploadSorted( long pass, CommandList commandList )
+	{
+		if ( deleted || sortedPass != pass || sortedCount == 0 )
+			return;
+		var stride = Vertex.SizeInBytes;
+		sortedBuffer ??= Device.ResourceFactory.CreateBuffer( new BufferDescription( (uint)sortedVertices.Length * stride, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
+		commandList.UpdateBuffer( sortedBuffer, 0, ref sortedVertices[0], (uint)sortedCount * stride );
+	}
+
+	/// <summary>Draws <paramref name="count"/> consecutive sorted slots from <paramref name="firstSlot"/>: neighbours of one kind are one draw, and the vertex buffer is bound once.</summary>
+	internal void DrawSorted( int firstSlot, int count )
+	{
+		if ( deleted || sortedBuffer == null || count <= 0 )
 			return;
 		var commandList = global::Global.Render.CommandList;
-		commandList.SetVertexBuffer( 0, vertexBuffer );
-		Draw( commandList, material, (firstQuad * VerticesPerQuad, count * VerticesPerQuad) );
+		commandList.SetVertexBuffer( 0, sortedBuffer );
+		var start = firstSlot;
+		for ( var slot = firstSlot + 1; slot <= firstSlot + count; slot++ )
+		{
+			if ( slot < firstSlot + count && sortedKinds[slot] == sortedKinds[start] )
+				continue;
+			Draw( commandList, MaterialOf( sortedKinds[start] ), (start * VerticesPerQuad, (slot - start) * VerticesPerQuad) );
+			start = slot;
+		}
 	}
 
 	/// <summary>
@@ -407,8 +468,12 @@ public sealed class ParticleRenderer : Entity
 		return uniforms;
 	}
 
+	/// <summary>The particle draw calls since the frame stats were last read (<c>--frame-stats</c>).</summary>
+	internal static int FrameDraws;
+
 	private static void Draw( CommandList commandList, Material<ObjectUniformBuffer> material, (int First, int Count) range )
 	{
+		FrameDraws++;
 		commandList.SetPipeline( material.Pipeline );
 		var resourceSets = material.GetResourceSets();
 		for ( uint index = 0; index < resourceSets.Length; ++index )
@@ -433,5 +498,9 @@ public sealed class ParticleRenderer : Entity
 		vertexBuffer = null;
 		if ( buffer != null )
 			global::Global.Render.ScheduleDelete( buffer.Dispose );
+		var sorted = sortedBuffer;
+		sortedBuffer = null;
+		if ( sorted != null )
+			global::Global.Render.ScheduleDelete( sorted.Dispose );
 	}
 }

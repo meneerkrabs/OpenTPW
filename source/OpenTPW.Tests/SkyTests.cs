@@ -172,6 +172,46 @@ public class SkyTests
 		}
 	}
 
+	[TestMethod]
+	public void TheGlobesStagedVerticesEqualAFullRebuildAndMirrorTheLayers()
+	{
+		var cloudPositions = Enumerable.Range( 0, Sky.GridSize * Sky.GridSize ).Select( index => Sky.ToEngine( Sky.CloudPosition( index / Sky.GridSize, index % Sky.GridSize ) ) ).ToArray();
+		var cylinderPositions = Enumerable.Range( 0, Sky.CylinderColumns * Sky.CylinderRings ).Select( index => Sky.ToEngine( Sky.CylinderPosition( index / Sky.CylinderRings, index % Sky.CylinderRings ) ) ).ToArray();
+		var colours = Enumerable.Range( 0, Sky.GridSize * Sky.GridSize ).Select( index => 0xFF000000u | (uint)index * 0x010203u ).ToArray();
+		var cloudTriangles = Sky.CloudTriangles().ToArray();
+		var cylinderTriangles = Sky.CylinderTriangles().ToArray();
+		var staging = new Sky.Staging( cloudPositions, colours, cloudTriangles, cylinderPositions, cylinderTriangles, globe: true );
+		var random = new Random( 11 );
+		foreach ( var layers in new[] { 1, 2, 4, 2, 4, 1 } )
+		{
+			for ( var frame = 0; frame < 3; frame++ )
+			{
+				var offsetU = Enumerable.Range( 0, Sky.MaximumLayers ).Select( _ => (float)(random.NextDouble() * 2 - 1) ).ToArray();
+				var offsetV = Enumerable.Range( 0, Sky.MaximumLayers ).Select( _ => (float)(random.NextDouble() * 2 - 1) ).ToArray();
+				// the first update builds, the next ones only rewrite the texture coordinates (ScrollTexCoords with two copies)
+				var staged = staging.Update( layers, offsetU, offsetV, out var clouds );
+				var expected = Sky.BuildVertices( layers, cloudPositions, colours, cloudTriangles, cylinderPositions, cylinderTriangles, offsetU, offsetV, out var expectedClouds, globe: true );
+				Assert.AreEqual( 2 * layers * cloudTriangles.Length * 3, clouds, $"{layers} layers: the layers twice" );
+				Assert.AreEqual( expectedClouds, clouds );
+				CollectionAssert.AreEqual( System.Runtime.InteropServices.MemoryMarshal.AsBytes( expected.AsSpan() ).ToArray(),
+					System.Runtime.InteropServices.MemoryMarshal.AsBytes( staged.AsSpan() ).ToArray(), $"{layers} layers, frame {frame}" );
+				var perLayer = cloudTriangles.Length * 3;
+				for ( var layer = 0; layer < layers; layer++ )
+				{
+					for ( var corner = 0; corner < perLayer; corner += 97 )
+					{
+						var top = staged[layer * perLayer + corner];
+						var mirrored = staged[(layers + layer) * perLayer + corner];
+						Assert.AreEqual( -top.Position.X, mirrored.Position.X );
+						Assert.AreEqual( top.Position.Y, mirrored.Position.Y );
+						Assert.AreEqual( -top.Position.Z, mirrored.Position.Z );
+						Assert.AreEqual( top.TexCoords, mirrored.TexCoords, "the copy scrolls with its layer" );
+					}
+				}
+			}
+		}
+	}
+
 	/// <summary>The lobby recolours the whole grid each frame: an invalidated staging builds the clouds again with the new colour.</summary>
 	[TestMethod]
 	public void AnInvalidatedStagingTakesTheNewGridColour()

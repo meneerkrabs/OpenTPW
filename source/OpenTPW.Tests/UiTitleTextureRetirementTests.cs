@@ -28,6 +28,7 @@ public class UiTitleTextureRetirementTests
 		// scheduling, not native resource disposal, so the captured deletion callbacks are deliberately never run.
 		var renderer = (UiRenderer)RuntimeHelpers.GetUninitializedObject( typeof( UiRenderer ) );
 		InitializeDictionary( renderer, "preparedImages" );
+		InitializeDictionary( renderer, "surfaceTextures" );
 		var textures = InitializeDictionary( renderer, "titleTextures" );
 		textures.Add( oldest, ((Veldrid.Texture)null!, (ResourceSet)null!) );
 		textures.Add( active, ((Veldrid.Texture)null!, (ResourceSet)null!) );
@@ -67,6 +68,26 @@ public class UiTitleTextureRetirementTests
 		{
 			Global.Render = previous;
 		}
+	}
+
+	[TestMethod]
+	public void ASteadyFrameStartWithLiveTitleAndSurfaceTexturesAllocatesNothing()
+	{
+		var atlas = new FontAtlas( FontAtlasTests.CreateFont( 10, new FontAtlasTests.SyntheticGlyph( 'a', 2, 2, 0, 0, 4 ) ) );
+		UiTitleBitmap.BeginFrame();
+		var title = UiTitleBitmap.Get( atlas, TextLayout.Create( atlas, "aaa" ), 0x80, 1 )!;
+		var renderer = (UiRenderer)RuntimeHelpers.GetUninitializedObject( typeof( UiRenderer ) );
+		InitializeDictionary( renderer, "preparedImages" );
+		InitializeDictionary( renderer, "titleTextures" ).Add( title, ((Veldrid.Texture)null!, (ResourceSet)null!) );
+		InitializeDictionary( renderer, "surfaceTextures" ).Add( new UiPixelSurface( 2, 2 ), ((Veldrid.Texture)null!, (ResourceSet)null!, 0, 0L) );
+		// the 100 warm-up and 400 measured frame starts (500 in all) must stay under the renderer's SurfaceIdleFrames (600): the surface entry is not retired during the measurement
+		for ( var index = 0; index < 100; index++ )
+			renderer.BeginFrame();
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for ( var index = 0; index < 400; index++ )
+			renderer.BeginFrame();
+		var perFrame = (GC.GetAllocatedBytesForCurrentThread() - before) / 400;
+		Assert.IsTrue( perFrame < 16, $"a steady renderer frame start allocated {perFrame} bytes" );
 	}
 
 	private static IDictionary InitializeDictionary( object target, string name )

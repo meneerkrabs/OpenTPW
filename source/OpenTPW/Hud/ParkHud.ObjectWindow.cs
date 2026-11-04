@@ -15,7 +15,7 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x755150 object window tables] the three tables share the window rectangle, the preview box (348,162), the stats frame (853,162) with 7 or 8 rows of a label (x 876..1273) and a value (x 1315..1550), the title box at y 74..153 and the buttons b_door (1430,784), b_erase (300,800), b_okay (1671,818), b_arup/b_ardown (1662,126/216) and b_allthings (1648,583); the ride table also has b_queue, b_ride it!, b_callmech and b_upgrade in the bottom row
 	// [DATA:video 4:00, 10:40, 23:40, 24:20, 77:09, 78:20] the windows of Belly Bounce, Tempel der Duisternis, Wilde Aap, Drankwinkel, Klein Toilet and IJswinkeltje have this layout (title in yellow, preview, seven rows, bottom row of round buttons, right column of arrows, list and tick); labels and values are white
 	// [BIN:TPW-EXE:0x4ad6c7 b_move] the ride window's refresh shows control 0x3e2c and enables it with 0x52c2b0 (Level.CanMove); the shop and sideshow windows' b_move (0xc080, 0xa0a8) have no such test and click the same pick-up 0x48cfa0 (their handlers 0x4b0b30 and 0x4b2150)
-	// [APPROX:UI-024] the preview is OpenTPW's orthographic icon; the settings controls are ParkHud.ObjectSettings
+	// [EXT:preview-icon-cpu-projection] the preview is OpenTPW's projected icon; the settings controls are ParkHud.ObjectSettings
 	/// <summary>What a row of the stats frame shows; the labels are UITEXT 17-23 for rides, 32-38 for shops and 41-48 for sideshows (<see cref="RowLabels"/>).</summary>
 	internal enum ObjectRowKind { None, Users, Age, Excitement, Reliability, Repair, Life, Scrap, Customers, CostOfGoods, Takings, Profit, Satisfaction, Happiness, Winners }
 

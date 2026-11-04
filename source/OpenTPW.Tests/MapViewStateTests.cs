@@ -62,18 +62,18 @@ public class MapViewStateTests
 	public void CategoryButtonsAreIndependentLayerToggles()
 	{
 		var hud = (OpenTPW.Hud.ParkHud)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( OpenTPW.Hud.ParkHud ) );
-		typeof( OpenTPW.Hud.ParkHud ).GetField( "mapCategories", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!
-			.SetValue( hud, new System.Collections.Generic.HashSet<BuildCategory> { BuildCategory.Rides, BuildCategory.Shops, BuildCategory.Sideshows, BuildCategory.Features } );
-		Assert.IsTrue( hud.MapShowsCategory( (int)BuildCategory.Rides ) && hud.MapShowsCategory( (int)BuildCategory.Features ), "with all four layers on, each shows" );
+		// the layer word 0xf: the four category bits
+		typeof( OpenTPW.Hud.ParkHud ).GetField( "mapLayers", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( hud, 0xFu );
+		Assert.IsTrue( hud.MapCategoryShown( BuildCategory.Rides ) && hud.MapCategoryShown( BuildCategory.Features ), "with all four layers on, each shows" );
 		hud.ToggleMapCategory( BuildCategory.Rides );
-		Assert.IsFalse( hud.MapShowsCategory( (int)BuildCategory.Rides ), "turning a layer off hides only its category" );
-		Assert.IsTrue( hud.MapShowsCategory( (int)BuildCategory.Shops ) && hud.MapShowsCategory( (int)BuildCategory.Sideshows ) && hud.MapShowsCategory( (int)BuildCategory.Features ) );
+		Assert.IsFalse( hud.MapCategoryShown( BuildCategory.Rides ), "turning a layer off hides only its category" );
+		Assert.IsTrue( hud.MapCategoryShown( BuildCategory.Shops ) && hud.MapCategoryShown( BuildCategory.Sideshows ) && hud.MapCategoryShown( BuildCategory.Features ) );
 		hud.ToggleMapCategory( BuildCategory.Shops );
 		hud.ToggleMapCategory( BuildCategory.Sideshows );
 		hud.ToggleMapCategory( BuildCategory.Features );
-		Assert.IsFalse( hud.MapShowsCategory( (int)BuildCategory.Shops ) || hud.MapShowsCategory( (int)BuildCategory.Features ), "with every layer off nothing is shown" );
+		Assert.IsFalse( hud.MapCategoryShown( BuildCategory.Shops ) || hud.MapCategoryShown( BuildCategory.Features ), "with every layer off nothing is shown" );
 		hud.ToggleMapCategory( BuildCategory.Rides );
-		Assert.IsTrue( hud.MapShowsCategory( (int)BuildCategory.Rides ) && !hud.MapShowsCategory( (int)BuildCategory.Shops ), "toggling one layer on leaves the others off" );
+		Assert.IsTrue( hud.MapCategoryShown( BuildCategory.Rides ) && !hud.MapCategoryShown( BuildCategory.Shops ), "toggling one layer on leaves the others off" );
 	}
 
 	[TestMethod]

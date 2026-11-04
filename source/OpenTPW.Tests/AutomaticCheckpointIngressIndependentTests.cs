@@ -40,7 +40,7 @@ public class AutomaticCheckpointIngressIndependentTests
 	}
 	private static ParkHud BareHud( Level level )
 	{
-		var hud = (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) ); Set( hud, "level", level ); Set( hud, "strings", OriginalUiTests.FakeStrings() ); Set( hud, "host", new HudHost() ); Set( hud, "<Stack>k__BackingField", new UiScreenStack() ); var screen = new UiScreen( "hud" ) { Modal = false }; Set( hud, "hud", screen ); hud.Stack.Push( screen ); return hud;
+		var hud = (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) ); Set( hud, "level", level ); Set( hud, "strings", OriginalUiTests.FakeStrings() ); Set( hud, "host", new HudHost { ParkInfoChoice = new() } ); Set( hud, "<Stack>k__BackingField", new UiScreenStack() ); var screen = new UiScreen( "hud" ) { Modal = false }; Set( hud, "hud", screen ); hud.Stack.Push( screen ); return hud;
 	}
 	private static void Pending( GameFlow flow )
 	{

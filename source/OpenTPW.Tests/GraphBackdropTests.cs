@@ -70,7 +70,7 @@ public class GraphBackdropTests
 		var unsnapped = new GraphBackdrop( 449, 269, 12 );
 		Assert.AreEqual( 429, unsnapped.Plot.Right );
 		Assert.AreEqual( 428f, unsnapped.VerticalLines().Last().Span.X );
-		Assert.AreEqual( 429, ParkInfoGraph.Column( 12, 12, unsnapped.Plot ), "series columns retain their separate existing formula" );
+		Assert.AreEqual( 428, ParkInfoGraph.Column( 12, 12, unsnapped.Plot ), "series columns sum the float step as the grid does (0x47FE90, 0x47FCD0)" );
 	}
 
 	[TestMethod]
@@ -183,4 +183,55 @@ public class GraphBackdropTests
 		}
 	}
 
+
+	[TestMethod]
+	public void TheMaximumScannerReadsTheSlotAfterTheHeadWhenNothingIsAboveZero()
+	{
+		// 0x4801D0 / 0x4802A0: no sample above 0 leaves the index at -1, and the slot head + 1 is read all the same
+		var wrapped = new HistoryRing( 144 );
+		for ( var entry = 0; entry < 150; entry++ )
+			wrapped.Add( entry == 6 ? 77 : 0 );
+		Assert.AreEqual( 5, wrapped.Head );
+		Assert.AreEqual( 77, ParkStatisticsHistory.SeriesMaximum( wrapped, 0, floating: false ), "the oldest entry of a wrapped ring" );
+		Assert.AreEqual( 77, ParkStatisticsHistory.SeriesMaximum( wrapped, 0, floating: true ) );
+		var full = new HistoryRing( 144 );
+		for ( var entry = 0; entry < 144; entry++ )
+			full.Add( 0 );
+		Assert.AreEqual( 143, ParkStatisticsHistory.SeriesMaximum( full, 0, floating: false ), "with the head at the last slot the head word itself" );
+		Assert.AreEqual( 0, ParkStatisticsHistory.SeriesMaximum( full, 0, floating: true ), "a single's bits read as a float are 0" );
+		var fresh = new HistoryRing( 144 );
+		Assert.AreEqual( 0, ParkStatisticsHistory.SeriesMaximum( fresh, 0, floating: false ) );
+		var positive = new HistoryRing( 144 );
+		positive.Add( 4 );
+		Assert.AreEqual( 4, ParkStatisticsHistory.SeriesMaximum( positive, 0, floating: false ), "a positive sample ends the quirk" );
+	}
+
+	[TestMethod]
+	public void AnImportedRingKeepsTheRawWordOfAnUnreadSlotAndTheScannerReadsIt()
+	{
+		// tp.exe's loader 0x4C5D70 reads all 0x90 slots raw, so the slot after the head of an unwrapped ring holds the saved word, which the max scanner reads when nothing is above 0
+		var slots = Enumerable.Repeat( 0d, 144 ).ToList();
+		slots[1] = 91;
+		var data = new RingData { Slots = slots, Head = 0, Wrapped = false };
+		var ring = data.ToRing();
+		Assert.AreEqual( 91, ParkStatisticsHistory.SeriesMaximum( ring, 0, floating: false ) );
+		Assert.AreEqual( 91, RingData.Of( ring ).Slots[1], "a saved park keeps the word too" );
+		Assert.AreEqual( 1, ring.Count, "the unread slot is not a sample" );
+		ring.Add( 0 );
+		Assert.AreEqual( 0, ring.SlotAfterHead( false ), "the head moved on: the slot after it is the next raw word" );
+		Assert.AreEqual( 0, RingData.Of( ring ).Slots[1], "the written slot holds the new sample" );
+	}
+
+	[TestMethod]
+	public void TheSingleRingsFloatToIntegerIsTheLowDwordOfATruncating64BitConversion()
+	{
+		// 0x67A830: fistp qword with truncation, eax = the low dword
+		Assert.AreEqual( 5, ParkStatisticsHistory.FloatToInt( 5.9 ) );
+		Assert.AreEqual( -5, ParkStatisticsHistory.FloatToInt( -5.9 ) );
+		Assert.AreEqual( unchecked((int)3_000_000_000L), ParkStatisticsHistory.FloatToInt( 3e9 ), "beyond 2^31 it wraps to the low 32 bits" );
+		Assert.AreEqual( 0, ParkStatisticsHistory.FloatToInt( double.PositiveInfinity ) );
+		Assert.AreEqual( 0, ParkStatisticsHistory.FloatToInt( double.NegativeInfinity ) );
+		Assert.AreEqual( 0, ParkStatisticsHistory.FloatToInt( double.NaN ) );
+		Assert.AreEqual( 0, ParkStatisticsHistory.FloatToInt( 1e19 ), "from 2^63 up the 64-bit indefinite has a zero low dword" );
+	}
 }

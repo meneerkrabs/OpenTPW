@@ -77,7 +77,7 @@ public class UiRegisterReadTests
 		var events = new List<string>();
 		var hud = (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
 		Set( hud, "level", level );
-		Set( hud, "host", new HudHost { WindowOpened = name => events.Add( "+" + name ), WindowClosed = name => events.Add( "-" + name ) } );
+		Set( hud, "host", new HudHost { ParkInfoChoice = new(), WindowOpened = name => events.Add( "+" + name ), WindowClosed = name => events.Add( "-" + name ) } );
 		Set( hud, "reportedScreens", new HashSet<string>( System.StringComparer.Ordinal ) );
 		Set( hud, "openScreens", new HashSet<string>( System.StringComparer.Ordinal ) );
 		Set( hud, "screenChanges", new List<string>() );

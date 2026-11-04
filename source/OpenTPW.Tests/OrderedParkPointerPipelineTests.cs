@@ -95,7 +95,7 @@ public class OrderedParkPointerPipelineTests
 			return ParkCommandResult.Ok();
 		}, () => false ) );
 		level.IsRemovingObjects = true;
-		hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost() );
+		hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } );
 		foreach ( var element in hud.Screen.Elements.ToArray() ) hud.Screen.Remove( element );
 		hud.Screen.Updating = _ => updating++;
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );

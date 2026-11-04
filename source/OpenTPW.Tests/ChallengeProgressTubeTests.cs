@@ -35,7 +35,7 @@ public class ChallengeProgressTubeTests
 		var help = 0;
 		var clicked = 0;
 		typeof( ParkHud ).GetField( "host", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( hud,
-			new HudHost { RestoredHelp = _ => help++ } );
+			new HudHost { ParkInfoChoice = new(), RestoredHelp = _ => help++ } );
 		Assert.IsFalse( hud.PostGameMessage( " " ) );
 		Assert.AreEqual( 0, help );
 		Assert.AreEqual( 0, audio.Events( "cat_ui" ).Count() );

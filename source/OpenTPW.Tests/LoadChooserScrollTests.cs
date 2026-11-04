@@ -176,7 +176,7 @@ public class LoadChooserScrollTests
 		var loaded = new List<ParkLoadEntry>();
 		var hud = VisitorWorldSelectionTests.Fixture( out _, out _ );
 		typeof( ParkHud ).GetField( "host", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( hud, new HudHost
-		{
+		{ ParkInfoChoice = new(),
 			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, OriginalUiTests.FakeStrings(), entries, loaded.Add )
 		} );
 		hud.OpenPauseMenu();

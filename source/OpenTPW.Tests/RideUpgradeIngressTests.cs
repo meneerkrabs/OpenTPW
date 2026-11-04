@@ -71,7 +71,7 @@ public class RideUpgradeIngressTests
 		typeof( Level ).GetMethod( "LinkEconomy", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( level, new object[] { second, two.Id } );
 		typeof( Level ).GetMethod( "SetupParkGate", BindingFlags.Instance | BindingFlags.NonPublic )!.Invoke( level, Array.Empty<object>() );
 		var current = economy; bridge = new GuestEconomyBridge( () => current, guests ); bridge.Link( first.Runtime.AttractionId, one.Id ); bridge.Link( second.Runtime.AttractionId, two.Id );
-		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => current ), new EmptyCatalog(), new HudHost() ); hud.SelectObject( first ); return hud;
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => current ), new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } ); hud.SelectObject( first ); return hud;
 	}
 	internal static UiContext Context()
 	{

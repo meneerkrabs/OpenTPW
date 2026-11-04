@@ -2,7 +2,7 @@ using OpenTPW.UI.Original;
 
 namespace OpenTPW.Hud;
 
-/// <summary>Which locator panel is out (tp.exe 0x7cc2f0: 1 staff, 2 visitors).</summary>
+/// <summary>The locator mode word (tp.exe 0x7cc2f0: 1 staff, 2 visitors, 0 none): the key handler ignores radio presses while it is 0.</summary>
 public enum LocatorMode { None, Staff, Visitor }
 
 /// <summary>
@@ -22,8 +22,11 @@ public sealed class LocatorModel
 	public bool StripShown { get; private set; }
 	/// <summary>Whether the camera follows the actor.</summary>
 	public bool Following { get; private set; }
-	/// <summary>Whether the role's radio is chosen in its group (0x66a295); the visitor panel opens with its role set but no radio chosen.</summary>
-	public bool RadioChosen { get; private set; }
+	/// <summary>The radio the group shows chosen (0x66a295): the role of the last pressed radio, 0 when none; the visitor panel opens with its role set but no radio chosen.</summary>
+	// [BIN:TPW-EXE:0x4b3bd1 locator group] the group chooses a pressed radio before it posts 0x101 to the panel, which ignores it while the mode word is 0, so a dead panel still shows the pressed radio
+	public int ChosenRadio { get; private set; }
+	/// <summary>Whether a radio is chosen in its group.</summary>
+	public bool RadioChosen => ChosenRadio != 0;
 	/// <summary>The actor whose name the strip last showed (the text 0x4b3490 wrote), 0 before any; the strip keeps it when a key reopens the panels without an actor.</summary>
 	public int StripActorId { get; private set; }
 	/// <summary>The role <see cref="StripActorId"/> was located in.</summary>
@@ -50,24 +53,38 @@ public sealed class LocatorModel
 	};
 
 	/// <summary>Ctrl+S, or Ctrl+V with a visitor (0x4b3f60): the panel of the actor's kind, its role chosen and the camera on it; without an actor the staff panel with no role.</summary>
-	public void Open( LocatorMode mode, int role, int actorId )
+	/// <param name="armClosesPanel">Whether the arm already carries a locator panel that 0x4a2590's retract message 0xb puts away (it sends the panel the close message 0x1001d8) between the mode and the actor being set.</param>
+	public void Open( LocatorMode mode, int role, int actorId, bool armClosesPanel = false )
 	{
 		// [BIN:TPW-EXE:0x004b3f60 locator open] an actor sets the mode from its type, chooses its radio, shows the strip and sets the follow flag; without one the actor (0x7cc308)
 		// and role (0x7cc30c) go to 0 and no radio is chosen, while the strip window 0x7cc304 (with its last text) and the follow flag 0x1000 stay as they were
 		Mode = mode;
+		// [BIN:TPW-EXE:0x004b3f90 mode before the arm] 0x4b3f60 sets the mode word (0x7cc2f0) first and then calls 0x4a2590, whose message 0xb makes the arm send the carried panel 0x1001d8 (0x4a17dc): the panel procedure zeroes the mode word, the actor, the strip and the follow flag (0x4b37e1..0x4b3817), and 0x4b3f60 sets the rest afterwards but never the mode word again
+		if ( armClosesPanel )
+			CloseByArm();
 		if ( actorId == 0 )
 		{
 			Role = 0;
 			ActorId = 0;
-			RadioChosen = false;
+			ChosenRadio = 0;
 			return;
 		}
 		Role = role;
 		ActorId = actorId;
-		RadioChosen = true;
+		ChosenRadio = role;
 		StripShown = true;
 		Following = true;
 		WriteStrip();
+	}
+
+	/// <summary>The panel's close message 0x1001d8: no actor, no strip, no follow flag, and the mode word 0; the role and the radio group stay.</summary>
+	// [BIN:TPW-EXE:0x004b37d5 locator close message] 0x7cc308 = 0, the strip window hidden and unlinked (0x65d9dd, 0x65f538), 0x7cc2f0 = 0 and the follow flag 0x1000 of 0x790ab0 cleared; the role word 0x7cc30c is not touched
+	public void CloseByArm()
+	{
+		Mode = LocatorMode.None;
+		ActorId = 0;
+		StripShown = false;
+		Following = false;
 	}
 
 	// the strip's text and icons (0x4b3490) are written only when an actor is located
@@ -78,14 +95,17 @@ public sealed class LocatorModel
 	}
 
 	/// <summary>Ctrl+V without a visitor (0x4b4280): the visitors panel with the visitor role set but its radio not chosen and no actor.</summary>
-	public void OpenVisitors()
+	/// <param name="armClosesPanel">Whether the arm carries a locator panel that 0x4a2590's message 0xb puts away (close message 0x1001d8) before the mode word is set.</param>
+	public void OpenVisitors( bool armClosesPanel = false )
 	{
-		// [BIN:TPW-EXE:0x004b4280 visitor locator open] the role becomes 6 and the actor 0 with no radio chosen; the strip window keeps its visibility and last name, with the
-		// state icon 0x148 hidden and the thought icon 0x14a shown; the follow flag 0x1000 is not touched (0x4b3640 follows nothing without an actor)
+		// [BIN:TPW-EXE:0x004b4280 visitor locator open] it calls 0x4a2590 first and only then sets the role to 6 (0x7cc30c), the mode word to 2 (0x7cc2f0), clears the radio group and the actor: after a carried panel's close message the strip is hidden and the follow flag clear,
+		// otherwise the strip window keeps its visibility and last name, with the state icon 0x148 hidden and the thought icon 0x14a shown; the follow flag 0x1000 is not touched (0x4b3640 follows nothing without an actor)
+		if ( armClosesPanel )
+			CloseByArm();
 		Mode = LocatorMode.Visitor;
 		Role = VisitorRole;
 		ActorId = 0;
-		RadioChosen = false;
+		ChosenRadio = 0;
 	}
 
 	/// <summary>
@@ -99,10 +119,10 @@ public sealed class LocatorModel
 		// [BIN:TPW-EXE:0x004b3790 locator radios] no mode ignores the press; from no role the role is set and its next actor taken; else a different role drops
 		// the actor first; 0x4b3340 asks 0x4824d0 for the actor after the current one and, without one, for the first; an actor shows the strip (0x65f447) and
 		// sets the follow flag 0x1000 with the text and camera update 0x4b3490, no actor hides the strip and clears the flag
+		ChosenRadio = role;
 		if ( Mode == LocatorMode.None )
 			return;
 		var previous = ActorId;
-		RadioChosen = true;
 		if ( Role != 0 && Role != role )
 			ActorId = 0;
 		Role = role;
@@ -138,7 +158,7 @@ public sealed class LocatorModel
 		Mode = LocatorMode.None;
 		Role = 0;
 		ActorId = 0;
-		RadioChosen = false;
+		ChosenRadio = 0;
 		StripShown = false;
 		Following = false;
 		StripActorId = 0;
@@ -151,7 +171,7 @@ public sealed class LocatorModel
 /// name, the staff state icon or the visitor's thought). Ctrl+S and Ctrl+V open them; a radio locates its role's next actor and the camera follows it.
 /// </summary>
 // [EXT:visitor-info-window] the visitor info window that Ctrl+V tests ([0x7cc418], window object 0x7cc408) is not ported, by design: a left click on an All Visitors row or a visitor picked in the park stands in for opening it and it closes with the All Visitors window, where the original's stays open on its own
-// [APPROX:UI-091] staff locator radios preserve independent saved role chains (+0x210), with qualified original-malformation and legacy-save reconstruction; visitor radios use the live ThingPool chain with an explicit out-of-pool fixture fallback; visitor position failure still clears the selection; the slide of the panels follows the arm drawer, but what the arm's retract message 0x1001d8 does to a locator opened while one is out is not ported (see the register row) — evidence needed: real-data visual comparison
+// [APPROX:UI-091] staff locator radios preserve independent saved role chains (+0x210), with qualified original-malformation and legacy-save reconstruction; visitor radios use the live ThingPool chain with an explicit out-of-pool fixture fallback; visitor position failure still clears the selection; the slide of the panels follows the arm drawer, with the retract and the dead radios of a locator key pressed while a panel is out — evidence needed: real-data visual comparison
 public sealed partial class ParkHud
 {
 	private static LayoutTable LocatorTable => OriginalLayoutTables.LocatorPanels;
@@ -176,6 +196,12 @@ public sealed partial class ParkHud
 	internal ArmSlide LocatorSlide => locatorSlide ??= new();
 	/// <summary>The panel the arm carries now or is putting away (tp.exe's panel slot, 0x7cc2fc staff or 0x7cc300 visitors); None once it is in.</summary>
 	private LocatorMode locatorShown;
+	/// <summary>The panel waiting in the arm's slot 2 for the carried one to be put away (0x4a1547, 0x4a19a7).</summary>
+	private LocatorMode locatorQueued;
+	/// <summary>Whether the panel the arm carries is sliding back in (the arm's states 3 and 4).</summary>
+	private bool locatorRetracting;
+	/// <summary>Whether a locator panel is out, coming or wanted: the mode word is set or the arm carries a panel that is not already sliding in.</summary>
+	internal bool LocatorPanelOpen => Locator.Mode != LocatorMode.None || locatorQueued != LocatorMode.None || (locatorShown != LocatorMode.None && !locatorRetracting);
 	/// <summary>The rectangle of a locator panel's table root: its width and height place the drawer's slide.</summary>
 	private static UiRect LocatorPanelRoot( LocatorMode mode ) => LocatorTable.Roots[mode == LocatorMode.Visitor ? 1 : 0].Rect;
 	private Vector3? locatorCameraTarget;
@@ -209,7 +235,7 @@ public sealed partial class ParkHud
 				var role = LocatorRadios.Single( radio => radio.Model == node.Model ).Role;
 				// [BIN:TPW-EXE:0x004b3bd1 locator group] a radio press chooses that radio and posts 0x101 to the panel, also when it is already chosen
 				Add( new UiButton { Id = $"locatorRole{role}", Model = node.Model, Help = strings.Help( node.Help ), Bounds = node.Rect,
-					Selected = () => Locator.RadioChosen && Locator.Role == role,
+					Selected = () => Locator.ChosenRadio == role,
 					Clicked = () => PressLocatorRole( role ) }, group, underHud: true );
 			}
 		}
@@ -247,7 +273,7 @@ public sealed partial class ParkHud
 			return;
 		}
 		CloseOpenWindowsForLocator();
-		Locator.OpenVisitors();
+		Locator.OpenVisitors( OpenLocatorPanelInArm( LocatorMode.Visitor ) );
 		// [BIN:TPW-EXE:0x004b4449 visitor locator help] 0x4b4280 posts help 0x11f (287) after it set the visitor role
 		host?.HelpPosted?.Invoke( AdvisorToolHelp.VisitorLocator );
 	}
@@ -255,12 +281,34 @@ public sealed partial class ParkHud
 	private void OpenLocator( LocatorMode mode, int role, int actorId )
 	{
 		CloseOpenWindowsForLocator();
-		Locator.Open( mode, role, actorId );
+		// [BIN:TPW-EXE:0x004b3f90 mode before the arm] the mode word is set before 0x4a2590 runs, so a panel the arm carries zeroes it with its close message and the new panel's radios stay dead
+		Locator.Open( mode, role, actorId, OpenLocatorPanelInArm( mode ) );
 		locatorCameraTarget = null;
 		// [BIN:TPW-EXE:0x004b4099 locator help] 0x4b3f60 ends by posting help 0x11f (287) through 0x486b00 when the chosen role is 6 (a visitor) and 0xc6 (198) for every other role or none, whether or not an actor was given
 		host?.HelpPosted?.Invoke( Locator.Role == LocatorModel.VisitorRole ? AdvisorToolHelp.VisitorLocator : AdvisorToolHelp.StaffLocator );
 		if ( Locator.Following )
 			FollowLocatorActor();
+	}
+
+	/// <summary>
+	/// 0x4a2590 for a locator panel: refused while the arm's slot 2 holds a panel; otherwise it sends the arm message 0xb (the carried panel gets the close message 0x1001d8, which withdraws
+	/// the locator help, and slides in) and posts 0xa, which queues the new panel in slot 2 while the arm is busy. Returns whether a carried locator panel was closed.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004a25b1 arm busy] the call returns at once when slot 2 is taken (0x65e705(arm, 2)); message 0xb (0x4a1793) closes slot 1's panel when there is one, and the 0xa handler (0x4a1535) puts the new panel in slot 2 once the arm's state is not 0
+	private bool OpenLocatorPanelInArm( LocatorMode panel )
+	{
+		if ( locatorQueued != LocatorMode.None )
+			return false;
+		var closes = locatorShown != LocatorMode.None;
+		if ( closes )
+		{
+			locatorRetracting = true;
+			// [BIN:TPW-EXE:0x004b3812 locator close help] the close message withdraws help 0x11f and then 0xc6 (0x486b40)
+			host?.HelpWithdrawn?.Invoke( AdvisorToolHelp.VisitorLocator );
+			host?.HelpWithdrawn?.Invoke( AdvisorToolHelp.StaffLocator );
+		}
+		locatorQueued = panel;
+		return closes;
 	}
 
 	// [BIN:TPW-EXE:0x004a2590 arm panel] the panel goes into the HUD arm (control 0x21: message 0xb, then 10), where the info arm and the message panel go, and 0x485b40 closes the open window
@@ -285,14 +333,17 @@ public sealed partial class ParkHud
 
 	public void CloseLocator()
 	{
-		// [BIN:TPW-EXE:0x004b37d5 locator close] the panel's close message 0x1001d8 withdraws help 0x11f (287) and then 0xc6 (198) through 0x486b40 (0x4b381d, 0x4b382a)
-		if ( Locator.Mode != LocatorMode.None )
+		// [BIN:TPW-EXE:0x4b37d5 locator close] the panel's close message 0x1001d8 withdraws help 0x11f (287) and then 0xc6 (198) through 0x486b40 (0x4b381d, 0x4b382a)
+		if ( LocatorPanelOpen )
 		{
 			host?.HelpWithdrawn?.Invoke( AdvisorToolHelp.VisitorLocator );
 			host?.HelpWithdrawn?.Invoke( AdvisorToolHelp.StaffLocator );
 		}
 		Locator.Close();
 		locatorCameraTarget = null;
+		locatorQueued = LocatorMode.None;
+		if ( locatorShown != LocatorMode.None )
+			locatorRetracting = true;
 	}
 
 	private void PressLocatorRole( int role )
@@ -307,6 +358,18 @@ public sealed partial class ParkHud
 	private int NextLocatorActor( int role, int current ) => role == LocatorModel.VisitorRole
 		? LocatorOrder.NextVisitor( level.Guests?.Guests ?? Array.Empty<Guest>(), level.Guests?.Things, current )
 		: (Status.EconomySource as ParkEconomy)?.Staff.NextInRole( LocatorModel.StaffTypeOf( role ), current ) ?? 0;
+
+	/// <summary>Whether the located visitor is still a live guest (the guest roster holds it and it has not left).</summary>
+	private bool LocatedVisitorLives()
+	{
+		var guests = level.Guests?.Guests;
+		if ( guests == null )
+			return false;
+		for ( var index = 0; index < guests.Count; index++ )
+			if ( guests[index].Id == Locator.ActorId && guests[index].State != GuestState.Gone )
+				return true;
+		return false;
+	}
 
 	private bool TryLocatorActorPosition( out Vector3 position )
 	{
@@ -339,7 +402,11 @@ public sealed partial class ParkHud
 
 	private void UpdateLocatorPanels()
 	{
-		if ( Locator.Mode != LocatorMode.None && (InfoArmOpen || OpenedMessage != null || CameraPanelOpen || IsRiding) )
+		if ( LocatorPanelOpen && (InfoArmOpen || OpenedMessage != null || CameraPanelOpen || IsRiding) )
+			CloseLocator();
+		// [BIN:TPW-EXE:0x481901 visitor deleted] the thing event listener (0x50ca50, message 0x1b) tells the visitors list (0x493c10) and the locator (0x4b3620) about a deleted guest: when the located actor
+		// (0x7cc308) is that guest the locator asks the arm to put its panel away (0x4a25f0), which sends the carried panel its close message; only guests have this path, a located staff member that leaves does not close it
+		if ( Locator.ActorId != 0 && Locator.Role == LocatorModel.VisitorRole && !LocatedVisitorLives() )
 			CloseLocator();
 		// Staff identity survives temporarily unavailable coordinates. Keep the existing visitor position-loss policy.
 		if ( Locator.ActorId != 0 && (Locator.Role == LocatorModel.VisitorRole
@@ -359,7 +426,7 @@ public sealed partial class ParkHud
 		if ( hud == null )
 			return;
 		foreach ( var element in locatorStripElements )
-			element.Visible = Locator.Mode != LocatorMode.None && Locator.StripShown;
+			element.Visible = Locator.StripShown;
 		// [BIN:TPW-EXE:0x004b4099 locator icons] the staff state icon shows outside the visitor role, the thought icon in it
 		if ( hud.Find( "locatorState" ) is { } state )
 			state.Visible &= Locator.Role != LocatorModel.VisitorRole;
@@ -377,21 +444,29 @@ public sealed partial class ParkHud
 	{
 		if ( hud == null )
 			return;
-		var wanted = Locator.Mode;
-		if ( locatorShown != LocatorMode.None && wanted != locatorShown )
+		// [BIN:TPW-EXE:0x4a1793 arm retract] the arm puts the carried panel away first (message 0xb), then its timer takes the panel waiting in slot 2 and posts it as 0xa (0x4a19a7-0x4a19c2)
+		if ( locatorShown != LocatorMode.None && locatorRetracting )
 		{
-			// the arm puts the panel it carries away first
 			LocatorSlide.Close();
 			if ( LocatorSlide.Settled )
+			{
 				locatorShown = LocatorMode.None;
+				locatorRetracting = false;
+			}
 		}
-		if ( locatorShown == LocatorMode.None && wanted != LocatorMode.None )
-			locatorShown = wanted;
-		if ( locatorShown != LocatorMode.None && locatorShown == wanted )
+		if ( locatorShown == LocatorMode.None && locatorQueued != LocatorMode.None )
+		{
+			locatorShown = locatorQueued;
+			locatorQueued = LocatorMode.None;
+		}
+		if ( locatorShown != LocatorMode.None && !locatorRetracting )
 			LocatorSlide.Open();
 		LocatorSlide.Update( delta );
-		if ( wanted == LocatorMode.None && LocatorSlide.Settled )
+		if ( locatorRetracting && LocatorSlide.Settled )
+		{
 			locatorShown = LocatorMode.None;
+			locatorRetracting = false;
+		}
 		var shown = locatorShown;
 		var step = LocatorSlide.Step;
 		var (shiftX, shiftY) = shown == LocatorMode.None ? (0, 0) : ArmDrawer.Shift( LocatorPanelRoot( shown ), step );

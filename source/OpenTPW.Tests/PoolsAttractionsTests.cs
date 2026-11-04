@@ -1763,7 +1763,7 @@ public class PoolsAttractionsLevelTests
 			var machine = level.Objects.TryPlace( wave, 5, 15, 0, out _ )!;
 			var rope = level.Objects.TryPlace( swing, 8, 15, 0, out _ )!;
 			var region = PoolSwimRegion.Build( Cells, (4, 12) )!;
-			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => null ), new UiTestCatalog(), new HudHost() );
+			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => null ), new UiTestCatalog(), new HudHost { ParkInfoChoice = new() } );
 			Assert.AreEqual( PoolWaveSettings.Default, level.PoolWavesOf( machine ) );
 
 			// the window opens on the machine's settings, the choices show them, and the tick writes the edited copy to the machine
@@ -1823,7 +1823,7 @@ public class PoolsAttractionsLevelTests
 		{
 			level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 12), (9, 14) ) );
 			var machine = level.Objects.TryPlace( wave, 5, 15, 0, out _ )!;
-			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => null ), new UiTestCatalog(), new HudHost() );
+			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => null ), new UiTestCatalog(), new HudHost { ParkInfoChoice = new() } );
 			hud.OpenWaveSettings( machine );
 			var screen = hud.Stack.Top!;
 			var canvas = new UiCanvas( 2048, 1536 );

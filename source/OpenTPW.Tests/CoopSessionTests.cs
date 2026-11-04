@@ -371,7 +371,7 @@ public partial class CoopSessionTests
 		var park = NewPark();
 		park.Enter();
 		var level = park.Level;
-		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost { ParkInfoChoice = new() } );
 		object?[] owners = { level.Objects, (CellBuildTool?)level.CellTool, level, level.Park };
 		int Handlers() => owners.Where( owner => owner != null ).Sum( owner => owner!.GetType().GetFields( BindingFlags.Instance | BindingFlags.NonPublic )
 			.Where( field => typeof( Delegate ).IsAssignableFrom( field.FieldType ) )
@@ -395,7 +395,7 @@ public partial class CoopSessionTests
 		bool Offers( Park park, UIStrings label )
 		{
 			park.Enter();
-			var hud = new ParkHud( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+			var hud = new ParkHud( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost { ParkInfoChoice = new() } );
 			hud.OpenPauseMenu();
 			var offered = hud.Stack.Top!.Find( label.ToString() ) != null;
 			Assert.AreEqual( ParkHud.PauseMenuOffers( park.Level.IsReadOnlyVisit, park.Level.IsCoopGuestPark, false, label ), offered, $"the menu lists {label} as its rule says" );
@@ -471,7 +471,7 @@ public partial class CoopSessionTests
 		var (_, guest, _, _) = Shared();
 		guest.Enter();
 		var strings = OriginalUiTests.FakeStrings();
-		var hud = new ParkHud( guest.Level, strings, new EconomyParkStatus( () => guest.Economy ), new NoItems(), new HudHost() );
+		var hud = new ParkHud( guest.Level, strings, new EconomyParkStatus( () => guest.Economy ), new NoItems(), new HudHost { ParkInfoChoice = new() } );
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 		var context = new UiContext( strings, new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) )
 		{ Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };

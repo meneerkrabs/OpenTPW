@@ -220,7 +220,7 @@ public partial class CoopSessionTests
 	{
 		var (host, guest, _, _) = Shared();
 		var doors = new List<bool>();
-		var view = ViewOf( guest, hudHost: new HudHost { ParkDoorPressed = doors.Add } );
+		var view = ViewOf( guest, hudHost: new HudHost { ParkInfoChoice = new(), ParkDoorPressed = doors.Add } );
 		Rounds( 20, host, guest );
 		GiveRights( host, guest, view, CoopRights.Finance );
 		var open = guest.Economy.IsParkOpen;
@@ -283,14 +283,14 @@ public partial class CoopSessionTests
 		UntilManaged( host, guest, view );
 		Assert.AreEqual( (fee + 2, fee + 2), (guest.Economy.EntranceFee, host.Economy.EntranceFee) );
 		// the rename closes at once, and the window draws the name until it applies
-		Element<UiButton>( view, "parkName" ).Activate();
+		Element<UiLabel>( view, "parkName" ).Activate();
 		Assert.AreEqual( "parkRename", Top( view ) );
 		Element<UiTextField>( view, "line1" ).Text = "Shared";
 		Element<UiTextField>( view, "line2" ).Text = "Land";
 		Element<UiButton>( view, "apply" ).Activate();
 		Assert.AreEqual( "entryPrice", Top( view ), "closed at once" );
 		var name = new ParkNameLines( "Shared", "Land" ).DisplayName;
-		Assert.AreEqual( name, Element<UiButton>( view, "parkName" ).Text!() );
+		Assert.AreEqual( name, Element<UiLabel>( view, "parkName" ).Text() );
 		Assert.AreNotEqual( name, guest.Level.ParkName!.DisplayName, "not applied yet" );
 		UntilManaged( host, guest, view );
 		Assert.AreEqual( (name, name), (guest.Level.ParkName!.DisplayName, host.Level.ParkName!.DisplayName) );
@@ -309,19 +309,19 @@ public partial class CoopSessionTests
 		view.Hud.OpenEntryPriceWindow();
 		view.Update();
 		var applied = guest.Level.ParkName!.DisplayName;
-		Element<UiButton>( view, "parkName" ).Activate();
+		Element<UiLabel>( view, "parkName" ).Activate();
 		Element<UiTextField>( view, "line1" ).Text = "Shared";
 		Element<UiTextField>( view, "line2" ).Text = "Park";
 		Element<UiButton>( view, "apply" ).Activate();
 		if ( firstSent )
 			SendNext( guest );
 		// the first rename is still unsent or open: changing only its second line must preserve the requested first line
-		Element<UiButton>( view, "parkName" ).Activate();
+		Element<UiLabel>( view, "parkName" ).Activate();
 		Assert.AreEqual( ("Shared", "Park"), (Element<UiTextField>( view, "line1" ).Text, Element<UiTextField>( view, "line2" ).Text) );
 		Element<UiTextField>( view, "line2" ).Text = "Land";
 		Element<UiButton>( view, "apply" ).Activate();
 		// if the first was sent, there are now an open and an unsent rename: reopening must use the newest one's two lines
-		Element<UiButton>( view, "parkName" ).Activate();
+		Element<UiLabel>( view, "parkName" ).Activate();
 		Assert.AreEqual( ("Shared", "Land"), (Element<UiTextField>( view, "line1" ).Text, Element<UiTextField>( view, "line2" ).Text) );
 		Element<UiTextField>( view, "line1" ).Text = "New";
 		Element<UiButton>( view, "apply" ).Activate();

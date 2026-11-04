@@ -64,16 +64,16 @@ public class HudCashTests
 	{
 		var memory = new ListSortMemory();
 		var first = HudWith( 0 );
-		typeof( ParkHud ).GetField( "host", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( first, new HudHost { ListSorts = memory } );
+		typeof( ParkHud ).GetField( "host", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( first, new HudHost { ParkInfoChoice = new(), ListSorts = memory } );
 		first.SortStaff( true );
 		first.SortStaff( true );
 		var second = HudWith( 0 );
-		typeof( ParkHud ).GetField( "host", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( second, new HudHost { ListSorts = memory } );
+		typeof( ParkHud ).GetField( "host", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( second, new HudHost { ParkInfoChoice = new(), ListSorts = memory } );
 		bool Descending( ParkHud hud ) => (bool)typeof( ParkHud ).GetProperty( "staffSortDescending", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hud )!;
 		bool ByWage( ParkHud hud ) => (bool)typeof( ParkHud ).GetProperty( "staffSortByWage", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hud )!;
 		Assert.IsTrue( ByWage( second ) && Descending( second ), "a later HUD of the same session starts on the wage column, descending" );
 		var fresh = HudWith( 0 );
-		typeof( ParkHud ).GetField( "host", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( fresh, new HudHost() );
+		typeof( ParkHud ).GetField( "host", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( fresh, new HudHost { ParkInfoChoice = new() } );
 		Assert.IsFalse( ByWage( fresh ) || Descending( fresh ), "a new session starts by name, ascending" );
 	}
 

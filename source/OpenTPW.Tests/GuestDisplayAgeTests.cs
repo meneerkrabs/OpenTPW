@@ -241,7 +241,7 @@ public class GuestDisplayAgeTests
 	}
 
 	[TestMethod]
-	public void LeavingStillReportsSecondsBasedStayEvenWithDifferentExactDisplayAge()
+	public void LeavingReportsTheStayInTurnsSinceTheStampAndNotTheSecondsClock()
 	{
 		var park = Park();
 		var payments = new StayPayments();
@@ -257,8 +257,29 @@ public class GuestDisplayAgeTests
 		guest.HasWaypoint = false;
 		Steps( park, 1 );
 		Assert.AreEqual( GuestState.WaitingToGoHome, guest.State );
+		// [BIN:TPW-EXE:0x4fd950] the stay is the integer turns since the stamp, not the float seconds clock
+		Assert.AreEqual( ParkStatisticsHistory.StayDays( 4000 ), payments.Days );
+		Assert.AreNotEqual( ParkStatisticsHistory.StayDays( 100 ), payments.Days );
+	}
+
+	[TestMethod]
+	public void LeavingWithoutTheIntegerStampFallsBackToTheSecondsClockForTheStay()
+	{
+		// [APPROX:GUEST-920] a guest of an older own-format save has no integer arrival stamp: its stay is the whole turns of its elapsed seconds
+		var park = Park();
+		var payments = new StayPayments();
+		park.Payments = payments;
+		while ( !park.NextTickStartsTurn )
+			park.Tick( GuestSnapshotTests.Tick );
+		var guest = park.SpawnInPark( 5, 5 );
+		guest.TimeInParkSeconds = 100 * ParkCalendar.TurnMilliseconds / 1000.0;
+		guest.DisplayTimeInParkTurns = null;
+		guest.Paid = true;
+		guest.State = GuestState.WalkingToVehicle;
+		guest.HasWaypoint = false;
+		Steps( park, 1 );
+		Assert.AreEqual( GuestState.WaitingToGoHome, guest.State );
 		Assert.AreEqual( ParkStatisticsHistory.StayDays( 100 ), payments.Days );
-		Assert.AreNotEqual( ParkStatisticsHistory.StayDays( 4000 ), payments.Days );
 	}
 
 	[TestMethod]

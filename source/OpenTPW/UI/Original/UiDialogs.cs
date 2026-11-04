@@ -95,6 +95,7 @@ public static class UiDialogs
 			for ( var index = 0; index < choices.Length; index++ )
 			{
 				var choice = choices[index];
+				// the dialog's callers are OpenTPW's own choices, each under its approved label: [EXT:theme-continue] (the Theme Park Inc continue prompt) and [EXT:save-extension-switch] (the load dialog's extension choices)
 				screen.Add( new UiButton
 				{
 					Id = $"choice{index}",

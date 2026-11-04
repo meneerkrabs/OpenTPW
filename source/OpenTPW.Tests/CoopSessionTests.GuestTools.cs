@@ -42,7 +42,7 @@ public partial class CoopSessionTests
 	{
 		park.Enter();
 		var strings = OriginalUiTests.FakeStrings();
-		var hud = new ParkHud( park.Level, strings, new EconomyParkStatus( () => park.Economy ), catalog ?? new NoItems(), hudHost ?? new HudHost() );
+		var hud = new ParkHud( park.Level, strings, new EconomyParkStatus( () => park.Economy ), catalog ?? new NoItems(), hudHost ?? new HudHost { ParkInfoChoice = new() } );
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 		var context = new UiContext( strings, new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) )
 		{ Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };

@@ -134,13 +134,13 @@ class TpiStatisticsHistoryContract(unittest.TestCase):
         self.assertIn("[EXT:tpi-history-fresh-start]", self.runtime)
         self.assertIn("[EXT:tpi-history-five-series]", self.runtime)
         document = read("docs/THEME-PARK-INC.md")
-        for expected in ("first fresh host month", "saved game turn, calendar rate", "three series", "144", "50", "UI-914 open"):
+        for expected in ("first fresh host month", "saved game turn, calendar rate", "three series", "144", "50", "UI-914 itself is retired"):
             # The contract spells the native three selections explicitly in the mapping section.
             if expected == "three series":
                 self.assertIn("selects only arrivals, people and rating", document)
             else:
                 self.assertIn(expected, document)
-        self.assertIn('("UI-914",', read("source/OpenTPW/UI/Original/UiApproximations.cs"))
+        self.assertIn("UI-914", read("tools/fidelity_retired.txt"))
         workflow = read(".github/workflows/build.yml")
         self.assertIn('python -m unittest discover -s tools -p "test_tpi_statistics_history_contract.py" -v', workflow)
         self.assertIn("dotnet build source/OpenTPW.sln --configuration Release --nologo", workflow)

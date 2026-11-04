@@ -128,7 +128,7 @@ public partial class CoopJoinSessionTests
 
 	/// <summary>The guest HUD's exit is the game's own (the replay twin's bare HUD has none): the pause menu's Exit To Lobby goes through the game's exit.</summary>
 	private static void GiveGameExit( GameFlow flow, Hud.ParkHud hud ) =>
-		SetField( hud, "host", new Hud.HudHost { ExitToLobby = () => flow.RequestAutomaticExit( flow.Level!, hud ) } );
+		SetField( hud, "host", new Hud.HudHost { ParkInfoChoice = new(), ExitToLobby = () => flow.RequestAutomaticExit( flow.Level!, hud ) } );
 
 	[TestMethod]
 	public async Task YesToTheGuestsExitLeavesTheSharedParkAndQueuesTheLobby()

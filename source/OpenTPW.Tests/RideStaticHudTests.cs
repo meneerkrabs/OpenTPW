@@ -56,7 +56,7 @@ public class RideStaticHudTests
 		Set( park, "<Heightfield>k__BackingField", new ModelHeightfield( 10, 10, 10, 10, 0, 0, Array.Empty<uint>(), new float[121], new uint[100] ) );
 		Set( level, "<OriginalPark>k__BackingField", park );
 		var ride = (PrototypeRide)RuntimeHelpers.GetUninitializedObject( typeof( PrototypeRide ) ); Set( level, "<PlacedRide>k__BackingField", ride );
-		var hud = fullHud ? new ParkHud( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost() ) : fixture;
+		var hud = fullHud ? new ParkHud( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } ) : fixture;
 		var clock = new Clock(); hud.RideStaticClock = clock.Read;
 		return new( hud, level, guests, ride, Context(), clock );
 	}
@@ -168,7 +168,7 @@ public class RideStaticHudTests
 	public void FinaleCleanupSkipsObservationAndNewHudSnapshotsItsCurrentCamera()
 	{
 		var w = Create(); Assert.IsTrue( w.Level.EnterRideView( w.Ride ) ); Update( w, 100 );
-		var replacement = new ParkHud( w.Level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost() );
+		var replacement = new ParkHud( w.Level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } );
 		replacement.RideStaticClock = w.Clock.Read; replacement.Update( w.Context, UiInput.Idle( new N.Vector2( -1 ) ), false, false, false );
 		Assert.IsFalse( replacement.RideStaticActive, "creating a HUD in an active camera does not invent entry" );
 		Assert.AreEqual( .3f, w.Hud.RideStaticLeft, "the other HUD's preparation cannot consume this HUD's budget" );

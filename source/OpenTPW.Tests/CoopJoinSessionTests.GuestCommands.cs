@@ -113,7 +113,7 @@ public partial class CoopJoinSessionTests
 		guest.Enter();
 		var strings = OriginalUiTests.FakeStrings();
 		var item = new BuildItem( "ride", entry.InfoId, (BuildCategory)entry.WhichUIType, -1, 0, null, Array.Empty<string>(), Entry: entry );
-		var hud = new ParkHud( guest.Level!, strings, new EconomyParkStatus( () => guest.Economy ), new OneItem( item ), new HudHost() );
+		var hud = new ParkHud( guest.Level!, strings, new EconomyParkStatus( () => guest.Economy ), new OneItem( item ), new HudHost { ParkInfoChoice = new() } );
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 		var context = new UiContext( strings, new UiFonts( _ => font ), new UiModels( name => throw new FileNotFoundException( name ) ) )
 		{ Canvas = new UiCanvas( 2048, 1536 ), ResolveTexture = _ => null };

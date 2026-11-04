@@ -98,7 +98,7 @@ public class ParkToolsOnReleaseTests
 		var fixture = VisitorWorldSelectionTests.Fixture( out _, out _ );
 		level = fixture.LevelForTests;
 		level.UseCommandsForTests( new ParkCommands( () => 0, command => { commands.Add( command ); return ParkCommandResult.Ok(); }, () => false ) );
-		hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost() );
+		hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } );
 		foreach ( var element in hud.Screen.Elements.ToArray() ) hud.Screen.Remove( element );
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 		context = new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ), new UiModels( name => throw new FileNotFoundException( name ) ) )
@@ -407,7 +407,7 @@ public class ParkToolsOnReleaseTests
 			Camera.ProjMatrix = System.Numerics.Matrix4x4.CreatePerspectiveFieldOfView( 0.8f, 1, 0.5f, 500 );
 			// the fixture's park has no heightfield to pick: the generic sandbox's Z = 0 plane stands in for the terrain
 			typeof( Level ).GetField( "<OriginalPark>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, null );
-			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost() );
+			var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new NoEconomyStatus(), new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } );
 			foreach ( var element in hud.Screen.Elements.ToArray() ) hud.Screen.Remove( element );
 			var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 			var context = new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ), new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 1000, 1000 ), PopupHelp = false, ResolveTexture = _ => null };

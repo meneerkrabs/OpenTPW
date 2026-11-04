@@ -219,7 +219,7 @@ internal static class ParkVisitorRoster
 	}
 
 	// [BIN:TPW-EXE:0x004fd950] retained display age reproduces unsigned current-turn minus creation stamp, including the four-turn quantization above.
-	// [APPROX:GUEST-920] older own-format saves lack that integer provenance and retain their previous seconds-derived fallback. Roster membership is unchanged and unqualified.
+	// [APPROX:GUEST-920] older own-format saves lack that integer provenance and retain their previous seconds-derived fallback. Roster membership follows the original's posts (ParkHud.ListedGuests).
 	private static long? Hours( Guest guest, bool refreshed ) => guest.TimeInParkSeconds is { } elapsed
 		? DisplayHours( guest.DisplayTimeInParkTurns ?? (long)Math.Floor( elapsed * 1000 / ParkCalendar.TurnMilliseconds ), refreshed ) : null;
 

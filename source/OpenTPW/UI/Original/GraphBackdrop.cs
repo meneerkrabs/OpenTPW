@@ -1,4 +1,5 @@
 using Veldrid;
+using NVector2 = System.Numerics.Vector2;
 
 namespace OpenTPW.UI.Original;
 
@@ -84,7 +85,6 @@ internal static class GraphBackdropRenderer
 {
 	// [EXT:graph-pixel-adapter] one bitmap pixel is two canvas units, at least one framebuffer pixel: the original draws at its display mode's pixel size, which
 	// follows the host's resolution, and this is the adapter (user-approved 2026-10-30).
-	// [APPROX:UI-060] finance sample/month correspondence, palette, fonts and composited raster fidelity remain unqualified.
 	internal static float Pixel( UiCanvas canvas ) => Math.Max( 1f, canvas.Scale * 2f );
 
 	internal static UiRect ToScreen( UiRect bitmap, UiRect frame, float pixel ) =>
@@ -114,5 +114,103 @@ internal static class GraphBackdropRenderer
 		Fill( backdrop.HorizontalAxis, GraphBackdrop.Axis );
 		Fill( backdrop.VerticalAxis, GraphBackdrop.Axis );
 		return true;
+	}
+
+	/// <summary>The row of a value: bottom less (value - minimum) x height / (maximum - minimum), cut to the plot; the bottom for an empty range.</summary>
+	// [BIN:TPW-EXE:0x47FE90 graph drawer] with a zero range ([+0x24] - [+0x1C]) both ends of a segment sit on the bottom row ([+0x14]); otherwise y = bottom - ((v - min) * [+4]) / range in integers, then cut to top ([+0xC]) .. bottom
+	// [APPROX:UI-060] the original multiplies in 32 bits (imul/idiv at 0x47FEEE, 0x47FF03), so a financial span above about 8.9 million wraps there; OpenTPW keeps 128-bit arithmetic for the long ledger values (a host safety adaptation)
+	internal static int Row( long value, long minimum, long maximum, (int Left, int Top, int Right, int Bottom) plot )
+	{
+		var range = (Int128)maximum - minimum;
+		if ( range == 0 )
+			return plot.Bottom;
+		var y = plot.Bottom - (int)((Int128)(plot.Bottom - plot.Top) * ((Int128)value - minimum) / range);
+		return Math.Clamp( y, plot.Top, plot.Bottom );
+	}
+
+	/// <summary>The column of the segment end <paramref name="index"/>: the left plus index steps of (width / samples) as a float, summed as the drawer does.</summary>
+	// [BIN:TPW-EXE:0x47FE90 graph drawer] x starts at the left ([+8]) as a float and each segment adds the step (width / samples stored as a float, 0x47FEAF) to the x before it was cut to the plot, both ends cut to left .. right and truncated (0x67A830)
+	internal static int Column( int index, int samples, (int Left, int Top, int Right, int Bottom) plot )
+	{
+		var step = (float)((double)(plot.Right - plot.Left) / samples);
+		var x = (float)plot.Left;
+		for ( var k = 0; k < index; k++ )
+			x = (float)(step + Math.Clamp( x, plot.Left, plot.Right ));
+		return (int)Math.Clamp( x, plot.Left, plot.Right );
+	}
+
+	/// <summary>
+	/// Draws one series of <paramref name="points"/> (oldest first, the segment count plus one) as the graph drawer 0x47FE90 does: a line per segment between whole
+	/// bitmap pixels, a hollow box round every segment end when the period has fewer than 144 samples, and the last value written at the line's end.
+	/// </summary>
+	internal static void DrawSeries( UiContext context, ReadOnlySpan<long> points, int samples, long minimum, long maximum,
+		(int Left, int Top, int Right, int Bottom) plot, RgbaByte colour, UiRect rect, float pixel, FontAtlas font, ref LabelCache label )
+	{
+		NVector2 At( int column, int row ) => new( rect.X + column * pixel, rect.Y + row * pixel );
+		void Line( NVector2 from, NVector2 to )
+		{
+			var delta = to - from;
+			if ( delta.LengthSquared() < 0.01f )
+			{
+				context.Batch.AddRectangle( new UiRect( from.X, from.Y, pixel, pixel ), colour );
+				return;
+			}
+			var normal = NVector2.Normalize( new NVector2( -delta.Y, delta.X ) ) * pixel / 2;
+			var a = new UiVertex( from + normal, NVector2.Zero, colour );
+			var b = new UiVertex( from - normal, NVector2.Zero, colour );
+			var c = new UiVertex( to + normal, NVector2.Zero, colour );
+			var d = new UiVertex( to - normal, NVector2.Zero, colour );
+			context.Batch.AddTriangle( UiTexture.Solid, a, b, c );
+			context.Batch.AddTriangle( UiTexture.Solid, c, b, d );
+		}
+		var step = (float)((double)(plot.Right - plot.Left) / samples);
+		var x = (float)plot.Left;
+		var lastColumn = plot.Left;
+		var lastRow = samples;
+		for ( var index = 0; index < points.Length - 1; index++ )
+		{
+			// [BIN:TPW-EXE:0x47FF1C segment ends] the far end is the x plus the step (a float), the next x the cut near end plus the step
+			var near = Math.Clamp( x, plot.Left, plot.Right );
+			var far = Math.Clamp( (float)(step + x), plot.Left, plot.Right );
+			x = (float)(step + near);
+			var fromColumn = (int)near;
+			var toColumn = (int)far;
+			var fromRow = Row( points[index], minimum, maximum, plot );
+			var toRow = Row( points[index + 1], minimum, maximum, plot );
+			Line( At( fromColumn, fromRow ), At( toColumn, toRow ) );
+			// [BIN:TPW-EXE:0x47FFE0 sample marks] with fewer than 0x90 samples each segment end gets a hollow box of four one-pixel lines round it
+			if ( samples < 0x90 )
+			{
+				Line( At( toColumn - 1, toRow - 1 ), At( toColumn + 1, toRow - 1 ) );
+				Line( At( toColumn + 1, toRow - 1 ), At( toColumn + 1, toRow + 1 ) );
+				Line( At( toColumn + 1, toRow + 1 ), At( toColumn - 1, toRow + 1 ) );
+				Line( At( toColumn - 1, toRow + 1 ), At( toColumn - 1, toRow - 1 ) );
+			}
+			lastColumn = toColumn;
+			lastRow = toRow;
+		}
+		// [BIN:TPW-EXE:0x47FE90 last value] the series' last value is written ("%d", 0x74F9D8) right-aligned against the end of the line, from 6 pixels above its row (2 at the least); a series with no segment writes it at the plot's left, 6 less than the sample count down
+		var labelText = label.TextOf( points[^1] );
+		var top = Math.Max( 2, lastRow - 6 );
+		var width = Math.Max( context.Measure( font, labelText ).Width, 1f ) / pixel;
+		var right = Math.Max( lastColumn, plot.Left + width );
+		context.DrawText( font, labelText, new UiRect( rect.X + (right - width - 1) * pixel, rect.Y + top * pixel, (width + 2) * pixel, 12 * pixel ), colour, UiAlign.Right, false );
+	}
+}
+
+/// <summary>The last value a series label showed and its text, so a frame that shows the same value formats nothing.</summary>
+internal struct LabelCache
+{
+	private long value;
+	private string? text;
+
+	internal string TextOf( long current )
+	{
+		if ( text == null || value != current )
+		{
+			value = current;
+			text = current.ToString( System.Globalization.CultureInfo.InvariantCulture );
+		}
+		return text;
 	}
 }

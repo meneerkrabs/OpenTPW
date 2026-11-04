@@ -51,7 +51,7 @@ public class PostcardShortcutIngressTests
 	{
 		var hud = VisitorWorldSelectionTests.Fixture( out _, out _ );
 		var calls = 0;
-		var host = new HudHost { OpenPostcard = stack => { calls++; stack.Push( new UiScreen( "sendPostcard" ) ); } };
+		var host = new HudHost { ParkInfoChoice = new(), OpenPostcard = stack => { calls++; stack.Push( new UiScreen( "sendPostcard" ) ); } };
 		Set( hud, "host", host );
 		var context = Context();
 		using ( Input.InjectKeyDown( Key.ControlLeft, Key.P ) )
@@ -103,7 +103,7 @@ public class PostcardShortcutIngressTests
 		var hud = VisitorWorldSelectionTests.Fixture( out _, out _ );
 		var level = (Level)typeof( ParkHud ).GetField( "level", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hud )!;
 		var calls = 0;
-		Set( hud, "host", new HudHost { OpenPostcard = gate == "noHost" ? null : _ => calls++ } );
+		Set( hud, "host", new HudHost { ParkInfoChoice = new(), OpenPostcard = gate == "noHost" ? null : _ => calls++ } );
 		if ( gate == "readonly" ) Set( level, "<Visit>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( ParkVisitInfo ) ) );
 		if ( gate is "overlay" or "pauseMenu" ) hud.Stack.Push( new UiScreen( gate == "pauseMenu" ? "pause" : "modal" ) );
 		if ( gate == "camera" ) Camera.Mode = new CameraMode();
@@ -151,7 +151,7 @@ public class PostcardShortcutIngressTests
 			Set( flow, "<Strings>k__BackingField", OriginalUiTests.FakeStrings() );
 			Set( flow, "<Context>k__BackingField", Context() );
 			Set( flow, "onlineSession", session );
-			Set( hud, "host", new HudHost { OpenPostcard = flow.ShowPostcard } );
+			Set( hud, "host", new HudHost { ParkInfoChoice = new(), OpenPostcard = flow.ShowPostcard } );
 			var before = simulation.ComputeStateHash();
 			using ( Input.InjectKeyDown( Key.ControlLeft, Key.P ) ) Input.UpdateButtons();
 			hud.Update( Context(), UiInput.Idle( new( -1, -1 ) ), false, false, false );
@@ -188,7 +188,7 @@ public class PostcardShortcutIngressTests
 			Camera.ViewMatrix = Camera.ProjMatrix = System.Numerics.Matrix4x4.Identity;
 			var hud = VisitorWorldSelectionTests.Fixture( out _, out _ );
 			var level = (Level)typeof( ParkHud ).GetField( "level", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( hud )!;
-			Set( hud, "host", new HudHost { OpenPostcard = stack => stack.Push( new UiScreen( "sendPostcard" ) ) } );
+			Set( hud, "host", new HudHost { ParkInfoChoice = new(), OpenPostcard = stack => stack.Push( new UiScreen( "sendPostcard" ) ) } );
 			using ( Input.InjectKeyDown( Key.ControlLeft, Key.P ) ) Input.UpdateButtons();
 			var press = new UiInput( new( 950, 950 ), true, true, false, false, UiKeys.None );
 			Assert.IsTrue( hud.Update( Context(), press, false, false, false ) );

@@ -44,7 +44,7 @@ public class AutomaticCheckpointIngressTests
 	[TestMethod]
 	public void ActualRetiredPauseExitCannotActOnReplacementPause()
 	{
-		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) ); var exits = 0; var hud = BareHud( level, new HudHost { ExitToLobby = () => exits++ } );
+		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) ); var exits = 0; var hud = BareHud( level, new HudHost { ParkInfoChoice = new(), ExitToLobby = () => exits++ } );
 		hud.OpenPauseMenu(); var retired = (UiMenuItem)hud.Stack.Top!.Find( "ExitToLobby" )!; hud.Stack.Pop(); hud.OpenPauseMenu(); retired.Clicked(); Assert.AreEqual( 0, exits ); ((UiMenuItem)hud.Stack.Top!.Find( "ExitToLobby" )!).Clicked(); Assert.AreEqual( 1, exits );
 	}
 
@@ -62,7 +62,7 @@ public class AutomaticCheckpointIngressTests
 	}
 	private (GameFlow Flow, Level Level, ParkHud Hud) ExitWorld()
 	{
-		var level = Live(); GameFlow? flow = null; ParkHud? hud = null; hud = BareHud( level, new HudHost { ExitToLobby = () => flow!.RequestAutomaticExit( level, hud! ) } ); flow = Flow( level, hud ); hud.OpenPauseMenu(); return (flow, level, hud);
+		var level = Live(); GameFlow? flow = null; ParkHud? hud = null; hud = BareHud( level, new HudHost { ParkInfoChoice = new(), ExitToLobby = () => flow!.RequestAutomaticExit( level, hud! ) } ); flow = Flow( level, hud ); hud.OpenPauseMenu(); return (flow, level, hud);
 	}
 	private void Exit( (GameFlow Flow, Level Level, ParkHud Hud) w ) => w.Hud.Stack.Update( context, UiInput.Click( w.Hud.Stack.Top!.Find( "ExitToLobby" )!.ScreenRect( context.Canvas ).Center ) );
 	private void Choice( (GameFlow Flow, Level Level, ParkHud Hud) w, string id ) => w.Hud.Stack.Update( context, UiInput.Click( w.Hud.Stack.Top!.Find( id )!.ScreenRect( context.Canvas ).Center ) );
@@ -96,7 +96,7 @@ public class AutomaticCheckpointIngressTests
 	public void QueuedExitRefusesForeignLeaseBeforeCapture( string changed )
 	{
 		var w = ExitWorld(); var captures = 0; w.Flow.AutomaticCaptureOverride = _ => { captures++; return Snapshot(); }; w.Flow.AutomaticRetireOverride = _ => Assert.Fail(); Exit( w );
-		if ( changed == "build" ) Set( w.Flow, "parkBuild", RuntimeHelpers.GetUninitializedObject( typeof( GameFlow ).GetNestedType( "ParkBuild", BindingFlags.NonPublic )! ) ); if ( changed == "modal" ) w.Hud.Stack.Push( new UiScreen( "foreignModal" ) ); if ( changed == "capture" ) w.Flow.ProgressCaptureOverride = () => true; if ( changed == "root" ) SaveFileSystem = new( Path.Combine( root, "other" ) ); if ( changed == "hud" ) Set( w.Flow, "<Hud>k__BackingField", BareHud( w.Level, new() ) ); if ( changed == "runtime" ) Set( w.Level, "<Park>k__BackingField", ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation ) ); if ( changed == "screen" ) w.Hud.Stack.Pop(); if ( changed == "profile" ) File.WriteAllText( Path.Combine( root, PlayerTicketFile.FileName ), "opaque replacement" );
+		if ( changed == "build" ) Set( w.Flow, "parkBuild", RuntimeHelpers.GetUninitializedObject( typeof( GameFlow ).GetNestedType( "ParkBuild", BindingFlags.NonPublic )! ) ); if ( changed == "modal" ) w.Hud.Stack.Push( new UiScreen( "foreignModal" ) ); if ( changed == "capture" ) w.Flow.ProgressCaptureOverride = () => true; if ( changed == "root" ) SaveFileSystem = new( Path.Combine( root, "other" ) ); if ( changed == "hud" ) Set( w.Flow, "<Hud>k__BackingField", BareHud( w.Level, new() { ParkInfoChoice = new() } ) ); if ( changed == "runtime" ) Set( w.Level, "<Park>k__BackingField", ParkEconomyRuntime.ForResume( EconomyTestData.Park(), ParkStartKind.FullSimulation ) ); if ( changed == "screen" ) w.Hud.Stack.Pop(); if ( changed == "profile" ) File.WriteAllText( Path.Combine( root, PlayerTicketFile.FileName ), "opaque replacement" );
 		Pending( w.Flow ); Assert.AreEqual( 0, captures ); Assert.AreSame( w.Level, w.Flow.Level );
 	}
 	[TestMethod]

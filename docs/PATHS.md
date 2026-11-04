@@ -69,7 +69,7 @@ end inside the rectangle and none of the scanned cells (the first cell past each
 (`0x528A70`, `0x539210`); Easymode's saved cells carry exactly these words (`mParentID`, tested on every cell of the Jungle park's
 footprints). The flag 0x10 is written only by the placement's `+` and `#` footprint cells, the track add-ons (`ParkCellMap.WriteFootprint`).
 `APPROX:PATH-005` (the missing owner word and the untraced writer of the flag) is retired. A park whose objects do not type their cells (a
-Theme Park Inc layout, whose placement is not traced) clears by the object standing on each cell. The developer panel's one-click remove tool
+read-only visit) clears by the object standing on each cell. The developer panel's one-click remove tool
 (an object, else a queue cell, else a path cell) is `[EXT:dev-one-click-remove]`: it is OpenTPW's and has no original counterpart. Removal is `ClearCell`'s forced path case (tp.exe `0x52c11f`): every bit of the cell's link byte, diagonals included, is
 cleared on both sides (tp.exe `0x5367A0`), no refund. A `NoModify` cell that still has linked neighbours stays; without
 neighbours the flag is dropped and the cell is removed. The one exception is `[EXT:removable-access-cells]`: the cells a placement lays outside an

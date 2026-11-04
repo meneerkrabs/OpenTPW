@@ -34,14 +34,22 @@ public class UmbrellaDrawingTests
 	}
 
 	[TestMethod]
-	public void ThePullIsAShareOfTheSightLineAndCoversMoreThanTheGuestsOwn()
+	public void ThePlacementIsGameExesPullOnTheGroundAndLiftByTheCameraHeight()
 	{
-		var eye = new System.Numerics.Vector3( 0, 0, 0 );
-		var forward = new System.Numerics.Vector3( 0, 1, 0 );
-		var point = new System.Numerics.Vector3( 1, 100, 2 );
-		var pulled = UmbrellaRenderer.PullToEye( point, eye, forward, UmbrellaRenderer.CameraPull );
-		Assert.AreEqual( 0.9f * point, pulled );
-		Assert.AreEqual( new System.Numerics.Vector3( 0, -5, 0 ), UmbrellaRenderer.PullToEye( new System.Numerics.Vector3( 0, -5, 0 ), eye, forward, 0.1f ), "a point behind the eye stays" );
+		// [BIN:TPI-EXE:0x60B236 umbrella pull] v' = v - (v - the camera's) x 0.1 on the two ground axes and y' = y + (the camera's height - 40) x 0.1, in original units (engine units are original x ModelScale)
+		const float s = ObjectPlacement.ModelScale;
+		var eye = new System.Numerics.Vector3( 100, -300, 120 * s );
+		var hand = new System.Numerics.Vector3( 110, -250, 6 * s );
+		var placed = UmbrellaRenderer.PullAndLift( hand, eye, UmbrellaRenderer.CameraPull );
+		Assert.AreEqual( 110 - (110 - 100) * 0.1f, placed.X, 1e-4f );
+		Assert.AreEqual( -250 - (-250 - -300) * 0.1f, placed.Y, 1e-4f );
+		Assert.AreEqual( 6 * s + (120 - 40) * s * 0.1f, placed.Z, 1e-5f, "the lift measures the camera's height against 40, not the hand's" );
+		var unpulled = UmbrellaRenderer.PullAndLift( hand, eye, 0f );
+		Assert.AreEqual( (hand.X, hand.Y), (unpulled.X, unpulled.Y), "no share leaves the ground position" );
+		var half = UmbrellaRenderer.PullAndLift( hand, eye, UmbrellaRenderer.CameraPull / 2 );
+		Assert.AreEqual( (hand.X + placed.X) / 2, half.X, 1e-4f, "a capped share scales the two ground modifiers" );
+		Assert.AreEqual( placed.Z, half.Z, 1e-5f, "the lift is the original's, never scaled by the cap (D8)" );
+		Assert.AreEqual( 6 * s + (120 - 40) * s * 0.1f, UmbrellaRenderer.PullAndLift( hand, eye, 0f ).Z, 1e-5f );
 		var guestShare = SpriteScale.PulledDepthShare( 100f / ObjectPlacement.ModelScale );
 		Assert.IsTrue( 1f - UmbrellaRenderer.CameraPull < guestShare, "the umbrella is nearer the camera than the guest it covers" );
 	}

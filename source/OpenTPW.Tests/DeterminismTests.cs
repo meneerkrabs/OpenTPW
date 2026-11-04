@@ -482,7 +482,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:umbrellas-extension] The pinned hash of <see cref="RunFixedParkWithABrollyShopInTheRain"/> (docs/DETERMINISM.md, "Umbrellas").</summary>
-	internal const ulong UmbrellasFixedRunHash = 0x7F084940237B577FUL;
+	internal const ulong UmbrellasFixedRunHash = 0x62E4D0D64BADA576UL;
 
 	[TestMethod]
 	public void FixedRunWithABrollyShopInTheRainIsTheSameInEveryProcessAndGuestsCarryUmbrellas()
@@ -588,10 +588,10 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-weather] The pinned hash of <see cref="RunFixedParkWithABrollyShopAndRainMoodInTheJungleWeatherAcrossDecember"/> with the option off: the original's weather across December (docs/DETERMINISM.md, "Wintry Decembers").</summary>
-	internal const ulong JungleDecemberOffFixedRunHash = 0xE5E0857EEA5A0DE1UL;
+	internal const ulong JungleDecemberOffFixedRunHash = 0xC8F044CD521E8C92UL;
 
 	/// <summary>[EXT:winter-weather] The pinned hash of the same run with the option on: December's rain bands are snow for the umbrellas and the rain mood (docs/DETERMINISM.md, "Wintry Decembers").</summary>
-	internal const ulong JungleDecemberWintryFixedRunHash = 0x8B66871BC4BF3F33UL;
+	internal const ulong JungleDecemberWintryFixedRunHash = 0xEB76F9169AEC004EUL;
 
 	[TestMethod]
 	public void UmbrellasAndRainMoodUnderTheJungleWeatherAcrossDecemberArePinnedWithWintryDecembersOffAndOn()
@@ -692,7 +692,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-always] The pinned hash of <see cref="RunFixedParkWithShopsAndRainMoodInTheJungleWeatherFromMay"/> with the Always winter option on (docs/DETERMINISM.md, "Always winter").</summary>
-	internal const ulong WinterAlwaysFixedRunHash = 0x9E14F4733B0DE59EUL;
+	internal const ulong WinterAlwaysFixedRunHash = 0x74182783F3F0F191UL;
 
 	[TestMethod]
 	public void ShopsAndRainMoodUnderTheJungleWeatherFromMayArePinnedWithAlwaysWinterOn()
@@ -762,10 +762,10 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:rain-mood-extension] The pinned hash of <see cref="RunFixedParkInTheRainWithRainMood"/> without a brolly shop (docs/DETERMINISM.md, "Rain mood").</summary>
-	internal const ulong RainMoodFixedRunHash = 0x43818BD4AC22950EUL;
+	internal const ulong RainMoodFixedRunHash = 0xB9F646A3B57CE716UL;
 
 	/// <summary>[EXT:rain-mood-extension] The pinned hash of <see cref="RunFixedParkInTheRainWithRainMood"/> with the brolly shop: the umbrellas and the rain mood rule both on (docs/DETERMINISM.md, "Rain mood").</summary>
-	internal const ulong RainMoodWithUmbrellasFixedRunHash = 0xA6343896042E628DUL;
+	internal const ulong RainMoodWithUmbrellasFixedRunHash = 0x00E16CA207BAF2EFUL;
 
 	[TestMethod]
 	public void FixedRunInTheRainWithRainMoodIsTheSameInEveryProcessAndMovesTheRun()
@@ -835,10 +835,10 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:winter-cold] The pinned hash of <see cref="RunFixedParkInTheSnowWithCold"/> with only the cold rule on (docs/DETERMINISM.md, "Winter cold").</summary>
-	internal const ulong WinterColdFixedRunHash = 0x290320BF12153E75UL;
+	internal const ulong WinterColdFixedRunHash = 0x604253D7094BD3C7UL;
 
 	/// <summary>[EXT:winter-cold] The pinned hash of <see cref="RunFixedParkInTheSnowWithCold"/> with the cold rule, the rain mood, the brolly shop and the winter shops all on (docs/DETERMINISM.md, "Winter cold").</summary>
-	internal const ulong WinterColdEverythingFixedRunHash = 0xB5FF8D87B78B5547UL;
+	internal const ulong WinterColdEverythingFixedRunHash = 0xED9D6B64CC3D541DUL;
 
 	[TestMethod]
 	public void FixedRunInTheSnowWithColdIsTheSameInEveryProcessAndMovesTheRun()
@@ -1486,7 +1486,7 @@ public class DeterminismTests
 	internal static readonly string[] PresentationMathFiles =
 	{
 		"World/Lobby/", "World/Particles/", "World/Evening/",
-		"World/Advisor.cs", "World/AdvisorRig.cs", "World/Camera.cs", "World/FreeWalkCameraMode.cs", "World/GlobeCameraMode.cs", "World/LobbyCameraMode.cs",
+		"World/Advisor.cs", "World/AdvisorRig.cs", "World/Camera.cs", "World/CamcorderWalk.cs", "World/FreeWalkCameraMode.cs", "World/GlobeCameraMode.cs", "World/LobbyCameraMode.cs",
 		"World/ParkCameraMode.cs", "World/RideCameraMode.cs", "World/Sky.cs", "World/Sun.cs", "World/OriginalProjection.cs",
 		"World/Coasters/CoasterCarBend.cs", "World/Coasters/CoasterCarRig.cs", "World/Coasters/CoasterToolPanel.cs", "World/Coasters/CoasterTrackMesh.cs",
 		"World/Coasters/CoasterRenderer.cs", "World/Coasters/CoasterPreview.cs",

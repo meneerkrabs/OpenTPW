@@ -267,6 +267,36 @@ public sealed partial class OriginalObjectRuntime
 		Visitors.StateWord.Set( RideObjectStates.Idle );
 	}
 
+	/// <summary>Theme Park Inc: the attraction was closed by the weather (the thing's <c>mClosedDueToWeather</c> byte +0x41); the weather reopens only such a closing.</summary>
+	public bool ClosedDueToWeather { get; private set; }
+
+	// [BIN:TPI-EXE:0x5DEE1F weather closing] the type's WeatherModifier.ClosedDuringHeatWave, Rain, Storm and Snow (type words +0x100, +0x104, +0x108, +0x10C, the key table order after the four weather percentages); 1 closes the attraction in that spell
+	private int ClosedDuring( int weatherState ) => weatherState is >= 1 and <= 4 && Entry.Settings.Has( WeatherClosingKeys[weatherState - 1] ) ? Entry.Settings.GetInt( WeatherClosingKeys[weatherState - 1] ) : 0;
+
+	private static readonly string[] WeatherClosingKeys = { "WeatherModifier.ClosedDuringHeatWave", "WeatherModifier.ClosedDuringRain", "WeatherModifier.ClosedDuringStorm", "WeatherModifier.ClosedDuringSnow" };
+
+	/// <summary>
+	/// Theme Park Inc's weather step of the attraction's update (message 1, sent to every attraction once per weather spell start): while the flag is clear a spell whose <c>ClosedDuring*</c> word is 1 closes it and sets the flag; while it is set the first update without such a
+	/// spell opens it again and clears the flag. The step does not look at whether the owner had closed the attraction (the original reopens it too).
+	/// </summary>
+	// [BIN:TPI-EXE:0x5DED90 attraction update] message 1 (built at 0x641FF3 after the spell start 0x642A80): flag +0x41 clear: the weather thing's state (+0x70, 0x4019B5) 1..4 picks the type word, a word of 1 logs "Closing...", clears the open word +0x7C and the loading slot +0x80, sends the script its close message 6 and sets +0x41 (0x5DEE1F..0x5DEEB9); flag set (0x5DEEBF): a spell whose word is 1 leaves it, else the open routine 0x5E1DC0 runs (its checks only log) and the flag clears
+	internal void ApplyWeatherClosing( int weatherState )
+	{
+		var closes = ClosedDuring( weatherState ) == 1;
+		if ( !ClosedDueToWeather )
+		{
+			if ( !closes )
+				return;
+			Close();
+			ClosedDueToWeather = true;
+		}
+		else if ( !closes )
+		{
+			ClosedDueToWeather = false;
+			Open();
+		}
+	}
+
 	// [BIN:TPW-EXE:0x004DF300 close model call] every closing that writes the open word +0x68 = 0 and VAR_RIDECLOSED = 1 (0x004DF300, 0x004DF150, 0x004DFE30(1), the repair tail's re-close at 0x004DFD3E, SetState 1, 2 and 4, a built object with a queue at 0x004DB712) calls 0x00454550(1) after it: the hoarding rises with the closed set unless another set stands
 	public void Close() => Close( modelCall: true );
 
@@ -626,6 +656,8 @@ public sealed partial class OriginalObjectRuntime
 			LitterEffect = settings.GetInt( "UsageInfo.LitterEffect" ),
 			// [DATA:<object>.sam:UsageInfo.InitCostOfGoods] type +320, the price test's base (tp.exe 0x004FDE50; the key table order InitCostOfGoods, ThirstEffect, HungerEffect, VomitEffect, HappinessEffect)
 			InitCostOfGoods = settings.Has( "UsageInfo.InitCostOfGoods" ) ? settings.GetInt( "UsageInfo.InitCostOfGoods" ) : 0,
+			// [BIN:TPI-EXE:0x6120FC willingness base] Theme Park Inc's price test starts from the type's Info.ExpectedPrice (+0x88) for a ride or a shop; the key is absent in Theme Park World
+			ExpectedPrice = settings.Has( "Info.ExpectedPrice" ) ? settings.GetInt( "Info.ExpectedPrice" ) : 0,
 			// [DATA:<object>.sam:UsageInfo.RipOffOK] type +0x16C (key 42 of the UsageInfo table at tp.exe 0x007456E8), copied into the per-type record's word +0xC that the price test reads (0x004D3E00); 100 in the shipped Shops.sam, 250 in SideShow.sam
 			RipOffOk = settings.Has( "UsageInfo.RipOffOK" ) ? settings.GetInt( "UsageInfo.RipOffOK" ) : 0,
 			// [DATA:<object>.sam:UsageInfo.FatigueEffect] type +0xE8 (key 9 of the UsageInfo table at tp.exe 0x007456E8), "reduce fatigue value by this amount"; 5 in the shipped Rides.sam, Shops.sam and SideShow.sam

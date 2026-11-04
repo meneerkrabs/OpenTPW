@@ -125,10 +125,7 @@ public sealed class RideCameraMode : CameraMode
 	// [BIN:TPW-EXE:0x42cc7c view not renormalised] the blended basis is not made orthonormal again: 0x42b070 only compares it with the last frame's matrix and 0x578bc0 copies it into the camera; OpenTPW's Blend orthonormalises its axes (a difference of the order of the square of the turn between two frames)
 	public static float BlendFactor( float deltaMilliseconds )
 	{
-		var whole = float.IsFinite( deltaMilliseconds ) ? MathF.Floor( Math.Max( deltaMilliseconds, 0f ) ) : 0f;
-		var dt = whole + 1f;
-		if ( dt > 200f )
-			dt = 100f;
+		var dt = CamcorderWalk.FrameMilliseconds( deltaMilliseconds );
 		return (1000f - dt) * 0.0005f;
 	}
 

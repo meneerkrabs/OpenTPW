@@ -72,7 +72,7 @@ public class WinterColdTests
 	private static Guest Aged( Rig rig, double days, int items = 0 )
 	{
 		var guest = rig.Simulation.SpawnInPark( 6, 5 );
-		guest.TimeInParkSeconds = days * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn * TurnSeconds;
+		GuestAges.Set( guest, days * ParkCalendar.SecondsPerDay / ParkCalendar.SecondsPerTurn * TurnSeconds );
 		guest.Happiness = 70;
 		guest.Thirst = 40;
 		guest.Hunger = 40;
@@ -396,7 +396,7 @@ public class WinterColdTests
 				{
 					var rig = new Rig( coldOn, rainMoodOn, seed: 3 );
 					var guest = Aged( rig, 0, items );
-					guest.TimeInParkSeconds = 0;
+					GuestAges.Set( guest, 0 );
 					guest.Happiness = 90;
 					if ( warmed )
 						guest.WarmUntilDay = 1000;
@@ -458,7 +458,7 @@ public class WinterColdTests
 		for ( var index = 0; index < guests.Length; index++ )
 		{
 			park.Simulation.SetWarmItemsForTest( guests[index], items[index] );
-			guests[index].TimeInParkSeconds = (96 + index) * TurnSeconds;
+			GuestAges.Set( guests[index], (96 + index) * TurnSeconds );
 			if ( index % 3 == 0 )
 				guests[index].WarmUntilDay = 40;
 		}

@@ -247,7 +247,7 @@ public sealed partial class GuestSimulation
 				// [BIN:TPW-EXE:0x4FD950 time in park] mArrivalDate (+0x1D4) is the world's game tick at the stamp and the hours the visitor lists show are (tick − stamp) >> 2 turns (the roster's cell); the saved stamp gives the elapsed park turns, a stamp after the save's own turn is not a date
 				if ( save.ArrivalDate <= parkTurn )
 				{
-					guest.TimeInParkSeconds = ((parkTurn - save.ArrivalDate) * ParkCalendar.TurnMilliseconds + 0.5) / 1000.0; // retained unchanged for statistics, weather gates and legacy duration consumers
+					guest.TimeInParkSeconds = ((parkTurn - save.ArrivalDate) * ParkCalendar.TurnMilliseconds + 0.5) / 1000.0; // retained unchanged for statistics and legacy duration consumers (the weather day gate reads the integer age)
 					guest.DisplayTimeInParkTurns = unchecked((uint)(parkTurn - save.ArrivalDate));
 				}
 			}

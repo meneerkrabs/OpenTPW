@@ -199,6 +199,32 @@ public class ThemeParkIncPlayTests
 	}
 
 	[TestMethod]
+	public void AnArabianRoadSignAndAQueueRideTypeTheirFootprintsLikeTheTwinCommit()
+	{
+		// [BIN:TPI-EXE:0x668552 footprint commit] the twin of tp.exe's commit (RIDES-031): the road sign's '@' cell is a type-1 NoModify path cell linked to its path neighbour, the queue ride's entrance is a typed entrance cell with the placement's owner word
+		UseTpiData();
+		var park = new SlicePark( "arabian" );
+		var cells = new ParkCellMap( 40, 40 );
+		var sign = park.Catalog.Entries.First( entry => entry.Shape.Cells.Any( cell => cell.Symbol == '@' ) );
+		var signCells = ObjectFootprint.GetCells( sign.Shape, 10, 10, 0 ).ToList();
+		var at = signCells.First( cell => cell.Cell.Symbol == '@' );
+		cells.SetType( at.X, at.Y - 1, ParkCellType.Path );
+		cells.WriteFootprint( signCells, ParkCellMap.CellWord( 10, 10 ), 0 );
+		Assert.AreEqual( (byte)ParkCellType.Path, cells.RawTypeAt( at.X, at.Y ), "the '@' cell is a type-1 path cell" );
+		Assert.AreEqual( ParkCellFlags.NoModify, cells.FlagsAt( at.X, at.Y ) );
+		Assert.AreNotEqual( 0, cells.LinksAt( at.X, at.Y ) & 0x01, "linked to the path cell above it" );
+		Assert.AreNotEqual( 0, cells.LinksAt( at.X, at.Y - 1 ) & 0x10, "and the neighbour links back" );
+		var ride = park.Catalog.Buildable.First( entry => entry.HasQueue && entry.ScriptPath != null );
+		var rideCells = ObjectFootprint.GetCells( ride.Shape, 20, 20, 0 ).ToList();
+		var owner = ParkCellMap.CellWord( 20, 20 );
+		cells.WriteFootprint( rideCells, owner, 0 );
+		var entrance = ObjectFootprint.GetAccessPoints( ride.Shape, 20, 20, 0 ).First( point => point.Kind == ObjectCellKind.Entrance );
+		Assert.AreEqual( (byte)ParkCellTypes.Entrance, cells.RawTypeAt( entrance.X, entrance.Y ), "the entrance cell is typed" );
+		Assert.AreEqual( owner, cells.OwnerAt( entrance.X, entrance.Y ) );
+		Assert.IsTrue( rideCells.All( cell => cells.OwnerAt( cell.X, cell.Y ) == owner ), "every footprint cell carries the owner word" );
+	}
+
+	[TestMethod]
 	public void EveryWorldHasPlantsThatRequireWateringAndNoRideDoes()
 	{
 		// [BIN:TPI-EXE:0x5DB654 thing flag +0x43 bit 0x10] the flag comes from the type's UsageInfo.RequiresWatering (the plants' bushes, trees and flower beds), which selects the scrap percentage's script branch (ECON-061)

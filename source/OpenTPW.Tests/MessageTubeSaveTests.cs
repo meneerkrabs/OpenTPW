@@ -147,7 +147,8 @@ public class MessageTubeSaveTests
 		Assert.IsNotNull( ( row with { Tag = 5 } ).Problem(), "plain row with an identity" );
 		Assert.IsNotNull( ( row with { Kind = MessageTubeRowSave.Terminal, Tag = 5, Lifetime = 0 } ).Problem(), "terminal without a lifetime" );
 		Assert.IsNotNull( ( row with { Kind = MessageTubeRowSave.Terminal, Tag = 5, Lifetime = 600_001 } ).Problem(), "a lifetime past the bound" );
-		Assert.IsNotNull( ( row with { Kind = MessageTubeRowSave.Progress, Tag = 0 } ).Problem(), "progress without a tag" );
+		Assert.IsNotNull( ( row with { Kind = MessageTubeRowSave.Progress, Tag = 0x17F } ).Problem(), "progress with the tag of no text" );
+		Assert.IsNull( ( row with { Kind = MessageTubeRowSave.Progress, Tag = 0 } ).Problem(), "tag 0 is a real tag" );
 		Assert.IsNotNull( ( row with { Read = true } ).Problem(), "timer state on a plain row" );
 		Assert.ThrowsException<System.IO.InvalidDataException>( () => new Clock().Hud.RestoreMessageTube( new MessageTubeSaveData { Rows = new[] { row with { Kind = 9 } } } ) );
 	}

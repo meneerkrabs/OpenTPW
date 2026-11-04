@@ -125,7 +125,8 @@ public sealed partial class ParkHud
 	private bool PostChallengeOffer( string text, int tag, int lifetime, Func<ParkEconomy?>? economy = null )
 	{
 		var source = economy ?? ( () => level?.Park?.Economy );
-		return AddTubeMessage( tag, MessageTag.NoTag, text, 0, 0, lifetime, true, 4, ChallengeActions( source ), source()?.Objectives.Current is { Accepted: false } offer ? offer : null ) != null;
+		// [BIN:TPW-EXE:0x50AF40 offer tags] the offer tags 274, 275, 277 and 279 replace the progress tags 306, 307, 309 and 312 through the add routine's replacement scan
+		return AddTubeMessage( tag, MessageTagTable.For( tag )?.Replaces ?? MessageTag.NoTag, text, 0, 0, lifetime, true, ChallengeActions( source ), source()?.Objectives.Current is { Accepted: false } offer ? offer : null ) != null;
 	}
 
 	private ActiveChallenge? CurrentUnansweredOffer => level?.Park?.Economy?.Objectives.Current is { Accepted: false } offer ? offer : null;

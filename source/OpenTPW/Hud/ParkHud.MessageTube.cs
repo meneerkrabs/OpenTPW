@@ -19,7 +19,7 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x48db94 offer removal] the tag window's removal (message 5, sent 500 ms after the removal 0x100002 hides it, 0x4a13e8) runs the action 0x1B first when the tag's second action is 0x1B (0x48db8b-0x48dbb0 -> 0x48e0f0 -> 0x48e269 -> the decline 0x4d2ec0), so an offer that is deleted, expires or is answered leaves a declined (or already answered) challenge
 	// [BIN:TPW-EXE:0x48ede0 offer post] the post wrapper opens a tag at once only when the record's byte +0x24 is 1 (0x48edeb); the tag system's record builder 0x509bf0 clears that byte on every path, so an offer is added like any message (0x48ee09) and never opens by itself
 	// [BIN:TPW-EXE:0x48D9C0 tags are kept] a selection never removes the tag: it stops the timers of an armed tag that is no offer (0x48d9ee-0x48da06), copies the tag's properties to the panel (0x48da38-0x48daa6) and opens the panel; the tag leaves the tube only through 0x100002 (the expiry 0x48dd7b, the right click 0x48e0b8, the bomb 0x48e5ac, the action result 2 0x48e53b) or the replacement of the add routine (0x48ebe3)
-	// [APPROX:UI-025] the locate and call-mechanic actions (3, 4, 23), the place of the 0x5a burst, the icons' bounce animations and writing the original's own tag block are not ported (see the register text)
+	// [APPROX:UI-025] the locate actions' thing and cell words (OpenTPW's advisor scans leave them 0), the place of the 0x5a burst, the icons' bounce animations and writing the original's own tag block are not ported (see the register text)
 	public const int MessageTubeCapacity = 10;
 
 	/// <summary>The advisor help the open message panel carries (0x11C, 284).</summary>
@@ -83,7 +83,7 @@ public sealed partial class ParkHud
 	/// the art of their kind. Returns false for blank text or a full tube, without changing rows, sound or help.
 	/// </summary>
 	public bool PostGameMessage( string text, params GameMessageAction[] actions ) =>
-		AddTubeMessage( MessageTag.NoTag, MessageTag.NoTag, text, 0, 0, 0, false, 0, actions ) != null;
+		AddTubeMessage( MessageTag.NoTag, MessageTag.NoTag, text, 0, 0, 0, false, actions ) != null;
 
 	/// <summary>
 	/// Posts a message of a tag (the tag system's record builder, <c>0x509BF0</c>): the tag record names the text entry's replacement, icon and lifetime, <paramref name="lifetime"/> overrides the lifetime
@@ -94,8 +94,8 @@ public sealed partial class ParkHud
 	{
 		var record = MessageTagTable.For( tag );
 		if ( actions.Length == 0 && record is { } known )
-			actions = TagActions( known );
-		return AddTubeMessage( tag, record?.Replaces ?? MessageTag.NoTag, text, contextShort, contextInt, lifetime >= 0 ? lifetime : record?.Lifetime ?? 0, record?.IsOffer == true, record?.Icon ?? 0, actions ) != null;
+			actions = TagActions( known, contextShort, contextInt );
+		return AddTubeMessage( tag, record?.Replaces ?? MessageTag.NoTag, text, contextShort, contextInt, lifetime >= 0 ? lifetime : record?.Lifetime ?? 0, record?.IsOffer == true, actions ) != null;
 	}
 
 	/// <summary>
@@ -104,10 +104,10 @@ public sealed partial class ParkHud
 	/// </summary>
 	// [BIN:TPW-EXE:0x48EB20 add routine] every tag window is scanned (0x65d56b): one whose tag (property 1), context word (3) and context dword (8) equal the record's replaced tag (+4), word (+0x1C) and dword (+0x20) is refreshed in place when the record's own tag is that tag (the text copied, 255 characters and a zero, the open panel's text control set: 0x48eb88-0x48ebd1) and otherwise removed at once with 0x100002 and the flag 1 (0x48ebd5-0x48ebe3); only when none was refreshed does the add go on
 	// [BIN:TPW-EXE:0x48EC04 add admission] the occupied count 0x7ca09c must be below the configured count (0x750610): there is no eviction; the first free slot (0x7c26b4, stride 0x208) takes the window, which is shown and attached after the others (0x100001, 0x48ed90)
-	private TubeRow? AddTubeMessage( int tag, int replaces, string text, short contextShort, int contextInt, int lifetime, bool offer, int icon, GameMessageAction[] actions, ActiveChallenge? offerIdentity = null ) =>
-		AddTubeMessage( tag, replaces, text, contextShort, contextInt, lifetime, offer, icon, actions, out _, offerIdentity );
+	private TubeRow? AddTubeMessage( int tag, int replaces, string text, short contextShort, int contextInt, int lifetime, bool offer, GameMessageAction[] actions, ActiveChallenge? offerIdentity = null ) =>
+		AddTubeMessage( tag, replaces, text, contextShort, contextInt, lifetime, offer, actions, out _, offerIdentity );
 
-	private TubeRow? AddTubeMessage( int tag, int replaces, string text, short contextShort, int contextInt, int lifetime, bool offer, int icon, GameMessageAction[] actions, out bool refreshed, ActiveChallenge? offerIdentity = null )
+	private TubeRow? AddTubeMessage( int tag, int replaces, string text, short contextShort, int contextInt, int lifetime, bool offer, GameMessageAction[] actions, out bool refreshed, ActiveChallenge? offerIdentity = null )
 	{
 		refreshed = false;
 		if ( string.IsNullOrWhiteSpace( text ) )
@@ -134,7 +134,7 @@ public sealed partial class ParkHud
 		}
 		if ( refreshed || pendingMessages.Count >= MessageTubeCapacity )
 			return null;
-		var added = new TubeRow( new ChallengeMessageIdentity( tag, contextShort, contextInt ), lifetime, offer, icon ) { OfferIdentity = offerIdentity };
+		var added = new TubeRow( new ChallengeMessageIdentity( tag, contextShort, contextInt ), lifetime, offer ) { OfferIdentity = offerIdentity };
 		pendingMessages.Add( text );
 		pendingActions.Add( actions.Take( MessageActionIds.Length ).ToArray() );
 		pendingChallengeRows.Add( added );
@@ -155,7 +155,7 @@ public sealed partial class ParkHud
 	{
 		if ( string.IsNullOrWhiteSpace( text ) )
 			return false;
-		var added = AddTubeMessage( tag, tag, text, contextShort, contextInt, 0, false, 0, Array.Empty<GameMessageAction>(), out var refreshed );
+		var added = AddTubeMessage( tag, tag, text, contextShort, contextInt, 0, false, Array.Empty<GameMessageAction>(), out var refreshed );
 		return added != null || refreshed;
 	}
 
@@ -244,7 +244,8 @@ public sealed partial class ParkHud
 	{
 		var now = ChallengeUiMilliseconds;
 		for ( var index = 0; index < (pendingMessages?.Count ?? 0); index++ )
-			pendingChallengeRows![index].ClearAt = now + TubeClearStep * (index + 1);
+			// a second right click posts the same messages again: the first one's delay stands
+			pendingChallengeRows![index].ClearAt ??= now + TubeClearStep * (index + 1);
 	}
 
 	/// <summary>The bomb hides the selected row and removes it 500 ms later; closing alone keeps it in the tube.</summary>

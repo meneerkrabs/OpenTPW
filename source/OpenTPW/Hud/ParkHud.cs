@@ -381,7 +381,7 @@ public sealed partial class ParkHud
 		// [DATA:video 15:20] the message tube (red, left of the HUD) with its icons, and the buttons of the green slide-out panel: the bomb deletes the opened message, the red cross closes the panel
 		hud.Add( new MessageTubeList( this ) { Id = "messageTube", Help = strings.Extra( OpenTpwText.MessageTubeHelp ), Bounds = TubeBase, Anchor = UiAnchor.BottomLeft } );
 		// [BIN:TPW-EXE:0x7501a0 message panel] mb_erase at (486,1325)-(589,1428) deletes the opened message; the two action buttons above it (486,1218) and (486,1110) take the art of their action's kind (mb_locate, mb_callmech, mb_resrch, mb_buy, mb_accept, mb_decline: ParkHud.MessageTube.cs)
-		// UI-025: the buttons come from the tag's actions (ParkHud.TagActions.cs; the offers' accept and decline from ParkHud.ChallengeMessages.cs); the locate and call-mechanic actions (3, 4, 23) have no button
+		// UI-025: the buttons come from the tag's actions (ParkHud.TagActions.cs; the offers' accept and decline from ParkHud.ChallengeMessages.cs); the call-mechanic action 23 is in no tag record
 		hud.Add( new UiButton { Id = "messageDelete", Model = "mb_erase", Clicked = DeleteOpenedMessage, Bounds = OriginalLayoutTables.MessagePanel.Model( "mb_erase" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		for ( var slot = 0; slot < MessageActionIds.Length; slot++ )
 		{
@@ -1585,7 +1585,7 @@ public sealed partial class ParkHud
 		// admission is separate: 0x65db25 chooses the topmost eligible window, and 0x658b1a/0x658b7f save down/up recipients.
 		// [APPROX:PATH-017] ParkHud.PointerInput implements bounded ordinary-WM batch admission then P/pointer drain, including captured movement and original release owners. The P window's backdrop (0x65dd7b, flags 1, appended last under the root;
 		// 0x65db25 lets the last eligible sibling win, 0x65f6d1 forwards nothing) is created by the P key and by the offline focus-loss pause (0x4a27f0, 0x4a2790) and covers only the windows that existed then: it takes every click and the camera takes no input under it.
-		// The P window is drawn (lolight and the paused banner, DrawPauseLayer) and holds keys and wheel from the screens below it; the alternate buffered-input mode and the stored hover cell of a drag released over the HUD (0x4879d0, 0x7b05cc) remain outside this contract; a generic speed flag is not an input owner.
+		// The P window is drawn (lolight and the paused banner, DrawPauseLayer) and holds keys and wheel from the screens below it; the alternate buffered-input mode and the click dispatcher's stored pick (0x4879d0 acts on the previous world frame's pick 0x7b05cc, rewritten by 0x54e2b0) remain outside this contract; a generic speed flag is not an input owner.
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
 			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true }

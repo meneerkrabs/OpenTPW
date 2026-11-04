@@ -28,7 +28,7 @@ public sealed partial class ParkHud
 			var text = pendingMessages[index];
 			// [BIN:TPW-EXE:0x48EE50 tube saved] the record holds the tag's full lifetime, never the time left or whether it was read: the loader's add routine starts the timers again
 			if ( row.IsOffer )
-				rows.Add( new MessageTubeRowSave( MessageTubeRowSave.Offer, text, 0, 0, 0, 0, false ) );
+				rows.Add( new MessageTubeRowSave( MessageTubeRowSave.Offer, text, row.Identity.Tag is MessageTag.NoTag ? 0 : row.Identity.Tag, row.Identity.ContextShort, row.Identity.ContextInt, 0, false ) );
 			else if ( row.IsTerminal )
 				rows.Add( new MessageTubeRowSave( MessageTubeRowSave.Terminal, text, row.Identity.Tag, row.Identity.ContextShort, row.Identity.ContextInt, row.Lifetime, false ) );
 			else if ( row.Identity.Tag != MessageTag.NoTag )
@@ -63,20 +63,19 @@ public sealed partial class ParkHud
 			pendingMessages.Add( row.Text );
 			var tag = row.Kind == MessageTubeRowSave.Message ? MessageTag.NoTag : row.Tag;
 			pendingActions.Add( row.Kind == MessageTubeRowSave.Offer ? ChallengeActions( () => level?.Park?.Economy )
-				: MessageTagTable.For( tag ) is { } tagged ? TagActions( tagged ) : Array.Empty<GameMessageAction>() );
+				: MessageTagTable.For( tag ) is { } tagged ? TagActions( tagged, row.ContextShort, row.ContextInt ) : Array.Empty<GameMessageAction>() );
 			var identity = new ChallengeMessageIdentity( tag, row.ContextShort, row.ContextInt );
-			var record = MessageTagTable.For( tag );
 			var restored = row.Kind switch
 			{
-				MessageTubeRowSave.Offer => new TubeRow( identity, ChallengeOfferLifetime, isOffer: true, icon: record?.Icon ?? 4 )
+				MessageTubeRowSave.Offer => new TubeRow( identity, ChallengeOfferLifetime, isOffer: true )
 				{
 					OfferIdentity = CurrentUnansweredOffer,
 					PendingOfferIdentity = row.OfferReleaseDelayMs != null ? CurrentUnansweredOffer : null,
 					ReleaseAt = row.OfferReleaseDelayMs is { } delay ? now + delay : null,
 					Hidden = row.OfferReleaseDelayMs != null
 				},
-				MessageTubeRowSave.Terminal => new TubeRow( identity, row.Lifetime, icon: record?.Icon ?? 0 ),
-				_ => new TubeRow( identity, 0, icon: record?.Icon ?? 0 )
+				MessageTubeRowSave.Terminal => new TubeRow( identity, row.Lifetime ),
+				_ => new TubeRow( identity, 0 )
 			};
 			pendingChallengeRows.Add( restored );
 			// [BIN:TPW-EXE:0x48EF70 tube loader] every record goes through the add routine, which starts the timers again from the full lifetime; only a row an earlier OpenTPW wrote as read keeps its timers stopped

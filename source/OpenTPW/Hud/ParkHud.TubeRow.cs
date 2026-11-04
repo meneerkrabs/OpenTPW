@@ -8,7 +8,7 @@ public sealed partial class ParkHud
 	/// One occupied slot of the message tube: a tag window of the original (<c>0x48DAE0</c>) with the properties the add routine <c>0x48EB20</c> stores in it. The identity (tag, context word and dword)
 	/// is what a later post of the same or a replacing tag matches; the two timers are the window's expiry (<c>0x80080</c>, the lifetime) and warning (<c>0x80081</c>, five seconds earlier) timers.
 	/// </summary>
-	private sealed class TubeRow( ChallengeMessageIdentity identity, int lifetime = 0, bool isOffer = false, int icon = 0 )
+	private sealed class TubeRow( ChallengeMessageIdentity identity, int lifetime = 0, bool isOffer = false )
 	{
 		public const int WarningLead = 5000;
 
@@ -20,7 +20,6 @@ public sealed partial class ParkHud
 
 		/// <summary>The tag's lifetime in milliseconds; 0 keeps the row until it is deleted, answered or expires another way.</summary>
 		public int Lifetime { get; } = lifetime;
-		public int Icon { get; } = icon;
 
 		/// <summary>A row with a lifetime that is not an offer: it expires unread and is read away from its timers by a selection.</summary>
 		public bool IsTerminal => Lifetime > 0 && !IsOffer;

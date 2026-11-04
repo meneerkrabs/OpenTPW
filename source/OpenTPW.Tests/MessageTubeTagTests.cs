@@ -365,7 +365,7 @@ public class MessageTubeTagTests
 		clock.Hud.PostTagMessage( 64, "buy" );      // action 9: the rides tab of the buy window
 		clock.Hud.PostTagMessage( 10, "hire" );     // action 13: the hire window of handymen
 		clock.Hud.PostTagMessage( 129, "nothing" ); // action 25 has no button
-		clock.Hud.PostTagMessage( 60, "locate" );   // action 3 is not ported: no button
+		clock.Hud.PostTagMessage( 60, "locate" );   // action 3: locate a thing, panel and tag stay
 		clock.Hud.OpenPendingMessage( 0 );
 		Assert.AreEqual( (GameMessageKind.Buy, 0x209), (clock.Hud.OpenedActions[0].Kind, clock.Hud.OpenedActions[0].HelpId) );
 		clock.Hud.OpenPendingMessage( 1 );
@@ -373,8 +373,68 @@ public class MessageTubeTagTests
 		clock.Hud.OpenPendingMessage( 2 );
 		Assert.AreEqual( 0, clock.Hud.OpenedActions.Count );
 		clock.Hud.OpenPendingMessage( 3 );
-		Assert.AreEqual( 0, clock.Hud.OpenedActions.Count );
+		Assert.AreEqual( (GameMessageKind.Locate, 0x204), (clock.Hud.OpenedActions[0].Kind, clock.Hud.OpenedActions[0].HelpId) );
 		CollectionAssert.AreEqual( new[] { "mb_buy", "b_loan", "b_pkinfo", "b_staffcost", "b_entry" }, new[] { GameMessageKind.Buy, GameMessageKind.Loans, GameMessageKind.ParkInfo, GameMessageKind.StaffCost, GameMessageKind.Entry }.Select( kind => kind.Model() ).ToArray() );
+	}
+
+	[TestMethod]
+	public void ARecordOfTagZeroImportsAndABadRecordIsDroppedNotThrown()
+	{
+		static byte[] Record( int tag, string text, int lifetime )
+		{
+			var bytes = new byte[SaveTubeRecord.Bytes];
+			BitConverter.GetBytes( tag ).CopyTo( bytes, 0 );
+			Encoding.Unicode.GetBytes( text + "\0" ).CopyTo( bytes, 4 );
+			BitConverter.GetBytes( lifetime ).CopyTo( bytes, 0x204 );
+			return bytes;
+		}
+		var records = SaveTubeRecord.Read( Record( 0, "tag zero", 30000 ).Concat( Record( 1, "tag one", 0 ) ).Concat( Record( 64, "bad lifetime", 700000 ) ).ToArray(), 3 );
+		var problems = new List<string>();
+		var tube = OriginalTubeImport.Rows( records, problems )!;
+		Assert.AreEqual( 2, tube.Rows.Count );
+		Assert.AreEqual( 1, problems.Count );
+		Assert.IsNull( tube.Problem() );
+		var clock = new Clock();
+		clock.Hud.RestoreMessageTube( tube );
+		CollectionAssert.AreEqual( new[] { "tag zero", "tag one" }, clock.Hud.PendingMessages.ToArray() );
+	}
+
+	[TestMethod]
+	public void ATagShownDuringAPauseSetsItsFlagButStartsNoBurst()
+	{
+		var clock = new Clock();
+		clock.Hud.UiPausedOverride = true;
+		clock.Hud.PostTagMessage( 64, "paused" );
+		Assert.AreEqual( 0, clock.Particles.Created.Count );
+		clock.Hud.UiPausedOverride = false;
+		clock.Hud.PostTagMessage( 62, "running" );
+		Assert.AreEqual( 1, clock.Particles.Created.Count, "only the later tag bursts: the first one's flag was set while paused" );
+	}
+
+	[TestMethod]
+	public void AnOfferTagReplacesItsProgressTagRowAtOnce()
+	{
+		Assert.AreEqual( 306, MessageTagTable.For( 274 )!.Value.Replaces );
+		var clock = new Clock();
+		clock.Hud.PostTagMessage( 306, "progress" );
+		clock.Hud.PostTagMessage( 274, "offer", actions: Array.Empty<GameMessageAction>() );
+		CollectionAssert.AreEqual( new[] { "offer" }, clock.Hud.PendingMessages.ToArray(), "the offer tag's record replaces tag 306 on the same context (0x48ebd5)" );
+	}
+
+	[TestMethod]
+	public void ASecondRightClickOnTheTubeDoesNotDelayTheFirstClearsRemovals()
+	{
+		var clock = new Clock();
+		clock.Hud.PostTagMessage( 280, "a" );
+		clock.Hud.PostTagMessage( 281, "b" );
+		clock.Now = 1000;
+		clock.Hud.DeleteAllPendingMessages();
+		clock.Now = 1050;
+		clock.Hud.DeleteAllPendingMessages();
+		clock.Pump( 1100 );
+		CollectionAssert.AreEqual( new[] { "b" }, clock.Hud.PendingMessages.ToArray() );
+		clock.Pump( 1200 );
+		Assert.AreEqual( 0, clock.Hud.PendingMessages.Count );
 	}
 
 	[TestMethod]

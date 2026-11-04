@@ -37,7 +37,7 @@ public sealed partial class ParkHud
 		if ( record.Lifetime != 30000 || record.FirstAction != 0 || record.SecondAction != 0
 			|| record.Tag == record.ReplacementTag || string.IsNullOrWhiteSpace( text ) || PendingMessages.Count >= MessageTubeCapacity )
 			return false;
-		return AddTubeMessage( record.Tag, record.ReplacementTag, text, 0, 0, record.Lifetime, false, record.Icon, Array.Empty<GameMessageAction>() ) != null;
+		return AddTubeMessage( record.Tag, record.ReplacementTag, text, 0, 0, record.Lifetime, false, Array.Empty<GameMessageAction>() ) != null;
 	}
 
 	/// <summary>One suspend flag: only a suspended-to-resumed transition restarts active timer origins.</summary>
@@ -62,7 +62,7 @@ public sealed partial class ParkHud
 	/// Direct load/save and postcard are excluded; load/save under Escape inherit the still-open pause screen.
 	/// </summary>
 	// [BIN:TPW-EXE:0x48c894 escape suspension] options 0x4a3a7b, map 0x5f0b8a and owned offline message boxes 0x47f27b also suspend.
-	// [BIN:TPW-EXE:0x48A6E0 pause suspends timers] the pause 0x4092A0(1) (the P key and the focus loss, 0x46B74C) runs 0x481440 -> 0x48A6E0, which suspends the UI timers (0x662411) and builds the P window; the resume 0x409300 -> 0x481450 -> 0x48A700 resumes them (0x662420) and destroys it. The focus-loss latch therefore owns the timers until an explicit resume.
+	// [BIN:TPW-EXE:0x48A6E0 pause suspends timers] the P key 0x409350 -> 0x481460 -> 0x48A720 toggles the window (0x4A27F0) and then suspends or resumes the UI timers (0x662411, 0x662420) by whether [0x7CB2CC] exists; only the focus loss takes 0x4092A0(1) -> 0x481440 -> 0x48A6E0 (suspend, then build the window), whose resume 0x409300 -> 0x481450 -> 0x48A700 resumes them and destroys it. The focus-loss latch therefore owns the timers until an explicit resume.
 	// The other pauses (0x4092A0(0, 0): the Escape menu, the box, options, map) suspend directly (0x662411 at 0x48C894, 0x47F27B, 0x4A3A7B, 0x5F0B8A); loans windows and the postcard pause the game clock only.
 	// Other dialogs, online ownership gates and nested host screens are not claimed to reproduce the original's single global flag.
 	internal static bool ChallengeMessageSuspensionFor( bool userPaused, IEnumerable<string> screens, bool focusPaused = false ) => userPaused || focusPaused

@@ -38,6 +38,11 @@ public sealed partial class ParkHud
 		return (x, 0, z);
 	}
 
+	/// <summary>Test seam for the pause word the burst reads; null follows the HUD's own pause flag.</summary>
+	internal bool? UiPausedOverride { get; set; }
+
+	private bool UiPaused => UiPausedOverride ?? (Stack != null && Status != null && ClockPaused);
+
 	private (int X, int Y, int Z) TubeIconNative( int index ) => UiParticleNative( TubeIcon( index ) );
 
 	/// <summary>
@@ -49,7 +54,9 @@ public sealed partial class ParkHud
 		var row = pendingChallengeRows![index];
 		if ( !row.FirstShown )
 		{
-			UiParticlePool.Create( TagShownEffect, TubeIconNative( index ) );
+			// [BIN:TPW-EXE:0x486BCE burst while paused] 0x486B90 makes nothing while the pause word [0x786B84] (the pause object's flag +0x1C) is set, and 0x48DFC6 sets property 10 all the same: a tag shown during a pause never bursts
+			if ( !UiPaused )
+				UiParticlePool.Create( TagShownEffect, TubeIconNative( index ) );
 			row.FirstShown = true;
 		}
 		if ( row.ParticleHandle is { } handle && UiParticlePool.IsAlive( handle ) )

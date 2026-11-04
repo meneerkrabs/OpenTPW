@@ -33,7 +33,13 @@ internal static class OriginalTubeImport
 			}
 			var kind = record.SecondAction == MessageTag.DeclineAction ? MessageTubeRowSave.Offer
 				: record.Lifetime > 0 ? MessageTubeRowSave.Terminal : MessageTubeRowSave.Progress;
-			rows.Add( new MessageTubeRowSave( kind, record.Text, record.Tag, record.ContextShort, record.ContextInt, kind == MessageTubeRowSave.Terminal ? record.Lifetime : 0, false ) );
+			var row = new MessageTubeRowSave( kind, record.Text, record.Tag, record.ContextShort, record.ContextInt, kind == MessageTubeRowSave.Terminal ? record.Lifetime : 0, false );
+			if ( row.Problem() is { } problem )
+			{
+				problems?.Add( $"tag {record.Tag}: {problem}" );
+				continue;
+			}
+			rows.Add( row );
 		}
 		return rows.Count == 0 ? null : new MessageTubeSaveData { Rows = rows };
 	}

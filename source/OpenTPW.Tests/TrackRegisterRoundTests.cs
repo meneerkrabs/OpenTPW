@@ -97,6 +97,43 @@ public class TrackRegisterRoundTests
 
 	// ---- TRACK-012 / TRACK-023: the start heading ----------------------------------------------------
 
+	/// <summary>PTCL-908: 0x549DB0 sets flag 0x4000000 on every vehicle (0x54A009) and the per-vehicle draw 0x546280 clears it and raises particle 15 (0x546A89..0x546AC7), whatever the family.</summary>
+	[TestMethod]
+	public void EveryFamilysFirstDrawRaisesTheBeamOnceAndNotAtCreation()
+	{
+		foreach ( var type in new[] { -5, -8, -4, -9, -10, -6 } )
+		{
+			var rig = new Rig( type );
+			rig.Controller.Command( 7, 0 );
+			rig.Controller.Command( 1, 1 );
+			Assert.AreEqual( 1, rig.Controller.Command( 4, 0 ) );
+			var vehicle = rig.Controller.Vehicles.Single();
+			Assert.IsTrue( vehicle.FirstDrawPending, $"type {type}: created, not yet drawn" );
+			Assert.AreEqual( 0, rig.Count( BumpEffectKind.Particle, BumpEffects.ParticleBeamUpCar ), $"type {type}: no beam at creation" );
+			rig.Run( 3 );
+			Assert.AreEqual( 0, rig.Count( BumpEffectKind.Particle, BumpEffects.ParticleBeamUpCar ), $"type {type}: ticks alone are no draw" );
+			rig.Controller.RaiseFirstDrawBeams();
+			Assert.AreEqual( 1, rig.Count( BumpEffectKind.Particle, BumpEffects.ParticleBeamUpCar ), $"type {type}: the first draw beams" );
+			Assert.IsFalse( vehicle.FirstDrawPending );
+			rig.Controller.RaiseFirstDrawBeams();
+			rig.Controller.RaiseFirstDrawBeams();
+			Assert.AreEqual( 1, rig.Count( BumpEffectKind.Particle, BumpEffects.ParticleBeamUpCar ), $"type {type}: later draws emit nothing" );
+		}
+	}
+
+	[TestMethod]
+	public void AVehicleRetiredBeforeItsFirstDrawBeamsOnlyThroughItsUnload()
+	{
+		var rig = new Rig( -5 );
+		rig.Controller.Command( 7, 0 );
+		rig.Controller.Command( 1, 1 );
+		rig.Controller.Command( 4, 0 );
+		var boat = rig.Controller.Vehicles.Single();
+		boat.Flags &= ~BumpVehicle.Live;
+		rig.Controller.RaiseFirstDrawBeams();
+		Assert.AreEqual( 0, rig.Count( BumpEffectKind.Particle, BumpEffects.ParticleBeamUpCar ), "the draw walks live vehicles only (flag 1 of 0x546280's list)" );
+	}
+
 	[TestMethod]
 	public void BoatsAndKartsStartAtHeadingZeroAndOnlyBumperCarsDrawARandomOne()
 	{

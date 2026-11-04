@@ -54,7 +54,11 @@ public class KartControllerTests
 		public void Run( int ticks )
 		{
 			for ( var tick = 0; tick < ticks; tick++ )
+			{
 				Controller.Tick();
+				// the frame step's vehicle draw (tp.exe 0x546280 from 0x54FA33): the first draw of a new kart raises particle 15
+				Controller.RaiseFirstDrawBeams();
+			}
 		}
 
 		/// <summary>Opens the ride, loads <paramref name="cars"/> karts with one guest each and lets them park on the grid.</summary>

@@ -166,7 +166,7 @@ public sealed class GuestPathGrid
 	{
 		if ( !IsQueue( x, y ) )
 			return;
-		PathLinkWriter.Unlink( Cells, x, y, cardinalOnly: true );
+		PathLinkWriter.Unlink( Cells, x, y, cardinalOnly: true, Cells.ClearEffects );
 		Cells.SetType( x, y, ParkCellType.Empty );
 		Invalidate();
 	}

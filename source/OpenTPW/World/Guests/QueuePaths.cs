@@ -234,7 +234,7 @@ public static class QueuePaths
 	/// </summary>
 	// [EXT:untyped-harness-world] a ride without an access cell (the gates and test rigs: harness worlds whose entrance is no typed cell with a link byte) walks the bridge's own queue geometry (user-approved 2026-10-30)
 	private static CornerWalkResult? TypedWalk( GuestPathGrid grid, RideVisitorBridge ride, bool write ) =>
-		ride.HasQueue && ride.AccessCell is { } entrance ? QueueCornerWalk.Run( grid.Cells, entrance, ride.Rotation, write ) : null;
+		ride.HasQueue && ride.AccessCell is { } entrance ? QueueCornerWalk.Run( grid.Cells, entrance, ride.Rotation, write, grid.Cells.Recreated ) : null;
 
 	/// <summary>
 	/// The walk the queue edit click makes (<c>0x526103</c>, <c>0x530120</c>): the counter writes and the link clear in one pass, then the re-evaluation <c>0x4DE1F0</c> the click runs whether or not a link was

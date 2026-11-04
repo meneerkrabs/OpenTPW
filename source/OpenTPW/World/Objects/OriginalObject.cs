@@ -108,7 +108,7 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 
 	/// <summary>Whether the detail option ANIMATINGTEXTURES lets the texture-frame tracks show: Low turns it off, Medium, High and the extended preset keep it on.</summary>
 	// [BIN:TPW-EXE:0x0044D9CD render flag 0x40] the option record 4 (ANIMATINGTEXTURES, value 0 or 1; the records are 0x3C bytes from TEXTUREQUALITY at 0x744300, their values the words from 0x785874) clears (0) or sets (1) bit 0x40 of the render flags 0x8BD550
-	private static bool TextureAnimationEnabled => IGraphicsSettings.Instance is not { } settings || settings.GetPresetValues( settings.Current.Preset ) is not { } detail || detail.AnimatingTextures != 0;
+	internal static bool TextureAnimationEnabled => IGraphicsSettings.Instance is not { } settings || settings.GetPresetValues( settings.Current.Preset ) is not { } detail || detail.AnimatingTextures != 0;
 
 	/// <summary>The frame a texture slot shows: its track's frame while texture animation is on, else frame 0.</summary>
 	// [BIN:TPW-EXE:0x0057A420 slot texture bind] each model texture slot binds frames[flags 0x40 of 0x8BD550 ? slot word +2 : 0] (0x00575F90), the slot's current frame that the clip update writes (0x00470C90)
@@ -520,7 +520,7 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 			if ( dynamic )
 				vertexParts.Add( (model, part.MeshIndex, part.Vertices, -1) );
 			// [EXT:winter-snow-surfaces] objects (roofs, trees, rides) take snow on their up-facing surfaces; a part on an animated node (it can move or turn) keeps its snow noise in model space, so the patches do not crawl over it
-			parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}", SnowSurface = SnowCover.GroundSurface, SnowNoiseInModelSpace = part.NodeIndex >= 0, Prepared = PresentDrawn }, part.NodeIndex) );
+			parts.Add( (new ModelEntity { Model = model, Name = $"{Entry.ArchiveName}:{part.Name}", SnowSurface = SnowCover.GroundSurface, SnowNoiseInModelSpace = part.NodeIndex >= 0, Prepared = PresentIfInView }, part.NodeIndex) );
 		}
 		frameTextures.AddRange( frameSlots.Values.Where( frames => frames.Bindings.Count > 0 ) );
 	}
@@ -788,6 +788,40 @@ public class OriginalObject : Entity, IPointLightSource, IObjectPickShape
 	/// </summary>
 	// [BIN:TPW-EXE:0x463030 render callback] 0x44E380(instance from the mesh object +0xB4, 1) then flag 0x200000 (0x463047..0x463052)
 	// [BIN:TPW-EXE:0x44E380 pose] with the posing argument set and flag 0x800000 set: 0x4726D0 (ObjectAnimator.ResetToStored) unless flag 0x80000 is set (no creator on the placed ride's path sets it: 0x463060 builds the flags from 0x211F/0x231F and the argument bits 0x1, 0x2, 0x80), then flag 0x800000 cleared; then 0x473C70(instance, 1, 0) and its key table refresh (0x473E01) and the head tick 0x44B510
+	/// <summary>
+	/// The first part of the frame that renders asks whether any part of the object is in the view; the object is then called back once for the frame (<see cref="PresentDrawn"/>). A part that is hidden or out of view
+	/// itself does not matter: the original's mesh prepare runs for the whole mesh object.
+	/// </summary>
+	// [BIN:TPW-EXE:0x57A788 whole-mesh callback] the mesh prepare tests the object's frame word (0x57A76D, 0x57A7ED), clears a state bit and calls the render callback (0x57A7FC) before it reaches the per-mesh view tests (0x57A5A6..0x57A685, 0x561A30); only the object's own flags keep it away (0x57A78E: the queued translucent path with [object+0x30] 0x200000, 0x57A85F: object flag 4); the scene's pass 0x576910 offers it every object of the always-list and of the cells the view covers (0x57697D..0x5769DC)
+	private void PresentIfInView()
+	{
+		if ( deleted )
+			return;
+		var frame = global::Global.Render?.FrameNumber ?? 0;
+		if ( viewTestedFrame == frame && frame != 0 )
+			return;
+		viewTestedFrame = frame;
+		if ( AnyPartInView() )
+			PresentDrawn();
+	}
+
+	private long viewTestedFrame = -1;
+
+	private bool AnyPartInView()
+	{
+		var viewProjection = Camera.ViewMatrix * Camera.ProjMatrix;
+		foreach ( var (entity, _) in parts )
+		{
+			if ( entity.Model is not { } model )
+				continue;
+			if ( !entity.Cullable || model.Bounds is not { } bounds )
+				return true;
+			if ( !Frustum.IsOutside( bounds.Min, bounds.Max, entity.DrawMatrix * viewProjection ) )
+				return true;
+		}
+		return false;
+	}
+
 	internal void PresentDrawn()
 	{
 		if ( deleted )

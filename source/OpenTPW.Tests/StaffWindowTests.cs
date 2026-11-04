@@ -197,6 +197,24 @@ public class StaffWindowTests
 		Assert.AreEqual( 20 * 1024 / 100, hud.EmployeeStatsShown.HappinessGauge, "timer 0x80080 refreshes them after 4000 ms" );
 	}
 
+	/// <summary>PTCL-908: 0x505790 beams the dismissed member at its place (0x4FA470(0x13), 0x5059C3); a member the world has not placed has none.</summary>
+	[TestMethod]
+	public void ADismissedEmployeeBeamsAtItsPlace()
+	{
+		var hud = EmployeeHud( out var economy, StaffType.Handyman, StaffType.Guard );
+		var placed = economy.Staff.Members[0];
+		placed.CellX = 12.25f;
+		placed.CellY = 7.5f;
+		var unplaced = economy.Staff.Members[1];
+		unplaced.CellX = null;
+		unplaced.CellY = null;
+		var beams = new System.Collections.Generic.List<(float, float)>();
+		economy.StaffDismissed += ( x, y ) => beams.Add( (x, y) );
+		economy.Fire( placed.Id );
+		economy.Fire( unplaced.Id );
+		CollectionAssert.AreEqual( new[] { (12.25f, 7.5f) }, beams, "one beam, at the placed member's cell-unit position" );
+	}
+
 	[TestMethod]
 	public void DismissClosesTheWindowAndAsksFirstWithConfirmations()
 	{

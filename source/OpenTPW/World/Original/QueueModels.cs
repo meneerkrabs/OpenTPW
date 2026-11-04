@@ -16,6 +16,10 @@ public static class QueueModels
 	/// <summary>The table 0x763388's models in index order.</summary>
 	public static readonly IReadOnlyList<string> Names = new[] { "quedead", "quedead", "questra", "quebnd2", "quebnd1", "queend", "quebin1", "quebin2" };
 
+	/// <summary>The load flags the loader <c>0x522900</c> hands <c>0x4629D0</c> for a model of the table: 0x12423, and 0x112423 for the rows whose flag word is 0x100 (the two <c>quedead</c> entries, <see cref="QueueModelPulse"/>).</summary>
+	// [BIN:TPW-EXE:0x00522951 load flags] mov al, [esi + 5]; edi = 0x12423, or 0x112423 when the byte is not 0 (0x522954..0x52295D); the rows' flag words are 0x100 for rows 0 and 1 and 0 for the other six (0x763390, 0x76339C, 0x7633A8..0x7633E4)
+	public static uint LoadFlags( int model ) => QueueModelPulse.Pulses( model ) ? 0x112423u : 0x12423u;
+
 	/// <summary>The queue table 0x7630B0: {model index (class 2), rotation, link mask}.</summary>
 	private static readonly (int Model, int Rotation, byte Mask)[] Table =
 	{

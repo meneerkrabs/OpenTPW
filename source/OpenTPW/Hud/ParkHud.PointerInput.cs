@@ -57,6 +57,31 @@ public sealed partial class ParkHud
 		// under it, and the HUD, which gets the leave message (0x10002: [0x790ab0] |= 0x100) when the layer appears, no pointer either
 		pausePointerOverlay = new UiPointerOwner( new object() );
 		pauseOverlayBelow = Stack.Screens.ToArray();
+		pauseBanner = null;
+		Stack.LayerBelow = pauseOverlayBelow;
+		Stack.LayerDraw = DrawPauseLayer;
+	}
+
+	private UiAnimatedModel? pauseBanner;
+
+	/// <summary>
+	/// The P window as it looks: the full-canvas 'lolight' model over the screens that existed when it was made, then the language's paused banner animating in its panel (table 0x752E00, 1700 x 400 at (174, 500)).
+	/// </summary>
+	// [BIN:TPW-EXE:0x47EE0D P window layers] 0x47ED80 makes the layer (0x65DD7B, (0,0)-(0x7FF,0x5FF), attributes 1), gives it the model 'lolight' (0x74F9BC, 0x65D1C8) and builds the panel from the table 0x752E00 under it: the table's one window 0x13E6 draws the model s_paused (the language folder's paused.MD2); its procedure 0x4A2680 starts the animation 0x752ED0 on message 0x15
+	private void DrawPauseLayer( UiContext context )
+	{
+		context.DrawModel( "lolight", 0, context.Canvas.Map( new UiRect( 0, 0, 2047, 1535 ), UiAnchor.Center ) );
+		var banner = OriginalLayoutTables.PauseWindow.Root;
+		pauseBanner ??= new UiAnimatedModel
+		{
+			Id = "pauseBanner",
+			Model = banner.Model!,
+			Bounds = banner.Rect,
+			Anchor = UiAnchor.Center,
+			Pivot = UiAnimatedModel.PivotOf( banner.Rect ),
+			Animation = new UiWindowAnimation( UiWindowAnimation.PauseBanner, UiWindowAnimation.PauseBannerInterval, (long)Math.Floor( context.Time * 1000.0 ) )
+		};
+		pauseBanner.Draw( context, false, false );
 	}
 
 	/// <summary>The P window's backdrop is up and nothing was opened after it: it holds the focus and the pointer (0x47ee67, 0x65db25).</summary>
@@ -100,6 +125,12 @@ public sealed partial class ParkHud
 		pausePointerOverlay?.Retire();
 		pausePointerOverlay = null;
 		pauseOverlayBelow = Array.Empty<UiScreen>();
+		pauseBanner = null;
+		if ( Stack != null )
+		{
+			Stack.LayerDraw = null;
+			Stack.LayerBelow = null;
+		}
 	}
 
 	private UiPointerOwner? HitPointer( UiContext context, NVector2 point )

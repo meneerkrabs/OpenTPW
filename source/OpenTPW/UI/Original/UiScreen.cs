@@ -416,6 +416,12 @@ public sealed class UiScreenStack
 
 	public bool Covers( UiCanvas canvas, NVector2 point ) => screens.Any( screen => screen.Covers( canvas, point ) );
 
+	/// <summary>A layer drawn over the screens in <see cref="LayerBelow"/> and under any screen opened later (the P window's backdrop, ParkHud); null for none.</summary>
+	public Action<UiContext>? LayerDraw { get; set; }
+
+	/// <summary>The screens the layer covers (the stack when it was made).</summary>
+	public UiScreen[]? LayerBelow { get; set; }
+
 	public void Draw( UiContext context ) => Draw( context, showHelp: null );
 
 	/// <summary>Draws with an optional owner-local help override; null follows the context option without changing it.</summary>
@@ -430,14 +436,28 @@ public sealed class UiScreenStack
 				break;
 			}
 		}
+		// the layer lies over the screens that existed when it was made and under every later one
+		var layerAfter = -1;
+		if ( LayerDraw != null && LayerBelow != null )
+			for ( var index = screens.Count - 1; index >= 0 && layerAfter < 0; index-- )
+				if ( Array.IndexOf( LayerBelow, screens[index] ) >= 0 )
+					layerAfter = index;
+		if ( LayerDraw != null && layerAfter < first )
+			LayerDraw( context );
 		for ( var index = first; index < screens.Count; index++ )
 		{
 			if ( screens[index].HiddenWhenCovered && index < screens.Count - 1 )
+			{
+				if ( index == layerAfter )
+					LayerDraw!( context );
 				continue;
+			}
 			// [DATA:video 10:00, 28:00] the pause overlay and the new-player dialog darken the scene behind them, as every modal screen does here
 			if ( screens[index].Modal && index > first )
 				context.Batch.AddRectangle( new UiRect( 0, 0, context.Canvas.Width, context.Canvas.Height ), UiColors.Backdrop );
 			screens[index].Draw( context );
+			if ( index == layerAfter )
+				LayerDraw!( context );
 		}
 		if ( (showHelp ?? context.PopupHelp) && !string.IsNullOrEmpty( context.HoverHelp ) )
 			DrawHelp( context, context.HoverHelp! );

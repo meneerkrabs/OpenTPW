@@ -251,7 +251,7 @@ public partial class Texture : Asset
 	}
 
 	/// <summary>The alpha type from the header of the original <c>.wct</c> at <paramref name="path"/> (Opaque when the game data does not have it).</summary>
-	private static TextureAlphaType OriginalAlphaType( string path )
+	internal static TextureAlphaType OriginalAlphaType( string path )
 	{
 		try
 		{

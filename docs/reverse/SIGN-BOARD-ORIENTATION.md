@@ -10,7 +10,7 @@ The source composition surface is twice the destination width and height (0x5ECB
 
 ## Native CPU destination packing
 
-The 32-bit output branch at 0x5ECF2C selects format zero. At 0x5ECF37–0x5ECF54, each destination pointer starts at:
+The 32-bit output branch at 0x5ECF2C selects format 1 (the compare at 0x5ECF2C is against 1; the 4444 branch compares with 2 at 0x5ECFCE; the caller maps the surface format index 3 to 1 and the others to 2, 0x4680D1..0x4680ED). At 0x5ECF37–0x5ECF54, each destination pointer starts at:
 
 `outputBase + (height - 1) * width * 4`
 
@@ -33,3 +33,7 @@ This source inspection does not prove native GPU equivalence. A controlled asymm
 `SignBoardOrientationTests.AsymmetricRawBoardPreservesEveryRowAndBothHalfSeams` calls the real sign parser and CPU composer with a fully opaque raw board. Distinct row, column and half channels make vertical/horizontal reversal, swapped halves and channel permutation detectable across every output pixel. Expected values include the native alpha-blit's division by 256 rather than 255.
 
 The fixture contains no original media, uses no fonts or GPU, and does not validate the wavelet decoder. Existing wavelet arithmetic/plane tests remain separate. Passing this CPU test must not be reported as an original-platform or browser/GPU comparison.
+
+## Round 11 additions (package K)
+
+The board is blitted into the composition surface forward and top-down (`0x5E7D70`: ascending loops, destination offset `(y * dstW + x) * bpp`, the alpha byte `max(dst, src)`, the colour bytes `dst += ((src - dst) * srcAlpha) >> 8`), and the text masks are top-down too (`0x5EAB70`: `biHeight = -2 h`). The 16-bit branch reduces each pixel by truncation, `(A & 0xF0) << 8 | (R & 0xF0) << 4 | (G & 0xF0) | B >> 4` (`0x5ED011..0x5ED04D`), and it is the default: the surface format index comes from `((flags & 0x400000) | 0x800000) >> 0x16` of `[0x7A1A8C]` (2 with the bit clear, 3 with it set, `0x44E1EB..0x44E21F`), the bit is the option TEXTURE32 (`0x7858AC`, `0x44DB6A..0x44DB88`) and all three shipped presets (`low`, `med`, `high.sam`) set TEXTURE32 0. OpenTPW's textures are 32 bit; applying the option would reduce every world texture, not only the boards, so it stays 32 bit under `[EXT:texture32-always]` (user-approved 2026-11-04). Not found: the upload of the packed halves to the GPU texture and the sign mesh's V direction.

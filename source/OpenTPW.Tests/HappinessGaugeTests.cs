@@ -44,7 +44,7 @@ public class HappinessGaugeTests
 			var data = Md2ModelFileTests.CreateGeometry();
 			Array.Clear( data, 0x1a4, 12 );
 			Encoding.ASCII.GetBytes( name + "\0" ).CopyTo( data, 0x1a4 );
-			return new UiModel( new ModelFile( new MemoryStream( data ) ), name );
+			return new UiModel( ClockwiseFaces.Of( new ModelFile( new MemoryStream( data ) ) ), name );
 		} ) ) { Canvas = new UiCanvas( width, height ), PopupHelp = false, ResolveTexture = _ => "/synthetic/shell.png" };
 		return new( hud, level, economy, guests, context );
 	}

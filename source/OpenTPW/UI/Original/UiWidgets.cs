@@ -315,7 +315,8 @@ public sealed class UiContext
 		var (sin, cos) = turn == 0 ? (0f, 1f) : MathF.SinCos( turn );
 		foreach ( var part in frame.Parts )
 		{
-			var texture = TextureFor( part );
+			var path = part.TextureName.Length == 0 ? null : ResolveTexture( part.TextureName );
+			var texture = path == null ? UiTexture.Solid : UiTexture.Image( path );
 			UiVertex Convert( int index )
 			{
 				var vertex = part.Vertices[index];
@@ -327,8 +328,14 @@ public sealed class UiContext
 				}
 				return new UiVertex( at, vertex.TexCoords, color );
 			}
-			for ( var index = 0; index + 2 < part.Indices.Count; index += 3 )
-				Batch.AddTriangle( texture, Convert( part.Indices[index] ), Convert( part.Indices[index + 1] ), Convert( part.Indices[index + 2] ) );
+			var drawn = part.DrawIndices;
+			var triangles = drawn.Count / 3;
+			var order = UiBatch.TriangleOrder( path, triangles );
+			for ( var triangle = 0; triangle < triangles; triangle++ )
+			{
+				var index = (order == null ? triangle : order[triangle]) * 3;
+				Batch.AddTriangle( texture, Convert( drawn[index] ), Convert( drawn[index + 1] ), Convert( drawn[index + 2] ) );
+			}
 		}
 	}
 

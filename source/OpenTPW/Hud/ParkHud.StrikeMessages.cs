@@ -28,7 +28,8 @@ public sealed partial class ParkHud
 			return;
 		}
 		if ( StrikeMessageText( item, table ) is { } text )
-			PostGameMessage( text );
+			// [BIN:TPW-EXE:0x509BF0 strike tags] the tag records of the table 0x75ECA8 show the entries 38..62 as the tags 35..59 (each its own record: a lifetime of 30 s, the "called off" tags replacing the warnings)
+			PostTagMessage( new StrikeMessage( (StaffType)item.InfoId, (StrikeMessageKind)item.Amount ).TagSystemIndex - 3, text );
 	}
 
 	/// <summary>The <c>TAG_SYSTEM.str</c> text of a strike message event (role in <see cref="ParkEvent.InfoId"/>, kind in <see cref="ParkEvent.Amount"/>), or null.</summary>

@@ -56,11 +56,14 @@ internal sealed record MessageTubeRowSave( int Kind, string Text, int Tag, short
 			return $"the message tube row kind {Kind} is unknown";
 		if ( string.IsNullOrWhiteSpace( Text ) || Text.Length > MessageTubeSaveData.MaximumTextLength )
 			return "a message tube row has no text or text longer than " + MessageTubeSaveData.MaximumTextLength + " characters";
-		var challenge = Kind is Progress or Terminal;
-		if ( !challenge && (Tag != 0 || ContextShort != 0 || ContextInt != 0) )
+		var tagged = Kind is Progress or Terminal;
+		// an offer may carry the tag and context of an original save's record; a plain message is the tag of no text
+		if ( Kind == Message && (Tag != 0 || ContextShort != 0 || ContextInt != 0) )
 			return "a plain message tube row carries a challenge identity";
-		if ( challenge && Tag <= 0 )
+		if ( tagged && Tag <= 0 )
 			return "a challenge tube row has no tag";
+		if ( Kind == Offer && Tag < 0 )
+			return "an offer tube row has a negative tag";
 		if ( Kind == Terminal )
 		{
 			if ( Lifetime is <= 0 or > MessageTubeSaveData.MaximumLifetime )

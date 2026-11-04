@@ -220,8 +220,13 @@ public class UiScreen
 					return true;
 			}
 			// [BIN:TPW-EXE:0x66563d list click] a click of the other button selects the row and posts 0x402 to the list's owner; the list decides what that does and whether the right click also backs out
-			if ( input.RightPressed && hit is IUiRowList rightList && input.Mouse.X >= 0 && rightList.RowAt( canvas, input.Mouse ) is >= 0 and var rightRow )
-				rightHandled = rightList.RowClicked( rightRow, false );
+			if ( input.RightPressed && hit is IUiRowList rightList && input.Mouse.X >= 0 )
+			{
+				if ( rightList.RowAt( canvas, input.Mouse ) is >= 0 and var rightRow )
+					rightHandled = rightList.RowClicked( rightRow, false );
+				else
+					rightHandled = rightList.RightPressedOnBody();
+			}
 			if ( IsRemoved )
 				return true;
 		}

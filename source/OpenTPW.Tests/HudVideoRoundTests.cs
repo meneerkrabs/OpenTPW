@@ -69,6 +69,8 @@ public class HudVideoRoundTests
 	public void TheMessageTubeAdmitsTenRefusesEleventhAndReusesReleasedSlotsAtTheTail()
 	{
 		var hud = Hud();
+		var now = 0L;
+		hud.ChallengeMessageClock = () => now;
 		Assert.AreEqual( 10, ParkHud.MessageTubeCapacity );
 		Assert.IsFalse( hud.PostGameMessage( "  " ) );
 		for ( var index = 0; index < 10; index++ )
@@ -77,13 +79,17 @@ public class HudVideoRoundTests
 		CollectionAssert.AreEqual( Enumerable.Range( 0, 10 ).Select( i => $"m{i}" ).ToArray(), hud.PendingMessages.ToArray() );
 		Assert.IsTrue( hud.OpenPendingMessage( 1 ) );
 		Assert.AreEqual( "m1", hud.OpenedMessage );
-		Assert.AreEqual( 9, hud.PendingMessages.Count );
+		Assert.AreEqual( 10, hud.PendingMessages.Count, "a read row stays in the tube (0x48d9c0 removes nothing)" );
 		Assert.IsTrue( hud.DeletePendingMessage( 0 ) );
-		Assert.AreEqual( 8, hud.PendingMessages.Count );
+		Assert.AreEqual( 10, hud.PendingMessages.Count, "the removal comes 500 ms later and the slot is occupied until then" );
+		Assert.IsFalse( hud.PostGameMessage( "refused while the slot is occupied" ) );
 		Assert.AreEqual( "m1", hud.OpenedMessage, "deleting a pending message leaves the open one alone" );
+		now += ParkHud.ChallengeTerminalReleaseDelay;
+		hud.ReleaseChallengeTerminalRows();
+		Assert.AreEqual( 9, hud.PendingMessages.Count );
 		Assert.IsTrue( hud.PostGameMessage( "reuse-first" ) );
-		Assert.IsTrue( hud.PostGameMessage( "reuse-second" ) );
-		CollectionAssert.AreEqual( Enumerable.Range( 2, 8 ).Select( i => $"m{i}" ).Concat( new[] { "reuse-first", "reuse-second" } ).ToArray(), hud.PendingMessages.ToArray() );
+		Assert.IsFalse( hud.PostGameMessage( "reuse-second" ) );
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 9 ).Select( i => $"m{i}" ).Concat( new[] { "reuse-first" } ).ToArray(), hud.PendingMessages.ToArray() );
 		Assert.IsFalse( hud.DeletePendingMessage( 10 ) );
 		hud.CloseMessagePanel();
 		Assert.IsNull( hud.OpenedMessage );
@@ -180,10 +186,11 @@ public class HudVideoRoundTests
 		Assert.IsNotNull( hud.OpenedMessage, "still within its 90 s although it is open" );
 		now = 1000 + ParkHud.ChallengeOfferLifetime;
 		hud.QueueChallengeTerminalTimers(); hud.DispatchChallengeTerminalTimers();
-		Assert.IsNull( hud.OpenedMessage, "the expiry puts the panel away" );
+		Assert.IsNotNull( hud.OpenedMessage, "the expiry hides the tag; the panel goes with the removal 500 ms later (0x48dd19)" );
 		Assert.IsNotNull( expiring.Objectives.Current );
 		now += ParkHud.ChallengeTerminalReleaseDelay;
 		hud.ReleaseChallengeTerminalRows();
+		Assert.IsNull( hud.OpenedMessage, "the removal puts the panel away" );
 		Assert.IsNull( expiring.Objectives.Current, "the expired offer is declined" );
 	}
 
@@ -191,6 +198,8 @@ public class HudVideoRoundTests
 	public void AWaitingOfferRetriesAfterAFullTubeFreesASlotWithoutDeclining()
 	{
 		var hud = Hud();
+		var now = 0L;
+		hud.ChallengeMessageClock = () => now;
 		var park = EconomyTestData.Park(); park.OpenPark();
 		park.AdvanceDays( 541 );
 		var offer = park.Objectives.Current;
@@ -200,6 +209,9 @@ public class HudVideoRoundTests
 		Assert.IsFalse( park.Objectives.Current!.Accepted );
 		Assert.AreEqual( 10, hud.PendingMessages.Count );
 		Assert.IsTrue( hud.DeletePendingMessage( 3 ) );
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "the deleted row holds its slot for 500 ms" );
+		now += ParkHud.ChallengeTerminalReleaseDelay;
+		hud.ReleaseChallengeTerminalRows();
 		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
 		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "the later update must not duplicate the offer" );
 		Assert.AreEqual( 10, hud.PendingMessages.Count );
@@ -232,9 +244,10 @@ public class HudVideoRoundTests
 		hud.PostGameMessage( "a" );
 		hud.PostGameMessage( "b" );
 		hud.OpenPendingMessage( 0 );
-		hud.OpenPendingMessage( 0 );
+		Assert.AreEqual( "a", hud.OpenedMessage );
+		hud.OpenPendingMessage( 1 );
 		Assert.AreEqual( "b", hud.OpenedMessage );
-		Assert.AreEqual( 0, hud.PendingMessages.Count );
+		Assert.AreEqual( 2, hud.PendingMessages.Count, "a read row stays in the tube" );
 	}
 
 	[TestMethod]

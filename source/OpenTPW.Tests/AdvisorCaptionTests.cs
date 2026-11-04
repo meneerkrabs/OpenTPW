@@ -42,7 +42,7 @@ public class AdvisorCaptionTests
 			"GeneralAdvisor.MinTimeAnyMessage 1\nGeneralAdvisor.MinTimeSameMessage 1\nGeneralAdvisor.MinScoreForConsideration 1\nMessageGroups[0].MinTimeSameMessage 0\nMessageGroups[0].SayOnlyOnce 0\nMessageGroups[0].DiscardAfterSlaps 0\n"
 			+ "MessageGroups[1].MinTimeSameMessage 0\nMessageGroups[1].SayOnlyOnce 0\nMessageGroups[1].DiscardAfterSlaps 0\nWelcome.Score 1\nBankrupted.Score 1\nParkNowOpen.Score 1\nParkNowClosed.Score 1\nPrebuiltPark.Score 1\n" ), "test.sam" ) ), () => 0L );
 		var posted = new System.Collections.Generic.List<int>();
-		advisor.CaptionSink = ( entry, _ ) => posted.Add( entry );
+		advisor.CaptionSink = ( _, entry, _, _, _ ) => posted.Add( entry );
 		advisor.PostCaption( 274 );
 		advisor.PostCaption( 0 );
 		advisor.PostCaption( 266 );

@@ -65,4 +65,12 @@ internal sealed class ParticleSystemPool : IAdvisorParticlePool
 		if ( handle is int emitter )
 			system.Kill( emitter );
 	}
+
+	public bool IsAlive( object handle ) => handle is int emitter && system.IsAlive( emitter );
+
+	public void SetHidden( object handle, bool hidden )
+	{
+		if ( handle is int emitter )
+			system.SetHidden( emitter, hidden );
+	}
 }

@@ -19,7 +19,20 @@ public static class Camera
 	/// The park view's far plane in engine units for the camera's view matrix, or null: the farthest corner distance of the span selection (<c>0x56BB00</c> hands it to <c>0x578CA0</c> every frame, which rebuilds the projection with it);
 	/// set by the level's terrain.
 	/// </summary>
-	public static Func<Matrix4x4, float, float?>? ParkFarPlane { get; set; }
+	public static Func<Matrix4x4, float, float?>? ParkFarPlane
+	{
+		get => parkFarPlane;
+		set
+		{
+			parkFarPlane = value;
+			parkFarLag = null;
+		}
+	}
+
+	private static Func<Matrix4x4, float, float?>? parkFarPlane;
+
+	// the far plane the previous frame's span selection set (the park projection of a frame uses it, see FarPlaneOf)
+	private static float? parkFarLag;
 
 	/// <summary>
 	/// The far argument of the first-person views in original units for the camera's view matrix, the display's height over its width and the sine and cosine of half the field of view, or null: the greatest clip depth of the cell boxes
@@ -50,7 +63,20 @@ public static class Camera
 			return lobbyFar;
 		if ( mode is LobbyCameraMode )
 			return FrontEndFarPlane;
-		return mode is ParkCameraMode && ParkFarPlane?.Invoke( view, 1f / Screen.Aspect ) is { } far ? far : OriginalProjection.DefaultFarPlane;
+		return mode is ParkCameraMode ? ParkFarFor( view, 1f / Screen.Aspect ) : OriginalProjection.DefaultFarPlane;
+	}
+
+	/// <summary>
+	/// The far plane the park projection of this frame uses, and the span selection of this frame, which sets the next frame's.
+	/// </summary>
+	// [BIN:TPW-EXE:0x576A2C far plane lag] the frame function composes the view-projection matrix first (0x576A2C) and only afterwards runs the span selection (0x576ADD -> 0x56BB00 -> 0x56BD3E -> 0x578CA0), which sets the new far plane for the next composition: a frame is drawn with the far plane of the span selection of the frame before it, the default one before any
+	// [APPROX:UI-107] not ported: the first park frame after a ride or walk view uses the far plane 0x56ED79 last set through 0x578CA0 (that view's box depth); here the lag continues from the last park frame's far
+	internal static float ParkFarFor( Matrix4x4 view, float aspectWord )
+	{
+		var used = parkFarLag ?? OriginalProjection.DefaultFarPlane;
+		if ( parkFarPlane?.Invoke( view, aspectWord ) is { } far )
+			parkFarLag = far;
+		return used;
 	}
 
 	private static void CalcViewProjMatrix()

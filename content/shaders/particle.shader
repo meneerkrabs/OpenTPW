@@ -13,9 +13,17 @@ vertex {
         mat4 g_mView;
         mat4 g_mProj;
         vec3 g_vLightPos;
+        float g_flAlphaReference; // the alpha test of the draw's state word (0 = none): the padding after the sun position, which this shader never read as a position
         vec3 g_vLightColor;
+        float g_flPadding1;
         vec3 g_vCameraPos;
         float g_flTime;
+        float g_flViewDistanceScale; // the engine fog's packed range (0 = no fog), as test.shader reads it
+        float g_flPadding3;
+        float g_flPadding4;
+        float g_flPadding5;
+        vec3 g_vFogColor;
+        float g_flPadding6;
     } g_oUbo;
 
     layout( location = 0 ) out struct VS_OUT {
@@ -43,14 +51,44 @@ fragment {
 
     layout( location = 0 ) out vec4 fragColor;
 
+    layout( set = 0, binding = 0 ) uniform ObjectUniformBuffer {
+        mat4 g_mModel;
+        mat4 g_mView;
+        mat4 g_mProj;
+        vec3 g_vLightPos;
+        float g_flAlphaReference;
+        vec3 g_vLightColor;
+        float g_flPadding1;
+        vec3 g_vCameraPos;
+        float g_flTime;
+        float g_flViewDistanceScale;
+        float g_flPadding3;
+        float g_flPadding4;
+        float g_flPadding5;
+        vec3 g_vFogColor;
+        float g_flPadding6;
+    } g_oUbo;
+
     layout( set = 1, binding = 0 ) uniform texture2D Color;
     layout( set = 1, binding = 1 ) uniform sampler s_Color;
 
-    // Camera-facing particles: the sprite frame modulated by the particle's colour and alpha. The material picks the
-    // blend (alpha, source-alpha-over-one, or one-plus-one).
+    // Camera-facing particles: the sprite frame modulated by the particle's colour and alpha (stage 0 of the original's blend states
+    // modulates colour and alpha). The material picks the blend (alpha, source-alpha-over-one, or one-plus-one) and the depth state;
+    // g_flAlphaReference is the state word's alpha test (the pixel's modulated alpha must reach it, GREATEREQUAL), and the
+    // engine fog of the first-person views blends distant quads into the fog colour as every other primitive's.
     void main()
     {
         vec4 vSprite = texture( sampler2D( Color, s_Color ), vs_out.vTexCoords );
         fragColor = vSprite * vs_out.vColor;
+        if ( fragColor.a < g_oUbo.g_flAlphaReference )
+            discard;
+        if ( g_oUbo.g_flViewDistanceScale > 0.0 )
+        {
+            float startQ = floor( g_oUbo.g_flViewDistanceScale / 4096.0 );
+            float fogStart = startQ * 0.125;
+            float fogEnd = ( g_oUbo.g_flViewDistanceScale - startQ * 4096.0 ) * 0.125;
+            float fogFactor = clamp( ( 1.0 / gl_FragCoord.w - fogStart ) / max( fogEnd - fogStart, 0.001 ), 0.0, 1.0 );
+            fragColor.xyz = mix( fragColor.xyz, g_oUbo.g_vFogColor, fogFactor );
+        }
     }
 }

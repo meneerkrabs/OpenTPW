@@ -36,15 +36,17 @@ The pure acceptance-rule checks can run with `node tools/web-particle-render/ass
 
 Synthetic particles have constant colours, no motion, fixed depth and zero sprite
 frames. The real particle snapshot and emitter order are asserted before rendering.
-World alpha 0/F0/FF should be opaque; EF remains fractional. Additive overrides,
-near/far submission order, the no-depth-write flag, interleaved material runs and
-unchanged screen-space behaviour have separate controls. A visible red/blue opaque
+World alpha 0/F0/FF is the opaque state 0x1256; EF is the blended state 0x556 (alpha
+test at 0x10, depth writes) and stays fractional. Additive overrides (0x200552, 0x200522
+with the alpha test at 0x10: an alpha-0 additive particle is invisible), near/far
+submission order, the no-depth-write flag, interleaved material runs and
+screen-space particles (an untextured screen-space particle of alpha 0 or >= 0xF0 is
+opaque too, 0x57C6FA) have separate controls. A visible red/blue opaque
 control, black corner, exact draw counts and an advancing frame counter prevent a
-blank or skipped frame from passing. The existing public PTCL-905 annotation is the
-contract source. Textured page modes, alpha testing and full native parity remain
-outside this diagnostic.
-
-The readback occurs synchronously after the exported draw, before returning to the
+blank or skipped frame from passing. The harness draws outside a level's translucent
+pass, so every quad is drawn in the original's submission order; the deferred list
+(`WorldPass.SubmitParticle`) is covered by unit tests. The readback occurs
+synchronously after the exported draw, before returning to the
 browser event loop. It binds the default read framebuffer, samples a 3x3 interior
 block and background corner, then restores the previous read binding. It checks
 context availability, framebuffer completeness and GL errors. Context options and
@@ -58,23 +60,13 @@ harness closes the isolated page/browser, which releases remaining renderer and
 context resources. No game storage or original media are read or uploaded.
 
 
-## Bounded runtime correction
+## Runtime state words
 
-Only untextured, non-additive world particles with alpha 0 or >=0xF0 select opaque
-blending, with depth writes unless flag 0x4000 is set. This follows the existing
-public native contract (0x57C6FA–0x57C71B, additive override 0x57C7C8, no-write
-0x57C7F4). Adjacent complete-state runs preserve original submission order and
-world evening tint. New opaque materials retain normal depth testing and owned
-resource cleanup. Textured, fractional-alpha, additive and screen paths retain
-their previous behavior; no global depth-write or alpha-test switch is introduced.
-
-Opaque vertex alpha is set to 255 specifically because the host's final world
-composition alpha-blends its render target. This preserves opaque RGB through that
-host stage; it is not evidence of a native alpha-byte rewrite. PTCL-905 remains
-open for textured page modes, alpha thresholds, additive depth, point filtering,
-and screen/native pass semantics. No original-media parity is claimed.
-
-The initial harness execution failed before readback because burst creation leaves
-culling bounds empty. The fixture now performs the normal startup-skip tick and
-one update tick, then asserts populated bounds and the unchanged particle snapshot.
-Constant palette, equal birth/death sizes and zero motion preserve its inputs.
+`ParticleState` ports the state word of a particle's batch (docs/PARTICLES.md,
+"Drawing"; PTCL-905 narrowed in round 11). Opaque states keep depth testing and
+write depth unless flag 0x4000 adds 0x800; the blended states alpha-test at 0x10 and
+write depth. Adjacent complete-state runs preserve original submission order and
+world evening tint. Opaque vertex alpha is set to 255 specifically because the host's
+final world composition alpha-blends its render target. This preserves opaque RGB
+through that host stage; it is not evidence of a native alpha-byte rewrite. No
+original-media parity is claimed.

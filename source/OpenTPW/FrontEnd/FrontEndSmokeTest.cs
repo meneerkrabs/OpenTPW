@@ -44,6 +44,24 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	// runs once at the end of the next frame, after its update (the HUD's first update when it is set as a park is entered)
 	private Action? afterNextUpdate;
 	private (List<Entity> Entities, int Count, int Materials) lobbyBeforeAbandon;
+	private readonly HashSet<Asset> lobbyAssetsBeforeAbandon = new();
+
+	/// <summary>
+	/// Whether the materials and shaders alive are the lobby's baseline and nothing else but what a lobby particle renderer made since: a renderer makes a material (and its shader) when a frame first needs a draw kind, so the lobby's own set
+	/// grows while it runs. Every other new one is the dropped park's and counts as a leak.
+	/// </summary>
+	private bool LobbyAssetsHeld()
+	{
+		var renderers = lobbyBeforeAbandon.Entities.OfType<ParticleRenderer>().ToList();
+		var now = Asset.All.Where( asset => asset is Material or Shader ).ToList();
+		return lobbyAssetsBeforeAbandon.All( now.Contains ) && now.All( asset => lobbyAssetsBeforeAbandon.Contains( asset ) || renderers.Any( renderer => renderer.Owns( asset ) ) );
+	}
+
+	/// <summary>The materials and shaders made since the lobby baseline was taken, for the failure message of a count that differs.</summary>
+	private string NewMaterialsNote() =>
+		$" ({Asset.All.Count( asset => asset is Material or Shader )} alive, {lobbyBeforeAbandon.Materials} before; new: " +
+		string.Join( ", ", Asset.All.Where( asset => asset is Material or Shader && !lobbyAssetsBeforeAbandon.Contains( asset ) )
+			.Select( asset => asset is Material material ? $"{material.GetType().Name} {Path.GetFileName( material.Shader.Path )}" : $"Shader {Path.GetFileName( ((Shader)asset).Path )}" ) ) + ")";
 
 	/// <summary>The SHA-256 of the park gate sign's two halves (composed in build steps over frames), or "none".</summary>
 	private static string GateSignDigest( Level level ) => level.GateSign?.Images is { } images
@@ -399,6 +417,26 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Lobby!.GateClips.Any( clip => clip == 2 ), "a cancelled enter closes the opened gate with M2" );
 		} );
 		Wait( "lobby fade clears", 60 );
+		// [BIN:TPW-EXE:0x5e41c0 Escape] Escape in the enter sequence ends it before the park starts: the opened gate closes with M2 and the menu is back
+		Do( "lobby enter again", () =>
+		{
+			flow.BeginLobbyEnter( flow.Menu!.Selected.Level );
+			Require( flow.LobbyEntering, "the enter sequence starts again" );
+		} );
+		var escapeFrames = 0;
+		steps.Enqueue( ("lobby enter turns again", () =>
+		{
+			Require( ++escapeFrames < 2000, "the second enter's turn finishes" );
+			return ((LobbyCameraMode)Camera.Mode).Phase == LobbyCameraMode.EnterPhase.Zoom;
+		}) );
+		Do( "lobby enter escape", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+		Wait( "lobby enter escape applies", 2 );
+		Do( "lobby enter escaped", () =>
+		{
+			Require( !flow.LobbyEntering, "Escape in the enter sequence resumes the lobby" );
+			Require( flow.Lobby!.GateClips.Any( clip => clip == 2 ), "and closes the opened gate with M2" );
+		} );
+		Wait( "lobby fade clears again", 60 );
 		// [BIN:TPW-EXE:0x4b8fd0 enter park] the enter-park routine starts the screen-space particle effect 0x62 over the key panel; the smoke starts it directly (the park start would tear the lobby down)
 		Do( "enter-park effect", () => flow.StartEnterParkEffect() );
 		var effectFrames = 0;
@@ -463,6 +501,22 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				} );
 			} );
 			Wait( "globe pins render", 3 );
+			// [BIN:TPW-EXE:0x5dd5e4 back from the globe] closing the globe activates the islands screen again, which builds the islands and their flyers afresh: the lobby scene is a new one
+			LobbyScene? lobbyBeforeGlobe = null;
+			Do( "close the globe", () =>
+			{
+				lobbyBeforeGlobe = flow.Lobby;
+				flow.Menu!.Stack.Pop();
+			} );
+			Wait( "globe closes", 3 );
+			Do( "lobby after the globe", () =>
+			{
+				Require( flow.Lobby is { Visible: true } && flow.Globe is { Visible: false }, "closing the globe shows the lobby again" );
+				Require( !ReferenceEquals( lobbyBeforeGlobe, flow.Lobby ), "and the islands screen's activation builds the lobby scene afresh" );
+				Click( flow.Menu!.Main, "worldView" );
+			} );
+			Wait( "online world opens again", 3 );
+			Do( "online world again", () => Require( flow.Menu!.Stack.Top?.Name == "onlineWorld" && flow.Globe is { Visible: true }, "Go Online shows the globe again" ) );
 			Do( "globe pins", () =>
 			{
 				var london = Camera.Position.GetSystemVector3();
@@ -1758,6 +1812,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Do( "start a park over frames that a later transition replaces", () =>
 		{
 			lobbyBeforeAbandon = (Entity.All, Entity.All.Count, Asset.All.Count( asset => asset is Material or Shader ));
+			lobbyAssetsBeforeAbandon.Clear();
+			lobbyAssetsBeforeAbandon.UnionWith( Asset.All.Where( asset => asset is Material or Shader ) );
 			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ), overFrames: true );
 		} );
 		Wait( "the replaced park is being built", 3 );
@@ -1768,13 +1824,15 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( !flow.BuildingPark && flow.Level == null && ReferenceEquals( Entity.All, lobbyBeforeAbandon.Entities )
 				&& Entity.All.Count == lobbyBeforeAbandon.Count,
 				"dropping the build leaves the lobby's own entities current and untouched" );
-			Require( Asset.All.Count( asset => asset is Material or Shader ) == lobbyBeforeAbandon.Materials,
-				"the dropped park's materials and shaders are released" );
+			Require( LobbyAssetsHeld(),
+				"the dropped park's materials and shaders are released" + NewMaterialsNote() );
 		} );
 		Wait( "the queued transition runs", 3 );
 		Do( "start a park over frames that is dropped after its HUD is made", () =>
 		{
 			lobbyBeforeAbandon = (Entity.All, Entity.All.Count, Asset.All.Count( asset => asset is Material or Shader ));
+			lobbyAssetsBeforeAbandon.Clear();
+			lobbyAssetsBeforeAbandon.UnionWith( Asset.All.Where( asset => asset is Material or Shader ) );
 			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ), overFrames: true );
 		} );
 		steps.Enqueue( ("the dropped park's HUD is made", () =>
@@ -1794,8 +1852,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( !flow.BuildingPark && flow.Level == null && flow.Hud == null && ReferenceEquals( Entity.All, lobbyBeforeAbandon.Entities )
 				&& Entity.All.Count == lobbyBeforeAbandon.Count, "dropping the build with its HUD made leaves the lobby current and untouched" );
 			Require( droppedHud!.Stack.Screens.Count == 0, "the dropped park's prepared HUD is cleared, as a tear-down clears a retired one" );
-			Require( Asset.All.Count( asset => asset is Material or Shader ) == lobbyBeforeAbandon.Materials,
-				"the dropped park's materials and shaders, its sky's included, are released" );
+			Require( LobbyAssetsHeld(),
+				"the dropped park's materials and shaders, its sky's included, are released" + NewMaterialsNote() );
 		} );
 		Wait( "the transition after the dropped HUD runs", 3 );
 		Do( "load the original park over frames", () =>

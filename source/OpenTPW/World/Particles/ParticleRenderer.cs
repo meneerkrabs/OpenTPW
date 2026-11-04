@@ -13,9 +13,11 @@ namespace OpenTPW;
 /// </summary>
 // [BIN:STP-PPC:engine_shared 0x1ACC8 particle draw] over the emitter slots, culled by bounding box; a camera-facing quad of half-size size/1024 times the sprite scale, rotated by the spin
 // [BIN:STP-PPC:engine_shared 0x1ACC8 blend] untextured: SRC_ALPHA, ONE_MINUS_SRC_ALPHA; render flags 0x2004: SRC_ALPHA, ONE; flags 0x4: ONE, ONE; otherwise the sprite's own alpha blend
-// [BIN:TPW-EXE:0x57C620 draw driver] one quad per particle in slot order 0..119, newest particle first, each with its own blend state; the render flags apply to untextured particles too
-// [EXT:particle-blend-runs] OpenTPW draws the quads in the original's order (0x565F90: slots ascending, newest particle first) as runs of one blend (alpha, source-alpha-over-one, one-plus-one) through its shared material pipeline, not one submission with its own state word per particle
-// [APPROX:PTCL-905] the complete per-particle state words (decoder 0x567620) are not reproduced; untextured non-additive world alpha0/>=F0 now uses opaque RGB and depth writes unless 4000, while textured modes, fractional alpha tests, additive depth and screen behavior remain unresolved: depth writes unless flags 0x4000 add 0x800, an untextured particle opaque (0x1256) when its alpha byte is 0 or >= 0xF0 and by alpha with an alpha test at 0x10/255 (0x556) otherwise, 0x200522 / 0x200552 for the add blends with that alpha test, MAGFILTER point for flags 0x20000, (the triangle depth sort 0x565590 -> 0x565490 acts within one particle's two coplanar triangles and has no visible effect); the particle shader still has no alpha test; the original sorts these batches into the same far-to-near list as the translucent world, OpenTPW draws them after that whole list (Level.SplitLate); the bounded untextured opaque world variant does not resolve those coupled states
+// [BIN:TPW-EXE:0x57C620 draw driver] one quad per particle in slot order 0..119, newest particle first, each with its own state word (ParticleState.WordOf, decoded by 0x567620); the render flags apply to untextured particles too
+// [BIN:TPW-EXE:0x565590 immediate or kept] a batch whose state has bit 0x1000 or 0x2000 (the opaque 0x1256 particles) is drawn when it is submitted; every other one (0x556, 0x200552, 0x200522) is kept with the mean depth of its vertices and drawn by 0x582AD0 far to near together with the translucent world faces (WorldPass)
+// [BIN:TPW-EXE:0x565F90 fog bit] every batch gets the state bit 0x100000 (D3DRS_FOGENABLE) while [0x8BCBC8] has 0x2000 (0x565FA6 to 0x565FB7), the particles too: the first-person views fog them with the engine's table fog
+// [EXT:particle-blend-runs] OpenTPW draws the opaque quads in the original's order (0x565F90: slots ascending, newest particle first) as runs of one state through its shared material pipeline, and the deferred quads one run of consecutive same-state quads at a time in the sorted order of WorldPass, not one submission with its own state word per particle
+// [APPROX:PTCL-905] the triangle sort inside a batch (0x565590 -> 0x565490) is not reproduced: a batch is one particle's two coplanar triangles, so it has no visible effect; a deferred quad's key is the mean z over w of its four corners, the same assumption as WorldTranslucency.Depth for the world's records, and ties keep the order the records were handed over where the original's quicksort (0x5829E0) does not; the point MAGFILTER of flags 0x20000 is COMPAT-010 ([EXT:texture-filter-samplers])
 public sealed class ParticleRenderer : Entity
 {
 	private const int VerticesPerQuad = 6;
@@ -25,6 +27,8 @@ public sealed class ParticleRenderer : Entity
 	private const float DefaultDisplayAspect = 0.75f;
 	/// <summary>Cull margin around an emitter's particle bounds, in 1/64 original units (a particle's own size).</summary>
 	private const int CullMargin = 16 * 64;
+	/// <summary>The number of draw kinds: the four blends of <see cref="ParticleState.Blend"/> times depth writes off (bit 2) times screen space (bit 3).</summary>
+	internal const int KindCount = 16;
 
 	// one renderer per level: a staged resume candidate gets its own, and a rolled-back candidate's deletion leaves the live level's alone
 	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Level, ParticleRenderer> byLevel = new();
@@ -44,19 +48,31 @@ public sealed class ParticleRenderer : Entity
 	private readonly List<ParticleEmitterBounds> bounds = new();
 	private readonly HashSet<int> visibleEmitters = new();
 	private readonly Vertex[] vertices;
-	// consecutive quads of one kind (blend and world or screen-space), in the original's draw order: slots ascending, newest particle first
+	// the draw kind of each quad (six vertices each) of the last frame, in the original's draw order: slots ascending, newest particle first
+	private readonly int[] quadKinds;
+	// and the key of its deferred record: the mean depth of its four corners (0 for a screen-space quad)
+	private readonly float[] quadDepths;
+	private System.Numerics.Matrix4x4 viewProjection;
+	private float lastDepth;
+	// consecutive quads of one kind that are drawn at once, as (kind, first vertex, vertex count)
 	private readonly List<(int Kind, int First, int Count)> runs = new();
+	// the screen-space quads of the frame, drawn last (RenderScreen), when a pass is open
+	private readonly List<(int Kind, int First, int Count)> screenRuns = new();
+	// the deferred quads copied in the pass's sorted order (one vertex buffer upload per pass, merged draws), their kinds and the pass they belong to
+	private readonly Vertex[] sortedVertices;
+	private readonly List<(int Kind, int First, int Count)> sortedRuns = new();
+	private readonly int[] sortedKinds;
+	private DeviceBuffer? sortedBuffer;
+	private int sortedCount;
+	private long sortedPass = -1;
 	private Texture? atlasTexture;
-	private Material<ObjectUniformBuffer>? alphaMaterial;
-	private Material<ObjectUniformBuffer>? additiveMaterial;
-	private Material<ObjectUniformBuffer>? oneOneMaterial;
-	private Material<ObjectUniformBuffer>? screenAlphaMaterial;
-	private Material<ObjectUniformBuffer>? screenAdditiveMaterial;
-	private Material<ObjectUniformBuffer>? screenOneOneMaterial;
-	private Material<ObjectUniformBuffer>? opaqueMaterial;
-	private Material<ObjectUniformBuffer>? opaqueNoWriteMaterial;
+	private readonly Material<ObjectUniformBuffer>?[] materials = new Material<ObjectUniformBuffer>?[KindCount];
 	private DeviceBuffer? vertexBuffer;
 	private bool deleted;
+	private int quadCount;
+	private int screenQuads;
+	// the draw kinds the last frame used: their uniform blocks are written once each
+	private int kindsPresent;
 
 	/// <summary>Live particles and quads drawn in the last frame (smoke instrumentation).</summary>
 	public int DrawnParticles { get; private set; }
@@ -73,22 +89,17 @@ public sealed class ParticleRenderer : Entity
 		this.paused = paused;
 		scale = engineUnitsPerOriginal;
 		vertices = new Vertex[system.Capacity * VerticesPerQuad];
+		quadKinds = new int[system.Capacity];
+		quadDepths = new float[system.Capacity];
+		sortedVertices = new Vertex[system.Capacity * VerticesPerQuad];
+		sortedKinds = new int[system.Capacity];
 		Name = "Particles";
 		try
 		{
-			// one atlas texture shared by the three materials; a failure leaves no half-built entity or assets behind
+			// one atlas texture shared by the materials, which are made when a frame first needs a kind; a failure leaves no half-built entity or assets behind
 			atlasTexture = new Texture( atlas.Pixels, atlas.Width, atlas.Height );
 			// uploaded: this renderer reads only the frame positions from now on
 			atlas.ReleasePixels();
-			alphaMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
-			additiveMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
-			opaqueMaterial = Prepare( atlasTexture, FlagsForKind( 6 ) );
-			opaqueNoWriteMaterial = Prepare( atlasTexture, FlagsForKind( 7 ) );
-			oneOneMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.OneOneBlend );
-			// screen-space quads sit at the template's z (word +0x52, 0 in every shipped screen-space template): in front of the scene
-			screenAlphaMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepth | MaterialFlags.DoubleSided );
-			screenAdditiveMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepth | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
-			screenOneOneMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepth | MaterialFlags.DoubleSided | MaterialFlags.OneOneBlend );
 		}
 		catch
 		{
@@ -106,13 +117,21 @@ public sealed class ParticleRenderer : Entity
 		return material;
 	}
 
+	/// <summary>The draw kinds this renderer has made a material for (smoke tests).</summary>
+	internal int MaterialCount => materials.Count( material => material != null );
+
+	/// <summary>Whether <paramref name="asset"/> is one of this renderer's materials or their shaders (smoke tests).</summary>
+	internal bool Owns( Asset asset ) => asset is Material material
+		? Array.IndexOf( materials, material ) >= 0
+		: asset is Shader shader && materials.Any( material => material != null && ReferenceEquals( material.Shader, shader ) );
+
+	private Material<ObjectUniformBuffer> MaterialOf( int kind ) => materials[kind] ??= Prepare( atlasTexture!, FlagsForKind( kind ) );
+
 	protected override void OnUpdate()
 	{
 		var seconds = WeatherVisualState.FrameSeconds( Time.Delta, paused() );
 		system.Advance( seconds );
 	}
-
-	private enum Batch { Alpha, Additive, OneOne }
 
 	// [BIN:TPW-EXE:0x57C7C8 blend flags] the flags test (bit 4, then 0x2000) runs for every particle, untextured ones included
 	// [BIN:STP-PPC:engine_shared 0x1ACC8 blend] see the class comment
@@ -121,16 +140,19 @@ public sealed class ParticleRenderer : Entity
 		: (renderFlags & 0x4) != 0 ? 2
 		: 0;
 
-	private static Batch BatchOf( in ParticleSprite sprite ) => (Batch)BatchIndexOf( sprite.RenderFlags );
-
 	protected override void OnRender()
 	{
 		DrawnParticles = 0;
+		quadCount = 0;
+		screenQuads = 0;
+		kindsPresent = 0;
+		runs.Clear();
+		screenRuns.Clear();
 		if ( deleted || system.Snapshot( sprites ) == 0 )
 			return;
 		system.CollectBounds( bounds );
 		visibleEmitters.Clear();
-		var viewProjection = Camera.ViewMatrix * Camera.ProjMatrix;
+		viewProjection = Camera.ViewMatrix * Camera.ProjMatrix;
 		foreach ( var emitter in bounds )
 			if ( InView( emitter, viewProjection ) )
 				visibleEmitters.Add( emitter.Slot );
@@ -142,10 +164,9 @@ public sealed class ParticleRenderer : Entity
 		var target = global::Global.Render.MultisampledFramebuffer;
 		var screenAspect = target.Width > 0 ? (float)target.Height / target.Width : 1f;
 		var vertexCount = 0;
-		runs.Clear();
 		foreach ( var sprite in sprites )
 		{
-			var batch = BatchOf( sprite );
+			var state = ParticleState.WordOf( sprite );
 			var screenSpace = sprite.ScreenSpace;
 			// screen-space emitters have no world bounds to cull by (the original leaves their bounds empty)
 			if ( !screenSpace && !visibleEmitters.Contains( sprite.Emitter ) )
@@ -153,10 +174,15 @@ public sealed class ParticleRenderer : Entity
 			if ( vertexCount + VerticesPerQuad > vertices.Length )
 				break;
 			var first = vertexCount;
-			if ( !(screenSpace ? AddScreenQuad( sprite, batch, screenAspect, ref vertexCount ) : AddQuad( sprite, batch, right, up, screenAspect, ref vertexCount )) )
+			var kind = KindOf( state, screenSpace );
+			if ( !(screenSpace ? AddScreenQuad( sprite, kind, screenAspect, ref vertexCount ) : AddQuad( sprite, kind, right, up, screenAspect, ref vertexCount )) )
 				continue;
 			DrawnParticles++;
-			AddToRuns( runs, RenderKindOf( sprite ), first, vertexCount - first );
+			if ( screenSpace )
+				screenQuads++;
+			quadDepths[quadCount] = screenSpace ? 0f : lastDepth;
+			quadKinds[quadCount++] = kind;
+			kindsPresent |= 1 << kind;
 		}
 		if ( vertexCount == 0 )
 			return;
@@ -169,49 +195,132 @@ public sealed class ParticleRenderer : Entity
 		var eye = Camera.Position.GetSystemVector3();
 		// [BIN:TPW-EXE:0x576A00 scene pass order] the scene render calls the terrain (0x56F670, 0x570D90), the particle pass (0x57C620, 0x576CBD), the model list loop that queues the advisor's model (0x584B10, 0x584BE0), the sprite flush (0x58A660, 0x576D72), the weather (0x57FF60, 0x576DAB) and the frame flush (0x582170, 0x576DBE); the screen-space quads are drawn in the particle pass with the world's, so everything the HUD windows submit and the advisor's model lie over them in the original too (PTCL-909 retired)
 		// [BIN:TPW-EXE:0x48A580 window paint] the frame step 0x4813B0 (0x54E71B, before the scene render) pumps the command queue (0x658E42, 0x48A5BE), posts message 2 to the root window (0x658CCC, 0x48A5D7: the priority queue 0xFAA5F4), sends the tick 0x1E (0x658F6C) and pumps the priority queue to its end (0x658F0B, 0x48A6BC), so the paint runs inside the call: the base handler 0x65C778 paints the children of a visible window (+0x48 bit 0) first, then sends message 3 and calls the window's draw slot (vtable +0); a control's draw queues its text bitmap as a sprite (0x588EF0 builds it, the quads of state 0x7060556, 0x58A26C) and the UI models' nodes the scene's walker (0x576910) lists; nothing is drawn at the paint, the scene pass of the same frame draws them
-		// [BIN:TPW-EXE:0x57C620 draw order] one quad per particle in slot order 0..119, newest particle first, world and screen-space particles in the same loop, so the runs follow that order and the kinds interleave as the particles do
+		// [BIN:TPW-EXE:0x57C620 draw order] one quad per particle in slot order 0..119, newest particle first, world and screen-space particles in the same loop, so the opaque runs follow that order
 		// The uniform block is the same for every run of a material in this frame, so it is written once per material, however often the kinds alternate.
-		var uniformsWritten = 0;
-		foreach ( var (kind, first, count) in runs )
+		for ( var kind = 0; kind < KindCount; kind++ )
+			if ( (kindsPresent & (1 << kind)) != 0 )
+				WriteUniforms( MaterialOf( kind ), kind, eye );
+
+		// the opaque quads are drawn here, as the original draws a state with bit 0x1000 when it is submitted; the others join the pass's deferred list when one is open
+		// [BIN:TPW-EXE:0x582AD0 deferred records] a kept batch's key is the mean depth of its vertices; a screen-space quad's z is its template's word (0 in every shipped template), the nearest key, so the original draws it after the world's records
+		// OpenTPW draws the blended screen-space quads after the late group (RenderScreen), over everything the scene drew; the opaque ones (0x1256) are drawn at once like every opaque state, and without an open pass all are drawn here
+		var pass = WorldPass.Active;
+		for ( var quad = 0; quad < quadCount; quad++ )
 		{
-			var material = kind switch
-			{
-				0 => alphaMaterial, 1 => additiveMaterial, 2 => oneOneMaterial,
-				3 => screenAlphaMaterial, 4 => screenAdditiveMaterial, 5 => screenOneOneMaterial,
-				6 => opaqueMaterial, _ => opaqueNoWriteMaterial
-			};
-			if ( (uniformsWritten & (1 << kind)) == 0 )
-			{
-				WriteUniforms( material!, eye, screenSpace: IsScreenKind( kind ), tinted: kind == 0 || kind is 6 or 7 );
-				uniformsWritten |= 1 << kind;
-			}
-			Draw( commandList, material!, (first, count) );
+			var kind = quadKinds[quad];
+			if ( IsScreenKind( kind ) && !IsImmediateKind( kind ) )
+				AddToRuns( screenRuns, kind, quad * VerticesPerQuad, VerticesPerQuad );
+			else if ( pass && !IsImmediateKind( kind ) )
+				WorldPass.SubmitParticle( this, quad, quadDepths[quad] );
+			else
+				AddToRuns( runs, kind, quad * VerticesPerQuad, VerticesPerQuad );
 		}
+		foreach ( var (kind, first, count) in runs )
+			Draw( commandList, MaterialOf( kind ), (first, count) );
+		if ( !pass )
+			RenderScreen();
 	}
 
-	/// <summary>The run kind of a quad: its blend batch, plus 3 for a screen-space particle.</summary>
-	internal static int KindOf( int batch, bool screenSpace ) => batch + (screenSpace ? 3 : 0);
-	private static int KindOf( Batch batch, bool screenSpace ) => KindOf( (int)batch, screenSpace );
-
-	// [BIN:TPW-EXE:0x57C6FA-0x57C71B] Untextured alpha0 or >=F0 selects opaque1256.
-	// Additive flags override afterward (0x57C7C8); 4000 adds no-depth-write (0x57C7F4).
-	// Textured and screen-space paths deliberately retain their existing behavior.
-	internal static int RenderKindOf( in ParticleSprite sprite )
+	/// <summary>Draws the screen-space quads of this frame (no depth): after the scene's late group, so they lie over everything the scene drew.</summary>
+	internal void RenderScreen()
 	{
-		var batch = BatchIndexOf( sprite.RenderFlags );
-		var alpha = sprite.Colour >> 24;
-		return !sprite.ScreenSpace && sprite.FrameCount == 0 && batch == 0 && (alpha == 0 || alpha >= 0xF0)
-			? ((sprite.RenderFlags & 0x4000) == 0 ? 6 : 7)
-			: KindOf( batch, sprite.ScreenSpace );
+		if ( deleted || vertexBuffer == null || screenRuns.Count == 0 )
+			return;
+		var commandList = global::Global.Render.CommandList;
+		commandList.SetVertexBuffer( 0, vertexBuffer );
+		foreach ( var (kind, first, count) in screenRuns )
+			Draw( commandList, MaterialOf( kind ), (first, count) );
+		screenRuns.Clear();
 	}
 
-	internal static bool IsScreenKind( int kind ) => kind is >= 3 and <= 5;
-	internal static MaterialFlags FlagsForKind( int kind ) => MaterialFlags.OpaqueBlend | MaterialFlags.DoubleSided
-		| (kind == 7 ? MaterialFlags.DisableDepthWrite : MaterialFlags.None);
+	/// <summary>
+	/// The draw kind of a state word: its <see cref="ParticleState.Blend"/> (0 to 3), 4 when it writes no depth, 8 for a screen-space particle.
+	/// </summary>
+	internal static int KindOf( uint state, bool screenSpace ) =>
+		(int)ParticleState.BlendOf( state ) | (ParticleState.WritesDepth( state ) ? 0 : 4) | (screenSpace ? 8 : 0);
+
+	internal static bool IsScreenKind( int kind ) => (kind & 8) != 0;
+
+	/// <summary>The kinds of the opaque states, which are drawn when they are submitted; the others are kept for the sorted list.</summary>
+	internal static bool IsImmediateKind( int kind ) => (kind & 3) == (int)ParticleState.Blend.Opaque;
+
+	internal static ParticleState.Blend BlendOfKind( int kind ) => (ParticleState.Blend)(kind & 3);
+
+	internal static MaterialFlags FlagsForKind( int kind )
+	{
+		var flags = MaterialFlags.DoubleSided;
+		flags |= BlendOfKind( kind ) switch
+		{
+			ParticleState.Blend.Opaque => MaterialFlags.OpaqueBlend,
+			ParticleState.Blend.SourceAlphaOne => MaterialFlags.AdditiveBlend,
+			ParticleState.Blend.OneOne => MaterialFlags.OneOneBlend,
+			_ => MaterialFlags.None
+		};
+		// screen-space quads sit at the template's z (word +0x52, 0 in every shipped screen-space template): in front of the scene. The opaque ones (0x1256) keep the depth test and write at z = 0 as the original's
+		// state does, so whatever is drawn after them cannot cover them; the blended ones are drawn last without a depth test (RenderScreen)
+		if ( IsScreenKind( kind ) && !IsImmediateKind( kind ) )
+			return flags | MaterialFlags.DisableDepth;
+		return (kind & 4) != 0 ? flags | MaterialFlags.DisableDepthWrite : flags;
+	}
 
 	// Host adaptation: the final world-to-output blit alpha-blends; an opaque particle must
 	// leave opaque alpha there too. This is not evidence that the native rewrites its alpha byte.
-	internal static uint ColourForKind( uint colour, int kind ) => kind is 6 or 7 ? colour | 0xFF000000u : colour;
+	internal static uint ColourForKind( uint colour, int kind ) => BlendOfKind( kind ) == ParticleState.Blend.Opaque ? colour | 0xFF000000u : colour;
+
+	/// <summary>The kind of a quad of the last frame.</summary>
+	internal int QuadKind( int quad ) => quadKinds[quad];
+
+	/// <summary>
+	/// Copies a deferred quad of the last frame into the sorted buffer of the pass <paramref name="pass"/> and returns its slot there (slots follow the order the pass hands the quads over, which is its sorted order);
+	/// the first quad of a pass starts the buffer anew. <see cref="UploadSorted"/> sends the copies to the GPU once, before the pass's first draw.
+	/// </summary>
+	internal int AppendSorted( long pass, int quad )
+	{
+		if ( sortedPass != pass )
+		{
+			sortedPass = pass;
+			sortedCount = 0;
+		}
+		return CopySorted( vertices, quadKinds, quad, sortedVertices, sortedKinds, ref sortedCount );
+	}
+
+	/// <summary>Copies quad <paramref name="quad"/> (its vertices and kind) to the next slot of the sorted arrays and returns that slot.</summary>
+	internal static int CopySorted( Vertex[] vertices, int[] kinds, int quad, Vertex[] sortedVertices, int[] sortedKinds, ref int sortedCount )
+	{
+		Array.Copy( vertices, quad * VerticesPerQuad, sortedVertices, sortedCount * VerticesPerQuad, VerticesPerQuad );
+		sortedKinds[sortedCount] = kinds[quad];
+		return sortedCount++;
+	}
+
+	/// <summary>The draws of <paramref name="count"/> consecutive sorted slots from <paramref name="firstSlot"/>: neighbours of one kind are one run, as (kind, first vertex, vertex count).</summary>
+	internal static void MergeSorted( int[] sortedKinds, int firstSlot, int count, List<(int Kind, int First, int Count)> runs )
+	{
+		runs.Clear();
+		for ( var slot = firstSlot; slot < firstSlot + count; slot++ )
+			AddToRuns( runs, sortedKinds[slot], slot * VerticesPerQuad, VerticesPerQuad );
+	}
+
+	/// <summary>Uploads the sorted copies of the pass <paramref name="pass"/> (nothing when it made none).</summary>
+	internal void UploadSorted( long pass, CommandList commandList )
+	{
+		if ( deleted || sortedPass != pass || sortedCount == 0 )
+			return;
+		var stride = Vertex.SizeInBytes;
+		sortedBuffer ??= Device.ResourceFactory.CreateBuffer( new BufferDescription( (uint)sortedVertices.Length * stride, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
+		commandList.UpdateBuffer( sortedBuffer, 0, ref sortedVertices[0], (uint)sortedCount * stride );
+	}
+
+	/// <summary>Draws <paramref name="count"/> consecutive sorted slots from <paramref name="firstSlot"/>: neighbours of one kind are one draw, and the vertex buffer is bound once.</summary>
+	internal void DrawSorted( int firstSlot, int count )
+	{
+		if ( deleted || sortedBuffer == null || count <= 0 )
+			return;
+		var commandList = global::Global.Render.CommandList;
+		commandList.SetVertexBuffer( 0, sortedBuffer );
+		MergeSorted( sortedKinds, firstSlot, count, sortedRuns );
+		foreach ( var (kind, first, vertexCount) in sortedRuns )
+			Draw( commandList, MaterialOf( kind ), (first, vertexCount) );
+	}
 
 	/// <summary>
 	/// Appends a quad's vertices to the draw order: the original submits one primitive per particle in that order, so OpenTPW keeps the
@@ -226,7 +335,7 @@ public sealed class ParticleRenderer : Entity
 	}
 
 	/// <summary>The screen-space draw count of the last frame (tests and smokes).</summary>
-	public int DrawnScreenParticles => runs.Where( run => IsScreenKind( run.Kind ) ).Sum( run => run.Count ) / VerticesPerQuad;
+	public int DrawnScreenParticles => screenQuads;
 
 	/// <summary>False when all eight corners of the emitter's particle bounds lie outside one frustum plane.</summary>
 	private bool InView( ParticleEmitterBounds emitter, System.Numerics.Matrix4x4 viewProjection )
@@ -270,7 +379,7 @@ public sealed class ParticleRenderer : Entity
 	internal static float ScreenHalfWidth( float halfHeight, int frameCount, int frameWidth, int frameHeight, float displayAspect ) =>
 		halfHeight * (frameCount == 0 || frameHeight <= 0 ? displayAspect : (float)frameWidth / frameHeight);
 
-	private bool AddQuad( in ParticleSprite sprite, Batch batch, SVector3 right, SVector3 up, float displayAspect, ref int vertexCount )
+	private bool AddQuad( in ParticleSprite sprite, int kind, SVector3 right, SVector3 up, float displayAspect, ref int vertexCount )
 	{
 		var frame = sprite.FrameCount == 0 ? atlas.White : atlas.Find( sprite.SpriteCode, sprite.Frame );
 		if ( frame is not { } found )
@@ -288,7 +397,7 @@ public sealed class ParticleRenderer : Entity
 		var across = (right * cos + up * sin) * halfWidth;
 		var vertical = (up * cos - right * sin) * halfHeight;
 
-		var tint = Tint( ColourForKind( sprite.Colour, RenderKindOf( sprite ) ), batch );
+		var tint = Tint( ColourForKind( sprite.Colour, kind ) );
 
 		Vertex Corner( SVector3 position, float u, float v ) => new( position, tint, new SVector2( u, v ) );
 		var topLeft = Corner( centre - across + vertical, found.U0, found.V0 );
@@ -297,6 +406,9 @@ public sealed class ParticleRenderer : Entity
 		var bottomRight = Corner( centre + across - vertical, found.U1, found.V1 );
 		vertices[vertexCount++] = topLeft; vertices[vertexCount++] = topRight; vertices[vertexCount++] = bottomLeft;
 		vertices[vertexCount++] = topRight; vertices[vertexCount++] = bottomRight; vertices[vertexCount++] = bottomLeft;
+		// the key of the deferred record: the mean depth of the four corners (the same z over w the world's records use)
+		lastDepth = (WorldTranslucency.Depth( centre - across + vertical, viewProjection ) + WorldTranslucency.Depth( centre + across + vertical, viewProjection )
+			+ WorldTranslucency.Depth( centre - across - vertical, viewProjection ) + WorldTranslucency.Depth( centre + across - vertical, viewProjection )) * 0.25f;
 		return true;
 	}
 
@@ -304,7 +416,7 @@ public sealed class ParticleRenderer : Entity
 	/// A screen-space particle's quad, its vertices in clip space (drawn without the camera): the half-width is the half-height times the frame's width over its height (a textured quad) or the target's
 	/// height over its width (an untextured quad, the aspect word 0x8BCBCC), as the original's.
 	/// </summary>
-	private bool AddScreenQuad( in ParticleSprite sprite, Batch batch, float screenAspect, ref int vertexCount )
+	private bool AddScreenQuad( in ParticleSprite sprite, int kind, float screenAspect, ref int vertexCount )
 	{
 		var frame = sprite.FrameCount == 0 ? atlas.White : atlas.Find( sprite.SpriteCode, sprite.Frame );
 		if ( frame is not { } found )
@@ -314,7 +426,7 @@ public sealed class ParticleRenderer : Entity
 		if ( !(halfWidth > 0 && halfHeight > 0) )
 			return false;
 		var (a, b, c, d) = ParticleScreenSpace.Corners( ParticleScreenSpace.Position( sprite.X, sprite.Z ), halfWidth, halfHeight, sprite.Spin );
-		var tint = Tint( sprite.Colour, batch );
+		var tint = Tint( ColourForKind( sprite.Colour, kind ) );
 		Vertex Corner( SVector2 screen, float u, float v )
 		{
 			var clip = ParticleScreenSpace.ToClip( screen );
@@ -329,39 +441,58 @@ public sealed class ParticleRenderer : Entity
 		return true;
 	}
 
-	private static SVector3 Tint( uint colour, Batch batch )
+	// [BIN:TPW-EXE:0x565F90 vertex colour] the vertex diffuse is the particle's colour as it is (the batch's colour word [rec+8] ANDed with the all-ones mask [[0x87A248]+0x2C], 0x566019 to 0x56602D), whatever the blend: stage 0 modulates the texture's colour and alpha with it,
+	// so a one-plus-one particle adds the texture times the colour's RGB, the alpha only reaching the alpha test (the Mac engine scales the colour by the alpha instead)
+	private static SVector3 Tint( uint colour )
 	{
 		var alpha = (int)(colour >> 24);
 		var red = (int)((colour >> 16) & 0xFF);
 		var green = (int)((colour >> 8) & 0xFF);
 		var blue = (int)(colour & 0xFF);
-		if ( batch == Batch.OneOne )
-		{
-			// one plus one adds the colour as is: the particle's alpha scales it instead of blending it
-			red = red * alpha / 255; green = green * alpha / 255; blue = blue * alpha / 255; alpha = 255;
-		}
 		return new SVector3( red, green, blue + 256 * alpha );
 	}
 
-	// [EXT:evening] <paramref name="tinted"/>: the world's alpha-blended particles (smoke, dust, steam) take the sprite tint at dusk and night like the guests do; the additive ones (fire, sparks, fireworks)
+	// [EXT:evening] the world's alpha-blended and opaque particles (smoke, dust, steam) take the sprite tint at dusk and night like the guests do; the additive ones (fire, sparks, fireworks)
 	// and the screen-space ones give off or belong to the screen's own light and are left as they are
-	private static void WriteUniforms( Material<ObjectUniformBuffer> material, SVector3 eye, bool screenSpace, bool tinted )
+	private static void WriteUniforms( Material<ObjectUniformBuffer> material, int kind, SVector3 eye ) =>
+		material.Set( "ObjectUniformBuffer", UniformsFor( kind, eye ) );
+
+	/// <summary>The uniform block of a draw kind: the camera (none for a screen-space kind), the alpha test of its state word, the first-person views' fog and the evening tint.</summary>
+	internal static ObjectUniformBuffer UniformsFor( int kind, SVector3 eye )
 	{
+		var screenSpace = IsScreenKind( kind );
+		var blend = BlendOfKind( kind );
+		var state = blend switch
+		{
+			ParticleState.Blend.Opaque => ParticleState.Opaque,
+			ParticleState.Blend.SourceAlphaOne => ParticleState.SourceAlphaOne,
+			ParticleState.Blend.OneOne => ParticleState.OneOne,
+			_ => ParticleState.Alpha
+		};
 		var uniforms = new ObjectUniformBuffer
 		{
 			g_mModel = System.Numerics.Matrix4x4.Identity,
 			g_mView = screenSpace ? System.Numerics.Matrix4x4.Identity : Camera.ViewMatrix,
 			g_mProj = screenSpace ? System.Numerics.Matrix4x4.Identity : Camera.ProjMatrix,
 			g_vCameraPos = eye,
-			g_flTime = Time.Now
+			g_flTime = Time.Now,
+			// [BIN:TPW-EXE:0x567620 alpha test] bit 0x400 of the state enables the test, GREATEREQUAL against 0x10 (0xF0 with bit 0x200): the opaque 0x1256 has none, the blended states 0x556, 0x200552 and 0x200522 test at 0x10
+			AlphaReference = ParticleState.AlphaReferenceOf( state )
 		};
-		if ( tinted )
+		// the table fog the first-person views turn on reaches every world quad (0x565F90 adds the fog bit to every batch while [0x8BCBC8] has 0x2000); a screen-space quad has w = 1 and is left out
+		if ( !screenSpace )
+			uniforms = uniforms.WithFog();
+		if ( !screenSpace && blend is ParticleState.Blend.Opaque or ParticleState.Blend.Alpha )
 			uniforms.WithSpriteTint( Level.Current?.Look ?? EveningLook.Day );
-		material.Set( "ObjectUniformBuffer", uniforms );
+		return uniforms;
 	}
+
+	/// <summary>The particle draw calls since the frame stats were last read (<c>--frame-stats</c>).</summary>
+	internal static int FrameDraws;
 
 	private static void Draw( CommandList commandList, Material<ObjectUniformBuffer> material, (int First, int Count) range )
 	{
+		FrameDraws++;
 		commandList.SetPipeline( material.Pipeline );
 		var resourceSets = material.GetResourceSets();
 		for ( uint index = 0; index < resourceSets.Length; ++index )
@@ -375,21 +506,20 @@ public sealed class ParticleRenderer : Entity
 		system.Clear();
 		if ( Level != null && byLevel.TryGetValue( Level, out var registered ) && ReferenceEquals( registered, this ) )
 			byLevel.Remove( Level );
-		opaqueMaterial?.ReleaseOwnedResources();
-		opaqueNoWriteMaterial?.ReleaseOwnedResources();
-		opaqueMaterial = opaqueNoWriteMaterial = null;
-		alphaMaterial?.ReleaseOwnedResources();
-		additiveMaterial?.ReleaseOwnedResources();
-		oneOneMaterial?.ReleaseOwnedResources();
-		screenAlphaMaterial?.ReleaseOwnedResources();
-		screenAdditiveMaterial?.ReleaseOwnedResources();
-		screenOneOneMaterial?.ReleaseOwnedResources();
-		alphaMaterial = additiveMaterial = oneOneMaterial = screenAlphaMaterial = screenAdditiveMaterial = screenOneOneMaterial = null;
+		for ( var kind = 0; kind < KindCount; kind++ )
+		{
+			materials[kind]?.ReleaseOwnedResources();
+			materials[kind] = null;
+		}
 		atlasTexture?.ReleaseOwned();
 		atlasTexture = null;
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null )
 			global::Global.Render.ScheduleDelete( buffer.Dispose );
+		var sorted = sortedBuffer;
+		sortedBuffer = null;
+		if ( sorted != null )
+			global::Global.Render.ScheduleDelete( sorted.Dispose );
 	}
 }

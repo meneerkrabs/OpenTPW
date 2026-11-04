@@ -39,6 +39,54 @@ public class RenderFogTests
 	}
 
 	[TestMethod]
+	public void TheViewportClearIsTheFogColourOnlyWithTheFogOrTheLobbyFlag()
+	{
+		// [BIN:TPW-EXE:0x5737AA viewport clear] colour = [0x8BD47C] when [0x8BCBC8] & 0x4002000 (the fog bit 0x2000, the lobby's 0x4000000), else 0
+		var fog = new RgbaByte( 0x48, 0xD8, 0xF8, 255 );
+		Assert.AreEqual( fog, RenderFog.ClearColour( fogFlag: true, lobbyFlag: false, fog ), "the first-person views" );
+		Assert.AreEqual( fog, RenderFog.ClearColour( fogFlag: false, lobbyFlag: true, fog ), "the lobby" );
+		Assert.AreEqual( new RgbaByte( 0, 0, 0, 255 ), RenderFog.ClearColour( fogFlag: false, lobbyFlag: false, fog ), "the park overview has no fog and clears black" );
+	}
+
+	[TestMethod]
+	public void TheClearFollowsTheFogSwitchTheGameFlowSets()
+	{
+		RenderFog.Reset();
+		try
+		{
+			Assert.IsFalse( RenderFog.Enabled );
+			RenderFog.SetParkRange( 2 );
+			Assert.IsTrue( RenderFog.Enabled, "the ride and walk cameras turn the fog bit on" );
+			RenderFog.Disable();
+			Assert.IsFalse( RenderFog.Enabled );
+		}
+		finally
+		{
+			RenderFog.Reset();
+		}
+	}
+
+	[TestMethod]
+	public void TheThemeParkIncClearTakesItsBackColourWithoutTheFog()
+	{
+		// [BIN:TPI-EXE:0x6D697A clear] the flags 0x4002000 pick the fog word, else the BackColour word
+		var fog = new RgbaByte( 0x48, 0xD8, 0xF8, 255 );
+		var back = new RgbaByte( 1, 2, 3, 255 );
+		Assert.AreEqual( fog, RenderFog.ClearColour( fogFlag: true, lobbyFlag: false, fog, back ) );
+		Assert.AreEqual( back, RenderFog.ClearColour( fogFlag: false, lobbyFlag: false, fog, back ) );
+		Assert.AreEqual( new RgbaByte( 0, 0, 0, 255 ), RenderFog.ClearColour( fogFlag: false, lobbyFlag: false, fog ), "tp.exe's word is the constant 0" );
+	}
+
+	[TestMethod]
+	public void TheBackColourIsReadFromTheLevelsSettingsOrIsBlack()
+	{
+		Assert.AreEqual( new RgbaByte( 0x11, 0x22, 0x33, 255 ), Sky.BackColour( "jungle", path => path == "/levels/jungle/Standard.sam", _ => "1122867" ) );
+		Assert.AreEqual( new RgbaByte( 0, 0, 0, 255 ), Sky.BackColour( "jungle", _ => false, _ => null ), "no file" );
+		Assert.AreEqual( new RgbaByte( 0, 0, 0, 255 ), Sky.BackColour( "jungle", _ => true, _ => "0" ), "the shipped value is 0" );
+		Assert.AreEqual( new RgbaByte( 0, 0, 0, 255 ), Sky.BackColour( "jungle", _ => true, _ => "not a number" ), "unreadable text" );
+	}
+
+	[TestMethod]
 	public void ASceneWithoutALevelFadesIntoTheLobbyColour()
 	{
 		Assert.AreEqual( new RgbaByte( 0x44, 0xDD, 0xFF, 255 ), RenderFog.LobbyColour );

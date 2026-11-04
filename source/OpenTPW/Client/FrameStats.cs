@@ -71,8 +71,11 @@ internal sealed class FrameStats : IDisposable
 			$"allocated {(allocated - allocatedAtStart) / seconds / 1e6:F1} MB/s ({(allocated - allocatedAtStart) / 1024.0 / count:F0} KB per frame); " +
 			$"GC gen0/1/2 {GC.CollectionCount( 0 ) - gen0AtStart}/{GC.CollectionCount( 1 ) - gen1AtStart}/{GC.CollectionCount( 2 ) - gen2AtStart}; " +
 			$"per frame update {Milliseconds( updateTicks, count ):F2} ms (simulation {Milliseconds( simulationTicks, count ):F2}), world render {Milliseconds( renderTicks, count ):F2}, interface overlay {Milliseconds( overlayTicks, count ):F2}, submit+present {Milliseconds( submitTicks, count ):F2}, GPU wait {Milliseconds( fenceTicks, count ):F2}, whole update call {Milliseconds( totalTicks, count ):F2}; " +
-			$"model parts per frame {(double)ModelEntity.DrawnParts / count:F0} drawn, {(double)ModelEntity.CulledParts / count:F0} outside the view, {(double)WorldPass.FrameRecords / count:F0} translucent records in the pass." );
+			$"model parts per frame {(double)ModelEntity.DrawnParts / count:F0} drawn, {(double)ModelEntity.CulledParts / count:F0} outside the view, {(double)WorldPass.FrameRecords / count:F0} translucent records in the pass; particles per frame {(double)WorldPass.FrameParticleQuads / count:F1} deferred quads, {(double)ParticleRenderer.FrameDraws / count:F1} draws ({(double)WorldPass.FrameParticleDrawsUnsorted / count:F1} deferred draws without the sorted copy)." );
 		WorldPass.FrameRecords = 0;
+		WorldPass.FrameParticleQuads = 0;
+		WorldPass.FrameParticleDrawsUnsorted = 0;
+		ParticleRenderer.FrameDraws = 0;
 		ModelEntity.DrawnParts = 0;
 		ModelEntity.CulledParts = 0;
 		(updateTicks, simulationTicks, renderTicks, overlayTicks, submitTicks, fenceTicks, totalTicks) = (0, 0, 0, 0, 0, 0, 0);

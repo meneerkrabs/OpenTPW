@@ -1,6 +1,8 @@
 using Veldrid;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using SVector3 = System.Numerics.Vector3;
 
@@ -10,6 +12,21 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class SkyTests
 {
+	[TestMethod]
+	public void EverySkyDrawTestsItsAlphaAtTheStateWordsReferenceOf0x10()
+	{
+		// [BIN:TPW-EXE:0x586448 sky state] 0x401D56 (clouds), 0x1D56 (cylinder) and 0x401D56 (objects): ALPHATESTENABLE 0x400, no 0x200, so the reference is 0x10 of 255
+		Assert.AreEqual( 0x10 / 255f, Sky.AlphaReference );
+		foreach ( var state in new[] { 0x401D56u, 0x1D56u } )
+		{
+			Assert.AreEqual( Sky.AlphaReference, ParticleState.AlphaReferenceOf( state ), 1e-6f );
+			Assert.IsFalse( ParticleState.WritesDepth( state ), "the sky writes no depth (0x800)" );
+			Assert.IsTrue( ParticleState.DrawsImmediately( state ), "and is drawn when it is submitted (0x1000)" );
+			Assert.AreEqual( ParticleState.Blend.Alpha, ParticleState.BlendOf( state ) );
+		}
+		Assert.AreEqual( ParticleState.Blend.Opaque, ParticleState.BlendOf( 0x401A56u ), "the single opaque layer of the debug key (render flag bit 8) has no blend" );
+	}
+
 	[TestMethod]
 	public void CloudGridHangsFromTheCentreHeightAndSagsAtAFifthPerUnit()
 	{
@@ -42,6 +59,10 @@ public class SkyTests
 	{
 		CollectionAssert.AreEqual( new[] { 0.99f, 0.84f, 0.67f, 0.51f }, Enumerable.Range( 0, 4 ).Select( ring => MathF.Round( Sky.CylinderTexCoord( 3, ring ).Y, 2 ) ).ToArray() );
 		CollectionAssert.AreEqual( new[] { 0.49f, 0.34f, 0.17f, 0.01f }, Enumerable.Range( 0, 4 ).Select( ring => MathF.Round( Sky.CylinderTexCoord( 12, ring ).Y, 2 ) ).ToArray() );
+		// [BIN:TPW-EXE:0x586B03 globe rows] oracle X78: the globe's flag gives these rows
+		CollectionAssert.AreEqual( new[] { 0.99f, 0.69f, 0.51f, 0.99f }, Enumerable.Range( 0, 4 ).Select( ring => MathF.Round( Sky.CylinderTexCoord( 3, ring, globe: true ).Y, 2 ) ).ToArray() );
+		CollectionAssert.AreEqual( new[] { 0.49f, 0.19f, 0.01f, 0.49f }, Enumerable.Range( 0, 4 ).Select( ring => MathF.Round( Sky.CylinderTexCoord( 12, ring, globe: true ).Y, 2 ) ).ToArray() );
+		Assert.AreEqual( new System.Numerics.Vector3( -3, 4, -5 ), Sky.Mirrored( new System.Numerics.Vector3( 3, 4, 5 ) ) );
 		Assert.AreEqual( (0f, 1f, 0f, 1f), (Sky.CylinderTexCoord( 0, 0 ).X, Sky.CylinderTexCoord( 8, 0 ).X, Sky.CylinderTexCoord( 9, 0 ).X, Sky.CylinderTexCoord( 17, 0 ).X) );
 	}
 
@@ -149,6 +170,94 @@ public class SkyTests
 				Assert.AreEqual( layers * cloudTriangles.Length * 3, clouds );
 				CollectionAssert.AreEqual( System.Runtime.InteropServices.MemoryMarshal.AsBytes( expected.AsSpan() ).ToArray(),
 					System.Runtime.InteropServices.MemoryMarshal.AsBytes( staged.AsSpan() ).ToArray(), $"{layers} layers, frame {frame}" );
+			}
+		}
+	}
+
+	[TestMethod]
+	public void TheLobbySceneIsRebuiltOnAnyWayBackFromTheGlobe()
+	{
+		var pending = false;
+		Assert.IsFalse( GameFlow.StepLobbyRebuild( toGlobe: false, toLobby: true, ref pending ), "a city lobby back to the lobby alone keeps the scene" );
+		Assert.IsFalse( GameFlow.StepLobbyRebuild( toGlobe: true, toLobby: false, ref pending ) );
+		Assert.IsTrue( pending );
+		Assert.IsFalse( GameFlow.StepLobbyRebuild( toGlobe: false, toLobby: false, ref pending ), "globe to city lobby: the islands screen is still down" );
+		Assert.IsTrue( GameFlow.StepLobbyRebuild( toGlobe: false, toLobby: true, ref pending ), "city lobby to lobby rebuilds" );
+		Assert.IsFalse( pending );
+		Assert.IsFalse( GameFlow.StepLobbyRebuild( toGlobe: false, toLobby: true, ref pending ), "once" );
+		// the teardown forgets a pending rebuild: the next lobby is built fresh
+		var source = File.ReadAllText( Path.Combine( EveningTestsRoot(), "source", "OpenTPW", "Client", "GameFlow.cs" ) ).Replace( "\r\n", "\n" );
+		StringAssert.Contains( source, "backdrop = Backdrop.Lobby;\n		lobbyScenePending = false;" );
+	}
+
+	private static string EveningTestsRoot()
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "source", "OpenTPW", "Client", "GameFlow.cs" ) ) )
+			directory = directory.Parent;
+		return directory?.FullName ?? throw new InvalidOperationException( "source root not found" );
+	}
+
+	[TestMethod]
+	public void TheParkProjectionUsesTheFarPlaneOfTheFrameBefore()
+	{
+		var previous = Camera.ParkFarPlane;
+		try
+		{
+			var fars = new Queue<float?>( new float?[] { 50f, null, 70f } );
+			Camera.ParkFarPlane = ( _, _ ) => fars.Dequeue();
+			var view = System.Numerics.Matrix4x4.Identity;
+			Assert.AreEqual( OriginalProjection.DefaultFarPlane, Camera.ParkFarFor( view, 0.75f ), "no span selection has run yet; this frame's selection sets 50" );
+			Assert.AreEqual( 50f, Camera.ParkFarFor( view, 0.75f ), "the far the frame before set; this frame has no spans" );
+			Assert.AreEqual( 50f, Camera.ParkFarFor( view, 0.75f ), "a frame without spans keeps the far plane; this frame's selection sets 70" );
+			fars.Enqueue( null );
+			Assert.AreEqual( 70f, Camera.ParkFarFor( view, 0.75f ) );
+			fars = new Queue<float?>( new float?[] { 90f } );
+			Camera.ParkFarPlane = ( _, _ ) => fars.Dequeue();
+			Assert.AreEqual( OriginalProjection.DefaultFarPlane, Camera.ParkFarFor( view, 0.75f ), "a new level starts over" );
+		}
+		finally
+		{
+			Camera.ParkFarPlane = previous;
+		}
+	}
+
+	[TestMethod]
+	public void TheGlobesStagedVerticesEqualAFullRebuildAndMirrorTheLayers()
+	{
+		var cloudPositions = Enumerable.Range( 0, Sky.GridSize * Sky.GridSize ).Select( index => Sky.ToEngine( Sky.CloudPosition( index / Sky.GridSize, index % Sky.GridSize ) ) ).ToArray();
+		var cylinderPositions = Enumerable.Range( 0, Sky.CylinderColumns * Sky.CylinderRings ).Select( index => Sky.ToEngine( Sky.CylinderPosition( index / Sky.CylinderRings, index % Sky.CylinderRings ) ) ).ToArray();
+		var colours = Enumerable.Range( 0, Sky.GridSize * Sky.GridSize ).Select( index => 0xFF000000u | (uint)index * 0x010203u ).ToArray();
+		var cloudTriangles = Sky.CloudTriangles().ToArray();
+		var cylinderTriangles = Sky.CylinderTriangles().ToArray();
+		var staging = new Sky.Staging( cloudPositions, colours, cloudTriangles, cylinderPositions, cylinderTriangles, globe: true );
+		var random = new Random( 11 );
+		foreach ( var layers in new[] { 1, 2, 4, 2, 4, 1 } )
+		{
+			for ( var frame = 0; frame < 3; frame++ )
+			{
+				var offsetU = Enumerable.Range( 0, Sky.MaximumLayers ).Select( _ => (float)(random.NextDouble() * 2 - 1) ).ToArray();
+				var offsetV = Enumerable.Range( 0, Sky.MaximumLayers ).Select( _ => (float)(random.NextDouble() * 2 - 1) ).ToArray();
+				// the first update builds, the next ones only rewrite the texture coordinates (ScrollTexCoords with two copies)
+				var staged = staging.Update( layers, offsetU, offsetV, out var clouds );
+				var expected = Sky.BuildVertices( layers, cloudPositions, colours, cloudTriangles, cylinderPositions, cylinderTriangles, offsetU, offsetV, out var expectedClouds, globe: true );
+				Assert.AreEqual( 2 * layers * cloudTriangles.Length * 3, clouds, $"{layers} layers: the layers twice" );
+				Assert.AreEqual( expectedClouds, clouds );
+				CollectionAssert.AreEqual( System.Runtime.InteropServices.MemoryMarshal.AsBytes( expected.AsSpan() ).ToArray(),
+					System.Runtime.InteropServices.MemoryMarshal.AsBytes( staged.AsSpan() ).ToArray(), $"{layers} layers, frame {frame}" );
+				var perLayer = cloudTriangles.Length * 3;
+				for ( var layer = 0; layer < layers; layer++ )
+				{
+					for ( var corner = 0; corner < perLayer; corner += 97 )
+					{
+						var top = staged[layer * perLayer + corner];
+						var mirrored = staged[(layers + layer) * perLayer + corner];
+						Assert.AreEqual( -top.Position.X, mirrored.Position.X );
+						Assert.AreEqual( top.Position.Y, mirrored.Position.Y );
+						Assert.AreEqual( -top.Position.Z, mirrored.Position.Z );
+						Assert.AreEqual( top.TexCoords, mirrored.TexCoords, "the copy scrolls with its layer" );
+					}
+				}
 			}
 		}
 	}

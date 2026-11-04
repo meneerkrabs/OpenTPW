@@ -1418,6 +1418,10 @@ public partial class Level : IDisposable
 		WorldPass.Flush();
 		foreach ( var entity in after )
 			RenderEntity( entity );
+		// the particles' screen-space quads (the tube's effects) lie over everything the scene drew
+		foreach ( var entity in before )
+			if ( entity is ParticleRenderer particles )
+				particles.RenderScreen();
 	}
 
 	private static void RenderEntity( Entity entity )

@@ -10,13 +10,17 @@ namespace OpenTPW;
 // [BIN:TPW-EXE:0x582AD0 deferred records] 0x582AD0, the second half of 0x582170, collects the records 0x565590 kept, sorts them with 0x5829E0 on +0x30 (the depth sum) over +0x20 (the vertex count), largest first, and draws them in that order
 internal static class WorldPass
 {
-	/// <summary>One kept record: the entity and the model to draw, the model matrix of the entity at the time, the record's depth and the order it was handed in.</summary>
-	internal readonly record struct Record( ModelEntity Entity, Model Model, Matrix4x4 Matrix, float Depth, int Sequence );
+	/// <summary>
+	/// One kept record: the entity and the model to draw, the model matrix of the entity at the time, the record's depth and the order it was handed in; a particle quad (<see cref="SubmitParticle"/>) names its renderer and
+	/// the quad of its last frame instead.
+	/// </summary>
+	internal readonly record struct Record( ModelEntity? Entity, Model? Model, Matrix4x4 Matrix, float Depth, int Sequence, ParticleRenderer? Particles = null, int Quad = 0 );
 
 	private static readonly List<Record> records = new();
 	private static readonly Comparison<Record> byDepth = ( left, right ) => Compare( left.Depth, left.Sequence, right.Depth, right.Sequence );
 	private static Matrix4x4 viewProjection;
 	private static long passes;
+	private static readonly List<ParticleRenderer> renderers = new();
 	private static readonly HashSet<Model> prepared = new( ReferenceEqualityComparer.Instance );
 
 	/// <summary>The number of the open pass (a model sorts once per pass and rotation), or -1 when none is open.</summary>
@@ -24,6 +28,9 @@ internal static class WorldPass
 
 	/// <summary>The translucent records the passes drew since the frame stats were last read (<see cref="FrameStats"/>).</summary>
 	internal static int FrameRecords;
+
+	/// <summary>The deferred particle quads the passes drew, and the draws the earlier rule (merge only neighbours that are ascending in the renderer's own buffer) would have made for them, since the frame stats were last read (<c>--frame-stats</c>).</summary>
+	internal static int FrameParticleQuads, FrameParticleDrawsUnsorted;
 
 	/// <summary>Whether a pass is open: entities hand their translucent groups over instead of drawing them.</summary>
 	internal static bool Active { get; private set; }
@@ -47,6 +54,17 @@ internal static class WorldPass
 			return false;
 		records.Add( new Record( entity, model, matrix, model.MeanDepth( matrix * viewProjection ), records.Count ) );
 		return true;
+	}
+
+	/// <summary>
+	/// Keeps one particle quad of <paramref name="particles"/> for the pass, with the mean depth of its corners as its key: the original keeps every particle batch whose state has neither bit 0x1000 nor 0x2000 (0x556, 0x200552,
+	/// 0x200522) in the same list as the translucent model faces (0x565590) and draws them by the same sort (0x582AD0).
+	/// </summary>
+	// [BIN:TPW-EXE:0x57C620 particle batches] each particle is submitted to 0x565F90 as a batch of its own (one record of two triangles), whose state decides between the immediate draw and this list
+	internal static void SubmitParticle( ParticleRenderer particles, int quad, float depth )
+	{
+		if ( Active )
+			records.Add( new Record( null, null, Matrix4x4.Identity, depth, records.Count, particles, quad ) );
 	}
 
 	/// <summary>Keeps a record with a given depth (tests).</summary>
@@ -77,12 +95,61 @@ internal static class WorldPass
 			prepared.Clear();
 			foreach ( var record in records )
 			{
-				record.Model.OrderTriangles( record.Matrix, record.Matrix * viewProjection, passes );
-				if ( prepared.Add( record.Model ) )
-					record.Model.FlushUploads( Render.CommandList );
+				if ( record.Model is not { } model )
+					continue;
+				model.OrderTriangles( record.Matrix, record.Matrix * viewProjection, passes );
+				if ( prepared.Add( model ) )
+					model.FlushUploads( Render.CommandList );
 			}
+			// the deferred particle quads are copied into their renderer's second buffer in the sorted order (one upload per renderer, before the first draw, like the models' uploads above), so
+			// consecutive quads are neighbours in it whatever the camera direction and a run of one kind is one draw
+			renderers.Clear();
+			ParticleRenderer? previous = null;
+			int previousKind = 0, previousQuad = 0;
+			for ( var index = 0; index < records.Count; index++ )
+			{
+				var record = records[index];
+				if ( record.Particles is not { } particles )
+				{
+					previous = null;
+					continue;
+				}
+				if ( FrameStats.Active )
+				{
+					var kind = particles.QuadKind( record.Quad );
+					FrameParticleQuads++;
+					if ( !(previous == particles && kind == previousKind && record.Quad == previousQuad + 1) )
+						FrameParticleDrawsUnsorted++;
+					(previous, previousKind, previousQuad) = (particles, kind, record.Quad);
+				}
+				records[index] = record with { Quad = particles.AppendSorted( passes, record.Quad ) };
+				if ( !renderers.Contains( particles ) )
+					renderers.Add( particles );
+			}
+			foreach ( var particles in renderers )
+				particles.UploadSorted( passes, Render.CommandList );
+			ParticleRenderer? run = null;
+			int runFirst = 0, runCount = 0;
 			foreach ( var record in records )
-				record.Entity.DrawModel( record.Model, record.Matrix );
+			{
+				if ( record.Particles is { } particles )
+				{
+					if ( run == particles && record.Quad == runFirst + runCount )
+					{
+						runCount++;
+						continue;
+					}
+					run?.DrawSorted( runFirst, runCount );
+					run = particles;
+					runFirst = record.Quad;
+					runCount = 1;
+					continue;
+				}
+				run?.DrawSorted( runFirst, runCount );
+				run = null;
+				record.Entity!.DrawModel( record.Model!, record.Matrix );
+			}
+			run?.DrawSorted( runFirst, runCount );
 		}
 		finally
 		{
@@ -95,6 +162,7 @@ internal static class WorldPass
 	{
 		records.Clear();
 		prepared.Clear();
+		renderers.Clear();
 		Active = false;
 	}
 }

@@ -82,6 +82,8 @@ class GuardRound2(unittest.TestCase):
                       for line in read(world / name).splitlines() if self.forbidden.search(line))
         self.assertEqual(hits, [
             'Advisor.cs: private readonly AdvisorMouth mouth = new( new Random() );',
+            # The park projection's lagged far plane, never read by the simulation.
+            'Camera.cs: private static float? parkFarLag;',
             # The online globe's orbit camera (#25): view angles, zoom and their damping, never read by the park.
             'GlobeCameraMode.cs: private static float pitch;',
             'GlobeCameraMode.cs: private static float pitchVelocity;',

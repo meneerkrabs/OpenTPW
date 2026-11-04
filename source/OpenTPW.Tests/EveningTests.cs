@@ -595,7 +595,7 @@ public class EveningTests
 		Assert.AreEqual( NVector3.Zero, day.g_vLightColor, "full day leaves the block as it was" );
 		var root = SourceRoot();
 		StringAssert.Contains( File.ReadAllText( Path.Combine( root, "source", "OpenTPW", "World", "Pools", "PoolSpray.cs" ) ), "WithSpriteTint" );
-		StringAssert.Contains( File.ReadAllText( Path.Combine( root, "source", "OpenTPW", "World", "Particles", "ParticleRenderer.cs" ) ), "tinted: kind == 0" );
+		StringAssert.Contains( File.ReadAllText( Path.Combine( root, "source", "OpenTPW", "World", "Particles", "ParticleRenderer.cs" ) ), "blend is ParticleState.Blend.Opaque or ParticleState.Blend.Alpha" );
 	}
 
 	[TestMethod]

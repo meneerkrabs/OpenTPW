@@ -253,7 +253,7 @@ public class WorldTranslucencyTests
 	}
 
 	[TestMethod]
-	public void TheLateEntitiesAreTheBlendedEffectsAndThePoolWaterAndTheRestKeepTheirOrder()
+	public void TheLateEntitiesAreTheWeatherAndThePoolWaterAndTheRestKeepTheirOrder()
 	{
 		var particle = Empty<ParticleRenderer>(); var weather = Empty<WeatherRenderer>(); var spray = Empty<PoolSprayRenderer>();
 		var water = Empty<PoolPartEntity>(); water.IsWater = true;
@@ -264,9 +264,10 @@ public class WorldTranslucencyTests
 		Entity[] input = { a, kids, water, particle, swimmers, b, spray, deck, weather };
 		var before = new List<Entity>(); var after = new List<Entity>();
 		Assert.IsTrue( Level.SplitLate( input, before, after ) );
-		SameOrder( [a, kids, b, deck], before.ToArray() );
+		// the particle renderer draws its opaque quads in the pass and hands its blended quads to the translucent list (PTCL-905)
+		SameOrder( [a, kids, particle, b, deck], before.ToArray() );
 		// the swimmers stay behind the water they swim in
-		SameOrder( [water, particle, swimmers, spray, weather], after.ToArray() );
+		SameOrder( [water, swimmers, spray, weather], after.ToArray() );
 		SameOrder( [a, kids, water, particle, swimmers, b, spray, deck, weather], input );
 	}
 

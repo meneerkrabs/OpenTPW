@@ -54,7 +54,7 @@ public static class SignSurfaceComposer
 		var surface = new byte[Width * SurfaceHeight * 4];
 		if ( sign.ExtraImage is { } board )
 		{
-			// [APPROX:COMPAT-018] GPU row orientation follows the decoded native container but awaits independent original-platform pixel parity. The PC reader's BILZ chunk tag is compared at 0x6193D0 (the inflate step); the transform after it (dequantisation scale, D4 coefficients 0x591600..0x591690, inverses 0x592C50 / 0x5933A0 / 0x592E60, conversions 0x5935A0 and 0x593301) is SignWaveletDecoder, at the thread's x87 precision; open: the GPU row orientation and board pixels
+			// [APPROX:COMPAT-018] GPU row orientation follows the decoded native container but awaits independent original-platform pixel parity. The PC reader's BILZ chunk tag is compared at 0x6193D0 (the inflate step); the transform after it (dequantisation scale, D4 coefficients 0x591600..0x591690, inverses 0x592C50 / 0x5933A0 / 0x592E60, conversions 0x5935A0 and 0x593301) is SignWaveletDecoder, at the thread's x87 precision; the board is packed bottom-up and reduced to A4R4G4B4 unless TEXTURE32 (0x5ECB40, 0x5ED011; every shipped preset has it 0 and OpenTPW's board stays 32 bit); open: the GPU upload of the packed halves, the sign mesh's V direction and board pixels
 			var pixels = board.IsWavelet ? SignWaveletDecoder.Decode( board ) : board.Payload;
 			if ( board.Width != Width || board.Height != Height || board.BytesPerPixel != 4 || pixels.Length != Width * Height * 4 )
 				throw new InvalidDataException( "Sign board dimensions or pixel format do not match the native destination." );

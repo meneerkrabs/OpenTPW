@@ -90,7 +90,7 @@ public class PauseOwnersTests
 		var economy = EconomyTestData.Park();
 		var hud = StaffWindowTests.Hud( economy );
 		// tp.exe's [0xF82884] is 0 in every park (only the front end sets it), so being logged in changes nothing for the park's own boxes (0x47F26C)
-		Set( hud, "host", new HudHost { IsLoggedIn = () => true } );
+		Set( hud, "host", new HudHost { ParkInfoChoice = new(), IsLoggedIn = () => true } );
 		hud.Stack.Push( new OpenTPW.UI.Original.UiScreen( "confirmDelete" ) );
 		Assert.AreEqual( 0f, hud.SimulationTimeScale );
 		Assert.IsTrue( hud.ClockPaused );

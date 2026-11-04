@@ -125,19 +125,17 @@ class GraphBackdropContract(unittest.TestCase):
         self.assertIn("!float.IsFinite( frame.Bottom )", body)
         self.assertIn("Math.Max( 1f, canvas.Scale * 2f )", self.helper)
 
-    def test_finance_backdrop_precedes_empty_guard_and_keeps_fractional_series(self):
+    def test_finance_backdrop_precedes_empty_guard_and_places_series_as_the_drawer_does(self):
         body = self.finance.split("private sealed class FinanceGraph", 1)[1]
-        self.assertLess(body.index("GraphBackdropRenderer.Draw("), body.index("if ( !hasSeries"))
-        self.assertIn("if ( !hasSeries || !canDrawSeries )", body)
-        self.assertLess(body.index("GraphBackdropRenderer.Draw("), body.index("if ( minimum == maximum )"))
-        self.assertIn("owner.financeYears * ParkCalendar.MonthsPerYear, minimum, maximum", body)
-        for expression in ("owner.FinanceMonths()", "owner.financeVisible.OrderBy( series => series )",
-                           "Math.Min( 0L, values.Min( series => series.Min() ) )", "Math.Max( 0L, values.Max( series => series.Max() ) )",
-                           "index / (float)(months.Count - 1)", "values[s][index] - (double)minimum",
-                           "maximum - (double)minimum", "owner.financeYears < 12"):
+        self.assertLess(body.index("GraphBackdropRenderer.Draw("), body.index("if ( economy == null || !any || !canDrawSeries )"))
+        self.assertIn("if ( economy == null || !any || !canDrawSeries )", body)
+        self.assertIn("owner.financeYears * ParkCalendar.MonthsPerYear", body)
+        self.assertIn("new GraphBackdrop( (int)(rect.Width / pixel), (int)(rect.Height / pixel), samples, minimum, maximum )", body)
+        for expression in ("FinanceSeriesOrder", "TryFinanceSample( economy, age, series, out var value )", "age <= samples",
+                           "Math.Min( samples, FinanceSamplesHeld( economy ) )", "GraphBackdropRenderer.DrawSeries(",
+                           "points[n - age] = last"):
             self.assertIn(expression, body)
-        self.assertLess(body.index("HollowMark("), body.index("context.Batch.AddTriangle("))
-        for forbidden in ("75, 86, 125, 130", "plot.Height * line / 4", "ParkInfoGraph.Row", "ZeroAxisRow"):
+        for forbidden in ("75, 86, 125, 130", "plot.Height * line / 4", "ZeroAxisRow", "OrderBy(", "HollowMark(", "index / (float)(months.Count - 1)"):
             self.assertNotIn(forbidden, body)
 
     def test_info_backdrop_does_not_take_over_series_sampling(self):
@@ -145,11 +143,13 @@ class GraphBackdropContract(unittest.TestCase):
         self.assertLess(body.index("GraphBackdropRenderer.Draw("), body.index("if ( economy == null"))
         self.assertIn("if ( economy == null || !canDrawSeries )", body)
         for expression in ("ParkInfoGraph.ScaleMaximum(", "ParkInfoGraph.DrawOrder", "ParkStatisticsHistory.SeriesPoints(",
-                           "ParkInfoGraph.Column( index, samples, plot )", "ParkInfoGraph.Row( points[index], maximum, plot )",
-                           "points[^1].ToString", "samples < 0x90"):
+                           "GraphBackdropRenderer.DrawSeries(", "samples, 0, maximum, plot"):
             self.assertIn(expression, body)
-        self.assertIn("(int)(plot.Left + (float)(plot.Right - plot.Left) / samples * index)", self.info)
-        self.assertIn("plot.Bottom - (int)((long)value * height / maximum)", self.info)
+        # one drawer for both graphs: float-summed columns, integer rows cut to the plot, boxes below 144 samples, the last value
+        for expression in ("x = (float)(step + Math.Clamp( x, plot.Left, plot.Right ))", "plot.Bottom - (int)((Int128)(plot.Bottom - plot.Top)",
+                           "samples < 0x90", "LabelCache", "TextOf("):
+            self.assertIn(expression, self.helper)
+        self.assertIn("GraphBackdropRenderer.Column( index, samples, plot )", self.info)
 
     def test_ci_and_register_keep_full_execution_and_qualification(self):
         workflow = read(".github/workflows/build.yml")
@@ -160,7 +160,7 @@ class GraphBackdropContract(unittest.TestCase):
             self.assertIn(token, register)
         self.assertNotIn("sets three interior", register)
         canonical = next(line for line in read("source/OpenTPW/UI/Original/UiApproximations.cs").splitlines() if '("UI-060",' in line)
-        for token in ("ten horizontal", "twelve", "ring's months", "raster", "Signed 128-bit"):
+        for token in ("ten horizontal", "twelve", "months held", "raster", "Signed 128-bit"):
             self.assertIn(token, canonical)
         self.assertNotIn("three interior", canonical)
         self.assertIn("[APPROX:UI-060]", self.helper)

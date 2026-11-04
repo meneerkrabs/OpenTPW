@@ -198,7 +198,7 @@ public class FreeWalkCameraTests
 		try {
 			Input.Keyboard=new(); Input.KeysDown=new(); Input.LastKeysDown=new(); Input.Keyboard.KeysDown.Add(Key.C); Input.UpdateButtons();
 			Fixture(out var level); Camera.Mode=new ParkCameraMode(); var original=Camera.Mode;
-			var hud=new ParkHud(level,OriginalUiTests.FakeStrings(),new NoEconomyStatus(),new EmptyCatalog(),new HudHost());
+			var hud=new ParkHud(level,OriginalUiTests.FakeStrings(),new NoEconomyStatus(),new EmptyCatalog(),new HudHost { ParkInfoChoice = new() });
 			hud.Update(Context(),UiInput.Idle(new N.Vector2(500)),false,false,false); Assert.IsFalse(hud.CamcorderArmed);
 			Input.Keyboard.KeysDown.Clear(); Input.UpdateButtons(); hud.Update(Context(),UiInput.Idle(new N.Vector2(500)),false,false,false);
 			Input.Keyboard.KeysDown.Add(Key.C); Input.UpdateButtons(); hud.Update(Context(),UiInput.Idle(new N.Vector2(500)),false,false,false); Assert.IsTrue(hud.CamcorderArmed);

@@ -94,7 +94,7 @@ public class AuthenticatedPauseLayoutTests
 	public void AuthenticationChangesApplyOnlyOnReopenAndResumeStillClicks()
 	{
 		var loggedIn = false; var samples = 0;
-		var hud = BareHud( Empty<Level>(), new HudHost { IsLoggedIn = () => { samples++; return loggedIn; } } );
+		var hud = BareHud( Empty<Level>(), new HudHost { ParkInfoChoice = new(), IsLoggedIn = () => { samples++; return loggedIn; } } );
 		var context = Context();
 		hud.OpenPauseMenu(); AssertLayout( hud.Stack.Top!, context, false );
 		loggedIn = true;

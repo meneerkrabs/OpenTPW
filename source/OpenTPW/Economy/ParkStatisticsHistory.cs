@@ -56,6 +56,19 @@ public sealed class HistoryRing
 		return true;
 	}
 
+	/// <summary>
+	/// The word of the slot after the head, which the maximum scanners read when no sample is above 0: the oldest entry of a wrapped ring, a slot not yet written in an unwrapped one
+	/// (a new park's is uninitialised heap, [EXT:original-undefined-reads]: 0 here; an original save's is its raw saved word) and with the head at the last slot the head word itself (an integer; a single's bits, read as a float, are 0).
+	/// </summary>
+	internal double SlotAfterHead( bool floating )
+	{
+		var slot = Head + 1;
+		return slot < data.Length ? data[slot] : floating ? 0 : Head;
+	}
+
+	/// <summary>The word stored in a slot, read or not.</summary>
+	internal double Raw( int slot ) => data[slot];
+
 	/// <summary>The entries oldest first.</summary>
 	public IEnumerable<double> Oldest()
 	{
@@ -104,7 +117,7 @@ public sealed class HistoryRing
 /// The park analyser's monthly statistics that the park information window graphs: the guests dropped off by the bus, the mean happiness, the mean stay,
 /// the guests in the park and the park rating. Nothing here is read by the simulation.
 /// </summary>
-// [APPROX:UI-914] TPW and independently traced TPI statistics are imported; TPI adapts partial inputs across a fresh host clock, not native saved-clock continuation. Real populated/wrapped-save corpus coverage and other park-information presentation residuals remain open.
+// [EXT:tpi-history-fresh-start] TPW and independently traced TPI statistics are imported; Theme Park Inc's own executable keeps its saved clock, which the money-only TPI economy does not continue (the first host close crosses the month boundary on its fresh clock). Validation item for the TPI restore work: real populated or wrapped TPI saves.
 public sealed class ParkStatisticsHistory
 {
 	/// <summary>The entries of a monthly ring (0x90).</summary>
@@ -191,7 +204,7 @@ public sealed class ParkStatisticsHistory
 		Restore( new ParkStatisticsData
 		{
 			ArrivalsThisMonth = statistics.ArrivalsThisMonth,
-			Arrivals = RingData.OfOriginal( statistics.Arrivals ), Happiness = RingData.OfOriginal( statistics.Happiness ),
+			Arrivals = RingData.OfOriginal( statistics.Arrivals ), Happiness = RingData.OfOriginal( statistics.Happiness, floating: true ),
 			Stay = RingData.OfOriginal( statistics.Stay ), People = RingData.OfOriginal( statistics.People ),
 			Rating = RingData.OfOriginal( statistics.Rating ), RecentStays = RingData.OfOriginal( statistics.RecentStays )
 		} );
@@ -211,36 +224,61 @@ public sealed class ParkStatisticsHistory
 	/// <summary>
 	/// The highest sample of the newest <c>period + 1</c> that the scale takes from a ring (<paramref name="floating"/>: a single ring, whose maximum is truncated), 0 when none is above 0.
 	/// </summary>
-	// [BIN:TPW-EXE:0x4801D0 series maximum] the scan reads samples 0 up to and including the period's sample count (one more than the graph draws), stops at the first it cannot read, and keeps the largest strictly above 0; the single ring's maximum (0x4802A0) is truncated to an integer
+	// OpenTPW's import rejects a non-finite active sample, which the native loader does not (+Inf would pass the scanner's above-0 test and end as 0 through the conversion above): the strict host validation, the one difference in the float scanner
+	// [BIN:TPW-EXE:0x4801D0 series maximum] the scan reads samples 0 up to and including the period's sample count stops at the first it cannot read, and keeps the largest strictly above 0, and when none is above 0 it still reads the slot after the head (0x480263..0x48028B, 0x48033b..0x480369) and keeps it if it is above the maximum; the single ring's maximum (0x4802A0) is truncated to an integer
+	/// <summary>
+	/// tp.exe's float-to-integer conversion of a single ring's value (<c>0x67A830</c>: truncating <c>fistp</c> to 64 bits, the low dword kept): a value beyond 2^31 wraps to its low 32 bits, and +Inf, -Inf, NaN and anything from 2^63 up give 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x67A830 float to integer] fldcw with the truncate bits, fistp qword, then eax = the low dword
+	internal static int FloatToInt( double value ) => !double.IsFinite( value ) || Math.Abs( value ) >= 9.2233720368547758E18 ? 0 : unchecked((int)(long)Math.Truncate( value ));
+
 	public static int SeriesMaximum( HistoryRing ring, int period, bool floating )
 	{
 		var samples = PeriodSamples( period );
 		var best = 0d;
+		var positive = false;
 		for ( var back = 0; back <= samples; back++ )
 		{
 			if ( !ring.TryGet( back, out var value ) )
 				break;
 			if ( value > best )
 				best = value;
+			positive |= value > 0;
 		}
-		return floating ? (int)best : (int)Math.Min( best, int.MaxValue );
+		var result = floating ? FloatToInt( best ) : (int)Math.Min( best, int.MaxValue );
+		if ( !positive )
+		{
+			var slot = ring.SlotAfterHead( floating );
+			result = Math.Max( result, floating ? FloatToInt( slot ) : (int)Math.Clamp( slot, int.MinValue, int.MaxValue ) );
+		}
+		return result;
 	}
 
 	/// <summary>
 	/// The points a series draws, oldest first: the newest <c>min(period samples, entries held)</c> plus one, where the extra oldest point is 0 when the ring has no older entry.
 	/// </summary>
 	// [BIN:TPW-EXE:0x480460 series points] n = min(period samples, entries held); the buffer holds n + 1 values, sample n back down to sample 0, an unreadable sample keeping the previous value (0 at the start); a single ring (0x480570) truncates each to an integer
-	public static int[] SeriesPoints( HistoryRing ring, int period, bool floating )
+	public static int SeriesPoints( HistoryRing ring, int period, bool floating, Span<long> points )
 	{
 		var n = Math.Min( PeriodSamples( period ), ring.Count );
-		var points = new int[n + 1];
-		var last = 0;
+		long last = 0;
 		for ( var back = n; back >= 0; back-- )
 		{
 			if ( ring.TryGet( back, out var value ) )
-				last = floating ? (int)value : (int)Math.Clamp( value, int.MinValue, int.MaxValue );
+				last = floating ? FloatToInt( value ) : (int)Math.Clamp( value, int.MinValue, int.MaxValue );
 			points[n - back] = last;
 		}
+		return n + 1;
+	}
+
+	/// <summary>The points a series draws as a new array, oldest first (see the span overload).</summary>
+	public static int[] SeriesPoints( HistoryRing ring, int period, bool floating )
+	{
+		var buffer = new long[PeriodSamples( 2 ) + 1];
+		var count = SeriesPoints( ring, period, floating, buffer );
+		var points = new int[count];
+		for ( var index = 0; index < count; index++ )
+			points[index] = (int)buffer[index];
 		return points;
 	}
 }
@@ -260,10 +298,29 @@ public sealed class RingData
 		return new RingData { Slots = slots, Head = ring.Head, Wrapped = ring.Wrapped };
 	}
 
-	internal static RingData OfOriginal( NativeStatisticsRing ring ) => new() { Slots = ring.Values.ToList(), Head = ring.Head, Wrapped = ring.Wrapped };
+	/// <summary>
+	/// An original save's ring. The slots tp.exe never reads (past the head of an unwrapped ring) keep the raw saved word, as a single's value when <paramref name="floating"/>
+	/// (a non-finite one becomes 0: tp.exe converts a single through 0x67A830, a 64-bit fistp whose low dword is 0 for +Inf, -Inf and NaN, so the scanner gets 0 from it too), because the maximum scanner reads the slot after the head when no sample is above 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4C5D70 ring loader] reads all 0x90 slots raw (loop at 0x4C6307), so the unread slots keep the saved words
+	internal static RingData OfOriginal( NativeStatisticsRing ring, bool floating = false )
+	{
+		var slots = ring.Values.ToList();
+		if ( !ring.Wrapped )
+			for ( var slot = ring.Head + 1; slot < slots.Count && slot < ring.RawValues.Count; slot++ )
+			{
+				var word = ring.RawValues[slot];
+				var value = floating ? (double)BitConverter.Int32BitsToSingle( word ) : word;
+				slots[slot] = double.IsFinite( value ) ? value : 0;
+			}
+		return new() { Slots = slots, Head = ring.Head, Wrapped = ring.Wrapped };
+	}
 
 	private static double SlotValue( HistoryRing ring, int slot )
 	{
+		// a slot past the head of an unwrapped ring is not read by tp.exe but keeps its word (an original save's raw word, else 0)
+		if ( !ring.Wrapped && slot > ring.Head )
+			return ring.Raw( slot );
 		// a slot is read through its age: head - slot, wrapped round
 		var back = (ring.Head - slot + ring.Size) % ring.Size;
 		return ring.TryGet( back, out var value ) ? value : 0;

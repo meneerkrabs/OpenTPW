@@ -2,7 +2,7 @@
 
 ## Status and classification
 - Bounded implementation: TPW native statistics histories, separately decoded TPI historical measurements across a fresh host start, and independent host rating persistence.
-- Classification: `missing_behavior`. UI-914 remains open; this is not retirement or full park-information fidelity.
+- Classification: `missing_behavior`. UI-914 remains open at this proposal's time; it was retired in round 11 J (see docs/UI.md).
 - Implementation baselines: TPW at main `dee52e34`; the TPI extension at main `1c215512` (October 19, 2026). The original proposal progress fragment is preserved unchanged.
 - No original executable execution, redistributed game assets, private source material, or native statistics export changes.
 

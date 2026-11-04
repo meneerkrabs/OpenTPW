@@ -16,15 +16,13 @@ public sealed partial class ParkHud
 	private float parkInfoAge;
 	// [BIN:TPW-EXE:0x004A4AB0 hidden icons stay hidden] a slot with no icon calls 0x65D9DD(0), which clears bit 0 of the control's +0x48; a slot with one only sets the frame (vtable +0x1C, 0x661525, which forwards message 0x80 to the
 	// control's two model objects and writes no flag), and neither 0x4A4AB0 nor the window procedure calls 0x65D9DD(1), so a hidden icon stays hidden while the window is open
-	// [APPROX:UI-914] the port follows that reading (an icon hidden by an empty slot stays hidden until the window is reopened); the model objects' handler of message 0x80 was not read, so a show there is not ruled out
+	// [BIN:TPW-EXE:0x476F10 model object handlers] the model objects' classes (0x476A90, 0x477250, 0x477580) test neither message 0x80 nor 8 in their handlers (0x476F10, 0x477310, 0x477640), so nothing shows a hidden icon again
 	private bool[]? parkInfoIcons;
 	private bool[] parkInfoIconHidden => parkInfoIcons ??= new bool[3];
 	private UiScreen? parkInfoScreen;
-	// [BIN:TPW-EXE:0x753C48 series mask] the graph's series mask and the period (0x7CB39C) are globals the window procedure keeps across openings; they start at the people-in-park series and 1 year
-	// [APPROX:UI-914] the choice is kept across openings within a park (it lives on the park's HUD), where tp.exe's two globals persist for the whole process and so carry over to the next park
-	private ParkInfoSeries? parkInfoSeriesChoice;
-	private ParkInfoSeries parkInfoSeries { get => parkInfoSeriesChoice ?? ParkInfoGraph.InitialSeries; set => parkInfoSeriesChoice = value; }
-	private int parkInfoPeriod;
+	// [BIN:TPW-EXE:0x753C48 series mask] the graph's series mask (initialised to 8) and the period (0x7CB39C) are globals written only by the window procedure (0x4A4764..0x4A5EC9) and kept across openings for the whole process, so they carry over to the next park: they live on the host's ParkInfoChoice, which the game flow shares between its parks
+	private ParkInfoSeries parkInfoSeries { get => InfoChoice.Series; set => InfoChoice.Series = value; }
+	private int parkInfoPeriod { get => InfoChoice.Period; set => InfoChoice.Period = value; }
 	private int parkInfoPeople, parkInfoSad, parkInfoHappy;
 	private long parkInfoVisitors;
 
@@ -136,7 +134,7 @@ public sealed partial class ParkHud
 		var thoughts = table.Control( 0x4A68D1 );
 		screen.Add( new UiModelImage { Id = "thoughtsFrame", Model = thoughts.Model!, Help = strings.Help( thoughts.Help ), Bounds = thoughts.Rect, Anchor = UiAnchor.Center } );
 		var thoughtsTitle = table.Control( 0x4A68CE );
-		screen.Add( new UiLabel { Id = "thoughtsTitle", Text = () => strings[UIStrings.Top3Thoughts], Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
+		screen.Add( new UiLabel { Id = "thoughtsTitle", Text = () => strings[UIStrings.Top3Thoughts], Font = fonts => fonts.Label, Color = UiColors.Ink, Align = UiAlign.Center, Fit = true,
 			Bounds = thoughtsTitle.Rect, Anchor = UiAnchor.Center } );
 		foreach ( var (slot, control) in new[] { (2, 0x4A68D2u), (1, 0x4A68D3u), (0, 0x4A68D4u) } )
 		{
@@ -226,7 +224,7 @@ public sealed partial class ParkHud
 		screen.Add( new UiModelImage { Id = "happinessFrame", Model = bars.Model!, Help = strings.Help( bars.Help ), Bounds = bars.Rect, Anchor = UiAnchor.Center } );
 		var barRect = table.Control( 0x4A68CF ).Rect;
 		screen.Add( new ParkInfoHappinessBars( this ) { Id = "happinessBars", Bounds = barRect, Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "happinessCaption", Text = () => strings[UIStrings.HappinessLevels], Font = fonts => fonts.Label, Color = new RgbaByte( 0, 0, 0, 255 ), Align = UiAlign.Center, Fit = true,
+		screen.Add( new UiLabel { Id = "happinessCaption", Text = () => strings[UIStrings.HappinessLevels], Font = fonts => fonts.Label, Color = UiColors.Ink, Align = UiAlign.Center, Fit = true,
 			Shadow = false, Bounds = barRect, Anchor = UiAnchor.Center } );
 	}
 

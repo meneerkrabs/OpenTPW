@@ -188,6 +188,9 @@ public static class ParkSaveFile
 		public required List<MonthData> History { get; init; }
 		/// <summary>The year's running profit (absent in saves written before it was kept: 0).</summary>
 		public long ProfitThisYear { get; init; }
+		/// <summary>The month the ledger counts its closes from, written only when it is not the one its history gives (an imported park saved after more than 144 closes); absent in older saves, which derive it from the history.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public long? StartMonthIndex { get; init; }
 	}
 
 	public sealed class MonthData
@@ -765,6 +768,7 @@ public static class ParkSaveFile
 			MonthIndex = park.Ledger.CurrentMonthIndex,
 			CurrentTotals = new Dictionary<LedgerCategory, long>( park.Ledger.CurrentTotals ),
 			ProfitThisYear = park.Ledger.ProfitThisYear,
+			StartMonthIndex = park.Ledger.StartMonthIndex == ParkLedger.DerivedStartMonthIndex( park.Ledger.CurrentMonthIndex, park.Ledger.History.Count ) ? null : park.Ledger.StartMonthIndex,
 			History = park.Ledger.History.Select( month => new MonthData
 			{
 				MonthIndex = month.MonthIndex,
@@ -1016,6 +1020,9 @@ public static class ParkSaveFile
 				$"litter at ({cell.X}, {cell.Y}) claimed by staff {cell.Collector}, who does not sweep it" );
 		Require( data.Ledger.MonthIndex == ParkCalendar.MonthIndex( data.Tick ), "ledger month matches the clock" );
 		Require( data.Ledger.History.Count <= ParkLedger.MaximumHistoryMonths && data.MonthlyAdmissions.Count <= ParkLedger.MaximumHistoryMonths, "history length" );
+		// the ledger's start: a history below 144 months began that many closes back (nothing was dropped), a full one began at least 144 closes back
+		Require( data.Ledger.StartMonthIndex is not { } start || (data.Ledger.History.Count < ParkLedger.MaximumHistoryMonths ? start == data.Ledger.MonthIndex - data.Ledger.History.Count
+			: start >= 0 && start <= data.Ledger.MonthIndex - data.Ledger.History.Count), "ledger start" );
 		Require( data.Ledger.CurrentTotals.Values.All( value => value >= 0 ) && data.Ledger.History.All( month => month.Totals.Values.All( value => value >= 0 ) ), "ledger totals" );
 		var ids = new HashSet<int>();
 		foreach ( var item in data.Objects )
@@ -1126,7 +1133,7 @@ public static class ParkSaveFile
 		// [EXT:legacy-generator-state] a save from before the world generator was ported has no state for it: it starts from the saved world seed (or from the old economy stream's state when the save has no world section), deterministically
 		park.World.Restore( data.WorldGenerator ?? (data.World is { } legacyWorld ? new WorldSeed( legacyWorld.Seed ).GeneratorState : WorldRng.StateFromSeed( data.RandomState )) );
 		park.Ledger.Restore( data.Ledger.Balance, data.Ledger.OpeningBalance, data.Ledger.MonthIndex, data.Ledger.CurrentTotals,
-			data.Ledger.History.Select( month => new LedgerMonth( month.MonthIndex, month.Totals, month.OpeningBalance, month.ClosingBalance, month.ParkRating, month.ParkValue ) ) );
+			data.Ledger.History.Select( month => new LedgerMonth( month.MonthIndex, month.Totals, month.OpeningBalance, month.ClosingBalance, month.ParkRating, month.ParkValue ) ), data.Ledger.StartMonthIndex );
 		park.Ledger.RestoreProfitThisYear( data.Ledger.ProfitThisYear );
 		park.RestoreTicketItems( data.TicketItems );
 		if ( data.LitterScaled > 0 && data.Litter.Count == 0 )

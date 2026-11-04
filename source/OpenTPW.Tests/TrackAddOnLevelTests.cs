@@ -324,7 +324,7 @@ public partial class TrackAddOnLevelTests
 	{
 		var (level, ride, _) = World();
 		AttachTrackEconomy( level, ride );
-		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost() );
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { ParkInfoChoice = new() } );
 		CutForLiveMend( level, ride );
 		var held = new List<Veldrid.Key>();
 		if ( ctrl )
@@ -353,7 +353,7 @@ public partial class TrackAddOnLevelTests
 		if ( hasQueue )
 			WithQueue( ride );
 		var posted = new List<int>();
-		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { HelpPosted = posted.Add } );
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { ParkInfoChoice = new(), HelpPosted = posted.Add } );
 		CutForLiveMend( level, ride );
 		HudToolClick.Click( hud, (20, 14), Veldrid.Key.ControlLeft );
 		Assert.IsTrue( ride.Runtime.Bump!.IsTrackValid && level.CellTool.IsActive && level.CellTool.Start == null, "the close kept the line tool without a start" );
@@ -375,7 +375,7 @@ public partial class TrackAddOnLevelTests
 		var (level, ride, _) = World();
 		AttachTrackEconomy( level, ride );
 		var posted = new List<int>();
-		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { HelpPosted = posted.Add } );
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { ParkInfoChoice = new(), HelpPosted = posted.Add } );
 		CutForLiveMend( level, ride );
 		HudToolClick.Click( hud, (20, 14), Veldrid.Key.ControlLeft );
 		Assert.IsTrue( level.CellTool.IsActive && level.CellTool.Start == null );
@@ -392,7 +392,7 @@ public partial class TrackAddOnLevelTests
 		var (level, ride, _) = World( laid: false );
 		AttachTrackEconomy( level, ride );
 		var posted = new List<int>();
-		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { HelpPosted = posted.Add } );
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new Hud.EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new Hud.HudHost { ParkInfoChoice = new(), HelpPosted = posted.Add } );
 		Assert.IsTrue( level.EnterTrackTool( ride, justPlaced: true ) );
 		Assert.AreEqual( CellToolMode.KartTrack, level.CellTool.Mode );
 		Assert.IsNotNull( level.CellTool.Start, "the open end is the start (0x530830, then 0x52F580 keeps it)" );

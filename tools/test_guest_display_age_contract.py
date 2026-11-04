@@ -40,7 +40,7 @@ class GuestDisplayAgeContract(unittest.TestCase):
         self.assertNotIn("random.", clock)
         simulation = read("source/OpenTPW/World/Guests/GuestSimulation.cs")
         self.assertIn("guest.TimeInParkSeconds = elapsed + dt;", simulation)
-        self.assertIn("StayDays( (long)Math.Floor( elapsed * 1000 / ParkCalendar.TurnMilliseconds ) )", simulation)
+        self.assertIn("StayDays( guest.DisplayTimeInParkTurns ?? (long)Math.Floor( elapsed * 1000 / ParkCalendar.TurnMilliseconds ) )", simulation)
         state = simulation[simulation.index("internal void AddCanonicalState"):]
         self.assertIn("var hashesDisplayAge = ReadsDisplayAge;", state)
         self.assertIn("hash.Add( 0x44415047L + displayTurnPhaseTicks )", state)

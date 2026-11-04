@@ -67,7 +67,7 @@ public class SharedParkChatModeTests
 	{
 		var hud = VisitorWorldSelectionTests.Fixture( out _, out _ );
 		level = (Level)typeof( ParkHud ).GetField( "level", BindingFlags.NonPublic | BindingFlags.Instance )!.GetValue( hud )!;
-		Set( hud, "host", new HudHost { Presence = () => presence } );
+		Set( hud, "host", new HudHost { ParkInfoChoice = new(), Presence = () => presence } );
 		return hud;
 	}
 

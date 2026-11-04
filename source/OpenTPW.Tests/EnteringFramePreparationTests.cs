@@ -39,7 +39,7 @@ public class EnteringFramePreparationTests
 		Set( level, "<PlacedRide>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( PrototypeRide ) ) );
 		var economy = EconomyTestData.Park();
 		economy.OpenPark();
-		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => economy ), new EmptyCatalog(), new HudHost() );
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => economy ), new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } );
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 		var context = new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ), new UiModels( name =>
 		{
@@ -152,7 +152,7 @@ public class EnteringFramePreparationTests
 		var placedBefore = Handlers( placed, level.Objects );
 		var endedBefore = Handlers( ended, level );
 		// without a string table the constructor fails in Build, after it has hooked the level
-		Assert.ThrowsException<NullReferenceException>( () => new ParkHud( level, null!, new EconomyParkStatus( () => EconomyTestData.Park() ), new EmptyCatalog(), new HudHost() ) );
+		Assert.ThrowsException<NullReferenceException>( () => new ParkHud( level, null!, new EconomyParkStatus( () => EconomyTestData.Park() ), new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } ) );
 		Assert.AreEqual( placedBefore, Handlers( placed, level.Objects ) );
 		Assert.AreEqual( endedBefore, Handlers( ended, level ) );
 	}

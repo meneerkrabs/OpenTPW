@@ -52,7 +52,7 @@ public class VisitChatModeTests
 		var hud = VisitorWorldSelectionTests.Fixture( out _, out _ );
 		level = (Level)typeof( ParkHud ).GetField( "level", BindingFlags.NonPublic | BindingFlags.Instance )!.GetValue( hud )!;
 		Set( level, "<Visit>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( ParkVisitInfo ) ) );
-		Set( hud, "host", new HudHost { Presence = () => presence } );
+		Set( hud, "host", new HudHost { ParkInfoChoice = new(), Presence = () => presence } );
 		return hud;
 	}
 
@@ -147,7 +147,7 @@ public class VisitChatModeTests
 		var hud = VisitorWorldSelectionTests.Fixture( out _, out _ );
 		var level = (Level)typeof( ParkHud ).GetField( "level", BindingFlags.NonPublic | BindingFlags.Instance )!.GetValue( hud )!;
 		Set( level, "<Visit>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( ParkVisitInfo ) ) );
-		Set( hud, "host", new HudHost() );
+		Set( hud, "host", new HudHost { ParkInfoChoice = new() } );
 		Frame( hud, UiInput.Idle( new N.Vector2( -1, -1 ) ) );
 		Assert.IsFalse( hud.ChatMode, "a visit without other players has no chat mode" );
 		Assert.AreSame( hud.Screen, hud.Stack.Screens[0] );

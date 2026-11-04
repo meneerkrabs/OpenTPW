@@ -1051,7 +1051,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	private void UpdateGuest( Guest guest, float dt )
 	{
-		// [APPROX:GUEST-920] seconds still accumulate per step for stay statistics and legacy displays; the integer-turn age (DisplayAge) feeds the visitor displays and, since UMB-003, the weather extensions' day gate. No other gameplay consumer is migrated here.
+		// [APPROX:GUEST-920] seconds still accumulate per step for legacy displays and the stay of a guest without integer provenance; the integer-turn age (DisplayAge) feeds the visitor displays, the stay statistics (EnterWaitingToGoHome) and, since UMB-003, the weather extensions' day gate. No other gameplay consumer is migrated here.
 		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
 			guest.TimeInParkSeconds = elapsed + dt;
 		if ( turnStarted )
@@ -1759,12 +1759,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>Sets state 21 (the guest waits at the stop to leave) and, for a guest that paid, stores its stay in the analyser's stay ring.</summary>
 	// [BIN:TPW-EXE:0x00502333 state 21] the state setter's case 0x15 stores the stay (0x004C7600: the turns since the arrival stamp 0x004FD950, in whole four-turn steps, as days) when the guest's paid flag +0x204 is set, then sets the thing's state 3 (0x004217F0)
-	// [APPROX:UI-914] the stay comes from the visitor's elapsed simulated seconds (GUEST-920), where the original subtracts two integer world turns (the arrival stamp +0x1D4, 0x4FD950)
+	// [BIN:TPW-EXE:0x4fd950 stay turns] the stay is the integer world turns since the arrival stamp (+0x1D4), which the guest's display age keeps (GUEST-920); a guest without that provenance (an older own-format save) falls back to its elapsed seconds
+	// [APPROX:GUEST-920] the seconds fallback of a guest saved before the integer stamp existed (DisplayTimeInParkTurns is null), as OverviewRosters does
 	private void EnterWaitingToGoHome( Guest guest )
 	{
 		EnterGuestState( guest, GuestState.WaitingToGoHome );
 		if ( guest.Paid && guest.TimeInParkSeconds is { } elapsed )
-			Payments?.StayEnded( ParkStatisticsHistory.StayDays( (long)Math.Floor( elapsed * 1000 / ParkCalendar.TurnMilliseconds ) ) );
+			Payments?.StayEnded( ParkStatisticsHistory.StayDays( guest.DisplayTimeInParkTurns ?? (long)Math.Floor( elapsed * 1000 / ParkCalendar.TurnMilliseconds ) ) );
 	}
 
 	/// <summary>State 20 (tp.exe <c>0x005019F0</c> case 0x14): one step of the walk to the stop; arriving is state 21; a stuck walk stays where it is.</summary>

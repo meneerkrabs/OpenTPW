@@ -153,7 +153,7 @@ public class ParkToolCommandLevelTests
 		level.Objects.Remove( park.One );
 		level.Objects.Remove( park.Two );
 		Assert.IsFalse( level.Objects.Objects.Any( placed => !placed.IsDeleted && placed.Entry.WhichUIType == 0 ), "no ride stands in the park" );
-		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost { ParkInfoChoice = new() } );
 		var entry = park.One.Entry;
 		hud.BeginPlacing( new BuildItem( "coaster", entry.InfoId, BuildCategory.Rides, 0, 0, null, System.Array.Empty<string>(), Entry: entry ) );
 		Assert.AreSame( entry, level.BuildEntry, "the tool is armed whatever the check posts" );
@@ -269,7 +269,7 @@ public class ParkToolCommandLevelTests
 	public void APlacedCoasterStationsToolEntryIsACommandOfItsOwn()
 	{
 		ParkHud Hud( ParkSettingCommandLevelTests.Park park ) =>
-			new( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+			new( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost { ParkInfoChoice = new() } );
 		// the fixture's one-cell footprint has no entrance: the placed coaster takes a queue front as a ride with an entrance does, so its queue tool follows the placement
 		static void GiveQueue( ParkSettingCommandLevelTests.Park park ) => park.Level.Objects.ObjectPlaced += placed =>
 		{
@@ -433,7 +433,7 @@ public class ParkToolCommandLevelTests
 	public void TheMoveToolsEndFollowsTheHudsOwnPlacementAsACommandOfItsOwn()
 	{
 		ParkHud Hud( ParkSettingCommandLevelTests.Park park ) =>
-			new( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+			new( park.Level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost { ParkInfoChoice = new() } );
 		var park = NewPark();
 		var level = park.Level;
 		var hud = Hud( park );
@@ -493,7 +493,7 @@ public class ParkToolCommandLevelTests
 	{
 		var park = NewPark();
 		var level = park.Level;
-		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost() );
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => park.Economy ), new NoItems(), new HudHost { ParkInfoChoice = new() } );
 		level.Commands.SessionRules = true;
 		var entry = park.Two.Entry;
 		// the fixture's one-cell footprint has no entrance: the placed ride takes a queue front as a ride with an entrance does, so its queue tool follows the placement

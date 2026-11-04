@@ -533,7 +533,7 @@ public sealed partial class ParkHud
 			owner.SortLoans( column );
 		}
 		public override void Draw( UiContext context, bool focused, bool pressed ) =>
-			context.DrawFittedText( context.Fonts.Label, text(), ScreenRect( context.Canvas ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
+			context.DrawListHeader( context.Fonts.Label, text(), ScreenRect( context.Canvas ), focused, pressed );
 	}
 
 	private sealed class LoanScrollBar : UiElement, IUiDragTarget

@@ -90,7 +90,7 @@ public sealed partial class OriginalEconomyImport
 		if ( save.Statistics is { } statistics )
 		{
 			economy.StatisticsHistory.RestoreOriginal( statistics );
-			evidence.Add( "Park analyser: five monthly statistics rings, live arrivals and recent stays imported; inactive host slots normalized, financial history unchanged." );
+			evidence.Add( "Park analyser: five monthly statistics rings, live arrivals and recent stays imported; the unread slots of an unwrapped ring keep their raw saved words (a non-finite single becomes 0); the finance graph's other monthly rings are not imported (SAVE-010)." );
 		}
 		else
 			economy.StatisticsHistory.Restore( new ParkStatisticsHistory().Capture() );

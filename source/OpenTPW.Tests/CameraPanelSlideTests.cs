@@ -78,7 +78,7 @@ public class CameraPanelSlideTests
 		var context = (UiContext)typeof( RideUpgradeIngressTests ).GetMethod( "Context", BindingFlags.Static | BindingFlags.NonPublic )!.Invoke( null, null )!;
 		var events = new List<string>();
 		typeof( ParkHud ).GetField( "host", Private )!.SetValue( hud, new HudHost
-		{
+		{ ParkInfoChoice = new(),
 			HelpPosted = message => events.Add( $"post {message}" ),
 			HelpWithdrawn = message => events.Add( $"withdraw {message}" )
 		} );

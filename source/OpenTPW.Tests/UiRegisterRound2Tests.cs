@@ -149,7 +149,7 @@ public class UiRegisterRound2Tests
 			var changed = 0;
 			var hud = (ParkHud)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
 			typeof( ParkHud ).GetField( "host", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!
-				.SetValue( hud, new HudHost { OptionsChanged = () => changed++ } );
+				.SetValue( hud, new HudHost { ParkInfoChoice = new(), OptionsChanged = () => changed++ } );
 			Assert.IsTrue( hud.HelpBarVisible );
 			hud.ToggleGlobalHelp();
 			Assert.IsFalse( GameOptions.Current.PopupHelp, "Ctrl+H flips Popup help (options +0x36)" );

@@ -94,7 +94,7 @@ public class ParkLossWindowTests
 		{ Canvas = new UiCanvas( 2048, 1536 ), Time = time, ResolveTexture = _ => null };
 	}
 
-	private static ParkHud Hud( Level level ) => new( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => level.Park!.Economy ), new EmptyCatalog(), new HudHost() );
+	private static ParkHud Hud( Level level ) => new( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => level.Park!.Economy ), new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } );
 
 	private static readonly N.Vector2 Nowhere = new( -1 );
 	private static bool Frame( ParkHud hud, UiContext context, UiInput? input = null ) => hud.Update( context, input ?? UiInput.Idle( Nowhere ), false, false, false );

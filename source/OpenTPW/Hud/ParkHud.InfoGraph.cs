@@ -25,7 +25,7 @@ public enum ParkInfoSeries
 public static class ParkInfoGraph
 {
 	/// <summary>The series mask the window starts with: the guests in the park (<c>0x753C48</c> = 8).</summary>
-	// [BIN:TPW-EXE:0x753C48 series mask] the mask is initialised to 8 (only the people-in-park toggle, 0x4A68BF) and kept by the window procedure across openings (for the process; OpenTPW keeps it within a park, UI-914); the builder presses a toggle for each set bit (0x4A52A0)
+	// [BIN:TPW-EXE:0x753C48 series mask] the mask is initialised to 8 (only the people-in-park toggle, 0x4A68BF) and kept by the window procedure across openings for the process (ParkInfoChoice, shared between parks); the builder presses a toggle for each set bit (0x4A52A0)
 	public const ParkInfoSeries InitialSeries = ParkInfoSeries.People;
 
 	/// <summary>The period the window starts with: 1 year (<c>0x7CB39C</c> = 0).</summary>
@@ -74,18 +74,10 @@ public static class ParkInfoGraph
 	public static (int Left, int Top, int Right, int Bottom) Plot( int widthPixels, int heightPixels ) => GraphBackdrop.PlotBounds( widthPixels, heightPixels );
 
 	/// <summary>The row of a value: the bottom less (value x height / maximum), cut to the plot, the bottom for a flat range.</summary>
-	// [BIN:TPW-EXE:0x47FE90 graph drawer] y = bottom - ((value - minimum) * height) / (maximum - minimum) in integers, bottom for an empty range, then cut to top..bottom
-	public static int Row( int value, int maximum, (int Left, int Top, int Right, int Bottom) plot )
-	{
-		var height = plot.Bottom - plot.Top;
-		var y = maximum == 0 ? plot.Bottom : plot.Bottom - (int)((long)value * height / maximum);
-		return Math.Clamp( y, plot.Top, plot.Bottom );
-	}
+	public static int Row( int value, int maximum, (int Left, int Top, int Right, int Bottom) plot ) => GraphBackdropRenderer.Row( value, 0, maximum, plot );
 
-	/// <summary>The column of sample <paramref name="index"/>: the left plus index steps of width / samples.</summary>
-	// [BIN:TPW-EXE:0x47FE90 graph drawer] the line starts at the plot's left and advances width / samples (a float, 0xC, 0x24 or 0x90) per sample, truncated for each segment end
-	public static int Column( int index, int samples, (int Left, int Top, int Right, int Bottom) plot ) =>
-		(int)(plot.Left + (float)(plot.Right - plot.Left) / samples * index);
+	/// <summary>The column of sample <paramref name="index"/>: the left plus index steps of width / samples, summed as floats as the drawer does.</summary>
+	public static int Column( int index, int samples, (int Left, int Top, int Right, int Bottom) plot ) => GraphBackdropRenderer.Column( index, samples, plot );
 
 	/// <summary>The vertical gridlines: the sample steps that get a line and the number written under it (every step for a year, every third for 3 years, every twelfth for 12).</summary>
 	// [BIN:TPW-EXE:0x47FCD0 graph grid] a line and its label (the step number, from 1) at the end of every step whose count passes 0, 2 or 11 (12, 36 and 144 samples); the horizontal lines are the ten divisions of the height
@@ -97,6 +89,10 @@ public sealed partial class ParkHud
 	/// <summary>The graph control: the black plot, its green axes and dark green grid, and the selected series.</summary>
 	private sealed class ParkInfoGraphElement( ParkHud owner ) : UiElement
 	{
+		/// <summary>The points of the series being drawn (the longest period, 144 samples, plus the extra oldest point).</summary>
+		private readonly long[] points = new long[ParkStatisticsHistory.PeriodSamples( 2 ) + 1];
+		private readonly LabelCache[] labels = new LabelCache[8];
+
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			var rect = ScreenRect( context.Canvas );
@@ -115,57 +111,9 @@ public sealed partial class ParkHud
 			{
 				if ( !owner.parkInfoSeries.HasFlag( series ) )
 					continue;
-				DrawSeries( context, ParkStatisticsHistory.SeriesPoints( Ring( series ), owner.parkInfoPeriod, series == ParkInfoSeries.Happiness ), samples, maximum, plot, ParkInfoGraph.Colour( series ), (rect, pixel), font );
+				var count = ParkStatisticsHistory.SeriesPoints( Ring( series ), owner.parkInfoPeriod, series == ParkInfoSeries.Happiness, points );
+				GraphBackdropRenderer.DrawSeries( context, points.AsSpan( 0, count ), samples, 0, maximum, plot, ParkInfoGraph.Colour( series ), rect, pixel, font, ref labels[(int)Math.Log2( (int)series )] );
 			}
-		}
-
-		private static void DrawSeries( UiContext context, int[] points, int samples, int maximum, (int Left, int Top, int Right, int Bottom) plot, RgbaByte colour, (UiRect Rect, float Pixel) frame, FontAtlas font )
-		{
-			var (rect, pixel) = frame;
-			NVector2 At( int column, int row ) => new( rect.X + column * pixel, rect.Y + row * pixel );
-			void Line( NVector2 from, NVector2 to )
-			{
-				var delta = to - from;
-				if ( delta.LengthSquared() < 0.01f )
-				{
-					context.Batch.AddRectangle( new UiRect( from.X, from.Y, pixel, pixel ), colour );
-					return;
-				}
-				var normal = NVector2.Normalize( new NVector2( -delta.Y, delta.X ) ) * pixel / 2;
-				var a = new UiVertex( from + normal, NVector2.Zero, colour );
-				var b = new UiVertex( from - normal, NVector2.Zero, colour );
-				var c = new UiVertex( to + normal, NVector2.Zero, colour );
-				var d = new UiVertex( to - normal, NVector2.Zero, colour );
-				context.Batch.AddTriangle( UiTexture.Solid, a, b, c );
-				context.Batch.AddTriangle( UiTexture.Solid, c, b, d );
-			}
-			var n = points.Length - 1;
-			var lastColumn = plot.Left;
-			var lastRow = samples;
-			for ( var index = 0; index < n; index++ )
-			{
-				var fromColumn = ParkInfoGraph.Column( index, samples, plot );
-				var toColumn = ParkInfoGraph.Column( index + 1, samples, plot );
-				var fromRow = ParkInfoGraph.Row( points[index], maximum, plot );
-				var toRow = ParkInfoGraph.Row( points[index + 1], maximum, plot );
-				Line( At( fromColumn, fromRow ), At( toColumn, toRow ) );
-				// [BIN:TPW-EXE:0x47FFE0 sample marks] with fewer than 0x90 samples each segment end gets a hollow box of four one-pixel lines round it
-				if ( samples < 0x90 )
-				{
-					Line( At( toColumn - 1, toRow - 1 ), At( toColumn + 1, toRow - 1 ) );
-					Line( At( toColumn + 1, toRow - 1 ), At( toColumn + 1, toRow + 1 ) );
-					Line( At( toColumn + 1, toRow + 1 ), At( toColumn - 1, toRow + 1 ) );
-					Line( At( toColumn - 1, toRow + 1 ), At( toColumn - 1, toRow - 1 ) );
-				}
-				lastColumn = toColumn;
-				lastRow = toRow;
-			}
-			// [BIN:TPW-EXE:0x47FE90 last value] the series' last value is written ("%d", 0x74F9D8) right-aligned against the end of the line, from 6 pixels above its row (2 at the least); a series with no segment writes it at the plot's left, 6 less than the sample count down
-			var label = points[^1].ToString( System.Globalization.CultureInfo.InvariantCulture );
-			var top = Math.Max( 2, lastRow - 6 );
-			var width = Math.Max( context.Measure( font, label ).Width, 1f ) / pixel;
-			var right = Math.Max( lastColumn, plot.Left + width );
-			context.DrawText( font, label, new UiRect( rect.X + (right - width - 1) * pixel, rect.Y + top * pixel, (width + 2) * pixel, 12 * pixel ), colour, UiAlign.Right, false );
 		}
 	}
 }

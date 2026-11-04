@@ -31,6 +31,8 @@ public sealed class HudHost
 	public Action<UiScreenStack>? OpenPostcard { get; init; }
 	/// <summary>The list sorts the windows keep for the session; the game flow shares one instance between its parks.</summary>
 	public ListSortMemory ListSorts { get; init; } = new();
+	/// <summary>The park information window's series mask and period, which tp.exe keeps in process globals; the game flow shares one instance between its parks.</summary>
+	public required ParkInfoChoice ParkInfoChoice { get; init; }
 	/// <summary>Called after a HUD key changed a player option (Ctrl+H flips Popup help) so the host can persist the options.</summary>
 	public Action? OptionsChanged { get; init; }
 	/// <summary>The open/close button or its shortcut was pressed (true: open, false: close), also when the park's state does not change; the advisor raises game event 3 or 4 on it.</summary>
@@ -91,6 +93,9 @@ public sealed partial class ParkHud
 	private BuildItem? pendingItem;
 	private UiLabel? moneyLabel;
 	private ListSortMemory? fallbackSorts;
+	private ParkInfoChoice? fallbackInfoChoice;
+	/// <summary>The remembered park information choice; a HUD built without a host keeps its own.</summary>
+	private ParkInfoChoice InfoChoice => host?.ParkInfoChoice ?? (fallbackInfoChoice ??= new());
 	/// <summary>The session's remembered list sorts (UI-084); a HUD built without a host keeps its own.</summary>
 	private ListSortMemory Sorts => host?.ListSorts ?? (fallbackSorts ??= new());
 	/// <summary>The client's selection: the level's own (<see cref="Level.Selection"/>), which placements and the removal of the object also write.</summary>
@@ -395,7 +400,7 @@ public sealed partial class ParkHud
 		// (control 47, (258,60,720,260), white font slot 1) sits at the top left of the screen, not in the panel, whose
 		// buttons start right below the date box. [BIN:TPW-EXE:0x4a2082 HUD builder] the original then resizes control 47 to the measured width of
 		// "999999999" and the text height + 16, centred on i_dollar (CashTextBounds); the per-frame Updating hook below does the same.
-		hud.Add( new UiLabel { Id = "date", Text = () => DateText, Font = fonts => fonts.Date, Color = new Veldrid.RgbaByte( 0, 0, 0, 255 ), Align = UiAlign.Center, Bounds = Rect( 182, 1061, 383, 1103 ), Anchor = UiAnchor.BottomLeft } );
+		hud.Add( new UiLabel { Id = "date", Text = () => DateText, Font = fonts => fonts.Date, Color = UiColors.Ink, Align = UiAlign.Center, Bounds = Rect( 182, 1061, 383, 1103 ), Anchor = UiAnchor.BottomLeft } );
 		moneyLabel = hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, ColorSource = () => CashColor( Status.Money ), Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
 
 		// [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters
@@ -403,7 +408,7 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x004a0c18 HUD balance refresh] 0x4a0ab0 sets i_dollar (control 0x32) to frame 1 for a negative balance and 0 otherwise, beside the balance's absolute value
 		// [BIN:TPW-EXE:0x005AF5D0 ticket count] [EXT:sandbox] [EXT:online-coop-snapshot-join] (a park outside the player's progress counts its own tickets: the generic sandbox has no player file to attach and a co-op park decides by its own records so every peer decides alike, situations that exist only in OpenTPW; UI-051 converted 2026-10-30) the ticket count is the player's earned tickets less the spent count (the HUD handler 0x4a0fb0 at 0x4a10cd; the four global flags once, the six local bytes of every park, the two secret flags) while the park is part of its player's progress (ParkEconomy.GoldenTicketsAvailable reads the attached ledger), otherwise the park's own unspent tickets
 		economyElements.Add( hud.Add( new UiModelImage { Id = "dollar", Model = "i_dollar", Frame = () => Status.Money < 0 ? 1 : 0, Bounds = Rect( 37, 58, 242, 262 ), Anchor = UiAnchor.TopLeft } ) );
-		economyElements.Add( hud.Add( new UiLabel { Id = "cashChange", Text = () => CashChangeText, Font = fonts => fonts.Balance, Color = UiColors.Highlight, Align = UiAlign.Right, Fit = true, Bounds = Rect( 458, 273, 720, 363 ), Anchor = UiAnchor.TopLeft } ) );
+		economyElements.Add( hud.Add( new UiLabel { Id = "cashChange", Text = () => CashChangeText, Font = fonts => fonts.Balance, Color = UiColors.CostText, Align = UiAlign.Right, Fit = true, Bounds = Rect( 458, 273, 720, 363 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "cashTrend", Model = "green_up", Frame = () => CashTrendFrame, Bounds = Rect( 728, 109, 831, 211 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "goldenKey", Model = "gkey", Bounds = Rect( 1853, 165, 1955, 268 ), Anchor = UiAnchor.TopRight } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "goldenTicket", Model = "gtick", Bounds = Rect( 1853, 54, 1955, 156 ), Anchor = UiAnchor.TopRight } ) );

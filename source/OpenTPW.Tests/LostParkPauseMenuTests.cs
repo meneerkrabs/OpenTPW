@@ -44,6 +44,7 @@ public class LostParkPauseMenuTests
 
 	private static HudHost AllHooks( bool online = true ) => new()
 	{
+		ParkInfoChoice = new(),
 		CreateLoad = _ => new UiScreen( "load" ),
 		CreateOptions = (_, _) => new UiScreen( "options" ),
 		RestartPark = () => { },
@@ -131,7 +132,7 @@ public class LostParkPauseMenuTests
 		var loads = 0;
 		var restarts = 0;
 		var (_, hud) = World( new HudHost
-		{
+		{ ParkInfoChoice = new(),
 			CreateLoad = canLoad ? _ => { loads++; return new UiScreen( "load" ); } : null,
 			RestartPark = canRestart ? () => restarts++ : null
 		} );
@@ -221,7 +222,7 @@ public class LostParkPauseMenuTests
 		var loads = 0;
 		var entry = new ParkLoadEntry( "synthetic", -1, false, "/synthetic/park.json", "Synthetic park" );
 		var (level, hud) = World( new HudHost
-		{
+		{ ParkInfoChoice = new(),
 			CreateLoad = stack =>
 			{
 				creates++;
@@ -257,7 +258,7 @@ public class LostParkPauseMenuTests
 	public void RestartUsesTheExistingConfirmationAndOnlyTheHostCanReplaceTheLostPark( bool confirm )
 	{
 		var restarts = 0;
-		var (level, hud) = World( new HudHost { RestartPark = () => restarts++ } );
+		var (level, hud) = World( new HudHost { ParkInfoChoice = new(), RestartPark = () => restarts++ } );
 		hud.OpenPauseMenu();
 		var menu = hud.Stack.Top;
 		Click( hud, "RestartPark" );
@@ -277,7 +278,7 @@ public class LostParkPauseMenuTests
 	public void QuitUsesTheExistingConfirmationAndCancellationDoesNotQuit( bool confirm )
 	{
 		var quits = 0;
-		var (level, hud) = World( new HudHost { Quit = () => quits++ } );
+		var (level, hud) = World( new HudHost { ParkInfoChoice = new(), Quit = () => quits++ } );
 		hud.OpenPauseMenu();
 		var menu = hud.Stack.Top;
 		Click( hud, "QuitGame" );
@@ -296,7 +297,7 @@ public class LostParkPauseMenuTests
 	public void ExitToLobbyKeepsItsCurrentMenuOwnershipGuard()
 	{
 		var exits = 0;
-		var (level, hud) = World( new HudHost { ExitToLobby = () => exits++ } );
+		var (level, hud) = World( new HudHost { ParkInfoChoice = new(), ExitToLobby = () => exits++ } );
 		hud.OpenPauseMenu();
 		var retired = (UiMenuItem)hud.Stack.Top!.Find( "ExitToLobby" )!;
 		hud.ClosePauseMenu();

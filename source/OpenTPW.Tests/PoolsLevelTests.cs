@@ -525,7 +525,7 @@ public class PoolsLevelTests
 
 	private (OpenTPW.Hud.ParkHud Hud, List<uint> Sounds) HudAt( int x, int y )
 	{
-		var hud = new OpenTPW.Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => economy ), new NoCatalog(), new HudHost() );
+		var hud = new OpenTPW.Hud.ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => economy ), new NoCatalog(), new HudHost { ParkInfoChoice = new() } );
 		typeof( OpenTPW.Hud.ParkHud ).GetField( "cursorX", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( hud, x );
 		typeof( OpenTPW.Hud.ParkHud ).GetField( "cursorY", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( hud, y );
 		var sounds = new List<uint>();

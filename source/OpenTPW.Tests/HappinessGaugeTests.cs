@@ -37,7 +37,7 @@ public class HappinessGaugeTests
 		Set( level, "<PlacedRide>k__BackingField", RuntimeHelpers.GetUninitializedObject( typeof( PrototypeRide ) ) );
 		var economy = EconomyTestData.Park();
 		economy.OpenPark();
-		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => economy ), new EmptyCatalog(), new HudHost() );
+		var hud = new ParkHud( level, OriginalUiTests.FakeStrings(), new EconomyParkStatus( () => economy ), new EmptyCatalog(), new HudHost { ParkInfoChoice = new() } );
 		var font = new FontAtlas( FontAtlasTests.CreateFont( 8, new FontAtlasTests.SyntheticGlyph( 'A', 2, 2, 0, 0, 3 ) ) );
 		var context = new UiContext( OriginalUiTests.FakeStrings(), new UiFonts( _ => font ), new UiModels( name =>
 		{

@@ -212,7 +212,7 @@ public partial class TrackAddOnLevelTests
 			if ( item != first && item.Runtime.Bump != null )
 				WithQueue( item );
 		};
-		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), Hud.EconomyParkStatus.ForLevel( level ), new NoBuildItems(), new Hud.HudHost() );
+		var hud = new Hud.ParkHud( level, OriginalUiTests.FakeStrings(), Hud.EconomyParkStatus.ForLevel( level ), new NoBuildItems(), new Hud.HudHost { ParkInfoChoice = new() } );
 		// the buy list armed the ride (the HUD's pending item) and the build click places it through its command; the HUD ends the placement once the command returned (AfterIssue)
 		typeof( Hud.ParkHud ).GetField( "pendingItem", Private )!.SetValue( hud, new Hud.BuildItem( "ride:1150", 1150, Hud.BuildCategory.Rides, -1, 0, null, System.Array.Empty<string>(), Entry: first.Entry ) );
 		level.BuildEntry = first.Entry;

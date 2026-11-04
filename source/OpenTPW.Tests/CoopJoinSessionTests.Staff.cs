@@ -50,7 +50,7 @@ public partial class CoopJoinSessionTests
 			if ( !ReferenceEquals( shown, level ) )
 			{
 				Hud?.Retire();
-				Hud = new ParkHud( level, strings, new EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new HudHost() );
+				Hud = new ParkHud( level, strings, new EconomyParkStatus( () => level.Park!.Economy ), new NoBuildItems(), new HudHost { ParkInfoChoice = new() } );
 				// the asset-free park has no language files: every applicant is named by its role and id
 				typeof( ParkHud ).GetField( "staffNames", BindingFlags.Instance | BindingFlags.NonPublic )!
 					.SetValue( Hud, Enum.GetValues<StaffType>().ToDictionary( type => type, _ => Array.Empty<string>() ) );

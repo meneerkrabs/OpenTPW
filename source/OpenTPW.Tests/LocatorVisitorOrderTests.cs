@@ -144,6 +144,9 @@ public class LocatorVisitorOrderTests
 		Cycle( hud, 2 ); // Removed before the next update: a stale current starts at the actual head.
 		guests.RemoveAll( guest => guest.Id == 2 ); simulation.Things.QueueDestroy( 2 ); Update( hud );
 		Assert.AreEqual( (0, false, false), (hud.Locator.ActorId, hud.Locator.StripShown, hud.Locator.Following) );
+		// tp.exe 0x4b3620: the deleted guest was the located actor, so the locator asked the arm to put its panel away; the key opens it again
+		Assert.AreEqual( LocatorMode.None, hud.Locator.Mode, "the located visitor's deletion closes the panel" );
+		hud.OpenVisitorLocator();
 		Cycle( hud, 7 );
 		simulation.Things.DestroyQueued();
 		// Explicitly release another low slot last, so this allocation proves slot reuse rather than ID chronology.

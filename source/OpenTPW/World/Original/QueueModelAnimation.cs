@@ -196,44 +196,35 @@ internal sealed class QueueAnimationGroup( QueueClipPlayer player )
 }
 
 /// <summary>
-/// The start of every queue cell by (model, cell, yaw): the generation of the frame it was made in. The first build (a level, a loaded park) makes them all in one frame. After a path edit, a cell that appears or goes
-/// has its four orthogonal neighbours placed again by the link refresh (each takes a new channel at frame 0) and starts again with them as a group of their own; a cell that stays but whose model or yaw changed (a link bit
-/// moved) restarts alone; the others keep their phase.
+/// The start of every queue cell by cell: the generation of the frame its instance was made in. The first build (a level, a loaded park) makes them all in one frame. After that exactly the cells the tools re-create start
+/// again, as a group of their own (<see cref="Assign"/>); every other cell keeps its phase, whatever its neighbours do.
 /// </summary>
-// [BIN:TPW-EXE:0x00534A13 link refresh] the immediate link refresh of the path tool (0x534A13, 0x534A40, 0x534C51 and the calls around them: 0x5365D0 on the neighbour) re-places only the orthogonal neighbour whose link bit it sets or clears, and only when it has the same class ([edi+8] == ebp, or type 0xA), through 0x522A90 and 0x5229E0 (a new channel at frame 0): a cell that stays and changes model or yaw restarts alone
-// [BIN:TPW-EXE:0x005311C0 fence walk] the 2 x 2 dirty-block walk 0x5311C0 (calls 0x5365D0 at 0x53132E..0x531362; called at 0x532557 and 0x5328B4 by the tool commit that draws lines of the type 0x19 cells, the park fence posts: 0x53ad60 tests type 0x19, ParkCellTypes.Hoarding) belongs to the fence line commit: it steps along the line by two cells and then scans the whole map for type 0x19 cells; it re-places fence cells, not queue cells, so no queue cell is restarted by it; the other writers of the dirty flag 0x40 (0x53a530 call sites such as 0x52C89F..0x52D0D5 and 0x532E9D..0x532F2C) are not traced here
+// [BIN:TPW-EXE:0x005365D0 tile refresh] the tile refresh of a class-2 cell (a queue cell; table 0x7630B0, the path table 0x763138 is class 1) removes its instance (0x522A90) and places it again (0x5229E0) with a new channel at frame 0, even when the model is unchanged; the callers that reach a queue cell are the line commit (0x5340A7 on every cell of the line from the anchor 0x81EDE4/0x81EDE8 to the end inclusive; the anchor becomes the end, 0x527650), the path link writer (0x534A8C, 0x534C9E, 0x534EB1, 0x5350BF: a queue neighbour whose +0xC link byte has the bit toward the new path cell), the clear 0x5367A0 (0x536B9E: each linked neighbour of a queue or entrance cell; from the type pass 0x5346D0, SetCell case 0x32, Back 0x52FE50), the corner walk 0x530120 (0x530387, 0x5303A3) and the fence fill 0x5311C0 (0x53132E..0x531362 on a dirty block, 0x531926..0x531965 on each unmarked post); the link refresh sites 0x534A13, 0x534A40 and 0x534C51 re-create type-1 and type-10 neighbours only, and the dirty flag 0x40 is cleared by 0x53A530, set only by the cell reset 0x536490, the tile ghost 0x5370E0 and 0x539670
 internal sealed class QueueBirths
 {
-	private readonly Dictionary<(int Model, int X, int Y, int Yaw), int> birth = new();
+	private readonly Dictionary<(int X, int Y), int> birth = new();
 	private int generation;
 
 	/// <summary>The start of a cell of the last <see cref="Assign"/>.</summary>
-	public int Of( (int Model, int X, int Y, int Yaw) key ) => birth[key];
+	public int Of( (int X, int Y) cell ) => birth[cell];
 
-	public void Assign( IEnumerable<(int Model, int X, int Y, int Yaw)> cells )
+	/// <summary>
+	/// Records the queue cells of a build: a cell that is new (or every cell, for the first build) and a cell in <paramref name="recreated"/> take a new start; the others keep theirs.
+	/// </summary>
+	public void Assign( IEnumerable<(int X, int Y)> cells, IReadOnlySet<(int X, int Y)> recreated )
 	{
 		var now = cells.ToHashSet();
-		var before = birth.Keys.Select( key => (key.X, key.Y) ).ToHashSet();
-		var after = now.Select( key => (key.X, key.Y) ).ToHashSet();
-		// the cells that appear or go set or clear the link bits of their orthogonal neighbours; a cell that stays and changed is a new key and restarts alone
-		var dirty = new HashSet<(int X, int Y)>( after.Except( before ) );
-		dirty.UnionWith( before.Except( after ) );
-		var changed = now.Any( key => !birth.ContainsKey( key ) ) || birth.Keys.Any( key => !now.Contains( key ) );
-		if ( !changed )
-			return;
 		var initial = birth.Count == 0;
+		var added = now.Any( cell => !birth.ContainsKey( cell ) );
+		var again = now.Any( cell => recreated.Contains( cell ) );
+		var removed = birth.Count > 0 && birth.Keys.Any( cell => !now.Contains( cell ) );
+		if ( !initial && !added && !again && !removed )
+			return;
 		var born = ++generation;
-		var next = new Dictionary<(int Model, int X, int Y, int Yaw), int>();
-		foreach ( var key in now )
-		{
-			var restart = initial || !birth.ContainsKey( key ) || NextToDirty( dirty, key.X, key.Y );
-			next[key] = restart ? born : birth[key];
-		}
-		birth.Clear();
-		foreach ( var (key, start) in next )
-			birth[key] = start;
+		foreach ( var cell in birth.Keys.Where( cell => !now.Contains( cell ) ).ToList() )
+			birth.Remove( cell );
+		foreach ( var cell in now )
+			if ( initial || !birth.ContainsKey( cell ) || recreated.Contains( cell ) )
+				birth[cell] = born;
 	}
-
-	private static bool NextToDirty( HashSet<(int X, int Y)> dirty, int x, int y ) =>
-		dirty.Contains( (x + 1, y) ) || dirty.Contains( (x - 1, y) ) || dirty.Contains( (x, y + 1) ) || dirty.Contains( (x, y - 1) );
 }

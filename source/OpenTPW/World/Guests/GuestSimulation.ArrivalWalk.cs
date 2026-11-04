@@ -92,9 +92,9 @@ public sealed partial class GuestSimulation
 			return start == null ? null : SpawnInPark( start.Value.X, start.Value.Y );
 		}
 		// [BIN:TPW-EXE:0x004FB1D9 park cell branch] a stop cell the test 0x4FA990 accepts (cell type 0, 1, 3, 9 or 10) jumps to 0x4FB1D9: the visitor number 0x51AAF0 into +0x1D8 and state 6 through 0x501DB0(6), before the two draws (0x516330 at 0x4FB201 and 0x4FB21C), with no crossing route (0x4FA5F0) and no beam
-		// the type test of 0x4FA990 (cell types 0, 1, 3, 9 and 10) decides in a world that types its cells, walkable or not
+		// the type test of 0x4FA990 (cell types 0, 1, 3, 9 and 10) decides in every world but a harness one, walkable or not
 		// [EXT:untyped-harness-world] an OpenTPW harness world does not type its cells (its stop cell reads type 0 with no cell of the map): an empty stop cell with no walkable cell there keeps the crossing route (user-approved 2026-10-30; the gates and test rigs)
-		var onParkCell = OnParkCellTypeAt( stop.X, stop.Y ) && (TypesCells?.Invoke() == true || Grid.Cells.RawTypeAt( stop.X, stop.Y ) != 0 || Grid.IsWalkable( stop.X, stop.Y ));
+		var onParkCell = OnParkCellTypeAt( stop.X, stop.Y ) && (!UntypedHarnessWorld || Grid.Cells.RawTypeAt( stop.X, stop.Y ) != 0 || Grid.IsWalkable( stop.X, stop.Y ));
 		var guest = Create();
 		if ( guest == null )
 			return null;

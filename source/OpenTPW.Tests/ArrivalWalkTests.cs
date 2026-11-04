@@ -146,7 +146,7 @@ public class ArrivalWalkTests
 		foreach ( var type in new byte[] { 0, 3, 9, 10 } )
 		{
 			var (simulation, _, _, _) = Rig();
-			simulation.TypesCells = () => true;
+			simulation.UntypedHarnessWorld = false;
 			simulation.Grid.Cells.SetType( 20, 5, type );
 			var beamed = 0;
 			simulation.Beamed += _ => beamed++;

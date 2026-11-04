@@ -735,7 +735,8 @@ public sealed partial class OriginalTerrain : Entity
 		var batchIndices = new List<uint>();
 		batchPulses = false;
 		var clips = new Dictionary<int, QueueClip?>();
-		queueBirths.Assign( valid.Select( queue => (queue.Tile.Model, queue.X, queue.Y, queue.Tile.Yaw) ) );
+		queueBirths.Assign( valid.Select( queue => (queue.X, queue.Y) ), queueRecreated );
+		queueRecreated.Clear();
 		var liveGroups = new HashSet<(int Model, int Birth)>();
 		foreach ( var group in valid.Where( queue => floors.ContainsKey( queue.Tile.Model ) ).GroupBy( queue => queue.Tile.Model ).OrderBy( group => group.Key ) )
 		{
@@ -751,7 +752,7 @@ public sealed partial class OriginalTerrain : Entity
 			// the cells of a model with a clip are baked by the frame they were made in: one player and one dynamic batch per group (QueueAnimationGroup); the meshes no track or frame slot touches stay in the shared batches
 			var groups = clip == null
 				? new[] { (Birth: 0, Cells: group.AsEnumerable()) }
-				: group.GroupBy( cell => queueBirths.Of( (cell.Tile.Model, cell.X, cell.Y, cell.Tile.Yaw) ) ).OrderBy( birth => birth.Key ).Select( birth => (Birth: birth.Key, Cells: birth.AsEnumerable()) ).ToArray();
+				: group.GroupBy( cell => queueBirths.Of( (cell.X, cell.Y) ) ).OrderBy( birth => birth.Key ).Select( birth => (Birth: birth.Key, Cells: birth.AsEnumerable()) ).ToArray();
 			foreach ( var (birth, cells) in groups )
 			{
 				QueueGroupBuild? build = null;
@@ -851,6 +852,12 @@ public sealed partial class OriginalTerrain : Entity
 	private readonly Dictionary<(int Model, int Birth), QueueClipPlayer> queuePlayers = new();
 
 	private readonly QueueBirths queueBirths = new();
+
+	/// <summary>The queue cells whose tile the tools re-created since the last build (<see cref="NoteQueueRecreated"/>).</summary>
+	private readonly HashSet<(int X, int Y)> queueRecreated = new();
+
+	/// <summary>A queue cell whose instance tp.exe re-creates (the tile refresh 0x5365D0): its animation starts again with the next build of the queue models.</summary>
+	internal void NoteQueueRecreated( int x, int y ) => queueRecreated.Add( (x, y) );
 
 	/// <summary>The name a batch slot takes for a page of the queue composites (the atlas, not a file).</summary>
 	private const string CompositePrefix = "\u0001queue-composite-";

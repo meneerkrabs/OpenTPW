@@ -142,6 +142,9 @@ public sealed class FenceEngine
 	private readonly FenceLayer layer;
 	private readonly int width, height;
 	private readonly Dictionary<int, ushort> pendingFlags = new();
+
+	/// <summary>The cells whose tile the fill refreshes (0x5365D0 at 0x53132E..0x531362 and 0x531926..0x531965), reported to <see cref="ParkCellMap.Recreated"/> when the buffered writes are committed.</summary>
+	private readonly List<int> pendingRecreated = new();
 	private readonly Dictionary<int, TrackCell> pendingTracks = new();
 	/// <summary>The fence's mark (flag 0x20) on the records that hold a track tile: a tile's own flag 0x20 can be a stray bit from saves made before round 11 (<see cref="TrackBuilder.FlagOverPath"/>), so the mark is kept here for the run and never written to the tile.</summary>
 	private readonly HashSet<int> trackMarks = new();
@@ -852,7 +855,7 @@ public sealed class FenceEngine
 		}
 	}
 
-	/// <summary>The four cells (0,0), (0,1), (1,1), (1,0) of the post block at a record: when any has the unowned flag all of them lose it (0x5311C0).</summary>
+	/// <summary>The four cells (0,0), (0,1), (1,1), (1,0) of the post block at a record: when any has the unowned flag all of them lose it and are refreshed (0x5311C0, 0x53132E..0x531362).</summary>
 	private void ClearBlock( int index )
 	{
 		var block = new[] { index, CellNeighbour( index, South ), CellNeighbour( index, 8 ), CellNeighbour( index, East ) };
@@ -866,6 +869,7 @@ public sealed class FenceEngine
 			return;
 		foreach ( var cell in block )
 			SetCellFlags( cell, CellFlags( cell ) & ~0x40 );
+		pendingRecreated.AddRange( block );
 	}
 
 	/// <summary>
@@ -961,13 +965,17 @@ public sealed class FenceEngine
 		}
 	}
 
+	// [BIN:TPW-EXE:0x0053132E tile refresh of a dirty block] a scan block whose four cells carry none of the unowned flag 0x40 is left alone; one that does has the flag cleared on all four and 0x5365D0 run on all four (0x53132E..0x531362); the last pass over the unmarked posts does the same unconditionally (0x531926..0x531965), so the queue cells among them start again
 	private void ClearBlock( int index, bool force )
 	{
 		var block = new[] { index, CellNeighbour( index, South ), CellNeighbour( index, 8 ), CellNeighbour( index, East ) };
 		if ( Array.Exists( block, cell => cell < 0 ) )
 			throw new FenceFaultException( "The fence fill reaches the cell beyond the map's edge." );
+		var dirty = force || Array.Exists( block, cell => (CellFlags( cell ) & 0x40) != 0 );
 		foreach ( var cell in block )
 			SetCellFlags( cell, CellFlags( cell ) & ~0x40 );
+		if ( dirty )
+			pendingRecreated.AddRange( block );
 	}
 
 	/// <summary>0x53BB20: a structure record on a coaster marker cell and the three cells next to it go back to nothing.</summary>
@@ -1200,6 +1208,10 @@ public sealed class FenceEngine
 		}
 		foreach ( var index in pendingStamps )
 			cells.StampBlockAt( X( index ), Y( index ) );
+		if ( cells.Recreated is { } recreated )
+			foreach ( var index in pendingRecreated )
+				recreated( X( index ), Y( index ) );
+		pendingRecreated.Clear();
 		pendingFlags.Clear();
 		pendingTracks.Clear();
 		trackMarks.Clear();

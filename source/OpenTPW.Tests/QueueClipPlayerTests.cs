@@ -45,31 +45,58 @@ public class QueueClipPlayerTests
 		Assert.IsTrue( restarts.Zip( restarts.Skip( 1 ), ( a, b ) => b - a ).All( gap => Math.Abs( gap - 0.5 ) <= 0.011 ), string.Join( ", ", restarts ) );
 	}
 
+	private static HashSet<(int X, int Y)> Set( params (int X, int Y)[] cells ) => cells.ToHashSet();
+
+	/// <summary>The cells the tools re-create restart, exactly those (0x5365D0 on a class-2 cell): the line commit's span with its anchor, the linked neighbours of a clear.</summary>
 	[TestMethod]
-	public void AnEditRestartsTheDirtyCellsAndTheirBlocksOnly()
+	public void OnlyTheCellsTheToolsRecreateStartAgain()
 	{
 		var births = new QueueBirths();
-		var cells = new[] { (0, 5, 5, 0), (0, 6, 5, 0), (0, 9, 9, 0), (0, 5, 7, 0) };
-		births.Assign( cells );
-		Assert.AreEqual( 1, cells.Select( births.Of ).Distinct().Single(), "the first build makes them all in one frame" );
-		births.Assign( cells );
-		Assert.AreEqual( 1, cells.Select( births.Of ).Distinct().Single(), "a rebuild without a change keeps every start" );
-		// a new cell at (5, 6) sets the link bits of its orthogonal neighbours (5, 5) and (5, 7): they restart with it; the diagonal (6, 5) and (9, 9) keep their phase
-		var edited = cells.Append( (0, 5, 6, 0) ).ToArray();
-		births.Assign( edited );
-		Assert.AreEqual( 2, births.Of( (0, 5, 6, 0) ) );
-		Assert.AreEqual( 2, births.Of( (0, 5, 5, 0) ) );
-		Assert.AreEqual( 2, births.Of( (0, 5, 7, 0) ) );
-		Assert.AreEqual( 1, births.Of( (0, 6, 5, 0) ), "the diagonal is no link neighbour" );
-		Assert.AreEqual( 1, births.Of( (0, 9, 9, 0) ) );
-		// a cell that goes has its neighbours placed again too; nobody is next to (9, 9)
-		births.Assign( edited.Where( key => key.Item2 != 9 ).ToArray() );
-		Assert.AreEqual( 2, births.Of( (0, 5, 6, 0) ), "no neighbour of (9, 9)" );
-		// a cell that stays and only turns (a link bit moved) restarts alone
-		births.Assign( edited.Select( key => key.Item2 == 6 ? (0, 6, 5, 1) : key ).Where( key => key.Item2 != 9 ).ToArray() );
-		Assert.AreEqual( 4, births.Of( (0, 6, 5, 1) ) );
-		Assert.AreEqual( 2, births.Of( (0, 5, 5, 0) ), "its neighbours keep their phase" );
-		Assert.AreEqual( 2, births.Of( (0, 5, 7, 0) ) );
+		// two parallel lanes, (5, 5..7) and (6, 5..7), and a far cell
+		var lanes = new List<(int X, int Y)> { (5, 5), (5, 6), (5, 7), (6, 5), (6, 6), (6, 7), (9, 9) };
+		births.Assign( lanes, Set() );
+		Assert.AreEqual( 1, lanes.Select( births.Of ).Distinct().Single(), "the first build makes them all in one frame" );
+		births.Assign( lanes, Set() );
+		Assert.AreEqual( 1, lanes.Select( births.Of ).Distinct().Single(), "a rebuild with nothing re-created keeps every start" );
+		// one cell N = (5, 8) next to the queue end A = (5, 7): the line commit re-creates {A, N}; the parallel lane's (6, 7) keeps its phase
+		lanes.Add( (5, 8) );
+		births.Assign( lanes, Set( (5, 7), (5, 8) ) );
+		Assert.AreEqual( 2, births.Of( (5, 7) ) );
+		Assert.AreEqual( 2, births.Of( (5, 8) ) );
+		Assert.AreEqual( 1, births.Of( (6, 7) ), "the parallel lane is no link neighbour" );
+		Assert.AreEqual( 1, births.Of( (5, 6) ) );
+		Assert.AreEqual( 1, births.Of( (9, 9) ) );
+		// a line c1..c3 from the anchor A = (6, 7): {A, c1, c2, c3}, A too although its model is unchanged
+		lanes.AddRange( new[] { (6, 8), (6, 9), (6, 10) } );
+		births.Assign( lanes, Set( (6, 7), (6, 8), (6, 9), (6, 10) ) );
+		Assert.AreEqual( 3, births.Of( (6, 7) ) );
+		Assert.AreEqual( 3, births.Of( (6, 10) ) );
+		Assert.AreEqual( 2, births.Of( (5, 8) ), "the other lane keeps its phase" );
+		Assert.AreEqual( 1, births.Of( (6, 6) ) );
+		// the middle cell M = (5, 6) is cleared: its linked neighbours (the predecessor and the successor) are re-created, the parallel (6, 6) is not
+		lanes.Remove( (5, 6) );
+		births.Assign( lanes, Set( (5, 5), (5, 7) ) );
+		Assert.AreEqual( 4, births.Of( (5, 5) ) );
+		Assert.AreEqual( 4, births.Of( (5, 7) ) );
+		Assert.AreEqual( 1, births.Of( (6, 6) ) );
+		Assert.AreEqual( 3, births.Of( (6, 9) ) );
+		// a model change with no refresh (nothing re-created) keeps the phase
+		births.Assign( lanes, Set() );
+		Assert.AreEqual( 4, births.Of( (5, 5) ) );
+	}
+
+	/// <summary>The clear's unlinking and the corner walk report the queue neighbours they refresh through ParkCellMap.Recreated (0x536B9E, 0x530387, 0x5303A3).</summary>
+	[TestMethod]
+	public void TheClearReportsItsLinkedNeighbours()
+	{
+		var map = new ParkCellMap( 12, 12 );
+		foreach ( var (x, y) in new[] { (5, 5), (5, 6), (5, 7) } )
+			map.SetType( x, y, ParkCellType.Queue );
+		map.SetLinks( 5, 5, 16 ); map.SetLinks( 5, 6, 1 | 16 ); map.SetLinks( 5, 7, 1 );
+		var reported = new List<(int X, int Y)>();
+		map.Recreated = ( x, y ) => reported.Add( (x, y) );
+		PathLinkWriter.Unlink( map, 5, 6, cardinalOnly: true, map.ClearEffects );
+		CollectionAssert.AreEquivalent( new[] { (5, 5), (5, 7) }, reported, "the predecessor and the successor through the middle cell's links" );
 	}
 
 	[TestMethod]

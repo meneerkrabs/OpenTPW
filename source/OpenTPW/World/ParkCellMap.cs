@@ -134,8 +134,14 @@ public sealed partial class ParkCellMap
 	/// </summary>
 	public Func<int, int, bool>? InitialPathSource { get; set; }
 
-	/// <summary>The effects a path clear carries on this map (<see cref="EntranceReevaluation"/>).</summary>
-	internal LinkEffects ClearEffects => new( null, null, EntranceReevaluation );
+	/// <summary>
+	/// Reports a cell whose tile the executable re-creates (the tile refresh 0x5365D0: the cell's instance is removed by 0x522A90 and placed again by 0x5229E0 with a new channel); the level sets it to note the queue cells
+	/// whose animations start again. The routes that refresh without the level's tile chooser (the clear's unlinking, the corner walk, the fence fill) report through it.
+	/// </summary>
+	public Action<int, int>? Recreated { get; set; }
+
+	/// <summary>The effects a path clear carries on this map (<see cref="EntranceReevaluation"/>, <see cref="Recreated"/>).</summary>
+	internal LinkEffects ClearEffects => new( Recreated, null, EntranceReevaluation );
 
 	/// <summary>[EXT:pools-bridges] Optional elevated walking layer; underlying water stays unchanged.</summary>
 	public PoolBridgeWorld? PoolBridges { get; internal set; }

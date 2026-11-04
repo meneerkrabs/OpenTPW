@@ -844,6 +844,18 @@ public partial class Level
 	{
 		if ( Guests?.Grid.Cells is { } cells && cells.TypeAt( x, y ) is ParkCellType.Path or ParkCellType.Queue )
 			PathVariants.Refresh( x, y );
+		NoteTileRecreated( x, y );
+	}
+
+	/// <summary>
+	/// A queue cell (the only class-2 cell, table 0x7630B0) whose tile 0x5365D0 re-creates starts its animation again: the executable removes the instance (0x522A90) and places it with a new channel (0x5229E0), so the clip
+	/// begins at frame 0. The routes that refresh are the line commit's refresh pass over the whole line including its anchor, the link writer and the clear's unlinking for the queue neighbours they change, the corner walk and the fence fill.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005365D0 tile refresh] the sites: the line commit (0x5340A7 on every cell of the line from the anchor to the end), the path link writer (0x534A8C, 0x534C9E, 0x534EB1, 0x5350BF: a queue neighbour with a link bit toward the new cell), the clear 0x5367A0 (0x536B9E: each linked neighbour), the corner walk (0x530387, 0x5303A3) and the fence fill 0x5311C0
+	internal void NoteTileRecreated( int x, int y )
+	{
+		if ( OriginalTerrain != null && Guests?.Grid.Cells is { } cells && cells.TypeAt( x, y ) == ParkCellType.Queue )
+			OriginalTerrain.NoteQueueRecreated( x, y );
 	}
 
 	/// <summary>The area clear tool (the bulldozer: Clear Land and the Clear key); null without paths or on a read-only visit.</summary>

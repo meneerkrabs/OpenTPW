@@ -17,8 +17,11 @@ internal enum AdvisorShopGroup
 	Sideshows,
 }
 
-/// <summary>The shop one of the statistics picked: its handle (the callback keeps it in the descriptor's word <c>+4</c>) and the figure it was picked by (<c>+8</c>).</summary>
-internal readonly record struct AdvisorShopPick( int Handle, int Value );
+/// <summary>
+/// The shop one of the statistics picked: its handle (the callback tests it for 0), the figure it was picked by (the callback keeps it in the scan object's <c>+8</c>) and the thing id the world names the shop by
+/// (the callback keeps it in <c>+4</c>; 0 without a world, where the handle is the economy's own instance id).
+/// </summary>
+internal readonly record struct AdvisorShopPick( int Handle, int Value, ushort ThingId = 0 );
 
 /// <summary>
 /// The park statistics the advisor's price, shop value and research callbacks read, as the original's helpers return them. Like <see cref="IAdvisorParkState"/> every member is a pure read of
@@ -259,7 +262,7 @@ internal static class AdvisorQueuesCallbacks
 
 	// ------------------------------------------------------------------ the shops' value and satisfaction
 
-	// [BIN:TPW-EXE:0x0059FB60 shop figure] 0x59FB60-0x5A0290 share the shape: the group's helper picks a shop (a handle of 0 gives 0); the worst figure of a "poor" line must be below the first word, the best of a "great" line above it (signed); the score is (figure - the word) x the second word with the figure first, so a poor line's is negative for a positive multiplier and never passes; the handle goes to the object's +4 and the figure to +8, which OpenTPW has no reader for
+	// [BIN:TPW-EXE:0x0059FB60 shop figure] 0x59FB60-0x5A0290 share the shape: the group's helper picks a shop (a handle of 0 gives 0); the worst figure of a "poor" line must be below the first word, the best of a "great" line above it (signed); the score is (figure - the word) x the second word with the figure first, so a poor line's is negative for a positive multiplier and never passes; on the passing side only (0x59FB8A, 0x59FBAA-0x59FBBC, 0x5A0182-0x5A018E) the handle goes to the object's +4 and the figure to +8, which the speech copies into the advice record
 	private static int Shop( AdvisorScanContext context, AdvisorShopGroup group, bool worst, string thresholdKey, string multiplierKey, Func<IAdvisorQueuesState, AdvisorShopPick?> pick )
 	{
 		if ( !Read( context, out _, out var queues, out var v, thresholdKey, multiplierKey ) )
@@ -268,6 +271,9 @@ internal static class AdvisorQueuesCallbacks
 			return 0;
 		if ( worst ? shop.Value >= v[0] : shop.Value <= v[0] )
 			return 0;
+		// a figure on the passing side stores the handle in the word +4 and the figure (a signed word, kept as it is) in the dword +8, whatever the multiplier makes of the score
+		context.RememberThing( shop.ThingId );
+		context.RememberSecondary( unchecked( (uint)shop.Value ) );
 		return unchecked( (shop.Value - v[0]) * v[1] );
 	}
 }
@@ -323,19 +329,19 @@ internal sealed partial class EconomyParkState : IAdvisorQueuesState
 	// [BIN:TPW-EXE:0x004CBEC0 sideshow satisfaction] the sideshows' best satisfaction skips a sideshow whose customers sum is 0, as the value helpers do; the stock and retail shops' satisfaction helpers do not
 	private static int? SatisfactionWithCustomers( ParkObjectState item ) => unchecked( (int)item.CustomersRing.Total ) == 0 ? null : Satisfaction( item );
 
-	/// <summary>The first shop of the group with the lowest (or highest) figure: the walk visits the things in order and only a strictly better figure replaces the pick.</summary>
-	// [BIN:TPW-EXE:0x004CADF0 pick] the attraction (thing type 3) of the group older than 30 days (0x4DD670) with a figure: the first one, then a figure below (worst) or above (best) the pick's as signed words
+	/// <summary>The first shop of the group with the lowest (or highest) figure: the walk visits the things newest first (the ids descending, as the object list is walked elsewhere) and only a strictly better figure replaces the pick.</summary>
+	// [BIN:TPW-EXE:0x004CADF0 pick] the walk starts at the head of the thing list (0x516130, 0x516160: the newest); the attraction (thing type 3) of the group older than 30 days (0x4DD670) with a figure: the first one, then a figure below (worst) or above (best) the pick's as signed words
 	private AdvisorShopPick? Pick( AdvisorShopGroup group, Func<ParkObjectState, int?> figure, bool best )
 	{
 		AdvisorShopPick? pick = null;
-		foreach ( var item in economy.Objects )
+		foreach ( var item in economy.Objects.OrderByDescending( item => item.Id ) )
 		{
 			if ( !economy.Catalog.TryGet( item.InfoId, out var info ) || !InGroup( info, group ) || (int)economy.ObjectAgeDays( item ) <= ShopMinimumAgeDays )
 				continue;
 			if ( figure( item ) is not { } value )
 				continue;
 			if ( pick is not { } picked || (best ? picked.Value < value : value < picked.Value) )
-				pick = new AdvisorShopPick( item.Id, value );
+				pick = new AdvisorShopPick( item.Id, value, economy.ThingOf( item.Id ) );
 		}
 		return pick;
 	}

@@ -12,7 +12,22 @@ public partial class Level
 			return;
 		Park.Economy.RideLiveExcitement = RideLiveExcitement;
 		Park.Economy.FirstUnconnectedQueueRide = FirstUnconnectedQueue;
+		Park.Economy.ObjectThingId = ThingIdOfInstance;
+		Park.Economy.ArrivalBusStopCell = ArrivalBusStopCellWord;
 	}
+
+	/// <summary>The thing id (the original's pool slot) of the attraction with this economy instance id; 0 for an object the level does not hold. The advisor's records carry it for the tube's locate button.</summary>
+	private int ThingIdOfInstance( int instance )
+	{
+		foreach ( var item in Objects.Objects )
+			if ( !item.IsDeleted && item.Runtime.IsAttraction && GetEconomyInstance( item ) == instance )
+				return item.ThingId;
+		return 0;
+	}
+
+	/// <summary>The cell word of the level's second bus stop (tp.exe <c>0x004D8650</c> with the flag 1: <c>z × 128 + x + 1</c> of <c>FixedItemInfo.BusStopB</c>), null when the level's settings name none (nothing is made up).</summary>
+	// [BIN:TPW-EXE:0x004D8650 bus stop cell word] the flag 1 returns the word (0x7855B8 << 7) + 0x7855B4 + 1 (lea ecx, [eax + ecx + 1], stored as a word)
+	private int? ArrivalBusStopCellWord() => Guests?.Settings.BusStopB is { } cell ? (ushort)((cell.Y << 7) + cell.X + 1) : null;
 
 	/// <summary>The live excitement of the ride with this economy instance id (tp.exe <c>0x004E0860</c> with the argument 0); 0 for an object the level does not hold.</summary>
 	private int RideLiveExcitement( int instance )

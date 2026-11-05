@@ -158,23 +158,34 @@ internal static class AdvisorInputsCallbacks
 		return gotAway > v[0] ? unchecked( gotAway * context.Score( "GeneralLaxSecurity.ScorePerGetAway" ) ) : 0;
 	}
 
-	// [BIN:TPW-EXE:0x0059EF60 unconnected queue] the first queue ride that joins no path (0x4CCB00 with the flag 0, so the selected object is left out) gives the flat word +0x388; none gives 0. The callback also stores that ride's id in the scan object's word +4 (the subject, read only by the advice record's builder 0x59B6BE)
+	// [BIN:TPW-EXE:0x0059EF60 unconnected queue] the first queue ride that joins no path (0x4CCB00 with the flag 0, so the selected object is left out) gives the flat word +0x388; none gives 0. The callback stores the returned handle, a thing id, in the scan object's word +4 right after the call (0x59EF83) and before the test of it; the speech copies it into the advice record (0x59B6CF), which the tube's locate button reads
 	private static int QueueUnconnectedScore( AdvisorScanContext context )
 	{
 		if ( !Read( context, out _, out var inputs, out _ ) )
 			return 0;
+		// the word is stored before the test of the result (0x59EF83), so a find with a thing id of 0 still scores nothing and stores nothing new
+		if ( context.Park is IAdvisorThingsState things && things.UnconnectedQueue is { } found )
+		{
+			context.RememberThing( found.Thing );
+			return found.Instance != 0 ? context.Score( "QueueUnconnected.Score" ) : 0;
+		}
 		return inputs.AnyQueueUnconnected == true ? context.Score( "QueueUnconnected.Score" ) : 0;
 	}
 
 	// [BIN:TPW-EXE:0x0059F4F0 visitors too scared] the park open (0x4C9050); the rides (0x4CA8E0 of 0, 0) at least the word +0x41C (MinimumRides, a signed compare); the mean live excitement of the rides (0x4CCBF0 with the age 10, cached) above the word +0x418 (AverageScarierThan): the flat word +0x420.
-	// The callback then asks the scariest ride (0x4CCD10) for the scan object's word +4, which only the advice record's builder reads
+	// The callback then asks the scariest ride (0x4CCD10) for the scan object's word +4 (a thing id, which the speech copies into the record)
 	private static int VisitorsTooScaredScore( AdvisorScanContext context )
 	{
 		if ( !Read( context, out var park, out var inputs, out var v, "VisitorsTooScared.MinimumRides", "VisitorsTooScared.AverageScarierThan" ) || !park.ParkOpen )
 			return 0;
 		if ( park.ObjectsOfKind( 0, 0 ) < v[0] )
 			return 0;
-		return inputs.AverageRideExcitement( 10 ) is { } average && average > v[1] ? context.Score( "VisitorsTooScared.Score" ) : 0;
+		if ( inputs.AverageRideExcitement( 10 ) is not { } average || average <= v[1] )
+			return 0;
+		// 0x59F55B: the scariest ride's thing id goes to the word +4 (0x4CCD10 writes through its argument scan + 4) before the flat score is returned
+		if ( context.Park is IAdvisorThingsState things )
+			context.RememberThing( things.ScariestRideThing );
+		return context.Score( "VisitorsTooScared.Score" );
 	}
 
 	// [BIN:TPW-EXE:0x005A04F0 lots of pranks] the kids the guards went after this month (0x4C94A0 of 0) above the word +0x5A8 (MorePrankstersThan, a signed compare): the flat word +0x5AC; no park-open test

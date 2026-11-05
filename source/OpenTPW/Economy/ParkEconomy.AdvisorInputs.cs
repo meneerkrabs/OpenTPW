@@ -93,6 +93,60 @@ public sealed partial class ParkEconomy
 	/// </summary>
 	public Func<int>? FirstUnconnectedQueueRide { get; set; }
 
+	/// <summary>
+	/// The original thing id (the word the advisor's records and the tube's locate button carry) of the world object with this economy instance id; 0 for an object the world does not hold.
+	/// Null (the default) means no world answers: the advisor's words stay 0, as for a park without a level. The economy's ids are not the thing ids (a ride's thing id is its pool slot).
+	/// </summary>
+	public Func<int, int>? ObjectThingId { get; set; }
+
+	/// <summary>
+	/// The cell word (<c>y × 128 + x + 1</c>) of the level's second bus stop (<c>FixedItemInfo.BusStopB</c>, tp.exe <c>0x004D8650</c> with the flag 1), null when the level names none or no world answers.
+	/// </summary>
+	public Func<int?>? ArrivalBusStopCell { get; set; }
+
+	/// <summary>The thing id of an economy instance as the world names it (0 when no world answers or it holds no such object).</summary>
+	internal ushort ThingOf( int instance ) => instance != 0 && ObjectThingId is { } probe ? unchecked( (ushort)probe( instance ) ) : (ushort)0;
+
+	/// <summary>
+	/// The dirtiest toilet (tp.exe <c>0x004CA220</c>): the walk over the things newest first takes the attractions with the relief flag and keeps the one whose filth, 100 minus the condition byte, is strictly the greatest, so the
+	/// first met of equals; null without a toilet.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004CA220 dirtiest toilet] the things from the head of the thing list (0x516130, 0x516160: the newest); type 3 with the flag +0x32 bit 0; filth = 100 minus the byte of __ftol(+0x44); the first qualifying thing is taken, then only a filth above the pick's (cmp eax, edi; jle skips)
+	internal ParkObjectState? DirtiestToilet()
+	{
+		ParkObjectState? pick = null;
+		var filth = 0;
+		foreach ( var item in Toilets() )
+		{
+			var value = 100 - StaffVitals.Byte( (float)item.Repair );
+			if ( pick == null || value > filth )
+				(pick, filth) = (item, value);
+		}
+		return pick;
+	}
+
+	/// <summary>
+	/// The scariest ride (tp.exe <c>0x004CCD10</c>): the attractions whose type has <c>WhichUIType</c> 0, newest first, by the low byte of their live excitement, strictly greater replacing and the first taken whatever its value;
+	/// 0 without a ride or without a world that reads the excitement.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004CCD10 scariest ride] the walk takes the first type 3 thing whose type record's +0x4AC is 0 (a handle of 0 is "none yet", so it is taken even at excitement 0), then each later one only above the pick's byte of 0x4E0860(thing, 0) (cmp eax, ebp; jle skips); the handle goes to the caller's word (the scan object's +4)
+	internal int ScariestRide()
+	{
+		if ( RideLiveExcitement is not { } excitement )
+			return 0;
+		var pick = 0;
+		var best = 0;
+		foreach ( var item in objects.Values.OrderByDescending( item => item.Id ) )
+		{
+			if ( !Catalog.TryGet( item.InfoId, out var info ) || info.RatingType != 0 )
+				continue;
+			var value = excitement( item.Id ) & 0xFF;
+			if ( pick == 0 || value > best )
+				(pick, best) = (item.Id, value);
+		}
+		return pick;
+	}
+
 	/// <summary>The excitement cache (the park save), null until a read has counted it.</summary>
 	internal (int Value, long Stamp)? CachedExcitement => excitementCached ? (excitementValue, excitementStamp) : null;
 

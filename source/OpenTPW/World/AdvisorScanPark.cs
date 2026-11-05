@@ -442,6 +442,9 @@ internal static class AdvisorParkCallbacks
 			return 0;
 		if ( park.Toilets == 0 )
 			return 0;
+		// 0x59E4B2: the dirtiest toilet's handle (0x4CA220) is stored in the word +4 before the filth thresholds are tested, so a low filth still leaves it
+		if ( context.Park is IAdvisorThingsState things )
+			context.RememberThing( things.DirtiestToiletThing );
 		var filth = park.MeanToiletFilth;
 		if ( filth < v[0] || (highKey != null && filth > v[2]) )
 			return 0;

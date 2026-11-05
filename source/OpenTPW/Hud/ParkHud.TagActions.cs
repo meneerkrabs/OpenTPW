@@ -66,7 +66,7 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x4868D0 locate cell] x = (word - 1) & 0x7F and z = (word - 1) >> 7, then the same jump 0x42AAB0(x * 10, z * 10); the original reads no memory for a word of 0: `dec eax` makes x 0x7F and z 0x1FFFFFF and 0x42AAB0 stores that target unclamped, which no post of ours carries
 	private void LocateCell( int cellWord )
 	{
-		// [APPROX:UI-025] a word of 0 does nothing here; the original jumps to the unclamped target above. Only OpenTPW's advisor leaves the words 0 (the scan callbacks' words are not ported, see the register text)
+		// [APPROX:UI-025] a generic word of 0 does nothing here; the original jumps to the unclamped target above. This is unreachable for big-busload advice with shipped TPW/TPI settings (all name BusStopBPosX/Y); 0x4D8650 still packs (Y << 7) + X + 1, not a missing-stop sentinel of 0 (see the register text)
 		if ( cellWord == 0 )
 			return;
 		JumpCameraToCell( (cellWord - 1) & 0x7F, (cellWord - 1) >> 7 );

@@ -415,7 +415,7 @@ internal sealed class AdvisorController
 	/// call, a mode the descriptor excludes scoring -1; a message that game code posts keeps its record's score, the callback of its row being the flat getter the record was built with.
 	/// Null when the message is not checked (no scan has run, a message the scan does not score).
 	/// </summary>
-	// [BIN:TPW-EXE:0x0059B6BE speech score] the speech (0x59B620) scores the record's message again through 0x59C0A0 (the descriptor's mode selector, then its callback on the live state) and says nothing when the score is below MinScoreForConsideration (0x59B6C3: signed, so a score equal to it passes); the callback also leaves the scan object's words +4 and +8, which the speech copies into the record's id and cell words when they are not 0 (0x59B6CF..0x59B6E4)
+	// [BIN:TPW-EXE:0x0059B6BE speech score] the speech (0x59B620) scores the record's message again through 0x59C0A0 (the descriptor's mode selector, then its callback on the live state) and says nothing when the score is below MinScoreForConsideration (0x59B6C3: signed, so a score equal to it passes); the callback also leaves the scan object's words +4 and +8 (cleared before every callback, 0x59C10F), which the speech copies into the record's id and cell words when they are not 0 (0x59B6CF..0x59B6E4); the scan's own enqueue builds its record with both words 0 (0x59A5FD)
 	internal AdvisorSpeechCheck? SpeechCheck( AdvisorPendingAdvice advice )
 	{
 		ArgumentNullException.ThrowIfNull( advice );
@@ -423,7 +423,7 @@ internal sealed class AdvisorController
 			return null;
 		var row = AdvisorDescriptorTable.Rows[advice.MessageId];
 		// [EXT:restored-advice] a row whose own callback is the constant-zero stub is posted by the extension with a score of its own: the original's stub would drop it here, the extension's line is said
-		return row.Scan && row.Callback != RestoredAdviceScan.ConstantZeroCallback ? new AdvisorSpeechCheck( Scan.ScoreOf( row, scan.Context, scan.GameType ) ) : null;
+		return row.Scan && row.Callback != RestoredAdviceScan.ConstantZeroCallback ? Scan.CheckOf( row, scan.Context, scan.GameType ) : null;
 	}
 
 	public AdvisorBalance Balance { get; }
@@ -549,7 +549,7 @@ internal sealed class AdvisorController
 		Scan.RestoreCursor( snapshot.ScanCursor );
 	}
 
-	// the record's second dword holds a cell word or an object type id (a word: 0x509F09 reads its low word, the cell word is masked to 16 bits at 0x59B26E), and the score-overridden byte is 0 or 1 (SaveAdvisorRecord)
+	// saved records' second dword still holds a cell or object type word (0x509F09 reads its low word, the cell word is masked to 16 bits at 0x59B26E): the speech frees the pending record before copying the callback's context words, including a shop's 32-bit figure; the score-overridden byte is 0 or 1 (SaveAdvisorRecord)
 	private static void RequireWords( SaveAdvisorRecord record, string what )
 	{
 		if ( record.Secondary > ushort.MaxValue )

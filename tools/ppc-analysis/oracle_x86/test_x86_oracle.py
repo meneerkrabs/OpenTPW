@@ -1569,5 +1569,55 @@ class OracleTpi(CoastTests, unittest.TestCase):
             sandbox.call(targets.TPI_RNG_STEP, this=obj)
 
 
+@unittest.skipUnless(UNICORN, UNICORN_HINT)
+@unittest.skipUnless(TPW, NO_TPW)
+class UiSceneOrder(unittest.TestCase):
+    """X79 (UI-004): tp.exe's scene list insertion 0x576270 and the batcher 0x581DB0 run on the shows of a UI frame."""
+
+    @classmethod
+    def setUpClass(cls):
+        import ui_scene_oracle
+        cls.oracle = ui_scene_oracle
+
+    def test_a_model_instance_goes_in_front_of_the_other_instances_and_behind_the_leading_lights(self):
+        """Type 2 objects are inserted at the head of the non-type-1 part; type 1 objects at the head: newest first within each."""
+        lists = self.oracle.scene_lists([('A', 2, 2), ('B', 2, 2), ('C', 1, 2), ('D', 2, 2), ('E', 1, 2)])
+        self.assertEqual(lists, {2: ['E', 'C', 'D', 'B', 'A']})
+
+    def test_categories_are_separate_lists(self):
+        lists = self.oracle.scene_lists([('A', 2, 2), ('B', 2, 1), ('C', 2, 2), ('D', 2, 1)])
+        self.assertEqual(lists, {1: ['D', 'B'], 2: ['C', 'A']})
+
+    def test_a_duplicate_add_leaves_the_order_unchanged(self):
+        """0x5762A6: an object already in the list is not moved by a second add (a nonzero to nonzero state change)."""
+        ops = [('add', 'A', 2, 2), ('add', 'B', 2, 2), ('add', 'A', 2, 2)]
+        self.assertEqual(self.oracle.scene_ops(ops), {2: ['B', 'A']})
+
+    def test_remove_then_add_moves_an_instance_to_the_head(self):
+        """Hide and show again (0x45BDD0 -> 0x576540, then 0x45BD30): the control becomes the newest, behind the leading type 1 objects."""
+        ops = [('add', 'A', 2, 2), ('add', 'B', 2, 2), ('add', 'L', 1, 2), ('remove', 'A', 2), ('add', 'A', 2, 2)]
+        self.assertEqual(self.oracle.scene_ops(ops), {2: ['L', 'A', 'B']})
+
+    def test_width_classes_and_the_explicit_class(self):
+        expected = {0: 5, 8: 5, 9: 4, 16: 4, 17: 3, 32: 3, 33: 2, 64: 2, 65: 1, 128: 1, 129: 0, 256: 0}
+        for width, page_class in expected.items():
+            self.assertEqual(self.oracle.width_class(width), page_class, width)
+        self.assertEqual(self.oracle.width_class(256, 0x30 | 3), 3, 'flags & 0x30 == 0x30 gives flags & 7')
+
+    def test_own_pages_draw_in_show_order(self):
+        """Between pages the batcher's reversal undoes the scene list's: the control shown first is drawn first."""
+        shows = [('panel', [(1, 0)]), ('button', [(2, 0)]), ('label', [(3, 0)])]
+        self.assertEqual(self.oracle.draw_order(shows), ['panel', 'button', 'label'])
+
+    def test_one_page_draws_in_scene_list_order(self):
+        """Inside one cache page the list order holds: the control shown last is drawn first, so a panel would cover the button it holds."""
+        shows = [('panel', [(1, 0, 5)]), ('button', [(2, 0, 5)])]
+        self.assertEqual(self.oracle.draw_order(shows), ['button', 'panel'])
+
+    def test_one_texture_is_one_node_at_its_oldest_user(self):
+        shows = [('panel', [(1, 0)]), ('button', [(2, 0)]), ('label', [(1, 0)])]
+        self.assertEqual(self.oracle.draw_order(shows), ['label', 'panel', 'button'])
+
+
 if __name__ == '__main__':
     unittest.main()

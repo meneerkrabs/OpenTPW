@@ -1,0 +1,5 @@
+## UI scene attachment order traced (November 5, 2026)
+
+Narrowed round 11's UI-004 research frontier: a shown model control attaches to category `0x20` at `scene+0x18`, not the `scene+0x2C` previously sought. The real insertion/removal routines prepend models after leading lights; hiding and re-showing a control changes its position independently of creation-registry order. An identity-gated x86 oracle checks 12 attachment/removal/reuse cases and 21 texture-width-class cases, including the slot flags that override width classification.
+
+The runtime draw order is deliberately unchanged. Exact grouping still needs persistent host control/show-event identities and actual texture-page placement/eviction, not merely grouping by width; a width class can contain multiple pages or fall back to another class. The existing UI-004 declaration and evidence notes now identify that narrower implementation boundary. No APPROX ID is added or retired, and no save fields, determinism pins or extensions change.

@@ -788,7 +788,8 @@ public class AdvisorScanQueuesTests
 			shops[index].WalkAwayDays.Clear();
 			shops[index].WalkAwayDays.Add( walkAways[index] );
 		}
-		Assert.AreEqual( new AdvisorShopPick( shops[1].Id, 10 ), state.WorstValue( AdvisorShopGroup.Drinks ), "the first of two equal lowest figures" );
+		// [BIN:TPW-EXE:0x004CADF0 pick] the walk starts at the head of the thing list, the newest object, and only a strictly lower figure replaces the pick: of two equal lowest figures the newer shop wins
+		Assert.AreEqual( new AdvisorShopPick( shops[2].Id, 10 ), state.WorstValue( AdvisorShopGroup.Drinks ), "the first met (the newest) of two equal lowest figures" );
 		Assert.AreEqual( new AdvisorShopPick( shops[0].Id, 40 ), state.BestValue( AdvisorShopGroup.Drinks ) );
 		// the walk-aways of a value are summed as unsigned words
 		shops[0].WalkAwayDays.Clear();

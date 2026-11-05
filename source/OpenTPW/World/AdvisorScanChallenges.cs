@@ -303,13 +303,18 @@ internal static class AdvisorChallengeCallbacks
 		return dropped > v[1] ? context.Score( "HypeNewpark.Score" ) : 0;
 	}
 
-	// [BIN:TPW-EXE:0x0059F440 big busload] at least one arrival group in the ring and the newest above the word at +0x410: the word at +0x414 (the callback also stores the cell 0x4D8650 names in the object's +8, which nothing here reads)
+	// [BIN:TPW-EXE:0x0059F440 big busload] at least one arrival group in the ring and the newest above the word at +0x410: the word at +0x414; the callback also stores the cell 0x4D8650 names for the flag 1, the second bus stop (FixedItemInfo.BusStopB), in the dword +8 (0x59F4DD, zero-extended from the word), which the speech copies into the record's cell word
 	private static int BigBusloadScore( AdvisorScanContext context )
 	{
 		if ( !Park( context, out _, out var state ) || !Read( context, out var v, "BigBusloadArrived.HowBigIsBig" ) )
 			return 0;
 		var waves = state.ArrivalWaves;
-		return waves.Count > 0 && waves[^1] > v[0] ? context.Score( "BigBusloadArrived.Score" ) : 0;
+		if ( waves.Count == 0 || waves[^1] <= v[0] )
+			return 0;
+		// 0x59F4DD: the cell 0x4D8650 names for the flag 1 (the second bus stop) goes to the dword +8, zero-extended from its word; a level that names none leaves it 0
+		if ( context.Park is IAdvisorThingsState things && things.ArrivalBusStopCell is { } cell )
+			context.RememberSecondary( (ushort)cell );
+		return context.Score( "BigBusloadArrived.Score" );
 	}
 
 	// [BIN:TPW-EXE:0x0059F860 congratulations] the park value (0x4C7DB0 with age 10) above the word at +0x480, the guests in the park (0x4C9130) above the word at +0x488 and the mean happiness (0x4C7BB0) above the word at +0x484 (the integer loaded with fild, compared as the x87 does, the happiness strictly above): the word at +0x48C; 0x59F8D0 is the same with +0x490, +0x498, +0x494 and +0x49C

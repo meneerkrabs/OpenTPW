@@ -91,6 +91,8 @@ public sealed class GuestSettings
 	/// <summary>The park entrance's two cells (FixedItemInfo.EntranceA/B), null when the balance file lacks one; the park fence starts beside them.</summary>
 	public (int X, int Y)? EntranceA { get; set; }
 	public (int X, int Y)? EntranceB { get; set; }
+	/// <summary>The second bus stop's cell (FixedItemInfo.BusStopB, tp.exe <c>0x007855B4</c>/<c>0x007855B8</c>), null when the balance file lacks it; the advisor's big-busload line names its cell word.</summary>
+	public (int X, int Y)? BusStopB { get; set; }
 
 	// approximation: no original source for the cap (the walk speed is per guest and traced: GuestSpeed, docs/reverse/WALK-plan.md; the needs, starting values and
 	// the exit counter are traced: NeedsUpdate, GuestStart, docs/reverse/ORACLE.md F25)
@@ -210,6 +212,7 @@ public sealed class GuestSettings
 		settings.ArrivalLaneB = Lane( "B" );
 		settings.EntranceA = Cell( "EntranceA" );
 		settings.EntranceB = Cell( "EntranceB" );
+		settings.BusStopB = Cell( "BusStopB" );
 		return settings;
 	}
 }

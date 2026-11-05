@@ -47,6 +47,23 @@ internal sealed class AdvisorScanContext
 	}
 
 	public AdvisorBalance Balance { get; }
+
+	/// <summary>The id word the last callback left in the scan object (<c>+0x4</c>, a word): a thing id for the locate button, 0 for none. <see cref="AdvisorScan.ScoreOf"/> clears it before every callback.</summary>
+	public ushort ThingId { get; private set; }
+
+	/// <summary>The cell dword the last callback left in the scan object (<c>+0x8</c>): a cell word, a figure or a type id, 0 for none. <see cref="AdvisorScan.ScoreOf"/> clears it before every callback.</summary>
+	public uint Secondary { get; private set; }
+
+	/// <summary>A callback stores the id word (<c>+0x4</c>), a thing id.</summary>
+	public void RememberThing( ushort thingId ) => ThingId = thingId;
+
+	/// <summary>A callback stores the dword at <c>+0x8</c> (a cell word, or a figure that may be negative as an unchecked word).</summary>
+	public void RememberSecondary( uint secondary ) => Secondary = secondary;
+
+	/// <summary>The lookup of a valid row clears both words before the mode selector and the callback run.</summary>
+	// [BIN:TPW-EXE:0x0059C10F scan words reset] 0x59C109-0x59C115: once the row is found (0x59C0FE) the word at +4 and the dword at +8 of the scan object are zeroed, before the mode selector (0x59C177) and whether or not the callback is called; 0x59C213-0x59C228 then copies both into the caller's two out arguments
+	internal void ClearWords() => (ThingId, Secondary) = (0, 0);
+
 	/// <summary>The park's money statistics; null without a park (every money callback then scores 0).</summary>
 	public IAdvisorMoneyState? Money { get; }
 	/// <summary>[EXT:restored-advice] The read-only park view the extension's callbacks read; null while the extension is off or without a park (they then score 0).</summary>
@@ -116,6 +133,7 @@ internal sealed class AdvisorScan
 	// [BIN:TPW-EXE:0x0059C730 mode selector] word +0xC: 2 always calls the callback, 0 only while the game-mode global 0xFB3B7C is 0, 1 only while it is 2; anything else scores -1
 	public int ScoreOf( AdvisorDescriptorRow row, AdvisorScanContext context, int gameType )
 	{
+		context.ClearWords();
 		if ( !AdvisorTables.GameModeAccepts( row.GameMode, gameType ) )
 			return -1;
 		// [BIN:TPW-EXE:0x005D60C0 constant zero stub] the callbacks of 21 scanned rows (and of every one OpenTPW has not ported) return 0
@@ -123,6 +141,13 @@ internal sealed class AdvisorScan
 			return callback( context );
 		// [EXT:restored-advice] a scan-zero row may get the extension's callback while it is on
 		return row.Callback == RestoredAdviceScan.ConstantZeroCallback && restored?.Invoke( row.MessageId ) is { } restoredCallback ? restoredCallback( context ) : 0;
+	}
+
+	/// <summary>The score of a row and the two words its callback left (the speech's score check, <c>0x59C0A0</c>): -1 and zero words for a mode the row excludes, zero words for a callback that stores none.</summary>
+	public AdvisorSpeechCheck CheckOf( AdvisorDescriptorRow row, AdvisorScanContext context, int gameType )
+	{
+		var score = ScoreOf( row, context, gameType );
+		return new AdvisorSpeechCheck( score, context.ThingId, context.Secondary );
 	}
 
 	/// <summary>

@@ -19,7 +19,7 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x48db94 offer removal] the tag window's removal (message 5, sent 500 ms after the removal 0x100002 hides it, 0x4a13e8) runs the action 0x1B first when the tag's second action is 0x1B (0x48db8b-0x48dbb0 -> 0x48e0f0 -> 0x48e269 -> the decline 0x4d2ec0), so an offer that is deleted, expires or is answered leaves a declined (or already answered) challenge
 	// [BIN:TPW-EXE:0x48ede0 offer post] the post wrapper opens a tag at once only when the record's byte +0x24 is 1 (0x48edeb); the tag system's record builder 0x509bf0 clears that byte on every path, so an offer is added like any message (0x48ee09) and never opens by itself
 	// [BIN:TPW-EXE:0x48D9C0 tags are kept] a selection never removes the tag: it stops the timers of an armed tag that is no offer (0x48d9ee-0x48da06), copies the tag's properties to the panel (0x48da38-0x48daa6) and opens the panel; the tag leaves the tube only through 0x100002 (the expiry 0x48dd7b, the right click 0x48e0b8, the bomb 0x48e5ac, the action result 2 0x48e53b) or the replacement of the add routine (0x48ebe3)
-	// [APPROX:UI-025] the locate actions' thing and cell words (OpenTPW's advisor scans leave them 0), the place of the 0x5a burst, the icons' bounce animations and writing the original's own tag block are not ported (see the register text)
+	// [APPROX:UI-025] the locate action's cell word for a level without a second bus stop (the advisor's scan callbacks fill the other words), the place of the 0x5a burst, the icons' bounce animations and writing the original's own tag block are not ported (see the register text)
 	public const int MessageTubeCapacity = 10;
 
 	/// <summary>The advisor help the open message panel carries (0x11C, 284).</summary>

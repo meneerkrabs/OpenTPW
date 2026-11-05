@@ -458,6 +458,29 @@ public class MessageTubeTagTests
 	}
 
 	[TestMethod]
+	public void AnAdvisorsRecordWordsDriveTheLocateButtonsOfItsCaptions()
+	{
+		// the post of an advisor caption (0x59B7D4) takes the record's id word as the context word (a short) and its cell dword as the context dword
+		var clock = new Clock();
+		var things = new List<int>();
+		var cells = new List<(int X, int Y)>();
+		clock.Hud.ThingCellForTests = id => { things.Add( id ); return (id & 0x7F, id >> 7); };
+		clock.Hud.CellJumpForTests = ( x, y ) => cells.Add( (x, y) );
+		// the dirty toilets' tag 88 locates a thing; a pool slot above 32767 survives the short
+		ushort thing = 40000;
+		clock.Hud.PostTagMessage( 88, "dirty toilet", unchecked( (short)thing ), 0 );
+		// the big busload's tag 162 locates the cell of the second bus stop, zero-extended from its word
+		uint cell = (uint)(12 * 128 + 34 + 1);
+		clock.Hud.PostTagMessage( 162, "big bus", 0, unchecked( (int)cell ) );
+		clock.Hud.OpenPendingMessage( 0 );
+		clock.Hud.OpenedActions[0].Clicked();
+		clock.Hud.OpenPendingMessage( 1 );
+		clock.Hud.OpenedActions[0].Clicked();
+		CollectionAssert.AreEqual( new[] { 40000 }, things );
+		CollectionAssert.AreEqual( new[] { (40000 & 0x7F, 40000 >> 7), (34, 12) }, cells );
+	}
+
+	[TestMethod]
 	public void AnOriginalSavesTubeRecordsReadAndBecomeRows()
 	{
 		static byte[] Record( int tag, string text, int lifetime, short icon, int first, int second, short word, int dword )

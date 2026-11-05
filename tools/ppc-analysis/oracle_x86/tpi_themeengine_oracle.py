@@ -1,10 +1,10 @@
-"""Verify ThemeEngine key-to-word bindings with the identified TPI settings loader.
+"""X90: ThemeEngine loader bindings (docs/reverse/ORACLE.md, section 7.42).
 
 Dev-only: OPENTPW_TPI_EXE and Unicorn are required. No original game process runs.
 The real constructor (0x418F60), schema accessors, initializer (0x419830), key
-resolver (0x4192C0) and integer conversion run in the bounded x86 harness.
-Only allocation and ASCII character classification are synthetic. The parser
-inputs below are controlled scalar settings, not a test of the full SAM grammar.
+resolver (0x4192C0), integer conversion and C-locale character classification run
+in the bounded x86 harness. Only allocation is synthetic. The parser inputs below
+are controlled scalar settings, not a test of the full SAM grammar.
 No executable bytes, schema contents or game data are emitted.
 
 Usage: python3 -I tools/ppc-analysis/oracle_x86/tpi_themeengine_oracle.py
@@ -41,34 +41,19 @@ def cstring(sb: Sandbox, text: str) -> int:
     return address
 
 
-def classify(predicate):
-    return lambda sb: (int(predicate(sb.arg(0))), 0)
-
-
 def sandbox(image: Image) -> Sandbox:
     return Sandbox(image, [
         (0x418F60, 0x419119), (0x4192C0, 0x419530),
         (0x419830, 0x419A50), (0x419CD0, 0x41AA40),
         (0x41B350, 0x41B384), (0x407E2D, 0x407E32),
         (0x407F2C, 0x407F31), (0x402441, 0x402446), (0x40C955, 0x40C95A),
-        (0x86F490, 0x86F526),
-    ], stubs={
-        0x7CBB70: lambda sb: (sb.alloc(sb.arg(0)), 0),
-        0x86F6B3: classify(lambda c: c in (9, 10, 11, 12, 13, 32)),
-        0x86F703: classify(lambda c: 65 <= c <= 90 or 97 <= c <= 122 or 48 <= c <= 57 or c == 95),
-        0x86F5E0: classify(lambda c: 65 <= c <= 90 or 97 <= c <= 122),
-        0x86F65E: classify(lambda c: 48 <= c <= 57),
-    }, budget=500_000)
+        (0x86F490, 0x86F526), (0x86F5E0, 0x86F731),
+    ], stubs={0x7CBB70: lambda sb: (sb.alloc(sb.arg(0)), 0)}, budget=500_000)
 
 
 def construct(sb: Sandbox) -> None:
     sb.reset()
     sb.write(OBJECT, 'I', VTABLE)
-    ctype = sb.object(512)
-    for c in range(256):
-        sb.write(ctype + 2 * c, 'H', (8 if c in (9, 10, 11, 12, 13, 32) else 0) | (4 if 48 <= c <= 57 else 0))
-    sb.write(0x9F72A8, 'I', ctype)
-    sb.write(0x9F6FDC, 'I', 1)
     result = sb.call(CONSTRUCTOR, this=OBJECT)
     assert result.esp_delta == 0, result.esp_delta
 
@@ -94,6 +79,7 @@ def verify(image: Image) -> int:
         raise ValueError('this oracle requires the identified TPI executable')
     sb = sandbox(image)
     construct(sb)
+    assert sb.call(0x86F703, args=(ord('_'),)).eax == 0, 'the original alphanumeric classifier rejects underscore'
     for name, address in BINDINGS.items():
         assert resolve(sb, 'ThemeEngine', name) == address, name
         assert sb.read(address, 'I') == 0, name
@@ -104,6 +90,10 @@ def verify(image: Image) -> int:
     text = ''.join(f'ThemeEngine.{name} {value}\n' for name, value in zip(BINDINGS, values))
     load(sb, text)
     assert [sb.read(address, 'I') for address in BINDINGS.values()] == [v & 0xFFFFFFFF for v in values]
+    # Shipped-style spacing, CRLF and comments run through the real CRT classifiers.
+    load(sb, 'ThemeEngine.BackColour\t\t0\t# c\r\n#ThemeEngine.FogColour 5\r\n')
+    assert sb.read(BINDINGS['BackColour'], 'I') == 0
+    assert sb.read(BINDINGS['FogColour'], 'I') == values[1], 'commented-out field must not overwrite the earlier layer'
     # Missing fields preserve the earlier layer; repeated assignments overwrite in file order.
     load(sb, 'ThemeEngine.BackColour 7\nThemeEngine.BackColour 11\n')
     assert sb.read(BINDINGS['BackColour'], 'I') == 11

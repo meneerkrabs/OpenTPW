@@ -2701,3 +2701,24 @@ Code: `oracle_x86/sky_oracle.py` builds tp.exe's sky object with its constructor
 **X78, `0x5863C0` under render flag `0x2000000` (the globe's, set `0x5DD072`).** The normal draw makes one record per cloud layer (the layer count, 1, 2 or 4) and then the cylinder's two runs. With the globe's flag it makes the layer records a second time between the layers and the cylinder: the grid's positions with x and the height negated (`0x586820` to `0x586855`), the same index list, colours and texture coordinates, so the clouds also show below the horizon. The cylinder's V rows change: the first run is 0.99, 0.69, 0.51, 0.99 (normal 0.99, 0.84, 0.67, 0.51) and the second 0.49, 0.19, 0.01, 0.49 (normal 0.49, 0.34, 0.17, 0.01). `Sky.Draw(globe: true)` ports both (`SkyTests`). Not covered: the object passes (the globe's flag does not touch them).
 
 `sky_golden.py` writes the golden numbers `source/OpenTPW.Tests/SkyGolden.cs` (the record states, both triangle index lists, the grid positions in the original's axes, every texture coordinate of every layer and of the cylinder under fixed scroll offsets, the layers' alpha) for the normal flags and the globe's; `SkyGoldenTests` replays them on `Sky.BuildVertices`, positions, mirrored copies, texture coordinates and alpha included.
+
+### Theme Park Inc follow-up: the ThemeEngine loader binding
+
+Code: `oracle_x86/tpi_themeengine_oracle.py`, with `test_tpi_themeengine_oracle.py`. It requires the identified no-CD `Game.exe` (`OPENTPW_TPI_EXE`, SHA-256 checked by `Image.load`) and Unicorn. It never launches the original game. The scope is the six scalar ThemeEngine fields, not general SAM grammar compatibility.
+
+The Standard settings object is `0xA01A60`; its static constructor `0x41B320` installs vtable `0x93A048` and calls the generic constructor `0x418F60` through `0x40493A`. The schema accessor `0x41B350` selects a 60-byte row from `0x9966C0`; the destination-base accessor `0x41B380` answers `this + 8`. The constructor walks through the type-12 terminator and builds a 12-byte map entry per row. Group delimiters (types 0 and 1) consume no destination word; scalar types 4 through 11 receive `base + wordIndex * 4` (`0x4190C9..0x4190D7`). Arrays have a separate stride and count word (`0x41901B..0x4190C3`); the oracle runs these real branches on the shipped schema, rather than assuming that every schema row consumes one word.
+
+The real key resolver `0x4192C0` searches a group's trailer and its fields, and the real SAM parser `0x419CD0` writes through the constructor's map. The oracle checks these bindings, using a distinct controlled integer for each field:
+
+| ThemeEngine field | Destination word |
+|---|---|
+| BackColour | `0xA027CC` |
+| FogColour | `0xA027D0` |
+| AmbientLightLevel | `0xA027D4` |
+| DirectionalLightLevel | `0xA027D8` |
+| ProceduralTexturingXOffset | `0xA027DC` |
+| ProceduralTexturingYOffset | `0xA027E0` |
+
+These six schema rows are type 4 (integer), starting at `0x99C69C`, with the key name at row +4. The group trailer is `0x99C804`. The constructor's initializer `0x419830` leaves these six words zero. A reset load (`0x419CD0`'s third argument 0) clears missing fields; an overlay preserves them, and repeated assignments overwrite in file order. The resolver's comparison is case-sensitive. The level loader applies the shared `data\\levels\\Standard.sam` then the theme's `Standard.sam` through `0x419B20`/`0x402B1C` (`0x6481FD..0x648243`). Thus the original clear-word copy `0x4288F0` really reads BackColour and FogColour, not just two unnamed words inferred from table order. The existing `Sky.BackColour` binding needs no runtime change.
+
+**Limits.** Allocation is a sandbox stub; ASCII character classification and the CRT's ASCII classification table are synthetic for the controlled scalar inputs. The real integer conversion runs (`0x86F490`/`0x86F51B`), including a negative procedural offset. No claim is made about locale-sensitive parsing, invalid input, full string/array/map grammar, or tp.exe's loader. No graphics device is involved. Existing managed colour and clear-selection tests remain the regression evidence for OpenTPW, separate from this original-routine binding proof.

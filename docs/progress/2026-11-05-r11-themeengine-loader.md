@@ -1,0 +1,5 @@
+## Theme Park Inc ThemeEngine loader binding (November 5, 2026)
+
+Closed round 11's ThemeEngine loader research follow-up. The generic settings constructor, schema resolver and SAM scalar writer were traced in the identified no-CD Game.exe. A bounded x86 oracle runs those routines on the real schema and proves the six named fields' destination words, including BackColour at `0xA027CC` and FogColour at `0xA027D0`; the binding no longer rests only on schema-table order.
+
+The oracle also checks zero initialization, reset versus overlay loads, repeated assignments, case-sensitive group lookup, signed procedural offsets and high-bit integer colour words. Allocation and ASCII classification are controlled stubs; full SAM grammar and locale compatibility are not claimed. The five available TPI Standard.sam files were inspected: the shared file supplies BackColour 0, with theme files overriding other ThemeEngine fields. The existing runtime binding is correct and is unchanged; no determinism pins, save fields, extensions or APPROX counts change.

@@ -100,4 +100,6 @@ the rest reports skips; nothing fails. CI has neither.
 
 `ui_batch_oracle.py` runs the UI part batcher `0x581DB0` with stubbed primitive builder and prints the order it emits material runs in for chosen texture page keys (finding X70).
 
+`ui_scene_oracle.py` runs the scene list insertion `0x576270` (the order instances reach the part list: newest shown first) and the batcher on the resulting list (finding X79, `UiSceneOrder` in `test_x86_oracle.py`).
+
 `sky_oracle.py` runs the sky draw `0x5863C0` (constructor `0x584EF0`) with a stubbed device and prints the records it makes for the normal render flags and the globe's `0x2000000` (finding X78, docs/reverse/ORACLE.md 7.40). `sky_golden.py` turns its records into the golden numbers `source/OpenTPW.Tests/SkyGolden.cs`.

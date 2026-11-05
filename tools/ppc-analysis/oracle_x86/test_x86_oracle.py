@@ -1569,5 +1569,39 @@ class OracleTpi(CoastTests, unittest.TestCase):
             sandbox.call(targets.TPI_RNG_STEP, this=obj)
 
 
+@unittest.skipUnless(UNICORN, UNICORN_HINT)
+@unittest.skipUnless(TPW, NO_TPW)
+class UiSceneOrder(unittest.TestCase):
+    """X82 (UI-004): tp.exe's scene list insertion 0x576270 and the batcher 0x581DB0 run on the shows of a UI frame."""
+
+    @classmethod
+    def setUpClass(cls):
+        import ui_scene_oracle
+        cls.oracle = ui_scene_oracle
+
+    def test_a_model_instance_goes_in_front_of_the_other_instances_and_behind_the_leading_lights(self):
+        """Type 2 objects are inserted at the head of the non-type-1 part; type 1 objects at the head: newest first within each."""
+        lists = self.oracle.scene_lists([('A', 2, 2), ('B', 2, 2), ('C', 1, 2), ('D', 2, 2), ('E', 1, 2)])
+        self.assertEqual(lists, {2: ['E', 'C', 'D', 'B', 'A']})
+
+    def test_categories_are_separate_lists(self):
+        lists = self.oracle.scene_lists([('A', 2, 2), ('B', 2, 1), ('C', 2, 2), ('D', 2, 1)])
+        self.assertEqual(lists, {1: ['D', 'B'], 2: ['C', 'A']})
+
+    def test_own_pages_draw_in_show_order(self):
+        """Between pages the batcher's reversal undoes the scene list's: the control shown first is drawn first."""
+        shows = [('panel', [(1, 0)]), ('button', [(2, 0)]), ('label', [(3, 0)])]
+        self.assertEqual(self.oracle.draw_order(shows), ['panel', 'button', 'label'])
+
+    def test_one_page_draws_in_scene_list_order(self):
+        """Inside one cache page the list order holds: the control shown last is drawn first, so a panel would cover the button it holds."""
+        shows = [('panel', [(1, 0, 5)]), ('button', [(2, 0, 5)])]
+        self.assertEqual(self.oracle.draw_order(shows), ['button', 'panel'])
+
+    def test_one_texture_is_one_node_at_its_oldest_user(self):
+        shows = [('panel', [(1, 0)]), ('button', [(2, 0)]), ('label', [(1, 0)])]
+        self.assertEqual(self.oracle.draw_order(shows), ['label', 'panel', 'button'])
+
+
 if __name__ == '__main__':
     unittest.main()

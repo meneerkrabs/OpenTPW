@@ -549,7 +549,7 @@ internal sealed class AdvisorController
 		Scan.RestoreCursor( snapshot.ScanCursor );
 	}
 
-	// the record's second dword holds a cell word or an object type id (a word: 0x509F09 reads its low word, the cell word is masked to 16 bits at 0x59B26E), and the score-overridden byte is 0 or 1 (SaveAdvisorRecord)
+	// saved records' second dword still holds a cell or object type word (0x509F09 reads its low word, the cell word is masked to 16 bits at 0x59B26E): the speech frees the pending record before copying the callback's context words, including a shop's 32-bit figure; the score-overridden byte is 0 or 1 (SaveAdvisorRecord)
 	private static void RequireWords( SaveAdvisorRecord record, string what )
 	{
 		if ( record.Secondary > ushort.MaxValue )

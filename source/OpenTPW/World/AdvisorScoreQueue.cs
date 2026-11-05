@@ -19,7 +19,7 @@ internal readonly record struct AdvisorMessageHistory(
 /// One pending advice record (<c>mMessage</c>, <c>mScore</c>, <c>mResponseNo</c>, <c>mOverrideOnlyOnce</c>) with the two words the record builder keeps beside them.
 /// </summary>
 /// <param name="ThingId">The record's word +0x0 (the builder's second argument): the id of the thing the advice is about, 0 for none.</param>
-/// <param name="Secondary">The record's dword +0x4 (the third argument): the cell word of the prank lines or the object type id of the ride and research lines, 0 for none.</param>
+/// <param name="Secondary">The record's dword +0x4 (the third argument): the cell word of the prank or big-busload (140) lines, the object type id of the ride and research lines, or a shop callback's 32-bit figure; 0 for none.</param>
 /// <param name="ScoreOverridden">The record's byte +0x16: set when the record was offered again with a score of its own (the F1 replay of the last tutorial), which is said without being scored again.</param>
 // [BIN:TPW-EXE:0x0059B590 advice record] the builder stores its second argument as the word +0x0, its third as the dword +0x4, the variant at +0x8, the message at +0xC, the score at +0x10 with its valid byte +0x14 and flags +0x15/+0x16; the queue copies all six dwords (0x59A940)
 // [BIN:TPW-EXE:0x0059B620 advice speech] the record's two words are read when it is said: they ride the category-24 message to the tag system (0x509BF0), whose caption formatter 0x509E10 reads them (docs/LIPS.md, "Captions")

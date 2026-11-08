@@ -25,7 +25,7 @@ internal sealed class PageTexture
 /// <summary>The allocator object (<c>this</c> of 0x58ECA0): the fields it reads are inputs, the fields it resets and fills are outputs.</summary>
 internal sealed class PageAllocatorCache
 {
-	/// <summary>+0x18CC: bit 1 allows the first request to be downsampled, bit 2 pads every placement to the alignment mask.</summary>
+	/// <summary>+0x18CC: bit 1 allows any request to be downsampled while no placement has been written yet; bit 2 pads every placement to the alignment mask.</summary>
 	public uint Flags;
 
 	/// <summary>+0x18E4.</summary>
@@ -74,7 +74,7 @@ internal sealed class PageAllocation
 /// The rectangle allocator tp.exe packs textures into a page with (<c>0x58ECA0</c>) and the integer key sort it keeps its free rectangles in (<c>0x57D090</c> into <c>0x57CED0</c>), ported instruction for instruction.
 /// A building block for the page orchestration (0x58EAE0 / 0x58F190): nothing in the renderer calls it yet. ORACLE.md X91 checks the port against isolated native execution.
 /// </summary>
-// [BIN:TPW-EXE:0x58ECA0 allocator] free list starts as the whole page; each request takes the LAST free rectangle it fits (rounded to the mask when 0x18E8 is set); the first request that fits nowhere may be downsampled and moved behind greater ranks; leftovers above 8 stay free
+// [BIN:TPW-EXE:0x58ECA0 allocator] free list starts as the whole page; each request takes the LAST free rectangle it fits (rounded to the mask when 0x18E8 is set); any request that fits nowhere may be downsampled and moved behind greater ranks while no placement has been written yet; leftovers above 8 stay free
 // [BIN:TPW-EXE:0x590FB0 device test] flags & 0x30000 and the device kind global 0x8BD524 equal to 1
 // [BIN:TPW-EXE:0x58CB40 rank key] ((ftol((1.5 - priority) * 2047) & 0xFFF) * 256 + width) * 256 + height, | 0x20000000 for flags 0x4000, | 0x40000000 for flags 0x80000; x87 control word 0x7F (single precision)
 // [BIN:TPW-EXE:0x57CED0 sort] the OriginalDepthSort quicksort on 20 byte records by an unsigned dword key; the tie permutation is part of the result

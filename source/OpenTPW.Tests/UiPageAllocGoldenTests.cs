@@ -125,6 +125,11 @@ public class UiPageAllocGoldenTests
 		texture.Priority = -0.5f;
 		OriginalPageAllocator.RefreshRank( texture );
 		Assert.AreEqual( ((0xFFEu * 256 + 20) * 256) + 10, texture.SortKey );
+		// At this float the native 24-bit arithmetic truncates to 1024, while double arithmetic gives 1023.
+		texture.Priority = BitConverter.UInt32BitsToSingle( 0x3F7FEFFEu );
+		Assert.AreEqual( 1023, (int)((1.5 - (double)texture.Priority) * 2047.0) );
+		OriginalPageAllocator.RefreshRank( texture );
+		Assert.AreEqual( ((1024u * 256 + 20) * 256) + 10, texture.SortKey );
 	}
 
 	[TestMethod]

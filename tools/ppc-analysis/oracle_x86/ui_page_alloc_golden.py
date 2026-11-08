@@ -6,7 +6,7 @@ No calls are stubbed. The identified tp.exe is required and never emitted.
 The input requests are explicit synthetic texture records, not captured assets.
 Page size/cache flags are caller inputs, not an assumed production device policy.
 
-Named cases cover: fit alignment 0x58ED66..BE, first-item reduction/reinsertion
+Named cases cover: fit alignment 0x58ED66..BE, reduction/reinsertion before any placement
 0x58EDC6..EEB2, padding 0x58EEE3..EFA4, remainder 8/9 and all split branches
 0x58EFB4..F0EF, tail/tie sort 0x58F0F3..F11B, failed fits and the 127-record
 limit 0x58ED43..54/0x58F135..17A. --coverage prints the first three witness
@@ -82,7 +82,7 @@ def cases():
                 [request(width, 9, 0x10000 | 0x30)], flags=1, device=device)
     add('unsigned-free-key-high-bit', (65535, 256), [request(32767, 16), request(9, 9), request(32767, 32)])
     # Exact float neighbours exercise the single-precision rank refresh, not just integer priorities.
-    for centre in (0x3F000000, 0x3F800000, 0x3FC00000):
+    for centre in (0x3F000000, 0x3F800000, 0x3FC00000, 0x3F7FEFFE):
         for offset in (-2, -1, 0, 1, 2):
             priority = struct.unpack('<f', struct.pack('<I', centre + offset))[0]
             add(f'priority-bits-{centre + offset:08x}', (64, 64),

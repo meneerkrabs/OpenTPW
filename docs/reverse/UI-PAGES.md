@@ -12,12 +12,12 @@ Two size pairs matter and they are easy to confuse:
 |---|---|
 | `+0x10`, `+0x12` | the **authored** size, signed 16-bit |
 | `+0x14`, `+0x16` | the **working** size, signed 16-bit; the halving steps rewrite these |
-| `+0x08` | flags: bits `0x30` are the remaining halvings, `0x30000` marks a device-dependent texture, `0x4000000` marks a page occupant |
+| `+0x08` | flags: bits `0x30` are the remaining halvings, `0x30000` marks a device-dependent texture, `0x40000000` marks a page occupant |
 | `+0x1C` | the page handle, written by the placement |
 | `+0x38` | the rank key |
 | `+0x04` | the next link |
 
-`0x58F9A5..0x58F9DD` reads `+0x10`/`+0x12`, rounds them up to 8 (`(v+7) & ~7`) and writes them into `+0x14`/`+0x16`. That is a **reset to the authored size**, and it is also the evidence that `0x58EAE0`'s ordering is by authored height then authored width: the merge puts the largest authored textures first.
+`0x58F9A5..0x58F9DD` reads `+0x10`/`+0x12`, rounds them up to 8 (`(v+7) & ~7`) and writes them into `+0x14`/`+0x16`. That is a **reset to the authored size**. Separately, `0x58EAE0` compares `+0x12` at `0x58EB62` and then `+0x10` at `0x58EB71`, so its order is authored height then authored width descending: the largest authored textures come first.
 
 ## The frame driver 0x58F940
 
@@ -47,11 +47,11 @@ The routine opens the same way for both paths: start class is the width class `0
 
 ### Non-device textures (0x590FB0 false): merge and pack
 
-`0x58F502..0x58F540` merges (`0x58EAE0`) and allocates (`0x58ECA0`, the page record as the fourth argument and the fifth argument 1). A zero placement count returns `-1` (`0x58F545..0x58F56E`). While the allocator succeeds and the page's half width and height are at least the cache maxima `+0x1918`/`+0x191C`, it steps to the **next higher** class and allocates again with the fifth argument 0, counting the attempt at `0x8C4B5C` and restoring `0x8C4B6C` on failure (`0x58F574..0x58F692`). Then `0x58F6A0`: the retry flag sends the page to `0x58E790`; a class change calls `0x58EA20`, the free-share test with its 2x factor, limit-plus-10 test and `vtable+0xC` count test (`0x58EA20` is called only here, at `0x58F6CA`); `0x58E8D0` **evicts the page entry's previous occupants** — it clears their `+0x1C` and either re-inserts them into the pending list by `+0x38` descending (flag `0x4000000`) or normalises them; the placement records are bubble-sorted by their unsigned `+0x10` dword (`0x58F720..0x58F77E`, not a float sort); `0x58B330`, the virtual `+0x10` and `0x58E820` follow; then per placement `0x590350` places the texture and the record moves between lists, decrementing `0x8C4B6C` (`0x58F7B8..0x58F8B7`); the last `0x58B330` runs only when no placed texture can still be halved (`0x58F8BD`); leftovers go to `0x58E790` and the finished page to `0x590FF0`.
+`0x58F502..0x58F540` merges (`0x58EAE0`) and allocates (`0x58ECA0`, the page record as the fourth argument and the fifth argument 1). A zero placement count first rebuilds the pending list through `0x58E790` (`0x58F557`) and then returns `-1` (`0x58F545..0x58F569`). While the allocator succeeds and the page's half width and height are at least the cache maxima `+0x1918`/`+0x191C`, it steps to the **next higher** class and allocates again with the fifth argument 0, counting the attempt at `0x8C4B5C` and restoring `0x8C4B6C` on failure (`0x58F574..0x58F692`). Then `0x58F6A0`: the retry flag rebuilds the pending list through `0x58E790` (`0x58F6AE..0x58F6B8`, whose argument is the pending-list pointer, not the page); a class change calls `0x58EA20`, the free-share test with its 2x factor, limit-plus-10 test and `vtable+0xC` count test (`0x58EA20` is called only here, at `0x58F6CA`); `0x58E8D0` **evicts the page entry's previous occupants** — it clears their `+0x1C` and either re-inserts them into the pending list by `+0x38` descending (flag `0x40000000`) or normalises them; the placement records are bubble-sorted by their unsigned `+0x10` dword (`0x58F720..0x58F77E`, not a float sort); `0x58B330`, the virtual `+0x10` and `0x58E820` follow; then per placement `0x590350` places the texture and the record moves between lists, decrementing `0x8C4B6C` (`0x58F7B8..0x58F8B7`); the last `0x58B330` runs only when no placed texture can still be halved (`0x58F8BD`); a second `0x58E790` (`0x58F8F0..0x58F90D`) rebuilds a local copy of the page entry's occupant list and writes it back into entry `+0x4`; the finished page goes to `0x590FF0`.
 
 ### Device-dependent textures (0x590FB0 true): shrink, then the whole page
 
-`0x58F24F..0x58F2FE`: while the texture is wider than the page (`+8`) it is halved (flags `-0x10`, size `(v+1)>>1`, rank refresh, steps counted at `0x8C4B70`); if it cannot shrink and still does not fit, the call returns `-1`. Then `0x58F301..0x58F3FB`: when it can still shrink and the class is below 5, an **inline** free-share comparison (`0x58F369..0x58F38E`; no `0x58EA20`, no 2x factor, ties go to the next class) may halve once more and move one class up. Finally a single `0x590350` gives this texture the whole page (`0x58F471`), followed by `0x590FF0` and return (`0x58F4F0`).
+`0x58F24F..0x58F2FE`: while the texture is wider than the page (`+8`) it is halved (flags `-0x10`, size `(v+1)>>1`, rank refresh, steps counted at `0x8C4B70`); if it cannot shrink and still does not fit, the call returns `-1`. Then `0x58F301..0x58F3FB`: when it can still shrink and the class is below 5, an **inline** free-share comparison (`0x58F369..0x58F38E`; no `0x58EA20`, no 2x factor, ties go to the next class) may halve once more and move one class up. Then it evicts the entry's previous occupants with `0x58E8D0` (`0x58F416`) and clears entry `+0x4` (`0x58F421`), increments the class used count (`0x58F428`), calls `0x58B330` and the virtual `+0x10` (a refusal returns 0 at `0x58F43B`), and only then a single `0x590350` gives this texture the whole page (`0x58F471`), followed by `0x590FF0` and return (`0x58F4F0`).
 
 ## What the device calls actually do
 
@@ -61,7 +61,7 @@ The class choice, the halving, the merge, the allocation and the placement sort 
 
 ## Counters
 
-`0x8C4B6C` is the allocator's own placement-count accumulator — `0x58ECA0` resets and increments it (`0x58ECE6`, `0x58F128`) and the manager saves, restores and decrements it — and `0x8C4B68` is incremented beside it. `0x8C4B5C` counts class retries and `0x8C4B70` counts halvings. All four are process statistics; the ported helper deliberately keeps none of them.
+`0x8C4B6C` is the allocator's own placement-count accumulator — `0x58ECA0` resets and increments it (`0x58ECE6`, `0x58F128`) and the manager saves, restores and decrements it — and `0x8C4B68` is incremented beside it. `0x8C4B5C` counts class retries and `0x8C4B70` counts halvings. The manager saves and restores `0x8C4B6C` around a failed retry, so at least that one participates in control; whether any of them is read to make a decision was not traced, so calling them statistics is unverified. The ported helper deliberately keeps none of them.
 
 ## What is still separately required
 
@@ -72,3 +72,5 @@ The class choice, the halving, the merge, the allocation and the placement sort 
 ## Recommendation
 
 Two cheap steps come before any renderer work: read the capacity initialisation, and port the device-dependent branch, whose policy is fully determined (shrink until it fits, optionally one class up, then the whole page). Runtime grouping still needs page objects that OpenTPW does not have, which is a renderer design decision under `[EXT:texture32-always]`, not a fidelity port.
+
+The capacity initialisation starts at the per-frame setup `0x58DA40`, which calls `0x58D400` (it fills a sub-object at `+0x1860` and reads `+0x18F4`/`+0x18F8`) and `0x58D670`; the latter is where the per-class divisors at `+0x1800` are read and written (`0x58D6EE`, `0x58D763`). Those three routines are the next bounded reading target, not a port.

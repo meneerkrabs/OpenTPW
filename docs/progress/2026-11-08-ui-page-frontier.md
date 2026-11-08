@@ -1,6 +1,6 @@
 ## UI page-grouping frontier recorded (November 8, 2026)
 
-Documented the orchestration that still stands between the ported pure helpers and a runtime change: the frame driver `0x58F940`, which clears six width-class counters and, when no class has room, resets a texture's working size from its authored size and drops it unplaced from that frame, and the manager `0x58F190` with its page table (`6 x 256` entries), per-class limit/divisor/used arrays, the two distinct paths (merge-and-pack for ordinary textures, shrink-to-fit then the whole page for device-dependent ones), the eviction of a page's previous occupants, the placement sort and the free-share class tests.
+Documented the orchestration that still stands between the ported pure helpers and a runtime change: the frame driver `0x58F940`, which clears six width-class counters and, when no class has room, resets a texture's working size from its authored size and drops it unplaced from that frame, and the manager `0x58F190` with its page table (`6 x 256` entries), per-class limit/divisor/used arrays, the two distinct paths (merge-and-pack for ordinary textures; for device-dependent ones on device kind 1, shrink-to-fit, optionally one class up, evict the entry's previous occupants, then the whole page), the eviction of a page's previous occupants, the placement sort and the free-share class tests.
 
 Several corrections came out of the review of this note and are worth recording because they change how the ID reads:
 

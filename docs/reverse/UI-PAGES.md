@@ -35,7 +35,7 @@ It clears six dwords at `this+0x1830` (`mov ecx,6; rep stosd`) — the per-width
 |---|---|
 | `+0x0000` | page table, 6 classes x 256 entries x 4 bytes (0x1800 bytes) |
 | `+0x1800` | six dwords, per-class **page count** (capped at `0x100`): divided into the class's free slots for the average-free-per-page test, and decremented when a page is evicted |
-| `+0x1860` | six dwords, the class's remaining **byte budget**; a page costs `bpp x size^2` |
+| `+0x1860` | six dwords, the class's remaining **byte budget**; a page costs `bpp x size^2` (see below) |
 | `+0x1818` | six dwords, per-class limit |
 | `+0x1830` | six dwords, per-class used count, cleared each frame |
 | `+0x18C4` | the frame's pending list head |
@@ -46,11 +46,19 @@ A page-table entry holds a page record whose width and height are dwords at `+8`
 
 ### Page sizes and the budget
 
-The page size is **the class's own size**, not a texture's. The table at `0x7022E8` holds `0x100, 0x80, 0x40, 0x20, 0x10, 0x08` — 256, 128, 64, 32, 16 and 8 square — and `0x58D6BE` passes that entry as the size to the creator. The creator `0x58D1D0` costs a page at `bpp x size^2`, where `bpp` is `0x7022D8[device kind]` (`2` for kinds 0 to 2 and `4` for kind 3, `0x58D204..0x58D21A`), and charges it against the class's budget at `+0x1860`.
+The page size is **the class's own size**, not a texture's. The table at `0x7022E8` holds `0x100, 0x80, 0x40, 0x20, 0x10, 0x08` — 256, 128, 64, 32, 16 and 8 square — and `0x58D6BE` passes that entry as the size to the creator.
 
-`0x58D1D0` creates pages while the budget lasts and the class holds fewer than `0x100` (256) pages (`0x58D261`), appending the new record at `table[class][count]` and incrementing `+0x1800` (`0x58D2D5..0x58D309`). `0x58D400` seeds the budget at `0x58D42C..0x58D43A` from `[0x8C1620]`, or `0x2000000` (32 MiB) when that is zero, and `0x58D670` repeats the pass for the other classes, evicting a class's last-entry page when it has anything to reclaim (`0x58D6EE..0x58D763`).
+The creator `0x58D1D0` costs a page at `bpp x size^2`, where `bpp` is `0x7022D8[format]` (`2` for formats 0 to 2 and `4` for format 3, `0x58D204..0x58D21D`). `0x7022D8` is indexed by the **texture-format** global `[0x8BD554]`, not by the device kind: the device kind is `[0x8BD524]`, the value the device test `0x590FB0` reads, and `0x58DACA` sets the format to `3` only when the compare at `0x58DABE` matches; otherwise the format arrives as an argument (`0x58DB5C`, `0x58DBD6`). When the fourth argument — the alignment gate at `+0x18E8` — is above 1, the cost is `(4 x bpp x size^2) / 3` (`0x58D21D..0x58D23F`, a signed division by three through `0x55555556`). Whether that factor stands for a mip chain is a guess and is not claimed.
 
-So a page is 256, 128, 64, 32, 16 or 8 square by class, capped at 256 pages per class and bounded by a byte budget that starts at 32 MiB unless the device reports its own. `0x5906E0` is not a size setter: it copies the six 256-entry slot tables between two buffers.
+`0x58D1D0` creates pages while the class's budget lasts and the class holds fewer than `0x100` (256) pages (`0x58D261`), appending the new record at `table[class][count]` and incrementing `+0x1800` (`0x58D2D5..0x58D309`). It subtracts the cost even when the surface factory returns nothing (`0x58D27F` to `0x58D314`).
+
+### Where the budget comes from
+
+The six budget dwords at `+0x1860` are not seeded directly from a constant. `0x58D400` first asks the device for its own figure — the vcall `+8` on `[0x8BD52C]` at `0x58D41B` — and only when that returns zero does it fall back to `[0x8C1620]` (a configured megabyte count shifted left 20, `0x44DDA8`) or `0x2000000` (32 MiB) at `0x58D42C..0x58D43A`. That figure funds class 0 alone, for a **probe**: `0x58D455` creates 256-byte pages with it, the measured cost `bpp x count x 65536` (`0x58D45C..0x58D470`) or the device's own value (`0x58D422`) becomes the total, and the probe pages are released again through `0x58D380` (`0x58D4A4`). The real per-class budgets are written at the end of the routine (`0x58D609..0x58D63A`): the total times a per-class share float at `+0x187C..+0x1890`, whose values are **not traced**.
+
+`0x58D670` then walks the classes and turns those budgets into a shared cascading pool: each class's leftover is added to the next class's and the giver is zeroed (`0x58D7B0..0x58D7BA`), and after the walk class 5's leftover goes back into class 0 for a second pass (`0x58D7E3..0x58D7FF`). A page is created when its class still has budget; when a creation fails on the first pass the class's last-entry page is evicted (`0x58D6CE..0x58D6D8`, `0x58D6EE..0x58D763`).
+
+So a page is 256, 128, 64, 32, 16 or 8 square by class, capped at 256 pages per class, and paid for out of a pool whose total comes from the device (or 32 MiB) and whose per-class split and cascade carry the remainder. `0x5906E0` sets no size: it copies the six 256-entry slot tables between two buffers and the six counts at `+0x1800` to `0x8C4B80`.
 
 The routine opens the same way for both paths: start class is the width class `0x590CF0` of the head when the head is device dependent (`0x590FB0`) and class 0 otherwise (`0x58F1A5..0x58F1C7`); the first class at or after it with `used < limit` is taken, and class 6 returns `-1` (`0x58F1C9..0x58F200`); the entry is `table[class][used]` (`0x58F212..0x58F23E`). Then it splits.
 
@@ -66,7 +74,7 @@ The routine opens the same way for both paths: start class is the width class `0
 
 `0x590350` is the placement: it writes the page handle into the texture's `+0x1C` (`0x590678`; the software path does the same at `0x5904E9`) and sets the page flag `0x1000` while clearing `0x2000` at `0x590401..0x590404`. `0x58B330` is only a six-instruction flag setter — `[page+4] = ([page+4] & 0x10000000) | arg` — and the surfaces themselves are created once at initialisation (`0x58D27A`, `0x58D297`); the per-frame device calls are the surface's vtable slots (`+0x10` at `0x58F436`/`0x58F7A4`, a zero return aborting, `+0x1C` inside `0x590350` at `0x59037E`, and `+0x14` in the tail of `0x590FF0` at `0x591007`, which also stamps `[page+0x14]` with the frame counter `0x8BCC40`), and a failing `0x590350` aborts the attempt.
 
-The class choice, the halving, the merge, the allocation and the placement sort are all decided **before** any device call, so the policy is not hidden inside the device layer. What blocks a port is different: the pages, their capacities and the per-class limits and divisors are created by runtime initialisation that has not been read, the manager keeps the page table and the used counts across frames, and the textures stay on their pages between frames, where OpenTPW draws immediately and keeps one GPU texture per path. `0x58DB0C`'s `0x40`/`0x80`/`0x100` are immediately overwritten with `0x10` at `0x58DB34`, so that is not the page-size source either.
+The class choice, the halving, the merge, the allocation and the placement sort are all decided **before** any device call, so the policy is not hidden inside the device layer. What blocks a port is different: the pages are created by a runtime initialisation of which the sizes, the per-class cap and the creation loop are now read while the share floats and the `+0x1818` limit's setter are not, the manager keeps the page table and the used counts across frames, and the textures stay on their pages between frames, where OpenTPW draws immediately and keeps one GPU texture per path. `0x58DB0C`'s `0x40`/`0x80`/`0x100` are immediately overwritten with `0x10` at `0x58DB34`, so that is not the page-size source either.
 
 ## Counters
 
@@ -74,12 +82,12 @@ The class choice, the halving, the merge, the allocation and the placement sort 
 
 ## What is still separately required
 
-1. The page objects, capacities, limits and divisors, and their per-frame lifetime (the unread initialisation above).
+1. The page objects and their per-frame lifetime: the sizes, the cap and the creation loop are read, the per-class share floats `+0x187C..+0x1890` and the setter of the `+0x1818` limit are not.
 2. The persistent control show order: controls prepend into the scene list at `scene+0x18` on show and are unlinked on hide; the per-window show event order is unread.
 3. The frame-wide deferred sort, which mixes the world's stashed records with the UI's (`0x582AD0 -> 0x5829E0`), so the UI tie permutation depends on world depth keys.
 
 ## Recommendation
 
-Two steps come before any renderer work. First read the capacity initialisation; only then can the device-dependent branch be ported, because that branch exists only on device kind 1 (`0x590FB0`) — which physical device kind 1 is, was not established here — and the branch reads the page width at `+8` (the shrink loop) and the per-class limits and page counts at `+0x1818`/`+0x1800` (the inline class test) from that same initialisation. Its policy is otherwise determined: shrink until it fits, optionally one class up, evict the entry's previous occupants, then give the texture the whole page. Runtime grouping still needs page objects of those six sizes with a byte budget and a cross-frame lifetime, which OpenTPW does not have; that is a renderer design decision under `[EXT:texture32-always]`, not a fidelity port.
+Two steps come before any renderer work. The capacity initialisation is now read far enough to port the device-dependent branch, because that branch exists only on device kind 1 (`0x590FB0`) — which physical device kind 1 is, was not established here — and the branch reads the page width at `+8` (the shrink loop) and the per-class limits and page counts at `+0x1818`/`+0x1800` (the inline class test) from that same initialisation. Its policy is otherwise determined: shrink until it fits, optionally one class up, evict the entry's previous occupants, then give the texture the whole page. Runtime grouping still needs page objects of those six sizes with a byte budget and a cross-frame lifetime, which OpenTPW does not have; that is a renderer design decision under `[EXT:texture32-always]`, not a fidelity port.
 
-The capacity model above is now read; the first capacity step starts at `0x58DA40`, which calls `0x58D400` at `0x58DAD6` and `0x58D670` at `0x58DAE9`. `0x58D400` also writes `+0x18F4` and `+0x18F8` (`0x58D4EA`, `0x58D4F2`, `0x58D50F`, `0x58D524`). Whether `0x58DA40` runs once per frame or once per page cycle is not established here.
+The first capacity step starts at `0x58DA40`, which calls `0x58D400` at `0x58DAD6` and `0x58D670` at `0x58DAE9`. `0x58D400` also writes `+0x18F4` and `+0x18F8` (`0x58D4EA`, `0x58D4F2`, `0x58D50F`, `0x58D524`). Whether `0x58DA40` runs once per frame or once per page cycle is not established here.

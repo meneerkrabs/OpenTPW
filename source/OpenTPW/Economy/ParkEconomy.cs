@@ -3045,7 +3045,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 		Speed = speed;
 		IsParkOpen = open;
 		EntranceFee = fee;
-		IsBankrupt = bankrupt;
+		// [BIN:TPI-EXE:0x5C0C99 bankruptcy] a Theme Park Inc park has no lost state to restore: its bank only broadcasts CMsgEvent(2), so a save written by an
+		// earlier build that stored the lost state is loaded trading rather than permanently unable to open or buy
+		IsBankrupt = bankrupt && !Rules.ThemeParkInc;
 		MonthsInRed = monthsInRed;
 		Litter.Restore( litter );
 		TicketsSpent = ticketsSpent;

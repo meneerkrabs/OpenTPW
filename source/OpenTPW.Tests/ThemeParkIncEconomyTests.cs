@@ -155,6 +155,17 @@ public class ThemeParkIncEconomyTests
 	}
 
 	[TestMethod]
+	public void AStoredLostStateIsNotRestoredForThemeParkInc()
+	{
+		// a save written by an earlier build could carry Bankrupt; Theme Park Inc never has that state, so the park loads trading
+		var economy = Economy( Ride( 1, 0, 20000 ) );
+		economy.RestoreState( 0, GameSpeed.Normal, true, 20, true, 6, Array.Empty<LitterCell>(), 0, 1, 0,
+			Array.Empty<ParkObjectState>(), Array.Empty<LoanAccount>(), Array.Empty<int>(), Array.Empty<long>() );
+		Assert.IsFalse( economy.IsBankrupt, "Theme Park Inc has no lost state to restore" );
+		Assert.IsTrue( economy.IsParkOpen );
+	}
+
+	[TestMethod]
 	public void TheBanksMonthComesBeforeTheObjectsDebits()
 	{
 		// [BIN:TPI-EXE:0x5C0B10 bank month before the objects] the month message goes to the listeners in thing-id order: the bank (9 in the prebuilt park) before every attraction (14 and up), so the bank's red-month message of

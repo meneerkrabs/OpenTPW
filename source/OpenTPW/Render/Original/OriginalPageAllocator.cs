@@ -72,7 +72,7 @@ internal sealed class PageAllocation
 
 /// <summary>
 /// The rectangle allocator tp.exe packs textures into a page with (<c>0x58ECA0</c>) and the integer key sort it keeps its free rectangles in (<c>0x57D090</c> into <c>0x57CED0</c>), ported instruction for instruction.
-/// A building block for the page orchestration (0x58EAE0 / 0x58F190): nothing in the renderer calls it yet.
+/// A building block for the page orchestration (0x58EAE0 / 0x58F190): nothing in the renderer calls it yet. ORACLE.md X91 checks the port against isolated native execution.
 /// </summary>
 // [BIN:TPW-EXE:0x58ECA0 allocator] free list starts as the whole page; each request takes the LAST free rectangle it fits (rounded to the mask when 0x18E8 is set); the first request that fits nowhere may be downsampled and moved behind greater ranks; leftovers above 8 stay free
 // [BIN:TPW-EXE:0x590FB0 device test] flags & 0x30000 and the device kind global 0x8BD524 equal to 1

@@ -20,7 +20,7 @@ public class UiPageMergeGoldenTests
 
 	private sealed record Record( uint Id, uint Flags, short U, short V, short Width, short Height );
 
-	private sealed record Expected( uint[] Order, int Area );
+	private sealed record Expected( uint[] Order, int Area, bool Unchanged );
 
 	private static List<Case> Cases()
 	{
@@ -35,7 +35,8 @@ public class UiPageMergeGoldenTests
 			Records( row.GetProperty( "pending" ) ),
 			new Expected(
 				row.GetProperty( "expected" ).GetProperty( "order" ).EnumerateArray().Select( value => value.GetUInt32() ).ToArray(),
-				row.GetProperty( "expected" ).GetProperty( "area" ).GetInt32() ) ) ).ToList();
+				row.GetProperty( "expected" ).GetProperty( "area" ).GetInt32(),
+				row.GetProperty( "expected" ).GetProperty( "unchanged" ).GetBoolean() ) ) ).ToList();
 	}
 
 	private static List<Record> Records( JsonElement rows ) => rows.EnumerateArray().Select( row => new Record(
@@ -64,10 +65,24 @@ public class UiPageMergeGoldenTests
 		Assert.AreEqual( UiPageMergeGolden.RowCount, Cases().Count, "the fixture row count" );
 		foreach ( var test in Cases() )
 		{
-			var (order, area) = OriginalPageListMerge.Merge( Chain( test.Existing ), Chain( test.Pending ), test.Device );
+			Assert.IsTrue( test.Expected.Unchanged, $"{test.Name}: the native routine left its inputs intact" );
+			var existing = Chain( test.Existing );
+			var pending = Chain( test.Pending );
+			var before = Describe( existing ) + "|" + Describe( pending );
+			var (order, area) = OriginalPageListMerge.Merge( existing, pending, test.Device );
 			CollectionAssert.AreEqual( test.Expected.Order, order.Select( node => node.Id ).ToArray(), $"{test.Name}: emission order" );
 			Assert.AreEqual( test.Expected.Area, area, $"{test.Name}: returned area" );
+			Assert.AreEqual( before, Describe( existing ) + "|" + Describe( pending ), $"{test.Name}: neither list is modified" );
 		}
+	}
+
+	/// <summary>The node plus the links and fields behind it, as text, so a mutation shows up in the assertion message.</summary>
+	private static string Describe( PageTextureNode? head )
+	{
+		var text = new StringBuilder();
+		for ( var node = head; node is not null; node = node.Next )
+			text.Append( $"{node.Id}:{node.Flags:x}:{node.U}:{node.V}:{node.Width}x{node.Height}>{node.Next?.Id ?? 0};" );
+		return text.ToString();
 	}
 
 	[TestMethod]
@@ -88,7 +103,7 @@ public class UiPageMergeGoldenTests
 	}
 
 	[TestMethod]
-	public void FullTiesEmitTheExistingRecordFirstAndTheAreaWraps()
+	public void FullTiesEmitTheExistingRecordFirstAndTheAreaSumWraps()
 	{
 		var existing = new PageTextureNode { Id = 1, Flags = OriginalPageListMerge.ExistingOnly, U = 1, V = 2, Width = 3, Height = 4 };
 		var pending = new PageTextureNode { Id = 2, U = 1, V = 2, Width = 5, Height = 6 };
@@ -96,13 +111,14 @@ public class UiPageMergeGoldenTests
 		CollectionAssert.AreEqual( new uint[] { 1, 2 }, order.Select( node => node.Id ).ToArray() );
 		Assert.AreEqual( 3 * 4 + 5 * 6, area );
 
-		// the product is a signed 32-bit multiply and the sum is unchecked
-		var big = new PageTextureNode { Id = 3, Width = 30000, Height = 30000 };
-		var bigger = new PageTextureNode { Id = 4, Width = 30000, Height = 30000 };
-		var (_, wrapped) = OriginalPageListMerge.Merge( null, big, 0 );
-		Assert.AreEqual( unchecked(30000 * 30000), wrapped );
-		big.Next = bigger;
-		Assert.AreEqual( unchecked(30000 * 30000 * 2), OriginalPageListMerge.Merge( null, big, 0 ).Area );
+		// three products of 900,000,000 exceed the signed 32-bit sum and wrap to -1,594,967,296
+		var first = new PageTextureNode { Id = 3, Width = 30000, Height = 30000 };
+		var second = new PageTextureNode { Id = 4, Width = 30000, Height = 30000 };
+		var third = new PageTextureNode { Id = 5, Width = 30000, Height = 30000 };
+		first.Next = second;
+		Assert.AreEqual( unchecked(30000 * 30000 * 2), OriginalPageListMerge.Merge( null, first, 0 ).Area, "two products stay in range" );
+		second.Next = third;
+		Assert.AreEqual( -1594967296, OriginalPageListMerge.Merge( null, first, 0 ).Area );
 	}
 
 	[TestMethod]

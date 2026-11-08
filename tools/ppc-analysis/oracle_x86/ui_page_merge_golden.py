@@ -49,6 +49,12 @@ EXISTING_ONLY = 0x40000000
 DEVICE_DEPENDENT = 0x30000
 
 
+def s32(value):
+    """The register read as the signed 32-bit integer the caller keeps."""
+    value &= 0xFFFFFFFF
+    return value - (1 << 32) if value >> 31 else value
+
+
 def node(identifier, flags=0, u=0, v=0, width=8, height=8):
     return dict(id=identifier, flags=flags, u=u, v=v, width=width, height=height)
 
@@ -75,7 +81,10 @@ def cases():
     add('full-tie-emits-existing-first', [node(1, EXISTING_ONLY, v=2, u=1)], [node(2, 0, v=2, u=1)])
     add('signed-v-ordering', [node(1, EXISTING_ONLY, v=-1, u=0)], [node(2, 0, v=-2, u=0), node(3, 0, v=0, u=0)])
     add('signed-u-tie', [node(1, EXISTING_ONLY, v=0, u=-1)], [node(2, 0, v=0, u=-2)])
-    add('area-sums-unchecked', [], [node(1, 0, width=30000, height=30000), node(2, 0, width=30000, height=30000)])
+    add('area-sums-in-range', [], [node(1, 0, width=30000, height=30000), node(2, 0, width=30000, height=30000)])
+    # three products of 900,000,000 exceed int32 and wrap: 2,700,000,000 -> -1,594,967,296
+    add('area-sums-wrap', [], [node(1, 0, width=30000, height=30000), node(2, 0, width=30000, height=30000),
+                               node(3, 0, width=30000, height=30000)])
     add('zero-sized-records', [], [node(1, 0, width=0, height=0), node(2, 0, width=0, height=5)])
     add('existing-longer-than-pending', [node(i, EXISTING_ONLY, v=i) for i in range(1, 7)], [node(50, 0, v=3)])
     add('pending-longer-than-existing', [node(1, EXISTING_ONLY, v=3)], [node(50 + i, 0, v=i) for i in range(1, 7)])
@@ -127,7 +136,18 @@ def oracle(sb, row):
         at += 1
         if at > len(ids):
             raise AssertionError('merged list does not terminate')
-    return dict(order=order, area=result.eax, terminator=sb.read(output + 4 * at, 'I'))
+    # The routine must leave every input record and its links untouched; read all of it back.
+    unchanged = True
+    for ordered, addresses in ((row['existing'], existing), (row['pending'], pending)):
+        for index, item in enumerate(ordered):
+            address = addresses[item['id']]
+            successor = addresses[ordered[index + 1]['id']] if index + 1 < len(ordered) else 0
+            fields = [sb.read(address + 8, 'I'), sb.read(address + 0x10, 'h'), sb.read(address + 0x12, 'h'),
+                      sb.read(address + 0x14, 'h'), sb.read(address + 0x16, 'h')]
+            if sb.read(address + 4, 'I') != successor or fields != [item['flags'], item['u'], item['v'],
+                                                                    item['width'], item['height']]:
+                unchanged = False
+    return dict(order=order, area=s32(result.eax), unchanged=unchanged)
 
 
 def render(coverage=False):

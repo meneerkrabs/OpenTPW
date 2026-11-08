@@ -140,7 +140,7 @@ public sealed class UiModel
 
 	/// <summary>
 	/// Frame for a button state: the index-th drawable frame, the first one for an index past them. [APPROX:UI-003] tp.exe's control draws nothing for a state the chain lacks (<see cref="TryGetState"/>), while a widget here keeps its first frame.
-	/// The index a button drives is settled: its 0x668820 state reaches the model control 0x476F10 -> 0x476E80 as the index word under bit 0x1 (0x668A58, 0x668C55, 0x668D06), and the base at +0xA stays 0 (the base constructor 0x6597B0 zeroes it and nothing sends bit 0x80000).
+	/// The index a button drives is settled: its 0x668820 state reaches the model control 0x476F10 -> 0x476E80 as the index word under bit 0x1 (0x668A58, 0x668C55, 0x668D06), and the base at +0xA stays 0 (the base constructor 0x6597B0 zeroes it, and the only site that sends bit 0x80000, 0x66160C, has no caller).
 	/// Evidence needed: whether a shipped button ever asks for a state past its model's chain.
 	/// </summary>
 	public UiModelFrame GetFrame( int index ) => Frames[index >= 0 && index < Frames.Count ? index : 0];

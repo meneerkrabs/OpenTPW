@@ -1395,9 +1395,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 	private void EndMonth( long nextMonthIndex )
 	{
 		// [BIN:TPI-EXE:0x5AF220 analyser month] Theme Park Inc's month message reaches its listeners in ascending thing-id order (the id-keyed tree walked in order by 0x436DD0).
-		// The staff HQ is id 1, the analyser 5, the bank 9 and the objects 14 and up, so under Theme Park Inc's rules the staff work comes first, the analyser's close and sample
-		// next, and only then the batch credit, the instalments and the objects — whose entries therefore fall in the month that opens
-		var analyserClosed = Rules.ThemeParkInc ? RunStaffMonth( nextMonthIndex ) : null;
+		// The analyser is id 5 and the bank 9, so its close and sample precede the batch credit, the instalments and the objects — whose entries therefore fall in the month that opens.
+		// A Theme Park Inc park runs no staff work (EconomyRules.ThemeParkIncMoney has Staff false), so nothing else moves
+		var analyserClosed = Rules.ThemeParkInc ? CloseAnalyserMonth( nextMonthIndex ) : null;
 
 		// [BIN:TPW-EXE:0x004D0370 bank month] the month message first pays the batch word (+0x10, an unsigned credit below 1,000,000 by the routine's own assertion) into the balance, the money-in total (+0x1FC90) and the year's profit (+0x124), then zeroes it (0x4D0393..0x4D03DB), before any instalment
 		if ( BatchCredit != 0 )
@@ -1405,12 +1405,26 @@ public sealed partial class ParkEconomy : IParkEconomy
 			Post( LedgerCategory.OtherIncome, BatchCredit );
 			BatchCredit = 0;
 		}
-		if ( !Rules.ThemeParkInc )
-			PayStaffMonth();
+		var wages = Rules.Staff ? Staff.TotalMonthlyWages : 0;
+		if ( wages > 0 )
+		{
+			Post( LedgerCategory.StaffCosts, wages );
+			Raise( ParkEventKind.WagesPaid, wages, 0, 0, $"{Staff.Members.Count} staff" );
+		}
 
 		// [BIN:TPI-EXE:0x5C0B10 bank month before the objects] Theme Park Inc's objects debit after the bank's whole month handler (below): the month message goes to the listeners in thing-id order and the bank's id (9 in the prebuilt park) lies below every attraction's (14 and up)
 		if ( !Rules.ThemeParkInc )
 			PayRunningCosts();
+		var training = Rules.Staff ? Staff.Train() : 0;
+		if ( training > 0 )
+		{
+			// [BIN:TPW-EXE:0x00505A10 staff training] the training is a debit (0x004D01F0, money out) added to its own analyser word +0x1FA40, which no finance row shows;
+			// the staff costs row (+0x1F7F0, graph bit 0x80 at 0x0049A7B0) takes only the wages (0x00504C70, 0x00505790)
+			Post( LedgerCategory.OtherCosts, training );
+			Raise( ParkEventKind.TrainingPaid, training );
+		}
+		if ( Rules.Staff )
+			ConsiderStrikes();
 		// [BIN:STP-PPC:0x100CC21C loan instalment] each bought loan, in offer-index order, pays exactly M and counts one more month repaid; it ends after N months (ORACLE F13)
 		// [BIN:TPW-EXE:0x4d0370 bank month] the instalment is deducted only with mWithdrawalsEnabled (+0x114) set, as a debit that keeps mLastBalance and the
 		// turn-entered-red stamp; the year profit then gains back the principal share either way, so with the flag clear the instalment raises the profit by it
@@ -1477,39 +1491,11 @@ public sealed partial class ParkEconomy : IParkEconomy
 		}
 	}
 
-	/// <summary>The staff headquarters' month work (wages, training, the strike check); Theme Park Inc's staff HQ is thing id 1, before the analyser.</summary>
-	private void PayStaffMonth()
-	{
-		var wages = Rules.Staff ? Staff.TotalMonthlyWages : 0;
-		if ( wages > 0 )
-		{
-			Post( LedgerCategory.StaffCosts, wages );
-			Raise( ParkEventKind.WagesPaid, wages, 0, 0, $"{Staff.Members.Count} staff" );
-		}
-		var training = Rules.Staff ? Staff.Train() : 0;
-		if ( training > 0 )
-		{
-			// [BIN:TPW-EXE:0x00505A10 staff training] the training is a debit (0x004D01F0, money out) added to its own analyser word +0x1FA40, which no finance row shows;
-			// the staff costs row (+0x1F7F0, graph bit 0x80 at 0x0049A7B0) takes only the wages (0x00504C70, 0x00505790)
-			Post( LedgerCategory.OtherCosts, training );
-			Raise( ParkEventKind.TrainingPaid, training );
-		}
-		if ( Rules.Staff )
-			ConsiderStrikes();
-	}
-
-	/// <summary>Theme Park Inc's month order: the staff HQ (id 1) first, then the analyser's close and sample (id 5), which precede the bank's credit (id 9).</summary>
-	private LedgerMonth RunStaffMonth( long nextMonthIndex )
-	{
-		PayStaffMonth();
-		return CloseAnalyserMonth( nextMonthIndex );
-	}
-
 	/// <summary>
 	/// The analyser's month handler: the cached census, the statistics rings the park information window graphs, the bad-month close and the ledger close with the sampled park value.
 	/// Theme Park Inc samples the bank balance (0x5C0740 is <c>return [bank+0x14]</c>); Theme Park World samples the net worth.
 	/// </summary>
-	// [BIN:TPI-EXE:0x5AF220 analyser month] the sampled value is read off the bank: the routine resolves the thing at world+0x1EAB5A (id 9) and calls 0x5C0740, which returns the balance at [bank+0x14], then pushes it into the monthly ring at +0x1F118
+	// [BIN:TPI-EXE:0x5AF220 analyser month] the sampled value is read off the bank: the routine resolves the thing at world+0x1EAB5A (id 9) and calls 0x5C0740, which returns the balance at [bank+0x14], then pushes it into the monthly ring whose head is at +0x1F35C (entries from +0x1F11C)
 	// [BIN:TPW-EXE:0x004C7720 month sample] the twin handler stores the net worth read with age 0 (0x004C79A7)
 	private LedgerMonth CloseAnalyserMonth( long nextMonthIndex )
 	{
@@ -1542,7 +1528,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 	// [BIN:TPI-EXE:0x005DEFFF monthly object cost] the object's month message takes 0 in state 1 or 4, else the type record's running cost (thing +0x84, the current level's Upgrades[n].RunningCost), adds the amount its statistics block accumulated (+0x938, 0x5DF029..0x5DF042, whatever the state), writes the running cost into +0xDD8 and the sum into the cost ring +0xB88, takes profit +0x1028 = takings +0x6E8 - the sum, clears the accumulators and the monthly rings it rolls, and debits the bank (0x5C07B0, the twin of tp.exe 0x4D01F0) with the sum, adding it to the game's costs word (+0x20F28)
 	// [BIN:TPI-EXE:0x5E60E0 cost booking] raises the daily cost ring (+0x88) and the month accumulator (+0x938) and posts the negated cost as message 0xC (a shop) or 0xD (a sideshow) to the analyser object (0x408EE5, 0x4082C9, 0x4020BD): the statistics' own feed; no debit
 	// [BIN:TPI-EXE:0x5C07B0 bank debit] balance -= amount at once; every site that debits is a purchase, an upgrade, a wage or this month message: the guest's use outcome never does
-	// [APPROX:ECON-060] Theme Park Inc's statistics are monthly rings (+0xB88 costs, +0x1028 profit, rolled by the same message) where OpenTPW's are the daily 30-day rings of Theme Park World (ECON-057), so the month's cost enters today's slot of the daily ring (the sales' own costs already did at the sale); the objects debit after the bank's month handler as the thing-id order of the month message gives (bank 9, attractions 14 and up), but the park analyser's handler (id 5, before the bank) is not read, so the month's ledger close and net-worth sample stay after both (register text)
+	// [APPROX:ECON-060] Theme Park Inc's statistics are monthly rings (+0xB88 costs, +0x1028 profit, rolled by the same message) where OpenTPW's are the daily 30-day rings of Theme Park World (ECON-057), so the month's cost enters today's slot of the daily ring (the sales' own costs already did at the sale); the objects debit after the bank's month handler as the thing-id order of the month message gives (bank 9, attractions 14 and up), and the park analyser (id 5) closes the ledger and samples the bank balance before both (0x5AF220, 0x5C0740)
 	private void PayRunningCosts()
 	{
 		if ( !Rules.ThemeParkInc )
@@ -1599,7 +1585,13 @@ public sealed partial class ParkEconomy : IParkEconomy
 
 	/// <summary>Loses the park as the bank's message does (a capture of the loss window; the bank's own month rule is left alone).</summary>
 	// [EXT:debug-hud] developer/screenshot helper, not original behaviour
-	internal void DebugLose() => HandleBankruptcyMessage();
+	internal void DebugLose()
+	{
+		// a Theme Park Inc park has no lost state to capture: its bankruptcy is one broadcast message, so the debug helper does nothing there
+		if ( Rules.ThemeParkInc )
+			return;
+		HandleBankruptcyMessage();
+	}
 
 	/// <summary>Admissions of months dropped from the bounded history (keeps the monthly differences exact).</summary>
 	public long DroppedAdmissions { get; private set; }

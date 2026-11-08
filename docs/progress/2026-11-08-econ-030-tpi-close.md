@@ -4,7 +4,7 @@ Theme Park Inc has no loss scene. Its bank's month tick `0x5C0B10` stamps the tu
 
 The lost state the register described is Theme Park World's. In Theme Park Inc, state 4 has a single writer, `0x649E94` inside the level-teardown routine `0x649E60`, whose callers are the result branches of the event-5 handler; no economy or bank code writes it.
 
-`EndMonth` therefore skips the lost state under Theme Park Inc's rules: the bankruptcy message is raised, `IsBankrupt` stays false, the park stays open and no purchase, hire or admission is refused — which is what an original that blocks nothing on bankruptcy does. Theme Park World is unchanged.
+`EndMonth` therefore skips the lost state under Theme Park Inc's rules: the bankruptcy message is raised, `IsBankrupt` stays false, the park stays open and no purchase, hire or admission is refused — which is what an original that blocks nothing on bankruptcy does. Theme Park World is unchanged: the change touches only the Theme Park Inc branch.
 
 `SixMonthsInTheRedLeaveTheParkTradingInsteadOfLosingIt` and `ThemeParkIncNeverEntersTheLostState` pin it (no lost state, the park open, no `Bankrupt` or `ParkClosed` event, a build not refused), and `TheBanksMonthComesBeforeTheObjectsDebits` keeps its ordering claim with the message and the absent lost state asserted. The economy, ledger, bank-word, advisor and Theme Park Inc selection passes (921 passed, 0 failed, 109 skipped).
 

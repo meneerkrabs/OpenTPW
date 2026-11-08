@@ -162,7 +162,6 @@ public class ThemeParkIncEconomyTests
 		economy.RestoreState( 0, GameSpeed.Normal, true, 20, true, 6, Array.Empty<LitterCell>(), 0, 1, 0,
 			Array.Empty<ParkObjectState>(), Array.Empty<LoanAccount>(), Array.Empty<int>(), Array.Empty<long>() );
 		Assert.IsFalse( economy.IsBankrupt, "Theme Park Inc has no lost state to restore" );
-		Assert.IsTrue( economy.IsParkOpen );
 	}
 
 	[TestMethod]

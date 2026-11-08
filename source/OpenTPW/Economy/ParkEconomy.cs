@@ -1394,6 +1394,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 
 	private void EndMonth( long nextMonthIndex )
 	{
+		// [BIN:TPI-EXE:0x5AF220 analyser month] Theme Park Inc's month message reaches its listeners in ascending thing-id order (the id-keyed tree walked in order by 0x436DD0), and the analyser's id (5) lies below the bank's (9): its close and its sample happen before the batch credit and before the instalments, so both land in the next month
+		var analyserClosed = Rules.ThemeParkInc ? CloseAnalyserMonth( nextMonthIndex ) : null;
+
 		// [BIN:TPW-EXE:0x004D0370 bank month] the month message first pays the batch word (+0x10, an unsigned credit below 1,000,000 by the routine's own assertion) into the balance, the money-in total (+0x1FC90) and the year's profit (+0x124), then zeroes it (0x4D0393..0x4D03DB), before any instalment
 		if ( BatchCredit != 0 )
 		{
@@ -1471,20 +1474,29 @@ public sealed partial class ParkEconomy : IParkEconomy
 			PayRunningCosts();
 			RollObjectMonths();
 		}
-		// [BIN:TPW-EXE:0x004C7720 month sample] the analyser's month handler stores the net worth read with age 0 (0x004C79A7)
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler reads the cached census with age 0 first (0x004C78C1); the month message goes to the things in id order (the listener tree walked by 0x0040FB10, dispatching through 0x0050B550) and the world constructor 0x005156A0 creates the staff manager (type 9) before the analyser (type 13), so the gate above has already read its count
-		var census = CachedGuestCensus( 0 );
-		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler fills the statistics rings the park information window graphs: the arrivals, the guests in the park (this census), the mean happiness (0x4C7BB0) and the mean stay
-		var rating = ParkRating;
-		StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census, rating );
-		CloseMisbehavingMonth();
-		var closed = Ledger.CloseMonth( nextMonthIndex, rating, NetWorth( 0 ) );
+		var closed = analyserClosed ?? CloseAnalyserMonth( nextMonthIndex );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
 		{
 			var year = Ledger.SummariseYear( nextMonthIndex / ParkCalendar.MonthsPerYear - 1 );
 			Raise( ParkEventKind.YearEnded, year?.Profit ?? 0, 0, 0, year == null ? "" : $"in ${year.MoneyIn}, out ${year.MoneyOut}, balance ${year.ClosingBalance}" );
 		}
+	}
+
+	/// <summary>
+	/// The analyser's month handler: the cached census, the statistics rings the park information window graphs, the bad-month close and the ledger close with the sampled park value.
+	/// Theme Park Inc samples the bank balance (0x5C0740 is <c>return [bank+0x14]</c>); Theme Park World samples the net worth.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5AF220 analyser month] the sampled value is read off the bank: the routine resolves the thing at world+0x1EAB5A (id 9) and calls 0x5C0740, which returns the balance at [bank+0x14], then pushes it into the monthly ring at +0x1F118
+	// [BIN:TPW-EXE:0x004C7720 month sample] the twin handler stores the net worth read with age 0 (0x004C79A7)
+	private LedgerMonth CloseAnalyserMonth( long nextMonthIndex )
+	{
+		var census = CachedGuestCensus( 0 );
+		var rating = ParkRating;
+		StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census, rating );
+		CloseMisbehavingMonth();
+		return Ledger.CloseMonth( nextMonthIndex, rating, Rules.ThemeParkInc ? Balance : NetWorth( 0 ) );
 	}
 
 	/// <summary>The month's roll of every object's calendar-month sums (the object's month message).</summary>

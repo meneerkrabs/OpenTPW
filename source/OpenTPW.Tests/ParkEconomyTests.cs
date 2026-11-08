@@ -130,7 +130,7 @@ public class ParkEconomyTests
 	public void ThemeParkIncClosesTheAnalyserMonthBeforeTheBankCreditsTheBatch()
 	{
 		// [BIN:TPI-EXE:0x5AF220 analyser month] the month message reaches its listeners in ascending thing-id order, so the analyser (5) closes
-		// before the bank (9): the batch it pays lands in the next month. tp.exe's twin 0x004C7720 runs after the bank, so the batch stays in the closing month there.
+		// before the bank (9): the batch it pays lands in the next month. Theme Park World keeps its own order, so the batch stays in the closing month there.
 		var park = new ParkEconomy( EconomyTestData.Settings( 50000 ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
 		park.RestoreBankWords( true, 50000, 0, 1234 );
 		park.AdvanceMonths( 1 );
@@ -379,22 +379,23 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
-	public void ThemeParkIncClosesTheParkAfterSixMonthsInTheRedInsteadOfLosingIt()
+	public void ThemeParkIncNeverEntersTheLostState()
 	{
-		// [BIN:TPI-EXE:0x5C0C99 bankruptcy] six months in the red build CMsgEvent(2) and broadcast it: the ordinary park-closed event, with no state write,
-		// no window and no asset. So a Theme Park Inc park closes and keeps trading; the lost state and its refusals are Theme Park World's.
+		// [BIN:TPI-EXE:0x5C0C99 bankruptcy] six months in the red build CMsgEvent(2) and broadcast it, with no state write, no window and no asset;
+		// the lost state 4 is the teardown's (0x649E94), so a Theme Park Inc park keeps trading and keeps its gate open
 		var park = new ParkEconomy( EconomyTestData.Settings( 100 ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
 		var events = new List<ParkEvent>();
 		park.EventRaised += events.Add;
 		park.ImportOriginalBank( -1000, 20, 0, Array.Empty<LoanAccount>() );
 		park.RestoreBankWords( true, -1000, 0 );
 		park.OpenPark();
-		for ( var month = 0; month < 8 && park.IsParkOpen; month++ )
-			park.AdvanceMonths( 1 );
+		park.AdvanceMonths( 8 );
+		Assert.IsTrue( park.MonthsInRed >= ParkEconomy.MonthsInRedForBankruptcy, "the rule's own count is reached" );
 		Assert.IsFalse( park.IsBankrupt, "Theme Park Inc never enters the lost state" );
-		Assert.IsFalse( park.IsParkOpen, "the bank's event closes the park" );
-		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.ParkClosed ), "the close is raised once" );
+		Assert.IsTrue( park.IsParkOpen, "the bank's message closes nothing" );
+		Assert.IsTrue( events.Any( item => item.Kind == ParkEventKind.BankruptcyMessage ), "the bank's message is raised" );
 		Assert.AreEqual( 0, events.Count( item => item.Kind == ParkEventKind.Bankrupt ), "no loss event" );
+		Assert.AreEqual( 0, events.Count( item => item.Kind == ParkEventKind.ParkClosed ), "and no close" );
 	}
 
 	[TestMethod]

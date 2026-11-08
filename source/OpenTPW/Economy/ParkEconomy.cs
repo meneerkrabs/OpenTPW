@@ -1394,8 +1394,10 @@ public sealed partial class ParkEconomy : IParkEconomy
 
 	private void EndMonth( long nextMonthIndex )
 	{
-		// [BIN:TPI-EXE:0x5AF220 analyser month] Theme Park Inc's month message reaches its listeners in ascending thing-id order (the id-keyed tree walked in order by 0x436DD0), and the analyser's id (5) lies below the bank's (9): its close and its sample happen before the batch credit and before the instalments, so both land in the next month
-		var analyserClosed = Rules.ThemeParkInc ? CloseAnalyserMonth( nextMonthIndex ) : null;
+		// [BIN:TPI-EXE:0x5AF220 analyser month] Theme Park Inc's month message reaches its listeners in ascending thing-id order (the id-keyed tree walked in order by 0x436DD0).
+		// The staff HQ is id 1, the analyser 5, the bank 9 and the objects 14 and up, so under Theme Park Inc's rules the staff work comes first, the analyser's close and sample
+		// next, and only then the batch credit, the instalments and the objects — whose entries therefore fall in the month that opens
+		var analyserClosed = Rules.ThemeParkInc ? RunStaffMonth( nextMonthIndex ) : null;
 
 		// [BIN:TPW-EXE:0x004D0370 bank month] the month message first pays the batch word (+0x10, an unsigned credit below 1,000,000 by the routine's own assertion) into the balance, the money-in total (+0x1FC90) and the year's profit (+0x124), then zeroes it (0x4D0393..0x4D03DB), before any instalment
 		if ( BatchCredit != 0 )
@@ -1403,25 +1405,12 @@ public sealed partial class ParkEconomy : IParkEconomy
 			Post( LedgerCategory.OtherIncome, BatchCredit );
 			BatchCredit = 0;
 		}
-		var wages = Rules.Staff ? Staff.TotalMonthlyWages : 0;
-		if ( wages > 0 )
-		{
-			Post( LedgerCategory.StaffCosts, wages );
-			Raise( ParkEventKind.WagesPaid, wages, 0, 0, $"{Staff.Members.Count} staff" );
-		}
+		if ( !Rules.ThemeParkInc )
+			PayStaffMonth();
+
 		// [BIN:TPI-EXE:0x5C0B10 bank month before the objects] Theme Park Inc's objects debit after the bank's whole month handler (below): the month message goes to the listeners in thing-id order and the bank's id (9 in the prebuilt park) lies below every attraction's (14 and up)
 		if ( !Rules.ThemeParkInc )
 			PayRunningCosts();
-		var training = Rules.Staff ? Staff.Train() : 0;
-		if ( training > 0 )
-		{
-			// [BIN:TPW-EXE:0x00505A10 staff training] the training is a debit (0x004D01F0, money out) added to its own analyser word +0x1FA40, which no finance row shows;
-			// the staff costs row (+0x1F7F0, graph bit 0x80 at 0x0049A7B0) takes only the wages (0x00504C70, 0x00505790)
-			Post( LedgerCategory.OtherCosts, training );
-			Raise( ParkEventKind.TrainingPaid, training );
-		}
-		if ( Rules.Staff )
-			ConsiderStrikes();
 		// [BIN:STP-PPC:0x100CC21C loan instalment] each bought loan, in offer-index order, pays exactly M and counts one more month repaid; it ends after N months (ORACLE F13)
 		// [BIN:TPW-EXE:0x4d0370 bank month] the instalment is deducted only with mWithdrawalsEnabled (+0x114) set, as a debit that keeps mLastBalance and the
 		// turn-entered-red stamp; the year profit then gains back the principal share either way, so with the flag clear the instalment raises the profit by it
@@ -1466,12 +1455,10 @@ public sealed partial class ParkEconomy : IParkEconomy
 		if ( MonthsInRed >= MonthsInRedForBankruptcy )
 		{
 			Raise( ParkEventKind.BankruptcyMessage, MonthsInRed );
-			// [BIN:TPI-EXE:0x5C0C99 bankruptcy] Theme Park Inc's bank builds CMsgEvent(2) and broadcasts it on the global bus (0x0A09728): the ordinary
-			// park-closed event, the same one 0x64F640 sends when the player closes the park. It writes no state, opens no window and loads no asset —
-			// the bank module holds no file names — so a Theme Park Inc park is closed, not lost, and its purchases, hires and admissions stay open
-			if ( Rules.ThemeParkInc )
-				ClosePark();
-			else
+			// [BIN:TPI-EXE:0x5C0C99 bankruptcy] Theme Park Inc's bank builds CMsgEvent(2) and broadcasts it on the global bus (0x0A09728). Value 2 is the bank's own
+			// message: the player's close sends CMsgEvent(4) (0x64F7C3) and the open sends 3, and only this site pushes 2. It writes no state — the lost state 4 is the
+			// teardown's (0x649E94) — opens no window and loads no asset, so a Theme Park Inc park is neither lost nor closed by it and keeps trading
+			if ( !Rules.ThemeParkInc )
 				HandleBankruptcyMessage();
 		}
 		if ( Rules.ThemeParkInc )
@@ -1488,6 +1475,34 @@ public sealed partial class ParkEconomy : IParkEconomy
 			var year = Ledger.SummariseYear( nextMonthIndex / ParkCalendar.MonthsPerYear - 1 );
 			Raise( ParkEventKind.YearEnded, year?.Profit ?? 0, 0, 0, year == null ? "" : $"in ${year.MoneyIn}, out ${year.MoneyOut}, balance ${year.ClosingBalance}" );
 		}
+	}
+
+	/// <summary>The staff headquarters' month work (wages, training, the strike check); Theme Park Inc's staff HQ is thing id 1, before the analyser.</summary>
+	private void PayStaffMonth()
+	{
+		var wages = Rules.Staff ? Staff.TotalMonthlyWages : 0;
+		if ( wages > 0 )
+		{
+			Post( LedgerCategory.StaffCosts, wages );
+			Raise( ParkEventKind.WagesPaid, wages, 0, 0, $"{Staff.Members.Count} staff" );
+		}
+		var training = Rules.Staff ? Staff.Train() : 0;
+		if ( training > 0 )
+		{
+			// [BIN:TPW-EXE:0x00505A10 staff training] the training is a debit (0x004D01F0, money out) added to its own analyser word +0x1FA40, which no finance row shows;
+			// the staff costs row (+0x1F7F0, graph bit 0x80 at 0x0049A7B0) takes only the wages (0x00504C70, 0x00505790)
+			Post( LedgerCategory.OtherCosts, training );
+			Raise( ParkEventKind.TrainingPaid, training );
+		}
+		if ( Rules.Staff )
+			ConsiderStrikes();
+	}
+
+	/// <summary>Theme Park Inc's month order: the staff HQ (id 1) first, then the analyser's close and sample (id 5), which precede the bank's credit (id 9).</summary>
+	private LedgerMonth RunStaffMonth( long nextMonthIndex )
+	{
+		PayStaffMonth();
+		return CloseAnalyserMonth( nextMonthIndex );
 	}
 
 	/// <summary>
@@ -1573,7 +1588,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 	// [BIN:TPW-EXE:0x004D0370 bank month] the routine compares the months in the red only with 5 (above it posts type 2 at 0x004D0557): it gives no warnings before
 	// [BIN:TPW-EXE:0x0054F8BB lost park sound] the main loop's sound update sends the music parameter and the crowd count as 0 while the world state is 4 (0x0054F86D, 0x0054F8BD), which GameAudio does for a bankrupt park
 	// [BIN:TPW-EXE:0x0059B620 advisor caption] the advice 106 the bank's message brings says the responses 274 and 275, whose tag 128 shows TAG_SYSTEM entry 127 ("the banks have closed your park") in the message tube (AutomaticAdvisor.PostCaption); the money warnings are the captions of the advice messages 102 to 105 (entries 123 to 126)
-	// [APPROX:ECON-030] the lost park follows the bank handler, thing-loop stop, zero arrival target and silent music/crowd; AutomaticAdvisor already produces money advice 102-105 through AdvisorScan and captions advice 106 on each bank message. The five-entry pause menu (0x48C150), the loss window 0x7472 with its gate camera (0x5168F0 -> 0x481B50 -> 0x48AC40, handler 0x48A740, layout 0x74FB20, banner table 0x74FC38), its dismissal into the hidden-HUD overlay (0x4A29D0) and the loaded-loss restore without the camera (0x4815E0 -> 0x48ADB0) are ported for single-player parks. The audit of the economic guards is done: tp.exe reads the world state 4 only at the bank handler (0x4D030F), the arrival target (0x4CF5BC, zero), the thing loop (0x516390), the music and crowd sound (0x54F862, 0x54F8B2), the load restore (0x4815F2), the pause menu's entries (0x48C27C) and the HUD's overlay (the key branch 0x4A2925, which lets only an Escape without modifiers through to the pause menu, and the hide toggle's early-out 0x4A2AC9); no purchase, hire, loan, build or open routine tests it, so the original refuses nothing in a lost park itself and its HUD, which holds every such control, is hidden. OpenTPW's overlay does the same for a single-player park (every shortcut and click is off under it, ParkHud.ParkShortcutsAllowed) and its economy-level refusals (ParkEconomy.IsBankrupt) stay as the stand-in where the overlay is not shown, where they are the only refusal: in co-op and visits as [EXT:online-coop-money] (user-approved 2026-10-30: solo parks get the loss scene, shared parks and visits keep the economy refusals, not part of this ID) and in Theme Park Inc, whose executable is now read: its bank builds the ordinary park-closed event CMsgEvent(2) once six months in the red have passed (0x5C0C99, broadcast on 0x0A09728, the same event 0x64F640 sends when the player closes the park), writes no state, opens no window and loads no asset — the installation holds no bankruptcy asset at all, and the only loss-specific text is the advisor condition `Bankrupted` (0x9827B4) beside InTheRedSixMonths/ThreeMonths/MonthLeft — so a Theme Park Inc park closes and keeps trading instead of being lost, and no economy refusal applies to it (EndMonth closes the park and raises ParkClosed there). The banner's animation is read to its clock and cadence (the step runs on the frame message 0x1e, which the per-frame update 0x658F6C sends down the window tree from 0x48A5DF, through 0x65C357 to the stepper 0x65E9A4: strictly more than the interval 35 ms since the last step on the clock timeGetTime, 0x65968E), as UiWindowAnimation steps it once per drawn frame. Still open for Theme Park Inc: who consumes the 36-byte notification the bank broadcasts as message type 25 (0x5C09D9), whether a level script writes mWorldState itself, and the advisor's own `Bankrupted` and InTheRed lines, which the executable knows only as scoring conditions
+	// [APPROX:ECON-030] the lost park follows the bank handler, thing-loop stop, zero arrival target and silent music/crowd; AutomaticAdvisor already produces money advice 102-105 through AdvisorScan and captions advice 106 on each bank message. The five-entry pause menu (0x48C150), the loss window 0x7472 with its gate camera (0x5168F0 -> 0x481B50 -> 0x48AC40, handler 0x48A740, layout 0x74FB20, banner table 0x74FC38), its dismissal into the hidden-HUD overlay (0x4A29D0) and the loaded-loss restore without the camera (0x4815E0 -> 0x48ADB0) are ported for single-player parks. The audit of the economic guards is done: tp.exe reads the world state 4 only at the bank handler (0x4D030F), the arrival target (0x4CF5BC, zero), the thing loop (0x516390), the music and crowd sound (0x54F862, 0x54F8B2), the load restore (0x4815F2), the pause menu's entries (0x48C27C) and the HUD's overlay (the key branch 0x4A2925, which lets only an Escape without modifiers through to the pause menu, and the hide toggle's early-out 0x4A2AC9); no purchase, hire, loan, build or open routine tests it, so the original refuses nothing in a lost park itself and its HUD, which holds every such control, is hidden. OpenTPW's overlay does the same for a single-player park (every shortcut and click is off under it, ParkHud.ParkShortcutsAllowed) and its economy-level refusals (ParkEconomy.IsBankrupt) stay as the stand-in where the overlay is not shown, where they are the only refusal: in co-op and visits as [EXT:online-coop-money] (user-approved 2026-10-30: solo parks get the loss scene, shared parks and visits keep the economy refusals, not part of this ID) and in Theme Park Inc, whose executable is now read: its bank builds CMsgEvent(2) once six months in the red have passed (0x5C0C99, broadcast on 0x0A09728) and does nothing else — value 2 is the bank's own message (the player's close sends 4 at 0x64F7C3 and the open sends 3), it writes no state (the lost state 4 is the teardown's, 0x649E94), opens no window and loads no asset, and no bankruptcy artwork exists — so a Theme Park Inc park is neither lost nor closed by it and keeps trading, and no economy refusal applies to it (EndMonth skips the lost state there). The banner's animation is read to its clock and cadence (the step runs on the frame message 0x1e, which the per-frame update 0x658F6C sends down the window tree from 0x48A5DF, through 0x65C357 to the stepper 0x65E9A4: strictly more than the interval 35 ms since the last step on the clock timeGetTime, 0x65968E), as UiWindowAnimation steps it once per drawn frame. Still open for Theme Park Inc: who consumes the 36-byte notification the bank broadcasts as message type 25 (0x5C09D9), whether a level script writes mWorldState itself, and the advisor's own `Bankrupted` and InTheRed lines, which the executable knows only as scoring conditions
 	private void HandleBankruptcyMessage()
 	{
 		if ( IsBankrupt || WinningSequenceActive?.Invoke() == true )

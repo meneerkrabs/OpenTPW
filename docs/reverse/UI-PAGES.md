@@ -34,7 +34,8 @@ It clears six dwords at `this+0x1830` (`mov ecx,6; rep stosd`) — the per-width
 | Offset | Meaning |
 |---|---|
 | `+0x0000` | page table, 6 classes x 256 entries x 4 bytes (0x1800 bytes) |
-| `+0x1800` | six dwords, per-class **page count**: divided into the class's free slots for the average-free-per-page test, and decremented when a page is evicted |
+| `+0x1800` | six dwords, per-class **page count** (capped at `0x100`): divided into the class's free slots for the average-free-per-page test, and decremented when a page is evicted |
+| `+0x1860` | six dwords, the class's remaining **byte budget**; a page costs `bpp x size^2` |
 | `+0x1818` | six dwords, per-class limit |
 | `+0x1830` | six dwords, per-class used count, cleared each frame |
 | `+0x18C4` | the frame's pending list head |
@@ -42,6 +43,14 @@ It clears six dwords at `this+0x1830` (`mov ecx,6; rep stosd`) — the per-width
 | `+0x1918/191C/1924` | allocator max-width/height/retry outputs |
 
 A page-table entry holds a page record whose width and height are dwords at `+8` and `+0xC` (`0x58F24F`, `0x58F57E`).
+
+### Page sizes and the budget
+
+The page size is **the class's own size**, not a texture's. The table at `0x7022E8` holds `0x100, 0x80, 0x40, 0x20, 0x10, 0x08` — 256, 128, 64, 32, 16 and 8 square — and `0x58D6BE` passes that entry as the size to the creator. The creator `0x58D1D0` costs a page at `bpp x size^2`, where `bpp` is `0x7022D8[device kind]` (`2` for kinds 0 to 2 and `4` for kind 3, `0x58D204..0x58D21A`), and charges it against the class's budget at `+0x1860`.
+
+`0x58D1D0` creates pages while the budget lasts and the class holds fewer than `0x100` (256) pages (`0x58D261`), appending the new record at `table[class][count]` and incrementing `+0x1800` (`0x58D2D5..0x58D309`). `0x58D400` seeds the budget at `0x58D42C..0x58D43A` from `[0x8C1620]`, or `0x2000000` (32 MiB) when that is zero, and `0x58D670` repeats the pass for the other classes, evicting a class's last-entry page when it has anything to reclaim (`0x58D6EE..0x58D763`).
+
+So a page is 256, 128, 64, 32, 16 or 8 square by class, capped at 256 pages per class and bounded by a byte budget that starts at 32 MiB unless the device reports its own. `0x5906E0` is not a size setter: it copies the six 256-entry slot tables between two buffers.
 
 The routine opens the same way for both paths: start class is the width class `0x590CF0` of the head when the head is device dependent (`0x590FB0`) and class 0 otherwise (`0x58F1A5..0x58F1C7`); the first class at or after it with `used < limit` is taken, and class 6 returns `-1` (`0x58F1C9..0x58F200`); the entry is `table[class][used]` (`0x58F212..0x58F23E`). Then it splits.
 
@@ -71,6 +80,6 @@ The class choice, the halving, the merge, the allocation and the placement sort 
 
 ## Recommendation
 
-Two steps come before any renderer work. First read the capacity initialisation; only then can the device-dependent branch be ported, because that branch exists only on device kind 1 (`0x590FB0`) — which physical device kind 1 is, was not established here — and the branch reads the page width at `+8` (the shrink loop) and the per-class limits and page counts at `+0x1818`/`+0x1800` (the inline class test) from that same initialisation. Its policy is otherwise determined: shrink until it fits, optionally one class up, evict the entry's previous occupants, then give the texture the whole page. Runtime grouping still needs page objects that OpenTPW does not have, which is a renderer design decision under `[EXT:texture32-always]`, not a fidelity port.
+Two steps come before any renderer work. First read the capacity initialisation; only then can the device-dependent branch be ported, because that branch exists only on device kind 1 (`0x590FB0`) — which physical device kind 1 is, was not established here — and the branch reads the page width at `+8` (the shrink loop) and the per-class limits and page counts at `+0x1818`/`+0x1800` (the inline class test) from that same initialisation. Its policy is otherwise determined: shrink until it fits, optionally one class up, evict the entry's previous occupants, then give the texture the whole page. Runtime grouping still needs page objects of those six sizes with a byte budget and a cross-frame lifetime, which OpenTPW does not have; that is a renderer design decision under `[EXT:texture32-always]`, not a fidelity port.
 
-The capacity initialisation starts at `0x58DA40`, which calls `0x58D400` at `0x58DAD6` and `0x58D670` at `0x58DAE9`. `0x58D400` writes a dword at `+0x1860` (`0x58D43A`) and writes `+0x18F4` and `+0x18F8` (`0x58D4EA`, `0x58D4F2`, `0x58D50F`, `0x58D524`); `0x58D670` reads the per-class page count at `+0x1800` (`0x58D6EE`) and decrements it (`0x58D763`) when it evicts a class's last-entry page, calling that page's `vtable+0x24` and freeing it. Whether `0x58DA40` runs once per frame or once per page cycle is not established here. Those routines are the next bounded reading target, not a port.
+The capacity model above is now read; the first capacity step starts at `0x58DA40`, which calls `0x58D400` at `0x58DAD6` and `0x58D670` at `0x58DAE9`. `0x58D400` also writes `+0x18F4` and `+0x18F8` (`0x58D4EA`, `0x58D4F2`, `0x58D50F`, `0x58D524`). Whether `0x58DA40` runs once per frame or once per page cycle is not established here.

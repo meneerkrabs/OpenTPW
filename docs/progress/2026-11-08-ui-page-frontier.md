@@ -4,7 +4,7 @@ Documented the orchestration that still stands between the ported pure helpers a
 
 Several corrections came out of the review of this note and are worth recording because they change how the ID reads:
 
-- A page is **not** sized from the first non-fitting texture; the size comes from the page record created by runtime initialisation, which is still unread. The driver's `-1` branch drops the texture unplaced, matching `docs/MD2-MODELS.md`.
+- A page is **not** sized from the first non-fitting texture: its size is its width class's own size, 256, 128, 64, 32, 16 or 8 square, from the table at `0x7022E8`, capped at 256 pages per class and charged against a per-class byte budget that starts at 32 MiB unless the device reports its own. The driver's `-1` branch drops the texture unplaced, matching `docs/MD2-MODELS.md`.
 - `+0x10`/`+0x12` are the **authored** size and `+0x14`/`+0x16` the working size the halving rewrites; and `0x58EAE0`'s ordering follows from its comparisons at `0x58EB62`/`0x58EB71`, so it is largest-authored-first.
 - `0x58EA20` (the 2x free-share test) is called only from the merge-and-pack path; the device-dependent path uses an inline comparison without the factor.
 - `0x590350` writes the page handle into the texture's `+0x1C` (`0x590678`), and `0x58DB0C`'s `0x40/0x80/0x100` are overwritten with `0x10` at `0x58DB34`, so neither is a page-size policy.

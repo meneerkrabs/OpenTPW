@@ -77,14 +77,14 @@ internal sealed class PageAllocation
 // [BIN:TPW-EXE:0x58ECA0 allocator] free list starts as the whole page; each request takes the LAST free rectangle it fits (rounded to the mask when 0x18E8 is set); any request that fits nowhere may be downsampled and moved behind greater ranks while no placement has been written yet; leftovers above 8 stay free
 // [BIN:TPW-EXE:0x590FB0 device test] flags & 0x30000 and the device kind global 0x8BD524 equal to 1
 // [BIN:TPW-EXE:0x58CB40 rank key] ((ftol((1.5 - priority) * 2047) & 0xFFF) * 256 + width) * 256 + height, | 0x20000000 for flags 0x4000, | 0x40000000 for flags 0x80000; x87 control word 0x7F (single precision)
-// [BIN:TPW-EXE:0x57CED0 sort] the OriginalDepthSort quicksort on 20 byte records by an unsigned dword key; the tie permutation is part of the result
+// [BIN:TPW-EXE:0x57CED0 sort] a separate quicksort on 20-byte records by an unsigned dword key; it shares the partition structure of the float depth sorts 0x5829E0/0x565490 (see OriginalDepthSort) but is not that routine, and its tie permutation is part of the result
 internal static class OriginalPageAllocator
 {
 	/// <summary>The placement cap: the loop ends once 127 records are written (<c>cmp edx, 0x7f</c>).</summary>
 	public const int MaxPlacements = 127;
 
-	/// <summary>Every placement adds at most one free rectangle to the first one, and the loop stops at 127 placements.</summary>
-	private const int FreeCapacity = MaxPlacements + 2;
+	/// <summary>The native free array holds 128 records (<c>[esp+0x58]</c> at 0x14 bytes each): the whole page plus at most one split rectangle per placement, and the loop stops at 127 placements.</summary>
+	private const int FreeCapacity = MaxPlacements + 1;
 
 	/// <summary>The leftover size above which a remainder stays a free rectangle (<c>cmp, 8</c>) and the width threshold of a device dependent texture's downsample (<c>[0x702434]</c>).</summary>
 	private const int Slack = 8;

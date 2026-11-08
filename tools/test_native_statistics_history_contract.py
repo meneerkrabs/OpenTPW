@@ -82,11 +82,11 @@ class NativeStatisticsHistoryContract(unittest.TestCase):
         self.assertLess(self.save.index("park.Ledger.Restore("), self.save.index("park.StatisticsHistory.Restore("))
 
     def test_month_close_captures_rating_once_without_changing_financial_history(self):
-        sample = self.economy.split("var census = CachedGuestCensus( 0 );", 1)[1].split("Raise( ParkEventKind.MonthEnded", 1)[0]
+        sample = body(self.economy, "private LedgerMonth CloseAnalyserMonth(")
         self.assertEqual(1, sample.count("ParkRating"))
         self.assertIn("var rating = ParkRating;", sample)
         self.assertIn("StatisticsHistory.CloseMonth( guestStatistics.CensusHappiness, census, rating );", sample)
-        self.assertIn("Ledger.CloseMonth( nextMonthIndex, rating, NetWorth( 0 ) );", sample)
+        self.assertIn("Ledger.CloseMonth( nextMonthIndex, rating, Rules.ThemeParkInc ? Balance : NetWorth( 0 ) );", sample)
         close = body(self.history, "public void CloseMonth(")
         self.assertEqual(1, close.count("Rating.Add( rating )"))
         self.assertIn("ArrivalsThisMonth = 0", close)

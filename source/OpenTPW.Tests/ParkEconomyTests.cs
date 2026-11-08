@@ -127,6 +127,26 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void ThemeParkIncClosesTheAnalyserMonthBeforeTheBankCreditsTheBatch()
+	{
+		// [BIN:TPI-EXE:0x5AF220 analyser month] the month message reaches its listeners in ascending thing-id order, so the analyser (5) closes
+		// before the bank (9): the batch it pays lands in the next month. tp.exe's twin 0x004C7720 runs after the bank, so the batch stays in the closing month there.
+		var park = new ParkEconomy( EconomyTestData.Settings( 50000 ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
+		park.RestoreBankWords( true, 50000, 0, 1234 );
+		park.AdvanceMonths( 1 );
+		Assert.AreEqual( 0, park.Ledger.History[^1].Totals.TryGetValue( LedgerCategory.OtherIncome, out var closing ) ? closing : 0,
+			"the batch is not part of the closing month" );
+		Assert.AreEqual( 1234, park.Ledger.CurrentTotals.TryGetValue( LedgerCategory.OtherIncome, out var current ) ? current : 0,
+			"the batch falls into the month that opens" );
+
+		var world = EconomyTestData.Park( 50000 );
+		world.RestoreBankWords( true, 50000, 0, 1234 );
+		world.AdvanceMonths( 1 );
+		Assert.AreEqual( 1234, world.Ledger.History[^1].Totals.TryGetValue( LedgerCategory.OtherIncome, out var worldClosing ) ? worldClosing : 0,
+			"Theme Park World keeps the batch in the closing month, unchanged" );
+	}
+
+	[TestMethod]
 	public void YearlyProfitRunsFromIncomeAndCostsAndResetsEachYear()
 	{
 		var park = EconomyTestData.Park( initialCash: 0 );

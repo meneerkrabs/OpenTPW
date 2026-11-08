@@ -1,0 +1,11 @@
+## A Theme Park Inc park is never lost (November 8, 2026)
+
+Theme Park Inc has no loss scene. Its bank's month tick `0x5C0B10` stamps the turn the balance first goes negative (`+0x128`), converts that stamp to months, and at **`0x5C0C99: cmp eax,6; jl`** — six or more months in the red — builds `CMsgEvent(2)` and broadcasts it on the global bus `0xA09728`. That is the bank's **own** message: the player's close sends `CMsgEvent(4)` (`0x64F7C3`) and the open sends `3`, and this site is the only one of the eight construction sites in the executable that pushes `2`. It writes no state, opens no window and loads no asset, and the bank module holds no file name.
+
+The lost state the register described is Theme Park World's. In Theme Park Inc, state 4 has a single writer, `0x649E94` inside the level-teardown routine `0x649E60`, whose callers are the result branches of the event-5 handler; no economy or bank code writes it.
+
+`EndMonth` therefore skips the lost state under Theme Park Inc's rules: the bankruptcy message is raised, `IsBankrupt` stays false, the park stays open and no purchase, hire or admission is refused — which is what an original that blocks nothing on bankruptcy does. Theme Park World is unchanged: the change touches only the Theme Park Inc branch.
+
+`SixMonthsInTheRedLeaveTheParkTradingInsteadOfLosingIt` and `ThemeParkIncNeverEntersTheLostState` pin it (no lost state, the park open, no `Bankrupt` or `ParkClosed` event, a build not refused), and `TheBanksMonthComesBeforeTheObjectsDebits` keeps its ordering claim with the message and the absent lost state asserted. The economy, ledger, bank-word, advisor and Theme Park Inc selection passes (921 passed, 0 failed, 109 skipped).
+
+The `[APPROX:ECON-030]` text records the read rule and narrows the residual to what is still unknown: who consumes the 36-byte notification the bank broadcasts as message type 25 (`0x5C09D9`), whether a level script writes `mWorldState` itself, and the advisor's own `Bankrupted` and `InTheRed*` lines. `RestoreState` also refuses to restore a lost state under Theme Park Inc's rules, so a save an earlier build wrote with one loads trading instead of permanently unable to open or buy (`AStoredLostStateIsNotRestoredForThemeParkInc`). The economy, save and Theme Park Inc selection passes (1308 passed, 0 failed, 162 skipped).

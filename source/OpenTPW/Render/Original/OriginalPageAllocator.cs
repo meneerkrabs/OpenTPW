@@ -227,7 +227,10 @@ internal static class OriginalPageAllocator
 	}
 
 	/// <summary>0x590FB0: a device dependent texture on device kind 1.</summary>
-	internal static bool DeviceDependent( PageTexture texture, int deviceKind ) => (texture.Flags & 0x30000) != 0 && deviceKind == 1;
+	internal static bool DeviceDependent( PageTexture texture, int deviceKind ) => DeviceDependent( texture.Flags, deviceKind );
+
+	/// <summary>0x590FB0 for a record's flags word (<c>[record+8]</c>), shared with the page-list merge.</summary>
+	internal static bool DeviceDependent( uint flags, int deviceKind ) => (flags & 0x30000) != 0 && deviceKind == 1;
 
 	/// <summary>0x58CB40: writes the rank key of <paramref name="texture"/> from its priority, size and flags.</summary>
 	internal static void RefreshRank( PageTexture texture )

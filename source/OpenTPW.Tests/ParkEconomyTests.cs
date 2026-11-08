@@ -379,6 +379,25 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void ThemeParkIncClosesTheParkAfterSixMonthsInTheRedInsteadOfLosingIt()
+	{
+		// [BIN:TPI-EXE:0x5C0C99 bankruptcy] six months in the red build CMsgEvent(2) and broadcast it: the ordinary park-closed event, with no state write,
+		// no window and no asset. So a Theme Park Inc park closes and keeps trading; the lost state and its refusals are Theme Park World's.
+		var park = new ParkEconomy( EconomyTestData.Settings( 100 ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
+		var events = new List<ParkEvent>();
+		park.EventRaised += events.Add;
+		park.ImportOriginalBank( -1000, 20, 0, Array.Empty<LoanAccount>() );
+		park.RestoreBankWords( true, -1000, 0 );
+		park.OpenPark();
+		for ( var month = 0; month < 8 && park.IsParkOpen; month++ )
+			park.AdvanceMonths( 1 );
+		Assert.IsFalse( park.IsBankrupt, "Theme Park Inc never enters the lost state" );
+		Assert.IsFalse( park.IsParkOpen, "the bank's event closes the park" );
+		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.ParkClosed ), "the close is raised once" );
+		Assert.AreEqual( 0, events.Count( item => item.Kind == ParkEventKind.Bankrupt ), "no loss event" );
+	}
+
+	[TestMethod]
 	public void SixThirtyDayMonthsInTheRedMakeTheParkBankrupt()
 	{
 		var park = EconomyTestData.Park( initialCash: 100 );

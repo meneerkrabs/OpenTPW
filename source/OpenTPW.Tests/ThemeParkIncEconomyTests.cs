@@ -131,20 +131,24 @@ public class ThemeParkIncEconomyTests
 	}
 
 	[TestMethod]
-	public void SixMonthsInTheRedBankruptThePark()
+	public void SixMonthsInTheRedCloseTheParkAndItKeepsTrading()
 	{
-		// an object whose running cost outruns the cash: 50000 lasts two months, then the 30-day months in the red count to six
+		// an object whose running cost outruns the cash: 50000 lasts two months, then the 30-day months in the red count to six.
+		// [BIN:TPI-EXE:0x5C0C99 bankruptcy] the bank then broadcasts the ordinary park-closed event and nothing else, so the park is closed rather than lost
 		var economy = Economy( Ride( 1, 0, 20000 ) );
 		economy.RegisterExisting( 1 );
+		economy.OpenPark();
 		var events = new List<ParkEventKind>();
 		economy.EventRaised += item => events.Add( item.Kind );
 		economy.AdvanceMonths( 3 );
 		Assert.IsTrue( economy.Balance < 0 );
 		Assert.IsFalse( economy.IsBankrupt );
 		economy.AdvanceMonths( 9 );
-		Assert.IsTrue( economy.IsBankrupt );
-		CollectionAssert.Contains( events, ParkEventKind.Bankrupt );
-		Assert.AreEqual( ParkEconomy.PurchaseResult.Bankrupt, economy.CheckBuild( 1 ) );
+		Assert.IsFalse( economy.IsBankrupt, "Theme Park Inc never enters the lost state" );
+		Assert.IsFalse( economy.IsParkOpen, "the bank's event closes the park" );
+		CollectionAssert.Contains( events, ParkEventKind.ParkClosed );
+		CollectionAssert.DoesNotContain( events, ParkEventKind.Bankrupt );
+		Assert.AreNotEqual( ParkEconomy.PurchaseResult.Bankrupt, economy.CheckBuild( 1 ), "a Theme Park Inc park refuses nothing on bankruptcy" );
 		Assert.AreEqual( 0, economy.Settings.Roles.Count, "and the staff-less park never needed a pool" );
 	}
 
@@ -158,7 +162,7 @@ public class ThemeParkIncEconomyTests
 		var events = new List<ParkEventKind>();
 		economy.EventRaised += item => events.Add( item.Kind );
 		economy.AdvanceMonths( 12 );
-		Assert.IsTrue( economy.IsBankrupt );
+		Assert.IsFalse( economy.IsParkOpen, "the park has closed by then, as the bank's event does" );
 		var bank = events.LastIndexOf( ParkEventKind.BankruptcyMessage );
 		Assert.IsTrue( bank >= 0 );
 		var costs = events.IndexOf( ParkEventKind.RunningCostsPaid, bank );

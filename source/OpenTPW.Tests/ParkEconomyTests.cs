@@ -132,12 +132,16 @@ public class ParkEconomyTests
 		// [BIN:TPI-EXE:0x5AF220 analyser month] the month message reaches its listeners in ascending thing-id order, so the analyser (5) closes
 		// before the bank (9): the batch it pays lands in the next month. Theme Park World keeps its own order, so the batch stays in the closing month there.
 		var park = new ParkEconomy( EconomyTestData.Settings( 50000 ), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
+		// an object with a scrap value, so the sampled balance and the net worth differ and the sample's source is observable
+		park.RegisterExisting( 1112 );
 		park.RestoreBankWords( true, 50000, 0, 1234 );
 		park.AdvanceMonths( 1 );
 		Assert.AreEqual( 0, park.Ledger.History[^1].Totals.TryGetValue( LedgerCategory.OtherIncome, out var closing ) ? closing : 0,
 			"the batch is not part of the closing month" );
 		Assert.AreEqual( 1234, park.Ledger.CurrentTotals.TryGetValue( LedgerCategory.OtherIncome, out var current ) ? current : 0,
 			"the batch falls into the month that opens" );
+		Assert.AreEqual( 50000, park.Ledger.History[^1].ParkValue, "Theme Park Inc samples the bank balance (0x5C0740), not the net worth" );
+		Assert.AreNotEqual( park.ParkValue, park.Ledger.History[^1].ParkValue, "and the two differ once an object has a scrap value" );
 
 		var world = EconomyTestData.Park( 50000 );
 		world.RestoreBankWords( true, 50000, 0, 1234 );

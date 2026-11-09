@@ -480,6 +480,14 @@ They are first-party evidence for the VM:
 These are test scripts, not shipped ride scripts, so they support but do not prove
 the semantics of the TPW corpus.
 
+## The attraction serialiser: field offsets and readers (read 2026-11-09)
+
+Theme Park Inc's model-3 object is `0x148` bytes with its type byte at `+2`; the object's loader and writer are the two halves of `0x5DC430` (writer `0x5DC4A2..0x5DD527`, loader `0x5DD52A..0x5DDF25`), and the handler `0x5DED90` is not its constructor — the real one is `0x5DB1B0`.
+
+The operating fields sit `+0x14` above the Theme Park World layout: speed `+0x6C`, capacity `+0x71`, duration `+0x70`, `mCanLoad` `+0x7C`, the claimed staff id `+0x72` and its turn `+0x74`. The two name lines are at `+0xA8` and `+0xEA`, written and read as 33 interleaved UTF-16 pairs. The three gauges are floats at `+0x60` (the third), `+0x58` (life) and `+0x54` (repair); Theme Park World's third gauge at `+0x4C` is `mFirstInQ` here.
+
+The loader writes **all** of them straight into the live object without validating any. Each has a reader except the third gauge: capacity, duration and speed feed the throughput/quality computation `0x5DFE00` and the ride panel `0x5E41D0`; `mCanLoad` gates the queue and load paths (`0x5DFCB0`, `0x5E163E`, `0x5E210B`, `0x5E3498`); the names build the sign text (`0x5E7C25`) and the display lines (`0x5E97E8`); the claim id and turn are read by the claimant test `0x5E37F0`, which lapses a claim after 100 turns — the rule ECON-022 already ports. The third gauge has no reader anywhere: only the constructor's zero store (`0x5DB230`), the writer (`0x5DCF0D`) and the loader (`0x5DDC4B`) touch it, which confirms the register's "no reader found" for the Theme Park World field of the same meaning.
+
 ## Differences
 
 - **Textures.** Theme Park Inc stores level, UI and advisor textures as one-image

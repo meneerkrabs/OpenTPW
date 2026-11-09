@@ -361,7 +361,8 @@ public sealed class BlueprintMarkers : ModelEntity
 	/// <c>SetCell</c> gives a plain cell height 0 and the vertex writer adds the terrain, so a plain marker drapes over the ground.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005330A5 plain cell height] SetCell 0x532FC0 passes 0 for a plain cell; the face is added at y + 1.5 (0x5338E7, constant 0x700D5C = -1.5 subtracted) and 0x53DDD0 adds the terrain at the vertex and the ripple
-	// [APPROX:BLUEPRINT-001] a typed TPW world supplies each cell's raise (BlueprintHeights, the tile raise of TileLineGhost); a world that types no cells ([EXT:untyped-harness-world]), a missing or invalid map and Theme Park Inc keep the unraised terrain (docs/reverse/BLUEPRINT.md).
+	// [APPROX:BLUEPRINT-001] a typed TPW world supplies each cell's raise (BlueprintHeights, the tile raise of TileLineGhost); a world that types no cells ([EXT:untyped-harness-world]) and a missing or invalid map keep the unraised terrain (docs/reverse/BLUEPRINT.md).
+	// Theme Park Inc raises the same terrain: its placement handler 0x67AD00 gates on the record types {0xB,0xC,0x10,0x11,0x19} (0x67AC80) and the map types 7/0x1E and 4/9/10, quantises with the same ceil-to-10 and steps between unequal neighbours by 10, so the original does not keep the terrain there. What is open is only whether OpenTPW's own Theme Park Inc path supplies those types to this method — not the original's behaviour.
 	public static float VertexHeight( ModelHeightfield field, int cornerX, int cornerY, float phase ) =>
 		field.GetCornerHeight( cornerX, cornerY ) + Lift + Ripple( phase, cornerX * FaceSize, cornerY * FaceSize );
 

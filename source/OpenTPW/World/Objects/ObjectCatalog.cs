@@ -581,7 +581,7 @@ public sealed class ObjectCatalog
 		var easyFile = easy ? files.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), "Easy_" + Path.GetFileName( mainFile ), StringComparison.OrdinalIgnoreCase ) ) : null;
 		if ( easyFile != null )
 			layers.Add( ObjectSettingsFile.Load( fileSystem, easyFile ) );
-		// [APPROX:RIDES-045] a Theme Park Inc object a mod brings runs its own script, but the variables only Theme Park Inc's engine writes (VAR_FPBYPASS, VAR_SPECIAL, VAR_SPEED, the litter bin's VAR_BOMB, ...) stay 0 in a Theme Park World park
+		// [BIN:TPI-EXE:0x6B0780 script variable setter] Theme Park Inc's executable never writes a script variable from its engine: the bounds-checked setter 0x6B0780 exists but no code calls it, and the only writes to a script's variable array are the interpreter's own 17 operand-destination tails (0x6AB48D and siblings). The read-only slots a modded object's script tests — capacity, duration, ride-closed, worn, break status, special, the staff room's closed — therefore stay 0 in the original too, and the scripts only ever clear the ones they also read (VAR_BOMB, VAR_FPBYPASS, VAR_USE, VAR_EMPTY). A guest's litter still arms a bin's first variable by name (Level.SetBinTrigger), which is Theme Park World's rule
 		// [EXT:mods] a mod's object gets the Info.Id its objects.json assigns, whatever its own .sam says (Layout records join on Info.Id, so the id is the mod's to keep stable)
 		// the designers' own Info.Name, before objects.json puts a name over it (the key a Theme Park Inc string table is matched by, ObjectNames.ApplyThemeParkIncNames)
 		var ownName = modObject != null ? new ObjectSettings( layers )["Info.Name"] : null;

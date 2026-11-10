@@ -315,6 +315,7 @@ RIDES-041 docs/OBJECTS.md
 RIDES-042 docs/OBJECTS.md
 RIDES-043 docs/OBJECTS.md
 RIDES-044 docs/RSE-VM.md
+RIDES-045 source/OpenTPW/World/Objects/ObjectCatalog.cs
 RIDES-046 docs/LIGHTS.md
 SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md

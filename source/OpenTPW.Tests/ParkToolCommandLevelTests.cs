@@ -161,6 +161,23 @@ public class ParkToolCommandLevelTests
 		Assert.AreEqual( AdvisorToolHelp.Placement, AdvisorToolHelp.BuildStart( 0, anyRidePlaced: true ), "the placement help (0xCE) once a ride stands" );
 	}
 
+	/// <summary>A coaster track add-on's click (0x5251F5/0x525838 while 0x52FAF0 answers 3) stores the clicked thing's raw anchor in both pairs, not the mapped station cells.</summary>
+	[TestMethod]
+	public void ACoasterTrackAddOnSelectStoresTheRawAnchor()
+	{
+		var park = Coaster();
+		var level = park.Level;
+		var addOn = new ObjectCatalogEntry( "jungle", ObjectCategory.Feature, "/levels/jungle/features/x", new ObjectSettings( new[]
+		{
+			new ObjectSettingsFile( $"Info.Id\t1272\nInfo.Name\t\"coasterjump\"\nAddOn.UpgradesId\t{park.One.Entry.InfoId}\nAddOn.UpgradeType\t{TrackAddOns.TrackUpgradeType}\nBumper.WhichTrackType\t3\n", "x.sam" )
+		} ), ObjectShape.Single, "/x.MD2", null, null, System.Array.Empty<string>(), System.Array.Empty<ObjectAnimationFile>(), System.Array.Empty<string>(),
+			System.Array.Empty<string>(), new BaseFileSystem( System.IO.Path.GetTempPath() ), null );
+		Assert.IsTrue( level.BeginAddOn( addOn, park.One ), "the add-on arms the track tool" );
+		level.NoteToolSelection( park.One );
+		Assert.AreEqual( (park.One.Placement.X, park.One.Placement.Y), level.ClientToolGlobals.Exit, "the raw anchor, not the mapped exit" );
+		Assert.AreEqual( (park.One.Placement.X, park.One.Placement.Y), level.ClientToolGlobals.Entry, "and the raw anchor as the entry" );
+	}
+
 	/// <summary>The coaster tool's entry runs the select (0x5276D0 at 0x4AF200/0x4988C0/0x497D20) and writes the sticky tool globals, so a later bulldoze or ghost reads this coaster's cells.</summary>
 	[TestMethod]
 	public void TheCoasterToolsEntryWritesTheStickyToolGlobals()

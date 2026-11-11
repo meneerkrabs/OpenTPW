@@ -390,6 +390,10 @@ public partial class Level
 		// the tool on this coaster already: nothing starts again (the original's entry closes only a coaster no tool edits)
 		if ( CoasterToolStation == station && CoasterPanel != null )
 			return TrackToolEntry.Entered;
+		// [BIN:TPW-EXE:0x4af200 coaster tool entry selects] every coaster tool entry runs the select 0x5276D0 first (the ride window's track button 0x4AF200, the marker-cell press and
+		// panel entry 0x4988C0 and the track tool's own 0x497D20), which stores the selected coaster's anchor mapped by 0x52A3A0/0x52A420 into 0x7639E0/E4 and 0x7639E8/EC. Without it a later
+		// bulldoze or ghost that reads the pair would still see the previously selected ride's cells
+		NoteToolSelection( station );
 		// [EXT:online-coop-commands] a guest's coaster commands still to send go first: a claim sent now would come before them (C3c-2)
 		if ( !CoasterCommandsSentBeforeClaim() )
 			return TrackToolEntry.Refused;

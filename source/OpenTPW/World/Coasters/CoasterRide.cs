@@ -540,7 +540,7 @@ public sealed class CoasterRide
 	/// </summary>
 	private float LeadCoordinate() => trains.Count > 0 && samples.Length > 0 ? CarCoordinate( trains[0], trains[0].CarLists.Length - 1 ) : LeadCarCoordinate;
 
-	// [APPROX:COAST-032] the rating pass, the train placement and the motion tick are compared bit for bit with isolated tp.exe runs (CoasterRatingGolden, ORACLE X46); not compared: the cars' curve point and pose (0x43c0a0 with 0x43e6b0, rendering only) and a car or release walk that reaches slot n past the sample list (the original reads the sampler's pre-rating copy of the last sample, 0x441783)
+	// [APPROX:COAST-032] the rating pass, the train placement and the motion tick are compared bit for bit with isolated tp.exe runs (CoasterRatingGolden, ORACLE X46); not compared: the cars' curve point and pose (0x43c0a0 with 0x43e6b0, rendering only) and a car or release walk that reaches slot n past the sample list. Read 2026-11-12: the second is not a divergence. The original copies the last sample into slot n before the rating pass (0x441783) and the only field its reader takes is the position, for the car point's lerp (0x43cf6c for the current point, 0x43d10d for the half-sample point); the rating pass rewrites speeds, forces and flags but never a sample's position, so the sampler's pre-rating copy and this array's last sample carry the same position and Slot(n) answers the same
 	/// <summary>
 	/// The trains after a rating pass (<c>0x43c450</c>): the train count changes (<c>0x43ba20</c>: a train past the new count gives up its riders and
 	/// its slot), new trains are set up, then every train is placed again: train 0 keeps its last car where it was and each next train's last car stands

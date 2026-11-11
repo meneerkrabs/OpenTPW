@@ -1037,7 +1037,11 @@ public partial class Level
 		var start = Guests.Grid.IsQueue( front.X, front.Y ) ? queue.QueueBackCell : front;
 		// [BIN:TPW-EXE:0x00530120 corner walk] the tool's entry walks the queue into the stack of corner points (0x81B740) and sets the line start to its last point; the tool's undo then takes the queue back segment by segment (Back 0x52FE50)
 		// a queue of its front cell alone (a ride just placed) keeps the one-point stack the placement leaves, so its first click lays from the front cell
-		var stack = Guests.Grid.IsQueue( front.X, front.Y ) && queue.QueueCells.Count >= 2 ? QueuePaths.CornerStack( Guests.Grid, queue ) : null;
+		// [BIN:TPW-EXE:0x00530120 one-cell queue] the walk pushes the first cell (0x5301FC) and, when it ends, the last cell (0x530494) — both unconditional — so a queue of one cell
+		// leaves two points, the same cell twice, and the count test 0x5273C7 ends the tool when that start is clicked again
+		var stack = Guests.Grid.IsQueue( front.X, front.Y ) ? QueuePaths.CornerStack( Guests.Grid, queue ) : null;
+		if ( Guests.Grid.IsQueue( front.X, front.Y ) && stack is not { Count: >= 2 } )
+			stack = new[] { start, start };
 		if ( stack is not { Count: >= 2 } || stack[^1] != start )
 			stack = null;
 		var segments = stack == null ? null : QueuePaths.StackSegments( queue, stack );

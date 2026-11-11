@@ -161,6 +161,21 @@ public class ParkToolCommandLevelTests
 		Assert.AreEqual( AdvisorToolHelp.Placement, AdvisorToolHelp.BuildStart( 0, anyRidePlaced: true ), "the placement help (0xCE) once a ride stands" );
 	}
 
+	/// <summary>The coaster tool's entry runs the select (0x5276D0 at 0x4AF200/0x4988C0/0x497D20) and writes the sticky tool globals, so a later bulldoze or ghost reads this coaster's cells.</summary>
+	[TestMethod]
+	public void TheCoasterToolsEntryWritesTheStickyToolGlobals()
+	{
+		var park = Coaster();
+		var level = park.Level;
+		// a stale selection from whatever was chosen before, which the entry has to replace
+		level.ClientToolGlobals.Exit = (99, 99);
+		level.ClientToolGlobals.Entry = (98, 98);
+		Assert.IsTrue( level.EnterCoasterTool( park.One ) );
+		var station = TrackStation.FromPlacement( park.One.Placement.X, park.One.Placement.Y, park.One.Placement.Rotation );
+		Assert.AreEqual( station.Exit, level.ClientToolGlobals.Exit, "the exit pair is the selected coaster's, mapped by 0x52A3A0" );
+		Assert.AreEqual( station.Entry, level.ClientToolGlobals.Entry, "and the entry pair by 0x52A420" );
+	}
+
 	/// <summary>The coaster tool's entry and exit (the ride closed and opened, the controller's tool state, the being-edited mark that keeps guests off) are commands a twin follows.</summary>
 	[TestMethod]
 	public void TheCoasterToolsEntryAndExitAreCommandsThatMarkTheCoasterBeingEdited()

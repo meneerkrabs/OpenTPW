@@ -47,6 +47,14 @@ public partial class Level
 		// [EXT:developer-prototype] the developer prototype (PlacedRide) is no placed thing of the catalogue: it has no entry the select could map
 		if ( item is not { Runtime: not null } || item is PrototypeRide || WindowTarget( item ) is not { } target )
 			return;
+		// [BIN:TPW-EXE:0x005251F5 type 3 raw anchor] a click taken while a track add-on tool of the coaster track type is armed (0x52FAF0 answers 3) stores the clicked thing's raw anchor in
+		// both pairs instead of the mapped station cells; the ride window's track button reaches this (0x4AF200 arms the tool at 0x4AF33E and calls the click handler 0x524960 at 0x4AF34B)
+		if ( BuildEntry is { } armed && TrackAddOns.IsTrackAddOn( armed ) && armed.Settings.GetInt( "Bumper.WhichTrackType", 0 ) == 3 )
+		{
+			ClientToolGlobals.Exit = (target.Placement.X, target.Placement.Y);
+			ClientToolGlobals.Entry = (target.Placement.X, target.Placement.Y);
+			return;
+		}
 		var station = trackStations != null && trackStations.TryGetValue( target, out var laid ) ? laid : TrackStation.FromPlacement( target.Placement.X, target.Placement.Y, target.Placement.Rotation );
 		ClientToolGlobals.Exit = station.Exit;
 		ClientToolGlobals.Entry = station.Entry;

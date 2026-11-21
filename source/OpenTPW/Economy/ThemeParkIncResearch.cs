@@ -336,6 +336,56 @@ public sealed class ThemeParkIncResearch
 		return true;
 	}
 
+	/// <summary>A project's percent done (<c>0x620210</c>): 100 for a cost of at most 0.1, else trunc(done × 100 / cost).</summary>
+	// [BIN:TPI-EXE:0x620210 percent done] cost <= 0.1 answers 100, else trunc(done × 100 / cost) (0x86FAB0)
+	public int Percent( int index )
+	{
+		var project = projects[index];
+		return project.Cost <= 0.1f ? 100 : unchecked( (int)(long)((double)project.Done * 100 / project.Cost) );
+	}
+
+	/// <summary>Whether a slot's project is finished (<c>0x576EC0</c>): a project index of 0 or more whose done reaches its cost (<c>0x6201E0</c>).</summary>
+	public bool SlotFinished( int slot ) => slotProjects[slot] >= 0 && !(projects[slotProjects[slot]].Done < projects[slotProjects[slot]].Cost);
+
+	/// <summary>
+	/// The slot "Start New Project" takes (<c>0x575F98</c>): slot 0 when it has no project or a finished one (cleared first), else slot 1 likewise; -1 when both run ("Must Delete Project!", 336/337).
+	/// </summary>
+	// [BIN:TPI-EXE:0x575F98 new project] +0x14 < 0 or 0x576EC0(0): a finished slot 0 is cleared (0x61F560(0), 0x575FE9), the chooser 0x574180(0); else the same for +0x18 and slot 1 (0x576062); else 336/337
+	public int StartNewProject()
+	{
+		for ( var slot = 0; slot < Slots; slot++ )
+		{
+			if ( slotProjects[slot] < 0 || SlotFinished( slot ) )
+			{
+				if ( SlotFinished( slot ) )
+					ClearSlot( slot );
+				return slot;
+			}
+		}
+		return -1;
+	}
+
+	/// <summary>
+	/// The chooser's rows for <paramref name="slot"/> (<c>0x574EC0</c> with the filter <c>0x574D00</c>), in project order: not finished, not the other slot's project, a group within the zone's tech level,
+	/// and a level project only when its object stands in the park.
+	/// </summary>
+	// [BIN:TPI-EXE:0x574D00 project filter] 0x620210 >= 100 excludes; the other slot's index (lab[4 × (6 - slot)]) excludes; the group byte +0x12 above the current zone record's +0 (the tech level, through
+	// 0x42A3B0 -> +0x4C -> +0x64 -> 0x74F4B0) excludes; category 4: t = info +0x3D8 ? info +0x3D4 : objId, no built thing of type t (0x647850) or one that 0x5E81D0 calls special and 0x5E8210 does not
+	// excludes. The add-on word +0x3D8 is 0 for every level project's object (the add-ons are category 4 types, which never become projects), so t is the object itself; no object with a level project is special
+	public IEnumerable<int> Offered( int slot, int techLevel, Func<int, bool> built )
+	{
+		var other = slotProjects[slot == 0 ? 1 : 0];
+		for ( var index = 0; index < Count; index++ )
+		{
+			var project = projects[index];
+			if ( Percent( index ) >= 100 || index == other || project.Group > techLevel )
+				continue;
+			if ( project.Category == 4 && !built( project.ObjectId ) )
+				continue;
+			yield return index;
+		}
+	}
+
 	/// <summary>The first unfinished Park Expansion project (<c>0x61EB30</c>), -1 for none: what the mission panel reports.</summary>
 	public int ObstacleProject()
 	{

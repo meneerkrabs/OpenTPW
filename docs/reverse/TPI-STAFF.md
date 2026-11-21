@@ -353,3 +353,39 @@ the HQ before the mission controller.
 - **HUD** (`[EXT:tpi-text-hud]`): a hired member's row in the staff panel opens his ability list (with a training room in the park); choosing the same ability twice confirms a retraining; the
   advisor's lines show as notes.
 - Not ported: the training-room panel's three slots (`0xA6C128`) and its suspend/resume (states 0x25/0x26, `0x62B960`), which only it sets.
+
+### 12.3 Research and the researchers
+
+`ThemeParkIncResearch` (the lab thing, class 14, and the object controls' researched words) and `ThemeParkIncStaffWorld.Researchers.cs` port Theme Park Inc's research, which replaces Theme Park
+World's effort split:
+
+- **The lab** of a park file is loaded, not filled: the prebuilt Science park brings 50 projects, both slots at -4 (the lab start's value, which every reader takes for none), the workload 85 and the
+  object controls (`0x5CF9B0`, researched `+0x10` and level `+0x14`). Projects are `+0x78` records of 0x24 bytes (`0x61F670`); `mType` stays whatever the record held (the prebuilt's free records are 0xCD).
+- **Tick** `0x61E980`, every sixth world tick (`W+0x1EAB40 % 6`, after the turn's increment): slot 0 then 1; a slot with a project and a consultant (or a project whose `StaffRqd` maps to no role,
+  `0x576FE0`) sums, over its 20-member team, each thing in state **24** (no kind or listing test): `(float)(work × workload × SpeedScaleDown + sum)`, work = `0x62E4C0` (the researcher's
+  `Researcher.Min/MaxResearchAbility` lerp, 1 for a salary below 10).
+- **Advance** `0x61FF80`: a finished project only releases its team; else the points (at most the rest of the cost) are added, `trunc(CashPerBrainPoint × points)` is debited through the bank (also 0),
+  and at the cost the object control is researched with the project's level, message **0x11** goes out, every type `LinkedWith` the object is researched, and the team is released (`+0x274 = 0`; the
+  researchers keep their state, the slot keeps the finished project).
+- **Message 0x11** `0x61DC20`: the career is told (`0x74D740`: the CDK entry of the type clears its flag); a **Park Expansion** (category 5) posts **0x23** (the HQ rebuilds its slots and the controller
+  shows the obstacle, §12.1); then the next upgrade level's project (`0x61FE70`).
+- **Obstacle project** `0x61CBF0` (the controller's registration and every message 0x27): HasObstacle, the obstacle thing, obstacle state 1, the type in the viewed zone's range (arabian ≥ 3700, science
+  ≤ 1800, water 2700–2800), no project of the type yet: category 5, cost `Obstacle.ResearchEffort` (no CostScaleUp), one cash a point, no consultant.
+- **Consultant** `0x61D970`: none for a project without a role; with `StaffSA` the first staff member of any role with that ability, else the first of the role (never a researcher). A consultant who
+  leaves is replaced by the pick (`0x61DAD0`); a leaving scientist leaves both teams.
+- **Catalogue**: a type whose control is not researched is not listed (`0x57CB66`; the mode-3 exception is not the career game's). A park without a seeded lab (a new zone, the headless economy) keeps
+  every buyable object on offer (`[EXT:tpi-no-research]`).
+- **The panel** (text HUD rows, `[EXT:tpi-text-hud]`): no scientist → 328/329; "Start New Project" takes slot 0 when it is empty or finished, else slot 1, else 336/337 (`0x575F98`); the chooser
+  (`0x574D00`) offers, in project order, every project not finished, not the other slot's, whose group is within the current zone's tech level, and a level project only when its object stands in the
+  park; the consultant is the automatic pick (none → 330/331); the team lists the researchers not on the other team; OK with nobody asks 333, a cancel asks 334/335 (`0x61F560`). The original's
+  "Edit Project" commits the last project chosen in that slot's chooser (`0xA67C24`), which can be project 0 after a load; the text HUD edits the slot's own project.
+- **Researchers** in the park: hired and dropped like the handyman (`0x61B070`); the start runs the look-for-work sequence (`0x61B820`: the gate `0x62BBA0`, too tired → idle, the room finder
+  `0x62E0E0` → state 25, none → happiness −2 and idle) and sets the lab's active flag (`0x61E4E0`). The finder takes the **first** room flagged 0x200 (`UsageInfo.ThinkingSpace`), with no distance,
+  capacity or tie test, when a walk to its entrance reaches it. State 25 (`0x62DCB0`): arrived → the room's script variable 0 rises, state 24 (the sprite deleted, `+0x278` stamped); stuck →
+  `HappyHitCosRoomInaccessible` and idle. State 24 (`0x6289BD`): energy `+= (float)(x × −0.1f)`, happiness `+= x × −0.05f` (x the single `1 − exp/MaxExp`); at an energy byte of at most RestLevel
+  he leaves (variable 0 falls, shown again), idles and looks for work — at exactly RestLevel the tired test (`<`) lets the finder send him back. Research ends no other way. The display state counts
+  "Researching" only for a listed researcher (`+0x274`). A removed research room sends its researchers out (message 10, `0x61B570`) and clears both teams (`0x61DB90`).
+- Not ported: the **level projects** of researched objects: every shipped `Upgrades[n].CashPerBrainPoint` is 0, so `0x61FE70` calls the CRT `rand()` (`0x61FF1A`) and drops the result; that draw
+  awaits the user's decision and such projects are not appended (`[EXT:tpi-capability-gates]`). The lab fill of a new zone (`0x61C9E0`, `rand() % 2 + 1` per project, `0x61FD50`) is not ported for the
+  same reason. Also not ported: the category efforts (computed, read by no tick), the lab-active messages 5/6 (advisor), the "project suspended" texts 300–304, and the per-object staff requirement
+  lists of §12.1. Ride projects need a mechanic consultant, and mechanics are not hired in the slice yet.

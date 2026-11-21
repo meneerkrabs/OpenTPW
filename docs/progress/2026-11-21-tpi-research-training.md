@@ -1,0 +1,18 @@
+## Theme Park Inc: staff HQ slots, training and research (November 21, 2026)
+
+The staff HQ's twenty obstacle slots, staff training and the research lab with its researchers are ported (docs/reverse/TPI-STAFF.md §12).
+
+- **Staff HQ** (`ThemeParkIncStaffHeadquarters`): the slot table from the mission's `ObstacleStaff` (`0x634600`), ability-only assignment (`0x634B00`), release and replacement on messages 0x21/0x2A
+  (`0x634730`), the trained-staff counts and assignment on 0x2B, and the rebuild on 0x23/0x24 (`0x634D20`). The mission controller's MetRequirements (`0x55A620`) now reads these slots; the
+  prebuilt keeps its saved slots. The staff type codes are the role order (r7 had guard and entertainer swapped).
+- **Training** (`ThemeParkIncTraining`, staff world states 7 and 8): abilities by role (`0x62B6C0`), the career's discovered abilities and 10000 experience (`0x639B20`), the room capacity of three
+  (`0x639F40`), the walk to the training room with message 0x2A, 300 updates (`SkillIncrement` 10 to `ProgessUpperLimit` 3000), the reward (motivation 100, +5000 experience, the agency's
+  percent), the finish with message 0x2B, and the cancel on a removed room. The text HUD's staff panel opens a hired member's ability list.
+- **Research** (`ThemeParkIncResearch`): the prebuilt's lab and object controls, the tick every sixth world tick from listed scientists in state 24, the cash per brain point, message 0x11 (the
+  career's CDK flag, a Park Expansion's 0x23), the obstacle project (`0x61CBF0`), the consultant pick, the catalogue's researched gate, and the panel's rules as text HUD rows. Researchers are hired
+  and placed with their start, look for work, room finder and states 25/24.
+- **Open, awaiting a decision**: the level project after a completion draws the CRT `rand()` and drops it (`0x61FF1A`; every shipped `CashPerBrainPoint` is 0), and a new zone's lab fill draws
+  `rand() % 2 + 1` (`0x61FD50`); neither is ported. The training walk's stuck branch draws a CRT `rand()` only for a thought, which is not drawn.
+
+Verified: new `ThemeParkIncStaffHqTests`, `ThemeParkIncTrainingTests` and `ThemeParkIncResearchTests`, the Theme Park Inc and save filters, and the silent, offscreen Science smoke (which now checks the
+HQ slots, the seeded lab and the research row).

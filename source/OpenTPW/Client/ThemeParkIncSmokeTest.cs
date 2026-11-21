@@ -84,6 +84,9 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 				Require( economy.TpiCareer!.StatusWord( 0, 1 ) == 8 && economy.TpiCareer.StatusWord( 0, 0 ) == 1, "miss00's guest statistic has started" );
 				Require( level.ThemeParkIncCurrentObstacle == prebuilt.Variables.CurrentObstacle && prebuilt.FindAttraction( level.ThemeParkIncCurrentObstacle )?.InfoId == 1700,
 					"the current obstacle is the prebuilt's 1700 gate" );
+				Require( economy.TpiStaff!.Hq.Slots.Count == ThemeParkIncStaffHeadquarters.SlotCount && economy.TpiStaff.Hq.AllFilled, "the staff HQ keeps the prebuilt's twenty empty-requirement slots" );
+				Require( economy.TpiResearch is { Count: 50, HasControls: true } research && research.Infos.Count > 0 && !research.IsResearched( 1105 )
+					&& Hud.StaffRows().Contains( flow.Strings.Entry( 285 ) ), "the research lab holds the prebuilt's fifty projects, gates the catalogue and has its row in the staff panel" );
 			}
 		} );
 		if ( flow.Level?.LevelName == "science" )

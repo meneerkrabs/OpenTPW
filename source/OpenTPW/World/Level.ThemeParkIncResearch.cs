@@ -134,4 +134,10 @@ public partial class Level
 			return null;
 		return world.ChooseAbility( economy, member, ability, confirmed, economy.Turn );
 	}
+
+	/// <summary>Whether a thing of the object type stands in the park (<c>0x647850</c>), for the research chooser's level projects.</summary>
+	internal bool ThemeParkIncBuilt( int type ) => ThemeParkIncAttractionsOf( type ).Any();
+
+	/// <summary>The current zone's tech level (its career record's <c>+0</c>), the research chooser's group limit; 0 without a career zone.</summary>
+	internal int ThemeParkIncTechLevel => Park?.Economy.TpiCareer is { CurrentZone: { } current } career && career.ZoneRecord( current.ParkNumber ) is { } record ? record.CurrentTechLevel : 0;
 }

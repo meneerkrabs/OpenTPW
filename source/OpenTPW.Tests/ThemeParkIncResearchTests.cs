@@ -268,4 +268,22 @@ public class ThemeParkIncResearchTests : ThemeParkIncScienceTestBase
 		var saved = staff.Members.Single( other => other.Id == member.Id );
 		Assert.AreEqual( (ThemeParkIncStaffWorld.ToResearchRoom, true, 600), (saved.World!.State, saved.Listed, saved.ResearchRoom) );
 	}
+
+	[TestMethod]
+	public void TheChooserOffersOpenProjectsWithinTheTechLevelAndNewProjectsTakeAFreeSlot()
+	{
+		// [BIN:TPI-EXE:0x574D00 project filter] [BIN:TPI-EXE:0x575F98 new project] [BIN:TPI-EXE:0x620210 percent done]
+		var (_, research) = Seeded();
+		var all = research.Offered( 0, 7, _ => true ).ToList();
+		Assert.AreEqual( 50, all.Count, "nothing finished, nothing in a slot" );
+		Assert.IsFalse( research.Offered( 0, 7, _ => false ).Any( index => research.Projects[index].Category == 4 ), "a level project needs its object in the park" );
+		Assert.IsTrue( research.Offered( 0, 0, _ => true ).All( index => research.Projects[index].Group == 0 ), "groups above the tech level are hidden" );
+		Assert.AreEqual( 0, research.StartNewProject() );
+		research.SetProject( 0, 27 );
+		Assert.IsFalse( research.Offered( 1, 7, _ => true ).Contains( 27 ), "the other slot's project is hidden" );
+		Assert.AreEqual( 1, research.StartNewProject() );
+		research.SetProject( 1, 28 );
+		Assert.AreEqual( -1, research.StartNewProject(), "Must Delete Project!" );
+		Assert.AreEqual( 0, research.Percent( 27 ) );
+	}
 }

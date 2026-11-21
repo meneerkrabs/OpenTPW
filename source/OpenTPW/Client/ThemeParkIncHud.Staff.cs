@@ -83,6 +83,11 @@ public sealed partial class ThemeParkIncHud
 			return rows;
 		}
 		trainingMember = null;
+		if ( researchView != ResearchView.None )
+		{
+			ResearchRows( Row );
+			return rows;
+		}
 		for ( var slot = 0; slot < staff.Slots.Count; slot++ )
 		{
 			if ( staff.Slots[slot] is { } candidate )
@@ -97,6 +102,7 @@ public sealed partial class ThemeParkIncHud
 			foreach ( var hired in staff.Members )
 				Row( StaffRow( hired.Role, hired.NameIndex, hired.Experience, hired.Salary ) + AbilitySuffix( hired ), () => OpenAbilities( hired ) );
 		}
+		ResearchRows( Row );
 		return rows;
 	}
 
@@ -262,6 +268,7 @@ public sealed partial class ThemeParkIncHud
 	{
 		staffOpen = false;
 		trainingMember = null;
+		researchView = ResearchView.None;
 		SetStaffPanelVisible( false );
 	}
 

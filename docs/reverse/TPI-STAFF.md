@@ -307,20 +307,35 @@ is unread); the stinkbomb particle's TPI position; the dead stale-claim sweep `0
 ### Mechanics and ride wear (WP9, November 21, 2026)
 
 Read from Game.exe (static, with the routines run in `tools/ppc-analysis/oracle_x86/tpi_ride_wear_oracle.py`, which agrees with the port on 3000 random cases at the 24-bit and
-the 53-bit control word). Ported in `ParkEconomy.ThemeParkIncRides.cs` and `ThemeParkIncStaffWorld.Mechanics.cs`; tested in `ThemeParkIncMechanicTests`.
+the 53-bit control word; `--golden` prints native wear-amount and wear-tick cases, which `ThemeParkIncMechanicTests` pins as numbers, a clamped repair, a clamped life and a worn
+ride among them). Ported in `ParkEconomy.ThemeParkIncRides.cs` and `ThemeParkIncStaffWorld.Mechanics.cs`; tested in `ThemeParkIncMechanicTests` and, for the level's side (the
+request's close, the repair tail and the relief object's `VAR_WORN`), `ThemeParkIncRepairTailTests`.
 
 **Type record.** The key table at `0x9A2CC0` (60-byte descriptors: type word and name) lays the type record out four bytes a key from `Id` at `+0x10`, sections adding nothing and a
 count word after each array. That puts `MaxCapacity` at `+0x1E4`, `MaxSpeed` at `+0x1F4`, the `Upgrades[n]` records (72 bytes) at `+0x270` (`RedLineCapacity` `+0x290`,
 `RedLineSpeed` `+0x2A0`, `WearRate` `+0x2A4`, `DurationOfUpgrade` `+0x2B0`, `RunningCost` `+0x2B4`), `RideBreakDown.Imminent` at `+0x3C8` and `RideBreakDown.WarnPlayer` at `+0x3CC`;
 the `AddOn` keys after them land at `+0x3D0..+0x3D8`, where their readers (`0x4D63C0`, `0x594E19`) take them. `Info.IsSpecial` is `+0x5C` and `Info.RunsContinuously` `+0x6C`
-(the thing flag `+0x43` bit 1, `0x5DB782`); `UsageInfo.HoldsLitter` `+0x1A8` sets `+0x42` bit 0x40. Every wearing ride of the three worlds has `Imminent` 10 and `WarnPlayer` 5.
+(the thing flag `+0x43` bit 1, `0x5DB782`); `UsageInfo.HoldsLitter` `+0x1A8` sets `+0x42` bit 0x40. Both readers of `Info.IsSpecial` (`0x5E26FB`, `0x5E493B`) compare it with 1,
+so only the value 1 makes a type special. Every wearing ride of the three worlds has `Imminent` 10 and `WarnPlayer` 5.
 The constructor starts the life gauge `+0x58` at `Info.WorkingLife` (`+0x8C`), 100 when it is 0 (`0x5DB53A`); the prebuilt Science park's rides were saved at exactly that.
 
 **Object update `0x5E4790`** (kind 3 in the thing pass `0x6375E0`, before the state dispatch `0x5E4CB0`): state 3 or 4 returns; with the state not 1, the open word `+0x7C` set
 and the turn & 7 zero, the wear tick `0x5E25B0` runs, then the breakdown request: a life or repair byte of 0 on an object that is not a relief object and whose `VAR_BREAKSTAT` is 0
 loses 5.0 life (clamped) unless its life byte is 0 or its type is special, and writes `VAR_BREAKSTAT` = 1 ("Object %d: requested breakdown"); this is the writer research item U1
 was missing. The state dispatch's state 0 (`0x5E5960`) turns the script's `VAR_BROKEN` into state 1, or 4 at a life byte of 0, as Theme Park World's. A relief object below a
-repair byte of 25 writes `VAR_WORN` = 1 on every update (`0x5E3990`).
+repair byte of 25 writes `VAR_WORN` = 1 on every update (`0x5E3990`). Two blocks of `0x5E4790` are not part of this port:
+- `0x5E47A1..0x5E4800`: a thing with `+0x42` bit 0x80 (set by the constructor at `0x5DB75B` from the type word `+0x1CC`, `UsageInfo.IsFireworks` in the key table, which also adds the
+  RegionFX row 7 at its cell) whose script variable 0 is 1 takes row 7 off its cell (message 7, `0x5D74D0` → `0x5D7560` with the subtract flag) and writes variable 0 = 2. This is
+  Theme Park World's fireworks rule `0x004E0B90`, which OpenTPW already runs for every edition: `Level.SyncEconomyObject` calls `ParkEconomy.FireworksFired` for any object whose type
+  declares `UsageInfo.IsFireworks`. No type of the three Theme Park Inc worlds declares it, so the shipped data never reaches the block.
+- `0x5E49C8..0x5E4A1E`: the word `+0x4C` (the queue head, `mFirstInQ`) clears when its thing is gone or the guest is in none of the queue states 14 to 17 (`0x61AC40`), as Theme Park
+  World's `+0x3C` at `0x004E0D51`; OpenTPW's queue is the visitor bridge's list (`RideVisitorBridge`), whose head leaves with its guest. The byte `+0x3E`, when set and the script names a
+  track ride, sets bit 0 of the track controller word (`0x475220`), clears bit 0x200000 on every piece of the object's track (`0x485AD0` → `0x48E780`) and clears itself: track-ride
+  state, outside the wear and the mechanics (Theme Park Inc's track rides are a later package).
+
+The level wires the ride events itself (`Level.SetupThemeParkIncRideEvents`): a Theme Park Inc park runs no park gate (`[EXT:tpi-park-open]`), so the Theme Park World wiring in
+`SetupParkGate` does not run there. The economy's script writes reach the ride's script, a maintenance request closes the ride, and a finished repair runs the closing tail, whose
+guard is the reopening guard `ParkGate.MayOpen` over the level's path grid.
 
 **Wear tick `0x5E25B0`.** `Upgrades[level].WearRate` 0 returns; the script's `VAR_RUNNING` (variable 9) above 0 or `Info.RunsContinuously`; the turn & 0x3F zero. `VAR_ONRIDE`
 (variable 5) 0 gives the wear 0, else `0x5E21A0`: riders clamped to `0..MaxCapacity`; `s = 0.9 × speed / MaxSpeed` (the script's speed `+0xC0`, `0x6B0C30`), then `s + 0.1`, or
@@ -340,6 +355,16 @@ message 10 subscribed, the search). The update is the common pre-update (`0x5DA3
   list (world `+0x1EAB88`, next `+0x14`, newest first, `0x64F3E0`) and walks it round once; a candidate is broken down, below its line, called for (not a relief object, bin or
   plant), or (for a mechanic whose learnt ability `+0x218` is 1) upgrading, and unclaimed; the nearest by `dx² + dy²` of the cell bytes, first broken or called-for ones, then the
   others, the first met on a tie. `+0x218` is 0 from the member start and only training writes it, so no placed mechanic upgrades.
+- The object list (`ParkEconomy.ThemeParkIncObjectList`). `0x64F3E0` puts a new object at the head (`+0x14` = the old head, world `+0x1EAB88` = the new one). The save keeps the list:
+  the World variable `FirstObject` and each attraction's `mNext`. In the prebuilt Science park it holds 24 things, newest first (thing ids 37 down to 14: Info.Id 1414, 1413, 1413, 1403,
+  1101, 1798, 1750, 1703, 1700, 1701, 1702, 1710, 1707, 3708, 1709, 1706, 1705, 1110, 1170, 1160, 1180, 104, 103, 1601). OpenTPW imports the objects in the save's record order (the
+  four rides first, then 1403 to 1414 and 1101, then the fixed items), so the economy's instance ids do not give this order; and 7 of the 24 things are not built at all: 1700, 1701,
+  1702, 1703, 1750 and 1798 have no object archive in the catalogue and 1710 is a tool entry. Both matter to the walk: the cursor steps over every thing, so the list's length and
+  order decide which search finds nothing (the one whose previous start was the last thing) and which candidate a tie keeps. So the economy keeps the list itself: a park built from
+  the save takes the saved order (`Level.SeedThemeParkIncObjectList`), an imported object as its economy record and a thing OpenTPW does not build as its negated thing id; a new
+  object enters at the head and a removed one leaves (`0x64F430`); the Science continuation saves the list and the cursor, which may rest on such a thing. The seven things were saved
+  in state 3 with a full state of repair and no request, the object update skips state 3, and their `.sam` files declare no `RideBreakDown` keys, so they are never candidates. The
+  prebuilt's HQ cursor word is 0.
 - Claimant `0x5E37F0`: a claim older than 100 turns lapses unless the claimant still targets the object (`0x62B280`: a mechanic's `+0x5D8`), and the claimant then goes idle.
 - To the ride `0x5DA650`: the claimant must be him ("UNUSUAL INCIDENT"); stuck clears `+0x5D8` and searches; arrived at a ride broken down, upgrading or called for sets 22,
   else searches with the ride kept.

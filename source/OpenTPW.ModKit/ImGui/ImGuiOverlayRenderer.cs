@@ -28,8 +28,8 @@
 // on Direct3D 11 a partial write into a dynamic buffer is a staging copy into it, outside the documented Map path), the projection matrix
 // included. Compiled against the ImGui.NET this repository uses (1.87) instead of the 1.72 the package was built with, SetOpenTKKeyMappings now fills
 // io.KeyMap at the ImGuiKey values 1.87 reads (512 and up) instead of the indices 0..21 the package wrote, which 1.87 ignores. In the game
-// the editor (Editor.SetKeyMappings) already filled the 1.87 values, so only the setup wizard, which has no editor, newly gets Tab, the arrows,
-// Backspace, Delete, Enter, Escape and Ctrl+A/C/V/X/Y/Z in its folder field. Formatting is Veldrid's.
+// the editor once filled the same 1.87 values itself (Editor.SetKeyMappings, since removed as redundant), so only the setup wizard, which has no
+// editor, newly got Tab, the arrows, Backspace, Delete, Enter, Escape and Ctrl+A/C/V/X/Y/Z in its folder field. This is now the only key map. Formatting is Veldrid's.
 
 #nullable disable
 using ImGuiNET;

@@ -25,16 +25,3 @@ namespace Veldrid.StartupUtilities
 		public static SwapchainSource GetSwapchainSource( Sdl2Window window ) => new CanvasSwapchainSource();
 	}
 }
-
-namespace Veldrid
-{
-	/// <summary>ImGui draws the developer panels, which the browser build leaves out.</summary>
-	public class ImGuiRenderer : IDisposable
-	{
-		public ImGuiRenderer( GraphicsDevice graphicsDevice, OutputDescription outputDescription, int width, int height ) { }
-		public void Update( float deltaSeconds, InputSnapshot snapshot ) { }
-		public void Render( GraphicsDevice graphicsDevice, CommandList commandList ) { }
-		public void WindowResized( int width, int height ) { }
-		public void Dispose() { }
-	}
-}

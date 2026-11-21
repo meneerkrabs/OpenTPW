@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// <summary>
 /// The experimental Theme Park Inc slice of the game flow (docs/THEME-PARK-INC.md): a Theme Park Inc world runs
 /// with the shared terrain, object, path and guest systems and the experimental HUD, under the edition capability
-	/// policy — money only (no staff, research or challenges), no advisor beyond the four traced weather forecasts, and no sharing. The desktop Science park can continue an OpenTPW save; layout checkpoints start fresh sessions.
+	/// policy — money and the cleaners (no other staff, research or challenges), no advisor beyond the four traced weather forecasts, and no sharing. The desktop Science park can continue an OpenTPW save; layout checkpoints start fresh sessions.
 /// The experimental flow is not a reproduction of the original Theme Park Inc interface.
 /// </summary>
 // [EXT:tpi-capability-gates] the slice's frame is gated by OpenTPW's capability policy (a scope decision), not by traced Theme Park Inc behaviour

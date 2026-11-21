@@ -327,7 +327,7 @@ public partial class Level
 			// members are visited at their slots like every other thing (ThemeParkIncStaffWorld.Update)
 			var tpiWorld = economy.TpiStaff != null ? TpiStaffWorld : null;
 			var tpiMembers = tpiWorld == null ? null : economy.TpiStaff!.Members.Where( member => member.Navigation != null ).ToDictionary( member => member.ThingId );
-			var tpiSwept = new HashSet<ThemeParkIncStaffMember>();
+			var tpiSwept = tpiMembers == null ? null : new HashSet<ThemeParkIncStaffMember>();
 			tpiWorld?.SyncChain( economy );
 			world?.BeginStaffTurn( economy, turn );
 			// [BIN:TPW-EXE:0x00516380 thing sweep] the walk starts at the used list's head (the pointer 0x7CF56C, read at 0x5163A4; its slot id is at +4); the slot table is 0x7CFB90, indexed at 0x5163E7 (id × 5, stride 20; 0x5163C0 reads entry 0 only for the assert) and the older link is read at 0x516416, the thing built last, and takes each slot's older link after the update (0x516413..0x516431); the things built during the walk
@@ -346,7 +346,7 @@ public partial class Level
 				}
 				if ( tpiMembers != null && tpiMembers.TryGetValue( slot.Id, out var tpiMember ) )
 				{
-					if ( tpiSwept.Add( tpiMember ) )
+					if ( tpiSwept!.Add( tpiMember ) )
 						tpiWorld!.Update( economy, tpiMember, turn );
 					continue;
 				}
@@ -376,7 +376,7 @@ public partial class Level
 					SweepStaffMember( economy, world, member, turn, restArea );
 			if ( tpiMembers != null )
 				foreach ( var member in tpiMembers.Values.ToList() )
-					if ( tpiSwept.Add( member ) )
+					if ( tpiSwept!.Add( member ) )
 						tpiWorld!.Update( economy, member, turn );
 			foreach ( var item in SweepableObjects( withoutSlot: true ).Values )
 				if ( visited.Add( item ) )

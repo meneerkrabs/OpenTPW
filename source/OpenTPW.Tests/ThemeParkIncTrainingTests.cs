@@ -224,7 +224,7 @@ public class ThemeParkIncTrainingTests : ThemeParkIncScienceTestBase
 		var turn = economy.Turn;
 		for ( var step = 0; step < 400 && member.State == 7; step++ )
 			world.Update( economy, member, ++turn );
-		Assert.AreEqual( 8, member.State, "arrived and training" );
+		Assert.AreEqual( (8, 0), (member.State, member.Navigation.Mask), "arrived and training; the state's entry puts the walk mask back to 0 (0x62854D)" );
 
 		// a path cell beside the row: the staff route reaches it along the paths with mask 0, and no fallback runs
 		var second = Hire( economy, world, (2, 5), experience: 20000 );

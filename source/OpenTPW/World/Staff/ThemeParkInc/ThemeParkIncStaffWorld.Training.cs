@@ -84,6 +84,8 @@ public sealed partial class ThemeParkIncStaffWorld
 	private void EnterTraining( ParkEconomy economy, ThemeParkIncStaffMember member, long turn )
 	{
 		member.Sprite.Delete();
+		// +0x1A0 = 0 (0x62854D): the walk mask is back to the paths' for the walks after the training
+		member.Navigation!.Mask = 0;
 		if ( !ThemeParkIncTraining.Enter( member ) )
 			CancelTraining( economy, member, turn );
 	}

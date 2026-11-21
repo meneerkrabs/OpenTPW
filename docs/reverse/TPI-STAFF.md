@@ -277,6 +277,13 @@ refuses its staff capability, so its staff world is not built in a Theme Park In
 - **Guest litter.** The guests' litter step is Theme Park Inc's (`0x614B71`): the urge byte at least 90, then a world draw whose low two bits must be 0 (else no litter and the urge
   kept), the bin search of radius 3, the type draw `C % 5 + 1` taken before the cell test, and an occupied cell skips both the drop and the urge's reset. The drop (`0x5D8C80`)
   reseeds and draws as Theme Park World's, but its sprite lies 3 to 6 tenths into the cell (`((d & 3) − 2) × 0.1 + 0.5`).
+- **Sprites.** The handymen are drawn by Theme Park World's staff renderer from Theme Park Inc's `esprites.wad` (`Generic\Handymen`, `Spr_ha`, found by name). The look is the candidate's
+  sprite draw reduced as `0x6902F0` does (`(R >> 2) mod` the loaded banks of category 9). The handyman's start makes the source in template 3 (`0x5D4980` → `0x5D1000`), the setters
+  queue 3, 0xF and 0x19 (`0x5D5630`, `0x628180`), the walk step asks for the walk 1 while walking (`0x60B541`; the run 2 is never a handyman's) and the interval `clamp(trunc(62 / v), 0, 250)`
+  (`0x5D10F0`), and the pre-update applies them (`0x5D1080`). Theme Park Inc's template table `0x9CDA94` holds tp.exe's programs (`0x0075A418`) under other numbers, opcode for opcode:
+  1 walk, 2 run, 3 stand, 0xF the patrol walk (tp.exe 9), 0x19 the sweep (tp.exe 0x11). The sprite pass itself (direction by heading and camera, mirroring, the pull towards the camera)
+  and the draw point's interpolation over the turn are Theme Park World's (`[EXT:tpi-twp-guest-rules]`). The sprite source is presentation and is not saved: a restored member gets a
+  fresh source in his state's template at his first update. The thoughts (`0x638960`, the `Generic\Thoughts` bank) are not drawn.
 - **Saves.** A placed member's thing (state, stamps, target, speed words, patrol rectangle, template and walk) is in the TpiStaff snapshot; the members' cell-chain entry numbers
   are in the continuation save (`TpiStaffChain`); a litter claim by a placed member's thing id is valid.
 
@@ -288,6 +295,6 @@ are unported (`[EXT:tpi-no-maintenance-wear]`, reworded: the handymen ship witho
 Not read or not ported in this package (inert, no stand-in): the rest-area finder `0x62BA20` and the walk to a rest area (WP4: the finder answers none, in the gate, the slack test
 `0x62D650` on entering state 1 and the low-motivation check of `0x62D810`); strikes in the park (WP5: no role's strike flag is set); the wage negotiation (WP6); the drop's M gate
 for a type-4 cell holding a kind-3 thing and its second gate `0x4D2180` (a type-4 cell is refused by the type test); the thoughts and voices' presentation (`0x638960`, `0x60BE90`:
-their draws are taken, the voices queued); the Theme Park Inc staff sprites (the handymen are not drawn yet); TPI litter types 9 to 12 (the pending-item drop `0x613D00`, whose gate
+their draws are taken, the voices queued); TPI litter types 9 to 12 (the pending-item drop `0x613D00`, whose gate
 is unread); the stinkbomb particle's TPI position; the dead stale-claim sweep `0x5D73A0` (no static caller).
 

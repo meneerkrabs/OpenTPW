@@ -237,7 +237,7 @@ idle, walk, to litter and sweep, with the search `0x5D52A0`, the meters, the day
 guests drop litter by Theme Park Inc's litter step (`0x614B71`). The other roles are refused with a note (`[EXT:tpi-capability-gates]`); the handymen walk with Theme Park World's
 walk (`[EXT:tpi-twp-guest-rules]`), and Theme Park Inc's toilet wear, loo cleaning and the litter bins' fill are unported, so the handymen sweep litter only
 (`[EXT:tpi-no-maintenance-wear]`). Rest areas, strikes in the park, the wage negotiation, training, pick-up and the other roles come in later packages (docs/reverse/TPI-STAFF.md §11).
-The handymen are not drawn yet.
+The handymen are drawn with Theme Park Inc's own sprites (`esprites.wad`, `Generic\Handymen`) and animate as their states ask (stand, walk, sweep).
 
 **What stays refused.** The other staff roles, so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge, because Theme Park Inc's toilet wear and loo cleaning are unported (`[EXT:tpi-no-maintenance-wear]`), and no
 upgrade is installed; research (the whole catalogue is on offer, `[EXT:tpi-no-research]`); challenges, golden tickets and the missions; the shares game; Theme Park Inc's

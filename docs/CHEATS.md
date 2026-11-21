@@ -274,6 +274,30 @@ records `opentpw.cheats`. The ride keeps the raised limit until it is removed; i
 - **Pin.** `CheatsRideVehicleTests.CheatsBumperRaisedRunHash` pins the jungle bumper controller raised to 32 cars, loaded with 32 guests and run through a 30-second session
   ([DETERMINISM.md](DETERMINISM.md#cheats)).
 
+## Theme Park Inc: Skip Mission and Get Promoted
+
+November 21, 2026 (user decision: "expose Skip Mission and Get Promoted as opt-in cheats in the cheats extension"). Theme Park Inc's `Game.exe` has a developer
+dialog `0x532A40` with two buttons, read statically (the game was not run):
+
+- **Skip Mission** (control `0x186A1`, text at `0x9B79C8`) runs the mission controller's completion tick `0x5F0940` at once, whatever the mission's requirements
+  are. The tick spends the mission's golden tickets when there are enough, opens the theme a mission opens, and finishes the game at the last mission. On any
+  other mission it advances the career `[BIN:TPI-EXE:0x532B39]`.
+- **Get Promoted** (control `0x186A2`, text at `0x9B79A8`) posts message 0x25 with the career's rank plus one. The controller turns that into the promotion
+  `0x74C450`: the new rank, and the firing line raised to that rank's limit `[BIN:TPI-EXE:0x532A9E]`.
+
+With `opentpw.cheats` on, a Theme Park Inc park's challenge panel shows both buttons, labelled with the executable's own English texts
+(`CheatKind.SkipMission`, `CheatKind.GetPromoted`). They queue like every cheat, mark the park as cheated and are recorded in its save.
+
+- The tick is the mission controller's (`ThemeParkIncMissionController.CompleteMission`, [TPI-MISSIONS.md](reverse/TPI-MISSIONS.md)): the career's side, the new
+  extent (`extents/extent.NNN` for the counter before the advance), the next obstacle and the new mission's exit statistics. The end-of-game sequence and
+  message 0x2C are not posted `[EXT:tpi-capability-gates]`. Get Promoted goes through the controller's message 0x25 handler.
+- A promotion past rank 6 reads on past the `FiringLineForRank` table into the Standard object, as the original does ([TPI-CAREER.md](reverse/TPI-CAREER.md) §2).
+- A Theme Park World save that carries either cheat is refused.
+- A Theme Park Inc park takes no Theme Park World cheat, and a Theme Park World park takes neither of these two.
+
+An earlier research note named `0x538F30` as the Get Promoted dialog. That is the obstacle and ticket debug page. See
+[TPI-CAREER.md](reverse/TPI-CAREER.md) §4.
+
 ## Phases
 
 - **K0** (this document): the trace, the capacity data, was COMPAT-007, retired, and SAVE-010 narrowed.

@@ -170,7 +170,8 @@ public sealed class ParkEconomyRuntime
 
 	/// <summary>
 	/// Creates the money economy of a Theme Park Inc <paramref name="park"/> (<see cref="EconomyRules.ThemeParkIncMoney"/>): Theme Park Inc's own settings and
-	/// object catalogue, no native economy/clock import, no staff, research or challenges. Saved analyser history is retained across this fresh host start;
+	/// object catalogue, no native economy/clock import, Theme Park Inc's own staff (the hiring pool and handymen), challenge system, career and missions, and no research. Saved analyser
+	/// history is retained across this fresh host start;
 	/// its partial arrivals and recent stays contribute to the first new host month, not the remainder of the saved native month. Objects register uncharged.
 	/// </summary>
 	public static ParkEconomyRuntime ForThemeParkIncLevel( OriginalPark park, WorldSeed? seed = null )
@@ -185,7 +186,7 @@ public sealed class ParkEconomyRuntime
 		if ( park.Save?.Statistics is { } statistics )
 			economy.StatisticsHistory.RestoreOriginal( statistics );
 		Log.Trace( $"Park economy: Theme Park Inc money rules; {park.LevelName} balance from {string.Join( ", ", settings.Standard.Sources )}; "
-			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, no staff, research or challenges." );
+			+ $"cash ${economy.Balance}, entrance fee ${economy.EntranceFee}, {economy.Catalog.Objects.Count} catalogue objects, Theme Park Inc staff ({(economy.TpiStaff == null ? "none" : "cleaners only")}), Theme Park Inc challenges ({(economy.TpiChallenges == null ? "none" : "ported types only")}), no research." );
 		return new ParkEconomyRuntime( economy, import: null )
 		{
 			Start = new ParkStart( ParkStartKind.FullSimulation, ParkGameMode.FullSimulation, EasyBalance: false, ImportShippedSave: false ),
@@ -276,8 +277,10 @@ public sealed class ParkEconomyRuntime
 	private void AttachLitter( GuestSimulation guests )
 	{
 		Economy.Litter.Cells = guests.Grid.Cells;
-		// [EXT:tpi-no-maintenance-wear] a park without staff drops no litter either: no handyman would ever sweep it
-		Economy.Litter.Disabled = guests.OnlineVisit || !Economy.Rules.Staff;
+		// [EXT:tpi-no-maintenance-wear] a park without staff drops no litter either: no handyman would ever sweep it; a Theme Park Inc park with its staff (ParkEconomy.TpiStaff) drops it, as its
+		// handymen sweep it (ThemeParkIncStaffWorld), and its toilets still wear nothing (TPI toilet wear and loo cleaning are unported)
+		Economy.Litter.Disabled = guests.OnlineVisit || !Economy.Rules.Staff && Economy.TpiStaff == null;
+		Economy.Litter.ThemeParkInc = Economy.Rules.ThemeParkInc;
 		Economy.OnlineVisit = guests.OnlineVisit;
 	}
 }

@@ -72,11 +72,19 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			var level = flow.Level;
 			Require( flow.IncHud != null && flow.Hud == null && level != null, "the Theme Park Inc slice runs with its own HUD, not the Theme Park World one" );
 			Require( level!.OriginalPark != null && level.Park is { Economy.Rules.ThemeParkInc: true } && level.IsThemeParkIncSlice, "the world loads with the Theme Park Inc money economy" );
-			Require( GameEditions.Capabilities.Money && !GameEditions.Capabilities.Staff && !GameEditions.Capabilities.Research && !GameEditions.Capabilities.Challenges && GameEditions.Capabilities.ExperimentalHud && !GameEditions.Capabilities.ParkSaves, "the capability policy runs the money and refuses staff, research, challenges and saves at runtime" );
+			Require( GameEditions.Capabilities.Money && !GameEditions.Capabilities.Staff && !GameEditions.Capabilities.Research && GameEditions.Capabilities.Challenges && GameEditions.Capabilities.ExperimentalHud && !GameEditions.Capabilities.ParkSaves, "the capability policy runs the money and the Theme Park Inc challenges and refuses staff, research and saves at runtime" );
 			Require( Context.Batch.TextDraws.Any( draw => draw.Text == LabelText( "money" ) && draw.Text.Length > 0 ), "the money line is drawn" );
 			Require( LabelText( "title" ) == flow.Strings.Extra( OpenTpwText.TpiTitle ) && (GameLanguage.Current.Name != GameLanguage.DefaultLanguage || LabelText( "title" ).Contains( "EXPERIMENTAL", StringComparison.Ordinal )), "the HUD names the experiment on screen, in the selected language" );
 			Require( LabelText( "limits" ) == flow.Strings.Extra( OpenTpwText.TpiLimits ) && (GameLanguage.Current.Name != GameLanguage.DefaultLanguage || LabelText( "limits" ) == GameEditions.Capabilities.ExperimentalNote), "the HUD's limits line is the capability policy's note (in the selected language)" );
 			Require( Context.Batch.TextDraws.Any( draw => draw.Text == Hud.GuestsText() ), "the guest counter is drawn" );
+			if ( level.LevelName == "science" && level.OriginalPark.Save?.ThemeParkIncWorld is { } prebuilt )
+			{
+				var economy = level.Park!.Economy;
+				Require( economy.TpiMissions != null && economy.TpiMissionWorld != null, "the mission controller runs with the level as its world" );
+				Require( economy.TpiCareer!.StatusWord( 0, 1 ) == 8 && economy.TpiCareer.StatusWord( 0, 0 ) == 1, "miss00's guest statistic has started" );
+				Require( level.ThemeParkIncCurrentObstacle == prebuilt.Variables.CurrentObstacle && prebuilt.FindAttraction( level.ThemeParkIncCurrentObstacle )?.InfoId == 1700,
+					"the current obstacle is the prebuilt's 1700 gate" );
+			}
 		} );
 		if ( flow.Level?.LevelName == "science" )
 			PlanPrecipitation();
@@ -252,6 +260,9 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Do( "cancel the tools", () => Click( Hud.Screen, "cancel" ) );
 		Wait( "tools down", 2 );
 		Do( "the tools are away", () => Require( !Level.IsRemovingObjects && !Level.CellTool.IsActive, "Cancel puts the remove tool away" ) );
+		PlanHandyman();
+		if ( flow.Level?.LevelName == "science" )
+			PlanChallenges();
 		Do( "round-trip Science state", () =>
 		{
 			var live = Level;
@@ -290,6 +301,19 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			{
 				Require( error.Message.Contains( "unsupported world state", StringComparison.Ordinal ), "Science rejects land ownership during preflight" );
 			}
+			// the save keeps the owned land as one bit map; a save without it predates the land and is refused
+			Require( saved.Layout.Cells.TpiUnowned is { } unownedBits && saved.Layout.Cells.Cells.All( cell => (cell.Flags & (ushort)ParkCellFlags.Unowned) == 0 )
+				&& Convert.FromBase64String( unownedBits ).Sum( bits => System.Numerics.BitOperations.PopCount( bits ) ) == 128 * 128 - ThemeParkIncLand.OwnedCount( live.Guests.Grid.Cells ),
+				"the Science save carries its unowned squares as a bit map" );
+			try
+			{
+				ParkResumeSaveFile.ValidateShape( saved with { Layout = saved.Layout with { Cells = saved.Layout.Cells with { TpiUnowned = null } } } );
+				throw new InvalidOperationException( "A Science save without its owned land was accepted." );
+			}
+			catch ( InvalidDataException error )
+			{
+				Require( error.Message.Contains( ParkResumeSaveFile.ThemeParkIncLandMissing, StringComparison.Ordinal ), "Science refuses a save without its owned land during preflight" );
+			}
 			File.WriteAllText( saves.Path, "{}" );
 			try
 			{
@@ -316,6 +340,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( restoredGuests.Select( guest => (guest.Id, guest.KidSetDraw) ).SequenceEqual( saved.Guests.Guests.Select( guest => (guest.Id, guest.KidSetDraw) ) ),
 				"the continued Science guests retain their generation-specific sprite bank draws" );
 			Require( ParkSaveFile.Serialize( candidate.Park!.Economy ) == expectedEconomy, "the continued Science park keeps its economy and clock" );
+			Require( saved.TpiCurrentObstacle is > 0 && candidate.ThemeParkIncCurrentObstacle == live.ThemeParkIncCurrentObstacle, "the continued Science park keeps its current obstacle" );
 			var restoredLayout = ParkLayoutSnapshot.CaptureSnapshot( candidate.Guests.Grid.Cells, candidate.Objects );
 			Require( System.Text.Json.JsonSerializer.Serialize( restoredLayout.Cells ) == System.Text.Json.JsonSerializer.Serialize( saved.Layout.Cells ),
 				"the continued Science park keeps its exact cell links and routing stamps" );
@@ -500,8 +525,12 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			// Leave the saved park paused so the first frame can be compared with the capture.
 			snapshot = live.CaptureResumeSnapshot( null, "Science", savedUtc: DateTimeOffset.UtcNow ) with { TpiHudSpeed = GameSpeed.Paused };
 			flow.ShowThemeParkIncFrontEnd();
-			Require( flow.Level == null && flow.IncFrontEnd!.Screen.Find( "loadGame" ) is UiButton { Enabled: false },
-				"the Personnel File disables Load A Game when no slot exists" );
+			// [BIN:TPI-EXE:0x6A47B0 leave park] leaving the park runs the full save: the player file, then the Science slot
+			Require( flow.Level == null && File.Exists( personnelFileSaves.Path ) && File.Exists( GameFlow.ThemeParkIncPlayerFilePath() )
+				&& flow.IncFrontEnd!.Screen.Find( "loadGame" ) is UiButton { Enabled: true }, "leaving the park saves it, so Load A Game is enabled" );
+			File.Delete( personnelFileSaves.Path );
+			flow.ShowThemeParkIncFrontEnd();
+			Require( flow.IncFrontEnd!.Screen.Find( "loadGame" ) is UiButton { Enabled: false }, "the Personnel File disables Load A Game when no slot exists" );
 		} );
 		Do( "open the Personnel File with a corrupt slot", () =>
 		{
@@ -562,7 +591,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	/// <summary>Picks the item the build list arms: the first Rides entry with a queue and a script, else the first such entry of any category.</summary>
 	private void ChooseItem()
 	{
-		var catalog = new OriginalBuildCatalog( Level.Objects.Catalog );
+		// the HUD's own list, mission gate included (ThemeParkIncCatalogue): the row index the smoke clicks is that list's
+		var catalog = Hud.Catalog;
 		BuildItem? chosen = null;
 		foreach ( var category in new[] { BuildCategory.Rides }.Concat( Enum.GetValues<BuildCategory>() ) )
 		{
@@ -598,6 +628,137 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		Require( list.RowAt( Context.Canvas, row ) == chosenIndex, "the chosen item's row is on screen" );
 		Sub( "select the row", () => flow.InjectedInput = UiInput.Click( row ) );
 		Sub( "activate the row", () => flow.InjectedInput = UiInput.Click( row ) );
+	}
+
+	private ThemeParkIncStaffMember? hiredHandyman;
+	private long handymanDropTurn;
+	private int staffRow;
+
+	/// <summary>
+	/// The Theme Park Inc staff panel's hire: the first Cleaner (handyman) row is activated through the list, the hire is dropped on the first path cell the drop accepts, and the member's
+	/// thing is updated by the park's turns; the round trip that follows then carries him.
+	/// </summary>
+	/// <summary>
+	/// The challenge panel: an offer of the Science level's first slot (the hot-dog challenge, a measured type) is listed under its <c>CHALLENGE_TITLES.str</c> title, its row's
+	/// accept is refused while the park is closed and accepts it once the park is open; the continuation round trip that follows then carries the accepted challenge.
+	/// </summary>
+	private void PlanChallenges()
+	{
+		Do( "open the challenge panel", () => Click( Hud.Screen, "challenges" ) );
+		Wait( "challenge panel opens", 2 );
+		Do( "offer the hot-dog challenge", () =>
+		{
+			var economy = Level.Park!.Economy;
+			Require( economy.TpiChallenges is { } challenges && challenges.Slots[0].Type == 2 && challenges.Slots[0].ScriptIndex == 2, "the Science level's first slot is the hot-dog challenge" );
+			Require( Hud.Screen.Find( "challengePanelList" ) is { Visible: true }, "the challenge list is open" );
+			Require( economy.DebugOfferThemeParkIncChallenge( 0 ) == 0, "the slot is offered" );
+		} );
+		Wait( "the offer note shows", 2 );
+		Do( "the offer is listed by its title", () =>
+		{
+			var title = Hud.Strings.ChallengeTitle( 2 );
+			Require( title.Length > 0 && Hud.ChallengeRows()[0] == string.Format( flow.Strings.Extra( OpenTpwText.TpiChallengeOfferedRow ), title ), "the row names CHALLENGE_TITLES.str entry 2" );
+			Require( Hud.Messages.Contains( string.Format( flow.Strings.Extra( OpenTpwText.TpiChallengeOfferNote ), title ) ), "the HUD notes the new offer" );
+			var economy = Level.Park!.Economy;
+			if ( !economy.IsParkOpen )
+			{
+				Hud.ActivateChallengeRow( 0 );
+				Require( economy.TpiChallenges!.Slots[0].Status == ThemeParkIncChallengeStatus.Offered, "a closed park refuses the accept" );
+				economy.OpenPark();
+			}
+			Hud.ActivateChallengeRow( 0 );
+			Require( economy.TpiChallenges!.Slots[0].Status == ThemeParkIncChallengeStatus.Running && Hud.ChallengeRows()[0].StartsWith( Hud.ChallengeTitle( economy.TpiChallenges.Slots[0] ), StringComparison.Ordinal ),
+				"the open park's accept starts the 60-day timed phase" );
+		} );
+		Do( "close the challenge panel", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+		Wait( "challenge panel closes", 2 );
+		Do( "the challenge panel is closed", () => Require( Hud.Screen.Find( "challengePanelList" ) is { Visible: false } && !Hud.MenuOpen, "Escape closes the challenge panel" ) );
+	}
+
+	private void PlanHandyman()
+	{
+		Do( "open the staff panel", () => Click( Hud.Screen, "staff" ) );
+		Wait( "staff panel opens", 2 );
+		Do( "choose a cleaner through the list", () =>
+		{
+			var staff = Level.Park!.Economy.TpiStaff;
+			Require( staff != null && Level.TpiStaffWorld != null, "the Theme Park Inc park has its staff and their world" );
+			var rows = Hud.StaffRows();
+			var candidates = staff!.Slots.Where( slot => slot != null ).ToList();
+			staffRow = candidates.FindIndex( candidate => candidate!.Role == ThemeParkIncStaffRole.Handyman );
+			Require( staffRow >= 0 && staffRow < rows.Count, "the pool lists a cleaner" );
+			var list = (UiScrollList)Hud.Screen.Find( "staffPanelList" )!;
+			Require( list.Visible, "the staff list is open" );
+			list.Scroll( -100000 );
+			var rect = list.ScreenRect( Context.Canvas );
+			var scale = rect.Height / list.Bounds.Height;
+			var first = Math.Clamp( staffRow - list.VisibleRows + 1, 0, Math.Max( 0, rows.Count - list.VisibleRows ) );
+			list.Scroll( first );
+			var row = new System.Numerics.Vector2( rect.X + rect.Width / 2, rect.Y + (list.Margin + (staffRow - first + 0.5f) * list.RowHeight) * scale );
+			Require( list.RowAt( Context.Canvas, row ) == staffRow, "the cleaner's row is on screen" );
+			Sub( "select the cleaner's row", () => flow.InjectedInput = UiInput.Click( row ) );
+			Sub( "activate the cleaner's row", () => flow.InjectedInput = UiInput.Click( row ) );
+		} );
+		Wait( "the hire starts", 2 );
+		Do( "the cleaner is in the hand", () =>
+		{
+			Require( Level.TpiPlacingSlot >= 0 && Level.Park!.Economy.TpiStaff!.IsPlacing( Level.TpiPlacingSlot ), "activating the cleaner's row starts his placement" );
+			Require( !Hud.Screen.Find( "staffPanelList" )!.Visible, "and closes the panel" );
+		} );
+		Do( "drop the cleaner on a linked path", () =>
+		{
+			var grid = Level.Guests!.Grid;
+			var before = Level.Park!.Economy.TpiStaff!.Members.Count;
+			handymanDropTurn = Level.Park.Economy.Turn;
+			// a path junction about eight cells into the park from the first linked path cell (the entrance's), so the cleaner walks in the open where the camera sees him
+			int Links( int x, int y ) => System.Numerics.BitOperations.PopCount( (uint)(grid.Cells.LinksAt( x, y ) & 0x55) );
+			var cells = Enumerable.Range( 0, grid.CountX * grid.CountY ).Select( index => (X: index % grid.CountX, Y: index / grid.CountX) )
+				.Where( cell => grid.IsWalkable( cell.X, cell.Y ) && Links( cell.X, cell.Y ) >= 2 ).OrderBy( cell => cell.Y ).ThenBy( cell => cell.X ).ToList();
+			Require( cells.Count > 0, "the park has linked path cells" );
+			var first = cells[0];
+			foreach ( var cell in cells.OrderBy( cell => (Links( cell.X, cell.Y ) >= 3 ? 0 : 100) + Math.Abs( Math.Abs( cell.X - first.X ) + Math.Abs( cell.Y - first.Y ) - 8 ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ) )
+				if ( (hiredHandyman = Level.DropTpiStaff( cell.X, cell.Y )) != null )
+					break;
+			Require( hiredHandyman != null && Level.Park.Economy.TpiStaff.Members.Count == before + 1, "the drop makes the member" );
+			Require( Level.TpiPlacingSlot < 0 && hiredHandyman!.Placed && Level.Things.IsUsed( hiredHandyman.ThingId ), "the member's thing is in the park's pool" );
+		} );
+		Wait( "the cleaner works", 150 );
+		PlanCleanerView();
+		Do( "the cleaner is updated by the park's turns", () =>
+		{
+			var member = hiredHandyman!;
+			Require( member.LastUpdateTurn > handymanDropTurn, $"the thing sweep updated the cleaner (last update {member.LastUpdateTurn}, dropped at {handymanDropTurn})" );
+			Require( member.State is ThemeParkIncStaffWorld.Idle or ThemeParkIncStaffWorld.Walking or ThemeParkIncStaffWorld.ToLitter or ThemeParkIncStaffWorld.Sweeping, "in a handyman state" );
+			Require( float.IsFinite( member.Energy ) && member.Energy <= 100f, "with his meters" );
+			Require( member.Sprite.Output != null && Level.TpiStaffWorld!.SpriteBanks?.BankCount( StaffType.Handyman ) > 0, "the cleaner's sprite source shows a frame of the handymen's bank" );
+			Log.Trace( $"Theme Park Inc slice smoke: cleaner {member.ThingId} in state {member.State:X} at {member.Navigation!.Cell}, energy {member.Energy}, last update turn {member.LastUpdateTurn}, walk original {member.Navigation.Original} arrived {member.Navigation.Arrived} target ({member.Navigation.TargetX >> 16}, {member.Navigation.TargetY >> 16}) links {Level.Guests!.Grid.Cells.LinksAt( member.Navigation.Cell.X, member.Navigation.Cell.Y ):X}; {Level.Park!.Economy.Litter.Count} litter item(s) in the park." );
+		} );
+	}
+
+	/// <summary>The camera close over the cleaner, the staff renderer drawing him, and (with OPENTPW_TPI_STAFF_CAPTURE naming a .png file) the world written for a visual check.</summary>
+	private void PlanCleanerView()
+	{
+		Do( "look at the cleaner", () =>
+		{
+			var camera = Camera.Mode as ParkCameraMode;
+			Require( camera != null, "the slice runs the park camera" );
+			var member = hiredHandyman!;
+			var focus = OriginalParkPlacement.GetCellCenter( Level.OriginalPark!.Heightfield, (int)member.DrawX, (int)member.DrawY );
+			camera!.Focus( focus );
+		} );
+		Wait( "the camera moves to the cleaner", 2 );
+		Do( "zoom in on the cleaner", () =>
+		{
+			var camera = (ParkCameraMode)Camera.Mode;
+			camera.SetPose( camera.Target, 90f, camera.Yaw );
+		} );
+		Wait( "the camera settles over the cleaner", 20 );
+		Do( "the staff renderer draws the cleaner", () =>
+		{
+			Require( Level.StaffRenderer is { DrawnStaff: >= 1 }, $"the cleaner is drawn (drawn {Level.StaffRenderer?.DrawnStaff})" );
+			if ( Environment.GetEnvironmentVariable( "OPENTPW_TPI_STAFF_CAPTURE" ) is { Length: > 0 } path )
+				WorldCapture.Write( path );
+		} );
 	}
 
 	/// <summary>A site whose footprint is allowed at rotation 0 and whose entrance looks onto a free straight queue line.</summary>

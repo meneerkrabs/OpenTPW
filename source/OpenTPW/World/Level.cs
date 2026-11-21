@@ -265,7 +265,7 @@ public partial class Level : IDisposable
 	/// </summary>
 	// [BIN:TPW-EXE:0x5ACCF0 park entry load] park entry (state 9 of 0x54E360) loads the newest file in the player's folder of the park through 0x414D40; an Instant Action player's folder holds the copy of the level's easymode.TPWI (0x5C8190 copies it when the player is created), so its Sound block plays as a loaded save's does
 	public SaveSoundData? OriginalSaveSound => !IsReadOnlyVisit && incLayout == null ? OriginalPark?.Save?.Sound : null;
-	/// <summary>True while this level runs the experimental Theme Park Inc slice: only the money economy (no staff, research or challenges), no HUD or advisor of the reference game.</summary>
+	/// <summary>True while this level runs the experimental Theme Park Inc slice: the money economy, the career, Theme Park Inc's cleaners and the ported challenge types (no other staff or research), no HUD or advisor of the reference game.</summary>
 	public bool IsThemeParkIncSlice => GameEditions.IsThemeParkInc && OriginalPark != null;
 	/// <summary>The version 2 layout a visit applies instead of the shipped level import; null for version 1 packages and own parks.</summary>
 	private readonly OpenTPW.Online.Packages.MinimalParkPayload? visitLayout;
@@ -400,8 +400,9 @@ public partial class Level : IDisposable
 				throw new InvalidDataException( "The saved cell map dimensions do not match the original terrain." );
 			yield return 0.15f;
 			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 86 of the
-			// balance keys the Theme Park World economy reads, so its worlds run the money only (Theme Park Inc's own keys: cash, loans, costs,
-			// the calendar, running costs) and not the staff, research or challenges (docs/THEME-PARK-INC.md, "Economy").
+			// balance keys the Theme Park World economy reads, so its worlds run Theme Park Inc's own systems instead: the money (cash, loans, costs, the calendar, running
+			// costs), its own staff (the hiring pool and hired handymen; the other roles are refused), its challenge system, the career and its missions, and no research
+			// (docs/THEME-PARK-INC.md, "Economy").
 			using ( LoadProfile.Measure( "economy" ) )
 			{
 				if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy && resume == null )
@@ -625,7 +626,9 @@ public partial class Level : IDisposable
 				OriginalTerrain.QueueModelSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue ? QueueModels.Choose( cells, x, y ) : null;
 				OriginalTerrain.PathVariantSource = PathVariants.IsSecond;
 				// [BIN:TPW-EXE:0x00450D10 land refresh] the land outside the park is drawn darker
-				OriginalTerrain.LandFlagsSource = ( x, y ) => cells.InBounds( x, y ) ? cells.FlagsAt( x, y ) : ParkCellFlags.None;
+				// [BIN:TPI-EXE:0x4A5E30 land refresh] Theme Park Inc's refresh writes no bit 0x400: it sets the landscape word's bits 0x1000..0x8000 from the 0x40 of the cell's neighbours, and the
+				// draw's use of them is not read, so its owned land is drawn as it was (docs/reverse/TPI-BOUNDARY.md)
+				OriginalTerrain.LandFlagsSource = GameEditions.IsThemeParkInc ? null : ( x, y ) => cells.InBounds( x, y ) ? cells.FlagsAt( x, y ) : ParkCellFlags.None;
 				// [EXT:pools-render] the pool cells are render-only holes of the ground mesh while the extension is on (nothing else reads this)
 				// [BIN:TPW-EXE:0x00535DD0 hole cell types] the ground is not drawn under an object, entrance or exit cell (the cell refresh writes the hole word), so the floor stands on nothing
 				OriginalTerrain.RenderHoleSource = ( x, y ) => ObjectCellHoles.IsHole( cells, x, y ) || PoolRenderHoles.IsHole( cells, x, y, FeatureGates.Pools );
@@ -704,6 +707,12 @@ public partial class Level : IDisposable
 			if ( GameEditions.Capabilities.Staff )
 				foreach ( var _ in SetupStaffSteps() )
 					yield return 0.95f;
+			else
+			{
+				SetupThemeParkIncStaff();
+				SeedThemeParkIncCurrentObstacle();
+				AttachThemeParkIncMissionWorld();
+			}
 			yield return 0.95f;
 			// [EXT:tpi-park-open] the Theme Park Inc park runs no gate commands: its gate script is not traced, so the economy neither drives nor closes the park door
 			if ( !GameEditions.IsThemeParkInc )
@@ -734,7 +743,7 @@ public partial class Level : IDisposable
 			: resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout, land == null || joinRestore != null ? null : cells => cells.SetUpLand( land, park.Save ) ) )
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
-			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield ) );
+			: new GuestPathGrid( OriginalCellMap( park, settings, land ) );
 		LandBarrier = ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y );
 		// the demolition keeps the NoModify flag of a MAP initial path cell in front of an entrance (tp.exe's cell byte +0x26 bit 8, 0x527EE0)
 		grid.Cells.InitialPathSource = ( x, y ) => park.Map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath );
@@ -889,6 +898,46 @@ public partial class Level : IDisposable
 
 	/// <summary>Whether a cell is of the original types 7 or 0x1e, which no fence may cross (<see cref="ParkLand.CheckPurchase"/>); null for a level without an original map.</summary>
 	internal Func<int, int, bool>? LandBarrier { get; private set; }
+
+	/// <summary>
+	/// The cell map of an original level's start: Theme Park World's with the level's fence and land (<see cref="LandSetup"/>); Theme Park Inc's with its owned land
+	/// (<see cref="ThemeParkIncLand"/>): the prebuilt park's saved flags, or a new world's init, gate strip and <c>hoardings.map</c>.
+	/// </summary>
+	internal static ParkCellMap OriginalCellMap( OriginalPark park, GuestSettings settings, ParkLandSetup? land )
+	{
+		var cells = ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield );
+		if ( !GameEditions.IsThemeParkInc )
+			return cells;
+		if ( park.Save is { } save )
+			ThemeParkIncLand.ImportSaved( cells, ( x, y ) => (save.Cells[x, y].MapFlags & (ushort)ParkCellFlags.Unowned) != 0 );
+		else if ( settings.EntranceA is { } entranceA && settings.EntranceB is { } entranceB )
+		{
+			var path = ThemeParkIncLand.HoardingsMapPath( park.LevelName );
+			var bytes = FileSystem.FileExists( path ) ? FileSystem.ReadAllBytes( path ) : Array.Empty<byte>();
+			if ( !ThemeParkIncLand.SetUpNewWorld( cells, entranceA, entranceB, bytes ) )
+				Log.Warning( $"Theme Park Inc level {park.LevelName}: {path} is missing or short; the land holds only the cells read." );
+		}
+		else
+			throw new InvalidDataException( $"Theme Park Inc level {park.LevelName} names no entrance cells (FixedItemInfo.EntranceA/BPos), which the land needs." );
+		return cells;
+	}
+
+	/// <summary>Theme Park Inc's mission number as the catalogue reads it (<c>0x5F03A0</c> +0xC: the mission object's <c>Info.Number</c>, career+0x10C0); 0 without a career.</summary>
+	internal int ThemeParkIncMissionNumber => Park?.Economy.TpiCareer?.Mission.Number ?? 0;
+
+	/// <summary>Whether the current mission's obstacle research is done: the mission controller's obstacle state (<c>0x5F01D0</c>) is 2; false without a controller.</summary>
+	internal bool ThemeParkIncObstacleResearchDone => Park?.Economy.TpiMissions is { Career.CurrentZone: not null } missions && missions.ObstacleState() == 2;
+
+	/// <summary>
+	/// Theme Park Inc's mission land growth for the mission controller: applies <c>extents/extent.NNN</c> for <paramref name="index"/> (the mission counter before it advances)
+	/// to the live world's cells with the land loader's rules (<see cref="ThemeParkIncLand.ApplyExtent"/>). Answers the loader's result: false for a missing or short file.
+	/// </summary>
+	internal bool ApplyThemeParkIncExtent( int index )
+	{
+		if ( !IsThemeParkIncSlice || Guests?.Grid.Cells is not { } cells )
+			throw new InvalidOperationException( "Only a Theme Park Inc world grows its land by extents." );
+		return ThemeParkIncLand.ApplyExtent( cells, index );
+	}
 
 	/// <summary>The level's park fence: its gate posts beside the entrance cells and its <c>Hoardings.sam</c>; null without them.</summary>
 	private static ParkLandSetup? LandSetup( OriginalPark park, GuestSettings settings )
@@ -1359,7 +1408,7 @@ public partial class Level : IDisposable
 	/// <summary>Writes the park economy and every random stream to an OpenTPW park save.</summary>
 	public void SavePark( string path )
 	{
-		StaffPlacement?.PrepareForSave();
+		PrepareStaffForSave();
 		Streams.SavePark( path );
 	}
 

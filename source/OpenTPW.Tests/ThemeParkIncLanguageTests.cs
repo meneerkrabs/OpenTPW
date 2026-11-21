@@ -136,6 +136,30 @@ public class ThemeParkIncLanguageTests
 	}
 
 	[TestMethod]
+	public void TheStaffNameTablesHoldNoTextTwiceSoTheNameTestCanCompareIndices()
+	{
+		// [BIN:TPI-EXE:0x631A30 name taken] the pool's name test compares texts across all roles; with no text twice among the six tables' entries the role and index decide it,
+		// which ParkEconomy.TpiStaffNameText's default relies on
+		var data = TpiData();
+		foreach ( var name in new[] { "English", "Dutch", "French", "German", "Swedish" } )
+		{
+			var language = GameLanguage.Resolve( data, name, null );
+			var seen = new Dictionary<string, string>();
+			foreach ( var table in new[] { "HANDYMAN_NAMES.str", "MECHANIC_NAMES.str", "ENTERTAINER_NAMES.str", "GUARD_NAMES.str", "RESEARCHER_NAMES.str", "GARDENER_NAMES.str" } )
+			{
+				var entries = language.LoadStrings( table ).Entries;
+				Assert.IsTrue( entries.Length >= ThemeParkIncStaffCandidates.NameTableSize, $"{name} {table} holds {entries.Length} names" );
+				for ( var index = 0; index < entries.Length; index++ )
+				{
+					if ( string.IsNullOrWhiteSpace( entries[index] ) )
+						continue;
+					Assert.IsTrue( seen.TryAdd( entries[index], $"{table}[{index}]" ), $"{name}: \"{entries[index]}\" is in {seen.GetValueOrDefault( entries[index] )} and {table}[{index}]" );
+				}
+			}
+		}
+	}
+
+	[TestMethod]
 	public void EveryThemeParkIncStringTableDecodesInEveryLanguageOfTheCd()
 	{
 		var data = TpiData();

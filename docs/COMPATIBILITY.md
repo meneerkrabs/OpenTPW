@@ -406,7 +406,7 @@ COMPAT-011 (the localized-string fallback order) and COMPAT-012 (the UniToMB enc
 `WideCharToMultiByte`, `0x424DB0`, and `Encode` has no runtime caller) are OpenTPW decisions or helpers now:
 `[EXT:locale-fallback]` and `[EXT:text-encode-helper]` (COMPAT-031, the cream gate paint, was an OpenTPW decision too and is contradicted by the video, see COMPAT-004). The original opens one language folder
 (`Data\Language\<selected>`, `0x419710`) and has no English-then-identifier chain; the missing-id result of the table lookup (`0x6ACB70`) is untraced.
-COMPAT-019 is an extension (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the viewer runs no missions, so it has no obstacle state to follow): Theme Park Inc's `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704 "New Science Drained Lake
+COMPAT-019 is an extension (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the level builds no obstacle things yet, so there is no 1703 or 1704 object to draw; [TPI-MISSIONS.md](reverse/TPI-MISSIONS.md) §6): Theme Park Inc's `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704 "New Science Drained Lake
 Obstacle", `levels/science/obstacles/` holds `lake.wad` and `dlake.wad`, `terrain.wad` holds dlake, dlakem, lake, lakem1 and lakem2, and
 `missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10 ("Water Drainage"); so "dlake" is the
 drained lake, not a finished one. COMPAT-006 (kerning) is retired (`APPROX:COMPAT-006`, October 17, 2026): tp.exe imports only ScriptStringAnalyse, ScriptStringGetLogicalWidths, ScriptStringOut, ScriptString_pSize and ScriptStringFree

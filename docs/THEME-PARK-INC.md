@@ -61,7 +61,7 @@ starts the playable slice below (older links still land here).
 `--load-original-level arabian|science|water` with Theme Park Inc data starts the experimental
 **playable slice** (`[EXT:tpi-viewer]`, October 13, 2026). A start without a world opens the slice's
 [Personnel File start screen](#theme-park-inc-front-end) instead. It is not Theme Park Inc support: there is
-no Theme Park Inc in-game interface, staff, research, challenges or native save writing (its money is the only economy), and nothing it draws has been
+no Theme Park Inc in-game interface, research or native save writing (its money, the cleaners and the measurable challenges are the only economy), and nothing it draws has been
 compared with the original game. How to extract the CD cabinets and start it:
 [RUNNING.md](RUNNING.md#theme-park-inc-level-viewer-experimental).
 
@@ -77,14 +77,14 @@ See [WEB.md](WEB.md#game-files-on-demand) for import retries and storage limits.
 **Edition capability policy.** `GameEditions.Capabilities` (Client/Setup/GameEdition.cs) is the one
 place that says what an edition's park runs. Theme Park World keeps every implemented system. The
 Theme Park Inc slice runs building, guests and the money under an experimental HUD and refuses the systems whose
-Theme Park Inc rules or data OpenTPW has not traced. The economy capability is split into `Money` (on for the slice),
-`Staff`, `Research` and `Challenges` (off): Theme Park Inc's `Standard.sam` lacks 86 of the 152 fixed balance
+Theme Park Inc rules or data OpenTPW has not traced. The economy capability is split into `Money` and `Challenges` (on for the slice; the challenges
+are Theme Park Inc's own system, see [Challenges](#theme-park-inc-challenges)), `Staff` and `Research` (off): Theme Park Inc's `Standard.sam` lacks 86 of the 152 fixed balance
 keys the Theme Park World economy reads, e.g. `PerGradeStaffConsts[0].BaseWage` (re-measured against the executable's
 schema rows October 17, 2026; the October 13 count of 89 of 155 was a text count), but carries the money keys. Also refused: advisor, Theme Park World's 3D lobby front end (`FrontEnd`; the Theme Park Inc Personnel File start screen has its own flag,
 `PersonnelFileFrontEnd`, on for the slice, `[EXT:tpi-front-end-phase1]`), native park saves, sharing
-(export/import/visit), the mission campaign, the Global Master Save and the disc's COS files (`[EXT:tpi-capability-gates]`, an OpenTPW scope decision).
-`Level` gates its economy on the policy; the refusals stay real, not deleted: nothing writes or resumes a native Theme Park Inc park save, GMS
-or COS file, and the start-up command line additionally refuses `--sandbox`,
+(export/import/visit), the mission campaign beyond the career object and the disc's COS files (`[EXT:tpi-capability-gates]`, an OpenTPW scope decision).
+`Level` gates its economy on the policy; the refusals stay real, not deleted: nothing writes or resumes a native Theme Park Inc park save
+or COS file (the player's Global Master Save is written and read since November 21, 2026: [TPI-CAREER.md](reverse/TPI-CAREER.md)), and the start-up command line additionally refuses `--sandbox`,
 `--smoke-test`, `--advisor-say`, `--advisor-response`, `--setup`, `--park-resume-smoke`,
 `--export-park`, `--import-park` and `--visit-park` on Theme Park Inc data, and `--front-end` together with a world. `--front-end` alone (or a start with no
 world and only file, language, display or sound options) opens the Personnel File; any other option without a world is refused as before.
@@ -108,6 +108,13 @@ zoom); the sandbox developer panels are off. On top of that the slice adds:
   undoes, right-click cancels; a placed `Info.HasQueue` ride switches to the queue tool. The build
   ghost markers now resolve their textures by name without extension, so Theme Park Inc's own
   `blue.tga`/`red.tga` markers draw (Theme Park World keeps its `blue.wct`/`red.wct`).
+- **Owned land** is Theme Park Inc's own ([TPI-BOUNDARY.md](reverse/TPI-BOUNDARY.md)): the prebuilt Science park keeps its saved flags (1259 owned squares), and a new
+  water or arabian world marks every square but the NoModify ones unowned, opens the gate strip beside the entrance and clears its `hoardings.map` with the land loader
+  `0x678B00` (x-major bytes, map border skipped). Paths, queues and objects are refused on unowned land, as the cell validator `0x67E320` refuses them; no fence is
+  laid and the land is not drawn darker (Theme Park Inc's boundary drawing is not read). `Level.ApplyThemeParkIncExtent` grows the land by `extents/extent.NNN` for the
+  mission controller, and the build list applies the catalogue's gate `0x57CA20`: the four special rides are hidden in every mission, and the mission number (0 until the career
+  runs) gates the thinking spaces and training rooms. The continuation save keeps the land as a bit map, and a save written before it is refused. The net worth counts the
+  owned squares only, by Theme Park World's cell-point rule (`ParkEconomy.CellPoints`, which skips unowned cells); Theme Park Inc's own net-worth routine has not been read against it.
 - **Guests** start with Theme Park Inc's own 24-row profile table, starting cash, exit counter and starting needs.
   The selected row supplies their excitement preference. The original prank code is saved separately from the
   Theme Park World flag but does not run any TPI prank actions yet. Existing guests in older saves keep their
@@ -133,7 +140,7 @@ for the separate `.tpilayout` format, exact state boundaries and verification li
 
 **Science continuation.** The desktop pause menu can [save and continue a solo Science park](PARK-SAVES.md#experimental-science-continuation-on-desktop) in OpenTPW's own format. This is separate from layout checkpoints and does not resume the original Science prebuilt's simulation state.
 
-**What it leaves out.** No research, challenges or staff (the money runs, see above); no native park saving/loading, online world, or advisor beyond the four weather forecasts. The prebuilt save's economy, guests, ride state and
+**What it leaves out.** No research, no staff apart from cleaners, no challenge whose value OpenTPW cannot measure (the money runs, see above); no native park saving/loading, online world, or advisor beyond the four weather forecasts. The prebuilt save's economy, guests, ride state and
 untraced scene records are not restored. Arabian and water remain empty apart from default fixed
 items; the science save contains no Bus record, so none is inferred for that park. Several ride
 scripts report unimplemented effects in the log; the two opcodes only Theme Park Inc scripts use
@@ -167,7 +174,7 @@ file fill them. In Theme Park Inc the lake is a separate model: `terrain.wad` ho
 (`lake_surface`, `lake_bottom`; its extent equals the holes that no `base.MD2` mesh covers: 453
 cells, none left once it is drawn), `lake.MD2` (the same lake with hoardings, a tent, a plank and a
 shovel, so a building site) and the animation files `idle1`/`idle2`/`lakem1`/`lakem2`/`dlakem`. The
-viewer now always draws `dlake.MD2` (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the viewer runs no missions; `lake.MD2` and the animations are
+viewer now always draws `dlake.MD2` (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the level builds no obstacle things yet, so there is no 1703 or 1704 object to draw; `lake.MD2` and the animations are
 ignored). That was a loader gap. The data names it the drained state: `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704
 "New Science Drained Lake Obstacle", and `missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10
 ("Water Drainage"); so `dlake` is the drained lake, not a finished one, and which one a park shows is data-driven (the exe holds no
@@ -196,8 +203,9 @@ missing lake bed textures; the viewer's lighting and water transparency against 
 
 ### Theme Park Inc economy (money only)
 
-Since October 17, 2026 the slice runs Theme Park Inc's **money** (`EditionCapabilities.Money`) and still refuses staff, research and challenges
-(`Staff`, `Research`, `Challenges`; the whole Theme Park World economy is `Economy`, true only for Theme Park World). The park's economy is
+Since October 17, 2026 the slice runs Theme Park Inc's **money** (`EditionCapabilities.Money`) and still refuses Theme Park World's staff and research
+(`Staff`, `Research`; the whole Theme Park World economy is `Economy`, true only for Theme Park World); since November 21, 2026 it also runs Theme Park Inc's own
+challenge system (`Challenges`, [below](#theme-park-inc-challenges)), never Theme Park World's objectives. The park's economy is
 the same `ParkEconomy` class under `EconomyRules.ThemeParkIncMoney` (`Economy/EconomyRules.cs`), over settings built from Theme Park Inc's own keys.
 Evidence: static reading of the no-CD `Game.exe` against `tp.exe` (October 17, 2026), nothing run; none of it is compared with the running original.
 
@@ -215,7 +223,7 @@ The object catalogue adds the keys only Theme Park Inc's type record has: `Info.
 | `LoanInfo[n]` (ten slots, eight used) | `0x5BFB97` (`0x00A020C4`); the loan loop and the monthly step `0x5C0B10`..`0x5C0C49` | `0x4CF7C0`, `0x4D0370` | `LoanMath` unchanged (oracle X8, X9) |
 | bank debit | `0x5C07B0` | `0x4D01F0` | `ParkEconomy.Post` |
 | `Costs.QueueCell`, `PathCell`, `KartTrackCell`, `WaterTrackCell` | setter `0x4289AC` (`0x00A0264C`..`0x00A02658`) | `0x408192` | path, queue and track charges as in Theme Park World |
-| `Costs.MapCell` | in the data (`0x00A0265C`), read by no instruction found | the Buy Land tool | **no Buy Land**: `TryBuyCells(Land)` answers `NoLandForSale`; the park boundary is the mission's `BoundaryClicks` (moderate confidence) |
+| `Costs.MapCell` | in the data (`0x00A0265C`), read by no instruction found | the Buy Land tool | **no Buy Land**: `TryBuyCells(Land)` answers `NoLandForSale`; the owned land is the zone's `hoardings.map` and grows by `extents/extent.NNN` ([TPI-BOUNDARY.md](reverse/TPI-BOUNDARY.md)); a mission's `BoundaryClicks` is read only by dead code |
 | calendar | constructor `0x607E90` | `0x4F7E80` | 2000-01-01, 15,000 game seconds per real second (`ParkCalendar`) |
 | entry-fee judgement | `0x6157D0` (divisor word `0x00A01A90`) | `0x4FF5C0` | same routine; the divisor is data: 6 in Theme Park Inc's global file (4 in arabian's layer), 4 in Theme Park World's |
 | object purchase, upgrade purchase | `0x5DBE3C`, `0x5E2A99` | `0x4DB090`, `0x4AF4E9` | the build charges `Upgrades[0].CostOfUpgrade`; the upgrade needs a mechanic, so it stays refused (`NeedsStaff`) |
@@ -233,10 +241,55 @@ fee, the build list shows each object's price and a placed object's refusal (not
 science save's objects register uncharged, like an imported park's; its own economy is not restored. A layout checkpoint saves the layout only: the cash, calendar and
 loans start fresh in the new session, like the guests.
 
-**What stays refused.** Staff (no pool, no wages, no mechanics, handymen or entertainers), so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge and no litter is dropped, because no handyman would ever clean it (`[EXT:tpi-no-maintenance-wear]`), and no
-upgrade is installed; research (the whole catalogue is on offer, `[EXT:tpi-no-research]`); challenges, golden tickets and the missions; the shares game; Theme Park Inc's
+**Staff (handymen only).** The staff panel (top-right Staff button) lists the hiring pool and hires a Cleaner: activating his row puts him in the hand, a click on a path or grass cell drops
+him (the drop's cell tests and its redirect of a drop on an object to the object's entrance, exit or nearest path cell are the executable's, `0x4D4EB0`), and right-click or Esc cancels. A placed handyman runs Theme Park Inc's own state machine (states 0, 1, 0x0F and 0x10:
+idle, walk, to litter and sweep, with the search `0x5D52A0`, the meters, the day counters, the daily experience gain, the payday and the wage demands, shown as notes), and the
+guests drop litter by Theme Park Inc's litter step (`0x614B71`). The other roles are refused with a note (`[EXT:tpi-capability-gates]`); the handymen walk with Theme Park World's
+walk (`[EXT:tpi-twp-guest-rules]`), and Theme Park Inc's toilet wear, loo cleaning and the litter bins' fill are unported, so the handymen sweep litter only
+(`[EXT:tpi-no-maintenance-wear]`). No Theme Park Inc object is a rest area, so a tired cleaner finds none, as in the original; strikes in the park, the wage negotiation, training, pick-up and the other roles come in later packages (docs/reverse/TPI-STAFF.md §11).
+The handymen are drawn with Theme Park Inc's own sprites (`esprites.wad`, `Generic\Handymen`) and animate as their states ask (stand, walk, sweep).
+
+**What stays refused.** The other staff roles, so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge, because Theme Park Inc's toilet wear and loo cleaning are unported (`[EXT:tpi-no-maintenance-wear]`), and no
+upgrade is installed; research (the whole catalogue is on offer, `[EXT:tpi-no-research]`); the challenge types OpenTPW cannot measure (see below), spending golden tickets, promotions and the missions; the shares game; Theme Park Inc's
 weather presentation's sky; the advisor's other messages; native save formats. Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data: the fee is charged at each use and the guest's price test 0x6120C0 refuses a price above its willingness to pay or its purse (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are
 not verified for it. The statistics block's accumulator (`+0x938`) is the month's booked costs, which the month message debits with the running cost (ECON-060).
+
+<a id="theme-park-inc-challenges"></a>
+### Theme Park Inc challenges
+
+Since November 21, 2026 a Theme Park Inc park runs the executable's challenge system (`ThemeParkIncChallenges`, `ParkEconomy.TpiChallenges`), which is not Theme
+Park World's objective system: [TPI-CHALLENGE-SYSTEM.md](reverse/TPI-CHALLENGE-SYSTEM.md) traces it and its section 10 lists the port's status. The level's first ten
+`ChallengesInThisLevel` entries name rows of `Data/Challenges.sam` (Science: rows 2, 4, 5, 14, 13, 18, 21, 8, 20 and 22, types 2, 35, 25, 46, 36, 41, 56, 17, 48
+and 17) that load into ten slots; every world update the system switches on once the park is open, makes slots available by their triggers, offers the lowest due
+slot at most every `DaysBetweenOffers` (20) days, and runs an accepted slot through its grace period and timed phase to a win or a loss. A win pays the cash prize
+through the bank and adds the golden tickets to the career; a loss returns the slot to its offer, takes one off the firing line on the slot's first loss and, once the
+line is spent, posts the firing letter. A won challenge's `PromoGiven` promotes the career (`0x74C450`) and the current zone record counts the win. The firing line,
+the tickets, the rank and the mission counter are the career's (`ThemeParkIncCareer`, [TPI-CAREER.md](reverse/TPI-CAREER.md)); the slots and the career are saved in the
+Science continuation save. The system draws no random number.
+
+What is measured: types 2 (hot dogs sold: the trigger is a fat shop, the count comes from the sale bookings), 25 (the least happy staff member; the trigger is an
+entertainer's experience) and 41 (no strike; the trigger is the staff count). Every other type stays unoffered (`[EXT:tpi-capability-gates]`), because its trigger
+or value reads park state OpenTPW does not model. The availability reads the career's mission counter. The mission controller runs since November 21, 2026 (below),
+but its completion waits for a camera flight OpenTPW does not port, so a career stays at mission 0 unless the cheats extension's Skip Mission advances it, and the
+Science rows that need mission 2, 3 or 4 wait for that. Left off
+under the same label: the shares (prize and price effect). The experimental HUD's Challenges button (top right, below Staff) lists the offered, accepted and won slots by
+their `CHALLENGE_TITLES.str` title with the days left and the progress value, and accepts an offered row while the park is open, as the original's mail does
+(`[EXT:tpi-text-hud]`); the challenge mail's full text, its sounds and the advisor's sender advice are not ported.
+
+<a id="theme-park-inc-missions"></a>
+### Theme Park Inc missions
+
+Since November 21, 2026 a Theme Park Inc park runs the executable's mission controller (`ThemeParkIncMissionController`, `ParkEconomy.TpiMissions`;
+[TPI-MISSIONS.md](reverse/TPI-MISSIONS.md)). It starts the mission's exit statistics in the viewed zone, tests them once a game day on every fourth world tick, and
+answers the obstacle, promotion and camera messages. Its completion tick spends the tickets, grows the land by the mission's extent, opens a theme, advances the
+career, finds the next obstacle and starts the new mission's statistics; the build list's mission gate reads the career's mission number. Types 1, 2, 3, 5 and 8
+are measured from the park; 4 (last month's takings, whose ride and facility rows OpenTPW's ledger does not keep), 6 (awards) and 7 (shares) are never decided (`[EXT:tpi-capability-gates]`). The controller is saved in the
+Science continuation save.
+
+**No mission completes in play, except through the cheats extension's Skip Mission.** Nothing calls OnMissionComplete: there is no mission window or Proceed
+control, and its camera flight, whose end is the only sender of the completion message 0x29, is not ported (the tests deliver 0x29 themselves). An obstacle
+mission would also need the research (message 0x23) and the staff HQ's obstacle slots, neither of which OpenTPW runs. What does not run yet besides: the obstacles as world things and their opening (their types are read from the zones' `obstacles`
+archives), and the objective letter's window.
 
 ### Prebuilt science save
 
@@ -444,7 +497,8 @@ executable, which the script's `--check` does not repeat: it reproduces the two 
 - **Zone chooser** (`[EXT:tpi-front-end-zone-chooser]`): the original reaches Polar Zone and Arabian Nights only through its campaign and Overview Map, so the page offers a latched
   button per zone (Land of Invention = science, Polar Zone = water, Arabian Nights = arabian, named by `THEMENAMES.str`) above Enter Game. The label above them is OpenTPW's
   (`OpenTpwText.TpiZoneChooser`).
-- **Load A Game** resumes the [local OpenTPW Science save](PARK-SAVES.md#experimental-science-continuation-on-desktop), independent of the selected zone. It is disabled in the browser or when the slot does not exist. This is not the original save picker.
+- **Load A Game** resumes the [local OpenTPW Science save](PARK-SAVES.md#experimental-science-continuation-on-desktop), independent of the selected zone, with the career of the player file (below). It is disabled in the browser or when the slot does not exist. This is not the original save picker.
+- **The player file** (since November 21, 2026): the career is the Global Master Save `opentpw-tpi/users/1New Player/New Player.GMS` in OpenTPW's own save folder, never the original's `save\users` (user decisions, one player and OpenTPW's own folder). Enter Game builds the zone's park with its career, saving the Science park writes it and leaving a park runs the full save (the player file, then the Science park save) ([TPI-CAREER.md](reverse/TPI-CAREER.md) §3.4).
 - **Delete Player** and **Coaster Design Kit** remain inactive. **Quit Game** (and Escape) asks for confirmation (cancel has the focus), and the tick closes the window.
 - Desktop: `--front-end`, or a plain start with Theme Park Inc data (`OPENTPW_GAME_PATH`/`--game-path` and no world), opens the page; `--load-original-level` still starts a world
   directly. The setup wizard and the remembered edition still ask for a world and start it directly in this phase, and the browser keeps its up-front theme choice.
@@ -586,7 +640,9 @@ noCD build of `Game.exe`, by static analysis only:
 - `0x0074D110` loads it;
 - the shared body is `0x0074D840` with its sub-serializers.
 
-The file is uncompressed and little-endian. The loader rejects it when one of six markers differs.
+The file is uncompressed and little-endian. Since November 21, 2026 every field is traced or kept as raw bytes, OpenTPW writes the file and reads it with the
+original's lenient rules (a marker that differs is a successful load that stops there); [TPI-CAREER.md](reverse/TPI-CAREER.md) §3 has the full layout, which
+supersedes the table below.
 
 | Part | Content |
 | --- | --- |
@@ -599,16 +655,10 @@ The file is uncompressed and little-endian. The loader rejects it when one of si
 | History | `mFirstHourTime`, then 644 × 20 bytes `mHistory[i]` |
 | Tail | `0x00592720` (a word and 92 bytes), `DTOT`, the shares game (`0x00620E30`: three company slots, `mNumberOwned`, `mPctCompanySharesOwned`, `mCompanyName`, `mCurrentValue`), `RAHS`, `0x00622D70` (count, bytes, a byte and three words), `MAPS`, the ambient sound tags (`0x005BF470`: count × 16 bytes) |
 
-Three German retail saves read to their last byte with every marker in place. They are kept private and
-checked by `ThemeParkIncGlobalSaveTests` when `OPENTPW_TPI_SAVES` names their folder. Sections without a traced
-meaning are read and skipped, and nothing is written back.
-
-The reader bounds park counts and names, map flags and ambient tags before reading
-their sections. It rejects truncated sections, trailing bytes and unpaired UTF-16
-surrogates in decoded sign lines or the company name. Valid surrogate pairs are
-accepted through the field's final code unit; unused units after the first NUL
-remain ignored. These text checks are OpenTPW's malformed-input policy. Synthetic
-tests cover every truncated prefix and the maximum supported table sizes.
+Three German retail saves read completely and write back byte for byte, directly and through the career object. They are kept private and
+checked by `ThemeParkIncGlobalSaveTests` and `ThemeParkIncCareerTests` when `OPENTPW_TPI_SAVES` names their folder. Synthetic tests cover every
+truncated prefix (a failed or a stopped load, as the body decides), the markers, the version and the trailing bytes. The decoded company name refuses
+unpaired UTF-16 surrogates (OpenTPW's malformed-input policy for its decoded view; the raw bytes are kept).
 
 ### `.GMI`: the refresh snapshot
 

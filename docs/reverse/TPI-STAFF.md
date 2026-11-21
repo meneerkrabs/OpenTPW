@@ -241,6 +241,66 @@ Ported as an economy model, without the world simulation, and checked against th
 - Strikes: grievance `0x633740`, the month consideration `0x6330B0` and its escalation.
 - The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21).
 
-Not ported yet: the role state machines and their walking, working, slacking (`0x62D650`) and low-motivation rest; training; the wage negotiation dialog
-(`0x559E00`); the hire list UI; saving the pool; and the economy's use of all this (Theme Park Inc staff are still refused in the slice).
+Not ported yet: the state machines of the roles other than the handyman; slacking (`0x62D650`) and low-motivation rest; training; the wage negotiation dialog (`0x559E00`).
+
+Since November 21, 2026 the pool runs in a Theme Park Inc park: the opening pool at the new-world init (`0x630CB0`), the pool update in every world update's tail after the
+thing loop and before the calendar (`0x649868`), the career rank 1 for the agencies (`0x74BDC7`), the pool in the Science continuation save, and a Staff panel in the HUD.
+
+### Handymen in the park (WP3, November 21, 2026)
+
+A separate Theme Park Inc staff world (`World/Staff/ThemeParkInc/ThemeParkIncStaffWorld.cs`) runs the placed members; Theme Park World's staff code is untouched (the slice
+refuses its staff capability, so its staff world is not built in a Theme Park Inc park).
+
+- **Hire and drop.** The staff panel's candidate rows hire: a Cleaner's row starts the hire (`0x630D10`) and puts him in the hand; a park click drops him (`0x4D4EB0`). A
+  type-4 cell whose chain holds an object's thing (its own cell) goes through the gate `0x4D1FC0` and the redirect `0x4D2180` by the object's `Info.WhichUIType` (type record `+0x600`,
+  copied from `+0x70`): a ride's drop makes him on its exit cell (`+0x48`), a shop's, a sideshow's and kinds 4 and 5 on its entrance cell (`+0x46`), a feature's on the path cell beside its
+  footprint nearest the click, whose queue link byte then points from the footprint to it (`0x5E9320`, `0x5E9230`); without such a path cell the drop ends silently and he stays in the
+  hand. Every other cell takes the ladder (flag 0x40, fence post, track record, type 0, 1, 3 or 9, as tp.exe's, with no occupancy test; the other footprint cells refuse by their type 4)
+  and refuses with the message "Cannot place staff member here". Right-click or Esc cancels (`0x6319E0(1)`). The drop builds the member: its thing takes the free list's head and enters the thing list at its head (`0x637100` → `0x649270`), the
+  person's start draws once for a base speed (`0x608FA4`, overwritten), the member's start sets the meters, the patrol rectangle (0, 0, 0x7F, 0x7F) and the base speed
+  `lerp(exp, 0, MaxExperience, 100, 100 + MaxSpeedDifference)` (`0x626390`), and the handyman's start (`0x5D4980`) ends in his search.
+- **Thing update.** The world pass walks the thing list newest first (`0x6495C1`); a member's update is the handyman's pre-update `0x5D5000` (the common part `0x628050`: the speed
+  smoothing and one tick of the display state's day counter by `0x62B010`; then, while idle, a litter scan every `trunc((1 − exp/MaxExp) × 50)` turns) and the state dispatch
+  `0x5D5710`.
+- **States.** 0 idle (`0x5D5863`: the 1-in-16 voice draw, then the idle end `0x62CA10`: the turn above `+0x23C − trunc((1 − exp/MaxExp) × −50)` looks for work `0x62D810`, which after
+  the search sets a member whose motivation byte is below MotivationPercentToStrike / 2 and who now works back to 0); 1 walk (`0x5D5731`: the voice draw, the walk step, arrived or
+  stuck searches, walking costs the moving step `0x62B3E0`); 0x0F to litter (`0x5D59D0`: the claim must still be his, arrival on litter snaps to the walk's point and sets 0x10);
+  0x10 sweep (`0x5D5AE0`: the working step, the work duration `0x62E4C0`, then the target's litter is removed `0x5D90D0` when his own cell holds litter, and he searches).
+  The setters are `0x5D5630` and `0x628180` (0: the idle stamp after a walk, the bonus 0, template 3; 1: template 0xF; 0x0F: the bonus 25, template 0xF; 0x10: the work stamp, template 0x19).
+- **Search `0x5D52A0`.** The gate `0x62BBA0` first (see below); tired (`0x62B3B0`) goes to the tail; the litter finder `0x5B1B50` (the box of radius `lerp(exp, 0, MaxExp,
+  Min/MaxDetectionRange)`, unclaimed or own claims, nearest by Manhattan distance, the first on a tie) and, inside the patrol rectangle (`0x62C610`), the reseed by the cell word
+  and the two sweep-spot draws, a route there claims the litter (`0x5D8FE0`: the member's thing id and the turn) and sets 0x0F; without litter a world draw picks between the loo
+  and the bin; the tail patrols (1) or idles (0).
+- **Gate `0x62BBA0`.** Read in full for a handyman: the strike branch needs the role's strike flag (no strike runs in a park yet); an energy byte at most RestLevel looks for a rest
+  area (`0x62BA20` finds none, see below), takes a world draw whose low nibble 0 costs HappyHitCosNoRestArea, and sets a working member to 0; above RestLevel the base speed follows the energy's
+  tens through the words at `0x9CFB28`, read past the five-entry table as the executable does (index 7 is 0x4020, index 9 is 0x40C0, the high words of the floats 2.5 and 6.0),
+  and a happiness byte above 97 takes a world draw for the mood thought; the gate then answers 0 (`+0x27E` is written only for researchers by `0x62E240`).
+- **Economy.** The day message runs each member's daily routine (`0x628CA0`: experience and the wage demand, shown as a note; the negotiation `0x559E00` is WP6; each day message replaces the previous day's demands, which the HUD takes every frame, so a run without the HUD holds at most one day's) and the counter
+  reset (`0x62D1A0`); the month message debits each salary and reviews the wage (`0x6265DE`); the members hear both in ascending thing-handle order.
+- **Guest litter.** The guests' litter step is Theme Park Inc's (`0x614B71`): the urge byte at least 90, then a world draw whose low two bits must be 0 (else no litter and the urge
+  kept), the bin search of radius 3, the type draw `C % 5 + 1` taken before the cell test, and an occupied cell skips both the drop and the urge's reset. The drop (`0x5D8C80`)
+  reseeds and draws as Theme Park World's, but its sprite lies 3 to 6 tenths into the cell (`((d & 3) − 2) × 0.1 + 0.5`).
+- **Sprites.** The handymen are drawn by Theme Park World's staff renderer from Theme Park Inc's `esprites.wad` (`Generic\Handymen`, `Spr_ha`, found by name). The look is the candidate's
+  sprite draw reduced as `0x6902F0` does (`(R >> 2) mod` the loaded banks of category 9). The handyman's start makes the source in template 3 (`0x5D4980` → `0x5D1000`), the setters
+  queue 3, 0xF and 0x19 (`0x5D5630`, `0x628180`), the walk step asks for the walk 1 while walking (`0x60B541`; the run 2 is never a handyman's) and the interval `clamp(trunc(62 / v), 0, 250)`
+  (`0x5D10F0`), and the pre-update applies them (`0x5D1080`). Theme Park Inc's template table `0x9CDA94` holds tp.exe's programs (`0x0075A418`) under other numbers, opcode for opcode:
+  1 walk, 2 run, 3 stand, 0xF the patrol walk (tp.exe 9), 0x19 the sweep (tp.exe 0x11). The sprite pass itself (direction by heading and camera, mirroring, the pull towards the camera)
+  and the draw point's interpolation over the turn are Theme Park World's (`[EXT:tpi-twp-guest-rules]`). The sprite source is presentation and is not saved: a restored member gets a
+  fresh source in his state's template at his first update. The thoughts (`0x638960`, the `Generic\Thoughts` bank) are not drawn.
+- **Saves.** A placed member's thing (state, stamps, target, speed words, patrol rectangle, template and walk) is in the TpiStaff snapshot; the members' cell-chain entry numbers
+  are in the continuation save (`TpiStaffChain`); a litter claim by a placed member's thing id is valid.
+
+Labels: the walk step `0x60B440`, the route set-up `0x62EB10`, the patrol destination `0x609F70` and the speed step `0x60BC90` use Theme Park World's walk, wander and speed
+smoothing (`[EXT:tpi-twp-guest-rules]`, user-approved 2026-11-21 for the staff's walk; WP0 found D1/D2/D5 differences and read `0x609F70` as a call skeleton only), as do the
+guests' bin search, bin walk and bin arrival; the loo finder `0x5D6230` and the bin finder `0x5D5F10` find nothing to clean because Theme Park Inc's toilet wear and the bins' fill
+are unported (`[EXT:tpi-no-maintenance-wear]`, reworded: the handymen ship without loo and bin cleaning); the other roles are refused at the hire (`[EXT:tpi-capability-gates]`).
+
+The rest-area finder `0x62BA20` (in the gate, the slack test `0x62D650` on entering state 1 and the low-motivation check of `0x62D810`) answers none, exactly: its only test of a
+thing is the flag `+0x42` bit 2 (and `+0x7C` nonzero), which the thing builder sets only from the type record's `+0x1B0` (`UsageInfo.ChillsYouOut`, `0x5DB6E2`), and no object of
+Science, Water or Arabian sets that key (`ThemeParkIncHandymanTests.NoThemeParkIncObjectIsARestArea`). The walk to a rest area is therefore unreachable and not ported (WP4).
+
+Not read or not ported in this package (inert, no stand-in): strikes in the park (WP5: no role's strike flag is set); the wage negotiation (WP6); the drop fallback's scan
+of a 180 or 270 degree object covers the rectangle `0x5E9320` computes, which is not the turned footprint (ported as the executable has it); the thoughts and voices' presentation (`0x638960`, `0x60BE90`:
+their draws are taken, the voices queued); TPI litter types 9 to 12 (the pending-item drop `0x613D00`, whose gate
+is unread); the stinkbomb particle's TPI position; the dead stale-claim sweep `0x5D73A0` (no static caller).
 

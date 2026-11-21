@@ -60,7 +60,8 @@ public class ThemeParkIncPlayTests
 		Assert.IsTrue( capabilities.PersonnelFileFrontEnd, "the slice starts at its own Personnel File screen" );
 		Assert.IsTrue( capabilities.Money, "the money runs on Theme Park Inc's own balance keys" );
 		Assert.IsFalse( capabilities.Economy, "the whole Theme Park World economy needs keys Theme Park Inc's Standard.sam lacks" );
-		Assert.IsFalse( capabilities.Staff || capabilities.Research || capabilities.Challenges, "staff, research and challenges stay refused" );
+		Assert.IsFalse( capabilities.Staff || capabilities.Research, "staff and research stay refused" );
+		Assert.IsTrue( capabilities.Challenges, "Theme Park Inc's own challenge system runs (its unmeasurable types are never offered)" );
 		Assert.IsFalse( capabilities.OriginalHud || capabilities.Advisor || capabilities.FrontEnd
 			|| capabilities.ParkSaves || capabilities.Sharing, "the untraced systems stay refused" );
 		var note = capabilities.ExperimentalNote;
@@ -496,7 +497,7 @@ public class ThemeParkIncPlayTests
 	}
 
 	[TestMethod]
-	public void ThePlacementFlowDebitsThePriceExactlyOnceAndALongRunDropsNoLitter()
+	public void ThePlacementFlowDebitsThePriceExactlyOnceAndALongRunDropsLitterForTheHandymen()
 	{
 		UseTpiData();
 		var park = new SlicePark( "science", arrivalTimeBetween: 2, withMoney: true );
@@ -516,7 +517,9 @@ public class ThemeParkIncPlayTests
 		runtime.LinkAttraction( placed!.Visitors, entry.InfoId );
 		Assert.AreEqual( before - info.PurchaseCost, economy.Balance, "exactly one debit of the purchase price, linking included" );
 		Assert.AreEqual( info.PurchaseCost, bought!.TotalSpent );
-		// a long run of guests: no litter drops, as no handyman would ever sweep it (Facilities, the toilets' directory, is not in the slice's catalogue; the toilet wear is a synthetic test)
+		// a long run of guests: the litter is on, as the park's handymen sweep it (ThemeParkIncHandymanTests), and no toilet wears (Facilities, the toilets' directory, is not in the slice's catalogue;
+		// the toilet wear is a synthetic test, and Theme Park Inc's own toilet wear is unported: [EXT:tpi-no-maintenance-wear])
+		Assert.IsFalse( economy.Litter.Disabled, "the guests drop litter in a park with Theme Park Inc staff" );
 		var cashAfterBuilds = economy.Balance;
 		for ( var step = 0; step < 15 * 60 * FixedStepClock.TicksPerSecond; step++ )
 		{
@@ -525,7 +528,6 @@ public class ThemeParkIncPlayTests
 		}
 		Assert.IsTrue( park.Guests.GetStatistics().InPark > 0, "guests came" );
 		Assert.IsFalse( economy.Objects.Any( item => ParkEconomy.IsDirtyToilet( item ) && economy.Catalog.TryGet( item.InfoId, out var relief ) && relief.ProvidesRelief ), "no toilet is dirty" );
-		Assert.AreEqual( 0, economy.LitterItems, "no litter drops" );
 		Assert.IsFalse( economy.IsBankrupt );
 		Assert.IsTrue( economy.Balance > cashAfterBuilds - 100000, "the run only earned and paid running costs" );
 	}
@@ -536,7 +538,9 @@ public class ThemeParkIncPlayTests
 		UseTpiData();
 		var park = new SlicePark( "science", withMoney: true );
 		var economy = park.Money!.Economy;
-		Assert.IsFalse( economy.Rules.Staff || economy.Rules.Research || economy.Rules.Challenges );
+		Assert.IsFalse( economy.Rules.Staff || economy.Rules.Research );
+		Assert.IsTrue( economy.Rules.Challenges && economy.TpiChallenges != null, "Theme Park Inc's own challenge system runs" );
+		CollectionAssert.AreEqual( new[] { 2, 35, 25, 46, 36, 41, 56, 17, 48, 17 }, economy.TpiChallenges!.Slots.Select( slot => slot.Type ).ToArray(), "the Science level's ten rows" );
 		Assert.IsFalse( economy.Features.GoldenTickets || economy.Features.Challenges || economy.Features.ResearchPanel || economy.Features.Upgrades );
 		Assert.ThrowsException<InvalidOperationException>( () => economy.Hire( 1 ) );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NoLandForSale, economy.TryBuyCells( CellPurchase.Land, 1 ), "Theme Park Inc has no Buy Land" );

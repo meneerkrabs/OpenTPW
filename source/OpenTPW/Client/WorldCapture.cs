@@ -64,6 +64,16 @@ public sealed class WorldCapture
 			camera.SetPose( new System.Numerics.Vector3( held.X, held.Y, 0 ), held.Height, held.Yaw );
 		if ( Written || ++frame < frames || (frame - frames) % interval != 0 )
 			return;
+		Write( count == 1 ? path : SequencePath( path, written ), includeInterface );
+		if ( ++written < count )
+			return;
+		Written = true;
+		global::Global.Render.Window.SdlWindow.Close();
+	}
+
+	/// <summary>Writes the rendered world (or, with <paramref name="includeInterface"/>, the composed output) to a PNG file now.</summary>
+	public static void Write( string path, bool includeInterface = false )
+	{
 		var source = includeInterface && global::Global.Render.OutputCaptureTexture is { } output ? output : global::Global.Render.ResolveColorTexture;
 		using var staging = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D( source.Width, source.Height, 1, 1, source.Format, TextureUsage.Staging ) );
 		using var commands = Device.ResourceFactory.CreateCommandList();
@@ -84,7 +94,7 @@ public sealed class WorldCapture
 					(pixels[pixel], pixels[pixel + 2]) = (pixels[pixel + 2], pixels[pixel]);
 			for ( var pixel = 3; pixel < pixels.Length; pixel += 4 )
 				pixels[pixel] = 255;
-			var full = Path.GetFullPath( count == 1 ? path : SequencePath( path, written ) );
+			var full = Path.GetFullPath( path );
 			Directory.CreateDirectory( Path.GetDirectoryName( full )! );
 			PngWriter.SaveBgra( full, pixels, (int)source.Width, (int)source.Height );
 			var cameraText = Camera.Mode is ParkCameraMode park ? FormattableString.Invariant( $" Camera {park.Target.X:0.#},{park.Target.Y:0.#},{park.Height:0.#},{park.Yaw:0.#}." ) : "";
@@ -94,9 +104,5 @@ public sealed class WorldCapture
 		{
 			Device.Unmap( staging );
 		}
-		if ( ++written < count )
-			return;
-		Written = true;
-		global::Global.Render.Window.SdlWindow.Close();
 	}
 }

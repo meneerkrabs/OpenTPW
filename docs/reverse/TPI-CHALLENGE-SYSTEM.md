@@ -373,3 +373,68 @@ Swing, 57 Husky, 53 Scarabs, 55 Genie, 51 Palace Coaster. Types live in code but
 - World update frequency (how much game time one pass covers), hence the exact moment within the final day.
 - `0x5C1000`–`0x5C2150` functions in the same module region (not part of the challenge classes as far as read).
 - The exact `[0xC65B80]` mode values (0 is required for challenges to run).
+
+---
+
+## 10. Port status
+
+OpenTPW ports the system as `ThemeParkIncChallenges` (`source/OpenTPW/Economy/ThemeParkIncChallenges.cs`, settings in `ThemeParkIncChallengeSettings.cs`, the
+park's side in `ParkEconomy.ThemeParkIncChallenges.cs`), November 21, 2026. It is separate from Theme Park World's `ParkObjectives`, which stays off in a Theme Park
+Inc park (`EconomyRules.Narrow`). The claims it relies on were re-read in the listing: the update `0x5C7930`, `CalcAvailTime` `0x5C36D0` (including the type-17
+trigger branch `0x5C3828`), the offer `0x5C8140` and its post `0x5C8320` (always true), the accept `0x5C84C0`, the days-left routine `0x5C54E0` with
+`0x7D8E30`, the comparisons `0x7D8ED0`/`0x7D8F30`, the clock `0x6089C0`, the event routine `0x5C8940`, the win and failure tables (`0x5C3F60`, `0x5C3DB0`,
+jump tables re-read from the file), the value cases for types 25 and 41 (`0x5C50C6`, `0x5C4F70`), the record constructor's clamp `0x5C22C0`, the follow-up filter
+`0x5C75C0`, the won cash and ticket steps `0x5C4250`/`0x74C890`, the lost branch `0x5C47D0`, the career reset `0x74BDC1`..`0x74BDE4` (mission counter 0, firing
+line 5, golden tickets 0) and the sale events `0x5E5DE0`/`0x5E60E0`.
+
+**Ported exactly.** The loader (row numbers, first free slot, the follow-up filter, the `GTPrize` clamp); the switch-on gate; the per-update cadence (the system is a
+thing of the world pass, so it runs once per park turn, not in a lost park; a headless economy runs it in the turn's thing update); `CalcAvailTime` with the
+unsigned day comparisons and the mission gate; the offer (lowest due slot, strict unsigned comparisons, the `DaysBetweenOffers` gap, offers not blocked by unanswered
+ones); the accept into grace (state 2) or the timed phase (state 3); the grace end without resetting the values; the final-day decision without the failure test; the
+early failure, park-closed loss and early win; the "days left stays negative" arithmetic (the low dword of the signed 64-bit quotient); the event routine
+`0x5C8940`; the win and failure tests of every type except 19 and 28; the cash prize through the bank (as a paid fare is credited, `0x5C0760`), the golden tickets
+to the career (`+0x1074`), the promotion of `PromoGiven` (`0x74C450`), the current zone record's challenge counts (`+0xF0`, `+0xF4`), the firing line on a slot's first
+loss and the firing letter once the line is spent. "Now" is the clock base (the FILETIME of 2000-01-01)
+plus floor(turn × 15000 / 4) seconds in 100 ns units, and the park age of the day counts is `ThemeParkIncStaff.GameDay` (`0x608C70`), as the staff port reads it.
+The slots, `mNextChallengeDelayTime` and the switch are saved with the park (`ParkSaveFile.Data.TpiChallenges`); the firing line, the golden tickets, the rank and the
+mission counter are the career's (`ThemeParkIncCareer`, `ParkSaveFile.Data.TpiCareer`, [TPI-CAREER.md](TPI-CAREER.md)). A Theme Park Inc save from before the challenge
+system or the career is refused ([PARK-SAVES.md](../PARK-SAVES.md)). A saved idle slot of an unmeasured type that is latched as due is refused as invalid: the offer
+`0x5C8140` does not test the type, so it would be offered.
+
+**Mission counter.** The availability reads the career's `+0x105C`; a new career's is 0 (`0x74BDC1`) and the mission controller is not ported yet, so it stays 0 unless
+the cheats extension's Skip Mission advances it. Every Science row except 8 and 22 needs
+`MissionNeededToActivate` 2, 3 or 4, so those slots are never available: a consequence of the data, not a gate.
+
+**Measured types.** `ThemeParkIncChallenges.IsPorted`: type 2 (trigger `0x5B9380`, any attraction whose `UsageInfo.SpecialIngredient` is 1; value: the sale events of
+`0x5E5DE0`, which `ParkEconomy.BookShopSale` posts for a paid Theme Park Inc sale: types 12, 1–8 and 45 for a shop, 13 for a sideshow, and the negated costs of
+`0x5E60E0`), type 25 (trigger `0x5B32F0(6)`, the highest entertainer experience, 0 with no entertainer; value `0x5AFED0`, the lowest truncated staff happiness byte,
+100 with no staff) and type 41 (trigger `0x5B2F40`, the placed staff members; value and win `0x634240`, any role's active strike). The staff accessors read
+`ParkEconomy.TpiStaff` (kinds 4–8 and 0x14 are its roles).
+
+**Gates (`[EXT:tpi-capability-gates]`).**
+
+- **Unmeasured types are never offered.** `CalcAvailTime` never latches a slot whose type is not measured, so `MaxDaysTilTrigger` cannot make it available
+  either. The Science level's unmeasured types and why: 35 (trigger `0x61D670(2)`, researched sideshows: research is refused; value `0x5B69C0` reads the attraction
+  satisfaction rings `0x5E6D80`, whose rings B–E are unread), 46 (trigger `+0x14` of an unread object; value `0x5B7D30`, ride repair), 36 (trigger park
+  `+0x22830`, unread; value `0x5AF940`, guest `+0x1BC`, whose OpenTPW counterpart is not established), 56 (value `0x5E41D0(0)`, the computed excitement
+  `0x403AE4`, unread), 17 and 48 (trigger `0x5C3828`: the target ride's `mBeenActivated` (`+0x12C`, set by the special-ride activation `0x5E8910`) or
+  `mHasBeenOpenedAtSomePoint` (`+0x12D`), neither modelled at run time, and the record `+0x5C` test is only a candidate reading; type 17's ride-use sender
+  `0x61A85B` and type 48's satisfaction value are not wired). All other types (the Arabian and Water levels' included) are unmeasured as well; types 19 and 28 also
+  have unported win tests.
+- **Shares.** The won branch's `0x621CE0(SharePrize)` and `0x621D30(SharePriceEffectIfWon)` and the first loss's `0x621D30(-SharePriceEffectIfLost)` are left
+  off: Theme Park Inc's share system is not ported.
+- **Promotions.** `PromoGiven` (message `0x25` → `0x74C450`: the rank and the firing line of `FiringLineForRank`) is left off: promotions are not ported, so the
+  firing line only falls.
+- **Level record.** The won branch's `+0xF0`/`+0xF4` of the career's level record (`0x5C4514`–`0x5C45FC`) are left off with the missions.
+- **Type 42.** Its shop closing and reopening (`0x650800`, `0x5C73D0`) are not reached: type 42 is unmeasured.
+
+**Not ported (presentation).** The sounds `0xC6` and `0xAF`, the advisor's sender advice (`0x718990`, `0x5C2150`), the challenge mails (message `0x1B` kinds 0–3,
+the text builders `0x5C5990` etc., which assemble `CHALLENGE_SPECIFIC.str` entries `3 × ScriptIndex − 3` onward with `CHALLENGE_GENERIC.str` pieces) and message
+`0x26`. The experimental HUD (`ThemeParkIncHud.Challenges.cs`, `[EXT:tpi-text-hud]`) lists the slots that left state 0 by their `CHALLENGE_TITLES.str` title
+(`0x5C63E0`: table `[0xA0D65C]`, `mChallengeTitles`, at the slot's `ScriptIndex`), shows days left and the progress value, notes offers, wins and losses, and
+accepts an offered row only in state 1 with the park open (`0x52C2B2`, `0x52C2D9`). A lost slot is in state 1 like an offered one, so its row can be accepted
+again; whether the original's lost mail reaches the accept control is unread (§9).
+
+**Open.** Missions (the mission counter), promotions and the shares; the unmeasured types' accessors; the challenge mail text; type 11's admission event
+(`0x5AEF40`, delivered through the message queue) and the type-16 and guard senders; the Science prebuilt save's own challenge records (`CHHQ`, which the slice
+does not restore, as it restores none of the prebuilt's economy).

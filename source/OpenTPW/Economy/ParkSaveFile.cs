@@ -44,6 +44,27 @@ public static class ParkSaveFile
 		/// <summary>The advisor's pending weather forecasts and their per-kind play history. Absent in saves without one and in Theme Park World saves.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncForecastSnapshot? TpiForecast { get; init; }
+		/// <summary>Theme Park Inc's hiring pool, members and strike records. Absent in Theme Park World saves and in Theme Park Inc saves from before the staff economy.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncStaffSnapshot? TpiStaff { get; init; }
+		/// <summary>
+		/// Theme Park Inc's challenge system: the ten slots, the offer delay and the switch, and the career's firing line and golden tickets. Absent in Theme Park World saves and in
+		/// Theme Park Inc saves from before the challenge system.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncChallengesSnapshot? TpiChallenges { get; init; }
+		/// <summary>
+		/// Theme Park Inc's career (the original's Global Master Save object): the mission counter, rank, firing line, golden tickets, zone records and the rest. Required in a Theme Park Inc
+		/// save; absent in Theme Park World saves. A Theme Park Inc save from before the career is refused.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncCareerSnapshot? TpiCareer { get; init; }
+		/// <summary>
+		/// Theme Park Inc's mission controller (the <c>OBJH</c> thing's state and thing). Absent in Theme Park World saves and in Theme Park Inc saves from before the controller, which continue with it
+		/// idle.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncMissionControllerSnapshot? TpiMissions { get; init; }
 		public required ParkGameMode Mode { get; init; }
 		/// <summary>
 		/// Legacy: earlier version-2 saves recorded whether a stand-in researched for the Instant Action seed's then
@@ -712,6 +733,10 @@ public static class ParkSaveFile
 			Edition = park.Rules.ThemeParkInc ? GameEdition.ThemeParkInc : GameEdition.ThemeParkWorld,
 			TpiWeather = park.TpiWeather?.Capture(),
 			TpiForecast = park.TpiForecast?.Capture(),
+			TpiStaff = park.TpiStaff?.Capture(),
+			TpiChallenges = park.TpiChallenges?.Capture(),
+			TpiCareer = park.TpiCareer?.Capture(),
+			TpiMissions = park.TpiMissions?.Capture(),
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
@@ -1018,13 +1043,25 @@ public static class ParkSaveFile
 		if ( data.Edition == GameEdition.ThemeParkInc )
 		{
 			if ( data.Easy || data.Mode != ParkGameMode.FullSimulation || data.Bankrupt || data.PendingInitialDay || data.Staff.Members.Count != 0
-				|| data.Staff.Candidates.Count != 0 || data.Cheats != null || data.Objectives.AdoptedChallenges != null )
+				|| data.Staff.Candidates.Count != 0 || data.Objectives.AdoptedChallenges != null
+				|| data.Cheats is { } cheats && (cheats.Log.Any( entry => !ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || cheats.Pending?.Any( action => !ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true) )
 				throw new InvalidDataException( "Park save is not a Theme Park Inc money-only park." );
 			if ( data.TpiWeather is { } weather && (!ThemeParkIncWeatherSpells.IsValid( weather )
 				|| data.Ledger.MonthIndex > 0 && weather == default) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc weather." );
 			if ( !ThemeParkIncForecastQueue.IsValid( data.TpiForecast ) )
 				throw new InvalidDataException( "Park save has invalid Theme Park Inc forecast advice." );
+			if ( !ThemeParkIncStaff.IsValid( data.TpiStaff ) )
+				throw new InvalidDataException( "Park save has invalid Theme Park Inc staff." );
+			if ( !ThemeParkIncChallenges.IsValid( data.TpiChallenges ) )
+				throw new InvalidDataException( "Park save has invalid Theme Park Inc challenges." );
+			// user decision 2026-11-21: a Theme Park Inc park save from before the career is refused, not continued with a new career
+			if ( data.TpiCareer == null )
+				throw new InvalidDataException( "This Theme Park Inc park was saved before OpenTPW kept the player's career (missions, rank, golden tickets) and cannot be continued; start a new game from the Personnel File." );
+			if ( !ThemeParkIncCareer.IsValid( data.TpiCareer ) )
+				throw new InvalidDataException( "Park save has an invalid Theme Park Inc career." );
+			if ( !ThemeParkIncMissionController.IsValid( data.TpiMissions ) )
+				throw new InvalidDataException( "Park save has an invalid Theme Park Inc mission controller." );
 			foreach ( var item in data.Objects )
 			{
 				// The native accumulator at +0x938 is a signed 32-bit word. Do not allow a host save to invent costs that overflow the next settlement.
@@ -1035,7 +1072,9 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null
+			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
+			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
 	}
 
@@ -1063,9 +1102,11 @@ public static class ParkSaveFile
 				&& cell.Collector >= 0 && littered.Add( (cell.X, cell.Y) ), $"litter at ({cell.X}, {cell.Y})" );
 		// A claim belongs to a handyman: in a world his own search takes it again (the original keeps a claim after a failed walk); without one he
 		// must be sweeping it, or nothing would end the claim.
+		// A Theme Park Inc claim holds the claimant's thing id (TPI Game.exe 0x5D8FE0), which a placed member holds: his search takes it again too.
 		foreach ( var cell in data.Litter.Where( cell => cell.Collector != 0 ) )
 			Require( data.Staff.Members.Any( member => member.Id == cell.Collector && member.Type == StaffType.Handyman
-				&& (member.WorldState != null || member.LitterCell is [var x, var y] && x == cell.X && y == cell.Y) ),
+				&& (member.WorldState != null || member.LitterCell is [var x, var y] && x == cell.X && y == cell.Y) )
+				|| data.TpiStaff?.Members.Any( member => member.Role == ThemeParkIncStaffRole.Handyman && member.World?.ThingId == cell.Collector ) == true,
 				$"litter at ({cell.X}, {cell.Y}) claimed by staff {cell.Collector}, who does not sweep it" );
 		Require( data.Ledger.MonthIndex == ParkCalendar.MonthIndex( data.Tick ), "ledger month matches the clock" );
 		Require( data.Ledger.History.Count <= ParkLedger.MaximumHistoryMonths && data.MonthlyAdmissions.Count <= ParkLedger.MaximumHistoryMonths, "history length" );
@@ -1192,6 +1233,32 @@ public static class ParkSaveFile
 				throw new InvalidDataException( "Park save has Theme Park Inc forecast advice, but the advisor settings are unavailable." );
 			park.TpiForecast.Restore( forecast );
 		}
+		if ( data.TpiCareer is { } career )
+			park.RestoreThemeParkIncCareer( career );
+		// [BIN:TPI-EXE:0x5F03C0 controller load] the saved state and thing, with +0x1B = 0 and +0x1A = 1
+		if ( data.TpiMissions is { } missions )
+			park.TpiMissions?.Restore( missions );
+		else if ( park.TpiMissions != null )
+			// a loaded controller never starts its exit statistics (0x64D5B4), so a park save from before the controller could never meet its mission: it is refused, not continued
+			throw new InvalidDataException( "This Theme Park Inc park was saved before OpenTPW kept the mission controller and cannot be continued; start a new game from the Personnel File." );
+		if ( data.TpiStaff is { } staff )
+		{
+			if ( park.TpiStaff == null )
+				throw new InvalidDataException( "Park save has Theme Park Inc staff, but the staff settings are unavailable." );
+			park.TpiStaff.Restore( staff );
+		}
+		else if ( park.TpiStaff != null )
+			// a Theme Park Inc save from before the staff economy holds no pool, and the pool's draws share the world generator: it cannot continue the same park
+			throw new InvalidDataException( "Park save was made before Theme Park Inc staff and cannot be continued; start the park again." );
+		if ( data.TpiChallenges is { } challenges )
+		{
+			if ( park.TpiChallenges == null )
+				throw new InvalidDataException( "Park save has Theme Park Inc challenges, but the challenge settings are unavailable." );
+			park.TpiChallenges.Restore( challenges );
+		}
+		else if ( park.TpiChallenges != null )
+			// a Theme Park Inc save from before the challenge system holds none of its slots, offer times or switch, and a new system would not be the park's: it is refused, not continued
+			throw new InvalidDataException( "This Theme Park Inc park was saved before OpenTPW kept the challenges and cannot be continued; start a new game from the Personnel File." );
 		park.PendingInitialDay = data.PendingInitialDay;
 		// [EXT:legacy-generator-state] a save from before the world generator was ported has no state for it: it starts from the saved world seed (or from the old economy stream's state when the save has no world section), deterministically
 		park.World.Restore( data.WorldGenerator ?? (data.World is { } legacyWorld ? new WorldSeed( legacyWorld.Seed ).GeneratorState : WorldRng.StateFromSeed( data.RandomState )) );

@@ -197,6 +197,23 @@ public class ParkResumeSaveFileTests
 	};
 
 	[TestMethod]
+	public void TheThemeParkIncCurrentObstacleSurvivesTheJsonRoundTrip()
+	{
+		var snapshot = Envelope() with { TpiCurrentObstacle = 1700 };
+		var restored = ParkResumeJson.Deserialize<ParkResumeSnapshot>( ParkResumeJson.Serialize( snapshot ) );
+		Assert.AreEqual( 1700, restored.TpiCurrentObstacle );
+		Assert.IsNull( Envelope().TpiCurrentObstacle, "a save without the field restores it as absent" );
+	}
+
+	[TestMethod]
+	public void AThemeParkWorldSaveCarryingTheThemeParkIncCurrentObstacleIsRefused()
+	{
+		var snapshot = Envelope() with { TpiCurrentObstacle = 1700 };
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( snapshot ) ).Message,
+			"Theme Park World save contains Theme Park Inc continuation state" );
+	}
+
+	[TestMethod]
 	public void ACompleteEnvelopeRoundTripsThroughTheOwnFormatCodec()
 	{
 		var snapshot = Envelope();

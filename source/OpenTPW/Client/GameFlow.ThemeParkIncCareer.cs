@@ -1,0 +1,204 @@
+namespace OpenTPW;
+
+/// <summary>
+/// The Theme Park Inc player file (docs/reverse/TPI-CAREER.md §3.4): the player's career as a Global Master Save, <c>opentpw-tpi\users\1New Player\New Player.GMS</c> in OpenTPW's own save
+/// folder, never in the original game's (<see cref="ThemeParkIncPlayerRoot"/>). Enter Game and Load A Game take the career from it; saving the Science park and leaving a park write it.
+/// </summary>
+internal sealed partial class GameFlow
+{
+	/// <summary>
+	/// The one player's name: the Personnel File's first slot, "New Player" (UITEXT 20 in English). The folder takes the English text in every language, so a language change keeps the career.
+	/// </summary>
+	// [EXT:tpi-front-end-one-player] OpenTPW has one player, the first slot's "New Player"; the original names the folder after the name the player typed
+	internal const string ThemeParkIncPlayerName = "New Player";
+
+	/// <summary>The session sections of the last player file loaded (the original keeps them in their own objects), or null before one was.</summary>
+	private ThemeParkIncGlobalSave? incSession;
+
+	/// <summary>Set while a load replaces the running park: the original's load discards it without writing the player file.</summary>
+	internal bool incReplacingPark;
+
+	/// <summary>The player file's path: <c>users\&lt;slot + 1&gt;&lt;name&gt;\&lt;name&gt;.GMS</c> under <see cref="ThemeParkIncPlayerRoot"/>.</summary>
+	// [BIN:TPI-EXE:0x777B80 player file path] 0x7763E0(slot) = <root>\save\users\<slot+1><name> (0x776070, 0x776210, 0x776300), then "\" + the name + ".GMS" (".GMI" for the refresh flag);
+	// OpenTPW keeps the users\<slot+1><name>\<name>.GMS layout under its own folder
+	internal static string ThemeParkIncPlayerFilePath() =>
+		Path.Combine( ThemeParkIncPlayerRoot( SaveFileSystem.GetAbsolutePath( "" ), GameFolder, Path.GetDirectoryName( SetupSettings.GetDefaultPath() )! ),
+			"users", $"1{ThemeParkIncPlayerName}", $"{ThemeParkIncPlayerName}.GMS" );
+
+	/// <summary>The game folder whose <c>save</c> folder is the original's own; the browser's saves have none.</summary>
+#if OPENTPW_BROWSER
+	private static string? GameFolder => null;
+#else
+	private static string? GameFolder => Settings.Default.GamePath;
+#endif
+
+	/// <summary>The folder under OpenTPW's own save folder that holds the player file's <c>users</c> folder.</summary>
+	internal const string ThemeParkIncPlayerFolder = "opentpw-tpi";
+
+	/// <summary>
+	/// The folder the player file's <c>users</c> folder is in: <see cref="ThemeParkIncPlayerFolder"/> under the save folder <paramref name="saveRoot"/> when that is OpenTPW's own
+	/// (<c>OPENTPW_SAVE_DIR</c>, the configuration's save folder, a test's), and under the configuration's save folder (<paramref name="configurationRoot"/>\save) when the save folder lies
+	/// inside the game folder <paramref name="gamePath"/>: the original Theme Park Inc's own <c>save\users</c> holds its players' files, which OpenTPW must never write over (user decision
+	/// 2026-11-21: OpenTPW's own folder).
+	/// </summary>
+	internal static string ThemeParkIncPlayerRoot( string saveRoot, string? gamePath, string configurationRoot )
+	{
+		var root = IsInsideFolder( saveRoot, gamePath ) ? Path.Combine( configurationRoot, "save" ) : saveRoot;
+		return Path.Combine( root, ThemeParkIncPlayerFolder );
+	}
+
+	// A case-insensitive test errs towards the configuration's folder on a case-sensitive disk, never towards the game's; so does testing both the given and the real paths, with
+	// their symbolic links resolved (a linked game folder, /tmp against /private/tmp)
+	private static bool IsInsideFolder( string path, string? folder )
+	{
+		if ( string.IsNullOrWhiteSpace( folder ) )
+			return false;
+		return StartsWithFolder( Path.GetFullPath( path ), Path.GetFullPath( folder ) ) || StartsWithFolder( RealPath( path ), RealPath( folder ) );
+	}
+
+	private static bool StartsWithFolder( string path, string folder ) =>
+		( Path.TrimEndingDirectorySeparator( path ) + Path.DirectorySeparatorChar ).StartsWith( Path.TrimEndingDirectorySeparator( folder ) + Path.DirectorySeparatorChar,
+			StringComparison.OrdinalIgnoreCase );
+
+	/// <summary>The full path with every symbolic link among its existing parts resolved; the parts that do not exist yet are kept as given.</summary>
+	internal static string RealPath( string path, int depth = 0 )
+	{
+		var full = Path.GetFullPath( path );
+		var root = Path.GetPathRoot( full )!;
+		var parts = full[root.Length..].Split( new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries );
+		var current = root;
+		for ( var index = 0; index < parts.Length; index++ )
+		{
+			var next = Path.Combine( current, parts[index] );
+			FileSystemInfo info = Directory.Exists( next ) ? new DirectoryInfo( next ) : new FileInfo( next );
+			if ( !info.Exists )
+				return Path.Combine( new[] { current }.Concat( parts[index..] ).ToArray() );
+			// a link's final target may itself lie below linked folders; a cycle stops at the depth guard and keeps the path as it is
+			current = info.LinkTarget != null && depth < 32 && info.ResolveLinkTarget( returnFinalTarget: true ) is { } target
+				? RealPath( target.FullName, depth + 1 )
+				: next;
+		}
+		return current;
+	}
+
+	/// <summary>The largest player file read: the retail files are about 18 KB, so anything near this is not one.</summary>
+	internal const int MaxThemeParkIncPlayerFileBytes = 4 << 20;
+
+	/// <summary>
+	/// The player's career from the player file, its current zone <paramref name="zone"/>, or null when there is no file. A file whose load fails is refused; one whose load stops early is
+	/// taken with the reset's values after the stop, as the original's loader leaves them.
+	/// </summary>
+	// [BIN:TPI-EXE:0x74D110 global save load] a failed load returns 0 to the caller; a marker that differs is a successful load
+	internal ThemeParkIncCareer? LoadThemeParkIncPlayerCareer( string zone )
+	{
+		if ( SaveFileSystem == null )
+			return null;
+		var path = ThemeParkIncPlayerFilePath();
+		if ( !File.Exists( path ) )
+			return null;
+		if ( new FileInfo( path ).Length > MaxThemeParkIncPlayerFileBytes )
+			throw new InvalidDataException( $"The Theme Park Inc player file is larger than {MaxThemeParkIncPlayerFileBytes} bytes: {path}" );
+		var save = ThemeParkIncGlobalSave.Read( File.ReadAllBytes( path ) );
+		var career = new ThemeParkIncCareer( ParkEconomy.GameCareerFiles.Instance, BalanceSettings.LoadThemeParkInc( zone ).ThemeParkIncFiringLineLimit );
+		var outcome = career.Load( save, zone );
+		if ( outcome == ThemeParkIncGlobalSaveOutcome.Failed )
+			throw new InvalidDataException( $"The Theme Park Inc player file could not be loaded ({save.OutcomeDetail}): {path}" );
+		if ( outcome == ThemeParkIncGlobalSaveOutcome.Stopped )
+			Log.Warning( $"Theme Park Inc player file: {save.OutcomeDetail}; the career keeps its reset values after that point." );
+		// the same refusal as the park's zone entry (ParkEconomy.EnterThemeParkIncZone), made here so a hand-edited file fails before the Personnel File is torn down
+		if ( career.CurrentZone is { } current && ( current.ParkNumber < 0 || current.ParkNumber >= ThemeParkIncCareer.ZoneNames.Count ) )
+			throw new InvalidDataException( $"The Theme Park Inc player file gives the zone '{zone}' park number {current.ParkNumber}, outside the zone table: {path}" );
+		var fresh = NewThemeParkIncSession();
+		save.OptionsBytesRaw ??= fresh.OptionsBytesRaw;
+		save.FirstHourTime ??= fresh.FirstHourTime;
+		save.Block592720 ??= fresh.Block592720;
+		save.SharesRaw ??= fresh.SharesRaw;
+		save.MapFlagsRaw ??= fresh.MapFlagsRaw;
+		save.AmbientRaw ??= fresh.AmbientRaw;
+		incSession = save;
+		Log.Trace( $"Theme Park Inc player file loaded: mission {career.MissionCounter}, rank {career.Rank}, firing line {career.FiringLine}, {career.GoldenTickets} golden tickets." );
+		return career;
+	}
+
+	/// <summary>The session sections of a new player file (tests replace the language's company name lookup).</summary>
+	internal Func<ThemeParkIncGlobalSave>? IncNewSession { get; set; }
+
+	private ThemeParkIncGlobalSave NewThemeParkIncSession()
+	{
+		if ( IncNewSession is { } custom )
+			return custom();
+		// [BIN:TPI-EXE:0x620CFB company name] the shares writer formats TAG_SYSTEM's entry 0xAC into an empty company name
+		var tags = GameLanguage.Current.LoadStrings( "TAG_SYSTEM.str" );
+		return ThemeParkIncSession.New( ParkEconomy.GameCareerFiles.Instance.Read, tags.Entries.Length > 0xAC ? tags.Entries[0xAC] : "" );
+	}
+
+	/// <summary>
+	/// Makes the player file's career the restored park's (Load A Game): the load reads the player's global save before the zone's park file, so the file's career wins over the one the park
+	/// save carries. No file leaves the park save's career.
+	/// </summary>
+	// [BIN:TPI-EXE:0x7451E0 load] the career is destroyed and the global save loaded (0x74D110) before the current zone's park file
+	internal void AttachThemeParkIncPlayerCareer( ParkEconomy economy, string zone )
+	{
+		if ( LoadThemeParkIncPlayerCareer( zone ) is { } career )
+			economy.AttachThemeParkIncCareer( career );
+	}
+
+	/// <summary>
+	/// Writes the player file from <paramref name="economy"/>'s career (the original writes the global save before a park save's park files): atomically, in OpenTPW's own folder; a failed write
+	/// leaves no temporary file behind.
+	/// </summary>
+	// [BIN:TPI-EXE:0x745720 park save] the global save is written first (0x777AF0) and the park files after it
+	internal void WriteThemeParkIncPlayerFile( ParkEconomy economy, string levelName )
+	{
+		if ( OperatingSystem.IsBrowser() || economy.TpiCareer is not { } career )
+			return;
+		var theme = ThemeParkIncCareer.ZoneNames.ToList().IndexOf( levelName );
+		var bytes = career.ToGlobalSave( incSession ??= NewThemeParkIncSession(), theme, refresh: false ).Write();
+		var path = ThemeParkIncPlayerFilePath();
+		Directory.CreateDirectory( Path.GetDirectoryName( path )! );
+		var temporary = path + ".tmp";
+		try
+		{
+			File.WriteAllBytes( temporary, bytes );
+			File.Move( temporary, path, overwrite: true );
+		}
+		finally
+		{
+			if ( File.Exists( temporary ) )
+				File.Delete( temporary );
+		}
+		Log.Trace( $"Theme Park Inc player file written: {path} (mission {career.MissionCounter})." );
+	}
+
+	/// <summary>Saves a Theme Park Inc park as it is left; a failure is logged, as leaving goes on.</summary>
+	private void SaveThemeParkIncOnLeave()
+	{
+		if ( Level is not { IsThemeParkIncSlice: true, IsReadOnlyVisit: false, CoopRole: CoopRole.None, Park.Economy: { } economy } level )
+			return;
+		SaveThemeParkIncOnLeave( economy, level.LevelName, level.LevelName == "science" ? SaveThemeParkIncScience : null );
+	}
+
+	/// <summary>
+	/// The leave's save (<c>0x744E10</c> → <c>0x745720</c>): the player file and then the zone's park save, which OpenTPW has for Science only (<paramref name="saveSciencePark"/>, itself writing
+	/// the player file first). Nothing while a load replaces the park or when the park is lost.
+	/// </summary>
+	// [BIN:TPI-EXE:0x6A47B0 leave park] outside the coaster editor and online modes, with the park's world state not 4 (lost) and the lobby one-shot clear, the leave calls 0x744E10 (the full save
+	// 0x745720 named "autosave"); OpenTPW saves into its own slots (user decision 2026-11-21: one player file, the Science continuation slot)
+	internal void SaveThemeParkIncOnLeave( ParkEconomy economy, string levelName, Action? saveSciencePark )
+	{
+		if ( incReplacingPark || SaveFileSystem == null || economy.IsBankrupt )
+			return;
+		try
+		{
+			if ( saveSciencePark != null )
+				saveSciencePark();
+			else
+				WriteThemeParkIncPlayerFile( economy, levelName );
+		}
+		// leaving goes on whatever the save throws (a teardown must not stop half way); only a failure of the process itself passes
+		catch ( Exception error ) when ( error is not (OutOfMemoryException or InsufficientExecutionStackException) )
+		{
+			Log.Warning( $"Theme Park Inc park not saved on leaving: {error.Message}" );
+		}
+	}
+}

@@ -52,6 +52,9 @@ public sealed partial class ThemeParkIncHud
 	private readonly UiButton removeButton;
 	private readonly List<(string Text, float Age)> messages = new();
 	private readonly OriginalBuildCatalog catalog;
+
+	/// <summary>The build list's catalogue: the world's buildable objects the mission gate lists (<see cref="ThemeParkIncCatalogue"/>).</summary>
+	internal OriginalBuildCatalog Catalog => catalog;
 	private BuildCategory category = BuildCategory.Rides;
 	private string lastLevelMessage = "";
 	private GameSpeed speed = GameSpeed.Normal;
@@ -71,7 +74,7 @@ public sealed partial class ThemeParkIncHud
 		this.level = level;
 		this.strings = strings;
 		this.host = host;
-		catalog = new OriginalBuildCatalog( level.Objects.Catalog );
+		catalog = new OriginalBuildCatalog( level.Objects.Catalog, entry => ThemeParkIncCatalogue.IsListed( entry, level.ThemeParkIncMissionNumber, level.ThemeParkIncObstacleResearchDone ) );
 		hud = new UiScreen( "tpiHud" ) { Modal = false };
 		Stack.Push( hud );
 		AddLabel( "guests", () => GuestsText(), new UiRect( 24, 196, 900, 60 ) );
@@ -83,6 +86,8 @@ public sealed partial class ThemeParkIncHud
 		AddLabel( "forecast", () => advisorCaption ?? "", new UiRect( 24, 436, 1300, 120 ) );
 		BuildTopLine();
 		BuildWindow();
+		BuildStaffPanel();
+		BuildChallengePanel();
 		removeButton = ToolButton( "remove", () => T( OpenTpwText.TpiRemove ), T( OpenTpwText.TpiRemoveHelp ),
 			() => { level.IsRemovingObjects = !level.IsRemovingObjects; if ( level.IsRemovingObjects ) DisarmBuild(); }, 1 );
 		removeButton.Selected = () => level.IsRemovingObjects;
@@ -91,6 +96,13 @@ public sealed partial class ThemeParkIncHud
 		ToolButton( "cancel", () => T( OpenTpwText.TpiCancel ), T( OpenTpwText.TpiCancelHelp ), DisarmAll, 3 );
 		ToolButton( "speed", SpeedText, T( OpenTpwText.TpiSpeedHelp ), CycleSpeed, 4 );
 		ToolButton( "menu", () => T( OpenTpwText.TpiMenu ), T( OpenTpwText.TpiMenuHelp ), OpenPauseMenu, 5 );
+		// the bottom row is full and the build window covers the space above it, so the staff button stands in the free top-right corner, the challenges button below it
+		var staffButton = ToolButton( "staff", () => T( OpenTpwText.TpiStaff ), T( OpenTpwText.TpiStaffHelp ), ToggleStaffPanel, 5 );
+		staffButton.Bounds = new UiRect( 2024 - 306, 16, 286, 110 );
+		staffButton.Anchor = UiAnchor.TopRight;
+		var challengesButton = ToolButton( "challenges", () => T( OpenTpwText.TpiChallenges ), T( OpenTpwText.TpiChallengesHelp ), ToggleChallengePanel, 5 );
+		challengesButton.Bounds = new UiRect( 2024 - 306, 136, 286, 110 );
+		challengesButton.Anchor = UiAnchor.TopRight;
 		buildList = (UiScrollList)hud.Find( "buildList" )!;
 		// The place flow's HUD finish (Level.PlaceObject owns the build and the guest link):
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8)
@@ -98,12 +110,18 @@ public sealed partial class ThemeParkIncHud
 		// [BIN:TPW-EXE:0x40C180 Escape in a tool] Escape ends a tool (installs the default park mode, SetMode(0)) and is consumed; only an Escape with no tool on reaches the pause menu row (0x748378, 0x40C4D0)
 		hud.Back = () =>
 		{
-			if ( level.CellTool.IsActive )
+			if ( level.TpiPlacingSlot >= 0 )
+				level.CancelTpiHire();
+			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
 			else if ( level.BuildEntry != null )
 				DisarmBuild();
 			else if ( buildOpen )
 				CloseBuildWindow();
+			else if ( staffOpen )
+				CloseStaffPanel();
+			else if ( challengesOpen )
+				CloseChallengePanel();
 			else if ( level.IsRemovingObjects )
 				level.IsRemovingObjects = false;
 			else
@@ -299,6 +317,8 @@ public sealed partial class ThemeParkIncHud
 			CloseBuildWindow();
 		else
 		{
+			CloseStaffPanel();
+			CloseChallengePanel();
 			buildOpen = true;
 			level.IsRemovingObjects = false;
 			SetBuildWindowVisible( true );
@@ -326,6 +346,7 @@ public sealed partial class ThemeParkIncHud
 
 	private void ArmBuild( ObjectCatalogEntry entry )
 	{
+		level.CancelTpiHire();
 		level.BuildEntry = entry;
 		armedEntry = entry;
 		level.IsRemovingObjects = false;
@@ -342,6 +363,7 @@ public sealed partial class ThemeParkIncHud
 
 	private void DisarmAll()
 	{
+		level.CancelTpiHire();
 		DisarmBuild();
 		level.IsRemovingObjects = false;
 		level.CellTool.Cancel();
@@ -351,6 +373,8 @@ public sealed partial class ThemeParkIncHud
 
 	private void OpenPauseMenu()
 	{
+		// the menu is a tool switch: a candidate in the hand goes back to the pool (0x6319E0(1)), so neither the menu's save nor a load finds him half placed
+		level.CancelTpiHire();
 		if ( Lost )
 		{
 			OpenLostMenu();
@@ -407,6 +431,7 @@ public sealed partial class ThemeParkIncHud
 		try { action(); if (success != null) PostMessage(success); return true; }
 		catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or InvalidOperationException or NotSupportedException)
 		{
+			Log.Warning( $"Theme Park Inc save or load failed: {error.Message}" );
 			Stack.Push(UiDialogs.Message("layoutFailed", () => error.Message,
 				(() => T( OpenTpwText.Back ), () => Stack.Pop())));
 			return false;
@@ -456,6 +481,7 @@ public sealed partial class ThemeParkIncHud
 			return true;
 		// The build window rides on the HUD screen, so a modal menu on top of it hides it (ModalOpen stops the camera keys).
 		SetBuildWindowVisible( buildOpen && !MenuOpen );
+		SetStaffPanelVisible( staffOpen && !MenuOpen );
 		var overUi = Stack.Covers( context.Canvas, input.Mouse );
 		var consumed = Stack.Update( context, input );
 		// Successful load retired this HUD during its callback: leave the candidate camera and old tools alone.
@@ -481,7 +507,9 @@ public sealed partial class ThemeParkIncHud
 		var inPark = !overUi && !consumed && level.TryGetGridCell( input.Mouse, new NVector2( context.Canvas.Width, context.Canvas.Height ), out cursorX, out cursorY );
 		if ( !inPark )
 			cursorX = cursorY = -1;
-		var toolClick = UpdateCellTool( context, input, inPark );
+		ShowWageDemands();
+		ShowChallengeNotices();
+		var toolClick = UpdateStaffPlacement( input, inPark ) || UpdateCellTool( context, input, inPark );
 		UpdateBlueprint( inPark, context.Delta );
 		// [BIN:TPW-EXE:0x4879D0 object click] the click selects the owner of the hovered cell, the cell of the cursor ray's nearest hit on the terrain or an object's model (0x45bf90, ObjectRayPick),
 		// as the Theme Park World park click does (ParkHud)
@@ -512,7 +540,7 @@ public sealed partial class ThemeParkIncHud
 	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark )
 	{
 		var tool = level.CellTool;
-		if ( MenuOpen || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive )
+		if ( MenuOpen || level.TpiPlacingSlot >= 0 || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive )
 			return false;
 		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );

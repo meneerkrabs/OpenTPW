@@ -69,6 +69,17 @@ public sealed partial class ParkEconomy : IParkEconomy
 			TpiWeather = new ThemeParkIncWeatherSpells( weather );
 			TpiForecast = CreateThemeParkIncForecast();
 		}
+		CreateThemeParkIncCareer();
+		if ( Rules.ThemeParkInc && settings.ThemeParkIncStaff is { } staffSettings )
+		{
+			TpiStaff = new ThemeParkIncStaff( staffSettings, TpiStaffNameText );
+			// [BIN:TPI-EXE:0x630CB0 opening pool] the new-world init (0x6482BA -> 0x5D65B0 -> 0x630CB0) fills the opening pool from the world generator and stamps it with the turn,
+			// before any layout or guest draws (the layout loads during the following world updates, 0x41D8C0)
+			TpiStaff.CreateOpeningPool( World, 0, TpiCareer!.Rank );
+		}
+		// [BIN:TPI-EXE:0x6485A9 challenge system] the new-world init constructs the challenge system thing, which loads its slots at once (0x5C7400 -> 0x5C7630); it draws nothing
+		CreateThemeParkIncChallenges();
+		CreateThemeParkIncMissions();
 		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
 		foreach ( var offer in settings.Loans )
 			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;
@@ -117,6 +128,22 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>The spells the Theme Park Inc weather has started (ThemeParkIncWeatherSpells.SpellStarts).</summary>
 	public int TpiSpellStarts => TpiWeather?.SpellStarts ?? 0;
 
+	/// <summary>Theme Park Inc's staff: the hiring pool, the members and their strikes (null in Theme Park World and where the staff keys are missing).</summary>
+	public ThemeParkIncStaff? TpiStaff { get; private set; }
+
+	/// <summary>
+	/// The Theme Park Inc wage demands of the last day message (0x628CA0's type-0x19 message). The salary negotiation that answers them is not ported yet: the HUD takes them every frame
+	/// and shows them as notes. Each day message clears the list before it adds its own demands, so a run without the HUD (headless, the smoke) holds at most one day's demands instead of
+	/// a list that grows for ever. Not saved (a notice, like the original's message bar).
+	/// </summary>
+	internal List<ThemeParkIncStaff.WageDemand> TpiWageDemands { get; } = new();
+
+	/// <summary>
+	/// A Theme Park Inc staff name's identity for the pool's name test, which compares the texts of the per-language <c>*_NAMES.str</c> tables. No retail language holds a
+	/// text twice across the six tables (ThemeParkIncLanguageTests), so the role and index decide the test exactly and the economy needs no strings.
+	/// </summary>
+	private static string TpiStaffNameText( ThemeParkIncStaffRole role, int index ) => $"{role}:{index}";
+
 	/// <summary>Theme Park Inc's forecast advice queue (null in Theme Park World, and where <c>Advisor.sam</c> is missing or lacks the group keys).</summary>
 	internal ThemeParkIncForecastQueue? TpiForecast { get; private set; }
 
@@ -147,38 +174,6 @@ public sealed partial class ParkEconomy : IParkEconomy
 		var mail = TpiPendingMail;
 		TpiPendingMail = null;
 		return mail;
-	}
-
-	/// <summary>
-	/// [BIN:TPI-EXE:0x74BDD1 career firing line] The career object's reset sets the rank to 1 and this counter to a fixed 5; only a
-	/// promotion message raises it, to that rank's <c>FiringLineForRank[n].Limit</c> when the limit is higher (<c>0x74C450</c>, called
-	/// from <c>0x5F1148</c>). OpenTPW has no promotions yet, so the counter starts at 5 and is never raised.
-	/// </summary>
-	private const int ThemeParkIncStartingFiringLine = 5;
-
-	/// <summary>Failed challenges a Theme Park Inc player may still take before the board ends the player's employment.</summary>
-	private int challengeFiringLine = ThemeParkIncStartingFiringLine;
-
-	/// <summary>The challenges a Theme Park Inc park has lost at least once: each takes one off the firing line only on its first loss.</summary>
-	// The firing line and this set are not in the Science continuation save yet: they change only when a challenge is lost, and the slice runs no Theme Park Inc challenges.
-	// The challenge port must save both (the career object holds the line, the slots their loss counts, docs/reverse/TPI-CHALLENGE-SYSTEM.md). A letter is never open at a save:
-	// the pause menu that saves does not open over it (ThemeParkIncHud.OpenPauseMenu), and a pending mail is shown on the frame of the turn that posts it.
-	private readonly HashSet<int> challengesLostOnce = new();
-
-	/// <summary>
-	/// [BIN:TPI-EXE:0x5C4857 firing line countdown] The challenge system's lost branch decrements the career counter on a challenge's
-	/// first loss only (the slot's loss count mChallengeLost, +0x5C, is 0; it is raised on every loss, 0x5C4870) and [BIN:TPI-EXE:0x5C48B6
-	/// firing line post] posts notification id 7 whenever the counter is no longer positive, so the letter arrives on the loss that exhausts
-	/// the line and on every loss after it; while the line is positive the lost branch posts the ordinary lost message (type 0x1B, kind 3,
-	/// 0x5C49A3) instead. The tag system turns id 7 into advice 0x1A3 (response 750, speech 870, tag 0x5F, entry 167). The counter lives in
-	/// the career object at 0xBFC484, not in the park; OpenTPW keeps it for the session and does not save it.
-	/// </summary>
-	private void CountThemeParkIncChallengeFailure( int challenge )
-	{
-		if ( challengesLostOnce.Add( challenge ) )
-			challengeFiringLine--;
-		if ( challengeFiringLine <= 0 )
-			TpiPendingMail = ThemeParkIncAdviceMail.ChallengeLost;
 	}
 
 	private static ThemeParkIncForecastQueue? CreateThemeParkIncForecast()
@@ -443,10 +438,13 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// Queues a cheat for the start of the next park turn (<see cref="ParkCheats"/>). False when the park cannot cheat (a Theme Park Inc economy: only Theme Park World's cheats are traced), the action is not
 	/// valid or the queue is full. The caller refuses read-only visits and online sessions.
 	/// </summary>
-	// [EXT:cheats-extension] Theme Park World parks only: the cheats are tp.exe's (docs/CHEATS.md); Theme Park Inc's executable was not searched for any
+	// [EXT:cheats-extension] a Theme Park World park takes tp.exe's cheats (docs/CHEATS.md); a Theme Park Inc park only its executable's two debug-dialog buttons, Skip Mission and Get Promoted
+	// (user decision 2026-11-21), with the extension on
 	// [EXT:cheats-window] the extension's own cheats (the weather, the arrivals) need the extension on and a level to act on
 	// [EXT:cheats-ride-vehicles] a ride's vehicle limit only for a ride the level can raise now
-	public bool QueueCheat( CheatAction action ) => !Rules.ThemeParkInc && (!ParkCheats.IsExtensionKind( action.Kind ) || FeatureGates.Cheats && CheatHost != null)
+	public bool QueueCheat( CheatAction action ) => (Rules.ThemeParkInc
+			? ParkCheats.IsThemeParkIncKind( action.Kind ) && FeatureGates.Cheats && TpiCareer != null
+			: !ParkCheats.IsThemeParkIncKind( action.Kind ) && (!ParkCheats.IsExtensionKind( action.Kind ) || FeatureGates.Cheats && CheatHost != null))
 		&& (action.Kind != CheatKind.RideVehicles || CheatHost!.CanRaiseRideVehicles( action.Argument )) && Cheats.Queue( action );
 
 	/// <summary>
@@ -485,6 +483,10 @@ public sealed partial class ParkEconomy : IParkEconomy
 			case CheatKind.RideVehicles:
 				// [EXT:cheats-ride-vehicles] the ride raised at once; one removed since it was asked for leaves the cheat recorded with no effect
 				return CheatHost is not { } host ? null : host.TryRaiseRideVehicles( action.Argument ) ? "" : "unavailable";
+			case CheatKind.SkipMission:
+				return SkipThemeParkIncMission();
+			case CheatKind.GetPromoted:
+				return PromoteThemeParkIncCareer();
 			default:
 				throw new InvalidOperationException( $"The cheat {action.Kind} is not applied by the economy." );
 		}
@@ -508,6 +510,11 @@ public sealed partial class ParkEconomy : IParkEconomy
 			UpdateThings( turn );
 			TpiWeather?.OnTurn( World.NextWord );
 		}
+		// [BIN:TPI-EXE:0x649868 staff pool update] after the thing loop the world update's tail updates the hiring pool (0x5D65E0 -> 0x631B40: expiry, refill and top-up, drawing
+		// from the world generator) in every world state, and only then the calendar (0x5D65FB -> 0x6083D0), whose day and month messages follow below
+		// [BIN:TPI-EXE:0x630CB0 pool rank] the pool reads the career's rank (+0x1060), which promotions raise (ThemeParkIncCareer.Promote)
+		// Before the pool, 0x5D65E9 first runs the staff sub-object update [esi+0x44c] -> 0x5BCB10 (a timer against [0xA02234] that posts message 0x17); it draws nothing from the world generator, so the draw order is unaffected; not ported.
+		TpiStaff?.UpdatePool( World, turn, TpiCareer!.Rank );
 		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
 		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
 		var changes = ParkCalendar.Update( ref stored, turn );
@@ -523,6 +530,14 @@ public sealed partial class ParkEconomy : IParkEconomy
 			EndObjectDay();
 		if ( changes.HasFlag( CalendarChange.Day ) )
 			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
+		// [BIN:TPI-EXE:0x626624 staff day] the day message (0x0B, broadcast by the calendar 0x6084FA after the thing loop and the pool update) runs every member's daily routine 0x628CA0 (the experience
+		// gain and a wage demand on its day of the month) and then 0x62D1A0 (the day's counters cleared); it takes no draw, and the staff hear it in ascending handle order
+		if ( changes.HasFlag( CalendarChange.Day ) && TpiStaff != null )
+		{
+			// one day's demands at most: the HUD drains them every frame, a headless run never does
+			TpiWageDemands.Clear();
+			TpiWageDemands.AddRange( TpiStaff.EndDay( turn, stored.Day ) );
+		}
 		if ( changes.HasFlag( CalendarChange.Month ) )
 		{
 			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
@@ -574,9 +589,14 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>The economy's part of the original's per-turn thing loop: staff, mechanics' jobs, research and the ride update.</summary>
 	internal void UpdateThings( long turn )
 	{
-		// [EXT:tpi-money-only] a park without staff runs none of this: the staff, the research lab, the challenge system and the ride update (whose wear and breakdowns only a mechanic repairs) are refused with the staff, research and challenges
+		// [EXT:tpi-money-only] a park without staff runs none of this: the staff, the research lab and the ride update (whose wear and breakdowns only a mechanic repairs) are refused with the staff and research
 		if ( !Rules.Staff )
+		{
+			// [BIN:TPI-EXE:0x637767 challenge thing] Theme Park Inc's challenge system and mission controller are things of the world pass (0x6375E0 -> 0x5C7930, 0x5EF520) whatever the staff
+			if ( TpiChallenges != null || TpiMissions != null )
+				UpdateChallenges( turn );
 			return;
+		}
 		UpdateStaffVitals();
 		foreach ( var member in Staff.Members )
 			CountDownJob( member );
@@ -1449,14 +1469,23 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>The challenge system's thing update, once per park turn (tp.exe <c>0x004D1E90</c>): the switch, the offers and a running challenge's check.</summary>
 	internal void UpdateChallenges( long turn )
 	{
+		// [BIN:TPI-EXE:0x6495C1 thing pass] the world pass walks the things newest first: the mission controller (built after the challenge system, 0x648633) updates before it
+		if ( TpiMissions != null )
+			UpdateThemeParkIncMissions( turn );
+		// a Theme Park Inc park runs its own challenge system, never Theme Park World's objectives (EconomyRules.Narrow refuses those for it)
+		if ( TpiChallenges != null )
+		{
+			UpdateThemeParkIncChallenges( turn );
+			return;
+		}
+		if ( TpiMissions != null )
+			return;
 		if ( !Features.Challenges )
 			return;
 		foreach ( var (kind, index, amount, detail) in Objectives.Update( turn * ParkCalendar.SecondsPerTurn, turn, MeasureChallenge, IsParkOpen, BestObjectOf, () => guestStatistics.GuestCensus ).ToList() )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
 				Post( LedgerCategory.OtherIncome, amount );
-			if ( kind == ParkEventKind.ChallengeFailed && Rules.ThemeParkInc )
-				CountThemeParkIncChallengeFailure( index );
 			Raise( kind, amount, 0, index, detail );
 		}
 	}
@@ -1574,6 +1603,11 @@ public sealed partial class ParkEconomy : IParkEconomy
 			// the objects' month messages come after the bank's (thing ids: bank 9, attractions 14 and up in the prebuilt park): each object debits its running cost and its month's booked costs, then rolls its month
 			PayRunningCosts();
 			RollObjectMonths();
+			// [BIN:TPI-EXE:0x6265DE staff payday] each member's month message debits its salary through the bank (0x64EBE0 -> 0x5C07B0: the balance, the red stamp and the wage total, with the
+			// bank's withdrawals flag) and then reviews its wage (0x62CDA0, whose demand day draws); the members hear it in ascending handle order (ThemeParkIncStaff.PayMonth). The objects' and the
+			// members' handlers interleave by thing id in the original; both only debit within the same turn, so their order changes neither the balance, the totals, the red stamp (set at
+			// whichever debit first crosses 0, the same turn) nor the reviews' draws
+			TpiStaff?.PayMonth( ( _, salary ) => Post( LedgerCategory.StaffCosts, salary ), World );
 		}
 		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler reads the cached census with age 0 first (0x004C78C1); the month message goes to the things in id order (the listener tree walked by 0x0040FB10, dispatching through 0x0050B550) and the world constructor 0x005156A0 creates the staff manager (type 9) before the analyser (type 13), so the gate above has already read its count
 		var closed = analyserClosed ?? CloseAnalyserMonth( nextMonthIndex );
@@ -2750,7 +2784,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 
 	public void AcceptChallenge()
 	{
-		RequireSystem( Rules.Challenges, "challenges" );
+		RequireSystem( Rules.Challenges && !Rules.ThemeParkInc, "Theme Park World challenges" );
 		var definition = Objectives.CurrentDefinition ?? throw new InvalidOperationException( "No challenge is offered." );
 		Objectives.AcceptAt( ParkCalendar.Seconds( Tick ), MeasureChallenge( definition ) );
 		Raise( ParkEventKind.ChallengeAccepted, definition.Prize, 0, definition.Index );
@@ -2758,7 +2792,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 
 	public void DeclineChallenge()
 	{
-		RequireSystem( Rules.Challenges, "challenges" );
+		RequireSystem( Rules.Challenges && !Rules.ThemeParkInc, "Theme Park World challenges" );
 		var definition = Objectives.CurrentDefinition;
 		var index = Objectives.DeclineAt( ParkCalendar.Seconds( Tick ) );
 		// [BIN:TPW-EXE:0x4d2ec0 challenge declined] a declined challenge whose mIndependent (+0x1d) is clear, a follow-up, credits half its prize (+0x14 / 2,
@@ -2813,6 +2847,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			item.TakingsRing.Today += price;
 			if ( Catalog.TryGet( item.InfoId, out var info ) )
 				Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
+			// [BIN:TPI-EXE:0x6126D0 fare taken] Theme Park Inc's paid use books its takings through 0x5E5DE0, which posts the challenge sale events
+			PostThemeParkIncTakingsEvents( item, price );
 		}
 		// [BIN:TPW-EXE:0x004FE1E0 shop use] a shop (WhichUIType 1) books 0x004E1B40's value (ShopGoodsCost: the cost of goods scaled by the quality and special-ingredient bytes) through 0x004E1920: the bank debit, the object's cost rings and the challenge types 12 and 13 all take the same number
 		var hasShopInfo = Catalog.TryGet( item.InfoId, out var shopInfo );
@@ -2827,6 +2863,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		{
 			item.PendingMonthlyCosts += goods;
 			item.TotalProfit += price;
+			PostThemeParkIncCostEvent( item, goods );
 		}
 		else
 		{
@@ -2868,6 +2905,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 			Post( LedgerCategory.SideshowTakings, price );
 			item.TakingsThisMonth += price;
 			item.TakingsRing.Today += price;
+			PostThemeParkIncTakingsEvents( item, price );
 		}
 		item.CustomersThisMonth++;
 		item.CustomersRing.Today++;
@@ -2877,6 +2915,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 			// [BIN:TPI-EXE:0x612789 sideshow cost] a won play (the use outcome 0x612740 runs for +0x21B set) books the thing's +0x88 through 0x5E60E0, the month accumulator again (ECON-060)
 			item.PendingMonthlyCosts += prize;
 			item.TotalProfit += price;
+			if ( won )
+				PostThemeParkIncCostEvent( item, prize );
 		}
 		else
 		{

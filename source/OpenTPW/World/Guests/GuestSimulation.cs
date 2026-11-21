@@ -1920,6 +1920,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.ExitLevel, Payments?.ParkClosed ?? false, draw, guest.PrankFlag, Settings.StinkbombLikelihood );
 		var outcome = GuestDecision.Decide( input, () =>
 		{
+			if ( Settings.TpiGuestStart != null )
+				return ThemeParkIncLitterStep( guest );
 			if ( SeekBin( guest ) )
 				return true;
 			DropLitter( guest, (LitterType)(1 + random.NextWord() % ParkLitter.OrdinaryKinds) );
@@ -2205,6 +2207,29 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.HasWaypoint = false;
 		EnterGuestState( guest, GuestState.ThrowingAwayLitter );
 		return true;
+	}
+
+	/// <summary>
+	/// Theme Park Inc's litter step (TPI Game.exe <c>0x614B71</c>, a guest whose litter urge byte is at least 90): a one-in-four world draw lets it on, then the bin search, then
+	/// the ordinary litter drawn before the cell is tested; an occupied cell takes neither the drop nor the urge's reset. True when the guest walks to a bin.
+	/// </summary>
+	// [BIN:TPI-EXE:0x614B84 litter gate] draw B; (B & 3) != 0 leaves the block (jne 0x614C2B) with no litter and the urge (+0x1D8) kept
+	// [BIN:TPI-EXE:0x614B97 bin search] 0x618D10 with radius 3: a bin sets the target (+0x204) and dispatch index 9 and returns, the urge kept ([EXT:tpi-twp-guest-rules] the search, the walk to the bin
+	// and its arrival are Theme Park World's: 0x618D10's reachability 0x60B8E0 and the bin handler 0x616F10's capacity and dirt tests are unread, the bins' fill is unported)
+	// [BIN:TPI-EXE:0x614C03 ordinary litter] draw C, type C % 5 + 1 (0x93E2BC holds 6), then the cell record's type (+0x30) must be 0 or the drop and the urge's reset are skipped
+	// (0x614C15..0x614C1B); the drop 0x5D8C80 and urge = 0 (0x614C25)
+	private bool ThemeParkIncLitterStep( Guest guest )
+	{
+		if ( (random.NextWord() & 3) != 0 )
+			return false;
+		if ( SeekBin( guest ) )
+			return true;
+		var type = (LitterType)(1 + random.NextWord() % ParkLitter.OrdinaryKinds);
+		if ( Litter is { } litter && litter.TypeAt( guest.CellX, guest.CellY ) != LitterType.None )
+			return false;
+		DropLitter( guest, type );
+		guest.Litter = 0;
+		return false;
 	}
 
 	/// <summary>

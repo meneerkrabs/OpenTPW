@@ -180,7 +180,7 @@ public sealed class BalanceSettings
 	/// </summary>
 	// [BIN:TPI-EXE:0x0041B350 balance getter] Theme Park Inc's Standard.sam schema (rows 0x009966C0) fills the block at 0x00A01A6C, a different layout from tp.exe's 0x0078504C; the money keys below keep tp.exe's names and meaning
 	// [BIN:TPI-EXE:0x005BFBBA bank constructor] BankAccountInfo.InitialCash and InitialAdmissionFee fill the bank as tp.exe's constructor 0x004CF8C6 does, and LoanInfo[n] (a ten-slot array, eight used) fills the offers (0x005BFB97)
-	private BalanceSettings( SamSettings standard, string theme )
+	private BalanceSettings( SamSettings standard, SamSettings? challenges, string theme )
 	{
 		Edition = GameEdition.ThemeParkInc;
 		Theme = theme;
@@ -192,7 +192,13 @@ public sealed class BalanceSettings
 		Costs = ReadCosts( standard );
 		EntryFee = ReadEntryFee( standard );
 		Weather = ThemeParkIncWeatherSettings.Read( standard );
-		// inert placeholders: nothing reads them while staff, research and challenges are refused
+		ThemeParkIncStaff = ThemeParkIncStaffSettings.Read( standard );
+		ThemeParkIncChallenges = ThemeParkIncChallengeSettings.Read( standard, challenges );
+		var table = ThemeParkIncCareer.FiringLineTable( standard );
+		// [EXT:headless-economy] settings built from parsed keys (tests and tools) answer the six limits and the count dword from those keys; LoadThemeParkInc replaces this with the
+		// Standard object bound from the files' bytes, which answers every rank as the original's read does
+		ThemeParkIncFiringLineLimit = rank => rank >= 0 && rank < table.Count ? table[rank] : null;
+		// inert placeholders: nothing reads them while staff, research and Theme Park World's challenges are refused
 		BaseWage = Array.Empty<int>();
 		RecuperationRate = HappinessRecuperationRate = Array.Empty<float>();
 		IdleDuration = HandymanDetectionRange = EntertainerActivationDistance = Array.Empty<int>();
@@ -245,6 +251,12 @@ public sealed class BalanceSettings
 	public CellCosts Costs { get; }
 	/// <summary>Theme Park Inc's weather settings (null in Theme Park World and in a file with no weather).</summary>
 	public ThemeParkIncWeatherSettings? Weather { get; }
+	/// <summary>Theme Park Inc's staff settings (null in Theme Park World and in a file without the staff keys).</summary>
+	public ThemeParkIncStaffSettings? ThemeParkIncStaff { get; }
+	/// <summary>Theme Park Inc's challenge settings and rows (null in Theme Park World and where the challenge keys or <c>Challenges.sam</c> are missing).</summary>
+	public ThemeParkIncChallengeSettings? ThemeParkIncChallenges { get; }
+	/// <summary>The word Theme Park Inc's promotion reads for a rank (<see cref="ThemeParkIncStandard.FiringLineLimit"/>), null where it is not read; null for every rank in Theme Park World.</summary>
+	public Func<int, int?> ThemeParkIncFiringLineLimit { get; private set; } = _ => null;
 	public EntryFeePerception EntryFee { get; }
 	public GoldenTicketSettings GoldenTickets { get; }
 	public ChallengeSchedule ChallengeTiming { get; }
@@ -329,11 +341,11 @@ public sealed class BalanceSettings
 	}
 
 	/// <summary>The Theme Park Inc money subset (see the private constructor) over explicit layers; the caller owns the layer order.</summary>
-	public static BalanceSettings ForThemeParkInc( SamSettings standard, string theme )
+	public static BalanceSettings ForThemeParkInc( SamSettings standard, string theme, SamSettings? challenges = null )
 	{
 		ArgumentNullException.ThrowIfNull( standard );
 		ValidateTheme( theme );
-		return new BalanceSettings( standard, theme );
+		return new BalanceSettings( standard, challenges, theme );
 	}
 
 	/// <summary>Loads the Theme Park Inc money settings of <paramref name="theme"/> (arabian, science, water): the global <c>levels/Standard.sam</c> under the theme's own.</summary>
@@ -341,7 +353,12 @@ public sealed class BalanceSettings
 	public static BalanceSettings LoadThemeParkInc( string theme )
 	{
 		var layers = GetStandardLayers( theme, easy: false ).Select( path => SamDocument.Parse( FileSystem.ReadAllText( path ), path ) );
-		return ForThemeParkInc( new SamSettings( layers ), theme );
+		// [BIN:TPI-EXE:0x5C768A challenge rows] the challenge system parses data/challenges.sam itself when it loads its slots
+		var challenges = FileSystem.FileExists( "/Challenges.sam" ) ? new SamSettings( new[] { SamDocument.Parse( FileSystem.ReadAllText( "/Challenges.sam" ), "/Challenges.sam" ) } ) : null;
+		var settings = ForThemeParkInc( new SamSettings( layers ), theme, challenges );
+		if ( ThemeParkIncStandard.Load( ParkEconomy.GameCareerFiles.Instance.Read, theme ) is { } standard )
+			settings.ThemeParkIncFiringLineLimit = rank => ThemeParkIncStandard.FiringLineLimit( standard, rank );
+		return settings;
 	}
 
 	/// <summary>Whether the theme ships an easy-mode balance layer (only jungle in the available data).</summary>

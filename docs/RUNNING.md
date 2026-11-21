@@ -212,7 +212,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park Inc' --load-original-level 
 Runs a Theme Park Inc world (`arabian`, `science` or `water`) as the experimental playable slice: the
 world in 3D with the park camera, an OpenTPW text HUD (build window, remove/rotate tools, speed
 control, pause menu on Esc), with Theme Park Inc guest profiles and three generations of sprite art. Guests still use the shared Theme Park World movement and update rules where TPI behavior has not been ported. Building is
-charged at Theme Park Inc's own prices (the money runs; see [the economy](THEME-PARK-INC.md#theme-park-inc-economy-money-only)), and the slice runs no staff, research, challenges or original Theme Park Inc in-game interface, and no advisor apart from the weather forecasts and the bank's letter. Desktop Science supports [OpenTPW continuation saves](PARK-SAVES.md#experimental-science-continuation-on-desktop), not native TPI saves. P pauses
+charged at Theme Park Inc's own prices (the money runs; see [the economy](THEME-PARK-INC.md#theme-park-inc-economy-money-only)), and the slice runs no staff apart from the cleaners (hired from the Staff panel), no research, challenges or original Theme Park Inc in-game interface, and no advisor apart from the weather forecasts and the bank's letter. Desktop Science supports [OpenTPW continuation saves](PARK-SAVES.md#experimental-science-continuation-on-desktop), not native TPI saves. P pauses
 the simulation. `--capture-world out.png --capture-frames 300` writes a screenshot. The folder must
 hold Theme Park Inc's `Data` folder (an installation, or the cabinets extracted as below); it is
 detected by its retail `levels/Standard.sam` or by `Ver.txt` beside the Theme Park Inc theme folders.
@@ -226,7 +226,7 @@ build availability, setup steps and limitations. Adding
 `--tpi-smoke-test` (best on `science`) drives the slice's whole HUD user flow with injected input —
 build window, place, queue tool, Escape ordering, pause and the pause menu's Quit. In Science it also
 checks saving, pause-menu continuation and the Personnel File's **Load A Game**. It ends with the bank's "Game Over" letter: the letter window opens and closing it loses the park. The smoke is refused
-on Theme Park World data. See
+on Theme Park World data, and without a fresh, dedicated `OPENTPW_SAVE_DIR`: leaving the park saves, and a smoke must never write into a real save folder. See
 [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-playable-slice) for what works.
 
 To verify Science continuation across a process restart, use the same fresh, dedicated `OPENTPW_SAVE_DIR`

@@ -6,7 +6,7 @@ namespace OpenTPW;
 /// <summary>
 /// The experimental Theme Park Inc slice of the game flow (docs/THEME-PARK-INC.md): a Theme Park Inc world runs
 /// with the shared terrain, object, path and guest systems and the experimental HUD, under the edition capability
-	/// policy — money only (no staff, research or challenges), no advisor beyond the four traced weather forecasts, and no sharing. The desktop Science park can continue an OpenTPW save; layout checkpoints start fresh sessions.
+	/// policy — money and the cleaners (no other staff, research or challenges), no advisor beyond the four traced weather forecasts, and no sharing. The desktop Science park can continue an OpenTPW save; layout checkpoints start fresh sessions.
 /// The experimental flow is not a reproduction of the original Theme Park Inc interface.
 /// </summary>
 // [EXT:tpi-capability-gates] the slice's frame is gated by OpenTPW's capability policy (a scope decision), not by traced Theme Park Inc behaviour
@@ -28,11 +28,29 @@ internal sealed partial class GameFlow
 		TearDown();
 		IncFrontEnd = new ThemeParkIncFrontEnd( Strings, new ThemeParkIncFrontEndHost
 		{
-			EnterWorld = zone => QueueLevel( zone, () => StartLevel( zone, original: true, developerPanels: false ) ),
+			EnterWorld = zone => QueueLevel( zone, () => EnterThemeParkIncZone( zone ) ),
 			ContinueScience = !OperatingSystem.IsBrowser() && File.Exists( IncScienceSavePath() ) ? QueueScienceContinuation : null,
 			Quit = Quit
 		}, UiFonts.CachedLoader( GameLanguage.Current ) );
 		Log.Trace( "Theme Park Inc front end: the Personnel File (experimental slice; Enter Game starts the chosen zone)." );
+	}
+
+	/// <summary>Enter Game: the zone's park starts with the player's career (the player file's, or a new one).</summary>
+	// [BIN:TPI-EXE:0x56AB40 enter game] the panel selects the player, which loads the player's global save, and changes to the zone
+	private void EnterThemeParkIncZone( string zone )
+	{
+		var frontEnd = IncFrontEnd;
+		ThemeParkIncCareer? career;
+		try { career = LoadThemeParkIncPlayerCareer( zone ); }
+		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException )
+		{
+			if ( frontEnd == null )
+				throw;
+			frontEnd.ShowLoadFailure( error.Message );
+			return;
+		}
+		using ( ParkEconomy.EnterThemeParkIncCareer( career ) )
+			StartLevel( zone, original: true, developerPanels: false );
 	}
 
 	private void QueueScienceContinuation()

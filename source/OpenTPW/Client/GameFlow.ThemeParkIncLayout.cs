@@ -8,6 +8,7 @@ internal sealed partial class GameFlow
 	internal void SaveThemeParkIncScience()
 	{
 		var level = RequireThemeParkIncScience();
+		WriteThemeParkIncPlayerFile( level.Park!.Economy, level.LevelName );
 		var snapshot = level.CaptureResumeSnapshot( null, "Science", savedUtc: DateTimeOffset.UtcNow ) with
 		{
 			TpiHudSpeed = IncHud?.Speed ?? GameSpeed.Normal
@@ -32,12 +33,13 @@ internal sealed partial class GameFlow
 		var assets = ParkResumeAssetManifest.Capture( catalog, settings );
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, catalog, settings, economyCatalog, assets );
 		var economy = ParkSaveFile.Restore( snapshot.Economy, settings, economyCatalog );
+		AttachThemeParkIncPlayerCareer( economy, snapshot.Theme );
 		using var scene = new EntityConstructionScope();
 		var candidate = new Level( snapshot, economy, OnlineFolders ) { ShowDeveloperPanels = false };
 		var candidateHud = CreateThemeParkIncHud( candidate, snapshot.TpiHudSpeed!.Value );
 		candidate.SimulationTimeScale = candidateHud.TimeScale;
 		scene.Detach();
-		TearDown( applyPendingLanguage: false );
+		TearDownReplacingThemeParkIncPark();
 		scene.Activate();
 		Level = ViewerLevel = candidate;
 		IncHud = candidateHud;
@@ -57,6 +59,14 @@ internal sealed partial class GameFlow
 
 	private Level RequireThemeParkIncScience() => Level is { IsThemeParkIncSlice: true, LevelName: "science", IsReadOnlyVisit: false, CoopRole: CoopRole.None } level
 		? level : throw new NotSupportedException( "Only a solo Theme Park Inc Science park can be continued." );
+
+	/// <summary>Retires the park a load replaces without the leave's save: a load replacing the park discards it (docs/reverse/TPI-CAREER.md §3.4).</summary>
+	private void TearDownReplacingThemeParkIncPark()
+	{
+		incReplacingPark = true;
+		try { TearDown( applyPendingLanguage: false ); }
+		finally { incReplacingPark = false; }
+	}
 
 	internal void SaveThemeParkIncLayout()
 	{
@@ -80,7 +90,7 @@ internal sealed partial class GameFlow
 		var candidate = new Level(checkpoint, OnlineFolders) { ShowDeveloperPanels = false };
 		var candidateHud = CreateThemeParkIncHud(candidate);
 		scene.Detach();
-		TearDown(applyPendingLanguage: false);
+		TearDownReplacingThemeParkIncPark();
 		scene.Activate();
 		Level = candidate;
 		ViewerLevel = candidate;

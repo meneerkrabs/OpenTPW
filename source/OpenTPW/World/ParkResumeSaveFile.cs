@@ -371,6 +371,22 @@ internal static class ParkResumeSaveFile
 	}
 
 	/// <summary>
+	/// The message a Theme Park Inc continuation without its current obstacle is refused with: one written before the mission controller kept it would continue with no obstacle, which the
+	/// world's mission would never find again.
+	/// </summary>
+	internal const string ThemeParkIncObstacleMissing = "the Theme Park Inc park was saved before its current obstacle was kept; this save cannot be continued, start a new game from the Personnel File";
+
+	/// <summary>The message a Theme Park Inc continuation without its owned land is refused with.</summary>
+	internal const string ThemeParkIncLandMissing = "the Theme Park Inc park was saved before its owned land was kept; this save cannot be continued, start the park again";
+
+	/// <summary>
+	/// Refuses a Theme Park Inc continuation whose layout carries no ownership bits (<see cref="ParkLayoutSnapshot.CellMapData.TpiUnowned"/>): one written before the land was kept
+	/// would restore every square as owned, which the original never reaches (docs/reverse/TPI-BOUNDARY.md).
+	/// </summary>
+	internal static void RequireThemeParkIncLand( ParkLayoutSnapshot.Data? layout ) =>
+		Require( layout?.Cells?.TpiUnowned != null, ThemeParkIncLandMissing );
+
+	/// <summary>
 	/// The envelope's own consistency, with no catalog or settings: header bounds, the embedded economy's format
 	/// and invariants, the layout's pure allocator/identity rules, the script world's graph, one runtime per
 	/// layout object with matching entry/attraction/script identity and every world root claimed (the prototype
@@ -425,11 +441,15 @@ internal static class ParkResumeSaveFile
 				&& snapshot.Advisor == null && snapshot.Weather == null && snapshot.Layout?.Cells?.Land == null,
 				"Theme Park Inc continuation contains unsupported world state" );
 			Require( snapshot.TpiHudSpeed is { } speed && Enum.IsDefined( speed ), "the saved Theme Park Inc HUD speed is invalid" );
+			Require( snapshot.TpiCurrentObstacle != null, ThemeParkIncObstacleMissing );
+			Require( snapshot.TpiCurrentObstacle is >= 0 and <= ushort.MaxValue, "the saved Theme Park Inc current obstacle is not a thing id" );
+			RequireThemeParkIncLand( snapshot.Layout );
 			Require( snapshot.TpiWeatherClosingsSeen is >= 0 && snapshot.TpiWeatherClosingsSeen <= (snapshot.Economy.TpiWeather?.SpellStarts ?? 0),
 				"the saved Theme Park Inc weather delivery count is invalid" );
 		}
 		else
-			Require( snapshot.TpiWeatherClosingsSeen == null && snapshot.TpiHudSpeed == null, "Theme Park World save contains Theme Park Inc continuation state" );
+			Require( snapshot.TpiWeatherClosingsSeen == null && snapshot.TpiHudSpeed == null && snapshot.TpiStaffChain == null && snapshot.TpiCurrentObstacle == null && snapshot.Layout?.Cells?.TpiUnowned == null,
+				"Theme Park World save contains Theme Park Inc continuation state" );
 		yield return true;
 		Require( snapshot.Layout != null, "the layout snapshot is missing" );
 		Require( snapshot.Guests != null, "the guest snapshot is missing" );
@@ -718,6 +738,13 @@ internal static class ParkResumeSaveFile
 		if ( snapshot.ParkName is { } parkName )
 			Require( ParkNameLines.IsValidLine( parkName.Line1 ) && ParkNameLines.IsValidLine( parkName.Line2 ),
 				$"the park name lines are missing, longer than {ParkNameLines.MaximumLength} characters or hold control characters" );
+		if ( snapshot.TpiStaffChain is { } tpiChain )
+		{
+			var placed = snapshot.Economy.TpiStaff?.Members.Where( member => member?.World != null ).Select( member => member!.World!.ThingId ).ToHashSet() ?? new HashSet<int>();
+			var filed = new HashSet<long>();
+			Require( tpiChain.All( pair => pair is [var id, var serial] && id is >= 1 and <= ThingPool.Capacity && placed.Contains( (int)id ) && serial >= 1 && filed.Add( id ) ),
+				"the Theme Park Inc staff chain names a thing no placed member holds, or a bad entry number" );
+		}
 		if ( snapshot.Staff is { } staff )
 		{
 			Require( staff.Actors != null, "the staff-world snapshot has no actor list" );
@@ -799,6 +826,7 @@ internal static class ParkResumeSaveFile
 		{
 			RequireThing( objects.All( record => record!.ThingId == 0 ), "an object names a thing id but the save holds no thing pool" );
 			RequireThing( members.All( member => member.ThingId == 0 ), "a staff member names a thing id but the save holds no thing pool" );
+			RequireThing( snapshot.Economy.TpiStaff?.Members.All( member => member?.World == null ) != false, "a staff member names a thing id but the save holds no thing pool" );
 			return;
 		}
 		var problems = ThingPool.Problems( snapshot.Things );
@@ -823,6 +851,10 @@ internal static class ParkResumeSaveFile
 			Names( record!.ThingId, SaveThingModel.Attraction, record.X, record.Y );
 		foreach ( var member in members )
 			Names( member.ThingId, ParkStaff.ThingModelOf( member.Type ), member.Id );
+		// a placed Theme Park Inc staff member's thing (ThemeParkIncStaffWorld: only the handyman is placed)
+		foreach ( var member in snapshot.Economy!.TpiStaff?.Members ?? Array.Empty<ThemeParkIncStaffMemberSnapshot>() )
+			if ( member?.World is { } world )
+				Names( world.ThingId, SaveThingModel.Handyman, member.Id );
 		if ( snapshot.Guests!.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion )
 			foreach ( var guest in snapshot.Guests.Guests! )
 				Names( guest!.Id, SaveThingModel.Guest, guest.Id );

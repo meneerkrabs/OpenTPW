@@ -34,7 +34,10 @@ public sealed class StaffRenderer : Entity
 	private readonly Func<IReadOnlyList<StaffMember>> members;
 	private readonly ModelHeightfield field;
 	private readonly StaffSpriteSet sprites;
-	private readonly StaffPlacement placement;
+	/// <summary>Theme Park World's staff tools; null for Theme Park Inc's members, who have neither tool (<see cref="tpiMembers"/>).</summary>
+	private readonly StaffPlacement? placement;
+	/// <summary>Theme Park Inc's placed members (<see cref="ThemeParkIncStaffWorld"/>), drawn through the same sprite pass; null in Theme Park World.</summary>
+	private readonly Func<IReadOnlyList<ThemeParkIncStaffMember>>? tpiMembers;
 	private readonly Material<ObjectUniformBuffer>? material;
 	private readonly List<Texture> textures = new();
 	private readonly Dictionary<StaffMember, MemberView> views = new( ReferenceEqualityComparer.Instance );
@@ -60,8 +63,21 @@ public sealed class StaffRenderer : Entity
 	internal IReadOnlyList<Asset> OwnedAssets => textures.Cast<Asset>().Concat( material == null ? Array.Empty<Asset>() : new Asset[] { material, material.Shader } ).ToArray();
 
 	public StaffRenderer( Func<IReadOnlyList<StaffMember>> members, ModelHeightfield field, StaffSpriteSet sprites, StaffPlacement placement )
+		: this( members, field, sprites, placement, null )
+	{
+	}
+
+	/// <summary>Draws Theme Park Inc's placed members (<see cref="ThemeParkIncStaffWorld"/>) with the banks <paramref name="sprites"/> loaded from Theme Park Inc's <c>esprites.wad</c>.</summary>
+	public StaffRenderer( Func<IReadOnlyList<ThemeParkIncStaffMember>> tpiMembers, ModelHeightfield field, StaffSpriteSet sprites )
+		: this( static () => Array.Empty<StaffMember>(), field, sprites, null, tpiMembers )
+	{
+	}
+
+	private StaffRenderer( Func<IReadOnlyList<StaffMember>> members, ModelHeightfield field, StaffSpriteSet sprites, StaffPlacement? placement,
+		Func<IReadOnlyList<ThemeParkIncStaffMember>>? tpiMembers )
 	{
 		this.members = members;
+		this.tpiMembers = tpiMembers;
 		this.field = field;
 		this.sprites = sprites;
 		this.placement = placement;
@@ -120,7 +136,7 @@ public sealed class StaffRenderer : Entity
 
 	private bool CanRender => Visible && material != null && !deleted;
 	// Keep the existing world exclusion (CellX only). Track separately requires both coordinates.
-	private bool CanPlaceMember( StaffMember member ) => !ReferenceEquals( member, placement.Carried ) && member.CellX != null;
+	private bool CanPlaceMember( StaffMember member ) => !ReferenceEquals( member, placement?.Carried ) && member.CellX != null;
 	private bool HasAtlas( int index ) => index >= 0 && index < textures.Count && index < sprites.Atlases.Count
 		&& textures[index].NativeTexture is { IsDisposed: false };
 
@@ -255,7 +271,9 @@ public sealed class StaffRenderer : Entity
 		}
 		if ( ++frames % 256 == 0 && views.Count > list.Count )
 			Prune( list );
-		if ( DanglePoint( placement ) is var (danglingX, danglingY) && placement.ToolType is { } toolType
+		if ( tpiMembers?.Invoke() is { Count: > 0 } placed )
+			count = PrepareThemeParkInc( placed, count, right, up, forward, eye );
+		if ( placement != null && DanglePoint( placement ) is var (danglingX, danglingY) && placement.ToolType is { } toolType
 			&& sprites.AtlasFor( toolType, placement.ToolVariantKey ) is var atlasIndex and >= 0 && atlasIndex < textures.Count
 			&& placement.ToolSpriteOutput is var (slot, step) && slot < sprites.Atlases[atlasIndex].Animations.Animations.Count
 			&& DangleAnchor( placement, field ) is { } danglingAnchor )
@@ -271,6 +289,34 @@ public sealed class StaffRenderer : Entity
 			DangleAt = (danglingX, danglingY);
 			DangleAnchorAt = danglingAnchor;
 			DangleFrameSize = (atlas.Frames[frameIndex].Width, atlas.Frames[frameIndex].Height);
+		}
+		return count;
+	}
+
+	/// <summary>
+	/// Theme Park Inc's placed members in the sprite pass: each is drawn from the handymen's bank of its variant at the slot and frame its sprite source shows, turned by its heading and the camera, at its
+	/// interpolated point (as Theme Park World's members are).
+	/// </summary>
+	// [BIN:TPI-EXE:0x5D4980 handyman sprite] the handyman's source is made with the category 9 (handymen) and the variant byte +0x30 (0x5D1000 -> 0x4E4810 with the table 0x9CDA94); [EXT:tpi-twp-guest-rules] the
+	// TPI sprite pass is not read: Theme Park World's pass (0x00542010: the heading sector plus the camera's yaw sector, mirrored past the bank's last direction, pulled towards the camera) draws it
+	private int PrepareThemeParkInc( IReadOnlyList<ThemeParkIncStaffMember> placed, int count, SVector3 right, SVector3 up, SVector3 forward, SVector3 eye )
+	{
+		var needed = count + (placed.Count + 1) * VerticesPerSprite;
+		if ( vertices.Length < needed )
+			Array.Resize( ref vertices, Math.Max( needed, 16 * VerticesPerSprite ) * 2 );
+		foreach ( var member in placed )
+		{
+			if ( member.Navigation == null || member.Sprite.Output is not var (slot, step) )
+				continue;
+			var atlasIndex = sprites.AtlasFor( StaffType.Handyman, ThemeParkIncStaffWorld.VariantOf( member, sprites ) );
+			if ( member.Role != ThemeParkIncStaffRole.Handyman || !HasAtlas( atlasIndex ) || slot >= sprites.Atlases[atlasIndex].Animations.Animations.Count )
+				continue;
+			var (frame, mirror) = FrameFor( sprites.Atlases[atlasIndex], slot, step, member.HeadingX, member.HeadingY, right, forward );
+			var position = GuestRenderer.CellToEngine( field, member.DrawX, member.DrawY );
+			if ( FeetHeight?.Invoke( member.DrawX, member.DrawY ) is { } height ) position.Z = height;
+			var (feet, share) = GuestRenderer.PullTowardsEye( position, eye, forward );
+			AddSprite( ref count, atlasIndex, frame, mirror, feet, right * share, up * share, forward );
+			DrawnStaff++;
 		}
 		return count;
 	}

@@ -81,6 +81,31 @@ public sealed partial class ParkEconomy
 	/// <summary>The mission's requirements are met (<c>0x55A620</c>): the mission window's complete button would be enabled.</summary>
 	public bool ThemeParkIncMissionMet => TpiMissions is { } missions && TpiCareer?.CurrentZone != null && missions.MetRequirements();
 
+	/// <summary>The park as the mission window reads it; null without a mission controller.</summary>
+	internal IThemeParkIncMissionWindowWorld? TpiMissionWindowWorld( string playerName ) => TpiMissions == null ? null : new ThemeParkIncMissionWindowWorld( this, playerName );
+
+	private sealed class ThemeParkIncMissionWindowWorld( ParkEconomy economy, string playerName ) : IThemeParkIncMissionWindowWorld
+	{
+		public ThemeParkIncMissionController Missions => economy.TpiMissions!;
+
+		public long Turn => economy.Turn;
+
+		public ushort CurrentObstacle => economy.TpiMissionWorld?.CurrentObstacle ?? 0;
+
+		// [BIN:TPI-EXE:0x61EB30 obstacle project] the research manager's first project of kind 5 whose progress is below its effort (stride 0x24 from +0x8C, count +0x24E8), or -1;
+		// [BIN:TPI-EXE:0x61E5E0 project progress] -1 gives 0, else progress × 100 / effort (100 at an effort of 0.1 or less), at most 100
+		// [EXT:tpi-capability-gates] Theme Park Inc's research is not ported and the controller registers no obstacle project (EnsureObstacleResearch): there is none, so 0
+		public int ObstacleResearchPercent => 0;
+
+		// [BIN:TPI-EXE:0x55C8B0 researchers] the researcher list head word park+0x1EAB84 (TPI-STAFF), set while a researcher is employed
+		public bool ResearchersHired => economy.TpiStaff?.OfRole( ThemeParkIncStaffRole.Researcher ).Any() ?? false;
+
+		// the staff HQ's slot table is not modelled ([EXT:tpi-capability-gates] at ThemeParkIncMissionController.MetRequirements)
+		public bool? ObstacleStaffSlotsFilled => null;
+
+		public string PlayerName => playerName;
+	}
+
 	private sealed class ThemeParkIncMissionHost( ParkEconomy economy ) : IThemeParkIncMissionHost
 	{
 		// [BIN:TPI-EXE:0x42A340 viewed zone] the world's zone object 0xA06558 holds the zone being viewed at +0x14 (set by 0x42A360 on a zone change): the economy's zone, as an index of the name

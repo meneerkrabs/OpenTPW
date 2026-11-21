@@ -18,7 +18,9 @@ public enum UiKeys
 	/// <summary>Tab: next text field.</summary>
 	Tab = 128,
 	/// <summary>Set with <see cref="Accept"/> when it came from Space, which a text field types instead.</summary>
-	Space = 256
+	Space = 256,
+	/// <summary>Theme Park Inc's Objectives key, a plain O (the key table row at <c>0x9A8A0C</c>); only the Theme Park Inc HUD reads it.</summary>
+	Objectives = 512
 }
 
 /// <summary>
@@ -106,7 +108,11 @@ public sealed class UiInputSource
 		// The original key table reserves Ctrl+P for the e-mail postcard (InputButton.SendEmailPostcard);
 		// pause is the plain P, so a held modifier keeps the pause key out of the combination's way.
 		if ( !keys.Contains( Key.ControlLeft ) && !keys.Contains( Key.ControlRight ) )
+		{
 			Map( Input.ChordKey( InputButton.Pause ), UiKeys.Pause );
+			// [BIN:TPI-EXE:0x9A8A0C objectives key] Theme Park Inc's key table row {key 'O' (0x4F), id 0x14, no modifier, "Objectives", 0x42F020} opens the mission window
+			Map( Key.O, UiKeys.Objectives );
+		}
 		previousKeys = keys;
 		var window = mouse.Position;
 		var notClick = false;

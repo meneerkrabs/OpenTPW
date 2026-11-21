@@ -206,6 +206,10 @@ public sealed class ThemeParkIncCareer
 		internal set => flags[0] = (byte)(value ? 1 : 0);
 	}
 
+	/// <summary>Clears the flag byte <c>+0x27</c>, which the mission window's builder does each time it opens.</summary>
+	// [BIN:TPI-EXE:0x55A860 career flag] movb $0, 0x27(career); what reads the byte is not traced
+	internal void ClearMissionWindowFlag() => flags[7] = 0;
+
 	/// <summary>
 	/// The tech level step of the exit statistics' start (<c>0x5EF30B..0x5EF365</c>): for <c>TechLevel.Theme</c> 0 to 2 the zone's record's current tech level rises to
 	/// <c>TechLevel.NewMaxGroup</c> when it is below.

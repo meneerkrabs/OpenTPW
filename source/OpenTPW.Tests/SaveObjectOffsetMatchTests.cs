@@ -75,7 +75,7 @@ public class OwnerWordOffsetTests
 			for ( var y = 0; y < 32; y++ )
 				for ( var x = 0; x < 32; x++ )
 					cells.SetPath( x, y, true );
-			typeof( Level ).GetMethod( "RegisterObjectWithGuests", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( level, new object[] { first } );
+			typeof( Level ).GetMethod( "RegisterObjectWithGuests", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( level, new object[] { first, true } );
 			Assert.IsNotNull( first.Visitors.PositionCell, "the object has an entrance, so it is registered with the guests and keeps its position cell" );
 			Assert.AreEqual( first.ThingCell, first.Visitors.PositionCell!.Value );
 			Assert.AreNotEqual( (first.Placement.X, first.Placement.Y), first.Visitors.PositionCell!.Value );

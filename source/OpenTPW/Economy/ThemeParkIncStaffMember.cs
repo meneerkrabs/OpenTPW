@@ -41,7 +41,7 @@ public sealed class ThemeParkIncStaffMember
 	public int WageDemandDay { get; internal set; }
 
 	/// <summary>Hires <paramref name="candidate"/>: its role, name, experience, wage as the salary, agency and look.</summary>
-	public static ThemeParkIncStaffMember Hire( ThemeParkIncStaffCandidate candidate, int id ) =>
+	public static ThemeParkIncStaffMember Hire( ThemeParkIncHireCandidate candidate, int id ) =>
 		new( id, candidate.Role, candidate.NameIndex, candidate.Experience, candidate.Wage, candidate.Agency, candidate.SpriteDraw );
 
 	/// <summary>A meter after adding <paramref name="value"/>: above 100 it is 100, below 0 it is 0 (the x87 sum stored as a single).</summary>

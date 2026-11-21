@@ -535,7 +535,7 @@ public sealed class ThemeParkIncChallenges
 	internal int DebugOffer( int index, long turn )
 	{
 		var slot = slots[index];
-		if ( slot.Type == 0 || slot.Status != ThemeParkIncChallengeStatus.Idle )
+		if ( slot.Type == 0 || slot.Status != ThemeParkIncChallengeStatus.Idle || !IsPorted( slot.Type ) )
 			return -1;
 		slot.OfferTimeSet = true;
 		slot.OfferTime = unchecked( Now( turn ) - 1 );
@@ -547,7 +547,7 @@ public sealed class ThemeParkIncChallenges
 	internal static bool IsValid( ThemeParkIncChallengesSnapshot? state ) =>
 		state == null || state.Slots is { Length: SlotCount } saved && saved.All( slot => slot != null && Enum.IsDefined( slot.Status )
 			&& (slot.Status == ThemeParkIncChallengeStatus.Idle || slot.Type != 0)
-			&& (slot.Status is not (ThemeParkIncChallengeStatus.Grace or ThemeParkIncChallengeStatus.Running) || IsPorted( slot.Type )) && slot.ChallengeLost >= 0 && (slot.Type == 0 || slot.GTPrize >= 1) );
+			&& (slot.Status is not (ThemeParkIncChallengeStatus.Offered or ThemeParkIncChallengeStatus.Grace or ThemeParkIncChallengeStatus.Running) || IsPorted( slot.Type )) && slot.ChallengeLost >= 0 && (slot.Type == 0 || slot.GTPrize >= 1) );
 
 	internal void Restore( ThemeParkIncChallengesSnapshot state )
 	{

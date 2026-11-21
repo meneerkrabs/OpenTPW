@@ -48,7 +48,7 @@ public sealed partial class ParkEconomy
 	// [BIN:TPI-EXE:0x52C2B2 accept control] the mail view enables control 0xC1202 only when the slot's state is 1 (0x52C2B2) and the park is open (0x52C2D9 -> 0x5B1D30)
 	public bool CanAcceptThemeParkIncChallenge( int index ) =>
 		TpiChallenges is { } challenges && index >= 0 && index < ThemeParkIncChallenges.SlotCount
-		&& challenges.Slots[index].Status == ThemeParkIncChallengeStatus.Offered && IsParkOpen;
+		&& challenges.Slots[index].Status == ThemeParkIncChallengeStatus.Offered && ThemeParkIncChallenges.IsPorted( challenges.Slots[index].Type ) && IsParkOpen;
 
 	/// <summary>Accepts the offered challenge in slot <paramref name="index"/> (the mail's accept control, <c>0x52A657</c> -> <c>0x5C84C0</c>).</summary>
 	public void AcceptThemeParkIncChallenge( int index )

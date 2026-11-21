@@ -262,6 +262,7 @@ public class ThemeParkIncResearchTests : ThemeParkIncScienceTestBase
 		Assert.IsFalse( research.RegisterObstacle( true, 2000, 29, 1, 1, 100, 0 ), "science types end at 1800" );
 		Assert.IsFalse( research.RegisterObstacle( true, 1705, 0, 1, 1, 100, 0 ), "no obstacle thing" );
 		Assert.AreEqual( 50, research.ObstacleProject() );
+		Assert.AreEqual( (0, 0), (research.ProgressPercent( -1 ), research.ProgressPercent( 50 )), "0x61E5E0: no project and an untouched one" );
 
 		research.Infos = new[] { new ThemeParkIncResearchInfo( 1703, 0, 0, new[] { 50, 0, 0 }, new int[3] ) };
 		var scientist = new ThemeParkIncStaffMember( 900, ThemeParkIncStaffRole.Researcher, 0, economy.TpiStaff!.Settings.MaxExperience, 50, 0, 0 ) { ThingId = 900, State = ThemeParkIncResearch.Researching };

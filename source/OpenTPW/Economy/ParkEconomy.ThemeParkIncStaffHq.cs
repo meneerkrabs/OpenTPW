@@ -14,8 +14,11 @@ public sealed partial class ParkEconomy
 		TpiMissions?.ObstacleResearched();
 	}
 
-	/// <summary>Message 0x24 with the obstacle thing <paramref name="thing"/>, the player removing the obstacle: the staff HQ rebuilds its slots and the mission controller starts its camera.</summary>
-	// [BIN:TPI-EXE:0x6325B9 HQ rebuild] message 0x24 -> 0x634D20; [BIN:TPI-EXE:0x5F0F96 remove obstacle] the controller's state 2
+	/// <summary>
+	/// Message 0x24 with the obstacle thing <paramref name="thing"/>, the player removing the obstacle (sent by the mission window's Proceed, <see cref="PressThemeParkIncMissionComplete"/>): the staff HQ
+	/// rebuilds its slots and the mission controller starts its camera, in ascending thing handle order (the HQ, built with the park, first).
+	/// </summary>
+	// [BIN:TPI-EXE:0x6325B9 HQ rebuild] message 0x24 -> 0x634D20; [BIN:TPI-EXE:0x5F0F96 remove obstacle] the controller's state 2; [BIN:TPI-EXE:0x436E97 message order] ascending handles
 	public void ThemeParkIncObstacleRemoved( ushort thing )
 	{
 		if ( TpiStaff != null && TpiCareer != null )

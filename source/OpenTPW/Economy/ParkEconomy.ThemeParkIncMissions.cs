@@ -81,6 +81,23 @@ public sealed partial class ParkEconomy
 	/// <summary>The mission's requirements are met (<c>0x55A620</c>): the mission window's complete button would be enabled.</summary>
 	public bool ThemeParkIncMissionMet => TpiMissions is { } missions && TpiCareer?.CurrentZone != null && missions.MetRequirements();
 
+	/// <summary>
+	/// The mission window's complete button (Proceed): when the requirements are met, an obstacle mission sends message 0x24 with the current obstacle (the staff HQ rebuilds, the controller flies the
+	/// camera to the obstacle, whose end opens it and completes the mission), any other mission runs OnMissionComplete. False, and nothing done, when the requirements are not met.
+	/// </summary>
+	// [BIN:TPI-EXE:0x55BD79 complete button] 0x55A620 false: nothing; HasObstacle (0x5F0190): message 0x24 (0x436140, vtable 0x93A3D0) with park+0x1EAB6E through the dispatcher 0xA09728; else the
+	// controller's 0x5F0770
+	public bool PressThemeParkIncMissionComplete()
+	{
+		if ( !ThemeParkIncMissionMet )
+			return false;
+		if ( TpiCareer!.HasObstacle )
+			ThemeParkIncObstacleRemoved( TpiMissionWorld?.CurrentObstacle ?? 0 );
+		else
+			TpiMissions!.OnMissionComplete( Turn );
+		return true;
+	}
+
 	/// <summary>The park as the mission window reads it; null without a mission controller.</summary>
 	internal IThemeParkIncMissionWindowWorld? TpiMissionWindowWorld( string playerName ) => TpiMissions == null ? null : new ThemeParkIncMissionWindowWorld( this, playerName );
 
@@ -93,17 +110,18 @@ public sealed partial class ParkEconomy
 		public ushort CurrentObstacle => economy.TpiMissionWorld?.CurrentObstacle ?? 0;
 
 		// [BIN:TPI-EXE:0x61EB30 obstacle project] the research manager's first project of kind 5 whose progress is below its effort (stride 0x24 from +0x8C, count +0x24E8), or -1;
-		// [BIN:TPI-EXE:0x61E5E0 project progress] -1 gives 0, else progress × 100 / effort (100 at an effort of 0.1 or less), at most 100
-		// [EXT:tpi-capability-gates] Theme Park Inc's research is not ported and the controller registers no obstacle project (EnsureObstacleResearch): there is none, so 0
-		public int ObstacleResearchPercent => 0;
+		// [BIN:TPI-EXE:0x61E5E0 project progress] -1 gives 0, else progress × 100 / effort (100 at an effort of 0.1 or less), at most 100; a park without a lab has no project, so 0
+		public int ObstacleResearchPercent => economy.TpiResearch is { } research ? research.ProgressPercent( research.ObstacleProject() ) : 0;
 
 		// [BIN:TPI-EXE:0x55C8B0 researchers] the researcher list head word park+0x1EAB84 (TPI-STAFF), set while a researcher is employed
 		public bool ResearchersHired => economy.TpiStaff?.OfRole( ThemeParkIncStaffRole.Researcher ).Any() ?? false;
 
-		// the staff HQ's slot table is not modelled ([EXT:tpi-capability-gates] at ThemeParkIncMissionController.MetRequirements)
-		public bool? ObstacleStaffSlotsFilled => null;
+		// [BIN:TPI-EXE:0x64E940 staff HQ] the HQ's twenty slots (ThemeParkIncStaffHeadquarters); a park without Theme Park Inc staff has no HQ
+		public bool? ObstacleStaffSlotsFilled => economy.TpiStaff?.Hq.AllFilled;
 
 		public string PlayerName => playerName;
+
+		public bool PressComplete() => economy.PressThemeParkIncMissionComplete();
 	}
 
 	private sealed class ThemeParkIncMissionHost( ParkEconomy economy ) : IThemeParkIncMissionHost

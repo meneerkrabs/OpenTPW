@@ -169,6 +169,28 @@ public class ThemeParkIncStaffHqTests : ThemeParkIncScienceTestBase
 	}
 
 	[TestMethod]
+	public void ProceedOnAMetObstacleMissionSendsMessage0x24ToTheHqAndTheController()
+	{
+		// [BIN:TPI-EXE:0x55BD79 complete button] [BIN:TPI-EXE:0x6325B9 HQ rebuild] [BIN:TPI-EXE:0x5F0F96 remove obstacle] the mission window's Proceed reaches both listeners of message 0x24
+		var economy = ScienceEconomy();
+		var staff = economy.TpiStaff!;
+		var career = economy.TpiCareer!;
+		Assert.IsTrue( career.CompleteMission().Advanced );
+		staff.Hq.BuildSlots( career.Mission );
+		career.DiscoverObstacleAbilities();
+		career.AddGoldenTickets( career.Mission.ObstacleGoldenTickets );
+		var window = economy.TpiMissionWindowWorld( "Player" )!;
+		Assert.IsFalse( window.PressComplete(), "the gardener's slot is empty: Proceed does nothing" );
+		Assert.AreEqual( ThemeParkIncMissionState.Idle, economy.TpiMissions!.State );
+		var gardener = new ThemeParkIncStaffMember( 77, ThemeParkIncStaffRole.Gardener, 0, 20000, 20, 0, 0 ) { ThingId = 900, Ability = 10 };
+		staff.Hq.TrainingFinished( gardener );
+		Assert.AreEqual( (true, 0), (window.ObstacleStaffSlotsFilled, window.ObstacleResearchPercent), "the window reads the HQ; without a lab there is no Park Expansion project" );
+		Assert.IsTrue( window.PressComplete() );
+		Assert.AreEqual( ThemeParkIncMissionState.ObstacleRemoved, economy.TpiMissions.State, "the controller heard 0x24" );
+		Assert.AreEqual( new ThemeParkIncHqSlot( 5, 10, 0 ), staff.Hq.Slots[0], "and the HQ rebuilt its table: the trained gardener is not in the park's staff" );
+	}
+
+	[TestMethod]
 	public void TheSciencePrebuiltsHqAsksForNothing()
 	{
 		// [BIN:TPI-EXE:0x6326B0 staff HQ load] the prebuilt saves twenty {7, 0, 0}

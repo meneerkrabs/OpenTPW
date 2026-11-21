@@ -345,6 +345,10 @@ public sealed class ThemeParkIncResearch
 		return unchecked( (int)(long)(float)(scaled / project.Cost) );
 	}
 
+	/// <summary>A project's progress for the mission window (<c>0x61E5E0</c>): 0 for no project (below 0), else the percent done, at most 100.</summary>
+	// [BIN:TPI-EXE:0x61E5E0 project progress] index < 0 answers 0; the percent of 0x620210 (cost <= 0.1f gives 100, else trunc(done × 100.0f / cost)), then at most 100
+	public int ProgressPercent( int index ) => index < 0 ? 0 : Math.Min( Percent( index ), 100 );
+
 	/// <summary>Whether a slot's project is finished (<c>0x576EC0</c>): a project index of 0 or more whose done reaches its cost (<c>0x6201E0</c>).</summary>
 	public bool SlotFinished( int slot ) => slotProjects[slot] >= 0 && !(projects[slotProjects[slot]].Done < projects[slotProjects[slot]].Cost);
 

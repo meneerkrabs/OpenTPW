@@ -19,7 +19,8 @@ The staff HQ's twenty obstacle slots, staff training and the research lab with i
   route `0x62EB10` (the closed park's entrance refusal and the walk mask) and the cell steer `0x60B7F0` are ported, so a refused walk to the training room searches again with mask 1; the lab tick,
   the advance's cash, the percent done and the researcher's step round every x87 operation to a single (control word 0x7F after DDSCL_FPUSETUP, `0x6BF33F`); a destroyed staff room's messages
   reach the lab (0x21) and the staff (0xA) at the click, as `0x637C40` delivers them at the demolish (`0x4D30F8` → `0x660D80` → `0x666DA0`), not at the turn's deferred free; the lab's save keeps the
-  object types' research words, so a headless economy completes projects; the staff-destroyed listeners `0x61DAD0` and `0x634730` are removed (no member leaves the park in OpenTPW).
+  object types' research words, so a headless economy completes projects; the staff-destroyed listeners `0x61DAD0` and `0x634730` are removed (no member leaves the park in OpenTPW); the mission window's Proceed sends message 0x24 through one economy entry point
+  (`ParkEconomy.PressThemeParkIncMissionComplete`), so the staff HQ rebuilds before the controller hears it, and the window reads the lab's Park Expansion progress (`0x61E5E0`) and the HQ's slots.
 
 Verified: new `ThemeParkIncStaffHqTests`, `ThemeParkIncTrainingTests` and `ThemeParkIncResearchTests`, the Theme Park Inc and save filters, and the silent, offscreen Science smoke (which now checks the
 HQ slots, the seeded lab and the research row).

@@ -87,7 +87,7 @@ The controller's handler `0x5F0F50` ends every message with the 0x27 broadcast.
 | Message | Sender | The controller |
 | --- | --- | --- |
 | 0x23 obstacle researched | the research lab's kind-5 project | `+0x1B = 1`; the next update discovers the obstacle staff's abilities, sets state 1 and flies the camera to the current obstacle (anim 1) |
-| 0x24 remove obstacle | the mission window's or the remove button | state 2, the message's thing, camera (anim 2), career `+0x13E5 = 1` |
+| 0x24 remove obstacle | the mission window's or the remove button | state 2, the message's thing, camera (anim 2), career `+0x13E5 = 1`; the staff HQ, an older thing, hears it first and rebuilds its slots (`0x634D20`) |
 | 0x25 promotion | a challenge win with `PromoGiven`, Get Promoted | `0x74C450(rank)` |
 | 0x26 challenge won | the challenge win | no case: only the broadcast |
 | 0x29 camera finished | the end of every camera flight (`0x5D0996`, the only sender) | state 2 or 3: the thing opens (`0x466050`, `0x5E8BD0`) and the tick runs; state 4: the thing is destroyed and the tick runs; then state and thing 0 |
@@ -151,7 +151,8 @@ mission title; labels yellow `(0xEA, 0xEF, 0x66)`), Mr Maybury's mugshot, the bo
   the staff HQ's 20 slots. The slots and the staff list's rows (`0x55E020`) are not modelled, so it says 92 and the list has only its headers 87 to 89
   (`[EXT:tpi-capability-gates]`).
 - **Proceed (`0x55BD79`).** Enabled by each refresh when MetRequirements (`0x55A620`) holds; a click without it does nothing. An obstacle mission posts message 0x24
-  with the current obstacle (`park+0x1EAB6E`), any other runs OnMissionComplete (`0x5F0770`); the window closes. When the requirements are met at opening the builder
+  with the current obstacle (`park+0x1EAB6E`), which the dispatcher `0x436DD0` delivers at once in ascending thing handle order, to the staff HQ (`0x634D20`) and then the controller; any other runs
+  OnMissionComplete (`0x5F0770`); the window closes. OpenTPW's window calls `ParkEconomy.PressThemeParkIncMissionComplete`, which sends 0x24 through `ThemeParkIncObstacleRemoved` to both. When the requirements are met at opening the builder
   also starts a particle burst at the button (`0x500B70` → `0x7BACC0`), which OpenTPW does not draw.
 - **Refresh and lifetime.** Opening arms a 4000 ms timer; its expiry sets `0xA61814`, from which every tick refreshes the window (and a reopened window refreshes at
   once). Only the close and cancel buttons (id −2) clear it. In obstacle state 2 a window opened without the staff list is built again. The builder makes no pause

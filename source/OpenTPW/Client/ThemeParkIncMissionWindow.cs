@@ -21,6 +21,8 @@ internal interface IThemeParkIncMissionWindowWorld
 	bool? ObstacleStaffSlotsFilled { get; }
 	/// <summary>The addressee: the player's name (<c>0x777870</c>, the user record's <c>+8</c>).</summary>
 	string PlayerName { get; }
+	/// <summary>Proceed's action (<see cref="ParkEconomy.PressThemeParkIncMissionComplete"/>): message 0x24 to the staff HQ and the controller, or OnMissionComplete; false when the requirements are not met.</summary>
+	bool PressComplete();
 }
 
 /// <summary>What survives the mission window object between openings (the globals at <c>0xA61814</c> and the list pointer <c>0xA61818</c>).</summary>
@@ -514,16 +516,12 @@ internal sealed class ThemeParkIncMissionWindow
 	/// window closes.
 	/// </summary>
 	// [BIN:TPI-EXE:0x55BD79 proceed] 0x55A620 false: nothing; 0x5F0190 (HasObstacle): message 0x24 with the thing park+0x1EAB6E (0x436140, vtable 0x93A3D0) through the dispatcher 0xA09728
-	// (0x436DD0, the controller's handler 0x5F0F96); else 0x64ED00 -> 0x5F0770; then 0x85049F(window, 4), 0x501CD0(0) and the advisor panel 0x1FA (presentation)
+	// (0x436DD0 calls its listeners at once in ascending thing handle order: the staff HQ's rebuild 0x634D20, then the controller's handler 0x5F0F96; ParkEconomy.PressThemeParkIncMissionComplete); else
+	// 0x64ED00 -> 0x5F0770; then 0x85049F(window, 4), 0x501CD0(0) and the advisor panel 0x1FA (presentation)
 	internal void Proceed()
 	{
-		var missions = world.Missions;
-		if ( !missions.MetRequirements() )
+		if ( !world.PressComplete() )
 			return;
-		if ( missions.Career.HasObstacle )
-			missions.RemoveObstacle( world.CurrentObstacle );
-		else
-			missions.OnMissionComplete( world.Turn );
 		Close();
 	}
 

@@ -264,23 +264,49 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Drops the Theme Park Inc candidate being placed on cell (<paramref name="x"/>, <paramref name="y"/>): a valid cell makes the member (its thing, its start and its first search),
-	/// a refused one keeps the placement going. The member placed, or null when the cell refused it.
+	/// Drops the Theme Park Inc candidate being placed on cell (<paramref name="x"/>, <paramref name="y"/>): a valid cell, or the cell an object on it redirects to, makes the member there (its
+	/// thing, its start and its first search); a refused one keeps the placement going. The member placed, or null when the drop refused it (<see cref="LastTpiDropSilent"/>: without a note).
 	/// </summary>
-	// [BIN:TPI-EXE:0x4D4EB0 staff drop] a refused cell prints "Cannot place staff member here" and the tool stays; a valid one constructs the member (ThemeParkIncStaffWorld.Construct), sets placed and
+	// [BIN:TPI-EXE:0x4D4EB0 staff drop] a refused cell prints "Cannot place staff member here" and the tool stays (ThemeParkIncStaffWorld.Drop); a valid one constructs the member at the drop's word
+	// (ThemeParkIncStaffWorld.Construct), sets placed and
 	// switches the tool, whose exit runs 0x6319E0(0): the candidate leaves the pool
 	public ThemeParkIncStaffMember? DropTpiStaff( int x, int y )
 	{
 		if ( TpiPlacingSlot < 0 || Park?.Economy is not { TpiStaff: { } staff } economy || TpiStaffWorld is not { } world || Guests == null )
 			return null;
-		if ( !ThemeParkIncStaffWorld.CanDrop( Guests.Grid.Cells, x, y ) )
+		var drop = ThemeParkIncStaffWorld.Drop( Guests.Grid.Cells, x, y, TpiDropObjectAt( x, y ) );
+		LastTpiDropSilent = drop.Silent;
+		if ( drop.Cell is not { } cell )
 			return null;
 		var member = staff.EndHire( TpiPlacingSlot, placed: true );
 		TpiPlacingSlot = -1;
 		if ( member == null )
 			return null;
-		world.Construct( economy, member, (x, y), Things );
+		world.Construct( economy, member, cell, Things );
 		return member;
+	}
+
+	/// <summary>Whether the last refused Theme Park Inc drop ended silently (an object's redirect found no cell), so the HUD shows no refusal note.</summary>
+	public bool LastTpiDropSilent { get; private set; }
+
+	/// <summary>
+	/// The object whose thing the cell's chain holds, head first, for the drop's gate: the newest placed object whose thing cell (<see cref="OriginalObject.ThingCell"/>) is the cell.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5DB1D5 object thing] the object's builder makes its thing through 0x637100 with its first argument, the cell its thing is filed under (kind 3), and a thing enters the head of
+	// its cell's chain (0x5D9560 walks it from +0x28 by +0xA): the other cells of a footprint hold no kind-3 thing, so the gate sees an object only on its own cell
+	private ThemeParkIncStaffWorld.DropObject? TpiDropObjectAt( int x, int y )
+	{
+		for ( var index = Objects.Objects.Count - 1; index >= 0; index-- )
+		{
+			var item = Objects.Objects[index];
+			if ( item.IsDeleted || item.ThingCell != (x, y) )
+				continue;
+			var settings = item.Entry.Settings;
+			// [DATA:<object>.sam:Info.WhichUIType] type record +0x70, copied into +0x600 (0x43D014); [DATA:<object>.sam:Info.MapOffsetX] +0x34, +0x38 (0 in every Theme Park Inc object)
+			return new( settings.GetInt( "Info.WhichUIType" ), item.ThingCell, item.Placement.Rotation, item.Entry.Shape,
+				settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ) );
+		}
+		return null;
 	}
 
 	/// <summary>The staff sprites this level loaded (null until it did, and in a level without an original park).</summary>

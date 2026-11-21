@@ -428,7 +428,7 @@ public class ThemeParkIncHandymanTests
 	private static void Set( object target, string field, object? value ) =>
 		target.GetType().GetField( field, BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( target, value );
 
-	/// <summary>A level with only what the Theme Park Inc hire needs: the Science economy, a path row with its guests, the staff world and no hire in progress.</summary>
+	/// <summary>A level with only what the Theme Park Inc hire needs: the Science economy and its objects, a path row with its guests, the staff world and no hire in progress.</summary>
 	private Level HireLevel()
 	{
 		var economy = ScienceEconomy();
@@ -442,6 +442,7 @@ public class ThemeParkIncHandymanTests
 		Set( level, "<CellTool>k__BackingField", new CellBuildTool() );
 		Set( level, "<TpiStaffWorld>k__BackingField", new ThemeParkIncStaffWorld( grid ) { Guests = guests } );
 		Set( level, "<TpiPlacingSlot>k__BackingField", -1 );
+		Set( level, "<Objects>k__BackingField", new ParkObjects( ObjectCatalog.Load( "science" ), new SandboxParkGrid(), new WorldSeed( 1 ) ) );
 		return level;
 	}
 
@@ -585,5 +586,95 @@ public class ThemeParkIncHandymanTests
 		}
 		Assert.AreEqual( ParkSaveFile.Serialize( reference.Economy ), ParkSaveFile.Serialize( restored ), "both go on alike" );
 		Assert.AreEqual( LitterType.None, restored.Litter.TypeAt( 6, 5 ), "and the walk ended in the sweep" );
+	}
+
+	// ---- The drop's redirect on an object (0x4D1FC0, 0x4D2180, 0x5E9320) ------------------------
+
+	private static ParkCellMap Cells( int size = 32 ) => new GuestPathGrid( size, size ).Cells;
+
+	[TestMethod]
+	public void TheDropGatesMFollowsTheJumpTable()
+	{
+		CollectionAssert.AreEqual( new[] { 1, 2, 3, 4, 5, 5, 0, 0 }, new[] { 0, 1, 2, 3, 4, 5, 6, -1 }.Select( ThemeParkIncStaffWorld.DropGate ).ToArray() );
+		// [BIN:TPI-EXE:0x5E9230 step direction] the four orthogonal steps and a diagonal
+		Assert.AreEqual( 1, ThemeParkIncStaffWorld.StepDirection( 3, 3, 3, 4 ) );
+		Assert.AreEqual( 0x40, ThemeParkIncStaffWorld.StepDirection( 3, 3, 4, 3 ) );
+		Assert.AreEqual( 0x10, ThemeParkIncStaffWorld.StepDirection( 3, 3, 3, 2 ) );
+		Assert.AreEqual( 4, ThemeParkIncStaffWorld.StepDirection( 3, 3, 2, 3 ) );
+		Assert.AreEqual( 0x80, ThemeParkIncStaffWorld.StepDirection( 3, 3, 4, 4 ) );
+	}
+
+	[TestMethod]
+	public void ADropOnARidesCellGoesToItsExitAndOnAShopsToItsEntrance()
+	{
+		// rows from the last text row: "2" (entrance, V 2), "*", "S" (exit, V 0) at U 1
+		var shape = new ObjectShape( new[] { "*2*", "***", "*S*" } );
+		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+		{
+			var cells = Cells();
+			var anchor = (X: 10, Y: 12);
+			foreach ( var (x, y, _) in ObjectFootprint.GetCells( shape, anchor.X, anchor.Y, rotation ) )
+				cells.SetType( x, y, 4 );
+			var ride = new ThemeParkIncStaffWorld.DropObject( 0, anchor, rotation, shape, 0, 0 );
+			var shop = ride with { WhichUIType = 1 };
+			// [BIN:TPI-EXE:0x5DB4C1 object cell words] +0x46 and +0x48 are the anchor plus the entrance's and the exit's (U, V) turned by the angle
+			var exit = ObjectFootprint.ToGrid( anchor.X, anchor.Y, rotation, 1, 0 );
+			var entrance = ObjectFootprint.ToGrid( anchor.X, anchor.Y, rotation, 1, 2 );
+			Assert.AreEqual( (exit, false), (ThemeParkIncStaffWorld.Drop( cells, anchor.X, anchor.Y, ride ).Cell!.Value, false ), $"ride at {rotation}" );
+			Assert.AreEqual( entrance, ThemeParkIncStaffWorld.Drop( cells, anchor.X, anchor.Y, shop ).Cell, $"shop at {rotation}" );
+			Assert.AreEqual( entrance, ThemeParkIncStaffWorld.Drop( cells, anchor.X, anchor.Y, shop with { WhichUIType = 2 } ).Cell, "a sideshow" );
+			Assert.AreEqual( entrance, ThemeParkIncStaffWorld.Drop( cells, anchor.X, anchor.Y, shop with { WhichUIType = 5 } ).Cell, "kind 5" );
+			// a kind above 5 takes the ladder, whose type test refuses the type-4 cell with the message
+			Assert.AreEqual( new ThemeParkIncStaffWorld.DropResult( null, false ), ThemeParkIncStaffWorld.Drop( cells, anchor.X, anchor.Y, shop with { WhichUIType = 6 } ) );
+			// without a thing on the cell the gate gives 0 too
+			Assert.AreEqual( new ThemeParkIncStaffWorld.DropResult( null, false ), ThemeParkIncStaffWorld.Drop( cells, anchor.X, anchor.Y, null ) );
+		}
+		// a shape without an entrance has (0, 0) for both words: the anchor itself
+		var noEntrance = new ThemeParkIncStaffWorld.DropObject( 0, (6, 6), 90, new ObjectShape( new[] { "*S" } ), 0, 0 );
+		var flat = Cells();
+		flat.SetType( 6, 6, 4 );
+		Assert.AreEqual( (6, 6), ThemeParkIncStaffWorld.Drop( flat, 6, 6, noEntrance ).Cell );
+	}
+
+	[TestMethod]
+	public void ADropOnAFeatureGoesToTheNearestPathBesideItAndLinksIt()
+	{
+		var shape = new ObjectShape( new[] { "**", "**" } );
+		var cells = Cells();
+		foreach ( var (x, y, _) in ObjectFootprint.GetCells( shape, 10, 10, 0 ) )
+			cells.SetType( x, y, 4 );
+		var feature = new ThemeParkIncStaffWorld.DropObject( 3, (10, 10), 0, shape, 0, 0 );
+		// [BIN:TPI-EXE:0x5E9320 drop fallback] no path beside it: the word is 0 and the drop ends silently
+		Assert.AreEqual( new ThemeParkIncStaffWorld.DropResult( null, true ), ThemeParkIncStaffWorld.Drop( cells, 10, 10, feature ) );
+		// paths at (12, 10) and (10, 9): from the cursor's cell (10, 10) the first is at the squared distance 4, the second at 1
+		cells.SetType( 12, 10, 1 );
+		cells.SetType( 10, 9, 1 );
+		Assert.AreEqual( new ThemeParkIncStaffWorld.DropResult( (10, 9), false ), ThemeParkIncStaffWorld.Drop( cells, 10, 10, feature ) );
+		Assert.AreEqual( 0x10, cells.QueueLinkAt( 10, 9 ), "the path cell's queue link is the step from the footprint cell (10, 10) to it, (0, -1)" );
+		Assert.AreEqual( 0, cells.QueueLinkAt( 12, 10 ) );
+		// a tie keeps the first met: from (9, 9) the paths (10, 9) (footprint cell (10, 10), y - 1) and (9, 10) (its x - 1, met after it) are both at 1
+		cells.SetType( 12, 10, (byte)0 );
+		cells.SetType( 9, 10, 1 );
+		cells.SetQueueLink( 10, 9, 0 );
+		Assert.AreEqual( (10, 9), ThemeParkIncStaffWorld.CellOfWord( ThemeParkIncStaffWorld.FallbackDropWord( cells, feature, ThemeParkIncStaffWorld.CellWord( 9, 9 ) ) ) );
+		Assert.AreEqual( (0x10, 0), (cells.QueueLinkAt( 10, 9 ), cells.QueueLinkAt( 9, 10 )) );
+		// at 180 the scanned rectangle is (x0 - j, y0 + i), not the turned footprint: a path beside (9, 11) is found although the footprint at 180 covers (9..10, 9..10)
+		var turned = Cells();
+		turned.SetType( 9, 12, 1 );
+		Assert.AreEqual( (9, 12), ThemeParkIncStaffWorld.CellOfWord( ThemeParkIncStaffWorld.FallbackDropWord( turned, feature with { Rotation = 180 }, ThemeParkIncStaffWorld.CellWord( 10, 10 ) ) ) );
+	}
+
+	[TestMethod]
+	public void EveryThemeParkIncObjectNamesItsKind()
+	{
+		// the drop gate reads Info.WhichUIType (+0x600 from +0x70): every object of the three worlds names it, so no default stands in
+		_ = ScienceEconomy();
+		foreach ( var world in new[] { "science", "water", "arabian" } )
+			foreach ( var entry in ObjectCatalog.Load( world ).Entries )
+			{
+				Assert.IsTrue( entry.Settings.Values.ContainsKey( "Info.WhichUIType" ), $"{world} {entry.SettingsName}" );
+				if ( entry.Settings.GetInt( "Info.MapOffsetX" ) != 0 || entry.Settings.GetInt( "Info.MapOffsetY" ) != 0 )
+					Console.WriteLine( $"offset: {world} {entry.SettingsName} {entry.Settings.GetInt( "Info.WhichUIType" )} ({entry.Settings.GetInt( "Info.MapOffsetX" )}, {entry.Settings.GetInt( "Info.MapOffsetY" )})" );
+			}
 	}
 }

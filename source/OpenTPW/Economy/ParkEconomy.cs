@@ -592,6 +592,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 		// [EXT:tpi-money-only] a park without staff runs none of this: the staff, the research lab and the ride update (whose wear and breakdowns only a mechanic repairs) are refused with the staff and research
 		if ( !Rules.Staff )
 		{
+			// a Theme Park Inc park with its staff wears its rides (UpdateThemeParkIncRide); without a host sweep the headless order is this one ([EXT:headless-economy])
+			if ( TpiStaff != null )
+				UpdateRides( turn );
 			// [BIN:TPI-EXE:0x637767 challenge thing] Theme Park Inc's challenge system and mission controller are things of the world pass (0x6375E0 -> 0x5C7930, 0x5EF520) whatever the staff
 			if ( TpiChallenges != null || TpiMissions != null )
 				UpdateChallenges( turn );
@@ -1102,6 +1105,12 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>One object's update of a park turn (the body of <see cref="UpdateRides"/>): the wear step, the breakdown check and the relief objects' worn report.</summary>
 	internal void UpdateRide( ParkObjectState item, long turn )
 	{
+		// a Theme Park Inc park with its staff runs Theme Park Inc's own object update (UpdateThemeParkIncRide)
+		if ( TpiStaff != null )
+		{
+			UpdateThemeParkIncRide( item, turn );
+			return;
+		}
 		// [BIN:TPW-EXE:0x004DB4FB object state] a thing whose type record is choosable (Info.IsChoosable, +0x32 bit 4) starts in state 0, any other in state 3, which the update skips
 		if ( !Catalog.TryGet( item.InfoId, out var info ) || !info.IsChoosable )
 			return;
@@ -2289,6 +2298,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 		};
 		// [BIN:TPW-EXE:0x004DB4FB object state] the constructor stores 0 for a choosable type and 3 for any other (SetState at 0x4DB508)
 		item.StoredState = info.IsChoosable ? RideObjectStates.Idle : RideObjectStates.NotAnAttraction;
+		// Theme Park Inc's constructor starts the life gauge at the type's working life (ThemeParkIncStartingLife); its wear runs only with its staff, so the gauge is set with them
+		if ( TpiStaff != null )
+			item.LifeGauge = ThemeParkIncStartingLife( info );
 		objects.Add( item.Id, item );
 		HookStateWord( item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
@@ -2304,6 +2316,9 @@ public sealed partial class ParkEconomy : IParkEconomy
 	private void ReleaseJobsOn( int instanceId )
 	{
 		StaffWorld?.ObjectRemoved( this, instanceId );
+		// Theme Park Inc's mechanics hear the removal message (0x5D9DD0)
+		if ( TpiStaff != null )
+			ThemeParkIncStaffWorld.ObjectRemoved( TpiStaff, instanceId, Turn );
 		foreach ( var member in Staff.Members )
 		{
 			if ( member.AssignedInstanceId == instanceId )

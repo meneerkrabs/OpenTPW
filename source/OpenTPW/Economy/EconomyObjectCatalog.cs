@@ -30,7 +30,12 @@ public sealed record UpgradeLevelInfo( int Level, long CostOfUpgrade, int CostOf
 /// <param name="ExpectedPrice">Theme Park Inc only: <c>Info.ExpectedPrice</c> (type record +0x88): the base of the guest's willingness to pay for every kind but a sideshow (Game.exe <c>0x6120FC</c>); read by the price test through the object's bridge (ECON-062); 0 in Theme Park World.</param>
 /// <param name="RidePricePerUse">Theme Park Inc only: a ride's <c>UsageInfo.InitPricePerUse</c>, the fee each use takes (ECON-062); 0 in Theme Park World, whose rides are free.</param>
 /// <param name="NotResearched">[EXT:mods] True for an object of an <c>objects.json</c> that declares <c>"research": false</c> (the pools extension's): it is never a research project, so it is in no research table, never in the saved completed set, does not count in the group statistics and is available from the start; the golden ticket's "everything built" does not ask for it.</param>
-/// <param name="WorkingLife">Theme Park Inc only: <c>Info.WorkingLife</c> (+0x8C); read, not used by the money slice (meaning not traced); 0 in Theme Park World.</param>
+/// <param name="WorkingLife">Theme Park Inc only: <c>Info.WorkingLife</c> (+0x8C), the life gauge a newly built object starts with (100 when 0, Game.exe <c>0x5DB53A</c>); 0 in Theme Park World.</param>
+/// <param name="HoldsLitter"><c>UsageInfo.HoldsLitter</c> (Theme Park Inc type record +0x1A8, the thing flag +0x42 bit 0x40): a bin; a maintenance request does not close it.</param>
+/// <param name="IsSpecial">Theme Park Inc only: <c>Info.IsSpecial</c> (+0x5C): a special ride's life gauge loses nothing to wear or to a breakdown (<c>0x5E26FB</c>, <c>0x5E493B</c>).</param>
+/// <param name="RunsContinuously"><c>Info.RunsContinuously</c> (Theme Park Inc +0x6C, the thing flag +0x43 bit 1): the ride wears whether or not its script reports it running (<c>0x5E2604</c>).</param>
+/// <param name="BreakdownImminent">Theme Park Inc only: <c>RideBreakDown.Imminent</c> (+0x3C8): below this state of repair byte a mechanic's search takes the ride and requests its maintenance, and the wear posts the imminent advice; 0 without the key.</param>
+/// <param name="BreakdownWarnPlayer">Theme Park Inc only: <c>RideBreakDown.WarnPlayer</c> (+0x3CC): below this state of repair byte the wear reports the ride worn (VAR_WORN); 0 without the key.</param>
 public sealed record EconomyObjectInfo(
 	int InfoId,
 	string Name,
@@ -63,7 +68,12 @@ public sealed record EconomyObjectInfo(
 	int WorkingLife = 0,
 	bool NotResearched = false,
 	bool RequiresWatering = false,
-	int RidePricePerUse = 0 )
+	int RidePricePerUse = 0,
+	bool HoldsLitter = false,
+	bool IsSpecial = false,
+	bool RunsContinuously = false,
+	float BreakdownImminent = 0,
+	float BreakdownWarnPlayer = 0 )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
@@ -178,12 +188,20 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 			settings.GetInt( "UsageInfo.ProvidesSecurity", 0, optional: true ) != 0,
 			// [BIN:TPW-EXE:0x004DB090 object constructor] UsageInfo.IsFireworks (type +0x110, thing +0x32 bit 0x80) adds RegionFX row 7: Hallow's Firework Show and Space's Laser Show
 			settings.GetInt( "UsageInfo.IsFireworks", 0, optional: true ) != 0,
-			// [BIN:TPI-EXE:0x005DEFFF type record] Theme Park Inc only: Info.ExpectedPrice (+0x88) and Info.WorkingLife (+0x8C); neither is used yet
+			// [BIN:TPI-EXE:0x005DEFFF type record] Theme Park Inc only: Info.ExpectedPrice (+0x88) and Info.WorkingLife (+0x8C), the starting life gauge (0x5DB53A)
 			settings.GetInt( "Info.ExpectedPrice", 0, optional: true ), settings.GetInt( "Info.WorkingLife", 0, optional: true ),
 			// [BIN:TPI-EXE:0x5DB654 thing flag +0x43 bit 0x10] a nonzero type word +0x1AC (UsageInfo.RequiresWatering, between HoldsLitter 0x1A8 and ChillsYouOut 0x1B0 in the key order) makes the thing builder set the flag (or word [thing+0x42], 0x1000) that selects the scrap percentage's first branch (0x5E75F9)
 			RequiresWatering: settings.GetInt( "UsageInfo.RequiresWatering", 0, optional: true ) != 0,
 			// [BIN:TPI-EXE:0x5DB58D thing price] the thing's price per use (+0x94) starts as the type's UsageInfo.InitPricePerUse (+0x194) for every kind, a ride's included (20 in Rides.sam); Theme Park World's rides carry no such key
-			RidePricePerUse: kind == ParkObjectKind.Ride ? settings.GetInt( "UsageInfo.InitPricePerUse", 0, optional: true ) : 0 );
+			RidePricePerUse: kind == ParkObjectKind.Ride ? settings.GetInt( "UsageInfo.InitPricePerUse", 0, optional: true ) : 0,
+			// [BIN:TPI-EXE:0x5DB6AE thing flags] UsageInfo.HoldsLitter (+0x1A8) sets +0x42 bit 0x40 and Info.RunsContinuously (+0x6C) sets +0x43 bit 1 (0x5DB782); the type record keeps Info.IsSpecial at +0x5C
+			HoldsLitter: settings.GetInt( "UsageInfo.HoldsLitter", 0, optional: true ) != 0,
+			IsSpecial: settings.GetInt( "Info.IsSpecial", 0, optional: true ) != 0,
+			RunsContinuously: settings.GetInt( "Info.RunsContinuously", 0, optional: true ) != 0,
+			// [BIN:TPI-EXE:0x9A2CC0 type record keys] the key table lays the record out four bytes a key (a count word after each array), which puts RideBreakDown.Imminent at +0x3C8 and
+			// RideBreakDown.WarnPlayer at +0x3CC (the AddOn keys that follow land at +0x3D0..+0x3D8, as their readers 0x4D63C0 and 0x594E19 take them); both are floats (key type 7)
+			BreakdownImminent: settings.Contains( "RideBreakDown.Imminent" ) ? (float)settings.GetDouble( "RideBreakDown.Imminent" ) : 0f,
+			BreakdownWarnPlayer: settings.Contains( "RideBreakDown.WarnPlayer" ) ? (float)settings.GetDouble( "RideBreakDown.WarnPlayer" ) : 0f );
 	}
 
 	/// <summary>

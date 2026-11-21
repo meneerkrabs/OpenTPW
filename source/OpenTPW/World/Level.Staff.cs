@@ -186,7 +186,7 @@ public partial class Level
 	{
 		if ( Park?.Economy.TpiStaff == null || Guests == null )
 			return;
-		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests };
+		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests, ObjectCells = TpiObjectCells };
 		AdoptTpiStaffThings();
 		// the members' sprites: Theme Park Inc's esprites.wad holds the handymen's bank under the folder Theme Park World's loader reads (Generic\Handymen, Spr_ha), found by name
 		if ( OriginalPark != null )
@@ -213,24 +213,25 @@ public partial class Level
 		{
 			if ( member.Navigation == null )
 				continue;
-			if ( Things.IsUsed( member.ThingId ) ? Things.ModelOf( member.ThingId ) != SaveThingModel.Handyman : !Things.Occupy( member.ThingId, SaveThingModel.Handyman ) )
-				throw new InvalidDataException( $"Theme Park Inc staff member {member.Id}'s thing id {member.ThingId} is not a handyman slot of the thing pool." );
+			var model = ThemeParkIncStaffWorld.ThingModelOf( member.Role );
+			if ( Things.IsUsed( member.ThingId ) ? Things.ModelOf( member.ThingId ) != model : !Things.Occupy( member.ThingId, model ) )
+				throw new InvalidDataException( $"Theme Park Inc staff member {member.Id}'s thing id {member.ThingId} is not a {model} slot of the thing pool." );
 		}
 	}
 
 	/// <summary>
-	/// Starts placing the Theme Park Inc candidate in pool slot <paramref name="slot"/> (the hire list's choice): a handyman goes to the hand until a drop or a cancel; the other roles are
-	/// refused. Null when the hire starts, else the refusal's reason.
+	/// Starts placing the Theme Park Inc candidate in pool slot <paramref name="slot"/> (the hire list's choice): a handyman or a mechanic goes to the hand until a drop or a cancel; the other
+	/// roles are refused. Null when the hire starts, else the refusal's reason.
 	/// </summary>
 	// [BIN:TPI-EXE:0x630D10 hire] the slot is marked as being placed and the park maximum check runs; the placement tool 0x93B61C then holds the candidate (its enter 0x4D4C20 makes the dangling sprite)
-	// [EXT:tpi-capability-gates] only the handyman is ported to the park: the other roles' hires are refused with a note (user-approved 2026-11-21)
+	// [EXT:tpi-capability-gates] only the handyman and the mechanic are ported to the park: the other roles' hires are refused with a note (user-approved 2026-11-21)
 	public string? BeginTpiHire( int slot )
 	{
 		if ( Park?.Economy.TpiStaff is not { } staff )
 			return "unavailable";
 		if ( slot < 0 || slot >= ThemeParkIncStaff.PoolSlots || staff.Slots[slot] is not { } candidate )
 			return "no candidate";
-		if ( candidate.Role != ThemeParkIncStaffRole.Handyman )
+		if ( !ThemeParkIncStaffMember.IsPlacedRole( candidate.Role ) )
 			return "role not ported";
 		if ( TpiStaffWorld == null )
 			return "unavailable";
@@ -305,6 +306,27 @@ public partial class Level
 			// [DATA:<object>.sam:Info.WhichUIType] type record +0x70, copied into +0x600 (0x43D014); [DATA:<object>.sam:Info.MapOffsetX] +0x34, +0x38 (0 in every Theme Park Inc object)
 			return new( settings.GetInt( "Info.WhichUIType" ), item.ThingCell, item.Placement.Rotation, item.Entry.Shape,
 				settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ) );
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// An economy object's cells for the Theme Park Inc mechanic's search: its thing cell (the finder's distance) and its entrance cell (the thing's word +0x46, the search's walk target), from
+	/// the placed object linked to the instance.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5DB4C1 object cell words] +0x46 = +0x44 + the type's +0x5E8 turned by the angle (ThemeParkIncStaffWorld.EntranceWord, the drop's); a cell word of 0 or off the map has no cell
+	private ((int X, int Y) Thing, (int X, int Y)? Entrance)? TpiObjectCells( int instance )
+	{
+		foreach ( var (item, linked) in economyInstances )
+		{
+			if ( linked != instance || item.IsDeleted )
+				continue;
+			var settings = item.Entry.Settings;
+			var thing = new ThemeParkIncStaffWorld.DropObject( settings.GetInt( "Info.WhichUIType" ), item.ThingCell, item.Placement.Rotation, item.Entry.Shape,
+				settings.GetInt( "Info.MapOffsetX" ), settings.GetInt( "Info.MapOffsetY" ) );
+			var word = ThemeParkIncStaffWorld.EntranceWord( thing );
+			var entrance = ThemeParkIncStaffWorld.CellOfWord( word );
+			return (item.ThingCell, word != 0 && Guests != null && Guests.Grid.Cells.InBounds( entrance.X, entrance.Y ) ? entrance : null);
 		}
 		return null;
 	}

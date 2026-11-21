@@ -293,6 +293,7 @@ public partial class Level
 		}
 		if ( substep.TourDue )
 			ScheduleSprites( spriteClock );
+		AttachThemeParkIncMissionWorld();
 		Park!.Economy.ThingSweep = new LevelThingSweep( this );
 		try
 		{

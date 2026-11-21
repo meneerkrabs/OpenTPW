@@ -79,6 +79,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		}
 		// [BIN:TPI-EXE:0x6485A9 challenge system] the new-world init constructs the challenge system thing, which loads its slots at once (0x5C7400 -> 0x5C7630); it draws nothing
 		CreateThemeParkIncChallenges();
+		CreateThemeParkIncMissions();
 		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
 		foreach ( var offer in settings.Loans )
 			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;
@@ -590,8 +591,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 		// [EXT:tpi-money-only] a park without staff runs none of this: the staff, the research lab and the ride update (whose wear and breakdowns only a mechanic repairs) are refused with the staff and research
 		if ( !Rules.Staff )
 		{
-			// [BIN:TPI-EXE:0x637767 challenge thing] Theme Park Inc's challenge system is a thing of the world pass (0x6375E0 -> 0x5C7930) whatever the staff
-			if ( TpiChallenges != null )
+			// [BIN:TPI-EXE:0x637767 challenge thing] Theme Park Inc's challenge system and mission controller are things of the world pass (0x6375E0 -> 0x5C7930, 0x5EF520) whatever the staff
+			if ( TpiChallenges != null || TpiMissions != null )
 				UpdateChallenges( turn );
 			return;
 		}
@@ -1467,12 +1468,17 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>The challenge system's thing update, once per park turn (tp.exe <c>0x004D1E90</c>): the switch, the offers and a running challenge's check.</summary>
 	internal void UpdateChallenges( long turn )
 	{
+		// [BIN:TPI-EXE:0x6495C1 thing pass] the world pass walks the things newest first: the mission controller (built after the challenge system, 0x648633) updates before it
+		if ( TpiMissions != null )
+			UpdateThemeParkIncMissions( turn );
 		// a Theme Park Inc park runs its own challenge system, never Theme Park World's objectives (EconomyRules.Narrow refuses those for it)
 		if ( TpiChallenges != null )
 		{
 			UpdateThemeParkIncChallenges( turn );
 			return;
 		}
+		if ( TpiMissions != null )
+			return;
 		if ( !Features.Challenges )
 			return;
 		foreach ( var (kind, index, amount, detail) in Objectives.Update( turn * ParkCalendar.SecondsPerTurn, turn, MeasureChallenge, IsParkOpen, BestObjectOf, () => guestStatistics.GuestCensus ).ToList() )

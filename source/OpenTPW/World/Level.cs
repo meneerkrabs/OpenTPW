@@ -707,7 +707,10 @@ public partial class Level : IDisposable
 				foreach ( var _ in SetupStaffSteps() )
 					yield return 0.95f;
 			else
+			{
 				SetupThemeParkIncStaff();
+				AttachThemeParkIncMissionWorld();
+			}
 			yield return 0.95f;
 			// [EXT:tpi-park-open] the Theme Park Inc park runs no gate commands: its gate script is not traced, so the economy neither drives nor closes the park door
 			if ( !GameEditions.IsThemeParkInc )
@@ -917,11 +920,11 @@ public partial class Level : IDisposable
 		return cells;
 	}
 
-	/// <summary>Theme Park Inc's mission number as the catalogue reads it (<c>M.Info.Number</c>, career+0x10B4 +0xC); the career sets it, 0 until a career runs.</summary>
-	internal int ThemeParkIncMissionNumber { get; set; }
+	/// <summary>Theme Park Inc's mission number as the catalogue reads it (<c>0x5F03A0</c> +0xC: the mission object's <c>Info.Number</c>, career+0x10C0); 0 without a career.</summary>
+	internal int ThemeParkIncMissionNumber => Park?.Economy.TpiCareer?.Mission.Number ?? 0;
 
-	/// <summary>Whether the current mission's obstacle research is done (the obstacle status 2 of <c>0x5F01D0</c>); the career sets it, false until a career runs.</summary>
-	internal bool ThemeParkIncObstacleResearchDone { get; set; }
+	/// <summary>Whether the current mission's obstacle research is done: the mission controller's obstacle state (<c>0x5F01D0</c>) is 2; false without a controller.</summary>
+	internal bool ThemeParkIncObstacleResearchDone => Park?.Economy.TpiMissions is { } missions && missions.ObstacleState() == 2;
 
 	/// <summary>
 	/// Theme Park Inc's mission land growth for the mission controller: applies <c>extents/extent.NNN</c> for <paramref name="index"/> (the mission counter before it advances)

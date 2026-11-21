@@ -17,7 +17,11 @@ public class ThemeParkIncCareerCheatsTests
 		var economy = ThemeParkIncChallengeTests.Economy();
 		var files = new TestCareerFiles()
 			.With( "/missions/Miss00.sam", "Info.Number 0\nObstacle.GoldenTickets 1\n" )
-			.With( "/missions/Miss01.sam", "Info.Number 1\nCompletion.EndOfGame 1\n" );
+			.With( "/missions/Miss01.sam", "Info.Number 1\nCompletion.EndOfGame 1\n" )
+			// the completion tick starts the next mission's statistics, whose tech level step reads a zone record (0x74F4B0): the zones' global.sam
+			.With( "/levels/arabian/global.sam", "ParkInfo.AvailableFromStart 0\n" )
+			.With( "/levels/science/global.sam", "ParkInfo.AvailableFromStart 1\n" )
+			.With( "/levels/water/global.sam", "ParkInfo.AvailableFromStart 0\n" );
 		economy.AttachThemeParkIncCareer( new ThemeParkIncCareer( files, TestCareerFiles.ShippedFiringLines ) );
 		return economy;
 	}

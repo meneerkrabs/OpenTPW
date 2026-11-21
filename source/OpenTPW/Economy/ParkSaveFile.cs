@@ -59,6 +59,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncCareerSnapshot? TpiCareer { get; init; }
+		/// <summary>
+		/// Theme Park Inc's mission controller (the <c>OBJH</c> thing's state and thing). Absent in Theme Park World saves and in Theme Park Inc saves from before the controller, which continue with it
+		/// idle.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncMissionControllerSnapshot? TpiMissions { get; init; }
 		public required ParkGameMode Mode { get; init; }
 		/// <summary>
 		/// Legacy: earlier version-2 saves recorded whether a stand-in researched for the Instant Action seed's then
@@ -730,6 +736,7 @@ public static class ParkSaveFile
 			TpiStaff = park.TpiStaff?.Capture(),
 			TpiChallenges = park.TpiChallenges?.Capture(),
 			TpiCareer = park.TpiCareer?.Capture(),
+			TpiMissions = park.TpiMissions?.Capture(),
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
@@ -1053,6 +1060,8 @@ public static class ParkSaveFile
 				throw new InvalidDataException( "This Theme Park Inc park was saved before OpenTPW kept the player's career (missions, rank, golden tickets) and cannot be continued; start a new game from the Personnel File." );
 			if ( !ThemeParkIncCareer.IsValid( data.TpiCareer ) )
 				throw new InvalidDataException( "Park save has an invalid Theme Park Inc career." );
+			if ( !ThemeParkIncMissionController.IsValid( data.TpiMissions ) )
+				throw new InvalidDataException( "Park save has an invalid Theme Park Inc mission controller." );
 			foreach ( var item in data.Objects )
 			{
 				// The native accumulator at +0x938 is a signed 32-bit word. Do not allow a host save to invent costs that overflow the next settlement.
@@ -1063,7 +1072,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
 	}
 
@@ -1224,6 +1233,8 @@ public static class ParkSaveFile
 		}
 		if ( data.TpiCareer is { } career )
 			park.TpiCareer!.Restore( career );
+		// [BIN:TPI-EXE:0x5F03C0 controller load] the saved state and thing, with +0x1B = 0 and +0x1A = 1; a save from before the controller continues with it idle
+		park.TpiMissions?.Restore( data.TpiMissions ?? new ThemeParkIncMissionControllerSnapshot( 0, 0 ) );
 		if ( data.TpiStaff is { } staff )
 		{
 			if ( park.TpiStaff == null )

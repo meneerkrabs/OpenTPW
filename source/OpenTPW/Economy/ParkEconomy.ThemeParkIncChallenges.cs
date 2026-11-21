@@ -196,10 +196,17 @@ public sealed partial class ParkEconomy
 				career.AddGoldenTickets( slot.GTPrize );
 			economy.AddTpiChallengeNotice( new ThemeParkIncChallengeNotice( index, ThemeParkIncChallengeNoticeKind.Won ) );
 			if ( slot.PromoGiven != 0 )
-				career.Promote( slot.PromoGiven );
+			{
+				if ( economy.TpiMissions is { } missions )
+					missions.Promotion( slot.PromoGiven );
+				else
+					career.Promote( slot.PromoGiven );
+			}
 			// [EXT:headless-economy] a headless economy without the zone's global.sam has no current zone record to count in
 			if ( career.CurrentZone != null )
 				career.CountChallengeWon( economy.TpiChallenges!.Slots.All( other => other.Type == 0 || other.Status == ThemeParkIncChallengeStatus.Won ) );
+			// [BIN:TPI-EXE:0x5C460A challenge won message] after the count the win posts message 0x26, which the mission controller only answers with its status broadcast
+			economy.TpiMissions?.ChallengeWon();
 		}
 
 		// [BIN:TPI-EXE:0x5C48B6 firing line post] after the count the lost branch posts the lost mail (message 0x1B kind 3, 0x5C49A3) while the career's firing line is above 0 (signed jg),

@@ -58,6 +58,7 @@ public sealed partial class ParkEconomy
 			throw new InvalidOperationException( "Only a Theme Park Inc park has a career." );
 		EnterThemeParkIncZone( career );
 		TpiCareer = career;
+		AttachThemeParkIncMissions( career );
 	}
 
 	// [BIN:TPI-EXE:0x42A360 set theme] the world's zone change calls the career's ChangeTheme (0x74F330) with the zone's name, which makes the zone's record the current one
@@ -73,12 +74,10 @@ public sealed partial class ParkEconomy
 	/// <see cref="ThemeParkIncCareer.CompleteMission"/>. The outcome names the mission the career is on afterwards, or "finished".
 	/// </summary>
 	// [BIN:TPI-EXE:0x532B39 skip mission] the dialog proc 0x532A40 takes button 0x186A1 ("Skip Mission", 0x9B79C8) to the park's controller (0x64ED00) and its completion tick 0x5F0940, then closes
-	// [EXT:tpi-capability-gates] the tick's world side is not ported: the new extent (0x678B00), the end sequence (0x5CD6E0), the next obstacle thing (0x6476F0), the exit statistics' start
-	// (0x5EEF60), message 0x2C and the refresh (0x4A5E30, 0x648C90) are left off
 	private string SkipThemeParkIncMission()
 	{
 		var career = TpiCareer!;
-		var completion = career.CompleteMission();
+		var completion = TpiMissions!.CompleteMission( Turn );
 		return completion.Finished || career.GameFinished ? "finished" : career.MissionCounter.ToString( System.Globalization.CultureInfo.InvariantCulture );
 	}
 
@@ -94,7 +93,7 @@ public sealed partial class ParkEconomy
 		var rank = unchecked( career.Rank + 1 );
 		if ( rank < 0 || rank >= career.RankCount )
 			return "unavailable";
-		career.Promote( rank );
+		TpiMissions!.Promotion( rank );
 		return rank.ToString( System.Globalization.CultureInfo.InvariantCulture );
 	}
 }

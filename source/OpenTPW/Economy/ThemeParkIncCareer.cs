@@ -150,6 +150,82 @@ public sealed class ThemeParkIncCareer
 	/// <summary>A status block's word <paramref name="word"/> (0 state, 1 type, 2 target value, 3 target time, 4/5 start date, 6 current value, 7 elapsed days, 8 zone, 9 baseline).</summary>
 	public int StatusWord( int index, int word ) => statuses[index * StatusWords + word];
 
+	/// <summary>A status block's 64-bit start date (words 4 and 5, the park clock in 100 ns).</summary>
+	public long StatusStart( int index ) => (long)(uint)statuses[index * StatusWords + 4] | (long)statuses[index * StatusWords + 5] << 32;
+
+	/// <summary>
+	/// Starts exit statistic <paramref name="index"/> (<c>0x74C620</c>): running, the start date and the baseline; the value and the days are left as they are.
+	/// </summary>
+	// [BIN:TPI-EXE:0x74C620 status start] +0 = 1, +0x10 = date low, +0x14 = date high, +0x24 = baseline
+	internal void StartStatus( int index, long date, int baseline )
+	{
+		var block = StatusBlock( index );
+		statuses[block] = 1;
+		statuses[block + 4] = unchecked( (int)date );
+		statuses[block + 5] = (int)(date >> 32);
+		statuses[block + 9] = baseline;
+	}
+
+	/// <summary>Stores a daily measurement of exit statistic <paramref name="index"/> (<c>0x74C5B0</c>): the elapsed days and the value.</summary>
+	// [BIN:TPI-EXE:0x74C5B0 status store] +0x1C = days, +0x18 = value
+	internal void StoreStatus( int index, int days, int value )
+	{
+		var block = StatusBlock( index );
+		statuses[block + 7] = days;
+		statuses[block + 6] = value;
+	}
+
+	/// <summary>Sets the state word of exit statistic <paramref name="index"/> (<c>0x74C5F0</c>): 2 achieved, 3 failed.</summary>
+	// [BIN:TPI-EXE:0x74C5F0 status state] +0 = state
+	internal void SetStatusState( int index, int state ) => statuses[StatusBlock( index )] = state;
+
+	/// <summary>
+	/// Whether exit statistic <paramref name="index"/> has reached its target (<c>0x74C670</c>): types 4 and 5 compare the value with the baseline raised by the target percentage,
+	/// <c>(TargetValue + 100) × baseline / 100</c> in 32-bit arithmetic truncated toward zero; every other type compares it with the target value.
+	/// </summary>
+	// [BIN:TPI-EXE:0x74C670 status target] type 5 or 4: edx = (+8 + 100) * +0x24 (imul, 32 bits), the high word of edx * 0x51EB851F shifted right 5 plus its sign bit (a signed division by 100),
+	// then +0x18 >= that (setge); otherwise +0x18 >= +8 (setge)
+	public bool StatusReached( int index )
+	{
+		var block = StatusBlock( index );
+		var value = statuses[block + 6];
+		var type = statuses[block + 1];
+		if ( type is 4 or 5 )
+			return value >= unchecked( (statuses[block + 2] + 100) * statuses[block + 9] ) / 100;
+		return value >= statuses[block + 2];
+	}
+
+	private static int StatusBlock( int index ) => index is >= 0 and < StatusCount ? index * StatusWords : throw new ArgumentOutOfRangeException( nameof( index ) );
+
+	/// <summary>
+	/// <c>+0x20</c>: the mission controller's "objective letter posted" byte (cleared by the completion tick, set when the controller posts the letter of the mission just completed).
+	/// </summary>
+	public bool ObjectiveLetterPosted
+	{
+		get => flags[0] != 0;
+		internal set => flags[0] = (byte)(value ? 1 : 0);
+	}
+
+	/// <summary>
+	/// The tech level step of the exit statistics' start (<c>0x5EF30B..0x5EF365</c>): for <c>TechLevel.Theme</c> 0 to 2 the zone's record's current tech level rises to
+	/// <c>TechLevel.NewMaxGroup</c> when it is below.
+	/// </summary>
+	// [BIN:TPI-EXE:0x5EF30B tech level] edi = +0x10E4 (TechLevel.Theme); edi > -1 and edi < 3 (signed): the record 0x74F4B0(edi) +0 = +0x10E8 (NewMaxGroup) when +0 < it (signed jle skips)
+	internal void RaiseTechLevel()
+	{
+		var theme = Mission.TechLevelTheme;
+		if ( theme <= -1 || theme >= 3 )
+			return;
+		if ( ZoneRecord( theme ) is not { } zone )
+			throw new InvalidOperationException( $"The tech level's zone {theme} has no record (the original's 0x74F4B0 would return none and fault)." );
+		if ( zone.Data.CurrentTechLevel < Mission.TechLevelNewMaxGroup )
+			zone.Data.CurrentTechLevel = Mission.TechLevelNewMaxGroup;
+	}
+
+	/// <summary>The park awards held (<c>0x74C860</c>): the nonzero bytes of <c>+0x2A..+0x31</c>.</summary>
+	// [BIN:TPI-EXE:0x74C860 awards held] counts the nonzero bytes +0x2A + i for i = 0..7
+	public int AwardsHeld => awards.Count( award => award != 0 );
+
 	/// <summary>
 	/// The Standard.sam firing line table as the career reads it (<c>0xA028F8</c>): the six <c>FiringLineForRank[n].Limit</c> values the layered Standard.sam parse leaves (0 for a key no layer
 	/// sets) and the array's count dword after them (one past the highest index set).
@@ -287,6 +363,10 @@ public sealed class ThemeParkIncCareer
 
 	/// <summary>The obstacle is removed (<c>0x74C430</c>: <c>+0x13E5 = 1</c>).</summary>
 	public void MarkObstacleRemoved() => ObstacleRemoved = true;
+
+	/// <summary>The mission has an obstacle to research and remove (<c>0x5F0190</c>): <c>Obstacle.Type</c> nonzero and <c>Info.NoResearch</c> zero.</summary>
+	// [BIN:TPI-EXE:0x5F0190 has obstacle] +0x1380 != 0 and the mission's +0x10 (Info.NoResearch) == 0
+	public bool HasObstacle => Mission.ObstacleType != 0 && Mission.NoResearch == 0;
 
 	/// <summary>
 	/// A promotion (<c>0x74C450</c>): the rank becomes <paramref name="rank"/> and the firing line rises to the rank's <c>FiringLineForRank</c> limit when it is below.

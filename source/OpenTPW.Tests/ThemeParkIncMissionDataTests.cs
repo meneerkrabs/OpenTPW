@@ -56,7 +56,6 @@ public class ThemeParkIncMissionDataTests
 	{
 		public ushort CurrentObstacle { get; private set; } = save.Variables.CurrentObstacle;
 		public List<ushort> Opened { get; } = new();
-		public List<ThemeParkIncCameraRequest> Cameras { get; } = new();
 
 		public void FindCurrentObstacle( int type )
 		{
@@ -71,7 +70,6 @@ public class ThemeParkIncMissionDataTests
 		public void OpenObstacle( ushort thing ) => Opened.Add( thing );
 		public void DestroyThing( ushort thing ) => throw new InvalidOperationException( "No shipped mission destroys a thing." );
 		public void LoadExtent( int index ) => Assert.IsTrue( ThemeParkIncLand.ApplyExtent( cells, index ) );
-		public void PlayCamera( ThemeParkIncCameraRequest request ) => Cameras.Add( request );
 	}
 
 	[TestMethod]
@@ -144,10 +142,14 @@ public class ThemeParkIncMissionDataTests
 
 		Assert.IsTrue( missions.OnMissionComplete( economy.Turn ) );
 		Assert.AreEqual( (ThemeParkIncMissionState.ObstacleOpened, (ushort)gate.Id), (missions.State, missions.CutsceneObject) );
-		Assert.AreEqual( new ThemeParkIncCameraRequest( (ushort)gate.Id, 2, 0 ), world.Cameras.Single(), "the camera flies to the 1700 gate (anim 2, mode 0)" );
+		Assert.AreEqual( new ThemeParkIncCameraRequest( (ushort)gate.Id, 2, 0 ), economy.TpiCameraRequests.Single(), "the camera flies to the 1700 gate (anim 2, mode 0)" );
+		Assert.AreEqual( (ushort)gate.Id, economy.TpiCutscene!.AnimThing, "the cutscene thing plays it" );
 		Assert.AreEqual( 0, career.MissionCounter, "nothing completes before the camera's end" );
 
-		missions.CameraFinished( economy.Turn );
+		// without a world the gate has no script: the intro window's end (0x5D02C0) ends the flight on the cutscene's next update, which posts message 0x29
+		economy.TpiCutscene.ForceSkip();
+		AdvanceTo( economy.Turn + 1 );
+		Assert.IsFalse( economy.TpiCutscene.Flying );
 		CollectionAssert.AreEqual( new[] { (ushort)gate.Id }, world.Opened, "the gate opens" );
 		Assert.AreEqual( 3030, ThemeParkIncLand.OwnedCount( cells ), "extent.000 grows the land" );
 		Assert.AreEqual( (1, 1, ThemeParkIncMissionState.Idle), (career.MissionCounter, career.Mission.Number, missions.State) );

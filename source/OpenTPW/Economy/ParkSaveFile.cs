@@ -65,6 +65,9 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncMissionControllerSnapshot? TpiMissions { get; init; }
+		/// <summary>Theme Park Inc's cutscene thing (the <c>CUTS</c> thing's flight). Absent in Theme Park World saves and in Theme Park Inc saves from before the flight, which continue with none.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ThemeParkIncCutsceneSnapshot? TpiCutscene { get; init; }
 		public required ParkGameMode Mode { get; init; }
 		/// <summary>
 		/// Legacy: earlier version-2 saves recorded whether a stand-in researched for the Instant Action seed's then
@@ -737,6 +740,7 @@ public static class ParkSaveFile
 			TpiChallenges = park.TpiChallenges?.Capture(),
 			TpiCareer = park.TpiCareer?.Capture(),
 			TpiMissions = park.TpiMissions?.Capture(),
+			TpiCutscene = park.TpiCutscene?.Capture(),
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
@@ -1072,7 +1076,7 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiCutscene != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
@@ -1237,6 +1241,8 @@ public static class ParkSaveFile
 			park.TpiCareer!.Restore( career );
 		// [BIN:TPI-EXE:0x5F03C0 controller load] the saved state and thing, with +0x1B = 0 and +0x1A = 1; a save from before the controller continues with it idle
 		park.TpiMissions?.Restore( data.TpiMissions ?? new ThemeParkIncMissionControllerSnapshot( 0, 0 ) );
+		// [BIN:TPI-EXE:0x5D0160 cutscene load] the saved thing of a flight; a save from before the flight continues with none
+		park.TpiCutscene?.Restore( data.TpiCutscene ?? new ThemeParkIncCutsceneSnapshot( 0 ) );
 		if ( data.TpiStaff is { } staff )
 		{
 			if ( park.TpiStaff == null )

@@ -268,8 +268,8 @@ Science continuation save. The system draws no random number.
 What is measured: types 2 (hot dogs sold: the trigger is a fat shop, the count comes from the sale bookings), 25 (the least happy staff member; the trigger is an
 entertainer's experience) and 41 (no strike; the trigger is the staff count). Every other type stays unoffered (`[EXT:tpi-capability-gates]`), because its trigger
 or value reads park state OpenTPW does not model. The availability reads the career's mission counter. The mission controller runs since November 21, 2026 (below),
-but its completion waits for a camera flight OpenTPW does not port, so a career stays at mission 0 unless the cheats extension's Skip Mission advances it, and the
-Science rows that need mission 2, 3 or 4 wait for that. Left off
+but its completion waits for the mission window's complete button, which the slice does not offer yet, so a career stays at mission 0 unless the cheats extension's
+Skip Mission advances it, and the Science rows that need mission 2, 3 or 4 wait for that. Left off
 under the same label: the shares (prize and price effect). The experimental HUD's Challenges button (top right, below Staff) lists the offered, accepted and won slots by
 their `CHALLENGE_TITLES.str` title with the days left and the progress value, and accepts an offered row while the park is open, as the original's mail does
 (`[EXT:tpi-text-hud]`); the challenge mail's full text, its sounds and the advisor's sender advice are not ported.
@@ -284,10 +284,14 @@ career, finds the next obstacle and starts the new mission's statistics; the bui
 are measured from the park; 4 (last month's takings, whose ride and facility rows OpenTPW's ledger does not keep), 6 (awards) and 7 (shares) are never decided (`[EXT:tpi-capability-gates]`). The controller is saved in the
 Science continuation save.
 
-**No mission completes in play, except through the cheats extension's Skip Mission.** Nothing calls OnMissionComplete: there is no mission window or Proceed
-control, and its camera flight, whose end is the only sender of the completion message 0x29, is not ported (the tests deliver 0x29 themselves). An obstacle
-mission would also need the research (message 0x23) and the staff HQ's obstacle slots, neither of which OpenTPW runs. What does not run yet besides: the obstacles as world things and their opening (their types are read from the zones' `obstacles`
-archives), and the objective letter's window.
+**Camera flights and obstacles.** The cutscene thing flies the controller's cameras as the original does: the ride view on the target's camera seat while its own
+script plays the clip, the clock at the flight's rate, the HUD hidden; its end posts the completion message 0x29. A new game's Science park opens with the zone
+arrival's flyover over the camera path 1798, which Escape or a right click skips. The obstacles and the camera path are things of the world, with their cells, and
+the 1700 gate opens (its `AfterShape`) when mission 0 completes; the lake is the obstacle 1703 and drains to 1704.
+
+**No mission completes in play yet, except through the cheats extension's Skip Mission.** The mission window and its complete button
+(`ParkEconomy.PressThemeParkIncMissionComplete`) are a separate package. An obstacle mission would also need the research (message 0x23) and the staff HQ's
+obstacle slots, neither of which OpenTPW runs. The objective letter's window is not built.
 
 ### Prebuilt science save
 

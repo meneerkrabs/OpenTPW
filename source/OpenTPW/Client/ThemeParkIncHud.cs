@@ -479,6 +479,8 @@ public sealed partial class ThemeParkIncHud
 	{
 		if ( UpdateLossScene( context, input ) )
 			return true;
+		if ( UpdateFlight( input ) )
+			return true;
 		// The build window rides on the HUD screen, so a modal menu on top of it hides it (ModalOpen stops the camera keys).
 		SetBuildWindowVisible( buildOpen && !MenuOpen );
 		var overUi = Stack.Covers( context.Canvas, input.Mouse );
@@ -628,7 +630,11 @@ public sealed partial class ThemeParkIncHud
 		blueprint.Show( cells, directions );
 	}
 
-	public void Draw( UiContext context ) => Stack.Draw( context );
+	public void Draw( UiContext context )
+	{
+		if ( !FlightActive )
+			Stack.Draw( context );
+	}
 
 	/// <summary>The letter window is open.</summary>
 	public bool LetterOpen => Stack.Screens.Any( screen => screen.Name == ThemeParkIncLetterWindow.ScreenName );

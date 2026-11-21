@@ -96,7 +96,8 @@ internal sealed partial class GameFlow
 		// A confirmed layout load can replace the world inside HUD input; do not tick the retired level.
 		if (!ReferenceEquals(Level, level)) return;
 		level.UiCapturesMouse = captured;
-		level.SimulationTimeScale = hud.TimeScale;
+		// [BIN:TPI-EXE:0x5D053C flight clock] a camera flight sets the park clock's rate to its mode's (1.0, 0.7 in mode 1) until its end restores the speed word's rate (0x41C000 sets the rate only); OpenTPW's pause speed keeps the park paused
+		level.SimulationTimeScale = level.Park?.Economy.TpiCutscene?.ClockRate is { } rate ? hud.Speed == GameSpeed.Paused ? 0f : (float)rate : hud.TimeScale;
 		level.Update();
 		GameAudio.Update( level.Guests?.GetStatistics().InPark ?? 0 );
 		if ( level.Park?.Economy.TpiWeather is { } weather )

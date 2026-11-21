@@ -97,13 +97,36 @@ not registered, because Theme Park Inc's research is not ported (`[EXT:tpi-capab
 
 ## 5. The camera flight
 
-The flight (`0x5D0400`, update `0x5D02F0`, end `0x5D0840`) is the target thing's own model animation played by the cutscene thing (class 22, `CUTS`). The
-world keeps running under it at game speed 100. The 0x29 handler reads only the controller's state and thing, not anything the flight produced. But the
-flight's end is the only sender of 0x29, so a completion happens when the animation ends. That time depends on the animation module's clock
-(`0x6B0740`, `0x6B0780`, `0x6B0C90`) and on how the camera follows the model, which are not read. OpenTPW does not port the flight: a camera request is
-recorded and logged, and nothing posts 0x29 (`[EXT:tpi-capability-gates]`). Posting it at once would move the completion's time, which needs an approval
-that was not given. Until the flight is ported, the controller's completion paths are exercised by tests that deliver 0x29 themselves, and the slice offers
-no Proceed control.
+There is no camera spline. A flight (`0x5D0400`, update `0x5D02F0`, end `0x5D0840`; the cutscene thing, class 22, `CUTS`, `ThemeParkIncCutscene`) is the ride view on the
+target thing's camera seat 1 while the thing's own script plays its animation:
+
+- **Start (`0x5D0400`).** Refused while another flight plays ("Attempt to play anim when one is already playing! Haroogha Haroogha"). The camera leaves any ride or walk view
+  (`0x50B4E0`) and rides the thing's seat 1 (`0x5E5B20(0, 1)`, then `0x4668C0`, Theme Park World's `0x42A560`: the first dummy record with type bit `0x1000` and value 1); an
+  ordinary attraction also gets script variable 12 = 1 there, an obstacle (`IsObstacle`, info `+0x4C`) or a camera path (`+0x60`) does not. The park clock's rate becomes the
+  mode's (`0x41C000`: 1.0, or 0.7 in mode 1) and the speed word 100 is only stored, so the rate is not re-derived from it until the end. The interface is locked and a full-screen
+  input window opens. The trigger goes into the thing's script variable 0 (`0x6B0780` through `0x6B0740`, "playing anim %d"). The 1703 lake opens panel 0x26D.
+- **The script.** The camera paths' `camera.RSE` waits for variable 0, plays its `M` clip (`cameram.MD2`, 500 ticks) with `WAITANIM 5 0`, then sets variable 1 and clears
+  variable 0 in the same slice and parks. The obstacles' scripts map the trigger to their clips (1 researched, 2 removed). So a flight lasts the clip's `WAITANIM` wait (16.4 s for
+  the Science camera path at rate 1.0) plus up to one thing update.
+- **Update (`0x5D02F0`).** Each thing update, after the mission controller's: variable 1 equal to 1, or a pending skip, ends the flight.
+- **Skip.** Mode 2 only (the zone arrival): the input window's Escape (`0x5D03B0`), the right button's release and the "menu" key action reach `0x5D0290`; `0x5D02C0` (the intro
+  window) ends a flight of any mode.
+- **End (`0x5D0840`).** The input window goes and the ride view is left (only for a flight this session started), the clock goes back to the speed word's rate, `result` is
+  variable 0, the thing and variables 0 and 1 are cleared; a mode-2 end runs the controller's `0x5F1760` (mission 0's first briefing, `0x5CD6E0(0x5C, 5, 1)`, once: career
+  `+0x20`) and starts the mission window's countdown; message 0x29 carries the thing and `result` (0 after the script's own end, the trigger after a skip); in zone 1 a thing of
+  type 1750 asks for the switch to zone 2 (`0x6A26B0(2, 0)`). The window opens one update after a mode-2 end (`0xA9D258` counts 1, 2, 3).
+- **Zone arrival (`0x6A43D8`).** A zone entered from the career's zone world (a new game's prebuilt Science park; `0x6A3D08`) flies the zone's camera path, anim 1, mode 2
+  (jump table `0x6A46CC`: zone 0 → 3798, 1 → 1798, 2 → 2798, 3 → 4798 in mode 1), while the park clock is on its first day (`0x608C70` over a day); a continued park (Load A Game)
+  has none.
+- **Save.** The `CUTS` body keeps only the thing (`0x5D0160`); a flight restored from a save waits for its script and ends without a view to leave.
+
+OpenTPW ports all of this: `ParkEconomy.TpiCutscene` plays the controller's camera requests and posts 0x29 at the real end, the level gives it its things' scripts and the ride
+view (`RideCameraMode` with its one-frame blend and pointer look), the Theme Park Inc HUD is hidden under the input window and turns Escape and the right button's release into
+the skip, the game flow runs the level at the flight's rate, and the continuation save keeps the thing (`ParkSaveFile.Data.TpiCutscene`). The mission window's complete button is
+`ParkEconomy.PressThemeParkIncMissionComplete` (`0x55BD79`: message 0x24 with the current obstacle for an obstacle mission, else OnMissionComplete); the window's own package opens it
+on `ThemeParkIncCutscene.MissionWindowRequests`. Not ported: the fog range and the camera words of the start (`0x6F22F0`, `0xBE2104`; drawing), the HUD control 0x40's saved state,
+the panels other than the request list (`PanelRequests`), the advice classes admitted during a flight (`0x71BDC0`), and the 1750 zone switch, which `ZoneSwitchRequests` records for
+the zone package.
 
 ## 6. Obstacles
 
@@ -143,5 +166,5 @@ both axes).
   and the thing ids of a new world depend on it, so a world without the prebuilt (Water, Arabian) builds no obstacle and no camera path. The rule itself
   is ported and tested.
 - The tile refresh `0x67FB80` (type 8 draws no ground); the level's heightfield already leaves the lake's holes, which 1703's and 1704's models cover.
-- The pick and the cursor help over the obstacle cells, the obstacle refresh `0x648C90`, the particle effects 81/77, and the gates' travel (`GateTo`) and the
-  1750 gate's zone switch at its camera's end (a later package).
+- The pick and the cursor help over the obstacle cells, the obstacle refresh `0x648C90`, the particle effects 81/77, and the gates' travel (`GateTo`); the
+  1750 gate's camera end records its zone switch (`ThemeParkIncCutscene.ZoneSwitchRequests`, §5) for the zone package.

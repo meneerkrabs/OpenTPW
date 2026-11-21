@@ -55,14 +55,69 @@ public partial class Level
 	private void SeedThemeParkIncCurrentObstacle()
 	{
 		if ( IsThemeParkIncSlice && resumeState == null && OriginalPark?.Save?.ThemeParkIncWorld is { } world )
+		{
 			ThemeParkIncCurrentObstacle = world.Variables.CurrentObstacle;
+			// [BIN:TPI-EXE:0x6A3D08 zone entry] a zone entered from the career's own zone world (the prebuilt park of a new game) sets 0xB8C004 and the arrival flag 0xB8C02C
+			tpiArrivalPending = true;
+		}
 	}
 
-	/// <summary>Gives the park's economy (also one a load put in place) this level as the world of its Theme Park Inc mission controller.</summary>
+	/// <summary>Gives the park's economy (also one a load put in place) this level as the world of its Theme Park Inc mission controller and cutscene thing.</summary>
 	private void AttachThemeParkIncMissionWorld()
 	{
 		if ( IsThemeParkIncSlice && Park?.Economy is { TpiMissions: not null } economy && economy.TpiMissionWorld == null )
 			economy.TpiMissionWorld = tpiMissionWorld ??= new ThemeParkIncMissionWorld( this );
+		if ( IsThemeParkIncSlice && Park?.Economy is { TpiCutscene: not null } flights && flights.TpiCutsceneWorld == null )
+			flights.TpiCutsceneWorld = tpiCutsceneWorld ??= new ThemeParkIncCutsceneWorld( this );
+	}
+
+	private ThemeParkIncCutsceneWorld? tpiCutsceneWorld;
+
+	/// <summary>Whether the zone arrival's flyover is still to be tried (<c>0x6A43D8</c>): a world built from the level, not from a save of the player's.</summary>
+	private bool tpiArrivalPending;
+
+	/// <summary>
+	/// The game state's first update of a Theme Park Inc world entered from the level (the prebuilt Science park of a new game): the zone arrival's flyover, once (<c>0x6A43D8</c>). A continued park
+	/// (Load A Game) has none: the zone entry's flag is cleared for a loaded game without the career's zone save.
+	/// </summary>
+	// [BIN:TPI-EXE:0x6A43E4 loaded game] with a loaded game (0xB8C030 != 0) and no career zone save (0xB8C004 != 1) the flag 0xB8C02C is cleared (0x6A44AF), so the flyover does not play
+	private void UpdateThemeParkIncArrival()
+	{
+		if ( !tpiArrivalPending )
+			return;
+		tpiArrivalPending = false;
+		Park?.Economy.StartThemeParkIncArrival();
+	}
+
+	/// <summary>The Theme Park Inc flight's camera: the ride view on the thing's seat 1, followed as the thing's animation moves it, with the pointer look over the flight's input window.</summary>
+	// [BIN:TPI-EXE:0x5E5B20 seat camera] 0x5E5B20(0, 1): thing +0x5C = 1; an info +0x14C of 3 runs the gate 0x4087FB first; neither IsObstacle (+0x4C) nor IsCameraPath (+0x60): script variable 12 = 1, which an obstacle and a
+	// camera path skip; then 0x4668C0 (tp.exe 0x42A560) with seat 1: the first dummy record of the model with type bit 0x1000 and value 1 (RideSeat), its node matrix the camera frame, camera mode 4 (the ride view)
+	private bool EnterThemeParkIncFlightView( OriginalObject thing )
+	{
+		ExitRideView();
+		return EnterWinningView( thing );
+	}
+
+	/// <summary>Whether <paramref name="item"/> is the thing of the Theme Park Inc flight that plays now, whose seat the ride view follows though it is no ride.</summary>
+	internal bool IsThemeParkIncFlightThing( OriginalObject item ) =>
+		Park?.Economy.TpiCutscene is { Flying: true } cutscene && cutscene.AnimThing == item.ThingId;
+
+	/// <summary>The level's objects and ride view as the cutscene thing's world.</summary>
+	private sealed class ThemeParkIncCutsceneWorld( Level level ) : IThemeParkIncCutsceneWorld
+	{
+		public RideVM? ScriptOf( ushort thing ) => level.ThemeParkIncThing( thing )?.Script;
+
+		public int? TypeOf( ushort thing ) => level.ThemeParkIncThing( thing )?.Entry.InfoId;
+
+		public void EnterView( ushort thing )
+		{
+			if ( level.ThemeParkIncThing( thing ) is { } item )
+				level.EnterThemeParkIncFlightView( item );
+			else
+				level.ExitRideView();
+		}
+
+		public void LeaveView() => level.ExitRideView();
 	}
 
 	/// <summary>The live attractions of <paramref name="type"/> in the thing list's order (newest first, <c>0xAA116C</c>).</summary>
@@ -112,8 +167,5 @@ public partial class Level
 				Log.Warning( $"Theme Park Inc mission extent {index} is missing or short; the land keeps the cells read." );
 		}
 
-		// [EXT:tpi-capability-gates] the cutscene thing (class 22, CUTS: 0x5D0400, its update 0x5D02F0 and end 0x5D0840) is not ported: nothing plays the flight, so its end (message 0x29) never comes
-		public void PlayCamera( ThemeParkIncCameraRequest request ) =>
-			Log.Warning( $"Theme Park Inc camera flight {request.Animation} on thing {request.Thing} (mode {request.Mode}) is not ported; the mission controller waits for its end." );
 	}
 }

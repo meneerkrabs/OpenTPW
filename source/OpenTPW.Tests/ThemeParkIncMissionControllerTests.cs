@@ -39,6 +39,7 @@ internal sealed class TestMissionHost : IThemeParkIncMissionHost
 	public void PlayCamera( ThemeParkIncCameraRequest request ) => Cameras.Add( request );
 	public void EnsureObstacleResearch() => Calls.Add( "research" );
 	public void PostObjectiveLetter( int completed ) => Calls.Add( $"letter {completed}" );
+	public void PostIntroductionLetter() => Calls.Add( "introduction" );
 	public void StatusChanged() => Broadcasts++;
 }
 

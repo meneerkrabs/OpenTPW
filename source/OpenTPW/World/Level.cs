@@ -625,7 +625,9 @@ public partial class Level : IDisposable
 				OriginalTerrain.QueueModelSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue ? QueueModels.Choose( cells, x, y ) : null;
 				OriginalTerrain.PathVariantSource = PathVariants.IsSecond;
 				// [BIN:TPW-EXE:0x00450D10 land refresh] the land outside the park is drawn darker
-				OriginalTerrain.LandFlagsSource = ( x, y ) => cells.InBounds( x, y ) ? cells.FlagsAt( x, y ) : ParkCellFlags.None;
+				// [BIN:TPI-EXE:0x4A5E30 land refresh] Theme Park Inc's refresh writes no bit 0x400: it sets the landscape word's bits 0x1000..0x8000 from the 0x40 of the cell's neighbours, and the
+				// draw's use of them is not read, so its owned land is drawn as it was (docs/reverse/TPI-BOUNDARY.md)
+				OriginalTerrain.LandFlagsSource = GameEditions.IsThemeParkInc ? null : ( x, y ) => cells.InBounds( x, y ) ? cells.FlagsAt( x, y ) : ParkCellFlags.None;
 				// [EXT:pools-render] the pool cells are render-only holes of the ground mesh while the extension is on (nothing else reads this)
 				// [BIN:TPW-EXE:0x00535DD0 hole cell types] the ground is not drawn under an object, entrance or exit cell (the cell refresh writes the hole word), so the floor stands on nothing
 				OriginalTerrain.RenderHoleSource = ( x, y ) => ObjectCellHoles.IsHole( cells, x, y ) || PoolRenderHoles.IsHole( cells, x, y, FeatureGates.Pools );
@@ -736,7 +738,7 @@ public partial class Level : IDisposable
 			: resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout, land == null || joinRestore != null ? null : cells => cells.SetUpLand( land, park.Save ) ) )
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
-			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield ) );
+			: new GuestPathGrid( OriginalCellMap( park, settings, land ) );
 		LandBarrier = ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y );
 		// the demolition keeps the NoModify flag of a MAP initial path cell in front of an entrance (tp.exe's cell byte +0x26 bit 8, 0x527EE0)
 		grid.Cells.InitialPathSource = ( x, y ) => park.Map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath );
@@ -891,6 +893,46 @@ public partial class Level : IDisposable
 
 	/// <summary>Whether a cell is of the original types 7 or 0x1e, which no fence may cross (<see cref="ParkLand.CheckPurchase"/>); null for a level without an original map.</summary>
 	internal Func<int, int, bool>? LandBarrier { get; private set; }
+
+	/// <summary>
+	/// The cell map of an original level's start: Theme Park World's with the level's fence and land (<see cref="LandSetup"/>); Theme Park Inc's with its owned land
+	/// (<see cref="ThemeParkIncLand"/>): the prebuilt park's saved flags, or a new world's init, gate strip and <c>hoardings.map</c>.
+	/// </summary>
+	internal static ParkCellMap OriginalCellMap( OriginalPark park, GuestSettings settings, ParkLandSetup? land )
+	{
+		var cells = ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield );
+		if ( !GameEditions.IsThemeParkInc )
+			return cells;
+		if ( park.Save is { } save )
+			ThemeParkIncLand.ImportSaved( cells, ( x, y ) => (save.Cells[x, y].MapFlags & (ushort)ParkCellFlags.Unowned) != 0 );
+		else if ( settings.EntranceA is { } entranceA && settings.EntranceB is { } entranceB )
+		{
+			var path = ThemeParkIncLand.HoardingsMapPath( park.LevelName );
+			var bytes = FileSystem.FileExists( path ) ? FileSystem.ReadAllBytes( path ) : Array.Empty<byte>();
+			if ( !ThemeParkIncLand.SetUpNewWorld( cells, entranceA, entranceB, bytes ) )
+				Log.Warning( $"Theme Park Inc level {park.LevelName}: {path} is missing or short; the land holds only the cells read." );
+		}
+		else
+			throw new InvalidDataException( $"Theme Park Inc level {park.LevelName} names no entrance cells (FixedItemInfo.EntranceA/BPos), which the land needs." );
+		return cells;
+	}
+
+	/// <summary>Theme Park Inc's mission number as the catalogue reads it (<c>M.Info.Number</c>, career+0x10B4 +0xC); the career sets it, 0 until a career runs.</summary>
+	internal int ThemeParkIncMissionNumber { get; set; }
+
+	/// <summary>Whether the current mission's obstacle research is done (the obstacle status 2 of <c>0x5F01D0</c>); the career sets it, false until a career runs.</summary>
+	internal bool ThemeParkIncObstacleResearchDone { get; set; }
+
+	/// <summary>
+	/// Theme Park Inc's mission land growth for the mission controller: applies <c>extents/extent.NNN</c> for <paramref name="index"/> (the mission counter before it advances)
+	/// to the live world's cells with the land loader's rules (<see cref="ThemeParkIncLand.ApplyExtent"/>). Answers the loader's result: false for a missing or short file.
+	/// </summary>
+	internal bool ApplyThemeParkIncExtent( int index )
+	{
+		if ( !IsThemeParkIncSlice || Guests?.Grid.Cells is not { } cells )
+			throw new InvalidOperationException( "Only a Theme Park Inc world grows its land by extents." );
+		return ThemeParkIncLand.ApplyExtent( cells, index );
+	}
 
 	/// <summary>The level's park fence: its gate posts beside the entrance cells and its <c>Hoardings.sam</c>; null without them.</summary>
 	private static ParkLandSetup? LandSetup( OriginalPark park, GuestSettings settings )

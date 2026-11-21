@@ -52,6 +52,9 @@ public sealed partial class ThemeParkIncHud
 	private readonly UiButton removeButton;
 	private readonly List<(string Text, float Age)> messages = new();
 	private readonly OriginalBuildCatalog catalog;
+
+	/// <summary>The build list's catalogue: the world's buildable objects the mission gate lists (<see cref="ThemeParkIncCatalogue"/>).</summary>
+	internal OriginalBuildCatalog Catalog => catalog;
 	private BuildCategory category = BuildCategory.Rides;
 	private string lastLevelMessage = "";
 	private GameSpeed speed = GameSpeed.Normal;
@@ -71,7 +74,7 @@ public sealed partial class ThemeParkIncHud
 		this.level = level;
 		this.strings = strings;
 		this.host = host;
-		catalog = new OriginalBuildCatalog( level.Objects.Catalog );
+		catalog = new OriginalBuildCatalog( level.Objects.Catalog, entry => ThemeParkIncCatalogue.IsListed( entry, level.ThemeParkIncMissionNumber, level.ThemeParkIncObstacleResearchDone ) );
 		hud = new UiScreen( "tpiHud" ) { Modal = false };
 		Stack.Push( hud );
 		AddLabel( "guests", () => GuestsText(), new UiRect( 24, 196, 900, 60 ) );

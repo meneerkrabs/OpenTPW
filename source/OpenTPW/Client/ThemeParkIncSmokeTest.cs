@@ -565,7 +565,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	/// <summary>Picks the item the build list arms: the first Rides entry with a queue and a script, else the first such entry of any category.</summary>
 	private void ChooseItem()
 	{
-		var catalog = new OriginalBuildCatalog( Level.Objects.Catalog );
+		// the HUD's own list, mission gate included (ThemeParkIncCatalogue): the row index the smoke clicks is that list's
+		var catalog = Hud.Catalog;
 		BuildItem? chosen = null;
 		foreach ( var category in new[] { BuildCategory.Rides }.Concat( Enum.GetValues<BuildCategory>() ) )
 		{

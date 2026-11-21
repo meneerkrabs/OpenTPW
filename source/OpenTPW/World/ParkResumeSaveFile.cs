@@ -370,6 +370,16 @@ internal static class ParkResumeSaveFile
 				$"the park provides asset '{key}', which the save does not expect" );
 	}
 
+	/// <summary>The message a Theme Park Inc continuation without its owned land is refused with.</summary>
+	internal const string ThemeParkIncLandMissing = "the Theme Park Inc park was saved before its owned land was kept; this save cannot be continued, start the park again";
+
+	/// <summary>
+	/// Refuses a Theme Park Inc continuation whose layout carries no ownership bits (<see cref="ParkLayoutSnapshot.CellMapData.TpiUnowned"/>): one written before the land was kept
+	/// would restore every square as owned, which the original never reaches (docs/reverse/TPI-BOUNDARY.md).
+	/// </summary>
+	internal static void RequireThemeParkIncLand( ParkLayoutSnapshot.Data? layout ) =>
+		Require( layout?.Cells?.TpiUnowned != null, ThemeParkIncLandMissing );
+
 	/// <summary>
 	/// The envelope's own consistency, with no catalog or settings: header bounds, the embedded economy's format
 	/// and invariants, the layout's pure allocator/identity rules, the script world's graph, one runtime per
@@ -381,16 +391,6 @@ internal static class ParkResumeSaveFile
 	/// writing; the catalog/theme/balance/asset checks that need the loading park are
 	/// <see cref="ValidateSnapshot"/>'s.
 	/// </summary>
-	/// <summary>The message a Theme Park Inc continuation without its owned land is refused with.</summary>
-	internal const string ThemeParkIncLandMissing = "the Theme Park Inc park was saved before its owned land was kept; this save cannot be continued, start the park again";
-
-	/// <summary>
-	/// Refuses a Theme Park Inc continuation whose layout carries no ownership bits (<see cref="ParkLayoutSnapshot.CellMapData.TpiUnowned"/>): one written before the land was kept
-	/// would restore every square as owned, which the original never reaches (docs/reverse/TPI-BOUNDARY.md).
-	/// </summary>
-	internal static void RequireThemeParkIncLand( ParkLayoutSnapshot.Data? layout ) =>
-		Require( layout?.Cells?.TpiUnowned != null, ThemeParkIncLandMissing );
-
 	internal static void ValidateShape( ParkResumeSnapshot snapshot )
 	{
 		ArgumentNullException.ThrowIfNull( snapshot );

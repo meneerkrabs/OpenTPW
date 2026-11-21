@@ -589,7 +589,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 	/// <summary>The economy's part of the original's per-turn thing loop: staff, mechanics' jobs, research and the ride update.</summary>
 	internal void UpdateThings( long turn )
 	{
-		// [EXT:tpi-money-only] a park without staff runs none of this: the staff, the research lab and the ride update (whose wear and breakdowns only a mechanic repairs) are refused with the staff and research
+		// [EXT:tpi-money-only] a park without Theme Park World's staff runs none of this: the staff, the research lab and Theme Park World's ride update are refused with the staff and research; a
+		// Theme Park Inc park with its own staff wears its rides by its own rules (UpdateThemeParkIncRide) and its mechanics repair them (ThemeParkIncStaffWorld)
 		if ( !Rules.Staff )
 		{
 			// a Theme Park Inc park with its staff wears its rides (UpdateThemeParkIncRide); without a host sweep the headless order is this one ([EXT:headless-economy])
@@ -1397,7 +1398,8 @@ public sealed partial class ParkEconomy : IParkEconomy
 	{
 		if ( !objects.TryGetValue( instanceId, out var item ) || !Catalog.TryGet( item.InfoId, out var info ) || !info.ProvidesRelief )
 			return false;
-		// [EXT:tpi-no-maintenance-wear] without staff nobody cleans a toilet (the handymen are refused), so a use wears none: the gauge stays full and the toilet stays usable (see also the ride wear in UpdateThings and the litter in ParkEconomyRuntime.AttachLitter)
+		// [EXT:tpi-no-maintenance-wear] Theme Park Inc's toilet wear and loo cleaning are unported (its handymen sweep litter only), so a use wears none: the gauge stays full and the toilet stays
+		// usable (see also the litter in ParkEconomyRuntime.AttachLitter; the rides wear by Theme Park Inc's rules with its staff, UpdateThemeParkIncRide)
 		if ( !Rules.Staff )
 			return false;
 		if ( OnlineVisit )

@@ -12,7 +12,8 @@ namespace OpenTPW;
 /// Theme Park World's walk (the guests' steering step with separation, the route search, the wander destination 0x004F9490 with its off-path search, the speed smoothing 0x004FA870 and the
 /// caps 0x00510190), over Theme Park Inc's own speed words (+0xD4, +0xD6, +0xD8).
 /// [EXT:tpi-no-maintenance-wear] (user-approved 2026-11-21) Theme Park Inc's toilet wear and the bins' fill are unported, so the loo finder 0x5D6230 and the bin finder 0x5D5F10 find nothing
-/// to clean: the handymen sweep litter only (states 0x11 to 0x14 are not entered).
+/// to clean: the handymen sweep litter only (states 0x11 to 0x14 are not entered). The rides' wear and the mechanics are ported (ThemeParkIncStaffWorld.Mechanics,
+/// ParkEconomy.UpdateThemeParkIncRide).
 /// </remarks>
 public sealed partial class ThemeParkIncStaffWorld
 {

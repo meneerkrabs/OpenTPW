@@ -65,6 +65,12 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public ThemeParkIncMissionControllerSnapshot? TpiMissions { get; init; }
+		/// <summary>
+		/// The Theme Park Inc ride-wear rules the save's rides and mechanics follow (<see cref="ThemeParkIncRideWearRules"/>): written by a park with Theme Park Inc's staff. A Theme Park Inc save
+		/// without it was made before the mechanics and the ride wear were ported and is refused.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? TpiRideWear { get; init; }
 		public required ParkGameMode Mode { get; init; }
 		/// <summary>
 		/// Legacy: earlier version-2 saves recorded whether a stand-in researched for the Instant Action seed's then
@@ -737,6 +743,7 @@ public static class ParkSaveFile
 			TpiChallenges = park.TpiChallenges?.Capture(),
 			TpiCareer = park.TpiCareer?.Capture(),
 			TpiMissions = park.TpiMissions?.Capture(),
+			TpiRideWear = park.TpiStaff != null ? ThemeParkIncRideWearRules : null,
 			Theme = park.Settings.Theme,
 			Easy = park.Settings.IsEasy,
 			Mode = park.Mode,
@@ -1062,6 +1069,11 @@ public static class ParkSaveFile
 				throw new InvalidDataException( "Park save has an invalid Theme Park Inc career." );
 			if ( !ThemeParkIncMissionController.IsValid( data.TpiMissions ) )
 				throw new InvalidDataException( "Park save has an invalid Theme Park Inc mission controller." );
+			// user decision 2026-11-21: a Theme Park Inc park save from before the mechanics and the ride wear is refused: its rides were worn by other rules (or not at all), so it is not the
+			// park the ported rules would have made
+			if ( data.TpiStaff != null && data.TpiRideWear != ThemeParkIncRideWearRules )
+				throw new InvalidDataException( ThemeParkIncRideWearMissing );
+			ValidateThemeParkIncJobs( data );
 			foreach ( var item in data.Objects )
 			{
 				// The native accumulator at +0x938 is a signed 32-bit word. Do not allow a host save to invent costs that overflow the next settlement.
@@ -1072,10 +1084,37 @@ public static class ParkSaveFile
 					_ = ring.ToRing();
 			}
 		}
-		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null
+		else if ( data.TpiWeather != null || data.TpiForecast != null || data.TpiStaff != null || data.TpiChallenges != null || data.TpiCareer != null || data.TpiMissions != null || data.TpiRideWear != null
 			|| data.Cheats is { } worldCheats && (worldCheats.Log.Any( entry => ParkCheats.IsThemeParkIncKind( entry.Kind ) ) || worldCheats.Pending?.Any( action => ParkCheats.IsThemeParkIncKind( action.Kind ) ) == true)
 			|| data.Objects.Any( item => item.PendingMonthlyCosts != 0 || item.TpiScriptCondition != 0 || item.TpiPriceRings != null ) )
 			throw new InvalidDataException( "Theme Park World save contains Theme Park Inc state." );
+	}
+
+	/// <summary>The rules version a Theme Park Inc save with its staff writes for its ride wear and mechanics (<see cref="Data.TpiRideWear"/>).</summary>
+	public const int ThemeParkIncRideWearRules = 1;
+
+	/// <summary>The refusal of a Theme Park Inc save from before the mechanics and the ride wear.</summary>
+	public const string ThemeParkIncRideWearMissing = "This Theme Park Inc park was saved before OpenTPW kept the mechanics and the ride wear and cannot be continued; start a new game from the Personnel File.";
+
+	/// <summary>
+	/// A Theme Park Inc save's jobs: an object's claim names a placed mechanic's thing (0x5E3780 writes his thing id), and a placed mechanic's ride is an object of the save (the removal message
+	/// clears it, 0x5D9DD0); a mechanic at work (21 or 22) has one.
+	/// </summary>
+	private static void ValidateThemeParkIncJobs( Data data )
+	{
+		var mechanics = (data.TpiStaff?.Members ?? Array.Empty<ThemeParkIncStaffMemberSnapshot>())
+			.Where( member => member.Role == ThemeParkIncStaffRole.Mechanic && member.World != null ).ToList();
+		var ids = data.Objects.Select( item => item.Id ).ToHashSet();
+		foreach ( var item in data.Objects.Where( item => item.MechanicId != 0 ) )
+			if ( !mechanics.Any( member => member.World!.ThingId == item.MechanicId ) )
+				throw new InvalidDataException( $"Park save is inconsistent: object {item.Id} is claimed by thing {item.MechanicId}, which is no placed Theme Park Inc mechanic." );
+		foreach ( var member in mechanics )
+		{
+			var world = member.World!;
+			if ( world.RideId is not { } ride || ride != 0 && !ids.Contains( ride )
+				|| world.State is ThemeParkIncStaffWorld.ToRide or ThemeParkIncStaffWorld.Repairing && ride == 0 )
+				throw new InvalidDataException( $"Park save is inconsistent: Theme Park Inc mechanic {member.Id}'s ride {world.RideId} is not an object of the park." );
+		}
 	}
 
 	/// <summary>Validates a parsed economy save in place. Internal: the world-save envelope validates its embedded economy through these same rules.</summary>

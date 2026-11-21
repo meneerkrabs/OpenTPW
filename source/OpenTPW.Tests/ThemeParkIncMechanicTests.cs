@@ -1,0 +1,355 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// Theme Park Inc's ride wear and its mechanics (docs/reverse/TPI-STAFF.md §11, "Mechanics and ride wear"): the type record's breakdown lines, the starting life, the wear amount
+/// 0x5E21A0 and tick 0x5E25B0 (goldens from tools/ppc-analysis/oracle_x86/tpi_ride_wear_oracle.py, which runs the routines natively), the breakdown request 0x5E4790, and the mechanic's
+/// search, walk, repair, claim lapse, removal message and save. The tests on the retail data need OPENTPW_TPI_PATH.
+/// </summary>
+[TestClass]
+[DoNotParallelize]
+public class ThemeParkIncMechanicTests
+{
+	private BaseFileSystem? previous;
+	private Logger? previousLog;
+
+	[TestInitialize]
+	public void Initialize() => previous = FileSystem;
+
+	[TestCleanup]
+	public void Cleanup()
+	{
+		FileSystem = previous!;
+		if ( previousLog != null )
+			Log = previousLog;
+		previousLog = null;
+		GameEditions.Select( GameEdition.ThemeParkWorld );
+	}
+
+	private void UseRetailData()
+	{
+		var path = Environment.GetEnvironmentVariable( "OPENTPW_TPI_PATH" );
+		if ( string.IsNullOrWhiteSpace( path ) || !Directory.Exists( path ) )
+			Assert.Inconclusive( "Set OPENTPW_TPI_PATH to a Theme Park Inc installation or its Data folder." );
+		var data = Directory.EnumerateDirectories( path! ).FirstOrDefault( directory => string.Equals( Path.GetFileName( directory ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? path!;
+		previousLog ??= Log;
+		Log = new();
+		FileSystem = new BaseFileSystem( data );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		GameEditions.Select( GameEdition.ThemeParkInc );
+	}
+
+	private ParkEconomy ScienceEconomy()
+	{
+		UseRetailData();
+		return ParkEconomyRuntime.ForThemeParkIncLevel( OriginalPark.Load( "science" ) ).Economy;
+	}
+
+	/// <summary>The rides' running state, riders and speed a test sets (the level's ride scripts otherwise).</summary>
+	private sealed class Operations : IRideOperations
+	{
+		public Dictionary<int, RideOperation> Rides { get; } = new();
+		public bool TryGet( int instanceId, out RideOperation operation ) => Rides.TryGetValue( instanceId, out operation );
+	}
+
+	/// <summary>The Giant Robot Swing (Info.Id 1101): WorkingLife 75, Upgrades[0].WearRate 6, MaxCapacity 16, MaxSpeed 100, RideBreakDown.Imminent 10 and WarnPlayer 5.</summary>
+	private const int RobotSwing = 1101;
+	/// <summary>The Log Mill (Info.Id 1180), a special ride (Info.IsSpecial 1).</summary>
+	private const int LogMill = 1180;
+
+	/// <summary>A path row along y = 5 from x = 0 to 11.</summary>
+	private static GuestPathGrid Row( ParkEconomy economy )
+	{
+		var grid = new GuestPathGrid( 16, 16 );
+		for ( var x = 0; x < 12; x++ )
+			grid.SetPath( x, 5, true );
+		economy.Litter.Cells = grid.Cells;
+		economy.Litter.ThemeParkInc = true;
+		return grid;
+	}
+
+	/// <summary>A world whose objects stand at (9, 7) with their entrance on the row at (9, 5).</summary>
+	private static ThemeParkIncStaffWorld World( ParkEconomy economy ) =>
+		new( Row( economy ) ) { ObjectCells = instance => economy.TryGetObject( instance, out _ ) ? ((9, 7), (9, 5)) : null };
+
+	/// <summary>Hires the first pooled mechanic and drops him on <paramref name="cell"/>.</summary>
+	private static ThemeParkIncStaffMember HireMechanic( ParkEconomy economy, ThemeParkIncStaffWorld world, (int X, int Y) cell )
+	{
+		var staff = economy.TpiStaff!;
+		var slot = Enumerable.Range( 0, ThemeParkIncStaff.PoolSlots ).First( index => staff.Slots[index]?.Role == ThemeParkIncStaffRole.Mechanic );
+		Assert.IsTrue( staff.BeginHire( slot ) );
+		var member = staff.EndHire( slot, placed: true )!;
+		world.Construct( economy, member, cell, null );
+		return member;
+	}
+
+	// ---- The type record and the starting life -------------------------------------------------
+
+	[TestMethod]
+	public void EveryWearingObjectHasTheBreakdownLinesAQueueAndTheMechanicsBank()
+	{
+		// [BIN:TPI-EXE:0x9A2CC0 type record keys] RideBreakDown.Imminent at +0x3C8 and WarnPlayer at +0x3CC; the repair tail's queue test needs Info.HasQueue on every object a mechanic repairs
+		UseRetailData();
+		var wearing = 0;
+		foreach ( var world in new[] { "science", "water", "arabian" } )
+		{
+			var entries = ObjectCatalog.Load( world ).Entries;
+			foreach ( var info in EconomyObjectCatalog.Load( world, easy: false ).Objects.Where( info => info.Upgrades.Any( level => level.WearRate != 0 ) ) )
+			{
+				wearing++;
+				Assert.AreEqual( (10f, 5f), (info.BreakdownImminent, info.BreakdownWarnPlayer), $"{world} {info.Name}" );
+				var entry = entries.Single( item => item.InfoId == info.InfoId );
+				Assert.AreEqual( 1, entry.Settings.GetInt( "Info.HasQueue" ), $"{world} {info.Name} has a queue" );
+				Assert.IsFalse( info.ProvidesRelief || info.HoldsLitter || info.RequiresWatering, $"{world} {info.Name} is a ride" );
+			}
+		}
+		Assert.AreEqual( 66, wearing, "the 66 wearing rides of the three worlds" );
+		// [BIN:TPI-EXE:0x5D9BB4 mechanic sprite] the mechanics' bank (Generic\Mechanics, Spr_om) loads with Theme Park World's loader
+		Assert.IsTrue( StaffSpriteSet.Load( "science" ).BankCount( StaffType.Mechanic ) > 0, "the mechanics' bank" );
+	}
+
+	[TestMethod]
+	public void ANewObjectStartsAtItsWorkingLifeAsThePrebuiltSciencePark()
+	{
+		// [BIN:TPI-EXE:0x5DB53A object life] +0x58 = Info.WorkingLife, or 100.0 when 0; the prebuilt Science park's choosable attractions were saved at exactly that
+		var economy = ScienceEconomy();
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( RobotSwing, out var built ) );
+		Assert.AreEqual( 75.0, built!.LifeGauge );
+		Assert.AreEqual( 100.0, built.Repair );
+		var park = OriginalPark.Load( "science" );
+		var checkedRides = 0;
+		foreach ( var item in park.Save!.ThemeParkIncObjects )
+		{
+			if ( !economy.Catalog.TryGet( item.Record.InfoId, out var info ) || !info.IsChoosable )
+				continue;
+			checkedRides++;
+			Assert.AreEqual( (float)ParkEconomy.ThemeParkIncStartingLife( info ), item.Attraction.LifeGauge, $"Info.Id {info.InfoId}" );
+			Assert.AreEqual( 100f, item.Attraction.StateOfRepair );
+		}
+		Assert.IsTrue( checkedRides >= 4, "the prebuilt rides" );
+	}
+
+	// ---- The wear --------------------------------------------------------------------------------
+
+	private static EconomyObjectInfo Ride( int maxCapacity, int maxSpeed, int redCapacity, int redSpeed, int wearRate ) =>
+		new( 1, "ride", ParkObjectKind.Ride, ResearchCategory.Ride, 0, new[] { new UpgradeLevelInfo( 0, 0, 0, wearRate, 0, Array.Empty<int>(), redSpeed, redCapacity ) },
+			null, null, null, 0, 0, 0, 0, 0, 0, "", MaxSpeed: maxSpeed, MaxCapacity: maxCapacity );
+
+	[TestMethod]
+	[DataRow( 59, 5, 5, 100, 0, 60, 1, 0x3F50C49Cu )]
+	[DataRow( 0, 24, 24, 100, 6, 29, 9, 0x409E6667u )]
+	[DataRow( 162, 0, 1, 162, 0, 52, 2, 0x3FC66666u )]
+	[DataRow( 100, 0, 11, 100, 7, 60, 6, 0x40533334u )]
+	[DataRow( 146, 0, 24, 100, 0, 147, 6, 0x40BC8B44u )]
+	[DataRow( 29, 0, 12, 100, 4, 60, 6, 0x3FB10624u )]
+	[DataRow( 100, 5, 2, 100, 2, 13, 1, 0x3F800000u )]
+	[DataRow( 0, 1, 5, 22, 1, 60, 2, 0x3EC28F5Cu )]
+	[DataRow( 75, 0, 8, 40, 2, 60, 4, 0x403F3333u )]
+	[DataRow( 0, -1, 8, 85, 1, 125, 6, 0x3F19999Au )]
+	public void TheWearAmountIsTheExecutables( int speed, int riders, int maxCapacity, int maxSpeed, int redCapacity, int redSpeed, int wearRate, uint expected )
+	{
+		// the oracle's native 0x5E21A0 at the 24-bit control word (tpi_ride_wear_oracle.py --golden)
+		var info = Ride( maxCapacity, maxSpeed, redCapacity, redSpeed, wearRate );
+		Assert.AreEqual( expected, BitConverter.SingleToUInt32Bits( ParkEconomy.ThemeParkIncWearAmount( info, info.Upgrades[0], new RideOperation( true, riders, speed ) ) ) );
+	}
+
+	[TestMethod]
+	public void TheWearTickRunsEverySixtyFourthTurnAndASpecialRideKeepsItsLife()
+	{
+		var economy = ScienceEconomy();
+		var operations = new Operations();
+		economy.RideOperations = operations;
+		economy.TryBuild( RobotSwing, out var swing );
+		economy.TryBuild( LogMill, out var mill );
+		operations.Rides[swing!.Id] = new RideOperation( true, 5, 59 );
+		operations.Rides[mill!.Id] = new RideOperation( true, 2, 59 );
+		Assert.IsTrue( ((EconomyObjectCatalog)economy.Catalog)[LogMill].IsSpecial );
+		var wear = ParkEconomy.ThemeParkIncWearAmount( ((EconomyObjectCatalog)economy.Catalog)[RobotSwing], ((EconomyObjectCatalog)economy.Catalog)[RobotSwing].Upgrades[0], operations.Rides[swing.Id] );
+		// [BIN:TPI-EXE:0x5E2614 wear interval] every 8th turn runs the tick, which wears on every 64th only
+		economy.UpdateRide( swing, 8 );
+		Assert.AreEqual( 100.0, swing.Repair, "turn 8 is not a wear turn" );
+		economy.UpdateRide( swing, 64 );
+		Assert.AreEqual( 100f - wear, (float)swing.Repair );
+		Assert.AreEqual( 75f - 0.02f * wear, (float)swing.LifeGauge );
+		economy.UpdateRide( mill, 64 );
+		Assert.IsTrue( mill.Repair < 100.0, "the special ride wears" );
+		Assert.AreEqual( 95.0, mill.LifeGauge, "but keeps its life (Info.IsSpecial, 0x5E26FB)" );
+		// a ride that does not run wears only with Info.RunsContinuously (the Robot Swing has none)
+		operations.Rides[swing.Id] = new RideOperation( false, 5, 59 );
+		var repair = swing.Repair;
+		economy.UpdateRide( swing, 128 );
+		Assert.AreEqual( repair, swing.Repair );
+		// a closed ride is not updated
+		operations.Rides[swing.Id] = new RideOperation( true, 5, 59 );
+		swing.IsOpen = false;
+		economy.UpdateRide( swing, 192 );
+		Assert.AreEqual( repair, swing.Repair );
+	}
+
+	[TestMethod]
+	public void AWornRideBreaksDownAndLosesFiveLifeUnlessItIsSpecial()
+	{
+		// [BIN:TPI-EXE:0x5E48FB breakdown request] the life or repair byte 0 requests the breakdown; the life loses 5 unless its byte is 0 or the type is special; no draw
+		var economy = ScienceEconomy();
+		economy.TryBuild( RobotSwing, out var swing );
+		economy.TryBuild( LogMill, out var mill );
+		swing!.Repair = 0.5;
+		mill!.Repair = 0.5;
+		var draws = economy.World.State;
+		economy.UpdateRide( swing, 8 );
+		economy.UpdateRide( mill, 8 );
+		Assert.IsTrue( swing.IsBrokenDown && mill.IsBrokenDown, "the headless economy breaks them down at once" );
+		Assert.AreEqual( (70.0, 95.0), (swing.LifeGauge, mill.LifeGauge) );
+		Assert.AreEqual( draws, economy.World.State, "no random number decides a breakdown" );
+		var life = economy.TryBuild( RobotSwing, out var dead ) == ParkEconomy.PurchaseResult.Ok ? dead! : throw new InvalidOperationException();
+		life.LifeGauge = 0.4;
+		economy.UpdateRide( life, 8 );
+		Assert.AreEqual( (true, RideObjectStates.Condemned, 0.4), (life.IsBrokenDown, ParkEconomy.ObjectState( life ), life.LifeGauge), "a life byte of 0 condemns the ride and loses nothing" );
+	}
+
+	// ---- The mechanic -----------------------------------------------------------------------------
+
+	[TestMethod]
+	public void AMechanicWalksToABrokenRideRepairsItAndSearchesAgain()
+	{
+		var economy = ScienceEconomy();
+		var world = World( economy );
+		economy.TryBuild( RobotSwing, out var swing );
+		swing!.Repair = 37.4;
+		swing.IsBrokenDown = true;
+		var member = HireMechanic( economy, world, (2, 5) );
+		// [BIN:TPI-EXE:0x5DA3D0 mechanic search] the finder takes the broken ride, a route reaches its entrance: the claim and state 21
+		Assert.AreEqual( (ThemeParkIncStaffWorld.ToRide, swing.Id, member.ThingId, economy.Turn), (member.State, member.RideId, swing.MechanicId, swing.ClaimTurn) );
+		Assert.IsFalse( swing.MaintenanceRequested, "a broken ride is not asked to request maintenance" );
+		Assert.AreEqual( ThemeParkIncStaffWorld.WalkTemplate, member.Template );
+		var turn = economy.Turn;
+		for ( var step = 0; step < 400 && member.State == ThemeParkIncStaffWorld.ToRide; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.AreEqual( ThemeParkIncStaffWorld.Repairing, member.State, "he reached it" );
+		Assert.AreEqual( ThemeParkIncStaffWorld.RepairTemplate, member.Template );
+		var settings = economy.TpiStaff!.Settings;
+		var duration = settings.WorkDuration( ThemeParkIncStaffRole.Mechanic, member.Experience, member.Motivation, member.Salary );
+		Assert.AreEqual( (long)ThemeParkIncStaffWorld.RepairTimer( duration, 37.4f ), member.JobTimer, "(100 - 37) x the work duration / 100" );
+		var timer = member.JobTimer;
+		for ( var step = 0; step < timer; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.AreEqual( (0L, true), (member.JobTimer, swing.IsBrokenDown), "the timer ran out" );
+		world.Update( economy, member, ++turn );
+		Assert.AreEqual( (100.0, false, 0, 0L, false), (swing.Repair, swing.IsBrokenDown, swing.MechanicId, swing.ClaimTurn, swing.MaintenanceRequested), "repaired fully (0x5E2910)" );
+		Assert.AreEqual( 0, member.RideId );
+		Assert.IsTrue( member.State is ThemeParkIncStaffWorld.Idle or ThemeParkIncStaffWorld.Walking, "and he searched again" );
+	}
+
+	[TestMethod]
+	public void ARideBelowItsImminentLineIsCalledForAndRepaired()
+	{
+		// [BIN:TPI-EXE:0x5DA4EF maintenance request] a ride not broken down, not called for and below RideBreakDown.Imminent (10) asks for maintenance (0x5E3400(1)), which closes it
+		var economy = ScienceEconomy();
+		var world = World( economy );
+		economy.TryBuild( RobotSwing, out var swing );
+		var requested = new List<int>();
+		economy.EventRaised += item =>
+		{
+			if ( item.Kind == ParkEventKind.MaintenanceRequested )
+				requested.Add( item.InstanceId );
+		};
+		swing!.Repair = 10.9;
+		var member = HireMechanic( economy, world, (2, 5) );
+		Assert.AreNotEqual( ThemeParkIncStaffWorld.ToRide, member.State, "a byte of 10 is not below the line" );
+		Assert.AreEqual( 0, member.RideId );
+		swing.Repair = 9.9;
+		// [BIN:TPI-EXE:0x5DAAD0 ride finder] the cursor stopped on the list's last object (the only one), so the next search moves it past the end and finds nothing; the one after starts at the head
+		world.Search( economy, member, economy.Turn );
+		Assert.AreEqual( (0, false, 0), (member.RideId, swing.MaintenanceRequested, economy.MechanicCursor) );
+		world.Search( economy, member, economy.Turn );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.ToRide, true), (member.State, swing.MaintenanceRequested) );
+		CollectionAssert.AreEqual( new[] { swing.Id }, requested );
+		var turn = economy.Turn;
+		for ( var step = 0; step < 2000 && member.RideId != 0; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.AreEqual( (100.0, false, 0), (swing.Repair, swing.MaintenanceRequested, swing.MechanicId), "the call ends with the repair" );
+	}
+
+	[TestMethod]
+	public void AClaimOlderThanAHundredTurnsLapsesWhenItsClaimantLooksElsewhere()
+	{
+		// [BIN:TPI-EXE:0x5E37F0 claimant] past +0x74 + 100 a claimant whose +0x5D8 is not the ride loses the claim and goes idle (0x628180(0))
+		var economy = ScienceEconomy();
+		var world = World( economy );
+		economy.TryBuild( RobotSwing, out var swing );
+		var member = HireMechanic( economy, world, (2, 5) );
+		swing!.MechanicId = member.ThingId;
+		swing.ClaimTurn = 10;
+		member.RideId = 0;
+		member.State = ThemeParkIncStaffWorld.Walking;
+		Assert.AreEqual( member.ThingId, world.Claimant( economy, swing, 110 ), "at most 100 turns on, the claim holds" );
+		Assert.AreEqual( 0, world.Claimant( economy, swing, 111 ) );
+		Assert.AreEqual( (0, 0L, ThemeParkIncStaffWorld.Idle, 111L), (swing.MechanicId, swing.ClaimTurn, member.State, member.IdleStamp), "the claimant goes idle (stamped: he was walking)" );
+		swing.MechanicId = member.ThingId;
+		swing.ClaimTurn = 10;
+		member.RideId = swing.Id;
+		Assert.AreEqual( member.ThingId, world.Claimant( economy, swing, 500 ), "a claimant still on his way keeps it" );
+	}
+
+	[TestMethod]
+	public void TheRideBeingFixedIsSoldAndTheMechanicGoesIdle()
+	{
+		// [BIN:TPI-EXE:0x5D9DD0 mechanic message] message 10 for his +0x5D8: "ride I was fixing was deleted", +0x5D8 = 0, state 0
+		var economy = ScienceEconomy();
+		var world = World( economy );
+		economy.TryBuild( RobotSwing, out var swing );
+		swing!.IsBrokenDown = true;
+		var member = HireMechanic( economy, world, (2, 5) );
+		Assert.AreEqual( ThemeParkIncStaffWorld.ToRide, member.State );
+		economy.Sell( swing.Id );
+		Assert.AreEqual( (0, ThemeParkIncStaffWorld.Idle, ThemeParkIncStaffWorld.IdleTemplate), (member.RideId, member.State, member.Template) );
+	}
+
+	[TestMethod]
+	public void APlacedMechanicSurvivesASaveAndAnOlderSaveIsRefused()
+	{
+		var economy = ScienceEconomy();
+		var world = World( economy );
+		economy.TryBuild( RobotSwing, out var swing );
+		swing!.IsBrokenDown = true;
+		swing.Repair = 20.0;
+		var member = HireMechanic( economy, world, (2, 5) );
+		var turn = economy.Turn;
+		for ( var step = 0; step < 400 && member.State == ThemeParkIncStaffWorld.ToRide; step++ )
+			world.Update( economy, member, ++turn );
+		world.Update( economy, member, ++turn );
+		Assert.AreEqual( ThemeParkIncStaffWorld.Repairing, member.State );
+		var json = ParkSaveFile.Serialize( economy );
+		StringAssert.Contains( json, "\"TpiRideWear\"" );
+		StringAssert.Contains( json, "\"JobTimer\"" );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( json ) ), economy.Settings, economy.Catalog );
+		Assert.AreEqual( json, ParkSaveFile.Serialize( restored ), "the save round-trips exactly" );
+		var restoredMember = restored.TpiStaff!.Members.Single();
+		Assert.AreEqual( (member.RideId, member.JobTimer, member.State), (restoredMember.RideId, restoredMember.JobTimer, restoredMember.State) );
+		var restoredWorld = World( restored );
+		for ( var step = 0; step < 300; step++ )
+		{
+			turn++;
+			world.Update( economy, member, turn );
+			restoredWorld.Update( restored, restoredMember, turn );
+		}
+		Assert.AreEqual( ParkSaveFile.Serialize( economy ), ParkSaveFile.Serialize( restored ), "both go on alike" );
+		Assert.AreEqual( 100.0, swing.Repair, "and the repair ended" );
+
+		// user decision 2026-11-21: a Science save from before the mechanics and the ride wear is refused
+		var node = System.Text.Json.Nodes.JsonNode.Parse( json )!.AsObject();
+		node.Remove( "TpiRideWear" );
+		var older = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( node.ToJsonString() ) ), economy.Settings, economy.Catalog ) );
+		Assert.AreEqual( ParkSaveFile.ThemeParkIncRideWearMissing, older.Message );
+		var saved = economy.TpiStaff!.Capture();
+		Assert.IsFalse( ThemeParkIncStaff.IsValid( saved with { Members = saved.Members.Select( item => item with { World = item.World! with { PatrolArea = new[] { 1, 1, 9, 9 } } } ).ToArray() } ),
+			"a mechanic's patrol area other than the whole map is refused (0x6256A0 is not ported)" );
+		Assert.IsFalse( ThemeParkIncStaff.IsValid( saved with { Members = saved.Members.Select( item => item with { World = item.World! with { State = 0x0F } } ).ToArray() } ),
+			"a handyman's state is not a mechanic's" );
+	}
+}

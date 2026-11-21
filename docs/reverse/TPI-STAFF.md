@@ -177,7 +177,7 @@ Receivers of message 0x17 and the advisor cues `0x636B90`: unread.
 
 | role | TPW (OpenTPW cites) | TPI counterpart | Differences read |
 |---|---|---|---|
-| mechanic search | `0x4DA5B0` | `0x5DA3D0` | target `+0x5D8` (TPW `+0x218`); extra check `0x62C6B0(ride)` before "found a ride" (`0x5DA447`); notice text 0x43 vs 0x46; extra branch `0x5E3400(1)` on the ride after `0x5E3950/0x5E3B70/0x5E28A0` (`0x5DA4EF..0x5DA514`); state 21 vs 12. Arrival `0x5DA650` ≙ `0x4DA732`, fix anim `0x5DA7C0` ≙ `0x4DA824`. Ride wear/breakdown rules (attraction side): unread |
+| mechanic search | `0x4DA5B0` | `0x5DA3D0` | target `+0x5D8` (TPW `+0x218`); extra check `0x62C6B0(ride)` before "found a ride" (`0x5DA447`); notice text 0x43 vs 0x46; extra branch `0x5E3400(1)` on the ride after `0x5E3950/0x5E3B70/0x5E28A0` (`0x5DA4EF..0x5DA514`); state 21 vs 12. Arrival `0x5DA650` ≙ `0x4DA732`, fix anim `0x5DA7C0` ≙ `0x4DA824`. Ride wear/breakdown rules (attraction side): see "Mechanics and ride wear" in §11 |
 | handyman | `0x4D73C0` family | `0x5D4BA0..0x5D6230` | adds **litter bins** ("dirty or burning bin" `0x5D553B`, `mBinToClean`); litter/toilet strings match (`0x5D5502` ≙ `0x4D730F`, `0x5D5B89` ≙ `0x4D7743`, `0x5D59FC` ≙ `0x4D75B1`); range/period §5. Littering `0x5D8C80` ≙ `0x4D93A5`, removal `0x5D90D0` ≙ `0x4D961B` |
 | entertainer | `0x4D4810` | `0x5D1A30` search, `0x5D1BC0` performance | performance length from `0x62E4C0` (TPW `0x785398+16g`, `0x4D484A`); constant search range (§5); new "Ouch! You little git!" `0x5D18DC`. `HappinessEffectOnCell` unreferenced in TPI |
 | guard / pranks | `0x4D6410`; HQ prank msg 0x0E `0x508A30` | HQ msg 0x0E `0x6323F9` (same strings and security-level test), nearest guard `0x6343C0` ≙ `0x5099C0`, chase `0x5D3960`.. | new first aid (`mPatientId`, `mFirstAidTimestamp`), prosecution stamp, two **release points** ("can't get to either release point" `0x5D42CC`) instead of TPW's ticket-booth keys (absent in TPI data); "Too tired to chase kids" exists only in TPW (`0x4D627F`) |
@@ -241,7 +241,7 @@ Ported as an economy model, without the world simulation, and checked against th
 - Strikes: grievance `0x633740`, the month consideration `0x6330B0` and its escalation.
 - The two CRT `rand()` draws (agency and demand day) come from the park's world generator (`[EXT:tpi-staff-crt-rand]`, approved 2026-11-21).
 
-Not ported yet: the state machines of the roles other than the handyman; slacking (`0x62D650`) and low-motivation rest; training; the wage negotiation dialog (`0x559E00`).
+Not ported yet: the state machines of the roles other than the handyman and the mechanic; slacking (`0x62D650`) and low-motivation rest; training; the wage negotiation dialog (`0x559E00`).
 
 Since November 21, 2026 the pool runs in a Theme Park Inc park: the opening pool at the new-world init (`0x630CB0`), the pool update in every world update's tail after the
 thing loop and before the calendar (`0x649868`), the career rank 1 for the agencies (`0x74BDC7`), the pool in the Science continuation save, and a Staff panel in the HUD.
@@ -303,4 +303,56 @@ Not read or not ported in this package (inert, no stand-in): strikes in the park
 of a 180 or 270 degree object covers the rectangle `0x5E9320` computes, which is not the turned footprint (ported as the executable has it); the thoughts and voices' presentation (`0x638960`, `0x60BE90`:
 their draws are taken, the voices queued); TPI litter types 9 to 12 (the pending-item drop `0x613D00`, whose gate
 is unread); the stinkbomb particle's TPI position; the dead stale-claim sweep `0x5D73A0` (no static caller).
+
+### Mechanics and ride wear (WP9, November 21, 2026)
+
+Read from Game.exe (static, with the routines run in `tools/ppc-analysis/oracle_x86/tpi_ride_wear_oracle.py`, which agrees with the port on 3000 random cases at the 24-bit and
+the 53-bit control word). Ported in `ParkEconomy.ThemeParkIncRides.cs` and `ThemeParkIncStaffWorld.Mechanics.cs`; tested in `ThemeParkIncMechanicTests`.
+
+**Type record.** The key table at `0x9A2CC0` (60-byte descriptors: type word and name) lays the type record out four bytes a key from `Id` at `+0x10`, sections adding nothing and a
+count word after each array. That puts `MaxCapacity` at `+0x1E4`, `MaxSpeed` at `+0x1F4`, the `Upgrades[n]` records (72 bytes) at `+0x270` (`RedLineCapacity` `+0x290`,
+`RedLineSpeed` `+0x2A0`, `WearRate` `+0x2A4`, `DurationOfUpgrade` `+0x2B0`, `RunningCost` `+0x2B4`), `RideBreakDown.Imminent` at `+0x3C8` and `RideBreakDown.WarnPlayer` at `+0x3CC`;
+the `AddOn` keys after them land at `+0x3D0..+0x3D8`, where their readers (`0x4D63C0`, `0x594E19`) take them. `Info.IsSpecial` is `+0x5C` and `Info.RunsContinuously` `+0x6C`
+(the thing flag `+0x43` bit 1, `0x5DB782`); `UsageInfo.HoldsLitter` `+0x1A8` sets `+0x42` bit 0x40. Every wearing ride of the three worlds has `Imminent` 10 and `WarnPlayer` 5.
+The constructor starts the life gauge `+0x58` at `Info.WorkingLife` (`+0x8C`), 100 when it is 0 (`0x5DB53A`); the prebuilt Science park's rides were saved at exactly that.
+
+**Object update `0x5E4790`** (kind 3 in the thing pass `0x6375E0`, before the state dispatch `0x5E4CB0`): state 3 or 4 returns; with the state not 1, the open word `+0x7C` set
+and the turn & 7 zero, the wear tick `0x5E25B0` runs, then the breakdown request: a life or repair byte of 0 on an object that is not a relief object and whose `VAR_BREAKSTAT` is 0
+loses 5.0 life (clamped) unless its life byte is 0 or its type is special, and writes `VAR_BREAKSTAT` = 1 ("Object %d: requested breakdown"); this is the writer research item U1
+was missing. The state dispatch's state 0 (`0x5E5960`) turns the script's `VAR_BROKEN` into state 1, or 4 at a life byte of 0, as Theme Park World's. A relief object below a
+repair byte of 25 writes `VAR_WORN` = 1 on every update (`0x5E3990`).
+
+**Wear tick `0x5E25B0`.** `Upgrades[level].WearRate` 0 returns; the script's `VAR_RUNNING` (variable 9) above 0 or `Info.RunsContinuously`; the turn & 0x3F zero. `VAR_ONRIDE`
+(variable 5) 0 gives the wear 0, else `0x5E21A0`: riders clamped to `0..MaxCapacity`; `s = 0.9 × speed / MaxSpeed` (the script's speed `+0xC0`, `0x6B0C30`), then `s + 0.1`, or
+`(s + 1.1) × 0.5` at or above `RedLineSpeed`; `c = 0.9 × riders / MaxCapacity`, then `c + 0.1`, or `(c + 1.1) × 0.5` when `RedLineCapacity <= riders × 0.1`; the wear is
+`(c + s) × WearRate × 0.5`. Repair loses the wear and life `0.02 ×` the wear unless the type is special, each clamped to 0..100; a repair byte below `WarnPlayer` writes `VAR_WORN` = 1;
+below `Imminent` with the byte plus the wear not below it posts advice 0x40 (not posted: the advisor queue carries the forecasts only). No random number is drawn. The world
+update runs at the 24-bit x87 precision the Direct3D device sets (`[EXT:hardware-d3d-path]`); the port rounds every step to a single.
+
+**Mechanic.** Kind 4, constructor `0x5D9B50` (the person and member start `0x626190`, sprite category 0xA in template 3, `+0x5D8` and `+0x5D4` 0, the setter's state 0, the removal
+message 10 subscribed, the search). The update is the common pre-update (`0x5DA3B0` jumps to `0x628050`) and the dispatch `0x5DA280`: 0 idle (voice 0xA3, the idle end
+`0x62CA10`), 1 patrol (voice 0xA2, the walk, the search on arrival or stuck), 21 to the ride `0x5DA650`, 22 repairing `0x5DA7C0`; 2 and 3 are the rest area's (unreached).
+- Search `0x5DA3D0`: the gate `0x62BBA0`; too tired goes to the tail; `+0x5D8` = the finder; the patrol area `0x62C6B0` (the whole map answers true; another rectangle needs the
+  unported patrol-area tool, and a saved mechanic with one is refused); "found a ride"; the route `0x62EAC0` to the ride's entrance word `+0x46` at the point (0x80, 0x80); the claim
+  `0x5E3780` (`+0x72` = his thing id, `+0x74` = the turn); advice 0x43 (not posted); a ride not broken down, not called for and below `Imminent` gets the request `0x5E3400(1)`
+  (`+0x78` = 1 and, unless a bin or a plant, closed); state 21; the tail patrols or idles.
+- Finder `0x5DAAD0` on the HQ thing of world `+0x1EAB4E` (cursor `+0x14`, kept as `ParkEconomy.MechanicCursor`): the cursor moves one object on from the previous start over the object
+  list (world `+0x1EAB88`, next `+0x14`, newest first, `0x64F3E0`) and walks it round once; a candidate is broken down, below its line, called for (not a relief object, bin or
+  plant), or (for a mechanic whose learnt ability `+0x218` is 1) upgrading, and unclaimed; the nearest by `dx² + dy²` of the cell bytes, first broken or called-for ones, then the
+  others, the first met on a tie. `+0x218` is 0 from the member start and only training writes it, so no placed mechanic upgrades.
+- Claimant `0x5E37F0`: a claim older than 100 turns lapses unless the claimant still targets the object (`0x62B280`: a mechanic's `+0x5D8`), and the claimant then goes idle.
+- To the ride `0x5DA650`: the claimant must be him ("UNUSUAL INCIDENT"); stuck clears `+0x5D8` and searches; arrived at a ride broken down, upgrading or called for sets 22,
+  else searches with the ride kept.
+- Setter `0x5DA150`: 21 queues template 0xF, 22 template 0x1A (tp.exe's repair program 0x12, `0x0074EE38`, opcode for opcode) and the timer `+0x5D4` =
+  `(100 − repair byte) × the work duration 0x62E4C0 / 100` (32-bit, toward zero).
+- Repairing `0x5DA7C0`: the working step `0x62B4D0`; the timer counts down; at 0 a broken ride gets `VAR_BREAKSTAT` = 0 and waits while `VAR_BROKEN`; then `0x5E2910`: repair 100,
+  `VAR_WORN` = 0, the claim and the call cleared, `VAR_BREAKSTAT` = 0, the open `0x5E1DC0` (open word, `VAR_RIDECLOSED` = 0, state 0) and the closing tail: the guard again (the queue
+  link `0x5E07B0`, which is tp.exe's `0x004DE4A0` instruction for instruction over 0x48-byte cell records, a running type-42 challenge, the park closed `+0x1EAB44`, the spell's
+  `ClosedDuring*` word, the coaster test) closes the ride unless a running type-46 challenge holds it; then the spell's close sets `+0x41`, and a coaster that refuses guests closes.
+- Removal message `0x5D9DD0`: a mechanic whose ride is removed forgets it and goes idle.
+
+Gated: the upgrade job (`+0x218` and training, WP14; the economy sells no upgrade); the advisor's ride messages 0x40, 0x43 and the clearing of the ride's queued notices 6..9
+(`0x636D10`) (`[EXT:tpi-capability-gates]`, the advisor's other messages; they draw nothing); the patrol area `0x6256A0` (WP15). The loo and bin finders and the toilet wear
+stay under `[EXT:tpi-no-maintenance-wear]`, which no longer covers the rides. No `rand()` call is reached: the paths above draw only the world generator, in the gate and the
+patrol, as the handyman's.
 

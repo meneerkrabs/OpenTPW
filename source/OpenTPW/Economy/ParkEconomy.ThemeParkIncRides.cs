@@ -33,7 +33,7 @@ public sealed partial class ParkEconomy
 				if ( !info.ProvidesRelief && (item.ScriptHosted ? item.ScriptBreakStat : 0) == 0 )
 				{
 					if ( RideBreakdownRules.GaugeByte( life ) != 0 && !info.IsSpecial )
-						item.LifeGauge = ClampThemeParkIncGauge( (double)life - 5.0f );
+						item.LifeGauge = ClampThemeParkIncGauge( life - 5.0f );
 					// [EXT:headless-economy-breakdown] (user-approved) as in UpdateRide: an object a script runs breaks down through its script (VAR_BREAKSTAT, the script's VAR_BROKEN and the
 					// ride update's state 1 from 0x5E5960, Theme Park World's RideStateWord.BrokenStateFor rule), the headless economy without ride scripts at once
 					if ( item.ScriptHosted )
@@ -53,10 +53,11 @@ public sealed partial class ParkEconomy
 			WriteScript( item, RideVariables.VAR_WORN, 1 );
 	}
 
-	/// <summary>A gauge after an x87 sum, clamped to 0..100 and stored as a single (the clamps of <c>0x5E26AC</c>, <c>0x5E270D</c> and <c>0x5E4943</c>).</summary>
-	// [BIN:TPI-EXE:0x5E26B4 gauge clamp] fcoms 100.0 with C0|C3 clear stores 100.0, fcoms 0.0 with C0 set stores 0 (an unordered NaN sets C0 too), else fstps; the sum is read at 53 bits (the
-	// economy's other Theme Park Inc routines)
-	internal static float ClampThemeParkIncGauge( double sum ) => sum > 100.0 ? 100f : !(sum >= 0.0) ? 0f : (float)sum;
+	/// <summary>A gauge after an x87 sum, clamped to 0..100 (the clamps of <c>0x5E26AC</c>, <c>0x5E270D</c> and <c>0x5E4943</c>).</summary>
+	// [BIN:TPI-EXE:0x5E26B4 gauge clamp] fcoms 100.0 with C0|C3 clear stores 100.0, fcoms 0.0 with C0 set stores 0 (an unordered NaN sets C0 too), else fstps
+	// [EXT:hardware-d3d-path] the world update runs on the game thread after the Direct3D device set the x87 to 24-bit precision (SetCooperativeLevel without FPUPRESERVE, 0x6BF33F/0x6BF5A8): every
+	// x87 step of the wear rounds to a single, as single-precision arithmetic does (tools/ppc-analysis/oracle_x86/tpi_ride_wear_oracle.py runs the routines at that control word)
+	internal static float ClampThemeParkIncGauge( float sum ) => sum > 100f ? 100f : !(sum >= 0f) ? 0f : sum;
 
 	/// <summary>
 	/// The wear tick (<c>0x5E25B0</c>) of a ride whose level wears: while the ride runs (its script's VAR_RUNNING, or <c>Info.RunsContinuously</c>), every 64th turn the state of repair loses the
@@ -82,9 +83,9 @@ public sealed partial class ParkEconomy
 		if ( (turn & 0x3F) != 0 )
 			return;
 		var wear = operation.Riders == 0 ? 0f : ThemeParkIncWearAmount( info, level, operation );
-		item.Repair = ClampThemeParkIncGauge( -(double)wear + (float)item.Repair );
+		item.Repair = ClampThemeParkIncGauge( -wear + (float)item.Repair );
 		if ( !info.IsSpecial )
-			item.LifeGauge = ClampThemeParkIncGauge( -(0.02f * (double)wear) + (float)item.LifeGauge );
+			item.LifeGauge = ClampThemeParkIncGauge( -(0.02f * wear) + (float)item.LifeGauge );
 		var repair = RideBreakdownRules.GaugeByte( (float)item.Repair );
 		if ( repair < info.BreakdownWarnPlayer )
 			WriteScript( item, RideVariables.VAR_WORN, 1 );
@@ -92,7 +93,7 @@ public sealed partial class ParkEconomy
 
 	/// <summary>
 	/// The wear of one tick (<c>0x5E21A0</c>, called with its rider flag 0): a speed term and a rider term, each 0.9 × value / maximum plus 0.1, or halfway to 1.1 at or above the level's red
-	/// line, times half the level's <c>WearRate</c>. The x87 sums at 53 bits, each term stored as a single, as the executable does.
+	/// line, times half the level's <c>WearRate</c>. Every step rounds to a single (the game thread's 24-bit x87, <see cref="ClampThemeParkIncGauge"/>).
 	/// </summary>
 	// [BIN:TPI-EXE:0x5E21A0 wear amount] riders = variable 5 clamped to 0..UsageInfo.MaxCapacity (+0x1E4, signed); s = single(speed / MaxSpeed (+0x1F4) × 0.9f), then single(s + 0.1f), or
 	// single((s + 1.1f) × 0.5f) when Upgrades[level].RedLineSpeed (+0x2A0) <= speed; c = single(riders / MaxCapacity × 0.9f) (flag 0: fidivl), then single(c + 0.1f), or single((c + 1.1f) × 0.5f)
@@ -101,11 +102,11 @@ public sealed partial class ParkEconomy
 	{
 		var riders = operation.Riders < 0 ? 0 : operation.Riders > info.MaxCapacity ? info.MaxCapacity : operation.Riders;
 		var speed = (float)operation.Speed;
-		var s = (float)((double)speed / info.MaxSpeed * 0.9f);
-		s = level.RedLineSpeed <= (double)speed ? (float)(((double)s + 1.1f) * 0.5f) : (float)((double)s + 0.1f);
-		var c = (float)((double)riders / info.MaxCapacity * 0.9f);
-		c = level.RedLineCapacity <= riders * (double)0.1f ? (float)(((double)c + 1.1f) * 0.5f) : (float)((double)c + 0.1f);
-		return (float)(((double)c + s) * level.WearRate * 0.5f);
+		var s = speed / info.MaxSpeed * 0.9f;
+		s = level.RedLineSpeed <= speed ? (s + 1.1f) * 0.5f : s + 0.1f;
+		var c = riders / (float)info.MaxCapacity * 0.9f;
+		c = level.RedLineCapacity <= riders * 0.1f ? (c + 1.1f) * 0.5f : c + 0.1f;
+		return (c + s) * level.WearRate * 0.5f;
 	}
 
 	/// <summary>Whether the object's state of repair byte is below its type's <c>RideBreakDown.Imminent</c> line (<c>0x5E28A0</c>): a mechanic's search takes it and requests its maintenance.</summary>

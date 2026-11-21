@@ -34,7 +34,7 @@ public class NativeWorldShaderRenderTests
 
 	/// <summary>
 	/// The uniform block as Material uploads it: a 784-byte dynamic uniform buffer (Material.ScratchBufferBytes) of which each draw records only the block's bytes (272, more with point
-	/// lights). On Direct3D 11 Veldrid writes such a partial update through a staging buffer and a GPU copy.
+	/// lights), written through DynamicBufferUpload as Material writes it, so on Direct3D 11 the upload is widened to the whole buffer (Map WRITE_DISCARD).
 	/// </summary>
 	[DataTestMethod]
 	[DataRow( "test.shader" )]
@@ -452,7 +452,18 @@ public class NativeWorldShaderRenderTests
 
 		using var commands = factory.CreateCommandList();
 		commands.Begin();
-		commands.UpdateBuffer( uniforms, 0, ubo );
+		// as Material writes it (Renderer.UpdateUniform): through DynamicBufferUpload, which on Direct3D 11 widens the partial write into the dynamic buffer
+		// to the whole 784 bytes; the device here does not come from Renderer.CreateDevice, so its backend is recorded for this upload
+		var recordedBackend = DynamicBufferUpload.Backend;
+		DynamicBufferUpload.Backend = device.BackendType;
+		try
+		{
+			DynamicBufferUpload.Update( commands, uniforms, ref ubo );
+		}
+		finally
+		{
+			DynamicBufferUpload.Backend = recordedBackend;
+		}
 		commands.UpdateBuffer( vertexBuffer, 0, vertices );
 		commands.GenerateMipmaps( texture );
 		commands.SetFramebuffer( framebuffer );

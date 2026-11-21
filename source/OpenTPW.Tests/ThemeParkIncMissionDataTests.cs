@@ -75,6 +75,42 @@ public class ThemeParkIncMissionDataTests
 	}
 
 	[TestMethod]
+	public void TheMapGridParsesTheTableAndStoresTheRowsBottomFirst()
+	{
+		var grid = ThemeParkIncMapGrid.Parse( new[] { "H.X", "% *", "2" }, "test" );
+		Assert.AreEqual( (3, 3), (grid.Width, grid.Height) );
+		Assert.AreEqual( new ThemeParkIncMapCell( 9, 16 ), grid[0, 0], "the last text row is row 0" );
+		Assert.AreEqual( new ThemeParkIncMapCell( 0, 0 ), grid[1, 0], "a short row's cells are 0" );
+		Assert.AreEqual( (ThemeParkIncMapGrid.Untouched, 4), (grid[0, 1].Value, grid[1, 1].Value), "a space takes no column" );
+		Assert.AreEqual( (8, 0, 5), (grid[0, 2].Value, grid[1, 2].Value, grid[2, 2].Value), "H, . and X" );
+		Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncMapGrid.Parse( new[] { "H?" }, "test" ), "a character outside the table" );
+		Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncMapGrid.Parse( new[] { new string( '.', 41 ) }, "test" ) );
+		Assert.ThrowsException<InvalidDataException>( () => ThemeParkIncMapGrid.Parse( Enumerable.Repeat( ".", 41 ).ToArray(), "test" ) );
+	}
+
+	[TestMethod]
+	public void TheScienceObstaclesCarryTheirOpeningWords()
+	{
+		UseTpiData();
+		var types = ThemeParkIncObstacleTypes.Load( FileSystem, "science" );
+		CollectionAssert.AreEqual( new[] { 1700, 1701, 1702, 1703, 1704, 1750, 1798 }, types.Keys.ToArray() );
+		var gate = types[1700];
+		Assert.AreEqual( (true, true, 41, 48, false, 0), (gate.IsObstacle, gate.OpenedAutomatically, gate.ShapeOffsetX, gate.ShapeOffsetY, gate.DeleteAfterUse, gate.ReplaceWithId) );
+		Assert.AreEqual( (4, 4, 8), (gate.Shape!.Width, gate.Shape.Height, gate.Shape[0, 0].Value), "a 4 × 4 block of H" );
+		Assert.AreEqual( (5, 0, 0), (gate.AfterShape![0, 1].Value, gate.AfterShape[1, 1].Value, gate.AfterShape[0, 0].Value), "X..X rows between rows of dots" );
+		var trees = types[1701];
+		Assert.AreEqual( (50, 38, 55, 41, true), (trees.ShapeOffsetX, trees.ShapeOffsetY, trees.EntranceX, trees.EntranceY, trees.DeleteAfterUse) );
+		Assert.AreEqual( (1, 1, 59, 17), (types[1702].MapOffsetX, types[1702].MapOffsetY, types[1702].ShapeOffsetX, types[1702].ShapeOffsetY), "the bridge carries a map offset" );
+		var lake = types[1703];
+		Assert.AreEqual( (6, 18, 1704, false), (lake.ShapeOffsetX, lake.ShapeOffsetY, lake.ReplaceWithId, lake.OpenedAutomatically) );
+		Assert.AreEqual( (false, 1, 7, 19), (types[1704].IsObstacle, types[1704].IsSupportingObstacle, types[1704].ShapeOffsetX, types[1704].ShapeOffsetY), "the drained lake" );
+		Assert.AreEqual( (2, 50, 13), (types[1750].GateTo, types[1750].ShapeOffsetX, types[1750].ShapeOffsetY), "the gate to the Polar Zone" );
+		Assert.IsTrue( types[1798].IsCameraPath );
+		foreach ( var zone in new[] { "water", "arabian", "wIntro" } )
+			Assert.IsTrue( ThemeParkIncObstacleTypes.Load( FileSystem, zone ).Count > 0, zone );
+	}
+
+	[TestMethod]
 	public void MissionZeroCompletesFromFortyGuestsToMissionOne()
 	{
 		UseTpiData();

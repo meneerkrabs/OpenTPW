@@ -6,6 +6,10 @@ public partial class Level
 	internal ushort ThemeParkIncCurrentObstacle { get; private set; }
 
 	private ThemeParkIncMissionWorld? tpiMissionWorld;
+	private IReadOnlyDictionary<int, ThemeParkIncObstacleType>? tpiObstacleTypes;
+
+	/// <summary>The zone's obstacle types (<c>levels/&lt;zone&gt;/obstacles</c>), read on first use.</summary>
+	internal IReadOnlyDictionary<int, ThemeParkIncObstacleType> ThemeParkIncObstacleTypes => tpiObstacleTypes ??= OpenTPW.ThemeParkIncObstacleTypes.Load( FileSystem, LevelName );
 
 	/// <summary>Opens the obstacle thing <paramref name="thing"/> (<c>0x5E8BD0</c>): the level holds no obstacle things yet, so no thing can be named.</summary>
 	private void OpenThemeParkIncObstacle( ushort thing ) =>
@@ -46,9 +50,8 @@ public partial class Level
 		// [BIN:TPI-EXE:0x647850 find attraction] walks the thing list from 0xAA116C and returns the first class-3 thing whose type record's +0 is the type, else 0
 		public ushort FindAttraction( int type ) => level.ThemeParkIncAttractionsOf( type ).FirstOrDefault() is { } item ? (ushort)item.ThingId : (ushort)0;
 
-		// [BIN:TPI-EXE:0x5F027E opened automatically] the type's object info (0xA09AC8->0x43C700) +0x138, the key Obstacle.OpenedAutomaticly
-		public bool OpensAutomatically( int type ) =>
-			level.Objects.Catalog.Entries.FirstOrDefault( entry => entry.InfoId == type ) is { } entry && entry.Settings.GetInt( "Obstacle.OpenedAutomaticly" ) == 1;
+		// [BIN:TPI-EXE:0x5F027E opened automatically] the type's object info (0xA09AC8->0x43C700) +0x138 == 1, the key Obstacle.OpenedAutomaticly; only the obstacles carry it
+		public bool OpensAutomatically( int type ) => level.ThemeParkIncObstacleTypes.TryGetValue( type, out var obstacle ) && obstacle.OpenedAutomatically;
 
 		public void OpenObstacle( ushort thing ) => level.OpenThemeParkIncObstacle( thing );
 

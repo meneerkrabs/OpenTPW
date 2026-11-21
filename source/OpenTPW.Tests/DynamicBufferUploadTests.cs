@@ -49,7 +49,7 @@ public class DynamicBufferUploadTests
 			root = root.Parent;
 		Assert.IsNotNull( root, "the repository root" );
 		var sources = new[] { "OpenTPW", "OpenTPW.Common", "OpenTPW.ModKit" }.Select( name => Path.Combine( root!.FullName, "source", name ) );
-		var helper = Path.Combine( root.FullName, "source", "OpenTPW", "Render", "DynamicBufferUpload.cs" );
+		var helper = Path.Combine( root.FullName, "source", "OpenTPW.Common", "Client", "DynamicBufferUpload.cs" );
 		var direct = new Regex( @"\.UpdateBuffer\s*(<[^>]*>\s*)?\(" );
 		var offenders = sources.SelectMany( directory => Directory.EnumerateFiles( directory, "*.cs", SearchOption.AllDirectories ) )
 			.Where( path => !path.Contains( $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}" ) && !path.Contains( $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}" ) )
@@ -58,5 +58,15 @@ public class DynamicBufferUploadTests
 			.Select( path => Path.GetRelativePath( root.FullName, path ) )
 			.ToArray();
 		CollectionAssert.AreEqual( Array.Empty<string>(), offenders, "buffer writes go through DynamicBufferUpload.Update: " + string.Join( ", ", offenders ) );
+	}
+
+	[TestMethod]
+	public void TheImGuiOverlayFindsThePackagesShadersForEveryBackend()
+	{
+		// ImGuiOverlayRenderer (OpenTPW.ModKit) is Veldrid.ImGui's renderer with whole-buffer uploads; it still reads the package's embedded shaders by these names
+		var names = System.Reflection.Assembly.Load( "Veldrid.ImGui" ).GetManifestResourceNames();
+		foreach ( var name in new[] { "imgui-vertex-legacy.hlsl.bytes", "imgui-vertex.hlsl.bytes", "imgui-frag.hlsl.bytes", "imgui-vertex.spv", "imgui-frag.spv",
+			"imgui-vertex.metallib", "imgui-frag.metallib" } )
+			CollectionAssert.Contains( names, name );
 	}
 }

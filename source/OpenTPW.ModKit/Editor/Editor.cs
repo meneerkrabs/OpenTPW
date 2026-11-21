@@ -8,7 +8,7 @@ public partial class Editor
 {
 	public static Editor Instance { get; private set; }
 
-	public ImGuiRenderer imguiRenderer { get; private set; }
+	public ImGuiOverlayRenderer imguiRenderer { get; private set; }
 	public GraphicsDevice graphicsDevice { get; private set; }
 
 	private List<BaseTab> tabs = new();
@@ -18,7 +18,7 @@ public partial class Editor
 	public static ImFontPtr MonospaceFont { get; private set; }
 	public static ImFontPtr SansSerifFont { get; private set; }
 
-	public Editor( ImGuiRenderer imguiRenderer, GraphicsDevice graphicsDevice )
+	public Editor( ImGuiOverlayRenderer imguiRenderer, GraphicsDevice graphicsDevice )
 	{
 		Instance ??= this;
 

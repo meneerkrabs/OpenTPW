@@ -156,6 +156,7 @@
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/AudioParkVisitTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/SaveDirectoryTests.cs" />
 		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ObjectSignComposeAheadTests.cs" />
+		<DeterminismPinsExcludedTests Include="../OpenTPW.Tests/ImGuiOverlayRendererTests.cs" />
 	</ItemGroup>
 	<ItemGroup Condition="'$(OpenTpwDeterminismPins)' == 'true'">
 		<Compile Include="../OpenTPW.Tests/**/*.cs" Exclude="../OpenTPW.Tests/obj/**;../OpenTPW.Tests/bin/**;@(DeterminismPinsExcludedTests)" Link="Tests/%(RecursiveDir)%(Filename)%(Extension)" />

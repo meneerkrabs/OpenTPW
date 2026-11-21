@@ -8,5 +8,5 @@ using Veldrid;
 
 public static class GlobalNamespace
 {
-	public static ImGuiRenderer ImGuiManager { get; set; }
+	public static ImGuiOverlayRenderer ImGuiManager { get; set; }
 }

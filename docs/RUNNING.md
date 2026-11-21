@@ -226,7 +226,7 @@ build availability, setup steps and limitations. Adding
 `--tpi-smoke-test` (best on `science`) drives the slice's whole HUD user flow with injected input —
 build window, place, queue tool, Escape ordering, pause and the pause menu's Quit. In Science it also
 checks saving, pause-menu continuation and the Personnel File's **Load A Game**. It ends with the bank's "Game Over" letter: the letter window opens and closing it loses the park. The smoke is refused
-on Theme Park World data. See
+on Theme Park World data, and without a fresh, dedicated `OPENTPW_SAVE_DIR`: leaving the park saves, and a smoke must never write into a real save folder. See
 [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-playable-slice) for what works.
 
 To verify Science continuation across a process restart, use the same fresh, dedicated `OPENTPW_SAVE_DIR`

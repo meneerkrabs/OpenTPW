@@ -483,6 +483,7 @@ public sealed partial class ThemeParkIncHud
 			return true;
 		// The build window rides on the HUD screen, so a modal menu on top of it hides it (ModalOpen stops the camera keys).
 		SetBuildWindowVisible( buildOpen && !MenuOpen );
+		SetStaffPanelVisible( staffOpen && !MenuOpen );
 		var overUi = Stack.Covers( context.Canvas, input.Mouse );
 		var consumed = Stack.Update( context, input );
 		// Successful load retired this HUD during its callback: leave the candidate camera and old tools alone.

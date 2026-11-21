@@ -383,9 +383,9 @@ public partial class Level
 				(StaffWorld ?? throw new InvalidDataException( "The saved staff world is unavailable." )).RestoreSnapshot( snapshot.Staff );
 			if ( snapshot.TpiStaffChain != null && Park != null )
 				(TpiStaffWorld ?? throw new InvalidDataException( "The saved Theme Park Inc staff world is unavailable." )).RestoreChain( Park.Economy, snapshot.TpiStaffChain );
-			// [BIN:TPI-EXE:0x64BC00 World loader] the World variables carry CurrentObstacle; a continuation from before the controller kept none
+			// [BIN:TPI-EXE:0x64BC00 World loader] the World variables carry CurrentObstacle; a continuation without it is refused (ParkResumeSaveFile.ThemeParkIncObstacleMissing)
 			if ( IsThemeParkIncSlice )
-				ThemeParkIncCurrentObstacle = (ushort)(snapshot.TpiCurrentObstacle ?? 0);
+				ThemeParkIncCurrentObstacle = (ushort)(snapshot.TpiCurrentObstacle ?? throw new InvalidDataException( ParkResumeSaveFile.ThemeParkIncObstacleMissing ));
 		}
 		yield return true;
 		using ( LoadProfile.Measure( "resume-coasters" ) )

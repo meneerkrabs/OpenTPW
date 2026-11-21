@@ -513,6 +513,7 @@ public sealed partial class ParkEconomy : IParkEconomy
 		// [BIN:TPI-EXE:0x649868 staff pool update] after the thing loop the world update's tail updates the hiring pool (0x5D65E0 -> 0x631B40: expiry, refill and top-up, drawing
 		// from the world generator) in every world state, and only then the calendar (0x5D65FB -> 0x6083D0), whose day and month messages follow below
 		// [BIN:TPI-EXE:0x630CB0 pool rank] the pool reads the career's rank (+0x1060), which promotions raise (ThemeParkIncCareer.Promote)
+		// Before the pool, 0x5D65E9 first runs the staff sub-object update [esi+0x44c] -> 0x5BCB10 (a timer against [0xA02234] that posts message 0x17); it draws nothing from the world generator, so the draw order is unaffected; not ported.
 		TpiStaff?.UpdatePool( World, turn, TpiCareer!.Rank );
 		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
 		var stored = ParkCalendar.FieldsAtTurn( previousTurn );

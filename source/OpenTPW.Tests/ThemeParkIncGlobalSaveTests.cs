@@ -176,6 +176,7 @@ public class ThemeParkIncGlobalSaveTests
 	public void TheHeaderTakesAnyVersionFromTwelveAndAnyTheme()
 	{
 		Assert.AreEqual( ThemeParkIncGlobalSaveOutcome.Failed, ThemeParkIncGlobalSave.Read( Create( new Layout { Version = 11 } ) ).Outcome );
+		Assert.AreEqual( ThemeParkIncGlobalSaveOutcome.Complete, ThemeParkIncGlobalSave.Read( Create( new Layout { Version = -1 } ) ).Outcome, "the test is unsigned (0x74D28F jae): -1 is a high version" );
 		var newer = ThemeParkIncGlobalSave.Read( Create( new Layout { Version = 13, Theme = 7 } ) );
 		Assert.AreEqual( (ThemeParkIncGlobalSaveOutcome.Complete, 13, 7), (newer.Outcome, newer.Version, newer.Theme) );
 		Assert.AreEqual( 12, BinaryPrimitives.ReadInt32LittleEndian( newer.Write().AsSpan( 4 ) ), "the writer stores version 12" );

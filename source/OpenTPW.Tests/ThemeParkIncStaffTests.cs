@@ -23,6 +23,59 @@ public class ThemeParkIncStaffTests
 		return new ThemeParkIncStaffSettings( new SamSettings( new[] { SamDocument.Parse( File.ReadAllText( file ), file ) } ) );
 	}
 
+	private static BalanceSettings RetailBalance()
+	{
+		var path = Environment.GetEnvironmentVariable( "OPENTPW_TPI_PATH" );
+		if ( string.IsNullOrWhiteSpace( path ) || !Directory.Exists( path ) )
+			Assert.Inconclusive( "Set OPENTPW_TPI_PATH to a Theme Park Inc installation or its Data folder." );
+		var data = Directory.EnumerateDirectories( path! ).FirstOrDefault( directory => string.Equals( Path.GetFileName( directory ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? path!;
+		var file = Directory.EnumerateFiles( Path.Combine( data, "levels" ) ).First( name => string.Equals( Path.GetFileName( name ), "Standard.sam", StringComparison.OrdinalIgnoreCase ) );
+		return BalanceSettings.ForThemeParkInc( new SamSettings( new[] { SamDocument.Parse( File.ReadAllText( file ), file ) } ), "science" );
+	}
+
+	private static byte[] Bytes( string json ) => System.Text.Encoding.UTF8.GetBytes( json );
+
+	[TestMethod]
+	public void ASaveWithoutTheStaffBlockIsRefusedForThemeParkInc()
+	{
+		var settings = RetailBalance();
+		var economy = new ParkEconomy( settings, new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
+		Assert.IsNotNull( economy.TpiStaff );
+		var json = System.Text.Json.Nodes.JsonNode.Parse( ParkSaveFile.Serialize( economy ) )!.AsObject();
+		Assert.IsTrue( json.Remove( "TpiStaff" ) );
+		var data = ParkSaveFile.Deserialize( Bytes( json.ToJsonString() ) );
+		var exception = Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( data, settings, economy.Catalog ) );
+		StringAssert.Contains( exception.Message, "made before Theme Park Inc staff" );
+	}
+
+	[TestMethod]
+	public void AThemeParkWorldSaveCarryingTheStaffBlockIsRefused()
+	{
+		var tpi = new ParkEconomy( RetailBalance(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
+		var staff = System.Text.Json.Nodes.JsonNode.Parse( ParkSaveFile.Serialize( tpi ) )!["TpiStaff"]!.DeepClone();
+		var tpw = new ParkEconomy( EconomyTestData.Settings(), new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7 );
+		var json = System.Text.Json.Nodes.JsonNode.Parse( ParkSaveFile.Serialize( tpw ) )!.AsObject();
+		json["TpiStaff"] = staff;
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Bytes( json.ToJsonString() ) ) );
+	}
+
+	[TestMethod]
+	public void ASerializeRestoreRoundTripKeepsThePoolAndTheWorldGeneratorAndTheNextRefillDrawsAlike()
+	{
+		var settings = RetailBalance();
+		var economy = new ParkEconomy( settings, new EconomyObjectCatalog( Array.Empty<EconomyObjectInfo>() ), ParkGameMode.FullSimulation, 7, EconomyRules.ThemeParkIncMoney );
+		economy.AdvanceMonths( 1 );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Bytes( ParkSaveFile.Serialize( economy ) ) ), settings, economy.Catalog );
+		CollectionAssert.AreEqual( economy.TpiStaff!.Slots.ToArray(), restored.TpiStaff!.Slots.ToArray(), "the slots survive the round trip" );
+		Assert.AreEqual( economy.World.State, restored.World.State, "the world generator survives the round trip" );
+		// past the refill interval (4 x TimeBetweenStaffUpdates turns) the next pool update draws from the generator in both parks
+		var turns = 4L * settings.ThemeParkIncStaff!.TimeBetweenStaffUpdates + 8;
+		economy.Advance( turns * 15000 );
+		restored.Advance( turns * 15000 );
+		CollectionAssert.AreEqual( economy.TpiStaff.Slots.ToArray(), restored.TpiStaff.Slots.ToArray(), "the refill picks the same candidates" );
+		Assert.AreEqual( economy.World.State, restored.World.State, "and draws the same words" );
+	}
+
 	[TestMethod]
 	public void TheInterpolationHelperClampsAndRoundsTowardZero()
 	{

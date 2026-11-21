@@ -615,7 +615,7 @@ public sealed class ThemeParkIncCareer
 		Reset();
 		zones.Clear();
 		CurrentZone = null;
-		if ( save.Version < ThemeParkIncGlobalSave.SupportedVersion )
+		if ( (uint)save.Version < ThemeParkIncGlobalSave.SupportedVersion )
 			return ThemeParkIncGlobalSaveOutcome.Failed;
 		// the original would load "Miss%02d.sam" of any counter and read the region table past its end on the next advance: a counter outside the table is refused
 		if ( !IsValidMissionCounter( save.Mission ) )

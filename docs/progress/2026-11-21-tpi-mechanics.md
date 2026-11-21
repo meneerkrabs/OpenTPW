@@ -1,0 +1,19 @@
+## Theme Park Inc: mechanics repair the rides as they wear (November 21, 2026)
+
+A Theme Park Inc park now wears its rides down and breaks them by Theme Park Inc's own rules, and the player can hire a Mechanic to repair them. The Mechanic is hired and dropped like the Cleaner and runs Theme Park Inc's mechanic state machine.
+
+- **Ride wear.** The object update (`0x5E4790`) runs the wear tick (`0x5E25B0`) every eighth turn while the ride is open: every 64th turn the ride loses its wear (`0x5E21A0`, from the riders, the speed, the maximum capacity and speed and the level's red lines and wear rate) from its state of repair, and a fiftieth of it from its life gauge unless it is special. Below the type's `WarnPlayer` line the ride is worn. A ride whose repair or life has run out breaks down (VAR_BREAKSTAT), and loses 5 of its life unless that is already 0. The relief below 25 follows `0x5E3990`. The game thread runs at 24-bit x87 precision, so the wear is computed in single precision.
+- **Starting life.** A new ride starts with the type's `WorkingLife` as its life gauge (`0x5DB53A`); the prebuilt Science park's saved gauges match it.
+- **The mechanic.** States 0, 1, 0x15 and 0x16 (idle, patrol, to ride, repairing) follow `0x5DA280`, `0x5DA650` and `0x5DA7C0`. His search (`0x5DA3D0`) runs the gate `0x62BBA0`, the ride finder `0x5DAAD0` (a cursor on the HQ walking the objects newest first, broken and requested rides first, nearest by squared distance), the route to the ride's entrance, the claim (`0x5E3780`) and the maintenance request below the type's `Imminent` line (`0x5E3400`). A claim lapses after 100 turns when its mechanic no longer targets the ride (`0x5E37F0`). The repair timer is `(100 - repair) * WorkDuration / 100` (`0x5DA150`), and the full repair (`0x5E2910`) restores the ride and reopens it with the closing tail of the repair (queue link, challenges 42 and 46, park closed, weather, coaster test). Removing a ride sends its mechanic back to idle (`0x5D9DD0`).
+- **Sprites.** Mechanics are drawn with Theme Park Inc's own mechanic sprites (`Generic\Mechanics`).
+- **Saves.** The Science continuation save keeps the mechanics, their ride and timer, the ride wear and the claims. A Theme Park Inc save made before this is refused with a message.
+
+Labels: `[EXT:tpi-no-maintenance-wear]` now covers only the toilets and bins, and `[EXT:tpi-capability-gates]` no longer covers the mechanics. Still gated: the ride upgrade job (it needs the training of WP14), the advisor's ride messages, and a patrol area smaller than the whole map (`0x6256A0`, WP15). No new approximation or label is added, and no CRT `rand()` draw is reached.
+
+Verified with these checks:
+
+- New tests for the type keys, the starting life, ten wear-amount goldens, the wear tick, the breakdown, the Imminent request (including the finder's cursor quirk), the claim lapse, the full repair, a ride removed under its mechanic and a save round-trip and refusal; the Theme Park Inc, save, ride and staff filters pass with the retail data.
+- An x86 oracle (`tools/ppc-analysis/oracle_x86/tpi_ride_wear_oracle.py`) runs the executable's wear amount, wear tick and repair timer in an emulator: 3000 cases, no mismatch at 24-bit and 53-bit precision.
+- The silent, offscreen Science smoke hires a Mechanic, drops him in the park and sees him patrol and drawn.
+
+The original game was not launched, and no binary or data is included.

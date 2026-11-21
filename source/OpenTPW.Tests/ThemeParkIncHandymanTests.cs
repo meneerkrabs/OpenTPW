@@ -231,6 +231,48 @@ public class ThemeParkIncHandymanTests
 		Assert.IsTrue( member.DayTicks( ThemeParkIncStaffMember.DisplayState.Working ) > 0, "the working updates are counted" );
 	}
 
+	private sealed class Banks( int count ) : IStaffSpriteBanks
+	{
+		public SpriteAnimationFile? AnimationsOf( StaffType type, int variantKey ) => null;
+		public int BankCount( StaffType type ) => type == StaffType.Handyman ? count : 0;
+	}
+
+	[TestMethod]
+	public void TheSpriteTemplatesAreTheExecutablesProgramsAndTheLookIsTheDrawsVariant()
+	{
+		// [BIN:TPI-EXE:0x9CDA94 staff sprite programs] Theme Park Inc's templates run tp.exe's programs under other numbers
+		Assert.AreEqual( (1, 2, 3, 9, 0x11), (ThemeParkIncStaffWorld.ProgramOf( 1 ), ThemeParkIncStaffWorld.ProgramOf( 2 ), ThemeParkIncStaffWorld.ProgramOf( 3 ),
+			ThemeParkIncStaffWorld.ProgramOf( 0xF ), ThemeParkIncStaffWorld.ProgramOf( 0x19 )) );
+		// [BIN:TPI-EXE:0x6902F0 sprite variant] (draw >> 2) mod the loaded banks
+		var member = new ThemeParkIncStaffMember( 1, ThemeParkIncStaffRole.Handyman, 0, 0, 100, 0, 0x2Du );
+		Assert.AreEqual( 0, ThemeParkIncStaffWorld.VariantOf( member, new Banks( 1 ) ) );
+		Assert.AreEqual( (0x2D >> 2) % 3, ThemeParkIncStaffWorld.VariantOf( member, new Banks( 3 ) ) );
+		Assert.AreEqual( 0, ThemeParkIncStaffWorld.VariantOf( member, null ), "no banks loaded" );
+	}
+
+	[TestMethod]
+	public void TheStatesAskTheSpriteForTheStandTheWalkAndTheSweep()
+	{
+		// [BIN:TPI-EXE:0x5D4980 handyman start] the source is made in template 3; [BIN:TPI-EXE:0x5D5630 handyman state setter] 0x0F queues 0xF (the patrol walk), 0x10 queues 0x19 (the sweep);
+		// [BIN:TPI-EXE:0x60B541 walk request] a step still walking asks for the walk 1; [BIN:TPI-EXE:0x5D1080 sprite requests] the pre-update applies the pending template
+		var economy = ScienceEconomy();
+		var world = new ThemeParkIncStaffWorld( Row( economy ) );
+		PlaceLitter( economy, (6, 5) );
+		var member = Hire( economy, world, (2, 5), experience: economy.TpiStaff!.Settings.MaxExperience / 2 );
+		Assert.IsNotNull( member.Sprite.Source, "the drop makes the source" );
+		Assert.IsTrue( member.Sprite.RestartsAt( StaffSpriteEvents.Stand ), "in the stand" );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.ToLitter, StaffSpriteEvents.Patrol), (member.State, member.Sprite.PendingTemplate), "the walk to litter queues the patrol walk" );
+		var turn = economy.Turn;
+		world.Update( economy, member, ++turn );
+		Assert.IsTrue( member.Sprite.RestartsAt( StaffSpriteEvents.Patrol ), "the pre-update applied it" );
+		Assert.AreEqual( StaffSpriteEvents.Walk, member.Sprite.PendingTemplate, "a step still walking asks for the walk" );
+		for ( var step = 0; step < 400 && member.State == ThemeParkIncStaffWorld.ToLitter; step++ )
+			world.Update( economy, member, ++turn );
+		Assert.AreEqual( (ThemeParkIncStaffWorld.Sweeping, StaffSpriteEvents.Sweep), (member.State, member.Sprite.PendingTemplate) );
+		world.Update( economy, member, ++turn );
+		Assert.IsTrue( member.Sprite.RestartsAt( StaffSpriteEvents.Sweep ), "he sweeps" );
+	}
+
 	[TestMethod]
 	public void LitterClaimedAwayEndsTheWalkAndAnotherSearchRuns()
 	{

@@ -188,6 +188,16 @@ public partial class Level
 			return;
 		TpiStaffWorld = new ThemeParkIncStaffWorld( Guests.Grid ) { Guests = Guests };
 		AdoptTpiStaffThings();
+		// the members' sprites: Theme Park Inc's esprites.wad holds the handymen's bank under the folder Theme Park World's loader reads (Generic\Handymen, Spr_ha), found by name
+		if ( OriginalPark != null )
+		{
+			StaffSpriteSet sprites;
+			using ( LoadProfile.Measure( "tpi-staff-sprites" ) )
+				sprites = StaffSpriteSet.Load( LevelName, StaffSpriteRules.BankLimitOf( IGraphicsSettings.Instance ) );
+			TpiStaffWorld.SpriteBanks = sprites;
+			StaffRenderer = new StaffRenderer( () => Park?.Economy.TpiStaff?.Members ?? (IReadOnlyList<ThemeParkIncStaffMember>)Array.Empty<ThemeParkIncStaffMember>(),
+				OriginalPark.Heightfield, sprites ) { FeetHeight = ( x, y ) => PoolBridges?.At( (int)x, (int)y )?.HeightAt( x, y ) };
+		}
 		// a continuation files its members with their saved entry numbers (Level.Resume, RestoreChain); the turn's sweep files any other placed member
 	}
 

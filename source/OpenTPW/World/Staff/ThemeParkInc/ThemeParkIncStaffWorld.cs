@@ -39,6 +39,78 @@ public sealed class ThemeParkIncStaffWorld
 	/// <summary>The guests: the members steer apart from them and share their cell chains (WALK-003); null in a test without guests.</summary>
 	public GuestSimulation? Guests { get; set; }
 
+	/// <summary>The staff sprite banks the level loaded from Theme Park Inc's <c>esprites.wad</c> (presentation); null: none (tests, a headless world).</summary>
+	public IStaffSpriteBanks? SpriteBanks { get; set; }
+
+	/// <summary>The sprite clock sample of the latest running tick, the time a new sprite source is made at (presentation).</summary>
+	public int SpriteClockMilliseconds { get; set; }
+
+	/// <summary>
+	/// The Theme Park World program a Theme Park Inc template number runs: Theme Park Inc's table 0x9CDA94 holds the same sprite programs as tp.exe's 0x0075A418 under other numbers, opcode for opcode.
+	/// </summary>
+	// [BIN:TPI-EXE:0x9CDA94 staff sprite programs] 1 (0x9AFBA8) SET 0x10 = 0x1200, SLOT 1, FRAME 0..7, JMP: tp.exe's walk 1; 2 (0x9AFC04) SLOT 2, FRAME 0..7: the run 2; 3 (0x9AFC60) SLOT 0, FRAME 0: the stand 3;
+	// 0xF (0x9AFB0C) SLOT 1, each FRAME 0..7 twice: the patrol walk 9; 0x19 (0x9B0630) SLOT 4, each FRAME 0..3 twice: the sweep 0x11 (the opcodes 0x40748C -> 0x4E5A20 SET, 0x401091 -> 0x4E61F0 SLOT,
+	// 0x404F43 -> 0x4E62B0 FRAME and 0x409291 -> 0x4E4FE0 JMP stand where tp.exe's 0x004766D0, 0x004768B0, 0x00476940 and 0x00476020 do, with the same operands)
+	public static int ProgramOf( int template ) => template switch
+	{
+		1 => StaffSpriteEvents.Walk,
+		2 => StaffSpriteEvents.Run,
+		IdleTemplate => StaffSpriteEvents.Stand,
+		WalkTemplate => StaffSpriteEvents.Patrol,
+		WorkTemplate => StaffSpriteEvents.Sweep,
+		_ => throw new ArgumentOutOfRangeException( nameof( template ), $"Theme Park Inc sprite template {template} is not ported." )
+	};
+
+	/// <summary>The handymen's bank a member is drawn from: the candidate's sprite draw, (R >> 2) mod the loaded banks of category 9, kept as a byte.</summary>
+	// [BIN:TPI-EXE:0x6902F0 sprite variant] (draw >> 2) divided (unsigned) by the category's loaded count (0x9D7008 + 12 × category), the remainder; the candidate keeps its low byte (+0x10) and the
+	// member its variant word +0x30, which 0x5D1000 hands to the sprite; the count is the banks the level loaded from Generic\Handymen (one, Spr_ha, in the retail data)
+	public static int VariantOf( ThemeParkIncStaffMember member, IStaffSpriteBanks? banks ) =>
+		banks?.BankCount( StaffType.Handyman ) is > 0 and var count ? (int)((member.SpriteDraw >> 2) % (uint)count) & 0xFF : 0;
+
+	/// <summary>
+	/// A state setter's template on the member's sprite wrapper: queued for the next pre-update, or a new source made in it when the member has none (the setters' tail, 0x628180: 0x5D1000 without a
+	/// handle, else 0x5D0F90).
+	/// </summary>
+	private void RequestTemplate( ThemeParkIncStaffMember member, int template )
+	{
+		member.Template = template;
+		if ( member.Sprite.Source == null )
+			member.Sprite.Create( StaffType.Handyman, VariantOf( member, SpriteBanks ), ProgramOf( template ), SpriteClockMilliseconds, SpriteBanks );
+		else
+			member.Sprite.QueueTemplate( ProgramOf( template ) );
+	}
+
+	/// <summary>The sprite scheduler's pass over the members' sources (Theme Park World's 0x00475360, on the even substeps): a source whose due time is before the clock sample takes one step.</summary>
+	public void ScheduleSprites( ParkEconomy? economy, int nowMilliseconds )
+	{
+		if ( economy?.TpiStaff is not { } staff )
+			return;
+		foreach ( var member in staff.Members )
+			member.Sprite.Tick( nowMilliseconds );
+	}
+
+	private const float TicksPerTurn = ParkCalendar.TicksPerSecond * ParkCalendar.TurnMilliseconds / 1000f;
+
+	/// <summary>
+	/// Presentation, every fixed tick: the point each member is drawn at, between his position at the start of his last update and his current one over the turn (Theme Park World's interpolation
+	/// 0x004F9F00, as its staff world's).
+	/// </summary>
+	public void TickPresentation( ParkEconomy? economy )
+	{
+		if ( economy?.TpiStaff is not { } staff || Guests is not { } guests )
+			return;
+		foreach ( var member in staff.Members )
+		{
+			if ( member.Navigation is not { } navigation )
+				continue;
+			if ( member.TurnTick < 0 )
+				(member.TurnFromX, member.TurnFromY, member.TurnTick) = (navigation.X, navigation.Y, guests.TickCount);
+			var (x, y) = PersonInterpolation.Point( member.TurnFromX, member.TurnFromY, navigation.X, navigation.Y, (guests.TickCount - member.TurnTick) / TicksPerTurn, clamped: true );
+			member.DrawX = x / (float)Fixed16.One;
+			member.DrawY = y / (float)Fixed16.One;
+		}
+	}
+
 	/// <summary>The members' voices of the last updates: the handyman's walking (0xA0) and idle (0xA1) voice events at a member's position. Presentation, taken by the audio.</summary>
 	public List<(int Event, float X, float Y)> Voices { get; } = new();
 
@@ -87,6 +159,9 @@ public sealed class ThemeParkIncStaffWorld
 		member.Template = IdleTemplate;
 		member.DrawX = navigation.X / (float)Fixed16.One;
 		member.DrawY = navigation.Y / (float)Fixed16.One;
+		member.TurnTick = -1;
+		member.Sprite.Reset();
+		member.Sprite.Create( StaffType.Handyman, VariantOf( member, SpriteBanks ), ProgramOf( IdleTemplate ), SpriteClockMilliseconds, SpriteBanks );
 		FollowChain( member );
 		Search( economy, member, economy.Turn );
 		FollowChain( member );
@@ -156,11 +231,15 @@ public sealed class ThemeParkIncStaffWorld
 		if ( member.Navigation == null || member.Role != ThemeParkIncStaffRole.Handyman || economy.TpiStaff is not { } staff )
 			return;
 		member.LastUpdateTurn = turn;
+		(member.TurnFromX, member.TurnFromY, member.TurnTick) = (member.Navigation.X, member.Navigation.Y, Guests?.TickCount ?? -1);
 		PreUpdate( economy, staff.Settings, member, turn );
 		Dispatch( economy, staff.Settings, member, turn );
-		var navigation = member.Navigation!;
-		member.DrawX = navigation.X / (float)Fixed16.One;
-		member.DrawY = navigation.Y / (float)Fixed16.One;
+		if ( Guests == null )
+		{
+			var navigation = member.Navigation!;
+			member.DrawX = navigation.X / (float)Fixed16.One;
+			member.DrawY = navigation.Y / (float)Fixed16.One;
+		}
 		FollowChain( member );
 	}
 
@@ -190,6 +269,11 @@ public sealed class ThemeParkIncStaffWorld
 		// [EXT:tpi-twp-guest-rules] 0x60BC90's smoothing of (+0xD4 + +0xD6 + +0xD8) / 100 into +0xDC and the decay of +0xD8 by 99/100 are taken as Theme Park World's 0x004FA870, the caps
 		// 0x63EF90 as 0x00510190
 		(member.SmoothedSpeed, member.Boost, member.MaxSpeed, member.MaxForce) = GuestSpeed.Update( member.SmoothedSpeed, member.BaseSpeed, member.SpeedBonus, member.Boost );
+		// [BIN:TPI-EXE:0x5D1080 sprite requests] 0x60BC90 then applies the wrapper's pending template (+0xC, through the table 0x9CDA94, 0x4E49A0) and interval (+0x10, 0x4E42B0), clearing each, as tp.exe's
+		// 0x004D4190; a member restored from a save (whose sprite is not saved) gets a source in his state's template first
+		if ( member.Sprite.Source == null )
+			member.Sprite.Create( StaffType.Handyman, VariantOf( member, SpriteBanks ), ProgramOf( member.Template ), SpriteClockMilliseconds, SpriteBanks );
+		member.Sprite.ApplyPending( StaffType.Handyman, VariantOf( member, SpriteBanks ), SpriteBanks );
 		member.CountTick( (ThemeParkIncStaffMember.DisplayState)Category( member.State ) );
 		var period = SearchPeriod( member.Experience, settings.MaxExperience );
 		var due = period == 0 || unchecked( (uint)turn ) % (uint)period == 0;
@@ -373,7 +457,7 @@ public sealed class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x62BD8D comfortable branch] energy byte above RestLevel: +0xD4 = lerp(exp, 0, MaxExperience, w, MaxSpeedDifference + w) with w = 140 at 100, else the word at 0x9CFB28 by the
 	// tens; happiness byte at most 10 asks for the thought 0x17, above 97 a world draw whose low nibble 0 asks for 0x16 (presentation)
 	// [BIN:TPI-EXE:0x62BE2B gate end] +0x27E is 0 for every member but a researcher listed for a room (only 0x62E240 writes it; the constructors clear it), so the gate answers 0
-	private static bool Gate( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
+	private bool Gate( ParkEconomy economy, ThemeParkIncStaffSettings settings, ThemeParkIncStaffMember member, long turn )
 	{
 		var energy = (int)(long)member.Energy & 0xFF;
 		if ( energy <= settings.RestLevel )
@@ -409,25 +493,25 @@ public sealed class ThemeParkIncStaffWorld
 	// [BIN:TPI-EXE:0x5D5630 handyman state setter] 0x0F, 0x11, 0x13: 0x60B3F0(1) and template 0xF; 0x10, 0x12, 0x14: +0x5D4 = the turn and template 0x19; the others through 0x628180
 	// [BIN:TPI-EXE:0x628180 staff state setter] 0 (and 0x23): +0x23C = the turn after state 1, else 0, then 0x60B3F0(0) and template 3 (0x60B6E0); 1: the slack test 0x62D650 (energy byte below
 	// StaffSlackingEnergy looks for a rest area, 0x62BA20, not ported: none, so it answers false and no draw is taken), then template 0xF; the state is stored last (0x6285CD)
-	internal static void SetState( ParkEconomy economy, ThemeParkIncStaffMember member, int state, long turn )
+	internal void SetState( ParkEconomy economy, ThemeParkIncStaffMember member, int state, long turn )
 	{
 		switch ( state )
 		{
 			case 0x0F or 0x11 or 0x13:
 				member.SpeedBonus = BonusTable[1];
-				member.Template = WalkTemplate;
+				RequestTemplate( member, WalkTemplate );
 				break;
 			case 0x10 or 0x12 or 0x14:
 				member.WorkStamp = turn;
-				member.Template = WorkTemplate;
+				RequestTemplate( member, WorkTemplate );
 				break;
 			case 0 or 0x23:
 				member.IdleStamp = member.State == Walking ? turn : 0;
 				member.SpeedBonus = BonusTable[0];
-				member.Template = IdleTemplate;
+				RequestTemplate( member, IdleTemplate );
 				break;
 			case Walking:
-				member.Template = WalkTemplate;
+				RequestTemplate( member, WalkTemplate );
 				break;
 			default:
 				throw new InvalidOperationException( $"Theme Park Inc staff state {state} is not ported." );
@@ -443,12 +527,33 @@ public sealed class ThemeParkIncStaffWorld
 		var navigation = member.Navigation!;
 		if ( !navigation.Original )
 			return WalkResult.Arrived;
-		return navigation.Step( member.MaxSpeed, member.MaxForce, grid.Cells, static ( _, _ ) => false, Separation ) switch
+		var (beforeX, beforeY) = (navigation.X, navigation.Y);
+		var result = navigation.Step( member.MaxSpeed, member.MaxForce, grid.Cells, static ( _, _ ) => false, Separation ) switch
 		{
 			OpenTPW.WalkResult.Walking => WalkResult.Walking,
 			OpenTPW.WalkResult.Stuck => WalkResult.Stuck,
 			_ => WalkResult.Arrived
 		};
+		// the heading (+0x2C) follows the step's direction ([EXT:tpi-twp-guest-rules]: Theme Park World's walk; Theme Park Inc's arrival also writes it, D1, from the same differences)
+		var (dx, dy) = ((long)navigation.X - beforeX, (long)navigation.Y - beforeY);
+		if ( dx != 0 || dy != 0 )
+		{
+			var length = Math.Sqrt( dx * (double)dx + dy * (double)dy );
+			(member.HeadingX, member.HeadingY) = ((float)(dx / length), (float)(dy / length));
+		}
+		// [BIN:TPI-EXE:0x60B541 walk request] a step that is still walking asks the sprite for the walk (template 1, 0x9AFBA8) unless its restart PC is there already (0x4E4AB0, then 0x5D0F90(1)): the run
+		// (2, 0x9AFC04) is for a guest without +0x2A4 or a guard with a speed bonus, never a handyman; then the interval clamp(trunc(62 / v), 0, 250) (0x5D10F0) of the step's length times 0x93E5B4,
+		// doubled without the run, as tp.exe's 0x004FA3F8
+		if ( result == WalkResult.Walking )
+		{
+			if ( !member.Sprite.RestartsAt( StaffSpriteEvents.Walk ) )
+			{
+				member.Template = 1;
+				member.Sprite.QueueTemplate( StaffSpriteEvents.Walk );
+			}
+			member.Sprite.QueueInterval( GuestSimulation.BodyIntervalForStep( beforeX, beforeY, navigation.X, navigation.Y, run: false ) );
+		}
+		return result;
 	}
 
 	private readonly List<GuestNavigation> neighbours = new();

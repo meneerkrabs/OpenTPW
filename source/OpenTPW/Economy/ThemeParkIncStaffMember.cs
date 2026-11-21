@@ -217,6 +217,17 @@ public sealed class ThemeParkIncStaffMember
 	/// <summary>Presentation: the point the member is drawn at, in cells.</summary>
 	public float DrawX { get; internal set; }
 	public float DrawY { get; internal set; }
+	/// <summary>Presentation: the walk's heading (the direction of its last step), which turns the sprite.</summary>
+	public float HeadingX { get; internal set; }
+	public float HeadingY { get; internal set; } = 1f;
+	/// <summary>Presentation: the walk position at the start of the member's last update and the tick it was taken, for the draw point's interpolation over the turn.</summary>
+	internal int TurnFromX, TurnFromY;
+	internal long TurnTick = -1;
+	/// <summary>
+	/// Presentation: the member's sprite wrapper and source (+0x14), playing the templates the state setters and the walk step queue (ThemeParkIncStaffWorld). Not saved: a restored member gets a fresh
+	/// source in his state's template at his first update.
+	/// </summary>
+	public StaffSpriteState Sprite { get; } = new();
 
 	/// <summary>The member's thing for a save; null before it is placed.</summary>
 	internal ThemeParkIncStaffWorldSnapshot? CaptureWorld() => Navigation is not { } navigation ? null : new( ThingId, State, IdleStamp, WorkStamp, LitterCell, BaseSpeed, SpeedBonus, Boost,
@@ -229,7 +240,7 @@ public sealed class ThemeParkIncStaffMember
 	internal static bool IsValidWorld( ThemeParkIncStaffRole role, ThemeParkIncStaffWorldSnapshot? world ) => world == null || IsPortedState( role, world.State )
 		&& world.ThingId is >= 1 and <= ThingPool.Capacity && world.LitterCell is >= 0 and <= ParkLitter.MapSize * ParkLitter.MapSize && world.BaseSpeed is >= 0 and <= ushort.MaxValue
 		&& world.SpeedBonus is >= 0 and <= ushort.MaxValue && world.Boost is >= 0 and <= ushort.MaxValue && float.IsFinite( world.SmoothedSpeed ) && world.IdleStamp >= 0 && world.WorkStamp >= 0
-		&& world.PatrolArea is { Length: 4 } area && area.All( value => value is >= 0 and < ParkLitter.MapSize ) && world.CellSerial >= 0
+		&& world.PatrolArea is { Length: 4 } area && area.All( value => value is >= 0 and < ParkLitter.MapSize ) && world.CellSerial >= 0 && world.Template is 1 or 2 or 3 or 0xF or 0x19
 		&& world.Navigation is { IsValid: true };
 
 	/// <summary>Restores the saved thing (a valid one, <see cref="IsValidWorld"/>), or leaves the member unplaced.</summary>

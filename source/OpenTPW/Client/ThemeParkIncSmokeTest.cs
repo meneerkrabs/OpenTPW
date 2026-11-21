@@ -628,21 +628,54 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			var grid = Level.Guests!.Grid;
 			var before = Level.Park!.Economy.TpiStaff!.Members.Count;
 			handymanDropTurn = Level.Park.Economy.Turn;
-			for ( var y = 0; y < grid.CountY && hiredHandyman == null; y++ )
-				for ( var x = 0; x < grid.CountX && hiredHandyman == null; x++ )
-					if ( grid.IsWalkable( x, y ) && System.Numerics.BitOperations.PopCount( (uint)(grid.Cells.LinksAt( x, y ) & 0x55) ) >= 2 )
-						hiredHandyman = Level.DropTpiStaff( x, y );
+			// a path junction about eight cells into the park from the first linked path cell (the entrance's), so the cleaner walks in the open where the camera sees him
+			int Links( int x, int y ) => System.Numerics.BitOperations.PopCount( (uint)(grid.Cells.LinksAt( x, y ) & 0x55) );
+			var cells = Enumerable.Range( 0, grid.CountX * grid.CountY ).Select( index => (X: index % grid.CountX, Y: index / grid.CountX) )
+				.Where( cell => grid.IsWalkable( cell.X, cell.Y ) && Links( cell.X, cell.Y ) >= 2 ).OrderBy( cell => cell.Y ).ThenBy( cell => cell.X ).ToList();
+			Require( cells.Count > 0, "the park has linked path cells" );
+			var first = cells[0];
+			foreach ( var cell in cells.OrderBy( cell => (Links( cell.X, cell.Y ) >= 3 ? 0 : 100) + Math.Abs( Math.Abs( cell.X - first.X ) + Math.Abs( cell.Y - first.Y ) - 8 ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ) )
+				if ( (hiredHandyman = Level.DropTpiStaff( cell.X, cell.Y )) != null )
+					break;
 			Require( hiredHandyman != null && Level.Park.Economy.TpiStaff.Members.Count == before + 1, "the drop makes the member" );
 			Require( Level.TpiPlacingSlot < 0 && hiredHandyman!.Placed && Level.Things.IsUsed( hiredHandyman.ThingId ), "the member's thing is in the park's pool" );
 		} );
 		Wait( "the cleaner works", 150 );
+		PlanCleanerView();
 		Do( "the cleaner is updated by the park's turns", () =>
 		{
 			var member = hiredHandyman!;
 			Require( member.LastUpdateTurn > handymanDropTurn, $"the thing sweep updated the cleaner (last update {member.LastUpdateTurn}, dropped at {handymanDropTurn})" );
 			Require( member.State is ThemeParkIncStaffWorld.Idle or ThemeParkIncStaffWorld.Walking or ThemeParkIncStaffWorld.ToLitter or ThemeParkIncStaffWorld.Sweeping, "in a handyman state" );
 			Require( float.IsFinite( member.Energy ) && member.Energy <= 100f, "with his meters" );
+			Require( member.Sprite.Output != null && Level.TpiStaffWorld!.SpriteBanks?.BankCount( StaffType.Handyman ) > 0, "the cleaner's sprite source shows a frame of the handymen's bank" );
 			Log.Trace( $"Theme Park Inc slice smoke: cleaner {member.ThingId} in state {member.State:X} at {member.Navigation!.Cell}, energy {member.Energy}, last update turn {member.LastUpdateTurn}, walk original {member.Navigation.Original} arrived {member.Navigation.Arrived} target ({member.Navigation.TargetX >> 16}, {member.Navigation.TargetY >> 16}) links {Level.Guests!.Grid.Cells.LinksAt( member.Navigation.Cell.X, member.Navigation.Cell.Y ):X}; {Level.Park!.Economy.Litter.Count} litter item(s) in the park." );
+		} );
+	}
+
+	/// <summary>The camera close over the cleaner, the staff renderer drawing him, and (with OPENTPW_TPI_STAFF_CAPTURE naming a .png file) the world written for a visual check.</summary>
+	private void PlanCleanerView()
+	{
+		Do( "look at the cleaner", () =>
+		{
+			var camera = Camera.Mode as ParkCameraMode;
+			Require( camera != null, "the slice runs the park camera" );
+			var member = hiredHandyman!;
+			var focus = OriginalParkPlacement.GetCellCenter( Level.OriginalPark!.Heightfield, (int)member.DrawX, (int)member.DrawY );
+			camera!.Focus( focus );
+		} );
+		Wait( "the camera moves to the cleaner", 2 );
+		Do( "zoom in on the cleaner", () =>
+		{
+			var camera = (ParkCameraMode)Camera.Mode;
+			camera.SetPose( camera.Target, 90f, camera.Yaw );
+		} );
+		Wait( "the camera settles over the cleaner", 20 );
+		Do( "the staff renderer draws the cleaner", () =>
+		{
+			Require( Level.StaffRenderer is { DrawnStaff: >= 1 }, $"the cleaner is drawn (drawn {Level.StaffRenderer?.DrawnStaff})" );
+			if ( Environment.GetEnvironmentVariable( "OPENTPW_TPI_STAFF_CAPTURE" ) is { Length: > 0 } path )
+				WorldCapture.Write( path );
 		} );
 	}
 

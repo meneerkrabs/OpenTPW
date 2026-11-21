@@ -134,6 +134,8 @@ public partial class Level
 				Park.Economy.Staff.SpriteClockMilliseconds = spriteClock;
 			if ( StaffPlacement != null )
 				StaffPlacement.SpriteClockMilliseconds = spriteClock;
+			if ( TpiStaffWorld != null )
+				TpiStaffWorld.SpriteClockMilliseconds = spriteClock;
 		}
 		// A park whose guests take their ids from the level's thing pool runs its turns as the original does (0x00516380): the tick that starts a turn runs the substep's ride scripts, then the sweep over the
 		// pool newest first, the gate retry, the turn's destroys and the arrival update. Without a park or its guests in the pool, in a lost park or where the economy and the guests count turns apart (a paused
@@ -178,6 +180,7 @@ public partial class Level
 		{
 			using var staffMark = FrameMarks.Measure( "sim.staff" );
 			StaffWorld?.Tick( deltaTime );
+			TpiStaffWorld?.TickPresentation( Park?.Economy );
 		}
 		using ( FrameMarks.Measure( "sim.rendering" ) )
 		{
@@ -212,6 +215,7 @@ public partial class Level
 	{
 		Guests?.ScheduleBodySprites();
 		StaffWorld?.ScheduleSprites( clock );
+		TpiStaffWorld?.ScheduleSprites( Park?.Economy, clock );
 		StaffPlacement?.ScheduleSprite( clock );
 		Portraits.Tick( clock );
 	}
